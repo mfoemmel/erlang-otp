@@ -1,0 +1,152 @@
+#
+# Custom makefile for building Win32 OTP from UNIX.
+#
+# Author: Mattias Nilsson <mattias@erix.ericsson.se>
+#
+# Modified heavily by PaN
+# See $ERL_TOP/erts/internal_doc/win32*.txt for details
+#
+
+include vsn.mk
+
+EMULATOR=beam
+
+# The NT host machine.
+NT_BUILDHOST=beamish
+
+# The view drive.
+NT_CC_DRIVE=L:
+
+#Paths on Unix and NT.
+UNIX_TMP_PATH=/home/gandalf/$(USER)/tmp
+NT_TMP_PATH=h:\gandalf\$(USER)\tmp
+NT_WISE_PATH=D:\Progra~1\Wise
+
+# Serial No (Used for progress/nightly builds)
+SERIALNO=
+USER=$(LOGNAME)
+
+# ClearCase Root
+ERL_TOP = /clearcase/otp/erts
+
+# Paths
+
+TESTROOT=$(UNIX_TMP_PATH)/ow_$(SYSTEM_VSN)$(SERIALNO)
+SETUPSRCDIR=$(NT_TMP_PATH)\ow_$(SYSTEM_VSN)$(SERIALNO)
+
+# Erlang Options (STATIC! Don't change!)
+SNAME = ntbuild_$(shell echo $(SYSTEM_VSN) | sed 's,\.,_,g')
+ERLOPTS=-setcookie ntbuild -sname $(SNAME) -pa . -noshell
+
+# Programs (change theese if you have to)
+# An old release of erlang for use in RPC's to the NT node
+ERL=/usr/local/otp/releases/otp_jam_sunos5_r4b/bin/erl
+OLDERLC=/usr/local/otp/releases/otp_jam_sunos5_r4b/bin/erlc
+
+# Make shortcuts..
+OMAKE = $(ERL) $(ERLOPTS) -s ntbuild omake "buildserver@$(NT_BUILDHOST)"
+NMAKE = $(ERL) $(ERLOPTS) -s ntbuild nmake "buildserver@$(NT_BUILDHOST)"
+SETDIR= $(ERL) $(ERLOPTS) -s ntbuild setdir "buildserver@$(NT_BUILDHOST)"
+
+#Windows programs
+
+# WISE=$(NT_WISE_PATH)\Wise32.exe 
+
+# Targets
+
+progress: setup unix1 $(EMULATOR) build_epmd apps unix2 tests win2
+release:  setup unix1 $(EMULATOR) build_epmd apps unix2 win2
+lite: setup unix1lite $(EMULATOR) build_epmd unix2lite win2
+
+apps: erl_interface gs os_mon ic crypto ssl runtime_tools etk
+
+tests:
+	(cd $(ERL_TOP); clearmake -V release_tests TESTROOT=$(TESTROOT)/test/test_suite TARGET=win32)
+
+
+# Initial setup in view.
+setup:
+	$(OLDERLC) -bjam ntbuild.erl -o.
+	@if test ! -d $(ERL_TOP)/erts/obj.$(EMULATOR)/win32; then mkdir $(ERL_TOP)/erts/obj.$(EMULATOR)/win32; fi
+	@if test ! -d $(ERL_TOP)/erts/obj.debug.$(EMULATOR)/win32; then mkdir $(ERL_TOP)/erts/obj.debug.$(EMULATOR)/win32; fi
+	@if test ! -d $(ERL_TOP)/erts/obj.instr.$(EMULATOR); then mkdir $(ERL_TOP)/erts/obj.instr.$(EMULATOR); fi
+	@if test ! -d $(ERL_TOP)/erts/obj.instr.$(EMULATOR)/win32; then mkdir $(ERL_TOP)/erts/obj.instr.$(EMULATOR)/win32; fi
+	@if test ! -d $(ERL_TOP)/erts/obj/win32; then mkdir $(ERL_TOP)/erts/obj/win32; fi
+	@if test ! -d $(ERL_TOP)/bin/win32; then mkdir $(ERL_TOP)/bin/win32; fi
+	@if test ! -d $(ERL_TOP)/erts/emulator/win32; then mkdir $(ERL_TOP)/erts/emulator/win32; fi
+	@if test ! -d $(ERL_TOP)/lib/os_mon/priv/bin/win32; then mkdir $(ERL_TOP)/lib/os_mon/priv/bin/win32; fi
+	@if test ! -d $(ERL_TOP)/lib/os_mon/priv/obj/win32; then mkdir $(ERL_TOP)/lib/os_mon/priv/obj/win32; fi
+	@if test ! -d $(ERL_TOP)/lib/ic/priv/lib/win32; then mkdir $(ERL_TOP)/lib/ic/priv/lib/win32; fi
+	@if test ! -d $(ERL_TOP)/lib/ic/priv/obj/win32; then mkdir $(ERL_TOP)/lib/ic/priv/obj/win32; fi
+	@if test ! -d $(TESTROOT); then mkdir $(TESTROOT); fi	
+	(cd autoconf; clearmake -V win32 EMULATOR=$(EMULATOR))
+
+
+# UNIX side part 1.
+
+unix1:
+	(cd ..;clearmake -V  lib_and_erts local_setup TYPE=opt LTYPE=opt TARGET=win32 BUILD_ALL=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
+
+unix1lite:
+	(cd ..;clearmake -V opt TARGET=win32 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
+
+
+# Emulator
+# We have to do a 'clean' because the VC linker says 'Internal Error' otherwise... 
+$(EMULATOR):
+	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
+	$(OMAKE) "\erts\erts\emulator" "NODEBUG=1 GCC=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR) clean"
+	$(OMAKE) "\erts\erts\emulator" "NODEBUG=1 GCC=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+
+
+# EPMD
+build_epmd:
+	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
+	$(OMAKE) "\erts\erts\epmd\src" "NODEBUG=1 GCC=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+
+
+# Applications
+
+erl_interface:
+	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
+	$(OMAKE) "\erts\lib\erl_interface\src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+
+gs:
+	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
+	$(OMAKE) "\erts\lib\gs\win" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+
+etk:
+	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
+	$(OMAKE) "\erts\lib\etk\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+
+os_mon:
+	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
+	$(OMAKE) "\erts\lib\os_mon\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+
+crypto:
+	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
+	$(OMAKE) "\erts\lib\crypto\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+
+ssl:
+	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
+	$(OMAKE) "\erts\lib\ssl\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+
+ic:
+	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
+	$(OMAKE) "\erts\lib\ic\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+
+runtime_tools:
+	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
+	$(OMAKE) "\erts\lib\runtime_tools\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+
+unix2:
+	(cd ../lib; clearmake -V release TARGET=win32 BUILD_ALL=1 TESTROOT=$(TESTROOT) SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
+	(clearmake -V release TARGET=win32 BUILD_ALL=1 TESTROOT=$(TESTROOT) SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
+
+unix2lite:
+	(cd ..; clearmake -V release TARGET=win32 TESTROOT=$(TESTROOT) SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
+
+# WISE Build & Install.
+win2:
+	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
+	$(OMAKE) "\erts\erts\etc\win32\wise" "SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR) TESTROOT=$(SETUPSRCDIR) WISEDIR=$(NT_WISE_PATH) install"

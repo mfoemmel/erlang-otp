@@ -1,0 +1,270 @@
+/* ``The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved via the world wide web at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+ * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+ * AB. All Rights Reserved.''
+ * 
+ *     $Id$
+ */
+#ifndef _ERL_ETERM_H
+#define _ERL_ETERM_H
+
+#ifndef SILENT
+#include <stdio.h>
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+#define ERL_INTEGER 'i'
+#define ERL_U_INTEGER 'u' /* unsigned int */
+#define ERL_ATOM 'a'
+#define ERL_PID 'p'
+#define ERL_PORT 'P'
+#define ERL_REF 'r'
+#define ERL_LIST 'l'
+#define ERL_EMPTY_LIST 'n'
+#define ERL_TUPLE 't'
+#define ERL_BINARY 'b'
+#define ERL_FLOAT 'f'
+#define ERL_VARIABLE 'v'  /* used in patterns */
+#define ERL_SMALL_BIG 'c'
+#define ERL_U_SMALL_BIG 'd'
+
+#define MAXNODE_LEN 256
+
+/*  Erlang terms in C  */
+
+typedef struct _header {
+  unsigned count:24;     /* reference counter */
+  unsigned type:8;       /* type of Erlang term */
+} Erl_Header;
+
+typedef struct _integer {
+  Erl_Header h;
+  int i;
+} Erl_Integer;
+
+typedef struct _uinteger {
+  Erl_Header h;
+  unsigned int u;
+} Erl_Uinteger;
+
+typedef struct _float {
+  Erl_Header h;
+  double f;
+} Erl_Float;
+
+typedef struct _atom {
+  Erl_Header h;
+  int len;
+  char *a;
+} Erl_Atom;
+
+typedef struct _pid {
+  Erl_Header h;
+  char node[MAXNODE_LEN];
+  unsigned int number;
+  unsigned int serial;
+  unsigned char creation;
+} Erl_Pid;
+
+typedef struct _port {    
+  Erl_Header h;
+  char node[MAXNODE_LEN];
+  unsigned int number;
+  unsigned char creation;
+} Erl_Port;
+
+typedef struct _ref {
+  Erl_Header h;
+  char node[MAXNODE_LEN];
+  int len;
+  unsigned int n[3];
+  unsigned char creation;
+} Erl_Ref;
+
+struct _eterm; /* forward */    
+
+typedef struct _list {
+  Erl_Header h;
+  struct _eterm *head;
+  struct _eterm *tail;
+} Erl_List;
+
+typedef struct _empty_list {
+  Erl_Header h;
+} Erl_EmptyList;
+
+typedef struct _tuple {
+  Erl_Header h;
+  int size;
+  struct _eterm **elems;
+} Erl_Tuple;
+
+typedef struct _binary {
+  Erl_Header h;
+  int size;
+  unsigned char *b;
+} Erl_Binary;
+
+/* Variables may only exist in patterns. 
+ * Note: identical variable names in a pattern 
+ * denotes the same value.
+ */
+typedef struct _variable {    
+  Erl_Header h;
+  int len;           
+  char *name;        
+  struct _eterm *v;  
+} Erl_Variable;
+
+typedef struct _eterm {
+  union {
+    Erl_Integer   ival;
+    Erl_Uinteger  uival; 
+    Erl_Float     fval;
+    Erl_Atom      aval;
+    Erl_Pid       pidval;     
+    Erl_Port      portval;    
+    Erl_Ref       refval;   
+    Erl_List      lval;
+    Erl_EmptyList nval;
+    Erl_Tuple     tval;
+    Erl_Binary    bval;
+    Erl_Variable  vval;
+  } uval;
+} ETERM;
+
+#define ERL_MAX_COUNT     0xffffff
+#define ERL_HEADER(x)     ((Erl_Header *)x)
+#define ERL_COUNT(x)      (ERL_HEADER(x)->count)
+#define ERL_TYPE(x)       (ERL_HEADER(x)->type)
+
+#define ERL_MAX ((1 << 27)-1)
+#define ERL_MIN -(1 << 27)
+
+/*
+ * Macros used for retrieving values from Erlang terms.
+ */
+
+#define ERL_INT_VALUE(x) ((x)->uval.ival.i)
+#define ERL_INT_UVALUE(x) ((x)->uval.uival.u)
+
+#define ERL_FLOAT_VALUE(x) ((x)->uval.fval.f)
+
+#define ERL_ATOM_PTR(x) ((x)->uval.aval.a)
+#define ERL_ATOM_SIZE(x) ((x)->uval.aval.len)
+
+#define ERL_PID_NODE(x) ((x)->uval.pidval.node)
+#define ERL_PID_NUMBER(x) ((x)->uval.pidval.number)
+#define ERL_PID_SERIAL(x) ((x)->uval.pidval.serial)
+#define ERL_PID_CREATION(x) ((x)->uval.pidval.creation)
+
+#define ERL_PORT_NODE(x) ((x)->uval.portval.node)
+#define ERL_PORT_NUMBER(x) ((x)->uval.portval.number)
+#define ERL_PORT_CREATION(x) ((x)->uval.portval.creation)
+
+#define ERL_REF_NODE(x) ((x)->uval.refval.node)
+#define ERL_REF_NUMBER(x) ((x)->uval.refval.n[0])
+#define ERL_REF_NUMBERS(x) ((x)->uval.refval.n)
+#define ERL_REF_LEN(x) ((x)->uval.refval.len)
+#define ERL_REF_CREATION(x) ((x)->uval.refval.creation)
+
+#define ERL_TUPLE_SIZE(x) ((x)->uval.tval.size)
+
+/* NOTE!!! This is 0-based!! (first item is number 0)
+ * Note too that element/2 (in Erlang) and
+ * erl_element() are both 1-based.
+ */
+#define ERL_TUPLE_ELEMENT(x, i) ((x)->uval.tval.elems[(i)])
+
+#define ERL_BIN_SIZE(x) ((x)->uval.bval.size)
+#define ERL_BIN_PTR(x) ((x)->uval.bval.b)
+
+#define ERL_CONS_HEAD(x) ((x)->uval.lval.head)
+#define ERL_CONS_TAIL(x) ((x)->uval.lval.tail)
+
+/*
+ * Typing checking macros.
+ */
+
+#define ERL_IS_INTEGER(x)  (ERL_TYPE(x) == ERL_INTEGER)
+#define ERL_IS_UNSIGNED_INTEGER(x)  (ERL_TYPE(x) == ERL_U_INTEGER)
+#define ERL_IS_FLOAT(x)    (ERL_TYPE(x) == ERL_FLOAT)
+#define ERL_IS_ATOM(x)     (ERL_TYPE(x) == ERL_ATOM)
+#define ERL_IS_PID(x)      (ERL_TYPE(x) == ERL_PID)
+#define ERL_IS_PORT(x)     (ERL_TYPE(x) == ERL_PORT)
+#define ERL_IS_REF(x)      (ERL_TYPE(x) == ERL_REF)
+#define ERL_IS_LIST(x)     (ERL_IS_CONS(x) || ERL_IS_EMPTY_LIST(x))
+#define ERL_IS_CONS(x)     (ERL_TYPE(x) == ERL_LIST)
+#define ERL_IS_EMPTY_LIST(x) (ERL_TYPE(x) == ERL_EMPTY_LIST)
+#define ERL_IS_TUPLE(x)    (ERL_TYPE(x) == ERL_TUPLE)
+#define ERL_IS_BINARY(x)   (ERL_TYPE(x) == ERL_BINARY)
+
+typedef unsigned char Erl_Heap;
+
+typedef struct _heapmark {
+  unsigned long mark;      /* id */
+  int size;                /* size of buffer */
+  Erl_Heap *base;          /* points to start of buffer */
+  Erl_Heap *cur;           /* points into buffer */
+  struct _heapmark *prev;  /* previous heapmark */
+} Erl_HeapMark;
+
+#if defined(__STDC__) || defined(__WIN32__)
+#define _ANSI_ARGS(x) x
+#else
+#define _ANSI_ARGS(x) ()
+#endif
+
+extern void erl_common_init _ANSI_ARGS((void *, long));
+extern ETERM *erl_mk_atom _ANSI_ARGS((char*));
+extern ETERM *erl_mk_var _ANSI_ARGS((char*));
+extern ETERM *erl_mk_int _ANSI_ARGS((int));
+extern ETERM *erl_mk_uint _ANSI_ARGS((unsigned int));
+extern ETERM *erl_mk_tuple _ANSI_ARGS((ETERM**,int));
+extern ETERM *erl_mk_list _ANSI_ARGS((ETERM**,int));
+extern ETERM *erl_mk_empty_list _ANSI_ARGS((void));
+extern ETERM *erl_mk_string _ANSI_ARGS((char*));
+extern ETERM *erl_mk_estring _ANSI_ARGS((char*, int));
+extern ETERM *erl_mk_float _ANSI_ARGS((double));
+extern ETERM *erl_element _ANSI_ARGS((int,ETERM*));
+extern ETERM *erl_mk_binary _ANSI_ARGS((char*,int));
+extern ETERM *erl_mk_pid _ANSI_ARGS((const char*,unsigned int,unsigned int,unsigned char));
+extern ETERM *erl_mk_ref _ANSI_ARGS((const char*,unsigned int,unsigned char));
+extern ETERM *erl_mk_long_ref _ANSI_ARGS((const char*,unsigned int,unsigned int,unsigned int,unsigned char));
+extern ETERM *erl_mk_port _ANSI_ARGS((const char*,unsigned int,unsigned char));
+extern ETERM *erl_cons _ANSI_ARGS((ETERM*,ETERM*));
+extern ETERM *erl_hd _ANSI_ARGS((ETERM*));
+extern ETERM *erl_tl _ANSI_ARGS((ETERM*));
+extern int erl_length _ANSI_ARGS((ETERM*));
+
+extern int erl_iolist_length _ANSI_ARGS((ETERM*));
+extern ETERM* erl_iolist_to_binary _ANSI_ARGS((ETERM* term));
+extern char* erl_iolist_to_string _ANSI_ARGS((ETERM* term));
+
+extern ETERM *erl_copy_term _ANSI_ARGS((ETERM*));
+extern int erl_size _ANSI_ARGS((ETERM*));
+extern ETERM *erl_var_content _ANSI_ARGS((ETERM*, char*));
+extern int erl_current_fix_desc _ANSI_ARGS((void));
+#ifndef SILENT
+extern int erl_print_term _ANSI_ARGS((FILE*,ETERM*));
+#endif
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

@@ -1,0 +1,21 @@
+This directory contains Java Applications which uses the Jive interface
+to communicate with an Erlang server.
+
+Start the Erlang server, in the server directory, on a host of your
+choice.
+
+Start one of the Java Application examples (Usage: Timer host port) e.g.
+
+java Timer akvavit 14000
+
+or
+
+java TimerAlt akvavit 14000
+
+or
+
+java TimerAltAlt akvavit 14000
+
+A ticking clock will be printed by the Java Application.
+
+Author: Joakim Grebenö, <jocke@erix.ericsson.se>

@@ -1,0 +1,259 @@
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+# 
+#     $Id$
+#
+#
+# Frequently used atoms.
+#
+atom false true
+atom Underscore='_'
+atom Noname='nonode@nohost'
+
+#
+# Used in Beam emulator loop.
+#
+atom fun infinity timeout normal call return
+
+#
+# All other atoms.  Try to keep the order alphabetic.
+#
+atom DOWN='DOWN'
+atom EXIT='EXIT'
+atom all
+atom allocated
+atom and
+atom andthen
+atom arity
+atom attributes
+atom backtrace backtrace_depth
+atom badarg badarith badarity badcookie badfile badmatch badsig badfun
+atom bag
+atom band
+atom binary
+atom bnot
+atom bor
+atom bxor
+atom call
+atom case_clause
+atom catchlevel
+atom cd
+atom clear
+atom close
+atom closed
+atom command
+atom compile
+atom connect
+atom connected
+atom const
+atom context_switches
+atom current_function
+atom data
+atom debug_flags
+atom dexit
+atom dgroup_leader
+atom dictionary
+atom disable_trace
+atom display_items
+atom dist
+atom Div='/'
+atom div
+atom dlink
+atom dmonitor_node
+atom dmonitor_p
+atom DollarDollar='$$'
+atom DollarUnderscore='$_'
+atom DollarDictionary='$dictionary'
+atom dsend
+atom dunlink
+atom duplicate_bag
+atom emulator
+atom enable_trace
+atom env
+atom eof
+atom eol
+atom Eq='=:='
+atom Eqeq='=='
+atom erlang
+atom error
+atom error_handler
+atom error_logger
+atom exit_status
+atom existing
+atom exiting
+atom exports
+atom false
+atom fd
+atom flags
+atom fullsweep
+atom fun
+atom function
+atom functions
+atom function_clause
+atom garbage_collection
+atom gc_end
+atom gc_start
+atom gc_switch
+atom Ge='>='
+atom generational
+atom getenv
+atom getting_linked
+atom Gt='>'
+atom heap_size
+atom hidden
+atom hide
+atom high
+atom id
+atom if_clause
+atom imports
+atom in
+atom index
+atom infinity
+atom initial_call
+atom input
+atom internal_error
+atom instruction_counts
+atom invalid
+atom io
+atom keep_zombies
+atom keypos
+atom kill
+atom killed
+atom label
+atom lambda_clause
+atom last_calls
+atom Le='=<'
+atom line
+atom links
+atom low
+atom Lt='<'
+atom machine
+atom match_spec
+atom max
+atom max_tables max_processes
+atom mbuf_size
+atom memory
+atom message
+atom message_queue_len
+atom messages
+atom min_heap_size
+atom Minus='-'
+atom module
+atom module_info
+atom more
+atom name
+atom named_table
+atom Neq='=/='
+atom Neqeq='/='
+atom net_kernel
+atom new
+atom nocatch
+atom noconnection
+atom nocookie
+atom node
+atom nodedown
+atom noeol
+atom nofile
+atom noproc
+atom normal
+atom not
+atom not_purged
+atom notalive
+atom nouse_stdio
+atom old_call_trace
+atom old_heap_size
+atom or
+atom ordered_set
+atom orelse
+atom os_type
+atom os_version
+atom out
+atom output
+atom owner
+atom packet
+atom Plus='+'
+atom pid
+atom port
+atom print
+atom priority
+atom private
+atom process
+atom process_dump
+atom procs
+atom protected
+atom protection
+atom public
+atom purify
+atom quantify
+atom receive
+atom recent_size
+atom reductions
+atom registered_name
+atom rem
+atom return_from
+atom return_to
+atom return_trace
+atom run_queue
+atom runnable
+atom running
+atom runtime
+atom save_calls
+atom see_zombies
+atom sequential_tracer
+atom sequential_trace_token
+atom serial
+atom set
+atom set_on_first_link
+atom set_on_first_spawn
+atom set_on_link
+atom set_on_spawn
+atom set_seq_token
+atom stack_size
+atom start
+atom status
+atom stderr_to_stdout
+atom stop
+atom stream
+atom suspend
+atom suspended
+atom switch
+atom system_limit
+atom system_version
+atom table
+atom timeout
+atom timeout_value
+atom Times='*'
+atom timestamp
+atom trace trace_ts traced 
+atom tracer
+atom trap_exit
+atom true
+atom type
+atom undef
+atom undefined
+atom undefined_function
+atom undefined_lambda
+atom ultrasparc_read_pic1
+atom ultrasparc_read_tick1
+atom ultrasparc_read_pic2
+atom ultrasparc_read_tick2
+atom ultrasparc_set_pcr
+atom use_stdio
+atom uniq
+atom value
+atom version
+atom waiting
+atom wall_clock
+atom xor

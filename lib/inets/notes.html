@@ -1,0 +1,117 @@
+<HTML>
+<HEAD>
+  <TITLE>Inets Release Notes</TITLE>
+</HEAD>
+
+<BODY BGCOLOR="#FFFFFF">
+
+<CENTER><H1>Inets Release Notes</H1></CENTER>
+
+<H2>Inets 2.5.1</H2>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+New option added to httpd_core: BindAddress. BindAddress defines
+which address the server will listen to.
+<br>
+Bugs reported since R5 has been fixed.
+<br>Own Id: OTP-3295
+
+
+</UL>
+
+<H2>Inets 2.5</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+Possible error codes from http_socket were not handled. Corrected.
+<br>Own Id: OTP-3214<br>
+Aux Id: Seq 3752
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+Errors in the examples and documentation were corrected.
+<br>Own Id: OTP-3263<br>
+Aux Id: seq 3921
+
+
+</UL>
+
+<H2>Inets 2.3</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+ftp:open crashed if connection was closed before a complete welcome message was received,
+this is now fixed.
+<br>Own Id: OTP-2723<br>
+Aux Id: HA98434, seq 1151
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The authentication modules have been rewritten with support for 
+dets, plain and mnesia authentication databases. There is also
+a new module called 'mod_secrity', which implements security
+event logging and notification. Both the mod_auth and
+mod_security modules have an API for the programmer that
+implements functions they will require to have full control
+over access restricted parts of a site.
+NOTE: The mod_auth_mnesia module does not implement the API
+previously found there, please see the mod_auth
+documentation.
+<br>Own Id: OTP-2281<br>
+Aux Id: seq 740,OTP-2273
+
+
+<LI>
+Support for the sockets application has been removed from INETS, use SocketType ssl or ip_comm
+instead.
+<br>Own Id: OTP-2848
+
+
+<LI>
+The HTTP server has got improved efficiency through recognition of the 'If-Modified-Since'
+header field.
+<br>Own Id: OTP-2870
+
+
+<LI>
+CGI scripts are now supported on Windows aswell as UNIX platforms.
+<br>Own Id: OTP-2915
+
+
+<LI>
+mod_auth now supports the 'deny from' directive.
+<br>Own Id: OTP-2982
+
+
+<LI>
+The HTTP server now experimentaly supports persistent connections (as defined in RFC2068). This is the first step towards HTTP/1.1 support. Enabling this feature may greatly improve performance, as the server then uses the same TCP connection for more than one HTTP request.
+Two new configuration directives are defined for httpd_core:
+KeepAlive  max-requests
+KeepAliveTimeout  seconds
+<br>Own Id: OTP-3032
+
+
+</UL>
+ 
+You can find older release note
+<A HREF="notes_history.html">here</A>.
+ 
+</body>
+</html>

@@ -1,0 +1,257 @@
+%% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%% 
+%%     $Id$
+%%
+
+-module(ic_genobj).
+
+
+-include_lib("ic/src/ic.hrl").
+
+%%-----------------------------------------------------------------
+%% External exports
+%%-----------------------------------------------------------------
+-export([new/1, free_table_space/1, table_space/1, process_space/0]).
+-export([skelfiled/1, stubfiled/1, hrlfiled/1, includefiled/1]).
+-export([interfacefiled/1, helperfiled/1, holderfiled/1]).
+-export([is_skelfile_open/1, is_stubfile_open/1, is_hrlfile_open/1]).
+-export([include_file/1, include_file_stack/1]).
+-export([push_file/2, pop_file/2, sys_file/2]).
+
+-export([skelscope/1, stubscope/1, impl/1, do_gen/1]).
+-export([symtab/1, auxtab/1, tktab/1, pragmatab/1, optiontab/1, typedeftab/1]).
+-export([idlfile/1, module/1, set_idlfile/2, set_module/2]).
+
+
+%%-----------------------------------------------------------------
+%% Internal exports
+%%-----------------------------------------------------------------
+-export([]).
+
+%%-----------------------------------------------------------------
+%% External functions
+%%-----------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%%
+%% Initialisation stuff
+%%
+%% 
+%%
+%%--------------------------------------------------------------------
+
+
+new(Opts) ->
+    OptDB	= ets:new(options, [set, public]),
+    Warns	= ets:new(warnings, [set, public]),
+    Aux		= ets:new(aux, [set, public]),
+    Tk		= ets:new(tktab, [set, public]),
+    PragmaTab   = ets:new(pragmatab, [bag, public]),
+    TypeDefTab  = ets:new(c_typedeftab, [set, public]),
+    KeyWordTab  = icscan:add_keyw(),
+    G = #genobj{options=OptDB, 
+		warnings=Warns, 
+		symtab=ic_symtab:new(), 
+		auxtab=Aux, 
+		tktab=Tk, 
+		pragmatab=PragmaTab,
+		c_typedeftab=TypeDefTab,
+		keywtab=KeyWordTab},
+    ic_error:init_errors(G),
+    ic_options:add_opt(G, default_opts, true),
+    ic_options:read_cfg(G, Opts),	       % Read any config files
+    ic_options:add_opt(G, Opts, true),
+    G.
+
+
+%%--------------------------------------------------------------------
+%%
+%% Table removal
+%%
+%% 
+%%
+%%--------------------------------------------------------------------
+
+
+free_table_space(G) ->
+    %% Free ets tables
+    ets:delete(G#genobj.options),
+    ets:delete(G#genobj.symtab),
+    ets:delete(G#genobj.warnings),
+    ets:delete(G#genobj.auxtab),
+    ets:delete(G#genobj.tktab),
+    ets:delete(G#genobj.pragmatab),
+    ets:delete(G#genobj.c_typedeftab),
+    ets:delete(G#genobj.keywtab),
+    %% Close file descriptors
+    close_fd(G#genobj.skelfiled),
+    close_fd(G#genobj.stubfiled),
+    close_fd(G#genobj.interfacefiled),
+    close_fd(G#genobj.helperfiled),
+    close_fd(G#genobj.holderfiled),
+    close_fd(G#genobj.includefiled).
+
+close_fd([]) ->
+    ok;
+close_fd([Fd|Fds]) ->
+    file_close(Fd),
+    close_fd(Fds).
+
+file_close(empty) -> ok;
+file_close(ignore) -> ok;
+file_close(Fd) -> 
+    file:close(Fd).
+
+
+
+
+
+%%--------------------------------------------------------------------
+%%
+%% Table memory usage
+%%
+%% 
+%%
+%%--------------------------------------------------------------------
+
+table_space(G) ->
+    OptT=4*element(2,element(1,ets:info(G#genobj.options))),
+    SymT=4*element(2,element(1,ets:info(G#genobj.symtab))),
+    WarT=4*element(2,element(1,ets:info(G#genobj.warnings))),
+    AuxT=4*element(2,element(1,ets:info(G#genobj.auxtab))),
+    TkT=4*element(2,element(1,ets:info(G#genobj.tktab))),
+    PraT=4*element(2,element(1,ets:info(G#genobj.pragmatab))),
+    TypT=4*element(2,element(1,ets:info(G#genobj.c_typedeftab))),
+    io:format("Option table ends at    ~p bytes\n",[OptT]),
+    io:format("Symbol table ends at    ~p bytes\n",[SymT]),
+    io:format("Warning table ends at   ~p bytes\n",[WarT]),
+    io:format("Aux table ends at       ~p bytes\n",[AuxT]),
+    io:format("Typecode table ends at  ~p bytes\n",[TkT]),
+    io:format("Pragma table ends at    ~p bytes\n",[PraT]),
+    io:format("Typedef table ends at   ~p bytes\n",[TypT]),
+    io:format("-----------------------------------------------\n"),
+    io:format("Totally used  ~p bytes\n",[OptT+SymT+WarT+AuxT+TkT+PraT+TypT]).
+
+
+
+%%--------------------------------------------------------------------
+%%
+%% Process memory usage
+%%
+%% 
+%%
+%%--------------------------------------------------------------------
+
+process_space() ->
+    Pheap=4*element(2,element(2,lists:keysearch(heap_size,1,process_info(self())))),
+    Pstack=4*element(2,element(2,lists:keysearch(stack_size,1,process_info(self())))),
+    io:format("Process current heap = ~p bytes\n",[Pheap]),
+    io:format("Symbol current stack = ~p bytes\n",[Pstack]),
+    io:format("-----------------------------------------------\n"),
+    io:format("Totally used  ~p bytes\n\n",[Pheap+Pstack]).
+
+
+
+
+
+
+skelfiled(G) -> hd(G#genobj.skelfiled).
+stubfiled(G) -> hd(G#genobj.stubfiled).
+includefiled(G) -> hd(G#genobj.includefiled).
+hrlfiled(G) ->  hd(G#genobj.includefiled).
+interfacefiled(G) ->  hd(G#genobj.interfacefiled).
+helperfiled(G) ->  hd(G#genobj.helperfiled).
+holderfiled(G) ->  hd(G#genobj.holderfiled).
+
+include_file(G) -> hd(G#genobj.includefile).
+include_file_stack(G) -> G#genobj.includefile.
+
+is_skelfile_open(G) ->
+    if  hd(G#genobj.skelfiled) /= empty, hd(G#genobj.skelfiled) /= ignore
+	-> true;
+	true -> false
+    end.
+is_stubfile_open(G) ->
+    if  hd(G#genobj.stubfiled) /= empty, hd(G#genobj.stubfiled) /= ignore
+	-> true;
+	true -> false
+    end.
+is_includefile_open(G) ->
+    if  hd(G#genobj.includefiled) /= empty, hd(G#genobj.includefiled) /= ignore
+	-> true;
+	true -> false
+    end.
+
+is_hrlfile_open(G) ->
+    if  hd(G#genobj.includefiled) /= empty, hd(G#genobj.includefiled) /= ignore
+	-> true;
+	true -> false
+    end.
+
+%%--------------------------------------------------------------------
+%%
+%% Handling of pre processor file commands
+%%
+%%--------------------------------------------------------------------
+
+push_file(G, Id) ->
+    New = G#genobj.filestack+1,
+    set_idlfile(G, Id),
+    G#genobj{filestack=New, do_gen=true_or_not(New)}.
+pop_file(G, Id) ->
+    New = G#genobj.filestack-1,
+    set_idlfile(G, Id),
+    G#genobj{filestack=New, do_gen=true_or_not(New)}.
+sys_file(G, Id) -> G#genobj{sysfile=true}.
+
+
+do_gen(G) -> G#genobj.do_gen.
+
+%%--------------------------------------------------------------------
+%%
+%% Storage routines
+%%i
+%% The generator object G is used to store many usefull bits of
+%% information so that the information doesn't need to get passed
+%% around everywhere.
+%%
+%%--------------------------------------------------------------------
+
+
+skelscope(G)	-> G#genobj.skelscope.
+stubscope(G)	-> G#genobj.stubscope.
+symtab(G)	-> G#genobj.symtab.
+auxtab(G)	-> G#genobj.auxtab.
+tktab(G)	-> G#genobj.tktab.
+impl(G)		-> G#genobj.impl.
+pragmatab(G)    -> G#genobj.pragmatab.
+optiontab(G)    -> G#genobj.options.
+typedeftab(G)    -> G#genobj.c_typedeftab.
+
+idlfile(G)	-> ?lookup(G#genobj.options, idlfile).
+module(G)	-> ?lookup(G#genobj.options, module).
+
+set_idlfile(G, X)	-> ?insert(G#genobj.options, idlfile, X).
+set_module(G, X)	-> ?insert(G#genobj.options, module, ic_forms:get_id(X)).
+
+
+%%-----------------------------------------------------------------
+%% Internal functions
+%%-----------------------------------------------------------------
+true_or_not(X) when X < 2 -> 
+    true;
+true_or_not(_) -> 
+    false.

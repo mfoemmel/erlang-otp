@@ -1,0 +1,198 @@
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+# 
+#     $Id$
+#
+# Toplevel makefile for building the Erlang system
+#
+
+# ----------------------------------------------------------------------
+
+# And you'd think that this would be obvious... :-)
+SHELL = /bin/sh
+
+# The top directory in which Erlang is unpacked
+ERL_TOP = @ERL_TOP@
+
+# erts (Erlang RunTime System) version
+ERTS = @ERTS@
+
+# ----------------------------------------------------------------------
+
+#
+# The variables below control where Erlang is installed. They are
+# configurable (unless otherwise stated). Some of them are best
+# changed by giving special arguments to configure instead of changing
+# them in this file. Note: If you change them in Makefile, instead of
+# Makefile.in your changes will be lost the next time you run
+# configure.
+#
+
+# prefix from autoconf, default is /usr/local (must be an absolute path)
+prefix      = @prefix@
+exec_prefix = @exec_prefix@
+
+# The following can be set in case you install Erlang in a different
+# location from where you have configured it to run. This can be
+# useful e.g. when installing on a server that stores the files with a
+# different path from where the clients access them. Or when building
+# rpms.
+INSTALL_PREFIX =
+
+# The directory in which user executables (erl, erlc and erl_call) are put
+BINDIR      = $(INSTALL_PREFIX)@bindir@
+
+# The directory which will contain installed Erlang version.
+# (ILIBDIR is supposed to be LIBDIR *without* the install prefix)
+ERLANG_LIBDIR     = $(INSTALL_PREFIX)@libdir@/erlang
+ERLANG_ILIBDIR    = @libdir@/erlang
+
+# You can *not* change these two, they have to stay this way for now.
+ERLANG_BINDIR     = $(ERLANG_LIBDIR)/bin
+ERLANG_ERTSBINDIR = $(ERLANG_LIBDIR)/$(ERTS)/bin
+
+# The directory in which man pages for above executables are put
+ERL_MAN1DIR      = $(INSTALL_PREFIX)@mandir@/man1
+ERL_MAN1EXT      = 1
+
+# The directory in which Erlang private man pages are put. In order
+# not to clutter up the man namespace these are by default put in the
+# Erlang private directory $(ERLANG_ILIBDIR)/man. If you want to
+# install the man pages together with the rest give the argument
+# "--disable-erlang-mandir" when you run configure, which will set
+# MAN_DIR to @mandir@.
+#   If you want a special suffix on the manpages set ERL_MANEXT to
+# this suffix, e.g. "erl"
+ERL_MANDIR       = $(INSTALL_PREFIX)@erl_mandir@
+ERL_MANEXT       =
+
+# ----------------------------------------------------------------------
+
+# Must be GNU make!
+MAKE    = @MAKE_PROG@
+
+# This should be set to the target "arch-vendor-os"
+TARGET  = @TARGET@
+
+# A BSD compatible install program
+INSTALL         = @INSTALL@
+INSTALL_PROGRAM = @INSTALL_PROGRAM@
+INSTALL_DATA    = @INSTALL_DATA@
+MKSUBDIRS       = ${INSTALL} -d
+
+# Program to create symbolic links
+LN_S            = @LN_S@
+
+# Ranlib program, if not needed set to e.g. ":"
+RANLIB          = @RANLIB@
+
+# ----------------------------------------------------------------------
+
+# Directories which you need in the path if you wish to run the
+# locally built system. (This can be put in front or back of the path
+# depending on which system is preferred.)
+LOCAL_PATH     = $(ERL_TOP)/erts/bin/$(TARGET):$(ERL_TOP)/erts/bin
+BOOTSTRAP_PATH = $(ERL_TOP)/bootstrap/bin
+
+# ----------------------------------------------------------------------
+
+#
+# The steps to build a working system are:
+#   * build an emulator
+#   * setup the erl and erlc program in bootstrap/bin
+#   * use the bootstrap erl and erlc to build all the libs
+#
+all: emulator bootstrap_setup libs local_setup
+
+# ----------------------------------------------------------------------
+
+emulator:
+	cd erts && ERL_TOP=$(ERL_TOP) $(MAKE) NO_START_SCRIPTS=true opt
+
+libs:
+	cd lib && \
+	  ERL_TOP=$(ERL_TOP) PATH=$(BOOTSTRAP_PATH):$${PATH} \
+		$(MAKE) opt BUILD_ALL=true
+
+# Creates "erl" and "erlc" in bootstrap/bin which uses the precompiled 
+# libraries in the bootstrap directory
+bootstrap_setup:
+	@rm -f bootstrap/bin/erl bootstrap/bin/erlc
+	@sed	-e "s;%FINAL_ROOTDIR%;$(ERL_TOP)/bootstrap;"   \
+		-e "s;erts-.*/bin;../bin/$(TARGET);"    \
+		-e "s;EMU=.*;EMU=beam$(TYPEMARKER);" \
+	        $(ERL_TOP)/erts/etc/unix/erl.src.src > \
+			$(ERL_TOP)/bootstrap/bin/erl
+	@cp $(ERL_TOP)/bin/$(TARGET)/erlc $(ERL_TOP)/bootstrap/bin/erlc
+	@chmod 755 $(ERL_TOP)/bootstrap/bin/erl $(ERL_TOP)/bootstrap/bin/erlc
+
+# Creates "erl" and "erlc" scripts in bin/erl which uses the libraries in lib
+local_setup:
+	@rm -f erts/bin/erl erts/bin/erlc
+	@cd erts && \
+		ERL_TOP=$(ERL_TOP) PATH=$(BOOTSTRAP_PATH):$${PATH} \
+		$(MAKE) local_setup
+
+
+# ----------------------------------------------------------------------
+
+#
+# Install
+#
+# Order is important here, don't change it!
+#
+install: install.dirs install.emulator install.libs install.Install install.bin
+
+install.emulator:
+	cd erts && \
+	  ERL_TOP=$(ERL_TOP) PATH=$(BOOTSTRAP_PATH):$${PATH} \
+	  $(MAKE) TESTROOT=$(ERLANG_LIBDIR) release
+
+install.libs:
+	cd lib && \
+	  ERL_TOP=$(ERL_TOP) PATH=$(BOOTSTRAP_PATH):$${PATH} \
+	  $(MAKE) TESTROOT=$(ERLANG_LIBDIR) BUILD_ALL=true release 
+
+install.Install:
+	cd $(ERLANG_LIBDIR) && ./Install -minimal $(ERLANG_LIBDIR)
+
+#
+# Erlang base public files
+#
+install.bin:
+	rm -f $(BINDIR)/erl $(BINDIR)/erlc
+	${LN_S} $(ERLANG_BINDIR)/erl      $(BINDIR)/erl
+	${LN_S} $(ERLANG_BINDIR)/erlc     $(BINDIR)/erlc
+
+#
+# Directories needed before we can install
+#
+install.dirs:
+	if test ! -d $(BINDIR) ; then ${MKSUBDIRS} $(BINDIR); fi
+	${MKSUBDIRS} $(ERLANG_LIBDIR)
+	${MKSUBDIRS} $(ERLANG_LIBDIR)/usr/lib
+
+# ----------------------------------------------------------------------
+
+#
+# Clean targets
+#
+
+clean:
+	rm -f *~ *.bak config.log config.status
+	cd erts && ERL_TOP=$(ERL_TOP) $(MAKE) clean
+	cd lib  && ERL_TOP=$(ERL_TOP) $(MAKE) clean BUILD_ALL=true
+
+# ----------------------------------------------------------------------

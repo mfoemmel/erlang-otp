@@ -1,0 +1,53 @@
+
+This is the etk package, a tight binding between Erlang and
+tk4.2 which makes it possible to write GUI programs in
+erlang which directly manipulate all the widgets found in tk4.2
+in a manner similar to tcl. Hence in a way this library 
+replaces tcl with erlang.
+
+To build this packege the Makefiles need to have a pointer
+to the source code of tk4.2 and tcl7.6, this can be given
+to the configure script as
+
+% ./configure --with-tcl <dir> --with-tk <dir>
+
+as well as the source code of the erlang system itself
+with
+
+% ./configure --with-erl <dir>
+
+In the distribution of Open Source Erlang these values
+default to the following
+
+with-erl: $ERL_TOP
+with-tcl: $ERL_TOP/lib/gs/c_src/lib/tcl7.6
+with-tk:  $ERL_TOP/lib/gs/c_src/lib/tk4.2
+
+So if the "gs" library exists in the $ERL_TOP/lib/ directory
+"etk" should build right inplace.
+
+
+% setenv ERL_TOP <dir>
+% gmake
+
+
+"etk" is ditributed together with the "gs_apps.tar.gz" file
+for convenience only.
+
+The documentation of this library is almost non existant
+since the API is almost one-to-one visavi the tk4.2 widgets.
+
+Furthermore, in order to be able to effectively use this
+library, understanding the GUI programming concepts of tcl/tk
+is absoluteley essential. Therefore we recommend a good book
+on tcl/tk such as "Effective Tcl/Tk Programming"
+by "Mark Harrisson and Michael McLennan, Addison Wesley 1998" 
+as an introductory text to the "etk" library.
+
+The doc directory contains html files of all the supported
+tk4.2 widgets.
+
+
+
+
+

@@ -1,0 +1,301 @@
+#ifndef _ODBCLLI_IDL
+#define _ODBCLLI_IDL
+
+typedef unsigned long memptr;
+
+typedef short SQLRETURN_G;
+
+typedef short SQLSMALLINT_G;
+typedef unsigned short SQLUSMALLINT_G;
+
+typedef long SQLINTEGER_G;
+typedef memptr SQLINTEGER_G_PTR;
+typedef unsigned long SQLUINTEGER_G;
+
+typedef sequence<string> STRING_SEQ;
+typedef sequence<char> SQLCHAR_G_SEQ;
+
+typedef sequence<SQLUSMALLINT_G> SQLUSMALLINT_SEQ;
+
+typedef memptr SQLHENV_G;
+typedef memptr SQLHDBC_G;
+typedef memptr SQLHSTMT_G;
+typedef memptr SQLHANDLE_G;
+
+typedef memptr SQLPOINTER_G;
+
+
+
+
+interface odbclli
+{
+
+  SQLRETURN_G sql_alloc_handle(in SQLSMALLINT_G HandleType,
+			       in SQLHANDLE_G RefInputHandle,
+			       out SQLHANDLE_G RefOutputHandle);
+
+  SQLRETURN_G sql_bind_col(in SQLHSTMT_G RefStmtHandle,
+			   in SQLUSMALLINT_G ColNum,
+			   in SQLSMALLINT_G BufCType,
+			   in SQLPOINTER_G RefBuf,
+			   in SQLINTEGER_G BufLen,
+			   in SQLINTEGER_G_PTR RefLenInd);
+  /*
+  SQLRETURN_G sql_bind_parameter(in SQLHSTMT_G RefStmtHandle,
+				 in SQLUSMALLINT_G ParNum,
+				 in SQLSMALLINT_G InOutType,
+				 in SQLSMALLINT_G BufCType,
+				 in SQLSMALLINT_G ParSqlType,
+				 in SQLUINTEGER_G ColSize,
+				 in SQLSMALLINT_G DecDigs,
+				 in SQLPOINTER_G RefBuf,
+				 in SQLINTEGER_G BufLen,
+				 in SQLINTEGER_G_PTR RefLenInd);
+  */
+  /*
+  SQLRETURN_G sql_cancel(in SQLHSTMT_G RefStmtHandle);
+  */
+  SQLRETURN_G sql_close_cursor(in SQLHSTMT_G RefStmtHandle);
+  /*
+  SQLRETURN_G sql_col_attribute(in SQLHSTMT_G RefStmtHandle,
+				in SQLUSMALLINT_G ColNum,
+				in SQLUSMALLINT_G FieldID,
+				in SQLSMALLINT_G BufLenCharAttr,
+				out SQLPOINTER_G CharAttr,
+				out SQLSMALLINT_G LenCharAttr,
+				out SQLPOINTER_G NumAttr);
+  */
+  /*
+  SQLRETURN_G sql_columns(in SQLHSTMT_G RefStmtHandle,
+			  in string Catalog,
+			  in string Schema,
+			  in string Table,
+			  in string Column);
+  */
+  SQLRETURN_G sql_connect(in SQLHDBC_G RefConnHandle,
+			  in string Server,
+			  in string UID,
+			  in string Auth);
+  /*
+  SQLRETURN_G sql_data_sources(in SQLHENV_G RefEnvHandle,
+			       in SQLUSMALLINT_G Direction,
+			       in SQLSMALLINT_G BufLenServer,
+			       in SQLSMALLINT_G BufLenDesc,
+			       out string Server,
+			       out SQLSMALLINT_G LenServer,
+			       out string Desc,
+			       out SQLSMALLINT_G LenDesc);
+  */
+  SQLRETURN_G sql_describe_col(in SQLHSTMT_G RefStmtHandle,
+			       in SQLSMALLINT_G ColNum,
+			       in SQLSMALLINT_G BufLenColName,
+			       out string ColName,
+			       out SQLSMALLINT_G LenColName,
+			       out SQLSMALLINT_G SqlType,
+			       out SQLUINTEGER_G ColSize,
+			       out SQLSMALLINT_G DecDigs,
+			       out SQLSMALLINT_G Nullable);
+
+  SQLRETURN_G sql_disconnect(in SQLHDBC_G RefConnHandle);
+
+  SQLRETURN_G sql_driver_connect(in SQLHDBC_G RefConnHandle,
+				 in string InConnStr,
+				 in SQLSMALLINT_G BufLenOutConnStr,
+				 in SQLUSMALLINT_G DrvCompletion,
+				 out string OutConnStr,
+				 out SQLSMALLINT_G LenOutConnStr);
+  /*
+  SQLRETURN_G sql_drivers(in SQLHENV_G RefHenv,
+			  in SQLUSMALLINT_G Direction,
+			  in SQLSMALLINT_G BufLenDesc,
+			  in SQLSMALLINT_G BufLenAttrs,
+			  out string DrvDesc,
+			  out SQLSMALLINT_G LenDrvDesc,
+			  out STRING_SEQ Attrs,
+			  out SQLSMALLINT_G LenAttrs);
+  */
+  SQLRETURN_G sql_end_tran(in SQLSMALLINT_G HandleType,
+			   in SQLHANDLE_G RefHandle,
+			   in SQLSMALLINT_G ComplType);
+
+  SQLRETURN_G sql_exec_direct(in SQLHSTMT_G RefStmtHandle,
+			      in string Stmt);
+  /*
+  SQLRETURN_G sql_execute(in SQLHSTMT_G RefStmtHandle);
+  */
+  SQLRETURN_G sql_fetch(in SQLHSTMT_G RefStmtHandle);
+
+  SQLRETURN_G sql_free_handle(in SQLSMALLINT_G HandleType,
+			      in SQLHANDLE_G RefHandle);
+  /*
+  SQLRETURN_G sql_free_stmt(in SQLHSTMT_G RefStmtHandle,
+			    in SQLUSMALLINT_G Option);
+  */
+  SQLRETURN_G sql_get_connect_attr(in SQLHDBC_G RefConnHandle,
+				   in SQLINTEGER_G Attr,
+				   in SQLINTEGER_G BufLen,
+				   in SQLSMALLINT_G BufCType,
+				   out string CharValue,
+				   out SQLINTEGER_G LenCharValue,
+				   out SQLUINTEGER_G NumValue);
+  /*
+  SQLRETURN_G sql_get_cursor_name(in SQLHSTMT_G RefStmtHandle,
+				  in SQLSMALLINT_G BufLenCursor,
+				  out string Cursor,
+				  out SQLSMALLINT_G LenCursor);
+  */
+  /*
+  SQLRETURN_G sql_get_data(in SQLHSTMT_G RefStmtHandle,
+			   in SQLUSMALLINT_G ColNum,
+			   in SQLSMALLINT_G BufCType,
+			   in SQLPOINTER_G RefBuf,
+			   in SQLINTEGER_G BufLen,
+			   in SQLINTEGER_G_PTR RefLenInd,
+			   out string CharValue,
+			   out SQLCHAR_G_SEQ BinValue
+			   out SQLINTEGER_G LenInd);
+  */
+  SQLRETURN_G sql_get_diag_rec(in SQLSMALLINT_G HandleType,
+			       in SQLHANDLE_G RefHandle,
+			       in SQLSMALLINT_G RecNum,
+			       in SQLSMALLINT_G BufLenErrMsg,
+			       out string SqlState,
+			       out SQLINTEGER_G NativeErr,
+			       out string ErrMsg,
+			       out SQLSMALLINT_G LenErrMsg);
+  /*
+  SQLRETURN_G sql_get_env_attr(in SQLHENV_G RefEnvHandle,
+			       in SQLINTEGER_G Attr,
+			       in SQLINTEGER_G BufLen,
+			       in SQLSMALLINT_G BufCType,
+			       out string CharValue,
+			       out SQLINTEGER_G LenCharValue,
+			       out SQLUINTEGER_G NumValue);
+  */
+  /*
+  SQLRETURN_G sql_get_functions(in SQLHDBC_G RefConnHandle,
+				in SQLUSMALLINT_G Function,
+				out SQLUSMALLINT_SEQ Exists);
+  */
+  /*
+  SQLRETURN_G sql_get_info(in SQLHDBC_G RefConnHandle,
+			   in SQLUSMALLINT_G InfoType,
+			   in SQLUSMALLINT_G BufLen,
+			   in SQLSMALLINT_G BufCType,
+			   out string CharValue,
+			   out SQLUSMALLINT_G LenInfoValue,
+			   out SQLUINTEGER_G NumValue);
+  */
+  /*
+  SQLRETURN_G sql_get_stmt_attr(in SQLHSTMT_G RefStmtHandle,
+				in SQLINTEGER_G Attr,
+				in SQLINTEGER_G BufLen,
+				in SQLSMALLINT_G BufCType,
+				out string CharValue,
+				out SQLINTEGER_G LenCharValue,
+				out SQLUINTEGER_G NumValue);
+  */
+  /*
+  SQLRETURN_G sql_get_type_info(in SQLHSTMT_G RefStmtHandle,
+				in SQLSMALLINT_G SqlType);
+  */
+  /*
+  SQLRETURN_G sql_native_sql(in SQLHDBC_G RefConnHandle,
+			     in string SqlStrIn,
+			     in SQLINTEGER_G BufLenSqlStrOut,
+			     out string SqlStrOut,
+			     out SQLINTEGER_G LenSqlStrOut);
+  */
+  /*
+  SQLRETURN_G sql_num_params(in SQLHSTMT_G RefStmtHandle,
+			     out SQLSMALLINT_G ParamCount);
+  */
+  SQLRETURN_G sql_num_result_cols(in SQLHSTMT_G RefStmtHandle,
+				  out SQLSMALLINT_G ColCount);
+  /*
+  SQLRETURN_G sql_param_data(in SQLHSTMT_G RefStmtHandle,
+			     out SQLPOINTER_G RefBuf);
+  */
+  /*
+  SQLRETURN_G sql_prepare(in SQLHSTMT_G RefStmthandle,
+			  in string Stmt);
+  */
+  /*
+  SQLRETURN_G sql_put_data(in SQLHSTMT_G RefStmthandle,
+			   in SQLPOINTER_G RefBuf,
+			   in SQLINTEGER_G LenInd);
+  */
+  SQLRETURN_G sql_row_count(in SQLHSTMT_G RefStmtHandle,
+			    out SQLINTEGER_G RowCount);
+
+  SQLRETURN_G sql_set_connect_attr(in SQLHDBC_G RefConnHandle,
+				   in SQLINTEGER_G Attr,
+				   in string CharValue,
+				   in SQLINTEGER_G LenCharValue,
+				   in SQLUINTEGER_G NumValue,
+				   in SQLSMALLINT_G BufCType);
+  /*
+  SQLRETURN_G sql_set_cursor_name(in SQLHSTMT_G RefStmtHandle,
+				  in string Cursor);
+  */
+  SQLRETURN_G sql_set_env_attr(in SQLHENV_G RefEnvHandle,
+			       in SQLINTEGER_G Attr,
+			       in string CharValue,
+			       in SQLINTEGER_G LenCharValue,
+			       in SQLUINTEGER_G NumValue,
+			       in SQLSMALLINT_G BufCType);
+  /*
+  SQLRETURN_G sql_set_stmt_attr(in SQLHSTMT_G RefStmtHandle,
+				in SQLINTEGER_G Attr,
+				in string CharValue,
+				in SQLINTEGER_G LenCharValue,
+				in SQLUINTEGER_G NumValue,
+				in SQLSMALLINT_G BufCType);
+  */
+  /*
+  SQLRETURN_G sql_special_columns(in SQLHSTMT_G RefStmtHandle,
+				  in SQLSMALLINT_G IDType,
+				  in string Catalog,
+				  in string Schema,
+				  in string Table,
+				  in SQLSMALLINT_G Scope,
+				  in SQLSMALLINT_G Nullable);
+  */
+  /*
+  SQLRETURN_G sql_statistics(in SQLHSTMT_G RefStmtHandle,
+			     in string Catalog,
+			     in string Schema,
+			     in string Table,
+			     in SQLUSMALLINT_G Unique,
+			     in SQLUSMALLINT_G Reserved);
+  */
+  /*
+  SQLRETURN_G sql_tables(in SQLHSTMT_G RefStmtHandle,
+			 in string Catalog,
+			 in string Schema,
+			 in string Table,
+			 in string TableType);
+  */
+  SQLRETURN_G alloc_buffer(in SQLSMALLINT_G BufCType,
+			   in SQLINTEGER_G Size,
+			   out SQLPOINTER_G RefBuf);
+
+  SQLRETURN_G dealloc_buffer(in SQLPOINTER_G RefBuf);
+  /*
+  SQLRETURN_G write_buffer(in SQLPOINTER_G RefBuf,
+			   in string CharValue,
+			   in SQLCHAR_G_SEQ BinValue,
+			   in SQLINTEGER_G NumValue,
+			   in SQLSMALLINT_G BufCType);
+  */
+  SQLRETURN_G read_buffer(in SQLPOINTER_G RefBuf,
+			  in SQLSMALLINT_G BufCType,
+			  in SQLINTEGER_G Length,
+			  out string CharValue,
+			  out SQLCHAR_G_SEQ BinValue,
+			  out SQLINTEGER_G NumValue);
+
+};
+
+
+#endif

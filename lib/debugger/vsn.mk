@@ -1,0 +1,2 @@
+DEBUGGER_VSN = 1.5.1
+

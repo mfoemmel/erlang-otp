@@ -1,0 +1,15 @@
+{application, asn1,
+ [{description, "The Erlang ASN1 compiler version %VSN%"},
+  {vsn, "%VSN%"},
+  {modules, [
+	asn1rt,
+	asn1rt_ber,
+	asn1rt_per,
+	asn1rt_ber_v1,
+	asn1rt_per_v1
+             ]},
+  {registered, [
+		]},
+  {env, []},
+  {applications, [kernel, stdlib]}
+  ]}.

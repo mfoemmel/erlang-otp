@@ -1,0 +1,42 @@
+{"%VSN%",
+ [
+  {"1.1.1", 
+   [{load_module, asn1rt_ber, soft_purge, soft_purge, []}, 
+    {load_module, asn1rt_per, soft_purge, soft_purge, []}, 
+    {load_module, asn1rt, soft_purge, soft_purge, []}, 
+    {add_module,  asn1rt_ber_v1},
+    {add_module,  asn1rt_per_v1} ]
+  }, 
+  {"1.1.5", 
+   [{load_module, asn1rt_ber, soft_purge, soft_purge, []}, 
+    {load_module, asn1rt_per, soft_purge, soft_purge, []}, 
+    {load_module, asn1rt, soft_purge, soft_purge, []}, 
+    {add_module,  asn1rt_ber_v1},
+    {add_module,  asn1rt_per_v1} ]
+  }, 
+  {"1.1.6", 
+   [{load_module, asn1rt_ber, soft_purge, soft_purge, []}, 
+    {load_module, asn1rt_per, soft_purge, soft_purge, []}, 
+    {load_module, asn1rt, soft_purge, soft_purge, []}, 
+    {add_module,  asn1rt_ber_v1},
+    {add_module,  asn1rt_per_v1} ]
+  } 
+ ], 
+ [
+  {"1.1.1", 
+   [{load_module, asn1rt_ber, soft_purge, soft_purge, []}, 
+    {load_module, asn1rt, soft_purge, soft_purge, []}, 
+    {load_module, asn1rt_per, soft_purge, soft_purge, []} ] 
+  }, 
+  {"1.1.5", 
+   [{load_module, asn1rt_ber, soft_purge, soft_purge, []}, 
+    {load_module, asn1rt_per, soft_purge, soft_purge, []} ] 
+    {load_module, asn1rt, soft_purge, soft_purge, []}, 
+  }, 
+  {"1.1.6", 
+   [{load_module, asn1rt_ber, soft_purge, soft_purge, []}, 
+    {load_module, asn1rt, soft_purge, soft_purge, []}, 
+    {load_module, asn1rt_per, soft_purge, soft_purge, []} ] 
+  } 
+ ]}.
+

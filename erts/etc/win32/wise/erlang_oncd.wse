@@ -1,0 +1,871 @@
+Document Type: WSE
+item: Global
+  Version=6.01
+  Title=Erlang OTP Setup
+  Flags=00010100
+  Languages=65 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+  Japanese Font Name=MS Gothic
+  Japanese Font Size=10
+  Progress Bar DLL=%_WISE_%\Progress\WIZ%_EXE_OS_TYPE_%.DLL
+  Start Gradient=0 0 255
+  End Gradient=0 0 0
+  Windows Flags=00100100000000010010010000011000
+  Log Pathname=%MAINDIR%\INSTALL.LOG
+  Message Font=MS Sans Serif
+  Font Size=8
+  Disk Filename=SETUP
+  Patch Flags=0000000000000001
+  Patch Threshold=85
+  Patch Memory=4000
+  EXE Filename=%EXE_FILE_NAME%
+  FTP Cluster Size=20
+  Per-User Version ID=1
+  Dialogs Version=6
+  Variable Name1=_SYS_
+  Variable Default1=C:\WINNT\System32
+  Variable Flags1=00001000
+  Variable Name2=_WISE_
+  Variable Default2=D:\Program Files\Wise
+  Variable Flags2=00001000
+end
+item: Open/Close INSTALL.LOG
+  Flags=00000001
+end
+item: Include Script
+  Pathname=X:\erts\install_nt\wise\erl_vsn.wse
+end
+item: Check if File/Dir Exists
+  Pathname=%SYS%
+  Flags=10000100
+end
+item: Set Variable
+  Variable=SYS
+  Value=%WIN%
+end
+item: End Block
+end
+item: Set Variable
+  Variable=APPTITLE
+  Value=%OTP_APP_NAME%
+  Flags=10000000
+end
+item: Set Variable
+  Variable=GROUP
+  Value=%OTP_APP_NAME%
+  Flags=10000000
+end
+item: Set Variable
+  Variable=DISABLED
+  Value=!
+end
+item: Set Variable
+  Variable=MAINDIR
+  Value=%APPBASE_PATH%
+  Flags=10000000
+end
+item: Get Registry Key Value
+  Variable=PROGRAM_FILES
+  Key=SOFTWARE\Microsoft\Windows\CurrentVersion
+  Default=C:\Program Files
+  Value Name=ProgramFilesDir
+  Flags=00000100
+end
+item: Set Variable
+  Variable=MAINDIR
+  Value=%PROGRAM_FILES%\%MAINDIR%
+  Flags=00001100
+end
+item: Set Variable
+  Variable=BACKUP
+  Value=%MAINDIR%\BACKUP
+  Flags=10000000
+end
+item: Set Variable
+  Variable=DOBACKUP
+  Value=B
+  Flags=10000000
+end
+item: Set Variable
+  Variable=COMPONENTS
+  Value=AB
+  Flags=10000000
+end
+item: Wizard Block
+  Direction Variable=DIRECTION
+  Display Variable=DISPLAY
+  Bitmap Pathname=%_WISE_%\DIALOGS\TEMPLATE\WIZARD.BMP
+  X Position=9
+  Y Position=10
+  Filler Color=8421440
+  Flags=00000011
+end
+item: Custom Dialog Set
+  Name=Welcome
+  Display Variable=DISPLAY
+  item: Dialog
+    Title=Welcome
+    Title French=Bienvenue
+    Title German=Willkommen
+    Title Portuguese=Bem-vindo 
+    Title Spanish=Bienvenido
+    Title Italian=Benvenuto
+    Title Danish=Velkommen
+    Title Dutch=Welkom
+    Title Norwegian=Velkommen
+    Title Swedish=V-Bälkommen-A
+    Width=280
+    Height=224
+    Font Name=Helv
+    Font Size=8
+    item: Push Button
+      Rectangle=172 185 214 199
+      Variable=DIRECTION
+      Value=N
+      Create Flags=01010000000000010000000000000001
+      Text=&Next >
+      Text French=&Suivant>
+      Text German=&Weiter>
+      Text Portuguese=&Pr-Bóximo>-A
+      Text Spanish=&Siguiente >
+      Text Italian=&Avanti >
+      Text Danish=&N-Bæste>-A
+      Text Dutch=&Volgende>
+      Text Norwegian=&Neste>
+      Text Swedish=&N-Bästa-A >
+    end
+    item: Push Button
+      Rectangle=222 185 264 199
+      Action=3
+      Create Flags=01010000000000010000000000000000
+      Text=Cancel
+      Text French=Annuler
+      Text German=Abbrechen
+      Text Portuguese=Cancelar
+      Text Spanish=Cancelar
+      Text Italian=Annulla
+      Text Danish=Annuller
+      Text Dutch=Annuleren
+      Text Norwegian=Avbryt
+      Text Swedish=Avbryt
+    end
+    item: Static
+      Rectangle=9 177 263 178
+      Action=3
+      Create Flags=01010000000000000000000000000111
+    end
+    item: Static
+      Rectangle=86 10 143 33
+      Action=2
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000000000000000001011
+      Pathname=Bitmaps\otplogo.BMP
+      Pathname French=%_WISE_%\dialogs\template\install.grf
+      Pathname German=%_WISE_%\dialogs\template\install.grf
+      Pathname Portuguese=%_WISE_%\dialogs\template\install.grf
+      Pathname Spanish=%_WISE_%\dialogs\template\install.grf
+      Pathname Italian=%_WISE_%\dialogs\template\install.grf
+      Pathname Danish=%_WISE_%\dialogs\template\install.grf
+      Pathname Dutch=%_WISE_%\dialogs\template\install.grf
+      Pathname Norwegian=%_WISE_%\dialogs\template\install.grf
+      Pathname Swedish=%_WISE_%\dialogs\template\install.grf
+    end
+    item: Static
+      Rectangle=150 9 258 39
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000000000000000000000
+      Text=Welcome to %APPTITLE% Setup program. This program will install %APPTITLE% to be run from the CD.
+      Text French=Bienvenue sur le programme d'installation %APPTITLE%. Ce programme va installer %APPTITLE% sur votre ordinateur.
+      Text German=Willkommen im Installationsprogramm f-Bür-A %APPTITLE%. Dieses Programm installiert  %APPTITLE% auf Ihrem Computer.
+      Text Portuguese=Bem-vindo ao programa de configura-Bção-A %APPTITLE%. Este programa instalar-Bá-A %APPTITLE% no seu computador
+      Text Spanish=Bienvenido al programa de Configuraci-Bón-A %APPTITLE%. Este programa instalar-Bá-A %APPTITLE en su ordenador
+      Text Italian=Benvenuto nel programma di installazione di %APPTITLE%. Con questo programma puoi installare %APPTITLE% sul tuo computer.
+      Text Danish=Velkommen til %APPTITLE% installationsprogrammet. Dette program installerer %APPTITLE% p-Bå-A computeren.
+      Text Dutch=Welkom bij het %APPTITLE% installatieprogramma. Dit programma installeert %APPTITLE% op uw computer.
+      Text Norwegian=Velkommen til %APPTITLE% Oppsett-program. Dette programmet vil installere %APPTITLE% p-Bå-A datamaskinen din.
+      Text Swedish=V-Bälkommen-A till installationsprogrammet f-Bör-A %APPTITLE%. Detta program installerar %APPTITLE% p-Bå-A din dator.
+    end
+    item: Static
+      Rectangle=86 45 256 175
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000000000000000000000
+      Text=It is strongly recommended that you exit all Windows programs before running this Setup Program.
+      Text=
+      Text=Click Cancel to quit Setup and close any programs you have running.  Click Next to continue with the Setup program .
+      Text=
+      Text=WARNING: This program is protected by copyright law and international treaties.
+      Text=
+      Text=Unauthorized reproduction or distribution of this program, or any portion of it, may result in severe civil and criminal penalties, and will be prosecuted to the maximum extent possible under law.
+      Text French=Il vous est fortement recommand-Bé-A de fermer tous les programmes Windows avant d'ex-Bécuter-A le Programme d'Installation
+      Text French=
+      Text French=Cliquez sur Annuler pour quitter l'Installation et fermez tous les programmes actuellement utilis-Bés.-A Cliquez sur Suivant pour continuer l'installation
+      Text French=
+      Text French=ATTENTION : Ce programme est prot-Bégé-A par la loi sur les droits d'exploitation et par les trait-Bés-A internationaux
+      Text French=
+      Text French=Toute reproduction ou distribution, m-Bême-A partielle, de ce programme qui n'aura pas re-Bçu-A d'autorisation pr-Béalable-A fera l'objet de poursuites et sera s-Bévèrement-A sanctionn-Bée-A par le droit civil et p-Bénal-A
+      Text German=Wir empfehlen nachdr-Bücklich,-A vor Ausf-Bühren-A dieses Installationsprogramms alle Windows-Programme zu beenden. 
+      Text German=
+      Text German=Auf Abbrechen klicken, um die Installation zu beenden und alle laufenden Programme zu schlie-Bßen.-A Auf Weiter klicken, um mit dem Installationsprogramm beginnen.
+      Text German=
+      Text German=WARNUNG: Dieses Programm ist urheberrechtlich sowie durch internationale Vertr-Bäge-A gesch-Bützt.-A 
+      Text German=
+      Text German=Die unzul-Bässige-A Vervielf-Bältigung-A oder Verbreitung dieses Programms, ob ganz oder auszugsweise, kann schwere zivil- und strafrechtliche Konsequenzen nach sich ziehen und wird unter voller Aussch-Böpfung-A der Rechtsmittel geahndet.
+      Text Portuguese=Recomenda-se insistentemente que saia de todos os programas do Windows antes de executar este Programa de Configura-Bção.-A
+      Text Portuguese=
+      Text Portuguese=Fa-Bça-A um clique sobre Cancelar para sair da Configura-Bção-A e feche todos os programas que estiver a executar. Fa-Bça-A um clique sobre Pr-Bóximo-A para continuar com o programa de configura-Bção-A
+      Text Portuguese=
+      Text Portuguese=AVISO: Este programa est-Bá-A protegido pela lei de direitos do autor e tratados internacionais
+      Text Portuguese=
+      Text Portuguese=A reprodu-Bção-A e a distribui-Bção-A sem autoriza-Bção-A deste programa, ou qualquer parte dele, pode dar lugar -Bà-A aplica-Bção-A de severas san-Bções-A civis e criminais, e ser-Bão-A perseguidas -Bà-A extens-Bão-A m-Báxima-A permitida pela lei.
+      Text Spanish=Se recomienda encarecidamente que salga de todos los programas Windows antes de ejecutar este programa de Configuraci-Bón.-A
+      Text Spanish=
+      Text Spanish=Haga un clic en Cancelar para abandonar la Configuraci-Bón-A y cerrar cualquier programa que haya estado ejecutando. Haga un clic en Siguiente para continuar con el programa de Configuraci-Bón.-A
+      Text Spanish=
+      Text Spanish=AVISO: Este programa est-Bá-A protegido por las leyes de derechos de autor y tratados internacionales.
+      Text Spanish=
+      Text Spanish=La reproducci-Bón-A o distribuci-Bón-A no autorizadas de este programa, o cualquier parte de -Bél,-A podr-Bía-A dar como resultado rigurosas multas civiles y penales, y se entablar-Bá-A la m-Báxima-A acci-Bón-A judicial que permita la ley.
+      Text Italian=Ti consigliamo di uscire da tutti i programmi Windows prima di eseguire questo programma di installazione.
+      Text Italian=
+      Text Italian=Fai clic su Annulla per uscire dal programma di installazione e chiudi tutti i programmi aperti. Fai clic su Avanti per continuare con il programma di Installazione.
+      Text Italian=
+      Text Italian=AVVERTENZA: Questo programma -Bè-A protetto ai sensi delle norme di legge e delle convenzioni internazionali in materia di diritti di copyright.
+      Text Italian=
+      Text Italian=La riproduzione o la distribuzione totale o parziale non autorizzata di questo programma potr-Bà-A essere soggetta a penalit-Bà-A civili e penali, e sar-Bà-A punita con la massima severit-Bà-A possibile a norma di legge.
+      Text Danish=Det anbefales kraftigt at afslutte alle Windows programmer, inden man k-Bører-A dette installationsprogram.
+      Text Danish=
+      Text Danish=Klik p-Bå-A Annuller for at forlade installationsprogrammet og lukke alle igangv-Bærende-A programmer. Klik p-Bå-A N-Bæste-A for at forts-Bætte-A med installationsprogrammet.
+      Text Danish=
+      Text Danish=ADVARSEL: Dette program er beskyttet af copyright og internationale traktater. 
+      Text Danish=
+      Text Danish=Uautoriseret gengivelse eller videresalg af dette program eller dele heraf kan f-Børe-A til streng civil- og/eller kriminel stra. Retsforf-Bølgning-A heraf vil finde sted i det videste omfang der hjemles muligt.
+      Text Dutch=Het wordt aangeraden om alle Windows programma's af te sluiten voordat u met de installatie van dit programma begint.
+      Text Dutch=
+      Text Dutch=Klik op Annuleren om de installatie te verlaten en eventueel nog lopende programma's af te sluiten. Klik op Volgende om verder te gaan met het Installatieprogramma.
+      Text Dutch=
+      Text Dutch=WAARSCHUWING: dit computerprogramma is auteursrechtelijk beschermd.
+      Text Dutch=
+      Text Dutch=Onrechtmatige verveelvoudiging of distributie van dit programma of een gedeelte ervan is verboden en strafbaar en zal met alle beschikbare juridische middelen worden bestreden.
+      Text Norwegian=Det anbefales p-Bå-A det sterkeste at du avslutter alle Windows-programmer f-Bør-A du kj-Bører-A dette Oppsett-programmet.
+      Text Norwegian=
+      Text Norwegian=Velg Avbryt for -Bå-A avbryte Oppsett og lukk alle programmer som er i bruk. Velg Neste for -Bå-A fortsette med Oppsett-programmet.
+      Text Norwegian=
+      Text Norwegian=ADVARSEL: Dette programmet er beskyttet i henhold til lover om opphavsrett og internasjonale konvensjoner.
+      Text Norwegian=
+      Text Norwegian=Uautorisert kopiering eller distribuering av dette programmet eller deler av det, vil resultere i alvorlig sivil og kriminell straff og vil f-Børe-A til saksm-Bål-A i h-Bøyest-A mulig utstrekning i henhold til loven. 
+      Text Swedish=Du tillr-Båds-A best-Bämt-A att g-Bå-A ur alla Windows-program innan du k-Bör-A installationsprogrammet.
+      Text Swedish=
+      Text Swedish=Klicka p-Bå-A Avbryt f-Bör-A att g-Bå-A ur installationsprogrammet och st-Bäng-A eventuella program som du har laddade. Klicka p-Bå-A N-Bästa-A f-Bör-A att forts-Bätta-A med installationen.
+      Text Swedish=
+      Text Swedish=VARNING: Detta program -Bär-A skyddat av upphovsr-Bätten-A och internationella avtal.
+      Text Swedish=
+      Text Swedish=Om du utan tillst-Bånd-A kopierar eller distribuerar detta program eller delar av det kan det bli allvarliga civilr-Bättsliga-A och brottsr-Bättliga-A straffp-Båföljder.-A Vi beivrar s-Bådana-A -Böverträdelser-A i den allra h-Bögsta-A utstr-Bäckning-A som lagen till-Båter.-A
+    end
+  end
+end
+item: Custom Dialog Set
+  Name=Select Program Manager Group
+  Display Variable=DISPLAY
+  item: Dialog
+    Title=Select Program Manager Group
+    Title French=S-Bélectionnez-A le Groupe du Gestionnaire de Programmes
+    Title German=Programm-Managergruppe w-Bählen-A
+    Title Portuguese=Seleccionar o Grupo Gestor de Programas
+    Title Spanish=Seleccione el Grupo del Administrador del Programa
+    Title Italian=Seleziona il gruppo Program Manager
+    Title Danish=V-Bælg-A Programstyringsgruppen
+    Title Dutch=Kies Programmabeheergroep.
+    Title Norwegian=Velg Programbehandlingsgruppen
+    Title Swedish=V-Bälj-A grupp i Programhanteraren
+    Width=280
+    Height=224
+    Font Name=Helv
+    Font Size=8
+    item: Push Button
+      Rectangle=172 185 214 199
+      Variable=DIRECTION
+      Value=N
+      Create Flags=01010000000000010000000000000001
+      Text=&Next >
+      Text French=&Suivant>
+      Text German=&Weiter>
+      Text Portuguese=&Pr-Bóximo>-A
+      Text Spanish=&Siguiente >
+      Text Italian=&Avanti >
+      Text Danish=&N-Bæste>-A
+      Text Dutch=&Volgende>
+      Text Norwegian=&Neste>
+      Text Swedish=&N-Bästa-A >
+    end
+    item: Push Button
+      Rectangle=130 185 172 199
+      Variable=DIRECTION
+      Value=B
+      Create Flags=01010000000000010000000000000000
+      Flags=0000000000000001
+      Text=< &Back
+      Text French=<&Retour
+      Text German=<&Zur-Bück-A
+      Text Portuguese=<&Retornar
+      Text Spanish=<&Retroceder
+      Text Italian=< &Indietro
+      Text Danish=<&Back
+      Text Dutch=<&Terug
+      Text Norwegian=<&Tilbake
+      Text Swedish=< &Tillbaka
+    end
+    item: Push Button
+      Rectangle=222 185 264 199
+      Action=3
+      Create Flags=01010000000000010000000000000000
+      Text=Cancel
+      Text French=Annuler
+      Text German=Abbrechen
+      Text Portuguese=Cancelar
+      Text Spanish=Cancelar
+      Text Italian=Annulla
+      Text Danish=Slet
+      Text Dutch=Annuleren
+      Text Norwegian=Avbryt
+      Text Swedish=Avbryt
+    end
+    item: Static
+      Rectangle=9 177 263 178
+      Action=3
+      Create Flags=01010000000000000000000000000111
+    end
+    item: Static
+      Rectangle=90 10 260 38
+      Create Flags=01010000000000000000000000000000
+      Text=Enter the name of the Program Manager group to add %APPTITLE% icons to:
+      Text French=Entrez le nom du groupe du Gestionnaire de Programmes o-Bù-A placer les ic-Bônes-A %APPTITLE% -Bà-A :
+      Text German=Den Namen der Programm-Managergruppe w-Bählen,-A in der die %APPTITLE%-Symbole gespeichert werden sollen:
+      Text Portuguese=Introduzir o nome do Grupo Gestor de Programa para acrescentar os -Bícones-A %APPTITLE% para:
+      Text Spanish=Introduzca el nombre del grupo del Administrador del Programa para a-Bñadir-A los iconos %APPTITLE para:
+      Text Italian=Inserisci il nome del gruppo Program Manager per aggiungere le icone di %APPTITLE% a:
+      Text Danish=Indtast navnet p-Bå-A Programstyringsgruppen der skal tilf-Bøjes-A %APPTITLE% elementer:
+      Text Dutch=Breng de naam van de programmabeheergroep in waaraan u %APPTITLE%-pictogrammen wilt toevoegen.
+      Text Norwegian=Tast inn navnet p-Bå-A programbehandlingsgruppen for -Bå-A legge %APPTITLE%-ikoner til:
+      Text Swedish=Skriv in namnet p-Bå-A den grupp i Programhanteraren d-Bär-A du vill ha ikonerna f-Bör-A %APPTITLE%:
+    end
+    item: Combobox
+      Rectangle=90 42 260 172
+      Variable=GROUP
+      Create Flags=01010000001000010000001100000001
+      Flags=0000000000000001
+      Text=%GROUP%
+      Text=
+      Text French=%GROUP%
+      Text French=
+      Text German=%GROUP%
+      Text German=
+      Text Portuguese=%GROUP%
+      Text Portuguese=
+      Text Spanish=%GROUP%
+      Text Spanish=
+      Text Italian=%GROUP%
+      Text Italian=
+      Text Danish=%GROUP%
+      Text Danish=
+      Text Dutch=%GROUP%
+      Text Dutch=
+      Text Norwegian=%GROUP%
+      Text Norwegian=
+      Text Swedish=%GROUP%
+      Text Swedish=
+    end
+  end
+end
+item: End Block
+end
+item: Browse for Directory
+  Variable=MAINDIR
+  Flags=9
+  Window Name=Select Source Catalog
+  Prompt Description=Please select the 'erl4.7.3' directory on your Erlang/OTP CD ROM.
+end
+item: If/While Statement
+  Variable=DOBACKUP
+  Value=A
+end
+item: Set Variable
+  Variable=BACKUPDIR
+  Value=%BACKUP%
+end
+item: End Block
+end
+item: Check Disk Space
+  Component=COMPONENTS
+end
+item: Set Variable
+  Variable=MAINDIR
+  Value=%MAINDIR%
+  Flags=00010100
+end
+item: Remark
+  Text=Find Program Folder To Create Links To...
+end
+item: Check Configuration
+  Flags=10100000
+end
+item: Get Registry Key Value
+  Variable=GROUP
+  Key=Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders
+  Default=%GROUP%
+  Value Name=Common Programs
+  Flags=00000100
+end
+item: Else Statement
+end
+item: Get Registry Key Value
+  Variable=GROUP
+  Key=.DEFAULT\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders
+  Default=%GROUP%
+  Value Name=Programs
+  Flags=00000110
+end
+item: End Block
+end
+item: If/While Statement
+  Variable=COMPONENTS
+  Value=A
+  Flags=00001010
+end
+item: Create Shortcut
+  Source=%MAINDIR%\bin\werl.exe
+  Destination=%GROUP%\%OTP_APP_NAME%\Erlang.lnk
+  Working Directory=%MAINDIR%
+  Icon Pathname=%MAINDIR%\%ERTS_DIR%\bin\%EMULATOR%.exe
+  Description=Erlang
+  Key Type=1536
+  Flags=00000001
+end
+item: Create Shortcut
+  Source=%MAINDIR%\bin\werl.exe
+  Destination=%GROUP%\%OTP_APP_NAME%\Erlang With Toolbar.lnk
+  Command Options=-s toolbar
+  Working Directory=%MAINDIR%
+  Icon Pathname=%MAINDIR%\%ERTS_DIR%\bin\%EMULATOR%.exe
+  Description=Erlang
+  Key Type=1536
+  Flags=00000001
+end
+item: Remark
+  Text=Find WordPad (And you thought this was easy ?)
+end
+item: Set Variable
+  Variable=WPDNAME
+  Value=write.exe
+end
+item: Create Shortcut
+  Source=write.exe
+  Destination=%GROUP%\%OTP_APP_NAME%\ReadMe.lnk
+  Command Options=%MAINDIR%\ReadMe
+  Working Directory=%MAINDIR%
+  Icon Pathname=write.exe
+  Description=Erlang ReadMe
+  Key Type=1536
+  Flags=00000001
+end
+item: Remark
+  Text=Register Filetypes And Associations
+end
+item: Edit Registry
+  Total Keys=9
+  item: Key
+    Key=.erl
+    New Value=Erlang Source File
+  end
+  item: Key
+    Key=Erlang Source File
+    New Value=Erlang Source File
+  end
+  item: Key
+    Key=Erlang Source File\DefaultIcon
+    New Value=%MAINDIR%\%ERTS_DIR%\bin\jam.exe,1
+  end
+  item: Key
+    Key=Erlang Include File\DefaultIcon
+    New Value=%MAINDIR%\%ERTS_DIR%\bin\jam.exe,2
+  end
+  item: Key
+    Key=Erlang Source File\shell\open\command
+    New Value=%WPDNAME% %%1
+  end
+  item: Key
+    Key=Erlang Source File\shell\Compile\command
+    New Value="%MAINDIR%\bin\erlc.exe" -pause "%%1"
+  end
+  item: Key
+    Key=.hrl
+    New Value=Erlang Include File
+  end
+  item: Key
+    Key=Erlang Include File
+    New Value=Erlang Include File
+  end
+  item: Key
+    Key=Erlang Include File\shell\open\command
+    New Value=%WPDNAME% %%1
+  end
+end
+item: End Block
+end
+item: If/While Statement
+  Variable=COMPONENTS
+  Value=B
+  Flags=00001010
+end
+item: Create Shortcut
+  Source=%MAINDIR%\doc\index.html
+  Destination=%GROUP%\%OTP_APP_NAME%\Online Manual.lnk
+  Working Directory=%MAINDIR%
+  Icon Pathname=%MAINDIR%\%ERTS_DIR%\bin\%EMULATOR%.exe
+  Description=Online Manual
+  Key Type=1536
+  Flags=00000001
+end
+item: End Block
+end
+item: Remark
+  Text=UnInstall Support
+end
+item: Include Script
+  Pathname=uninstal_onlycd.wse
+end
+item: Remark
+  Text=Update Erlang Registry Entries
+end
+item: Edit Registry
+  Total Keys=7
+  item: Key
+    Key=SOFTWARE\Ericsson\Erlang\%ERTS_VSN%
+    New Value=%MAINDIR%\%ERTS_DIR%\bin
+    Value Name=Bindir
+    Root=2
+  end
+  item: Key
+    Key=SOFTWARE\Ericsson\Erlang\%ERTS_VSN%
+    New Value=%EMULATOR%
+    Value Name=Emulator
+    Root=2
+  end
+  item: Key
+    Key=SOFTWARE\Ericsson\Erlang\%ERTS_VSN%
+    New Value=erl
+    Value Name=Progname
+    Root=2
+  end
+  item: Key
+    Key=SOFTWARE\Ericsson\Erlang\%ERTS_VSN%
+    New Value=%MAINDIR%
+    Value Name=Rootdir
+    Root=2
+  end
+  item: Key
+    Key=SOFTWARE\Ericsson\Erlang\%ERTS_VSN%
+    New Value=%MAINDIR%/lib/%GS_DIR%/priv/tcl/lib/tcl7.6
+    Value Name=TclLibrary
+    Root=2
+  end
+  item: Key
+    Key=SOFTWARE\Ericsson\Erlang\%ERTS_VSN%
+    New Value=%MAINDIR%/lib/%GS_DIR%/priv/tcl/lib/tk4.2
+    Value Name=TkLibrary
+    Root=2
+  end
+  item: Key
+    Key=SOFTWARE\Ericsson\Erlang\%ERTS_VSN%
+    New Value=%MAINDIR%/lib/%GS_DIR%/priv/tcl/bin/wish42.exe
+    Value Name=Wish
+    Root=2
+  end
+end
+item: Remark
+  Text=Do platform specific checks and notifications.
+end
+item: Check Configuration
+  Flags=10100000
+end
+item: Get System Information
+  Variable=SERVICEPACK
+  Flags=00010010
+end
+item: Wizard Block
+  Direction Variable=DIRECTION
+  Display Variable=DISPLAY
+  Bitmap Pathname=Bitmaps\Install.bmp
+  X Position=0
+  Y Position=0
+  Filler Color=8421440
+  Dialog=Windows NT Service Pack Recommendation
+  Variable=SERVICEPACK
+  Value=3
+  Compare=7
+  Flags=00000011
+end
+item: Custom Dialog Set
+  Name=Windows NT Service Pack Recommendation
+  Display Variable=DISPLAY
+  item: Dialog
+    Title=Windows NT Service Pack Recommendation
+    Width=202
+    Height=76
+    Font Name=Helv
+    Font Size=8
+    item: Static
+      Rectangle=45 7 197 29
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000000000000000000000
+      Text=You are strongly advised to install the Windows NT Service Pack 3 prior to running Erlang.
+      Pathname=D:\Program Files\Wise\DIALOGS\TEMPLATE\Install.bmp
+    end
+    item: Push Button
+      Rectangle=81 36 116 51
+      Action=1
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000000
+      Text=Ok
+    end
+  end
+end
+item: End Block
+end
+item: Else Statement
+end
+item: Check Configuration
+  Flags=10111001
+end
+item: Wizard Block
+  Direction Variable=DIRECTION
+  Display Variable=DISPLAY
+  Bitmap Pathname=%_WISE_%\DIALOGS\TEMPLATE\INSTALL.BMP
+  X Position=4
+  Y Position=7
+  Filler Color=8421440
+  Flags=00000011
+end
+item: Custom Dialog Set
+  Name=Winsock 2
+  Display Variable=DISPLAY
+  item: Dialog
+    Title=Winsock 2
+    Width=217
+    Height=104
+    Font Name=Helv
+    Font Size=8
+    item: Static
+      Rectangle=44 6 212 60
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000000000000000000000
+      Text=You are running Windows 95/98. If you are running Windows 95, you will need to have Winsock 2 installed in order for Erlang to run. If you are running Windows 98 or another TCP/IP package than Winsock, you should skip this part of the installation. To let this program install Winsock 2 for you, press the Install Winsock button.
+    end
+    item: Push Button
+      Rectangle=107 69 166 84
+      Alternate=0%MAINDIR%\ws2setup.exe%MAINDIR%
+      Action=6
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000000
+      Text=Install Winsock 2
+    end
+    item: Push Button
+      Rectangle=169 69 210 84
+      Action=1
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000001
+      Text=Next >>
+    end
+  end
+end
+item: End Block
+end
+item: End Block
+end
+item: End Block
+end
+item: Self-Register OCXs/DLLs
+  Description=Updating System Configuration, Please Wait...
+end
+item: Wizard Block
+  Direction Variable=DIRECTION
+  Display Variable=DISPLAY
+  Bitmap Pathname=%_WISE_%\DIALOGS\TEMPLATE\WIZARD.BMP
+  X Position=9
+  Y Position=10
+  Filler Color=8421440
+  Flags=00000011
+end
+item: Set Variable
+  Variable=VIEW_README
+  Value=A
+end
+item: Custom Dialog Set
+  Name=Finished
+  Display Variable=DISPLAY
+  item: Dialog
+    Title=Installation Complete
+    Title French=Installation en cours
+    Title German=Installation abgeschlossen
+    Title Portuguese=Instala-Bção-A Completa 
+    Title Spanish=Se ha completado la Instalaci-Bón-A
+    Title Italian=Installazione completata
+    Title Danish=Installation gennemf-Børt-A
+    Title Dutch=Installatie afgerond
+    Title Norwegian=Installasjonen er fullf-Børt-A
+    Title Swedish=Installationen klar
+    Width=280
+    Height=224
+    Font Name=Helv
+    Font Size=8
+    item: Push Button
+      Rectangle=170 185 212 199
+      Variable=DIRECTION
+      Value=N
+      Create Flags=01010000000000010000000000000001
+      Text=&Finish >
+      Text French=&Terminer>
+      Text German=&Fertigstellen>
+      Text Portuguese=&Terminar >
+      Text Spanish=&Finalizar>
+      Text Italian=&Fine >
+      Text Danish=&Afslut >
+      Text Dutch=&Klaar>
+      Text Norwegian=&Avslutt>
+      Text Swedish=&Sluta>
+    end
+    item: Push Button
+      Control Name=CANCEL
+      Rectangle=222 185 264 199
+      Action=3
+      Create Flags=01010000000000010000000000000000
+      Text=Cancel
+      Text French=Annuler
+      Text German=Abbrechen
+      Text Portuguese=Cancelar
+      Text Spanish=Cancelar
+      Text Italian=Annulla
+      Text Danish=Annuller
+      Text Dutch=Annuleren
+      Text Norwegian=Avbryt
+      Text Swedish=Avbryt
+    end
+    item: Static
+      Rectangle=9 177 263 178
+      Action=3
+      Create Flags=01010000000000000000000000000111
+    end
+    item: Static
+      Rectangle=90 7 260 60
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000000000000000000000
+      Text=%APPTITLE% has been successfully installed.
+      Text=
+      Text=
+      Text=Press the Finish button to exit this installation.
+      Text=
+      Text French=L'installation de %APPTITLE% est r-Béussie-A
+      Text French=
+      Text French=
+      Text French=Cliquez sur Terminer pour quitter cette installation
+      Text French=
+      Text German=%APPTITLE% wurde erfolgreich installiert.
+      Text German=
+      Text German=
+      Text German=Zum Beenden dieser Installation Fertigstellen anklicken.
+      Text German=
+      Text Portuguese=%APPTITLE% foi instalado com -Bêxito-A
+      Text Portuguese=
+      Text Portuguese=
+      Text Portuguese=Pressionar o bot-Bão-A Terminar para sair desta instala-Bção-A
+      Text Portuguese=
+      Text Spanish=%APPTITLE% se ha instalado con -Béxito.-A
+      Text Spanish=
+      Text Spanish=
+      Text Spanish=Pulse el bot-Bón-A de Finalizar para salir de esta instalaci-Bón.-A
+      Text Spanish=
+      Text Italian=%APPTITLE% -Bè-A stato installato.
+      Text Italian=
+      Text Italian=
+      Text Italian=Premi il pulsante Fine per uscire dal programma di installazione
+      Text Italian=
+      Text Danish=%APPTITLE% er nu installeret korrekt.
+      Text Danish=
+      Text Danish=
+      Text Danish=Klik p-Bå-A Afslut for at afslutte installationen.
+      Text Danish=
+      Text Dutch=%APPTITLE% is met succes ge-Bïnstalleerd.-A
+      Text Dutch=
+      Text Dutch=
+      Text Dutch=Druk op Klaar om deze installatie af te ronden.
+      Text Dutch=
+      Text Norwegian=Installasjonen av %APPTITLE% er vellykket.
+      Text Norwegian=
+      Text Norwegian=
+      Text Norwegian=Trykk p-Bå-A Avslutt-tasten for -Bå-A avslutte denne installasjonen.
+      Text Norwegian=
+      Text Swedish=Installationen av %APPTITLE% har lyckats.
+      Text Swedish=
+      Text Swedish=
+      Text Swedish=Tryck p-Bå-A Sluta f-Bör-A att g-Bå-A ur installationsprogrammet.
+      Text Swedish=
+    end
+    item: Push Button
+      Control Name=BACK
+      Rectangle=128 185 170 199
+      Variable=DIRECTION
+      Value=B
+      Create Flags=01010000000000010000000000000000
+      Text=< &Back
+      Text French=<&Retour
+      Text German=<&Zur-Bück-A
+      Text Portuguese=<&Retornar
+      Text Spanish=<&Retroceder
+      Text Italian=< &Indietro
+      Text Danish=<&Tilbage
+      Text Dutch=<&Terug
+      Text Norwegian=<&Tilbake
+      Text Swedish=< &Tillbaka
+    end
+    item: Checkbox
+      Rectangle=88 89 269 103
+      Variable=VIEW_README
+      Enabled Color=00000000000000001111111111111111
+      Create Flags=01010000000000010000000000000011
+      Text=View ReadMe File
+      Text=
+    end
+    item: Set Control Attribute
+      Control Name=BACK
+      Operation=1
+    end
+    item: Set Control Attribute
+      Control Name=CANCEL
+      Operation=1
+    end
+  end
+end
+item: End Block
+end
+item: If/While Statement
+  Variable=VIEW_README
+  Value=A
+  Flags=00000010
+end
+item: Execute Program
+  Pathname=%WPDNAME%
+  Command Line=%MAINDIR%\ReadMe
+  Default Directory=%MAINDIR%
+  Flags=00000010
+end
+item: End Block
+end
+item: Remark
+  Text=Prevent WISE from rebooting the machine.
+end
+item: Set Variable
+  Variable=RESTART
+end
+item: New Event
+  Name=Cancel
+end
+item: Include Script
+  Pathname=%_WISE_%\INCLUDE\rollback.wse
+end

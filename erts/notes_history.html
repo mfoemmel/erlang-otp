@@ -1,0 +1,1822 @@
+<HTML>
+<HEAD>
+<TITLE>ERTS Release Notes (Old)</TITLE>
+</HEAD>
+<BODY BGCOLOR="#FFFFFF">
+<BLOCKQUOTE>
+<P>These release notes describe the Erlang Runtime System, i.e. the
+emulator, the builtin drivers, <CODE>erl_call</CODE> utility,
+and the the <CODE>erl_interface</CODE> library.
+
+<H2>Erts 4.8.1</H2>
+<H3>Known problems</H3>
+
+<UL>
+
+<LI>
+System enters unstable state if epmd crashes
+<br>Own Id: OTP-1067<br>
+Aux Id: tir-f-054
+
+
+</UL>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+In some circumstances, the first character printed on a line
+could be rubbed out by later material. Example:
+<CODE>io:format("string: ~s", ["yes\r\n"])</CODE>. The first 's'
+disappeared. This has been fixed.
+<br>Own Id: OTP-3084<br>
+Aux Id: OTP-3098
+
+
+<LI>
+When editing the command line in the Erlang shell on Unix,
+the cursor could jump to the wrong line when characters were
+rubbed out in a line which wrapped over several screen lines.
+The problem was present at least when using an <CODE>xterm</CODE>
+terminal emulator. This has been fixed.
+<br>Own Id: OTP-3098<br>
+Aux Id: OTP-3084
+
+
+<LI>
+If the <CODE>erl</CODE> option <CODE>-compile</CODE> was used with
+no arguments, an incomprehensible error message was
+given.
+(For example, the call <CODE>erl -compile -S file.erl</CODE>
+may be thought to compile <CODE>file.erl</CODE> with the <CODE>-S</CODE>
+option, but it doesn't, since <CODE>erl</CODE> command-line options
+cannot take other options as arguments.)
+<br>Own Id: OTP-3109
+
+
+<LI>
+For Beam, two minor bugs in the relational operators have been
+corrected.  Comparing an atom to a float could give the wrong
+answer (depending on operand order); for example, <CODE>a =< 1.0</CODE>
+used to return <CODE>false</CODE> instead of <CODE>true</CODE>.
+The operator <CODE>==</CODE> used to work like <CODE>=:=</CODE> inside
+lists and tuples; for example, <CODE>{42} == {42.0}</CODE> used to
+return <CODE>false</CODE> instead of the correct <CODE>true</CODE>.
+<br>Own Id: OTP-3120
+
+
+<LI>
+The driver_data array is initiated to late. It might be
+accessed (due to a SIGCHLD) before it is initiated
+with a emulator crash as result. The error did only
+occur when something was piped into <CODE>erl</CODE> from
+a Bourne shell on Solaris 2.6 or 2.7. This is now corrected.
+<br>Own Id: OTP-3127
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+<CODE>erlang:monitor/2</CODE> and <CODE>erlang:demonitor/1</CODE>
+have been changed since release R5A: an info field
+containing the exit reason has been
+added to the message sent when a monitored process exits;
+<CODE>erlang:demonitor(Ref)</CODE> can only be performed by the
+process which obtained <CODE>Ref</CODE> by calling
+<CODE>erlang:monitor/2</CODE>.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3114<br>
+Aux Id: OTP-2818, OTP-3113
+
+
+<LI>
+In Beam, <CODE>fun</CODE>s can now "survive" a code change,
+that is, a <CODE>fun</CODE> defined in the old version of
+a module can now be called.  In previous versions of
+Beam and in Jam, only <CODE>fun</CODE>s in the current version
+of a module could be called.
+<br>
+The <CODE>error_handler</CODE> module has been extended
+with an <CODE>undefined_lambda/3</CODE> function,
+which will be called if an attempt is made to call
+a <CODE>fun</CODE> that is defined in a module that is not
+loaded.  This new function will only be called in Beam.
+<br>
+<CODE>Fun</CODE>s in Beam are also faster than in previous
+versions.
+<br>Own Id: OTP-3124
+
+
+</UL>
+<H2>Erts 4.8</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+When a process exits with reason <CODE>nocatch</CODE>, the BEAM
+emulator now reports this to the error logger, which
+it did not previously do. The JAM emulator always did.
+<br>Own Id: OTP-2667
+
+
+<LI>
+The string printed by 'erl -version' is now prettier and
+the emulator will terminate after printing the string.
+<br>Own Id: OTP-2815
+
+
+<LI>
+The encoding and decoding of the Erlang types port and reference 
+is corrected. Previously the emulator could crash when a
+corrupt reference or port was received from e.g a C-node.
+Earlier a reference created by a C-node and sent to an Erlang-node
+got it's creation field changed when it was sent back to the
+C-node. This is also corrected (for both reference and port).
+<br>Own Id: OTP-2822
+
+
+<LI>
+Unix only: <CODE>halt()</CODE> hanged indefinitely if Erlang was
+started
+with <CODE>-noinput</CODE>/<CODE>-noshell</CODE> and read-only port
+programs had been started (for example when using
+<CODE>gs:start()</CODE>).
+<br>Own Id: OTP-2947<br>
+Aux Id: Seq 1409, OTP-3019
+
+
+<LI>
+When the system clock was adjusted, in such a way that
+time goes "backwards", time-outs were sometimes prematurely
+released (Unix only).
+<br>Own Id: OTP-2965<br>
+Aux Id: Seq 1468
+
+
+<LI>
+If all file descriptors were used up, an Erlang crash dump
+couldn't be produced. This has been fixed.
+<br>Own Id: OTP-2977<br>
+Aux Id: OTP-2662
+
+
+<LI>
+"<CODE>erl -compile</CODE>" exited with exit code 0 even if
+compilation failed. Now failing compilation causes non-zero
+exit code.  Note that any trailing '-s' commands will
+no longer be executed.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3055
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+Processes which exit abnormally can now be kept for
+inspection. Such processes are called zombies.
+The BIF call <CODE>erlang:system_flag(keep_zombies, N)</CODE> sets
+the number of zombie processes to keep (default is 0).
+Zombies are invisible to most BIFs, except <CODE>processes/0</CODE>,
+and <CODE>process_info/[1,2]</CODE>. In order to check whether a
+process is alive, the test
+<CODE>process_info(Pid,status)==undefined</CODE> no longer works;
+the new BIF <CODE>is_process_alive/1</CODE> should be used instead.
+In the <CODE>c</CODE> module, the new function <CODE>zi/0</CODE> lists
+zombies as well as living processes.
+The number of zombies to keep can also be set with the
+kernel application environment variable <CODE>keep_zombies</CODE>.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-1784<br>
+Aux Id: seq 359
+
+
+<LI>
+An option <CODE>exit_status</CODE> has been added to
+<CODE>open_port/2</CODE>, to be used when spawning external
+programs. When the external process connected to the
+port exits, a message of the form <CODE>{Port, {exit_status,
+Status}}</CODE> is sent to the connected process, where
+<CODE>Status</CODE> is the exit status of the external process.
+<br>Own Id: OTP-2398<br>
+Aux Id: OTP-1241
+
+
+<LI>
+Messages originating from within the Erlang system (not using
+the Erlang I/O system to do output), such as error reports
+for exiting processes, used to write all strings as lists
+of character codes. Now they are written using string syntax
+when possible.
+<br>Own Id: OTP-2450
+
+
+<LI>
+The printed form of some Erlang terms
+has been improved:
+binaries are now printed with their size;
+ports are printed with their node and id (id is the result
+of <CODE>erlang:port_info(Port, id)</CODE>);
+references are printed with their node and the sequential
+number which identifies them.
+Examples: <CODE>#Bin<216></CODE>, <CODE>#Port<0.5></CODE>,
+<CODE>#Ref<0.117></CODE>.
+<br>Own Id: OTP-2600
+
+
+<LI>
+The number of ports is no longer set statically to 256, but
+set dynamically to at least the number of available
+file descriptors.
+The id's of ports are no longer restricted to the maximum
+number of ports, so they are reused considerably less often.
+<br>Own Id: OTP-2653
+
+
+<LI>
+Erlang crash dumps now also contain the names of all
+atoms. This will make it easier to find errors due to
+excessive run-time generation of atoms.
+<br>Own Id: OTP-2688
+
+
+<LI>
+On UNIX when Erlang was started with <CODE>erl -noshell</CODE> from
+the shell, 2 jam processes (or beam) was created. This
+was not an error but it was unnecessary in this case.
+The extra tiny jam process is no longer created in this
+case.
+<br>Own Id: OTP-2717<br>
+Aux Id: OTP-2027
+
+
+<LI>
+New BIFs <CODE>erlang:monitor/2</CODE> and
+<CODE>erlang:demonitor/1</CODE> have been introduced, for monitoring
+the exit of processes.
+<CODE>erlang:monitor/2</CODE> and <CODE>erlang:demonitor/1</CODE> are
+likely to change somewhat in release R5B; they are present
+now for the functionality to be tested. The exact format
+of the monitoring messages may change, and restrictions may
+be imposed on which process can turn off a monitoring.
+<br>Own Id: OTP-2818<br>
+Aux Id: OTP-2794 WP37
+
+
+<LI>
+Compiled Beam modules have a new format.  All modules
+must be recompiled before they can be used in R5.  Also,
+tools manipulating the module attributes in the object files 
+directly must be
+changed, because the attributes are now stored differently.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-2847<br>
+Aux Id: OTP-2794 WP37
+
+
+<LI>
+Diverse <CODE>ets</CODE> updates: 
+A new ets data-type <CODE>ordered_set</CODE> is added, which keeps objects in erlang 
+term order.<br>
+Limited support for conncurrent updates and traversals of ets tables is added,
+including a safe way of "fixing" ets tables.<br>
+The limit on the number of ets tables is now user defineable through an 
+environment variable.<br>
+A new function, <CODE>ets:rename</CODE> is added.<br>
+Any integer field in a tuple can now be updated with the 
+<CODE>ets:update_conter/3</CODE> function.
+<br>Own Id: OTP-2849<br>
+Aux Id: seq 1316, OTP-2705, OTP-2884, OTP-2913, OTP-3005
+
+
+<LI>
+An Erlang system which is instrumented for memory statistics
+(i.e., started with the <CODE>-instr</CODE> option) now includes
+the statistics in the Erlang crash dump when one is
+produced.
+<br>Own Id: OTP-2860
+
+
+<LI>
+A new BIF <CODE>process_display/2</CODE> has been introduced, which
+prints process information to standard error. Currently,
+it can be used for inspecting the stack of a process.
+<br>Own Id: OTP-2941
+
+
+<LI>
+An Erlang crash dump now contains more information than
+before: the names and sizes of all ETS tables;
+zombie processes, in the order in which they died.
+For each process: a stack backtrace (see
+<CODE>erlang:process_display(Pid, backtrace)</CODE>);
+the size of message buffer data; active monitors (see
+<CODE>erlang:monitor/2</CODE>) in the list of links;
+active timers.
+<br>Own Id: OTP-2975<br>
+Aux Id: OTP-2662, OTP-2688, OTP-2860
+
+
+<LI>
+<CODE>erlang:trace/3</CODE> no longer returns <CODE>false</CODE> for any
+arguments; it exits with <CODE>badarg</CODE> in all cases when the
+trace request couldn't be honoured.
+The documentation has been improved somewhat.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3023<br>
+Aux Id: OTP-2939
+
+
+<LI>
+The timeout specified in 'receive after' and for
+the timer BIFs can now be a positive integer up to
+4294967295 milli-seconds (almost 50 days).
+The limit used to be 134217727 milli-seconds
+(about 37 hours).
+<br>Own Id: OTP-3047
+
+
+<LI>
+Due to an oversight, the following improvements were
+left out of the documentation in previous releases:
+<p>		
+There is a guard test <CODE>function/1</CODE> for testing whether
+a term is a fun. Note that
+since funs are currently represented as tuples, testing for
+fun should be done before testing for tuple.
+<p>
+The operator <CODE>++</CODE> performs list concatenation.
+<p>
+The operators <CODE>not</CODE>, <CODE>and</CODE>, <CODE>or</CODE> and
+<CODE>xor</CODE> operate on Boolean values.
+<p>
+The unary operator <CODE>bnot</CODE> performs a bitwise 'not' on
+an integer.
+<br>Own Id: OTP-3066
+
+
+<LI>
+The source code for the <CODE>setuid_socket_wrap</CODE> utility
+that binds privileged ports
+(as root) and passes these ports to the Erlang emulator
+is now included in OTP for the UNIX platforms.
+The file can be found at 
+<CODE>$(ERL_ROOT)/erts-4.8/src/setuid_socket_wrap.c</CODE>.
+<br>Own Id: OTP-3070
+
+
+<LI>
+BEAM only: The address space limit of the Erlang machine, 
+which was 265 MByte 
+in previous releases is now extended to 1GByte for the 
+Beam virtual machine.
+<br>Own Id: OTP-3089
+
+
+</UL>
+
+<H2>Erts 4.7.3</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+Nothing, we need more input, can't recreate the problem,
+see Notes.
+<br>Own Id: OTP-2216<br>
+Aux Id: seq 656
+
+
+<LI>
+When killing a shell in the ^G command level using the
+sequence "^G k", some processes associated with the
+shell were left running. Now, there are no extra processes
+left anymore.
+<br>Own Id: OTP-2317
+
+
+<LI>
+<CODE>os:cmd</CODE> on WIN32 does not always catch the output from 
+the executed program correctly. This is now corrected.
+<br>Own Id: OTP-2371<br>
+Aux Id: seq 808
+
+
+<LI>
+In previous releases of OTP it was not possible to upgrade the
+Erlang emulator (named e.g jam471 or beam471) because the 
+executable file was
+renamed for each new version. This is now corrected by always
+giving the same name (jam or beam) without version number to
+the executable file.
+<br>Own Id: OTP-2372
+
+
+<LI>
+<CODE>ets:i()</CODE> could cause heart-beat timeout if there was
+many large ets-tables in the Erlang-system. This is now
+corrected.
+<br>Own Id: OTP-2409<br>
+Aux Id: seq 829
+
+
+<LI>
+Comparison between a float and an integer larger than
+the largest float gave the wrong result. This has been
+fixed.
+<br>Own Id: OTP-2436
+
+
+<LI>
+Heart is corrected to work on Linux.
+<br>Own Id: OTP-2488
+
+
+<LI>
+LINUX only: The gen_udp process did terminate when sending 
+(with <CODE>gen_udp:send</CODE>) to
+a non existing destination port. This is now corrected.
+<br>Own Id: OTP-2510
+
+
+<LI>
+On WIN32 an output of 0 bytes to the shell console with 
+<CODE>io:format</CODE> or
+similar could cause the shell console to hang. This problem
+occurred when <CODE>systools:make_script</CODE> was run. 
+The problem only occured when running "erl" and not when 
+"werl" was run. This
+is now corrected.
+<br>Own Id: OTP-2575<br>
+Aux Id: seq 932
+
+
+<LI>
+UNIX only: The UNIX manual page for <CODE>erlsrv</CODE> was wrongly
+formatted, this is now corrected.
+<br>Own Id: OTP-2593<br>
+Aux Id: Seq 950
+
+
+<LI>
+Unix only: If Erlang was started with -noshell, made
+some output and then exited, it could happen that the
+output didn't appear until after Erlang had exited
+(for example, the error messages from "erlc" could
+appear after the new Unix shell prompt). This has been
+fixed.
+<br>Own Id: OTP-2599
+
+
+<LI>
+Redundant text "Module:" is removed from the title of the
+reference manual for module <CODE>seq_trace</CODE>.
+<br>Own Id: OTP-2603<br>
+Aux Id: seq 954
+
+
+<LI>
+Low priority processes were not fairly scheduled (in most
+cases), i.e. a low priority process was never run at all
+if there were runnable processes of a higher priority.
+This has been corrected.
+<br>Own Id: OTP-2644
+
+
+<LI>
+Vxworks only: Erlang crash dumps are now generated if a 
+file system is present.
+<br>Own Id: OTP-2671
+
+
+<LI>
+Certain BIFs, such as erlang:monitor_node/2 (which are
+implemented as traps to Erlang code), behaved erratically
+in JAM (for example, returning an incorrect value). This
+has been fixed.
+<br>Own Id: OTP-2680
+
+
+<LI>
+The <CODE>heart</CODE> port program can now handle the shutdown
+alternative on all platforms. Previously this only worked
+on Solaris.
+<br>Own Id: OTP-2695
+
+
+<LI>
+The number of 'ets' tables was limited to around 1642.
+This is raised to around 6544.
+<br>Own Id: OTP-2705
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The name of a distributed Erlang node should always be
+on the form Node@Host, where both Node and Host are
+nonempty strings not containing any '@'. This format
+is checked when the node becomes distributed. Previously,
+the check was less strict than it should have been,
+for example allowing duplicated '@' characters. This has
+been fixed.
+<br>Own Id: OTP-2537
+
+
+<LI>
+Enhanced memory handling on VxWorks, 
+erlang can use its own malloc algorithms
+in a user supplied area.
+<br>Own Id: OTP-2669
+
+
+<LI>
+An additional way to stop an Erlang node when a serious error
+condition is suspected has been introduced (Unix only): if the
+signal SIGUSR1 is sent to the Erlang system, an Erlang crash dump and
+a core dump are produced, whereby the Erlang system terminates.
+(This function was present already in R4A, but left out of the
+release notes.)
+<br>Own Id: OTP-2700<br>
+Aux Id: OTP-2414
+
+
+<LI>
+The max size for <CODE>Cmd</CODE> in <CODE>heart:set_cmd(Cmd)</CODE> is 
+increased from 254 up to 2046 characters.
+<br>Own Id: OTP-2703
+
+
+</UL>
+<H2>Erts 4.7.1</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+Processes that did "heavy" file processing did not pay
+for that.  They could execute for a very long time before
+other processes were scheduled in.  Now every file operation
+costs 100 reductions, which will not allow a process to do
+many file operations before it is scheduled out.
+<br>Own Id: OTP-1932
+
+
+<LI>
+When using the -boot and -config command-line options
+on Windows, filenames in the native Windows syntax using
+only backslashes didn't work -- forward slashes had to be
+used. Now backslashes work as well as forward slashes.
+<br>Own Id: OTP-2373
+
+
+<LI>
+In the Werl window, marking a region containing blank lines below
+the last line displayed and choosing 'Copy' from the menu,
+would crash Werl.  This has been corrected.
+<br>Own Id: OTP-2381
+
+
+<LI>
+When several lines were inserted into the Erlang shell
+using the paste function of the window manager, all but
+the first line could be lost. This has been fixed.
+<br>Own Id: OTP-2435
+
+
+<LI>
+Errors when sending incorrect data to a port was 
+reported using the old method if the owner did not 
+trap exit. This has been corrected so posix error 
+codes are always sent.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-2437
+
+
+<LI>
+If the real-time clock jumped backwards (for any reason),
+all timers in Erlang would release immediately.  This is
+handled somewhat more gracefully, by pretending that the time
+stands still.
+<br>Own Id: OTP-2438<br>
+Aux Id: seq 836
+
+
+<LI>
+The garbage collector now does a complete garbage collection
+("fullsweep"), whenever a process has binaries that could
+only be freed by a complete collection.  This frees binaries
+sooner, but takes more times for processes that have a lot
+of live data.
+<br>Own Id: OTP-2454<br>
+Aux Id: seq 845, seq 849
+
+
+<LI>
+The <CODE>erlc</CODE> program now tries to execute the program <CODE>erl</CODE>
+in the same directory which the <CODE>erlc</CODE> program itself is located
+in.  If that fails, <CODE>erl</CODE> will be searched for in <CODE>PATH</CODE>.
+<br>Own Id: OTP-2460
+
+
+<LI>
+<CODE>inet:gethostname()</CODE> did not always return a short hostname without
+the domain part. The error was introduced in OTP R3B and is now corrected.
+<br>Own Id: OTP-2489<br>
+Aux Id: seq 864
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The erlsrv utility provides the means for running Erlang
+applications as system services on Windows NT.
+<br>Own Id: OTP-1669
+
+
+<LI>
+There are two new options to open_port/2 which apply when the port is
+of type 'spawn': {env, Env} and {cd, Dir}, which set environment variables,
+and change the working directory, respectively.
+<br>
+The new options are currently not implemented on VxWorks.
+<br>Own Id: OTP-1720
+
+
+<LI>
+Line oriented I/O with new parameter {line, N} to open_port/2.
+<br>Own Id: OTP-1886
+
+
+<LI>
+New parameter to open_port/2, stderr_to_stdout, will redirect
+standard error output to standard output for port programs on
+all platforms.
+<br>Own Id: OTP-1887
+
+
+<LI>
+The spawn_opt/4 BIF allows the minimum heap size, garbage collection
+type, and priority to be set when creating a process.
+<br>Own Id: OTP-2261<br>
+Aux Id: seq 720
+
+
+<LI>
+Short lived processes no longer get a second heap for the 
+generational garbage collection.
+<br>Own Id: OTP-2336
+
+
+<LI>
+The emulator can switch GC algorithm for a process when the 
+heap grows to a certain size
+<br>Own Id: OTP-2337
+
+
+<LI>
+A new module 'instrument' has been added to 'tools'.
+When running an instrumented version of Erlang, data
+are collected about the usage of resources, and can
+later be analysed. The command-line option -instr
+causes 'erl' to start instrumented Erlang.
+<br>Own Id: OTP-2358
+
+
+<LI>
+Three new BIFs exist, for managing timers:
+<br>
+erlang:start_timer/3, erlang:send_after/3 and
+erlang:cancel_timer/1.
+<br>
+(A previously existing undocumented BIF set_timer/3 has been
+replaced by the new start_timer/3.)
+<br>Own Id: OTP-2376
+
+
+<LI>
+When tracing process scheduling, a process to be scheduled in
+used to be garbage-collected (if needed) before the trace message
+was sent.  This gave an incorrect total for the excution time
+of the process.  This has been corrected.
+<br>Own Id: OTP-2394
+
+
+<LI>
+For improving the error reporting when detecting an error serious
+enough to warrant stopping the Erlang node, a new BIF erlang:halt/1
+has been introduced.
+<br>
+Addendum to the documentation for halt/0: halt/0 returns the
+status code 0 to the environment.
+<br>
+(The BIF erlang:halt/1 previously existed in an undocumented form, with
+slightly different behaviour.)
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-2414<br>
+Aux Id: OTP-2359
+
+
+<LI>
+The description of error_handler:undefined_global_name/2
+has been removed, since it's no longer called from
+Erlang 4.6 and later.
+<br>Own Id: OTP-2525
+
+
+<LI>
+Sequential tracing is available in alfa status and only
+for JAM systems. Since it is an alpha release the 
+programmatic interface could be slightly changed based on
+experience from users. The module <CODE>seq_trace</CODE>
+contains the interface.
+Sequential tracing makes it possible to trace all messages
+that are a direct result from one initiating message
+e.g. all messages in a call-setup for one connection.
+<br>Own Id: OTP-2527
+
+</UL>
+
+<CENTER><H1>Erl_interface Release Notes</H1></CENTER>
+
+<H2>4.7.3</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+A C-node could sometimes leak a file descriptor after querying epmd about a non-existent Erlang node. This is now fixed.
+<br>Own Id: OTP-2683
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+A problem receiving large messages from remote Erlang nodes has been fixed.
+<br>Own Id: OTP-2676
+
+
+</UL>
+
+
+<H2>4.7.1</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+Nodenames passed to erl_call with "-s" are now terminated correctly.
+<br>Own Id: OTP-2241<br>
+Aux Id: seq 707
+
+
+<LI>
+erl_var_content was sometimes traversing lists incorrectly, 
+possibly resulting in a segmentation violation. This has 
+been corrected.
+<br>Own Id: OTP-2325<br>
+Aux Id: OTP-2326
+
+
+<LI>
+A pointer error in the VxWorks version of erl_gethostbyname() was 
+causing segmentation violations. This has been fixed.
+<br>Own Id: OTP-2327
+
+
+<LI>
+A missing symbol was causing link errors on VxWorks. This is 
+corrected.
+<br>Own Id: OTP-2333
+
+
+<LI>
+Many of the functions in Erl_interface would abort when passed 
+NULL asrguments. Now, these functions return NULL in situations
+where it is reasonable to do so.
+<br>Own Id: OTP-2335
+
+
+<LI>
+Erl_connect() is no longer passing the hostname and nodename 
+arguments in the wrong order to an internal help function. This 
+was causing problems when the node attempted to call erl_publish().
+<br>Own Id: OTP-2355
+
+<LI>
+In R3 a header file <CODE>erl_timeout.h</CODE> was erroneously included in the 
+release. Some symbols were defined in <CODE>erl_timeout.h</CODE> that could 
+conflict with user-defined symbols, since they were not prefixed 
+properly. This file is no longer included.
+<br>Own Id: OTP-2452<br>
+Aux Id: seq 848
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The documentation for <CODE>erl_call</CODE> now states correctly that some arguments
+need to be quoted.
+<br>Own Id: OTP-2047
+
+<LI>
+NULL pointers are now handled properly by an internal
+function used for free()ing Erlang terms.
+<br>Own Id: OTP-2242
+
+
+<LI>
+C nodes now have access to Global, through a nearby Erlang node.
+<br>Own Id: OTP-2249<br>
+Aux Id: OTP-2459
+
+
+<LI>
+C nodes now have a mechanism for storing state data and backing 
+it up to Mnesia on a nearby Erlang node.
+<br>Own Id: OTP-2250
+
+
+<LI>
+A set of primitives has been written that enable the use of an IDL 
+backend for C, so the C-Erlang interface can now be specified in IDL.
+<br>Own Id: OTP-2251
+
+
+<LI>
+erl_fix_alloc has been completely rewritten and is now simpler, 
+faster, and does not leak.
+<br>Own Id: OTP-2326
+
+
+<LI>
+erl_start_sys and erl_Start_Epmd now works on Windows and VxWorks
+<br>Own Id: OTP-2356
+
+
+<LI>
+Some of the threads files in erl_interface are only meaningful 
+on a unix platform. These files are no longer used on Windows 
+and VxWorks.
+<br>Own Id: OTP-2357
+
+
+<LI>
+The ErlMessage struct used by erl_receive_msg() has been changed 
+as part of a larger change to make C nodes understand more of the 
+Erlang distribution protocol.
+<br>(*** INCOMPATIBILITY with R3B02 ***)
+<br>Own Id: OTP-2511
+
+
+<LI>
+Users must now include an extra header file and link with an extra 
+library to use some of the erl_interface features. In general, this
+means that for anything new in R4, or to use the communication
+facilities.
+<br>(*** INCOMPATIBILITY with R3B02 ***)
+<br>Own Id: OTP-2512
+
+
+<LI>
+The functions erl_mk_pid(), erl_mk_port() and erl_mk_ref() 
+previously allowed pids, ports and refs to be created with 
+arbitrary numbers in some of the fields. Now the values 
+provided by the caller are masked, so that only valid 
+numbers can be used.
+<br>(*** INCOMPATIBILITY with R3B02 ***)
+<br>Own Id: OTP-2513
+
+
+</UL>
+
+<H2>R3B02 (Erts 4.6.4)</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+On Windows, 'epmd -daemon' did not release epmd from the
+command shell (if the command shell was terminated, so was
+epmd).  This has been corrected.
+<br>Own Id: OTP-2220<br>
+Aux Id: seq 671
+
+
+<LI>
+The BEAM emulator did sometimes crash during execution when an
+Erlang process was about to generate it's exit reason. This is
+now corrected.
+<br>Own Id: OTP-2227<br>
+Aux Id: seq 687, OTP-1783, OTP-1849
+
+
+<LI>
+In the BEAM emulator, the <CODE>trace</CODE> bif did erroneously report calls to <CODE>element/2</CODE> as calls to <CODE>process_info/2</CODE>. This is now corrected.
+*New-Rev(s):
+<br>Own Id: OTP-2228<br>
+Aux Id: seq 689
+
+
+<LI>
+Erlang (R3B version) did not support nis or nisplus lookup of host
+names. This is now corrected.
+<br>Own Id: OTP-2235<br>
+Aux Id: seq 703, OTP-2036
+
+
+<LI>
+Erlang (R3B version) did not support WINS lookup of hostnames. This
+is now corrected.
+<br>Own Id: OTP-2236<br>
+Aux Id: seq 685, seq 702, TSR-1998-02-17/a
+
+
+<LI>
+On WIN32 <CODE>receive after</CODE> could timeout to early during
+certain circumstances and only on some PC brands.
+On these PC:s the assumption that a call to 
+<CODE>GetSystemTime</CODE> always returns
+a higher value than the previous call proved to be wrong.
+This is now corrected.
+<br>Own Id: OTP-2245
+
+
+<LI>
+Releasehandling did not work on WINDOWS. This is now corrected.
+A new option <CODE>-start_erl</CODE> to <CODE>werl</CODE> and <CODE>erl</CODE> is
+introduced which works in the same way as the 
+<CODE>start_erl</CODE> script on UNIX. I.e with this option the file
+<CODE>start_erl.data</CODE> will be read and used to 
+determine which versions to execute.
+<br>Own Id: OTP-2297<br>
+Aux Id: seq 755
+
+
+<LI>
+In the following situation, the EXIT message would contain
+the wrong Pid: Node B holds a pid <CODE>OldPidA</CODE> which refers to
+a process on node A.  Node A goes down and restarts.
+Node B does <CODE>link(OldPidA)</CODE>; the pid in the exit
+message <CODE>{'EXIT', Pid, noproc}</CODE> is not the same as
+<CODE>OldPidA</CODE>.  This has been corrected.
+<br>Own Id: OTP-2304<br>
+Aux Id: seq 706
+
+
+<LI>
+<CODE>ets:new/2</CODE> could case the whole emulator to crash if
+called with a not well formed list as second argument.
+Example: <CODE>ets:new(a,[set|protected])</CODE> which should
+result in <CODE>{'EXIT',{badarg,Reason}}</CODE> and not make the emulator 
+to crash. This is corrected.
+<br>Own Id: OTP-2314<br>
+Aux Id: seq 769
+
+
+<LI>
+<CODE>heart:set_cmd/1</CODE> cannot set a command longer than 127
+characters, this is now corrected. This problem does not 
+exist in pre R3 versions of OTP.
+<br>Own Id: OTP-2374
+
+
+<LI>
+A bug in ets:lookup_element could cause the emulator
+to crash if the lookup was to return a list of more than
+one element. This is corrected.
+<br>Own Id: OTP-2386
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+On Windows, the value of the environment variable
+<CODE>ERL_WINDOW_TITLE</CODE>, if set, will be used as
+the window title for the <CODE>erl</CODE> and <CODE>werl</CODE> windows.
+To set the title when starting Erlang, the <CODE>-env</CODE> option
+can be used like this: <CODE>werl -env ERL_WINDOW_TITLE Title</CODE>.
+<br>Own Id: OTP-2222<br>
+Aux Id: seq 678
+
+
+</UL>
+<H2>R3B01 (Erts 4.6.3)</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+The <CODE>-pa</CODE> and <CODE>-pz</CODE> options to <CODE>erl</CODE> did not
+add the paths to the code server when combined with the
+<CODE>-mode embedded</CODE> option. This is corrected.
+<br>Own Id: OTP-2160<br>
+Aux Id: seq 644
+
+
+</UL>
+<H2>R3B (Erts 4.6.3)</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+On Unix, using erl in a pipeline like this now works as expected:
+<br>
+'cat - | erl -noshell -s nisse'
+<br>
+It used to fail with an error message from cat.
+<br>Own Id: OTP-2027
+
+
+<LI>
+In a distributed node, calling <CODE>init:stop/0</CODE> used to cause
+a lot of crash reports to be generated.  This has been corrected.
+<br>Own Id: OTP-2044<br>
+Aux Id: seq 540
+
+
+<LI>
+Epmd is now reading data non-blocking. This means that hanging
+nodes, and other situations where epmd may be expecting data
+but get none, will not block epmd from fulfilling other
+requests. There is also a one minute timeout for inactivity
+when epmd expects more data from a node. Epmd will then close
+the connection.
+<br>
+Epmd still <EM>writes</EM> data blocking. The amount of
+data that is written is normally so small that this is not a
+problem but it should be addressed in a future release.
+<br>Own Id: OTP-2046
+
+
+<LI>
+On Windows, pressing Ctrl-C or Ctrl-Break in erl (not in werl) used
+to hang erl.  This has been corrected.
+<br>Own Id: OTP-2058
+
+
+<LI>
+Previously (in erts 4.6.1 and 4.6.2) a distributed Erlang node could not
+be started on a host with a hostname containing for example underscore (_).
+This checking is now relaxed and the only requirement from the Erlang
+systems point of view is that it contains visible characters (#21..#7E).
+<br>Own Id: OTP-2059<br>
+Aux Id: seq 568
+
+
+<LI>
+For statistics(runtime) and statistics(wall_clock),
+there was sometimes a discrepancy between the reported
+time since last call, and the actual difference
+between the two reported times since the Erlang node
+was started. This is now fixed.
+<br>Own Id: OTP-2081
+
+
+<LI>
+The data sent on a socket with <CODE>gen_tcp:send</CODE> was lost if the socket 
+was explicitly closed. 
+This is corrected.
+<br>Own Id: OTP-2088<br>
+Aux Id: seq 591
+
+
+<LI>
+On Windows 95, the <CODE>erl</CODE> and <CODE>werl</CODE> programs used
+to crash if Winsock2 was not installed.
+<br>
+In this release, the Erlang emulator will work in a single-node
+configureation even without Winsock2, but the functionality will
+be limited in that modules that use TCP/IP or UDP/IP
+(for instance, gen_tcp, gen_udp, ftp) through the new inet driver
+will not work.
+<br>
+The Erlang emulator will not start if the <CODE>-sname</CODE> or 
+<CODE>-name</CODE> is used.
+<br>Own Id: OTP-2145
+
+
+<LI>
+During startup of OTP on Unix, <CODE>receive after</CODE> timeouts would
+trigger too early.  This was particularly pronounced in embedded
+mode when a large number of modules were loaded.  This has been
+corrected.
+<br>Own Id: OTP-2158<br>
+Aux Id: OTP-2054 OTP-2152
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+International characters in the range 160-255 can now
+be entered and shown in the Erlang shell on both Unix
+and Windows.  Is is assumed that the characters are
+encoded according to ISO 8859-1, which is used in both
+Solaris and Windows.  Note that on Windows, characters
+will be displayed correctly only in the Werl window,
+not by erl started in a command prompt window (because
+it uses the IBM character set).
+<br>
+As as consequence of this change, the Meta key on Sun
+keyboards will now generate accented international
+characters.  It cannot be used for entering editing
+commands, like Meta-B for backing up a word; but
+Esc B will still work.
+<br>Own Id: OTP-1782
+
+
+<LI>
+Ports opened with open_port({spawn, Name}, Opts) no longer
+write error reports.  Instead, if the owner of the port
+(or another process linked to the port) traps exits,
+it will receive {'EXIT', Port, PosixCode} messages, where
+PosixCode is an atom given the Posix error codes.  Posix
+error codes are listed in the manual pages for
+the file and inet modules.
+<br>
+Example of Posix codes for ports: einval if you send more
+than 255 bytes to port opened with {packet, 1} and enomem
+if driver fails to allocate memory.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-1796
+
+
+<LI>
+The erl (and also werl on Windows) options -pa and -pz are
+slightly modified in order to behave exactly the same as the functions
+add_patha/1 and add_pathz/1 in the module code.
+<br>Own Id: OTP-2008
+
+
+<LI>
+The following information is interesting for users of
+the 4.6 through 4.6.2 releases.  Others can safely ignore
+this information.
+<br>
+There are new flags in erl (and werl) for controlling what
+the emulator should do when a send operation to a registered
+name is attempted and there is no such name registered.
+In the ERTS 4.6.3 release (like all releases before 4.6),
+the current process generates an exception if it attempts
+to send to an unregistered name.
+<br>
+The 4.6, 4.6.1, and 4.6.2 releases, however, silently ignored such
+attempts.  In the 4.6.1 and 4.6.2 releases, the +W flag enabled the
+old exception generating behaviour.
+<br>
+In this release (4.6.3) the default behaviour is to generate
+an exception, but the +W flag is still allowed for backwards
+compatibility. The new flag +w will turn on the new
+behaviour (to silently ignore messages sent to an unregistered
+name); we do not recommend that this flag is used.
+<br>Own Id: OTP-2010
+
+
+<LI>
+Creation of Unix subprocesses with open_port({spawn,...)
+now uses the 'vfork' system call by default, instead of
+'fork'. Using 'vfork' leads to less swap space usage.
+If the old behaviour is wanted, set the environment
+variable "ERL_NO_VFORK" to any value.
+<br>Own Id: OTP-2131
+
+
+<LI>
+There has been improvements in the <CODE>global</CODE> and
+<CODE>application_controller</CODE> which have made the distribution
+protocol in R3 incompatible with prior versions.
+<br>
+Because of this the Erlang Port Mapper Daemon, epmd,
+has changed port number. For the user this means
+that nodes running an older version of OTP can't find
+or communicate with nodes running R3.
+<br>
+An unfortunate side effect of that the change of port number
+was done in R3B, not R3A when the actual protocol changed,
+is that a R3A node can't communicate with a R3B node.
+<br>(*** INCOMPATIBILITY with R2 ***)
+<br>Own Id: OTP-2139
+
+
+</UL>
+<H2>R3A02</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+ets:match_object/2 sometimes exited with badarg when
+applied on a table with more than 1000 entries.
+<br>Own Id: OTP-2022<br>
+Aux Id: seq502, HA69908
+
+
+<LI>
+Sending of a message that violates the port protocol,
+to a port puts the sending process in a strange state 
+(a zombie process).
+This is now corrected and will result in a badsig
+exception.
+<br>Own Id: OTP-2033<br>
+Aux Id: seq530, HA70127
+
+
+</UL>
+<H2>R3A (Erts 4.6)</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+A bug involving spurious timeout traces on Beam has been fixed.
+<br>Own Id: OTP-1486
+
+
+<LI>
+Calling trace(Pid, true, [suspend]) would not suspend the
+process if it was waiting (and most processes in an Erlang system
+are waiting).  This limitation has been removed.
+<br>Own Id: OTP-1488
+
+
+<LI>
+When (re)compiling modules in one of the kernel, stdlib, or compiler
+directories of OTP, or a module with the same name as a module
+in these directories, an infinite loop could occur.
+<br>Own Id: OTP-1647
+
+
+<LI>
+On the BEAM system on Solaris 2, a registered message
+sent from another node could end up in the message queue
+of the wrong process.
+<br>Own Id: OTP-1659<br>
+Aux Id: HA59059
+
+
+<LI>
+When starting erl with both -noshell and -noinput, a shell was started anyway. This has been fixed.
+<br>Own Id: OTP-1684
+
+
+<LI>
+Invoking Erlang as 'erl -s Module Function Arguments' causes the
+emulator to terminate if Module:Function/X fails.
+The emulator used to silently ignore failed calls.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-1697
+
+
+<LI>
+If the HOME environment variable was set on the command line
+to the Erlang emulator (using -env), the emulator would still
+use the earlier value of HOME in the environment of the parent
+process, and fail to start if HOME was not defined.
+This has been changed, so that a value of HOME on the command
+line always overrides the value in the parent environment.
+<br>
+On Windows, the same applies to the environment variables
+HOMEDRIVE and HOMEPATH.
+<br>Own Id: OTP-1703
+
+
+<LI>
+The erlang:trace/3 BIF didn't report messages that a process
+sent to itself.
+<br>Own Id: OTP-1709
+
+
+<LI>
+The Erlang machine could hang in accept, in case it
+received a signal during the connect phase when 
+connecting to another node. That select was interrupted
+by a signal was not checked.
+<br>Own Id: OTP-1722
+
+
+<LI>
+Tcp_drv.c was reusing struct timevals in select, without
+reinializing them.
+<br>Own Id: OTP-1723
+
+
+<LI>
+Due to integer overrun, the statistics(wall_clock) BIF
+could sometimes return a negative value. It now returns a
+bignum when necessary.
+<br>Own Id: OTP-1726<br>
+Aux Id: HA56471, OTP-1604
+
+
+<LI>
+Some interruptible system calls were not being checked.
+<br>Own Id: OTP-1817
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+It is now possible to customize the location of the
+<CODE>releases</CODE> directory.  This makes it
+possible to test the release handling procedure without
+write access to the OTP root directory.  Changes in
+<CODE>start_erl</CODE> (UNIX), <CODE>systools_make</CODE> and
+documentation.  The filestructure is slightly changed;
+the <CODE>SystemVsn</CODE> directory is moved from
+<CODE>erts-EVsn</CODE> to the <CODE>releases</CODE> directory.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-1635<br>
+Aux Id: HA54792
+
+
+<LI>
+The heart program with limited functionality now works on
+Windows NT.
+<br>Own Id: OTP-1672
+
+
+<LI>
+The heart program now reports the time when it times out.
+<br>Own Id: OTP-1806
+
+
+<LI>
+The handling of busy ports has been changed, resulting
+in improved I/O performance.
+<br>Own Id: OTP-1895<br>
+Aux Id: HA55234
+
+
+<LI>
+All linked-in drivers compiled for earlier releases of OTP
+must be recompiled before being linked with an R3 emulator,
+because more fields have been added to the DriverEntry
+struct.  Failure to recompile will most likely result in
+a core dump.
+<br>(*** INCOMPATIBILITY with R2 ***)
+<br>Own Id: OTP-2120
+
+
+<LI>
+The erl_prim_loader and erl_boot_server modules
+now longer supports the distributed loader method.
+Instead, there is a new	inet loader method.
+As a consequence, <CODE>-loader distributed</CODE> option to
+erl is no longer accepted, and should be replaced with
+<CODE>-loader inet</CODE>.
+Also, <CODE>-nodes Nodes</CODE> should be replaced with
+<CODE>-hosts Hosts</CODE>, where hosts is a list of IP addresses.
+<br>
+For further intformation, see the documentation for
+<CODE>cerl</CODE>, <CODE>erl_boot_server</CODE>, and <CODE>erl_prim_loader</CODE>.
+<br>(*** INCOMPATIBILITY with R2 ***)
+<br>Own Id: OTP-2123
+
+
+<LI>
+On Windows 95 and Windows NT, the program <CODE>werl</CODE> has
+been added as alternative way to start Erlang.
+The <CODE>werl</CODE> program starts Erlang in its own window
+which has scrollbars, allows command-line editing and
+cut and paste.
+<br>
+The <CODE>erl</CODE> is retained for situations when Erlang is
+used in a pipeline or its standard input or output is
+redirected.  The <CODE>werl</CODE> cannot be used in such
+situations.  The <CODE>erl</CODE> program can be used
+interactively too, but only the old shell is provided
+(no line-editing) and on Windows 95 there is no way
+to scroll back to see text which has scrolled off.
+<br>Own Id: OTP-2127
+
+
+<LI>
+Executing a send operation like <CODE>{Name, Node} ! Msg</CODE>,
+where Node is the current node and Name is an unregistered
+name, will now fail silently.  In 4.5.3 and earlier releases,
+this used to failed with a <CODE>badarg</CODE> reason.
+<br>
+Note that the new behaviour is consistent with the behaviour
+that has always been when Node is a remote node.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-2129
+
+
+</UL>
+<H3>Known problems</H3>
+
+<UL>
+
+<LI>
+<c>os:cmd</c> on WIN32 does not always catch the output from 
+the executed program correctly. There is also a problem with
+executing programs with space in the path.
+<br>Own Id: OTP-2371<br>
+Aux Id: seq813
+
+
+</UL>
+
+<A NAME="1"><!-- Empty --></A><H2>1 ERTS 4.5.3</H2><A NAME="1.1"><!-- Empty --></A><H3>1.1 Incompatibilities with ERTS 4.5.2</H3><P>Because of several bug-fixes in <CODE>erl_interface</CODE> we were forced to introduce
+        a minor incompatibility concerning the representation of an empty list in the C-code.
+        Previously it was allowed to represent the empty list in two alternative ways of
+        which one alternative was a NULL (0) pointer. This alternative is no longer allowed.
+        If old code containing this representation of empty lists is rebuilt with this version 
+        of <CODE>erl_interface</CODE> they will crash at runtime.
+        <P><CODE>erl_interface</CODE> does no longer try to convert Erlang lists to C strings (this 
+        could cause troubles ). New functions which let the user convert an Erlang list to
+        a C-string are added.
+        <P>Own Id: OTP-1401
+<A NAME="1.2"><!-- Empty --></A><H3>1.2 Fixed bugs and malfunctions</H3><P><UL>
+<LI>     The limitation of max 32 simultaneously open ports or connections to other Erlang nodes
+         in the Windows NT version is removed. 
+         <BR>
+Own Id:OTP-1296
+        <BR>
+<LI>     <CODE>erl_print_term</CODE> in <CODE>erl_interface</CODE> returned the wrong number of characters when the escape character '\'
+         was present in the print-string.
+         <BR>
+Own Id:OTP-1474
+        <BR>
+<LI>     <CODE>erl_interface</CODE>: Error when encoding a negative ERL_SMALL_BIG (integer).
+         Resulted in that e.g -2e9 became -1999999999 in the resulting Erlang external format.
+         <BR>
+Own Id:OTP-1314, OTP-1442, OTP-1443
+        <BR>
+<LI>     <CODE>erl_interface</CODE>: <CODE>erl_match</CODE> sometimes gives wrong result.
+         <BR>
+Own Id:OTP-1386
+        <BR>
+<LI>     <CODE>erl_interface</CODE>: Problems with memory management caused by inconsistent
+         handling of empty lists (two alternative representations). NULL (0) pointer 
+         removed as valid representation.
+         <BR>
+Own Id:OTP-1401
+        <BR>
+<LI>     The <CODE>ets:match/2</CODE> function could fail to return all
+         matches on Beam if the pattern contained
+         a constant key (for instance, {directory, '$1'}) and
+         a garbage collection occurred inside the <CODE>erlang:db_match/2</CODE>
+         BIF.
+         <BR>
+Own Id: OTP-1483
+        <BR>
+<LI>     The documentation for the <CODE>suspend</CODE> flag <CODE>trace/3</CODE> BIF
+         has been corrected.
+         It used to say that a suspended process would be scheduled
+         on normal events such as message passing; this is no longer
+         the case.
+         <BR>
+Own Id: OTP-1487
+        <BR>
+</UL>
+<A NAME="1.3"><!-- Empty --></A><H3>1.3 Known bugs and limitations</H3><P><UL>
+<LI>     If trace on receive is enabled in Beam with the trace/3
+         BIF, an timeout trace will be generated every time
+         the process executes a receive statement and there
+         is no messages.
+         <BR>
+Own Id: OTP-1486
+        <BR>
+</UL>
+<A NAME="1.4"><!-- Empty --></A><H3>1.4 Improvements and new features</H3><P><UL>
+<LI>The following improvements regarding <CODE>erl_interface</CODE> are done:<BR>
+         <BR>
+<UL>
+<LI>            Macros to retrieve the fields of <CODE>ETERM</CODE> is added.
+                <BR>
+Own Id: OTP-1473
+         <BR>
+<LI>            There is now *one* representation for an empty list, not two
+                as is used to be. An empty list is represented by the 
+                <CODE>Erl_EmptyList</CODE> structure. There is a new macro, 
+                <CODE>ERL_IS_EMPTY_LIST(ep)</CODE>, to test for an empty list.
+         <BR>
+<LI>            None of the type checking macros (<CODE>ERL_IS_LIST(ep)</CODE>, 
+                <CODE>ERL_IS_TUPLE(ep)</CODE>, etc), accept NULL pointers any longer.
+                Make sure to only pass valid ETERM pointers.
+         <BR>
+<LI>            <CODE>erl_cons(head, tail)</CODE> now requires tail to be a non-NULL
+                pointer. To represent the end of a list, use the return
+                value from erl_mk_empty_list().
+         <BR>
+<LI>            <CODE>erl_length()</CODE> now only works for a proper list; i.e. for the
+                the term [a|b], erl_length() returns -1.
+         <BR>
+<LI>            <CODE>erl_tl()</CODE>, <CODE>erl_hd()</CODE> is now silent if given a bad list
+                (but still returns NULL).
+         <BR>
+</UL>
+
+<LI>     <BR>
+Own Id:
+        <BR>
+</UL>
+<A NAME="2"><!-- Empty --></A><H2>2 ERTS 4.5.2</H2><A NAME="2.1"><!-- Empty --></A><H3>2.1 Incompatibilities with ERTS 4.5.1</H3><P>Due to changes in code generation for BEAM, all BEAM code
+must be recompiled.
+<A NAME="2.2"><!-- Empty --></A><H3>2.2 Fixed bugs and malfunctions</H3><P><UL>
+<LI>     Order of messages received could be wrong for a suspended process
+         waiting for a busy port.
+         <BR>
+Own Id:OTP-1421
+        <BR>
+</UL>
+<A NAME="3"><!-- Empty --></A><H2>3 ERTS 4.5.1</H2><A NAME="3.1"><!-- Empty --></A><H3>3.1 Incompatibilities with ERTS 4.5</H3><P>Due to changes in code generation for BEAM, all BEAM code
+must be recompiled.
+<A NAME="3.2"><!-- Empty --></A><H3>3.2 Fixed bugs and malfunctions</H3><P><UL>
+<LI>     The include file <CODE>decl.h</CODE> was missing in the distribution.
+         <BR>
+Own Id:OTP-1395
+         <BR>
+Aux Id:HA48525
+        <BR>
+<LI>     Exit process when the process is in the timeout queue crashes emulator (BEAM only).
+         <BR>
+Own Id:OTP-1396
+        <BR>
+<LI>     Error in send primitive in BEAM, which cause the Table Visualizer
+         to crash GS. (BEAM only).
+         <BR>
+Own Id:OTP-1399
+        <BR>
+<LI>     Error in distributed Erlang, where simultaneous connects between
+         two nodes could crash the emulator (bus error), has been 
+         corrected. 
+         <BR>
+Own Id:OTP-1403
+        <BR>
+</UL>
+<A NAME="4"><!-- Empty --></A><H2>4 ERTS 4.5</H2><A NAME="4.1"><!-- Empty --></A><H3>4.1 Improvements and new features</H3><P><UL>
+<LI>     The Erlang emulator now produces &#34;crash-dumps&#34; if it detects some
+         internal error and terminates it self in a controlled way. The &#34;crash-dump&#34; is written to a file named <CODE>erl_crash.dump</CODE> or fetches 
+         the name from the environment variable <CODE>ERL_CRASH_DUMP</CODE> if it 
+         is defined.
+         <BR>
+Owd Id: OTP-1215 
+        <BR>
+<LI>The previous solution with different binaries for
+         DNS and NO_DNS is changed to a solution with only one 
+         binary wich can adjust it's behaviour in run time.
+         <BR>
+         Where it is possible to choose between two different methods 
+         of name
+         resolution, e.g. Solaris 2, the <CODE>emulator</CODE>, <CODE>erl_interface</CODE>, <CODE>erl_call</CODE> and <CODE>epmd</CODE>
+         check the environment variable <CODE>ERL_RESOLV</CODE> to determine if 
+         the DNS
+         resolver should be used or not. If <CODE>ERL_RESOLV</CODE> has the 
+         value <CODE>nodns</CODE> the
+         regular name resolution method <CODE>gethostby{name|addr}</CODE> 
+         will be used, if
+         <CODE>ERL_RESOLV</CODE> has the value <CODE>dns</CODE> the Domain Name Service
+         <CODE>res_gethostby{name|addr}</CODE> will be used.
+         
+         <BR>
+<LI>Dynamic Driver Loading and Linking
+         
+         <BR>
+If the underlying operating system support dynamic loading and 
+         linking
+         of shared objects, drivers can be loaded into a running emulator.
+         After loading the driver can be used exactly like a linked-in 
+         driver.
+         See the manual page for <CODE>erl_ddll</CODE> for details.
+         
+         <BR>
+<LI>The file-driver is enhanced to support the revised <CODE>file</CODE>
+         module in <CODE>stdlib</CODE>.
+         <BR>
+Own Id:OTP-1075
+         <BR>
+<LI>The internal representation of string constants in BEAM is 
+         significantly improved which result in decreased code size for
+         BEAM compiled modules.
+         <BR>
+<LI>The port program <CODE>authchk</CODE> is removed and replaced by code in the erlang module <CODE>auth</CODE>.
+        <BR>
+</UL>
+<A NAME="4.2"><!-- Empty --></A><H3>4.2 Incompatibilities with ERTS 4.4.2</H3><P><UL>
+<LI>In order to run the BEAM-emulator 4.4.1 all Erlang modules must
+        be recompiled.
+        <BR>
+<LI>The possibility to start as an old fashioned Erlang system 
+         with
+         <CODE>start_old.boot</CODE> is no longer supported.
+         <BR>
+Own Id:OTP-1335
+<BR>
+</UL>
+<A NAME="4.3"><!-- Empty --></A><H3>4.3 Fixed bugs and malfunctions</H3><P> <P><UL>
+<LI><CODE>erl_print_term</CODE> in <CODE>erl_interface</CODE> now return the
+         number of chars written.
+         <BR>
+Own Id:OTP-1092
+        <BR>
+<LI>A new BIF match_object is introduced for internal use by the 
+         <CODE>ets</CODE>
+        module and <CODE>mnesia</CODE>.<BR>
+ 
+         A match operation on a huge table is divided into several
+        blocks, otherwise the Erlang system might be blocked for a too 
+        long time. This new function is required by Mnesia.
+         <BR>
+Own Id:OTP-1325
+        <BR>
+<LI>     The Erlang system now returns error codes when the 
+         system is terminated. These error codes is used e.g to 
+         interrupt Make when a syntax fault is encountered when 
+         compiling an Erlang program with <CODE>erl -compile</CODE>. A new
+         utility <CODE>erlc</CODE> which is a front-end for compilation of
+         Erlang programs (and many other things) is also added.
+         <BR>
+Own Id:OTP-1201,OTP-1326
+         <BR>
+Aux Id:HA41029
+        <BR>
+<LI>     The ERL_TICK protocol towards a HIDDEN node (a c-node) is 
+         corrected. An ERL_TICK is now sent if the Erlang node has not 
+         received anything from
+         the HIDDEN node within the TICK interval.
+         <BR>
+Own Id:OTP-1254,OTP-1322
+        <BR>
+<LI>The handling of timers in the new timing wheel algorithm is 
+         corrected. Timeouts was too short or too long during certain 
+         circumstances.
+         <BR>
+Own Id:OTP-1270
+        <BR>
+<LI>Long timeouts is corrected (was too long e.g 900 sec became 912 sec).
+         <BR>
+Own Id:OTP-1273
+        <BR>
+<LI>Corrected communication problems between Erlang nodes (caused
+         segmentation fault).
+         <BR>
+Own Id:OTP-1345
+        <BR>
+</UL>
+<A NAME="5"><!-- Empty --></A><H2>5 ERTS 4.4.2</H2><A NAME="5.1"><!-- Empty --></A><H3>5.1 Improvements and new features</H3><P>The handling of timeouts in the emulator (both jam and beam) is implemented with a new
+        algorithm (Timing Wheel) which will execute a system which uses many 
+        timeouts (&#34;receive ... after&#34;) more efficiently.
+        <P>The detection of absent Erlang nodes in a distributed configuration
+        is enhanced. I.e a node that does not respond is detected earlier.
+<A NAME="5.2"><!-- Empty --></A><H3>5.2 Incompatibilities with ERTS 4.4.1</H3><P> In order to run the BEAM-emulator 4.4.2 all Erlang modules must
+        be recompiled.
+<A NAME="5.3"><!-- Empty --></A><H3>5.3 Fixed bugs and malfunctions</H3><P>     <P><UL>
+<LI>     <CODE>erl_interface.h</CODE> file no longer contains invalid 
+         characters.
+         <BR>
+Own Id:OTP-1176
+         <BR>
+Aux Id:HA39735
+         <BR>
+</UL>
+<A NAME="6"><!-- Empty --></A><H2>6 ERTS 4.4.1</H2><A NAME="6.1"><!-- Empty --></A><H3>6.1 Improvements and new features</H3><P>Added unlimited number of variables in <CODE>ets:match/2</CODE>.
+<A NAME="6.2"><!-- Empty --></A><H3>6.2 Incompatibilities with ERTS 4.4</H3><P> -
+<A NAME="6.3"><!-- Empty --></A><H3>6.3 Fixed bugs and malfunctions</H3><P> <P><UL>
+<LI><CODE>open_port({spawn,10},[])</CODE> caused the emulator to crash.
+         <BR>
+Own Id:OTP-1011
+        <BR>
+<LI><CODE>binary_to_term</CODE> caused the emulator to crash if the binary contained data which was not a valid format to create a term from.
+         <BR>
+Own Id:OTP-1013
+        <BR>
+<LI>The emulator could be hanging when pinging other node which is in CTRL-c mode.
+         <BR>
+Own Id:OTP-1068
+        <BR>
+<LI>Correction of documentation of erlang:hash/2.
+         <BR>
+Own Id:OTP-1016
+        <BR>
+<LI>Documentation of time-stamped traces.
+         <BR>
+Own Id:OTP-1031
+        <BR>
+<LI>CTRL-break handler error on SunOS5.
+         <BR>
+Own Id:OTP-1071
+        <BR>
+<LI><CODE>universaltime_to_localtime</CODE> did compute the wrong date (sometimes).
+         <BR>
+Own Id:OTP-1081
+        <BR>
+<LI>Lack of memory crash. The error was caused by incorrect flow-
+         control between distributed Erlang nodes which caused the sending
+         node to buffer up far to much when the receiving node wasn't ready
+         to receive the data.
+         <BR>
+Own Id:OTP-1082
+         <BR>
+Aux Id:HA35160
+        <BR>
+<LI>During certain circumstances a dead-lock between a port 
+         program
+(e.g. esock) and the Erlang emulator could occur. 
+         This is solved by adding non-blocking I/O to the Erlang 
+         run-time I/O
+system for spawned port programs (spawn driver).
+         <BR>
+Own Id:OTP-1085
+         <BR>
+Aux Id:HA35005
+        <BR>
+<LI>Limit on number of variables in ets table queries removed.
+        Caused Mnemosyne queries to fail.
+         <BR>
+Own Id:OTP-1016, OTP-1124
+         <BR>
+Aux Id: HA36605
+        <BR>
+<LI>Emulator bug: TCP buffers to much. Related to OTP-1082 above.
+         <BR>
+Own Id:OTP-1108
+        <BR>
+<LI>Communication problems between Erlang nodes. A node which
+         made a re-connection attempt to another node, before the other
+         node had recognised (by timeout or otherwise) that the first
+         node had gone down, would be rejected. Now new connection
+         attempts are always recognised.
+         <BR>
+Own Id: OTP-1110
+         <BR>
+Aux Id: HA36954
+        <BR>
+</UL>
+<A NAME="7"><!-- Empty --></A><H2>7 ERTS 4.4</H2><P> <A NAME="7.1"><!-- Empty --></A><H3>7.1 Improvements and new features</H3><P>      <P><UL>
+<LI>     New BIF:s for handling of local and universal time:
+         <BR>
+<UL>
+<LI> <CODE>erlang:localtime/0</CODE><BR>
+<LI> <CODE>erlang:localtime_to_universaltime/1</CODE><BR>
+<LI> <CODE>erlang:universaltime/0</CODE><BR>
+<LI><CODE>erlang:universaltime_to_localtime/1</CODE><BR>
+</UL>
+
+        <LI>     A new information item <CODE>message_queue_len</CODE> which returns the
+         nubmer of messages currently in a process message queue is added
+         , and can be fetched with <CODE>process_info/1</CODE> and <CODE>process_info/2</CODE>.
+        <BR>
+<LI>     The internal implementation of <CODE>ets</CODE>-tables is improved, which
+         results in faster access to the data. This is an improvement
+         which the DBMS Mnesia benefits from since it uses <CODE>ets</CODE>-
+         tables as base for it's implementation.
+        <BR>
+<LI>     <CODE>erl_call</CODE> is a new utility which is now supported. 
+         It was previously delivered as an example of how to use the 
+         <CODE>erl_interface</CODE> library.
+        <BR>
+<LI>     A new process priority <CODE>high</CODE> is added. The scheduling between
+         processes with priority <CODE>high</CODE> works like normal but processes
+         with priorities <CODE>low</CODE> and <CODE>normal</CODE> will not get any time slice.
+        <BR>
+<LI>     The start command <CODE>otp</CODE> is changed back to <CODE>erl</CODE>.
+        <BR>
+<LI>     <CODE>time_stamp</CODE> added as a new flag to the BIF <CODE>erlang:trace/3</CODE>. When <CODE>time_stamp</CODE> is on the trace messages which are tuples will have
+         an additional last element which is the time_stamp in the same
+         format as returned by <CODE>erlang:now/0</CODE>.
+        <BR>
+</UL>
+<A NAME="7.2"><!-- Empty --></A><H3>7.2 Incompatibilities with ERTS in OTP P1H</H3><P>  There are no incompatibilities in this step.
+<A NAME="7.3"><!-- Empty --></A><H3>7.3 Fixed bugs and malfunctions</H3><P>The priority returned from the BIF <CODE>process_info(Pid)</CODE> was
+        the priority of the calling process and not as it should be the
+        priority of the process denoted by <CODE>Pid</CODE>.
+</BLOCKQUOTE>
+<CENTER>
+<HR>
+<FONT SIZE=-1>
+Copyright &copy; 1991-99
+<A HREF="http://www.ericsson.se">Ericsson Utvecklings AB</A><BR>
+<!--#include virtual="/ssi/otp_footer.html"-->
+</FONT>
+</CENTER>
+</BODY>
+</HTML>

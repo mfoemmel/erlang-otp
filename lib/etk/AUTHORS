@@ -1,0 +1,6 @@
+etk is based on Tcl/Tk - some of the Erlang source are just translations
+of tcl files.
+
+etk was originally written by Tony Rogval, and fixed up into an
+application by Claes Wikström.
+

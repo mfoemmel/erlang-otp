@@ -1,0 +1,290 @@
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+# 
+#     $Id$
+#
+include $(ERL_TOP)/make/target.mk
+include ../vsn.mk
+
+#
+# Run this make file with TYPE set to the type of emulator you want.
+# Different versions of the emulator for different uses. The default
+# is "debug". For a normal version use "opt".
+#
+ifeq ($(TYPE),debug)
+PURIFY =
+TYPEMARKER = .debug
+TYPE_FLAGS = -DDEBUG -DINSTRUMENT @DEBUG_FLAGS@
+else
+ifeq ($(TYPE),instr)
+PURIFY =
+TYPEMARKER = .instr
+TYPE_FLAGS = -g -O2 -DINSTRUMENT
+else
+ifeq ($(TYPE),purify)
+PURIFY = purify
+TYPEMARKER = .purify
+TYPE_FLAGS = -g -O2 -DPURIFY -DNO_JUMP_TABLE
+else
+ifeq ($(TYPE),quantify)
+PURIFY = quantify
+TYPEMARKER = .quantify
+TYPE_FLAGS = -g -O2 -DQUANTIFY -DNO_JUMP_TABLE
+else
+PURIFY =
+TYPEMARKER =
+TYPE_FLAGS = -g -O2
+endif
+endif
+endif
+endif
+
+#
+#
+#
+SHELL   = /bin/sh
+CC      = @CC@
+WFLAGS  = @WFLAGS@
+CFLAGS  = @CFLAGS@ @DEFS@ $(TYPE_FLAGS) $(WFLAGS) $(STANDALONE_FLAGS)
+HCC     = @HCC@
+LD      = @LD@
+RANLIB  = @RANLIB@
+STRIP   = strip
+PERL    = @PERL@
+
+
+LIBS    = @LIBS@ -L$(ERL_TOP)/erts/obj/$(TARGET) -lz
+
+OBJDIR = $(ERL_TOP)/erts/obj$(TYPEMARKER).beam/$(TARGET)
+BINDIR = $(ERL_TOP)/bin/$(TARGET)
+
+OSTYPE = @OSTYPE@
+
+EMULATOR_EXECUTABLE_SAE = beam_evm$(TYPEMARKER)
+EMULATOR_EXECUTABLE = beam$(TYPEMARKER)
+
+
+# ----------------------------------------------------------------------
+include $(ERL_TOP)/make/$(TARGET)/otp.mk
+
+all: generate zlib $(BINDIR)/$(EMULATOR_EXECUTABLE)
+
+# Unsupported at the moment
+sae: $(TARGET)/preload_sae.c generate zlib $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE)
+
+zlib:
+	@set -e ; cd zlib && $(MAKE) $(TYPE)
+
+clean:
+	rm -f $(TARGET)/*.c $(TARGET)/*.h
+	rm -f $(ERL_TOP)/erts/obj.*beam/$(TARGET)/*.o
+
+.PHONY: all sae zlib clean
+
+docs:
+
+# ----------------------------------------------------------------------
+include $(ERL_TOP)/make/otp_release_targets.mk
+
+RELSYSDIR = $(RELEASE_PATH)/erts-$(VSN)
+
+RELEASE_INCLUDES = beam/erl_driver.h beam/driver.h sys/$(OSTYPE)/driver_int.h 
+
+release_spec: all
+	$(INSTALL_DIR) $(RELSYSDIR)
+	$(INSTALL_DIR) $(RELSYSDIR)/src
+	$(INSTALL_DIR) $(RELSYSDIR)/man
+	$(INSTALL_DIR) $(RELSYSDIR)/doc
+	$(INSTALL_DIR) $(RELSYSDIR)/bin
+	$(INSTALL_DIR) $(RELEASE_PATH)/usr/include
+	$(INSTALL_DATA) $(RELEASE_INCLUDES) $(RELEASE_PATH)/usr/include
+	$(INSTALL_DATA) $(RELEASE_INCLUDES) $(RELSYSDIR)/src
+	$(INSTALL_PROGRAM) $(BINDIR)/$(EMULATOR_EXECUTABLE) $(RELSYSDIR)/bin
+
+release_docs_spec:
+
+# ----------------------------------------------------------------------
+# Generated source code. Put in $(TARGET) directory
+#
+
+.PHONY : generate
+
+generate: $(TARGET)/beam_opcodes.h $(TARGET)/erl_bif_table.c \
+		$(TARGET)/erl_version.h \
+		$(TARGET)/driver_tab.c $(TARGET)/preload.c
+
+# opcode table
+$(TARGET)/beam_opcodes.h $(TARGET)/beam_opcodes.c: beam/ops.tab
+	$(PERL) utils/beam_makeops -outdir $(TARGET) -emulator \
+		$(ERL_TOP)/lib/compiler/src/genop.tab beam/ops.tab
+
+# bif and atom table
+$(TARGET)/erl_bif_table.c $(TARGET)/erl_bif_table.h $(TARGET)/erl_bif_wrap.c \
+  $(TARGET)/erl_atom_table.c $(TARGET)/erl_atom_table.h: \
+    beam/atom.names beam/bif.tab
+	$(PERL) utils/make_tables -src $(TARGET) -include $(TARGET) $^
+
+# version include file
+$(TARGET)/erl_version.h: ../vsn.mk
+	$(PERL) utils/make_version -o $@ $(VSN)$(SERIALNO)
+
+# driver table
+$(TARGET)/driver_tab.c:	Makefile.in
+	$(PERL) utils/make_driver_tab -o $@ $(DRV_OBJS)
+
+# preloaded code
+$(TARGET)/preload.c: $(ERL_TOP)/lib/kernel/ebin/init.beam \
+			$(ERL_TOP)/lib/kernel/ebin/erl_prim_loader.beam
+	$(PERL) utils/make_preload -old $^ > $@
+
+# preloaded code - sae
+$(TARGET)/preload_sae.c: $(ERL_TOP)/erts/sae/ebin/ring0.beam
+	$(PERL) utils/make_preload $^ > $@
+
+# ----------------------------------------------------------------------
+# Pattern rules
+#
+INCLUDES  =  -Ibeam -Isys/$(OSTYPE) -I$(TARGET)
+
+# Need to include etc dir on VxWorks
+ifeq ($(findstring vxworks,$(TARGET)),vxworks)
+INCLUDES += -I$(ERL_TOP)/erts/etc/vxworks
+endif
+
+$(OBJDIR)/%.o: beam/%.c
+	$(CC) $(subst O2,O3, $(CFLAGS)) $(INCLUDES) -c $< -o $@
+
+$(OBJDIR)/%.o: $(TARGET)/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -c $< -o $@
+
+$(OBJDIR)/%.o: sys/$(OSTYPE)/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(OBJDIR)/%.o: drivers/common/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -Izlib -c $< -o $@
+
+$(OBJDIR)/%.o: drivers/$(OSTYPE)/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -c $< -o $@
+
+# VxWorks uses unix drivers too...
+ifeq ($(findstring vxworks,$(TARGET)),vxworks)
+$(OBJDIR)/%.o: drivers/unix/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -c $< -o $@
+endif
+
+# ----------------------------------------------------------------------
+# Specials
+
+ifeq ($(CC), gcc)
+$(OBJDIR)/ggc.o: beam/ggc.c
+	$(CC) $(subst O2,O3, $(CFLAGS)) $(INCLUDES) -fno-inline -c $< -o $@
+endif
+
+$(OBJDIR)/sys_sae.o: sys/$(OSTYPE)/sys.c beam/sys.h
+	$(CC) $(CFLAGS) $(INCLUDES) -DSTANDALONE_ERLANG -c $< -o $@
+
+$(OBJDIR)/erl_init_sae.o: beam/erl_init.c $(TARGET)/erl_version.h
+	$(CC) $(subst O2,O3, $(CFLAGS)) $(INCLUDES) -DSTANDALONE_ERLANG \
+		-c $< -o $@
+
+# ----------------------------------------------------------------------
+# Build necessary beam files if they are not already in place. To force
+# rebuilding (is this a good idea?) add a dummy dependency to this target.
+#
+
+$(ERL_TOP)/lib/%.beam $(ERL_TOP)/erts/sae/ebin/%.beam:
+	cd $(@D)/../src && $(MAKE) ../ebin/$(@F)
+
+
+# ----------------------------------------------------------------------
+# Object files
+#
+INIT_OBJS = \
+	$(OBJDIR)/sys.o			$(OBJDIR)/erl_init.o \
+	$(OBJDIR)/preload.o
+
+INIT_OBJS_SAE = \
+	$(OBJDIR)/erl_start.o		$(OBJDIR)/sys_sae.o \
+	$(OBJDIR)/erl_init_sae.o	$(OBJDIR)/preload_sae.o
+
+EMU_OBJS = \
+	$(OBJDIR)/beam_emu.o		$(OBJDIR)/beam_opcodes.o \
+	$(OBJDIR)/beam_load.o		$(OBJDIR)/beam_bif_load.o \
+	$(OBJDIR)/beam_debug.o
+
+RUN_OBJS = \
+	$(OBJDIR)/erl_atom_table.o	$(OBJDIR)/erl_bif_table.o \
+	$(OBJDIR)/erl_bif_info.o	$(OBJDIR)/erl_bif_op.o \
+	$(OBJDIR)/erl_bif_os.o		$(OBJDIR)/erl_bif_lists.o \
+	$(OBJDIR)/erl_bif_trace.o	$(OBJDIR)/erl_bif_wrap.o \
+	$(OBJDIR)/erl_trace.o		$(OBJDIR)/copy.o \
+	$(OBJDIR)/utils.o		$(OBJDIR)/bif.o \
+	$(OBJDIR)/io.o			$(OBJDIR)/erl_api.o \
+	$(OBJDIR)/erl_debug.o		$(OBJDIR)/erl_md5.o \
+	$(OBJDIR)/erl_message.o		$(OBJDIR)/erl_process.o \
+	$(OBJDIR)/erl_process_dict.o	$(OBJDIR)/erl_arith.o \
+	$(OBJDIR)/time.o		$(OBJDIR)/erl_time_sup.o  \
+	$(OBJDIR)/external.o		$(OBJDIR)/dist.o \
+	$(OBJDIR)/binary.o		$(OBJDIR)/erl_db.o \
+	$(OBJDIR)/erl_db_util.o		$(OBJDIR)/erl_db_hash.o \
+	$(OBJDIR)/erl_db_tree.o		$(OBJDIR)/fix_alloc.o \
+	$(OBJDIR)/big.o			$(OBJDIR)/hash.o \
+	$(OBJDIR)/index.o		$(OBJDIR)/atom.o \
+	$(OBJDIR)/module.o		$(OBJDIR)/export.o \
+	$(OBJDIR)/register.o		$(OBJDIR)/break.o \
+	$(OBJDIR)/ggc.o			$(OBJDIR)/erl_posix_str.o \
+	$(OBJDIR)/erl_math.o
+
+OS_OBJS =					\
+	$(OBJDIR)/driver_tab.o		$(OBJDIR)/unix_efile.o \
+	$(OBJDIR)/unix_ddll_drv.o	$(OBJDIR)/gzio.o \
+	$(OBJDIR)/elib_malloc.o		$(OBJDIR)/elib_memmove.o
+
+DRV_OBJS =					\
+	$(OBJDIR)/efile_drv.o		$(OBJDIR)/ddll_drv.o \
+	$(OBJDIR)/inet_drv.o		$(OBJDIR)/ram_file_drv.o
+
+ifneq ($(findstring vxworks,$(TARGET)),vxworks)
+DRV_OBJS += $(OBJDIR)/ttsl_drv.o
+endif
+
+BASE_OBJS = $(RUN_OBJS) $(EMU_OBJS) $(OS_OBJS) $(EXTRA_BASE_OBJS)
+
+OBJS =	$(BASE_OBJS) $(DRV_OBJS)
+
+
+# ----------------------------------------------------------------------
+# The emulator itself
+
+$(BINDIR)/$(EMULATOR_EXECUTABLE): $(INIT_OBJS) $(OBJS)
+	$(PURIFY) $(LD) -o $(BINDIR)/$(EMULATOR_EXECUTABLE) \
+	$(LDFLAGS) $(DEXPORT) $(INIT_OBJS) $(OBJS) $(LIBS)
+
+$(BINDIR)/$(EMULATOR_EXECUTABLE_SAE): $(TARGET)/preload_sae.c \
+					$(INIT_OBJS_SAE) $(OBJS)
+	$(PURIFY) $(LD) -o $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE) \
+	$(LDFLAGS) $(DEXPORT) $(INIT_OBJS_SAE) $(OBJS) $(LIBS)
+
+# ----------------------------------------------------------------------
+# Dependencies
+#
+depend:
+	$(CC) -MM -MG $(CFLAGS) $(INCLUDES) \
+		  beam/*.c drivers/common/*.c drivers/$(OSTYPE)/*.c \
+		  sys/$(OSTYPE)/*.c | \
+		sed 's|^\([^:]*:\)|$$(OBJDIR)/\1|g' > $(TARGET)/depend.mk
+
+-include $(TARGET)/depend.mk
+

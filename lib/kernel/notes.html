@@ -1,0 +1,313 @@
+<HTML>
+<HEAD>
+  <TITLE>Kernel Release Notes</TITLE>
+</HEAD>
+
+<BODY BGCOLOR="#FFFFFF">
+
+<CENTER><H1>Kernel Release Notes</H1></CENTER>
+
+<H2>Kernel 2.4.1</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+<CODE>application_controller</CODE> could hang if application:stop/1 
+was called at about the same time as the application
+terminated.
+<br>Own Id: OTP-3351<br>
+Aux Id: Seq4092
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The functions <CODE>format_error/1</CODE>, <CODE>change_header/2</CODE>
+and <CODE>change_notify/3</CODE> have been added to the 
+<CODE>disk_log</CODE> module.
+<br>Own Id: OTP-3297<br>
+Aux Id: OTP-3296, OTP-3340
+
+
+<LI>
+Further changes have been made in the <CODE>disk_log</CODE> module.
+Proper error handling has been added. Several bugs
+have been fixed.
+<br>Own Id: OTP-3340<br>
+Aux Id: OTP-3297
+
+
+<LI>
+The BIF <CODE>binary_to_term/1</CODE> will now ignore any garbage
+following the encoded term (as it used to do in versions of
+OTP before R3). The undocumented BIF
+<CODE>erlang:old_binary_to_term/1</CODE> (which is now equvivalent
+to <CODE>binary_to_term/1</CODE>) will be removed in a future
+release.
+<br>Own Id: OTP-3368
+
+
+</UL>
+<H2>Kernel 2.4</H2>
+<H3>Known problems</H3>
+
+<UL>
+
+<LI>
+If an error occurs when accessing a file, the file process
+dies, and any further attempts to access the file may cause
+the caller to hang.
+<br>Own Id: OTP-1400<br>
+Aux Id: OTP-1034
+
+
+<LI>
+<CODE>code:is_loaded/1</CODE> doesn't type check its arguments.
+<br>Own Id: OTP-2607
+
+
+<LI>
+Using <code>gen_tcp:send</code> on a closed socket causes the
+process to hang.
+<br>Own Id: OTP-2714<br>
+Aux Id: seq 1122
+
+
+<LI>
+If more than 1024 bytes of text (more than 256 in release R4)
+are pasted into the shell, and this text consists of
+more than one expression sequence (each ending with a period),
+text after the first 1024 bytes may be lost.
+<br>Own Id: OTP-3041
+
+
+</UL>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+Deadlock occured in global when two nodes reconnect after
+a connection failure because both nodes tried to set lock 
+on the other nodes in the system.
+<br>
+This is now solved by letting only one of the reconneting
+nodes set the lock.
+<br>Own Id: OTP-3162
+
+
+<LI>
+A distributed application was not marked as running
+when it was started. 
+The error occurred on all nodes but the node where the 
+application was actually started, if the application had the 
+permit-flag set to false at boot loading.
+<br>Own Id: OTP-3184
+
+
+<LI>
+<CODE>gen_tcp:send</CODE> did return <CODE>{error,normal}</CODE> 
+when the
+connection was closed by the other end of the socket. 
+This is 
+now corrected so that <CODE>{error, enotconn}</CODE> or possibly 
+<CODE>{error, econnreset}</CODE> is returned.
+<br>Own Id: OTP-3224<br>
+Aux Id: OTP-2954, OTP-3220, Seq 3804
+
+
+<LI>
+The functions <CODE>file:eval/1</CODE> and <CODE>file:path_eval/2</CODE>
+now conform with their documentation when evaluation of
+an expression fails.
+<br>Own Id: OTP-3254<br>
+Aux Id: OTP-3161
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+New BIFs have been introduced for spawning a process
+with a Fun: <CODE>spawn(Fun)</CODE>, <CODE>spawn(Node, Fun)</CODE>,
+and corresponding <CODE>spawn_link</CODE>, replacing previous
+undocumented BIFs with the same names.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3121<br>
+Aux Id: OTP-3141
+
+
+<LI>
+Errors occurring while the <CODE>.erlang</CODE> file was executed
+were previously not reported in any way. Now, the first such
+error is reported using the error logger.
+<br>Own Id: OTP-3161<br>
+Aux Id: OTP-3254
+
+
+<LI>
+The option <CODE>backtrace</CODE> to <CODE>process_info/2</CODE> returns
+the stack backtrace of a process, as a binary (use
+<CODE>binary_to_list</CODE> to expand it into a string).
+<br>Own Id: OTP-3180<br>
+Aux Id: Seq 3600
+
+
+<LI>
+All kind of trace messages can now be sent to a port
+instead of to a process (for less performance impact).
+The <CODE>erlang:trace/3</CODE> BIF now accept an option to
+set the tracer process or port.
+The seq_trace:set_system_tracer/1 (for sequential tracing)
+function now accepts a port identifier as well as a pid.
+<p>
+There are suitable drivers that can receive trace output
+in the new <CODE>runtime_tools</CODE> application.
+<br>Own Id: OTP-3236
+
+
+<LI>
+In order to support the new call tracing, several incompatible
+changes have been made to the trace/3 BIF.
+<p>
+The trace/3 BIF is now longer auto-imported; it must be
+called as erlang:trace/3 or imported.
+<p>
+The 'bifs' flag is no longer supported.  Bifs can be traced
+as any exported function using the new call tracing
+(see <CODE>erlang:trace_pattern/2</CODE>).
+<p>
+The 'suspend' flag is no longer supported.  Use the new
+<CODE>erlang:suspend_process/1</CODE> and <CODE>erlang:resume_process/1</CODE>
+Bifs instead.
+<p>
+The 'call' flag turns on new call tracing for a process.
+Use the 'old_call_trace' to turn on the old-fashioned call
+tracing.
+<p>
+There is no longer a restriction that process cannot trace
+a process that is tracing another processs.  Therefore, it is
+possible to construct a circle of processes that are tracing
+each other (which is a bad idea beacuase the Erlang machine
+will probably crasch).
+<p>
+The trace messages from send and receive traces have been
+changed to make consistent with the other trace messages.
+Now all trace messages have the pid of the traced process in
+position 2 and the type of trace in position 3.
+<p>
+If timestamps are enabled, the first element of each trace
+message tuple will be 'trace_ts'.
+<p>
+The return value is no longer 'true', but the number of processes
+that matched the process argument.  For instance, the return value
+will be '1' if an explicit Pid argument was given.
+<br>(*** INCOMPATIBILITY with R5B01 ***)
+<br>Own Id: OTP-3237<br>
+Aux Id: OTP-3238
+
+
+<LI>
+A new kind of call tracing has been added.  The new call
+tracing only support tracing of external function calls,
+but there is no need to trace-compile the modules to be
+traced.
+<p>
+The <CODE>erlang:trace/3</CODE> has been changed and extended
+to support the new call tracing.  It is also possible
+to set the default tracer and trace flags for all
+new processes that are or created.  There is also a new
+option to explicitly pass the pid of the tracer process.
+Also, trace messages can be sent to a port for less
+performance impact.
+<p>
+There are two new Bifs: <CODE>erlang:trace_pattern/2</CODE>
+to enable tracing on certain conditions for one or more
+exported functions or Bifs, <CODE>erlang:trace_info/2</CODE>
+to retrieve trace information about a process or exported
+function.
+<br>Own Id: OTP-3238<br>
+Aux Id: OTP-3237
+
+
+<LI>
+EXIT codes now contains more information about where the
+error occured.  There used to be only an indication of the
+current function; now the complete call chain is included
+in the EXIT code.
+<p>
+There are two new Bifs similar to exit/1, except that
+they generate information about which in function the fault
+occurred.  The Bifs are <CODE>erlang:fault/1</CODE> and
+<CODE>erlang:fault/2</CODE>.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3239
+
+
+<LI>
+The <CODE>disk_log</CODE> module has been improved.
+The new notification <CODE>{blocked_log,</CODE> Items<CODE>}</CODE> is 
+generated when any of the functions <CODE>alog/2</CODE>, 
+<CODE>balog/2</CODE>, <CODE>alog_terms/2</CODE>, or <CODE>balog_terms/2</CODE>
+is used with a log that is blocked but not queuing.
+The new notification <CODE>{format_external,</CODE> Items<CODE>}</CODE>
+is generated when <CODE>alog/2</CODE> or <CODE>alog_terms/2</CODE>
+is used with an internal log.
+The new function <CODE>info/1</CODE> returns information about a 
+disk log.
+The  functions <CODE>reopen/2,3</CODE>, <CODE>breopen/3</CODE>, 
+<CODE>truncate/1,2</CODE> and <CODE>btruncate/2</CODE> can be used with 
+wrap logs.
+Several bugs have been fixed.
+<br>Own Id: OTP-3296<br>
+Aux Id: OTP-3297, OTP-3308
+
+
+<LI>
+The <CODE>disk_log</CODE> module has been changed according to the
+following. Requests to close a disk log are always granted. 
+The disk log is unblocked if the blocking process closes 
+the disk log. Any other process just closes the log. If a 
+process that is linked to a disk log terminates, this
+is handled exactly as if the process had closed the log
+and then terminated. If any other process than the blocking 
+one tries to unblock a log, 
+<CODE>{error, {not_blocked_by_pid, Name}}</CODE> is returned.
+The exit messages returned by open and reopen have been
+changed.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3307<br>
+Aux Id: OTP-3308
+
+
+<LI>
+The <CODE>disk_log</CODE> module has been slightly changed
+according to the following.
+<CODE>inc_wrap_file/1</CODE> sends wrap notices.
+<CODE>inc_wrap_file/1</CODE> and <CODE>change_size/2</CODE> return
+an error message if anything goes wrong, rather than
+terminating the log. <CODE>block/1,2</CODE>, <CODE>sync/1</CODE> and
+<CODE>truncate</CODE> no longer queue requests if the log is
+blocked with <CODE>QueueLogRecords</CODE> set to <CODE>false</CODE>.
+Files other than internal logs and shorter than 8 bytes are 
+not overwritten when opening an internal log. If the process
+that has blocked a log tries to update the log, an error
+message is returned.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3308<br>
+Aux Id: OTP-3296, OTP-3307
+
+
+</UL>
+
+There are also release notes for 
+<A HREF="notes_history.html">older versions</A>.
+
+</body>
+</html>

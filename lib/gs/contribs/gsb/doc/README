@@ -1,0 +1,29 @@
+%-----------------------------------------%
+% READMEFILE FOR GSB
+%-----------------------------------------%
+Files included in the GSB package:
+
+browse_dialog.erl         gen_file_dialog.swr       option.erl
+browse_dialog.rc          gen_file_dialog.trc       save_soft_dialog.erl
+browse_dialog_ui.erl      gsb.erl                   save_soft_dialog.rc
+color_editor.erl          gsb.hrl                   save_soft_dialog_ui.erl
+color_editor.rc           gsb.rc                    standard.erl
+color_editor_ui.erl       gsb_db.erl                standard.hrl
+draw.erl                  gsb_run.erl               .toolbox
+draw.hrl                  gsb_ui.erl                .option
+file_dialog.erl           hierarchy.erl            
+file_dialog.rc            menu.erl                  toolbox.erl
+file_dialog_ui.erl        menu.hrl                  transfer.erl
+gen_db.erl                menutest.rc
+gen_file_dialog.erl       messages.erl
+
+Start erlang and just use make:all([load]) to create the builder.
+The builder is started with gsb:start().
+Note that the .toolbox and .option must be present in the current
+directory.
+
+Enjoy !
+
+/ Peter & Fredrik (961101)
+
+

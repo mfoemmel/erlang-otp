@@ -1,0 +1,211 @@
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+# 
+#     $Id$
+#
+include $(ERL_TOP)/make/target.mk
+
+ifeq ($(TYPE),debug)
+TYPEMARKER = .debug
+TYPE_FLAGS = -Wall -ggdb -DDEBUG @DEBUG_FLAGS@
+else
+TYPEMARKER =
+TYPE_FLAGS = -Wall -O2 -DDEBUG_DIST
+endif
+
+include $(ERL_TOP)/make/$(TARGET)/otp.mk
+include ../vsn.mk
+VSN=$(EI_VSN)
+
+include $(ERL_TOP)/erts/epmd/epmd.mk
+
+# Define this if no error printouts is allowed to be generated.
+NO_ERR_MSG = #-DNO_ERR_MSG
+
+# Define this if the function erl_print_term shall be excluded
+SILENT = #-DSILENT
+
+# Collect all the flags specified above.
+ERL_SYSF = $(NO_ERR_MSG) $(SILENT) $(ETARGET) $(DNS)
+
+#=== USER CONFIGURABLE STUFF ENDS HERE ===
+
+CC = @CC@
+LD = @LD@
+RANLIB = @RANLIB@
+
+LIBS = @LIBS@
+
+BINDIR = $(ERL_TOP)/lib/erl_interface/bin/$(TARGET)
+OBJDIR = $(ERL_TOP)/lib/erl_interface/obj$(TYPEMARKER)/$(TARGET)
+
+DNS = -DUSE_DNS
+
+# CFLAGS += @CFLAGS@ $(TYPE_FLAGS) -I. -I$(RUNDIR) @DEFS@ $(ERL_SYSF) -DERLANG_DAEMON_PORT=$(ERLANG_DAEMON_PORT)
+CFLAGS += @LIB_CFLAGS@ @DCFLAGS@ $(TYPE_FLAGS) -I. @DEFS@ $(ERL_SYSF) -DEPMD_PORT=$(EPMD_PORT_NO)
+
+# ifeq ($(findstring vxworks,$(TARGET)),vxworks)
+# CFLAGS += -I$(RESDIR)
+# endif
+
+# ----------------------------------------------------
+# Release directory specification
+# ----------------------------------------------------
+RELSYSDIR = $(RELEASE_PATH)/lib/erl_interface-$(VSN)
+
+INSTALL = @INSTALL@
+INSTALL_DIR = $(INSTALL) -d
+INSTALL_PROGRAM = @INSTALL_PROGRAM@
+INSTALL_DATA = @INSTALL_DATA@
+
+# The targets
+ifeq ($(findstring vxworks,$(TARGET)),vxworks)
+ERL_CALL = erl_call
+ERL_LIB = liberl_interface.a
+EI_LIB = libei.a
+else
+ifeq ($(findstring win32,$(TARGET)),win32)
+ERL_CALL = erl_call.exe
+ERL_LIB = erl_interface.lib
+ERL_LIB_MD = erl_interface_md.lib
+ERL_LIB_MDD = erl_interface_mdd.lib
+EI_LIB = ei.lib
+EI_LIB_MD = ei_md.lib
+EI_LIB_MDD = ei_mdd.lib
+else
+ERL_CALL = erl_call
+ERL_LIB = liberl_interface.a
+EI_LIB = libei.a
+endif
+endif
+
+
+#---------------------------------
+# source and object file information
+#---------------------------------
+# Note: only list headers that should be installed by 'make release'
+# 
+# ERL_ is old erl_interface
+# EI_ is new one...
+#---------------------------------
+
+ERL_HEADERS = erl_connect.h erl_global.h erl_interface.h erl_marshal.h \
+	erl_error.h erl_fix_alloc.h erl_rport.h erl_epmd.h erl_eterm.h \
+	erl_locking.h erl_format.h erl_malloc.h erl_start.h erl_resolve.h
+
+EI_HEADERS = ei.h eicode.h eiext.h eisend.h eihash.h eireg.h eimd5.h
+
+ERL_OBJS = $(addprefix $(OBJDIR)/,epmd_port.o epmd_publish.o epmd_unpublish.o erl_connect.o erl_error.o erl_eterm.o erl_fix_alloc.o erl_format.o erl_locking.o erl_malloc.o erl_marshal.o erl_nothreads.o erl_pthreads.o erl_resolve.o erl_rport.o erl_start.o erl_sthreads.o global_register.o global_names.o global_unregister.o global_whereis.o)
+
+IDL_OBJS = $(addprefix $(OBJDIR)/,decode_atom.o decode_binary.o decode_boolean.o decode_char.o decode_double.o decode_intlist.o decode_list_header.o decode_long.o decode_pid.o decode_port.o decode_ref.o decode_string.o decode_term.o decode_trace.o decode_tuple_header.o decode_ulong.o decode_version.o encode_atom.o encode_binary.o encode_boolean.o encode_char.o encode_double.o encode_list_header.o encode_long.o encode_pid.o encode_port.o encode_ref.o encode_string.o encode_term.o encode_trace.o encode_tuple_header.o encode_ulong.o encode_version.o get_type.o receive.o send.o send_exit.o send_link.o send_reg.o show_msg.o trace.o whereis.o eimd5.o)
+
+HASH_OBJS = $(addprefix $(OBJDIR)/,hash_dohash.o hash_foreach.o hash_freetab.o hash_insert.o hash_isprime.o hash_lookup.o hash_newtab.o hash_remove.o hash_resize.o hash_rlookup.o)
+
+REG_OBJS = $(addprefix $(OBJDIR)/,reg_close.o reg_delete.o reg_dirty.o reg_dump.o reg_free.o reg_get.o reg_getf.o reg_geti.o reg_getp.o reg_gets.o reg_make.o reg_open.o reg_purge.o reg_resize.o reg_restore.o reg_set.o reg_setf.o reg_seti.o reg_setp.o reg_sets.o reg_stat.o reg_tabstat.o)
+
+EI_OBJS = $(IDL_OBJS) $(HASH_OBJS) $(REG_OBJS)
+
+
+#---------------------------------
+# Build targets
+#---------------------------------
+
+ifeq ($(findstring win32,$(TARGET)),win32)
+all: 
+	echo "This must be built with NMAKE on NT"
+else
+
+all: $(OBJDIR) $(BINDIR) \
+	$(OBJDIR)/$(ERL_LIB) $(OBJDIR)/$(EI_LIB) $(BINDIR)/$(ERL_CALL)
+
+endif
+
+$(OBJDIR):
+	-@mkdir -p $(OBJDIR)
+
+$(BINDIR):
+	-@mkdir -p $(BINDIR)
+
+docs:
+
+clean:
+	rm -f $(ERL_OBJS) 
+	rm -f $(EI_OBJS)
+	rm -f $(OBJDIR)/$(ERL_LIB) 
+	rm -f $(OBJDIR)/$(EI_LIB)
+	rm -f $(ERL_CALL)
+	rm -f *~ core
+
+#
+# Objects & executables
+#
+
+$(OBJDIR)/%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@ 
+
+$(OBJDIR)/$(ERL_LIB): $(ERL_OBJS)
+	-$(AR) rcv $@ $(ERL_OBJS)
+	-$(RANLIB) $@
+
+$(OBJDIR)/$(EI_LIB): $(EI_OBJS)
+	-$(AR) rcv $@ $(EI_OBJS)
+	-$(RANLIB) $@
+
+ifneq ($(findstring vxworks,$(TARGET)),vxworks)
+
+$(BINDIR)/$(ERL_CALL): $(OBJDIR)/$(EI_LIB) $(OBJDIR)/$(ERL_LIB) erl_call.c erl_interface.h
+	$(CC) $(CFLAGS) -L$(OBJDIR) -o $@ erl_call.c -lerl_interface -lei $(LIBS)
+
+endif
+ifeq ($(findstring vxworks,$(TARGET)),vxworks)
+$(BINDIR)/$(ERL_CALL): $(OBJDIR)/$(EI_LIB) $(OBJDIR)/$(ERL_LIB) erl_call.c erl_interface.h
+	$(CC) -c $(CFLAGS) -o $(OBJDIR)/erl_call.o erl_call.c 
+	$(LD) -r -d -o $(BINDIR)/$(ERL_CALL) $(OBJDIR)/erl_call.o -L$(OBJDIR) -lerl_interface -lei $(LIBS)
+endif
+include $(ERL_TOP)/make/otp_release_targets.mk
+
+release_spec: all
+	$(INSTALL_DIR) $(RELSYSDIR)/include
+	$(INSTALL_DIR) $(RELSYSDIR)/lib
+	$(INSTALL_DIR) $(RELSYSDIR)/bin
+	$(INSTALL_DIR) $(RELSYSDIR)/src
+
+	$(INSTALL_DATA) $(ERL_HEADERS) $(RELSYSDIR)/include
+	$(INSTALL_DATA) $(OBJDIR)/$(ERL_LIB) $(RELSYSDIR)/lib
+#	-$(RANLIB) $(RELSYSDIR)/lib/$(ERL_LIB)
+
+	$(INSTALL_DATA) $(OBJDIR)/$(EI_LIB) $(RELSYSDIR)/lib
+ifeq ($(findstring win32,$(TARGET)),win32)
+	$(INSTALL_DATA) $(OBJDIR)/$(ERL_LIB_MD) $(RELSYSDIR)/lib
+	$(INSTALL_DATA) $(OBJDIR)/$(EI_LIB_MD) $(RELSYSDIR)/lib
+	$(INSTALL_DATA) $(OBJDIR)/$(ERL_LIB_MDD) $(RELSYSDIR)/lib
+	$(INSTALL_DATA) $(OBJDIR)/$(EI_LIB_MDD) $(RELSYSDIR)/lib
+endif
+	$(INSTALL_DATA) $(EI_HEADERS) $(RELSYSDIR)/include
+	$(INSTALL_DATA) \
+		$(notdir $(ERL_OBJS:%.o=%.c)) \
+		$(notdir $(EI_OBJS:%.o=%.c)) \
+		erl_call.c erl_config.h erl_internal.h \
+		erl_timeout.c erl_timeout.h putget.h $(RELSYSDIR)/src
+
+ifneq ($(findstring vxworks,$(TARGET)),vxworks)
+	$(INSTALL_PROGRAM) $(BINDIR)/$(ERL_CALL) $(RELSYSDIR)/bin
+endif
+release_docs_spec:
+
+
+TRUE:
+
+

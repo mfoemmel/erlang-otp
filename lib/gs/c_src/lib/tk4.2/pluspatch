@@ -1,0 +1,58 @@
+#!/bin/sh
+# The next line restarts using tclsh7.6 \
+exec tclsh7.6 $0 ${1+"$@"}
+
+set dirs ". ./unix ./library ./bitmaps ./generic ./doc ./tests ./compat ./mac ./win ./win/rc"
+set package "+"
+set version "4.2p2"
+set date "4/23/97"
+
+#
+# This is a tcl-script that will search a list of directories
+# for ".orig"-files. For all of these it will make a "diff",
+# and create a patch-file.
+#
+#	Written by:	Jan Nijtmans
+#			NICI (Nijmegen Institute of Cognition and Information)
+#			email: nijtmans@nici.kun.nl
+#			url:   http://www.cogsci.kun.nl/~nijtmans/
+
+set patchlevel ""
+set dfiles ""
+
+set file [open pluspatch.orig w]
+close $file
+set file [open README.PLUS.orig w]
+close $file
+
+foreach dir $dirs {
+    set files [eval exec ls $dir]
+    foreach file $files {
+	if {[regexp ".*\.orig" $file]} {
+	    set file $dir/[string range $file 0 [expr [string length $file]-6]]
+	    if {$file=="$dir/tk.h"} {
+		set patchlevel $file.diff
+	    } else {
+		lappend dfiles $file.diff
+	    }
+	    set file [string range $file 2 [string length $file]]
+	    puts stdout "creating $file.diff"
+	    catch "exec diff -c $file.orig $file >$file.diff"
+	}
+    }
+}
+
+puts stdout "creating tk${version}plus.patch"
+set file [open tk${version}plus.patch w]
+puts $file ""
+puts $file "tk${version}plus.patch -   $date"
+puts $file ""
+puts $file "This patch file updates from Tk ${version} to Tk ${version}${package}. It should be applied"
+puts $file "by running the \"patch\" program in the top-level directory of a clean"
+puts $file "Tk ${version} release, using the command \"patch -p <tk${version}plus.patch\""
+puts $file ""
+puts $file "Prereq: \"${version}\""
+puts $file [eval exec cat $patchlevel $dfiles]
+close $file
+
+exec rm -rf pluspatch.diff pluspatch.orig README.PLUS.diff README.PLUS.orig

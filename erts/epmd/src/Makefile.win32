@@ -1,0 +1,58 @@
+#=== USER CONFIGURABLE STUFF ===
+#
+
+include ../../vsn.mk
+include ../epmd.mk
+
+# We need the special object file that defines our entry points
+ROOT 		= \erts
+!if defined(NODEBUG) || defined(RELEASE)
+ETCOBJDIR	= $(ROOT)\erts\obj\win32
+!else
+ETCOBJDIR	= $(ROOT)\erts\obj.debug\win32
+!endif
+ENTRY_OBJ	= $(ETCOBJDIR)\port_entry.obj
+PORT_ENTRY_POINT= erl_port_entry
+ERL_ENTRY_LFLAGS= $(ERL_LFLAGS) -link -entry:$(PORT_ENTRY_POINT)
+
+#=== USER CONFIGURABLE STUFF ENDS HERE ===
+TARGET = win32
+OBJDIR = ..\..\obj\$(TARGET)
+BINDIR = ..\..\..\bin\$(TARGET)
+
+EPMD_R4_FLAGS = -DEPMD_PORT_NO=$(EPMD_PORT_NO)
+
+EPMD_PROGS = $(BINDIR)\epmd.exe
+
+EPMD_R4_OBJS = $(OBJDIR)\epmd.obj $(OBJDIR)\epmd_cli.obj $(OBJDIR)\epmd_srv.obj
+
+CC         = cl -nologo
+LIBRARIAN  = lib
+#CC_DEBUG   = -Zi
+INCL_PATHS = -I.
+
+# Collect all the flags specified above.
+ETARGET    = -D__WIN32__ -MT
+CFLAGS     = $(CC_DEBUG) $(ETARGET) $(EPMD_R4_FLAGS) 
+CFLAGS_MD  = $(CFLAGS:-MT=-MD)
+CFLAGS_MDD = $(CFLAGS:-MT=-MDd) -Yd
+
+all:	$(EPMD_PROGS)
+
+$(BINDIR)\epmd.exe: $(EPMD_R4_OBJS) $(ENTRY_OBJ)
+	$(CC) $(CC_DEBUG) -MT -o $@ $** wsock32.lib $(ERL_ENTRY_LFLAGS)
+
+{}.c{$(OBJDIR)}.obj:
+	$(CC) $(CFLAGS) -c -Fo$@ $(INCL_PATHS) $<
+
+# This is to avoid 'command line to long' errors on NT when deleting...
+# Extremely ugly, but I know no way of avoiding this!
+FOOL_NT_1=$(EPMD_R4_OBJS)
+FOOL_NT=$(FOOL_NT_1:.obj=.del)
+
+clean:  $(FOOL_NT)
+	del $(BINDIR)\epmd.exe
+
+{}.c{$(OBJDIR)}.del:
+	-del $*.obj
+

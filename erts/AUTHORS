@@ -1,0 +1,34 @@
+Original authors:
+
+The original JAM emulator was first implemented by Mike Williams (the
+instruction set was argued out with Joe Armstrong).
+
+The original BEAM emulator and loader were first implemented by Bogumil Hausman.
+They were completely rewritten by Björn Gustavsson.
+
+Over the years the emulator has been basically completely rewritten by
+a large number of individuals. Most(?) notably Claes Wikström, Tony
+Rogvall, Björn Gustavsson, Patrik Nyblom and Arndt Jonasson.
+
+Marcus Arendt did the original port for Windows NT. Most of this code
+was rewritten by Björn Gustavsson, Patrik Nyblom, Kenneth Lundin,
+Fredrik Tillman and  Mattias Nilsson.
+
+Per Hedeland did the original port for VxWorks. This port was
+improved by Peter Högfeldt, Patrik Nyblom and Patrik Winroth.
+
+There are also a lot of people who have contributed smaller (and
+bigger) things to the emulator and runtime system: Per Hedeland,
+Peter Högfeldt, Kenneth Lundin, Fredrik Tillman, Mattias Nilsson,
+Kent Boortz, Markus Torpvret, Jan-Erik Dahlin, Sebastian Strollo
+and perhaps more...
+
+Open source contributors:
+
+  Mick Dwyer
+  Geoff Wong
+  Maurice Castro
+  Luke Gorrie <luke@vegetable.org>
+  Shawn Pearce <pearcs@rpi.edu>
+  Ruslan Shevchenko <Ruslan@Shevchenko.Kiev.UA>
+

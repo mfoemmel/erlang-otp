@@ -1,0 +1,294 @@
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+# 
+#     $Id$
+#
+bif erlang:abs/1
+bif erlang:append/2
+bif erlang:apply/3
+bif erlang:atom_to_list/1
+bif erlang:binary_to_list/1
+bif erlang:binary_to_list/3
+bif erlang:binary_to_term/1
+bif erlang:check_process_code/2
+bif erlang:concat_binary/1
+bif erlang:date/0
+bif erlang:delete_module/1
+bif erlang:display/1
+bif erlang:display_string/1
+bif erlang:display_nl/0
+bif erlang:element/2
+bif erlang:erase/0
+bif erlang:erase/1
+bif erlang:exit/1
+bif erlang:exit/2
+bif erlang:float/1
+bif erlang:float_to_list/1
+bif erlang:fun_info/2
+bif erlang:function_exported/3
+bif erlang:garbage_collect/0
+bif erlang:garbage_collect/1
+bif erlang:get/0
+bif erlang:get/1
+bif erlang:get_keys/1
+bif erlang:group_leader/0
+bif erlang:group_leader/2
+bif erlang:halt/0
+bif erlang:hash/2
+bif erlang:hd/1
+bif erlang:info/1
+bif erlang:integer_to_list/1
+bif erlang:is_alive/0
+bif erlang:length/1
+bif erlang:link/1
+bif erlang:list_to_atom/1
+bif erlang:list_to_binary/1
+bif erlang:list_to_float/1
+bif erlang:list_to_integer/1
+bif erlang:list_to_pid/1
+bif erlang:list_to_tuple/1
+bif erlang:load_module/2
+bif erlang:loaded/0
+bif erlang:localtime/0
+bif erlang:localtime_to_universaltime/1
+bif erlang:make_ref/0
+bif erlang:md5/1
+bif erlang:md5_init/0
+bif erlang:md5_update/2
+bif erlang:md5_final/1
+bif erlang:module_loaded/1
+bif erlang:monitor_node/2
+bif erlang:node/1
+bif erlang:node/0
+bif erlang:nodes/0
+bif erlang:now/0
+bif erlang:open_port_prim/2
+bif erlang:pid_to_list/1
+bif erlang:port_info/1
+bif erlang:port_info/2
+bif erlang:ports/0
+bif erlang:pre_loaded/0
+bif erlang:process_flag/2
+bif erlang:process_flag/3
+bif erlang:process_info/1
+bif erlang:process_info/2
+bif erlang:processes/0
+bif erlang:purge_module/1
+bif erlang:put/2
+bif erlang:register/2
+bif erlang:registered/0
+bif erlang:round/1
+bif erlang:self/0
+bif erlang:send/2
+bif erlang:setelement/3
+bif erlang:size/1
+bif erlang:spawn/3
+bif erlang:spawn_link/3
+bif erlang:split_binary/2
+bif erlang:statistics/1
+bif erlang:subtract/2
+bif erlang:term_to_binary/1
+bif erlang:throw/1
+bif erlang:time/0
+bif erlang:tl/1
+bif erlang:trunc/1
+bif erlang:tuple_to_list/1
+bif erlang:universaltime/0
+bif erlang:universaltime_to_localtime/1
+bif erlang:unlink/1
+bif erlang:unregister/1
+bif erlang:whereis/1
+bif erlang:spawn_opt/2
+bif erlang:float_to_words/1
+bif erlang:halt/1
+bif erlang:setnode/2
+bif erlang:setnode/3
+bif erlang:dist_exit/3
+bif erlang:dist_unlink/2
+bif erlang:dist_link/2
+bif erlang:binary_to_dist/1
+bif erlang:dist_to_binary/1
+
+bif erlang:port_command/2
+bif erlang:port_control/3
+bif erlang:port_close/1
+bif erlang:port_connect/2
+
+# Tracing & debugging.
+bif erlang:trace_pattern/2
+bif erlang:trace/3
+bif erlang:trace_info/2
+bif erlang:suspend_process/1
+bif erlang:resume_process/1
+
+bif erlang:m_cos/1
+bif erlang:m_cosh/1
+bif erlang:m_sin/1
+bif erlang:m_sinh/1
+bif erlang:m_tan/1
+bif erlang:m_tanh/1
+bif erlang:m_acos/1
+bif erlang:m_acosh/1
+bif erlang:m_asin/1
+bif erlang:m_asinh/1
+bif erlang:m_atan/1
+bif erlang:m_atanh/1
+bif erlang:m_erf/1
+bif erlang:m_erfc/1
+bif erlang:m_exp/1
+bif erlang:m_log/1
+bif erlang:m_log10/1
+bif erlang:m_sqrt/1
+bif erlang:m_atan2/2
+bif erlang:m_pow/2
+
+bif erlang:old_binary_to_term/1
+
+bif erlang:start_timer/3
+bif erlang:send_after/3
+bif erlang:cancel_timer/1
+
+bif erlang:make_tuple/2
+bif erlang:append_element/2
+
+bif erlang:seq_trace/2
+bif erlang:seq_trace_info/1
+bif erlang:seq_trace_print/2
+bif erlang:system_flag/2
+bif erlang:system_info/1
+
+bif erlang:ref_to_list/1
+bif erlang:port_to_list/1
+bif erlang:fun_to_list/1
+
+bif erlang:monitor/2
+bif erlang:demonitor/1
+bif erlang:process_display/2
+
+bif erlang:is_process_alive/1
+
+bif erlang:fault/1
+bif erlang:fault/2
+
+bif erlang:is_builtin/3
+
+bif erlang:'and'/2
+bif erlang:'or'/2
+bif erlang:'xor'/2
+bif erlang:'not'/1
+
+bif erlang:'>'/2	sgt_2
+bif erlang:'>='/2	sge_2
+bif erlang:'<'/2	slt_2
+bif erlang:'=<'/2	sle_2
+bif erlang:'=:='/2	seq_2
+bif erlang:'=='/2	seqeq_2
+bif erlang:'=/='/2	sneq_2
+bif erlang:'/='/2	sneqeq_2
+bif erlang:'+'/2	splus_2
+bif erlang:'-'/2	sminus_2
+bif erlang:'*'/2	stimes_2
+bif erlang:'/'/2	sdiv_2
+bif erlang:'div'/2	
+bif erlang:'rem'/2	
+bif erlang:'bor'/2	
+bif erlang:'band'/2
+bif erlang:'bxor'/2
+bif erlang:'bsl'/2
+bif erlang:'bsr'/2
+bif erlang:'bnot'/1
+bif erlang:'-'/1	sminus_1
+bif erlang:'+'/1	splus_1
+
+
+bif erlang:is_atom/1
+bif erlang:is_list/1
+bif erlang:is_tuple/1
+bif erlang:is_constant/1
+bif erlang:is_float/1
+bif erlang:is_integer/1
+bif erlang:is_number/1
+bif erlang:is_pid/1
+bif erlang:is_port/1
+bif erlang:is_reference/1
+bif erlang:is_binary/1
+bif erlang:is_function/1
+bif erlang:is_record/3
+
+bif erlang:match_spec_test/3
+
+bif erlang:'$put'/2	dollar_put_2
+bif erlang:'$get'/0	dollar_get_0
+bif erlang:'$get'/1	dollar_get_1
+bif erlang:'$get_keys'/1	dollar_get_keys_1
+bif erlang:'$erase'/0	dollar_erase_0
+bif erlang:'$erase'/1	dollar_erase_1
+
+#
+# Bifs in ets module.
+#
+
+bif ets:all/0
+bif ets:new/2
+bif ets:db_delete/1
+bif ets:delete/2
+bif ets:first/1
+bif ets:fixtable/2
+bif ets:lookup/2
+bif ets:lookup_element/3
+bif ets:db_info/2
+bif ets:last/1
+bif ets:match/2
+bif ets:match_delete/2
+bif ets:db_match_object/3
+bif ets:next/2
+bif ets:prev/2
+bif ets:insert/2
+bif ets:rename/2
+bif ets:slot/2
+bif ets:update_counter/3
+bif ets:select/2
+bif ets:match_spec_compile/1
+bif ets:match_spec_run/2
+bif ets:match_spec_run/3
+
+### XXX Remove me!!!
+# bif ets:testnisse/2
+
+#
+# Bifs in os module.
+#
+
+bif os:putenv/2
+bif os:getenv/1
+bif os:getpid/0
+
+
+#
+# Bifs in lists module.
+#
+
+bif lists:member/2
+bif lists:reverse/2
+bif lists:keymember/3
+bif lists:keysearch/3
+
+#
+# Bifs for debugging.
+#
+
+bif erts_debug:disassemble/1
+bif erts_debug:make_fun/1
+# There is also a pseudo-BIF named erts_debug:apply/4.

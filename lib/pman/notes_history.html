@@ -1,0 +1,297 @@
+<HTML>
+<!-- 
+ ``The contents of this file are subject to the Erlang Public License,
+ Version 1.1, (the "License"); you may not use this file except in
+ compliance with the License. You should have received a copy of the
+ Erlang Public License along with this software. If not, it can be
+ retrieved via the world wide web at http://www.erlang.org/.
+ 
+ Software distributed under the License is distributed on an "AS IS"
+ basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ the License for the specific language governing rights and limitations
+ under the License.
+ 
+ The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+ Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+ AB. All Rights Reserved.''
+ 
+     $Id$
+-->
+<HEAD>
+<TITLE>PMAN Release Notes</TITLE>
+</HEAD>
+<BODY BGCOLOR="#FFFFFF">
+<BLOCKQUOTE>
+<A NAME="18"><!-- Empty --></A><H2>18 PMAN Release Notes</H2><P>This document describes the changes made to the Process Manager
+(PMAN) application.
+
+<H2>Pman 2.2</H2>
+There are no release notes for this release.
+
+<H2>Pman 2.1.4</H2>
+There are no release notes for this release.
+
+<H2>Pman 2.1.3</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+PMAN now handles when a node becomes distributed/undistributed using
+the functions net_kernel:start/1 and net_kernel:stop/0.
+<br>Own Id: OTP-2002
+
+
+<LI>
+Sometimes an attempt to kill a process would kill an
+important system process and cause the entire system 
+to crash. This has been fixed.
+<br>Own Id: OTP-2342
+
+
+<LI>
+Sometimes PMAN would crash during refresh when the code for one 
+of the supervised processes was recompiled. This has been fixed.
+<br>Own Id: OTP-2579
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The Notify window when a node is connected has been removed.
+<br>Own Id: OTP-2003
+
+</UL>
+
+
+
+<H2>Pman 2.1.2</H2>
+
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+Internal changes to facilitate automatic tests.
+<br>Own Id: OTP-2188
+
+
+</UL>
+
+<A NAME="18.1"><!-- Empty --></A><H3>18.1  Release Notes for PMAN 2.1.1 </H3><A NAME="18.1.1"><!-- Empty --></A><H4>18.1.1 Improvements and new features</H4><P><UL>
+<LI> PMAN no longer bothers the user to confirm that there is no
+        Options file at startup.<BR>
+
+          Own Id: OTP-1987<BR>
+
+        <LI> The dialog for selecting process to show, now shows
+        more detailed information about the available processes.<BR>
+
+         Own Id: OTP-1989<BR>
+
+         <LI> The accidentally removed function for
+        double-clicking a process to trace it has been
+        re-introduced.<BR>
+
+         Own Id: OTP-1993<BR>
+
+        <LI> Some minor changes to window/dialog/button texts
+        have been made.<BR>
+
+         Own Id: OTP-1994, OTP-1998<BR>
+
+         <LI> Processes in the main window are now sorted so that
+        the most recently started process appears at the top of the
+        list. This was temporarily changed in PMAN 2.1.0. <BR>
+
+         Own Id: OTP-1999<BR>
+
+         </UL>
+<A NAME="18.1.2"><!-- Empty --></A><H4>18.1.2 Fixed bugs and malfunctions</H4><P><UL>
+<LI> App file now contains all necessary (and no
+         non-existent) modules.
+         <BR>
+Own Id: OTP-2051<BR>
+
+         <LI> PMAN no longer outputs internal &#34;Error in
+        refresh...&#34; messages.<BR>
+
+         Own Id: OTP-1971<BR>
+
+        <LI> PMAN no longer exits if the user waits too long to
+        respond to a configrmation dialog.<BR>
+
+          Own Id: OTP-1988<BR>
+
+         <LI> The Option dialog could sometimes cause PMAN to
+        crash. This no longer happens.<BR>
+
+         Own Id: OTP-2000<BR>
+
+         <LI> The infrequently occuring problem with refresh at
+        startup is solved.<BR>
+
+         Own Id: OTP-1992<BR>
+
+        <LI> There was a problem with the Save Buffer dialog,
+        that caused some menu items to be mistakenly disabled. This is
+        fixed.<BR>
+
+         Own Id: OTP-2100<BR>
+
+         <LI> The selected process in the main window now remains
+        selected after refresh.<BR>
+
+         Own Id: OTP-2110<BR>
+
+         </UL>
+<A NAME="18.1.3"><!-- Empty --></A><H4>18.1.3 Incompatibilities with PMAN 2.1.0</H4><P> There are no known incompatibilities with PMAN 2.1.0.
+
+<P> There was a change to the module interface between PMAN
+2.0.3 and PMAN 2.1.0, however this was not well described in the
+previous release notes. The changes are described in more
+detail below.
+
+
+<P><UL>
+<LI> The module interface to <CODE>pman</CODE> has
+         changed. <BR>
+
+
+         <CODE>pman:start/0</CODE> and <CODE>pman:start/1</CODE> now return
+         the Pid of PMANs main window process if the start-up
+         succeeds within 20 seconds, otherwise it will fail with
+         the EXIT reason <CODE>{startup_timeout, pman}</CODE>. The
+         returned Pid is the Pid of the PMAN that was
+         started. Previously <CODE>pman:start/0</CODE> and
+         <CODE>pman:start/1</CODE> returned a tuple, <CODE>{ok, Pid}</CODE>
+         immediately, even if PMAN didn't start properly.<BR>
+
+
+         There are two new functions, <CODE>pman:start_notimeout/0</CODE>, and
+         pman:start_notimeout/1, that starts PMAN and returns the Pid
+         of a successfully started PMAN. These functions will not
+         fail with an EXIT reason after a specified time, but will
+         wait indefinitely until PMAN has started successfully.<BR>
+
+         
+         (*** POTENTIAL INCOMPATIBILITY ***)<BR>
+
+        </UL>
+<A NAME="18.1.4"><!-- Empty --></A><H4>18.1.4 Known bugs and problems</H4><P><UL>
+<LI> There are some minor problems with the show/hide
+         mechanisms that may be confusing to the user.<BR>
+
+         Own Id:OTP-1858, OTP-1859. <BR>
+
+         <LI> PMAN does not handle when the node it is running on
+        becomes distributed.<BR>
+
+          Own Id: OTP-2003<BR>
+
+         <LI> PMAN allows several trace windows to be opened for
+        the same PID when all trace options are set to false.<BR>
+
+          Own Id: OTP-2071<BR>
+
+         </UL>
+<A NAME="18.2"><!-- Empty --></A><H3>18.2  Release Notes for PMAN 2.1.0 </H3><A NAME="18.2.1"><!-- Empty --></A><H4>18.2.1 Improvements and new features</H4><P><UL>
+<LI> The graphical user interface is changed to make it
+         clearer and easier to use. Please read the User's
+         Guide.<BR>
+
+         Own Id: OTP-1617<BR>
+
+        <LI> The user can now save personal preferences for trace
+         options between sessions.
+         <BR>
+Own Id: OTP-1617 <BR>
+</UL>
+<A NAME="18.2.2"><!-- Empty --></A><H4>18.2.2 Fixed bugs and malfunctions</H4><P><UL>
+<LI> PMAN no longer causes the GS frontend to
+         crash. <BR>
+
+         Own Id: OTP-1605<BR>
+
+         <LI>The Shell tracer no longer loses track of the shell
+         process when it dies.<BR>
+
+         Own Id: OTP-1363<BR>
+<LI>PMAN is now available from the Toolbar<BR>
+
+         Own Id: OTP-1478<BR>
+<LI>The Process-&#62;Module menu item no longer fails after a
+        Shell exit.<BR>
+
+         Own Id: OTP-1479<BR>
+<LI>The Shell traces now has the correct title at all
+        times.<BR>
+
+         Own Id: OTP-1480<BR>
+<LI>PMAN no longer crashes, or causes GS to crash.<BR>
+
+         Own Id: OTP-1605<BR>
+<LI>PMAN now has an application file<BR>
+
+         Own Id: OTP-1689<BR>
+
+         <LI>PMAN no longer crashes when the code for traced
+        processes on a remote note are recompiled.<BR>
+
+         Own Id: OTP-1896<BR>
+<LI>PMAN no causes traced processes to terminate when
+        something happens to PMAN. <BR>
+
+         Own Id: OTP-1897<BR>
+
+         <LI> Some user interface bugs have been fixed. <BR>
+
+         </UL>
+<A NAME="18.2.3"><!-- Empty --></A><H4>18.2.3 Incompatibilities with PMAN 2.0.3</H4><P><UL>
+<LI>The graphical user interface is changed<BR>
+
+         Own Id: OTP-1617<BR>
+<LI> The module interface to <CODE>pman</CODE> has
+         changed. Please read the Reference Manual.<BR>
+</UL>
+<A NAME="18.2.4"><!-- Empty --></A><H4>18.2.4 Known bugs and problems</H4><P><UL>
+<LI> There are some minor problems with the show/hide
+         mechanisms that may be confusing to the user.<BR>
+
+         Own Id:OTP-1858, OTP-1859. <BR>
+
+         <LI>Sometimes the Refresh mechanism fails, and outputs
+        some debug text.<BR>
+
+         Own Id: OTP-1971<BR>
+</UL>
+<A NAME="18.3"><!-- Empty --></A><H3>18.3  PMAN 2.0.3 </H3><A NAME="18.3.1"><!-- Empty --></A><H4>18.3.1 Improvements and new features</H4><P><UL>
+<LI> The shell tracer can now detect when the shell
+         process has died, and continue tracing the new shell
+         process. <BR>
+<LI> The Help-menu now opens the on-line
+         documentation in a web browser. <BR>
+<LI> Keyboard accelerators introduced for the menus. <BR>
+</UL>
+<A NAME="18.3.2"><!-- Empty --></A><H4>18.3.2 Known bugs and problems</H4><P><UL>
+<LI> The Process-&#62;Module menu item in the Shell Tracer
+         window partly breaks the application when it is selected
+         after the shell has exited, and restarted (and the tracer
+         has found the new process). <BR>
+</UL>
+<A NAME="18.4"><!-- Empty --></A><H3>18.4 pman 2.0.2</H3><P>Bug in the windows NT version which gave problems when saving files fixed.<P>Bug in the help window when opened from the shell fixed.<A NAME="18.5"><!-- Empty --></A><H3>18.5 pman 2.0.1</H3><P>No changes compared to 2.0.<A NAME="18.6"><!-- Empty --></A><H3>18.6 pman 2.0</H3><P>The application pman is a new gs-based version of the old pxw-based pman
+        (the latter is now named pxw_pman). See the reference manual page
+        <A HREF="doc/html/pman.html">pman</A>.</BLOCKQUOTE>
+<CENTER>
+<HR>
+<FONT SIZE=-1>
+Copyright &copy; 1991-99
+<A HREF="http://www.ericsson.se">Ericsson Utvecklings AB</A><BR>
+<!--#include virtual="/ssi/otp_footer.html"-->
+</FONT>
+</CENTER>
+</BODY>
+</HTML>

@@ -1,0 +1,377 @@
+%% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%% 
+%%     $Id$
+%%
+
+-module(ic_options).
+
+-include_lib("ic/src/ic.hrl").
+-include_lib("kernel/include/file.hrl").
+
+%%-----------------------------------------------------------------
+%% External exports
+%%-----------------------------------------------------------------
+-export([defaultBe/0, float_to_version/1, get_opt/2, add_opt/3, read_cfg/2, which_opts/1]).
+
+%%-----------------------------------------------------------------
+%% Internal exports
+%%-----------------------------------------------------------------
+-export([]).
+
+%%-----------------------------------------------------------------
+%% External functions
+%%-----------------------------------------------------------------
+
+%%--------------------------------------------------------------------
+%%
+%% Option handling
+%%
+%% Valid options are: (those with * is NotYetImpl)
+%%
+%% pedantic - makes the compiler really nitty-gritty about its input
+%%
+%% Wall - those warning options that we feel an IDL programmer should
+%% care about. Not as picky as pedantic
+%%
+%% warn_multi_mod - warn if several modules are declared in the same
+%% IDL file
+%%
+%% warn_nested_mod - warn if there are nested modules. This is not a
+%% problem but it breakes the rule that modules are put into one file
+%% each.
+%%
+%% warn_name_shadow - warn if identifiers are shadow through inherited
+%% interfaces. Default is true.
+%%
+%% warn_quoted_atom - warn if atoms needs quote, this makes Erlang
+%% code less nice but is certainly no error.
+%%
+%% nowarn - suppress all warning messages. Will still output warnings
+%% if silent2 option is used
+%%
+%% always_outargs - force object server implementation return the
+%% tuple {RetVal, OutArgs, NewState} even if there are no OutArgs. If
+%% this option is not set then such an operation implementation is
+%% assumed to return {RetVal, NewState}
+%%
+%% use_proc_dict - use the process dictionary in the client
+%% stubs. This means that client stubs return RetVal instead of {ok,
+%% RetVal, OutArgs} and that corba:get_outargs() returns OutArgs. The
+%% out arguments are stored with the key '$corba_outargs'.
+%%
+%% module_group - use the top module as file name for both skeletons
+%% and stubs. Default value is false which means that each interface
+%% is put in a separate file.
+%%
+%% skel_module_group - group all interfaces in a module in one
+%% skeleton file as opposed to one skeleton file for each
+%% interface. Defaults to false.
+%%
+%% stub_module_group - group all interface stubs from a module in one
+%% stub file as opposed to one stub file for each interface. Default
+%% is false.
+%%
+%% *help - prints a small summary of the compiler usage
+%%
+%% silent - suppresses all messages from the compiler
+%%
+%% silent2 - suppresses all messages from the compiler and returns all
+%% warnings or errors as lists. Returns {ok, WarnList} or {error,
+%% WarnList, ErrList}
+%%
+%% *noexec - runs the compiler but does not open files or write to
+%% files.
+%%
+%% {serv, <ModName>} - sets the name of the implementation skeleton
+%% file. This defaults to ModName_skel.
+%%
+%% {impl, <ModName>} - sets the name of the interface server
+%% implementation module name. This defaults to InterfaceName_impl
+%%
+%% {outdir, Dir} - use Dir as the directory to put all generated
+%% files.
+%%
+%% {servdir, Dir} - put all generated skel files in the directory Dir.
+%%
+%% {stubdir, Dir} - put all generated stub files in the directory Dir.
+%%
+%% {this, InterfaceOrOpName} - puts the OE_THIS parameter into the
+%% impl. call. This option can be used both on whole interfaces an on
+%% distinct operations. Fullscoped names must be used (as in {this,
+%% "M1::I1::Op"}). The option can be given in 3 ways: {this, Name}
+%% means this will be added to all matching Name or as {{this, Name},
+%% true} or this can explicitly be asked to be left out as in {{this,
+%% Name}, false} which enables OE_THIS to be passed to all ops of an
+%% interface except those set by the false flag.
+%%
+%% cfgfile - sets the name of the config file that is read at
+%% startup. The order of the different ways to set options is: default
+%% setting, configuration file, options given when generator is
+%% called. Default name for this file is .ic_config
+%%
+%% serv_last_call - tells what the last handle_call clause should
+%% do. It can have the values exception, which makes the last clause
+%% return a CORBA exception and exit which does not generate a last clause
+%% (which will make the server crash on an unknown call)
+%%
+%%
+%% -- UNDOCUMENTED --
+%%
+%% debug - prints debug information
+%%
+%% tokens - prints the tokens from the tokenizer and then exit
+%%
+%% form - prints the form from the parser and then exit
+%%
+%% tform - form returned from type check
+%%
+%% time - if true then time is measured during compilation
+%%
+%% use_leex - tries to use a leex scanner. Can have the values 1, 2,
+%% or boolean() for different styles of leex scanners
+%%
+%% 
+%%--------------------------------------------------------------------
+allowed_opt(default_opts, V)		-> true;
+allowed_opt(debug, V)			-> is_bool(V);
+allowed_opt(tokens, V)			-> is_bool(V);
+allowed_opt(form, V)			-> is_bool(V);
+allowed_opt(tform, V)			-> is_bool(V);
+allowed_opt(time, V)			-> is_bool(V);
+allowed_opt(use_leex, V)		-> is_intorbool(V);
+allowed_opt(maxerrs, V)			-> is_intorinfinity(V);
+allowed_opt(maxwarns, V)		-> is_intorinfinity(V);
+allowed_opt(nowarn, V)			-> is_bool(V);
+allowed_opt(show_opts, V)		-> is_bool(V);
+
+allowed_opt(help, V)			-> is_bool(V);
+allowed_opt('Wall', V)			-> is_bool(V);
+allowed_opt(warn_multi_mod, V)		-> is_bool(V);
+allowed_opt(warn_quoted_atom, V)	-> is_bool(V);
+allowed_opt(warn_nested_mod, V)		-> is_bool(V);
+allowed_opt(warn_name_shadow, V)	-> is_bool(V);
+allowed_opt(module_group, V)		-> is_bool(V);
+allowed_opt(skel_module_group, V)	-> is_bool(V);
+allowed_opt(stub_module_group, V)	-> is_bool(V);
+allowed_opt(always_outargs, V)		-> is_bool(V);
+allowed_opt(pedantic, V)		-> is_bool(V);
+%%allowed_opt(gen_serv, V)		-> is_bool(V);
+%%allowed_opt(gen_stub, V)		-> is_bool(V);
+allowed_opt(gen_hrl, V)			-> is_bool(V);
+allowed_opt(serv_last_call, exception)	-> true;
+allowed_opt(serv_last_call, exit)	-> true;
+allowed_opt(silent, V)			-> is_bool(V);
+allowed_opt(silent2, V)			-> is_bool(V);
+allowed_opt({serv, _}, V)		-> true;
+allowed_opt({impl, _}, V)		-> true;
+allowed_opt(outdir, V)			-> true;
+allowed_opt(servdir, V)			-> true;
+allowed_opt(stubdir, V)			-> true;
+allowed_opt(cfgfile, V)			-> true;
+allowed_opt(use_preproc, V)		-> is_bool(V);
+allowed_opt(preproc_cmd, V)		-> true;
+allowed_opt(preproc_flags, V)		-> true;
+allowed_opt(this, V)			-> true;
+allowed_opt({this, _}, V)		-> is_bool(V);
+allowed_opt(handle_info, V)		-> true;
+allowed_opt({handle_info, _}, V)	-> is_bool(V);
+allowed_opt(timeout, V)		        -> true;
+allowed_opt({timeout, _}, V)     	-> is_bool(V);
+allowed_opt(scoped_op_calls, V)         -> is_bool(V);
+% Compatibility option (semantic check limitation)
+allowed_opt(scl, V)                     -> is_bool(V);
+% Added switches for non corba generation
+allowed_opt(be, erl_corba)	        -> true;
+allowed_opt(be, erl_genserv)	        -> true;
+allowed_opt(be, c_genserv)		-> true;
+allowed_opt(be, erl_plain)		-> true; 
+allowed_opt(be, c_server)		-> true;
+allowed_opt(be, c_client)		-> true;
+allowed_opt(be, java)    		-> true;
+% Noc backend
+allowed_opt(be, noc)  	                -> true; 
+allowed_opt({broker,_},{_,transparent}) -> true; 
+allowed_opt({broker,_},{_,Term})  	-> is_term(Term);
+allowed_opt({use_tk,_},V)               -> is_bool(V);
+%
+allowed_opt(precond, {M, F})            -> true;
+allowed_opt({precond, _}, {M, F})       -> true;
+allowed_opt(postcond, {M, F})           -> true;
+allowed_opt({postcond, _}, {M, F})      -> true;
+allowed_opt(no_codechange, V)             -> is_bool(V);
+allowed_opt(_, _)			-> false.
+
+
+-define(DEFAULTCFGFILE, ".ic_config").
+
+which_opts(G) ->
+    ets:match(G#genobj.options, {{option, '$1'}, '$2'}).
+
+add_opt(G, KList, Val) when list(KList) ->
+    lists:foreach(fun({K, V}) -> add_opt(G, K, V);
+		  (K) -> add_opt(G, K, Val) end,
+		  KList);
+
+add_opt(G, servdir, V) ->
+    do_add_opt(G, servdir, assure_directory(G, ic_util:to_list(V)));
+add_opt(G, stubdir, V) ->
+    do_add_opt(G, stubdir, assure_directory(G, ic_util:to_list(V)));
+add_opt(G, K, V) ->
+    do_add_opt(G, K, V).
+
+
+assure_directory(G, Dir) ->
+    Dirs = filename:split(Dir),
+    check_dirs(Dirs, [], filename:pathtype(Dir)).
+    
+check_dirs([X | Xs], SoFar, Type) ->
+    New = if  SoFar == [], Type /= absolute ->
+		  X;
+	      true ->
+		  filename:join(SoFar, X)
+	  end,
+    assert_dir(New),
+    check_dirs(Xs, New, Type);
+check_dirs([], SoFar, Type) ->
+    SoFar.
+
+assert_dir(D) ->
+    case file:read_file_info(D) of
+	{ok, X} when X#file_info.type == directory -> ok;
+	_ -> case file:make_dir(D) of
+		 ok -> ok;
+		 _ -> exit({could_not_create, D})
+	     end
+    end.
+
+%%assure_directory(G, Dir) ->
+%%    Dir2 = parse_dir([], Dir),
+%%%%    io:format("Trying dir: ~p to ~p~n", [Dir, Dir2]),
+%%    Dir2.
+
+%%parse_dir([],[]) -> [];
+%%parse_dir(SoFar, [$/ | Rest]) ->
+%%    New = SoFar ++ [$/],
+%%    assert_dir(New),
+%%    parse_dir(New, Rest);
+%%parse_dir(SoFar, [C|Rest]) ->
+%%    parse_dir(SoFar++[C], Rest);
+%%parse_dir(SoFar, []) -> 
+%%    assert_dir(SoFar),
+%%    fix(SoFar).
+
+%%assert_dir(D) ->
+%%    case file:file_info(D) of
+%%	{ok, {_, directory, _, _, _, _, _}} -> ok;
+%%	_ -> case file:make_dir(D) of
+%%		 ok -> ok;
+%%		 _ -> exit({could_not_create, D})
+%%	     end
+%%    end.
+
+%%fix(D) ->
+%%    F = case lists:reverse(D) of
+%%	[$/ | R] -> D;
+%%	_ -> D ++ "/"
+%%    end,
+%%    F.
+    
+
+do_add_opt(G, handle_info, V) when V /= true, V /= false ->
+    ?insert(G#genobj.options, {option, {handle_info, V}}, true);
+do_add_opt(G, timeout, V) when V /= true, V /= false ->
+    ?insert(G#genobj.options, {option, {timeout, V}}, true);
+do_add_opt(G, this, V) ->
+    ?insert(G#genobj.options, {option, {this, V}}, true);
+do_add_opt(G, {this, V}, false) ->
+    ?insert(G#genobj.options, {option, {this, V}}, force_false);
+do_add_opt(G, scoped_op_calls, V) when V /= true, V /= false ->
+    ?insert(G#genobj.options, {option, {scoped_op_calls, V}}, false);
+do_add_opt(G, K, V) ->
+    case allowed_opt(K, V) of
+	true ->
+	    case expand_opt(K) of
+		L when list(L) ->
+		    add_opt(G, L, V);
+		_ ->
+		    %%io:format("Add opt: ~p ~p~n", [K, V]),
+		    ?insert(G#genobj.options, {option, K}, V)
+	    end;
+	_ ->
+	    ic_error:warn(G, {illegal_opt, K})
+    end.
+
+get_opt(G, K) ->
+    case ets:lookup(G#genobj.options, {option, K}) of
+	[] -> false;
+	[{{_, K}, V}] -> V
+    end.
+
+expand_opt(pedantic) -> [warn_multi_mod, warn_quoted_atom, always_outargs];
+expand_opt(module_group) -> [skel_module_group, stub_module_group];
+expand_opt('Wall') -> [warn_multi_mod, warn_nested_mod, warn_name_shadow];
+expand_opt(outdir) -> [servdir, stubdir];
+expand_opt(default_opts) -> 
+    ['Wall', gen_hrl, {serv_last_call, exception},
+     {outdir, []}, use_preproc, {preproc_cmd, "erl"}, 
+     {preproc_flags, ""}, {maxerrs, 10}, {maxwarns, infinity}];
+%% gcc preproc command {preproc_cmd, "gcc -x c++ -E"}
+expand_opt(Opt) -> Opt.
+
+
+%% Use this if user not provide 
+%% a backend.
+defaultBe() -> erl_corba.
+    
+
+%%
+%% Read any config file
+read_cfg(G, Opts) ->
+    Name = case lists:keysearch(cfgfile, 1, Opts) of
+	       {value, {_, N}} -> ic_util:to_list(N);
+	       _ -> ?DEFAULTCFGFILE
+	   end,
+    case file:consult(Name) of
+	{ok, OptList} ->
+	    add_opt(G, OptList, true);
+	X when Name == ?DEFAULTCFGFILE -> ok;
+%%	{error, X} ->
+%%	    ic_error:warn(G, {cfg_open, X, Name});
+	X -> ic_error:warn(G, {cfg_open, X, Name})
+    end.
+
+
+float_to_version({_,_,Str}) -> Str.
+
+
+%%-----------------------------------------------------------------
+%% Internal functions
+%%-----------------------------------------------------------------
+is_bool(true) -> true;
+is_bool(false) -> true;
+is_bool(_) -> false.
+
+is_intorbool(X) when integer(X) -> true;
+is_intorbool(X) -> is_bool(X).
+
+is_intorinfinity(X) when integer(X) -> true;
+is_intorinfinity(infinity) -> true;
+is_intorinfinity(X) -> false.
+
+
+is_term(Term) when tuple(Term) -> true;
+is_term(_NoTerm) -> false.
+    

@@ -1,0 +1,953 @@
+OTP-MESH-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+	MODULE-IDENTITY, OBJECT-IDENTITY, OBJECT-TYPE,
+	NOTIFICATION-TYPE, Integer32
+        	FROM SNMPv2-SMI
+	TEXTUAL-CONVENTION, DisplayString, RowStatus, DateAndTime
+		FROM SNMPv2-TC
+	MODULE-COMPLIANCE, OBJECT-GROUP, NOTIFICATION-GROUP
+		FROM SNMPv2-CONF
+	otpApplications, otpModules
+		FROM OTP-REG
+	currentAlarmTime, currentAlarmSeverity, currentAlarmObject
+		FROM OTP-EVA-MIB
+	;
+
+
+
+otpMeshModule MODULE-IDENTITY
+    LAST-UPDATED  "9807010900Z"
+    ORGANIZATION  "Ericsson, EPK/TK"
+    CONTACT-INFO
+       "Contact:  Erlang Support
+
+         Postal:  ERICSSON SOFTWARE TECHNOLOGY AB
+                  ERLANG SYSTEMS
+                  Box 1214
+                  S-164 28  KISTA, SWEDEN
+
+            Tel:  +46  8 719 00 00
+         E-mail:  support@erlang.ericsson.se"
+    DESCRIPTION   "This MIB is part of the OTP MIB.  It defines MIB objects
+	           for the MESH application in OTP."
+    REVISION      "9807010900Z"
+    DESCRIPTION	  "The initial version of this MIB module. It is very much
+	           inspired by the OTP-EVA-MIB mib."
+    ::= { otpModules 10 }
+
+
+
+
+
+otpMeshMIB		OBJECT IDENTIFIER ::= { otpApplications 6 }
+otpMeshMIBConformance	OBJECT IDENTIFIER ::= { otpMeshMIB 1 }
+otpMeshMIBObjects	OBJECT IDENTIFIER ::= { otpMeshMIB 2 }
+meshAlarms		OBJECT IDENTIFIER ::= { otpMeshMIB 3 }
+meshEvents		OBJECT IDENTIFIER ::= { otpMeshMIB 4 }
+otpMeshMIBGroups	OBJECT IDENTIFIER ::= { otpMeshMIBConformance 2 }
+meshTables		OBJECT IDENTIFIER ::= { otpMeshMIBObjects 1 }
+meshVariables		OBJECT IDENTIFIER ::= { otpMeshMIBObjects 2 }
+
+
+TypeAdministration ::= TEXTUAL-CONVENTION
+	STATUS		current
+	DESCRIPTION	"Represents the administrative states for measurement types:
+			 1 == unlocked, 2 == shutting_down, 3 == locked."
+	SYNTAX		INTEGER {
+				unlocked(1),
+				shuttingDown(2),
+				locked(3)
+				}
+
+
+
+MeasAdministration ::= TEXTUAL-CONVENTION
+	STATUS		current
+	DESCRIPTION	"Represents the administrative states for measurement objects:
+			 1 == started, 2 == stopped."
+	SYNTAX		INTEGER {
+				started(1),
+				stopped(2)
+				}
+
+
+-- Currently no use(?) for the following convention...
+--
+-- MeasOperation ::= TEXTUAL-CONVENTION
+--	STATUS		current
+--	DESCRIPTION	"Represents the operative states for measurement objects:
+--			 1 == enabled, 2 == disabled."
+--	SYNTAX		INTEGER {
+--				enabled(1),
+--				disabled(2)
+--				}
+
+
+
+
+ThreshType ::= TEXTUAL-CONVENTION
+	STATUS		current
+	DESCRIPTION	"Represents the two different types of thresholds:
+			 1 == upper, 2 == lower."
+	SYNTAX		INTEGER {
+				upper(1),
+				lower(2)
+				}
+
+
+
+ThreshAdministration ::= TEXTUAL-CONVENTION
+	STATUS		current
+	DESCRIPTION	"Represents the administrative states for thresholds:
+			 1 == enabled, 2 == disabled."
+	SYNTAX		INTEGER {
+				enabled(1),
+				disabled(2)
+				}
+
+
+
+typeTable OBJECT-TYPE
+	SYNTAX 		SEQUENCE OF TypeEntry
+	MAX-ACCESS 	not-accessible
+	STATUS		current
+	DESCRIPTION	"A table containing all measurement types in the system."
+	::= { meshTables 1 }
+
+
+typeEntry OBJECT-TYPE
+	SYNTAX		TypeEntry
+	MAX-ACCESS 	not-accessible
+	STATUS		current
+	DESCRIPTION	""
+	INDEX		{ typeName }
+	::= { typeTable 1 }
+
+
+TypeEntry ::= SEQUENCE {
+	typeName  	DisplayString,
+	typeInfo  	DisplayString,
+	typeCallbackMod	DisplayString,
+	typeAdminState	TypeAdministration,
+	typeMeasArgs	DisplayString,
+	typeMaxInst	Integer32,
+	typeStatus	RowStatus
+	}
+
+
+typeName OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	not-accessible
+	STATUS		current
+	DESCRIPTION	"Name of measurement type."
+	::= { typeEntry 1 }
+
+
+typeInfo OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"Information about measurement type."
+	::= { typeEntry 2 }
+
+
+typeCallbackMod OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"Callback module associated with measurement type."
+	::= { typeEntry 3 }
+
+
+typeAdminState OBJECT-TYPE
+	SYNTAX		TypeAdministration
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"Administrative state of measurement type."
+	::= { typeEntry 4 }
+
+
+typeMeasArgs OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"List of arguments which will be forwarded to existing measurement
+			 objects if the type is locked or unregistered.
+			 NOTE: this column is NOT necessary/used when creating a new row,
+			       i.e., when registering a new measurement type.
+			 NOTE: if no arguments are given, the empty list will be forwarded
+			       to the measurement objects (if any). That is, the arguments
+			       specified in each measurement object WON'T be used!"
+	::= { typeEntry 5 }
+
+
+typeMaxInst OBJECT-TYPE
+	SYNTAX		Integer32
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"Maximum number of allowed measurement type instances."
+	::= { typeEntry 6 }
+
+
+typeStatus OBJECT-TYPE
+	SYNTAX		RowStatus
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"The status of this conceptual row."
+	::= { typeEntry 7 }
+
+
+
+-- ****************************************************************************
+-- End of typeTable definition.
+-- ****************************************************************************
+
+
+
+typeInfoTable OBJECT-TYPE
+	SYNTAX 		SEQUENCE OF TypeInfoEntry
+	MAX-ACCESS 	not-accessible
+	STATUS		current
+	DESCRIPTION	"A table containing read-only information about all
+			 measurement types in the system."
+	::= { meshTables 2 }
+
+
+typeInfoEntry OBJECT-TYPE
+	SYNTAX		TypeInfoEntry
+	MAX-ACCESS 	not-accessible
+	STATUS		current
+	DESCRIPTION	""
+	INDEX		{ typeInfoName }
+	::= { typeInfoTable 1 }
+
+
+TypeInfoEntry ::= SEQUENCE {
+	typeInfoName  		DisplayString,
+	typeInfoCurrInst	Integer32
+	}
+
+
+typeInfoName OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	not-accessible
+	STATUS		current
+	DESCRIPTION	"Name of measurement type."
+	::= { typeInfoEntry 1 }
+
+
+typeInfoCurrInst OBJECT-TYPE
+	SYNTAX		Integer32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Maximum number of allowed measurement type instances."
+	::= { typeInfoEntry 2 }
+
+
+
+-- ****************************************************************************
+-- End of typeInfoTable definition.
+-- ****************************************************************************
+
+
+
+measTable OBJECT-TYPE
+	SYNTAX 		SEQUENCE OF MeasEntry
+	MAX-ACCESS 	not-accessible
+	STATUS		current
+	DESCRIPTION	"A table containing all measurement objects in the system.
+			 Also used to create new objects."
+	::= { meshTables 3 }
+
+
+measEntry OBJECT-TYPE
+	SYNTAX		MeasEntry
+	MAX-ACCESS 	not-accessible
+	STATUS		current
+	DESCRIPTION	""
+	INDEX		{ measId }
+	::= { measTable 1 }
+
+
+MeasEntry ::= SEQUENCE {
+	measId  	DisplayString,
+	measType	DisplayString,
+	measInfo  	DisplayString,
+	measResId	DisplayString,
+	measAdminState	MeasAdministration,
+	measArgs	DisplayString,
+	measStatus	RowStatus
+	}
+
+
+measId OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	not-accessible
+	STATUS		current
+	DESCRIPTION	"Id of measurement object."
+	::= { measEntry 1 }
+
+
+measType OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"Name of the type the measurement object belongs to."
+	::= { measEntry 2 }
+
+
+measInfo OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"Information about the measurement object."
+	::= { measEntry 3 }
+
+
+measResId OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"Information about the resource(s) the measurement object shall use."
+	::= { measEntry 4 }
+
+
+measAdminState OBJECT-TYPE
+	SYNTAX		MeasAdministration
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"Administrative state of measurement object."
+	::= { measEntry 5 }
+
+
+measArgs OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"List of arguments that will be forwarded to the measurement objects
+			 when they are created, started, stopped, and deleted.
+			 NOTE: if locking of a measurement is ordered, these arguments WON'T
+			       be used when deleting existing measurement objects. Only the
+			       argument list specified in the measurement type row will be
+			       forwarded in that case."
+	::= { measEntry 6 }
+
+
+measStatus OBJECT-TYPE
+	SYNTAX		RowStatus
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"The status of this conceptual row."
+	::= { measEntry 7 }
+
+
+
+-- ****************************************************************************
+-- End of measTable definition.
+-- ****************************************************************************
+
+
+
+measInfoTable OBJECT-TYPE
+	SYNTAX 		SEQUENCE OF MeasInfoEntry
+	MAX-ACCESS 	not-accessible
+	STATUS		current
+	DESCRIPTION	"A table containing read-only information about all
+			 measurement objects in the system."
+	::= { meshTables 4 }
+
+
+measInfoEntry OBJECT-TYPE
+	SYNTAX		MeasInfoEntry
+	MAX-ACCESS 	not-accessible
+	STATUS		current
+	DESCRIPTION	""
+	INDEX		{ measInfoId }
+	::= { measInfoTable 1 }
+
+
+MeasInfoEntry ::= SEQUENCE {
+	measInfoId  		DisplayString,
+--	measInfoOperState	DisplayString,
+	measInfoLastVal		DisplayString,
+	measInfoLastValTime	DisplayString,
+	measInfoLastValInfo	DisplayString,
+	measInfoMaxTideCurr	DisplayString,
+	measInfoMaxTidePrev	DisplayString,
+	measInfoMinTideCurr	DisplayString,
+	measInfoMinTidePrev	DisplayString,
+	measInfoLastReset	DateAndTime
+	}
+
+
+measInfoId OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	not-accessible
+	STATUS		current
+	DESCRIPTION	"Id of measurement object."
+	::= { measInfoEntry 1 }
+
+
+-- measInfoOperState OBJECT-TYPE
+--	SYNTAX		DisplayString (SIZE (0..255))
+--	MAX-ACCESS	read-only
+--	STATUS		current
+--	DESCRIPTION	"The current operability state of the measurement object."
+--	::= { measInfoEntry 2 }
+
+
+measInfoLastVal OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"The last measurement value reported by the measurement object."
+	::= { measInfoEntry 2 }
+
+
+measInfoLastValTime OBJECT-TYPE
+	SYNTAX		DateAndTime
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Date and time the last measurement value reported was obtained
+			 or sent by the measurement object. A DisplayString is used since
+			 there are currently no restrictions on the format the measurement
+			 object may use."
+	::= { measInfoEntry 3 }
+
+
+measInfoLastValInfo OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Information about the last reported measurement value."
+	::= { measInfoEntry 4 }
+
+
+measInfoMaxTideCurr OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Maximum tidemark current value for the measurement object."
+	::= { measInfoEntry 5 }
+
+
+measInfoMaxTidePrev OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Maximum tidemark previous value for the measurement object."
+	::= { measInfoEntry 6 }
+
+
+measInfoMinTideCurr OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Minimum tidemark current value for the measurement object."
+	::= { measInfoEntry 7 }
+
+
+measInfoMinTidePrev OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Minimum tidemark previous value for the measurement object."
+	::= { measInfoEntry 8 }
+
+
+measInfoLastReset OBJECT-TYPE
+	SYNTAX		DateAndTime
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"Date and time for the last reset of the measurement object.
+			 Date and time is always given in universal time! This means
+			 that eight (8) octets are always returned, not eleven (11)!
+			 Should no reset time information be available, e.g., due to
+			 no reset ever of the measurement object, the returned string
+			 will have the normal format (8 octets), but the following
+			 values:
+
+			 field		octet		value
+			 -----		-----		-----
+			 year		 1-2		 0000
+			 month		  3		    0
+			 day		  4		    0
+			 hour		  5		    0
+			 minutes	  6		    0
+			 seconds	  7		    0
+			 deci-seconds	  8		    0
+
+			 That is, what's displayed is:
+	
+					0000-00-00,00:00:00.0
+
+			 NOTE: this can't be confused with the first moment of the
+			       year 2000, since that value will be presented like 
+			        	2000-01-01,00:00:00.0"
+	::= { measInfoEntry 9 }
+
+
+
+-- ****************************************************************************
+-- End of measInfoTable definition.
+-- ****************************************************************************
+
+
+threshTable OBJECT-TYPE
+	SYNTAX 		SEQUENCE OF ThreshEntry
+	MAX-ACCESS 	not-accessible
+	STATUS		current
+	DESCRIPTION	""
+	::= { meshTables 5 }
+
+
+threshEntry OBJECT-TYPE
+	SYNTAX		ThreshEntry
+	MAX-ACCESS 	not-accessible
+	STATUS		current
+	DESCRIPTION	""
+	INDEX		{ threshMeasId,
+			  threshId}
+	::= { threshTable 1 }
+
+
+
+ThreshEntry ::= SEQUENCE {
+	threshMeasId		DisplayString,
+	threshId  		INTEGER,
+	threshType		ThreshType,
+	threshVal1		DisplayString,	
+	threshVal2		DisplayString,	
+	threshAdminState	ThreshAdministration,
+	threshStatus		RowStatus
+	}
+
+
+
+threshMeasId OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	not-accessible
+	STATUS		current
+	DESCRIPTION	"Id of measurement object."
+	::= { threshEntry 1 }
+
+
+
+threshId OBJECT-TYPE
+	SYNTAX		INTEGER (1..255)
+	MAX-ACCESS	not-accessible
+	STATUS		current
+	DESCRIPTION	"Id of threshold object.
+			 NOTE: if any measurement object sets a threshold, using an
+			 identifier that ISN'T an integer, that threshold won't be
+			 visible in this table!"
+	::= { threshEntry 2 }
+
+
+threshType OBJECT-TYPE
+	SYNTAX		ThreshType
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"Threshold type: 1 == upper, 2 == lower."
+	::= { threshEntry 3 }
+
+
+threshVal1 OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	""
+	::= { threshEntry 4 }
+
+
+threshVal2 OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	""
+	::= { threshEntry 5 }
+
+
+threshAdminState OBJECT-TYPE
+	SYNTAX		ThreshAdministration
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"Threshold administrative state: 1 == enabled, 2 == disabled."
+	::= { threshEntry 6 }
+
+
+threshStatus OBJECT-TYPE
+	SYNTAX		RowStatus
+	MAX-ACCESS	read-create
+	STATUS		current
+	DESCRIPTION	"The status of this conceptual row."
+	::= { threshEntry 7 }
+
+
+
+
+
+
+resetMeas OBJECT-TYPE
+	SYNTAX		DisplayString (SIZE (0..255))
+	MAX-ACCESS	read-write
+	STATUS		current
+	DESCRIPTION	"Resets the measurement object specified. The value shall
+			 be the same (have the same format) as when specifying
+			 the index for a certain row in the measTable table.
+
+			 Reset arguments (i.e., arguments passed on to the measurement
+			 object specified) are taken from the corresponding measArgs
+			 field in the measTable table. That is, the measArgs field
+			 has to be set to the desired value BEFORE this variable is
+			 set!
+			 NOTE: the reset operation is allowed in all measTable
+			       row/measurement object states, as long as the row
+			       exists, but the operation is only meaningful (i.e.,
+			       will only have any real effect) when the state is
+			       'active'.
+			 NOTE: this variable is intended to be write-only; however,
+			       this is not allowed in the MAX-ACCESS clause, meaning
+			       it has to be read-write. If the user tries to read the
+			       current value, it shall be noted that it is only the
+			       last reset request made using SNMP that is shown!
+			       That is, measurement objects/applications/supervisors
+			       may, in the managed system, have ordered reset them-
+			       selves - these reset orders are NOT visible through
+			       this variable!"
+			
+	::= {meshVariables 1 }
+	
+
+
+
+watchdogNofTypes OBJECT-TYPE
+	SYNTAX		Integer32
+	MAX-ACCESS	read-write
+	STATUS		current
+	DESCRIPTION	"Sets the number of measurement types allowed.
+			 If this number is exceeded, the user is notified."
+	::= { meshVariables 2 }
+
+
+
+
+watchdogNofMeas OBJECT-TYPE
+	SYNTAX		Integer32
+	MAX-ACCESS	read-write
+	STATUS		current
+	DESCRIPTION	"Sets the number of measurement objects allowed totally.
+			 If this number is exceeded, the user is notified."
+	::= { meshVariables 3 }
+
+
+
+
+
+
+currentNofTypes OBJECT-TYPE
+	SYNTAX		Integer32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"The current number of active measurement types, totally."
+	::= { meshVariables 4 }
+
+
+
+
+currentNofMeas OBJECT-TYPE
+	SYNTAX		Integer32
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION	"The current number of active measurement objects, totally."
+	::= { meshVariables 5 }
+
+
+
+
+
+
+
+-- Alarms
+
+meshAlarmsV2 OBJECT-IDENTITY
+	STATUS 		current
+	DESCRIPTION	"The alarms for the MESH application."
+	::= { meshAlarms 0 }
+
+
+
+typeAllowedNofMeas OBJECT-TYPE
+	SYNTAX		Integer32
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"This object may be included in a trap definition for an alarm.
+			 It specifies the number of measurement objects allowed within
+			 a specific measurement type."
+	::= { meshAlarms 1 }
+
+
+typeCurrentNofMeas OBJECT-TYPE
+	SYNTAX		Integer32
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION	"This object may be included in a trap definition for an alarm.
+			 It specifies the current number of measurement objects within
+			 a specific measurement type."
+	::= { meshAlarms 2 }
+
+
+
+meshTooManyTypes NOTIFICATION-TYPE
+	OBJECTS   { 	currentAlarmTime,
+		  	currentAlarmSeverity,
+		  	currentAlarmObject,
+		  	watchdogNofTypes,
+		  	currentNofTypes
+		  }
+	STATUS		current
+	DESCRIPTION	"An alarm sent when the total number of active measurement
+			 types exceeds the allowed number."
+	::= { meshAlarmsV2 1 }
+
+
+
+
+meshTooManyMeasurements NOTIFICATION-TYPE
+	OBJECTS   { 	currentAlarmTime,
+		  	currentAlarmSeverity,
+		  	currentAlarmObject,
+		  	watchdogNofMeas,
+		  	currentNofMeas
+		  }
+	STATUS		current
+	DESCRIPTION	"An alarm sent when the total number of active measurement
+			 objects exceeds the allowed number."
+	::= { meshAlarmsV2 2 }
+
+
+
+
+meshTypeCapacityExceeded NOTIFICATION-TYPE
+	OBJECTS   { 	currentAlarmTime,
+		  	currentAlarmSeverity,
+		  	currentAlarmObject,
+			typeName,
+			typeCurrentNofMeas,
+			typeAllowedNofMeas
+		  }
+	STATUS		current
+	DESCRIPTION	"An alarm sent when the total number of active measurement
+			 objects exceeds the allowed number."
+	::= { meshAlarmsV2 3 }
+
+
+
+
+meshThresholdTriggered NOTIFICATION-TYPE
+	OBJECTS   { 	currentAlarmTime,
+		  	currentAlarmSeverity,
+		  	currentAlarmObject,
+			measId,
+			threshId
+		  }
+	STATUS		current
+	DESCRIPTION	"An alarm sent when the total number of active measurement
+			 objects exceeds the allowed number."
+	::= { meshAlarmsV2 4 }
+
+
+
+
+-- Events
+
+
+
+
+meshEventsV2 OBJECT-IDENTITY
+	STATUS 		current
+	DESCRIPTION	"The events for the MESH application."
+	::= { meshEvents 0 }
+
+
+
+nodeName OBJECT-TYPE
+	SYNTAX      	DisplayString
+    	MAX-ACCESS  	accessible-for-notify
+    	STATUS      	current
+    	DESCRIPTION	"This object may be included in a trap definition for an event.
+        		 It specifies the node name of a node that has gone either up
+			 or down."
+    ::= { meshEvents 1 }
+
+
+
+meshTypeFailure NOTIFICATION-TYPE
+	OBJECTS   { 	typeName
+		  }
+	STATUS		current
+	DESCRIPTION	"An event sent when a measurement type becomes disabled."
+	::= { meshEventsV2 1 }
+
+
+
+meshMeasurementTerminated NOTIFICATION-TYPE
+	OBJECTS   { 	measId,
+			typeName
+		  }
+	STATUS		current
+	DESCRIPTION	"An event sent when a measurement object terminates."
+	::= { meshEventsV2 2 }
+
+
+
+meshTypeUnconnected NOTIFICATION-TYPE
+	OBJECTS   { 	typeName
+		  }
+	STATUS		current
+	DESCRIPTION	"An event sent when a connection to a measurement type is lost."
+	::= { meshEventsV2 5 }
+
+
+
+meshMeasurementUnconnected NOTIFICATION-TYPE
+	OBJECTS   { 	measId,
+			typeName
+		  }
+	STATUS		current
+	DESCRIPTION	"An event sent when connection to a measurement object is lost."
+	::= { meshEventsV2 6 }
+
+
+
+meshTypeConnected NOTIFICATION-TYPE
+	OBJECTS   { 	typeName
+		  }
+	STATUS		current
+	DESCRIPTION	"An event sent when a measurement type once again is connected."
+	::= { meshEventsV2 7 }
+
+
+
+meshMeasurementConnected NOTIFICATION-TYPE
+	OBJECTS   { 	measId,
+			typeName
+		  }
+	STATUS		current
+	DESCRIPTION	"An event sent when a measurement object once again is connected."
+	::= { meshEventsV2 8 }
+
+
+
+meshNodeUp NOTIFICATION-TYPE
+	OBJECTS	  {	nodeName
+		  }
+	STATUS		current
+	DESCRIPTION	"An event sent when a node, used by any measurement type or object,
+			 gets connected once again."
+	::= { meshEventsV2 9 }
+
+
+
+meshNodeDown NOTIFICATION-TYPE
+	OBJECTS	  {	nodeName
+		  }
+	STATUS		current
+	DESCRIPTION	"An event sent when a node, used by any measurement type or object,
+			 goes down."
+	::= { meshEventsV2 10 }
+
+
+
+
+
+meshWatchDog OBJECT IDENTIFIER ::= { meshAlarms 0 0 }
+-- tooManyTypes OBJECT IDENTIFIER ::= { meshAlarms 0 1 }
+
+
+
+meshUserGroup OBJECT-GROUP
+	OBJECTS { typeInfo,
+		  typeCallbackMod,
+		  typeAdminState,
+		  typeMeasArgs,
+		  typeMaxInst,
+		  typeStatus,
+
+		  typeInfoCurrInst,
+
+		  measType,
+		  measInfo,
+		  measResId,
+		  measAdminState,
+		  measArgs,
+		  measStatus,
+
+--        	  measInfoOperState,
+        	  measInfoLastVal,	
+        	  measInfoLastValTime,
+        	  measInfoLastValInfo,
+        	  measInfoMaxTideCurr,
+        	  measInfoMaxTidePrev,
+        	  measInfoMinTideCurr,
+        	  measInfoMinTidePrev,
+        	  measInfoLastReset,
+
+		  threshType,
+		  threshVal1,
+		  threshVal2,
+		  threshAdminState,
+		  threshStatus,
+
+		  resetMeas,
+		  watchdogNofTypes,
+		  watchdogNofMeas,
+		  currentNofTypes,
+		  currentNofMeas,
+
+		  typeAllowedNofMeas,
+		  typeCurrentNofMeas,
+
+		  nodeName
+		}
+	STATUS 		current
+	DESCRIPTION	"All objects in this MIB."
+	::= { otpMeshMIBGroups 1 }
+
+
+
+meshUserAlarms NOTIFICATION-GROUP
+	NOTIFICATIONS 	{ meshTooManyTypes,
+			  meshTooManyMeasurements,
+			  meshTypeCapacityExceeded,
+			  meshThresholdTriggered
+		      	}
+	STATUS		current
+	DESCRIPTION	"All alarm notifications in this MIB."
+	::= { otpMeshMIBGroups 2 }
+
+
+
+
+meshUserEvents NOTIFICATION-GROUP
+	NOTIFICATIONS	{ meshTypeFailure,
+			  meshMeasurementTerminated,
+			  meshTypeUnconnected,
+			  meshMeasurementUnconnected,
+			  meshTypeConnected,
+			  meshMeasurementConnected,
+			  meshNodeUp,
+			  meshNodeDown
+			}
+	STATUS		current
+	DESCRIPTION	"All event notifications in this MIB."
+	::= { otpMeshMIBGroups 3 }
+
+
+
+END
+
+
+
+

@@ -1,0 +1,763 @@
+<HTML>
+<HEAD>
+<TITLE>STDLIB Release Notes (Old)</TITLE>
+</HEAD>
+<BODY BGCOLOR="#FFFFFF">
+<BLOCKQUOTE>
+<P>This document describes the release notes for older versions
+of the <CODE>stdlib</CODE> application.
+
+<H2>Stdlib 1.7</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+Erlang shell line editing (e.g., M-B to back up over a word)
+didn't handle all Latin-1 characters correctly.
+<br>Own Id: OTP-3158
+
+
+</UL>
+<H2>Stdlib 1.6.1</H2>
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+When a module with behaviour <CODE>gen_server</CODE>,
+<CODE>gen_event</CODE> or <CODE>gen_fsm</CODE> was compiled, warnings
+were given for
+absent call-back functions, except for <CODE>code_change</CODE>.
+Now, a warning is given for absent <CODE>code_change</CODE> as
+well.
+<br>Own Id: OTP-3148<br>
+Aux Id: OTP-3072, OTP-3026
+
+
+</UL>
+<H2>Stdlib 1.6</H2>
+
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+The previously undocumented function <CODE>queue:to_list/1</CODE>
+didn't work properly. Now, it returns the elements of
+the queue, the oldest first in the list.
+<br>Own Id: OTP-2701<br>
+Aux Id: Seq 1069
+
+
+<LI>
+A tab in the Erlang shell (modulename completion) could
+block a big system (>1000 modules) for several seconds and
+consumed a huge amount of memory. The reason for this was that 
+<CODE>append</CODE> was used to create the list of all modules and
+this is very inefficient. This has now been corrected: 
+1) <CODE>code:all_loaded</CODE> no longer uses append. 2)  <CODE>append</CODE>
+and
+all other BIFs can no longer consume unlimited amounts of
+memory before a garbage collection occurs.
+<br>Own Id: OTP-2708
+
+
+<LI>
+<CODE>erl_parse:abstract/1</CODE> crashed when given terms such
+as <CODE>[4|5]</CODE>.
+<br>Own Id: OTP-2836
+
+
+<LI>
+The module <CODE>erl_id_trans</CODE> didn't handle unary operators
+before numeric literals, or the Mnemosyne <CODE>query</CODE>
+expression.
+<br>Own Id: OTP-2838
+
+
+<LI>
+C-nodes previously could get an rpc:call trying to execute
+process_info on the C-node. C-nodes are so called "hidden" 
+nodes and should not get any rpc calls by accident. This is
+now corrected.
+<br>Own Id: OTP-2953
+
+
+<LI>
+<CODE>erl_scan:string/[1,2]</CODE> handled comments incorrectly.
+<br>Own Id: OTP-2986
+
+
+<LI>
+<CODE>ets:match_object/2</CODE> is made faster by removing a
+<CODE>receive after 1</CODE> and letting the internal BIF 
+db_match_object decide
+if the current process should be rescheduled.
+<br>Own Id: OTP-2987<br>
+Aux Id: Seq 1500
+
+
+<LI>
+ets:match_delete now works correctly for the duplicate_bag
+ets table type.
+<br>Own Id: OTP-3005<br>
+Aux Id: Seq 1512
+
+
+<LI>
+The handling of the freelist in <CODE>dets</CODE> is 
+made more efficient. In the previous version of dets
+the <CODE>dets:close/1</CODE> could take several hours in the worst
+case because of computation which tried to combine the
+freelist. This is now corrected and the new version has
+significantly better performance in dets:open_file and
+dets:close  while having the same or marginally 
+worse performance on dets:delete. The time it takes 
+to open or close a dets file is now always short (at the seconds
+level at worst , in the most cases much faster).
+<br>Own Id: OTP-3025
+
+
+<LI>
+<CODE>erl_pp:form/[1,2]</CODE> now format upper-case record
+names correctly; previously the necessary quoting was left
+out. This affected for example the tools <CODE>cover</CODE>
+and <CODE>coast</CODE>.
+<br>Own Id: OTP-3058, OTP-2952<br>
+Aux Id: OTP-2952
+
+
+<LI>
+If the argument to the attribute <CODE>-include_lib</CODE> didn't
+contain a '/', the compilation/preprocessing crashed,
+instead of giving a proper error message.
+<br>Own Id: OTP-3073
+
+
+<LI>
+<CODE>erl_lint:is_guard_test/1</CODE> did not accept
+floating-point literals. This caused execution using
+<CODE>erl_eval</CODE> (for example in the shell) to behave
+incorrectly when floating-point literals occurred in guards.
+<br>Own Id: OTP-3091
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The erl_tar:table/2 function now returns more information
+about each member in the tar file if given the <CODE>verbose</CODE>
+option.  Tww new functions, erl_tar:t/1 and erl_tar:tt/2,
+prints the members of the tar file instead of returning them.
+The <CODE>tt/1</CODE> function simply prints the name of each member
+(like 'tar t'), while <CODE>tt/2</CODE> prints more information
+similar to 'tar tv'.
+<br>Own Id: OTP-2520
+
+
+<LI>
+For consistency, <CODE>lists:seq(N,N,0)</CODE> now returns
+<CODE>[N]</CODE> instead of giving an error.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-2613
+
+
+<LI>
+The syntax of Erlang tokens has been extended to
+allow the use of the full ISO-8859-1 (Latin-1)
+character set. This is noticeable in the following
+ways: all the Latin-1 printable characters can be used
+and are shown without the escape backslash convention;
+atoms and variables can use all Latin-1 letters.
+<br>Own Id: OTP-2985
+
+
+<LI>
+The result of <CODE>c:m(Module)</CODE> contains a tuple
+<CODE>{time, Time}</CODE> which represents the date and time of
+compilation
+of the module. Previously, the time was in the local timezone
+of the compilation. Since there is no record of what that
+timezone was, the time information was unreliable, and
+has been changed to always be in GMT (if the underlying
+system supports it - in other words, what
+<CODE>erlang:universaltime/0</CODE> returns).
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3012
+
+
+<LI>
+The <CODE>export_all</CODE> compilation option no longer produces one
+warning for each function defined in a module; it produces
+one single warning (since <CODE>export_all</CODE> shouldn't be used
+in production code).
+<br>Own Id: OTP-3020
+
+
+<LI>
+When compiling, warnings for functions which are not used
+are now given also for functions which call only themselves.
+<br>Own Id: OTP-3021<br>
+Aux Id: OTP-1007
+
+
+<LI>
+Due to an oversight, the following improvement was
+left out of the documentation in previous releases:
+<p>
+The variables used in the matching functions in the
+<CODE>ets</CODE> module are not
+restricted to '$0' to '$9' anymore.
+<br>Own Id: OTP-3063
+
+
+<LI>
+The <CODE>gen_server:call</CODE> now uses the new BIF <CODE>monitor/2</CODE> which
+makes it possible to monitor the death of processes. This 
+makes the  call safer and the feedback to the
+caller will be immediate if the serving process has died
+or dies when it services the call. Previously the only 
+way to prevent a hanging here was to use the <CODE>Timeout</CODE> argument
+to the call function. A potential incompability is that the
+<CODE>gen_server:call</CODE> and comparable functions in the 
+<CODE>gen_event</CODE> and <CODE>gen_fsm</CODE> modules now can exit
+with another reason than <CODE>timeout</CODE> when the server has
+terminated its execution. The new reason is <CODE>noproc</CODE>.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3074
+
+
+<LI>
+A note on forward compatibility. Users are urged to refrain
+from using the following constructions: 1) numeric ASCII
+codes for characters; 2) strings spanning several lines;
+3) the character constant "<CODE>$ </CODE>" to produce a space.
+These constructions are still legal, but will produce
+warnings in future releases, and at some point may be
+removed from the language.
+Instead, use: 1) character constant syntax; 2) the
+escape code "</CODE>\n</CODE>"; 3) the character constant
+"</CODE>$\s</CODE>".
+<br>Own Id: OTP-3083
+
+<H2>Stdlib 1.5.2</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+<CODE>ets:file2tab</CODE> which uses <CODE>disk_log</CODE> now uses the <CODE>read_only</CODE> option to <CODE>disk_log:open</CODE>
+when it opens the file.
+<br>Own Id: OTP-1716<br>
+Aux Id: OTP-1765
+
+
+<LI>
+On Unix, if the name of the current directory contained a blank,
+<CODE>os:cmd/1</CODE> would fail.  This has been corrected.
+<br>Own Id: OTP-2026
+
+
+<LI>
+It was possible for ets:all/1 to include malformed table
+identifiers in the result. This has been fixed.
+<br>Own Id: OTP-2214
+
+
+<LI>
+The compiler previously silently accepted that a module
+defined a function with the same name and arity as an
+imported function. This now causes an error.
+<br>Own Id: OTP-2338<br>
+Aux Id: seq 793
+
+
+<LI>
+erl_scan:string/1 used to exit in many situations where it
+should return an error tuple. This has been fixed.
+<br>Own Id: OTP-2347
+
+
+<LI>
+When given a bad first argument, io:format/3, io:fwrite/3 and
+io:fread/3 could hang instead of returning an error.
+This has been fixed.
+<br>Own Id: OTP-2400
+
+
+<LI>
+lists:seq/3 hanged instead of exiting for some invalid
+arguments; e.g., lists:seq(1, 5, -1). This has been fixed.
+<br>Own Id: OTP-2404
+
+
+<LI>
+Guard expressions could cause exit when used in shell
+and erl_eval, instead of causing the guard to fail.
+This has been fixed.
+<br>Own Id: OTP-2405
+
+
+<LI>
+missing parameter, Id, in 
+application_controller:do_change_appl/3 fixed.
+<br>Own Id: OTP-2681<br>
+Aux Id: seq 1029
+
+
+<LI>
+The low level process interface 'proc_lib' used by
+itself and also by generic servers has a syncronisation
+bug. The scenario is
+<br>
+1. Process A calls proc_lib:spawn() returning
+the process id B of the child. The function
+will wait for an answer from the child.
+<br>
+2. The function times out waiting for an answer
+from the child using proc_lib:init_ack().
+<br>
+3. Process A tries again calling proc_lib:spawn()
+returning process id C. But now the child B
+has answered and because the wait function
+doesn't check where the answer comes from
+it believes that it was process C that
+was succeeding.
+<br>Own Id: OTP-2702<br>
+Aux Id: seq1051
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+erl_lint now gives warnings for some useless
+constructions which are usually the result of misspellings,
+e.g., "7(X)", or "s#state{nr=1}".
+<br>Own Id: OTP-1927<br>
+Aux Id: OTP-1961
+
+
+</UL>
+<H2>Stdlib 1.5.1</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+keysort/2 is now stable (i.e., it preserves the order
+of elements which have the same key).
+Bad arguments now cause an exit, instead of just silently
+returning the input list.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-2300
+
+
+<LI>
+A call to dets:open_file/1 resulting in an error could
+cause both the caller and the dets server to hang.
+This has been fixed.
+<br>Own Id: OTP-2399
+
+
+<LI>
+The documentation for erl_parse:parse_term/1 incorrectly
+stated that it returns the abstract form of a term, so that
+parse_term/1 and tokens/1 are the inverses of each other.
+Actually, erl_parse:parse_term/1 returns the term itself.
+The documentation has been changed to reflect this.
+<br>Own Id: OTP-2401
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+Many functions in stdlib do not enforce the types which the
+functions are documented to accept, thus resulting in
+undefined behaviour when given arguments of invalid type.
+Stricter error checking has been added to some functions in
+stdlib, namely lists:sublist/[2,3] and lists:keysort/2,
+resulting in an exit if an invalid argument is given.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-2441<br>
+Aux Id: OTP-2300, OTP-2689
+
+
+<LI>
+ets:i/0 used to truncate entries which didn't fit in the
+designated field. Now, nothing is truncated - the remaining
+entries are pushed to the right instead.
+<br>Own Id: OTP-2524
+
+
+</UL>
+<H2>R3B02 (Stdlib 1.4.2)</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+<CODE>dets</CODE> can now repair files even if parts of the segment 
+array is truncated. The problem occured when <CODE>mnesia</CODE> 
+was used.
+<br>Own Id: OTP-2056<br>
+Aux Id: seq 559, OTP-2042
+
+
+<LI>
+The compiler (on jam systems) did report "error head-mismatch"
+on the wrong line (the last instead of the first head-mismatch).
+This is corrected.
+<br>Own Id: OTP-2125<br>
+Aux Id: seq 616
+
+
+<LI>
+A <CODE>dets</CODE> internal problem with <CODE>split_to_binary</CODE> 
+which caused mnesia user problems is fixed.
+<br>Own Id: OTP-2156<br>
+Aux Id: seq 636
+
+
+<LI>
+If the system was halted when <CODE>dets</CODE> is in the middle of
+repairing a small file (i.e a file that is repaired in RAM), this could result in a corrupt <CODE>dets</CODE> file. This is now corrected. The version of
+the <CODE>dets</CODE> file format is stepped to 8 and version 6 and 7
+files are automatically upgraded when they are opened.
+<br>Own Id: OTP-2221<br>
+Aux Id: seq 672
+
+
+<LI>
+In previous R3 releases, <CODE>slave:start/X</CODE> didn't 
+work if <CODE>erl</CODE>
+was started with long names (<CODE>-name Name</CODE>).
+<br>Own Id: OTP-2288<br>
+Aux Id: seq 746
+
+
+<LI>
+<CODE>dets</CODE> is now put under control of a supervisor when it is started.
+This corrects the earlier problem that caused <CODE>dets</CODE> to be terminated when mnesia was terminated even though there could be other users of <CODE>dets</CODE>.
+<br>Own Id: OTP-2296<br>
+Aux Id: seq 754
+
+
+<LI>
+<CODE>ets:new/2</CODE> could case the whole emulator to crash if
+called with a not well formed list as second argument.
+Example: <CODE>ets:new(a,[set|protected])</CODE> which should
+result in <CODE>{'EXIT',{badarg,Reason}}</CODE> and not make the emulator 
+to crash. This is corrected.
+<br>Own Id: OTP-2314<br>
+Aux Id: seq 769
+
+
+<LI>
+A <CODE>dets</CODE> file must be closed by the owner (i.e the
+process that opened it). <CODE>{error, not_owner}</CODE> will be
+returned if another process tries to close the file.
+<br>Own Id: OTP-2393
+
+
+</UL>
+<H2>R3B (Stdlib 1.4.1)</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+If the evaluator exits while the shell is reading a new prompt,
+the exit message will be printed immediately.
+<br>Own Id: OTP-2085<br>
+Aux Id: seq 592
+
+
+</UL>
+<H2>R3A (Stdlib 1.4)</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+In dets tables of type bag an object could sometimes be 
+duplicated by mistake. This is corrected.
+<br>Own Id: OTP-1642
+
+
+<LI>
+The ets:info/2 BIF used to fail with badarg if the table
+didn't exist, contrary to the documentation which
+states that undefined should be returned.
+The implementation has been corrected.
+This might break existing code that evaluated ets:info/2
+within a catch and assumed that an nonexisting table was
+indicated by an 'EXIT' tuple.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-1868<br>
+Aux Id: seq 418
+
+
+<LI>
+The function sys:log_to_file didn't close old files, 
+this is corrected.
+<br>Own Id: OTP-1977
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The function nativename/1 has been added to the filename
+module.  It converts a filename to a form acceptable for
+command shell and native applications on the currently
+running platform.  Specifically, on Windows it replaces
+slashes with backslashes.
+<br>Own Id: OTP-1632
+
+
+<LI>
+Enhancements in dets: Support for etimated_no_objects.
+Dets now uses ram_files pread and pwrite which results in
+significantly improved performance for certain operations.
+<br>Own Id: OTP-1641
+
+
+<LI>
+The documentation regarding terminate and trap_exits is
+improved for the gen_* modules.
+<br>Own Id: OTP-1755
+
+
+<LI>
+The following functions are added to the module calendar:
+now_to_local_time/1, 
+now_to_universal_time/1  (== now_to_datetime/1), 
+local_time_to_universal_time/1, 
+universal_time_to_local_time/1.
+<br>Own Id: OTP-1801
+
+
+<LI>
+New table option 'duplicate_bags' added to both ets and dets.
+A 'duplicate_bag' table can have several identical objects.
+<br>Own Id: OTP-1810
+
+
+</UL>
+
+<A NAME="1"><!-- Empty --></A><H2>1 Stdlib 1.3.2</H2><A NAME="1.1"><!-- Empty --></A><H3>1.1 Incompatibilities with Stdlib 1.3.1</H3><P><UL>
+<LI>     Because of the major updates to the <CODE>slave</CODE> module a
+         version of OTP with this new slave module as described
+         here *cannot* start slave nodes on computers using an
+         older version of OTP, and vice versa.
+
+         <BR>
+The return values from <CODE>slave</CODE> on error are
+         changed (atoms are used instead of strings).
+
+         <BR>
+Own Id:OTP-1463
+<BR>
+</UL>
+<A NAME="1.2"><!-- Empty --></A><H3>1.2 Fixed Bugs and malfunctions</H3><P><UL>
+<LI>     <CODE>filename:basename(&#34;/foo/bar/&#34;)</CODE> returned wrong
+         result: <CODE>[]</CODE>. The last <CODE>/</CODE> should be ignored and
+         the result should be <CODE>&#34;bar&#34;</CODE>.
+
+         <BR>
+Own Id:OTP-1451
+<BR>
+</UL>
+<A NAME="1.3"><!-- Empty --></A><H3>1.3 Improvements and new features</H3><P><UL>
+<LI>     <CODE>slave:start</CODE> is enhanced to work on other platforms
+         (e.g WIN32). Previously it was UNIX specific.
+
+         <BR>
+Own Id:OTP-1463
+        <BR>
+<LI>     The <CODE>timer</CODE> module is modified to be a gen_server
+         and is now supervised by the safe kernel supervisor.
+
+         <BR>
+Own Id: OTP-1469
+<BR>
+</UL>
+<A NAME="2"><!-- Empty --></A><H2>2 Stdlib 1.3.1</H2><A NAME="2.1"><!-- Empty --></A><H3>2.1 Fixed Bugs and malfunctions</H3><P><UL>
+<LI>     <CODE>ets</CODE> tables created before the system was converted to a
+         distributed system could not be accessed then the system
+         became distributed. The representation of the <CODE>ets</CODE> table
+         identifier is thus changed.
+         <BR>
+Own Id: OTP-1393
+<BR>
+</UL>
+<A NAME="3"><!-- Empty --></A><H2>3 Stdlib 1.3</H2><A NAME="3.1"><!-- Empty --></A><H3>3.1 Improvements and new features</H3><P><UL>
+<LI>     <CODE>erl_eval</CODE> did crash on valid input like:
+         <BR>
+<PRE>1&#62; lists:sort(A=[1,2]).
+            </PRE>
+         A correction conserning variable bindings is done.
+         <BR>
+Own Id: OTP-1295
+         <BR>
+<LI>     <CODE>dets:next</CODE> did sometimes erreounously return <CODE>'$end_of_table'</CODE>.
+         <BR>
+Own Id: OTP-1293
+         <BR>
+<LI>     Corrected spelling errors in <CODE>help()</CODE> printout from shell.
+         <BR>
+Own Id: OTP-1038
+         <BR>
+<LI>Added a new function <CODE>sync_notify</CODE> in <CODE>gen_event</CODE>.
+         <BR>
+Own Id: OTP-1310
+
+        <BR>
+<LI>     The functions <CODE>add_sup_handler/3</CODE> and
+         <CODE>swap_sup_handler/3</CODE> are added to the
+         <CODE>gen_event</CODE> module. They are used to supervise
+         <CODE>gen_event</CODE> handlers.
+
+         <BR>
+Own Id: OTP-1122
+        <BR>
+<LI>     It is possible to add several handlers using the same call-back
+         module to a <CODE>gen_event</CODE> event manager. Use the new
+         <CODE>{Module, Id}</CODE> syntax for such event handlers.
+        <BR>
+<LI>     <CODE>gen_event</CODE> generates an error report when a handler
+         crashes.
+        <BR>
+<LI>Two new supervisor types <CODE>rest_for_one</CODE> and
+         <CODE>simple_one_for_one</CODE> are added.
+         <BR>
+Own Id: OTP-1177
+        <BR>
+<LI><CODE>os:type/1</CODE> and its documentation is corrected. 
+         <BR>
+Own Id: OTP-1185
+        <BR>
+<LI>     The function <CODE>init_ack/1</CODE> is added to the <CODE>proc_lib</CODE>
+         module.
+        <BR>
+<LI>     <CODE>erl_lint</CODE> produces warnings related to the <CODE>behaviour</CODE>
+         module attribute. For example, missing call-back functions are
+         reported. This feature is used by the compiler.
+         <BR>
+Own Id: OTP-1200
+        <BR>
+</UL>
+<A NAME="3.2"><!-- Empty --></A><H3>3.2 Fixed Bugs and malfunctions</H3><P><UL>
+<LI><CODE>gen_server:cast</CODE> and <CODE>gen_server:abcast</CODE> did 
+         sometimes crash if the server did not exist.
+         <BR>
+Own Id:OTP-1343
+        <BR>
+<LI>The <CODE>ets</CODE> reference manual is corrected to describe
+         what happens when trying to access a non existant table.
+         <BR>
+Own Id:OTP-1244
+<BR>
+</UL>
+<A NAME="3.3"><!-- Empty --></A><H3>3.3 Incompatibilities with Stdlib 1.2</H3><P>-
+<A NAME="4"><!-- Empty --></A><H2>4 Stdlib 1.2</H2><A NAME="4.1"><!-- Empty --></A><H3>4.1 Improvements and new features</H3><P><UL>
+<LI>     The <CODE>dets</CODE> module has been greatly enhanced. Previously
+         the <CODE>dets</CODE> module had no real space management on the file.
+         Now, space is managed on a per file basis by a builtin buddy system.
+         This means that allocation is much faster. The format of a dets file
+         is consequently also changed, the dets module will however 
+         recognize files with the old format and automatically upgrade
+         the file to the new format the first time it is opened.
+         <BR>
+This has consequences for the Mnesia system, or rather it does not,
+         since the version upgrade is done automatically.
+        <BR>
+<LI>    A new module <CODE>filename</CODE> which has a number of useful functions 
+                for manipulation of filenames. These functions are recommended
+                to use
+                when writing applications which shall be runnable on a number
+        of different platforms.
+        <BR>
+<LI>    A new module <CODE>os</CODE> which provides functions which enables
+        various information from the host operating system to the Erlang 
+        programmer. The function <CODE>cmd/1</CODE> is equivalent with the 
+        <CODE>unix:cmd/1</CODE> on a unix platform and will also be available
+        on other platforms if applicable, e.g on Windows NT. This function
+        is the recommended way of issuing operating system commands from
+        Erlang programs (rather than <CODE>unix:cmd/1</CODE>). Other functions
+        in the module are <CODE>version</CODE> and <CODE>type&#62;</CODE> which give
+        information about the host operating system version and type.
+<BR>
+</UL>
+<A NAME="4.2"><!-- Empty --></A><H3>4.2 Fixed Bugs and malfunctions</H3><P><UL>
+<LI>     The <CODE>ets</CODE> man page updated (Name instead of Id).
+         <BR>
+Own Id: OTP-1001.
+        <BR>
+<LI>     The <CODE>ets</CODE> module now handles arbitrarily many variables.
+         Previously there was an upper limit of 10.
+         <BR>
+Own Id: OTP-1124.
+<BR>
+</UL>
+<A NAME="5"><!-- Empty --></A><H2>5 Stdlib 1.1</H2><A NAME="5.1"><!-- Empty --></A><H3>5.1 Improvements and new features</H3><P><UL>
+<LI>     Added <CODE>disk_log</CODE>, a disc based term logging facility.
+
+        <BR>
+<LI>     Added <CODE>dets</CODE>, a disc based term storage.
+
+        <BR>
+<LI>     Added <CODE>proc_lib:start/3,4</CODE>,
+         <CODE>proc_lib:start_link/3,4</CODE> and
+         <CODE>proc_lib:init_ack/2</CODE> for synchronous start of
+         <CODE>proc_lib</CODE> processes.
+
+        <BR>
+<LI>     Added <CODE>regexp</CODE>, regular expression functions for strings.
+
+        <BR>
+<LI>     It is possible to have anonymous supervisors.
+<BR>
+</UL>
+<A NAME="5.2"><!-- Empty --></A><H3>5.2 Fixed Bugs and malfunctions</H3><P><UL>
+<LI>     Fixed bug in <CODE>timer</CODE> there timeouts would cause an internal
+         error under heavy load.
+<BR>
+</UL>
+<A NAME="5.3"><!-- Empty --></A><H3>5.3 Incompatibilities with OTP P1G</H3><P><UL>
+<LI>     It is possible to change the internal state of the event manager
+         using the <CODE>gen_event:call</CODE> function. The <CODE>handle_call/2</CODE>
+         call-back function should return in a similar way as the
+         <CODE>handle_event/2</CODE> function.
+
+        <BR>
+<LI>     A <CODE>gen_event</CODE> worker should specify <CODE>dynamic</CODE> for
+         modules in the supervisor child specification.
+<BR>
+</UL>
+<A NAME="5.4"><!-- Empty --></A><H3>5.4 Known bugs and problems</H3><P>-
+</BLOCKQUOTE>
+<CENTER>
+<HR>
+<FONT SIZE=-1>
+Copyright &copy; 1991-99
+<A HREF="http://www.ericsson.se">Ericsson Utvecklings AB</A><BR>
+<!--#include virtual="/ssi/otp_footer.html"-->
+</FONT>
+</CENTER>
+</BODY>
+</HTML>

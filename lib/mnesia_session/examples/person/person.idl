@@ -1,0 +1,31 @@
+//
+// A simple example on different structures used to access mnesia from
+// the outside 
+//
+// If the tables and structures should be accessed through a corba
+// interface, they need to be defined in a IDL specification so that
+// the mnesia_session interface can access the types needed to use
+// corba type any.
+//
+
+module persons
+{
+  enum Sex {male, female};
+
+  struct data
+  {
+    Sex sex;
+    long age;
+    long phone;
+  };
+  
+  struct person 
+  {
+    string name;                 // Used as key
+    data personData;             // A reference to other data structure
+    string married_to;           // A relation 
+    sequence <string> children;  // A list
+  };
+
+};
+

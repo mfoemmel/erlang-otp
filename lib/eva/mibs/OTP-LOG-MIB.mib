@@ -1,0 +1,536 @@
+OTP-LOG-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, NOTIFICATION-TYPE, OBJECT-IDENTITY, OBJECT-TYPE,
+    Gauge32, Integer32, IpAddress, Unsigned32
+        FROM SNMPv2-SMI
+    AutonomousType, DateAndTime, DisplayString, RowStatus
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, NOTIFICATION-GROUP, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    otpModules, otpApplications
+        FROM OTP-REG
+    OwnerString
+        FROM OTP-TC
+    currentAlarmObject, currentAlarmSeverity, currentAlarmTime
+	FROM OTP-EVA-MIB
+    ;
+ 
+otpLogModule MODULE-IDENTITY
+    LAST-UPDATED  "9712010900Z"
+    ORGANIZATION  "Ericsson, EPK/TE"
+    CONTACT-INFO
+        "Contact:  Erlang Support
+
+          Postal:  ERICSSON SOFTWARE TECHNOLOGY AB
+                   ERLANG SYSTEMS
+                   Box 1214
+                   S-164 28  KISTA, SWEDEN
+
+             Tel:  +46  8 719 00 00
+          E-mail:  support@erlang.ericsson.se"
+    DESCRIPTION
+        "This MIB is part of the OTP MIB.  It defines MIB objects
+        for the log application in OTP."
+
+    REVISION    "9712010900Z"
+    DESCRIPTION
+        "Converted to v2 SMI and placed in the OTP tree."
+
+    REVISION    "9705020900Z"
+    DESCRIPTION
+        "The initial version of the OTP-LOG-MIB module.  It is very
+        much inspired by the Axd301Sto-OMS mib."
+    ::= { otpModules 7 }
+
+otpLogMIB       OBJECT IDENTIFIER ::= { otpApplications 5 }
+otpLogMIBConformance
+                OBJECT IDENTIFIER ::= { otpLogMIB 1 }
+otpLogMIBObjects
+                OBJECT IDENTIFIER ::= { otpLogMIB 2 }
+otpLogMIBAlarms
+                OBJECT IDENTIFIER ::= { otpLogMIB 4 }
+otpLogMIBAlarmsV2
+                OBJECT IDENTIFIER ::= { otpLogMIBAlarms 0 }
+
+-- Datatypes
+
+-- Managed Objects
+
+log             OBJECT IDENTIFIER ::= { otpLogMIBObjects 1 }
+logCauses       OBJECT IDENTIFIER ::= { otpLogMIBObjects 2 }
+logTransfer     OBJECT IDENTIFIER ::= { otpLogMIBObjects 3 }
+
+
+-- The Log group
+--
+-- The Log group controls the logs in the agent system.
+
+logTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF LogEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table describes log instances. Each row represents one 
+        log instance.
+
+        The log table supports generic logs. Different applications
+        can choose to use this table to control their logs.  In this
+        way, all logs in the system are controlled in a uniform way."
+    ::= { log 1 }
+
+logEntry OBJECT-TYPE
+    SYNTAX      LogEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A set of parameters that describes a log.
+
+        The logType describes what kind of log it is.  Each application
+        that uses this table for its logs, must define an own log type
+        and associate an object identifier with the type (e.g. by using
+        the OBJECT-IDENTITY macro).
+
+        Some types of logs support log creation, and some do not.  This
+        must be specified for each log type by the MIB designer for that
+        application.  Each such MIB may define additional managed objects
+        that controls log creation, e.g. an application 'xx' may define
+        an object 'xxLogTotalMaxAllowedSize' that restricts the total size
+        occupied by the logs of that type.  Applications may define
+        extentions to this table for certain log types as well.  Such
+        an extention could e.g. 'xxLogFileName'."
+    INDEX    { logIndex }
+    ::= { logTable 1 }
+
+LogEntry ::= SEQUENCE {
+    logIndex            Integer32 (1..2147483647),
+    logName             DisplayString (SIZE (1..127)),
+    logType             AutonomousType,
+    logAdminStatus      INTEGER,
+    logOperStatus       INTEGER,
+    logMaxSize          Unsigned32,
+    logNumberOfRecords  Gauge32,
+    logMinWrapTime      Integer32,
+    logWrapPercentage   Integer32,
+    logOwner            OwnerString,
+    logRowStatus        RowStatus
+    }
+
+logIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "An index which uniquely identifies an entry in the
+        log table."
+    ::= { logEntry 1 }
+
+logName OBJECT-TYPE
+    SYNTAX      DisplayString (SIZE (1..127))
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "A name that explains what kind of log it is. For example
+        AlarmLog. The name must be unique within the logTable."
+    ::= { logEntry 2 }
+
+logType OBJECT-TYPE
+    SYNTAX      AutonomousType
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies which type of log it is. Each application that
+        uses this table for log control defines an object identity
+        for its own logs. When a log is created, this attribute
+        must be set to an object identity defined by an application
+        known by the agent system. It is up to that application to
+        define how to control the contents of the log. If the type of
+        log is not known or not defined in a MIB, the value of this
+        object is zeroDotZero."
+    ::= { logEntry 3 }
+
+logAdminStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+        up(1),
+        down(2)
+        }
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies if the log is active or not, i.e specifies desired
+        logOperStatus."
+    DEFVAL { up }
+    ::= { logEntry 4 }
+
+logOperStatus OBJECT-TYPE
+    SYNTAX      INTEGER {
+        up(1),
+        down(2)
+        }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "Tells whether the log has full functionality or not. If it
+        is down then no events are stored in the log."
+    ::= { logEntry 5 }
+
+logMaxSize OBJECT-TYPE
+    SYNTAX      Unsigned32
+    UNITS       "bytes"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Maximum size of the log in bytes.  Local limits may
+        make the creation fail. When the log reaches its
+        maximum size, logWrapPercentage of the log space is
+        freed to make room for more records; that is the log wraps."
+    DEFVAL { 1000000 }
+    ::= { logEntry 6 }
+
+logNumberOfRecords OBJECT-TYPE
+    SYNTAX      Gauge32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The number of log records stored in the log."
+    ::= { logEntry 7 }
+
+logMinWrapTime OBJECT-TYPE
+    SYNTAX      Integer32 (1..65535)
+    UNITS       "hours"
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The lowest time limit, in hours, for the wrap functionality
+        in the log. If the log wraps too quickly the alarm
+        'logWrapAlarm' is sent."
+    DEFVAL { 24 }
+    ::= { logEntry 8 }
+
+logWrapPercentage OBJECT-TYPE
+    SYNTAX      Integer32 (1..100)
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Specifies how much data for each log, in percentage of
+        logMaxSize, that is removed at a wrap situation."
+    DEFVAL { 5 }
+    ::= { logEntry 9 }
+
+logOwner OBJECT-TYPE
+    SYNTAX      OwnerString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "The manager entity that 'owns' the log, and is    therefore
+        responsible for its contents, including entries in the
+        logDiscriminatorTable. Logs created by the agent
+        system should not be deleted or otherwise modified."
+    ::= { logEntry 10 }
+
+logRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Used to make it possible to create and delete logs from a
+        management application. Supported values are 'createAndGo' and 
+        'destroy'."
+    ::= { logEntry 11 }
+
+
+-- Alarms
+
+logWrapAlarm NOTIFICATION-TYPE
+    OBJECTS {
+        currentAlarmTime,
+        currentAlarmSeverity,
+        currentAlarmObject
+        }
+    STATUS  current
+    DESCRIPTION
+        "Alarm which is sent if the log wraps too quickly.
+        currentAlarmObject points to the logName of the faulty log.
+        Default severity is Major."
+    ::= { otpLogMIBAlarmsV2 1 }
+
+logMediaErrorAlarm NOTIFICATION-TYPE
+    OBJECTS {
+        currentAlarmTime,
+        currentAlarmSeverity,
+        currentAlarmObject
+        }
+    STATUS  current
+    DESCRIPTION
+        "Alarm which is sent when the logging function has detected
+        an error is the storage media, and can't log anything more.
+        currentAlarmObject points to the logName of the faulty log.
+        Default severity is Critical."
+    ::= { otpLogMIBAlarmsV2 2 }
+
+-- Causes
+
+logNoSpaceLeft OBJECT-IDENTITY
+    STATUS     current
+    DESCRIPTION
+        "This cause is used when there is no space left on the media.
+        If this error occurs, the system is erroneous configured."
+    ::= { logCauses 1 }
+
+logMediaBroken OBJECT-IDENTITY
+    STATUS     current
+    DESCRIPTION
+        "This cause is used when the storage media is broken."
+ ::= {logCauses 2}
+
+
+-- The Log Transfer group
+--
+-- The Log Transfer group defined objects for transferring a log
+-- with FTP to a management station.
+
+logTransferTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF LogTransferEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table provides functions for transferring a log
+        to a management station using FTP.
+        When a manager creates a row in this table, he provides 
+        search criteria and FTP parameters. When the log items
+        requested are collected, the result is sent to the FTP
+        address specified.
+
+        This table may be extended with specific search criteria
+        by MIB designers that use this table for their log types.
+        For example, an SNMP Audit Trail log may define an object
+        'snmpLogTransferIpAddress' which can be used to transfer
+        log items from a specific manager.  Note that if additional
+        objects exists for a certain log type, it may not be possible
+        to start a transfer without specifying values for the
+        additional objects as well."
+    ::= { logTransfer 1 }
+
+logTransferEntry OBJECT-TYPE
+    SYNTAX      LogTransferEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A set of parameters that describes a log transfer entry."
+    INDEX      { logIndex, logTransferIndex }
+    ::= { logTransferTable 1 }
+
+LogTransferEntry ::= SEQUENCE {
+    logTransferIndex         Integer32 (1..2147483647),
+    logTransferStartTime     DateAndTime,
+    logTransferStopTime      DateAndTime,
+    logTransferFTPAddress    IpAddress,
+    logTransferFTPUser       DisplayString,
+    logTransferFTPPasswd     DisplayString,
+    logTransferFTPFile       DisplayString,
+    logTransferLastResult    INTEGER,
+    logTransferRowStatus     RowStatus
+    }
+
+logTransferIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647)
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "An index which uniquely identifies an entry in the
+        logTransferTable."
+    ::= { logTransferEntry 1 }
+
+logTransferStartTime OBJECT-TYPE
+    SYNTAX      DateAndTime
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Log records stored after this time are collected."
+    ::= { logTransferEntry 2 }
+
+logTransferStopTime OBJECT-TYPE
+    SYNTAX      DateAndTime
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Log records stored before this time are collected."
+    ::= { logTransferEntry 3 }
+
+logTransferFTPAddress OBJECT-TYPE
+    SYNTAX      IpAddress
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This attribute specifies to which ip address the resulting
+        log file is sent."
+    ::= { logTransferEntry 4 }
+
+logTransferFTPUser OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This attribute specifies user used in the FTP session."
+    ::= { logTransferEntry 5 }
+
+logTransferFTPPasswd OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This attribute specifies password used in the FTP session."
+    ::= { logTransferEntry 6 }
+
+logTransferFTPFile OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This attribute specifies what the log file is called
+        on the recieving side."
+    ::= { logTransferEntry 7 }
+
+logTransferLastResult OBJECT-TYPE
+    SYNTAX      INTEGER {
+        ok(1),
+        aborted(2),
+        ftpBadAddress(3),
+        ftpLoginError(4),
+        ftpWriteError(5),
+        ftpTransferError(6),
+        otherError(7)
+        }
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "This attribute shows the result of the last transfer attempt
+        for this entry.
+          - ok               the transfer succeded
+          - aborted          the transfer was aborted by the management station
+          - ftpBadAddress    the FTP address could not be contacted
+          - ftpLoginError    the combination of FTP user and passwd was invalid
+          - ftpWriteError    the user had no write access to the file
+          - ftpTransferError the FTP session aborted
+          - otherError       any other error, e.g. internal error in log"
+    ::= { logTransferEntry 8 }
+
+logTransferRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "This attribute is used to create and delete transfer entries, and
+        to start or abort log transfer sessions.  When an entry exists in
+        this table, and the status is 'notInService' it is ready to
+        start a transfer session.
+
+        When the status of a row is set to 'active', the transfer
+        begins.  When the transfer is finished, the status is set to
+        'notInService'.  If the status of an 'active' row (i.e. a
+        transfer is in progress) is set to 'notInService', the transfer
+        is aborted.
+
+        Thus, if the row is created with 'createAndGo', the transfer is
+        created, and the transfer session is started at once."
+    ::= { logTransferEntry 9 }
+
+
+-- conformance information
+
+otpLogMIBCompliances
+                OBJECT IDENTIFIER ::= { otpLogMIBConformance 1 }
+otpLogMIBGroups
+                OBJECT IDENTIFIER ::= { otpLogMIBConformance 2 }
+
+
+-- compliance statements
+
+otpLogBasicCompliance MODULE-COMPLIANCE
+    STATUS  current
+    DESCRIPTION
+            "The compliance statement for SNMPv2 entities which
+            implement the OTP-LOG-MIB."
+    MODULE  -- this module
+        MANDATORY-GROUPS { logGroup, logAlarmsGroup }
+
+	GROUP   logTransferGroup
+        DESCRIPTION
+            "This group is mandatory for agent systems that supports
+            log transfer with FTP."
+
+        OBJECT  logName
+        MIN-ACCESS  read-only
+        DESCRIPTION
+            "Read-write and read-create access are not required."  
+
+        OBJECT  logType
+        MIN-ACCESS  read-only
+        DESCRIPTION
+            "Read-write and read-create access are not required."  
+
+        OBJECT  logAdminStatus
+        MIN-ACCESS  read-only
+        DESCRIPTION
+            "Read-write and read-create access are not required."  
+
+        OBJECT  logMaxSize
+        MIN-ACCESS  read-only
+        DESCRIPTION
+            "Read-write and read-create access are not required."  
+
+        OBJECT  logOwner
+        MIN-ACCESS  read-only
+        DESCRIPTION
+            "Read-write and read-create access are not required."  
+
+        OBJECT  logRowStatus
+        MIN-ACCESS  read-only
+        DESCRIPTION
+            "Read-write and read-create access are not required."  
+    ::= { otpLogMIBCompliances 1 }
+
+
+-- units of conformance
+
+logGroup OBJECT-GROUP
+    OBJECTS { logName,
+              logType,
+              logAdminStatus,
+              logOperStatus,
+              logMaxSize,
+              logNumberOfRecords,
+              logMinWrapTime,
+              logWrapPercentage,
+              logOwner,
+              logRowStatus }
+    STATUS  current
+    DESCRIPTION
+        "A collection of objects providing basic instrumentation
+        and control of logs in the OTP system."
+    ::= { otpLogMIBGroups 1 }
+
+logTransferGroup OBJECT-GROUP
+    OBJECTS { logTransferStartTime,
+              logTransferStopTime,
+              logTransferFTPAddress,
+              logTransferFTPUser,
+              logTransferFTPPasswd,
+              logTransferFTPFile,
+              logTransferLastResult,
+              logTransferRowStatus }
+    STATUS  current
+    DESCRIPTION
+        "A collection of objects providing control over log
+        transfer with FTP from the agent system."
+    ::= { otpLogMIBGroups 2 }
+
+logAlarmssGroup NOTIFICATION-GROUP
+    NOTIFICATIONS { logWrapAlarm, logMediaErrorAlarm }
+    STATUS        current
+    DESCRIPTION
+        "The alarms which are generated from the Log application."
+    ::= { otpLogMIBGroups 3 }
+
+
+END

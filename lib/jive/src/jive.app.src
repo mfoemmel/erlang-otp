@@ -1,0 +1,15 @@
+{application,jive,
+ [{description,"JIVE  CXC 138 50"},
+  {vsn,"%VSN%"},	
+  {modules,[jive_app,
+	    jive,
+	    jive_server,
+	    jive_sup,
+	    jive_broker,
+	    jive_worker,
+	    jive_worker_sup
+	   ]},
+  {registered,[jive_sup,jive_worker_sup,jive_server,jive_broker]},
+  {env,[{listen_port,14000}, {accept_timeout,1000}]},
+  {applications,[kernel,stdlib]},
+  {mod,{jive_app,[]}}]}. 

@@ -1,0 +1,23 @@
+{application, mesh,
+   [{description, "Measurement Handler"},
+    {vsn, "%VSN%"},
+    {modules, [mesh,
+	       mesh_app,
+	       mesh_lib,
+	       mesh_log,
+               mesh_server,
+	       mesh_snmp,
+	       mesh_sup
+	      ]},
+    {registered, [mesh_sup,
+		  mesh_server,
+		  mesh_snmp
+		 ]},
+    {env, [{snmp_adapted,false}]},
+    {applications, [kernel,
+		    stdlib,
+		    sasl,
+		    mnesia,
+		    eva
+		   ]},
+    {mod, {mesh_app, []}}]}.

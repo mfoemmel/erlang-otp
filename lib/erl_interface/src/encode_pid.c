@@ -1,0 +1,51 @@
+/* ``The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved via the world wide web at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+ * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+ * AB. All Rights Reserved.''
+ * 
+ *     $Id$
+ */
+#include <string.h>
+
+#include "ei.h"
+#include "putget.h"
+
+int ei_encode_pid(char *buf, int *index, const erlang_pid *p)
+{
+  char *s = buf + *index;
+  char *s0 = s;
+  int len = strlen(p->node);
+  
+  if (!buf) s += 13 + len;
+  else {
+    put8(s,ERL_PID_EXT);
+
+    /* first the nodename */
+    put8(s,ERL_ATOM_EXT);
+
+    put16be(s,len);
+  
+    memmove(s, p->node, len);
+    s += len;
+
+    /* now the integers */
+    put32be(s,p->num & 0x7fff); /* 15 bits */
+    put32be(s,p->serial & 0x07); /* 3 bits */
+    put8(s,(p->creation & 0x03)); /* 2 bits */
+  }
+  
+  *index += s-s0;
+  
+  return 0;
+}
+

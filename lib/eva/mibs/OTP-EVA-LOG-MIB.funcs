@@ -1,0 +1,3 @@
+{evaLogDiscriminatorTable, {eva_log_snmp, eva_log_discr_table, []}}.
+{evaLogTotalMaxAllowedSize, {eva_log_snmp, eva_log_total_max_allowed, []}}.
+{evaLogTotalMaxSize, {eva_log_snmp, eva_log_total_max_size, []}}.

@@ -1,0 +1,132 @@
+<HTML>
+<HEAD>
+  <TITLE>Compiler Release Notes</TITLE>
+</HEAD>
+
+<BODY BGCOLOR="#FFFFFF">
+
+<CENTER><H1>Compiler Release Notes</H1></CENTER>
+
+<HTML>
+<HEAD>
+  <TITLE>Compiler Release Notes</TITLE>
+</HEAD>
+
+<BODY BGCOLOR="#FFFFFF">
+
+<H2>Compiler 2.1</H2>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The old compiler from R5 is included as well as the new compiler.
+The new compiler (<CODE>v2</CODE>) is the default. The old compiler
+can be chosen by giving a <CODE>v1</CODE> option to the compiler.
+The compiler will also read default compiler options from
+the ERL_COMPILER_OPTIONS environment variables.
+<br>
+<p>
+The <CODE>v2</CODE> compiler, which is default, generates smaller and
+faster code than the <CODE>v1</CODE> compiler, but in one case the
+compilation can be extremly slow: on pattern matching on long literal
+strings. The <CODE>v2</CODE> compiler in R6A also compiled huge list
+and/or tuple literals slowly. The <CODE>v2</CODE> compiler in R6B
+compiles these literals much faster.
+<br>Own Id: OTP-3363
+
+
+</UL>
+<H2>Compiler 2.0</H2>
+<H3>Known problems</H3>
+
+<UL>
+
+<LI>
+Use of recursively defined records causes the compiler to
+crash instead of reporting an error.
+<br>Own Id: OTP-2677
+
+
+<LI>
+All current versions of the Beam compiler (both the <CODE>v1</CODE>
+and the <CODE>v2</CODE> versions) have a hard limit on the size of
+list and tuple literals in Beam modules. This limit 1024,
+which is the number of registers in the Beam virtual machine.
+When building a list whose elements are not small integers
+or atoms, the compiler generates code that builds all list
+elements from left to right (as the Erlang standard prescribes)
+saving the built elements in registers. When all elements has
+been built, the list itself is built. This effectively limits
+the size of a literal list to 1024 elements.
+<br>
+<p>
+This limitation will be removed in a future version of the
+compiler.
+<br>
+<p>
+Note 1: This only applies to list literals in Beam modules,
+not to list literals read from data files by <CODE>file:consult/X</CODE>
+or other means, or lists built dynamically by Erlang code or
+BIFs. The only practial limit on the list size is the available
+memory.
+<br>
+<p>
+Note 2: Literals list with elements that don't need to be built
+beforehand (such as numbers and atoms) can be of any length.
+<br>
+<p>
+Note 3: The same rules apply to tuples.
+<br>Own Id: OTP-3367
+
+
+</UL>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+In earlier Beam releases, the result of the
+match operator '=' in a function body was wrong.
+For instance, in '<CODE>io:format("~p\n", [[X]=[a]])</CODE>',
+the result of the match expression '<CODE>[X]=[a]</CODE>' should
+be '<CODE>[a]</CODE>', but in Beam it was '<CODE>a</CODE>'.
+This all means that multiple patterns in function bodies
+such as '<CODE>[X] = [Y] = [a]</CODE>' would fail with a badmatch exception
+in Beam releases before R6.
+This has been corrected in the new Beam compiler.
+Incorrect code like '<CODE>a = [X] = [a]</CODE>' which depended
+on the incorrect behaviour will now fail with a badmatch.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3176
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+Where previously only one comma-separated sequence of guard
+tests was allowed, now a guard can be written as a
+disjunction of sequences, using
+<CODE>;</CODE> as separator. This is syntactic sugar which removes
+the bother of writing the same body after several guards.
+<br>Own Id: OTP-3182
+
+
+<LI>
+The compiler has been entirely rewritten for this release.
+It generally generates smaller and faster code
+than the old compiler. The compiler itself, however, may
+be slower than the older compiler, depending on the input.
+<br>Own Id: OTP-3335
+
+
+</UL>
+
+There are also release notes for 
+<A HREF="notes_history.html">older versions</A>.
+
+</body>
+</html>

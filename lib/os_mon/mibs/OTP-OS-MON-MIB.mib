@@ -1,0 +1,358 @@
+OTP-OS-MON-MIB DEFINITIONS ::= BEGIN
+ 
+IMPORTS
+    MODULE-IDENTITY, NOTIFICATION-TYPE, OBJECT-TYPE,
+    Counter32, Gauge32, Integer32
+        FROM SNMPv2-SMI
+    DisplayString
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, NOTIFICATION-GROUP, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    otpModules, otpApplications
+        FROM OTP-REG
+    erlNodeId
+        FROM OTP-MIB
+    currentAlarmObject, currentAlarmSeverity, currentAlarmTime
+	FROM OTP-EVA-MIB
+    ;
+
+otpOsMonModule MODULE-IDENTITY
+    LAST-UPDATED  "9807080900Z"
+    ORGANIZATION  "Ericsson, EPK/TE"
+    CONTACT-INFO
+        "Contact:  Erlang Support
+
+          Postal:  ERICSSON SOFTWARE TECHNOLOGY AB
+                   ERLANG SYSTEMS
+                   Box 1214
+                   S-164 28  KISTA, SWEDEN
+
+             Tel:  +46  8 719 00 00
+          E-mail:  support@erlang.ericsson.se"
+    DESCRIPTION
+        "This MIB is part of the OTP MIB.  It defines MIB objects
+        for the os_mon application in OTP."
+
+    REVISION     "9807080900Z"
+    DESCRIPTION
+        "Changed MAX-ACCESS for diskDescr from not-accessible to
+        read-only."
+
+    REVISION     "9801270900Z"
+    DESCRIPTION
+        "Changed erroneous name of this module to otpOsMonModule."
+
+    REVISION     "9712010900Z"
+    DESCRIPTION
+        "Converted to v2 SMI and placed in the OTP tree."
+
+    REVISION     "9608191700Z"
+    DESCRIPTION
+        "The initial revision of MIB module OTP-OS-MON-MIB."
+    ::= { otpModules 4 }
+
+otpOsMonMIB     OBJECT IDENTIFIER ::= { otpApplications 2 }
+otpOsMonMIBConformance
+                OBJECT IDENTIFIER ::= { otpOsMonMIB 1 }
+otpOsMonMIBObjects
+                OBJECT IDENTIFIER ::= { otpOsMonMIB 2 }
+otpOsMonMIBAlarms
+                OBJECT IDENTIFIER ::= { otpOsMonMIB 4 }
+otpOsMonMIBAlarmsV2
+                OBJECT IDENTIFIER ::= { otpOsMonMIBAlarms 0 }
+
+
+-- Datatypes
+
+-- Managed Objects
+
+load            OBJECT IDENTIFIER ::= { otpOsMonMIBObjects 1 }
+disk            OBJECT IDENTIFIER ::= { otpOsMonMIBObjects 2 }
+
+loadMemorySystemWatermark OBJECT-TYPE
+    SYNTAX      Integer32 (0..100)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION    
+        "Threshold in percent of the total available system
+        memory, which specifies how much memory can be allocated
+        by the system before an alarm is sent."
+    ::= { load 1 }
+
+loadMemoryErlProcWatermark OBJECT-TYPE
+    SYNTAX      Integer32 (0..100)
+    MAX-ACCESS  read-only    
+    STATUS      current    
+    DESCRIPTION
+        "Threshold in percent of the total available system
+        memory, which specifies how much memory can be allocated
+        by one Erlang process before an alarm is sent."
+    ::= { load 2 }
+
+loadTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF LoadEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A table with load and memory information
+        for each node."
+    ::= { load 3 }
+
+loadEntry OBJECT-TYPE
+    SYNTAX      LoadEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "A conceptual row in the loadTable."
+    INDEX   { erlNodeId }
+    ::= { loadTable 1 }
+
+LoadEntry ::= SEQUENCE {
+    loadSystemTotalMemory           Gauge32,
+    loadSystemUsedMemory            Gauge32,
+    loadLargestErlProcess           DisplayString,
+    loadLargestErlProcessUsedMemory Gauge32,
+    loadCpuLoad                     Integer32        
+    }
+
+loadSystemTotalMemory OBJECT-TYPE
+    SYNTAX      Gauge32
+    UNITS       "bytes"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The amount of total memory in the system."
+    ::= { loadEntry 1 }
+
+loadSystemUsedMemory OBJECT-TYPE
+    SYNTAX      Gauge32
+    UNITS       "bytes"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The amount of used memory."
+    ::= { loadEntry 2 }
+
+loadLargestErlProcess OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The process identifier (Pid) of the largest Erlang
+        process."
+    ::= { loadEntry 3 }
+
+loadLargestErlProcessUsedMemory OBJECT-TYPE
+    SYNTAX      Gauge32
+    UNITS       "bytes"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The amount of memory used by the largest Erlang
+        process."
+    ::= { loadEntry 4 }
+
+loadCpuLoad OBJECT-TYPE
+    SYNTAX      Integer32 (0..100)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The load in percent of the CPU where the Erlang
+        node runs."
+    ::= { loadEntry 5}
+
+diskAlmostFullThreshold OBJECT-TYPE
+    SYNTAX      Integer32 (0..100)
+    MAX-ACCESS  read-only    
+    STATUS      current    
+    DESCRIPTION    
+        "Threshold in percent of the available disk space,
+        which specifies how much disk space can be used by
+        a disk or partition before an alarm is sent."
+    ::= { disk 1 }
+
+diskTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF DiskEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+          "A table with all local disks or partitions on each
+          node."
+    ::= { disk 2 }
+
+diskEntry OBJECT-TYPE
+    SYNTAX      DiskEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+          "A conceptual row in the diskTable."
+    INDEX      { erlNodeId, diskId }
+    ::= { diskTable 1 }
+
+DiskEntry ::= SEQUENCE {
+    diskId          Integer32,
+    diskDescr       DisplayString,
+    diskKBytes      Gauge32,
+    diskCapacity    Integer32
+    }
+
+diskId OBJECT-TYPE
+    SYNTAX      Integer32
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "An integer that uniquely identifies the disk
+        or partition."
+    ::= { diskEntry 1 }
+
+diskDescr OBJECT-TYPE
+    SYNTAX     DisplayString
+    MAX-ACCESS read-only
+    STATUS     current
+    DESCRIPTION
+        "A string that identifies the disk or partition."
+    ::= { diskEntry 2 }
+
+diskKBytes OBJECT-TYPE
+    SYNTAX      Gauge32
+    UNITS       "kbytes"
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The amount of total disk/partition space. "
+    ::= { diskEntry 3 }
+
+diskCapacity OBJECT-TYPE
+    SYNTAX      Integer32 (0..100)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "How much of the disk's/partition's total capacity has
+        been used, in percent."
+    ::= { diskEntry 4 }
+
+
+-- Alarms
+
+loadSystemMemoryHighAlarm NOTIFICATION-TYPE
+    OBJECTS {
+        currentAlarmTime,
+        currentAlarmSeverity,
+        currentAlarmObject
+        }
+    STATUS  current
+    DESCRIPTION
+        "This alarm is sent when the used system memory exceeds
+        loadMemorySystemWatermark of the total available memory.
+	currentAlarmObject points to the loadSystemUsedMemory of the
+        system.
+        Default severity is Major."
+    ::= { otpOsMonMIBAlarmsV2 1 }
+
+loadErlProcMemoryHighAlarm NOTIFICATION-TYPE
+    OBJECTS {
+        currentAlarmTime,
+        currentAlarmSeverity,
+        currentAlarmObject
+        }
+    STATUS  current
+    DESCRIPTION
+        "This alarm is sent when an Erlang process exceeds
+        loadMemoryErlProcWatermark of the total available memory.
+	currentAlarmObject points to the loadLargestErlProcess that
+        is too big.
+        Default severity is Minor."
+    ::= { otpOsMonMIBAlarmsV2 2 }
+
+diskAlmostFullAlarm NOTIFICATION-TYPE
+    OBJECTS {
+        currentAlarmTime,
+        currentAlarmSeverity,
+        currentAlarmObject
+        }
+    STATUS  current
+    DESCRIPTION
+        "Alarm which is sent if the log wraps too quickly.
+        currentAlarmObject points to the diskDescr of the faulty disk.
+        Default severity is Major."
+    ::= { otpOsMonMIBAlarmsV2 3 }
+
+-- conformance information
+
+otpOsMonMIBCompliances
+                OBJECT IDENTIFIER ::= { otpOsMonMIBConformance 1 }
+otpOsMonMIBGroups
+                OBJECT IDENTIFIER ::= { otpOsMonMIBConformance 2 }
+
+
+-- compliance statements
+
+otpOsMonBasicCompliance MODULE-COMPLIANCE
+    STATUS  current
+    DESCRIPTION
+        "The compliance statement for SNMPv2 entities which
+        implement the OTP-OS-MON-MIB."
+    MODULE  -- this module
+        GROUP loadGroup
+        DESCRIPTION
+            "This group is mandatory for systems implementing the
+            load supervison functionality."
+        GROUP loadAlarmsGroup
+        DESCRIPTION
+            "This group is optional for systems implementing the
+            load supervison functionality."
+        GROUP diskGroup
+        DESCRIPTION
+            "This group is mandatory for system implementing the
+            disk supervison functionality."
+        GROUP diskAlarmsGroup
+        DESCRIPTION
+            "This group is optional for systems implementing the
+            disk supervison functionality."
+    ::= { otpOsMonMIBCompliances 1 }
+
+
+-- units of conformance
+
+loadGroup OBJECT-GROUP
+    OBJECTS { loadMemorySystemWatermark,
+              loadMemoryErlProcWatermark,
+              loadSystemTotalMemory,
+              loadSystemUsedMemory,
+              loadLargestErlProcess,
+              loadLargestErlProcessUsedMemory,
+              loadCpuLoad }
+    STATUS  current
+    DESCRIPTION
+            "A collection of objects providing basic instrumentation
+            of the load of the OTP system."
+    ::= { otpOsMonMIBGroups 1 }
+
+loadAlarmsGroup NOTIFICATION-GROUP
+    NOTIFICATIONS { loadSystemMemoryHighAlarm, loadErlProcMemoryHighAlarm }
+    STATUS        current
+    DESCRIPTION
+        "The notifications which is generated from the load functionality
+        of the OS MON application."
+    ::= { otpOsMonMIBGroups 2 }
+
+diskGroup OBJECT-GROUP
+    OBJECTS { diskAlmostFullThreshold,
+              diskDescr,
+              diskKBytes,
+              diskCapacity }
+    STATUS  current
+    DESCRIPTION
+            "A collection of objects providing basic instrumentation
+            of the disks in the OTP system."
+    ::= { otpOsMonMIBGroups 3 }
+
+diskAlarmsGroup NOTIFICATION-GROUP
+    NOTIFICATIONS { diskAlmostFullAlarm }
+    STATUS        current
+    DESCRIPTION
+        "The notifications which is generated from the disk functionality
+        of the OS MON application."
+    ::= { otpOsMonMIBGroups 4 }
+
+END

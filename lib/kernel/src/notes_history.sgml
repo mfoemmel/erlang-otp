@@ -1,0 +1,442 @@
+<!doctype chapter PUBLIC "-//Stork//DTD chapter//EN">
+<!-- 
+ ``The contents of this file are subject to the Erlang Public License,
+ Version 1.1, (the "License"); you may not use this file except in
+ compliance with the License. You should have received a copy of the
+ Erlang Public License along with this software. If not, it can be
+ retrieved via the world wide web at http://www.erlang.org/.
+ 
+ Software distributed under the License is distributed on an "AS IS"
+ basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ the License for the specific language governing rights and limitations
+ under the License.
+ 
+ The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+ Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+ AB. All Rights Reserved.''
+ 
+     $Id$
+-->
+<chapter>
+  <header>
+    <title>KERNEL Release Notes
+    <prepared>Kenneth Lundin
+    <docno>
+    <date>1997-11-17
+    <rev>F
+    <file>notes.sgml
+  </header>
+
+  <p>This document describes the changes made to the Kernel application.
+
+
+  <section>
+    <title>Kernel 1.3.2</title>
+
+    <section>
+      <title>Fixed Bugs and malfunctions</title>
+      <list>
+	<item>
+	  <p><c>file:stop</c> does not hang any more.
+	  <p>Own Id:OTP-1404
+
+	<item>
+	  <p><c>net_kernel</c> could in some situations send two
+	  nodeup messages to the monitor processes (processes that
+	  have evaluated <c>net_kernel:monitor_nodes()</c>).
+
+	  <p>This problem could make <c>global</c> hang when several
+	  nodes connected.
+
+	  <p>Own Id:OTP-1418; OTP-1127, OTP-1412
+	  <br>Aux Id:tir-d-088
+
+	<item>
+	  <p><c>net_kernel</c> did not send nodedown messages for
+	  allowed nodes. If net_kernel:allow(Nodes) was used, no
+	  nodedown messages at all were sent to monitor processes
+	  net_kernel.
+ 
+	  <p>nodedown messages are now sent for allowed nodes but are
+	    ignored for connection attempts from disallowed nodes.
+
+	  <p>Own Id:OTP-1419
+
+	<item>
+	  <p><c>application_controller</c> had sync problems in the
+            takeover phase when an application was remote started.
+
+	  <p>Own Id:OTP-1426
+
+	<item>
+	  <p><c>application_controller</c> did sometimes report
+	    <c>{error,{not_started,App}}</c> even though the
+	    application in question has been started on another node.
+
+	  <p>Own Id:OTP-1454
+	  <br>Aux Id:HA52440
+
+	<item>
+	  <p><c>application_controller</c> could hang due to a
+	    deadlock situation during startup in a distributed system.
+
+	  <p>Own Id:OTP-1472
+
+      </list>
+    </section>
+
+    <section>
+      <title>Improvements and new features</title>
+      <list>
+	<item>
+	  <p>The support for dynamic loading of drivers in module <c>erl_ddll</c> is enhanced with
+	    reference counting of loaded drivers and automatic unloading of drivers when the "owner"
+	    process terminates.
+	  <p>Own Id:OTP-1460
+	<item>
+	  <p>The <c>os</c> module has got 2 new functions <c>getenv/1</c> to read environment variables from the hos operating system and <c>find_executable/1,2</c> to find executable programs using a
+	    search path.
+	  <p>Own Id:OTP-1461
+	<item>
+	  <p>A new function <c>application:which_application(Module)</c> which returns the 
+	    application that <c>Module</c> belongs to.
+	  <p>Own Id:OTP-1008
+      </list>
+
+    </section>
+  </section>
+
+  <section>
+    <title>Kernel 1.3.1</title>
+
+    <section>
+      <title>Fixed Bugs and malfunctions</title>
+      <list>
+	<item>
+	  <p>Malformed string/list as argument to unix:cmd/1 caused entire
+	  ERTS to crash.
+	  <p>Own Id: OTP-1384
+	<item>
+	  <p>It was not possible to convert a non distributed system
+	    into a distributed system as stated in the net_kernel
+	    reference manual.
+	    Note that this is not the recommended way to start a
+	    distributed system.
+	  <p>Own Id: OTP-1393
+	<item>
+	  <p><c>net_adm:world/1</c> was broken on Windows NT, since it relied
+	  on <c>unix:cmd/1</c>.
+	  <p>Own Id: OTP-1397
+	<item>
+	  <p>The <c>disk_log_server</c>  now clears it's state correctly 
+		when a disk_log process terminates.
+	  <p>Own Id: OTP-1402
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Kernel 1.3</title>
+
+    <section>
+      <title>Improvements and new features</title>
+
+      <list>
+	<item>
+	  <p><c>net_ticktime</c> is configurable through the <c>kernel</c>
+	    application. <c>net_ticktime</c> specifies the time within which
+	    a non responding node will be considered to be down.
+
+	<item>
+	  <p><c>-boot_var</c> flag read by <c>init</c>. This flag is used
+	    to set a path variable in the boot script. If applications
+	    will be placed under another directory than $ROOT/lib in an
+	    embedded system this flag can be used.
+	
+	<item>
+	  <p>A new function for controlling execution of applications
+	    is added; <c>application:permit/2</c>.  The function
+	    controls which applications are permitted to execute on
+	    the node.
+
+	<item>
+	  <p>A new configuration parameter <c>permissions</c>
+	    specifies the default permission an application has when
+	    it is loaded.
+
+	<item><p>New functions in <c>application</c>. <br>
+	    <c>application:load(App, Dist)</c> - set (and check!)
+	    distribution configuration for an application at load
+	    time.<br> <c>application:get_application/0,1</c> - get the
+	    application of a pid.
+	  <p>Own Id: OTP-1306
+
+	<item><p><c>.config</c> files are now allowed to contain
+	    comments.
+	  <p>Own Id: OTP-1134
+	    <br>Aux Id: HA37561
+
+	<item><p>It is now possible to specify more than one
+	    configuration file to <c>erl</c>, by using the command
+	    line flag <c>-config</c>.
+
+	<item>
+	  <p>The code server (module <c>code</c>) did sometimes store
+	    relative pathnames which could cause troubles in some cases. 
+	    The code server is changed to always store absolute pathnames.
+	  <p>Own Id: OTP-1239
+	    <br>Aux Id: erlang/66
+
+	<item>
+	  <p>An elucidation regarding strings in the <c>code</c> module.
+	    Since the <c>1.1</c> version of the kernel application the
+	    <c>code</c> module always returns directory (and file) names as
+	    strings. See the <c>code(3)</c> manual page.
+	  <p>It is preferable that directory names are provided as strings
+	    to all functions. The possibility to provide directory names
+	    as atoms may be removed in future releases. Module names
+	    should always be given as atoms and the possibility to provide
+	    module names as strings may be removed in future releases.
+	  <p>Own Id: OTP-1186
+
+	<item><p> <c>code:priv_dir/1</c> was very slow and is made
+	    much faster now.  <p>Own Id: OTP-1339
+
+	<item><p>The module <c>disk_log</c> is moved from
+	    <c>stdlib</c> to <c>kernel</c>, and some new functionality
+	    is added.  <c>disk_log</c> supports wrap and halt logs,
+	    the size of a log is configurable, it supports different
+	    file formats, and it supports replicated logs.
+	  <p>Own Id: OTP-1305
+
+	<item>
+	  <p>The <c>erl_boot_server</c> is dynamically configurable.
+	  <p>Own Id: OTP-1275
+
+	<item>
+	  <p>The functions <c>add_slave/1</c>, <c>delete_slave/1</c> and
+	    <c>which_slaves/0</c> are added to the <c>erl_boot_server</c>.
+
+	<item><p> New option <c>raw</c> to <c>file:open</c> and also a
+	    new variant of the function which takes a list of
+	    options. The open with an optionlist is the recommended
+	    way to open a file from no on.
+	  <p>Own Id: OTP-1242
+
+	<item>
+	  <p>New format for the <c>Reason</c> field when <c>{error,Reason}</c>
+	    is returned from functions in the <c>file</c> module. There is
+	    also new documentation about this in the reference manual.
+	    <p>Own Id: OTP-1075
+	</item>
+
+	<item><p> The configuration parameter <c>os</c> is removed
+	    from <c>kernel.app</c>.  The function <c>os:type()</c> is
+	    used instead.
+	  <p>Own Id: OTP-1277
+	    
+      </list>
+    </section>
+
+    <section>
+      <title>Fixed Bugs and malfunctions</title>
+      <list>
+	<item>
+	  <p><c>net_adm:world()</c> is corrected on Windows NT.
+	  <p>Own Id: OTP-1219
+	<item>
+	<p><c>file:list_dir("c:")</c> returns "No such file..." on NT
+	<p>Own Id:OTP-1237
+	<item>
+	  <p>Bad call to <c>c:c/1</c> did crash the Erlang shell.
+	    Solved by addition of a better test that a module name is correct.
+	  <p>Own Id: OTP-1256
+	    <br>Aux Id: erlang/73
+ 
+	<item>
+	  <p>The <c>rpc:cast</c> function was synchronous when casted function
+	    call was performed at the current node.
+	  <p>Own Id: OTP-1292
+	</list>
+      
+    </section>
+
+    <section>
+      <title>Incompatibilities with Kernel 1.1.1</title>
+      <list>
+	<item>
+	  <p>New format for the <c>Reason</c> field when <c>{error,Reason}</c>
+	    is returned from functions in the <c>file</c> module. 
+	    This is an interface change (the format of <c> Reason</c> but
+	    it will only break a minimal amount (if any) of old code since
+	    the previous format of <c>Reason</c> was more or less useless
+	    in match operations.  There where also errors in the documentation
+	    and other inconsistencies with the old format.
+	    <p>The most likely places where old code needs to be adjusted is where the  highlevel functions <c>consult</c>, <c>path_consult</c>, <c>eval</c> and <c>path_eval</c> in combination with a  match for the result <c>{error,open}</c> is used.
+	    <p>Own Id: OTP-1075
+	</item>
+	</list>
+    </section>
+
+    <section>
+      <title>Known bugs and problems</title>
+      
+      <p>-
+    </section>
+  </section>
+
+  <section>
+    <title>Kernel 1.1.1</title>
+
+    <section>
+      <title>Improvements and new feature</title>
+
+      <p>-
+    </section>
+
+    <section>
+      <title>Fixed Bugs and malfunctions</title>
+      
+      <list>
+
+	<item>
+	  <p><c>application:get_env/1</c> returned <c>undefined</c>
+	    for all parameters during startup of an application.
+
+	  <p>Own Id: OTP-1079
+
+	<item>
+	  <p>When synchronization of mandatory node fails using the
+	    <c>sync_nodes_mandatory</c> configuration parameter , the
+	    node should be takendown, but it wasn't.
+
+	  <p>Own Id: OTP-1083
+
+	<item>
+	  <p>Manual page for file corrected.
+
+	  <p>Own Id: OTP-1102
+
+	<item>
+	  <p>Attempt to start an application when already running
+	    causes error.  Now <c>application:start/1,2</c> returns
+	    <c>{error,{already_started,Name}}</c> if the application
+	    is running.
+
+	  <p>Own Id: OTP-1111
+	    <br>Aux Id: tir-f-087, tir-d-087
+
+	<item>
+	  <p>Restart (<c>init:restart/0</c>) of system did not work
+	    after a software upgrade. Started using the now old
+	    version.
+
+	  <p>Own Id: OTP-1113
+	    <br>Aux Id: HA37170
+
+	<item>
+	  <p><c>init:stop/0</c> did not work after a restart
+	  (<c>init:restart/0</c>).
+
+	  <p>Own Id: OTP-1117
+
+      </list>
+    </section>
+
+    <section>
+      <title>Incompatibilities with Kernel 1.1</title>
+
+      <p>-
+    </section>
+
+    <section>
+      <title>Known bugs and problems</title>
+      
+      <p>-
+    </section>
+  </section>
+
+  <section>
+    <title>Kernel 1.1</title>
+
+    <section>
+      <title>Improvements and new feature</title>
+      <list>
+        <item>
+	  <p>Application configuration paramaters can be given from
+	    the command line (overrides the configuration file):
+<code>
+erl -Appl Key Value
+</code>
+
+	<item>
+	  <p>Load applications before start. All applications (included
+	    in the boot script) are loaded before the first application is
+	    started.
+
+	<item>
+	  <p>Heart uses the hardware watchdog (Solaris), see heart(3).
+
+	<item>
+	  <p>Added <c>error_logger:info_msg/1,2</c>.
+
+	<item>
+	  <p>Support for distributed applications enhanced and
+	  documented.
+
+      </list>
+    </section>
+
+    <section>
+      <title>Fixed Bugs and malfunctions</title>
+      
+      <list>
+	<item>
+	  <p><c>net_adm:ping(Node)</c> will never return <c>pong</c>
+	    if this node is not allowed (<c>net_kernel:allow/1</c>) to
+	    connect to <c>Node</c>.
+
+	<item>
+	  <p><c>net_kernel:allow/1</c> handles hidden nodes. 
+
+      </list>
+    </section>
+
+    <section>
+      <title>Incompatibilities with OTP P1G</title>
+      <list>
+	<item>
+	  <p>A configuration file must have suffix .config. (For example,
+	    to use the file sys.config, erl -config ./sys is used)
+	    
+	<item>
+	  <p>Old boot scripts won't work - generate new with systools.
+
+	<item>
+	  <p>Added the application behaviour.
+	    Change in .app file: previously, <c>{start, {M, F, A}}</c>
+	    was specified, now <c>{mod, {M, A}}</c> should be specified,
+	    and <c>M:start(Type, A)</c> is called.
+
+        <item>
+	  <p><c>code:root_dir/0</c>, <c>code:lib_dir/0</c>,
+	    <c>code:compiler_dir/0</c> and <c>code:uc_dir/0</c> returns
+	    a string.
+
+	<item>
+	  <p>The <c>error_handler</c> is silent, e.g. it will not write
+	    <c>** cannot autoload: Mod **</c> and
+	    <c>** undefined registered name: Name **</c> to stdout any
+	    longer.
+      </list>
+    </section>
+
+    <section>
+      <title>Known bugs and problems</title>
+      
+      <p>-
+    </section>
+  </section>
+</chapter>
+
+

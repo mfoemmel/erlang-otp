@@ -1,0 +1,157 @@
+OTP-EVA-LOG-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+    MODULE-IDENTITY, OBJECT-IDENTITY, OBJECT-TYPE,
+    Integer32, Unsigned32
+        FROM SNMPv2-SMI
+    RowStatus
+        FROM SNMPv2-TC
+    MODULE-COMPLIANCE, OBJECT-GROUP
+        FROM SNMPv2-CONF
+    otpModules
+        FROM OTP-REG
+    otpEvaMIBObjects, otpEvaMIBCompliances
+        FROM OTP-EVA-MIB
+    logIndex
+        FROM OTP-LOG-MIB
+    ;
+
+otpEvaLogModule MODULE-IDENTITY
+    LAST-UPDATED "9712010900Z"
+    ORGANIZATION "Ericsson, EPK/TE"
+    CONTACT-INFO
+       "Contact:  Erlang Support
+
+         Postal:  ERICSSON SOFTWARE TECHNOLOGY AB
+                  ERLANG SYSTEMS
+                  Box 1214
+                  S-164 28  KISTA, SWEDEN
+
+             Tel: +46  8 719 00 00
+          E-mail: support@erlang.ericsson.se"
+    DESCRIPTION
+       "This MIB is part of the OTP MIB.  It defines MIB objects
+        for the event logging mechanism in eva.
+
+        It uses the generic logTable from OTP-LOG-MIB to log
+        events and alarms. When an EVA log should be created,
+        the logType should be set to 'evaLogType'."
+
+    REVISION    "9712010900Z"
+    DESCRIPTION
+        "Converted to v2 SMI and placed in the OTP tree."
+
+    REVISION    "9705020900Z"
+    DESCRIPTION
+        "The initial version of this MIB module.  It is very much
+        inspired by the Axd301Sto-OMS mib."
+   ::= { otpModules 8 }
+
+evaLog         OBJECT IDENTIFIER ::= { otpEvaMIBObjects 4 }
+
+-- The Eva Log group
+--
+-- The Eva Log group controls the event logs in the agent system.
+
+evaLogType OBJECT-IDENTITY
+    STATUS     current
+    DESCRIPTION
+        "This identity should be used as the logType for event and
+        alarm logs created in the logTable."
+    ::= { evaLog 1 }
+
+evaLogTotalMaxSize OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total specified maximum size of all eva logs in bytes."
+    ::= { evaLog 2 }
+
+evaLogTotalMaxAllowedSize OBJECT-TYPE
+    SYNTAX      Unsigned32
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The total size in bytes all eva logs are allowed to fill. If
+        the evaLogTotalMaxSize should exceed this value for a
+        newly created log, the creation of the log fails.  This
+        object corresponds to the amount of diskspace available for
+        the log function in the agent system."
+    ::= { evaLog 3 }
+
+evaLogDiscriminatorTable OBJECT-TYPE
+    SYNTAX      SEQUENCE OF EvaLogDiscriminatorEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "This table describes which events are logged in a specific
+        log instance of type 'evaLogType'. Each row represents one event
+        type that is logged in the log. One log instance can be associated
+        with several rows in this table."
+    ::= { evaLog 4 }
+
+evaLogDiscriminatorEntry OBJECT-TYPE
+    SYNTAX      EvaLogDiscriminatorEntry
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Describes which events a log subscribes for."
+    INDEX    { logIndex, evaLogDiscrEventIndex }
+    ::= { evaLogDiscriminatorTable 1 }
+
+EvaLogDiscriminatorEntry ::= SEQUENCE {
+    evaLogDiscrEventIndex   Integer32 (1..2147483647),
+    evaLogDiscrRowStatus    RowStatus
+    }
+
+evaLogDiscrEventIndex OBJECT-TYPE
+    SYNTAX      Integer32 (1..2147483647) -- eventTableIndex
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "Specifies the event type that the log shall subscribe for.
+        An Index which, together with logIndex, uniquely identifies
+        an entry in the eva log discriminator table. An event with
+        eventIndex equal to evaLogDiscrEventIndex is logged in the log
+        logIndex."
+    ::= { evaLogDiscriminatorEntry 1 }
+
+evaLogDiscrRowStatus OBJECT-TYPE
+    SYNTAX      RowStatus
+    MAX-ACCESS  read-create
+    STATUS      current
+    DESCRIPTION
+        "Used to make it possible to add rows to the table from a
+        management application. Supported values are createAndGo and 
+        destroy."
+    ::= { evaLogDiscriminatorEntry 2 }
+
+-- conformance information
+
+-- compliance statements
+
+otpEvaLogCompliance MODULE-COMPLIANCE
+    STATUS  current
+    DESCRIPTION
+        "The compliance statement for OTP stystems that
+        implement the OTP-EVA-LOG-MIB."
+    MODULE  -- this module
+        MANDATORY-GROUPS { evaLogGroup }
+    ::= { otpEvaMIBCompliances 2 }
+
+
+-- units of conformance
+
+evaLogGroup OBJECT-GROUP
+    OBJECTS { evaLogTotalMaxSize,
+              evaLogTotalMaxAllowedSize,
+              evaLogDiscrRowStatus }
+    STATUS  current
+    DESCRIPTION
+        "A collection of objects providing control of event and
+        alarm logs in the OTP system."
+    ::= { otpEvaMIBGroups 5 }
+
+
+END

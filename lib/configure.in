@@ -1,0 +1,28 @@
+dnl Turn of caching
+define([AC_CACHE_LOAD], )dnl
+define([AC_CACHE_SAVE], )dnl
+
+dnl Process this file with autoconf to produce a configure script.
+AC_INIT
+
+dnl
+dnl This is just to run configure in all applications that need it.
+dnl
+
+if test -z "$ERL_TOP" || test ! -d $ERL_TOP ; then
+  AC_MSG_ERROR(You need to set the environment variable ERL_TOP!)
+fi
+erl_top=${ERL_TOP}
+AC_CONFIG_AUX_DIRS($erl_top/erts/autoconf)
+
+subdirs=""
+for d in * ; do
+    if test -f $d/configure ; then
+	subdirs="$subdirs $d"
+    fi
+done
+
+AC_CONFIG_SUBDIRS($subdirs)
+
+AC_OUTPUT
+

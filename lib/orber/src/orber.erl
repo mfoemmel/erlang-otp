@@ -1,0 +1,686 @@
+%%--------------------------------------------------------------------
+%% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%% 
+%%     $Id$
+%%
+%%-----------------------------------------------------------------
+%% File: orber.erl
+%% Author: Lars Thorsen
+%% 
+%% Description:
+%%    This file contains the Orber application interface
+%%
+%% Creation date: 970407
+%%
+%%-----------------------------------------------------------------
+-module(orber).
+
+-include_lib("orber/src/orber_debug.hrl").
+-include_lib("orber/src/ifr_objects.hrl").
+%%-----------------------------------------------------------------
+%% External exports
+%%-----------------------------------------------------------------
+-export([start/0, stop/0, install/1, install/2, orber_nodes/0, iiop_port/0,
+	 domain/0, bootstrap_port/0, iiop_ssl_port/0, 
+	 ssl_server_certfile/0, ssl_client_certfile/0, set_ssl_client_certfile/1,
+	 ssl_server_verify/0, ssl_client_verify/0, set_ssl_client_verify/1,
+	 ssl_server_depth/0, ssl_client_depth/0, set_ssl_client_depth/1,
+	 ssl_server_cacertfile/0,ssl_client_cacertfile/0, set_ssl_client_cacertfile/1,
+	 uninstall/0, giop_version/0, info/0,
+	 is_running/0, add_node/2, remove_node/1, iiop_timeout/0,
+	 objectkeys_gc_time/0]).
+
+%%-----------------------------------------------------------------
+%% Internal exports
+%%-----------------------------------------------------------------
+-export([host/0, start/2, init/1, start_naming_service/1,
+	 messageInInterceptors/0, messageOutInterceptors/0]).
+%%-----------------------------------------------------------------
+%% Internal definitions
+%%-----------------------------------------------------------------
+%% Defines possible configuration parameters a user can add when
+%% installing Orber.
+-define(INSTALL_DEF_OPT, [{ifr_storage_type, disc_copies},
+			  {install_timeout, infinity},
+			  {local_content, false}]).
+
+-define(ORBER_TABS, [orber_CosNaming, orber_objkeys, corba_policy,
+		     corba_policy_associations]).
+
+%%-----------------------------------------------------------------
+%% External interface functions
+%%-----------------------------------------------------------------
+start() ->
+    application:start(mnesia),
+    TableTest = test_tables(),
+    case lists:member(not_member, TableTest) of
+	true ->
+	    exit({error,"Orber Mnesia Table(s) missing. Orber not properly installed."});
+	_->
+	    application:start(orber)
+    end.
+
+
+stop() ->
+    application:stop(orber).
+
+
+iiop_port() ->
+    case application:get_env(orber, iiop_port) of
+	{ok, Port} when integer(Port) ->
+	    Port;
+	_ ->
+	    4001
+    end.
+
+bootstrap_port() ->
+    case application:get_env(orber, bootstrap_port) of
+	{ok, Port} when integer(Port) ->
+	    Port;
+	_ ->
+	    iiop_port()
+    end.
+
+orber_nodes() ->
+    case mnesia:table_info(orber_objkeys,ram_copies) of
+	Nodes when list(Nodes) ->
+	    Nodes;
+	_ ->
+	    [node()]
+    end.
+
+domain() -> 
+    case application:get_env(orber, domain) of
+	{ok, Domain} when list(Domain) ->
+	    Domain;
+	{ok, Domain} when atom(Domain) ->
+	    atom_to_list(Domain);
+	_ ->
+	    "ORBER"
+    end.
+
+host() ->
+    case application:get_env(orber, ip_address) of
+	{ok,I} when list(I) ->
+	    I;
+	{ok, {A1, A2, A3, A4}} when integer(A1+A2+A3+A4) ->
+	    integer_to_list(A1) ++ "." ++ integer_to_list(A2) ++ "." ++ integer_to_list(A3)
+		++ "." ++ integer_to_list(A4);
+	_ ->
+	    ip_address()
+    end.
+
+ip_address() ->
+    {ok, Hostname} = inet:gethostname(),
+    {ok, {A1, A2, A3, A4}} = inet:getaddr(Hostname, inet),
+    integer_to_list(A1) ++ "." ++ integer_to_list(A2) ++ "." ++ integer_to_list(A3)
+	++ "." ++ integer_to_list(A4).
+
+
+giop_version() ->
+    case application:get_env(orber, giop_version) of
+	{ok, {Major, Minor}} ->
+	    {Major, Minor};
+	_ ->
+	    {1, 1}
+    end.
+
+iiop_timeout() ->
+    case application:get_env(orber, iiop_timeout) of
+	{ok, Int} when integer(Int) ->
+	    if
+		Int > 1000000 ->
+		    error_logger:error_msg("Orber 'iiop_timeout' badly configured.
+Time to large (>1000000 sec), swithed to 'infinity'~n"),
+		    infinity;
+		true ->
+		    %% Convert to msec.
+		    Int*1000
+	    end;
+	_ ->
+	    infinity
+    end.
+
+objectkeys_gc_time() ->
+    case application:get_env(orber, objectkeys_gc_time) of
+	{ok, Int} when integer(Int) ->
+	    if
+		Int > 1000000 ->
+		    error_logger:error_msg("Orber 'objectkeys_gc_time' badly configured.
+Time to large (>1000000 sec), swithed to 'infinity'~n"),
+		    infinity;
+		true ->
+		    Int
+	    end;
+	_ ->
+	    infinity
+    end.
+
+
+%%-----------------------------------------------------------------
+%% Security access operations (SSL)
+%%-----------------------------------------------------------------
+   
+secure() ->
+    case application:get_env(orber, secure) of
+	{ok, V} ->
+	    V;
+	_ ->
+	    no
+    end.
+ 
+iiop_ssl_port() ->
+    case application:get_env(orber, secure) of
+	{ok, ssl} ->
+	        case application:get_env(orber, iiop_ssl_port) of
+		    {ok, Port} when integer(Port) ->
+			Port;
+		    _ ->
+			4002
+		end;
+	_ ->
+	    -1
+    end.
+
+ssl_server_certfile() ->
+    case application:get_env(orber, ssl_server_certfile) of
+	{ok, V1}  when list(V1) ->
+	    V1;
+	{ok, V2}  when atom(V2) ->
+	    atom_to_list(V2);
+	_ ->
+	    {ok, Cwd} = file:get_cwd(),
+	    filename:join(Cwd,"ssl_server_cert.pem")
+    end.
+    
+ssl_client_certfile() ->
+    case get(ssl_client_certfile) of
+	undefined ->
+	    case application:get_env(orber, ssl_client_certfile) of
+		{ok, V1}  when list(V1) ->
+		    V1;
+		{ok, V2}  when atom(V2) ->
+		    atom_to_list(V2);
+		_ ->
+		    {ok, Cwd} = file:get_cwd(),
+		    filename:join(Cwd,"ssl_client_cert.pem")
+	    end;
+	V ->
+	    V
+    end.
+
+set_ssl_client_certfile(Value) when list(Value) ->
+    put(ssl_client_certfile, Value).
+    
+ssl_server_verify() ->
+    Verify = case application:get_env(orber, ssl_server_verify) of
+	{ok, V} when integer(V) ->
+	    V;
+	_ ->
+	    0
+    end,
+    if
+	Verify =< 2, Verify >= 0 ->
+	    Verify;
+	true ->
+	   0
+    end.
+    
+ssl_client_verify() ->
+    Verify = case get(ssl_client_verify) of
+		 undefined ->
+		     case application:get_env(orber, ssl_client_verify) of
+			 {ok, V1} when integer(V1) ->
+			     V1;
+			 _ ->
+			     0
+		     end;
+		 V2 ->
+		     V2
+	     end,
+    if
+	Verify =< 2, Verify >= 0 ->
+	    Verify;
+	true ->
+	   0
+    end.
+
+set_ssl_client_verify(Value) when integer(Value), Value =< 2, Value >= 0 ->
+    put(ssl_client_verify, Value), ok.
+    
+ssl_server_depth() ->
+    case application:get_env(orber, ssl_server_depth) of
+	{ok, V1} when integer(V1) ->
+	    V1;
+	_ ->
+	    1
+    end.
+    
+ssl_client_depth() ->
+    case get(ssl_client_depth) of
+	undefined ->
+	    case application:get_env(orber, ssl_client_depth) of
+		{ok, V1} when integer(V1) ->
+		    V1;
+		_ ->
+		    1
+	    end;
+	V2 ->
+	    V2
+    end.
+
+set_ssl_client_depth(Value) when integer(Value) ->
+    put(ssl_client_depth, Value), ok.
+    
+
+
+ssl_server_cacertfile() ->
+    case application:get_env(orber, ssl_server_cacertfile) of
+	{ok, V1}  when list(V1) ->
+	    V1;
+	{ok, V2}  when atom(V2) ->
+	    atom_to_list(V2);
+	_ ->
+	    []
+    end.
+    
+ssl_client_cacertfile() ->
+    case get(ssl_client_cacertfile) of
+	undefined ->
+	    case application:get_env(orber, ssl_client_cacertfile) of
+		{ok, V1}  when list(V1) ->
+		    V1;
+		{ok, V2}  when atom(V2) ->
+		    atom_to_list(V2);
+		_ ->
+		    []
+	    end;
+	V3 ->
+	    V3
+    end.
+
+set_ssl_client_cacertfile(Value) when list(Value) ->
+    put(ssl_client_cacertfile, Value), ok.
+    
+
+%%-----------------------------------------------------------------
+%% Configuration settings
+%%-----------------------------------------------------------------
+info() ->
+    case is_running() of
+	true ->
+	    io:format("==== Orber System Information ====\n",[]),
+	    io:format("Orber domain: ~p\n",[domain()]),
+	    io:format("IIOP port number: ~p\n",[iiop_port()]),
+	    io:format("Bootstrap port number: ~p\n",[bootstrap_port()]),
+	    io:format("Nodes in domain: ~p\n",[orber_nodes()]),
+	    io:format("GIOP version: ~p\n",[giop_version()]),
+	    io:format("IIOP timeout: ~p\n",[iiop_timeout()]),
+	    Sec = secure(),
+	    io:format("ORB security: ~p\n",[Sec]),
+	    case Sec of
+		ssl ->
+		    io:format("SSL IIOP port number ~p\n",[iiop_ssl_port()]),
+		    io:format("SSL server certfile ~p\n",[ssl_server_certfile()]),
+		    io:format("SSL server verification type ~p\n",[ssl_server_verify()]),
+		    io:format("SSL server verification depth ~p\n",[ssl_server_depth()]),
+		    io:format("SSL server cacertfile ~p\n",[ssl_server_cacertfile()]),
+		    io:format("SSL client certfile ~p\n",[ssl_client_certfile()]),
+		    io:format("SSL client verification type ~p\n",[ssl_client_verify()]),
+		    io:format("SSL client verification depth ~p\n",[ssl_client_depth()]),
+		    io:format("SSL client cacertfile ~p\n",[ssl_client_cacertfile()]);
+		no ->
+		    ok
+	    end; 
+	_ ->
+	    io:format("Orber is not running\n",[])
+    end.
+
+%%-----------------------------------------------------------------
+%% Installation interface functions
+%%-----------------------------------------------------------------
+install(Nodes) ->
+    install(Nodes, []).
+
+install([], Options) ->
+    install([node()], Options);
+install(Nodes, Options) when list(Nodes), list(Options)->
+    case is_running() of
+	false ->
+	    case mnesia:system_info(is_running) of
+		no ->
+		    application:start(mnesia),
+		    Outcome = install_orber(Nodes, Options),
+		    application:stop(mnesia),
+		    Outcome;
+		yes ->
+		    install_orber(Nodes, Options)
+	    end;
+	_ ->
+	    exit({error, "Orber is already running on this node."})
+    end.
+
+
+
+install_orber(Nodes, Options) ->
+    Local_content_tables = get_option(local_content, Options),
+    MnesiaOptions = [Local_content_tables],
+    {_, IFR_storage_type} = get_option(ifr_storage_type, Options),
+    {_, Timeout} = get_option(install_timeout, Options),
+    AllTabs = mnesia:system_info(tables),
+    TableTest = test_tables(),
+    case lists:member(is_member, TableTest) of
+	true ->
+	    case Local_content_tables of
+		{local_content, true} ->
+		    orber_ifr:init(Timeout, {localCopy,IFR_storage_type});
+		_->
+		    exit({error, "Orber Mnesia Table(s) already exist. Cannot install Orber."})
+	    end;
+	_ ->
+	    orber_ifr:init(Timeout, [{IFR_storage_type, Nodes} |MnesiaOptions])
+    end,
+    orber_objectkeys:install(Timeout, [{ram_copies, Nodes} |MnesiaOptions]),
+    orber_policy_server:install(Timeout, [{ram_copies, Nodes} |MnesiaOptions]),
+    'CosNaming_NamingContext_impl':install(Timeout, [{ram_copies, Nodes} |MnesiaOptions]),
+    application:start(orber),
+    oe_cos_naming:oe_register(),
+    oe_erlang:oe_register(),
+    oe_CORBA:oe_register(),
+    create_default_contexts(),
+    mnesia:dump_tables(['orber_CosNaming']),
+    application:stop(orber).
+
+
+test_tables() ->
+    AllTabs = mnesia:system_info(tables),
+    lists:map(fun(Tab) ->
+		      case lists:member(Tab,AllTabs) of
+			  false ->
+			      not_member;
+			  _ ->
+			      is_member
+		      end
+	      end,
+	      ?ifr_object_list++?ORBER_TABS).
+
+%%-----------------------------------------------------------------
+%% UnInstallation interface functions
+%%-----------------------------------------------------------------
+uninstall() ->
+    orber_objectkeys:stop_all(),
+    application:stop(orber),
+    delete_orber_tables(?ifr_object_list++?ORBER_TABS).
+
+delete_orber_tables([]) -> ok;
+delete_orber_tables([Tab1|Rest]) ->
+    mnesia:delete_table(Tab1),
+    delete_orber_tables(Rest).
+
+get_option(Key, OptionList) ->
+    case lists:keysearch(Key, 1, OptionList) of
+	{value,{Key,Value}} ->
+	    {Key,Value};
+	_ ->
+	    case lists:keysearch(Key, 1, ?INSTALL_DEF_OPT) of
+		{value,{Key,Value}} ->
+		    {Key,Value};
+		_->
+		    exit(io_lib:format("Option ~w not found in optionlist", 
+				       [Key]))
+	    end
+    end.
+
+%%-----------------------------------------------------------------
+%% Add and remove node interface functions
+%%-----------------------------------------------------------------
+
+add_node(Node, StorageType) when atom(Node), atom(StorageType)  ->
+    case rpc:call(Node, mnesia, system_info, [is_running]) of
+	{badrpc, Reason} ->
+	    exit({error, "Node '"++atom_to_list(Node)++
+		  "' do not respond. add_node/2 failed."});
+	yes ->
+	    case rpc:call(Node, orber, is_running, []) of
+		false ->
+		    copy_tables(?ifr_object_list, Node, StorageType);
+		true ->
+		    exit({error, "Unable to add node '" ++ 
+			  atom_to_list(Node) ++ 
+			  "' since Orber already running."});
+		_ ->
+		    exit({error, "Unable to reach node: '" ++ 
+			  atom_to_list(Node) ++ 
+			  " add_node/1 failed"})
+	    end;
+	no ->
+	    exit({error, "Mnesia not running on node '"++atom_to_list(Node)++ 
+		  "' add_node/2 failed."}) 
+    end.
+
+%% We have to copy the tables in two steps, i.e., orber tables should be ram_copies
+%% while the user may choose to install the rest as disc_copies.
+copy_tables([], Node, StorageType) ->
+    copy_orber_tables(?ORBER_TABS, Node);
+copy_tables([T1|Trest], Node, StorageType) ->
+    case mnesia:add_table_copy(T1, Node, StorageType) of
+	{atomic, ok} ->
+	    copy_tables(Trest, Node, StorageType);
+	_ ->
+	    exit({error, "Unable to copy table(s). add_node/2 failed"})
+    end.
+copy_orber_tables([], Node) ->
+    case rpc:call(Node, application, start, [orber]) of
+	ok ->
+	    ok;
+	_->
+	    exit({error, "All tables installed but failed to start orber on node: '"++
+		  atom_to_list(Node)})
+    end;
+copy_orber_tables([THead|TTail], Node) ->
+    case mnesia:add_table_copy(THead, Node, ram_copies) of
+	{atomic, ok} ->
+	    copy_orber_tables(TTail, Node);
+	_ ->
+	    exit({error, "Unable to copy table(s). add_node/2 failed"})
+    end.
+
+remove_node(Node) when atom(Node) ->
+    case rpc:call(Node, mnesia, system_info, [is_running]) of
+	yes ->
+	    case rpc:call(Node, orber, is_running, []) of
+		true ->
+		    rpc:call(Node, application, stop, [orber]),
+		    remove_tables(?ifr_object_list ++ ?ORBER_TABS, Node);
+		false ->
+		    remove_tables(?ifr_object_list ++ ?ORBER_TABS, Node);
+		_ ->
+		    exit({error, "Unable to reach node: '"++atom_to_list(Node)++ 
+			  "' remove_node/1 failed"})
+	    end;
+	no ->
+	    case rpc:call(Node, mnesia, start, []) of
+		ok ->
+		    remove_tables(?ifr_object_list ++ ?ORBER_TABS, Node),
+		    rpc:call(Node, mnesia, stop, []);
+		_->
+		    exit({error, "Unable to reach node: '"++atom_to_list(Node)++ 
+			  "' remove_node/1 failed"})
+	    end;
+	{badrpc, Reason} ->
+	    exit({error, "Unable to contact node '"++atom_to_list(Node)++ 
+		  "' remove_node/1 failed."})
+    end.
+
+
+remove_tables(Tables, Node) ->
+    remove_tables(Tables, Node, []).
+
+remove_tables([], Node, []) -> ok;
+remove_tables([], Node, Failed) ->
+    exit({error, "Unable to remove table(s). Remove_node/1 failed."});
+remove_tables([T1|Trest], Node, Failed) ->
+    case mnesia:del_table_copy(T1, Node) of
+	{atomic, ok} ->
+	    remove_tables(Trest, Node, Failed);
+	_ ->
+	    remove_tables(Trest, Node, [T1|Failed])
+    end.
+
+
+
+%%-----------------------------------------------------------------
+%% Internal interface functions
+%%-----------------------------------------------------------------
+
+    
+is_running() ->
+    is_running(application:which_applications()).
+
+is_running([]) ->
+    false;
+is_running([{orber, _, _} |As]) ->
+     true;
+is_running([_ |As]) ->
+    is_running(As).
+
+check_giop_version() ->
+    case giop_version() of
+	{1,0} ->
+	    ok;
+	{1,1} ->
+	    ok;
+	X ->
+	    X
+    end.
+
+%%-----------------------------------------------------------------
+%% Server functions
+%%-----------------------------------------------------------------
+start(_, _) ->
+    supervisor:start_link({local, orber_sup}, orber, orb_init).
+
+init(orb_init) ->
+    case check_giop_version() of
+	ok ->
+	    ?PRINTDEBUG("init orber supervisor"),
+	        case mnesia:wait_for_tables(?ifr_object_list, infinity) of
+		  ok ->
+		    SupFlags = {one_for_one, 5, 1000},  
+		    ChildSpec = [
+				 {orber_iiop_sup, {orber_iiop, start_sup, [[]]},
+				  permanent, 
+				  10000, supervisor, [orber_iiop]},
+				 {orber_init, {orber_initial_references, start,
+					       [[]]},
+				  permanent, 
+				  10000, worker, [orber_initial_references]},
+				 {orber_reqno, {orber_request_number, start,
+						[[]]},
+				  permanent, 
+				  10000, worker, [orber_request_number]},
+				 {orber_objkeyserver, {orber_objectkeys, start,
+						       [[orber_nodes(), 0]]},
+				  permanent, 
+				  10000, worker, [orber_objectkeys]},
+				 {orber_policyserver, {orber_policy_server, start,
+						       [[]]},
+				  permanent, 
+				  10000, worker, [orber_policy_server]},
+				 {orber_nameservice, {orber, start_naming_service, 
+						      [[]]},
+				  permanent, 
+				  10000, worker, ['CosNaming_NamingContext']}
+				],
+		    {ok, {SupFlags, ChildSpec}};
+		  StopReason ->
+		    {stop, StopReason}
+	    end;
+	X ->
+	    {stop, iolib:format("GIOP ~p not an implemeted version", [X])}
+    end.
+
+start_naming_service(_) ->
+    case catch 'CosNaming_NamingContext':oe_create_link([],
+							[{regname, {local, orber_nameservice}},
+							 {sup_child, true}]
+						       ) of 
+	{'EXCEPTION', E} ->
+	    {error, {'EXCEPTION', E}};
+	{'EXIT', R} ->
+	    {error, {'EXIT', R}};
+	{ok, Pid, Key} ->
+	    {ok, Pid}
+    end.
+
+
+
+create_default_contexts() ->
+    HostComponent = lname_component:set_id(lname_component:create(),
+					   "host"),
+    HostsComponent = lname_component:set_id(lname_component:create(),
+					    "hosts"),
+    ResourcesComponent = lname_component:set_id(lname_component:create(),
+						"resources"),
+    DevelopmentComponent = lname_component:set_id(lname_component:create(),
+					   "development"),
+    FactoriesComponent = lname_component:set_id(lname_component:create(),
+					   "factories"),
+    WGComponent = lname_component:set_id(lname_component:create(),
+					   "workgroup"),
+    %% Creation of Naming Context host and it's subcontexts
+    NS = corba:resolve_initial_references("NameService"),
+    H = 'CosNaming_NamingContext':bind_new_context(NS,
+		lname:insert_component(lname:create(), 1, HostComponent)),
+    HR = 'CosNaming_NamingContext':bind_new_context(H,
+		lname:insert_component(lname:create(), 1, ResourcesComponent)),
+    'CosNaming_NamingContext':bind_new_context(HR,
+		lname:insert_component(lname:create(), 1, FactoriesComponent)),
+    HD = 'CosNaming_NamingContext':bind_new_context(H,
+	lname:insert_component(lname:create(), 1, DevelopmentComponent)),
+    HDR = 'CosNaming_NamingContext':bind_new_context(HD,
+		lname:insert_component(lname:create(), 1, ResourcesComponent)),
+    'CosNaming_NamingContext':bind_new_context(HDR,
+		lname:insert_component(lname:create(), 1, FactoriesComponent)),
+      %% Creation of Naming Context workgroup and it's subcontexts
+    W = 'CosNaming_NamingContext':bind_new_context(NS,
+		lname:insert_component(lname:create(), 1, WGComponent)),
+    'CosNaming_NamingContext':bind_new_context(W,
+		lname:insert_component(lname:create(), 1, HostsComponent)),
+    WR = 'CosNaming_NamingContext':bind_new_context(W,
+		lname:insert_component(lname:create(), 1, ResourcesComponent)),
+    'CosNaming_NamingContext':bind_new_context(WR,
+		lname:insert_component(lname:create(), 1, FactoriesComponent)),
+    WD = 'CosNaming_NamingContext':bind_new_context(W,
+	lname:insert_component(lname:create(), 1, DevelopmentComponent)),
+    WDR = 'CosNaming_NamingContext':bind_new_context(WD,
+		lname:insert_component(lname:create(), 1, ResourcesComponent)),
+    'CosNaming_NamingContext':bind_new_context(WDR,
+		lname:insert_component(lname:create(), 1, FactoriesComponent)),
+    ok.
+
+
+
+
+
+
+messageInInterceptors() ->
+     [].
+
+
+messageOutInterceptors() ->
+     [].
+

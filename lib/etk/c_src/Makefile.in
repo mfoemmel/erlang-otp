@@ -1,0 +1,2073 @@
+#
+# This file is a merge of Tcl/Tk Makefile.in
+#
+include $(ERL_TOP)/make/target.mk
+include $(ERL_TOP)/make/$(TARGET)/otp.mk
+
+include ../vsn.mk
+VSN=$(ETK_VSN)
+
+# ----------------------------------------------------
+# Release Target
+# ---------------------------------------------------- 
+RELSYSDIR = $(RELEASE_PATH)/lib/etk-$(VSN)
+
+TCLVERSION = @TCL_VERSION@
+TKVERSION = @TK_VERSION@
+
+#----------------------------------------------------------------
+# Things you can change to personalize the Makefile for your own
+# site (you can make these changes in either Makefile.in or
+# Makefile, but changes to Makefile will get lost if you re-run
+# the configuration script).
+#----------------------------------------------------------------
+
+# Default top-level directories in which to install architecture-
+# specific files (exec_prefix) and machine-independent files such
+# as scripts (prefix).  The values specified here may be overridden
+# at configure-time with the --exec-prefix and --prefix options
+# to the "configure" script.
+
+prefix =	@prefix@
+exec_prefix =	@exec_prefix@
+
+LIB_RUNTIME_DIR =	@LIB_RUNTIME_DIR@
+
+# The directory containing the Tcl sources and headers appropriate
+# for this version of Tk ("srcdir" will be replaced or has already
+# been replaced by the configure script):
+TCL_INC_DIR =	@TCL_INC_DIR@
+
+# The directory containing the Tcl library archive file appropriate
+# for this version of Tk:
+TCL_LIB_DIR =		@TCL_LIB_DIR@
+
+# The directory containing the Tcl executables appropriate
+# for this version of Tk:
+TCL_BIN_DIR =		@TCL_BIN_DIR@
+
+# A "-I" switch that can be used when compiling to make all of the
+# X11 include files accessible (the configure script will try to
+# set this value, and will cause it to be an empty string if the
+# include files are accessible via /usr/include).
+X11_INCLUDES =		@XINCLUDES@
+
+# Linker switch(es) to use to link with the X11 library archive (the
+# configure script will try to set this value automatically, but you
+# can override it).
+X11_LIB_SWITCHES =	@XLIBSW@
+
+# If your X server is X11R4 or earlier, then you may wish to reverse
+# the comment characters on the following two lines.  This will enable
+# extra code to speed up XStringToKeysym.  In X11R5 and later releases
+# XStringToKeysym is plenty fast, so you needn't define REDO_KEYSYM_LOOKUP.
+KEYSYM_FLAGS =
+#KEYSYM_FLAGS = -DREDO_KEYSYM_LOOKUP
+
+# Libraries to use when linking:  must include at least Xlib, the
+# dynamic loading library, and the math library (in that order).  This
+# definition is determined by the configure script.
+
+LIBS =		@DL_LIBS@ @LIBS@ @SHARED_LIBS@
+
+# To change the compiler switches, for example to change from -O
+# to -g, change the following lines:
+
+CFLAGS = @CFLAGS@ -DETK
+
+# To turn off the security checks that disallow incoming sends when
+# the X server appears to be insecure, reverse the comments on the
+# following lines:
+SECURITY_FLAGS =
+#SECURITY_FLAGS = -DTK_NO_SECURITY
+
+# To disable ANSI-C procedure prototypes reverse the comment characters
+# on the following lines:
+PROTO_FLAGS =
+#PROTO_FLAGS = -DNO_PROTOTYPE
+
+# Mathematical functions like sin and atan2 are enabled for expressions
+# by default.  To disable them, reverse the comment characters on the
+# following pairs of lines:
+MATH_FLAGS =
+#MATH_FLAGS = -DTCL_NO_MATH
+MATH_LIBS = @MATH_LIBS@
+#MATH_LIBS =
+
+# If you use the setenv, putenv, or unsetenv procedures to modify
+# environment variables in your application and you'd like those
+# modifications to appear in the "env" Tcl variable, switch the
+# comments on the two lines below so that Tcl provides these
+# procedures instead of your standard C library.
+
+ENV_FLAGS =
+#ENV_FLAGS = -DTclSetEnv=setenv -DTcl_PutEnv=putenv -DTclUnsetEnv=unsetenv
+
+SHOBJ_SUFFIX = @SHOBJ_SUFFIX@
+#SHOBJ_SUFFIX = .o
+
+# To compile for non-UNIX systems (so that only the non-UNIX-specific
+# commands are available), reverse the comment characters on the
+# following pairs of lines.  In addition, you'll have to provide your
+# own replacement for the "panic" procedure (see panic.c for what
+# the current one does).
+GENERIC_FLAGS =
+#GENERIC_FLAGS = -DTCL_GENERIC_ONLY
+
+
+# To enable memory debugging reverse the comment characters on the following
+# lines.  Warning:  if you enable memory debugging, you must do it
+# *everywhere*, including all the code that calls Tcl, and you must use
+# ckalloc and ckfree everywhere instead of malloc and free.
+MEM_DEBUG_FLAGS =
+#MEM_DEBUG_FLAGS = -DTCL_MEM_DEBUG
+
+# Some versions of make, like SGI's, use the following variable to
+# determine which shell to use for executing commands:
+SHELL =		/bin/sh
+
+# The symbols below provide support for dynamic loading and shared
+# libraries.  The values of the symbols are normally set by the
+# configure script.  You shouldn't normally need to modify any of
+# these definitions by hand.
+
+SHLIB_CFLAGS = @SHLIB_CFLAGS@ @THR_DEFS@
+
+# The following symbol defines additional compiler flags to enable
+# Tcl itself to be a shared library.
+
+TCLSH_LD_FLAGS = @LD_FLAGS@ @TCLSH_LD_FLAGS@
+
+# The symbols below provide support for dynamic loading and shared
+# libraries.  See configure.in for a description of what the
+# symbols mean.  The values of the symbols are normally set by the
+# configure script.  You shouldn't normally need to modify any of
+# these definitions by hand.
+
+ifeq ($(findstring win32,$(TARGET)), win32)
+SHLIB_SUFFIX = .dll
+EXE_SUFFIX = .exe
+else
+SHLIB_SUFFIX = @SHLIB_SUFFIX@
+EXE_SUFFIX =
+#SHLIB_SUFFIX = .so
+endif
+
+ifeq ($(findstring win32,$(TARGET)), win32)
+SHOBJ_SUFFIX = .obj
+else
+SHOBJ_SUFFIX = @SHOBJ_SUFFIX@
+#SHOBJ_SUFFIX = .o
+endif
+
+# The symbol below provides support for dynamic loading and shared
+# libraries.  See configure.in for a description of what it means.
+# The values of the symbolis normally set by the configure script.
+
+PNG_LIB_NAME  = libpng$(SHLIB_SUFFIX)
+JPEG_LIB_NAME = libjpeg$(SHLIB_SUFFIX)
+
+#----------------------------------------------------------------
+# The information below is modified by the configure script when
+# Makefile is generated from Makefile.in.  You shouldn't normally
+# modify any of this stuff by hand.
+#----------------------------------------------------------------
+
+COMPAT_OBJS =	@LIBOBJS@
+COMPAT_SOBJS =	@LIBSOBJS@
+
+AC_FLAGS =		@DEFS@
+RANLIB =		@RANLIB@
+LN_S =			ln -s
+BUILD_DIR =		@BUILD_DIR@
+
+CC =			@CC@
+SHLIB_LD =		@SHLIB_LD@
+
+ETK_DIR =               @ETK_DIR@
+TK_DIR =		@TK_SRC_DIR@
+TCL_DIR =		@TCL_SRC_DIR@
+ERL_DIR =               @ERL_DIR@
+
+ETK_SRC_DIR =           $(ETK_DIR)/c_src
+ETK_ERL_DIR =           $(ETK_DIR)/src
+ETK_BIN_DIR =		$(ETK_DIR)/priv/bin/$(TARGET)
+
+OBJDIR =		$(TARGET)
+
+TCL_GENERIC_DIR = 	$(TCL_DIR)/generic
+COMPAT_DIR =		$(TCL_DIR)/compat
+TCL_TOOL_DIR =		$(TCL_DIR)/tools
+TCL_UNIX_DIR = 		$(TCL_DIR)/unix
+
+TK_GENERIC_DIR =	$(TK_DIR)/generic
+TK_UNIX_DIR = 		$(TK_DIR)/unix
+TK_BMAP_DIR =		$(TK_DIR)/bitmaps
+
+#----------------------------------------------------------------
+# The information below should be usable as is.  The configure
+# script won't modify it and you shouldn't need to modify it
+# either.
+#----------------------------------------------------------------
+
+TCL_CC_SWITCHES =	${CFLAGS} -I${TCL_GENERIC_DIR} -I${TCL_UNIX_DIR} \
+${AC_FLAGS} ${MATH_FLAGS} ${GENERIC_FLAGS} ${PROTO_FLAGS} ${MEM_DEBUG_FLAGS} \
+${ENV_FLAGS} -DTCL_SHLIB_EXT=\"${SHLIB_SUFFIX}\"
+
+TK_CC_SWITCHES =	${CFLAGS} -I${TK_UNIX_DIR} -I${TK_GENERIC_DIR} \
+-I${TK_BMAP_DIR} -I${TCL_INC_DIR} ${X11_INCLUDES} ${AC_FLAGS} ${PROTO_FLAGS} \
+${SECURITY_FLAGS} ${MEM_DEBUG_FLAGS} ${KEYSYM_FLAGS}
+
+DEPEND_SWITCHES = ${CFLAGS} -I${TK_UNIX_DIR} -I${TK_GENERIC_DIR} \
+ -I${TCL_GENERIC_DIR} -I${TCL_UNIX_DIR} \
+-I${TK_BMAP_DIR} \
+-I${TCL_INC_DIR} ${X11_INCLUDES} \
+${AC_FLAGS} ${MATH_FLAGS} ${GENERIC_FLAGS} ${PROTO_FLAGS} ${SECURITY_FLAGS} \
+${MEM_DEBUG_FLAGS} ${KEYSYM_FLAGS} -DTCL_SHLIB_EXT=\"${SHLIB_SUFFIX}\"
+
+WISH_OBJS = tkAppInit.o
+
+WIDGOBJS = tkButton.o tkEntry.o tkFrame.o tkListbox.o \
+	tkMenu.o tkMenubutton.o tkMessage.o tkScale.o \
+	tkScrollbar.o
+
+WIDGSOBJS = tkButton$(SHOBJ_SUFFIX) tkEntry$(SHOBJ_SUFFIX) \
+	tkFrame$(SHOBJ_SUFFIX) tkListbox$(SHOBJ_SUFFIX) \
+	tkMenu$(SHOBJ_SUFFIX) tkMenubutton$(SHOBJ_SUFFIX) \
+	tkMessage$(SHOBJ_SUFFIX) tkScale$(SHOBJ_SUFFIX) \
+	tkScrollbar$(SHOBJ_SUFFIX)
+
+CANVOBJS = tkCanvas.o tkCanvArc.o tkCanvBmap.o tkCanvImg.o \
+	tkCanvLine.o tkCanvPoly.o tkCanvPs.o tkCanvText.o \
+	tkCanvUtil.o tkCanvWind.o tkRectOval.o tkTrig.o
+
+CANVSOBJS = tkCanvas$(SHOBJ_SUFFIX) tkCanvArc$(SHOBJ_SUFFIX) \
+	tkCanvBmap$(SHOBJ_SUFFIX) tkCanvImg$(SHOBJ_SUFFIX) \
+	tkCanvLine$(SHOBJ_SUFFIX) tkCanvPoly$(SHOBJ_SUFFIX) \
+	tkCanvPs$(SHOBJ_SUFFIX) tkCanvText$(SHOBJ_SUFFIX) \
+	tkCanvUtil$(SHOBJ_SUFFIX) tkCanvWind$(SHOBJ_SUFFIX) \
+	tkRectOval$(SHOBJ_SUFFIX) tkTrig$(SHOBJ_SUFFIX)
+
+IMAGEOBJS = tkImage.o tkImgBmap.o tkImgGIF.o tkImgJPEG.o \
+	tkImgPPM.o tkImgXPM.o tkImgPNG.o tkImgPhoto.o \
+	tkPhotoUtil.o tkImgPmap.o
+
+IMAGESOBJS = tkImage$(SHOBJ_SUFFIX) tkImgBmap$(SHOBJ_SUFFIX) \
+	tkImgGIF$(SHOBJ_SUFFIX) tkImgJPEG$(SHOBJ_SUFFIX) \
+	tkImgPPM$(SHOBJ_SUFFIX) tkImgXPM$(SHOBJ_SUFFIX) \
+	tkImgPNG$(SHOBJ_SUFFIX) tkImgPhoto$(SHOBJ_SUFFIX)\
+	tkPhotoUtil$(SHOBJ_SUFFIX) tkImgPmap$(SHOBJ_SUFFIX)
+
+TEXTOBJS = tkText.o tkTextBTree.o tkTextDisp.o tkTextIndex.o \
+	tkTextMark.o tkTextTag.o tkTextWind.o
+
+TEXTSOBJS = tkText$(SHOBJ_SUFFIX) tkTextBTree$(SHOBJ_SUFFIX) \
+	tkTextDisp$(SHOBJ_SUFFIX) tkTextIndex$(SHOBJ_SUFFIX) \
+	tkTextMark$(SHOBJ_SUFFIX) tkTextTag$(SHOBJ_SUFFIX) \
+	tkTextWind$(SHOBJ_SUFFIX)
+
+
+TK_UNIX_OBJS = \
+	tkUnix.o tkUnixCursor.o tkUnixDialog.o tkUnixDraw.o tkUnixEvent.o \
+	tkUnixPmap.o tkUnixSelect.o tkUnixWm.o tkUnixXId.o
+
+TK_UNIX_SOBJS = \
+	tkUnix$(SHOBJ_SUFFIX) tkUnixCursor$(SHOBJ_SUFFIX) \
+	tkUnixDialog$(SHOBJ_SUFFIX) tkUnixDraw$(SHOBJ_SUFFIX) \
+	tkUnixEvent$(SHOBJ_SUFFIX) tkUnixPmap$(SHOBJ_SUFFIX) \
+	tkUnixSelect$(SHOBJ_SUFFIX) tkUnixWm$(SHOBJ_SUFFIX) \
+	tkUnixXId$(SHOBJ_SUFFIX)
+
+#
+# ETK removed
+# tclUnixPipe.o
+#
+TCL_UNIX_OBJS = \
+	tclMtherr.o tclUnixChan.o tclUnixFCmd.o tclUnixFile.o \
+	tclUnixNotfy.o tclUnixPipe.o tclUnixSock.o tclUnixTime.o \
+	tclUnixInit.o
+
+#
+# ETK removed
+# tclUnixPipe${SHOBJ_SUFFIX} 
+#
+TCL_UNIX_SOBJS = \
+	tclMtherr${SHOBJ_SUFFIX} tclUnixChan${SHOBJ_SUFFIX} \
+	tclUnixFCmd${SHOBJ_SUFFIX} tclUnixFile${SHOBJ_SUFFIX} \
+	tclUnixNotfy${SHOBJ_SUFFIX} \
+	tclUnixSock${SHOBJ_SUFFIX} tclUnixTime${SHOBJ_SUFFIX} \
+	tclUnixInit${SHOBJ_SUFFIX} 
+
+TK_OBJS = \
+	 tk3d.o tkArgv.o tkAtom.o tkBind.o tkBitmap.o tkClipboard.o tkCmds.o \
+	tkColor.o tkConfig.o tkCursor.o tkError.o tkEvent.o \
+	tkFocus.o tkFont.o tkGet.o tkGC.o tkGeometry.o tkGrab.o tkGrid.o \
+	tkOption.o tkPack.o tkPlace.o \
+	tkSelect.o tkSend.o tkUtil.o tkVisual.o \
+	tkWindow.o \
+	$(TK_UNIX_OBJS) $(WIDGOBJS) $(CANVOBJS) $(IMAGEOBJS) $(TEXTOBJS)
+
+TK_SOBJS = \
+	tk3d$(SHOBJ_SUFFIX) tkArgv$(SHOBJ_SUFFIX) tkAtom$(SHOBJ_SUFFIX) \
+	tkBind$(SHOBJ_SUFFIX) tkBitmap$(SHOBJ_SUFFIX) tkClipboard$(SHOBJ_SUFFIX) \
+	tkCmds$(SHOBJ_SUFFIX) tkColor$(SHOBJ_SUFFIX) tkConfig$(SHOBJ_SUFFIX) \
+	tkCursor$(SHOBJ_SUFFIX) tkError$(SHOBJ_SUFFIX) tkEvent$(SHOBJ_SUFFIX) \
+	tkFocus$(SHOBJ_SUFFIX) tkFont$(SHOBJ_SUFFIX) tkGet$(SHOBJ_SUFFIX) \
+	tkGC$(SHOBJ_SUFFIX) tkGeometry$(SHOBJ_SUFFIX) tkGrab$(SHOBJ_SUFFIX) \
+	tkGrid$(SHOBJ_SUFFIX) tkOption$(SHOBJ_SUFFIX) tkPack$(SHOBJ_SUFFIX) \
+	tkPlace$(SHOBJ_SUFFIX) tkSelect$(SHOBJ_SUFFIX) tkSend$(SHOBJ_SUFFIX) \
+	tkUtil$(SHOBJ_SUFFIX) tkVisual$(SHOBJ_SUFFIX) tkWindow$(SHOBJ_SUFFIX) \
+	$(TK_UNIX_SOBJS) $(WIDGSOBJS) $(CANVSOBJS) $(IMAGESOBJS) $(TEXTSOBJS)
+
+TCL_SPECIAL_OBJS = ${COMPAT_OBJS} tclParseCmd.o # tclUnixMain.o 
+
+TCL_SPECIAL_SOBJS = ${TCL_COMPAT_SOBJS} tclParseCmd${SHOBJ_SUFFIX} # tclUnixMain${SHOBJ_SUFFIX}
+
+TK_SPECIAL_OBJS = tkMain.o tkUnixInit.o 
+
+TK_SPECIAL_SOBJS = tkMain$(SHOBJ_SUFFIX) tkUnixInit$(SHOBJ_SUFFIX)
+
+TK_SRCS = \
+	$(TK_GENERIC_DIR)/tk3d.c $(TK_GENERIC_DIR)/tkArgv.c \
+	$(TK_GENERIC_DIR)/tkAtom.c $(ETK_SRC_DIR)/tkBind.c	\
+	$(TK_GENERIC_DIR)/tkBitmap.c $(TK_GENERIC_DIR)/tkClipboard.c \
+	$(TK_GENERIC_DIR)/tkCmds.c $(TK_GENERIC_DIR)/tkColor.c \
+	$(TK_GENERIC_DIR)/tkConfig.c $(TK_GENERIC_DIR)/tkCursor.c \
+	$(TK_GENERIC_DIR)/tkError.c $(TK_GENERIC_DIR)/tkEvent.c \
+	$(TK_GENERIC_DIR)/tkFocus.c $(TK_GENERIC_DIR)/tkFont.c \
+	$(TK_GENERIC_DIR)/tkGet.c $(TK_GENERIC_DIR)/tkGC.c \
+	$(TK_GENERIC_DIR)/tkGeometry.c $(TK_GENERIC_DIR)/tkGrab.c \
+	$(TK_GENERIC_DIR)/tkGrid.c \
+	$(TK_GENERIC_DIR)/tkMain.c $(TK_GENERIC_DIR)/tkOption.c \
+	$(TK_GENERIC_DIR)/tkPack.c $(TK_GENERIC_DIR)/tkPlace.c \
+	$(TK_GENERIC_DIR)/tkSelect.c \
+	$(TK_GENERIC_DIR)/tkSend.c $(TK_GENERIC_DIR)/tkUtil.c \
+	$(TK_GENERIC_DIR)/tkVisual.c $(TK_GENERIC_DIR)/tkWindow.c \
+	$(TK_GENERIC_DIR)/tkButton.c \
+	$(TK_GENERIC_DIR)/tkEntry.c $(TK_GENERIC_DIR)/tkFrame.c \
+	$(TK_GENERIC_DIR)/tkListbox.c $(TK_GENERIC_DIR)/tkMenu.c \
+	$(TK_GENERIC_DIR)/tkMenubutton.c $(TK_GENERIC_DIR)/tkMessage.c \
+	$(TK_GENERIC_DIR)/tkScale.c $(TK_GENERIC_DIR)/tkScrollbar.c \
+	$(TK_GENERIC_DIR)/tkCanvas.c $(TK_GENERIC_DIR)/tkCanvArc.c \
+	$(TK_GENERIC_DIR)/tkCanvBmap.c $(TK_GENERIC_DIR)/tkCanvImg.c \
+	$(TK_GENERIC_DIR)/tkCanvLine.c $(TK_GENERIC_DIR)/tkCanvPoly.c \
+	$(TK_GENERIC_DIR)/tkCanvPs.c $(TK_GENERIC_DIR)/tkCanvText.c \
+	$(TK_GENERIC_DIR)/tkCanvUtil.c \
+	$(TK_GENERIC_DIR)/tkCanvWind.c $(TK_GENERIC_DIR)/tkRectOval.c \
+	$(TK_GENERIC_DIR)/tkTrig.c $(TK_GENERIC_DIR)/tkImage.c \
+	$(TK_GENERIC_DIR)/tkImgBmap.c $(TK_GENERIC_DIR)/tkImgGIF.c \
+	$(TK_GENERIC_DIR)/tkImgJPEG.c $(TK_GENERIC_DIR)/tkImgPPM.c\
+	$(TK_GENERIC_DIR)/tkImgPNG.c\
+	$(TK_GENERIC_DIR)/tkImgXPM.c  $(TK_GENERIC_DIR)/tkImgPmap.c\
+	$(TK_GENERIC_DIR)/tkImgPhoto.c $(TK_GENERIC_DIR)/tkText.c \
+	$(TK_GENERIC_DIR)/tkTextBTree.c $(TK_GENERIC_DIR)/tkTextDisp.c \
+	$(TK_GENERIC_DIR)/tkTextIndex.c $(TK_GENERIC_DIR)/tkTextMark.c \
+	$(TK_GENERIC_DIR)/tkTextTag.c $(TK_GENERIC_DIR)/tkTextWind.c \
+	$(TK_UNIX_DIR)/tkAppInit.c $(TK_UNIX_DIR)/tkUnix.c \
+	$(TK_UNIX_DIR)/tkUnixCursor.c \
+	$(TK_UNIX_DIR)/tkUnixDialog.c $(TK_UNIX_DIR)/tkUnixDraw.c \
+	$(TK_UNIX_DIR)/tkUnixEvent.c $(TK_UNIX_DIR)/tkUnixInit.c \
+	$(TK_UNIX_DIR)/tkUnixSelect.c $(TK_UNIX_DIR)/tkUnixWm.c \
+	$(TK_UNIX_DIR)/tkUnixXId.c
+
+TCLSH_OBJS = tclAppInit.o
+
+# ETK removed
+#
+#  tclCmdAH.o
+#  tclCmdIL.o
+#  tclCmdMZ.o
+#  tclInterp.o
+#  tclIOCmd.o
+#
+TCL_GENERIC_OBJS = \
+	panic.o regexp.o tclAsync.o tclBasic.o tclCkalloc.o \
+	tclClock.o  tclDate.o tclEnv.o \
+	tclEvent.o tclExpr.o tclFCmd.o \
+	tclFHandle.o tclFileName.o tclGet.o tclHash.o \
+	tclHistory.o  tclIO.o \
+	tclIOSock.o tclIOUtil.o tclLink.o tclLoad.o tclNotify.o \
+	tclParse.o tclPkg.o tclPosixStr.o tclPreserve.o tclProc.o \
+	tclUtil.o tclVar.o tclLoadDl.o 
+
+#
+# ETK removed
+#
+#  tclCmdAH${SHOBJ_SUFFIX} 
+#  tclCmdIL${SHOBJ_SUFFIX} 
+#  tclCmdMZ${SHOBJ_SUFFIX}
+#  tclInterp${SHOBJ_SUFFIX} 
+#  tclIOCmd${SHOBJ_SUFFIX}
+#
+
+TCL_GENERIC_SOBJS = \
+	panic${SHOBJ_SUFFIX} regexp${SHOBJ_SUFFIX} \
+	tclAsync${SHOBJ_SUFFIX} tclBasic${SHOBJ_SUFFIX} \
+	tclCkalloc${SHOBJ_SUFFIX} tclClock${SHOBJ_SUFFIX} \
+	tclDate${SHOBJ_SUFFIX} \
+	tclEnv${SHOBJ_SUFFIX} tclEvent${SHOBJ_SUFFIX} \
+	tclExpr${SHOBJ_SUFFIX} tclFCmd${SHOBJ_SUFFIX} \
+	tclFHandle${SHOBJ_SUFFIX} tclFileName${SHOBJ_SUFFIX} \
+	tclGet${SHOBJ_SUFFIX} tclHash${SHOBJ_SUFFIX} \
+	tclHistory${SHOBJ_SUFFIX} \
+	tclIO${SHOBJ_SUFFIX} \
+	tclIOSock${SHOBJ_SUFFIX} tclIOUtil${SHOBJ_SUFFIX} \
+	tclLink${SHOBJ_SUFFIX} tclLoad${SHOBJ_SUFFIX} \
+	tclNotify${SHOBJ_SUFFIX} tclParse${SHOBJ_SUFFIX} \
+	tclPkg${SHOBJ_SUFFIX} tclPosixStr${SHOBJ_SUFFIX} \
+	tclPreserve${SHOBJ_SUFFIX} tclProc${SHOBJ_SUFFIX} \
+	tclUtil${SHOBJ_SUFFIX} tclVar${SHOBJ_SUFFIX} \
+	tclLoadDl${SHOBJ_SUFFIX} 
+
+TCL_GENERIC_HDRS = \
+	$(TCL_GENERIC_DIR)/tclRegexp.h \
+	$(TCL_GENERIC_DIR)/tcl.h \
+	$(TCL_GENERIC_DIR)/tclInt.h \
+	$(TCL_GENERIC_DIR)/tclPort.h \
+	$(TCL_GENERIC_DIR)/tclPatch.h
+
+TCL_GENERIC_SRCS = \
+	$(TCL_GENERIC_DIR)/regexp.c \
+	$(TCL_GENERIC_DIR)/tclParseCmd.c \
+	$(TCL_GENERIC_DIR)/tclAsync.c \
+	$(ETK_SRC_DIR)/tclBasic.c \
+	$(TCL_GENERIC_DIR)/tclCkalloc.c \
+	$(TCL_GENERIC_DIR)/tclClock.c \
+	$(TCL_GENERIC_DIR)/tclCmdAH.c \
+	$(TCL_GENERIC_DIR)/tclCmdIL.c \
+	$(TCL_GENERIC_DIR)/tclCmdMZ.c \
+	$(TCL_GENERIC_DIR)/tclDate.c \
+	$(TCL_GENERIC_DIR)/tclEnv.c \
+	$(TCL_GENERIC_DIR)/tclEvent.c \
+	$(TCL_GENERIC_DIR)/tclExpr.c \
+	$(TCL_GENERIC_DIR)/tclFCmd.c \
+	$(TCL_GENERIC_DIR)/tclFHandle.c \
+	$(TCL_GENERIC_DIR)/tclFileName.c \
+	$(TCL_GENERIC_DIR)/tclGet.c \
+	$(TCL_GENERIC_DIR)/tclHash.c \
+	$(TCL_GENERIC_DIR)/tclHistory.c \
+	$(TCL_GENERIC_DIR)/tclInitDSA.c \
+	$(TCL_GENERIC_DIR)/tclInterp.c \
+	$(TCL_GENERIC_DIR)/tclIO.c \
+	$(TCL_GENERIC_DIR)/tclIOCmd.c \
+	$(TCL_GENERIC_DIR)/tclIOSock.c \
+	$(ETK_SRC_DIR)/tclIOUtil.c \
+	$(TCL_GENERIC_DIR)/tclLink.c \
+	$(TCL_GENERIC_DIR)/tclLoad.c \
+	$(TCL_GENERIC_DIR)/tclMain.c \
+	$(TCL_GENERIC_DIR)/tclNotify.c \
+	$(TCL_GENERIC_DIR)/tclParse.c \
+	$(TCL_GENERIC_DIR)/tclPkg.c \
+	$(TCL_GENERIC_DIR)/tclPosixStr.c \
+	$(TCL_GENERIC_DIR)/tclPreserve.c \
+	$(TCL_GENERIC_DIR)/tclProc.c \
+	$(TCL_GENERIC_DIR)/tclUtil.c \
+	$(TCL_GENERIC_DIR)/tclVar.c
+
+UNIX_HDRS = \
+	$(TCL_UNIX_DIR)/tclUnixPort.h
+
+HDRS = bltList.h \
+	default.h ks_names.h tkPatch.h tk.h tkCanvas.h tkInt.h  \
+	tkPort.h tkText.h
+
+TCL_UNIX_SRCS = \
+	$(TCL_UNIX_DIR)/tclAppInit.c \
+	$(TCL_UNIX_DIR)/tclMtherr.c \
+	$(TCL_UNIX_DIR)/tclUnixChan.c \
+	$(TCL_UNIX_DIR)/tclUnixFCmd.c \
+	$(TCL_UNIX_DIR)/tclUnixFile.c \
+	$(TCL_UNIX_DIR)/tclUnixMain.c \
+	$(TCL_UNIX_DIR)/tclUnixNotfy.c \
+	$(TCL_UNIX_DIR)/tclUnixPipe.c \
+	$(TCL_UNIX_DIR)/tclUnixSock.c \
+	$(TCL_UNIX_DIR)/tclUnixTest.c \
+	$(TCL_UNIX_DIR)/tclUnixTime.c \
+	$(TCL_UNIX_DIR)/tclUnixInit.c
+
+DL_SRCS = \
+	$(TCL_UNIX_DIR)/tclLoadAix.c \
+	$(TCL_UNIX_DIR)/tclLoadAout.c \
+	$(TCL_UNIX_DIR)/tclLoadDl.c \
+	$(TCL_UNIX_DIR)/tclLoadDl2.c \
+	$(TCL_UNIX_DIR)/tclLoadDld.c \
+	$(TCL_GENERIC_DIR)/tclLoadNone.c \
+	$(TCL_UNIX_DIR)/tclLoadOSF.c \
+	$(TCL_UNIX_DIR)/tclLoadShl.c
+
+TCL_OBJS = ${TCL_GENERIC_OBJS} ${TCL_UNIX_OBJS}
+
+TCL_SOBJS = ${TCL_GENERIC_SOBJS} ${TCL_UNIX_SOBJS}
+
+# Note: don't include DL_SRCS in SRCS:  most of those files won't
+# compile on the current machine, and they will cause problems for
+# things like "make depend".
+
+TCL_SRCS = $(TCL_GENERIC_SRCS) $(TCL_UNIX_SRCS)
+
+ifeq ($(findstring win32,$(TARGET)), win32)
+all debug opt:
+	@echo  The rest built native on Windows
+else	
+all debug opt:	$(ETK_BIN_DIR) $(OBJDIR) \
+	$(ETK_BIN_DIR)/etk $(ETK_BIN_DIR)/etk_drv$(SHLIB_SUFFIX)
+endif
+# The following target generates the file generic/tclDate.c 
+# from the yacc grammar found in generic/tclGetDate.y.  This is
+# only run by hand as yacc is not available in all environments.
+# The name of the .c file is different than the name of the .y file
+# so that make doesn't try to automatically regenerate the .c file.
+
+gendate:
+	yacc -l $(TCL_GENERIC_DIR)/tclGetDate.y
+	sed -e 's/yy/TclDate/g' -e '/^#include <values.h>/d' \
+	    -e 's/SCCSID/%Z\% %M\% %I\% %E\% %U\%/g' \
+	    -e '/#ifdef __STDC__/,/#endif/d' -e '/TclDateerrlab:/d' \
+	    -e '/TclDatenewstate:/d' -e '/#pragma/d' \
+	    <y.tab.c >$(TCL_GENERIC_DIR)/tclDate.c
+	rm y.tab.c
+
+# Object files used on all Unix systems:
+
+$(OBJDIR)/panic.o: $(TCL_GENERIC_DIR)/panic.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/panic.c
+
+$(OBJDIR)/regexp.o: $(TCL_GENERIC_DIR)/regexp.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/regexp.c
+
+$(OBJDIR)/tclAppInit.o: $(TCL_UNIX_DIR)/tclAppInit.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclAppInit.c
+
+$(OBJDIR)/tclAsync.o: $(TCL_GENERIC_DIR)/tclAsync.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclAsync.c
+
+$(OBJDIR)/tclBasic.o: $(ETK_SRC_DIR)/tclBasic.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(ETK_SRC_DIR)/tclBasic.c
+
+$(OBJDIR)/tclCkalloc.o: $(TCL_GENERIC_DIR)/tclCkalloc.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclCkalloc.c
+
+$(OBJDIR)/tclClock.o: $(TCL_GENERIC_DIR)/tclClock.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclClock.c
+
+$(OBJDIR)/tclCmdAH.o: $(TCL_GENERIC_DIR)/tclCmdAH.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclCmdAH.c
+
+$(OBJDIR)/tclCmdIL.o: $(TCL_GENERIC_DIR)/tclCmdIL.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclCmdIL.c
+
+$(OBJDIR)/tclCmdMZ.o: $(TCL_GENERIC_DIR)/tclCmdMZ.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclCmdMZ.c
+
+$(OBJDIR)/tclDate.o: $(TCL_GENERIC_DIR)/tclDate.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclDate.c
+
+$(OBJDIR)/tclEnv.o: $(TCL_GENERIC_DIR)/tclEnv.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclEnv.c
+
+$(OBJDIR)/tclEvent.o: $(TCL_GENERIC_DIR)/tclEvent.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclEvent.c
+
+$(OBJDIR)/tclExpr.o: $(TCL_GENERIC_DIR)/tclExpr.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclExpr.c
+
+$(OBJDIR)/tclFCmd.o: $(TCL_GENERIC_DIR)/tclFCmd.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclFCmd.c
+
+$(OBJDIR)/tclFHandle.o: $(TCL_GENERIC_DIR)/tclFHandle.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclFHandle.c
+
+$(OBJDIR)/tclFileName.o: $(TCL_GENERIC_DIR)/tclFileName.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclFileName.c
+
+$(OBJDIR)/tclGet.o: $(TCL_GENERIC_DIR)/tclGet.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclGet.c
+
+$(OBJDIR)/tclHash.o: $(TCL_GENERIC_DIR)/tclHash.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclHash.c
+
+$(OBJDIR)/tclHistory.o: $(TCL_GENERIC_DIR)/tclHistory.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclHistory.c
+
+$(OBJDIR)/tclInterp.o: $(TCL_GENERIC_DIR)/tclInterp.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclInterp.c
+
+$(OBJDIR)/tclInitDSA.o: $(TCL_GENERIC_DIR)/tclInitDSA.c
+	$(CC) -o $@ -c -I$(TCL_GENERIC_DIR) $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclInitDSA.c
+
+$(OBJDIR)/tclInitDSA..o: $(TCL_GENERIC_DIR)/tclInitDSA.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ -I$(TCL_GENERIC_DIR) $(TCL_CC_SWITCHES) \
+		${SHLIB_CFLAGS} $(TCL_GENERIC_DIR)/tclInitDSA.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclIO.o: $(TCL_GENERIC_DIR)/tclIO.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclIO.c
+
+$(OBJDIR)/tclIOCmd.o: $(TCL_GENERIC_DIR)/tclIOCmd.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclIOCmd.c
+
+$(OBJDIR)/tclIOSock.o: $(TCL_GENERIC_DIR)/tclIOSock.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclIOSock.c
+
+$(OBJDIR)/tclIOUtil.o: $(ETK_SRC_DIR)/tclIOUtil.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(ETK_SRC_DIR)/tclIOUtil.c
+
+$(OBJDIR)/tclLink.o: $(TCL_GENERIC_DIR)/tclLink.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclLink.c
+
+$(OBJDIR)/tclLoad.o: $(TCL_GENERIC_DIR)/tclLoad.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclLoad.c
+
+$(OBJDIR)/tclLoadAix.o: $(TCL_UNIX_DIR)/tclLoadAix.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclLoadAix.c
+
+$(OBJDIR)/tclLoadAout.o: $(TCL_UNIX_DIR)/tclLoadAout.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) -DLIB_RUNTIME_DIR=\"$(LIB_RUNTIME_DIR)\" \
+		$(TCL_UNIX_DIR)/tclLoadAout.c
+
+$(OBJDIR)/tclLoadDl.o: $(TCL_UNIX_DIR)/tclLoadDl.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclLoadDl.c
+
+$(OBJDIR)/tclLoadDl2.o: $(TCL_UNIX_DIR)/tclLoadDl2.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclLoadDl2.c
+
+$(OBJDIR)/tclLoadDld.o: $(TCL_UNIX_DIR)/tclLoadDld.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclLoadDld.c
+
+$(OBJDIR)/tclLoadNone.o: $(TCL_GENERIC_DIR)/tclLoadNone.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclLoadNone.c
+
+$(OBJDIR)/tclLoadOSF.o: $(TCL_UNIX_DIR)/tclLoadOSF.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclLoadOSF.c
+
+$(OBJDIR)/tclLoadShl.o: $(TCL_UNIX_DIR)/tclLoadShl.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclLoadShl.c
+
+$(OBJDIR)/tclMain.o: $(TCL_GENERIC_DIR)/tclMain.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclMain.c
+
+$(OBJDIR)/tclMtherr.o: $(TCL_UNIX_DIR)/tclMtherr.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclMtherr.c
+
+$(OBJDIR)/tclNotify.o: $(TCL_GENERIC_DIR)/tclNotify.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclNotify.c
+
+$(OBJDIR)/tclParse.o: $(TCL_GENERIC_DIR)/tclParse.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) -DTCL_PARSE_NO_CMDS=1 $(TCL_GENERIC_DIR)/tclParse.c
+
+$(OBJDIR)/tclParseCmd.o: $(TCL_GENERIC_DIR)/tclParseCmd.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclParseCmd.c
+
+$(OBJDIR)/tclPkg.o: $(TCL_GENERIC_DIR)/tclPkg.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclPkg.c
+
+$(OBJDIR)/tclPosixStr.o: $(TCL_GENERIC_DIR)/tclPosixStr.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclPosixStr.c
+
+$(OBJDIR)/tclPreserve.o: $(TCL_GENERIC_DIR)/tclPreserve.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclPreserve.c
+
+$(OBJDIR)/tclProc.o: $(TCL_GENERIC_DIR)/tclProc.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclProc.c
+
+$(OBJDIR)/tclUtil.o: $(TCL_GENERIC_DIR)/tclUtil.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclUtil.c
+
+$(OBJDIR)/tclVar.o: $(TCL_GENERIC_DIR)/tclVar.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_GENERIC_DIR)/tclVar.c
+
+$(OBJDIR)/tclUnixChan.o: $(TCL_UNIX_DIR)/tclUnixChan.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclUnixChan.c
+
+$(OBJDIR)/tclUnixFCmd.o: $(TCL_UNIX_DIR)/tclUnixFCmd.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclUnixFCmd.c
+
+$(OBJDIR)/tclUnixFile.o: $(TCL_UNIX_DIR)/tclUnixFile.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclUnixFile.c
+
+$(OBJDIR)/tclUnixMain.o: $(TCL_UNIX_DIR)/tclUnixMain.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclUnixMain.c
+
+$(OBJDIR)/tclUnixNotfy.o: $(TCL_UNIX_DIR)/tclUnixNotfy.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclUnixNotfy.c
+
+$(OBJDIR)/tclUnixPipe.o: $(TCL_UNIX_DIR)/tclUnixPipe.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclUnixPipe.c
+
+$(OBJDIR)/tclUnixSock.o: $(TCL_UNIX_DIR)/tclUnixSock.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclUnixSock.c
+
+$(OBJDIR)/tclUnixTest.o: $(TCL_UNIX_DIR)/tclUnixTest.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclUnixTest.c
+
+$(OBJDIR)/tclUnixTime.o: $(TCL_UNIX_DIR)/tclUnixTime.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(TCL_UNIX_DIR)/tclUnixTime.c
+
+$(OBJDIR)/tclUnixInit.o: $(TCL_UNIX_DIR)/tclUnixInit.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) -DTCL_LIBRARY=\"\" \
+		-DTCL_PACKAGE_PATH="\"\"" \
+		$(TCL_UNIX_DIR)/tclUnixInit.c
+
+# compat binaries
+
+$(OBJDIR)/fixstrtod.o: $(COMPAT_DIR)/fixstrtod.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(COMPAT_DIR)/fixstrtod.c
+
+$(OBJDIR)/getcwd.o: $(COMPAT_DIR)/getcwd.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(COMPAT_DIR)/getcwd.c
+
+$(OBJDIR)/opendir.o: $(COMPAT_DIR)/opendir.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(COMPAT_DIR)/opendir.c
+
+$(OBJDIR)/strncasecmp.o: $(COMPAT_DIR)/strncasecmp.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(COMPAT_DIR)/strncasecmp.c
+
+$(OBJDIR)/strstr.o: $(COMPAT_DIR)/strstr.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(COMPAT_DIR)/strstr.c
+
+$(OBJDIR)/strtod.o: $(COMPAT_DIR)/strtod.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(COMPAT_DIR)/strtod.c
+
+$(OBJDIR)/strtol.o: $(COMPAT_DIR)/strtol.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(COMPAT_DIR)/strtol.c
+
+$(OBJDIR)/strtoul.o: $(COMPAT_DIR)/strtoul.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(COMPAT_DIR)/strtoul.c
+
+$(OBJDIR)/tmpnam.o: $(COMPAT_DIR)/tmpnam.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(COMPAT_DIR)/tmpnam.c
+
+$(OBJDIR)/waitpid.o: $(COMPAT_DIR)/waitpid.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(COMPAT_DIR)/waitpid.c
+
+$(OBJDIR)/_eprintf.o: $(COMPAT_DIR)/_eprintf.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(COMPAT_DIR)/_eprintf.c
+
+$(OBJDIR)/_builtin.o: $(COMPAT_DIR)/_builtin.c
+	$(CC) -o $@ -c $(TCL_CC_SWITCHES) $(COMPAT_DIR)/_builtin.c
+
+# Object files used on all Unix systems (shared versions)
+
+$(OBJDIR)/panic..o: $(TCL_GENERIC_DIR)/panic.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/panic.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/regexp..o: $(TCL_GENERIC_DIR)/regexp.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/regexp.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/itcl_cmds..o: $(TCL_GENERIC_DIR)/itcl_cmds.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/itcl_cmds.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/itcl_ensemble..o: $(TCL_GENERIC_DIR)/itcl_ensemble.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/itcl_ensemble.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/itcl_namesp..o: $(TCL_GENERIC_DIR)/itcl_namesp.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/itcl_namesp.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/itcl_util..o: $(TCL_GENERIC_DIR)/itcl_util.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/itcl_util.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclAppInit..o: $(TCL_UNIX_DIR)/tclAppInit.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclAppInit.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclAsync..o: $(TCL_GENERIC_DIR)/tclAsync.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclAsync.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclBasic..o: $(ETK_SRC_DIR)/tclBasic.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(ETK_SRC_DIR)/tclBasic.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclCkalloc..o: $(TCL_GENERIC_DIR)/tclCkalloc.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclCkalloc.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclClock..o: $(TCL_GENERIC_DIR)/tclClock.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclClock.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclCmdAH..o: $(TCL_GENERIC_DIR)/tclCmdAH.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclCmdAH.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclCmdIL..o: $(TCL_GENERIC_DIR)/tclCmdIL.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclCmdIL.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclCmdMZ..o: $(TCL_GENERIC_DIR)/tclCmdMZ.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclCmdMZ.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclDate..o: $(TCL_GENERIC_DIR)/tclDate.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclDate.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclEnv..o: $(TCL_GENERIC_DIR)/tclEnv.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclEnv.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclEvent..o: $(TCL_GENERIC_DIR)/tclEvent.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclEvent.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclFCmd..o: $(TCL_GENERIC_DIR)/tclFCmd.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclFCmd.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclExpr..o: $(TCL_GENERIC_DIR)/tclExpr.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclExpr.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclFHandle..o: $(TCL_GENERIC_DIR)/tclFHandle.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclFHandle.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclFileName..o: $(TCL_GENERIC_DIR)/tclFileName.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclFileName.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclGet..o: $(TCL_GENERIC_DIR)/tclGet.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclGet.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclHash..o: $(TCL_GENERIC_DIR)/tclHash.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclHash.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclHistory..o: $(TCL_GENERIC_DIR)/tclHistory.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclHistory.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclInterp..o: $(TCL_GENERIC_DIR)/tclInterp.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclInterp.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclIO..o: $(TCL_GENERIC_DIR)/tclIO.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclIO.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclIOUtil..o: $(ETK_SRC_DIR)/tclIOUtil.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(ETK_SRC_DIR)/tclIOUtil.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclIOCmd..o: $(TCL_GENERIC_DIR)/tclIOCmd.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclIOCmd.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclIOSock..o: $(TCL_GENERIC_DIR)/tclIOSock.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclIOSock.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclLink..o: $(TCL_GENERIC_DIR)/tclLink.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclLink.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclLoad..o: $(TCL_GENERIC_DIR)/tclLoad.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclLoad.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclLoadAix..o: $(TCL_UNIX_DIR)/tclLoadAix.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclLoadAix.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclLoadAout..o: $(TCL_UNIX_DIR)/tclLoadAout.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) \
+		-DLIB_RUNTIME_DIR=\"$(LIB_RUNTIME_DIR)\" \
+		${SHLIB_CFLAGS} $(TCL_UNIX_DIR)/tclLoadAout.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclLoadDl..o: $(TCL_UNIX_DIR)/tclLoadDl.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclLoadDl.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclLoadDl2..o: $(TCL_UNIX_DIR)/tclLoadDl2.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclLoadDl2.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclLoadDld..o: $(TCL_UNIX_DIR)/tclLoadDld.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclLoadDld.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclLoadNone..o: $(TCL_GENERIC_DIR)/tclLoadNone.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclLoadNone.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclLoadShl..o: $(TCL_UNIX_DIR)/tclLoadShl.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclLoadShl.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclMain..o: $(TCL_GENERIC_DIR)/tclMain.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclMain.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclMtherr..o: $(TCL_UNIX_DIR)/tclMtherr.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclMtherr.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclNotify..o: $(TCL_GENERIC_DIR)/tclNotify.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclNotify.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclParse..o: $(TCL_GENERIC_DIR)/tclParse.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) -DTCL_PARSE_NO_CMDS=1 \
+		${SHLIB_CFLAGS} $(TCL_GENERIC_DIR)/tclParse.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclParseCmd..o: $(TCL_GENERIC_DIR)/tclParseCmd.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclParseCmd.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclPkg..o: $(TCL_GENERIC_DIR)/tclPkg.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclPkg.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclPosixStr..o: $(TCL_GENERIC_DIR)/tclPosixStr.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclPosixStr.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclPreserve..o: $(TCL_GENERIC_DIR)/tclPreserve.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclPreserve.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclProc..o: $(TCL_GENERIC_DIR)/tclProc.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclProc.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclUtil..o: $(TCL_GENERIC_DIR)/tclUtil.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclUtil.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclVar..o: $(TCL_GENERIC_DIR)/tclVar.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_GENERIC_DIR)/tclVar.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclUnixAZ..o: $(TCL_UNIX_DIR)/tclUnixAZ.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclUnixAZ.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclUnixChan..o: $(TCL_UNIX_DIR)/tclUnixChan.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclUnixChan.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclUnixFCmd..o: $(TCL_UNIX_DIR)/tclUnixFCmd.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclUnixFCmd.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclUnixFile..o: $(TCL_UNIX_DIR)/tclUnixFile.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclUnixFile.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclUnixMain..o: $(TCL_UNIX_DIR)/tclUnixMain.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclUnixMain.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclUnixNotfy..o: $(TCL_UNIX_DIR)/tclUnixNotfy.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclUnixNotfy.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclUnixPipe..o: $(TCL_UNIX_DIR)/tclUnixPipe.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclUnixPipe.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclUnixSock..o: $(TCL_UNIX_DIR)/tclUnixSock.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclUnixSock.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclUnixTest..o: $(TCL_UNIX_DIR)/tclUnixTest.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) @SHLIB_CFLAGS@ \
+		$(TCL_UNIX_DIR)/tclUnixTest.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclUnixTime..o: $(TCL_UNIX_DIR)/tclUnixTime.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclUnixTime.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclUnixUtil..o: $(TCL_UNIX_DIR)/tclUnixUtil.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(TCL_UNIX_DIR)/tclUnixUtil.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tclUnixInit..o: $(TCL_UNIX_DIR)/tclUnixInit.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		-DTCL_PACKAGE_PATH='""' \
+		-DTCL_LIBRARY=\"\" $(TCL_UNIX_DIR)/tclUnixInit.c
+	@OBJ_RESTORE@
+
+# compat binaries (shared versions)
+
+$(OBJDIR)/fixstrtod..o: $(COMPAT_DIR)/fixstrtod.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(COMPAT_DIR)/fixstrtod.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/getcwd..o: $(COMPAT_DIR)/getcwd.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(COMPAT_DIR)/getcwd.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/opendir..o: $(COMPAT_DIR)/opendir.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(COMPAT_DIR)/opendir.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/strncasecmp..o: $(COMPAT_DIR)/strncasecmp.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(COMPAT_DIR)/strncasecmp.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/strstr..o: $(COMPAT_DIR)/strstr.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(COMPAT_DIR)/strstr.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/strtod..o: $(COMPAT_DIR)/strtod.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(COMPAT_DIR)/strtod.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/strtol..o: $(COMPAT_DIR)/strtol.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(COMPAT_DIR)/strtol.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/strtoul..o: $(COMPAT_DIR)/strtoul.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(COMPAT_DIR)/strtoul.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tmpnam..o: $(COMPAT_DIR)/tmpnam.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(COMPAT_DIR)/tmpnam.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/waitpid..o: $(COMPAT_DIR)/waitpid.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(COMPAT_DIR)/waitpid.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/_eprintf..o: $(COMPAT_DIR)/_eprintf.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(COMPAT_DIR)/_eprintf.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/_builtin..o: $(COMPAT_DIR)/_builtin.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TCL_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(COMPAT_DIR)/_builtin.c
+	@OBJ_RESTORE@
+
+# The following target is configured by autoconf to generate either
+# a shared library or non-shared library for Tk.
+
+
+# Note, in the target below TCL_LIBRARY needs to be set or else
+# "make test" won't work in the case where the compilation directory
+# isn't the same as the source directory.
+
+clean:
+	rm -f *.a *.o libtk* libtcl* core errs *~ \#* TAGS *.E a.out \
+		errors wish* tclsh* tcltest* lib.exp *% *${SHLIB_SUFFIX} \
+		*.static ../tests/core ish* $(OBJDIR)/*.o
+
+distclean: clean
+	rm -f Makefile config.status config.cache config.log 
+
+modeclean:
+	chmod u-w ../changes ../library/*.tcl ../tests/*.test
+	chmod u-w ../doc/*.n ../generic/*.c ../win/*.rc ../compat/*.c
+	chmod u-w+x ../generic/hello.tcl
+
+depend:
+	makedepend -- $(DEPEND_SWITCHES) -- \
+		$(TCL_SRCS) $(TK_SRCS) -fMakefile.in
+
+
+# ---------------------------------------------------------------------------
+# Erlang/Tk-2.0 objects
+# ---------------------------------------------------------------------------
+
+ETK_OBJS = \
+	$(TCL_SPECIAL_OBJS) $(TCL_OBJS) $(TK_OBJS) \
+	tkstr.o etkMisc.o etk.o
+
+ETK_DRV_OBJS = \
+	${TCL_SPECIAL_SOBJS} $(TCL_SOBJS) $(TK_SOBJS) \
+	tkstr..o etkMisc..o etk_drv..o
+
+ETK_LIBS = \
+	$(X11_LIB_SWITCHES) $(LIBS) $(MATH_LIBS) -lc
+
+$(ETK_BIN_DIR)/etk:	 $(ETK_OBJS:%=$(OBJDIR)/%)
+	LD_LIBRARY_PATH=$(OBJDIR):@X11_LIB_DIR@:${LD_LIBRARY_PATH}; \
+	export LD_LIBRARY_PATH; \
+	$(CC) @LD_FLAGS@ $(ETK_OBJS:%=$(OBJDIR)/%) $(ETK_LIBS) \
+		@TK_CC_SEARCH_FLAGS@ -o $@
+
+$(ETK_BIN_DIR)/etk_drv$(SHLIB_SUFFIX):	$(ETK_DRV_OBJS:%=$(OBJDIR)/%)
+	LD_LIBRARY_PATH=$(OBJDIR):@X11_LIB_DIR@:${LD_LIBRARY_PATH}; \
+	export LD_LIBRARY_PATH; \
+        $(SHLIB_LD) -o $@ $(ETK_DRV_OBJS:%=$(OBJDIR)/%) @TK_LD_SEARCH_FLAGS@ \
+	@THR_LIBS@ $(ETK_LIBS) @SHLIB_LD_LIBS@
+
+$(OBJDIR)/mkstring:	$(ETK_SRC_DIR)/mkstring.c
+	$(CC) -o $@ -o  $@ $(CLFAGS) $(ETK_SRC_DIR)/mkstring.c
+
+$(OBJDIR)/tkstr.o:	$(OBJDIR)/tkstr.c
+	$(CC) -o $@ -c $(CLFAGS) $(OBJDIR)/tkstr.c
+
+$(OBJDIR)/tkstr..o:	$(OBJDIR)/tkstr.c
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(CLFAGS) $(OBJDIR)/tkstr.c
+
+$(OBJDIR)/tkstr.c:	$(OBJDIR)/mkstring $(ETK_SRC_DIR)/strings.tab
+	(cd $(OBJDIR) ; ./mkstring $(ETK_SRC_DIR)/strings.tab)
+	cp -p $(OBJDIR)/tkstr.erl $(ETK_ERL_DIR)
+
+$(OBJDIR)/etk_drv..o:     $(ETK_SRC_DIR)/etk_drv.c $(ETK_SRC_DIR)/etk.h
+	$(CC) -o $@ -c -I$(ETK_SRC_DIR) -I$(OBJDIR) @ERL_INC_DIR@ \
+		-DLOADABLE @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(ETK_SRC_DIR)/etk_drv.c
+
+$(OBJDIR)/etk.o:	$(ETK_SRC_DIR)/etk.c $(ETK_SRC_DIR)/etk.h
+	$(CC) -o $@ -c -I$(ETK_SRC_DIR) -I$(OBJDIR) $(TK_CC_SWITCHES) \
+			$(ETK_SRC_DIR)/etk.c
+
+$(OBJDIR)/etkMisc.o:	$(ETK_SRC_DIR)/etkMisc.c $(ETK_SRC_DIR)/etk.h
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(ETK_SRC_DIR)/etkMisc.c
+
+$(OBJDIR)/etkMisc..o:	$(ETK_SRC_DIR)/etkMisc.c $(ETK_SRC_DIR)/etk.h
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) ${SHLIB_CFLAGS} \
+		$(ETK_SRC_DIR)/etkMisc.c
+	@OBJ_RESTORE@
+
+# ---------------------------------------------------------------------------
+# Tk objects
+# ---------------------------------------------------------------------------
+$(OBJDIR)/tk3d.o: $(TK_GENERIC_DIR)/tk3d.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tk3d.c
+
+$(OBJDIR)/tkAppInit.o: $(TK_UNIX_DIR)/tkAppInit.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_UNIX_DIR)/tkAppInit.c
+
+$(OBJDIR)/tkArgv.o: $(TK_GENERIC_DIR)/tkArgv.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkArgv.c
+
+$(OBJDIR)/tkAtom.o: $(TK_GENERIC_DIR)/tkAtom.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkAtom.c
+
+$(OBJDIR)/tkBind.o: $(ETK_SRC_DIR)/tkBind.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(ETK_SRC_DIR)/tkBind.c
+
+$(OBJDIR)/tkBitmap.o: $(TK_GENERIC_DIR)/tkBitmap.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkBitmap.c
+
+$(OBJDIR)/tkClipboard.o: $(TK_GENERIC_DIR)/tkClipboard.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkClipboard.c
+
+$(OBJDIR)/tkCmds.o: $(TK_GENERIC_DIR)/tkCmds.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkCmds.c
+
+$(OBJDIR)/tkColor.o: $(TK_GENERIC_DIR)/tkColor.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkColor.c
+
+$(OBJDIR)/tkConfig.o: $(TK_GENERIC_DIR)/tkConfig.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkConfig.c
+
+$(OBJDIR)/tkCursor.o: $(TK_GENERIC_DIR)/tkCursor.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkCursor.c
+
+$(OBJDIR)/tkError.o: $(TK_GENERIC_DIR)/tkError.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkError.c
+
+$(OBJDIR)/tkEvent.o: $(TK_GENERIC_DIR)/tkEvent.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkEvent.c
+
+$(OBJDIR)/tkFocus.o: $(TK_GENERIC_DIR)/tkFocus.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkFocus.c
+
+$(OBJDIR)/tkFont.o: $(TK_GENERIC_DIR)/tkFont.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkFont.c
+
+$(OBJDIR)/tkGet.o: $(TK_GENERIC_DIR)/tkGet.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkGet.c
+
+$(OBJDIR)/tkGC.o: $(TK_GENERIC_DIR)/tkGC.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkGC.c
+
+$(OBJDIR)/tkGeometry.o: $(TK_GENERIC_DIR)/tkGeometry.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkGeometry.c
+
+$(OBJDIR)/tkGrab.o: $(TK_GENERIC_DIR)/tkGrab.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkGrab.c
+
+$(OBJDIR)/tkGrid.o: $(TK_GENERIC_DIR)/tkGrid.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkGrid.c
+
+$(OBJDIR)/tkInitDSA.o: $(TK_GENERIC_DIR)/tkInitDSA.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkInitDSA.c
+
+$(OBJDIR)/tkInitDSA..o: $(TK_GENERIC_DIR)/tkInitDSA.c
+	@OBJ_S-o $@ AVE@
+	$(CC) -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) $(TK_GENERIC_DIR)/tkInitDSA.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkMain.o: $(TK_GENERIC_DIR)/tkMain.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkMain.c
+
+$(OBJDIR)/tkOption.o: $(TK_GENERIC_DIR)/tkOption.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkOption.c
+
+$(OBJDIR)/tkPack.o: $(TK_GENERIC_DIR)/tkPack.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkPack.c
+
+$(OBJDIR)/tkPhotoUtil.o: $(TK_GENERIC_DIR)/tkPhotoUtil.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkPhotoUtil.c
+
+$(OBJDIR)/tkPlace.o: $(TK_GENERIC_DIR)/tkPlace.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkPlace.c
+
+$(OBJDIR)/tkSelect.o: $(TK_GENERIC_DIR)/tkSelect.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkSelect.c
+
+$(OBJDIR)/tkSend.o: $(TK_GENERIC_DIR)/tkSend.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkSend.c
+
+$(OBJDIR)/tkUtil.o: $(TK_GENERIC_DIR)/tkUtil.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkUtil.c
+
+$(OBJDIR)/tkVisual.o: $(TK_GENERIC_DIR)/tkVisual.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkVisual.c
+
+$(OBJDIR)/tkWindow.o: $(TK_GENERIC_DIR)/tkWindow.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkWindow.c
+
+$(OBJDIR)/tkButton.o: $(TK_GENERIC_DIR)/tkButton.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkButton.c
+
+$(OBJDIR)/tkEntry.o: $(TK_GENERIC_DIR)/tkEntry.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkEntry.c
+
+$(OBJDIR)/tkFrame.o: $(TK_GENERIC_DIR)/tkFrame.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkFrame.c
+
+$(OBJDIR)/tkListbox.o: $(TK_GENERIC_DIR)/tkListbox.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkListbox.c
+
+$(OBJDIR)/tkMenu.o: $(TK_GENERIC_DIR)/tkMenu.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkMenu.c
+
+$(OBJDIR)/tkMenubutton.o: $(TK_GENERIC_DIR)/tkMenubutton.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkMenubutton.c
+
+$(OBJDIR)/tkMessage.o: $(TK_GENERIC_DIR)/tkMessage.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkMessage.c
+
+$(OBJDIR)/tkScale.o: $(TK_GENERIC_DIR)/tkScale.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkScale.c
+
+$(OBJDIR)/tkScrollbar.o: $(TK_GENERIC_DIR)/tkScrollbar.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkScrollbar.c
+
+$(OBJDIR)/tkCanvas.o: $(TK_GENERIC_DIR)/tkCanvas.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkCanvas.c
+
+$(OBJDIR)/tkCanvArc.o: $(TK_GENERIC_DIR)/tkCanvArc.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkCanvArc.c
+
+$(OBJDIR)/tkCanvBmap.o: $(TK_GENERIC_DIR)/tkCanvBmap.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkCanvBmap.c
+
+$(OBJDIR)/tkCanvImg.o: $(TK_GENERIC_DIR)/tkCanvImg.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkCanvImg.c
+
+$(OBJDIR)/tkCanvLine.o: $(TK_GENERIC_DIR)/tkCanvLine.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkCanvLine.c
+
+$(OBJDIR)/tkCanvPoly.o: $(TK_GENERIC_DIR)/tkCanvPoly.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkCanvPoly.c
+
+$(OBJDIR)/tkCanvPs.o: $(TK_GENERIC_DIR)/tkCanvPs.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkCanvPs.c
+
+$(OBJDIR)/tkCanvText.o: $(TK_GENERIC_DIR)/tkCanvText.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkCanvText.c
+
+$(OBJDIR)/tkCanvUtil.o: $(TK_GENERIC_DIR)/tkCanvUtil.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkCanvUtil.c
+
+$(OBJDIR)/tkCanvWind.o: $(TK_GENERIC_DIR)/tkCanvWind.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkCanvWind.c
+
+$(OBJDIR)/tkRectOval.o: $(TK_GENERIC_DIR)/tkRectOval.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkRectOval.c
+
+$(OBJDIR)/tkTrig.o: $(TK_GENERIC_DIR)/tkTrig.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkTrig.c
+
+$(OBJDIR)/tkImage.o: $(TK_GENERIC_DIR)/tkImage.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkImage.c
+
+$(OBJDIR)/tkImgBmap.o: $(TK_GENERIC_DIR)/tkImgBmap.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkImgBmap.c
+
+$(OBJDIR)/tkImgGIF.o: $(TK_GENERIC_DIR)/tkImgGIF.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkImgGIF.c
+
+$(OBJDIR)/tkImgJPEG.o: $(TK_GENERIC_DIR)/tkImgJPEG.c 
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) -DJPEG_LIB_NAME=\"${JPEG_LIB_NAME}\" \
+		$(TK_GENERIC_DIR)/tkImgJPEG.c
+
+$(OBJDIR)/tkImgPPM.o: $(TK_GENERIC_DIR)/tkImgPPM.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkImgPPM.c
+
+$(OBJDIR)/tkImgPNG.o: $(TK_GENERIC_DIR)/tkImgPNG.c 
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) -DPNG_LIB_NAME=\"${PNG_LIB_NAME}\" \
+		$(TK_GENERIC_DIR)/tkImgPNG.c
+
+$(OBJDIR)/tkImgXPM.o: $(TK_GENERIC_DIR)/tkImgXPM.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkImgXPM.c
+
+$(OBJDIR)/tkImgPhoto.o: $(TK_GENERIC_DIR)/tkImgPhoto.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkImgPhoto.c
+
+$(OBJDIR)/tkImgPmap.o: $(TK_GENERIC_DIR)/tkImgPmap.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkImgPmap.c
+
+$(OBJDIR)/tkTest.o: $(TK_GENERIC_DIR)/tkTest.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkTest.c
+
+$(OBJDIR)/tkSquare.o: $(TK_GENERIC_DIR)/tkSquare.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkSquare.c
+
+$(OBJDIR)/tkText.o: $(TK_GENERIC_DIR)/tkText.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkText.c
+
+$(OBJDIR)/tkTextBTree.o: $(TK_GENERIC_DIR)/tkTextBTree.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkTextBTree.c
+
+$(OBJDIR)/tkTextDisp.o: $(TK_GENERIC_DIR)/tkTextDisp.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkTextDisp.c
+
+$(OBJDIR)/tkTextIndex.o: $(TK_GENERIC_DIR)/tkTextIndex.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkTextIndex.c
+
+$(OBJDIR)/tkTextMark.o: $(TK_GENERIC_DIR)/tkTextMark.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkTextMark.c
+
+$(OBJDIR)/tkTextTag.o: $(TK_GENERIC_DIR)/tkTextTag.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkTextTag.c
+
+$(OBJDIR)/tkTextWind.o: $(TK_GENERIC_DIR)/tkTextWind.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_GENERIC_DIR)/tkTextWind.c
+
+# ---------------------------------------------------------------------------
+# Tk unix objects
+# ---------------------------------------------------------------------------
+$(OBJDIR)/tkUnix.o: $(TK_UNIX_DIR)/tkUnix.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_UNIX_DIR)/tkUnix.c
+
+$(OBJDIR)/tkUnixCursor.o: $(TK_UNIX_DIR)/tkUnixCursor.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_UNIX_DIR)/tkUnixCursor.c
+
+$(OBJDIR)/tkUnixDialog.o: $(TK_UNIX_DIR)/tkUnixDialog.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_UNIX_DIR)/tkUnixDialog.c
+
+$(OBJDIR)/tkUnixDraw.o: $(TK_UNIX_DIR)/tkUnixDraw.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_UNIX_DIR)/tkUnixDraw.c
+
+$(OBJDIR)/tkUnixEvent.o: $(TK_UNIX_DIR)/tkUnixEvent.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_UNIX_DIR)/tkUnixEvent.c
+
+$(OBJDIR)/tkUnixInit.o: $(TK_UNIX_DIR)/tkUnixInit.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) -DTK_LIBRARY=\"\" \
+	    $(TK_UNIX_DIR)/tkUnixInit.c
+
+$(OBJDIR)/tkUnixPmap.o: $(TK_UNIX_DIR)/tkUnixPmap.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_UNIX_DIR)/tkUnixPmap.c
+
+$(OBJDIR)/tkUnixSelect.o: $(TK_UNIX_DIR)/tkUnixSelect.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_UNIX_DIR)/tkUnixSelect.c
+
+$(OBJDIR)/tkUnixWm.o: $(TK_UNIX_DIR)/tkUnixWm.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_UNIX_DIR)/tkUnixWm.c
+
+$(OBJDIR)/tkUnixXId.o: $(TK_UNIX_DIR)/tkUnixXId.c
+	$(CC) -o $@ -c $(TK_CC_SWITCHES) $(TK_UNIX_DIR)/tkUnixXId.c
+
+# ---------------------------------------------------------------------------
+# Tk shared objects
+# ---------------------------------------------------------------------------
+
+$(OBJDIR)/tk3d..o: $(TK_GENERIC_DIR)/tk3d.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) $(TK_GENERIC_DIR)/tk3d.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkAppInit..o: $(TK_UNIX_DIR)/tkAppInit.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_UNIX_DIR)/tkAppInit.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkArgv..o: $(TK_GENERIC_DIR)/tkArgv.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkArgv.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkAtom..o: $(TK_GENERIC_DIR)/tkAtom.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkAtom.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkBind..o: $(ETK_SRC_DIR)/tkBind.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(ETK_SRC_DIR)/tkBind.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkBitmap..o: $(TK_GENERIC_DIR)/tkBitmap.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkBitmap.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkClipboard..o: $(TK_GENERIC_DIR)/tkClipboard.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkClipboard.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkCmds..o: $(TK_GENERIC_DIR)/tkCmds.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkCmds.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkColor..o: $(TK_GENERIC_DIR)/tkColor.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkColor.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkConfig..o: $(TK_GENERIC_DIR)/tkConfig.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkConfig.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkCursor..o: $(TK_GENERIC_DIR)/tkCursor.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkCursor.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkError..o: $(TK_GENERIC_DIR)/tkError.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkError.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkEvent..o: $(TK_GENERIC_DIR)/tkEvent.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkEvent.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkFocus..o: $(TK_GENERIC_DIR)/tkFocus.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkFocus.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkFont..o: $(TK_GENERIC_DIR)/tkFont.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkFont.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkGet..o: $(TK_GENERIC_DIR)/tkGet.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkGet.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkGC..o: $(TK_GENERIC_DIR)/tkGC.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkGC.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkGeometry..o: $(TK_GENERIC_DIR)/tkGeometry.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkGeometry.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkGrab..o: $(TK_GENERIC_DIR)/tkGrab.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkGrab.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkGrid..o: $(TK_GENERIC_DIR)/tkGrid.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkGrid.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkMain..o: $(TK_GENERIC_DIR)/tkMain.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkMain.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkOption..o: $(TK_GENERIC_DIR)/tkOption.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkOption.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkPack..o: $(TK_GENERIC_DIR)/tkPack.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkPack.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkPhotoUtil..o: $(TK_GENERIC_DIR)/tkPhotoUtil.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkPhotoUtil.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkPlace..o: $(TK_GENERIC_DIR)/tkPlace.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkPlace.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkSelect..o: $(TK_GENERIC_DIR)/tkSelect.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkSelect.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkSend..o: $(TK_GENERIC_DIR)/tkSend.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkSend.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkUtil..o: $(TK_GENERIC_DIR)/tkUtil.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkUtil.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkVisual..o: $(TK_GENERIC_DIR)/tkVisual.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkVisual.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkWindow..o: $(TK_GENERIC_DIR)/tkWindow.c 
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkWindow.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkButton..o: $(TK_GENERIC_DIR)/tkButton.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkButton.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkEntry..o: $(TK_GENERIC_DIR)/tkEntry.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkEntry.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkFrame..o: $(TK_GENERIC_DIR)/tkFrame.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkFrame.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkListbox..o: $(TK_GENERIC_DIR)/tkListbox.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkListbox.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkMenu..o: $(TK_GENERIC_DIR)/tkMenu.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkMenu.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkMenubutton..o: $(TK_GENERIC_DIR)/tkMenubutton.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkMenubutton.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkMessage..o: $(TK_GENERIC_DIR)/tkMessage.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkMessage.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkScale..o: $(TK_GENERIC_DIR)/tkScale.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkScale.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkScrollbar..o: $(TK_GENERIC_DIR)/tkScrollbar.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkScrollbar.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkCanvas..o: $(TK_GENERIC_DIR)/tkCanvas.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkCanvas.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkCanvArc..o: $(TK_GENERIC_DIR)/tkCanvArc.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkCanvArc.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkCanvBmap..o: $(TK_GENERIC_DIR)/tkCanvBmap.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkCanvBmap.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkCanvImg..o: $(TK_GENERIC_DIR)/tkCanvImg.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkCanvImg.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkCanvLine..o: $(TK_GENERIC_DIR)/tkCanvLine.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkCanvLine.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkCanvPoly..o: $(TK_GENERIC_DIR)/tkCanvPoly.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkCanvPoly.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkCanvPs..o: $(TK_GENERIC_DIR)/tkCanvPs.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkCanvPs.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkCanvText..o: $(TK_GENERIC_DIR)/tkCanvText.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkCanvText.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkCanvUtil..o: $(TK_GENERIC_DIR)/tkCanvUtil.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkCanvUtil.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkCanvWind..o: $(TK_GENERIC_DIR)/tkCanvWind.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkCanvWind.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkRectOval..o: $(TK_GENERIC_DIR)/tkRectOval.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkRectOval.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkTrig..o: $(TK_GENERIC_DIR)/tkTrig.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkTrig.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkImage..o: $(TK_GENERIC_DIR)/tkImage.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkImage.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkImgBmap..o: $(TK_GENERIC_DIR)/tkImgBmap.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkImgBmap.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkImgGIF..o: $(TK_GENERIC_DIR)/tkImgGIF.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkImgGIF.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkImgJPEG..o: $(TK_GENERIC_DIR)/tkImgJPEG.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		-DJPEG_LIB_NAME=\"${JPEG_LIB_NAME}\" $(TK_GENERIC_DIR)/tkImgJPEG.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkImgPPM..o: $(TK_GENERIC_DIR)/tkImgPPM.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkImgPPM.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkImgPNG..o: $(TK_GENERIC_DIR)/tkImgPNG.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		-DPNG_LIB_NAME=\"${PNG_LIB_NAME}\" $(TK_GENERIC_DIR)/tkImgPNG.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkImgXPM..o: $(TK_GENERIC_DIR)/tkImgXPM.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkImgXPM.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkImgPhoto..o: $(TK_GENERIC_DIR)/tkImgPhoto.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkImgPhoto.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkImgPmap..o: $(TK_GENERIC_DIR)/tkImgPmap.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkImgPmap.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkTest..o: $(TK_GENERIC_DIR)/tkTest.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkTest.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkSquare..o: $(TK_GENERIC_DIR)/tkSquare.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkSquare.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkText..o: $(TK_GENERIC_DIR)/tkText.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkText.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkTextBTree..o: $(TK_GENERIC_DIR)/tkTextBTree.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkTextBTree.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkTextDisp..o: $(TK_GENERIC_DIR)/tkTextDisp.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkTextDisp.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkTextIndex..o: $(TK_GENERIC_DIR)/tkTextIndex.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkTextIndex.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkTextMark..o: $(TK_GENERIC_DIR)/tkTextMark.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkTextMark.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkTextTag..o: $(TK_GENERIC_DIR)/tkTextTag.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkTextTag.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkTextWind..o: $(TK_GENERIC_DIR)/tkTextWind.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_GENERIC_DIR)/tkTextWind.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkUnix..o: $(TK_UNIX_DIR)/tkUnix.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_UNIX_DIR)/tkUnix.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkUnixCursor..o: $(TK_UNIX_DIR)/tkUnixCursor.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_UNIX_DIR)/tkUnixCursor.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkUnixDialog..o: $(TK_UNIX_DIR)/tkUnixDialog.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_UNIX_DIR)/tkUnixDialog.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkUnixDraw..o: $(TK_UNIX_DIR)/tkUnixDraw.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_UNIX_DIR)/tkUnixDraw.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkUnixEmbed..o: $(TK_UNIX_DIR)/tkUnixEmbed.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_UNIX_DIR)/tkUnixEmbed.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkUnixEvent..o: $(TK_UNIX_DIR)/tkUnixEvent.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_UNIX_DIR)/tkUnixEvent.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkUnixInit..o: $(TK_UNIX_DIR)/tkUnixInit.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		-DTK_LIBRARY=\"\" $(TK_UNIX_DIR)/tkUnixInit.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkUnixPmap..o: $(TK_UNIX_DIR)/tkUnixPmap.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_UNIX_DIR)/tkUnixPmap.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkUnixSelect..o: $(TK_UNIX_DIR)/tkUnixSelect.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_UNIX_DIR)/tkUnixSelect.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkUnixWm..o: $(TK_UNIX_DIR)/tkUnixWm.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_UNIX_DIR)/tkUnixWm.c
+	@OBJ_RESTORE@
+
+$(OBJDIR)/tkUnixXId..o: $(TK_UNIX_DIR)/tkUnixXId.c
+	@OBJ_SAVE@
+	$(CC) -o $@ -c @CC_SHOBJ_FLAG@ $(TK_CC_SWITCHES) $(SHLIB_CFLAGS) \
+		$(TK_UNIX_DIR)/tkUnixXId.c
+	@OBJ_RESTORE@
+
+
+
+$(TCL_SRC_DIR)/library/prolog.c: $(TCL_SRC_DIR)/library/prolog.ps
+	@echo "creating library/prolog.c"
+	@echo "/* This file was machine generated from prolog.ps */" >$(TCL_SRC_DIR)/library/prolog.c
+	@echo "" >>$(TCL_SRC_DIR)/library/prolog.c
+	@sed -e '/^$$/d'            \
+	    -e 's/\\/\\\\/g'            \
+	    -e 's/"/\\\"/g'              \
+	    -e 's/^/\"/'             \
+	    -e 's/$$/\",/'             \
+	$(TCL_SRC_DIR)/library/prolog.ps >>$(TCL_SRC_DIR)/library/prolog.c
+
+#
+# Target to check for proper usage of UCHAR macro.
+#
+
+checkuchar:
+	-egrep isalnum\|isalpha\|iscntrl\|isdigit\|islower\|isprint\|ispunct\|isspace\|isupper\|isxdigit\|toupper\|tolower $(SRCS) | grep -v UCHAR
+
+
+#
+# Create OBJDIR and ETK_BIN_DIR
+#
+$(ETK_BIN_DIR):
+	-mkdir -p $(ETK_BIN_DIR)
+
+$(OBJDIR):
+	-mkdir -p $(OBJDIR)
+
+# ----------------------------------------------------
+# Release Target
+# ---------------------------------------------------- 
+include $(ERL_TOP)/make/otp_release_targets.mk
+
+BDIR = ../priv/bitmap
+
+
+PROGRAMS = \
+	$(ETK_BIN_DIR)/etk$(EXE_SUFFIX) $(ETK_BIN_DIR)/etk_drv$(SHLIB_SUFFIX)
+
+BITMAP_FILES = \
+	$(BDIR)/bomb.xpm  	$(BDIR)/doc-mini.gif \
+	$(BDIR)/doc.gif $(BDIR)/folder-mini.gif \
+	$(BDIR)/folder.gif $(BDIR)/folder2.xpm \
+	$(BDIR)/folders.xpm $(BDIR)/mail1.xpm \
+	$(BDIR)/mail2.xpm  $(BDIR)/unknown1.xpm 
+
+release_spec: all
+	$(INSTALL_DIR) $(RELSYSDIR)/priv/bin
+	$(INSTALL_DIR) $(RELSYSDIR)/priv/bitmap
+	$(INSTALL_DATA) $(BITMAP_FILES) $(RELSYSDIR)/priv/bitmap
+	$(INSTALL_PROGRAM) $(PROGRAMS) $(RELSYSDIR)/priv/bin
+
+docs release_docs release_docs_spec:
+
+
+# DO NOT DELETE THIS LINE -- make depend depends on it.
+

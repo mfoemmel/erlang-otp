@@ -1,0 +1,101 @@
+This example directory contains an example of how the log and eva sub
+applications can be combined into an ordinary application.  This
+example application is called 'oms' (Operation and Maintenance
+Subsystem).  The example shows how the eva & log applications can be
+used with or without SNMP.
+
+The directory contains the following files:
+
+example/board_test_2.erl        - Code that uses eva & log functionality
+       /oms/src/oms.erl       - The OMS application code (starts eva & log)
+            ebin/oms.app
+
+In order to start the example, you will have to:
+  1) copy the files (recursively) from the example directory to your own
+     directory
+  2a) compile all .erl files
+  2b) compile the BOARD-MIB:
+       snmp:c("BOARD-MIB", [{db, mnesia}, {il, ["eva/priv/mibs"]}]).
+  2c) compile oms/src/oms.erl, and put the oms.{jam.beam} file in the oms/ebin
+      directory
+  3) start erlang, and decide if you want to use snmp (default is true):
+       erl -sname oms_test -pa oms/ebin -oms use_snmp true
+  4) create mnesia schema and eva & log tables:
+       mnesia:create_schema([node()]).
+       application:start(mnesia).
+       oms:create().
+  5) If you want to use snmp, configure it:  snmp:config() and
+     restart the system with -config sys
+  6) Start sasl, snmp and oms:
+       application:start(sasl).
+       application:start(snmp).  % maybe
+       application:start(oms).
+
+  7) Now you can try to use the functions in eva, log and board_test,
+     e.g., to initialize:
+       board_test:init_test().
+       board_test:init() or board_test:init_snmp()
+
+The following is a transcript from a session that didn't use snmp.
+It uses the simple_adaptation found in eva/examples.
+
+
+(oms_test@balin)1> mnesia:create_schema([node()]).
+ok
+(oms_test@balin)2> application:start(mnesia).
+ok
+(oms_test@balin)3> oms:create().
+ok
+(oms_test@balin)4> application:start(sasl).
+ok
+(oms_test@balin)5> application:start(oms).
+ok
+(oms_test@balin)6> board_test:init_test().
+ok
+(oms_test@balin)7> board_test:init().
+ok
+(oms_test@balin)8> simple_adaptation:start(). 
+Initializing simple EVA adaptation...
+ok
+(oms_test@balin)9> board_test:remove_board(1).
+ok
+
+** Event: boardRemoved, 1 generated
+ 
+(oms_test@balin)10> simple_adaptation:print_alarms().
+
+** Active alarm list
+ok
+
+(oms_test@balin)11> F1 = board_test:board_on_fire(1).
+{oms_test@balin,{878,383915,155097}}
+
+** minor alarm boardFailure of class equipment, 1 generated
+ 
+(oms_test@balin)12> simple_adaptation:print_alarms().
+
+** Active alarm list
+        minor  equipment alarm boardFailure from {board,1}, probable cause: fire
+ok
+
+(oms_test@balin)13> eva:clear_alarm(F1).             
+
+** Event: clear_alarm, 1 generated
+ok
+
+(oms_test@balin)14> F2 = board_test:board_on_fire(1).
+{oms_test@balin,{878,383976,840921}}
+
+** minor alarm boardFailure of class equipment, 2 generated
+
+(oms_test@balin)15> F3 = board_test:board_on_fire(2).
+{oms_test@balin,{878,383982,649908}}
+
+** minor alarm boardFailure of class equipment, 3 generated
+
+(oms_test@balin)63> simple_adaptation:print_alarms().
+** Active alarm list
+        minor  equipment alarm boardFailure from {board,2}, probable cause: fire
+        minor  equipment alarm boardFailure from {board,1}, probable cause: fire
+
+    

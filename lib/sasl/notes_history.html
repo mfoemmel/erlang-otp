@@ -1,0 +1,558 @@
+<HTML>
+<!-- 
+ ``The contents of this file are subject to the Erlang Public License,
+ Version 1.1, (the "License"); you may not use this file except in
+ compliance with the License. You should have received a copy of the
+ Erlang Public License along with this software. If not, it can be
+ retrieved via the world wide web at http://www.erlang.org/.
+ 
+ Software distributed under the License is distributed on an "AS IS"
+ basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ the License for the specific language governing rights and limitations
+ under the License.
+ 
+ The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+ Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+ AB. All Rights Reserved.''
+ 
+     $Id$
+-->
+<HEAD>
+<TITLE>SASL Release Notes</TITLE>
+</HEAD>
+<BODY BGCOLOR="#FFFFFF">
+<BLOCKQUOTE>
+<A NAME="1"><!-- Empty --></A><H2>1 SASL Release Notes</H2><P>This document describes the changes made to the SASL application.
+
+<H2>Sasl 1.7.1</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+If a system is started and a permanent application
+has erroneous environment parameters, the system should
+crash. This is the behaviour now, before the system
+only printed an error report. 
+The system will only crash if the application is
+started from a boot script genrated by calling
+systools:make_script/1/2 
+If application:start/1/2 is called the behaviour is as before. 
+<br>
+Note: affects the result of the systools:make_script/1/2.
+systools:make_script generates now a call to 
+application:start_boot/2 instead of as prevoiusly a call to
+application:start/2.
+<br>Own Id: OTP-3002
+
+
+<LI>
+It is now allowed that an application X includes 
+application Y, and application Y in its turn is depending
+of application X. Previously this caused a circular dependency
+in systools:make_script.
+<br>Own Id: OTP-3065<br>
+Aux Id: Seq 1593 (OTP-2564, Seq 921)
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+It is possible to define a new parameter when installing
+a new release at upgrade. The parameter defines if the
+node should be restarted or rebooted in case of an error
+at installation. Syntax is as follows:
+<br>
+release_handler:install_release(Vsn, Opt) where
+Opt = [{error_action, EA}]
+EA = restart | reboot
+<br>
+Default value is restart. The old install_release/1 gives
+also the default error action restart, as before.
+<br>Own Id: OTP-2966<br>
+Aux Id: Seq 1464
+
+
+<LI>
+When a module with behaviour <CODE>gen_server</CODE>,
+<CODE>gen_event</CODE> or <CODE>gen_fsm</CODE> was compiled, warnings
+were given for
+absent call-back functions, except for <CODE>code_change</CODE>.
+Now, a warning is given for absent <CODE>code_change</CODE> as
+well.
+<br>Own Id: OTP-3148<br>
+Aux Id: OTP-3072, OTP-3026
+
+
+</UL>
+<H2>Sasl 1.7</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+The transient applications were previously treated as 
+temporary applications if an error was detected during start.
+<br>Own Id: OTP-2718<br>
+Aux Id: seq 1136
+
+
+<LI>
+Release handler accepts now all types of Erlang terms in 
+-vsn(term()).
+<br>Own Id: OTP-2740<br>
+Aux Id: seq 1181
+
+
+<LI>
+When an application was removed from a node the code was
+previously not removed from the memory.
+<br>Own Id: OTP-2760
+
+
+<LI>
+Better error messages from systool:make_script
+<br>Own Id: OTP-2768<br>
+Aux Id: seq 1226
+
+
+<LI>
+The instructions for kernel in a release upgrade script
+were not executed, neither were the configuration
+parameters for kernel updated when upgrading the system.
+This is now corrected.
+<br>Own Id: OTP-2997
+
+
+<H2>Sasl 1.6.2</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+In previous releases of OTP it was not possible to upgrade the
+Erlang emulator (named e.g jam471 or beam471) because the 
+executable file was
+renamed for each new version. This is now corrected by always
+giving the same name (jam or beam) without version number to
+the executable file.
+<br>Own Id: OTP-2372
+
+
+<LI>
+If a local application had permission set to false
+initially, it was previously started anyway. 
+Sasl could also hang in some cases when permission 
+was changed, this is now corrected.
+<br>Own Id: OTP-2463<br>
+Aux Id: Seq 858
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+the parameter start_phases not correctly checked
+when creating the boot file.
+<br>Own Id: OTP-2610
+
+
+</UL>
+<H2>Sasl 1.6.1</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+Failover of a loaded MIB did not work. When a MIB was loaded
+on one node and that node crashed, the failover of the MIB
+to a new node did not work.
+<br>Own Id: OTP-2200<br>
+Aux Id: seq 651, HA75679
+
+
+<LI>
+It is now allowed for an included application to use
+its own top application; i.e to have the top application
+in the applications-key in the resource file.
+<br>Own Id: OTP-2564<br>
+Aux Id: Seq 921
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+systools checks for illegal options in the function 
+parameters.
+<br>Own Id: OTP-1851
+
+
+<LI>
+A crash of the release_handler process now crashes
+the enitre application SASL, which normally means that
+the node restarts.
+<br>Own Id: OTP-2516<br>
+Aux Id: seq851
+
+
+</UL>
+
+<A NAME="1.1"><!-- Empty --></A><H3>1.1 SASL 1.5</H3><A NAME="1.1.1"><!-- Empty --></A><H4>1.1.1 Fixed Bugs and malfunctions</H4><P><UL>
+<LI>     The release handler didn't handle downgrades correctly.
+         The downgrade script wasn't found even though it did
+         exist.
+         
+         <BR>
+Own Id: OTP-2298 <BR>
+Aux Id: seq755
+
+        <BR>
+<LI>     The function <CODE>release_handler:create_RELEASES/4</CODE> now
+         handles the new syntax with other restart type than
+         <CODE>permanent</CODE> in the <CODE>.rel</CODE> file.
+
+         <BR>
+Own Id: OTP-2319 <BR>
+Aux Id: seq777
+
+<BR>
+</UL>
+<A NAME="1.1.2"><!-- Empty --></A><H4>1.1.2 Improvements and new features</H4><P><UL>
+<LI>     The <CODE>code_change</CODE> instruction is extended with
+         explicit support for downgrades.
+
+         <BR>
+The <CODE>update</CODE> instruction is extended with
+         information needed for downgrades.
+
+         <BR>
+Text about dowgrades is added in the documentation. See
+         the chapter &#34;Release Handling&#34; in the User's guide.
+
+         <BR>
+</UL>
+<A NAME="1.2"><!-- Empty --></A><H3>1.2 SASL 1.4.1</H3><A NAME="1.2.1"><!-- Empty --></A><H4>1.2.1 Fixed Bugs and malfunctions</H4><P><UL>
+<LI>     Failover/takeover of the SNMP agent administering the MIB
+         did not work, since the old implementation tried to delete a
+         Mnesia table on a node which was not up and running (which
+         always is the case at failover). Now the SNMP related Mnesia
+         table is defined to have the <CODE>local_content</CODE> property.
+         
+         <BR>
+Own Id: OTP-2146 <BR>
+Aux Id: seq1
+
+<BR>
+</UL>
+<A NAME="1.3"><!-- Empty --></A><H3>1.3 SASL 1.4</H3><A NAME="1.3.1"><!-- Empty --></A><H4>1.3.1 Fixed Bugs and malfunctions</H4><P><UL>
+<LI>     A code-only application with no dependecies to other
+         applications is now started correctly, when a start script
+         is generated with <CODE>systools:make_script</CODE>
+
+         <BR>
+Own Id: OTP-1580
+
+        <BR>
+<LI>     <CODE>rb</CODE> handles unknown reports.
+         <BR>
+Own Id: OTP-1595
+
+        <BR>
+<LI>     The <CODE>erlNodeWallClock</CODE> counter in <CODE>OTP-MIB</CODE> is
+         now a real <CODE>Counter32</CODE> objects; i.e. wraps to 0 when
+         2^32 is reached.
+         <BR>
+Own Id: OTP-1604
+
+        <BR>
+<LI>     <CODE>systools:make_script</CODE> does not sort applications
+         when it is not necessary. The order specified in the
+         <CODE>.rel</CODE> file is maintained.
+
+         <BR>
+Own Id: OTP-1644
+
+        <BR>
+<LI>     The release handling instruction <CODE>sync_nodes</CODE> could
+         hang forever if one node tried to sync before the other
+         node was ready.
+
+         <BR>
+Own Id: OTP-1959
+
+<BR>
+</UL>
+<A NAME="1.3.2"><!-- Empty --></A><H4>1.3.2 Improvements and new features</H4><P><UL>
+<LI>     The syntax of the different files defined by SASL is
+         defined in separate documents. Check the reference manual
+         for <CODE>appup(4)</CODE>, <CODE>rel(4)</CODE>, <CODE>relup(4)</CODE> and
+         <CODE>script(4)</CODE>.
+
+        <BR>
+<LI>     It is now possible to customise where the release handler
+         writes its files. The release installation procedure can
+         now be run without write access to the installation root
+         directory.
+
+         <BR>
+Own Id: OTP-1635
+         <BR>
+Aux Id: HA54792
+
+        <BR>
+<LI>     A release packet as constructed with
+         <CODE>systools:make_tar</CODE> is now a compressed tar file
+         (<CODE>.tar.gz</CODE>) on all platforms. <CODE>systools</CODE> and
+         <CODE>release_handler</CODE> use the new compress functions in
+         <CODE>erl_tar</CODE>.
+
+         <BR>
+Own Id: OTP-1710
+
+        <BR>
+<LI>     It is now possible to specify the restart type of an
+         application in the <CODE>.rel</CODE> file. Previously, all
+         applications were started as <CODE>permanent</CODE> applications.
+
+         <BR>
+Own Id: OTP-1835
+
+<BR>
+</UL>
+<A NAME="1.4"><!-- Empty --></A><H3>1.4 SASL 1.3.2</H3><A NAME="1.4.1"><!-- Empty --></A><H4>1.4.1 Fixed Bugs and malfunctions</H4><P><UL>
+<LI>             Better tar file open/close control in
+         <CODE>systools_make</CODE>.
+         <BR>
+
+</UL>
+<A NAME="1.5"><!-- Empty --></A><H3>1.5 SASL 1.3.1</H3><A NAME="1.5.1"><!-- Empty --></A><H4>1.5.1 Fixed Bugs and malfunctions</H4><P><UL>
+<LI>     <CODE>systools:make_script</CODE> creates the boot script according
+         to new requirements of kernel servers.
+         <BR>
+Own Id: OTP-1393
+<BR>
+</UL>
+<A NAME="1.6"><!-- Empty --></A><H3>1.6 SASL 1.3</H3><A NAME="1.6.1"><!-- Empty --></A><H4>1.6.1 Improvements and new features</H4><P><UL>
+<LI>     Introduced new attribute, <CODE>included_applications</CODE>, in 
+         application resource files (<CODE>.app</CODE>).
+         This attribute is used to group a number of applications together.
+         Included applications are not started automatically by the
+         system (they are only loaded), thus this have to be handled by the
+         including application.
+
+        <BR>
+<LI>     The release file, <CODE>Release.rel</CODE>, can override the
+         <CODE>included_applications</CODE> attribute in order to exclude some
+         of the specified (in the <CODE>.app</CODE> file) applications.
+        
+        <BR>
+<LI>     Added possibilities to specifiy the path option to 
+         <CODE>systools</CODE> functions with a wildcard. The only supported
+         wildcard is <CODE>*</CODE>. <CODE>*</CODE> is expanded to the regular
+         expression <CODE>[^/]*</CODE>.
+         If a wildcard is the only character between two directory 
+         separators it is treated as a place holder for
+         exactly one directory level, i.e. the regular expression
+         <CODE>[^/]+</CODE>.
+
+        <BR>
+<LI>     It is possible to specify symbolic names for a prefix part of
+         a directory in <CODE>systools</CODE> functions. A variable name replaces
+         the specified prefix in the generated boot script and tar file.
+
+         <BR>
+This is useful if one want to install applications in other
+         places than under the Erlang root directory.
+         
+         <BR>
+A symbolic name (variable) is specified with the <CODE>variables</CODE>
+         option to <CODE>systools:make_script</CODE> and <CODE>systools:make_tar</CODE>.
+         Use the <CODE>-boot_var Var Dir</CODE> command line flag in order to
+         start a system with variables in the boot script.
+
+        <BR>
+<LI>     <CODE>no_module_tests</CODE> option excludes the source code tests
+         (parse for version and validity tests of object code) in
+         <CODE>systools:make_script</CODE> and <CODE>systools:make_tar</CODE>.
+         This option is always set for <CODE>systools:make_relup</CODE>.
+         (Speeds up the generation).
+
+        <BR>
+<LI>     <CODE>systools</CODE> can generate boot script and tar files for
+         another target Erlang emulator than the current emulator.
+         Use the <CODE>machine</CODE> option.
+
+        <BR>
+<LI>     Application <CODE>.appup</CODE> files are only read when absolutely
+         necessary by <CODE>systools:make_relup</CODE>.
+
+        <BR>
+<LI>     The <CODE>start_erl</CODE> script shall not be modified/edited.
+         This script now reads configuration data generated by the
+         <CODE>release_handler</CODE>.
+
+        <BR>
+<LI>     The requirement that the <CODE>start</CODE> script (used for
+         embedded systems) shall be located in <CODE>&#60;ERL_INSTALL_DIR&#62;/bin</CODE>
+         is removed. It is now configurable through the <CODE>SASL</CODE>
+         configuration parameter <CODE>start_prg</CODE>.
+         
+        <BR>
+<LI>     It is possible to install a release not unpacked by the
+         <CODE>release_handler</CODE>.
+
+        <BR>
+<LI>     Added new functions in the <CODE>release_handler</CODE>:
+
+         <BR>
+<UL>
+<LI>     <CODE>set_unpacked/2</CODE>
+         <BR>
+<LI>     <CODE>set_removed/1</CODE>
+         <BR>
+<LI>     <CODE>install_file/2</CODE>
+         <BR>
+</UL>
+
+
+        <LI>     The <CODE>release_handler</CODE> now handles diskless nodes (and/or
+         nodes with read-only filesystems).
+
+        <BR>
+<LI>     The file <CODE>sys.config</CODE> is now mandatory, and must be
+         present in all releases.
+
+        <BR>
+<LI>     New options <CODE>exref</CODE> and <CODE>{exref, [AppName]}</CODE> added to
+         <CODE>systools</CODE> making it possible to perform
+         a simple cross reference check of function calls. Only modules
+         belonging to applications specified in the <CODE>.rel</CODE> file
+         are checked.
+
+        <BR>
+<LI>     Created tar files (by <CODE>systools:make_tar</CODE>) are only
+         compressed on unix systems.
+
+        <BR>
+<LI>     Added new option <CODE>var_tar</CODE> to
+         <CODE>systools:make_tar</CODE>.
+
+        <BR>
+<LI>Added new function to <CODE>rb</CODE>, <CODE>rb:show/0</CODE>
+         that shows all reports.
+         <BR>
+Own Id: OTP-1144
+
+<BR>
+</UL>
+<A NAME="1.6.2"><!-- Empty --></A><H4>1.6.2 Fixed Bugs and malfunctions</H4><P><UL>
+<LI>             The term output to the <CODE>relup</CODE> file by
+         <CODE>systools:make_relup/3</CODE> is now parsable by
+         Erlang. The function now also accept an <CODE>Description</CODE>
+         parameter for release name lists.
+         <BR>
+
+         Own Id: OTP-1206<BR>
+
+<LI>             <CODE>systools:make_relup</CODE> now correctly handles new and
+         obsolete applications in the appup scripts.
+         <BR>
+
+         Own Id: OTP-1095<BR>
+
+        <LI>             <CODE>release_handler_1</CODE> has now been included in 
+         <CODE>sasl.app file</CODE>.
+         <BR>
+
+         Own Id: OTP-1178 Aux Id: HA40608<BR>
+
+        <LI>     The order among the mandatory applications (kernel and stdlib)
+         in the <CODE>.rel</CODE> file does not need to be kernel first.
+
+        <BR>
+<LI>Fixed timeout problem in <CODE>rb:grep/1</CODE>.
+         <BR>
+Own Id: OTP-1144
+
+        <BR>
+<LI><CODE>release_handler:remove_release/1</CODE> handles
+         non-existing files. When it was called and a file to be
+         removed didn't exist, the release handler process crashed.
+         <BR>
+Own Id: OTP-1341
+
+        <BR>
+<LI>             The wrong application version was used in the release down
+         grading script. Note that it is necessary to include the
+         path to all down graded releases. This can be conveniently done
+         by using the new path options specified above.
+         <BR>
+
+         Own Id: OTP-1360<BR>
+
+        </UL>
+<A NAME="1.6.3"><!-- Empty --></A><H4>1.6.3 Incompatibilities with SASL 1.1.1</H4><P>-
+<A NAME="1.6.4"><!-- Empty --></A><H4>1.6.4 Known bugs and problems</H4><P>-
+<A NAME="1.7"><!-- Empty --></A><H3>1.7 SASL 1.1.1</H3><A NAME="1.7.1"><!-- Empty --></A><H4>1.7.1 Improvements and new feature</H4><P>-
+<A NAME="1.7.2"><!-- Empty --></A><H4>1.7.2 Fixed Bugs and malfunctions</H4><P><UL>
+<LI>     It is now possible to specify modules without version number
+         in an application resource file (.app), i.e. <BR>
+<PRE>...
+{modules, [Module | {Module, Vsn}]}
+...</PRE>
+         Own Id: OTP-1116
+
+        <BR>
+<LI>     Restart (init:restart/0) of system did not work after a
+         software upgrade. Started using the now old version but
+         should have used the new (if release_handler:make_permanent
+         has been called).
+
+         <BR>
+Own Id: OTP-1113
+         <BR>
+Aux Id: HA37170
+<BR>
+</UL>
+<A NAME="1.7.3"><!-- Empty --></A><H4>1.7.3 Incompatibilities with SASL 1.1</H4><P>-
+<A NAME="1.7.4"><!-- Empty --></A><H4>1.7.4 Known bugs and problems</H4><P>-
+<A NAME="1.8"><!-- Empty --></A><H3>1.8 SASL 1.1</H3><A NAME="1.8.1"><!-- Empty --></A><H4>1.8.1 Improvements and new feature</H4><P><UL>
+<LI>     Added <CODE>systools:make_script</CODE>, <CODE>systools:make_relup</CODE>
+         and <CODE>systools:make_tar</CODE>.
+
+<BR>
+<LI>     Added the module <CODE>overload</CODE>, an overload regulation
+         process.
+
+        <BR>
+<LI>     Added configuration parameter <CODE>errlog_type = error |
+         progress | all</CODE> to supress logging of certain error
+         report types. Default is <CODE>all</CODE>.
+
+        <BR>
+<LI>     Added the OTP-MIB for SNMP monitoring of OTP.
+
+<BR>
+</UL>
+<A NAME="1.8.2"><!-- Empty --></A><H4>1.8.2 Fixed Bugs and malfunctions</H4><P>-
+<A NAME="1.8.3"><!-- Empty --></A><H4>1.8.3 Incompatibilities with OTP P1G</H4><P>-
+<A NAME="1.8.4"><!-- Empty --></A><H4>1.8.4 Known bugs and problems</H4><P>-
+</BLOCKQUOTE>
+<CENTER>
+<HR>
+<FONT SIZE=-1>
+Copyright &copy; 1991-99
+<A HREF="http://www.ericsson.se">Ericsson Utvecklings AB</A><BR>
+<!--#include virtual="/ssi/otp_footer.html"-->
+</FONT>
+</CENTER>
+</BODY>
+</HTML>

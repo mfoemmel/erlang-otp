@@ -1,0 +1,92 @@
+<HTML>
+<HEAD>
+  <TITLE>Sasl Release Notes</TITLE>
+</HEAD>
+ 
+<BODY BGCOLOR="#FFFFFF">
+ 
+<CENTER><H1>Sasl Release Notes</H1></CENTER>
+
+<H2>Sasl 1.8.2</H2>
+
+<H3>Fixed Bugs and malfunctions</H3>
+
+<UL>
+	
+<LI>
+The high-level release upgrade instructions
+<CODE>add_application</CODE> and <CODE>remove_application</CODE> were
+broken.
+<br>Own Id: OTP-3347
+
+</UL>
+
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The high-level release upgrade instruction
+<CODE>restart_application</CODE> has been added.
+<br>Own Id: OTP-3347
+
+<LI>
+All modules in the <CODE>sasl</CODE> application have got new
+vsn-numbers.
+<br>Own Id: OTP-3330
+
+</UL>
+
+<H2>Sasl 1.8.1</H2>
+
+<H3>Fixed Bugs and malfunctions</H3>
+
+<UL>
+	
+<LI>
+The entries for Erlang machine and version in OTP-MIB were mixed up. 
+<br>Own Id: OTP-3204 <br>Aux Id: seq3710
+
+</UL>
+
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+One more option, <CODE>restart_emulator</CODE>, has been added to 
+<CODE>systools:make_relup()</CODE>. The presence of this options 
+ensures	that a complete reboot of the system is done when 
+the system is upgraded or downgraded.
+<br>Own Id: OTP-2561<br>
+Aux Id: seq 922
+
+
+<LI>
+The functions <CODE>behaviour_info/[0,1]</CODE> have been
+removed from the module <CODE>systools</CODE>.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3159<br>
+Aux Id: OTP-1965
+
+
+<LI>
+The function <CODE>release_handler:install_release/2</CODE> takes
+two more options: <CODE>code_change_timout</CODE> overrides the
+default timeout used while waiting for a module to perform
+code change; <CODE>suspend_timeout</CODE> overrides the timeout
+supplied by the high-level instruction <CODE>update</CODE>
+or by the low-level instruction <CODE>suspend</CODE>. Valid
+values are integers greater than zero, <CODE>infinity</CODE> and
+<CODE>default</CODE>.
+<br>Own Id: OTP-3321<br>
+Aux Id: Seq4014
+
+
+</UL>
+ 
+There are also release notes for 
+<A HREF="notes_history.html">older versions</A>.
+
+</body>
+</html>

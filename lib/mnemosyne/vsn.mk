@@ -1,0 +1,2 @@
+MNEMOSYNE_VSN = 1.2.4
+

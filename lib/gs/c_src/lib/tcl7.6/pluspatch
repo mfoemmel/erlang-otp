@@ -1,0 +1,61 @@
+#!/bin/sh
+# The next line restarts using tclsh7.6 \
+exec tclsh7.6 $0 ${1+"$@"}
+
+set dirs ". ./unix ./generic ./compat ./doc ./library ./tests ./unix/dltest ./mac ./win"
+set package "+"
+set version "7.6p2"
+set date "4/29/97"
+
+#
+# This is a tcl-script that will search a list of directories
+# for ".orig"-files. For all of these it will make a "diff",
+# and create a patch-file.
+#
+#	Written by:	Jan Nijtmans
+#			NICI (Nijmegen Institute of Cognition and Information)
+#			email: nijtmans@nici.kun.nl
+#			url:   http://www.nici.kun.nl/~nijtmans/
+
+set patchlevel ""
+set dfiles ""
+
+set file [open pluspatch.orig w]
+close $file
+set file [open README.PLUS.orig w]
+close $file
+
+foreach dir $dirs {
+    set files [eval exec ls $dir]
+    foreach file $files {
+	if {[regexp ".*\.orig" $file]} {
+	    set file [file join $dir [string range $file 0 [expr [string length $file]-6]]]
+	    if {$file=="$dir/tcl.h"} {
+		set patchlevel $file.diff
+	    } else {
+		lappend dfiles $file.diff
+	    }
+	    set file [string range $file 2 [string length $file]]
+	    puts stdout "creating $file.diff"
+	    catch "exec diff -c $file.orig $file >$file.diff"
+	}
+    }
+}
+
+puts stdout "creating tcl${version}plus.patch"
+set file [open tcl${version}plus.patch w]
+puts $file ""
+puts $file "tcl${version}plus.patch -   $date"
+puts $file ""
+puts $file "This patch file updates from Tcl ${version} to Tcl ${version}${package}. It should be applied"
+puts $file "by running the \"patch\" program in the top-level directory of a clean"
+puts $file "Tcl ${version} release, using the command \"patch -p <tcl${version}plus.patch\""
+puts $file ""
+puts $file "If you are still using tcl7.6 (final), then apply SUN's p2 patch"
+puts $file "(tcl7.6p2.patch.gz or tcl7.6p2.patch.Z) before applying this one."
+puts $file ""
+puts $file "Prereq: \"${version}\""
+eval exec cat $patchlevel $dfiles >@$file
+close $file
+
+exec rm -rf pluspatch.diff pluspatch.orig README.PLUS.diff README.PLUS.orig

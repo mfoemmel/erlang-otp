@@ -1,0 +1,486 @@
+// ``The contents of this file are subject to the Erlang Public License,
+// Version 1.1, (the "License"); you may not use this file except in
+// compliance with the License. You should have received a copy of the
+// Erlang Public License along with this software. If not, it can be
+// retrieved via the world wide web at http://www.erlang.org/.
+// 
+// Software distributed under the License is distributed on an "AS IS"
+// basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+// the License for the specific language governing rights and limitations
+// under the License.
+// 
+// The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+// Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+// AB. All Rights Reserved.''
+// 
+//     $Id$
+//
+//////////////////////////////////////////////////////////////////
+// Mnesia Session - IDL interface to Mnesia
+// 
+// Two similar but slightly different interfaces
+// to Mnesia is provided:
+//
+//    corba_session - compile this IDL specification
+//                    with the _CORBA_ macro DEFINED
+//
+//    session       - compile this IDL specification
+//                    with the _CORBA_ macro UNDEFINED
+//
+//////////////////////////////////////////////////////////////////
+
+#include <erlang.idl>
+
+// All types are enclosed by the mnesia module
+
+module mnesia
+{
+  ///////////////////////////////////////////////////////////////
+  // Status - a general type for keeping track of
+  // the outcome of the session related functions.
+
+  enum Status
+  {
+    // Success codes:
+    
+    ok,            // The operation was successful and
+                   // the all out parameters except 'reason'
+                   // contains valid data.
+
+    end_of_table,  // End of table has been reached.
+                   // This return code is only used by
+                   // a few functions, such as dirty_slot/4,
+                   // dirty_first/3, dirty_next/4 ...
+
+    // Failure codes:
+  
+    timeout,     // This return code is only used by
+                 // wait_for_table.
+
+    error        // Miscellaneous error.
+                 // Operation did not succeed and the out
+                 // parameter 'reason' contains a description
+                 // of the error. The other out parameters
+                 // contains garbage.
+	
+   // In future releases we will probably expand this enum
+   // with more precise error codes like no_exists, badarg etc.
+  };
+
+  // Record - an erlang record, i.e. a tagged tuple with the
+  // following layout: {tab_name, key, attr_1, ... attr_N}
+
+  typedef erlang::term Record;  
+  typedef sequence <Record> Recordlist;
+
+  // TableName - a name of a table. Note that the character '_' 
+  // should be avoided if the table is intended to be used
+  // via the Corba Session.
+
+  typedef string TableName;
+  typedef sequence <TableName> TableList;
+
+  // Key - a key of a record
+
+  typedef erlang::term Key;  
+  typedef sequence <Key> KeyList;
+
+  // Indecies - list of index positions.
+  // In the sample record above, attr_1 has position 3
+
+  typedef sequence <long> Indices;
+
+  // AttrNames - a list of attribute names
+
+  typedef sequence <string> AttrNames;
+
+  // RecordName - Type information
+  
+  typedef string RecordName;
+
+  // Node - an Erlang node, e.g. "name1@host[.org.country]"
+
+  typedef string Node;
+  typedef sequence <Node> NodeList;  
+
+  // Storage - table storage type
+
+  enum Storage {ram_copies, disc_copies, disc_only_copies};
+
+  // SetOrBag - table type
+
+  enum SetOrBag {set, bag};
+
+  // AccessMode - controls the accessibility of a table
+
+  enum AccessMode {read_only, read_write};
+
+  // Checkpoints - a list of checkpoint names
+
+  typedef sequence <string> Checkpoints;
+
+  ///////////////////////////////////////////////////////////////
+  // TableDef - initial specification of a table
+
+  struct TableDef
+  {
+    SetOrBag type;
+    AccessMode mode;
+    NodeList ram_copies;
+    NodeList disc_copies;
+    NodeList disc_only_copies;
+    Indices index_list;
+    AttrNames attributes;
+    RecordName record_name;  
+  };
+
+  ///////////////////////////////////////////////////////////////
+  // CheckpointDef - initial specification of a checkpoint
+
+  struct CheckpointDef
+  {
+    string cpName;
+    TableList max;
+    TableList min;
+    boolean allow_remote;
+    boolean ram_overrides_dump;
+  };
+
+  ///////////////////////////////////////////////////////////////
+  // TableInfo - information about a table
+
+  struct TableInfo
+  {
+    AccessMode mode;
+    AttrNames  attributes;
+    long arity;
+    Checkpoints checkpoints;
+    NodeList ram_copies;
+    NodeList disc_copies;
+    NodeList disc_only_copies;
+    Indices indexlist;
+    long load_order;
+    boolean local_content;
+    NodeList master_nodes;
+    long memory;
+    long size;
+    Storage storage_type;
+    SetOrBag type;
+    Node where_to_read;
+    NodeList where_to_write;
+    RecordName record_name; 
+     
+    // Not supported: cookie, snmp, subscribers, version, wild_pattern
+  };
+
+  ///////////////////////////////////////////////////////////////
+  // SystemInfo - information about the Mnesia system
+  // Some info can always be determined, but 
+  // other info is only valid if Mnesia is running.
+
+  struct SystemInfo
+  {
+    // The following information is always determined by
+    // system_info/2:
+
+    boolean auto_repair;
+    string backup_module;
+    string event_module;
+    NodeList db_nodes;
+    string debug;
+    string directory;
+    boolean dump_log_load_regulation;
+    long dump_log_time_threshold;
+    boolean dump_log_update_in_place;
+    long dump_log_write_threshold;
+    NodeList extra_db_nodes;
+    boolean is_running;
+    string schema_location;
+    boolean use_dir;
+    // Not supported: log_version, protocol_version, version
+	
+    // The following information is only valid if Mnesia is running.
+    // Check 'is_running' before the info is accessed and regard the
+    // values as undefined if 'is_running' is false.
+
+    Checkpoints checkpoints;
+    boolean fallback_activated;
+    TableList local_tables;
+    TableList master_node_tables;
+    NodeList running_db_nodes;
+    TableList tables;
+    long transaction_failures;
+    long transaction_commits;
+    long transaction_restarts;
+    long transaction_log_writes;
+
+    // Not supported: held_locks, lock_queue, communication protocol,
+    //                subscribers, transactions
+  };
+  
+///////////////////////////////////////////////////////////////
+// Most of the following functions returns Status and in case of
+// an error, the out parameter 'reason' contains the description
+// of the cause and all other out parameters contains undefined values.
+//
+// If the function was successful, 'reason' contains an empty string
+// and the other out parameters contains valid data.
+
+#ifdef _CORBA_
+  interface corba_session
+#endif
+#ifndef _CORBA_
+  interface session
+#endif
+    {
+      ///////////////////////////////////////////////////////////////
+      // Dirty access functions
+    
+      Status dirty_write(	  in  TableName tab,
+				  in  Record object,
+                         	  out string reason);
+
+      Status dirty_read(	  in  TableName tab,
+                        	  in  Key key, 
+				  out Recordlist result,
+                        	  out string reason);
+
+      Status dirty_update_counter(in  TableName tab,
+                                  in  Key key,
+                                  in  long val, 
+				  out long newval,
+                                  out string reason);
+
+      Status dirty_delete(	  in  TableName tab,
+                          	  in  Key key,
+                          	  out string reason);
+
+      Status dirty_delete_object( in TableName tab, 
+				  in  Record object,
+                                  out string reason);
+
+      Status dirty_slot(	  in  TableName tab,
+                        	  in  long slot,
+				  out Recordlist result,
+                        	  out string reason);
+
+      Status dirty_first(	  in  TableName tab,
+                         	  out Key next_key,
+                         	  out string reason);
+
+      Status dirty_next(	  in  TableName tab,
+                        	  in  Key key,
+				  out Key next_key,
+                        	  out string reason);
+
+      Status dirty_all_keys(	  in  TableName tab,
+                            	  out KeyList keys,
+                            	  out string reason);
+
+      Status dirty_match_all(     in  TableName tab,
+				  out Recordlist result,
+                                  out string reason);
+
+      Status dirty_index_read(	  in  TableName tab, 
+                              	  in  Key key,
+                              	  in  long pos,
+			      	  out Recordlist result,
+                              	  out string reason);
+
+      ///////////////////////////////////////////////////////////////
+      // Table management
+
+      Status create_table(	      in  TableName tab,
+                          	      in  TableDef tabDefs,
+                          	      out string reason);
+
+      Status delete_table(	      in  TableName tab,
+                          	      out string reason);
+
+      Status add_table_copy(	      in  TableName tab, 
+			    	      in  Node node, 
+			    	      in  Storage type, 
+                            	      out string reason);
+
+      Status del_table_copy(	      in  TableName tab,
+                            	      in  Node node,
+                            	      out string reason);
+
+      Status move_table_copy(	      in  TableName tab, 
+                             	      in  Node from,
+                             	      in  Node to,
+			     	      out string reason);
+
+      Status add_table_index(	      in  TableName tab,
+                             	      in  long attrname,
+                             	      out string reason); 
+
+      Status del_table_index(	      in  TableName tab, 
+                             	      in  long attrname,
+                             	      out string reason);
+
+      Status change_table_copy_type(  in  TableName tab,
+                                      in  Node node,
+                                      in  Storage type,
+				      out string reason);
+
+      Status change_table_access_mode(in  TableName tab,
+                                      in  AccessMode mode, 
+				      out string reason);
+
+      ///////////////////////////////////////////////////////////////
+      // Table load
+      Status wait_for_tables(	     in  TableList tabs,
+                             	     in  long timeout, 
+				     out TableList failed_tabs,
+                             	     out string reason);
+
+      Status force_load_table(	     in  TableName tab,
+                              	     out string reason);
+
+      Status change_table_load_order(in  TableName tab,
+                                     in  long load_order,
+                                     out string reason);
+
+      Status set_master_nodes1(	     in  NodeList nodes, 
+                               	     out string reason);
+
+      Status set_master_nodes2(	     in  TableName tab, 
+                               	     in  NodeList nodes,
+                               	     out string reason);
+
+      ///////////////////////////////////////////////////////////////
+      // Database management
+
+      Status backup1(		   in  string filename,
+                     		   out string reason);
+   
+      Status backup2(		   in  erlang::term opaque,
+                     		   in  string modulename,
+                     		   out string reason); 
+   
+      Status install_fallback1(    in  string filename,
+                                   out string reason);
+   
+      Status install_fallback2(    in  erlang::term opaque,
+                                   in  string modulename, 
+			           out string reason);
+   
+      Status uninstall_fallback(   out string reason);
+
+      Status dump_log(             out string reason);
+
+      Status dump_tables(          in  TableList list, 
+                                   out string reason);
+
+      Status activate_checkpoint(  in  CheckpointDef cpdef, 
+                                   out string reason);
+
+      Status deactivate_checkpoint(in  string cpName, 
+                                   out string reason);
+
+      Status backup_checkpoint1(   in  string cpName,
+                                   in  string filename, 
+				   out string reason);
+
+      Status backup_checkpoint2(   in  string cpName, 
+				   in  erlang::term opaque,
+				   in  string modulename,
+				   out string reason);
+
+      ///////////////////////////////////////////////////////////////
+      // Miscellaneous
+
+      Status load_textfile(   in  string filename,
+                              out string reason);
+
+      Status dump_to_textfile(in  string filename,
+                              out string reason);
+  
+      Status table_info(      in  TableName tab,
+                              out TableInfo info,
+                              out string reason);
+
+      Status system_info(     out SystemInfo info,
+                              out string reason);
+
+#ifndef _CORBA_
+      ///////////////////////////////////////////////////////////////
+      // match_object functions is not supported due to the fact that
+      // erlang::term is represented as an 'any' object and can not
+      // be handled in an ordinary way in corba
+
+      Status dirty_match_object(      in  TableName Tab,
+				      in  Record pattern, 
+                                      out Recordlist result,
+                                      out string reason);
+
+      Status dirty_index_match_object(in TableName Tab, 
+				      in  Record pattern, 
+                                      in  long pos,
+				      out Recordlist result, 
+                                      out string reason);
+
+      ///////////////////////////////////////////////////////////////
+      // Functions that deals with starting and stopping the Mnesia
+      // application or operates when Mnesia is not running is not
+      // supported in the corba interface due to fact that Orber
+      // needs a running Mnesia in order to operate.
+ 
+      Status create_schema(  in  NodeList nodes,
+                             out string reason);
+
+      Status delete_schema(  in  NodeList nodes,
+                             out string reason);
+
+      Status    start_mnesia(out string reason);
+
+      Status    stop_mnesia( out string reason);
+#endif
+    };
+  
+#ifdef _CORBA_
+
+//////////////////////////////////////////////////////////////////
+// The corba_connector object registers itself in the local name
+// service at startup of the Mnesia Session application
+
+  interface corba_connector
+    {
+      // Connects to Mnesia on the same Erlang node as the 
+      // Corba Connector object, creates a Corba Session object
+      // and returns its object key.
+
+      corba_session connect();
+
+      // Disconnects from Mnesia and disposes
+      // the Corba Session object
+
+      void disconnect(in corba_session object_key);
+    };
+#endif
+
+
+#ifndef _CORBA_
+//////////////////////////////////////////////////////////////////
+// The connector process registers itself in the local Erlang node
+// at startup of the Mnesia Session application
+
+  interface connector
+    {
+      // Connects to Mnesia on the same Erlang node as the
+      // Connector process, creates a Session process and returns
+      // its process identifier.
+
+      erlang::pid connect();
+
+      // Disconnects from Mnesia and terminates
+      // the Session process.
+
+      void disconnect(in erlang::pid object_key);
+    };
+#endif
+
+};
+
+

@@ -1,0 +1,106 @@
+
+# Crypto - Makefile for Windows NT
+#
+# It is assumed that the following environment variables have been set:
+#
+# INCLUDE       X:\MSDEV\INCLUDE
+# LIB           X:\MSDEV\LIB
+#
+# so that standard include files, and libraries can be found.
+#
+
+# XXX Should we set it?
+TARGET = win32
+
+# Roots
+CC_ROOT = 
+SSLEAY_ROOT = \libraries\ssl\usr\ssleay\win32
+
+LINK = link
+MLFLAGS= /nologo /subsystem:console /machine:I386
+
+LIBDIR = ..\priv\lib\$(TARGET)
+OBJDIR = ..\priv\obj\$(TARGET)
+
+!if !exist($(LIBDIR)) 
+!	if [mkdir $(LIBDIR)]
+!	error "CRYPTO: cannot create LIBDIR"
+!	endif
+!endif
+
+!if !exist($(OBJDIR))
+!	if [mkdir $(OBJDIR)]
+!	error "CRYPTO: cannot create OBJDIR"
+!	endif
+!endif
+
+# Includes
+#
+SSLEAY_INCLUDE = $(SSLEAY_ROOT)\inc32
+SYS_INCLUDE = \erts\erts\emulator\beam
+INCLUDES = /I. /I$(SSLEAY_INCLUDE) /I$(SYS_INCLUDE)
+
+# Libraries (static, linked to MSVCRT.LIB)
+#
+SSLEAY_LIBDIR = $(SSLEAY_ROOT)\out32
+SSLEAY_LIBS = \
+	$(SSLEAY_LIBDIR)\ssleay32.lib \
+	$(SSLEAY_LIBDIR)\libeay32.lib 
+
+ERL_DLL_LIB = \erts\bin\$(TARGET)\erl_dll.lib
+
+# Compiler options
+# 
+OPTS = /G5 /Ox /O2 /Ob2
+CFLAGS = $(INCLUDES) /nologo /MD $(OPTS) -D__WIN32__ -DWIN32
+
+# Object files
+#
+CRYPTO_DRV_OBJS = \
+	$(OBJDIR)\crypto_drv.obj
+
+#
+# Targets
+#
+
+all:	$(LIBDIR)\crypto_drv.dll
+
+clean: 
+	del $(LIBDIR)\*.dll
+	del $(OBJDIR)\*.obj
+
+$(LIBDIR)\crypto_drv.dll:	$(CRYPTO_DRV_OBJS) $(LIBDIR)\elibcrypto.lib
+	$(LINK) $(MLFLAGS) /dll /out:$(LIBDIR)\crypto_drv.dll \
+		$(CRYPTO_DRV_OBJS) $(LIBDIR)\elibcrypto.lib \
+		$(ERL_DLL_LIB)
+
+$(LIBDIR)\elibcrypto.lib:	elibcrypto.def
+	$(LINK) $(MLFLAGS) /dll /out:$(LIBDIR)\elibcrypto.dll \
+		/def:elibcrypto.def /implib:$(LIBDIR)\elibcrypto.lib \
+		$(SSLEAY_LIBS)
+
+# Inference rule .c.obj:
+#
+{.}.c{$(OBJDIR)}.obj:
+	$(CC) $(CFLAGS) /c /Fo$@ $(*B).c
+
+# Dependencies
+#
+$(OBJDIR)\crypto_drv.o:		$(SYS_INCLUDE)\erl_driver.h \
+		                $(SSLEAY_INCLUDE)\des.h \
+		                $(SSLEAY_INCLUDE)\md5.h \
+				$(SSLEAY_INCLUDE)\sha.h
+
+
+
+
+
+
+
+
+
+
+
+
+
+

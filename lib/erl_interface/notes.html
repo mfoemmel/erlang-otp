@@ -1,0 +1,49 @@
+<HTML>
+<HEAD>
+  <TITLE>Erl_interface Release Notes</TITLE>
+</HEAD>
+
+<BODY BGCOLOR="#FFFFFF">
+
+<CENTER><H1>Erl_interface Release Notes</H1></CENTER>
+
+<H2>Erl_interface 3.2</H2>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The reference type has been extended from 18 bits to
+82 bits. For compatibility with older nodes, an R6 node
+can send a ref to an older node; if the older node sends
+it back, it has lost all but its 18 least significant
+bits, but still compares equal to the original ref.
+The external format has been extended to represent the new
+longer refs; that means for example that binaries with
+refs, produced on an R6 node, cannot be converted to a term
+on an older node.
+In <CODE>erl_interface</CODE>, a function <CODE>erl_mk_long_ref</CODE>
+has been added, and macros <CODE>ERL_REF_NUMBERS</CODE> and
+<CODE>ERL_REF_LEN</CODE>.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3140<br>
+Aux Id: OTP-3139
+
+
+<LI>
+The function <CODE>erl_receive_msg</CODE> has the problem that
+a fixed buffer must be given - a larger message than
+expected is simply discarded. A function
+<CODE>erl_xreceive_msg</CODE> has been introduced, which
+dynamically resizes the buffer given to it, if needed.
+<br>Own Id: OTP-3313<br>
+Aux Id: OTP-2927
+
+
+</UL>
+
+There are also release notes for 
+<A HREF="notes_history.html">older versions</A>.
+
+</body>
+</html>

@@ -1,0 +1,44 @@
+{application, tools,
+ [{description, "DEVTOOLS  CXC 138 16"},
+  {vsn, "%VSN%"},
+  {modules, [exref,
+	     exref_analysis,
+	     exref_cross_ref,
+	     exref_internal,
+	     exref_io,
+	     exref_pp,
+	     exref_server,
+	     eprof,
+	     instrument,
+	     make,
+	     coast,
+	     coast_analyse_funcs,
+	     coast_comm_funcs,
+	     coast_compile_funcs,
+	     coast_server
+	    ]
+  },
+  {registered,[]},
+  {applications, [kernel, stdlib]},
+  {env, [{file_util_search_methods,[{"", ""}, {"ebin", "esrc"}, {"ebin", "src"}]}
+	]
+  }
+ ]
+}. 
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

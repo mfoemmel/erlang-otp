@@ -1,0 +1,14 @@
+Original Authors:
+
+The original JAM compiler was first implemented by Joe Armstrong.
+
+The original BEAM compiler (v1) was first implemented by Bogumil Hausman.
+
+The original v2 and v3 compilers were implemented by Robert Virding.
+Björn Gustavsson adapted the code generation for the BEAM machine and
+added the optimisation passes.
+
+General improvements and corrections were made by Robert Virding,
+Arndt Jonasson, Tony Rogvall, Björn Gustavsson and Jan-Erik Dahlin.
+
+Open source contributors:

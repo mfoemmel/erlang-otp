@@ -1,0 +1,157 @@
+
+                             Erlang Open Source
+                            --------------------
+
+Please read the whole file before attempting to build and install
+Erlang.
+
+What you need
+-------------
+
+  otp_src_R6B-0.tar.gz
+
+(See below for which programs you need to compile)
+
+
+How to build and install Erlang
+-------------------------------
+
+Start by unpacking the Erlang base kit distribution file. (Please note
+that to unpack the distribution files you will need a zcat program
+that can handle gzipped files and a tar program which handles long
+file names.)
+
+  1)    zcat otp_src_R6B-0.tar.gz | tar xf -
+
+Now cd into the base kit directory.
+
+  2)    cd otp_src_R6B-0
+
+Then run the following commands
+
+  3)    ./configure
+  4)    make
+  5)    make install
+
+Let's go through them in some detail:
+
+    Step 3 runs a configuration script created by the GNU autoconf
+utility, which checks for system specific features and the creates a
+number of makefiles. The configure script allows you to customize a
+number of parameters, type "./configure --help" for details. One of
+the things you can specify is where Erlang should be installed, by
+default Erlang will install in /usr/local/{bin,lib/erlang,man/man1},
+to keep the same structure but install in a different place, let's
+call it <Dir>, than /usr/local use the --prefix argument. Like so:
+"./configure --prefix=<Dir>". This step will also configure any
+additional libraries unpacked in step 3 (if you didn't add any of the
+extra libraries configure will issue a warning saying that there is no
+configuration information in lib, this warning can safely be ignored).
+
+    Step 4 first build the Erlang emulator, this will take
+approximately five minutes on a reasonably fast machine. It then
+proceeds to build the Erlang libraries in the "lib" subdirectory using
+the built emulator and the bootstrap libraries provided in the
+"bootstrap" subdirectory.  Compiling everything can take quite a long
+time, expect half an hour up to a couple of hours. After step 4 is
+completed you should have a working Erlang system which you can try by
+typing "bin/erl". This should start up Erlang and give you a prompt.
+
+    Step 5 is optional. It installs the Erlang system, together with
+documentation in the directory which you specified in step 3. (If you
+change your mind about where you wish to install you can rerun step 3,
+without having to do step 4 again).
+
+If you or your system has special requirements please read the
+Makefile for additional configuration information.
+
+
+Required utilities
+------------------
+
+These are the known tools you will need in order to unpack and build
+the Erlang base kit.
+
+  Unpacking
+
+    GNU unzip, or a modern uncompress
+    A tar program that understand the GNU tar format for long
+      filenames (such as e.g. GNU tar) 
+
+  Compiling
+
+    GNU make (this is a must)
+    C compiler (ANSI)
+    Perl 5 (this used to be optional, but now it is required)
+
+  Installing
+
+    An install program that can take multiple file names
+
+
+Portability
+-----------
+
+Our aim is to make the system as portable as possible and with as
+little special requirements as possible. However we only have access
+to a limited amount of machines/operating systems locally, these are
+the ones which we have succeeded compiling Erlang on:
+ 
+   Operating system    Version   Compiler
+
+    Solaris/sparc      2.6        cc, gcc
+    Solaris/x86        2.5.1      gcc
+    SunOS              4.1.4      gcc
+    Linux/redhat       5.2        gcc
+    Linux/suse                    gcc
+    Linux/slackware               gcc
+    FreeBSD            2.2.8      gcc
+    FreeBSD            3.1        gcc
+    Irix               6.3        gcc
+
+If you find that you can compile Erlang on an operating system not
+listed above please report this to us. Or if you can't but figured out
+what needed to be fixed please tell us about that too!
+
+
+Caveats
+-------
+
+There are currently no dependencies in the Makefiles, which means that
+if you modify any source code the system might not build properly.
+Also "make clean" does not clean out everything that should be
+cleaned. (Sorry, we are working on it.) For the emulator there is now
+(R6B.0) a way to generate dependencies, "make depend" in erts/emulator
+should do it.
+
+The install targets needs an "install" program that can handle
+multiple files. (This is a bug we need to fix.)
+
+
+Make and the variable "ERL_TOP"
+-------------------------------
+
+All the makefiles in the entire directory tree use the environment
+variable ERL_TOP to find the absolute path of the installation. The
+configure script will figure this out and set it in the toplevel
+Makefile (which, when building, it will pass on). However when
+developing it is sometimes convenient to be able to run make in a
+subdirectory. In order to do this you need to set the ERL_TOP variable
+before you run make.
+
+For example, assume your GNU make program is called "make" and you
+wish to rebuild the Erlang part of stdlib, then you could do:
+
+  cd lib/stdlib/src ; env ERL_TOP=<Dir> make
+
+Where <Dir> would be what you find ERL_TOP is set to in the top level
+Makefile.
+
+More Information
+----------------
+
+More information can be found on http://www.erlang.org/
+
+For commercial inquires (printed documentation, support et.c.) please
+visit http://www.erlang.se/info/
+

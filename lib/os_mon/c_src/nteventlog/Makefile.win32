@@ -1,0 +1,104 @@
+# ROOT    	   	Top of ERTS directories (must be absolute).
+#
+# TOOLS32 	  	Location of VC++ 32-bit development tools.
+
+include ../../vsn.mk
+
+CC = cl -nologo
+RC = rc
+APPROOT = ..\..
+#TOOLS32		= c:\msdev
+TOOLS32		= d:\progra~1\devstudio\vc
+
+# Comment the following line to compile with symbols
+#NODEBUG=1
+
+!if defined(NODEBUG) || defined(RELEASE)
+ERL_DEBUG 	= -DNDEBUG -Ox
+TTYPE		= opt
+!else
+ERL_DEBUG 	= -DDEBUG -Zi
+TTYPE		= debug
+!endif
+
+!if defined(RELEASE)
+BUILD_TYPE	=
+!elseif defined(NODEBUG)
+BUILD_TYPE	= -opt
+!else
+BUILD_TYPE	= -debug
+!endif
+
+OBJDIR		= $(APPROOT)\priv\obj\win32
+BINDIR		= $(APPROOT)\priv\bin\win32
+
+ROOT 		= \erts
+!if defined(NODEBUG) || defined(RELEASE)
+ETCOBJDIR	= $(ROOT)\erts\obj\win32
+!else
+ETCOBJDIR	= $(ROOT)\erts\obj.debug\win32
+!endif
+ENTRY_OBJ	= $(ETCOBJDIR)\port_entry.obj
+PORT_ENTRY_POINT= erl_port_entry
+
+EXECUTABLES = \
+	$(BINDIR)\nteventlog.exe
+OBJS = \
+	$(OBJDIR)\elog_main.obj \
+	$(OBJDIR)\elog_format.obj \
+	$(OBJDIR)\elog_pipe_stdin.obj \
+	$(OBJDIR)\elog_registry.obj \
+	$(OBJDIR)\elog_util.obj
+	
+
+CPU		= i386
+
+ERL_INCLUDES  =	
+
+DEFINES =  $(ERL_INCLUDES) -DNT -D__WIN32__ -DWINDOWS -DWIN32 -D_WIN32 -D_MT
+ERL_CFLAGS_COMMON = -c -MT $(DEFINES) -W3
+
+ERL_CFLAGS = $(ERL_DEBUG) $(ERL_CFLAGS_COMMON)
+ERL_LFLAGS = -release -nologo -pdb:none -incremental:no -nodefaultlib \
+	-subsystem:console,4.0 
+
+ERL_ENTRY_LFLAGS= $(ERL_LFLAGS) -entry:$(PORT_ENTRY_POINT)
+
+WIN32_LIBS = kernel32.lib advapi32.lib gdi32.lib user32.lib comctl32.lib \
+	winspool.lib comdlg32.lib libcmt.lib
+
+WIN32_LIBS=libcmt.lib oldnames.lib kernel32.lib ws2_32.lib mswsock.lib \
+	advapi32.lib shell32.lib 
+
+WINSOCK		= ws2_32.lib mswsock.lib
+
+#
+# Targets
+#
+
+all:    $(EXECUTABLES)
+
+
+$(BINDIR)\nteventlog.exe: $(OBJS) $(ENTRY_OBJ)
+	$(LINK) $(ERL_ENTRY_LFLAGS) -out:$*.exe $** $(ERL_RES) $(WIN32_LIBS)
+
+#
+# Implicit rules
+#
+
+.c{$(OBJDIR)}.obj:
+	$(CC) -Fo$*.obj $** $(ERL_CFLAGS)
+
+
+#{$(OBJDIR)}.obj{$(BINDIR)}.exe:
+#	$(CC) -Fe$*.exe $** $(OBJDIR)\erl.res
+
+
+clean:
+	-@del $(BINDIR)\*.exe
+	-@del $(OBJDIR)\*.obj
+	-@del $(OBJDIR)\*.sbr
+	-@del $(OBJDIR)\*.res
+
+
+

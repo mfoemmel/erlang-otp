@@ -1,0 +1,57 @@
+#!/usr/bin/env perl 
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+# 
+#     $Id$
+#
+use strict;
+use File::Basename;
+
+# Create the file erl_version.h
+#
+# Usage:
+#    make_version [ -o outputfile ] version-specifier
+#
+# Output goes to ./erl_version.h (or to "outputfile" if specified)
+#
+
+my $progname = basename($0);
+my $outputfile = "./erl_version.h";
+
+while (@ARGV && $ARGV[0] =~ /^-(\w+)/) {
+    my $opt = shift;
+    if ($opt eq '-o') {
+	$outputfile = shift;
+	die "No output file specified" unless defined $outputfile;
+    } else {
+	usage("bad option: $opt");
+    }
+}
+
+my $version = shift;
+die "No version name specified" unless defined $version;
+my $time_str = localtime;
+
+open(FILE, ">$outputfile") || die "Couldn't create $outputfile";
+
+print FILE <<EOF;
+/* This file was created by $progname -- don't modify. */
+#define ERLANG_VERSION "$version"
+#define ERLANG_COMPILE_DATE "$time_str"
+EOF
+
+close(FILE);
+
+exit(0);

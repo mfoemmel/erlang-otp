@@ -1,0 +1,132 @@
+#=== USER CONFIGURABLE STUFF ===
+#
+
+include ../vsn.mk
+include ../../../erts/epmd/epmd.mk
+
+# Define this if no error printouts is allowed to be generated.
+NO_ERR_MSG = #-DNO_ERR_MSG
+
+# Define this if the function erl_print_term shall be excluded
+SILENT = #-DSILENT
+
+# Define what targets we are aiming for. Valid targets are:
+# SUNOS4, SOLARIS, NETBSD, VRTX,
+ETARGET = -D__WIN32__ -MT
+
+# Collect all the flags specified above.
+ERL_SYSF = $(NO_ERR_MSG) $(SILENT) $(ETARGET) $(DNS)
+ERL_SYSF_MD = $(ERL_SYSF:-MT=-MD)
+ERL_SYSF_MDD = $(ERL_SYSF:-MT=-MDd) -Yd
+
+#=== USER CONFIGURABLE STUFF ENDS HERE ===
+TARGET = win32
+#DRVDIR = ..\..\emulator\drv.nt
+OBJDIR = ..\obj\$(TARGET)
+BINDIR = ..\bin\$(TARGET)
+
+ERL_OBJS = $(OBJDIR)\epmd_port.obj $(OBJDIR)\epmd_publish.obj $(OBJDIR)\epmd_unpublish.obj $(OBJDIR)\erl_connect.obj $(OBJDIR)\erl_error.obj $(OBJDIR)\erl_eterm.obj $(OBJDIR)\erl_fix_alloc.obj $(OBJDIR)\erl_format.obj $(OBJDIR)\erl_locking.obj $(OBJDIR)\erl_malloc.obj $(OBJDIR)\erl_marshal.obj $(OBJDIR)\erl_nothreads.obj $(OBJDIR)\erl_pthreads.obj $(OBJDIR)\erl_resolve.obj $(OBJDIR)\erl_rport.obj $(OBJDIR)\erl_start.obj $(OBJDIR)\erl_sthreads.obj $(OBJDIR)\global_register.obj $(OBJDIR)\global_names.obj $(OBJDIR)\global_unregister.obj $(OBJDIR)\global_whereis.obj
+
+# what pain to have to specify full path for each file
+# why doesn't WinMake (or whatever) understand $addprefix ??
+#
+
+IDL_OBJS = $(OBJDIR)\decode_atom.obj $(OBJDIR)\decode_binary.obj $(OBJDIR)\decode_boolean.obj $(OBJDIR)\decode_char.obj $(OBJDIR)\decode_double.obj $(OBJDIR)\decode_list_header.obj $(OBJDIR)\decode_long.obj $(OBJDIR)\decode_pid.obj $(OBJDIR)\decode_port.obj $(OBJDIR)\decode_ref.obj $(OBJDIR)\decode_string.obj $(OBJDIR)\decode_term.obj $(OBJDIR)\decode_trace.obj $(OBJDIR)\decode_tuple_header.obj $(OBJDIR)\decode_ulong.obj $(OBJDIR)\decode_version.obj $(OBJDIR)\encode_atom.obj $(OBJDIR)\encode_binary.obj $(OBJDIR)\encode_boolean.obj $(OBJDIR)\encode_char.obj $(OBJDIR)\encode_double.obj $(OBJDIR)\encode_list_header.obj $(OBJDIR)\encode_long.obj $(OBJDIR)\encode_pid.obj $(OBJDIR)\encode_port.obj $(OBJDIR)\encode_ref.obj $(OBJDIR)\encode_string.obj $(OBJDIR)\encode_term.obj $(OBJDIR)\encode_trace.obj $(OBJDIR)\encode_tuple_header.obj $(OBJDIR)\encode_ulong.obj $(OBJDIR)\encode_version.obj $(OBJDIR)\get_type.obj $(OBJDIR)\receive.obj $(OBJDIR)\send.obj $(OBJDIR)\send_exit.obj $(OBJDIR)\send_link.obj $(OBJDIR)\send_reg.obj $(OBJDIR)\show_msg.obj $(OBJDIR)\trace.obj $(OBJDIR)\whereis.obj $(OBJDIR)\eimd5.obj
+
+HASH_OBJS = $(OBJDIR)\hash_dohash.obj $(OBJDIR)\hash_foreach.obj $(OBJDIR)\hash_freetab.obj $(OBJDIR)\hash_insert.obj $(OBJDIR)\hash_isprime.obj $(OBJDIR)\hash_lookup.obj $(OBJDIR)\hash_newtab.obj $(OBJDIR)\hash_remove.obj $(OBJDIR)\hash_resize.obj $(OBJDIR)\hash_rlookup.obj
+
+REG_OBJS = $(OBJDIR)\reg_close.obj $(OBJDIR)\reg_delete.obj $(OBJDIR)\reg_dirty.obj $(OBJDIR)\reg_dump.obj $(OBJDIR)\reg_free.obj $(OBJDIR)\reg_get.obj $(OBJDIR)\reg_getf.obj $(OBJDIR)\reg_geti.obj $(OBJDIR)\reg_getp.obj $(OBJDIR)\reg_gets.obj $(OBJDIR)\reg_make.obj $(OBJDIR)\reg_open.obj $(OBJDIR)\reg_purge.obj $(OBJDIR)\reg_resize.obj $(OBJDIR)\reg_restore.obj $(OBJDIR)\reg_set.obj $(OBJDIR)\reg_setf.obj $(OBJDIR)\reg_seti.obj $(OBJDIR)\reg_setp.obj $(OBJDIR)\reg_sets.obj $(OBJDIR)\reg_stat.obj $(OBJDIR)\reg_tabstat.obj
+
+
+EI_OBJS = $(IDL_OBJS) $(HASH_OBJS) $(REG_OBJS)
+
+# Now, we want to create something else to... Multithreaded DLL linked and
+# Dito debug
+
+EI_OBJS_MD=$(EI_OBJS:.obj=.mdobj)
+EI_OBJS_MDD=$(EI_OBJS:.obj=.mddobj)
+ERL_OBJS_MD=$(ERL_OBJS:.obj=.mdobj)
+ERL_OBJS_MDD=$(ERL_OBJS:.obj=.mddobj)
+
+
+INCL_HERE = -I.
+INCL_ETC = -I..\..\etc
+INCL_EMUL_RUNTIME = -I..\..\..\system\emulator\runtime
+
+CC = cl -DEPMD_PORT=$(EPMD_PORT_NO) -nologo
+LIBRARIAN = lib
+#CC_DEBUG = -Zi
+INCL_PATHS = $(INCL_HERE) $(INCL_ETC) $(INCL_EMUL_RUNTIME)
+
+.SUFFIXES: .mdobj .mddobj
+
+all:	$(OBJDIR) $(BINDIR) $(OBJDIR)\ei.lib $(OBJDIR)\erl_interface.lib $(OBJDIR)\ei_md.lib $(OBJDIR)\erl_interface_md.lib $(OBJDIR)\ei_mdd.lib $(OBJDIR)\erl_interface_mdd.lib $(BINDIR)\erl_call.exe
+
+$(OBJDIR):
+	-mkdir $(OBJDIR)
+
+$(BINDIR):
+	-mkdir $(BINDIR)
+
+$(OBJDIR)/erl_interface.lib: $(ERL_OBJS)
+	$(LIBRARIAN) /OUT:$@ $**
+
+$(OBJDIR)/erl_interface_md.lib: $(ERL_OBJS_MD)
+	$(LIBRARIAN) /OUT:$@ $**
+
+$(OBJDIR)/erl_interface_mdd.lib: $(ERL_OBJS_MDD)
+	$(LIBRARIAN) /OUT:$@ $**
+
+$(OBJDIR)/ei.lib: $(EI_OBJS)
+	$(LIBRARIAN) /OUT:$@ $**
+
+$(OBJDIR)/ei_md.lib: $(EI_OBJS_MD)
+	$(LIBRARIAN) /OUT:$@ $**
+
+$(OBJDIR)/ei_mdd.lib: $(EI_OBJS_MDD)
+	$(LIBRARIAN) /OUT:$@ $**
+
+# or erl_call_nodns
+$(BINDIR)\erl_call.exe: $(OBJDIR)\erl_call.obj $(OBJDIR)\erl_interface.lib $(OBJDIR)\ei.lib
+	$(CC) $(CC_DEBUG) -MT -o $@ $** wsock32.lib
+
+{}.c{$(OBJDIR)}.obj:
+	$(CC) $(CC_DEBUG) $(ERL_SYSF) -c -Fo$@ $(INCL_PATHS) $<
+
+#{$(DRVDIR)}.c{$(OBJDIR)}.obj:
+#    $(CC) $(CC_DEBUG) $(ERL_SYSF) -c $(INCL_PATHS) -Fo$@ $<
+
+{}.c{$(OBJDIR)}.mdobj:
+	$(CC) $(CC_DEBUG) $(ERL_SYSF_MD) -c -Fo$@ $(INCL_PATHS) $<
+
+#{$(DRVDIR)}.c{$(OBJDIR)}.mdobj:
+#    $(CC) $(CC_DEBUG) $(ERL_SYSF_MD) -c $(INCL_PATHS) -Fo$@ $<
+
+{}.c{$(OBJDIR)}.mddobj:
+	$(CC) $(CC_DEBUG) $(ERL_SYSF_MDD) -c -Fo$@ $(INCL_PATHS) $<
+
+#{$(DRVDIR)}.c{$(OBJDIR)}.mddobj:
+#    $(CC) $(CC_DEBUG) $(ERL_SYSF_MDD) -c $(INCL_PATHS) -Fo$@ $<
+
+
+# This is to avoid 'command line to long' errors on NT when deleting...
+# Extremely ugly, but I know no way of avoiding this!
+FOOL_NT_1=$(ERL_OBJS) $(EI_OBJS)
+FOOL_NT=$(FOOL_NT_1:.obj=.del)
+
+clean:  $(FOOL_NT)
+	del /F /Q $(OBJDIR)\erl_call.obj
+	del /F /Q $(BINDIR)\erl_call.exe
+	del /F /Q $(OBJDIR)\erl_interface.lib
+	del /F /Q $(OBJDIR)\erl_interface_md.lib
+	del /F /Q $(OBJDIR)\erl_interface_mdd.lib
+	del /F /Q $(OBJDIR)\ei.lib
+	del /F /Q $(OBJDIR)\ei_md.lib
+	del /F /Q $(OBJDIR)\ei_mdd.lib
+	del /F /Q $(BINDIR)\erl_call.exe
+
+{}.c{$(OBJDIR)}.del:
+	-del /F /Q $*.obj $*.mdobj $*.mddobj
+
+#{$(DRVDIR)}.c{$(OBJDIR)}.del:
+#	-del /F /Q $*.obj $*.mdobj $*.mddobj

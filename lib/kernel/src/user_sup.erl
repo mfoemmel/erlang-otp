@@ -1,0 +1,121 @@
+%% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%% 
+%%     $Id$
+%%
+-module(user_sup).
+
+%% ---------------------------------------------
+%% This is a supervisor bridge hiding the process
+%% details of the user/group implementation.
+%% ---------------------------------------------
+
+-behaviour(supervisor_bridge).
+
+-export([start/0]).
+
+%% Internal exports.
+-export([init/1, terminate/2, relay/1]).
+
+start() ->
+    supervisor_bridge:start_link(user_sup, []).
+
+init([]) ->
+    case get_user() of
+	nouser ->
+	    ignore;
+	{master, Master} ->
+	    Pid = start_slave(Master),
+	    {ok, Pid, Pid};
+	{M, F, A} ->
+	    case start_user({M, F}, A) of
+		{ok, Pid} ->
+		    {ok, Pid, Pid};
+		Error ->
+		    Error
+	    end
+    end.
+
+start_slave(Master) ->
+    case rpc:call(Master, erlang, whereis, [user]) of
+	User when pid(User) ->
+	    spawn(?MODULE, relay, [User]);
+	_ ->
+	    error_logger:error_msg('Cannot get remote user', []),
+	    receive after 1000 -> true end,
+	    halt()
+    end.
+
+relay(Pid) ->
+    register(user, self()),
+    relay1(Pid).
+
+relay1(Pid) ->
+    receive
+        X ->
+            Pid ! X,
+	    relay1(Pid)
+    end.
+
+
+%%-----------------------------------------------------------------
+%% Sleep awhile in order to let user write all (some) buffered 
+%% information before termination.
+%%-----------------------------------------------------------------
+terminate(_Reason, UserPid) ->
+    receive after 1000 -> ok end,
+    exit(UserPid, kill),
+    ok.
+
+%%-----------------------------------------------------------------
+%% If there is a user, wait for it to register itself.  (But wait
+%% no more than 10 seconds).  This is so the application_controller
+%% is guaranteed that the user is started.
+%%-----------------------------------------------------------------
+start_user(Func,A) ->
+    apply(Func, A),
+    wait_for_user_p(100).
+
+wait_for_user_p(0) ->
+    {error, nouser};
+wait_for_user_p(N) ->
+    case whereis(user) of
+	Pid when pid(Pid) ->
+	    link(Pid),
+	    {ok, Pid};
+	_ ->
+	    receive after 100 -> ok end,
+	    wait_for_user_p(N-1)
+    end.
+
+get_user() ->
+    Flags = init:get_arguments(),
+    check_flags(Flags, {user_drv, start, []}).
+
+%% These flags depend upon what arguments the erl script passes on
+%% to erl91.
+check_flags([{nouser, []} |T], _) -> check_flags(T, nouser);
+check_flags([{user, [User]} | T], _) ->
+    check_flags(T, {list_to_atom(User), start, []});
+check_flags([{noinp_shell, []} | T], _) -> check_flags(T, {user, start, []});
+check_flags([{oldshell, []} | T], _) -> check_flags(T, {user, start, []});
+check_flags([{noinput, []} | T], _) -> check_flags(T, {user, start_out, []});
+check_flags([{master, [Node]} | T], _) ->
+    check_flags(T, {master, list_to_atom(Node)});
+check_flags([{x, []} | T], _) ->
+    check_flags(T, {user, start, [[sys_xerl,start]]});
+check_flags([H | T], User) -> check_flags(T, User);
+check_flags([], User) -> User.
+

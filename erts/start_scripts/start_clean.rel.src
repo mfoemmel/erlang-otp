@@ -1,0 +1,3 @@
+{release, {"OTP  APN 181 01","%SYS_VSN%"}, {erts, "%ERTS_VSN%"},
+ [{kernel,"%KERNEL_VSN%"},
+  {stdlib,"%STDLIB_VSN%"}]}.

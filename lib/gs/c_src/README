@@ -1,0 +1,33 @@
+
+GTK is a stand-alone wish with GS-extensions
+
+GS is a Graphics Interface for Erlang
+
+
+This version of gtk uses:
+
+- Tcl7.6	ftp://ftp.sunlabs.com/pub/tcl/tcl7.6.tar.gz
+- Tk4.2		ftp://ftp.sunlabs.com/pub/tcl/tk4.2.tar.gz
+- Plus Patches	ftp://ftp.nici.kun.nl/pub/tkpvm/tcl7.6plus.patch.gz
+		ftp://ftp.nici.kun.nl/pub/tkpvm/tk4.2plus.patch.gz
+
+
+INSTALLATION: 
+
+make [OS]	where OS is [solaris2|sunos4|x86]. This will build
+		gtk, wrap and killer.  The default value is solaris2.
+
+make install	This will install gtk, wrap and killer in GS_BIN_DIR
+		(see Makefile).  To set GS_BIN_DIR change the Makefile
+		or use: make GS_BIN_DIR=/where/you/want install
+
+
+FEEDBACK:
+
+Comments and Bug reports can be sent to: bugs@erlang.ericsson.se 
+
+------------------------------------------------------
+ By Anders Dahlin, anders@erlang.ericsson.se
+ © Copyright Ericsson Software Technology AB
+ Erlang Systems 1996
+------------------------------------------------------

@@ -1,0 +1,703 @@
+``The contents of this file are subject to the Erlang Public License,
+Version 1.1, (the "License"); you may not use this file except in
+compliance with the License. You should have received a copy of the
+Erlang Public License along with this software. If not, it can be
+retrieved via the world wide web at http://www.erlang.org/.
+
+Software distributed under the License is distributed on an "AS IS"
+basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+the License for the specific language governing rights and limitations
+under the License.
+
+The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+AB. All Rights Reserved.''
+
+    $Id$
+
+
+ERLANGS EXTERNAL FORMAT and distribution protocol
+-------------------------------------------------
+
+1.  INTRODUCTION
+
+The external format is mainly used in the distribution mechanism of
+erlang. The interace generator (ig) also use this format for implementing
+foreign interface to other languages. Similar formats me be found in 
+XDR, CDR, ASN.1 etc.
+
+Since erlang has a fixed number of types, there is no need for a programmer
+to define a specefication for the external format used within some application.
+All Erlang terms has an external representation and the interpretation of
+the different terms are application specific.
+
+In erlang the BIF term_to_binary may is used to convert a term into
+the external format. To convert binary data encoding a term the BIF
+binary_to_term is used.
+
+The distribution does this implicitly when sending messages across node
+boundaries.
+
+The distribution protocol is described in the chapters EPMD protocol
+and Node to Node protocol.
+
+2.  TERM ENCODING
+
+2.1. VERSION_MAGIC (131)
+
+The overall format of the term format is:
+
+  1      1       N
++-----+-----+-------------+
+| 131 | Tag |   Data      |
++-----+-----+-------------+
+
+2.2. SMALL_INTEGER_EXT (97)
+
+  1    1
++----+-----+
+| 97 | Int |
++----+-----+
+
+unsigned 8 bit integer.
+
+2.3. INTEGER_EXT       (98)
+
+  1       4
++----+-----------+
+| 98 |   Int     |
++----+-----------+
+
+signed 32 bit integer in big endian format (i.e MSB first)
+
+2.4. FLOAT_EXT         (99)
+
+  1         31
++----+----------------+
+| 99 |   Float String |
++----+----------------+
+
+A float is stored in string format. the format used in sprintf to
+format the float is "%.20e"  (there are more byte allocated than neccessary)
+To unpack the float use sscanf with format "%lf"
+
+2.5. ATOM_EXT          (100)
+
+  1       2        Len
++-----+-------+-----------+
+| 100 | Len   | Atom name |
++-----+-------+-----------+
+
+An atom is stored with a 2 byte unsigned length in big endian order, followed
+Len numbers of 8 bit characters that forms the atom name.
+The Len MUST be limitied to 255, which means that the Len field may be
+reduced to 1 byte.
+
+2.6. REFERENCE_EXT     (101)
+
+  1       N            4           1
++-----+-----------+-----------+----------+
+| 101 |    Node   |     ID    | Creation |
++-----+-----------+-----------+----------+
+
+Encode a reference object i.e an object generated with make_ref/0.
+The Node Term is an encoded atom, i.e. ATOM_EXT, NEW_CACHE (see 2.17.) or
+CACHED_ATOM (see 2.18.). The ID field contains an big endian unsigned integer,
+but SHOULD be reguarded as uninterpreted data since this field is node 
+specific. Creation is a byte containing a node serial number that
+makes it possible to separate old (crashed) nodes from a new one.
+
+In ID, only 18 bits are significant; the rest should be 0.
+In Creation, only 2 bits are significant; the rest should be 0.
+
+See 2.19 (NEW_REFERENCE_EXT).
+
+2.7. PORT_EXT          (102)
+
+  1       N            4           1
++-----+-----------+-----------+----------+
+| 102 |    Node   |    ID     | Creation |
++-----+-----------+-----------+----------+
+
+Encode a port object ( open_port/2 ).
+The ID is a node specific identifier for a local port. The distribution
+in 4.4 does not support port operations across node boundaries.
+The Creation works just like in REFERENCE_EXT
+
+2.8. PID_EXT           (103)
+
+  1       N            4            4           1
++-----+-----------+-----------+-----------+----------+
+| 103 |    Node   |    ID     |  Serial   | Creation |
++-----+-----------+-----------+-----------+----------+
+
+Encode a process object ( spawn/3 ).
+The ID and Creation fields works just like in REFERENCE_EXT, while
+the Serial field is used to improve safety.
+
+In ID, only 15 bits are significant; the rest should be 0.
+
+2.9. SMALL_TUPLE_EXT   (104)
+
+  1       1        N
++-----+-------+--------------+
+| 104 | Arity |    Elements  |
++-----+-------+--------------+
+
+The x_TUPLE_EXT encodes a tuple. The Arity is an unsigned byte that
+determines how many element that follows in the Elements section.
+
+2.10. LARGE_TUPLE_EXT   (105)
+
+  1       4        N
++-----+-------+--------------+
+| 105 | Arity |    Elements  |
++-----+-------+--------------+
+
+See SMALL_TUPLE_EXT with the exception that Arity is an unsigned 4 byte integer
+in big endian format.
+
+2.11. NIL_EXT           (106)
+
+   1
++-----+
+| 106 |
++-----+
+
+The represenation for [].
+
+
+2.12. STRING_EXT        (107)
+
+   1     2        Len
++-----+-----+-----------------+
+| 107 | Len |  Characters     |
++-----+-----+-----------------+
+
+String do NOT have a corrspeonding erlang representation. But the
+Erlang 4.4 normally regards lists of bytes (i.e integer in range 0..255)
+as strings. Since the length field is a unsigned 2 byte integer (big endian)
+implementations must make sure that lists longer than 65535 elements are
+encoded with the LIST_EXT (2.13.).
+
+
+2.13. LIST_EXT          (108)
+
+   1      4             
++-----+--------+---------------------+
+| 108 |   n    | Elem(1) ... Elem(n) |
++-----+--------+---------------------+
+
+Lists are stored in the same way as the LARGE_TUPLE_EXT, There is NO
+short form i.e no SMALL_LIST_EXT.
+
+2.14. BINARY_EXT        (109)
+
+   1      4           Len
++-----+-------+---------------------+
+| 109 |  Len  |      Data           |
++-----+-------+---------------------+
+
+Binaries are generated with list_to_binary/1, term_to_binary/1 or
+as input from binary ports. The Len length field is an unsigned 4 byte integer
+(big endian).
+
+2.15. SMALL_BIG_EXT     (110)
+
+   1      1      1        n
++-----+-------+------+------------------+
+| 110 |   n   | Sign |  d(0) ... d(n-1) |
++-----+-------+------+------------------+
+
+Bignums are stored in unary form with a sign byte that is 0
+if unsigned and 1 if signed. The digits are stored with the
+LSB byte first. i.e d0 is stored first and to calculate the integer
+the following formula may come in handy.
+
+   where B = 256
+   (-1)^Sign * (d0*B^0 + d1*B^1 + d2*B^2 + ... d(N-1)*B^(n-1))
+
+2.16. LARGE_BIG_EXT     (111)
+
+   1      4      1         n
++-----+-------+------+------------------+
+| 111 |   n   | Sign |  d(0) ... d(n-1) |
++-----+-------+------+------------------+
+
+See SMALL_BIG_EXT with the difference that the length field is an unsigned
+4 byte integer.
+
+2.17 NEW_CACHE         (78)
+
+  1       1       2         Len
++----+-------+--------+-----------+
+| 78 | index |  Len   | Atom name |
++----+-------+--------+-----------+
+
+NEW_CACHE works just like ATOM_EXT but it must also cache the atom 
+in the atom cache in the location given by index.
+
+2.18. CACHED_ATOM       (67)
+
+   1      1
++----+-------+
+| 67 | index |
++----+-------+
+
+When the atom cache is in use, index is the slot number that the 
+atom MUST be located.
+
+2.19. NEW_REFERENCE_EXT		(114)
+
+  1      2       N            1           N'
++-----+-----+-----------+-----------+-----------+
+| 114 | Len |    Node   | Creation  |   ID  ... |
++-----+-----+-----------+-----------+-----------+
+
+Node and Creation are as in REFERENCE_EXT.
+
+ID contains a sequence of big-endian unsigned integers (4 bytes each, so
+N' is a multiple of 4), but should be regarded as uninterpreted data.
+
+N' = 4*Len.
+
+In the first word (four bytes) of ID, only 18 bits are significant;
+the rest should be 0.
+In Creation, only 2 bits are significant; the rest should be 0.
+
+NEW_REFERENCE_EXT was introduced with distribution version 4.
+In version 4, N' should be at most 12.
+
+See 2.7 (REFERENCE_EXT).
+
+2.20. FUN_EXT		(117)
+
+  1      4    N1      N2      N3      N4      4*Len
++-----+-----+-----+--------+-------+------+--------------+
+| 114 | Len | Pid | Module | Index | Uniq | Free vars... |
++-----+-----+-----+--------+-------+------+--------------+
+
+Pid is process identifier as in PID_EXT. It represents the process in which
+the fun was created.
+
+Module is an encoded as an atom, using ATOM_EXT, NEW_CACHE (2.17) or
+CACHED_ATOM (2.18). This is the module that the fun is implemented in.
+
+Index is an integer encoded using SMALL_INTEGER_EXT (2.2) or INTEGER_EXT (2.3).
+It is typically a small index into the module's fun table.
+
+Uniq is an integer encoded using SMALL_INTEGER_EXT (2.2) or INTEGER_EXT (2.3).
+Uniq is the hash value of the parse for the fun.
+
+Free vars is Len number of terms, each one encoded according to its type.
+
+3. EPMD protocol
+
+The protocol that EPMD (Erlang Port Mapper Daemon) talks is summarized here.
+
+	Client (or Node)                  EPMD
+        ----------------                  ----------
+
+	ALIVE_REQ       ---------------->
+
+	                <---------------- ALIVE_OK_RESP
+
+	                <---------------- ALIVE_NOTOK_RESP
+
+	ALIVE_CLOSE_REQ ---------------->
+
+	PORT_PLEASE_REQ ---------------->
+
+	                <---------------- PORT_OK_RESP
+
+	                <---------------- PORT_NOTOK_RESP
+
+	NAMES_REQ       ---------------->                   
+
+	                <---------------- NAMES_RESP
+
+	DUMP_REQ        ---------------->                   
+
+	                <---------------- DUMP_RESP
+
+	KILL_REQ        ---------------->
+
+	                <---------------- KILL_RESP
+
+	STOP_REQ        ---------------->
+
+	                <---------------- STOP_OK_RESP
+
+	                <---------------- STOP_NOTOK_RESP
+
+3.1 Requests
+
+Each request *_REQ is presided by a two byte length field. Thus, the
+overall request format is:
+
+    2        n
++--------+---------+
+| Length | Request |
++--------+---------+
+
+3.1.1 ALIVE_REQ         (97)
+
+   1     2         n
++----+--------+----------+
+| 97 | PortNo | NodeName |
++----+--------+----------+
+
+where n = Length - 3
+
+The connection created to the EPMD must be kept until the node is
+not a distributed node any longer.
+
+
+3.1.1.1 ALIVE2_REQ	(120)
+
+
+[120, PortNo, NodeType, Protocol, DistrvsnRange, Nlen, NodeName, Elen, Extra]
+PortNo = 2 bytes
+NodeType = 1 byte (77 = normal erlang node, 72 hidden node (c-node) ...)
+Protocol = 1 byte [0 = tcp/ip-v4, ... ]
+DistrvsnRange = [Highestvsn, Lowestvsn] where Highestvsn = Lowestvsn = 2 byte
+	for erts-4.6.x (OTP-R3)the vsn = 0
+	for erts-4.7.x (OTP-R4)
+Nlen = 2 bytes
+NodeName = string ,length = Nlen
+Elen = 2 bytes
+Extra = string ,length = Elen
+
+
+The connection created to the EPMD must be kept until the node is
+not a distributed node any longer.
+
+
+3.1.2  ALIVE_CLOSE_REQ  ()
+
+The connection is simply closed by the client.
+
+3.1.3 PORT_PLEASE_REQ   (112)
+
+   1       n
++-----+----------+
+| 112 | NodeName |
++-----+----------+
+
+where n = Length - 1
+
+3.1.3.1 PORT_PLEASE2_REQ   (122)
+
+   1       n
++-----+----------+
+| 122 | NodeName |
++-----+----------+
+
+where n = Length - 1
+
+3.1.4 NAMES_REQ         (110)
+
+   1  
++-----+
+| 110 |
++-----+
+
+3.1.5 DUMP_REQ          (100)
+
+   1  
++-----+
+| 100 |
++-----+
+
+3.1.6 KILL_REQ          (107)
+
+   1  
++-----+
+| 107 |
++-----+
+
+3.1.7 STOP_REQ          (115)  (Not Used)
+
+   1       n
++-----+----------+
+| 115 | NodeName |
++-----+----------+
+
+where n = Length - 1
+
+The current implementation of Erlang does not care if the connection
+to the EPMD is broken.
+
+3.2 Responses
+
+3.2.1 ALIVE_OK_RESP     (89)
+
+   1       2
++----+----------+
+| 89 | Creation |
++----+----------+
+
+3.2.1.1 ALIVE2_RESP (121)
+
+   1     1          2
++----+--------+-----------+
+|121 | Result | Creation  |
++----+--------+-----------+
+
+Result = 0 -> ok, Result > 0 -> error
+
+
+3.2.2 ALIVE_NOTOK_RESP  ()
+
+EPMD closed the connection.
+
+3.2.3 PORT_OK_RESP      ()
+
+    2
++--------+
+| PortNo |
++--------+
+
+3.2.4 PORT_NOTOK_RESP   ()
+
+EPMD closed the connection.
+
+3.2.4.1 PORT2_RESP      (119)
+
+[119, Result] or
+[119, Result, PortNo, NodeType, Protocol, DistrvsnRange, Nlen, 
+	NodeName, Elen, Extra]
+Result = 1 byte (0 = ok, >0 error)
+NodeType = 1 byte ( 77 - normal Erlang node , 72 - hidden node ...)
+PortNo = 2 byte
+Protocol = 1 byte
+DistrvsnRange = [Highestvsn, Lowestvsn] Highestvsn = Lowestvsn = 2 bytes
+Nlen = 2 bytes
+NodeName = string, length = Nlen
+Elen = 2 bytes
+Extra = string, length = Elen
+
+If Result > 0, the packet only consists of [119, Result].
+
+3.2.4 PORT_NOTOK_RESP   ()
+
+EPMD closed the connection.
+
+
+3.2.5 NAMES_RESP        ()
+
+      4
++------------+-----------+
+| EPMDPortNo | NodeInfo* |
++------------+-----------+
+
+NodeInfo is a string written for each active node.
+When all NodeInfo has been written the connection is
+closed by EPMD.
+
+NodeInfo is, as expressed in Erlang:
+
+	io:format("name ~s at port ~p~n", [NodeName, Port]).
+
+3.2.6 DUMP_RESP         ()
+
+      4
++------------+-----------+
+| EPMDPortNo | NodeInfo* |
++------------+-----------+
+
+NodeInfo is a string written for each node kept in EPMD.
+When all NodeInfo has been written the connection is
+closed by EPMD.
+
+NodeInfo is, as expressed in Erlang:
+
+	io:format("active name     ~s at port ~p, fd = ~p ~n",
+	          [NodeName, Port, Fd]).
+
+or
+
+	io:format("old/unused name ~s at port ~p, fd = ~p~n",
+	          [NodeName, Port, Fd]).
+
+
+
+3.2.7 KILL_RESP         ()
+
+     2
++----------+
+| OKString |
++----------+
+
+where OKString is "OK".
+
+3.2.8 STOP_OK_RESP      ()
+
+     7
++----------+
+| OKString |
++----------+
+
+where OKString is "STOPPED".
+
+3.2.9 STOP_NOTOK_RESP   ()
+
+     7
++-----------+
+| NOKString |
++-----------+
+
+where NOKString is "NOEXIST".
+
+
+
+4 The Erlang <-> Erlang distribution protocol
+
+The distribution protocol can be divided into four (4) parts:
+
+	1. Low level socket connection.
+
+	2. Handshake, interchange node name and authenticate.
+
+	3. Authentication (done by net_kernel).
+
+	4. Connected. 
+	
+A node fetches the Port number of another node through the EPMD (at the
+other host) in order to initiate a connection request.
+
+3 and 4 are performed at the same level but the net_kernel disconnects the
+other node if it communicates using an invalid cookie (after one (1) second).
+
+4.1 Handshake
+
+The handshake is discussed in detail in the internal documentation for 
+the kernel (erlang) application.
+
+4.2 Protocol between connected nodes
+
+     4       1         n          m
++--------+------+------------+----------+
+| Length | Type | ControlMsg |  Message |
++--------+------+------------+----------+
+
+where:
+
+	Length is equal to 1 + n + m
+
+	Type is: 112 - pass through
+
+	ControlMsg is a tuple passed using the external format of
+	Erlang.
+
+	Message is the message sent to another node using the '!'
+	(in external format).
+	But, Message is only passed in combination with a ControlMsg
+	encoding a send ('!').
+
+4.2.1 Pass through
+
+The control message is a tuple, where the first element indicates
+which distributed operation it encodes.
+
+4.2.1.1 LINK
+
+	{1, FromPid, ToPid}
+
+4.2.1.2 SEND
+
+	{2, Cookie, ToPid}
+
+	Note: Message is sent as well.
+
+4.2.1.3 EXIT
+
+	{3, FromPid, ToPid, Reason}
+
+4.2.1.4 UNLINK
+
+	{4, FromPid, ToPid}
+
+4.2.1.5 NODE_LINK
+
+	{5}
+
+4.2.1.6 REG_SEND
+
+	{6, FromPid, Cookie, ToName}
+
+	Note: Message is sent as well.
+
+4.2.1.7 GROUP_LEADER
+
+	{7, FromPid, ToPid}
+
+4.2.1.8 EXIT2
+
+	{8, FromPid, ToPid, Reason}
+
+-----------------------------------------------
+New Ctrlmessages for distrvsn = 1 (OTP R4)
+-----------------------------------------------
+
+4.3.1 SEND_TT
+
+	{12, Cookie, ToPid, TraceToken}
+
+	Note: Message is sent as well.
+
+4.3.2 EXIT_TT
+
+	{13, FromPid, ToPid, TraceToken, Reason}
+
+
+4.3.3 REG_SEND_TT
+
+	{16, FromPid, Cookie, ToName, TraceToken}
+
+	Note: Message is sent as well.
+
+
+4.3.4 EXIT2_TT
+
+	{18, FromPid, ToPid, TraceToken, Reason}
+
+
+-----------------------------------------------
+New Ctrlmessages for distrvsn = 2
+-----------------------------------------------
+
+distrvsn 2 was never used.
+
+-----------------------------------------------
+New Ctrlmessages for distrvsn = 3 (OTP R5C)
+-----------------------------------------------
+
+None, but the version number was increased anyway.
+
+-----------------------------------------------
+New Ctrlmessages for distrvsn = 4 (OTP R6)
+These are only recognized by Erlang nodes, not by hidden nodes.
+-----------------------------------------------
+
+4.4.1 MONITOR_P
+
+	{19, FromPid, ToPid, Ref}
+
+	FromPid = monitoring process
+	ToPid = monitored process
+
+4.4.2 DEMONITOR_P
+
+	{20, FromPid, ToPid, Ref}
+	We include the FromPid just in case we want to trace this.
+
+	FromPid = monitoring process
+	ToPid = monitored process
+
+4.4.3 MONITOR_P_EXIT
+
+	{21, FromPid, ToPid, Ref}
+
+	FromPid = monitored process
+	ToPid = monitoring process

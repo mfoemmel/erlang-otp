@@ -1,0 +1,31 @@
+#ifndef _CORBA_IDL
+#define _CORBA_IDL
+
+#pragma prefix "omg.org"
+
+//******************************************************************
+//
+//Policy Object:
+//
+//******************************************************************
+
+module CORBA {
+
+  // Policy typedefs
+  typedef unsigned long PolicyType;
+  typedef string Identifier;
+  typedef string ScopedName;
+  typedef string RepositoryId;
+ 
+  // Basic IDL definition
+  interface Policy
+    {
+      readonly attribute PolicyType policy_type;
+      Policy copy();
+      void destroy();
+    };
+  typedef sequence <Policy> PolicyList;
+  
+};
+
+#endif

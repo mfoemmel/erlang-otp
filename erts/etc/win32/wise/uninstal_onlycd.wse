@@ -1,0 +1,98 @@
+Document Type: WSE
+item: Global
+  Version=6.01
+  Flags=00000100
+  Split=1420
+  Languages=65 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+  Copy Default=1
+  Japanese Font Name=MS Gothic
+  Japanese Font Size=10
+  Start Gradient=0 0 255
+  End Gradient=0 0 0
+  Windows Flags=00000000000000000000101000001000
+  Message Font=MS Sans Serif
+  Font Size=8
+  Disk Label=GLBS
+  Disk Filename=INSTALL
+  Patch Flags=0000000000000001
+  Patch Threshold=200
+  Patch Memory=4096
+  Per-User Version ID=1
+end
+item: Remark
+end
+item: Remark
+  Text=     Install Support for uninstalling the application.
+end
+item: Remark
+end
+item: Set Variable
+  Variable=UNINSTALL_PATH
+  Value=%_LOGFILE_PATH_%
+  Flags=00000010
+end
+item: Set Variable
+  Variable=UNINSTALL_PATH
+  Value=%UNINSTALL_PATH%\UNWISE.EXE
+end
+item: Remark
+end
+item: Remark
+  Text=     Install Support for multiple languages
+end
+item: Remark
+end
+item: Set Variable
+  Variable=UNINSTALL_LANG
+  Value=%UNINSTALL_PATH%
+  Flags=00000010
+end
+item: Set Variable
+  Variable=UNINSTALL_LANG
+  Value=%UNINSTALL_LANG%\UNWISE.INI
+end
+item: Remark
+end
+item: Remark
+  Text=     Install the add/remove or uninstall icon
+end
+item: Remark
+end
+item: Set Variable
+  Variable=UNINSTALL_PATH
+  Value=%UNINSTALL_PATH%
+  Flags=00010100
+end
+item: Set Variable
+  Variable=INST_LOG_PATH
+  Value=%_LOGFILE_PATH_%
+  Flags=00010100
+end
+item: Check Configuration
+  Flags=10111011
+end
+item: Edit Registry
+  Total Keys=1
+  Key=Software\Microsoft\Windows\CurrentVersion\Uninstall\%APPTITLE%
+  New Value=%APPTITLE%
+  Value Name=DisplayName
+  Root=2
+end
+item: Edit Registry
+  Total Keys=1
+  Key=Software\Microsoft\Windows\CurrentVersion\Uninstall\%APPTITLE%
+  New Value=%UNINSTALL_PATH% %INST_LOG_PATH%
+  New Value=
+  Value Name=UninstallString
+  Root=2
+end
+item: Else Statement
+end
+item: Add ProgMan Icon
+  Group=%GROUP%
+  Icon Name=Uninstall %APPTITLE%
+  Command Line=%UNINSTALL_PATH% /A %INST_LOG_PATH%
+  Icon Pathname=%UNINSTALL_PATH%
+end
+item: End Block
+end

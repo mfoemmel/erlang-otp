@@ -1,0 +1,22 @@
+#
+# Copyright (C) 1997, Ericsson Telecommunications
+# Author: Patrik Winroth
+#
+# This sed program file is intended to be used when creating Makefiles for vxworks
+# from the generic Makefile.in that is found in a number of directories (see configure.vxworks)
+#
+
+# ccsparc -O2 doesn't work when compiling "rundir"/gc.c - signal 11 is generated when trying
+# therefore it is compiled with -O1 instead, which works - get a new ccsparc !
+s/\$(COMPILE\.emu) -o \$@ -c gc\.c/$(CC) @CFLAGS@ @DEFS@ -O1 $(BEAM_MODE) -I$(SYSDIR) -I$(EMUDIR) -I. $(CPPFLAGS) -c -o $@ -c gc.c/
+s/@host@/vxworks_sparc/
+s/@system_type@/vxworks_sparc/
+s/@CC@/\/home\/gandalf\/bsproj\/tools\/vw-gnu\/solaris.sparc\/bin\/ccsparc/
+s/@HCC@/gcc/
+s/@LD@/\/home\/gandalf\/bsproj\/tools\/vw-gnu\/solaris.sparc\/bin\/ldsparc/
+s/@DEBUG_FLAGS@/-g/
+s/@GCCLIB_PATH@/\/home\/gandalf\/bsproj\/tools\/vw-gnu\/solaris.sparc\/lib\/gcc-lib\/sparc-wrs-vxworks\/cygnus-2.2.3.1\/libgcc.a/
+s/@RANLIB@/ranlibsparc/
+s/@AR@/arsparc/
+s/@CFLAGS@/-I\/home\/gandalf\/bsproj\/BS.2\/UOS\/vw\/5.2\/h -DWANT_NONBLOCKING -DHAVE_MEMMOVE -DCPU=SPARC -DVXWORKS -fno-builtin -nostdinc/
+

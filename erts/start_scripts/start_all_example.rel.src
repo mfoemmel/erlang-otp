@@ -1,0 +1,8 @@
+{release, {"OTP  APN 181 01","%SYS_VSN%"}, {erts, "%ERTS_VSN%"},
+ [{kernel,"%KERNEL_VSN%"},
+  {stdlib,"%STDLIB_VSN%"},
+  {sasl, "%SASL_VSN%"},
+  {os_mon, "%OS_MON_VSN%"},
+  {inets, "%INETS_VSN%"},
+  {snmp, "%SNMP_VSN%"},
+  {mnesia, "%MNESIA_VSN%"}]}.

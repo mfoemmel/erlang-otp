@@ -1,0 +1,152 @@
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+# 
+#     $Id$
+#
+include $(ERL_TOP)/make/target.mk
+include $(ERL_TOP)/make/$(TARGET)/otp.mk
+
+# ----------------------------------------------------
+# Application version
+# ----------------------------------------------------
+include ../vsn.mk
+VSN=$(CRYPTO_VSN)
+
+# ----------------------------------------------------
+# The following variables differ on different systems, we set
+# reasonable defaults, if something different is needed it should
+# be set for that system only.
+# ----------------------------------------------------
+CC = @CC@
+LD = @DED_LD@
+SHELL = /bin/sh
+LIBS = @LIBS@
+LDFLAGS = @DED_LDFLAGS@
+soname = @ded_soname@
+OS = @OSTYPE@
+TARGET = @host@
+# We need libgcc.a on Solaris 2
+LIBGCC = @GCCLIB_PATH@
+
+ROOTDIR = $(ERL_TOP)/lib
+PRIVDIR = ../priv
+OBJDIR = $(PRIVDIR)/obj/$(TARGET)
+LIBDIR = $(PRIVDIR)/lib/$(TARGET)
+
+# XXX We use the SSLeay installation under application SSL
+SSLEAY_ROOT = @SSLEAY_ROOT@
+
+SSLEAY_LIBDIR = $(SSLEAY_ROOT)/lib
+SSLEAY_INCDIR = $(SSLEAY_ROOT)/include
+# For erl_driver.h
+SYS_INCDIR = $(ERL_TOP)/erts/emulator/beam
+
+INCLUDES = -I $(SSLEAY_INCDIR) -I $(SYS_INCDIR)
+
+ifeq ($(TYPE),debug)
+TYPEMARKER = .debug
+TYPE_FLAGS = -g -DDEBUG @DEBUG_FLAGS@
+else
+TYPEMARKER =
+TYPE_FLAGS = -O2
+endif
+
+ALL_CFLAGS = @CFLAGS@ @DEFS@ $(TYPE_FLAGS) $(INCLUDES)
+
+# ----------------------------------------------------
+# Release directory specification
+# ----------------------------------------------------
+RELSYSDIR = $(RELEASE_PATH)/lib/crypto-$(VSN)
+
+# ----------------------------------------------------
+# Misc Macros
+# ----------------------------------------------------
+CRYPTO_DRV_OBJS = $(OBJDIR)/crypto_drv.o
+ELIBCRYPTO_OBJS = $(OBJDIR)/elibcrypto.o
+
+OBJS = $(CRYPTO_DRV_OBJS) $(ELIBCRYPTO_OBJS)
+
+ifeq ($(findstring win32,$(TARGET)), win32)
+SOLIBS = $(LIBDIR)/crypto_drv.dll \
+	 $(LIBDIR)/elibcrypto.dll
+else
+SOLIBS = $(LIBDIR)/crypto_drv.so \
+	 $(LIBDIR)/elibcrypto.so
+endif
+
+ELIBCRYPTO_UNDEFS = \
+	-u CRYPTO_set_mem_functions \
+	-u MD5 \
+	-u MD5_Init \
+	-u MD5_Update \
+	-u MD5_Final \
+	-u SHA1 \
+	-u SHA1_Init \
+	-u SHA1_Update \
+	-u SHA1_Final \
+	-u des_set_key \
+	-u des_ncbc_encrypt
+
+# ----------------------------------------------------
+# Targets
+# ----------------------------------------------------
+
+ifeq ($(findstring win32,$(TARGET)), win32)
+debug opt:
+	@echo "Native code libraries will need to be built on windows."
+else
+debug opt: $(OBJDIR) $(LIBDIR) $(SOLIBS)
+endif
+
+$(OBJDIR):
+	-@mkdir -p $(OBJDIR)
+
+$(LIBDIR):
+	-@mkdir -p $(LIBDIR)
+
+
+$(OBJDIR)/%.o: %.c
+	$(INSTALL_DIR) $(OBJDIR)
+	$(CC) -c -o $@ $(ALL_CFLAGS) $<
+
+$(OBJDIR)/elibcrypto.o:
+	$(INSTALL_DIR) $(OBJDIR)
+	$(LD) -r $(ELIBCRYPTO_UNDEFS) -L $(SSLEAY_LIBDIR) -lcrypto -o $@
+
+$(LIBDIR)/crypto_drv.so: $(CRYPTO_DRV_OBJS)
+	$(INSTALL_DIR) $(LIBDIR)
+	$(LD) $(LDFLAGS) $(soname) $(@F) -o $@ $^ -lc $(LIBS)
+
+$(LIBDIR)/elibcrypto.so: $(ELIBCRYPTO_OBJS)
+	$(INSTALL_DIR) $(LIBDIR)
+	$(LD) $(LDFLAGS) $(soname) $(@F) -o $@ $^ $(LIBGCC) -lc $(LIBS)
+
+clean:
+	rm -f $(SOLIBS) $(OBJS)
+	rm -f core *~
+
+docs:
+
+# ----------------------------------------------------
+# Release Target
+# ---------------------------------------------------- 
+include $(ERL_TOP)/make/otp_release_targets.mk
+
+release_spec: opt
+	$(INSTALL_DIR) $(RELSYSDIR)/priv/lib
+	$(INSTALL_PROGRAM) $(SOLIBS) $(RELSYSDIR)/priv/lib
+
+release_docs_spec:
+

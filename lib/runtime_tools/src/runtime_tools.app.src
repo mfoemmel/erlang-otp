@@ -1,0 +1,9 @@
+{application, runtime_tools,
+   [{description, "RUNTIME_TOOLS version 1"},
+    {vsn, "%VSN%"},
+    {modules, [dbg]},
+    {registered, []},
+    {applications, [kernel, stdlib]},
+    {env, []}]}.
+
+

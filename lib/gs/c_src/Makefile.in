@@ -1,0 +1,134 @@
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+# 
+#     $Id$
+#
+include $(ERL_TOP)/make/target.mk
+include $(ERL_TOP)/make/$(TARGET)/otp.mk
+
+# ----------------------------------------------------
+# Application version
+# ----------------------------------------------------
+include ../vsn.mk
+VSN=$(GS_VSN)
+
+# ----------------------------------------------------
+# The following variables differ on different systems, we set
+# reasonable defaults, if something different is needed it should
+# be set for that system only.
+# ----------------------------------------------------
+CC = @CC@
+SHELL = /bin/sh
+#                               # Since we mostly use gcc to compile the
+#                               # emulator, but we use cc to install, we must
+#                               # supply libgcc.a
+
+STRIP = strip			# Strip program, used at install time
+
+X_CFLAGS = @X_CFLAGS@
+CFLAGS = @CFLAGS@ @DEFS@ $(TYPE_FLAGS) $(X_CFLAGS) $(DEFINES) 
+CONFIGURE_FILES = ../configure ../configure.in
+
+
+XLIBS = -lX11
+LIBS = $(TK_LIB) $(TCL_LIB) $(XLIBS) @LIBS@ 
+
+TCL_VERSION = 7.6
+TK_VERSION  = 4.2
+
+# This is a nasty way to get the names of the static libraries.
+TK_LIB_FILE  = $(shell sed -n 's/^TK_UNSHARED_LIB_FILE[^=]*=[ ]*//p' $(LIBDIR)/tk4.2/unix/Makefile)
+TCL_LIB_FILE = $(shell sed -n 's/^TCL_UNSHARED_LIB_FILE[^=]*=[ ]*//p' $(LIBDIR)/tcl7.6/unix/Makefile)
+
+TK_LIB     = @TK_LIB@
+TCL_LIB    = @TCL_LIB@
+TCL_H      = @TCL_H@
+TCL_H_DIR  = @TCL_H_DIR@
+TCL2C      = @TCL2C@
+
+X_LIBS = @X_LIBS@
+LDFLAGS = $(X_LIBS)
+
+ifeq ($(TYPE),debug)
+TYPEMARKER = .debug
+TYPE_FLAGS = -g -DDEBUG 
+else
+TYPEMARKER =
+TYPE_FLAGS =
+endif
+
+ROOTDIR = ..
+BINDIR = $(ROOTDIR)/priv/bin
+LIBDIR = ./lib
+
+RELSYSDIR = $(RELEASE_PATH)/lib/gs-$(VSN)
+
+# ----------------------------------------------------
+# Common Macros
+# ----------------------------------------------------
+TCL_FILES =  gtk.tcl gtk_srv.tcl
+
+PROGRAMS= $(BINDIR)/gtk $(BINDIR)/killer $(BINDIR)/wrap
+
+# ----------------------------------------------------
+# Targets
+# ----------------------------------------------------
+
+debug opt:  @tcltklibs@ $(PROGRAMS)
+
+clean:
+	rm -f $(PROGRAMS) gtk.c
+	rm -f errs core *~
+	(cd lib/tcl7.6/unix; $(MAKE) clean)
+	(cd lib/tk4.2/unix; $(MAKE) clean)
+
+docs:
+
+tcltklibs:
+	(cd lib/tcl7.6/unix; $(MAKE))
+	(cd lib/tk4.2/unix; $(MAKE))
+
+gtk.c: $(TCL_FILES)
+	$(TCL2C) -o $@ $(TCL_FILES) -tk
+
+$(BINDIR)/gtk: gtk.c
+	$(INSTALL_DIR) $(BINDIR)
+	$(CC) gtk.c -I$(TCL_H_DIR) $(CFLAGS) $(LDFLAGS) $(LIBS)  -o $@
+
+$(BINDIR)/killer: killer.c
+	$(INSTALL_DIR) $(BINDIR)
+	$(CC) killer.c $(CFLAGS) -o $@
+
+$(BINDIR)/wrap: wrap.c
+	$(INSTALL_DIR) $(BINDIR)
+	$(CC) wrap.c $(CFLAGS) -o $@
+
+$(BINDIR)/tcl2c: tcl2c.c
+	$(INSTALL_DIR) $(BINDIR)
+	$(CC) tcl2c.c $(CFLAGS) -o $@
+
+C_FILES = gtk.c killer.c wrap.c
+
+# ----------------------------------------------------
+# Release Target
+# ---------------------------------------------------- 
+include $(ERL_TOP)/make/otp_release_targets.mk
+
+release_spec: opt
+	$(INSTALL_DIR) $(RELSYSDIR)/priv/bin
+	$(INSTALL_PROGRAM) $(PROGRAMS) $(RELSYSDIR)/priv/bin
+
+release_docs_spec:
+

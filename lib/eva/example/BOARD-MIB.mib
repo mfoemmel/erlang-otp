@@ -1,0 +1,105 @@
+--BOARD-MIB.mib
+BOARD-MIB DEFINITIONS ::= BEGIN
+
+IMPORTS
+	DisplayString
+		FROM RFC1213-MIB
+	OBJECT-TYPE
+		FROM RFC-1212
+	experimental
+		FROM RFC1155-SMI
+	currentAlarmTime, currentAlarmSeverity, currentAlarmObject
+		FROM OTP-EVA-MIB;
+
+board	OBJECT IDENTIFIER ::= {experimental 1}
+
+boardTable OBJECT-TYPE
+	SYNTAX SEQUENCE OF BoardEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"Contains information about the boards in the system."
+	::= { board 1 }
+
+boardEntry OBJECT-TYPE
+	SYNTAX BoardEntry
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"A set of parameters for boards."
+	INDEX { boardIndex }
+	::= { boardTable 1 }
+
+BoardEntry ::= SEQUENCE {
+	boardIndex		INTEGER,
+	boardName		DisplayString,
+	boardType               DisplayString
+	}
+
+boardIndex OBJECT-TYPE
+	SYNTAX INTEGER
+	ACCESS not-accessible
+	STATUS mandatory
+	DESCRIPTION
+		"A unique index identifying each board."
+	::= { boardEntry 1 }
+
+boardName OBJECT-TYPE
+	SYNTAX DisplayString
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The name of the board."
+	::= { boardEntry 2 }
+
+boardType OBJECT-TYPE
+	SYNTAX DisplayString
+	ACCESS read-only
+	STATUS mandatory
+	DESCRIPTION
+		"The type of the board."
+	::= { boardEntry 3 }
+
+-- Events
+
+boardRemoved TRAP-TYPE
+	ENTERPRISE board
+	VARIABLES {
+		boardName
+		}
+	DESCRIPTION
+		"An event sent when a board is removed."
+	::= 1
+
+boardInserted TRAP-TYPE
+	ENTERPRISE board
+	VARIABLES {
+		boardName,
+		boardType
+		}
+	DESCRIPTION
+		"An event sent when a board is inserted."
+	::= 2
+
+-- Alarms
+
+boardFailure TRAP-TYPE
+	ENTERPRISE board
+	VARIABLES {
+		currentAlarmTime,
+		currentAlarmSeverity,
+		currentAlarmObject,
+		boardName
+		}
+	DESCRIPTION
+		"An alarm sent when a board failure is detected."
+	::= 3
+
+-- Causes
+
+fire OBJECT IDENTIFIER ::= {board 2}
+-- DESCRIPTION
+--	"The board is on fire."
+
+END
+--BOARD-MIB.mib

@@ -1,0 +1,341 @@
+<HTML>
+<HEAD>
+<TITLE>ASN1 Release Notes (Old)</TITLE>
+</HEAD>
+<BODY BGCOLOR="#FFFFFF">
+<BLOCKQUOTE>
+<P>This document describes the changes made to old versions of the <CODE>asn1</CODE> application.
+
+<H2>Asn1 1.1.3.1</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+BER Encoding and decoding of <CODE>ENUMERATED</CODE> 
+with extensionmark
+"..." did not work (crashed with a runtime error). This
+has now been corrected. If an unknown enumerated value is
+decoded (for an extensible enumerated type) 
+it is returned as <CODE>{asn1_enum,Value}</CODE> where
+<CODE>Value</CODE> is an integer. Enumerated values in this format
+are also accepted by the encoder.  
+ASN.1 modules containing 
+<CODE>ENUMERATED</CODE> with extensionmark should be 
+recompiled with the corrected
+version of the compiler. The BER runtime functions are also
+corrected.
+Note that this correction has already been delivered as a
+bugfix for R4B (OTP-2951).
+<br>Own Id: OTP-3202<br>
+Aux Id: Seq3745
+
+
+</UL>
+
+<H2>Asn1 1.1.1</H2>
+<H3>Known problems</H3>
+
+<UL>
+
+<LI>
+The syntactic construct <CODE>COMPONENTS OF</CODE> is not
+implemented.
+<br>Own Id: OTP-2515
+
+
+<LI>
+<CODE>ANY</CODE> and <CODE>ANY DEFINED BY</CODE> are currently not 
+supported.
+<br>Own Id: OTP-2741<br>
+Aux Id: seq 1188
+
+
+<LI>
+Multiple definitions of the same Type or Value is not detected
+by the compiler. The error occurs when the generated Erlang
+module is compiled.
+<br>Own Id: OTP-3105
+
+
+</UL>
+<H2>Asn1 1.1</H2>
+<H3>Known problems</H3>
+
+<UL>
+
+<LI>
+The primitive/constructed bit in the tag byte of an encoding
+is not correct when it comes to user defined tags.
+For example in <CODE> T ::= [2] SEQUENCE { a BOOLEAN} </CODE> 
+the tag 2 does not get the constructed bit set which it should.
+This is now corrected.
+<br>Own Id: OTP-3241
+
+
+</UL>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+The BER decoder failed to decode certain nested data types
+where <CODE>IMPLICIT</CODE> tags where involved. 
+This is now corrected.
+<br>Own Id: OTP-2719<br>
+Aux Id: seq 1148
+
+
+<LI>
+The handling of types with extension marker "..." is corrected.
+Earlier each SEQUENCE and SET with an extension marker got an
+extra field named <CODE>asn1_EXT</CODE> in the generated record.
+This was a mistake and that field is now removed (conserns
+both BER and BER).
+<br>Own Id: OTP-2724<br>
+Aux Id: seq 1148, OTP-2719
+
+
+<LI>
+The decoder (both BER and PER) could not handle unnamed
+bits of a <CODE>BIT STRING</CODE> if the type had any 
+named bits declared. This is now corrected and the unnamed
+bits are returned as <CODE>{bit,Pos}</CODE> where Pos is the bit 
+position. The <CODE>{bit,Pos}</CODE> can be used as input to the
+encoder too.
+<br>Own Id: OTP-2725<br>
+Aux Id: seq 1148,OTP-2719,OTP-2724
+
+
+<LI>
+The functions <CODE>asn1rt:decode</CODE> and <CODE>asn1ct:decode</CODE>
+did not always return <CODE>{ok,Result}</CODE> or 
+<CODE>{error,Reason}</CODE> as documented. This is now corrected.
+<br>Own Id: OTP-2730<br>
+Aux Id: seq 1158
+
+
+<LI>
+The compiler did not accept CHOICE types as components 
+of a SEQUENCE or SET when
+the modules tag default was IMPLICIT. 
+Example:<br>
+<code>
+C ::= CHOICE { ......}
+A ::= SEQUENCE {
+a [1] C, -- This was not accepted
+.....
+</code>		
+This was an error
+caused by a misinterpretation of the ASN.1 standard. This
+is now corrected.
+<br>Own Id: OTP-2731<br>
+Aux Id: seq 1163
+
+
+<LI>
+When decoding a SEQUENCE A which contains an OPTIONAL component
+b which is a SEQUENCE with mandatory components, the decoder
+does not detect as an error that a mandatory component of b
+is missing. The same error could occur also in other cases
+with nested types and optional components of SEQUENCE or SET.
+This is now corrected.
+<br>Own Id: OTP-2738<br>
+Aux Id: seq 1183
+
+
+<LI>
+BER Encoding and decoding of <CODE>ENUMERATED</CODE> 
+with extensionmark
+"..." did not work (crashed with a runtime error). This
+has now been corrected. If an unknown enumerated value is
+decoded (for an extensible enumerated type) 
+it is returned as <CODE>{asn1_enum,Value}</CODE> where
+<CODE>Value</CODE> is an integer. Enumerated values in this format
+are also accepted by the encoder.  
+ASN.1 modules containing 
+<CODE>ENUMERATED</CODE> with extensionmark should be 
+recompiled with the corrected
+version of the compiler. The BER runtime functions are also
+corrected.
+<br>Own Id: OTP-2951<br>
+Aux Id: Seq 1446 OTP-2929
+
+
+<LI>
+The compiler does now accept all valid value notations
+for the OBJECT IDENTIFIER type. The generated code for
+those values is also corrected.
+<br>Own Id: OTP-3059
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The code generated for BER is significantly enhanced resulting
+in less code and around 300% better performance in runtime 
+for the encoding of complex ASN.1 values. The performance of
+decoding is unchanged.
+<br>Own Id: OTP-2806
+
+</UL>
+
+<H2>Asn1 1.0.3</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+The <CODE>asn1.app</CODE> file is corrected.
+<br>Own Id: OTP-2640
+
+
+<LI>
+The encoding of integers in BER did not comply with the
+standard for all values. The values was not encoded
+in the minimum number of octets as required. This is
+now corrected in the runtime module <CODE>asn1rt_ber</CODE>.
+<br>Own Id: OTP-2666
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The compiler now generates explicit exports directives for 
+all generated
+functions that should be exported (instead of -compile(export_all)). 
+This eliminates the warnings from the Erlang compiler when 
+compiling the 
+generated file.
+<br>Own Id: OTP-1845
+
+</UL>
+
+
+<H2>R3B02 (Asn1 1.0.2)</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+The decoding of a BER encoded SEQUENCE with optional component
+of type SEQUENCE (also with optional components) could result 
+in an error or wrong result if the tags are equal.
+<br>Own Id: OTP-2226
+
+
+<LI>
+The encoding of (PER) SEQUENCE with extensionmark was wrong.
+This is now corrected.
+<br>Own Id: OTP-2349
+
+
+</UL>
+<H2>R3A (Asn1 0.9)</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+The asn1 compiler now detects the use of an implicit tag before <CODE>CHOICE</CODE> as an error (in accordance with the standard)
+<br>Own Id: OTP-1844
+
+
+<LI>
+An OPTIONAL CHOICE embedded in SEQUENCE when BER coding
+caused an error when generating decode code. This is now
+corrected.
+<br>Own Id: OTP-1857<br>
+Aux Id: OTP-1848
+
+
+</UL>
+
+<A NAME="1"><!-- Empty --></A><H2>1 ASN1 0.8.1</H2><P>This is the first release of the ASN1 application. This version is released
+for beta-testing. Some functionality will be added until the 1.0 version is
+released. See the release notes for the latest version for the exact details about new features. A list of missing features and restrictions can be found in the
+chapter below.
+
+<A NAME="1.1"><!-- Empty --></A><H3>1.1 Missing features and other restrictions</H3><P><UL>
+<LI> 
+         The encoding rules BER and PER (aligned) is supported. <STRONG>PER (unaligned) 
+         IS NOT SUPPORTED</STRONG>.
+        <BR>
+<LI> 
+         NOT SUPPORTED types <CODE>ANY</CODE> and <CODE>ANY DEFINED BY</CODE> 
+         (is not in the standard any more).
+        <BR>
+<LI> 
+         NOT SUPPORTED types <CODE>EXTERNAL</CODE> and <CODE>EMBEDDED-PDV</CODE>. 
+        <BR>
+<LI> 
+         NOT SUPPORTED type <CODE>REAL</CODE> (planned to be implemented). 
+        <BR>
+<LI> 
+         The code generation support for value definitions in the ASN.1 notation is very limited
+         (planned to be enhanced).
+        <BR>
+<LI>     The support for constraints is limited to:
+         <BR>
+<UL>
+<LI>            SizeConstraint  SIZE(X)
+         <BR>
+<LI>            SingleValue     (1)
+         <BR>
+<LI>            ValueRange      (X..Y)
+         <BR>
+<LI>            PermittedAlpabet FROM (but not for BMPString and UniversalString when generating PER).
+         <BR>
+</UL>
+
+         Complex expressions in constraints is not supported (planned to be extended).
+        <BR>
+<LI> 
+         The current version of the compiler has very limited error checking:
+         <BR>
+<UL>
+<LI>Stops at first syntax error.
+         <BR>
+<LI>Does not stop when a reference to an undefined type is found , 
+                but prints an error message. Compilation of the generated 
+                Erlang module will then fail.
+         <BR>
+<LI>A whole number of other semantical controls is currently missing. This
+                means that the compiler will give little or bad help to detect what's wrong
+                with an ASN.1 specification, but will mostly work very well when the
+                ASN.1 specification is correct.
+         <BR>
+</UL>
+
+        <LI> 
+         The maximum INTEGER supported in this version is a signed 64 bit integer. This
+         limitation is probably quite reasonable. (Planned to be extended).
+        <BR>
+<LI> 
+         Only AUTOMATIC TAGS supported for PER.
+        <BR>
+<LI> 
+         Only EXPLICIT and IMPLICIT TAGS supported for BER.
+        <BR>
+<LI> 
+         The compiler supports decoding of BER-data with indefinite length but it is 
+         not possible to produce data with indefinite length with the encoder. 
+<BR>
+</UL>
+</BLOCKQUOTE>
+<CENTER>
+<HR>
+<FONT SIZE=-1>
+Copyright &copy; 1991-99
+<A HREF="http://www.ericsson.se">Ericsson Utvecklings AB</A><BR>
+<!--#include virtual="/ssi/otp_footer.html"-->
+</FONT>
+</CENTER>
+</BODY>
+</HTML>

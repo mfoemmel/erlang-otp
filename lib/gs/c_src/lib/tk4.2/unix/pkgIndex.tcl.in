@@ -1,0 +1,5 @@
+# Tcl package index file, version 1.0
+
+package ifneeded Tk @TK_VERSION@ [list load [file join $dir @TK_SHARED_LIB_FILE@] Tk]
+package ifneeded Tksquare @TK_VERSION@ [list tclPkgSetup $dir Tksquare @TK_VERSION@ {{Tksquare@SHLIB_SUFFIX@ load square}}]
+package ifneeded Tktest @TK_VERSION@ [list tclPkgSetup $dir Tktest @TK_VERSION@ {{Tktest@SHLIB_SUFFIX@ load {testdeleteapps testevent testmakeexist testsend}}}]

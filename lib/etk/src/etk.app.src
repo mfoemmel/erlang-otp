@@ -1,0 +1,10 @@
+{application, etk,
+ [{description, "ErlTk - Erlang Tk binding"},
+  {vsn, "%VSN%"},
+  {modules, [tk, etk, etk_menu, tklib,
+	tkbutton, tkentry, tklistbox, tkmenu, tkscale, tkscrlbar, tktext,
+	tkconsole, tkdialog, tkfocus, tkoptmenu, tkrender, tktearoff,
+	tkstr]},
+  {registered, [tk]},
+  {applications, [kernel, stdlib]}
+]}.

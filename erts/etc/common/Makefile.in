@@ -1,0 +1,270 @@
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+# 
+#     $Id$
+#
+include $(ERL_TOP)/make/target.mk
+
+ifeq ($(TYPE),debug)
+PURIFY =
+TYPEMARKER = .debug
+TYPE_FLAGS = -DDEBUG @DEBUG_FLAGS@
+else
+ifeq ($(TYPE),purify)
+PURIFY = purify
+TYPEMARKER =
+TYPE_FLAGS = -g -O2 -DPURIFY
+else
+PURIFY =
+TYPEMARKER =
+TYPE_FLAGS =
+endif
+endif
+
+include $(ERL_TOP)/make/$(TARGET)/otp.mk
+include ../../vsn.mk
+
+CC        = @CC@
+WFLAGS    = @WFLAGS@
+CFLAGS    = @CFLAGS@ @DEFS@ $(TYPE_FLAGS) @WFLAGS@ -I$(SYSDIR) -I$(EMUDIR)
+LD        = @LD@
+LIBS      = @LIBS@
+LDFLAGS   = @LDFLAGS@
+
+BINDIR    = $(ERL_TOP)/bin/$(TARGET)
+OBJDIR    = $(ERL_TOP)/erts/obj$(TYPEMARKER)/$(TARGET)
+EMUDIR    = $(ERL_TOP)/erts/emulator/beam
+SYSDIR    = $(ERL_TOP)/erts/emulator/sys/@OSTYPE@
+DRVDIR    = $(ERL_TOP)/erts/emulator/drivers/@OSTYPE@
+ERLINTDIR = $(ERL_TOP)/lib/erl_interface/src
+VXETC     = ../vxworks
+UXETC     = ../unix
+
+ifeq ($(findstring vxworks,$(TARGET)), vxworks)
+ERLEXEC = erl.exec
+else
+ERLEXEC = erlexec
+endif
+
+# ----------------------------------------------------
+# Release directory specification
+# ----------------------------------------------------
+
+INSTALL         = @INSTALL@
+INSTALL_DIR     = $(INSTALL) -d
+INSTALL_PROGRAM = @INSTALL_PROGRAM@
+INSTALL_DATA    = @INSTALL_DATA@
+
+ifeq ($(findstring solaris,$(TARGET)),solaris)
+INSTALL_EMBEDDED_PROGS = $(BINDIR)/run_erl $(BINDIR)/to_erl $(BINDIR)/wd_keeper
+INSTALL_EMBEDDED_DATA = ../unix/start.src ../unix/start_erl.src
+endif
+
+ifeq ($(findstring vxworks,$(TARGET)), vxworks)
+INSTALL_EMBEDDED_PROGS = $(BINDIR)/erl_io $(BINDIR)/rdate $(BINDIR)/vxcall
+INSTALL_EMBEDDED_DATA = $(BINDIR)/erl_script.sam $(VXETC)/resolv.conf
+INSTALL_INCLUDES = $(VXETC)/reclaim.h
+INSTALL_TOP = $(VXETC)/README.VxWorks
+INSTALL_MISC =
+INSTALL_SRC = heart.c $(VXETC)/heart_config.h $(VXETC)/heart_config.c  \
+		$(VXETC)/erl.exec.c $(VXETC)/rdate.c $(VXETC)/vxcall.c \
+		$(VXETC)/erl_io.c
+ERLEXECDIR = $(VXETC)
+INSTALL_LIBS = $(OBJDIR)/reclaim.o
+INSTALL_OBJS = $(OBJDIR)/heart.o
+TEXTFILES = $(BINDIR)/erl_script.sam
+else
+INET_GETHOST = $(BINDIR)/inet_gethost
+INSTALL_EMBEDDED_PROGS += $(BINDIR)/erlc
+INSTALL_TOP = Install
+INSTALL_MISC = ../unix/format_man_pages ../unix/makewhatis
+INSTALL_SRC = ../unix/setuid_socket_wrap.c #delivered as an example
+ERLEXECDIR = .
+INSTALL_LIBS =
+INSTALL_OBJS =
+INSTALL_INCLUDES =
+TEXTFILES = Install erl.src
+endif
+
+INSTALL_NOTES = \
+	$(ERL_TOP)/erts/notes.html \
+	$(ERL_TOP)/erts/notes_history.html
+
+INSTALL_PROGS =              \
+	$(INET_GETHOST)      \
+	$(BINDIR)/heart      \
+	$(BINDIR)/$(ERLEXEC) \
+	$(INSTALL_EMBEDDED_PROGS)
+
+
+etc:	$(INSTALL_PROGS) $(INSTALL_LIBS) $(TEXTFILES)
+
+docs:
+
+clean:
+	rm -f *~ core
+
+#
+# Objects & executables
+#
+#$(OBJDIR)/%.o: %.c
+#	$(CC) $(CFLAGS) -o $@ -c $<
+#
+#$(OBJDIR)/%.o: ../unix/%.c
+#	$(CC) $(CFLAGS) -o $@ -c $<
+#
+#$(BINDIR)/%: $(OBJDIR)/%.o
+#	$(PURIFY) $(LD) $(LDFLAGS) -o $@ $< $(LIBS)
+
+$(OBJDIR)/inet_gethost.o: inet_gethost.c
+	$(CC) $(CFLAGS) -o $@ -c inet_gethost.c
+
+$(BINDIR)/inet_gethost: $(OBJDIR)/inet_gethost.o
+	$(PURIFY) $(LD) $(LDFLAGS) -o $@ $(OBJDIR)/inet_gethost.o $(LIBS)
+
+$(BINDIR)/run_erl: $(OBJDIR)/run_erl.o
+	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/run_erl.o
+
+$(OBJDIR)/run_erl.o: ../unix/run_erl.c
+	$(CC) $(CFLAGS) -o $@ -c ../unix/run_erl.c
+
+$(BINDIR)/to_erl: $(OBJDIR)/to_erl.o
+	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/to_erl.o
+
+$(OBJDIR)/to_erl.o: ../unix/to_erl.c
+	$(CC) $(CFLAGS) -o $@ -c ../unix/to_erl.c
+
+$(BINDIR)/wd_keeper: $(OBJDIR)/wd_keeper.o
+	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/wd_keeper.o
+
+$(OBJDIR)/wd_keeper.o: ../unix/wd_keeper.c
+	$(CC) $(CFLAGS) -o $@ -c ../unix/wd_keeper.c
+
+$(BINDIR)/$(ERLEXEC): $(OBJDIR)/$(ERLEXEC).o
+	$(PURIFY) $(LD) $(LDFLAGS) -o $@ $(OBJDIR)/$(ERLEXEC).o
+
+$(OBJDIR)/$(ERLEXEC).o: $(ERLEXECDIR)/$(ERLEXEC).c
+	$(CC) -I$(EMUDIR) $(CFLAGS) -o $@ -c $(ERLEXECDIR)/$(ERLEXEC).c
+
+$(BINDIR)/erlc: $(OBJDIR)/erlc.o
+	$(PURIFY) $(LD) $(LDFLAGS) -o $@ $(OBJDIR)/erlc.o -L$(OBJDIR) $(LIBS)
+
+$(OBJDIR)/erlc.o: erlc.c
+	$(CC) -I$(ERLINTDIR) $(CFLAGS) -o $@ -c erlc.c
+
+ifeq ($(findstring vxworks,$(TARGET)), vxworks)
+$(BINDIR)/heart: $(OBJDIR)/heart.o $(OBJDIR)/heart_config.o 
+	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/heart.o $(OBJDIR)/heart_config.o
+
+$(OBJDIR)/heart_config.o: $(VXETC)/heart_config.c
+	$(CC) $(CFLAGS) -o $@ -c $(VXETC)/heart_config.c
+
+$(OBJDIR)/reclaim.o: $(VXETC)/reclaim.c
+	$(CC) $(CFLAGS) -o $@ -c $(VXETC)/reclaim.c
+
+$(OBJDIR)/heart.o: heart.c
+	$(CC) $(CFLAGS) -I$(VXETC) -o $@ -c heart.c
+
+$(BINDIR)/erl_script.sam: $(VXETC)/erl_script.sam.in ../../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' \
+		$(VXETC)/erl_script.sam.in > $(BINDIR)/erl_script.sam
+else
+
+$(BINDIR)/heart: $(OBJDIR)/heart.o
+	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/heart.o
+
+$(OBJDIR)/heart.o: heart.c
+	$(CC) $(CFLAGS) -o $@ -c heart.c
+
+endif
+
+
+# VxWorks specific executables and objects ...
+
+$(BINDIR)/erl_io: $(OBJDIR)/erl_io.o
+	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/erl_io.o
+
+$(OBJDIR)/erl_io.o: $(VXETC)/erl_io.c
+	$(CC) $(CFLAGS) -o $@ -c $(VXETC)/erl_io.c
+
+$(BINDIR)/rdate: $(OBJDIR)/rdate.o
+	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/rdate.o
+
+$(OBJDIR)/rdate.o: $(VXETC)/rdate.c
+	$(CC) $(CFLAGS) -o $@ -c $(VXETC)/rdate.c
+
+$(BINDIR)/vxcall: $(OBJDIR)/vxcall.o
+	$(LD) $(LDFLAGS) -o $@ $(OBJDIR)/vxcall.o
+
+$(OBJDIR)/vxcall.o: $(VXETC)/vxcall.c
+	$(CC) $(CFLAGS) -o $@ -c $(VXETC)/vxcall.c
+
+
+
+Install:	../unix/Install.src ../../vsn.mk $(TARGET)/Makefile
+	sed -e 's;%I_VSN%;$(VSN);' \
+	    -e 's;%EMULATOR%;$(EMULATOR);' \
+            -e 's;%EMULATOR_NUMBER%;$(EMULATOR_NUMBER);' \
+	    -e 's;%I_SYSTEM_VSN%;$(SYSTEM_VSN);' \
+          ../unix/Install.src > Install
+
+erl.src: ../unix/erl.src.src ../../vsn.mk $(TARGET)/Makefile
+	sed -e 's;%EMULATOR%;$(EMULATOR);' \
+            -e 's;%EMULATOR_NUMBER%;$(EMULATOR_NUMBER);' \
+            -e 's;%VSN%;$(VSN);' \
+                  ../unix/erl.src.src > erl.src
+
+# ----------------------------------------------------
+# Release Target
+# ---------------------------------------------------- 
+include $(ERL_TOP)/make/otp_release_targets.mk
+
+release_spec: etc
+ifneq ($(INSTALL_OBJS),)
+	$(INSTALL_DIR) $(RELEASE_PATH)/erts-$(VSN)/obj
+	$(INSTALL_DATA) $(INSTALL_OBJS) $(RELEASE_PATH)/erts-$(VSN)/obj
+endif
+	$(INSTALL_DIR) $(RELEASE_PATH)/erts-$(VSN)/bin
+ifneq ($(findstring vxworks,$(TARGET)), vxworks)
+	$(INSTALL_PROGRAM) erl.src $(RELEASE_PATH)/erts-$(VSN)/bin
+endif
+	$(INSTALL_PROGRAM) $(INSTALL_PROGS) $(RELEASE_PATH)/erts-$(VSN)/bin
+	$(INSTALL_PROGRAM) $(INSTALL_TOP) $(RELEASE_PATH)
+ifneq ($(INSTALL_MISC),)
+	$(INSTALL_DIR) $(RELEASE_PATH)/misc
+	$(INSTALL_PROGRAM) $(INSTALL_MISC) $(RELEASE_PATH)/misc
+endif
+ifneq ($(INSTALL_SRC),)
+	$(INSTALL_DIR) $(RELEASE_PATH)/erts-$(VSN)/src
+	$(INSTALL_DATA) $(INSTALL_SRC) $(RELEASE_PATH)/erts-$(VSN)/src
+endif
+	$(INSTALL_DATA) $(INSTALL_NOTES) $(RELEASE_PATH)/erts-$(VSN)
+ifneq ($(INSTALL_EMBEDDED_DATA),)
+	$(INSTALL_DATA) $(INSTALL_EMBEDDED_DATA) $(RELEASE_PATH)/erts-$(VSN)/bin
+endif
+ifneq ($(INSTALL_LIBS),)
+	$(INSTALL_DATA) $(INSTALL_LIBS) $(RELEASE_PATH)/erts-$(VSN)/bin
+endif
+ifneq ($(INSTALL_INCLUDES),)
+	$(INSTALL_DIR) $(RELEASE_PATH)/erts-$(VSN)/include
+	$(INSTALL_DATA) $(INSTALL_INCLUDES) $(RELEASE_PATH)/erts-$(VSN)/include
+endif
+
+release_docs_spec:
+
+
+
+
+

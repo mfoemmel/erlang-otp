@@ -1,0 +1,172 @@
+
+define([AC_CACHE_LOAD], )dnl
+define([AC_CACHE_SAVE], )dnl
+
+dnl Process this file with autoconf to produce a configure script.
+AC_INIT(c_src/killer.c)
+
+if test -z "$ERL_TOP" || test ! -d $ERL_TOP ; then
+  AC_MSG_ERROR(You need to set the environment variable ERL_TOP!)
+fi
+erl_top=${ERL_TOP}
+AC_CONFIG_AUX_DIRS($erl_top/erts/autoconf)
+
+AC_CANONICAL_HOST
+
+dnl
+dnl Figure out if we have prebuilt tcl/tk libs we can link with...
+dnl
+AC_SUBST(TK_LIB)
+AC_SUBST(TCL_LIB)
+AC_SUBST(TCL2C)
+AC_SUBST(TCL_H)
+AC_SUBST(TCL_H_DIR)
+AC_SUBST(tcltklibs)
+
+system_type=${host_cpu}_`echo $host_os | sed 's/^\([[^\.]]*\)\.\(.*\)$/\1/'`
+
+AC_MSG_CHECKING(where to find the tcl/tk libraries)
+if test -d c_src/$system_type ; then
+    TK_LIB=$system_type/libtk'$(TK_VERSION).a'
+    TCL_LIB=$system_type/libtcl'$(TCL_VERSION).a'
+    TCL2C="$system_type/tcl2c"
+    TCL_H_DIR="$system_type"
+    tcltklibs=""
+    AC_MSG_RESULT(prebuilt in c_src/$system_type)
+else
+    TK_LIB='$(LIBDIR)/tk4.2/unix/$(TK_LIB_FILE)'
+    TCL_LIB='$(LIBDIR)/tcl7.6/unix/$(TCL_LIB_FILE)'
+    TCL_H='$(LIBDIR)/tcl7.6/generic/tcl.h'
+    TCL_H_DIR='$(LIBDIR)/tcl7.6/generic'
+    TCL2C='$(LIBDIR)/tcl7.6/unix/tcl2c'
+    tcltklibs="tcltklibs"
+    AC_MSG_RESULT(using sources in c_src/lib)
+    AC_CONFIG_SUBDIRS(c_src/lib/tcl7.6/unix c_src/lib/tk4.2/unix)
+fi
+
+AC_PROG_CC
+AC_PROG_RANLIB
+
+#--------------------------------------------------------------------
+# ld is used for linking on vxworks
+#--------------------------------------------------------------------
+LD='$(CC)'
+AC_SUBST(LD)
+
+
+dnl Checks for libraries.
+
+dnl Find additional X libraries, magic flags, etc.
+AC_DEFUN(LOCAL_PATH_XTRA,
+[AC_REQUIRE([AC_ISC_POSIX])dnl
+AC_REQUIRE([AC_PATH_X])dnl
+if test "$no_x" = yes; then
+  # Not all programs may use this symbol, but it does not hurt to define it.
+  X_CFLAGS="$X_CFLAGS -DX_DISPLAY_MISSING"
+else
+  if test -n "$x_includes"; then
+    X_CFLAGS="$X_CFLAGS -I$x_includes"
+  fi
+
+  # It would be nice to have a more robust check for the -R ld option than
+  # just checking for Solaris.
+  # It would also be nice to do this for all -L options, not just this one.
+  if test -n "$x_libraries"; then
+    X_LIBS="$X_LIBS -L$x_libraries"
+    if test "`(uname) 2>/dev/null`" = SunOS &&
+      uname -r | grep '^5' >/dev/null; then
+      X_LIBS="$X_LIBS -R$x_libraries"
+    fi
+  fi
+
+  # Check for libraries that X11R6 Xt/Xaw programs need.
+
+  ac_save_LDFLAGS="$LDFLAGS"
+  LDFLAGS="$LDFLAGS -L$x_libraries"
+  # SM needs ICE to (dynamically) link under SunOS 4.x (so we have to
+  # check for ICE first), but we must link in the order -lSM -lICE or
+  # we get undefined symbols.  So assume we have SM if we have ICE.
+  # These have to be linked with before -lX11, unlike the other
+  # libraries we check for below, so use a different variable.
+  #  --interran@uluru.Stanford.EDU, kb@cs.umb.edu.
+  AC_CHECK_LIB(ICE, IceConnectionNumber,
+    [X_PRE_LIBS="$X_PRE_LIBS -lSM -lICE"])
+  LDFLAGS="$ac_save_LDFLAGS"
+
+  # Check for system-dependent libraries X programs must link with.
+
+  if test "$ISC" = yes; then
+    X_EXTRA_LIBS="$X_EXTRA_LIBS -lnsl_s -linet"
+  else
+    # Martyn.Johnson@cl.cam.ac.uk says this is needed for Ultrix, if the X
+    # libraries were built with DECnet support.  And karl@cs.umb.edu says
+    # the Alpha needs dnet_stub (dnet does not exist).
+    AC_CHECK_LIB(dnet, dnet_ntoa, [X_EXTRA_LIBS="$X_EXTRA_LIBS -ldnet"])
+    if test "$ac_cv_lib_dnet" = no; then dnl Added "" around the variable here , Lars
+      AC_CHECK_LIB(dnet_stub, dnet_ntoa,
+        [X_EXTRA_LIBS="$X_EXTRA_LIBS -ldnet_stub"])
+    fi
+
+    # msh@cis.ufl.edu says -lnsl (and -lsocket) are needed for his 386/AT,
+    # to get the SysV transport functions.
+    # Not sure which flavor of 386 UNIX this is, but it seems harmless to
+    # check for it.
+    AC_CHECK_LIB(nsl, t_accept, [X_EXTRA_LIBS="$X_EXTRA_LIBS -lnsl"])
+
+    # lieder@skyler.mavd.honeywell.com says without -lsocket,
+    # socket/setsockopt and other routines are undefined under SCO ODT 2.0.
+    # But -lsocket is broken on IRIX, according to simon@lia.di.epfl.ch.
+    if test "`(uname) 2>/dev/null`" != IRIX; then
+      AC_CHECK_LIB(socket, socket, [X_EXTRA_LIBS="$X_EXTRA_LIBS -lsocket"])
+    fi
+  fi
+fi
+AC_SUBST(X_CFLAGS)dnl
+AC_SUBST(X_PRE_LIBS)dnl
+AC_SUBST(X_LIBS)dnl
+AC_SUBST(X_EXTRA_LIBS)dnl
+])
+
+LOCAL_PATH_XTRA
+
+AC_CHECK_LIB(SM, main, [R6_XLIBS = -lSM -lICE])
+AC_SUBST(R6_XLIBS)
+
+
+
+erl_checkBoth=0
+AC_CHECK_FUNC(connect, erl_checkSocket=0, erl_checkSocket=1)
+if test "$erl_checkSocket" = 1; then
+    AC_CHECK_LIB(socket, main, LIBS="$LIBS -lsocket", erl_checkBoth=1)
+fi
+if test "$erl_checkBoth" = 1; then
+    tk_oldLibs=$LIBS
+    LIBS="$LIBS -lsocket -lnsl"
+    AC_CHECK_FUNC(accept, erl_checkNsl=0, [LIBS=$tk_oldLibs])
+fi
+AC_CHECK_FUNC(gethostbyname, , AC_CHECK_LIB(nsl, main, [LIBS="$LIBS -lnsl"]))
+AC_CHECK_FUNC(gethostbyname_r,AC_DEFINE(HAVE_GETHOSTBYNAME_R))
+
+dnl Checks for library functions.
+AC_PROG_GCC_TRADITIONAL
+
+
+AC_CHECK_LIB(m, sin)
+
+AC_CHECK_LIB(dl, dlopen, [LIBS="$LIBS -ldl" DLDFLAGS="-shared -fPIC"])
+case $host_os in
+        linux*)
+                DEXPORT="-rdynamic" ;;
+        sysv4*)
+                AC_DEFINE(SOCKOPT_CONNECT_STAT)
+                AC_DEFINE(NO_SA_LEN)
+                AC_DEFINE(NO_PRAGMA_WEAK)
+                LIBS="$LIBS -lgen -lc -L /usr/ucblib -lucb"
+                DLDFLAGS="-G -z text"
+                DEXPORT="-Wl,-Bexport" ;;
+esac
+AC_SUBST(DLDFLAGS)
+
+
+AC_OUTPUT(c_src/$host/Makefile:c_src/Makefile.in)
+

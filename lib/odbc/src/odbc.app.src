@@ -1,0 +1,14 @@
+{application, odbc,
+ [{description, "ODBC XXX"},
+  {vsn, "%VSN%"},
+  {modules, [
+	     odbc,
+	     odbclli,
+	     oe_odbclli
+            ]},
+  {registered, [
+		odbc
+	       ]},
+  {applications, [kernel, stdlib]},
+  {mod, {odbc_app, odbc_server}}]}.
+

@@ -1,0 +1,257 @@
+<HTML>
+<HEAD>
+  <TITLE>Erts Release Notes</TITLE>
+</HEAD>
+
+<BODY BGCOLOR="#FFFFFF">
+
+<CENTER><H1>Erts Release Notes</H1></CENTER>
+<H2>Erts 4.9.1</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+<CODE>process_info(Pid, backtrace)</CODE> returned just a binary,
+not a tuple <CODE>{backtrace, Pid}</CODE>, as the documentation
+indicates.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3357
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+Funs are now a distinct type, not tuples as they used to be.
+Applications that assume that funs are tuples will no longer
+work. There are new BIFs <CODE>erlang:fun_info/2</CODE> which can be used
+to take funs apart and <CODE>erlang:fun_to_list/1</CODE> which returns
+a textual representation of a fun.
+<br>
+<p>Funs have their own external representaion
+when they are sent to other nodes. If a fun is sent to an
+old R5 node, it will automatically be converted to the old tuple
+form. Funs in the old tuple form received from other nodes will
+be recognized as funs in this version of OTP (R6), but not
+in R7.
+<br>
+<p>The <CODE>check_process_code/2</CODE> BIF will now return
+<CODE>true</CODE> if the process contains funs that depend on the
+old code of the module.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3364
+
+
+<LI>
+When Erlang was started the path to the runtime system was always
+added to the PATH environment variable. This could cause the PATH to
+grow indefinitely when Erlang was restarted by e.g. heart. The path is
+now only added if needed.
+<br>Own Id: OTP-3366
+
+
+<LI>
+The BIF <CODE>binary_to_term/1</CODE> will now ignore any garbage
+following the encoded term (as it used to do in versions of
+OTP before R3). The undocumented BIF
+<CODE>erlang:old_binary_to_term/1</CODE> (which is now equvivalent
+to <CODE>binary_to_term/1</CODE>) will be removed in a future
+release.
+<br>Own Id: OTP-3368
+
+
+</UL>
+<H2>Erts 4.9</H2>
+<H3>Known problems</H3>
+
+<UL>
+
+<LI>
+System enters unstable state if epmd crashes
+<br>Own Id: OTP-1067<br>
+Aux Id: tir-f-054
+
+
+</UL>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+If more than a few thousand timers (produced by
+<CODE>erlang:send_after</CODE> or <CODE>erlang:start_timer</CODE>)
+were active, the system became sluggish. This has been
+somewhat improved.
+<br>Own Id: OTP-3164<br>
+Aux Id: OTP-3192
+
+
+<LI>
+Matching on bignumbers was done incorrectly so that
+matching two different bignumbers would succeed.
+Also, 'case 38792784388877 of' (bignumber literal
+as control expression) would not load.
+These errors have been corrected.
+<br>Own Id: OTP-3188<br>
+Aux Id: Seq 3645
+
+
+<LI>
+For the particular number -134217728, the <CODE>abs</CODE> operator
+returned an incorrect result.
+<br>Own Id: OTP-3190
+
+
+<LI>
+When using zombies, about 1k bytes of memory leaked for every
+process becoming a zombie. In BEAM, keeping large number
+of zombies caused Erlang to use much more memory than
+necessary.
+<br>Own Id: OTP-3191
+
+
+<LI>
+The improved fun handling caused problems for the debugger.
+If you try interpret a module which have ever been loaded,
+the emulator will not invoke error_handler:undefined_lambda/3
+function when it doesn't find the fun.  Therefore, the
+debugger will never be invoked.  This has been fixed so that
+if the emualator doesn't find a fun in the loaded code for a module,
+it will invoke error_handler:undefined_lambda/3 if there is
+no current code for the module.
+<br>Own Id: OTP-3213
+
+
+<LI>
+erlang:old_term_to_binary/1 could crasch for certain forms
+of correct input.  This has been corrected.
+<br>Own Id: OTP-3216<br>
+Aux Id: Seq 8
+
+
+<LI>
+Too long argument lists to apply/2 or apply/3 used to crasch
+the emulator. This has been corrected. A <CODE>system_limit</CODE>
+exception will be generated.
+<br>Own Id: OTP-3255
+
+
+<LI>
+'Last change:' removed from manual page footers on 
+Solaris 2.
+<br>Own Id: OTP-3264
+
+
+<LI>
+The process_info(memory) call returns a more accurate number than
+in earlier releases.  More of the internal structures (old heap
+and book-keeping information for binaries) are included in the
+count.
+<br>Own Id: OTP-3328
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+<CODE>erlang:monitor/2</CODE> can now monitor processes on other
+nodes.
+<br>Own Id: OTP-3113<br>
+Aux Id: OTP-2818, OTP-3114
+
+
+<LI>
+The reference type has been extended from 18 bits to
+82 bits. For compatibility with older nodes, an R6 node
+can send a ref to an older node; if the older node sends
+it back, it has lost all but its 18 least significant
+bits, but still compares equal to the original ref.
+The external format has been extended to represent the new
+longer refs; that means for example that binaries with
+refs, produced on an R6 node, cannot be converted to a term
+on an older node.
+In <CODE>erl_interface</CODE>, a function <CODE>erl_mk_long_ref</CODE>
+has been added, and macros <CODE>ERL_REF_NUMBERS</CODE> and
+<CODE>ERL_REF_LEN</CODE>.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3140<br>
+Aux Id: OTP-3139
+
+
+<LI>
+BEAM only: The stack of a process was and is allocated as
+part of the heap. Therefore,
+<CODE>process_info(Pid, stack_size)</CODE>
+used to always return 0. Now, it instead returns the
+actually used size of the stack.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3173
+
+
+<LI>
+For each process, it is possible to save information about
+the last global calls made by the process.
+<CODE>process_flag(Pid, save_calls, N)</CODE> specifies that
+<CODE>N</CODE> calls are to be saved. The list of the last calls
+is obtained with <CODE>process_info(Pid, last_calls)</CODE>.
+<br>Own Id: OTP-3230
+
+
+<LI>
+The process dictionary is faster and optimized for integer 
+keys, which makes it suitable for storing incoming messages 
+to a gen_server.
+<br>Own Id: OTP-3233
+
+
+<LI>
+A mechanism to express function parameter matching and trace 
+actions is added to the emulator. It is used by the 
+erlang:trace_pattern/2 BIF. This allows users to express
+which actions to take as a result of  entering a traced 
+function based on parameter type and values. The descriptions 
+of parameter matching and associated actions are commonly 
+called match_spec's and are documented in the 
+erts users guide.
+<br>Own Id: OTP-3235
+
+
+<LI>
+Erlang is now resistant to operating system time changes. The 
+internal time, as reported by <CODE>erlang:now/0</CODE>, is slowly adjusted
+to match the system time without disturbing any erlang 
+processes.
+<br>Own Id: OTP-3262<br>
+Aux Id: Seq 3896
+
+
+<LI>
+Due to an oversight, the following improvement was
+left out of the documentation in previous releases:
+The operator <CODE>--</CODE> performs list subtraction.
+It is also available as the function <CODE>lists:subtract/2</CODE>.
+<br>Own Id: OTP-3318
+
+
+<LI>
+There is now a rudimentary flow control between processes
+on the same node. The cost of a send operation, counted in
+reductions, will be proportional to the length of the receiver's
+message queue. This means that a process sending continously
+to another process will be slowed down as the message queue
+of the receiver grows.
+<br>Own Id: OTP-3332
+
+
+</UL>
+
+
+There are also release notes for <A HREF="notes_history.html">older versions</A>.
+
+</body>
+</html>

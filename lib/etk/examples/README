@@ -1,0 +1,12 @@
+
+In this examples directory to etk we have two
+examples sofar.
+
+1. wtour -- An extensible programmable toy to learn about
+            etk, try it out as wtour:start() in the wtour
+            directory, (Remember to compile the erlang files first,
+            no object code is ditributed)
+
+
+2. mines  -- The boring game of mines.
+

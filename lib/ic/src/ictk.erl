@@ -1,0 +1,648 @@
+%% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%% 
+%%     $Id$
+%%
+-module(ictk).
+
+
+%% Toplevel generation functions
+-export([reg_gen/3, unreg_gen/1]).
+
+
+%% Utilities
+-export([get_IR_ID/3, get_IR_VSN/3, register_name/1, unregister_name/1]).
+
+-import(icgen, [get_id2/1, mk_name/2, mk_oe_name/2, nl/1, emit/2, 
+		emit/3, get_body/1, to_atom/1, to_atom/1, to_list/1,
+		get_idlist/1]).
+
+-include("icforms.hrl").
+-include("ic.hrl").
+
+%%--------------------------------------------------------------------
+%%
+%% IFR Registration Generation
+%%
+%%
+%%--------------------------------------------------------------------
+
+-define(IFRID(G), mk_name(G, "IFR")).
+-define(VARID(G), mk_name(G, "VAR")).
+-define(IFRMOD, orber_ifr).
+
+%% Used internally for debugging of symbol table store and lookup
+%%-define(DBG(F,A), io:format(F,A)).
+-define(DBG(F,A), ok).
+
+
+
+reg_gen(G, N, X) ->
+    ?DBG("Reg Gen: ~n", []),
+    S = icgen:tktab(G),
+    init_var(),
+    case icgen:is_stubfile_open(G) of
+	true ->
+	    Var = ?IFRID(G),
+	    Fd = icgen:stubfiled(G),
+	    nl(Fd), nl(Fd), nl(Fd),
+	    emit(Fd, "~p() ->\n", [to_atom(register_name(G))]),
+	    emit(Fd, "    ~s = ~p:find_repository(),\n",
+		 [Var, ?IFRMOD]),
+	    nl(Fd),
+	    
+            %% Write call function that checks if included
+            %% modules and interfaces are created.
+	    emit(Fd, "    include_reg_test(~s),\n",[?IFRID(G)]),
+	    
+	    reg2(G, S, N, "Repository_create_", Var, X),
+	    nl(Fd),
+	    emit(Fd, "    ok.\n"),
+
+            %% Write function implementation that checks 
+            %% existance of included modules and interfaces.
+	    emit(Fd, "~s",[check_include_regs(G)]);
+	false -> ok
+    end.
+
+
+
+%% reg2 is top level registration 
+reg2(G, S, N, C, V, X)  when list(X) -> reg2_list(G, S, N, C, V, X);
+
+reg2(G, S, N, C, V, X) when record(X, module) ->
+    NewV = r_emit2(G, S, N, C, V, X, "", []),
+    reg2_list(G, S, [get_id2(X) | N], "ModuleDef_create_", NewV, get_body(X));
+
+reg2(G, S, N, C, V, X) when record(X, const) ->
+    r_emit2(G, S, N, C, V, X, ", ~s, ~p", 
+	    [get_idltype(G, S, N, X), {X#const.tk, X#const.val}]);
+
+reg2(G, S, N, C, V, X) when record(X, struct) ->
+    do_struct(G, S, N, C, V, X, ic_forms:get_tk(X));
+
+reg2(G, S, N, C, V, X) when record(X, except) ->
+    do_except(G, S, N, C, V, X, ic_forms:get_tk(X));
+
+reg2(G, S, N, C, V, X) when record(X, union) ->
+    do_union(G, S, N, C, V, X, ic_forms:get_tk(X));
+
+reg2(G, S, N, C, V, X) when record(X, enum) ->
+    r_emit2(G, S, N, C, V, X, ", ~p", 
+	    [get_enum_member_list(G, S, N, get_body(X))]);
+
+reg2(G, S, N, C, V, X) when record(X, typedef) ->
+    do_typedef(G, S, N, C, V, X),
+    look_for_types(G, S, N, C, V, get_body(X));
+
+reg2(G, S, N, C, V, X) when record(X, attr) ->
+    XX = #id_of{type=X},
+    lists:foreach(fun(Id) -> r_emit2(G, S, N, C, V, XX#id_of{id=Id}, ", ~s, ~p",
+				     [get_idltype(G, S, N, X), get_mode(G, N, X)])
+		  end,
+		  get_idlist(X));
+
+reg2(G, S, N, C, V, X) when record(X, interface) ->
+    N2 = [get_id2(X) | N],
+    Body = get_body(X), 
+    BIs = get_base_interfaces(G,X), %% produce code for the interface inheritance
+    NewV = r_emit2(G, S, N, C, V, X, ", " ++ BIs,[]),
+    reg2_list(G, S, N2, "InterfaceDef_create_", NewV, Body);
+
+
+reg2(G, S, N, C, V, X) when record(X, op) ->
+    r_emit2(G, S, N, C, V, X, ", ~s, ~p, [~s], [~s], ~p",
+	    [get_idltype(G, S, N, X), get_mode(G, N, X), 
+	     get_params(G, S, N, X#op.params), get_exceptions(G, S, N, X),
+	     get_context(G, S, N, X)]);
+
+reg2(G, S, N, C, V, X)  when record(X, preproc) -> ok;
+
+reg2(G, S, N, C, V, X)  when record(X, pragma) -> ok;
+
+reg2(G, S, N, C, V, X) ->  ok.
+
+
+%% This function filters off all "#include <FileName>.idl" code that 
+%% come along from preprocessor and scanner. Produces code ONLY for
+%% the actuall file. See ticket OTP-2133
+reg2_list(G, S, N, C, V, []) -> [];
+reg2_list(G, S, N, C, V, List ) ->
+    CurrentFileName = icgen:idlfile(G), 
+    reg2_list(G, S, N, C, V, {CurrentFileName,true}, List).
+
+%% The filter function + loop 
+reg2_list(G, S, N, C, V, {CFN,Status}, []) -> [];
+reg2_list(G, S, N, C, V, {CFN,Status}, [X | Xs]) ->
+    case Status of 
+	true ->
+	    case X of
+		{preproc,_,{_,_,FileName},[{_,_,"1"}]} ->
+		    reg2_list(G, S, N, C, V, {CFN,false}, Xs);
+		_ ->
+		    F = reg2(G, S, N, C, V, X),
+		    [F | reg2_list(G, S, N, C, V, {CFN,Status}, Xs)]
+	    end;
+	false ->
+	    case X of
+		{preproc,_,{_,_,CFN},[{_,_,"2"}]} ->
+		    F = reg2(G, S, N, C, V, X),
+		    [F | reg2_list(G, S, N, C, V, {CFN,true}, Xs)];
+		_ ->
+		    reg2_list(G, S, N, C, V, {CFN,Status}, Xs)
+	    end
+    end.
+
+
+
+%% This function produces code for existance check over
+%% top level included modules and interfaces
+check_include_regs(G) ->
+    IfrId = ?IFRID(G),
+    case ic_pragma:get_incl_refs(G) of
+	none ->
+	    io_lib:format("~n%% No included idl-files detected.~n", []) ++
+	    io_lib:format("include_reg_test(~s) -> true.\n",[IfrId]);
+	IMs ->
+	    io_lib:format("~n%% IFR registration checks for included idl files.~n", []) ++
+	    io_lib:format("include_reg_test(~s) ->\n",[IfrId]) ++
+		check_incl_refs(G,IfrId,IMs)
+    end.
+
+check_incl_refs(_,_,[]) ->
+    io_lib:format("  true.\n",[]);
+check_incl_refs(G,IfrId,[[First]|Rest]) ->
+    ModId = ic_pragma:scope2id(G,First),
+    io_lib:format("  case orber_ifr:'Repository_lookup_id'(~s,~p) of~n", [IfrId,ModId]) ++
+	io_lib:format("    [] ->~n      exit({unregistered,~p});~n", [ModId]) ++
+	io_lib:format("    _  ->~n      true~n  end,~n",[]) ++
+	check_incl_refs(G,IfrId,Rest).
+
+
+
+
+do_typedef(G, S, N, C, V, X) ->
+    case icgen:is_stubfile_open(G) of
+	false -> ok;
+	true -> 
+	    Fd = icgen:stubfiled(G),
+	    Thing = get_thing_name(X),
+	    IR_VSN = get_IR_VSN(G, N, X),
+	    TK = ic_forms:get_tk(X),
+
+	    lists:foreach(
+	      fun(Id) ->
+		      r_emit_raw(Fd, "", C, Thing, V, 
+				 get_IR_ID(G, N, Id), get_id2(Id),
+				 IR_VSN, ", ~s", 
+				 [get_idltype_tk(G, S, N, 
+						 ictype:maybe_array(G, S, N, 
+							     Id, TK))])
+	      end, get_idlist(X))
+    end.
+
+
+do_union(G, S, N, C, V, X, {tk_union, IFRID, Name, DiscrTK, DefNr, L}) ->
+    N2 = [get_id2(X) | N],
+    r_emit2(G, S, N, C, V, X, ", ~s, [~s]", 
+	    [get_idltype_tk(G, S, N, DiscrTK),
+	     get_union_member_def(G, S, N2, L)]),
+    look_for_types(G, S, N2, C, V, get_body(X)).
+
+%%    r_emit2(G, S, N, C, V, X, ", [~s]", 
+%%	    [get_member_def(G, S, N, ElemList)]),
+%%    look_for_types(G, S, N2, C, V, ElemList).
+
+do_struct(G, S, N, C, V, X, {tk_struct, IFRID, Name, ElemList}) ->
+    N2 = [get_id2(X) | N],
+    r_emit2(G, S, N, C, V, X, ", [~s]", 
+	    [get_member_def(G, S, N, ElemList)]),
+    look_for_types(G, S, N2, C, V, get_body(X)).
+
+do_except(G, S, N, C, V, X, {tk_except, IFRID, Name, ElemList}) ->
+    N2 = [get_id2(X) | N],
+    r_emit2(G, S, N, C, V, X, ", [~s]", 
+	    [get_member_def(G, S, N, ElemList)]),
+    look_for_types(G, S, N2, C, V, get_body(X)).
+
+
+%% new_var finds an unused Erlang variable name by increasing a
+%% counter.
+new_var(G) ->
+    mk_name(G, integer_to_list(put(var_count, get(var_count) + 1))).
+init_var() ->
+    put(var_count, 1).
+
+%% Public interface. The name of the register function.
+register_name(G) ->
+    mk_oe_name(G, "register").
+unregister_name(G) ->
+    mk_oe_name(G, "unregister").
+
+
+
+look_for_types(G, S, N, C, V, L) when list(L) ->
+    lists:foreach(fun(X) -> look_for_types(G, S, N, C, V, X) end, L);
+look_for_types(G, S, N, C, V, {Name, TK}) ->	% member
+    look_for_types(G, S, N, C, V, TK);
+look_for_types(G, S, N, C, V, {tk_union, IFRID, Name, DT, Def, L}) ->
+    io:format("Found new union~n", []),
+    ok;
+look_for_types(G, S, N, C, V, {Label, Name, TK}) ->	% case_dcl
+    look_for_types(G, S, N, C, V, TK);
+look_for_types(G, S, N, C, V, {tk_struct, IFRID, Name, L}) ->
+    io:format("Found new struct~n", []),
+    ok;
+look_for_types(G, S, N, C, V, X) ->
+    ok.
+
+    
+
+
+%% This function produces code for the interface inheritance registration.
+%% It produces a string that represents a list of function calls.
+%% This list becomes a list of object references when the main function
+%% "orber_ifr:ModuleDef_create_interface" is called.
+
+get_base_interfaces(G,X) ->
+    case element(3,X) of
+	[] ->
+	    "[]";
+	L ->
+	    "[" ++ 
+		lists:flatten(
+		  lists:foldl( 
+		    fun(E, Acc) -> [call_fun_str(G,E), ", " | Acc] end, 
+		    call_fun_str(G,hd(L)), 
+		    tl(L)
+		   )
+		 ) ++ "]"
+    end.
+
+call_fun_str(G,S) ->
+    lists:flatten( 
+	io_lib:format("orber_ifr:lookup_id(~s,\"~s\")",
+		      [ ?IFRID(G),
+			ic_pragma:scope2id(G,S)] )).
+
+
+
+
+
+%%--------------------------------------------------------------------
+%%
+%% r_emit emits an IFR register function call. It returns a new
+%% variable (if further defs should be added to that one)
+%%
+%%	G is genobj
+%%
+%%	S is symbol table (ets)
+%%
+%%	N is list of ids describing scope
+%%
+%%	C is create stub (eg. "Repository_create_")
+%%
+%%	V is variable name where current def should be added,
+%%
+%%	X is the current def item,
+%%
+%%	F and A is auxillary format and args that will be io_lib
+%%	formatted and inserted as a string (don't forget to start with
+%%	", ")
+%%
+
+r_emit2(G, S, N, C, V, X) ->
+    r_emit2(G, S, N, C, V, X, "", []).
+r_emit2(G, S, N, C, V, X, F, A) ->
+    case icgen:is_stubfile_open(G) of
+	false -> ok;
+	true -> 
+	    {NewV, Str} = get_assign(G, V, X),
+	    r_emit_raw(icgen:stubfiled(G), Str, 
+		       C, get_thing_name(X), V, 
+		       get_IR_ID(G, N, X), get_id2(X), get_IR_VSN(G, N, X), 
+		       F, A),
+	    NewV
+    end.
+
+
+%%--------------------------------------------------------------------
+%%
+%% An IFR register line registers an entity (Thing) into the IFR. The
+%% thing is registered INTO something, an type is registered into a
+%% module for instance, and this is reflected in the Var parameter
+%% below. The var parameter is the name of the parent IFR object. The
+%% Thing parameter is the name of the thing we're trying to register,
+%% a typdef is called an alias and an interface is called an
+%% interface. Sometimes we need to store the thing we're registering
+%% into a variable because we're going to add other things to it
+%% later, modules and interfaces are such containers, so we must
+%% remember that variable for later use.
+%%
+%% All parameters shall be strings unless otherwise noted
+%%
+%% Fd		- File descriptor (not a string, stupid)
+%% AssignStr	- Assign or not, empty except for interfaces and modules
+%% Create	- Create has diff. names dep. on into what we register
+%% Thing	- WHAT is registered, interface
+%% Var		- The name of the variable we register into
+%% IR_ID	- The IFR identifier (may be "")
+%% Id		- The identifier (name) of the object
+%% IR_VSN	- The IFR version as a string
+%% AuxStr	- An auxillary string
+%%
+%%r_emit_raw(Fd, AssignStr, Create, Thing, Var, IR_ID, Id, IR_VSN) ->
+%%    r_emit_raw(Fd, AssignStr, Create, Thing, Var, IR_ID, Id, IR_VSN, "", []).
+r_emit_raw(Fd, AssignStr, Create, Thing, Var, IR_ID, Id, IR_VSN, F, A) ->
+    emit(Fd, "~n    ~s~p:~p(~s, \"~s\", \"~s\", \"~s\"~s),~n", 
+	 [AssignStr, ?IFRMOD, to_atom(Create++Thing), Var, IR_ID, Id, 
+	  IR_VSN, io_lib:format(F, A)]).
+
+
+
+%% Used by r_emit. Returns tuple {Var, Str} where Var is the resulting
+%% output var (if any, otherwise same as input arg) and Str is a
+%% string of the assignment if any ("" or "Var = ")
+get_assign(G, V, X) when record(X, module) ->
+    mk_assign(G);
+get_assign(G, V, X) when record(X, interface) ->
+    mk_assign(G);
+get_assign(G, V, X) -> {V, ""}.
+mk_assign(G) ->
+    V = new_var(G),
+    {V, io_lib:format("~s = ", [V])}.
+
+%% Returns a list of strings of all enum members (suitable for ~p)
+get_enum_member_list(G, S, N, L) ->
+    lists:map(fun(M) -> get_id2(M) end, L).
+
+%%enum_member2str(G, S, N, X) -> get_id2(X).
+%%    io_lib:format("~p", [get_id2(X)]).
+
+
+%% Will output a string of the union members.
+get_union_member_def(G, S, N, []) -> [];
+get_union_member_def(G, S, N, L) ->
+    [union_member2str(G, S, N, hd(L)) | 
+     lists:map(fun(M) -> [", ", union_member2str(G, S, N, M)] end, tl(L))].
+%%    lists:foldl(fun(M, Acc) -> 
+%%			[union_member2str(G, S, N, M),", " | Acc] end,
+%%		union_member2str(G, S, N, hd(L)), tl(L)).
+
+union_member2str(G, S, N, {Label, Name, TK}) ->
+    io_lib:format("~s{name=~p, label=~p, type=~p, type_def=~s}",
+		  ["#unionmember", Name, Label, TK, 
+		   get_idltype_tk(G, S, N, TK)]).
+
+
+%% Will output a string of the struct members. Works for exceptions
+%% and structs
+%%
+get_member_def(G, S, N, []) -> [];
+get_member_def(G, S, N, L) ->
+    [member2str(G, S, N, hd(L)) | 
+     lists:map(fun(M) -> [", ", member2str(G, S, N, M)] end, tl(L))].
+
+member2str(G, S, N, {Id, TK}) ->
+    io_lib:format("~s{name=~p, type=~p, type_def=~s}",
+		  ["#structmember", Id, TK, get_idltype_tk(G, S, N, TK)]).
+
+%% Translates between record names and create operation names. 
+get_thing_name(X) when record(X, op) -> "operation";
+get_thing_name(X) when record(X, const) -> "constant";
+get_thing_name(X) when record(X, typedef) -> "alias";
+get_thing_name(X) when record(X, attr) -> "attribute";
+get_thing_name(X) when record(X, except) -> "exception";
+get_thing_name(X) when record(X, id_of) -> get_thing_name(X#id_of.type);
+get_thing_name(X) -> to_list(element(1,X)).
+
+
+%% Returns the mode (in, out, oneway etc) of ops and params. Return
+%% value is an atom.
+get_mode(G, N, X) when record(X, op) ->
+    case X#op.oneway of
+	{oneway, _} -> 'OP_ONEWAY';
+	_ -> 'OP_NORMAL'
+    end;
+get_mode(G, N, X) when record(X, attr) ->
+    case X#attr.readonly of
+	{readonly, _} -> 'ATTR_READONLY';
+	_ -> 'ATTR_NORMAL'
+    end;
+get_mode(G, N, X) when record(X, param) ->
+    case X#param.inout of
+	{in, _} -> 'PARAM_IN';
+	{inout, _} -> 'PARAM_INOUT';
+	{out, _} -> 'PARAM_OUT'
+    end.
+
+
+%% Returns a string form of idltype creation.
+%%get_idltype_id(G, S, N, X, Id) ->
+%%    TK = ictype:tk_lookup(G, S, N, Id),
+%%    get_idltype_tk(G, S, N, TK).
+get_idltype(G, S, N, X) ->
+    get_idltype_tk(G, S, N, ic_forms:get_tk(X)).
+get_idltype_tk(G, S, N, TK) ->
+    io_lib:format("~p:~p(~s, ~p)", [orber_ifr, 'Repository_create_idltype',
+				    ?IFRID(G), TK]).
+
+%% Returns a string form of typecode creation. This shall be found in
+%% the type code symbol table.
+%%get_typecode(G, S, N, X) -> typecode.
+%%get_typecode(G, S, N, X) -> tk(G, S, N, get_type(X)).
+
+
+%% Returns the string form of a list of parameters.
+get_params(G, S, N, []) ->  "";
+get_params(G, S, N, L) -> 
+    lists:foldl(fun(X, Acc) -> param2str(G, S, N, X)++", "++Acc end,
+		param2str(G, S, N, hd(L)), tl(L)).
+
+
+%% Converts a parameter to a string.
+param2str(G, S, N, X) ->
+    io_lib:format("~s{name=~p, type=~p, type_def=~s, mode=~p}~n", 
+		  ["#parameterdescription", get_id2(X),
+		   ic_forms:get_tk(X),
+		   %%tk_lookup(G, S, N, get_type(X)),
+		   get_idltype(G, S, N, X),
+		   get_mode(G, N, X)]).
+
+
+
+
+%% Public interface. Returns the IFR ID of an object. This
+%% is updated to comply with CORBA 2.0 pragma directives.
+get_IR_ID(G, N, X) ->
+    ScopedId = [get_id2(X) | N],
+    case ic_pragma:get_alias(G,ScopedId) of
+	none ->
+	    case ic_pragma:pragma_id(G, N, X) of
+		none ->
+		    case ic_pragma:pragma_prefix(G, N, X) of
+			none ->
+			    IR_ID = lists:flatten(
+				      io_lib:format("IDL:~s:~s", 
+						    [slashify(ScopedId), 
+						     get_IR_VSN(G, N, X)])),
+			    ic_pragma:mk_alias(G,IR_ID,ScopedId),
+			    IR_ID;
+			PF ->
+			    IR_ID = lists:flatten(
+				      io_lib:format("IDL:~s:~s", 
+						    [ PF ++ "/" ++
+						      get_id2(X),
+						      get_IR_VSN(G, N, X)])),
+			    ic_pragma:mk_alias(G,IR_ID,ScopedId),
+			    IR_ID
+		    end;
+		PI ->
+		    ic_pragma:mk_alias(G,PI,ScopedId),
+		    PI
+	    end;
+	Alias ->
+	    Alias
+    end.
+
+    
+%% Public interface. Returns the IFR Version of an object. This
+%% is updated to comply with CORBA 2.0 pragma directives.
+get_IR_VSN(G, N, X) ->
+    ic_pragma:pragma_version(G,N,X).
+    
+
+
+
+
+%% Returns a slashified name, [I1, M1] becomes "M1/I1"
+%slashify(List) -> lists:foldl(fun(X, Acc) -> get_id2(X)++"/"++Acc end, 
+%			      hd(List), tl(List)).
+
+%% Returns a slashified name, [I1, M1] becomes "M1/I1"
+slashify(List) -> lists:foldl(fun(X, Acc) -> X++"/"++Acc end, 
+			      hd(List), tl(List)).
+
+
+%% Returns the context literals of an op
+get_context(G, S, N, X) -> 
+    lists:map(fun(C) -> element(3, C) end, X#op.ctx).
+
+
+
+%% Returns the list of the exceptions of an operation
+get_exceptions(G, S, N, X) -> 
+    case X#op.raises of
+	[] ->
+	    "";
+	L ->
+	    lists:flatten(
+	      lists:foldl( 
+		fun(E, Acc) -> [excdef(G, S, N, X, E), ", " | Acc] end, 
+		excdef(G, S, N, X, hd(L)), 
+		tl(L)
+	       )
+	     )
+    end.
+
+
+%% Returns the definition of an exception of an operation
+excdef(G, S, N, X, L) ->
+    io_lib:format("orber_ifr:lookup_id(~s,\"~s\")",
+		  [ ?IFRID(G),
+		   get_EXC_ID(G, S, N, X, L) ] ).
+
+
+
+
+
+
+%% This function produces code for the exception registration.
+%% It produces a string that represents a list of function calls.
+%% This list becomes a list of object references when the main function
+%% "orber_ifr:InterfaceDef_create_operation" is called.
+
+get_EXC_ID(G, S, N, X, ScopedId) ->
+    case ic_pragma:get_alias(G,ScopedId) of
+	none ->
+	    case ic_pragma:pragma_id(G, N, X) of
+		none ->
+		    case ic_pragma:pragma_prefix(G, N, X) of
+			none ->
+			    EXC_ID = lists:flatten(
+				       io_lib:format("IDL:~s:~s", [slashify(ScopedId), 
+								   get_IR_VSN(G, N, X)])),
+			    ic_pragma:mk_alias(G,EXC_ID,ScopedId),
+			    EXC_ID;
+			PF ->
+			    EXC_ID = lists:flatten(
+				       io_lib:format("IDL:~s:~s", [ PF ++ "/" ++ 
+								    hd(ScopedId),
+								    get_IR_VSN(G, N, X)])),
+			    ic_pragma:mk_alias(G,EXC_ID,ScopedId),
+			    EXC_ID
+		    end;
+		PI ->
+		    ic_pragma:mk_alias(G,PI,ScopedId),
+		    PI
+	    end;
+	Alias ->
+	    Alias
+    end.
+
+
+
+
+
+%% unreg_gen/1 uses the information stored in pragma table
+%% to decide which modules are to be unregistered
+unreg_gen(G) ->
+    ?DBG("UNReg Gen: ~n", []),
+    S = icgen:tktab(G),
+    case icgen:is_stubfile_open(G) of
+	true ->
+	    Var = ?IFRID(G),
+	    Fd = icgen:stubfiled(G),
+	    nl(Fd), nl(Fd), nl(Fd),
+	    emit(Fd, "~p() ->\n", [to_atom(unregister_name(G))]),
+	    emit(Fd, "    ~s = ~p:find_repository(),\n",
+		 [Var, ?IFRMOD]),
+	    nl(Fd),
+	    case ScopedIds = ic_pragma:get_local_refs(G) of
+		none ->
+		    true;
+		ScopedIds -> 
+		    lists:foreach(
+		      fun([ScopedId]) ->
+			      emit(Fd, "    ~p:destroy(~p:'Repository_lookup_id'(~s, ~p)),~n",
+				   [?IFRMOD,?IFRMOD,Var,ic_pragma:get_alias(G,ScopedId)])
+		      end, ScopedIds)
+	    end,
+	    emit(Fd, "    ok.\n");
+	false -> ok
+    end.
+
+
+
+
+
+
+
+
+
+
+
+
+

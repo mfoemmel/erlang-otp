@@ -1,0 +1,13 @@
+{application, gs,
+ [{description, "GS  The Graphics System"},
+  {vsn, "%VSN%"},
+  {modules, [gs,gs_frontend,gs_make,gs_widgets,gtk,gtk_arc,gtk_button,
+	     gtk_canvas,gtk_checkbutton,gtk_db,gtk_editor,gtk_entry,
+             gtk_font,gtk_frame,gtk_generic,gtk_grid,gtk_gridline,gtk_gs,
+             gtk_image,gtk_label,gtk_line,gtk_listbox,gtk_menu,gtk_menubar,
+             gtk_menubutton,gtk_menuitem,gtk_oval,gtk_polygon,gtk_port_handler,
+             gtk_radiobutton,gtk_rectangle,gtk_scale,gtk_text,gtk_widgets,
+             gtk_window,tcl2erl,tool_file_dialog,tool_genfd,tool_utils,
+	     gs_packer,gse]},
+  {registered, [gs_frontend]},
+  {applications, [kernel, stdlib]}]}.

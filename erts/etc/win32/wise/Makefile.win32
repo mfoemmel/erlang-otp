@@ -1,0 +1,71 @@
+#
+# Win32 Makefile for Wise & automatic installation/test stuff...
+#
+# See the file $ERL_TOP/erts/internal_doc/win32_need.txt for 'must have' stuff.
+#
+
+# Version files
+include ../../../vsn.mk
+include ../../../../lib/gs/vsn.mk
+
+WISEDIR=D:\Progra~1\Wise
+WISE=$(WISEDIR)\Wise32.exe 
+WISE_SCRIPTS = erl_vsn.wse erlang-main.wse data-files.wse doc-files.wse \
+	       psdoc-files.wse test-files.wse
+
+NTWISEDIR=$(WISEDIR:\\=\\)
+
+EXE_FILE_NAME = otp_lxa_11930_nt.exe
+RM = del
+
+#
+# Targets
+#
+
+install: $(EXE_FILE_NAME) autorun.pl
+	@autorun.pl
+
+clean:
+	$(RM) $(WISE_SCRIPTS)
+	$(RM) *.wsm
+	$(RM) $(EXE_FILE_NAME)
+	$(RM) autorun.pl
+
+#
+# Explicit Rules.
+#
+$(EXE_FILE_NAME): $(WISE_SCRIPTS)
+	@echo Generating EXE file. This will take a while...
+	@$(WISE) /C erlang-main.wse
+
+erlang-main.wse: erlang.wse
+	sed 	-e 's;%EXE_FILE_NAME%;$(EXE_FILE_NAME);' \
+		-e "s;%WISED%;$(NTWISEDIR);" \
+		erlang.wse >erlang-main.wse
+
+erl_vsn.wse: erl_vsn.wse.in
+	echo $(EMULATOR)
+	sed -e "s;%SERIAL_NO%;$(SERIALNO);" \
+	    -e "s;%SYSTEM_VSN%;$(SYSTEM_VSN);" \
+	    -e "s;%EMU%;$(EMULATOR);" \
+	    -e "s;%ERTS_VSN%;$(VSN);" -e "s;%GS_VSN%;$(GS_VSN);" \
+	    erl_vsn.wse.in >erl_vsn.wse
+
+data-files.wse: $(TESTROOT) genwse.pl
+	genwse.pl $(TESTROOT) . data
+
+doc-files.wse: $(TESTROOT) genwse.pl
+	genwse.pl $(TESTROOT)\doc . doc
+
+psdoc-files.wse: $(TESTROOT) genwse.pl
+	genwse.pl $(TESTROOT)\doc . psdoc
+
+test-files.wse: $(TESTROOT) genwse.pl
+	genwse.pl $(TESTROOT)\test . test
+
+autorun.pl: autorun.pl.in
+	sed -e "s;%ERTS_VSN%;$(VSN);" -e "s;%SERIAL_NO%;$(SERIALNO);" \
+	    -e "s;%EXE_FILE_NAME%;$(EXE_FILE_NAME);" \
+	    -e "s;%SYSTEM_VSN%;$(SYSTEM_VSN);" \
+	    autorun.pl.in >autorun.pl
+

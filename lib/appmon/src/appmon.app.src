@@ -1,0 +1,6 @@
+{application, appmon,
+ [{description, "DEVTOOLS  CXC 138 16"},
+  {vsn, "%VSN%"},
+  {modules, [appmon_info]},
+  {registered,[appmon, appmon_info, appmon_txt]},
+  {applications, [kernel, stdlib]}]}.

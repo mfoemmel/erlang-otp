@@ -1,0 +1,315 @@
+# Visual C++ 2.x and 4.0 makefile
+#
+# Copyright (c) 1995-1996 by Sun Microsystems, Inc.
+#
+# See the file "license.terms" for information on usage and redistribution
+# of this file, and for a DISCLAIMER OF ALL WARRANTIES.
+# 
+# SCCS: @(#) makefile.vc 1.35 96/10/02 14:04:12
+
+# Project directories
+#
+# ROOT = top of source tree
+# TMPDIR = location where .obj files should be stored during build
+# TCLDIR = location of top of Tcl source heirarchy
+# TOOLS32 = location of VC++ 32-bit development tools
+#
+
+ROOT	= ..
+TMPDIR	= .
+TOOLS32	= c:\msdev
+TCLDIR	= ..\..\tcl7.6
+
+# uncomment the following line to compile with Itcl namespaces
+#ITCLFLAGS = -DITCL_NAMESPACES=1
+
+# Comment the following line to compile with symbols
+NODEBUG=1
+
+# uncomment the following two lines to compile with TCL_MEM_DEBUG
+#DEBUGDEFINES	=-DTCL_MEM_DEBUG
+
+# Make sure the VC++ tools are at the head of the path
+PATH=$(TOOLS32)\bin;$(PATH)
+
+TCLLIBDIR       = $(TCLDIR)\win
+WINDIR          = $(ROOT)\win
+GENERICDIR	= $(ROOT)\generic
+LIBDIR		= $(ROOT)\library
+XLIBDIR		= $(ROOT)\xlib
+
+cc32 = $(TOOLS32)\bin\cl -I$(TOOLS32)\include
+rc32 = $(TOOLS32)\bin\rc
+link32 = $(TOOLS32)\bin\link
+
+TK_INCLUDES = \
+        -I$(TOOLS32)\include -I$(ROOT)\win -I$(ROOT)\generic \
+	-I$(ROOT)\bitmaps -I$(ROOT)\xlib -I$(ROOT) -I$(TCLDIR)\generic
+
+TK_DEFINES = \
+        -nologo $(DEBUGDEFINES) -DUSE_TCLALLOC=0 $(ITCLFLAGS)
+
+WISHOBJS = \
+	$(TMPDIR)\tkConsole.obj \
+	$(TMPDIR)\winMain.obj
+
+WISHSAOBJS = \
+      $(TMPDIR)\tkConsole.obj \
+      $(TMPDIR)\winMainSA.obj
+
+TKTESTOBJS = \
+	$(TMPDIR)\tkConsole.obj \
+	$(TMPDIR)\tkTest.obj \
+	$(TMPDIR)\tkSquare.obj \
+	$(TMPDIR)\testMain.obj
+
+XLIBOBJS = \
+	$(TMPDIR)\xdraw.obj \
+	$(TMPDIR)\xgc.obj \
+	$(TMPDIR)\ximage.obj \
+	$(TMPDIR)\xutil.obj
+
+TKOBJS = \
+	$(XLIBOBJS) \
+	$(TMPDIR)\tkWinClipboard.obj \
+	$(TMPDIR)\tkWinColor.obj \
+	$(TMPDIR)\tkWinCursor.obj \
+	$(TMPDIR)\tkWinDialog.obj \
+	$(TMPDIR)\tkWinDraw.obj \
+	$(TMPDIR)\tkWinFont.obj \
+	$(TMPDIR)\tkWinImage.obj \
+	$(TMPDIR)\tkWinInit.obj \
+	$(TMPDIR)\tkWinKey.obj \
+	$(TMPDIR)\tkWinPixmap.obj \
+	$(TMPDIR)\tkWinPmap.obj \
+	$(TMPDIR)\tkWinPointer.obj \
+	$(TMPDIR)\tkWinRegion.obj \
+	$(TMPDIR)\tkWinWindow.obj \
+	$(TMPDIR)\tkWinWm.obj \
+	$(TMPDIR)\tkWinX.obj \
+	$(TMPDIR)\stubs.obj \
+	$(TMPDIR)\tk3d.obj \
+	$(TMPDIR)\tkArgv.obj \
+	$(TMPDIR)\tkAtom.obj \
+	$(TMPDIR)\tkBind.obj \
+	$(TMPDIR)\tkBitmap.obj \
+	$(TMPDIR)\tkButton.obj \
+	$(TMPDIR)\tkCanvArc.obj \
+	$(TMPDIR)\tkCanvBmap.obj \
+	$(TMPDIR)\tkCanvImg.obj \
+	$(TMPDIR)\tkCanvLine.obj \
+	$(TMPDIR)\tkCanvPoly.obj \
+	$(TMPDIR)\tkCanvPs.obj \
+	$(TMPDIR)\tkCanvText.obj \
+	$(TMPDIR)\tkCanvUtil.obj \
+	$(TMPDIR)\tkCanvWind.obj \
+	$(TMPDIR)\tkCanvas.obj \
+	$(TMPDIR)\tkClipboard.obj \
+	$(TMPDIR)\tkCmds.obj \
+	$(TMPDIR)\tkColor.obj \
+	$(TMPDIR)\tkConfig.obj \
+	$(TMPDIR)\tkCursor.obj \
+	$(TMPDIR)\tkEntry.obj \
+	$(TMPDIR)\tkError.obj \
+	$(TMPDIR)\tkEvent.obj \
+	$(TMPDIR)\tkFileFilter.obj \
+	$(TMPDIR)\tkFocus.obj \
+	$(TMPDIR)\tkFont.obj \
+	$(TMPDIR)\tkFrame.obj \
+	$(TMPDIR)\tkGC.obj \
+	$(TMPDIR)\tkGeometry.obj \
+	$(TMPDIR)\tkGet.obj \
+	$(TMPDIR)\tkGrab.obj \
+	$(TMPDIR)\tkGrid.obj \
+	$(TMPDIR)\tkImage.obj \
+	$(TMPDIR)\tkImgBmap.obj \
+	$(TMPDIR)\tkImgGIF.obj \
+	$(TMPDIR)\tkImgJPEG.obj \
+	$(TMPDIR)\tkImgPNG.obj \
+	$(TMPDIR)\tkImgPPM.obj \
+	$(TMPDIR)\tkImgPhoto.obj \
+	$(TMPDIR)\tkImgUtil.obj \
+	$(TMPDIR)\tkImgPmap.obj \
+	$(TMPDIR)\tkImgXPM.obj \
+	$(TMPDIR)\tkListbox.obj \
+	$(TMPDIR)\tkMain.obj \
+	$(TMPDIR)\tkMenu.obj \
+	$(TMPDIR)\tkMenubutton.obj \
+	$(TMPDIR)\tkMessage.obj \
+	$(TMPDIR)\tkOption.obj \
+	$(TMPDIR)\tkPack.obj \
+	$(TMPDIR)\tkPhotoUtil.obj \
+	$(TMPDIR)\tkPlace.obj \
+	$(TMPDIR)\tkRectOval.obj \
+	$(TMPDIR)\tkScale.obj \
+	$(TMPDIR)\tkScrollbar.obj \
+	$(TMPDIR)\tkSelect.obj \
+	$(TMPDIR)\tkSend.obj \
+	$(TMPDIR)\tkText.obj \
+	$(TMPDIR)\tkTextBTree.obj \
+	$(TMPDIR)\tkTextDisp.obj \
+	$(TMPDIR)\tkTextIndex.obj \
+	$(TMPDIR)\tkTextMark.obj \
+	$(TMPDIR)\tkTextTag.obj \
+	$(TMPDIR)\tkTextWind.obj \
+	$(TMPDIR)\tkTrig.obj \
+	$(TMPDIR)\tkUtil.obj \
+	$(TMPDIR)\tkVisual.obj \
+	$(TMPDIR)\tkWindow.obj
+
+C_STANDALONE = $(LIBDIR)/bgerror.c \
+      $(LIBDIR)/button.c \
+      $(LIBDIR)/clrpick.c \
+      $(LIBDIR)/comdlg.c \
+      $(LIBDIR)/console.c \
+      $(LIBDIR)/dialog.c \
+      $(LIBDIR)/entry.c \
+      $(LIBDIR)/focus.c \
+      $(LIBDIR)/listbox.c \
+      $(LIBDIR)/menu.c \
+      $(LIBDIR)/msgbox.c \
+      $(LIBDIR)/obsolete.c \
+      $(LIBDIR)/optMenu.c \
+      $(LIBDIR)/palette.c \
+      $(LIBDIR)/scale.c \
+      $(LIBDIR)/scrlbar.c \
+      $(LIBDIR)/tearoff.c \
+      $(LIBDIR)/text.c \
+      $(LIBDIR)/tkfbox.c \
+      $(LIBDIR)/xmfbox.c \
+      $(LIBDIR)/tk.c \
+      $(LIBDIR)/prolog.c \
+      $(LIBDIR)/tclIndex.h
+
+TCLLIB = tcl76.lib
+TCLLIBSA = tcl76sa.lib
+TKLIB = tk42.lib
+TKLIBSA = tk42sa.lib
+TCLDLL = tcl76.dll
+TKDLL = tk42.dll
+WISH = wish42.exe
+WISHSA = wish42sa.exe
+TKTEST = tktest.exe
+
+CP      = copy
+
+!include    "$(TOOLS32)\include\win32.mak"
+
+all:    $(TKDLL) $(WISH) $(TKLIBSA) $(WISHSA)
+test:	$(TKDLL) $(TKTEST)
+
+tkvc.def: $(TKOBJS) $(TMPDIR)\tkWin32Dll.obj $(TMPDIR)\tkInitDSA.obj
+	$(TCLLIBDIR)\dumpexts.exe -o $@ $(TKDLL) @<<
+		$(TKOBJS) $(TMPDIR)\tkWin32Dll.obj $(TMPDIR)\tkInitDSA.obj
+<<
+
+$(TKDLL): $(TKOBJS) $(TMPDIR)\tkWin32Dll.obj $(TMPDIR)\tkInitDSA.obj $(TMPDIR)\tk.res tkvc.def
+	set LIB=$(TOOLS32)\lib
+        $(link32) $(linkdebug) $(dlllflags) -def:tkvc.def \
+ 		$(TMPDIR)\tk.res $(TCLLIBDIR)\$(TCLLIB) $(guilibsdll) \
+		-out:$(TKDLL) @<<
+		$(TKOBJS) $(TMPDIR)\tkWin32Dll.obj $(TMPDIR)\tkInitDSA.obj
+<<
+
+
+$(WISH): $(WISHOBJS) $(TKLIB) $(TMPDIR)\wish.res
+	set LIB=$(TOOLS32)\lib
+	$(link32) $(linkdebug) $(guilflags) \
+		$(WISHOBJS) $(TMPDIR)\wish.res $(TKLIB) \
+		$(TCLLIBDIR)\$(TCLLIB) $(guilibsdll) \
+		-out:$(WISH) 
+
+$(TMPDIR)\winMainSA.obj: $(WINDIR)\winMain.c
+      $(cc32) $(cdebug) $(cflags) $(cvarsdll) $(TK_INCLUDES) $(TK_DEFINES) \
+        -DTk_Init=Tk_InitStandAlone -DTcl_Init=Tcl_InitStandAlone \
+        -Fo$(TMPDIR)\winMainSA.obj $?
+
+$(TMPDIR)\tkInitSA.obj: $(GENERICDIR)\tkInitSA.c $(C_STANDALONE)
+
+$(TKLIBSA): $(TKOBJS) $(TMPDIR)\tkInitSA.obj
+      @del $(TKLIBSA)
+        lib -out:$(TKLIBSA) @<<
+                $(TKOBJS)
+              $(TMPDIR)\tkInitSA.obj
+<<
+
+$(WISHSA): $(WISHSAOBJS) $(TKLIBSA) $(TMPDIR)\wishsa.res
+      set LIB=$(TOOLS32)\lib
+      $(link32) $(linkdebug) $(guilflags) \
+              $(WISHSAOBJS) $(TKLIBSA) $(TMPDIR)\wishsa.res \
+              $(TCLLIBDIR)\$(TCLLIBSA) $(guilibsdll) \
+              -out:$(WISHSA) 
+
+$(TKTEST): $(TKTESTOBJS) $(TKLIB) $(TMPDIR)\wish.res
+	set LIB=$(TOOLS32)\lib
+	$(link32) $(linkdebug) $(guilflags) \
+		$(TKTESTOBJS) $(TMPDIR)\wish.res $(TKLIB) \
+		$(TCLLIBDIR)\$(TCLLIB) $(guilibsdll) \
+		-out:$(TKTEST) 
+
+hello: $(TMPDIR)\hello.obj $(TCLLIB) $(TMPDIR)\wish.res
+	set LIB=$(TOOLS32)\lib
+	$(link32) $(linkdebug) $(guilflags) \
+		$(TMPDIR)\hello.obj $(TMPDIR)\wish.res $(TKLIBSA) \
+		$(TCLLIBDIR)\$(TCLLIBSA) $(guilibsdll) \
+		-out:$@ 
+
+$(TMPDIR)\hello.obj:	$(TMPDIR)\hello.c:
+    $(cc32) $(TCL_CFLAGS) -Fo$(TMPDIR)\ $(TMPDIR)\hello.c
+
+$(TMPDIR)\hello.c:	$(GENERICDIR)\hello.tcl:
+      $(TCLLIBDIR)\tcl2c -tk -o $(TMPDIR)\hello.c $(GENERICDIR)\hello.tcl
+
+#
+# Special case object file targets
+#
+
+$(TMPDIR)\testMain.obj: $(ROOT)\win\winMain.c
+	$(cc32) $(cdebug) $(cflags) $(cvarsdll) $(TK_INCLUDES) \
+        	$(TK_DEFINES) -DTK_TEST -Fo$@ $?
+
+#
+# Implicit rules
+#
+
+{$(ROOT)\xlib}.c{$(TMPDIR)}.obj:
+	$(cc32) $(cdebug) $(cflags) $(cvarsdll) $(TK_INCLUDES) \
+		$(TK_DEFINES) -Fo$(TMPDIR)\ $<
+
+{$(ROOT)\generic}.c{$(TMPDIR)}.obj:
+	$(cc32) $(cdebug) $(cflags) $(cvarsdll) $(TK_INCLUDES) \
+		$(TK_DEFINES) -Fo$(TMPDIR)\ $<
+
+{$(ROOT)\win}.c{$(TMPDIR)}.obj:
+	$(cc32) $(cdebug) $(cflags) $(cvarsdll) $(TK_INCLUDES) \
+		$(TK_DEFINES) -Fo$(TMPDIR)\ $<
+
+{$(ROOT)\win\rc}.rc{$(TMPDIR)}.res:
+	$(rc32) -fo $@ -r -i $(ROOT)\generic $<
+
+.SUFFIXES: .ps .tcl $(SUFFIXES)
+
+{$(LIBDIR)}.tcl{$(LIBDIR)}.c:
+      $(TCLLIBDIR)\tcl2c -a -n $@ -o $@ $<
+
+$(LIBDIR)\tclIndex.h: $(TCL2C) $(LIBDIR)\tclIndex
+      $(TCLLIBDIR)\tcl2c -o $@ -n $@ $(LIBDIR)\tclIndex -index
+
+$(LIBDIR)/prolog.c: $(LIBDIR)/prolog.ps
+      @echo creating library/prolog.c
+      @echo /* This file was machine generated from prolog.ps */ >$(LIBDIR)\prolog.c
+      @echo. >>$(LIBDIR)\prolog.c
+      @rem <<prolog.sed
+s/\\/\\\\/g
+s/\"/\\\"/g
+s/^/\"/
+s/$$/\",/
+<<NOKEEP
+      @sed -f prolog.sed $(LIBDIR)/prolog.ps >>$(LIBDIR)\prolog.c
+  
+clean:
+	-@del *.exp
+	-@del *.lib
+	-@del *.dll
+	-@del *.exe
+        -@del $(TMPDIR)\*.obj 

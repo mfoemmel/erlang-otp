@@ -1,0 +1,66 @@
+dnl	This file is an input file used by the GNU "autoconf" program to
+dnl	generate the file "configure", which is run to configure the
+dnl	Makefile in this directory.
+AC_INIT(pkga.c)
+# SCCS: @(#) configure.in 1.9 96/04/15 09:50:20
+
+# Recover information that Tcl computed with its configure script.
+
+. ../tclConfig.sh
+
+CC=$TCL_CC
+AC_SUBST(CC)
+SHLIB_CFLAGS=$TCL_SHLIB_CFLAGS
+AC_SUBST(SHLIB_CFLAGS)
+SHLIB_LD=$TCL_SHLIB_LD
+AC_SUBST(SHLIB_LD)
+SHLIB_LD_LIBS=$TCL_SHLIB_LD_LIBS
+AC_SUBST(SHLIB_LD_LIBS)
+SHLIB_SUFFIX=$TCL_SHLIB_SUFFIX
+AC_SUBST(SHLIB_SUFFIX)
+#
+# Test if there are shared versions of the tcl, math and c libraries.
+# No need for that for a.out type systems, because there
+# static libraries can and should be linked in always.
+#
+LIBS=""
+if test "x${SHLIB_SUFFIX}" = "x..o" -o "x${SHLIB_SUFFIX}" = "x.a"; then
+    if test "x${SHLIB_CFLAGS}" = "x-G 0"; then
+	TEST_SUFFIX="_G0.a"
+    else
+	TEST_SUFFIX=".a"
+    fi
+else
+    if test "x${TCL_SHARED_LIB_SUFFIX}" = 'x${VERSION}.a' -a "x${SHLIB_SUFFIX}" = "x.so"; then
+	TEST_SUFFIX=".a"
+	LIBS="${TCL_BUILD_LIB_SPEC}"
+    else
+	TEST_SUFFIX="${SHLIB_SUFFIX}"
+    fi
+fi
+
+TCL_BASE=`echo ${TCL_LIB_SPEC} |sed -e "s|^.*-l||"`
+case $TCL_BASE in
+    *i)
+	TCLSH="ish${TCL_VERSION}"
+	;;
+    *)
+	TCLSH="tclsh${TCL_VERSION}"
+	;;
+esac
+VERSION=""
+eval "TCL_SHARED_LIB_FILE=lib${TCL_BASE}${TCL_SHARED_LIB_SUFFIX}"
+
+dirs="/lib/libc${TEST_SUFFIX}* /usr/lib/libc${TEST_SUFFIX}*"
+for i in $dirs ; do
+    if test -f $i; then
+	LIBS="${LIBS} -lc"
+	break;
+    fi
+done
+
+AC_SUBST(LIBS)
+AC_SUBST(TCLSH)
+AC_SUBST(TCL_VERSION)
+
+AC_OUTPUT(Makefile)

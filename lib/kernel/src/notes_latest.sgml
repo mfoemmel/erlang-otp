@@ -1,0 +1,239 @@
+<!doctype chapter PUBLIC "-//Stork//DTD chapter//EN">
+<!-- 
+ ``The contents of this file are subject to the Erlang Public License,
+ Version 1.1, (the "License"); you may not use this file except in
+ compliance with the License. You should have received a copy of the
+ Erlang Public License along with this software. If not, it can be
+ retrieved via the world wide web at http://www.erlang.org/.
+ 
+ Software distributed under the License is distributed on an "AS IS"
+ basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ the License for the specific language governing rights and limitations
+ under the License.
+ 
+ The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+ Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+ AB. All Rights Reserved.''
+ 
+     $Id$
+-->
+<chapter>
+  <header>
+    <title>KERNEL Release Notes
+    <prepared>Kenneth Lundin
+    <docno>
+    <date>1997-11-17
+    <rev>F
+    <file>notes.sgml
+  </header>
+
+  <p>This document describes the changes made to the Kernel application.
+  <section>
+    <title>Kernel 2.0.3</title>
+
+    <section>
+      <title>Fixed Bugs and malfunctions</title>
+      <list>
+
+	<item>
+	  <p>The code server did not treat the command line flags
+	    <c>-pa</c> and <c>-pz</c> correctly.  Now they behave as
+	    <c>code:add_pathsa/1</c> and  <c>code:add_pathsz/1</c>,
+	    respectively.
+
+	  <p>Own Id: OTP-2008
+
+	<item>
+	  <p>The global name server could get out of sync when nodes
+	    were slave started.
+
+	  <p>Own Id: OTP-2011
+
+	<item>
+	  <p>When the <c>pg2</c> server is started, <c>disk_log</c>
+	    could crash when a log was started.
+
+	  <p>Own Id: OTP-2028
+
+	<item>
+	  <p>The documentation of the functions
+	  <c>pg2:get_members/1</c> and <c>pg2:get_local_members/1</c>
+	  is updated.
+
+	  <p>Own Id: OTP-2028
+
+      </list>
+
+    </section>
+
+  </section>
+
+  <section>
+    <title>Kernel 2.0.2</title>
+    <section>
+      <title>Fixed bugs and malfunctions</title>
+      <list>
+	<item><p>The absence of the file <c>/etc/resolv.conf</c> and 
+	    <c>/etc/nsswitch.conf</c> on a UNIX system is now reported
+	    as a warning (if warnings are activated) instead of an error.
+	    See OTP-2037 below for how to activate warnings.
+	    <p>Own Id: OTP-2053<br>
+	    Aux Id: seq 552
+	<item><p>An Erlang node could not connect to machines (lookup through
+	    DNS)
+	    when a search 
+	    entry was missing in <c>/etc/resolv.conf</c>.
+	    <p>Own Id: OTP-2036<br>
+	    Aux Id:seq 542
+	<item><p>The parsing of domain names was to restrictive, did not accept
+	    underscore in names. Now underscore is accepted but not as 
+	    the first character in a name. If other suspicious names are 
+	    found the Erlang system
+	    will warn about those , but only if warnings are explicitly 
+	    activated with
+	    the kernel application environment variable 
+	    <c>inet_warnings</c> set to <c>on</c>. The warnings can 
+	    also be
+	    activated on the command line like this:<br> 
+	    <c>erl -kernel inet_warnings on</c>
+	    <p>Own Id: OTP-2037<br>
+	    Aux Id:seq 543
+      </list>
+    </section>
+  </section>
+
+
+  <section>
+    <title>Kernel 2.0.1</title>
+    <p>Nothing to report.
+  </section>
+
+  <section>
+    <title>Kernel 2.0</title>
+
+    <section>
+      <title>Incompatibilities with Kernel 1.3.2</title>
+      <list>
+	<item><p>Due to new functionality in <c>global</c>, and
+	    rewrite of the Application Controller, new Erlang nodes
+	    cannot be connected (through the distributed Erlang
+	    protocol) to old nodes.
+
+        <item><p>application_controller is changed. 
+	    Therefore Erlang nodes with this version of Kernel cannot cooperate
+	    with nodes with kernel 1.3.2 or older.
+
+        <item><p><c>erl_prim_loader</c> has a different way of loading code
+            from another node.  The old loader <c>distributed</c>
+            (specified as <c>-loader distributed</c>) is replaced by
+            another loader <c>inet</c>.  This loader uses another
+            loading protocol.  The old flag <c>-nodes</c> cannot be
+            used.  There is another flag <c>-hosts</c> that should be
+            used instead.
+
+        <item><p><c>erl -s Module Function Arguments</c> now crashes
+            if Module:Function() fails.  <p>Own Id:OTP-1697
+	    
+	<item><p>The internal file structure for the Erlang
+	    installation has been modified.  The directory with system
+	    version files (e.g. the boot file) is moved from the
+	    <c>erts</c> directory to the <c>releases</c> directory.
+
+      </list>
+
+    </section>
+
+    <section>
+      <title>Fixed Bugs and malfunctions</title>
+      <list>
+
+	<item>
+	  <p><c>disk_log</c> now handles reconfiguration of logs
+	  correctly.
+
+	  <p>Own Id: OTP-1435, OTP-1634
+	    <br>Aux Id: HA51162
+
+	<item>
+	  <p>Corrected the failure to load an application that
+	  includes another application that is not loaded yet.
+
+	  <p>Own Id: OTP-1586
+
+	<item>
+	  <p>When an Erlang system is started with the option <c>-s
+	  Mod Func Args</c> the Erlang system will exit with an error
+	  code if the execution of <c>Mod:Func(Args)</c> causes an
+	  exception (i.e returns <c>{'EXIT',Reason}</c>). In previous
+	  versions the Erlang system continued to run without giving
+	  any information about the failure in executing the
+	  <c>Mod:Func(Args)</c>.
+
+	  <p>Own Id: OTP-1697
+
+	<item>
+	  <p>Corrected that <c>disk_log</c> always truncated internal
+	    wrap-logs.
+
+	  <p>Own Id: OTP-1869
+
+	<item>
+	  <p>Fixed bug in <c>pg2:get_closest_pid/1</c> when the group
+	    did not exist.
+
+	  <p>Own Id: OTP-1945
+
+      </list>
+    </section>
+
+    <section>
+      <title>Improvements and new features</title>
+      <list>
+
+	<item>
+	  <p>The syntax of the different files defined by Kernel is
+	    defined in separate documents.  Check the reference manual
+	    for <c>app(4)</c> and <c>config(4)</c>.
+
+	<item>
+	  <p>It is possible to customize the behaviour of
+	  <c>global</c> when it detects name conflicts (e.g. due to a
+	    partitioned net).
+
+	  <p>Own Id: OTP-1455
+
+	<item>
+	  <p>The Application Controller allows the functions in
+	    <c>application</c> to be called from within an application
+	    start.
+
+	  <p>Own Id: OTP-1629
+
+	<item>
+	  <p>The Application Controller is split into two processes;
+	    one that handles local applications, and one that handles
+	    distributed applications.  If distributed applications are
+	    used, the configuration parameter <c>start_dist_ac</c>
+	    should be set.
+
+	  <p>Own Id: OTP-1629, OTP-1636
+
+	<item>
+	  <p>The Erlang distribution protocol is rewritten with more
+	  parts implemented in Erlang and a new driver for the
+	  communications part. This will make the distribution easier
+	  to maintain and enhance from now on.
+
+	  <p>Own Id: OTP-1643
+
+      </list>
+
+    </section>
+
+  </section>
+
+</chapter>
+
+
+
+

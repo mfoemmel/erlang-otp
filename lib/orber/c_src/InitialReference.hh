@@ -1,0 +1,49 @@
+/**
+ * ``The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved via the world wide web at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+ * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+ * AB. All Rights Reserved.''
+ * 
+ *     $Id$
+ *
+ */
+/*
+ * InitialReference is a class for creating an external IOR for the object
+ * reference INIT.
+ */
+#ifndef _INITIALREFERENCE_HH
+#define _INITIALREFERENCE_HH
+#include <stdio.h>
+#include <string.h>
+#include <strstream.h>
+
+class InitialReference {
+private:
+  char* iorString;
+  char* host;
+  int port;
+
+  void enc_ushort(int s, char *byteArray);
+  void enc_ulong(long l, char *byteArray);
+  void createIOR(strstream& byte, long length);
+  long align(strstreambuf* sbuf, long currentLength, int alignment);
+
+public:
+  InitialReference();
+  ~InitialReference();
+
+  char* stringified_ior(char* host, int port);
+  
+};
+
+#endif

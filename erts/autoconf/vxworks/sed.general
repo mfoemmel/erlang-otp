@@ -1,0 +1,54 @@
+#
+# Copyright (C) 1997, Ericsson Telecommunications
+# Author: Patrik Winroth
+#
+# This sed program file is intended to be used when creating Makefiles
+# for vxworks from the generic Makefile.in that is found in a number
+# of directories (see configure.vxworks).
+#
+# This is the general part that is common for all architectures.
+#
+
+s|@erts_rootdir@|/clearcase/otp/erts|
+
+s|@LIBOBJS@|$(OBJDIR)/elib_malloc.o|
+s|@DLOAD_LIB@||
+s|@LDFLAGS@||
+s|@DED_LDFLAGS@||
+s|@GCCLIB@|libgcc.a|
+s|@DEFS@||
+s|@DEXPORT@||
+s|@DCFLAGS@||
+s|@BEAM_MODE@|-DBEAM_GCC|
+s|@cc_root@|/clearcase/otp/|
+# Define VxWorks even though cross-compiling. 
+s|@HCFLAGS@|-DVXWORKS|
+s|@HCLIBS@||
+
+# The target tools prefix, prepended to all cc,ld,as etc commands
+s|@TTPREFIX@|GCC_EXEC_PREFIX=@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/ @WIND_BASE@/host/@HOST_TYPE@/bin/|
+
+# Install programs etc
+s|@PERL@|perl|
+s|@INSTALL@|/usr/ucb/install -c|
+s|@INSTALL_PROGRAM@|${INSTALL}|
+s|@INSTALL_DATA@|${INSTALL} -m 644|
+s|@INSTALL_DIR@|$(INSTALL) -d|
+s|@OSTYPE@|vxworks|
+s|@vxworks_reclaim@|reclaim.h|
+s|@os_mon_programs@||
+s|@erlexec@|erl.exec|
+s|@EMU_LIBOBJS@||
+
+# General CFLAGS
+s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R|
+s|@WFLAGS@||
+
+# What is this anyway?
+s|@ded_soname@||
+
+
+# Only variable substituted directly
+s|$(LDFLAGS)|-r -d|
+s|$(EFLAGS)|-DELIB_HEAP_USER -DELIB_SORTED_BLOCKS|
+

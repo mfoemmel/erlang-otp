@@ -1,0 +1,291 @@
+<HTML>
+<HEAD>
+<TITLE>INETS Release Notes
+</TITLE>
+</HEAD>
+<BODY BGCOLOR="#FFFFFF">
+<CENTER>
+<BLOCKQUOTE>
+<A NAME="1"><!-- Empty --></A><H2>1 INETS Release Notes
+</H2><P>This document describes the changes made to the INETS application.
+
+<A NAME="1.1"><!-- Empty --></A><H3>1.1 INETS 2.2.5</H3><A NAME="1.1.1"><!-- Empty --></A><H4>1.1.1 Fixed Bugs and Malfunctions</H4><P><UL>
+<LI>The server-side include parsing (<CODE>mod_include(3)</CODE>)
+         no longer has problems with <STRONG>big</STRONG> HTML files. These
+problems previously resulted in a memory intensive emulator
+and lingering processes.
+         <BR>
+Own Id: OTP-2507<BR>
+
+        <LI>HTTP-1.1 requests are now accepted; even though the
+         server is HTTP-1.0 compliant. HTTP-1.1 uses the same external
+         protocol as HTTP-1.0 anyway; as defined in RFC 1945.
+         <BR>
+Own Id: OTP-2679<BR>
+
+</UL>
+<A NAME="1.1.2"><!-- Empty --></A><H4>1.1.2 Known bugs and problems</H4><P><UL>
+<LI>If a Web browser connect itself to an SSL enabled server
+         using a URL <STRONG>not</STRONG> starting with <CODE>https://</CODE> the
+         server will hang due to an ugly bug in the SSLeay package!<BR>
+
+</UL>
+<A NAME="1.2"><!-- Empty --></A><H3>1.2 INETS 2.2.2</H3><A NAME="1.2.1"><!-- Empty --></A><H4>1.2.1 Fixed Bugs and Malfunctions</H4><P><UL>
+<LI>&#34;unknown&#34; is not always put into the remotehost field
+         of access logs when the obsolote sockets type is used. The
+         remotehost field is furthermore always a numerical IP
+         address even if the new ip_comm socket type is used.
+         <BR>
+Own Id: OTP-2225, seq 682<BR>
+
+        <LI>The server does a complete cleanup even though
+         httpd:stop/1 wasn't used to terminate the server.
+         <BR>
+Own Id: OTP-2229<BR>
+
+        <LI>The server now uses the new inet(3) distribution
+         mechanism as default if the <CODE>SocketType</CODE> directive
+         not is used in the server configuration, i.e. as stated in
+         <CODE>httpd_core(3)</CODE>.
+         <BR>
+Own Id: OTP-2554<BR>
+
+        <LI>The <CODE>ErrorLog</CODE> and <CODE>ErrorDiskLog</CODE>
+         directives now handles absolute file paths on Windows
+         NT/95. 
+         <BR>
+Own Id: OTP-2504, seq885<BR>
+
+</UL>
+<A NAME="1.2.2"><!-- Empty --></A><H4>1.2.2 Known bugs and problems</H4><P><UL>
+<LI>If a Web browser connect itself to an SSL enabled server
+         using a URL <STRONG>not</STRONG> starting with <CODE>https://</CODE> the
+         server will hang due to an ugly bug in the SSLeay package!<BR>
+
+</UL>
+<A NAME="1.3"><!-- Empty --></A><H3>1.3 INETS 2.2.1.1</H3><A NAME="1.3.1"><!-- Empty --></A><H4>1.3.1 Fixed Bugs and Malfunctions</H4><P><UL>
+<LI>TCP errors is now taken care of.
+         <BR>
+Own Id: OTP-2389<BR>
+
+        <LI>Passwords are now encoded before storage in Mnesia.
+         <BR>
+Own Id: OTP-2278,seq737<BR>
+
+        <LI>httpd_socket:peername problem solved.
+         <BR>
+Own Id: OTP-2225,seq682<BR>
+
+        <LI>&#34;ErlScriptAlias all&#34; makes the server accept client
+         access to <STRONG>all</STRONG> modules in the Erlang node.
+         <BR>
+Own Id: OTP-2285,seq743<BR>
+
+</UL>
+<A NAME="1.3.2"><!-- Empty --></A><H4>1.3.2 Known bugs and problems</H4><P><UL>
+<LI>If a Web browser connect itself to an SSL enabled server
+         using a URL <STRONG>not</STRONG> starting with <CODE>https://</CODE> the
+         server will hang due to an ugly bug in the SSLeay package!<BR>
+
+</UL>
+<A NAME="1.4"><!-- Empty --></A><H3>1.4 INETS 2.2.1</H3><A NAME="1.4.1"><!-- Empty --></A><H4>1.4.1 Improvements and New Features</H4><P><UL>
+<LI>The module mod_ecgi is now called mod_esi and the
+         &#34;Module&#34; config directive has to be updated accordingly.<BR>
+
+         (*** INCOMPATIBILITY with INETS 2.1 **)
+        <BR>
+<LI>The config directives &#34;ServerName&#34;, &#34;Port&#34;,
+         &#34;ServerRoot&#34; and &#34;DocumentRoot&#34; are now mandatory.<BR>
+
+         (*** INCOMPATIBILITY with INETS 2.1 **)
+        <BR>
+<LI>The default value for the config directive
+         &#34;SocketType&#34; is &#34;ip_comm&#34; (Erlang's new communication
+         mechanism) instead of the obsolete sockets dito.<BR>
+
+         (*** INCOMPATIBILITY with INETS 2.1 **)
+<BR>
+</UL>
+<A NAME="1.4.2"><!-- Empty --></A><H4>1.4.2 Fixed Bugs and Malfunctions</H4><P><UL>
+<LI>The access log format now uses a correct date format.
+         <BR>
+Own Id: OTP-2068<BR>
+
+        <LI>ftp:open/2 no longer hangs indefinitely.
+         <BR>
+Own Id: OTP-2041, seq526<BR>
+
+</UL>
+<A NAME="1.4.3"><!-- Empty --></A><H4>1.4.3 Known bugs and problems</H4><P><UL>
+<LI>If a Web browser connect itself to an SSL enabled server
+         using a URL <STRONG>not</STRONG> starting with <CODE>https://</CODE> the
+         server will hang due to an ugly bug in the SSLeay package!<BR>
+
+</UL>
+<A NAME="1.5"><!-- Empty --></A><H3>1.5 INETS 2.2</H3><A NAME="1.5.1"><!-- Empty --></A><H4>1.5.1 Improvements and New Features</H4><P><UL>
+<LI>     The server documentation has been thoroughly reviewed
+         and enhanced. The documentation has been grouped into 18
+         manual pages and the Erlang Web Server API (EWSAPI) is
+         described in detail.<BR>
+
+         Own Id: OTP-1439<BR>
+
+        <LI>Mnesia based management of authentication data is now
+         supported. It is now possible to on-the-fly manage user and
+         group information to be used for authentication. (Read
+         more about this in the EWSAPI module <CODE>mod_auth_mnesia</CODE>
+         description).<BR>
+
+         Own Id: OTP-1591<BR>
+
+         Own Id: OTP-1491<BR>
+
+        <LI>An alternative mechanism for storage of log
+         information is no supported. This mechanism uses
+         <CODE>disk_log(3)</CODE> to enable the use of wrap logs
+         etc. (Read more about this in the EWSAPI module 
+         <CODE>mod_disk_log</CODE> description).<BR>
+
+         Own Id: OTP-1491<BR>
+
+        <LI>A new config directive <CODE>SocketType</CODE> has been added
+         making it possible to specify which communication
+         mechanism to use, i.e. <CODE>ip_comm</CODE>, <CODE>sockets</CODE> or
+         <CODE>ssl</CODE>. <CODE>ip_comm</CODE> is the default choice if nothing
+         is specified in the server config file. (Read more about
+         <CODE>SocketType</CODE> in <CODE>httpd_core(3)</CODE>.<BR>
+ 
+         Own Id: OTP-1600<BR>
+
+        <LI>A new mandatory config directive <CODE>ServerName</CODE>
+         has been added telling the server about its actual host
+         name. <CODE>ServerName</CODE> must be specified for the server
+         to start. (Read more about
+         <CODE>ServerName</CODE> in <CODE>httpd_core(3)</CODE>.<BR>
+
+        <LI>Server-Side Includes is now supported. (Read more about
+         this in the EWSAPI module <CODE>mod_include</CODE> description). 
+        <BR>
+<LI>Filetype/method-based script execution is now
+         supported (Read more about this in the EWSAPI module
+         <CODE>mod_actions</CODE> description).<BR>
+
+        <LI>Basic directory indexing is now supported (Read more
+         about this in the EWSAPI module <CODE>mod_dir</CODE> description).<BR>
+
+        <LI>The <CODE>ftp</CODE> client has been extended with a set of new
+        functions: <CODE>delete/2</CODE>, <CODE>recv_bin</CODE>, <CODE>rename</CODE>, 
+        <CODE>rmdir</CODE>, <CODE>send_bin</CODE>, and functions for sending file
+        chunks.<BR>
+
+        Own Id: OTP-1724, OTP-1803
+<BR>
+</UL>
+<A NAME="1.5.2"><!-- Empty --></A><H4>1.5.2 Fixed Bugs and Malfunctions</H4><P><UL>
+<LI>It is now possible to start a server using <CODE>erl</CODE>
+         command's <CODE>-s</CODE> option.<BR>
+
+         Own Id: OTP-1444<BR>
+
+        <LI>Erlang CGI-scripts now correctly handles %3A character
+         sequences in the CGI <CODE>QUERY_STRING</CODE><BR>
+
+         Own Id: OTP-1459<BR>
+
+         Aux Id: HA54106<BR>
+
+        <LI>The <CODE>ftp</CODE> client now correctly receives a file in 
+        the current directory of the client<BR>
+
+         Own Id: OTP-1809<BR>
+
+        <LI>The <CODE>ftp</CODE> client is now linked to the owner.
+        <BR>
+Own Id: OTP-1802<BR>
+
+</UL>
+<A NAME="1.5.3"><!-- Empty --></A><H4>1.5.3 Known bugs and problems</H4><P><UL>
+<LI>If a Web browser connect itself to an SSL enabled server
+         using a URL <STRONG>not</STRONG> starting with <CODE>https://</CODE> the
+         server will hang due to an ugly bug in the SSLeay package!<BR>
+
+</UL>
+<A NAME="1.6"><!-- Empty --></A><H3>1.6 INETS 2.1</H3><A NAME="1.6.1"><!-- Empty --></A><H4>1.6.1 Improvements and New Features</H4><P>Secure Sockets Layer (SSL) is now supported. Read more about
+        SSL in the OTP SSL application. 
+
+<P><UL>
+<LI>Erlang CGI-scripts now correctly handles colons (:)
+in the <CODE>QUERY_STRING</CODE><BR>
+
+         Own Id: OTP-1444<BR>
+
+        <LI>httpd beam start-up configuration problems solved.<BR>
+
+         Own Id: OTP-1467<BR>
+
+         Aux Id: HA54102<BR>
+
+</UL>
+<A NAME="1.6.2"><!-- Empty --></A><H4>1.6.2 Known bugs and problems</H4><P><UL>
+<LI>It is currently not possible to start a server using
+erl command's <CODE>-s</CODE> option! 
+        <BR>
+<LI>If a Web browser connect itself to an SSL enabled server
+         using a URL <STRONG>not</STRONG> starting with <CODE>https://</CODE> the
+         server will hang due to an ugly bug in the SSLeay package!
+        <BR>
+<LI>That the ftp client did not check for eof in a file
+        read, has been corrected.<BR>
+
+        Own Id: OTP-1572
+<BR>
+</UL>
+<A NAME="1.7"><!-- Empty --></A><H3>1.7 INETS 2.0</H3><A NAME="1.7.1"><!-- Empty --></A><H4>1.7.1 Improvements and New Features</H4><P>The Web server has been totally redesigned and now
+        supports the <STRONG>Erlang Scripting Interface</STRONG> (ESI),
+        <STRONG>CGI-1.1</STRONG>, <STRONG>User Authentication</STRONG>, <STRONG>Common Log
+        Format</STRONG> , <STRONG>URL Aliasing</STRONG>, <STRONG>Mime Type
+        Settings</STRONG>, <STRONG>Erlang Web Server API</STRONG> (EWSAPI) and
+        <STRONG>External Config Files</STRONG> (Apache style) etc.
+<A NAME="1.7.2"><!-- Empty --></A><H4>1.7.2 Known bugs and problems</H4><P>It seems that there is a problem starting the server using
+        the <CODE>erl</CODE> command's <CODE>-s</CODE> option!
+<A NAME="1.8"><!-- Empty --></A><H3>1.8 INETS 1.0.2</H3><A NAME="1.8.1"><!-- Empty --></A><H4>1.8.1 Fixed Bugs and Malfunctions</H4><P><UL>
+<LI>A file with a <CODE>.js</CODE> file suffix is now mime
+        stamped with <CODE>application/x-javascript</CODE> (Ticket: OTP-1221).
+        <LI>Output produced by an Erlang CGI script is now parsed
+        before delivery, i.e. a valid response status code is generated,
+        e.g. <CODE>Location: http://www.yahoo.com\n\n</CODE> generates the
+        status code 302 to inform the client of the redirect declared
+        in the <CODE>Location:</CODE> field (Ticket: OTP-1227).         
+</UL>
+<A NAME="1.9"><!-- Empty --></A><H3>1.9 INETS 1.0.1</H3><A NAME="1.9.1"><!-- Empty --></A><H4>1.9.1 Improvements and New Features</H4><P><UL>
+<LI>Addition of <CODE>httpd:parse_query/1</CODE> which parses input
+         to <STRONG>eval</STRONG> and <STRONG>erl</STRONG> scripts.
+         
+<LI>Examples in <CODE>httpd_example</CODE> + documentation has been
+         updated and no longer use <CODE>flatten</CODE> and <CODE>++</CODE> as
+         extensively. Cause: It is OK to return nested lists to a
+         port, <CODE>term_to_binary/1</CODE> and <CODE>size/1</CODE>.
+         
+<LI>It is now OK to use &#34;/&#34; instead of &#34;:&#34; in <STRONG>eval</STRONG> and
+         <STRONG>erl</STRONG> scripts as <CODE>module:function</CODE> separator.
+</UL>
+<A NAME="1.9.2"><!-- Empty --></A><H4>1.9.2 Fixed Bugs and Malfunctions</H4><P><UL>
+<LI>Manually started HTTP servers (<CODE>start/6</CODE>) no longer
+         linked to the eshell (gosh!).<LI>Data transfer is now gracefully stopped if a HTTP
+         client aborts a HTTP request.<LI>Input to <STRONG>erl</STRONG> and <STRONG>eval</STRONG> script no
+         longer gets automatically (and wrongly) converted (+ made
+         into space and %xx made into the appropriate
+         character). Use the new <CODE>parse_query</CODE> function
+         instead.</UL>
+<A NAME="1.10"><!-- Empty --></A><H3>1.10 INETS 1.0</H3><P>New application.
+</BLOCKQUOTE>
+<CENTER>
+<HR>
+<FONT SIZE=-1>
+Copyright &copy; 1991-98
+<A HREF="http://www.ericsson.se">Ericsson Telecom AB</A><BR>
+<!--#include virtual="/ssi/otp_footer.html"-->
+</FONT>
+</CENTER>
+</BODY>
+</HTML>

@@ -1,0 +1,16 @@
+{typeTable,     {mesh_snmp, type_table, []}}.
+{measTable,     {mesh_snmp, meas_table, []}}.
+{typeInfoTable, {mesh_snmp, type_info_table, []}}.
+{measInfoTable, {mesh_snmp, meas_info_table, []}}.
+{threshTable,   {mesh_snmp, thresh_table, []}}.
+
+{resetMeas,        {mesh_snmp, reset_meas, []}}.
+{watchdogNofTypes, {mesh_snmp, watchdog_types, []}}.
+{watchdogNofMeas,  {mesh_snmp, watchdog_meas, []}}.
+{currentNofTypes,  {mesh_snmp, current_types, []}}.
+{currentNofMeas,   {mesh_snmp, current_meas, []}}.
+
+
+
+
+

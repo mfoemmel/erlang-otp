@@ -1,0 +1,99 @@
+# ROOT    	   	Top of ERTS directories (must be absolute).
+#
+# TOOLS32 	  	Location of VC++ 32-bit development tools.
+
+include ../vsn.mk
+
+CC = cl -nologo
+RC = rc
+APPROOT = ..
+#TOOLS32		= c:\msdev
+TOOLS32		= d:\progra~1\devstudio\vc
+
+# Comment the following line to compile with symbols
+#NODEBUG=1
+
+!if defined(NODEBUG) || defined(RELEASE)
+ERL_DEBUG 	= -Ox
+TTYPE		= opt
+!else
+ERL_DEBUG 	= -DDEBUG -Zi
+TTYPE		= debug
+!endif
+
+!if defined(RELEASE)
+BUILD_TYPE	=
+!elseif defined(NODEBUG)
+BUILD_TYPE	= -opt
+!else
+BUILD_TYPE	= -debug
+!endif
+
+OBJDIR		= $(APPROOT)\priv\obj\win32
+BINDIR		= $(APPROOT)\priv\bin\win32
+
+
+EXECUTABLES = \
+	$(BINDIR)\win32sysinfo.exe $(BINDIR)\nteventlog.exe
+OBJS = \
+	$(OBJDIR)\win32sysinfo.obj
+
+CPU		= i386
+
+ERL_INCLUDES  =	
+
+DEFINES =  $(ERL_INCLUDES) -DNT -D__WIN32__ -DWINDOWS -DWIN32 -D_WIN32
+ERL_CFLAGS_COMMON = -c -MT $(DEFINES) -W3
+
+ERL_CFLAGS = $(ERL_DEBUG) $(ERL_CFLAGS_COMMON)
+ERL_LFLAGS = -MT
+
+# We need the special object file that defines our entry points
+ROOT 		= \erts
+!if defined(NODEBUG) || defined(RELEASE)
+ETCOBJDIR	= $(ROOT)\erts\obj\win32
+!else
+ETCOBJDIR	= $(ROOT)\erts\obj.debug\win32
+!endif
+ENTRY_OBJ	= $(ETCOBJDIR)\port_entry.obj
+PORT_ENTRY_POINT= erl_port_entry
+ERL_ENTRY_LFLAGS= $(ERL_LFLAGS) -link -entry:$(PORT_ENTRY_POINT)
+
+WIN32_LIBS = kernel32.lib advapi32.lib gdi32.lib user32.lib comctl32.lib \
+	winspool.lib comdlg32.lib
+
+WINSOCK		= ws2_32.lib mswsock.lib
+
+#
+# Targets
+#
+
+all:    $(EXECUTABLES)
+
+
+$(BINDIR)\win32sysinfo.exe: win32sysinfo.c $(ENTRY_OBJ)
+	$(CC)  -Fe$*.exe win32sysinfo.c $(ERL_RES) $(ENTRY_OBJ) advapi32.lib $(ERL_ENTRY_LFLAGS)
+
+$(BINDIR)\nteventlog.exe:
+	cd nteventlog 
+	$(MAKE) -$(MAKEFLAGS) -f Makefile.win32
+	cd ..
+
+#
+# Implicit rules
+#
+
+
+{$(OBJDIR)}.obj{$(BINDIR)}.exe:
+	$(CC) -Fe$*.exe $** $(OBJDIR)\erl.res
+
+
+clean:
+	-@del $(BINDIR)\*.exe
+	-@del $(OBJDIR)\*.obj
+	-@del $(OBJDIR)\*.sbr
+	-@del $(OBJDIR)\*.res
+
+
+
+

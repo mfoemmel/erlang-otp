@@ -1,0 +1,44 @@
+
+Building OTP in clearcase
+-------------------------
+
+(For building from sources see the file ../../README)
+
+1. setenv CLEARCASE_MAKE_COMPAT gnu
+   setenv ERL_TOP /clearcase/otp/erts
+
+2. Go to the directory $ERL_TOP
+
+3. Type 'clearmake -V do_configure'. The configuration is determined
+   and then some Makefiles are created.
+
+4. Go to /clearcase/otp/erts. Type
+
+	clearmake
+
+   This will first build a new emulator then the applications.
+
+To run what you have just built, type
+
+	/clearcase/otp/erts/bin/erl
+
+
+Building test suites
+--------------------
+
+Go to /clearcase/otp/erts.
+
+Run
+	clearmake release_tests TESTROOT=<path>
+
+
+Running test suites
+-------------------
+
+Go to the `test_server' directory of the installed test suite.
+
+Start the Erlang system you want to test.
+
+The first time, run ts:install().
+
+To run a single test suite, ts:run(Name).

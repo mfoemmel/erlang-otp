@@ -1,0 +1,174 @@
+#!/bin/sh
+# 
+#  Patch $ERL_ROOT/emulator/obj/Makefile.dist & make
+#
+#
+start_option=query
+while [ $# -ne 0 ]; do
+	case $1 in
+		-minimal) start_option=minimal ;;
+		-sasl)    start_option=sasl    ;;
+		*)        ERL_ROOT=$1          ;;
+	esac
+	shift
+done
+
+if [ -z "$ERL_ROOT" -o ! -d "$ERL_ROOT" ]
+then
+	echo "Install: need ERL_ROOT directory as argument"
+	exit 1
+fi
+
+if [ `echo $ERL_ROOT | awk '{ print substr($1,1,1) }'` != "/" ]
+then
+	echo "Install: need an absolute path to ERL_ROOT"
+	exit 1
+fi
+
+if [ ! -d $ERL_ROOT/erts-%I_VSN%/bin ]
+then
+	echo "Install: The directory $ERL_ROOT/erts-%I_VSN%/bin does not exist"
+	echo "         Bad location or erts module not un-tared"
+	exit 1
+fi
+
+if [ -d $ERL_ROOT/erts-%I_VSN%/obj ]
+then
+	cd $ERL_ROOT/erts-%I_VSN%/obj
+	sed -e "s;%FINAL_ROOTDIR%;$ERL_ROOT;" Makefile.src > Makefile
+fi
+
+if [ ! -d $ERL_ROOT/bin ]
+then
+        mkdir $ERL_ROOT/bin
+fi
+
+#
+# Fetch target system.
+#
+SYS=`(uname -s) 2>/dev/null` || SYS=unknown
+REL=`(uname -r) 2>/dev/null` || REL=unknown
+case $SYS:$REL in
+	        SunOS:5.*)
+	                TARGET=sunos5 ;;
+	        Linux:*)
+	                TARGET=linux ;;
+	        *)
+	                TARGET="" ;;
+esac
+
+cd $ERL_ROOT/erts-%I_VSN%/bin
+
+sed -e "s;%FINAL_ROOTDIR%;$ERL_ROOT;" erl.src > erl
+chmod 755 erl
+
+#
+# Create start file for embedded system use,
+# currently only on Solaris/SunOS 5
+#
+if [ "X$TARGET" = "Xsunos5" ]; then
+  (cd $ERL_ROOT/erts-%I_VSN%/bin;
+   sed -e "s;%FINAL_ROOTDIR%;$ERL_ROOT;" start.src > start;
+   chmod 755 start)
+fi
+
+cd $ERL_ROOT/bin
+
+cp -p $ERL_ROOT/erts-%I_VSN%/bin/erl .
+cp -p $ERL_ROOT/erts-%I_VSN%/bin/erlc .
+
+#
+# Set a soft link to epmd
+# This should not be done for an embedded system!
+#
+
+# Remove old links first.
+if [ -h epmd ]; then
+  /bin/rm -f epmd
+fi
+
+ln -s $ERL_ROOT/erts-%I_VSN%/bin/epmd epmd
+
+if [ "X$TARGET" = "Xsunos5" ]; then
+  cp -p $ERL_ROOT/erts-%I_VSN%/bin/run_erl .
+  cp -p $ERL_ROOT/erts-%I_VSN%/bin/to_erl .
+  cp -p $ERL_ROOT/erts-%I_VSN%/bin/start .
+  sed -e "s;%EMU%;%EMULATOR%%EMULATOR_NUMBER%;" $ERL_ROOT/erts-%I_VSN%/bin/start_erl.src > start_erl
+  chmod 755 start_erl
+fi
+
+if [ -d $ERL_ROOT/lib/sasl* ]
+then
+    (cd $ERL_ROOT/releases
+     echo %I_VSN% %I_SYSTEM_VSN% > start_erl.data)
+     echo ""
+    (cd $ERL_ROOT/releases/%I_SYSTEM_VSN%
+     echo ""
+     echo "Building SASL boot script ..."
+#     ERCL_EMULATOR="$ERL_ROOT/bin/erl +B -boot ./start" $ERL_ROOT/bin/erlc -s start_sasl.rel
+     $ERL_ROOT/bin/erl -noinput +B -boot ./start -s systools make_script start_sasl -s erlang halt
+     $ERL_ROOT/bin/erl -noinput +B -boot ./start -s release_handler create_RELEASES $ERL_ROOT start_sasl.rel -s erlang halt
+     echo "")
+fi
+
+
+if [ -f $ERL_ROOT/releases/%I_SYSTEM_VSN%/start_sasl.boot ] && \
+   [ "$start_option" = "query" ]
+then
+    echo "Do you want to use a minimal system startup"
+    echo "instead of the SASL startup? (y/n) [n]: " | tr -d '\012'
+    read reply
+    case $reply in
+    [Yy]*)
+	start_option=minimal ;;
+    *)
+	start_option=sasl ;;
+    esac
+fi
+
+case $start_option in
+    minimal)
+	Name=start_clean ;;
+    sasl)
+	Name=start_sasl  ;;
+    *)
+	Name=start_sasl  ;;
+esac
+
+cp -p ../releases/%I_SYSTEM_VSN%/start_*.boot .
+cp -p $Name.boot start.boot
+cp -p ../releases/%I_SYSTEM_VSN%/$Name.script start.script
+
+#
+# Installation of pxw
+#
+if [ -d $ERL_ROOT/lib/pxw -a -x $ERL_ROOT/lib/pxw/Install ]
+then
+	cd $ERL_ROOT/lib/pxw
+	./Install $ERL_ROOT
+fi
+
+#
+# We always run ranlib unless Solaris/SunOS 5
+# but ignore failures.
+#
+if [ "X$TARGET" != "Xsunos5" ]; then 
+    cd $ERL_ROOT/usr/lib
+    for library in lib*.a
+    do
+	(ranlib $library) > /dev/null 2>&1
+    done
+fi
+
+
+#
+# Fixing the man pages
+#
+
+if [ -d $ERL_ROOT/man ]
+then
+    cd $ERL_ROOT
+    ./misc/format_man_pages $ERL_ROOT
+fi
+
+
