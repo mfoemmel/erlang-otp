@@ -81,11 +81,11 @@ reconfigure(Dir) ->
     init_tabs(Sec2Group, Access, View),
     ok.
 
-maybe_create_table(Name) ->
-    case snmp_local_db:table_exists(db(Name)) of
-	true -> ok;
-	_ -> snmp_local_db:table_create(db(Name))
-    end.
+% maybe_create_table(Name) ->
+%     case snmp_local_db:table_exists(db(Name)) of
+% 	true -> ok;
+% 	_ -> snmp_local_db:table_create(db(Name))
+%     end.
 
 init_tabs(Sec2Group, Access, View) ->
     ?vdebug("create vacm security-to-group table",[]),

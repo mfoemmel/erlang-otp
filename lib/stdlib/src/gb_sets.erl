@@ -71,6 +71,9 @@
 %% - delete(X, S): removes element X from set S; returns new set.
 %%   Assumes that the element exists in the set.
 %%
+%% - delete_any(X, S): removes key X from set S if the key is present
+%%   in the set, otherwise does nothing; returns new set.
+%%
 %%   Alias: del_element(), for compatibility with `sets'.
 %%
 %% - balance(S): rebalances the tree representation of S. Note that this
@@ -137,9 +140,9 @@
 -module(gb_sets).
 
 -export([empty/0, is_empty/1, size/1, singleton/1, is_member/2,
-	 insert/2, add/2, delete/2, balance/1, union/2, union/1,
-	 intersection/2, intersection/1, difference/2, is_subset/2,
-	 to_list/1, from_list/1, from_ordset/1, take_smallest/1,
+	 insert/2, add/2, delete/2, delete_any/2, balance/1,
+	 union/2, union/1, intersection/2, intersection/1, difference/2,
+	 is_subset/2, to_list/1, from_list/1, from_ordset/1, take_smallest/1,
 	 iterator/1, next/1, filter/2, fold/3, is_set/1]).
 
 %% `sets' compatibility aliases:
@@ -194,16 +197,16 @@ singleton(Key) ->
 is_element(Key, S) ->
     is_member(Key, S).
 
-is_member(Key, {S, T}) ->
+is_member(Key, {_, T}) ->
     is_member_1(Key, T).
 
 is_member_1(Key, {Key1, Smaller, _}) when Key < Key1 ->
     is_member_1(Key, Smaller);
 is_member_1(Key, {Key1, _, Bigger}) when Key > Key1 ->
     is_member_1(Key, Bigger);
-is_member_1(Key, {_, _, _}) ->
+is_member_1(_, {_, _, _}) ->
     true;
-is_member_1(Key, nil) ->
+is_member_1(_, nil) ->
     false.
 
 insert(Key, {S, T}) ->
@@ -265,7 +268,7 @@ count(nil) ->
 
 max(X, Y) when X < Y ->
     Y;
-max(X, Y) ->
+max(X, _Y) ->
     X.
 
 balance({S, T}) ->
@@ -312,6 +315,14 @@ from_ordset(L) ->
 del_element(Key, S) ->
     delete(Key, S).
 
+delete_any(Key, S) ->
+    case is_member(Key, S) of
+ 	true ->
+ 	    delete(Key, S);
+ 	false ->
+ 	    S
+    end.
+
 delete(Key, {S, T}) ->
     {S - 1, delete_1(Key, T)}.
 
@@ -321,7 +332,7 @@ delete_1(Key, {Key1, Smaller, Larger}) when Key < Key1 ->
 delete_1(Key, {Key1, Smaller, Bigger}) when Key > Key1 ->
     Bigger1 = delete_1(Key, Bigger),
     {Key1, Smaller, Bigger1};
-delete_1(Key, {_, Smaller, Larger}) ->
+delete_1(_, {_, Smaller, Larger}) ->
     merge(Smaller, Larger).
 
 merge(Smaller, nil) ->
@@ -460,7 +471,7 @@ union_2([X | Xs1], [Y | _] = Ys, As, S) when X < Y ->
     union_2(Xs1, Ys, [X | As], S);
 union_2([X | _] = Xs, [Y | Ys1], As, S) when X > Y ->
     union_2(Ys1, Xs, [Y | As], S);
-union_2([X | Xs1], [Y | Ys1], As, S) ->
+union_2([X | Xs1], [_ | Ys1], As, S) ->
     union_2(Xs1, Ys1, [X | As], S - 1);
 union_2([], Ys, As, S) ->
     {S, balance_revlist(push(Ys, As), S)};
@@ -502,12 +513,12 @@ union_list(S, []) -> S.
 %% The rest is modelled on the above.
 
 
-intersection({N1, T1} = A, {N2, T2} = B) when N2 < N1 ->
+intersection({N1, T1}, {N2, T2}) when N2 < N1 ->
     intersection(to_list_1(T2), N2, T1, N1);
-intersection({N1, T1} = A, {N2, T2} = B) ->
+intersection({N1, T1}, {N2, T2}) ->
     intersection(to_list_1(T1), N1, T2, N2).
 
-intersection(L, N1, T2, N2) when N2 < 10 ->
+intersection(L, _N1, T2, N2) when N2 < 10 ->
     intersection_2(L, to_list_1(T2));
 intersection(L, N1, T2, N2) ->
     X = N1 * round(?c * math:log(N2)),
@@ -542,7 +553,7 @@ intersection_2([X | Xs1], [Y | _] = Ys, As, S) when X < Y ->
     intersection_2(Xs1, Ys, As, S);
 intersection_2([X | _] = Xs, [Y | Ys1], As, S) when X > Y ->
     intersection_2(Ys1, Xs, As, S);
-intersection_2([X | Xs1], [Y | Ys1], As, S) ->
+intersection_2([X | Xs1], [_ | Ys1], As, S) ->
     intersection_2(Xs1, Ys1, [X | As], S + 1);
 intersection_2([], _, As, S) ->
     {S, balance_revlist(As, S)};
@@ -602,9 +613,9 @@ difference_2([X | Xs1], [Y | _] = Ys, As, S) when X < Y ->
     difference_2(Xs1, Ys, [X | As], S);
 difference_2([X | _] = Xs, [Y | Ys1], As, S) when X > Y ->
     difference_2(Xs, Ys1, As, S);
-difference_2([X | Xs1], [Y | Ys1], As, S) ->
+difference_2([_X | Xs1], [_Y | Ys1], As, S) ->
     difference_2(Xs1, Ys1, As, S - 1);
-difference_2([], Ys, As, S) ->
+difference_2([], _Ys, As, S) ->
     {S, balance_revlist(As, S)};
 difference_2(Xs, [], As, S) ->
     {S, balance_revlist(push(Xs, As), S)}.
@@ -616,7 +627,7 @@ difference_2(Xs, [], As, S) ->
 is_subset({N1, T1}, {N2, T2}) ->
     is_subset(to_list_1(T1), N1, T2, N2).
 
-is_subset(L, N1, T2, N2) when N2 < 10 ->
+is_subset(L, _N1, T2, N2) when N2 < 10 ->
     is_subset_2(L, to_list_1(T2));
 is_subset(L, N1, T2, N2) ->
     X = N1 * round(?c * math:log(N2)),
@@ -634,7 +645,7 @@ is_subset_1([X | Xs], T) ->
 	false ->
 	    false
     end;
-is_subset_1([], T) ->
+is_subset_1([], _) ->
     true.
 
 
@@ -642,7 +653,7 @@ is_subset_2([X | _], [Y | _]) when X < Y ->
     false;
 is_subset_2([X | _] = Xs, [Y | Ys1]) when X > Y ->
     is_subset_2(Xs, Ys1);
-is_subset_2([X | Xs1], [Y | Ys1]) ->
+is_subset_2([_ | Xs1], [_ | Ys1]) ->
     is_subset_2(Xs1, Ys1);
 is_subset_2([], _) ->
     true;

@@ -55,11 +55,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#ifndef __STDC__
-#include <varargs.h>
-#else
 #include <stdarg.h>
-#endif
 
 
 #ifndef WANT_NONBLOCKING
@@ -90,8 +86,7 @@ EXTERN_FUNCTION(void, output_ready, (int, int));
 EXTERN_FUNCTION(int, driver_interrupt, (int, int));
 EXTERN_FUNCTION(void, increment_time, (int));
 EXTERN_FUNCTION(int, next_time, (_VOID_));
-EXTERN_FUNCTION(int, send_error_to_logger, (uint32));
-EXTERN_FUNCTION(int, schedule, (_VOID_));
+EXTERN_FUNCTION(int, send_error_to_logger, (Eterm));
 EXTERN_FUNCTION(void, set_reclaim_free_function, (FreeFunction));
 EXTERN_FUNCTION(int, erl_mem_info_get, (MEM_PART_STATS *));
 
@@ -213,14 +208,19 @@ erl_sys_init(void)
 #endif
 }
 
+/*
+ * Called from schedule() when it runs out of runnable processes,
+ * or when Erlang code has performed INPUT_REDUCTIONS reduction
+ * steps. runnable == 0 iff there are no runnable Erlang processes.
+ */
 void
-erl_sys_schedule_loop(void)
+erl_sys_schedule(int runnable)
 {
-  for(;;) {
-    while(schedule())
-      check_io(0);		/* poll for any i/o */
-    check_io(1);	
-  }
+    if (runnable) {
+	check_io(0);		/* Poll for I/O */
+    } else {
+	check_io(1);
+    }
 }
 
 /* signal handling */
@@ -457,7 +457,7 @@ char *getenv_string(GETENV_STATE *state0)
 
 #define TMP_BUF_MAX (tmp_buf_size - 1024)
 static byte *tmp_buf;
-static uint32 tmp_buf_size;
+static Uint tmp_buf_size;
 int cerr_pos;
 
 /* II. The spawn/fd/vanilla drivers */
@@ -1211,7 +1211,7 @@ static int port_inp_failure(int port_num, int ready_fd, int res)
 static void ready_input(ErlDrvData drv_data, ErlDrvEvent drv_event)
 {
   int port_num, packet_bytes, res;
-  uint32 h = 0;
+  Uint h = 0;
   char *buf;
   int fd = (int) drv_data;
   int ready_fd = (int) drv_event;
@@ -1421,6 +1421,9 @@ int driver_select(ErlDrvPort this_port, ErlDrvEvent fd, int mode, int on)
     return(-1);
 }
 
+int driver_event(ErlDrvPort ix, ErlDrvEvent e, ErlDrvEventData event_data) {
+    return -1;
+}
 
 /* See if there is any i/o pending. If wait is 1 wait for i/o.
    Both are done using "select". NULLTV (ie 0) causes select to wait.
@@ -1491,7 +1494,7 @@ int sys_putenv(char *buffer){
 
 
 void
-sys_init_io(byte *buf, uint32 size)
+sys_init_io(byte *buf, Uint size)
 {
   tmp_buf = buf;
   tmp_buf_size = size;
@@ -1608,23 +1611,10 @@ static void fix_registers(void){
    (i.e. something that puts a limit on the number of chars printed)
    - the below is probably the best we can do...    */
 
-/*VARARGS*/
-#ifndef __STDC__
-void sys_printf(va_alist)
-     va_dcl
-{
-  va_list va;
-  CIO where;
-  char   *format;
-  va_start(va);
-  where = va_arg(va, CIO);
-  format = va_arg(va, char *);
-#else
 void sys_printf(CIO where, char* format, ...)
 {
   va_list va;
   va_start(va,format);
-#endif
 
   if (where == CERR)
       erl_error(format, va);
@@ -1715,24 +1705,15 @@ stdio_write(char *buf, int nchars, int fp)
   return(OK);
 }
 
-/* VARARGS */
-#ifndef __STDC__
-int real_printf(va_alist)
-     va_dcl
-{
-  va_list ap;
-  char *fmt;
-  
-  va_start(ap);
-  fmt = va_arg(ap, char *);
-#else
 int real_printf(const char *fmt, ...)
 {
   va_list ap;
+  int err;
   
   va_start(ap, fmt);
-#endif
-  return(fioFormatV(fmt, ap, stdio_write, (int)stdout));
+  err = fioFormatV(fmt, ap, stdio_write, (int)stdout);
+  va_end(ap);
+  return(err);
 }
 	
 	
@@ -2666,7 +2647,7 @@ erl_debug(char* fmt, ...)
     char sbuf[1024];		/* Temporary buffer. */
     va_list va;
     
-    VA_START(va, fmt);
+    va_start(va, fmt);
     vsprintf(sbuf, fmt, va);
     va_end(va);
     fprintf(stderr, "%s\n", sbuf);

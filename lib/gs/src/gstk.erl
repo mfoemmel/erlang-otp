@@ -27,7 +27,7 @@ start_link(GsId,FrontendNode,Owner,Options) ->
 	false ->
 	    Gstk = spawn_link(gstk, init,[{GsId, FrontendNode, Owner, Options}]),
 	    receive
-		{ok, PortHandler} ->
+		{ok, _PortHandler} ->
 		    {ok, Gstk};
 		{error, Reason} ->
 		    {error, Reason}
@@ -106,7 +106,6 @@ init({GsId,FrontendNode,Owner,Opts}) ->
 	    Gstkid = #gstkid{id=GsId,widget="",owner=Owner,objtype=gs},
 	    gstk_db:insert_gs(DB,Gstkid),
 	    gstk_font:init(),
-	    exec(["option add *font ",gstk_font:choose_ascii(DB,{screen,12})]),
 	    loop(#state{db=DB,frontendnode=FrontendNode})
     end.
 
@@ -152,7 +151,7 @@ doit({From,dump_db},State) ->
     io:format("kids:~p~n",[ets:tab2list(get(kids))]),
     reply(From,State);
 
-doit({From,stop},S) ->
+doit({From,stop},_State) ->
     gstk_port_handler:stop(get(port_handler)),
     exit(get(worker),kill),
     reply(From,stopped),
@@ -163,7 +162,7 @@ doit({event,{Id, Etag, Args}},#state{db=DB}) ->
         {Etype, Edata} ->
             Gstkid = gstk_db:lookup_gstkid(DB, Id),
             apply(gstk_widgets:objmod(Gstkid),event,[DB,Gstkid,Etype,Edata,Args]);
-        Other -> true
+        _ -> true
     end,
     done.
 
@@ -248,7 +247,7 @@ pid_died_impl(DB, Pid) ->
 	    destroy_impl(DB, Gstkid),
 	    Tops = get_tops(IDs, DB),
 	    destroy_widgets(Tops, DB);
-	Other ->
+	_ ->
 	    true
     end.
 
@@ -268,7 +267,7 @@ get_tops([ID | IDs], DB) ->
 		    [Widget | get_tops(IDs, DB)]
 	    end
     end;
-get_tops([], DB) -> [].
+get_tops([], _DB) -> [].
 
 
 delete_widgets([ID | Rest], DB) ->
@@ -287,7 +286,7 @@ delete_widgets([], _) -> true.
 destroy_widgets(Widgets, DB) ->
     case destroy_wids(Widgets, DB) of
 	[]       -> true;
-	Destroys -> exec(["catch {destroy ", Destroys, "}"])
+	Destroys -> exec(["destroy ", Destroys])
     end.
 
 
@@ -299,7 +298,7 @@ destroy_wids([{Parent, ID, Objmod, Args} | Rest], DB) ->
 destroy_wids([W | Rest], DB) ->
     [W, " "| destroy_wids(Rest, DB)];
 
-destroy_wids([], DB) -> [].
+destroy_wids([], _DB) -> [].
 
 
 %% ----- The Color Model -----
@@ -315,7 +314,7 @@ to_color(Color) when atom(Color) -> atom_to_list(Color).
 
 dec2hex(M,N) -> dec2hex(M,N,[]).
 
-dec2hex(0,N,Ack) -> Ack;
+dec2hex(0,_N,Ack) -> Ack;
 dec2hex(M,N,Ack) -> dec2hex(M-1,N bsr 4,[d2h(N band 15)|Ack]).
 
 d2h(N) when N<10 -> N+$0;
@@ -331,7 +330,9 @@ to_ascii(V) when atom(V)    -> to_ascii( atom_to_list(V));
 to_ascii(V) when tuple(V)   -> to_ascii(lists:flatten(io_lib:format("~w",[V])));
 to_ascii(V) when pid(V)     -> pid_to_list(V).
 
-
+% FIXME: Currently we accept newlines in strings and handle this at
+% the Tcl side. Is this the best way or should we translate to "\n"
+% here?
 to_ascii([$[|R], Y, X) ->  to_ascii(R, Y, [$[, $\\ | X]);
 to_ascii([$]|R], Y, X) ->  to_ascii(R, Y, [$], $\\ | X]);
 to_ascii([${|R], Y, X) ->  to_ascii(R, Y, [${, $\\ | X]);
@@ -368,6 +369,6 @@ worker_init(Delay) ->
 worker_match([{DB,[Expr|Exprs]}|DbExprs]) ->
     ets:match_delete(DB,Expr),
     worker_match([{DB,Exprs}|DbExprs]);
-worker_match([{DB,[]}|DbExprs]) ->
+worker_match([{_DB,[]}|DbExprs]) ->
     worker_match(DbExprs);
 worker_match([]) -> done.

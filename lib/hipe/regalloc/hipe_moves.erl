@@ -105,11 +105,11 @@ set_movelist(New_movelist, Moves) ->
 %%%----------------------------------------------------------------------
 
 new(IG) ->
-    #moves{coalesced   = ordsets:new(),
-	   constrained = ordsets:new(),
-	   frozen      = ordsets:new(),
+    #moves{coalesced   = gb_sets:new(),
+	   constrained = gb_sets:new(),
+	   frozen      = gb_sets:new(),
 	   worklist    = hipe_ig_moves:worklist_moves(hipe_ig:ig_moves(IG)),
-	   active      = ordsets:new(),
+	   active      = gb_sets:new(),
 	   movelist    = hipe_ig_moves:movelist(hipe_ig:ig_moves(IG))}.
 
 
@@ -131,15 +131,15 @@ new(IG) ->
 %
 %%%----------------------------------------------------------------------
 remove(coalesced, Element, Moves) ->
-    set_coalesced(ordsets:del_element(Element, coalesced(Moves)), Moves);
+    set_coalesced(gb_sets:del_element(Element, coalesced(Moves)), Moves);
 remove(constrained, Element, Moves) ->
-    set_constrained(ordsets:del_element(Element, constrained(Moves)), Moves);
+    set_constrained(gb_sets:del_element(Element, constrained(Moves)), Moves);
 remove(frozen, Element, Moves) ->
-    set_frozen(ordsets:del_element(Element, frozen(Moves)), Moves);
+    set_frozen(gb_sets:del_element(Element, frozen(Moves)), Moves);
 remove(worklist, Element, Moves) ->
     set_worklist(ordsets:del_element(Element, worklist(Moves)), Moves);
 remove(active, Element, Moves) ->
-    set_active(ordsets:del_element(Element, active(Moves)), Moves);
+    set_active(gb_sets:del_element(Element, active(Moves)), Moves);
 remove(movelist, Element, Moves) -> 
     set_movelist(ordsets:del_element(Element, movelist(Moves)), Moves).
 
@@ -162,17 +162,17 @@ remove(movelist, Element, Moves) ->
 %
 %%%----------------------------------------------------------------------
 add(coalesced, Element, Moves) ->
-    set_coalesced(ordsets:add_element(Element, coalesced(Moves)), Moves);
+    set_coalesced(gb_sets:add_element(Element, coalesced(Moves)), Moves);
 add(constrained, Element, Moves) ->
-    set_constrained(ordsets:add_element(Element, constrained(Moves)), Moves);
+    set_constrained(gb_sets:add_element(Element, constrained(Moves)), Moves);
 add(frozen, Element, Moves) ->
-    set_frozen(ordsets:add_element(Element, frozen(Moves)), Moves);
+    set_frozen(gb_sets:add_element(Element, frozen(Moves)), Moves);
 add(worklist, Element, Moves) ->
     set_worklist(ordsets:add_element(Element, worklist(Moves)), Moves);
 add(active, Element, Moves) ->
-    set_active(ordsets:add_element(Element, active(Moves)), Moves);
+    set_active(gb_sets:add_element(Element, active(Moves)), Moves);
 add(movelist, Element, Moves) ->
-    set_movelist(ordsets:add_element(Element, movelist(Moves)), Moves).
+    set_movelist(gb_sets:add_element(Element, movelist(Moves)), Moves).
 
 
 %%%----------------------------------------------------------------------
@@ -193,15 +193,15 @@ add(movelist, Element, Moves) ->
 %
 %%%----------------------------------------------------------------------
 member(coalesced, Element, Moves) -> 
-    ordsets:is_element(Element, coalesced(Moves));
+   gb_sets:is_element(Element, coalesced(Moves));
 member(constrained, Element, Moves) ->
-    ordsets:is_element(Element, constrained(Moves));
+    gb_sets:is_element(Element, constrained(Moves));
 member(frozen, Element, Moves) ->
-    ordsets:is_element(Element, frozen(Moves));
+    gb_sets:is_element(Element, frozen(Moves));
 member(worklist, Element, Moves) ->
     ordsets:is_element(Element, worklist(Moves));
 member(active, Element, Moves) ->
-    ordsets:is_element(Element, active(Moves));
+    gb_sets:is_element(Element, active(Moves));
 member(movelist, Element, Moves) ->
     ordsets:is_element(Element, movelist(Moves)).
 
@@ -223,15 +223,15 @@ member(movelist, Element, Moves) ->
 %
 %%%----------------------------------------------------------------------
 is_empty(coalesced, Moves) ->
-    coalesced(Moves) == [];
+    gb_sets:is_empty(coalesced(Moves));
 is_empty(constrained, Moves) ->
-    constrained(Moves) == [];
+    gb_sets:is_empty(constrained(Moves));
 is_empty(frozen, Moves) ->
-    frozen(Moves) == [];
+    gb_sets:is_empty(frozen(Moves));
 is_empty(worklist, Moves) ->
     worklist(Moves) == [];
 is_empty(active, Moves) ->
-    active(Moves) == [];
+    gb_sets:is_empty(active(Moves));
 is_empty(movelist, Moves) ->
     movelist(Moves) == [].
 
@@ -251,11 +251,32 @@ is_empty(movelist, Moves) ->
 %%   A set of temporaries that's not frozen, constrained or coalesced.
 %%----------------------------------------------------------------------
 
-node_moves(Node, Moves) when integer(Node) ->
-    Q = ordsets:intersection(movelist_associated_with(Node, Moves),
-			  ordsets:union(active(Moves), worklist(Moves))),
-    %% io:format("node_moves: node ~p moves: ~p~n",[Node,Q]),
-    Q.
+node_moves(Node, Moves) when is_integer(Node) ->
+%% Associated = movelist_associated_with(Node, Moves),
+%%  Associated /\ (Active U Worklist)
+
+%% Since the union Active Worklist might be much larger than 
+%% the Associated set we do not want to generate the set the
+%% straightforward way. (We would like to do the union lazily).
+
+%% Straightforward code:
+%  Q = ordsets:intersection(
+%	movelist_associated_with(Node, Moves),
+%	ordsets:union(ordsets:from_list(gb_sets:to_list(active(Moves))), 
+%		      worklist(Moves))),
+%    %% io:format("node_moves: node ~p moves: ~p~n",[Node,Q]),
+%    Q.
+
+  %% Two lookups for each element.
+  %% Could go one step further and use the fact that the lists are ordered.
+  Associated = movelist_associated_with(Node, Moves),
+  Active = active(Moves),
+  Worklist = worklist(Moves),
+  [X || X <- Associated,
+	  gb_sets:is_member(X,Active) orelse
+	  ordsets:is_element(X,Worklist)].
+      
+
 
 %%----------------------------------------------------------------------
 %% Function:    move_related
@@ -274,9 +295,9 @@ node_moves(Node, Moves) when integer(Node) ->
 %%   false --  Otherwise.
 %%----------------------------------------------------------------------
 
-move_related(Node, Moves) when integer(Node) ->
+move_related(Node, Moves) when is_integer(Node) ->
     %% We know that node_moves/2 returns an ordset (a list).
     not (node_moves(Node, Moves) == []).
 
-movelist_associated_with(Node, Moves) when integer(Node) ->
+movelist_associated_with(Node, Moves) when is_integer(Node) ->
     hipe_vectors_wrapper:get(movelist(Moves), Node).

@@ -76,7 +76,7 @@
 pack(Size, SpecSizes) when Size < 0 ->
     pack(0, SpecSizes);
 pack(Size, SpecSizes) ->
-    {Weights,Stretched,Fixed,Min,Max} = get_size_info(SpecSizes),
+    {Weights,_Stretched,Fixed,Min,Max} = get_size_info(SpecSizes),
     Left = Size - Fixed,
     Unit = if Weights == 0 -> 0; true -> Left / Weights end,
     if
@@ -123,7 +123,7 @@ remove_failure(Specs, Unit) ->
 	    {no,Specs}				% NewSpecs == Specs but
     end.					% we choose the old one
 
-remove_failure([], Unit, MaxFailure) ->
+remove_failure([], _Unit, MaxFailure) ->
     {MaxFailure,[]};
 remove_failure([{stretch,W,Mi} | Specs], Unit, MaxFailure) ->
     {MinMax,NewMaxFailure} = max_failure(MaxFailure, Mi-W*Unit, 0),
@@ -150,7 +150,7 @@ remove_failure([Spec | Specs], Unit, MaxFailure) ->
 max_failure(LastDiff, DMi, DMa)
   when DMi > LastDiff, DMi > DMa ->
     {min,DMi};
-max_failure(LastDiff, DMi, DMa)
+max_failure(LastDiff, _DMi, DMa)
   when DMa > LastDiff ->
     {max,DMa};
 max_failure(MaxFailure, _DMi, _DMa) ->
@@ -179,7 +179,7 @@ max_failure(MaxFailure, _DMi, _DMa) ->
 distribute_space(Specs, Unit) ->
     distribute_space(Specs, Unit, 0.0).
 
-distribute_space([], Unit, Err) ->
+distribute_space([], _Unit, _Err) ->
     [];
 distribute_space([Spec | Specs], Unit, Err) ->
     distribute_space(Spec, Specs, Unit, Err).
@@ -230,11 +230,11 @@ cnvt_to_max([Spec | Specs]) ->
 
 cnvt_to_min({fixed,P}, Specs) ->
     [{stretch,P} | cnvt_to_min(Specs)];
-cnvt_to_min({stretch,W}, Specs) ->
+cnvt_to_min({stretch,_W}, Specs) ->
     [{fixed,0} | cnvt_to_min(Specs)];
-cnvt_to_min({stretch,W,Mi}, Specs) ->
+cnvt_to_min({stretch,_W,Mi}, Specs) ->
     [{stretch,Mi} | cnvt_to_min(Specs)];
-cnvt_to_min({stretch,W,Mi,Ma}, Specs) ->
+cnvt_to_min({stretch,_W,Mi,_Ma}, Specs) ->
     [{stretch,Mi} | cnvt_to_min(Specs)];
 cnvt_to_min(Spec, Specs) ->
     [Spec | cnvt_to_min(Specs)].
@@ -244,7 +244,7 @@ cnvt_to_min(Spec, Specs) ->
 
 cnvt_to_max({fixed,P}, Specs) ->
     [{stretch,P} | cnvt_to_max(Specs)];
-cnvt_to_max({stretch,W,Mi,Ma}, Specs) ->
+cnvt_to_max({stretch,_W,_Mi,Ma}, Specs) ->
     [{stretch,Ma} | cnvt_to_max(Specs)].
 
 
@@ -268,8 +268,7 @@ get_size_info({stretch,W}, TotW, NumW, TotFixed, TotMin, _TotMax, Specs) ->
     get_size_info(Specs, TotW+W, NumW+1, TotFixed, TotMin, infinity);
 get_size_info({stretch,W,Mi}, TotW, NumW, TotFixed, TotMin, _TotMax, Specs) ->
     get_size_info(Specs, TotW+W, NumW+1, TotFixed, TotMin+Mi, infinity);
-get_size_info({stretch,W,Mi,Ma}, TotW, NumW, TotFixed, TotMin, infinity, Specs) ->
+get_size_info({stretch,W,Mi,_Ma}, TotW, NumW, TotFixed, TotMin, infinity, Specs) ->
     get_size_info(Specs, TotW+W, NumW+1, TotFixed, TotMin+Mi, infinity);
 get_size_info({stretch,W,Mi,Ma}, TotW, NumW, TotFixed, TotMin, TotMax, Specs) ->
     get_size_info(Specs, TotW+W, NumW+1, TotFixed, TotMin+Mi, TotMax+Ma).
-

@@ -15,7 +15,22 @@
 static void __noreturn
 et_abort(const char *expr, const char *file, unsigned line)
 {
-    erl_exit(1, "TYPE ASSERTION FAILED, file %s, line %u: %s\n", file, line, expr);
+#ifdef EXIT_ON_ET_ABORT
+    static int have_been_called = 0;
+
+    if (have_been_called) {
+	abort();
+    } else {
+	/*
+	 * Prevent infinite loop.
+	 */
+	have_been_called = 1;
+	erl_exit(1, "TYPE ASSERTION FAILED, file %s, line %u: %s\n", file, line, expr);
+    }
+#else
+    erl_printf(CERR, "TYPE ASSERTION FAILED, file %s, line %u: %s\n", file, line, expr);
+    abort();
+#endif
 }
 
 #if ET_DEBUG
@@ -51,6 +66,9 @@ unsigned tag_val_def(Eterm x)
 	    case (_TAG_HEADER_REF >> _TAG_PRIMARY_SIZE):	return REF_DEF;
 	    case (_TAG_HEADER_FLOAT >> _TAG_PRIMARY_SIZE):	return FLOAT_DEF;
 	    case (_TAG_HEADER_FUN >> _TAG_PRIMARY_SIZE):	return FUN_DEF;
+	    case (_TAG_HEADER_EXTERNAL_PID >> _TAG_PRIMARY_SIZE):	return EXTERNAL_PID_DEF;
+	    case (_TAG_HEADER_EXTERNAL_PORT >> _TAG_PRIMARY_SIZE):	return EXTERNAL_PORT_DEF;
+	    case (_TAG_HEADER_EXTERNAL_REF >> _TAG_PRIMARY_SIZE):	return EXTERNAL_REF_DEF;
 	    default:						return BINARY_DEF;
 	  }
 	  break;
@@ -112,15 +130,25 @@ ET_DEFINE_CHECKED(Uint,bignum_header_arity,Eterm,_is_bignum_header);
 ET_DEFINE_CHECKED(Eterm*,big_val,Eterm,is_big);
 ET_DEFINE_CHECKED(Eterm*,float_val,Eterm,is_float);
 ET_DEFINE_CHECKED(Eterm*,tuple_val,Eterm,is_tuple);
-ET_DEFINE_CHECKED(Uint,pid_serial,Eterm,is_pid);
-ET_DEFINE_CHECKED(Uint,pid_number,Eterm,is_pid);
-ET_DEFINE_CHECKED(Uint,pid_node,Eterm,is_pid);
-ET_DEFINE_CHECKED(Uint,pid_creation,Eterm,is_pid);
-ET_DEFINE_CHECKED(Uint,port_node,Eterm,is_port);
-ET_DEFINE_CHECKED(Uint,port_number,Eterm,is_port);
-ET_DEFINE_CHECKED(Uint,port_creation,Eterm,is_port);
-ET_DEFINE_CHECKED(Uint,pid_or_port_creation,Eterm,_is_pid_or_port);
-ET_DEFINE_CHECKED(Eterm*,ref_val,Eterm,is_ref);
+ET_DEFINE_CHECKED(Uint,internal_pid_data,Eterm,is_internal_pid);
+ET_DEFINE_CHECKED(struct erl_node_*,internal_pid_node,Eterm,is_internal_pid);
+ET_DEFINE_CHECKED(Uint,internal_port_data,Eterm,is_internal_port);
+ET_DEFINE_CHECKED(struct erl_node_*,internal_port_node,Eterm,is_internal_port);
+ET_DEFINE_CHECKED(Eterm*,internal_ref_val,Eterm,is_internal_ref);
+ET_DEFINE_CHECKED(Uint,internal_ref_data_words,Eterm,is_internal_ref);
+ET_DEFINE_CHECKED(Uint*,internal_ref_data,Eterm,is_internal_ref);
+ET_DEFINE_CHECKED(struct erl_node_*,internal_ref_node,Eterm,is_internal_ref);
+ET_DEFINE_CHECKED(Eterm*,external_val,Eterm,is_external);
+ET_DEFINE_CHECKED(Uint,external_data_words,Eterm,is_external);
+ET_DEFINE_CHECKED(Uint,external_pid_data_words,Eterm,is_external_pid);
+ET_DEFINE_CHECKED(Uint,external_pid_data,Eterm,is_external_pid);
+ET_DEFINE_CHECKED(struct erl_node_*,external_pid_node,Eterm,is_external_pid);
+ET_DEFINE_CHECKED(Uint,external_port_data_words,Eterm,is_external_port);
+ET_DEFINE_CHECKED(Uint,external_port_data,Eterm,is_external_port);
+ET_DEFINE_CHECKED(struct erl_node_*,external_port_node,Eterm,is_external_port);
+ET_DEFINE_CHECKED(Uint,external_ref_data_words,Eterm,is_external_ref);
+ET_DEFINE_CHECKED(Uint*,external_ref_data,Eterm,is_external_ref);
+ET_DEFINE_CHECKED(struct erl_node_*,external_ref_node,Eterm,is_external_ref);
 
 #if BEAM
 ET_DEFINE_CHECKED(Eterm,make_cp,Uint*,_is_aligned);

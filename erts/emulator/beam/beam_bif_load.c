@@ -40,10 +40,6 @@ static void delete_export_references(Eterm module);
 static int purge_module(int module);
 static int is_native(Eterm* code);
 
-int erts_match_spec_is_on = 0;
-Binary* erts_default_match_spec = NULL;
-int erts_match_local_functions = 0;
-
 Eterm
 load_module_2(BIF_ALIST_2)
 BIF_ADECL_2
@@ -61,7 +57,7 @@ BIF_ADECL_2
     hp = HAlloc(BIF_P, 3);
     GET_BINARY_BYTES(BIF_ARG_2, code);
     sz = binary_size(BIF_ARG_2);
-    if ((i = do_load(BIF_P->group_leader, BIF_ARG_1, code, sz)) < 0) { 
+    if ((i = erts_load_module(BIF_P->group_leader, &BIF_ARG_1, code, sz)) < 0) { 
 	switch (i) {
 	case -1: reason = am_badfile; break; 
 	case -2: reason = am_nofile; break;
@@ -73,10 +69,14 @@ BIF_ADECL_2
 	}
 	BIF_RET(TUPLE2(hp, am_error, reason));
     }
-    if (erts_match_spec_is_on) {
-	Eterm mfa[1] = {BIF_ARG_1};
-	(void) erts_set_trace_pattern(mfa, 1, erts_default_match_spec, 1,
-				      erts_match_local_functions);
+    if (erts_default_trace_pattern_is_on) {
+	Eterm mfa[1];
+	mfa[0] = BIF_ARG_1;
+	(void) erts_set_trace_pattern(mfa, 1, 
+				      erts_default_match_spec, 
+				      erts_default_meta_match_spec,
+				      1, erts_default_trace_pattern_flags, 
+				      erts_default_meta_tracer_pid);
     }
     BIF_RET(TUPLE2(hp, am_module, BIF_ARG_1));
 }
@@ -117,19 +117,25 @@ BIF_ADECL_2
     Module* modp;
 
     if (is_not_atom(BIF_ARG_2)) {
-    error:
-	BIF_ERROR(BIF_P, BADARG);
-    }
-    if (is_not_pid(BIF_ARG_1) || (pid_node(BIF_ARG_1) != THIS_NODE) ||
-	(pid_number(BIF_ARG_1) >= max_process)) {
 	goto error;
     }
-    rp = process_tab[pid_number(BIF_ARG_1)];
-    if (INVALID_PID(rp, BIF_ARG_1)) {
+    if (is_internal_pid(BIF_ARG_1)) {
+	if (internal_pid_index(BIF_ARG_1) >= erts_max_processes)
+	    goto error;
+	rp = process_tab[internal_pid_index(BIF_ARG_1)];
+	if (INVALID_PID(rp, BIF_ARG_1)) {
+	    BIF_RET(am_false);
+	}
+	modp = erts_get_module(BIF_ARG_2);
+	BIF_RET(check_process_code(rp, modp));
+    }
+    else if (is_external_pid(BIF_ARG_1)
+	     && external_pid_dist_entry(BIF_ARG_1) == erts_this_dist_entry) {
 	BIF_RET(am_false);
     }
-    modp = erts_get_module(BIF_ARG_2);
-    return check_process_code(rp, modp);
+
+ error:
+    BIF_ERROR(BIF_P, BADARG);
 }
 
 
@@ -217,8 +223,10 @@ check_process_code(Process* rp, Module* modp)
     Eterm* start;
     Eterm* end;
     Eterm* sp;
+#ifndef SHARED_HEAP
     ErlFunThing* funp;
     int done_gc = 0;
+#endif
 
 #define INSIDE(a) (start <= (a) && (a) < end)
     if (modp == NULL) {		/* Doesn't exist. */
@@ -243,11 +251,7 @@ check_process_code(Process* rp, Module* modp)
     /*
      * Check all continuation pointers stored on the stack.
      */
-#ifdef UNIFIED_HEAP
-    for (sp = rp->stop; sp < rp->stack; sp++) {
-#else
-    for (sp = rp->stop; sp < rp->hend; sp++) {
-#endif
+    for (sp = rp->stop; sp < STACK_START(rp); sp++) {
 	if (is_CP(*sp) && INSIDE(cp_val(*sp))) {
 	    return am_true;
 	}
@@ -257,8 +261,9 @@ check_process_code(Process* rp, Module* modp)
      * See if there are funs that refer to the old version of the module.
      */
 
+#ifndef SHARED_HEAP
  rescan:
-    for (funp = rp->off_heap.funs; funp; funp = funp->next) {
+    for (funp = MSO(rp).funs; funp; funp = funp->next) {
 	Eterm* fun_code;
 
 	fun_code = funp->fe->address;
@@ -271,16 +276,13 @@ check_process_code(Process* rp, Module* modp)
 		 * Try to get rid of this fun by garbage collecting.
 		 */
 		done_gc = 1;
-#ifdef UNIFIED_HEAP
-                global_gc_flags |= F_NEED_FULLSWEEP;
-#else
-                rp->flags |= F_NEED_FULLSWEEP;
-#endif
+                FLAGS(rp) |= F_NEED_FULLSWEEP;
 		(void) erts_garbage_collect(rp, 0, rp->arg_reg, rp->arity);
 		goto rescan;
 	    }
 	}
     }
+#endif
     return am_false;
 #undef INSIDE
 }

@@ -209,45 +209,48 @@ gen_prototypes(G, N, X) ->
 						     [IName])], c), 
 	    emit(HFd, "typedef CORBA_Object ~s;\n\n", [IName]), 	
 	    emit(HFd, "#endif\n\n"), 
+	    
+	    Bodies = [ic_forms:get_body(X)| 
+		[ B || {_, B} <- X#interface.inherit_body]],
 
 	    emit(HFd, "\n/* Structure definitions  */\n", []), 
-	    foreach(fun({Name, Body}) ->
+	    foreach(fun(Body) ->
 			    emit_structs_inside_module(G, HFd, N, Body) end, 
-		    [{x, ic_forms:get_body(X)}| X#interface.inherit_body]), 
+		    Bodies),
 
 	    emit(HFd, "\n/* Switch and exec functions  */\n", []), 
-	    emit(HFd, "int ~s__switch(~s oe_obj, CORBA_Environment *oe_env);\n", 
-		 [IName, IName]), 
-	    foreach(fun({Name, Body}) ->
+	    emit(HFd, "int ~s__switch(~s oe_obj, CORBA_Environment "
+		 "*oe_env);\n", [IName, IName]), 
+	    foreach(fun(Body) ->
 			    emit_prototypes(G, HFd, N, Body) end, 
-		    [{x, ic_forms:get_body(X)}| X#interface.inherit_body]), 
+		    Bodies),
 
 	    emit(HFd, "\n/* Generic decoder */\n", []), 
 	    emit(HFd, "int ~s__call_info(~s oe_obj, CORBA_Environment "
 		 "*oe_env);\n", [IName, IName]), 
 
 	    emit(HFd, "\n/* Restore function typedefs */\n", []), 
-	    foreach(fun({Name, Body}) ->
+	    foreach(fun(Body) ->
 			    emit_restore_typedefs(G, HFd, N, Body) end, 
-		    [{x, ic_forms:get_body(X)}| X#interface.inherit_body]), 
+		    Bodies),
 
 	    emit(HFd, "\n/* Callback functions */\n", []), 
-	    foreach(fun({Name, Body}) ->
+	    foreach(fun(Body) ->
 			    emit_callback_prototypes(G, HFd, N, Body) end, 
-		    [{x, ic_forms:get_body(X)}| X#interface.inherit_body]), 
+		    Bodies),
 
 	    emit(HFd, "\n/* Parameter decoders */\n", []), 
-	    foreach(fun({Name, Body}) ->
+	    foreach(fun(Body) ->
 			    emit_decoder_prototypes(G, HFd, N, Body) end, 
-		    [{x, ic_forms:get_body(X)}| X#interface.inherit_body]), 
+		    Bodies),
 
 	    emit(HFd, "\n/* Message encoders */\n", []), 
-	    foreach(fun({Name, Body}) ->
+	    foreach(fun(Body) ->
 			    emit_encoder_prototypes(G, HFd, N, Body) end, 
-		    [{x, ic_forms:get_body(X)}| X#interface.inherit_body]), 
+		    Bodies),
 
 	    %% Emit operation mapping structures
-	    emit_operation_map_declaration(G, HFd, N), 
+	    emit_operation_mapping_declaration(G, HFd, N, Bodies), 
 
 	    ok;
 
@@ -271,13 +274,14 @@ gen_serv(G, N, X) ->
 	    put(op_variable_count, 0), 
 	    put(tmp_declarations, []), 
 
-	    %% Generate the operation switch part
-	    foreach(fun({Name, Body}) ->
+	    %% Generate exec, decode and encoding functions, and
+	    %% table of exec functions.
+	    Bodies = [ic_forms:get_body(X)| 
+		      [ B || {_, B} <- X#interface.inherit_body]],
+	    foreach(fun(Body) ->
 			    emit_dispatch(G, Fd, N, Body) end, 
-		    [{x, ic_forms:get_body(X)}| X#interface.inherit_body]), 
-
-	    emit_operation_map(G, Fd, N);
-
+		    Bodies), 
+	    emit_operation_mapping(G, Fd, N, Bodies);
 	false ->
 	    ok
     end.
@@ -291,11 +295,11 @@ emit_structs_inside_module(G, Fd, N, Xs)->
       fun(X) when record(X, enum) ->
 	      icenum:enum_gen(G, N, X, c);
 	 (X) when record(X, typedef) ->
-	      icenum:enum_gen(G, N, X, c);
+	      icstruct:struct_gen(G, N, X, c);
 	 (X) when record(X, struct) ->
-	      icenum:enum_gen(G, N, X, c);
+	      icstruct:struct_gen(G, N, X, c);
 	 (X) when record(X, union) ->
-	      icenum:enum_gen(G, N, X, c);
+	      icstruct:struct_gen(G, N, X, c);
 	 (_) ->
 	      ok
       end, Xs).
@@ -466,7 +470,8 @@ emit_decoder_prototypes(G, Fd, N, [X| Xs]) when record(X, op) ->
 	"" ->
 	    ok;
 	PLFDP ->
-	    emit(Fd, "int ~s__dec(~s oe_obj, ~s, CORBA_Environment *oe_env);\n", 
+	    emit(Fd, "int ~s__dec(~s oe_obj, ~s, CORBA_Environment "
+		 "*oe_env);\n", 
 		 [ScopedName, ic_util:to_undersc(N), PLFDP])
     end, 
     emit_decoder_prototypes(G, Fd, N, Xs);
@@ -526,12 +531,12 @@ emit_encoder_prototypes(G, Fd, N, [X| Xs]) ->
 emit_encoder_prototypes(G, Fd, N, []) -> ok.
 
 %%------------------------------------------------------------
-%% Emit operation map declaration
+%% Emit operation mapping declaration
 %%------------------------------------------------------------
 
-emit_operation_map_declaration(G, Fd, Scope) ->
-    Interface = ic_util:to_undersc(Scope), 
-    OpNames = ic_pragma:fetchLocalOperationNames(G, Scope), 
+emit_operation_mapping_declaration(G, Fd, N, Bodies) ->
+    Interface = ic_util:to_undersc(N), 
+    OpNames = get_all_opnames(G, N, Bodies),
     Length = erlang:length(OpNames), 
     emit(Fd, "\n/* Operation mapping */\n", []), 
     emit(Fd, "extern ___map___ ___~s_map___;\n", [Interface]), 
@@ -542,6 +547,20 @@ emit_operation_map_declaration(G, Fd, Scope) ->
 	    emit(Fd, "extern ___operation___ ___~s_operations___[];\n", 
 		 [Interface]) 
     end.
+
+get_all_opnames(G, N, Bodies) ->
+    lists:flatmap(
+      fun(Xs) ->
+	      lists:zf(		% filtermap
+		fun(X) when record(X, op) ->
+			{Name, _, _} = ic_cbe:extract_info(G, N, X), 
+			{true, Name}; 
+		   (_) ->
+			false
+		end, 
+		Xs) 
+      end, 
+      Bodies).
 
 %%------------------------------------------------------------
 %% Emit switch 
@@ -598,12 +617,12 @@ emit_dispatch(G, Fd, N, Xs) ->
       end, Xs).
 
 %%------------------------------------------------------------
-%% Emit operation map (mapping? XXX)
+%% Emit operation mapping
 %%------------------------------------------------------------
 
-emit_operation_map(G, Fd, Scope) ->
-    Interface = ic_util:to_undersc(Scope), 
-    OpNames = ic_pragma:fetchLocalOperationNames(G, Scope), 
+emit_operation_mapping(G, Fd, N, Bodies) ->
+    OpNames = get_all_opnames(G, N, Bodies),
+    Interface = ic_util:to_undersc(N), 
     Length = erlang:length(OpNames), 
     emit(Fd, "\n/* Operation mapping */\n\n", []), 
     case Length of 
@@ -612,24 +631,18 @@ emit_operation_map(G, Fd, Scope) ->
 	_ ->
 	    emit(Fd, "\n___operation___ ___~s_operations___[~p]  =  {\n", 
 		 [Interface, Length]), 
-	    emit_operation_map2(Fd, Scope, OpNames), 
+	    Members = lists:map(
+			fun(Op) ->
+				Name = ic_util:to_undersc([Op]), 
+				io_lib:fwrite("  {~p, ~p, ~s__exec}", 
+					      [Interface, Name, Name])
+			end, OpNames),
+	    emit(Fd, ic_util:join(Members, ",\n")),
 	    emit(Fd, "};\n\n", []), 
 	    emit(Fd, "___map___ ___~s_map___ = "
 		 "{~p, ___~s_operations___};\n\n", 
 		 [Interface, Length, Interface])
     end.
-
-emit_operation_map2(Fd, Scope, [Op]) ->
-    Name = ic_util:to_undersc([Op| Scope]), 
-    Interface = ic_util:to_undersc(Scope), 
-     emit(Fd, "  {~p, ~p, ~s__exec}\n", 
- 	 [Interface, Name, Name]);
-emit_operation_map2(Fd, Scope, [Op| Ops]) ->
-    Name = ic_util:to_undersc([Op| Scope]), 
-    Interface = ic_util:to_undersc(Scope), 
-    emit(Fd, "  {~p, ~p, ~s__exec},\n", 
-	 [Interface, Name, Name]), 
-    emit_operation_map2(Fd, Scope, Ops).
 
 %%------------------------------------------------------------
 %% Emit constant

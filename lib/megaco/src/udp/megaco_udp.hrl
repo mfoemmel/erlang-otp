@@ -49,11 +49,10 @@
 -define(udp_report(Level, UdpRec, From, To, Label, Contents),
         if
             list(Contents) ->
-                event_tracer:report(Level, From, To,
-                                    Label, [{line, ?MODULE, ?LINE}, UdpRec | Contents
-]);
+                megaco:report_event(Level, From, To, Label,
+				    [{line, ?MODULE, ?LINE}, UdpRec | Contents]);
             true ->
-                ok = error_logger:format("~p(~p): Bad arguments to event_tracer:
+                ok = error_logger:format("~p(~p): Bad arguments to et:
 "
                                          "report(~p, ~p, ~p, ~p, ~p, ~p)~n",
                                          [?MODULE, ?LINE,

@@ -204,7 +204,7 @@ option(Option, Gstkid, TkW, DB,_) ->
 %% Return 	: The value of the option or invalid_option
 %%		  [OptionValue | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-read_option(Option, Gstkid, TkW, DB, AItem) ->
+read_option(Option, Gstkid, TkW, _DB, _AItem) ->
     case Option of
 	activebw      -> tcl2erl:ret_int([TkW," cg -activebo"]);
 	disabledfg    -> tcl2erl:ret_color([TkW," cg -disabledfo"]);
@@ -241,9 +241,8 @@ delete_menuitem(DB, MenuId, ItemId) ->
     gstk_db:insert_widget(DB, Mgstkid#gstkid{widget_data=NewItems}).
 
 
-lookup_menuitem_pos(DB, Mgstkid, ItemId) ->
+lookup_menuitem_pos(_DB, Mgstkid, ItemId) ->
     Items = Mgstkid#gstkid.widget_data,
-    
     find_pos(ItemId, Items) - 1.
 
 %%----------------------------------------------------------------------
@@ -252,8 +251,8 @@ lookup_menuitem_pos(DB, Mgstkid, ItemId) ->
 find_pos(ItemId, Items) ->
     find_pos(ItemId, Items, 1).
 
-find_pos(ItemId, [], N) -> gs:error("Couldn't find item in menu~n", []);
-find_pos(ItemId, [ItemId|Items], N) -> N;
+find_pos(_ItemId, [], _N) -> gs:error("Couldn't find item in menu~n", []);
+find_pos(ItemId, [ItemId|_Items], N) -> N;
 find_pos(ItemId, [_|Items], N) ->
     find_pos(ItemId, Items, N + 1).
 

@@ -39,6 +39,7 @@ typedef struct db_table_hash {
     int slot;                 /* slot in db_tables */
     int keypos;               /* defaults to 1 */
     int nitems;               /* Total number of items */
+    Uint memory;               /* Total memory size */
     int kept_items;           /* Number of kept elements due to fixation */
     Uint megasec,sec,microsec; /* Last fixation time */
     DbFixation *fixations;     /* List of processes who have fixed 
@@ -107,6 +108,9 @@ int db_select_hash(Process *p, DbTableHash *tb /* [in out] */,
 		   Eterm pattern /* [in] */,
 		   Sint chunk_size /* [in] */,
 		   Eterm *ret /* [out] */);
+int db_select_count_hash(Process *p, DbTableHash *tb /* [in out] */, 
+			 Eterm pattern /* [in] */,
+			 Eterm *ret /* [out] */);
 int db_select_delete_hash(Process *p, DbTableHash *tb /* [in out] */, 
 			  Eterm pattern /* [in] */,
 			  Eterm *ret /* [out] */);
@@ -115,20 +119,25 @@ int db_select_hash_continue(Process *p, DbTableHash *tb /* [in out] */,
 			    Eterm continuation /* [in] */,
 			    Eterm *ret /* [out] */);
 
+int db_select_count_hash_continue(Process *p, 
+				  DbTableHash *tb /* [in out] */, 
+				  Eterm continuation /* [in] */,
+				  Eterm *ret /* [out] */);
+
 int db_select_delete_continue_hash(Process *p ,/* [in out] */ 
 				   DbTableHash *tb /* [in out] */,
 				   Eterm continuation /* [in] */,
 				   Eterm *ret /* [out] */,
 				   int force_delete /* [in] */);
-
-int  db_info_memory_hash(Process *p, DbTableHash *tb /* [in out] */,
-			 Eterm *ret /* [out] */, 
-			 int *reds /* [out] */);
 void db_print_hash(CIO fd /* [in] */, 
 		   int show /* [in] */,
-		   DbTableHash *tb /* [in] */, 
-		   int *sum /* [out] */);
+		   DbTableHash *tb /* [in] */);
 void free_hash_table(DbTableHash *tb /* [in out] */);
+
+void erts_db_hash_foreach_offheap(DbTableHash *,
+				  void (*)(ErlOffHeap *, void *),
+				  void *);
+
 #ifdef HARDDEBUG
 void db_check_table_hash(DbTableHash *tb);
 #endif

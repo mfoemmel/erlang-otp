@@ -1,6 +1,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <01/08/09 12:13:36 happi>
+%% Time-stamp: <02/05/13 17:50:58 happi>
 %% ====================================================================
 %%  Filename : 	hipe_x86_ra_postconditions.erl
 %%  Module   :	hipe_x86_ra_postconditions
@@ -9,9 +9,9 @@
 %%  History  :	* 2001-07-24 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: mikpe $
-%%              $Date: 2001/09/12 15:07:04 $
-%%              $Revision: 1.9 $
+%%              $Author: toli6207 $
+%%              $Date: 2002/08/09 08:33:55 $
+%%              $Revision: 1.16 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -25,10 +25,10 @@
 -define(count_temp(T), ?cons_counter(counter_mfa_mem_temps, T)).
 
 
-check_and_rewrite(X86Defun, Coloring, DontSpill, Options) ->  
-  %% io:format("Converting\n"),
+check_and_rewrite(X86Defun, Coloring, DontSpill, _Options) ->  
+  %%io:format("Converting\n"),
   TempMap = hipe_temp_map:cols2tuple(Coloring,hipe_x86_specific),
-  %% io:format("Rewriting\n"),
+  %%io:format("Rewriting\n"),
   #defun{code=Code0} = X86Defun,
   {Code1, NewDontSpill} = do_insns(Code0, TempMap, [], DontSpill),
   {X86Defun#defun{code=Code1,
@@ -39,10 +39,10 @@ do_insns([I|Insns], TempMap, Is, DontSpill) ->
   {NewIs, NewDontSpill} = do_insns(Insns, TempMap, Is, DontSpill),
   {NewI, FinalDontSpill} = do_insn(I, TempMap, NewDontSpill),
 %%  case [I] of
-%%    NewI -> ok;
-%%    _ ->
-%%      io:format("\n~w ->\n ~w\n------------\n",[I,NewI]),
-%%  end,
+%%     NewI -> ok;
+%%     _ ->
+%%       io:format("\n~w ->\n ~w\n------------\n",[I,NewI])
+%%   end,
   {NewI ++ NewIs, FinalDontSpill};
 do_insns([],_, Is, DontSpill) ->
     {Is, DontSpill}.
@@ -59,21 +59,32 @@ do_insn(I, TempMap, DontSpill) ->	% Insn -> Insn list
 	    do_lea(I, TempMap, DontSpill);
 	#move{} ->
 	    do_move(I, TempMap, DontSpill);
+ 	#movsx{} ->
+	    do_movx(I, TempMap, DontSpill);
+	#movzx{} ->
+	    do_movx(I, TempMap, DontSpill);
+	#fmov{} ->
+ 	    do_fmov(I, TempMap, DontSpill);
+ 	#fop{} ->
+ 	    do_fop(I, TempMap, DontSpill);
 	_ ->
-	    %% comment, jmp*, label, pseudo_jcc, pseudo_call, pseudo_tailcall,
-	    %% push, ret
+	    %% comment, jmp*, label, pseudo_call, pseudo_jcc, pseudo_tailcall,
+	    %% pseudo_tailcall_prepare, push, ret
 	    {[I], DontSpill}
     end.
-
 %%% Fix an alu op.
 
 do_alu(I, TempMap, DontSpill) ->
-  #alu{src=Src0,dst=Dst0} = I,
-  {FixSrc,Src,FixDst,Dst, NewDontSpill} = 
-    do_binary(Src0, Dst0, TempMap, DontSpill),
-  {FixSrc ++ FixDst ++ [I#alu{src=Src,dst=Dst}], NewDontSpill}.
-
-%%% Fix a cmp op.
+    case hipe_x86:is_shift(I) of
+	true ->
+	    do_shift(I, TempMap, DontSpill);
+	
+	_ ->
+	    #alu{src=Src0,dst=Dst0} = I,
+	    {FixSrc,Src,FixDst,Dst, NewDontSpill} = 
+		do_binary(Src0, Dst0, TempMap, DontSpill),
+	    {FixSrc ++ FixDst ++ [I#alu{src=Src,dst=Dst}], NewDontSpill}
+    end.
 
 do_cmp(I, TempMap, DontSpill) ->
   #cmp{src=Src0,dst=Dst0} = I,
@@ -118,6 +129,82 @@ do_move(I, TempMap, DontSpill) ->
   {FixSrc ++ FixDst ++ [I#move{src=Src,dst=Dst}],
    NewDontSpill}.
 
+%%% fix a movx op
+
+do_movx(I, TempMap, DontSpill) ->
+    {FixSrc, Src, DontSpill1} =
+	case I of
+	    #movsx{src=Src0,dst=Dst0} ->
+		fix_src_operand(Src0, TempMap);
+	    #movzx{src=Src0,dst=Dst0} ->
+		fix_src_operand(Src0, TempMap)
+	end,
+    {FixDst, Dst, DontSpill2} = fix_dst_operand(Dst0, TempMap),
+    {I3, DontSpill3} =
+	case is_spilled(Dst, TempMap) of
+	    false ->
+		I2 = case I of
+		    #movsx{} ->
+			[hipe_x86:mk_movsx(Src, Dst)];
+		    #movzx{} ->
+			[hipe_x86:mk_movzx(Src, Dst)]
+		     end,
+			{I2, []};
+	    true ->
+		Dst2 = clone(Dst),
+		I2 = 
+		    case I of
+			#movsx{} ->
+			    [hipe_x86:mk_movsx(Src, Dst2), hipe_x86:mk_move(Dst2, Dst)];
+			#movzx{} ->
+			    [hipe_x86:mk_movzx(Src, Dst2), hipe_x86:mk_move(Dst2, Dst)]
+		    end,
+		{I2, [Dst2]}
+	end,
+    {FixSrc++FixDst++I3, 
+     DontSpill3 ++ DontSpill2 ++
+     DontSpill1 ++ DontSpill}.
+
+%%% Fix a fmov op.
+
+do_fmov(I, TempMap, DontSpill) ->
+  #fmov{src=Src0,dst=Dst0} = I,
+  {FixSrc, Src, FixDst, Dst, NewDontSpill} = 
+    do_binary(Src0, Dst0,
+	      TempMap, DontSpill),
+  {FixSrc ++ FixDst ++ [I#fmov{src=Src,dst=Dst}],
+   NewDontSpill}.
+
+%%% Fix a fop.
+
+do_fop(I, TempMap, DontSpill) ->
+  #fop{src=Src0,dst=Dst0} = I,
+  {FixSrc, Src, FixDst, Dst, NewDontSpill} = 
+    do_binary(Src0, Dst0,
+	      TempMap, DontSpill),
+  {FixSrc ++ FixDst ++ [I#fop{src=Src,dst=Dst}],
+   NewDontSpill}.
+
+%%% Fix a shift operation
+%%% 1. remove pseudos from any explicit memory operands
+%%% 2. if the source is a register or memory position
+%%% make sure to move it to %ecx
+do_shift(I, TempMap, DontSpill) ->
+    #alu{src=Src0,dst=Dst0} = I,
+    {FixSrc, Src, DontSpill1} = fix_src_operand(Src0, TempMap),
+    {FixDst, Dst, DontSpill2} = fix_dst_operand(Dst0, TempMap),
+    DontSpill3 = DontSpill ++ DontSpill1 ++ DontSpill2,
+    Reg = hipe_x86_registers:ecx(),
+    case Src of
+	#x86_imm{} ->
+	    {FixDst ++ [I#alu{dst=Dst}], DontSpill3};
+	#x86_temp{reg=Reg}  ->
+	    {FixDst ++ [I#alu{dst=Dst}], DontSpill3};
+	_ ->
+	    Src2 = clone2(Src, Reg),
+	    {FixSrc ++ [hipe_x86:mk_move(Src, Src2)] ++ FixDst ++ [I#alu{src=Src2, dst=Dst}], DontSpill3++[Src2]}
+    end.
+
 %%% Fix the operands of a binary op.
 %%% 1. remove pseudos from any explicit memory operands
 %%% 2. if both operands are (implicit or explicit) memory operands,
@@ -160,6 +247,9 @@ fix_mem_operand(Opnd, TempMap) ->	% -> {[fixupcode], newop, DontSpill}
 	  %% XXX: (Mikael) this test looks wrong to me, since it will
 	  %% falsely trigger for temps that are actual registers.
 	  %% ra_dummy uses src_is_pseudo() here.
+          %%
+	  %% The assembler can't handle reg offsets, so at the moment
+          %% it is handled here. (Happi)
 	  case  hipe_x86:is_temp(Off) of
 	    false ->
 	      {[], Opnd, []};
@@ -220,28 +310,28 @@ is_mem_opnd(Opnd, TempMap) ->
 
 %%% Check if an operand is a spilled Temp.
 
-src_is_spilled(Src, TempMap) ->
-  case hipe_x86:is_temp(Src) of
-    true ->
-      Reg = hipe_x86:temp_reg(Src),
-      case hipe_x86:temp_is_allocatable(Src) of
-	true -> 
-	  case size(TempMap) > Reg of 
-	    true ->
-	      case hipe_temp_map:is_spilled(Reg, TempMap) of
-		true ->
-		  ?count_temp(Reg),
-		  true;
-		false ->
-		  false
-	      end;
-	    false ->
-	      false
-	  end;
-	false -> true
-      end;
-    false -> false
-  end.
+%src_is_spilled(Src, TempMap) ->
+%  case hipe_x86:is_temp(Src) of
+%    true ->
+%      Reg = hipe_x86:temp_reg(Src),
+%      case hipe_x86:temp_is_allocatable(Src) of
+%	true -> 
+%	  case size(TempMap) > Reg of 
+%	    true ->
+%	      case hipe_temp_map:is_spilled(Reg, TempMap) of
+%		true ->
+%		  ?count_temp(Reg),
+%		  true;
+%		false ->
+%		  false
+%	      end;
+%	    false ->
+%	      false
+%	  end;
+%	false -> true
+%      end;
+%    false -> false
+%  end.
 
 is_spilled(Temp, TempMap) ->
   case hipe_x86:temp_is_allocatable(Temp) of
@@ -272,3 +362,13 @@ clone(Dst) ->
 	    #x86_temp{} -> hipe_x86:temp_type(Dst)
 	end,
     hipe_x86:mk_new_temp(Type).
+
+%%% Make a certain reg into a clone of Dst
+
+clone2(Dst, Reg) ->
+  Type =
+    case Dst of
+      #x86_mem{} -> hipe_x86:mem_type(Dst);
+      #x86_temp{} -> hipe_x86:temp_type(Dst)
+    end,
+  hipe_x86:mk_temp(Reg,Type).

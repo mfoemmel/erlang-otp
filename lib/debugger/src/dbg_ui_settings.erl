@@ -69,7 +69,7 @@ init(Monitor, GS, Pos, Title, Action, SFile) ->
 	end,
 		    
     Filter = filename:join(SDir, "*.state"),
-    Extra = fun(File) -> true end,
+    Extra = fun(_File) -> true end,
 			
     %% Create window
     Win = case Action of
@@ -102,7 +102,7 @@ loop(State) ->
 	    loop(State2);
 
 	%% From the dbg_ui_winman process (Debugger window manager)
-	{dbg_ui_winman, update_windows_menu, Data} ->
+	{dbg_ui_winman, update_windows_menu, _Data} ->
 	    loop(State);
 	{dbg_ui_winman, destroy} ->
 	    exit(normal)
@@ -110,7 +110,7 @@ loop(State) ->
 
 gui_cmd(ignore, State) ->
     State;
-gui_cmd({stopped, Dir}, State) ->	
+gui_cmd({stopped, _Dir}, _State) ->	
     exit(normal);
 gui_cmd({win, Win}, State) ->
     State#state{win=Win};
@@ -133,7 +133,8 @@ default_settings_dir(GS) ->
 	    {ok, CWD} = file:get_cwd(),
 	    
 	    Msg = ["Default directory", DefDir, "does not exist.",
-		   "Ok to create it?"],
+		   "Click Ok to create it or", 
+		   "Cancel to use other directory!"],
 	    case tool_utils:confirm(GS, Msg) of
 		ok ->
 		    ToolsDir = filename:dirname(DefDir),
@@ -141,16 +142,16 @@ default_settings_dir(GS) ->
 			true ->
 			    case file:make_dir(DefDir) of
 				ok -> DefDir;
-				Error -> CWD
+				_Error -> CWD
 			    end;
 			false ->
 			    case file:make_dir(ToolsDir) of
 				ok ->
 				    case file:make_dir(DefDir) of
 					ok -> DefDir;
-					Error -> CWD
+					_Error -> CWD
 				    end;
-				Error -> CWD
+				_Error -> CWD
 			    end
 		    end;
 		cancel -> CWD

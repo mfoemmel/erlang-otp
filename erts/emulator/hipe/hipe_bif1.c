@@ -1,4 +1,4 @@
-/*
+/* $Id$
  * hipe_bif1.c
  *
  * Performance analysis support.
@@ -15,7 +15,7 @@
 #include "hipe_bif0.h"
 #include "hipe_bif1.h"
 
-#define BeamOpCode(Op)	((uint32)BeamOp(Op))
+#define BeamOpCode(Op)	((Uint)BeamOp(Op))
 
 BIF_RETTYPE hipe_bifs_call_count_on_1(BIF_ALIST_1)
 BIF_ADECL_1
@@ -98,7 +98,7 @@ BIF_ADECL_1
 BIF_RETTYPE hipe_bifs_system_timer_get_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
-#ifdef BENCH_STAT
+#ifdef __BENCHMARK__
     uint min;
     uint sec;
     uint milli;
@@ -107,7 +107,7 @@ BIF_ADECL_0
     Eterm *hp;
 
     hp = HAlloc(BIF_P, 5);
-    tmp = (sys_gethrtime() - sys_time)/1000;
+    tmp = system_time/1000;
     micro = tmp % 1000;
     tmp /= 1000;
     milli = tmp % 1000;
@@ -121,23 +121,23 @@ BIF_ADECL_0
 #else
     BIF_RET(am_false);
 #endif
-    }
+}
 
 BIF_RETTYPE hipe_bifs_system_timer_clear_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
-#ifdef BENCH_STAT
-    sys_time = sys_gethrtime();
+#ifdef __BENCHMARK__
+    system_time = 0;
     BIF_RET(am_true);
 #else
     BIF_RET(am_false);
 #endif
-    }
+}
 
 BIF_RETTYPE hipe_bifs_gc_timer_get_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
-#ifdef BENCH_STAT
+#ifdef __BENCHMARK__
     uint min;
     uint sec;
     uint milli;
@@ -199,12 +199,12 @@ BIF_ADECL_0
 #else
     BIF_RET(am_false);
 #endif
-    }
+}
 
 BIF_RETTYPE hipe_bifs_gc_timer_clear_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
-#ifdef BENCH_STAT
+#ifdef __BENCHMARK__
     major_gc_time = 0;
     minor_gc_time = 0;
     max_major_time = 0;
@@ -213,20 +213,21 @@ BIF_ADECL_0
 #else
     BIF_RET(am_false);
 #endif
-    }
+}
 
 BIF_RETTYPE hipe_bifs_send_timer_get_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
-#ifdef BENCH_STAT
+#ifdef __BENCHMARK__
     uint min;
     uint sec;
     uint milli;
     uint micro;
     hrtime_t tmp;
     Eterm *hp;
+    Eterm sendtime, copytime, sizetime;
 
-    hp = HAlloc(BIF_P, 5);
+    hp = HAlloc(BIF_P, 5*3 + 4);
     tmp = send_time/1000;
     micro = tmp % 1000;
     tmp /= 1000;
@@ -234,38 +235,12 @@ BIF_ADECL_0
     tmp /= 1000;
     sec = tmp % 60;
     min = tmp / 60;
-    BIF_RET(TUPLE4(hp,make_small(min),
+    sendtime = TUPLE4(hp,make_small(min),
                       make_small(sec),
                       make_small(milli),
-                      make_small(micro)));
-#else
-    BIF_RET(am_false);
-#endif
-    }
+                      make_small(micro));
 
-BIF_RETTYPE hipe_bifs_send_timer_clear_0(BIF_ALIST_0)
-BIF_ADECL_0
-{
-#ifdef BENCH_STAT
-    send_time = 0;
-    BIF_RET(am_true);
-#else
-    BIF_RET(am_false);
-#endif
-    }
-
-BIF_RETTYPE hipe_bifs_copy_timer_get_0(BIF_ALIST_0)
-BIF_ADECL_0
-{
-#ifdef BENCH_STAT
-    uint min;
-    uint sec;
-    uint milli;
-    uint micro;
-    hrtime_t tmp;
-    Eterm *hp;
-
-    hp = HAlloc(BIF_P, 5);
+    hp += 5;
     tmp = copy_time/1000;
     micro = tmp % 1000;
     tmp /= 1000;
@@ -273,30 +248,48 @@ BIF_ADECL_0
     tmp /= 1000;
     sec = tmp % 60;
     min = tmp / 60;
-    BIF_RET(TUPLE4(hp,make_small(min),
+    copytime = TUPLE4(hp,make_small(min),
                       make_small(sec),
                       make_small(milli),
-                      make_small(micro)));
+                      make_small(micro));
+
+    hp += 5;
+    tmp = size_time/1000;
+    micro = tmp % 1000;
+    tmp /= 1000;
+    milli = tmp % 1000;
+    tmp /= 1000;
+    sec = tmp % 60;
+    min = tmp / 60;
+    sizetime = TUPLE4(hp,make_small(min),
+                        make_small(sec),
+                        make_small(milli),
+                        make_small(micro));
+
+    hp += 5;
+    BIF_RET(TUPLE3(hp,sendtime,copytime,sizetime));
 #else
     BIF_RET(am_false);
 #endif
-    }
+}
 
-BIF_RETTYPE hipe_bifs_copy_timer_clear_0(BIF_ALIST_0)
+BIF_RETTYPE hipe_bifs_send_timer_clear_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
-#ifdef BENCH_STAT
+#ifdef __BENCHMARK__
+    send_time = 0;
     copy_time = 0;
+    size_time = 0;
     BIF_RET(am_true);
 #else
     BIF_RET(am_false);
 #endif
-    }
+}
 
 BIF_RETTYPE hipe_bifs_gc_info_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
-#ifdef BENCH_STAT
+#ifdef __BENCHMARK__
     Eterm *hp;
 
     hp = HAlloc(BIF_P, 7);
@@ -309,12 +302,12 @@ BIF_ADECL_0
 #else
     BIF_RET(am_false);
 #endif
-    }
+}
 
 BIF_RETTYPE hipe_bifs_clear_gc_info_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
-#ifdef BENCH_STAT
+#ifdef __BENCHMARK__
     major_garbage_cols = 0;
     minor_garbage_cols = 0;
     live_major_sum = 0;
@@ -325,53 +318,54 @@ BIF_ADECL_0
 #else
     BIF_RET(am_false);
 #endif
-    }
+}
 
 BIF_RETTYPE hipe_bifs_bench_info_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
-#ifdef BENCH_STAT
+#ifdef __BENCHMARK__
     Eterm *hp;
-    uint32 p_index, number = 0;
 
-    for(p_index = 0; p_index < max_process; p_index++)
-    {
-        Process * p = process_tab[p_index];
-        if(p == NULL)
-            continue;
-        number++;
-    }
-    hp = HAlloc(BIF_P, 5);
-    BIF_RET(TUPLE4(hp,make_small(number),
+    hp = HAlloc(BIF_P, 8);
+    BIF_RET(TUPLE7(hp,make_small(processes_busy),
+                      make_small(processes_spawned),
                       make_small((uint)messages_sent),
+                      make_small((uint)((BIF_P->htop - BIF_P->heap) +
+                                        (OLD_HTOP(BIF_P) - OLD_HEAP(BIF_P)))),
+                      make_small((uint)((BIF_P->hend - BIF_P->heap) +
+                                        (OLD_HEND(BIF_P) - OLD_HEAP(BIF_P)))),
                       make_small(biggest_heap_size_ever),
                       make_small(max_allocated_heap)));
 #else
     BIF_RET(am_false);
 #endif
-    }
+}
 
 BIF_RETTYPE hipe_bifs_clear_bench_info_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
-#ifdef BENCH_STAT
-    int i;
-
+#ifdef __BENCHMARK__
+    processes_spawned = 0;
     messages_sent = 0;
     biggest_heap_size_ever = 0;
     max_allocated_heap = 0;
-    for (i=0; i<1000; i++)
-        message_sizes[i] = 0;
+# ifdef CALCULATE_MESSAGE_SIZES
+    {
+        int i;
+        for (i = 0; i < 1000; i++)
+            message_sizes[i] = 0;
+    }
+# endif
     BIF_RET(am_true);
 #else
     BIF_RET(am_false);
 #endif
-    }
+}
 
 BIF_RETTYPE hipe_bifs_message_info_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
-#ifdef BENCH_STAT
+#ifdef CALCULATE_MESSAGE_SIZES
     int i,j, max = 0;
     int tmp[12] = {0,0,0,0,0,0,0,0,0,0,0,0};
     for (i=0; i<65; i++)
@@ -405,4 +399,113 @@ BIF_ADECL_0
 #else
     BIF_RET(am_false);
 #endif
+}
+
+/*
+ * HiPE hrvtime().
+ * These implementations are currently available:
+ * + On Linux/x86 with the perfctr driver we can use the process'
+ *   virtualised time-stamp counter. To enable this mode you must
+ *   pass `--with-perfctr=/path/to/perfctr' when configuring.
+ * + The fallback, which is the same as {X,_} = runtime(statistics).
+ */
+
+#if defined(__i386__) && USE_PERFCTR
+
+/*
+ * This uses the Linux/x86 perfctr driver to virtualise the
+ * x86 time-stamp counter.
+ */
+#include "libperfctr.h"
+static struct vperfctr *vperfctr;
+static double cpu_khz;
+#define hrvtime_is_started()	(vperfctr != NULL)
+
+static void start_hrvtime(void)
+{
+    struct perfctr_info info;
+    struct vperfctr_control control;
+
+    if( vperfctr != NULL )
+	return;
+    vperfctr = vperfctr_open();
+    if( vperfctr == NULL )
+	return;
+    if( vperfctr_info(vperfctr, &info) >= 0 ) {
+	cpu_khz = (double)info.cpu_khz;
+	if( info.cpu_features & PERFCTR_FEATURE_RDTSC ) {
+	    memset(&control, 0, sizeof control);
+	    control.cpu_control.tsc_on = 1;
+	    if( vperfctr_control(vperfctr, &control) >= 0 )
+		return;
+	}
     }
+    vperfctr_close(vperfctr);
+    vperfctr = NULL;
+}
+
+static double get_hrvtime(void)
+{
+    unsigned long long ticks;
+    double milli_seconds;
+
+    ticks = vperfctr_read_tsc(vperfctr);
+    milli_seconds = (double)ticks / cpu_khz;
+    return milli_seconds;
+}
+
+static void stop_hrvtime(void)
+{
+    if( vperfctr ) {
+	vperfctr_stop(vperfctr);
+	vperfctr_close(vperfctr);
+	vperfctr = NULL;
+    }
+}
+
+#else
+
+/*
+ * Fallback, if nothing better exists.
+ * This is the same as {X,_} = statistics(runtime), which uses
+ * times(2) on Unix systems.
+ */
+
+#define hrvtime_is_started()	1
+#define start_hrvtime()		do{}while(0)
+#define stop_hrvtime()		do{}while(0)
+
+static double get_hrvtime(void)
+{
+    unsigned long ms_user;
+    elapsed_time_both(&ms_user, NULL, NULL, NULL);
+    return (double)ms_user;
+}
+
+#endif	/* hrvtime support */
+
+BIF_RETTYPE hipe_bifs_get_hrvtime_0(BIF_ALIST_0)
+BIF_ADECL_0
+{
+    Eterm *hp;
+    Eterm res;
+    FloatDef f;
+
+    if( !hrvtime_is_started() ) {
+	start_hrvtime();
+	if( !hrvtime_is_started() )
+	    BIF_ERROR(BIF_P, BADARG);
+    }
+    f.fd = get_hrvtime();
+    hp = HAlloc(BIF_P, 3);
+    res = make_float(hp);
+    PUT_DOUBLE(f, hp);
+    BIF_RET(res);
+}
+
+BIF_RETTYPE hipe_bifs_stop_hrvtime_0(BIF_ALIST_0)
+BIF_ADECL_0
+{
+    stop_hrvtime();
+    BIF_RET(am_true);
+}

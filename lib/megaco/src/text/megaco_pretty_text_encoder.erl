@@ -64,7 +64,7 @@ encode_message([{flex,_}], MegaMsg) when record(MegaMsg, 'MegacoMessage') ->
     end;
 encode_message(EncodingConfig, MegaMsg) when record(MegaMsg, 'MegacoMessage')  ->
     {error, {bad_encoding_config, EncodingConfig}};
-encode_message(EncodingConfig, MegaMsg) ->
+encode_message(_EncodingConfig, _MegaMsg) ->
     {error, bad_megaco_message}.
 	    
 %%----------------------------------------------------------------------
@@ -74,7 +74,7 @@ encode_message(EncodingConfig, MegaMsg) ->
 
 decode_message([], Bin) when binary(Bin) ->
     case megaco_text_scanner:scan(Bin) of
-	{ok, Tokens, LastLine} ->
+	{ok, Tokens, _LastLine} ->
 	    case (catch megaco_text_parser:parse(Tokens)) of
 		{ok, MegacoMessage} ->
 		    {ok, MegacoMessage};
@@ -95,7 +95,7 @@ decode_message([], Bin) when binary(Bin) ->
     end;
 decode_message([{flex, Port}], Bin) when binary(Bin) ->
     case megaco_flex_scanner:scan(Bin, Port) of
-	{ok, Tokens, LastLine} ->
+	{ok, Tokens, _LastLine} ->
 	    case (catch megaco_text_parser:parse(Tokens)) of
 		{ok, MegacoMessage} ->
 		    {ok, MegacoMessage};
@@ -116,7 +116,7 @@ decode_message([{flex, Port}], Bin) when binary(Bin) ->
     end;
 decode_message(EncodingConfig, Bin) when binary(Bin) ->
     {error, {bad_encoding_config, EncodingConfig}};
-decode_message(EncodingConfig, BadBin) ->
+decode_message(_EncodingConfig, _BadBin) ->
     {error, bad_binary}.
 
 %%----------------------------------------------------------------------
@@ -175,7 +175,7 @@ trim_quoted_string([H | T]) ->
 	safe_char   -> [H  | trim_quoted_string(T)];
 	rest_char   -> [H  | trim_quoted_string(T)];
 	white_space -> [H  | trim_quoted_string(T)];
-	BadChar     -> [$? | trim_quoted_string(T)]
+	_BadChar     -> [$? | trim_quoted_string(T)]
     end;
 trim_quoted_string([]) ->
     [].
@@ -209,7 +209,7 @@ trim_quoted_string([]) ->
 -define(LBRKT_INDENT(State),  [?SpToken, ?LbrktToken, ?INDENT(?INC_INDENT(State))]).
 -define(RBRKT_INDENT(State),  [?INDENT(State), ?RbrktToken]).
 -define(COMMA_INDENT(State),  [?CommaToken, ?INDENT(State)]).
--define(SEP_INDENT(State),    [?LfToken]).
+-define(SEP_INDENT(_State),   [?LfToken]).
 
 %%----------------------------------------------------------------------
 %% Define token macros

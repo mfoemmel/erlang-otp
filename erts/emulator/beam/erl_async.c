@@ -12,8 +12,6 @@
 
 EXTERN_FUNCTION(int, async_ready, (int, void*));
 extern  int erts_async_max_threads;
-extern  int erl_max_ports;
-extern Port* erts_port;
 
 typedef struct _erl_async {
     struct _erl_async* next;
@@ -274,7 +272,7 @@ long driver_async(ErlDrvPort ix, unsigned int* key,
     long id;
     unsigned int qix;
 
-    if ((ix < 0) || (ix >= erl_max_ports) || erts_port[ix].status == FREE)
+    if ((ix < 0) || (ix >= erts_max_ports) || erts_port[ix].status == FREE)
 	return -1;
     ptr = &erts_port[ix];
 

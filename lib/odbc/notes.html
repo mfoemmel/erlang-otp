@@ -1,0 +1,70 @@
+<html>
+<head>
+  <title>Odbc Release Notes</title>
+  <style type="text/css">
+<!--
+    body          { background: white; margin: 3em }
+
+    body          { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1 h2 h3 h4   { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1            { font-size: 48 }
+    p li          { font-family: Verdana, Arial, Helvetica, sans-serif }
+-->
+  </style>
+</head>
+
+<body bgcolor=white>
+
+<center><h1>Odbc Release Notes</h1></center>
+
+
+<!--- ################################################################# --->
+
+<h2>Odbc 1.0</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+    The Erlang ODBC application consists of both Erlang and C code. The C
+    code is delivered as a precompiled executable for windows and solaris.
+    For the purpose of recompilation or compiling on some other platform
+    there is a Makefile included.<br>
+    (Own Id: OTP-4193)<br>
+    (Aux Id: seq7190)<p>
+  </li>
+
+  <li>
+    Expensive constructs such as lists:flatten/1, double buffering and
+    string compare has been replaced by more efficient constructs or when
+    possible totally eliminated.<br>
+    (Own Id: OTP-4362)<p>
+  </li>
+
+  <li>
+    New API that has an Erlang/OTP touch and feel instead of being a
+    C-interface with Erlang syntax. The old interface is deprecated and
+    will be removed in release R10.<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-4498)<p>
+  </li>
+
+  <li>
+    API functions that became deprecated in version 0.9.1 has been removed.<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-4499)<p>
+  </li>
+
+</ul>
+
+
+
+There are also release notes for
+<a href="notes_history.html">older versions</a>.
+
+</body>
+</html>

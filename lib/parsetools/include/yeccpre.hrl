@@ -62,11 +62,11 @@ yeccpars1([], {M, F, A}, State, States, Vstack) ->
     case catch apply(M, F, A) of
         {eof, Endline} ->
             {error, {Endline, ?THIS_MODULE, "end_of_file"}};
-        {error, Descriptor, Endline} ->
+        {error, Descriptor, _Endline} ->
             {error, Descriptor};
         {'EXIT', Reason} ->
             {error, {0, ?THIS_MODULE, Reason}};
-        {ok, Tokens, Endline} ->
+        {ok, Tokens, _Endline} ->
 	    case catch yeccpars1(Tokens, {M, F, A}, State, States, Vstack) of
 		error ->
 		    Errorline = element(2, hd(Tokens)),
@@ -92,7 +92,7 @@ yecctoken2string({char,_,C}) -> io_lib:write_char(C);
 yecctoken2string({var,_,V}) -> io_lib:format('~s', [V]);
 yecctoken2string({string,_,S}) -> io_lib:write_string(S);
 yecctoken2string({reserved_symbol, _, A}) -> io_lib:format('~w', [A]);
-yecctoken2string({Cat, _, Val}) -> io_lib:format('~w', [Val]);
+yecctoken2string({_Cat, _, Val}) -> io_lib:format('~w', [Val]);
 
 yecctoken2string({'dot', _}) -> io_lib:format('~w', ['.']);
 yecctoken2string({'$end', _}) ->

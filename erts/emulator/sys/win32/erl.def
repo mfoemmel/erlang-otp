@@ -48,4 +48,5 @@ EXPORTS
 	driver_dl_close
 	driver_dl_error
 	set_port_control_flags
-
+	erl_start
+	sys_get_key

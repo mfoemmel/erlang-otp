@@ -29,19 +29,29 @@
 #include "erl_db.h"
 #include "dist.h"
 #include "error.h"
+#include "beam_catches.h"
+
+#ifdef HIPE
+#include "hipe_mode_switch.h"	/* for hipe_init_process() */
+#endif
 
 #define MAX_BIT          (1 << PRIORITY_MAX)
 #define HIGH_BIT         (1 << PRIORITY_HIGH)
 #define NORMAL_BIT       (1 << PRIORITY_NORMAL)
 #define LOW_BIT          (1 << PRIORITY_LOW)
 
-extern Eterm* beam_apply[];
-extern Eterm* beam_exit[];
+extern Eterm beam_apply[];
+extern Eterm beam_exit[];
 
 #define KEEP_ZOMBIE
 
-static int p_next;
-static int p_serial;
+static Sint p_next;
+static Sint p_serial;
+static Uint p_serial_mask;
+static Uint p_serial_shift;
+
+Uint erts_max_processes = ERTS_DEFAULT_MAX_PROCESSES;
+Uint erts_process_tab_index_mask;
 
 typedef struct schedule_q {
     Process* first;
@@ -49,47 +59,66 @@ typedef struct schedule_q {
 } ScheduleQ;
 
 static ScheduleQ queue[NPRIORITY_LEVELS];
-static int processes_busy;
 static int bg_count;
-static unsigned qmask = 0;
+static unsigned qmask;
+#ifdef __BENCHMARK__
+int processes_busy;
+#else
+static int processes_busy;
+#endif
+
 
 Process**  process_tab;
 Uint context_switches;		/* no of context switches */
 Uint reductions;		/* total number of reductions */
 Uint last_reds;			/* used in process info */
-Uint erts_default_process_flags = 0;
-Eterm erts_default_tracer = NIL;
+Uint erts_default_process_flags;
+Eterm erts_default_tracer;
 
-#ifdef UNIFIED_HEAP
-  Process** active_procs;
-  #define HEAP_SIZE global_heap_sz
-  #define MBUF_SIZE global_mbuf_sz
-  #define UH_FLAGS  global_gc_flags
-#else
-  #define HEAP_SIZE p->heap_sz
-  #define MBUF_SIZE p->mbuf_sz
-  #define UH_FLAGS  p->flags
+const struct trace_pattern_flags erts_trace_pattern_flags_off = {0, 0, 0, 0};
+
+int                         erts_default_trace_pattern_is_on;
+Binary                     *erts_default_match_spec;
+Binary                     *erts_default_meta_match_spec;
+struct trace_pattern_flags  erts_default_trace_pattern_flags;
+Eterm                       erts_default_meta_tracer_pid;
+
+#ifdef SHARED_HEAP
+Uint erts_num_active_procs;
+Process** erts_active_procs;
 #endif
 
+/*
+ * Local functions.
+ */
+static void delete_process(Process* p);
+static void print_function_from_pc(Eterm* x, CIO fd);
+static int stack_element_dump(Process* p, Eterm* sp, int yreg, CIO fd);
+
 /* initialize the scheduler */
-void init_scheduler()
+void
+init_scheduler(void)
 {
     int i;
 
-    process_tab = (Process**) erts_definite_alloc(max_process*sizeof(Process*));
+    process_tab = (Process**) erts_definite_alloc(erts_max_processes*sizeof(Process*));
     if(!process_tab) {
 	process_tab = (Process**) 
-	    safe_alloc_from(91, max_process * sizeof(Process*));
+	    safe_alloc_from(91, erts_max_processes * sizeof(Process*));
     }
-    sys_memzero(process_tab, max_process * sizeof(Process*));
-#ifdef UNIFIED_HEAP
-    active_procs = (Process**)
-        safe_alloc_from(92, max_process * sizeof(Process*));
-    active_procs[0] = NULL;
+    sys_memzero(process_tab, erts_max_processes * sizeof(Process*));
+#ifdef SHARED_HEAP
+    erts_active_procs = (Process**)
+        safe_alloc_from(92, erts_max_processes * sizeof(Process*));
+    erts_num_active_procs = 0;
 #endif
 
     p_next = 0;
     p_serial = 0;
+
+    p_serial_shift = erts_fit_in_bits(erts_max_processes - 1);
+    p_serial_mask = ((~(~0 << ERTS_PROCESSES_BITS)) >> p_serial_shift);
+    erts_process_tab_index_mask = ~(~0 << p_serial_shift);
 
     /* mark the schedule queue as empty */
     for(i = 0; i < NPRIORITY_LEVELS; i++)
@@ -100,6 +129,14 @@ void init_scheduler()
     context_switches = 0;
     reductions = 0;
     last_reds = 0;
+    erts_default_process_flags = 0;
+    erts_default_tracer = NIL;
+    
+    erts_default_trace_pattern_is_on = 0;
+    erts_default_match_spec = NULL;
+    erts_default_meta_match_spec = NULL;
+    erts_default_trace_pattern_flags = erts_trace_pattern_flags_off;
+    erts_default_meta_tracer_pid = NIL;
 }
 
 int
@@ -119,8 +156,8 @@ sched_q_len(void)
 }
 
 /* schedule a process */
-void add_to_schedule_q(p)
-Process *p;
+void
+add_to_schedule_q(Process *p)
 {
     ScheduleQ* sq = &queue[p->prio];
 
@@ -141,8 +178,8 @@ Process *p;
 
 /* Possibly remove a scheduled process we need to suspend */
 
-int remove_proc_from_sched_q(p)
-Process *p;
+int
+remove_proc_from_sched_q(Process *p)
 {
     Process *tmp, *prev;
     int i;
@@ -185,22 +222,71 @@ Process *p;
 */
 
 #ifdef INSTRUMENT
-Eterm current_process = THE_NON_VALUE;
+Eterm current_erl_process = THE_NON_VALUE;
 #endif
 
-int
-schedule(void)
+/*
+ * schedule() is called from BEAM (process_main()) or HiPE
+ * (hipe_mode_switch()) when the current process is to be
+ * replaced by a new process. 'calls' is the number of reduction
+ * steps the current process consumed.
+ * schedule() returns the new process, and the new process'
+ * ->fcalls field is initialised with its allowable number of
+ * reduction steps.
+ *
+ * When no process is runnable, or when sufficiently many reduction
+ * steps have been made, schedule() calls erl_sys_schedule() to
+ * schedule system-level activities.
+ */
+Process *schedule(Process *p, int calls)
 {
-    Process *p;
     ScheduleQ *sq;
-    int function_calls = 0;
-    int calls;
+    static int function_calls;
 
-    if (do_time) {
-	bump_timer();
+    /*
+     * Clean up after the process being suspended.
+     */
+    if (p) {	/* NULL in the very first schedule() call */
+#ifdef SHARED_HEAP
+	if (p->status != P_FREE && MBUF(p)) {
+	    (void) erts_garbage_collect(p, 0, p->arg_reg, p->arity);
+	}
+#endif
+	function_calls += calls;
+	reductions += calls;
+
+#ifdef SHARED_HEAP
+        ASSERT(p->heap && p->htop && p->hend && p->heap_sz);
+        global_htop = p->htop;
+        global_heap = p->heap;
+        global_hend = p->hend;
+        global_heap_sz = p->heap_sz;
+        p->htop = NULL;
+        p->heap = NULL;
+        p->hend = NULL;
+        p->heap_sz = 0;
+#endif
+#ifdef INSTRUMENT
+	current_erl_process = THE_NON_VALUE;
+#endif
+	p->reds += calls;
+	if (p->status == P_FREE) {
+	    fix_free(process_desc, (Eterm *) p);
+	} else if (IS_TRACED_FL(p, F_TRACE_SCHED)) {
+	    trace_sched(p, am_out);
+	}
+
+	if (do_time) {
+	    bump_timer();
+	}
+        STOP_TIMER(system);
     }
-    
-    do {
+
+    /*
+     * Find a new process to run.
+     */
+ pick_next_process:
+    if (function_calls <= INPUT_REDUCTIONS) {
 	switch (qmask) {
 	case MAX_BIT:
 	case MAX_BIT|HIGH_BIT:
@@ -233,15 +319,17 @@ schedule(void)
 	    sq = &queue[PRIORITY_LOW];
 	    break;
 	case 0:			/* No process at all */
-	    return 0;
+	    goto do_sys_schedule;
 #ifdef DEBUG
 	default:
 	    ASSERT(0);
 #else
 	default:
-	    return 0; /* Should not happen ... */
+	    goto do_sys_schedule; /* Should not happen ... */
 #endif
 	}
+
+        START_TIMER(system);
 
 	/*
 	 * Take the chosen process out of the queue.
@@ -255,9 +343,17 @@ schedule(void)
 	}
 
 	ASSERT(p->status != P_SUSPENDED); /* Never run a suspended process */
-
-#ifdef UNIFIED_HEAP
+#ifdef SHARED_HEAP
         p->active = 1;
+        ASSERT(!p->heap && !p->htop && !p->hend && !p->heap_sz);
+        p->htop = global_htop;
+        p->heap = global_heap;
+        p->hend = global_hend;
+        p->heap_sz = global_heap_sz;
+        global_htop = NULL;
+        global_heap = NULL;
+        global_hend = NULL;
+        global_heap_sz = 0;
 #endif
 	context_switches++;
 	calls = CONTEXT_REDS;
@@ -265,40 +361,37 @@ schedule(void)
 	    if (IS_TRACED_FL(p, F_TRACE_SCHED)) {
 		trace_sched(p, am_in);
 	    }
-	    if (((MBUF_SIZE + p->off_heap.overhead)*MBUF_GC_FACTOR) >= HEAP_SIZE) {
-		calls -= erts_garbage_collect(p, 0, p->arg_reg, p->arity);
-		if (calls < 0) {
-		    calls = 1;
-		}
-	    }
 	    p->status = P_RUNNING;
 	}
 
-#ifdef INSTRUMENT
-	current_process = p->id;
-#endif
-
-	calls = process_main(p, calls);
-	function_calls += calls;
-	reductions += calls;
-
-#ifdef INSTRUMENT
-	current_process = THE_NON_VALUE;
-#endif
-
-	p->reds += calls;
-	if (p->status == P_FREE) {
-	    fix_free(process_desc, (Eterm *) p);
-	} else if (IS_TRACED_FL(p, F_TRACE_SCHED)) {
-	    trace_sched(p, am_out);
+	if (((MBUF_SIZE(p) + MSO(p).overhead) * MBUF_GC_FACTOR) >= HEAP_SIZE(p)) {
+	    calls -= erts_garbage_collect(p, 0, p->arg_reg, p->arity);
+	    if (calls < 0) {
+		calls = 1;
+	    }
 	}
 
-	if (do_time) {
-	    bump_timer();
-	}
-    } while (function_calls <= INPUT_REDUCTIONS);
-    
-    return qmask;
+#ifdef INSTRUMENT
+	current_erl_process = p->id; /* Always an internal pid */
+#endif
+
+	p->fcalls = calls;
+#ifdef SHARED_HEAP
+	ASSERT(p->active);
+#endif
+	return p;
+    }
+
+    /*
+     * Schedule system-level activities.
+     */
+ do_sys_schedule:
+    erl_sys_schedule(qmask);
+    function_calls = 0;
+    if (do_time) {
+	bump_timer();
+    }
+    goto pick_next_process;
 }
 
 /*
@@ -315,21 +408,28 @@ alloc_process(void)
 
     if ((p = (Process*) fix_alloc_from(92,process_desc)) == NULL)
 	return NULL;
-    p->id = make_pid(p_serial, THIS_NODE, p_next);
+    p->id = make_internal_pid(p_serial << p_serial_shift | p_next);
     p->rstatus = P_FREE;
     p->rcount = 0;
 
     /* set p_next to the next available slot */
     p_prev = p_next;
-    p_next = (p_next+1) % max_process;
+
+    p_next++;
+    if(p_next >= erts_max_processes)
+	p_next = 0;
 
     while(p_prev != p_next) {
 	if (p_next == 0)
-	    p_serial = (p_serial+1) % MAX_SERIAL;
-	if (process_tab[p_next] == NULL) /* found a free slot */
+	    p_serial = (p_serial+1) & p_serial_mask;
+	if (process_tab[p_next] == NULL)
+	    /* found a free slot */
 	    return p;
-	p_next = (p_next+1) % max_process;
+	p_next++;
+	if(p_next >= erts_max_processes)
+	    p_next = 0;
     }
+
     p_next = -1;
     return p;
 }
@@ -342,10 +442,12 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 		   ErlSpawnOpts* so) /* Options for spawn. */
 {
     Process *p;
+    Sint arity;			/* Number of arguments. */
+#ifndef SHARED_HEAP
     Uint arg_size;		/* Size of arguments. */
     Uint sz;			/* Needed words on heap. */
-    Sint arity;			/* Number of arguments. */
     Uint heap_need;		/* Size needed on heap. */
+#endif
     ScheduleQ* sq;
 
     /*
@@ -365,71 +467,88 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     }
 
     processes_busy++;
+#ifdef __BENCHMARK__
+    processes_spawned++;
+#endif
+
+#ifndef SHARED_HEAP
     arg_size = size_object(args);
     heap_need = arg_size;
-    p->group_leader = parent->group_leader;
+#endif
+
     p->flags = erts_default_process_flags;
 
     if (so->flags & SPO_USE_ARGS) {
 	p->min_heap_size = so->min_heap_size;
 	p->prio = so->priority;
-#ifndef UNIFIED_HEAP
+#ifndef SHARED_HEAP
 	p->max_gen_gcs = so->max_gen_gcs;
 #endif
     } else {
 	p->min_heap_size = H_MIN_SIZE;
 	p->prio = PRIORITY_NORMAL;
-#ifndef UNIFIED_HEAP
+#ifndef SHARED_HEAP
 	p->max_gen_gcs = erts_max_gen_gcs;
 #endif
     }
-    ASSERT(p->min_heap_size == next_heap_size(p->min_heap_size, 0));
+    ASSERT(p->min_heap_size == erts_next_heap_size(p->min_heap_size, 0));
     
     p->initial[INITIAL_MOD] = mod;
     p->initial[INITIAL_FUN] = func;
     p->initial[INITIAL_ARI] = (Uint) arity;
 
+#ifndef SHARED_HEAP
     /*
      * Must initialize binary lists here before copying binaries to process.
      */
     p->off_heap.mso = NULL;
     p->off_heap.funs = NULL;
+    p->off_heap.externals = NULL;
     p->off_heap.overhead = 0;
+
+    heap_need +=
+	IS_CONST(parent->group_leader) ? 0 : NC_HEAP_SIZE(parent->group_leader);
 
     if (heap_need < p->min_heap_size) {
 	sz = heap_need = p->min_heap_size;
     } else {
-	sz = next_heap_size(heap_need, 0);
+	sz = erts_next_heap_size(heap_need, 0);
     }
+    p->arith_lowest_htop = (Eterm *) 0;
+#endif
+
 
 #ifdef HIPE
     hipe_init_process(&p->hipe);
 #endif
 
-#ifdef UNIFIED_HEAP
-    p->send = (Eterm *) safe_alloc_from(7, sizeof(Eterm) * S_DEFAULT_SIZE);
+#ifdef SHARED_HEAP
+    p->send = (Eterm *) erts_safe_sl_alloc_from(7, (sizeof(Eterm)
+						    * S_DEFAULT_SIZE));
     p->stop = p->stack = p->send + S_DEFAULT_SIZE;
     p->stack_sz = S_DEFAULT_SIZE;
     p->htop = NULL;
     p->hend = NULL;
+    p->heap = NULL;
+    p->heap_sz = 0;
 #else
     p->heap = (Eterm *) erts_safe_sl_alloc_from(8, sizeof(Eterm)*sz);
     p->old_hend = p->old_htop = p->old_heap = NULL;
     p->high_water = p->heap;
     p->gen_gcs = 0;
-#endif
+    p->stop = p->hend = p->heap + sz;
+    p->htop = p->heap;
+    p->heap_sz = sz;
     p->arith_avail = 0;		/* No arithmetic heap. */
     p->arith_heap = NULL;
 #ifdef DEBUG
     p->arith_check_me = NULL;
 #endif
-
-#ifndef UNIFIED_HEAP
-    p->stop = p->hend = p->heap + sz;
-    p->htop = p->heap;
-    p->heap_sz = sz;
 #endif
+    p->saved_htop = NULL;
+    p->fvalue = NIL;
     p->catches = 0;
+
     /* No need to initialize p->fcalls. */
 
     p->current = p->initial+INITIAL_MOD;
@@ -441,7 +560,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->max_arg_reg = sizeof(p->def_arg_reg)/sizeof(p->def_arg_reg[0]);
     p->arg_reg[0] = mod;
     p->arg_reg[1] = func;
-#ifdef UNIFIED_HEAP
+#ifdef SHARED_HEAP
     p->arg_reg[2] = args;
 #else
     p->arg_reg[2] = copy_struct(args, arg_size, &p->htop, &p->off_heap);
@@ -454,27 +573,41 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 
     p->reg = NULL;
     p->reg_atom = THE_NON_VALUE;
-    p->dslot = -1;
+    p->dist_entry = NULL;
     p->error_handler = am_error_handler;    /* default */
-    p->tracer_proc = erts_default_tracer;
     p->links = NULL;
     p->ct = NULL;
+
+#ifdef SHARED_HEAP
+    p->group_leader = parent->group_leader;
+#else
+    /* Needs to be done after the heap has been set up */
+    p->group_leader =
+	IS_CONST(parent->group_leader)
+	? parent->group_leader
+	: STORE_NC(&p->htop, &p->off_heap.externals, parent->group_leader);
+#endif
+    ASSERT(IS_CONST(erts_default_tracer));
+    p->tracer_proc = erts_default_tracer;
 
     p->msg.first = NULL;
     p->msg.last = &p->msg.first;
     p->msg.save = &p->msg.first;
     p->msg.len = 0;
-#ifndef UNIFIED_HEAP
+#ifndef SHARED_HEAP
     p->mbuf = NULL;
+    p->halloc_mbuf = NULL;
     p->mbuf_sz = 0;
 #endif
     p->dictionary = NULL;
     p->debug_dictionary = NULL;
-    p ->seq_trace_lastcnt = 0;
-    p ->seq_trace_clock = 0;
+    p->seq_trace_lastcnt = 0;
+    p->seq_trace_clock = 0;
     SEQ_TRACE_TOKEN(p) = NIL;
-
-    process_tab[pid_number(p->id)] = p;
+#ifdef HEAP_FRAG_ELIM_TEST
+    p->ssb = NULL;
+#endif
+    process_tab[internal_pid_index(p->id)] = p;
 
     if (IS_TRACED(parent)) {
 	if (parent->flags & F_TRACE_SOS) {
@@ -515,10 +648,14 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 	}
     }
 
-#ifdef UNIFIED_HEAP
-    ADD_TO_ROOTSET(p);
+#ifdef SHARED_HEAP
+    /*
+     * Add process to the array of active processes.
+     */
     p->active = 1;
+    erts_active_procs[erts_num_active_procs++] = p;
 #endif
+
     /*
      * Schedule process for execution.
      */
@@ -544,14 +681,16 @@ void erts_init_empty_process(Process *p)
     p->htop = NULL;
     p->stop = NULL;
     p->hend = NULL;
-#ifdef UNIFIED_HEAP
+    p->heap = NULL;
+#ifdef SHARED_HEAP
     p->stack = NULL;
     p->send  = NULL;
     p->stack_sz = 0;
 #else
-    p->heap = NULL;
+    p->arith_lowest_htop = (Eterm *) 0;
     p->gen_gcs = 0;
     p->max_gen_gcs = 0;
+    p->saved_htop = NULL;
 #endif
     p->min_heap_size = 0;
     p->status = P_RUNABLE;
@@ -567,30 +706,32 @@ void erts_init_empty_process(Process *p)
     p->fvalue = NIL;
     p->freason = 0;
     p->fcalls = 0;
-    p->dslot = -1;
+    p->dist_entry = NULL;
     memset(&(p->tm), 0, sizeof(ErlTimer));
     p->next = NULL;
+#ifndef SHARED_HEAP
     p->off_heap.mso = NULL;
     p->off_heap.funs = NULL;
+    p->off_heap.externals = NULL;
     p->off_heap.overhead = 0;
+#endif
     p->reg = NULL;
     p->reg_atom = THE_NON_VALUE;
-#ifndef UNIFIED_HEAP
     p->heap_sz = 0;
+#ifndef SHARED_HEAP
     p->high_water = NULL;
     p->old_hend = NULL;
     p->old_htop = NULL;
     p->old_heap = NULL;
+    p->mbuf = NULL;
+    p->halloc_mbuf = NULL;
+    p->mbuf_sz = 0;
 #endif
     p->links = NULL;         /* List of links */
     p->msg.first = NULL;
     p->msg.last = &p->msg.first;
     p->msg.save = &p->msg.first;
     p->msg.len = 0;
-#ifndef UNIFIED_HEAP
-    p->mbuf = NULL;
-    p->mbuf_sz = 0;
-#endif
     p->dictionary = NULL;
     p->debug_dictionary = NULL;
     p->ct = NULL;
@@ -608,12 +749,12 @@ void erts_init_empty_process(Process *p)
     /*
      * Secondary heap for arithmetic operations.
      */
+#ifndef SHARED_HEAP
     p->arith_heap = NULL;
     p->arith_avail = 0;
 #ifdef DEBUG
-    p->arith_file = NULL;
-    p->arith_line = 0;
     p->arith_check_me = NULL;
+#endif
 #endif
 
     /*
@@ -628,6 +769,10 @@ void erts_init_empty_process(Process *p)
     p->def_arg_reg[3] = 0;
     p->def_arg_reg[4] = 0;
     p->def_arg_reg[5] = 0;
+#ifdef HEAP_FRAG_ELIM_TEST
+    p->ssb = NULL;
+#endif
+
 #ifdef HIPE
     hipe_init_process(&p->hipe);
 #endif
@@ -636,7 +781,7 @@ void erts_init_empty_process(Process *p)
 void
 erts_cleanup_empty_process(Process* p)
 {
-#ifdef UNIFIED_HEAP
+#ifdef SHARED_HEAP
     ;
 #else
     ErlHeapFragment* ptr = p->mbuf;
@@ -654,13 +799,13 @@ static void
 delete_process0(Process* p, int do_delete)
 {
     ErlLink* lnk;
-#ifndef UNIFIED_HEAP
     ErlMessage* mp;
+#ifndef SHARED_HEAP
     ErlHeapFragment* bp;
 #endif
     int i;
 
-#ifndef UNIFIED_HEAP
+#ifndef SHARED_HEAP
     /* Clean binaries and funs */
     erts_cleanup_offheap(&p->off_heap);
 
@@ -678,28 +823,37 @@ delete_process0(Process* p, int do_delete)
      * Release heaps. Clobber contents in DEBUG build.
      */
 
-#ifdef UNIFIED_HEAP
-#ifdef DEBUG
+#ifdef SHARED_HEAP
+#  ifdef DEBUG
     sys_memset(p->send, 0xfb, p->stack_sz*sizeof(Eterm));
-#endif
-#ifdef HIPE
+#  endif
+#  ifdef HIPE
     hipe_delete_process(&p->hipe);
-#endif
-    sys_free((void*) p->send);
+#  endif
+    erts_sl_free((void*) p->send);
 #else
-#ifdef DEBUG
+#  ifdef DEBUG
     sys_memset(p->heap, 0xfb, p->heap_sz*sizeof(Eterm));
-#endif
-#ifdef HIPE
+#  endif
+#  ifdef HIPE
     hipe_delete_process(&p->hipe);
-#endif
+#  endif
     erts_sl_free((void*) p->heap);
     if (p->old_heap != NULL) {
-#ifdef DEBUG
+#  ifdef DEBUG
 	sys_memset(p->old_heap, 0xfb, (p->old_hend-p->old_heap)*sizeof(Eterm));
-#endif
+#  endif
 	erts_sl_free(p->old_heap);
     }
+
+#ifdef HEAP_FRAG_ELIM_TEST
+    if (p->ssb) {
+	erts_sl_free(p->ssb);
+    }
+#ifdef DEBUG
+    p->ssb = (void *) 0x7DEFFACD;
+#endif
+#endif
 
     /*
      * Free all pending message buffers.
@@ -710,7 +864,7 @@ delete_process0(Process* p, int do_delete)
 	free_message_buffer(bp);
 	bp = next_bp;
     }
-#endif
+#endif /* SHARED_HEAP */
 
     if (p->dictionary != NULL) {
 	sys_free(p->dictionary);
@@ -722,7 +876,6 @@ delete_process0(Process* p, int do_delete)
 	p->debug_dictionary = NULL;
     }
 
-#ifndef UNIFIED_HEAP
     /* free all pending messages */
     mp = p->msg.first;
     while(mp != NULL) {
@@ -730,39 +883,52 @@ delete_process0(Process* p, int do_delete)
 	free_message(mp);
 	mp = next_mp;
     }
-#endif
 
     /* free all links */
     lnk = p->links;
     while(lnk != NULL) {
 	ErlLink* next_link = lnk->next;
-	fix_free(link_desc, (Eterm*)lnk);
+	del_link(&lnk);
 	lnk = next_link;
     }
 
     if (p->ct != NULL)
-       sys_free(p->ct);
+        sys_free(p->ct);
 
     if (p->flags & F_USING_DB)
 	db_proc_dead(p->id);
 
-    i = pid_number(p->id);
+    ASSERT(internal_pid_index(p->id) < erts_max_processes);
+    i = internal_pid_index(p->id);
+
     process_tab[i] = NULL;
     if (p_next == -1)
 	p_next = i;
+
+    if(p->dist_entry) {
+	DEREF_DIST_ENTRY(p->dist_entry);
+	p->dist_entry = NULL;
+    }
+
+    p->fvalue = NIL;
+    
+#ifdef SHARED_HEAP
+    for (i = 0; i < erts_num_active_procs; i++) {
+	if (erts_active_procs[i] == p) {
+	    erts_active_procs[i] = erts_active_procs[--erts_num_active_procs];
+	    break;
+	}
+    }
+#endif
 
     /*
      * Don't free it here, just mark it.
      */
     if (do_delete) {
-       fix_free(process_desc, (Eterm *) p);
+        fix_free(process_desc, (Eterm *) p);
     } else {
-       p->status = P_FREE;
-   }
-
-#ifdef UNIFIED_HEAP
-    REMOVE_FROM_ROOTSET(p);
-#endif
+        p->status = P_FREE;
+    }
     processes_busy--;
 }
 
@@ -773,10 +939,11 @@ static int last_killed_no = 0;
 static int keep_killed = 0;
 #endif
 
-/* p is supposed to be the currently executing process 
+/*
+ * p must be the currently executing process.
  */
-void delete_process(p)
-Process* p;
+static void
+delete_process(Process* p)
 {
 #ifdef KEEP_ZOMBIE
    Process *kp;
@@ -807,7 +974,7 @@ Process* p;
 
       if (p->flags & F_USING_DB)
 	 db_proc_dead(p->id);
-      UH_FLAGS |= F_NEED_FULLSWEEP;
+      FLAGS(p) |= F_NEED_FULLSWEEP;
       erts_garbage_collect(p, 0, p->arg_reg, p->arity);
    }
    else
@@ -895,7 +1062,12 @@ schedule_exit(Process *p, Eterm reason)
     if (status == P_RUNNING)
 	return;
 
-    copy_object(reason, p, 0, &copy, (Process*)0);
+    copy = copy_object(reason, p);
+    
+#ifdef SHARED_HEAP
+    p->active = 1;
+#endif
+
     p->fvalue = copy;
     cancel_timer(p);
     p->freason = USER_EXIT;
@@ -906,145 +1078,231 @@ schedule_exit(Process *p, Eterm reason)
     }
 }
 
+/*
+ * This function delivers an EXIT message to a process
+ * which is trapping EXITs.
+ */
+
+static void
+send_exit_message(Process *to, Eterm exit_term, Uint term_size, Eterm token)
+{
+#ifdef SHARED_HEAP
+    if (token != NIL) {
+	ASSERT(token == NIL);
+    } else {
+	queue_message_tt(to, NULL, exit_term, NIL);
+    }
+#else
+    if (token == NIL) {
+	Eterm* hp;
+	Eterm mess;
+
+	hp = HAlloc(to, term_size);
+	mess = copy_struct(exit_term, term_size, &hp, &MSO(to));
+	queue_message_tt(to, NULL, mess, NIL);
+    } else {
+	ErlHeapFragment* bp;
+	Eterm* hp;
+	Eterm mess;
+	Eterm temp_token;
+	Uint sz_token;
+
+	ASSERT(is_tuple(token));
+	sz_token = size_object(token);
+	bp = new_message_buffer(term_size+sz_token);
+	hp = bp->mem;
+	mess = copy_struct(exit_term, term_size, &hp, &MSO(to));
+	/* the trace token must in this case be updated by the caller */
+	seq_trace_output(token, mess, SEQ_TRACE_SEND, to->id, NULL);
+	temp_token = copy_struct(token, sz_token, &hp, &MSO(to));
+	queue_message_tt(to, bp, mess, temp_token);
+    }
+#endif
+}
+
 /* this function fishishes a process and propagates exit messages - called
    by process_main when a process dies */
 void 
 do_exit(Process* p, Eterm reason)
 {
-   Process *rp;
-   ErlLink* lnk;
-   Eterm item;
-   int slot;
-   int ix;
-   Ref *ref;
+    Process *rp;
+    ErlLink* lnk;
+    Eterm item;
+    DistEntry *dep;
+    int ix;
+    Eterm ref;
+    Eterm exit_tuple = NIL;
+    Uint exit_tuple_sz = 0;
 
-   p->status = P_EXITING;
+    p->arity = 0;		/* No live registers */
+    p->fvalue = reason;
+    p->status = P_EXITING;
 
-   if (IS_TRACED_FL(p,F_TRACE_PROCS))
-      trace_proc(p, p, am_exit, reason);
+    if (IS_TRACED_FL(p,F_TRACE_PROCS))
+	trace_proc(p, p, am_exit, reason);
 
-   if (p->flags & F_DEFAULT_TRACER) {
-       if (erts_default_tracer == p->id) {
-	   erts_default_tracer = NIL;
-	   erts_default_process_flags &= ~TRACE_FLAGS;
-       }
-   }
-
-   lnk = p->links;
-   p->links = NULL;
-
-   while(lnk != NULL) {
-      item = lnk->item;
-      switch(lnk->type) {
-       case LNK_LINK:
-	 if (is_port(item)) {
-	    if ((slot = port_node(item)) != THIS_NODE)
-	       dist_exit(slot, p->id, item, reason);
-	    else {
-	       ix = port_index(item);
-	       if (erts_port[ix].status != FREE) {
-		   del_link(find_link(&erts_port[ix].links,LNK_LINK,
-				      p->id,NIL));
-		   do_exit_port(item, p->id, reason);
-	       }
-	    }
-	 }
-	 else if (is_pid(item)) {
-	    if ((slot = pid_node(item)) != THIS_NODE) {
-		if (SEQ_TRACE_TOKEN(p) != NIL) {
-		    seq_trace_update_send(p);
-		}
-		dist_exit_tt(slot, p->id, item, reason, SEQ_TRACE_TOKEN(p));
-	    }
-	    else {
-	       if ((rp = pid2proc(item)) != NULL) {
-		   ErlLink **rlinkpp = 
-		       find_link(&rp->links, LNK_LINK, p->id, NIL);
-		   del_link(rlinkpp);
-		   if (rp->flags & F_TRAPEXIT) {
-		       if (SEQ_TRACE_TOKEN(p) != NIL ) {
-			   seq_trace_update_send(p);
-		       }
-		       deliver_exit_message_tt(p->id, rp, reason, 
-					       SEQ_TRACE_TOKEN(p));
-		       if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlinkpp != NULL) {
-			   trace_proc(p, rp, am_getting_unlinked, p->id);
-		       }
-		   } else if (reason == am_normal) {
-		       if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlinkpp != NULL) {
-			   trace_proc(p, rp, am_getting_unlinked, p->id);
-		       }
-		   } else {
-		       schedule_exit(rp, reason);
-		   } 
-	       }
-	   }
+    if (p->flags & F_TRACER) {
+	if (EQ(erts_default_tracer, p->id)) {
+	    erts_default_tracer = NIL;
+	    erts_default_process_flags &= ~TRACE_FLAGS;
 	}
-	 break;
-     case LNK_LINK1:
-	 ref = &lnk->ref;
-	 if (item == p->id) {
-	    /* We are monitoring 'data' */
-	    if (is_small(lnk->data))
-	       slot = unsigned_val(lnk->data); /* Monitor name */
-	    else
-	       slot = pid_node(lnk->data);
-	    if (slot != THIS_NODE) {
-	       ErlLink** lnkp;
-	       lnkp = find_link_by_ref(&dist_addrs[slot].links, ref);
-	       if (lnkp != NULL) {
-		  /* Force send, use the atom in dist slot 
-		   * link list as data for the message.
-		   */
-		  dist_demonitor(slot, item, (*lnkp)->data, ref, 1);
-		  /* dist_demonitor() may have removed the link;
-		     therefore, look it up again. */
-		  lnkp = find_link_by_ref(&dist_addrs[slot].links, ref);
-		  del_link(lnkp);
-	       }
-	    } else {
-	       if ((rp = pid2proc(lnk->data)) != NULL)
-		  del_link(find_link_by_ref(&rp->links, ref));
-	    }
-	 } else {
-	    /* 'Item' is monitoring us */
-	    if (pid_node(lnk->item) != THIS_NODE) {
-	       dist_m_exit(pid_node(item), item, lnk->data, ref, reason);
-	    } else {
-	       if ((rp = pid2proc(lnk->item)) != NULL) {
-		  queue_monitor_message(rp, ref, am_process, p->id, reason);
-		  del_link(find_link_by_ref(&rp->links, ref));
-	       }
-	    }
-	 }
-	 break;
-       case LNK_NODE:
-	 del_link(find_link(&dist_addrs[lnk->data].links,LNK_NODE,
-			    p->id,NIL));
-	 break;
+    }
 
-#ifdef MONITOR_ENHANCE
-       case LNK_NODE1:
-	 del_link(find_link(&dist_addrs[lnk->data].links,LNK_NODE1,
-			    p->id,NIL));
-	 break;
+    lnk = p->links;
+    p->links = NULL;
+    
+    
+    /*
+     * Pre-build the EXIT tuple if there are any links.
+     */
+    if (lnk != NULL) {
+	Eterm* hp;
+	if (HEAP_LIMIT(p) - HEAP_TOP(p) <= 4) {
+	    (void) erts_garbage_collect(p, 4, NULL, 0);
+	    reason = p->fvalue;
+	}
+	hp = HEAP_TOP(p);
+	HEAP_TOP(p) += 4;
+	exit_tuple = TUPLE3(hp, am_EXIT, p->id, reason);
+#ifndef SHARED_HEAP
+	exit_tuple_sz = size_object(exit_tuple);
 #endif
+    }
 
-       case LNK_OMON:
-       case LNK_TMON:
-       default:
-	 erl_exit(1, "bad type in link list\n");
-	 break;
-      }
-      del_link(&lnk);		/* will set lnk to next as well !! */
-   }
+    while (lnk != NULL) {
+	item = lnk->item;
+	switch(lnk->type) {
+	case LNK_LINK:
+	    if(is_internal_port(item)) {
+		ix = internal_port_index(item);
+		if (erts_port[ix].status != FREE) {
+		    del_link(find_link(&erts_port[ix].links,LNK_LINK,
+				       p->id,NIL));
+		    do_exit_port(item, p->id, reason);
+		}
+	    }
+	    else if(is_external_port(item)) {
+		dep = external_port_dist_entry(item);
+		if(dep != erts_this_dist_entry)
+		    dist_exit(dep, p->id, item, reason);
+	    }
+	    else if (is_internal_pid(item)) {
+		if ((rp = pid2proc(item)) != NULL) {
+		    ErlLink **rlinkpp = 
+			find_link(&rp->links, LNK_LINK, p->id, NIL);
+		    del_link(rlinkpp);
+		    if (rp->flags & F_TRAPEXIT) {
+			if (SEQ_TRACE_TOKEN(p) != NIL ) {
+			    seq_trace_update_send(p);
+			}
+			send_exit_message(rp, exit_tuple, exit_tuple_sz,
+					  SEQ_TRACE_TOKEN(p));
+			if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlinkpp != NULL) {
+			    trace_proc(p, rp, am_getting_unlinked, p->id);
+			}
+		    } else if (reason == am_normal) {
+			if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlinkpp != NULL) {
+			    trace_proc(p, rp, am_getting_unlinked, p->id);
+			}
+		    } else {
+			schedule_exit(rp, reason);
+		    } 
+		}
+	    }
+	    else if (is_external_pid(item)) {
+		dep = external_pid_dist_entry(item);
+		if(dep != erts_this_dist_entry) {
+		    if (SEQ_TRACE_TOKEN(p) != NIL) {
+			seq_trace_update_send(p);
+		    }
+		    dist_exit_tt(dep, p->id, item, reason, SEQ_TRACE_TOKEN(p));
+		}
+	    }
+	    break;
+	case LNK_LINK1:
+	    ref = lnk->ref;
+	    if (item == p->id) {
+		/* We are monitoring 'data' */
+		if (is_atom(lnk->data)) {
+		    /* Monitoring a name on this node */
+		    ASSERT(is_node_name_atom(lnk->data));
+		    dep = erts_sysname_to_connected_dist_entry(lnk->data);
+		    if(!dep)
+			break;
+		}
+		else {
+		    ASSERT(is_pid(lnk->data));
+		    dep = pid_dist_entry(lnk->data);
+		}
+		if (dep != erts_this_dist_entry) {
+		    ErlLink** lnkp;
+		    lnkp = find_link_by_ref(&dep->links, ref);
+		    if (lnkp != NULL) {
+			/* Force send, use the atom in dist slot 
+			 * link list as data for the message.
+			 */
+			dist_demonitor(dep, item, (*lnkp)->data, ref, 1);
+			/* dist_demonitor() may have removed the link;
+			   therefore, look it up again. */
+			lnkp = find_link_by_ref(&dep->links, ref);
+			del_link(lnkp);
+		    }
+		} else {
+		    if ((rp = pid2proc(lnk->data)) != NULL)
+			del_link(find_link_by_ref(&rp->links, ref));
+		}
+	    } else {
+		/* 'Item' is monitoring us */
+		if (is_internal_pid(item)) {
+		    if ((rp = pid2proc(item)) != NULL) {
+			Eterm lhp[3];
+			Eterm item = (is_atom(lnk->data)
+				      ? TUPLE2(&lhp[0],
+					       lnk->data,
+					       erts_this_dist_entry->sysname)
+				      : lnk->data);
+			ASSERT(lnk->data == p->id || is_atom(lnk->data));
+			queue_monitor_message(rp, ref, am_process,
+					      item, reason);
+			del_link(find_link_by_ref(&rp->links, ref));
+		    }
+		} else if (is_external_pid(item)) {
+		    dep = external_pid_dist_entry(item);
+		    if(dep != erts_this_dist_entry)
+			dist_m_exit(dep, item, lnk->data, ref, reason);
+		}
+		else {
+		    ASSERT(0);
+		}
+	    }
 
-   if ((p->flags & F_DISTRIBUTION) && (p->dslot != -1))
-      do_net_exits(p->dslot);
+	    break;
+	case LNK_NODE:
+	    ASSERT(is_node_name_atom(item));
+	    dep = erts_sysname_to_connected_dist_entry(item);
+	    if(dep)
+		del_link(find_link(&dep->links,LNK_NODE,p->id,NIL));
+	    else {
+		/* XXX Is this possible? Shouldn't this link
+		   previously have been removed if the node
+		   had previously been disconnected. */
+		ASSERT(0);
+	    }
+	    break;
 
-   /* Save the exit reason, for post-mortem debugging */
-   p->fvalue = reason;
-   delete_process(p);
+	case LNK_OMON:
+	case LNK_TMON:
+	default:
+	    erl_exit(1, "bad type in link list\n");
+	    break;
+	}
+	del_link(&lnk);		/* will set lnk to next as well !! */
+    }
+
+    if ((p->flags & F_DISTRIBUTION) && p->dist_entry)
+	do_net_exits(p->dist_entry);
+
+    delete_process(p);
 }
 
 /* Callback for process timeout */
@@ -1087,4 +1345,85 @@ set_timer(Process* p, Uint timeout)
 		  timeout);
     p->flags |= F_INSLPQUEUE;
     p->flags &= ~F_TIMO;
+}
+
+/*
+ * Stack dump functions follow.
+ */
+
+void
+erts_stack_dump(Process *p, CIO fd)
+{
+    Eterm* sp;
+    int i;
+    int yreg = -1;
+
+    erl_printf(fd, "program counter = 0x%x (", p->i);
+    print_function_from_pc(p->i, fd);
+    erl_printf(fd, ")\n");
+    erl_printf(fd, "cp = 0x%x (", p->cp);
+    print_function_from_pc(p->cp, fd);
+    erl_printf(fd, ")\n");
+    if (!((p->status == P_RUNNING) || (p->status == P_GARBING))) {
+        erl_printf(fd, "arity = %d\n",p->arity);
+        for (i = 0; i < p->arity; i++) {
+            erl_printf(fd, "   ");
+            display(p->arg_reg[i], fd);
+            erl_printf(fd, "\n");
+        }
+    }
+    for (sp = p->stop; sp < STACK_START(p); sp++) {
+        yreg = stack_element_dump(p, sp, yreg, fd);
+    }
+}
+
+static void
+print_function_from_pc(Eterm* x, CIO fd)
+{
+    Eterm* addr = find_function_from_pc(x);
+    if (addr == NULL) {
+        if (x == beam_exit) {
+            sys_printf(fd, "<terminate process>");
+        } else if (x == beam_apply+1) {
+            sys_printf(fd, "<terminate process normally>");
+        } else {
+            sys_printf(fd, "unknown function");
+        }
+    } else {
+        display(addr[0], fd);
+        sys_printf(fd, ":");
+        display(addr[1], fd);
+        sys_printf(fd, "/%d", addr[2]);
+        sys_printf(fd, " + %d", ((x-addr)-2) * sizeof(Eterm));
+    }
+}
+
+static int
+stack_element_dump(Process* p, Eterm* sp, int yreg, CIO fd)
+{
+    Eterm x = *sp;
+
+    if (yreg < 0 || is_CP(x)) {
+        erl_printf(fd, "\n%-8p ", sp);
+    } else {
+        char sbuf[16];
+        sprintf(sbuf, "y(%d)", yreg);
+        sys_printf(fd, "%-8s ", sbuf);
+        yreg++;
+    }
+
+    if (is_CP(x)) {
+        sys_printf(fd, "Return addr 0x%X (", (Eterm *) x);
+        print_function_from_pc(cp_val(x), fd);
+        sys_printf(fd, ")\n");
+        yreg = 0;
+    } else if is_catch(x) {
+        sys_printf(fd, "Catch 0x%X (", catch_pc(x));
+        print_function_from_pc(catch_pc(x), fd);
+        sys_printf(fd, ")\n");
+    } else {
+        display(x, fd);
+        erl_putc('\n', fd);
+    }
+    return yreg;
 }

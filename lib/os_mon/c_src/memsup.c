@@ -80,11 +80,7 @@
 #include <sys/param.h>
 #endif
 
-#if defined __STDC__
 #include <stdarg.h>
-#else
-#include <varargs.h>
-#endif
 
 #include <string.h>
 #include <time.h>

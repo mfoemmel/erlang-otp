@@ -71,18 +71,12 @@
 	     stk=[],				%Stack table
 	     res=[]}).				%Reserved regs: [{reserved, I, V}]
 
-%% Always inline these simple functions.
-
--compile({inline,{comment,1}}).
--compile({inline,{on_stack,2}}).
--compile({inline,{new_label,1}}).
-
 module({Mod,Exp,Attr,Forms}, Options) ->
     NewFunsFlag = not member(no_new_funs, Options),
-    {Fs,St} = functions(Forms, Options, #cg{mod=Mod,new_funs=NewFunsFlag}),
+    {Fs,St} = functions(Forms, #cg{mod=Mod,new_funs=NewFunsFlag}),
     {ok,{Mod,Exp,Attr,Fs,St#cg.lcount}}.
 
-functions(Forms, Options, St0) ->
+functions(Forms, St0) ->
     mapfoldl(fun (F, St) -> function(F, St) end, St0#cg{lcount=1}, Forms).
 
 function({function,Name,Arity,As0,Vb,Vdb}, St0) ->
@@ -91,9 +85,8 @@ function({function,Name,Arity,As0,Vb,Vdb}, St0) ->
     {Fun,St2} = cg_fun(Vb, As0, Vdb, St1),
     {{function,Name,Arity,St2#cg.fcode,Fun},St2};
 function({asm,Name,Arity,Code}, St0) ->
-    {Fi,St1} = new_label(St0),
-    {Fl,St2} = new_label(St1),
-    {{function,Name,Arity,Fl,Code},St2}.
+    {Fl,St} = new_label(St0),
+    {{function,Name,Arity,Fl,Code},St}.
 
 %% cg_fun([Lkexpr], [HeadVar], Vdb, State) -> {[Ainstr],State}
 
@@ -106,7 +99,7 @@ cg_fun(Les, Hvs, Vdb, St0) ->
 					   put_reg_from(V, 0, Reg)
 				   end, [], Hvs),
 			stk=[]}, 0, Vdb),
-    {B2,Aft,St3} = cg_list(Les, 0, Vdb, Bef, St2#cg{btype=exit,
+    {B2,_Aft,St3} = cg_list(Les, 0, Vdb, Bef, St2#cg{btype=exit,
 						    bfail=Fi,
 						    finfo=Fi,
 						    fcode=Fl,
@@ -136,16 +129,16 @@ cg({receive_loop,Te,Rvar,Rm,Tes,Rs}, Le, Vdb, Bef, St) ->
     recv_loop_cg(Te, Rvar, Rm, Tes, Rs, Le, Vdb, Bef, St);
 cg(receive_next, Le, Vdb, Bef, St) ->
     recv_next_cg(Le, Vdb, Bef, St);
-cg(receive_accept, Le, Vdb, Bef, St) -> {[remove_message],Bef,St};
-cg(receive_reject, Le, Vdb, Bef, St) -> {[],Bef,St};
+cg(receive_accept, _Le, _Vdb, Bef, St) -> {[remove_message],Bef,St};
+cg(receive_reject, _Le, _Vdb, Bef, St) -> {[],Bef,St};
 cg({'catch',Cb,R}, Le, Vdb, Bef, St) ->
     catch_cg(Cb, R, Le, Vdb, Bef, St);
 cg({set,Var,Con}, Le, Vdb, Bef, St) -> set_cg(Var, Con, Le, Vdb, Bef, St);
 cg({return,Rs}, Le, Vdb, Bef, St) -> return_cg(Rs, Le, Vdb, Bef, St);
 cg({break,Bs}, Le, Vdb, Bef, St) -> break_cg(Bs, Le, Vdb, Bef, St);
-cg({need_heap,0}, Le, Vdb, Bef, St) ->
+cg({need_heap,0}, _Le, _Vdb, Bef, St) ->
     {[],Bef,St};
-cg({need_heap,H}, Le, Vdb, Bef, St) ->
+cg({need_heap,H}, _Le, _Vdb, Bef, St) ->
     {[{test_heap,H,max_reg(Bef#sr.reg)}],Bef,St}.
 
 %% cg_list([Kexpr], FirstI, Vdb, StackReg, St) -> {[Ainstr],StackReg,St}.
@@ -159,16 +152,16 @@ cg_list(Kes, I, Vdb, Bef, St0) ->
 %			     ok = io:fwrite("    ~p\n", [Keis]),
 %			     ok = io:fwrite("    %% ~p\n", [Intb]),
 			     {comment(Inta) ++ Keis,{Intb,Stb}}
-		     end, {Bef,St0}, need_heap(Kes, I, St0#cg.btype)),
+		     end, {Bef,St0}, need_heap(Kes, I)),
     {Keis,Aft,St1}.
 
 %% need_heap([Lkexpr], I, BifType) -> [Lkexpr].
 %%  Insert need_heap instructions in Kexpr list.  Try to be smart and
 %%  collect them together as much as possible.
 
-need_heap(Kes0, I, BifType) ->
+need_heap(Kes0, I) ->
     {Kes1,{H,F}} = flatmapfoldr(fun (Ke, {H0,F0}) ->
-					{Ns,H1,F1} = need_heap(Ke, H0, F0, BifType),
+					{Ns,H1,F1} = need_heap_1(Ke, H0, F0),
 					{[Ke|Ns],{H1,F1}}
 				end, {0,false}, Kes0),
     %% Prepend need_heap if necessary.
@@ -179,27 +172,27 @@ need_heap(Kes0, I, BifType) ->
 % 			     (Lke) -> Lke#l.ke end, Kes2)}]),
     Kes2.
 
-need_heap(#l{ke={set,V,Val}}, H, F, BifType) ->
+need_heap_1(#l{ke={set,_,Val}}, H, F) ->
     %% Just pass through adding to needed heap.
     {[],H + case Val of
-		{cons,Es} -> 2;
+		{cons,_} -> 2;
 		{tuple,Es} -> 1 + length(Es);
 		{string,S} -> 2 * length(S);
-		Other -> 0
+		_Other -> 0
 	    end,F};
-need_heap(#l{ke={call,Func,As,Rs},i=I}, H, F, BifType) ->
+need_heap_1(#l{ke={call,_Func,_As,_Rs},i=I}, H, F) ->
     %% Calls generate a need if necessary and also force one.
     {need_heap_need(I, H, F),0,true};
-need_heap(#l{ke={bif,dsetelement,As,Rs},i=I}, H, F, BifType) ->
+need_heap_1(#l{ke={bif,dsetelement,_As,_Rs},i=I}, H, F) ->
     {need_heap_need(I, H, F),0,true};
-need_heap(#l{ke={bif,Bif,As,Rs},i=I}, H, F, BifType) ->
+need_heap_1(#l{ke={bif,_Bif,_As,_Rs}}, H, F) ->
     {[],H,F};
-need_heap(#l{i=I}, H, F, BifType) ->
+need_heap_1(#l{i=I}, H, F) ->
     %% Others kexprs generate a need if necessary but don't force.
     {need_heap_need(I, H, F),0,false}.
 
-need_heap_need(I, 0, false) -> [];
-need_heap_need(I, H, F) -> [#l{ke={need_heap,H},i=I}].
+need_heap_need(_I, 0, false) -> [];
+need_heap_need(I, H, _F) -> [#l{ke={need_heap,H},i=I}].
 
 
 %% match_cg(Match, [Ret], Le, Vdb, StackReg, State) ->
@@ -211,7 +204,7 @@ need_heap_need(I, H, F) -> [#l{ke={need_heap,H},i=I}].
 
 match_cg(M, Rs, Le, Vdb, Bef, St0) ->
     I = Le#l.i,
-    {Saves,Sis,Int0} = adjust_stack(Bef, I, I+1, Vdb),
+    {Sis,Int0} = adjust_stack(Bef, I, I+1, Vdb),
     {B,St1} = new_label(St0),
     {Mis,Int1,St2} = match_cg(M, none, Int0, St1#cg{break=B}),
     %% Put return values in registers.
@@ -228,20 +221,20 @@ match_cg(M, Rs, Le, Vdb, Bef, St0) ->
 match_cg(Le, Fail, Bef, St) ->
     match_cg(Le#l.ke, Le, Fail, Bef, St).
 
-match_cg({alt,F,S}, Le, Fail, Bef, St0) ->
+match_cg({alt,F,S}, _Le, Fail, Bef, St0) ->
     {Tf,St1} = new_label(St0),
     {Fis,Faft,St2} = match_cg(F, Tf, Bef, St1),
     {Sis,Saft,St3} = match_cg(S, Fail, Bef, St2),
     Aft = sr_merge(Faft, Saft),
     {Fis ++ [{label,Tf}] ++ Sis,Aft,St3};
-match_cg({select,V,Scs}, Va, Fail, Bef, St) ->
+match_cg({select,V,Scs}, _Va, Fail, Bef, St) ->
     match_fmf(fun (S, F, Sta) ->
-		      select_cg(S, V, Va#l.vdb, F, Fail, Bef, Sta) end,
+		      select_cg(S, V, F, Fail, Bef, Sta) end,
 	      Fail, St, Scs);
-match_cg({guard,Gcs}, Le, Fail, Bef, St) ->
+match_cg({guard,Gcs}, _Le, Fail, Bef, St) ->
     match_fmf(fun (G, F, Sta) -> guard_clause_cg(G, F, Bef, Sta) end,
 	      Fail, St, Gcs);
-match_cg({block,Es}, Le, Fail, Bef, St0) ->
+match_cg({block,Es}, Le, _Fail, Bef, St0) ->
     %% Must clear registers and stack of dead variables.
     Int = clear_dead(Bef, Le#l.i, Le#l.vdb),
     case St0#cg.is_top_block of
@@ -267,22 +260,22 @@ match_fail_cg({function_clause,As}, Le, Vdb, Bef, St) ->
 match_fail_cg({badmatch,Term}, Le, Vdb, Bef, St) ->
     {R,Ms,Int0} = cg_reg_arg(Term, Bef),
     Int1 = clear_dead(Int0, Le#l.i, Vdb),
-    {Saves,Sis,Int2} = adjust_stack(Int1, Le#l.i, Le#l.i+1, Vdb),
+    {Sis,Int2} = adjust_stack(Int1, Le#l.i, Le#l.i+1, Vdb),
     {Ms ++ Sis ++ [{badmatch,R}],
      Int2#sr{reg=clear_regs(Int0#sr.reg)},St};
 match_fail_cg({case_clause,Reason}, Le, Vdb, Bef, St) ->
     {R,Ms,Int0} = cg_reg_arg(Reason, Bef),
     Int1 = clear_dead(Int0, Le#l.i, Vdb),
-    {Saves,Sis,Int2} = adjust_stack(Int1, Le#l.i, Le#l.i+1, Vdb),
+    {Sis,Int2} = adjust_stack(Int1, Le#l.i, Le#l.i+1, Vdb),
     {Ms ++ Sis ++ [{case_end,R}],
      Int2#sr{reg=clear_regs(Int0#sr.reg)},St};
 match_fail_cg(if_clause, Le, Vdb, Bef, St) ->
     Int0 = clear_dead(Bef, Le#l.i, Vdb),
-    {Saves,Sis,Int1} = adjust_stack(Int0, Le#l.i, Le#l.i+1, Vdb),
+    {Sis,Int1} = adjust_stack(Int0, Le#l.i, Le#l.i+1, Vdb),
     {Sis ++ [if_end],
      Int1#sr{reg=clear_regs(Int1#sr.reg)}, St}.
 
-block_cg([], I, Vdb, Bef, St0) ->
+block_cg([], _I, _Vdb, Bef, St0) ->
     {[],Bef,St0};
 block_cg(Kes0, I, Vdb, Bef, St0) ->
     {Kes2,Int1,St1} =
@@ -307,15 +300,15 @@ basic_block([Le|Les], Acc) ->
 	no_block -> {reverse(Acc, [Le]),Les}
     end.
 	
-collect_block({set,Var,Con})        -> include;
-collect_block({call,{var,V},As,Rs}) -> {block_end,As++[{var,V}]};
-collect_block({call,Func,As,Rs})    -> {block_end,As};
-collect_block({enter,{var,V},As})   -> {block_end,As++[{var,V}]};
-collect_block({enter,Func,As})      -> {block_end,As};
-collect_block({return,Rs})          -> {block_end,Rs};
-collect_block({break,Bs})           -> {block_end,Bs};
-collect_block({bif,Bif,As,Rs})      -> include;
-collect_block(Other) -> no_block.
+collect_block({set,_,_})             -> include;
+collect_block({call,{var,V},As,_Rs}) -> {block_end,As++[{var,V}]};
+collect_block({call,_Func,As,_Rs})   -> {block_end,As};
+collect_block({enter,{var,V},As})    -> {block_end,As++[{var,V}]};
+collect_block({enter,_Func,As})      -> {block_end,As};
+collect_block({return,Rs})           -> {block_end,Rs};
+collect_block({break,Bs})            -> {block_end,Bs};
+collect_block({bif,_Bif,_As,_Rs})    -> include;
+collect_block(_)                     -> no_block.
 
 %% cg_basic_block([Kexpr], FirstI, LastI, As, Vdb, StackReg, State) ->
 %%      {[Ainstr],StackReg,State}.
@@ -326,12 +319,12 @@ cg_basic_block(Kes, Fb, Lf, As, Vdb, Bef, St0) ->
     Stk = extend_stack(Bef, Lf, Lf+1, Vdb),
     Int0 = Bef#sr{reg=Regs0,stk=Stk,res=Res},
     X0_v0 = x0_vars(As, Fb, Lf, Vdb),
-    {Keis,{Aft,X0_final,St1}} =
+    {Keis,{Aft,_,St1}} =
 	flatmapfoldl(fun(Ke, St) -> cg_basic_block(Ke, St, Lf, Vdb) end,
-		     {Int0,X0_v0,St0}, need_heap(Kes, Fb, St0#cg.btype)),
+		     {Int0,X0_v0,St0}, need_heap(Kes, Fb)),
     {Keis,Aft,St1}.
 
-cg_basic_block(Ke, {Inta,X0v,Sta}, Lf, Vdb) when element(1, Ke#l.ke) =:= need_heap ->
+cg_basic_block(Ke, {Inta,X0v,Sta}, _Lf, Vdb) when element(1, Ke#l.ke) =:= need_heap ->
     {Keis,Intb,Stb} = cg(Ke, Vdb, Inta, Sta),
     {comment(Inta) ++ Keis, {Intb,X0v,Stb}};
 cg_basic_block(Ke, {Inta,X0_v1,Sta}, Lf, Vdb) ->
@@ -341,7 +334,7 @@ cg_basic_block(Ke, {Inta,X0_v1,Sta}, Lf, Vdb) ->
     {Keis,Inte,Stb} = cg(Ke, Vdb, Intd, Sta),
     {comment(Inta) ++ Sis ++ Keis, {Inte,X0_v2,Stb}}.
 
-make_reservation([], I) -> [];
+make_reservation([], _) -> [];
 make_reservation([{var,V}|As], I) -> [{I,V}|make_reservation(As, I+1)];
 make_reservation([A|As], I) -> [{I,A}|make_reservation(As, I+1)].
 
@@ -358,7 +351,7 @@ reserve([{I,V}|Rs], [{reserved,I,_}|Regs], Stk) ->
     [{reserved,I,V}|reserve(Rs, Regs, Stk)];
 %reserve([{I,V}|Rs], [Other|Regs], Stk) -> [Other|reserve(Rs, Regs, Stk)];
 reserve([{I,V}|Rs], [], Stk) -> [{reserved,I,V}|reserve(Rs, [], Stk)];
-reserve([], Regs, Stk) -> Regs.
+reserve([], Regs, _) -> Regs.
 
 extend_stack(Bef, Fb, Lf, Vdb) ->
     Stk0 = clear_dead_stk(Bef#sr.stk, Fb, Vdb),
@@ -376,7 +369,7 @@ save_carefully(Bef, Fb, Lf, Vdb) ->
 		   F < Fb,
 		   L >= Lf,
 		   not on_stack(V, Stk) ],
-    Saves = [ V || {V,F,L} <- keysort(2, New) ],
+    Saves = [ V || {V,_,_} <- keysort(2, New) ],
     save_carefully(Saves, Bef, []).
 
 save_carefully([], Bef, Acc) -> {reverse(Acc),Bef};
@@ -386,13 +379,12 @@ save_carefully([V|Vs], Bef, Acc) ->
 	Stk1 ->
 	    SrcReg = fetch_reg(V, Bef#sr.reg),
 	    Move = {move,SrcReg,fetch_stack(V, Stk1)},
-	    {x,I} = SrcReg,
+	    {x,_} = SrcReg,			%Assertion - must be X register.
 	    save_carefully(Vs, Bef#sr{stk=Stk1}, [Move|Acc])
     end.
 
-x0_vars([], Fb, Lf, Vdb) ->
-    [];
-x0_vars([{var,V}|_], Fb, Lf, Vdb) ->
+x0_vars([], _Fb, _Lf, _Vdb) -> [];
+x0_vars([{var,V}|_], Fb, _Lf, Vdb) ->
     {V,F,L} = vdb_find(V, Vdb),
     x0_vars1([{V,F,L}], Fb, F, Vdb);
 x0_vars([X0|_], Fb, Lf, Vdb) ->
@@ -405,16 +397,16 @@ x0_vars1(X0, Fb, Xf, Vdb) ->
     Vs1 = keysort(3, Vs0),
     keysort(2, X0++Vs1).
 
-allocate_x0([], I, Bef) -> {[],Bef#sr{res=[]}};
-allocate_x0([{V,F,L}|Vs], I, Bef) when L =< I ->
+allocate_x0([], _, Bef) -> {[],Bef#sr{res=[]}};
+allocate_x0([{_,_,L}|Vs], I, Bef) when L =< I ->
     allocate_x0(Vs, I, Bef);
-allocate_x0([{V,F,L}|Vs], I, Bef) ->
+allocate_x0([{V,F,L}|Vs], _, Bef) ->
     {[{V,F,L}|Vs],Bef#sr{res=reserve_x0(V, Bef#sr.res)}}.
 
 reserve_x0(V, [_|Res]) -> [{0,V}|Res];
 reserve_x0(V, []) -> [{0,V}].
 
-top_level_block(Keis, Bef, MaxRegs, St0) when St0#cg.need_frame =:= false,
+top_level_block(Keis, Bef, _MaxRegs, St0) when St0#cg.need_frame =:= false,
 					      length(Bef#sr.stk) =:= 0 ->
     %% This block need no stack frame.  However, we still need to turn the
     %% stack frame upside down.
@@ -449,7 +441,7 @@ top_level_block(Keis, Bef, MaxRegs, St0) ->
 %%   catches work.  The code generation algorithm gives a lower register
 %%   number to the outer catch, which is wrong.
 
-turn_yregs(0, Tp, MaxY) -> Tp;
+turn_yregs(0, Tp, _) -> Tp;
 turn_yregs(El, Tp, MaxY) when element(1, element(El, Tp)) == yy ->
     turn_yregs(El-1, setelement(El, Tp, {y,MaxY-element(2, element(El, Tp))}), MaxY);
 turn_yregs(El, Tp, MaxY) when list(element(El, Tp)) ->
@@ -459,7 +451,7 @@ turn_yregs(El, Tp, MaxY) when list(element(El, Tp)) ->
 turn_yregs(El, Tp, MaxY) ->
     turn_yregs(El-1, Tp, MaxY).
 
-%% select_cg(Sclause, V, Vdb, TypeFail, ValueFail, StackReg, State) ->
+%% select_cg(Sclause, V, TypeFail, ValueFail, StackReg, State) ->
 %%      {Is,StackReg,State}.
 %%  Selecting type and value needs two failure labels, TypeFail is the
 %%  label to jump to of the next type test when this type fails, and
@@ -467,30 +459,30 @@ turn_yregs(El, Tp, MaxY) ->
 %%  wrong.  These are different as in the second case there is no need
 %%  to try the next type, it will always fail.
 
-select_cg(#l{ke={type_clause,cons,[S]}}, {var,V}, Vdb, Tf, Vf, Bef, St) ->
+select_cg(#l{ke={type_clause,cons,[S]}}, {var,V}, Tf, Vf, Bef, St) ->
     select_cons(S, V, Tf, Vf, Bef, St);
-select_cg(#l{ke={type_clause,nil,[S]}}, {var,V}, Vdb, Tf, Vf, Bef, St) ->
+select_cg(#l{ke={type_clause,nil,[S]}}, {var,V}, Tf, Vf, Bef, St) ->
     select_nil(S, V, Tf, Vf, Bef, St);
-select_cg(#l{ke={type_clause,binary,[S]}}, {var,V}, Vdb, Tf, Vf, Bef, St) ->
+select_cg(#l{ke={type_clause,binary,[S]}}, {var,V}, Tf, Vf, Bef, St) ->
     select_binary(S, V, Tf, Vf, Bef, St);
-select_cg(#l{ke={type_clause,bin_seg,S}}, {var,V}, Vdb, Tf, Vf, Bef, St) ->
+select_cg(#l{ke={type_clause,bin_seg,S}}, {var,V}, Tf, Vf, Bef, St) ->
     select_bin_segs(S, V, Tf, Vf, Bef, St);
-select_cg(#l{ke={type_clause,bin_end,[S]}}, {var,V}, Vdb, Tf, Vf, Bef, St) ->
+select_cg(#l{ke={type_clause,bin_end,[S]}}, {var,V}, Tf, Vf, Bef, St) ->
     select_bin_end(S, V, Tf, Vf, Bef, St);
-select_cg(#l{ke={type_clause,Type,Scs}}, {var,V}, Vdb, Tf, Vf, Bef, St0) ->
+select_cg(#l{ke={type_clause,Type,Scs}}, {var,V}, Tf, Vf, Bef, St0) ->
     {Vis,{Aft,St1}} =
 	mapfoldl(fun (S, {Int,Sta}) ->
-			 {Val,Is,Inta,Stb} = select_val(S, V, Tf, Vf, Bef, Sta),
+			 {Val,Is,Inta,Stb} = select_val(S, V, Vf, Bef, Sta),
 			 {{Is,[Val]},{sr_merge(Int, Inta),Stb}}
 		 end, {void,St0}, Scs),
     OptVls = combine(lists:sort(combine(Vis))),
     {Vls,Sis,St2} = select_labels(OptVls, St1, [], []),
     {select_val_cg(Type, fetch_var(V, Bef), Vls, Tf, Vf, Sis), Aft, St2}.
 
-select_val_cg(tuple, R, [Arity, {f,Lbl}], Tf, Vf, [{label,Lb}|Sis]) ->
-    [{test,is_tuple,{f,Tf},[R]}, {test,test_arity,{f,Vf},[R,Arity]}|Sis];
+select_val_cg(tuple, R, [Arity,{f,Lbl}], Tf, Vf, [{label,Lbl}|Sis]) ->
+    [{test,is_tuple,{f,Tf},[R]},{test,test_arity,{f,Vf},[R,Arity]}|Sis];
 select_val_cg(tuple, R, Vls, Tf, Vf, Sis) ->
-    [{test,is_tuple,{f,Tf},[R]}, {select_tuple_arity,R,{f,Vf},{list,Vls}}|Sis];
+    [{test,is_tuple,{f,Tf},[R]},{select_tuple_arity,R,{f,Vf},{list,Vls}}|Sis];
 select_val_cg(Type, R, [Val, {f,Lbl}], Fail, Fail, [{label,Lbl}|Sis]) ->
     [{test,is_eq_exact,{f,Fail},[R,{Type,Val}]}|Sis];
 select_val_cg(Type, R, [Val, {f,Lbl}], Tf, Vf, [{label,Lbl}|Sis]) ->
@@ -519,7 +511,7 @@ select_labels([], St, Vls, Sis) ->
 
 add_vls([V|Vs], Lbl, Acc) ->
     add_vls(Vs, Lbl, [V, {f,Lbl}|Acc]);
-add_vls([], Lbl, Acc) -> Acc.
+add_vls([], _, Acc) -> Acc.
 
 select_cons(#l{ke={val_clause,{cons,Es},B},i=I,vdb=Vdb}, V, Tf, Vf, Bef, St0) ->
     {Eis,Int,St1} = select_extract_cons(V, Es, I, Vdb, Bef, St0),
@@ -537,7 +529,7 @@ select_binary(#l{ke={val_clause,{binary,{var,Ivar}},B},i=I,vdb=Vdb},
     {[{test,bs_start_match,{f,Tf},[fetch_var(V, Bef)]},{bs_save,Ivar}|Bis],
      Aft,St1}.
 
-select_bin_segs(Scs, Ivar, Tf, Vf, Bef, St) ->
+select_bin_segs(Scs, Ivar, Tf, _Vf, Bef, St) ->
     match_fmf(fun(S, Fail, Sta) ->
 		      select_bin_seg(S, Ivar, Fail, Bef, Sta) end,
 	      Tf, St, Scs).
@@ -569,10 +561,10 @@ select_extract_bin([{var,Hd},{var,Tl}], Size0, Unit, Type, Flags, Vf,
 
 get_bin_size_reg({var,V}, Bef) ->
     fetch_var(V, Bef);
-get_bin_size_reg(Literal, Bef) ->
+get_bin_size_reg(Literal, _Bef) ->
     Literal.
 
-select_bin_end(#l{ke={val_clause,bin_end,B},i=I,vdb=Vdb},
+select_bin_end(#l{ke={val_clause,bin_end,B}},
 		   Ivar, Tf, Vf, Bef, St0) ->
     {Bis,Aft,St2} = match_cg(B, Vf, Bef, St0),
     {[{bs_restore,Ivar},{test,bs_test_tail,{f,Tf},[0]}|Bis],Aft,St2}.
@@ -581,12 +573,11 @@ get_bits_instr(integer) -> bs_get_integer;
 get_bits_instr(float)   -> bs_get_float;
 get_bits_instr(binary)  -> bs_get_binary.
 
-select_val(#l{ke={val_clause,{tuple,Es},B},i=I,vdb=Vdb}, V, Tf, Vf, Bef, St0) ->
+select_val(#l{ke={val_clause,{tuple,Es},B},i=I,vdb=Vdb}, V, Vf, Bef, St0) ->
     {Eis,Int,St1} = select_extract_tuple(V, Es, I, Vdb, Bef, St0),
     {Bis,Aft,St2} = match_cg(B, Vf, Int, St1),
     {length(Es),Eis ++ Bis,Aft,St2};
-
-select_val(#l{ke={val_clause,{Type,Val},B},i=I,vdb=Vdb}, V, Tf, Vf, Bef, St0) ->
+select_val(#l{ke={val_clause,{_,Val},B}}, _V, Vf, Bef, St0) ->
     {Bis,Aft,St1} = match_cg(B, Vf, Bef, St0),
     {Val,Bis,Aft,St1}.
 
@@ -597,8 +588,8 @@ select_val(#l{ke={val_clause,{Type,Val},B},i=I,vdb=Vdb}, V, Tf, Vf, Bef, St0) ->
 select_extract_tuple(Src, Vs, I, Vdb, Bef, St) ->
     F = fun ({var,V}, {Int0,Elem}) ->
 		case vdb_find(V, Vdb) of
-		    {V,F,L} when L =< I -> {[], {Int0,Elem+1}};
-		    Other ->
+		    {V,_,L} when L =< I -> {[], {Int0,Elem+1}};
+		    _Other ->
 			Reg1 = put_reg(V, Int0#sr.reg),
 			Int1 = Int0#sr{reg=Reg1},
 			Rsrc = fetch_var(Src, Int1),
@@ -632,7 +623,7 @@ select_extract_cons(Src, [{var,Hd}, {var,Tl}], I, Vdb, Bef, St) ->
     {Es,Aft,St}.
     
 
-guard_clause_cg(#l{ke={guard_clause,G,B},i=I,vdb=Vdb}, Fail, Bef, St0) ->
+guard_clause_cg(#l{ke={guard_clause,G,B},vdb=Vdb}, Fail, Bef, St0) ->
     {Gis,Int,St1} = guard_cg(G, Fail, Vdb, Bef, St0),
     {Bis,Aft,St2} = match_cg(B, Fail, Int, St1),
     {Gis ++ Bis,Aft,St2}.
@@ -645,24 +636,24 @@ guard_clause_cg(#l{ke={guard_clause,G,B},i=I,vdb=Vdb}, Fail, Bef, St0) ->
 %%  the correct exit point.  Primops and tests all go to the next
 %%  instruction on success or jump to a failure label.
 
-guard_cg(#l{ke={guard_not,N},i=I,vdb=Ndb}, Fail, Vdb, Bef, St0) ->
+guard_cg(#l{ke={guard_not,N},vdb=Ndb}, Fail, _Vdb, Bef, St0) ->
     %% Must do a little label trickery here to invert guard.
     {Succ,St1} = new_label(St0),
     {Nis,Aft,St2} = guard_cg(N, Succ, Ndb, Bef, St1),
     {Nis ++ [{jump,{f,Fail}},{label,Succ}],Aft,St2};
-guard_cg(#l{ke={guard_and,Ts},i=I,vdb=Adb}, Fail, Vdb, Bef, St) ->
+guard_cg(#l{ke={guard_and,Ts},vdb=Adb}, Fail, _Vdb, Bef, St) ->
     guard_and_cg(Ts, Fail, Adb, Bef, St);
-guard_cg(#l{ke={guard_or,Ts},i=I,vdb=Odb}, Fail, Vdb, Bef, St0) ->
+guard_cg(#l{ke={guard_or,Ts},vdb=Odb}, Fail, _Vdb, Bef, St0) ->
     {Succ,St1} = new_label(St0),
     {Tis,Aft,St2} = guard_or_cg(Ts, Succ, Fail, Odb, Bef, St1),
     {Tis ++ [{label,Succ}],Aft,St2};		%Here's success
-guard_cg(#l{ke={protected,Ts,Rs},i=I,vdb=Pdb}, Fail, Vdb, Bef, St) ->
+guard_cg(#l{ke={protected,Ts,Rs},i=I,vdb=Pdb}, Fail, _Vdb, Bef, St) ->
     protected_cg(Ts, Rs, Fail, I, Pdb, Bef, St);
-guard_cg(#l{ke={block,Ts},i=I,vdb=Bdb}, Fail, Vdb, Bef, St) ->
+guard_cg(#l{ke={block,Ts},i=I,vdb=Bdb}, Fail, _Vdb, Bef, St) ->
     guard_cg_list(Ts, Fail, I, Bdb, Bef, St);
-guard_cg(#l{ke={test,Test,As},i=I,vdb=Tdb}, Fail, Vdb, Bef, St) ->
+guard_cg(#l{ke={test,Test,As},i=I,vdb=_Tdb}, Fail, Vdb, Bef, St) ->
     test_cg(Test, As, Fail, I, Vdb, Bef, St);
-guard_cg(G, Fail, Vdb, Bef, St) ->
+guard_cg(G, _Fail, Vdb, Bef, St) ->
     %%ok = io:fwrite("cg ~w: ~p~n", [?LINE,{G,Fail,Vdb,Bef}]),
     {Gis,Aft,St1} = cg(G, Vdb, Bef, St),
     %%ok = io:fwrite("cg ~w: ~p~n", [?LINE,{Aft}]),
@@ -680,7 +671,7 @@ protected_cg(Ts, [], Fail, I, Vdb, Bef, St0) ->
     {Tis,Aft,St1} = guard_cg_list(Ts, Fail, I, Vdb, Bef,
 				  St0#cg{btype=fail,bfail=Fail}),
     {Tis,Aft,St1#cg{btype=St0#cg.btype,bfail=St0#cg.bfail}};
-protected_cg(Ts, Rs, Fail, I, Vdb, Bef, St0) ->
+protected_cg(Ts, Rs, _Fail, I, Vdb, Bef, St0) ->
     {Pfail,St1} = new_label(St0),
     {Psucc,St2} = new_label(St1),
     {Tis,Aft,St3} = guard_cg_list(Ts, Pfail, I, Vdb, Bef,
@@ -696,13 +687,13 @@ protected_cg(Ts, Rs, Fail, I, Vdb, Bef, St0) ->
 
 test_cg(Test, As, Fail, I, Vdb, Bef, St0) ->
     case test_type(Test, length(As)) of
-    	{cond,Op} ->
+    	{cond_op,Op} ->
 	    {Ars,Ms,Int0} = cg_reg_args(As, Bef),
 	    Int1 = clear_dead(Int0, I, Vdb),
 	    {Ms ++ [{test,Op,{f,Fail},Ars}],
 	     clear_dead(Int1, I, Vdb),
 	     St0};
-	{rev_cond,Op} ->
+	{rev_cond_op,Op} ->
 	    {[S1,S2],Ms,Int0} = cg_reg_args(As, Bef),
 	    Int1 = clear_dead(Int0, I, Vdb),
 	    {Ms ++ [{test,Op,{f,Fail},[S2,S1]}],
@@ -710,34 +701,34 @@ test_cg(Test, As, Fail, I, Vdb, Bef, St0) ->
 	     St0}
     end.
 
-test_type(is_atom, 1)      -> {cond, is_atom};
-test_type(is_binary, 1)    -> {cond, is_binary};
-test_type(is_constant, 1)  -> {cond, is_constant};
-test_type(is_float, 1)     -> {cond, is_float};
-test_type(is_function, 1)  -> {cond, is_function};
-test_type(is_integer, 1)   -> {cond, is_integer};
-test_type(is_list, 1)      -> {cond, is_list};
-test_type(is_number, 1)    -> {cond, is_number};
-test_type(is_pid, 1)       -> {cond, is_pid};
-test_type(is_port, 1)      -> {cond, is_port};
-test_type(is_reference, 1) -> {cond, is_ref};
-test_type(is_tuple, 1)     -> {cond, is_tuple};
-test_type('=<', 2)  -> {rev_cond, is_ge};
-test_type('>', 2)   -> {rev_cond, is_lt};
-test_type('<', 2)   -> {cond, is_lt};
-test_type('>=', 2)  -> {cond, is_ge};
-test_type('==', 2)  -> {cond, is_eq};
-test_type('/=', 2)  -> {cond, is_ne};
-test_type('=:=', 2) -> {cond, is_eq_exact};
-test_type('=/=', 2) -> {cond, is_ne_exact}.
+test_type(is_atom, 1)      -> {cond_op,is_atom};
+test_type(is_binary, 1)    -> {cond_op,is_binary};
+test_type(is_constant, 1)  -> {cond_op,is_constant};
+test_type(is_float, 1)     -> {cond_op,is_float};
+test_type(is_function, 1)  -> {cond_op,is_function};
+test_type(is_integer, 1)   -> {cond_op,is_integer};
+test_type(is_list, 1)      -> {cond_op,is_list};
+test_type(is_number, 1)    -> {cond_op,is_number};
+test_type(is_pid, 1)       -> {cond_op,is_pid};
+test_type(is_port, 1)      -> {cond_op,is_port};
+test_type(is_reference, 1) -> {cond_op,is_ref};
+test_type(is_tuple, 1)     -> {cond_op,is_tuple};
+test_type('=<', 2)  -> {rev_cond_op,is_ge};
+test_type('>', 2)   -> {rev_cond_op,is_lt};
+test_type('<', 2)   -> {cond_op,is_lt};
+test_type('>=', 2)  -> {cond_op,is_ge};
+test_type('==', 2)  -> {cond_op,is_eq};
+test_type('/=', 2)  -> {cond_op,is_ne};
+test_type('=:=', 2) -> {cond_op,is_eq_exact};
+test_type('=/=', 2) -> {cond_op,is_ne_exact}.
 
 guard_and_cg([G|Gs], Fail, Vdb, Bef, St0) ->
-    {Gis,Int,St1} = guard_cg(G, Fail, Vdb, Bef, St0),
+    {Gis,_,St1} = guard_cg(G, Fail, Vdb, Bef, St0),
     {Gsis,Aft,St2} = guard_and_cg(Gs, Fail, Vdb, Bef, St1),
     {Gis ++ Gsis,Aft,St2};
-guard_and_cg([], Fail, Vdb, Bef, St) -> {[],Bef,St}.
+guard_and_cg([], _, _, Bef, St) -> {[],Bef,St}.
 
-guard_or_cg([G], Succ, Fail, Vdb, Bef, St) ->
+guard_or_cg([G], _Succ, Fail, Vdb, Bef, St) ->
     %% This just falls straight through on success.
     guard_cg(G, Fail, Vdb, Bef, St);
 guard_or_cg([G|Gs], Succ, Fail, Vdb, Bef, St0) ->
@@ -755,7 +746,7 @@ guard_cg_list(Kes, Fail, I, Vdb, Bef, St0) ->
 			     {Keis,Intb,Stb} =
 				 guard_cg(Ke, Fail, Vdb, Inta, Sta),
 			     {comment(Inta) ++ Keis,{Intb,Stb}}
-		     end, {Bef,St0}, need_heap(Kes, I, St0#cg.btype)),
+		     end, {Bef,St0}, need_heap(Kes, I)),
     {Keis,Aft,St1}.
 
 %% match_fmf(Fun, LastFail, State, [Clause]) -> {Is,Aft,State}.
@@ -771,7 +762,7 @@ match_fmf(F, LastFail, St0, [H|T]) ->
     {R,Aft1,St2} = F(H, Fail, St1),
     {Rs,Aft2,St3} = match_fmf(F, LastFail, St2, T),
     {R ++ [{label,Fail}] ++ Rs,sr_merge(Aft1, Aft2),St3};
-match_fmf(F, LastFail, St, []) -> {[],void,St}.
+match_fmf(_, _, St, []) -> {[],void,St}.
 
 %% call_cg(Func, [Arg], [Ret], Le, Vdb, StackReg, State) ->
 %%      {[Ainstr],StackReg,State}.
@@ -830,7 +821,7 @@ free_dead([dead|Stk], Y, Instr, StkAcc) ->
     free_dead(Stk, Y+1, [{kill,{yy,Y}}|Instr], [free|StkAcc]);
 free_dead([Any|Stk], Y, Instr, StkAcc) ->
     free_dead(Stk, Y+1, Instr, [Any|StkAcc]);
-free_dead([], Y, Instr, StkAcc) -> {Instr,reverse(StkAcc)}.
+free_dead([], _, Instr, StkAcc) -> {Instr,reverse(StkAcc)}.
 
 enter_cg({var,V}, As, Le, Vdb, Bef, St0) ->
     {Sis,Int} = cg_setup_call(As++[{var,V}], Bef, Le#l.i, Vdb),
@@ -888,12 +879,12 @@ trap_bif(erlang, unlink, 1) -> true;
 trap_bif(erlang, monitor_node, 2) -> true;
 trap_bif(erlang, group_leader, 2) -> true;
 trap_bif(erlang, exit, 2) -> true;
-trap_bif(M, F, A) -> false.
+trap_bif(_, _, _) -> false.
 
 %% bif_cg(Bif, [Arg], [Ret], Le, Vdb, StackReg, State) ->
 %%      {[Ainstr],StackReg,State}.
 
-bif_cg(dsetelement, [Index0,Tuple0,New0], Rs, Le, Vdb, Bef, St0) ->
+bif_cg(dsetelement, [Index0,Tuple0,New0], _Rs, Le, Vdb, Bef, St0) ->
     {[New,Tuple,{integer,Index1}],Ms,Int} = cg_reg_args([New0,Tuple0,Index0], Bef),
     Index = Index1-1,
     {Ms ++ [{set_tuple_element,New,Tuple,Index}],
@@ -907,10 +898,10 @@ bif_cg(Bif, As, Rs, Le, Vdb, Bef, St0) ->
     %%   Currently, we are somewhat pessimistic in
     %% that we save any variable that will be live after this BIF call.
 
-    {_Saves,Sis,Int1} =
+    {Sis,Int1} =
 	case St0#cg.in_catch of
 	    true -> adjust_stack(Bef, Le#l.i, Le#l.i+1, Vdb);
-	    false -> {[],[],Int0}
+	    false -> {[],Int0}
 	end,
 
     Int2 = clear_dead(Int1, Le#l.i, Vdb),
@@ -921,23 +912,23 @@ bif_cg(Bif, As, Rs, Le, Vdb, Bef, St0) ->
      [{bif,Bif,bif_fail(St0#cg.btype, St0#cg.bfail, length(Ars)),Ars,Dst}],
      clear_dead(Int3, Le#l.i, Vdb), St0}.
 
-bif_fail(Type, Fail, 0) -> nofail;
-bif_fail(exit, Fail, Ar) -> {f,0};
-bif_fail(fail, Fail, Ar) -> {f,Fail}.
+bif_fail(_, _, 0) -> nofail;
+bif_fail(exit, _, _) -> {f,0};
+bif_fail(fail, Fail, _) -> {f,Fail}.
 
 %% recv_loop_cg(TimeOut, ReceiveVar, ReceiveMatch, TimeOutExprs,
 %%              [Ret], Le, Vdb, Bef, St) -> {[Ainstr],Aft,St}.
 
 recv_loop_cg(Te, Rvar, Rm, Tes, Rs, Le, Vdb, Bef, St0) ->
-    {Saves,Sis,Int0} = adjust_stack(Bef, Le#l.i, Le#l.i, Vdb),
+    {Sis,Int0} = adjust_stack(Bef, Le#l.i, Le#l.i, Vdb),
     Int1 = Int0#sr{reg=clear_regs(Int0#sr.reg)},
     %% Get labels.
     {Rl,St1} = new_label(St0),
     {Tl,St2} = new_label(St1),
     {Bl,St3} = new_label(St2),
     St4 = St3#cg{break=Bl,recv=Rl},		%Set correct receive labels
-    {Ris,Raft,St5} = cg_recv_mesg(Rvar, Rm, Tl, Le#l.i, Vdb, Int1, St4),
-    {Wis,Taft,St6} = cg_recv_wait(Te, Tes, Le#l.i, Vdb, Int1, St5),
+    {Ris,Raft,St5} = cg_recv_mesg(Rvar, Rm, Tl, Int1, St4),
+    {Wis,Taft,St6} = cg_recv_wait(Te, Tes, Le#l.i, Int1, St5),
     Int2 = sr_merge(Raft, Taft),		%Merge stack/registers
     Reg = load_vars(Rs, Int2#sr.reg),
     {Sis ++ Ris ++ [{label,Tl}] ++ Wis ++ [{label,Bl}],
@@ -946,7 +937,7 @@ recv_loop_cg(Te, Rvar, Rm, Tes, Rs, Le, Vdb, Bef, St0) ->
 
 %% cg_recv_mesg( ) -> {[Ainstr],Aft,St}.
 
-cg_recv_mesg({var,R}, Rm, Tl, I, Vdb, Bef, St0) ->
+cg_recv_mesg({var,R}, Rm, Tl, Bef, St0) ->
     Int0 = Bef#sr{reg=put_reg(R, Bef#sr.reg)},
     Ret = fetch_reg(R, Int0#sr.reg),
     %% Int1 = clear_dead(Int0, I, Rm#l.vdb),
@@ -956,18 +947,18 @@ cg_recv_mesg({var,R}, Rm, Tl, I, Vdb, Bef, St0) ->
 
 %% cg_recv_wait(Te, Tes, I, Vdb, Int2, St3) -> {[Ainstr],Aft,St}.
 
-cg_recv_wait({atom,infinity}, Tes, I, Vdb, Bef, St0) ->
+cg_recv_wait({atom,infinity}, Tes, I, Bef, St0) ->
     %% We know that the 'after' body will never be executed.
     %% But to keep the stack and register information up to date,
     %% we will generate the code for the 'after' body, and then discard it.
     Int1 = clear_dead(Bef, I, Tes#l.vdb),
-    {Tis,Int2,St1} = block_cg(Tes#l.ke, Tes#l.i, Tes#l.vdb,
+    {_,Int2,St1} = block_cg(Tes#l.ke, Tes#l.i, Tes#l.vdb,
 			      Int1#sr{reg=clear_regs(Int1#sr.reg)}, St0),
     {[{wait,{f,St1#cg.recv}}],Int2,St1};
-cg_recv_wait({integer,0}, Tes, I, Vdb, Bef, St0) ->
+cg_recv_wait({integer,0}, Tes, _I, Bef, St0) ->
     {Tis,Int,St1} = block_cg(Tes#l.ke, Tes#l.i, Tes#l.vdb, Bef, St0),
     {[timeout|Tis],Int,St1};
-cg_recv_wait(Te, Tes, I, Vdb, Bef, St0) ->
+cg_recv_wait(Te, Tes, I, Bef, St0) ->
     {Reg,Ris,Int0} = cg_reg_arg(Te, Bef),
     %% Must have empty registers here!  Bug if anything in registers.
     Int1 = clear_dead(Int0, I, Tes#l.vdb),
@@ -979,7 +970,7 @@ cg_recv_wait(Te, Tes, I, Vdb, Bef, St0) ->
 %%  Use adjust stack to clear stack, but only need it for Aft.
 
 recv_next_cg(Le, Vdb, Bef, St) ->
-    {Saves,Sis,Aft} = adjust_stack(Bef, Le#l.i, Le#l.i+1, Vdb),
+    {Sis,Aft} = adjust_stack(Bef, Le#l.i, Le#l.i+1, Vdb),
     {[{loop_rec_end,{f,St#cg.recv}}] ++ Sis,Aft,St}.	%Joke
 
 %% catch_cg(CatchBlock, Var, I, Vdb, Bef, St) -> {[Ainstr],Aft,St}.
@@ -1038,7 +1029,7 @@ set_cg([], {binary,Bin}, Le, Vdb, Bef, St) ->
     Fail = bif_fail(St#cg.btype, St#cg.bfail, 42),
     Ais = cg_binary(Bin, find_scratch_reg(Bef#sr.reg), Fail, Bef),
     {Ais,clear_dead(Bef, Le#l.i, Vdb),St};
-set_cg([], Con, Le, Vdb, Bef, St) ->
+set_cg([], _, Le, Vdb, Bef, St) ->
     %% This should have been stripped by compiler, just cleanup.
     {[],clear_dead(Bef, Le#l.i, Vdb), St}.
 
@@ -1061,26 +1052,26 @@ cg_bin({bin_seg,S0,U,T,Fs,[E0,Next]}, Fail, Bef) ->
 	     float   -> bs_put_float
 	 end,
     [{Op,Fail,S1,U,{field_flags,Fs},E1}|cg_bin(Next, Fail, Bef)];
-cg_bin(bin_end, Fail, Bef) -> [].
+cg_bin(bin_end, _, _) -> [].
 
 cg_bs_init(Code) ->
-    {Size,Fs} = foldl(fun ({Op,Fail,{integer,N},U,_,_}, {S,Fs}) ->
-		  {S + N*U,Fs};
-	      (Other, {S,Fs}) ->
-		  {S,[]}
-	  end, {0,[exact]}, Code),
+    {Size,Fs} = foldl(fun ({_,_,{integer,N},U,_,_}, {S,Fs}) ->
+			      {S + N*U,Fs};
+			  (_, {S,_}) ->
+			      {S,[]}
+		      end, {0,[exact]}, Code),
     {bs_init,(Size+7) div 8,{field_flags,Fs}}.
 
 need_bin_buf(Code0) ->
-    {Code1,F,H} = foldr(fun ({Op,Fail,{integer,N},U,_,_}=Bs, {Code,F,H}) ->
+    {Code1,F,H} = foldr(fun ({_,_,{integer,N},U,_,_}=Bs, {Code,F,H}) ->
 				{[Bs|Code],F,H + N*U};
-			    ({Op,Fail,S,U,_,_}=Bs, {Code,F,H}) ->
+			    ({_,_,_,_,_,_}=Bs, {Code,F,H}) ->
 				{[Bs|need_bin_buf_need(H, F, Code)],true,0}
 			end, {[],false,0}, Code0),
     need_bin_buf_need(H, F, Code1).
 
 need_bin_buf_need(0, false, Rest) -> Rest;
-need_bin_buf_need(H, F, Rest) -> [{bs_need_buf,H}|Rest].
+need_bin_buf_need(H, _, Rest) -> [{bs_need_buf,H}|Rest].
 
 cg_build_args(As, Bef) ->
     map(fun ({var,V}) -> {put,fetch_var(V, Bef)};
@@ -1128,7 +1119,7 @@ cg_setup_call(As, Bef, I, Vdb) ->
     {Ms,Int0} = cg_call_args(As, Bef, I, Vdb),
     %% Have set up arguments, can now clean up, compress and save to stack.
     Int1 = Int0#sr{stk=clear_dead_stk(Int0#sr.stk, I, Vdb),res=[]},
-    {Saves,Sis,Int2} = adjust_stack(Int1, I, I+1, Vdb),
+    {Sis,Int2} = adjust_stack(Int1, I, I+1, Vdb),
     {Ms ++ Sis ++ [{'%live',length(As)}],Int2}.
 
 %% cg_call_args([Arg], SrState) -> {[Instr],SrState}.
@@ -1161,7 +1152,7 @@ load_arg_regs([_|Rs], [{var,V}|As], I) -> [{I,V}|load_arg_regs(Rs, As, I+1)];
 load_arg_regs([_|Rs], [A|As], I) -> [{I,A}|load_arg_regs(Rs, As, I+1)];
 load_arg_regs([], [{var,V}|As], I) -> [{I,V}|load_arg_regs([], As, I+1)];
 load_arg_regs([], [A|As], I) -> [{I,A}|load_arg_regs([], As, I+1)];
-load_arg_regs(Rs, [], I) -> Rs.
+load_arg_regs(Rs, [], _) -> Rs.
 
 %% Returns the variables must be saved and are currently in the
 %% x registers that are about to be overwritten by the arguments.
@@ -1202,7 +1193,7 @@ gen_moves([{var,V}|As], Sr, I, Acc) ->
     end;
 gen_moves([A|As], Sr, I, Acc) ->
     gen_moves(As, Sr, I+1, [{move,A,{x,I}}|Acc]);
-gen_moves([], Sr, I, Acc) -> lists:keysort(3, Acc).
+gen_moves([], _, _, Acc) -> lists:keysort(3, Acc).
 
 %% order_moves([Move], ScratchReg) -> [Move]
 %%  Orders move instruction so that source registers are not
@@ -1216,11 +1207,11 @@ gen_moves([], Sr, I, Acc) -> lists:keysort(3, Acc).
 
 order_moves(Ms, Scr) -> order_moves(Ms, Scr, []).
 
-order_moves([{move,Src,Dst}=M|Ms0], ScrReg, Acc0) ->
+order_moves([{move,_,_}=M|Ms0], ScrReg, Acc0) ->
     {Chain,Ms} = collect_chain(Ms0, [M], ScrReg),
     Acc = reverse(Chain, Acc0),
     order_moves(Ms, ScrReg, Acc);
-order_moves([], ScrReg, Acc) -> Acc.
+order_moves([], _, Acc) -> Acc.
 
 collect_chain(Ms, Path, ScrReg) ->
     collect_chain(Ms, Path, [], ScrReg).
@@ -1234,13 +1225,13 @@ collect_chain([{move,Src,Same}=M|Ms0], [{move,Same,_}|_]=Path, Others, ScrReg) -
     end;
 collect_chain([M|Ms], Path, Others, ScrReg) ->
     collect_chain(Ms, Path, [M|Others], ScrReg);
-collect_chain([], Path, Others, ScrReg) ->
+collect_chain([], Path, Others, _) ->
     {Path,Others}.
 
-break_up_cycle({move,Src,Dst}=M, Path, ScrReg) ->
+break_up_cycle({move,Src,_}=M, Path, ScrReg) ->
     [{move,ScrReg,Src},M|break_up_cycle1(Src, Path, ScrReg)].
 
-break_up_cycle1(Dst, [{move,Src,Dst}=M|Path], ScrReg) ->
+break_up_cycle1(Dst, [{move,Src,Dst}|Path], ScrReg) ->
     [{move,Src,ScrReg}|Path];
 break_up_cycle1(Dst, [M|Path], LastMove) ->
     [M|break_up_cycle1(Dst, Path, LastMove)].
@@ -1255,8 +1246,8 @@ clear_dead(Sr, Until, Vdb) ->
 clear_dead_reg(Sr, Until, Vdb) ->
     Reg = map(fun ({I,V}) ->
 		      case vdb_find(V, Vdb) of
-			  {V,F,L} when L > Until -> {I,V};
-			  Other -> free		%Remove anything else
+			  {V,_,L} when L > Until -> {I,V};
+			  _ -> free		%Remove anything else
 		      end;
 		  ({reserved,I,V}) -> {reserved,I,V};
 		  (free) -> free
@@ -1266,8 +1257,8 @@ clear_dead_reg(Sr, Until, Vdb) ->
 clear_dead_stk(Stk, Until, Vdb) ->
     map(fun ({V}) ->
 		case vdb_find(V, Vdb) of
-		    {V,F,L} when L > Until -> {V};
-		    Other -> dead		%Remove anything else
+		    {V,_,L} when L > Until -> {V};
+		    _ -> dead			%Remove anything else
 		end;
 	    (free) -> free;
 	    (dead) -> dead
@@ -1293,7 +1284,7 @@ longest([free|T1], []) -> [free|T1];
 longest([], [free|T2]) -> [free|T2];
 longest([], []) -> [].
 
-%% adjust_stack(Bef, FirstBefore, LastFrom, Vdb) -> {[SaveVar],[Ainstr],Aft}.
+%% adjust_stack(Bef, FirstBefore, LastFrom, Vdb) -> {[Ainstr],Aft}.
 %%  Do complete stack adjustment by compressing stack and adding
 %%  variables to be saved.  Try to optimise ordering on stack by
 %%  having reverse order to their lifetimes.
@@ -1303,8 +1294,7 @@ longest([], []) -> [].
 adjust_stack(Bef, Fb, Lf, Vdb) ->
     Stk0 = Bef#sr.stk,
     {Stk1,Saves} = save_stack(Stk0, Fb, Lf, Vdb),
-    {Saves,
-     saves(Saves, Bef#sr.reg, Stk1),
+    {saves(Saves, Bef#sr.reg, Stk1),
      Bef#sr{stk=Stk1}}.
 
 %% save_stack(Stack, FirstBefore, LastFrom, Vdb) -> {[SaveVar],NewStack}.
@@ -1319,7 +1309,7 @@ save_stack(Stk0, Fb, Lf, Vdb) ->
 		   not on_stack(V, Stk0) ],
     %% Add new variables that are not just dropped immediately.
     %% N.B. foldr works backwards from the end!!
-    Saves = [ V || {V,F,L} <- keysort(3, New) ],
+    Saves = [ V || {V,_,_} <- keysort(3, New) ],
     Stk1 = foldr(fun (V, Stk) -> put_stack(V, Stk) end, Stk0, Saves),
     {Stk1,Saves}.
 
@@ -1336,7 +1326,7 @@ saves(Ss, Reg, Stk) ->
 %% comment(C) -> ['%'{C}].
 
 %comment(C) -> [{'%',C}].
-comment(C) -> [].
+comment(_) -> [].
 
 %% fetch_var(VarName, StkReg) -> r{R} | sp{Sp}.
 %% find_var(VarName, StkReg) -> ok{r{R} | sp{Sp}} | error.
@@ -1390,7 +1380,7 @@ put_reg_1(V, [], I) -> [{I,V}].
 
 load_reg(V, R, Rs) -> load_reg_1(V, R, Rs, 0).
 
-load_reg_1(V, I, [R|Rs], I) -> [{I,V}|Rs];
+load_reg_1(V, I, [_|Rs], I) -> [{I,V}|Rs];
 load_reg_1(V, I, [R|Rs], C) -> [R|load_reg_1(V, I, Rs, C+1)];
 load_reg_1(V, I, [], I) -> [{I,V}];
 load_reg_1(V, I, [], C) -> [free|load_reg_1(V, I, [], C+1)].
@@ -1399,31 +1389,31 @@ load_reg_1(V, I, [], C) -> [free|load_reg_1(V, I, [], C+1)].
 % free_reg(V, [R|Rs]) -> [R|free_reg(V, Rs)];
 % free_reg(V, []) -> [].
 
-fetch_reg(V, [{I,V}|SRs]) -> {x,I};
-fetch_reg(V, [SR|SRs]) -> fetch_reg(V, SRs).
+fetch_reg(V, [{I,V}|_]) -> {x,I};
+fetch_reg(V, [_|SRs]) -> fetch_reg(V, SRs).
 
-find_reg(V, [{I,V}|SRs]) -> {ok,{x,I}};
-find_reg(V, [SR|SRs]) -> find_reg(V, SRs);
-find_reg(V, []) -> error.
+find_reg(V, [{I,V}|_]) -> {ok,{x,I}};
+find_reg(V, [_|SRs]) -> find_reg(V, SRs);
+find_reg(_, []) -> error.
 
 %% For the bit syntax, we need a scratch register if we are constructing
 %% a binary that will not be used.
 
 find_scratch_reg(Rs) -> find_scratch_reg(Rs, 0).
     
-find_scratch_reg([free|Rs], I) -> {x,I};
-find_scratch_reg([R|Rs], I) -> find_scratch_reg(Rs, I+1);
+find_scratch_reg([free|_], I) -> {x,I};
+find_scratch_reg([_|Rs], I) -> find_scratch_reg(Rs, I+1);
 find_scratch_reg([], I) -> {x,I}.
 
 %%copy_reg(Val, R, Regs) -> load_reg(Val, R, Regs).
 %%move_reg(Val, R, Regs) -> load_reg(Val, R, free_reg(Val, Regs)).
 
 %%clear_regs(Regs) -> map(fun (R) -> free end, Regs).
-clear_regs(Regs) -> [].
+clear_regs(_) -> [].
 
 max_reg(Regs) ->
-    foldl(fun ({I,V}, Max) -> I;
-	      (Other, Max) -> Max end,
+    foldl(fun ({I,_}, _) -> I;
+	      (_, Max) -> Max end,
 	  -1, Regs) + 1.
 
 %% put_stack(Val, [{Val}]) -> [{Val}].
@@ -1442,7 +1432,7 @@ put_stack_carefully(Val, Stk0) ->
 	Stk1 when list(Stk1) -> Stk1
     end.
 
-put_stack_carefully1(Val, []) -> throw(error);
+put_stack_carefully1(_, []) -> throw(error);
 put_stack_carefully1(Val, [dead|Stk]) -> [{Val}|Stk];
 put_stack_carefully1(Val, [free|Stk]) -> [{Val}|Stk];
 put_stack_carefully1(Val, [NotFree|Stk]) ->
@@ -1450,8 +1440,8 @@ put_stack_carefully1(Val, [NotFree|Stk]) ->
 
 fetch_stack(Var, Stk) -> fetch_stack(Var, Stk, 0).
 
-fetch_stack(V, [{V}|Stk], I) -> {yy,I};
-fetch_stack(V, [O|Stk], I) -> fetch_stack(V, Stk, I+1).
+fetch_stack(V, [{V}|_], I) -> {yy,I};
+fetch_stack(V, [_|Stk], I) -> fetch_stack(V, Stk, I+1).
 
 % find_stack(Var, Stk) -> find_stack(Var, Stk, 0).
 
@@ -1490,10 +1480,11 @@ flatmapfoldl(F, Accu0, [Hd|Tail]) ->
     {R,Accu1} = F(Hd, Accu0),
     {Rs,Accu2} = flatmapfoldl(F, Accu1, Tail),
     {R++Rs,Accu2};
-flatmapfoldl(F, Accu, []) -> {[],Accu}.
+flatmapfoldl(_, Accu, []) -> {[],Accu}.
 
 flatmapfoldr(F, Accu0, [Hd|Tail]) ->
     {Rs,Accu1} = flatmapfoldr(F, Accu0, Tail),
     {R,Accu2} = F(Hd, Accu1),
     {R++Rs,Accu2};
-flatmapfoldr(F, Accu, []) -> {[],Accu}.
+flatmapfoldr(_, Accu, []) -> {[],Accu}.
+

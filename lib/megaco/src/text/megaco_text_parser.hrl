@@ -27,18 +27,18 @@
 make_safe_token({_TokenTag, Line, Text}) ->
     {safeToken, Line, Text}.
 
-ensure_value({safeToken, Line, Text}) ->
+ensure_value({safeToken, _Line, Text}) ->
     ensure_value(Text);
-ensure_value({'QuotedChars', Line, Text}) ->
+ensure_value({'QuotedChars', _Line, Text}) ->
     ensure_value(Text);
 ensure_value(Text) when list(Text) ->
     Text. %% BUGBUG: ensure length
 
 %% NAME       = ALPHA *63(ALPHA / DIGIT / "_" )
-ensure_NAME({TokenTag, Line, Text}) ->
+ensure_NAME({_TokenTag, _Line, Text}) ->
     Text.  %% BUGBUG: ensure length and chars
 
-ensure_requestID({safeToken, Line, "*"}) ->
+ensure_requestID({safeToken, _Line, "*"}) ->
     ?megaco_all_request_id;
 ensure_requestID(RequestId) ->
     ensure_uint32(RequestId).
@@ -53,7 +53,7 @@ ensure_auth_header(SpiToken, SnToken, AdToken) ->
     #'AuthenticationHeader'{secParmIndex = Spi, seqNum = Sn, ad = Ad}.
 
 %% ContextID         = (UINT32 / "*" / "-" / "$")
-ensure_contextID({TokenTag, Line, Text}) ->
+ensure_contextID({_TokenTag, _Line, Text}) ->
     case Text of
         "*"  -> ?megaco_all_context_id;
         "-"  -> ?megaco_null_context_id;
@@ -75,14 +75,14 @@ ensure_domainAddress({TokenTag, Line, Addr}, Port) ->
             return_error(Line, {bad_domainAddress, Addr})
     end.
 
-ensure_domainName({TokenTag, Line, Name}, Port) ->
+ensure_domainName({_TokenTag, _Line, Name}, Port) ->
     %% BUGBUG: validate name
     {domainName, #'DomainName'{name = Name, portNumber = Port}}.
 
 %% extensionParameter= "X"  ("-" / "+") 1*6(ALPHA / DIGIT)
-ensure_extensionParameter({TokenTag, Line, Text}) ->
+ensure_extensionParameter({_TokenTag, Line, Text}) ->
     case Text of
-        [X, S | Chars] ->
+        [X, S | _Chars] ->
             if
                 X /= $X, X /= $x,
                 S /= $+, S /= $- ->
@@ -107,7 +107,7 @@ ensure_message(MegacopToken,  MID, Body) ->
 %% modemType         = (V32bisToken / V22bisToken / V18Token / 
 %%                      V22Token / V32Token / V34Token / V90Token / 
 %%                      V91Token / SynchISDNToken / extensionParameter)
-ensure_modemType({TokenTag, Line, Text} = Token) ->
+ensure_modemType({_TokenTag, _Line, Text} = Token) ->
     case Text of
         "v32b"      -> v32bis;
         "v22b"      -> v22bis;
@@ -124,12 +124,12 @@ ensure_modemType({TokenTag, Line, Text} = Token) ->
     end.
 
 %% An mtp address is five octets long
-ensure_mtpAddress({TokenTag, Line, Addr}) ->
+ensure_mtpAddress({_TokenTag, _Line, Addr}) ->
     %% BUGBUG: validate address
     {mtpAddress, Addr}.
 
 %% MuxType = ( H221Token / H223Token / H226Token / V76Token / extensionParameter )
-ensure_muxType({TokenTag, Line, Text} = Token) ->
+ensure_muxType({_TokenTag, _Line, Text} = Token) ->
     case Text of
         "h221" -> h221;
         "h223" -> h223;
@@ -156,13 +156,13 @@ ensure_pkgdName({TokenTag, Line, Text}) ->
     case string:tokens(Text, [$/]) of
         [Name, Item] ->
             ensure_name_or_star({TokenTag, Line, Name}),
-            ensure_name_or_star({TokenTag, Line, Name}),
+            ensure_name_or_star({TokenTag, Line, Item}),
             Text;
         _ ->
             return_error(Line, {bad_pkgdName, Text})
     end.
 
-ensure_name_or_star(Name) when Name == "*" ->
+ensure_name_or_star({_, _, Name}) when Name == "*" ->
     Name;
 ensure_name_or_star(Name) ->
     ensure_NAME(Name).
@@ -205,7 +205,7 @@ ensure_serviceChangeMethod({safeToken, Line, Text}) ->
         "handoff"       -> handOff;
         Bad             -> return_error(Line, {bad_serviceChangeMethod, Bad})
     end.
-ensure_profile({TokenTag, Line, Text}) ->
+ensure_profile({_TokenTag, Line, Text}) ->
     case string:tokens(Text, [$/]) of
         [Name, Version] ->
             Version2 = ensure_version(Version),
@@ -259,7 +259,7 @@ select_stream_or_other(Name, Value) ->
             {other, EP}
     end.
 
-ensure_eventDM({TokenTag, Line, DMD}) when record(DMD, 'DigitMapDescriptor') ->
+ensure_eventDM({_TokenTag, Line, DMD}) when record(DMD, 'DigitMapDescriptor') ->
     Name = DMD#'DigitMapDescriptor'.digitMapName,
     Val  = DMD#'DigitMapDescriptor'.digitMapValue,
     if
@@ -329,7 +329,7 @@ do_merge_eventParameters([], StreamId, EPL, RA, yes) ->
     #'RequestedEvent'{streamID    = StreamId,
                       eventAction = RA, 
                       evParList   = lists:reverse(EPL)};
-do_merge_eventParameters([], StreamId, EPL, RA, no) ->
+do_merge_eventParameters([], StreamId, EPL, _RA, no) ->
     #'RequestedEvent'{streamID    = StreamId,
                       eventAction = asn1_NOVALUE, 
                       evParList   = lists:reverse(EPL)}.
@@ -368,7 +368,7 @@ do_merge_secondEventParameters([], StreamId, EPL, SRA, yes) ->
     #'SecondRequestedEvent'{streamID    = StreamId,
                             eventAction = SRA, 
                             evParList   = lists:reverse(EPL)};
-do_merge_secondEventParameters([], StreamId, EPL, SRA, no) ->
+do_merge_secondEventParameters([], StreamId, EPL, _SRA, no) ->
     #'SecondRequestedEvent'{streamID    = StreamId,
                             eventAction = asn1_NOVALUE, 
                             evParList   = lists:reverse(EPL)}.
@@ -381,7 +381,7 @@ do_merge_secondEventParameters([], StreamId, EPL, SRA, no) ->
 %% in a path domain name.
 %% pathDomainName    = (ALPHA / DIGIT / "*" )
 %%                        *63(ALPHA / DIGIT / "-" / "*" / ".")
-ensure_terminationID({safeToken, Line, LowerText}) ->
+ensure_terminationID({safeToken, _Line, LowerText}) ->
     %% terminationID     = "ROOT" / pathName / "$" / "*"
     decode_term_id(LowerText, false, [], []).
 
@@ -396,7 +396,7 @@ decode_term_id([], Wild, Id, Component) ->
     Id2 = [lists:reverse(Component) | Id],
     #megaco_term_id{contains_wildcards = Wild, id = lists:reverse(Id2)}.
             
-ensure_pathName({TokenTag, Line, Text}) ->
+ensure_pathName({_TokenTag, _Line, Text}) ->
     Text.  %% BUGBUG: ensure values
 
 %% TimeStamp            = Date "T" Time ; per ISO 8601:1988
@@ -414,7 +414,7 @@ ensure_transactionID(TransId) ->
     ensure_uint32(TransId).
 
 %% transactionAck       = transactionID / (transactionID "-" transactionID)
-ensure_transactionAck({safeToken, Line, Text}) ->
+ensure_transactionAck({safeToken, _Line, Text}) ->
     case string:tokens(Text, [$-]) of
         [Id] ->
             #'TransactionAck'{firstAck = ensure_transactionID(Id)};
@@ -513,7 +513,7 @@ strip_contextAttrAuditRequest(R)
 strip_contextAttrAuditRequest(R) ->
     R.
 
-make_commandRequest({CmdTag, {TokenTag, Line, Text}}, Cmd) ->
+make_commandRequest({CmdTag, {_TokenTag, _Line, Text}}, Cmd) ->
     Req = #'CommandRequest'{command  = {CmdTag, Cmd}},
     case Text of
         [$w, $- | _] ->
@@ -544,39 +544,31 @@ do_merge_terminationAudit([], AuditReturnParameters, AuditItems) ->
     [AuditReturnParameter | AuditReturnParameters].
         
 merge_mediaDescriptor(MediaParms) ->
-    TS         = asn1_NOVALUE,
-    Streams    = [],
-    StreamType = multiStream,
-    do_merge_mediaDescriptor(MediaParms, TS, StreamType, Streams).
+    do_merge_mediaDescriptor(MediaParms, asn1_NOVALUE, [], []).
 
-do_merge_mediaDescriptor([H | T] = All, TS, StreamType, Streams) ->
+do_merge_mediaDescriptor([H | T], TS, One, Multi) ->
     case H of
-        {streamParm, TSP} ->
-            do_merge_mediaDescriptor(T, TS, oneStream, [TSP | Streams]);
-        {streamDescriptor, SD} when StreamType == multiStream ->
-            do_merge_mediaDescriptor(T, TS, StreamType, [SD | Streams]);
+        {streamParm, Parm} when Multi == [] ->
+            do_merge_mediaDescriptor(T, TS, [Parm | One], Multi);
+        {streamDescriptor, Desc} when One == [] ->
+            do_merge_mediaDescriptor(T, TS, One, [Desc | Multi]);
         {termState, TS2} when TS  == asn1_NOVALUE ->
-            do_merge_mediaDescriptor(T, TS2, StreamType, Streams);
+            do_merge_mediaDescriptor(T, TS2, One, Multi);
         _ ->
-            return_error(0, {bad_merge_mediaDescriptor, [All,TS, StreamType, Streams]})
+            return_error(0, {bad_merge_mediaDescriptor, [H, TS, One, Multi]})
     end;
-do_merge_mediaDescriptor([], TS, oneStream, [TaggedStreamParm]) ->
-    SP = merge_streamParms([TaggedStreamParm]),
-    #'MediaDescriptor'{streams        = {oneStream, SP},
-                       termStateDescr = TS};
-do_merge_mediaDescriptor([], TS, oneStream, TaggedStreamParms) ->
-    SP = merge_streamParms(TaggedStreamParms),
-    DefaultStreamId = 1,
-    SD = #'StreamDescriptor'{streamID    = DefaultStreamId,
-			     streamParms = SP},
-    #'MediaDescriptor'{streams        = {multiStream, [SD]},
-                       termStateDescr = TS};
-do_merge_mediaDescriptor([], TS, multiStream, SD) when SD /= [] ->
-    #'MediaDescriptor'{streams        = {multiStream, lists:reverse(SD)},
-                       termStateDescr = TS};
-do_merge_mediaDescriptor([], TS, multiStream, []) ->
-    #'MediaDescriptor'{streams        = asn1_NOVALUE,
-                       termStateDescr = TS}.
+do_merge_mediaDescriptor([], TS, One, Multi) ->
+    if
+	One == [], Multi == [] ->
+	    #'MediaDescriptor'{streams = asn1_NOVALUE,
+			       termStateDescr = TS};
+	One /= [], Multi == [] ->
+	    #'MediaDescriptor'{streams = {oneStream, merge_streamParms(One)},
+			       termStateDescr = TS};
+	One == [], Multi /= [] ->
+	    #'MediaDescriptor'{streams = {multiStream, lists:reverse(Multi)},
+			       termStateDescr = TS}
+    end.
   
 merge_streamParms(TaggedStreamParms) ->
     SP = #'StreamParms'{},
@@ -652,7 +644,7 @@ do_merge_terminationStateDescriptor([], TSD) ->
     PP = TSD#'TerminationStateDescriptor'.propertyParms,
     TSD#'TerminationStateDescriptor'{propertyParms = lists:reverse(PP)}.
 
-ensure_prop_groups({TokenTag, Line, Text}) ->
+ensure_prop_groups({_TokenTag, _Line, Text}) ->
     Group  = [],
     Groups = [],
     parse_prop_name(Text, Group, Groups).
@@ -726,7 +718,7 @@ make_prop_parm(Name, Value) ->
     #'PropertyParm'{name  = lists:reverse(Name),
                     value = [lists:reverse(Value)]}.
 
-ensure_uint({TokenTag, Line, Val}, Min, Max) when integer(Val) ->
+ensure_uint({_TokenTag, Line, Val}, Min, Max) when integer(Val) ->
     if
         integer(Min), Val >= Min ->
             if
@@ -756,7 +748,7 @@ ensure_uint16(Int) ->
 ensure_uint32(Int) ->
     ensure_uint(Int, 0, 4294967295) .
 
-ensure_hex({TokenTag, Line, Chars}, Min, Max) ->
+ensure_hex({_TokenTag, _Line, Chars}, Min, Max) ->
     ensure_uint(length(Chars), Min, Max),
     hex_to_int(Chars);
 ensure_hex(Chars, Min, Max) ->
@@ -781,5 +773,5 @@ hchar_to_int(Char) when $A =< Char, Char =< $F ->
 hchar_to_int(Char) when $a =< Char, Char =< $f ->
     Char - $a.
 
-value_of({TokenTag, Line, Text}) ->
+value_of({_TokenTag, _Line, Text}) ->
     Text.

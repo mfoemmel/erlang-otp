@@ -3,12 +3,6 @@
   {vsn, "%VSN%"},
   {modules,
    [	
-	et,
-	et_collector,
-	et_contents_viewer,
-	et_selector,
-	et_viewer,
-	event_tracer,
 	megaco,
 	megaco_ber_bin_encoder,
 	megaco_ber_bin_media_gateway_control,

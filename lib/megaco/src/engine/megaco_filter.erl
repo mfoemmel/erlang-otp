@@ -27,28 +27,22 @@
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_v1.hrl").
 -include("megaco_internal.hrl").
--include_lib("megaco/utils/et/et.hrl").
+-include_lib("et/include/et.hrl").
 
 start() ->
     start([]).
 
-start(Options) ->
-    Args = [{event_order, event_ts},
-	    {scale, 3},
-	    {max_actors, infinity},
-	    {trace_global, true},
-	    {dict_insert, {filter, ?MODULE}, fun filter/1},
-	    {active_filter, ?MODULE},
-	    {title, "Megaco tracer - Erlang/OTP"} | Options],
-    case et_viewer:start_link(Args) of
-	{ok, ViewerPid} ->
-	    CollectorPid = et_viewer:get_collector_pid(ViewerPid),
-	    unlink(ViewerPid),
-	    unlink(CollectorPid),
-	    ok;
-	{error, Reason} ->
-	    exit(Reason)
-    end.
+start(ExtraOptions) ->
+    Options =
+	[{event_order, event_ts},
+	 {scale, 3},
+	 {max_actors, infinity},
+	 {trace_pattern, {megaco, max}},
+	 {trace_global, true},
+	 {dict_insert, {filter, ?MODULE}, fun filter/1},
+	 {active_filter, ?MODULE},
+	 {title, "Megaco tracer - Erlang/OTP"} | ExtraOptions],
+    et_viewer:start(Options).
 
 filter(E) when record(E, event) ->
     From = filter_actor(E#event.from),
@@ -80,7 +74,7 @@ filter_actors(From, To, E) when E#event.from == ?APPLICATION,
 		    end
 	    end
     end;
-filter_actors(From, To, E) ->
+filter_actors(_From, _To, E) ->
     E.
 
 filter_actor(Actor) ->
@@ -129,7 +123,7 @@ do_filter_actor(Actor) ->
 	    "preliminary_mid";
 	megaco ->
 	    megaco;
-	Other ->
+	_Other ->
 	    "UNKNOWN"
     end.
 
@@ -137,7 +131,7 @@ filter_contents([], E, Contents) ->
     E#event{contents = lists:flatten(lists:reverse(Contents))};
 filter_contents([H | T], E, Contents) ->
     case H of
-	{line, Mod, Line} ->
+	{line, _Mod, _Line} ->
 	    filter_contents(T, E, Contents);
 	CD when record(CD, conn_data) ->
 	    CH = CD#conn_data.conn_handle,
@@ -152,7 +146,7 @@ filter_contents([H | T], E, Contents) ->
 	    To   = CH#megaco_conn_handle.remote_mid,
 	    E2 = filter_actors(From, To, E),
 	    filter_contents(T, E2, Contents);
-	{orig_conn_handle, CH} ->
+	{orig_conn_handle, _CH} ->
 	    filter_contents(T, E, Contents);
 	RH when record(RH, megaco_receive_handle) ->
 	    Actor = RH#megaco_receive_handle.local_mid,
@@ -195,7 +189,7 @@ filter_contents([H | T], E, Contents) ->
 		    E2 = E#event{label = Label ++ ".." ++ integer_to_list(Last)},
 		    filter_contents([], E2, [[Pretty, "\n"], Contents])
 	    end;
-	{context_id, ContextId} ->
+	{context_id, _ContextId} ->
 	    Pretty = pretty(H),
 	    filter_contents(T, E, [[Pretty, "\n"], Contents]);
 	{command_request, CmdReq} ->
@@ -222,14 +216,14 @@ filter_contents([H | T], E, Contents) ->
 		    [$r, $e, $c, $e, $i, $v, $e, $ , $b, $y, $t, $e, $s | Tail] ->
 			L = lists:concat(["receive ", size(Bin), " bytes", Tail]),
 			E#event{label = L};
-		    Other ->
+		    _ ->
 			E
 		end,
 	    CharList = erlang:binary_to_list(Bin),
 	    filter_contents(T, E2, [[CharList , "\n"], Contents]);
 	[] ->
 	    filter_contents(T, E, Contents);
-	{test_lib, Mod, Fun} ->
+	{test_lib, _Mod, _Fun} ->
 	    filter_contents(T, E, Contents);
 	Other ->
 	    Pretty = pretty(Other),
@@ -239,7 +233,7 @@ filter_contents([H | T], E, Contents) ->
 append_serial(Serial, E) when integer(Serial) ->
     Label = term_to_string(E#event.label),
     E#event{label = Label ++ " #" ++ integer_to_list(Serial)};
-append_serial(Serial, E) ->
+append_serial(_Serial, E) ->
     E.
 
 prepend_error(E) ->
@@ -261,7 +255,7 @@ pretty(MegaMsg) when record(MegaMsg, 'MegacoMessage') ->
     case catch megaco_pretty_text_encoder:encode_message([], MegaMsg) of
 	{ok, Bin} ->
 	    term_to_string(Bin);
-	Bad ->
+	_Bad ->
 	    term_to_string(MegaMsg)
     end;
 pretty(CmdReq) when record(CmdReq, 'CommandRequest') ->
@@ -269,7 +263,7 @@ pretty(CmdReq) when record(CmdReq, 'CommandRequest') ->
 	{ok, IoList} ->
 	    IoList2 = lists:flatten(IoList),
 	    term_to_string(IoList2);
-	Bad ->
+	_Bad ->
 	    term_to_string(CmdReq)
     end;
 pretty({complete_success, ContextId, RepList} = Res) ->
@@ -279,7 +273,7 @@ pretty({complete_success, ContextId, RepList} = Res) ->
 	{ok, IoList} ->
 	    IoList2 = lists:flatten(IoList),
 	    term_to_string(IoList2);
-	Bad ->
+	_Bad ->
 	    term_to_string(Res)
    end;
 pretty(AR) when record(AR, 'ActionReply') ->
@@ -287,7 +281,7 @@ pretty(AR) when record(AR, 'ActionReply') ->
 	{ok, IoList} ->
 	    IoList2 = lists:flatten(IoList),
 	    term_to_string(IoList2);
-	Bad ->
+	_Bad ->
 	    term_to_string(AR)
    end;
 pretty({partial_failure, ContextId, RepList} = Res) ->
@@ -297,7 +291,7 @@ pretty({partial_failure, ContextId, RepList} = Res) ->
 	{ok, IoList} ->
 	    IoList2 = lists:flatten(IoList),
 	    term_to_string(IoList2);
-	Bad ->
+	_Bad ->
 	    term_to_string(Res)
    end;
 pretty({trans, Trans}) ->
@@ -305,7 +299,7 @@ pretty({trans, Trans}) ->
 	{ok, IoList} ->
 	    IoList2 = lists:flatten(IoList),
 	    term_to_string(IoList2);
-	Bad ->
+	_Bad ->
 	    term_to_string(Trans)
     end;
 pretty(Other) ->
@@ -328,7 +322,7 @@ string_to_term(Chars) ->
 
 do_string_to_term(Cont, Chars, Line) ->
     case catch erl_scan:tokens(Cont, Chars, Line) of
-	{done, {ok, Tokens, EndLine}, Rest} ->
+	{done, {ok, Tokens, _EndLine}, _Rest} ->
 	    case erl_parse:parse_term(Tokens) of
 		{ok, Term} ->
 		    {ok, Term};

@@ -24,11 +24,23 @@
 #  include "erl_win_sys.h"
 #elif defined (VXWORKS) 
 #  include "erl_vxworks_sys.h"
+#elif defined (_OSE_) 
+#  include "erl_ose_sys.h"
 #else 
 #  include "erl_unix_sys.h"
 #ifndef UNIX
 #  define UNIX 1
 #endif
+#endif
+
+#ifndef ERTS_INLINE
+#  if defined(__GNUC__)
+#    define ERTS_INLINE __inline__
+#  elif defined(__WIN32__)
+#    define ERTS_INLINE __inline
+#  else
+#    define ERTS_INLINE
+#  endif
 #endif
 
 #ifdef DEBUG
@@ -58,13 +70,7 @@ void erl_assert_error(char* expr, char* file, int line);
  * headers will fail to compile!
  */
 
-#if defined(__STDC__) || defined(_MSC_VER)
-#  include <stdarg.h>
-#  define VA_START(x, y) va_start(x, y)
-#else
-#  include <varargs.h>
-#  define VA_START(x, y) va_start(x)
-#endif
+#include <stdarg.h>
 
 #if defined(__STDC__) || defined(_MSC_VER)
 #  define EXTERN_FUNCTION(t, f, x)  extern t f x
@@ -103,8 +109,8 @@ EXTERN_FUNCTION(int, real_printf, (const char *fmt, ...));
 #endif
 
 /*
-** The uint32, sint32 etc datatypes are deprecated and will be removed in 
-** favour of the following datatypes:
+** Data types:
+**
 ** Eterm: A tagged erlang term (possibly 64 bits)
 ** UInt:  An unsigned integer exactly as large as an Eterm.
 ** SInt:  A signed integer exactly as large as an eterm and therefor large
@@ -115,43 +121,54 @@ EXTERN_FUNCTION(int, real_printf, (const char *fmt, ...));
 ** Sint16: A signed integer of 16 bits exactly.
 */
 
-#if defined(SIZEOF_LONG) && (SIZEOF_LONG == 8)
+#if SIZEOF_VOID_P == 8
 #define ARCH_64
-#endif
-
-#ifdef ARCH_64
-
-/* The new and preferred datatypes */
-typedef unsigned long    Eterm;
-typedef unsigned long    Uint;   
-typedef long             Sint;
-typedef unsigned int     Uint32;
-typedef int              Sint32;
-typedef unsigned short   Uint16;
-typedef short            Sint16;
-
-typedef unsigned char	 byte;
-
+#elif SIZEOF_VOID_P == 4
 #else
-
-/* The new and preferred datatypes */
-typedef unsigned long   Eterm;  
-typedef unsigned long   Uint;   
-typedef long            Sint;
-typedef unsigned long   Uint32;
-typedef long            Sint32;
-typedef unsigned short  Uint16;
-typedef short           Sint16;
-
-/* The old and deprecated types */
-typedef long		sint32;
-typedef unsigned long	uint32;
-typedef short		sint16;
-typedef unsigned short	uint16;
-typedef unsigned char	byte;
-
+#error Neither 32 nor 64 bit architecture
 #endif
 
+#if SIZEOF_VOID_P != SIZEOF_SIZE_T
+#error sizeof(void*) != sizeof(size_t)
+#endif
+
+#if SIZEOF_VOID_P == SIZEOF_LONG
+typedef unsigned long Eterm;
+typedef unsigned long Uint;
+typedef long          Sint;
+#elif SIZEOF_VOID_P == SIZEOF_INT
+typedef unsigned int Eterm;
+typedef unsigned int Uint;
+typedef int          Sint;
+#else
+#error Found no appropriate type to use for 'Eterm', 'Uint' and 'Sint'
+#endif
+
+#if SIZEOF_LONG == 4
+typedef unsigned long Uint32;
+typedef long          Sint32;
+#elif SIZEOF_INT == 4
+typedef unsigned int Uint32;
+typedef int          Sint32;
+#else
+#error Found no appropriate type to use for 'Uint32' and 'Sint32'
+#endif
+
+#if SIZEOF_INT == 2
+typedef unsigned int Uint16;
+typedef int          Sint16;
+#elif SIZEOF_SHORT == 2
+typedef unsigned short Uint16;
+typedef short          Sint16;
+#else
+#error Found no appropriate type to use for 'Uint16' and 'Sint16'
+#endif
+
+#if CHAR_BIT == 8
+typedef unsigned char byte;
+#else
+#error Found no appropriate type to use for 'byte'
+#endif
 
 /* Deal with memcpy() vs bcopy() etc. We want to use the mem*() functions,
    but be able to fall back on bcopy() etc on systems that don't have
@@ -205,6 +222,13 @@ typedef unsigned char	byte;
    in non-blocking mode - and ioctl FIONBIO on AIX *doesn't* work for
    pipes or ttys (O_NONBLOCK does)!!! For now, we'll use FIONBIO for AIX. */
 
+# ifdef _OSE_
+static const int zero_value = 0, one_value = 1;
+#      define SET_BLOCKING(fd)	        ioctl((fd), FIONBIO, (char*)&zero_value)
+#      define SET_NONBLOCKING(fd)	ioctl((fd), FIONBIO, (char*)&one_value)
+#      define ERRNO_BLOCK EWOULDBLOCK
+# else
+
 #  ifdef __WIN32__
 
 static unsigned long zero_value = 0, one_value = 1;
@@ -245,6 +269,7 @@ static const int zero_value = 0, one_value = 1;
 #      endif /* !NB_FIONBIO */
 #    endif /* _WXWORKS_ */
 #  endif /* !__WIN32__ */
+# endif /* _OSE_ */
 #endif /* WANT_NONBLOCKING */
      
 EXTERN_FUNCTION(int, check_async_ready, (_VOID_));
@@ -275,6 +300,8 @@ typedef struct preload {
  * None of the drivers use all of the fields.
  */
 
+/* OSE: Want process_type and priority in here as well! Needs updates in erl_bif_ports.c! */
+
 typedef struct _SysDriverOpts {
     int ifd;			/* Input file descriptor (fd driver). */
     int ofd;			/* Outputfile descriptor (fd driver). */
@@ -287,6 +314,12 @@ typedef struct _SysDriverOpts {
     char *envir;		/* Environment of the port process, */
 				/* in Windows format. */
     char *wd;			/* Working directory. */
+
+#ifdef _OSE_
+    enum PROCESS_TYPE process_type;
+    OSPRIORITY priority;
+#endif /* _OSE_ */
+
 } SysDriverOpts;
 
 
@@ -304,7 +337,7 @@ extern int erts_init_time_sup(void);
  */
 extern void erl_sys_init(void);
 extern void erl_sys_args(int *argc, char **argv);
-extern void erl_sys_schedule_loop(void);
+extern void erl_sys_schedule(int);
 void sys_tty_reset(void);
 
 EXTERN_FUNCTION(int, sys_max_files, (_VOID_));
@@ -321,7 +354,7 @@ EXTERN_FUNCTION(void, get_localtime, (int*, int*, int*, int*, int*, int*));
 EXTERN_FUNCTION(void, get_universaltime, (int*, int*, int*, int*, int*, int*));
 EXTERN_FUNCTION(int, univ_to_local, (int*, int*, int*, int*, int*, int*));
 EXTERN_FUNCTION(int, local_to_univ, (int*, int*, int*, int*, int*, int*));
-void get_now(Uint32*, Uint32*, Uint32*);
+void get_now(Uint*, Uint*, Uint*);
 EXTERN_FUNCTION(void, set_break_quit, (void (*)(), void (*)()));
 
 
@@ -406,11 +439,11 @@ typedef struct {
 
 EXTERN_FUNCTION(void, sys_alloc_stat, (SysAllocStat *));
 
-#ifdef VXWORKS
+#if (defined(VXWORKS) || defined(_OSE_))
 /* NOTE! sys_calloc2 does not exist on other 
-   platforms than VxWorks */
+   platforms than VxWorks and OSE */
 EXTERN_FUNCTION(void*, sys_calloc2, (Uint, Uint));
-#endif /* VXWORKS */
+#endif /* VXWORKS || OSE */
 
 
 #define sys_memcpy(s1,s2,n)  memcpy(s1,s2,n)
@@ -449,27 +482,48 @@ EXTERN_FUNCTION(void*, sys_calloc2, (Uint, Uint));
 
 /* Standard set of integer macros  .. */
 
+#define get_int64(s) ((((unsigned char*) (s))[0] << 56) | \
+                      (((unsigned char*) (s))[1] << 48) | \
+                      (((unsigned char*) (s))[2] << 40) | \
+                      (((unsigned char*) (s))[3] << 32) | \
+                      (((unsigned char*) (s))[4] << 24) | \
+                      (((unsigned char*) (s))[5] << 16) | \
+                      (((unsigned char*) (s))[6] << 8)  | \
+                      (((unsigned char*) (s))[7]))
+
+#define put_int64(i, s) do {                                           \
+                            Uint j = (i);                              \
+                            ((char*)(s))[7] = (char)((j)&0xff), j>>=8; \
+                            ((char*)(s))[6] = (char)((j)&0xff), j>>=8; \
+                            ((char*)(s))[5] = (char)((j)&0xff), j>>=8; \
+                            ((char*)(s))[4] = (char)((j)&0xff), j>>=8; \
+                            ((char*)(s))[3] = (char)((j)&0xff), j>>=8; \
+                            ((char*)(s))[2] = (char)((j)&0xff), j>>=8; \
+                            ((char*)(s))[1] = (char)((j)&0xff), j>>=8; \
+                            ((char*)(s))[0] = (char)((j)&0xff);        \
+                        } while (0)
+
 #define get_int32(s) ((((unsigned char*) (s))[0] << 24) | \
                       (((unsigned char*) (s))[1] << 16) | \
                       (((unsigned char*) (s))[2] << 8)  | \
                       (((unsigned char*) (s))[3]))
 
 #define put_int32(i, s) {((char*)(s))[0] = (char)((i) >> 24) & 0xff; \
-                        ((char*)(s))[1] = (char)((i) >> 16) & 0xff; \
-                        ((char*)(s))[2] = (char)((i) >> 8)  & 0xff; \
-                        ((char*)(s))[3] = (char)((i)        & 0xff);}
+                         ((char*)(s))[1] = (char)((i) >> 16) & 0xff; \
+                         ((char*)(s))[2] = (char)((i) >> 8)  & 0xff; \
+                         ((char*)(s))[3] = (char)((i)        & 0xff);}
 
 #define get_int16(s) ((((unsigned char*)  (s))[0] << 8) | \
                       (((unsigned char*)  (s))[1]))
 
 
 #define put_int16(i, s) {((unsigned char*)(s))[0] = ((i) >> 8) & 0xff; \
-                        ((unsigned char*)(s))[1] = (i)         & 0xff;}
+                         ((unsigned char*)(s))[1] = (i)        & 0xff;}
 
 #define get_int8(s) ((((unsigned char*)  (s))[0] ))
 
 
-#define put_int8(i, s) { ((unsigned char*)(s))[0] = (i)         & 0xff;}
+#define put_int8(i, s) { ((unsigned char*)(s))[0] = (i) & 0xff;}
 
 /*
  * Use DEBUGF as you would use printf, but use double parentheses:

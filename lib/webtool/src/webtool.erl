@@ -351,8 +351,8 @@ insert_app(_,_)->
 %----------------------------------------------------------------------
 %Control that the string file really is a file name
 %----------------------------------------------------------------------
-is_file(File_name)->
-    control_type(File_name,regular).
+%is_file(File_name)->
+%    control_type(File_name,regular).
 
 is_dir(File_name)->
     control_type(File_name,directory).

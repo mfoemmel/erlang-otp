@@ -22,6 +22,11 @@
 #include "epmd.h"     /* Renamed from 'epmd_r4.h' */
 #include "epmd_int.h"
 
+#ifdef _OSE_
+#  include "ose.h"
+#  include "efs.h"
+#endif
+
 /* forward declarations */
 
 static void usage _ANSI_ARGS_((EpmdVars *));
@@ -29,8 +34,6 @@ static void run_daemon _ANSI_ARGS_((EpmdVars*));
 #ifdef __WIN32__
 static int has_console(void);
 #endif
-
-
 
 #ifdef DONT_USE_MAIN
 
@@ -74,6 +77,86 @@ static char *mystrdup(s)
     return r;
 }
 
+#ifdef _OSE_
+
+struct args_sig {
+  SIGSELECT sig_no;
+  int argc ;
+  char argv[20][20];
+};
+
+union SIGNAL {
+  SIGSELECT sig_no;
+  struct args_sig args;
+};
+
+/* Start function. It may be called from the start script as well as from
+   the OSE shell directly (using late start hooks). It spawns epmd as an
+   OSE process which calls the epmd main function. */
+int start_ose_epmd(int argc, char **argv) {
+  union SIGNAL *sig;
+  PROCESS epmd_;
+  OSENTRYPOINT ose_epmd;
+  int i;
+
+  if(hunt("epmd", 0, &epmd_, NULL)) {
+    fprintf(stderr, "Warning! EPMD already exists (%u).\n", epmd_);
+    return 0;
+  }
+  else {
+    /* copy start args to signal */
+    sig = alloc(sizeof(struct args_sig), 0);
+    sig->args.argc = argc;
+    for(i=0; i<argc; i++) {
+      strcpy((sig->args.argv)[i], argv[i]);
+    }    
+    /* start epmd and send signal */
+    epmd_ = create_process(OS_PRI_PROC, /* processtype */
+			   "epmd",      /* name        */
+			   ose_epmd,    /* entrypoint  */
+			   16383,	/* stacksize   */
+			   20,	        /* priority    */
+			   0,	        /* timeslice   */
+			   0,	        /* block       */
+			   NULL,0,0);   /* not used    */
+    efs_clone(epmd_);
+    start(epmd_);
+    send(&sig, epmd_);	
+#ifdef DEBUG
+    printf("EPMD ID: %li\n", epmd_);
+#endif
+  }
+  return 0;
+}
+
+OS_PROCESS(ose_epmd) {
+  union SIGNAL *sig;
+  static const SIGSELECT rec_any_sig[] = { 0 };
+  int i, argc;
+  char **argv;
+
+  sig = receive((SIGSELECT*)rec_any_sig);
+
+  argc = sig->args.argc;
+  argv = (char **)malloc((argc+1)*sizeof(char *));
+  for(i=0; i<argc; i++) {
+    argv[i] = (char *)malloc(strlen((sig->args.argv)[i])+1);
+    strcpy(argv[i], (sig->args.argv)[i]);
+  }
+  argv[argc] = NULL;
+  free_buf(&sig);
+
+  epmd(argc, argv);
+
+  for(i=0; i<argc; i++) {
+    free(argv[i]);
+  }
+  free(argv);
+}
+
+#else  /* ifdef _OSE_ */
+
+/* VxWorks start function */
 int start_epmd(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9)
 char *a0, *a1, *a2, *a3, *a4, *a5, *a6, *a7, *a8, *a9;     
 {
@@ -113,6 +196,7 @@ char *a0, *a1, *a2, *a3, *a4, *a5, *a6, *a7, *a8, *a9;
 		   0,0,0,0,0,0,0);
 }
     
+#endif    /* _OSE_ */
     
     
 
@@ -249,7 +333,7 @@ int main(int argc, char** argv)
     }
     return 0;
 }
-
+
 #ifndef NO_DAEMON
 static void run_daemon(g)
      EpmdVars *g;
@@ -361,14 +445,15 @@ static void run_daemon(g)
 }
 #endif
 
-#ifdef VXWORKS
+#if (defined(VXWORKS) || defined(_OSE_))
 static void run_daemon(g)
     EpmdVars *g;
 {
     run(g);
 }
 #endif
-
+
+
 /***************************************************************************
  *  Misc support routines
  *
@@ -450,7 +535,7 @@ static void dbg_gen_printf(onsyslog,perr,from_level,g,format,args)
       int len;
 
       time(&now);
-      timestr = ctime(&now);
+      timestr = (char *)ctime(&now);
       sprintf(buf, "epmd: %.*s: ", (int) strlen(timestr)-1, timestr);
       len = strlen(buf);
       vsprintf(buf + len, format, args);
@@ -462,74 +547,33 @@ static void dbg_gen_printf(onsyslog,perr,from_level,g,format,args)
 }
 
 
-#if defined(__STDC__) || defined(_MSC_VER)
 void dbg_perror(EpmdVars *g,const char *format,...)
 {
   va_list args;
   va_start(args, format);
-#else
-void dbg_tty_printf(va_alist)
-  va_dcl
-{
-  va_list args;
-  EpmdVars *g;
-  char *format;
-
-  va_start(args);
-  g = va_arg(args, EpmdVars *);
-  format = va_arg(args, char *);
-#endif
   dbg_gen_printf(1,1,0,g,format,args);
   va_end(args);
 }
 
 
-#if defined(__STDC__) || defined(_MSC_VER)
 void dbg_tty_printf(EpmdVars *g,int from_level,const char *format,...)
 {
-  va_list args;
-  va_start(args, format);
-#else
-void dbg_tty_printf(va_alist)
-  va_dcl
-{
-  va_list args;
-  EpmdVars *g;
-  int from_level;
-  char *format;
-
-  va_start(args);
-  g = va_arg(args, EpmdVars *);
-  from_level = va_arg(args, int);
-  format = va_arg(args, char *);
-#endif
-  if (g->debug >= from_level)
+  if (g->debug >= from_level) {
+    va_list args;
+    va_start(args, format);
     dbg_gen_printf(0,0,from_level,g,format,args);
-  va_end(args);
+    va_end(args);
+  }
 }
 
-#if defined(__STDC__) || defined(_MSC_VER)
 void dbg_printf(EpmdVars *g,int from_level,const char *format,...)
 {
-  va_list args;
-  va_start(args, format);
-#else
-void dbg_printf(va_alist)
-  va_dcl
-{
-  va_list args;
-  EpmdVars *g;
-  int from_level;
-  char *format;
-
-  va_start(args);
-  g = va_arg(args, EpmdVars *);
-  from_level = va_arg(args, int);
-  format = va_arg(args, char *);
-#endif
-  if (g->debug >= from_level)
+  if (g->debug >= from_level) {
+    va_list args;
+    va_start(args, format);
     dbg_gen_printf(1,0,from_level,g,format,args);
-  va_end(args);
+    va_end(args);
+  }
 }
 
 

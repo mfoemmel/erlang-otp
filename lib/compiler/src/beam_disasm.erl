@@ -86,7 +86,7 @@ process_chunks(F,ChunkInfoList) ->
 	   {strings,Str1},
 	   {attributes,Attributes},
 	   {comp_info,CompInfo}],
-    {beam_file,[Item || {Key,Data}=Item <- All, Data =/= none]}.
+    {beam_file,[Item || {_Key,Data}=Item <- All, Data =/= none]}.
 
 %%-----------------------------------------------------------------------
 %% Retrieve an optional chunk or none if the chunk doesn't exist.
@@ -145,8 +145,8 @@ get_atom_name(0,Xs,RevName) ->
 %% Disassembles the export table of a BEAM file.
 %%-----------------------------------------------------------------------
 
-beam_disasm_exports(none,Atoms) -> none;
-beam_disasm_exports(ExpTabBin,Atoms) ->
+beam_disasm_exports(none, _) -> none;
+beam_disasm_exports(ExpTabBin, Atoms) ->
     {_NumAtoms,B} = get_int(ExpTabBin),
     disasm_exports(B,Atoms).
 
@@ -190,15 +190,15 @@ resolve_imports(Exps,Atoms) ->
 %% Disassembles the lambda (fun) table of a BEAM file.
 %%-----------------------------------------------------------------------
 
-beam_disasm_lambdas(none, Atoms) -> none;
-beam_disasm_lambdas(<<NumLambdas:32,Tab/binary>>, Atoms) ->
+beam_disasm_lambdas(none, _) -> none;
+beam_disasm_lambdas(<<_:32,Tab/binary>>, Atoms) ->
     disasm_lambdas(Tab, Atoms, 0).
 
 disasm_lambdas(<<F:32,A:32,Lbl:32,Index:32,NumFree:32,OldUniq:32,More/binary>>,
 	       Atoms, OldIndex) ->
     Info = {lookup_key(F, Atoms),A,Lbl,Index,NumFree,OldUniq},
     [{OldIndex,Info}|disasm_lambdas(More, Atoms, OldIndex+1)];
-disasm_lambdas(<<>>, Atoms, OldIndex) -> [].
+disasm_lambdas(<<>>, _, _) -> [].
 
 %%-----------------------------------------------------------------------
 %% Disassembles the code chunk of a BEAM file:
@@ -207,12 +207,10 @@ disasm_lambdas(<<>>, Atoms, OldIndex) -> [].
 %%-----------------------------------------------------------------------
 
 beam_disasm_code(CodeBin,Atoms,Imports,Str,Lambdas) ->
-    [SS3,SS2,SS1,SS0,  % Sub-Size (length of information before code)
-     IS3,IS2,IS1,IS0,  % Instruction Set Identifier (always 0)
-     OM3,OM2,OM1,OM0,  % Opcode Max
-     L3,L2,L1,L0,F3,F2,F1,F0|Code] = binary_to_list(CodeBin),
-    NumLabels = i32([L3,L2,L1,L0]),
-    NumFunctions = i32([F3,F2,F1,F0]),
+    [_SS3,_SS2,_SS1,_SS0,  % Sub-Size (length of information before code)
+     _IS3,_IS2,_IS1,_IS0,  % Instruction Set Identifier (always 0)
+     _OM3,_OM2,_OM1,_OM0,  % Opcode Max
+     _L3,_L2,_L1,_L0,_F3,_F2,_F1,_F0|Code] = binary_to_list(CodeBin),
     case catch disasm_code(Code) of
 	{'EXIT',Rsn} ->
 	    ?NO_DEBUG('code disasm failed: ~p~n',[Rsn]),
@@ -220,9 +218,6 @@ beam_disasm_code(CodeBin,Atoms,Imports,Str,Lambdas) ->
 	DisasmCode ->
 	    Functions = get_function_chunks(DisasmCode),
 	    LocLabels = local_labels(Functions,Atoms),
-	    ?NO_DEBUG('~p~n~p~n~p~n~p~n',
-		      [{'NUM_LABELS',NumLabels},{'NUM_FUNCTIONS',NumFunctions},
-		       {'LABELS',LocLabels},{'FUNCTIONS',Functions}]),
 	    [ resolve_names(F,Atoms,Imports,Str,LocLabels,Lambdas) || F <- Functions ]
     end.
 
@@ -257,7 +252,7 @@ get_function_chunks([]) ->
 
 get_funs(PrevI,[I|Is],RevF,RevFs) ->
     case I of
-	{func_info,Info} ->
+	{func_info,_Info} ->
 	    [H|T] = RevF,
 	    {Last,Fun,TrailingLabels} = split_head_labels(H,T,[]),
 	    get_funs(I, Is, [PrevI|TrailingLabels], add_fun([Last|Fun],RevFs));
@@ -409,19 +404,19 @@ decode_int(_,B,_) ->
 
 decode_int_length(B,Bs) ->
     %% The following imitates get_erlang_integer() in beam_load.c
-    {Len,Bs1} = %% Len is the size of the integer value in bytes
-	case B bsr 5 of
-	    7 ->
-		{Arg,ArgBs} = decode_arg(Bs),
-		case Arg of
-		    {u,L} ->
-			{L+9,ArgBs};  % 9 stands for 7+2
-		    _ -> 
-			?exit({decode_int,weird_bignum_sublength,Arg})
-		end;
-	    L ->
-		{L+2,Bs}
-	end.
+    %% Len is the size of the integer value in bytes
+    case B bsr 5 of
+	7 ->
+	    {Arg,ArgBs} = decode_arg(Bs),
+	    case Arg of
+		{u,L} ->
+		    {L+9,ArgBs};  % 9 stands for 7+2
+		_ -> 
+		    ?exit({decode_int,weird_bignum_sublength,Arg})
+	    end;
+	L ->
+	    {L+2,Bs}
+    end.
     
 decode_negative(N,Len) ->
     N - (1 bsl (Len*8)). % 8 is number of bits in a byte
@@ -534,11 +529,11 @@ resolve_names(Fun,Atoms,Imports,Str,Lbls,Lambdas) ->
 
 resolve_inst({make_fun2,Args},Atoms,_,_,Lbls,Lambdas) ->
     [OldIndex] = resolve_args(Args,Atoms),
-    {value,{OldIndex,{F,A,Lbl,Index,NumFree,OldUniq}}} =
+    {value,{OldIndex,{F,A,_Lbl,_Index,NumFree,OldUniq}}} =
 	lists:keysearch(OldIndex, 1, Lambdas),
     [{_,{M,_,_}}|_] = Lbls,			% Slighly kludgy.
     {make_fun2,{M,F,A},OldIndex,OldUniq,NumFree};
-resolve_inst(Instr,Atoms,Imports,Str,Lbls,Lambdas) ->
+resolve_inst(Instr,Atoms,Imports,Str,Lbls,_Lambdas) ->
     resolve_inst(Instr,Atoms,Imports,Str,Lbls).
 
 resolve_inst({label,[{u,L}]},_,_,_,_) ->
@@ -582,7 +577,7 @@ resolve_inst({allocate_heap_zero,[{u,X0},{u,X1},{u,X2}]},_,_,_,_) ->
     {allocate_heap_zero,X0,X1,X2};
 resolve_inst({test_heap,[{u,X0},{u,X1}]},_,_,_,_) ->
     {test_heap,X0,X1};
-resolve_inst({init,[Dst]},Atm,Exp,Str,Lbls) ->
+resolve_inst({init,[Dst]},_,_,_,_) ->
     {init,Dst};
 resolve_inst({deallocate,[{u,L}]},_,_,_,_) ->
     {deallocate,L};
@@ -736,14 +731,14 @@ resolve_inst({badmatch,[X]},_,_,_,_) ->
     {badmatch,X};
 resolve_inst({if_end,[]},_,_,_,_) ->
     if_end;
-resolve_inst({case_end,[X]},_,_,_,_) ->
-    {case_end,X};
+resolve_inst({case_end,[X]},Atoms,_,_,_) ->
+    {case_end,resolve_arg(X, Atoms)};
 resolve_inst({call_fun,[{u,N}]},_,_,_,_) ->
     {call_fun,N};
 resolve_inst({make_fun,Args},Atoms,_,_,Lbls) ->
     [{f,L},Magic,FreeVars] = resolve_args(Args,Atoms),
     {make_fun,catch lookup_key(L,Lbls),Magic,FreeVars};
-resolve_inst({is_function,[F,X]},Atoms,_,_,_) ->
+resolve_inst({is_function,[F,X]},_,_,_,_) ->
     {is_function,F,X};
 resolve_inst({call_ext_only,[{u,N},{u,MFAix}]},_,Imports,_,_) ->
     {call_ext_only,N,catch lists:nth(MFAix+1,Imports)};
@@ -801,7 +796,7 @@ resolve_inst({bs_need_buf,[{u,N}]},_,_,_,_) ->
 %%
 %% Instructions for handling floating point numbers added in June 2001 (R8).
 %%
-resolve_inst({fclearerror,[]},Atoms,_,_,_) ->
+resolve_inst({fclearerror,[]},_,_,_,_) ->
     fclearerror;
 resolve_inst({fcheckerror,Args},Atoms,_,_,_) ->
     [Fail] = resolve_args(Args,Atoms),

@@ -49,6 +49,8 @@
 %%-----------------------------------------------------------------
 -define(DEBUG_LEVEL, 7).
 
+-record(state, {stype, socket, db, interceptors, ssl_port}).
+
 %%-----------------------------------------------------------------
 %% External interface functions
 %%-----------------------------------------------------------------
@@ -80,20 +82,33 @@ stop() ->
 %% Func: init/1
 %%-----------------------------------------------------------------
 init({connect, Type, Socket}) ->
-    ?PRINTDEBUG2("orber_iiop_inproxy init: ~p ", [self()]),
     process_flag(trap_exit, true),
+    SSLPort = orber:iiop_ssl_port(),
     case orber:get_interceptors() of
 	false ->
-	    {ok, {Socket, Type, ets:new(orber_incoming_requests, [set]), false}};
+	    {ok, #state{stype = Type, 
+			socket = Socket, 
+			db =  ets:new(orber_incoming_requests, [set]), 
+			interceptors = false,
+			ssl_port = SSLPort}};
 	{native, PIs} ->
 	    {ok, {{N1,N2,N3,N4}, Port}} = inet:peername(Socket),
 	    Address = lists:concat([N1, ".", N2, ".", N3, ".", N4]),
-	    ?PRINTDEBUG2("orber_iiop_inproxy init PIs: ~p ~p ~p", [PIs, Address, Port]),
-	    {ok, {Socket, Type, ets:new(orber_incoming_requests, [set]),
-		  {native, orber_pi:new_in_connection(PIs, Address, Port), PIs}}};
+	    {ok, #state{stype = Type, 
+			socket = Socket, 
+			db =  ets:new(orber_incoming_requests, [set]), 
+			interceptors = {native, 
+					orber_pi:new_in_connection(PIs, 
+								   Address, 
+								   Port), 
+					PIs},
+			ssl_port = SSLPort}};
 	{Type, PIs} ->
-	    ?PRINTDEBUG2("orber_iiop_inproxy init PIs: ~p ", [PIs]),
-	    {ok, {Socket, Type, ets:new(orber_incoming_requests, [set]), {Type, PIs}}}
+	    {ok, #state{stype = Type, 
+			socket = Socket, 
+			db =  ets:new(orber_incoming_requests, [set]), 
+			interceptors = {Type, PIs},
+			ssl_port = SSLPort}}
     end.
 
 %%-----------------------------------------------------------------
@@ -102,16 +117,9 @@ init({connect, Type, Socket}) ->
 %% We may want to kill all proxies before terminating, but the best
 %% option should be to let the requests complete (especially for one-way
 %% functions it's a better alternative.
-%% kill_all_proxies(IncRequests, ets:first(IncRequests)),
-terminate(Reason, {Socket, Type, IncRequests, Interceptors}) ->
+terminate(Reason, #state{db = IncRequests,
+			 interceptors = Interceptors}) ->
     ets:delete(IncRequests),
-    if
-	Reason == normal ->
-	    ok;
-	true ->
-	    orber:debug_level_print("[~p] orber_iiop_inproxy:terminate(~p)", 
-				    [?LINE, Reason], ?DEBUG_LEVEL)
-    end,
     case Interceptors of 
 	false ->
 	    ok;
@@ -120,12 +128,6 @@ terminate(Reason, {Socket, Type, IncRequests, Interceptors}) ->
 	{Type, PIs} ->
 	    ok
     end.
-
-kill_all_proxies(_, '$end_of_table') ->
-    ok;
-kill_all_proxies(IncRequests, Key) ->
-    exit(Key, kill),
-    kill_all_proxies(IncRequests, ets:next(IncRequests, Key)).
 
 %%-----------------------------------------------------------------
 %% Func: handle_call/3
@@ -146,50 +148,109 @@ handle_cast(_, State) ->
 %%-----------------------------------------------------------------
 %% Func: handle_info/2
 %%-----------------------------------------------------------------
+%% Normal invocation
+handle_info({tcp, Socket, Bytes}, State) ->
+    handle_msg(normal, Socket, Bytes, State);
+handle_info({ssl, Socket, Bytes}, State) ->
+    handle_msg(ssl, Socket, Bytes, State);
+%% Errors, closed connection
 handle_info({tcp_closed, Socket}, State) ->
     {stop, normal, State};
 handle_info({tcp_error, Socket}, State) ->
     {stop, normal, State};
-handle_info({tcp, Socket, Bytes}, {Socket, normal, IncRequests, Interceptors}) ->
-    Pid = orber_iiop_inrequest:start(Bytes, normal, Socket, Interceptors),
-    ets:insert(IncRequests, {Pid, undefined}),
-    {noreply, {Socket, normal, IncRequests, Interceptors}};
 handle_info({ssl_closed, Socket}, State) ->
     {stop, normal, State};
 handle_info({ssl_error, Socket}, State) ->
     {stop, normal, State};
-handle_info({ssl, Socket, Bytes}, {Socket, ssl, IncRequests, Interceptors}) ->
-    Pid = orber_iiop_inrequest:start(Bytes, ssl, Socket, Interceptors),
-    ets:insert(IncRequests, {Pid, undefined}),
-    {noreply, {Socket, ssl, IncRequests, Interceptors}};
-handle_info({'EXIT', Pid, normal}, {Socket, Type, IncRequests, Interceptors}) ->
-    ets:delete(IncRequests, Pid),
-    {noreply, {Socket, Type, IncRequests, Interceptors}};
-handle_info({'EXIT', Pid, Reason}, {Socket, Type, IncRequests, Interceptors}) ->
-    ?PRINTDEBUG2("proxy ~p finished with reason ~p", [Pid, Reason]),
-    ets:delete(IncRequests, Pid),
-    {noreply, {Socket, Type, IncRequests, Interceptors}};
+%% Servant termination.
+handle_info({'EXIT', Pid, normal}, State) ->
+    ets:delete(State#state.db, Pid),
+    {noreply, State};
+handle_info({message_error, Pid, ReqId}, State) ->
+    ets:delete(State#state.db, ReqId),
+    {noreply, State};
 handle_info(X,State) ->
     {noreply, State}.
 
 
+handle_msg(Type, Socket, Bytes, #state{stype = Type, 
+				       socket = Socket,
+				       interceptors = Interceptors,
+				       ssl_port = SSLPort} = State) ->
+    case catch cdr_decode:dec_giop_message_header(Bytes) of
+	%% Only when using IIOP-1.2 may the client send this message. 
+	%% Introduced in CORBA-2.6
+	#giop_message{message_type = ?GIOP_MSG_CLOSE_CONNECTION, 
+		      giop_version = {1,2}} ->
+	    {stop, normal, State};
+	#giop_message{message_type = ?GIOP_MSG_CANCEL_REQUEST} = GIOPHdr ->
+	    ReqId = cdr_decode:peak_request_id(GIOPHdr#giop_message.byte_order,
+					       GIOPHdr#giop_message.message),
+	    case ets:lookup(State#state.db, ReqId) of
+		[{RId, PPid}] ->
+		    ets:delete(State#state.db, RId),
+		    PPid ! {self(), cancel_request_header};
+		[] ->
+		    send_msg_error(Type, Socket, Bytes, "No such fragment id")
+	    end,
+	    {noreply, State};
+	#giop_message{message_type = ?GIOP_MSG_CLOSE_CONNECTION} ->
+	    {noreply, State};
+	%% A fragment; we must hav received a Request or LocateRequest
+	%% with fragment-flag set to true.
+	%% We need to decode the header to get the request-id.
+	#giop_message{message_type = ?GIOP_MSG_FRAGMENT,
+		      giop_version = {1,2}} = GIOPHdr ->
+	    ReqId = cdr_decode:peak_request_id(GIOPHdr#giop_message.byte_order,
+					       GIOPHdr#giop_message.message),
+	    case ets:lookup(State#state.db, ReqId) of
+		[{RId, PPid}] when GIOPHdr#giop_message.fragments == true ->
+		    PPid ! {self(), GIOPHdr};
+		[{RId, PPid}] ->
+		    ets:delete(State#state.db, RId),
+		    PPid ! {self(), GIOPHdr};
+		[] ->
+		    send_msg_error(Type, Socket, Bytes, "No such fragment id")
+	    end,
+	    {noreply, State};
+	%% Must be a Request or LocateRequest which have been fragmented.
+	%% We need to decode the header to get the request-id.
+	#giop_message{fragments = true,
+		      giop_version = {1,2}} = GIOPHdr ->
+	    ReqId = cdr_decode:peak_request_id(GIOPHdr#giop_message.byte_order,
+					       GIOPHdr#giop_message.message),
+	    Pid = orber_iiop_inrequest:start_fragment_collector(GIOPHdr, Bytes, 
+								Type, Socket, 
+								Interceptors, 
+								ReqId, self(),
+								SSLPort),
+	    ets:insert(State#state.db, {Pid, ReqId}),
+	    ets:insert(State#state.db, {ReqId, Pid}),
+	    {noreply, State};
+	GIOPHdr when record(GIOPHdr, giop_message) ->
+	    Pid = orber_iiop_inrequest:start(GIOPHdr, Bytes, Type, Socket,
+					     Interceptors, SSLPort),
+	    ets:insert(State#state.db, {Pid, undefined}),
+	    {noreply, State};
+	message_error ->
+	    send_msg_error(Type, Socket, Bytes, "Unable to decode the GIOP-header"),
+	    {noreply, State}
+    end;
+handle_msg(Type, _, Bytes, State) ->
+    orber:dbg("[~p] orber_iiop_inproxy:handle_msg(~p); 
+Received a message from a socket of a different type.
+Should be ~p but was ~p.", [?LINE, Bytes, State#state.stype, Type], ?DEBUG_LEVEL),
+    {noreply, State}.
+
+send_msg_error(Type, Socket, Data, Msg) ->
+    orber:dbg("[~p] orber_iiop_inproxy:handle_msg(~p); 
+~p.", [?LINE, Data, Msg], ?DEBUG_LEVEL),
+    Reply = cdr_encode:enc_message_error(orber:giop_version()),
+    orber_socket:write(Type, Socket, Reply).
+
 %%-----------------------------------------------------------------
 %% Func: code_change/3
 %%-----------------------------------------------------------------
-code_change({down, OldVsn}, {Socket, Type, IncRequests, Interceptors},interceptors) ->
-    {ok, {Socket, Type, IncRequests}};
-code_change(OldVsn, {Socket, Type, IncRequests}, interceptors) ->
-    case orber:get_interceptors() of
-	false ->
-	    {ok, {Socket, Type, IncRequests, false}};
-	{native, PIs} ->
-	    {ok, {{N1,N2,N3,N4}, Port}} = inet:peername(Socket),
-	    Address = lists:concat([N1, ".", N2, ".", N3, ".", N4]),
-	    {ok, {Socket, Type, IncRequests, 
-		  {native, orber_pi:new_in_connection(PIs, Address, Port), PIs}}};
-	{Type, PIs} ->
-	    {ok, {Socket, Type, IncRequests, {Type, PIs}}}
-    end;
 code_change(OldVsn, State, Extra) ->
     {ok, State}.
 

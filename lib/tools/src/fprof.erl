@@ -115,7 +115,7 @@ apply(A, B, C, D) ->
 
 
 apply_1(Function, Args, Options) ->        
-    {[Start, Procs, Continue], Options_1} =
+    {[_, Procs, Continue], Options_1} =
 	getopts(Options, [start, procs, continue]),
     Procs_1 = case Procs of
 		  [{procs, P}] when list(P) ->
@@ -711,19 +711,24 @@ stop(Reason) ->
 call(Request) ->
     case whereis(?FPROF_SERVER) of
 	undefined ->
-	    start();
-	_Server ->
-	    ok
-    end,
-    just_call(Request).
+	    start(),
+	    just_call(Request);
+	Server ->
+	    just_call(Server, Request)
+    end.
 
 %% Send request to server process, and return the server's reply.
 %% Returns {'EXIT', Pid, Reason} if the server dies during the
 %% call, or if it wasn't started.
-just_call(Request) ->		      
-    Mref = erlang:monitor(process, ?FPROF_SERVER),
+just_call(Request) ->
+    just_call(whereis(?FPROF_SERVER), Request).
+
+just_call(undefined, _) ->
+    {'EXIT', ?FPROF_SERVER, noproc};
+just_call(Pid, Request) ->
+    Mref = erlang:monitor(process, Pid),
     receive
-	{'DOWN', Mref, _, Pid, Reason} ->
+	{'DOWN', Mref, _, _, Reason} ->
 	    {'EXIT', Pid, Reason}
     after 0 ->
 	    Tag = {Mref, self()},
@@ -734,13 +739,13 @@ just_call(Request) ->
 			0
 		end,
 	    %% io:format("~p request: ~p~n", [?MODULE, Request]),
-	    catch ?FPROF_SERVER ! {?FPROF_SERVER, Tag, Request},
+	    catch Pid ! {?FPROF_SERVER, Tag, Request},
 	    receive
 		{?FPROF_SERVER, Mref, Reply} ->
 		    erlang:demonitor(Mref),
 		    receive {'DOWN', Mref, _, _, _} -> ok after T -> ok end,
 		    Reply;
-		{'DOWN', Mref, _, Pid, Reason} ->
+		{'DOWN', Mref, _, _, Reason} ->
 		    receive {?FPROF_SERVER, Mref, _} -> ok after T -> ok end,
 		    {'EXIT', Pid, Reason}
 	    after ?FPROF_SERVER_TIMEOUT ->
@@ -813,7 +818,7 @@ try_pending_stop(State) ->
 handle_req(#trace_start{procs = Procs,
 			mode = Mode,
 			type = file,
-			dest = Filename} = Request, Tag, State) ->
+			dest = Filename}, Tag, State) ->
     case {get(trace_state), get(pending_stop)} of
 	{idle, []} ->
 	    trace_off(),
@@ -836,7 +841,7 @@ handle_req(#trace_start{procs = Procs,
 handle_req(#trace_start{procs = Procs,
 			mode = Mode,
 			type = tracer,
-			dest = Tracer} = Request, Tag, State) ->
+			dest = Tracer}, Tag, State) ->
     case {get(trace_state), get(pending_stop)} of
 	{idle, []} ->
 	    trace_off(),
@@ -856,7 +861,7 @@ handle_req(#trace_start{procs = Procs,
 	    State
     end;
 
-handle_req(#trace_stop{} = Request, Tag, State) ->
+handle_req(#trace_stop{}, Tag, State) ->
     case get(trace_state) of
 	running ->
 	    TracePid = get(trace_pid),
@@ -889,7 +894,7 @@ handle_req(#trace_stop{} = Request, Tag, State) ->
 handle_req(#profile{src = Filename,
 		    group_leader = GroupLeader,
 		    dump = Dump,
-		    flags = Flags} = Request, Tag, State) ->
+		    flags = Flags}, Tag, State) ->
     case {get(profile_state), get(pending_stop)} of
 	{{idle, _}, []} ->
 	    case ensure_open(Dump, [write | Flags]) of
@@ -920,7 +925,7 @@ handle_req(#profile{src = Filename,
 	    
 handle_req(#profile_start{group_leader = GroupLeader,
 			  dump = Dump,
-			  flags = Flags} = Request, Tag, State) ->
+			  flags = Flags}, Tag, State) ->
     case {get(profile_state), get(pending_stop)} of
 	{{idle, _}, []} ->
 	    case ensure_open(Dump, [write | Flags]) of
@@ -948,12 +953,13 @@ handle_req(#profile_start{group_leader = GroupLeader,
 	    State
     end;
 
-handle_req(#profile_stop{} = Request, Tag, State) ->
+handle_req(#profile_stop{}, Tag, State) ->
     case {get(profile_state), get(profile_type)} of
 	{running, tracer} ->
 	    ProfilePid = get(profile_pid),
 	    case {get(trace_state), get(trace_type), get(trace_pid)} of
 		{running, tracer, ProfilePid} ->
+		    trace_off(),
 		    erase(trace_type),
 		    erase(trace_pid),
 		    put(trace_state, idle);
@@ -970,12 +976,9 @@ handle_req(#profile_stop{} = Request, Tag, State) ->
 	    reply(Tag, {error, not_profiling}),
 	    State
     end;
-	    
-handle_req(#analyse{group_leader = GroupLeader,
-		    dest = Dest,
-		    flags = Flags,
-		    cols = Cols,
-		    callers = Callers} = Request, Tag, State) ->
+
+handle_req(#analyse{dest = Dest,
+		    flags = Flags} = Request, Tag, State) ->
     case get(profile_state) of
 	{idle, ok} ->
 	    case ensure_open(Dest, [write | Flags]) of
@@ -985,20 +988,17 @@ handle_req(#analyse{group_leader = GroupLeader,
 		{DestState, DestPid} ->
 		    ProfileTable = get(profile_table),
 		    case catch spawn_3step(
-			   fun(Server) ->
-				   Result = 
-				       do_analyse(ProfileTable, 
-						  Request#analyse{
-						    dest = DestPid}),
-				   Result
+			   fun(_Server) ->
+				   do_analyse(ProfileTable, 
+					      Request#analyse{dest = DestPid})
 			   end,
-			   fun(Worker, Result) ->
+			   fun(_Worker, _Result) ->
 				   finish
 			   end,
-			   fun(Server, finish) ->
+			   fun(_Server, finish) ->
 				   ok
 			   end) of
-			{ok, Worker, Result, finish} ->
+			{ok, _Worker, Result, finish} ->
 			    reply(Tag, Result),
 			    State;
 			{'EXIT', Reason} ->
@@ -1020,7 +1020,7 @@ handle_req(#analyse{group_leader = GroupLeader,
 	    State
     end;
 
-handle_req(#stop{reason = Reason} = Request, Tag, State) ->
+handle_req(#stop{reason = Reason}, Tag, State) ->
     PendingStop = get(pending_stop),
     case PendingStop of
 	[] ->
@@ -1268,7 +1268,7 @@ spawn_3step(Spawn, FunPrelude, FunAck, FunBody)
 		    end
 	    end;
 	{'DOWN', MRef, _, _, Reason} ->
-	    receive {Chile, Ref, _Ack} -> ok after 0 -> ok end,
+	    receive {Child, Ref, _Ack} -> ok after 0 -> ok end,
 	    case Spawn of 
 		spawn_link ->
 		    receive {'EXIT', Reason} -> ok after 0 -> ok end;
@@ -1291,8 +1291,8 @@ trace_off() ->
 	_ ->
 	    ok
     end,
-    erlang:trace_pattern(on_load, false, []),
-    erlang:trace_pattern({'_', '_', '_'}, false, []),
+    erlang:trace_pattern(on_load, false, [local]),
+    erlang:trace_pattern({'_', '_', '_'}, false, [local]),
     ok.
 
 
@@ -1441,7 +1441,7 @@ end_of_trace(Table, TS) ->
 
 
 
-info_dots(GroupLeader, GroupLeader, N) ->
+info_dots(GroupLeader, GroupLeader, _) ->
     ok;
 info_dots(GroupLeader, _, N) ->
     if (N rem 100000) == 0 ->
@@ -1456,13 +1456,13 @@ info_dots(GroupLeader, _, N) ->
 
 info(GroupLeader, GroupLeader, _, _) ->
     ok;
-info(GroupLeader, Dump, Format, List) ->
+info(GroupLeader, _, Format, List) ->
     io:format(GroupLeader, Format, List).
 
 dump_stack(undefined, _, Term) ->
     Term;
 dump_stack(Dump, Stack, Term) ->
-    {Depth, D} = 
+    {Depth, _D} = 
 	case Stack of
 	    undefined ->
 		{0, 0};
@@ -1474,7 +1474,6 @@ dump_stack(Dump, Stack, Term) ->
 			{N, length(hd(Stack))}
 		end
 	end,
-%    io:format(Dump, "{~w,~w, ~p}.~n", [Depth, D, Term]),
      io:format(Dump, "~s~p.~n", [lists:duplicate(Depth, "  "), parsify(Term)]),
     Term.
 
@@ -1492,19 +1491,19 @@ dump(Dump, Term) ->
 
 
 
-trace_handler({trace_ts, Pid, call, MFA, TS} = Trace, Table, Dump) ->
+trace_handler({trace_ts, Pid, call, _MFA, _TS} = Trace, _Table, Dump) ->
     Stack = get(Pid),
     dump_stack(Dump, Stack, Trace),
     exit({incorrect_trace_data, ?MODULE, ?LINE,
 	  [Trace, Stack]});
-trace_handler({trace_ts, Pid, call, {M, F, Arity} = Func, 
+trace_handler({trace_ts, Pid, call, {_M, _F, Arity} = Func, 
 	       {cp, CP}, TS} = Trace,
 	      Table, Dump)
   when integer(Arity) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_call(Table, Pid, Func, TS, CP),
     TS;
-trace_handler({trace_ts, Pid, call, {M, F, Args} = MFArgs, 
+trace_handler({trace_ts, Pid, call, {_M, _F, Args} = MFArgs, 
 	       {cp, CP}, TS} = Trace,
 	      Table, Dump)
   when list(Args) ->
@@ -1519,13 +1518,13 @@ trace_handler({trace_ts, Pid, return_to, undefined, TS} = Trace,
     dump_stack(Dump, get(Pid), Trace),
     trace_return_to(Table, Pid, undefined, TS),
     TS;
-trace_handler({trace_ts, Pid, return_to, {M, F, Arity} = Func, TS} = Trace,
+trace_handler({trace_ts, Pid, return_to, {_M, _F, Arity} = Func, TS} = Trace,
 	      Table, Dump)
   when integer(Arity) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_return_to(Table, Pid, Func, TS),
     TS;
-trace_handler({trace_ts, Pid, return_to, {M, F, Args} = MFArgs, TS} = Trace,
+trace_handler({trace_ts, Pid, return_to, {_M, _F, Args} = MFArgs, TS} = Trace,
 	      Table, Dump)
   when list(Args) ->
     dump_stack(Dump, get(Pid), Trace),
@@ -1558,13 +1557,13 @@ trace_handler({trace_ts, Pid, out, 0, TS} = Trace,
     dump_stack(Dump, get(Pid), Trace),
     trace_out(Table, Pid, undefined, TS),
     TS;
-trace_handler({trace_ts, Pid, out, {M, F, Arity} = Func, TS} = Trace,
+trace_handler({trace_ts, Pid, out, {_M, _F, Arity} = Func, TS} = Trace,
 	      Table, Dump)
   when integer(Arity) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_out(Table, Pid, Func, TS),
     TS;
-trace_handler({trace_ts, Pid, out, {M, F, Args} = MFArgs, TS} = Trace,
+trace_handler({trace_ts, Pid, out, {_M, _F, Args} = MFArgs, TS} = Trace,
 	      Table, Dump)
   when list(Args) ->
     dump_stack(Dump, get(Pid), Trace),
@@ -1578,13 +1577,13 @@ trace_handler({trace_ts, Pid, in, 0, TS} = Trace,
     dump_stack(Dump, get(Pid), Trace),
     trace_in(Table, Pid, undefined, TS),
     TS;
-trace_handler({trace_ts, Pid, in, {M, F, Arity} = Func, TS} = Trace,
+trace_handler({trace_ts, Pid, in, {_M, _F, Arity} = Func, TS} = Trace,
 	      Table, Dump)
   when integer(Arity) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_in(Table, Pid, Func, TS),
     TS;
-trace_handler({trace_ts, Pid, in, {M, F, Args} = MFArgs, TS} = Trace,
+trace_handler({trace_ts, Pid, in, {_M, _F, Args} = MFArgs, TS} = Trace,
 	      Table, Dump)
   when list(Args) ->
     dump_stack(Dump, get(Pid), Trace),
@@ -1593,69 +1592,69 @@ trace_handler({trace_ts, Pid, in, {M, F, Args} = MFArgs, TS} = Trace,
     TS;
 %%
 %% gc_start
-trace_handler({trace_ts, Pid, gc_start, _Info = Func, TS} = Trace,
+trace_handler({trace_ts, Pid, gc_start, _Func, TS} = Trace,
 	      Table, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_gc_start(Table, Pid, TS),
     TS;
 %%
 %% gc_end
-trace_handler({trace_ts, Pid, gc_end, _Info = Func, TS} = Trace,
+trace_handler({trace_ts, Pid, gc_end, _Func, TS} = Trace,
 	      Table, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_gc_end(Table, Pid, TS),
     TS;
 %%
 %% link
-trace_handler({trace_ts, Pid, link, OtherPid, TS} = Trace,
-	      Table, Dump) ->
+trace_handler({trace_ts, Pid, link, _OtherPid, TS} = Trace,
+	      _Table, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% unlink
-trace_handler({trace_ts, Pid, unlink, OtherPid, TS} = Trace,
-	      Table, Dump) ->
+trace_handler({trace_ts, Pid, unlink, _OtherPid, TS} = Trace,
+	      _Table, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% getting_linked
-trace_handler({trace_ts, Pid, getting_linked, OtherPid, TS} = Trace,
-	      Table, Dump) ->
+trace_handler({trace_ts, Pid, getting_linked, _OtherPid, TS} = Trace,
+	      _Table, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% getting_unlinked
-trace_handler({trace_ts, Pid, getting_unlinked, OtherPid, TS} = Trace,
-	      Table, Dump) ->
+trace_handler({trace_ts, Pid, getting_unlinked, _OtherPid, TS} = Trace,
+	      _Table, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% register
 trace_handler({trace_ts, Pid, register, _Name, TS} = Trace,
-	      Table, Dump) ->
+	      _Table, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% unregister
 trace_handler({trace_ts, Pid, unregister, _Name, TS} = Trace,
-	      Table, Dump) ->
+	      _Table, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% send
 trace_handler({trace_ts, Pid, send, _OtherPid, _Msg, TS} = Trace,
-	      Table, Dump) ->
+	      _Table, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% 'receive'
 trace_handler({trace_ts, Pid, 'receive', _Msg, TS} = Trace,
-	      Table, Dump) ->
+	      _Table, Dump) ->
     dump_stack(Dump, get(Pid), Trace),
     TS;
 %%
 %% Others
-trace_handler(Trace, Table, Dump) ->
+trace_handler(Trace, _Table, Dump) ->
     dump(Dump, Trace),
     exit({incorrect_trace_data, ?MODULE, ?LINE, [Trace]}).
 
@@ -1748,8 +1747,8 @@ trace_call(Table, Pid, Func, TS, CP) ->
 	    put(Pid, trace_call_shove(Table, Pid, Func, TS, Stack));
 	[[{Func0, _} | _], [{Func0, _} | _], [{CP, _} | _] | _] ->
 	    %% Artificial case that only should happen when 
-	    %% stack recursive short cykle collapsing has been done,
-	    %% otherwise CP should not occur so far from the stack top.
+	    %% stack recursive short cycle collapsing has been done,
+	    %% otherwise CP should not occur so far from the stack front.
 	    %%
 	    %% It is a tail recursive call but fix the stack first.
 	    init_log(Table, Pid, Func),
@@ -1768,11 +1767,29 @@ trace_call(Table, Pid, Func, TS, CP) ->
 			[Level0, [{CP, TS0}]]
 		end,
 	    put(Pid, trace_call_shove(Table, Pid, Func, TS, OldStack));
-	_ when CP == undefined ->
-	    %% Assume tail recursive call.
+	[_ | _] ->
+	    %% Weird case when the stack is seriously f***ed up.
+	    %% CP is not at stack top nor at previous stack top, 
+	    %% which is impossible, if we had a correct stack view.
+	    OldStack = 
+		if CP == undefined ->
+			%% Assume that CP is unknown because it is
+			%% the stack bottom for the process, and that 
+			%% the whole call stack is invalid. Waste it.
+			trace_return_to_int(Table, Pid, CP, TS, Stack);
+		   true ->
+			%% Assume that we have collapsed a tail recursive
+			%% call stack cykle too many. Introduce CP in
+			%% the current tail recursive level so it at least
+			%% gets charged for something.
+			init_log(Table, Pid, CP),
+			trace_call_shove(Table, Pid, CP, TS, Stack)
+		end,
+	    %% Regard this call as a stack push.
 	    init_log(Table, Pid, Func),
-	    put(Pid, trace_call_shove(Table, Pid, Func, TS, Stack));
+	    put(Pid, trace_call_push(Table, Pid, Func, TS, OldStack));
 	_ ->
+	    %% Should not happen since all cases are covered above. (?)
 	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
 		  [Pid, Func, TS, CP, Stack]})
     end,
@@ -1804,7 +1821,7 @@ trace_call_shove(Table, Pid, Func, TS, Stack) ->
     trace_clock(Table, Pid, 1, NewStack, #clocks.cnt),
     NewStack.
 
-%% Collapse tail recursive call stack cycles to prevent it from
+%% Collapse tail recursive call stack cycles to prevent them from
 %% growing to infinite length.
 trace_call_collapse([]) ->
     [];
@@ -1812,7 +1829,7 @@ trace_call_collapse([_] = Stack) ->
     Stack;
 trace_call_collapse([_, _] = Stack) ->
     Stack;
-trace_call_collapse([{Func0, _} | Stack1] = Stack) ->
+trace_call_collapse([_ | Stack1] = Stack) ->
     trace_call_collapse_1(Stack, Stack1, 1).
 
 %% Find some other instance of the current function in the call stack
@@ -1838,13 +1855,13 @@ trace_call_collapse_2([{Func1, _} | [{Func2, _} | _] = Stack2],
 	   [{Func1, _} | [{Func2, _} | _] = S2],
 	   N) ->
     trace_call_collapse_2(Stack2, S2, N-1);
-trace_call_collapse_2([{Func1, _} | _], [{Func1, _} | _], N) ->
+trace_call_collapse_2([{Func1, _} | _], [{Func1, _} | _], _N) ->
     false;
-trace_call_collapse_2(Stack, [_], N) ->
+trace_call_collapse_2(_Stack, [_], _N) ->
     false;
 trace_call_collapse_2(Stack, [_ | S], N) ->
     trace_call_collapse_2(Stack, S, N);
-trace_call_collapse_2(Stack, [], N) ->
+trace_call_collapse_2(_Stack, [], _N) ->
     false.
 
 
@@ -1854,16 +1871,15 @@ trace_return_to(Table, Pid, Func, TS) ->
     ?dbg(0, "trace_return_to(~p, ~p, ~p)~n~p~n", 
 	 [Pid, Func, TS, Stack]),
     case Stack of
-	[] ->
-	    NewStack = [[{Func, TS}]],
-	    put(Pid, NewStack);
 	[[{suspend, _} | _] | _] ->
 	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
 		  [Pid, Func, TS, Stack]});
 	[[{garbage_collect, _} | _] | _] ->
 	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
 		  [Pid, Func, TS, Stack]});
-	[_ | _] = Stack ->
+	[_ | _] ->
+	    put(Pid, trace_return_to_int(Table, Pid, Func, TS, Stack));
+	[] ->
 	    put(Pid, trace_return_to_int(Table, Pid, Func, TS, Stack));
 	_ ->
 	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
@@ -1872,68 +1888,74 @@ trace_return_to(Table, Pid, Func, TS) ->
     ok.
 
 trace_return_to_int(Table, Pid, Func, TS, Stack) ->
-    trace_clock(Table, Pid, TS, Stack, #clocks.own),
-    {NewStack, _} = trace_return_to_2(Table, Pid, Func, TS, Stack),
-    NewStack.
+    case trace_return_to_2(Table, Pid, Func, TS, Stack) of
+	{undefined, _} ->
+	    [[{Func, TS}] | Stack];
+	{[[{Func, _} | Level0] | Stack1] = NewStack, _} ->
+	    trace_clock(Table, Pid, TS, NewStack, #clocks.own),
+	    [[{Func, TS} | Level0] | Stack1];
+	{NewStack, _} ->
+	    trace_clock(Table, Pid, TS, NewStack, #clocks.own),
+	    NewStack
+    end.
 
 %% A list of charged functions is passed around to assure that 
 %% any function is charged with ACC time only once - the first time
-%% it is encountered.
+%% it is encountered. The function trace_return_to_1 is called only
+%% for the front of a tail recursive level, and if the front 
+%% does not match the returned-to function, trace_return_to_2
+%% is called for all functions within the tail recursive level.
+%%
+%% Charging is done in reverse order, i.e from stack rear to front.
 
 %% Search the call stack until the returned-to function is found at
-%% a tail recursive level's front, and charge all functions within
-%% the passed level with ACC time. The charging is done from rear to
-%% front.
+%% a tail recursive level's front, and charge it with ACC time.
 trace_return_to_1(_, _, undefined, _, []) ->
     {[], []};
-trace_return_to_1(_, _, Func, TS, []) ->
-    {[[{Func, TS}]], []};
+trace_return_to_1(_, _, _, _, []) ->
+    {undefined, []};
 trace_return_to_1(Table, Pid, Func, TS, 
 		  [[{Func, _} | Level0] | Stack1] = Stack) ->
-    NewStack = [[{Func, TS} | Level0] | Stack1],
-    Charged = 
-	case Level0 of
-	    [] ->
-		trace_return_to_3(Stack1, []);
-	    _ ->
-		trace_return_to_3([Level0 | Stack1], [])
-	end,
+    %% Match at front of tail recursive level
+    Charged = trace_return_to_3([Level0 | Stack1], []),
     case lists:member(Func, Charged) of
 	false ->
 	    trace_clock(Table, Pid, TS, Stack, #clocks.acc),
-	    {NewStack, [Func | Charged]};
+	    {Stack, [Func | Charged]};
 	true ->
-	    {NewStack, Charged}
+	    {Stack, Charged}
     end;
 trace_return_to_1(Table, Pid, Func, TS, Stack) ->
     trace_return_to_2(Table, Pid, Func, TS, Stack).
 
 %% Charge all functions within one tail recursive level, 
 %% from rear to front, with ACC time.
+trace_return_to_2(Table, Pid, Func, TS, [] = Stack) ->
+    trace_return_to_1(Table, Pid, Func, TS, Stack);
+trace_return_to_2(Table, Pid, Func, TS, [[] | Stack1]) ->
+    trace_return_to_1(Table, Pid, Func, TS, Stack1);
 trace_return_to_2(Table, Pid, Func, TS,
 		  [[{Func0, _} | Level1] | Stack1] = Stack) ->
-    {NewStack, Charged} = 
-	case Level1 of
-	    [] ->
-		trace_return_to_1(Table, Pid, Func, TS, Stack1);
-	    _ ->
-		trace_return_to_2(Table, Pid, Func, TS, [Level1 | Stack1])
-	end,
-    case lists:member(Func0, Charged) of
-	false ->
-	    trace_clock(Table, Pid, TS, Stack, #clocks.acc),
-	    {NewStack, [Func0 | Charged]};
-	true ->
-	    {NewStack, Charged}
+    case trace_return_to_2(Table, Pid, Func, TS, [Level1 | Stack1]) of
+	{undefined, _} = R ->
+	    R;
+	{NewStack, Charged} = R ->
+	    case lists:member(Func0, Charged) of
+		false ->
+		    trace_clock(Table, Pid, TS, Stack, #clocks.acc),
+		    {NewStack, [Func0 | Charged]};
+		true ->
+		    R
+	    end
     end.
 
 %% Return a flat list of all function names in the given stack
 trace_return_to_3([], R) ->
     R;
-trace_return_to_3([[{Func, _}] | S], R) ->
-    trace_return_to_3(S, [Func | R]);
-trace_return_to_3([[{Func, _} | L] | S], R) ->
-    trace_return_to_3([L | S], [Func | R]).
+trace_return_to_3([[] | Stack1], R) ->
+    trace_return_to_3(Stack1, R);
+trace_return_to_3([[{Func0, _} | Level0] | Stack1], R) ->
+    trace_return_to_3([Level0 | Stack1], [Func0 | R]).
 
 
 
@@ -2233,7 +2255,7 @@ do_analyse(Table,
 	      ets:insert(ProcTable, Misc)
       end),
     ?dbg(3, "get() -> ~p~n", [get()]),
-    {FirstTS, LastTS, TraceCnt} = 
+    {FirstTS, LastTS, _TraceCnt} = 
 	case {ets:lookup(ProcTable, first_ts), 
 	      ets:lookup(ProcTable, last_ts_n)} of
 	    {[#misc{data = FTS}], [#misc{data = {LTS, TC}}]} 

@@ -20,6 +20,10 @@
 #  include "config.h"
 #endif
 
+#ifdef _OSE_
+#  include "ose.h"
+#endif
+
 #include "sys.h"
 #include "erl_vm.h"
 #include "erl_sys_driver.h"
@@ -79,12 +83,10 @@ BIF_ADECL_1
    tmpp = (char*) tmp_buf;
 
    if (is_port(obj)) {
-      int i, ix, node;
-
-      node = port_node(obj);
-      ix = port_number(obj);
-      i = port_creation(obj);
-      sprintf(tmpp, "#Port<%d.%d>", node, ix);
+      sprintf(tmpp,
+	      "#Port<%lu.%lu>",
+	      port_channel_no(obj),
+	      port_number(obj));
    } else
       BIF_ERROR(BIF_P, BADARG);
 
@@ -119,9 +121,9 @@ id2port(Eterm id)
 {
     int ix;
 
-    if (is_not_port(id) || (port_node(id) != THIS_NODE))
+    if (is_not_internal_port(id))
 	return NULL;
-    ix = port_index(id);
+    ix = internal_port_index(id);
     if ((erts_port[ix].status == FREE) || (erts_port[ix].status & CLOSING))
 	return NULL;
     return &erts_port[ix];
@@ -158,7 +160,7 @@ BIF_ADECL_2
 	BIF_ERROR(BIF_P, RESCHEDULE);
     }
 
-    if (write_port(BIF_P->id, port_index(p->id), BIF_ARG_2) != 0) {
+    if (write_port(BIF_P->id, internal_port_index(p->id), BIF_ARG_2) != 0) {
 	goto error;
     }
 
@@ -177,7 +179,7 @@ static int erts_port_call_need_init = 1;
 static byte *ensure_buff(Uint size)
 {
     if (erts_port_call_need_init) {
-	erts_port_call_buff = safe_alloc((size_t) size);
+	erts_port_call_buff = safe_alloc_from(380, (size_t) size);
 	erts_port_call_buff_size = size;
 	erts_port_call_need_init = 0;
     } else if (erts_port_call_buff_size < size) {
@@ -230,7 +232,7 @@ BIF_ADECL_3
     bytes = ensure_buff(size);
     
     endp = bytes;
-    if (to_external(-1, BIF_ARG_3, &endp) || endp == NULL) {
+    if (erts_to_external_format(NULL, BIF_ARG_3, &endp) || endp == NULL) {
 	erl_exit(1, "%s, line %d: bad term: %x\n",
 		 __FILE__, __LINE__, BIF_ARG_3);
     }
@@ -247,6 +249,23 @@ BIF_ADECL_3
 		    (char **) &port_resp, 
 		    (int) sizeof(port_result),
 		    &ret_flags);
+#ifdef HARDDEBUG
+    { 
+	int z;
+	printf("real_size = %ld,%d, ret = %d\r\n",real_size, 
+	       (int) real_size, ret);
+	printf("[");
+	for(z = 0; z < real_size; ++z) {
+	    printf("%d, ",(int) bytes[z]);
+	}
+	printf("]\r\n");
+	printf("[");
+	for(z = 0; z < ret; ++z) {
+	    printf("%d, ",(int) port_resp[z]);
+	}
+	printf("]\r\n");
+    }
+#endif
     if (ret <= 0 || port_resp[0] != VERSION_MAGIC) { 
 	/* Error or a binary without magic/ with wrong magic */
 	goto error;
@@ -257,7 +276,7 @@ BIF_ADECL_3
     }
     hp = HAlloc(BIF_P, result_size);
     endp = port_resp;
-    if ((res = from_external(-1, &hp, &endp, &(BIF_P->off_heap))) 
+    if ((res = erts_from_external_format(NULL, &hp, &endp, &MSO(BIF_P)))
 	== THE_NON_VALUE) {
 	goto error;
     }
@@ -311,14 +330,12 @@ BIF_ADECL_2
     Eterm pid = BIF_ARG_2;
     int ix;
 
-    if (is_not_pid(pid) || (prt = id_or_name2port(BIF_ARG_1)) == NULL) {
+    if (is_not_internal_pid(pid)
+	|| (prt = id_or_name2port(BIF_ARG_1)) == NULL) {
     error:
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if (pid_node(pid) != THIS_NODE) {
-	goto error;
-    }
-    if ((ix = pid_number(pid)) >= max_process) {
+    if ((ix = internal_pid_index(pid)) >= erts_max_processes) {
 	goto error;
     }
     rp = process_tab[ix];
@@ -330,7 +347,8 @@ BIF_ADECL_2
 	rp->links = new_link(rp->links, LNK_LINK, prt->id, NIL);
 	prt->links = new_link(prt->links, LNK_LINK, pid, NIL);	
     }
-    prt->connected = pid;
+
+    prt->connected = pid; /* internal pid */
     BIF_RET(am_true);
 }
 
@@ -377,7 +395,7 @@ BIF_ADECL_1
 	BIF_RET(prt->data);
     } else {
 	Eterm* hp = HAlloc(BIF_P, prt->bp->size);
-	Eterm res = copy_struct(prt->data, prt->bp->size, &hp, &BIF_P->off_heap);
+	Eterm res = copy_struct(prt->data, prt->bp->size, &hp, &MSO(BIF_P));
 	BIF_RET(res);
     }
 }
@@ -413,6 +431,10 @@ open_port(Eterm pid, Eterm name, Eterm settings)
     opts.wd = NULL;
     opts.envir = NULL;
     opts.exit_status = 0;
+#ifdef _OSE_
+    opts.process_type = OS_PRI_PROC;
+    opts.priority = 20;
+#endif
     binary_io = 0;
     soft_eof = 0;
     linebuf = 0;

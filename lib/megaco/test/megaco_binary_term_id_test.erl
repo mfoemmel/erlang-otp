@@ -928,9 +928,10 @@ mtid13() ->
     #megaco_term_id{contains_wildcards = true,
 		    id = [[$1,$0,$*]]}.
 %% Empty last level
-mtid14() -> 
-    #megaco_term_id{contains_wildcards = true,
-		    id = [[$1,$0,$*],[$1,$0,$0,$$],[]]}.
+%% mtid14() -> 
+%%    #megaco_term_id{contains_wildcards = true,
+%%		    id = [[$1,$0,$*],[$1,$0,$0,$$],[]]}.
+
 %% Empty second level and missing last level
 mtid15() -> 
     #megaco_term_id{contains_wildcards = true,

@@ -82,6 +82,10 @@ TARGET_FILES= $(BUILD_MIBS:%=$(SNMP_BIN_TARGET_DIR)/%.bin) $(HRL_TARGETS)  $(V1_
 # ----------------------------------------------------
 #SNMP_FLAGS = -I $(ERL_TOP)/lib/sasl/priv/mibs -I ../priv/mibs
 
+ifneq ($(MIBS_VERBOSITY),) 
+SNMP_FLAGS += +'{verbosity,$(MIBS_VERBOSITY)}'
+endif
+
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------

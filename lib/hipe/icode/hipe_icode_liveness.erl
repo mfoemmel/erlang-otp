@@ -5,6 +5,7 @@
 
 -module(hipe_icode_liveness).
 
+-include("../util/hipe_vector.hrl").
 -include("../flow/liveness.inc").
 
 

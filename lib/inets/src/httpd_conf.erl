@@ -230,6 +230,7 @@ load_traverse(Line, [Context|Contexts], [Module|Modules], NewContexts, ConfigLis
 
 load(eof, []) ->
     eof;
+
 load([$M,$a,$x,$H,$e,$a,$d,$e,$r,$S,$i,$z,$e,$ |MaxHeaderSize], []) ->
     ?DEBUG("load -> MaxHeaderSize: ~p",[MaxHeaderSize]),
     case make_integer(MaxHeaderSize) of
@@ -288,12 +289,19 @@ load([$B,$i,$n,$d,$A,$d,$d,$r,$e,$s,$s,$ |Address], []) ->
 		    {error, ?NICE(CAddress++" is an invalid address")}
 	    end
     end;
-load([$K,$e,$e,$p,$A,$l,$i,$v,$e,$ |MaxRequests], []) ->
+load([$K,$e,$e,$p,$A,$l,$i,$v,$e,$ |OnorOff], []) ->
+    case list_to_atom(clean(OnorOff)) of
+	off ->
+	    {ok, [], {persistent_conn, false}};
+	_ ->
+	    {ok, [], {persistent_conn, true}}
+    end;
+load([$M,$a,$x,$K,$e,$e,$p,$A,$l,$i,$v,$e,$R,$e,$q,$u,$e,$s,$t,$ |MaxRequests], []) ->
     case make_integer(MaxRequests) of
 	{ok, Integer} ->
-	    {ok, [], {keep_alive, Integer}};
+	    {ok, [], {max_keep_alive_request, Integer}};
 	{error, _} ->
-	    {error, ?NICE(clean(MaxRequests)++" is an invalid KeepAlive")}
+	    {error, ?NICE(clean(MaxRequests)++" is an invalid MaxKeepAliveRequest")}
     end;
 load([$K,$e,$e,$p,$A,$l,$i,$v,$e,$T,$i,$m,$e,$o,$u,$t,$ |Timeout], []) ->
     case make_integer(Timeout) of
@@ -560,17 +568,23 @@ remove_all(ConfigDB) ->
     remove_traverse(ConfigDB, lists:append(Modules,[?MODULE])).
 
 remove_traverse(ConfigDB,[]) ->
+    ?vtrace("remove_traverse -> done", []),
     ok;
 remove_traverse(ConfigDB,[Module|Rest]) ->
+    ?vtrace("remove_traverse -> call ~p:remove", [Module]),
     case (catch apply(Module,remove,[ConfigDB])) of
 	{'EXIT',{undef,_}} ->
+	    ?vtrace("remove_traverse -> undef", []),
 	    remove_traverse(ConfigDB,Rest);
 	{'EXIT',{function_clause,_}} ->
+	    ?vtrace("remove_traverse -> function_clause", []),
 	    remove_traverse(ConfigDB,Rest);
 	{'EXIT',Reason} ->
+	    ?vtrace("remove_traverse -> exit: ~p", [Reason]),
 	    error_logger:error_report({'EXIT',Reason}),
 	    remove_traverse(ConfigDB,Rest);
 	{error,Reason} ->
+	    ?vtrace("remove_traverse -> error: ~p", [Reason]),
 	    error_logger:error_report(Reason),
 	    remove_traverse(ConfigDB,Rest);
 	_ ->

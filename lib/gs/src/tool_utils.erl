@@ -83,13 +83,13 @@ open_help(S, File) ->
 %% Returns remote if File is a remote URL (ie begins with 'http:')
 file_type(File) ->
     case File of
-	"http://"++URL ->
+	"http://"++_URL ->
 	    remote;
 	_ ->
 	    %% HTML files can have a tag (<name>.html#tag), this must be
 	    %% removed when checking if the file exists
 	    File2 = case filename:extension(File) of
-			".html#"++Index ->
+			".html#"++_Index ->
 			    filename:rootname(File)++".html";
 			_ ->
 			    File
@@ -169,7 +169,7 @@ help_win(Type, S, Strings) ->
     Font = gs:read(S, {choose_font, {screen,12}}),
     Text = insert_newlines(Strings),
     {Wlbl0,Hlbl0} = gs:read(Lbl, {font_wh,{Font,Text}}),
-    {Went0,Hent0} = gs:read(Lbl, {font_wh,{Font,"Entry"}}),
+    {_Went0,Hent0} = gs:read(Lbl, {font_wh,{Font,"Entry"}}),
     {Wbtn0,Hbtn0} = gs:read(Lbl, {font_wh,{Font,"Cancel"}}),
     
     %% Compute the size of the objects and adjust the graphics accordingly
@@ -224,9 +224,9 @@ buttons(confirm_yesno) -> ["Yes", "No", "Cancel"];
 buttons(request) ->       ["Ok", "Cancel"].
 
 max(X, Y) when X>Y -> X;
-max(X, Y) -> Y.
+max(_X, Y) -> Y.
 
-xbuttons(1, Wbtn, Wwin, Wlbl) ->
+xbuttons(1, Wbtn, Wwin, _Wlbl) ->
     [round(Wwin/2-Wbtn/2)];
 xbuttons(2, Wbtn, Wwin, Wlbl) ->
     Margin = (Wwin-Wlbl)/2,
@@ -238,7 +238,7 @@ xbuttons(3, Wbtn, Wwin, Wlbl) ->
 foreach2(Fun, [H1|T1], [H2|T2]) ->
     Fun(H1, H2),
     foreach2(Fun, T1, T2);
-foreach2(Fun, [], []) ->
+foreach2(_Fun, [], []) ->
     true.
 
 event_loop(Win,Entry) ->

@@ -3,7 +3,9 @@
 %% Definition of high level three-address instructions
 %%
 
--record(icode, {'fun', params, code, data, var_range, label_range, info=[]}).
+-record(icode, {'fun', params, closure, leaf, 
+		code, data, var_range, label_range, info=[]}).
+
 -record('if', {op, args, true_label, false_label, p, info=[]}).
 -record(switch_val, {arg, fail_label, length, cases, info=[]}).
 -record(switch_tuple_arity, {arg, fail_label, length, cases, info=[]}).
@@ -20,5 +22,11 @@
 -record(remove_catch, {id, info=[]}).
 -record(comment, {text, info=[]}).
 -record(label, {name, info=[]}).
+-record(fclearerror, {info=[]}).
+-record(fmov, {dst, src, negate, info=[]}).
+-record(unsafe_untag_float, {dst, src, info=[]}).
+-record(unsafe_tag_float, {dst, src, info=[]}).
+-record(conv_to_float, {dst, src, info=[]}).
+-record(phi, {dst, name, args, predList, info=[]}).
 
 

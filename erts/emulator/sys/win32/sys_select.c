@@ -282,6 +282,15 @@ driver_select(port, event, mode, on)
     }
 }
 
+int
+driver_event(port, event, event_data)
+     int port;
+     HANDLE event;
+     ErlDrvEventData event_data;
+{
+    return -1;
+}
+
 
 static int
 set_driver_select(port, event, handler)
@@ -457,7 +466,6 @@ int wait;
     register int i;
     int n;
     EventData* ev;
-    MSG message;
 
     /*
      * If there is no I/O events ready and if we were asked to wait,
@@ -469,7 +477,6 @@ int wait;
 	DWORD timeout;
 	HANDLE harr[2] = {event_io_ready};
 	int num_h = 1;
-	int which;
 
 	erts_time_remaining(&tv);
 	timeout = tv.tv_sec * 1000 + tv.tv_usec / 1000;

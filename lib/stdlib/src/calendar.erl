@@ -142,10 +142,10 @@ is_leap_year1(_) -> false.
 last_day_of_the_month(Y, M) when integer(Y), Y >= 0 ->
     last_day_of_the_month1(Y, M).
 
-last_day_of_the_month1(Y, 4) -> 30;
-last_day_of_the_month1(Y, 6) -> 30;
-last_day_of_the_month1(Y, 9) -> 30;
-last_day_of_the_month1(Y,11) -> 30;
+last_day_of_the_month1(_, 4) -> 30;
+last_day_of_the_month1(_, 6) -> 30;
+last_day_of_the_month1(_, 9) -> 30;
+last_day_of_the_month1(_,11) -> 30;
 last_day_of_the_month1(Y, 2) ->
    case is_leap_year(Y) of
       true -> 29;
@@ -292,7 +292,7 @@ day_to_year(DayOfEpoch) when DayOfEpoch >= 0 ->
 
 dty(Y, D1, D2) when D1 < D2 -> 
     dty(Y-1, D1, dy(Y-1));
-dty(Y, D1, D2) ->
+dty(Y, _D1, D2) ->
     {Y, D2}.
 
 %% year_day_to_date(Year, DayOfYear)  = {Month,  DayOfMonth}

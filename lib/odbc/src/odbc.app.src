@@ -7,7 +7,7 @@
 	     odbc_sup
             ]},
   {registered, [
-		odbc
+		odbc_sup
 	       ]},
   {applications, [kernel, stdlib]},
   {env,[]},

@@ -21,9 +21,14 @@
 	 lookup_mime_default/3, reason_phrase/1, message/3, rfc1123_date/0,
 	 rfc1123_date/1, day/1, month/1, decode_hex/1, decode_base64/1, encode_base64/1,
 	 flatlength/1, split_path/1, split_script_path/1, suffix/1, to_upper/1,
-	 to_lower/1, split/3, header/1, header/2, header/3, uniq/1,
-	 make_name/2,make_name/3,make_name/4]).
+	 to_lower/1, split/3, header/2, header/3, header/4, uniq/1,
+	 make_name/2,make_name/3,make_name/4,strip/1,
+	 hexlist_to_integer/1,integer_to_hexlist/1,
+	 convert_request_date/1,create_etag/1,create_etag/2,getSize/1,
+	 response_generated/1]).
 
+%%Since hexlist_to_integer is a lousy name make a name convert
+-export([encode_hex/1]).
 -include("httpd.hrl").
 
 %% key1search
@@ -45,11 +50,11 @@ lookup(Table,Key) ->
   lookup(Table,Key,undefined).
 
 lookup(Table,Key,Undefined) ->
-    case ets:lookup(Table,Key) of
-	[] ->
-	    Undefined;
+    case catch ets:lookup(Table,Key) of
 	[{Key,Value}|_] ->
-	    Value
+	    Value;
+	_->
+	    Undefined
     end.
 
 %% multi_lookup
@@ -96,19 +101,29 @@ lookup_mime_default(ConfigDB,Suffix,Undefined) ->
     end.
 
 %% reason_phrase
-
+reason_phrase(100) -> "Continue";
+reason_phrase(101) -> "Swithing protocol";
 reason_phrase(200) -> "OK";
 reason_phrase(201) -> "Created";
 reason_phrase(202) -> "Accepted";
 reason_phrase(204) -> "No Content";
+reason_phrase(205) -> "Reset Content";
+reason_phrase(206) -> "Partial Content";
 reason_phrase(301) -> "Moved Permanently";
 reason_phrase(302) -> "Moved Temporarily";
 reason_phrase(304) -> "Not Modified";
 reason_phrase(400) -> "Bad Request";
 reason_phrase(401) -> "Unauthorized";
+reason_phrase(402) -> "Payment Required";
 reason_phrase(403) -> "Forbidden";
 reason_phrase(404) -> "Not Found";
+reason_phrase(405) -> "Method Not Allowed";
+reason_phrase(408) -> "Request Timeout";
+reason_phrase(411) -> "Length Required";
 reason_phrase(414) -> "Request-URI Too Long";
+reason_phrase(412) -> "Precondition Failed";
+reason_phrase(416) -> "request Range Not Satisfiable";
+reason_phrase(417) -> "Expectation failed";
 reason_phrase(500) -> "Internal Server Error";
 reason_phrase(501) -> "Not Implemented";
 reason_phrase(502) -> "Bad Gateway";
@@ -134,8 +149,13 @@ message(403,RequestURI,_) ->
   "You don't have permission to access "++RequestURI++" on this server.";
 message(404,RequestURI,_) ->
   "The requested URL "++RequestURI++" was not found on this server.";
+message(412,none,_) ->
+  "The requested preconditions where false";
 message(414,ReasonPhrase,_) ->
   "Message "++ReasonPhrase++".";
+message(416,ReasonPhrase,_) ->
+    ReasonPhrase;
+
 message(500,none,ConfigDB) ->
   ServerAdmin=lookup(ConfigDB,server_admin,"unknown@unknown"),
   "The server encountered an internal error or
@@ -149,6 +169,84 @@ message(501,{Method,RequestURI,HTTPVersion},ConfigDB) ->
   Method++" to "++RequestURI++" ("++HTTPVersion++") not supported.";
 message(503,String,ConfigDB) ->
   "This service in unavailable due to: "++String.
+
+%%convert_rfc_date(Date)->{{YYYY,MM,DD},{HH,MIN,SEC}}
+
+convert_request_date([D,A,Y,DateType|Rest])->
+    Func=case DateType of
+	     $\, ->
+		 fun convert_rfc1123_date/1;
+	     $\  ->
+		 fun convert_ascii_date/1;
+	     _ ->
+		 fun convert_rfc850_date/1
+	 end,
+    case catch Func([D,A,Y,DateType|Rest])of
+	{ok,Date} ->
+	    Date;
+	Error->
+	    bad_date
+    end.
+convert_rfc850_date(DateStr)->
+    case string:tokens(DateStr," ") of
+	[WeekDay,Date,Time,TimeZone|Rest]->
+	   convert_rfc850_date(Date,Time);
+	bad_date ->
+	    bad_date;
+	Error->
+	    bad_date
+    end.
+
+convert_rfc850_date([D1,D2,_,M,O,N,_,Y1,Y2|_Rest],[H1,H2,_Col,M1,M2,_Col,S1,S2|_Rest2])->    
+    Year=list_to_integer([50,48,Y1,Y2]),
+    Day=list_to_integer([D1,D2]),
+    Month=convert_month([M,O,N]),
+    Hour=list_to_integer([H1,H2]),
+    Min=list_to_integer([M1,M2]),
+    Sec=list_to_integer([S1,S2]),
+    {ok,{{Year,Month,Day},{Hour,Min,Sec}}};
+convert_rfc850_date(_BadDate,_BadTime)->
+    bad_date.
+
+convert_ascii_date([_D,_A,_Y,_SP,M,O,N,_SP,D1,D2,_SP,H1,H2,_Col,M1,M2,_Col,S1,S2,_SP,Y1,Y2,Y3,Y4|Rest])->
+    Year=list_to_integer([Y1,Y2,Y3,Y4]),
+    Day=case D1 of 
+	$\ ->
+	    list_to_integer([D2]);
+	_->
+	    list_to_integer([D1,D2])
+    end,
+    Month=convert_month([M,O,N]),
+    Hour=list_to_integer([H1,H2]),
+    Min=list_to_integer([M1,M2]),
+    Sec=list_to_integer([S1,S2]),
+    {ok,{{Year,Month,Day},{Hour,Min,Sec}}};
+convert_ascii_date(BadDate)->
+    bad_date.
+convert_rfc1123_date([_D,_A,_Y,_C,_SP,D1,D2,_SP,M,O,N,_SP,Y1,Y2,Y3,Y4,_SP,H1,H2,_Col,M1,M2,_Col,S1,S2|Rest])->    
+    Year=list_to_integer([Y1,Y2,Y3,Y4]),
+    Day=list_to_integer([D1,D2]),
+    Month=convert_month([M,O,N]),
+    Hour=list_to_integer([H1,H2]),
+    Min=list_to_integer([M1,M2]),
+    Sec=list_to_integer([S1,S2]),
+    {ok,{{Year,Month,Day},{Hour,Min,Sec}}};
+convert_rfc1123_date(BadDate)->    
+    bad_date.
+
+convert_month("Jan")->1;
+convert_month("Feb") ->2;
+convert_month("Mar") ->3; 
+convert_month("Apr") ->4;
+convert_month("May") ->5;
+convert_month("Jun") ->6;
+convert_month("Jul") ->7;
+convert_month("Aug") ->8;
+convert_month("Sep") ->9;
+convert_month("Oct") ->10;
+convert_month("Nov") ->11;
+convert_month("Dec") ->12.
+
 
 %% rfc1123_date
 
@@ -397,6 +495,18 @@ to_lower([C|Cs]) ->
 to_lower([]) ->
     [].
 
+
+%% strip
+strip(Value)->
+    lists:reverse(remove_ws(lists:reverse(remove_ws(Value)))).
+	
+remove_ws([$\s|Rest])->
+    remove_ws(Rest);
+remove_ws([$\t|Rest]) ->
+    remove_ws(Rest);
+remove_ws(Rest) ->
+    Rest.
+
 %% split
 
 split(String,RegExp,Limit) ->
@@ -420,52 +530,62 @@ do_split(String,RegExp,Limit) ->
     end.
 
 %% header
+header(StatusCode,Date)when list(Date)->
+    header(StatusCode,"text/plain",false);
 
-
-
-header(StatusCode) when integer(StatusCode) ->
-    Date = rfc1123_date(),
-    io_lib:format("HTTP/1.0 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n"
-		  "Connection: close\r\n",
-		  [StatusCode, httpd_util:reason_phrase(StatusCode),
-		   Date, ?SERVER_SOFTWARE]).
-
-header(StatusCode, Info) when integer(StatusCode), record(Info, mod) ->
+header(StatusCode, PersistentConnection) when integer(StatusCode)->
     Date = rfc1123_date(),
     Connection = 
-	case Info#mod.connection of
-	    keep_alive ->
-		"Keep-Alive";
+	case PersistentConnection of
+	    true ->
+		"";
 	    _ ->
-		"close"
+		"Connection: close \r\n"
 	end,
-    io_lib:format("HTTP/1.0 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n"
-		  "Connection: ~s\r\n",
+    io_lib:format("HTTP/1.1 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n~s",
 		  [StatusCode, httpd_util:reason_phrase(StatusCode),
-		   Date, ?SERVER_SOFTWARE, Connection]);
+		   Date, ?SERVER_SOFTWARE, Connection]).
 
-header(StatusCode, MimeType) when integer(StatusCode) ->
-    header(StatusCode, MimeType, rfc1123_date()).
+%%----------------------------------------------------------------------
 
-header(StatusCode, MimeType, Info) when integer(StatusCode), record(Info, mod) ->
-    Date = rfc1123_date(),
+header(StatusCode, MimeType, Date) when list(Date) ->
+    header(StatusCode, MimeType, false,rfc1123_date());
+
+
+header(StatusCode, MimeType, PersistentConnection) when integer(StatusCode) ->
+    header(StatusCode, MimeType, PersistentConnection,rfc1123_date()).
+
+
+%%----------------------------------------------------------------------
+
+header(416, MimeType,PersistentConnection,Date)-> 
     Connection = 
-	case Info#mod.connection of
-	    keep_alive ->
-		"Keep-Alive";
+	case PersistentConnection of
+	    true ->
+		"";
 	    _ ->
-		"close"
+		"Connection: close \r\n"
 	end,
-    io_lib:format("HTTP/1.0 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n"
-		  "Content-Type: ~s\r\nConnection: ~s\r\n",
-		  [StatusCode, httpd_util:reason_phrase(StatusCode),
+    io_lib:format("HTTP/1.1 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n"
+		  "Content-Range:bytes *"
+		  "Content-Type: ~s\r\n~s",
+		  [416, httpd_util:reason_phrase(416),
 		   Date, ?SERVER_SOFTWARE, MimeType, Connection]);
 
-header(StatusCode, MimeType, Date) ->
-    io_lib:format("HTTP/1.0 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n"
-		  "Content-Type: ~s\r\nConnection: close\r\n",
+
+header(StatusCode, MimeType,PersistentConnection,Date) when integer(StatusCode)-> 
+    Connection = 
+	case PersistentConnection of
+	    true ->
+		"";
+	    _ ->
+		"Connection: close \r\n"
+	end,
+    io_lib:format("HTTP/1.1 ~w ~s \r\nDate: ~s\r\nServer: ~s\r\n"
+		  "Content-Type: ~s\r\n~s",
 		  [StatusCode, httpd_util:reason_phrase(StatusCode),
-		   Date, ?SERVER_SOFTWARE, MimeType]).
+		   Date, ?SERVER_SOFTWARE, MimeType, Connection]).
+
 
 
 %% make_name/2, make_name/3
@@ -493,10 +613,10 @@ make_name(Prefix,Addr,Port) ->
 make_name(Prefix,"*",Port,Postfix) ->
     make_name(Prefix,undefined,Port,Postfix);
 
-make_name(Prefix,undefined,Port,Postfix) ->
+make_name(Prefix,any,Port,Postfix) ->
     make_name1(io_lib:format("~s_~w~s",[Prefix,Port,Postfix]));
 
-make_name(Prefix,any,Port,Postfix) ->
+make_name(Prefix,undefined,Port,Postfix) ->
     make_name1(io_lib:format("~s_~w~s",[Prefix,Port,Postfix]));
 
 make_name(Prefix,Addr,Port,Postfix) ->
@@ -521,4 +641,138 @@ search_and_replace(S,A,B) ->
                   end
           end,
     lists:map(Fun,S).
+
+
+
+%%----------------------------------------------------------------------
+%% Converts  a string that constists of 0-9,A-F,a-f to a 
+%% integer
+%%----------------------------------------------------------------------
+
+hexlist_to_integer([])->
+    empty;
+
+
+%%When the string only contains one value its eaasy done.
+%% 0-9
+hexlist_to_integer([Size]) when Size>=48 , Size=<57 ->
+   Size-48;
+%% A-F
+hexlist_to_integer([Size]) when Size>=65 , Size=<70 ->
+    Size-55;
+%% a-f
+hexlist_to_integer([Size]) when Size>=97 , Size=<102 ->
+    Size-87;
+hexlist_to_integer([Size]) ->
+    not_a_num;
+
+hexlist_to_integer(Size) ->
+    Len=string:span(Size,"1234567890abcdefABCDEF"),
+    hexlist_to_integer2(Size,16 bsl (4 *(Len-2)),0).
+
+hexlist_to_integer2([],_Pos,Sum)->
+    Sum;
+hexlist_to_integer2([HexVal|HexString],Pos,Sum)when HexVal>=48,HexVal=<57->
+    hexlist_to_integer2(HexString,Pos bsr 4,Sum+((HexVal-48)*Pos));
+
+hexlist_to_integer2([HexVal|HexString],Pos,Sum)when HexVal>=65,HexVal=<70->
+    hexlist_to_integer2(HexString,Pos bsr 4,Sum+((HexVal-55)*Pos));
+
+hexlist_to_integer2([HexVal|HexString],Pos,Sum)when HexVal>=97,HexVal=<102->
+    hexlist_to_integer2(HexString,Pos bsr 4,Sum+((HexVal-87)*Pos));
+
+hexlist_to_integer2(_AfterHexString,_Pos,Sum)->
+    Sum.
+
+%%----------------------------------------------------------------------
+%%Converts an integer to an hexlist
+%%----------------------------------------------------------------------
+encode_hex(Num)->
+    integer_to_hexlist(Num).
+
+
+integer_to_hexlist(Num)->
+    integer_to_hexlist(Num,getSize(Num),[]).
+
+integer_to_hexlist(Num,Pot,Res) when Pot<0 ->
+    convert_to_ascii([Num|Res]);
+
+integer_to_hexlist(Num,Pot,Res) ->
+    Position=(16 bsl (Pot*4)),
+    PosVal=Num div Position,
+    integer_to_hexlist(Num-(PosVal*Position),Pot-1,[PosVal|Res]).
+convert_to_ascii(RevesedNum)->
+    convert_to_ascii(RevesedNum,[]).
+
+convert_to_ascii([],Num)->
+    Num;
+convert_to_ascii([Num|Reversed],Number)when Num>-1, Num<10 ->
+    convert_to_ascii(Reversed,[Num+48|Number]);
+convert_to_ascii([Num|Reversed],Number)when Num>9, Num<16 ->
+    convert_to_ascii(Reversed,[Num+55|Number]);
+convert_to_ascii(NumReversed,Number) ->
+    error.
+
+
+				    	      
+getSize(Num)->
+    getSize(Num,0).
+
+getSize(Num,Pot)when Num<(16 bsl(Pot *4))  ->
+    Pot-1;
+
+getSize(Num,Pot) ->
+    getSize(Num,Pot+1).
+
+
+
+
+
+create_etag(FileInfo)->
+    create_etag(FileInfo#file_info.mtime,FileInfo#file_info.size).
+
+create_etag({{Year,Month,Day},{Hour,Min,Sec}},Size)->
+    create_part([Year,Month,Day,Hour,Min,Sec])++io_lib:write(Size);
+
+create_etag(FileInfo,Size)->
+    create_etag(FileInfo#file_info.mtime,Size).
+
+create_part(Values)->
+    lists:map(fun(Val0)->
+		      Val=Val0 rem 60,
+			  if
+			      Val=<25 ->
+				  65+Val;  % A-Z
+			      Val=<50 ->
+				  72+Val;  % a-z
+			      %%Since no date s
+			      true ->
+				  Val-3
+			  end
+	      end,Values).
+				    
+
+
+%%----------------------------------------------------------------------
+%%Function that controls whether a response is generated or not
+%%----------------------------------------------------------------------
+response_generated(Info)->
+    case httpd_util:key1search(Info#mod.data,status) of
+	%% A status code has been generated!
+	{StatusCode,PhraseArgs,Reason}->
+	    true;
+	%%No status code control repsonsxe
+	undefined ->
+	    case httpd_util:key1search(Info#mod.data, response) of
+		%% No response has been generated!
+		undefined ->
+		    false;
+		%% A response has been generated or sent!
+		Response ->
+		    true
+	    end
+    end.
+
+
+
 

@@ -98,7 +98,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 create(DB, GstkId, Opts) ->
     TkW = gstk_generic:mk_tkw_child(DB,GstkId),
-    {G, GID, NOpts} = fix_group(Opts, DB, GstkId#gstkid.owner),
+    {G, GID, _NOpts} = fix_group(Opts, DB, GstkId#gstkid.owner),
     NGstkId=GstkId#gstkid{widget=TkW,widget_data={G, GID}},
     PlacePreCmd = [";place ", TkW],
     case gstk_generic:make_command(Opts,NGstkId,TkW,"",PlacePreCmd,DB) of
@@ -169,11 +169,11 @@ event(DB, Gstkid, Etype, Edata, Args) ->
 		   [Text, Bool | Rest] = Args,
 		   RBool = case Bool of
 			       1      -> true;
-			       Other2 -> false
+			       _Other2 -> false
 			   end,
-		   {G, Gid} = Gstkid#gstkid.widget_data,
+		   {G, _Gid} = Gstkid#gstkid.widget_data,
 		   [Text, G, RBool | Rest];
-	       Other3 ->
+	       _Other3 ->
 		   Args
 	   end,
     gstk_generic:event(DB, Gstkid, Etype, Edata, Arg2).
@@ -300,15 +300,15 @@ cbind(DB, Gstkid, Etype, On) ->
     Cmd = case On of
 	      {true, Edata} ->
 		  Eref = gstk_db:insert_event(DB, Gstkid, Etype, Edata),
-		  [" -com {erlsend  ", Eref, " \\\"[", TkW,
+		  [" -command {erlsend  ", Eref, " \\\"[", TkW,
 		   " cg -text]\\\" \[expr \$[", TkW, " cg -va]\]}"];
 	      true ->
 		  Eref = gstk_db:insert_event(DB, Gstkid, Etype, ""),
-		  [" -com {erlsend  ", Eref, " \\\"[", TkW,
+		  [" -command {erlsend  ", Eref, " \\\"[", TkW,
 		   " cg -text]\\\" \[expr \$[", TkW, " cg -va]\]}"];
-	      Other ->
-		  Eref = gstk_db:delete_event(DB, Gstkid, Etype),
-		  " -com {}"
+	      _Other ->
+		  gstk_db:delete_event(DB, Gstkid, Etype),
+		  " -command {}"
 	  end,
     {s, Cmd}.
 

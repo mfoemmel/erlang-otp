@@ -79,7 +79,9 @@ TARGET_FILES= \
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS +=  -pa $(ERL_TOP)/lib/mnesia_session/ebin 
+ERL_FLAGS +=  \
+	-pa $(ERL_TOP)/lib/mnesia_session/ebin \
+	-pa $(ERL_TOP)/lib/ic/ebin 
 
 #ERL_COMPILE_FLAGS += \
 

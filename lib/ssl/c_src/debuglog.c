@@ -88,9 +88,12 @@ int __debugprintf(const char *format, ...)
     va_start(args, format);
     ret = vfprintf(stderr, format, args);
 #endif
-    if (syslogfp) 
-	vfprintf(syslogfp, format, args);
     va_end(args);
+    if (syslogfp) { 
+        va_start(args, format);
+	vfprintf(syslogfp, format, args);
+        va_end(args);
+    }
     return ret;
 }
 

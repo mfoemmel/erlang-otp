@@ -118,12 +118,12 @@ construct_trap(Trap, Varbinds) ->
 	    error;
 	{value, TRec} when record(TRec, trap) ->
 	    ListOfVars = TRec#trap.oidobjects,
-	    OidVbs = lists:map({snmp_trap, alias_to_oid}, [], Varbinds),
+	    OidVbs = snmp_misc:map({snmp_trap, alias_to_oid}, [], Varbinds),
 	    LV = initiate_vars(ListOfVars, OidVbs),
 	    {ok, TRec, try_initialise_vars(get(mibserver), LV)};
 	{value, NRec} when record(NRec, notification) ->
 	    ListOfVars = NRec#notification.oidobjects,
-	    OidVbs = lists:map({snmp_trap, alias_to_oid}, [], Varbinds),
+	    OidVbs = snmp_misc:map({snmp_trap, alias_to_oid}, [], Varbinds),
 	    LV = initiate_vars(ListOfVars, OidVbs),
 	    {ok, NRec, try_initialise_vars(get(mibserver), LV)}
     end.
@@ -285,7 +285,7 @@ make_varbind_list(Varbinds) ->
 	split_variables(order(Varbinds)),
     V = get_all(VariablesWithType),
     Vars = lists:append([V, VariablesWithValueAndType]),
-    lists:map({snmp_trap, make_varbind}, [], unorder(lists:keysort(1, Vars))).
+    snmp_misc:map({snmp_trap, make_varbind}, [], unorder(lists:keysort(1, Vars))).
 
 %%-----------------------------------------------------------------
 %% Func: send_trap/6

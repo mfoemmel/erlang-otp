@@ -68,13 +68,15 @@
 
 -export([module/2,function/1]).
 
--import(lists, [map/2,foldl/3,foldr/3,mapfoldl/3,all/2,any/2,reverse/1]).
+-import(lists, [map/2,foldl/3,foldr/3,mapfoldl/3,all/2,any/2,reverse/1,
+		member/2]).
 -include("core_parse.hrl").
 
 %% Variable value info.
 -record(sub, {v=[],cexpr=none,t=[]}).		%Variable substitutions
 
-module(#c_module{defs=Ds0}=Mod, Opts) ->
+module(#c_module{defs=Ds0}=Mod, _Opts) ->
+    %% Use the compiler process dictionary to propagate this option.
     Ds1 = map(fun function/1, Ds0),
     {ok,Mod#c_module{defs=Ds1}}.
 
@@ -110,27 +112,27 @@ guard(#c_call{module=#c_atom{val=erlang},
 	      args=[A1,A2]}=Call, Sub) ->
     case {guard(A1, Sub),guard(A2, Sub)} of
 	{#c_atom{val=true},Arg2} -> Arg2;
-	{#c_atom{val=false},Arg2} -> #c_atom{val=false};
+	{#c_atom{val=false},_} -> #c_atom{val=false};
 	{Arg1,#c_atom{val=true}} -> Arg1;
-	{Arg1,#c_atom{val=false}} -> #c_atom{val=false};
+	{_,#c_atom{val=false}} -> #c_atom{val=false};
 	{Arg1,Arg2} -> Call#c_call{args=[Arg1,Arg2]}
     end;
 guard(#c_call{module=#c_atom{val=erlang},
 	      name=#c_atom{val='or'},
 	      args=[A1,A2]}=Call, Sub) ->
     case {guard(A1, Sub),guard(A2, Sub)} of
-	{#c_atom{val=true},Arg2} -> #c_atom{val=true};
+	{#c_atom{val=true},_} -> #c_atom{val=true};
 	{#c_atom{val=false},Arg2} -> Arg2;
-	{Arg1,#c_atom{val=true}} -> #c_atom{val=true};
+	{_,#c_atom{val=true}} -> #c_atom{val=true};
 	{Arg1,#c_atom{val=false}} -> Arg1;
 	{Arg1,Arg2} -> Call#c_call{args=[Arg1,Arg2]}
     end;
 guard(#c_seq{arg=Arg0,body=B0}=Seq, Sub) ->
     case {guard(Arg0, Sub),guard(B0, Sub)} of
 	{#c_atom{val=true},B1} -> B1;
-	{#c_atom{val=false}=False,B1} -> False;
+	{#c_atom{val=false}=False,_} -> False;
 	{Arg,#c_atom{val=true}} -> Arg;
-	{Arg,#c_atom{val=false}=False} -> False;
+	{_,#c_atom{val=false}=False} -> False;
 	{Arg,B1} -> Seq#c_seq{arg=Arg,body=B1}
     end;
 guard(#c_try{expr=E0,body=#c_atom{val=false}}=Prot, Sub) ->
@@ -146,12 +148,12 @@ guard(E, Sub) -> expr(E, Sub).
 
 expr(#c_var{}=V, Sub) ->
     sub_get_var(V, Sub);
-expr(#c_char{}=C, Sub) -> C;
-expr(#c_int{}=I, Sub) -> I;
-expr(#c_float{}=F, Sub) -> F;
-expr(#c_atom{}=A, Sub) -> A;
-expr(#c_string{}=S, Sub) -> S;
-expr(#c_nil{}=N, Sub) -> N;
+expr(#c_char{}=C, _) -> C;
+expr(#c_int{}=I, _) -> I;
+expr(#c_float{}=F, _) -> F;
+expr(#c_atom{}=A, _) -> A;
+expr(#c_string{}=S, _) -> S;
+expr(#c_nil{}=N, _) -> N;
 expr(#c_cons{hd=H0,tl=T0}=Cons, Sub) ->
     H1 = expr(H0, Sub),
     T1 = expr(T0, Sub),
@@ -160,7 +162,7 @@ expr(#c_tuple{anno=A,es=Es}, Sub) ->
     #c_tuple{anno=A,es=expr_list(Es, Sub)};
 expr(#c_binary{segs=Ss}=Bin, Sub) ->
     Bin#c_binary{segs=bin_seg_list(Ss, Sub)};
-expr(#c_fname{}=Fname, Sub) -> Fname;
+expr(#c_fname{}=Fname, _) -> Fname;
 expr(#c_fun{vars=Vs0,body=B0}=Fun, Sub0) ->
     {Vs1,Sub1} = pattern_list(Vs0, Sub0),
     B1 = body(B0, Sub1),
@@ -192,7 +194,7 @@ expr(#c_let{vars=Vs0,arg=Arg0,body=B0}=Let, Sub0) ->
 	    core_lib:make_values(Args);
 	{[],[],Body} ->
 	    Body;
-	Other ->
+	_Other ->
 	    opt_case_in_let(Let#c_let{vars=Vs1,
 				      arg=core_lib:make_values(Args),
 				      body=B1})
@@ -217,12 +219,11 @@ expr(#c_apply{op=Op0,args=As0}=App, Sub) ->
     Op1 = expr(Op0, Sub),
     As1 = expr_list(As0, Sub),
     App#c_apply{op=Op1,args=As1};
-expr(#c_call{module=M0,name=N0,args=As0}=Call, Sub) ->
+expr(#c_call{module=M0,name=N0}=Call, Sub) ->
     M1 = expr(M0, Sub),
     N1 = expr(N0, Sub),
-    As1 = expr_list(As0, Sub),
-    call(Call#c_call{module=M1,name=N1,args=As1}, M1, N1, As1);
-expr(#c_primop{anno=A,name=N,args=As0}=Prim, Sub) ->
+    call(Call#c_call{module=M1,name=N1}, M1, N1, Sub);
+expr(#c_primop{args=As0}=Prim, Sub) ->
     As1 = expr_list(As0, Sub),
     Prim#c_primop{args=As1};
 expr(#c_catch{body=B0}=Catch, Sub) ->
@@ -272,24 +273,358 @@ is_safe_lit_bin(Ss) ->
 					unit=U,type=float}, {Bits,Safe}) ->
 				Sb = S*U,
 				{Bits + Sb, Safe and (Sb == 64)};
-			    (Seg, {Bits,Safe}) -> {Bits,false}
+			    (_Seg, {Bits,_Safe}) -> {Bits,false}
 			end, {0,true}, Ss),
     Safe and ((Bits rem 8) == 0).
 
 %% eval_cons(Cons, Head, Tail) -> Expr.
 %%  Evaluate constant part of a cons expression.
 
-eval_cons(Cons, #c_char{val=C}, #c_string{val=S}) ->
+eval_cons(_Cons, #c_char{val=C}, #c_string{val=S}) ->
     #c_string{val=[C|S]};
-eval_cons(Cons, #c_char{val=C}, #c_nil{}) -> #c_string{val=[C]};
-eval_cons(Cons, #c_int{val=I}, #c_string{val=S}) when I >=0, I < 256 ->
+eval_cons(_Cons, #c_char{val=C}, #c_nil{}) -> #c_string{val=[C]};
+eval_cons(_Cons, #c_int{val=I}, #c_string{val=S}) when I >=0, I < 256 ->
     #c_string{val=[I|S]};
-eval_cons(Cons, #c_int{val=I}, #c_nil{}) when I >=0, I < 256 ->
+eval_cons(_Cons, #c_int{val=I}, #c_nil{}) when I >=0, I < 256 ->
     #c_string{val=[I]};
 eval_cons(Cons, H, T) ->
     Cons#c_cons{hd=H,tl=T}.			%Rebuild cons arguments
 
-%% call(Call, Mod, Name, Args) -> Expr.
+%% Handling remote calls. The module/name fields have been processed.
+
+call(#c_call{args=As}=Call, #c_atom{val=M}, #c_atom{val=N}, Sub) ->
+    case get(no_inline_list_funcs) of
+	true ->
+	    call_0(Call, M, N, As, Sub);
+	false ->
+	    call_1(Call, M, N, As, Sub)
+    end;
+call(#c_call{args=As}=Call, M, N, Sub) ->
+    call_0(Call, M, N, As, Sub).
+
+call_0(Call, M, N, As0, Sub) ->
+    As1 = expr_list(As0, Sub),
+    fold_call(Call#c_call{args=As1}, M, N, As1).
+
+%% We inline some very common higher order list operations.
+%% We use the same evaluation order as the library function.
+
+call_1(_Call, lists, all, [Arg1,Arg2], Sub) ->
+    Loop = #c_fname{id='^all', arity=1},
+    F = #c_var{name='F'},
+    Xs = #c_var{name='Xs'},
+    X = #c_var{name='X'},
+    Err1 = #c_tuple{es=[#c_atom{val='case_clause'}, X]},
+    CC1 = #c_clause{pats=[#c_atom{val=true}], guard=#c_atom{val=true},
+		    body=#c_apply{op=Loop, args=[Xs]}},
+    CC2 = #c_clause{pats=[#c_atom{val=false}], guard=#c_atom{val=true},
+		    body=#c_atom{val=false}},
+    CC3 = #c_clause{pats=[X], guard=#c_atom{val=true},
+		    body=#c_primop{name=#c_atom{val='match_fail'},
+				   args=[Err1]}},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+		   body=#c_case{arg=#c_apply{op=F, args=[X]},
+				clauses = [CC1, CC2, CC3]}},
+    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
+		   body=#c_atom{val=true}},
+    Err2 = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
+		   body=#c_primop{name=#c_atom{val='match_fail'},
+				  args=[Err2]}},
+    Fun = #c_fun{vars=[Xs],
+		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
+    L = #c_var{name='L'},
+    expr(#c_let{vars=[F, L], arg=#c_values{es=[Arg1, Arg2]},
+		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+			       body=#c_apply{op=Loop, args=[L]}}},
+	 Sub);
+call_1(_Call, lists, any, [Arg1,Arg2], Sub) ->
+    Loop = #c_fname{id='^any', arity=1},
+    F = #c_var{name='F'},
+    Xs = #c_var{name='Xs'},
+    X = #c_var{name='X'},
+    Err1 = #c_tuple{es=[#c_atom{val='case_clause'}, X]},
+    CC1 = #c_clause{pats=[#c_atom{val=true}], guard=#c_atom{val=true},
+		    body=#c_atom{val=true}},
+    CC2 = #c_clause{pats=[#c_atom{val=false}], guard=#c_atom{val=true},
+		    body=#c_apply{op=Loop, args=[Xs]}},
+    CC3 = #c_clause{pats=[X], guard=#c_atom{val=true},
+		    body=#c_primop{name=#c_atom{val='match_fail'},
+				   args=[Err1]}},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+		   body=#c_case{arg=#c_apply{op=F, args=[X]},
+				clauses = [CC1, CC2, CC3]}},
+    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
+		   body=#c_atom{val=false}},
+    Err2 = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
+		   body=#c_primop{name=#c_atom{val='match_fail'},
+				  args=[Err2]}},
+    Fun = #c_fun{vars=[Xs],
+		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
+    L = #c_var{name='L'},
+    expr(#c_let{vars=[F, L], arg=#c_values{es=[Arg1, Arg2]},
+		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+			       body=#c_apply{op=Loop, args=[L]}}},
+	 Sub);
+call_1(_Call, lists, foreach, [Arg1,Arg2], Sub) ->
+    Loop = #c_fname{id='^foreach', arity=1},
+    F = #c_var{name='F'},
+    Xs = #c_var{name='Xs'},
+    X = #c_var{name='X'},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+		   body=#c_seq{arg=#c_apply{op=F, args=[X]},
+			       body=#c_apply{op=Loop, args=[Xs]}}},
+    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
+		   body=#c_atom{val=ok}},
+    Err = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
+		   body=#c_primop{name=#c_atom{val='match_fail'},
+				  args=[Err]}},
+    Fun = #c_fun{vars=[Xs],
+		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
+    L = #c_var{name='L'},
+    expr(#c_let{vars=[F, L], arg=#c_values{es=[Arg1, Arg2]},
+		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+			       body=#c_apply{op=Loop, args=[L]}}},
+	 Sub);
+call_1(_Call, lists, map, [Arg1,Arg2], Sub) ->
+    Loop = #c_fname{id='^map', arity=1},
+    F = #c_var{name='F'},
+    Xs = #c_var{name='Xs'},
+    X = #c_var{name='X'},
+    H = #c_var{name='H'},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+		   body=#c_let{vars=[H], arg=#c_apply{op=F, args=[X]},
+			       body=#c_cons{hd=H,
+					    tl=#c_apply{op=Loop,
+							args=[Xs]}}}},
+    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
+		   body=#c_nil{}},
+    Err = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
+		   body=#c_primop{name=#c_atom{val='match_fail'},
+				  args=[Err]}},
+    Fun = #c_fun{vars=[Xs],
+		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
+    L = #c_var{name='L'},
+    expr(#c_let{vars=[F, L], arg=#c_values{es=[Arg1, Arg2]},
+		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+			       body=#c_apply{op=Loop, args=[L]}}},
+	 Sub);
+call_1(_Call, lists, flatmap, [Arg1,Arg2], Sub) ->
+    Loop = #c_fname{id='^flatmap', arity=1},
+    F = #c_var{name='F'},
+    Xs = #c_var{name='Xs'},
+    X = #c_var{name='X'},
+    H = #c_var{name='H'},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+		   body=#c_let{vars=[H],
+			       arg=#c_apply{op=F, args=[X]},
+			       body=#c_call{module=#c_atom{val=erlang},
+					    name=#c_atom{val='++'},
+					    args=[H,
+						  #c_apply{op=Loop,
+							   args=[Xs]}]}}},
+    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
+		   body=#c_nil{}},
+    Err = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
+		   body=#c_primop{name=#c_atom{val='match_fail'},
+				  args=[Err]}},
+    Fun = #c_fun{vars=[Xs],
+		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
+    L = #c_var{name='L'},
+    expr(#c_let{vars=[F, L], arg=#c_values{es=[Arg1, Arg2]},
+		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+			       body=#c_apply{op=Loop, args=[L]}}},
+	 Sub);
+call_1(_Call, lists, filter, [Arg1,Arg2], Sub) ->
+    Loop = #c_fname{id='^filter', arity=1},
+    F = #c_var{name='F'},
+    Xs = #c_var{name='Xs'},
+    X = #c_var{name='X'},
+    B = #c_var{name='B'},
+    Err1 = #c_tuple{es=[#c_atom{val='case_clause'}, X]},
+    CC1 = #c_clause{pats=[#c_atom{val=true}], guard=#c_atom{val=true},
+		    body=#c_cons{hd=X, tl=Xs}},
+    CC2 = #c_clause{pats=[#c_atom{val=false}], guard=#c_atom{val=true},
+		    body=Xs},
+    CC3 = #c_clause{pats=[X], guard=#c_atom{val=true},
+		    body=#c_primop{name=#c_atom{val='match_fail'},
+				   args=[Err1]}},
+    Case = #c_case{arg=B, clauses = [CC1, CC2, CC3]},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+		   body=#c_let{vars=[B],
+			       arg=#c_apply{op=F, args=[X]},
+			       body=#c_let{vars=[Xs],
+					   arg=#c_apply{op=Loop,
+							args=[Xs]},
+					   body=Case}}},
+    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
+		   body=#c_nil{}},
+    Err2 = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
+		   body=#c_primop{name=#c_atom{val='match_fail'},
+				  args=[Err2]}},
+    Fun = #c_fun{vars=[Xs],
+		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
+    L = #c_var{name='L'},
+    expr(#c_let{vars=[F, L], arg=#c_values{es=[Arg1, Arg2]},
+		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+			       body=#c_apply{op=Loop, args=[L]}}},
+	 Sub);
+call_1(_Call, lists, foldl, [Arg1,Arg2,Arg3], Sub) ->
+    Loop = #c_fname{id='^foldl', arity=2},
+    F = #c_var{name='F'},
+    Xs = #c_var{name='Xs'},
+    X = #c_var{name='X'},
+    A = #c_var{name='A'},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+		   body=#c_apply{op=Loop,
+				 args=[Xs, #c_apply{op=F, args=[X, A]}]}},
+    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true}, body=A},
+    Err = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
+		   body=#c_primop{name=#c_atom{val='match_fail'},
+				  args=[Err]}},
+    Fun = #c_fun{vars=[Xs, A],
+		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
+    L = #c_var{name='L'},
+    expr(#c_let{vars=[F, A, L], arg=#c_values{es=[Arg1, Arg2, Arg3]},
+		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+			       body=#c_apply{op=Loop, args=[L, A]}}},
+	 Sub);
+call_1(_Call, lists, foldr, [Arg1,Arg2,Arg3], Sub) ->
+    Loop = #c_fname{id='^foldr', arity=2},
+    F = #c_var{name='F'},
+    Xs = #c_var{name='Xs'},
+    X = #c_var{name='X'},
+    A = #c_var{name='A'},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+		   body=#c_apply{op=F, args=[X, #c_apply{op=Loop,
+							 args=[Xs, A]}]}},
+    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true}, body=A},
+    Err = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
+		   body=#c_primop{name=#c_atom{val='match_fail'},
+				  args=[Err]}},
+    Fun = #c_fun{vars=[Xs, A],
+		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
+    L = #c_var{name='L'},
+    expr(#c_let{vars=[F, A, L], arg=#c_values{es=[Arg1, Arg2, Arg3]},
+		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+			       body=#c_apply{op=Loop, args=[L, A]}}},
+	 Sub);
+call_1(_Call, lists, mapfoldl, [Arg1,Arg2,Arg3], Sub) ->
+    Loop = #c_fname{id='^mapfoldl', arity=2},
+    F = #c_var{name='F'},
+    Xs = #c_var{name='Xs'},
+    X = #c_var{name='X'},
+    A = #c_var{name='A'},
+    Match =
+	fun (A, P, E) ->
+		C1 = #c_clause{pats=[P], guard=#c_atom{val=true}, body=E},
+		Err = #c_tuple{es=[#c_atom{val='badmatch'}, X]},
+		C2 = #c_clause{pats=[X], guard=#c_atom{val=true},
+			       body=#c_primop{name=#c_atom{val='match_fail'},
+					      args=[Err]}},
+		#c_case{arg=A, clauses=[C1, C2]}
+	end,
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+		   body=Match(#c_apply{op=F, args=[X, A]},
+			      #c_tuple{es=[X, A]},
+%%% Tuple passing version
+			      Match(#c_apply{op=Loop, args=[Xs, A]},
+				    #c_tuple{es=[Xs, A]},
+				    #c_tuple{es=[#c_cons{hd=X, tl=Xs}, A]})
+%%% Multiple-value version
+%%% 			      #c_let{vars=[Xs,A],
+%%% 				     %% The tuple here will be optimised
+%%% 				     %% away later; no worries.
+%%% 				     arg=#c_apply{op=Loop, args=[Xs, A]},
+%%% 				     body=#c_values{es=[#c_cons{hd=X, tl=Xs},
+%%% 							A]}}
+			     )},
+    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
+%%% Tuple passing version
+		   body=#c_tuple{es=[#c_nil{}, A]}},
+%%% Multiple-value version
+%%% 		   body=#c_values{es=[#c_nil{}, A]}},
+    Err = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
+		   body=#c_primop{name=#c_atom{val='match_fail'},
+				  args=[Err]}},
+    Fun = #c_fun{vars=[Xs, A],
+		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
+    L = #c_var{name='L'},
+    expr(#c_let{vars=[F, A, L], arg=#c_values{es=[Arg1, Arg2, Arg3]},
+		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+%%% Tuple passing version
+			       body=#c_apply{op=Loop, args=[L, A]}}},
+%%% Multiple-value version
+%%% 			       body=#c_let{vars=[Xs, A],
+%%% 					   arg=#c_apply{op=Loop,
+%%% 							args=[L, A]},
+%%% 					   body=#c_tuple{es=[Xs, A]}}}},
+	 Sub);
+call_1(_Call, lists, mapfoldr, [Arg1,Arg2,Arg3], Sub) ->
+    Loop = #c_fname{id='^mapfoldr', arity=2},
+    F = #c_var{name='F'},
+    Xs = #c_var{name='Xs'},
+    X = #c_var{name='X'},
+    A = #c_var{name='A'},
+    Match =
+	fun (A, P, E) ->
+		C1 = #c_clause{pats=[P], guard=#c_atom{val=true}, body=E},
+		Err = #c_tuple{es=[#c_atom{val='badmatch'}, X]},
+		C2 = #c_clause{pats=[X], guard=#c_atom{val=true},
+			       body=#c_primop{name=#c_atom{val='match_fail'},
+					      args=[Err]}},
+		#c_case{arg=A, clauses=[C1, C2]}
+	end,
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+%%% Tuple passing version
+		   body=Match(#c_apply{op=Loop, args=[Xs, A]},
+			      #c_tuple{es=[Xs, A]},
+			      Match(#c_apply{op=F, args=[X, A]},
+				    #c_tuple{es=[X, A]},
+				    #c_tuple{es=[#c_cons{hd=X, tl=Xs}, A]}))
+%%% Multiple-value version
+%%% 		   body=#c_let{vars=[Xs,A],
+%%% 			       %% The tuple will be optimised away
+%%% 			       arg=#c_apply{op=Loop, args=[Xs, A]},
+%%% 			       body=Match(#c_apply{op=F, args=[X, A]},
+%%% 					  #c_tuple{es=[X, A]},
+%%% 					  #c_values{es=[#c_cons{hd=X, tl=Xs},
+%%% 						        A]})}
+		  },
+    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
+%%% Tuple passing version
+		   body=#c_tuple{es=[#c_nil{}, A]}},
+%%% Multiple-value version
+%%% 		   body=#c_values{es=[#c_nil{}, A]}},
+    Err = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
+		   body=#c_primop{name=#c_atom{val='match_fail'},
+				  args=[Err]}},
+    Fun = #c_fun{vars=[Xs, A],
+		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
+    L = #c_var{name='L'},
+    expr(#c_let{vars=[F, A, L], arg=#c_values{es=[Arg1, Arg2, Arg3]},
+		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+%%% Tuple passing version
+ 			       body=#c_apply{op=Loop, args=[L, A]}}},
+%%% Multiple-value version
+%%% 			       body=#c_let{vars=[Xs, A],
+%%% 					   arg=#c_apply{op=Loop,
+%%% 							args=[L, A]},
+%%% 					   body=#c_tuple{es=[Xs, A]}}}},
+	 Sub);
+call_1(#c_call{module=M, name=N}=Call, _, _, As, Sub) ->
+    call_0(Call, M, N, As, Sub).
+
+%% fold_call(Call, Mod, Name, Args) -> Expr.
 %%  Try to safely evaluate the call.  Just try to evaluate arguments,
 %%  do the call and convert return values to literals.  If this
 %%  succeeds then use the new value, otherwise just fail and use
@@ -302,44 +637,44 @@ eval_cons(Cons, H, T) ->
 %%
 %%  We evalute '++' if the first operand is as literal (or partly literal).
 
-call(Call, #c_atom{val=M}, #c_atom{val=F}, Args) ->
-    call_1(Call, M, F, Args);
-call(Call, M, N, Args) -> Call.
+fold_call(Call, #c_atom{val=M}, #c_atom{val=F}, Args) ->
+    fold_call_1(Call, M, F, Args);
+fold_call(Call, _M, _N, _Args) -> Call.
 
-call_1(Call, erlang, length, [Arg]) ->
+fold_call_1(Call, erlang, length, [Arg]) ->
     eval_length(Call, Arg);
-call_1(Call, erlang, '++', [Arg1,Arg2]) ->
+fold_call_1(Call, erlang, '++', [Arg1,Arg2]) ->
     eval_append(Call, Arg1, Arg2);
-call_1(Call, erlang, element, [Arg1,Arg2]=Args) ->
+fold_call_1(Call, erlang, element, [Arg1,Arg2]) ->
     Ref = make_ref(),
     case catch {Ref,eval_element(Arg1, Arg2)} of
 	{Ref,Val} -> Val;
-	Other -> Call
+	_Other -> Call
     end;
-call_1(Call, erlang, setelement, [Arg1,Arg2,Arg3]=Args) ->
+fold_call_1(Call, erlang, setelement, [Arg1,Arg2,Arg3]) ->
     Ref = make_ref(),
     case catch {Ref,eval_setelement(Arg1, Arg2, Arg3)} of
 	{Ref,Val} -> Val;
-	Other -> Call
+	_Other -> Call
     end;
-call_1(Call, erlang, N, [Arg]) ->
+fold_call_1(Call, erlang, N, [Arg]) ->
     case catch begin
 		   LitA = core_lib:literal_value(Arg),
 		   {ok,core_lib:make_literal(eval_call(N, LitA))}
 	       end of
 	{ok,Val} -> Val;
-	Other -> Call
+	_Other -> Call
     end;
-call_1(Call, erlang, N, [Arg1,Arg2]) ->
+fold_call_1(Call, erlang, N, [Arg1,Arg2]) ->
     case catch begin
 		   LitA1 = core_lib:literal_value(Arg1),
 		   LitA2 = core_lib:literal_value(Arg2),
 		   {ok,core_lib:make_literal(eval_call(N, LitA1, LitA2))}
 	       end of
 	{ok,Val} -> Val;
-	Other -> Call
+	_Other -> Call
     end;
-call_1(Call, Mod, Name, Args) -> Call.
+fold_call_1(Call, _Mod, _Name, _Args) -> Call.
 
 %% eval_call(Op, Arg) -> Value.
 %% eval_call(Op, Arg1, Arg2) -> Value.
@@ -408,9 +743,9 @@ eval_call(element, X, Y) -> element(X, Y).
 eval_length(Call, Core) -> eval_length(Call, Core, 0).
     
 eval_length(Call, #c_nil{}, Len) -> #c_int{anno=Call#c_call.anno,val=Len};
-eval_length(Call, #c_cons{tl=T}=Cons, Len) ->
+eval_length(Call, #c_cons{tl=T}, Len) ->
     eval_length(Call, T, Len+1);
-eval_length(Call, List, 0) -> Call;		%Could do nothing
+eval_length(Call, _List, 0) -> Call;		%Could do nothing
 eval_length(Call, List, Len) ->
     #c_call{anno=Call#c_call.anno,
 	    module=#c_atom{val=erlang},
@@ -420,14 +755,14 @@ eval_length(Call, List, Len) ->
 %% eval_append(Call, FirstList, SecondList) -> Val.
 %%  Evaluates the constant part of '++' expression.
 
-eval_append(Call, #c_string{val=Cs1}=S1, #c_string{val=Cs2}) ->
+eval_append(_Call, #c_string{val=Cs1}=S1, #c_string{val=Cs2}) ->
     S1#c_string{val=Cs1 ++ Cs2};
 eval_append(Call, #c_string{val=Cs}, List) when length(Cs) =< 4 ->
     Anno = Call#c_call.anno,
     foldr(fun (C, L) ->
 		  #c_cons{anno=Anno,hd=#c_int{val=C},tl=L}
 	  end, List, Cs);
-eval_append(Call, #c_nil{}, List) -> List;
+eval_append(_Call, #c_nil{}, List) -> List;
 eval_append(Call, #c_cons{tl=T}=Cons, List) ->
     Cons#c_cons{tl=eval_append(Call, T, List)};
 eval_append(Call, X, Y) ->
@@ -474,7 +809,7 @@ let_substs(Vs0, As0, Sub0) ->
 let_substs_1(Vs, #c_values{es=As}, Sub) ->
     let_subst_list(Vs, As, Sub);
 let_substs_1([V], A, Sub) -> let_subst_list([V], [A], Sub);
-let_substs_1(Vs, A, Sub) -> {Vs,A,[]}.
+let_substs_1(Vs, A, _) -> {Vs,A,[]}.
 
 let_subst_list([V|Vs0], [A|As0], Sub) ->
     {Vs1,As1,Ss} = let_subst_list(Vs0, As0, Sub),
@@ -482,7 +817,7 @@ let_subst_list([V|Vs0], [A|As0], Sub) ->
 	true -> {Vs1,As1,sub_subst_var(V, A, Sub) ++ Ss};
 	false -> {[V|Vs1],[A|As1],Ss}
     end;
-let_subst_list([], [], Sub) -> {[],[],[]}.
+let_subst_list([], [], _) -> {[],[],[]}.
 
 %% pattern(Pattern, InSub) -> {Pattern,OutSub}.
 %% pattern(Pattern, InSub, OutSub) -> {Pattern,OutSub}.
@@ -506,12 +841,12 @@ pattern(#c_var{name=V0}=Pat, Isub, Osub) ->
 	    {Pat1,sub_set_var(Pat, Pat1, Osub)};
 	false -> {Pat,sub_del_var(Pat, Osub)}
     end;
-pattern(#c_char{}=Pat, Isub, Osub) -> {Pat,Osub};
-pattern(#c_int{}=Pat, Osub, Isub) -> {Pat,Osub};
-pattern(#c_float{}=Pat, Isub, Osub) -> {Pat,Osub};
-pattern(#c_atom{}=Pat, Isub, Osub) -> {Pat,Osub};
-pattern(#c_string{}=Pat, Isub, Osub) -> {Pat,Osub};
-pattern(#c_nil{}=Pat, Isub, Osub) -> {Pat,Osub};
+pattern(#c_char{}=Pat, _, Osub) -> {Pat,Osub};
+pattern(#c_int{}=Pat, Osub, _) -> {Pat,Osub};
+pattern(#c_float{}=Pat, _, Osub) -> {Pat,Osub};
+pattern(#c_atom{}=Pat, _, Osub) -> {Pat,Osub};
+pattern(#c_string{}=Pat, _, Osub) -> {Pat,Osub};
+pattern(#c_nil{}=Pat, _, Osub) -> {Pat,Osub};
 pattern(#c_cons{hd=H0,tl=T0}=Pat, Isub, Osub0) ->
     {H1,Osub1} = pattern(H0, Isub, Osub0),
     {T1,Osub2} = pattern(T0, Isub, Osub1),
@@ -577,35 +912,35 @@ sub_set_name(V, Val, #sub{v=S,t=Tdb}=Sub) ->
 sub_del_var(#c_var{name=V}, #sub{v=S,t=Tdb}=Sub) ->
     Sub#sub{v=v_erase(V, S),t=kill_types(V, Tdb)}.
 
-sub_subst_var(#c_var{name=V}, Val, #sub{v=S0}=Sub) ->
+sub_subst_var(#c_var{name=V}, Val, #sub{v=S0}) ->
     %% Fold chained substitutions.
     [{V,Val}] ++ [ {K,Val} || {K,#c_var{name=V1}} <- S0, V1 =:= V ].
 
 sub_is_val(#c_var{name=V}, #sub{v=S}) ->
     v_is_value(V, S).
 
-v_find(Key, [{K,Value}|_]) when Key < K -> error;
+v_find(Key, [{K,_}|_]) when Key < K -> error;
 v_find(Key, [{K,Value}|_]) when Key == K -> {ok,Value};
-v_find(Key, [{K,Value}|D]) when Key > K -> v_find(Key, D);
-v_find(Key, []) -> error.
+v_find(Key, [{K,_}|D]) when Key > K -> v_find(Key, D);
+v_find(_, []) -> error.
 
-v_store(Key, New, [{K,Old}=Pair|Dict]) when Key < K ->
+v_store(Key, New, [{K,_Old}=Pair|Dict]) when Key < K ->
     [{Key,New},Pair|Dict];
-v_store(Key, New, [{K,Old}|Dict]) when Key == K ->
+v_store(Key, New, [{K,_Old}|Dict]) when Key == K ->
     [{Key,New}|Dict];
-v_store(Key, New, [{K,Old}=Pair|Dict]) when Key > K ->
+v_store(Key, New, [{K,_Old}=Pair|Dict]) when Key > K ->
     [Pair|v_store(Key, New, Dict)];
 v_store(Key, New, []) -> [{Key,New}].
 
 v_erase(Key, [{K,Value}|Dict]) when Key < K -> [{K,Value}|Dict];
-v_erase(Key, [{K,Value}|Dict]) when Key == K -> Dict;
+v_erase(Key, [{K,_}|Dict]) when Key == K -> Dict;
 v_erase(Key, [{K,Value}|Dict]) when Key > K ->
     [{K,Value}|v_erase(Key, Dict)];
-v_erase(Key, []) -> [].
+v_erase(_, []) -> [].
 
 v_is_value(Var, Sub) ->
-    any(fun ({V,#c_var{name=Val}}) when Val == Var -> true;
-	    (Other) -> false
+    any(fun ({_,#c_var{name=Val}}) when Val == Var -> true;
+	    (_) -> false
 	end, Sub).
 
 %% clauses(E, [Clause], Sub) -> [Clause].
@@ -617,11 +952,11 @@ clauses(E, [C0|Cs], Sub) ->
     %%ok = io:fwrite("~w: ~p~n", [?LINE,{E,Ps}]),
     case {will_match(E, Ps),will_succeed(G)} of
 	{yes,yes} -> [C1];			%Skip the rest
-	{no,Suc} -> clauses(E, Cs, Sub);	%Skip this clause
-	{Mat,no} -> clauses(E, Cs, Sub);	%Skip this clause
-	{Mat,Suc} -> [C1|clauses(E, Cs, Sub)]
+	{no,_Suc} -> clauses(E, Cs, Sub);	%Skip this clause
+	{_Mat,no} -> clauses(E, Cs, Sub);	%Skip this clause
+	{_Mat,_Suc} -> [C1|clauses(E, Cs, Sub)]
     end;
-clauses(E, [], Sub) -> [].
+clauses(_, [], _) -> [].
 
 %% will_succeed(Guard) -> yes | maybe | no.
 %%  Test if we know whether a guard will succeed/fail or just don't
@@ -629,7 +964,7 @@ clauses(E, [], Sub) -> [].
 
 will_succeed(#c_atom{val=true}) -> yes;
 will_succeed(#c_atom{val=false}) -> no;
-will_succeed(Guard) -> maybe.
+will_succeed(_Guard) -> maybe.
 
 %% will_match(Expr, [Pattern]) -> yes | maybe | no.
 %%  Test if we know whether a match will succeed/fail or just don't
@@ -639,15 +974,15 @@ will_match(#c_values{es=Es}, Ps) ->
     will_match_list(Es, Ps, yes);
 will_match(E, [P]) ->
     will_match_1(E, P);
-will_match(E, Ps) -> no.
+will_match(_, _) -> no.
 
-will_match_1(E, #c_var{}) -> yes;		%Will always match
+will_match_1(_E, #c_var{}) -> yes;		%Will always match
 will_match_1(E, #c_alias{pat=P}) ->		%Pattern decides
     will_match_1(E, P);
-will_match_1(#c_var{}, P) -> maybe;
+will_match_1(#c_var{}, _P) -> maybe;
 will_match_1(#c_tuple{es=Es}, #c_tuple{es=Ps}) ->
     will_match_list(Es, Ps, yes);
-will_match_1(E, P) -> maybe.
+will_match_1(_, _) -> maybe.
 
 will_match_list([E|Es], [P|Ps], M) ->
     case will_match_1(E, P) of
@@ -656,7 +991,7 @@ will_match_list([E|Es], [P|Ps], M) ->
 	no -> no
     end;
 will_match_list([], [], M) -> M;
-will_match_list(Es, Ps, M) -> no.		%Different length
+will_match_list(_, _, _) -> no.			%Different length
 
 %% eval_case(Case) -> #c_case{} | #c_let{}.
 %%  If possible, evaluate a case at compile time.  We know that the
@@ -676,7 +1011,7 @@ eval_case(#c_case{arg=#c_var{name=V},
 	    end;
 	error -> eval_case(Cases)
     end;
-eval_case(Cases, Sub) -> eval_case(Cases).
+eval_case(Cases, _) -> eval_case(Cases).
 
 eval_case(#c_case{arg=E,clauses=[#c_clause{pats=Ps,body=B}]}=Case) ->
     case is_var_pat(Ps) of
@@ -686,14 +1021,14 @@ eval_case(#c_case{arg=E,clauses=[#c_clause{pats=Ps,body=B}]}=Case) ->
 eval_case(Case) -> Case.
 
 is_var_pat(Ps) -> all(fun (#c_var{}) -> true;
-			  (Pat) -> false
+			  (_Pat) -> false
 		      end, Ps).
 
 will_match_type(#c_tuple{es=Es}, #c_tuple{es=Ps}) ->
     will_match_list_type(Es, Ps);
 will_match_type(#c_atom{}=Atom, #c_atom{}=Atom) -> yes;
-will_match_type(#c_var{}=Atom, Type) -> yes;
-will_match_type(Ps, Type) -> no.
+will_match_type(#c_var{}, _) -> yes;
+will_match_type(_, _) -> no.
 
 will_match_list_type([E|Es], [P|Ps]) ->
     case will_match_type(E, P) of
@@ -701,7 +1036,7 @@ will_match_list_type([E|Es], [P|Ps]) ->
 	no -> no
     end;
 will_match_list_type([], []) -> yes;
-will_match_list_type(Es, Ps) -> no.		%Different length
+will_match_list_type(_, _) -> no.		%Different length
 
 remove_non_vars(#c_tuple{es=Ps}, #c_tuple{es=Es}, Pacc, Eacc) ->
     remove_non_vars(Ps, Es, Pacc, Eacc);
@@ -729,7 +1064,7 @@ case_opt_cs([#c_clause{pats=Ps0,guard=G,body=B}=C|Cs], Arity) ->
 	error ->				%Can't match
 	    case_opt_cs(Cs, Arity)
     end;
-case_opt_cs([], Arity) -> [].
+case_opt_cs([], _) -> [].
 
 letify_guard(Flet, Avs, #c_call{module=#c_atom{val=erlang},
 			       name=#c_atom{val='not'},
@@ -754,24 +1089,23 @@ letify_guard(Flet, Avs, E) -> foldl(Flet, E, Avs).
 
 %% case_tuple_pat([Pattern], Arity) -> {ok,[Pattern],[{AliasVar,Pat}]} | error.
 
-case_tuple_pat([#c_tuple{anno=A,es=Ps}], Arity) when length(Ps) == Arity ->
+case_tuple_pat([#c_tuple{es=Ps}], Arity) when length(Ps) =:= Arity ->
     {ok,Ps,[]};
-    %%{ok,unalias_pat_list(Ps),[]};
 case_tuple_pat([#c_var{anno=A}=V], Arity) ->
     Vars = make_vars(A, 1, Arity),
     {ok,Vars,[{V,#c_tuple{es=Vars}}]};
-case_tuple_pat([#c_alias{anno=A,var=V,pat=P}], Arity) ->
+case_tuple_pat([#c_alias{var=V,pat=P}], Arity) ->
     case case_tuple_pat([P], Arity) of
 	{ok,Ps,Avs} -> {ok,Ps,[{V,#c_tuple{es=unalias_pat_list(Ps)}}|Avs]};
 	error -> error
     end;
-case_tuple_pat(Pat, Arity) -> error.
+case_tuple_pat(_, _) -> error.
 
 %% unalias_pat(Pattern) -> Pattern.
 %%  Remove all the aliases in a pattern but using the alias variables
 %%  instead of the values.  We KNOW they will be bound.
 
-unalias_pat(#c_alias{var=V,pat=P}) -> V;
+unalias_pat(#c_alias{var=V}) -> V;
 unalias_pat(#c_cons{hd=H0,tl=T0}=Cons) ->
     H1 = unalias_pat(H0),
     T1 = unalias_pat(T0),
@@ -804,16 +1138,16 @@ letify(#c_var{name=Vname}=Var, Val, Body) ->
 
 opt_case_in_let(#c_let{vars=Vs,arg=Arg,body=B}=Let) ->
     case catch opt_case_in_let(Vs, Arg, B) of
-	{'EXIT',Reason} -> Let;			%Optimisation not possible.
+	{'EXIT',_} -> Let;			%Optimisation not possible.
 	Other -> Other
     end;
 opt_case_in_let(Other) -> Other.
 
-opt_case_in_let([#c_var{name=V}=Var], Arg0,
+opt_case_in_let([#c_var{name=V}], Arg0,
 		#c_case{arg=#c_var{name=V},clauses=[C1|_]}) ->
     #c_clause{pats=[#c_tuple{es=Es}],guard=#c_atom{val=true},body=B} = C1,
-    true = all(fun (#c_var{}) ->true;
-		   (Other) -> false end, Es),	%Only variables in tuple
+    true = all(fun (#c_var{}) -> true;
+		   (_) -> false end, Es),	%Only variables in tuple
     false = core_lib:is_var_used(V, B),		%Built tuple must not be used.
     Arg1 = tuple_to_values(Arg0, length(Es)),	%Might fail.
     #c_let{vars=Es,arg=Arg1,body=B}.
@@ -821,23 +1155,23 @@ opt_case_in_let([#c_var{name=V}=Var], Arg0,
 %% tuple_to_values(Expr, TupleArity) -> Expr' | exception
 %%  Convert tuples in return position of arity TupleArity to values.
 
-tuple_to_values(#c_primop{name=#c_atom{val=match_fail},args=[Arg]}=Prim,
-		Arity) ->
+tuple_to_values(#c_primop{name=#c_atom{val=match_fail},args=[_]}=Prim,
+		_Arity) ->
     Prim;
 tuple_to_values(#c_call{module=#c_atom{val=erlang},
 			name=#c_atom{val=exit},
 			args=Args}=Call,
-		Arity) when length(Args) == 1 ->
+		_Arity) when length(Args) == 1 ->
     Call;
 tuple_to_values(#c_call{module=#c_atom{val=erlang},
 			name=#c_atom{val=fault},
 			args=Args}=Call,
-		Arity) when length(Args) == 1 ->
+		_Arity) when length(Args) == 1 ->
     Call;
 tuple_to_values(#c_call{module=#c_atom{val=erlang},
 			name=#c_atom{val=fault},
 			args=Args}=Call,
-		Arity) when length(Args) == 2 ->
+		_Arity) when length(Args) == 2 ->
     Call;
 tuple_to_values(#c_tuple{es=Es}, Arity) when length(Es) =:= Arity ->
     core_lib:make_values(Es);
@@ -862,17 +1196,16 @@ tuple_to_values(#c_clause{body=B0}=Clause, Arity) ->
 %%  Updates the type database.
 update_types(#c_var{name=V}, [#c_tuple{}=P], Types) ->
     orddict:store(V, P, Types);
-update_types(Other, Ps, Types) -> Types.
+update_types(_, _, Types) -> Types.
 
 %% update_types(V, Tdb) -> Tdb'
 %%  Kill any entries that references the variable,
 %%  either in the key or in the value.
 kill_types(V, [{V,_}|Tdb]) ->
     kill_types(V, Tdb);
-kill_types(V, [{K,#c_tuple{es=Vars}}=Entry|Tdb]) ->
+kill_types(V, [{_,#c_tuple{es=Vars}}=Entry|Tdb]) ->
     case v_is_value(V, Vars) of
 	true -> kill_types(V, Tdb);
 	false -> [Entry|kill_types(V, Tdb)]
     end;
-kill_types(V, []) -> [].
-
+kill_types(_, []) -> [].

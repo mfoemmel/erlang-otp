@@ -91,7 +91,7 @@ configure(Dir) ->
     ok.
 
 init_vars(Agent) ->
-    lists:map({snmp_framework_mib, init_var}, [], Agent).
+    snmp_misc:map({snmp_framework_mib, init_var}, [], Agent).
 
 maybe_create_table(Name) ->
     case snmp_local_db:table_exists(db(Name)) of

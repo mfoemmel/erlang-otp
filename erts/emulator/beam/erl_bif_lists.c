@@ -35,7 +35,7 @@
  */
 
 Eterm
-erlang_append_2(Process* p, Eterm A, Eterm B)
+ebif_plusplus_2(Process* p, Eterm A, Eterm B)
 {
     return append_2(p, A, B);
 }
@@ -45,7 +45,7 @@ erlang_append_2(Process* p, Eterm A, Eterm B)
  */
 
 Eterm
-erlang_subtract_2(Process* p, Eterm A, Eterm B)
+ebif_minusminus_2(Process* p, Eterm A, Eterm B)
 {
     return subtract_2(p, A, B);
 }

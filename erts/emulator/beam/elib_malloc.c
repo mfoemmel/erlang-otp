@@ -275,8 +275,8 @@ EWord page_size = 0;        /* Set by elib_init */
  do {									\
     if ((EWord)(p) & (a-1)) {						\
 	elib_printf(stderr,						\
-		    "RUNTIME ERROR: bad alignment (0x%x:%d:%d)\n",	\
-		    (unsigned) (p), (int) a, __LINE__);			\
+		    "RUNTIME ERROR: bad alignment (0x%lx:%d:%d)\n",	\
+		    (unsigned long) (p), (int) a, __LINE__);			\
 	ELIB_FAILURE;							\
     }									\
   } while(0)
@@ -546,13 +546,12 @@ EWord nw;
 }
 
 
-size_t elib_sizeof(p)
-void *p;
+size_t elib_sizeof(void *p)
 {
     AllocatedBlock* pp;
 
     if (p != 0) {
-	pp = (AllocatedBlock*) (p-1);
+	pp = (AllocatedBlock*) (((char *)p)-1);
 	return SIZEOF(pp);
     }
     return 0;
@@ -1098,11 +1097,13 @@ void* to;
 
     elib_printf(to, "Fixed free lists:\n");
     for (i = 0; i < FIXED; i++)
-	elib_printf(to, "size[%d] = %d\n", i, sz_fixed[i]);
+	elib_printf(to, "size[%d] = %lu\n", 
+		    i, (unsigned long)sz_fixed[i]);
 
     elib_printf(to, "Dynamic free lists\n");
     for (i = 0; i < DYNAMIC; i++)
-	elib_printf(to, "size < 2^%d = %d\n", i+5, sz_dynamic[i]);
+	elib_printf(to, "size < 2^%d = %lu\n", 
+		    i+5, (unsigned long) sz_dynamic[i]);
 
     elib_heap_map(map, 80);
     elib_printf(to, "Simple heap display:\n");
@@ -1864,6 +1865,8 @@ void
 elib_ensure_initialized(void)
 {
 #ifdef ENABLE_ELIB_MALLOC
+#ifndef ELIB_DONT_INITIALIZE
     elib_init(NULL, 0);
+#endif
 #endif
 }

@@ -1,9 +1,0 @@
-{application, comet,
-   [{description, "COMET version 1.0.1"},
-    {vsn, "%VSN%"},
-    {modules, [erl_com]},
-    {registered, []},
-    {applications, [kernel, stdlib]},
-    {env, []}]}.
-
-

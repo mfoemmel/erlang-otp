@@ -18,9 +18,9 @@
 %%              * 2001-07-30 EJ (happi@csd.uu.se):
 %%               Fixed some bugs and started cleanup.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2001/08/16 10:48:49 $
-%%              $Revision: 1.7 $
+%%              $Author: richardc $
+%%              $Date: 2002/10/01 12:44:28 $
+%%              $Revision: 1.10 $
 %% ====================================================================
 %%  Exports  :
 %%    gen_switch_val(I, VarMap, ConstTab, Options, ExitInfo)
@@ -74,7 +74,7 @@
 %%    can be turned on by default.
 
 gen_switch_val(I, VarMap, ConstTab, Options, ExitInfo) ->
-  case property_lists:get_bool(use_indexing, Options) of
+  case proplists:get_bool(use_indexing, Options) of
     false -> gen_slow_switch_val(I, VarMap, ConstTab, Options, ExitInfo);
     true -> gen_fast_switch_val(I, VarMap, ConstTab, Options, ExitInfo)
   end.
@@ -106,13 +106,13 @@ handle_types([], Code, VarMap, ConstTab, _, _) ->
   {Code, VarMap, ConstTab}.
 
 
-gen_fast_switch_on(integer, Cases, VarMap, ConstTab, Arg, {I, Fail, Options, ExitInfo})  ->
+gen_fast_switch_on(integer, Cases, VarMap, ConstTab, Arg, {I, Fail, Options, _ExitInfo})  ->
   {First,_} = hd(Cases),
   Min = hipe_icode:const_value(First),
   if length(Cases) < ?MINFORJUMPTABLE ->
       gen_small_switch_val(Arg,Cases,Fail,VarMap,ConstTab,Options);
      true ->
-      case property_lists:get_bool(use_clusters, Options) of
+      case proplists:get_bool(use_clusters, Options) of
 	false ->
 	  M = list_to_tuple(Cases),
 	  D = density(M,1,size(M)),
@@ -129,8 +129,8 @@ gen_fast_switch_on(integer, Cases, VarMap, ConstTab, Arg, {I, Fail, Options, Exi
 	  find_cluster(CM,VarMap,ConstTab,Options,Arg,Fail,hipe_icode:switch_val_fail_label(I))
       end
   end;
-gen_fast_switch_on(atom, Cases, VarMap, ConstTab, Arg, {I, Fail, Options, ExitInfo})  ->
-  case property_lists:get_bool(use_inline_atom_search, Options) of
+gen_fast_switch_on(atom, Cases, VarMap, ConstTab, Arg, {_I, Fail, Options, _ExitInfo})  ->
+  case proplists:get_bool(use_inline_atom_search, Options) of
     true ->
       if
 	length(Cases) < ?MININLINEATOMSEARCH ->
@@ -147,7 +147,7 @@ gen_fast_switch_on(atom, Cases, VarMap, ConstTab, Arg, {I, Fail, Options, ExitIn
 	  gen_search_switch_val(Arg, Cases, Fail, VarMap, ConstTab, Options)
       end
   end;	
-gen_fast_switch_on(_, Cases, VarMap, ConstTab, Arg, {I, Fail, Options, ExitInfo})  ->
+gen_fast_switch_on(_, _Cases, VarMap, ConstTab, _Arg, {I, _Fail, Options, ExitInfo})  ->
   %% We can only handle smart indexing of integers and atoms
   %% TODO: Consider bignum
   gen_slow_switch_val(I, VarMap, ConstTab, Options, ExitInfo).
@@ -162,7 +162,7 @@ split_types([],_) ->
   %% Cant happen.
   ?EXIT({empty_caselist}).
 
-switch_on_types([{Type, Cases}], AccCode, AccCases, Arg) ->
+switch_on_types([{Type, Cases}], AccCode, AccCases, _Arg) ->
   Lbl = hipe_rtl:mk_new_label(),
   I = hipe_rtl:mk_goto(hipe_rtl:label_name(Lbl)),
   {[{Type, Lbl, lists:reverse(Cases)}| AccCases],lists:reverse([I|AccCode])};
@@ -206,13 +206,13 @@ casetype({Const,_}) ->
 	casetype(hipe_icode:const_value(Const));
 casetype(A) ->
 	if
-	  integer(A) -> 
+	  is_integer(A) -> 
 	    case hipe_tagscheme:is_fixnum(A) of
 	      true -> integer;
 	      false -> bignum
 	    end;
-	  float(A) -> float;
-	  atom(A) -> atom;
+	  is_float(A) -> float;
+	  is_atom(A) -> atom;
 	  true -> other
 	end.
 
@@ -220,7 +220,7 @@ casetype(A) ->
 %% check that no duplicate values occur in the case list and also
 %% check that all case values have the same type.
 check_duplicates([]) -> true;
-check_duplicates([X]) -> true;
+check_duplicates([_]) -> true;
 check_duplicates([{Const1,_},{Const2,L2}|T]) ->
 	C1 = hipe_icode:const_value(Const1),
 	C2 = hipe_icode:const_value(Const2),
@@ -252,9 +252,9 @@ check_duplicates([{Const1,_},{Const2,L2}|T]) ->
 %% the first N cases can be divided into M (but no fewer) clusters where
 %% each cluster is dense.
 
-minclusters(Cases) when list(Cases) ->
+minclusters(Cases) when is_list(Cases) ->
 	minclusters(list_to_tuple(Cases));
-minclusters(Cases) when tuple(Cases) ->
+minclusters(Cases) when is_tuple(Cases) ->
 	N = size(Cases),
 	MinClusters = list_to_tuple([0|n_list(N,inf)]),
 	i_loop(1,N,MinClusters,Cases).
@@ -266,20 +266,20 @@ n_list(N,Init) -> [Init | n_list(N-1,Init)].
 
 
 %% Do the dirty work of minclusters
-i_loop(I,N,MinClusters,Cases) when I > N -> 
+i_loop(I,N,MinClusters,_Cases) when I > N -> 
 	MinClusters;
 i_loop(I,N,MinClusters,Cases) when I =< N ->
 	M = j_loop(0, I-1, MinClusters, Cases),
 	i_loop(I+1, N, M, Cases).
 
 %% More dirty work	
-j_loop(J,I1,MinClusters,Cases) when J > I1 ->
+j_loop(J,I1,MinClusters,_Cases) when J > I1 ->
 	MinClusters;
 j_loop(J,I1,MinClusters,Cases) when J =< I1 ->
 	D = density(Cases,J+1,I1+1),
 	A0 = element(J+1,MinClusters),
 	A = if
-		number(A0) ->
+		is_number(A0) ->
 			A0+1;
 		true ->
 			A0
@@ -325,7 +325,7 @@ cluster_split(Cases,Clust) ->
 	L2=lists:reverse(A),
 	cluster_split(Max,[],[],L1,L2).
 
-cluster_split(0,[],Res,Cases,Clust) -> 
+cluster_split(0,[],Res,Cases,_Clust) -> 
 	L=lists:reverse(Cases),
 	{H,_}=hd(L),
 	{T,_}=hd(Cases),
@@ -339,7 +339,7 @@ cluster_split(N,Sofar,Res,Cases,[N|Clust]) ->
 	{T,_}=lists:last(Sofar),
 	cluster_split(N-1,[],[{dense,hipe_icode:const_value(H),hipe_icode:const_value(T),Sofar}|Res],Cases,[N|Clust]);
 
-cluster_split(N,Sofar,Res,[C|Cases],[M|Clust]) ->
+cluster_split(N,Sofar,Res,[C|Cases],[_|Clust]) ->
 	cluster_split(N,[C|Sofar],Res,Cases,Clust).
 
 
@@ -353,19 +353,19 @@ cluster_merge([{dense,Min,Max,C}|T]) when length(C) >= ?MINFORJUMPTABLE ->
 	[{dense,Min,Max,C}|C2];
 
 cluster_merge([{sparse,Min,_,C},{sparse,_,Max,D}|T]) ->
-	R = {sparse,Min,Max,lists:append(C,D)},
+	R = {sparse,Min,Max,C ++ D},
 	cluster_merge([R|T]);
 
 cluster_merge([{sparse,Min,_,C},{dense,_,Max,D}|T]) when length(D) < ?MINFORJUMPTABLE ->
-	R = {sparse,Min,Max,lists:append(C,D)},
+	R = {sparse,Min,Max,C ++ D},
 	cluster_merge([R|T]);
 
 cluster_merge([{dense,Min,_,C},{dense,_,Max,D}|T]) when length(C) < ?MINFORJUMPTABLE, length(D) < ?MINFORJUMPTABLE ->
-	R = {sparse,Min,Max,lists:append(C,D)},
+	R = {sparse,Min,Max,C ++ D},
 	cluster_merge([R|T]);
 
 cluster_merge([{dense,Min,_,D},{sparse,_,Max,C}|T]) when length(D) < ?MINFORJUMPTABLE ->
-	R = {sparse,Min,Max,lists:append(C,D)},
+	R = {sparse,Min,Max,C ++ D},
 	cluster_merge([R|T]);
 
 cluster_merge([A,{dense,Min,Max,C}|T]) when length(C) >= ?MINFORJUMPTABLE ->
@@ -375,7 +375,7 @@ cluster_merge([A,{dense,Min,Max,C}|T]) when length(C) >= ?MINFORJUMPTABLE ->
 
 %% Generate code to search for the correct cluster
 
-find_cluster([{sparse,Min,Max,C}],VarMap,ConstTab,Options,Arg,Fail,IcodeFail) ->
+find_cluster([{sparse,_Min,_Max,C}],VarMap,ConstTab,Options,Arg,Fail,_IcodeFail) ->
 	case length(C) < ?MINFORINTSEARCHTREE of
 	   true ->
 	   	gen_small_switch_val(Arg,C,Fail,VarMap,ConstTab,Options);
@@ -384,7 +384,7 @@ find_cluster([{sparse,Min,Max,C}],VarMap,ConstTab,Options,Arg,Fail,IcodeFail) ->
 	end;
 
 	
-find_cluster([{dense,Min,Max,C}],VarMap,ConstTab,Options,Arg,Fail,IcodeFail) ->	
+find_cluster([{dense,Min,_Max,C}],VarMap,ConstTab,Options,Arg,Fail,IcodeFail) ->	
 	case length(C) < ?MINFORJUMPTABLE of
 	   true ->
 	   	gen_small_switch_val(Arg,C,Fail,VarMap,ConstTab,Options);
@@ -397,7 +397,6 @@ find_cluster([{Density,Min,Max,C}|T],VarMap,ConstTab,Options,Arg,Fail,IcodeFail)
 	
 	ClustLab=hipe_rtl:mk_new_label(),
 	NextLab=hipe_rtl:mk_new_label(),
-	Reg=hipe_rtl:mk_new_reg(),
 	{ClustCode,V1,C1}=find_cluster([{Density,Min,Max,C}],VarMap,ConstTab,Options,Arg,Fail,IcodeFail),
 
 	{Rest,V2,C2}=find_cluster(T,V1,C1,Options,Arg,Fail,IcodeFail),
@@ -416,14 +415,14 @@ find_cluster([{Density,Min,Max,C}|T],VarMap,ConstTab,Options,Arg,Fail,IcodeFail)
 
 %% Generate efficient code for a linear search through the case list.
 %% Only works for atoms and integer.
-gen_linear_switch_val(Arg,Cases,Fail,VarMap,ConstTab,Options) ->
-	{Values,Labels} = split_cases(Cases),
+gen_linear_switch_val(Arg,Cases,Fail,VarMap,ConstTab,_Options) ->
+	{Values,_Labels} = split_cases(Cases),
 	{LabMap,VarMap1} = lbls_from_cases(Cases,VarMap),
 	
 	Code = fast_linear_search(Arg,Values,LabMap,Fail),
 	{Code,VarMap1,ConstTab}.
 
-fast_linear_search(Arg,[],[],Fail) ->
+fast_linear_search(_Arg,[],[],Fail) ->
 	[
 	hipe_rtl:mk_goto(hipe_rtl:label_name(Fail))
 	];
@@ -433,7 +432,7 @@ fast_linear_search(Arg,[Case|Cases],[Label|Labels],Fail) ->
 	C2 = fast_linear_search(Arg,Cases,Labels,Fail),
 	C1 =
 	  if
-	    integer(Case) ->
+	    is_integer(Case) ->
 	  	TVal= hipe_tagscheme:mk_fixnum(Case),
   		[
 	  	hipe_rtl:mk_move(Reg,hipe_rtl:mk_imm(TVal)),
@@ -442,7 +441,7 @@ fast_linear_search(Arg,[Case|Cases],[Label|Labels],Fail) ->
 				hipe_rtl:label_name(NextLab), 0.5),
 		NextLab
 		];
-	    atom(Case) ->
+	    is_atom(Case) ->
 	  	[
   		hipe_rtl:mk_load_atom(Reg,Case),
 	  	hipe_rtl:mk_branch(Arg,eq,Reg,
@@ -456,22 +455,22 @@ fast_linear_search(Arg,[Case|Cases],[Label|Labels],Fail) ->
 	[C1,C2].
 
 
-%% Generate code to search through a small cluster of integers using binary search
-gen_small_switch_val(Arg,Cases,Fail,VarMap,ConstTab,Options) -> 
-	{Values,Labels} = split_cases(Cases),
+%% Generate code to search through a small cluster of integers using
+%% binary search
+gen_small_switch_val(Arg,Cases,Fail,VarMap,ConstTab,_Options) -> 
+	{Values,_Labels} = split_cases(Cases),
 	{LabMap,VarMap1} = lbls_from_cases(Cases,VarMap),
-	F = fun(X) -> hipe_tagscheme:mk_fixnum(X) end,
-	Keys = lists:map(F,Values),  % Add tags to the values
-	
+	Keys = [hipe_tagscheme:mk_fixnum(X)    % Add tags to the values
+		|| X <- Values],
 	Code = inline_search(Keys, LabMap, Arg, Fail),
 	{Code, VarMap1, ConstTab}.
 
 
 %% Generate code to search through a small cluster of atoms
-gen_atom_switch_val(Arg,Cases,Fail,VarMap,ConstTab,Options) -> 
-	{Values, Labels} = split_cases(Cases),
+gen_atom_switch_val(Arg,Cases,Fail,VarMap,ConstTab,_Options) -> 
+	{Values, _Labels} = split_cases(Cases),
 	{LabMap,VarMap1} = lbls_from_cases(Cases,VarMap),
-	LMap = lists:map(fun (L) -> {label,L} end, LabMap),
+	LMap = [{label,L} || L <- LabMap],
 	
 	{NewConstTab,Id} = hipe_consttab:insert_sorted_block(ConstTab, Values),
 	{NewConstTab2,LabId} = hipe_consttab:insert_sorted_block(NewConstTab, 4 , word, LMap, Values),
@@ -492,7 +491,7 @@ get_cases(_, 0, 0) ->
      [];
 get_cases([H|T], 0, N) ->
     [H | get_cases(T, 0, N - 1)];
-get_cases([H|T], N1, N2) ->
+get_cases([_|T], N1, N2) ->
     get_cases(T, N1 - 1, N2 - 1).
 
     
@@ -508,7 +507,7 @@ get_cases([H|T], N1, N2) ->
 %%  Default - A label to jump to if the key is not found.
 %%
 
-inline_search([], LabelList, KeyReg, Default) -> [];
+inline_search([], _LabelList, _KeyReg, _Default) -> [];
 inline_search(KeyList, LabelList, KeyReg, Default) ->
     %% Create some registers and lables that we need.
     Reg = hipe_rtl:mk_new_reg(),
@@ -624,8 +623,6 @@ inline_atom_search(Start,End, Block, LBlock, KeyReg, Default, Labels) ->
 		L1 = hipe_rtl:mk_new_label(),
 		L2 = hipe_rtl:mk_new_label(),
 		L3 = hipe_rtl:mk_new_label(),
-		L4 = hipe_rtl:mk_new_label(),
-		L5 = hipe_rtl:mk_new_label(),
 		[
 		hipe_rtl:mk_load_word_index(Reg,Block,Start),
 		hipe_rtl:mk_branch(KeyReg,eq,Reg,
@@ -702,7 +699,7 @@ gen_jump_table(Arg,Fail,IcodeFail,VarMap,ConstTab,Cases,Min) ->
 
 dense_interval(Cases, Min, IcodeFail) ->
 	dense_interval(Cases, Min, IcodeFail, 0, 0).
-dense_interval([Pair = {Const,L}|Rest], Pos, Fail, Range, NoEntries) ->
+dense_interval([Pair = {Const,_}|Rest], Pos, Fail, Range, NoEntries) ->
 	Val= hipe_icode:const_value(Const),
 	if 
 	    Pos < Val ->
@@ -713,7 +710,7 @@ dense_interval([Pair = {Const,L}|Rest], Pos, Fail, Range, NoEntries) ->
 		{Max, Res} = dense_interval(Rest, Pos+1, Fail, Range+1, NoEntries+1),
 		{Max, [Pair | Res]}
 	end;
-dense_interval([], Max, _, Range, NoEntries) -> 
+dense_interval([], Max, _, _, _) -> 
 	{Max-1, []}.
 
 
@@ -740,7 +737,7 @@ rewrite_switch_val_cases([{C,L}|Cases], Fail, Arg) ->
 		      hipe_icode:label_name(NextLab)),
      NextLab |
      rewrite_switch_val_cases(Cases, Fail, Arg)];
-rewrite_switch_val_cases([], Fail, Arg) ->
+rewrite_switch_val_cases([], Fail, _Arg) ->
     [hipe_icode:mk_goto(Fail)].
 
 
@@ -748,10 +745,10 @@ rewrite_switch_val_cases([], Fail, Arg) ->
 %% switch_val with binary search jumptable
 %%
 
-gen_search_switch_val(Arg, Cases, Default, VarMap, ConstTab, Options) ->
+gen_search_switch_val(Arg, Cases, Default, VarMap, ConstTab, _Options) ->
   ValTableR = hipe_rtl:mk_new_reg(),
 
-  {Values,Labels} = split_cases(Cases),
+  {Values,_Labels} = split_cases(Cases),
   {NewConstTab,Id} =
        hipe_consttab:insert_sorted_block(ConstTab, 
 			      Values),
@@ -983,7 +980,7 @@ split_cases([{V,L}|Rest], Vs, Ls) ->
 %% where H(Ai) = make_arityval(Ai)
 %% 
 
-gen_switch_tuple(I, Map, ConstTab, Options, ExitInfo) ->
+gen_switch_tuple(I, Map, ConstTab, _Options, _ExitInfo) ->
     {X, Map1} = 
     hipe_rtl_varmap:icode_var2rtl_var(hipe_icode:switch_tuple_arity_arg(I), Map),
     Fail0 = hipe_icode:switch_tuple_arity_fail_label(I),

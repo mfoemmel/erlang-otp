@@ -81,7 +81,7 @@
 
 static SysTimeval inittv; /* Used everywhere, the initial time-of-day */
 
-static SysTimes start; /* Used in elapsed_time_both */
+static SysTimes t_start; /* Used in elapsed_time_both */
 static SysTimeval gtv; /* Used in wall_clock_elapsed_time_both */
 static SysTimeval then; /* Used in get_now */
 
@@ -378,15 +378,15 @@ unsigned long *ms_user_diff, *ms_sys_diff;
     if (ms_sys != NULL)
 	*ms_sys = total_sys;
 
-    prev_total_user = (start.tms_utime * 1000) / SYS_CLK_TCK;
-    prev_total_sys = (start.tms_stime * 1000) / SYS_CLK_TCK;
+    prev_total_user = (t_start.tms_utime * 1000) / SYS_CLK_TCK;
+    prev_total_sys = (t_start.tms_stime * 1000) / SYS_CLK_TCK;
 
     if (ms_user_diff != NULL)
 	*ms_user_diff = total_user - prev_total_user;
 	  
     if (ms_sys_diff != NULL)
 	*ms_sys_diff = total_sys - prev_total_sys;
-    start = now;
+    t_start = now;
 }
 
 
@@ -633,7 +633,7 @@ int *year, *month, *day, *hour, *minute, *second;
 
 /* get a timestamp */
 void
-get_now(Uint32* megasec, Uint32* sec, Uint32* microsec)
+get_now(Uint* megasec, Uint* sec, Uint* microsec)
 {
     SysTimeval now;
     
@@ -650,9 +650,9 @@ get_now(Uint32* megasec, Uint32* sec, Uint32* microsec)
 	now.tv_usec = 0;
 	now.tv_sec++;
     }
-    *megasec = now.tv_sec / 1000000;
-    *sec = now.tv_sec % 1000000;
-    *microsec = now.tv_usec;
+    *megasec = (Uint) (now.tv_sec / 1000000);
+    *sec = (Uint) (now.tv_sec % 1000000);
+    *microsec = (Uint) (now.tv_usec);
     then = now;
 }
 
@@ -725,12 +725,12 @@ void erts_time_remaining(SysTimeval *rem_time)
 
 
 #ifdef HAVE_ERTS_NOW_CPU
-void erts_get_now_cpu(Uint32* megasec, Uint32* sec, Uint32* microsec) {
+void erts_get_now_cpu(Uint* megasec, Uint* sec, Uint* microsec) {
     SysHrTime t = sys_gethrvtime() / 1000;
-    *microsec = t % 1000000;
-    t /= 1000000;
-    *sec = t % 1000000;
-    t /= 1000000;
-    *megasec = t % 1000000;
+    *microsec = (Uint) (t % 1000000);
+    t /= ((Uint)1000000);
+    *sec = (Uint) (t % 1000000);
+    t /= ((Uint) 1000000);
+    *megasec = (Uint) (t % 1000000);
 }
 #endif

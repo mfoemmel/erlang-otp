@@ -34,6 +34,7 @@ typedef struct db_table_tree {
     int slot;                 /* slot in db_tables */
     int keypos;               /* defaults to 1 */
     int nitems;               /* Total number of items */
+    Uint memory;              /* Total memory size */
     int kept_items;           /* Always empty for trees */
     Uint megasec,sec,microsec; /* Last fixation time */
     DbFixation *fixations;     /* List of processes who have fixed 
@@ -92,6 +93,9 @@ int db_select_tree(Process *p, DbTableTree *tb /* [in out] */,
 		   Eterm pattern /* [in] */, 
 		   int reversed /* [in] */,
 		   Eterm *ret /* [out] */);
+int db_select_count_tree(Process *p, DbTableTree *tb /* [in out] */, 
+			 Eterm pattern /* [in] */, 
+			 Eterm *ret /* [out] */);
 int db_select_chunk_tree(Process *p, DbTableTree *tb /* [in out] */, 
 			 Eterm pattern /* [in] */, 
 			 Sint chunk_size /* [in] */,
@@ -101,6 +105,10 @@ int db_select_tree_continue(Process *p,
 			    DbTableTree *tb /* [in out] */,
 			    Eterm continuation /* [in] */,
 			    Eterm *ret /* [out] */);
+int db_select_count_tree_continue(Process *p, 
+				  DbTableTree *tb /* [in out] */,
+				  Eterm continuation /* [in] */,
+				  Eterm *ret /* [out] */);
 int db_select_delete_tree(Process *p, DbTableTree *tb /* [in out] */, 
 			  Eterm pattern /* [in] */, 
 			  Eterm *ret /* [out] */);
@@ -108,14 +116,15 @@ int db_select_delete_continue_tree(Process *p,
 				   DbTableTree *tb /* [in out] */, 
 				   Eterm continuation /* [in] */,
 				   Eterm *ret);
-int  db_info_memory_tree(Process *p, DbTableTree *tb /* [in out] */,
-			 Eterm *ret /* [out] */, 
-			 int *reds /* [out] */);
 void db_print_tree(CIO fd /* [in] */, 
 		   int show /* [in] */,
-		   DbTableTree *tb /* [in] */, 
-		   int *sum /* [out] */);
+		   DbTableTree *tb /* [in] */);
 void free_tree_table(DbTableTree *tb /* [in out] */);
+
+void erts_db_tree_foreach_offheap(DbTableTree *tab,
+				  void (*)(ErlOffHeap *, void *),
+				  void *);
+
 #ifdef HARDDEBUG
 void db_check_table_tree(DbTableTree *tb);
 #endif

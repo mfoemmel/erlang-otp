@@ -39,7 +39,24 @@ RELSYSDIR = $(RELEASE_PATH)/lib/mnesia_session-$(VSN)/examples
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
+
+PROGRAM = person_ex
+
+APP_DIR = $(ERL_TOP)/lib/mnesia_session
+
+INCLUDE_DIR := $(APP_DIR)/include
+
+IC_DIR := $(ERL_TOP)/lib/ic
+
+EI_DIR := $(ERL_TOP)/lib/erl_interface
+APP_BUILD_DIR = $(shell (dirname $(shell (dirname $(shell (dirname $(shell pwd)))))))
+ 
+IC_BUILD_DIR := $(shell echo 'io:format("~s~n",[code:lib_dir(ic)]),halt().' | erl | sed 's,^[0-9]*> *,,g' | tail +2)
+ 
+EI_BUILD_DIR := $(shell echo 'io:format("~s~n",[code:lib_dir(erl_interface)]),halt().' | erl | sed 's,^[0-9]*> *,,g' | tail +2)
+
 PP_DIR= gen_person_files
+
 MS_DIR= gen_session_files
 
 PERSON_IDL = ../person.idl
@@ -130,28 +147,38 @@ TARGET_FILES= \
 
 DEV_TARGET_FILES= \
 	$(COMMON_TARGET_FILES) \
-	person_ex
+	$(PROGRAM)
 
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-#ERL_FLAGS +=  \
-#		-pa $(ERL_TOP)/lib/ic/ebin \
-#		-pa $(ERL_TOP)/lib/orber/ebin \
-#		-pa $(ERL_TOP)/lib/mnesia_session/ebin
 
-ERL_FLAGS += -pa $(ERL_TOP)/lib/mnesia_session/ebin
+ERL_FLAGS += \
+	-pa $(APP_DIR)/ebin \
+	-pa $(IC_DIR)/ebin \
+	-pa $(EI_DIR)/ebin
 
 
 ERL_COMPILE_FLAGS += \
-		-I ./$(PP_DIR) \
-		-I $(ERL_TOP)/lib/ic/include
+		-I $(PP_DIR) \
+		-I $(IC_DIR)/include
 
-
-C_FLAGS += \
-	$(DEBUG_C_FLAGS) \
+# Includes
+IFLAGS = -I$(APP_DIR)/include \
 	-I $(PP_DIR) \
-	-I $(MS_DIR) 
+	-I $(MS_DIR) \
+	-I $(IC_DIR)/include \
+	-I $(EI_DIR)/include
+
+# Library paths
+LDFLAGS += -L$(IC_DIR)/priv/lib \
+	   -L$(EI_DIR)/lib
+
+LDLIBS += -lic -lerl_interface -lei -lsocket -lnsl
+
+CFLAGS += \
+	$(DEBUG_CFLAGS) \
+	$(IFLAGS)
 
 # DEBUG CC = /opt/SUNWspro/bin/cc
 # ----------------------------------------------------
@@ -168,7 +195,7 @@ dev: $(DEV_TARGET_FILES)
 
 clean:
 	rm -f $(TARGET_FILES)
-	rm -f $(GEN_PP_O_FILES) $(GEN_MS_O_FILES) person_ex.o person_ex
+	rm -f $(GEN_PP_O_FILES) $(GEN_MS_O_FILES) $(PROGRAM).o $(PROGRAM)
 	rm -f $(GEN_MS_FILES) $(GEN_PP_FILES)
 	rm -f $(GEN_ERL_FILES)
 	rm -f core
@@ -197,19 +224,20 @@ $(GEN_MS_O_FILES): $(GEN_MS_C_FILES)
 
 $(GEN_PP_O_FILES): $(GEN_PP_C_FILES)
 
-person_ex.o: person_ex.c $(GEN_PP_C_FILES)  $(GEN_MS_C_FILES)
+$(PROGRAM).o: $(PROGRAM).c $(GEN_PP_C_FILES)  $(GEN_MS_C_FILES)
 
-%.o: %.c
-	$(CC) -c $(C_FLAGS) $< -o $@
+$(PROGRAM): $(PROGRAM).o $(GEN_PP_O_FILES) $(GEN_MS_O_FILES)
+	$(CC) $(CFLAGS) $(PROGRAM).o $(GEN_PP_O_FILES) $(GEN_MS_O_FILES) -o $@ $(LDFLAGS) $(LDLIBS)
 
-# Debug	-L /home/gandalf/gordon/erts/solaris-p5a-gdb/lib/\
-
-PERSON_C_FLAGS= \
-	-L $(ERL_ROOTDIR)/usr/lib \
-	-lic -lerl_interface -lei -lsocket -lnsl
-
-person_ex: person_ex.o $(GEN_PP_O_FILES) $(GEN_MS_O_FILES)
-	$(CC) $(C_FLAGS)  $(GEN_PP_O_FILES) $(GEN_MS_O_FILES) -o $@ person_ex.c $(PERSON_C_FLAGS)
+info:
+	@echo ""
+	@echo "APP_DIR   = $(APP_DIR)"
+	@echo "PROGRAM   = $(PROGRAM)"
+	@echo "ERL_FLAGS = $(ERL_FLAGS)"
+	@echo "CFLAGS    = $(CFLAGS)"
+	@echo "LDFLAG    = $(LDFLAGS)"
+	@echo "LDLIBS    = $(LDLIBS)"
+	@echo ""
 
 # ----------------------------------------------------
 # Special Build Targets
@@ -231,7 +259,7 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/person/c_session/$(PP_DIR)
 	$(INSTALL_DATA) $(IDL_FILES) $(RELSYSDIR)/person
 	$(INSTALL_DATA) Makefile $(RELSYSDIR)/person/c_session/Makefile.skel
-	$(INSTALL_DATA) $(COMMON_TARGET_FILES) person_ex.c $(NORMAL_ERL_FILES) $(RELSYSDIR)/person/c_session
+	$(INSTALL_DATA) $(COMMON_TARGET_FILES) $(PROGRAM).c $(NORMAL_ERL_FILES) $(RELSYSDIR)/person/c_session
 	$(INSTALL_DATA) $(GEN_PP_FILES) $(GEN_ERL_FILES) $(RELSYSDIR)/person/c_session/$(PP_DIR)
 	$(INSTALL_DATA) $(GEN_MS_FILES) $(RELSYSDIR)/person/c_session/$(MS_DIR)
 

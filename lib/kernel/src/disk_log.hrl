@@ -19,6 +19,9 @@
 -define(DISK_LOG_NAME_TABLE, disk_log_names).
 -define(DISK_LOG_PID_TABLE, disk_log_pids).
 
+%% File format version
+-define(VERSION, 2).
+
 %% HEADSZ is the size of the file header, 
 %% HEADERSZ is the size of the item header ( = ?SIZESZ + ?MAGICSZ).
 -define(HEADSZ, 8).
@@ -29,6 +32,7 @@
 -define(MAGICINT, 203500599).  %% ?MAGICHEAD = <<?MAGICINT:32>>
 
 -define(MAX_FILES, 65000).
+-define(MAX_BYTES, ((1 bsl 64) - 1)).
 -define(MAX_CHUNK_SIZE, 8192).
 
 %% Object defines
@@ -38,6 +42,7 @@
 
 %% record of args for open
 -record(arg, {name = 0,
+	      version = undefined,
 	      file = none,
 	      repair = true,
 	      size = infinity,
@@ -64,8 +69,9 @@
 	                      %%  called when wraplog wraps
 	 mode,                %%  read_write | read_only
 	 size,                %%  value of open/1 option 'size' (never changed)
-	 extra}               %%  record 'halt' for halt logs,
+	 extra,               %%  record 'halt' for halt logs,
                               %%  record 'handle' for wrap logs.
+	 version}             %%  undefined, integer() if wrap log file
 	).
 
 -record(handle,               %% For a wrap log.

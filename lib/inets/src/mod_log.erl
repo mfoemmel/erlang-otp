@@ -22,89 +22,104 @@
 
 -include("httpd.hrl").
 
+-define(VMODULE,"LOG").
+-include("httpd_verbosity.hrl").
+
 %% do
 
 do(Info) ->
-  AuthUser=auth_user(Info#mod.data),
-  Date=custom_date(),
-  log_internal_info(Info,Date,Info#mod.data),
-  case httpd_util:key1search(Info#mod.data,status) of
-    %% A status code has been generated!
-    {StatusCode,PhraseArgs,Reason} ->
-      transfer_log(Info,"-",AuthUser,Date,StatusCode,0),
-      if
-	StatusCode >= 400 ->
-	  error_log(Info,Date,Reason);
-	true ->
-	  not_an_error
-      end,
-      {proceed,Info#mod.data};
-    %% No status code has been generated!
-    undefined ->
-      case httpd_util:key1search(Info#mod.data,response) of
-	{already_sent,StatusCode,Size} ->
-	  transfer_log(Info,"-",AuthUser,Date,StatusCode,Size),
-	  {proceed,Info#mod.data};
-	{StatusCode,Response} ->
-	  transfer_log(Info,"-",AuthUser,Date,200,
-		       httpd_util:flatlength(Response)),
-	  {proceed,Info#mod.data};
+    AuthUser = auth_user(Info#mod.data),
+    Date     = custom_date(),
+    log_internal_info(Info,Date,Info#mod.data),
+    case httpd_util:key1search(Info#mod.data,status) of
+	%% A status code has been generated!
+	{StatusCode,PhraseArgs,Reason} ->
+	    transfer_log(Info,"-",AuthUser,Date,StatusCode,0),
+	    if
+		StatusCode >= 400 ->
+		    error_log(Info,Date,Reason);
+		true ->
+		    not_an_error
+	    end,
+	    {proceed,Info#mod.data};
+	%% No status code has been generated!
 	undefined ->
-	  transfer_log(Info,"-",AuthUser,Date,200,0),
-	  {proceed,Info#mod.data}
-      end
-  end.
+	    case httpd_util:key1search(Info#mod.data,response) of
+		{already_sent,StatusCode,Size} ->
+		    transfer_log(Info,"-",AuthUser,Date,StatusCode,Size),
+		    {proceed,Info#mod.data};
+		{response,Head,Body} ->
+		    Size=httpd_util:key1search(Head,content_length,unknown),
+		    Code=httpd_util:key1search(Head,code,unknown),
+		    transfer_log(Info,"-",AuthUser,Date,Code,Size),
+		    {proceed,Info#mod.data};
+		{StatusCode,Response} ->
+		    transfer_log(Info,"-",AuthUser,Date,200,
+				 httpd_util:flatlength(Response)),
+		    {proceed,Info#mod.data};
+		undefined ->
+		    transfer_log(Info,"-",AuthUser,Date,200,0),
+		    {proceed,Info#mod.data}
+	    end
+    end.
 
 custom_date() ->
-  LocalTime=calendar:local_time(),
-  UniversalTime=calendar:universal_time(),
-  Minutes=round(diff_in_minutes(LocalTime,UniversalTime)),
-  {{YYYY,MM,DD},{Hour,Min,Sec}}=LocalTime,
-  Date=io_lib:format("~.2.0w/~.3s/~.4w:~.2.0w:~.2.0w:~.2.0w ~c~.2.0w~.2.0w",
-		     [DD, httpd_util:month(MM), YYYY, Hour, Min, Sec, 
-		      sign(Minutes),
-		      abs(Minutes) div 60, abs(Minutes) rem 60]),  
-  lists:flatten(Date).
+    LocalTime=calendar:local_time(),
+    UniversalTime=calendar:universal_time(),
+    Minutes=round(diff_in_minutes(LocalTime,UniversalTime)),
+    {{YYYY,MM,DD},{Hour,Min,Sec}}=LocalTime,
+    Date = 
+	io_lib:format("~.2.0w/~.3s/~.4w:~.2.0w:~.2.0w:~.2.0w ~c~.2.0w~.2.0w",
+		      [DD, httpd_util:month(MM), YYYY, Hour, Min, Sec, 
+		       sign(Minutes),
+		       abs(Minutes) div 60, abs(Minutes) rem 60]),  
+    lists:flatten(Date).
 
 diff_in_minutes(L,U) ->
-  (calendar:datetime_to_gregorian_seconds(L) -
-   calendar:datetime_to_gregorian_seconds(U))/60.
+    (calendar:datetime_to_gregorian_seconds(L) -
+     calendar:datetime_to_gregorian_seconds(U))/60.
 
 sign(Minutes) when Minutes > 0 ->
-  $+;
+    $+;
 sign(Minutes) ->
-  $-.
+    $-.
 
 auth_user(Data) ->
-  case httpd_util:key1search(Data,remote_user) of
-    undefined ->
-      "-";
-    RemoteUser ->
-      RemoteUser
-  end.
+    case httpd_util:key1search(Data,remote_user) of
+	undefined ->
+	    "-";
+	RemoteUser ->
+	    RemoteUser
+    end.
 
 %% log_internal_info
 
 log_internal_info(Info,Date,[]) ->
-  ok;
+    ok;
 log_internal_info(Info,Date,[{internal_info,Reason}|Rest]) ->
-  error_log(Info,Date,Reason),
-  log_internal_info(Info,Date,Rest);
+    error_log(Info,Date,Reason),
+    log_internal_info(Info,Date,Rest);
 log_internal_info(Info,Date,[_|Rest]) ->
-  log_internal_info(Info,Date,Rest).
+    log_internal_info(Info,Date,Rest).
 
 %% transfer_log
 
 transfer_log(Info,RFC931,AuthUser,Date,StatusCode,Bytes) ->
-  case httpd_util:lookup(Info#mod.config_db,transfer_log) of
-    undefined ->
-      no_transfer_log;
-    TransferLog ->
-      {PortNumber,RemoteHost}=(Info#mod.init_data)#init_data.peername,
-      io:format(TransferLog,"~s ~s ~s [~s] \"~s\" ~w ~w~n",
-		[RemoteHost,RFC931,AuthUser,Date,Info#mod.request_line,
-		 StatusCode,Bytes])
-  end.
+    case httpd_util:lookup(Info#mod.config_db,transfer_log) of
+	undefined ->
+	    no_transfer_log;
+	TransferLog ->
+	    {PortNumber,RemoteHost}=(Info#mod.init_data)#init_data.peername,
+	    case (catch io:format(TransferLog, "~s ~s ~s [~s] \"~s\" ~w ~w~n",
+				  [RemoteHost, RFC931, AuthUser, 
+				   Date, Info#mod.request_line,
+				   StatusCode, Bytes])) of
+		ok ->
+		    ok;
+		Error ->
+		    error_logger:error_report(Error)
+	    end
+    end.
 
 %% security log
 
@@ -119,25 +134,25 @@ security_log(Info, Reason) ->
 %% error_log
 
 error_log(Info,Date,Reason) ->
-  case httpd_util:lookup(Info#mod.config_db, error_log) of
-    undefined ->
-      no_error_log;
-    ErrorLog ->
-      {PortNumber,RemoteHost}=(Info#mod.init_data)#init_data.peername,
-      io:format(ErrorLog,"[~s] access to ~s failed for ~s, reason: ~p~n",
-		[Date,Info#mod.request_uri,RemoteHost,Reason])
-  end.
+    case httpd_util:lookup(Info#mod.config_db, error_log) of
+	undefined ->
+	    no_error_log;
+	ErrorLog ->
+	    {PortNumber,RemoteHost}=(Info#mod.init_data)#init_data.peername,
+	    io:format(ErrorLog,"[~s] access to ~s failed for ~s, reason: ~p~n",
+		      [Date,Info#mod.request_uri,RemoteHost,Reason])
+    end.
 
 error_log(SocketType,Socket,ConfigDB,{PortNumber,RemoteHost},Reason) ->
-  case httpd_util:lookup(ConfigDB,error_log) of
-    undefined ->
-      no_error_log;
-    ErrorLog ->
-      Date=custom_date(),
-      io:format(ErrorLog,"[~s] server crash for ~s, reason: ~p~n",
-                [Date,RemoteHost,Reason]),
-      ok
-  end.
+    case httpd_util:lookup(ConfigDB,error_log) of
+	undefined ->
+	    no_error_log;
+	ErrorLog ->
+	    Date=custom_date(),
+	    io:format(ErrorLog,"[~s] server crash for ~s, reason: ~p~n",
+		      [Date,RemoteHost,Reason]),
+	    ok
+    end.
 
 report_error(ConfigDB,Error) ->
     case httpd_util:lookup(ConfigDB,error_log) of
@@ -165,19 +180,19 @@ load([$S,$e,$c,$u,$r,$i,$t,$y,$L,$o,$g,$ |SecurityLog], []) ->
 %% store
 
 store({transfer_log,TransferLog},ConfigList) ->
-  case create_log(TransferLog,ConfigList) of
-    {ok,TransferLogStream} ->
-      {ok,{transfer_log,TransferLogStream}};
-    {error,Reason} ->
-      {error,Reason}
-  end;
+    case create_log(TransferLog,ConfigList) of
+	{ok,TransferLogStream} ->
+	    {ok,{transfer_log,TransferLogStream}};
+	{error,Reason} ->
+	    {error,Reason}
+    end;
 store({error_log,ErrorLog},ConfigList) ->
-  case create_log(ErrorLog,ConfigList) of
-    {ok,ErrorLogStream} ->
-      {ok,{error_log,ErrorLogStream}};
-    {error,Reason} ->
-      {error,Reason}
-  end;
+    case create_log(ErrorLog,ConfigList) of
+	{ok,ErrorLogStream} ->
+	    {ok,{error_log,ErrorLogStream}};
+	{error,Reason} ->
+	    {error,Reason}
+    end;
 store({security_log, SecurityLog},ConfigList) ->
     case create_log(SecurityLog, ConfigList) of
 	{ok, SecurityLogStream} ->
@@ -187,49 +202,49 @@ store({security_log, SecurityLog},ConfigList) ->
     end.
 
 create_log(LogFile,ConfigList) ->
-  Filename=httpd_conf:clean(LogFile),
-  case filename:pathtype(Filename) of
-    absolute ->
-      case file:open(Filename,read_write) of
-	{ok,LogStream} ->
-	  file:position(LogStream,{eof,0}),
-	  {ok,LogStream};
-	{error,_} ->
-	  {error,?NICE("Can't create "++Filename)}
-      end;
-    volumerelative ->
-      case file:open(Filename,read_write) of
-	{ok,LogStream} ->
-	  file:position(LogStream,{eof,0}),
-	  {ok,LogStream};
-	{error,_} ->
-	  {error,?NICE("Can't create "++Filename)}
-      end;
-    relative ->
-      case httpd_util:key1search(ConfigList,server_root) of
-	undefined ->
-	  {error,
-	   ?NICE(Filename++
-		 " is an invalid logfile name beacuse ServerRoot is not defined")};
-	ServerRoot ->
-	  AbsoluteFilename=filename:join(ServerRoot,Filename),
-	  case file:open(AbsoluteFilename,read_write) of
-	    {ok,LogStream} ->
-	      file:position(LogStream,{eof,0}),
-	      {ok,LogStream};
-	    {error,Reason} ->
-	      {error,?NICE("Can't create "++AbsoluteFilename)}
-	  end
-      end
-  end.
+    Filename = httpd_conf:clean(LogFile),
+    case filename:pathtype(Filename) of
+	absolute ->
+	    case file:open(Filename,read_write) of
+		{ok,LogStream} ->
+		    file:position(LogStream,{eof,0}),
+		    {ok,LogStream};
+		{error,_} ->
+		    {error,?NICE("Can't create "++Filename)}
+	    end;
+	volumerelative ->
+	    case file:open(Filename,read_write) of
+		{ok,LogStream} ->
+		    file:position(LogStream,{eof,0}),
+		    {ok,LogStream};
+		{error,_} ->
+		    {error,?NICE("Can't create "++Filename)}
+	    end;
+	relative ->
+	    case httpd_util:key1search(ConfigList,server_root) of
+		undefined ->
+		    {error,
+		     ?NICE(Filename++
+			   " is an invalid logfile name beacuse ServerRoot is not defined")};
+		ServerRoot ->
+		    AbsoluteFilename=filename:join(ServerRoot,Filename),
+		    case file:open(AbsoluteFilename,read_write) of
+			{ok,LogStream} ->
+			    file:position(LogStream,{eof,0}),
+			    {ok,LogStream};
+			{error,Reason} ->
+			    {error,?NICE("Can't create "++AbsoluteFilename)}
+		    end
+	    end
+    end.
 
 %% remove
 
 remove(ConfigDB) ->
-  lists:foreach(fun([Stream]) -> file:close(Stream) end,
-		ets:match(ConfigDB,{transfer_log,'$1'})),
-  lists:foreach(fun([Stream]) -> file:close(Stream) end,
-		ets:match(ConfigDB,{error_log,'$1'})),
-  lists:foreach(fun([Stream]) -> file:close(Stream) end,
-		ets:match(ConfigDB,{security_log,'$1'})),
-  ok.
+    lists:foreach(fun([Stream]) -> file:close(Stream) end,
+		  ets:match(ConfigDB,{transfer_log,'$1'})),
+    lists:foreach(fun([Stream]) -> file:close(Stream) end,
+		  ets:match(ConfigDB,{error_log,'$1'})),
+    lists:foreach(fun([Stream]) -> file:close(Stream) end,
+		  ets:match(ConfigDB,{security_log,'$1'})),
+    ok.

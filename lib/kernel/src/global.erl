@@ -304,19 +304,6 @@ set_lock({ResourceId, LockRequesterId}, Nodes, Retries, Times) ->
 	    end
     end.
 
-lock_on_nodes([], _, _) ->
-    true;
-lock_on_nodes([Node | Rest], Id, Sofar) ->
-    case gen_server:multi_call([Node], global_name_server, {set_lock, Id}) of
-	{[], _} ->
-	    lock_on_nodes(Rest, Id, Sofar);
-	{[{_, true}], _} ->
-	    lock_on_nodes(Rest, Id, [Node | Sofar]);
-	{[{_, Status}], _} ->
-	    gen_server:multi_call(Sofar, global_name_server, {del_lock, Id}),
-	    Status
-    end.
-
 check_replies([{_Node, true} | T], Id, Nodes) ->
     check_replies(T, Id, Nodes);
 check_replies([{_Node, Status} | T], Id, Nodes) ->
@@ -1098,10 +1085,6 @@ handle_set_lock({ResourceId, LockRequesterId}, Pid, S) ->
 			LockRequesterId,
 			_LockRequesterId2,
 			S#state.lockers}),
-%		    before_or_false(LockRequesterId, S#state.lockers);
-%%% maybe the index should be from the end, not from the front.
-%		    index_or_false(LockRequesterId,
-%				   lists:reverse(S#state.lockers), 1);
 		    false;
 		_ ->
 		    false
@@ -1111,23 +1094,6 @@ handle_set_lock({ResourceId, LockRequesterId}, Pid, S) ->
 	    ets:insert(global_locks, {ResourceId, LockRequesterId, [Pid]}),
 	    true
     end.
-
-before_or_false(E, []) ->
-    false;
-before_or_false(E, [_]) ->
-    false;
-before_or_false(E, [{N1, E}, {N2, Other} | _]) when E > Other, N1 > N2 ->
-    ?P1({queue_after, time(), node(), {N1, E}, {N2, Other}}),
-    Other;
-before_or_false(E, [_ | R]) ->
-    before_or_false(E, R).
-
-index_or_false(E, [], _) ->
-    false;
-index_or_false(E, [{_Node,E}|_], N) ->
-    N;
-index_or_false(E, [_|R], N) ->
-    index_or_false(E, R, N+1).
 
 is_lock_set(ResourceId) ->
     case ets:lookup(global_locks, ResourceId) of
@@ -1952,22 +1918,6 @@ check_sync_nodes(SyncNodes) ->
 	    {error, Error}
     end.
 
-%%% R7
-%get_own_nodes() ->
-%    case application:get_env(kernel, global_groups) of
-%	undefined ->
-%	    {ok, all};
-%	{ok, []} ->
-%	    {ok, all};
-%	{ok, NodeGrps} ->
-%	    case catch global_group:config_scan(NodeGrps) of
-%		{error, Error2} ->
-%		    {error, {"global_groups definition error", Error2}};
-%		{_GroupNameDef, NodesDef, _OtherDef} ->
-%		    {ok, NodesDef}
-%	    end
-%    end.
-
 get_own_nodes() ->
     case global_group:get_own_nodes_with_errors() of
 	{error, Error} ->
@@ -1975,14 +1925,3 @@ get_own_nodes() ->
 	OkTup ->
 	    OkTup
     end.
-
-%%% In certain places in the server, calling io:format hangs everything,
-%%% so we'd better use erlang:display/1.
-format(S, A) ->
-    erlang:display({format, cs(), S, A}),
-%    io:format(S, A),
-    ok.
-
-cs() ->
-    {Big, Small, Tiny} = now(),
-    (Small rem 100) * 100 + (Tiny div 10000).

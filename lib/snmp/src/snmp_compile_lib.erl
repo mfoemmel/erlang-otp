@@ -22,8 +22,11 @@
 	 is_consistent/1, resolve_defval/1, make_variable_info/1,
 	 check_trap_name/3, make_table_info/4, get_final_mib/2, set_dir/2,
 	 look_at/1, add_cdata/2,check_access_group/1,check_def/3,
-	 check_notification_trap/1,register_oid/4,error/2,error/3,warning/2,
-	 warning/3,print_error/2,print_error/3,make_cdata/1,
+	 check_notification_trap/1,register_oid/4,
+	 error/2, error/3,
+	 %% warning/2, warning/3,
+	 print_error/2,print_error/3,
+	 make_cdata/1,
 	 trap_variable_info/3, check_notification/3,
 	 key1search/2,key1search/3]).
 
@@ -31,7 +34,7 @@
 -export([check_of/1, check_trap/2,check_trap/3,get_elem/2]).
 
 %% debug exports
--export([vvalidate/1, i/2, l/2, d/2, t/2]).
+-export([vvalidate/1, w/2, w/3, i/2, i/3, l/2, d/2, t/2]).
 
 
 -include("snmp_types.hrl").
@@ -312,7 +315,7 @@ read_mib(Line, Filename, [Dir|Path]) ->
 	{error, enoent} ->
 	    read_mib(Line, Filename, Path);
 	{error, Reason} ->
-	    warning("~s found but not imported. Reason: ~p.",[AbsFile,Reason]),
+	    w("~s found but not imported. Reason: ~p.",[AbsFile,Reason]),
 	    read_mib(Line, Filename, Path)
     end.
 
@@ -393,17 +396,17 @@ check_all_consistency(Filenames) ->
     ok.
 
 check_oid_conflicts(MIBs) ->
-    MEs = lists:append(lists:map(m(get_elem), [#mib.mes], MIBs)),
+    MEs = lists:append(snmp_misc:map(m(get_elem), [#mib.mes], MIBs)),
     SortedMEs = lists:keysort(#me.oid, MEs),
     search_for_dublettes2(#me{aliasname=dummy_init}, SortedMEs).
 
 check_trap_conflicts(MIBs) ->
-    Traps = lists:append(lists:map(m(get_elem), [#mib.traps], MIBs)),
+    Traps = lists:append(snmp_misc:map(m(get_elem), [#mib.traps], MIBs)),
     snmp_misc:foreach(m(check_trap), [Traps], Traps).
 
 check_trap(Trap, Traps) ->
     case lists:member(error,
-		      lists:map(m(check_trap),[Trap,undef],
+		      snmp_misc:map(m(check_trap),[Trap,undef],
 				lists:delete(Trap,Traps))) of
 	true ->
 	    throw({undef,"",[]});
@@ -754,9 +757,9 @@ test_index_positions_impl(Line, Indexes,
 	    end,
 	    test_index_positions_impl(Line,
 					  lists:delete(Name, Indexes), ColMEs);
-	false -> warning("Index columns must be first for "
-			 "the default functions to work properly. "
-			 "~w is no index column.", [Name], Line),
+	false -> w("Index columns must be first for "
+		   "the default functions to work properly. "
+		   "~w is no index column.", [Name], Line),
 		 none
     end.
 
@@ -1038,13 +1041,11 @@ collect_mes_for_table(TableME, [ME|MEs]) ->
 
 %% returns: MibEntry with access-functions.
 insert_default_mfa(ME, DBName) when record(ME, me)->
-    warning("No accessfunction for '~w', using default.",
-	    [ME#me.aliasname]),
+    i("No accessfunction for '~w', using default.", [ME#me.aliasname]),
     set_default_function(ME, DBName);
 
 insert_default_mfa([TableME, EntryME | Columns], DBName) ->
-    warning("No accessfunction for '~w', using default.",
-	    [TableME#me.aliasname]),
+    i("No accessfunction for '~w', using default.", [TableME#me.aliasname]),
     set_default_function([TableME, EntryME | Columns], DBName).
 
 %% returns boolean.
@@ -1115,9 +1116,9 @@ check_rowstatus(TableME) ->
     {value,TableInfo} = snmp_misc:assq(table_info,TableME#me.assocList),
     case TableInfo#table_info.status_col of
 	undefined -> 
-        warning("No RowStatus column in table ~w. "
-		"The default functions won't work properly.",
-		[TableME#me.aliasname]);
+        w("No RowStatus column in table ~w. "
+	  "The default functions won't work properly.",
+	  [TableME#me.aliasname]);
 	Q -> ok
     end.
 
@@ -1174,43 +1175,61 @@ extract_table_infos([ME | T]) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 t(F,A) ->
-    vprint(printable(get(verbosity),trace),F,A).
+    vprint(printable(get(verbosity),trace),F,A,undefined).
 
 d(F,A) ->
-    vprint(printable(get(verbosity),debug),F,A).
+    vprint(printable(get(verbosity),debug),F,A,undefined).
 
 l(F,A) ->
-    vprint(printable(get(verbosity),log),F,A).
+    vprint(printable(get(verbosity),log),F,A,undefined).
 
 i(F,A) ->
-    vprint(printable(get(verbosity),info),F,A).
+    vprint(printable(get(verbosity),info),F,A,undefined).
+i(F,A,L) ->
+    vprint(printable(get(verbosity),info),F,A,L).
+
+w(F,A) ->
+    vprint(printable(get(verbosity),warning),F,A,undefined).
+w(F,A,L) ->
+    vprint(printable(get(verbosity),warning),F,A,L).
 
 
-vprint(false,_F,_A) ->
+
+vprint(false,_F,_A,_L) ->
     ok;
-vprint(S,F,A) ->
-    io:format(image_of_severity(S) ++ F ++ "~n",A).
+vprint(S,F,A,undefined) ->
+    io:format("~s: " ++ image_of_severity(S) ++ F ++ "~n",
+	      [get(filename)|A]);
+vprint(S,F,A,L) ->
+    io:format("~s: ~w: " ++ image_of_severity(S) ++ F ++ "~n",
+	      [get(filename),L|A]).
 
 
-printable(silence,_)   -> false;
-printable(info,info)   -> info;
-printable(log,info)    -> info;
-printable(log,log)     -> log;
-printable(debug,info)  -> info;
-printable(debug,log)   -> log;
-printable(debug,debug) -> debug;
-printable(trace,S)     -> S;
-printable(_V,_S)       -> false.
+printable(silence,_)       -> false;
+printable(warning,warning) -> warning;
+printable(info,info)       -> info;
+printable(info,warning)    -> warning;
+printable(log,warning)     -> warning;
+printable(log,info)        -> info;
+printable(log,log)         -> log;
+printable(debug,warning)   -> warning;
+printable(debug,info)      -> info;
+printable(debug,log)       -> log;
+printable(debug,debug)     -> debug;
+printable(trace,S)         -> S;
+printable(_V,_S)           -> false.
 
 
-image_of_severity(info)  -> "I: ";
-image_of_severity(log)   -> "L: ";
-image_of_severity(debug) -> "D: ";
-image_of_severity(trace) -> "T: ";
-image_of_severity(_)     -> "".
+image_of_severity(warning)  -> "Warning: ";
+image_of_severity(info)     -> "Info: ";
+image_of_severity(log)      -> "Log: ";
+image_of_severity(debug)    -> "Debug: ";
+image_of_severity(trace)    -> "Trace: ";
+image_of_severity(_)        -> " - ".
 
 
 vvalidate(silence) -> ok;
+vvalidate(warning) -> ok;
 vvalidate(info)    -> ok;
 vvalidate(log)     -> ok;
 vvalidate(debug)   -> ok;
@@ -1353,6 +1372,7 @@ resolve_oids([], _, _) ->
     ok.
     
 		 
+
 update_me_oids([#me{aliasname = '$no_name$'} | Mes], OidEts) ->
     update_me_oids(Mes, OidEts);
 update_me_oids([Me | Mes], OidEts) ->
@@ -1428,27 +1448,27 @@ error(FormatStr, Data, Line) when list(FormatStr) ->
     print_error(FormatStr,Data,Line),
     exit(error).
 
-warning(FormatStr, Data) when list(FormatStr) ->
-    WarningBool=hd([Value || {Option,Value} <-get(options), Option==warnings]),
-    case WarningBool==true of
-	true->
-	    io:format("~s: Warning: ", [get(filename)]),
-	    ok = io:format(FormatStr,Data),
-	    io:format("~n");
-	false->
-	    ok
-    end.
+% warning(FormatStr, Data) when list(FormatStr) ->
+%     WarningBool=hd([Value || {Option,Value} <-get(options), Option==warnings]),
+%     case WarningBool==true of
+% 	true->
+% 	    io:format("~s: Warning: ", [get(filename)]),
+% 	    ok = io:format(FormatStr,Data),
+% 	    io:format("~n");
+% 	false->
+% 	    ok
+%     end.
 
-warning(FormatStr, Data, Line) when list(FormatStr) ->
-    WarningBool=hd([Value || {Option,Value} <-get(options), Option==warnings]),
-    case WarningBool==true of
-	true->
-	    io:format("~s: ~w: Warning: ", [get(filename), Line]),
-	    ok = io:format(FormatStr,Data),
-	    io:format("~n");
-	false->
-	    ok
-    end.
+% warning(FormatStr, Data, Line) when list(FormatStr) ->
+%     WarningBool=hd([Value || {Option,Value} <-get(options), Option==warnings]),
+%     case WarningBool==true of
+% 	true->
+% 	    io:format("~s: ~w: Warning: ", [get(filename), Line]),
+% 	    ok = io:format(FormatStr,Data),
+% 	    io:format("~n");
+% 	false->
+% 	    ok
+%     end.
 
 print_error(FormatStr, Data) when list(FormatStr) ->
     ok = io:format("~s: Error: " ++ FormatStr,[get(filename)|Data]),

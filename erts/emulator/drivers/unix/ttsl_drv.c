@@ -80,41 +80,41 @@ static ErlDrvData ttysl_start(ErlDrvPort, char*);
 static void ttysl_stop(ErlDrvData);
 static void ttysl_from_erlang(ErlDrvData, char*, int);
 static void ttysl_from_tty(ErlDrvData, ErlDrvEvent);
-static sint16 get_sint16();
+static Sint16 get_sint16(char*);
 
 static ErlDrvPort ttysl_port;
 static int ttysl_fd;
 static FILE *ttysl_out;
 
 /* Functions that work on the line buffer. */
-static int start_lbuf();
-static int stop_lbuf();
-static int put_chars();
-static int move_rel();
-static int ins_chars();
-static int del_chars();
-static byte *step_over_chars(int n);
-static int insert_buf();
-static int write_buf();
-static int outc();
-static int move_cursor();
+static int start_lbuf(void);
+static int stop_lbuf(void);
+static int put_chars(byte*,int);
+static int move_rel(int);
+static int ins_chars(byte*,int);
+static int del_chars(int);
+static byte *step_over_chars(int);
+static int insert_buf(byte*,int);
+static int write_buf(byte*,int);
+static int outc(byte);
+static int move_cursor(int,int);
 
 /* Termcap functions. */
-static int start_termcap();
-static int stop_termcap();
-static int move_left();
-static int move_right();
-static int move_up();
-static int move_down();
+static int start_termcap(void);
+static int stop_termcap(void);
+static int move_left(int);
+static int move_right(int);
+static int move_up(int);
+static int move_down(int);
 
 /* Terminal setting functions. */
-static int tty_init();
-static int tty_set();
-static int tty_reset();
+static int tty_init(int,int,int,int);
+static int tty_set(int);
+static int tty_reset(int);
 /* static RETSIGTYPE (*orig_ctl_c)(); gordon temp */
 /* static RETSIGTYPE ctl_c(); gordon temp */
-static RETSIGTYPE suspend();
-static RETSIGTYPE cont();
+static RETSIGTYPE suspend(int);
+static RETSIGTYPE cont(int);
 
 /* Define the driver table entry. */
 struct erl_drv_entry ttsl_driver_entry = {
@@ -143,7 +143,7 @@ static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
     int flag;
     extern int using_oldshell; /* set this to let the rest of erts know */
 
-    if ((int)ttysl_port != -1)
+    if (ttysl_port != (ErlDrvPort)-1)
       return ERL_DRV_ERROR_GENERAL;
 
     if (!isatty(0) || !isatty(1))
@@ -198,7 +198,7 @@ static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
 #endif
     /* orig_ctl_c = sys_sigset(SIGINT, ctl_c); gordon temp */
 
-    driver_select(port, (ErlDrvEvent)ttysl_fd, DO_READ, 1);
+    driver_select(port, (ErlDrvEvent)(Uint)ttysl_fd, DO_READ, 1);
     ttysl_port = port;
 
     /* we need to know this when we enter the break handler */
@@ -209,13 +209,13 @@ static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
 
 static void ttysl_stop(ErlDrvData ttysl_data)
 {
-    if ((int)ttysl_port != -1) {
+    if (ttysl_port != (ErlDrvPort)-1) {
 	stop_lbuf();
 	stop_termcap();
 	tty_reset(ttysl_fd);
 	if (ttysl_fd != 0)
 	  close(ttysl_fd);
-	driver_select(ttysl_port, (ErlDrvEvent)ttysl_fd, DO_READ, 0);
+	driver_select(ttysl_port, (ErlDrvEvent)(Uint)ttysl_fd, DO_READ, 0);
 #if 0
 	sys_sigset(SIGTSTP, SIG_DFL);
 	sys_sigset(SIGTTIN, SIG_DFL);
@@ -298,9 +298,9 @@ static void ttysl_from_erlang(ErlDrvData ttysl_data, char* buf, int count)
 static void ttysl_from_tty(ErlDrvData ttysl_data, ErlDrvEvent fd)
 {
     char b[1024];
-    int i;
+    ssize_t i;
 
-    if ((i = read((int)fd, b, 1024)) >= 0)
+    if ((i = read((int)(Sint)fd, b, 1024)) >= 0)
       driver_output(ttysl_port, b, i);
     else
       driver_failure(ttysl_port, -1);
@@ -308,13 +308,12 @@ static void ttysl_from_tty(ErlDrvData ttysl_data, ErlDrvEvent fd)
 }
 
 /* Procedures for putting and getting integers to/from strings. */
-static sint16 get_sint16(s)
-char *s;
+static Sint16 get_sint16(char *s)
 {
     return ((*s << 8) | ((byte*)s)[1]);
 }
 
-static int start_lbuf()
+static int start_lbuf(void)
 {
     if (!lbuf && !(lbuf = (byte*) driver_alloc(lbuf_size)))
       return FALSE;
@@ -324,7 +323,7 @@ static int start_lbuf()
     return TRUE;
 }
 
-static int stop_lbuf()
+static int stop_lbuf(void)
 {
     if (lbuf) driver_free(lbuf);
     lbuf = NULL;
@@ -332,9 +331,7 @@ static int stop_lbuf()
 }
 
 /* Put l characters from s into the buffer and output them. */
-static int put_chars(s, l)
-byte *s;
-int l;
+static int put_chars(byte *s, int l)
 {
     int n;
 
@@ -350,8 +347,7 @@ int l;
  * Move the current postition forwards or backwards within the current
  * line. We know about padding.
  */
-static int move_rel(n)
-int n;
+static int move_rel(int n)
 {
     int npos;			/* The new position */
     byte *c;
@@ -368,9 +364,7 @@ int n;
 }
 
 /* Insert characters into the buffer at the current position. */
-static int ins_chars(s, l)
-byte *s;
-int l;
+static int ins_chars(byte *s, int l)
 {
     int n, tl;
     byte *tbuf = NULL;		/* Suppress warning about use-before-set */
@@ -397,8 +391,7 @@ int l;
  * and after (n > 0) the current position. Cursor left at beginning of
  * deleted block.
  */
-static int del_chars(n)
-int n;
+static int del_chars(int n)
 {
     int i, l, r;
     byte *c;
@@ -449,8 +442,7 @@ int n;
 }
 
 /* Step over n logical characters, check for overflow. */
-static byte *step_over_chars(n)
-int n;
+static byte *step_over_chars(int n)
 {
     byte *c, *beg, *end;
 
@@ -474,9 +466,7 @@ int n;
  * Insert n characters into the buffer at lc. Update pointers into buffer.
  * Know about pad characters and treat \n specially.
  */
-static int insert_buf(s, n)
-byte *s;
-int n;
+static int insert_buf(byte *s, int n)
 {
     int pos;
     byte *start;
@@ -525,9 +515,7 @@ int n;
  * non-printables. Know about pad characters and that \n can never
  * occur normally.
  */
-static int write_buf(s, n)
-byte *s;
-int n;
+static int write_buf(byte *s, int n)
 {
     while (n > 0) {
 	if (isprint(*s)) {
@@ -565,14 +553,12 @@ int n;
 }
 
 /* The basic procedure for outputting one character. */
-static int outc(c)
-byte c;
+static int outc(byte c)
 {
     return (int)putc(c, ttysl_out);
 }
 
-static int move_cursor(from, to)
-int from, to;
+static int move_cursor(int from, int to)
 {
     int dc, dl;
 
@@ -589,7 +575,7 @@ int from, to;
     return TRUE;
 }
 
-static int start_termcap()
+static int start_termcap(void)
 {
     char *c;
 
@@ -612,39 +598,35 @@ static int start_termcap()
     return FALSE;
 }
 
-static int stop_termcap()
+static int stop_termcap(void)
 {
     if (capbuf) driver_free(capbuf);
     capbuf = NULL;
     return TRUE;
 }
 
-static int move_left(n)
-int n;
+static int move_left(int n)
 {
     while (n-- > 0)
       tputs(left, 1, outc);
     return TRUE;
 }
 
-static int move_right(n)
-int n;
+static int move_right(int n)
 {
     while (n-- > 0)
       tputs(right, 1, outc);
     return TRUE;
 }
 
-static int move_up(n)
-int n;
+static int move_up(int n)
 {
     while (n-- > 0)
       tputs(up, 1, outc);
     return TRUE;
 }
 
-static int move_down(n)
-int n;
+static int move_down(int n)
 {
     while (n-- > 0)
       tputs(down, 1, outc);
@@ -661,8 +643,7 @@ int n;
 
 static struct termios tty_smode, tty_rmode;
 
-static int tty_init(fd, canon, echo, sig)
-int  fd, canon, echo, sig;
+static int tty_init(int fd, int canon, int echo, int sig)
 {
     if (tcgetattr(fd, &tty_rmode) < 0)
       return -1;
@@ -726,8 +707,7 @@ int  fd, canon, echo, sig;
  * recent call to the tty_init() function above.
  */
 
-static int tty_set(fd)
-int  fd;                /* of terminal device */
+static int tty_set(int fd)
 {
     DEBUGF(("Setting tty...\n"));
 
@@ -736,8 +716,7 @@ int  fd;                /* of terminal device */
     return(0);
 }
 
-static int tty_reset(fd)
-int  fd;                /* of terminal device */
+static int tty_reset(int fd)         /* of terminal device */
 {
     DEBUGF(("Resetting tty...\n"));
 
@@ -752,8 +731,7 @@ int  fd;                /* of terminal device */
  * to the orignal settings
  */
 
-static RETSIGTYPE suspend(sig)	
-int sig;
+static RETSIGTYPE suspend(int sig)
 {
     if (tty_reset(ttysl_fd) < 0) {
 	fprintf(stderr,"Can't reset tty \n");
@@ -772,8 +750,7 @@ int sig;
     }
 }
 
-static RETSIGTYPE cont(sig)	
-int sig;
+static RETSIGTYPE cont(int sig)
 {
     if (tty_set(ttysl_fd) < 0) {
 	fprintf(stderr,"Can't set tty raw\n");

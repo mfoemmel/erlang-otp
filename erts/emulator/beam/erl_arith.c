@@ -75,13 +75,13 @@ BIF_ADECL_2
     BIF_RET(erts_mixed_times(BIF_P, BIF_ARG_1, BIF_ARG_2));
 } 
 
-BIF_RETTYPE sdiv_2(BIF_ALIST_2)
+BIF_RETTYPE div_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
     BIF_RET(erts_mixed_div(BIF_P, BIF_ARG_1, BIF_ARG_2));
 } 
 
-BIF_RETTYPE div_2(BIF_ALIST_2)
+BIF_RETTYPE intdiv_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
     if (BIF_ARG_2 == SMALL_ZERO) {

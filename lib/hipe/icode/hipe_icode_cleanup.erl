@@ -1,7 +1,7 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2000 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <01/03/26 11:58:05 happi>
+%% Time-stamp: <02/05/13 14:57:54 happi>
 %% ====================================================================
 %%  Filename : 	hipe_icode_cleanup.erl
 %%  Module   :	hipe_icode_cleanup
@@ -10,9 +10,9 @@
 %%  History  :	* 2000-11-07 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2001/07/30 15:16:14 $
-%%              $Revision: 1.3 $
+%%              $Author: happi $
+%%              $Date: 2002/05/13 16:51:07 $
+%%              $Revision: 1.4 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -22,9 +22,9 @@
 -export([code/1]).
 
 code(Icode) ->
-  {LMin,LMax} = hipe_icode:icode_label_range(Icode),
+  {_LMin,LMax} = hipe_icode:icode_label_range(Icode),
   hipe_gensym:set_label(icode,LMax+1),
-  {VMin,VMax} = hipe_icode:icode_var_range(Icode),
+  {_VMin,VMax} = hipe_icode:icode_var_range(Icode),
   hipe_gensym:set_var(icode,VMax+1),
   Code = hipe_icode:icode_code(Icode),
   NewCode = cleanup_code(Code),
@@ -55,7 +55,7 @@ cleanup_instr(I, Catches) ->
 	  end;
 	false -> [I]
       end;
-    Other -> [I]
+    _Other -> [I]
   end.
 
 

@@ -118,31 +118,34 @@ int efile_delete_file(Efile_error* errInfo, char* name);
 int efile_rename(Efile_error* errInfo, char* src, char* dst);
 int efile_chdir(Efile_error* errInfo, char* name);
 int efile_getdcwd(Efile_error* errInfo, int drive,
-		  char* buffer, unsigned size);
+		  char* buffer, size_t size);
 int efile_opendir(Efile_error* errInfo, char* name,
 		  EFILE_DIR_HANDLE* p_dir_handle);
 int efile_readdir(Efile_error* errInfo, char* name, 
 		  EFILE_DIR_HANDLE* dir_handle,
-		  char* buffer, unsigned size);
+		  char* buffer, size_t size);
 int efile_openfile(Efile_error* errInfo, char* name, int flags,
-		   int* pfd, unsigned* pSize);
+		   int* pfd, off_t* pSize);
 void efile_closefile(int fd);
 int efile_fsync(Efile_error* errInfo, int fd);
 int efile_fileinfo(Efile_error* errInfo, Efile_info* pInfo,
 		   char *name, int info_for_link);
 int efile_write_info(Efile_error* errInfo, Efile_info* pInfo, char *name);
-int efile_write(Efile_error* errInfo, int flags, int fd, char* buf, unsigned count);
-int efile_writev(Efile_error* errInfo, int flags, int fd, SysIOVec* iov, int iovcnt, int size);
-int efile_read(Efile_error* errInfo, int flags, int fd, char* buf,
-	       unsigned count, unsigned* pBytesRead);
-int efile_seek(Efile_error* errInfo, int fd, int offset, int origin,
-	       unsigned* new_location);
+int efile_write(Efile_error* errInfo, int flags, int fd, 
+		char* buf, size_t count);
+int efile_writev(Efile_error* errInfo, int flags, int fd, 
+		 SysIOVec* iov, int iovcnt, size_t size);
+int efile_read(Efile_error* errInfo, int flags, int fd, 
+	       char* buf, size_t count, size_t* pBytesRead);
+int efile_seek(Efile_error* errInfo, int fd, 
+	       off_t offset, int origin, off_t* new_location);
 int efile_truncate_file(Efile_error* errInfo, int *fd, int flags);
-int efile_pwrite(Efile_error* errInfo, int fd, char* buf,
-		 unsigned count, int offset);
-int efile_pread(Efile_error* errInfo, int fd, int offset, char* buf,
-		unsigned count, unsigned* pBytesRead);
-int efile_readlink(Efile_error* errInfo, char *name, char* buffer, unsigned size);
+int efile_pwrite(Efile_error* errInfo, int fd, 
+		 char* buf, size_t count, off_t offset);
+int efile_pread(Efile_error* errInfo, int fd, 
+		off_t offset, char* buf, size_t count, size_t* pBytesRead);
+int efile_readlink(Efile_error* errInfo, char *name, 
+		   char* buffer, size_t size);
 int efile_link(Efile_error* errInfo, char* old, char* new);
 int efile_symlink(Efile_error* errInfo, char* old, char* new);
 

@@ -24,6 +24,9 @@
 
 -export([is_constant_expr/1, partial_eval/1]).
 
+%% Is used by standalone Erlang (escript).
+-export([match_clause/4]).
+
 %% The following exports are here for backwards compatibility.
 -export([seq/2,seq/3,arg_list/2,arg_list/3]).
 
@@ -55,7 +58,7 @@ exprs(Exprs, Bs, Lf) ->
 exprs([E|Es], Bs0, _, Lf) ->
     {value,V,Bs} = expr(E, Bs0, Lf),
     exprs(Es, Bs, V, Lf);
-exprs([], Bs, V, Lf) ->
+exprs([], Bs, V, _) ->
     {value,V,Bs}.
 
 %% expr(Expression, Bindings)
@@ -66,24 +69,24 @@ exprs([], Bs, V, Lf) ->
 expr(E, Bs) ->
     expr(E, Bs, none).
 
-expr({var,L,V}, Bs, Lf) ->
+expr({var,_,V}, Bs, _) ->
     case binding(V, Bs) of
 	{value,Val} ->
 	    {value,Val,Bs};
 	unbound ->
 	    exit({{unbound,V},[{?MODULE,expr,3}]})
     end;
-expr({char,_,C}, Bs, Lf) ->
+expr({char,_,C}, Bs, _) ->
     {value,C,Bs};
-expr({integer,_,I}, Bs, Lf) ->
+expr({integer,_,I}, Bs, _) ->
     {value,I,Bs};
-expr({float,_,F}, Bs, Lf) ->
+expr({float,_,F}, Bs, _) ->
     {value,F,Bs};
-expr({atom,_,A}, Bs, Lf) ->
+expr({atom,_,A}, Bs, _) ->
     {value,A,Bs};
-expr({string,_,S}, Bs, Lf) ->
+expr({string,_,S}, Bs, _) ->
     {value,S,Bs};
-expr({nil, _}, Bs, Lf) ->
+expr({nil, _}, Bs, _) ->
     {value,[],Bs};
 expr({cons,_,H0,T0}, Bs0, Lf) ->
     {value,H,Bs1} = expr(H0, Bs0, Lf),
@@ -94,16 +97,18 @@ expr({lc,_,E,Qs}, Bs, Lf) ->
 expr({tuple,_,Es}, Bs0, Lf) ->
     {Vs,Bs} = expr_list(Es, Bs0, Lf),
     {value,list_to_tuple(Vs),Bs};
-expr({record_index,_,Name,F}, Bs, Lf) ->
+expr({record_field,_,_,_}=Mod, Bs0, Lf) ->
+    Mod1 = expand_module_name(Mod, Bs0),
+    {value,M,Bs1} = expr(Mod1, Bs0, Lf),
+    {value,M,Bs1};
+expr({record_index,_,Name,_}, _, _) ->
     exit({undef_record,Name});
-expr({record,_,Name,Fs}, Bs, Lf) ->
+expr({record,_,Name,_}, _, _) ->
     exit({undef_record,Name});
-expr({record_field,_,Rec,Name,F}, Bs, Lf) ->
+expr({record_field,_,_,Name,_}, _, _) ->
     exit({undef_record,Name});
-expr({record,_,Rec,Name,Fs}, Bs, Lf) ->
+expr({record,_,_,Name,_}, _, _) ->
     exit({undef_record,Name});
-expr({record_field,_,Rec,F}, Bs, Lf) ->
-    exit(undef_record);
 expr({block,_,Es}, Bs, Lf) ->
     exprs(Es, Bs, Lf);
 expr({'if',_,Cs}, Bs, Lf) ->
@@ -146,7 +151,7 @@ expr({'fun',Line,{clauses,Cs}}, Bs, Lf) ->
 	      fun (A,B,C,D,E,F,G,H,I,J,K) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K], Bs, Lf) end,
 	      Bs};
 	12 -> {value,
-	      fun (A,B,C,D,E,F,G,H,I,J,K,L) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K], Bs, Lf) end,
+	      fun (A,B,C,D,E,F,G,H,I,J,K,L) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L], Bs, Lf) end,
 	      Bs};
 	13 -> {value,
 	      fun (A,B,C,D,E,F,G,H,I,J,K,L,M) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M], Bs, Lf) end,
@@ -172,11 +177,12 @@ expr({'fun',Line,{clauses,Cs}}, Bs, Lf) ->
 	20 -> {value,
 	      fun (A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T) -> eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T], Bs, Lf) end,
 	      Bs};
-	Other ->
+	_Other ->
 	    exit({'argument_limit',{'fun',Line,Cs}})
     end;
 expr({call,_,{remote,_,Mod,Func},As0}, Bs0, Lf) ->
-    {value,M,Bs1} = expr(Mod, Bs0, Lf),
+    Mod1 = expand_module_name(Mod, Bs0),
+    {value,M,Bs1} = expr(Mod1, Bs0, Lf),
     {value,F,Bs2} = expr(Func, Bs0, Lf),
     {As,Bs3} = expr_list(As0, merge_bindings(Bs1, Bs2), Lf),
     {value,apply(M, F, As),Bs3};
@@ -198,7 +204,7 @@ expr({call,_,Func0,As0}, Bs0, Lf) ->		%Local functions handler
 expr({'catch',_,Expr}, Bs0, Lf) ->
     Ref = make_ref(),
     case catch {Ref,expr(Expr, Bs0, Lf)} of
-	{Ref,{value,Val,Bs}=Ret} ->		%Nothing was thrown (guaranteed).
+	{Ref,{value,_,_}=Ret} ->		%Nothing was thrown (guaranteed).
 	    Ret;
 	Other ->
 	    {value,Other,Bs0}
@@ -252,11 +258,11 @@ expr({bin,_,Fs}, Bs0, Lf) ->
 		       fun(E, B) -> expr(E, B, Lf) end,
 		       [],
 		       true);
-expr({remote,_,M,F}, Bs, Lf) ->
+expr({remote,_,_,_}, _, _) ->
     exit({{badexpr,':'},[{erl_eval,expr,3}]});
-expr({field,_,Rec,F}, Bs, Lf) ->
+expr({record_field,_,_,_}, _, _) ->
     exit({{badexpr, '.'},[{erl_eval,expr,3}]});
-expr({value,_,Val}, Bs, Lf) ->			%Special case straight values.
+expr({value,_,Val}, Bs, _) ->			%Special case straight values.
     {value,Val,Bs}.
 
 %% local_func(Function, Arguments, Bindings, LocalFuncHandler) ->
@@ -277,10 +283,10 @@ local_func(Func, As, Bs, {eval,F,Eas}) ->
 local_func(Func, As0, Bs0, {M,F}) ->
     {As1,Bs1} = expr_list(As0, Bs0, {M,F}),
     {value,apply(M, F, [Func,As1]),Bs1};
-local_func(Func, As, Bs, {M,F,Eas}) ->
+local_func(Func, As, _, {M,F,Eas}) ->
     apply(M, F, [Func,As|Eas]);
 %% Default unknown function handler to undefined function.
-local_func(Func, As0, Bs0, none) ->
+local_func(Func, As0, _, none) ->
     exit({undef,[{erl_eval,Func,length(As0)}]}).
 
 %% eval_lc(Expr, [Qualifier], Bindings, LocalFunctionHandler) ->
@@ -304,13 +310,13 @@ eval_lc1(E, [F|Qs], Bs0, Lf) ->
 	true ->
 	    case guard_test(F, Bs0, Lf) of
 		{value,true,Bs1} -> eval_lc1(E, Qs, Bs1, Lf);
-		{value,false,Bs1} -> []
+		{value,false,_} -> []
 	    end;
 	false ->
 	    case expr(F, Bs0, Lf) of
 		{value,true,Bs1} -> eval_lc1(E, Qs, Bs1, Lf);
-		{value,false,Bs1} -> [];
-		Other -> exit({bad_filter,[{erl_eval,expr,3}]})
+		{value,false,_} -> [];
+		_Other -> exit({bad_filter,[{erl_eval,expr,3}]})
 	    end
     end;
 eval_lc1(E, [], Bs, Lf) ->
@@ -320,20 +326,20 @@ eval_lc1(E, [], Bs, Lf) ->
 %% eval_fun(Clauses, Arguments, Bindings, LocalFunctionHandler) ->
 %%	Value
 
-eval_fun([{clause,L,H,G,B}|Cs], As, Bs0, Lf) ->
+eval_fun([{clause,_,H,G,B}|Cs], As, Bs0, Lf) ->
     case match_list(H, As, new_bindings()) of
 	{match,Bsn} ->				%The new bindings for the head
 	    Bs1 = add_bindings(Bsn, Bs0),	% which then shadow!
 	    case guard(G, Bs1, Lf) of
 		true ->
-		    {value,V,Bs2} = exprs(B, Bs1, Lf),
+		    {value,V,_} = exprs(B, Bs1, Lf),
 		    V;
 		false -> eval_fun(Cs, As, Bs0, Lf)
 	    end;
 	nomatch ->
 	    eval_fun(Cs, As, Bs0, Lf)
     end;
-eval_fun([], As, Bs, Lf) ->
+eval_fun([], As, _, _) ->
     exit({function_clause,[{?MODULE,'-inside-a-shell-fun-',As},
 			   {erl_eval,expr,3}]}).
 
@@ -350,7 +356,7 @@ expr_list(Es, Bs, Lf) ->
 expr_list([E|Es], Vs, BsOrig, Bs0, Lf) ->
     {value,V,Bs1} = expr(E, BsOrig, Lf),
     expr_list(Es, [V|Vs], BsOrig, merge_bindings(Bs1, Bs0), Lf);
-expr_list([], Vs, _, Bs, Lf) ->
+expr_list([], Vs, _, Bs, _) ->
     {reverse(Vs),Bs}.
 
 eval_op('*', A1, A2) -> A1 * A2;
@@ -402,13 +408,13 @@ if_clauses([{clause,_,[],G,B}|Cs], Bs, Lf) ->
 	true -> exprs(B, Bs, Lf);
 	false -> if_clauses(Cs, Bs, Lf)
     end;
-if_clauses([], Bs, Lf) ->
+if_clauses([], _, _) ->
     exit({if_clause,[{erl_eval,expr,3}]}).
 
 %% case_clauses(Value, Clauses, Bindings, LocalFuncHandler)
 
 case_clauses(Val, Cs, Bs, Lf) ->
-    case match_clause(Cs, Val, Bs, Lf) of
+    case match_clause(Cs, [Val], Bs, Lf) of
 	{B, Bs1} ->
 	    exprs(B, Bs1, Lf);
 	nomatch ->
@@ -421,7 +427,7 @@ case_clauses(Val, Cs, Bs, Lf) ->
 receive_clauses(Cs, Bs, Lf, Ms) ->
     receive
 	Val ->
-	    case match_clause(Cs, Val, Bs, Lf) of
+	    case match_clause(Cs, [Val], Bs, Lf) of
 		{B, Bs1} ->
 		    merge_queue(Ms),
 		    exprs(B, Bs1, Lf);
@@ -436,7 +442,7 @@ receive_clauses(T, Cs, TB, Bs, Lf, Ms) ->
     {_,_} = statistics(runtime),
     receive
 	Val ->
-	    case match_clause(Cs, Val, Bs, Lf) of
+	    case match_clause(Cs, [Val], Bs, Lf) of
 		{B, Bs1} ->
 		    merge_queue(Ms),
 		    exprs(B, Bs1, Lf);
@@ -475,14 +481,14 @@ send_all([], _) -> true.
     
 %% match_clause -> {Body, Bindings} or nomatch
 
-match_clause([{clause,_,[P],G,B}|Cs], Val, Bs, Lf) ->
-    case match(P, Val, Bs) of
+match_clause([{clause,_,H,G,B}|Cs], Vals, Bs, Lf) ->
+    case match_list(H, Vals, Bs) of
 	{match, Bs1} ->
 	    case guard(G, Bs1, Lf) of
 		true -> {B, Bs1};
-		false -> match_clause(Cs, Val, Bs, Lf)
+		false -> match_clause(Cs, Vals, Bs, Lf)
 	    end;
-	nomatch -> match_clause(Cs, Val, Bs, Lf)
+	nomatch -> match_clause(Cs, Vals, Bs, Lf)
     end;
 match_clause([], _, _, _) ->
     nomatch.
@@ -504,7 +510,7 @@ guard1([G|Gs], Bs0, Lf) when list(G) ->
 	false ->
 	    guard1(Gs, Bs0, Lf)
     end;
-guard1([], Bs, Lf) -> false.
+guard1([], _, _) -> false.
 
 %% guard conjunction
 guard0([G|Gs], Bs0, Lf) ->
@@ -512,12 +518,12 @@ guard0([G|Gs], Bs0, Lf) ->
 	true ->
 	    case guard_test(G, Bs0, Lf) of
 		{value,true,Bs} -> guard0(Gs, Bs, Lf);
-		{value,false,Bs} -> false
+		{value,false,_} -> false
 	    end;
 	false ->
 	    exit({guard_expr,[{erl_eval,expr,3}]})
     end;
-guard0([], Bs, Lf) -> true.
+guard0([], _, _) -> true.
 	
 %% guard_test(GuardTest, Bindings, LocalFuncHandler) ->
 %%	{value,bool(),NewBindings}.
@@ -527,7 +533,7 @@ guard0([], Bs, Lf) -> true.
 guard_test({call,_,{atom,_,Name},As0}, Bs0, Lf) ->
     case catch expr_list(As0, Bs0, Lf) of
 	{As1,Bs1} -> {value,type_test(Name, As1),Bs1};
-	Other -> {value,false,Bs0}
+	_Other -> {value,false,Bs0}
     end;
 guard_test({op,_,Op,Lhs0,Rhs0}, Bs0, Lf) ->
     case catch begin
@@ -535,9 +541,9 @@ guard_test({op,_,Op,Lhs0,Rhs0}, Bs0, Lf) ->
 		   {value,eval_op(Op, Lhs, Rhs),Bs1}
 	       end of
 	{value,Bool,Bs2} -> {value,Bool,Bs2};
-	Other -> {value,false,Bs0}
+	_Other -> {value,false,Bs0}
     end;
-guard_test({atom,_,true}, Bs, Lf) -> {value,true,Bs}.
+guard_test({atom,_,true}, Bs, _) -> {value,true,Bs}.
 
 type_test(integer, [A]) -> erlang:is_integer(A);
 type_test(float, [A]) ->  erlang:is_float(A);
@@ -554,7 +560,7 @@ type_test(binary, [A]) -> erlang:is_binary(A);
 type_test(record, As) -> type_test(is_record, As);
 type_test(is_record, [R,A]) when tuple(R), atom(A) ->
     erlang:is_record(R, A, size(R));
-type_test(is_record, [R,A]) -> false;
+type_test(is_record, [_,_]) -> false;
 type_test(Test, As) -> erlang:apply(erlang, Test, As).
 
 
@@ -571,8 +577,7 @@ match(Pat, Term, Bs) ->
 	    Other
     end.
 
-string_to_conses([], Line, Tail) ->
-    Tail;
+string_to_conses([], _, Tail) -> Tail;
 string_to_conses([E|Rest], Line, Tail) ->
     {cons, Line, {integer, Line, E}, string_to_conses(Rest, Line, Tail)}.
 
@@ -602,12 +607,12 @@ match1({var,_,Name}, Term, Bs) ->
     case binding(Name, Bs) of
 	{value,Term} ->
 	    {match,Bs};
-	{value,V} ->
+	{value,_} ->
 	    throw(nomatch);
 	unbound ->
 	    {match,add_binding(Name, Term, Bs)}
     end;
-match1({match,Line,Pat1,Pat2}, Term, Bs0) ->
+match1({match,_,Pat1,Pat2}, Term, Bs0) ->
     {match, Bs1} = match1(Pat1, Term, Bs0),
     match1(Pat2, Term, Bs1);
 match1({string,_,S0}, S, Bs) ->
@@ -623,21 +628,21 @@ match1({nil,_}, Nil, Bs) ->
 match1({cons,_,H,T}, [H1|T1], Bs0) ->
     {match,Bs} = match1(H, H1, Bs0),
     match1(T, T1, Bs);
-match1({cons,_,_H,_T}, _List, _Bs0) ->
+match1({cons,_,_,_}, _, _) ->
     throw(nomatch);
 match1({tuple,_,Elts}, Tuple, Bs) when tuple(Tuple),
 				       length(Elts) == size(Tuple) ->
     match_tuple(Elts, Tuple, 1, Bs);
-match1({tuple,_,Elts}, Tuple, Bs) ->
+match1({tuple,_,_}, _, _) ->
     throw(nomatch);
 match1({bin, _, Fs}, B, Bs0) when binary(B) ->
     eval_bits:match_bits(Fs, B, Bs0,
 			 fun(L, R, Bs) -> match1(L, R, Bs) end,
 			 fun(E, Bs) -> expr(E, Bs, none) end,
 			 true);
-match1({bin, _, Fs}, B, Bs0) ->
+match1({bin,_,_}, _, _) ->
     throw(nomatch);
-match1({op,Line,'++',{nil,_},R}, Term, Bs) ->
+match1({op,_,'++',{nil,_},R}, Term, Bs) ->
     match1(R, Term, Bs);
 match1({op,_,'++',{cons,Li,{integer,L2,I},T},R}, Term, Bs) ->
     match1({cons,Li,{integer,L2,I},{op,Li,'++',T,R}}, Term, Bs);
@@ -748,8 +753,8 @@ partial_eval(Expr) ->
 	    Expr
     end.
 
-ev_expr({op,Ln,Op,L,R}) -> eval(Op, ev_expr(L), ev_expr(R));
-ev_expr({op,Ln,Op,A}) -> eval(Op, ev_expr(A));
+ev_expr({op,_,Op,L,R}) -> eval(Op, ev_expr(L), ev_expr(R));
+ev_expr({op,_,Op,A}) -> eval(Op, ev_expr(A));
 ev_expr({integer,_,X}) -> X;
 ev_expr({float,_,X})   -> X;
 ev_expr({atom,_,X})    -> X;
@@ -797,9 +802,47 @@ eval('-', X) -> 0 - X;
 eval('bnot', X) -> bnot X;
 eval('not', X) ->  not X.
 
-ret_expr(Old, New) ->
+ret_expr(_Old, New) ->
 %%    io:format("~w: reduced ~s => ~s~n",
 %%	      [line(Old), erl_pp:expr(Old), erl_pp:expr(New)]),
     New.
 
 line(Expr) -> element(2, Expr).
+
+%% In syntax trees, module/package names are atoms or lists of atoms.
+
+package_to_string(A) when atom(A) -> atom_to_list(A);
+package_to_string(L) when list(L) -> packages:concat(L).
+
+expand_module_name({atom,L,A} = M, Bs) ->
+    case binding({module,A}, Bs) of
+	{value, A1} ->
+	    {atom,L,A1};
+	unbound ->
+	    case packages:is_segmented(A) of
+		true ->
+		    M;
+		false ->
+%%% 		    P = case binding({module,'$package'}, Bs) of
+%%% 			    {value, P1} -> P1;
+%%% 			    unbound -> ""
+%%% 			end,
+%%% 		    A1 = list_to_atom(packages:concat(P, A)),
+%%% 		    {atom,L,list_to_atom(A1)}
+		    {atom,L,A}
+	    end
+    end;
+expand_module_name(M, _) ->
+    case erl_parse:package_segments(M) of
+	error ->
+	    M;
+	M1 ->
+	    L = element(2,M),
+	    Mod = package_to_string(M1),
+	    case packages:is_valid(Mod) of
+		true ->
+		    {atom,L,list_to_atom(Mod)};
+		false ->
+		    exit({{bad_module_name, Mod}, [{erl_eval,expr,3}]})
+	    end
+    end.

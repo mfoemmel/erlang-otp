@@ -1,7 +1,7 @@
 %%% $Id$
 %%% hipe_x86_encode.erl
 %%% Copyright (C) 2000-2001 Mikael Pettersson
-
+%%%
 %%% This is the syntax of x86 r/m operands:
 %%%
 %%% opnd  ::= reg			mod == 11
@@ -236,6 +236,27 @@ sizeof_rm(RM) ->
 	{rm_mem, EA} -> sizeof_ea(EA)
     end.
 
+%%% Floating point stack postitions
+
+-define(ST0, 2#000).
+-define(ST1, 2#001).
+-define(ST2, 2#010).
+-define(ST3, 2#011).
+-define(ST4, 2#100).
+-define(ST5, 2#101).
+-define(ST6, 2#110).
+-define(ST7, 2#111).
+
+st(0) -> ?ST0;
+st(1) -> ?ST1;
+st(2) -> ?ST2;
+st(3) -> ?ST3;
+st(4) -> ?ST4;
+st(5) -> ?ST5;
+st(6) -> ?ST6;
+st(7) -> ?ST7.
+
+
 %%% Instructions
 %%%
 %%% Insn	::= {Op,Opnds}
@@ -332,11 +353,11 @@ cbw_sizeof({}) ->
     2.
 
 nullary_op_encode(Opcode, {}) ->
-    %% cdq, clc, cld, cmc, cwde, into, leave, nop, stc, std
+    %% cdq, clc, cld, cmc, cwde, into, leave, nop, prefix_fs, stc, std
     [Opcode].
 
 nullary_op_sizeof({}) ->
-    %% cdq, clc, cld, cmc, cwde, into, leave, nop, stc, std
+    %% cdq, clc, cld, cmc, cwde, into, leave, nop, prefix_fs, stc, std
     1.
 
 cmovcc_encode({{cc,CC}, {reg32,Reg32}, {rm32,RM32}}) ->
@@ -601,7 +622,7 @@ shift_op_sizeof(Opnds) ->		% rcl, rcr, rol, ror, sar, shl, shr
 	    1 + sizeof_rm(RM32);
 	{{rm32,RM32}, cl} ->
 	    1 + sizeof_rm(RM32);
-	{{rm32,RM32}, {imm8,Imm8}} ->
+	{{rm32,RM32}, {imm8,_Imm8}} ->
 	    1 + sizeof_rm(RM32) + 1
     end.
 
@@ -663,6 +684,148 @@ test_sizeof(Opnds) ->
 	    1 + sizeof_rm(RM32)
     end.
 
+fild_encode(Opnds) ->
+    %% The operand cannot be a register!
+    {{rm32, RM32}} = Opnds,
+    [16#DB | encode_rm(RM32, 2#000, [])].
+
+fild_sizeof(Opnds) ->
+    {{rm32, RM32}} = Opnds,
+    1 + sizeof_rm(RM32).
+
+fld_encode(Opnds) ->
+    case Opnds of
+	{{rm64fp, RM64fp}} ->
+	    [16#DD | encode_rm(RM64fp, 2#000, [])];
+	{{fpst, St}} ->
+	    [16#D9, 16#C0 bor st(St)]
+    end.
+
+fld_sizeof(Opnds) ->
+    case Opnds of
+	{{rm64fp, RM64fp}} ->
+	    1 + sizeof_rm(RM64fp);
+	{{fpst, _}} ->
+	    2
+    end.
+
+fp_comm_arith_encode(OpCode, Opnds) ->
+    %% fadd, fmul
+    case Opnds of
+	{{rm64fp, RM64fp}} ->
+	    [16#DC | encode_rm(RM64fp, OpCode, [])];
+	{{fpst,0}, {fpst,St}} ->
+	    [16#D8, (16#C0 bor (OpCode bsl 3)) bor st(St)];
+	{{fpst,St}, {fpst,0}} ->	
+	    [16#DC, (16#C0 bor (OpCode bsl 3)) bor st(St)]
+    end.
+	    
+fp_comm_arith_pop_encode(OpCode, Opnds) ->
+    %% faddp, fmulp
+    case Opnds of
+	[] ->
+	    [16#DE, 16#C0 bor (OpCode bsl 3) bor st(1)];
+	{{fpst,St},{fpst,0}} ->
+	    [16#DE, 16#C0 bor (OpCode bsl 3) bor st(St)]
+    end.
+
+fp_arith_encode(OpCode, Opnds) ->
+    %% fdiv, fsub
+    case Opnds of
+	{{rm64fp, RM64fp}} ->
+	    [16#DC | encode_rm(RM64fp, OpCode, [])];
+	{{fpst,0}, {fpst,St}} ->
+	    OpCode0 = OpCode band 2#110,
+	    [16#D8, 16#C0 bor (OpCode0 bsl 3) bor st(St)];
+	{{fpst,St}, {fpst,0}} ->
+	    OpCode0 = OpCode bor 1,
+	    [16#DC, 16#C0 bor (OpCode0 bsl 3) bor st(St)]
+    end.
+	    
+fp_arith_pop_encode(OpCode, Opnds) ->
+    %% fdivp, fsubp
+    OpCode0 = OpCode bor 1,
+    case Opnds of
+	[] ->
+	    [16#DE, 16#C8 bor (OpCode0 bsl 3) bor st(1)];
+	{{fpst,St}, {fpst,0}} ->
+	    [16#DE, 16#C8 bor (OpCode0 bsl 3) bor st(St)]
+    end.
+
+fp_arith_rev_encode(OpCode, Opnds) ->
+    %% fdivr, fsubr
+    case Opnds of
+	{{rm64fp, RM64fp}} ->
+	    [16#DC | encode_rm(RM64fp, OpCode, [])];
+	{{fpst,0}, {fpst,St}} ->
+	    OpCode0 = OpCode bor 1,
+	    [16#D8, 16#C0 bor (OpCode0 bsl 3) bor st(St)];
+	{{fpst,St}, {fpst,0}} ->
+	    OpCode0 = OpCode band 2#110,
+	    [16#DC, 16#C0 bor (OpCode0 bsl 3) bor st(St)]
+    end.
+	    
+fp_arith_rev_pop_encode(OpCode, Opnds) ->
+    %% fdivrp, fsubrp
+    OpCode0 = OpCode band 2#110,
+    case Opnds of
+	[] ->
+	    [16#DE, (16#C0 bor (OpCode0 bsl 3) bor st(1)) band 7];
+	{{fpst,St}, {fpst, 0}} ->
+	    [16#DE, (16#C0 bor (OpCode0 bsl 3) bor st(St)) band 7]
+    end.
+
+fp_arith_sizeof(Opnds) ->
+    case Opnds of
+	{{rm64fp, RM64fp}} ->
+	    1 + sizeof_rm(RM64fp);
+	{{fpst,0}, {fpst,_}} ->
+	    2;
+	{{fpst,_}, {fpst,0}} ->
+	    2
+    end.
+
+fst_encode(OpCode, Opnds) ->
+    case Opnds of
+	{{rm64fp, RM64fp}} ->
+	    [16#DD | encode_rm(RM64fp, OpCode, [])];
+	{{fpst, St}} ->
+	    [16#DD, 16#C0 bor (OpCode bsl 3) bor st(St)]
+    end.
+
+fst_sizeof(Opnds) ->
+    case Opnds of
+	{{rm64fp, RM64fp}} ->
+	    1 + sizeof_rm(RM64fp);
+	{{fpst, _}} ->
+	    2
+    end.
+    
+fchs_encode() ->
+    [16#D9, 16#E0].
+fchs_sizeof() ->
+    2.
+
+ffree_encode({{fpst, St}})->
+    [16#DD, 16#C0 bor st(St)].
+ffree_sizeof() ->
+    2.
+
+fwait_encode() ->
+    [16#AD].
+fwait_sizeof() ->
+    1.
+
+fxch_encode(Opnds) ->
+    case Opnds of
+	[] ->
+	    [16#D9, 16#C8 bor st(1)];
+	{{fpst, St}} ->
+	    [16#D9, 16#C8 bor st(St)]
+    end.
+fxch_sizeof() ->
+    2.
+
 insn_encode({Op, Opnds}) ->
     insn_encode(Op, Opnds).
 
@@ -690,6 +853,26 @@ insn_encode(Op, Opnds) ->
 	'dec' -> incdec_encode(2#001, Opnds);
 	'div' -> arith_unop_encode(2#110, Opnds);
 	'enter' -> enter_encode(Opnds);
+	'fadd' -> fp_comm_arith_encode(2#000, Opnds);
+	'faddp' -> fp_comm_arith_pop_encode(2#000, Opnds);
+	'fchs' -> fchs_encode();
+	'fdiv' -> fp_arith_encode(2#110, Opnds);
+	'fdivp' -> fp_arith_pop_encode(2#110, Opnds);
+	'fdivr' -> fp_arith_rev_encode(2#111, Opnds);
+	'fdivrp' -> fp_arith_rev_pop_encode(2#111, Opnds);
+	'ffree' -> ffree_encode(Opnds);
+	'fild' -> fild_encode(Opnds);
+	'fld' -> fld_encode(Opnds);
+	'fmul' -> fp_comm_arith_encode(2#001, Opnds);
+	'fmulp' -> fp_comm_arith_pop_encode(2#001, Opnds);
+	'fst' -> fst_encode(2#010, Opnds);
+	'fstp' -> fst_encode(2#011, Opnds);
+	'fsub' -> fp_arith_encode(2#100, Opnds);
+	'fsubp' -> fp_arith_pop_encode(2#100, Opnds);
+	'fsubr' -> fp_arith_rev_encode(2#101, Opnds);
+	'fsubrp' -> fp_arith_rev_pop_encode(2#101, Opnds);
+	'fwait' -> fwait_encode();
+	'fxch' -> fxch_encode(Opnds);
 	'idiv' -> arith_unop_encode(2#111, Opnds);
 	'imul' -> imul_encode(Opnds);
 	'inc' -> incdec_encode(2#000, Opnds);
@@ -711,6 +894,7 @@ insn_encode(Op, Opnds) ->
 	'not' -> arith_unop_encode(2#010, Opnds);
 	'or' -> arith_binop_encode(2#001, Opnds);
 	'pop' -> pop_encode(Opnds);
+	'prefix_fs' -> nullary_op_encode(16#64, Opnds);
 	'push' -> push_encode(Opnds);
 	'rcl' -> shift_op_encode(2#010, Opnds);
 	'rcr' -> shift_op_encode(2#011, Opnds);
@@ -759,6 +943,26 @@ insn_sizeof(Op, Opnds) ->
 	'dec' -> incdec_sizeof(Opnds);
 	'div' -> arith_unop_sizeof(Opnds);
 	'enter' -> enter_sizeof(Opnds);
+	'fadd' -> fp_arith_sizeof(Opnds);
+	'faddp' -> fp_arith_sizeof(Opnds);
+	'fchs' -> fchs_sizeof();
+	'fdiv' -> fp_arith_sizeof(Opnds);
+	'fdivp' -> fp_arith_sizeof(Opnds);
+	'fdivr' -> fp_arith_sizeof(Opnds);
+	'fdivrp' -> fp_arith_sizeof(Opnds);
+	'ffree' -> ffree_sizeof();
+	'fild' -> fild_sizeof(Opnds);
+	'fld' -> fld_sizeof(Opnds);
+	'fmul' -> fp_arith_sizeof(Opnds);
+	'fmulp' -> fp_arith_sizeof(Opnds);
+	'fst' -> fst_sizeof(Opnds);
+	'fstp' -> fst_sizeof(Opnds);
+	'fsub' -> fp_arith_sizeof(Opnds);
+	'fsubp' -> fp_arith_sizeof(Opnds);
+	'fsubr' -> fp_arith_sizeof(Opnds);
+	'fsubrp' -> fp_arith_sizeof(Opnds);
+	'fwait' -> fwait_sizeof();
+	'fxch' -> fxch_sizeof();	
 	'idiv' -> arith_unop_sizeof(Opnds);
 	'imul' -> imul_sizeof(Opnds);
 	'inc' -> incdec_sizeof(Opnds);
@@ -780,6 +984,7 @@ insn_sizeof(Op, Opnds) ->
 	'not' -> arith_unop_sizeof(Opnds);
 	'or' -> arith_binop_sizeof(Opnds);
 	'pop' -> pop_sizeof(Opnds);
+	'prefix_fs' -> nullary_op_sizeof(Opnds);
 	'push' -> push_sizeof(Opnds);
 	'rcl' -> shift_op_sizeof(Opnds);
 	'rcr' -> shift_op_sizeof(Opnds);
@@ -1025,6 +1230,7 @@ dotest1(OS) ->
     t(OS,'xor',{RM32,Imm8}),
     t(OS,'xor',{RM32,Reg32}),
     t(OS,'xor',{Reg32,RM32}),
+    t(OS,'prefix_fs',{}), t(OS,'add',{{reg32,?EAX},{rm32,rm_mem(ea_disp32(16#20))}}),
     [].
 
 dotest() -> dotest1(group_leader()).	% stdout == group_leader

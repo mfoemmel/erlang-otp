@@ -25,13 +25,12 @@
 #include "global.h"
 #include "erl_process.h"
 #include "beam_load.h"
-#include "hash.h"
 #include "bif.h"
 #include "error.h"
 #include "beam_bp.h"
 
 
-/*
+/* *************************************************************************
 ** Macros
 */
 
@@ -39,174 +38,336 @@
 ** Memory allocation macros
 */
 /* 220 == Breakpoint data (for instrumentation) */
-#define Alloc(SIZ) sys_alloc_from(220, (SIZ))
-#define ReAlloc(OLD,SIZ) sys_realloc(OLD,SIZ)
-#define Free(OLD) sys_free(OLD)
+#define Alloc(SIZ) (safe_alloc_from(220, (SIZ)))
+#define ReAlloc(OLD,SIZ) (safe_realloc(OLD,SIZ))
+#define Free(OLD) (sys_free(OLD))
 
 /*
-** Initial size of breakpoint table
-*/
-#define BP_INITIAL_SIZE 10
-
-/*
-** Global variables
+** Doubly linked ring macros
 */
 
-/*
-** Breakpoint hash table (accessed via macros in beam_bp.h
-*/
-Hash erts_bp_table;
+#define BpInit(a,i)        \
+do {                       \
+    (a)->orig_instr = (i); \
+    (a)->next = (a);       \
+    (a)->prev = (a);       \
+} while (0)
 
-/*
+#define BpSpliceNext(a,b)                   \
+do {                                        \
+    register BpData *c = (a), *d = (b), *e; \
+    e             = c->next->prev;          \
+    c->next->prev = d->next->prev;          \
+    d->next->prev = e;                      \
+    e       = c->next;                      \
+    c->next = d->next;                      \
+    d->next = e;                            \
+} while (0)
+
+#define BpSplicePrev(a,b)                   \
+do {                                        \
+    register BpData *c = (a), *d = (b), *e; \
+    e             = c->prev->next;          \
+    c->prev->next = d->prev->next;          \
+    d->prev->next = e;                      \
+    e       = c->prev;                      \
+    c->prev = d->prev;                      \
+    d->prev = e;                            \
+} while (0)
+
+#ifdef DEBUG
+#  define BpSingleton(a) ((a)->next == (a) && (a)->prev == (a))
+#else
+#  define BpSingleton(a) ((a)->next == (a))
+#endif
+
+#define BpInitAndSpliceNext(a,i,b) \
+do {                               \
+    (a)->orig_instr = (i);         \
+    (a)->prev       = (b);         \
+    (b)->next->prev = (a);         \
+    (a)->next = (b)->next;         \
+    (b)->next = (a);               \
+} while (0)
+
+#define BpInitAndSplicePrev(a,i,b) \
+do {                               \
+    (a)->orig_instr = (i);         \
+    (a)->next       = (b);         \
+    (b)->prev->next = (a);         \
+    (a)->prev = (b)->prev;         \
+    (b)->prev = (a);               \
+} while (0)
+
+/* *************************************************************************
 ** Local prototypes
 */
 
 /*
 ** Helpers
 */
-static int do_erts_set_break(Module *m, Eterm mfa[3], int specified,
-			     Binary *match_spec, Uint break_op);
-static int do_erts_clear_break(Module *m, Eterm mfa[3],
-			       int specified, Uint break_op);
 
-/*
-** Table access functions
-*/
-static int erts_set_break(Eterm mfa[3], int specified,
-		   Binary *match_spec, Uint break_op);
-static int erts_clear_break(Eterm mfa[3], int specified, Uint break_op);
-static TraceBpData *erts_get_bp_data(Uint *pc);
-static void erts_put_bp_data(TraceBpData *bpd);
-static void erts_remove_bp_data(Uint *pc);
+static int set_break(Eterm mfa[3], int specified,
+		     Binary *match_spec, Uint break_op, 
+		     enum erts_break_op count_op, Eterm tracer_pid);
+static int set_module_break(Module *modp, Eterm mfa[3], int specified,
+			    Binary *match_spec, Uint break_op,
+			    enum erts_break_op count_op, Eterm tracer_pid);
+static int set_function_break(Module *modp, Uint *pc,
+			      Binary *match_spec, Uint break_op,
+			      enum erts_break_op count_op, Eterm tracer_pid); 
 
-/*
-** Callbacks for hash.c
-*/
-static HashValue bp_hash(void *);
-static int bp_cmp(void *, void *);
-static void *bp_alloc(void *);
-static void bp_free(void *);
+static int clear_break(Eterm mfa[3], int specified, 
+		       Uint break_op);
+static int clear_module_break(Module *modp, Eterm mfa[3], int specified, 
+			      Uint break_op);
+static int clear_function_break(Module *modp, Uint *pc, 
+				Uint break_op);
 
-/*
-** Static globals
-*/
+static BpData *is_break(Uint *pc, Uint break_op);
 
-/*
-** Info struct for hash.c
-*/
-static HashFunctions bp_hf = {
-    &bp_hash,
-    &bp_cmp,
-    &bp_alloc,
-    &bp_free
-};
 
-/*
+
+/* *************************************************************************
 ** External interfaces
 */
 
-void erts_bp_init(void) 
-{
-    hash_init(&erts_bp_table, "breakpoint_data", BP_INITIAL_SIZE, bp_hf);
+void 
+erts_bp_init(void) {
 }
 
 int 
-erts_set_trace_break(Eterm mfa[3], int specified, Binary *match_spec)
-{
-    return erts_set_break(mfa, specified, match_spec,
-			  (Uint) BeamOp(op_i_trace_breakpoint));
+erts_set_trace_break(Eterm mfa[3], int specified, Binary *match_spec,
+		     Eterm tracer_pid) {
+    return set_break(mfa, specified, match_spec,
+		     (Uint) BeamOp(op_i_trace_breakpoint), 0, tracer_pid);
 }
 
 int 
-erts_set_debug_break(Eterm mfa[3], int specified)
-{
-    return erts_set_break(mfa, specified, NULL, (Uint) BeamOp(op_i_debug_breakpoint));
+erts_set_mtrace_break(Eterm mfa[3], int specified, Binary *match_spec,
+		      Eterm tracer_pid) {
+    return set_break(mfa, specified, match_spec,
+		     (Uint) BeamOp(op_i_mtrace_breakpoint), 0, tracer_pid);
 }
 
-static int 
-erts_set_break(Eterm mfa[3], int specified, Binary *match_spec, Eterm break_op)
-{
-    Module *modp;
-    int num_processed = 0;
-    if (!specified) {
-	/* Find and process all modules in the system... */
-	int current = -1;
-	while ((current = index_iter(&module_table,current)) >= 0) {
-	    if ((modp = module_code(current)) != NULL) {
-		num_processed += do_erts_set_break(modp, mfa, 
-						   specified, match_spec, break_op);
-	    }
-	}
+void
+erts_set_mtrace_bif(Uint *pc, Binary *match_spec, Eterm tracer_pid) {
+    BpDataTrace *bdt;
+    
+    bdt = (BpDataTrace *) pc[-4];
+    if (bdt) {
+	MatchSetUnref(bdt->match_spec);
+	MatchSetRef(match_spec);
+	bdt->match_spec = match_spec;
+	bdt->tracer_pid = tracer_pid;
     } else {
-	/* Process a single module */
-	if ((modp = erts_get_module(mfa[0])) != NULL) {
-	    num_processed += do_erts_set_break(modp, mfa, 
-					       specified, match_spec, break_op);
-	}	
+	bdt = Alloc(sizeof(BpDataTrace));
+	BpInit((BpData *) bdt, 0);
+	MatchSetRef(match_spec);
+	bdt->match_spec = match_spec;
+	bdt->tracer_pid = tracer_pid;
+	pc[-4] = (Uint) bdt;
     }
-    return num_processed;
 }
+
+int 
+erts_set_debug_break(Eterm mfa[3], int specified) {
+    return set_break(mfa, specified, NULL, 
+		     (Uint) BeamOp(op_i_debug_breakpoint), 0, NIL);
+}
+
+int 
+erts_set_count_break(Eterm mfa[3], int specified, enum erts_break_op count_op) {
+    return set_break(mfa, specified, NULL, 
+		     (Uint) BeamOp(op_i_count_breakpoint), count_op, NIL);
+}
+
+
+
 int
-erts_clear_trace_break(Eterm mfa[3], int specified)
-{
-    return erts_clear_break(mfa, specified, (Uint) BeamOp(op_i_trace_breakpoint));
+erts_clear_trace_break(Eterm mfa[3], int specified) {
+    return clear_break(mfa, specified, 
+		       (Uint) BeamOp(op_i_trace_breakpoint));
 }
 
 int
-erts_clear_debug_break(Eterm mfa[3], int specified)
-{
-    return erts_clear_break(mfa, specified, (Uint) BeamOp(op_i_debug_breakpoint));
+erts_clear_mtrace_break(Eterm mfa[3], int specified) {
+    return clear_break(mfa, specified, 
+		       (Uint) BeamOp(op_i_mtrace_breakpoint));
 }
 
-static int
-erts_clear_break(Eterm mfa[3], int specified, Uint break_op) 
-{
-    int num_processed = 0;
-    Module *modp;
-    if (!specified) {
-	int current = -1;
-	while ((current = index_iter(&module_table,current)) >= 0) {
-	    if ((modp = module_code(current)) != NULL) {
-		num_processed += do_erts_clear_break(modp, mfa, specified, break_op);
-	    }
+void
+erts_clear_mtrace_bif(Uint *pc) {
+    BpDataTrace *bdt;
+    
+    bdt = (BpDataTrace *) pc[-4];
+    if (bdt) {
+	if (bdt->match_spec) {
+	    MatchSetUnref(bdt->match_spec);
 	}
-    } else {
-	/* Process a single module */
-	if ((modp = erts_get_module(mfa[0])) != NULL) {
-	    num_processed += do_erts_clear_break(modp, mfa, specified, break_op);
-	}	
+	Free(bdt);
     }
-    return num_processed;
+    pc[-4] = (Uint) NULL;
 }
 
-void erts_clear_module_break(Module *modp)
-{
-    (void) do_erts_clear_break(modp, NULL, 0, 0);
+int
+erts_clear_debug_break(Eterm mfa[3], int specified) {
+    return clear_break(mfa, specified, 
+		       (Uint) BeamOp(op_i_debug_breakpoint));
 }
 
-Uint erts_process_break(Process *p, Uint *pc, Eterm *mfa, 
-			Eterm *args, Uint32 *ret_flags)
-{
-    TraceBpData *bpd = erts_get_bp_data(pc);
-    ASSERT(bpd != NULL);
+int
+erts_clear_count_break(Eterm mfa[3], int specified) {
+    return clear_break(mfa, specified, 
+		       (Uint) BeamOp(op_i_count_breakpoint));
+}
 
-    *ret_flags = erts_call_trace(p, mfa, bpd->match_spec, args, 1);
-    return bpd->orig_instr;
+int
+erts_clear_break(Eterm mfa[3], int specified) {
+    return clear_break(mfa, specified, 0);
+}
+
+int 
+erts_clear_module_break(Module *modp) {
+    ASSERT(modp);
+    return clear_module_break(modp, NULL, 0, 0);
+}
+
+int
+erts_clear_function_break(Module *modp, Uint *pc) {
+    ASSERT(modp);
+    return clear_function_break(modp, pc, 0);
 }
 
 
-Uint *erts_find_local_func(Eterm mfa[3])
-{
+
+Uint 
+erts_trace_break(Process *p, Uint *pc, Eterm *args, 
+		 Uint32 *ret_flags, Eterm *tracer_pid) {
+    BpDataTrace *bdt = (BpDataTrace *) pc[-4];
+    
+    ASSERT(pc[-5] == (Uint) BeamOp(op_i_func_info_IaaI));
+    ASSERT(bdt);
+    bdt = (BpDataTrace *) bdt->next;
+    ASSERT(bdt);
+    ASSERT(ret_flags);
+    ASSERT(tracer_pid);
+    *ret_flags = erts_call_trace(p, pc-3/*mfa*/, bdt->match_spec, args, 
+				 1, &bdt->tracer_pid);
+    *tracer_pid = bdt->tracer_pid;
+    pc[-4] = (Uint) bdt;
+    return bdt->orig_instr;
+}
+
+
+
+Uint32
+erts_bif_mtrace(Process *p, Uint *pc, Eterm *args, int local, 
+		Eterm *tracer_pid) {
+    BpDataTrace *bdt = (BpDataTrace *) pc[-4];
+    
+    ASSERT(tracer_pid);
+    if (bdt) {
+	Uint32 flags = erts_call_trace(p, pc-3/*mfa*/, bdt->match_spec, args,
+				      local, &bdt->tracer_pid);
+	*tracer_pid = bdt->tracer_pid;
+	return flags;
+    }
+    *tracer_pid = NIL;
+    return 0;
+}
+
+
+
+int 
+erts_is_trace_break(Uint *pc, Binary **match_spec_ret, Eterm *tracer_pid_ret) {
+    BpDataTrace *bdt = 
+	(BpDataTrace *) is_break(pc, (Uint) BeamOp(op_i_trace_breakpoint));
+    
+    if (bdt) {
+	if (match_spec_ret) {
+	    *match_spec_ret = bdt->match_spec;
+	}
+	if (tracer_pid_ret) {
+	    *tracer_pid_ret = bdt->tracer_pid;
+	}
+	return !0;
+    }
+    return 0;
+}
+
+int 
+erts_is_mtrace_break(Uint *pc, Binary **match_spec_ret, Eterm *tracer_pid_ret) {
+    BpDataTrace *bdt = 
+	(BpDataTrace *) is_break(pc, (Uint) BeamOp(op_i_mtrace_breakpoint));
+    
+    if (bdt) {
+	if (match_spec_ret) {
+	    *match_spec_ret = bdt->match_spec;
+	}
+	if (tracer_pid_ret) {
+	    *tracer_pid_ret = bdt->tracer_pid;
+	}
+	return !0;
+    }
+    return 0;
+}
+
+int
+erts_is_mtrace_bif(Uint *pc, Binary **match_spec_ret, Eterm *tracer_pid_ret) {
+    BpDataTrace *bdt = (BpDataTrace *) pc[-4];
+    
+    if (bdt) {
+	if (match_spec_ret) {
+	    *match_spec_ret = bdt->match_spec;
+	}
+	if (tracer_pid_ret) {
+	    *tracer_pid_ret = bdt->tracer_pid;
+	}
+	return !0;
+    }
+    return 0;
+}
+
+int
+erts_is_native_break(Uint *pc) {
+#ifdef HIPE
+    ASSERT(pc[-5] == (Uint) BeamOp(op_i_func_info_IaaI));
+    return pc[0]  == (Uint) BeamOp(op_hipe_trap_call) 
+	|| pc[0]  == (Uint) BeamOp(op_hipe_trap_call_closure);
+#else
+    return 0;
+#endif
+}
+
+int 
+erts_is_count_break(Uint *pc, Sint *count_ret) {
+    BpDataCount *bdc = 
+	(BpDataCount *) is_break(pc, (Uint) BeamOp(op_i_count_breakpoint));
+    
+    if (bdc) {
+	if (count_ret) {
+	    *count_ret = bdc->count;
+	}
+	return !0;
+    }
+    return 0;
+}
+
+
+
+Uint *
+erts_find_local_func(Eterm mfa[3]) {
     Module *modp;
     Uint** code_base;
     Uint* code_ptr;
-    int i,n;
+    Uint i,n;
 
     if ((modp = erts_get_module(mfa[0])) == NULL)
 	return NULL;
     
     code_base = (Uint **) modp->code;
-    n = (int) code_base[MI_NUM_FUNCTIONS];
+    n = (Uint) code_base[MI_NUM_FUNCTIONS];
     for (i = 0; i < n; ++i) {
 	code_ptr = code_base[MI_FUNCTIONS+i];
 	if (mfa[1] == ((Eterm) code_ptr[3]) &&
@@ -217,154 +378,343 @@ Uint *erts_find_local_func(Eterm mfa[3])
     return NULL;
 }
 
-int erts_is_local_tracepoint(Uint *pc, Binary **match_spec_ret)
-{
-    if (*pc != (Uint) BeamOp(op_i_trace_breakpoint)) {
+
+
+/* *************************************************************************
+** Local helpers
+*/
+
+
+static int set_break(Eterm mfa[3], int specified, 
+		     Binary *match_spec, Eterm break_op, 
+		     enum erts_break_op count_op, Eterm tracer_pid) {
+    Module *modp;
+    int num_processed = 0;
+    if (!specified) {
+	/* Find and process all modules in the system... */
+	int current = -1;
+	while ((current = index_iter(&module_table,current)) >= 0) {
+	    if ((modp = module_code(current)) != NULL) {
+		num_processed += 
+		    set_module_break(modp, mfa, specified, 
+				     match_spec, break_op, count_op, 
+				     tracer_pid);
+	    }
+	}
+    } else {
+	/* Process a single module */
+	if ((modp = erts_get_module(mfa[0])) != NULL) {
+	    num_processed += 
+		set_module_break(modp, mfa, specified, 
+				 match_spec, break_op, count_op, 
+				 tracer_pid);
+	}	
+    }
+    return num_processed;
+}
+
+static int set_module_break(Module *modp, Eterm mfa[3], int specified,
+			    Binary *match_spec, Uint break_op, 
+			    enum erts_break_op count_op, Eterm tracer_pid) {
+    Uint** code_base;
+    Uint* code_ptr;
+    int num_processed = 0;
+    Uint i,n;
+
+    ASSERT(break_op);
+    ASSERT(modp);
+    code_base = (Uint **) modp->code;
+    if (code_base == NULL) {
 	return 0;
     }
-    if (match_spec_ret != NULL) {
-	TraceBpData *bpd = erts_get_bp_data(pc);
-	ASSERT(bpd != NULL);
-	*match_spec_ret = bpd->match_spec;
+    n = (Uint) code_base[MI_NUM_FUNCTIONS];
+    for (i = 0; i < n; ++i) {
+	code_ptr = code_base[MI_FUNCTIONS+i];
+	ASSERT(code_ptr[0] == (Uint) BeamOp(op_i_func_info_IaaI));
+	if ((specified < 2 || mfa[1] == ((Eterm) code_ptr[3])) &&
+	    (specified < 3 || ((int) mfa[2]) == ((int) code_ptr[4]))) {
+	    Uint   *pc = code_ptr+5;
+	    
+	    num_processed +=
+		set_function_break(modp, pc, match_spec, 
+				   break_op, count_op, tracer_pid);
+	}
+    }
+    return num_processed;
+}
+
+static int set_function_break(Module *modp, Uint *pc, 
+			      Binary *match_spec, Uint break_op, 
+			      enum erts_break_op count_op, Eterm tracer_pid) {
+    BpData *bd, **r;
+    size_t size;
+    Uint **code_base = (Uint **)modp->code;
+    
+    ASSERT(code_base);
+    ASSERT(code_base <= (Uint **)pc);
+    ASSERT((Uint **)pc < code_base + (modp->code_length/sizeof(Uint *)));
+    /*
+     * Currently no trace support for native code.
+     */
+    if (erts_is_native_break(pc)) {
+	return 0;
+    }
+    /* Do not allow two breakpoints of the same kind */
+    if ( (bd = is_break(pc, break_op))) {
+	if (break_op == (Uint) BeamOp(op_i_trace_breakpoint) 
+	    || break_op == (Uint) BeamOp(op_i_mtrace_breakpoint)) {
+	    BpDataTrace *bdt = (BpDataTrace *) bd;
+	    
+	    /* Update match spec and tracer */
+	    MatchSetUnref(bdt->match_spec);
+	    MatchSetRef(match_spec);
+	    bdt->match_spec = match_spec;
+	    bdt->tracer_pid = tracer_pid;
+	} else {
+	    ASSERT(! match_spec);
+	    ASSERT(is_nil(tracer_pid));
+	    if (break_op == (Uint) BeamOp(op_i_count_breakpoint)) {
+		BpDataCount *bdc = (BpDataCount *) bd;
+		
+		if (count_op == erts_break_stop) {
+		    if (bdc->count >= 0) {
+			bdc->count = -bdc->count-1; /* Stop call counter */
+		    }
+		} else {
+		    bdc->count = 0; /* Reset call counter */
+		}
+	    } else {
+		ASSERT (! count_op);
+	    }
+	}
+	return 1;
+    }
+    if (break_op == (Uint) BeamOp(op_i_trace_breakpoint) ||
+	break_op == (Uint) BeamOp(op_i_mtrace_breakpoint)) {
+	size = sizeof(BpDataTrace);
+    } else {
+	ASSERT(! match_spec);
+	ASSERT(is_nil(tracer_pid));
+	if (break_op == (Uint) BeamOp(op_i_count_breakpoint)) {
+	    if (count_op == erts_break_reset
+		|| count_op == erts_break_stop) {
+		/* Do not insert a new breakpoint */
+		return 1;
+	    }
+	    size = sizeof(BpDataCount);
+	} else {
+	    ASSERT(! count_op);
+	    ASSERT(break_op == (Uint) BeamOp(op_i_debug_breakpoint));
+	    size = sizeof(BpDataDebug);
+	}
+    }
+    r = (BpData **) (pc-4);
+    if (! *r) {
+	ASSERT(*pc != (Uint) BeamOp(op_i_trace_breakpoint));
+	ASSERT(*pc != (Uint) BeamOp(op_i_mtrace_breakpoint));
+	ASSERT(*pc != (Uint) BeamOp(op_i_debug_breakpoint));
+	ASSERT(*pc != (Uint) BeamOp(op_i_count_breakpoint));
+	/* First breakpoint; create singleton ring */
+	bd = Alloc(size);
+	BpInit(bd, *pc);
+	*pc = break_op;
+	*r = bd;
+    } else {
+	ASSERT(*pc == (Uint) BeamOp(op_i_trace_breakpoint) ||
+	       *pc == (Uint) BeamOp(op_i_mtrace_breakpoint) ||
+	       *pc == (Uint) BeamOp(op_i_debug_breakpoint) ||
+	       *pc == (Uint) BeamOp(op_i_count_breakpoint));
+	if (*pc == (Uint) BeamOp(op_i_debug_breakpoint)) {
+	    /* Debug bp must be last, so if it is also first; 
+	     * it must be singleton. */
+	    ASSERT(BpSingleton(*r)); 
+	    /* Insert new bp first in the ring, i.e second to last. */
+	    bd = Alloc(size);
+	    BpInitAndSpliceNext(bd, *pc, *r);
+	    *pc = break_op;
+	} else if ((*r)->prev->orig_instr 
+		   == (Uint) BeamOp(op_i_debug_breakpoint)) {
+	    /* Debug bp last in the ring; insert new second to last. */
+	    bd = Alloc(size);
+	    BpInitAndSplicePrev(bd, (*r)->prev->orig_instr, *r);
+	    (*r)->prev->orig_instr = break_op;
+	} else {
+	    /* Just insert last in the ring */
+	    bd = Alloc(size);
+	    BpInitAndSpliceNext(bd, (*r)->orig_instr, *r);
+	    (*r)->orig_instr = break_op;
+	    *r = bd;
+	}
+    }
+    /* Init the bp type specific data */
+    if (break_op == (Uint) BeamOp(op_i_trace_breakpoint) ||
+	break_op == (Uint) BeamOp(op_i_mtrace_breakpoint)) {
+		
+	BpDataTrace *bdt = (BpDataTrace *) bd;
+		
+	MatchSetRef(match_spec);
+	bdt->match_spec = match_spec;
+	bdt->tracer_pid = tracer_pid;
+    } else if (break_op == (Uint) BeamOp(op_i_count_breakpoint)) {
+	BpDataCount *bdc = (BpDataCount *) bd;
+		
+	bdc->count = 0;
+    }
+    ++((Uint) code_base[MI_NUM_BREAKPOINTS]);
+    return 1;
+}
+
+static int clear_break(Eterm mfa[3], int specified, Uint break_op) {
+    int num_processed = 0;
+    Module *modp;
+    if (!specified) {
+	/* Iterate over all modules */
+	int current = -1;
+	while ((current = index_iter(&module_table,current)) >= 0) {
+	    if ((modp = module_code(current)) != NULL) {
+		num_processed += 
+		    clear_module_break(modp, mfa, specified, break_op);
+	    }
+	}
+    } else {
+	/* Process a single module */
+	if ((modp = erts_get_module(mfa[0])) != NULL) {
+	    num_processed += 
+		clear_module_break(modp, mfa, specified, break_op);
+	}	
+    }
+    return num_processed;
+}
+
+static int clear_module_break(Module *m, Eterm mfa[3], int specified, 
+			      Uint break_op) {
+    Uint** code_base;
+    Uint* code_ptr;
+    int num_processed = 0;
+    Uint i,n;
+    
+    ASSERT(m);
+    code_base = (Uint **) m->code;
+    if (code_base == NULL) {
+	return 0;
+    }
+    n = (Uint) code_base[MI_NUM_FUNCTIONS];
+    for (i = 0; i < n; ++i) {
+	code_ptr = code_base[MI_FUNCTIONS+i];
+	if ((specified < 2 || mfa[1] == ((Eterm) code_ptr[3])) &&
+	    (specified < 3 || ((int) mfa[2]) == ((int) code_ptr[4]))) {
+	    Uint *pc = code_ptr + 5;
+	    
+	    num_processed += 
+		clear_function_break(m, pc, break_op);
+	}
+    }
+    return num_processed;
+}
+
+static int clear_function_break(Module *m, Uint *pc, Uint break_op) {
+    BpData *bd;
+    Uint **code_base = (Uint **)m->code;
+    
+    ASSERT(code_base);
+    ASSERT(code_base <= (Uint **)pc);
+    ASSERT((Uint **)pc < code_base + (m->code_length/sizeof(Uint *)));
+    /*
+     * Currently no trace support for native code.
+     */
+    if (erts_is_native_break(pc)) {
+	return 0;
+    }
+    while ( (bd = is_break(pc, break_op))) {
+	/* Remove all breakpoints of this type.
+	 * There should be only one of each type, 
+	 * but break_op may be 0 which matches any type. 
+	 */
+	Uint op;
+	BpData **r = (BpData **) (pc-4);
+	
+	ASSERT(*r);
+	/* Find opcode for this breakpoint */
+	if (break_op) {
+	    op = break_op;
+	} else {
+	    if (bd == (*r)->next) {
+		/* First breakpoint in ring */
+		op = *pc;
+	    } else {
+		op = bd->prev->orig_instr;
+	    }
+	}
+	if (BpSingleton(bd)) {
+	    ASSERT(*r == bd);
+	    /* Only one breakpoint to remove */
+	    *r  = NULL;
+	    *pc = bd->orig_instr;
+	} else {
+	    BpData *bd_prev = bd->prev;
+	    
+	    BpSpliceNext(bd, bd_prev);
+	    ASSERT(BpSingleton(bd));
+	    if (bd == *r) {
+		/* We removed the last breakpoint in the ring */
+		*r = bd_prev;
+		bd_prev->orig_instr = bd->orig_instr;
+	    } else if (bd_prev == *r) {
+		/* We removed the first breakpoint in the ring */
+		*pc = bd->orig_instr;
+	    } else {
+		bd_prev->orig_instr = bd->orig_instr;
+	    }
+	}
+	if (op == (Uint) BeamOp(op_i_trace_breakpoint) ||
+	    op == (Uint) BeamOp(op_i_mtrace_breakpoint)) {
+	    
+	    BpDataTrace *bdt = (BpDataTrace *) bd;
+	    
+	    MatchSetUnref(bdt->match_spec);
+	}
+	Free(bd);
+	ASSERT(((Uint) code_base[MI_NUM_BREAKPOINTS]) > 0);
+	--((Uint) code_base[MI_NUM_BREAKPOINTS]);
     }
     return 1;
 }
 
+
+
 /*
-** Local helpers
+** Searches (linear forward) the breakpoint ring for a specified opcode
+** and returns a pointer to the breakpoint data structure or NULL if
+** not found. If the specified opcode is 0, the last breakpoint is 
+** returned. The program counter must point to the first executable
+** (breakpoint) instruction of the function.
 */
-static int do_erts_set_break(Module *m, Eterm mfa[3], int specified,
-			    Binary *match_spec, Uint break_op) 
-{
-    Uint** code_base;
-    Uint* code_ptr;
-    int num_processed = 0;
-    int i,n;
-    TraceBpData bpd;
-
-
-    bpd.match_spec = match_spec;
-    code_base = (Uint **) m->code;
-    if (code_base == NULL) {
-	return 0;
-    }
-    n = (int) code_base[MI_NUM_FUNCTIONS];
-    for (i = 0; i < n; ++i) {
-	code_ptr = code_base[MI_FUNCTIONS+i];
-	if ((specified < 2 || mfa[1] == ((Eterm) code_ptr[3])) &&
-	    (specified < 3 || ((int) mfa[2]) == ((int) code_ptr[4]))) {
-#ifdef HIPE
-	    /*
-	     * Currently no trace support for native code.
-	     */
-	    if (code_ptr[1] != 0) {
-		continue;
-	    }
-#endif
-
-	    bpd.position = code_ptr + 5;
-	    /* Insert only if it's not already a breakpoint */
-	    if (*(bpd.position) != break_op) {
-		bpd.orig_instr = *bpd.position;
-		*(bpd.position) = break_op;
-		erts_put_bp_data(&bpd);
-		++(code_base[MI_NUM_BREAKPOINTS]);
+static BpData *is_break(Uint *pc, Uint break_op) {
+    ASSERT(pc[-5] == (Uint) BeamOp(op_i_func_info_IaaI));
+    if (! erts_is_native_break(pc)) {
+	BpData *bd = (BpData *) pc[-4];
+	
+	if (break_op == 0) {
+	    return bd;
+	}
+	if (*pc == break_op) {
+	    ASSERT(bd);
+	    return bd->next;
+	}
+	if (! bd){
+	    return NULL;
+	}
+	bd = bd->next;
+	while (bd != (BpData *) pc[-4]) {
+	    ASSERT(bd);
+	    if (bd->orig_instr == break_op) {
+		bd = bd->next;
+		ASSERT(bd);
+		return bd;
 	    } else {
-		/* Only update the match_spec. */
-		TraceBpData *b = erts_get_bp_data(bpd.position);
-		MatchSetUnref(b->match_spec);
-		MatchSetRef(match_spec);
-		b->match_spec = match_spec;
+		bd = bd->next;
 	    }
-	    ++num_processed;
 	}
     }
-    return num_processed;
+    return NULL;
 }
-
-static int 
-do_erts_clear_break(Module *m, Eterm mfa[3], int specified, Uint break_op) 
-{
-    Uint** code_base;
-    Uint* code_ptr;
-    int num_processed = 0;
-    int i,n;
-    TraceBpData *bp;
-    Uint *pc;
-
-
-    code_base = (Uint **) m->code;
-    if (code_base == NULL) {
-	return 0;
-    }
-    n = (int) code_base[MI_NUM_FUNCTIONS];
-    for (i = 0; i < n; ++i) {
-	code_ptr = code_base[MI_FUNCTIONS+i];
-	if ((specified < 2 || mfa[1] == ((Eterm) code_ptr[3])) &&
-	    (specified < 3 || ((int) mfa[2]) == ((int) code_ptr[4]))) {
-	    pc = code_ptr + 5;
-	    if ((break_op == 0 || *pc == break_op) &&
-		(bp = erts_get_bp_data(pc)) != NULL) {
-		*pc = bp->orig_instr;
-		erts_remove_bp_data(pc);
-		ASSERT(code_base[MI_NUM_BREAKPOINTS] > 0);
-		--(code_base[MI_NUM_BREAKPOINTS]);
-	    }
-	    ++num_processed;
-	}
-    }
-    return num_processed;
-}
-
-/*
-** Access functions for breakpoint table
-*/
-static TraceBpData *erts_get_bp_data(Uint *pc)
-{
-    TraceBpBucket *x;
-    TraceBpLookupBucket(pc, x);
-    return (x) ? &(x->bp_data) : NULL;
-}
-
-static void erts_put_bp_data(TraceBpData *bpd)
-{
-    TraceBpBucket tmpl;
-    tmpl.bp_data = *bpd;
-    hash_put(&erts_bp_table,&tmpl);
-}
-
-static void erts_remove_bp_data(Uint *pc)
-{
-    TraceBpBucket tmpl;
-    tmpl.bp_data.position = pc;
-    hash_erase(&erts_bp_table,&tmpl);
-}
-
-
-/*
-** Functions for the hashing module
-*/
-static HashValue bp_hash(void *obj)
-{
-    return TraceBpHash(((TraceBpBucket *) obj)->bp_data.position);
-}
-
-static int bp_cmp(void *a, void *b) 
-{
-    return !TraceBpBucketEqual(a,b);
-}
-
-static void *bp_alloc(void *orig)
-{
-    TraceBpBucket *n = Alloc(sizeof(TraceBpBucket));
-    n->bp_data = ((TraceBpBucket *) orig)->bp_data;
-    MatchSetRef(n->bp_data.match_spec);
-    return (void *) n;
-}
-
-static void bp_free(void *obj)
-{
-    MatchSetUnref(((TraceBpBucket *)obj)->bp_data.match_spec);
-    Free(obj);
-}
-

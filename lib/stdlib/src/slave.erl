@@ -226,7 +226,7 @@ one_way_link(Master, Slave) ->
 	    Slave ! {nodedown, node()};
 	{'EXIT', Slave, _Reason} ->
 	    unlink(Master);
-	Other ->
+	_Other ->
 	    one_way_link(Master, Slave)
     end.
 
@@ -323,10 +323,10 @@ dns(H) -> {ok, Host} = net_adm:dns_hostname(H), Host.
 to_list(X) when list(X) -> X;
 to_list(X) when atom(X) -> atom_to_list(X).
 
-upto(Char,[]) -> [];
-upto(Char, [Char|T]) -> [];
+upto(_, []) -> [];
+upto(Char, [Char|_]) -> [];
 upto(Char, [H|T]) -> [H|upto(Char, T)].
 
-after_char(Char, []) -> [];
+after_char(_, []) -> [];
 after_char(Char, [Char|Rest]) -> Rest;
 after_char(Char, [_|Rest]) -> after_char(Char, Rest).

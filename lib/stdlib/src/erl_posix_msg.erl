@@ -159,4 +159,5 @@ message(eversion) -> "version mismatch";
 message(ewouldblock) -> "operation would block";
 message(exdev) -> "cross-domain link";
 message(exfull) -> "message tables full";
+message(nxdomain) -> "non-existing domain";
 message(_) -> "unknown POSIX error".

@@ -2025,7 +2025,8 @@ undo_prepare_commit(Tid, Commit) ->
 	[] ->
 	    ignore;
 	Ops ->
-	    mnesia_controller:release_schema_commit_lock(),
+	    %% Catch to allow failure mnesia_controller may not be started
+	    catch mnesia_controller:release_schema_commit_lock(),
 	    undo_prepare_ops(Tid, Ops)
     end,
     Commit.

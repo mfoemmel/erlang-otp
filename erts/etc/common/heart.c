@@ -102,12 +102,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 
-#if defined(__STDC__) || defined(_MSC_VER)
-#  include <stdarg.h>
-#else
-#  include <varargs.h>
-#  define const
-#endif
+#include <stdarg.h>
 
 #include <string.h>
 #include <time.h>
@@ -901,7 +896,6 @@ read_skip(fd, buf, maxlen, len)
 /*
  *  print_error
  */
-#if defined(__STDC__) || defined(_MSC_VER)
 static void
 print_error(const char *format,...)
 {
@@ -910,19 +904,6 @@ print_error(const char *format,...)
   char *timestr;
 
   va_start(args, format);
-#else
-static void
-print_error(va_alist)
-va_dcl
-{
-  va_list args;
-  char *format;
-  time_t now;
-  char *timestr;
-
-  va_start(args);
-  format = va_arg(args, char *);
-#endif
   time(&now);
   timestr = ctime(&now);
   fprintf(stderr, "%s: %.*s: ", program_name, (int) strlen(timestr)-1, timestr);
@@ -931,26 +912,13 @@ va_dcl
   fprintf(stderr, "\r\n");
 }
 
-#if defined(__STDC__) || defined(_MSC_VER)
 static void
 debugf(const char *format,...)
 {
   va_list args;
 
-  va_start(args, format);
-#else
-static void
-debugf(va_alist)
-va_dcl
-{
-
-  va_list args;
-  char *format;
-
-  va_start(args);
-  format = va_arg(args, char *);
-#endif
   if (!debug_on) return;
+  va_start(args, format);
   fprintf(stderr, "Heart: ");
   vfprintf(stderr, format, args);
   va_end(args);

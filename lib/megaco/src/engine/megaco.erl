@@ -58,7 +58,9 @@
 
 	 ms/0, nc/0, nc/1, ni/0, ni/1,
 
-	 enable_trace/2, disable_trace/0, set_trace/1
+	 enable_trace/2, disable_trace/0, set_trace/1,
+
+	 report_event/4, report_event/5
         ]).
 
 -include_lib("megaco/include/megaco.hrl").
@@ -336,11 +338,11 @@ find_file([Dir | Dirs], File) ->
 		    case find_file(SubDirs, File) of
 			{ok, Abs} ->
 			    {ok, Abs};
-			{error, Reason} ->
+			{error, _Reason} ->
 			    find_file(Dirs, File)
 		    end
 	    end;
-	{error, Reason} ->
+	{error, _Reason} ->
 	    find_file(Dirs, File)
     end;
 find_file([], File) ->
@@ -360,7 +362,7 @@ find_file([], File) ->
 %% Level -> max | min | integer()
 %% Destination -> File | Port
 %% File -> string()
-%% Port -> integer()  
+%% Port -> integer()
 %%
 %% Description:
 %% This function is used to start tracing at level Level and send
@@ -373,7 +375,7 @@ enable_trace(Level, File) when list(File) ->
 enable_trace(Level, Port) when integer(Port) ->
     dbg:tracer(port, dbg:trace_port(ip, Port)),
     set_trace(Level);
-enable_trace(Level, {Fun, Data} = HandleSpec) when function(Fun) ->
+enable_trace(Level, {Fun, _Data} = HandleSpec) when function(Fun) ->
     dbg:tracer(process, HandleSpec),
     set_trace(Level).
 
@@ -399,9 +401,14 @@ disable_trace() ->
 %% already been started. 
 %%-----------------------------------------------------------------
 set_trace(Level) ->
-    Pat = et:make_pattern(Level),
-    et:change_pattern(Pat).
+    Pat = et_selector:make_pattern(Level),
+    et_selector:change_pattern(Pat).
 
+report_event(DetailLevel, FromTo, Label, Contents) ->
+    %% N.B External call
+    ?MODULE:report_event(DetailLevel, FromTo, FromTo, Label, Contents).
 
-
+report_event(_DetailLevel, _From, _To, _Label, _Contents) ->
+    hopefully_traced.
+    
 

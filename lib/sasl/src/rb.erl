@@ -445,9 +445,19 @@ get_short_descr({{Date, Time}, {Type, Pid, _}}) ->
 get_short_descr(_) ->
     {"???", "???"}.
     
-date_str({Y,Mo,D},{H,Mi,S}) ->
-    lists:flatten(io_lib:format("~w-~2.2.0w-~2.2.0w ~2.2.0w:~2.2.0w:~2.2.0w", 
-				[Y,Mo,D,H,Mi,S])).
+date_str({Y,Mo,D}=Date,{H,Mi,S}=Time) ->
+    case application:get_env(sasl,utc_log) of 
+	{ok,true} ->
+	    {{YY,MoMo,DD},{HH,MiMi,SS}} = 
+		calendar:local_time_to_universal_time({Date,Time}),
+	    lists:flatten(io_lib:format("~w-~2.2.0w-~2.2.0w ~2.2.0w:"
+					"~2.2.0w:~2.2.0w UTC", 
+					[YY,MoMo,DD,HH,MiMi,SS]));
+	_ ->
+	    lists:flatten(io_lib:format("~w-~2.2.0w-~2.2.0w ~2.2.0w:"
+					"~2.2.0w:~2.2.0w", 
+					[Y,Mo,D,H,Mi,S]))
+    end.
 
 
 
@@ -455,14 +465,15 @@ date_str({Y,Mo,D},{H,Mi,S}) ->
 print_list(Data, Type) ->
     Header = {"No", "Type", "Process", "Date     Time"},
     Width = find_width([Header | Data], 0)+1,
+    DateWidth = find_date_width([Header | Data], 0) +1,
     Format = lists:concat(["~4s~20s ~", Width, "s~20s~n"]),
     io:format(Format, tuple_to_list(Header)),
     io:format(Format, ["==", "====", "=======", "====     ===="]),
-    print_list(Data, Type, Width).
-print_list([], _, _) -> true;
-print_list([H|T], Type, Width) ->
-    print_one_report(H, Type, Width),
-    print_list(T, Type, Width).
+    print_list(Data, Type, Width, DateWidth).
+print_list([], _, _, _) -> true;
+print_list([H|T], Type, Width, DateWidth) ->
+    print_one_report(H, Type, Width, DateWidth),
+    print_list(T, Type, Width, DateWidth).
 
 find_width([], Width) -> Width;
 find_width([H|T], Width) ->
@@ -471,20 +482,29 @@ find_width([H|T], Width) ->
 	Try > Width -> find_width(T, Try);
 	true -> find_width(T, Width)
     end.
+find_date_width([], Width) -> Width;
+find_date_width([H|T], Width) ->
+    Try = length(element(4, H)),
+    if
+	Try > Width -> find_date_width(T, Try);
+	true -> find_date_width(T, Width)
+    end.
 
 print_one_report({No, RealType, ShortDescr, Date, Fname, FilePosition},
 		 WantedType,
-		 Width) ->
+		 Width, DateWidth) ->
     if
 	WantedType == all ->
-	    print_short_descr(No, RealType, ShortDescr, Date, Width);
+	    print_short_descr(No, RealType, ShortDescr, Date, Width, 
+			      DateWidth);
 	WantedType == RealType ->
-	    print_short_descr(No, RealType, ShortDescr, Date, Width);
+	    print_short_descr(No, RealType, ShortDescr, Date, Width, 
+			      DateWidth);
 	true -> ok
     end.
 
-print_short_descr(No, Type, ShortDescr, Date, Width) ->
-    Format = lists:concat(["~4w~20w ~", Width, "s~20s~n"]),
+print_short_descr(No, Type, ShortDescr, Date, Width, DateWidth) ->
+    Format = lists:concat(["~4w~20w ~", Width, "s~", DateWidth,"s~n"]),
     io:format(Format, [No,
 		       Type, 
 		       io_lib:format("~s", [ShortDescr]),

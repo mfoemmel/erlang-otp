@@ -17,7 +17,6 @@
 %%
 -module(mod_get).
 -export([do/1]).
-
 -include("httpd.hrl").
 
 %% do
@@ -51,68 +50,47 @@ do_get(Info) ->
     ?DEBUG("do_get -> Request URI: ~p",[Info#mod.request_uri]),
     Path = mod_alias:path(Info#mod.data, Info#mod.config_db, 
 			  Info#mod.request_uri),
-    %% Find the modification date of the file.
-    {FileInfo, LastModified} =
-	case file:read_file_info(Path) of
-	    {ok, FileInfo0} ->
-		{FileInfo0, 
-		 httpd_util:rfc1123_date(FileInfo0#file_info.mtime)};
-	    _ ->
-		{#file_info{},""}
-	end,
+    {FileInfo, LastModified} =get_modification_date(Path),
 
-    SendIt = 
-	case strip_date(httpd_util:key1search(Info#mod.parsed_header,
-						"If-Modified-Since")) of
-	    undefined ->
-		true;
-	    LastModified ->
-		false;
-	    Other ->
-		true
-	end,
-    case SendIt of
-	true ->
-	    %% Send the file!
-	    case file:open(Path, [raw,binary]) of
-		{ok, FileDescriptor} ->
-		    ?DEBUG("do_get -> FileDescriptor: ~p",[FileDescriptor]),
-		    Suffix = httpd_util:suffix(Path),
-		    MimeType = 
-			httpd_util:lookup_mime_default(Info#mod.config_db,
-						       Suffix,"text/plain"),
-		    Date = httpd_util:rfc1123_date(),
-		    Size = integer_to_list(FileInfo#file_info.size),
-		    Header = [httpd_util:header(200, MimeType, Info),
-			      "Last-Modified: ", LastModified, "\r\n",
-			      "Content-length: ",Size,"\r\n", 
-			      "\r\n"],
-		    send(Info#mod.socket_type, Info#mod.socket,
-			 Header, FileDescriptor),
-		    file:close(FileDescriptor),
-		    {proceed,[{response,{already_sent,200,
-					 FileInfo#file_info.size}},
-			      {mime_type,MimeType}|Info#mod.data]};
-		{error, Reason} ->
-		    ?ERROR("do_get -> failed open file: ~p",[Reason]),
-		    {proceed,
-		     [{status,open_error(Reason,Info,Path)}|Info#mod.data]}
-	    end;
-	false ->
-	    {proceed, [{status, {304, Info#mod.request_uri, not_modified}}]}
+    send_response(Info#mod.socket,Info#mod.socket_type,Path,Info,FileInfo,LastModified).
+
+
+%%The common case when no range is specified
+send_response(Socket,SocketType,Path,Info,FileInfo,LastModified)->
+    %% Send the file!
+    %% Find the modification date of the file
+    case file:open(Path,[raw,binary]) of
+	{ok, FileDescriptor} ->
+	    ?DEBUG("do_get -> FileDescriptor: ~p",[FileDescriptor]),
+	    Suffix = httpd_util:suffix(Path),
+	    MimeType = httpd_util:lookup_mime_default(Info#mod.config_db,
+						      Suffix,"text/plain"),
+	    %FileInfo=file:read_file_info(Path),
+	    Date = httpd_util:rfc1123_date(),
+	    Size = integer_to_list(FileInfo#file_info.size),
+	    Header=case Info#mod.http_version of
+		       "HTTP/1.1" ->
+			   [httpd_util:header(200, MimeType, Info#mod.connection),
+			    "Last-Modified: ", LastModified, "\r\n",
+			    "Etag: ",httpd_util:create_etag(FileInfo),"\r\n",
+			    "Content-Length: ",Size,"\r\n\r\n"];
+		       "HTTP/1.0" ->
+			   [httpd_util:header(200, MimeType, Info#mod.connection),
+			    "Last-Modified: ", LastModified, "\r\n",
+			    "Content-Length: ",Size,"\r\n\r\n"]
+		   end,
+		       
+	    send(Info#mod.socket_type, Info#mod.socket,
+		 Header, FileDescriptor),
+	    file:close(FileDescriptor),
+	    {proceed,[{response,{already_sent,200,
+				 FileInfo#file_info.size}},
+		      {mime_type,MimeType}|Info#mod.data]};
+	{error, Reason} ->
+	    
+	    {proceed,
+	     [{status,open_error(Reason,Info,Path)}|Info#mod.data]}
     end.
-
-
-%% IE4 & NS4 sends an extra '; length=xxxx' string at the end of the If-Modified-Since
-%% header, we detect this and ignore it (the RFCs does not mention this).
-strip_date(undefined) ->
-    undefined;
-strip_date([]) ->
-    [];
-strip_date([$;,$ |Rest]) ->
-    [];
-strip_date([C|Rest]) ->
-    [C|strip_date(Rest)].
 
 %% send
 
@@ -141,7 +119,7 @@ send_body(SocketType,Socket,FileDescriptor) ->
 	    ?DEBUG("send_body -> done with this file",[]),
 	    eof
     end.
-
+    
 
 %% open_error - Handle file open failure
 %%
@@ -163,4 +141,39 @@ open_error(StatusCode,none,Path,Reason) ->
     {StatusCode,none,?NICE("Can't open "++Path++Reason)};
 open_error(StatusCode,Info,Path,Reason) ->
     {StatusCode,Info#mod.request_uri,?NICE("Can't open "++Path++Reason)}.
+
+get_modification_date(Path)->
+    case file:read_file_info(Path) of
+	{ok, FileInfo0} ->
+	    {FileInfo0, httpd_util:rfc1123_date(FileInfo0#file_info.mtime)};
+	_ ->
+	    {#file_info{},""}
+    end.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

@@ -80,13 +80,27 @@ sup_get(Tag, Report) ->
 	    ""
     end.
 
-write_head(supervisor_report, Time, Pid) ->
-    write_head1("SUPERVISOR REPORT", Time, Pid);
-write_head(crash_report, Time, Pid) ->
-    write_head1("CRASH REPORT", Time, Pid);
-write_head(progress, Time, Pid) ->
-    write_head1("PROGRESS REPORT", Time, Pid).
+maybe_utc(Time) ->
+    case application:get_env(sasl,utc_log) of
+	{ok,true} ->
+	    {utc,calendar:local_time_to_universal_time(Time)};
+	_ ->
+	    Time
+    end.
 
+write_head(supervisor_report, Time, Pid) ->
+    write_head1("SUPERVISOR REPORT", maybe_utc(Time), Pid);
+write_head(crash_report, Time, Pid) ->
+    write_head1("CRASH REPORT", maybe_utc(Time), Pid);
+write_head(progress, Time, Pid) ->
+    write_head1("PROGRESS REPORT", maybe_utc(Time), Pid).
+
+write_head1(Type, {utc,{{Y,Mo,D},{H,Mi,S}}}, Pid) when node(Pid) /= node() ->
+    io_lib:format("~n=~s==== ~p-~s-~p::~s:~s:~s UTC (~p) ===~n",
+		  [Type,D,month(Mo),Y,t(H),t(Mi),t(S),node(Pid)]);
+write_head1(Type, {utc,{{Y,Mo,D},{H,Mi,S}}}, _) ->
+    io_lib:format("~n=~s==== ~p-~s-~p::~s:~s:~s UTC ===~n",
+		  [Type,D,month(Mo),Y,t(H),t(Mi),t(S)]);
 write_head1(Type, {{Y,Mo,D},{H,Mi,S}}, Pid) when node(Pid) /= node() ->
     io_lib:format("~n=~s==== ~p-~s-~p::~s:~s:~s (~p) ===~n",
 		  [Type,D,month(Mo),Y,t(H),t(Mi),t(S),node(Pid)]);

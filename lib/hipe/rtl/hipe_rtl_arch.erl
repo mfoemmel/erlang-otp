@@ -1,7 +1,6 @@
 %% -*- erlang-indent-level: 4 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <01/04/10 14:20:15 happi>
+%% Copyright (c) 2001 by Erik Johansson.  
 %% ====================================================================
 %%  Filename : 	hipe_rtl_arch.erl
 %%  Module   :	hipe_rtl_arch
@@ -10,9 +9,9 @@
 %%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: mikpe $
-%%              $Date: 2001/09/13 19:53:30 $
-%%              $Revision: 1.5 $
+%%              $Author: richardc $
+%%              $Date: 2002/10/01 12:44:28 $
+%%              $Revision: 1.7 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -102,11 +101,13 @@ is_precoloured(Reg) ->
 live_at_return() ->
     case get(hipe_target_arch) of
 	ultrasparc ->
-	    ordsets:from_list(lists:map(fun(R) -> hipe_rtl:mk_reg(R) end,
-					hipe_sparc_registers:global()));
+	    ordsets:from_list(
+	      [hipe_rtl:mk_reg(R)
+	       || R <- hipe_sparc_registers:global()]);
 	x86 ->
-	    ordsets:from_list(lists:map(fun({R,_}) -> hipe_rtl:mk_reg(R) end,
-					hipe_x86_registers:live_at_return()))
+	    ordsets:from_list(
+	      [hipe_rtl:mk_reg(R)
+	       || {R,_} <- hipe_x86_registers:live_at_return()])
     end.
 
 %%%
@@ -152,10 +153,10 @@ prefix_pptr(Name) ->
 	    false
     end.
 
-sparc_prefix_pptr(mbox_empty)		-> true;
-sparc_prefix_pptr(get_msg)		-> true;
-sparc_prefix_pptr(next_msg)		-> true;
-sparc_prefix_pptr(select_msg)		-> true;
+sparc_prefix_pptr(mbox_empty)		-> false;
+sparc_prefix_pptr(get_msg)		-> false;
+sparc_prefix_pptr(next_msg)		-> false;
+sparc_prefix_pptr(select_msg)		-> false;
 sparc_prefix_pptr(bs_get_integer)	-> true;
 sparc_prefix_pptr(bs_get_float)		-> true;
 sparc_prefix_pptr(bs_get_binary_all)	-> true;

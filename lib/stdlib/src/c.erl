@@ -62,18 +62,18 @@ help() ->
 
 c(File) -> c(File, []).
 
-c(File, Opt) when atom(Opt) -> c(File, [Opt]);
-c(File, Opts0) ->
+c(File, Opts0) when list(Opts0) ->
     Opts = [report_errors,report_warnings|Opts0],
     case compile:file(File, Opts) of
 	{ok,Mod} ->				%Listing file.
 	    machine_load(Mod, File, Opts);
-	{ok,Mod,Ws} ->				%Warnings maybe turned on.
+	{ok,Mod,_Ws} ->				%Warnings maybe turned on.
 	    machine_load(Mod, File, Opts);
 	Other ->				%Errors go here
 	    Other
-    end.
-
+    end;
+c(File, Opt) -> 
+    c(File, [Opt]).
 
 %%% Obtain the 'outdir' option from the argument. Return "." if no
 %%% such option was given.
@@ -94,11 +94,12 @@ machine_load(Mod, File, Opts) ->
     File2 = filename:join(Dir, filename:basename(File, ".erl")),
     case compile:output_generated(Opts) of
 	true ->
-	    case list_to_atom(filename:basename(File, ".erl")) of
-		Mod ->
+	    Base = packages:last(Mod),
+	    case filename:basename(File, ".erl") of
+		Base ->
 		    code:purge(Mod),
-		    check_load(code:load_abs(File2), Mod);
-		OtherMod ->
+		    check_load(code:load_abs(File2,Mod), Mod);
+		_OtherMod ->
 		    format("** Module name '~p' does not match file name '~p' **~n",
 			   [Mod,File]),
 		    {error, badfile}
@@ -183,8 +184,7 @@ make_term(Str) ->
 
 nc(File) -> nc(File, []).
 
-nc(File, Opt) when atom(Opt) -> nc(File, [Opt]);
-nc(File, Opts0) ->
+nc(File, Opts0) when list(Opts0) ->
     Opts = Opts0 ++ [report_errors, report_warnings],
     case compile:file(File, Opts) of
 	{ok,Mod} ->
@@ -198,7 +198,9 @@ nc(File, Opts0) ->
 	    end;
 	Other ->                                %Errors go here
 	    Other
-    end.
+    end;
+nc(File, Opt) when atom(Opt) -> 
+    nc(File, [Opt]).
 
 %% l(Mod)
 %%  Reload module Mod from file of same name
@@ -210,7 +212,7 @@ l(Mod) ->
 %% Network version of l/1
 nl(Mod) ->
     case code:get_object_code(Mod) of
-	{Module, Bin, Fname} ->
+	{_Module, Bin, Fname} ->
             rpc:eval_everywhere(code,load_binary,[Mod,Fname,Bin]);
 	Other ->
 	    Other
@@ -392,7 +394,7 @@ f_p_e(P, F) ->
     case file:path_eval(P, F) of
 	{error, enoent} ->
 	    {error, enoent};
-	{error, E={Line, Mod, Term}} ->
+	{error, E={Line, _Mod, _Term}} ->
 	    error("file:path_eval(~p,~p): error on line ~p: ~s~n",
 		  [P, F, Line, file:format_error(E)]),
 	    ok;
@@ -479,7 +481,7 @@ split_print_exports([{F1, A1}|T1], [{F2, A2} | T2]) ->
     split_print_exports(T1, T2);
 split_print_exports([], []) -> ok.
 
-print_time({Year,Month,Day,Hour,Min,Secs}) ->
+print_time({Year,Month,Day,Hour,Min,_Secs}) ->
     format("Date: ~s ~w ~w, ", [month(Month),Day,Year]),
     format("Time: ~.2.0w.~.2.0w~n", [Hour,Min]);
 print_time(notime) ->
@@ -582,7 +584,7 @@ ls(Dir) ->
     case file:list_dir(Dir) of
 	{ok, Entries} ->
 	    ls_print(sort(Entries));
-	{error,E} ->
+	{error,_E} ->
 	    format("Invalid directory\n")
     end.
 
@@ -621,9 +623,11 @@ get_proc_mem() ->
 				Acc
 			end
 		end,
-		0,
+		erlang:system_info(global_heaps_size),
 		processes()).
 
+get_non_proc_mem([{ports, Alloc}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
 get_non_proc_mem([{static, Alloc}|Rest], Acc) ->
     get_non_proc_mem(Rest, Acc+Alloc);
 get_non_proc_mem([{atom_space, Alloc, _Used}|Rest], Acc) ->
@@ -640,12 +644,22 @@ get_non_proc_mem([{register_table, Alloc}|Rest], Acc) ->
     get_non_proc_mem(Rest, Acc+Alloc);
 get_non_proc_mem([{loaded_code, Alloc}|Rest], Acc) ->
     get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{bif_timer, Alloc}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{dist_table, Alloc}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{node_table, Alloc}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{link_lh, _Alloc}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc);
 get_non_proc_mem([{process_desc, Alloc, Used}|Rest], Acc) ->
     get_non_proc_mem(Rest, Acc+Alloc-Used);
 get_non_proc_mem([{proc_bin_desc, Alloc, Used}|Rest], Acc) ->
     get_non_proc_mem(Rest, Acc+Alloc-Used);
-get_non_proc_mem([{link_desc, Alloc, _Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{link_desc, Alloc, Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc-Used);
+get_non_proc_mem([{link_sh_desc, Alloc, Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc-Used);
 get_non_proc_mem([{atom_desc, Alloc, _Used}|Rest], Acc) ->
     get_non_proc_mem(Rest, Acc+Alloc);
 get_non_proc_mem([{export_desc, Alloc, _Used}|Rest], Acc) ->
@@ -655,12 +669,6 @@ get_non_proc_mem([{module_desc, Alloc, _Used}|Rest], Acc) ->
 get_non_proc_mem([{preg_desc, Alloc, _Used}|Rest], Acc) ->
     get_non_proc_mem(Rest, Acc+Alloc);
 get_non_proc_mem([{plist_desc, Alloc, _Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{fixed_deletion_desc, Alloc, _Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{bif_timer_rec_desc, Alloc, _Used}|Rest], Acc) ->
-    get_non_proc_mem(Rest, Acc+Alloc);
-get_non_proc_mem([{fun_desc, Alloc, _Used}|Rest], Acc) ->
     get_non_proc_mem(Rest, Acc+Alloc);
 get_non_proc_mem([{_Mem, _Alloc, _Used}|Rest], Acc) ->
     get_non_proc_mem(Rest, Acc);
@@ -701,44 +709,34 @@ mem(total, Proc, MemList, Ets) ->
 	    mem(processes, Proc, MemList, Ets)
 		+ mem(system, Proc, MemList, Ets)
     end;
-mem(processes, Proc, MemList, Ets) ->
+mem(processes, Proc, _MemList, _Ets) ->
     Proc;
 mem(system, Proc, MemList, Ets) ->
     case catch get_mem(total, allocated, MemList) of
 	Tot when integer(Tot) ->
 	    Tot - mem(processes, Proc, MemList, Ets);
 	_ ->
-	    get_non_proc_mem(MemList, 0)
-		+ mem(ets, Proc, MemList, Ets)
-		+ lists:foldl(fun (P, M) ->
-				      case catch
-					  erlang:port_info(P, memory) of
-					  {memory, Mem} -> M+Mem;
-					  _ -> M
-				      end
-			       end,
-			       0, 
-			       erlang:ports())
+	    get_non_proc_mem(MemList, 0) + mem(ets, Proc, MemList, Ets)
     end;
-mem(atom, Proc, MemList, Ets) ->
+mem(atom, _Proc, MemList, _Ets) ->
     get_mem(atom_space, allocated, MemList)
         + get_mem(atom_table, allocated, MemList)
         + get_mem(atom_desc, allocated, MemList);
-mem(atom_used, Proc, MemList, Ets) ->
+mem(atom_used, _Proc, MemList, _Ets) ->
     get_mem(atom_space, used, MemList)
         + get_mem(atom_table, used, MemList)
         + get_mem(atom_desc, used, MemList);
-mem(binary, Proc, MemList, Ets) ->
+mem(binary, _Proc, MemList, _Ets) ->
     get_mem(binary, allocated, MemList);
-mem(code, Proc, MemList, Ets) ->
+mem(code, _Proc, MemList, _Ets) ->
     get_mem(module_table, allocated, MemList)
         + get_mem(export_table, allocated, MemList)
         + get_mem(loaded_code, allocated, MemList)
         + get_mem(export_desc, allocated, MemList)
         + get_mem(module_desc, allocated, MemList);
-mem(ets, Proc, MemList, Ets) ->
+mem(ets, _Proc, _MemList, Ets) ->
     Ets;
-mem(maximum, Proc, MemList, Ets) ->
+mem(maximum, _Proc, MemList, _Ets) ->
     case catch get_mem(maximum, allocated, MemList) of
 	Max when integer(Max) ->
 	    Max;
@@ -748,19 +746,32 @@ mem(maximum, Proc, MemList, Ets) ->
 mem(_, _, _, _) ->
     badarg.
 
+non_proc_mem_list() ->
+    Ports = lists:foldl(fun (P, Acc) ->
+				case erlang:port_info(P, memory) of
+				    {memory, M} ->
+					Acc+M;
+				    _ ->
+					Acc
+				end
+			end,
+			0,
+			erlang:ports()),
+    [{ports, Ports} | erlang:system_info(allocated_areas)].
+
 get_proc_mem_if_needed(total) ->            get_proc_mem();
 get_proc_mem_if_needed(processes) ->        get_proc_mem();
 get_proc_mem_if_needed(_) ->                0.
 
-get_allocated_areas_if_needed(total) ->     erlang:system_info(allocated_areas);
-get_allocated_areas_if_needed(processes) -> erlang:system_info(allocated_areas);
-get_allocated_areas_if_needed(system) ->    erlang:system_info(allocated_areas);
-get_allocated_areas_if_needed(atom) ->      erlang:system_info(allocated_areas);
-get_allocated_areas_if_needed(atom_used) -> erlang:system_info(allocated_areas);
-get_allocated_areas_if_needed(binary) ->    erlang:system_info(allocated_areas);
-get_allocated_areas_if_needed(code) ->      erlang:system_info(allocated_areas);
-get_allocated_areas_if_needed(maximum) ->   erlang:system_info(allocated_areas);
-get_allocated_areas_if_needed(_) ->         [].
+get_non_proc_mem_if_needed(total) ->     non_proc_mem_list();
+get_non_proc_mem_if_needed(processes) -> non_proc_mem_list();
+get_non_proc_mem_if_needed(system) ->    non_proc_mem_list();
+get_non_proc_mem_if_needed(atom) ->      non_proc_mem_list();
+get_non_proc_mem_if_needed(atom_used) -> non_proc_mem_list();
+get_non_proc_mem_if_needed(binary) ->    non_proc_mem_list();
+get_non_proc_mem_if_needed(code) ->      non_proc_mem_list();
+get_non_proc_mem_if_needed(maximum) ->   non_proc_mem_list();
+get_non_proc_mem_if_needed(_) ->         [].
 
 get_ets_mem_if_needed(total) ->             get_ets_mem();
 get_ets_mem_if_needed(system) ->            get_ets_mem();
@@ -780,7 +791,7 @@ get_maximum_list(Proc, MemList, Ets) ->
 %% memory information.
 %%
 memory() ->
-    MemList = erlang:system_info(allocated_areas),
+    MemList = non_proc_mem_list(),
     Ets = get_ets_mem(),
     Proc = get_proc_mem(),
     [{total,        mem(total,        Proc, MemList, Ets)},
@@ -796,7 +807,7 @@ memory() ->
 memory(Type) ->
     case mem(Type,
 	     get_proc_mem_if_needed(Type),
-	     get_allocated_areas_if_needed(Type),
+	     get_non_proc_mem_if_needed(Type),
 	     get_ets_mem_if_needed(Type)) of
 	Result when integer(Result) ->
 	    Result;

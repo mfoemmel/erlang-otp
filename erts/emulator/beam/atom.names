@@ -39,6 +39,7 @@ atom false true
 atom Underscore='_'
 atom Noname='nonode@nohost'
 atom EOT='$end_of_table'
+atom Cookie=''
 
 #
 # Used in Beam emulator loop.
@@ -60,9 +61,10 @@ atom andthen
 atom arity
 atom attributes
 atom backtrace backtrace_depth
-atom badarg badarith badarity badcookie badfile badmatch badsig badfun
+atom badarg badarith badarity badfile badmatch badsig badfun
 atom bag
 atom band
+atom big
 atom binary
 atom bnot
 atom bor
@@ -71,6 +73,7 @@ atom breakpoint
 atom bsl
 atom bsr
 atom call
+atom call_count
 atom caller
 atom case_clause
 atom catchlevel
@@ -86,6 +89,7 @@ atom connected
 atom const
 atom context_switches
 atom cpu_timestamp
+atom creation
 atom current_function
 atom data
 atom debug_flags
@@ -111,6 +115,7 @@ atom duplicate_bag
 atom elib_malloc
 atom emulator
 atom enable_trace
+atom endian
 atom env
 atom eof
 atom eol
@@ -146,10 +151,12 @@ atom getenv
 atom getting_linked
 atom getting_unlinked
 atom global
+atom global_heaps_size
 atom Gt='>'
 atom heap_block_size
 atom heap_size
 atom heap_sizes
+atom heap_type
 atom hidden
 atom hide
 atom high
@@ -176,7 +183,9 @@ atom label
 atom last_calls
 atom Le='=<'
 atom line
+atom link_list
 atom links
+atom little
 atom local
 atom low
 atom Lt='<'
@@ -190,6 +199,8 @@ atom memory
 atom message
 atom message_queue_len
 atom messages
+atom meta
+atom meta_match_spec
 atom min_heap_size
 atom Minus='-'
 atom module
@@ -211,6 +222,7 @@ atom noconnect
 atom noconnection
 atom nocookie
 atom node
+atom node_and_dist_references
 atom nodedown
 atom noeol
 atom nofile
@@ -221,6 +233,7 @@ atom not_purged
 atom notalive
 atom nouse_stdio
 atom objects
+atom ok
 atom old_heap_block_size
 atom old_heap_size
 atom on_load
@@ -234,6 +247,7 @@ atom output
 atom owner
 atom packet
 atom Plus='+'
+atom pause
 atom pid
 atom port
 atom print
@@ -256,6 +270,8 @@ atom register
 atom registered_name
 atom refc
 atom rem
+atom reset
+atom restart
 atom return_from
 atom return_to
 atom return_trace
@@ -275,6 +291,9 @@ atom set_on_link
 atom set_on_spawn
 atom set_seq_token
 atom set_tcw
+atom set_tcw_fake
+atom separate
+atom shared
 atom silent
 atom size
 atom sl_alloc
@@ -288,6 +307,7 @@ atom suspend
 atom suspended
 atom system_limit
 atom system_version
+atom system_architecture
 atom SYSTEM='SYSTEM'
 atom table
 atom this
@@ -322,5 +342,6 @@ atom version
 atom visible
 atom waiting
 atom wall_clock
+atom wordsize
 atom xor
 atom yield

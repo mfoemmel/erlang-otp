@@ -47,7 +47,7 @@ is_atomic(#c_atom{}) -> true;
 is_atomic(#c_string{}) -> true;
 is_atomic(#c_nil{}) -> true;
 is_atomic(#c_fname{}) -> true;
-is_atomic(E) -> false.
+is_atomic(_) -> false.
 
 %% is_literal(Expr) -> true | false.
 
@@ -384,7 +384,7 @@ vu_expr(V, #c_letrec{defs=Fs,body=B}) ->
 	true -> true;
 	false -> vu_body(V, B)
     end;
-vu_expr(V, #c_seq{arg=Arg,body=B}=Seq) ->
+vu_expr(V, #c_seq{arg=Arg,body=B}) ->
     case vu_expr(V, Arg) of
 	true -> true;
 	false -> vu_body(V, B)
@@ -407,7 +407,7 @@ vu_expr(V, #c_apply{op=Op,args=As}) ->
     vu_expr_list(V, [Op|As]);
 vu_expr(V, #c_call{module=M,name=N,args=As}) ->
     vu_expr_list(V, [M,N|As]);
-vu_expr(V, #c_primop{name=N,args=As}) ->	%Name is an atom
+vu_expr(V, #c_primop{args=As}) ->		%Name is an atom
     vu_expr_list(V, As);
 vu_expr(V, #c_catch{body=B}) ->
     vu_body(V, B);
@@ -440,7 +440,7 @@ vu_seg_list(V, Ss) ->
 
 vu_clause(V, #c_clause{pats=Ps,guard=G,body=B}) ->
     case vu_pattern_list(V, Ps) of
-	{true,Shad} -> true;			%It is used
+	{true,_Shad} -> true;			%It is used
 	{false,true} -> false;			%Shadowed
 	{false,false} ->			%Not affected
 	    case vu_expr(V, G) of
@@ -457,7 +457,7 @@ vu_clauses(V, Cs) ->
 %%  Binaries complicate patterns as a variable can both be properly
 %%  used, in a bit segment size, and shadow.  They can also do both.
 
-vu_pattern(V, Pat) -> vu_pattern(V, Pat, {false,false}).
+%% vu_pattern(V, Pat) -> vu_pattern(V, Pat, {false,false}).
 
 vu_pattern(V, #c_var{name=V2}, St) ->
     setelement(2, St, V =:= V2);
@@ -475,7 +475,7 @@ vu_pattern(V, #c_alias{var=Var,pat=P}, St0) ->
 	{true,true}=St1 -> St1;
 	St1 -> vu_pattern(V, P, St1)
     end;
-vu_pattern(V, _, St) -> St.
+vu_pattern(_, _, St) -> St.
 
 vu_pattern_list(V, Ps) -> vu_pattern_list(V, Ps, {false,false}).
 
@@ -486,7 +486,7 @@ vu_pat_seg_list(V, Ss, St) ->
     lists:foldl(fun (#c_bin_seg{val=Val,size=Size}, St0) ->
 			case vu_pattern(V, Val, St0) of
 			    {true,true}=St1 -> St1;
-			    {Used,Shad} -> {vu_expr(V, Size),Shad}
+			    {_Used,Shad} -> {vu_expr(V, Size),Shad}
 			end
 		end, St, Ss).
 

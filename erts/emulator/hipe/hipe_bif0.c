@@ -15,16 +15,21 @@
 #include "bif.h"
 #include "big.h"
 #include "beam_load.h"
-#include "beam_catches.h"
 #include "erl_db.h"
-#include "erl_bits.h"
+#include "hash.h"
 #ifdef HIPE
 #include "hipe_mode_switch.h"
 #include "hipe_native_bif.h"
 #include "hipe_bif0.h"
+/* We need hipe_literals.h for HIPE_SYSTEM_CRC, but it redefines
+   a few constants. #undef them here to avoid warnings. */
+#undef F_TIMO
+#undef THE_NON_VALUE
+#undef ERL_FUN_SIZE
+#include "hipe_literals.h"
 #endif
 
-#define BeamOpCode(Op)	((uint32)BeamOp(Op))
+#define BeamOpCode(Op)	((Uint)BeamOp(Op))
 
 /* check if an address is unsafe for a 32-bit load or store */
 #if defined(__i386__)
@@ -271,10 +276,6 @@ BIF_ADECL_1
 {
     Eterm *block;
 
-#ifdef UNIFIED_HEAP
-    /* Ugly, but must prevent code loading in this case. */
-    BIF_ERROR(BIF_P, SYSTEM_LIMIT);
-#endif
     if( is_not_small(BIF_ARG_1) )
 	BIF_ERROR(BIF_P, BADARG);
     block = (Eterm*) safe_alloc(unsigned_val(BIF_ARG_1));
@@ -479,99 +480,176 @@ BIF_ADECL_1
 }
 
 /*
- * Catch table accesses.
- */
-
-BIF_RETTYPE hipe_bifs_catch_index_to_word_1(BIF_ALIST_1)
-BIF_ADECL_1
-{
-    int i;
-
-    if( is_not_small(BIF_ARG_1) ||
-	(i = signed_val(BIF_ARG_1)) < 0 )
-	BIF_ERROR(BIF_P, BADARG);
-    BIF_RET(Uint_to_term(make_catch(i), BIF_P));
-}
-
-BIF_RETTYPE hipe_bifs_catch_table_nil_0(BIF_ALIST_0)
-BIF_ADECL_0
-{
-    BIF_RET(make_small(BEAM_CATCHES_NIL));
-}
-
-BIF_RETTYPE hipe_bifs_catch_table_insert_2(BIF_ALIST_2)
-BIF_ADECL_2
-{
-    void *address;
-
-    if( is_not_small(BIF_ARG_2) ||
-	(address = term_to_address(BIF_ARG_1)) == NULL )
-	BIF_ERROR(BIF_P, BADARG);
-    BIF_RET(make_small(beam_catches_cons(address, signed_val(BIF_ARG_2))));
-}
-
-BIF_RETTYPE hipe_bifs_catch_table_remove_3(BIF_ALIST_3)
-BIF_ADECL_3
-{
-    int head;
-    void *code;
-    unsigned code_bytes;
-
-    if( is_not_small(BIF_ARG_1) ||
-	(head = signed_val(BIF_ARG_1)) < BEAM_CATCHES_NIL ||
-	(code = term_to_address(BIF_ARG_2)) == NULL ||
-	!is_small(BIF_ARG_3) ||
-	(code_bytes = signed_val(BIF_ARG_3)) < 0 )
-	BIF_ERROR(BIF_P, BADARG);
-    beam_catches_delmod(head, code, code_bytes);
-    BIF_RET(NIL);
-}
-
-/*
  * Native-code stack descriptor hash table.
+ *
+ * This uses a specialised version of BEAM's hash table code:
+ * - hash table size is always a power of two
+ *   permits replacing an expensive integer division operation
+ *   with a cheap bitwise 'and' in the hash index calculation
+ * - lookups assume the key is in the table
+ *   permits removing NULL checks
+ * - switched order of the hash bucket next and hvalue fields
+ *   the hvalue field, which must always be checked, gets a zero
+ *   structure offset, which is faster on some architectures;
+ *   the next field is only referenced if hvalue didn't match
+ * These changes yield a much more efficient lookup operation.
  */
-static Hash sdesc_table;
+struct hipe_sdesc_table hipe_sdesc_table;
 
-static HashValue sdesc_hash(struct sdesc *x)
+static struct sdesc **alloc_bucket(unsigned int size)
 {
-    return x->bucket.hvalue;
+    unsigned long nbytes = size * sizeof(struct sdesc*);
+    struct sdesc **bucket = sys_alloc_from(110, nbytes);
+    if( !bucket )
+	erl_exit(1, "failed to allocate hash buckets (%lu)\n", nbytes);
+    sys_memzero(bucket, nbytes);
+    return bucket;
 }
 
-static int sdesc_cmp(struct sdesc *x, struct sdesc *y)
+static void hipe_grow_sdesc_table(void)
 {
-    return 0;	/* only called if the hvalues already match */
+    unsigned int old_size, new_size, new_mask;
+    struct sdesc **old_bucket, **new_bucket;
+    unsigned int i;
+
+    old_size = 1 << hipe_sdesc_table.log2size;
+    hipe_sdesc_table.log2size += 1;
+    new_size = 1 << hipe_sdesc_table.log2size;
+    new_mask = new_size - 1;
+    hipe_sdesc_table.mask = new_mask;
+    old_bucket = hipe_sdesc_table.bucket;
+    new_bucket = alloc_bucket(new_size);
+    hipe_sdesc_table.bucket = new_bucket;
+    for(i = 0; i < old_size; ++i) {
+	struct sdesc *b = old_bucket[i];
+	while( b != NULL ) {
+	    struct sdesc *next = b->bucket.next;
+	    unsigned int j = (b->bucket.hvalue >> HIPE_RA_LSR_COUNT) & new_mask;
+	    b->bucket.next = new_bucket[j];
+	    new_bucket[j] = b;
+	    b = next;
+	}
+    }
+    sys_free(old_bucket);
 }
 
-static struct sdesc *sdesc_alloc(struct sdesc *x)
+static struct sdesc *hipe_put_sdesc(struct sdesc *sdesc)
 {
-    return x;	/* pre-allocated */
+    unsigned long ra;
+    unsigned int i;
+    struct sdesc *chain;
+    unsigned int size;
+
+    ra = sdesc->bucket.hvalue;
+    i = (ra >> HIPE_RA_LSR_COUNT) & hipe_sdesc_table.mask;
+    chain = hipe_sdesc_table.bucket[i];
+
+    for(; chain != NULL; chain = chain->bucket.next)
+	if( chain->bucket.hvalue == ra )
+	    return chain;	/* collision! (shouldn't happen) */
+
+    sdesc->bucket.next = hipe_sdesc_table.bucket[i];
+    hipe_sdesc_table.bucket[i] = sdesc;
+    hipe_sdesc_table.used += 1;
+    size = 1 << hipe_sdesc_table.log2size;
+    if( hipe_sdesc_table.used > (4*size)/5 )	/* rehash at 80% */
+	hipe_grow_sdesc_table();
+    return sdesc;
 }
 
 void hipe_init_sdesc_table(struct sdesc *sdesc)
 {
-    HashFunctions f;
+    unsigned int log2size, size;
 
-    f.hash = (H_FUN) sdesc_hash;
-    f.cmp = (HCMP_FUN) sdesc_cmp;
-    f.alloc = (HALLOC_FUN) sdesc_alloc;
-    f.free = NULL;	/* XXX: needed if we ever start deallocating code */
+    log2size = 10;
+    size = 1 << log2size;
+    hipe_sdesc_table.log2size = log2size;
+    hipe_sdesc_table.mask = size - 1;
+    hipe_sdesc_table.used = 0;
+    hipe_sdesc_table.bucket = alloc_bucket(size);
 
-    hash_init(&sdesc_table, "sdesc_table", 500, f);
-
-    if( hash_put(&sdesc_table, sdesc) != sdesc ) {
-	fprintf(stderr, "%s: initial hash_put() failed\r\n",__FUNCTION__);
-	abort();
-    }
+    hipe_put_sdesc(sdesc);
 }
 
-struct sdesc *hipe_find_sdesc(unsigned long ra)
+/* XXX: remove later when sparc is more debugged 
+#ifdef __sparc__ 
+const struct sdesc *hipe_find_sdesc(unsigned long ra)
 {
-    /* inlined & specialised version of hash_get() for speed */
-    HashBucket *b = sdesc_table.bucket[ra % sdesc_table.size];
-    for(; b; b = b->next)
-	if( b->hvalue == ra )
-	    return (struct sdesc*)b;
-    return 0;
+    unsigned int i = (ra >> HIPE_RA_LSR_COUNT) & hipe_sdesc_table.mask;
+    const struct sdesc *sdesc = hipe_sdesc_table.bucket[i];
+    for(; sdesc; sdesc = sdesc->bucket.next)
+	if( sdesc->bucket.hvalue == ra )
+	    return sdesc;
+    fprintf(stderr, "%s: ra %#lx has no sdesc\r\n", __FUNCTION__, ra);
+    abort();
+}
+  #endif */
+
+/*
+ * XXX: x86 and SPARC currently use the same stack descriptor
+ * representation. If different representations are needed in
+ * the future, this code has to be made target dependent.
+ */
+static struct sdesc *decode_sdesc(Eterm arg)
+{
+    Uint ra, exnra;
+    Eterm *live;
+    unsigned int fsize, arity, nlive, i, nslots, off;
+    unsigned int livebitswords, sdescwords;
+    void *p;
+    struct sdesc *sdesc;
+
+    if( is_not_tuple(arg) ||
+	(tuple_val(arg))[0] != make_arityval(5) ||
+	term_to_Uint((tuple_val(arg))[1], &ra) == 0 ||
+	term_to_Uint((tuple_val(arg))[2], &exnra) == 0 ||
+	is_not_small((tuple_val(arg))[3]) ||
+	(fsize = unsigned_val((tuple_val(arg))[3])) > 65535 ||
+	is_not_small((tuple_val(arg))[4]) ||
+	(arity = unsigned_val((tuple_val(arg))[4])) > 255 ||
+	is_not_tuple((tuple_val(arg))[5]) )
+	return 0;
+    /* Get tuple with live slots */
+    live = tuple_val((tuple_val(arg))[5]) + 1;
+    /* Get number of live slots */
+    nlive = arityval(live[-1]);
+    /* Calculate size of frame = locals + ra + arguments */
+    nslots = fsize + 1 + arity;
+    /* Check that only valid slots are given. */
+    for(i = 0; i < nlive; ++i) {
+	if( is_not_small(live[i]) ||
+	    (off = unsigned_val(live[i]), off >= nslots) ||
+	    off == fsize )
+	    return 0;
+    }
+
+    /* Calculate number of words for the live bitmap. */
+    livebitswords = (fsize + arity + 1 + 31) / 32;
+    /* Calculate number of words for the stack descriptor. */
+    sdescwords = 3 + livebitswords + (exnra ? 1 : 0);
+    p = safe_alloc(sdescwords*4);
+    /* If we have an exception handler use the
+       special sdesc_with_exnra structure. */
+    if( exnra ) {
+	struct sdesc_with_exnra *sdesc_we = p;
+	sdesc_we->exnra = exnra;
+	sdesc = &(sdesc_we->sdesc);
+    } else
+	sdesc = p;
+
+    /* Initialise head of sdesc. */
+    sdesc->bucket.next = 0;
+    sdesc->bucket.hvalue = ra;
+    sdesc->summary = (fsize << 9) | (exnra ? (1<<8) : 0) | arity;
+    /* Clear all live-bits */
+    for(i = 0; i < livebitswords; ++i)
+	sdesc->livebits[i] = 0;
+    /* Set live-bits given by caller. */
+    for(i = 0; i < nlive; ++i) {
+	off = unsigned_val(live[i]);
+	sdesc->livebits[off / 32] |= (1 << (off & 31));
+    }
+    return sdesc;
 }
 
 BIF_RETTYPE hipe_bifs_enter_sdesc_1(BIF_ALIST_1)
@@ -579,10 +657,12 @@ BIF_ADECL_1
 {
     struct sdesc *sdesc;
 
-    sdesc = term_to_address(BIF_ARG_1);
-    if( !sdesc )
+    sdesc = decode_sdesc(BIF_ARG_1);
+    if( !sdesc ) {
+	fprintf(stderr, "%s: bad sdesc!\r\n", __FUNCTION__);
 	BIF_ERROR(BIF_P, BADARG);
-    if( hash_put(&sdesc_table, sdesc) != sdesc ) {
+    }
+    if( hipe_put_sdesc(sdesc) != sdesc ) {
 	fprintf(stderr, "%s: duplicate entry!\r\n", __FUNCTION__);
 	BIF_ERROR(BIF_P, BADARG);
     }
@@ -672,9 +752,7 @@ BIF_ADECL_3
 	is_not_atom(BIF_ARG_2) ||
 	is_not_small(BIF_ARG_3) ||
 	signed_val(BIF_ARG_3) < 0 )
-	/* XXX: might return am_false instead, but the HiPE compiler
-	   "knows" about this error exit :-( */
-	BIF_ERROR(BIF_P, BADARG);
+        BIF_RET(am_false);
 
     address = nbif_address(BIF_ARG_1, BIF_ARG_2, unsigned_val(BIF_ARG_3));
     if( address )
@@ -712,7 +790,6 @@ BIF_ADECL_1
 
 	check_bif(am_gc_1, nbif_gc_1);
 	check_bif(am_get_msg, nbif_get_msg);
-	check_bif(am_inc_stack_0, nbif_inc_stack_0);
 	check_bif(am_select_msg, nbif_select_msg);
 	check_bif(am_mbox_empty, nbif_mbox_empty);
 	check_bif(am_next_msg, nbif_next_msg);
@@ -736,16 +813,43 @@ BIF_ADECL_1
 	check_bif(am_bs_put_binary_all, nbif_bs_put_binary_all);
 	check_bif(am_bs_put_float, nbif_bs_put_float);
 	check_bif(am_bs_put_string, nbif_bs_put_string);
+	check_bif(am_bs_get_matchbuffer, nbif_bs_get_matchbuffer);
 
 	check_bif(am_cmp_2, nbif_cmp_2);
 	check_bif(am_op_exact_eqeq_2, nbif_eq_2);
 
 	check_bif(am_test, nbif_test);
+
+
+	check_bif(am_clear_fp_exception, nbif_clear_fp_exception);
+	check_bif(am_check_fp_exception, nbif_check_fp_exception);
+	check_bif(am_conv_big_to_float, nbif_conv_big_to_float);
+
+#ifdef __sparc__
+	check_bif(am_inc_stack_0args_0, nbif_inc_stack_0args);
+	check_bif(am_inc_stack_1args_0, nbif_inc_stack_1args);
+	check_bif(am_inc_stack_2args_0, nbif_inc_stack_2args);
+	check_bif(am_inc_stack_3args_0, nbif_inc_stack_3args);
+	check_bif(am_inc_stack_4args_0, nbif_inc_stack_4args);
+	check_bif(am_inc_stack_5args_0, nbif_inc_stack_5args);
+	check_bif(am_inc_stack_6args_0, nbif_inc_stack_6args);
+	check_bif(am_inc_stack_7args_0, nbif_inc_stack_7args);
+	check_bif(am_inc_stack_8args_0, nbif_inc_stack_8args);
+	check_bif(am_inc_stack_9args_0, nbif_inc_stack_9args);
+	check_bif(am_inc_stack_10args_0, nbif_inc_stack_10args);
+	check_bif(am_inc_stack_11args_0, nbif_inc_stack_11args);
+	check_bif(am_inc_stack_12args_0, nbif_inc_stack_12args);
+	check_bif(am_inc_stack_13args_0, nbif_inc_stack_13args);
+	check_bif(am_inc_stack_14args_0, nbif_inc_stack_14args);
+	check_bif(am_inc_stack_15args_0, nbif_inc_stack_15args);
+	check_bif(am_inc_stack_16args_0, nbif_inc_stack_16args);
+#endif
+#ifdef __i386__
+	check_bif(am_inc_stack_0, nbif_inc_stack_0);
+#endif
 #undef check_bif
       default:
-	/* XXX: might return am_false instead, but the HiPE compiler
-	   "knows" about this error exit :-( */
-	BIF_ERROR(BIF_P, BADARG);
+	BIF_RET(am_false);
     }
     BIF_RET(address_to_term(res, BIF_P));
 }
@@ -771,7 +875,7 @@ BIF_ADECL_2
 #define GBIF_LIST(ATOM,ARY,CFUN) if(BIF_ARG_1 == ATOM && arity == ARY) { address = CFUN; break; }
 #include "hipe_gbif_list.h"
 #undef GBIF_LIST
-	printf("\r\n" "%s: guard BIF ", __FUNCTION__);
+	printf("\r\n%s: guard BIF ", __FUNCTION__);
 	fflush(stdout);
 	print_atom(atom_val(BIF_ARG_1), COUT);
 	printf("/%u isn't listed in hipe_gbif_list.h\r\n", arity);
@@ -812,7 +916,7 @@ BIF_ADECL_3
 DbTable* code_tb = (DbTable*) NULL;
 void init_code_table(void)
 {
-    uint32 status;
+    Uint32 status;
     int keypos;
     int cret;
 
@@ -853,6 +957,26 @@ BIF_ADECL_1
     default:
 	BIF_ERROR(BIF_P, BADARG);
     }
+}
+
+/* XXX: this is really a primop, not a BIF */
+BIF_RETTYPE hipe_conv_big_to_float(BIF_ALIST_1)
+BIF_ADECL_1
+{
+    Eterm res;
+    Eterm* hp;
+    FloatDef f;
+
+    if( is_not_big(BIF_ARG_1) ) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    if( big_to_double(BIF_ARG_1, &f.fd) < 0 ) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    hp = HAlloc(BIF_P, 3);
+    res = make_float(hp);
+    PUT_DOUBLE(f, hp);
+    BIF_RET(res);
 }
 
 BIF_RETTYPE hipe_bifs_get_funinfo_1(BIF_ALIST_1)
@@ -957,8 +1081,10 @@ BIF_ADECL_3
     BIF_ERROR(BIF_P, BADARG);
   }
 
-  funp->next = BIF_P->off_heap.funs;
-  BIF_P->off_heap.funs = funp;
+#ifndef SHARED_HEAP
+  funp->next = MSO(BIF_P).funs;
+  MSO(BIF_P).funs = funp;
+#endif
 
   BIF_RET(make_fun(funp));
 }
@@ -1062,4 +1188,17 @@ int hipe_patch_address(Uint *address, Eterm patchtype, Uint value)
 	    return 0;
 	}
     }
+}
+
+BIF_RETTYPE hipe_bifs_check_crc_1(BIF_ALIST_1)
+BIF_ADECL_1
+{
+    Uint crc;
+
+    term_to_Uint(BIF_ARG_1, &crc);
+    if( !crc )
+	BIF_ERROR(BIF_P, BADARG);
+    if( crc == HIPE_SYSTEM_CRC )
+	BIF_RET(am_true);
+    BIF_RET(am_false);
 }

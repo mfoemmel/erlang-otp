@@ -68,11 +68,10 @@
 -define(tcp_report(Level, TcpRec, From, To, Label, Contents),
         if
             list(Contents) ->
-                event_tracer:report(Level, From, To,
-                                    Label, [{line, ?MODULE, ?LINE}, TcpRec | Contents
-]);
+                megaco:report_event(Level, From, To, Label,
+				    [{line, ?MODULE, ?LINE}, TcpRec | Contents]);
             true ->
-                ok = error_logger:format("~p(~p): Bad arguments to event_tracer:
+                ok = error_logger:format("~p(~p): Bad arguments to et:
 "
                                          "report(~p, ~p, ~p, ~p, ~p, ~p)~n",
                                          [?MODULE, ?LINE,

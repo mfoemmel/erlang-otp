@@ -34,17 +34,17 @@
 
 encode_message(Config, MegaMsg) when record(MegaMsg, 'MegacoMessage') ->
     {ok, erlang:term_to_binary(MegaMsg, Config)};
-encode_message(Config, MegaMsg) ->
+encode_message(_Config, _MegaMsg) ->
     {error, not_a_megaco_message}.
 	    
 %%----------------------------------------------------------------------
 %% Convert a binary into a 'MegacoMessage' record
 %% Return {ok, MegacoMessageRecord} | {error, Reason}
 %%----------------------------------------------------------------------
-decode_message(Config, Bin) ->
+decode_message(_Config, Bin) ->
     case catch erlang:binary_to_term(Bin) of
 	MegaMsg when record(MegaMsg, 'MegacoMessage') ->
 	    {ok, MegaMsg};
-	{'EXIT', Reason} ->
+	{'EXIT', _Reason} ->
 	    {error, bad_binary}
     end.

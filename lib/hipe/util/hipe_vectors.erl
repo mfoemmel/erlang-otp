@@ -5,8 +5,9 @@
 % Abstract interface to vectors.
 
 
-%-define(impl,hipe_pure_vectors).
--define(impl,hipe_beam_vectors).
+%%% XXX: replace the pure version with one based on gb_trees!
+-define(impl,hipe_pure_vectors).
+%-define(impl,hipe_beam_vectors).
 
 %-define(VERIFY,1).
 %-define(pimpl,hipe_pure_vectors).

@@ -237,6 +237,6 @@ number_of_calls(MFA,Rest) ->
 	    Rest;
 	0 ->
 	    Rest;
-	N when integer(N) ->
+	N when is_integer(N) ->
 	    [{MFA,N}|Rest]
     end.

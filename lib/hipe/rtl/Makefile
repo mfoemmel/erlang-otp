@@ -37,12 +37,12 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-MODULES = hipe_frame hipe_rtl hipe_rtl_cfg hipe_rtl_cse hipe_rtl_ebb \
-	  hipe_rtl_trim_frame hipe_rtl_liveness hipe_rtl_prop \
+MODULES = hipe_rtl hipe_rtl_cfg hipe_rtl_cse hipe_rtl_ebb \
+	  hipe_rtl_liveness hipe_rtl_prop \
 	  hipe_icode2rtl hipe_tagscheme hipe_rtl_mk_switch \
 	  hipe_rtl_primops hipe_rtl_gctests hipe_rtl_arch \
 	  hipe_rtl_varmap hipe_rtl_exceptions hipe_rtl_guardops \
-	  hipe_rtl_bs_ops
+	  hipe_rtl_bs_ops hipe_rtl_inline_bs_ops
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
@@ -97,10 +97,12 @@ HIPE_MKLITERALS=$(ERL_TOP)/bin/$(TARGET)/hipe_mkliterals
 hipe_literals.hrl:	$(HIPE_MKLITERALS)
 	$(HIPE_MKLITERALS) -e > hipe_literals.hrl
 
-$(EBIN)/hipe_rtl_cfg.beam: ../flow/cfg.inc
-$(EBIN)/hipe_rtl_liveness.beam: ../flow/liveness.inc
+$(EBIN)/hipe_rtl.beam: hipe_rtl.hrl
+$(EBIN)/hipe_rtl_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl
+$(EBIN)/hipe_rtl_ebb.beam: ../flow/ebb.inc
+$(EBIN)/hipe_rtl_liveness.beam: ../util/hipe_vector.hrl ../flow/liveness.inc
 $(EBIN)/hipe_icode2rtl.beam: hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_tagscheme.beam: hipe_literals.hrl
-$(EBIN)/hipe_frame.beam: hipe_literals.hrl
-$(EBIN)/hipe_rtl_frame.beam: hipe_literals.hrl
-$(EBIN)/hipe_rtl_trim_frame.beam: hipe_literals.hrl
+$(EBIN)/hipe_rtl_primops.beam: hipe_literals.hrl
+$(EBIN)/hipe_rtl_guardops.beam: hipe_literals.hrl
+$(EBIN)/hipe_rtl_prop.beam: ../main/hipe.hrl

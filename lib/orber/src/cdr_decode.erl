@@ -40,8 +40,8 @@
 %%-----------------------------------------------------------------
 -export([dec_giop_message_header/1, dec_reply_header/4,
 	 dec_reply_body/6, dec_locate_reply_header/4, 
-	 dec_locate_reply_body/5, dec_message_header/2, dec_request_body/6,
-	 dec_octet_sequence_bin/6, dec_message/2]).
+	 dec_locate_reply_body/5, dec_message_header/3, dec_request_body/6,
+	 dec_octet_sequence_bin/6, dec_message/2, peak_request_id/2]).
 
 %%-----------------------------------------------------------------
 %% Functions which only are exported for the testcases.
@@ -74,34 +74,37 @@ dec_message(TypeCodes, Bytes) ->
     Message = dec_giop_message_header(Bytes),
     ?PRINTDEBUG2("GIOP header: ~w", [Message]),
     case Message#giop_message.message_type of
-        'request' ->
+        ?GIOP_MSG_REQUEST ->
             {Version, ReqHdr, Rest, Len, ByteOrder} = 
 		dec_request_header(Message#giop_message.giop_version,
 				   Message#giop_message.message, ?GIOP_HEADER_SIZE, 
 				   Message#giop_message.byte_order, Bytes),
 	    dec_request_body(Version, ReqHdr, Rest, Len, ByteOrder, Bytes);
-        'reply' ->
+        ?GIOP_MSG_REPLY ->
             dec_reply(Message#giop_message.giop_version,
                       TypeCodes, Message#giop_message.message, ?GIOP_HEADER_SIZE,
                       Message#giop_message.byte_order);
-        'cancel_request' ->
+        ?GIOP_MSG_CANCEL_REQUEST ->
             dec_cancel_request(Message#giop_message.giop_version,
                                Message#giop_message.message, ?GIOP_HEADER_SIZE, 
                                Message#giop_message.byte_order);
-        'locate_request' ->
+        ?GIOP_MSG_LOCATE_REQUEST ->
             dec_locate_request(Message#giop_message.giop_version,
                                Message#giop_message.message, ?GIOP_HEADER_SIZE, 
                                Message#giop_message.byte_order);
-        'locate_reply' ->
+        ?GIOP_MSG_LOCATE_REPLY ->
             dec_locate_reply(Message#giop_message.giop_version,
                              Message#giop_message.message, ?GIOP_HEADER_SIZE, 
                              Message#giop_message.byte_order);
-        'close_connection' ->
+        ?GIOP_MSG_CLOSE_CONNECTION ->
             'close_connection';
-        'message_error' ->
+        ?GIOP_MSG_MESSAGE_ERROR ->
             'message_error';
-        'fragment' ->
-            'fragment'
+        ?GIOP_MSG_FRAGMENT ->
+            {Version, FragHdr, Rest, Len, ByteOrder} = 
+		dec_fragment_header(Message#giop_message.giop_version,
+				    Message#giop_message.message, ?GIOP_HEADER_SIZE, 
+				    Message#giop_message.byte_order, Bytes)
     end.
 
 %%-----------------------------------------------------------------
@@ -111,24 +114,41 @@ dec_message(TypeCodes, Bytes) ->
 %% Returns: 
 %%       A giop_message record.
 %%-----------------------------------------------------------------
-dec_giop_message_header(<<"GIOP",Major:8,Minor:8,ByteOrderData:8,MessType:8,
-			Rest/binary>>) ->
-    Version = {Major, Minor},
-    ByteOrder = 
-	if
-	    Version == {1,0} ->
-		check_byte_order(ByteOrderData);
-	    true ->
-		dec_flags(ByteOrderData)
-	end,
-    %% We know that this long integer is aligned because of the 
-    %% fix header structure.
-    {MessSize, Message} = cdrlib:dec_unsigned_long(ByteOrder, Rest),
-    #giop_message{magic = "GIOP", giop_version = Version, 
-		  byte_order = ByteOrder, message_type = dec_giop_msg_type(MessType), 
+%%                         Magic|Version|BO| Type | Size | Body
+dec_giop_message_header(<<"GIOP",1:8,0:8,1:8,MessType:8,
+			MessSize:32/little-unsigned-integer,Message/binary>>) ->
+    #giop_message{magic = "GIOP", giop_version = {1,0},
+		  byte_order = little, message_type = MessType, 
 		  message_size = MessSize, message = Message};
-dec_giop_message_header(_) ->
+dec_giop_message_header(<<"GIOP",1:8,0:8,0:8,MessType:8,
+			MessSize:32/big-unsigned-integer,Message/binary>>) ->
+    #giop_message{magic = "GIOP", giop_version = {1,0},
+		  byte_order = big, message_type = MessType, 
+		  message_size = MessSize, message = Message};
+dec_giop_message_header(<<"GIOP",1:8,Minor:8,Flags:8,MessType:8,
+			MessSize:32/little-unsigned-integer,Message/binary>>) when
+  ((Flags band 16#01) == 16#01) ->
+    #giop_message{magic = "GIOP", giop_version = {1,Minor},
+		  byte_order = little, fragments = ((Flags band 16#02) == 16#02),
+		  message_type = MessType, message_size = MessSize, message = Message};
+dec_giop_message_header(<<"GIOP",1:8,Minor:8,Flags:8,MessType:8,
+			MessSize:32/big-unsigned-integer,Message/binary>>) ->
+    #giop_message{magic = "GIOP", giop_version = {1,Minor},
+		  byte_order = big, fragments = ((Flags band 16#02) == 16#02),
+		  message_type = MessType, message_size = MessSize, message = Message};
+dec_giop_message_header(<<Hdr:?GIOP_HEADER_SIZE/binary, Body/binary>>) ->
+    orber:dbg("[~p] cdr_decode:dec_giop_message_header(~p); 
+Orber cannot decode the GIOP-header.", [?LINE, Hdr], ?DEBUG_LEVEL),
+    exit(message_error);
+dec_giop_message_header(Other) ->
+    orber:dbg("[~p] cdr_decode:dec_giop_message_header(~p); 
+Orber cannot decode the GIOP-header.", [?LINE, Other], ?DEBUG_LEVEL),
     exit(message_error).
+
+peak_request_id(big, <<ReqId:32/big-unsigned-integer,_/binary>>) ->
+    ReqId;
+peak_request_id(little, <<ReqId:32/little-unsigned-integer,_/binary>>) ->
+    ReqId.
 
 %%-----------------------------------------------------------------
 %% Func: dec_message_header/2
@@ -137,36 +157,38 @@ dec_giop_message_header(_) ->
 %%       Bytes - is the the message body as a byte sequence.
 %% Returns: 
 %%-----------------------------------------------------------------
-dec_message_header(TypeCodes, Bytes) ->
-    Message = dec_giop_message_header(Bytes),
+dec_message_header(TypeCodes, Message, Bytes) ->
+%    Message = dec_giop_message_header(Bytes),
     ?PRINTDEBUG2("GIOP header: ~w", [Message]),
     case Message#giop_message.message_type of
-	'request' ->
+	?GIOP_MSG_REQUEST ->
 	    dec_request_header(Message#giop_message.giop_version,
 			       Message#giop_message.message, ?GIOP_HEADER_SIZE, 
 			       Message#giop_message.byte_order, Bytes);
-	'reply' ->
+	?GIOP_MSG_REPLY ->
 	    dec_reply(Message#giop_message.giop_version,
 		      TypeCodes, Message#giop_message.message, ?GIOP_HEADER_SIZE,
 		      Message#giop_message.byte_order);
-	'cancel_request' ->
+	?GIOP_MSG_CANCEL_REQUEST ->
 	    dec_cancel_request(Message#giop_message.giop_version,
 			       Message#giop_message.message, ?GIOP_HEADER_SIZE, 
 			       Message#giop_message.byte_order);
-	'locate_request' ->
+	?GIOP_MSG_LOCATE_REQUEST ->
 	    dec_locate_request(Message#giop_message.giop_version,
 			       Message#giop_message.message, ?GIOP_HEADER_SIZE, 
 			       Message#giop_message.byte_order);
-	'locate_reply' ->
+	?GIOP_MSG_LOCATE_REPLY ->
 	    dec_locate_reply(Message#giop_message.giop_version,
 			     Message#giop_message.message, ?GIOP_HEADER_SIZE, 
 			     Message#giop_message.byte_order);
-	'close_connection' ->
+	?GIOP_MSG_CLOSE_CONNECTION ->
 	    'close_connection';
-	'message_error' ->
+	?GIOP_MSG_MESSAGE_ERROR ->
 	    'message_error';
-	'fragment' ->
-	    'fragment'
+	?GIOP_MSG_FRAGMENT ->
+	    dec_fragment_header(Message#giop_message.giop_version,
+				Message#giop_message.message, ?GIOP_HEADER_SIZE, 
+				Message#giop_message.byte_order, Bytes)	    
     end.
 
 
@@ -195,73 +217,6 @@ dec_byte_order_list([0|T]) ->
     {big, T};
 dec_byte_order_list([1|T]) ->
     {little, T}.
-
-
-
-%%-----------------------------------------------------------------
-%% Func: check_byte_order/1
-%% Args: 
-%%       The message as a byte sequence.
-%% Returns: 
-%%       A tuple {Endianess, Rest} where Endianess is big or little.
-%%       Rest is the remaining message byte sequence.
-%%-----------------------------------------------------------------
-check_byte_order(0) ->
-    big;
-check_byte_order(1) ->
-    little.
-
-%%-----------------------------------------------------------------
-%% Func: dec_flags/1
-%% Args: 
-%%       The message as a byte sequence.
-%% Returns: 
-%%       A tuple {Endianess, Rest} where Endianess is big or little.
-%%       Rest is the remaining message byte sequence.
-%%-----------------------------------------------------------------
-dec_flags(0) ->
-    %% Eq. to 00000000
-    big;
-dec_flags(1) ->
-    %% Eq. to 00000001
-    little;
-dec_flags(X) ->
-    %% Not only the Endian flag is set, test which.
-    if
-	((X band 16#02) == 16#02) ->
-	    orber:dbg("[~p] cdr_decode:dec_flags(~p)
-Fragmented Messages not supported.", [?LINE, X], ?DEBUG_LEVEL),
-	    corba:raise(#'MARSHAL'{minor=103, completion_status=?COMPLETED_MAYBE});
-	%% Since the 6 most significant bits are unused we'll accept this for now.
-	((X band 16#01) == 16#01) ->
-	    little;
-	true ->
-	    big
-    end.
-
-%%-----------------------------------------------------------------
-%% Func: dec_giop_msg_type
-%% Args: 
-%%       An integer message type code
-%% Returns: 
-%%       An atom which is the message type code name
-%%-----------------------------------------------------------------
-dec_giop_msg_type(0) ->
-    'request';
-dec_giop_msg_type(1) ->
-    'reply';
-dec_giop_msg_type(2) ->
-    'cancel_request';
-dec_giop_msg_type(3) ->
-    'locate_request';
-dec_giop_msg_type(4) ->
-    'locate_reply';
-dec_giop_msg_type(5) ->
-    'close_connection';
-dec_giop_msg_type(6) ->
-    'message_error';
-dec_giop_msg_type(7) ->
-    'fragment'.
 
 %%-----------------------------------------------------------------
 %% Func    : dec_response_flags
@@ -310,7 +265,7 @@ dec_target_addr(Version, Message, Len, ByteOrder, RequestId, Type) ->
 	Other ->
 	    orber:dbg("[~p] cdr_decode:dec_target_addr(~p); 
 Unsupported TargetAddress.", [?LINE, Other], ?DEBUG_LEVEL),
-	    corba:raise(#'MARSHAL'{minor=103, completion_status=?COMPLETED_MAYBE})
+	    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 12), completion_status=?COMPLETED_MAYBE})
     end.
 
 %%-----------------------------------------------------------------
@@ -394,6 +349,12 @@ dec_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_CodeSets,
     {CodeCtx, _, _} =  dec_type(?CONV_FRAME_CODESETCONTEXT, Version, 
 				Rest, 1, ByteOrder),
     dec_used_contexts(Version, T, [CodeCtx|Ctxs]);
+dec_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_BI_DIR_IIOP,
+						  context_data = Bytes}|T], Ctxs) ->
+    {ByteOrder, Rest} = dec_byte_order(list_to_binary(Bytes)),
+    {BiDirCtx, _, _} =  dec_type(?IIOP_BIDIRIIOPSERVICECONTEXT, Version, 
+				Rest, 1, ByteOrder),
+    dec_used_contexts(Version, T, [BiDirCtx|Ctxs]);
 dec_used_contexts(Version, [H|T], Ctxs) ->
     dec_used_contexts(Version, T, [H|Ctxs]).
 
@@ -567,25 +528,21 @@ dec_locate_reply_header(Version, Message, Len, ByteOrder) ->
    
 dec_locate_reply_body(Version, LocateStatus, Rest, Len, ByteOrder) when Version == {1,2} ->
     %% In CORBA-2.3.1 the LocateReply body didn't align the body (8-octet
-    %% boundry) for IIOP-1.2. This have been changed in later specs.
-    %% Un-comment the lines below when we want to be CORBA-2.4 compliant.
-    %% DO NOT forget to change Rest to Rest1 and Len to Len1!!!!!!!!!!
+    %% boundry) for IIOP-1.2. This have been changed in CORBA-2.4 and
+    %% changed back in CORBA-2.6. Hence, we should not change this.
     case LocateStatus of
 	'object_forward' ->
-%	    {Rest1, Len1, Counter} = dec_align(Rest, Len, 8, Len),
 	    {ObjRef, _, _, _} = dec_objref(Version, Rest, Len, ByteOrder),
 	    ObjRef;
 	'object_forward_perm' ->
 	    %% This is deprecated in later version than CORBA-2.3.1. We'll leave it for
 	    %% now.
-%	    {Rest1, Len1, Counter} = dec_align(Rest, Len, 8, Len),
 	    {ObjRef, _, _, _} = dec_objref(Version, Rest, Len, ByteOrder),
 	    ObjRef;
 	'loc_system_exception' ->
 	    %% This should be updated but since 'dec_system_exception' removes
 	    %% alignment, which the LocateReplyBody don't have, for 1.2 we
-	    %% pretend it's 1.1 for now. Change {1,1} to Version when we want
-	    %% to be CORBA-2.4 compliant.
+	    %% pretend it's 1.1 for now. 
 	    {SysExc, _} = dec_system_exception({1,1}, Rest, Len, ByteOrder),
 	    corba:raise(SysExc);
 	'loc_needs_addressing_mode' ->
@@ -607,6 +564,27 @@ dec_locate_status(Version, Bytes, Len, ByteOrder) ->
     {L, Rest, Len1} = dec_type('tk_ulong', Version, Bytes, Len, ByteOrder),
     {dec_giop_locate_status_type(L), Rest, Len1}.
 
+
+%%-----------------------------------------------------------------
+%% Func: dec_fragment_header/5
+%% Args: 
+%%       Message - The message
+%%       Len0 - Number of bytes already read.
+%%       ByteOrder - little or big
+%% Returns: 
+%%-----------------------------------------------------------------
+dec_fragment_header(Version, Message, Len0, ByteOrder, Buffer) when Version == {1,2} ->
+    {Request_id, Rest1, Len1, _} = dec_type('tk_ulong', Version, Message, Len0, 
+					    ByteOrder, [], 0),
+    {Version, #fragment_header{request_id=Request_id}, Rest1, Len1, ByteOrder};
+dec_fragment_header(Version, Message, Len0, ByteOrder, Buffer) ->
+    %% The FragmentHeader is IIOP-1.2 specific. Hence, do nothing here.
+    orber:dbg("[~p] cdr_decode:dec_fragment_header(~p)
+Orber only supports fragmented messages for IIOP-1.2.", 
+	      [?LINE, Version], ?DEBUG_LEVEL),
+    exit(message_error).
+%    {Version, #fragment_header{}, Message, Len0, ByteOrder}.
+
 %%-----------------------------------------------------------------
 %% Func: dec_giop_reply_status_type
 %% Args:
@@ -622,7 +600,7 @@ dec_giop_reply_status_type(2) ->
     'system_exception';
 dec_giop_reply_status_type(3) ->
     'location_forward';
-%% ## NEW IIOP 1.2 ##
+%% ## IIOP-1.2 ##
 dec_giop_reply_status_type(4) ->
     'location_forward_perm';
 dec_giop_reply_status_type(5) ->
@@ -641,7 +619,7 @@ dec_giop_locate_status_type(1) ->
     'object_here';
 dec_giop_locate_status_type(2) ->
     'object_forward';
-%% ## NEW IIOP 1.2 ##
+%% ## IIOP-1.2 ##
 dec_giop_locate_status_type(3) ->
     'object_forward_perm';
 dec_giop_locate_status_type(4) ->
@@ -754,8 +732,9 @@ dec_type({'tk_alias', IFRId, Name, TC}, Version, Bytes, Len, ByteOrder, Buff, C)
 dec_type({'tk_fixed', Digits, Scale}, Version, Bytes, Len, ByteOrder, Buff, C) ->
     dec_fixed(Digits, Scale, Bytes, Len, C);
 dec_type(Type, _, _, _, _, _, _) ->
-    orber:dbg("[~p] cdr_decode:dec_type(~p)", [?LINE, Type], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=104, completion_status=?COMPLETED_MAYBE}).
+    orber:dbg("[~p] cdr_decode:dec_type(~p)
+Incorrect TypeCode or unsupported type.", [?LINE, Type], ?DEBUG_LEVEL),
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 13), completion_status=?COMPLETED_MAYBE}).
 
 stringify_enum({tk_enum,_,_,_}, Label) ->
     atom_to_list(Label);
@@ -813,11 +792,11 @@ dec_fixed_2(1, Scale, <<D1:4,?FIXED_NEGATIVE:4,T/binary>>, Len, C) ->
 dec_fixed_2(Digits, Scale, Bytes, Len, C) when Digits =< 0 ->
     orber:dbg("[~p] cdr_decode:dec_fixed_2(~p, ~p)
 Malformed fixed type.", [?LINE, Digits, Scale], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=105, completion_status=?COMPLETED_MAYBE});
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 14), completion_status=?COMPLETED_MAYBE});
 dec_fixed_2(Digits, Scale, <<>>, Len, C) ->
     orber:dbg("[~p] cdr_decode:dec_fixed_2(~p, ~p)
 The fixed type received was to short.", [?LINE, Digits, Scale], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=105, completion_status=?COMPLETED_MAYBE});
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 14), completion_status=?COMPLETED_MAYBE});
 dec_fixed_2(Digits, Scale, <<D1:4,D2:4,T/binary>>, Len, C) ->
     {Seq, Rest2, Len2, NewC2, Sign} = dec_fixed_2(Digits-2, Scale, T, Len+1, C+1),
     {[D1+48, D2+48 | Seq], Rest2, Len2, NewC2, Sign}.
@@ -917,6 +896,8 @@ is_known_struct('CONV_FRAME_CodeSetComponent') -> true;
 is_known_struct('CONV_FRAME_CodeSetComponentInfo') -> true;
 is_known_struct('GIOP_IORAddressingInfo') -> true;
 is_known_struct('ALTERNATE_IIOP_ADDRESS') -> true;
+is_known_struct('IIOP_BiDirIIOPServiceContext') -> true;
+is_known_struct('IIOP_ListenPoint') -> true;
 is_known_struct(_) -> false.
 
 %%-----------------------------------------------------------------
@@ -960,7 +941,7 @@ dec_wstring({1,2}, Message, Len, ByteOrder, Buff, C) ->
 	true ->
 	    orber:dbg("[~p] cdr_decode:dec_wstring(~p);",
 		      [?LINE, Rest1], ?DEBUG_LEVEL),
-	    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_NO})
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO})
     end;
 dec_wstring(Version, Message, Len, ByteOrder, Buff, C) ->
     {Rest, Len1, NewC} = dec_align(Message, Len, 4, C),
@@ -977,7 +958,7 @@ dec_wstring(Version, Message, Len, ByteOrder, Buff, C) ->
 	true ->
 	    orber:dbg("[~p] cdr_decode:dec_wstring(~p);",
 				    [?LINE, Rest1], ?DEBUG_LEVEL),
-	    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_NO})
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO})
     end.
 
 
@@ -1047,7 +1028,8 @@ dec_struct1(Version, [{ElemName, ElemType} | TypeCodeList], Message, Len, ByteOr
 ifrid_to_name([], _) ->
     orber:dbg("[~p] cdr_decode:ifrid_to_name([]). No Id supplied.", 
 			    [?LINE], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE});
+    corba:raise(#'MARSHAL'{minor=(?CORBA_OMGVMCID bor 11), 
+			   completion_status=?COMPLETED_MAYBE});
 ifrid_to_name(Id, Type) -> 
     case orber:get_lightweight_nodes() of
 	false when Type == ir_UnionDef ->
@@ -1057,7 +1039,8 @@ ifrid_to_name(Id, Type) ->
 		Other ->
 		    orber:dbg("[~p] cdr_decode:ifrid_to_name(~p). IFR Id not found: ~p", 
 					    [?LINE, Id, Other], ?DEBUG_LEVEL),
-		    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE})
+		    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 9), 
+					   completion_status=?COMPLETED_MAYBE})
 	    end;
 	false when Type == ir_StructDef ->
 	    case mnesia:dirty_index_read(ir_StructDef, Id, #ir_StructDef.id) of
@@ -1066,7 +1049,8 @@ ifrid_to_name(Id, Type) ->
 		Other ->
 		    orber:dbg("[~p] cdr_decode:ifrid_to_name(~p). IFR Id not found: ~p", 
 					    [?LINE, Id, Other], ?DEBUG_LEVEL),
-		    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE})
+		    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 10), 
+					   completion_status=?COMPLETED_MAYBE})
 	    end;
 	false when Type == ir_ExceptionDef ->
 	    case mnesia:dirty_index_read(ir_ExceptionDef, Id, #ir_ExceptionDef.id) of
@@ -1075,7 +1059,8 @@ ifrid_to_name(Id, Type) ->
 		Other ->
 		    orber:dbg("[~p] cdr_decode:ifrid_to_name(~p). IFR Id not found: ~p", 
 					    [?LINE, Id, Other], ?DEBUG_LEVEL),
-		    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE})
+		    corba:raise(#'UNKNOWN'{minor=(?CORBA_OMGVMCID bor 1), 
+					   completion_status=?COMPLETED_MAYBE})
 	    end;
 	Nodes ->
 	    {A,B,C} = now(),
@@ -1096,7 +1081,7 @@ get_ifr_node([], _, _) ->
     %% Were not able to contact any of the given nodes.
     orber:dbg("[~p] cdr_decode:get_ifr_node([]). No Node available.", 
 			    [?LINE], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE});
+    corba:raise(#'INTERNAL'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_MAYBE});
 get_ifr_node(Nodes, N, L) ->
     Node = lists:nth(N, Nodes),
     case catch corba:resolve_initial_references_remote("OrberIFR", [Node]) of
@@ -1131,7 +1116,7 @@ dec_system_exception(Version, Message, Len, ByteOrder) when Version == {1,2} ->
 					       ["COMPLETED_YES", "COMPLETED_NO",
 						"COMPLETED_MAYBE"]}}],
 					    Rest1, Len1, ByteOrder),
-    {list_to_tuple([list_to_atom(Name), "" |Struct]), Len2};
+    {list_to_tuple([Name, "" |Struct]), Len2};
 dec_system_exception(Version, Message, Len, ByteOrder) ->
     {TypeId, Rest1, Len1} = dec_type({'tk_string', 0}, Version, Message, Len, ByteOrder),
     Name = get_system_exception_name(TypeId),
@@ -1141,7 +1126,7 @@ dec_system_exception(Version, Message, Len, ByteOrder) ->
 					       ["COMPLETED_YES", "COMPLETED_NO",
 						"COMPLETED_MAYBE"]}}],
 					    Rest1, Len1, ByteOrder),
-    {list_to_tuple([list_to_atom(Name), "" |Struct]), Len2}.
+    {list_to_tuple([Name, "" |Struct]), Len2}.
 
 dec_user_exception(Version, Message, Len, ByteOrder) when Version == {1,2} ->
     {Rest0, Len0, Counter} = dec_align(Message, Len, 8, Len),
@@ -1178,7 +1163,8 @@ get_user_exception_type(TypeId) ->
 		Other ->
 		    orber:dbg("[~p] cdr_decode:get_user_exception_type(~p). IFR Id not found: ~p", 
 					    [?LINE, TypeId, Other], ?DEBUG_LEVEL),
-		    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE})
+		    corba:raise(#'UNKNOWN'{minor=(?CORBA_OMGVMCID bor 1), 
+					   completion_status=?COMPLETED_MAYBE})
 	    end;
 	Nodes ->
 	    {A,B,C} = now(),
@@ -1189,16 +1175,31 @@ get_user_exception_type(TypeId) ->
     end.
 
 get_system_exception_name(TypeId) ->
-    case string:tokens(TypeId, ":/") of
-	[IDL, OMGORG, CORBA, Name, Version] ->
-	    Name;
-	[IDL, CORBA, Name, Version] ->
-	    Name;
-	_ ->
-             %% The CORBA-spec states that this exception should be raised if
-             %% it's a system exception we do not support.
-	    "UNKNOWN"
+    ExcName = 
+	case string:tokens(TypeId, ":/") of
+	    [IDL, OMGORG, CORBA, Name, Version] when list(Name) ->
+		list_to_atom(Name);
+	    [IDL, CORBA, Name, Version] when list(Name) ->
+		%% We should remove this case but we keep it for now due to backward 
+		%% compatible reasons.
+		list_to_atom(Name);
+	    Other ->
+		%% The CORBA-spec states that this exception should be raised if
+		%% it's a system exception we do not support.
+		orber:dbg("[~p] cdr_decode:get_system_exception_name(~p).
+Unknown System Exception: ~p", 
+			  [?LINE, TypeId, Other], ?DEBUG_LEVEL),
+		corba:raise(#'UNKNOWN'{minor=(?CORBA_OMGVMCID bor 2), completion_status=?COMPLETED_MAYBE})
+	end,
+    case orber_exceptions:type(ExcName) of
+	 ?SYSTEM_EXCEPTION ->
+	    ExcName;
+	What ->
+	    orber:dbg("[~p] cdr_decode:get_system_exception_name(~p).
+Unknown System Exception: ~p", [?LINE, TypeId, What], ?DEBUG_LEVEL),
+	    corba:raise(#'UNKNOWN'{minor=(?CORBA_OMGVMCID bor 2), completion_status=?COMPLETED_MAYBE})
     end.
+    
 
 %%-----------------------------------------------------------------
 %% Func: dec_type_code/4
@@ -1402,10 +1403,18 @@ dec_type_code(32, Version, Message, Len, ByteOrder, Buff, C) ->
     {ComplexParams, Message1, Len1, Ex} = decode_complex_tc_parameters(Version, Message, Len, ByteOrder),
     {ByteOrder1, Rest1} = dec_byte_order(ComplexParams),
     {{RepId, Name}, <<>>, Len2, NewC} =
-	dec_type({'tk_struct', "", "", [{"repository ID", {'tk_string', 0}},
+	dec_type({'tk_struct', "", "", [{"RepositoryId", {'tk_string', 0}},
 					{"name", {'tk_string', 0}}]},
 		 Version, Rest1, 1, ByteOrder1, Buff, C+1+Ex),
     {{'tk_abstract_interface', RepId, Name}, Message1, Len1, NewC};
+dec_type_code(33, Version, Message, Len, ByteOrder, Buff, C) ->
+    {ComplexParams, Message1, Len1, Ex} = decode_complex_tc_parameters(Version, Message, Len, ByteOrder),
+    {ByteOrder1, Rest1} = dec_byte_order(ComplexParams),
+    {{RepId, Name}, <<>>, Len2, NewC} =
+	dec_type({'tk_struct', "", "", [{"RepositoryId", {'tk_string', 0}},
+					{"name", {'tk_string', 0}}]},
+		 Version, Rest1, 1, ByteOrder1, Buff, C+1+Ex),
+    {{'tk_local_interface', RepId, Name}, Message1, Len1, NewC};
 dec_type_code(16#ffffffff, Version, Message, Len, ByteOrder, Buff, C) ->  %% placeholder
     {Indirection, Message1, Len1, NewC} =
 	dec_type('tk_long', Version, Message, Len, ByteOrder, Buff, C),
@@ -1416,7 +1425,7 @@ dec_type_code(16#ffffffff, Version, Message, Len, ByteOrder, Buff, C) ->  %% pla
 dec_type_code(Type, _, _, _, _, _, _) -> 
     orber:dbg("[~p] cdr_decode:dec_type_code(~p); No match.", 
 			    [?LINE, Type], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE}).
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 8), completion_status=?COMPLETED_MAYBE}).
 
 check_enum({'tk_enum', _, _, _}) ->
     true;

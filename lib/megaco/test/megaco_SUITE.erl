@@ -46,6 +46,7 @@ init() ->
 all(suite) ->
     [
      app_test,
+     appup_test,
      config,
      udp,
      tcp,
@@ -67,6 +68,9 @@ tickets(suite) ->
 
 app_test(suite) ->
     [{megaco_app_test, all}].
+
+appup_test(suite) ->
+    [{megaco_appup_test, all}].
 
 config(suite) ->
     [{megaco_config_test, all}].

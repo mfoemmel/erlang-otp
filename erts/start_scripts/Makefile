@@ -138,6 +138,12 @@ $(ERL_TOP)/bin/start_sasl.script:
 	$(ERLC) $(SASL_PATH) \
 	$(SCRIPT_PATH) $(SCRIPT_FLAGS) +otp_build -o $@ start_sasl.rel
 
+## Special target used from system/build/Makefile for source code release bootstrap.
+bootstrap_scripts: start_clean.rel
+	$(INSTALL_DIR) $(TESTROOT)/bin
+	$(ERLC) $(SASL_PATH) $(SCRIPT_PATH) $(SCRIPT_FLAGS) \
+           +otp_build -o $(TESTROOT)/bin/start.script start_clean.rel
+
 clean:
 	$(RM) $(REL_SCRIPTS) $(INSTALL_SCRIPTS)
 

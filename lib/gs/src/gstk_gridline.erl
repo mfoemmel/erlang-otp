@@ -54,7 +54,7 @@ create(DB, Gstkid, Options) ->
 %%----------------------------------------------------------------------
 %% Returns: ok|false
 %%----------------------------------------------------------------------
-check_row(CellPos,undefined) ->
+check_row(_CellPos,undefined) ->
     {error,{gridline,{row,undefined}}};
 check_row(CellPos,Row) ->
     case ets:lookup(CellPos,{1,Row}) of
@@ -72,14 +72,14 @@ check_row(CellPos,Row) ->
 %% s => text item
 %% p => rect item
 %%----------------------------------------------------------------------
-option(Option, Gstkid, TkW, DB,_) ->
+option(Option, _Gstkid, _TkW, DB,_) ->
     case Option of
-	{{bg,Item}, Color} -> {p,[" -f ", gstk:to_color(Color)]};
-	{{text,Item},Text} -> {s, [" -te ", gstk:to_ascii(Text)]};
-	{{fg,Item},Color} -> {sp,{[" -fi ", gstk:to_color(Color)],
+	{{bg,_Item}, Color} -> {p,[" -f ", gstk:to_color(Color)]};
+	{{text,_Item},Text} -> {s, [" -te ", gstk:to_ascii(Text)]};
+	{{fg,_Item},Color} -> {sp,{[" -fi ", gstk:to_color(Color)],
 				  [" -outline ", gstk:to_color(Color)]}};
-	{{font,Item},Font} -> {s,[" -font ",gstk_font:choose_ascii(DB,Font)]};
-	Q -> invalid_option
+	{{font,_Item},Font} -> {s,[" -font ",gstk_font:choose_ascii(DB,Font)]};
+	_ -> invalid_option
     end.
 
 %%----------------------------------------------------------------------
@@ -127,13 +127,13 @@ config(DB, Gstkid, Opts) ->
 %%----------------------------------------------------------------------
 %% Returns: true|false depending on if operation succeeded
 %%----------------------------------------------------------------------
-move_line(NewRow,OldRow,DB,State,Ngstkid) ->
+move_line(NewRow,OldRow,_DB,State,_Ngstkid) ->
     case ets:lookup(State#state.cell_pos,{1,NewRow}) of
 	[] ->
 	    {error,{gridline,row_outside_grid,NewRow}};
 	[{_,#item{line_id=Lid}}] when Lid =/= free->
 	    {error,{gridline,new_row_occupied,NewRow}};
-	[{_,NewItem}] ->
+	[{_,_NewItem}] ->
 	    #state{tkcanvas=TkW,ncols=Ncols,cell_pos=CP} = State,
 	    swap_lines(TkW,OldRow,NewRow,1,Ncols,CP),
 	    true
@@ -181,7 +181,7 @@ config_line(DB,Pgstkid,Lgstkid, Opts) ->
 %%----------------------------------------------------------------------
 %% Returns: non-processed options
 %%----------------------------------------------------------------------
-config_gridline(DB,CP,Gstkid,0,Row,Opts) ->
+config_gridline(_DB,_CP,_Gstkid,0,_Row,Opts) ->
     Opts;
 config_gridline(DB,CP,Gstkid,Col,Row,Opts) ->
     {ColOpts,OtherOpts} = opts_for_col(Col,Opts,[],[]),
@@ -205,13 +205,13 @@ opts_for_col(Col,[{{Key,Col},Val}|Opts],ColOpts,RestOpts) ->
     opts_for_col(Col,Opts,[{{Key,Col},Val}|ColOpts],RestOpts);
 opts_for_col(Col,[Opt|Opts],ColOpts,RestOpts) ->
     opts_for_col(Col,Opts,ColOpts,[Opt|RestOpts]);
-opts_for_col(Col,[],ColOpts,RestOpts) -> {ColOpts,RestOpts}.
+opts_for_col(_Col,[],ColOpts,RestOpts) -> {ColOpts,RestOpts}.
 
 %%----------------------------------------------------------------------
 %% {Key,{Col,Val}} becomes {{Key,Col},Val}
 %% {Key,Val} becomes {{Key,1},Val}...{{Key,Ncol},Val}
 %%----------------------------------------------------------------------
-transform_opts([], Ncols) -> [];
+transform_opts([], _Ncols) -> [];
 transform_opts([{{Key,Col},Val} | Opts],Ncols) ->
     [{{Key,Col},Val}|transform_opts(Opts,Ncols)];
 transform_opts([{Key,{Col,Val}}|Opts],Ncols) when integer(Col) ->
@@ -242,7 +242,7 @@ read(DB, Gstkid, Opt) ->
     Pgstkid = gstk_db:lookup_gstkid(DB,Gstkid#gstkid.parent),
     gstk_generic:read_option(DB, Gstkid, Opt,Pgstkid).
 
-read_option({font,Column},Gstkid, TkW,DB,Pgstkid) -> 
+read_option({font,Column},Gstkid, _TkW,DB,Pgstkid) -> 
     case gstk_db:opt_or_not(DB,Gstkid,{font,Column}) of
 	false -> gstk_db:opt(DB,Pgstkid,font);
 	{value,V} -> V
@@ -257,7 +257,7 @@ read_option({Opt,Column},Gstkid, TkW,DB,#gstkid{widget_data=State}) ->
 	bg -> tcl2erl:ret_color([Pre,Rid," -f"]);
 	fg -> tcl2erl:ret_color([Pre,Tid," -fi"]);
 	text -> tcl2erl:ret_str([Pre,Tid," -te"]);
-	Q -> {bad_result, {Gstkid#gstkid.objtype, invalid_option, {Opt,Column}}}
+	_ -> {bad_result, {Gstkid#gstkid.objtype, invalid_option, {Opt,Column}}}
     end;
 read_option(Option,Gstkid,TkW,DB,Pgstkid) -> 
     case lists:member(Option,[bg,fg,text]) of
@@ -265,7 +265,7 @@ read_option(Option,Gstkid,TkW,DB,Pgstkid) ->
 	      false -> gstk_db:opt(DB,Gstkid,Option,undefined)
     end.
 
-update_cp_db(0,Row,_,_) -> ok;
+update_cp_db(0,_Row,_,_) -> ok;
 update_cp_db(Col,Row,ID,CP) ->
     [{_,Item}] = ets:lookup(CP,{Col,Row}),
     ets:insert(CP,{{Col,Row},Item#item{line_id = ID}}),
@@ -293,5 +293,5 @@ event(DB, GridGstkid, Etype, _Edata, [CanItem]) ->
 	    end;
 	_ -> ok
     end;
-event(DB, Gstkid, _Etype, _Edata, Args) ->
+event(_DB, _Gstkid, _Etype, _Edata, _Args) ->
     ok.

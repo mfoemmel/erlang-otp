@@ -42,7 +42,7 @@ encode_name(Config, term_id, TermId) ->
     case megaco:encode_binary_term_id(Config, TermId) of
 	{ok, TermId2} ->
 	    TermId2;
-	{error, Reason} ->
+	{error, _Reason} ->
 	    exit({bad_term_id, TermId})
     end;	
 encode_name(_Config, Scope, Item) ->
@@ -53,7 +53,7 @@ decode_name(Config, term_id, TermId) ->
     case megaco:decode_binary_term_id(Config, TermId) of
 	{ok, TermId2} ->
 	    TermId2;
-	{error, Reason} ->
+	{error, _Reason} ->
 	    exit({bad_term_id, TermId})
     end;
 decode_name(_Config, Scope, Item) ->
@@ -353,7 +353,7 @@ decode_package(Package) ->
             end
     end.
 
-decode_profile([A, B] = Profile) ->
+decode_profile([A, B]) ->
     case A of
         16#00 -> 
             case B of
@@ -364,7 +364,7 @@ decode_profile([A, B] = Profile) ->
 	    "profile" ++ [A + $0, B + $0]
     end.
 
-decode_dialplan([A, B] = Dialplan) ->
+decode_dialplan([A, B]) ->
     "dialplan" ++ [A + $0, B + $0].
 
 decode_mid(Mid) ->
@@ -422,7 +422,7 @@ encode({Scope, PackageItem}, SubItem) when atom(Scope) ->
 	    encode_native(Scope, SubItem)
     end.
 
-encode_item(Scope, Package, "*") ->
+encode_item(_Scope, _Package, "*") ->
     [16#ff, 16#ff];
 encode_item(Scope, Package, Item) ->
     i("encode_item(~s) -> entry",[Package]),
@@ -627,7 +627,7 @@ decode_tonegen(signal, Item) ->
 	[16#00, 16#01] -> "pt"
     end;
 
-decode_tonegen({signal_parameter, Item}, SubItem) ->
+decode_tonegen({signal_parameter, Item}, _SubItem) ->
     case Item of
         [16#00, 16#01] -> % Event: pt
             case Item of
@@ -1781,5 +1781,5 @@ i(true,F,A) ->
     S1 = io_lib:format("NRES: " ++ F ++ "~n",A),
     S2 = lists:flatten(S1),
     io:format("~s",[S2]);
-i(_,F,A) ->
+i(_,_F,_A) ->
     ok.

@@ -13,7 +13,7 @@
 %% Portions created by Ericsson are Copyright 2000, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id $
 %%
 
 -module(xref).
@@ -118,14 +118,18 @@ m(Module) when atom(Module) ->
 	Error -> Error
     end;
 m(File) ->
-    {Dir, BaseName} = xref_utils:split_filename(File, ".beam"),
-    BeamFile = filename:join(Dir, BaseName),
-    Fun = fun(S) -> xref_base:add_module(S, BeamFile) end,
-    case catch do_functions_analysis(Fun) of
-	{error, _, {no_debug_info, _}} ->
-	    catch do_modules_analysis(Fun);
-	Result ->
-	    Result
+    case xref_utils:split_filename(File, ".beam") of
+	false ->
+	    {error, xref_base, {invalid_filename, File}};
+	{Dir, BaseName} ->
+	    BeamFile = filename:join(Dir, BaseName),
+	    Fun = fun(S) -> xref_base:add_module(S, BeamFile) end,
+	    case catch do_functions_analysis(Fun) of
+		{error, _, {no_debug_info, _}} ->
+		    catch do_modules_analysis(Fun);
+		Result ->
+		    Result
+	    end
     end.
 
 %% -> [Faulty] | Error; Faulty = {undefined, Calls} | {unused, Funs}

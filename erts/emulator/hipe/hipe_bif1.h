@@ -1,4 +1,4 @@
-/*
+/* $Id$
  * hipe_bif1.h
  *
  * Performance analysis support.
@@ -8,7 +8,7 @@
 
 struct hipe_call_count {
     unsigned count;
-    uint32 opcode;
+    Uint opcode;
 };
 
 #endif /* HIPE_BIF1_H */

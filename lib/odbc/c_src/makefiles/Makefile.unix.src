@@ -1,0 +1,57 @@
+#
+# Makefile for Unix
+# Written for gcc
+#
+
+# Edit these to match your installation
+#
+# ODBCROOT - root directory of the ODBC installation
+# ODBCLDFLAGS = -L<location of ODBC library>
+# ODBCLIBS = -l<name of ODBC library>
+# ODBCINCLUDE = -I<location of ODBC include files>
+#
+ODBCROOT = /opt/local/pgm/odbc
+ODBCLDFLAGS = -L$(ODBCROOT)/lib
+ODBCLIBS = -lodbc
+ODBCINCLUDE = $(ODBCROOT)/include
+
+# EIROOT - root directory of the erl_interface
+#
+EIROOT = ../../../lib/%EI%
+
+BINDIR = ../priv/bin
+OBJDIR = ../priv/obj
+
+
+EIINCLUDE = $(EIROOT)/include
+INCLUDES = -I. -I$(EIINCLUDE) -I$(ODBCINCLUDE)
+CFLAGS = -g -O2
+CC = gcc
+
+MULTITHREADFLAGS = -D_REENTRANT -DMULTITHREAD_UNIX
+MULTITHREADLIBS = -lpthread
+
+EILDFLAGS = -L$(EIROOT)/lib
+EILIBS = -lei -lerl_interface
+
+# -------------------------------------------------------------------------
+
+# Compile all files
+all: codbcserver 
+
+# Compile odbcserver file
+codbcserver: $(BINDIR)/odbcserver
+
+# -------------------------------------------------------------------------
+
+$(BINDIR)/odbcserver: $(OBJDIR)/odbcserver.o
+	$(CC) $(CFLAGS) -o $@ $(OBJDIR)/odbcserver.o $(EILDFLAGS) \
+		$(ODBCLDFLAGS) $(MULTITHREADLIBS) $(EILIBS) $(ODBCLIBS)
+
+$(OBJDIR)/odbcserver.o: odbcserver.c
+	$(CC) $(CFLAGS) $(INCLUDES) $(MULTITHREADFLAGS) -o $@ -c odbcserver.c
+
+# -------------------------------------------------------------------------
+clean:
+	rm -f $(BINDIR)/* $(OBJDIR)/*
+

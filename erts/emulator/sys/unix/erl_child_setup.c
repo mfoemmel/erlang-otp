@@ -57,6 +57,11 @@ main(int argc, char *argv[])
 {
     int i, from, to;
 
+    /* OBSERVE!
+     * Keep child setup after fork() (implemented in sys.c) up to date
+     * if changes are made here.
+     */
+
     if (argc != CS_ARGV_NO_OF_ARGS)
 	return 1;
 

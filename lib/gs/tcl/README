@@ -1,0 +1,87 @@
+==============================================================================
+                  How to create prebuilt Tcl/Tk binaries
+==============================================================================
+
+For commercial releases we use a prebuilt binary release of Tcl/Tk 8.X
+where X >= 2. This release is placed into "gs-VSN/priv/tcl" and the
+'gstk_port_handler' module searches this directory first to find the
+"wish" executable program.
+
+It is possible to pack the files from a standard installation on a
+machine into a TAR file but it is preferable to build Tcl/Tk from
+sources. The steps are
+
+  0. Set some environment variables
+
+       % setenv BUILDDIR /tmp/build
+       % setenv GNUTAR gtar
+
+  1. Download unpack the sources from http://sourceforge.net/projects/tcl.
+     Use the latest stable release. When this README was written
+     the latest stable version was 8.3.4.
+
+       % mkdir -p $BUILDDIR/tcl
+       % cd $BUILDDIR
+       % $GNUTAR -xzf /my/src/path/tcl8.3.4.tar.gz
+       % $GNUTAR -xzf /my/src/path/tk8.3.4.tar.gz
+
+       % cd tcl8.3.4/unix
+       % ./configure --enable-gcc --enable-threads --disable-load \
+                --disable-shared --prefix=$BUILDDIR/tcl
+       % make
+       % make install
+
+       % cd ../../tk8.3.4/unix
+       % ./configure --enable-gcc --enable-threads --disable-load \
+                --disable-shared --prefix=$BUILDDIR/tcl \
+                --with-tcl=$BUILDDIR/tcl/lib
+       % make
+       % make install
+
+  2. Check that the executable wish program don't depend on libtcl
+     or libtk. If it does we have to redo this or keep them
+     where they are, else we can remove the libraries
+
+       % cd $BUILDDIR
+       % ldd tcl/bin/wish8.3
+
+     and if the executables doesn't depend on libtcl or libtk we remove them
+
+       % rm -f tcl/lib/libt*
+
+  3. Remove other things we don't need. There may be other things in
+     later releases but only remove the obvious things
+
+       % rm -fr tcl/include tcl/man
+       % rm -f  tcl/bin/tclsh*
+       % rm -f  tcl/lib/*.sh
+       % rm -fr tcl/lib/tcl*/http*
+       % rm -fr tcl/lib/tcl*/tcltest*
+       % rm -fr tcl/lib/tk*/demos
+       % rm -fr tcl/lib/tk*/images
+       % rm -f  tcl/lib/*/*.c
+
+  4. Some releases of Tcl/Tk contains soft links that make the directory
+     structure circular making it impossible to use 'cp' to copy the
+     tcl directory. You can find them with
+
+       % find tcl -type l
+
+  5. Find out the name of the resulting TAR archive. Run the GS configure
+     script on the target platform to view the name 
+
+       % cd $ERL_TOP/lib/gs
+       % rm -f config.cache
+       % autoconf
+       % ./configure
+  
+  6. Use the TAR program on the system to pack the resulting Tcl/Tk
+     distribution. Keep the top "tcl" library
+
+       % tar -cf - tcl | gzip > xxxxxxxx.tar.gz
+
+  7. Copy and check in this TAR archive into the directory
+
+       /clearcase/otp/erts/lib/gs/tcl/binaries
+
+  8. We are done........

@@ -39,7 +39,6 @@ void erl_start(int, char**);
 void erl_exit(int n, char*, _DOTS_);
 void erl_error(char*, va_list);
 int send_error_to_logger(Eterm);
-int schedule(_VOID_);
 void erl_crash_dump(char*, char*);
 
 /*
@@ -108,7 +107,7 @@ BOOL WINAPI ctrl_handler(DWORD dwCtrlType);
  * (Named pipes are not supported on Windows 95.)
  */
 
-static int max_files = 2000;
+static int max_files = 1024;
 
 static BOOL use_named_pipes;
 static BOOL win_console = FALSE;
@@ -120,7 +119,6 @@ static OSVERSIONINFO int_os_version;	/* Version information for Win32. */
 /* This is the system's main function (which may or may not be called "main")
    - do general system-dependent initialization
    - call erl_start() to parse arguments and do other init
-   - arrange for schedule() to be called forever, and i/o to be done
 */
 
 HMODULE beam_module = NULL;
@@ -2039,9 +2037,8 @@ int sys_putenv(char *buffer){
     return(_putenv(env));
 }
 
-void sys_init_io(buf, size)
-byte *buf;
-uint32 size;
+void
+sys_init_io(byte *buf, Uint size)
 {
     tmp_buf = buf;
     tmp_buf_size = size;
@@ -2049,7 +2046,7 @@ uint32 size;
 
 #ifdef USE_THREADS
     {
-	/* This is speical stuff, starting a driver from the 
+	/* This is special stuff, starting a driver from the 
 	 * system routines, but is a nice way of handling stuff
 	 * the erlang way
 	 */
@@ -2064,15 +2061,6 @@ uint32 size;
     }
 #endif
 }
-
-/*void sys_init_io(buf, size)
-byte *buf;
-uint32 size;
-{
-    tmp_buf = buf;
-    tmp_buf_size = (int)size;
-}
-*/
 
 #ifdef INSTRUMENT
 /* When instrumented sys_alloc and friends are implemented in utils.c */
@@ -2123,13 +2111,13 @@ int alloc_calls = 0, realloc_calls = 0, free_calls = 0;
 void* SYS_ALLOC(Uint size)
 {
 #ifdef DEBUG
-    uint32* p = (uint32*) malloc(2*sizeof(uint32)+((size_t)size));
+    Uint* p = (Uint*) malloc(2*sizeof(Uint)+((size_t)size));
     alloc_calls++;
   
     if (p != NULL) {
 	*p = (size_t) size;
 	tot_allocated += (size_t) size;
-	return (void*)(((char*)p) + 2*sizeof(uint32));
+	return (void*)(((char*)p) + 2*sizeof(Uint));
     }
     /* memset(p, 0, size); */
     return p;
@@ -2145,14 +2133,14 @@ void* SYS_REALLOC(void* ptr, Uint size)
     if (ptr == NULL)
 	return SYS_ALLOC(size);
     else {
-	uint32* p = (uint32*) ((char*)ptr - 2*sizeof(uint32));
+	Uint* p = (Uint*) ((char*)ptr - 2*sizeof(Uint));
 	realloc_calls++;
 	tot_allocated -= *p;
-	p = (uint32*) realloc((char*)p, 2*sizeof(uint32)+((size_t)size));
+	p = (Uint*) realloc((char*)p, 2*sizeof(Uint)+((size_t)size));
 	if (p != NULL) {
 	    *p = (size_t) size;
 	    tot_allocated += (size_t) size;
-	    return (void*)(((char*)p) + 2*sizeof(uint32));
+	    return (void*)(((char*)p) + 2*sizeof(Uint));
 	}
 	return p;
     }
@@ -2165,7 +2153,7 @@ void* SYS_REALLOC(void* ptr, Uint size)
 void SYS_FREE(void* ptr)
 {
 #ifdef DEBUG
-    uint32* p = (uint32*) ((char*)ptr-2*sizeof(uint32));
+    Uint* p = (Uint*) ((char*)ptr-2*sizeof(Uint));
     free_calls++;
     tot_allocated -= *p;
     free((char*)p);
@@ -2612,19 +2600,19 @@ erl_sys_init()
     init_sys_select();
 }
 
-void 
-erl_sys_schedule_loop(void)
+/*
+ * Called from schedule() when it runs out of runnable processes,
+ * or when Erlang code has performed INPUT_REDUCTIONS reduction
+ * steps. runnable == 0 iff there are no runnable Erlang processes.
+ */
+void
+erl_sys_schedule(int runnable)
 {
-    for (;;) {
-	while (schedule()) {
-	    win_check_io(0);	/* Poll for I/O. */
-	    check_async_ready(); /* Check async completions. */
-	}
-	if (check_async_ready()) {
-	    win_check_io(0);
-	} else {
-	    win_check_io(1);		/* Wait for I/O or a timeout. */
-	}
+    if (runnable) {
+	win_check_io(0);	/* Poll for I/O */
+	check_async_ready();	/* Check async completions */
+    } else {
+	win_check_io(check_async_ready() ? 0 : 1);
     }
 }
 

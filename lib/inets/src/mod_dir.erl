@@ -61,15 +61,13 @@ do_dir(Info) ->
 		   "      DefaultPath:       ~p~n"
 		   "      DecodedRequestURI: ~p",
 		   [Path,DefaultPath,DecodedRequestURI]),
-	    case dir(DefaultPath,
-		     string:strip(DecodedRequestURI,right,$/),
-		     Info#mod.config_db) of
+	    case dir(DefaultPath,string:strip(DecodedRequestURI,right,$/),Info#mod.config_db) of
 		{ok, Dir} ->
-		    Response = ["Content-Type: text/html\r\n",
-				"Content-Length: ",
-				integer_to_list(httpd_util:flatlength(Dir)),
-				"\r\n\r\n",Dir],	
-		    {proceed,[{response,{200,Response}},
+		    Head=[{content_type,"text/html"},
+			  {content_length,integer_to_list(httpd_util:flatlength(Dir))},
+			   {date,httpd_util:rfc1123_date(FileInfo#file_info.mtime)},
+			  {code,200}],
+		    {proceed,[{response,{response,Head,Dir}},
 			      {mime_type,"text/html"}|Info#mod.data]};
 		{error, Reason} ->
 		    ?ERROR("do_dir -> dir operation failed: ~p",[Reason]),

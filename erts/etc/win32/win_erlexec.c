@@ -27,8 +27,6 @@
 #include "sys.h"
 #include "erl_driver.h"
 
-#include "erl_api.h"
-
 extern int nohup;
 extern int keep_window;
 void error(char* format, ...);
@@ -67,7 +65,7 @@ start_win_emulator(char* emu, char** argv, int start_detached)
 	while (argv[argc] != NULL) {
 	    ++argc;
 	}
-	ErlOtpStart(argc, argv);
+	erl_start(argc, argv);
 	result = 0;
     }
     if (result == -1) {
@@ -80,7 +78,7 @@ void __cdecl
 do_keep_window(void)
 {
     printf("\nPress any key to close window.\n");
-    ErlGetConsoleKey();
+    sys_get_key(0);
 }
 
 int
@@ -131,7 +129,7 @@ start_emulator(char* emu, char** argv, int start_detached)
     if (keep_window) {
 	atexit(do_keep_window);
     }
-    ErlOtpStart(argc, argv);
+    erl_start(argc, argv);
     return 0;
 }
 

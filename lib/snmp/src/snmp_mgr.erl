@@ -333,8 +333,8 @@ handle_info(iter_get_next, State)
   when record(State#state.last_received_pdu, pdu) ->
     d("handle_info -> iter_get_next request",[]),
     PrevPDU = State#state.last_received_pdu,
-    Oids = lists:map({snmp_mgr, get_oid_from_varbind}, [],
-		     PrevPDU#pdu.varbinds),
+    Oids = snmp_misc:map({snmp_mgr, get_oid_from_varbind}, [],
+			 PrevPDU#pdu.varbinds),
     {noreply, execute_request(get_next, Oids, State)};
 
 handle_info(iter_get_next, State) ->
@@ -473,8 +473,8 @@ check_is_pure_oid([X | T]) ->
 
 get_next_iter_impl(0, PrevPDU, MiniMIB, PackServ) -> PrevPDU;
 get_next_iter_impl(N, PrevPDU, MiniMIB, PackServ) ->
-    Oids = lists:map({snmp_mgr, get_oid_from_varbind}, [],
-		     PrevPDU#pdu.varbinds),
+    Oids = snmp_misc:map({snmp_mgr, get_oid_from_varbind}, [],
+			 PrevPDU#pdu.varbinds),
     PDU = make_pdu(get_next, Oids, MiniMIB),
     send_pdu(PDU, MiniMIB, PackServ),
     case receive_response() of
@@ -495,27 +495,27 @@ get_next_iter_impl(N, PrevPDU, MiniMIB, PackServ) ->
 %%--------------------------------------------------
 
 make_pdu(set, VarsAndValues, MiniMIB) ->
-    VBs = lists:map({snmp_mgr, var_and_value_to_varbind}, [MiniMIB],
-		    VarsAndValues),
+    VBs = snmp_misc:map({snmp_mgr, var_and_value_to_varbind}, [MiniMIB],
+			VarsAndValues),
     make_pdu_impl(set, VBs);
 make_pdu(bulk, {NonRepeaters, MaxRepetitions, Oids}, MiniMIB) ->
-    Foids = lists:map({snmp_mgr, flatten_oid}, [MiniMIB], Oids),
+    Foids = snmp_misc:map({snmp_mgr, flatten_oid}, [MiniMIB], Oids),
     #pdu{type = 'get-bulk-request',request_id = make_request_id(),
 	 error_status = NonRepeaters, error_index = MaxRepetitions,
-	 varbinds = lists:map({snmp_mgr, make_vb}, [], Foids)};
+	 varbinds = snmp_misc:map({snmp_mgr, make_vb}, [], Foids)};
 make_pdu(Operation, Oids, MiniMIB) ->
     make_pdu_impl(Operation,
-		  lists:map({snmp_mgr, flatten_oid}, [MiniMIB], Oids)).
+		  snmp_misc:map({snmp_mgr, flatten_oid}, [MiniMIB], Oids)).
 
 make_pdu_impl(get, Oids) ->
     #pdu{type = 'get-request',request_id = make_request_id(),
 	 error_status = noError, error_index = 0,
-	 varbinds = lists:map({snmp_mgr, make_vb}, [], Oids)};
+	 varbinds = snmp_misc:map({snmp_mgr, make_vb}, [], Oids)};
 
 make_pdu_impl(get_next, Oids) ->
     #pdu{type = 'get-next-request', request_id = make_request_id(), 
 	 error_status = noError, error_index = 0,
-	 varbinds = lists:map({snmp_mgr, make_vb}, [], Oids)};
+	 varbinds = snmp_misc:map({snmp_mgr, make_vb}, [], Oids)};
 
 make_pdu_impl(set, Varbinds) ->
     #pdu{type = 'set-request', request_id = make_request_id(),
@@ -524,7 +524,8 @@ make_pdu_impl(set, Varbinds) ->
 make_discovery_pdu() ->
     #pdu{type = 'get-request',request_id = make_request_id(),
 	 error_status = noError, error_index = 0,
-	 varbinds = lists:map({snmp_mgr, make_vb}, [], [?sysDescr_instance])}.
+	 varbinds = snmp_misc:map({snmp_mgr, make_vb}, [], 
+				  [?sysDescr_instance])}.
 
 var_and_value_to_varbind({Oid, Type, Value}, MiniMIB) ->
     Oid2 = flatten_oid(Oid, MiniMIB), 

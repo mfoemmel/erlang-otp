@@ -185,8 +185,12 @@ init_time(void)
 {
     int i;
 
-    if ((tiw = (ErlTimer**)sys_alloc_from(140,TIW_SIZE * sizeof(ErlTimer*))) == NULL)
-	erl_exit(1, "can't allocate timing wheel\n");
+    tiw = (ErlTimer**) erts_definite_alloc(TIW_SIZE * sizeof(ErlTimer*));
+    if (!tiw) {
+	tiw = (ErlTimer**)sys_alloc_from(140,TIW_SIZE * sizeof(ErlTimer*));
+	if (!tiw)
+	    erl_exit(1, "can't allocate timing wheel\n");
+    }
     for(i = 0; i < TIW_SIZE; i++)
 	tiw[i] = NULL;
     do_time = tiw_pos = tiw_nto = 0;

@@ -61,22 +61,22 @@
 %% -define(report(Level, C, Label, Contents),
 %% 	   if
 %% 	       record(C, conn_data), list(Contents) ->
-%% 		   event_tracer:report(Level, C#conn_data.conn_handle,
+%% 		   megaco:report_event(Level, C#conn_data.conn_handle,
 %% 				       Label, [{line, ?MODULE, ?LINE}, C | Contents]);
 %% 	       record(C, megaco_receive_handle) ->
-%% 		   event_tracer:report(Level, C#megaco_receive_handle.local_mid,
+%% 		   megaco:report_event(Level, C#megaco_receive_handle.local_mid,
 %% 				       Label, [{line, ?MODULE, ?LINE}, C | Contents]);
 %% 	       record(C, megaco_conn_handle) ->
-%% 		   event_tracer:report(Level, C#megaco_conn_handle.local_mid,
+%% 		   megaco:report_event(Level, C#megaco_conn_handle.local_mid,
 %% 				       Label, [{line, ?MODULE, ?LINE}, C | Contents]);
 %% 	       true ->
-%% 		   event_tracer:report(Level, ?APPLICATION,
+%% 		   megaco:report_event(Level, ?APPLICATION,
 %% 				       Label, [{line, ?MODULE, ?LINE}, C | Contents])
 %% 	   end).
 
 -define(report(Level, C, Label, Contents),
-	event_tracer:report(Level, ?APPLICATION,
-			    Label, [{line, ?MODULE, ?LINE}, C | Contents])).
+	megaco:report_event(Level, ?APPLICATION, Label,
+			    [{line, ?MODULE, ?LINE}, C | Contents])).
 
 -define(report_important(C, Label, Contents), ?report(20, C, Label, Contents)).
 -define(report_verbose(  C, Label, Contents), ?report(40, C, Label, Contents)).

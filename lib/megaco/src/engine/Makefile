@@ -17,10 +17,6 @@
 #
 include $(ERL_TOP)/make/target.mk
 
-ifeq ($(TYPE),debug)
-ERL_COMPILE_FLAGS += -Ddebug -W
-endif
-
 EBIN = ../../ebin
 MEGACO_INCLUDEDIR = ../../include
 
@@ -32,7 +28,6 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # ----------------------------------------------------
 include ../../vsn.mk
 VSN=$(MEGACO_VSN)
-
 
 # ----------------------------------------------------
 # Release directory specification
@@ -63,8 +58,15 @@ APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
-ERL_COMPILE_FLAGS += -I../../include
+ifeq ($(TYPE),debug)
+ERL_COMPILE_FLAGS += -Ddebug
+endif
+
+ERL_FLAGS += 	-pa $(ERL_TOP)/lib/et/ebin \
+		-pa $(ERL_TOP)/lib/megaco/ebin
+ERL_COMPILE_FLAGS += -I../../include \
+                     +'{parse_transform,sys_pre_attributes}' \
+                     +'{attribute,insert,app_vsn,$(APP_VSN)}'
 
 
 # ----------------------------------------------------
@@ -131,7 +133,8 @@ $(EBIN)/megaco_erl_dist_encoder.$(EMULATOR): megaco_erl_dist_encoder.erl \
 
 $(EBIN)/megaco_filter.$(EMULATOR): megaco_filter.erl \
 	../../include/megaco.hrl ../../include/megaco_message_v1.hrl \
-	megaco_internal.hrl ../../utils/et/et.hrl
+	megaco_internal.hrl 
+#$(ET_TOP)/include/et.hrl
 
 $(EBIN)/megaco_monitor.$(EMULATOR): megaco_monitor.erl 
 

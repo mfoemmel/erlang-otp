@@ -33,7 +33,6 @@ CONFIG_FILES="../emulator/$host/Makefile
 	  ../../lib/runtime_tools/c_src/$host/Makefile
 	  ../../lib/ssl/c_src/$host/Makefile
 	  ../../lib/odbc/c_src/$host/Makefile
-	  ../../lib/comet/c_src/$host/Makefile
 	  ../../lib/asn1/c_src/$host/Makefile
 	  ../../lib/megaco/src/flex/$host/Makefile
 	  ../../make/$host/otp.mk"

@@ -575,7 +575,7 @@ handle_call({lcd, Dir}, _From, State) ->
   end;
 
 handle_call({dir, Len, Dir}, _From, State) when State#state.chunk == false ->
-    debug("   dir: ~p: ~s~n",[Len,Dir]),
+    debug("  dir : ~p: ~s~n",[Len,Dir]),
     #state{csock = CSock, type = Type} = State,
     set_type(ascii, Type, CSock),
     LSock = listen_data(CSock, raw),
@@ -592,7 +592,9 @@ handle_call({dir, Len, Dir}, _From, State) when State#state.chunk == false ->
     debug(" ctrl : command result: ~p~n",[Result]),
     case Result of
 	pos_prel ->
-	    DSock = accept_data(LSock),
+	    debug("  dbg : await the data connection", []),
+	    DSock   = accept_data(LSock),
+	    debug("  dbg : await the data", []),
 	    DirData = recv_data(DSock),
 	    debug(" data : DirData: ~p~n",[DirData]),
 	    Reply0 = case result(CSock) of
@@ -904,10 +906,14 @@ recv_data(Sock, Sofar, ?OPER_TIMEOUT) ->
 recv_data(Sock, Sofar, Retry) ->
     case sock_read(Sock) of
 	{ok, Data} ->
+	    debug("  dbg : received some data: ~n~s", [Data]),
 	    recv_data(Sock, [Data| Sofar], 0);
 	{error, timeout} ->
 	    %% Retry..
 	    recv_data(Sock, Sofar, Retry+1);
+	{error, Reason} ->
+	    SoFar1 = lists:flatten(lists:reverse(Sofar)),
+	    exit({socket_error, Reason, Sock, SoFar1, Retry});
 	{closed, _} ->
 	    lists:flatten(lists:reverse(Sofar))
     end.
@@ -944,24 +950,6 @@ recv_binary2(Sock, Bs, Retry) ->
 
 %% --------------------------------------------------
 
-%% recv_binary(Sock) = {ok, Bin}
-%% 
-%recv_binary(Sock) ->
-%  recv_binary(Sock, [], 0).
-
-%recv_binary(Sock, _Bs, ?OPER_TIMEOUT) ->
-%    sock_close(Sock),
-%    {error,timeout};
-%recv_binary(Sock, Bs, Retry) ->
-%    case sock_read(Sock) of
-%	{ok, Bin} ->
-%	    recv_binary(Sock, [Bs, Bin], 0);
-%	{error, timeout} ->
-%	    recv_binary(Sock, Bs, Retry+1);
-%	{closed, _Why} ->
-%	    {ok,list_to_binary(Bs)}
-%  end.
-
 %%
 %% FILE TRANSFER
 %%
@@ -979,6 +967,9 @@ recv_file(Sock, Fd, Retry) ->
 	    recv_file(Sock, Fd);
 	{error, timeout} ->
 	    recv_file(Sock, Fd, Retry+1);
+% 	{error, Reason} ->
+% 	    SoFar1 = lists:flatten(lists:reverse(Sofar)),
+% 	    exit({socket_error, Reason, Sock, SoFar1, Retry});
 	{closed, How} ->
 	    {closed, How}
   end.

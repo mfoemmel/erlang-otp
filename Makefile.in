@@ -113,9 +113,16 @@ BOOT_PREFIX=$(ERL_TOP)/bootstrap/bin:
 # The steps to build a working system are:
 #   * build an emulator
 #   * setup the erl and erlc program in bootstrap/bin
+#   * build additional compilers and copy them into bootstrap/lib
 #   * use the bootstrap erl and erlc to build all the libs
 #
-all: depend emulator emulator.instr bootstrap_setup libs local_setup
+all: depend emulator emulator.instr \
+     init_boot \
+     bootstrap_setup \
+     secondary_bootstrap_build secondary_bootstrap_copy \
+     tertiary_bootstrap_build tertiary_bootstrap_copy \
+     fourth_bootstrap_build fourth_bootstrap_copy \
+     libs build_boot local_setup
 
 #
 # Use these targets when you want to use the erl and erlc
@@ -128,6 +135,20 @@ noboot_install:
 	$(MAKE) BOOT_PREFIX= install
 
 # ----------------------------------------------------------------------
+ERLANG_EARS=$(ERL_TOP)/bootstrap/erts
+ELINK=$(ERL_TOP)/bootstrap/erts/bin/elink
+BOOT_BINDIR=$(ERL_TOP)/bootstrap/erts/bin
+BEAM_EVM=$(ERL_TOP)/bin/$(TARGET)/beam_evm
+
+init_boot:
+	cp $(BOOT_BINDIR)/ecc $(ERL_TOP)/bootstrap/bin
+	chmod +w $(ERL_TOP)/bootstrap/bin/ecc
+	ERLANG_EARS=$(ERLANG_EARS) $(BEAM_EVM) $(ELINK) -r $(BEAM_EVM) \
+	   $(ERL_TOP)/bootstrap/bin/ecc
+
+build_boot:
+	cd erts/boot/src && ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
+		$(MAKE) opt
 
 emulator:
 	cd erts && ERL_TOP=$(ERL_TOP) $(MAKE) NO_START_SCRIPTS=true opt
@@ -138,6 +159,11 @@ emulator.instr:
 
 libs:
 	cd lib && \
+	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
+		$(MAKE) opt BUILD_ALL=true
+
+kernel:
+	cd lib/kernel && \
 	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 		$(MAKE) opt BUILD_ALL=true
 
@@ -161,6 +187,57 @@ bootstrap_setup:
 	@cp $(ERL_TOP)/bin/$(TARGET)/erlc $(ERL_TOP)/bootstrap/bin/erlc
 	@chmod 755 $(ERL_TOP)/bootstrap/bin/erl $(ERL_TOP)/bootstrap/bin/erlc
 
+secondary_bootstrap_build:
+	cd lib && \
+	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
+		$(MAKE) opt SECONDARY_BOOTSTRAP=true
+
+secondary_bootstrap_copy:
+	if test ! -d bootstrap/lib/kernel ; then mkdir bootstrap/lib/kernel ; fi
+	if test ! -d bootstrap/lib/kernel/ebin ; then mkdir bootstrap/lib/kernel/ebin ; fi
+	if test ! -d bootstrap/lib/kernel/include ; then mkdir bootstrap/lib/kernel/include ; fi
+	cp lib/kernel/ebin/*.beam bootstrap/lib/kernel/ebin
+	cp lib/kernel/include/*.hrl bootstrap/lib/kernel/include
+	if test ! -d bootstrap/lib/hipe ; then mkdir bootstrap/lib/hipe ; fi
+	if test ! -d bootstrap/lib/hipe/ebin ; then mkdir bootstrap/lib/hipe/ebin ; fi
+	if test -f lib/hipe/ebin/hipe.beam ; then cp lib/hipe/ebin/*.beam bootstrap/lib/hipe/ebin; fi
+	if test ! -d bootstrap/lib/parsetools ; then mkdir bootstrap/lib/parsetools ; fi
+	if test ! -d bootstrap/lib/parsetools/ebin ; then mkdir bootstrap/lib/parsetools/ebin ; fi
+	if test ! -d bootstrap/lib/parsetools/include ; then mkdir bootstrap/lib/parsetools/include ; fi
+	cp lib/parsetools/ebin/*.beam bootstrap/lib/parsetools/ebin
+	cp lib/parsetools/include/*.hrl bootstrap/lib/parsetools/include
+	if test ! -d bootstrap/lib/asn1 ; then mkdir bootstrap/lib/asn1 ; fi
+	if test ! -d bootstrap/lib/asn1/ebin ; then mkdir bootstrap/lib/asn1/ebin ; fi
+	cp lib/asn1/ebin/*.beam bootstrap/lib/asn1/ebin
+
+tertiary_bootstrap_build:
+	cd lib && \
+	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
+		$(MAKE) opt TERTIARY_BOOTSTRAP=true
+
+tertiary_bootstrap_copy:
+	if test ! -d bootstrap/lib/snmp ; then mkdir bootstrap/lib/snmp ; fi
+	if test ! -d bootstrap/lib/snmp/ebin ; then mkdir bootstrap/lib/snmp/ebin ; fi
+	if test ! -d bootstrap/lib/snmp/include ; then mkdir bootstrap/lib/snmp/include ; fi
+	cp lib/snmp/ebin/*.beam bootstrap/lib/snmp/ebin
+
+fourth_bootstrap_build:
+	cd lib && \
+	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
+		$(MAKE) opt FOURTH_BOOTSTRAP=true
+
+fourth_bootstrap_copy:
+	if test ! -d bootstrap/lib/sasl ; then mkdir bootstrap/lib/sasl ; fi
+	if test ! -d bootstrap/lib/sasl/ebin ; then mkdir bootstrap/lib/sasl/ebin ; fi
+	if test ! -d bootstrap/lib/sasl/include ; then mkdir bootstrap/lib/sasl/include ; fi
+	if test ! -d bootstrap/lib/ic ; then mkdir bootstrap/lib/ic ; fi
+	if test ! -d bootstrap/lib/ic/ebin ; then mkdir bootstrap/lib/ic/ebin ; fi
+	if test ! -d bootstrap/lib/ic/include ; then mkdir bootstrap/lib/ic/include ; fi
+	cp lib/ic/ebin/*.beam bootstrap/lib/ic/ebin
+	cp lib/ic/include/*.idl lib/ic/include/*.h bootstrap/lib/ic/include
+	cp lib/sasl/ebin/*.beam bootstrap/lib/sasl/ebin
+	cp lib/sasl/include/*.hrl bootstrap/lib/sasl/include
+
 # Creates "erl" and "erlc" scripts in bin/erl which uses the libraries in lib
 local_setup:
 	@rm -f erts/bin/erl erts/bin/erlc
@@ -176,7 +253,7 @@ local_setup:
 #
 # Order is important here, don't change it!
 #
-install: install.dirs install.emulator install.emulator.instr install.libs install.Install install.bin
+install: install.dirs install.emulator install.emulator.instr install.libs install.boot install.Install install.bin
 
 install.emulator:
 	cd erts && \
@@ -193,6 +270,10 @@ install.libs:
 	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 	  $(MAKE) TESTROOT=$(ERLANG_LIBDIR) BUILD_ALL=true release 
 
+install.boot:
+	cd erts/boot/src && ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
+		$(MAKE) release TESTROOT=$(ERLANG_LIBDIR)
+
 install.Install:
 	cd $(ERLANG_LIBDIR) && ./Install -minimal $(ERLANG_LIBDIR)
 
@@ -203,6 +284,10 @@ install.bin:
 	rm -f $(BINDIR)/erl $(BINDIR)/erlc
 	${LN_S} $(ERLANG_BINDIR)/erl      $(BINDIR)/erl
 	${LN_S} $(ERLANG_BINDIR)/erlc     $(BINDIR)/erlc
+	${LN_S} $(ERLANG_BINDIR)/ecc      $(BINDIR)/ecc
+	${LN_S} $(ERLANG_BINDIR)/elink    $(BINDIR)/elink
+	${LN_S} $(ERLANG_BINDIR)/ear      $(BINDIR)/ear
+	${LN_S} $(ERLANG_BINDIR)/escript  $(BINDIR)/escript
 
 #
 # Directories needed before we can install

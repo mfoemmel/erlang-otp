@@ -21,21 +21,17 @@ At Ericsson we have a "Daily Build and Test" that runs on:
     Operating system        Version
     -----------------------------------------------------------
     Solaris/Sparc           2.5.1
+    Solaris/Sparc           2.6
+    Solaris/Sparc           2.7
     Solaris/Sparc           2.8
-    Solaris/x86             2.5.1    (1)
-    Linux/RedHat x86        5.2
     Linux/RedHat x86        6.2
-    Linux/RedHat x86        7.1      (2)
     Linux/Debian x86        2.2
-    Linux/Debian PowerPC    2.2      (3)
+    Linux/Debian PowerPC    2.2      (1)
     FreeBSD x86             4.1.1
-    Darwin/Mac OS X PowerPC 10.1     (4)
+    Darwin/Mac OS X PowerPC 10.2.1   (2)
 
-(1) Not tested for a couple of months.
-(2) This distribution was updated to kernel 2.4.5, glibc 2.2.2 and
-    jdk 1.3.1_01.
-(3) Runs on an Apple iMac.
-(4) Runs on an Apple iMac. This port is not completed, see notes below.
+(1) Runs on an Apple iMac.
+(2) Runs on an Apple iMac. See notes below.
 
 
 Required utilities
@@ -82,12 +78,14 @@ These are the tools you will need in order to unpack and build Erlang/OTP.
 			'sed' version at Solaris. Make sure "/bin/sed"
 			or "/usr/bin/sed" is used on the Solaris platform.
 
-  m4                    GNU m4 is needed for building HiPE.
+  Flex                  Optional, headers and libraries are needed to 
+                        build the flex scanner for the megaco application
+                        on Unix/Linux.
 
   Installing
   ----------
 
-  An install program that can take multiple file names
+  An install program that can take multiple file names.
 
 
 How to build and install Erlang/OTP
@@ -96,12 +94,12 @@ How to build and install Erlang/OTP
 Start by unpacking the Erlang/OTP distribution file with your
 GNU compatible TAR
 
-  1)    gunzip -c otp_src_R8B-0.tar.gz | tar xf -
-  1)    zcat otp_src_R8B-0.tar.gz | tar xf -
+  1)    gunzip -c otp_src_R9B-0.tar.gz | tar xf -
+  1)    zcat otp_src_R9B-0.tar.gz | tar xf -
 
 Now cd into base directory
 
-  2)    cd otp_src_R8B-0
+  2)    cd otp_src_R9B-0
 
 Run the following commands
 
@@ -134,15 +132,16 @@ files are located or disable the use of SSL.
 
 Other options are:
 
-	--enable-hipe   	Enable HiPE (High-Performance Erlang).
-				Only for Ultra Sparc and x86-based machines
-				running Linux or Solaris/x86.
+	--disable-hipe   	Disable HiPE (High-Performance Erlang).
+				HiPE will automatically be enabled on
+				supported platforms (Ultra Sparc and
+				x86-based machines running Linux or
+				Solaris/x86).
 	--enable-threads	Enable threaded I/O support in
 				the Erlang emulator.
-	--enable-unified-heap	Experimental version of Erlang with
+	--enable-shared-heap	Experimental version of Erlang with
 				a shared heap for all processes, which
 				speeds up message passing.
-				DOES NOT WORK WITH HiPE.
 
     Step 4 first builds the Erlang emulator, this will take
 approximately five minutes on a reasonably fast machine. It then
@@ -169,21 +168,26 @@ For some graphical tools to find the on-line help you have to install
 the HTML documentation on top of the installed OTP applications, i.e.
 
         cd <PrefixDir>/lib/erlang
-        gunzip -c otp_doc_html_R8B-0.tar.gz | tar xf -
+        gunzip -c otp_doc_html_R9B-0.tar.gz | tar xf -
 
 For "erl -man <page>" to work the Unix manual pages have to be
 installed in the same way, i.e.
 
         cd <PrefixDir>/lib/erlang
-        gunzip -c otp_doc_man_R8B-0.tar.gz | tar xf -
+        gunzip -c otp_doc_man_R9B-0.tar.gz | tar xf -
 
+
+GS (Graphic System)
+-------------------
+
+GS now requires Tcl/Tk 8.3. It will be searched for when starting GS.
 
 Using HiPE
 ----------
 
-If you enabled HiPE when building (as described above),
-compile an module into native code like this from the
-Erlang shell:
+If you are running on a platform supporting HiPE and if
+you have not disabled HiPE, you can compile an module into
+native code like this from the Erlang shell:
 
 	c(Module, native).
 
@@ -212,16 +216,13 @@ to print out the available options.
 Darwin/Mac OS X
 ---------------
 
-This is a new port that isn't complete. The main test suites are
-successful but there are more work to be done. Mac OS X version 10.1
-is needed.
+Mac OS X version 10.2 (Jaguar) is needed.
+(Mac OS X 10.1.x will probably work as well, but we have
+not tested the final R9 build any 10.1.x system.)
 
-Use the "gnutar" command to unpack the sources.
-
-The GS application doesn't build on Darwin.  After "configure" but
-before "make" do
-
-	touch lib/gs/SKIP
+IMPORTANT! Use the "gnutar" command to unpack the sources.
+(Using "tar" or Stuff-It Expander might seem to work, but it will not
+build successfully.)
 
 Erlang/OTP will read the network configuration files in "/etc" at
 startup.  In Darwin these are normally not used by the operating
@@ -240,6 +241,9 @@ using "cc" and the flags "-bundle -flat_namespace -undefined
 suppress". You also include "-fno-common" in CFLAGS when
 compiling. Use ".so" as the library suffix.
 
+Known issue: Dynamic loading of drivers (the "ddll" module) will
+probably not work if you have installed "libcompat"
+(required by Open Office for Mac OS X).
 
 Caveats
 -------

@@ -151,7 +151,7 @@ event(DB, Gstkid, Etype, Edata, Args) ->
 %%
 %% Return 	: A tuple {OptionType, OptionCmd}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-option(Option, Gstkid, TkW, DB,_) ->
+option(Option, _Gstkid, _TkW, _DB,_) ->
     case Option of
 	{underline,     Int} -> {s, [" -und ", gstk:to_ascii(Int)]};
 	{wraplength,    Int} -> {s, [" -wra ", gstk:to_ascii(Int)]};
@@ -168,7 +168,7 @@ option(Option, Gstkid, TkW, DB,_) ->
 %% Return 	: The value of the option or invalid_option
 %%		  [OptionValue | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-read_option(Option,Gstkid,TkW,DB,_) -> 
+read_option(Option,Gstkid,TkW,_DB,_) -> 
     case Option of
 	underline     -> tcl2erl:ret_int([TkW," cg -und"]);
 	wraplength    -> tcl2erl:ret_int([TkW," cg -wra"]);

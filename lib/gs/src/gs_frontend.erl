@@ -89,7 +89,7 @@ start(Opts) ->
 backend_name(Opts) ->
     case gs:assq(kernel,Opts) of
 	{value,true} -> kernel;
-	Q -> user
+	_ -> user
     end.
 
 
@@ -101,7 +101,7 @@ stop() ->
 %% ------------------------------------------------------------
 %% Initialize
 %%
-init(Opts) ->
+init(_Opts) ->
     process_flag(trap_exit, true),
     DB=ets:new(gs_names,[set,public]),
     loop(#state{db=DB,self=self()}).
@@ -141,7 +141,7 @@ doit({FromOwner,{config, Args}},State) ->
 doit({event,ToOwner,{gs,Obj,Etype,Data,Args}}, #state{db=DB,self=Self}) ->
     case ets:lookup(DB,Obj) of
 	[{_,{Name,ToOwner}}] -> ToOwner ! {gs,Name,Etype,Data,Args};
-	Q -> ToOwner ! {gs,{Obj,Self},Etype,Data,Args}
+	_ -> ToOwner ! {gs,{Obj,Self},Etype,Data,Args}
     end,
     done;
 
@@ -202,8 +202,8 @@ doit({'EXIT', KernelBackend, Reason}, State)
     gs:error("kernel backend died reason ~w~n", [Reason]),
     exit({gs_kernel_died,Reason});
 
-doit({'EXIT', Pid, Reason}, #state{kernel=K,user=U,db=DB}) ->
-    %% io:format("Pid ~w died reason ~w~n", [Pid, Reason]),
+doit({'EXIT', Pid, _Reason}, #state{kernel=K,user=U,db=DB}) ->
+    %% io:format("Pid ~w died reason ~w~n", [Pid, _Reason]),
     if pid(U) -> 
 	    DeadObjU = gstk:pid_died(U,Pid),
 	    remove_objs(DB,DeadObjU);
@@ -238,7 +238,7 @@ doit({From,{instance,user,Opts}},State) ->
 		    case UC of
 			undefined -> 
 			    State#state{user_count=1, user=UserBackend};
-			N ->
+			_N ->
 			    State#state{user_count=UC+2, user=UserBackend}
 		    end;
 		{error, Reason} ->
@@ -286,7 +286,7 @@ doit({From,{info,kernel_db}},State) ->
 doit({From,{info,user_db}},State) ->
     reply(From,gstk:request(State#state.user,dump_db)).
 
-terminate(Reason,#state{db=DB}) ->
+terminate(_Reason,#state{db=DB}) ->
     if DB==undefined -> ok;
        true ->
 %	    io:format("frontend db:~p~n",[ets:tab2list(DB)])
@@ -319,7 +319,7 @@ find_user_obj(Int,DB) when integer(Int) ->
        true -> %% a user obj
 	    [Int|find_user_obj(ets:next(DB,Int),DB)]
     end;
-find_user_obj('$end_of_table',DB) ->
+find_user_obj('$end_of_table',_DB) ->
     [];
 find_user_obj(OtherKey,DB) ->
     find_user_obj(ets:next(DB,OtherKey),DB).
@@ -332,17 +332,17 @@ remove_objs(DB,[Obj|Objs]) ->
 	[] -> backend_only
     end,
     remove_objs(DB,Objs);
-remove_objs(DB,[]) -> done.
+remove_objs(_DB,[]) -> done.
 	    
 idOrName_to_id(DB,IdOrName,Pid) when atom(IdOrName) ->
     case ets:lookup(DB,{IdOrName,Pid}) of
 	[{_,Obj}] -> Obj;
-	Q -> undefined
+	_ -> undefined
     end;
 idOrName_to_id(DB,Obj,_Pid) ->
     case ets:lookup(DB,Obj) of
 	[_] -> Obj;
-	Q -> undefined
+	_ -> undefined
     end.
     
 

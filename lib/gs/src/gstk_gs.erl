@@ -39,8 +39,8 @@ read(DB, Gstkid, Opt) ->
     gstk_generic:read_option(DB, Gstkid, Opt).
 
 % No options of my own
-read_option(Option,Gstkid, TkW,DB,_) -> 
+read_option(Option,Gstkid, _TkW,_DB,_) -> 
     {bad_result, {Gstkid#gstkid.objtype, invalid_option, Option}}.
 
-option(Option, Gstkid, TkW, DB,_) ->
+option(_Option, _Gstkid, _TkW, _DB,_) ->
     invalid_option.

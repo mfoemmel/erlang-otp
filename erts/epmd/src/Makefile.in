@@ -26,11 +26,19 @@ else
 ifeq ($(TYPE),purify)
 PURIFY     = purify
 TYPEMARKER =
-TYPE_FLAGS = -O2 -DPURIFY
+ifeq ($(findstring ose,$(TARGET)),ose)
+  TYPE_FLAGS = -DPURIFY
+else
+  TYPE_FLAGS = -O2 -DPURIFY
+endif
 else
 PURIFY     =
 TYPEMARKER =
-TYPE_FLAGS = -O2
+ifeq ($(findstring ose,$(TARGET)),ose)
+  TYPE_FLAGS =
+else
+  TYPE_FLAGS = -O2
+endif
 endif
 endif
 
@@ -94,7 +102,10 @@ docs:
 
 clean:
 	rm -f $(BINDIR)/$(EPMD) 
-	rm -f $(EPMD_OBJS) 
+	rm -f $(ERL_TOP)/erts/obj.*/$(TARGET)/epmd.o
+	rm -f $(ERL_TOP)/erts/obj.*/$(TARGET)/epmd_cli.o
+	rm -f $(ERL_TOP)/erts/obj.*/$(TARGET)/epmd_srv.o 
+	rm -f *.o
 	rm -f *~ core
 
 #

@@ -5,11 +5,15 @@
 %%
 %% hipe_sparc_registers.erl
 %%
+%% See OTP/erts/emulator/hipe/hipe_sparc_abi.txt
+%%
 
 -module(hipe_sparc_registers).
 
 -export([reg_name/1,
+	 fpreg_name/1,
 	 first_virtual/0,
+	 call_clobbered/0,
 	 is_precolored/1,
 	 all_precolored/0,
 	 allocatable/0,
@@ -17,6 +21,7 @@
 	 fixed/0,
 	 number_of_physical/0,
 	 register_args/0,
+	 register_rets/0,
 	 physical_name/1,
 	 global/0,
 	 stack_pointer/0,
@@ -29,21 +34,28 @@
 	 zero/0,
 	 icc/0,
 	 xcc/0,
+	 fcc/1,
 	 y/0,
 	 arg/1,
+	 ret/1,
 	 temp0/0,
 	 temp1/0,
 	 temp2/0,
-	 temp3/0]).
+	 temp3/0,
+	 cpsave/0,
+	 cplink/0]).
+
+-include("../rtl/hipe_literals.hrl").
+
 
 %%
 %% Registers are described by non-negative integers.
-%% Numbers 0..35 denote physical registers:
+%% Numbers 0..38 denote physical registers:
 %%	0..31 denote the standard integer registers.
 %%	32 and 33 denote icc and xcc.
-%%	34 denotes the y register.
-%%	35 denotes zero/%g0 (XXX: why is this 35 instead of 0???)
-%% Numbers > 35 denote virtual registers
+%%            34 to 37 denotes fcc0 to fcc3
+%%	38 denote the y register.
+%% Numbers > 38 denote virtual registers
 %%
 
 -define(G0,0).
@@ -80,12 +92,23 @@
 -define(I7,31).
 -define(ICC,32).
 -define(XCC,33).
--define(Y,34).
+-define(FCC0,34).
+-define(FCC1,35).
+-define(FCC2,36).
+-define(FCC3,37).
+-define(Y,38).
 -define(Z,?G0).
                
 
 -define(NR_PHYSICAL,31).
--define(LAST_PRECOLOURED,35).
+-define(LAST_PRECOLOURED,38).
+
+
+call_clobbered() ->
+  allocatable().
+%% -- [temp0(),temp1(),temp2(),temp3()].
+%  lists:seq(0,?LAST_PRECOLOURED).
+
 
 %%
 %% Symbolic name of a register, to be used in assembly listings etc.
@@ -127,32 +150,54 @@ reg_name(R) ->
 	%% these won't probably occur, but ...
 	?ICC -> "%icc";
 	?XCC -> "%xcc";
+	?FCC0 -> "%fcc0";
+	?FCC1 -> "%fcc1";
+	?FCC2 -> "%fcc2";
+	?FCC3 -> "%fcc3";
 	?Y -> "%y";
-	?Z  -> "%g0";	% ugly
-
         %% to handle code before regalloc:
         Other -> "%r" ++ integer_to_list(Other)
     end.
 
+
+
+%% TODO: Consider cleaning up this function.
+fpreg_name(FR) ->
+  "%f" ++ integer_to_list(FR).
+
 %%
 %% Pre-allocated registers.
 %%
--define(STACK_POINTER,?L6).
--define(STACK_LIMIT,?L7).
--define(HEAP_POINTER,?I1).
--define(HEAP_LIMIT,?I2).
--define(PROC_POINTER,?I0).
--define(FCALLS,?L5).
--define(RETURN_ADDRESS,?O7).
--define(ARG0,?O0).
--define(ARG1,?O1). 
--define(ARG2,?O2).
--define(ARG3,?O3).
--define(ARG4,?O4).
--define(TEMP0,?O5).	% used in emu <-> native transitions
--define(TEMP1,?I3).	% used in emu <-> native transitions
--define(TEMP2,?L4).	% used in emu <-> native transitions
--define(TEMP3,?L3).
+-define(STACK_POINTER,?SPARC_REG_NSP).
+-define(STACK_LIMIT,?SPARC_REG_NSP_LIMIT).
+-define(HEAP_POINTER,?SPARC_REG_HP).
+-define(HEAP_LIMIT,?SPARC_REG_HP_LIMIT).
+-define(PROC_POINTER,?SPARC_REG_P).
+-define(FCALLS,?SPARC_REG_FCALLS).
+-define(RETURN_ADDRESS,?SPARC_REG_RA).
+-define(ARG0,?SPARC_REG_ARG0).
+-define(ARG1,?SPARC_REG_ARG1). 
+-define(ARG2,?SPARC_REG_ARG2).
+-define(ARG3,?SPARC_REG_ARG3).
+-define(ARG4,?SPARC_REG_ARG4).
+-define(ARG5,?SPARC_REG_ARG5).
+-define(ARG6,?SPARC_REG_ARG6). 
+-define(ARG7,?SPARC_REG_ARG7).
+-define(ARG8,?SPARC_REG_ARG8).
+-define(ARG9,?SPARC_REG_ARG9).
+-define(ARG10,?SPARC_REG_ARG10).
+-define(ARG11,?SPARC_REG_ARG11). 
+-define(ARG12,?SPARC_REG_ARG12).
+-define(ARG13,?SPARC_REG_ARG13).
+-define(ARG14,?SPARC_REG_ARG14).
+-define(ARG15,?SPARC_REG_ARG15).
+-define(TEMP0,?SPARC_REG_TEMP0).%% used in emu <-> native transitions
+-define(TEMP1,?SPARC_REG_TEMP1).	%% used in emu <-> native transitions
+-define(TEMP2,?SPARC_REG_TEMP2).	%% used in emu <-> native transitions
+-define(TEMP3,?SPARC_REG_TEMP3).
+
+-define(CPSAVE, ?SPARC_REG_TEMP2).   %% used in calls to inc_stack.
+-define(CPLINK, ?SPARC_REG_TEMP1).   %% see hipe_sparc_glue.S
 
 %%
 %% The lowest of the virtual registers.
@@ -181,6 +226,13 @@ fcalls() -> ?FCALLS.
 return_address() -> ?RETURN_ADDRESS.
 icc() -> ?ICC.
 xcc() -> ?XCC.
+fcc(N) -> 
+  case N of
+    0 -> ?FCC0;
+    1 -> ?FCC1;
+    2 -> ?FCC2;
+    3 -> ?FCC3
+  end.
 y() -> ?Y.
 zero() -> ?Z.
 arg(X) ->
@@ -190,27 +242,77 @@ arg(X) ->
       2 -> ?ARG2;
       3 -> ?ARG3;
       4 -> ?ARG4;
+      5 -> ?ARG5;
+      6 -> ?ARG6;
+      7 -> ?ARG7;
+      8 -> ?ARG8;
+      9 -> ?ARG9;
+      10 -> ?ARG10;
+      11 -> ?ARG11;
+      12 -> ?ARG12;
+      13 -> ?ARG13;
+      14 -> ?ARG14;
+      15 -> ?ARG15;
       Other -> exit({?MODULE, {"Argument out of range", Other}})
+   end.
+
+ret(X) ->
+   case X of
+      0 -> ?ARG15;
+      1 -> ?ARG0;
+      2 -> ?ARG1;
+      3 -> ?ARG2;
+      4 -> ?ARG3;
+      5 -> ?ARG4;
+      6 -> ?ARG5;
+      7 -> ?ARG6;
+      8 -> ?ARG7;
+      9 -> ?ARG8;
+      10 -> ?ARG9;
+      11 -> ?ARG10;
+      12 -> ?ARG11;
+      13 -> ?ARG12;
+      14 -> ?ARG13;
+      15 -> ?ARG14;
+      Other -> exit({?MODULE, {"Ret value of range", Other}})
    end.
 temp0() -> ?TEMP0.
 temp1() -> ?TEMP1.
 temp2() -> ?TEMP2.
 temp3() -> ?TEMP3.
+cpsave() -> ?CPSAVE.
+cplink() -> ?CPLINK.
+  
 
 %%
 %% A list of all allocatable regs
+%% see .../erts/emulator/hipe/hipe_sparc_abi.txt
+%%   http://soldc.sun.com/articles/sparcv9abi.html
+%%   http://www.users.qwest.net/~eballen1/sparc.tech.links.html
+%%   http://compilers.iecc.com/comparch/article/93-12-073
 %%
-%% Check sparc ABI for potential bugs ;-)
+%%  Global registers summary
+%%  Reg  | SPARC V8 (32-bit) | SPARC V8PLUS (64-bit) | SPARC V9 (64-bit) 
+%%  %g0  | Constant 0        | Constant 0            | Constant 0 
+%%  %g1  | Scratch           | Scratch               | Scratch 
+%%  %g2  | Application       | Application           | Application 
+%%  %g3  | Application       | Application           | Application 
+%%  %g4  | Application       | Application           | Scratch 
+%%  %g5  | System            | Scratch               | Scratch 
+%%  %g6  | System            | System                | System 
+%%  %g7  | System            | System                | System 
+%%                             <Current ARCH>  
 %%
-allocatable() ->
-   [     ?G1, ?G2, ?G3, ?G4, ?G5, ?G6,
-                             ?O5,      ?O7,
-    ?L0, ?L1, ?L2, ?L3, ?L4, ?L5, ?L6, ?L7,
-    ?I0, ?I1, ?I2, ?I3, ?I4, ?I5     , ?I7,
-   %% To discourage the regalloc from using argument registers they
-   %% are placed at the end.  This should be handled somewhere else.
-    ?O4,  ?O3, ?O2,  ?O1, ?O0].
+%% Does gcc generate code that uses %g2 to %g4 ?
+%%  If not these could perhaps be used for P, HP, H-Limit
+%%
 
+allocatable() ->
+      %% To discourage the regalloc from using argument registers they
+      %% are placed at the end. This should be handled somewhere else.
+   [?TEMP3, ?TEMP2, ?TEMP1, ?ARG14, ?ARG13, ?ARG12,
+    ?ARG11, ?ARG10, ?ARG9, ?ARG8, ?ARG7, ?ARG6, ?ARG5, 
+    ?ARG4, ?ARG3, ?ARG2, ?ARG1, ?ARG0, ?ARG15 ]. 
 
 %%
 %% Fixed registers.
@@ -259,21 +361,34 @@ all_precolored() ->
     ?XCC,
     ?ICC,
     ?Y,
+    ?TEMP0,
+    ?TEMP1,
+    ?TEMP2,
+    ?TEMP3,
     ?ARG0,
     ?ARG1,
     ?ARG2,
     ?ARG3,
-    ?ARG4].
+    ?ARG4,
+    ?ARG5,
+    ?ARG6,
+    ?ARG7,
+    ?ARG8,
+    ?ARG9,
+    ?ARG10,
+    ?ARG11,
+    ?ARG12,
+    ?ARG13,
+    ?ARG14,
+    ?ARG15
+].
 
 %%
 %% The number of arguments that are passed in registers.
 %%
-register_args() -> 5.
+register_args() -> ?SPARC_ARGS_IN_REGS.
+register_rets() -> ?SPARC_ARGS_IN_REGS.
 
 %%
 %% The actual register number a precolored register should use.
-%% This is the same as the precolored name for all but the zero-register.
-%% XXX: why? this deserves to die!
-%% 
-%%physical_name(?Z) -> 0;
 physical_name(P) -> P.

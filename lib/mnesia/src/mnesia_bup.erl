@@ -569,7 +569,7 @@ fallback_name() -> "FALLBACK.BUP".
 fallback_bup() -> mnesia_lib:dir(fallback_name()).
 
 fallback_tmp_name() -> "FALLBACK.TMP".
-fallback_tmp() -> mnesia_lib:dir(fallback_tmp_name()).
+%% fallback_full_tmp_name() -> mnesia_lib:dir(fallback_tmp_name()).
 
 fallback_receiver(Master, FA) ->
     process_flag(trap_exit, true),

@@ -15,11 +15,13 @@ include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 #
-# Macros
+# "rtl" below must be the first directory so that file rtl/hipe_literals.hrl
+# which is needed by many other HiPE files is built first
 #
 
-SUB_DIRECTORIES = main regalloc util rtl icode sparc flow opt misc app \
-		  x86
+SUB_DIRECTORIES = rtl main icode sparc regalloc ssa flow opt misc util app \
+		  x86 tools
+
 
 #
 # Default Subdir Targets

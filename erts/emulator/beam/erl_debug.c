@@ -29,15 +29,9 @@
 
 #define WITHIN(ptr, x, y) ((x) <= (ptr) && (ptr) < (y))
 
-#ifdef UNIFIED_HEAP
 #define IN_HEAP(p, ptr) \
-   (WITHIN((ptr), global_heap, global_hend) || (global_old_heap && \
-       WITHIN((ptr), global_old_heap, global_old_hend)))
-#else
-#define IN_HEAP(p, ptr) \
-   (WITHIN((ptr), (p)->heap, (p)->hend) || (p->old_heap && \
-       WITHIN((ptr), (p)->old_heap, (p)->old_hend)))
-#endif
+   (WITHIN((ptr), p->heap, p->hend) || (OLD_HEAP(p) && \
+       WITHIN((ptr), OLD_HEAP(p), OLD_HEND(p))))
 
 /*
  * This file defines functions for use within a debugger like gdb
@@ -113,19 +107,26 @@ pdisplay1(Process* p, Eterm obj, CIO fd)
 	erl_putc('}', fd);
 	break;
     case REF_DEF:
-	erl_printf(fd, "<<%d",
-		   ref_node(obj));
-	for (i = ref_arity(obj)-2; i >= 0; i--)
-	    erl_printf(fd, ",%lu",
-		       ref_ptr(obj)->w[i]);
-	erl_printf(fd, ">>");
+    case EXTERNAL_REF_DEF: {
+	Uint32 *ref_num;
+	erl_printf(fd, "#Ref<%lu", ref_channel_no(obj));
+	ref_num = ref_numbers(obj);
+	for (i = ref_no_of_numbers(obj)-1; i >= 0; i--)
+	    erl_printf(fd, ",%lu", ref_num[i]);
+	erl_printf(fd, ">");
 	break;
+    }
     case PID_DEF:
-	erl_printf(fd, "<%d.%d.%d>",
-		   pid_node(obj), pid_number(obj), pid_serial(obj));
+    case EXTERNAL_PID_DEF:
+	erl_printf(fd, "<%lu.%lu.%lu>",
+		   pid_channel_no(obj),
+		   pid_number(obj),
+		   pid_serial(obj));
 	break;
     case PORT_DEF:
-	erl_printf(fd, "<%d,%d>", port_node(obj),
+    case EXTERNAL_PORT_DEF:
+	erl_printf(fd, "#Port<%lu.%lu>",
+		   port_channel_no(obj),
 		   port_number(obj));
 	break;
     case LIST_DEF:
@@ -163,7 +164,11 @@ pdisplay1(Process* p, Eterm obj, CIO fd)
     case FLOAT_DEF: {
 	    FloatDef ff;
 	    GET_DOUBLE(obj, ff);
+#ifdef _OSE_
+	    erl_printf(fd, "%e", ff.fd);
+#else
 	    erl_printf(fd, "%.20e", ff.fd);
+#endif
 	}
 	break;
     case BINARY_DEF:
@@ -178,19 +183,11 @@ pdisplay1(Process* p, Eterm obj, CIO fd)
 void
 pps(Process* p, Eterm* stop)
 {
-#ifdef UNIFIED_HEAP
-    Eterm* sp = p->stack-1;
+    Eterm* sp = STACK_START(p) - 1;
 
-    if (stop <= p->send) {
-        stop = p->send + 1;
+    if (stop <= STACK_END(p)) {
+        stop = STACK_END(p) + 1;
     }
-#else
-    Eterm* sp = p->hend-1;
-
-    if (stop <= p->htop) {
-	stop = p->htop + 1;
-    }
-#endif
 
     while(sp >= stop) {
 	erl_printf(COUT,"%08lx: ", (Eterm) sp);

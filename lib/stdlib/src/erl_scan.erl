@@ -94,7 +94,7 @@ string(Cs) -> string(Cs, 1).
 string(Cs, Sp) ->
     %% Add an 'eof' to always get correct handling.
     case string_pre_scan(Cs ++ eof, [], Sp) of
-	{done,Rest,SoFar,Ep} ->			%Got tokens
+	{done,_Rest,SoFar,Ep} ->		%Got tokens
 	    case scan(reverse(SoFar), Sp) of
 		{ok,Toks} -> {ok,Toks,Ep};
 		{error,E} -> {error,E,Ep}
@@ -122,7 +122,7 @@ is_end([C|Cs]) when C >= $\000, C =< $\s ->
     is_end(Cs);
 is_end([C|Cs]) when C >= $\200, C =< $\240 ->
     is_end(Cs);
-is_end([C|Cs]) -> false;
+is_end([_|_]) -> false;
 is_end([]) -> true.
 
 %% format_error(Error)
@@ -200,7 +200,7 @@ pre_scan(C, Cs, SoFar, Pos) ->
 
 %% pre_string([Char], Quote, Reent, StartPos, SoFar, Pos)
 
-pre_string([Q|Cs], Q, Reent, Sp, SoFar, Pos) ->
+pre_string([Q|Cs], Q, _Reent, _Sp, SoFar, Pos) ->
     pre_scan(Cs, [Q|SoFar], Pos);
 pre_string([$\n|Cs], Q, Reent, Sp,SoFar, Pos) ->
     pre_string(Cs, Q, Reent, Sp, [$\n|SoFar], Pos+1);
@@ -215,7 +215,7 @@ pre_string([$\\|Cs0], Q, Reent, Sp, SoFar0, Pos) ->
     end;
 pre_string([C|Cs], Q, Reent, Sp, SoFar, Pos) ->
     pre_string(Cs, Q, Reent, Sp, [C|SoFar], Pos);
-pre_string([], Q, Reent, Sp, SoFar, Pos) ->
+pre_string([], _Q, Reent, Sp, SoFar, Pos) ->
     {more,[{Reent,Sp}],SoFar,Pos};
 pre_string(eof, Q, _, Sp, SoFar, Pos) ->
     pre_string_error(Q, Sp, SoFar, Pos).
@@ -242,8 +242,8 @@ pre_escape([$^|Cs0], SoFar) ->
     end;
 pre_escape([C|Cs], SoFar) ->
     {Cs,[C,$\\|SoFar]};
-pre_escape([], SoFar) -> more;
-pre_escape(eof, SoFar) -> error.
+pre_escape([], _SoFar) -> more;
+pre_escape(eof, _SoFar) -> error.
 
 %% pre_comment([Char], SoFar, Pos)
 %%  Comments are replaced by one SPACE.
@@ -321,7 +321,7 @@ scan1([$'|Cs0], Toks, Pos) ->				%Quoted atom
     case catch list_to_atom(S) of
 	A when atom(A) ->
 	    scan1(Cs1, [{atom,Pos,A}|Toks], Pos1);
-	Error -> scan_error({illegal,atom}, Pos)
+	_Error -> scan_error({illegal,atom}, Pos)
     end;
 scan1([$"|Cs0], Toks, Pos) ->				%String
     {S,Cs1,Pos1} = scan_string(Cs0, $", Pos),
@@ -362,7 +362,7 @@ scan1([$.|Cs], Toks, Pos) ->
 scan1([C|Cs], Toks, Pos) ->				%Punctuation character
     P = list_to_atom([C]),
     scan1(Cs, [{P,Pos}|Toks], Pos);
-scan1([], Toks0, Pos) ->
+scan1([], Toks0, _Pos) ->
     Toks = reverse(Toks0),
     {ok,Toks}.
 
@@ -377,7 +377,7 @@ scan_atom(C, Cs0, Toks, Pos) ->
 		true -> scan1(Cs, [{Name,Pos}|Toks], Pos);
 		false -> scan1(Cs, [{atom,Pos,Name}|Toks], Pos)
 	    end;
-	Error -> scan_error({illegal,atom}, Pos)
+	_Error -> scan_error({illegal,atom}, Pos)
     end.
 
 scan_variable(C, Cs0, Toks, Pos) ->
@@ -385,7 +385,7 @@ scan_variable(C, Cs0, Toks, Pos) ->
     case catch list_to_atom([C|reverse(Wcs)]) of
 	Name when atom(Name) ->
 	    scan1(Cs, [{var,Pos,Name}|Toks], Pos);
-	Error -> scan_error({illegal,var}, Pos)
+	_Error -> scan_error({illegal,var}, Pos)
     end.
 
 %% scan_name(Cs) -> lists:splitwith(fun (C) -> name_char(C) end, Cs).
@@ -530,7 +530,7 @@ scan_after_fraction(Cs, Ncs, Toks, SPos, CPos) ->
     case catch list_to_float(reverse(Ncs)) of
 	N when float(N) ->
 	    scan1(Cs, [{float,SPos,N}|Toks], CPos);
-	Error -> scan_error({illegal,float}, SPos)
+	_Error -> scan_error({illegal,float}, SPos)
     end.
 
 %% scan_exponent(CharList, NumberCharStack, TokenStack, StartPos, CurPos)
@@ -548,7 +548,7 @@ scan_exponent1([C|Cs0], Ncs0, Toks, SPos, CPos) when C >= $0, C =< $9 ->
     case catch list_to_float(reverse(Ncs)) of
 	N when float(N) ->
 	    scan1(Cs, [{float,SPos,N}|Toks], CPos1);
-	Error -> scan_error({illegal,float}, SPos)
+	_Error -> scan_error({illegal,float}, SPos)
     end;
 scan_exponent1(_, _, _, _, CPos) ->
     scan_error(float, CPos).
@@ -576,7 +576,10 @@ reserved_word('begin') -> true;
 reserved_word('case') -> true;
 reserved_word('try') ->
     Opts = get_compiler_options(),
-    member('enable_try', Opts);
+    not member('disable_try', Opts);
+reserved_word('cond') ->
+    Opts = get_compiler_options(),
+    not member('disable_cond', Opts);
 reserved_word('catch') -> true;
 reserved_word('andalso') -> true;
 reserved_word('orelse') -> true;

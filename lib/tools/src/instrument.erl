@@ -82,6 +82,8 @@ type_string(32) ->
     "unknown fixalloc block";
 type_string(33) ->
     "message buffer";
+type_string(34) ->
+    "message link";
 type_string(4) ->
     "estack";
 type_string(40) ->
@@ -120,6 +122,8 @@ type_string(57) ->
     "db counter";
 type_string(58) ->
     "db trace vec";
+type_string(59) ->
+    "db fixed deletion";
 type_string(60) ->
     "binary (external.c)";
 type_string(61) ->
@@ -160,6 +164,8 @@ type_string(821) ->
     "heap fragment (1)";
 type_string(822) ->
     "heap fragment (2)";
+type_string(830) ->
+    "sequential store buffer (for vectors)";
 type_string(91) ->
     "process table";
 type_string(92) ->
@@ -182,6 +188,16 @@ type_string(151) ->
     "dmem";
 type_string(152) ->
     "distribution table";
+type_string(153) ->
+    "distribution table buckets";
+type_string(154) ->
+    "distribution table entry";
+type_string(155) ->
+    "node table";
+type_string(156) ->
+    "node table buckets";
+type_string(157) ->
+    "node table entry";
 type_string(160) ->
     "port table";
 type_string(161) ->
@@ -264,6 +280,10 @@ type_string(350) ->
     "trace to port temp buffer";
 type_string(360) ->
     "lists subtract temp buffer";
+type_string(370) ->
+    "link (lh)";
+type_string(380) ->
+    "port call buffer";
 type_string(400) ->
     "definite_alloc block";
 type_string(_) ->

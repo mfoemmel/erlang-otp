@@ -34,8 +34,9 @@ RELSYSDIR = $(RELEASE_PATH)/lib/runtime_tools-$(VSN)
 # ----------------------------------------------------
 
 MODULES= \
-	dbg
-HRL_FILES= 
+	dbg \
+	observer_backend
+HRL_FILES= ../include/observer_backend.hrl
 
 ERL_FILES= $(MODULES:%=%.erl)
 
@@ -55,7 +56,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += 
+ERL_COMPILE_FLAGS += +warn_unused_vars -I../include 
 
 # ----------------------------------------------------
 # Targets

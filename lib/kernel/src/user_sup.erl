@@ -109,13 +109,11 @@ get_user() ->
 check_flags([{nouser, []} |T], _) -> check_flags(T, nouser);
 check_flags([{user, [User]} | T], _) ->
     check_flags(T, {list_to_atom(User), start, []});
-check_flags([{noinp_shell, []} | T], _) -> check_flags(T, {user, start, []});
+check_flags([{noshell, []} | T], _) -> check_flags(T, {user, start, []});
 check_flags([{oldshell, []} | T], _) -> check_flags(T, {user, start, []});
 check_flags([{noinput, []} | T], _) -> check_flags(T, {user, start_out, []});
 check_flags([{master, [Node]} | T], _) ->
     check_flags(T, {master, list_to_atom(Node)});
-check_flags([{x, []} | T], _) ->
-    check_flags(T, {user, start, [[sys_xerl,start]]});
 check_flags([H | T], User) -> check_flags(T, User);
 check_flags([], User) -> User.
 

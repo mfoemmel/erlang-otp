@@ -50,24 +50,23 @@ do(Info) ->
     end.
 
 do_include(Info) ->
-    ?vtrace("do include:~n   URI: ~p",[Info#mod.request_uri]),
+    ?vtrace("do_include -> entry with"
+	    "~n   URI: ~p",[Info#mod.request_uri]),
     Path = mod_alias:path(Info#mod.data,Info#mod.config_db,
 			  Info#mod.request_uri),
     Suffix = httpd_util:suffix(Path),
     case httpd_util:lookup_mime_default(Info#mod.config_db,Suffix) of
 	"text/x-server-parsed-html" ->
-	    Date = httpd_util:rfc1123_date(),
-	    Header = httpd_util:header(200,"text/html",Date),
-	    httpd_socket:deliver(Info#mod.socket_type,
-				 Info#mod.socket,
-				 [Header,"\r\n\r\n"]),
-	    %% case send_in_chunks(Info,Path) of
-	    case send_in(Info,Path) of
-		{ok,ErrorLog} ->
-		    {proceed,[{response,{already_sent,200,0}},
+	    HeaderStart = 
+		httpd_util:header(200, "text/html", Info#mod.connection),
+	    ?vtrace("do_include -> send ~p", [Path]),
+	    case send_in(Info,Path,HeaderStart,file:read_file_info(Path)) of
+		{ok, ErrorLog, Size} ->
+		    ?vtrace("do_include -> sent ~w bytes", [Size]),
+		    {proceed,[{response,{already_sent,200,Size}},
 			      {mime_type,"text/html"}|
 			      lists:append(ErrorLog,Info#mod.data)]};
-		{error,Reason} ->
+		{error, Reason} ->
 		    ?vlog("send in failed:"
 			  "~n   Reason: ~p"
 			  "~n   Path:   ~p"
@@ -76,7 +75,7 @@ do_include(Info) ->
 		    {proceed,
 		     [{status,send_error(Reason,Info,Path)}|Info#mod.data]}
 	    end;
-	_ ->
+	_ -> %% Unknown mime type, ignore
 	    {proceed,Info#mod.data}
     end.
 
@@ -339,10 +338,10 @@ exec(Info,Context,ErrorLog,[cgi],[RequestURI],R) ->
     ?vtrace("exec cgi:~n   RequestURI: ~p",[RequestURI]),
     cgi(Info,Context,ErrorLog,R,RequestURI);
 exec(Info,Context,ErrorLog,TagList,ValueList,R) ->
-    ?vlog("exec with spurious tag:"
-	  "~n   TagList:   ~p"
-	  "~n   ValueList: ~p",
-	  [TagList,ValueList]),
+    ?vtrace("exec with spurious tag:"
+	    "~n   TagList:   ~p"
+	    "~n   ValueList: ~p",
+	    [TagList,ValueList]),
     {ok, Context,
      [{internal_info,?NICE("exec directive has a spurious tag")}|
       ErrorLog], httpd_util:key1search(Context,errmsg,""),R}.
@@ -358,7 +357,7 @@ cmd(Info, Context, ErrorLog, R, Command) ->
 	P when port(P) ->
 	    {NewErrorLog, Result} = proxy(Port, ErrorLog),
 	    {ok, Context, NewErrorLog, Result, R};
-	{'EXIT',Reason} ->
+	{'EXIT', Reason} ->
 	    ?vlog("open port failed: exit"
 		  "~n   URI:    ~p"
 		  "~n   Reason: ~p",
@@ -428,7 +427,7 @@ exec_script(Info,Script,AfterScript,ErrorLog,Context,R) ->
 			  (catch port_command(Port,EntityBody))
 		  end,
 	    case Res of
-		{'EXIT',Reason} ->
+		{'EXIT', Reason} ->
 		    ?vlog("port send failed:"
 			  "~n   Port:   ~p"
 			  "~n   URI:    ~p"
@@ -443,7 +442,7 @@ exec_script(Info,Script,AfterScript,ErrorLog,Context,R) ->
 		    {NewErrorLog, Result} = proxy(Port, ErrorLog),
 		    {ok, Context, NewErrorLog, remove_header(Result), R}
 	    end;
-	{'EXIT',Reason} ->
+	{'EXIT', Reason} ->
 	    ?vlog("open port failed: exit"
 		  "~n   URI:    ~p"
 		  "~n   Reason: ~p",
@@ -497,19 +496,45 @@ proxy(Port, ErrorLog, Result) ->
 %% (comments and directives that start in one chunk but end
 %% in another is not handled).
 %%
-send_in(Info, Path) ->
+
+send_in(Info, Path,Head, {ok,FileInfo}) ->
     case file:read_file(Path) of
 	{ok, Bin} ->
-	    send_in1(Info, binary_to_list(Bin));
+	    send_in1(Info, binary_to_list(Bin), Head, FileInfo);
 	{error, Reason} ->
-	    ?ERROR("Failed open file: ~p",[Reason]),
+	    ?vlog("failed reading file: ~p",[Reason]),
 	    {error, {open,Reason}}
-    end.
+    end;
+send_in(Info,Path,Head,{error,Reason}) ->
+    ?vlog("failed open file: ~p",[Reason]),
+    {error, {open,Reason}}.
 
-send_in1(Info, Data) ->
+send_in1(Info, Data,Head,FileInfo) ->
     {ok, _Context, Err, ParsedBody} = parse(Info,Data,?DEFAULT_CONTEXT,[],[]),
-    httpd_socket:deliver(Info#mod.socket_type,Info#mod.socket, ParsedBody),
-    {ok,Err}.
+    Size = length(ParsedBody),
+    ?vdebug("send_in1 -> Size: ~p",[Size]),
+    Head1 = case Info#mod.http_version of 
+		"HTTP/1.1"->
+		    Head ++ 
+			"Content-Length: " ++ 
+			integer_to_list(Size) ++
+			"\r\nEtag:" ++ 
+			httpd_util:create_etag(FileInfo,Size) ++"\r\n" ++
+			"Last-Modified: " ++ 
+			httpd_util:rfc1123_date(FileInfo#file_info.mtime)  ++ 
+			"\r\n\r\n";
+		_->
+		    %% i.e http/1.0 and http/0.9
+		    Head ++
+			"Content-Length: " ++ 
+			integer_to_list(Size) ++
+			"\r\nLast-Modified: " ++ 
+			httpd_util:rfc1123_date(FileInfo#file_info.mtime)  ++ 
+			"\r\n\r\n"
+	    end,
+    httpd_socket:deliver(Info#mod.socket_type,Info#mod.socket, 
+			 [Head1,ParsedBody]),
+    {ok, Err, Size}.
 
 
 
@@ -695,5 +720,7 @@ read_error(StatusCode,none,Path,Reason) ->
     {StatusCode,none,?NICE("Can't read "++Path++Reason)};
 read_error(StatusCode,Info,Path,Reason) ->
     {StatusCode,Info#mod.request_uri,?NICE("Can't read "++Path++Reason)}.
+
+
 
 

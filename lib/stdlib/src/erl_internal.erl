@@ -78,7 +78,7 @@ guard_bif(is_port, 1) -> true;
 guard_bif(is_reference, 1) -> true;
 guard_bif(is_tuple, 1) -> true;
 guard_bif(is_record, 2) -> true;
-guard_bif(N, A) -> false.
+guard_bif(_, _) -> false.
 
 %% -type type_test(Name, Arity) -> bool()
 %%	when Name = atom(), Arity = integer().
@@ -110,7 +110,7 @@ type_test(port, 1) -> true;
 type_test(binary, 1) -> true;
 type_test(record, 2) -> true;
 type_test(function, 1) -> true;
-type_test(N, A) -> false.
+type_test(_, _) -> false.
 
 %% -type arith_op(Op, Arity) -> bool()
 %%	when Op = atom(), Arity = integer().
@@ -129,7 +129,7 @@ arith_op('bor', 2) -> true;
 arith_op('bxor', 2) -> true;
 arith_op('bsl', 2) -> true;
 arith_op('bsr', 2) -> true;
-arith_op(N, A) -> false.
+arith_op(_, _) -> false.
 
 %% -type bool_op(Op, Arity) -> bool()
 %%	when Op = atom(), Arity = integer().
@@ -138,7 +138,7 @@ bool_op('not', 1) -> true;
 bool_op('and', 2) -> true;
 bool_op('or', 2) -> true;
 bool_op('xor', 2) -> true;
-bool_op(N, A) -> false.
+bool_op(_, _) -> false.
 
 %% -type comp_op(Op, Arity) -> bool()
 %%	when Op = atom(), Arity = integer().
@@ -151,7 +151,7 @@ comp_op('>=', 2) -> true;
 comp_op('>', 2) -> true;
 comp_op('=:=', 2) -> true;
 comp_op('=/=', 2) -> true;
-comp_op(N, A) -> false.
+comp_op(_, _) -> false.
 
 %% -type list_op(Op, Arity) -> bool()
 %%	when Op = atom(), Arity = integer().
@@ -200,7 +200,7 @@ op_type('--', 2) -> list;
 op_type('!', 2) -> send.
 
 bif(erlang, Name, Arity) -> bif(Name, Arity);
-bif(Mod, Func, Arity) -> false.
+bif(_, _, _) -> false.
 
 %% bif(Name, Arity) -> true|false
 %%   Returns true if erlang:Name/Arity is an auto-imported BIF, false otherwise.
@@ -297,7 +297,10 @@ bif(spawn_link, 1) -> true;
 bif(spawn_link, 2) -> true;
 bif(spawn_link, 3) -> true;
 bif(spawn_link, 4) -> true;
+bif(spawn_opt, 2) -> true;
+bif(spawn_opt, 3) -> true;
 bif(spawn_opt, 4) -> true;
+bif(spawn_opt, 5) -> true;
 bif(split_binary, 2) -> true;
 bif(statistics, 1) -> true;
 bif(term_to_binary, 1) -> true;
@@ -310,11 +313,11 @@ bif(tuple_to_list, 1) -> true;
 bif(unlink, 1) -> true;
 bif(unregister, 1) -> true;
 bif(whereis, 1) -> true;
-bif(Name, Arity) -> false.
+bif(_, _) -> false.
 
 obsolete(Mod, Fun, Arity) ->
     %% Just in case.
     case catch otp_internal:obsolete(Mod, Fun, Arity) of
 	{true,Arg} -> {true,Arg};
-	Other -> false				%False, no otp_internal
+	_Other -> false				%False, no otp_internal
     end.

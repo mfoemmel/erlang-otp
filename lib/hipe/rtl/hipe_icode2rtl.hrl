@@ -2,7 +2,7 @@
 %%-------------------------------------------------------------------------
 %% Check whether this pass should add gc-test or whether it is done.
 %%
--define(AddGC(Opts),property_lists:get_bool(rtl_add_gc,Opts)).
+-define(AddGC(Opts),proplists:get_bool(rtl_add_gc,Opts)).
 -define(DoAddGC(Opts), [rtl_add_gc,Opts]).
 
 %% ----------------------------------------------------------------------
@@ -14,7 +14,7 @@
 %%   exception originated. 
 %%
 %% DEBUG level >2 prints the translation
--ifndef(DEBUG).
--define(DEBUG,3).
--endif.
--define(DO_ASSERT,true).
+%-ifndef(DEBUG).
+%-define(DEBUG,3).
+%-endif.
+%%-define(DO_ASSERT,true).

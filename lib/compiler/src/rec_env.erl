@@ -163,7 +163,7 @@ expand_entries([{Key, Value} | Es], S) ->
 		     Value
 	     end,
     [{Key, Value1} | expand_entries(Es, S)];		 
-expand_entries([], S) ->
+expand_entries([], _) ->
     [].
 
 
@@ -189,7 +189,7 @@ expand_entries([], S) ->
 bind(Key, Value, {Dict, Store}) ->
     {dict:store(Key, Value, Dict), Store}.
 
-bind_list([Key | _] = Keys, Vs, {Dict, Store}) ->
+bind_list([_ | _] = Keys, Vs, {Dict, Store}) ->
     Dict1 = bind_list_1(Keys, Vs, Dict),
     {Dict1, Store};
 bind_list([], [], Env) ->
@@ -239,7 +239,7 @@ bind_list_1([], _, Dict) ->
 %% then the index is incremented. This minimizes the amount of work done
 %% at lookup.
 
-bind_recursive([], [], F, Env) ->
+bind_recursive([], [], _, Env) ->
     Env;
 bind_recursive(Ks, Vs, F, {Dict, {N, Store}}) ->
     Dict1 = bind_recursive_1(Ks, Vs, F, N, Dict),
@@ -411,7 +411,7 @@ new_key(N, R, T, Dict) when T < ?MAX_RETRIES ->
 %%%	    io:fwrite("New: ~w.\n", [N]),
 	    N
     end;
-new_key(N, R, T, Dict) ->
+new_key(N, R, _, Dict) ->
     %% Too many retries - enlarge the range and start over.
     ?measure_retries((T + 1)),
     R1 = (R * ?ENLARGE_ENUM) div ?ENLARGE_DENOM,
@@ -434,7 +434,7 @@ start_range(Dict) ->
 	?MINIMUM_RANGE).
 
 max(X, Y) when X > Y -> X;
-max(X, Y) -> Y.
+max(_, Y) -> Y.
 
 %% The previous key might or might not be used to compute the next key
 %% to be tried. It is currently not used.
@@ -443,7 +443,7 @@ max(X, Y) -> Y.
 %% this function does not generate values in order, but
 %% (pseudo-)randomly distributed over the range.
 
-generate(Key, Range) ->
+generate(_, Range) ->
     random:uniform(Range).    % works well
 
 
@@ -496,7 +496,7 @@ new_custom_key(N, R, T, F, Dict) when T < ?MAX_RETRIES ->
 	    ?measure_retries(T),
 	    A
     end;
-new_custom_key(N, R, T, F, Dict) ->
+new_custom_key(N, R, _, F, Dict) ->
     %% Too many retries - enlarge the range and start over.
     ?measure_retries((T + 1)),
     R1 = (R * ?ENLARGE_ENUM) div ?ENLARGE_DENOM,

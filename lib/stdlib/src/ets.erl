@@ -32,7 +32,8 @@
 	 to_dets/2,
 	 init_table/2,
 	 test_ms/2,
-	 tab2list/1]).
+	 tab2list/1,
+	 fun2ms/1]).
 
 -export([i/0, i/1, i/2, i/3]).
 
@@ -67,6 +68,43 @@
 %% select_delete/2
 %% update_counter/3
 %%
+
+fun2ms(ShellFun) when is_function(ShellFun) ->
+    % Check that this is really a shell fun...
+    Mod = erlang:fun_info(ShellFun,module),
+    case Mod of 
+	{module,erl_eval} ->
+	    Env = erlang:fun_info(ShellFun,env),
+	    case Env of
+		{env,[{eval,{shell,local_func},_},
+		      ImportList,
+		      Clauses]} when is_list(ImportList),
+				     element(1,hd(Clauses)) == clause ->
+		    case ms_transform:transform_from_shell(
+			   ?MODULE,Clauses,ImportList) of
+			{error,[{_,[{_,_,Code}|_]}|_],_} ->
+			    io:format("Error: ~s~n",
+				      [ms_transform:format_error(Code)]),
+			    {error,transform_error};
+			Else ->
+			    Else
+		    end;
+		_ ->
+		    exit({badarg,{?MODULE,fun2ms,
+				  [function,called,with,real,'fun',
+				   should,be,transformed,with,
+				   parse_transform,'or',called,with,
+				   a,'fun',generated,in,the,
+				   shell]}})
+	       end;
+	_ ->
+	    exit({badarg,{?MODULE,fun2ms,[function,called,with,real,'fun',
+				      should,be,transformed,with,
+				      parse_transform,'or',called,with,
+				      a,'fun',generated,in,the,
+				      shell]}}) 
+    end.
+
 
 foldl(F, Accu, T) ->
     ets:safe_fixtable(T, true),
@@ -122,7 +160,7 @@ from_dets(EtsTable, DetsTable) ->
     case (catch dets:to_ets(DetsTable, EtsTable)) of
 	{error, Reason} ->
 	    erlang:fault(Reason,[EtsTable,DetsTable]);
-	{'EXIT', {Reason1, Stack1}} ->
+	{'EXIT', {Reason1, _Stack1}} ->
 	    erlang:fault(Reason1,[EtsTable,DetsTable]);
 	{'EXIT', EReason} ->
 	    erlang:fault(EReason,[EtsTable,DetsTable]);
@@ -136,7 +174,7 @@ to_dets(EtsTable, DetsTable) ->
     case (catch dets:from_ets(DetsTable, EtsTable)) of
 	{error, Reason} ->
 	    erlang:fault(Reason,[EtsTable,DetsTable]);
-	{'EXIT', {Reason1, Stack1}} ->
+	{'EXIT', {Reason1, _Stack1}} ->
 	    erlang:fault(Reason1,[EtsTable,DetsTable]);
 	{'EXIT', EReason} ->
 	    erlang:fault(EReason,[EtsTable,DetsTable]);
@@ -148,7 +186,7 @@ to_dets(EtsTable, DetsTable) ->
 
 test_ms(Term,MS) ->
     case erlang:match_spec_test(Term,MS,table) of
-	{ok, Result, _Flags, Messages} ->
+	{ok, Result, _Flags, _Messages} ->
 	    {ok, Result}; 
 	{error, Errors} ->
 	    {error, Errors}
@@ -158,7 +196,7 @@ init_table(Table, Fun) ->
     ets:delete_all_objects(Table),
     init_table_continue(Table, Fun(read)).
 
-init_table_continue(Table, end_of_input) ->
+init_table_continue(_Table, end_of_input) ->
     true;
 init_table_continue(Table, {List,Fun}) when list(List), function(Fun) ->
     case (catch init_table_sub(Table, List)) of
@@ -168,10 +206,10 @@ init_table_continue(Table, {List,Fun}) when list(List), function(Fun) ->
 	true ->
 	    init_table_continue(Table,Fun(read))
     end;
-init_table_continue(Table, Error) ->
+init_table_continue(_Table, Error) ->
     exit(Error).
 
-init_table_sub(Table,[]) ->
+init_table_sub(_Table,[]) ->
     true;
 init_table_sub(Table, [H|T]) ->
     ets:insert(Table,H),
@@ -250,7 +288,7 @@ tab2list(T) ->
 filter(Tn, F, A) when atom(Tn) ; integer(Tn) ->
     do_filter(Tn,ets:first(Tn),F,A, []).
 
-do_filter(Tab, '$end_of_table', _,_, Ack) -> 
+do_filter(_Tab, '$end_of_table', _,_, Ack) -> 
     Ack;
 do_filter(Tab, Key, F, A, Ack) ->
     case apply(F, [ets:lookup(Tab, Key) | A]) of
@@ -289,9 +327,9 @@ tab2file(Tab, K, Name) ->
 	    tab2file(Tab, Next, Name)
     end.
 
-get_objs(Tab, K, 0, Ack) ->
+get_objs(_Tab, K, 0, Ack) ->
     {K, lists:reverse(Ack)};
-get_objs(Tab, '$end_of_table', _, Ack) ->
+get_objs(_Tab, '$end_of_table', _, Ack) ->
     {'$end_of_table', lists:reverse(Ack)};
 get_objs(Tab, K, I, Ack) ->
     Os = ets:lookup(Tab, K),
@@ -307,7 +345,7 @@ file2tab(File) ->
 	    init_file2tab(Name);
 	{repaired, Name, _,_} ->
 	    init_file2tab(Name);
-	Other ->
+	_Other ->
 	    old_file2tab(File)  %% compatibilty
     end.
 
@@ -447,7 +485,7 @@ i(Tab, Height, Width) ->
 display_items(Height, Width, Tab, '$end_of_table', Turn, Opos) -> 
     P = 'EOT  (q)uit (p)Digits (k)ill /Regexp -->',
     choice(Height, Width, P, eot, Tab, '$end_of_table', Turn, Opos);
-display_items(Height, Width, Tab, Key, Turn, Opos) when Turn < 0 ->
+display_items(Height, Width, Tab, _Key, Turn, _Opos) when Turn < 0 ->
     i(Tab, Height, Width);
 display_items(Height, Width, Tab, Key, Turn, Opos) when Turn < Height ->
     do_display(Height, Width, Tab, Key, Turn, Opos);
@@ -515,10 +553,10 @@ do_display(Height, Width, Tab, Key, Turn, Opos) ->
 do_display_items(Height, Width, [Obj|Tail], Opos) ->
     do_display_item(Height, Width, Obj, Opos),
     do_display_items(Height, Width, Tail, Opos+1);
-do_display_items(Height, Width, [], Opos) ->
+do_display_items(_Height, _Width, [], Opos) ->
     Opos.
 
-do_display_item(Height, Width, I, Opos)  ->
+do_display_item(_Height, Width, I, Opos)  ->
     L = to_string(I),
     L2 = if
 	     length(L) > Width - 8 ->

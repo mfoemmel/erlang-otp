@@ -113,6 +113,7 @@ handshake_other_started(#hs_data{request_type = ReqType} = HSData) ->
 			       other_version = Version,
 			       other_node = Node,
 			       other_started = true},
+    check_dflag_x_ref(NewHSData),
     is_allowed(NewHSData),
     mark_pending(NewHSData).
 %%
@@ -130,7 +131,32 @@ is_allowed(#hs_data{other_node = Node,
 	_ -> true
     end.
 
+%%
+%% Check that the other node can handle extended
+%% references. If it can not, abort the connection.
+%%
+check_dflag_x_ref(#hs_data{other_node = Node,
+			   other_flags = OtherFlags,
+			   other_started = OtherStarted} = HSData) ->
+    case OtherFlags band ?DFLAG_EXTENDED_REFERENCES of
+	?DFLAG_EXTENDED_REFERENCES ->
+	    ok;
+	0 ->
+	    case OtherStarted of
+		true ->
+		    send_status(HSData, not_allowed),
+		    error_msg("** Connection attempt from node ~w rejected "
+			      "since it cannot handle extended references. "
+			      "**~n", [Node]);
+	        _ ->
+		    error_msg("** Connection attempt to node ~w aborted "
+			      "since it cannot handle extended references. "
+			      "**~n", [Node])
+	    end,
+	    ?shutdown(Node)
+    end.
 
+	    
 
 %% No nodedown will be sent if we fail before this process has
 %% succeeded to mark the node as pending !
@@ -290,6 +316,7 @@ handshake_we_started(#hs_data{request_type = ReqType,
     NewHSData = HSData#hs_data{this_flags = ThisFlags,
 			       other_flags = OtherFlags, 
 			       other_started = false}, 
+    check_dflag_x_ref(NewHSData),
     MyChallenge = gen_challenge(),
     {MyCookie,HisCookie} = get_cookies(Node),
     send_challenge_reply(NewHSData,MyChallenge,

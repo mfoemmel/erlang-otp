@@ -86,8 +86,6 @@
 	 objkey_to_string/1,
 	 string_to_objkey/1,
 	 string_to_objkey_local/1,
-	 check_exception_type/1,
-	 get_system_exception_typedef/1,
 	 call_relay/3,
 	 cast_relay/2]).
 
@@ -381,7 +379,8 @@ common_create(Module, TypeID, Env, Options, StartMethod) when list(Options) ->
 	Why ->
 	    orber:dbg("[~p] corba:common_create(~p, ~p); 
 bad name type or combination(~p).", [?LINE, Module, Options, Why], ?DEBUG_LEVEL),
-	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})   
+	    corba:raise(#'BAD_PARAM'{minor=(?ORBER_VMCID bor 1), 
+				     completion_status=?COMPLETED_NO})   
     end,
     case Opt#options.pseudo of
 	false ->
@@ -399,7 +398,8 @@ bad name type or combination(~p).", [?LINE, Module, Options, Why], ?DEBUG_LEVEL)
 			    %% This branch takes care of exit values
 			    %% which aren't expected (due to bug).
 			    gen_server:call(Pid, stop),
-			    exit(R);
+	                    corba:raise(#'BAD_PARAM'{minor=(?ORBER_VMCID bor 1), 
+				                     completion_status=?COMPLETED_NO});
 			Objkey when Opt#options.sup_child == true ->
 		            {ok, Pid, Objkey};
                         Objkey ->
@@ -422,12 +422,14 @@ bad name type or combination(~p).", [?LINE, Module, Options, Why], ?DEBUG_LEVEL)
 		Reason ->
 		    orber:dbg("[~p] corba:common_create(~p);
 'init' function incorrect(~p).", [?LINE, ModuleImpl, Reason], ?DEBUG_LEVEL),
-		    corba:raise(#'INTERNAL'{minor=1100, completion_status=?COMPLETED_NO})
+	            corba:raise(#'BAD_PARAM'{minor=(?ORBER_VMCID bor 1), 
+				             completion_status=?COMPLETED_NO})   
 	    end;
 	What ->
 	    orber:dbg("[~p] corba:common_create(~p, ~p); 
 not a boolean(~p).", [?LINE, Module, Options, What], ?DEBUG_LEVEL),
-	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})   
+	    corba:raise(#'BAD_PARAM'{minor=(?ORBER_VMCID bor 1), 
+				     completion_status=?COMPLETED_NO})   
     end.
 
 %%----------------------------------------------------------------------
@@ -486,7 +488,7 @@ get_pid(Objkey) ->
 	{'internal_registered', Key, _, _, _} when atom(Key) ->
 	    case whereis(Key) of
 		undefined ->
-		    corba:raise(#'OBJECT_NOT_EXIST'{minor=100, completion_status=?COMPLETED_NO});
+		    corba:raise(#'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO});
 		Pid ->
 		    Pid
 	    end;
@@ -579,11 +581,12 @@ call_internal(Pid, Obj, Func, Args, Types, Check, Mod, Timeout) when pid(Pid),
             typecheck_reply(Check, Types, {'EXCEPTION', E}, Mod, Func),
 	    corba:raise(E);
 	{'EXIT',{timeout, _}} ->
-	    corba:raise(#'COMM_FAILURE'{minor=108, completion_status=?COMPLETED_MAYBE});
+	    corba:raise(#'TIMEOUT'{completion_status=?COMPLETED_MAYBE});
 	{'EXIT',R} ->
 	    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p); 
 call exit(~p).", [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
-	    exit(R);
+	    corba:raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 4), 
+				     completion_status=?COMPLETED_NO});
 	Res ->
             typecheck_reply(Check, Types, Res, Mod, Func),
 	    Res
@@ -598,11 +601,18 @@ call_internal(Pid, Obj, Func, Args, Types, Check, Mod, Timeout) when pid(Pid) ->
 	{badrpc, {'EXIT',R}} ->
 	    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p); 
 call exit(~p).", [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
-	    exit(R);
+	    corba:raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 3), 
+				     completion_status=?COMPLETED_MAYBE});
 	{badrpc,nodedown} ->
 	    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p); 
 Node ~p down.", [?LINE, Func, Args, Types, node(Pid)], ?DEBUG_LEVEL),
-	    corba:raise(#'COMM_FAILURE'{minor=108, completion_status=?COMPLETED_MAYBE});
+	    corba:raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 2), 
+				     completion_status=?COMPLETED_NO});
+	{badrpc, Reason} ->
+	    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p); 
+Unable to invoke operation due to: ~p", [?LINE, Func, Args, Types, Reason], ?DEBUG_LEVEL),
+	    corba:raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 5), 
+				     completion_status=?COMPLETED_MAYBE});
 	Res ->
             typecheck_reply(Check, Types, Res, Mod, Func),
 	    Res
@@ -634,36 +644,32 @@ call_internal({pseudo, Module}, Obj, Func, Args, Types, Check, Mod, Timeout) ->
 	{'EXIT', What} ->
 	    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p); 
 Pseudo object exit(~p).", [?LINE, Func, Args, Types, What], ?DEBUG_LEVEL),
-	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_MAYBE});
+	    corba:raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 4),
+				     completion_status=?COMPLETED_MAYBE});
 	Unknown ->
 	    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p); 
 Pseudo object failed due to bad return value (~p).", 
 				    [?LINE, Func, Args, Types, Unknown], ?DEBUG_LEVEL),
-	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_MAYBE})
+	    corba:raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 6),
+				     completion_status=?COMPLETED_MAYBE})
     end;
 call_internal(Registered, Obj, Func, Args, Types, Check, Mod, Timeout) when atom(Registered)->
     typecheck_request(Check, Types, Args, Mod, Func),
     case whereis(Registered) of
 	undefined ->
-	    corba:raise(#'OBJECT_NOT_EXIST'{minor=100, completion_status=?COMPLETED_NO});
-%% To be used when we allow objects which are {'local', RegName} to be persistent.
-%	    case orber_objectkeys:is_persistent(Registered) of
-%		true ->
-%		    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
-%		_->
-%		    corba:raise(#'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO})
-%	    end;
+	    corba:raise(#'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO});
 	P ->
 	    case catch gen_server:call(P, {Obj, Func, Args}, Timeout) of
 		{'EXCEPTION', E} ->
 		    typecheck_reply(Check, Types, {'EXCEPTION', E}, Mod, Func),
 		    corba:raise(E);
 		{'EXIT',{timeout, _}} ->
-		    corba:raise(#'COMM_FAILURE'{minor=109, completion_status=?COMPLETED_MAYBE});	
+		    corba:raise(#'TIMEOUT'{completion_status=?COMPLETED_MAYBE});	
 		{'EXIT',R} ->
-		    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p); 
+		    orber:dbg("[~p] corba:call_internal(~p, ~p, ~p).
 call exit(~p).", [?LINE, Func, Args, Types, R], ?DEBUG_LEVEL),
-		    exit(R);
+		    corba:raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 5), 
+			  	             completion_status=?COMPLETED_MAYBE});
 		Res ->
                     typecheck_reply(Check, Types, Res, Mod, Func),
 		    Res
@@ -691,7 +697,7 @@ Typecode.....: ~p
 Arguments....: ~p
 Result.......: ~p
 ===========================================~n", [Mod, Func, length(TC), TC, Args, {'EXIT',R}]),
-	    corba:raise(#'MARSHAL'{minor=104, completion_status=?COMPLETED_MAYBE});
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
 	_ ->
 	    ok
     end;
@@ -731,7 +737,7 @@ Raised.........: ~p
 Result.........: ~p
 ===========================================~n", 
 				   [Mod, Func, length(TC), ExcType, ExcTC, Args, {'EXIT',R}]),
-	    corba:raise(#'MARSHAL'{minor=104, completion_status=?COMPLETED_MAYBE});
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
 	{'EXIT',R} ->
 	    {RetType, TC, OutParams} = Types, 
 	    error_logger:error_msg("========== Orber Typecheck Reply ==========
@@ -741,7 +747,7 @@ Reply..........: ~p
 Result.........: ~p
 ===========================================~n", 
 				   [Mod, Func, length(TC), [RetType | OutParams], Args, {'EXIT',R}]),
-	    corba:raise(#'MARSHAL'{minor=104, completion_status=?COMPLETED_MAYBE});
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
 	_ ->
 	    ok
     end;
@@ -751,13 +757,13 @@ typecheck_reply(_, _, _, _, _) ->
 call_relay(Pid, {Obj, Func, Args}, Timeout) ->
     case whereis(orber_objkeyserver) of
 	undefined ->
-	    corba:raise(#'COMM_FAILURE'{minor=110, completion_status=?COMPLETED_MAYBE});
+	    corba:raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_MAYBE});
 	_ ->
 	    case catch gen_server:call(Pid, {Obj, Func, Args}, Timeout) of
 		{'EXCEPTION', E} ->
 		    corba:raise(E);
 		{'EXIT',{timeout, _}} ->
-		    corba:raise(#'COMM_FAILURE'{minor=108, completion_status=?COMPLETED_MAYBE});
+		    corba:raise(#'TIMEOUT'{completion_status=?COMPLETED_MAYBE});
 		{'EXIT',R} ->
 		    orber:dbg("[~p] corba:call_internal(~p, ~p); 
 call exit(~p).", [?LINE, Func, Args, R], ?DEBUG_LEVEL),
@@ -785,27 +791,28 @@ cast(Obj, Func, Args, Types) ->
 
 cast_internal(Pid, Obj, Func, Args, Types, Check, Mod) when pid(Pid), node(Pid) == node() ->
     typecheck_request(Check, Types, Args, Mod, Func),
-    gen_server:cast(Pid, {Obj, Func, Args});
+    catch gen_server:cast(Pid, {Obj, Func, Args}),
+    ok;
 cast_internal(Pid, Obj, Func, Args, Types, Check, Mod) when pid(Pid) ->
     typecheck_request(Check, Types, Args, Mod, Func),
     case catch rpc:call(node(Pid), corba, call_relay, [Pid, {Obj, Func, Args}]) of
 	{'EXCEPTION', E} ->
             typecheck_reply(Check, Types, {'EXCEPTION', E}, Mod, Func),
 	    corba:raise(E);
-	{badrpc, {'EXIT', {undef, _}}} ->
-	    %% Must be an older version; try the old-way.
-	    gen_server:cast(Pid, {Obj, Func, Args});
 	{badrpc, {'EXIT', R}} ->
-	    exit(R);
+	    corba:raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 3), 
+				     completion_status=?COMPLETED_MAYBE});
 	{badrpc,nodedown} ->
 	    orber:dbg("[~p] corba:cast_internal(~p, ~p, ~p); 
 Node ~p down.", [?LINE, Func, Args, Types, node(Pid)], ?DEBUG_LEVEL),
-	    corba:raise(#'COMM_FAILURE'{minor=108, completion_status=?COMPLETED_MAYBE});
+	    corba:raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 2), 
+				     completion_status=?COMPLETED_NO});
 	Other ->
 	    orber:dbg("[~p] corba:cast_internal(~p, ~p, ~p);
 Communication with node: ~p failed with reason: ~p.", 
 				    [?LINE, Func, Args, Types, node(Pid), Other], ?DEBUG_LEVEL),
-	    exit(Other)
+	    corba:raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 5), 
+				     completion_status=?COMPLETED_MAYBE})
     end;
 
 %% This case handles if the reference is created as a Pseudo object. Just call apply/3.
@@ -818,14 +825,7 @@ cast_internal(Registered, Obj, Func, Args, Types, Check, Mod) ->
     typecheck_request(Check, Types, Args, Mod, Func),
     case whereis(Registered) of
 	undefined ->
-	    corba:raise(#'OBJECT_NOT_EXIST'{minor=100, completion_status=?COMPLETED_NO});
-%% To be used when we allow objects which are {'local', RegName} to be persistent.
-%	    case orber_objectkeys:is_persistent(Registered) of
-%		true ->
-%		    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
-%		_->
-%		    corba:raise(#'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO})
-%	    end;
+	    corba:raise(#'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO});
 	P ->
 	    gen_server:cast(P, {Obj, Func, Args})
     end.
@@ -833,7 +833,8 @@ cast_internal(Registered, Obj, Func, Args, Types, Check, Mod) ->
 cast_relay(Pid, {Obj, Func, Args}) ->
     case whereis(orber_objkeyserver) of
 	undefined ->
-	    corba:raise(#'COMM_FAILURE'{minor=110, completion_status=?COMPLETED_MAYBE});
+	    corba:raise(#'TRANSIENT'{minor=(?ORBER_VMCID bor 1), 
+				     completion_status=?COMPLETED_NO});
 	_ ->
 	    gen_server:cast(Pid, {Obj, Func, Args})
     end.
@@ -878,16 +879,6 @@ request_from_iiop({Mod, ObjType, Module, UserDef, OrberDef, Flags}, oe_get_inter
 	_->
 	    []
     end;
-%% This case handles if the reference is created as a Pseudo object. Just call apply/3.
-%request_from_iiop({Mod, pseudo, Module, UserDef, OrberDef, Flags}, oe_get_interface, 
-%		  Args, Types, _ResponseExpected) ->
-%    M=remove_impl(lists:reverse(atom_to_list(Module))),
-%    case M:handle_call({false, oe_get_interface, []}, false, false) of
-%	{reply, OpDef, _} ->
-%	    OpDef;
-%	_->
-%	    []
-%    end;
 request_from_iiop({Mod, pseudo, Module, UserDef, OrberDef, Flags}, Func, Args, 
 		  Types, ResponseExpected) ->
     State = binary_to_term(get_subobject_key({Mod, pseudo, Module, UserDef, OrberDef, 
@@ -910,16 +901,25 @@ request_from_iiop({Mod, pseudo, Module, UserDef, OrberDef, Flags}, Func, Args,
 		    ok;
 		{'EXCEPTION', E} ->
 		    {'EXCEPTION', E};
+		{'EXIT', {undef, _}} ->
+		    orber:dbg("[~p] corba:request_from_iiop(~p, ~p, ~p); 
+The call-back module does not exist.", [?LINE, Func, Args, Types], ?DEBUG_LEVEL),
+		    {'EXCEPTION', #'TRANSIENT'{minor=(?ORBER_VMCID bor 4),
+					       completion_status=?COMPLETED_NO}};
 		{'EXIT', What} ->
 		    orber:dbg("[~p] corba:request_from_iiop(~p, ~p, ~p); 
-Pseudo object exit(~p). The call-back module probably contain an error.", 
-					    [?LINE, Func, Args, Types, What], ?DEBUG_LEVEL),
-		    {'EXCEPTION', #'COMM_FAILURE'{completion_status=?COMPLETED_MAYBE}};
+Pseudo object exit(~p).
+The call-back module probably contain an error.",
+			      [?LINE, Func, Args, Types, What], ?DEBUG_LEVEL),
+		    {'EXCEPTION', #'TRANSIENT'{minor=(?ORBER_VMCID bor 4),
+					       completion_status=?COMPLETED_MAYBE}};
 		Unknown ->
 		    orber:dbg("[~p] corba:request_from_iiop(~p, ~p, ~p); 
-Pseudo object failed(~p); confirm that the return value is correct (e.g. {reply, Reply, State})", 
-					    [?LINE, Func, Args, Types, Unknown], ?DEBUG_LEVEL),
-		    {'EXCEPTION', #'COMM_FAILURE'{completion_status=?COMPLETED_MAYBE}}
+Pseudo object failed(~p); 
+confirm that the return value is correct (e.g. {reply, Reply, State})", 
+			      [?LINE, Func, Args, Types, Unknown], ?DEBUG_LEVEL),
+		    {'EXCEPTION', #'TRANSIENT'{minor=(?ORBER_VMCID bor 6),
+					       completion_status=?COMPLETED_MAYBE}}
 	    end;
 	false ->
 	    catch apply(Module, Func, [{Mod, pseudo, Module, UserDef, OrberDef, 
@@ -946,9 +946,6 @@ request_from_iiop({Mod, Type, Key, UserDef, OrberDef, Flags}, Func, Args, Types,
 			    {{Mod, Type, Key, UserDef, OrberDef, Flags}, Func, Args})
     end.
 
-%remove_impl([$l,$p,$m,$i,$_|Rest]) -> list_to_atom(lists:reverse(Rest)).
-    
-
 %%------------------------------------------------------------
 %% Internal stuff
 %%------------------------------------------------------------
@@ -969,7 +966,7 @@ mk_objkey(Mod, Pid, [], _, Flags) when pid(Pid) ->
 	R ->
 	    orber:dbg("[~p] corba:mk_objkey(~p);
 unable to store key(~p).", [?LINE, Mod, R], ?DEBUG_LEVEL),
-	    corba:raise(#'INTERNAL'{minor=1101, completion_status=?COMPLETED_NO})
+	    corba:raise(#'INTERNAL'{minor=(?ORBER_VMCID bor 2), completion_status=?COMPLETED_NO})
     end;
 mk_objkey(Mod, Pid, {'global', RegName}, Persitent, Flags) when pid(Pid) ->
     Key = term_to_binary(RegName),
@@ -979,7 +976,7 @@ mk_objkey(Mod, Pid, {'global', RegName}, Persitent, Flags) when pid(Pid) ->
 	R ->
 	    orber:dbg("[~p] corba:mk_objkey(~p, ~p);
 unable to store key(~p).", [?LINE, Mod, RegName, R], ?DEBUG_LEVEL),
-	    corba:raise(#'INTERNAL'{minor=1102, completion_status=?COMPLETED_NO})
+	    corba:raise(#'INTERNAL'{minor=(?ORBER_VMCID bor 2), completion_status=?COMPLETED_NO})
     end;
 mk_objkey(Mod, Pid, {'local', RegName}, Persistent, Flags) when pid(Pid), atom(RegName) ->
     register(RegName, Pid),
@@ -990,7 +987,7 @@ mk_objkey(Mod, Pid, {'local', RegName}, Persistent, Flags) when pid(Pid), atom(R
 	R ->
 	    orber:dbg("[~p] corba:mk_objkey(~p, ~p);
 unable to store key(~p).", [?LINE, Mod, RegName, R], ?DEBUG_LEVEL),
-	    corba:raise(#'INTERNAL'{minor=1103, completion_status=?COMPLETED_NO})
+	    corba:raise(#'INTERNAL'{minor=(?ORBER_VMCID bor 2), completion_status=?COMPLETED_NO})
     end.
 
 
@@ -1045,98 +1042,6 @@ prefix([E |L1], [E | L2]) ->
 prefix(_, _) ->
     false.
 
-
-%%-----------------------------------------------------------------
-%% Check if CORBA system exception or user defined
-%%-----------------------------------------------------------------
-check_exception_type('UNKNOWN') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('BAD_PARAM') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('NO_MEMORY') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('IMP_LIMIT') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('COMM_FAILURE') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('INV_OBJREF') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('NO_PERMISSION') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('INTERNAL') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('MARSHAL') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('INITIALIZE') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('NO_IMPLEMENT') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('BAD_TYPECODE') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('BAD_OPERATION') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('NO_RESOURCES') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('NO_RESPONSE') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('PERSIST_STORE') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('BAD_INV_ORDER') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('TRANSIENT') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('FREE_MEM') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('INV_IDENT') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('INV_FLAG') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('INTF_REPOS') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('BAD_CONTEXT') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('OBJ_ADAPTER') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('DATA_CONVERSION') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('OBJECT_NOT_EXIST') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('TRANSACTION_REQUIRED') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('TRANSACTION_ROLLEDBACK') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('INVALID_TRANSACTION') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('INV_POLICY') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('CODESET_INCOMPATIBLE') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('REBIND') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('TIMEOUT') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('TRANSACTION_UNAVAILABLE') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('TRANSACTION_MODE') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type('BAD_QOS') ->
-    ?SYSTEM_EXCEPTION;
-check_exception_type(_) ->
-    ?USER_EXCEPTION.
-
-
-%%-----------------------------------------------------------------
-%% Generate typedef of system exception
-%%-----------------------------------------------------------------
-get_system_exception_typedef(ExcName) ->
-    Name = atom_to_list(ExcName),
-    {'tk_except', "IDL:omg.org/CORBA/" ++ Name ++ ":1.0", Name,
-     [
-      {"minor",'tk_ulong'},
-      {"completed",{'tk_enum', "", "completion_status",
-	   ["COMPLETED_YES", "COMPLETED_NO",
-	    "COMPLETED_MAYBE"]}}
-     ]}.
 
 
 evaluate_options([], #options{local_typecheck = undefined} = Options) ->

@@ -24,13 +24,11 @@
 
 -export([compile_cmdline/1]).
 
-%% Internal exports.
--export([compiler_runner/1]).
-
 %% Mapping from extension to {M,F} to run the correct compiler.
 
-compiler(".S") -> {compile,compile};
 compiler(".erl") -> {compile,compile};
+compiler(".S") -> {compile,compile_asm};
+compiler(".beam") -> {compile,compile_beam};
 compiler(".core") -> {corec,compile};
 compiler(".mib") -> {snmp,compile};
 compiler(".bin") -> {snmp_mib_to_hrl,compile};
@@ -61,7 +59,7 @@ compile_cmdline(List) ->
 
 compile(List) ->
     process_flag(trap_exit, true),
-    Pid = spawn_link(?MODULE, compiler_runner, [List]),
+    Pid = spawn_link(fun() -> compiler_runner(List) end),
     receive
 	{'EXIT', Pid, {compiler_result, Result}} ->
 	    Result;
@@ -76,7 +74,8 @@ compiler_runner(List) ->
 %% Parses the first part of the option list.
 
 compile1(['@cwd', Cwd|Rest]) ->
-    compile1(Rest, Cwd, #options {outdir=atom_to_list(Cwd), cwd=Cwd});
+    CwdL = atom_to_list(Cwd),
+    compile1(Rest, Cwd, #options {outdir=CwdL, cwd=CwdL});
 compile1(Other) ->
     throw({error, {bad_input, Other}}).
 
@@ -85,9 +84,6 @@ compile1(Other) ->
 compile1(['@i', Dir|Rest], Cwd, Opts) ->
     AbsDir = filename:absname(Dir, Cwd),
     compile1(Rest, Cwd, Opts#options{includes=[AbsDir|Opts#options.includes]});
-compile1(['@ilroot', Ilroot|Rest], Cwd, Opts) ->
-    AbsDir = filename:absname(Ilroot, Cwd),
-    compile1(Rest, Cwd, Opts#options{ilroot=Ilroot});
 compile1(['@outdir', Dir|Rest], Cwd, Opts) ->
     AbsName = filename:absname(Dir, Cwd),
     case file_or_directory(AbsName) of
@@ -126,9 +122,9 @@ compile2(Files, Cwd, Opts) ->
     case {Opts#options.outfile,length(Files)} of
 	{"", _} ->
 	    compile3(Files, Cwd, Opts);
-	{[C|_], 1} ->
+	{[_|_], 1} ->
 	    compile3(Files, Cwd, Opts);
-	{[C|_], N} ->
+	{[_|_], _N} ->
 	    io:format("Output file name given, but more than one input file.~n"),
 	    error
     end.
@@ -156,7 +152,7 @@ compile3([], _Cwd, _Options) -> ok.
 
 %% Invokes the appropriate compiler, depending on the file extension.
 
-compile_file("", Input, Output, Options) ->
+compile_file("", Input, _Output, _Options) ->
     io:format("File has no extension: ~s~n", [Input]),
     error;
 compile_file(Ext, Input, Output, Options) ->
@@ -190,7 +186,7 @@ file_or_directory(Name) ->
 	{error, _} ->
 	    case filename:extension(Name) of
 		[] -> directory;
-		Other -> file
+		_Other -> file
 	    end
     end.
 

@@ -16,8 +16,7 @@
 %%     $Id$
 %%
 -module(mod_disk_log).
-
--export([do/1, error_log/5, load/2, store/2, remove/1]).
+-export([do/1,error_log/5,security_log/2,load/2,store/2,remove/1]).
 
 -export([report_error/2]).
 
@@ -36,7 +35,7 @@ do(Info) ->
     case httpd_util:key1search(Info#mod.data,status) of
 	%% A status code has been generated!
 	{StatusCode,PhraseArgs,Reason} ->
-	    transfer_log(Info,"-", AuthUser, Date, StatusCode, 0, LogFormat),
+	    transfer_log(Info, "-", AuthUser, Date, StatusCode, 0, LogFormat),
 	    if
 		StatusCode >= 400 ->
 		    error_log(Info, Date, Reason, LogFormat);
@@ -48,16 +47,24 @@ do(Info) ->
 	undefined ->
 	    case httpd_util:key1search(Info#mod.data,response) of
 		{already_sent,StatusCode,Size} ->
-		    transfer_log(Info,"-", AuthUser, Date, StatusCode, Size,
-				 LogFormat),
+		    transfer_log(Info, "-", AuthUser, Date, StatusCode,
+				 Size, LogFormat),
 		    {proceed,Info#mod.data};
+
+		{response, Head, Body} ->
+		    Size = httpd_util:key1search(Head, content_length, 0),
+		    Code = httpd_util:key1search(Head, code, 200),
+		    transfer_log(Info, "-", AuthUser, Date, Code, 
+				 Size, LogFormat),
+		    {proceed,Info#mod.data};	
+		
 		{StatusCode,Response} ->
-		    transfer_log(Info,"-", AuthUser, Date, 200,
+		    transfer_log(Info, "-", AuthUser, Date, 200,
 				 httpd_util:flatlength(Response), LogFormat),
 		    {proceed,Info#mod.data};
 		undefined ->
-		    transfer_log(Info,"-", AuthUser, Date, 200, undefined,
-				 LogFormat),
+		    transfer_log(Info, "-", AuthUser, Date, 200,
+				 0, LogFormat),
 		    {proceed,Info#mod.data}
 	    end
     end.
@@ -66,8 +73,8 @@ custom_date() ->
     LocalTime     = calendar:local_time(),
     UniversalTime = calendar:universal_time(),
     Minutes       = round(diff_in_minutes(LocalTime,UniversalTime)),
-    {{YYYY, MM, DD}, {Hour, Min, Sec}} = LocalTime,
-    Date =
+    {{YYYY,MM,DD},{Hour,Min,Sec}} = LocalTime,
+    Date = 
 	io_lib:format("~.2.0w/~.3s/~.4w:~.2.0w:~.2.0w:~.2.0w ~c~.2.0w~.2.0w",
 		      [DD,httpd_util:month(MM),YYYY,Hour,Min,Sec,sign(Minutes),
 		       abs(Minutes) div 60,abs(Minutes) rem 60]),  
@@ -94,58 +101,77 @@ auth_user(Data) ->
 
 log_internal_info(Info,Date,[]) ->
     ok;
-log_internal_info(Info, Date, [{internal_info,Reason}|Rest]) ->
+log_internal_info(Info,Date,[{internal_info,Reason}|Rest]) ->
     Format = get_log_format(Info#mod.config_db),
-    error_log(Info, Date, Reason, Format),
+    error_log(Info,Date,Reason,Format),
     log_internal_info(Info,Date,Rest);
 log_internal_info(Info,Date,[_|Rest]) ->
     log_internal_info(Info,Date,Rest).
 
+
 %% transfer_log
 
-transfer_log(Info, RFC931, AuthUser, Date, StatusCode, Bytes, Format) ->
+transfer_log(Info,RFC931,AuthUser,Date,StatusCode,Bytes,Format) ->
     case httpd_util:lookup(Info#mod.config_db,transfer_disk_log) of
 	undefined ->
 	    no_transfer_log;
 	TransferDiskLog ->
 	    {PortNumber,RemoteHost}=(Info#mod.init_data)#init_data.peername,
-	    Entry=io_lib:format("~s ~s ~s [~s] \"~s\" ~w ~w~n",
-				[RemoteHost,RFC931,AuthUser,Date,
-				 Info#mod.request_line,StatusCode,Bytes]),
-	    write(TransferDiskLog,Entry,Format)
+	    Entry = io_lib:format("~s ~s ~s [~s] \"~s\" ~w ~w~n",
+				  [RemoteHost,RFC931,AuthUser,Date,
+				   Info#mod.request_line,StatusCode,Bytes]),
+	    write(TransferDiskLog, Entry, Format)
     end.
 
 
 %% error_log
 
 error_log(Info, Date, Reason, Format) ->
+    Format=get_log_format(Info#mod.config_db),
     case httpd_util:lookup(Info#mod.config_db,error_disk_log) of
 	undefined ->
 	    no_error_log;
 	ErrorDiskLog ->
-	    {PortNumber, RemoteHost} = (Info#mod.init_data)#init_data.peername,
+	    {PortNumber,RemoteHost}=(Info#mod.init_data)#init_data.peername,
 	    Entry = 
 		io_lib:format("[~s] access to ~s failed for ~s, reason: ~p~n",
-			      [Date,Info#mod.request_uri,RemoteHost,Reason]),
+			      [Date, Info#mod.request_uri, 
+			       RemoteHost, Reason]),
 	    write(ErrorDiskLog, Entry, Format)
     end.
 
-error_log(SocketType,Socket,ConfigDB,{PortNumber,RemoteHost},Reason) ->
+error_log(SocketType, Socket, ConfigDB, {PortNumber, RemoteHost}, Reason) ->
     Format = get_log_format(ConfigDB),
     case httpd_util:lookup(ConfigDB,error_disk_log) of
 	undefined ->
 	    no_error_log;
 	ErrorDiskLog ->
 	    Date  = custom_date(),
-	    Entry = io_lib:format("[~s] server crash for ~s, reason: ~p~n",
-				  [Date,RemoteHost,Reason]),
-	    write(ErrorDiskLog,Entry,Format),
+	    Entry = 
+		io_lib:format("[~s] server crash for ~s, reason: ~p~n",
+			      [Date,RemoteHost,Reason]),
+	    write(ErrorDiskLog, Entry, Format),
 	    ok
     end.
 
-report_error(ConfigDB,Error) ->
+
+%% security_log
+
+security_log(ConfigDB, Event) ->
     Format = get_log_format(ConfigDB),
-    case httpd_util:lookup(ConfigDB,error_disk_log) of
+    case httpd_util:lookup(ConfigDB,security_disk_log) of
+	undefined ->
+	    no_error_log;
+	DiskLog ->
+	    Date  = custom_date(),
+	    Entry = io_lib:format("[~s] ~s ~n", [Date, Event]),
+	    write(DiskLog, Entry, Format),
+	    ok
+    end.
+
+report_error(ConfigDB, Error) ->
+    Format = get_log_format(ConfigDB),
+    case httpd_util:lookup(ConfigDB, error_disk_log) of
 	undefined ->
 	    no_error_log;
 	ErrorDiskLog ->
@@ -155,12 +181,11 @@ report_error(ConfigDB,Error) ->
 	    ok
     end.
 
-
 %%----------------------------------------------------------------------
 %% Get the current format of the disklog
 %%----------------------------------------------------------------------
-get_log_format(ConfigDB) ->
-    httpd_util:lookup(ConfigDB, disk_log_format, external).
+get_log_format(ConfigDB)->
+    httpd_util:lookup(ConfigDB,disk_log_format,external).
 
 
 %%
@@ -180,8 +205,9 @@ load([$T,$r,$a,$n,$s,$f,$e,$r,$D,$i,$s,$k,$L,$o,$g,$S,$i,$z,$e,$ |
 			    {ok,[],{transfer_disk_log_size,
 				    {MaxBytesInteger,MaxFilesInteger}}};
 			{error,_} ->
-			    {error,?NICE(httpd_conf:clean(TransferDiskLogSize)++
-					 " is an invalid TransferDiskLogSize")}
+			    {error,
+			     ?NICE(httpd_conf:clean(TransferDiskLogSize)++
+				   " is an invalid TransferDiskLogSize")}
 		    end;
 		{error,_} ->
 		    {error,?NICE(httpd_conf:clean(TransferDiskLogSize)++
@@ -201,14 +227,12 @@ load([$E,$r,$r,$o,$r,$D,$i,$s,$k,$L,$o,$g,$S,$i,$z,$e,$ | ErrorDiskLogSize],[]) 
 			    {ok,[],{error_disk_log_size,
 				    {MaxBytesInteger,MaxFilesInteger}}};
 			{error,_} ->
-			    {error,
-			     ?NICE(httpd_conf:clean(ErrorDiskLogSize) ++
-			     " is an invalid ErrorDiskLogSize")}
+			    {error,?NICE(httpd_conf:clean(ErrorDiskLogSize)++
+					 " is an invalid ErrorDiskLogSize")}
 		    end;
 		{error,_} ->
-		    {error,
-		     ?NICE(httpd_conf:clean(ErrorDiskLogSize) ++
-		     " is an invalid ErrorDiskLogSize")}
+		    {error,?NICE(httpd_conf:clean(ErrorDiskLogSize)++
+				 " is an invalid ErrorDiskLogSize")}
 	    end
     end;
 load([$E,$r,$r,$o,$r,$D,$i,$s,$k,$L,$o,$g,$ |ErrorDiskLog],[]) ->
@@ -224,14 +248,12 @@ load([$S,$e,$c,$u,$r,$i,$t,$y,$D,$i,$s,$k,$L,$o,$g,$S,$i,$z,$e,$ |SecurityDiskLo
 			    {ok, [], {security_disk_log_size,
 				      {MaxBytesInteger, MaxFilesInteger}}};
 			{error,_} ->
-			    {error, 
-			     ?NICE(httpd_conf:clean(SecurityDiskLogSize) ++
-			     " is an invalid SecurityDiskLogSize")}
+			    {error, ?NICE(httpd_conf:clean(SecurityDiskLogSize)++
+					  " is an invalid SecurityDiskLogSize")}
 		    end;
 		{error, _} ->
-		    {error, 
-		     ?NICE(httpd_conf:clean(SecurityDiskLogSize) ++
-		     " is an invalid SecurityDiskLogSize")}
+		    {error, ?NICE(httpd_conf:clean(SecurityDiskLogSize)++
+				  " is an invalid SecurityDiskLogSize")}
 	    end
     end;
 load([$S,$e,$c,$u,$r,$i,$t,$y,$D,$i,$s,$k,$L,$o,$g,$ |SecurityDiskLog],[]) ->
@@ -249,49 +271,50 @@ load([$D,$i,$s,$k,$L,$o,$g,$F,$o,$r,$m,$a,$t,$ |Format],[]) ->
 
 %% store
 
-store({transfer_disk_log, TransferDiskLog}, ConfigList) ->
-    ?vtrace("store(transfer_disk_log) -> entry with"
-	    "~n   TransferDiskLog: ~p", [TransferDiskLog]),
-    case create_disk_log(TransferDiskLog, ConfigList) of
-	{ok, TransferDB} ->
-	    {ok, {transfer_disk_log, TransferDB}};
-	{error, Reason} ->
-	    {error, Reason}
+store({transfer_disk_log,TransferDiskLog},ConfigList) ->
+    case create_disk_log(TransferDiskLog,ConfigList) of
+	{ok,TransferDB} ->
+	    {ok,{transfer_disk_log,TransferDB}};
+	{error,Reason} ->
+	    {error,Reason}
     end;
-store({error_disk_log, ErrorDiskLog}, ConfigList) ->
-    ?vtrace("store(error_disk_log) -> entry with"
-	    "~n   ErrorDiskLog: ~p", [ErrorDiskLog]),
-    case create_disk_log(ErrorDiskLog, ConfigList) of
-	{ok, ErrorDB} ->
-	    {ok, {error_disk_log, ErrorDB}};
-	{error, Reason} ->
-	    {error, Reason}
+store({security_disk_log,SecurityDiskLog},ConfigList) ->
+    case create_disk_log(SecurityDiskLog,ConfigList) of
+	{ok,SecurityDB} ->
+	    {ok,{security_disk_log,SecurityDB}};
+	{error,Reason} ->
+	    {error,Reason}
+    end;
+store({error_disk_log,ErrorDiskLog},ConfigList) ->
+    case create_disk_log(ErrorDiskLog,ConfigList) of
+	{ok,ErrorDB} ->
+	    {ok,{error_disk_log,ErrorDB}};
+	{error,Reason} ->
+	    {error,Reason}
     end.
 
 
 %%----------------------------------------------------------------------
 %% Open or creates the disklogs 
 %%----------------------------------------------------------------------
-create_disk_log(LogFile, ConfigList) ->
+create_disk_log(LogFile,ConfigList) ->
     Filename = httpd_conf:clean(LogFile),
     {MaxBytes, MaxFiles} =
-	httpd_util:key1search(ConfigList,
-			      transfer_disk_log_size, {500*1024, 8}),
+	httpd_util:key1search(ConfigList,transfer_disk_log_size,{500*1024,8}),
     case filename:pathtype(Filename) of
 	absolute ->
 	    create_disk_log(Filename, MaxBytes, MaxFiles, ConfigList);
 	volumerelative ->
 	    create_disk_log(Filename, MaxBytes, MaxFiles, ConfigList);
 	relative ->
-	    case httpd_util:key1search(ConfigList, server_root) of
+	    case httpd_util:key1search(ConfigList,server_root) of
 		undefined ->
 		    {error,
-		     ?NICE(Filename ++
-			   " is an invalid ErrorLog beacuse ServerRoot "
-			   "is not defined")};
+		     ?NICE(Filename++
+			   " is an invalid ErrorLog beacuse ServerRoot is not defined")};
 		ServerRoot ->
-		    AbsoluteFilename = filename:join(ServerRoot, Filename),
-		    create_disk_log(AbsoluteFilename, MaxBytes, MaxFiles, 
+		    AbsoluteFilename = filename:join(ServerRoot,Filename),
+		    create_disk_log(AbsoluteFilename, MaxBytes, MaxFiles,
 				    ConfigList)
 	    end
     end.
@@ -301,6 +324,7 @@ create_disk_log(Filename, MaxBytes, MaxFiles, ConfigList) ->
     open(Filename, MaxBytes, MaxFiles, Format).
     
 
+
 %% remove
 remove(ConfigDB) ->
     lists:foreach(fun([DiskLog]) -> close(DiskLog) end,
@@ -308,7 +332,6 @@ remove(ConfigDB) ->
     lists:foreach(fun([DiskLog]) -> close(DiskLog) end,
 		  ets:match(ConfigDB,{error_disk_log,'$1'})),
     ok.
-
 
 
 %% 
@@ -337,44 +360,44 @@ open(Filename, MaxBytes, MaxFiles, _) ->
 open1(Filename, MaxBytes, MaxFiles, Opts0) ->
     Opts1 = [{name, Filename}, {file, Filename}, {type, wrap}] ++ Opts0,
     case open2(Opts1, {MaxBytes, MaxFiles}) of
-	{ok, LogDB} ->
-	    {ok, LogDB};
-	{error, Reason} ->
-	    ?vlog("failed opening disk log with args:"
-		  "~n   Filename: ~p"
-		  "~n   MaxBytes: ~p"
-		  "~n   MaxFiles: ~p"
-		  "~n   Opts0:    ~p"
-		  "~nfor reason:"
-		  "~n   ~p", [Filename, MaxBytes, MaxFiles, Opts0, Reason]),
-	    {error, 
-	     ?NICE("Can't create " ++ Filename ++ 
-		   lists:flatten(io_lib:format(", ~p",[Reason])))};
-	_ ->
-	    {error, ?NICE("Can't create "++Filename)}
+        {ok, LogDB} ->
+            {ok, LogDB};
+        {error, Reason} ->
+            ?vlog("failed opening disk log with args:"
+                  "~n   Filename: ~p"
+                  "~n   MaxBytes: ~p"
+                  "~n   MaxFiles: ~p"
+                  "~n   Opts0:    ~p"
+                  "~nfor reason:"
+                  "~n   ~p", [Filename, MaxBytes, MaxFiles, Opts0, Reason]),
+            {error, 
+             ?NICE("Can't create " ++ Filename ++ 
+                   lists:flatten(io_lib:format(", ~p",[Reason])))};
+        _ ->
+            {error, ?NICE("Can't create "++Filename)}
     end.
 
 open2(Opts, Size) ->
     case disk_log:open(Opts) of
-	{error, {badarg, size}} ->
-	    %% File did not exist, add the size option and try again
-	    disk_log:open([{size, Size} | Opts]);
-	Else ->
-	    Else
+        {error, {badarg, size}} ->
+            %% File did not exist, add the size option and try again
+            disk_log:open([{size, Size} | Opts]);
+        Else ->
+            Else
     end.
 
-    
+
 %%----------------------------------------------------------------------
 %% Actually writes the entry to the disk_log. If the log is an 
 %% internal disk_log write it with log otherwise with blog.
-%5----------------------------------------------------------------------  
+%%----------------------------------------------------------------------  
 write(Log, Entry, internal) ->
     disk_log:log(Log, Entry);
 
 write(Log, Entry, _) ->
     disk_log:blog(Log, Entry).
 
-
 %% Close the log file
 close(Log) ->
     disk_log:close(Log).
+

@@ -42,12 +42,14 @@ MODULES= \
 	odbc_app \
 	odbc_sup
 
+HRLS =  odbc_internal 
 
+INCLUDE=../include
+ODBC_HRL=$(INCLUDE)/odbc.hrl
 
+EXT_HRL_FILES= $(ODBC_HRL)
+HRL_FILES = $(HRLS:%=%.hrl)
 ERL_FILES= $(MODULES:%=%.erl)	
-
-TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR))
-
 
 APP_FILE = odbc.app
 APP_SRC = $(APP_FILE).src
@@ -57,13 +59,13 @@ APPUP_FILE = odbc.appup
 APPUP_SRC = $(APPUP_FILE).src
 APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
 
+TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa ../ebin
-# The -pa option is just used temporary until erlc can handle 
-# includes from other directories than ../include .
-
+ERL_FLAGS +=
+ERL_COMPILE_FLAGS += -I$(INCLUDE)
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
@@ -97,8 +99,10 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(ERL_FILES) $(RELSYSDIR)/src
-	$(INSTALL_DIR) $(RELSYSDIR)/ebin
+	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(RELSYSDIR)/src
+	$(INSTALL_DIR) $(RELSYSDIR)/include
+	$(INSTALL_DATA) $(EXT_HRL_FILES) $(RELSYSDIR)/include 
+	$(INSTALL_DIR) $(RELSYSDIR)/ebin	
 	$(INSTALL_DATA) $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) \
 	$(RELSYSDIR)/ebin
 

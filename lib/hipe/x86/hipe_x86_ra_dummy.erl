@@ -3,19 +3,39 @@
 %%% simple local x86 regalloc
 
 -module(hipe_x86_ra_dummy).
--export([ra/2]).
+-export([ra/3]).
 -include("hipe_x86.hrl").
 -define(HIPE_INSTRUMENT_COMPILER, true). % enable instrumentation
 -include("../main/hipe.hrl").
 
-ra(X86Defun, Options) ->
+ra(X86Defun, Coloring_fp, Options) ->
     #defun{code=Code0} = X86Defun,
     Code1 = do_insns(Code0),
     %% Record all pseudos as spilled.
+%%     ?add_spills(Options, hipe_gensym:get_var() -
+%% 		hipe_x86_registers:first_virtual()),
+    NofSpilledFloats = count_non_float_spills(Coloring_fp),
+    NofFloats = length(Coloring_fp),
     ?add_spills(Options, hipe_gensym:get_var() -
-		hipe_x86_registers:first_virtual()),
+		hipe_x86_registers:first_virtual()-
+		NofSpilledFloats -
+		NofFloats),
     TempMap = [],
-    {X86Defun#defun{code=Code1}, TempMap}.
+    {X86Defun#defun{code=Code1,
+		    var_range={0, hipe_gensym:get_var()}},
+     TempMap}.
+
+count_non_float_spills(Coloring_fp)->
+    count_non_float_spills(Coloring_fp,0).
+count_non_float_spills([{_,To}|Tail], Num)->
+    case hipe_x86_specific_fp:is_precolored(To) of
+	true ->
+	    count_non_float_spills(Tail, Num);
+	_ ->
+	    count_non_float_spills(Tail, Num+1)
+    end;
+count_non_float_spills([],Num) ->
+    Num.
 
 do_insns([I|Insns]) ->
     do_insn(I) ++ do_insns(Insns);
@@ -34,9 +54,13 @@ do_insn(I) ->	% Insn -> Insn list
 	    do_lea(I);
 	#move{} ->
 	    do_move(I);
+ 	#fmov{} ->
+ 	    do_fmov(I);
+ 	#fop{} ->
+ 	    do_fop(I);
 	_ ->
-	    %% comment, jmp*, label, pseudo_jcc, pseudo_call, pseudo_tailcall,
-	    %% push, ret
+	    %% comment, jmp*, label, pseudo_call, pseudo_jcc, pseudo_tailcall,
+	    %% pseudo_tailcall_prepare, push, ret
 	    [I]
     end.
 
@@ -62,8 +86,8 @@ do_jmp_switch(I) ->
 	false ->
 	    [I];
 	true ->
-	    EAX = hipe_x86:mk_temp(hipe_x86_registers:eax(), 'untagged'),
-	    [hipe_x86:mk_move(Temp, EAX), I#jmp_switch{temp=EAX}]
+	    Reg = hipe_x86:mk_temp(hipe_x86_registers:temp0(), 'untagged'),
+	    [hipe_x86:mk_move(Temp, Reg), I#jmp_switch{temp=Reg}]
     end.
 
 %%% Fix a lea op.
@@ -74,8 +98,8 @@ do_lea(I) ->
 	false ->
 	    [I];
 	true ->
-	    EAX = hipe_x86:mk_temp(hipe_x86_registers:eax(), 'untagged'),
-	    [I#lea{temp=EAX}, hipe_x86:mk_move(EAX, Temp)]
+	    Reg = hipe_x86:mk_temp(hipe_x86_registers:temp0(), 'untagged'),
+	    [I#lea{temp=Reg}, hipe_x86:mk_move(Reg, Temp)]
     end.
 
 %%% Fix a move op.
@@ -84,6 +108,20 @@ do_move(I) ->
     #move{src=Src0,dst=Dst0} = I,
     {FixSrc, Src, FixDst, Dst} = do_binary(Src0, Dst0),
     FixSrc ++ FixDst ++ [I#move{src=Src,dst=Dst}].
+
+%%% Fix a fmov op.
+
+do_fmov(I) ->
+  #fmov{src=Src0,dst=Dst0} = I,
+  {FixSrc, Src, FixDst, Dst} = do_binary(Src0, Dst0),
+  FixSrc ++ FixDst ++ [I#fmov{src=Src,dst=Dst}].
+
+%%% Fix a fop.
+
+do_fop(I) ->
+  #fop{src=Src0,dst=Dst0} = I,
+  {FixSrc, Src, FixDst, Dst} = do_binary(Src0, Dst0),
+  FixSrc ++ FixDst ++ [I#fop{src=Src,dst=Dst}].
 
 %%% Fix the operands of a binary op.
 %%% 1. remove pseudos from any explicit memory operands
@@ -102,8 +140,8 @@ do_binary(Src0, Dst0) ->
 		    false ->
 			{FixSrc, Src};
 		    true ->
-			EAX = hipe_x86_registers:eax(),
-			Src2 = clone(Src, EAX),
+			Reg = hipe_x86_registers:temp0(),
+			Src2 = clone(Src, Reg),
 			FixSrc2 = FixSrc ++ [hipe_x86:mk_move(Src, Src2)],
 			{FixSrc2, Src2}
 		end
@@ -112,16 +150,16 @@ do_binary(Src0, Dst0) ->
 
 %%% Fix any x86_mem operand to not refer to any pseudos.
 %%% The fixup may use additional instructions and registers.
-%%% 'src' operands may clobber '%eax'.
-%%% 'dst' operands may clobber '%edx'.
+%%% 'src' operands may clobber '%temp0'.
+%%% 'dst' operands may clobber '%temp1'.
 %%% (This is not arbitrary. The translation of restore_catch does a
 %%% "move %eax,<dst>", and fail_to does a "move <src>,%eax".)
 
 fix_src_operand(Opnd) ->
-    fix_mem_operand(Opnd, hipe_x86_registers:eax()).
+    fix_mem_operand(Opnd, hipe_x86_registers:temp0()).
 
 fix_dst_operand(Opnd) ->
-    fix_mem_operand(Opnd, hipe_x86_registers:edx()).
+    fix_mem_operand(Opnd, hipe_x86_registers:temp1()).
 
 fix_mem_operand(Opnd, Reg) ->	% -> {[fixupcode], newop}
     case Opnd of
@@ -169,8 +207,11 @@ src_is_pseudo(Src) ->
 	false -> false
     end.
 
-temp_is_pseudo(Temp) ->
-    not(hipe_x86_registers:is_precoloured(hipe_x86:temp_reg(Temp))).
+temp_is_pseudo(Temp = #x86_temp{type=Type}) ->
+    if Type == 'double'-> false;
+       true ->
+	    not(hipe_x86_registers:is_precoloured(hipe_x86:temp_reg(Temp)))
+    end.
 
 %%% Make Reg a clone of Dst (attach Dst's type to Reg).
 

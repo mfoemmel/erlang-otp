@@ -65,10 +65,10 @@ config(Config) when list(Config) ->
     evil_update_user(Mid),
 
     ?VERIFY({'EXIT', _}, megaco:system_info(non_exist)),
-    ?VERIFY({'EXIT', _}, megaco:user_info(non_exist, min_trans_id)),
+    ?VERIFY({'EXIT', _}, megaco:user_info(non_exist, trans_id)),
     ?VERIFY({'EXIT', _}, megaco:user_info(Mid, non_exist)),
     ?VERIFY({error,{no_such_user, _}},
-	    megaco:update_user_info(non_exist, min_trans_id, 1)),
+	    megaco:update_user_info(non_exist, trans_id, 1)),
     ?VERIFY({error, {bad_user_val, _, _, _}},
 	    megaco:update_user_info(Mid, non_exist, 4711)),
 

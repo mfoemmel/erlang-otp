@@ -67,7 +67,7 @@ init(Parent,Owner,Options) ->
 			  {packer_y,[{fixed,?UPH},{fixed,?ENTRYH},
 				     {stretch,1}]},
 			  {pack_x,2},{pack_y,2}]),
-    Fup = filename:dirname(code:which(?MODULE)) ++ "/fup.bm",
+    Fup = filename:join([code:priv_dir(gs),"bitmap","fup.bm"]),
     gs:button(up,frame,[{label,{image, Fup}},{pack_x,1},{pack_y,1}]),
     gs:label(infodir,frame,[{pack_x,2},{pack_y,1},{align,w},
 			    {label,{text," Dir:"}}]),
@@ -155,7 +155,7 @@ loop(State) ->
 	{gs,up,click,_,_} ->
 	    S2 = try_to_enter(State,filename:dirname(State#state.dir)),
 	    loop(S2);
-	{gs,lb,doubleclick,_,[Idx,ItemTxt|_]} ->
+	{gs,lb,doubleclick,_,[_Idx,ItemTxt|_]} ->
 	    S2 = try_to_enter(State,ItemTxt),
 	    loop(S2);
 	{gs,entry,keypress,_,['Return'|_]} ->
@@ -164,10 +164,10 @@ loop(State) ->
 	    loop(S2);
 	{gs,entry,keypress,_,_} ->
 	    loop(State);
-	{gs,lb,click,_,[Idx,ItemTxt|_]} ->
+	{gs,lb,click,_,[_Idx,ItemTxt|_]} ->
 	    EntryText = case lists:last(ItemTxt) of
 			    $/ -> "";
-			    Nope ->
+			    _ ->
 				ItemTxt
 			end,
 	    gs:config(entry,{text,EntryText}),
@@ -196,7 +196,7 @@ sort_selected([Idx|Is],Dirs,Files) ->
     case lists:last(FileOrDir) of
 	$/ ->
 	    sort_selected(Is,[drop_last(FileOrDir)|Dirs],Files);
-	Afile ->
+	_Afile ->
 	    sort_selected(Is,Dirs,[FileOrDir|Files])
     end.
 	    
@@ -221,7 +221,7 @@ drop_last(L) ->
 drop_last(L,N) ->
     lists:sublist(L,length(L)-N).
 
-count(Char,[]) ->
+count(_Char,[]) ->
     0;
 count(H,[H|T]) -> 1+count(H,T);
 count(H,[_|T]) -> count(H,T).
@@ -255,7 +255,7 @@ get_files(Dir,[File|Files],ResDirs,ResFiles,Extensions) ->
 		false ->
 		    get_files(Dir,Files,ResDirs,ResFiles,Extensions)
 	    end;
-	Q -> % dead links (and other stuff?)
+	_ -> % dead links (and other stuff?)
 %	    io:format("file:~s/~s ignored~n",[Dir,File]),
 	    get_files(Dir,Files,ResDirs,ResFiles,Extensions)
     end.
@@ -285,10 +285,10 @@ cleanup(FileOrDir) ->
 	$/ ->
 	    case count($/,FileOrDir) of
 		1 -> FileOrDir;
-		G ->
+		_ ->
 		    cleanup(drop_last(FileOrDir))
 	    end;
-	Q ->
+	_ ->
 	    case lists:suffix("..",FileOrDir) of
 		true ->
 		    case drop_last(FileOrDir,3) of

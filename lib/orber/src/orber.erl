@@ -28,12 +28,13 @@
 -module(orber).
 
 -include_lib("orber/include/corba.hrl").
+-include_lib("orber/src/orber_iiop.hrl").
 -include_lib("orber/src/orber_debug.hrl").
 -include_lib("orber/src/ifr_objects.hrl").
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/0, stop/0, install/1, install/2, orber_nodes/0, iiop_port/0,
+-export([start/0, start/1, stop/0, install/1, install/2, orber_nodes/0, iiop_port/0,
 	 domain/0, bootstrap_port/0, iiop_ssl_port/0, iiop_out_ports/0,
 	 ssl_server_certfile/0, ssl_client_certfile/0, set_ssl_client_certfile/1,
 	 ssl_server_verify/0, ssl_client_verify/0, set_ssl_client_verify/1,
@@ -46,15 +47,19 @@
 	 start_lightweight/0, start_lightweight/1,
 	 get_ORBDefaultInitRef/0, get_ORBInitRef/0,
 	 get_interceptors/0, set_interceptors/1,
-	 jump_start/0, jump_start/1, jump_start/2, jump_stop/0, js/0, js/1,
-	 iiop_connections/0, iiop_connections_pending/0, typechecking/0]).
+	 jump_start/0, jump_start/1, jump_start/2, jump_stop/0,
+	 iiop_connections/0, iiop_connections_pending/0, typechecking/0,
+	 exclude_codeset_ctx/0, exclude_codeset_component/0, bidir_context/0,
+	 secure/0, multi_jump_start/1, multi_jump_start/2, multi_jump_start/3, 
+	 get_tables/0]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
 -export([host/0, ip_address_variable_defined/0, start/2, init/1,
-	 get_debug_level/0, debug_level_print/3, dbg/3, configure/2,
-	 multi_configure/1, throw_helper/2]).
+	 get_debug_level/0, debug_level_print/3, dbg/3, error/3,
+	 exception_info/1, configure/2, multi_configure/1,
+	 mjs/1, mjs/2, js/0, js/1]).
 
 %%-----------------------------------------------------------------
 %% Internal definitions
@@ -78,47 +83,154 @@
 %%-----------------------------------------------------------------
 
 jump_stop() ->
-    orber:stop(),
-    orber:uninstall(),
+    stop(),
+    uninstall(),
     mnesia:stop().
 
 js() ->
-    corba:orb_init([{interceptors, {native, [orber_iiop_tracer]}},
-		    {orber_debug_level, 10}, {local_typecheck, true}]),
-    jump_start(4001, ip_address()).
+    jump_start(iiop_port(), [{interceptors, {native, [orber_iiop_tracer]}},
+			     {orber_debug_level, 10}, 
+			     {flags, ?ORB_ENV_LOCAL_TYPECHECKING}]).
 
 js(Port) ->
-    corba:orb_init([{interceptors, {native, [orber_iiop_tracer]}},
-		    {orber_debug_level, 10}]),
-    jump_start(Port, ip_address()).
+    jump_start(Port, [{interceptors, {native, [orber_iiop_tracer]}},
+		      {orber_debug_level, 10}, 
+		      {flags, ?ORB_ENV_LOCAL_TYPECHECKING}]).
 
 jump_start() ->
-    jump_start(4001, ip_address()).
+    jump_start(iiop_port(), []).
 
 jump_start(Port) ->
-    jump_start(Port, ip_address()).
+    jump_start(Port, []).
 
-jump_start(Port, Domain) when integer(Port), atom(Domain) ->
-    jump_start(Port, atom_to_list(Domain));
-jump_start(Port, Domain) when integer(Port), list(Domain) ->
-    DomainName = Domain ++ [$:|integer_to_list(Port)],
+jump_start(Port, InitOptions) when integer(Port), list(InitOptions) ->
+    Domain = ip_address() ++ [$:|integer_to_list(Port)],
+    Options = lists:keydelete(iiop_port, 1, InitOptions),
     mnesia:start(),
-    corba:orb_init([{iiop_port, Port}, {domain, DomainName}]),
-    orber:install([node()], [{ifr_storage_type, ram_copies}]),
-    orber:start(),    
-    orber:info();
-jump_start(Port, Domain) ->
-    exit({error, Port, Domain}). 
+    corba:orb_init([{iiop_port, Port}, {domain, Domain}|Options]),
+    install([node()], [{ifr_storage_type, ram_copies}]),
+    start(),    
+    info();
+jump_start(Port, Options) ->
+    exit({error, Port, Options}). 
+
+
+mjs(Nodes) ->
+    multi_js_helper(Nodes, iiop_port(),
+		    [{interceptors, {native, [orber_iiop_tracer]}},
+		     {orber_debug_level, 10}, 
+		     {flags, ?ORB_ENV_LOCAL_TYPECHECKING}]).
+
+mjs(Nodes, Port) ->
+    multi_js_helper(Nodes, Port, 
+		    [{interceptors, {native, [orber_iiop_tracer]}},
+		     {orber_debug_level, 10},
+		     {flags, ?ORB_ENV_LOCAL_TYPECHECKING}]).
+
+
+multi_jump_start(Nodes) ->
+    multi_js_helper(Nodes, iiop_port(), []).
+
+multi_jump_start(Nodes, Port) ->
+    multi_js_helper(Nodes, Port, []).
+
+multi_jump_start(Nodes, Port, Options) ->
+    multi_js_helper(Nodes, Port, Options).
+
+multi_js_helper(Nodes, Port, InitOptions) when list(Nodes), integer(Port), 
+					       list(InitOptions) ->
+    Domain = ip_address() ++ [$:|integer_to_list(Port)],
+    %% We MUST delete the option iiop_port.
+    InitOptions2 = lists:keydelete(iiop_port, 1, InitOptions),
+    Options = [{domain, Domain}|InitOptions2],
+    case node() of
+	nonode@nohost ->
+	    {error, "The distribution is not started"};
+	_ ->
+	    mnesia:start(),
+	    corba:orb_init([{iiop_port, Port}|Options]),
+	    install([node()], [{ifr_storage_type, ram_copies}]),
+	    start(),
+	    case jump_start_slaves(Nodes, Port, Options, [], []) of
+		{ok, NodeData} ->
+		    info(),
+		    {ok, [{node(), Port}|NodeData]};
+		Other ->
+		    Other
+	    end
+    end.
+
+jump_start_slaves([], Port, Options, [], NodeData) ->
+    rpc:multicall([node() | nodes()], global, sync, []),
+    {ok, NodeData};
+jump_start_slaves([], Port, Options, Errors, _) ->
+    {error, Errors};
+jump_start_slaves([{Host, N}|T], Port, Options, Errors, NodeData) ->
+    case create_nodes(Host, N, Port, Options, Errors, NodeData) of
+	{ok, NewNodeData} ->
+	    jump_start_slaves(T, Port, Options, Errors, NewNodeData);
+	{error, NewErrors} ->
+	    jump_start_slaves(T, Port, Options, NewErrors, NodeData)
+    end;
+jump_start_slaves([Host|T], Port, Options, Errors, NodeData) ->
+    case catch create_node(Host, Port+1, Options) of
+	{ok, NewNode} ->
+	    jump_start_slaves(T, Port, Options, Errors, [{NewNode, Port+1}|NodeData]);
+	{error, Reason} ->
+	    jump_start_slaves(T, Port, Options, [{Host, Port, Reason}|Errors], 
+			      NodeData);
+	Other ->
+	    jump_start_slaves(T, Port, Options, [{Host, Port, Other}|Errors], 
+			      NodeData)
+    end.
+
+create_nodes(Host, 0, Port, Options, [], NodeData) ->
+    {ok, NodeData};
+create_nodes(Host, 0, Port, Options, Errors, _) ->
+    {error, Errors};
+create_nodes(Host, N, Port, Options, Errors, NodeData) ->
+    case catch create_node(Host, Port+N, Options) of
+	{ok, NewNode} ->
+	    create_nodes(Host, N-1, Port, Options, Errors, 
+			 [{NewNode, Port+N}|NodeData]);
+	{error, Reason} ->
+	    create_nodes(Host, N-1, Port, Options, 
+			 [{Host, Port+N, Reason}|Errors], NodeData);
+	Other ->
+	    create_nodes(Host, N-1, Port, Options, 
+			 [{Host, Port+N, Other}|Errors], NodeData)
+    end.
+    
+
+create_node(Host, Port, Options) ->
+    case slave:start_link(Host, Port) of
+	{ok, NewNode} ->
+	    case net_adm:ping(NewNode) of
+		pong ->
+		    ok = rpc:call(NewNode, mnesia, start, []),
+		    {ok,_} = rpc:call(NewNode, mnesia, change_config, [extra_db_nodes, [node()]]),
+		    ok = rpc:call(NewNode, corba, orb_init, [[{iiop_port, Port}|Options]]),
+		    ok = rpc:call(NewNode, orber, add_node, [NewNode, ram_copies]),
+		    {ok, NewNode};
+		_ ->
+		    {error, "net_adm:ping(Node) failed"}
+	    end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 
 start() ->
+    start(temporary).
+
+start(Type) when Type == permanent; Type == temporary ->
     application:start(mnesia),
     TableTest = test_tables(),
     case lists:member(not_member, TableTest) of
 	true ->
 	    exit({error,"Orber Mnesia Table(s) missing. Orber not properly installed."});
 	_->
-	    application:start(orber)
+	    try_starting(Type, false)
     end.
 
 start_lightweight() ->
@@ -144,6 +256,9 @@ start_lightweight(Nodes) ->
 stop() ->
     application:stop(orber).
 
+
+get_tables() ->
+    ?ifr_object_list++?ORBER_TABS.
 
 iiop_port() ->
     case application:get_env(orber, iiop_port) of
@@ -271,6 +386,46 @@ iiop_connections() ->
 iiop_connections_pending() ->
     orber_iiop_pm:list_setup_connections().
 
+
+get_flags() ->
+    case get(oe_orber_flags) of
+	undefined ->
+	    case application:get_env(orber, flags) of
+		undefined ->
+		    put(oe_orber_flags, ?ORB_ENV_INIT_FLAGS),
+		    ?ORB_ENV_INIT_FLAGS;
+		{ok, Flags} ->
+		    put(oe_orber_flags, Flags),
+		    Flags
+	    end;
+	Flags when integer(Flags) ->
+	    Flags
+    end.
+    
+typechecking() ->
+    ?ORB_FLAG_TEST(get_flags(), ?ORB_ENV_LOCAL_TYPECHECKING).
+
+exclude_codeset_ctx() ->
+    ?ORB_FLAG_TEST(get_flags(), ?ORB_ENV_EXCLUDE_CODESET_CTX).
+
+exclude_codeset_component() ->
+    ?ORB_FLAG_TEST(get_flags(), ?ORB_ENV_EXCLUDE_CODESET_COMPONENT).
+
+bidir_context() ->
+    Flags = get_flags(),
+    if
+	?ORB_FLAG_TEST(Flags, ?ORB_ENV_USE_BI_DIR_IIOP) ->
+	    [#'IOP_ServiceContext'
+	     {context_id=?IOP_BI_DIR_IIOP,
+	      context_data = 
+	      #'IIOP_BiDirIIOPServiceContext'{listen_points = 
+					      [#'IIOP_ListenPoint'{host=host(), 
+								   port=iiop_port()}]}}];
+	true ->
+	    []
+    end.
+
+
 objectkeys_gc_time() ->
     case application:get_env(orber, objectkeys_gc_time) of
 	{ok, Int} when integer(Int) ->
@@ -285,22 +440,6 @@ Time to large (>1000000 sec), swithed to 'infinity'~n"),
 	_ ->
 	    infinity
     end.
-
-typechecking() ->
-    case get(oe_typechecking) of
-	undefined ->
-	    case application:get_env(orber, local_typecheck) of
-		undefined ->
-		    put(oe_typechecking, false),
-		    false;
-		{ok, Boolean} ->
-		    put(oe_typechecking, Boolean),
-		    Boolean
-	    end;
-	Boolean ->
-	    Boolean
-    end.
-
 
 %%-----------------------------------------------------------------
 %% CosNaming::NamingContextExt operations
@@ -510,9 +649,18 @@ set_ssl_client_cacertfile(Value) when list(Value) ->
 info() ->
     case is_running() of
 	true ->
-	    case secure() of
-		no ->
-		    error_logger:info_msg("=== Orber-~-9s System Information ===
+	    Info1 = create_main_info(),
+	    Info2 = create_flag_info(Info1),
+	    Info3 = create_security_info(secure(), Info2),
+	    error_logger:info_msg(Info3);
+	_ ->
+	    error_logger:info_msg("=== Orber-~-9s System Information ===
+       *** Orber is not running ***
+==========================================~n",[?ORBVSN])
+    end.
+
+create_main_info() ->
+    [io_lib:format("=== Orber-~-9s System Information ===
 Orber domain..................: ~s
 IIOP port number..............: ~p
 Bootstrap port number.........: ~p
@@ -528,34 +676,36 @@ Object Keys GC interval.......: ~p
 Using Interceptors............: ~p
 Debug Level...................: ~p
 orbInitRef....................: ~p
-orbDefaultInitRef.............: ~p
-Local Typechecking............: ~p
-=========================================~n",
+orbDefaultInitRef.............: ~p~n",
 [?ORBVSN, domain(), iiop_port(), bootstrap_port(), orber_nodes(), giop_version(),
  iiop_timeout(), iiop_connection_timeout(), iiop_setup_connection_timeout(),
- iiop_out_ports(), iiop_connections(), iiop_connections_pending(), 
+ iiop_out_ports(), iiop_connections(), iiop_connections_pending(),
  objectkeys_gc_time(), get_interceptors(), get_debug_level(), get_ORBInitRef(),
- get_ORBDefaultInitRef(), typechecking()]);
-                ssl ->
-		    error_logger:info_msg("=== Orber-~-9s System Information ===
-Orber domain..................: ~s
-IIOP port number..............: ~p
-Bootstrap port number.........: ~p
-Nodes in domain...............: ~p
-GIOP version..................: ~p
-IIOP timeout..................: ~p
-IIOP connection timeout.......: ~p
-IIOP setup connection timeout.: ~p
-IIOP out ports................: ~p
-IIOP connections..............: ~p
-IIOP connections (pending)....: ~p
-Object Keys GC interval.......: ~p
-Using Interceptors............: ~p
-Debug Level...................: ~p
-orbInitRef....................: ~p
-orbDefaultInitRef.............: ~p
-Local Typechecking............: ~p
-ORB security..................: ssl
+ get_ORBDefaultInitRef()])].
+
+create_flag_info(Info) ->
+    case application:get_env(orber, flags) of
+	undefined ->
+	    [Info, "System Flags Set..............: -~n"];
+	{ok, Flags} ->
+	    FlagData = check_flags(?ORB_ENV_FLAGS, Flags, []),
+	    [Info, "System Flags Set..............:~n", FlagData, "~n"]
+    end.
+  
+check_flags([], _, Acc) ->
+    Acc;
+check_flags([{Flag, Txt}|T], Flags, Acc) when ?ORB_FLAG_TEST(Flags, Flag) ->
+    check_flags(T, Flags, ["   - ", Txt, "~n"|Acc]);
+check_flags([_|T], Flags, Acc) ->
+    check_flags(T, Flags, Acc).
+
+	    
+
+
+create_security_info(no, Info) ->
+    lists:flatten([Info, "=========================================~n"]);
+create_security_info(ssl, Info) ->
+    lists:flatten([Info, io_lib:format("ORB security..................: ssl
 SSL IIOP port number..........: ~p
 SSL server certfile...........: ~p
 SSL server verification type..: ~p
@@ -566,21 +716,16 @@ SSL client verification type..: ~p
 SSL client verification depth.: ~p
 SSL client cacertfile.........: ~p
 =========================================~n",
-[?ORBVSN, domain(), iiop_port(), bootstrap_port(), orber_nodes(), giop_version(),
- iiop_timeout(), iiop_connection_timeout(), iiop_setup_connection_timeout(),
- iiop_out_ports(), iiop_connections(), iiop_connections_pending(), 
- objectkeys_gc_time(), get_interceptors(), get_debug_level(), get_ORBInitRef(),
- get_ORBDefaultInitRef(), typechecking(), iiop_ssl_port(), ssl_server_certfile(), 
- ssl_server_verify(),
+[iiop_ssl_port(), ssl_server_certfile(), ssl_server_verify(),
  ssl_server_depth(), ssl_server_cacertfile(), ssl_client_certfile(),
- ssl_client_verify(), ssl_client_depth(), ssl_client_cacertfile()])
-           end;
-	_ ->
-	    error_logger:info_msg("=== Orber-~-9s System Information ===
-       *** Orber is not running ***
-==========================================~n",[?ORBVSN])
-    end.
+ ssl_client_verify(), ssl_client_depth(), ssl_client_cacertfile()])]).
 
+
+%%-----------------------------------------------------------------
+%% EXCEPTION mapping
+%%-----------------------------------------------------------------
+exception_info(Exc) ->
+    orber_exceptions:dissect(Exc).
 
 %%-----------------------------------------------------------------
 %% Installation interface functions
@@ -632,7 +777,7 @@ install_orber(Nodes, Options) ->
     orber_policy_server:install(Timeout, [{ram_copies, Nodes} |MnesiaOptions]),
     'CosNaming_NamingContextExt_impl':install(Timeout, [{NSType, Nodes} |MnesiaOptions]),
     orber_initial_references:install(Timeout, [{InitType, Nodes} |MnesiaOptions]),
-    application:start(orber),
+    try_starting(temporary, true),
     oe_cos_naming:oe_register(),
     oe_cos_naming_ext:oe_register(),
     oe_erlang:oe_register(),
@@ -646,6 +791,7 @@ install_orber(Nodes, Options) ->
 		{aborted, {has_no_disc,_}} ->
 		    ok;
 		{aborted, Reason} ->
+		    application:stop(orber),
 		    exit({error, {"Unable to dump mnesia tables.", Reason}})
 	    end;
 	_ ->
@@ -653,6 +799,19 @@ install_orber(Nodes, Options) ->
     end,
     application:stop(orber).
 
+try_starting(Type, Exit) ->
+    case application:start(orber, Type) of
+	ok ->
+	    ok;
+	{error,{already_started,orber}} when Exit == true ->
+	    exit("Orber already started on this node.");
+	Reason when Exit == true ->
+	    exit("Unable to start Orber. Is the listen port vacant?");
+	{error,{already_started,orber}} ->
+	    {error,{already_started,orber}};
+	_ ->
+	    {error, "Unable to start Orber. Is the listen port vacant?"}
+	end.
 
 test_tables() ->
     AllTabs = mnesia:system_info(tables),
@@ -704,24 +863,24 @@ get_option(Key, OptionList) ->
 add_node(Node, StorageType) when atom(Node), atom(StorageType)  ->
     case rpc:call(Node, mnesia, system_info, [is_running]) of
 	{badrpc, Reason} ->
-	    exit({error, "Node '"++atom_to_list(Node)++
-		  "' do not respond. add_node/2 failed."});
+	    exit("Node '"++atom_to_list(Node)++
+		 "' do not respond. add_node/2 failed.");
 	yes ->
 	    case rpc:call(Node, orber, is_running, []) of
 		false ->
 		    copy_tables(?ifr_object_list, Node, StorageType);
 		true ->
-		    exit({error, "Unable to add node '" ++ 
-			  atom_to_list(Node) ++ 
-			  "' since Orber already running."});
+		    exit("Unable to add node '" ++ 
+			 atom_to_list(Node) ++ 
+			 "' since Orber already running.");
 		_ ->
-		    exit({error, "Unable to reach node: '" ++ 
-			  atom_to_list(Node) ++ 
-			  " add_node/1 failed"})
+		    exit("Unable to reach node: '" ++ 
+			 atom_to_list(Node) ++ 
+			 " add_node/1 failed")
 	    end;
 	no ->
-	    exit({error, "Mnesia not running on node '"++atom_to_list(Node)++ 
-		  "' add_node/2 failed."}) 
+	    exit("Mnesia not running on node '"++atom_to_list(Node)++ 
+		 "' add_node/2 failed.") 
     end.
 
 %% We have to copy the tables in two steps, i.e., orber tables should be ram_copies
@@ -732,23 +891,28 @@ copy_tables([T1|Trest], Node, StorageType) ->
     case mnesia:add_table_copy(T1, Node, StorageType) of
 	{atomic, ok} ->
 	    copy_tables(Trest, Node, StorageType);
-	_ ->
-	    exit({error, "Unable to copy table(s). add_node/2 failed"})
+	{aborted, Reason} ->
+	    exit({"orber:add_node/2 failed. Unable to copy IFR table(s): ", 
+		  [T1|Trest],
+		  mnesia:error_description(Reason)})
     end.
+
 copy_orber_tables([], Node) ->
     case rpc:call(Node, application, start, [orber]) of
 	ok ->
 	    ok;
-	_->
-	    exit({error, "All tables installed but failed to start orber on node: '"++
-		  atom_to_list(Node)})
+	Reason ->
+	    exit("All tables installed but failed to start orber on node: '"++
+		 atom_to_list(Node))
     end;
 copy_orber_tables([THead|TTail], Node) ->
     case mnesia:add_table_copy(THead, Node, ram_copies) of
 	{atomic, ok} ->
 	    copy_orber_tables(TTail, Node);
-	_ ->
-	    exit({error, "Unable to copy table(s). add_node/2 failed"})
+	{aborted, Reason} ->
+	    exit({"orber:add_node/2 failed. Unable to copy system table(s):",
+		  [THead|TTail],
+		  mnesia:error_description(Reason)})
     end.
 
 remove_node(Node) when atom(Node) ->
@@ -761,8 +925,8 @@ remove_node(Node) when atom(Node) ->
 		false ->
 		    remove_tables(?ifr_object_list ++ ?ORBER_TABS, Node);
 		_ ->
-		    exit({error, "Unable to reach node: '"++atom_to_list(Node)++ 
-			  "' remove_node/1 failed"})
+		    exit("Unable to reach node: '"++atom_to_list(Node)++ 
+			 "' remove_node/1 failed")
 	    end;
 	no ->
 	    case rpc:call(Node, mnesia, start, []) of
@@ -770,12 +934,12 @@ remove_node(Node) when atom(Node) ->
 		    remove_tables(?ifr_object_list ++ ?ORBER_TABS, Node),
 		    rpc:call(Node, mnesia, stop, []);
 		_->
-		    exit({error, "Unable to reach node: '"++atom_to_list(Node)++ 
-			  "' remove_node/1 failed"})
+		    exit("Unable to reach node: '"++atom_to_list(Node)++ 
+			 "' remove_node/1 failed")
 	    end;
 	{badrpc, Reason} ->
-	    exit({error, "Unable to contact node '"++atom_to_list(Node)++ 
-		  "' remove_node/1 failed."})
+	    exit("Unable to contact node '"++atom_to_list(Node)++ 
+		 "' remove_node/1 failed.")
     end.
 
 
@@ -784,13 +948,13 @@ remove_tables(Tables, Node) ->
 
 remove_tables([], Node, []) -> ok;
 remove_tables([], Node, Failed) ->
-    exit({error, "Unable to remove table(s). Remove_node/1 failed."});
+    exit({"orber:remove_node/1 failed. Unable to remove table(s):", Failed});
 remove_tables([T1|Trest], Node, Failed) ->
     case mnesia:del_table_copy(T1, Node) of
 	{atomic, ok} ->
 	    remove_tables(Trest, Node, Failed);
-	_ ->
-	    remove_tables(Trest, Node, [T1|Failed])
+	{aborted, Reason} ->
+	    remove_tables(Trest, Node, [{T1, Reason}|Failed])
     end.
 
 
@@ -798,16 +962,6 @@ remove_tables([T1|Trest], Node, Failed) ->
 %%-----------------------------------------------------------------
 %% Internal interface functions
 %%-----------------------------------------------------------------
-%% This a function requested by IC.
-throw_helper('INTF_REPOS', 'COMPLETED_YES') ->
-    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_YES});
-throw_helper('INTF_REPOS', 'COMPLETED_NO') ->
-    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO});
-throw_helper('INTF_REPOS', 'COMPLETED_MAYBE') ->
-    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_MAYBE}).
-
-
-
 
 is_loaded() ->
     is_running(application:loaded_applications()).
@@ -864,16 +1018,53 @@ debug_level_print(Format, Data, RequestedLevel) ->
 dbg(Format, Data, RequestedLevel) ->
     case application:get_env(orber, orber_debug_level) of
 	{ok, Level} when integer(Level), Level >= RequestedLevel ->
-	    %% Use the catch if incorrect format used somewhere.
-	    catch error_logger:error_msg("=================== Orber =================~n"++
-					 Format++
-					 "~n===========================================~n",
-					 Data),
+	    if
+		RequestedLevel > 4 ->
+		    %% Use catch if incorrect format used somewhere.
+		    catch error_logger:error_msg("=================== Orber =================~n"++
+						 Format++
+						 "~n===========================================~n",
+						 Data);
+		RequestedLevel > 2 ->
+		    %% Use catch if incorrect format used somewhere.
+		    catch error_logger:error_msg("=========== Orber COS Application =========~n"++
+						 Format++
+						 "~n===========================================~n",
+						 Data);
+		true ->
+		    %% Use catch if incorrect format used somewhere.
+		    catch error_logger:error_msg("========== Orber Client Application =======~n"++
+						 Format++
+						 "~n===========================================~n",
+						 Data)
+	    end,
 	    ok;
 	_ ->
 	    ok
     end.
 
+error(Format, Data, RequestedLevel) ->
+    if
+	RequestedLevel > 4 ->
+	    %% Use catch if incorrect format used somewhere.
+	    catch error_logger:error_msg("=================== Orber =================~n"++
+					 Format++
+					 "~n===========================================~n",
+					 Data);
+	RequestedLevel > 2 ->
+	    %% Use catch if incorrect format used somewhere.
+	    catch error_logger:error_msg("=========== Orber COS Application =========~n"++
+					 Format++
+					 "~n===========================================~n",
+					 Data);
+	true ->
+	    %% Use catch if incorrect format used somewhere.
+	    catch error_logger:error_msg("========== Orber Client Application =======~n"++
+					 Format++
+					 "~n===========================================~n",
+					 Data)
+    end,
+    ok.
 
 configure(Key, Value) when atom(Key) ->
     configure(Key, Value, check);
@@ -967,11 +1158,9 @@ configure(iiop_out_ports, {Min, Max}, Status) when integer(Min), integer(Max) ->
 %% Set the lightweight option.
 configure(lightweight, Value, Status) when list(Value) ->
     do_safe_configure(lightweight, Value, Status);
-%% Set the lightweight option.
-configure(local_typecheck, true, Status) ->
-    do_safe_configure(local_typecheck, true, Status);
-configure(local_typecheck, false, Status) ->
-    do_safe_configure(local_typecheck, false, Status);
+%% Configre the System Flags
+configure(flags, Value, Status) when integer(Value) ->
+    do_safe_configure(flags, Value, Status);
 
 %% SSL settings
 configure(secure, ssl, Status) ->
@@ -1004,8 +1193,8 @@ configure(ssl_client_cacertfile, Value, Status) when atom(Value) ->
     do_safe_configure(ssl_client_cacertfile, atom_to_list(Value), Status);
 
 configure(Key, Value, _) ->
-    orber:debug_level_print("[~p] orber:configure(~p, ~p); Bad key or value.", 
-			    [?LINE, Key, Value], ?DEBUG_LEVEL),
+    dbg("[~p] orber:configure(~p, ~p); Bad key or value.", 
+	[?LINE, Key, Value], ?DEBUG_LEVEL),
     exit("Bad configuration parameter(s)").
 
 %% This function may be used as long as it is safe to change a value at any time.
@@ -1065,32 +1254,6 @@ add_table_index() ->
 			"Unable to index ir_Contained mnesia table."),
     check_mnesia_result(mnesia:add_table_index(ir_TypedefDef, id),
 			"Unable to index ir_TypedefDef mnesia table.").
-
-del_table_index() ->
-    check_mnesia_result(mnesia:del_table_index(ir_ModuleDef, id),
-			"Unable to remove index for the mnesia table ir_ModuleDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_InterfaceDef, id),
-			"Unable to remove index for the mnesia table ir_InterfaceDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_StructDef, id),
-			"Unable to remove index for the mnesia table ir_StructDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_UnionDef, id),
-			"Unable to remove index for the mnesia table ir_UnionDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_ExceptionDef, id),
-			"Unable to remove index for the mnesia table ir_ExceptionDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_ConstantDef, id),
-			"Unable to remove index for the mnesia table ir_ConstantDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_EnumDef, id),
-			"Unable to remove index for the mnesia table ir_EnumDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_AliasDef, id),
-			"Unable to remove index for the mnesia table ir_AliasDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_AttributeDef, id),
-			"Unable to remove index for the mnesia table ir_AttributeDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_OperationDef, id),
-			"Unable to remove index for the mnesia table ir_OperationDef."),
-    check_mnesia_result(mnesia:del_table_index(ir_Contained, id),
-			"Unable to remove index for the mnesia table ir_Contained."),
-    check_mnesia_result(mnesia:del_table_index(ir_TypedefDef, id),
-			"Unable to remove index for the mnesia table ir_TypedefDef.").
 
 %%-----------------------------------------------------------------
 %% Server functions

@@ -54,6 +54,16 @@
 -define(GIOP_MORE_FRAGMENTS_FALSE, 0).
 -define(GIOP_MORE_FRAGMENTS_TRUE,  1).
 
+%% GIOP Message Types
+-define(GIOP_MSG_REQUEST,          0).
+-define(GIOP_MSG_REPLY,            1).
+-define(GIOP_MSG_CANCEL_REQUEST,   2).
+-define(GIOP_MSG_LOCATE_REQUEST,   3).
+-define(GIOP_MSG_LOCATE_REPLY,     4).
+-define(GIOP_MSG_CLOSE_CONNECTION, 5).
+-define(GIOP_MSG_MESSAGE_ERROR,    6).
+-define(GIOP_MSG_FRAGMENT,         7).
+
 %% PROFILE_ID's
 -define(TAG_INTERNET_IOP,        0).
 -define(TAG_MULTIPLE_COMPONENTS, 1).
@@ -207,11 +217,18 @@
 %% byte_order: indicating the byte order being used in subsequent 
 %%		elements of the message.
 %%	0 - big-endian byte ordering, 1 - little-endian byte ordering
+%% fragments: true if more fragments follow, otherwise false.
 %% message_type: indicating the type of the message 
 %% message_size: gives the length of the message following the message 
 %%		headerin octets.
 %%----------------------------------------------------------------------
--record(giop_message, {magic, giop_version, byte_order, message_type, message_size, message}).
+-record(giop_message, {magic, 
+		       giop_version, 
+		       byte_order,
+		       fragments = false,
+		       message_type, 
+		       message_size, 
+		       message}).
 
 
 
@@ -297,9 +314,16 @@
 %%----------------------------------------------------------------------
 -record(version, {major,minor}).
 
+%%----------------------------------------------------------------------
+%% Fragment Message Header
+%%
+%% request_id:
+%%----------------------------------------------------------------------
+-record(fragment_header, {request_id}).
+
 
 %%----------------------------------------------------------------------
-%% ORB_FLAGS macros. Used in {_,_,_,_,{Key, Flags},_}/6
+%% ORB_FLAGS macros. Used in the local object references {_,_,_,_,_,Flags}.
 %% 
 %%----------------------------------------------------------------------
 
@@ -307,9 +331,6 @@
 -define(ORB_SEC_ATTRIBUTES, 16#01).
 -define(ORB_CONTEXT,        16#02).
 -define(ORB_TYPECHECK,      16#04).
-
-%% Flags below should be changed :-) At the moment not used. When updated
-%% it is necessary to update ../test/corba_SUITE.erl
 -define(ORB_THING,          16#08).
 -define(ORB_ELSE1,          16#10).
 -define(ORB_ELSE2,          16#20).
@@ -318,8 +339,29 @@
 
 -define(ORB_INIT_FLAGS, 16#00).
 
+%%----------------------------------------------------------------------
+%% Flags used as configuration parameters (application env).
+%% 
+%%----------------------------------------------------------------------
+-define(ORB_ENV_EXCLUDE_CODESET_COMPONENT, 16#01).
+-define(ORB_ENV_LOCAL_TYPECHECKING,        16#02).
+-define(ORB_ENV_EXCLUDE_CODESET_CTX,       16#04).
+-define(ORB_ENV_USE_BI_DIR_IIOP,           16#08).
 
-%% Definition of flag operations:
+
+-define(ORB_ENV_INIT_FLAGS,      16#00).
+
+-define(ORB_ENV_FLAGS, 
+	[{?ORB_ENV_EXCLUDE_CODESET_CTX, "Exclude CodeSet Ctx"},
+	 {?ORB_ENV_LOCAL_TYPECHECKING, "Local Typechecking"},
+	 {?ORB_ENV_EXCLUDE_CODESET_COMPONENT, "Exclude CodeSet Component"},
+	 {?ORB_ENV_USE_BI_DIR_IIOP, "Use BiDirIIOP"}]).
+
+
+%%----------------------------------------------------------------------
+%% Definition of flag operations
+%% 
+%%----------------------------------------------------------------------
 %% USAGE: Boolean = ?ORB_FLAG_TEST(Flags, ?ORB_SEC_ATTRIBUTES)
 -define(ORB_FLAG_TEST(_F1, _I1),   ((_F1 band _I1) == _I1)).
 
@@ -375,6 +417,7 @@
 -record('GIOP_TargetAddress', {label, value}).
 
 -record('GIOP_IORAddressingInfo', {selected_profile_index, ior}).
+
 
 %%
 %% Nil object reference
@@ -477,7 +520,16 @@
 -define(DEFAULT_CODESETS, 
 	#'CONV_FRAME_CodeSetComponentInfo'{'ForCharData' = ?DEFAULT_FOR_CHAR, 
 					   'ForWcharData' = ?DEFAULT_FOR_WCHAR}).
-	  
+
+%% Fragmentation - IIOP-1.1 & 1.2	  
+-record('GIOP_FragmentHeader_1_2', {request_id}).
+
+-define(GIOP_FragmentHeader_1_2, {'tk_struct', 0, 
+				  'GIOP_FragmentHeader_1_2',
+				  [{"request_id", 'tk_ulong'}]}).
+
+
+
 
 %%-- ServiceContext ID's ------------
 %% Describes what type of context included, i.e.,
@@ -499,7 +551,17 @@
 				    [{"char_data", 'tk_ulong'},
 				     {"wchar_data", 'tk_ulong'}]}).
 
-	
+
+-record('IIOP_ListenPoint', {host, port}).
+-define(IIOP_LISTENPOINT, {'tk_struct', 0, 'IIOP_ListenPoint',
+			   [{"host", {'tk_string', 0}},
+			    {"port", 'tk_ushort'}]}).
+
+-record('IIOP_BiDirIIOPServiceContext', {listen_points}).
+-define(IIOP_BIDIRIIOPSERVICECONTEXT, 
+	{'tk_struct', 0, 'IIOP_BiDirIIOPServiceContext',
+	 [{"listen_points", {'tk_sequence', ?IIOP_LISTENPOINT, 0}}]}).
+
 -define(IOP_TransactionService,        0).
 -define(IOP_CodeSets,                  1).
 -define(IOP_ChainBypassCheck,          2).

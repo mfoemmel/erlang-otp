@@ -243,8 +243,6 @@ Failed to read from DB: ~p", [?LINE, Key, What], ?DEBUG_LEVEL),
 	    {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}
     end.
 
-write(Key, ObjRef) ->
-    write(Key, ObjRef, internal).
 write(Key, ObjRef, Type) ->
     _WF = fun() ->
 		  case mnesia:wread({orber_references, Key}) of

@@ -669,7 +669,7 @@ Version..........: ~p.~p
 Host.............: ~s
 Port.............: ~p~n", [Major, Minor, Host, Port]),
     ObjKeyStr = print_objkey(Objkey),
-    print_profiles(T, [ObjKeyStr | Acc]);
+    print_profiles(T, [Profile, ObjKeyStr | Acc]);
 print_profiles([#'IOP_TaggedProfile'
 		{tag=?TAG_INTERNET_IOP,
 		 profile_data = #'IIOP_ProfileBody_1_1'{iiop_version=
@@ -690,7 +690,7 @@ print_profiles([#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS,
 				     profile_data = Components}|T], Acc) ->
     MComp = io_lib:format("~n------------------ Multiple Components ----~n", []),
     ComponentsStr = print_components(Components, []),
-    print_profiles(T, [ComponentsStr, MComp | Acc]);
+    print_profiles(T, [MComp, ComponentsStr | Acc]);
 print_profiles([#'IOP_TaggedProfile'{tag=?TAG_SCCP_IOP,
 				     profile_data = Data}|T], Acc) ->
     SCCP = io_lib:format("~n------------------ SCCP IOP ---------------~n", []),
@@ -852,17 +852,31 @@ code(Version, #'IOP_IOR'{type_id=TypeId, profiles=Profiles}, Bytes, Len) ->
 			#'IOP_IOR'{type_id=TypeId, profiles=ProfileSeq},
 			Bytes, Len);
 code(Version, {Id, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) when atom(Id) ->
-    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
-					 component_data=?DEFAULT_CODESETS},
-    IOR = create(Version, Id:typeID(), orber:host(), orber:iiop_port(),
-		 {Id, Type, Key, UserDef, OrberDef, Flags}, [CodeSetComp]),
-    code(Version, IOR, Bytes, Len);
+    case orber:exclude_codeset_component() of
+	true ->
+	    IOR = create(Version, Id:typeID(), orber:host(), orber:iiop_port(),
+			 {Id, Type, Key, UserDef, OrberDef, Flags}, []),
+	    code(Version, IOR, Bytes, Len);
+	_ ->
+	    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+						 component_data=?DEFAULT_CODESETS},
+	    IOR = create(Version, Id:typeID(), orber:host(), orber:iiop_port(),
+			 {Id, Type, Key, UserDef, OrberDef, Flags}, [CodeSetComp]),
+	    code(Version, IOR, Bytes, Len)
+    end;
 code(Version, {Id, Type, Key, UserDef, OrberDef, Flags}, Bytes, Len) ->
-    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
-					 component_data=?DEFAULT_CODESETS},
-    IOR = create(Version, binary_to_list(Id), orber:host(), orber:iiop_port(),
-		 {Id, Type, Key, UserDef, OrberDef, Flags}, [CodeSetComp]),
-    code(Version, IOR, Bytes, Len).
+    case orber:exclude_codeset_component() of
+	true ->
+	    IOR = create(Version, binary_to_list(Id), orber:host(), orber:iiop_port(),
+			 {Id, Type, Key, UserDef, OrberDef, Flags}, []),
+	    code(Version, IOR, Bytes, Len);
+	_ ->
+	    CodeSetComp = #'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
+						 component_data=?DEFAULT_CODESETS},
+	    IOR = create(Version, binary_to_list(Id), orber:host(), orber:iiop_port(),
+			 {Id, Type, Key, UserDef, OrberDef, Flags}, [CodeSetComp]),
+	    code(Version, IOR, Bytes, Len)
+    end.
 
 code_profile_datas(_, []) ->
     [];

@@ -11,6 +11,7 @@
 	     mnesia_corba_connector,
 	     mnesia_corba_connector_impl,
 	     mnesia_corba_session,
+	     mnesia_corba_session_impl,
 	     mnesia_session,
 	     mnesia_session_impl,
 	     mnesia_session_lib,

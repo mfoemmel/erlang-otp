@@ -15,9 +15,9 @@
 %%            fail-instruction in Icode.
 %%         - All other BIFs, operators, or internal functions that are 
 %%            implemented in C (or assembler, or inlined, or whatever)
-%%            should use the primop instruction.
+%%            should use the call instruction with primop tag.
 %%            If the call is tail-recursive it will have to be
-%%            implemented as primop + return.
+%%            implemented as call primop + return.
 %%         - Calls or tail-recursive calls to all other Erlang functions
 %%            should be implemented with call or enter respectively.
 %%             
@@ -35,7 +35,7 @@
 -export([translate_instrs/5]).  %% used in hipe_rtl_mk_switch
 
 %%-------------------------------------------------------------------------
-
+-define(DEBUG,1).
 -include("hipe_icode2rtl.hrl").
 -include("../main/hipe.hrl").
 -include("hipe_literals.hrl").
@@ -47,34 +47,41 @@
 %%
 translate(Fun,Options) ->
   ?IF_DEBUG_LEVEL(2,put(hipe_mfa,hipe_icode:icode_fun(Fun)),true),  
+  %% hipe_icode:pp(Fun),
 
   %% Initialize gensym and varmap
   {Args, VarMap} = hipe_rtl_varmap:init(Fun),
-
-  %% hipe_icode:pp(Fun),
-
-  %% Get the name of the function to translate.
+  %% Get the name and other info of the function to translate.
   MFA = hipe_icode:icode_fun(Fun),
+  Data = hipe_icode:icode_data(Fun),
+  Icode = hipe_icode:icode_code(Fun),
+  IsClosure = hipe_icode:icode_is_closure(Fun), 
+  IsLeaf = hipe_icode:icode_is_leaf(Fun), 
+  Info = hipe_icode:icode_info(Fun),
 
   %% Create code that build exit terms with a trace.
   {ExitInfo, ConstTab1} =
-    hipe_rtl_exceptions:gen_exception(MFA, hipe_icode:icode_data(Fun)),
+    hipe_rtl_exceptions:gen_exception(MFA, Data),
 
   %% Translate Icode instructions to RTL instructions
+  ?opt_start_timer("Icode to nested RTL"),
   {Code, _VarMap1, ConstTab2} = 
-    translate_instrs(hipe_icode:icode_code(Fun), 
+    translate_instrs(Icode,
 		     VarMap,
 		     ConstTab1,
 		     Options,
 		     ExitInfo),
-
+  ?opt_stop_timer("Icode to nested RTL"),
   %% We build the code as list of lists of...
   %%  in order to avoid appends.
+  ?opt_start_timer("Flatten RTL"),
   Code1 = lists:flatten(Code), 
-
+  ?opt_stop_timer("Flatten RTL"),
   %% Build the RTL structure.
   Rtl = hipe_rtl:mk_rtl(MFA,
 			Args,
+			IsClosure,
+			IsLeaf,
 			Code1,
 			ConstTab2,
 			{1, hipe_gensym:get_var(rtl)},
@@ -82,7 +89,7 @@ translate(Fun,Options) ->
 
   %% hipe_rtl:pp(Rtl),
   %% Propagate info from Icode to RTL.
-  hipe_rtl:rtl_info_update(Rtl, hipe_icode:icode_info(Fun)).
+  hipe_rtl:rtl_info_update(Rtl, Info).
 %% ____________________________________________________________________
 %% 
 
@@ -93,12 +100,14 @@ translate(Fun,Options) ->
 %%
 %% Translate all icode instructions to rtl instructions
 %%
+translate_instrs(Is, VarMap, ConstTab, Options, ExitInfo) ->
+  translate_instrs(Is, VarMap, [], ConstTab, Options, ExitInfo).
 
-translate_instrs([], VarMap, ConstTab, Options, ExitInfo) ->
+translate_instrs([], VarMap, Code, ConstTab, _Options, ExitInfo) ->
   %% We add the code for building exit values last.
   ExitCode = hipe_rtl_exceptions:exit_code(ExitInfo),
-  {ExitCode, VarMap, ConstTab};
-translate_instrs([I|Is], VarMap, ConstTab, Options, ExitInfo) ->
+  {[Code,ExitCode], VarMap, ConstTab};
+translate_instrs([I|Is], VarMap, AccCode, ConstTab, Options, ExitInfo) ->
   %% Translate one instruction. 
   {Code, VarMap0, ConstTab0} = 
     translate_instruction(I, VarMap, ConstTab, Options, ExitInfo),
@@ -106,12 +115,7 @@ translate_instrs([I|Is], VarMap, ConstTab, Options, ExitInfo) ->
   ?IF_DEBUG(?when_option(rtl_show_translation, Options,
 			 ?msg("  To Instr: ~w~n",[Code])),
 	    no_debug),
-  %% Translate all other isntructions
-  {MoreCode, VarMap1, ConstTab1} = 
-    translate_instrs(Is, VarMap0, ConstTab0, Options, ExitInfo),
-
-  %% Cons the instructions together.
-  {[Code | MoreCode], VarMap1, ConstTab1}.
+  translate_instrs(Is, VarMap0, [AccCode,Code], ConstTab0, Options, ExitInfo).
 
 
 %%
@@ -141,16 +145,20 @@ translate_instruction(I, VarMap, ConstTab, Options, ExitInfo) ->
 	hipe_rtl_varmap:icode_label2rtl_label(hipe_icode:goto_label(I), VarMap),
       {hipe_rtl:mk_goto(hipe_rtl:label_name(Label)), Map0, ConstTab};
     fail ->
-      hipe_rtl_exceptions:gen_fail(I, VarMap, ConstTab, Options, ExitInfo);
+      hipe_rtl_exceptions:gen_fail(I, VarMap, ConstTab, ExitInfo);
     label ->
       LabelName = hipe_icode:label_name(I),
       {NewLabel, Map0} = hipe_rtl_varmap:icode_label2rtl_label(LabelName, VarMap),
       {hipe_rtl:info_update(NewLabel, hipe_icode:info(I)), Map0, ConstTab};
     restore_catch ->
-      hipe_rtl_exceptions:gen_restore_catch(I, VarMap, ConstTab, Options, ExitInfo);
+      hipe_rtl_exceptions:gen_restore_catch(I, VarMap, ConstTab, Options);
     comment ->
       {hipe_rtl:mk_comment(hipe_icode:comment_text(I)), VarMap, ConstTab};  
-
+    fclearerror ->
+      gen_fclearerror(VarMap, ConstTab);
+    fmov ->  gen_fmove(I, VarMap, ConstTab);
+    unsafe_untag_float -> gen_unsafe_untag_float(I, VarMap, ConstTab);
+    unsafe_tag_float -> gen_unsafe_tag_float(I, VarMap, ConstTab, Options);
     X ->
       exit({?MODULE, {"unknown icode instruction", X}})
   end.
@@ -172,6 +180,54 @@ gen_move(I, VarMap, ConstTab) ->
 	gen_const_move(Dst, MovedSrc, ConstTab),
       {Code, VarMap0, NewConstMap}
   end.
+
+%% ____________________________________________________________________
+%% FCLEARERROR
+gen_fclearerror(VarMap, ConstTab) ->
+  ContLbl = hipe_rtl:mk_new_label(),
+  LblName = hipe_rtl:label_name(ContLbl),
+  {[hipe_rtl:mk_call([], clear_fp_exception, [], primop, LblName, []),
+    ContLbl], VarMap, ConstTab}.
+
+%% ____________________________________________________________________
+%% FMOVE. fvar := fvar or fvar := -fvar
+gen_fmove(I, VarMap, ConstTab) ->
+  Neg = hipe_icode:fmov_negate(I),
+  {[Dst,Src], VarMap0} =
+    hipe_rtl_varmap:ivs2rvs([hipe_icode:fmov_dst(I),
+			     hipe_icode:fmov_src(I)], VarMap),
+  {hipe_rtl:mk_fmov(Dst, Src, Neg), VarMap0, ConstTab}.
+
+%% ____________________________________________________________________
+%% UNSAFE_UNTAG_FLOAT. fvar := var or fvar := const
+gen_unsafe_untag_float(I, VarMap, ConstTab) ->
+  Src1 = hipe_icode:unsafe_untag_float_src(I),
+  Dst1 = hipe_icode:unsafe_untag_float_dst(I),
+  case hipe_icode:is_var(Src1) of
+    true ->
+      {[Dst, Src], VarMap0} = 
+	hipe_rtl_varmap:ivs2rvs([Dst1, Src1], VarMap),
+      {hipe_tagscheme:unsafe_untag_float(Dst, Src), VarMap0, ConstTab};
+    false -> 
+      %% If Src1 is a constant we do var := const, fvar := var
+      {Dst, VarMap0} = 
+	hipe_rtl_varmap:icode_var2rtl_var(Dst1, VarMap),
+      Tmp = hipe_rtl:mk_new_var(),
+      {Code, NewConstTab} = 
+	gen_const_move(Tmp, Src1, ConstTab),
+      {[Code] ++
+       hipe_tagscheme:unsafe_untag_float(Dst, Tmp), VarMap0, NewConstTab}
+  end.
+
+%% ____________________________________________________________________
+%% UNSAFE_TAG_FLOAT. var := fvar
+gen_unsafe_tag_float(I, VarMap, ConstTab, Options) ->
+  {[Dst, Src], VarMap0} = 
+    hipe_rtl_varmap:ivs2rvs([hipe_icode:unsafe_tag_float_dst(I),
+			     hipe_icode:unsafe_tag_float_src(I)],
+			    VarMap),
+  {hipe_tagscheme:unsafe_tag_float(Dst, Src, Options), VarMap0, ConstTab}.
+
 
 %% ____________________________________________________________________
 %% TYPE
@@ -239,8 +295,7 @@ gen_if(I, VarMap, ConstTab) ->
 	     Args,
 	     hipe_rtl:label_name(TrueLbl),
 	     hipe_rtl:label_name(FalseLbl),
-	     hipe_icode:if_pred(I),
-	     hipe_icode:info(I)),
+	     hipe_icode:if_pred(I)),
   {[Code,CondCode], Map3, NewConstTab}.
 
 
@@ -248,7 +303,7 @@ args_to_vars([Arg|Args],VarMap, ConstTab) ->
   {Vars, VarMap1, ConstTab1, Code} = 
     args_to_vars(Args, VarMap, ConstTab),
 
-  case hipe_icode:is_var(Arg) of
+  case hipe_icode:is_var_or_fvar_or_reg(Arg) of
     true ->
       {Var, VarMap2} = hipe_rtl_varmap:icode_var2rtl_var(Arg,VarMap1),
       {[Var|Vars], VarMap2, ConstTab1, Code};
@@ -271,46 +326,69 @@ gen_call(I, VarMap, Options, ExitInfo, ConstTab) ->
   {Args, VarMap1, ConstTab1, InitCode} = 
     args_to_vars(hipe_icode:call_args(I), VarMap0, ConstTab),
   
-  Cont = hipe_icode:call_continuation(I), 
-  {ContLbl, VarMap2} = 
-    hipe_rtl_varmap:icode_label2rtl_label(Cont,
-					  VarMap1),
-  ContLblName = hipe_rtl:label_name(ContLbl),
+
   Fail = hipe_icode:call_fail(I),
 
-  {Code, VarMap4, ConstTab4} =
+  {Code, VarMap5, ConstTab4} =
     case hipe_icode:call_in_guard(I) of
       true ->
-	hipe_rtl_guardops:gen_guardop(I, VarMap, Options, ConstTab1);
+	hipe_rtl_guardops:gen_guardop(I, VarMap, ConstTab1);
       false ->
 	{FailLblName, VarMap3} =
 	  case Fail of 
 	    [] -> %% Not in a catch
-	      {[], VarMap2};
-	    _ ->  
-	      {FLbl, VarMap2b} = 
-		hipe_rtl_varmap:icode_label2rtl_label(Fail, VarMap2),
-	      {hipe_rtl:label_name(FLbl), VarMap2b}
+	      {[], VarMap1};
+	    _ ->
+	      {FLbl, VarMap2} = 
+		hipe_rtl_varmap:icode_label2rtl_label(Fail, VarMap1),
+	      {hipe_rtl:label_name(FLbl), VarMap2}
 	  end,
-	
-	case hipe_bif:is_bif(Fun) of 
-	  true -> 
-	    Annot = hipe_icode:info(I),
-	    
-	    hipe_rtl_primops:gen_primop(
-	      {Fun, Dst, Args, ContLblName, FailLblName, Annot},
-	      {VarMap3, ConstTab1},
-	      {Options, ExitInfo});
-	  false ->
-	    Call = hipe_rtl:mk_call(Dst, Fun, Args, 
-				    hipe_icode:call_type(I),
-				    ContLblName,
-				    FailLblName),
-	    {Call, VarMap3, ConstTab1}
 
+	case hipe_icode:call_continuation(I) of
+	  [] -> %% This call does not end a BB.
+	    ContLbl = hipe_rtl:mk_new_label(),
+	    ContLblName = hipe_rtl:label_name(ContLbl),
+	    case hipe_bif:is_bif(Fun) of 
+	      true -> 
+		Annot = hipe_icode:info(I),
+		{Code1, VarMap4, ConstTab2} =
+		  hipe_rtl_primops:gen_primop(
+		    {Fun, Dst, Args, ContLblName, FailLblName, Annot},
+		    {VarMap3, ConstTab1},
+		    {Options, ExitInfo}),
+		{[Code1,ContLbl], VarMap4, ConstTab2};
+	      false ->
+		Call = hipe_rtl:mk_call(Dst, Fun, Args, 
+					hipe_icode:call_type(I),
+					ContLblName,
+					FailLblName),
+		{[Call,ContLbl], VarMap3, ConstTab1}
+	    end;
+
+	  Cont -> %% This call ends a BB.
+	    {ContLbl, VarMap4} = 
+	      hipe_rtl_varmap:icode_label2rtl_label(Cont,
+						    VarMap3),
+	    ContLblName = hipe_rtl:label_name(ContLbl),
+	    case hipe_bif:is_bif(Fun) of 
+	      true -> 
+		Annot = hipe_icode:info(I),
+		
+		hipe_rtl_primops:gen_primop(
+		  {Fun, Dst, Args, ContLblName, FailLblName, Annot},
+		  {VarMap4, ConstTab1},
+		  {Options, ExitInfo});
+	      false ->
+		Call = hipe_rtl:mk_call(Dst, Fun, Args, 
+					hipe_icode:call_type(I),
+					ContLblName,
+					FailLblName),
+		{Call, VarMap4, ConstTab1}
+	    
+	    end
 	end
     end,
-  {[InitCode,Code], VarMap4, ConstTab4}.
+  {[InitCode,Code], VarMap5, ConstTab4}.
 
 
 %% ____________________________________________________________________
@@ -350,17 +428,16 @@ gen_enter(I, VarMap, Options, ExitInfo, ConstTab) ->
 
 
 %% ____________________________________________________________________
-%% 
 %%
 %% Generate code for the if-conditional
 %%
 
-gen_cond(CondOp, Args, TrueLbl, FalseLbl, Pred, Annot) ->
+gen_cond(CondOp, Args, TrueLbl, FalseLbl, Pred) ->
   Tmp = hipe_rtl:mk_new_reg(),
   GenLbl = hipe_rtl:mk_new_label(),
   TestRetLbl = hipe_rtl:mk_new_label(),
   TestRetName = hipe_rtl:label_name(TestRetLbl),
-  Arity = length(Args),
+  %% Arity = length(Args),
   case CondOp of
     '=:=' ->
       [Arg1, Arg2] = Args,
@@ -457,7 +534,7 @@ gen_cond(CondOp, Args, TrueLbl, FalseLbl, Pred, Annot) ->
        hipe_rtl:mk_alu(NewFlags, Flags, 'xor', hipe_rtl:mk_imm(?F_TIMO)),
        hipe_rtl_arch:pcb_store(?P_FLAGS, NewFlags),
        hipe_rtl:mk_goto(FalseLbl)];
-    Other ->
+    _Other ->
       [hipe_rtl:mk_call([Tmp], CondOp, Args, c, TestRetName, []),
        TestRetLbl,
        hipe_rtl:mk_branch(Tmp, ne, hipe_rtl:mk_imm(0),
@@ -484,7 +561,7 @@ gen_cond(CondOp, Args, TrueLbl, FalseLbl, Pred, Annot) ->
 %%
 -ifdef(usesjumptable).
 -define(uumess,?msg("~w Use jtab: ~w\n",
-		    [Options,property_lists:get_bool(use_jumptable, Options)])).
+		    [Options,proplists:get_bool(use_jumptable, Options)])).
 -else.
 -define(uumess,ok).
 -endif.
@@ -497,7 +574,6 @@ gen_switch_val(I, VarMap, ConstTab, Options, ExitInfo) ->
 
 gen_switch_tuple(I, Map, ConstTab, Options, ExitInfo) ->
   hipe_rtl_mk_switch:gen_switch_tuple(I, Map, ConstTab, Options, ExitInfo).
-
 
 
 %%
@@ -524,7 +600,7 @@ gen_untagged_const_move(Dst, Const, ConstTab) ->
       {hipe_rtl:mk_move(Dst, Src), ConstTab};
     %%      List when list(List) ->
     %%	 gen_const_list(Dst, List, ConstTab);
-    X when integer(X) ->
+    X when is_integer(X) ->
       case hipe_tagscheme:is_fixnum(X) of
 	true ->
 	  Src = hipe_rtl:mk_imm(tagged_val_of(X)),
@@ -532,7 +608,7 @@ gen_untagged_const_move(Dst, Const, ConstTab) ->
 	false ->
 	  gen_big_move(Dst, X, ConstTab)
       end;
-    A when atom(A) ->
+    A when is_atom(A) ->
       {hipe_rtl:mk_load_atom(Dst, A), ConstTab};
     Big ->
       gen_big_move(Dst, Big, ConstTab)
@@ -545,26 +621,25 @@ gen_big_move(Dst, Big, ConstTab) ->
    %%  gen_tag(Dst, Tmp, type_of(Big))],
    NewTab}.
 
-gen_tag(Dst, Addr, Type) ->
-  case Type of
-    tuple -> hipe_tagscheme:tag_tuple(Dst, Addr);
-    cons -> hipe_tagscheme:tag_cons(Dst, Addr);
-    float -> hipe_tagscheme:tag_flonum(Dst, Addr);
-    bignum -> hipe_tagscheme:tag_bignum(Dst, Addr)
-  end.
+%% gen_tag(Dst, Addr, Type) ->
+%%   case Type of
+%%     tuple -> hipe_tagscheme:tag_tuple(Dst, Addr);
+%%     cons -> hipe_tagscheme:tag_cons(Dst, Addr);
+%%     float -> hipe_tagscheme:tag_flonum(Dst, Addr);
+%%     bignum -> hipe_tagscheme:tag_bignum(Dst, Addr)
+%%   end.
 
-type_of(Term) ->
-  if Term =:= [] -> nil;
-     list(Term) -> cons;
-     tuple(Term) -> tuple;
-     integer(Term) ->
-      case hipe_tagscheme:is_fixnum(Term) of
-	true -> fixnum;
-	false -> bignum
-      end;
-     float(Term) -> float
-  end.
-
+%% type_of(Term) ->
+%%   if Term =:= [] -> nil;
+%%      list(Term) -> cons;
+%%      tuple(Term) -> tuple;
+%%      integer(Term) ->
+%%       case hipe_tagscheme:is_fixnum(Term) of
+%% 	true -> fixnum;
+%% 	false -> bignum
+%%       end;
+%%      float(Term) -> float
+%%   end.
 
 %% gen_const_list(Dst, [], ConstTab) ->
 %%   gen_const_move(Dst, [], ConstTab);
@@ -581,7 +656,7 @@ type_of(Term) ->
 %%
 
 tagged_val_of([]) -> hipe_tagscheme:mk_nil();
-tagged_val_of(X) when integer(X) -> hipe_tagscheme:mk_fixnum(X).
+tagged_val_of(X) when is_integer(X) -> hipe_tagscheme:mk_fixnum(X).
 
 %%
 %% Generate code for a typetest. If X is not of type Type then goto Label.
@@ -601,7 +676,7 @@ gen_type_test(X, Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
       {hipe_tagscheme:test_fixnum(X, TrueLbl, FalseLbl, Pred), ConstTab};
     integer ->
       {hipe_tagscheme:test_integer(X, TrueLbl, FalseLbl, Pred), ConstTab};
-    {integer, N} when integer(N) -> 
+    {integer, N} when is_integer(N) -> 
       %% XXX: warning, does not work for bignums
       case hipe_tagscheme:is_fixnum(N) of
 	true ->
@@ -642,9 +717,9 @@ gen_type_test(X, Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
     bignum ->
       {hipe_tagscheme:test_bignum(X, TrueLbl, FalseLbl, Pred), ConstTab};
     pid ->
-      {hipe_tagscheme:test_pid(X, TrueLbl, FalseLbl, Pred), ConstTab};
+      {hipe_tagscheme:test_any_pid(X, TrueLbl, FalseLbl, Pred), ConstTab};
     port ->
-      {hipe_tagscheme:test_port(X, TrueLbl, FalseLbl, Pred), ConstTab};
+      {hipe_tagscheme:test_any_port(X, TrueLbl, FalseLbl, Pred), ConstTab};
     reference ->
       {hipe_tagscheme:test_ref(X, TrueLbl, FalseLbl, Pred), ConstTab};
     function ->
@@ -656,10 +731,3 @@ gen_type_test(X, Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
     Other ->
       exit({?MODULE, {"unknown type", Other}})
   end.
-
-
-
-
-
-
-

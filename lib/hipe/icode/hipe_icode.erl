@@ -10,9 +10,9 @@
 %%           :  2001-01-30 EJ (happi@csd.uu.se): 
 %%                             Apply, primop, guardop removed
 %%  CVS      :
-%%              $Author: happi $
-%%              $Date: 2001/10/01 08:29:33 $
-%%              $Revision: 1.11 $
+%%              $Author: richardc $
+%%              $Date: 2002/09/24 13:48:04 $
+%%              $Revision: 1.26 $
 %% ====================================================================
 %%  TODO     :  Add some assertions to the constructors.
 %%              Split into several modules.
@@ -25,6 +25,8 @@
 
 -include("hipe_icode.hrl").
 -include("../main/hipe.hrl").
+
+-define(hash, hipe_hash).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -58,7 +60,7 @@
 %%    remove_catch       - label
 %%    fail               - [reason], type
 %%                         type is one of {exit, throw, fault, fault2}  
-%%                         for fault2 reason is acctually reason and trace.
+%%                         for fault2 reason is actually reason and trace.
 %%
 %%    comment            - text
 %%
@@ -168,11 +170,15 @@
 %%
 %% Exports
 %%
--export([mk_icode/5, %% mk_icode(Fun, Params, Code, VarRange, LabelRange)
-	 mk_icode/6, %% mk_icode(Fun, Params, Code, Data, VarRange, LabelRange)
+-export([mk_icode/7, %% mk_icode(Fun, Params, IsClosure, IsLeaf, 
+	 %%          Code, VarRange, LabelRange)
+	 mk_icode/8, %% mk_icode(Fun, Params, IsClosure, IsLeaf, 
+	 %%          Code, Data, VarRange, LabelRange)
 	 icode_fun/1,
 	 icode_params/1,
 	 icode_params_update/2,
+	 icode_is_closure/1,
+	 icode_is_leaf/1,
 	 icode_code/1,
 	 icode_code_update/2,
 	 icode_data/1,
@@ -221,7 +227,7 @@
 		 type_false_label/1,
 		 type_pred/1,
 		 is_type/1,
-		 
+
 		 mk_guardop/5,     %% mk_guardop(Dst, Fun, Args,  Continuation, Fail)
 		 mk_primop/3,      %% mk_primop(Dst, Fun, Args)
 		 mk_primop/5,      %% mk_primop(Dst, Fun, Args, Cont, Fail)
@@ -229,7 +235,9 @@
 		 mk_call/7,        %% mk_call(Dst, Mod, Fun, Args, Type,
 		 %%        Continuation, Fail)
 		 call_dst/1,
+		 call_dst_update/2,
 		 call_args/1,
+		 call_args_update/2,
 		 call_fun/1,
 		 call_type/1,
 		 call_continuation/1,
@@ -250,6 +258,12 @@
 		 enter_type/1,
 		 is_enter/1,
 
+		 mk_fclearerror/0,
+		 mk_fmov/2,                % mk_fmov(Dst, Src)
+		 mk_fmov/3,                % mk_fmov(Dst, Src, Negate)
+		 mk_unsafe_untag_float/2,  % (Dst, Src)
+		 mk_unsafe_tag_float/2,    % (Dst, Src)
+		 mk_conv_to_float/2,       % (Dst, Src)
 
 		 mk_gctest/0,
 		 mk_redtest/0,
@@ -268,9 +282,13 @@
 		 mk_const/1,               % mk_const(Const)
 		 mk_const_fun/4,           % mk_const_fun(MFA,U,I,Args)
 		 mk_var/1,                 % mk_var(Id)
+		 mk_reg/1,                 % mk_reg(Id)
+		 mk_fvar/1,                % mk_fvar(Id)
 		 mk_new_var/0,             % mk_new_var()
+                 mk_phi/2,                 % mk_phi(Name, PredList)
 		 info_add/2,
-		 info_update/2]).
+		 info_update/2,
+                 phi_name/1]).
 
 
 %%
@@ -290,14 +308,26 @@
 	 is_const/1,
 	 is_const_fun/1,
 	 is_var/1,
-	 is_uncond/1]).
+	 is_fvar/1,
+	 is_reg/1,
+	 is_var_or_fvar_or_reg/1,
+	 is_uncond/1,
+	 is_fclearerror/1,
+	 is_fmov/1,
+	 is_unsafe_untag_float/1,
+	 is_unsafe_tag_float/1,
+	 is_conv_to_float/1,
+         is_phi/1]).
 
 
 %%
 %% Selectors
 %%
 
--export([
+-export([subst_phi_arg/3,
+	 phi_getArgMap/1,
+	 phi_predList/1,
+	 phi_dst/1,
 	 mov_dst/1,
 	 mov_src/1,
 	 mov_src_update/2,
@@ -311,8 +341,23 @@
 	 fail_reason/1,
 	 fail_type/1,
 	 var_name/1,
+	 fvar_name/1,
+   reg_name/1,		 
 	 const_value/1,
-	 info/1]).
+	 info/1,
+	 fmov_dst/1,
+	 fmov_src/1,
+	 fmov_negate/1,
+	 fmov_src_update/2,
+	 unsafe_untag_float_dst/1,
+	 unsafe_untag_float_src/1,
+	 unsafe_untag_float_src_update/2,
+	 unsafe_tag_float_dst/1,
+	 unsafe_tag_float_src/1,
+	 unsafe_tag_float_src_update/2,
+	 conv_to_float_dst/1,
+	 conv_to_float_src/1,
+	 conv_to_float_src_update/2]).
 
 %%
 %% Misc
@@ -321,11 +366,13 @@
 -export([args/1,
 	 uses/1,
 	 defines/1,
+         phi_getArgMap/1,
+         phi_predList/1,
+         phi_dst/1,
 	 is_pure/1,
 	 pp/1,
 	 pp/2,
 	 pp_exit/1,
-	 remove_empty_bbs/1,
 	 preprocess_code/1,
 	 strip_comments/1,
 	 subst/2,
@@ -338,7 +385,6 @@
 	 is_leaf0/1 % needs to be used in beam_to_icode
 	]).
 
--export([update_labels/2]).
 -export([highest_var/1,highest_label/1]).
 
 
@@ -347,20 +393,24 @@
 %% icode
 %%
 
-mk_icode(Fun, Params, Code, VarRange, LabelRange) ->
+mk_icode(Fun, Params, Closure, Leaf, Code, VarRange, LabelRange) ->
   #icode{'fun'=Fun, params=Params, code=Code,
+	 closure=Closure,
+	 leaf=Leaf,
 	 data=hipe_consttab:new(),
 	 var_range=VarRange,
 	 label_range=LabelRange}.
-mk_icode(Fun, Params, Code, Data, VarRange, LabelRange) ->
+mk_icode(Fun, Params, Closure, Leaf, Code, Data, VarRange, LabelRange) ->
   #icode{'fun'=Fun, params=Params, code=Code,
-	 data=Data,
+	 data=Data, closure=Closure, leaf=Leaf,
 	 var_range=VarRange,
 	 label_range=LabelRange}.
 icode_fun(Icode) -> Icode#icode.'fun'.
 icode_params(Icode) -> Icode#icode.params.
 icode_params_update(Icode, Params) -> 
   Icode#icode{params=Params}.
+icode_is_closure(Icode) -> Icode#icode.closure.
+icode_is_leaf(Icode) -> Icode#icode.leaf.
 icode_code(Icode) -> Icode#icode.code.
 icode_code_update(Icode,NewCode) -> 
   Vmax = hipe_icode:highest_var(NewCode),
@@ -485,6 +535,52 @@ mov_src_update(M, NewSrc) -> M#mov{src=NewSrc}.
 is_mov(I) when record(I, mov) -> true;
 is_mov(_) -> false.
 
+
+%%
+%% phi  
+%%
+
+mk_phi(Var, PredList) ->
+  #phi{dst = Var, name = Var, args = ?hash:empty(),
+       predList = PredList}.
+phi_dst(P) -> P#phi.dst.
+phi_name(P) -> P#phi.name.
+phi_predList(P) -> P#phi.predList.
+phi_getArgMap(P) -> P#phi.args.
+subst_phi_arg(P, Pred, Value) ->
+  P#phi{args = ?hash:update(Pred, Value, P#phi.args)}.
+phi_args(P) -> 
+  get_phi_args(P#phi.predList, P#phi.args, P#phi.name, []).
+
+replace_phi_args([Pred | T], Map, Subst) ->
+  Map2 = case ?hash:lookup(Pred, Map) of
+           not_found    ->   Map;
+           {found, Var} ->   replace_phi_arg(Pred, Map, Var, Subst)
+         end,
+  replace_phi_args(T, Map2, Subst);
+
+replace_phi_args([], Map, _) -> Map.
+
+replace_phi_arg(Pred, Map, Var, [{Var, New} | T]) ->
+  replace_phi_arg(Pred, ?hash:update(Pred, New, Map), Var, T);
+
+replace_phi_arg(Pred, Map, Var, [_ | T]) ->
+  replace_phi_arg(Pred, Map, Var, T);
+
+replace_phi_arg(_, Map, _, []) -> Map.
+
+get_phi_args([Pred | T], Map, Name, Result) ->
+  Arg = case ?hash:lookup(Pred, Map) of
+          not_found      -> Name;
+          {found, Other} -> Other
+        end, 
+    get_phi_args(T, Map, Name, [Arg|Result]);
+
+get_phi_args([], _, _, Result) -> Result.
+
+is_phi(I) when record(I, phi) -> true;
+is_phi(_) -> false.
+
 %%
 %% call
 %%
@@ -505,7 +601,9 @@ mk_call(Dst, M, F, Args, Type, Continuation, Fail) ->
 	continuation_label=Continuation, fail_label=Fail,
 	in_guard=false, code_change=false}.
 call_dst(C) -> C#call.dst.
+call_dst_update(C,Dest) -> C#call{dst=Dest}.
 call_args(C) -> C#call.args.
+call_args_update(C,Args) -> C#call{args=Args}.
 call_fun(C) -> C#call.'fun'.
 call_type(C) -> C#call.type.
 call_continuation(C) -> C#call.continuation_label.
@@ -596,17 +694,32 @@ mk_const(C) -> {const, {flat, C}}.
 mk_const_fun(MFA,U,I,Args) -> {const, {const_fun, {MFA,U,I,Args}}}.
 const_value({const, {flat, X}}) -> X;
 const_value({const, {const_fun, X}}) -> X.
-is_const({const, X}) -> true;
+is_const({const, _}) -> true;
 is_const(_) -> false.
-is_const_fun({const, {const_fun, X}}) -> true;
+is_const_fun({const, {const_fun, _}}) -> true;
 is_const_fun(_) -> false.
 
 
 mk_var(V) -> {var, V}.
 var_name({var, Name}) -> Name.
-is_var({var, X}) -> true;
+is_var({var, _}) -> true;
 is_var(_) -> false.
 
+mk_reg(V) -> {reg, V}.
+reg_name({reg, Name}) -> Name.
+is_reg({reg, _}) -> true;
+is_reg(_) -> false.
+
+is_var_or_fvar_or_reg({var, _}) -> true;
+is_var_or_fvar_or_reg({fvar, _}) -> true;
+is_var_or_fvar_or_reg({reg, _}) -> true;
+
+is_var_or_fvar_or_reg(_) -> false.
+
+mk_fvar(V) -> {fvar, V}.
+fvar_name({fvar, Name}) -> Name.
+is_fvar({fvar, _}) -> true;
+is_fvar(_) -> false.
 
 %%
 %% Misc. primops
@@ -628,6 +741,67 @@ mk_gctest() -> mk_primop([], gc_test, []).
 mk_redtest() -> mk_primop([], redtest, []).
 
 
+%%
+%% Floating point
+%%
+
+%%
+%% fclearerror
+%%
+
+mk_fclearerror() ->
+  #fclearerror{info=[]}.
+is_fclearerror(C) when record(C, fclearerror) -> true;
+is_fclearerror(_) -> false.
+
+%%
+%% fmove
+%%
+
+%% negate is either true or false. False is default
+mk_fmov(X, Y) ->
+  mk_fmov(X, Y, false).
+mk_fmov(X, Y, Neg) -> #fmov{dst=X, src=Y, negate=Neg}.
+fmov_dst(M) -> M#fmov.dst.
+fmov_src(M) -> M#fmov.src.
+fmov_src_update(M, NewSrc) -> M#fmov{src=NewSrc}.
+fmov_negate(M) -> M#fmov.negate.
+is_fmov(I) when record(I, fmov) -> true;
+is_fmov(_) -> false.
+
+%%
+%% Unsafe untag float
+%%
+
+mk_unsafe_untag_float(X, Y) -> #unsafe_untag_float{dst=X, src=Y}.
+unsafe_untag_float_dst(U) -> U#unsafe_untag_float.dst.
+unsafe_untag_float_src(U) -> U#unsafe_untag_float.src.
+unsafe_untag_float_src_update(U, NewSrc) -> U#unsafe_untag_float{src=NewSrc}.
+is_unsafe_untag_float(U) when record(U, unsafe_untag_float) -> true;
+is_unsafe_untag_float(_) -> false.
+
+%%
+%% Unsafe tag float
+%%
+
+mk_unsafe_tag_float(X, Y) -> #unsafe_tag_float{dst=X, src=Y}.
+unsafe_tag_float_dst(U) -> U#unsafe_tag_float.dst.
+unsafe_tag_float_src(U) -> U#unsafe_tag_float.src.
+unsafe_tag_float_src_update(U, NewSrc) -> U#unsafe_tag_float{src=NewSrc}.
+is_unsafe_tag_float(U) when record(U, unsafe_tag_float) -> true;
+is_unsafe_tag_float(_) -> false.
+
+%%
+%% Convert to float
+%%
+
+mk_conv_to_float(X, Y) -> #conv_to_float{dst=X, src=Y}.
+conv_to_float_dst(C) -> C#conv_to_float.dst.
+conv_to_float_src(C) -> C#conv_to_float.src.
+conv_to_float_src_update(C, NewSrc) -> C#conv_to_float{src=NewSrc}.
+is_conv_to_float(C) when record(C, conv_to_float) -> true;
+is_conv_to_float(_) -> false.
+  
 
 %%
 %% info for all instructions
@@ -649,8 +823,12 @@ info(I) ->
     comment -> I#comment.info;
     switch_val -> I#switch_val.info;
     switch_tuple_arity -> I#switch_tuple_arity.info;
-    label -> I#label.info
-
+    label -> I#label.info;
+    fclearerror -> I#fclearerror.info;
+    fmov -> I#fmov.info;
+    unsafe_untag_float -> I#unsafe_untag_float.info;
+    unsafe_tag_float -> I#unsafe_tag_float.info;
+    conv_to_float -> I#conv_to_float.info  
   end.
 
 
@@ -674,7 +852,12 @@ info_update(I, NewInfo) ->
     comment -> I#comment{info = NewInfo};
     switch_val -> I#switch_val{info = NewInfo};
     switch_tuple_arity -> I#switch_tuple_arity{info = NewInfo};
-    label -> I#label{info = NewInfo}
+    label -> I#label{info = NewInfo};
+    fclearerror -> I#fclearerror{info=NewInfo};
+    fmov -> I#fmov{info = NewInfo};
+    unsafe_untag_float -> I#unsafe_untag_float{info = NewInfo};
+    unsafe_tag_float -> I#unsafe_tag_float{info = NewInfo};
+    conv_to_float -> I#conv_to_float{info = NewInfo}
   end.
 
 
@@ -697,6 +880,11 @@ args(I) ->
     call -> I#call.args;
     enter -> I#enter.args;
     return -> I#return.vars;
+    fmov -> [fmov_src(I)];
+    unsafe_untag_float -> [unsafe_untag_float_src(I)];
+    unsafe_tag_float -> [unsafe_tag_float_src(I)];
+    conv_to_float -> [conv_to_float_src(I)];
+    phi -> get_phi_args(I#phi.predList, I#phi.args, I#phi.name, []);
     %%    goto -> [];
     %%    pushcatch -> [];
     %%    restore_catch -> [];
@@ -710,8 +898,13 @@ args(I) ->
 defines(I) ->
   case element(1, I) of
     mov -> remove_constants([I#mov.dst]);
+    fmov -> remove_constants([I#mov.dst]);
     call -> remove_constants(I#call.dst);
     restore_catch -> remove_constants([I#restore_catch.dst]);
+    unsafe_untag_float -> [unsafe_untag_float_dst(I)];
+    unsafe_tag_float -> [unsafe_tag_float_dst(I)];
+    conv_to_float -> [conv_to_float_dst(I)];
+    phi -> remove_constants([I#phi.dst]);
     %%    'if' -> [];
     %%    switch_val -> [];
     %%    switch_tuple_arity -> [];
@@ -735,6 +928,10 @@ remove_constants([{const, _}|Xs]) ->
   remove_constants(Xs);
 remove_constants([{var, Var}|Xs]) ->
   [{var, Var} | remove_constants(Xs)];
+remove_constants([{fvar, Var}|Xs]) ->
+  [{fvar, Var} | remove_constants(Xs)];
+remove_constants([{colored, Var}|Xs]) ->
+  [{colored, Var} | remove_constants(Xs)];
 remove_constants([_|Xs]) ->
   remove_constants(Xs).
 
@@ -771,6 +968,14 @@ subst_uses(Subst, X) ->
     call -> X#call{args=subst_list(Subst, X#call.args)};
     enter -> X#enter{args=subst_list(Subst, X#enter.args)};
     return -> X#return{vars=subst_list(Subst, X#return.vars)};
+    fmov -> X#fmov{src=subst1(Subst, X#fmov.src)};
+    unsafe_untag_float -> X#unsafe_untag_float
+			    {src=subst1(Subst, X#unsafe_untag_float.src)};
+    unsafe_tag_float -> X#unsafe_tag_float
+			  {src=subst1(Subst, X#unsafe_tag_float.src)};
+    conv_to_float -> X#conv_to_float
+		       {src=subst1(Subst, X#conv_to_float.src)};
+    phi -> X#phi{args = replace_phi_args(X#phi.predList, X#phi.args, Subst)};
     _ -> X
 	 %%    goto -> X;
 	 %%    pushcatch -> X;
@@ -785,6 +990,14 @@ subst_defines(Subst,X) ->
     mov ->  X#mov{dst=subst1(Subst,X#mov.dst)};
     call -> X#call{dst=subst_list(Subst,X#call.dst)};
     restore_catch -> X#restore_catch{dst=subst1(Subst,X#restore_catch.dst)};
+    fmov ->  X#fmov{dst=subst1(Subst,X#mov.dst)};
+    unsafe_untag_float -> X#unsafe_untag_float
+			    {dst=subst1(Subst, unsafe_untag_float_dst(X))};
+    unsafe_tag_float -> X#unsafe_tag_float
+			  {dst=subst1(Subst, unsafe_tag_float_dst(X))};
+    conv_to_float -> X#conv_to_float
+		       {dst=subst1(Subst, conv_to_float_dst(X))};
+    phi -> X#phi{dst = subst1(Subst, X#phi.dst)};
     _ -> X
   end.
 %%    'if' -> X;
@@ -806,7 +1019,7 @@ subst_list(S,Xs) ->
   [subst1(S,X) || X <- Xs].
 
 subst1([],X) -> X;
-subst1([{X,Y}|Xs],X) -> Y;
+subst1([{X,Y}|_],X) -> Y;
 subst1([_|Xs],X) -> subst1(Xs,X).
 
 %%
@@ -894,14 +1107,14 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
 		end,
       NewFail = case Jmp#call.fail_label of
 		  ToOld -> ToNew;
-		  OldFail  -> OldFail
+		  OldFail -> OldFail
 		end,
       Jmp#call{continuation_label = NewCont, 
 	       fail_label = NewFail};
     pushcatch ->
       case pushcatch_label(Jmp) of
 	ToOld -> Jmp#pushcatch{label = ToNew};
-	OldFail  -> Jmp
+	_  -> Jmp
       end;
     _ ->
       Jmp
@@ -918,6 +1131,15 @@ is_uncond(I) ->
     fail -> true;
     enter -> true;
     return -> true;
+    call -> 
+      case call_fail(I) of
+	[] -> 
+	  case call_continuation(I) of
+	    [] -> false;
+	    _ -> true
+	  end;
+	_ -> true
+      end;
     _ -> false
   end.
 
@@ -934,7 +1156,15 @@ is_branch(I) ->
     type -> true;
     goto -> true;
     fail -> true;
-    call -> true;
+    call -> 
+      case call_fail(I) of
+	[] -> 
+	  case call_continuation(I) of
+	    [] -> false;
+	    _ -> true
+	  end;
+	_ -> true
+      end;
     enter -> true;
     return -> true;
     _ -> false
@@ -967,7 +1197,7 @@ mk_movs([X|Xs], [Y|Ys]) ->
 %% Make a series of element operations
 %%
 
-mk_elements(Tuple, []) -> 
+mk_elements(_, []) -> 
   [];
 mk_elements(Tuple, [X|Xs]) ->
   [mk_primop([X], {unsafe_element, length(Xs)+1}, [Tuple]) | 
@@ -981,53 +1211,15 @@ mk_elements(Tuple, [X|Xs]) ->
 
 preprocess_code(Icode) ->
   Code = icode_code(Icode),
-  %% pp(Icode),
-  VMax = hipe_icode:highest_var(Code),
-  LMax = hipe_icode:highest_label(Code),
-  hipe_gensym:set_label(icode,LMax+1),
-  hipe_gensym:set_var(icode,VMax+1),
-
-  StartLabel = hipe_icode:label_name(hd(Code)),
-  CompliantCode =  split_code(Code),
-  Labels = find_empty_bbs(CompliantCode, empty_map()),
-  NewCode = update_labels(CompliantCode, Labels),
-  NewStart = lists:foldl(
-	       fun({From,T}, _)
-		  when From =:= StartLabel -> T; 
-		  (_,Acc) -> Acc 
-	       end, StartLabel, Labels),
-  {NewStart, hipe_icode:icode_code_update(Icode,NewCode)}.
-
-split_code(Code) ->
-  preprocess_code(Code, []).
+  CompliantCode =  preprocess_code(Code,[]),
+  hipe_icode:icode_code_update(Icode,CompliantCode).
 
 preprocess_code([I0|Is0], Acc) ->
   {I,Is} = fallthrough_fixup(I0, Is0),
-  case add_continuation(I) of
-    {ContinuationLabel, NewI} ->
-      preprocess_code(Is, [ContinuationLabel,NewI|Acc]);
-    _ ->
-      preprocess_code(Is, [I | Acc])
-  end;
+  preprocess_code(Is, [I | Acc]);
 preprocess_code([], Acc) ->
   lists:reverse(Acc).
 
-add_continuation(I) ->
-  case type(I) of
-    call ->
-      case call_continuation(I) of 
-	[] ->
-	  ContinuationLabel = mk_new_label(),
-	  NewI = call_set_continuation(
-		   I, 
-		   label_name(ContinuationLabel)),
-	  {ContinuationLabel, NewI};
-	_ ->
-	  I    % Already has label, all is ok.
-      end;
-    _ ->
-      I
-  end.
 
 fallthrough_fixup(I0, Is0 = [I1|_]) ->
   case is_label(I1) of
@@ -1044,123 +1236,6 @@ fallthrough_fixup(I0, Is0 = [I1|_]) ->
   end;
 fallthrough_fixup(I0, []) ->
   {I0, []}.
-
-
-%% add_fail(I,FailLabel) ->
-%%   case type(I) of
-%%     call ->
-%%       case call_fail(I) of 
-%% 	[] ->
-%% 	  call_set_fail(I, FailLabel);
-%% 	_ -> %% Already has a cont_label, all is ok.
-%% 	  I
-%%       end;
-%%     _ -> I
-%%   end.
-
-
-%%
-%% Remove empty basic blocks
-%%
-
-remove_empty_bbs(Icode) ->
-  Labels = find_empty_bbs(icode_code(Icode),empty_map()),
-  NewCode = update_labels(icode_code(Icode), Labels),
-  mk_icode(icode_fun(Icode), 
-	   icode_params(Icode), 
-	   NewCode, 
-	   icode_var_range(Icode),
-	   icode_label_range(Icode)).
-
-
-find_empty_bbs([I1, I2|Is], Map) ->
-  case {is_label(I1), is_label(I2)} of
-    {true, true} ->
-      find_empty_bbs([I2|Is],
-		     insert_mapping(label_name(I1), 
-				    label_name(I2), Map));
-    _ ->
-      case {is_label(I1), is_goto(I2)} of
-	{true, true} ->
-	  case {label_name(I1), goto_label(I2)} of
-	    {Same, Same} -> find_empty_bbs([I2|Is], Map);
-	    {Lbl, Dest} -> 
-	      find_empty_bbs(Is, 
-			     insert_mapping(Lbl,
-					    Dest, Map))
-	  end;
-	_ ->
-	  find_empty_bbs([I2|Is], Map)
-      end
-  end;
-find_empty_bbs(_, Map) -> Map.
-
-
-insert_mapping(From, To, [{From2, To2}| Map]) ->
-  case {From, To} of
-    {From2, _}  -> insert_mapping(From, To, Map);
-    {To2, _}     -> [{From2, To} | insert_mapping(From, To, Map)];
-    {_ ,From2} -> [{From2, To2}| insert_mapping(From, To2, Map)];
-    _ -> [{From2, To2} | insert_mapping(From, To, Map)]
-  end;
-insert_mapping(From, To, []) -> [{From, To}].
-
-empty_map() ->
-  [].
-
-update_labels([], Labels) ->
-  [];
-update_labels([I|Is], Labels) ->
-  case type(I) of
-    label ->
-      Name = label_name(I),
-      Rem = lists:any(fun({F,T}) -> Name==F end, Labels),
-      if Rem =:= true ->
-	  Info = info(I),
-	  [NextI|RestIs]  = Is,
-	  NextInfo = info(NextI),
-	  case type(NextI) of
-	    goto -> %% We have a goto immediately after a label...
-	      update_labels(RestIs, Labels);
-	    _ ->
-	      update_labels([info_update(NextI, Info++NextInfo) 
-			     | RestIs], 
-			    Labels)
-	  end;
-	 true ->
-	  [I | update_labels(Is, Labels)]
-      end;
-    _ -> 
-      case is_branch(I) of
-	true ->
-	  X = update_labels0(I, Labels), 
-	  [X | update_labels(Is, Labels)];
-	_ -> case type(I) of
-	       pushcatch ->
-		 X = update_labels0(I, Labels), 
-		 [X | update_labels(Is, Labels)];
-	       _ ->
-		 [I | update_labels(Is, Labels)]
-	     end
-      end
-  end.
-
-update_labels0(Jmp, Labels) ->
-  lists:foldl(fun({From, To}, Ins) -> 
-		  redirect_jmp(Ins, From, To) 
-	      end,
-	      Jmp,
-	      Labels).
-
-%% find_label(LabelName, []) ->
-%%    not_found;
-%% find_label(LabelName, [{From, To}|LabelPairs]) ->
-%%    FromName = label_name(From),
-%%    if FromName =:= LabelName ->
-%% 	 {From, To};
-%%       true ->
-%% 	 find_label(LabelName, LabelPairs)
-%%    end.
 
 
 %%
@@ -1208,8 +1283,8 @@ is_pure_op(_) -> false.
 %%
 
 is_leaf(Icode) ->
-  Code = icode_code(Icode),
-  is_leaf0(Code).
+  icode_is_leaf(Icode).
+
 
 is_leaf0([]) ->
   true;
@@ -1243,21 +1318,30 @@ pp(Icode) ->
   pp(standard_io, Icode).
 
 pp(Dev, Icode) ->
-  {Mod, Fun, Arity} = icode_fun(Icode),
+  {Mod, Fun, _Arity} = icode_fun(Icode),
   Args =  icode_params(Icode),
   io:format(Dev, "~w:~w(", [Mod, Fun]),
   pp_args(Dev, Args),
   io:format(Dev, ") ->~n", []),
-  io:format(Dev, "%% Info:~w\n",[icode_info(Icode)]),
+  io:format(Dev, "%% Info:~w\n",
+	    [[case icode_is_closure(Icode) of
+		true -> 'Closure'; 
+		false -> 'Not a closure'
+	      end,
+	      case icode_is_leaf(Icode) of
+		true -> 'Leaf function'; 
+		false -> 'Not a leaf function'
+	      end |
+	      icode_info(Icode)]]),
   pp_instrs(Dev, icode_code(Icode)),
   io:format(Dev, "%% Data:\n", []),
   hipe_data_pp:pp(Dev, icode_data(Icode), icode, "").
 
-pp_instrs(Dev, []) ->
+pp_instrs(_Dev, []) ->
   ok;
 pp_instrs(Dev, [I|Is]) ->
   case catch pp_instr(Dev, I) of
-    {'EXIT',Rsn} ->
+    {'EXIT',_Rsn} ->
       io:format(Dev, '*** ~w ***~n',[I]);
     _ ->
       ok
@@ -1270,18 +1354,18 @@ pp_exit(Icode) ->
   pp_exit(standard_io, Icode).
 
 pp_exit(Dev, Icode) ->
-  {Mod, Fun, Arity} = icode_fun(Icode),
+  {Mod, Fun, _Arity} = icode_fun(Icode),
   Args =  icode_params(Icode),
   io:format(Dev, "~w:~w(", [Mod, Fun]),
   pp_args(Dev, Args),
   io:format(Dev, ") ->~n", []),
   pp_instrs_exit(Dev, icode_code(Icode)).
 
-pp_instrs_exit(Dev, []) ->
+pp_instrs_exit(_Dev, []) ->
   ok;
 pp_instrs_exit(Dev, [I|Is]) ->
   case catch pp_instr(Dev, I) of
-    {'EXIT',Rsn} ->
+    {'EXIT',_Rsn} ->
       exit({pp,I});
     _ ->
       ok
@@ -1298,8 +1382,17 @@ pp_instr(Dev, I) ->
 	[] -> io:format(Dev, "~n",[]);
 	Info -> io:format(Dev, "~w~n", [Info])
       end;
+
     comment ->
       io:format(Dev, "    % ~p~n", [comment_text(I)]);
+
+    phi ->
+      io:format(Dev, "    ", []),
+      pp_arg(Dev, phi_dst(I)),
+      io:format(Dev, " := phi(", []),
+      pp_args(Dev, phi_args(I)),
+      io:format(Dev, ")~n", []);
+
     mov ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, mov_dst(I)),
@@ -1323,8 +1416,13 @@ pp_instr(Dev, I) ->
       hipe_icode_primops:pp(call_fun(I), Dev),
       io:format(Dev, "(", []),
       pp_args(Dev, call_args(I)),
-      io:format(Dev, ") (~w) -> ~w",
-		[call_type(I),call_continuation(I)]),
+      case call_continuation(I) of
+	[] ->
+	  io:format(Dev, ") (~w)", [call_type(I)]);
+	CC ->
+	  io:format(Dev, ") (~w) -> ~w",
+		    [call_type(I),CC])
+      end,
 
       case call_fail(I) of
 	[] ->  io:format(Dev, "~n", []);
@@ -1333,9 +1431,9 @@ pp_instr(Dev, I) ->
     enter ->
       io:format(Dev, "    ", []),
       case enter_fun(I) of
-	{Mod, Fun, Arity} ->
+	{Mod, Fun, _Arity} ->
 	  io:format(Dev, "~w:~w(", [Mod, Fun]);
-	{Fun, Arity} ->
+	{Fun, _Arity} ->
 	  io:format(Dev, "~w(", [Fun]);
 	Fun ->
 	  io:format(Dev, "~w(", [Fun])
@@ -1358,24 +1456,13 @@ pp_instr(Dev, I) ->
       io:format(Dev, "    remove_catch(~w)~n", 
 		[remove_catch_label(I)]);
     fail ->
-      io:format(Dev, "    fail(", []),
-      case fail_type(I) of
-	exit -> 
-	  io:format(Dev, "{'EXIT', ",[]),
-	  pp_args(Dev, fail_reason(I)),
-	  io:format(Dev, "}",[]);
-	throw ->
-	  pp_args(Dev, fail_reason(I));
-	fault ->
-	  io:format(Dev, "{'EXIT', {",[]),
-	  pp_args(Dev, fail_reason(I)),
-	  io:format(Dev, ", ~w}}",[[]]);
-	fault2 ->
-	  io:format(Dev, "{'EXIT', {",[]),
-	  pp_args(Dev, fail_reason(I)),
-	  io:format(Dev, "}}",[])
-      end,
-      io:format(Dev, ")~n", []);
+      Type = case fail_type(I) of
+	       fault2 -> fault;
+	       T -> T
+	     end,
+      io:format(Dev, "    fail(~w, [", [Type]),
+      pp_args(Dev, fail_reason(I)),
+      io:put_chars(Dev, "])\n");
     'if' ->
       io:format(Dev, "    if ~w(", [if_op(I)]),
       pp_args(Dev, if_args(I)),
@@ -1401,17 +1488,52 @@ pp_instr(Dev, I) ->
       io:format(Dev, ") then ~p (~.2f) else ~p~n", 
 		[type_true_label(I), type_pred(I), type_false_label(I)]);
     goto ->
-      io:format(Dev, "    goto ~p~n", [goto_label(I)])
+      io:format(Dev, "    goto ~p~n", [goto_label(I)]);
+    fclearerror ->
+      io:format(Dev, "    fclearerror~n", []);
+    fmov ->
+      io:format(Dev, "    ", []),
+      pp_arg(Dev, fmov_dst(I)),
+      case fmov_negate(I) of
+	true ->
+	  io:format(Dev, " f:= -", []);
+	false ->
+	  io:format(Dev, " f:= ", [])
+      end,
+      pp_arg(Dev, fmov_src(I)),
+      io:format(Dev, "~n", []);
+    unsafe_untag_float ->
+      io:format(Dev, "    ", []),
+      pp_arg(Dev, unsafe_untag_float_dst(I)),
+      io:format(Dev, " f:= ", []),
+      pp_arg(Dev, unsafe_untag_float_src(I)),
+      io:format(Dev, "~n", []);
+    unsafe_tag_float ->
+      io:format(Dev, "    ", []),
+      pp_arg(Dev, unsafe_tag_float_dst(I)),
+      io:format(Dev, " f:= ", []),
+      pp_arg(Dev, unsafe_tag_float_src(I)),
+      io:format(Dev, "~n", []);
+    conv_to_float ->
+      io:format(Dev, "    ", []),
+      pp_arg(Dev, conv_to_float_dst(I)),
+      io:format(Dev, " f:= ", []),
+      pp_arg(Dev, conv_to_float_src(I)),
+      io:format(Dev, "~n", [])
   end.
 
 pp_arg(Dev, {var, V}) when integer(V) ->
   io:format(Dev, "v~p", [V]);
 pp_arg(Dev, {var, V}) ->
   io:format(Dev, "~p", [V]);
+pp_arg(Dev, {fvar, V}) -> % Added
+  io:format(Dev, "fv~p", [V]);
+pp_arg(Dev, {reg, V}) -> % Added
+  io:format(Dev, "r~p", [V]);
 pp_arg(Dev, C) ->
   io:format(Dev, "~p", [const_value(C)]).
 
-pp_args(Dev, []) -> ok;
+pp_args(_Dev, []) -> ok;
 pp_args(Dev, [A]) ->
   pp_arg(Dev, A);
 pp_args(Dev, [A|Args]) ->
@@ -1428,7 +1550,7 @@ pp_switch_val_cases(Dev, Cases) ->
   io:format(Dev, "",[]).
 
 
-pp_switch_val_cases(Dev, [{Val,L}], Pos) -> 
+pp_switch_val_cases(Dev, [{Val,L}], _Pos) -> 
   io:format(Dev, "        ",[]),
   pp_arg(Dev, Val),
   io:format(Dev, " -> ~w\n", [L]);
@@ -1443,7 +1565,7 @@ pp_switch_val_cases(Dev, [{Val, L}|Ls], Pos) ->
   %%      N -> N + 1
   %%    end,
   pp_switch_val_cases(Dev, Ls, NewPos);
-pp_switch_val_cases(Dev, [], _) -> ok.
+pp_switch_val_cases(_Dev, [], _) -> ok.
 
 
 %% ---------------------------------------------
@@ -1459,7 +1581,12 @@ highest_var([],Max) ->
   Max.
 
 new_max([V|Vs],Max) ->
-  VName = var_name(V),
+  case is_var(V) of
+    true ->
+      VName = var_name(V);
+    false ->
+      VName = fvar_name(V)
+  end,
   if VName > Max ->
       new_max(Vs, VName);
      true ->

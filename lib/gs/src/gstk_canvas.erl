@@ -181,7 +181,7 @@ event(DB, Gstkid, Etype, Edata, Args) ->
 %%
 %% Return 	: A tuple {OptionType, OptionCmd}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-option(Option, Gstkid, MainW,DB,Canvas) ->
+option(Option,Gstkid,_MainW,DB,Canvas) ->
     case Option of
 	{scrollregion, {X1, Y1, X2, Y2}} ->
 	    gstk_db:insert_opt(DB,Gstkid,Option),
@@ -232,7 +232,7 @@ option(Option, Gstkid, MainW,DB,Canvas) ->
 %% Return 	: The value of the option or invalid_option
 %%		  [OptionValue | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-read_option(Option,Gstkid,MainW,DB,Canvas) ->
+read_option(Option,Gstkid,_MainW,DB,Canvas) ->
     case Option of
 	scrollregion  -> gstk_db:opt(DB,Gstkid,scrollregion);
 	{hit, {X,Y}} ->
@@ -245,13 +245,13 @@ read_option(Option,Gstkid,MainW,DB,Canvas) ->
 	    {_,Ymin,_,Ymax} = gstk_db:opt(DB,Gstkid,scrollregion),
 	    K = 1/(Ymax-Ymin),
 	    M = -K*Ymin,
-	    Y = round((PercentOffViewTop - M)/K);
+	    _Y = round((PercentOffViewTop - M)/K);
 	xscrollpos ->
 	    {PercentOffViewLeft,_} = tcl2erl:ret_tuple([Canvas," xvi"]),
 	    {Xmin,_,Xmax,_} = gstk_db:opt(DB,Gstkid,scrollregion),
 	    K = 1/(Xmax-Xmin),
 	    M = -K*Xmin,
-	    X = round((PercentOffViewLeft-M)/K);
+	    _X = round((PercentOffViewLeft-M)/K);
 	buttonpress   -> gstk_db:is_inserted(DB, Gstkid, buttonpress);
 	buttonrelease -> gstk_db:is_inserted(DB, Gstkid, buttonrelease);
 	configure     -> gstk_db:is_inserted(DB, Gstkid, configure);
@@ -371,7 +371,7 @@ ebind(DB, Gstkid, TkW, Etype, WS, Edata) ->
 %%
 %% WS = Widget suffix for complex widgets
 %%
-eunbind(DB, Gstkid, TkW, Etype, WS, Edata) ->
+eunbind(DB, Gstkid, TkW, Etype, WS, _Edata) ->
     gstk_db:delete_event(DB, Gstkid, Etype),
     P = ["bind ", TkW, WS],
     Cmd = case Etype of
@@ -479,7 +479,7 @@ pickout_coords([{coords,Coords} | Rest], Opts, ObjType, NbrOfCoords)
     end;
 pickout_coords([Opt | Rest], Opts, ObjType, NbrOfCoords) ->
     pickout_coords(Rest, [Opt|Opts], ObjType, NbrOfCoords);
-pickout_coords([], Opts, ObjType, NbrOfCoords) ->
+pickout_coords([], _Opts, ObjType, NbrOfCoords) ->
     {error, io_lib:format("A ~w must have ~w coordinates",
 			  [ObjType,NbrOfCoords])}.
 

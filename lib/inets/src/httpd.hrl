@@ -21,7 +21,7 @@
 -ifndef(SERVER_SOFTWARE).
 -define(SERVER_SOFTWARE,"inets/develop").	% Define in Makefile!
 -endif.
--define(SERVER_PROTOCOL,"HTTP/1.0").
+-define(SERVER_PROTOCOL,"HTTP/1.1").
 -define(SOCKET_CHUNK_SIZE,8192).
 -define(SOCKET_MAX_POLL,25).
 -define(FILE_CHUNK_SIZE,64*1024).
@@ -68,6 +68,7 @@
 	     socket,
 	     config_db,
 	     method,
+	     absolute_uri=[],
 	     request_uri,
 	     http_version,
 	     request_line,

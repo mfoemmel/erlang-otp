@@ -188,7 +188,7 @@ option(Option, Gstkid, TkW, DB,_) ->
 %% Return 	: The value of the option or invalid_option
 %%		  [OptionValue | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-read_option(Option,GstkId,TkW,DB,_) ->
+read_option(Option,GstkId,TkW,_DB,_) ->
     case Option of
 	anchor        -> tcl2erl:ret_place(anchor, TkW);
 	disabledfg    -> tcl2erl:ret_color([TkW," cg -disabledfo"]);
@@ -206,7 +206,7 @@ read_option(Option,GstkId,TkW,DB,_) ->
 %%			       PRIMITIVES
 %%-----------------------------------------------------------------------------
 
-fix_placement(Attr, Value, Gstkid, TkW, DB) ->
+fix_placement(Attr, Value, Gstkid, _TkW, DB) ->
     Pgstkid = gstk_db:lookup_gstkid(DB, Gstkid#gstkid.parent),
     case Pgstkid#gstkid.objtype of
 	menubar -> invalid_option;

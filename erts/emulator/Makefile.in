@@ -35,6 +35,11 @@ PURIFY =
 TYPEMARKER = .instr
 TYPE_FLAGS = @CFLAGS@ -DINSTRUMENT
 else
+ifeq ($(TYPE),shared)
+PURIFY =
+TYPEMARKER = .shared
+TYPE_FLAGS = @CFLAGS@ -DSHARED_HEAP
+else
 ifeq ($(TYPE),purify)
 PURIFY = purify
 TYPEMARKER = .purify
@@ -43,11 +48,16 @@ else
 ifeq ($(TYPE),quantify)
 PURIFY = quantify
 TYPEMARKER = .quantify
-TYPE_FLAGS = @CFLAGS@ -g -O2 -DQUANTIFY -DNO_JUMP_TABLE
+ifeq ($(findstring ose,$(TARGET)),ose)
+  TYPE_FLAGS = @CFLAGS@ -DQUANTIFY
+else
+  TYPE_FLAGS = @CFLAGS@ -g -O2 -DQUANTIFY -DNO_JUMP_TABLE
+endif
 else
 PURIFY =
 TYPEMARKER =
 TYPE_FLAGS = @CFLAGS@
+endif
 endif
 endif
 endif
@@ -74,6 +84,15 @@ RANLIB  = @RANLIB@
 STRIP   = strip
 PERL    = @PERL@
 
+ifeq ($(CC), gcc)
+GEN_OPT_FLGS = -O3 -fomit-frame-pointer
+UNROLL_FLG = -funroll-loops
+else
+GEN_OPT_FLGS = 
+UNROLL_FLG = 
+endif
+
+
 ifdef PURIFY_CHILD_SETUP
 CS_PURIFY = $(PURIFY)
 CS_TYPE_FLAGS = $(TYPE_FLAGS)
@@ -84,15 +103,19 @@ CS_TYPE_FLAGS = $(subst QUANTIFY,FAKE_QUANTIFY, \
 endif
 CS_CFLAGS_ = $(CS_TYPE_FLAGS) @DEFS@ $(WFLAGS) 
 ifeq ($(CC), gcc)
-CS_CFLAGS = $(subst -O2, -O3 -funroll-loops, $(CS_CFLAGS_))
+CS_CFLAGS = $(subst -O2, $(GEN_OPT_FLGS) $(UNROLL_FLG), $(CS_CFLAGS_))
 else
 CS_CFLAGS = $(CS_CFLAGS_)
 endif
 
-
 LIBS    = @LIBS@ @THR_LIBS@ -L$(ERL_TOP)/erts/obj/$(TARGET) -lz
 
 ELIB_FLAGS = -DENABLE_ELIB_MALLOC -DELIB_ALLOC_IS_CLIB -DELIB_HEAP_SBRK
+
+PERFCTR_PATH=@PERFCTR_PATH@
+ifdef PERFCTR_PATH
+LIBS += $(PERFCTR_PATH)/usr.lib/libperfctr.a
+endif
 
 OBJDIR = $(ERL_TOP)/erts/obj$(TYPEMARKER).beam/$(TARGET)
 BINDIR = $(ERL_TOP)/bin/$(TARGET)
@@ -109,15 +132,13 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 ifeq ($(ERLANG_OSTYPE), unix)
 UNIX_ONLY_BUILDS =	$(BINDIR)/$(CS_EXECUTABLE) \
-			$(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB)
+			$(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB) \
+			$(BINDIR)/$(EMULATOR_EXECUTABLE_SAE)
 else
 UNIX_ONLY_BUILDS =
 endif
 
-all: generate zlib $(BINDIR)/$(EMULATOR_EXECUTABLE) $(UNIX_ONLY_BUILDS) # $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE)
-
-# Unsupported at the moment
-sae: $(TARGET)/preload_sae.c generate zlib $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE)
+all: generate zlib $(BINDIR)/$(EMULATOR_EXECUTABLE) $(UNIX_ONLY_BUILDS)
 
 zlib:
 	@set -e ; cd zlib && $(MAKE) $(TYPE)
@@ -150,6 +171,7 @@ release_spec: all
 ifeq ($(ERLANG_OSTYPE), unix)
 	$(INSTALL_PROGRAM) $(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB) $(RELSYSDIR)/bin
 	$(INSTALL_PROGRAM) $(BINDIR)/$(CS_EXECUTABLE) $(RELSYSDIR)/bin
+	$(INSTALL_PROGRAM) $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE) $(RELSYSDIR)/bin
 endif
 	$(INSTALL_DIR) $(RELEASE_PATH)/usr/include/obsolete
 	$(INSTALL_DATA) obsolete/driver.h $(RELEASE_PATH)/usr/include/obsolete
@@ -164,7 +186,17 @@ release_docs_spec:
 
 generate: $(TARGET)/beam_opcodes.h $(TARGET)/erl_bif_table.c \
 		$(TARGET)/erl_version.h \
-		$(TARGET)/driver_tab.c $(TARGET)/preload.c
+		$(TARGET)/driver_tab.c $(TARGET)/preload.c \
+		$(HIPE_GENERATE)
+
+ifdef HIPE_ENABLED
+HIPE_GENERATE = $(BINDIR)/hipe_mkliterals
+endif
+
+ifdef HIPE_ENABLED
+generate: $(TARGET)/hipe_x86_asm.h
+generate: $(TARGET)/hipe_literals.h
+endif
 
 # opcode table
 
@@ -185,13 +217,15 @@ endif
 
 TABLES=	$(TARGET)/erl_bif_table.c $(TARGET)/erl_bif_table.h	\
 	$(TARGET)/erl_bif_wrap.c $(TARGET)/erl_bif_list.h	\
-	$(TARGET)/erl_atom_table.c $(TARGET)/erl_atom_table.h
+	$(TARGET)/erl_atom_table.c $(TARGET)/erl_atom_table.h   \
+	$(TARGET)/erl_pbifs.c
+
 $(TABLES):	$(ATOMS) $(BIFS)
 	$(PERL) utils/make_tables -src $(TARGET) -include $(TARGET) $^
 
 # version include file
 $(TARGET)/erl_version.h: ../vsn.mk
-	$(PERL) utils/make_version -o $@ $(VSN)$(SERIALNO)
+	$(PERL) utils/make_version -o $@ $(VSN)$(SERIALNO) $(TARGET)
 
 # driver table
 $(TARGET)/driver_tab.c:	Makefile.in
@@ -204,11 +238,8 @@ $(TARGET)/preload.c: $(ERL_TOP)/lib/kernel/ebin/otp_ring0.beam \
 			$(ERL_TOP)/lib/kernel/ebin/init.beam \
 			$(ERL_TOP)/lib/kernel/ebin/prim_inet.beam \
 			$(ERL_TOP)/lib/kernel/ebin/prim_file.beam \
-			$(ERL_TOP)/lib/kernel/ebin/erl_prim_loader.beam
-	$(PERL) utils/make_preload -old $^ > $@
-
-# preloaded code - sae
-$(TARGET)/preload_sae.c: $(ERL_TOP)/erts/sae/ebin/ring0.beam
+			$(ERL_TOP)/lib/kernel/ebin/erl_prim_loader.beam \
+			$(ERL_TOP)/lib/kernel/ebin/erlang.beam
 	$(PERL) utils/make_preload -old $^ > $@
 
 # ----------------------------------------------------------------------
@@ -216,13 +247,47 @@ $(TARGET)/preload_sae.c: $(ERL_TOP)/erts/sae/ebin/ring0.beam
 #
 INCLUDES  =  -Ibeam -Isys/$(ERLANG_OSTYPE) -I$(TARGET) -Izlib -Ihipe
 
+ifdef PERFCTR_PATH
+INCLUDES += -I$(PERFCTR_PATH)/usr.lib -I$(PERFCTR_PATH)/linux/include
+endif
+
 # Need to include etc dir on VxWorks
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 INCLUDES += -I$(ERL_TOP)/erts/etc/vxworks
 endif
 
+ifneq ($(findstring ose,$(TARGET)),ose)
 $(OBJDIR)/%.o: beam/%.c
-	$(CC) $(subst O2,O3, $(CFLAGS)) $(INCLUDES) -c $< -o $@
+	$(CC) $(subst -O2, $(GEN_OPT_FLGS), $(CFLAGS)) $(INCLUDES) -c $< -o $@
+else
+
+INCLUDES += -Idrivers/ose
+
+ifeq ($(TYPE),debug)
+$(OBJDIR)/%.o: beam/%.c
+	  $(CC) $(CFLAGS) -DNO_JUMP_TABLE $(INCLUDES) -c $< -o $@
+else
+
+VXCC=@VXCC@
+VXCFLAGS=@VXCFLAGS@
+CFLAGS_NOOPT=@CFLAGS_NOOPT@ @DEFS@ $(WFLAGS) @THR_DEFS@ \
+ -DHIPE_ARCHITECTURE=$(ARCH) $(ARCHCFLAGS)
+
+# we want to use jump table
+$(OBJDIR)/beam_emu.o: beam/beam_emu.c
+	$(VXCC) $(VXCFLAGS) $(INCLUDES) -c $< -o $@
+
+# ggc and erl_process do not work properly with DIAB's -XO option,
+# we'll compile them with gcc instead
+$(OBJDIR)/ggc.o: beam/ggc.c
+	$(VXCC) $(VXCFLAGS) $(INCLUDES) -c $< -o $@
+$(OBJDIR)/erl_process.o: beam/erl_process.c
+	$(VXCC) $(VXCFLAGS) $(INCLUDES) -c $< -o $@
+
+$(OBJDIR)/%.o: beam/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+endif
+endif
 
 $(OBJDIR)/%.o: $(TARGET)/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -c $< -o $@
@@ -236,12 +301,15 @@ $(OBJDIR)/%.o: drivers/common/%.c
 $(OBJDIR)/%.o: drivers/$(ERLANG_OSTYPE)/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -c $< -o $@
 
-# VxWorks uses unix drivers too...
+# VxWorks and OSE uses unix drivers too...
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 $(OBJDIR)/%.o: drivers/unix/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -c $< -o $@
 endif
-
+ifeq ($(findstring ose,$(TARGET)),ose)
+$(OBJDIR)/%.o: drivers/unix/%.c
+	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -c $< -o $@
+endif
 
 # ----------------------------------------------------------------------
 # Specials
@@ -253,11 +321,15 @@ $(BINDIR)/$(CS_EXECUTABLE): $(CS_SRC)
 	$(CS_CFLAGS) $(INCLUDES) $(CS_SRC)
 
 $(OBJDIR)/%.elib.o: beam/%.c
-	$(CC) $(ELIB_FLAGS) $(subst O2,O3, $(CFLAGS)) $(INCLUDES) -c $< -o $@
+	$(CC) $(ELIB_FLAGS) $(subst -O2, $(GEN_OPT_FLGS), $(CFLAGS)) $(INCLUDES) -c $< -o $@
+
+# Disable vfork() for sae (then we don't need the child_setup program)
+$(OBJDIR)/sys_sae.o: sys/$(ERLANG_OSTYPE)/sys.c
+	$(CC) -DDISABLE_VFORK=1 $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 ifeq ($(CC), gcc)
 $(OBJDIR)/erl_sl_alloc.o: beam/erl_sl_alloc.c
-	$(CC) $(subst -O2, -O3 -funroll-loops, $(CFLAGS)) $(INCLUDES) -c $< -o $@
+	$(CC) $(subst -O2, $(GEN_OPT_FLGS) $(UNROLL_FLG), $(CFLAGS)) $(INCLUDES) -c $< -o $@
 endif
 
 # ----------------------------------------------------------------------
@@ -274,7 +346,7 @@ $(ERL_TOP)/lib/%.beam $(ERL_TOP)/erts/sae/ebin/%.beam:
 #
 INIT_OBJS = $(OBJDIR)/erl_main.o		$(OBJDIR)/preload.o
 
-INIT_OBJS_SAE = $(OBJDIR)/erl_main_sae.o	$(OBJDIR)/preload_sae.o
+INIT_OBJS_SAE = $(OBJDIR)/erl9_start.o
 
 EMU_OBJS = \
 	$(OBJDIR)/beam_emu.o		$(OBJDIR)/beam_opcodes.o \
@@ -283,14 +355,15 @@ EMU_OBJS = \
 	$(OBJDIR)/beam_catches.o
 
 RUN_OBJS = \
-	$(OBJDIR)/erl_init.o \
+	$(OBJDIR)/erl_pbifs.o \
+	$(OBJDIR)/benchmark.o           $(OBJDIR)/erl_init.o \
 	$(OBJDIR)/erl_atom_table.o	$(OBJDIR)/erl_bif_table.o \
 	$(OBJDIR)/erl_bif_info.o	$(OBJDIR)/erl_bif_op.o \
 	$(OBJDIR)/erl_bif_os.o		$(OBJDIR)/erl_bif_lists.o \
 	$(OBJDIR)/erl_bif_trace.o	$(OBJDIR)/erl_bif_wrap.o \
 	$(OBJDIR)/erl_trace.o		$(OBJDIR)/copy.o \
 	$(OBJDIR)/utils.o		$(OBJDIR)/bif.o \
-	$(OBJDIR)/io.o			$(OBJDIR)/erl_api.o \
+	$(OBJDIR)/io.o \
 	$(OBJDIR)/erl_debug.o		$(OBJDIR)/erl_md5.o \
 	$(OBJDIR)/erl_message.o		$(OBJDIR)/erl_process.o \
 	$(OBJDIR)/erl_process_dict.o	$(OBJDIR)/erl_arith.o \
@@ -304,10 +377,12 @@ RUN_OBJS = \
 	$(OBJDIR)/module.o		$(OBJDIR)/export.o \
 	$(OBJDIR)/register.o		$(OBJDIR)/break.o \
 	$(OBJDIR)/erl_async.o		$(OBJDIR)/sys_threads.o \
-	$(OBJDIR)/ggc.o			$(OBJDIR)/erl_posix_str.o \
+	$(OBJDIR)/ggc.o 		$(OBJDIR)/erl_gc.o \
+	$(OBJDIR)/erl_posix_str.o \
 	$(OBJDIR)/erl_bits.o 		$(OBJDIR)/erl_math.o \
 	$(OBJDIR)/erl_vector.o		$(OBJDIR)/erl_term.o \
-	$(OBJDIR)/erl_fun.o             $(OBJDIR)/erl_bif_port.o
+	$(OBJDIR)/erl_fun.o             $(OBJDIR)/erl_bif_port.o \
+	$(OBJDIR)/erl_node_tables.o
 
 
 OS_OBJS = \
@@ -320,12 +395,18 @@ OS_OBJS = \
 	$(OBJDIR)/elib_malloc.o \
 	$(OBJDIR)/elib_memmove.o
 
+ifeq ($(findstring ose,$(TARGET)),ose)
+	OS_OBJS += $(OBJDIR)/erl_port_init.o \
+		   $(OBJDIR)/ose_inet_sock_select.o \
+		   $(OBJDIR)/ose_sfp.o
+else
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 	OS_OBJS += $(OBJDIR)/vxworks_ddll_drv.o \
                     $(OBJDIR)/int64.o 
 else
 	OS_OBJS += $(OBJDIR)/unix_ddll_drv.o \
                    $(OBJDIR)/sys_float.o
+endif
 endif
 
 DRV_OBJS = \
@@ -335,7 +416,11 @@ DRV_OBJS = \
 	$(OBJDIR)/ram_file_drv.o
 
 ifneq ($(findstring vxworks,$(TARGET)),vxworks)
+  ifeq ($(findstring ose,$(TARGET)),ose)
+	DRV_OBJS += 	$(OBJDIR)/ose_inet_drv.o
+  else
 	DRV_OBJS += $(OBJDIR)/ttsl_drv.o
+  endif
 endif
 
 HIPE_ultrasparc_OBJS=$(OBJDIR)/hipe_sparc_glue.o $(OBJDIR)/hipe_sparc_bifs.o $(OBJDIR)/hipe_sparc_stack.o
@@ -356,6 +441,7 @@ endif
 BASE_OBJS = $(RUN_OBJS) $(EMU_OBJS) $(OS_OBJS) $(EXTRA_BASE_OBJS)
 
 OBJS =	$(BASE_OBJS) $(DRV_OBJS)
+OBJS_SAE =  $(subst sys.o,sys_sae.o,$(OBJS))
 OBJS_ELIB = 	$(subst elib_malloc.o,elib_malloc.elib.o, \
 		$(subst elib_memmove.o,elib_memmove.elib.o, \
 		$(subst erl_bif_info.o,erl_bif_info.elib.o, \
@@ -375,7 +461,10 @@ pre_hipe:
 endif
 
 $(TARGET)/%.S: hipe/%.m4
-	m4 $(INCLUDES) $< > $@
+	m4 -DTARGET=$(TARGET) $< > $@
+
+$(TARGET)/%.h: hipe/%.m4
+	m4 -DTARGET=$(TARGET) $< > $@
 
 $(OBJDIR)/%.o: $(TARGET)/%.S
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
@@ -389,6 +478,8 @@ $(OBJDIR)/%.o: hipe/%.c
 $(BINDIR)/hipe_mkliterals:	$(OBJDIR)/hipe_mkliterals.o
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $<
 
+$(OBJDIR)/hipe_mkliterals.o:	$(TARGET)/hipe_x86_asm.h
+
 $(TARGET)/hipe_literals.h:	$(BINDIR)/hipe_mkliterals
 	$(BINDIR)/hipe_mkliterals -c > $@
 
@@ -396,9 +487,9 @@ $(OBJDIR)/hipe_sparc_glue.o:	hipe/hipe_sparc_glue.S hipe/hipe_sparc_asm.h hipe/h
 $(TARGET)/hipe_sparc_bifs.S:	hipe/hipe_sparc_bifs.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
 $(OBJDIR)/hipe_sparc_bifs.o:	$(TARGET)/hipe_sparc_bifs.S hipe/hipe_sparc_asm.h hipe/hipe_mode_switch.h $(TARGET)/hipe_literals.h
 
-$(OBJDIR)/hipe_x86_glue.o:	hipe/hipe_x86_glue.S hipe/hipe_x86_asm.h hipe/hipe_mode_switch.h $(TARGET)/hipe_literals.h
-$(TARGET)/hipe_x86_bifs.S:	hipe/hipe_x86_bifs.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
-$(OBJDIR)/hipe_x86_bifs.o:	$(TARGET)/hipe_x86_bifs.S hipe/hipe_x86_asm.h hipe/hipe_mode_switch.h $(TARGET)/hipe_literals.h
+$(OBJDIR)/hipe_x86_glue.o:	hipe/hipe_x86_glue.S $(TARGET)/hipe_x86_asm.h $(TARGET)/hipe_literals.h hipe/hipe_mode_switch.h
+$(TARGET)/hipe_x86_bifs.S:	hipe/hipe_x86_bifs.m4 hipe/hipe_x86_asm.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
+$(OBJDIR)/hipe_x86_bifs.o:	$(TARGET)/hipe_x86_bifs.S $(TARGET)/hipe_literals.h
 
 # end of HiPE section
 ########################################
@@ -428,6 +519,33 @@ $(TARGET)/int64.c:
 
 endif
 
+ifeq ($(findstring ose,$(TARGET)),ose)
+# Extract soft float functions from libgcc.a (for beam_emu)
+VXCC=@VXCC@
+VXCFLAGS=@VXCFLAGS@
+VXLD=@VXLD@
+VXLDFLAGS=@VXLDFLAGS@
+VXCCLIBFLAGS=@VXCCLIBFLAGS@
+STRIP=@STRIP@
+SYMPREFIX=@SYMPREFIX@
+
+NEEDFUNCTIONS=__floatsidf __adddf3 __negdf2 __muldf3 __divdf3 __subdf3
+KEEPSYMS=$(NEEDFUNCTIONS:%=-K $(SYMPREFIX)%)
+
+$(OBJDIR)/ose_sfp.o: $(TARGET)/ose_sfp.c
+	$(VXCC) $(VXCFLAGS) -o $(OBJDIR)/ose_sfp_tmp.o -c $(TARGET)/ose_sfp.c
+	$(VXLD) -o $(OBJDIR)/ose_sfp.o $(OBJDIR)/ose_sfp_tmp.o $(VXLDFLAGS) $(VXCCLIBFLAGS)
+	$(STRIP) $(KEEPSYMS) $(OBJDIR)/ose_sfp.o
+
+$(TARGET)/ose_sfp.c:
+	echo 'void dummy(void); void dummy(void) {' > $(TARGET)/ose_sfp.c
+	for x in $(NEEDFUNCTIONS); do echo 'extern void '$$x'();' \
+		>> $(TARGET)/ose_sfp.c; done 
+	for x in $(NEEDFUNCTIONS); do echo $$x'();' >> $(TARGET)/ose_sfp.c; done
+	echo '}'  >> $(TARGET)/ose_sfp.c 
+
+endif
+
 # ----------------------------------------------------------------------
 # The emulator itself
 
@@ -439,10 +557,9 @@ $(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB): $(INIT_OBJS) $(OBJS_ELIB)
 	$(PURIFY) $(LD) -o $(BINDIR)/$(EMULATOR_EXECUTABLE_ELIB) \
 	$(LDFLAGS) $(DEXPORT) $(INIT_OBJS) $(OBJS_ELIB) $(LIBS)
 
-$(BINDIR)/$(EMULATOR_EXECUTABLE_SAE): $(TARGET)/preload_sae.c \
-					$(INIT_OBJS_SAE) $(OBJS)
+$(BINDIR)/$(EMULATOR_EXECUTABLE_SAE): $(INIT_OBJS_SAE) $(OBJS_SAE)
 	$(PURIFY) $(LD) -o $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE) \
-	$(LDFLAGS) $(DEXPORT) $(INIT_OBJS_SAE) $(OBJS) $(LIBS)
+	$(LDFLAGS) $(DEXPORT) $(INIT_OBJS_SAE) $(OBJS_SAE) $(LIBS)
 
 # ----------------------------------------------------------------------
 # Dependencies

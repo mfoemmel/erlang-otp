@@ -51,21 +51,4 @@ start_link_session(mnesia_session_sup) ->
 	    Error = {session_start_error, Other},
 	    ?VERBOSE("~p~n", [Error]),
 	    Other
-    end;
-	
-start_link_session(mnesia_corba_session_sup) ->
-    case catch mnesia_corba_session:oe_create_link(corba_session) of
-	{'EXCEPTION', Reason} ->
-	    Error = {corba_session_start_exception, Reason},
-	    ?VERBOSE("~p~n", [Error]),
-	    {error, Error};
-	{'EXIT', Reason} ->
-	    Error = {corba_session_start_exit, Reason},
-	    ?VERBOSE("~p~n", [Error]),
-	    {error, Error};
-	SessionObjectKey ->
-	    Pid = corba:get_pid(SessionObjectKey),
-	    Msg = {mnesia_corba_session_key, Pid, SessionObjectKey},
-	    mnesia_corba_connector ! Msg,
-	    {ok, Pid}
     end.

@@ -1,22 +1,37 @@
-hot_cold:
- * peephole opt of 
-      jump L1
-      X
-   L1:
+
+sparc_frame & company
+ o RA
+   * Teach RA that calls clobbers all physical regs.
+   * Pass the TempMap (spills) to sparc_frame
+ o Frame
+   * Rewrite spills to the stack.
+   * Handle push and pop.
+   * Add stack need test.
+   * Add prolog and epilog to calls.
+   * ( Exceptions )
+   * Generate stack descriptors.
+ o Loader
+   * Handle stack descriptors.
+ o System
+   * Make GC aware of stack descriptors.
+ o Overall
+   * Benchmark.
+   * Get rid of rtl-frame et al.
+
+
+scheduler:
+ * Fix and test.
+ * Exapand pseudo instructions before scheduler.
+
+hot & finalize:
+ * Cleanup hot and rename.
+ * Get rid of finalize.
 
 sparc_loader:
-
- * Remove the need to have a .beam file loaded. (This might work already.)
- * Make the BEAM loader invoke the patching when a .beam file is
-   loaded so that native code calls the beam code.
  * Add exporting of exported constants.
  * Add support for freeing of catch-indices.
  * Add freeing of old code. 
  * Add freeing of catch-indices.
  * Inline sparc_ext_format somehow.
- * Test a lot.
- * Make the module autoload on startup.
- * Make the code_server load HiPE code automatically when appropriate.
- * Test a lot.
- * Flush the I-cache after patch.
+
 

@@ -36,9 +36,6 @@
 
 -export([format_error/1]).
 
-%% Local exports.
--export([funs_to_lines/2, graph_access/2, graph_quote/1]).
-
 -import(lists, 
 	[concat/1, foldl/3, map/2, nthtail/2, reverse/1, sort/1, sublist/2]).
 
@@ -134,8 +131,8 @@ statements([Expr], Table, L, UV) ->
 		 {relation_to_family, E1};
 	     {_Type, edge_closure} -> 
 		 %% Fake a closure usage, just to make sure it is destroyed.
-		 E2 = {{?MODULE, graph_access}, E1, E1},
-		 {{?MODULE, graph_quote}, E2};
+		 E2 = {fun graph_access/2, E1, E1},
+		 {fun graph_quote/1, E2};
 	     _Else -> E1
 	 end,
     {ok, UV, stats(L, NE)}.
@@ -166,8 +163,8 @@ t_expr(E, Table) ->
 %%%      | {convert, ObjectType, Type, Type}
 %%%      | {convert, Type, Type}
 %%% Constant = atom() | {atom(), atom()} | MFA | {MFA, MFA}
-%%% Call = function() % often function in the sofs module
-%%%      | {module(), function()}
+%%% Call = atom() % function in the sofs module
+%%%      | fun()
 %%% Type = {line, LineType} | function | module | application | release 
 %%%      | number
 %%% LineType = line | local_call | external_call | export_call | all_line_call
@@ -352,7 +349,8 @@ check_expr({regexpr, RExpr, Type0}, _Table) ->
 	    release -> 'R'
 	end,
     Var = {variable, {predef, V}},
-    Call = {call, {xref_utils, regexpr}, {constants, RExpr}, Var},
+    Call = {call, fun(E, V2) -> xref_utils:regexpr(E, V2) end, 
+	    {constants, RExpr}, Var},
     {expr, Type, vertex, Call};
 check_expr(C={constant, _Type, _OType, _C}, Table) ->
     check_constants([C], Table).
@@ -397,9 +395,9 @@ set_op(weak) -> weak_relation;
 set_op(strict) -> strict_relation;
 set_op(Op) -> Op.
 
-ari_op(union) -> {erlang, '+'};
-ari_op(intersection) -> {erlang, '*'};
-ari_op(difference) -> {erlang, '-'}.
+ari_op(union) -> fun(X, Y) -> X + Y end;
+ari_op(intersection) -> fun(X, Y) -> X * Y end;
+ari_op(difference) -> fun(X, Y) -> X - Y end.
 
 restriction(ROp, E1, Type1, NE1, Type2, NE2) ->
     {Column, _} = restr_op(ROp),
@@ -438,13 +436,13 @@ restr_op('||') -> {2, use}.
 %% _after_ the call to the function that uses the digraph (the default
 %% is that it is inserted _before_ the call).
 use_of_closure(Op, C) ->
-    access_of_closure(C, {call, {xref_utils, Op}, C}).
+    access_of_closure(C, {call, fun(X) -> xref_utils:Op(X) end, C}).
 
 use_of_closure(Op, C, E) ->
-    access_of_closure(C, {call, {xref_utils, Op}, C, E}).
+    access_of_closure(C, {call, fun(X, Y) -> xref_utils:Op(X, Y) end, C, E}).
 
 access_of_closure(C, E) ->
-    {call, {?MODULE, graph_access}, C, E}.
+    {call, fun graph_access/2, C, E}.
 
 check_constants(Cs=[C={constant, Type0, OType, _Con} | Cs1], Table) ->
     check_mix(Cs1, Type0, OType, C),
@@ -554,7 +552,7 @@ var_name(Variable) -> Variable.
 convert(E, OType, OType) ->
     E;
 convert(E, edge, edge_closure) ->
-    {{xref_utils, closure}, E}.
+    {fun(S) -> xref_utils:closure(S) end, E}.
 
 convert(E, OType, FromType, number) ->
     un_familiarize(FromType, OType, E);
@@ -608,7 +606,7 @@ special(edge, {line, _LineType}, {line, all_line_call}, Calls) ->
            {union, {image, {get, def_at},
                            {union, {domain, {get, ?T(mods)}}, 
                                    {range, {get, ?T(mods)}}}}},
-           {{?MODULE, funs_to_lines}, 
+           {fun funs_to_lines/2,
 	           {get, ?T(def_at)}, Calls}}};
 special(edge, function, {line, LineType}, VEs) ->
     Var = if 
@@ -733,7 +731,10 @@ find_nodes(Tuple, I, T) when tuple(Tuple) ->
 		  {[NA | L0], NI, NT}
 	  end,
     {NL, NI, T1} = foldl(Fun, {[], I, T}, L),
-    Tag = case Tag0 of {_,_} -> Tag0; _Else -> {sofs, Tag0} end,
+    Tag = case Tag0 of
+	      _ when function(Tag0) -> Tag0;
+	      _ when atom(Tag0) -> {sofs, Tag0}
+	  end,
     find_node({apply, Tag, NL}, NI, T1).
 
 find_node(E, I, T) ->

@@ -97,7 +97,6 @@ int erts_atfork_sys(void (*prepare)(void),
 #endif
 }
 
-
 int erts_mutex_destroy(erts_mutex_t mtx)
 {
     if (mtx != NULL) {

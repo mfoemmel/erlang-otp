@@ -27,15 +27,18 @@
 
 -export([module/2]).
 
--import(lists, [foldl/3]).
+-import(lists, [foldl/3,member/2]).
 
 module(Mod0, Options) ->
     %% List optimisations to be done.
-    Opts = [fun(M, Opts) -> sys_core_inline:module(M, Opts) end,
-	    fun(M, Opts) -> sys_core_fold:module(M, Opts) end,
-	    fun(M, Opts) -> {ok, cerl_inline:core_transform(M, Opts)} end],
-    Mod1 = fold_opt(Opts, Mod0, Options),
-    {ok,Mod1}.
+    Passes = [fun(M, Opts) -> sys_core_inline:module(M, Opts) end,
+	      fun(M, Opts) -> sys_core_fold:module(M, Opts) end,
+	      fun(M, Opts) -> {ok, cerl_inline:core_transform(M, Opts)} end,
+	      fun(M, Opts) -> sys_core_dsetel:module(M, Opts) end],
+    put(no_inline_list_funcs, not member(inline_list_funcs, Options)),
+    Mod = fold_opt(Passes, Mod0, Options),
+    erase(no_inline_list_funcs),
+    {ok,Mod}.
 
 fold_opt(Os, Mod, Options) ->
     foldl(fun (O, M0) ->

@@ -3,6 +3,7 @@
 %%%
 %%% Currently implemented transformations:
 %%% - replace pseudo_jcc with jcc;jmp
+%%% - remove pseudo_tailcall_prepare
 %%% - remove jmp to the next instruction
 %%% - replace add,sub 1 with inc,dec [disabled, needs stricter checks]
 
@@ -36,7 +37,7 @@ peep([I | Insns]) ->
     [I | peep(Insns)];
 peep([]) ->
     [].
-    
+
 %%%
 %%% Apply final code expansions.
 %%%
@@ -50,10 +51,12 @@ expand_insn(I, Tail) ->
     case I of
 	#pseudo_jcc{} ->
 	    expand_pseudo_jcc(I, Tail);
+	#pseudo_tailcall_prepare{} ->
+	    Tail;
 	_ ->
 	    [I | Tail]
     end.
 
 expand_pseudo_jcc(I, Tail) ->
-    #pseudo_jcc{cond=Cond,true_label=TrueLab,false_label=FalseLab} = I, % ignore pred
-    [hipe_x86:mk_jcc(Cond, TrueLab), hipe_x86:mk_jmp_label(FalseLab) | Tail].
+    #pseudo_jcc{cc=Cc,true_label=TrueLab,false_label=FalseLab} = I, % ignore pred
+    [hipe_x86:mk_jcc(Cc, TrueLab), hipe_x86:mk_jmp_label(FalseLab) | Tail].

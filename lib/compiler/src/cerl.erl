@@ -10,85 +10,89 @@
 %% under the License.
 %% 
 %% The Initial Developer of the Original Code is Richard Carlsson.
-%% Copyright (C) 1999-2001 Richard Carlsson.
+%% Copyright (C) 1999-2002 Richard Carlsson.
 %% Portions created by Ericsson are Copyright 2001, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
 %%     $Id$
 
 %% =====================================================================
-%% Core Erlang abstract syntax trees
+%% @doc Core Erlang abstract syntax trees.
 %%
-%% NOTES:
+%% <p> This module defines an abstract data type for representing Core
+%% Erlang source code as syntax trees.</p>
 %%
-%% This module deals with the composition and decomposition of
-%% *syntactic* entities; its purpose is to hide all direct references to
-%% the data structures used to represent these entities. With few
-%% exceptions, the functions of this module perform no semantic
-%% interpretation whatsoever of their arguments, and in general, no type
-%% checking is done by these functions - the user is assumed to pass
-%% type-correct arguments, and if this is not done, the effects are not
-%% defined.
+%% <p>A recommended starting point for the first-time user is the
+%% documentation of the function <a
+%% href="#type-1"><code>type/1</code></a>.</p>
 %%
-%% *All* internal representations are prone to change without notice,
-%% and should not be documented outside this module. *Nor* do we give
-%% any guarantees regarding how a syntax tree of any kind may or may not
-%% be represented, *with the following exceptions*: no syntax tree is
-%% represented by a single atom, such as `none', by a list constructor
-%% `[X | Y]', or by the empty list `[]'.
+%% <h3><b>NOTES:</b></h3>
 %%
-%% META-NOTATION: Source code examples are written within matching
-%% single quotes, as in e.g. `foo(X)'. Within code examples, angular
-%% brackets ("less than"/"greater than") surround metavariables, as in
-%% e.g. `-module(<Name>).'. The characters "less than", "greater than",
-%% and single quote characters must be escaped by a backslash, as in
-%% `{\'EXIT\', R}'. The notation <`...'> is used to embed arbitrary
-%% text, as in e.g. `<Guard> <`->'> <Body>', where the text between
-%% `\<\`' and the earliest following `\'\>' is interpreted as an Erlang
-%% string that can contain any printable characters, Erlang escape
-%% sequences, and whitespace; where one or more consecutive whitespace
-%% characters represent a single space character.
-%% =====================================================================
+%% <p>This module deals with the composition and decomposition of
+%% <em>syntactic</em> entities (as opposed to semantic ones); its
+%% purpose is to hide all direct references to the data structures
+%% used to represent these entities. With few exceptions, the
+%% functions in this module perform no semantic interpretation of
+%% their inputs, and in general, the user is assumed to pass
+%% type-correct arguments - if this is not done, the effects are not
+%% defined.</p>
+%%
+%% <p>The internal representations of abstract syntax trees are
+%% subject to change without notice, and should not be documented
+%% outside this module. Furthermore, we do not give any guarantees on
+%% how an abstract syntax tree may or may not be represented, <em>with
+%% the following exceptions</em>: no syntax tree is represented by a
+%% single atom, such as <code>none</code>, by a list constructor
+%% <code>[X | Y]</code>, or by the empty list <code>[]</code>. This
+%% can be relied on when writing functions that operate on syntax
+%% trees.</p>
+%%
+%% @type cerl(). An abstract Core Erlang syntax tree.
+%%
+%% <p>Every abstract syntax tree has a <em>type</em>, given by the
+%% function <a href="#type-1"><code>type/1</code></a>.  In addition,
+%% each syntax tree has a list of <em>user annotations</em> (cf.  <a
+%% href="#get_ann-1"><code>get_ann/1</code></a>), which are included
+%% in the Core Erlang syntax.</p>
 
 -module(cerl).
 
--export([abstract/1, add_ann/2, alias_pat/1, alias_var/1, ann_c_alias/3,
-	 ann_c_apply/3, ann_c_atom/2, ann_c_call/4, ann_c_case/3,
-	 ann_c_catch/2, ann_c_char/2, ann_c_clause/3, ann_c_clause/4,
-	 ann_c_cons/3, ann_c_float/2, ann_c_fname/3, ann_c_fname/4,
-	 ann_c_fun/3, ann_c_int/2, ann_c_let/4, ann_c_letrec/3,
-	 ann_c_module/4, ann_c_module/5, ann_c_nil/1,
-	 ann_c_nonlit_cons/3, ann_c_nonlit_tuple/2, ann_c_primop/3,
+-export([abstract/1, add_ann/2, alias_pat/1, alias_var/1,
+	 ann_abstract/2, ann_c_alias/3, ann_c_apply/3, ann_c_atom/2,
+	 ann_c_call/4, ann_c_case/3, ann_c_catch/2, ann_c_char/2,
+	 ann_c_clause/3, ann_c_clause/4, ann_c_cons/3, ann_c_float/2,
+	 ann_c_fname/3, ann_c_fun/3, ann_c_int/2, ann_c_let/4,
+	 ann_c_letrec/3, ann_c_module/4, ann_c_module/5, ann_c_nil/1,
+	 ann_c_cons_skel/3, ann_c_tuple_skel/2, ann_c_primop/3,
 	 ann_c_receive/2, ann_c_receive/4, ann_c_seq/3, ann_c_string/2,
 	 ann_c_try/4, ann_c_tuple/2, ann_c_values/2, ann_c_var/2,
-	 ann_c_var/3, ann_make_data/3, apply_args/1, apply_arity/1,
-	 apply_op/1, atom_lit/1, atom_name/1, atom_val/1, c_alias/2,
-	 c_apply/2, c_atom/1, c_call/3, c_case/2, c_catch/1, c_char/1,
-	 c_clause/2, c_clause/3, c_cons/2, c_float/1, c_fname/2,
-	 c_fname/3, c_fun/2, c_int/1, c_let/3, c_letrec/2, c_module/3,
-	 c_module/4, c_nil/0, c_nonlit_cons/2, c_nonlit_tuple/1,
-	 c_primop/2, c_receive/1, c_receive/3, c_seq/2, c_string/1,
-	 c_try/3, c_tuple/1, c_values/1, c_var/1, c_var/2, call_args/1,
-	 call_arity/1, call_module/1, call_name/1, case_arg/1,
-	 case_arity/1, case_clauses/1, catch_body/1, char_lit/1,
-	 char_val/1, clause_arity/1, clause_body/1, clause_guard/1,
-	 clause_pats/1, clause_vars/1, clone_fname/2, clone_fname/3,
-	 clone_var/2, concrete/1, cons_hd/1, cons_tl/1, copy_ann/2,
+	 ann_make_data/3, ann_make_list/2, ann_make_list/3,
+	 ann_make_data_skel/3, ann_make_tree/3, apply_args/1,
+	 apply_arity/1, apply_op/1, atom_lit/1, atom_name/1, atom_val/1,
+	 c_alias/2, c_apply/2, c_atom/1, c_call/3, c_case/2, c_catch/1,
+	 c_char/1, c_clause/2, c_clause/3, c_cons/2, c_float/1,
+	 c_fname/2, c_fun/2, c_int/1, c_let/3, c_letrec/2, c_module/3,
+	 c_module/4, c_nil/0, c_cons_skel/2, c_tuple_skel/1, c_primop/2,
+	 c_receive/1, c_receive/3, c_seq/2, c_string/1, c_try/3,
+	 c_tuple/1, c_values/1, c_var/1, call_args/1, call_arity/1,
+	 call_module/1, call_name/1, case_arg/1, case_arity/1,
+	 case_clauses/1, catch_body/1, char_lit/1, char_val/1,
+	 clause_arity/1, clause_body/1, clause_guard/1, clause_pats/1,
+	 clause_vars/1, concrete/1, cons_hd/1, cons_tl/1, copy_ann/2,
 	 data_arity/1, data_es/1, data_type/1, float_lit/1, float_val/1,
 	 fname_arity/1, fname_id/1, fold_literal/1, from_records/1,
 	 fun_arity/1, fun_body/1, fun_vars/1, get_ann/1, int_lit/1,
 	 int_val/1, is_c_alias/1, is_c_apply/1, is_c_atom/1,
-	 is_c_atom/2, is_c_call/1, is_c_case/1, is_c_catch/1,
-	 is_c_char/1, is_c_char/2, is_c_clause/1, is_c_cons/1,
-	 is_c_float/1, is_c_float/2, is_c_fname/1, is_c_fun/1,
-	 is_c_int/1, is_c_int/2, is_c_let/1, is_c_letrec/1, is_c_list/1,
-	 is_c_module/1, is_c_nil/1, is_c_primop/1, is_c_print_char/1,
-	 is_c_print_string/1, is_c_receive/1, is_c_seq/1, is_c_string/1,
-	 is_c_try/1, is_c_tuple/1, is_c_values/1, is_c_var/1, is_data/1,
-	 is_leaf/1, is_literal/1, is_literal_term/1, let_arg/1,
-	 let_arity/1, let_body/1, let_vars/1, letrec_body/1,
+	 is_c_call/1, is_c_case/1, is_c_catch/1, is_c_char/1,
+	 is_c_clause/1, is_c_cons/1, is_c_float/1, is_c_fname/1,
+	 is_c_fun/1, is_c_int/1, is_c_let/1, is_c_letrec/1, is_c_list/1,
+	 is_c_module/1, is_c_nil/1, is_c_primop/1, is_c_receive/1,
+	 is_c_seq/1, is_c_string/1, is_c_try/1, is_c_tuple/1,
+	 is_c_values/1, is_c_var/1, is_data/1, is_leaf/1, is_literal/1,
+	 is_literal_term/1, is_print_char/1, is_print_string/1,
+	 let_arg/1, let_arity/1, let_body/1, let_vars/1, letrec_body/1,
 	 letrec_defs/1, letrec_vars/1, list_elements/1, list_length/1,
-	 make_data/2, make_list/1, make_list/2, make_nonlit_data/2,
+	 make_data/2, make_list/1, make_list/2, make_data_skel/2,
 	 make_tree/2, meta/1, module_attrs/1, module_defs/1,
 	 module_exports/1, module_name/1, module_vars/1,
 	 pat_list_vars/1, pat_vars/1, primop_args/1, primop_arity/1,
@@ -98,12 +102,14 @@
 	 try_body/1, try_expr/1, try_vars/1, tuple_arity/1, tuple_es/1,
 	 type/1, update_c_alias/3, update_c_apply/3, update_c_call/4,
 	 update_c_case/3, update_c_catch/2, update_c_clause/4,
-	 update_c_cons/3, update_c_fname/3, update_c_fun/3,
-	 update_c_let/4, update_c_letrec/3, update_c_module/5,
-	 update_c_primop/3, update_c_receive/4, update_c_seq/3,
-	 update_c_try/4, update_c_tuple/2, update_c_values/2,
-	 update_c_var/2, update_data/3, values_arity/1, values_es/1,
-	 var_class/1, var_name/1]).
+	 update_c_cons/3, update_c_cons_skel/3, update_c_fname/2,
+	 update_c_fname/3, update_c_fun/3, update_c_let/4,
+	 update_c_letrec/3, update_c_module/5, update_c_primop/3,
+	 update_c_receive/4, update_c_seq/3, update_c_try/4,
+	 update_c_tuple/2, update_c_tuple_skel/2, update_c_values/2,
+	 update_c_var/2, update_data/3, update_list/2, update_list/3,
+	 update_data_skel/3, update_tree/2, update_tree/3,
+	 values_arity/1, values_es/1, var_name/1]).
 
 
 %% Binary-syntax support. This is still experimental.
@@ -113,7 +119,7 @@
 	 ann_c_bin_seg/6, is_c_bin_seg/1, bin_seg_val/1, bin_seg_size/1,
 	 bin_seg_unit/1, bin_seg_type/1, bin_seg_flags/1]).
 
--include("cerl.hrl").
+-include("core_parse.hrl").
 
 
 %% =====================================================================
@@ -125,14 +131,12 @@
 %% annotation terms associated with the node - this is by default empty.
 %%
 %% For most node constructor functions, there are analogous functions
-%% named `ann_...', taking one extra argument `As' (always the first
+%% named 'ann_...', taking one extra argument 'As' (always the first
 %% argument), specifying an annotation list at node creation time.
-%% Similarly, for many constructors there are also functions named
-%% `update_...', taking one extra argument `Old', specifying a node
-%% (which should be of the same type as the one being created) from
-%% which all fields not explicitly given as arguments should be copied
-%% (usually, this is only the annotation field, but for variables it
-%% also includes the `Class' field).
+%% Similarly, there are also functions named 'update_...', taking one
+%% extra argument 'Old', specifying a node from which all fields not
+%% explicitly given as arguments should be copied (generally, this is
+%% the annotation field only).
 %% =====================================================================
 
 %% This defines the general representation of constant literals:
@@ -140,49 +144,91 @@
 -record(literal, {ann = [], val}).
 
 
-%% =====================================================================
-%% type(Node) -> atom()
+%% @spec type(Node::cerl()) -> atom()
 %%
-%%	    Node = coreErlang()
+%% @doc Returns the type tag of <code>Node</code>. Current node types
+%% are:
+%%	    
+%% <p><center><table border="1">
+%%  <tr>
+%%    <td>alias</td>
+%%    <td>apply</td>
+%%    <td>call</td>
+%%    <td>case</td>
+%%    <td>catch</td>
+%%  </tr><tr>
+%%    <td>clause</td>
+%%    <td>cons</td>
+%%    <td>fun</td>
+%%    <td>let</td>
+%%    <td>letrec</td>
+%%  </tr><tr>
+%%    <td>literal</td>
+%%    <td>module</td>
+%%    <td>primop</td>
+%%    <td>receive</td>
+%%    <td>seq</td>
+%%  </tr><tr>
+%%    <td>try</td>
+%%    <td>tuple</td>
+%%    <td>values</td>
+%%    <td>var</td>
+%%  </tr>
+%% </table></center></p>
 %%
-%%	Returns the type tag of `Node', if `Node' represents a Core
-%%	Erlang syntax tree. Current node types are:
+%% <p>Note: The name of the primary constructor function for a node
+%% type is always the name of the type itself, prefixed by
+%% "<code>c_</code>"; recognizer predicates are correspondingly
+%% prefixed by "<code>is_c_</code>". Furthermore, to simplify
+%% preservation of annotations (cf. <code>get_ann/1</code>), there are
+%% analogous constructor functions prefixed by "<code>ann_c_</code>"
+%% and "<code>update_c_</code>", for setting the annotation list of
+%% the new node to either a specific value or to the annotations of an
+%% existing node, respectively.</p>
 %%
-%%	    alias
-%%	    apply
-%%	    call
-%%	    case
-%%	    catch
-%%	    clause
-%%	    cons
-%%	    fun
-%%	    let
-%%	    letrec
-%%	    literal
-%%	    module
-%%	    primop
-%%	    receive
-%%	    seq
-%%	    try
-%%	    tuple
-%%	    values
-%%	    var
+%% @see abstract/1
+%% @see c_alias/2
+%% @see c_apply/2
+%% @see c_call/3
+%% @see c_case/2
+%% @see c_catch/1
+%% @see c_clause/3
+%% @see c_cons/2
+%% @see c_fun/2
+%% @see c_let/3
+%% @see c_letrec/2
+%% @see c_module/3
+%% @see c_primop/2
+%% @see c_receive/1
+%% @see c_seq/2
+%% @see c_try/3
+%% @see c_tuple/1
+%% @see c_values/1
+%% @see c_var/1
+%% @see get_ann/1
+%% @see to_records/1
+%% @see from_records/1
+%% @see data_type/1
+%% @see subtrees/1
+%% @see meta/1
 
 type(Node) ->
     element(1, Node).
 
 
-%% =====================================================================
-%% is_leaf(Node) -> bool()
+%% @spec is_leaf(Node::cerl()) -> bool()
 %%
-%%	    Node = coreErlang()
+%% @doc Returns <code>true</code> if <code>Node</code> is a leaf node,
+%% otherwise <code>false</code>. The current leaf node types are
+%% <code>literal</code> and <code>var</code>.
 %%
-%%	Returns `true' if `Node' is a leaf node, otherwise `false'.
+%% <p>Note: all literals (cf. <code>is_literal/1</code>) are leaf
+%% nodes, even if they represent structured (constant) values such as
+%% <code>{foo, [bar, baz]}</code>. Also note that variables are leaf
+%% nodes but not literals.</p>
 %%
-%%	Note: all literals (cf. `is_literal) are leaf nodes, even if
-%%	they represent structured (constant) values such as `{foo, [bar,
-%%	baz]}'. Also note that variables are leaf nodes but not
-%%	literals.
+%% @see type/1
+%% @see is_literal/1
 
 is_leaf(Node) ->
     case type(Node) of
@@ -192,74 +238,94 @@ is_leaf(Node) ->
     end.
 
 
-%% =====================================================================
-%% get_ann(Node) -> [term()]
+%% @spec get_ann(cerl()) -> [term()]
 %%
-%%	    Node = coreErlang()
+%% @doc Returns the list of user annotations associated with a syntax
+%% tree node. For a newly created node, this is the empty list. The
+%% annotations may be any terms.
 %%
-%%	Returns the list of annotation terms associated with `Node'.
-%%
-%% set_ann(Node, List) -> Node1
-%%
-%%	    Node = Node1 = coreErlang()
-%%	    List = [term()]
-%%
-%%	`Node1' is `Node' with its associated list of annotation terms
-%%	set to `List'.
-%%
-%% add_ann(Terms, Node) -> Node1
-%%
-%%	    Terms = [term()]
-%%	    Node = Node1 = coreErlang()
-%%
-%%	`Node1' is `Node' with `Terms' prefixed to its associated list
-%%	of annotation terms. Duplicates are not removed.
-%%
-%% copy_ann(Source, Target) -> Node
-%%
-%%	    Source = Target = Node = coreErlang()
-%%
-%%	`Node' is `Target' with its associated list of annotation terms
-%%	set to that of `Source'.
-%%
-%%	Note: this is equivalent to `set_ann(Target, get_ann(Source))',
-%%	but potentially more efficient.
+%% @see set_ann/2
 
 get_ann(Node) ->
     element(2, Node).
 
+
+%% @spec set_ann(Node::cerl(), Annotations::[term()]) -> cerl()
+%%
+%% @doc Sets the list of user annotations of <code>Node</code> to
+%% <code>Annotations</code>.
+%%
+%% @see get_ann/1
+%% @see add_ann/2
+%% @see copy_ann/2
+
 set_ann(Node, List) ->
     setelement(2, Node, List).
 
+
+%% @spec add_ann(Annotations::[term()], Node::cerl()) -> cerl()
+%%
+%% @doc Appends <code>Annotations</code> to the list of user
+%% annotations of <code>Node</code>.
+%%
+%% <p>Note: this is equivalent to <code>set_ann(Node, Annotations ++
+%% get_ann(Node))</code>, but potentially more efficient.</p>
+%%
+%% @see get_ann/1
+%% @see set_ann/2
+
 add_ann(Terms, Node) ->
     set_ann(Node, Terms ++ get_ann(Node)).
+
+
+%% @spec copy_ann(Source::cerl(), Target::cerl()) -> cerl()
+%%
+%% @doc Copies the list of user annotations from <code>Source</code>
+%% to <code>Target</code>.
+%%
+%% <p>Note: this is equivalent to <code>set_ann(Target,
+%% get_ann(Source))</code>, but potentially more efficient.</p>
+%%
+%% @see get_ann/1
+%% @see set_ann/2
 
 copy_ann(Source, Target) ->
     set_ann(Target, get_ann(Source)).
 
 
-%% =====================================================================
-%% abstract(Term) -> coreErlang()
+%% @spec abstract(Term::term()) -> cerl()
 %%
-%%	    Term = term()
+%% @doc Creates a syntax tree corresponding to an Erlang term.
+%% <code>Term</code> must be a literal term, i.e., one that can be
+%% represented as a source code literal. Thus, it may not contain a
+%% process identifier, port, reference, binary or function value as a
+%% subterm.
 %%
-%%	Returns an abstract syntax tree representation of `Term', which
-%%	must be a literal term, i.e., which can be represented as a
-%%	source code constant. Thus, `Term' may not contain a PID, port,
-%%	reference ("ref"), binary or function value as a subterm.
+%% <p>Note: This is a constant time operation.</p>
 %%
-%%	Note: This function executes in constant time.
-%%
-%% is_literal_term(Term) -> bool()
-%%
-%%	    Term = term()
-%%
-%%	Returns `true' if `Term' can be represented as a literal,
-%%	otherwise `false'. This function takes time linear in proportion
-%%	to the size of `Term'.
+%% @see ann_abstract/2
+%% @see concrete/1
+%% @see is_literal/1
+%% @see is_literal_term/1
 
 abstract(T) ->
     #literal{val = T}.
+
+
+%% @spec ann_abstract(Annotations::[term()], Term::term()) -> cerl()
+%% @see abstract/1
+
+ann_abstract(As, T) ->
+    #literal{val = T, ann = As}.
+
+
+%% @spec is_literal_term(Term::term()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Term</code> can be
+%% represented as a literal, otherwise <code>false</code>. This
+%% function takes time proportional to the size of <code>Term</code>.
+%%
+%% @see abstract/1
 
 is_literal_term(T) when integer(T) -> true;
 is_literal_term(T) when float(T) -> true;
@@ -274,7 +340,7 @@ is_literal_term([H | T]) ->
     end;
 is_literal_term(T) when tuple(T) ->
     is_literal_term_list(tuple_to_list(T));
-is_literal_term(T) ->
+is_literal_term(_) ->
     false.
 
 is_literal_term_list([T | Ts]) ->
@@ -288,49 +354,61 @@ is_literal_term_list([]) ->
     true.
 
 
-%% =====================================================================
-%% concrete(Node) -> term()
+%% @spec concrete(Node::cerl()) -> term()
 %%
-%%	    Node = coreErlang()
+%% @doc Returns the Erlang term represented by a syntax tree.  An
+%% exception is thrown if <code>Node</code> does not represent a
+%% literal term.
 %%
-%%	Returns the concrete term represented by `Node', if `Node'
-%%	represents a literal. An exception is thrown if `Node' does not
-%%	represent a literal term.
+%% <p>Note: This is a constant time operation.</p>
 %%
-%%	Note: This function executes in constant time.
-%%
-%% is_literal(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' whenever `Node' represents a literal, otherwise
-%%	`false'.
-%%
-%%	Note: This function executes in constant time.
-%%
-%% fold_literal(Node) -> Node1
-%%
-%%	    Node = Node1 = coreErlang()
-%%
-%%	This is occasionally useful if `c_nonlit_cons' or
-%%	`c_nonlit_tuple' were used to construct `Node', and you want to
-%%	revert to the normal "folded" representation of literals. If
-%%	`Node' represents a tuple or list constructor, its elements are
-%%	rewritten recursively, and the node is reconstructed using
-%%	`c_cons' or `c_tuple', respectively; otherwise, `Node' is not
-%%	changed.
+%% @see abstract/1
+%% @see is_literal/1
 
 %% Because the normal tuple and list constructor operations always
-%% return a literal if the arguments are literals, `concrete' and
-%% `is_literal' never need to traverse the structure.
+%% return a literal if the arguments are literals, 'concrete' and
+%% 'is_literal' never need to traverse the structure.
 
 concrete(#literal{val = V}) ->
     V.
 
+
+%% @spec is_literal(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> represents a
+%% literal term, otherwise <code>false</code>. This function returns
+%% <code>true</code> if and only if the value of
+%% <code>concrete(Node)</code> is defined.
+%%
+%% <p>Note: This is a constant time operation.</p>
+%%
+%% @see abstract/1
+%% @see concrete/1
+%% @see fold_literal/1
+
 is_literal(#literal{}) ->
     true;
-is_literal(T) ->
+is_literal(_) ->
     false.
+
+
+%% @spec fold_literal(Node::cerl()) -> cerl()
+%%
+%% @doc Assures that literals have a normal-form representation. This
+%% is occasionally useful if <code>c_cons_skel/2</code> or
+%% <code>c_tuple_skel/1</code> were used in the construction of
+%% <code>Node</code>, and you want to revert to the normal "folded"
+%% representation of literals. If <code>Node</code> represents a tuple
+%% or list constructor, its elements are rewritten recursively, and
+%% the node is reconstructed using <code>c_cons/2</code> or
+%% <code>c_tuple/1</code>, respectively; otherwise, <code>Node</code>
+%% is not changed.
+%%
+%% @see is_literal/1
+%% @see c_cons_skel/2
+%% @see c_tuple_skel/1
+%% @see c_cons/2
+%% @see c_tuple/1
 
 fold_literal(Node) ->
     case type(Node) of
@@ -349,607 +427,585 @@ fold_literal_list([]) ->
     [].
 
 
-%% =====================================================================
-%% c_module(Name, Exports, Definitions) -> Node
-%% c_module(Name, Exports, Attributes, Definitions) -> Node
-%% ann_c_module(As, Name, Exports, Definitions) -> Node
-%% ann_c_module(As, Exports, Attributes, Definitions) -> Node
-%% update_c_module(Old, Name, Exports, Attributes, Definitions) -> Node
-%%
-%%	    Name = Node = coreErlang()
-%%	    Exports = [Var]
-%%	    Var = coreErlang()
-%%	    Attributes = [{Atom, Term}]
-%%	    Atom = Term = coreErlang()
-%%	    Definitions = [{Var, Fun}]
-%%	    Fun = coreErlang()
-%%	    type(Node) = module
-%%
-%%	`Node' is an abstract module definition, representing:
-%%
-%%	    `module <Name> [<E1>, ..., <Ek>]
-%%	       attributes [<K1> = <T1>, ..., <Km> = <Tm>]
-%%	       <V1> = <F1>
-%%	       ...
-%%	       <Vn> = <Fn>
-%%	     end'
-%%
-%%	if `Exports' is `[E1, ..., Ek]', `Attributes' is `[{K1, T1},
-%%	..., {Km, Tm}]', and `Definitions' = `[{V1, F1}, ..., {Vn,
-%%	Fn}]'. Leaving out `Attributes' is equivalent to passing the
-%%	empty list.
-%%
-%% is_c_module(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract module definition;
-%%	otherwise `false'.
-%%
-%% module_name(Node) -> Name
-%%
-%%	    Node = Name = coreErlang()
-%%	    is_c_module(Node)
-%%
-%%	Returns the `Name' subtree of the abstract module definition
-%%	`Node'.
-%%
-%% module_exports(Node) -> Exports
-%%
-%%	    Node = coreErlang()
-%%	    Exports = [Var]
-%%	    Var = coreErlang()
-%%	    is_c_module(Node)
-%%
-%%	Returns the list `[E1, ..., Ek]', if `Node' represents `module
-%%	<Name> [<E1>, ..., <Ek>] ... end'.
-%%
-%% module_attrs(Node) -> Attributes
-%%
-%%	    Node = coreErlang()
-%%	    Attributes = [{Atom, Term}]
-%%	    Atom = Term = coreErlang()
-%%	    is_c_module(Node)
-%%
-%%	Returns the list `[{K1, T1}, ..., {Km, Tm}]', if `Node'
-%%	represents `module <Name> [...] attributes [<K1> = <T1>, ...,
-%%	<Km> = <Tm>] ... end'.
-%%
-%% module_defs(Node) -> Definitions
-%%
-%%	    Node = coreErlang()
-%%	    Definitions = [{Var, Fun}]
-%%	    Var = Fun = coreErlang()
-%%	    is_c_module(Node)
-%%
-%%	Returns the list `[{V1, F1}, ..., {Vn, Fn}]', if `Node'
-%%	represents `module <Name> [...] attributes [...] <V1> = <F1> ...
-%%	<Vn> = <Fn> end'.
-%%
-%% module_vars(Node) -> Variables
-%%
-%%	    Node = coreErlang()
-%%	    Variables = [Var]
-%%	    Var = coreErlang()
-%%	    is_c_module(Node)
-%%
-%%	Returns the list `[V1, ..., Vn]', if `Node' represents `module
-%%	<Name> [...] attributes [...] <V1> = <F1> ... <Vn> = <Fn> end'.
-
-%% Representation:
-%%
-%% {module, A, Name, Exports, Attributes, Definitions}
-%%
-%%	Node = Name = coreErlang()
-%%	Exports = [Var]
-%%	Var = coreErlang()
-%%	Attributes = [{Atom, Term}]
-%%	Atom = Term = coreErlang()
-%%	Definitions = [{Var, Fun}]
-%%	Fun = coreErlang()
+%% ---------------------------------------------------------------------
 
 -record(module, {ann = [], name, exports, attrs, defs}).
+
+
+%% @spec c_module(Name::cerl(), Exports, Definitions) -> cerl()
+%%
+%%     Exports = [cerl()]
+%%     Definitions = [{cerl(), cerl()}]
+%%
+%% @equiv c_module(Name, Exports, [], Definitions)
 
 c_module(Name, Exports, Es) ->
     #module{name = Name, exports = Exports, attrs = [], defs = Es}.
 
+
+%% @spec c_module(Name::cerl(), Exports, Attributes, Definitions) ->
+%%           cerl()
+%%
+%%     Exports = [cerl()]
+%%     Attributes = [{cerl(), cerl()}]
+%%     Definitions = [{cerl(), cerl()}]
+%%
+%% @doc Creates an abstract module definition. The result represents
+%% <pre>
+%%   module <em>Name</em> [<em>E1</em>, ..., <em>Ek</em>]
+%%     attributes [<em>K1</em> = <em>T1</em>, ...,
+%%                 <em>Km</em> = <em>Tm</em>]
+%%     <em>V1</em> = <em>F1</em>
+%%     ...
+%%     <em>Vn</em> = <em>Fn</em>
+%%   end</pre>
+%%
+%% if <code>Exports</code> = <code>[E1, ..., Ek]</code>,
+%% <code>Attributes</code> = <code>[{K1, T1}, ..., {Km, Tm}]</code>,
+%% and <code>Definitions</code> = <code>[{V1, F1}, ..., {Vn,
+%% Fn}]</code>.
+%%
+%% <p><code>Name</code> and all the <code>Ki</code> must have type
+%% <code>atom</code>, and all the <code>Ti</code> must represent
+%% constant literals. All the <code>Vi</code> and <code>Ei</code> must
+%% have type <code>var</code> and represent function names. All the
+%% <code>Fi</code> must have type <code>'fun'</code>.</p>
+%%
+%% @see c_module/3
+%% @see module_name/1
+%% @see module_exports/1
+%% @see module_attrs/1
+%% @see module_defs/1
+%% @see module_vars/1
+%% @see ann_c_module/4
+%% @see ann_c_module/5
+%% @see update_c_module/5
+%% @see c_atom/1
+%% @see c_var/1
+%% @see c_fun/2
+%% @see is_literal/1
+
 c_module(Name, Exports, Attrs, Es) ->
     #module{name = Name, exports = Exports, attrs = Attrs, defs = Es}.
+
+
+%% @spec ann_c_module(As::[term()], Name::cerl(), Exports,
+%%                    Definitions) -> cerl()
+%%
+%%     Exports = [cerl()]
+%%     Definitions = [{cerl(), cerl()}]
+%%
+%% @see c_module/3
+%% @see ann_c_module/5
 
 ann_c_module(As, Name, Exports, Es) ->
     #module{name = Name, exports = Exports, attrs = [], defs = Es,
 	    ann = As}.
 
+
+%% @spec ann_c_module(As::[term()], Name::cerl(), Exports,
+%%                    Attributes, Definitions) -> cerl()
+%%
+%%     Exports = [cerl()]
+%%     Attributes = [{cerl(), cerl()}]
+%%     Definitions = [{cerl(), cerl()}]
+%%
+%% @see c_module/4
+%% @see ann_c_module/4
+
 ann_c_module(As, Name, Exports, Attrs, Es) ->
     #module{name = Name, exports = Exports, attrs = Attrs, defs = Es,
 	    ann = As}.
 
+
+%% @spec update_c_module(Old::cerl(), Name::cerl(), Exports,
+%%                       Attributes, Definitions) -> cerl()
+%%
+%%     Exports = [cerl()]
+%%     Attributes = [{cerl(), cerl()}]
+%%     Definitions = [{cerl(), cerl()}]
+%%
+%% @see c_module/4
+
 update_c_module(Node, Name, Exports, Attrs, Es) ->
     #module{name = Name, exports = Exports, attrs = Attrs, defs = Es,
 	    ann = get_ann(Node)}.
+
+
+%% @spec is_c_module(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% module definition, otherwise <code>false</code>.
+%%
+%% @see type/1
 
 is_c_module(#module{}) ->
     true;
 is_c_module(_) ->
     false.
 
+
+%% @spec module_name(Node::cerl()) -> cerl()
+%%
+%% @doc Returns the name subtree of an abstract module definition.
+%%
+%% @see c_module/4
+
 module_name(Node) ->
     Node#module.name.
+
+
+%% @spec module_exports(Node::cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of exports subtrees of an abstract module
+%% definition.
+%%
+%% @see c_module/4
 
 module_exports(Node) ->
     Node#module.exports.
 
+
+%% @spec module_attrs(Node::cerl()) -> [{cerl(), cerl()}]
+%%
+%% @doc Returns the list of pairs of attribute key/value subtrees of
+%% an abstract module definition.
+%%
+%% @see c_module/4
+
 module_attrs(Node) ->
     Node#module.attrs.
 
+
+%% @spec module_defs(Node::cerl()) -> [{cerl(), cerl()}]
+%%
+%% @doc Returns the list of function definitions of an abstract module
+%% definition.
+%%
+%% @see c_module/4
+
 module_defs(Node) ->
     Node#module.defs.
+
+
+%% @spec module_vars(Node::cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of left-hand side function variable subtrees
+%% of an abstract module definition.
+%%
+%% @see c_module/4
 
 module_vars(Node) ->
     [F || {F, _} <- module_defs(Node)].
 
 
-%% =====================================================================
-%% c_int(Value) -> Node
-%% ann_c_int(As, Value) -> Node
-%%
-%%	    Value = integer()
-%%	    Node = coreErlang()
-%%	    type(Node) = literal
-%%	    is_c_int(Node, Value)
-%%
-%%	`Node' is an abstract integer literal, representing the
-%%	canonical decimal numeral of `Value', as given by
-%%	`erlang:integer_to_list/1'.
-%%
-%% is_c_int(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract integer literal,
-%%	otherwise `false'.
-%%
-%% is_c_int(Node, Value) -> bool()
-%%
-%%	    Node = coreErlang()
-%%	    Value = integer()
-%%
-%%	Returns `true' if `Node' is an abstract integer literal such
-%%	that `int_val(Node)' is equal to `Value', otherwise `false'.
-%%
-%% int_val(Node) -> integer()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_int(Node)
-%%
-%%	Returns the value of the integer literal represented by `Node'.
-%%
-%% int_lit(Node) -> string()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_int(Node)
-%%
-%%	Returns the character sequence of the integer numeral
-%%	represented by `Node'.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_int(Value::integer()) -> cerl()
 %%
-%% {literal, A, Value}
 %%
-%%	Value = integer()
+%% @doc Creates an abstract integer literal. The lexical
+%% representation is the canonical decimal numeral of
+%% <code>Value</code>.
 %%
-%% Note: if the underlying implementation of Erlang does not have
-%% "bignums", then not all integer numerals can be represented.
+%% @see ann_c_int/2
+%% @see is_c_int/1
+%% @see int_val/1
+%% @see int_lit/1
+%% @see c_char/1
 
 c_int(Value) ->
     #literal{val = Value}.
 
+
+%% @spec ann_c_int(As::[term()], Value::integer()) -> cerl()
+%% @see c_int/1
+
 ann_c_int(As, Value) ->
     #literal{val = Value, ann = As}.
+
+
+%% @spec is_c_int(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> represents an
+%% integer literal, otherwise <code>false</code>.
+%% @see c_int/1
 
 is_c_int(#literal{val = V}) when integer(V) ->
     true;
 is_c_int(_) ->
     false.
 
-is_c_int(#literal{val = V}, V1) when integer(V), V =:= V1 ->
-    true;
-is_c_int(_, _) ->
-    false.
+
+%% @spec int_val(cerl()) -> integer()
+%%
+%% @doc Returns the value represented by an integer literal node.
+%% @see c_int/1
 
 int_val(Node) ->
     Node#literal.val.
+
+
+%% @spec int_lit(cerl()) -> string()
+%%
+%% @doc Returns the numeral string represented by an integer literal
+%% node.
+%% @see c_int/1
 
 int_lit(Node) ->
     integer_to_list(int_val(Node)).
 
 
-%% =====================================================================
-%% c_float(Value) -> Node
-%% ann_c_float(As, Value) -> Node
-%%
-%%	    Value = float()
-%%	    Node = coreErlang()
-%%	    type(Node) = literal
-%%	    is_c_float(Node, Value)
-%%
-%%	`Node' is an abstract floating-point literal, representing the
-%%	decimal floating-point numeral of `Value' as given by
-%%	`erlang:float_to_list/1'.
-%%
-%% is_c_float(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract floating-point numeral;
-%%	otherwise `false'.
-%%	
-%% is_c_float(Node, Value) -> bool()
-%%
-%%	    Node = coreErlang()
-%%	    Value = float()
-%%
-%%	Returns `true' if `Node' is an abstract floating-point literal
-%%	such that `float_val(Node)' is equal to `Value', otherwise
-%%	`false'.
-%%
-%% float_val(Node) -> float()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_float(Node)
-%%
-%%	Returns the value of the floating-point literal represented by
-%%	`Node'.
-%%
-%% float_lit(Node) -> string()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_float(Node)
-%%
-%%	Returns the character sequence of the floating-point numeral
-%%	represented by `Node'.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_float(Value::float()) -> cerl()
 %%
-%% {literal, A, Value}
+%% @doc Creates an abstract floating-point literal.  The lexical
+%% representation is the decimal floating-point numeral of
+%% <code>Value</code>.
 %%
-%%	Value = float()
-%%
+%% @see ann_c_float/2
+%% @see is_c_float/1
+%% @see float_val/1
+%% @see float_lit/1
+
 %% Note that not all floating-point numerals can be represented with
 %% full precision.
 
 c_float(Value) ->
     #literal{val = Value}.
 
+
+%% @spec ann_c_float(As::[term()], Value::float()) -> cerl()
+%% @see c_float/1
+
 ann_c_float(As, Value) ->
     #literal{val = Value, ann = As}.
+
+
+%% @spec is_c_float(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> represents a
+%% floating-point literal, otherwise <code>false</code>.
+%% @see c_float/1
 
 is_c_float(#literal{val = V}) when float(V) ->
     true;
 is_c_float(_) ->
     false.
 
-is_c_float(#literal{val = V}, V1) when float(V), V =:= V1 ->
-    true;
-is_c_float(_, _) ->
-    false.
+
+%% @spec float_val(cerl()) -> float()
+%%
+%% @doc Returns the value represented by a floating-point literal
+%% node.
+%% @see c_float/1
 
 float_val(Node) ->
     Node#literal.val.
+
+
+%% @spec float_lit(cerl()) -> string()
+%%
+%% @doc Returns the numeral string represented by a floating-point
+%% literal node.
+%% @see c_float/1
 
 float_lit(Node) ->
     float_to_list(float_val(Node)).
 
 
-%% =====================================================================
-%% c_atom(Name) -> Node
-%% ann_c_atom(As, Name) -> Node
-%%
-%%	    Name = atom() | string()
-%%	    Node = coreErlang()
-%%	    type(Node) = literal
-%%	    is_c_atom(Node, Name)
-%%
-%%	`Node' is an abstract atom literal corresponding to `Name'. If
-%%	`Name' is an atom, `Node' simply represents the corresponding
-%%	atom literal (always written within single-quotes). If `Name' is
-%%	a string, `Node' represents exactly the atom literal formed by
-%%	enclosing the character sequence of `Name' within single-quote
-%%	characters.
-%%
-%%	Note: in order to make comparison of abstract atoms a quick
-%%	operation, the atom names are internally represented as actual
-%%	atoms. This implies that passing a string as `Name' argument to
-%%	this constructor function causes a corresponding actual atom to
-%%	be created.
-%%
-%% is_c_atom(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract atom literal, otherwise
-%%	`false'.
-%%	
-%% is_c_atom(Node, Value) -> bool()
-%%
-%%	    Node = coreErlang()
-%%	    Value = atom()
-%%
-%%	Returns `true' if `Node' is an abstract atom literal such that
-%%	`atom_val(Node)' is equal to `Value', otherwise `false'.
-%%
-%% atom_val(Node)-> atom()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_atom(Node)
-%%
-%%	Returns the actual atom corresponding to the atom literal
-%%	represented by `Node'.
-%%
-%% atom_name(Node) -> string()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_atom(Node)
-%%
-%%	Returns the printname (not including the surrounding
-%%	single-quote characters) corresponding to the atom literal
-%%	represented by `Node'.
-%%
-%% atom_lit(Node) -> string()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_atom(Node)
-%%
-%%	Returns the character sequence of the atom literal corresponding
-%%	to `Node' (always including surrounding single-quote
-%%	characters). E.g., `atom_lit(c_atom("a\012b"))' might yield
-%%	`"\'a\\nb\'"'. Note that one abstract atom may have several
-%%	literal representations, and that the representation yielded by
-%%	this function is not fixed.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_atom(Name) -> cerl()
+%%	    Name = atom() | string()
 %%
-%% {literal, A, Name}
+%% @doc Creates an abstract atom literal.  The print name of the atom
+%% is the character sequence represented by <code>Name</code>.
 %%
-%%	Name = atom()
+%% <p>Note: passing a string as argument to this function causes a
+%% corresponding atom to be created for the internal representation.</p>
+%%
+%% @see ann_c_atom/2
+%% @see is_c_atom/1
+%% @see atom_val/1
+%% @see atom_name/1
+%% @see atom_lit/1
 
 c_atom(Name) when atom(Name) ->
     #literal{val = Name};
 c_atom(Name) ->
     #literal{val = list_to_atom(Name)}.
 
+
+%% @spec ann_c_atom(As::[term()], Name) -> cerl()
+%%	    Name = atom() | string()
+%% @see c_atom/1
+
 ann_c_atom(As, Name) when atom(Name) ->
     #literal{val = Name, ann = As};
 ann_c_atom(As, Name) ->
     #literal{val = list_to_atom(Name), ann = As}.
+
+
+%% @spec is_c_atom(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> represents an
+%% atom literal, otherwise <code>false</code>.
+%%
+%% @see c_atom/1
 
 is_c_atom(#literal{val = V}) when atom(V) ->
     true;
 is_c_atom(_) ->
     false.
 
-is_c_atom(#literal{val = V}, V1) when atom(V), V =:= V1 ->
-    true;
-is_c_atom(_, _) ->
-    false.
+%% @spec atom_val(cerl())-> atom()
+%%
+%% @doc Returns the value represented by an abstract atom.
+%%
+%% @see c_atom/1
 
 atom_val(Node) ->
     Node#literal.val.
 
+
+%% @spec atom_name(cerl()) -> string()
+%%
+%% @doc Returns the printname of an abstract atom.
+%%
+%% @see c_atom/1
+
 atom_name(Node) ->
     atom_to_list(atom_val(Node)).
 
-%% TODO: replace the use of the unofficial `write_string/2'.
+
+%% @spec atom_lit(cerl()) -> string()
+%%
+%% @doc Returns the literal string represented by an abstract
+%% atom. This always includes surrounding single-quote characters.
+%%
+%% <p>Note that an abstract atom may have several literal
+%% representations, and that the representation yielded by this
+%% function is not fixed; e.g.,
+%% <code>atom_lit(c_atom("a\012b"))</code> could yield the string
+%% <code>"\'a\\nb\'"</code>.</p>
+%%
+%% @see c_atom/1
+
+%% TODO: replace the use of the unofficial 'write_string/2'.
 
 atom_lit(Node) ->
-    io_lib:write_string(atom_name(Node), $').
+    io_lib:write_string(atom_name(Node), $'). %' stupid Emacs.
 
 
-%% =====================================================================
-%% c_char(Char) -> Node
-%% ann_c_char(As, Char) -> Node
-%%
-%%	    Char = char() | integer()
-%%	    Node = coreErlang()
-%%	    type(Node) = literal
-%%	    is_c_char(Node, Char)
-%%
-%%	`Node' is an abstract character literal corresponding to `Char'.
-%%
-%%	Note: the literal corresponding to a particular character value
-%%	is not uniquely defined. E.g., the character `a' can be written
-%%	both as `$a' and `$\141', and a Tab character can be written as
-%%	`$\11' or `$\t', etc.
-%%
-%% is_c_char(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' may represent a character literal;
-%%	otherwise `false'. If the Erlang implementation does not
-%%	distinguish between integers and characters, then
-%%	`is_c_int(<Node>)' will also yield `true', and in this case
-%%	`is_c_char(<Node>)' will yield `true' if `int_val(<Node>)' is
-%%	an integer in the proper range for representing a character.
-%%	
-%% is_c_char(Node, Value) -> bool()
-%%
-%%	    Node = coreErlang()
-%%	    Value = char()
-%%
-%%	Returns `true' if `is_c_char(Node)' yields `true' and
-%%	`char_val(Node)' is equal to `Value', otherwise `false'.
-%%
-%% is_c_print_char(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' whenever `is_c_char(Node)' yields `true' and
-%%	`concrete(Node)' is a "printing" character value, i.e., that
-%%	denotes a character with either a given graphical representation
-%%	or a "named" escape sequence such as `\n' or '\\'. Currently,
-%%	ISO 8859-1 (Latin-1) character values are being recognized.
-%%	
-%% char_val(Node) -> char()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_char(Node)
-%%
-%%	Returns the value corresponding to the character literal
-%%	represented by `Node'.
-%%
-%% char_lit(Node) -> string()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_char(Node)
-%%
-%%	Returns the character sequence of the character literal
-%%	corresponding to `Node' (including a leading `$' character).
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_char(Value) -> cerl()
 %%
-%% {literal, A, Code}
+%%    Value = char() | integer()
 %%
-%%	Code = char()
+%% @doc Creates an abstract character literal. If the local
+%% implementation of Erlang defines <code>char()</code> as a subset of
+%% <code>integer()</code>, this function is equivalent to
+%% <code>c_int/1</code>. Otherwise, if the given value is an integer,
+%% it will be converted to the character with the corresponding
+%% code. The lexical representation of a character is
+%% "<code>$<em>Char</em></code>", where <code>Char</code> is a single
+%% printing character or an escape sequence.
 %%
-%% representing a character literal corresponding to `Code', if `Code'
-%% has type char() but not type integer(), or the character whose code
-%% is given by `Code', if `Code' has type integer().
+%% @see c_int/1
+%% @see c_string/1
+%% @see ann_c_char/2
+%% @see is_c_char/1
+%% @see char_val/1
+%% @see char_lit/1
+%% @see is_print_char/1
 
-c_char(Char) ->
-    #literal{val = Char}.
+c_char(Value)  when integer(Value), Value >= 0 ->
+    #literal{val = Value}.
 
-ann_c_char(As, Char) ->
-    #literal{val = Char, ann = As}.
 
-is_c_char(#literal{val = V}) when integer(V) ->
+%% @spec ann_c_char(As::[term()], Value::char()) -> cerl()
+%% @see c_char/1
+
+ann_c_char(As, Value) ->
+    #literal{val = Value, ann = As}.
+
+
+%% @spec is_c_char(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> may represent a
+%% character literal, otherwise <code>false</code>.
+%%
+%% <p>If the local implementation of Erlang defines
+%% <code>char()</code> as a subset of <code>integer()</code>, then
+%% <code>is_c_int(<em>Node</em>)</code> will also yield
+%% <code>true</code>.</p>
+%%
+%% @see c_char/1
+%% @see is_print_char/1
+
+is_c_char(#literal{val = V}) when integer(V), V >= 0 ->
     is_char_value(V);
 is_c_char(_) ->
     false.
 
-is_c_char(#literal{val = V}, V1) when integer(V), V =:= V1 ->
-    is_char_value(V);
-is_c_char(_, _) ->
+
+%% @spec is_print_char(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> may represent a
+%% "printing" character, otherwise <code>false</code>. (Cf.
+%% <code>is_c_char/1</code>.)  A "printing" character has either a
+%% given graphical representation, or a "named" escape sequence such
+%% as "<code>\n</code>". Currently, only ISO 8859-1 (Latin-1)
+%% character values are recognized.
+%%
+%% @see c_char/1
+%% @see is_c_char/1
+
+is_print_char(#literal{val = V}) when integer(V), V >= 0 ->
+    is_print_char_value(V);
+is_print_char(_) ->
     false.
 
-is_c_print_char(#literal{val = V}) when integer(V) ->
-    is_print_char_value(V);
-is_c_print_char(_) ->
-    false.
+
+%% @spec char_val(cerl()) -> char()
+%%
+%% @doc Returns the value represented by an abstract character literal.
+%%
+%% @see c_char/1
 
 char_val(Node) ->
     Node#literal.val.
+
+
+%% @spec char_lit(cerl()) -> string()
+%%
+%% @doc Returns the literal string represented by an abstract
+%% character. This includes a leading <code>$</code>
+%% character. Currently, all characters that are not in the set of ISO
+%% 8859-1 (Latin-1) "printing" characters will be escaped.
+%%
+%% @see c_char/1
 
 char_lit(Node) ->
     io_lib:write_char(char_val(Node)).
 
 
-%% =====================================================================
-%% c_string(String) -> Node
-%% ann_c_string(As, String) -> Node
-%%
-%%	    String = string()
-%%	    Node = coreErlang()
-%%	    type(Node) = literal
-%%
-%%	`Node' is an abstract string literal corresponding to the
-%%	sequence of characters in `String', but not representing a
-%%	*specific* string literal. E.g., `c_string("x\ny")' represents
-%%	any and all of `"x\ny"', `"x\12y"', `"x\012y"' and `"x\^Jy"'.
-%%	(Cf. `char'.)
-%%
-%% is_c_string(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' represents either `[]' or `[<Head> |
-%%	<Tail>]', where in the latter case `is_c_char(Head)' yields
-%%	`true' and recursively `is_c_string(Tail)' also yields `true'.
-%%	Returns `false' otherwise.
-%%
-%% is_c_print_string(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' whenever `is_c_string(Node)' yields `true' and
-%%	`concrete(Node)' is a sequence of "printing" character values,
-%%	i.e., that denote characters with either a given graphical
-%%	representation or a "named" escape sequence such as `\n' or
-%%	'\\'. Currently, ISO 8859-1 (Latin-1) character values are being
-%%	recognized. (Cf. `is_c_print_char'.)
-%%
-%% string_val(Node) -> string()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_string(Node)
-%%
-%%	Returns the value of the string literal represented by `Node'.
-%%
-%% string_lit(Node) -> string()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_string(Node)
-%%
-%%	Returns the character sequence of the literal represented by
-%%	`Node'; this includes surrounding double-quote characters.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_string(Value::string()) -> cerl()
 %%
-%% {literal, A, Value}
+%% @doc Creates an abstract string literal. Equivalent to creating an
+%% abstract list of the corresponding character literals
+%% (cf. <code>is_c_string/1</code>), but is typically more
+%% efficient. The lexical representation of a string is
+%% "<code>"<em>Chars</em>"</code>", where <code>Chars</code> is a
+%% sequence of printing characters or spaces.
 %%
-%%	Value = string()
+%% @see c_char/1
+%% @see ann_c_string/2
+%% @see is_c_string/1
+%% @see string_val/1
+%% @see string_lit/1
+%% @see is_print_string/1
 
-c_string(Chars) ->
-    #literal{val = Chars}.
+c_string(Value) ->
+    #literal{val = Value}.
 
-ann_c_string(As, Chars) ->
-    #literal{val = Chars, ann = As}.
 
-%% Note that strings must be literals, not abstract cons cells.
+%% @spec ann_c_string(As::[term()], Value::string()) -> cerl()
+%% @see c_string/1
+
+ann_c_string(As, Value) ->
+    #literal{val = Value, ann = As}.
+
+
+%% @spec is_c_string(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> may represent a
+%% string literal, otherwise <code>false</code>. Strings are defined
+%% as lists of characters; see <code>is_c_char/1</code> for details.
+%%
+%% @see c_string/1
+%% @see is_c_char/1
+%% @see is_print_string/1
 
 is_c_string(#literal{val = V}) ->
     is_char_list(V);
 is_c_string(_) ->
     false.
 
-is_c_print_string(#literal{val = V}) ->
+
+%% @spec is_print_string(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> may represent a
+%% string literal containing only "printing" characters, otherwise
+%% <code>false</code>. See <code>is_c_string/1</code> and
+%% <code>is_print_char/1</code> for details. Currently, only ISO
+%% 8859-1 (Latin-1) character values are recognized.
+%%
+%% @see c_string/1
+%% @see is_c_string/1
+%% @see is_print_char/1
+
+is_print_string(#literal{val = V}) ->
     is_print_char_list(V);
-is_c_print_string(_) ->
+is_print_string(_) ->
     false.
 
+
+%% @spec string_val(cerl()) -> string()
+%%
+%% @doc Returns the value represented by an abstract string literal.
+%%
+%% @see c_string/1
+
 string_val(Node) ->
-    concrete(Node).
+    Node#literal.val.
+
+
+%% @spec string_lit(cerl()) -> string()
+%%
+%% @doc Returns the literal string represented by an abstract string.
+%% This includes surrounding double-quote characters
+%% <code>"..."</code>. Currently, characters that are not in the set
+%% of ISO 8859-1 (Latin-1) "printing" characters will be escaped,
+%% except for spaces.
+%%
+%% @see c_string/1
 
 string_lit(Node) ->
     io_lib:write_string(string_val(Node)).
 
 
-%% =====================================================================
-%% c_nil() -> Node
-%% ann_c_nil(As) -> Node
-%%
-%%	    Node = coreErlang()
-%%	    type(Node) = literal
-%%
-%%	`Node' is an abstract empty list (the empty list is
-%%	traditionally called "nil"), representing `[]'.
-%%
-%% is_c_nil(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract empty list, otherwise
-%%	`false'.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_nil() -> cerl()
 %%
-%% {literal, A, []}
+%% @doc Creates an abstract empty list. The result represents
+%% "<code>[]</code>". The empty list is traditionally called "nil".
+%%
+%% @see ann_c_nil/1
+%% @see is_c_list/1
+%% @see c_cons/2
 
 c_nil() ->
     #literal{val = []}.
 
+
+%% @spec ann_c_nil(As::[term()]) -> cerl()
+%% @see c_nil/0
+
 ann_c_nil(As) ->
     #literal{val = [], ann = As}.
+
+
+%% @spec is_c_nil(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% empty list, otherwise <code>false</code>.
 
 is_c_nil(#literal{val = []}) ->
     true;
@@ -957,170 +1013,31 @@ is_c_nil(_) ->
     false.
 
 
-%% =====================================================================
-%% Binary-syntax support (still experimental)
+%% ---------------------------------------------------------------------
 
--record(binary, {ann = [], segs}).
-
-c_binary(Segments) ->
-    #binary{segs = Segments}.
-
-ann_c_binary(As, Segments) ->
-    #binary{segs = Segments, ann = As}.
-
-update_c_binary(Node, Segments) ->
-    #binary{segs = Segments, ann = get_ann(Node)}.
-
-is_c_binary(#binary{}) ->
-    true;
-is_c_binary(_) ->
-    false.
-
-binary_segs(Node) ->
-    Node#binary.segs.
-
-
--record(bin_seg, {ann = [], val, size, unit, type, flags}).
-
-c_bin_seg(Val, Size, Unit, Type, Flags) ->
-    #bin_seg{val = Val, size = Size, unit = Unit, type = Type,
-	     flags = Flags}.
-
-ann_c_bin_seg(As, Val, Size, Unit, Type, Flags) ->
-    #bin_seg{val = Val, size = Size, unit = Unit, type = Type,
-	     flags = Flags, ann = As}.
-
-update_c_bin_seg(Node, Val, Size, Unit, Type, Flags) ->
-    #bin_seg{val = Val, size = Size, unit = Unit, type = Type,
-	     flags = Flags, ann = get_ann(Node)}.
-
-is_c_bin_seg(#bin_seg{}) ->
-    true;
-is_c_bin_seg(_) ->
-    false.
-
-bin_seg_val(Node) ->
-    Node#bin_seg.val.
-
-bin_seg_size(Node) ->
-    Node#bin_seg.size.
-
-bin_seg_unit(Node) ->
-    Node#bin_seg.unit.
-
-bin_seg_type(Node) ->
-    Node#bin_seg.type.
-
-bin_seg_flags(Node) ->
-    Node#bin_seg.flags.
-
-
-%% =====================================================================
-%% c_cons(Head, Tail) -> Node
-%% ann_c_cons(As, Head, Tail) -> Node
-%% update_c_cons(Old, Head, Tail) -> Node
+%% @spec c_cons(Head::cerl(), Tail::cerl()) -> cerl()
 %%
-%%	    Head = Tail = Node = coreErlang()
-%%	    type(Node) = cons | literal
+%% @doc Creates an abstract list constructor. The result represents
+%% "<code>[<em>Head</em> | <em>Tail</em>]</code>". Note that if both
+%% <code>Head</code> and <code>Tail</code> have type
+%% <code>literal</code>, then the result will also have type
+%% <code>literal</code>, and annotations on <code>Head</code> and
+%% <code>Tail</code> are lost.
 %%
-%%	`Node' is an abstract list constructor representing `[<Head> |
-%%	<Tail>]'. Recall that in Erlang, the tail element of a list
-%%	constructor is not necessarily a list. Note that if both `Head'
-%%	and `Tail' have type `literal', then `Node' will also have type
-%%	`literal', and all annotations on `Head' and `Tail' are lost.
+%% <p>Recall that in Erlang, the tail element of a list constructor is
+%% not necessarily a list.</p>
 %%
-%% c_nonlit_cons(Head, Tail) -> Node
-%% ann_c_nonlit_cons(As, Head, Tail) -> Node
-%%
-%%	    Head = Tail = Node = coreErlang()
-%%	    type(Node) = cons
-%%
-%%	This function is occasionally useful when it is necessary to
-%%	keep annotations on the subnodes of a list constructor node,
-%%	even if both subnodes are constant literals. `Node' is an
-%%	abstract list constructor representing `[<Head> | <Tail>]'. Note
-%%	however that `Node' will always have type `cons',
-%%	`is_literal(Node)' will yield `false' and `concrete(Node)' will
-%%	fail.
-%%
-%% is_c_cons(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract list constructor;
-%%	otherwise `false'.
-%%
-%% cons_hd(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_cons(Node)
-%%
-%%	Returns the `Head' subtree of the abstract list constructor
-%%	`Node'.
-%%
-%% cons_tl(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_cons(Node)
-%%
-%%	Returns the `Tail' subtree of the abstract list constructor
-%%	`Node'. (Recall that the tail does not necessarily represent a
-%%	proper list.)
-%%
-%% is_c_list(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' represents either `[]' or `[<Head> |
-%%	<Tail>]', where in the latter case recursively
-%%	`is_c_list(Tail)' = `true'. Returns `false' otherwise.
-%%
-%%	Note: Because `Node' is a syntax tree, the actual runtime values
-%%	represented by its subtrees are often partially or completely
-%%	unknown. Thus, if `Node' represents e.g. `[N | Ns]' then
-%%	`is_c_list(Node)' yields `false', because `Ns' is a variable,
-%%	which might not be bound to a list. If `Node' represents a
-%%	nil-terminated list such as `[foo, bar]' or `[X, Y]', then
-%%	`is_c_list(Node)' can safely yield `true'.
-%%
-%% list_elements(Node) -> [coreErlang()]
-%%
-%%	    Node = coreErlang()
-%%	    is_c_list(Node)
-%%
-%%	Returns the list of "list element" subtrees, in left-to-right
-%%	order, of the (proper) list represented by `Node'. E.g., if
-%%	`Node' represents `[<X1> | [<X2> | [<X3> | []]]]', then
-%%	`list_elements(Node)' yields the list `[X1, X2, X3]'.
-%%
-%% list_length(Node) -> integer()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_list(Node)
-%%
-%%	Returns the number of "list element" subtrees of the (proper)
-%%	list represented by `Node'. E.g., if `Node' represents `[X1 |
-%%	[X2 | [X3 | [X4, X5, X6]]]]', then `list_length(Node)' yields
-%%	the integer 6.
-%%
-%% make_list(List) -> Node
-%% make_list(List, Tail) -> Node
-%%
-%%	    List = [coreErlang()]
-%%	    Tail = coreErlang() | none
-%%	    Node = coreErlang()
-%%
-%%	Returns a syntax tree representing the list whose prefix
-%%	consists of the syntax trees in `List' (in order), and whose
-%%	tail is represented by `Tail'. If `Tail' is `none', the
-%%	resulting abstract list will be proper (nil-terminated). Leaving
-%%	out `Tail' is equivalent to passing `none'.
-
-%% Representation:
-%%
-%% {cons, A, Head, Tail}
-%%
-%%	Head = Tail = coreErlang()
+%% @see ann_c_cons/3
+%% @see update_c_cons/3
+%% @see c_cons_skel/2
+%% @see is_c_cons/1
+%% @see cons_hd/1
+%% @see cons_tl/1
+%% @see is_c_list/1
+%% @see c_nil/0
+%% @see list_elements/1
+%% @see list_length/1
+%% @see make_list/2
 
 -record(cons, {ann = [], hd, tl}).
 
@@ -1131,23 +1048,79 @@ c_cons(#literal{val = Head}, #literal{val = Tail}) ->
 c_cons(Head, Tail) ->
     #cons{hd = Head, tl = Tail}.
 
+
+%% @spec ann_c_cons(As::[term()], Head::cerl(), Tail::cerl()) -> cerl()
+%% @see c_cons/2
+
 ann_c_cons(As, #literal{val = Head}, #literal{val = Tail}) ->
     #literal{val = [Head | Tail], ann = As};
 ann_c_cons(As, Head, Tail) ->
     #cons{hd = Head, tl = Tail, ann = As}.
+
+
+%% @spec update_c_cons(Old::cerl(), Head::cerl(), Tail::cerl()) ->
+%%           cerl()
+%% @see c_cons/2
 
 update_c_cons(Node, #literal{val = Head}, #literal{val = Tail}) ->
     #literal{val = [Head | Tail], ann = get_ann(Node)};
 update_c_cons(Node, Head, Tail) ->
     #cons{hd = Head, tl = Tail, ann = get_ann(Node)}.
 
+
+%% @spec c_cons_skel(Head::cerl(), Tail::cerl()) -> cerl()
+%%
+%% @doc Creates an abstract list constructor skeleton. Does not fold
+%% constant literals, i.e., the result always has type
+%% <code>cons</code>, representing "<code>[<em>Head</em> |
+%% <em>Tail</em>]</code>".
+%%
+%% <p>This function is occasionally useful when it is necessary to have
+%% annotations on the subnodes of a list constructor node, even when the
+%% subnodes are constant literals. Note however that
+%% <code>is_literal/1</code> will yield <code>false</code> and
+%% <code>concrete/1</code> will fail if passed the result from this
+%% function.</p>
+%%
+%% <p><code>fold_literal/1</code> can be used to revert a node to the
+%% normal-form representation.</p>
+%%
+%% @see ann_c_cons_skel/3
+%% @see update_c_cons_skel/3
+%% @see c_cons/2
+%% @see is_c_cons/1
+%% @see is_c_list/1
+%% @see c_nil/0
+%% @see is_literal/1
+%% @see fold_literal/1
+%% @see concrete/1
+
 %% *Never* collapse literals.
 
-c_nonlit_cons(Head, Tail) ->
+c_cons_skel(Head, Tail) ->
     #cons{hd = Head, tl = Tail}.
 
-ann_c_nonlit_cons(As, Head, Tail) ->
+
+%% @spec ann_c_cons_skel(As::[term()], Head::cerl(), Tail::cerl()) ->
+%%           cerl()
+%% @see c_cons_skel/2
+
+ann_c_cons_skel(As, Head, Tail) ->
     #cons{hd = Head, tl = Tail, ann = As}.
+
+
+%% @spec update_c_cons_skel(Old::cerl(), Head::cerl(), Tail::cerl()) ->
+%%           cerl()
+%% @see c_cons_skel/2
+
+update_c_cons_skel(Node, Head, Tail) ->
+    #cons{hd = Head, tl = Tail, ann = get_ann(Node)}.
+
+
+%% @spec is_c_cons(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% list constructor, otherwise <code>false</code>.
 
 is_c_cons(#cons{}) ->
     true;
@@ -1156,15 +1129,56 @@ is_c_cons(#literal{val = [_ | _]}) ->
 is_c_cons(_) ->
     false.
 
+
+%% @spec cons_hd(cerl()) -> cerl()
+%%
+%% @doc Returns the head subtree of an abstract list constructor.
+%%
+%% @see c_cons/2
+
 cons_hd(#cons{hd = Head}) ->
     Head;
 cons_hd(#literal{val = [Head | _]}) ->
     #literal{val = Head}.
 
+
+%% @spec cons_tl(cerl()) -> cerl()
+%%
+%% @doc Returns the tail subtree of an abstract list constructor.
+%%
+%% <p>Recall that the tail does not necessarily represent a proper
+%% list.</p>
+%%
+%% @see c_cons/2
+
 cons_tl(#cons{tl = Tail}) ->
     Tail;
 cons_tl(#literal{val = [_ | Tail]}) ->
     #literal{val = Tail}.
+
+
+%% @spec is_c_list(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> represents a
+%% proper list, otherwise <code>false</code>. A proper list is either
+%% the empty list <code>[]</code>, or a cons cell <code>[<em>Head</em> |
+%% <em>Tail</em>]</code>, where recursively <code>Tail</code> is a
+%% proper list.
+%% 
+%% <p>Note: Because <code>Node</code> is a syntax tree, the actual
+%% run-time values corresponding to its subtrees may often be partially
+%% or completely unknown. Thus, if <code>Node</code> represents e.g.
+%% "<code>[... | Ns]</code>" (where <code>Ns</code> is a variable), then
+%% the function will return <code>false</code>, because it is not known
+%% whether <code>Ns</code> will be bound to a list at run-time. If
+%% <code>Node</code> instead represents e.g. "<code>[1, 2, 3]</code>" or
+%% "<code>[A | []]</code>", then the function will return
+%% <code>true</code>.</p>
+%%
+%% @see c_cons/2
+%% @see c_nil/0
+%% @see list_elements/1
+%% @see list_length/1
 
 is_c_list(#cons{tl = Tail}) ->
     is_c_list(Tail);
@@ -1180,6 +1194,21 @@ is_proper_list([]) ->
 is_proper_list(_) ->
     false.
 
+%% @spec list_elements(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of element subtrees of an abstract list.
+%% <code>Node</code> must represent a proper list. E.g., if
+%% <code>Node</code> represents "<code>[<em>X1</em>, <em>X2</em> |
+%% [<em>X3</em>, <em>X4</em> | []]</code>", then
+%% <code>list_elements(Node)</code> yields the list <code>[X1, X2, X3,
+%% X4]</code>.
+%%
+%% @see c_cons/2
+%% @see c_nil/1
+%% @see is_c_list/1
+%% @see list_length/1
+%% @see make_list/2
+
 list_elements(#cons{hd = Head, tl = Tail}) ->
     [Head | list_elements(Tail)];
 list_elements(#literal{val = V}) ->
@@ -1190,87 +1219,120 @@ abstract_list([X | Xs]) ->
 abstract_list([]) ->
     [].
 
+
+%% @spec list_length(Node::cerl()) -> integer()
+%%
+%% @doc Returns the number of element subtrees of an abstract list.
+%% <code>Node</code> must represent a proper list. E.g., if
+%% <code>Node</code> represents "<code>[X1 | [X2, X3 | [X4, X5,
+%% X6]]]</code>", then <code>list_length(Node)</code> returns the
+%% integer 6.
+%%
+%% <p>Note: this is equivalent to
+%% <code>length(list_elements(Node))</code>, but potentially more
+%% efficient.</p>
+%%
+%% @see c_cons/2
+%% @see c_nil/1
+%% @see is_c_list/1
+%% @see list_elements/1
+
 list_length(L) ->
     list_length(L, 0).
 
-list_length(#cons{hd = Head, tl = Tail}, A) ->
+list_length(#cons{tl = Tail}, A) ->
     list_length(Tail, A + 1);
 list_length(#literal{val = V}, A) ->
     A + length(V).
 
-make_list(List) ->
-    make_list(List, none).
 
-make_list([H | T], Tail) ->
-    c_cons(H, make_list(T, Tail));    % `c_cons' folds literals
-make_list([], none) ->
-    c_nil();
-make_list([], Node) ->
+%% @spec make_list(List) -> Node
+%% @equiv make_list(List, none)
+
+make_list(List) ->
+    ann_make_list([], List).
+
+
+%% @spec make_list(List::[cerl()], Tail) -> cerl()
+%%
+%%	    Tail = cerl() | none
+%%
+%% @doc Creates an abstract list from the elements in <code>List</code>
+%% and the optional <code>Tail</code>. If <code>Tail</code> is
+%% <code>none</code>, the result will represent a nil-terminated list,
+%% otherwise it represents "<code>[... | <em>Tail</em>]</code>".
+%%
+%% @see c_cons/2
+%% @see c_nil/0
+%% @see ann_make_list/3
+%% @see update_list/3
+%% @see list_elements/1
+
+make_list(List, Tail) ->
+    ann_make_list([], List, Tail).
+
+
+%% @spec update_list(Old::cerl(), List::[cerl()]) -> cerl()
+%% @equiv update_list(Old, List, none)
+
+update_list(Node, List) ->
+    ann_make_list(get_ann(Node), List).
+
+
+%% @spec update_list(Old::cerl(), List::[cerl()], Tail) -> cerl()
+%%
+%%	    Tail = cerl() | none
+%%
+%% @see make_list/2
+%% @see update_list/2
+
+update_list(Node, List, Tail) ->
+    ann_make_list(get_ann(Node), List, Tail).
+
+
+%% @spec ann_make_list(As::[term()], List::[cerl()]) -> cerl()
+%% @equiv ann_make_list(As, List, none)
+
+ann_make_list(As, List) ->
+    ann_make_list(As, List, none).
+
+
+%% @spec ann_make_list(As::[term()], List::[cerl()], Tail) -> cerl()
+%%
+%%	    Tail = cerl() | none
+%%
+%% @see make_list/2
+%% @see ann_make_list/2
+
+ann_make_list(As, [H | T], Tail) ->
+    ann_c_cons(As, H, make_list(T, Tail));    % `c_cons' folds literals
+ann_make_list(As, [], none) ->
+    ann_c_nil(As);
+ann_make_list(_, [], Node) ->
     Node.
 
 
-%% =====================================================================
-%% c_tuple(List) -> Node
-%% ann_c_tuple(As, List) -> Node
-%% update_c_tuple(Old, List) -> Node
-%%
-%%	    List = [coreErlang()]
-%%	    Node = coreErlang()
-%%	    type(Node) = tuple | literal
-%%
-%%	`Node' is an abstract tuple representing `{<E1>, ..., <En>}', if
-%%	`List' is `[E1, ..., En]'. Note that if all elements in `List'
-%%	have type `literal', or if `List' is empty, then `Node' will
-%%	also have type `literal' and all annotations on elements in
-%%	`List' are lost.
-%%
-%% c_nonlit_tuple(List) -> Node
-%% ann_c_nonlit_tuple(List) -> Node
-%%
-%%	    List = [coreErlang()]
-%%	    Node = coreErlang()
-%%	    type(Node) = tuple
-%%
-%%	This function is occasionally useful when it is necessary to
-%%	keep annotations on the subnodes of a tuple node, even if all
-%%	the subnodes are constant literals. `Node' is an abstract tuple
-%%	representing `{<E1>, ..., <En>}', if `List' is `[E1, ..., En]'.
-%%	Note however that `Node' will always have type `tuple',
-%%	`is_literal(Node)' will yield `false' and `concrete(Node)' will
-%%	fail.
-%%
-%% is_c_tuple(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract tuple; otherwise
-%%	`false'.
-%%
-%% tuple_es(Node) -> [coreErlang()]
-%%
-%%	    Node = coreErlang()
-%%	    is_c_tuple(Node)
-%%
-%%	Returns the list `[E1, ..., En]' if `Node' represents `{<E1>,
-%%	..., <En>}'.
-%%
-%% tuple_arity(Node) -> Arity
-%%
-%%	    Node = coreErlang()
-%%	    Arity = integer()
-%%	    is_c_tuple(Node)
-%%
-%%	Returns the number `n', if `Node' represents `{<E1>, ...,
-%%	<En>}'.
-%%
-%%	Note: this is equivalent to `erlang:length(tuple_es(Node))', but
-%%	potentially more efficient.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_tuple(Elements::[cerl()]) -> cerl()
 %%
-%% {tuple, A, List}
+%% @doc Creates an abstract tuple. If <code>Elements</code> is
+%% <code>[E1, ..., En]</code>, the result represents
+%% "<code>{<em>E1</em>, ..., <em>En</em>}</code>".  Note that if all
+%% nodes in <code>Elements</code> have type <code>literal</code>, or if
+%% <code>Elements</code> is empty, then the result will also have type
+%% <code>literal</code> and annotations on nodes in
+%% <code>Elements</code> are lost.
 %%
-%%	List = [coreErlang()]
+%% <p>Recall that Erlang has distinct 1-tuples, i.e., <code>{X}</code>
+%% is always distinct from <code>X</code> itself.</p>
+%%
+%% @see ann_c_tuple/2
+%% @see update_c_tuple/2
+%% @see is_c_tuple/1
+%% @see tuple_es/1
+%% @see tuple_arity/1
+%% @see c_tuple_skel/1
 
 -record(tuple, {ann = [], es}).
 
@@ -1284,6 +1346,10 @@ c_tuple(Es) ->
 	    #literal{val = list_to_tuple(lit_list_vals(Es))}
     end.
 
+
+%% @spec ann_c_tuple(As::[term()], Elements::[cerl()]) -> cerl()
+%% @see c_tuple/1
+
 ann_c_tuple(As, Es) ->
     case is_lit_list(Es) of
 	false ->
@@ -1291,6 +1357,10 @@ ann_c_tuple(As, Es) ->
 	true ->
 	    #literal{val = list_to_tuple(lit_list_vals(Es)), ann = As}
     end.
+
+
+%% @spec update_c_tuple(Old::cerl(),  Elements::[cerl()]) -> cerl()
+%% @see c_tuple/1
 
 update_c_tuple(Node, Es) ->
     case is_lit_list(Es) of
@@ -1301,13 +1371,59 @@ update_c_tuple(Node, Es) ->
 		     ann = get_ann(Node)}
     end.
 
+
+%% @spec c_tuple_skel(Elements::[cerl()]) -> cerl()
+%%
+%% @doc Creates an abstract tuple skeleton. Does not fold constant
+%% literals, i.e., the result always has type <code>tuple</code>,
+%% representing "<code>{<em>E1</em>, ..., <em>En</em>}</code>", if
+%% <code>Elements</code> is <code>[E1, ..., En]</code>.
+%% 
+%% <p>This function is occasionally useful when it is necessary to have
+%% annotations on the subnodes of a tuple node, even when all the
+%% subnodes are constant literals. Note however that
+%% <code>is_literal/1</code> will yield <code>false</code> and
+%% <code>concrete/1</code> will fail if passed the result from this
+%% function.</p>
+%%
+%% <p><code>fold_literal/1</code> can be used to revert a node to the
+%% normal-form representation.</p>
+%%
+%% @see ann_c_tuple_skel/2
+%% @see update_c_tuple_skel/2
+%% @see c_tuple/1
+%% @see tuple_es/1
+%% @see is_c_tuple/1
+%% @see is_literal/1
+%% @see fold_literal/1
+%% @see concrete/1
+
 %% *Never* collapse literals.
 
-c_nonlit_tuple(Es) ->
+c_tuple_skel(Es) ->
     #tuple{es = Es}.
 
-ann_c_nonlit_tuple(As, Es) ->
+
+%% @spec ann_c_tuple_skel(As::[term()], Elements::[cerl()]) -> cerl()
+%% @see c_tuple_skel/1
+
+ann_c_tuple_skel(As, Es) ->
     #tuple{es = Es, ann = As}.
+
+
+%% @spec update_c_tuple_skel(Old::cerl(), Elements::[cerl()]) -> cerl()
+%% @see c_tuple_skel/1
+
+update_c_tuple_skel(Old, Es) ->
+    #tuple{es = Es, ann = get_ann(Old)}.
+
+
+%% @spec is_c_tuple(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% tuple, otherwise <code>false</code>.
+%%
+%% @see c_tuple/1
 
 is_c_tuple(#tuple{}) ->
     true;
@@ -1316,10 +1432,28 @@ is_c_tuple(#literal{val = V}) when tuple(V) ->
 is_c_tuple(_) ->
     false.
 
+
+%% @spec tuple_es(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of element subtrees of an abstract tuple.
+%%
+%% @see c_tuple/1
+
 tuple_es(#tuple{es = Es}) ->
     Es;
 tuple_es(#literal{val = V}) ->
     make_lit_list(tuple_to_list(V)).
+
+
+%% @spec tuple_arity(Node::cerl()) -> integer()
+%%
+%% @doc Returns the number of element subtrees of an abstract tuple.
+%%
+%% <p>Note: this is equivalent to <code>length(tuple_es(Node))</code>,
+%% but potentially more efficient.</p>
+%%
+%% @see tuple_es/1
+%% @see c_tuple/1
 
 tuple_arity(#tuple{es = Es}) ->
     length(Es);
@@ -1327,820 +1461,921 @@ tuple_arity(#literal{val = V}) when tuple(V) ->
     size(V).
 
 
-%% =====================================================================
-%% c_var(Name) -> Node
-%% c_var(Name, Class) -> Node
-%% ann_c_var(As, Name) -> Node
-%% ann_c_var(As, Name, Class) -> Node
-%% update_c_var(Old, Name) -> Node
-%%
-%%	    Name = Class = integer() | atom() | {atom(), integer()}
-%%	    Node = coreErlang()
-%%	    type(Node) = var
-%%	    is_c_var(Node)
-%%
-%%	`Node' is an abstract variable whose name is given by `Name'. In
-%%	addition, each variable has a class field, which can be
-%%	specified with the optional `Class' parameter. If `Class' is
-%%	left out, the class field will be set to `Name'. If a name is
-%%	given as a single atom, it should either be a "simple" atom
-%%	which does not need to be single-quoted in Erlang, or otherwise
-%%	its print name should correspond to a proper Erlang variable,
-%%	i.e., begin with an uppercase character or an underscore. Names
-%%	`{A, N}' represent function names; these are special variables
-%%	which may be bound in the function definitions of a module or
-%%	`letrec', and may be listed in the exports of a module. They may
-%%	not be bound in `let' expressions and cannot occur in patterns.
-%%	The atom `A' in a function name may be any atom; the integer `N'
-%%	must be nonnegative.
-%%
-%%	The intention behind the class field is to preserve information
-%%	about the "original variable name", even when the variable has
-%%	been renamed. The class can be inherited from one variable to
-%%	another by using the `clone_var' function below.
-%%
-%%	When printing variable names, they must have the form of proper
-%%	Core Erlang variables and function names. E.g., an integer `42'
-%%	could be formatted as `_42', an atom `'Xxx'' simply as `Xxx' and
-%%	an atom `foo' as `_foo'. However, one must assure that any two
-%%	valid distinct names are never mapped to the same strings.
-%%	Tuples such as `{foo, 2}' are simply formatted as `'foo'/2',
-%%	with no risk of conflicts.
-%%
-%% c_fname(Atom, Arity) -> Node
-%% c_fname(Atom, Arity, Class) -> Node
-%% ann_c_fname(As, Atom, Arity) -> Node
-%% ann_c_fname(As, Atom, Arity, Class) -> Node
-%% update_c_fname(Old, Atom, Arity) -> Node
-%%
-%%	    Atom = atom()
-%%	    Arity = integer()
-%%	    Class = Identifier | {Identifier, integer()}
-%%	    Identifier = string() | atom() 
-%%	    Node = coreErlang()
-%%	    type(Node) = var
-%%	    is_c_var(Node)
-%%	    is_c_fname(Node)
-%%
-%% is_c_var(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract variable, otherwise
-%%	`false'.
-%%
-%% is_c_fname(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract variable representing a
-%%	function name, otherwise `false'.
-%%
-%% var_name(Node) -> Name
-%%
-%%	    Node = coreErlang()
-%%	    Name = integer() | atom() | {atom(), integer()}
-%%	    is_c_var(Node)
-%%
-%%	Returns the name of the abstract variable `Node'.
-%%
-%% var_class(Node) -> Class
-%%
-%%	    Node = coreErlang()
-%%	    Class = Identifier | {Identifier, Arity}
-%%	    Identifier = string() | atom() 
-%%	    Arity = integer()
-%%	    is_c_var(Node)
-%%
-%%	Returns the class field of the abstract variable `Node'.
-%%
-%% fname_id(Node) -> Atom
-%%
-%%	    Node = coreErlang()
-%%	    Atom = atom()
-%%	    is_c_fname(Node)
-%%
-%%	Returns the identifier field of the abstract variable `Node', if
-%%	it represents a function name.
-%%
-%% fname_arity(Node) -> Arity
-%%
-%%	    Node = coreErlang()
-%%	    Arity = integer()
-%%	    is_c_fname(Node)
-%%
-%%	Returns the arity field of the abstract variable `Node', if it
-%%	represents a function name.
-%%
-%% clone_var(Node, Name) -> Node1
-%%
-%%	    Node = Node1 = coreErlang()
-%%	    Name = integer() | atom() | {atom(), integer()}
-%%	    is_c_var(Node)
-%%	    is_c_var(Node1)
-%%
-%%	`Node1' is an abstract variable with the name given by `Name'
-%%	but with the same class field as `Node'.
-%%
-%%	Note: Annotations are *not* copied from `Node' to `Node1'. Use
-%%	`update_c_var' for this.
-%%
-%% clone_fname(Node, Atom) -> Node1
-%% clone_fname(Node, Atom, Arity) -> Node1
-%%
-%%	    Node = Node1 = coreErlang()
-%%	    Name = integer() | atom() | {atom(), integer()}
-%%	    is_c_fname(Node)
-%%	    is_c_fname(Node1)
-%%
-%%	`Node1' is an abstract variable with the name `{Atom, Arity}'
-%%	but with the same class field as `Node'. If `Arity' is left out,
-%%	the arity of `Node' is used.
-%%
-%%	Note: Annotations are *not* copied from `Node' to `Node1'. Use
-%%	`update_c_fname' for this.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_var(Name::var_name()) -> cerl()
 %%
-%% {var, A, Name, Class}
+%%     var_name() = integer() | atom() | {atom(), integer()}
 %%
-%%	Name = integer() | atom() | {atom(), integer()}
-%%	Class = Identifier | {Identifier, integer()}
-%%	Identifier = string() | atom() 
+%% @doc Creates an abstract variable. A variable is identified by its
+%% name, given by the <code>Name</code> parameter.
+%%
+%% <p>If a name is given by a single atom, it should either be a
+%% "simple" atom which does not need to be single-quoted in Erlang, or
+%% otherwise its print name should correspond to a proper Erlang
+%% variable, i.e., begin with an uppercase character or an
+%% underscore. Names on the form <code>{A, N}</code> represent
+%% function name variables "<code><em>A</em>/<em>N</em></code>"; these
+%% are special variables which may be bound only in the function
+%% definitions of a module or a <code>letrec</code>.  They may not be
+%% bound in <code>let</code> expressions and cannot occur in clause
+%% patterns. The atom <code>A</code> in a function name may be any
+%% atom; the integer <code>N</code> must be nonnegative. The functions
+%% <code>c_fname/2</code> etc. are utilities for handling function
+%% name variables.</p>
+%%
+%% <p>When printing variable names, they must have the form of proper
+%% Core Erlang variables and function names. E.g., a name represented
+%% by an integer such as <code>42</code> could be formatted as
+%% "<code>_42</code>", an atom <code>'Xxx'</code> simply as
+%% "<code>Xxx</code>", and an atom <code>foo</code> as
+%% "<code>_foo</code>". However, one must assure that any two valid
+%% distinct names are never mapped to the same strings.  Tuples such
+%% as <code>{foo, 2}</code> representing function names can simply by
+%% formatted as "<code>'foo'/2</code>", with no risk of conflicts.</p>
+%%
+%% @see ann_c_var/2
+%% @see update_c_var/2
+%% @see is_c_var/1
+%% @see var_name/1
+%% @see c_fname/2
+%% @see c_module/4
+%% @see c_letrec/2
 
--record(var, {ann = [], name, class}).
+-record(var, {ann = [], name}).
 
 c_var(Name) ->
-    #var{name = Name, class = Name}.
+    #var{name = Name}.
 
-c_var(Name, Class) ->
-    #var{name = Name, class = Class}.
+
+%% @spec ann_c_var(As::[term()], Name::var_name()) -> cerl()
+%%
+%% @see c_var/1
 
 ann_c_var(As, Name) ->
-    #var{name = Name, class = Name, ann = As}.
+    #var{name = Name, ann = As}.
 
-ann_c_var(As, Name, Class) ->
-    #var{name = Name, class = Class, ann = As}.
+%% @spec update_c_var(Old::cerl(), Name::var_name()) -> cerl()
+%%
+%% @see c_var/1
 
 update_c_var(Node, Name) ->
-    #var{name = Name, class = var_class(Node), ann = get_ann(Node)}.
+    #var{name = Name, ann = get_ann(Node)}.
+
+
+%% @spec is_c_var(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% variable, otherwise <code>false</code>.
+%%
+%% @see c_var/1
 
 is_c_var(#var{}) ->
     true;
 is_c_var(_) ->
     false.
 
-c_fname(Atom, Arity) ->
-    c_fname(Atom, Arity, {Atom, Arity}).
 
-c_fname(Atom, Arity, Class) ->
-    #var{name = {Atom, Arity}, class = Class}.
+%% @spec c_fname(Name::atom(), Arity::integer()) -> cerl()
+%% @equiv c_var({Name, Arity})
+%% @see fname_id/1
+%% @see fname_arity/1
+%% @see is_c_fname/1
+%% @see ann_c_fname/3
+%% @see update_c_fname/3
+
+c_fname(Atom, Arity) ->
+    c_var({Atom, Arity}).
+
+
+%% @spec ann_c_fname(As::[term()], Name::atom(), Arity::integer()) ->
+%%           cerl()
+%% @equiv ann_c_var(As, {Atom, Arity})
+%% @see c_fname/2
 
 ann_c_fname(As, Atom, Arity) ->
-    ann_c_fname(As, Atom, Arity, {Atom, Arity}).
+    ann_c_var(As, {Atom, Arity}).
 
-ann_c_fname(As, Atom, Arity, Class) ->
-    #var{name = {Atom, Arity}, class = Class, ann = As}.
+
+%% @spec update_c_fname(Old::cerl(), Name::atom()) -> cerl()
+%% @doc Like <code>update_c_fname/3</code>, but takes the arity from
+%% <code>Node</code>.
+%% @see update_c_fname/3
+%% @see c_fname/2
+
+update_c_fname(#var{name = {_, Arity}, ann = As}, Atom) ->
+    #var{name = {Atom, Arity}, ann = As}.
+
+
+%% @spec update_c_fname(Old::cerl(), Name::atom(), Arity::integer()) ->
+%%           cerl()
+%% @equiv update_c_var(Old, {Atom, Arity})
+%% @see update_c_fname/2
+%% @see c_fname/2
 
 update_c_fname(Node, Atom, Arity) ->
-    #var{name = {Atom, Arity}, class = var_class(Node),
-	 ann = get_ann(Node)}.
+    update_c_var(Node, {Atom, Arity}).
+
+
+%% @spec is_c_fname(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% function name variable, otherwise <code>false</code>.
+%%
+%% @see c_fname/2
+%% @see c_var/1
+%% @see c_var_name/1
 
 is_c_fname(#var{name = {A, N}}) when atom(A), integer(N), N >= 0 ->
     true;
 is_c_fname(_) ->
     false.
 
+
+%% @spec var_name(cerl()) -> var_name()
+%%
+%% @doc Returns the name of an abstract variable.
+%%
+%% @see c_var/1
+
 var_name(Node) ->
     Node#var.name.
 
-var_class(Node) ->
-    Node#var.class.
+
+%% @spec fname_id(cerl()) -> atom()
+%%
+%% @doc Returns the identifier part of an abstract function name
+%% variable.
+%% 
+%% @see fname_arity/1
+%% @see c_fname/2
 
 fname_id(#var{name={A,_}}) ->
     A.
 
+
+%% @spec fname_arity(cerl()) -> integer()
+%%
+%% @doc Returns the arity part of an abstract function name variable.
+%%
+%% @see fname_id/1
+%% @see c_fname/2
+
 fname_arity(#var{name={_,N}}) ->
     N.
 
-clone_var(#var{class = Class}, Name) ->
-    #var{name = Name, class = Class}.
 
-clone_fname(#var{name = {_, _}, class = Class}, Atom, Arity) ->
-    #var{name = {Atom, Arity}, class = Class}.
+%% ---------------------------------------------------------------------
 
-clone_fname(#var{name = {_, Arity}, class = Class}, Atom) ->
-    #var{name = {Atom, Arity}, class = Class}.
-
-
-%% =====================================================================
-%% c_values(List) -> Node
-%% ann_c_values(As, List) -> Node
-%% update_c_values(Old, List) -> Node
+%% @spec c_values(Elements::[cerl()]) -> cerl()
 %%
-%%	    List = [coreErlang()]
-%%	    Node = coreErlang()
-%%	    type(Node) = values
+%% @doc Creates an abstract value list. If <code>Elements</code> is
+%% <code>[E1, ..., En]</code>, the result represents
+%% "<code>&lt;<em>E1</em>, ..., <em>En</em>&gt;</code>".
 %%
-%%	`Node' is an abstract value list representing `\< <E1>, ...,
-%%	<En> \>', if `List' is `[E1, ..., En]'.
-%%
-%% is_c_values(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract value list; otherwise
-%%	`false'.
-%%
-%% values_es(Node) -> [coreErlang()]
-%%
-%%	    Node = coreErlang()
-%%	    is_c_values(Node)
-%%
-%%	Returns the list `[E1, ..., En]' if `Node' represents `\< <E1>,
-%%	..., <En> \>'.
-%%
-%% values_arity(Node) -> Arity
-%%
-%%	    Node = coreErlang()
-%%	    Arity = integer()
-%%	    is_c_values(Node)
-%%
-%%	Returns the number `n', if `Node' represents `\< <E1>, ..., <En>
-%%	\>'.
-%%
-%%	Note: This is equivalent to `erlang:length(values_es(Node))',
-%%	but potentially more efficient.
-
-%% Representation:
-%%
-%% {values, A, List}
-%%
-%%	List = [coreErlang()]
+%% @see ann_c_values/2
+%% @see update_c_values/2
+%% @see is_c_values/1
+%% @see values_es/1
+%% @see values_arity/1
 
 -record(values, {ann = [], es}).
 
 c_values(Es) ->
     #values{es = Es}.
 
+
+%% @spec ann_c_values(As::[term()], Elements::[cerl()]) -> cerl()
+%% @see c_values/1
+
 ann_c_values(As, Es) ->
     #values{es = Es, ann = As}.
 
+
+%% @spec update_c_values(Old::cerl(), Elements::[cerl()]) -> cerl()
+%% @see c_values/1
+
 update_c_values(Node, Es) ->
     #values{es = Es, ann = get_ann(Node)}.
+
+
+%% @spec is_c_values(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% value list; otherwise <code>false</code>.
+%%
+%% @see c_values/1
 
 is_c_values(#values{}) ->
     true;
 is_c_values(_) ->
     false.
 
+
+%% @spec values_es(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of element subtrees of an abstract value
+%% list.
+%%
+%% @see c_values/1
+%% @see values_arity/1
+
 values_es(Node) ->
     Node#values.es.
+
+
+%% @spec values_arity(Node::cerl()) -> integer()
+%%
+%% @doc Returns the number of element subtrees of an abstract value
+%% list.
+%% 
+%% <p>Note: This is equivalent to
+%% <code>length(values_es(Node))</code>, but potentially more
+%% efficient.</p>
+%%
+%% @see c_values/1
+%% @see values_es/1
 
 values_arity(Node) ->
     length(values_es(Node)).
 
 
-%% =====================================================================
-%% c_fun(Variables, Body) -> Node
-%% ann_c_fun(As, Variables, Body) -> Node
-%% update_c_fun(Old, Variables, Body) -> Node
-%%
-%%	    Variables = [Variable]
-%%	    Variable = Body = Node = coreErlang()
-%%	    type(Node) = fun
-%%
-%%	`Node' is an abstract fun-expression representing `fun (<V1>,
-%%	..., <Vn>) <`->'> <Body>', if `Variables' is `[V1, ..., Vn]'.
-%%
-%% is_c_fun(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract fun-expression;
-%%	otherwise `false'.
-%%
-%% fun_vars(Node) -> Variables
-%%
-%%	    Node = coreErlang()
-%%	    Variables = [Variable]
-%%	    Variable = coreErlang()
-%%	    is_c_fun(Node)
-%%
-%%	Returns the list `[V1, ..., Vn]', if `Node' represents `fun
-%%	(<V1>, ..., <Vn>) <`->'> <Body>'.
-%%
-%% fun_body(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_fun(Node)
-%%
-%%	Returns the `Body' subtree of the abstract fun-expression
-%%	`Node'.
-%%
-%% fun_arity(Node) -> Arity
-%%
-%%	    Node = coreErlang()
-%%	    Arity = integer()
-%%	    is_c_fun(Node)
-%%
-%%	Returns the number `n', if `Node' represents `fun (<V1>, ...,
-%%	<Vn>) <`->'> <Body>'.
-%%
-%%	Note: this is equivalent to `erlang:length(fun_vars(Node))', but
-%%	potentially more efficient.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% TODO: Finish specification of binary-syntax.
+
+%% @doc Note: Binary-syntax support is still experimental! The syntax
+%% is not fixed.
+%% @see ann_c_binary/2
+%% @see update_c_binary/2
+%% @see is_c_binary/1
+%% @see binary_segs/1
+
+-record(binary, {ann = [], segs}).
+
+c_binary(Segments) ->
+    #binary{segs = Segments}.
+
+
+%% @see c_binary/1
+ann_c_binary(As, Segments) ->
+    #binary{segs = Segments, ann = As}.
+
+
+%% @see c_binary/1
+update_c_binary(Node, Segments) ->
+    #binary{segs = Segments, ann = get_ann(Node)}.
+
+
+%% @see c_binary/1
+is_c_binary(#binary{}) ->
+    true;
+is_c_binary(_) ->
+    false.
+
+
+%% @see c_binary/1
+binary_segs(Node) ->
+    Node#binary.segs.
+
+
+%% @doc Note: Binary-syntax support is still experimental! The syntax
+%% is not fixed.
+%% @see c_binary/1
+%% @see ann_c_bin_seg/6
+%% @see update_c_bin_seg/6
+%% @see bin_seg_val/5
+%% @see bin_seg_size/5
+%% @see bin_seg_unit/5
+%% @see bin_seg_type/5
+%% @see bin_seg_flags/5
+
+-record(bin_seg, {ann = [], val, size, unit, type, flags}).
+
+c_bin_seg(Val, Size, Unit, Type, Flags) ->
+    #bin_seg{val = Val, size = Size, unit = Unit, type = Type,
+	     flags = Flags}.
+
+%% @see c_bin_seg/5
+ann_c_bin_seg(As, Val, Size, Unit, Type, Flags) ->
+    #bin_seg{val = Val, size = Size, unit = Unit, type = Type,
+	     flags = Flags, ann = As}.
+
+%% @see c_bin_seg/5
+update_c_bin_seg(Node, Val, Size, Unit, Type, Flags) ->
+    #bin_seg{val = Val, size = Size, unit = Unit, type = Type,
+	     flags = Flags, ann = get_ann(Node)}.
+
+%% @see c_bin_seg/5
+is_c_bin_seg(#bin_seg{}) ->
+    true;
+is_c_bin_seg(_) ->
+    false.
+
+%% @see c_bin_seg/5
+bin_seg_val(Node) ->
+    Node#bin_seg.val.
+
+%% @see c_bin_seg/5
+bin_seg_size(Node) ->
+    Node#bin_seg.size.
+
+%% @see c_bin_seg/5
+bin_seg_unit(Node) ->
+    Node#bin_seg.unit.
+
+%% @see c_bin_seg/5
+bin_seg_type(Node) ->
+    Node#bin_seg.type.
+
+%% @see c_bin_seg/5
+bin_seg_flags(Node) ->
+    Node#bin_seg.flags.
+
+
+%% ---------------------------------------------------------------------
+
+%% @spec c_fun(Variables::[cerl()], Body::cerl()) -> cerl()
 %%
-%% {'fun', A, Variables, Body}
+%% @doc Creates an abstract fun-expression. If <code>Variables</code>
+%% is <code>[V1, ..., Vn]</code>, the result represents "<code>fun
+%% (<em>V1</em>, ..., <em>Vn</em>) -> <em>Body</em></code>". All the
+%% <code>Vi</code> must have type <code>var</code>.
 %%
-%%	Variables = [Variable]
-%%	Variable = Body = coreErlang()
+%% @see ann_c_fun/3
+%% @see update_c_fun/3
+%% @see is_c_fun/1
+%% @see fun_vars/1
+%% @see fun_body/1
+%% @see fun_arity/1
 
 -record('fun', {ann = [], vars, body}).
 
 c_fun(Variables, Body) ->
     #'fun'{vars = Variables, body = Body}.
 
+
+%% @spec ann_c_fun(As::[term()], Variables::[cerl()], Body::cerl()) ->
+%%           cerl()
+%% @see c_fun/2
+
 ann_c_fun(As, Variables, Body) ->
     #'fun'{vars = Variables, body = Body, ann = As}.
 
+
+%% @spec update_c_fun(Old::cerl(), Variables::[cerl()],
+%%                    Body::cerl()) -> cerl()
+%% @see c_fun/2
+
 update_c_fun(Node, Variables, Body) ->
     #'fun'{vars = Variables, body = Body, ann = get_ann(Node)}.
+
+
+%% @spec is_c_fun(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% fun-expression, otherwise <code>false</code>.
+%%
+%% @see c_fun/2
 
 is_c_fun(#'fun'{}) ->
     true;		% Now this is fun!
 is_c_fun(_) ->
     false.
 
+
+%% @spec fun_vars(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of parameter subtrees of an abstract
+%% fun-expression.
+%%
+%% @see c_fun/2
+%% @see fun_arity/1
+
 fun_vars(Node) ->
     Node#'fun'.vars.
 
+
+%% @spec fun_body(cerl()) -> cerl()
+%%
+%% @doc Returns the body subtree of an abstract fun-expression.
+%%
+%% @see c_fun/2
+
 fun_body(Node) ->
     Node#'fun'.body.
+
+
+%% @spec fun_arity(Node::cerl()) -> integer()
+%%
+%% @doc Returns the number of parameter subtrees of an abstract
+%% fun-expression.
+%% 
+%% <p>Note: this is equivalent to <code>length(fun_vars(Node))</code>,
+%% but potentially more efficient.</p>
+%%
+%% @see c_fun/2
+%% @see fun_vars/1
 
 fun_arity(Node) ->
     length(fun_vars(Node)).
 
 
-%% =====================================================================
-%% c_seq(Argument, Body) -> Node
-%% ann_c_seq(As, Argument, Body) -> Node
-%% update_c_seq(Old, Argument, Body) -> Node
-%%
-%%	    Argument = Body = Node = coreErlang()
-%%	    type(Node) = seq
-%%
-%%	`Node' is an abstract sequencing expression representing `do
-%%	<Argument> <Body>'.
-%%
-%% is_c_seq(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract sequencing expression;
-%%	otherwise `false'.
-%%
-%% seq_arg(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_seq(Node)
-%%
-%%	Returns the `Argument' subtree of the abstract sequencing
-%%	expression `Node'.
-%%
-%% seq_body(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_seq(Node)
-%%
-%%	Returns the `Body' subtree of the abstract sequencing expression
-%%	`Node'.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_seq(Argument::cerl(), Body::cerl()) -> cerl()
 %%
-%% {seq, A, Argument, Body}
+%% @doc Creates an abstract sequencing expression. The result
+%% represents "<code>do <em>Argument</em> <em>Body</em></code>".
 %%
-%%	Argument = Body = coreErlang()
+%% @see ann_c_seq/3
+%% @see update_c_seq/3
+%% @see is_c_seq/1
+%% @see seq_arg/1
+%% @see seq_body/1
 
 -record(seq, {ann = [], arg, body}).
 
 c_seq(Argument, Body) ->
     #seq{arg = Argument, body = Body}.
 
+
+%% @spec ann_c_seq(As::[term()], Argument::cerl(), Body::cerl()) ->
+%%           cerl()
+%% @see c_seq/2
+
 ann_c_seq(As, Argument, Body) ->
     #seq{arg = Argument, body = Body, ann = As}.
 
+
+%% @spec update_c_seq(Old::cerl(), Argument::cerl(), Body::cerl()) ->
+%%           cerl()
+%% @see c_seq/2
+
 update_c_seq(Node, Argument, Body) ->
     #seq{arg = Argument, body = Body, ann = get_ann(Node)}.
+
+
+%% @spec is_c_seq(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% sequencing expression, otherwise <code>false</code>.
+%%
+%% @see c_seq/2
 
 is_c_seq(#seq{}) ->
     true;
 is_c_seq(_) ->
     false.
 
+
+%% @spec seq_arg(cerl()) -> cerl()
+%%
+%% @doc Returns the argument subtree of an abstract sequencing
+%% expression.
+%%
+%% @see c_seq/2
+
 seq_arg(Node) ->
     Node#seq.arg.
+
+
+%% @spec seq_body(cerl()) -> cerl()
+%%
+%% @doc Returns the body subtree of an abstract sequencing expression.
+%%
+%% @see c_seq/2
 
 seq_body(Node) ->
     Node#seq.body.
 
 
-%% =====================================================================
-%% c_let(Variables, Argument, Body) -> Node
-%% ann_c_let(As, Variables, Argument, Body) -> Node
-%% update_c_let(Old, Variables, Argument, Body) -> Node
-%%
-%%	    Argument = Body = Node = coreErlang()
-%%	    Variables = [Variable]
-%%	    Variable = coreErlang()
-%%	    type(Node) = let
-%%
-%%	`Node' is an abstract let-expression representing `let \< <V1>,
-%%	..., <Vn> \> = <Argument> in <Body>', if `Variables' is `[V1,
-%%	..., Vn]'.
-%%
-%% is_c_let(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract let-expression;
-%%	otherwise `false'.
-%%
-%% let_vars(Node) -> Variables
-%%
-%%	    Node = coreErlang()
-%%	    Variables = [Variable]
-%%	    Variable = coreErlang()
-%%	    is_c_let(Node)
-%%
-%%	Returns the list `[V1, ..., Vn]', if `Node' represents `let \<
-%%	<V1>, ..., <Vn> \> = <Argument> in <Body>'.
-%%
-%% let_arg(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_let(Node)
-%%
-%%	Returns the `Argument' subtree of the abstract let-expression
-%%	`Node'
-%%
-%% let_body(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_let(Node)
-%%
-%%	Returns the `Body' subtree of the abstract let-expression
-%%	`Node'.
-%%
-%% let_arity(Node) -> Arity
-%%
-%%	    Node = coreErlang()
-%%	    Arity = integer()
-%%	    is_c_let(Node)
-%%
-%%	Returns the number `n', if `Node' represents `let \< <V1>, ...,
-%%	<Vn> \> = <Argument> in <Body>'.
-%%
-%%	Note: this is equivalent to `erlang:length(let_vars(Node))', but
-%%	potentially more efficient.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_let(Variables::[cerl()], Argument::cerl(), Body::cerl()) ->
+%%           cerl()
 %%
-%% {'let', A, Variables, Argument, Body}
+%% @doc Creates an abstract let-expression. If <code>Variables</code>
+%% is <code>[V1, ..., Vn]</code>, the result represents "<code>let
+%% &lt;<em>V1</em>, ..., <em>Vn</em>&gt; = <em>Argument</em> in
+%% <em>Body</em></code>".  All the <code>Vi</code> must have type
+%% <code>var</code>.
 %%
-%%	Variables = [Variable]
-%%	Variable = Argument = Body = coreErlang()
+%% @see ann_c_let/4
+%% @see update_c_let/4
+%% @see is_c_let/1
+%% @see let_vars/1
+%% @see let_arg/1
+%% @see let_body/1
+%% @see let_arity/1
 
 -record('let', {ann = [], vars, arg, body}).
 
 c_let(Variables, Argument, Body) ->
     #'let'{vars = Variables, arg = Argument, body = Body}.
 
+
+%% ann_c_let(As, Variables, Argument, Body) -> Node
+%% @see c_let/3
+
 ann_c_let(As, Variables, Argument, Body) ->
     #'let'{vars = Variables, arg = Argument, body = Body, ann = As}.
+
+
+%% update_c_let(Old, Variables, Argument, Body) -> Node
+%% @see c_let/3
 
 update_c_let(Node, Variables, Argument, Body) ->
     #'let'{vars = Variables, arg = Argument, body = Body,
 	   ann = get_ann(Node)}.
+
+
+%% @spec is_c_let(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% let-expression, otherwise <code>false</code>.
+%%
+%% @see c_let/3
 
 is_c_let(#'let'{}) ->
     true;
 is_c_let(_) ->
     false.
 
+
+%% @spec let_vars(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of left-hand side variables of an abstract
+%% let-expression.
+%%
+%% @see c_let/3
+%% @see let_arity/1
+
 let_vars(Node) ->
     Node#'let'.vars.
+
+
+%% @spec let_arg(cerl()) -> cerl()
+%%
+%% @doc Returns the argument subtree of an abstract let-expression.
+%%
+%% @see c_let/3
 
 let_arg(Node) ->
     Node#'let'.arg.
 
+
+%% @spec let_body(cerl()) -> cerl()
+%%
+%% @doc Returns the body subtree of an abstract let-expression.
+%%
+%% @see c_let/3
+
 let_body(Node) ->
     Node#'let'.body.
+
+
+%% @spec let_arity(Node::cerl()) -> integer()
+%%
+%% @doc Returns the number of left-hand side variables of an abstract
+%% let-expression.
+%% 
+%% <p>Note: this is equivalent to <code>length(let_vars(Node))</code>,
+%% but potentially more efficient.</p>
+%%
+%% @see c_let/3
+%% @see let_vars/1
 
 let_arity(Node) ->
     length(let_vars(Node)).
 
 
-%% =====================================================================
-%% c_letrec(Definitions, Body) -> Node
-%% ann_c_letrec(As, Definitions, Body) -> Node
-%% update_c_letrec(Old, Definitions, Body) -> Node
-%%
-%%	    Body = Node = coreErlang()
-%%	    Definitions = [{Variable, Fun}]
-%%	    Variable = Fun = coreErlang()
-%%	    type(Node) = letrec
-%%
-%%	`Node' is an abstract letrec-expression representing `letrec
-%%	<V1> = <F1> ... <Vn> = <Fn> in <Body>', if `Definitions' =
-%%	`[{V1, F1}, ..., {Vn, Fn}]'.
-%%
-%% is_c_letrec(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract letrec-expression;
-%%	otherwise `false'.
-%%
-%% letrec_defs(Node) -> Definitions
-%%
-%%	    Node = coreErlang()
-%%	    Definitions = [{Variable, Fun}]
-%%	    Variable = Fun = coreErlang()
-%%	    is_c_letrec(Node)
-%%
-%%	Returns the list `[{V1, F1}, ..., {Vn, Fn}]' if `Node'
-%%	represents `letrec <V1> = <F1> ... <Vn> = <Fn> in <Body>'.
-%%
-%% letrec_body(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_letrec(Node)
-%%
-%%	Returns the `Body' subtree of the abstract letrec-expression
-%%	`Node'.
-%%
-%% letrec_vars(Node) -> Variables
-%%
-%%	    Node = coreErlang()
-%%	    Variables = [Variable]
-%%	    Variable = coreErlang()
-%%	    is_c_letrec(Node)
-%%
-%%	Returns the list `[V1, ..., Vn]', if `Node' represents `letrec
-%%	<V1> = <F1> ... <Vn> = <Fn> in <Body>'.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_letrec(Definitions::[{cerl(), cerl()}], Body::cerl()) ->
+%%           cerl()
 %%
-%% {letrec, A, Definitions, Body}
+%% @doc Creates an abstract letrec-expression. If
+%% <code>Definitions</code> is <code>[{V1, F1}, ..., {Vn, Fn}]</code>,
+%% the result represents "<code>letrec <em>V1</em> = <em>F1</em>
+%% ... <em>Vn</em> = <em>Fn</em> in <em>Body</em></code>.  All the
+%% <code>Vi</code> must have type <code>var</code> and represent
+%% function names.  All the <code>Fi</code> must have type
+%% <code>'fun'</code>.
 %%
-%%	Definitions = [{Variable, Fun}]
-%%	Body = Variable = Fun = coreErlang()
+%% @see ann_c_letrec/3
+%% @see update_c_letrec/3
+%% @see is_c_letrec/1
+%% @see letrec_defs/1
+%% @see letrec_body/1
+%% @see letrec_vars/1
 
 -record(letrec, {ann = [], defs, body}).
 
 c_letrec(Defs, Body) ->
     #letrec{defs = Defs, body = Body}.
 
+
+%% @spec ann_c_letrec(As::[term()], Definitions::[{cerl(), cerl()}],
+%%                    Body::cerl()) -> cerl()
+%% @see c_letrec/2
+
 ann_c_letrec(As, Defs, Body) ->
     #letrec{defs = Defs, body = Body, ann = As}.
 
+
+%% @spec update_c_letrec(Old::cerl(),
+%%                       Definitions::[{cerl(), cerl()}],
+%%                       Body::cerl()) -> cerl()
+%% @see c_letrec/2
+
 update_c_letrec(Node, Defs, Body) ->
     #letrec{defs = Defs, body = Body, ann = get_ann(Node)}.
+
+
+%% @spec is_c_letrec(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% letrec-expression, otherwise <code>false</code>.
+%%
+%% @see c_letrec/2
 
 is_c_letrec(#letrec{}) ->
     true;
 is_c_letrec(_) ->
     false.
 
+
+%% @spec letrec_defs(Node::cerl()) -> [{cerl(), cerl()}]
+%%
+%% @doc Returns the list of definitions of an abstract
+%% letrec-expression. If <code>Node</code> represents "<code>letrec
+%% <em>V1</em> = <em>F1</em> ... <em>Vn</em> = <em>Fn</em> in
+%% <em>Body</em></code>", the returned value is <code>[{V1, F1}, ...,
+%% {Vn, Fn}]</code>.
+%%
+%% @see c_letrec/2
+
 letrec_defs(Node) ->
     Node#letrec.defs.
 
+
+%% @spec letrec_body(cerl()) -> cerl()
+%%
+%% @doc Returns the body subtree of an abstract letrec-expression.
+%%
+%% @see c_letrec/2
+
 letrec_body(Node) ->
     Node#letrec.body.
+
+
+%% @spec letrec_vars(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of left-hand side function variable subtrees
+%% of a letrec-expression. If <code>Node</code> represents
+%% "<code>letrec <em>V1</em> = <em>F1</em> ... <em>Vn</em> =
+%% <em>Fn</em> in <em>Body</em></code>", the returned value is
+%% <code>[V1, ..., Vn]</code>.
+%%
+%% @see c_letrec/2
 
 letrec_vars(Node) ->
     [F || {F, _} <- letrec_defs(Node)].
 
 
-%% =====================================================================
-%% c_case(Argument, Clauses) -> Node
-%% ann_c_case(As, Argument, Clauses) -> Node
-%% update_c_case(Old, Argument, Clauses) -> Node
-%%
-%%	    Argument = Node = coreErlang()
-%%	    Clauses = [Clause] - []
-%%	    Clause = coreErlang()
-%%	    type(Node) = case
-%%
-%%	`Node' is an abstract case-expression representing `case
-%%	<Argument> of <C1> ... <Cn> end', if `Clauses' is a nonempty
-%%	list `[C1, ..., Cn]'.
-%%
-%% is_c_case(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract case-expression;
-%%	otherwise `false'.
-%%
-%% case_arg(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_case(Node)
-%%
-%%	Returns the `Argument' subtree of the abstract case-expression
-%%	`Node'.
-%%
-%% case_clauses(Node) -> Clauses
-%%
-%%	    Node = coreErlang()
-%%	    Clauses = [Clause] - []
-%%	    Clause = coreErlang()
-%%	    is_c_case(Node)
-%%
-%%	Returns a nonempty list `[C1, ..., Cn]', if `Node' represents
-%%	`case <Expr> of <C1> ... <Cn> end'.
-%%
-%% case_arity(Node) -> Arity
-%%
-%%	    Node = coreErlang()
-%%	    Arity = integer()
-%%	    is_c_case(Node)
-%%
-%%	This is equivalent to `clause_arity(hd(case_clauses(Node)))',
-%%	but potentially more efficient.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_case(Argument::cerl(), Clauses::[cerl()]) -> cerl()
 %%
-%% {'case', A, Argument, Clauses}
+%% @doc Creates an abstract case-expression. If <code>Clauses</code>
+%% is <code>[C1, ..., Cn]</code>, the result represents "<code>case
+%% <em>Argument</em> of <em>C1</em> ... <em>Cn</em>
+%% end</code>". <code>Clauses</code> must not be empty.
 %%
-%%	Argument = coreErlang()
-%%	Clauses = [Clause] - []
-%%	Clause = coreErlang()
+%% @see ann_c_case/3
+%% @see update_c_case/3
+%% @see is_c_case/1
+%% @see c_clause/3
+%% @see case_arg/1
+%% @see case_clauses/1
+%% @see case_arity/1
 
 -record('case', {ann = [], arg, clauses}).
 
 c_case(Expr, Clauses) ->
     #'case'{arg = Expr, clauses = Clauses}.
 
+
+%% @spec ann_c_case(As::[term()], Argument::cerl(),
+%%                  Clauses::[cerl()]) -> cerl()
+%% @see c_case/2
+
 ann_c_case(As, Expr, Clauses) ->
     #'case'{arg = Expr, clauses = Clauses, ann = As}.
 
+
+%% @spec update_c_case(Old::cerl(), Argument::cerl(),
+%%                     Clauses::[cerl()]) -> cerl()
+%% @see c_case/2
+
 update_c_case(Node, Expr, Clauses) ->
     #'case'{arg = Expr, clauses = Clauses, ann = get_ann(Node)}.
+
+
+%% is_c_case(Node) -> bool()
+%%
+%%	    Node = cerl()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% case-expression; otherwise <code>false</code>.
+%%
+%% @see c_case/2
 
 is_c_case(#'case'{}) ->
     true;
 is_c_case(_) ->
     false.
 
+
+%% @spec case_arg(cerl()) -> cerl()
+%%
+%% @doc Returns the argument subtree of an abstract case-expression.
+%%
+%% @see c_case/2
+
 case_arg(Node) ->
     Node#'case'.arg.
 
+
+%% @spec case_clauses(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of clause subtrees of an abstract
+%% case-expression.
+%%
+%% @see c_case/2
+%% @see case_arity/1
+
 case_clauses(Node) ->
     Node#'case'.clauses.
+
+
+%% @spec case_arity(Node::cerl()) -> integer()
+%%
+%% @doc Equivalent to
+%% <code>clause_arity(hd(case_clauses(Node)))</code>, but potentially
+%% more efficient.
+%%
+%% @see c_case/2
+%% @see case_clauses/1
+%% @see clause_arity/1
 
 case_arity(Node) ->
     clause_arity(hd(case_clauses(Node))).
 
 
-%% =====================================================================
-%% c_clause(Patterns, Body) -> Node
-%% c_clause(Patterns, Guard, Body) -> Node
-%% ann_c_clause(As, Patterns, Body) -> Node
-%% ann_c_clause(As, Patterns, Guard, Body) -> Node
-%% update_c_clause(Old, Patterns, Guard, Body) -> Node
-%%
-%%	    Guard = Body = Node = coreErlang()
-%%	    Patterns = [coreErlang()]
-%%	    type(Node) = clause
-%%
-%%	`Node' is an abstract clause representing `\< <P1>, ..., <Pn> \>
-%%	when <Guard> <`->'> <Body>', if `Patterns' is `[P1, ..., Pn]'.
-%%	Leaving out the `Guard' argument is equivalent to supplying the
-%%	value `c_atom(true)'.
-%%
-%% is_c_clause(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract clause; otherwise
-%%	`false'.
-%%
-%% clause_pats(Node) -> [coreErlang()]
-%%
-%%	    Node = coreErlang()
-%%	    is_c_clause(Node)
-%%
-%%	Returns the list `[P1, ..., Pn]', if `Node' represents `\< <P1>,
-%%	..., <Pn> \> when <Guard> <`->'> <Body>'.
-%%
-%% clause_guard(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_clause(Node)
-%%
-%%	Returns the `Guard' subtree of the abstract clause `Node'.
-%%
-%% clause_body(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_clause(Node)
-%%
-%%	Returns the `Body' subtree of the abstract clause `Node'.
-%%
-%% clause_arity(Node) -> Arity
-%%
-%%	    Node = coreErlang()
-%%	    Arity = integer()
-%%	    is_c_clause(Node)
-%%
-%%	Returns the number `n', if `Node' represents `\< <P1>, ..., <Pn>
-%%	\> when <Guard> <`->'> <Body>'.
-%%
-%%	Note: this is equivalent to `erlang:length(clause_pats(Node))',
-%%	but potentially more efficient.
-%%
-%% clause_vars(Node) -> [Variable]
-%%
-%%	    Node = Variable = coreErlang()
-%%	    is_c_clause(Node)
-%%	    is_c_var(Variable)
-%%
-%%	Returns the list of all abstract variables occurring in P1, ...,
-%%	Pn, if `Node' represents `\< <P1>, ..., <Pn> \> when <Guard>
-%%	<`->'> <Body>'. An exception is thrown if `Node' does not
-%%	represent a well-formed Core Erlang clause.
-%%
-%% pat_vars(Node) -> [Variable]
-%%
-%%	    Node = Variable = coreErlang()
-%%	    is_c_var(Variable)
-%%
-%%	Returns a list of the abstract variables occurring in `Node'. An
-%%	exception is thrown if `Node' does not represent a well-formed
-%%	Core Erlang pattern. The resulting list may contain multiple
-%%	entries having the same variable name.
-%%
-%% pat_list_vars(List) -> [Variable]
-%%
-%%	    List = [coreErlang()]
-%%	    Variable = coreErlang()
-%%	    is_c_var(Variable)
-%%
-%%	Returns a list of the abstract variables occurring in the syntax
-%%	trees in `List'. An exception is thrown if some element in
-%%	`List' does not represent a well-formed Core Erlang pattern. The
-%%	resulting list may contain multiple entries having the same
-%%	variable name.
+%% ---------------------------------------------------------------------
 
-%% Representation:
-%%
-%% {clause, A, Patterns, Guard, Body}
-%%
-%%	Patterns = [coreErlang()]
-%%	Guard = Body = coreErlang()
-
--record(clause, {ann = [], pats, guard, body}).
+%% @spec c_clause(Patterns::[cerl()], Body::cerl()) -> cerl()
+%% @equiv c_clause(Patterns, c_atom(true), Body)
+%% @see c_atom/1
 
 c_clause(Patterns, Body) ->
-    #clause{pats = Patterns, guard = c_atom(true), body = Body}.
+    c_clause(Patterns, c_atom(true), Body).
+
+
+%% @spec c_clause(Patterns::[cerl()], Guard::cerl(), Body::cerl()) ->
+%%           cerl()
+%%
+%% @doc Creates an an abstract clause. If <code>Patterns</code> is
+%% <code>[P1, ..., Pn]</code>, the result represents
+%% "<code>&lt;<em>P1</em>, ..., <em>Pn</em>&gt; when <em>Guard</em> ->
+%% <em>Body</em></code>".
+%%
+%% @see c_clause/2
+%% @see ann_c_clause/4
+%% @see update_c_clause/4
+%% @see is_c_clause/1
+%% @see c_case/2
+%% @see c_receive/3
+%% @see clause_pats/1
+%% @see clause_guard/1
+%% @see clause_body/1
+%% @see clause_arity/1
+%% @see clause_vars/1
+
+-record(clause, {ann = [], pats, guard, body}).
 
 c_clause(Patterns, Guard, Body) ->
     #clause{pats = Patterns, guard = Guard, body = Body}.
 
+
+%% @spec ann_c_clause(As::[term()], Patterns::[cerl()],
+%%                    Body::cerl()) -> cerl()
+%% @equiv ann_c_clause(As, Patterns, c_atom(true), Body)
+%% @see c_clause/3
 ann_c_clause(As, Patterns, Body) ->
-    #clause{pats = Patterns, guard = c_atom(true), body = Body,
-	    ann = As}.
+    ann_c_clause(As, Patterns, c_atom(true), Body).
+
+
+%% @spec ann_c_clause(As::[term()], Patterns::[cerl()], Guard::cerl(),
+%%                    Body::cerl()) -> cerl()
+%% @see ann_c_clause/3
+%% @see c_clause/3
 
 ann_c_clause(As, Patterns, Guard, Body) ->
     #clause{pats = Patterns, guard = Guard, body = Body, ann = As}.
 
+
+%% @spec update_c_clause(Old::cerl(), Patterns::[cerl()],
+%%                       Guard::cerl(), Body::cerl()) -> cerl()
+%% @see c_clause/3
+
 update_c_clause(Node, Patterns, Guard, Body) ->
     #clause{pats = Patterns, guard = Guard, body = Body,
 	    ann = get_ann(Node)}.
+
+
+%% @spec is_c_clause(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% clause, otherwise <code>false</code>.
+%%
+%% @see c_clause/3
 
 is_c_clause(#clause{}) ->
     true;
 is_c_clause(_) ->
     false.
 
+
+%% @spec clause_pats(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of pattern subtrees of an abstract clause.
+%%
+%% @see c_clause/3
+%% @see clause_arity/1
+
 clause_pats(Node) ->
     Node#clause.pats.
+
+
+%% @spec clause_guard(cerl()) -> cerl()
+%%
+%% @doc Returns the guard subtree of an abstract clause.
+%% 
+%% @see c_clause/3
 
 clause_guard(Node) ->
     Node#clause.guard.
 
+
+%% @spec clause_body(cerl()) -> cerl()
+%%
+%% @doc Returns the body subtree of an abstract clause.
+%%
+%% @see c_clause/3
+
 clause_body(Node) ->
     Node#clause.body.
+
+
+%% @spec clause_arity(Node::cerl()) -> integer()
+%%
+%% @doc Returns the number of pattern subtrees of an abstract clause.
+%%
+%% <p>Note: this is equivalent to
+%% <code>length(clause_pats(Node))</code>, but potentially more
+%% efficient.</p>
+%%
+%% @see c_clause/3
+%% @see clause_pats/1
 
 clause_arity(Node) ->
     length(clause_pats(Node)).
 
+
+%% @spec clause_vars(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of all abstract variables in the patterns of
+%% an abstract clause. The order of listing is not defined.
+%%
+%% @see c_clause/3
+%% @see pat_list_vars/1
+
 clause_vars(Clause) ->
     pat_list_vars(clause_pats(Clause)).
+
+
+%% @spec pat_vars(Pattern::cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of all abstract variables in a pattern. An
+%% exception is thrown if <code>Node</code> does not represent a
+%% well-formed Core Erlang clause pattern. The order of listing is not
+%% defined.
+%%
+%% @see pat_list_vars/1
+%% @see clause_vars/1
 
 pat_vars(Node) ->
     pat_vars(Node, []).
@@ -2163,6 +2398,17 @@ pat_vars(Node, Vs) ->
 	    pat_vars(alias_pat(Node), [alias_var(Node) | Vs])
     end.
 
+
+%% @spec pat_list_vars(Patterns::[cerl()]) -> [cerl()]
+%%
+%% @doc Returns the list of all abstract variables in the given
+%% patterns. An exception is thrown if some element in
+%% <code>Patterns</code> does not represent a well-formed Core Erlang
+%% clause pattern. The order of listing is not defined.
+%%
+%% @see pat_vars/1
+%% @see clause_vars/1
+
 pat_list_vars(Ps) ->
     pat_list_vars(Ps, []).
 
@@ -2172,567 +2418,625 @@ pat_list_vars([], Vs) ->
     Vs.
 
 
-%% =====================================================================
-%% c_alias(Variable, Pattern) -> Node
-%% ann_c_alias(As, Variable, Pattern) -> Node
-%% update_c_alias(Old, Variable, Pattern) -> Node
-%%
-%%	    Variable = Pattern = Node = coreErlang()
-%%	    type(Node) = alias
-%%
-%%	`Node' is an abstract pattern alias representing
-%%	`<Variable> = <Pattern>'.
-%%
-%% is_c_alias(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract pattern alias; otherwise
-%%	`false'.
-%%
-%% alias_var(Node) -> Variable
-%%
-%%	    Node = Variable = coreErlang()
-%%	    is_c_alias(Node)
-%%
-%%	Returns the `Variable' subtree of the abstract pattern alias
-%%	`Node'.
-%%
-%% alias_pat(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_alias(Node)
-%%
-%%	Returns the `Pattern' subtree of the abstract pattern alias
-%%	`Node'.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_alias(Variable::cerl(), Pattern::cerl()) -> cerl()
 %%
-%% {alias, A, Variable, Pattern}
+%% @doc Creates an abstract pattern alias. The result represents
+%% "<code><em>Variable</em> = <em>Pattern</em></code>".
 %%
-%%	Variable = Pattern = coreErlang()
+%% @see ann_c_alias/3
+%% @see update_c_alias/3
+%% @see is_c_alias/1
+%% @see alias_var/1
+%% @see alias_pat/1
+%% @see c_clause/3
 
 -record(alias, {ann = [], var, pat}).
 
 c_alias(Var, Pattern) ->
     #alias{var = Var, pat = Pattern}.
 
+
+%% @spec ann_c_alias(As::[term()], Variable::cerl(),
+%%                   Pattern::cerl()) -> cerl()
+%% @see c_alias/2
+
 ann_c_alias(As, Var, Pattern) ->
     #alias{var = Var, pat = Pattern, ann = As}.
 
+
+%% @spec update_c_alias(Old::cerl(), Variable::cerl(),
+%%                      Pattern::cerl()) -> cerl()
+%% @see c_alias/2
+
 update_c_alias(Node, Var, Pattern) ->
     #alias{var = Var, pat = Pattern, ann = get_ann(Node)}.
+
+
+%% @spec is_c_alias(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% pattern alias, otherwise <code>false</code>.
+%%
+%% @see c_alias/2
 
 is_c_alias(#alias{}) ->
     true;
 is_c_alias(_) ->
     false.
 
+
+%% @spec alias_var(cerl()) -> cerl()
+%%
+%% @doc Returns the variable subtree of an abstract pattern alias.
+%%
+%% @see c_alias/2
+
 alias_var(Node) ->
     Node#alias.var.
+
+
+%% @spec alias_pat(cerl()) -> cerl()
+%%
+%% @doc Returns the pattern subtree of an abstract pattern alias.
+%%
+%% @see c_alias/2
 
 alias_pat(Node) ->
     Node#alias.pat.
 
 
-%% =====================================================================
-%% c_receive(Clauses) -> Node
-%% c_receive(Clauses, Timeout, Action) -> Node
-%% ann_c_receive(As, Clauses) -> Node
-%% ann_c_receive(As, Clauses, Timeout, Action) -> Node
-%% update_c_receive(Old, Clauses, Timeout, Action) -> Node
-%%
-%%	    Clauses = [Clause]
-%%	    Clause = Timeout = Action = Node = coreErlang()
-%%	    type(Node) = receive
-%%
-%%	`Node' is an abstract receive-expression representing `receive
-%%	<C1> ... <Cn> after <Timeout> <`->'> <Action> end', if `Clauses'
-%%	is `[C1, ..., Cn]'. Leaving out `Timeout' and `Action' is
-%%	equivalent to supplying the values of `c_atom(infinity)' and
-%%	`c_atom(true)', respectively (where the latter is arbitrary).
-%%
-%% is_c_receive(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract receive-expression;
-%%	otherwise `false'.
-%%
-%% receive_clauses(Node) -> Clauses
-%%
-%%	    Node = coreErlang()
-%%	    Clauses = [Clause]
-%%	    Clause = coreErlang()
-%%	    is_c_receive(Node)
-%%
-%%	Returns the (possibly empty) list `[C1, ..., Cn]', if `Node'
-%%	represents `receive <C1> ... <Cn> after <Timeout> <`->'>
-%%	<Action> end'.
-%%
-%% receive_timeout(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_receive(Node)
-%%
-%%	Returns the `Timeout' subtree of the abstract receive-expression
-%%	`Node'.
-%%
-%% receive_action(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_receive(Node)
-%%
-%%	Returns the `Action' subtree of the abstract receive-expression
-%%	`Node'.
+%% ---------------------------------------------------------------------
 
-%% Representation:
-%%
-%% {'receive', A, Clauses, Timeout, Action}
-%%
-%%	Clauses = [Clause]
-%%	Clause = Timeout = Action = Node = coreErlang()
-
--record('receive', {ann = [], clauses, timeout, action}).
+%% @spec c_receive(Clauses::[cerl()]) -> cerl()
+%% @equiv c_receive(Clauses, c_atom(infinity), c_atom(true))
+%% @see c_atom/1
 
 c_receive(Clauses) ->
-    #'receive'{clauses = Clauses, timeout = c_atom(infinity),
-	       action = c_atom(true)}.
+    c_receive(Clauses, c_atom(infinity), c_atom(true)).
+
+
+%% @spec c_receive(Clauses::[cerl()], Timeout::cerl(),
+%%                 Action::cerl()) -> cerl()
+%%
+%% @doc Creates an abstract receive-expression. If
+%% <code>Clauses</code> is <code>[C1, ..., Cn]</code>, the result
+%% represents "<code>receive <em>C1</em> ... <em>Cn</em> after
+%% <em>Timeout</em> -> <em>Action</em> end</code>".
+%%
+%% @see c_receive/1
+%% @see ann_c_receive/4
+%% @see update_c_receive/4
+%% @see is_c_receive/1
+%% @see receive_clauses/1
+%% @see receive_timeout/1
+%% @see receive_action/1
+
+-record('receive', {ann = [], clauses, timeout, action}).
 
 c_receive(Clauses, Timeout, Action) ->
     #'receive'{clauses = Clauses, timeout = Timeout, action = Action}.
 
+
+%% @spec ann_c_receive(As::[term()], Clauses::[cerl()]) -> cerl()
+%% @equiv ann_c_receive(As, Clauses, c_atom(infinity), c_atom(true))
+%% @see c_receive/3
+%% @see c_atom/1
+
 ann_c_receive(As, Clauses) ->
-    #'receive'{clauses = Clauses, timeout = c_atom(infinity),
-	       action = c_atom(true), ann = As}.
+    ann_c_receive(As, Clauses, c_atom(infinity), c_atom(true)).
+
+
+%% @spec ann_c_receive(As::[term()], Clauses::[cerl()],
+%%                     Timeout::cerl(), Action::cerl()) -> cerl()
+%% @see ann_c_receive/2
+%% @see c_receive/3
 
 ann_c_receive(As, Clauses, Timeout, Action) ->
     #'receive'{clauses = Clauses, timeout = Timeout, action = Action,
 	       ann = As}.
 
+
+%% @spec update_c_receive(Old::cerl(), Clauses::[cerl()],
+%%                        Timeout::cerl(), Action::cerl()) -> cerl()
+%% @see c_receive/3
+
 update_c_receive(Node, Clauses, Timeout, Action) ->
     #'receive'{clauses = Clauses, timeout = Timeout, action = Action,
 	       ann = get_ann(Node)}.
+
+
+%% @spec is_c_receive(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% receive-expression, otherwise <code>false</code>.
+%%
+%% @see c_receive/3
 
 is_c_receive(#'receive'{}) ->
     true;
 is_c_receive(_) ->
     false.
 
+
+%% @spec receive_clauses(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of clause subtrees of an abstract
+%% receive-expression.
+%%
+%% @see c_receive/3
+
 receive_clauses(Node) ->
     Node#'receive'.clauses.
 
+
+%% @spec receive_timeout(cerl()) -> cerl()
+%%
+%% @doc Returns the timeout subtree of an abstract receive-expression.
+%%
+%% @see c_receive/3
+
 receive_timeout(Node) ->
     Node#'receive'.timeout.
+
+
+%% @spec receive_action(cerl()) -> cerl()
+%%
+%% @doc Returns the action subtree of an abstract receive-expression.
+%%
+%% @see c_receive/3
 
 receive_action(Node) ->
     Node#'receive'.action.
 
 
-%% =====================================================================
-%% c_apply(Operator, Arguments) -> Node
-%% ann_c_apply(As, Operator, Arguments) -> Node
-%% update_c_apply(Old, Operator, Arguments) -> Node
-%%
-%%	    Operator = Node = coreErlang()
-%%	    Arguments = [coreErlang()]
-%%	    type(Node) = apply
-%%
-%%	`Node' is an abstract function application expression
-%%	representing `(<Operator>)(<A1>, ..., <An>)', if `Arguments' is
-%%	`[A1, ..., An]'.
-%%
-%% is_c_apply(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract function application
-%%	expression; otherwise `false'.
-%%
-%% apply_op(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_apply(Node)
-%%
-%%	Returns the `Operator' subtree of the abstract function
-%%	application expression `Node'.
-%%
-%% apply_args(Node) -> Arguments
-%%
-%%	    Node = coreErlang()
-%%	    Arguments = [coreErlang()]
-%%	    is_c_apply(Node)
-%%
-%%	Returns the list `[A1, ..., An]', if `Node' represents
-%%	`(<Operator>)(<A1>, ..., <An>)'.
-%%
-%% apply_arity(Node) -> Arity
-%%
-%%	    Node = coreErlang()
-%%	    Arity = integer()
-%%	    is_c_apply(Node)
-%%
-%%	Returns the number `n', if `Node' represents `(<Operator>)(<A1>,
-%%	..., <An>)'.
-%%
-%%	Note: this is equivalent to `erlang:length(apply_args(Node))',
-%%	but potentially more efficient.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_apply(Operator::cerl(), Arguments::[cerl()]) -> cerl()
 %%
-%% {apply, A, Operator, Arguments}
+%% @doc Creates an abstract function application. If
+%% <code>Arguments</code> is <code>[A1, ..., An]</code>, the result
+%% represents "<code>apply <em>Operator</em>(<em>A1</em>, ...,
+%% <em>An</em>)</code>".
 %%
-%%	Operator = coreErlang()
-%%	Arguments = [coreErlang()]
+%% @see ann_c_apply/3
+%% @see update_c_apply/3
+%% @see is_c_apply/1
+%% @see apply_op/1
+%% @see apply_args/1
+%% @see apply_arity/1
+%% @see c_call/3
+%% @see c_primop/2
 
 -record(apply, {ann = [], op, args}).
 
 c_apply(Operator, Arguments) ->
     #apply{op = Operator, args = Arguments}.
 
+
+%% @spec ann_c_apply(As::[term()], Operator::cerl(),
+%%                   Arguments::[cerl()]) -> cerl()
+%% @see c_apply/2
+
 ann_c_apply(As, Operator, Arguments) ->
     #apply{op = Operator, args = Arguments, ann = As}.
 
+
+%% @spec update_c_apply(Old::cerl(), Operator::cerl(),
+%%                      Arguments::[cerl()]) -> cerl()
+%% @see c_apply/2
+
 update_c_apply(Node, Operator, Arguments) ->
     #apply{op = Operator, args = Arguments, ann = get_ann(Node)}.
+
+
+%% @spec is_c_apply(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% function application, otherwise <code>false</code>.
+%%
+%% @see c_apply/2
 
 is_c_apply(#apply{}) ->
     true;
 is_c_apply(_) ->
     false.
 
+
+%% @spec apply_op(cerl()) -> cerl()
+%%
+%% @doc Returns the operator subtree of an abstract function
+%% application.
+%%
+%% @see c_apply/2
+
 apply_op(Node) ->
     Node#apply.op.
 
+
+%% @spec apply_args(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of argument subtrees of an abstract function
+%% application.
+%%
+%% @see c_apply/2
+%% @see apply_arity/1
+
 apply_args(Node) ->
     Node#apply.args.
+
+
+%% @spec apply_arity(Node::cerl()) -> integer()
+%%
+%% @doc Returns the number of argument subtrees of an abstract
+%% function application.
+%%
+%% <p>Note: this is equivalent to
+%% <code>length(apply_args(Node))</code>, but potentially more
+%% efficient.</p>
+%%
+%% @see c_apply/2
+%% @see apply_args/1
 
 apply_arity(Node) ->
     length(apply_args(Node)).
 
 
-%% =====================================================================
-%% c_call(Module, Name, Arguments) -> Node
-%% ann_c_call(As, Module, Name, Arguments) -> Node
-%% update_c_call(Old, Module, Name, Arguments) -> Node
-%%
-%%	    Module = Name = Node = coreErlang()
-%%	    Arguments = [coreErlang()]
-%%	    type(Node) = call
-%%
-%%	`Node' is an abstract inter-module call expression representing
-%%	`call <Module>:<Name>(<A1>, ..., <An>)', if `Arguments' is `[A1,
-%%	..., An]'.
-%%
-%% is_c_call(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract inter-module call
-%%	expression; otherwise `false'.
-%%
-%% call_module(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_call(Node)
-%%
-%%	Returns the `Module' subtree of the abstract inter-module call
-%%	expression `Node'.
-%%
-%% call_name(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_call(Node)
-%%
-%%	Returns the `Name' subtree of the abstract inter-module call
-%%	expression `Node'.
-%%
-%% call_args(Node) -> Arguments
-%%
-%%	    Node = coreErlang()
-%%	    Arguments = [coreErlang()]
-%%	    is_c_call(Node)
-%%
-%%	Returns the list `[A1, ..., An]', if `Node' represents `call
-%%	<Module>:<Name>(<A1>, ..., <An>)'.
-%%
-%% call_arity(Node) -> Arity
-%%
-%%	    Node = coreErlang()
-%%	    Arity = integer()
-%%	    is_c_call(Node)
-%%
-%%	Returns the number `n', if `Node' represents `call
-%%	<Module>:<Name>(<A1>, ..., <An>)'.
-%%
-%%	Note: this is equivalent to `erlang:length(call_args(Node))',
-%%	but potentially more efficient.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_call(Module::cerl(), Name::cerl(), Arguments::[cerl()]) ->
+%%           cerl()
 %%
-%% {call, A, Module, Name, Arguments}
+%% @doc Creates an abstract inter-module call. If
+%% <code>Arguments</code> is <code>[A1, ..., An]</code>, the result
+%% represents "<code>call <em>Module</em>:<em>Name</em>(<em>A1</em>,
+%% ..., <em>An</em>)</code>".
 %%
-%%	Module = Name = coreErlang()
-%%	Arguments = [coreErlang()]
+%% @see ann_c_call/4
+%% @see update_c_call/4
+%% @see is_c_call/1
+%% @see call_module/1
+%% @see call_name/1
+%% @see call_args/1
+%% @see call_arity/1
+%% @see c_apply/2
+%% @see c_primop/2
 
 -record(call, {ann = [], module, name, args}).
 
 c_call(Module, Name, Arguments) ->
     #call{module = Module, name = Name, args = Arguments}.
 
+
+%% @spec ann_c_call(As::[term()], Module::cerl(), Name::cerl(),
+%%                  Arguments::[cerl()]) -> cerl()
+%% @see c_call/3
+
 ann_c_call(As, Module, Name, Arguments) ->
     #call{module = Module, name = Name, args = Arguments, ann = As}.
+
+
+%% @spec update_c_call(Old::cerl(), Module::cerl(), Name::cerl(),
+%%                  Arguments::[cerl()]) -> cerl()
+%% @see c_call/3
 
 update_c_call(Node, Module, Name, Arguments) ->
     #call{module = Module, name = Name, args = Arguments,
 	  ann = get_ann(Node)}.
+
+
+%% @spec is_c_call(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% inter-module call expression; otherwise <code>false</code>.
+%%
+%% @see c_call/3
 
 is_c_call(#call{}) ->
     true;
 is_c_call(_) ->
     false.
 
+
+%% @spec call_module(cerl()) -> cerl()
+%%
+%% @doc Returns the module subtree of an abstract inter-module call.
+%%
+%% @see c_call/3
+
 call_module(Node) ->
     Node#call.module.
+
+
+%% @spec call_name(cerl()) -> cerl()
+%%
+%% @doc Returns the name subtree of an abstract inter-module call.
+%%
+%% @see c_call/3
 
 call_name(Node) ->
     Node#call.name.
 
+
+%% @spec call_args(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of argument subtrees of an abstract
+%% inter-module call.
+%%
+%% @see c_call/3
+%% @see call_arity/1
+
 call_args(Node) ->
     Node#call.args.
+
+
+%% @spec call_arity(Node::cerl()) -> integer()
+%%
+%% @doc Returns the number of argument subtrees of an abstract
+%% inter-module call.
+%%
+%% <p>Note: this is equivalent to
+%% <code>length(call_args(Node))</code>, but potentially more
+%% efficient.</p>
+%%
+%% @see c_call/3
+%% @see call_args/1
 
 call_arity(Node) ->
     length(call_args(Node)).
 
 
-%% =====================================================================
-%% c_primop(Name, Arguments) -> Node
-%% ann_c_primop(As, Name, Arguments) -> Node
-%% update_c_primop(Old, Name, Arguments) -> Node
-%%
-%%	    Name = Node = coreErlang()
-%%	    Arguments = [coreErlang()]
-%%	    type(Node) = primop
-%%
-%%	`Node' is an abstract primitive operation expression
-%%	representing `primop <Name>(<A1>, ..., <An>)', if `Arguments' is
-%%	`[A1, ..., An]'.
-%%
-%% is_c_primop(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract primitive operation
-%%	expression; otherwise `false'.
-%%
-%% primop_name(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_primop(Node)
-%%
-%%	Returns the `Name' subtree of the abstract primitive operation
-%%	expression `Node'.
-%%
-%% primop_args(Node) -> Arguments
-%%
-%%	    Node = coreErlang()
-%%	    Arguments = [coreErlang()]
-%%	    is_c_primop(Node)
-%%
-%%	Returns the list `[A1, ..., An]', if `Node' represents `primop
-%%	<Name>(<A1>, ..., <An>)'.
-%%
-%% primop_arity(Node) -> Arity
-%%
-%%	    Node = coreErlang()
-%%	    Arity = integer()
-%%	    is_c_primop(Node)
-%%
-%%	Returns the number `n', if `Node' represents `primop
-%%	<Name>(<A1>, ..., <An>)'.
-%%
-%%	Note: this is equivalent to `erlang:length(primop_args(Node))',
-%%	but potentially more efficient.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_primop(Name::cerl(), Arguments::[cerl()]) -> cerl()
 %%
-%% {primop, A, Name, Arguments}
+%% @doc Creates an abstract primitive operation call. If
+%% <code>Arguments</code> is <code>[A1, ..., An]</code>, the result
+%% represents "<code>primop <em>Name</em>(<em>A1</em>, ...,
+%% <em>An</em>)</code>". <code>Name</code> must have type
+%% <code>atom</code>.
 %%
-%%	Name = coreErlang()
-%%	Arguments = [coreErlang()]
+%% @see ann_c_primop/3
+%% @see update_c_primop/3
+%% @see is_c_primop/1
+%% @see primop_name/1
+%% @see primop_args/1
+%% @see primop_arity/1
+%% @see c_apply/2
+%% @see c_call/3
 
 -record(primop, {ann = [], name, args}).
 
 c_primop(Name, Arguments) ->
     #primop{name = Name, args = Arguments}.
 
+
+%% @spec ann_c_primop(As::[term()], Name::cerl(),
+%%                    Arguments::[cerl()]) -> cerl()
+%% @see c_primop/2
+
 ann_c_primop(As, Name, Arguments) ->
     #primop{name = Name, args = Arguments, ann = As}.
 
+
+%% @spec update_c_primop(Old::cerl(), Name::cerl(),
+%%                       Arguments::[cerl()]) -> cerl()
+%% @see c_primop/2
+
 update_c_primop(Node, Name, Arguments) ->
     #primop{name = Name, args = Arguments, ann = get_ann(Node)}.
+
+
+%% @spec is_c_primop(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% primitive operation call, otherwise <code>false</code>.
+%%
+%% @see c_primop/2
 
 is_c_primop(#primop{}) ->
     true;
 is_c_primop(_) ->
     false.
 
+
+%% @spec primop_name(cerl()) -> cerl()
+%%
+%% @doc Returns the name subtree of an abstract primitive operation
+%% call.
+%%
+%% @see c_primop/2
+
 primop_name(Node) ->
     Node#primop.name.
 
+
+%% @spec primop_args(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of argument subtrees of an abstract primitive
+%% operation call.
+%%
+%% @see c_primop/2
+%% @see primop_arity/1
+
 primop_args(Node) ->
     Node#primop.args.
+
+
+%% @spec primop_arity(Node::cerl()) -> integer()
+%%
+%% @doc Returns the number of argument subtrees of an abstract
+%% primitive operation call.
+%%
+%% <p>Note: this is equivalent to
+%% <code>length(primop_args(Node))</code>, but potentially more
+%% efficient.</p>
+%%
+%% @see c_primop/2
+%% @see primop_args/1
 
 primop_arity(Node) ->
     length(primop_args(Node)).
 
 
-%% =====================================================================
-%% c_try(Expression, Variables, Body) -> Node
-%% ann_c_try(As, Expression, Variables, Body) -> Node
-%% update_c_try(Old, Expression, Variables, Body) -> Node
-%%
-%%	    Expression = Body = Node = coreErlang()
-%%	    Variables = [Var]
-%%	    Var = coreErlang()
-%%	    type(Node) = try
-%%
-%%	`Node' is an abstract try-expression representing `try
-%%	<Expression> catch (<V1>, ..., <Vn>) <`->'> <Body>', if
-%%	`Variables' is `[V1, ..., Vn]'.
-%%
-%% is_c_try(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract try-expression;
-%%	otherwise `false'.
-%%
-%% try_expr(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_try(Node)
-%%
-%%	Returns the `Expression' subtree of the abstract try-expression
-%%	`Node'.
-%%
-%% try_vars(Node) -> Variables
-%%
-%%	    Node = coreErlang()
-%%	    Variables = [Var]
-%%	    Var = coreErlang()
-%%	    is_c_try(Node)
-%%
-%%	Returns the list `[V1, ..., Vn]', if `Node' represents `try
-%%	<Expression> catch (<V1>, ..., <Vn>) <`->'> <Body>'.
-%%
-%% try_body(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_try(Node)
-%%
-%%	Returns the `Body' subtree of the abstract try-expression
-%%	`Node'.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_try(Expression::cerl(), Variables::[cerl()],
+%%             Body::cerl()) -> cerl()
 %%
-%% {'try', A, Expression, Variables, Body}
+%% @doc Creates an abstract try-expression. If <code>Variables</code>
+%% is <code>[V1, ..., Vn]</code>, the result represents "<code>try
+%% <em>Expression</em> catch (<em>V1</em>, ..., <em>Vn</em>) ->
+%% <em>Body</em></code>". All the <code>Vi</code> must have type
+%% <code>var</code>.
 %%
-%%	Expression = Body = coreErlang()
-%%	Variables = [Var]
-%%	Var = coreErlang()
+%% @see ann_c_try/4
+%% @see update_c_try/4
+%% @see is_c_try/1
+%% @see try_expr/1
+%% @see try_vars/1
+%% @see try_body/1
+%% @see c_catch/1
 
 -record('try', {ann = [], expr, vars, body}).
 
 c_try(Expr, Vs, Body) ->
     #'try'{expr = Expr, vars = Vs, body = Body}.
 
+
+%% @spec ann_c_try(As::[term()], Expression::cerl(),
+%%                 Variables::[cerl()], Body::cerl()) -> cerl()
+%% @see c_try/3
+
 ann_c_try(As, Expr, Vs, Body) ->
     #'try'{expr = Expr, vars = Vs, body = Body, ann = As}.
+
+
+%% @spec update_c_try(Old::cerl(), Expression::cerl(),
+%%                    Variables::[cerl()], Body::cerl()) -> cerl()
+%% @see c_try/3
 
 update_c_try(Node, Expr, Vs, Body) ->
     #'try'{expr = Expr, vars = Vs, body = Body, ann = get_ann(Node)}.
 
-is_c_try(#try{}) ->
+
+%% @spec is_c_try(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% try-expression, otherwise <code>false</code>.
+%%
+%% @see c_try/3
+
+is_c_try(#'try'{}) ->
     true;
 is_c_try(_) ->
     false.
 
+
+%% @spec try_expr(cerl()) -> cerl()
+%%
+%% @doc Returns the expression subtree of an abstract try-expression.
+%%
+%% @see c_try/3
+
 try_expr(Node) ->
     Node#'try'.expr.
 
+
+%% @spec try_vars(cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of variable subtrees of an abstract
+%% try-expression.
+%%
+%% @see c_try/3
+
 try_vars(Node) ->
     Node#'try'.vars.
+
+
+%% @spec try_body(cerl()) -> cerl()
+%%
+%% @doc Returns the body subtree of an abstract try-expression.
+%%
+%% @see c_try/3
 
 try_body(Node) ->
     Node#'try'.body.
 
 
-%% =====================================================================
-%% c_catch(Body) -> Node
-%% ann_c_catch(As, Body) -> Node
-%% update_c_catch(Old, Body) -> Node
-%%
-%%	    Body = Node = coreErlang()
-%%	    type(Node) = catch
-%%
-%%	`Node' is an abstract catch-expression representing `catch
-%%	<Body>'.
-%%
-%% is_c_catch(Node) -> bool()
-%%
-%%	    Node = coreErlang()
-%%
-%%	Returns `true' if `Node' is an abstract catch-expression;
-%%	otherwise `false'.
-%%
-%% catch_body(Node) -> coreErlang()
-%%
-%%	    Node = coreErlang()
-%%	    is_c_catch(Node)
-%%
-%%	Returns the `Body' subtree of the abstract catch-expression
-%%	`Node'.
+%% ---------------------------------------------------------------------
 
-%% Representation:
+%% @spec c_catch(Body::cerl()) -> cerl()
 %%
-%% {'catch', A, Body}
+%% @doc Creates an abstract catch-expression. The result represents
+%% "<code>catch <em>Body</em></code>".
 %%
-%%	Body = coreErlang()
+%% <p>Note: catch-expressions can be rewritten as try-expressions, and
+%% will eventually be removed from Core Erlang.</p>
+%%
+%% @see ann_c_catch/2
+%% @see update_c_catch/2
+%% @see is_c_catch/1
+%% @see catch_body/1
+%% @see c_try/3
 
 -record('catch', {ann = [], body}).
 
 c_catch(Body) ->
     #'catch'{body = Body}.
 
+
+%% @spec ann_c_catch(As::[term()], Body::cerl()) -> cerl()
+%% @see c_catch/1
+
 ann_c_catch(As, Body) ->
     #'catch'{body = Body, ann = As}.
 
+
+%% @spec update_c_catch(Old::cerl(), Body::cerl()) -> cerl()
+%% @see c_catch/1
+
 update_c_catch(Node, Body) ->
     #'catch'{body = Body, ann = get_ann(Node)}.
+
+
+%% @spec is_c_catch(Node::cerl()) -> bool()
+%%
+%% @doc Returns <code>true</code> if <code>Node</code> is an abstract
+%% catch-expression, otherwise <code>false</code>.
+%%
+%% @see c_catch/1
 
 is_c_catch(#'catch'{}) ->
     true;
 is_c_catch(_) ->
     false.
 
+
+%% @spec catch_body(Node::cerl()) -> cerl()
+%%
+%% @doc Returns the body subtree of an abstract catch-expression.
+%%
+%% @see c_catch/1
+
 catch_body(Node) ->
     Node#'catch'.body.
 
 
-%% =====================================================================
-%% to_records(Tree) -> record(Type)
+%% ---------------------------------------------------------------------
+
+%% @spec to_records(Tree::cerl()) -> record(record_types())
 %%
-%%	    Tree = coreErlang()
-%%	    Type = c_alias | c_apply | c_call | c_case | c_catch |
-%%		   c_clause | c_cons | c_fun | c_let | c_letrec |
-%%		   c_lit | c_module | c_primop | c_receive | c_seq |
-%%		   c_try | c_tuple | c_values | c_var
+%% @doc Translates an abstract syntax tree to a corresponding explicit
+%% record representation. The records are defined in the file
+%% "<code>cerl.hrl</code>".
 %%
-%%	Translates a Core Erlang abstract syntax tree to a corresponding
-%%	tree constructed from the records defined in the file
-%%	`cerl.hrl'. Annotation term lists are copied to the
-%%	corresponding target nodes.
+%% <p>Note: Compound constant literals are always unfolded in the
+%% record representation.</p>
+%%
+%% @see type/1
+%% @see from_records/1
 
 to_records(Node) ->
     A = get_ann(Node),
@@ -2875,19 +3179,25 @@ lit_list_to_records([]) ->
     [].
 
 
-%% =====================================================================
-%% from_records(Tree) -> coreErlang()
+%% @spec from_records(Tree::record(record_types())) -> cerl()
 %%
-%%	    Tree = record(Type)
-%%	    Type = c_alias | c_apply | c_call | c_case | c_catch |
-%%		   c_clause | c_cons | c_fun | c_let | c_letrec |
-%%		   c_lit | c_module | c_primop | c_receive | c_seq |
-%%		   c_try | c_tuple | c_values | c_var
+%%     record_types() = c_alias | c_apply | c_call | c_case | c_catch |
+%%                      c_clause | c_cons | c_def| c_fun | c_let |
+%%                      c_letrec |c_lit | c_module | c_primop |
+%%                      c_receive | c_seq | c_try | c_tuple |
+%%                      c_values | c_var
 %%
-%%	Translates a syntax tree constructed from the records defined in
-%%	the file `cerl.hrl' to a corresponding abstract syntax tree.
-%%	Annotation term lists are copied to the corresponding target
-%%	nodes.
+%% @doc Translates an explicit record representation to a
+%% corresponding abstract syntax tree.  The records are defined in the
+%% file "<code>cerl.hrl</code>".
+%%
+%% <p>Note: Compound constant literals are folded, discarding
+%% annotations on subtrees. There are no <code>c_def</code> nodes in
+%% the abstract representation; annotations on <code>c_def</code>
+%% records are discarded.</p>
+%%
+%% @see type/1
+%% @see to_records/1
 
 from_records(#c_int{val = V, anno = As}) ->
     ann_c_int(As, V);
@@ -2966,82 +3276,17 @@ from_records_list([]) ->
     [].
 
 
-%% =====================================================================
-%% is_data(Node) -> bool()
+%% ---------------------------------------------------------------------
+
+%% @spec is_data(Node::cerl()) -> bool()
 %%
-%%	    Node = coreErlang()
+%% @doc Returns <code>true</code> if <code>Node</code> represents a
+%% data constructor, otherwise <code>false</code>. Data constructors
+%% are cons cells, tuples, and atomic literals.
 %%
-%%	Returns `true' if `Node' represents a data constructor, i.e., an
-%%	atomic literal, cons or tuple; otherwise `false'.
-%%
-%% data_type(Node) -> CType
-%%
-%%	    Node = coreErlang()
-%%	    CType = cons | tuple | {atomic, Value}
-%%	    Value = integer() | float() | atom() | []
-%%
-%%	    is_data(Node)
-%%
-%%	Returns a type descriptor for the data constructor represented
-%%	by `Node'. This is mainly useful for comparing types and for
-%%	constructing new nodes of the same type (cf. `make_data'). If
-%%	`Node' represents an integer, floating-point number, atom or
-%%	empty list, `CType' is `{atomic, Value}', where `Value' is the
-%%	value of `concrete(Node)'; otherwise `CType' is `cons' or
-%%	`tuple'.
-%%
-%%	Type descriptors can be compared for equality or order (in the
-%%	Erlang term order), but remember that floating-point values
-%%	should in general never be tested for equality.
-%%
-%% data_es(Node) -> Elements
-%%
-%%	    Node = coreErlang()
-%%	    Elements = [coreErlang()]
-%%
-%%	    is_data(Node)
-%%
-%%	Returns the subtrees of `Node', in left-to-right order, if
-%%	`Node' represents a data constructor. If the arity of the
-%%	constructor is zero, the result is the empty list.
-%%
-%%	Note: if `data_type(Node)' is `cons', the number of subtrees is
-%%	exactly two. If `data_type(Node)' is `{atomic, Value}', the
-%%	number of subtrees is zero.
-%%
-%% data_arity(Node) -> Arity
-%%
-%%	    Node = coreErlang()
-%%	    Arity = integer()
-%%
-%%	    is_data(Node)
-%%
-%%	Returns the number of subtrees of a data constructor `Node'.
-%%	This is equivalent to `length(data_es(Node))', but potentially
-%%	more efficient.
-%%
-%% make_data(CType, Elements) -> Node
-%% ann_make_data(As, CType, Elements) -> Node
-%% update_data(Old, CType, Elements) -> Node
-%%
-%%	    CType = cons | tuple | {atomic, Value}
-%%	    Value = integer() | float() | atom() | []
-%%	    Elements = [coreErlang()]
-%%	    Node = coreErlang()
-%%
-%%	    is_data(Node)
-%%
-%%	`Node' represents the data constructor (cf. `is_data') whose
-%%	type descriptor (cf. `data_type') is `CType', and whose subtrees
-%%	are exactly those in the list `Elements', in left-to-right
-%%	order, if this is possible (see `data_arity' for arity
-%%	limitations on constructor types). An exception is thrown if the
-%%	length of `Elements' is invalid for the given `CType'.
-%%
-%% make_nonlit_data(CType, Elements) -> Node
-%%
-%%	Like `make_data', but analogous to `c_nonlit_tuple' and
-%%	`c_nonlit_cons'.
+%% @see data_type/1
+%% @see data_es/1
+%% @see data_arity/1
 
 is_data(#literal{}) ->
     true;
@@ -3051,6 +3296,30 @@ is_data(#tuple{}) ->
     true;
 is_data(_) ->
     false.
+
+
+%% @spec data_type(Node::cerl()) -> dtype()
+%%
+%%     dtype() = cons | tuple | {atomic, Value}
+%%     Value = integer() | float() | atom() | []
+%%
+%% @doc Returns a type descriptor for a data constructor
+%% node. (Cf. <code>is_data/1</code>.) This is mainly useful for
+%% comparing types and for constructing new nodes of the same type
+%% (cf. <code>make_data/2</code>). If <code>Node</code> represents an
+%% integer, floating-point number, atom or empty list, the result is
+%% <code>{atomic, Value}</code>, where <code>Value</code> is the value
+%% of <code>concrete(Node)</code>, otherwise the result is either
+%% <code>cons</code> or <code>tuple</code>.
+%%
+%% <p>Type descriptors can be compared for equality or order (in the
+%% Erlang term order), but remember that floating-point values should
+%% in general never be tested for equality.</p>
+%%
+%% @see is_data/1
+%% @see make_data/2
+%% @see type/1
+%% @see concrete/1
 
 data_type(#literal{val = V}) ->
     case V of
@@ -3066,6 +3335,22 @@ data_type(#cons{}) ->
 data_type(#tuple{}) ->
     tuple.
 
+
+%% @spec data_es(Node::cerl()) -> [cerl()]
+%%
+%% @doc Returns the list of subtrees of a data constructor node. If
+%% the arity of the constructor is zero, the result is the empty list.
+%%
+%% <p>Note: if <code>data_type(Node)</code> is <code>cons</code>, the
+%% number of subtrees is exactly two. If <code>data_type(Node)</code>
+%% is <code>{atomic, Value}</code>, the number of subtrees is
+%% zero.</p>
+%%
+%% @see is_data/1
+%% @see data_type/1
+%% @see data_arity/1
+%% @see make_data/2
+
 data_es(#literal{val = V}) ->
     case V of
 	[Head | Tail] ->
@@ -3079,6 +3364,16 @@ data_es(#cons{hd = H, tl = T}) ->
     [H, T];
 data_es(#tuple{es = Es}) ->
     Es.
+
+
+%% @spec data_arity(Node::cerl()) -> integer()
+%%
+%% @doc Returns the number of subtrees of a data constructor
+%% node. This is equivalent to <code>length(data_es(Node))</code>, but
+%% potentially more efficient.
+%%
+%% @see is_data/1
+%% @see data_es/1
 
 data_arity(#literal{val = V}) ->
     case V of
@@ -3094,105 +3389,134 @@ data_arity(#cons{}) ->
 data_arity(#tuple{es = Es}) ->
     length(Es).
 
-make_data({atomic, V}, []) -> #literal{val = V};
-make_data(cons, [H, T]) -> c_cons(H, T);
-make_data(tuple, Es) -> c_tuple(Es).
+
+%% @spec make_data(Type::dtype(), Elements::[cerl()]) -> cerl()
+%%
+%% @doc Creates a data constructor node with the specified type and
+%% subtrees. (Cf. <code>data_type/1</code>.)  An exception is thrown
+%% if the length of <code>Elements</code> is invalid for the given
+%% <code>Type</code>; see <code>data_es/1</code> for arity constraints
+%% on constructor types.
+%%
+%% @see data_type/1
+%% @see data_es/1
+%% @see ann_make_data/3
+%% @see update_data/3
+%% @see make_data_skel/2
+
+make_data(CType, Es) ->
+    ann_make_data([], CType, Es).
+
+
+%% @spec ann_make_data(As::[term()], Type::dtype(),
+%%                     Elements::[cerl()]) -> cerl()
+%% @see make_data/2
 
 ann_make_data(As, {atomic, V}, []) -> #literal{val = V, ann = As};
 ann_make_data(As, cons, [H, T]) -> ann_c_cons(As, H, T);
 ann_make_data(As, tuple, Es) -> ann_c_tuple(As, Es).
 
-update_data(Node, {atomic, V}, []) ->
-    #literal{val = V, ann = get_ann(Node)};
-update_data(Node, cons, [H, T]) ->
-    update_c_cons(Node, H, T);
-update_data(Node, tuple, Es) ->
-    update_c_tuple(Node, Es).
 
-make_nonlit_data({atomic, V}, []) -> #literal{val = V};
-make_nonlit_data(cons, [H, T]) -> c_nonlit_cons(H, T);
-make_nonlit_data(tuple, Es) -> c_nonlit_tuple(Es).
+%% @spec update_data(Old::cerl(), Type::dtype(),
+%%                   Elements::[cerl()]) -> cerl()
+%% @see make_data/2
+
+update_data(Node, CType, Es) ->
+    ann_make_data(get_ann(Node), CType, Es).
 
 
-%% =====================================================================
-%% subtrees(Node) -> Components
+%% @spec make_data_skel(Type::dtype(), Elements::[cerl()]) -> cerl()
 %%
-%%	    Node = coreErlang()
-%%	    Components = [] | Groups
-%%	    Groups = [[coreErlang()]] - []
+%% @doc Like <code>make_data/2</code>, but analogous to
+%% <code>c_tuple_skel/1</code> and <code>c_cons_skel/2</code>.
 %%
-%%	Returns the empty list `[]' if `Node' is a leaf node (cf.
-%%	`is_leaf'); otherwise returns a *nonempty* list of lists of
-%%	syntax trees, representing the subtrees of `Node' *in
-%%	left-to-right order as they would occur in the printed program
-%%	text*, and grouped by category. Often, each group contains only
-%%	a single subtree.
+%% @see ann_make_data_skel/3
+%% @see update_data_skel/3
+%% @see make_data/2
+%% @see c_tuple_skel/1
+%% @see c_cons_skel/2
+
+make_data_skel(CType, Es) ->
+    ann_make_data_skel([], CType, Es).
+
+
+%% @spec ann_make_data_skel(As::[term()], Type::dtype(),
+%%                          Elements::[cerl()]) -> cerl()
+%% @see make_data_skel/2
+
+ann_make_data_skel(As, {atomic, V}, []) -> #literal{val = V, ann = As};
+ann_make_data_skel(As, cons, [H, T]) -> ann_c_cons_skel(As, H, T);
+ann_make_data_skel(As, tuple, Es) -> ann_c_tuple_skel(As, Es).
+
+
+%% @spec update_data_skel(Old::cerl(), Type::dtype(),
+%%                        Elements::[cerl()]) -> cerl()
+%% @see make_data_skel/2
+
+update_data_skel(Node, CType, Es) ->
+    ann_make_data_skel(get_ann(Node), CType, Es).
+
+
+%% ---------------------------------------------------------------------
+
+%% @spec subtrees(Node::cerl()) -> [[cerl()]]
 %%
-%%	Depending on the type of `Node', the size of some groups may
-%%	vary (e.g., the group consisting of the argument expressions of
-%%	a primop-call), while others always contain the same number of
-%%	elements - usually exactly one (e.g., the group containing the
-%%	argument expression of a `case' expression). Note, though, that
-%%	the exact structure of the returned list (for a given node type)
-%%	should in general not be depended upon, since it might be
-%%	subject to change without notice.
+%% @doc Returns the grouped list of all subtrees of a node. If
+%% <code>Node</code> is a leaf node (cf. <code>is_leaf/1</code>), this
+%% is the empty list, otherwise the result is always a nonempty list,
+%% containing the lists of subtrees of <code>Node</code>, in
+%% left-to-right order as they occur in the printed program text, and
+%% grouped by category. Often, each group contains only a single
+%% subtree.
 %%
-%% make_tree(Type, Groups) -> Node
+%% <p>Depending on the type of <code>Node</code>, the size of some
+%% groups may be variable (e.g., the group consisting of all the
+%% elements of a tuple), while others always contain the same number
+%% of elements - usually exactly one (e.g., the group containing the
+%% argument expression of a case-expression). Note, however, that the
+%% exact structure of the returned list (for a given node type) should
+%% in general not be depended upon, since it might be subject to
+%% change without notice.</p>
 %%
-%%	    Type = atom()
-%%	    Groups = [[coreErlang()]] - []
-%%	    Node = coreErlang()
+%% <p>The function <code>subtrees/1</code> and the constructor functions
+%% <code>make_tree/2</code> and <code>update_tree/2</code> can be a
+%% great help if one wants to traverse a syntax tree, visiting all its
+%% subtrees, but treat nodes of the tree in a uniform way in most or all
+%% cases. Using these functions makes this simple, and also assures that
+%% your code is not overly sensitive to extensions of the syntax tree
+%% data type, because any node types not explicitly handled by your code
+%% can be left to a default case.</p>
 %%
-%%	`Type' is a node type name (cf. `type') that does not denote a
-%%	leaf node (cf. `is_leaf'). `Groups' is a *nonempty* list of
-%%	lists of syntax trees, representing the subtrees of a node
-%%	corresponding to `Type', *in left-to-right order as they would
-%%	occur in the printed program text*, grouped by category as done
-%%	by the function `subtrees'.
+%% <p>For example:
+%% <pre>
+%%   postorder(F, Tree) ->
+%%       F(case subtrees(Tree) of
+%%           [] -> Tree;
+%%           List -> update_tree(Tree,
+%%                               [[postorder(F, Subtree)
+%%                                 || Subtree &lt;- Group]
+%%                                || Group &lt;- List])
+%%         end).
+%% </pre>
+%% maps the function <code>F</code> on <code>Tree</code> and all its
+%% subtrees, doing a post-order traversal of the syntax tree. (Note
+%% the use of <code>update_tree/2</code> to preserve annotations.) For
+%% a simple function like:
+%% <pre>
+%%   f(Node) ->
+%%       case type(Node) of
+%%           atom -> atom("a_" ++ atom_name(Node));
+%%           _ -> Node
+%%       end.
+%% </pre>
+%% the call <code>postorder(fun f/1, Tree)</code> will yield a new
+%% representation of <code>Tree</code> in which all atom names have
+%% been extended with the prefix "a_", but nothing else (including
+%% annotations) has been changed.</p>
 %%
-%%	The result from evaluating the expression `make_tree(type(Node),
-%%	subtrees(Node))' represents the same source code text as `Node'
-%%	itself, *given that `subtrees(Node)' yields a nonempty list*
-%%	(equivalently, that `is_leaf(Node)' yields `false'), but the
-%%	result does not necessarily have the exact same data
-%%	representation as `Node', and its list of annotations is empty.
-%%
-%% The above functions can be a great help if one wants to traverse a
-%% syntax tree, visiting all its subtrees, but treat nodes of the tree
-%% in a uniform way in some or all cases. Using `subtrees' and the
-%% constructor function `make_tree' makes this simple, and also assures
-%% that the code is not overly sensitive to extensions of the syntax
-%% tree data type, because any node types not explicitly handled by your
-%% code can be left to a default case for nodes in general.
-%%
-%% Example:
-%%
-%%	bottomup(F, Tree) ->
-%%	    F(case subtrees(Tree) of
-%%		[] ->
-%%		    Tree;
-%%		List ->
-%%		    make_tree(type(Tree),
-%%			      [[bottomup(F, Subtree)
-%%				|| Subtree <- Group]
-%%			       || Group <- List])
-%%	      end).
-%%
-%% maps the function `F' on `Tree' and all its subtrees, in a bottom-up
-%% order. For a simple function like e.g.:
-%%
-%%	f(Node) ->
-%%	    case is_c_atom(Node) of
-%%		true ->
-%%		    c_atom("a_" ++ atom_name(Node));
-%%		false ->
-%%		    Node
-%%	    end.
-%%
-%% the call `bottomup(fun f/1, Tree)' will yield the syntax tree `Tree'
-%% in which all atom names have been extended with the prefix `a_'.
-%% (Note, though, that annotations on the original tree are not
-%% preserved by the above example, in order to keep it simple.)
+%% @see is_leaf/1
+%% @see make_tree/2
+%% @see update_tree/2
 
 subtrees(T) ->
     case is_leaf(T) of
@@ -3249,64 +3573,145 @@ subtrees(T) ->
 	    end
     end.
 
-make_tree(values, [Es]) -> c_values(Es);
-make_tree(binary, [Ss]) -> c_binary(Ss);
-make_tree(bin_seg, [[V],[S],[U],[T],Fs]) -> c_bin_seg(V, S, U, T, Fs);
-make_tree(cons, [[H], [T]]) -> c_cons(H, T);
-make_tree(tuple, [Es]) -> c_tuple(Es);
-make_tree('let', [Vs, [A], [B]]) -> c_let(Vs, A, B);
-make_tree(seq, [[A], [B]]) -> c_seq(A, B);
-make_tree(apply, [[Op], As]) -> c_apply(Op, As);
-make_tree(call, [[M], [N], As]) -> c_call(M, N, As);
-make_tree(primop, [[N], As]) -> c_primop(N, As);
-make_tree('case', [[A], Cs]) -> c_case(A, Cs);
-make_tree(clause, [Ps, [G], [B]]) -> c_clause(Ps, G, B);
-make_tree(alias, [[V], [P]]) -> c_alias(V, P);
-make_tree('fun', [Vs, [B]]) -> c_fun(Vs, B);
-make_tree('receive', [Cs, [T], [A]]) -> c_receive(Cs, T, A);
-make_tree('try', [[E], Vs, [B]]) -> c_try(E, Vs, B);
-make_tree('catch', [[B]]) -> c_catch(B);
-make_tree(letrec, [Es, [B]]) -> c_letrec(fold_tuples(Es), B);
-make_tree(module, [[N], Xs, As, Es]) ->
-    c_module(N, Xs, fold_tuples(As), fold_tuples(Es)).
+
+%% @spec update_tree(Old::cerl(), Groups::[[cerl()]]) -> cerl()
+%%
+%% @doc Creates a syntax tree with the given subtrees, and the same
+%% type and annotations as the <code>Old</code> node. This is
+%% equivalent to <code>ann_make_tree(get_ann(Node), type(Node),
+%% Groups)</code>, but potentially more efficient.
+%%
+%% @see update_tree/3
+%% @see ann_make_tree/3
+%% @see get_ann/1
+%% @see type/1
+
+update_tree(Node, Gs) ->
+    ann_make_tree(get_ann(Node), type(Node), Gs).
 
 
-%% =====================================================================
-%% meta(Tree) -> MetaTree
+%% @spec update_tree(Old::cerl(), Type::atom(), Groups::[[cerl()]]) ->
+%%           cerl()
 %%
-%%	    Tree = MetaTree = coreErlang()
+%% @doc Creates a syntax tree with the given type and subtrees, and
+%% the same annotations as the <code>Old</code> node. This is
+%% equivalent to <code>ann_make_tree(get_ann(Node), Type,
+%% Groups)</code>, but potentially more efficient.
 %%
-%%	`MetaTree' is a meta-representation of the syntax tree `Tree';
-%%	it represents an Erlang expression `<MetaTree>' which, if
-%%	evaluated, yields a representation of the same syntax tree as
-%%	`Tree' (but whose actual underlying representation may differ).
-%%	The expression represented by MetaTree is guaranteed to be
-%%	*implementation independent* with regard to the data structures
-%%	used by this module. Annotations on nodes of `Tree' will be
-%%	preserved, except for on subterms of constant compound literals.
+%% @see update_tree/2
+%% @see ann_make_tree/3
+%% @see get_ann/1
+
+update_tree(Node, Type, Gs) ->
+    ann_make_tree(get_ann(Node), Type, Gs).
+
+
+%% @spec make_tree(Type::atom(), Groups::[[cerl()]]) -> cerl()
 %%
-%%	Any node in `Tree' of type `var' whose list of annotations
-%%	contains the atom `meta_var' will remain unchanged in
-%%	`MetaTree', except that exactly one occurrence of `meta_var' is
-%%	removed from its list of annotations.
+%% @doc Creates a syntax tree with the given type and subtrees.
+%% <code>Type</code> must be a node type name
+%% (cf. <code>type/1</code>) that does not denote a leaf node type
+%% (cf. <code>is_leaf/1</code>).  <code>Groups</code> must be a
+%% <em>nonempty</em> list of groups of syntax trees, representing the
+%% subtrees of a node of the given type, in left-to-right order as
+%% they would occur in the printed program text, grouped by category
+%% as done by <code>subtrees/1</code>.
 %%
-%%	The main use of the `meta' function is to transform the *data
-%%	structure* `Tree', which represents a piece of program code,
-%%	into a form that is *representation independent when printed*.
-%%	E.g., suppose `Tree' represents a variable `V'. Then (assuming a
-%%	function `print' exists), evaluating `print(abstract(Tree))' -
-%%	simply using `abstract' to map the data structure onto a syntax
-%%	tree representation - would output a string that might look
-%%	something like `{var, ...'V'...}', which is obviously dependent
-%%	on the implementation of this module. E.g., for caching syntax
-%%	trees, this could be useful. However, in some situations (e.g.,
-%%	in a program generator generator), it may be unacceptable. Using
-%%	`print(meta(Tree))' instead would output a *representation
-%%	independent* string; in the case above, something like
-%%	`cerl:c_int('V')'.
+%% <p>The result of <code>ann_make_tree(get_ann(Node), type(Node),
+%% subtrees(Node))</code> (cf. <code>update_tree/2</code>) represents
+%% the same source code text as the original <code>Node</code>,
+%% assuming that <code>subtrees(Node)</code> yields a nonempty
+%% list. However, it does not necessarily have the exact same data
+%% representation as <code>Node</code>.</p>
 %%
-%%	The implementation tries to generate compact code with respect
-%%	to literals and lists.
+%% @see ann_make_tree/3
+%% @see type/1
+%% @see is_leaf/1
+%% @see subtrees/1
+%% @see update_tree/2
+
+make_tree(Type, Gs) ->
+    ann_make_tree([], Type, Gs).
+
+
+%% @spec ann_make_tree(As::[term()], Type::atom(),
+%%                     Groups::[[cerl()]]) -> cerl()
+%%
+%% @doc Creates a syntax tree with the given annotations, type and
+%% subtrees. See <code>make_tree/2</code> for details.
+%%
+%% @see make_tree/2
+
+ann_make_tree(As, values, [Es]) -> ann_c_values(As, Es);
+ann_make_tree(As, binary, [Ss]) -> ann_c_binary(As, Ss);
+ann_make_tree(As, bin_seg, [[V],[S],[U],[T],Fs]) ->
+    ann_c_bin_seg(As, V, S, U, T, Fs);
+ann_make_tree(As, cons, [[H], [T]]) -> ann_c_cons(As, H, T);
+ann_make_tree(As, tuple, [Es]) -> ann_c_tuple(As, Es);
+ann_make_tree(As, 'let', [Vs, [A], [B]]) -> ann_c_let(As, Vs, A, B);
+ann_make_tree(As, seq, [[A], [B]]) -> ann_c_seq(As, A, B);
+ann_make_tree(As, apply, [[Op], Es]) -> ann_c_apply(As, Op, Es);
+ann_make_tree(As, call, [[M], [N], Es]) -> ann_c_call(As, M, N, Es);
+ann_make_tree(As, primop, [[N], Es]) -> ann_c_primop(As, N, Es);
+ann_make_tree(As, 'case', [[A], Cs]) -> ann_c_case(As, A, Cs);
+ann_make_tree(As, clause, [Ps, [G], [B]]) -> ann_c_clause(As, Ps, G, B);
+ann_make_tree(As, alias, [[V], [P]]) -> ann_c_alias(As, V, P);
+ann_make_tree(As, 'fun', [Vs, [B]]) -> ann_c_fun(As, Vs, B);
+ann_make_tree(As, 'receive', [Cs, [T], [A]]) ->
+    ann_c_receive(As, Cs, T, A);
+ann_make_tree(As, 'try', [[E], Vs, [B]]) -> ann_c_try(As, E, Vs, B);
+ann_make_tree(As, 'catch', [[B]]) -> ann_c_catch(As, B);
+ann_make_tree(As, letrec, [Es, [B]]) ->
+    ann_c_letrec(As, fold_tuples(Es), B);
+ann_make_tree(As, module, [[N], Xs, Es, Ds]) ->
+    ann_c_module(As, N, Xs, fold_tuples(Es), fold_tuples(Ds)).
+
+
+%% ---------------------------------------------------------------------
+
+%% @spec meta(Tree::cerl()) -> cerl()
+%%
+%% @doc Creates a meta-representation of a syntax tree. The result
+%% represents an Erlang expression "<code><em>MetaTree</em></code>"
+%% which, if evaluated, will yield a new syntax tree representing the
+%% same source code text as <code>Tree</code> (although the actual
+%% data representation may be different). The expression represented
+%% by <code>MetaTree</code> is <em>implementation independent</em>
+%% with regard to the data structures used by the abstract syntax tree
+%% implementation.
+%%
+%% <p>Any node in <code>Tree</code> whose node type is
+%% <code>var</code> (cf. <code>type/1</code>), and whose list of
+%% annotations (cf. <code>get_ann/1</code>) contains the atom
+%% <code>meta_var</code>, will remain unchanged in the resulting tree,
+%% except that exactly one occurrence of <code>meta_var</code> is
+%% removed from its annotation list.</p>
+%%
+%% <p>The main use of the function <code>meta/1</code> is to transform
+%% a data structure <code>Tree</code>, which represents a piece of
+%% program code, into a form that is <em>representation independent
+%% when printed</em>. E.g., suppose <code>Tree</code> represents a
+%% variable named "V". Then (assuming a function <code>print/1</code>
+%% for printing syntax trees), evaluating
+%% <code>print(abstract(Tree))</code> - simply using
+%% <code>abstract/1</code> to map the actual data structure onto a
+%% syntax tree representation - would output a string that might look
+%% something like "<code>{var, ..., 'V'}</code>", which is obviously
+%% dependent on the implementation of the abstract syntax trees. This
+%% could e.g. be useful for caching a syntax tree in a file. However,
+%% in some situations like in a program generator generator (with two
+%% "generator"), it may be unacceptable.  Using
+%% <code>print(meta(Tree))</code> instead would output a
+%% <em>representation independent</em> syntax tree generating
+%% expression; in the above case, something like
+%% "<code>cerl:c_var('V')</code>".</p>
+%%
+%% <p>The implementation tries to generate compact code with respect
+%% to literals and lists.</p>
+%%
+%% @see abstract/1
+%% @see type/1
+%% @see get_ann/1
 
 meta(Node) ->
     %% First of all we check for metavariables:
@@ -3317,7 +3722,7 @@ meta(Node) ->
 		    meta_0(var, Node);
 		true ->
 		    %% A meta-variable: remove the first found
-		    %% `meta_var' annotation, but otherwise leave
+		    %% 'meta_var' annotation, but otherwise leave
 		    %% the node unchanged.
 		    set_ann(Node, lists:delete(meta_var, get_ann(Node)))
 	    end;
@@ -3335,7 +3740,7 @@ meta_0(Type, Node) ->
 
 meta_1(literal, Node) ->
     %% We handle atomic literals separately, to get a bit
-    %% more compact code. For the rest, we use `abstract'.
+    %% more compact code. For the rest, we use 'abstract'.
     case concrete(Node) of
 	V when atom(V) ->
 	    meta_call(c_atom, [Node]);
@@ -3349,15 +3754,8 @@ meta_1(literal, Node) ->
 	    meta_call(abstract, [Node])
     end;
 meta_1(var, Node) ->
-    %% A normal variable or function name. Unless the class field is the
-    %% empty string, we preserve both name and class.
-    As = case var_class(Node) of
-	     "" ->
-		 [];
-	     Class ->
-		 [abstract(Class)]
-	 end,
-    meta_call(c_var, [abstract(var_name(Node)) | As]);
+    %% A normal variable or function name.
+    meta_call(c_var, [abstract(var_name(Node))]);
 meta_1(values, Node) ->
     meta_call(c_values,
 	      [make_list(meta_list(values_es(Node)))]);
@@ -3373,8 +3771,8 @@ meta_1(bin_seg, Node) ->
 	       make_list(meta_list(bin_seg_flags(Node)))]);
 meta_1(cons, Node) ->
     %% The list is split up if some sublist has annotatations. If
-    %% we get exactly one element, we generate a `c_cons' call
-    %% instead of `make_list' to reconstruct the node.
+    %% we get exactly one element, we generate a 'c_cons' call
+    %% instead of 'make_list' to reconstruct the node.
     case split_list(Node) of
 	{[H], none} ->
 	    meta_call(c_cons, [meta(H), meta(c_nil())]);
@@ -3451,7 +3849,7 @@ meta_1(module, Node) ->
 			  || {N, F} <- module_defs(Node)])]).
 
 meta_call(F, As) ->
-    c_call(c_atom(this_module()), c_atom(F), As).
+    c_call(c_atom(?MODULE), c_atom(F), As).
 
 meta_list([T | Ts]) ->
     [meta(T) | meta_list(Ts)];
@@ -3473,12 +3871,13 @@ split_list(Node, L) ->
     end.
 
 
-%% =====================================================================
+%% ---------------------------------------------------------------------
+
 %% General utilities
 
 is_lit_list([#literal{} | Es]) ->
     is_lit_list(Es);
-is_lit_list([E | Es]) ->
+is_lit_list([_ | _]) ->
     false;
 is_lit_list([]) ->
     true.
@@ -3493,8 +3892,8 @@ make_lit_list([V | Vs]) ->
 make_lit_list([]) ->
     [].
 
-%% The following tests are the same as done by `io_lib:char_list' and
-%% `io_lib:printable_list', respectively, but for a single character.
+%% The following tests are the same as done by 'io_lib:char_list' and
+%% 'io_lib:printable_list', respectively, but for a single character.
 
 is_char_value(V) when V >= $\000, V =< $\377 -> true;
 is_char_value(_) -> false.
@@ -3548,8 +3947,3 @@ fold_tuples([X, Y | Es]) ->
     [{X, Y} | fold_tuples(Es)];
 fold_tuples([]) ->
     [].
-
-this_module() ->
-    module_info(module).
-
-%% =====================================================================

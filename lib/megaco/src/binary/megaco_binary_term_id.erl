@@ -88,7 +88,7 @@ encode(Config, #megaco_term_id{contains_wildcards = true, id = IDs}) ->
 	EncodedTid ->
 	    {ok, EncodedTid}
     end;
-encode(Config, TermId) ->
+encode(_Config, TermId) ->
     {error, {bad_type, TermId}}.
 
 
@@ -151,7 +151,7 @@ decode(Config, #'TerminationID'{wildcard = Wildcards, id = IDs}) ->
 	MegacoTid ->
 	    {ok,MegacoTid}
     end;
-decode(Config, TermId) ->
+decode(_Config, TermId) ->
     {error, {bad_type, TermId}}.
 
 

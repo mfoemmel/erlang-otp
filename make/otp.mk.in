@@ -31,9 +31,16 @@ DUBIOUS_ORIGINS = /undefined/environment/
 # the application if it should be compiled.
 #
 
+TSP_APP = @TSP_APP@
 HIPE_APP = @HIPE_APP@
 SSL_APP = @SSL_APP@
 CRYPTO_APP = @CRYPTO_APP@
+
+# ----------------------------------------------------
+#	HiPE
+# ----------------------------------------------------
+
+HIPE_ENABLED=@HIPE_ENABLED@
 
 # ----------------------------------------------------
 #	Command macros
@@ -46,12 +53,18 @@ INSTALL_DATA    = @INSTALL_DATA@
 
 CC = @CC@
 HCC = @HCC@
+CC32 = @CC32@
+CFLAGS32 = @CFLAGS32@
 BASIC_CFLAGS = @CFLAGS@
 DEBUG_FLAGS =  @DEBUG_FLAGS@
 LD = @LD@
 RANLIB = @RANLIB@
 AR = @AR@
 PERL = @PERL@
+
+BITS64 = @BITS64@
+
+OTP_RELEASE = @OTP_RELEASE@
 
 # ----------------------------------------------------
 #	Erlang language section
@@ -60,13 +73,17 @@ EMULATOR = beam
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 # VxWorks object files should be compressed.
 # Other object files should have debug_info.
-ERL_COMPILE_FLAGS += +compressed
+  ERL_COMPILE_FLAGS += +compressed
 else
-ifdef BOOTSTRAP
-ERL_COMPILE_FLAGS += +slim
-else
-ERL_COMPILE_FLAGS += +debug_info
-endif
+  ifeq ($(findstring ose_ppc750,$(TARGET)),ose_ppc750)
+    ERL_COMPILE_FLAGS += +compressed
+  else
+    ifdef BOOTSTRAP
+      ERL_COMPILE_FLAGS += +slim
+    else
+      ERL_COMPILE_FLAGS += +debug_info
+    endif
+  endif
 endif
 ERLC_WFLAGS = -W
 ERLC = erlc $(ERLC_WFLAGS) $(ERLC_FLAGS)

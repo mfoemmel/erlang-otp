@@ -9,71 +9,210 @@
 %%  History  :	* 1998-01-28 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      : $Id$
 %% ====================================================================
-%% Options:
-%%     o0, 'O0', o1, 'O1', o2, 'O2', o3, 'O3': set optimization level
-%%       (default 0)
-%%     `{'O', N}': set optimization level to N.
-%%     icode_rename: rename variables (optimizes stack->reg mapping)
-%%     icode_prop: one pass of Icode optimization
-%%     icode_bwd_cprop: backward copy propagation on Icode.
-%%     rtl_prop_1: first pass of RTL optimization
-%%     rtl_prop_2: second pass of RTL optimization
-%%     rtl_cse: common subexpression elimination on RTL
-%%        Also {rtl_cse, CSE_type}
-%%        The CSE_types are the following:
-%%        - true/false = normal CSE/no CSE
-%%        - local = CSE per block; 
-%%        - ebb = CSE per extended basic block; 
-%%        - global = CSE by fixpoint iteration)
-%%     sparc_profile: inserts profiling counters into code
-%%         You get an annotated CFG by hipe_profile:annot(MFA)
-%%         (and see also misc/hipe_profile.erl for more info)
-%%        Also {sparc_profile, Prof_type}
-%%        The Prof_types are the following:
-%%        - true/false = normal profiling/no profiling
-%%        - block = 
-%%        - arc = 
-%%     sparc_schedule: perform ILP scheduling on code (also annotates
-%%         code with cycle estimates)
-%%        Also {sparc_schedule, Sched_type}
-%%        The Sched_types are the following:
-%%        - true/false = normal scheduling/no scheduling
-%%        - ultra =
-%%     sparc_post_schedule: schedule after register allocation as well.
-%%         There are two reasons for this:
-%%         - spill code (rare)
-%%         - reg.alloc may reuse registers in nearby instructions, which
-%%           can destroy our careful schedule; post-scheduling tries to
-%%           repair the damage (if any; I haven't seen it make a difference
-%%           yet)
-%%     sparc_estimate_block_times: do not perform scheduling, but
-%%         annotate with cycle estimates
-%%     load: load the module after compiling.
-%%     {timeout, Time}: Where Time is time in ms or 'infinity', sets the
-%%         time the compiler is allowed to use for the compilation.
-%%         The default (DEFAULT_TIMEOUT) is set to 15 minutes.
-%%     pp_beam, {pp_beam, {file, File}}:
-%%     pp_icode, {pp_icode, {file, File}}, {pp_icode, {only, Functions}}:
-%%     pp_opt_icode, {pp_opt_icode, {file, File}},
-%%         {pp_opt_icode, {only, Functions}}:
-%%     pp_rtl, {pp_rtl, {file, File}}, {pp_rtl, {only, Functions}}:
-%%     pp_native, {pp_native, {file, File}}, {pp_native, {only, Functions}}:
-%%     pp_all: [pp_beam,pp_icode,pp_rtl,pp_native]
-%%     pp_asm: Prints the assembly listing with addresses and bytecode.
+%% @doc This is the direct interface to the HiPE compiler.
 %%
-%%     DEBUG Options: (Might require that some modules have been compiled
-%%                     with the debug flag.)
-%%     rtl_show_translation: Prints each step in the translation from
-%%                           Icode to RTL
+%% <h3>Normal use</h3>
 %%
-%%   You can also write `{Option, false}' to turn `Option' off, or
-%%   `{Option, true}' to force it on. Boolean-valued (true/false)
-%%   options also have negative-form aliases, e.g. `no_sparc_profile' =
-%%   `{sparc_profile, false}'.
+%% <p>The normal way to native-compile an Erlang module using HiPE is to
+%% include the atom <code>native</code> in the Erlang compiler options,
+%% as in:
 %%
-%%   *Note*: options are processed in the order they appear; an early
-%%   option will 'shadow' a later one. (E.g.,
-%%   property_lists:lookup([{foo,false}, foo]) => {foo, false}.)
+%% <pre>    1> c(my_module, [native]).</pre></p>
+%%
+%% <p>Options to the HiPE compiler are then passed as follows:
+%%
+%% <pre>    1> c(my_module, [native,{hipe,Options}]).</pre></p>
+%%
+%% <p>For on-line help in the Erlang shell, call <a
+%% href="#help-0"><code>hipe:help()</code></a>. Details on HiPE compiler
+%% options are given by <a
+%% href="#help_options-0"><code>hipe:help_options()</code></a>.</p>
+%%
+%% <h3>Using the direct interface - for advanced users only</h3>
+%%
+%% To compile a module or a specific function to native code and
+%% automatically load the code into memory, call <a
+%% href="#c-1"><code>hipe:c(Module)</code></a> or <a
+%% href="#c-2"><code>hipe:c(Module, Options)</code></a>. Note that all
+%% options are specific to the HiPE compiler. See the <a
+%% href="#index">function index</a> for other compiler functions.
+%%
+%% <h3>Main Options</h3>
+%%
+%% Options are processed in the order they appear in the list; an
+%% early option will shadow a later one.
+%% <dl>
+%%   <dt><code>o0, 'O0', o1, 'O1', o2, 'O2', o3, 'O3'</code></dt>
+%%     <dd>Set optimization level (default 0).</dd>
+%%
+%%   <dt><code>{'O', N}</code></dt>
+%%     <dd>Set optimization level to <code>N</code>.</dd>
+%%
+%%   <dt><code>load</code></dt>
+%%     <dd>Automatically load the code into memory after compiling.</dd>
+%%
+%%   <dt><code>time</code></dt>
+%%     <dd>Reports the compilation times for the different stages
+%%     of the compiler. Call <a
+%%     href="#help_option-1"><code>hipe:help_option(time)</code></a> for
+%%     details.</dd>
+%%
+%%   <dt><code>{timeout, Time}</code></dt>
+%%     <dd>Sets the time the compiler is allowed to use for the
+%%     compilation. <code>Time</code> is time in ms or the atom
+%%     <code>infinity</code> (the default).</dd>
+%%
+%%   <dt><code>verbose</code></dt>
+%%     <dd>Make the HiPE compiler output information about what it is
+%%     being done.</dd>
+%% </dl>
+%% 
+%% <h3>Advanced Options</h3>
+%%
+%% Note: You can also specify <code>{Option, false}</code> to turn a
+%% particular option off, or <code>{Option, true}</code> to force it on.
+%% Boolean-valued (<code>true</code>/<code>false</code>) options also
+%% have negative-form aliases, e.g. <code>no_load</code> = <code>{load,
+%% false}</code>.
+%%
+%% <p><dl>
+%%   <dt><code>debug</code></dt>
+%%     <dd>Outputs internal debugging information during
+%%     compilation.</dd>
+%%
+%%   <dt><code>icode_prop</code></dt>
+%%     <dd>One pass of Icode optimization.</dd>
+%%
+%%   <dt><code>icode_bwd_cprop</code></dt>
+%%     <dd>Backward copy propagation on Icode.</dd>
+%%
+%%   <dt><code>icode_ssa</code></dt>
+%%     <dd>Runs the compiler with Static Single Assignment (SSA) Form on
+%%     the Icode level.</dd>
+%%
+%%   <dt><code>pp_all</code></dt>
+%%     <dd>Equivalent to <code>[pp_beam, pp_icode, pp_rtl,
+%%     pp_native]</code>.</dd>
+%%
+%%   <dt><code>pp_asm</code></dt>
+%%     <dd>Prints the assembly listing with addresses and bytecode.
+%%     Currently available for x86 only.</dd>
+%%
+%%   <dt><code>pp_beam, {pp_beam, {file, File}}</code></dt>
+%%     <dd>Display the input Beam code to stdout or file.</dd>
+%%
+%%   <dt><code>pp_icode, {pp_icode, {file, File}},
+%%       {pp_icode, {only, Functions}}</code></dt>
+%%     <dd>Pretty-print Icode intermediate code to stdout or file.</dd>
+%%
+%%   <dt><code>pp_native, {pp_native, {file, File}},
+%%       {pp_native, {only, Functions}}</code></dt>
+%%     <dd>Pretty-print native code to stdout or file.</dd>
+%%
+%%   <dt><code>pp_opt_icode, {pp_opt_icode, {file, File}},
+%%       {pp_opt_icode, {only, Functions}}</code></dt>
+%%     <dd>Pretty-print optimized Icode to stdout or file.</dd>
+%%
+%%   <dt><code>pp_rtl, {pp_rtl, {file, File}},
+%%       {pp_rtl, {only, Functions}}</code></dt>
+%%     <dd>Pretty-print RTL intermediate code to stdout or file.</dd>
+%%
+%%   <dt><code>regalloc</code></dt>
+%%     <dd>Select register allocation algorithm. Used as
+%%     <code>{regalloc, Method}</code>.
+%%
+%%     <p><code>Method</code> is one of the following:
+%%     <ul>
+%%       <li><code>naive</code>: spills everything (for debugging and
+%%       testing).</li>
+%%       <li><code>linear_scan</code>: fast; not so good if few
+%%       registers available.</li>
+%%       <li><code>graph_color</code>: slow, but gives better
+%%       performance.</li>
+%%       <li><code>coalescing</code>: tries hard to use registers.</li>
+%%     </ul></p></dd>
+%%
+%%   <dt><code>remove_comments</code></dt>
+%%     <dd>Remove comments from intermediate code.</dd>
+%%
+%%   <dt><code>rtl_cse</code></dt>
+%%     <dd>Common subexpression elimination on RTL. Also <code>{rtl_cse,
+%%     CSE_type}</code>.
+%%
+%%     <p><code>CSE_type</code> is one of the following:
+%%     <ul>
+%%       <li><code>true</code>/<code>false</code>: normal CSE/no
+%%       CSE</li>
+%%       <li><code>local</code>: CSE per block</li>
+%%       <li><code>ebb</code>: CSE per extended basic block</li>
+%%       <li><code>global</code>: CSE by fixpoint iteration</li>
+%%     </ul></p></dd>
+%%
+%%   <dt><code>rtl_prop_1</code></dt>
+%%     <dd>First pass of RTL optimization.</dd>
+%%
+%%   <dt><code>rtl_prop_2</code></dt>
+%%     <dd>Second pass of RTL optimization.</dd>
+%%
+%%   <dt><code>sparc_estimate_block_times</code></dt>
+%%     <dd>Do not perform scheduling, but annotate with cycle
+%%     estimates</dd>
+%%
+%%   <dt><code>sparc_estimate_block_times</code></dt>
+%%     <dd>Do not perform scheduling, but annotate with cycle
+%%     estimates</dd>
+%%
+%%   <dt><code>sparc_post_schedule</code></dt>
+%%   <dd>Schedule after register allocation as well. There are two
+%%   reasons for this:
+%%   <ol>
+%%     <li>Spill code (rare).</li>
+%%     <li>Register allocation may reuse registers in nearby
+%%     instructions, which can destroy our careful schedule;
+%%     post-scheduling tries to repair the damage (if any; no difference
+%%     has been observed so far).</li>
+%%   </ol></dd>
+%%
+%%   <dt><code>sparc_profile</code></dt>
+%%     <dd>Inserts profiling counters into code. You get an annotated
+%%     CFG by <code>hipe_profile:annot(MFA)</code> (see also
+%%     <code>misc/hipe_profile.erl</code> for more info). Also
+%%     <code>{sparc_profile, Prof_type}</code>.
+%%
+%%     <p><code>Prof_type</code> is one of the following:
+%%     <ul>
+%%       <li><code>true</code>/<code>false</code>: normal
+%%       profiling/no profiling</li>
+%%       <li><code>block</code>: </li>
+%%       <li><code>arc</code>: </li>
+%%     </ul></p>
+%%   </dd>
+%%
+%%   <dt><code>sparc_schedule</code></dt>
+%%     <dd>Perform ILP scheduling on code (also annotates code with
+%%     cycle estimates). Also <code>{sparc_schedule, Sched_type}</code>.
+%%
+%%     <p><code>Sched_type</code> is one of are the following:
+%%     <ul>
+%%        <li><code>true</code>/<code>false</code>: normal
+%%        scheduling/no scheduling</li>
+%%         <li><code>ultra</code>:</li>
+%%     </ul></p>
+%%   </dd>
+%%
+%%   <dt><code>use_indexing</code></dt>
+%%     <dd>Use indexing for multiple-choice branch selection.</dd>
+%% </dl></p>
+%%
+%% <h3>Debugging Options</h3>
+%% (May require that some modules have been
+%% compiled with the <code>DEBUG</code> flag.)
+%% <dl>
+%%   <dt><code>rtl_show_translation</code></dt>
+%%     <dd>Prints each step in the translation from Icode to RTL</dd>
+%% </dl>
+%%
+%% @end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe).
@@ -95,29 +234,45 @@
 	 help_option/1,
 	 help_debug_options/0,
 	 version/0,
-	 has_hipe_code/1,
-	 expand_options/1]).
+	 has_hipe_code/1]).
 
 -ifndef(DEBUG).
 -define(DEBUG,true).
 -endif.
 -include("hipe.hrl").
+-include("../rtl/hipe_literals.hrl").
 
 -define(COMPILE_DEFAULTS, [o2]).
--define(DEFAULT_TIMEOUT, 900000).  % 15 minutes
+-define(DEFAULT_TIMEOUT, infinity).
 
-
-%% ---------------------------------------------------------------------
-%% User interface for loading code into memory. The code can be given as
-%% a native code binary or as the file name of a BEAM file which should
-%% contain a native-code chunk. If only the module name is given, the
-%% BEAM file is located automatically. Returns `{module, Mod}' or
-%% `{error, Reason}'.
+%% @spec load(Mod) -> {module, Mod} | {error, Reason}
+%%     Mod = mod()
+%%     Reason = term()
+%% 
+%% @doc Like load/2, but tries to locate a BEAM file automatically.
+%%
+%% @see load/2
 
 load(Mod) ->
     load(Mod, beam_file(Mod)).
 
-load(Mod, Bin) when binary(Bin) ->
+%% @spec load(Mod, Bin) -> {module, Mod} | {error, Reason}
+%%     Mod = mod()
+%%     Reason = term()
+%%     Bin = binary() | filename()
+%%     filename() = term()
+%%
+%% @type mod() = atom(). A module name.
+%% 
+%% @doc User interface for loading code into memory. The code can be
+%% given as a native code binary or as the file name of a BEAM file
+%% which should contain a native-code chunk. If only the module name is
+%% given (see <code>load/1</code>), the BEAM file is located
+%% automatically.
+%%
+%% @see load/1
+
+load(Mod, Bin) when is_binary(Bin) ->
     do_load(Mod, Bin, false);
 load(Mod, File) ->
    ChunkName =
@@ -132,23 +287,57 @@ load(Mod, File) ->
     end.
 
 
-%% ---------------------------------------------------------------------
-%% This is the user-friendly compiler interface, which by default loads
-%% the compiled code directly (use the `no_load' or `{load, false}' flag
-%% to turn this off). Returns `{ok, Name}' or `{error, Reason}'. The
-%% `file' function takes a file path and deduces the module name from
-%% that.
-
 -define(USER_DEFAULTS, [load]).
+
+
+%% @spec c(Name) -> {ok, Name} | {error, Reason}
+%%       Name = mod() | mfa()
+%%       Reason = term()
+%%
+%% @equiv c(Name, [])
 
 c(Name) ->
   c(Name, []).
 
+%% @spec c(Name, options()) -> {ok, Name} | {error, Reason}
+%%     Name = mod() | mfa()
+%%     options() = [option()]
+%%     option() = term()
+%%     Reason = term()
+%%
+%% @type mfa(M::mod(),F::fun(),A::arity()) = {M,F,A}.
+%%       A fully qualified function name.
+%%
+%% @type fun() = atom(). A function identifier.
+%%
+%% @type arity() = integer(). A function arity; always nonnegative.
+%% 
+%% @doc User-friendly native code compiler interface. Reads BEAM code
+%% from the corresponding "Module<code>.beam</code>" file in the system
+%% path, and compiles either a single function or the whole module to
+%% native code. By default, the compiled code is loaded directly. See
+%% above for documentation of options.
+%%
+%% @see c/1
+%% @see c/3
+%% @see f/2
+%% @see compile/2
+
 c(Name, Options) ->
   c(Name, beam_file(Name), Options).
 
+%% @spec c(Name, File, options()) -> {ok, Name} | {error, Reason}
+%%     Name = mod() | mfa()
+%%     File = filename() | binary()
+%%     Reason = term()
+%%
+%% @doc Like <code>c/2</code>, but reads BEAM code from the specified
+%% <code>File</code>.
+%%
+%% @see c/2
+%% @see f/2
+
 c(Name, File, Opts) ->
-  init(Opts),
   case compile(Name, File, user_compile_opts(Opts)) of
     {ok, _} ->
       {ok, Name};
@@ -156,8 +345,25 @@ c(Name, File, Opts) ->
       Other
   end.
 
+%% @spec f(File) -> {ok, Name} | {error, Reason}
+%%     File = filename() | binary()
+%%     Name = mod()
+%%     Reason = term()
+%%
+%% @equiv f(File, [])
+
 f(File) ->
   f(File, []).
+
+%% @spec f(File, options()) -> {ok, Name} | {error, Reason}
+%%     File = filename() | binary()
+%%     Name = mod()
+%%     Reason = term()
+%%
+%% @doc Like <code>c/3</code>, but takes the module name from the
+%% specified <code>File</code>. This always compiles the whole module.
+%%
+%% @see c/3
 
 f(File, Opts) ->
   case file(File, user_compile_opts(Opts)) of
@@ -171,39 +377,103 @@ user_compile_opts(Opts) ->
   Opts ++ ?USER_DEFAULTS.
 
 
-%% ---------------------------------------------------------------------
-%% This is the direct compiler interface, which just compiles the named
-%% function or module, returning `{ok, Binary}' or `{error, Reason}'. By
-%% default, it does not load the binary to memory (use the 'load' flag
-%% for this). `File' can be a file name *or* a binary containing the
-%% BEAM code for the module.
-%%
-%% The 'file' function takes the module name directly from the file or
-%% binary, regardless of the file name, and returns `{ok, Name, Binary}'
-%% or `{error, Reason}'
+%% @spec compile(Name) -> {ok, Binary} | {error, Reason}
+%%       Name = mod() | mfa()
+%%       Binary = binary()
+%%       Reason = term()
+%% 
+%% @equiv compile(Name, [])
 
 compile(Name) ->
   compile(Name, []).
 
+%% @spec compile(Name, options()) -> {ok, Binary} | {error, Reason}
+%%       Name = mod() | mfa()
+%%       Binary = binary()
+%%       Reason = term()
+%%
+%% @doc Direct compiler interface, for advanced use. This just compiles
+%% the named function or module, reading BEAM code from the
+%% corresponding "Module<code>.beam</code>" file in the system path.
+%% Returns <code>{ok, Binary}</code> if successful, or <code>{error,
+%% Reason}</code> otherwise. By default, it does <em>not</em> load the
+%% binary to memory (the <code>load</code> option can be used to
+%% activate automatic loading). <code>File</code> can be either a file
+%% name or a binary containing the BEAM code for the module.
+%%
+%% @see c/2
+%% @see compile/1
+%% @see compile/3
+%% @see file/2
+%% @see load/2
+
 compile(Name, Options) ->
   compile(Name, beam_file(Name), Options).
 
+beam_file({M,_F,_A}) ->
+  beam_file(M);
+beam_file(Module) when is_atom(Module) ->
+  case code:which(Module) of
+    non_existing ->
+      ?error_msg("Cannot find .beam file.",[]),
+      ?EXIT({cant_find_beam_file});
+    File ->
+      File
+  end.
+
+%% @spec compile(Name, File, options()) -> {ok, Binary} | {error, Reason}
+%%       Name = mod() | mfa()
+%%       File = filename() | binary()
+%%       Binary = binary()
+%%       Reason = term()
+%% 
+%% @doc Like <code>compile/2</code>, but reads BEAM code from the
+%% specified <code>File</code>.
+%%
+%% @see compile/2
+
 compile(Name, File, Opts0) ->
-  init(Opts0),
-  Opts = expand_options(Opts0 ++ ?COMPILE_DEFAULTS),
-  ?when_option(verbose, Opts, ?debug_msg("Options: ~p.\n",[Opts])),
-  check_options(Opts),
+  check_module(Name),
+  Opts = expand_basic_options(Opts0 ++ ?COMPILE_DEFAULTS),
+  ?when_option(verbose, Opts, ?debug_msg("Compiling: ~p\n",[Name])),
   ?option_start_time("Compile", Opts),
   Res = compile_any(Name, File, Opts),
   ?option_stop_time("Compile",Opts),
   Res.
 
+check_module(hipe_internal) ->
+  ?error_msg("Nope, can't do that\n",[]),
+  ?EXIT({cant_compile_hipe_internal});
+check_module(_) ->
+      ok.
+
+%% @spec file(File) -> {ok, Name, Binary} | {error, Reason}
+%%       File = filename() | binary()
+%%       Name = mod() | mfa()
+%%       Binary = binary()
+%%       Reason = term()
+%% 
+%% @equiv file(File, [])
+
 file(File) ->
   file(File, []).
 
+%% @spec file(File, options()) -> {ok, Name, Binary} | {error, Reason}
+%%       File = filename() | binary()
+%%       Name = mod() | mfa()
+%%       Binary = binary()
+%%       Reason = term()
+%% 
+%% @doc Like <code>compile/2</code>, but takes the module name from the
+%% specified <code>File</code>. Returns both the name and the final
+%% binary if successful.
+%%
+%% @see file/1
+%% @see compile/2
+
 file(File, Options) ->
   case beam_lib:info(File) of
-    L when list(L) ->
+    L when is_list(L) ->
       {value,{module,Mod}} = lists:keysearch(module,1,L),
       case compile(Mod, File, Options) of
 	{ok, Bin} ->
@@ -218,58 +488,43 @@ file(File, Options) ->
 
 %% The rest are internal functions:
 
-compile_any({M,F,A} = MFA, File, Options) ->
-  %% When compiling just one function then the emulated code
-  %% for the module must be loaded.
-
-  case M of
-    hipe_internal ->
-      ?error_msg("Nope can't do that\n",[]),
-      ?EXIT({cant_compile_hipe_internal});
-    _ ->
-      ok
-  end,
+compile_any({M,_F,_A} = MFA, File, Options) ->
+  %% When compiling just one function, then the emulated code for the
+  %% module must be loaded.
   code:ensure_loaded(M),
-
-  Client = self(),
-  CompFun = fun () ->
-		compile_mfa(MFA, File, Client, Options)
+  CompFun = fun (Code, File, Opts) ->
+		compile_mfa(MFA, Code, File, Opts)
 	    end,
-  run_compiler(CompFun, Options);
+  run_compiler(File, CompFun, Options);
 compile_any(Mod, File, Options) ->
- case Mod of
-    hipe_internal ->
-      ?error_msg("Nope can't do that\n",[]),
-      ?EXIT({cant_compile_hipe_internal});
-    _ ->
-      ok
-  end,
-  Client = self(),
-  CompFun = fun () ->
-		compile_module(Mod, File, Client, Options)
+  CompFun = fun (Code, File, Opts) ->
+		compile_module(Mod, Code, File, Opts)
 	    end,
-  run_compiler(CompFun, Options).
+  run_compiler(File, CompFun, Options).
 
-compile_mfa({M, F, A} = MFA, File, Client, Options) ->
-  init(Options),
-  %% DebugState = get(hipe_debug),
-  put(hipe_debug,property_lists:get_bool(debug, Options)),
-  ?option_time(Icode = (catch hipe_beam_to_icode:mfa(File, MFA, Options)),
+%% Note that compile_mfa/compile_module only collect the Icode. 
+%% Most of the real work is then done in the 'finalize' function.
+
+compile_mfa({M,_F,_A} = MFA, BeamCode, _File, Options) ->
+  ?option_time({ok,Icode} = 
+	       (catch {ok,hipe_beam_to_icode:mfa(BeamCode, MFA, Options)}),
 	       "BEAM-to-Icode", Options),
-  compile_finish(Icode, M, Client, false, Options).
+  compile_finish(Icode, M, false, Options).
 
-compile_module(Mod, File, Client, Options) ->
-  init(Options),
-  %% DebugState = get(hipe_debug),
-  put(hipe_debug,property_lists:get_bool(debug, Options)),
-  ?option_time(Icode = (catch hipe_beam_to_icode:module(File, Options)),
+compile_module(Mod, BeamCode, File, Options) ->
+  ?option_time({ok, Icode} =
+	       (catch {ok, hipe_beam_to_icode:module(BeamCode, Options)}),
 	       "BEAM-to-Icode", Options),
+  BeamBin = get_beam_code(File),
+  compile_finish(Icode, Mod, BeamBin, Options).
 
-  Bin = get_beam_code(File),
+compile_finish({'EXIT',Error}, _Mod, _WholeModule, _Options) ->
+  {error, Error};
+compile_finish(Icode, Mod, WholeModule, Options) ->
+  Res = finalize(Icode, Mod, WholeModule, Options),
+  post(Res, Options).
 
-  compile_finish(Icode, Mod, Client, Bin, Options).
-
-get_beam_code(Bin) when binary(Bin) -> Bin;
+get_beam_code(Bin) when is_binary(Bin) -> Bin;
 get_beam_code(FileName)->
   case erl_prim_loader:get_file(FileName) of
     {ok,Bin,_} ->
@@ -278,23 +533,34 @@ get_beam_code(FileName)->
       ?EXIT(no_beam_file)
   end.
 
-compile_finish({'EXIT', Error}, Mod, Client, WholeModule, Options) ->
-  compiler_return({error, Error}, Client);
-compile_finish(Icode, Mod, Client, WholeModule, Options) ->
-  Res = finalize(Icode, Mod, WholeModule, Options),
-  FinalRes = post(Res, Options),
-  compiler_return(FinalRes, Client).
+%% Note that this function receives the "basic" options.
 
-run_compiler(CompFun, Options) ->
-  process_flag(trap_exit, false),  %% so that the main process is not killed
-  CompProc = spawn_link(CompFun),  %% in case the linked CompProc gets killed
-  Timeout = case property_lists:get_value(timeout, Options) of
-	      N when integer(N), N >= 0 -> N;
+run_compiler(File, CompFun, Options) ->
+  %% Spawn and link in case the linked CompProc gets killed. Make sure
+  %% the main process catches the signal if this happens.
+  process_flag(trap_exit, false),
+  Parent = self(),
+  CompProc = spawn_link(
+	       fun () ->
+		   %% Compiler process
+		   set_architecture(Options),
+		   pre_init(Options),
+		   {Code,CompOpts} = hipe_beam_to_icode:disasm(File),
+		   Opts = expand_options(Options ++ CompOpts),
+		   check_options(Opts),
+		   ?when_option(verbose, Options,
+				?debug_msg("Options: ~p.\n",[Opts])),
+		   init(Opts),
+		   Result = CompFun(Code, File, Opts),
+		   compiler_return(Result, Parent)
+	       end),
+  Timeout = case proplists:get_value(timeout, Options) of
+	      N when is_integer(N), N >= 0 -> N;
 	      undefined -> ?DEFAULT_TIMEOUT;
 	      infinity -> infinity;
 	      Other ->
 		?warning_msg("Bad timeout value: ~P\n"
-			     "Using default timeout limit.\n",
+			     "Using default timeout limit.\n",	
 			     [Other, 5]),
 		?DEFAULT_TIMEOUT
 	    end,
@@ -323,14 +589,13 @@ finalize(List, Mod, WholeModule, Opts) ->
   ?when_option(verbose, Opts,
 	       ?debug_msg("Compiled ~p in ~.2f s\n",
 			  [Mod,(T2Compile-T1Compile)/1000])),
-  case property_lists:get_bool(to_rtl, Opts) of
+  case proplists:get_bool(to_rtl, Opts) of
     true ->
       {ok, CompiledCode};
     false ->
       Closures = 
 	[MFA || {MFA, Icode} <- List,
-		lists:member(closure,
-			     hipe_icode:icode_info(Icode))],
+		hipe_icode:icode_is_closure(Icode)],
       {T1,_} = erlang:statistics(runtime),
       ?when_option(verbose, Opts, ?debug_msg("Assembling ~w",[Mod])),
       case catch assemble(CompiledCode, Closures, Opts) of
@@ -372,8 +637,8 @@ finalize_fun({MFA, Icode}, Opts) ->
   end.
 
 maybe_load(Mod, Bin, WholeModule, Opts) ->
-  case property_lists:get_bool(load, Opts) of
-	false ->
+  case proplists:get_bool(load, Opts) of
+    false ->
       ok;
     true ->
       ?when_option(verbose, Opts, ?debug_msg("Loading/linking\n", [])),
@@ -394,34 +659,59 @@ do_load(Mod, Bin, WholeModule) ->
     false ->
       case get(hipe_host_arch) of
 	ultrasparc ->
-	  hipe_sparc_loader:load(Mod, Bin);
+	  hipe_unified_loader:load(Mod, Bin);
 	x86 ->
-	  hipe_x86_loader:load(Mod, Bin);
+	  hipe_unified_loader:load(Mod, Bin);
 	Arch ->
 	  ?EXIT({executing_on_an_unsupported_architecture,Arch})
       end;
     _ ->
-      case code:is_sticky(Mod) of
-	true ->
-	  %% Don't load sticky mods.
-	  %?error_msg("Can't load module that resides in sticky dir\n",[]),
-	  %?EXIT({error,sticky_directory,Mod});
-
-	  %% Just don't purge stick mods.
-	  ok;
-	_ ->
-	  code:purge(Mod),
-	  code:delete(Mod)
-      end,
-	  
+      %% workaround for what may be an x86 bug
       case get(hipe_host_arch) of
-	ultrasparc ->
-	  hipe_sparc_loader:load_module(Mod, Bin, WholeModule);
 	x86 ->
-	  hipe_x86_loader:load_module(Mod, Bin, WholeModule);
-	Arch ->
-	  ?EXIT({executing_on_an_unsupported_architecture,Arch})
-
+	  %% x86 must run the old code for now
+	  case code:is_sticky(Mod) of
+	    true ->
+	      %% Don't load sticky mods.
+	      %%?error_msg("Can't load module that resides in sticky dir\n",[]),
+	      %%?EXIT({error,sticky_directory,Mod});
+	      %% Just don't purge stick mods.
+	      ok;
+	    _ ->
+	      code:purge(Mod),
+	      code:delete(Mod)
+	  end,
+	  case get(hipe_host_arch) of
+	    ultrasparc ->
+	      hipe_unified_loader:load_module(Mod, Bin, WholeModule);
+	    x86 ->
+	      hipe_unified_loader:load_module(Mod, Bin, WholeModule);
+	    Arch ->
+	      ?EXIT({executing_on_an_unsupported_architecture,Arch})
+	  end;
+	ultrasparc ->
+	  %% the new code, which alas trips a bug on x86
+	  case code:is_sticky(Mod) of
+	    true ->
+	      %% Don't purge or register sticky mods.
+	      case get(hipe_host_arch) of
+		ultrasparc ->
+		  hipe_unified_loader:load_module(Mod, Bin, WholeModule);
+		x86 ->
+		  hipe_unified_loader:load_module(Mod, Bin, WholeModule)
+	      end;
+	    _ -> %% Not a sticky module.
+	      Chunkname = case get(hipe_host_arch) of
+			    ultrasparc ->"HS8P";
+			    x86 -> "HX86"
+			  end,
+	      {ok, _, Chunks0} = beam_lib:all_chunks(WholeModule),
+	      Chunks = [{Chunkname,Bin}| lists:keydelete(Chunkname,1,Chunks0)],
+	      {ok, BeamPlusNative} = beam_lib:build_module(Chunks),
+	      Res = code:load_binary(Mod,code:which(Mod),
+				     BeamPlusNative),
+	      Res
+	  end
       end
   end.
       
@@ -437,9 +727,9 @@ assemble(CompiledCode, Closures, Options) ->
       ?EXIT({executing_on_an_unsupported_architecture,Arch})
   end.
 
-%%% use option no_assemble_x86 to disable calling hipe_x86_assemble
+%% use option no_assemble_x86 to disable calling hipe_x86_assemble
 x86_assemble(Code, Closures, Options) ->
-  case property_lists:get_bool(no_assemble_x86, Options) of
+  case proplists:get_bool(no_assemble_x86, Options) of
     true ->
       Code;
     false ->
@@ -447,32 +737,52 @@ x86_assemble(Code, Closures, Options) ->
   end.
 
 %% ____________________________________________________________________
-%% 
-%% Prepare the compiler process for compiling MFA with Options.
-%% Set up options and variables which are accessed globally.
-%%
-init(Options) ->
-  %% `hipe_internal' must be loaded to compile gen_server
-  code:ensure_loaded(hipe_internal),
-  %% initialise host and target architecture target defaults to
-  %% host, but can be overridden by passing in a {target,Target}
-  %% option
+
+%% Initialise host and target architectures. Target defaults to host,
+%% but can be overridden by passing an option {target, Target}.
+
+set_architecture(Options) ->
   put(hipe_host_arch, erlang:system_info(hipe_architecture)),
   put(hipe_target_arch,
-      property_lists:get_value(target,
-			       Options,
-			       get(hipe_host_arch))),
-  %% Initialise some counters used for measurements and
-  %% benchmarking.  If the option measure_regalloc is given the
-  %% compilation will return a keylist with the counter values.
+      proplists:get_value(target, Options, get(hipe_host_arch))),
+  ok.
+
+%% This sets up some globally accessed stuff that are needed by the
+%% compiler process before it even gets the full list of options.
+%% Therefore, this expands the current set of options for local use.
+
+pre_init(Opts) ->
+  Options = expand_options(Opts),
+  %% Initialise some counters used for measurements and benchmarking. If
+  %% the option 'measure_regalloc' is given the compilation will return
+  %% a keylist with the counter values.
+
+  put(hipe_time,
+      case proplists:get_value(time, Options,false) of
+	true -> [hipe,hipe_main];
+	OptTime -> OptTime
+      end),
   [?set_hipe_timer_val(Timer,0) || Timer <- hipe_timers()],
   [case Counter of
      {CounterName, InitVal} -> put(CounterName, InitVal);
      CounterName  -> put(CounterName,0)
    end
-   || Counter <- property_lists:get_value(counters,Options++[{counters,[]}])],
+   || Counter <- proplists:get_value(counters, Options, [])],
+  
+  put(hipe_debug,proplists:get_bool(debug, Options)),  
+  put(hipe_inline_fp, proplists:get_bool(inline_fp, Options)),
+  put(hipe_inline_bs, proplists:get_value(inline_bs, Options)),
+  ok.
+
+%% Prepare the compiler process by setting up variables which are
+%% accessed globally. Options have been fully expanded at ths point.
+
+init(_Options) ->
+  %% `hipe_internal' must be loaded to compile gen_server
+  code:ensure_loaded(hipe_internal),
 
   put(regalloctime,0),
+  put(callersavetime,0),
   put(totalspill,{0,0}),
   put(spilledtemps,0),
   put(pre_ra_instrs,0),
@@ -487,25 +797,25 @@ init(Options) ->
 
 post(Res, Options) ->
   TimerVals = 
-    case property_lists:get_value(timers,Options) of
-      Timers when list(Timers) ->
+    case proplists:get_value(timers,Options) of
+      Timers when is_list(Timers) ->
 	[{Timer, ?get_hipe_timer_val(Timer)} || Timer <- Timers];
       _ -> []
     end,
   CounterVals = 
-    case property_lists:get_value(counters,Options) of
-      Counters when list(Counters) ->
+    case proplists:get_value(counters,Options) of
+      Counters when is_list(Counters) ->
 	[case Counter of
-	   {CounterName, InitVal} -> {CounterName, get(CounterName)};
+	   {CounterName, _InitVal} -> {CounterName, get(CounterName)};
 	   CounterName -> {CounterName, get(CounterName)}
 	 end
 	 || Counter <- Counters];
       _ -> []
     end,
   Measures = 
-    case property_lists:get_bool(measure_regalloc, Options) of
+    case proplists:get_bool(measure_regalloc, Options) of
       true ->
-	get();
+	get();  % return whole process dictionary list (simplest way...)
       false -> []
     end,
 
@@ -518,19 +828,11 @@ post(Res, Options) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-beam_file({M,F,A}) ->
-  beam_file(M);
-beam_file(Module) when atom(Module) ->
-  case code:which(Module) of
-    non_existing ->
-      Module;
-    File ->
-      File
-  end;
-beam_file(Name) ->
-  Name.
-
-
+%% @spec version() -> {Major, Minor, Increment}
+%% Major = integer()
+%% Minor = integer()
+%% Increment  = integer() 
+%% @doc Returns the current HiPE version.
 version() ->
   ?version().
 
@@ -539,22 +841,44 @@ version() ->
 %% D O C U M E N T A T I O N   -   H E L P 
 %%
 
+%% @spec () -> ok
+%% @doc Prints on-line documentation to the standard output.
 help() ->
   {V1,V2,V3} = ?version(),
   io:format("The HiPE Compiler (Version ~w.~w.~w)\n" ++
-	    " Functions:\n" ++
+	    " The normal way to native-compile Erlang code " ++
+	    "using HiPE is to\n" ++
+	    " include `native' in the Erlang compiler " ++
+	    "options, as in:\n" ++
+	    "     1> c(my_module, [native]).\n" ++
+	    " Options to the HiPE compiler must then be passed " ++
+	    "as follows:\n" ++
+	    "     1> c(my_module, [native,{hipe,Options}]).\n" ++
+	    " Use `help_options()' for details.\n" ++
+	    " Utility functions:\n" ++
+	    "   help()\n" ++
+	    "     Prints this message.\n" ++
+	    "   help_options()\n" ++
+	    "     Prints a description of options recognized by the\n" ++
+	    "     HiPE compiler.\n" ++
+	    "   help_option(Option)\n" ++
+	    "     Prints a description of that option.\n" ++
+	    "   help_debug_options()\n" ++
+	    "     Prints a description of debug options.\n" ++
+	    "   version() ->\n" ++
+	    "     Returns `{Major,Minor,Revision}'.\n" ++
+	    " The following functions are for advanced users only!\n" ++
+	    " Note that all options are specific to the HiPE compiler.\n" ++
 	    "   c(Name,Options)\n" ++ 
-	    "     Compiles the module or function Name and loads\n" ++
-	    "     it to memory. Name is an atom or a tuple {M,F,A}.\n" ++
-	    "     Options is a list of option terms;\n" ++
-	    "     use `help_options()' for details.\n" ++
+	    "     Compiles the module or function Name and loads it\n" ++
+	    "     to memory. Name is an atom or a tuple {M,F,A}.\n" ++
 	    "   c(Name)\n" ++
 	    "     As above, but using only default options.\n" ++
 	    "   c(Name,File,Options)\n" ++
 	    "     As above, but reading BEAM code from File.\n" ++
 	    "   f(File,Options)\n" ++ 
-	    "     As c(Name,File,Options), but taking the module\n" ++
-	    "     name from File.\n" ++
+	    "     As c(Name,File,Options), but taking the module name\n" ++
+	    "     from File.\n" ++
 	    "   f(File)\n" ++ 
 	    "     As above, but using only default options.\n" ++
 	    "   compile(Name,Options)\n" ++
@@ -574,35 +898,25 @@ help() ->
 	    "   load(Module,Source)\n" ++
 	    "     As above, but taking the code from Source.\n" ++
 	    "     Source is either the name of a BEAM file\n" ++
-	    "     or a binary containing native code.\n" ++
-	    "   help()\n" ++
-	    "     Prints this message.\n" ++
-	    "   help_options()\n" ++
-	    "     Prints a description of options used by the\n" ++
-	    "     above functions.\n" ++
-	    "   help_option(Option)\n" ++
-	    "     Prints a description of that option.\n" ++
-	    "   help_debug_options()\n" ++
-	    "     Prints a description of debug options used by the\n" ++
-	    "     above functions.\n" ++
-	    "   version() ->\n" ++
-	    "     Returns `{Major,Minor,Revision}'.\n",
+	    "     or a binary containing native code.\n",
 	    [V1,V2,V3]),
   ok.
 
 %% TODO: it should be possible to specify the target somehow when asking
 %% for available options. Right now, you only see host machine options.
 
+%% @spec () -> ok
+%% @doc Prints documentation about options to the standard output.
 help_options() ->
-  init([]), %% needed because of target-specific option expansion
+  set_architecture([]), %% needed for target-specific option expansion
   O1 = expand_options([o1]),
   O2 = expand_options([o2]),
   O3 = expand_options([o3]),
   io:format("HiPE Compiler Options\n" ++
 	    " Boolean-valued options generally have corresponding " ++
 	    "aliases `no_...',\n" ++
-	    " and can also be specified as `{Name, true}' " ++
-	    "or `{Name, false}.\n\n" ++
+	    " and can also be specified as `{Option, true}' " ++
+	    "or `{Option, false}.\n\n" ++
 	    " General boolean options:\n" ++
 	    "   ~p.\n\n" ++
 	    " Non-boolean options:\n" ++
@@ -612,13 +926,15 @@ help_options() ->
 	    "use `hipe:help_option(Name)' for details.\n\n" ++
 	    " Aliases:\n" ++
 	    "   pp_all = ~p,\n" ++
+	    "   pp_sparc = pp_native,\n" ++
+	    "   pp_x86 = pp_native,\n" ++
 	    "   o0 = {'O',0},\n" ++
 	    "   o1 = {'O',1} = ~p,\n" ++
 	    "   o2 = {'O',2} = ~p ++ o1,\n" ++
 	    "   o3 = {'O',3} = ~p ++ o2.\n",
 	    [ordsets:from_list([verbose, debug, time, load, pp_beam,
-				pp_icode, pp_rtl, pp_native, pp_x86,
-				pp_sparc, pp_asm, timeout]),
+				pp_icode, pp_rtl, pp_native, pp_asm,
+				timeout]),
 	     expand_options([pp_all]),
 	     O1 -- [{'O',1}],
 	     (O2 -- O1) -- [{'O',2}],
@@ -630,54 +946,60 @@ help_options() ->
 
 option_text('O') ->
   "Specify optimization level. Used as {'O', LEVEL}.\n" ++
-    "    At the moment levels 0 - 3 are implemented.\n" ++
-    "    Aliases: o1, o2, o3, 'O1', 'O2', O3'.";
+  "    At the moment levels 0 - 3 are implemented.\n" ++
+  "    Aliases: o1, o2, o3, 'O1', 'O2', O3'.";
 option_text(debug) ->
   "Outputs internal debugging information during compilation.";
 option_text(fill_delayslot) ->
   "Try to optimize Sparc delay slots.";
 option_text(icode_prop) ->
   "One pass of Icode optimization.";
-option_text(icode_rename) ->
-  "Rename variables (optimizes stack->reg mapping).";
+option_text(icode_ssa) ->
+  "Runs the compiler with Static Single Assignment (SSA) Form\n"++
+  "on the Icode level.";
 option_text(load) ->
-  "Automatically load the produced code into memory.\n" ++
-    "    By default, this flag is `true'.";
+  "Automatically load the produced code into memory.";
 option_text(pp_asm) ->
   "Displays assembly listing with addresses and bytecode.\n" ++
-    "    Currently available for x86 only.";
+  "Currently available for x86 only.";
 option_text(pp_beam) ->
   "Display the input Beam code.";
 option_text(pp_icode) ->
   "Display the intermediate HiPE-ICode.";
-option_text(pp_native) ->
-  "Display the generated native code.";
 option_text(pp_rtl) ->
   "Display the intermediate HiPE-RTL code.";
+option_text(pp_native) ->
+  "Display the generated native code.";
 option_text(regalloc) ->
   "Select register allocation algorithm. Used as {regalloc, METHOD}.\n" ++
-    "    Currently available methods:\n" ++
-    "        naive - spills everything (for debugging and testing).\n" ++
-    "        linear_scan - fast; not so good if few registers available.\n" ++
-    "        graph_color - slow, but gives better performance.\n" ++
-    "        coalescing - tries hard to use registers.";
+  "    Currently available methods:\n" ++
+  "        naive - spills everything (for debugging and testing).\n" ++
+  "        linear_scan - fast; not so good if few registers available.\n" ++
+  "        graph_color - slow, but gives better performance.\n" ++
+  "        coalescing - tries hard to use registers.";
 option_text(remove_comments) ->
   "Strip comments from intermediate code.";
+option_text(rtl_cse) ->
+  "Common Subexpression Elimination on RTL.";
 option_text(rtl_prop_1) ->
   "Perform RTL-level optimization early.";
 option_text(rtl_prop_2) ->
   "Perform RTL-level optimization late.";
 option_text(sparc_peephole) ->
   "Perform Sparc peephole optimization.";
-option_text(trim_frame) ->
-  "Minimize stack frames on Sparc.";
+option_text(sparc_prop) ->
+  "Perform Sparc-level optimization.";
 option_text(time) ->
-  "Reports the compilation times for the different\n" ++
-    "    stages of the compiler.";
+  "Reports the compilation times for the different stages\n" ++
+  "of the compiler.\n" ++
+  "    {time, Module}       reports timings for the module Module.\n" ++
+  "    {time, [M1, M2, M3]} reports timings for the specified modules.\n" ++
+  "    {time, all}          reports timings all modules.\n" ++
+  "    time                 reports timings for the main module.\n";
 option_text(timeout) ->
   "Specify compilation time limit in ms. Used as {timeout, LIMIT}.\n" ++
-    "    The limit must be a nonnegative integer or the atom 'infinity'.\n" ++
-    "    The current default limit is 15 minutes (900000 ms).";
+  "    The limit must be a non-negative integer or the atom 'infinity'.\n" ++
+  "    The current default limit is 15 minutes (900000 ms).";
 option_text(use_indexing) ->
   "Use indexing for multiple-choice branch selection.";
 option_text(verbose) ->
@@ -685,11 +1007,14 @@ option_text(verbose) ->
 option_text(_) ->
   [].
 
+%% @spec (option()) -> ok
+%% @doc Prints documentation about a specific option to the standard
+%% output.
 help_option(Opt) ->
-  init([]), %% needed because of target-specific option expansion
+  set_architecture([]), %% needed for target-specific option expansion
   case expand_options([Opt]) of
     [Opt] ->
-      Name = if tuple(Opt), size(Opt) >= 1 -> element(1, Opt);
+      Name = if is_tuple(Opt), size(Opt) >= 1 -> element(1, Opt);
 		true -> Opt
 	     end,
       case option_text(Name) of
@@ -708,6 +1033,9 @@ help_option(Opt) ->
       io:fwrite("This is an alias for: ~p.\n", [Opts])
   end.
 
+%% @spec () -> ok
+%% @doc Prints documentation about debugging options to the standard
+%% output.
 help_debug_options() ->
   io:format("HiPE compiler debug options:\n" ++
 	    "Might require that some modules have been compiled " ++ 
@@ -717,8 +1045,10 @@ help_debug_options() ->
 	    []),
   ok.
 
-%% 
-has_hipe_code(Atom) when atom(Atom) ->
+%% @spec (Name) -> bool() 
+%% Name = mod() | string()
+%% @doc Returns true if the module or file contains native HiPE code.
+has_hipe_code(Atom) when is_atom(Atom) ->
   has_hipe_code(atom_to_list(Atom));
 has_hipe_code(File) ->
   case catch 
@@ -734,8 +1064,7 @@ has_hipe_code(File) ->
 
 %%
 hipe_timers() ->
-  [time_icode_rename,
-   time_ra].
+  [time_ra].
 
 %% ____________________________________________________________________
 %% 
@@ -761,14 +1090,13 @@ hipe_timers() ->
 %%     sparc_schedule
 %%     timeregalloc:
 %%     timers
-%%     trim_frame
-%%     old_straighten:
 %%     safe
 %%     use_indexing
 %%     rtl_add_gc
 %%     rtl_cse
 
-%% Definitions:
+%% Valid option keys. (Don't list aliases or negations - the check is
+%% done after the options have been expanded to normal form.)
 
 opt_keys() ->
     ['O',
@@ -785,21 +1113,19 @@ opt_keys() ->
      hotness,
      icode_bwd_cprop,
      icode_prop,
-     icode_rename,
+     icode_ssa,
      icode_type,
+     inline_bs,
+     inline_fp,
      iproc_debug,
      ls_order,
      load,
      measure_regalloc,
-     old_straighten,
-     pp_all,
+     pp_asm,
      pp_beam,
      pp_icode,
-     pp_rtl,
      pp_native,
-     pp_x86,
-     pp_sparc,
-     pp_asm,
+     pp_rtl,
      regalloc,
      remove_comments,
      rtl_add_gc,
@@ -812,6 +1138,7 @@ opt_keys() ->
      sparc_peephole,
      sparc_post_schedule,
      sparc_profile,
+     sparc_prop,
      sparc_schedule,
      sparc_opt_cfg,
      sparc_rename,
@@ -821,57 +1148,61 @@ opt_keys() ->
      timeregalloc,
      timers,
      to_rtl,
-     trim_frame,
      use_indexing,
      use_inline_atom_search,
      use_clusters,
      use_jumptable,
      verbose].
 
+%% Definitions: 
 
 o1_opts() ->
+  Common = [rtl_prop_2, inline_fp, inline_bs],
   case get(hipe_target_arch) of
     ultrasparc ->
-      [rtl_prop_2, sparc_peephole, fill_delayslot];
+      [sparc_peephole, fill_delayslot | Common];
     x86 ->
-      [rtl_prop_2];
+      Common;
     Arch ->
       ?EXIT({executing_on_an_unsupported_architecture,Arch})
   end.
 
 o2_opts() ->
-  [use_indexing, icode_prop, remove_comments, trim_frame | o1_opts()].
-
-o3_opts() ->
+  Common = [icode_ssa, use_indexing, icode_prop, remove_comments | o1_opts()],
   case get(hipe_target_arch) of
     ultrasparc ->
-      [icode_rename,{regalloc,graph_color}| o2_opts()];
+      [sparc_prop | Common];
     x86 ->
-      [icode_rename,{regalloc,coalescing} | o2_opts()];
+      Common;
+    Arch -> 
+      ?EXIT({executing_on_an_unsupported_architecture,Arch})
+  end.
+
+o3_opts() ->
+  Common = o2_opts(),
+  case get(hipe_target_arch) of
+    ultrasparc ->
+      [{regalloc,graph_color}| Common];
+    x86 ->
+      [{regalloc,coalescing} | Common];
     Arch ->
       ?EXIT({executing_on_an_unsupported_architecture,Arch})
   end.
 
-opt_aliases() ->
-  [{'O0', o0},
-   {'O1', o1},
-   {'O2', o2},
-   {'O3', o3},
-   {pp_sparc, pp_native},
-   {pp_x86, pp_native}].
+%% Note that in general, the normal form for options should be positive.
+%% This is a good programming convention, so that tests in the code say
+%% "if 'x' ..." instead of "if not 'no_x' ...".
 
 opt_negations() ->
-  [{assemble_x86, no_assemble_x86},
+  [{assemble_x86, no_assemble_x86},    % normal form is negative!
    {no_debug, debug},
    {no_fill_delayslot, fill_delayslot},
    {no_finalise_x86, finalise_x86},
    {no_frame_x86, frame_x86},
    {no_icode_bwd_cprop, icode_bwd_cprop},
    {no_icode_prop, icode_prop},
-   {no_icode_rename, icode_rename},
+   {no_icode_ssa, icode_ssa},
    {no_load, load},
-   {no_old_straighten, old_straighten},
-   {no_pp_all, pp_all},
    {no_pp_beam, pp_beam},
    {no_pp_icode, pp_icode},
    {no_pp_rtl, pp_rtl},
@@ -886,12 +1217,27 @@ opt_negations() ->
    {no_sparc_peephole, sparc_peephole},
    {no_sparc_post_schedule, sparc_post_schedule},
    {no_sparc_profile, sparc_profile},
+   {no_sparc_prop, sparc_prop},
    {no_sparc_schedule, sparc_schedule},
    {no_time, time},
-   {no_trim_frame, trim_frame},
    {no_use_clusters, use_clusters},
    {no_use_inline_atom_search, use_inline_atom_search},
    {no_use_indexing, use_indexing}].
+
+%% Don't use negative forms in right-hand sides of aliases and
+%% expansions! We only expand negations once, before the other
+%% expansions are done.
+
+opt_aliases() ->
+  [{'O0', o0},
+   {'O1', o1},
+   {'O2', o2},
+   {'O3', o3},
+   {pp_sparc, pp_native},
+   {pp_x86, pp_native}].
+
+opt_basic_expansions() ->
+  [{pp_all, [pp_beam, pp_icode, pp_rtl, pp_native]}].
 
 opt_pre_expansions() ->
   [{o0, [{'O', 0}]},
@@ -903,19 +1249,32 @@ opt_expansions() ->
   [{{'O', 1}, [{'O', 1} | o1_opts()]},
    {{'O', 2}, [{'O', 2} | o2_opts()]},
    {{'O', 3}, [{'O', 3} | o3_opts()]},
-   {safe, [{regalloc,graph_color},old_straighten, no_use_indexing,
-	   rtl_add_gc, no_trim_frame]},
-   {pp_all, [pp_beam, pp_icode, pp_rtl, pp_native]}].
+   {safe, [{regalloc,graph_color}, no_use_indexing, rtl_add_gc]}
+   ].
+
+%% This expands "basic" options, which may be tested early and cannot be
+%% in conflict with options found in the source code.
+
+expand_basic_options(Opts) ->
+  proplists:normalize(Opts, [{negations, opt_negations()},
+			     {aliases, opt_aliases()},
+			     {expand, opt_basic_expansions()}]).
+
+%% Note that set_architecture/1 must be called first, and that the given
+%% list should contain the total set of options, since things like 'o2'
+%% are expanded here. Basic expansions are processed here also, since
+%% this function is called from the help-functions.
 
 expand_options(Opts) ->
-  property_lists:normalize(Opts, [{aliases, opt_aliases()},
-				  {expand, opt_pre_expansions()},
-				  {expand, opt_expansions()},
-				  {negations, opt_negations()}]).
+  proplists:normalize(Opts, [{negations, opt_negations()},
+			     {aliases, opt_aliases()},
+			     {expand, opt_basic_expansions()},
+			     {expand, opt_pre_expansions()},
+			     {expand, opt_expansions()}]).
 
 check_options(Opts) ->
   Keys = ordsets:from_list(opt_keys()),
-  Used = ordsets:from_list(property_lists:get_keys(Opts)),
+  Used = ordsets:from_list(proplists:get_keys(Opts)),
   case ordsets:subtract(Used, Keys) of
     [] ->
       ok;

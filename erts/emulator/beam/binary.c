@@ -66,8 +66,8 @@ new_binary(Process *p, byte *buf, int len)
     pb = (ProcBin *) HAlloc(p, PROC_BIN_SIZE);
     pb->thing_word = HEADER_PROC_BIN;
     pb->size = len;
-    pb->next = p->off_heap.mso;
-    p->off_heap.mso = pb;
+    pb->next = MSO(p).mso;
+    MSO(p).mso = pb;
     pb->val = bptr;
     pb->bytes = bptr->orig_bytes;
 
@@ -75,7 +75,7 @@ new_binary(Process *p, byte *buf, int len)
      * Miscellanous updates. Return the tagged binary.
      */
     tot_bin_allocated += len;
-    p->off_heap.overhead += pb->size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
+    MSO(p).overhead += pb->size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
     return make_binary(pb);
 }
 
@@ -113,8 +113,8 @@ Eterm new_binary_arith(Process *p, byte *buf, int len)
     pb = (ProcBin *) ArithAlloc(p, PROC_BIN_SIZE);
     pb->thing_word = HEADER_PROC_BIN;
     pb->size = len;
-    pb->next = p->off_heap.mso;
-    p->off_heap.mso = pb;
+    pb->next = MSO(p).mso;
+    MSO(p).mso = pb;
     pb->val = bptr;
     pb->bytes = bptr->orig_bytes;
 
@@ -122,10 +122,9 @@ Eterm new_binary_arith(Process *p, byte *buf, int len)
      * Miscellanous updates. Return the tagged binary.
      */
     tot_bin_allocated += len;
-    p->off_heap.overhead += pb->size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
+    MSO(p).overhead += pb->size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
     return make_binary(pb);
 }
-
 
 Eterm
 erts_realloc_binary(Eterm bin, size_t size)
@@ -236,14 +235,6 @@ BIF_ADECL_1
     }
     BIF_RET(bin);
 }
-
-
-BIF_RETTYPE concat_binary_1(BIF_ALIST_1)
-BIF_ADECL_1
-{
-    return list_to_binary_1(BIF_ALIST_1);  /* Not meaningful any longer */
-}
-
 
 BIF_RETTYPE split_binary_2(BIF_ALIST_2)
 BIF_ADECL_2

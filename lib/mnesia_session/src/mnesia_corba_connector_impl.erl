@@ -39,20 +39,19 @@ terminate(Reason, State) ->
     ok.
 
 connect(State) ->
-    Res = supervisor:start_child(?SUPERVISOR, []),
+    Res = (catch mnesia_corba_session:oe_create_link(corba_session, [{pseudo,true}])),
     ?DBG("connect() -> ~p~n", [Res], State#state.debug),
     case Res of
-	{ok, Pid} ->
-	    receive
-		{mnesia_corba_session_key, Pid, Key} ->
-		    {reply, Key, State}
-	    after 0 ->
-		    Reason = {corba_session_key_lost, Pid},
-		    ?VERBOSE("<ERROR> ~p~n", [Reason], State#state.debug),
-		    {reply, {error, Reason}, State}
-	    end;
-	{error, Reason} ->
-	    {reply, {error, Reason}, State}
+	{'EXCEPTION', Reason} ->
+	    Error = {corba_session_start_exception, Reason},
+	    ?VERBOSE("~p~n", [Error], State#state.debug),
+	    {reply, {error, Error}, State};
+	{'EXIT', Reason} ->
+	    Error = {corba_session_start_exit, Reason},
+	    ?VERBOSE("~p~n", [Error], State#state.debug),
+	    {reply, {error, Error}, State};
+	SessionObjectKey ->
+	    {reply, SessionObjectKey, State}
     end.
 
 disconnect(State, SessionObjectkey) ->

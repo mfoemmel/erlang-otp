@@ -10,7 +10,9 @@
 	 is_precoloured/1,
 	 all_precoloured/0,
 	 eax/0,
-	 edx/0,
+	 ecx/0,
+	 temp0/0,
+	 temp1/0,
 	 esp/0,
 	 proc_pointer/0,
 	 heap_pointer/0,
@@ -21,6 +23,10 @@
 	 is_fixed/1,
 	 fixed/0,
 	 allocatable/0,
+	 nr_args/0,
+	 arg/1,
+	 is_arg/1,
+	 args/1,
 	 call_clobbered/0,
 	 tailcall_clobbered/0,
 	 live_at_return/0]).
@@ -38,6 +44,16 @@
 -define(FCALLS, 8).		% proc field alias
 -define(HEAP_LIMIT, 9).		% proc field alias
 -define(LAST_PRECOLOURED, 9).
+
+-define(ARG0, ?EAX).
+-define(ARG1, ?EDX).
+-define(ARG2, ?ECX).
+-define(ARG3, ?EBX).
+-define(ARG4, ?EDI).
+
+-define(TEMP0, ?EBX).	% XXX: was EAX
+-define(TEMP1, ?EDI).	% XXX: was EDX
+
 
 -define(PROC_POINTER, ?EBP).
 -define(HEAP_POINTER, ?ESI).
@@ -74,7 +90,9 @@ all_precoloured() ->
      ?HEAP_LIMIT].
 
 eax() -> ?EAX.
-edx() -> ?EDX.
+ecx() -> ?ECX.
+temp0() -> ?TEMP0.
+temp1() -> ?TEMP1.
 esp() -> ?ESP.
 proc_pointer() -> ?PROC_POINTER.
 fcalls() -> ?FCALLS.
@@ -100,6 +118,40 @@ fixed() ->
 allocatable() ->
     [?EDX, ?ECX, ?EBX, ?EDI, ?EAX].
 
+nr_args() -> ?X86_NR_ARG_REGS.
+
+arg(N) ->
+    if N < ?X86_NR_ARG_REGS ->
+	    case N of
+		0 -> ?ARG0;
+		1 -> ?ARG1;
+		2 -> ?ARG2;
+		3 -> ?ARG3;
+		4 -> ?ARG4;
+		_ -> exit({?MODULE, arg, N})
+	    end;
+       true ->
+	    exit({?MODULE, arg, N})
+    end.
+
+is_arg(R) ->
+    case R of
+	?ARG0 -> ?X86_NR_ARG_REGS > 0;
+	?ARG1 -> ?X86_NR_ARG_REGS > 1;
+	?ARG2 -> ?X86_NR_ARG_REGS > 2;
+	?ARG3 -> ?X86_NR_ARG_REGS > 3;
+	?ARG4 -> ?X86_NR_ARG_REGS > 4;
+	_ -> false
+    end.
+
+args(Arity) ->
+    Max = ?X86_NR_ARG_REGS,
+    N = if Arity > Max -> Max; true -> Arity end,
+    args(N-1, []).
+
+args(I, Rest) when I < 0 -> Rest;
+args(I, Rest) -> args(I-1, [arg(I) | Rest]).
+
 call_clobbered() ->
     [{?EAX,tagged},{?EAX,untagged},	% does the RA strip the type or not?
      {?EDX,tagged},{?EDX,untagged},
@@ -107,8 +159,9 @@ call_clobbered() ->
      {?EBX,tagged},{?EBX,untagged},
      {?EDI,tagged},{?EDI,untagged}].
 
-tailcall_clobbered() ->		% tailcall args shuffle clobbers eax
-    [{?EAX,tagged},{?EAX,untagged}].
+tailcall_clobbered() ->		% tailcall crapola needs two temps
+    [{?TEMP0,tagged},{?TEMP0,untagged},
+     {?TEMP1,tagged},{?TEMP1,untagged}].
 
 live_at_return() ->
     [{?EAX,tagged}

@@ -10,53 +10,59 @@
 %% under the License.
 %% 
 %% The Initial Developer of the Original Code is Richard Carlsson.
-%% Copyright (C) 1999-2001 Richard Carlsson.
+%% Copyright (C) 1999-2002 Richard Carlsson.
 %% Portions created by Ericsson are Copyright 2001, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
 %%     $Id$
 
-%% =====================================================================
-%% Basic functions on Core Erlang abstract syntax trees.
+%% @doc Basic functions on Core Erlang abstract syntax trees.
+%%
+%% <p>Syntax trees are defined in the module <a
+%% href=""><code>cerl</code></a>.</p>
+%%
+%% @type cerl() = cerl:cerl()
 
 -module(cerl_trees).
 
--export([depth/1, fold/3, free_variables/1, map/2, mapfold/3, size/1,
-	 variables/1]).
+-export([depth/1, fold/3, free_variables/1, label/1, label/2, map/2,
+	 mapfold/3, size/1, variables/1]).
 
--import(cerl, [alias_pat/1, alias_var/1, apply_args/1, apply_op/1,
-	       binary_segs/1, bin_seg_val/1, bin_seg_size/1,
-	       bin_seg_unit/1, bin_seg_type/1, bin_seg_flags/1,
-	       call_args/1, call_module/1, call_name/1, case_arg/1,
-	       case_clauses/1, catch_body/1, update_c_alias/3,
-	       update_c_apply/3, update_c_binary/2, update_c_bin_seg/6,
-	       update_c_call/4, update_c_case/3, update_c_catch/2,
-	       update_c_clause/4, update_c_cons/3, update_c_fun/3,
-	       update_c_let/4, update_c_letrec/3, update_c_module/5,
-	       update_c_primop/3, update_c_receive/4, update_c_seq/3,
-	       update_c_try/4, update_c_tuple/2, update_c_values/2,
-	       clause_body/1, clause_guard/1, clause_pats/1, concrete/1,
-	       cons_hd/1, cons_tl/1, fun_body/1, fun_vars/1, let_arg/1,
-	       let_body/1, let_vars/1, letrec_body/1, letrec_defs/1,
-	       letrec_vars/1, module_attrs/1, module_defs/1,
-	       module_exports/1, module_name/1, module_vars/1,
-	       primop_args/1, primop_name/1, receive_action/1,
-	       receive_clauses/1, receive_timeout/1, seq_arg/1,
-	       seq_body/1, subtrees/1, try_body/1, try_expr/1,
-	       try_vars/1, tuple_es/1, type/1, values_es/1,
-	       var_name/1]).
+-import(cerl, [alias_pat/1, alias_var/1, ann_c_alias/3, ann_c_apply/3,
+	       ann_c_binary/2, ann_c_bin_seg/6, ann_c_call/4,
+	       ann_c_case/3, ann_c_catch/2, ann_c_clause/4,
+	       ann_c_cons/3, ann_c_fun/3, ann_c_let/4, ann_c_letrec/3,
+	       ann_c_module/5, ann_c_primop/3, ann_c_receive/4,
+	       ann_c_seq/3, ann_c_try/4, ann_c_tuple/2, ann_c_values/2,
+	       apply_args/1, apply_op/1, binary_segs/1, bin_seg_val/1,
+	       bin_seg_size/1, bin_seg_unit/1, bin_seg_type/1,
+	       bin_seg_flags/1, call_args/1, call_module/1, call_name/1,
+	       case_arg/1, case_clauses/1, catch_body/1, clause_body/1,
+	       clause_guard/1, clause_pats/1, clause_vars/1, concrete/1,
+	       cons_hd/1, cons_tl/1, fun_body/1, fun_vars/1, get_ann/1,
+	       let_arg/1, let_body/1, let_vars/1, letrec_body/1,
+	       letrec_defs/1, letrec_vars/1, module_attrs/1,
+	       module_defs/1, module_exports/1, module_name/1,
+	       module_vars/1, primop_args/1, primop_name/1,
+	       receive_action/1, receive_clauses/1, receive_timeout/1,
+	       seq_arg/1, seq_body/1, set_ann/2, subtrees/1, try_body/1,
+	       try_expr/1, try_vars/1, tuple_es/1, type/1,
+	       update_c_alias/3, update_c_apply/3, update_c_binary/2,
+	       update_c_bin_seg/6, update_c_call/4, update_c_case/3,
+	       update_c_catch/2, update_c_clause/4, update_c_cons/3,
+	       update_c_fun/3, update_c_let/4, update_c_letrec/3,
+	       update_c_module/5, update_c_primop/3, update_c_receive/4,
+	       update_c_seq/3, update_c_try/4, update_c_tuple/2,
+	       update_c_values/2, values_es/1, var_name/1]).
 
 
-%% =====================================================================
-%% depth(Tree) -> integer()
+%% ---------------------------------------------------------------------
+
+%% @spec depth(Tree::cerl) -> integer()
 %%
-%%	Returns the length of the longest path in `Tree' (i.e., a leaf
-%%	node yields zero, a tree representing `{foo, bar}' yields one,
-%%	etc.
-%%
-%% size(Tree) -> integer()
-%%
-%%	Returns the number of nodes in `Tree'.
+%% @doc Returns the length of the longest path in the tree.  A leaf
+%% node has depth zero, the tree representing "<code>{foo,
+%% bar}</code>" has depth one, etc.
 
 depth(T) ->
     case subtrees(T) of
@@ -70,21 +76,28 @@ depth_1(Ts) ->
     lists:foldl(fun (T, A) -> max(depth(T), A) end, 0, Ts).
 
 max(X, Y) when X > Y -> X; 
-max(X, Y) -> Y.
+max(_, Y) -> Y.
+
+
+%% @spec size(Tree::cerl()) -> integer()
+%%
+%% @doc Returns the number of nodes in <code>Tree</code>.
 
 size(T) ->
-    fold(fun (X, S) -> S + 1 end, 0, T).
+    fold(fun (_, S) -> S + 1 end, 0, T).
 
 
-%% =====================================================================
-%% map(Function, Tree) -> Tree1
+%% ---------------------------------------------------------------------
+
+%% @spec map(Function, Tree::cerl()) -> cerl()
 %%
-%%	   Function = (Tree) -> Tree1
-%%	   Tree = Tree1 = coreErlang()
+%%	   Function = (cerl()) -> cerl()
 %%	   
-%%	The resulting `Tree1' is the given `Tree' where every node has
-%%	been replaced by the result of applying `Function' on the
-%%	original node.
+%% @doc Maps a function onto the nodes of a tree. This replaces each
+%% node in the tree by the result of applying the given function on
+%% the original node.
+%%
+%% @see mapfold/3
 
 map(F, T) ->
     F(map_1(F, T)).
@@ -170,25 +183,25 @@ map_1(F, T) ->
 
 map_list(F, [T | Ts]) ->
     [map(F, T) | map_list(F, Ts)];
-map_list(F, []) ->
+map_list(_, []) ->
     [].
 
 map_pairs(F, [{T1, T2} | Ps]) ->
     [{map(F, T1), map(F, T2)} | map_pairs(F, Ps)];
-map_pairs(F, []) ->
+map_pairs(_, []) ->
     [].
 
 
-%% =====================================================================
-%% fold(Function, State, Tree) -> State1
+%% @spec fold(Function, Unit::term(), Tree::cerl()) -> term()
 %%
-%%	   Function = (Tree, State) -> State1
-%%	   Tree = coreErlang()
-%%	   State = State1 = term()
-%%	   
-%%	The resulting `State1' is the value of `Function(X1,
-%%	Function(X2, ... Function(Xn, State) ... ))', where `[X1, X2,
-%%	..., Xn]' are the nodes of `Tree' in a post-order traversal.
+%%    Function = (cerl(), term()) -> term()
+%%
+%% @doc Does a fold operation over the nodes of the tree. The result
+%% is the value of <code>Function(X1, Function(X2, ... Function(Xn,
+%% Unit) ... ))</code>, where <code>X1, ..., Xn</code> are the nodes
+%% of <code>Tree</code> in a post-order traversal.
+%%
+%% @see mapfold/3
 
 fold(F, S, T) ->
     F(T, fold_1(F, S, T)).
@@ -272,26 +285,28 @@ fold_1(F, S, T) ->
 
 fold_list(F, S, [T | Ts]) ->
     fold_list(F, fold(F, S, T), Ts);
-fold_list(F, S, []) ->
+fold_list(_, S, []) ->
     S.
 
 fold_pairs(F, S, [{T1, T2} | Ps]) ->
     fold_pairs(F, fold(F, fold(F, S, T1), T2), Ps);
-fold_pairs(F, S, []) ->
+fold_pairs(_, S, []) ->
     S.
 
 
-%% =====================================================================
-%% mapfold(Function, State, Tree) -> {Tree1, State1}
+%% @spec mapfold(Function, Initial::term(), Tree::cerl()) ->
+%%           {cerl(), term()}
 %%
-%%	   Function = (Tree, State) -> {Tree1, State1}
-%%	   Tree = Tree1 = coreErlang()
-%%	   State = State1 = term()
+%%    Function = (cerl(), term()) -> {cerl(), term()}
 %%
-%%	This function is similar to `map', but also propagates a state
-%%	value from each application of `Function' to the next, starting
-%%	with the given `State', while doing a post-order traversal of
-%%	the tree (much like `fold').
+%% @doc Does a combined map/fold operation on the nodes of the
+%% tree. This is similar to <code>map/2</code>, but also propagates a
+%% value from each application of <code>Function</code> to the next,
+%% starting with the given value <code>Initial</code>, while doing a
+%% post-order traversal of the tree, much like <code>fold/3</code>.
+%%
+%% @see map/2
+%% @see fold/3
 
 mapfold(F, S0, T) ->
     case type(T) of
@@ -397,7 +412,7 @@ mapfold_list(F, S0, [T | Ts]) ->
     {T1, S1} = mapfold(F, S0, T),
     {Ts1, S2} = mapfold_list(F, S1, Ts),
     {[T1 | Ts1], S2};
-mapfold_list(F, S, []) ->
+mapfold_list(_, S, []) ->
     {[], S}.
 
 mapfold_pairs(F, S0, [{T1, T2} | Ps]) ->
@@ -405,27 +420,37 @@ mapfold_pairs(F, S0, [{T1, T2} | Ps]) ->
     {T4, S2} = mapfold(F, S1, T2),
     {Ps1, S3} = mapfold_pairs(F, S2, Ps),
     {[{T3, T4} | Ps1], S3};
-mapfold_pairs(F, S, []) ->
+mapfold_pairs(_, S, []) ->
     {[], S}.
 
 
-%% =====================================================================
-%% variables(Tree) -> [Name]
-%% free_variables(Tree) -> [Name]
+%% ---------------------------------------------------------------------
+
+%% @spec variables(Tree::cerl()) -> [var_name()]
 %%
-%%	    Tree = coreErlang()
-%%	    Name = integer() | atom() | {atom(), integer()}
+%%	    var_name() = integer() | atom() | {atom(), integer()}
 %%
-%%	These functions return an ordered-set list of the names of all
-%%	the (free) variables and function variables occurring in the
-%%	syntax tree `Tree'. An exception is thrown if `Tree' does not
-%%	represent a well-formed Core Erlang syntax tree.
+%% @doc Returns an ordered-set list of the names of all variables in
+%% the syntax tree. (This includes function name variables.) An
+%% exception is thrown if <code>Tree</code> does not represent a
+%% well-formed Core Erlang syntax tree.
+%%
+%% @see free_variables/1
 
 variables(T) ->
     variables(T, false).
 
+
+%% @spec free_variables(Tree::cerl()) -> [var_name()]
+%%
+%% @doc Like <code>variables/1</code>, but only includes variables
+%% that are free in the tree.
+%%
+%% @see variables/1
+
 free_variables(T) ->
     variables(T, true).
+
 
 %% This is not exported
 
@@ -535,7 +560,7 @@ vars_in_list(Ts, S) ->
 
 vars_in_list([T | Ts], S, A) ->
     vars_in_list(Ts, S, ordsets:union(variables(T, S), A));
-vars_in_list([], S, A) ->
+vars_in_list([], _, A) ->
     A.
 
 %% Note that this function only visits the right-hand side of function
@@ -546,7 +571,7 @@ vars_in_defs(Ds, S) ->
 
 vars_in_defs([{_, F} | Ds], S, A) ->
     vars_in_defs(Ds, S, ordsets:union(variables(F, S), A));
-vars_in_defs([], S, A) ->
+vars_in_defs([], _, A) ->
     A.
 
 %% This amounts to insertion sort. Since the lists are generally short,
@@ -561,4 +586,193 @@ var_list_names([], A) ->
     A.
 
 
-%% =====================================================================
+%% ---------------------------------------------------------------------
+
+%% label(Tree::cerl()) -> {cerl(), integer()}
+%%
+%% @equiv label(Tree, 0)
+
+label(T) ->
+    label(T, 0).
+
+%% @spec label(Tree::cerl(), N::integer()) -> {cerl(), integer()}
+%%
+%% @doc Labels each expression in the tree. A term <code>{label,
+%% L}</code> is prefixed to the annotation list of each expression node,
+%% where L is a unique number for every node, except for variables (and
+%% function name variables) which get the same label if they represent
+%% the same variable. Constant literal nodes are not labeled.
+%%
+%% <p>The returned value is a tuple <code>{NewTree, Max}</code>, where
+%% <code>NewTree</code> is the labeled tree and <code>Max</code> is 1
+%% plus the largest label value used. All previous annotation terms on
+%% the form <code>{label, X}</code> are deleted.</p>
+%%
+%% <p>The values of L used in the tree is a dense range from
+%% <code>N</code> to <code>Max - 1</code>, where <code>N =&lt; Max
+%% =&lt; N + size(Tree)</code>. Note that it is possible that no
+%% labels are used at all, i.e., <code>N = Max</code>.</p>
+%%
+%% <p>Note: All instances of free variables will be given distinct
+%% labels.</p>
+%%
+%% @see label/1
+%% @see size/1
+
+label(T, N) ->
+    label(T, N, dict:new()).
+
+label(T, N, Env) ->
+    case type(T) of
+ 	literal ->
+	    %% Constant literals are not labeled.
+	    {T, N};
+	var ->
+	    case dict:find(var_name(T), Env) of
+		{ok, L} ->
+		    {As, _} = label_ann(T, L),
+		    N1 = N;
+		error ->
+		    {As, N1} = label_ann(T, N)
+	    end,
+	    {set_ann(T, As), N1};
+	values ->
+	    {Ts, N1} = label_list(values_es(T), N, Env),
+	    {As, N2} = label_ann(T, N1),
+	    {ann_c_values(As, Ts), N2};
+	cons ->
+	    {T1, N1} = label(cons_hd(T), N, Env),
+	    {T2, N2} = label(cons_tl(T), N1, Env),
+	    {As, N3} = label_ann(T, N2),
+	    {ann_c_cons(As, T1, T2), N3};
+ 	tuple ->
+	    {Ts, N1} = label_list(tuple_es(T), N, Env),
+	    {As, N2} = label_ann(T, N1),
+	    {ann_c_tuple(As, Ts), N2};
+ 	'let' ->
+	    {A, N1} = label(let_arg(T), N, Env),
+	    {Vs, N2, Env1} = label_vars(let_vars(T), N1, Env),
+	    {B, N3} = label(let_body(T), N2, Env1),
+	    {As, N4} = label_ann(T, N3),
+	    {ann_c_let(As, Vs, A, B), N4};
+	seq ->
+	    {A, N1} = label(seq_arg(T), N, Env),
+	    {B, N2} = label(seq_body(T), N1, Env),
+	    {As, N3} = label_ann(T, N2),
+ 	    {ann_c_seq(As, A, B), N3};
+ 	apply ->
+	    {E, N1} = label(apply_op(T), N, Env),
+	    {Es, N2} = label_list(apply_args(T), N1, Env),
+	    {As, N3} = label_ann(T, N2),
+	    {ann_c_apply(As, E, Es), N3};
+ 	call ->
+	    {M, N1} = label(call_module(T), N, Env),
+	    {F, N2} = label(call_name(T), N1, Env),
+	    {Es, N3} = label_list(call_args(T), N2, Env),
+	    {As, N4} = label_ann(T, N3),
+ 	    {ann_c_call(As, M, F, Es), N4};
+ 	primop ->
+	    {F, N1} = label(primop_name(T), N, Env),
+	    {Es, N2} = label_list(primop_args(T), N1, Env),
+	    {As, N3} = label_ann(T, N2),
+	    {ann_c_primop(As, F, Es), N3};
+ 	'case' ->
+	    {A, N1} = label(case_arg(T), N, Env),
+	    {Cs, N2} = label_list(case_clauses(T), N1, Env),
+	    {As, N3} = label_ann(T, N2),
+ 	    {ann_c_case(As, A, Cs), N3};
+ 	clause ->
+	    {_, N1, Env1} = label_vars(clause_vars(T), N, Env),
+	    {Ps, N2} = label_list(clause_pats(T), N1, Env1),
+	    {G, N3} = label(clause_guard(T), N2, Env1),
+	    {B, N4} = label(clause_body(T), N3, Env1),
+	    {As, N5} = label_ann(T, N4),
+	    {ann_c_clause(As, Ps, G, B), N5};
+ 	alias ->
+	    {V, N1} = label(alias_var(T), N, Env),
+	    {P, N2} = label(alias_pat(T), N1, Env),
+	    {As, N3} = label_ann(T, N2),
+	    {ann_c_alias(As, V, P), N3};
+ 	'fun' ->
+	    {Vs, N1, Env1} = label_vars(fun_vars(T), N, Env),
+	    {B, N2} = label(fun_body(T), N1, Env1),
+	    {As, N3} = label_ann(T, N2),
+	    {ann_c_fun(As, Vs, B), N3};
+ 	'receive' ->
+	    {Cs, N1} = label_list(receive_clauses(T), N, Env),
+	    {E, N2} = label(receive_timeout(T), N1, Env),
+	    {A, N3} = label(receive_action(T), N2, Env),
+	    {As, N4} = label_ann(T, N3),
+	    {ann_c_receive(As, Cs, E, A), N4};
+ 	'try' ->
+	    {E, N1} = label(try_expr(T), N, Env),
+	    {Vs, N2, Env1} = label_vars(try_vars(T), N1, Env),
+	    {B, N3} = label(try_body(T), N2, Env1),
+	    {As, N4} = label_ann(T, N3),
+	    {ann_c_try(As, E, Vs, B), N4};
+ 	'catch' ->
+	    {B, N1} = label(catch_body(T), N, Env),
+	    {As, N2} = label_ann(T, N1),
+	    {ann_c_catch(As, B), N2};
+	binary ->
+	    {Ds, N1} = label_list(binary_segs(T), N, Env),
+	    {As, N2} = label_ann(T, N1),
+	    {ann_c_binary(As, Ds), N2};
+	bin_seg ->
+	    {Val, N1} = label(bin_seg_val(T), N, Env),
+	    {Size, N2} = label(bin_seg_size(T), N1, Env),
+	    {Unit, N3} = label(bin_seg_unit(T), N2, Env),
+	    {Type, N4} = label(bin_seg_type(T), N3, Env),
+	    {Fs, N5} = label_list(bin_seg_flags(T), N4, Env),
+	    {As, N6} = label_ann(T, N5),
+	    {ann_c_bin_seg(As, Val, Size, Unit, Type, Fs), N6};
+	letrec ->
+	    {_, N1, Env1} = label_vars(letrec_vars(T), N, Env),
+	    {Ds, N2} = label_defs(letrec_defs(T), N1, Env1),
+	    {B, N3} = label(letrec_body(T), N2, Env1),
+	    {As, N4} = label_ann(T, N3),
+	    {ann_c_letrec(As, Ds, B), N4};
+	module ->
+	    %% The module name and attributes are not labeled.
+	    {_, N1, Env1} = label_vars(module_vars(T), N, Env),
+	    {Ds, N2} = label_defs(module_defs(T), N1, Env1),
+	    {Es, N3} = label_list(module_exports(T), N2, Env1),
+	    {As, N4} = label_ann(T, N3),
+	    {ann_c_module(As, module_name(T), Es, module_attrs(T), Ds),
+	     N4}
+    end.
+
+label_list([T | Ts], N, Env) ->
+    {T1, N1} = label(T, N, Env),
+    {Ts1, N2} = label_list(Ts, N1, Env),
+    {[T1 | Ts1], N2};
+label_list([], N, _Env) ->
+    {[], N}.
+
+label_vars([T | Ts], N, Env) ->
+    Env1 = dict:store(var_name(T), N, Env),
+    {As, N1} = label_ann(T, N),
+    T1 = set_ann(T, As),
+    {Ts1, N2, Env2} = label_vars(Ts, N1, Env1),
+    {[T1 | Ts1], N2, Env2};
+label_vars([], N, Env) ->
+    {[], N, Env}.
+
+label_defs([{F, T} | Ds], N, Env) ->
+    {F1, N1} = label(F, N, Env),
+    {T1, N2} = label(T, N1, Env),
+    {Ds1, N3} = label_defs(Ds, N2, Env),
+    {[{F1, T1} | Ds1], N3};
+label_defs([], N, _Env) ->
+    {[], N}.
+
+label_ann(T, N) ->
+    {[{label, N} | filter_labels(get_ann(T))], N + 1}.
+
+filter_labels([{label, _} | As]) ->
+    filter_labels(As);
+filter_labels([A | As]) ->
+    [A | filter_labels(As)];
+filter_labels([]) ->
+    [].
+

@@ -72,6 +72,8 @@ print(Tuple, Col, Ll, D) when tuple(Tuple) ->
     end;
 print(Binary, Col, Ll, D) when binary(Binary) ->
     io_lib:write(Binary, D);
+print(Vec, Col, Ll, D) when size(Vec) == 0 ->
+    "#Vector<>";
 print(Vec, Col, Ll, D) when size(Vec) >= 0 ->
     Len = write_length(Vec, D, 0, Ll - Col),
     if
@@ -191,6 +193,7 @@ write_length(Bin, D, Acc, Max) when binary(Bin) ->
         true ->
             Acc + 4 + 4*(D+1)
     end;
+write_length(Vec, D, Acc, Max) when size(Vec) == 0 -> Acc + 9;
 write_length(Vec, D, Acc, Max) when size(Vec) >= 0 ->
     write_length_list(vector:to_list(Vec), D, Acc, Max);
 write_length(Term, D, Acc, Max) ->

@@ -25,8 +25,14 @@
 -include("snmp_types.hrl").
 -include("snmp_verbosity.hrl").
 
--record(state, {parent, master_agent, usock, mpd_state, log,
-		reqs = [], debug = false}).
+-record(state, {parent, 
+		master_agent, 
+		usock, 
+		usock_opts, 
+		mpd_state, 
+		log,
+		reqs = [], 
+		debug = false}).
 
 -ifndef(default_verbosity).
 -define(default_verbosity,silence).
@@ -61,15 +67,22 @@ get_log_type(Pid) ->
 set_log_type(Pid, Type) ->
     Pid ! {set_log_type, Type}.
 
+get_port() ->
+    {value, UDPPort} = snmp_framework_mib:intAgentUDPPort(get),
+    UDPPort.
+
+get_address() ->
+    {value, IPAddress} = snmp_framework_mib:intAgentIpAddress(get),
+    IPAddress.
 
 init(MasterAgent, Parent, Opts) ->
     process_flag(trap_exit, true),
     put(sname,nif),
     put(verbosity,get_verbosity(Opts)),
     ?vlog("starting",[]),
-    {value, UDPPort} = snmp_framework_mib:intAgentUDPPort(get),
+    UDPPort = get_port(),
     ?vdebug("port: ~w",[UDPPort]),
-    {value, IPAddress} = snmp_framework_mib:intAgentIpAddress(get),
+    IPAddress = get_address(),
     ?vdebug("addr: ~w",[IPAddress]),
     Vsns = snmp_misc:get_vsns(),
     ?vdebug("vsns: ~w",[Vsns]),
@@ -85,14 +98,12 @@ init(MasterAgent, Parent, Opts) ->
 		  _ ->
 		      []
 	      end,
-    ?vdebug("get no_reuse_address option",[]),
     IPOpts2 = case application:get_env(snmp, no_reuse_address) of
 		  {ok, true} ->
 		      [{reuseaddr, true}];
 		  _ ->
 		      []
 	      end,
-    ?vdebug("get recbuf option",[]),
     IPOpts3 = case get_recbuf(Opts) of
 		  use_default ->
 		      [];
@@ -104,9 +115,12 @@ init(MasterAgent, Parent, Opts) ->
     case gen_udp_open(UDPPort, [binary| IPOpts]) of
 	{ok, Id} ->
 	    MpdState = snmp_mpd:init_mpd(Vsns),
-	    S = #state{parent = Parent,
-		       master_agent = MasterAgent, mpd_state = MpdState,
-		       usock = Id, log = Log},
+	    S = #state{parent       = Parent,
+		       master_agent = MasterAgent, 
+		       mpd_state    = MpdState,
+		       usock        = Id, 
+		       usock_opts   = [binary| IPOpts],
+		       log          = Log},
 	    proc_lib:init_ack({ok, self()}),
 	    ?vdebug("started",[]),
 	    loop(S);
@@ -114,6 +128,7 @@ init(MasterAgent, Parent, Opts) ->
 	    ?vinfo("Failed to open UDP socket: ~p",[Reason]),
 	    proc_lib:init_ack({error, {udp, UDPPort, Reason}})
     end.
+
 
 gen_udp_open(Port, Opts) ->
     case init:get_argument(snmp_fd) of
@@ -212,6 +227,25 @@ loop(S) ->
 	{'EXIT', Parent, Reason} when Parent == S#state.parent ->
 	    ?vlog("~n   parent (~p) exited: ~p", [Parent,Reason]),
 	    exit(Reason);
+	{'EXIT', Port, Reason} when Port == S#state.usock ->
+	    UDPPort = get_port(),
+	    S1 = 
+		case gen_udp_open(UDPPort, S#state.usock_opts) of
+		    {ok, Id} ->
+			error_msg("Port ~p exited for reason ~p~n"
+				  "Re-opened (~p)", [Port, Reason, Id]),
+			S#state{usock = Id};
+		    {error, ReopenReason} ->
+			error_msg("Port ~p exited for reason ~p~n"
+				  "Re-open failed for reason ~p", 
+				  [Port, Reason, ReopenReason]),
+			ok
+		end,
+	    loop(S1);
+	{'EXIT', Port, Reason} when port(Port) ->
+	    error_msg("Exit message from port ~p for reason ~p~n", 
+		      [Port, Reason]),
+	    loop(S);
 	{'EXIT', Pid, Reason} ->
 	    ?vlog("~n   ~p exited: ~p", [Pid,Reason]),
 	    NewS = clear_reqs(Pid, S),
@@ -330,6 +364,52 @@ system_continue(_Parent, _Dbg, S) ->
 
 system_terminate(Reason, _Parent, _Dbg, S) ->
     exit(Reason).
+
+system_code_change(S, _Module, _OldVsn, downgrade_to_pre_3_3_8) ->
+    ?vdebug("system_code_change(down,pre_3_3_8) -> entry", []),
+    #state{parent       = Parent, 
+	   master_agent = MasterAgent, 
+	   usock        = Port,
+	   mpd_state    = MpdState, 
+	   log          = Log, 
+	   reqs         = Reqs, 
+	   debug        = Debug} = S,
+    S1 = {state, Parent, MasterAgent, Port, MpdState, Log, Reqs, Debug},
+    {ok, S1};
+
+system_code_change(S, _Module, _OldVsn, upgrade_from_pre_3_3_8) ->
+    ?vdebug("system_code_change(up,pre_3_3_8) -> entry", []),
+    {state, Parent, MasterAgent, Port, MpdState, Log, Reqs, Debug} = S,
+    %% Note that we cannot restore all of the socket options fully, 
+    %% since some of them comes from the arguments to the start 
+    %% function and is never stored...
+    ?vdebug("get (framework) agent ip address",[]),
+    {value, IPAddress} = snmp_framework_mib:intAgentIpAddress(get),
+    ?vdebug("get bind_to_ip_address option",[]),
+    IPOpts1 = case application:get_env(snmp, bind_to_ip_address) of
+		  {ok, true} ->
+		      [{ip, list_to_tuple(IPAddress)}];
+		  _ ->
+		      []
+	      end,
+    ?vdebug("get no_reuse_address option",[]),
+    IPOpts2 = case application:get_env(snmp, no_reuse_address) of
+		  {ok, true} ->
+		      [{reuseaddr, true}];
+		  _ ->
+		      []
+	      end,
+    IPOpts = IPOpts1 ++ IPOpts2, 
+    ?vdebug("IP options: ~p",[IPOpts]),
+    S1 = #state{parent       = Parent,
+		master_agent = MasterAgent,
+		usock        = Port,
+		usock_opts   = [binary| IPOpts],
+		mpd_state    = MpdState,
+		log          = Log,
+		reqs         = Reqs,
+		debug        = Debug},
+    {ok, S1};
 
 system_code_change(S, _Module, _OldVsn, _Extra) ->
     {ok, S}.

@@ -10,6 +10,7 @@
 #include "erl_process.h"
 #include "error.h"
 #include "bif.h"
+#include "erl_bits.h"
 #include "hipe_mode_switch.h"
 #include "hipe_native_bif.h"
 #include "hipe_stack.h"
@@ -122,7 +123,7 @@ Eterm hipe_get_msg(Process *p)
 	printf("Getting message from empty message queue (1)!");
 	exit(1);
     }
-    return mp->mesg;
+    return ERL_MESSAGE_TERM(mp);
 }
 
 /* This is like the loop_rec_end BEAM instruction.
@@ -198,4 +199,13 @@ void hipe_handle_exception(Process *c_p)
     c_p->fvalue = Value;
 
     hipe_find_handler(c_p);
+}
+
+/*
+ * Support for compiled binary syntax operations.
+ */
+
+void *hipe_bs_get_matchbuffer(void)
+{
+    return &erts_mb.orig;
 }

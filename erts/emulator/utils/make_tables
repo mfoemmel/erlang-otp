@@ -27,13 +27,14 @@ use File::Basename;
 #    make_tables [ Options ] file...
 #
 # Options:
-#    -src directory	Where to write generates C source files (default ".").
+#    -src directory	Where to write generated C source files (default ".").
 #    -include directory Where to generate generated C header files (default ".").
 #
 # Output:
 #    <-src>/erl_am.c
 #    <-src>/erl_bif_table.c
 #    <-src>/erl_bif_wrap.c
+#    <-src>/erl_pbifs.c
 #    <-include>/erl_atom_table.h
 #    <-include>/erl_bif_table.h
 #
@@ -51,6 +52,8 @@ my %aliases;
 my $auto_alias_num = 0;
 
 my @bif;
+my @implementation;
+my @pbif;
 
 while (@ARGV && $ARGV[0] =~ /^-(\w+)/) {
     my $opt = shift;
@@ -75,8 +78,8 @@ while (<>) {
     if ($type eq 'atom') {
 	save_atoms(@args);
     } elsif ($type eq 'bif' or $type eq 'ubif') {
-	my($bif,$alias) = (@args);
-	$bif =~ m@^(\w+):(.*)/(\d)$@ or error("invalid BIF");
+	my($bif,$alias,$alias2) = (@args);
+	$bif =~ m@^([a-z_.'0-9]+):(.*)/(\d)$@ or error("invalid BIF");
 	my($mod,$name,$arity) = ($1,$2,$3);
 	save_atoms($mod, $name);
 	unless (defined $alias) {
@@ -89,6 +92,8 @@ while (<>) {
 	$wrapper = $alias if $type eq 'ubif';
 	push(@bif, ["am_$atom_alias{$mod}","am_$atom_alias{$name}",$arity,
 		    $alias,$wrapper]);
+        push(@pbif, $bif =~ m/^'/ && $alias =~ m/^ebif_/);
+        push(@implementation, $alias2);
     } else {
 	error("invalid line");
     }
@@ -238,6 +243,38 @@ for ($i = 0; $i < @bif; $i++) {
     print "}\n\n";
 }
 
+#
+# Generate the package bif file.
+#
+
+open_file("$src/erl_pbifs.c");
+my $i;
+includes("export.h", "sys.h", "erl_vm.h", "global.h", "erl_process.h", "bif.h",
+	 "erl_bif_table.h", "erl_atom_table.h");
+for ($i = 0; $i < @bif; $i++) {
+    my $arity = $bif[$i]->[2];
+    my $func = $bif[$i]->[3];
+    my $arg;
+    next unless $pbif[$i];
+    next unless $func =~ m/^ebif_(.*)/;
+    my $orig_func = $1;
+    $orig_func = $implementation[$i] if $implementation[$i];
+    print "Eterm\n";
+    print "$func(Process* p";
+    for ($arg = 1; $arg <= $arity; $arg++) {
+	print ", Eterm arg$arg";
+    }
+    print ")\n";
+    print "{\n";
+    print "    return $orig_func(p";
+    for ($arg = 1; $arg <= 3; $arg++) {
+	if ($arg <= $arity) {
+	    print ", arg$arg";
+        }
+    }
+    print ");\n";
+    print "}\n\n";
+}
 
 sub open_file {			# or die
     my($name) = @_;

@@ -121,6 +121,10 @@ extern char **environ;
 
 #include "erl_sys_driver.h"
 
+#ifndef DISABLE_VFORK
+#define DISABLE_VFORK 0
+#endif
+
 #ifdef USE_THREADS
 #  ifdef ENABLE_CHILD_WAITER_THREAD
 #    define CHLDWTHR ENABLE_CHILD_WAITER_THREAD
@@ -163,7 +167,6 @@ EXTERN_FUNCTION(int, driver_interrupt, (int, int));
 EXTERN_FUNCTION(void, increment_time, (int));
 EXTERN_FUNCTION(int, next_time, (_VOID_));
 int send_error_to_logger(Eterm);
-EXTERN_FUNCTION(int, schedule, (_VOID_));
 EXTERN_FUNCTION(void, do_break, (_VOID_));
 
 EXTERN_FUNCTION(void, erl_sys_args, (int*, char**));
@@ -192,6 +195,7 @@ struct readyfd {
     int    iport;
     int    oport;
     struct pollfd pfd;
+    ErlDrvEventData event_data;
 };
 
 static struct pollfd*  poll_fds;      /* Allocated at startup */
@@ -254,7 +258,9 @@ static int max_fd;
 #endif
 
 #define CHILD_SETUP_PROG_NAME	"child_setup" ERL_BUILD_TYPE_MARKER
+#if !DISABLE_VFORK
 static char *child_setup_prog;
+#endif
 
 #ifdef DEBUG
 static int debug_log = 0;
@@ -281,6 +287,7 @@ static struct fd_data {
     int   inport;
     int   outport;
 #if !defined(USE_SELECT)
+    ErlDrvEventData event_data;
     int   pix;       /* index in poll_fds array */
 #endif
     char  *buf;
@@ -330,6 +337,7 @@ void sys_tty_reset(void)
 void
 erl_sys_init(void)
 {
+#if !DISABLE_VFORK
     char *bindir = getenv("BINDIR");
     if (!bindir)
         erl_exit(-1, "Environment variable BINDIR is not set\n");
@@ -346,6 +354,7 @@ erl_sys_init(void)
             bindir,
             DIR_SEPARATOR_CHAR,
             CHILD_SETUP_PROG_NAME);
+#endif
 
 #ifdef USE_SETLINEBUF
     setlinebuf(stdout);
@@ -906,12 +915,6 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 				    in the parent process. */
     int saved_errno;
     long res;
-#ifndef QNX
-    char *cs_argv[CS_ARGV_NO_OF_ARGS + 1];
-    char fd_close_range[44];                  /* 44 bytes are enough to  */
-    char dup2_op[CS_ARGV_NO_OF_DUP2_OPS][44]; /* hold any "%d:%d" string */
-                                              /* on a 64-bit machine.    */
-#endif
 
     switch (opts->read_write) {
     case DO_READ:
@@ -979,38 +982,6 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 
 #ifndef QNX
 
-    /* Setup argv[] for the child setup program (implemented in
-       erl_child_setup.c) */
-    i = 0;
-    if (opts->use_stdio) {
-	if (opts->read_write & DO_READ){
-	     /* stdout for process */
-	    sprintf(&dup2_op[i++][0], "%d:%d", ifd[1], 1);
-	    if(opts->redir_stderr)
-		/* stderr for process */
-		sprintf(&dup2_op[i++][0], "%d:%d", ifd[1], 2);
-	}
-	if (opts->read_write & DO_WRITE)
-	     /* stdin for process */
-	    sprintf(&dup2_op[i++][0], "%d:%d", ofd[0], 0);
-    } else {		/* XXX will fail if ofd[0] == 4 (unlikely..) */
-	if (opts->read_write & DO_READ)
-	    sprintf(&dup2_op[i++][0], "%d:%d", ifd[1], 4);
-	if (opts->read_write & DO_WRITE)
-	    sprintf(&dup2_op[i++][0], "%d:%d", ofd[0], 3);
-    }
-    for (; i < CS_ARGV_NO_OF_DUP2_OPS; i++)
-	strcpy(&dup2_op[i][0], "-");
-    sprintf(fd_close_range, "%d:%d", opts->use_stdio ? 3 : 5, max_files - 1);
-
-    cs_argv[CS_ARGV_PROGNAME_IX] = child_setup_prog;
-    cs_argv[CS_ARGV_WD_IX] = opts->wd ? opts->wd : ".";
-    cs_argv[CS_ARGV_CMD_IX] = tmp_buf; /* Command */
-    cs_argv[CS_ARGV_FD_CR_IX] = fd_close_range;
-    for (i = 0; i < CS_ARGV_NO_OF_DUP2_OPS; i++)
-	cs_argv[CS_ARGV_DUP2_OP_IX(i)] = &dup2_op[i][0];
-    cs_argv[CS_ARGV_NO_OF_ARGS] = NULL;
-
     /* Block child from SIGINT and SIGUSR1. Must be before fork()
        to be safe. */
     block_signals();
@@ -1019,28 +990,127 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
     erts_mutex_lock(dead_child_status_lock);
 #endif
 
+#if !DISABLE_VFORK
     /* See fork/vfork discussion before this function. */
     if (getenv("ERL_NO_VFORK") != NULL) {
-      DEBUGF(("Using fork\n"));
-      pid = fork();
-    } else {
-      DEBUGF(("Using vfork\n"));
-      pid = vfork();
+#endif
+
+	DEBUGF(("Using fork\n"));
+	pid = fork();
+
+	if (pid == 0) {
+	    /* The child! Setup child... */
+
+	    /* OBSERVE!
+	     * Keep child setup after vfork() (implemented below and in
+	     * erl_child_setup.c) up to date if changes are made here.
+	     */
+
+	    if (opts->use_stdio) {
+		if (opts->read_write & DO_READ) {
+		    /* stdout for process */
+		    if (dup2(ifd[1], 1) < 0)
+			goto child_error;
+		    if(opts->redir_stderr)
+			/* stderr for process */
+			if (dup2(ifd[1], 2) < 0)
+			    goto child_error;
+		}
+		if (opts->read_write & DO_WRITE)
+		    /* stdin for process */
+		    if (dup2(ofd[0], 0) < 0)
+			goto child_error;
+	    }
+	    else {	/* XXX will fail if ofd[0] == 4 (unlikely..) */
+		if (opts->read_write & DO_READ)
+		    if (dup2(ifd[1], 4) < 0)
+			goto child_error;
+		if (opts->read_write & DO_WRITE)
+		    if (dup2(ofd[0], 3) < 0)
+			goto child_error;
+	    }
+
+	    for (i = opts->use_stdio ? 3 : 5; i < max_files; i++)
+		(void) close(i);
+	    
+	    if (opts->wd && chdir(opts->wd) < 0)
+		goto child_error;
+
+#if defined(USE_SETPGRP_NOARGS)		/* SysV */
+	    (void) setpgrp();
+#elif defined(USE_SETPGRP)		/* BSD */
+	    (void) setpgrp(0, getpid());
+#else					/* POSIX */
+	    (void) setsid();
+#endif
+	    
+	    unblock_signals();
+
+	    execle("/bin/sh", "sh", "-c", tmp_buf, (char *) NULL, new_environ);
+
+	child_error:
+	    _exit(1);
+	}
+#if !DISABLE_VFORK
     }
+    else { /* Use vfork() */
+	char *cs_argv[CS_ARGV_NO_OF_ARGS + 1];
+	char fd_close_range[44];                  /* 44 bytes are enough to  */
+	char dup2_op[CS_ARGV_NO_OF_DUP2_OPS][44]; /* hold any "%d:%d" string */
+                                                  /* on a 64-bit machine.    */
 
-    if (pid == 0) {
-	/* The child */
+	/* Setup argv[] for the child setup program (implemented in
+	   erl_child_setup.c) */
+	i = 0;
+	if (opts->use_stdio) {
+	    if (opts->read_write & DO_READ){
+		/* stdout for process */
+		sprintf(&dup2_op[i++][0], "%d:%d", ifd[1], 1);
+		if(opts->redir_stderr)
+		    /* stderr for process */
+		    sprintf(&dup2_op[i++][0], "%d:%d", ifd[1], 2);
+	    }
+	    if (opts->read_write & DO_WRITE)
+		/* stdin for process */
+		sprintf(&dup2_op[i++][0], "%d:%d", ofd[0], 0);
+	} else {	/* XXX will fail if ofd[0] == 4 (unlikely..) */
+	    if (opts->read_write & DO_READ)
+		sprintf(&dup2_op[i++][0], "%d:%d", ifd[1], 4);
+	    if (opts->read_write & DO_WRITE)
+		sprintf(&dup2_op[i++][0], "%d:%d", ofd[0], 3);
+	}
+	for (; i < CS_ARGV_NO_OF_DUP2_OPS; i++)
+	    strcpy(&dup2_op[i][0], "-");
+	sprintf(fd_close_range, "%d:%d", opts->use_stdio ? 3 : 5, max_files-1);
 
-	/* Observe!
-	 * OTP-4389: The child setup program (implemented in
-	 * erl_child_setup.c) will perform the necessary setup of the
-	 * child before it execs to the user program. This because
-	 * vfork() only allow an *immediate* execve() or _exit() in the
-	 * child.
-	 */
-	execve(child_setup_prog, cs_argv, new_environ);
-	_exit(1);
-    } else if (pid == -1) {
+	cs_argv[CS_ARGV_PROGNAME_IX] = child_setup_prog;
+	cs_argv[CS_ARGV_WD_IX] = opts->wd ? opts->wd : ".";
+	cs_argv[CS_ARGV_CMD_IX] = tmp_buf; /* Command */
+	cs_argv[CS_ARGV_FD_CR_IX] = fd_close_range;
+	for (i = 0; i < CS_ARGV_NO_OF_DUP2_OPS; i++)
+	    cs_argv[CS_ARGV_DUP2_OP_IX(i)] = &dup2_op[i][0];
+	cs_argv[CS_ARGV_NO_OF_ARGS] = NULL;
+
+	DEBUGF(("Using vfork\n"));
+	pid = vfork();
+
+	if (pid == 0) {
+	    /* The child! */
+
+	    /* Observe!
+	     * OTP-4389: The child setup program (implemented in
+	     * erl_child_setup.c) will perform the necessary setup of the
+	     * child before it execs to the user program. This because
+	     * vfork() only allow an *immediate* execve() or _exit() in the
+	     * child.
+	     */
+	    execve(child_setup_prog, cs_argv, new_environ);
+	    _exit(1);
+	}
+    }
+#endif
+
+    if (pid == -1) {
         saved_errno = errno;
         unblock_signals();
         close_pipes(ifd, ofd, opts->read_write);
@@ -1268,7 +1338,7 @@ static ErlDrvData fd_start(ErlDrvPort port_num, char* name,
 #if CHLDWTHR
     erts_mutex_lock(dead_child_status_lock);
 #endif
-    res = (ErlDrvData)set_driver_data(port_num, opts->ifd, opts->ofd,
+    res = (ErlDrvData)(long)set_driver_data(port_num, opts->ifd, opts->ofd,
 				      opts->packet_bytes,
 				      opts->read_write, 0, -1);
 #if CHLDWTHR
@@ -1312,10 +1382,10 @@ static void fd_stop(ErlDrvData fd)  /* Does not close the fds */
 {
     int ofd;
     
-    nbio_stop_fd(driver_data[(int)fd].port_num, (int)fd);
-    ofd = driver_data[(int)fd].ofd;
-    if (ofd != (int)fd && ofd != -1) 
-	nbio_stop_fd(driver_data[(int)fd].port_num, (int)ofd);
+    nbio_stop_fd(driver_data[(int)(long)fd].port_num, (int)(long)fd);
+    ofd = driver_data[(int)(long)fd].ofd;
+    if (ofd != (int)(long)fd && ofd != -1) 
+	nbio_stop_fd(driver_data[(int)(long)fd].port_num, (int)(long)ofd);
 }
 
 static ErlDrvData vanilla_start(ErlDrvPort port_num, char* name,
@@ -1338,7 +1408,7 @@ static ErlDrvData vanilla_start(ErlDrvPort port_num, char* name,
 #if CHLDWTHR
     erts_mutex_lock(dead_child_status_lock);
 #endif
-    res = (ErlDrvData)set_driver_data(port_num, fd, fd,
+    res = (ErlDrvData)(long)set_driver_data(port_num, fd, fd,
 				      opts->packet_bytes,
 				      opts->read_write, 0, -1);
 #if CHLDWTHR
@@ -1354,12 +1424,12 @@ static void stop(ErlDrvData fd)
 {
     int prt, ofd;
 
-    prt = driver_data[(int)fd].port_num;
-    nbio_stop_fd(prt, (int)fd);
-    close((int)fd);
+    prt = driver_data[(int)(long)fd].port_num;
+    nbio_stop_fd(prt, (int)(long)fd);
+    close((int)(long)fd);
 
-    ofd = driver_data[(int)fd].ofd;
-    if (ofd != (int)fd && (int)ofd != -1) {
+    ofd = driver_data[(int)(long)fd].ofd;
+    if (ofd != (int)(long)fd && (int)(long)ofd != -1) {
 	nbio_stop_fd(prt, ofd);
 	(void) close(ofd);
     }
@@ -1369,7 +1439,7 @@ static void stop(ErlDrvData fd)
 #endif
 
     /* Mark as unused. Maybe resetting the 'port_num' slot is better? */
-    driver_data[(int)fd].pid = -1;
+    driver_data[(int)(long)fd].pid = -1;
 
 #if CHLDWTHR
   erts_mutex_unlock(dead_child_status_lock);
@@ -1378,7 +1448,7 @@ static void stop(ErlDrvData fd)
 
 static void outputv(ErlDrvData e, ErlIOVec* ev)
 {
-    int fd = (int)e;
+    int fd = (int)(long)e;
     int ix = driver_data[fd].port_num;
     int pb = driver_data[fd].packet_bytes;
     int ofd = driver_data[fd].ofd;
@@ -1426,7 +1496,7 @@ static void outputv(ErlDrvData e, ErlIOVec* ev)
 
 static void output(ErlDrvData e, char* buf, int len)
 {
-    int fd = (int)e;
+    int fd = (int)(long)e;
     int ix = driver_data[fd].port_num;
     int pb = driver_data[fd].packet_bytes;
     int ofd = driver_data[fd].ofd;
@@ -1553,7 +1623,7 @@ int res;			/* Result: 0 (eof) or -1 (error) */
 
 static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
 {
-    int fd = (int)e;
+    int fd = (int)(long)e;
     int port_num, packet_bytes, res;
     Uint h;
     char *buf;
@@ -1701,7 +1771,7 @@ static void ready_input(ErlDrvData e, ErlDrvEvent ready_fd)
 
 static void ready_output(ErlDrvData e, ErlDrvEvent ready_fd)
 {
-    int fd = (int)e;
+    int fd = (int)(long)e;
     int ix = driver_data[fd].port_num;
     int n;
     struct iovec* iv;
@@ -1757,6 +1827,7 @@ int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
 
 		pix = max_fd;
 		fd_data[fd].pix = pix;
+		fd_data[fd].event_data = NULL;
 	    }
 	    poll_fds[pix].fd = fd;
 	    if (mode & DO_READ) {
@@ -1979,7 +2050,54 @@ int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
 
 #endif /* USE_KERNEL_POLL */
 
-#else
+int driver_event(ErlDrvPort ix, ErlDrvEvent e, ErlDrvEventData event_data) {
+    int fd = (int)e;
+    if ((fd < 0) || (fd >= max_files))
+	return -1;
+
+    if (event_data && event_data->events) {
+	int pix = fd_data[fd].pix;  /* index to poll_fds */
+	
+	if (pix < 0) {  /* add new slot */
+	    max_fd++;   /* FIXME: panic if max_fds >= max_files */
+	    
+	    pix = max_fd;
+	    poll_fds[pix].fd = fd;
+	    fd_data[fd].pix = pix;
+	    fd_data[fd].inport = ix;
+	}
+	fd_data[fd].event_data = event_data;
+	poll_fds[pix].events = event_data->events;
+    } else {
+	int pix = fd_data[fd].pix;  /* index to poll_fds */
+
+	if (pix < 0) 	           /* driver deselected already */
+	    return -1;
+
+	/* delete entry by moving the last entry to pix position */
+	/* FIXME: panic if max_fd == -1 */
+	
+	fd_data[fd].pix  = -1;
+	
+	if (pix != max_fd) {
+	    int rfd = poll_fds[max_fd].fd;
+	    poll_fds[pix] = poll_fds[max_fd];
+	    fd_data[rfd].pix = pix;
+	}
+	
+	/* Need to clear at least .events since it is or'ed when
+	 * this slot is reused - might as well clear everything.
+	 */
+	poll_fds[max_fd].fd      = -1;
+	poll_fds[max_fd].events  = 0;
+	poll_fds[max_fd].revents = 0;
+	
+	max_fd--;
+    }
+    return 0;
+}
+
+#else  /* if defined(USE_SELECT) */
 
 /* Interface function available to driver writers */
 int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
@@ -2023,7 +2141,11 @@ int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
 	return(-1);
 }
 
-#endif
+int driver_event(ErlDrvPort ix, ErlDrvEvent e, ErlDrvEventData event_data) {
+    return -1;
+}
+
+#endif /*  !defined(USE_SELECT) */
 
 /*
 ** Async opertation support
@@ -2066,7 +2188,7 @@ static ErlDrvData async_drv_start(ErlDrvPort port_num,
 
 static void async_drv_stop(ErlDrvData e)
 {
-    int port_num = (int)e;
+    int port_num = (int)(long)e;
 
     DEBUGF(("async_drv_stop: %d\r\n", port_num));
 
@@ -2279,6 +2401,7 @@ int do_wait;
 		rp->pfd = poll_fds[i]; /* COPY! */
 		rp->iport = fd_data[fd].inport;
 		rp->oport = fd_data[fd].outport;
+		rp->event_data = fd_data[fd].event_data;
 		rp++;
 		rr--;
 	    }
@@ -2317,7 +2440,11 @@ int do_wait;
 	int   fd      = qp->pfd.fd;
 	short revents = qp->pfd.revents;
 
-	if (revents & (POLL_INPUT|POLLOUT)) {
+	if (revents && qp->event_data) {
+	    qp->event_data->revents = revents;
+	    event_ready(qp->iport, fd, qp->event_data);
+	}
+	else if (revents & (POLL_INPUT|POLLOUT)) {
 	    if (revents & POLLOUT)
 		output_ready(qp->oport, fd);
 	    if (revents & (POLL_INPUT|POLLHUP))
@@ -3045,24 +3172,10 @@ static char *fix_nl(char *f, CIO where)
    - the below is probably the best we can do...    */
     
 /*VARARGS*/
-
-#ifndef __STDC__
-
-void sys_printf(va_alist)
-    va_dcl
-{
-    va_list va;
-    CIO where;
-    char   *format;
-    va_start(va);
-    where = va_arg(va, CIO);
-    format = va_arg(va, char *);
-#else
 void sys_printf(CIO where, char* format, ...)
 {
     va_list va;
     va_start(va,format);
-#endif
 
     format = fix_nl(format, where);
 
@@ -3207,21 +3320,14 @@ erl_assert_error(char* expr, char* file, int line)
     abort();
 }
 
-#ifdef __STDC__
 void
 erl_debug(char* fmt, ...)
-#else
-void
-erl_debug(fmt, va_alist)
-char* fmt;
-va_dcl
-#endif /* __STDC__ */
 {
     char sbuf[1024];		/* Temporary buffer. */
     va_list va;
     
     if (debug_log) {
-	VA_START(va, fmt);
+	va_start(va, fmt);
 	vsprintf(sbuf, fmt, va);
 	va_end(va);
 	fprintf(stderr, "%s", sbuf);
@@ -3297,21 +3403,21 @@ static void check_children()
 
 #endif
 
+/*
+ * Called from schedule() when it runs out of runnable processes,
+ * or when Erlang code has performed INPUT_REDUCTIONS reduction
+ * steps. runnable == 0 iff there are no runnable Erlang processes.
+ */
 void
-erl_sys_schedule_loop(void)
+erl_sys_schedule(int runnable)
 {
-    for (;;) {
-	while (schedule()) {
-	    check_io(0);	/* Poll for I/O. */
-	    check_async_ready(); /* Check async compleations */
-	    check_children();
-	}
-	if (check_async_ready())
-	    check_io(0);
-	else
-	    check_io(1);	/* Wait for I/O or a timeout. */
-	check_children();
+    if (runnable) {
+	check_io(0);		/* Poll for I/O */
+	check_async_ready();	/* Check async completions */
+    } else {
+	check_io(check_async_ready() ? 0 : 1);
     }
+    check_children();
 }
 
 void
@@ -3327,10 +3433,8 @@ char** argv;
 int sys_start_hrvtime() {
     long msacct = PR_MSACCT;
     int fd;
-    char proc_self[30] = "/proc/"; /* 30 > strlen("/proc/" ++ sys_get_pid()) */
 
-    sys_get_pid(proc_self + strlen(proc_self));
-    if ( (fd = open(proc_self, O_WRONLY)) == -1) {
+    if ( (fd = open("/proc/self", O_WRONLY)) == -1) {
 	return -1;
     }
     if (ioctl(fd, PIOCSET, &msacct) < 0) {

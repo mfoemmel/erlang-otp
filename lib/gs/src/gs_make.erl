@@ -42,7 +42,7 @@ fill_ets(DB,[{Objs,Opt,Fun,Access}|Terms]) ->
     fill_ets(DB,lists:flatten(Objs),Opt,Fun,Access),
     fill_ets(DB,Terms).
 
-fill_ets(DB,[],_,_,_) -> done;
+fill_ets(_DB,[],_,_,_) -> done;
 fill_ets(DB,[Obj|Objs],Opt,Fun,rw) ->
     ets:insert(DB,{Obj,Opt,Fun,read}),
     ets:insert(DB,{Obj,Opt,Fun,write}),
@@ -58,64 +58,70 @@ fill_ets(DB,[Obj|Objs],Opt,Fun,w) ->
     
 gen_out_opts(DB) ->
     ObjTypes = lists:flatten(ordsets:list_to_set(ets:match(DB,{'$1','_','_',write}))),
-    p("out_opts([Option|Options],Gstkid,TkW,DB,ExtraArg,S,P,C) -> \n"),
-    p("{Opt,Val} = case Option of \n"),
-    p("{{default,Cat,Key},V} -> {default,{Cat,{Key,V}}};\n"),
-    p("{Key,V} -> Option;\n"),
-    p("{default,Cat,Opti} -> {default,{Cat,Opti}};\n"),
-    p("Atom when atom(Atom) -> {Atom,undefined};\n"),
-    p("_Other -> {error, {invalid_option,Option}}\n"),
-    p("end,\n"),
-    p("   case Gstkid#gstkid.objtype of\n"),
+    p("out_opts([Option|Options],Gstkid,TkW,DB,ExtraArg,S,P,C) ->\n"),
+    p("  {Opt,Val} =\n"),
+    p("    case Option of \n"),
+    p("      {{default,Cat,Key},V} -> {default,{Cat,{Key,V}}};\n"),
+    p("      {_Key,_V} -> Option;\n"),
+    p("      {default,Cat,Opti} -> {default,{Cat,Opti}};\n"),
+    p("      Atom when atom(Atom) -> {Atom,undefined};\n"),
+    p("      _ -> {error, {invalid_option,Option}}\n"),
+    p("    end,\n"),
+    p("  case Gstkid#gstkid.objtype of\n"),
     gen_out_type_case_clauses(merge_types(ObjTypes),DB),
-    p("Q -> exit({internal_error,unknown_objtype,Q})\n end;\n"),
-    p("out_opts([],Gstkid,TkW,DB,ExtraArg,S,P,C) -> \n"),
-    p("     {S,P,C}.\n").
+    p("    Q -> exit({internal_error,unknown_objtype,Q})\n"),
+    p("  end;\n"),
+    p("out_opts([],_Gstkid,_TkW,_DB,_ExtraArg,S,P,C) -> \n"),
+    p("  {S,P,C}.\n").
 
 
-gen_out_type_case_clauses([],DB) -> done;
+gen_out_type_case_clauses([],_DB) -> done;
 gen_out_type_case_clauses([Objtype|Objtypes],DB) ->
     OptsFuns = lists:map({erlang,list_to_tuple},
 			 ets:match(DB,{Objtype,'$1','$2',write})),
     p("   ~p -> \ncase Opt of\n",[Objtype]),
     gen_opt_case_clauses(merge_opts(opt_prio(),OptsFuns)),
-    p("Other -> \nhandle_external_opt_call([Option|Options],Gstkid,TkW,DB,ExtraArg,"
-      "gstk_~p:option(Option,Gstkid,TkW,DB,ExtraArg),S,P,C)\n",[Objtype]),
-    p("end;\n"),
+    p("  _ -> \n"),
+    p("    handle_external_opt_call([Option|Options],Gstkid,TkW,DB,ExtraArg,"
+      "                             gstk_~p:option(Option,Gstkid,TkW,DB,ExtraArg),S,P,C)\n",
+      [Objtype]),
+    p("  end;\n"),
     gen_out_type_case_clauses(Objtypes,DB).
 
 gen_opt_case_clauses([]) ->
     done;
 gen_opt_case_clauses([{Opt,Fun}|OptFuncs]) ->
-    p("~p -> \n~p(Val,Options,Gstkid,TkW,DB,ExtraArg,S,P,C);\n",[Opt,Fun]),
+    p("  ~p ->\n",[Opt]),
+    p("    ~p(Val,Options,Gstkid,TkW,DB,ExtraArg,S,P,C);\n",[Fun]),
     gen_opt_case_clauses(OptFuncs).
 
 gen_read(DB) ->
     ObjTypes = lists:flatten(ordsets:list_to_set(ets:match(DB,{'$1','_','_',read}))),
     p("read_option(DB,Gstkid,TkW,Option,ExtraArg) ->\n"),
-    p("Key = case Option of\n"),
+    p("  Key = case Option of\n"),
     p("    Atom when atom(Atom) -> Atom;\n"),
     p("    Opt when tuple(Opt) -> element(1,Opt)\n"),
-    p("   end,\n"),
-    p(" case Gstkid#gstkid.objtype of\n"),
+    p("  end,\n"),
+    p("  case Gstkid#gstkid.objtype of\n"),
     gen_read_type_clauses(merge_types(ObjTypes),DB),
-    p("Q -> exit({internal_error,unknown_objtype,Q})\n end.\n").
+    p("    Q -> exit({internal_error,unknown_objtype,Q})\n"),
+    p("  end.\n").
     
 
 gen_read_type_clauses([],_) -> done;
 gen_read_type_clauses([Objtype|Objtypes],DB) ->
     OptsFuns = lists:map({erlang,list_to_tuple},
 			 ets:match(DB,{Objtype,'$1','$2',read})),
-    p("   ~p -> \ncase Key of\n",[Objtype]),
+    p("  ~p -> \ncase Key of\n",[Objtype]),
     gen_readopt_case_clauses(merge_opts(opt_prio(),OptsFuns)),
-    p("Other -> \nhandle_external_read(gstk_~p:read_option(Option,Gstkid,TkW,DB,ExtraArg))\n",[Objtype]),
-    p("end;\n"),
+    p("  _ -> \nhandle_external_read(gstk_~p:read_option(Option,Gstkid,TkW,DB,ExtraArg))\n",[Objtype]),
+    p("  end;\n"),
     gen_read_type_clauses(Objtypes,DB).
 
 gen_readopt_case_clauses([]) ->
     done;
 gen_readopt_case_clauses([{Opt,Fun}|OptFuncs]) ->
-    p("~p -> \n~p(Option,Gstkid,TkW,DB,ExtraArg);\n",[Opt,Fun]),
+    p("  ~p -> \n~p(Option,Gstkid,TkW,DB,ExtraArg);\n",[Opt,Fun]),
     gen_readopt_case_clauses(OptFuncs).
 
 

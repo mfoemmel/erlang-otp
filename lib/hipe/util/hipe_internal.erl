@@ -1,7 +1,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% HIPE_INTERNAL
-%
+%%
+%% HIPE_INTERNAL
+%%
 
 -module(hipe_internal).
 
@@ -27,11 +27,11 @@ not_loaded() ->
 send(P, M) ->
    P ! M.
 
-keysearch(Key, N, [H|T]) when element(N, H) == Key ->
+keysearch(Key, N, [H|_]) when element(N, H) == Key ->
     {value, H};
-keysearch(Key, N, [H|T]) ->
+keysearch(Key, N, [_|T]) ->
     keysearch(Key, N, T);
-keysearch(Key, N, []) -> false.
+keysearch(_Key, _N, []) -> false.
 
 call_fun(F,[]) ->
   F();

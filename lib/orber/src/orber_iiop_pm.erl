@@ -40,7 +40,7 @@
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
--export([connect/7, disconnect/2, list_existing_connections/0, 
+-export([connect/6, disconnect/2, list_existing_connections/0, 
 	 list_setup_connections/0, list_all_connections/0,
 	 init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 code_change/3, terminate/2, stop/0, setup_connection/7]).
@@ -63,22 +63,46 @@ start(Opts) ->
     gen_server:start_link({local, 'orber_iiop_pm'}, ?MODULE, Opts, []).
 
 
-connect(Host, Data, SocketType, SocketOptions, Timeout, Chars, Wchars) ->
-    Port = case SocketType of
-	       normal -> 
-		   Data;
-	       ssl -> 
-		   Data#'SSLIOP_SSL'.port
-	   end,
+connect(Host, Port, SocketType, Timeout, Chars, Wchars) when SocketType == normal ->
     case ets:lookup(?PM_CONNECTION_DB, {Host, Port}) of
 	[{_, connecting, I, _}] ->
 	    gen_server:call(orber_iiop_pm, {connect, Host, Port, SocketType, 
+					    [], Chars, Wchars}, Timeout);
+	[] ->
+	    gen_server:call(orber_iiop_pm, {connect, Host, Port, SocketType, 
+					    [], Chars, Wchars}, Timeout);
+	[{_, P, I, _}] ->
+	    {P, [], I}
+    end;
+connect(Host, #'SSLIOP_SSL'{port = Port} = Data, SocketType, Timeout, Chars, Wchars) 
+  when SocketType == ssl ->
+    case ets:lookup(?PM_CONNECTION_DB, {Host, Port}) of
+	[{_, connecting, I, _}] ->
+	    SocketOptions = get_ssl_socket_options(),
+	    gen_server:call(orber_iiop_pm, {connect, Host, Port, SocketType, 
 					    SocketOptions, Chars, Wchars}, Timeout);
 	[] ->
+	    SocketOptions = get_ssl_socket_options(),
 	    gen_server:call(orber_iiop_pm, {connect, Host, Port, SocketType, 
 					    SocketOptions, Chars, Wchars}, Timeout);
 	[{_, P, I, _}] ->
 	    {P, [], I}
+    end.
+
+get_ssl_socket_options() ->
+    [{certfile, orber:ssl_client_certfile()},
+     {verify, orber:ssl_client_verify()},
+     {depth, orber:ssl_client_depth()} |
+     ssl_client_cacertfile_option()].
+
+ssl_client_cacertfile_option() ->
+    case orber:ssl_client_cacertfile() of
+	[] ->
+	    [];
+	X when list(X) ->
+	    [{cacertfile, X}];
+	_ ->
+	    []
     end.
 
 disconnect(Host, Port) ->
@@ -184,8 +208,7 @@ handle_call({disconnect, Host, Port}, From, State) ->
 	    ok;
 	[{_, connecting, I, _}] ->
 	    ets:delete(?PM_CONNECTION_DB, {Host, Port}),
-	    Exc = {'EXCEPTION',#'INTERNAL'{minor = 125, 
-					   completion_status = ?COMPLETED_NO}},
+	    Exc = {'EXCEPTION',#'INTERNAL'{completion_status = ?COMPLETED_NO}},
 	    send_reply_to_queue(ets:lookup(State#state.queue, {Host, Port}), Exc),
 	    ets:delete(State#state.queue, {Host, Port}),
 	    catch invoke_connection_closed(I);
@@ -231,8 +254,7 @@ handle_info({'EXIT', Pid, Reason}, State) ->
 		[{K, connecting, I, _}] ->
 		    ets:delete(?PM_CONNECTION_DB, K),
 		    invoke_connection_closed(I),
-		    Exc = {'EXCEPTION',#'INTERNAL'{minor = 123, 
-						   completion_status = ?COMPLETED_NO}},
+		    Exc = {'EXCEPTION',#'INTERNAL'{completion_status = ?COMPLETED_NO}},
 		    send_reply_to_queue(ets:lookup(State#state.queue, K), Exc),
 		    ets:delete(State#state.queue, K),
 		    orber:dbg("[~p] orber_iiop_pm:handle_info(setup_failed ~p); 
@@ -305,16 +327,23 @@ Got EXIT: ~p", [?LINE, Host, Port, Reason], ?DEBUG_LEVEL),
 Probably no listener on the given Node/Port or timedout.", 
 					    [?LINE, Host, Port], ?DEBUG_LEVEL),
 		    PMPid ! {setup_failed, {Host, Port}, 
-			     {'EXCEPTION', #'COMM_FAILURE'{minor=123, completion_status=?COMPLETED_NO}}},
+			     {'EXCEPTION', #'COMM_FAILURE'{minor=(?ORBER_VMCID bor 1),
+							   completion_status=?COMPLETED_NO}}},
 		    ok;
 		{ok, Child} ->
-		    CodeSetCtx = 
-			#'CONV_FRAME_CodeSetContext'
-		      {char_data =  Chars, 
-		       wchar_data = Wchars},
-		    Ctx = [#'IOP_ServiceContext'
-			   {context_id=?IOP_CodeSets, 
-			    context_data = CodeSetCtx}],
+		    BiDirCtx = orber:bidir_context(),
+		    Ctx = case orber:exclude_codeset_ctx() of
+			      true ->
+				  BiDirCtx;
+			      _ ->
+				  CodeSetCtx = 
+				      #'CONV_FRAME_CodeSetContext'
+				    {char_data =  Chars, 
+				     wchar_data = Wchars},
+				  [#'IOP_ServiceContext'
+				   {context_id=?IOP_CodeSets, 
+				    context_data = CodeSetCtx} | BiDirCtx]
+			  end,
 		    PMPid ! {setup_successfull, {Host, Port}, {Child, Ctx, Interceptors}},
 		    ok
 	    end
@@ -337,7 +366,8 @@ init_interceptors(Host, Port) ->
 		{'EXIT', R} ->
 		    orber:dbg("[~p] orber_iiop_pm:init_interceptors(~p); Got Exit: ~p. One or more Interceptor incorrect or undefined?", 
 					    [?LINE, PIs, R], ?DEBUG_LEVEL),
-		    {'EXCEPTION', #'COMM_FAILURE'{minor=124, completion_status=?COMPLETED_NO}};
+		    {'EXCEPTION', #'COMM_FAILURE'{minor=(?ORBER_VMCID bor 2), 
+						  completion_status=?COMPLETED_NO}};
 		IntRef ->
 		    {native, IntRef, PIs}
 	    end;

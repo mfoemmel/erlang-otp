@@ -56,7 +56,7 @@ encode_message([{flex,_}], MegaMsg) when record(MegaMsg, 'MegacoMessage') ->
     end;
 encode_message(EncodingConfig, MegaMsg) when record(MegaMsg, 'MegacoMessage')  ->
     {error, {bad_encoding_config, EncodingConfig}};
-encode_message(EncodingConfig, MegaMsg) ->
+encode_message(_EncodingConfig, _MegaMsg) ->
     {error, bad_megaco_message}.
 
 %%----------------------------------------------------------------------
@@ -66,7 +66,7 @@ encode_message(EncodingConfig, MegaMsg) ->
 
 decode_message([], Bin) when binary(Bin) ->
     case megaco_text_scanner:scan(Bin) of
-	{ok, Tokens, LastLine} ->
+	{ok, Tokens, _LastLine} ->
 	    case (catch megaco_text_parser:parse(Tokens)) of %% OTP-4007
 		{ok, MegacoMessage} ->
 		    {ok, MegacoMessage};
@@ -87,7 +87,7 @@ decode_message([], Bin) when binary(Bin) ->
     end;
 decode_message([{flex, Port}], Bin) when binary(Bin) ->
     case megaco_flex_scanner:scan(Bin, Port) of
-	{ok, Tokens, LastLine} ->
+	{ok, Tokens, _LastLine} ->
 	    case (catch megaco_text_parser:parse(Tokens)) of %% OTP-4007
 		{ok, MegacoMessage} ->
 		    {ok, MegacoMessage};
@@ -108,7 +108,7 @@ decode_message([{flex, Port}], Bin) when binary(Bin) ->
     end;
 decode_message(EncodingConfig, Bin) when binary(Bin) ->
     {error, {bad_encoding_config, EncodingConfig}};
-decode_message(EncodingConfig, BadBin) ->
+decode_message(_EncodingConfig, _BadBin) ->
     {error, bad_binary}.
 
 %%----------------------------------------------------------------------
@@ -134,13 +134,13 @@ decode_message(EncodingConfig, BadBin) ->
 -define(WSP,    ?SP).
 -define(SEP,    ?WSP).
 
--define(INIT_INDENT,          []).
--define(INC_INDENT(State),    State).
--define(INDENT(State),        State).
--define(LBRKT_INDENT(State),  [?LbrktToken]).
--define(RBRKT_INDENT(State),  [?RbrktToken]).
--define(COMMA_INDENT(State),  [?CommaToken]).
--define(SEP_INDENT(State),    [?LfToken]).
+-define(INIT_INDENT,           []).
+-define(INC_INDENT(State),     State).
+-define(INDENT(State),         State).
+-define(LBRKT_INDENT(_State),  [?LbrktToken]).
+-define(RBRKT_INDENT(_State),  [?RbrktToken]).
+-define(COMMA_INDENT(_State),  [?CommaToken]).
+-define(SEP_INDENT(_State),    [?LfToken]).
 
 %%----------------------------------------------------------------------
 %% Define token macros

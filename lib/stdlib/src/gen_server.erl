@@ -112,7 +112,7 @@
 behaviour_info(callbacks) ->
     [{init,1},{handle_call,3},{handle_cast,2},{handle_info,2},
      {terminate,2},{code_change,3}];
-behaviour_info(Other) ->
+behaviour_info(_Other) ->
     undefined.
 
 %%% ---------------------------------------------------
@@ -232,7 +232,7 @@ send_nodes([Node|Tail], Name, Tag, Req, Monitors)
     %% Handle non-existing names in rec_nodes.
     catch {Name, Node} ! {'$gen_call', {self(), {Tag, Node}}, Req},
     send_nodes(Tail, Name, Tag, Req, [Monitor | Monitors]);
-send_nodes([Node|Tail], Name, Tag, Req, Monitors) ->
+send_nodes([_Node|Tail], Name, Tag, Req, Monitors) ->
     %% Skip non-atom Node
     send_nodes(Tail, Name, Tag, Req, Monitors);
 send_nodes([], _Name, _Tag, _Req, Monitors) -> 
@@ -241,7 +241,7 @@ send_nodes([], _Name, _Tag, _Req, Monitors) ->
 start_monitor(Node, Name) when atom(Node), atom(Name) ->
     if node() == nonode@nohost, Node /= nonode@nohost ->
 	    Ref = make_ref(),
-	    self() ! {'DOWN', Ref, process, Name, noconnection},
+	    self() ! {'DOWN', Ref, process, {Name, Node}, noconnection},
 	    {Node, Ref};
        true ->
 	    case catch erlang:monitor(process, {Name, Node}) of
@@ -357,7 +357,7 @@ rec_nodes_rest(Tag, [N|Tail], Name, Badnodes, Replies) ->
 	    monitor_node(N, false),
 	    rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies)
     end;
-rec_nodes_rest(Tag, [], Name, Badnodes, Replies) ->
+rec_nodes_rest(_Tag, [], _Name, Badnodes, Replies) ->
     {Replies, Badnodes}.
 
 
@@ -425,7 +425,7 @@ loop(Parent, Name, State, Mod, Time, Debug) ->
 system_continue(Parent, Debug, [Name, State, Mod, Time]) ->
     loop(Parent, Name, State, Mod, Time, Debug).
 
-system_terminate(Reason, Parent, Debug, [Name, State, Mod, Time]) ->
+system_terminate(Reason, _Parent, Debug, [Name, State, Mod, _Time]) ->
     terminate(Reason, Name, [], Mod, State, Debug).
 
 system_code_change([Name, State, Mod, Time], _Module, OldVsn, Extra) ->
@@ -463,7 +463,7 @@ dispatch({'$gen_cast', Msg}, Mod, State) ->
 dispatch(Info, Mod, State) ->
     apply(Mod, handle_info, [Info, State]).
 
-handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, Time) ->
+handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, _Time) ->
     case catch apply(Mod, handle_call, [Msg, From, State]) of
 	{reply, Reply, NState} ->
 	    reply(From, Reply),
@@ -482,11 +482,11 @@ handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, Time) ->
 	    exit(R);
 	Other -> handle_common_reply(Other, Parent, Name, Msg, Mod, State)
     end;
-handle_msg(Msg, Parent, Name, State, Mod, Time) ->
+handle_msg(Msg, Parent, Name, State, Mod, _Time) ->
     Reply = (catch dispatch(Msg, Mod, State)),
     handle_common_reply(Reply, Parent, Name, Msg, Mod, State).
 
-handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, Time, Debug) ->
+handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, _Time, Debug) ->
     case catch apply(Mod, handle_call, [Msg, From, State]) of
 	{reply, Reply, NState} ->
 	    Debug1 = reply(Name, From, Reply, NState, Debug),
@@ -510,7 +510,7 @@ handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, Time, Debug) ->
 	Other ->
 	    handle_common_reply(Other, Parent, Name, Msg, Mod, State, Debug)
     end;
-handle_msg(Msg, Parent, Name, State, Mod, Time, Debug) ->
+handle_msg(Msg, Parent, Name, State, Mod, _Time, Debug) ->
     Reply = (catch dispatch(Msg, Mod, State)),
     handle_common_reply(Reply, Parent, Name, Msg, Mod, State, Debug).
 
@@ -587,7 +587,7 @@ error_info(Reason, Name, Msg, State, Debug) ->
 %%% Misc. functions.
 %%% ---------------------------------------------------
 
-opt(Op, [{Op, Value}|Options]) ->
+opt(Op, [{Op, Value}|_]) ->
     {ok, Value};
 opt(Op, [_|Options]) ->
     opt(Op, Options);

@@ -1,7 +1,7 @@
 {application, runtime_tools,
    [{description, "RUNTIME_TOOLS version 1"},
     {vsn, "%VSN%"},
-    {modules, [dbg]},
+    {modules, [dbg, observer_backend]},
     {registered, []},
     {applications, [kernel, stdlib]},
     {env, []}]}.

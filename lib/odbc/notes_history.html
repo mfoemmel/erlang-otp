@@ -1,0 +1,83 @@
+<html>
+<head>
+  <title>Odbc Release Notes</title>
+  <style type="text/css">
+<!--
+    body          { background: white; margin: 3em }
+
+    body          { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1 h2 h3 h4   { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1            { font-size: 48 }
+    p li          { font-family: Verdana, Arial, Helvetica, sans-serif }
+-->
+  </style>
+</head>
+
+<body bgcolor=white>
+
+<!--- ################################################################# --->
+
+<h2>Odbc 0.9.3</h2>
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+  <li>
+      Erlang ODBC application can handle floating point number and 
+      has been improved with null value handling. The error messages has
+      been improved with STATE-information from SQL function 
+      SQLGetDiagRec.<br>
+      (Own Id: OTP-4192)<br>
+      (Aux Id: seq7195)<p>
+  </li>
+
+  <li>
+      sqlCloseCursor have been replaced with sqlCloseHandle <br>
+      (*** POTENTIAL INCOMPATIBILITY ***)<br>
+      <p>
+  </li>
+</ul>
+
+<h3>Fixed errors and malfunctions</h3>
+<ul>
+  <li>
+      When Erlang ODBC application close does not the odbcserver
+      hang anymore.<br>
+      (Aux Id: seq7283)<p>
+  </li>
+      
+</ul>
+
+<!--- ################################################################# --->
+
+<h2>Odbc 0.8.1</h2>
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+  <li>
+      Functions for starting and stopping ODBC servers.
+      <br>
+      <p>
+  </li>
+      
+  <li>The <em>Basic API</em> which is almost identical to
+      that defined by the ODBC standard.
+      <br>
+      <p>
+  </li>
+      
+  <li>
+      The <em>Utility API</em> which supplies a few easy-to-use
+      functions for database access with little control over details.
+      <br>
+      <p>
+  </li>
+</ul>
+
+</body>
+</html>

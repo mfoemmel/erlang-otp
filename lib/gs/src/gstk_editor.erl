@@ -199,7 +199,7 @@ event(DB, Gstkid, Etype, Edata, Args) ->
 %%
 %% Return 	: A tuple {OptionType, OptionCmd}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-option(Option, Gstkid, MainW,DB, Editor) ->
+option(Option, Gstkid, _MainW, DB, Editor) ->
     case Option of
 	{font,Font} when tuple(Font) ->   
 	    gstk_db:insert_opt(DB,Gstkid,Option),
@@ -272,7 +272,7 @@ option(Option, Gstkid, MainW,DB, Editor) ->
 %% Return 	: The value of the option or invalid_option
 %%		  [OptionValue | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-read_option(Option,GstkId,MainW,DB,Editor) ->
+read_option(Option,GstkId,_MainW,DB,Editor) ->
     case Option of
 	font -> gstk_db:opt(DB,GstkId,font,undefined);
 	padx          -> tcl2erl:ret_atom([Editor," cg -padx"]);
@@ -355,7 +355,7 @@ get_color_tag(Editor,Color,Gstkid) ->
     case lists:keysearch(Color, 2, Tags) of
 %	{value, {No, _}} -> {["c",gstk:to_ascii(No)], Gstkid};
 %	false -> % don't reuse tags, priority order spoils that
-	Any ->
+	_Any ->
 	    {No,_} = lists:max(Tags),
 	    N=No+1,
 	    SO2 = SO#so{misc=[{N,Color}|Tags]},
@@ -370,7 +370,7 @@ get_style_tag(DB,Editor,Style,Gstkid) ->
     case lists:keysearch(Style, 2, Tags) of
 %	{value, {No, _}} -> {["f",gstk:to_ascii(No)], Gstkid};
 %	false -> % don't reuse tags, priority order spoils that
-	Any -> 
+	_Any -> 
 	    {No,_} = lists:max(Tags),
 	    N=No+1,
 	    SO2 = SO#so{misc=[{N,Style}|Tags]},
@@ -390,7 +390,7 @@ last_tag_val(TagVal, Chr, [Tag|Ts],TagDict) ->
 	[Chr|ANo] ->
 	    No = list_to_integer(ANo),
 	    last_tag_val(gs:val(No, TagDict),Chr,Ts,TagDict);
-	NoAcolor ->
+	_NoAcolor ->
 	    last_tag_val(TagVal,Chr, Ts,TagDict)
     end.
     

@@ -677,12 +677,12 @@ find_col(Col, [H | T]) -> find_col(Col, T).
 %%     {inconsistentValue 0} otherwise. (Index = 0. It's hard to tell
 %%        which Col is wrong, when the problem is that one is missing!)
 %%------------------------------------------------------------------
-check_mandatory_cols([], _) -> {noError, 0};
-check_mandatory_cols(_, []) -> {inconsistentValue, 0};
-check_mandatory_cols([Col | Cols], [{Col, Val} | T]) ->
-    check_mandatory_cols(Cols, T);
-check_mandatory_cols([Col | Cols], [{Col2, Val} | T]) ->
-    check_mandatory_cols([Col | Cols], T).
+% check_mandatory_cols([], _) -> {noError, 0};
+% check_mandatory_cols(_, []) -> {inconsistentValue, 0};
+% check_mandatory_cols([Col | Cols], [{Col, Val} | T]) ->
+%     check_mandatory_cols(Cols, T);
+% check_mandatory_cols([Col | Cols], [{Col2, Val} | T]) ->
+%     check_mandatory_cols([Col | Cols], T).
 
 
 try_apply(nofunc, _) -> {noError, 0};

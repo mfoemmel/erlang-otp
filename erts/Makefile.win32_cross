@@ -47,7 +47,7 @@ OMAKE= $(WINRPC) winmake #omake -E -EN -f Makefile.win32
 
 # Targets
 
-progress_test: setup unix1 $(EMULATOR) build_epmd apps unix2 tests win2
+progress_test: setup unix1 $(EMULATOR) build_epmd apps unix2 unix3 tests win2
 progress: setup unix1 $(EMULATOR) build_epmd apps unix2 unix3 win2
 release:  setup unix1 $(EMULATOR) build_epmd apps unix2 unix3 win2
 lite: setup unix1lite $(EMULATOR) build_epmd unix2lite win2
@@ -87,7 +87,7 @@ local_setup:
 
 night: progress copytests runtests
 
-apps: erl_interface gs os_mon ic crypto comet ssl odbc runtime_tools asn1
+apps: erl_interface os_mon ic crypto ssl odbc runtime_tools asn1
 
 tests:
 	(cd $(ERL_TOP) && $(MAKE_V) release_tests TESTROOT=$(TESTROOT)/test/test_suite TARGET=win32)
@@ -140,9 +140,6 @@ build_epmd:
 erl_interface:
 	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\erl_interface\src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
 
-gs:
-	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\gs\win" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
-
 os_mon:
 	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\os_mon\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
 
@@ -163,9 +160,6 @@ ic:
 
 runtime_tools:
 	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\runtime_tools\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
-
-comet:
-	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\comet\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
 
 asn1:
 	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\asn1\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"

@@ -111,11 +111,12 @@
 
 	 %% Mnesia internal functions
 	 dirty_rpc/4,                          % Not for public use
+	 has_var/1, fun_select/7,
 	 foldl/6, foldr/6,
 
 	 %% Module internal callback functions
 	 remote_dirty_match_object/2,           % Not for public use
-	 has_var/1
+	 remote_dirty_select/2                  % Not for public use
 	]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -255,6 +256,8 @@ ms() ->
      mnesia_dumper,
      mnesia_loader,
      mnesia_frag, 
+     mnesia_frag_hash, 
+     mnesia_frag_old_hash, 
      mnesia_index,
      mnesia_kernel_sup,
      mnesia_late_loader,
@@ -444,8 +447,8 @@ lock(Tid, Ts, LockItem, LockKind) ->
     case element(1, Tid) of
 	tid ->
 	    case LockItem of
-		%% {record, Tab, Key} ->
-		%%    lock_record(Tid, Ts, Tab, Key, LockKind);
+		{record, Tab, Key} ->
+		    lock_record(Tid, Ts, Tab, Key, LockKind);
 		{table, Tab} ->
 		    lock_table(Tid, Ts, Tab, LockKind);
 		{global, GlobalKey, Nodes} ->
@@ -467,6 +470,24 @@ write_lock_table(Tab) ->
     lock({table, Tab}, write),
     ok.
 
+lock_record(Tid, Ts, Tab, Key, LockKind) when atom(Tab) ->
+    Store = Ts#tidstore.store,
+    Oid =  {Tab, Key},
+    case LockKind of
+	read ->
+	    mnesia_locker:rlock(Tid, Store, Oid);
+	write ->
+	    mnesia_locker:wlock(Tid, Store, Oid);
+	sticky_write ->
+	    mnesia_locker:sticky_wlock(Tid, Store, Oid);
+	none ->
+	    [];
+	_ ->
+	    abort({bad_type, Tab, LockKind})
+    end;
+lock_record(Tid, Ts, Tab, _Key, _LockKind) ->
+    abort({bad_type, Tab}).
+
 lock_table(Tid, Ts, Tab, LockKind) when atom(Tab) ->
     Store = Ts#tidstore.store,
     case LockKind of
@@ -476,6 +497,8 @@ lock_table(Tid, Ts, Tab, LockKind) when atom(Tab) ->
 	    mnesia_locker:wlock_table(Tid, Store, Tab);
 	sticky_write ->
 	    mnesia_locker:sticky_wlock_table(Tid, Store, Tab);
+	none ->
+	    [];
 	_ ->
 	    abort({bad_type, Tab, LockKind})
     end;
@@ -894,20 +917,12 @@ match_object(Tid, Ts, Tab, Pat, LockKind)
 	    mnesia_lib:db_match_object(ram_copies, Tab, Pat);
 	tid ->
 	    Key = element(2, Pat),
-	    Store = Ts#tidstore.store,
-	    case LockKind of
-		read ->
-		    case has_var(Key) of
-			false ->
-			    mnesia_locker:rlock(Tid, Store, {Tab, Key});
-			true ->
-			    mnesia_locker:rlock_table(Tid, Store, Tab)
-		    end;
-		_ ->
-		    abort({bad_type, Tab, LockKind})
+	    case has_var(Key) of
+		false -> lock_record(Tid, Ts, Tab, Key, LockKind);
+		true  -> lock_table(Tid, Ts, Tab, LockKind)
 	    end,
 	    Objs = dirty_match_object(Tab, Pat),
-	    add_written_match(Store, Pat, Tab, Objs);
+	    add_written_match(Ts#tidstore.store, Pat, Tab, Objs);
 	Protocol ->
 	    dirty_match_object(Tab, Pat)
     end;
@@ -933,51 +948,64 @@ add_match([{Oid, Val, delete_object}|R], Objs, Type) ->
 add_match([{Oid, Val, write}|R], Objs, Type) ->
     case Type of
 	bag ->
-	    add_match(R, [Val|lists:delete(Val, Objs)], Type);
+	    add_match(R, [Val | lists:delete(Val, Objs)], Type);
 	_ ->
-	    add_match(R, [Val|deloid(Oid,Objs)],Type)
+	    add_match(R, [Val | deloid(Oid,Objs)],Type)
     end.
-
 
 %%%%%%%%%%%%%%%%%%
 % select 
 
-select(Tab, MatchPattern) ->
-    select(Tab, MatchPattern, read).
-select(Tab, MatchPattern, LockKind) 
-  when atom(Tab), Tab /= schema, list(MatchPattern) ->
+select(Tab, Pat) ->
+    select(Tab, Pat, read).
+select(Tab, Pat, LockKind) 
+  when atom(Tab), Tab /= schema, list(Pat) ->
     case get(mnesia_activity_state) of
 	{?DEFAULT_ACCESS, Tid, Ts} ->
-	    select(Tid, Ts, Tab, MatchPattern, LockKind);
+	    select(Tid, Ts, Tab, Pat, LockKind);
 	{Mod, Tid, Ts} ->
-	    Mod:select(Tid, Ts, Tab, MatchPattern, LockKind);
+	    Mod:select(Tid, Ts, Tab, Pat, LockKind);
 	_ ->
 	    abort(no_transaction)
     end;
-select(Tab, MatchPattern, Lock) ->
-    abort({badarg, Tab, MatchPattern}).
+select(Tab, Pat, Lock) ->
+    abort({badarg, Tab, Pat}).
 
-select(Tid, Ts, Tab, MatchPattern, LockKind) ->
+select(Tid, Ts, Tab, Spec, LockKind) ->
+    SelectFun = fun(FixedSpec) -> dirty_select(Tab, FixedSpec) end,
+    fun_select(Tid, Ts, Tab, Spec, LockKind, Tab, SelectFun).
+
+fun_select(Tid, Ts, Tab, Spec, LockKind, TabPat, SelectFun) ->
     case element(1, Tid) of
 	ets ->
-	    mnesia_lib:db_select(ram_copies, Tab, MatchPattern);
+	    mnesia_lib:db_select(ram_copies, Tab, Spec);
 	tid ->    
 	    Store = Ts#tidstore.store,
-	    Written = ?ets_match_object(Store, {{Tab, '_'}, '_', '_'}),	    
-	    lock_table(Tid, Ts, Tab, LockKind),
+	    Written = ?ets_match_object(Store, {{TabPat, '_'}, '_', '_'}),	    
+	    %% Avoid table lock if possible
+	    case Spec of
+		[{HeadPat,_, _}] when tuple(HeadPat), size(HeadPat) > 2 ->
+		    Key = element(2, HeadPat),
+		    case has_var(Key) of
+			false -> lock_record(Tid, Ts, Tab, Key, LockKind);
+			true  -> lock_table(Tid, Ts, Tab, LockKind)
+		    end;
+		_ ->
+		    lock_table(Tid, Ts, Tab, LockKind)
+	    end,
 	    case Written of 
 		[] ->  
 		    %% Nothing changed in the table during this transaction,
 		    %% Simple case get results from [d]ets
-		    dirty_select(Tab, MatchPattern);
+		    SelectFun(Spec);
 		_ ->   
 		    %% Hard (slow case) records added or deleted earlier 
 		    %% in the transaction, have to cope with that.
 		    Type = val({Tab, setorbag}),
-		    FixedPatt = get_record_pattern(MatchPattern),
-		    TabRecs = dirty_select(Tab, FixedPatt),
+		    FixedSpec = get_record_pattern(Spec),
+		    TabRecs = SelectFun(FixedSpec),
 		    FixedRes = add_match(Written, TabRecs, Type),
-		    CMS = ets:match_spec_compile(MatchPattern),
+		    CMS = ets:match_spec_compile(Spec),
 		    case Type of 
 			ordered_set -> 
 			    ets:match_spec_run(lists:sort(FixedRes), CMS);
@@ -986,7 +1014,7 @@ select(Tid, Ts, Tab, MatchPattern, LockKind) ->
 		    end
 	    end;
 	Protocol ->
-	    dirty_select(Tab, MatchPattern)
+	    SelectFun(Spec)
     end. 
 
 get_record_pattern([]) ->
@@ -1017,8 +1045,10 @@ all_keys(Tid, Ts, Tab, LockKind)
     Pat = setelement(2, Pat0, '$1'),
     Keys = select(Tid, Ts, Tab, [{Pat, [], ['$1']}], LockKind),
     case val({Tab, setorbag}) of
-	bag -> mnesia_lib:uniq(Keys);
-	_ -> Keys
+	bag ->
+	    mnesia_lib:uniq(Keys);
+	_ ->
+	    Keys
     end;
 all_keys(Tid, Ts, Tab, LockKind) ->    
     abort({bad_type, Tab}).
@@ -1049,16 +1079,10 @@ index_match_object(Tid, Ts, Tab, Pat, Attr, LockKind)
 		Pos when Pos =< size(Pat) ->
 		    case LockKind of
 			read ->
-			    Elem = element(Pos, Pat),
-			    case has_var(Elem) of
-				false ->
-				    Store = Ts#tidstore.store,
-				    mnesia_locker:rlock_table(Tid, Store, Tab),
-				    Objs = dirty_index_match_object(Tab, Pat, Attr),
-				    add_written_match(Store, Pat, Tab, Objs);
-				true ->
-				    abort({bad_type, Attr, Elem})
-			    end;
+			    Store = Ts#tidstore.store,
+			    mnesia_locker:rlock_table(Tid, Store, Tab),
+			    Objs = dirty_index_match_object(Tab, Pat, Attr),
+			    add_written_match(Store, Pat, Tab, Objs);
 			_ ->
 			    abort({bad_type, Tab, LockKind})
 		    end;
@@ -1242,35 +1266,46 @@ remote_dirty_match_object(Tab, Pat, []) ->
 remote_dirty_match_object(Tab, Pat, PosList) ->
     abort({bad_type, Tab, Pat}).
 
-%% Fix index usage !! BUGBUG
-dirty_select(Tab, Pat) when atom(Tab), Tab /= schema, list(Pat) ->
-%%    dirty_rpc(Tab, ?MODULE, remote_dirty_select_object, [Tab, Pat]);
-    dirty_rpc(Tab, mnesia_lib, db_select, [Tab, Pat]);
-dirty_select(Tab, Pat) ->
-    abort({bad_type, Tab, Pat}).
+dirty_select(Tab, Spec) when atom(Tab), Tab /= schema, list(Spec) ->
+    dirty_rpc(Tab, ?MODULE, remote_dirty_select, [Tab, Spec]);
+dirty_select(Tab, Spec) ->
+    abort({bad_type, Tab, Spec}).
 
-%remote_dirty_select(Tab, Pat) ->
-%    Key = element(2, Pat),
-%    case has_var(Key) of
-%	false ->
-%	    mnesia_lib:db_select(Tab, Pat);
-%	true ->
-%	    PosList = val({Tab, index}),
-%	    remote_dirty_select(Tab, Pat, PosList)
-%    end.
+remote_dirty_select(Tab, Spec) ->
+    case Spec of
+	[{HeadPat, _, _}] when tuple(HeadPat), size(HeadPat) > 2 ->
+	    Key = element(2, HeadPat),
+	    case has_var(Key) of
+		false ->
+		    mnesia_lib:db_select(Tab, Spec);
+		true  ->
+		    PosList = val({Tab, index}),
+		    remote_dirty_select(Tab, Spec, PosList)
+	    end;
+	_ ->
+	    mnesia_lib:db_select(Tab, Spec)
+    end.
 
-%remote_dirty_select(Tab, Pat, [Pos | Tail]) when Pos =< size(Pat) ->
-%    IxKey = element(Pos, Pat),
-%    case has_var(IxKey) of
-%	false ->
-%	    mnesia_index:dirty_select(Tab, Pat, Pos);
-%	true ->
-%	    remote_dirty_select(Tab, Pat, Tail)
-%    end;
-%remote_dirty_select(Tab, Pat, []) ->
-%    mnesia_lib:db_select(Tab, Pat);
-%remote_dirty_select(Tab, Pat, PosList) ->
-%    abort({bad_type, Tab, Pat}).
+remote_dirty_select(Tab, [{HeadPat,_, _}] = Spec, [Pos | Tail])
+  when tuple(HeadPat), size(HeadPat) > 2, Pos =< size(Spec) ->
+    Key = element(Pos, HeadPat),
+    case has_var(Key) of
+	false ->
+	    Recs = mnesia_index:dirty_select(Tab, Spec, Pos),
+	    %% Returns the records without applying the match spec
+	    %% The actual filtering is handled by the caller
+	    CMS = ets:match_spec_compile(Spec),
+	    case val({Tab, setorbag}) of 
+		ordered_set -> 
+		    ets:match_spec_run(lists:sort(Recs), CMS);
+		_ ->
+		    ets:match_spec_run(Recs, CMS)
+	    end;
+	true  ->
+	    remote_dirty_select(Tab, Spec, Tail)
+    end;
+remote_dirty_select(Tab, Spec, _) ->
+    mnesia_lib:db_select(Tab, Spec).
 
 dirty_all_keys(Tab) when atom(Tab), Tab /= schema ->
     case ?catch_val({Tab, wild_pattern}) of
@@ -1297,13 +1332,18 @@ dirty_index_match_object(Tab, Pat, Attr)
   when atom(Tab), Tab /= schema, tuple(Pat), size(Pat) > 2 ->
     case mnesia_schema:attr_tab_to_pos(Tab, Attr) of
 	Pos when Pos =< size(Pat) ->
-	    Elem = element(Pos, Pat),
-	    case has_var(Elem) of
+	    case has_var(element(2, Pat)) of
 		false ->
-		    dirty_rpc(Tab, mnesia_index, dirty_match_object,
-			      [Tab, Pat, Pos]);
+		    dirty_match_object(Tab, Pat);
 		true ->
-		    abort({bad_type, Tab, Attr, Elem})
+		    Elem = element(Pos, Pat),
+		    case has_var(Elem) of
+			false ->
+			    dirty_rpc(Tab, mnesia_index, dirty_match_object,
+				      [Tab, Pat, Pos]);
+			true ->
+			    abort({bad_type, Tab, Attr, Elem})
+		    end		    
 	    end;
 	BadPos ->
 	    abort({bad_type, Tab, BadPos})
@@ -1356,16 +1396,34 @@ do_dirty_rpc(Tab, nowhere, _, _, Args) ->
     mnesia:abort({no_exists, Args});
 do_dirty_rpc(Tab, Node, M, F, Args) ->
     case rpc:call(Node, M, F, Args) of
+	{badrpc,{'EXIT', {undef, [{ M, F, _} | _]}}}
+	  when M == ?MODULE, F == remote_dirty_select ->
+	    %% Oops, the other node has not been upgraded
+	    %% to 4.0.3 yet. Lets do it the old way.
+	    %% Remove this in next release.
+	    do_dirty_rpc(Tab, Node, mnesia_lib, db_select, Args);
 	{badrpc, Reason} ->
-	    %% 'Node' probably went down now
-	    erlang:yield(), %% Let mnesia_controller get broken link message first
-	    NewNode = mnesia_controller:call({check_w2r, Node, Tab}), % Sync 
-	    if 
-		NewNode == Node -> 
-		    ErrorTag = mnesia_lib:dirty_rpc_error_tag(Reason),
-		    mnesia:abort({ErrorTag, Args});
-		true ->
-		    do_dirty_rpc(Tab, NewNode, M, F, Args)
+	    erlang:yield(), %% Do not be too eager
+	    case get(mnesia_activity_state) of
+		{_Mod, Tid, _Ts} when record(Tid, tid) ->
+		    %% In order to perform a consistent
+		    %% retry of a transaction we need
+		    %% to acquire the lock on the NewNode.
+		    %% In this context we do neither know
+		    %% the kind or granularity of the lock.
+		    %% --> Abort the transaction 
+		    mnesia:abort({node_not_running, Node});
+		_ ->
+		    %% Splendid! A dirty retry is safe
+		    %% 'Node' probably went down now
+		    %% Let mnesia_controller get broken link message first
+		    case mnesia_controller:call({check_w2r, Node, Tab}) of % Sync
+			NewNode when NewNode == Node -> 
+			    ErrorTag = mnesia_lib:dirty_rpc_error_tag(Reason),
+			    mnesia:abort({ErrorTag, Args});
+			NewNode ->
+			    do_dirty_rpc(Tab, NewNode, M, F, Args)
+		    end
 	    end;
 	Other ->
 	    Other

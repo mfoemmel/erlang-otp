@@ -65,7 +65,7 @@
 	  update_mode,     % saved | dirty | new_dirty | {error, Reason}
 	  fixed = false,   % false | {now_time(), [{pid(),Counter}]}
                            % time of first fix, and number of fixes per process
-	  hash_bif,        % hash bif used for this file (phash or hash)
+	  hash_bif,        % hash bif used for this file (phash2, phash, hash)
 	  min_no_slots,    % minimum number of slots (default or integer)
 	  max_no_slots,    % maximum number of slots (default or integer)
 	  cache,           % cache(). Write cache.
@@ -74,6 +74,9 @@
 	  access = read_write,  % read | read_write
 	  ram_file = false,     % true | false
 	  name,                 % the name of the table
+
+	  parent,               % The supervisor of Dets processes.
+	  server,               % The creator of Dets processes.
 
           %% Depending on the file format:
           version,

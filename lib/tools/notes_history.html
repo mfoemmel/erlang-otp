@@ -1,11 +1,95 @@
 <HTML>
 <HEAD>
-  <TITLE>Tools Release Notes</TITLE>
+  <TITLE>Tools Release Notes (Old)</TITLE>
 </HEAD>
 
 <BODY BGCOLOR="#FFFFFF">
 
-<CENTER><H1>Tools Release Notes</H1></CENTER>
+<CENTER><H1>Tools Release Notes (Old)</H1></CENTER>
+
+<h2>Tools 2.0</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    xref bug fix: variables LM and AM were not always disjoint.<br>
+    (Own Id: OTP-3921)<p>
+  </li>
+
+</ul>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+    <p>Coast was much too slow and ineffiecient, especially for large
+    modules. Also, it was discovered that Coast in some cases returned
+    erroneous values.</p> <p>Consequently, Coast has been discontinued and
+    is replaced with a new tool <b>Cover</b> with similar interface and
+    functionality. Refer to the Tools User's Guide and Reference Manual for
+    more information about Cover.</p><br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-3622)<p>
+  </li>
+
+  <li>
+    The functions <code>xref:m/1</code> and <code>xref:d/1</code> return a
+    list of undefined functions in case the BEAM files do not contain debug
+    information.<br>
+    (Own Id: OTP-3879)<p>
+  </li>
+
+  <li>
+    <code>xref</code> represents unresolved calls with calls where the
+    module, the function or the number of arguments are atoms and integers
+    that are unlikely to occur in an Erlang system. Calls to
+    <code>erlang:apply/2</code> and the like are included among the
+    external calls. This is in contrast to R7 where calls to
+    <code>apply</code> and <code>spawn</code> were used for representing
+    unresolved calls.<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-3948)<p>
+  </li>
+
+  <li>
+    The default value of the Xref option <code>verbose</code> has been
+    changed from <code>true</code> to <code>false</code>. The function
+    <code>xm/1</code>, which cross reference checks a module by calling
+    <code>xref:m/1</code>, has been added to the <code>c</code> module.<br>
+    (Own Id: OTP-4101)<p>
+  </li>
+
+  <li>
+    Added a web based user interface to Cover.<br>
+    (Own Id: OTP-4105)<br>
+    (Aux Id: OTP-4104)<p>
+  </li>
+
+  <li>
+    The old cross reference tool <code>exref</code> has now been removed,
+    use the new tool <code>xref</code> instead.<br>
+    (Own Id: OTP-4140)<p>
+  </li>
+
+</ul>
+
+<h2>Tools 1.6.3</h2>
+<h3>Improvements and new features</h3>
+<ul>
+  <li>
+    A preliminary version of the new Fprof tool has been added.<br>
+   (Own Id: OTP-4010)<p>
+  </li>
+</ul>
 
 <H2>Tools 1.6.2</H2>
 <H3>Improvements and new features</H3>

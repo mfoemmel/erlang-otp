@@ -56,7 +56,7 @@
 behaviour_info(callbacks) ->
     [{init,1},{handle_event,2},{handle_call,2},{handle_info,2},
      {terminate,2},{code_change,3}];
-behaviour_info(Other) ->
+behaviour_info(_Other) ->
     undefined.
 
 %% gen_event:start(Handler) -> ok | {error, What}
@@ -486,7 +486,7 @@ split(Mod, [Ha|T], L) when Ha#handler.module == Mod,
     {Mod, Ha, lists:reverse(L, T)};
 split(Ha, [H|T], L) ->
     split(Ha, T, [H|L]);
-split(Ha, [], _) ->
+split(_, [], _) ->
     error.
 
 %% server_call(Handler, Query, MSL, ServerName) ->
@@ -505,11 +505,11 @@ server_call(Handler, Query, MSL, SName) ->
 	    {{error, bad_module}, MSL}
     end.
 
-search({Mod, Id}, [Ha|MSL]) when Ha#handler.module == Mod,
-                                 Ha#handler.id == Id ->
+search({Mod, Id}, [Ha|_MSL]) when Ha#handler.module == Mod,
+				  Ha#handler.id == Id ->
     {ok, Ha};
-search(Mod, [Ha|MSL]) when Ha#handler.module == Mod,
-                           Ha#handler.id == false ->
+search(Mod, [Ha|_MSL]) when Ha#handler.module == Mod,
+			    Ha#handler.id == false ->
     {ok, Ha};
 search(Handler, [_|MSL]) ->
     search(Handler, MSL);
@@ -580,9 +580,9 @@ report_terminate(Handler, Reason, State, LastIn, SName) ->
 	    ok
     end.
 
-report_error(Handler, normal, _, _, _)                -> ok;
-report_error(Handler, shutdown, _, _, _)              -> ok;
-report_error(Handler, {swapped,_,_}, _, _, _)         -> ok;
+report_error(_Handler, normal, _, _, _)               -> ok;
+report_error(_Handler, shutdown, _, _, _)             -> ok;
+report_error(_Handler, {swapped,_,_}, _, _, _)        -> ok;
 report_error(Handler, Reason, State, LastIn, SName)   ->
     error_msg("** gen_event handler ~p crashed.~n"
 	      "** Was installed in ~p~n"
@@ -624,8 +624,8 @@ get_modules(MSL) ->
 %%-----------------------------------------------------------------
 %% Status information
 %%-----------------------------------------------------------------
-format_status(Opt, StatusData) ->
-    [PDict, SysState, Parent, Debug, [ServerName, MSL]] = StatusData,
+format_status(_Opt, StatusData) ->
+    [_PDict, SysState, Parent, _Debug, [ServerName, MSL]] = StatusData,
     Header = lists:concat(["Status for event handler ", ServerName]),
     [{header, Header},
      {data, [{"Status", SysState},

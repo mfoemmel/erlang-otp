@@ -48,7 +48,7 @@ init([]) ->
     User = set_group_leader(),
     {ok, {User, []}}.
     
-handle_event({Type, GL, Msg}, State) when node(GL) /= node() ->
+handle_event({_Type, GL, _Msg}, State) when node(GL) /= node() ->
     {ok, State};
 handle_event(Event, State) ->
     write_event(tag_event(Event)),
@@ -75,12 +75,12 @@ handle_call(_Query, State) -> {ok, {error, bad_query}, State}.
 
 % unfortunately, we can't unlink from User - links are not counted!
 %    if pid(User) -> unlink(User); true -> ok end,
-terminate(install_prev, State) ->
+terminate(install_prev, _State) ->
     [];
-terminate(_Reason, {User, PrevHandler}) ->
+terminate(_Reason, {_User, PrevHandler}) ->
     {error_logger_tty_h, PrevHandler}.
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%% ------------------------------------------------------
@@ -141,7 +141,7 @@ write_event({Time, {info_msg, _GL, {Pid, Format, Args}}}) ->
 	    F = add_node("ERROR: ~p - ~p~n", Pid),
 	    format(T ++ F, [Format,Args])
     end;
-write_event({Time, Error}) ->
+write_event({_Time, _Error}) ->
     ok.
 
 format(String)       -> io:format(user, String, []).

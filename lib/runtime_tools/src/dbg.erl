@@ -16,23 +16,66 @@
 %%     $Id$
 %%
 -module(dbg).
--export([p/1,p/2,c/3,c/4,i/0,i/1,stop/0,tracer/0,tracer/1,tracer/2,
-	 get_tracer/0, tp/2, tp/3, tp/4, ctp/1, ctp/2, ctp/3,
-	 tpl/2, tpl/3, tpl/4, ctpl/1, ctpl/2, ctpl/3,
-	 ctpg/1, ctpg/2, ctpg/3,
-	 ltp/0, wtp/1, rtp/1, dtp/0, dtp/1, n/1, cn/1, ln/0, h/0, h/1]).
-%-export([ptp/0]).
+-export([p/1,p/2,c/3,c/4,i/0,i/1,start/0,stop/0,stop_clear/0,tracer/0,tracer/1,
+	 tracer/2, tracer/3, get_tracer/0, get_tracer/1, tp/2, tp/3, tp/4, 
+	 ctp/0, ctp/1, ctp/2, ctp/3, tpl/2, tpl/3, tpl/4, ctpl/0, ctpl/1, 
+	 ctpl/2, ctpl/3, ctpg/0, ctpg/1, ctpg/2, ctpg/3, ltp/0, wtp/1, rtp/1, 
+	 dtp/0, dtp/1, n/1, cn/1, ln/0, h/0, h/1]).
 
--export([trace_port/2, flush_trace_port/0, trace_port_control/1,
-	 trace_client/2, trace_client/3, stop_trace_client/1]).
+-export([trace_port/2, flush_trace_port/0, flush_trace_port/1,
+	 trace_port_control/1, trace_port_control/2, trace_client/2, 
+	 trace_client/3, stop_trace_client/1]).
+
+-export([transform_flags/1,dhandler/2]).
+
+-export([fun2ms/1]).
 
 %% Local exports
--export([init/2,do_relay/1,tracer_init/2,tracer_loop/2]).
+-export([erlang_trace/3,get_info/0]).
 
 %% Debug exports
 -export([wrap_presort/2, wrap_sort/2, wrap_postsort/1, wrap_sortfix/2,
 	 match_front/2, match_rear/2,
 	 match_0_9/1]).
+
+
+%%% Shell callable utility
+fun2ms(ShellFun) when is_function(ShellFun) ->
+    % Check that this is really a shell fun...
+    Mod = erlang:fun_info(ShellFun,module),
+    case Mod of 
+	{module,erl_eval} ->
+	    Env = erlang:fun_info(ShellFun,env),
+	    case Env of
+		{env,[{eval,{shell,local_func},_},
+		      ImportList,
+		      Clauses]} when is_list(ImportList),
+				     element(1,hd(Clauses)) == clause ->
+		    case ms_transform:transform_from_shell(
+			   ?MODULE,Clauses,ImportList) of
+			{error,[{_,[{_,_,Code}|_]}|_],_} ->
+			    io:format("Error: ~s~n",
+				      [ms_transform:format_error(Code)]),
+			    {error,transform_error};
+			Else ->
+			    Else
+		    end;
+		_ ->
+		    exit({badarg,{?MODULE,fun2ms,
+				  [function,called,with,real,'fun',
+				   should,be,transformed,with,
+				   parse_transform,'or',called,with,
+				   a,'fun',generated,in,the,
+				   shell]}})
+	       end;
+	_ ->
+	    exit({badarg,{?MODULE,fun2ms,[function,called,with,real,'fun',
+				      should,be,transformed,with,
+				      parse_transform,'or',called,with,
+				      a,'fun',generated,in,the,
+				      shell]}}) 
+    end.
+
 
 %%% Client functions.
 
@@ -40,6 +83,8 @@
 %% n(Node) -> {ok, Node} | {error, Reason}
 %% Adds Node to the list of traced nodes.
 %%
+n(Node) when Node =:= node() ->
+    {error, cant_add_local_node};
 n(Node) ->
     case (catch net_adm:ping(Node)) of
 	{'EXIT',_} ->
@@ -51,6 +96,7 @@ n(Node) ->
 	Other ->
 	    {error, Other}
     end.
+
 %%
 %% cn(Node) -> ok
 %% Remove Node from the list of traced nodes.
@@ -60,20 +106,22 @@ cn(Node) ->
 
 %%
 %% ln() -> ok
-%% List traced nodes (except local node)
+%% List traced nodes
 %%
 ln() ->
     lists:foreach(fun(X) ->
-			  io:format("~p~n",[X])
-		  end,
-		  req(get_nodes)),
+                          io:format("~p~n",[X])
+                  end,
+                  req(get_nodes)),
     ok.
-
 
 %%
 %% tp/tpl(Module, Pattern) | tp/tpl(Module,Function,Pattern) |
 %% tp/tpl(Module,Function,Arity,Pattern) | tp/tpl({M,F,A},Pattern) 
-%% -> {ok, [{matched, N}]} | {ok, [{matched,N}, {saved, M}]} | {error, Reason}
+%% -> {ok, [{matched,Node,N}]} | 
+%%    {ok, [{matched,Node,N}, {saved,M}]} | 
+%%    {ok, [{saved,M}]} | 
+%%    {error, Reason}
 %% Set trace pattern for function or group of functions.
 %%
 tp(Module, Function, Pattern) ->
@@ -82,7 +130,7 @@ tp(Module, Function, Arity, Pattern) ->
     do_tp({Module, Function, Arity}, Pattern, []).
 tp(Module, Pattern) when atom(Module) ->
     do_tp({Module, '_', '_'}, Pattern, []);
-tp({Module, Function, Arity} = X, Pattern) ->
+tp({_Module, _Function, _Arity} = X, Pattern) ->
     do_tp(X,Pattern,[]).
 tpl(Module, Function, Pattern) ->
     do_tp({Module, Function, '_'}, Pattern, [local]).
@@ -90,104 +138,94 @@ tpl(Module, Function, Arity, Pattern) ->
     do_tp({Module, Function, Arity}, Pattern, [local]).
 tpl(Module, Pattern) when atom(Module) ->
     do_tp({Module, '_', '_'}, Pattern, [local]);
-tpl({Module, Function, Arity} = X, Pattern) ->
+tpl({_Module, _Function, _Arity} = X, Pattern) ->
     do_tp(X,Pattern,[local]).
-do_tp({Module, Function, Arity} = X, Pattern, Flags) when integer(Pattern) ->
+do_tp({_Module, _Function, _Arity} = X, Pattern, Flags) when integer(Pattern) ->
     case ets:lookup(get_pattern_table(), Pattern) of
 	[{_,NPattern}] ->
 	    do_tp(X, binary_to_term(NPattern), Flags);
 	_ ->
 	    {error, unknown_pattern}
     end;
-do_tp({Module, Function, Arity} = X, Pattern, Flags) when list(Pattern) ->
-    RemoteNodes = req(get_nodes),
+do_tp({Module, _Function, _Arity} = X, Pattern, Flags) when list(Pattern) ->
+    Nodes = req(get_nodes),
     case Module of
 	'_' -> 
 	    ok;
 	M when atom(M) ->
-	    (catch M:module_info()), % Make it load
+	    %% Try to load M on all nodes
 	    lists:foreach(fun(Node) ->
-				  (catch rpc:call(Node, M, module_info, []))
+				  rpc:call(Node, M, module_info, [])
 			  end,
-			  RemoteNodes)
+			  Nodes)
     end,
-    case (catch erlang:trace_pattern(X, Pattern, Flags)) of
-	{'EXIT', Reason} ->
-	    case lint_tp(Pattern) of
-		{ok,_} ->
-		    {error, {badarg, X}};
-		Other ->
-		    Other
-	    end;
-	Matched ->
+    case lint_tp(Pattern) of
+	{ok,_} ->
 	    SaveInfo = case save_pattern(Pattern) of
 			   N when integer(N), N > 0 ->
 			       [{saved, N}];
 			   _ ->
 			       []
 		       end,
-	    {ok, [{matched, Matched} | remote_tp(RemoteNodes, X, Pattern, Flags)] 
-	     ++ SaveInfo}
+	    {ok, do_tp_on_nodes(Nodes, X, Pattern, Flags) ++ SaveInfo};
+	Other ->
+	    Other
     end.
 
-remote_tp(RN, MFA, P, Flags) ->
+%% All nodes are handled the same way - also the local node if it is traced
+do_tp_on_nodes(Nodes, MFA, P, Flags) ->
     lists:map(fun(Node) ->
-			  case (catch rpc:call(
-					Node,
-					erlang,
-					trace_pattern,
-					[MFA,
-					P, Flags])) of
-			      N when integer(N) ->
-				  {matched, Node, N};
-			      Else ->
-				  {matched, Node, 0, Else}
-			  end
+		      case rpc:call(Node,erlang,trace_pattern,[MFA,P, Flags]) of
+			  N when integer(N) ->
+			      {matched, Node, N};
+			  Else ->
+			      {matched, Node, 0, Else}
+		      end
 	      end,
-	      RN).
+	      Nodes).
 
 %%
-%% ctp/ctpl(Module) | ctp/ctpl(Module,Function) | ctp/ctpl(Module,Function,Arity) |
-%% ctp/ctpl({M,F,A}) ->
+%% ctp/ctpl(Module) | ctp/ctpl(Module,Function) | 
+%% ctp/ctpl(Module,Function,Arity) | ctp/ctpl({M,F,A}) ->
 %% {ok, [{matched, N}]} | {error, Reason}
 %% Clears trace pattern for function or group of functions.
 %%
+ctp() ->
+    do_ctp({'_','_','_'},[]).
 ctp(Module, Function) ->
     do_ctp({Module, Function, '_'}, []).
 ctp(Module, Function, Arity) ->
     do_ctp({Module, Function, Arity}, []).
 ctp(Module) when atom(Module) ->
     do_ctp({Module, '_', '_'}, []);
-ctp({Module, Function, Arity} = X) ->
+ctp({_Module, _Function, _Arity} = X) ->
     do_ctp(X,[]).
+ctpl() ->
+    do_ctp({'_', '_', '_'}, [local]).    
 ctpl(Module, Function) ->
     do_ctp({Module, Function, '_'}, [local]).
 ctpl(Module, Function, Arity) ->
     do_ctp({Module, Function, Arity}, [local]).
 ctpl(Module) when atom(Module) ->
     do_ctp({Module, '_', '_'}, [local]);
-ctpl({Module, Function, Arity} = X) ->
+ctpl({_Module, _Function, _Arity} = X) ->
     do_ctp(X,[local]).
+ctpg() ->
+    do_ctp({'_', '_', '_'}, [global]).
 ctpg(Module, Function) ->
     do_ctp({Module, Function, '_'}, [global]).
 ctpg(Module, Function, Arity) ->
     do_ctp({Module, Function, Arity}, [global]).
 ctpg(Module) when atom(Module) ->
     do_ctp({Module, '_', '_'}, [global]);
-ctpg({Module, Function, Arity} = X) ->
+ctpg({_Module, _Function, _Arity} = X) ->
     do_ctp(X,[global]).
 do_ctp({Module, Function, Arity},[]) ->
     do_ctp({Module, Function, Arity},[global]),
     do_ctp({Module, Function, Arity},[local]);
-do_ctp({Module, Function, Arity},Flags) ->
-    case (catch erlang:trace_pattern({Module, Function, Arity}, false, Flags)) of
-	{'EXIT',_} ->
-	    {error, badarg};
-	Else ->
-	    {ok, [{matched, Else} | remote_tp(req(get_nodes),
-					      {Module, Function, Arity},
-					      false, Flags)]}
-    end.
+do_ctp({_Module, _Function, _Arity}=MFA,Flags) ->
+    Nodes = req(get_nodes),
+    {ok,do_tp_on_nodes(Nodes,MFA,false,Flags)}.
 
 %%
 %% ltp() -> ok
@@ -254,7 +292,7 @@ tracer() ->
     tracer(process).
 
 tracer(process) ->
-    tracer(process, {fun dhandler/2,false});
+    tracer(process, {fun dhandler/2,user});
 tracer(Type) ->
     tracer(Type, false).
 
@@ -268,12 +306,55 @@ tracer(process, {Handler,HandlerData}) ->
     start(fun() -> start_tracer_process(Handler, HandlerData) end).
 
 
+remote_tracer(port, Fun) when function(Fun) ->
+    remote_start(Fun);
+
+remote_tracer(port, Port) when port(Port) ->
+    remote_start(fun() -> Port end);
+
+remote_tracer(process, {Handler,HandlerData}) ->
+    remote_start(fun() -> start_tracer_process(Handler, HandlerData) end).
+
+remote_start(StartTracer) ->
+    case (catch StartTracer()) of
+	{'EXIT', Reason} ->
+	    {error, Reason};
+	Tracer ->
+	    {ok,Tracer}
+    end.
+
+%%
+%% tracer(Node,Type,Data) -> {ok, Node} | {error, Reason}
+%% Add Node to the list of traced nodes and a trace port defined by
+%% Type and Data is started on Node.
+%%
+tracer(Node,Type,Data) when Node =:= node() ->
+    case tracer(Type,Data) of
+	{ok,_Dbg} -> {ok,Node};
+	Error -> Error
+    end;
+tracer(Node,Type,Data) ->
+    case (catch net_adm:ping(Node)) of
+	{'EXIT',_} ->
+	    {error, {bad_node, Node}};
+	pang ->
+	    {error, {nodedown, Node}};
+	pong ->
+	    req({add_node, Node, Type, Data});
+	Other ->
+	    {error, Other}
+    end.
 
 flush_trace_port() ->
     trace_port_control(flush).
+flush_trace_port(Node) ->
+    trace_port_control(Node,flush).
 
-trace_port_control(flush) ->
-    case trace_port_control($f, "") of
+trace_port_control(Operation) ->
+    trace_port_control(node(),Operation).
+
+trace_port_control(Node,flush) ->
+    case trace_port_control(Node,$f, "") of
 	{ok, [0]} ->
 	    ok;
 	{ok, _} ->
@@ -281,23 +362,24 @@ trace_port_control(flush) ->
 	Other ->
 	    Other
     end;
-trace_port_control(get_listen_port) ->
-    case trace_port_control($p, "") of
+trace_port_control(Node,get_listen_port) ->
+    case trace_port_control(Node,$p, "") of
 	{ok, <<0, IpPort:16>>} ->
 	    {ok, IpPort};
-	{ok, Other} ->
+	{ok, _Other} ->
 	    {error, not_supported_by_trace_driver};
 	Other ->
 	    Other
     end.
 
-trace_port_control(Command, Arg) ->
-    case get_tracer() of
+trace_port_control(Node, Command, Arg) ->
+    case get_tracer(Node) of
 	{ok, Port} when port(Port) ->
-	    {ok, catch erlang:port_control(Port, Command, Arg)};
+	    {ok, catch rpc:call(Node,erlang,port_control,[Port, Command, Arg])};
 	_ ->
 	    {error, no_trace_driver}
     end.
+    
 
 					   
 
@@ -323,42 +405,57 @@ trace_port(ip, Portno) when integer(Portno) ->
 
 trace_port(ip, {Portno, Qsiz}) when integer(Portno), integer(Qsiz) -> 
     fun() ->
-	    (catch erl_ddll:load_driver(
-		     filename:join(
-		       code:priv_dir(runtime_tools), 
-		       "lib"), 
-		     "trace_ip_drv")),
+	    Driver = "trace_ip_drv",
+	    Dir1 = filename:join(code:priv_dir(runtime_tools), "lib"),
+	    case catch erl_ddll:load_driver(Dir1, Driver) of
+		ok ->
+		    ok;
+		_ ->
+		    Dir2 = filename:join(
+			     Dir1, 
+			     erlang:system_info(system_architecture)),
+		    catch erl_ddll:load_driver(Dir2, Driver)
+	    end,
 	    L = lists:flatten(
-		  io_lib:format("trace_ip_drv ~p ~p 2",
-				[Portno, Qsiz])),
+		  io_lib:format("~s ~p ~p 2",
+				[Driver, Portno, Qsiz])),
 	    open_port({spawn, L}, [eof])
     end.
 
 trace_port1(file, Filename, Options) ->
     Driver = "trace_file_drv",
-    Name = filename:absname(Filename), 
-    %% Absname is needed since the driver uses 
-    %% the supplied name without further investigations, 
-    %% and if the name is relative the resulting path 
-    %% might be too long which can cause a bus error
-    %% on vxworks instead of a nice error code return.
-    {Wrap, Tail} =
-	case Options of
-	    {wrap, T, WrapSize, WrapCnt, WrapTime} ->
-		{lists:flatten(
-		   io_lib:format("w ~p ~p ~p ~p ", 
-				 [WrapSize, WrapCnt, WrapTime, length(Name)])),
-		 T};
-	    nowrap ->
-		{"", ""}
-	end,
-    Command = Driver ++ " " ++ Wrap ++ "n " ++ Name ++ Tail,
     fun() ->
-	    (catch erl_ddll:load_driver(
-		     filename:join(
-		       code:priv_dir(runtime_tools), 
-		       "lib"), 
-		     Driver)),
+	    Name = filename:absname(Filename), 
+	    %% Absname is needed since the driver uses 
+	    %% the supplied name without further investigations, 
+	    %% and if the name is relative the resulting path 
+	    %% might be too long which can cause a bus error
+	    %% on vxworks instead of a nice error code return.
+	    %% Also, the absname must be found inside the fun,
+	    %% in case the actual node where the port shall be
+	    %% started is on another node (or even another host)
+	    {Wrap, Tail} =
+		case Options of
+		    {wrap, T, WrapSize, WrapCnt, WrapTime} ->
+			{lists:flatten(
+			   io_lib:format("w ~p ~p ~p ~p ", 
+					 [WrapSize, WrapCnt, WrapTime, 
+					  length(Name)])),
+			 T};
+		    nowrap ->
+			{"", ""}
+		end,
+	    Command = Driver ++ " " ++ Wrap ++ "n " ++ Name ++ Tail,
+	    Dir1 = filename:join(code:priv_dir(runtime_tools), "lib"),
+	    case catch erl_ddll:load_driver(Dir1, Driver) of
+		ok ->
+		    ok;
+		_ ->
+		    Dir2 = filename:join(
+			     Dir1, 
+			     erlang:system_info(system_architecture)),
+		    catch erl_ddll:load_driver(Dir2, Driver)
+	    end,
 	    case Options of
 		{wrap, _, _, _} ->
 		    %% Delete old files
@@ -366,7 +463,7 @@ trace_port1(file, Filename, Options) ->
 		    lists:foreach(
 		      fun(N) -> file:delete(N) end,
 		      Files);
-		Other ->
+		_Other ->
 		    ok
 	    end,
 	    open_port({spawn, Command}, [eof])
@@ -374,21 +471,21 @@ trace_port1(file, Filename, Options) ->
 
 
 trace_client(file, Filename) ->
-    trace_client(file, Filename, {fun dhandler/2,false});
+    trace_client(file, Filename, {fun dhandler/2,user});
 trace_client(follow_file, Filename) ->
-    trace_client(follow_file, Filename, {fun dhandler/2,false});
+    trace_client(follow_file, Filename, {fun dhandler/2,user});
 trace_client(ip, Portno) when integer(Portno) ->
-    trace_client1(ip, {"localhost", Portno}, {fun dhandler/2,false});
+    trace_client1(ip, {"localhost", Portno}, {fun dhandler/2,user});
 trace_client(ip, {Host, Portno}) when integer(Portno) ->
-    trace_client1(ip, {Host, Portno}, {fun dhandler/2,false}).
+    trace_client1(ip, {Host, Portno}, {fun dhandler/2,user}).
 
 trace_client(file, {Filename, wrap, Tail}, FD) ->
     trace_client(file, {Filename, wrap, Tail, 128*1024}, FD);
 trace_client(file, {Filename, wrap, Tail, WrapSize}, FD) ->
     trace_client(file, {Filename, wrap, Tail, WrapSize, 8}, FD);
 trace_client(file, 
-	     {Filename, wrap, Tail, _, WrapCnt} = WrapSpec, 
-	     {Fun, Data} = FD)
+	     {_Filename, wrap, Tail, _WrapSize, WrapCnt} = WrapSpec, 
+	     {Fun, _Data} = FD)
   when list(Tail), function(Fun), integer(WrapCnt), WrapCnt >= 1 ->
     trace_client1(file, WrapSpec, FD);
 trace_client(file, Filename, {Fun, Data} ) when function(Fun) ->
@@ -439,16 +536,48 @@ i(Pid) -> req({i,Pid}).
 	
 c(M, F, A) ->
     c(M, F, A, all).
+c(M, F, A, Flags) when atom(Flags) ->
+    c(M, F, A, [Flags]);
 c(M, F, A, Flags) ->
-    p(self(), Flags),
+    case transform_flags(Flags) of
+	{error,Reason} -> {error,Reason};
+	Flags1 ->
+	    tracer(),
+	    {ok, Tracer} = get_tracer(),
+	    S = self(),
+	    Pid = spawn(fun() -> c(S, M, F, A, [{tracer, Tracer} | Flags1]) end),
+	    Mref = erlang:monitor(process, Pid),
+	    receive
+		{'DOWN', Mref, _, _, Reason} ->
+		    stop_clear(),
+		    {error, Reason};
+		{Pid, Res} ->
+		    erlang:demonitor(Mref),
+		    receive {'DOWN', Mref, _, _, _} -> ok after 0 -> ok end,
+		    %% 'sleep' prevents the tracer (recv_all_traces) from
+		    %% receiving garbage {'EXIT',...} when dbg i stopped.
+		    timer:sleep(1),
+		    stop_clear(),
+		    Res
+	    end
+    end.
+
+c(Parent, M, F, A, Flags) ->
+    %% The trace BIF is used directly here instead of the existing function
+    %% p/2. The reason is that p/2 (when stopping trace) sends messages which 
+    %% we don't want to show up in this simple tracing from the shell.
+    erlang:trace(self(), true, Flags),
     Res = apply(M, F, A),
-    p(self(), clear),
-    Res.
+    erlang:trace(self(), false, [all]),
+    Parent ! {self(), Res}.
 
 stop() ->
     req(stop).
 
-
+stop_clear() ->
+    ctp(),
+    stop().
+
 %%% Calling the server.
 
 req(R) ->
@@ -469,7 +598,7 @@ req(R) ->
 ensure() ->
     case whereis(dbg) of
 	undefined -> 
-	    case tracer() of
+	    case start() of
 		{ok, P} ->
 		    P;
 		{error, already_started} ->
@@ -479,60 +608,79 @@ ensure() ->
 	    Pid
     end.
 
-
+
 %%% Server implementation.
+start() ->
+    start(no_tracer).
 
 start(TracerFun) ->
-    Tracer = spawn(?MODULE, init, [self(),TracerFun]),
-    receive
-	{Tracer,started} ->
-	    {ok, Tracer};
-	{Tracer, Error} ->
-	    Error
+    S = self(),
+    case whereis(dbg) of
+	undefined ->
+	    Dbg = spawn(fun() -> init(S) end),
+	    receive {Dbg,started} -> ok end,
+	    case TracerFun of
+		no_tracer ->
+		    {ok, Dbg};
+		Fun when function(Fun) ->
+		    req({tracer,TracerFun})
+	    end;
+	Pid when pid(Pid), function(TracerFun) ->
+	    req({tracer,TracerFun})
     end.
 
-init(Parent, StartTracer) ->
+init(Parent) ->
     process_flag(trap_exit, true),
-    case (catch register(dbg, self())) of
-	{'EXIT', _} ->
-	    Parent ! {self(), {error, already_started}};
-	_ ->
-	    case (catch StartTracer()) of
-		{'EXIT', Reason} ->
-		    Parent ! {self(), {error, Reason}};
-		Tracer ->
-		    Parent ! {self(),started},
-		    loop(Tracer,[], [])
-	    end
-    end.
+    register(dbg, self()),
+    Parent ! {self(),started},
+    loop({[],[]},[]).
 
 %
 % SurviveLinks = Processes we should take with us while falling, 
-%                but not get killed by if they die (i. e. trace clients.)
+%                but not get killed by if they die (i. e. trace clients 
+%                and relay processes on other nodes)
+%                SurviveLinks = {TraceClients,Relays}
 %
-loop(Tracer,SurviveLinks, Table) ->
+loop({C,T}=SurviveLinks, Table) ->
     receive
 	{From,i} ->
-	    reply(From, display_info(processes())),
-	    loop(Tracer, SurviveLinks, Table);
+	    reply(From, display_info(lists:map(fun({N,_}) -> N end,get()))),
+	    loop(SurviveLinks, Table);
 	{From,{i,Pid}} ->
 	    reply(From, display_info(to_pid(Pid))),
-	    loop(Tracer, SurviveLinks, Table);
+	    loop(SurviveLinks, Table);
 	{From,{p,Pid,Flags}} ->
-	    reply(From, trace_process(Tracer, to_pid(Pid), Flags)),
-	    loop(Tracer, SurviveLinks, Table);
-	{From,get_tracer} ->
-	    reply(From, {ok,Tracer}),
-	    loop(Tracer, SurviveLinks, Table);
+	    reply(From, trace_process(Pid, Flags)),
+	    loop(SurviveLinks, Table);
+	{From,{tracer,TracerFun}} when function(TracerFun) ->
+	    case get(node()) of
+		undefined ->
+		    case (catch TracerFun()) of
+			{'EXIT', Reason} ->
+			    reply(From, {error, Reason});
+			Tracer when pid(Tracer); port(Tracer) ->
+			    put(node(),{self(),Tracer}),
+			    reply(From, {ok,self()})
+		    end;
+		{_Relay,_Tracer} ->
+		    reply(From, {error, already_started})
+	    end,
+	    loop(SurviveLinks,Table);
+	{From,{get_tracer,Node}} ->
+	    case get(Node) of
+		undefined -> reply(From,{error, {no_tracer_on_node,Node}});
+		{_Relay,Tracer} -> reply(From, {ok,Tracer})
+	    end,
+	    loop(SurviveLinks, Table);
 	{From, get_table} ->
 	    Tab = case Table of
 		      [] ->
 			  ets:new(dbg_tab, [ordered_set, public]);
-		      T ->
-			  T
+		      _exists ->
+			  Table
 		  end,
 	    reply(From, {ok, Tab}),
-	    loop(Tracer, SurviveLinks, Tab);
+	    loop(SurviveLinks, Tab);
 	{From,stop} ->
 	    reply(From, ok),
 	    exit(done);
@@ -540,52 +688,80 @@ loop(Tracer,SurviveLinks, Table) ->
 	    case (catch link(Pid)) of
 		{'EXIT', Reason} ->
 		    reply(From, {error, Reason}),
-		    loop(Tracer, SurviveLinks, Table);
+		    loop(SurviveLinks, Table);
 		_ ->
 		    reply(From, {ok, Pid}),
-		    loop(Tracer, [Pid | SurviveLinks], Table)
+		    loop({[Pid|C],T}, Table)
 	    end;
-	{From, {add_node, Node}} when Node =:= node() ->
-	    reply(From,{ok, Node}),
-	    loop(Tracer, SurviveLinks, Table);
 	{From, {add_node, Node}} ->
-	    case (catch relay(Node, Tracer)) of
+	    case get(node()) of
+		undefined -> 
+		    reply(From, {error, no_local_tracer}),
+		    loop(SurviveLinks, Table);
+		{_LocalRelay,Tracer} when port(Tracer) -> 
+		    reply(From, {error, cant_trace_remote_pid_to_local_port}),
+		    loop(SurviveLinks, Table);
+	        {_LocalRelay,Tracer} when pid(Tracer) ->
+		    case (catch relay(Node, Tracer)) of
+			{ok,Relay} ->
+			    reply(From, {ok, Node}),
+			    loop({C,[Relay|T]}, Table);
+			{'EXIT', Something} ->
+			    reply(From, {error, Something}),
+			    loop(SurviveLinks, Table);
+			Error ->
+			    reply(From, Error),
+			    loop(SurviveLinks, Table)
+		    end
+	    end;
+	{From, {add_node, Node, Type, Data}} ->
+	    case (catch relay(Node, {Type,Data})) of
+		{ok,Relay} ->
+		    reply(From, {ok, Node}),
+		    loop({C,[Relay|T]}, Table);
 		{'EXIT', Something} ->
-		    reply(From,
-			  {error, cant_trace_remote_pid_to_local_port});
-		Pid when pid(Pid) ->
-		    reply(From, {ok, Node});
-		SomethingElse ->
-		    reply(From, {error, SomethingElse})
-	    end,
-	    loop(Tracer, SurviveLinks, Table);
+		    reply(From, {error, Something}),
+		    loop(SurviveLinks, Table);
+		Error ->
+		    reply(From, Error),
+		    loop(SurviveLinks, Table)
+	    end;
 	{From, {remove_node, Node}} ->
 	    erase(Node),
 	    reply(From, ok),
-	    loop(Tracer, SurviveLinks, Table);
+	    loop(SurviveLinks, Table);
 	{From, get_nodes} ->
 	    reply(From, lists:map(fun({N,_}) -> N end, get())),
-	    loop(Tracer, SurviveLinks, Table);
-	{'EXIT', Pid, _} ->
-	    case lists:delete(Pid, SurviveLinks) of
-		SurviveLinks ->
-		    exit(done);
-		NewSLinks ->
-		    loop(Tracer, NewSLinks, Table)
+	    loop(SurviveLinks, Table);
+	{'EXIT', Pid, Reason} ->
+	    case lists:delete(Pid, C) of
+		C ->
+		    case lists:delete(Pid,T) of
+			T ->
+			    io:format(user,"** dbg got EXIT - terminating: ~p~n",
+				      [Reason]),
+			    exit(done);
+			NewT -> 
+			    erase(node(Pid)),
+			    loop({C,NewT}, Table)
+		    end;
+		NewC ->
+		    loop({NewC,T}, Table)
 	    end;
 	Other ->
-	    io:format(user,"** dbg got garbage: ~p~n", [Other]),
-	    loop(Tracer, SurviveLinks, Table)
+	    io:format(user,"** dbg got garbage: ~p~n", 
+		      [{Other,SurviveLinks,Table}]),
+	    loop(SurviveLinks, Table)
     end.
 
 reply(Pid, Reply) ->
     Pid ! {dbg,Reply}.
 
-
+
 %%% A process-based tracer.
 
 start_tracer_process(Handler, HandlerData) ->
-    spawn_link(?MODULE, tracer_init, [Handler,HandlerData]).
+    spawn_link(fun() -> tracer_init(Handler,HandlerData) end).
 
 tracer_init(Handler, HandlerData) ->
     process_flag(trap_exit, true),
@@ -596,7 +772,7 @@ tracer_loop(Handler, Hdata) ->
     receive
 	{From,stop} ->
 	    From ! {stop,Hdata};
-	{'EXIT',_,Reason} ->
+	{'EXIT',_Pid,_Reason} ->
 	    ok;
 	Trace ->
 	    NewData = recv_all_traces(Trace, Handler, Hdata),
@@ -626,18 +802,23 @@ recv_all_traces(Suspended0, Handler, Hdata, Traces) ->
 	    io:format(user,"** tracer received garbage: ~p~n", [Other]),
 	    recv_all_traces(Suspended0, Handler, Hdata, Traces)
     after 0 ->
-	    NewHdata = invoke_handler(Traces, Handler, Hdata),
-	    resume(ordsets:set_to_list(Suspended0)),
-	    NewHdata
+	    case catch invoke_handler(Traces, Handler, Hdata) of
+		{'EXIT',Reason} -> 
+		    resume(ordsets:set_to_list(Suspended0)),
+		    exit({trace_handler_crashed,Reason});
+		NewHdata ->
+		    resume(ordsets:set_to_list(Suspended0)),
+		    NewHdata
+	    end
     end.
 
 invoke_handler([Tr|Traces], Handler, Hdata0) ->
     Hdata = invoke_handler(Traces, Handler, Hdata0),
     Handler(Tr, Hdata);
-invoke_handler([], Handler, Hdata) ->
+invoke_handler([], _Handler, Hdata) ->
     Hdata.
 
-suspend({trace,From,call,Func}, Suspended) when node(From) == node() ->
+suspend({trace,From,call,_Func}, Suspended) when node(From) == node() ->
     case ordsets:is_element(From, Suspended) of
 	true -> Suspended;
 	false ->
@@ -648,7 +829,7 @@ suspend({trace,From,call,Func}, Suspended) when node(From) == node() ->
 		    Suspended
 	    end
     end;
-suspend(Other, Suspended) -> Suspended.
+suspend(_Other, Suspended) -> Suspended.
 
 resume([Pid|Pids]) when node(Pid) == node() ->
     (catch erlang:resume_process(Pid)),
@@ -656,91 +837,48 @@ resume([Pid|Pids]) when node(Pid) == node() ->
 resume([]) -> ok.
 
 
-
+
 %%% Utilities.
 
 trac(Pid, How, Flags) when atom(Pid) ->
-    case catch erlang:trace(Pid, How, Flags) of
-	{'EXIT',Reason} -> 
-	    case erlang:is_process_alive(Pid) of
-		false ->
-		    {error, {dead_process, Pid}};
-		_ ->
-		    {error,Reason}
-	    end;
-	N -> 
-	    {ok,[{matched, N} | trac_remote(Pid, How, Flags)]}
+    %% Pid = all | new | existing | RegisteredName
+    %% Must go to all nodes
+    case get() of
+	[] -> {error,no_tracers};
+	Nodes -> trac_on_nodes(Nodes,Pid,How,Flags)
     end;
-trac(Pid, How, Flags) when node(Pid) == node() ->
-    case catch erlang:trace(Pid, How, Flags) of
-	{'EXIT',Reason} -> 
-	    {error,Reason};
-	N -> 
-	    {ok,[{matched,N}]}
-    end;
-
-%%
-%% Remote tracing...
-%%
 trac(Pid, How, Flags) ->
-    case lists:keysearch(tracer,1,Flags) of
-	{value, {tracer, Port}} when port(Port) ->
-	    {error, {cant_trace_remote_pid_to_local_port, Pid}};
-	{value, {tracer, Pid1}} when pid(Pid1) ->
-	    Node = node(Pid), 
-	    case get(Node) of
-		Relay when pid(Relay) ->
-		    case (catch rpc:call(
-				  Node, 
-				  erlang,
-				  trace,
-				  [Pid,
-				   How,
-				   lists:keyreplace(
-				     tracer,
-				     1,
-				     Flags,
-				     {tracer, Relay})])) of
-			N when integer(N) -> 
-			    {ok,[{matched,N}]};
-			{'EXIT',ExitCode} ->
-			    case (catch rpc:call(Node, 
-						 erlang,
-						 is_process_alive,
-						  [Pid])) of
-				false ->
-				    {error, {dead_process, Pid}};
-				_ ->
-				    {error, ExitCode}
-			    end;
-			Other ->
-			    {error, Other}
-		    end;
-		Else ->
-		    {error, {node_not_activated, Node}}
-	    end;
-	Strange ->
-	    {error, unsupported_tracer}
+    Node = node(Pid), 
+    case get(Node) of
+	undefined -> {error,{no_tracer_on_node,Node}};
+	NodeInfo -> trac_on_nodes([{Node,NodeInfo}],Pid,How,Flags)
     end.
 
-trac_remote(AtomPid, How, Flags) ->
-    lists:map(
-      fun({Node, Relay}) ->
-	      case rpc:call(Node, 
-			    erlang, 
-			    trace,
-			    [AtomPid, 
-			     How,
-			     lists:keyreplace(tracer,1,
-					      Flags,
-					      {tracer, Relay})]) of
-		  N when integer(N) ->
-		      {matched, Node, N};
-		  Else ->
-		      {matched, Node, 0, Else}
-	      end
-      end,
-      get()).
+trac_on_nodes(Nodes, AtomPid, How, Flags) ->
+    Matched = 
+	lists:map(
+	  fun({Node, {_Relay, Tracer}}) -> 
+		  case rpc:call(Node, ?MODULE, erlang_trace,
+				[AtomPid, How, [{tracer, Tracer} | Flags]]) of
+		      N when integer(N) ->
+			  {matched, Node, N};
+		      {badrpc,Reason} ->
+			  {matched, Node, 0, Reason};
+		      Else ->
+			  {matched, Node, 0, Else}
+		  end
+	  end,
+	  Nodes),
+    {ok,Matched}.
+
+
+erlang_trace(AtomPid, How, Flags) ->
+    case to_pid(AtomPid) of
+	{badpid,_} ->
+	    {no_proc,AtomPid};
+	P ->
+	    erlang:trace(P, How, Flags)
+    end.
 
 %% Since we are not allowed to do erlang:trace/3 on a remote
 %% process, we create a relay process at the remote node.
@@ -748,108 +886,126 @@ trac_remote(AtomPid, How, Flags) ->
 relay(Node,To) when Node /= node() ->
     case get(Node) of
 	undefined -> 
-	    Pid = spawn_link(Node, ?MODULE, do_relay, [To]),
-	    put(Node, Pid),
-	    Pid;
-	Pid -> 
-	    Pid
+	    S = self(),
+	    Pid = spawn_link(Node, fun() -> do_relay(S,To) end),
+	    receive {started,Remote} -> put(Node, {Pid,Remote}) end,
+	    {ok,Pid};
+	{_Relay,PortOrPid} ->
+	    {error, {already_started, PortOrPid}}
     end.
 
-do_relay(RelP) ->
+do_relay(Parent,RelP) ->
     process_flag(trap_exit, true),
+    case RelP of
+	{Type,Data} -> 
+	    {ok,Tracer} = remote_tracer(Type,Data),
+	    Parent ! {started,Tracer};
+	Pid when pid(Pid) ->
+	    Parent ! {started,self()}
+    end,
     do_relay_1(RelP).
 
 do_relay_1(RelP) ->
+    %% In the case of a port tracer, this process exists only so that
+    %% dbg know that the node is alive... should maybe use monitor instead?
     receive
 	{'EXIT', _P, _} ->
 	    exit(normal);
-	Other ->             %% Here is the normal case for trace i/o
-	    RelP ! Other, 
+	TraceInfo when pid(RelP) ->  % Here is the normal case for trace i/o
+	    RelP ! TraceInfo, 
+	    do_relay_1(RelP);
+	Other ->
+	    io:format(user,"** relay got garbage: ~p~n", [Other]),
 	    do_relay_1(RelP)
     end.
 
-dhandler(end_of_trace, _Data) ->
-    ok;
-dhandler(Trace, _Data) when element(1, Trace) == trace, size(Trace) >= 3 ->
-    dhandler1(Trace, size(Trace));
-dhandler(Trace, _Data) when element(1, Trace) == trace_ts, size(Trace) >= 4 ->
-    dhandler1(Trace, size(Trace)-1);
-dhandler(Trace, _Data) when element(1, Trace) == drop, size(Trace) == 2 ->
-    io:format(user, "*** Dropped ~p messages.~n", [element(2,Trace)]),
-    ok;
-dhandler(Trace, _Data) when element(1, Trace) == seq_trace, size(Trace) >= 3 ->
+dhandler(end_of_trace, Out) ->
+    Out;
+dhandler(Trace, Out) when element(1, Trace) == trace, size(Trace) >= 3 ->
+    dhandler1(Trace, size(Trace), Out);
+dhandler(Trace, Out) when element(1, Trace) == trace_ts, size(Trace) >= 4 ->
+    dhandler1(Trace, size(Trace)-1, Out);
+dhandler(Trace, Out) when element(1, Trace) == drop, size(Trace) == 2 ->
+    io:format(Out, "*** Dropped ~p messages.~n", [element(2,Trace)]),
+    Out;
+dhandler(Trace, Out) when element(1, Trace) == seq_trace, size(Trace) >= 3 ->
     SeqTraceInfo = case Trace of
 		       {seq_trace, Lbl, STI, TS} ->
-			   io:format(user, "SeqTrace ~p [~p]: ",
+			   io:format(Out, "SeqTrace ~p [~p]: ",
 				     [TS, Lbl]),
 			   STI;
 		       {seq_trace, Lbl, STI} ->
-			  io:format(user, "SeqTrace [~p]: ",
+			  io:format(Out, "SeqTrace [~p]: ",
 				     [Lbl]),
 			   STI 
 		   end,
     case SeqTraceInfo of
 	{send, Ser, Fr, To, Mes} ->
-	    io:format(user, "(~p) ~p ! ~p [Serial: ~p]~n",
+	    io:format(Out, "(~p) ~p ! ~p [Serial: ~p]~n",
 		      [Fr, To, Mes, Ser]);
 	{'receive', Ser, Fr, To, Mes} ->
-	    io:format(user, "(~p) << ~p [Serial: ~p, From: ~p]~n",
+	    io:format(Out, "(~p) << ~p [Serial: ~p, From: ~p]~n",
 		      [To, Mes, Ser, Fr]);
 	{print, Ser, Fr, _, Info} ->
-	    io:format(user, "-> ~p [Serial: ~p, From: ~p]~n",
+	    io:format(Out, "-> ~p [Serial: ~p, From: ~p]~n",
 		      [Info, Ser, Fr]);
 	Else ->
-	    io:format(user, "~p~n", [Else])
+	    io:format(Out, "~p~n", [Else])
     end,
-    ok;
-dhandler(Trace, _Data) ->
-    ok.
+    Out;
+dhandler(_Trace, Out) ->
+    Out.
 
-dhandler1(Trace, Size) ->
-    Self = self(),
+dhandler1(Trace, Size, Out) ->
+%%%!    Self = self(),
     From = element(2, Trace),
     case element(3, Trace) of
 	'receive' ->
 	    case element(4, Trace) of
 		{dbg,ok} -> ok;
-		Message -> io:format(user, "(~p) << ~p~n", [From,Message])
+		Message -> io:format(Out, "(~p) << ~p~n", [From,Message])
 	    end;
 	'send' ->
 	    Message = element(4, Trace),
 	    case element(5, Trace) of
-		Self -> ok;
-		To -> io:format(user, "(~p) ~p ! ~p~n", [From,To,Message])
+%%%! This causes messages to disappear when used by ttb (observer). Tests
+%%%! so far show that there is no difference in results with dbg even if I
+%%%! comment it out, so  I hope this is only some old code which isn't
+%%%! needed anymore... /siri
+%%%!		Self -> ok;
+		To -> io:format(Out, "(~p) ~p ! ~p~n", [From,To,Message])
 	    end;
 	call ->
 	    case element(4, Trace) of
 		MFA when Size == 5 ->
 		    Message = element(5, Trace),
-		    io:format(user, "(~p) call ~s (~p)~n", [From,ffunc(MFA),Message]);
+		    io:format(Out, "(~p) call ~s (~p)~n", [From,ffunc(MFA),Message]);
 		MFA ->
-		    io:format(user, "(~p) call ~s~n", [From,ffunc(MFA)])
+		    io:format(Out, "(~p) call ~s~n", [From,ffunc(MFA)])
 	    end;
 	return -> %% To be deleted...
 	    case element(4, Trace) of
 		MFA when Size == 5 ->
 		    Ret = element(5, Trace),
-		    io:format(user, "(~p) old_ret ~s -> ~p~n", [From,ffunc(MFA),Ret]);
+		    io:format(Out, "(~p) old_ret ~s -> ~p~n", [From,ffunc(MFA),Ret]);
 		MFA ->
-		    io:format(user, "(~p) old_ret ~s~n", [From,ffunc(MFA)])
+		    io:format(Out, "(~p) old_ret ~s~n", [From,ffunc(MFA)])
 	    end;
 	return_from ->
 	    MFA = element(4, Trace),
 	    Ret = element(5, Trace),
-	    io:format(user, "(~p) returned from ~s -> ~p~n", [From,ffunc(MFA),Ret]);
+	    io:format(Out, "(~p) returned from ~s -> ~p~n", [From,ffunc(MFA),Ret]);
 	return_to ->
 	    MFA = element(4, Trace),
-	    io:format(user, "(~p) returning to ~s~n", [From,ffunc(MFA)]);
+	    io:format(Out, "(~p) returning to ~s~n", [From,ffunc(MFA)]);
 	spawn when Size == 5 ->
 	    Pid = element(4, Trace),
 	    MFA = element(5, Trace),
-	    io:format(user, "(~p) spawn ~p as ~s~n", [From,Pid,ffunc(MFA)]);
+	    io:format(Out, "(~p) spawn ~p as ~s~n", [From,Pid,ffunc(MFA)]);
 	Op ->
-	    io:format(user, "(~p) ~p ~s~n", [From,Op,ftup(Trace,4,Size)])
-    end.
+	    io:format(Out, "(~p) ~p ~s~n", [From,Op,ftup(Trace,4,Size)])
+    end,
+    Out.
 
 
 
@@ -880,63 +1036,78 @@ ftup(Trace, Index, Size) ->
 
 
 
-trace_process(Tracer, {badpid,_}=Bad, Flags) ->
+trace_process({badpid,_}=Bad, _Flags) ->
     {error,Bad};
-trace_process(Tracer, Pid, [clear]) ->
-    trac(Pid, false, [{tracer,Tracer}|all()]);
-trace_process(Tracer, Pid, Flags0) ->
+trace_process(Pid, [clear]) ->
+    trac(Pid, false, all());
+trace_process(Pid, Flags0) ->
     case transform_flags(Flags0) of
-	{error,_}=Error -> Error;
-	Flags -> trac(Pid, true, [{tracer,Tracer}|Flags])
+	{error,Reason} -> {error,Reason};
+	Flags -> trac(Pid, true, Flags)
     end.
 	    
-transform_flags([]) -> [];
-transform_flags([m|Tail]) -> [send,'receive'|transform_flags(Tail)];
-transform_flags([s|Tail]) -> [send|transform_flags(Tail)];
-transform_flags([r|Tail]) -> ['receive'|transform_flags(Tail)];
-transform_flags([c|Tail]) -> [call|transform_flags(Tail)];
-transform_flags([call|Tail]) -> [call|transform_flags(Tail)];
-transform_flags([p|Tail]) -> [procs|transform_flags(Tail)];
-transform_flags([sos|Tail]) -> [set_on_spawn|transform_flags(Tail)];
-transform_flags([sol|Tail]) -> [set_on_link|transform_flags(Tail)];
-transform_flags([sofs|Tail]) -> [set_on_first_spawn|transform_flags(Tail)];
-transform_flags([sofl|Tail]) -> [set_on_first_link|transform_flags(Tail)];
-transform_flags([all|_]) -> all();
-transform_flags([F|Tail]=List) when atom(F) ->
+transform_flags(Flags0) ->
+    transform_flags(Flags0,[]).
+transform_flags([],Acc) -> Acc;
+transform_flags([m|Tail],Acc) -> transform_flags(Tail,[send,'receive'|Acc]);
+transform_flags([s|Tail],Acc) -> transform_flags(Tail,[send|Acc]);
+transform_flags([r|Tail],Acc) -> transform_flags(Tail,['receive'|Acc]);
+transform_flags([c|Tail],Acc) -> transform_flags(Tail,[call|Acc]);
+transform_flags([call|Tail],Acc) -> transform_flags(Tail,[call|Acc]);
+transform_flags([p|Tail],Acc) -> transform_flags(Tail,[procs|Acc]);
+transform_flags([sos|Tail],Acc) -> transform_flags(Tail,[set_on_spawn|Acc]);
+transform_flags([sol|Tail],Acc) -> transform_flags(Tail,[set_on_link|Acc]);
+transform_flags([sofs|Tail],Acc) -> transform_flags(Tail,[set_on_first_spawn|Acc]);
+transform_flags([sofl|Tail],Acc) -> transform_flags(Tail,[set_on_first_link|Acc]);
+transform_flags([all|_],_Acc) -> all();
+transform_flags([F|Tail]=List,Acc) when atom(F) ->
     case lists:member(F, all()) of
-	true -> [F|transform_flags(Tail)];
+	true -> transform_flags(Tail,[F|Acc]);
 	false -> {error,{bad_flags,List}}
     end;
-transform_flags(Bad) -> {error,{bad_flags,Bad}}.
+transform_flags(Bad,_Acc) -> {error,{bad_flags,Bad}}.
 
 all() ->
     [send,'receive',call,procs,garbage_collection,running,
      set_on_spawn,set_on_first_spawn,set_on_link,set_on_first_link,
      timestamp,arity,return_to].
 
-display_info(List) ->
+display_info([Node|Nodes]) ->
+    io:format("~nNode ~w:~n",[Node]),
     io:format("~-12s ~-21s Trace ~n", ["Pid", "Initial call"]),
-    display_info1(List).
+    List = rpc:call(Node,?MODULE,get_info,[]),
+    display_info1(List),
+    display_info(Nodes);
+display_info([]) ->
+    ok.
 
-display_info1([Pid|T]) ->
+display_info1([{Pid,Call,Flags}|T]) ->
+    io:format("~-12s ~-21s ~s~n",
+	      [io_lib:format("~w",[Pid]),
+	       io_lib:format("~p", [Call]),
+	       format_trace(Flags)]),
+    display_info1(T); 
+display_info1([]) ->
+    ok.
+
+get_info() ->
+    get_info(processes(),[]).
+
+get_info([Pid|T],Acc) ->
     case pinfo(Pid, initial_call) of
         undefined ->
-            display_info1(T);
+            get_info(T,Acc);
         {initial_call, Call} ->
 	    case tinfo(Pid, flags) of
 		undefined ->
-		    display_info1(T);
+		    get_info(T,Acc);
 		{flags,[]} ->
-		    display_info1(T);
+		    get_info(T,Acc);
 		{flags,Flags} ->
-		    io:format("~-12s ~-21s ~s~n",
-			      [io_lib:format("~w",[Pid]),
-			       io_lib:format("~p", [Call]),
-			       format_trace(Flags)]),
-		    display_info1(T)
+		    get_info(T,[{Pid,Call,Flags}|Acc])
 	    end
     end;
-display_info1([]) -> ok.
+get_info([],Acc) -> Acc.
 
 format_trace([]) -> [];
 format_trace([Item]) -> [ts(Item)];
@@ -950,7 +1121,7 @@ ts(set_on_spawn) -> "sos";
 ts(set_on_first_spawn) -> "sofs";
 ts(set_on_link) -> "sol";
 ts(set_on_first_link) -> "sofl";
-ts(Other) -> Other.
+ts(Other) -> atom_to_list(Other).
 
 %%
 %% Turn something into a pid, return 'nopid' on failure 
@@ -959,7 +1130,11 @@ ts(Other) -> Other.
 to_pid(new) -> new;
 to_pid(all) -> all;
 to_pid(existing) -> existing;
-to_pid(X) when pid(X) -> X;
+to_pid(X) when pid(X) -> 
+    case erlang:is_process_alive(X) of
+	true -> X;
+	false -> {badpid,X}
+    end;
 to_pid(X) when atom(X) ->
     case whereis(X) of
 	undefined -> {badpid,X};
@@ -1056,7 +1231,7 @@ mk_reader_wrap([Hd | _] = WrapFiles) ->
 	    exit({client_cannot_open, Error})
     end.
 
-mk_reader_wrap([Hd | Tail] = WrapFiles, File) ->
+mk_reader_wrap([_Hd | Tail] = WrapFiles, File) ->
     fun() ->
 	    case read_term(fun file_read/2, File) of
 		{ok, Term} ->
@@ -1154,14 +1329,14 @@ ip_read(Socket, N) ->
 	    exit({'socket read too much data', Bin});
 	{error, closed} ->
 	    eof;
-	{error, Reason} = Error ->
+	{error, _Reason} = Error ->
 	    exit({'socket read error', Error})
     end.
 
-
-
 get_tracer() ->
-    req(get_tracer).
+    req({get_tracer,node()}).
+get_tracer(Node) ->
+    req({get_tracer,Node}).
 
 save_pattern([]) ->
     false;
@@ -1175,7 +1350,7 @@ save_pattern(Pattern, PT) ->
 		   Int;
 	       '$end_of_table' ->
 		   0;
-	       Else ->
+	       _Else ->
 		   throw({error, badtable})
 	   end,
     BPattern = term_to_binary(Pattern),
@@ -1197,13 +1372,15 @@ pt_doforall(Fun, Ld) ->
     T = get_pattern_table(),
     pt_doforall(T, Fun, ets:first(T), Ld).
 
-pt_doforall(_, _, '$end_of_table', Ld) -> 
+pt_doforall(_, _, '$end_of_table', _Ld) -> 
     ok;
 pt_doforall(T, Fun, Key, Ld) ->
     [{A,B}] = ets:lookup(T,Key),
     NLd = Fun({A,binary_to_term(B)},Ld),
     pt_doforall(T,Fun,ets:next(T,Key),NLd).
 
+lint_tp([]) ->
+    {ok,[]};
 lint_tp(Pattern) ->
     case erlang:match_spec_test([],Pattern,trace) of
 	{ok,_Res,Warnings,_Flags} ->
@@ -1224,7 +1401,7 @@ check_list(T) ->
 	    {error, bad_match_spec};
 	ok ->
 	    ok;
-	Else ->
+	_Else ->
 	    {error, badfile}
     end.
 
@@ -1284,7 +1461,7 @@ wrap_sortfix([], _N) ->
 %% file 0, gap 1..N
 wrap_sortfix([{0, _}] = Files, N) when N >= 1 ->
     Files;
-wrap_sortfix([{0, _}] = Files, _N) ->
+wrap_sortfix([{0, _}], _N) ->
     exit(inconsistent_wrap_file_trace_set);
 %% files 0, ...
 wrap_sortfix([{0, _} | _] = Files, N) when N >= 1->
@@ -1343,7 +1520,7 @@ match_front([], ListB) when list(ListB) ->
     false;
 match_front([Hd|TlA], [Hd|TlB]) ->
     match_front(TlA,TlB);
-match_front([HdA|_], [HdB|_]) ->
+match_front([_HdA|_], [_HdB|_]) ->
     false.
 
 %% Reversed version of match_front/2
@@ -1361,7 +1538,7 @@ match_0_9([]) ->
     false;
 match_0_9([H]) when integer(H), $0 =< H, H =< $9 ->
     true;
-match_0_9([H|T] = L) when integer(H), $0 =< H, H =< $9 ->
+match_0_9([H|T]) when integer(H), $0 =< H, H =< $9 ->
     match_0_9(T);
 match_0_9(L) when list(L) ->
     false.
@@ -1387,7 +1564,7 @@ h() ->
        "       - Manipulate trace patterns for functions",
        "   n, cn, ln",
        "       - Add/remove traced nodes.",
-       "   tracer, trace_port, trace_client, get_tracer, stop", 
+       "   tracer, trace_port, trace_client, get_tracer, stop, stop_clear", 
        "       - Manipulate tracer process/port",
        "   i",
        "       - Info", 
@@ -1433,7 +1610,9 @@ h(tpl) ->
        " - Set pattern for traced local (as well as global) function calls."]);
 h(ctp) ->
     help_display(
-      ["ctp(Module)",
+      ["ctp()",
+       " - Same as ctp({'_', '_', '_'})",
+       "ctp(Module)",
        " - Same as ctp({Module, '_', '_'})",
        "ctp(Module, Function)",
        " - Same as ctp({Module, Function, '_'})",
@@ -1443,24 +1622,28 @@ h(ctp) ->
        " - Clear call trace pattern for the specified functions"]);
 h(ctpl) ->
     help_display(
-      ["ctpl(Module)",
+      ["ctpl()",
+       " - Same as ctpl({'_', '_', '_'})",
+       "ctpl(Module)",
        " - Same as ctpl({Module, '_', '_'})",
        "ctpl(Module, Function)",
        " - Same as ctpl({Module, Function, '_'})",
        "ctpl(Module, Function, Arity)",
        " - Same as ctpl({Module, Function, Arity})",
        "ctpl({Module, Function, Arity}) -> {ok, MatchDesc} | {error, term()}",
-       " - Clear call trace pattern for the specified functions"]);
+       " - Clear local call trace pattern for the specified functions"]);
 h(ctpg) ->
     help_display(
-      ["ctpg(Module)",
+      ["ctpg()",
+       " - Same as ctpg({'_', '_', '_'})",
+       "ctpg(Module)",
        " - Same as ctpg({Module, '_', '_'})",
        "ctpg(Module, Function)",
        " - Same as ctpg({Module, Function, '_'})",
        "ctpg(Module, Function, Arity)",
        " - Same as ctpg({Module, Function, Arity})",
        "ctpg({Module, Function, Arity}) -> {ok, MatchDesc} | {error, term()}",
-       " - Clear call trace pattern for the specified functions"]);
+       " - Clear global call trace pattern for the specified functions"]);
 h(ltp) ->
     help_display(["ltp() -> ok",
 		  " - Lists saved match_spec's on the console."]);
@@ -1476,8 +1659,11 @@ h(rtp) ->
     help_display(["rtp(Name) -> ok | {error, Error}",
 		  " - Read saved match specifications from file."]);
 h(n) ->
-    help_display(["n(Nodename) -> {ok, Nodename} | {error, Reason}",
-		  " - Adds a node to the list of traced nodes"]);
+    help_display(
+      ["n(Nodename) -> {ok, Nodename} | {error, Reason}",
+       " - Starts a tracer server on the given node.",
+       "n(Nodename,Type,Data) -> {ok, Nodename} | {error, Reason}",
+       " - Starts a tracer server with additional args on the given node."]);
 h(cn) ->
     help_display(["cn(Nodename) -> ok",
 		  " - Clears a node from the list of traced nodes."]);
@@ -1502,9 +1688,17 @@ h(trace_client) ->
 h(get_tracer) ->
     help_display(
       ["get_tracer() -> {ok, Tracer}",
-       " - Returns the process or port to which all trace messages are "
-       "sent."]);
+       " - Returns the process or port to which all trace messages are sent.",
+      "get_tracer(Node) -> {ok, Tracer}",
+       " - Returns the process or port to which all trace messages are sent."]);
 h(stop) ->
     help_display(
       ["stop() -> stopped",
-       " - Stops the dbg server and the tracing of all processes."]).
+       " - Stops the dbg server and the tracing of all processes.",
+       "   Does not clear any trace patterns."]);
+h(stop_clear) ->
+    help_display(
+      ["stop_clear() -> stopped",
+       " - Stops the dbg server and the tracing of all processes,",
+       "   and clears all trace patterns."]).
+

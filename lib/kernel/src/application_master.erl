@@ -78,12 +78,12 @@ call(Application, Req) ->
     Ref = erlang:monitor(process, Application),
     Application ! {Req, Tag, self()},
     receive 
-	{'DOWN', Ref, process, Application, _Info} ->
+	{'DOWN', Ref, process, _, _Info} ->
 	    ok;
 	{Tag, Res} ->
 	    erlang:demonitor(Ref),
 	    receive 
-		{'DOWN', Ref, process, Application, _Info} -> 
+		{'DOWN', Ref, process, _, _Info} -> 
 		    Res
 	    after 0 ->
 		    Res

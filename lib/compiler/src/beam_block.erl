@@ -25,7 +25,7 @@
 -import(lists, [map/2,mapfoldr/3,reverse/1,reverse/2,foldl/3,member/2,sort/1]).
 -define(MAXREG, 1024).
 
-module({Mod,Exp,Attr,Fs,Lc}, Opt) ->
+module({Mod,Exp,Attr,Fs,Lc}, _Opt) ->
     {ok,{Mod,Exp,Attr,map(fun function/1, Fs),Lc}}.
 
 function({function,Name,Arity,CLabel,Asm0}) ->
@@ -46,12 +46,12 @@ block([{bif,size,Fail,[Tuple],Tmp},
 	   {test,test_arity,Fail,[Tuple,Size]},
 	   {get_tuple_element,Tuple,0,Tmp},
 	   {test,is_eq,Fail,[Tmp,RecordTag]}|Is], Block, All);
-block([{loop_rec,{f,Fail},{x,0}},{loop_rec_end,Lbl},{label,Fail}|Is], Block, All) ->
+block([{loop_rec,{f,Fail},{x,0}},{loop_rec_end,_Lbl},{label,Fail}|Is], Block, All) ->
     block(Is, Block, All);
 block([I|Is], Block, All) ->
     case collect(I) of
 	false -> opt_block(Block, I, Is, All);
-	Ti when tuple(Ti) -> block(Is, [Ti|Block], All)
+	Ti when is_tuple(Ti) -> block(Is, [Ti|Block], All)
     end;
 block([], [], All) ->
     reverse(All);
@@ -73,10 +73,10 @@ collect({get_list,S,D1,D2})  -> {set,[D1,D2],[S],get_list};
 collect(remove_message)      -> {set,[],[],remove_message};
 collect({'catch',R,L})       -> {set,[R],[],{'catch',L}};
 collect({'%live',R})  -> {'%live',R};
-collect(Other) -> false.
+collect(_) -> false.
 
 opt_block([], I, Is, All) -> block(Is, [], [I|All]);
-opt_block([{'%live',R}], I, Is, All) -> block(Is, [], [I|All]);
+opt_block([{'%live',_}], I, Is, All) -> block(Is, [], [I|All]);
 opt_block(Block, I, Is, All) ->    
     block(Is, [], [I|opt_block(reverse(Block), All)]).
 
@@ -110,8 +110,8 @@ find_fixpoint(OptFun, Is0) ->
 	Is1 -> find_fixpoint(OptFun, Is1)
     end.
 
-move_allocates([{set,Ds,Ss,{set_tuple_element,I}}|_]=Is) -> Is;
-move_allocates([{set,Ds,Ss,Op}=Set,{allocate,R,Alloc}|Is]) when integer(R) ->
+move_allocates([{set,_Ds,_Ss,{set_tuple_element,_}}|_]=Is) -> Is;
+move_allocates([{set,Ds,Ss,_Op}=Set,{allocate,R,Alloc}|Is]) when is_integer(R) ->
     [{allocate,live_regs(Ds, Ss, R),Alloc},Set|Is];
 move_allocates([{allocate,R1,Alloc1},{allocate,R2,Alloc2}|Is]) ->
     R1 = R2,					% Assertion.
@@ -148,8 +148,8 @@ opt_moves([X0,Y0]=Ds, Is0) ->
     {X1,Is1} = opt_move(X0, Is0),
     case opt_move(Y0, Is1) of
 	{Y1,Is2} when X1 =/= Y1 -> {[X1,Y1],Is2};
-	Other when X1 =/= Y0 -> {[X1,Y0],Is1};
-	Other -> {Ds,Is0}
+	_Other when X1 =/= Y0 -> {[X1,Y0],Is1};
+	_Other -> {Ds,Is0}
     end.
 
 opt_move(R, [{set,[D],[R],move}|Is]=Is0) ->
@@ -170,29 +170,23 @@ opt_move(R, [I|Is0]) ->
 opt_move(R, []) -> {R,[]}.
 
 
-is_transparent(R, {set,Ds,Ss,Op}) ->
+is_transparent(R, {set,Ds,Ss,_Op}) ->
     case member(R, Ds) of
 	true -> false;
 	false -> not member(R, Ss)
     end;
-is_transparent(R, I) -> false.
+is_transparent(_, _) -> false.
 
-is_killed(R, [{set,Ds,Ss,Op}|Is]) ->
-    case member(R, Ss) of
-	true -> false;
-	false -> case member(R, Ds) of
-		     true -> true;
-		     false -> is_killed(R, Is)
-		 end
-    end;
-is_killed({x,R}, [{'%live',Live}|Is]) when R >= Live -> true;
-is_killed({x,R}, [{'%live',Live}|Is]) -> is_killed(R, Is);
-is_killed(R, Is) -> false.
+is_killed(R, [{set,Ds,Ss,_Op}|Is]) ->
+    not member(R, Ss) andalso (member(R, Ds) orelse is_killed(R, Is));
+is_killed({x,R}, [{'%live',Live}|_]) when R >= Live -> true;
+is_killed({x,R}, [{'%live',_}|Is]) -> is_killed(R, Is);
+is_killed(_, _) -> false.
 
 %% opt_alloc(Instructions) -> Instructions'
 %%  Optimises all allocate instructions.
 
-opt_alloc([{allocate,R,{Any,Ns,Nh,[]}}|Is]) ->
+opt_alloc([{allocate,R,{_,Ns,Nh,[]}}|Is]) ->
     [opt_alloc(Is, Ns, Nh, R)|opt(Is)];
 opt_alloc([I|Is]) -> [I|opt_alloc(Is)];
 opt_alloc([]) -> [].
@@ -201,7 +195,7 @@ opt_alloc([]) -> [].
 %%  Generates the optimal sequence of instructions for
 %%  allocating and initalizing the stack frame and needed heap.
 
-opt_alloc(Is, nostack, Nh, LivingRegs) ->
+opt_alloc(_Is, nostack, Nh, LivingRegs) ->
     {allocate,LivingRegs,{nozero,nostack,Nh,[]}};
 opt_alloc(Is, Ns, Nh, LivingRegs) ->
     InitRegs = init_yreg(Is, 0),
@@ -214,7 +208,7 @@ opt_alloc(Is, Ns, Nh, LivingRegs) ->
 
 gen_init(Fs, Regs) -> gen_init(Fs, Regs, 0, []).
 
-gen_init(Fs, Regs, Fs, Acc) -> reverse(Acc);
+gen_init(SameFs, _Regs, SameFs, Acc) -> reverse(Acc);
 gen_init(Fs, Regs, Y, Acc) when Regs band 1 == 0 ->
     gen_init(Fs, Regs bsr 1, Y+1, [{init, {y,Y}}|Acc]);
 gen_init(Fs, Regs, Y, Acc) ->
@@ -223,9 +217,9 @@ gen_init(Fs, Regs, Y, Acc) ->
 %% init_yreg(Instructions, RegSet) -> RegSetInitialized
 %%  Calculate the set of initialized y registers.
 
-init_yreg([{set,Ds,_,{bif,_,_}}|Is], Reg) -> Reg;
+init_yreg([{set,_,_,{bif,_,_}}|_], Reg) -> Reg;
 init_yreg([{set,Ds,_,_}|Is], Reg) -> init_yreg(Is, add_yregs(Ds, Reg));
-init_yreg(Is, Reg) -> Reg.
+init_yreg(_Is, Reg) -> Reg.
 
 add_yregs(Ys, Reg) -> foldl(fun(Y, R0) -> add_yreg(Y, R0) end, Reg, Ys).
     
@@ -248,11 +242,11 @@ live_regs(N, 0) -> N;
 live_regs(N, Regs) -> live_regs(N+1, Regs bsr 1).
 
 x_dead([{x,N}|Rs], Regs) -> x_dead(Rs, Regs band (bnot (1 bsl N)));
-x_dead([Other|Rs], Regs) -> x_dead(Rs, Regs);
+x_dead([_|Rs], Regs) -> x_dead(Rs, Regs);
 x_dead([], Regs) -> Regs.
 
 x_live([{x,N}|Rs], Regs) -> x_live(Rs, Regs bor (1 bsl N));
-x_live([Other|Rs], Regs) -> x_live(Rs, Regs);
+x_live([_|Rs], Regs) -> x_live(Rs, Regs);
 x_live([], Regs) -> Regs.
 
 %%
@@ -284,13 +278,13 @@ share_floats(Is0) ->
 
 get_floats([{set,_,[{float,F}],_}|Is], Acc) ->
     get_floats(Is, [F|Acc]);
-get_floats([I|Is], Acc) ->
+get_floats([_|Is], Acc) ->
     get_floats(Is, Acc);
 get_floats([], Acc) -> Acc.
 
 more_than_once([F,F|Fs], Set) ->
     more_than_once(Fs, gb_sets:add(F, Set));
-more_than_once([F|Fs], Set) ->
+more_than_once([_|Fs], Set) ->
     more_than_once(Fs, Set);
 more_than_once([], Set) -> Set.
 
@@ -298,13 +292,13 @@ highest_used([{set,Ds,Ss,_}|Is], High) ->
     highest_used(Is, highest(Ds, highest(Ss, High)));
 highest_used([{'%live',Live}|Is], High) when Live > High ->
     highest_used(Is, Live);
-highest_used([I|Is], High) ->
+highest_used([_|Is], High) ->
     highest_used(Is, High);
 highest_used([], High) -> High.
 
 highest([{x,R}|Rs], High) when R > High ->
     highest(Rs, R);
-highest([R|Rs], High) ->
+highest([_|Rs], High) ->
     highest(Rs, High);
 highest([], High) -> High.
 
@@ -335,7 +329,7 @@ opt_kill([{block,Block},Instr|_]=Is, I, [{kill,Y}=K|Acc], Kills) ->
 		false -> opt_kill(Is, I, Acc, [K|Kills])
 	    end
     end;
-opt_kill([Instr|_]=Is, I, [{kill,Y}=K|Acc], Kills) ->
+opt_kill([Instr|_]=Is, I, [{kill,_}=K|Acc], Kills) ->
     case is_tail_call_or_ret(Instr) of
 	true -> opt_kill(Is, I, Acc, Kills);
 	false -> opt_kill(Is, I, Acc, [K|Kills])
@@ -348,4 +342,4 @@ opt_kill(Is, I, Acc, []) ->
 is_tail_call_or_ret({call_last,_,_,_}) -> true;
 is_tail_call_or_ret({call_ext_last,_,_,_}) -> true;
 is_tail_call_or_ret({deallocate,_}) -> true;
-is_tail_call_or_ret(Other) -> false.
+is_tail_call_or_ret(_) -> false.

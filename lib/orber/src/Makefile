@@ -99,7 +99,8 @@ MODULES= \
 	orber_web_server \
 	orber_iiop_tracer \
 	orber_iiop_tracer_silent \
-	fixed
+	fixed \
+	orber_exceptions
 
 
 EXTERNAL_HRL_FILES= ../include/corba.hrl \

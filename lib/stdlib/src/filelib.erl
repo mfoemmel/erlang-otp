@@ -20,6 +20,7 @@
 %% File utilities.
 
 -export([wildcard/1, wildcard/2, is_dir/1, is_file/1, compile_wildcard/1]).
+-export([fold_files/5, last_modified/1, file_size/1, ensure_dir/1]).
 
 -include_lib("kernel/include/file.hrl").
 
@@ -46,6 +47,76 @@ is_file(File) ->
 	    true;
         _ ->
             false
+    end.
+
+%% fold_files(Dir, RegExp, Recursive, Fun, AccIn).
+
+%% folds the function Fun(F, Acc) -> Acc1 over
+%%   all files <F> in <Dir> that match the regular expression <RegExp>
+%%   If <Recursive> is true all sub-directories to <Dir> are processed
+
+fold_files(Dir, RegExp, Recursive, Fun, Acc) ->
+    {ok, Re1} = regexp:parse(RegExp),
+    fold_files1(Dir, Re1, Recursive, Fun, Acc).
+
+fold_files1(Dir, RegExp, Recursive, Fun, Acc) ->
+    case file:list_dir(Dir) of
+	{ok, Files} -> fold_files(Files, Dir, RegExp, Recursive, Fun, Acc);
+	{error, _}  -> Acc
+    end.
+
+fold_files([File|T], Dir, RegExp, Recursive, Fun, Acc0) ->
+    FullName = Dir ++  [$/|File],
+    case is_file(FullName) of
+	true  ->
+	    case regexp:match(FullName, RegExp) of
+		{match, _, _}  -> 
+		    Acc = Fun(FullName, Acc0),
+		    fold_files(T, Dir, RegExp, Recursive, Fun, Acc);
+		_ ->
+		    fold_files(T, Dir, RegExp, Recursive, Fun, Acc0)
+	    end;
+	false ->
+	    case Recursive and is_dir(FullName) of
+		true ->
+		    Acc1 = fold_files1(FullName, RegExp, Recursive, Fun, Acc0),
+		    fold_files(T, Dir, RegExp, Recursive, Fun, Acc1);
+		false ->
+		    fold_files(T, Dir, RegExp, Recursive, Fun, Acc0)
+	    end
+    end.
+
+last_modified(File) ->
+    case file:read_file_info(File) of
+	{ok, Info} ->
+	    Info#file_info.mtime;
+	_ ->
+	    0
+    end.
+
+file_size(File) ->
+    case file:read_file_info(File) of
+	{ok, Info} ->
+	    Info#file_info.size;
+	_ ->
+	    0
+    end.
+
+%%----------------------------------------------------------------------
+%% +type ensure_dir(X) -> true.
+%% +type X = filename() | dirname()
+%% ensures that the directory name required to create D exists
+
+ensure_dir("/") ->
+    true;
+ensure_dir(F) ->
+    Dir = filename:dirname(F),
+    case is_dir(Dir) of
+	true ->
+	    true;
+	false ->
+	    ensure_dir(Dir),
+	    file:make_dir(Dir)
     end.
 
 
@@ -104,9 +175,9 @@ wildcard4([{one_of, Ordset}|Rest], [C|File]) ->
     end;
 wildcard4([{alt, Alts}], File) ->
     do_alt(Alts, File);
-wildcard4([C|Rest1], [C|Rest2]) when integer(C) ->
+wildcard4([C|Rest1], [C|Rest2]) when is_integer(C) ->
     wildcard4(Rest1, Rest2);
-wildcard4([X|Rest1], [Y|Rest2]) when integer(X), integer(Y) ->
+wildcard4([X|_], [Y|_]) when is_integer(X), is_integer(Y) ->
     false;
 wildcard4([], []) ->
     true;
@@ -174,7 +245,7 @@ compile_part(Part) ->
 compile_part_to_sep(Part) ->
     compile_part(Part, true, []).
 
-compile_part([], true, Result) ->
+compile_part([], true, _) ->
     error(missing_delimiter);
 compile_part([$,|Rest], true, Result) ->
     {ok, $,, lists:reverse(Result), Rest};

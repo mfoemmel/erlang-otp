@@ -49,5 +49,5 @@ debug opt instr release docs release_docs tests release_tests clean depend:
 	    fi ;							\
 	done ;								\
 	if test -f vsn.mk; then						\
-	    echo "=== Exiting application" `basename $$app_pwd` ;	\
+	    echo "=== Leaving application" `basename $$app_pwd` ;	\
 	fi

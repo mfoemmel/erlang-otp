@@ -39,7 +39,9 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 MODULES = hipe_icode hipe_icode_cfg hipe_icode_ebb hipe_icode_liveness \
 	hipe_icode_prop hipe_icode_heap_test hipe_icode_cleanup \
-	hipe_update_catches hipe_beam_to_icode hipe_icode_primops
+	hipe_update_catches hipe_beam_to_icode hipe_icode_primops \
+	hipe_icode_binary_pass hipe_icode_ssa_phi hipe_icode_ssa_rename \
+	hipe_icode_ssa hipe_icode_ssa_propagate
 
 
 HRL_FILES=
@@ -90,12 +92,15 @@ release_spec: opt
 
 release_docs_spec:
 
-$(EBIN)/hipe_icode_cfg.beam: ../flow/cfg.inc
-
-$(EBIN)/hipe_icode_liveness.beam: ../flow/liveness.inc
-
+$(EBIN)/hipe_icode_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl
+$(EBIN)/hipe_icode_ebb.beam: ../flow/ebb.inc
+$(EBIN)/hipe_icode_liveness.beam: ../util/hipe_vector.hrl ../flow/liveness.inc
 $(EBIN)/hipe_icode_heap_test.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl
-
+$(EBIN)/hipe_icode_prop.beam: ../main/hipe.hrl
 $(EBIN)/hipe_update_catches.beam: ../main/hipe.hrl
-
 $(EBIN)/hipe_beam_to_icode.beam: ../main/hipe.hrl
+
+$(EBIN)/hipe_icode_ssa_rename.beam: ../ssa/hipe_ssa_rename.inc
+$(EBIN)/hipe_icode_ssa.beam: ../ssa/hipe_ssa.inc
+$(EBIN)/hipe_icode_ssa_propagate.beam: ../ssa/hipe_ssa_propagate.inc
+$(EBIN)/hipe_icode_ssa_phi.beam: ../ssa/hipe_ssa_phi.inc

@@ -69,8 +69,11 @@
 /* Define to enable HiPE. */
 #undef HIPE
 
-/* Define to enable unified heap model. */
-#undef UNIFIED_HEAP
+/* Define to enable shared heap model. */
+#undef SHARED_HEAP
+
+/* Define to enable hrvtime() on Linux/x86 systems with perfctr extension. */
+#undef USE_PERFCTR
 
 /* Define to enable use of elib_malloc (a malloc() replacement). */
 #undef ENABLE_ELIB_MALLOC
@@ -80,6 +83,12 @@
 
 /* Define to enable the use of sorted blocks when using elib_malloc. */
 #undef ELIB_SORTED_BLOCKS
+
+/*
+ *  Misc. system calls and include files.
+ */
+/* Define if netdb.h needs struct sockaddr_in ans in.h CAN be included before*/
+#undef NETDB_H_NEEDS_IN_H
 
 /* */
 #undef NO_PRAGMA_WEAK
@@ -98,6 +107,12 @@
 
 /* define if gethrvtime() works and uses ioctl() to /proc/self */
 #undef HAVE_GETHRVTIME_PROCFS_IOCTL
+
+/* The number of bytes in a size_t.  */
+#undef SIZEOF_SIZE_T
+
+/* The number of bytes in an off_t.  */
+#undef SIZEOF_OFF_T
 
 /* Possible gethostbyname_r() function interfaces (sigh...) */
 /* Note: don't use the number 1, to protect against out-of-sync configure */
@@ -191,6 +206,12 @@
 
 /* Define if you have the gethrtime function.  */
 #undef HAVE_GETHRTIME
+
+/* Define if you have the getipnodebyaddr function.  */
+#undef HAVE_GETIPNODEBYADDR
+
+/* Define if you have the getipnodebyname function.  */
+#undef HAVE_GETIPNODEBYNAME
 
 /* Define if you have the getpagesize function.  */
 #undef HAVE_GETPAGESIZE

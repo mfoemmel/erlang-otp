@@ -97,8 +97,7 @@ corba_procs(KA) ->
 	    Mods = [Name, corba, mnesia],
 	    MFA = {?MODULE, start_link_connector, [Name]},
 	    Conn = {Name, MFA, permanent, KA, worker, Mods},
-	    SessionSup = session_sup_spec(mnesia_corba_session_sup),    
-	    [Conn, SessionSup]
+	    [Conn]
     end.
 
 corba_enabled() ->
@@ -138,13 +137,12 @@ start_link_connector(mnesia_corba_connector) ->
 	begin
 	    register_types(),
 	    Env = [],
-	    Name = {local, mnesia_corba_connector},
-	    CreateRes = (catch mnesia_corba_connector:oe_create_link(Env, Name)),
-	    Key = exit_to_error(CreateRes, corba_connector_create),
+	    Opts = [{regname, {local, mnesia_corba_connector}},{sup_child,true}],
+	    CreateRes = (catch mnesia_corba_connector:oe_create_link(Env, Opts)),
+	    {ok, Pid, Key} = exit_to_error(CreateRes, corba_connector_create),
 	    NS = corba:resolve_initial_references("NameService"),
 	    BindRes = (catch 'CosNaming_NamingContext':bind(NS, CorbaName, Key)),
 	    ok = exit_to_error(BindRes, corba_bind_error),
-	    Pid = corba:get_pid(Key),
 	    {ok, Pid}
 	end.
 

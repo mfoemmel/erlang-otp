@@ -45,18 +45,19 @@ MODULES=hipe_rtl_to_x86 \
 	hipe_x86_defuse \
 	hipe_x86_encode \
 	hipe_x86_finalise \
+	hipe_x86_float \
 	hipe_x86_frame \
 	hipe_x86_liveness \
 	hipe_x86_pp \
 	hipe_x86_ra_coalescing \
 	hipe_x86_ra_dummy \
+	hipe_x86_ra_fp_ls \
 	hipe_x86_ra_graph_color \
 	hipe_x86_ra_ls \
-	hipe_x86_ra_postconditions \
+	hipe_x86_ra_ls_postconditions \
 	hipe_x86_ra_measure_live_regs \
-	hipe_x86_registers \
-	hipe_x86_saver \
-	hipe_x86_sched
+	hipe_x86_ra_postconditions \
+	hipe_x86_registers
 
 HRL_FILES=hipe_x86.hrl
 ERL_FILES=$(MODULES:%=%.erl)
@@ -103,15 +104,18 @@ release_spec: opt
 
 release_docs_spec:
 
-$(EBIN)/hipe_x86_assemble.beam: ../main/hipe.hrl
-$(EBIN)/hipe_x86_cfg.beam: ../flow/cfg.inc
+# Please keep this list sorted.
+$(EBIN)/hipe_x86_assemble.beam: ../main/hipe.hrl ../rtl/hipe_literals.hrl
+$(EBIN)/hipe_x86_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl
 $(EBIN)/hipe_x86_frame.beam: ../main/hipe.hrl
-$(EBIN)/hipe_x86_liveness.beam: ../flow/liveness.inc
+$(EBIN)/hipe_x86_liveness.beam: ../util/hipe_vector.hrl ../flow/liveness.inc
 $(EBIN)/hipe_x86_ra_coalescing.beam: ../main/hipe.hrl
 $(EBIN)/hipe_x86_ra_dummy.beam: ../main/hipe.hrl
 $(EBIN)/hipe_x86_ra_graph_color.beam: ../main/hipe.hrl
-$(EBIN)/hipe_x86_ra_ls.beam: ../main/hipe.hrl
-$(EBIN)/hipe_x86_registers.beam: ../rtl/hipe_literals.hrl
+$(EBIN)/hipe_x86_ra_ls.beam: ../main/hipe.hrl ../util/hipe_vector.hrl
+$(EBIN)/hipe_x86_ra_ls_postconditions.beam: ../main/hipe.hrl
+$(EBIN)/hipe_x86_ra_measure_live_regs.beam: ../util/hipe_vector.hrl
 $(EBIN)/hipe_x86_ra_postconditions.beam: ../main/hipe.hrl
+$(EBIN)/hipe_x86_registers.beam: ../rtl/hipe_literals.hrl
 
 $(TARGET_FILES): hipe_x86.hrl

@@ -30,31 +30,35 @@
 #include "dist.h"
 #include "erl_version.h"
 #include "erl_db_util.h"
+#include "erl_message.h"
 #ifdef ELIB_ALLOC_IS_CLIB
 #include "elib_stat.h"
 #endif
 
 #define DECL_AM(S) Eterm AM_ ## S = am_atom_put(#S, sizeof(#S) - 1)
 
-extern int bif_timer_rec_desc;
-extern int fixed_deletion_desc;
 #ifdef USE_THREADS
 extern int erts_async_max_threads;
 #endif
 /* Keep erts_system_version as a global variable for easy access from a core */
 static char erts_system_version[] = ("Erlang (" EMULATOR ")"
 				     " emulator version " ERLANG_VERSION
+#ifdef ARCH_64
+				     " [64-bit]"
+#endif
 #ifndef OTP_RELEASE
 				     " [source]"
 #endif	
 #ifdef HIPE
 				     " [hipe]"
 #endif	
-#ifdef UNIFIED_HEAP
-				     " [unified heap]"
+#ifdef SHARED_HEAP
+				     " [shared heap]"
 #endif
 #ifdef ET_DEBUG
+#if ET_DEBUG
 				     " [type-assertions]"
+#endif
 #endif	
 #ifdef DEBUG
 				     " [debug-compiled]"
@@ -79,67 +83,78 @@ static char erts_system_version[] = ("Erlang (" EMULATOR ")"
 # define PERFMON_GETPCR			_IOR('P', 2, unsigned long long)
 #endif
 
-#ifdef UNIFIED_HEAP
-  #define STACK_BEGIN    rp->stack
-  #define HEAP_SIZE      global_heap_sz
-  #define UH_OLD_HEND    global_old_hend
-  #define UH_OLD_HEAP    global_old_heap
-  #define UH_MAX_GEN_GCS global_max_gen_gcs
-  #define UH_MBUF_SIZE   global_mbuf_sz
-#else
-  #define STACK_BEGIN    rp->hend
-  #define HEAP_SIZE      rp->heap_sz
-  #define UH_OLD_HEND    rp->old_hend
-  #define UH_OLD_HEAP    rp->old_heap
-  #define UH_MAX_GEN_GCS rp->max_gen_gcs
-  #define UH_MBUF_SIZE   rp->mbuf_sz
-#endif
-
 static Eterm
-make_bin_list(Process* p, ProcBin* pb)
+bld_bin_list(Uint **hpp, Uint *szp, ProcBin* pb)
 {
     Eterm res = NIL;
-    Eterm* hp;
     Eterm tuple;
 
-    while (pb) {
-	hp = HAlloc(p, 4+2);
-	tuple = TUPLE3(hp, make_small_or_big((Uint)pb->val, p),
-		       make_small_or_big(pb->val->orig_size, p),
-		       make_small(pb->val->refc));
-	hp += 4;
-	res = CONS(hp, tuple, res);
-	pb = pb->next;
+    for (; pb; pb = pb->next) {
+	Eterm val = erts_bld_uint(hpp, szp, (Uint) pb->val);
+	Eterm orig_size = erts_bld_uint(hpp, szp, pb->val->orig_size);
+
+	if (szp)
+	    *szp += 4+2;
+	if (hpp) {
+	    tuple = TUPLE3(*hpp, val, orig_size, make_small(pb->val->refc));
+	    res = CONS(*hpp + 4, tuple, res);
+	    *hpp += 4+2;
+	}
     }
     return res;
 }
 
 static Eterm
-make_tuple2_list(Process* p, Sint length, Eterm terms1[], Uint terms2[])
+make_link_list(Process *p, ErlLink *ls)
 {
-    Eterm list = NIL;
-    Sint i;
-    Eterm *hp = HAlloc(p, length*(2+3));
+    DECL_AM(erl_link);
+    Eterm tup;
+    Eterm res;
+    Eterm *hp;
+    ErlLink *l;
+    Uint s;
+#ifdef DEBUG
+    Eterm *endp;
+#endif
 
-    for(i = length - 1; i >= 0; i--) {
-	list = CONS(hp+3, TUPLE2(hp, terms1[i], terms2[i]), list);
-	hp += 2+3;
+    for(l = ls, s = 0; l; l = l->next) {
+	s += IS_CONST(l->item) ? 0 : NC_HEAP_SIZE(l->item);
+	s += IS_CONST(l->data) ? 0 : NC_HEAP_SIZE(l->data);
+	s += IS_CONST(l->ref)  ? 0 : NC_HEAP_SIZE(l->ref);
+	s += 2 /* 1 cons cell */ + 6 /* 1 five-tuple */;
     }
-    return list;
-}
 
-static Eterm
-make_term_list(Process* p, Sint length, Eterm terms[])
-{
-    Eterm list = NIL;
-    Sint i;
-    Eterm *hp = HAlloc(p, length*2);
+    if(!s)
+	return NIL;
 
-    for(i = length - 1; i >= 0; i--) {
-	list = CONS(hp, terms[i], list);
+    hp = HAlloc(p, s);
+
+#ifdef DEBUG
+    endp = hp + s;
+#endif
+
+    for(l = ls, res = NIL; l; l = l->next) {
+	Eterm i = (IS_CONST(l->item)
+		   ? l->item
+		   : STORE_NC(&hp, &MSO(p).externals, l->item));
+	Eterm d = (IS_CONST(l->data)
+		   ? l->data
+		   : STORE_NC(&hp, &MSO(p).externals, l->data));
+	Eterm r = (IS_CONST(l->ref)
+		   ? l->ref
+		   : STORE_NC(&hp, &MSO(p).externals, l->ref));
+	tup = TUPLE5(hp, AM_erl_link, make_small(l->type), i, d, r);
+	hp += 6;
+	res = CONS(hp, tup, res);
 	hp += 2;
     }
-    return list;
+
+#ifdef DEBUG
+    ASSERT(hp == endp);
+#endif
+    
+    return res;
+
 }
 
 Eterm
@@ -162,11 +177,35 @@ process_info_1(Process* p, Eterm pid)
 	am_reductions,
 	am_garbage_collection,
     };
-    Eterm items[ASIZE(keys)];
+    Eterm items[ASIZE(keys)+2];
     Eterm result = NIL;
     Eterm tmp;
     Eterm* hp;
     int i;
+    int next = 0;
+
+    /*
+     * The dollar dictionary is special. We will only show it if its is non-empty.
+     */
+
+    tmp = process_info_2(p, pid, am_DollarDictionary);
+    if (is_non_value(tmp)) {
+	return THE_NON_VALUE;
+    } else if (is_tuple(tmp)) {
+	Eterm* tp = tuple_val(tmp);
+	if (tp[2] != NIL) {
+	    items[next++] = tmp;
+	}
+    }
+
+    /*
+     * Registered name is also special.
+     */
+    
+    tmp = process_info_2(p, pid, am_registered_name);
+    if (is_tuple(tmp)) {
+	items[next++] = tmp;
+    }
 
     /*
      * Collect all information about the process.
@@ -176,48 +215,22 @@ process_info_1(Process* p, Eterm pid)
 	Eterm item;
 
 	item = process_info_2(p, pid, keys[i]);
-	if (is_non_value(item)) {
-	    return THE_NON_VALUE;
-	}
 	if (item == am_undefined) {
 	    return am_undefined;
 	}
-	items[i] = item;
-    }
-
-    /*
-     * The dollar dictionary is special. We will only show it if its is non-empty.
-     */
-
-    tmp = process_info_2(p, pid, am_DollarDictionary);
-
-    hp = HAlloc(p, 2*(ASIZE(keys)+2));
-
-    if (is_tuple(tmp)) {
-	Eterm* tp = tuple_val(tmp);
-	if (tp[2] != NIL) {
-	    result = CONS(hp, tmp, result);
-	    hp += 2;
-	}
+	items[next++] = item;
     }
 
     /*
      * Build the resulting list.
      */
 
-    for (i = ASIZE(keys) - 1; i >= 0; i--) {
+    hp = HAlloc(p, 2*next);
+    for (i = next - 1; i >= 0; i--) {
 	result = CONS(hp, items[i], result);
 	hp += 2;
     }
 
-    /*
-     * Registered name is also special.
-     */
-    
-    tmp = process_info_2(p, pid, am_registered_name);
-    if (is_tuple(tmp)) {
-	result = CONS(hp, tmp, result);
-    }
     return result;
 }
 
@@ -231,24 +244,24 @@ BIF_ADECL_2
     int i, j;
     Eterm pid = BIF_ARG_1;
 
-    if (is_not_pid(pid) || (pid_node(pid) != THIS_NODE) ||
-	(pid_number(pid) >= max_process)) {
+    if (is_external_pid(pid)
+	&& external_pid_dist_entry(pid) == erts_this_dist_entry)
+	BIF_RET(am_undefined);
+	
+    if (is_not_internal_pid(pid)
+	|| internal_pid_index(BIF_ARG_1) >= erts_max_processes) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-
-    i = pid_creation(pid);
-    if ((i != this_creation) && (i != 0))
-	BIF_RET(am_undefined);
 
     if (is_not_atom(BIF_ARG_2))
 	BIF_ERROR(BIF_P, BADARG);
 
     item = BIF_ARG_2;
-    rp = process_tab[pid_number(BIF_ARG_1)];
+    
+    rp = process_tab[internal_pid_index(BIF_ARG_1)];
 
     /* if the process is not active return undefined */
-    if (INVALID_PID(rp, BIF_ARG_1))
-    {
+    if (INVALID_PID(rp, BIF_ARG_1)) {
 	if (rp != NULL && rp->status == P_EXITING)
 	    ;
 	else
@@ -340,7 +353,7 @@ BIF_ADECL_2
 	    if (rp != BIF_P) {
 		mp = rp->msg.first;
 		while(mp != NULL) {
-		    size += size_object(mp->mesg);
+		    size += size_object(ERL_MESSAGE_TERM(mp));
 		    mp = mp->next;
 		}
 	    }
@@ -351,11 +364,10 @@ BIF_ADECL_2
 	    /* Build with back-pointers (as cons whould have done) */
 	    mp = rp->msg.first;
 	    while(mp != NULL) {
-		if (rp == BIF_P)
-		    cons[0] = mp->mesg;	/* write head */
-		else {
-		    size = size_object(mp->mesg); /* XXX I know */
-		    cons[0] = copy_struct(mp->mesg, size, &hp, &BIF_P->off_heap);
+		if (rp == BIF_P) {
+		    cons[0] = ERL_MESSAGE_TERM(mp);
+		} else {
+		    cons[0] = copy_object(ERL_MESSAGE_TERM(mp), BIF_P);
 		}
 		cons -= 2;	/* next cell */
 		cons[3] = make_list(cons); /* write tail */
@@ -367,97 +379,139 @@ BIF_ADECL_2
 	hp = HAlloc(BIF_P, 3);
 	res = make_small(rp->msg.len);
     } else if (item == am_links) {
-	int n = 0;
+	int sz = 0;
 	ErlLink* lnk;
+	Eterm item;
 
-	lnk = rp->links;
-	while(lnk != NULL) {
-	    if (lnk->type == LNK_LINK)
-		n++;
-	    lnk = lnk->next;
-	}
-	hp = HAlloc(BIF_P, 3 + 2*n);
-	lnk = rp->links;
-	while(lnk != NULL) {
+	for (lnk = rp->links; lnk; lnk = lnk->next) {
 	    if (lnk->type == LNK_LINK) {
-		res = CONS(hp, lnk->item, res);
+		sz += NC_HEAP_SIZE(lnk->item);
+		sz += 2;
+	    }
+	}
+	hp = HAlloc(BIF_P, 3 + sz);
+	res = NIL;
+	for (lnk = rp->links; lnk; lnk = lnk->next) {
+	    if (lnk->type == LNK_LINK) {
+		item = STORE_NC(&hp, &MSO(BIF_P).externals, lnk->item); 
+		res = CONS(hp, item, res);
 		hp += 2;
 	    }
-	    lnk = lnk->next;
 	}
     } else if (item == am_monitors) {
-	int n = 0;
+#undef  MI_INC
+#define MI_INC 50
+	int sz = 0;
+	struct {
+	    Eterm entity;
+	    Eterm node;
+	} *mi = NULL;
+	Uint mi_i = 0;
+	Uint mi_max = 0;
 	ErlLink* lnk;
+	ErlLink **lnkp;
 
 	/* lnk->item is the monitor link origin end */
-	lnk = rp->links;
-	while(lnk != NULL) {
-	    if ((lnk->type == LNK_LINK1)
-		&& (rp->id == lnk->item) ) {
-		n += 5; /* For a cons cell and a 2-tuple */
-		if (is_small(lnk->data)) {
-		    /* Monitor by name. Will need an additional 2-tuple. */
-		    n += 3;
-		} else if (is_not_pid(lnk->data)) {
-		    ASSERT(0);
+	for (lnk = rp->links; lnk; lnk = lnk->next) {
+	    if (mi_i >= mi_max) {
+		mi = (mi ? erts_safe_sl_realloc(mi,
+						mi_max*sizeof(*mi),
+						(mi_max+MI_INC)*sizeof(*mi))
+		      : erts_safe_sl_alloc(MI_INC*sizeof(*mi)));
+		mi_max += MI_INC;
+	    }
+	    if (lnk->type == LNK_LINK1 && rp->id == lnk->item) {
+		
+		if (is_atom(lnk->data)) {
+		    /* Dist monitor by name. */
+		    DistEntry *dep;
+
+		    ASSERT(is_node_name_atom(lnk->data));
+		    dep = erts_sysname_to_connected_dist_entry(lnk->data);
+		    if (!dep)
+			continue;
+		    lnkp = find_link_by_ref(&dep->links, lnk->ref);
+		    mi[mi_i].entity = (*lnkp)->data;
+		    mi[mi_i].node = lnk->data;
+
+		    /* Will need an additional 2-tuple. */
+		    sz += 3;
+		} else if (is_internal_pid(lnk->data)) {
+		    Process *p = pid2proc(lnk->data);
+		    if (!p)
+			continue;
+		    lnkp = find_link_by_ref(&p->links, lnk->ref);
+		    if (!lnkp)
+			continue;
+		    if (is_atom((*lnkp)->data)) { /* Local monitor by name. */
+			mi[mi_i].entity = (*lnkp)->data;
+			mi[mi_i].node = erts_this_dist_entry->sysname;
+			/* Will need an additional 2-tuple. */
+			sz += 3;
+		    }
+		    else
+			mi[mi_i].entity = lnk->data;
 		}
+		else {
+		    ASSERT(is_external_pid(lnk->data));
+		    mi[mi_i].entity = lnk->data;
+		    sz += NC_HEAP_SIZE(lnk->data);
+		}
+		mi_i++;
+		sz += 2 + 3; /* For a cons cell and a 2-tuple */
 	    }
-	    lnk = lnk->next;
 	}
-	hp = HAlloc(BIF_P, 3 + n);
-	lnk = rp->links;
-	while(lnk != NULL) {
-	    if ((lnk->type == LNK_LINK1)
-		&& (rp->id == lnk->item) ) {
-		if (is_small(lnk->data)) {
-		    /* Monitor by name. 
-		     * Build {process, {Name, Node}} and cons it. 
-		     */
-		    Eterm     t1, t2;
-		    Sint      slot = unsigned_val(lnk->data);
-		    ErlLink** dist_lnkp =
-			find_link_by_ref(&dist_addrs[slot].links, &lnk->ref);
-		    ASSERT(dist_lnkp != NULL);
-		    t1 = TUPLE2(hp, (*dist_lnkp)->data, 
-			       dist_addrs[slot].sysname );
-		    hp += 3;
-		    t2 = TUPLE2(hp, am_process, t1);
-		    hp += 3;
-		    res = CONS(hp, t2, res);
-		    hp += 2;
-		} else if (is_pid(lnk->data)) {
-		    /* Monitor by pid. Build {process, Pid} and cons it. */
-		    Eterm t;
-		    t = TUPLE2(hp, am_process, lnk->data);
-		    hp += 3;
-		    res = CONS(hp, t, res);
-		    hp += 2;
-		} else
-		    ASSERT(0);
-	    }
-	    lnk = lnk->next;
-	}
-    } else if (item == am_monitored_by) {
-	int n = 0;
-	ErlLink* lnk;
+	hp = HAlloc(BIF_P, 3 + sz);
+	res = NIL;
+	for (mi_max = mi_i, mi_i = 0; mi_i < mi_max; mi_i++) {
+	    if (is_atom(mi[mi_i].entity)) {
+		/* Monitor by name. 
+		 * Build {process, {Name, Node}} and cons it. 
+		 */
+		Eterm t1, t2;
 
-	/* lnk->item is the monitor link origin end */
-	lnk = rp->links;
-	while(lnk != NULL) {
-	    if ((lnk->type == LNK_LINK1)
-		&& (rp->id != lnk->item) )
-		n++;
-	    lnk = lnk->next;
-	}
-	hp = HAlloc(BIF_P, 3 + 2*n);
-	lnk = rp->links;
-	while(lnk != NULL) {
-	    if ((lnk->type == LNK_LINK1)
-		&& (rp->id != lnk->item) ) {
-		res = CONS(hp, lnk->item, res);
+		t1 = TUPLE2(hp, mi[mi_i].entity, mi[mi_i].node);
+		hp += 3;
+		t2 = TUPLE2(hp, am_process, t1);
+		hp += 3;
+		res = CONS(hp, t2, res);
 		hp += 2;
 	    }
-	    lnk = lnk->next;
+	    else {
+		/* Monitor by pid. Build {process, Pid} and cons it. */
+		Eterm t;
+		Eterm pid = STORE_NC(&hp,
+				     &MSO(BIF_P).externals,
+				     mi[mi_i].entity);
+		t = TUPLE2(hp, am_process, pid);
+		hp += 3;
+		res = CONS(hp, t, res);
+		hp += 2;
+	    }
+	}
+	if (mi)
+	    erts_sl_free((void *) mi);
+#undef  MI_INC
+    } else if (item == am_monitored_by) {
+	int sz = 0;
+	ErlLink* lnk;
+	Eterm item;
+
+	/* lnk->item is the monitor link origin end */
+	for (lnk = rp->links; lnk; lnk = lnk->next) {
+	    if (lnk->type == LNK_LINK1 && rp->id != lnk->item) {
+		sz += NC_HEAP_SIZE(lnk->item);
+		sz += 2;
+	    }
+	}
+	hp = HAlloc(BIF_P, 3 + sz);
+	res = NIL;
+	for (lnk = rp->links; lnk; lnk = lnk->next) {
+	    if (lnk->type == LNK_LINK1 && rp->id != lnk->item) {
+		item = STORE_NC(&hp, &MSO(BIF_P).externals, lnk->item); 
+		res = CONS(hp, item, res);
+		hp += 2;
+	    }
 	}
     } else if (item == am_dictionary) {
 	res = dictionary_copy(BIF_P, rp->dictionary);
@@ -476,23 +530,28 @@ BIF_ADECL_2
 	res = rp->error_handler;
     } else if (item == am_heap_size) {
 	hp = HAlloc(BIF_P, 3);
-	res = make_small(HEAP_SIZE);
+	res = make_small(HEAP_SIZE(rp));
     } else if (item == am_stack_size) {
 	hp = HAlloc(BIF_P, 3);
-	res = make_small(STACK_BEGIN - rp->stop);
+	res = make_small(STACK_START(rp) - rp->stop);
     } else if (item == am_memory) { /* Memory consumed in bytes */
 	Uint size = 0;
+	Uint hsz = 3;
 	ErlLink* lnk;
 
-	lnk = rp->links;
-	while (lnk != NULL) {
-	    size += sizeof(ErlLink);
-	    lnk = lnk->next;
-	}
-	size += (HEAP_SIZE + UH_MBUF_SIZE) * sizeof(Eterm) + sizeof(Process);
-	if (UH_OLD_HEAP != NULL && UH_OLD_HEND != NULL) {
-	    size += (UH_OLD_HEND - UH_OLD_HEAP) * sizeof(Eterm);
-	}
+	size += sizeof(Process);
+
+	for(lnk = rp->links; lnk; lnk = lnk->next)
+	    size += erts_link_size(lnk);
+
+#ifdef SHARED_HEAP
+	size += (rp->stack - rp->send) * sizeof(Eterm);
+#else
+	size += (rp->heap_sz + rp->mbuf_sz) * sizeof(Eterm);
+	if (rp->old_hend && rp->old_heap)
+	    size += (rp->old_hend - rp->old_heap) * sizeof(Eterm);
+#endif
+
 	if (rp->reg) {
 	    size += sizeof(RegProc);
 	}
@@ -507,17 +566,22 @@ BIF_ADECL_2
 		     + (rp->ct->len - 1) * sizeof(Export *));
 	}
 
-	hp = HAlloc(BIF_P, 3);
-	res = make_small_or_big(size, BIF_P);
+	(void) erts_bld_uint(NULL, &hsz, size);
+	hp = HAlloc(BIF_P, hsz);
+	res = erts_bld_uint(&hp, NULL, size);
     } else if (item == am_garbage_collection){
 	hp = HAlloc(BIF_P, 3+2+3);
-	res = TUPLE2(hp, am_fullsweep_after, make_small(UH_MAX_GEN_GCS));
+	res = TUPLE2(hp, am_fullsweep_after, make_small(MAX_GEN_GCS(BIF_P)));
 	hp += 3;
 	res = CONS(hp, res, NIL);
 	hp += 2;
     } else if (item == am_group_leader) {
-	hp = HAlloc(BIF_P, 3);
-	res = rp->group_leader;
+	int sz = NC_HEAP_SIZE(rp->group_leader);
+	hp = HAlloc(BIF_P, 3 + sz);
+	/*
+	 * XXX Multi-thread note: Reading from another process's heap.
+	 */
+	res = STORE_NC(&hp, &MSO(BIF_P).externals, rp->group_leader);
     } else if (item == am_reductions) {
 	Uint reds;
 
@@ -540,26 +604,30 @@ BIF_ADECL_2
 	hp = HAlloc(BIF_P, 3);
 	res = make_small(rp->flags & TRACE_FLAGS);
     } else if (item == am_binary) {
-	res = make_bin_list(BIF_P, rp->off_heap.mso);
-	hp = HAlloc(BIF_P, 3);
+	Uint sz = 3;
+	(void) bld_bin_list(NULL, &sz, MSO(rp).mso);
+	hp = HAlloc(BIF_P, sz);
+	res = bld_bin_list(&hp, NULL, MSO(rp).mso);
     } else if (item == am_sequential_trace_token) {
-	Uint size = size_object(rp->seq_trace_token);
-	hp = HAlloc(BIF_P, size+3);
-	res = copy_struct(rp->seq_trace_token, size, &hp, &BIF_P->off_heap);
+
+	/*
+	 * XXX Multi-thread note: Reading from another process's heap.
+	 */
+	res = copy_object(rp->seq_trace_token, BIF_P);
+	hp = HAlloc(BIF_P, 3);
     } else if (item == am_exit) {
-	Uint size;
 	if (rp->status == P_EXITING) {
-	    size = size_object(rp->fvalue);
-	    hp = HAlloc(BIF_P, 3+size);
-	    res = copy_struct(rp->fvalue, size, &hp, &BIF_P->off_heap);
-	} else
+	    res = copy_object(rp->fvalue, BIF_P);
+	    hp = HAlloc(BIF_P, 3);
+	} else {
 	    BIF_RET(NIL);
+	}
     } else if (item == am_catchlevel) {
 	hp = HAlloc(BIF_P, 3);
 	res = make_small(catchlevel(BIF_P));
     } else if (item == am_backtrace) {
 	cerr_pos = 0;
-	stack_dump2(rp, CBUF);
+	erts_stack_dump(rp, CBUF);
 	res = new_binary(BIF_P, tmp_buf, cerr_pos);
 	hp = HAlloc(BIF_P, 3);
     } else if (item == am_last_calls) {
@@ -686,16 +754,36 @@ info_1_tuple(Process* BIF_P,	/* Pointer to current process. */
 	}
 	BIF_RET(am_true);
 #endif
+    } else if (sel == am_link_list) {
+	ErlLink *links = NULL;
+	if(is_internal_pid(*tp)) {
+	    Process *p = pid2proc(*tp);
+	    if(p)
+		links = p->links;
+	    else
+		return am_undefined;
+	}
+	else if(is_internal_port(*tp)) {
+	    Port *p = id2port(*tp);
+	    if(p)
+		links = p->links;
+	    else
+		return am_undefined;
+	}
+	else if(is_node_name_atom(*tp)) {
+	    DistEntry *dep = erts_find_dist_entry(*tp);
+	    if(dep)
+		links = dep->links;
+	    else
+		return am_undefined;
+	}
+	else
+	    return THE_NON_VALUE;
+
+	return make_link_list(BIF_P, links);
     }
     return THE_NON_VALUE;
 }
-
-BIF_RETTYPE info_1(BIF_ALIST_1)
-BIF_ADECL_1
-{
-    return system_info_1(BIF_P, BIF_ARG_1);
-}
-
 
 BIF_RETTYPE system_info_1(BIF_ALIST_1)
 BIF_ADECL_1
@@ -729,7 +817,7 @@ BIF_ADECL_1
 	BIF_RET(db_get_trace_control_word_0(BIF_P));
     } else if (BIF_ARG_1 == am_sequential_tracer) {
 	if (is_pid(system_seq_tracer) || is_port(system_seq_tracer)) {
-	    val = system_seq_tracer;
+	    val = STORE_NC_IN_PROC(BIF_P, system_seq_tracer);
 	} else {
 	    val = am_false;
 	}
@@ -748,14 +836,14 @@ BIF_ADECL_1
 	BIF_RET(res);
     } else if (BIF_ARG_1 == am_process_count) {
 	count = 0;
-	for (i = 0; i < max_process; i++) {
+	for (i = 0; i < erts_max_processes; i++) {
 	    if (process_tab[i] != NULL && process_tab[i]->status != P_EXITING) {
 		count++;
 	    }
 	}
 	BIF_RET(make_small(count));
     } else if (BIF_ARG_1 == am_process_limit) {
-	BIF_RET(make_small(max_process));
+	BIF_RET(make_small(erts_max_processes));
     } else if (BIF_ARG_1 == am_info) {
 	info(CBUF);
     } else if (BIF_ARG_1 == am_procs)
@@ -779,7 +867,15 @@ BIF_ADECL_1
 #endif
 	hp = HAlloc(BIF_P, sys_ver_len*2);
 	BIF_RET(buf_to_intlist(&hp, sys_ver, sys_ver_len, NIL));
-    }
+    } else if (BIF_ARG_1 == am_system_architecture) {
+	int n;
+
+	sys_strcpy((char*)tmp_buf, ERLANG_ARCHITECTURE);
+	n = sys_strlen((char*)tmp_buf);
+	hp = HAlloc(BIF_P, n*2);
+	BIF_RET(buf_to_intlist(&hp, tmp_buf, n, NIL));
+    } 
+
 #ifdef INSTRUMENT
     else if (BIF_ARG_1 == am_allocated) {
 	Eterm val;
@@ -789,232 +885,227 @@ BIF_ADECL_1
     }
 #endif
     else if (BIF_ARG_1 == am_allocated_areas) {
-#undef INSTR_AA_2TUPS
-#ifdef INSTRUMENT
-#define INSTR_AA_2TUPS 2
-#else
-#define INSTR_AA_2TUPS 0
-#endif
-#undef  NO_AA_2TUPS
-#define NO_AA_2TUPS  (7 + INSTR_AA_2TUPS)
-#undef  NO_AA_3TUPS
-#define NO_AA_3TUPS  14
-#undef  NO_AA_TUPS
-#define NO_AA_TUPS   (NO_AA_2TUPS+NO_AA_3TUPS)
-#undef  AA_WORDS
-#define AA_WORDS     (2*NO_AA_TUPS+3*NO_AA_2TUPS+4*NO_AA_3TUPS)
-
-      Eterm tuples[NO_AA_TUPS];
-      int i;
-      int code_sz = 0;
-      ErtsDefiniteAllocInfo edai;
-#ifdef INSTRUMENT
-      SysAllocStat sas;
-      DECL_AM(total);
-      DECL_AM(maximum);
-#endif
-      DECL_AM(static);
-      DECL_AM(definite_alloc);
-      DECL_AM(atom_space);
-      DECL_AM(binary);
-      DECL_AM(atom_table);
-      DECL_AM(module_table);
-      DECL_AM(export_table);
-      DECL_AM(register_table);
-      DECL_AM(loaded_code);
-      DECL_AM(process_desc);
-      DECL_AM(table_desc);
-      DECL_AM(link_desc);
-      DECL_AM(atom_desc);
-      DECL_AM(export_desc);
-      DECL_AM(module_desc);
-      DECL_AM(preg_desc);
-      DECL_AM(mesg_desc);
-      DECL_AM(plist_desc);
-      DECL_AM(fixed_deletion_desc);
-      DECL_AM(bif_timer_rec_desc);
-      DECL_AM(fun_desc);
+	/* Keep c:memory() (in stdlib) up to date if changed */
 #ifdef DEBUG
-      Eterm *endp;
+	Eterm *endp;
 #endif
-
-      for (i = 0; i < module_code_size; i++) {
-        if (module_code(i) != NULL &&
-            ((module_code(i)->code_length != 0) ||
-             (module_code(i)->old_code_length != 0))) {
-          code_sz += module_code(i)->code_length;
-          if (module_code(i)->old_code_length != 0) {
-            code_sz += module_code(i)->old_code_length;
-          }
-        }
-      }
-
-      hp = HAlloc(BIF_P, AA_WORDS);
-
-#ifdef DEBUG
-      endp = hp + AA_WORDS;
-#endif
-
-      erts_definite_alloc_info(&edai);
-
-      i = 0;
-      tuples[i++] = TUPLE3(hp,
-                           AM_definite_alloc,
-                           make_small_or_big(edai.block, BIF_P),
-                           make_small_or_big(edai.used, BIF_P));
-      hp += 4;
-      tuples[i++] = TUPLE2(hp,
-                           AM_static,
-                           make_small_or_big(MAXDIST * sizeof(DistEntry)
-                                             /* Distribution table */
-
-                                             + max_process * sizeof(Process*)
-                                             /* Process table */
-
-                                             + erl_max_ports * sizeof(Port)
-                                             /* Port table */
-
-                                             + TMP_BUF_SIZE * sizeof(byte)
-                                             /* Tmp buffer */
-
-                                             + 14 /* XXX */ * sizeof(Eterm)
-                                             /* Tmp buffer 
-                                                (dmem in dist.c) */
-
-                                             + 64+1 /* XXX */
-                                             /* fix alloc descs
-                                                (dbuf in erl_message.c) */ 
-
-                                             /* XXX continue ... */,
-                                             BIF_P));
-      hp += 3;
-      tuples[i++] = TUPLE3(hp,
-                           AM_atom_space,
-                           make_small_or_big(reserved_atom_space, BIF_P),
-                           make_small_or_big(atom_space, BIF_P));
-      hp += 4;
-      tuples[i++] = TUPLE2(hp,
-                           AM_binary,
-                           make_small_or_big(tot_bin_allocated, BIF_P));
-      hp += 3;
-      tuples[i++] = TUPLE2(hp,
-                           AM_atom_table,
-                           make_small_or_big(index_table_sz(&atom_table),
-                                             BIF_P));
-      hp += 3;
-      tuples[i++] = TUPLE2(hp,
-                           AM_module_table,
-                           make_small_or_big(index_table_sz(&module_table),
-                                             BIF_P));
-      hp += 3;
-      tuples[i++] = TUPLE2(hp,
-                           AM_export_table,
-                           make_small_or_big(index_table_sz(&export_table),
-                                             BIF_P));
-      hp += 3;
-      tuples[i++] = TUPLE2(hp,
-                           AM_register_table,
-                           make_small_or_big(hash_table_sz(&process_reg),
-                                             BIF_P));
-      hp += 3;
-      tuples[i++] = TUPLE2(hp,
-                           AM_loaded_code,
-                           make_small_or_big(code_sz, BIF_P));
-      hp += 3;
-      tuples[i++] = TUPLE3(hp,
-                           AM_process_desc,
-                           make_small_or_big(fix_info(process_desc), BIF_P),
-                           make_small_or_big(fix_used(process_desc), BIF_P));
-      hp += 4;
-      tuples[i++] = TUPLE3(hp,
-                           AM_table_desc,
-                           make_small_or_big(fix_info(table_desc), BIF_P),
-                           make_small_or_big(fix_used(table_desc), BIF_P));
-      hp += 4;
-      tuples[i++] = TUPLE3(hp,
-                           AM_link_desc,
-                           make_small_or_big(fix_info(link_desc), BIF_P),
-                           make_small_or_big(fix_used(link_desc), BIF_P));
-      hp += 4;
-      tuples[i++] = TUPLE3(hp,
-                           AM_atom_desc,
-                           make_small_or_big(fix_info(atom_desc), BIF_P),
-                           make_small_or_big(fix_used(atom_desc), BIF_P));
-      hp += 4;
-      tuples[i++] = TUPLE3(hp,
-                           AM_export_desc,
-                           make_small_or_big(fix_info(export_desc), BIF_P),
-                           make_small_or_big(fix_used(export_desc), BIF_P));
-      hp += 4;
-      tuples[i++] = TUPLE3(hp,
-                           AM_module_desc,
-                           make_small_or_big(fix_info(module_desc), BIF_P),
-                           make_small_or_big(fix_used(module_desc), BIF_P));
-      hp += 4;
-      tuples[i++] = TUPLE3(hp,
-                           AM_preg_desc,
-                           make_small_or_big(fix_info(preg_desc), BIF_P),
-                           make_small_or_big(fix_used(preg_desc), BIF_P));
-      hp += 4;
-      tuples[i++] = TUPLE3(hp,
-                           AM_mesg_desc,
-                           make_small_or_big(fix_info(mesg_desc), BIF_P),
-                           make_small_or_big(fix_used(mesg_desc), BIF_P));
-      hp += 4;
-      tuples[i++] = TUPLE3(hp,
-                           AM_plist_desc,
-                           make_small_or_big(fix_info(plist_desc), BIF_P),
-                           make_small_or_big(fix_used(plist_desc), BIF_P));
-      hp += 4;
-      tuples[i++] = TUPLE3(hp,
-                           AM_fixed_deletion_desc,
-                           make_small_or_big(fix_info(fixed_deletion_desc),
-                                             BIF_P),
-                           make_small_or_big(fix_used(fixed_deletion_desc),
-                                             BIF_P));
-      hp += 4;
-      tuples[i++] = TUPLE3(hp,
-                           AM_bif_timer_rec_desc,
-                           make_small_or_big(fix_info(bif_timer_rec_desc),
-                                             BIF_P),
-                           make_small_or_big(fix_used(bif_timer_rec_desc),
-                                             BIF_P));
-      hp += 4;
-      tuples[i++] = TUPLE3(hp,
-                           AM_fun_desc,
-                           make_small_or_big(fix_info(erts_fun_desc),
-                                             BIF_P),
-                           make_small_or_big(fix_used(erts_fun_desc),
-                                             BIF_P));
-      hp += 4;
 #ifdef INSTRUMENT
-      sys_alloc_stat(&sas);
-      tuples[i++] = TUPLE2(hp,
-                           AM_total,
-                           make_small_or_big(sas.total, BIF_P));
-      hp += 3;
-      tuples[i++] = TUPLE2(hp,
-                           AM_maximum,
-                           make_small_or_big(sas.maximum, BIF_P));
-      hp += 3;
+	SysAllocStat sas;
+	DECL_AM(total);
+	DECL_AM(maximum);
+#endif
+	int i;
+	ErtsDefiniteAllocInfo edai;
+	DECL_AM(static);
+	DECL_AM(definite_alloc);
+	DECL_AM(atom_space);
+	DECL_AM(binary);
+	DECL_AM(atom_table);
+	DECL_AM(module_table);
+	DECL_AM(export_table);
+	DECL_AM(dist_table);
+	DECL_AM(node_table);
+	DECL_AM(register_table);
+	DECL_AM(loaded_code);
+	DECL_AM(bif_timer);
+	DECL_AM(link_lh);
+	DECL_AM(process_desc);
+	DECL_AM(table_desc);
+	DECL_AM(link_desc);
+	DECL_AM(link_sh_desc);
+	DECL_AM(atom_desc);
+	DECL_AM(export_desc);
+	DECL_AM(module_desc);
+	DECL_AM(preg_desc);
+	DECL_AM(plist_desc);
+	DECL_AM(fun_desc);
+	Uint atom_tab_sz = index_table_sz(&atom_table);
+	Uint mod_tab_sz = index_table_sz(&module_table);
+	Uint exp_tab_sz = index_table_sz(&export_table);
+	Uint reg_tab_sz = hash_table_sz(&process_reg);
+	Uint dist_tab_sz = erts_dist_table_size();
+	Uint node_tab_sz = erts_node_table_size();
+	Uint timer_sz = bif_timer_memory_size();
+	Uint proc_desc_sz = fix_info(process_desc);
+	Uint proc_desc_used = fix_used(process_desc);
+	Uint tab_desc_sz = fix_info(table_desc);
+	Uint tab_desc_used = fix_used(table_desc);
+	Uint atom_desc_sz = fix_info(atom_desc);
+	Uint atom_desc_used = fix_used(atom_desc);
+	Uint exp_desc_sz = fix_info(export_desc);
+	Uint exp_desc_used = fix_used(export_desc);
+	Uint mod_desc_sz = fix_info(module_desc);
+	Uint mod_desc_used = fix_used(module_desc);
+	Uint preg_desc_sz = fix_info(preg_desc);
+	Uint preg_desc_used = fix_used(preg_desc);
+	Uint link_desc_sz = fix_info(link_desc);
+	Uint link_desc_used = fix_used(link_desc);
+	Uint link_sh_desc_sz = fix_info(link_sh_desc);
+	Uint link_sh_desc_used = fix_used(link_sh_desc);
+	Uint plist_desc_sz = fix_info(plist_desc);
+	Uint plist_desc_used = fix_used(plist_desc);
+	Uint fun_desc_sz = fix_info(erts_fun_desc);
+	Uint fun_desc_used = fix_used(erts_fun_desc);
+	int code_sz = 0;
+	Uint static_sz;
+	Eterm tuples[25];
+	Uint *hp;
+	Uint **hpp;
+	Uint sz;
+	Uint *szp;
+
+	for (i = 0; i < module_code_size; i++) {
+	    if (module_code(i) != NULL &&
+		((module_code(i)->code_length != 0) ||
+		 (module_code(i)->old_code_length != 0))) {
+		code_sz += module_code(i)->code_length;
+		if (module_code(i)->old_code_length != 0) {
+		    code_sz += module_code(i)->old_code_length;
+		}
+	    }
+	}
+
+#ifdef INSTRUMENT
+	sys_alloc_stat(&sas);
 #endif
 
-      ASSERT(i == NO_AA_TUPS);
+	erts_definite_alloc_info(&edai);
 
-      res = NIL;
-      for(i--; i >= 0; i--) {
-        res = CONS(hp, tuples[i], res);
-        hp += 2;
-      }
+	static_sz =
+	    erts_max_processes*sizeof(Process*)	/* Process table */
+	    + erts_max_ports*sizeof(Port)	/* Port table */
+	    + TMP_BUF_SIZE*sizeof(byte)		/* Tmp buffer */
+	    + ERL_MESSAGE_BUF_SZ*sizeof(ErlMessage) /* Default message buf */
+	    + 14*sizeof(Eterm)			/* XXX dmem in dist.c */
+	    + 64+1				/* XXX dbuf in erl_message.c */ 
+	    /* XXX continue ... */;
+
+
+
+	/* First find out the heap size needed ... */
+	hpp = NULL;
+	szp = &sz;
+	sz = 0;
+
+    build_allocated_areas_term:
+	i = 0;
+	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
+				     AM_definite_alloc,
+				     erts_bld_uint(hpp, szp, edai.block),
+				     erts_bld_uint(hpp, szp, edai.used));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
+				     AM_static,
+				     erts_bld_uint(hpp, szp, static_sz));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
+				     AM_atom_space,
+				     erts_bld_uint(hpp, szp,
+						   reserved_atom_space),
+				     erts_bld_uint(hpp, szp, atom_space));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
+				     AM_binary,
+				     erts_bld_uint(hpp, szp,
+						   tot_bin_allocated));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
+				     AM_atom_table,
+				     erts_bld_uint(hpp, szp, atom_tab_sz));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
+				     AM_module_table,
+				     erts_bld_uint(hpp, szp, mod_tab_sz));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
+				     AM_export_table,
+				     erts_bld_uint(hpp, szp, exp_tab_sz));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
+				     AM_register_table,
+				     erts_bld_uint(hpp, szp, reg_tab_sz));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
+				     AM_loaded_code,
+				     erts_bld_uint(hpp, szp, code_sz));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
+				     AM_dist_table,
+				     erts_bld_uint(hpp, szp, dist_tab_sz));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
+				     AM_node_table,
+				     erts_bld_uint(hpp, szp, node_tab_sz));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
+				     AM_bif_timer,
+				     erts_bld_uint(hpp, szp, timer_sz));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
+				     AM_link_lh,
+				     erts_bld_uint(hpp, szp,
+						   erts_tot_link_lh_size));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
+				     AM_process_desc,
+				     erts_bld_uint(hpp, szp, proc_desc_sz),
+				     erts_bld_uint(hpp, szp, proc_desc_used));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
+				     AM_table_desc,
+				     erts_bld_uint(hpp, szp, tab_desc_sz),
+				     erts_bld_uint(hpp, szp, tab_desc_used));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
+				     AM_atom_desc,
+				     erts_bld_uint(hpp, szp, atom_desc_sz),
+				     erts_bld_uint(hpp, szp, atom_desc_used));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
+				     AM_export_desc,
+				     erts_bld_uint(hpp, szp, exp_desc_sz),
+				     erts_bld_uint(hpp, szp, exp_desc_used));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
+				     AM_module_desc,
+				     erts_bld_uint(hpp, szp, mod_desc_sz),
+				     erts_bld_uint(hpp, szp, mod_desc_used));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
+				     AM_preg_desc,
+				     erts_bld_uint(hpp, szp, preg_desc_sz),
+				     erts_bld_uint(hpp, szp, preg_desc_used));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
+				     AM_link_desc,
+				     erts_bld_uint(hpp, szp, link_desc_sz),
+				     erts_bld_uint(hpp, szp, link_desc_used));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
+				     AM_link_sh_desc,
+				     erts_bld_uint(hpp, szp, link_sh_desc_sz),
+				     erts_bld_uint(hpp, szp,
+						   link_sh_desc_used));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
+				     AM_plist_desc,
+				     erts_bld_uint(hpp, szp, plist_desc_sz),
+				     erts_bld_uint(hpp, szp,
+						   plist_desc_used));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 3,
+				     AM_fun_desc,
+				     erts_bld_uint(hpp, szp, fun_desc_sz),
+				     erts_bld_uint(hpp, szp, fun_desc_used));
+#ifdef INSTRUMENT
+	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
+				     AM_total,
+				     erts_bld_uint(hpp, szp, sas.total));
+	tuples[i++] = erts_bld_tuple(hpp, szp, 2,
+				     AM_maximum,
+				     erts_bld_uint(hpp, szp, sas.maximum));
+#endif
+
+	ASSERT(i <= sizeof(tuples)/sizeof(Eterm));
+
+	res = erts_bld_list(hpp, szp, i, tuples);
+
+
+	if (szp) {
+	    /* ... and then build the term */
+	    hp = HAlloc(BIF_P, sz);
 #ifdef DEBUG
-      ASSERT(endp == hp);
+	    endp = hp + sz;
 #endif
-      BIF_RET(res);
-#undef INSTR_AA_2TUPS
-#undef NO_AA_2TUPS
-#undef NO_AA_3TUPS
-#undef NO_AA_TUPS
-#undef AA_WORDS
+
+	    szp = NULL;
+	    hpp = &hp;
+	    goto build_allocated_areas_term;
+	}
+
+#ifdef DEBUG
+	ASSERT(endp == hp);
+#endif
+
+	BIF_RET(res);
     }
     else if (BIF_ARG_1 == am_os_type) {
        Eterm type = am_atom_put(os_type, strlen(os_type));
@@ -1031,11 +1122,17 @@ BIF_ADECL_1
 #ifndef HAVE_MMAP
 #define HAVE_MMAP 0
 #endif
-      Eterm features = NIL;
-      Eterm settings = NIL;
-      Eterm atoms[11];
-      Uint terms[11];
-      Uint length = 0;
+#ifdef DEBUG
+      Uint *endp;
+#endif
+      Uint **hpp;
+      Uint sz;
+      Uint *szp;
+      Eterm features;
+      Eterm settings;
+      Eterm atoms[12];
+      Uint terms[12];
+      Uint length;
       SysAllocStat sas;
       ErtsSlAllocStat esas;
       ErtsDefiniteAllocInfo edai;
@@ -1044,30 +1141,41 @@ BIF_ADECL_1
       DECL_AM(definite_alloc);
 
       sys_alloc_stat(&sas);
-      erts_sl_alloc_stat(&esas);
+      erts_sl_alloc_stat(&esas, 0);
       erts_definite_alloc_info(&edai);
-	
+
+
+      /* First find out the heap size needed ... */
+      hpp = NULL;
+      szp = &sz;
+      sz = 0;
+
+    build_allocator_term:
+
+      length = 0;
+      features = NIL;
+      settings = NIL;
+
       if(sas.trim_threshold >= 0) {
 	  DECL_AM(trim_threshold);
 	  atoms[length]   = AM_trim_threshold;
-	  terms[length++] = make_small_or_big((Uint) sas.trim_threshold, BIF_P);
+	  terms[length++] = erts_bld_uint(hpp, szp, (Uint) sas.trim_threshold);
       }
       if(sas.top_pad >= 0) {
 	  DECL_AM(top_pad);
 	  atoms[length]   = AM_top_pad;
-	  terms[length++] = make_small_or_big((Uint) sas.top_pad, BIF_P);
+	  terms[length++] = erts_bld_uint(hpp, szp, (Uint) sas.top_pad);
       }
 
       atoms[length] = AM_definite_alloc;
-      terms[length++] = make_small_or_big((Uint) edai.block, BIF_P);
+      terms[length++] = erts_bld_uint(hpp, szp, (Uint) edai.block);
 
-      settings = make_tuple2_list(BIF_P, length, atoms, terms);
+      settings = erts_bld_2tup_list(hpp, szp, length, atoms, terms);
 
       if (esas.sl_alloc_enabled) {
 	  DECL_AM(release);
 	  DECL_AM(singleblock_carrier_threshold);
 	  DECL_AM(max_mmap_carriers);
-	  Uint *hp;
 
 	  length = 0;
 
@@ -1075,84 +1183,80 @@ BIF_ADECL_1
 	  terms[length++] = am_true;
 
 	  atoms[length]   = AM_release;
-	  if (esas.old_sl_alloc_enabled) {
-	      hp = HAlloc(BIF_P, 2*(sizeof(ERTS_OLD_SL_ALLOC_RELEASE)-1));
-	      terms[length++] =
-		  buf_to_intlist(&hp,
-				 (byte*) ERTS_OLD_SL_ALLOC_RELEASE,
-				 sizeof(ERTS_OLD_SL_ALLOC_RELEASE) - 1,
-				 NIL);
-	  }
-	  else {
-	      hp = HAlloc(BIF_P, 2*(sizeof(ERTS_SL_ALLOC_RELEASE)-1));
-	      terms[length++] =
-		  buf_to_intlist(&hp,
-				 (byte*) ERTS_SL_ALLOC_RELEASE,
-				 sizeof(ERTS_SL_ALLOC_RELEASE) - 1,
-				 NIL);
-	  }
+	  terms[length++] = erts_bld_string(hpp,
+					    szp,
+					    (!esas.old_sl_alloc_enabled
+					     ? ERTS_SL_ALLOC_RELEASE
+					     : ERTS_OLD_SL_ALLOC_RELEASE));
 
 	  atoms[length]   = AM_singleblock_carrier_threshold;
-	  terms[length++] =
-	      make_small_or_big(esas.singleblock_carrier_threshold, BIF_P);
+	  terms[length++] = erts_bld_uint(hpp, szp,
+					  esas.singleblock_carrier_threshold);
 
 	  atoms[length]   = AM_max_mmap_carriers;
-	  terms[length++] = make_small_or_big(esas.max_mmap_carriers, BIF_P);
+	  terms[length++] = erts_bld_uint(hpp, szp, esas.max_mmap_carriers);
 
 	  if (!esas.old_sl_alloc_enabled) {
 	      DECL_AM(singleblock_carrier_move_threshold);
+	      DECL_AM(mmap_singleblock_carrier_load_threshold);
 	      DECL_AM(main_carrier_size);
 	      DECL_AM(smallest_multiblock_carrier_size);
 	      DECL_AM(largest_multiblock_carrier_size);
-	      DECL_AM(multiblock_carrier_growth_ratio);
+	      DECL_AM(multiblock_carrier_growth_stages);
 	      DECL_AM(max_block_search_depth);
-	      DECL_AM(carrier_order_search);
 
 	      atoms[length]   = AM_singleblock_carrier_move_threshold;
 	      terms[length++] =
-		  make_small_or_big(esas.singleblock_carrier_move_threshold,
-				    BIF_P);
+		  erts_bld_uint(hpp, szp,
+				esas.singleblock_carrier_move_threshold);
+
+	      atoms[length]   = AM_mmap_singleblock_carrier_load_threshold;
+	      terms[length++] =
+		  erts_bld_uint(hpp, szp,
+				esas.mmap_singleblock_carrier_load_threshold);
 
 	      atoms[length]   = AM_main_carrier_size;
 	      terms[length++] =
-		  make_small_or_big(esas.main_carrier_size, BIF_P);
+		  erts_bld_uint(hpp, szp, esas.main_carrier_size);
 
 	      atoms[length]   = AM_smallest_multiblock_carrier_size;
 	      terms[length++] =
-		  make_small_or_big(esas.smallest_multiblock_carrier_size,
-				    BIF_P);
+		  erts_bld_uint(hpp, szp,
+				esas.smallest_multiblock_carrier_size);
 
 	      atoms[length]   = AM_largest_multiblock_carrier_size;
 	      terms[length++] =
-		  make_small_or_big(esas.largest_multiblock_carrier_size,
-				    BIF_P);
+		  erts_bld_uint(hpp, szp, esas.largest_multiblock_carrier_size);
 
-	      atoms[length]   = AM_multiblock_carrier_growth_ratio;
+	      atoms[length]   = AM_multiblock_carrier_growth_stages;
 	      terms[length++] =
-		  make_small_or_big(esas.multiblock_carrier_growth_ratio,
-				    BIF_P);
+		  erts_bld_uint(hpp, szp,
+				esas.multiblock_carrier_growth_stages);
 
 	      atoms[length]   = AM_max_block_search_depth;
 	      terms[length++] =
-		  make_small_or_big(esas.max_block_search_depth, BIF_P);
-
-	      atoms[length]   = AM_carrier_order_search;
-	      terms[length++] = esas.carrier_order_search ? am_true : am_false;
+		  erts_bld_uint(hpp, szp, esas.max_block_search_depth);
 
 	  }
 
-	  sla_setts = make_tuple2_list(BIF_P, length, atoms, terms);
+	  sla_setts = erts_bld_2tup_list(hpp, szp, length, atoms, terms);
 
       }
       else {
 	  length = 0;
 	  atoms[length]   = AM_enabled;
 	  terms[length++] = am_false;
-	  sla_setts = make_tuple2_list(BIF_P, length, atoms, terms);
+	  sla_setts = erts_bld_2tup_list(hpp, szp, length, atoms, terms);
       }
 
-      hp = HAlloc(BIF_P, 5);
-      settings = CONS(hp+3, TUPLE2(hp, am_sl_alloc, sla_setts), settings);
+      settings = erts_bld_cons(hpp,
+			       szp,
+			       erts_bld_tuple(hpp,
+					      szp,
+					      2,
+					      am_sl_alloc,
+					      sla_setts),
+			       settings);
 
       length = 0;
 
@@ -1174,7 +1278,7 @@ BIF_ADECL_1
       terms[length++] = am_fix_alloc;
 #endif
 
-      features = length ? make_term_list(BIF_P, length, terms) : NIL;
+      features = length ? erts_bld_list(hpp, szp, length, terms) : NIL;
 
 #if defined(ELIB_ALLOC_IS_CLIB)
       {
@@ -1185,46 +1289,55 @@ BIF_ADECL_1
 		   "%d.%d.%d.%d.%d",
 		   &ver[0], &ver[1], &ver[2], &ver[3], &ver[4]);
 
-	hp = HAlloc(BIF_P, 5+i*2);
-
 	version = NIL;
-	for(i--; i >= 0; i--) {
-	  version = CONS(hp, make_small(ver[i]), version);
-	  hp += 2;
-	}
+	for(i--; i >= 0; i--)
+	  version = erts_bld_cons(hpp, szp, make_small(ver[i]), version);
 
-	res = TUPLE4(hp, am_elib_malloc, version, features, settings);
+	res = erts_bld_tuple(hpp, szp, 4,
+			     am_elib_malloc, version, features, settings);
       }
 #elif defined(__GLIBC__)
       {
 	DECL_AM(glibc);
 	Eterm version;
-	int words =
-	  5 + 1*2
-#ifdef __GLIBC_MINOR__
-	  + 2
-#endif
-	  ;
-	hp = HAlloc(BIF_P, words);
 
+	version = erts_bld_cons(hpp,
+				szp,
+				make_small(__GLIBC__),
 #ifdef __GLIBC_MINOR__
-	version = CONS(hp,
-		       make_small(__GLIBC__),
-		       CONS(hp+2, make_small(__GLIBC_MINOR__), NIL));	
-	hp += 4;
+				erts_bld_cons(hpp,
+					      szp,
+					      make_small(__GLIBC_MINOR__),
+					      NIL)
 #else
-	version = CONS(hp, make_small(__GLIBC__), NIL);
-	hp += 2;
+				NIL
 #endif
+	    );
 
-	res = TUPLE4(hp, AM_glibc, version, features, settings);
+	res = erts_bld_tuple(hpp, szp, 4,
+			     AM_glibc, version, features, settings);
       }
 
 #else /* unknown allocator */
 
-      hp = HAlloc(BIF_P, 5);
-      res = TUPLE4(hp, am_undefined, NIL, features, settings);
+      res = erts_bld_tuple(hpp, szp, 4,
+			   am_undefined, NIL, features, settings);
 
+#endif
+
+      if (szp) {
+	  /* ... and then build the term */
+	  hp = HAlloc(BIF_P, sz);
+#ifdef DEBUG
+	  endp = hp + sz;
+#endif
+	  hpp = &hp;
+	  szp = NULL;
+	  goto build_allocator_term;
+      }
+
+#ifdef DEBUG
+      ASSERT(endp == hp);
 #endif
 
       BIF_RET(res);
@@ -1243,7 +1356,7 @@ BIF_ADECL_1
 	BIF_RET(make_small(n));
     }
     else if (BIF_ARG_1 == am_sl_alloc) {
-	BIF_RET(erts_sl_alloc_stat_eterm(BIF_P));
+	BIF_RET(erts_sl_alloc_stat_eterm(BIF_P, 1));
     }
     else if (BIF_ARG_1 == am_elib_malloc) {
 #ifdef ELIB_ALLOC_IS_CLIB
@@ -1258,40 +1371,72 @@ BIF_ADECL_1
 	DECL_AM(largest_free_block);
 	Eterm atoms[8];
 	Eterm ints[8];
-	int length = 0;
+	Uint **hpp;
+	Uint sz;
+	Uint *szp;
+	int length;
+#ifdef DEBUG
+	Uint *endp;
+#endif
 
 	elib_stat(&stat);
 
-	atoms[length] = AM_heap_size;
-	ints[length++] = make_small_or_big((Uint) stat.mem_total*sizeof(Uint),
-					   BIF_P);
-	atoms[length] = AM_max_alloced_size;
-	ints[length++] = make_small_or_big((Uint) (stat.mem_max_alloc
-						   * sizeof(Uint)),
-					   BIF_P);
-	atoms[length] = AM_alloced_size;
-	ints[length++] = make_small_or_big((Uint) stat.mem_alloc*sizeof(Uint),
-					   BIF_P);
-	atoms[length] = AM_free_size;
-	ints[length++] = make_small_or_big((Uint) stat.mem_free*sizeof(Uint),
-					   BIF_P);
-	atoms[length] = AM_no_alloced_blocks;
-	ints[length++] = make_small_or_big((Uint) stat.mem_blocks,
-					   BIF_P);
-	atoms[length] = AM_no_free_blocks;
-	ints[length++] = make_small_or_big((Uint) stat.free_blocks,
-					   BIF_P);
-	atoms[length] = AM_smallest_alloced_block;
-	ints[length++] = make_small_or_big((Uint) stat.min_used*sizeof(Uint),
-					   BIF_P);
-	atoms[length] = AM_largest_free_block;
-	ints[length++] = make_small_or_big((Uint) stat.max_free*sizeof(Uint),
-					    BIF_P);
+	/* First find out the heap size needed ... */
+	hpp = NULL;
+	szp = &sz;
+	sz = 0;
 
-	res = make_tuple2_list(BIF_P, length, atoms, ints);
-#else
-	res = am_false;
+    build_elib_malloc_term:
+	length = 0;
+	atoms[length] = AM_heap_size;
+	ints[length++] = erts_bld_uint(hpp, szp,
+				       (Uint) stat.mem_total*sizeof(Uint));
+	atoms[length] = AM_max_alloced_size;
+	ints[length++] = erts_bld_uint(hpp, szp,
+				       (Uint) stat.mem_max_alloc*sizeof(Uint));
+	atoms[length] = AM_alloced_size;
+	ints[length++] = erts_bld_uint(hpp, szp,
+				       (Uint) stat.mem_alloc*sizeof(Uint));
+	atoms[length] = AM_free_size;
+	ints[length++] = erts_bld_uint(hpp, szp,
+				       (Uint) stat.mem_free*sizeof(Uint));
+	atoms[length] = AM_no_alloced_blocks;
+	ints[length++] = erts_bld_uint(hpp, szp, (Uint) stat.mem_blocks);
+	atoms[length] = AM_no_free_blocks;
+	ints[length++] = erts_bld_uint(hpp, szp, (Uint) stat.free_blocks);
+	atoms[length] = AM_smallest_alloced_block;
+	ints[length++] = erts_bld_uint(hpp, szp,
+				       (Uint) stat.min_used*sizeof(Uint));
+	atoms[length] = AM_largest_free_block;
+	ints[length++] = erts_bld_uint(hpp, szp,
+				       (Uint) stat.max_free*sizeof(Uint));
+
+
+
+	ASSERT(length <= sizeof(atoms)/sizeof(Eterm));
+	ASSERT(length <= sizeof(ints)/sizeof(Eterm));
+
+	res = erts_bld_2tup_list(hpp, szp, length, atoms, ints);
+
+	if (szp) {
+	    /* ... and then build the term */
+	    hp = HAlloc(BIF_P, sz);
+#ifdef DEBUG
+	    endp = hp + sz;
 #endif
+
+	    szp = NULL;
+	    hpp = &hp;
+	    goto build_elib_malloc_term;
+	}
+
+#ifdef DEBUG
+	ASSERT(endp == hp);
+#endif
+
+#else /* #ifdef ELIB_ALLOC_IS_CLIB */
+	res = am_false;
+#endif /* #ifdef ELIB_ALLOC_IS_CLIB */
 
 	BIF_RET(res);
     }
@@ -1334,8 +1479,41 @@ BIF_ADECL_1
 	    hp += 2;
 	}
 	BIF_RET(res);
+    } else if (BIF_ARG_1 == am_wordsize) {
+	return make_small(sizeof(Eterm));
+    } else if (BIF_ARG_1 == am_endian) {
+#if defined(WORDS_BIGENDIAN)
+	return am_big;
+#else
+	return am_little;
+#endif
     } else if (BIF_ARG_1 == am_heap_sizes) {
 	return erts_heap_sizes(BIF_P);
+    } else if (BIF_ARG_1 == am_global_heaps_size) {
+#ifdef SHARED_HEAP
+	Uint hsz = 0;
+	Uint sz = 0;
+
+	sz += global_heap_sz;
+	sz += global_mbuf_sz;
+	if (global_old_hend && global_old_heap)
+	    sz += global_old_hend - global_old_heap;
+
+	sz *= sizeof(Eterm);
+
+	(void) erts_bld_uint(NULL, &hsz, sz);
+	hp = hsz ? HAlloc(BIF_P, hsz) : NULL;
+	res = erts_bld_uint(&hp, NULL, sz);
+#else
+	res = make_small(0);
+#endif
+	return res;
+    } else if (BIF_ARG_1 == am_heap_type) {
+#ifdef SHARED_HEAP
+	return am_shared;
+#else
+	return am_separate;
+#endif
 #if defined(__GNUC__) && defined(HAVE_SOLARIS_SPARC_PERFMON)
     } else if (BIF_ARG_1 == am_ultrasparc_read_tick1) {
 	register unsigned high asm("%l0");
@@ -1390,6 +1568,13 @@ BIF_ADECL_1
 		     make_small(low & 0xFFFF));
 	BIF_RET(res);
 #endif
+    } else if (BIF_ARG_1 == am_creation) {
+	return make_small(erts_this_node->creation);
+    } else if (BIF_ARG_1 == am_node_and_dist_references) {
+	/*
+	 * OBSERVE! Only supposed to be used for testing, and debugging.
+	 */
+	BIF_RET(erts_get_node_and_dist_references(BIF_P));
     } else {
     error:
 	BIF_ERROR(BIF_P, BADARG);
@@ -1473,7 +1658,6 @@ BIF_ADECL_2
     Eterm item = BIF_ARG_2;
     Eterm res;
     Eterm* hp;
-    int i;
     int count;
     int portix;
     Process *p;
@@ -1487,39 +1671,42 @@ BIF_ADECL_2
 	    BIF_ERROR(BIF_P, BADARG);
     }
 
-    if (is_not_port(portid) || (port_node(portid) != THIS_NODE) ||
-	((portix = port_index(portid)) >= erl_max_ports)) {
+    if (is_external_port(portid)
+	&& external_port_dist_entry(portid) == erts_this_dist_entry)
+	BIF_RET(am_undefined);
+
+    if (is_not_internal_port(portid)
+	|| ((portix = internal_port_index(portid)) >= erts_max_ports)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    i = port_creation(portid);
-    if (((i != this_creation) && (i != 0)) || (erts_port[portix].status == FREE)) {
-	BIF_RET(am_undefined);
+
+    if ((erts_port[portix].status == FREE)) {
+	BIF_RET(am_undefined);	
     }
 
     if (item == am_id) {
 	hp = HAlloc(BIF_P, 3);
-	res = make_small(port_number(portid));
+	res = make_small(internal_port_number(portid));
     }
     else if (item == am_links) {
-	int n = 0;
+	int sz = 0;
 	ErlLink* lnk;
+	Eterm item;
 
-	lnk = erts_port[portix].links;
-	while(lnk != NULL) {
-	    if (lnk->type == LNK_LINK)
-		n++;
-	    lnk = lnk->next;
-	}
-	hp = HAlloc(BIF_P, 3 + 2*n);
-
-	lnk = erts_port[portix].links;
-	res = NIL;
-	while(lnk != NULL) {
+	for (lnk = erts_port[portix].links; lnk; lnk = lnk->next) {
 	    if (lnk->type == LNK_LINK) {
-		res = CONS(hp, lnk->item, res);
+		sz += NC_HEAP_SIZE(lnk->item); 
+		sz += 2;
+	    }
+	}
+	hp = HAlloc(BIF_P, 3 + sz);
+	res = NIL;
+	for (lnk = erts_port[portix].links; lnk; lnk = lnk->next) {
+	    if (lnk->type == LNK_LINK) {
+		item = STORE_NC(&hp, &MSO(BIF_P).externals, lnk->item); 
+		res = CONS(hp, item, res);
 		hp += 2;
 	    }
-	    lnk = lnk->next;
 	}
     }
     else if (item == am_name) {
@@ -1530,7 +1717,7 @@ BIF_ADECL_2
     }
     else if (item == am_connected) {
 	hp = HAlloc(BIF_P, 3);
-	res = erts_port[portix].connected;
+	res = erts_port[portix].connected; /* internal pid */
     }
     else if (item == am_input) {
 	hp = HAlloc(BIF_P, 3);
@@ -1553,6 +1740,7 @@ BIF_ADECL_2
 	/* All memory consumed in bytes (the Port struct should not be
 	   included though).
 	 */
+	Uint hsz = 3;
 	Uint size = 0;
 	ErlLink* lnk;
 	ErlHeapFragment* bp;
@@ -1560,7 +1748,7 @@ BIF_ADECL_2
 	hp = HAlloc(BIF_P, 3);
 
 	for(lnk = erts_port[portix].links; lnk; lnk = lnk->next)
-	    size += sizeof(ErlLink);
+	    size += erts_link_size(lnk);
 
 	for (bp = erts_port[portix].bp; bp; bp = bp->next)
 	    size += sizeof(ErlHeapFragment) + (bp->size - 1)*sizeof(Eterm);
@@ -1574,7 +1762,9 @@ BIF_ADECL_2
 	/* All memory allocated by the driver should be included, but it is
 	   hard to retrieve... */
 	
-	res = make_small_or_big(size, BIF_P);
+	(void) erts_bld_uint(NULL, &hsz, size);
+	hp = HAlloc(BIF_P, hsz);
+	res = erts_bld_uint(&hp, NULL, size);
     }
     else
 	BIF_ERROR(BIF_P, BADARG);

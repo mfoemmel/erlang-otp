@@ -1,7 +1,7 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <01/07/19 13:00:47 happi>
+%% Time-stamp: <02/05/13 15:06:57 happi>
 %% ====================================================================
 %%  Filename : 	hipe_icode_primops.erl
 %%  Module   :	hipe_icode_primops
@@ -10,9 +10,9 @@
 %%  History  :	* 2001-06-13 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: happi $
-%%              $Date: 2001/07/19 23:44:36 $
-%%              $Revision: 1.6 $
+%%              $Author: pegu2945 $
+%%              $Date: 2002/07/03 14:42:39 $
+%%              $Revision: 1.10 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -25,6 +25,8 @@ pp(Op, Dev) ->
   case Op of
     {hipe_bs_primop, BsOp} ->
       case BsOp of 
+	{bs_create_space, Size, _} ->
+	  io:format(Dev, "bs_create_space<~w>", [Size]);
 	{bs_put_binary_all, Flags} -> 
 	  io:format(Dev, "bs_put_binary_all<~w>", [Flags]);
 	{bs_put_binary, Size} ->
@@ -57,6 +59,8 @@ pp(Op, Dev) ->
 	  io:format(Dev, "bs_save<~w>", [Index]);
 	bs_init ->
 	  io:format(Dev, "bs_init", []);
+	{bs_need_buf, Need} ->
+	  io:format(Dev, "bs_need_buf<~w>", [Need]);
 	bs_final ->
 	  io:format(Dev, "bs_final", [])
 
@@ -64,9 +68,11 @@ pp(Op, Dev) ->
       end;
     {mkfun, {Mod, Fun, Arity}, U, I} ->
       io:format(Dev, "mkfun<~w,~w,~w,~w,~w>", [Mod, Fun, Arity, U, I]);
-    {Mod, Fun, Arity} ->
+   {closure_element, N} ->
+      io:format(Dev, "closure_element<~w>", [N]);
+    {Mod, Fun, _Arity} ->
       io:format(Dev, "~w:~w", [Mod, Fun]);
-    {Fun, Arity} ->
+    {Fun, _Arity} ->
       io:format(Dev, "~w", [Fun]);
     Fun ->
       io:format(Dev, "~w", [Fun])

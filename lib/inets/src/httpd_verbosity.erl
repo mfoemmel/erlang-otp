@@ -75,10 +75,13 @@ image_of_verbosity(trace) -> "TRACE";
 image_of_verbosity(_)     -> "".
 
 %% ShortName
-image_of_sname(man)           -> "MANAGER";
-image_of_sname(sec)           -> "SECMAN";
+image_of_sname(acc)           -> "ACCEPTOR";
+image_of_sname(acc_sup)       -> "ACCEPTOR_SUP";
 image_of_sname(auth)          -> "AUTH";
-image_of_sname(P) when pid(P) -> io_lib:format("LISTENER(~p)",[P]);
+image_of_sname(man)           -> "MANAGER";
+image_of_sname(misc_sup)      -> "MISC_SUP";
+image_of_sname(sec)           -> "SECURITY";
+image_of_sname(P) when pid(P) -> io_lib:format("REQUEST_HANDLER(~p)",[P]);
 image_of_sname(undefined)     -> "";
 image_of_sname(V)             -> io_lib:format("~p",[V]).
 

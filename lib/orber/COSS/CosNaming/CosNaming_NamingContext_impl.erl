@@ -531,8 +531,4 @@ write_result({atomic,ok}) -> ok;
 write_result(Foo) ->
     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
-check_name({Id, Kind}) when length(Id) == 0 ->
-    corba:raise(#'CosNaming_NamingContext_InvalidName'{});
-check_name(X) ->
-    ok.
- 
+

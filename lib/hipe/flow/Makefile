@@ -37,7 +37,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-MODULES = hipe_bb
+MODULES = hipe_bb hipe_gen_cfg
 
 
 HRL_FILES=
@@ -87,3 +87,4 @@ release_spec: opt
 
 release_docs_spec:
 
+$(EBIN)/hipe_gen_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl

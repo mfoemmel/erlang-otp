@@ -265,6 +265,10 @@ erts_bs_get_integer(Process *p, Uint num_bits, unsigned flags)
 	    }
 	    BIG_DIGIT(hp,0) = DLOW(v32);
 	    BIG_DIGIT(hp,1) = DHIGH(v32);
+#ifdef ARCH_64
+	    BIG_DIGIT(hp,2) = 0;
+	    BIG_DIGIT(hp,3) = 0;
+#endif
 	    res = make_big(hp);
 	    break;
 	}
@@ -607,7 +611,7 @@ int
 erts_bs_put_integer(Eterm arg, Uint num_bits, unsigned flags)
 {
     if (BIT_OFFSET(erts_bin_offset) == 0) {
-	need_buf(&erts_bin_buf, &erts_bin_buf_len, NBYTES(num_bits + erts_bin_offset));
+	need_buf(&erts_bin_buf, (int*)&erts_bin_buf_len, NBYTES(num_bits + erts_bin_offset));
 	if (fmt_int(erts_bin_buf+BYTE_OFFSET(erts_bin_offset),
 		    NBYTES(num_bits), arg, num_bits, flags) < 0) {
 	    return 0;
@@ -620,7 +624,7 @@ erts_bs_put_integer(Eterm arg, Uint num_bits, unsigned flags)
 	if (fmt_int(iptr, NBYTES(num_bits), arg, num_bits, flags) < 0) {
 	    return 0;
 	}
-	need_buf(&erts_bin_buf, &erts_bin_buf_len, NBYTES(num_bits + erts_bin_offset));
+	need_buf(&erts_bin_buf, (int*)&erts_bin_buf_len, NBYTES(num_bits + erts_bin_offset));
 	copy_bits(iptr, 0, 1, erts_bin_buf, erts_bin_offset, 1, num_bits);
     }
     erts_bin_offset += num_bits;
@@ -639,7 +643,7 @@ erts_bs_put_binary(Eterm arg, Uint num_bits)
     if (num_bits > 8*binary_size(arg)) {
 	return 0;
     }
-    need_buf(&erts_bin_buf, &erts_bin_buf_len, NBYTES(num_bits + erts_bin_offset));
+    need_buf(&erts_bin_buf, (int*)&erts_bin_buf_len, NBYTES(num_bits + erts_bin_offset));
     if (BIT_OFFSET(erts_bin_offset) == 0) {
 	sys_memcpy(erts_bin_buf+BYTE_OFFSET(erts_bin_offset),
 		   bptr, NBYTES(num_bits));
@@ -661,7 +665,7 @@ erts_bs_put_binary_all(Eterm arg)
     }
     GET_BINARY_BYTES(arg, bptr);
     n = 8*binary_size(arg);
-    need_buf(&erts_bin_buf, &erts_bin_buf_len, NBYTES(n + erts_bin_offset));
+    need_buf(&erts_bin_buf, (int*)&erts_bin_buf_len, NBYTES(n + erts_bin_offset));
     if (BIT_OFFSET(erts_bin_offset) == 0) {
 	sys_memcpy(erts_bin_buf+BYTE_OFFSET(erts_bin_offset), bptr, NBYTES(n));
     } else {
@@ -718,7 +722,7 @@ erts_bs_put_float(Eterm arg, Uint num_bits, int flags)
 	return 0;
     }
 
-    need_buf(&erts_bin_buf, &erts_bin_buf_len, NBYTES(num_bits + erts_bin_offset));
+    need_buf(&erts_bin_buf, (int*)&erts_bin_buf_len, NBYTES(num_bits + erts_bin_offset));
 
     if (BIT_OFFSET(erts_bin_offset) == 0) {
 	if (BIT_IS_MACHINE_ENDIAN(flags)) {
@@ -764,7 +768,7 @@ erts_bs_put_float(Eterm arg, Uint num_bits, int flags)
 void 
 erts_bs_put_string(byte* iptr, Uint num_bytes)
 {
-    need_buf(&erts_bin_buf, &erts_bin_buf_len, num_bytes + NBYTES(erts_bin_offset));
+    need_buf(&erts_bin_buf, (int*)&erts_bin_buf_len, num_bytes + NBYTES(erts_bin_offset));
     if (BIT_OFFSET(erts_bin_offset) != 0) {
 	copy_bits(iptr, 0, 1, erts_bin_buf, erts_bin_offset, 1, num_bytes*8);
     } else {

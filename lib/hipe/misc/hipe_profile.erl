@@ -344,7 +344,7 @@ counter(Ctr,CtrL,Tmp,N,Code) ->
 compute_counters({Ctrs,Comp}) ->
     [ {L, counter_value_of(E,Ctrs)} ||  {L,E} <- Comp ].
 
-counter_value_of(N,Ctrs) when integer(N) -> find_value(N,Ctrs);
+counter_value_of(N,Ctrs) when is_integer(N) -> find_value(N,Ctrs);
 counter_value_of({add,E1,E2},Ctrs) ->
     counter_value_of(E1,Ctrs) + counter_value_of(E2,Ctrs);
 counter_value_of({sub,E1,E2},Ctrs) ->

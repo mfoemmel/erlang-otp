@@ -68,7 +68,8 @@
 %%
 %% - keys(T): returns an ordered list of all keys in tree T.
 %%
-%% - values(T): returns a list of all values in tree T.
+%% - values(T): returns the list of values for all keys in tree T,
+%%   sorted by their corresponding keys. Duplicates are not removed.
 %%
 %% - to_list(T): returns an ordered list of {Key, Value} pairs for all
 %%   keys in tree T.
@@ -147,7 +148,7 @@ size({Size, _}) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-lookup(Key, {S, T}) ->
+lookup(Key, {_, T}) ->
     lookup_1(Key, T).
 
 %% The term order is an arithmetic total order, so we should not
@@ -161,39 +162,39 @@ lookup_1(Key, {Key1, _, Smaller, _}) when Key < Key1 ->
     lookup_1(Key, Smaller);
 lookup_1(Key, {Key1, _, _, Bigger}) when Key > Key1 ->
     lookup_1(Key, Bigger);
-lookup_1(Key, {_, Value, _, _}) ->
+lookup_1(_, {_, Value, _, _}) ->
     {value, Value};
-lookup_1(Key, nil) ->
+lookup_1(_, nil) ->
     none.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% This is a specialized version of `lookup'.
 
-is_defined(Key, {S, T}) ->
+is_defined(Key, {_, T}) ->
     is_defined_1(Key, T).
 
 is_defined_1(Key, {Key1, _, Smaller, _}) when Key < Key1 ->
     is_defined_1(Key, Smaller);
 is_defined_1(Key, {Key1, _, _, Bigger}) when Key > Key1 ->
     is_defined_1(Key, Bigger);
-is_defined_1(Key, {_, _, _, _}) ->
+is_defined_1(_, {_, _, _, _}) ->
     true;
-is_defined_1(Key, nil) ->
+is_defined_1(_, nil) ->
     false.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% This is a specialized version of `lookup'.
 
-get(Key, {S, T}) ->
+get(Key, {_, T}) ->
     get_1(Key, T).
 
 get_1(Key, {Key1, _, Smaller, _}) when Key < Key1 ->
     get_1(Key, Smaller);
 get_1(Key, {Key1, _, _, Bigger}) when Key > Key1 ->
     get_1(Key, Bigger);
-get_1(Key, {_, Value, _, _}) ->
+get_1(_, {_, Value, _, _}) ->
     Value.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -256,14 +257,14 @@ insert_1(Key, Value, {Key1, V, Smaller, Bigger}, S) when Key > Key1 ->
     end;
 insert_1(Key, Value, nil, S) when S == 0 ->
     {{Key, Value, nil, nil}, 1, 1};
-insert_1(Key, Value, nil, S) ->
+insert_1(Key, Value, nil, _S) ->
     {{Key, Value, nil, nil}};
 insert_1(Key, _, _, _) ->
     erlang:fault({key_exists, Key}).
 
 max(X, Y) when X < Y ->
     Y;
-max(X, Y) ->
+max(X, _Y) ->
     X.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -339,7 +340,7 @@ delete_1(Key, {Key1, Value, Smaller, Larger}) when Key < Key1 ->
 delete_1(Key, {Key1, Value, Smaller, Bigger}) when Key > Key1 ->
     Bigger1 = delete_1(Key, Bigger),
     {Key1, Value, Smaller, Bigger1};
-delete_1(Key, {_, _, Smaller, Larger}) ->
+delete_1(_, {_, _, Smaller, Larger}) ->
     merge(Smaller, Larger).
 
 merge(Smaller, nil) ->
@@ -378,7 +379,7 @@ to_list(nil, L) -> L.
 keys({_, T}) ->
     keys(T, []).
 
-keys({Key, Value, Small, Big}, L) ->
+keys({Key, _Value, Small, Big}, L) ->
     keys(Small, [Key | keys(Big, L)]);
 keys(nil, L) -> L.
 
@@ -387,7 +388,7 @@ keys(nil, L) -> L.
 values({_, T}) ->
     values(T, []).
 
-values({Key, Value, Small, Big}, L) ->
+values({_Key, Value, Small, Big}, L) ->
     values(Small, [Value | values(Big, L)]);
 values(nil, L) -> L.
 

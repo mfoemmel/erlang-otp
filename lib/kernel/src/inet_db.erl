@@ -511,10 +511,6 @@ lookup_type(Domain,Type) ->
 lookup_cname(Domain) ->
     [R#dns_rr.data || R <- lookup_rr(Domain, in, ?S_CNAME) ].
 
-%% lookup domain pointers
-lookup_ptr(Domain) ->
-    [R#dns_rr.data || R <- lookup_rr(Domain, in, ?S_PTR) ].
-
 %% Have to do all lookups (changes to the db) in the
 %% process in order to make it possible to refresh the cache.
 lookup_rr(Domain, Class, Type) ->
@@ -1095,31 +1091,6 @@ lower_rr(RR) ->
 tolower([C|Cs]) when C >= $A, C =< $Z -> [(C-$A)+$a | tolower(Cs)];
 tolower([C|Cs]) -> [C | tolower(Cs)];
 tolower([]) -> [].
-
-%% reverse of inet_res:dn_in_addr_arpa()
-arpa_addr_in_dn(Cs) ->
-    arpa_addr_in_dn(Cs, [], []).
-
-arpa_addr_in_dn([X | Xs], Ds, Acc) when X >= $0, X =< $9 ->
-    arpa_addr_in_dn(Xs, [X|Ds], Acc);
-arpa_addr_in_dn([$. | Xs], Ds, Acc) ->
-    arpa_addr_in_dn(Xs, [], [list_to_integer(Ds) | Acc]);
-arpa_addr_in_dn([], Ds, Acc) -> 
-    list_to_tuple(reverse([list_to_integer(Ds) | Acc])).
-
-%% reverse of inet_res:dn_ip6_int nibble dot list to {A,B,C,D,E,F,G,H}
-int_ip6_dn(Cs) ->
-    int_ip6_dn(Cs, []).
-
-int_ip6_dn([$.,X3,$.,X2,$.,X1,$.,X0 | T], Acc) ->
-    X = (dig(X3) bsl 12) + (dig(X2) bsl 8) + (dig(X1) bsl 4) + dig(X0),
-    int_ip6_dn(T, [X | Acc]);
-int_ip6_dn([], Acc) -> list_to_tuple(reverse(Acc)).
-
-
-dig(X) when X >= $A, X =< $F -> (X - $A) + 10;
-dig(X) when X >= $a, X =< $f -> (X - $a) + 10;
-dig(X) when X >= $0, X =< $9 -> (X - $0).
 
 dn_ip6_int(A,B,C,D,E,F,G,H) ->
     dnib(H) ++ dnib(G) ++ dnib(F) ++ dnib(E) ++ 

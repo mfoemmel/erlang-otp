@@ -81,7 +81,7 @@ tr_MegacoMessage(#'MegacoMessage'{authHeader = Auth,
     #'MegacoMessage'{authHeader = tr_opt_AuthenticationHeader(Auth, State),
                      mess       = tr_Message(Mess, State)}.
 
-tr_opt_AuthenticationHeader(asn1_NOVALUE, State) ->
+tr_opt_AuthenticationHeader(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_AuthenticationHeader(#'AuthenticationHeader'{secParmIndex = SPI,
                                                     seqNum       = SN,
@@ -153,7 +153,7 @@ tr_IP4Address(#'IP4Address'{address    = [A1, A2, A3, A4],
 tr_V4hex(Val, State) ->
     tr_DIGIT(Val, State, 0, 255).
 
-tr_IP6Address(Val, State) ->
+tr_IP6Address(_Val, _State) ->
     exit(ipv6_not_supported). %% BUGBUG: nyi
 
 tr_PathName(Path, State) ->
@@ -178,7 +178,7 @@ tr_TransactionAck(#'TransactionAck'{firstAck = First,
     #'TransactionAck'{firstAck = tr_TransactionId(First, State),
 		      lastAck  = tr_opt_TransactionId(Last, State)}.
 
-tr_opt_TransactionId(asn1_NOVALUE, State) ->
+tr_opt_TransactionId(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_TransactionId(Id, State) ->
     tr_TransactionId(Id, State).
@@ -205,8 +205,8 @@ tr_TransactionReply(#'TransactionReply'{transactionId     = Id,
                         immAckRequired    = tr_opt_null(ImmAck, State),
                         transactionResult = tr_TransactionReply_transactionResult(TransRes, State)}.
 
-tr_opt_null(asn1_NOVALUE, State) -> asn1_NOVALUE;
-tr_opt_null('NULL', State)       -> 'NULL'.
+tr_opt_null(asn1_NOVALUE, _State) -> asn1_NOVALUE;
+tr_opt_null('NULL', _State)       -> 'NULL'.
 
 tr_TransactionReply_transactionResult({Tag, Val}, State) ->
     Val2 = 
@@ -218,7 +218,7 @@ tr_TransactionReply_transactionResult({Tag, Val}, State) ->
         end,
     {Tag, Val2}.
 
-tr_opt_ErrorDescriptor(asn1_NOVALUE, State) ->
+tr_opt_ErrorDescriptor(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_ErrorDescriptor(ErrDesc, State) ->
     tr_ErrorDescriptor(ErrDesc, State).
@@ -232,7 +232,7 @@ tr_ErrorDescriptor(#'ErrorDescriptor'{errorCode = Code,
 tr_ErrorCode(Code, State) ->
     tr_DIGIT(Code, State, 0, 999).
 
-tr_opt_ErrorText(asn1_NOVALUE, State)  ->
+tr_opt_ErrorText(asn1_NOVALUE, _State)  ->
     asn1_NOVALUE;
 tr_opt_ErrorText(Text, State)  ->
     tr_QUOTED_STRING(Text, State).
@@ -266,7 +266,7 @@ tr_ActionReply(#'ActionReply'{contextId       = CtxId,
                    contextReply    = tr_opt_ContextRequest(CtxRep, State),
                    commandReply    = CmdRepList2}.
 
-tr_opt_ContextRequest(asn1_NOVALUE, State) ->
+tr_opt_ContextRequest(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_ContextRequest(#'ContextRequest'{priority    = Prio,
                                         emergency   = Em,
@@ -293,7 +293,7 @@ tr_opt_ContextRequest(#'ContextRequest'{priority    = Prio,
                       emergency   = Em2,
                       topologyReq = TopReqList2}.
 
-tr_opt_ContextAttrAuditRequest(asn1_NOVALUE, State) ->
+tr_opt_ContextAttrAuditRequest(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_ContextAttrAuditRequest(#'ContextAttrAuditRequest'{topology = Top,
                                                           emergency = Em,
@@ -427,7 +427,7 @@ tr_AuditResult(#'AuditResult'{terminationID          = Id,
     #'AuditResult'{terminationID          = tr_TerminationID(Id, State),
 		   terminationAuditResult = tr_TerminationAudit(AuditRes, State)}.
 
-tr_opt_AuditDescriptor(asn1_NOVALUE, State) ->
+tr_opt_AuditDescriptor(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_AuditDescriptor(Desc, State) ->
     tr_AuditDescriptor(Desc, State).
@@ -441,7 +441,7 @@ tr_AuditDescriptor(#'AuditDescriptor'{auditToken = Tokens},
 	end,
     #'AuditDescriptor'{auditToken = Tokens2}.  
 
-tr_auditItem(Token, State) ->
+tr_auditItem(Token, _State) ->
     case Token of
         muxToken               -> muxToken;
         modemToken             -> modemToken;
@@ -596,7 +596,7 @@ tr_TerminationID(TermId, State) when State#state.mode /= verify ->
     resolve(term_id, TermId, State, valid);
 tr_TerminationID(#'TerminationID'{wildcard = Wild,
                                   id       = Id},
-                 State) ->
+                 _State) ->
     #'TerminationID'{wildcard = Wild,
                      id       = Id};
 tr_TerminationID(#megaco_term_id{contains_wildcards = IsWild,
@@ -605,13 +605,13 @@ tr_TerminationID(#megaco_term_id{contains_wildcards = IsWild,
     #megaco_term_id{contains_wildcards = tr_bool(IsWild, State),
                     id                 = [tr_term_id_component(Sub, State) || Sub <- Id]}.
 
-tr_opt_bool(asn1_NOVALUE, State) -> asn1_NOVALUE;
+tr_opt_bool(asn1_NOVALUE, _State) -> asn1_NOVALUE;
 tr_opt_bool(Bool, State)         -> tr_bool(Bool, State).
 
-tr_bool(true, State)  -> true;
-tr_bool(false, State) -> false.
+tr_bool(true, _State)  -> true;
+tr_bool(false, _State) -> false.
 
-tr_term_id_component(Sub, State) ->
+tr_term_id_component(Sub, _State) ->
     case Sub of
         all    -> all;
         choose -> choose;
@@ -634,7 +634,7 @@ tr_MediaDescriptor(#'MediaDescriptor'{termStateDescr = TermState,
     #'MediaDescriptor'{termStateDescr = tr_opt_TerminationStateDescriptor(TermState, State),
                        streams        = tr_opt_streams(Streams, State)}.
 
-tr_opt_streams(asn1_NOVALUE, State) ->
+tr_opt_streams(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_streams({Tag, Val}, State) ->
     Val2 = 
@@ -670,7 +670,7 @@ tr_StreamDescriptor(#'StreamDescriptor'{streamID    = Id,
 %% reservedMode      = ReservedToken EQUAL ( "ON" / "OFF" )
 %% 
 %% streamMode           = ModeToken EQUAL streamModes
-tr_opt_LocalControlDescriptor(asn1_NOVALUE, State) ->
+tr_opt_LocalControlDescriptor(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_LocalControlDescriptor(#'LocalControlDescriptor'{streamMode    = Mode,
                                                         reserveGroup  = Group,
@@ -682,7 +682,7 @@ tr_opt_LocalControlDescriptor(#'LocalControlDescriptor'{streamMode    = Mode,
                               reserveValue  = tr_opt_bool(Value, State),
                               propertyParms = [tr_PropertyParm(P, State) || P <- Props]}.
 
-tr_opt_StreamMode(Mode, State) ->
+tr_opt_StreamMode(Mode, _State) ->
     case Mode of
         asn1_NOVALUE -> asn1_NOVALUE;
         sendOnly     -> sendOnly;
@@ -711,7 +711,7 @@ tr_PkgdName(Name, State) ->
 %% encoding the protocol the descriptor consists of groups of properties
 %% (tag-value pairs) as specified in Annex C.  Each such group may
 %% contain the parameters of a session description.
-tr_opt_LocalRemoteDescriptor(asn1_NOVALUE, State) ->
+tr_opt_LocalRemoteDescriptor(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_LocalRemoteDescriptor(#'LocalRemoteDescriptor'{propGrps = Groups},
                              State) ->
@@ -736,9 +736,9 @@ tr_PropertyParm(#'PropertyParm'{name      = Name,
                     value     = tr_Value(Value, State),
                     extraInfo = tr_opt_extraInfo(Extra, State)}.
 
-tr_opt_extraInfo(asn1_NOVALUE, State) ->
+tr_opt_extraInfo(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
-tr_opt_extraInfo({relation, Rel}, State) ->
+tr_opt_extraInfo({relation, Rel}, _State) ->
     Rel2 = 
         case Rel of
             greaterThan -> greaterThan;
@@ -753,7 +753,7 @@ tr_opt_extraInfo({sublist, Sub}, State) ->
     Sub2 = tr_bool(Sub, State),
     {sublist, Sub2}.
 
-tr_opt_TerminationStateDescriptor(asn1_NOVALUE, State) ->
+tr_opt_TerminationStateDescriptor(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_TerminationStateDescriptor(#'TerminationStateDescriptor'{propertyParms      = Props,
                                                                 eventBufferControl = Control,
@@ -763,14 +763,14 @@ tr_opt_TerminationStateDescriptor(#'TerminationStateDescriptor'{propertyParms   
                                   eventBufferControl = tr_opt_EventBufferControl(Control, State),
                                   serviceState       = tr_opt_ServiceState(Service, State)}.
 
-tr_opt_EventBufferControl(Control, State) ->
+tr_opt_EventBufferControl(Control, _State) ->
     case Control of
         asn1_NOVALUE -> asn1_NOVALUE;
         off          -> off;
         lockStep     -> lockStep
     end.
 
-tr_opt_ServiceState(Service, State) ->
+tr_opt_ServiceState(Service, _State) ->
     case Service of
         asn1_NOVALUE -> asn1_NOVALUE;
         test         -> test;
@@ -784,7 +784,7 @@ tr_MuxDescriptor(#'MuxDescriptor'{muxType  = Type,
     #'MuxDescriptor'{muxType  = tr_MuxType(Type, State),
                      termList = [tr_TerminationID(Id, State) || Id <- IdList]}.
 
-tr_MuxType(Type, State) ->
+tr_MuxType(Type, _State) ->
     case Type of
         h221 -> h221;
         h223 -> h223;
@@ -792,7 +792,7 @@ tr_MuxType(Type, State) ->
         v76  -> v76
     end.
 
-tr_opt_StreamID(asn1_NOVALUE, State) ->
+tr_opt_StreamID(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_StreamID(Id, State) ->
     tr_StreamID(Id, State).
@@ -822,7 +822,7 @@ tr_RequestedEvent(#'RequestedEvent'{pkgdName    = Name,
                       eventAction = tr_opt_RequestedActions(Actions, State),
                       evParList   = [tr_EventParameter(P, Name, State) || P <- Parms]}.
 
-tr_opt_RequestedActions(asn1_NOVALUE, State) ->
+tr_opt_RequestedActions(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_RequestedActions(#'RequestedActions'{keepActive        = Keep,
                                             eventDM           = DM,
@@ -834,12 +834,12 @@ tr_opt_RequestedActions(#'RequestedActions'{keepActive        = Keep,
                         secondEvent       = tr_opt_SecondEventsDescriptor(Event, State),
                         signalsDescriptor = tr_opt_SignalsDescriptor(SigDesc, State)}.
 
-tr_opt_keepActive(asn1_NOVALUE, State) ->
+tr_opt_keepActive(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_keepActive(Keep, State) ->
     tr_bool(Keep, State).
 
-tr_opt_EventDM(asn1_NOVALUE, State) ->
+tr_opt_EventDM(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_EventDM({Tag, Val}, State) ->
     Val2 = 
@@ -849,7 +849,7 @@ tr_opt_EventDM({Tag, Val}, State) ->
         end,
     {Tag, Val2}.
 
-tr_opt_SecondEventsDescriptor(asn1_NOVALUE, State) ->
+tr_opt_SecondEventsDescriptor(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_SecondEventsDescriptor(#'SecondEventsDescriptor'{requestID = Id,
                                                         eventList = Events},
@@ -869,7 +869,7 @@ tr_SecondRequestedEvent(#'SecondRequestedEvent'{pkgdName    = Name,
                             evParList   = [tr_EventParameter(P, Name, State) || P <- Parms]}.
 
 
-tr_opt_SecondRequestedActions(asn1_NOVALUE, State) ->
+tr_opt_SecondRequestedActions(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_SecondRequestedActions(#'SecondRequestedActions'{keepActive        = Keep,
                                                         eventDM           = DM,
@@ -890,7 +890,7 @@ tr_EventSpec(#'EventSpec'{eventName    = Name,
                  streamID     = tr_opt_StreamID(Id, State),
                  eventParList = [tr_EventParameter(P, Name, State) || P <- Parms]}.
 
-tr_opt_SignalsDescriptor(asn1_NOVALUE, State) ->
+tr_opt_SignalsDescriptor(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_SignalsDescriptor(SigDesc, State) ->
     tr_SignalsDescriptor(SigDesc, State).
@@ -929,17 +929,17 @@ tr_Signal(#'Signal'{signalName       = Name,
               keepActive       = tr_opt_keepActive(Keep, State),
               sigParList       = [tr_SigParameter(P, Name, State) || P <- Parms]}.
 
-tr_opt_duration(asn1_NOVALUE, State) ->
+tr_opt_duration(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_duration(Dur, State) ->
     tr_UINT16(Dur, State).
 
-tr_opt_NotifyCompletion(asn1_NOVALUE, State) ->
+tr_opt_NotifyCompletion(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_NotifyCompletion(Items, State) when list(Items) ->
     [tr_notifyCompletionItem(I, State) || I <- Items].
 
-tr_notifyCompletionItem(Item, State) ->
+tr_notifyCompletionItem(Item, _State) ->
     case Item of
         onTimeOut                   -> onTimeOut;
         onInterruptByEvent          -> onInterruptByEvent;
@@ -947,7 +947,7 @@ tr_notifyCompletionItem(Item, State) ->
         otherReason                 -> otherReason
     end.
 
-tr_opt_SignalType(Type, State) ->
+tr_opt_SignalType(Type, _State) ->
     case Type of
         asn1_NOVALUE -> asn1_NOVALUE;
         brief        ->   brief;
@@ -976,12 +976,12 @@ tr_SigParameter(#'SigParameter'{sigParameterName = ParName,
                     value            = tr_Value(Value, State),
                     extraInfo        = tr_opt_extraInfo(Extra, State)}.
 
-tr_opt_RequestID(asn1_NOVALUE, State) ->
+tr_opt_RequestID(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_RequestID(Id, State) ->
     tr_RequestID(Id, State).
 
-tr_RequestID(Id, State) when Id == ?megaco_all_request_id ->
+tr_RequestID(Id, _State) when Id == ?megaco_all_request_id ->
     ?megaco_all_request_id;
 tr_RequestID(Id, State) ->
     tr_UINT32(Id, State).
@@ -993,7 +993,7 @@ tr_ModemDescriptor(#'ModemDescriptor'{mtl = Types,
     #'ModemDescriptor'{mtl = [tr_ModemType(T, State) || T <- Types],
                        mpl = [tr_PropertyParm(P, State) || P <- Props]}.
 
-tr_ModemType(Type, State) ->
+tr_ModemType(Type, _State) ->
     %% BUGBUG: Does not handle extensionParameter
     case Type of
         v18       -> v18;
@@ -1013,7 +1013,7 @@ tr_DigitMapDescriptor(#'DigitMapDescriptor'{digitMapName  = Name,
     #'DigitMapDescriptor'{digitMapName  = tr_opt_DigitMapName(Name, State),
                           digitMapValue = tr_opt_DigitMapValue(Value, State)}.
 
-tr_opt_DigitMapName(asn1_NOVALUE, State) ->
+tr_opt_DigitMapName(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_DigitMapName(Name, State) ->
     tr_DigitMapName(Name, State).
@@ -1022,7 +1022,7 @@ tr_DigitMapName(Name, State) ->
     Constraint = fun(Item) -> tr_Name(Item, State) end,
     resolve(dialplan, Name, State, Constraint).
 
-tr_opt_DigitMapValue(asn1_NOVALUE, State) ->
+tr_opt_DigitMapValue(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_DigitMapValue(Value, State) ->
     tr_DigitMapValue(Value, State).
@@ -1037,7 +1037,7 @@ tr_DigitMapValue(#'DigitMapValue'{digitMapBody = Body,
                      longTimer    = tr_opt_timer(Long, State),
                      digitMapBody = tr_STRING(Body, State)}. %% BUGBUG: digitMapBody not handled at all
 
-tr_opt_timer(asn1_NOVALUE, State) ->
+tr_opt_timer(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_timer(Timer, State) ->
     tr_DIGIT(Timer, State, 0, 99).
@@ -1060,7 +1060,7 @@ tr_ServiceChangeParm(#'ServiceChangeParm'{serviceChangeMethod  = Method,
                          serviceChangeMgcId   = tr_opt_serviceChangeMgcId(MgcId, State),
                          timeStamp            = tr_opt_TimeNotation(Time, State)}.
 
-tr_ServiceChangeMethod(Method, State) ->
+tr_ServiceChangeMethod(Method, _State) ->
     case Method of
         failover      -> failover;
         forced        -> forced;
@@ -1070,7 +1070,7 @@ tr_ServiceChangeMethod(Method, State) ->
         handOff       -> handOff
     end. %% BUGBUG: extension
 
-tr_opt_ServiceChangeAddress(asn1_NOVALUE, State) ->
+tr_opt_ServiceChangeAddress(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_ServiceChangeAddress({Tag, Val}, State) ->
     Val2 = 
@@ -1084,12 +1084,12 @@ tr_opt_ServiceChangeAddress({Tag, Val}, State) ->
         end,
     {Tag, Val2}.
 
-tr_opt_serviceChangeVersion(asn1_NOVALUE, State) ->
+tr_opt_serviceChangeVersion(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_serviceChangeVersion(Version, State) ->
     tr_version(Version, State).
 
-tr_opt_ServiceChangeProfile(asn1_NOVALUE, State) ->
+tr_opt_ServiceChangeProfile(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_ServiceChangeProfile(#'ServiceChangeProfile'{profileName = Name,
                                                     version     = Version},
@@ -1101,17 +1101,17 @@ tr_opt_ServiceChangeProfile(#'ServiceChangeProfile'{profileName = Name,
 tr_serviceChangeReason([_] = Reason, State) ->
     tr_Value(Reason, State).
 
-tr_opt_serviceChangeDelay(asn1_NOVALUE, State) ->
+tr_opt_serviceChangeDelay(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_serviceChangeDelay(Delay, State) ->
     tr_UINT32(Delay, State).
 
-tr_opt_serviceChangeMgcId(asn1_NOVALUE, State) ->
+tr_opt_serviceChangeMgcId(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_serviceChangeMgcId(MgcId, State) ->
     tr_MId(MgcId, State).
 
-tr_opt_portNumber(asn1_NOVALUE, State) ->
+tr_opt_portNumber(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_portNumber(Port, State) ->
     tr_portNumber(Port, State).
@@ -1151,7 +1151,7 @@ tr_StatisticsParameter(#'StatisticsParameter'{statName  = Name,
     #'StatisticsParameter'{statName  = resolve(statistics, Name, State, Constraint),
                            statValue = tr_opt_Value(Value, State)}.
 
-tr_opt_TimeNotation(asn1_NOVALUE, State) ->
+tr_opt_TimeNotation(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_TimeNotation(#'TimeNotation'{date = Date,
                                     time = Time},
@@ -1163,39 +1163,39 @@ tr_opt_TimeNotation(#'TimeNotation'{date = Date,
 %% BUGBUG: This violation of the is required in order to comply with
 %% BUGBUG: the dd/ce ds parameter that may possibly be empty.
 
-tr_opt_Value(asn1_NOVALUE, State) ->
+tr_opt_Value(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_Value(Value, State) ->
     tr_Value(Value, State).
 
-tr_Value(Strings, State) when list(Strings) ->
+tr_Value(Strings, _State) when list(Strings) ->
     [[Char || Char <- String] || String <- Strings].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %% Encode an octet string, escape } by \ if necessary 
-tr_OCTET_STRING(String, State, Min, Max) when list(String) ->
+tr_OCTET_STRING(String, _State, Min, Max) when list(String) ->
     verify_count(length(String), Min, Max),
     String.
 
-tr_QUOTED_STRING(String, State) when list(String) ->
+tr_QUOTED_STRING(String, _State) when list(String) ->
     verify_count(length(String), 1, infinity),
     String.
 
 %% The internal format of hex digits is a list of octets
 %% Min and Max means #hexDigits
 %% Leading zeros are prepended in order to fulfill Min
-tr_HEXDIG(Octets, State, Min, Max) when list(Octets) ->
+tr_HEXDIG(Octets, _State, Min, Max) when list(Octets) ->
     verify_count(length(Octets), Min, Max),
     Octets.
 
 tr_DIGIT(Val, State, Min, Max) ->
     tr_integer(Val, State, Min, Max).
 
-tr_STRING(String, State) when list(String) ->
+tr_STRING(String, _State) when list(String) ->
     String.
 
-tr_STRING(String, State, Min, Max) when list(String) ->
+tr_STRING(String, _State, Min, Max) when list(String) ->
     verify_count(length(String), Min, Max),
     String.
 
@@ -1205,7 +1205,7 @@ tr_UINT16(Val, State) ->
 tr_UINT32(Val, State) ->
     tr_integer(Val, State, 0, 4294967295).
 
-tr_integer(Int, State, Min, Max) ->
+tr_integer(Int, _State, Min, Max) ->
     verify_count(Int, Min, Max),
     Int.
 
@@ -1238,5 +1238,5 @@ i(true,F,A) ->
     S1 = io_lib:format("TRANSF: " ++ F ++ "~n",A),
     S2 = lists:flatten(S1),
     io:format("~s",[S2]);
-i(_,F,A) ->
+i(_,_F,_A) ->
     ok.

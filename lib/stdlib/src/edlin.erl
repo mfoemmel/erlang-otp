@@ -63,7 +63,7 @@ edit_line1(Cs, {line,P,{[],[]},none}) ->
 edit_line1(Cs, {line,P,L,M}) ->
     edit(Cs, P, L, M, []).
 
-edit([C|Cs], P, Line, {blink,N}, [R|Rs]) ->	%Remove blink here
+edit([C|Cs], P, Line, {blink,_}, [_|Rs]) ->	%Remove blink here
     edit([C|Cs], P, Line, none, Rs);
 edit([C|Cs], P, {Bef,Aft}, Prefix, Rs0) ->
     case key_map(C, Prefix) of
@@ -111,7 +111,7 @@ edit([], P, L, {blink,N}, Rs) ->
     {blink,{line,P,L,{blink,N}},reverse(Rs)};
 edit([], P, L, Prefix, Rs) ->
     {more_chars,{line,P,L,Prefix},reverse(Rs)};
-edit(eof, P, {Bef,Aft}, Mode, Rs) ->
+edit(eof, _, {Bef,Aft}, _, Rs) ->
     {done,reverse(Bef, Aft),[],reverse(Rs, [{move_rel,length(Aft)}])}.
 
 %% Assumes that arg is a string
@@ -171,12 +171,9 @@ key_map($t, meta) -> transpose_word;
 key_map($y, meta) -> yank_pop;
 key_map($\177, none) -> backward_delete_char;
 key_map($\177, meta) -> backward_kill_word;
-%% To enable the Meta key (and disable international characters),
-%% uncomment the following line:
-%% key_map(C, none) when C > 128 -> key_map(C-128, meta);
 key_map(C, none) when C >= $\s ->
     {insert,C};
-key_map(C, M) -> {undefined,C}.
+key_map(C, _) -> {undefined,C}.
 
 %% do_op(Action, Before, After, Requests)
 
@@ -185,11 +182,11 @@ do_op({insert,C}, Bef, [], Rs) ->
 do_op({insert,C}, Bef, Aft, Rs) ->
     {{[C|Bef],Aft},[{insert_chars, [C]}|Rs]};
 %% do blink after $$
-do_op({blink,C,M}, Bef=[$$,$$|Bef0], Aft, Rs) ->
+do_op({blink,C,M}, Bef=[$$,$$|_], Aft, Rs) ->
     N = over_paren(Bef, C, M),
     {blink,N+1,{[C|Bef],Aft},[{move_rel,-(N+1)},{insert_chars,[C]}|Rs]};
 %% don't blink after a $
-do_op({blink,C,M}, Bef=[$$|Bef0], Aft, Rs) ->
+do_op({blink,C,_}, Bef=[$$|_], Aft, Rs) ->
     do_op({insert,C}, Bef, Aft, Rs);
 %do_op({blink,C,M}, Bef, [], Rs) ->
 %    N = over_paren(Bef, C, M),
@@ -210,9 +207,9 @@ do_op(auto_blink, Bef, Aft, Rs) ->
 	N -> {blink,N+1,{Bef,Aft},
 	      [{move_rel,-(N+1)}|Rs]}
     end;
-do_op(forward_delete_char, Bef, [C|Aft], Rs) ->
+do_op(forward_delete_char, Bef, [_|Aft], Rs) ->
     {{Bef,Aft},[{delete_chars,1}|Rs]};
-do_op(backward_delete_char, [C|Bef], Aft, Rs) ->
+do_op(backward_delete_char, [_|Bef], Aft, Rs) ->
     {{Bef,Aft},[{delete_chars,-1}|Rs]};
 do_op(transpose_char, [C1,C2|Bef], [], Rs) ->
     {{[C2,C1|Bef],[]},[{put_chars,[C1,C2]},{move_rel,-2}|Rs]};
@@ -259,7 +256,7 @@ do_op(end_of_line, Bef, [], Rs) ->
     {{Bef,[]},Rs};
 do_op(beep, Bef, Aft, Rs) ->
     {{Bef,Aft},[beep|Rs]};
-do_op(Other, Bef, Aft, Rs) ->
+do_op(_, Bef, Aft, Rs) ->
     {{Bef,Aft},[beep|Rs]}.
 
 %% over_word(Chars, InitialStack, InitialCount) ->
@@ -291,7 +288,8 @@ word_char(C) when C >= $a, C =< $z -> true;
 word_char(C) when C >= $ß, C =< $ÿ, C /= $÷ -> true;
 word_char(C) when C >= $0, C =< $9 -> true;
 word_char(C) when C == $_ -> true;
-word_char(C) -> false.
+word_char(C) when C == $. -> true;    % accept dot-separated names
+word_char(_) -> false.
 
 %% over_white(Chars, InitialStack, InitialCount) ->
 %%	{RemainingChars,CharStack,Count}
@@ -314,9 +312,9 @@ over_paren(Chars, Paren, Match) ->
 
 over_paren([C,$$,$$|Cs], Paren, Match, D, N, L)  ->
     over_paren([C|Cs], Paren, Match, D, N+2, L);
-over_paren([C,$$|Cs], Paren, Match, D, N, L)  ->
+over_paren([_,$$|Cs], Paren, Match, D, N, L)  ->
     over_paren(Cs, Paren, Match, D, N+2, L);
-over_paren([Match|Cs], Paren, Match, 1, N, L) ->
+over_paren([Match|_], _Paren, Match, 1, N, _) ->
     N;
 over_paren([Match|Cs], Paren, Match, D, N, [Match|L]) ->
     over_paren(Cs, Paren, Match, D-1, N+1, L);
@@ -337,16 +335,16 @@ over_paren([$[|Cs], Paren, Match, D, N, [$[|L])  ->
 over_paren([${|Cs], Paren, Match, D, N, [${|L])  ->
     over_paren(Cs, Paren, Match, D, N+1, L);
 
-over_paren([$(|Cs], Paren, Match, D, N, L)  ->
+over_paren([$(|_], _, _, _, _, _)  ->
     beep;
-over_paren([$[|Cs], Paren, Match, D, N, L)  ->
+over_paren([$[|_], _, _, _, _, _)  ->
     beep;
-over_paren([${|Cs], Paren, Match, D, N, L)  ->
+over_paren([${|_], _, _, _, _, _)  ->
     beep;
 
-over_paren([C|Cs], Paren, Match, D, N, L)  ->
+over_paren([_|Cs], Paren, Match, D, N, L)  ->
     over_paren(Cs, Paren, Match, D, N+1, L);
-over_paren([], Paren, Match, D, N, L) ->
+over_paren([], _, _, _, _, _) ->
     0.
 
 over_paren_auto(Chars) ->
@@ -355,20 +353,14 @@ over_paren_auto(Chars) ->
 
 over_paren_auto([C,$$,$$|Cs], D, N, L)  ->
     over_paren_auto([C|Cs], D, N+2, L);
-over_paren_auto([C,$$|Cs], D, N, L)  ->
+over_paren_auto([_,$$|Cs], D, N, L)  ->
     over_paren_auto(Cs, D, N+2, L);
-%over_paren_auto([Match|Cs], 1, N, L) ->
-%    N;
-%over_paren_auto([Match|Cs], D, N, [Match|L]) ->
-%    over_paren_auto(Cs, D-1, N+1, L);
-%over_paren_auto([Paren|Cs], D, N, L) ->
-%    over_paren_auto(Cs, D+1, N+1, [Match|L]);
 
-over_paren_auto([$(|Cs], D, N, [])  ->
+over_paren_auto([$(|_], _, N, [])  ->
     {N, $)};
-over_paren_auto([$[|Cs], D, N, [])  ->
+over_paren_auto([$[|_], _, N, [])  ->
     {N, $]};
-over_paren_auto([${|Cs], D, N, [])  ->
+over_paren_auto([${|_], _, N, [])  ->
     {N, $}};
 
 over_paren_auto([$)|Cs], D, N, L)  ->
@@ -385,9 +377,9 @@ over_paren_auto([$[|Cs], D, N, [$[|L])  ->
 over_paren_auto([${|Cs], D, N, [${|L])  ->
     over_paren_auto(Cs, D, N+1, L);
 
-over_paren_auto([C|Cs], D, N, L)  ->
+over_paren_auto([_|Cs], D, N, L)  ->
     over_paren_auto(Cs, D, N+1, L);
-over_paren_auto([], D, N, L) ->
+over_paren_auto([], _, _, _) ->
     0.
 
 %% erase_line(Line)
@@ -398,28 +390,28 @@ over_paren_auto([], D, N, L) ->
 %% prompt(Line)
 %%  Various functions for accessing bits of a line.
 
-erase_line({line,Pbs,{Bef,Aft},M}) ->
+erase_line({line,Pbs,{Bef,Aft},_}) ->
     reverse(erase(Pbs, Bef, Aft, [])).
 
-erase_inp({line,Pbs,{Bef,Aft},M}) ->
+erase_inp({line,_,{Bef,Aft},_}) ->
     reverse(erase([], Bef, Aft, [])).
 
 erase(Pbs, Bef, Aft, Rs) ->
     [{delete_chars,-length(Pbs)-length(Bef)},{delete_chars,length(Aft)}|Rs].
 
-redraw_line({line,Pbs,{Bef,Aft},M}) ->
+redraw_line({line,Pbs,{Bef,Aft},_}) ->
     reverse(redraw(Pbs, Bef, Aft, [])).
 
 redraw(Pbs, Bef, Aft, Rs) ->
     [{move_rel,-length(Aft)},{put_chars,reverse(Bef, Aft)},{put_chars,Pbs}|Rs].
 
-length_before({line,Pbs,{Bef,Aft},M}) ->
+length_before({line,Pbs,{Bef,_Aft},_}) ->
     length(Pbs) + length(Bef).
 
-length_after({line,Pbs,{Bef,Aft},M}) ->
+length_after({line,_,{_Bef,Aft},_}) ->
     length(Aft).
 
-prompt({line,Pbs,L,M}) ->
+prompt({line,Pbs,_,_}) ->
     Pbs.
 
 %% expand(CurrentBefore) ->
@@ -431,18 +423,18 @@ prompt({line,Pbs,L,M}) ->
 %%  possible expansions are printed.
 
 expand(Bef0) ->
-    {Bef1,Word,Nw} = over_word(Bef0, [], 0),
+    {Bef1,Word,_} = over_word(Bef0, [], 0),
     case over_white(Bef1, [], 0) of
-	{[$:|Bef2],White,Nwh} ->
-	    {Bef3,White1,Nwh1} = over_white(Bef2, [], 0),
-	    {Bef,Mod,Nm} = over_word(Bef3, [], 0),
+	{[$:|Bef2],_White,_Nwh} ->
+	    {Bef3,_White1,_Nwh1} = over_white(Bef2, [], 0),
+	    {_,Mod,_Nm} = over_word(Bef3, [], 0),
 	    expand_function_name(Mod, Word);
-	{Bef2,White,Nwh} ->
+	{_,_,_} ->
 	    expand_module_name(Word)
     end.
 
 expand_module_name(Prefix) ->
-    match(Prefix, code:all_loaded(), $:).
+    match(Prefix, code:all_loaded(), ":").
 
 expand_function_name(ModStr, FuncPrefix) ->
     Mod = list_to_atom(ModStr),
@@ -451,7 +443,7 @@ expand_function_name(ModStr, FuncPrefix) ->
 	    L = apply(Mod, module_info, []),
 	    case keysearch(exports, 1, L) of
 		{value, {_, Exports}} ->
-		    match(FuncPrefix, Exports, $();
+		    match(FuncPrefix, Exports, "(");
 		_ ->
 		    no
 	    end;
@@ -460,22 +452,21 @@ expand_function_name(ModStr, FuncPrefix) ->
     end.
 
 match(Prefix, Alts, Extra) ->
-    Matches0 = match1(Prefix, Alts, []),
-    Matches = lists:map(fun({N,_}) -> N end, Matches0),
-    case longest_common_head(Matches) of
+    Matches = match1(Prefix, Alts),
+    case longest_common_head([N || {N,_} <- Matches]) of
 	{partial, []} ->
-	    print_matches(Matches0),
+	    print_matches(Matches),
 	    no;
 	{partial, Str} ->
 	    case nthtail(length(Prefix), Str) of
 		[] ->
-		    print_matches(Matches0),
+		    print_matches(Matches),
 		    {yes, []};
 		Remain ->
 		    {yes, Remain}
 	    end;
 	{complete, Str} ->
-	    {yes, append(nthtail(length(Prefix), Str), [Extra])};
+	    {yes, nthtail(length(Prefix), Str) ++ Extra};
 	no ->
 	    no
     end.
@@ -518,6 +509,9 @@ field_width([], W) when W < 40 ->
 field_width([], _) ->
     40.
 
+match1(Prefix, Alts) ->
+    match1(Prefix, Alts, []).
+
 match1(Prefix, [{H,A}|T], L) ->
     case prefix(Prefix, Str = atom_to_list(H)) of
 	true ->
@@ -550,11 +544,11 @@ longest_common_head(LL, L) ->
 	    {partial, reverse(L)}
     end.
 
-same_head([[H|T]|T1]) -> same_head(H, T1).
+same_head([[H|_]|T1]) -> same_head(H, T1).
 
 same_head(H, [[H|_]|T]) -> same_head(H, T);
-same_head(H, [])        -> true;
-same_head(H, _)         -> false.
+same_head(_, [])        -> true;
+same_head(_, _)         -> false.
 
 all_tails(LL) -> all_tails(LL, []).
 

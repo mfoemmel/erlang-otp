@@ -24,7 +24,7 @@
 
 -compile({inline,{label,2}}).
 
-module({Mod,Exp,Attr,Fs0,Lc0}, Opt) ->
+module({Mod,Exp,Attr,Fs0,_}, _Opt) ->
     Order = [Lbl || {function,_,_,Lbl,_} <- Fs0],
     All = foldl(fun({function,_,_,Lbl,_}=Func,D) -> dict:store(Lbl, Func, D) end,
 		dict:new(), Fs0),

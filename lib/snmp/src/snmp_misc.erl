@@ -60,10 +60,11 @@
 	 loop/5,
 	 make_mini_mib/1,
 	 make_mini_mib_elem/1,
+	 map/3,
 	 mem_size/1,
 	 mk_msg_flags/2,
 	 multi_map/2,
-	 now/0,
+	 %% now/0,
 	 now/1,
 	 oid/2,
 	 open_file/1,
@@ -109,7 +110,7 @@ to_upper([C|Cs]) -> [C|to_upper(Cs)];
 to_upper([]) -> [].
 
 %% Returns time in ms = sec/1000
-now() -> now(ms).
+% now() -> now(ms).
 now(ms) ->
     Now = erlang:now(),
     element(1,Now)*1000000000+
@@ -280,6 +281,7 @@ foreach(Function,ExtraArgs,[H | T]) ->
     foreach(Function, ExtraArgs, T);
 foreach(Function,ExtraArgs,[]) -> true.
 
+map(F, Eas, List) -> [ apply(F, [E|Eas]) || E <- List ].
 
 str_xor([H1|T1], [H2|T2]) ->
     [H1 bxor H2 | str_xor(T1, T2)];
@@ -294,8 +296,8 @@ str_xor([], []) ->
 %%-----------------------------------------------------------------
 multi_map(Func, [[] | ListOfLists]) -> [];
 multi_map(Func, ListOfLists) ->
-    [apply(Func, lists:map({erlang, hd}, [], ListOfLists)) |
-     multi_map(Func, lists:map({erlang, tl}, [], ListOfLists))].
+    [apply(Func, map({erlang, hd}, [], ListOfLists)) |
+     multi_map(Func, map({erlang, tl}, [], ListOfLists))].
 
 %% Primitive performance analysis.
 time(M,F,A) ->

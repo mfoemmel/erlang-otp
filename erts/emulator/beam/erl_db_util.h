@@ -83,6 +83,7 @@ typedef struct db_table_common {
     int slot;                 /* slot in db_tables */
     int keypos;               /* defaults to 1 */
     int nitems;               /* Total number of items */
+    Uint memory;              /* Total memory size */
     int kept_items;           /* Number of kept elements due to fixation */
     Uint megasec,sec,microsec; /* Last fixation time */
     DbFixation *fixations;   /* List of processes who have fixed 
@@ -114,10 +115,12 @@ typedef struct db_table_common {
 
 extern Eterm db_big_buf[];
 
+Eterm erts_ets_copy_object(Eterm, Process*);
+
 /* optimised version of copy_object (normal case? atomic object) */
 #define COPY_OBJECT(obj, p, objp) \
    if (IS_CONST(obj)) { *(objp) = (obj); } \
-   else { copy_object(obj, p, 0, objp, (Process*) 0); }
+   else { *objp = erts_ets_copy_object(obj, p); }
 
 #define DB_READ  (DB_PROTECTED|DB_PUBLIC)
 #define DB_WRITE DB_PUBLIC
@@ -146,9 +149,9 @@ int db_do_update_counter(Process *p,
 			 int (*realloc_fun)(void *, Uint, Eterm, int),
 			 Eterm incr,
 			 Eterm *ret);
-Eterm db_match_set_lint(Process *p, Eterm matchexpr, int flags);
+Eterm db_match_set_lint(Process *p, Eterm matchexpr, Uint flags);
 Binary *db_match_set_compile(Process *p, Eterm matchexpr, 
-			     int flags);
+			     Uint flags);
 
 typedef struct match_prog {
     ErlHeapFragment *term_save; /* Only if needed, a list of message 
@@ -200,19 +203,25 @@ typedef struct dmc_err_info {
 /*
 ** Compilation flags
 **
-** These are mutually excluding alternatives, interspaced so
-** 1 may be added to either without colliding, which is used to 
-** distinguish between guard and body in erl_db_util.c.
+** The dialect is in the 3 least significant bits and are to be interspaced by
+** by at least 2 (decimal), thats why ((Uint) 2) isn't used. This is to be 
+** able to add DBIF_GUARD or DBIF BODY to it to use in the match_spec bif
+** table. The rest of the word is used like ordinary flags, one bit for each 
+** flag. Note that DCOMP_TABLE and DCOMP_TRACE are mutually exclusive.
 */
-#define DCOMP_TABLE 0 /* Ets and dets. The body returns a value, 
+#define DCOMP_TABLE ((Uint) 1) /* Ets and dets. The body returns a value, 
 		       * and the parameter to the execution is a tuple. */
-#define DCOMP_TRACE 2 /* Trace. More functions are allowed, and the 
+#define DCOMP_TRACE ((Uint) 4) /* Trace. More functions are allowed, and the 
 		       * parameter to the execution will be an array. */
+#define DCOMP_DIALECT_MASK ((Uint) 0x7) /* To mask out the bits marking 
+					   dialect */
+#define DCOMP_FAKE_DESTRUCTIVE ((Uint) 8) /* When this is active, no setting of
+					     trace control words or seq_trace tokens will be done. */
 
 
 Binary *db_match_compile(Eterm *matchexpr, Eterm *guards,
 			 Eterm *body, int num_matches, 
-			 Uint32 flags, 
+			 Uint flags, 
 			 DMCErrInfo *err_info);
 /* Returns newly allocated MatchProg binary with refc == 0*/
 Eterm db_prog_match(Process *p, Binary *prog, Eterm term, int arity, 
@@ -226,7 +235,7 @@ Eterm db_format_dmc_err_info(Process *p, DMCErrInfo *ei);
 void db_free_dmc_err_info(DMCErrInfo *ei);
 /* Completely free's an error info structure, including all recorded 
    errors */
-Eterm db_make_mp_binary(Process *p, Binary *mp);
+Eterm db_make_mp_binary(Process *p, Binary *mp, Eterm **hpp);
 /* Convert a match program to a erlang "magic" binary to be returned to userspace,
    increments the reference counter. */
 

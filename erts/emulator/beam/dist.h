@@ -60,24 +60,20 @@ extern Export* dunlink_trap;
 extern Export* dmonitor_node_trap;
 extern Export* dgroup_leader_trap;
 extern Export* dexit_trap;
-#ifdef MONITOR_ENHANCE
-extern Export* dmonitor_node2_trap;
-#endif
 extern Export* dmonitor_p_trap;
 
-extern int dist_link(int, Eterm, Eterm);
-extern int dist_send(Process*, int, Eterm, Eterm);
-extern int dist_exit_tt(int, Eterm, Eterm, Eterm, Eterm);
-extern int dist_exit_old(int, Eterm, Eterm, Eterm);
-#define dist_exit(a, b, c, d) dist_exit_old(a, b, c, d)
-extern int dist_unlink(int, Eterm, Eterm);
-extern int dist_reg_send(Process*, int, Eterm, Eterm);
-extern int dist_group_leader(int, Eterm, Eterm);
-extern int dist_exit2(int, Eterm, Eterm, Eterm);
+extern int dist_link(DistEntry*, Eterm, Eterm);
+extern int dist_send(Process*, DistEntry*, Eterm, Eterm);
+extern int dist_exit_tt(DistEntry*, Eterm, Eterm, Eterm, Eterm);
+extern int dist_unlink(DistEntry*, Eterm, Eterm);
+extern int dist_reg_send(Process*, DistEntry*, Eterm, Eterm);
+extern int dist_group_leader(DistEntry*, Eterm, Eterm);
+extern int dist_exit(DistEntry*, Eterm, Eterm, Eterm);
+extern int dist_exit2(DistEntry*, Eterm, Eterm, Eterm);
 #endif
 
-extern int dist_demonitor(int, Eterm, Eterm, Ref *, int);
-extern int dist_monitor(int, Eterm, Eterm, Ref *);
-extern int dist_m_exit(int, Eterm, Eterm, Ref *, Eterm);
+extern int dist_demonitor(DistEntry*, Eterm, Eterm, Eterm, int);
+extern int dist_monitor(DistEntry*, Eterm, Eterm, Eterm);
+extern int dist_m_exit(DistEntry*, Eterm, Eterm, Eterm, Eterm);
 
 #endif

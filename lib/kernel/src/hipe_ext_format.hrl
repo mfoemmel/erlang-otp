@@ -1,8 +1,7 @@
-% hipe_x86_ext_format.hrl
-% Definitions for unified external object format
-% Currently: x86, sparc
-% Copyright (C) 2001 Ulf Magnusson
-% Email: ulf.magnusson@ubm-computing.com
+%% hipe_x86_ext_format.hrl
+%% Definitions for unified external object format
+%% Currently: x86, sparc
+%% Authors: Erik Johansson, Ulf Magnusson
 
 -define(LOAD_ATOM,0).
 -define(CALL_BIF,1).
@@ -53,12 +52,9 @@
 	    load_atom -> ?LOAD_ATOM;
 	    mfa -> ?MFA;
 	    load_address -> ?LOAD_ADDRESS;
-	    call_bif -> ?CALL_BIF;
 	    sdesc -> ?SDESC;
-	    {call_link,localfun,hot} ->  ?CALL_LOCAL_HOT;
-	    {call_link,localfun,cold} ->  ?CALL_LOCAL_COLD;
-	    {call_link,localfun,none} ->  ?CALL_LOCAL;
-	    {call_link,remotefun} ->  ?CALL_REMOTE
+	    call_local ->  ?CALL_LOCAL;
+	    call_remote ->  ?CALL_REMOTE
         end).
 
 -define(EXT2PATCH_TYPE(E),
@@ -66,14 +62,12 @@
 	    ?LOAD_ATOM -> load_atom;
 	    ?MFA -> mfa;
 	    ?LOAD_ADDRESS -> load_address;
-	    ?CALL_BIF -> call_bif;
 	    ?SDESC -> sdesc;
 	    ?CALL_REMOTE -> call_remote;
-	    ?CALL_LOCAL_HOT -> call_local_hot;
-	    ?CALL_LOCAL_COLD -> call_local_cold;
 	    ?CALL_LOCAL -> call_local
 	end).
 
+-define(STACK_DESC(ExnRA, FSize, Arity, Live), {ExnRA, FSize, Arity, Live}).
 
 
 

@@ -1,11 +1,39 @@
 <HTML>
 <HEAD>
-  <TITLE>Debugger Release Notes</TITLE>
+  <TITLE>Debugger Release Notes (Old)</TITLE>
 </HEAD>
 
 <BODY BGCOLOR="#FFFFFF">
 
-<CENTER><H1>Debugger Release Notes</H1></CENTER>
+<CENTER><H1>Debugger Release Notes (Old)</H1></CENTER>
+
+<h2>Debugger 2.0</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    Parts of the code, mainly for the GUI, has been rewritten in order
+    to make Debugger more robust and efficient. The functionality remains
+    the same but behaviour and appearance have changed slightly. Modules
+    must have been compiled with the option <CODE>debug_info</CODE> set
+    in order to be interpreted, only modules for which this is true are
+    shown in the Interpret window.
+    (Own Id: OTP-4201)<br>
+  </li>
+
+  <li>
+    The "Interpret Dialog" window no longer hangs if one tries to
+    debug-compile a module residing in a sticky directory.<br>
+    (Own Id: OTP-2665)<p>
+  </li>
+
+</ul>
+
 
 <h2>Debugger 1.5.4</h2>
 

@@ -34,8 +34,6 @@ VSN=$(MNESIA_SESSION_VSN)
 # ----------------------------------------------------
 RELSYSDIR = $(RELEASE_PATH)/lib/mnesia_session-$(VSN)
 
-INCLUDE_DIR= ../include
-
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
@@ -46,6 +44,7 @@ IDL_FILES = \
 NORMAL_MODULES= \
 	mnesia_connector_impl \
 	mnesia_corba_connector_impl \
+	mnesia_corba_session_impl \
 	mnesia_session_impl \
 	mnesia_session_lib \
 	mnesia_session_sup \
@@ -124,30 +123,25 @@ APPUP_FILE= mnesia_session.appup
 APPUP_SRC= $(APPUP_FILE).src
 APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 
-
-
-
-
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-# Mnesia_session is included just to fool the code loader to find the
-# include library used in include_lib(...)
-ERL_FLAGS +=  \
-		-pa $(ERL_TOP)/lib/mnesia_session/ebin \
-		-I $(INCLUDE_DIR)
 
+APP_DIR = $(ERL_TOP)/lib/mnesia_session
+
+IC_DIR := $(ERL_TOP)/lib/ic
+
+ERL_FLAGS +=  \
+		-pa $(APP_DIR)/ebin \
+		-pa $(IC_DIR)/ebin \
+		-I $(APP_DIR)/include
 
 ERL_COMPILE_FLAGS += \
 	+'{parse_transform,sys_pre_attributes}' \
 	+'{attribute,insert,vsn,"mnesia_session_$(MNESIA_SESSION_VSN)"}'
 
-ERL_ROOTDIR := $(shell echo 'io:format("~s~n",[code:root_dir()]),halt().' | erl | sed 's,^[0-9]*> *,,g' | tail +2)
-
-IC_DIR := $(shell echo 'io:format("~s~n",[code:lib_dir(ic)]),halt().' | erl | sed 's,^[0-9]*> *,,g' | tail +2)
-
 IDL_COMPILE_FLAGS += \
-	-I ${IC_DIR}/include
+	-I $(IC_DIR)/include
 
 # ----------------------------------------------------
 # Targets
@@ -168,25 +162,27 @@ clean:
 	rm -f $(TARGET_EBIN_FILES)
 	rm -f $(GEN_CORBA_FILES)
 	rm -f $(GEN_GS_FILES)
-	rm -f $(INCLUDE_DIR)/mnesia.hrl
+	rm -f $(APP_DIR)/include/mnesia.hrl
 	rm -f core
 
 docs:
 
-$(EBIN)/mnesia_session_impl.$(EMULATOR): $(INCLUDE_DIR)/mnesia.hrl
+$(EBIN)/mnesia_session_impl.$(EMULATOR): $(APP_DIR)/include/mnesia.hrl
+$(EBIN)/mnesia_corba_session_impl.$(EMULATOR): $(APP_DIR)/include/mnesia.hrl
 
 $(GEN_CORBA_FILES): mnesia_corba_session.idl 
 	$(ERLC) $(ERL_FLAGS) $(IDL_COMPILE_FLAGS) \
 	+'{preproc_flags,"-I${IC_DIR}/include"}' \
-	+'{{impl,"mnesia_corba_session"},"mnesia_session_impl"}' \
+	+'{{impl,"mnesia_corba_session"},"mnesia_corba_session_impl"}' \
+	+'{this,"mnesia::corba_session"}' \
 	mnesia_corba_session.idl
-	mv mnesia.hrl $(INCLUDE_DIR)
+	mv mnesia.hrl $(APP_DIR)/include
 
 $(GEN_GS_FILES): mnesia_session.idl
 	$(ERLC) $(ERL_FLAGS)  $(IDL_COMPILE_FLAGS) \
 	+'{be,erl_genserv}' \
 	mnesia_session.idl
-	mv mnesia.hrl $(INCLUDE_DIR)
+	mv mnesia.hrl $(APP_DIR)/include
 
 # ----------------------------------------------------
 # Special Build Targets
@@ -214,7 +210,7 @@ release_spec: opt
 	$(INSTALL_DATA) $(HRL_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(TARGET_EBIN_FILES) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(IDL_FILES) $(RELSYSDIR)/include
-	$(INSTALL_DATA) $(INCLUDE_DIR)/mnesia.hrl $(RELSYSDIR)/include
+	$(INSTALL_DATA) $(APP_DIR)/include/mnesia.hrl $(RELSYSDIR)/include
 
 release_docs_spec:
 

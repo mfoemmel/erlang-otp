@@ -18,6 +18,7 @@
 -module(httpd_example).
 -export([print/1,get/2,post/2,yahoo/2]).
 
+-export([newformat/3]).
 %% These are used by the inets test-suite
 -export([delay/1]).
 
@@ -55,13 +56,13 @@ post(Env,Input) ->
   default(Env,Input).
 
 yahoo(Env,Input) ->
-  "Location: http://www.yahoo.com\n\n".
+  "Location: http://www.yahoo.com\r\n\r\n".
 
 default(Env,Input) ->
   [header(),
    top("Default Example"),
    "<B>Environment:</B> ",io_lib:format("~p",[Env]),"<BR>\n",
-   "<B>Input:</B> ",Input,"<BR>\n\n",
+   "<B>Input:</B> ",Input,"<BR>\n",
    "<B>Parsed Input:</B> ",
    io_lib:format("~p",[httpd:parse_query(Input)]),"\n",
    footer()].
@@ -82,7 +83,15 @@ footer() ->
   "</BODY>
 </HTML>\n".
 
-
+    
+newformat(SessionID,Env,Input)->
+    mod_esi:deliver(SessionID,"Content-Type:text/html\r\n\r\n"),
+    mod_esi:deliver(SessionID,top("new esi format test")),
+    mod_esi:deliver(SessionID,"This new format is nice<BR>"),
+    mod_esi:deliver(SessionID,"This new format is nice<BR>"),
+    mod_esi:deliver(SessionID,"This new format is nice<BR>"),
+    mod_esi:deliver(SessionID,footer()).
+    
 %% ------------------------------------------------------
 
 delay(Time) when integer(Time) ->

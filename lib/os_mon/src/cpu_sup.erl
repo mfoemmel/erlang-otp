@@ -19,6 +19,8 @@
 
 %%% Purpose : Obtain cpu statistics
 
+%%-compile(export_all).
+
 -export([nprocs/0,avg1/0,avg5/0,avg15/0,ping/0,util/0,util/1]).
 
 %% External exports
@@ -46,7 +48,7 @@
 -define(INT32(D3,D2,D1,D0),
 	(((D3) bsl 24) bor ((D2) bsl 16) bor ((D1) bsl 8) bor (D0))).
 
--define(MAX_INT32, ((1 bsl 32) - 1)).
+-define(MAX_UINT32, ((1 bsl 32) - 1)).
 
 -record(cpu_util, {cpu, busy = [], non_busy = []}).
 
@@ -439,7 +441,7 @@ state_list_diff([{State,ValueNew}|RestNew], []) ->
 state_list_diff([{State,ValueNew}|RestNew], [{State,ValueOld}|RestOld]) ->
     ValDiff = case val_diff(ValueNew, ValueOld) of
 		  Int when Int >= 0 -> Int;
-		  _ -> throw({error, negative_utilizaton})
+		  Int -> negative_diff(State, Int)
 	      end,
     {RestStateDiff, FoundDiff} = state_list_diff(RestNew, RestOld),
     {[{State, ValDiff} | RestStateDiff], FoundDiff orelse ValDiff /= 0}.
@@ -451,11 +453,32 @@ state_list_add([{State, ValueA}|RestA], []) ->
 state_list_add([{State, ValueA} | RestA], [{State, ValueB} | RestB]) ->
     [{State, ValueA + ValueB} | state_list_add(RestA, RestB)].
 
+
+
+val_diff(New, Old) when New > ?MAX_UINT32; Old > ?MAX_UINT32 ->
+    New - Old; %% We obviously got uints > 32 bits
 val_diff(New, Old) when New < Old ->
-    %% Value wrapped around between old and new (32 bit integer)
-    ?MAX_INT32 + New - Old;
+    uint32_range_diff((?MAX_UINT32 + 1) + New - Old);
 val_diff(New, Old) ->
-    New - Old.
+    uint32_range_diff(New - Old).
+
+%% We expect a maximal increment of (?MAX_UINT32 div 2); a larger
+%% difference is interpreted as a decrement
+uint32_range_diff(Diff) when Diff =< (?MAX_UINT32 div 2) ->
+    Diff;
+uint32_range_diff(Diff) ->
+    Diff - (?MAX_UINT32 + 1).
+
+negative_diff(State, Diff) ->
+    negative_diff(State, Diff, os:type()).
+
+negative_diff(_State, Diff, {unix, linux}) when Diff >= -1 ->
+    %% This should never happen! But values sometimes takes a step
+    %% backwards on linux. We'll ignore it as long as it's only
+    %% one step...
+    0;
+negative_diff(State, Diff, _) ->
+    throw({error, {negative_diff, State, Diff}}).
 
 %%%
 %%% Sunos specific functions...

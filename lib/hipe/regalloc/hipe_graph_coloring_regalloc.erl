@@ -1,6 +1,6 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%
+%%@doc
 %%		  GRAPH COLORING REGISTER ALLOCATOR
 %%
 %% A simple graph coloring register allocator:
@@ -20,23 +20,23 @@
 %% The result should be considerably quicker than earlier versions.
 %%
 %% Deficiencies:
-%% - no iterated graph coloring    (means more registers must be reserved)
-%%   * requires code rewriting to work
-%% - no rewriting of code          (spills, etc.)
 %% - no renaming                   (reduce unnecessary register pressure)
 %% - spill costs are naive         (should use better exec.estimates)
 %% - no biased coloring            (coalesce moves)
 %% - no live range splitting       (possibly not critical)
 %%
 %% *** NOTE ***
-%% You will have to rewrite some interface calls at the end of the file!
+%% Uses apply for target specific functions, takes the module name as
+%% argument. This target specific module should implement all target 
+%% specific functions, see the end of the file.
+%% 
 
 -module(hipe_graph_coloring_regalloc).
 -export([regalloc/4]).
 
--ifndef(DO_ASSERT).
--define(DO_ASSERT, true).
--endif.
+%-ifndef(DO_ASSERT).
+%-define(DO_ASSERT, true).
+%-endif.
 
 %-ifndef(DEBUG).
 %-define(DEBUG,0).
@@ -94,36 +94,37 @@ regalloc(CFG, SpillIndex, SpillLimit, Target) ->
 %
 
 build_ig(CFG, Target) ->
-   case catch build_ig0(CFG, Target) of
-      {'EXIT',Rsn} ->
-	 exit({regalloc, build_ig, Rsn});
-      Else ->
-	 Else
-   end.
+  case catch build_ig0(CFG, Target) of
+    {'EXIT',Rsn} ->
+      exit({regalloc, build_ig, Rsn});
+    Else ->
+      Else
+  end.
 
 build_ig0(CFG, Target) ->
-   Live = Target:analyze(CFG),
-   NumN = Target:number_of_temporaries(CFG),  % poss. N-1?
-   {IG, Spill} = build_ig_bbs(Target:labels(CFG), 
-			      CFG, 
-			      Live,
-			      empty_ig(NumN), 
-			      empty_spill(NumN),
-			      Target),
-   {normalize_ig(IG), Spill}.
+  Live = Target:analyze(CFG),
+  NumN = Target:number_of_temporaries(CFG),  % poss. N-1?
+  {IG, Spill} = build_ig_bbs(Target:labels(CFG), 
+			     CFG, 
+			     Live,
+			     empty_ig(NumN), 
+			     empty_spill(NumN),
+			     Target),
+  {normalize_ig(IG), Spill}.
 
-build_ig_bbs([], CFG, Live, IG, Spill, Target) ->
-   {IG, Spill};
+build_ig_bbs([], _CFG, _Live, IG, Spill, _Target) ->
+  {IG, Spill};
 build_ig_bbs([L|Ls], CFG, Live, IG, Spill, Target) ->
-   Xs = bb(CFG, L, Target),
-   {_, NewIG, NewSpill} = build_ig_bb(Xs, liveout(Live,L, Target), IG, Spill, Target),
-   build_ig_bbs(Ls, CFG, Live, NewIG, NewSpill, Target).
+  Xs = bb(CFG, L, Target),
+  {_, NewIG, NewSpill} = 
+    build_ig_bb(Xs, liveout(Live,L, Target), IG, Spill, Target),
+  build_ig_bbs(Ls, CFG, Live, NewIG, NewSpill, Target).
 
-build_ig_bb([], LiveOut, IG, Spill, Target) ->
-   {LiveOut, IG, Spill};
+build_ig_bb([], LiveOut, IG, Spill, _Target) ->
+  {LiveOut, IG, Spill};
 build_ig_bb([X|Xs], LiveOut, IG, Spill, Target) ->
-   {Live,NewIG,NewSpill} = build_ig_bb(Xs, LiveOut, IG, Spill, Target),
-   build_ig_instr(X, Live, NewIG, NewSpill, Target).
+  {Live,NewIG,NewSpill} = build_ig_bb(Xs, LiveOut, IG, Spill, Target),
+  build_ig_instr(X, Live, NewIG, NewSpill, Target).
 
 % Note: We could add move-related arcs here as well.
 %
@@ -138,19 +139,19 @@ build_ig_instr(X, Live, IG, Spill, Target) ->
   DefList = ordsets:to_list(Def),
   NewSpill = inc_spill_costs(DefList, 
 			     inc_spill_costs(ordsets:to_list(Use), Spill)),
-   NewIG = interference_arcs(DefList, ordsets:to_list(Live), IG),
-   NewLive = ordsets:union(Use, ordsets:subtract(Live, Def)),
-   {NewLive, NewIG, NewSpill}.
+  NewIG = interference_arcs(DefList, ordsets:to_list(Live), IG),
+  NewLive = ordsets:union(Use, ordsets:subtract(Live, Def)),
+  {NewLive, NewIG, NewSpill}.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-interference_arcs([], Live, IG) -> 
+interference_arcs([], _Live, IG) -> 
    IG;
 interference_arcs([X|Xs],Live,IG) ->
    interference_arcs(Xs, Live, i_arcs(X, Live, IG)).
 
-i_arcs(X, [], IG) -> 
+i_arcs(_X, [], IG) -> 
    IG;
 i_arcs(X, [Y|Ys], IG) ->
    i_arcs(X, Ys, add_edge(X,Y, IG)).
@@ -288,7 +289,7 @@ simplify(Low, NumNodes, PreC, IG, Spill, K, Ix, Stk, SpillLimit,
    simplify_ig(Low2, ActualNumNodes-length(Stk2), IG, Spill, K, Ix2, Stk2, Vis2,
 	       SpillLimit, Target).
 
-handle_non_spill([], IG, Spill, K, Ix, Stk, Vis, Low, SpillLimit, Target) ->
+handle_non_spill([], _IG, _Spill, _K, Ix, Stk, Vis, Low, _SpillLimit, _Target) ->
   {Stk, Ix, Vis, Low};
 handle_non_spill([X|Xs], IG, Spill, K, Ix, Stk, Vis, Low, SpillLimit, Target) ->
   Info = hipe_vectors_wrapper:get(IG, X),
@@ -312,7 +313,7 @@ handle_non_spill([X|Xs], IG, Spill, K, Ix, Stk, Vis, Low, SpillLimit, Target) ->
 		       NewLow, SpillLimit, Target)
   end.
 
-simplify_ig([], 0, IG, Spill, K, Ix, Stk, Vis, SpillLimit, Target) ->
+simplify_ig([], 0, _IG, _Spill, _K, Ix, Stk, _Vis, _SpillLimit, _Target) ->
   {Stk, Ix};
 simplify_ig([], N, IG, Spill, K, Ix, Stk, Vis, SpillLimit, Target) 
   when N > 0 ->
@@ -353,7 +354,7 @@ decrement_neighbors(X, Xs, IG, Vis, K) ->
 % For each node, decrement its degree and check if it is now
 % a low-degree node. In that case, add it to the 'low list'.
 
-decrement_each([], Low, IG, Vis, K) -> 
+decrement_each([], Low, IG, _Vis, _K) -> 
    {Low, IG};
 decrement_each([N|Ns], OldLow, IG, Vis, K) ->
    {Low, CurrIG} = decrement_each(Ns, OldLow, IG, Vis, K),
@@ -398,13 +399,13 @@ spill(IG, Vis, Spill, K, SpillLimit, Target) ->
      [] ->
       ?error_msg("There is no node to spill",[]),
       ?EXIT('no node to spill');
-    [{Cost,N}|Xs] ->
+    [{_Cost,N}|_] ->
       {Low, NewIG} = decrement_neighbors(N, [], IG, Vis, K),
       ?report("spilled node ~p at cost ~p (~p now ready)~n",[N,Cost,Low]),
       {N, Low, NewIG}
   end.
 
-spill_costs([], IG, Vis, Spill, SpillLimit, Target) ->
+spill_costs([], _IG, _Vis, _Spill, _SpillLimit, _Target) ->
    [];
 spill_costs([{N,Info}|Ns], IG, Vis, Spill, SpillLimit, Target) ->
   case degree(Info) of
@@ -463,7 +464,7 @@ select(Stk, PreC, IG, K, PhysRegs, NumNodes, Target) ->
    ?report("precoloring has yielded ~p~n",[list_coloring(Cols)]),
    PhysColors ++ select_colors(Stk, IG, Cols, PhysRegs, K).
 
-select_colors([], IG, Cols, PhysRegs, K) -> 
+select_colors([], _IG, _Cols, _PhysRegs, _K) -> 
    ?report("all nodes colored~n",[]),
    [];
 select_colors([{X,colorable}|Xs], IG, Cols, PhysRegs, K) ->
@@ -496,8 +497,6 @@ select_colors([{X,{spill,M}}|Xs], IG, Cols, PhysRegs, K) ->
    [{X,{spill,M}} | select_colors(Xs, IG, Cols, PhysRegs, K)].
 
 select_color(X, IG, Cols, PhysRegs) ->
-   K = ordsets:size(PhysRegs),
-   Ns = neighbors(X, IG),
    UsedColors = get_colors(neighbors(X, IG), Cols),
    Reg = select_unused_color(UsedColors, PhysRegs),
    {Reg, set_color(X, Reg, Cols)}.
@@ -505,7 +504,7 @@ select_color(X, IG, Cols, PhysRegs) ->
 
 %%%%%%%%%%%%%%%%%%%%
 
-get_colors([],Cols) -> [];
+get_colors([],_Cols) -> [];
 get_colors([X|Xs],Cols) ->
    case color_of(X,Cols) of
       uncolored ->
@@ -554,7 +553,7 @@ push_colored(X,Stk) ->
 
 %%%%%%%%%%%%%%%%%%%%
 
-low_degree_nodes([], K, NotAllocatable) -> [];
+low_degree_nodes([], _K, _NotAllocatable) -> [];
 low_degree_nodes([{N,Info}|Xs], K, NotAllocatable) ->
   case lists:member(N, NotAllocatable) of
     true ->
@@ -575,7 +574,7 @@ low_degree_nodes([{N,Info}|Xs], K, NotAllocatable) ->
 unvisited_neighbors(X,Vis,IG) ->
     ordsets:from_list(unvisited(neighbors(X,IG),Vis)).
 
-unvisited([],Vis) -> [];
+unvisited([],_Vis) -> [];
 unvisited([X|Xs],Vis) ->
    case visited(X,Vis) of
       true ->
@@ -828,10 +827,15 @@ def_use(X, Target) ->
    {ordsets:from_list(reg_names(Target:defines(X), Target)), 
     ordsets:from_list(reg_names(Target:uses(X), Target))}.
 
-reg_names([], Target) ->
-   [];
-reg_names([R|Rs], Target) ->
-   [Target:reg_nr(R) | reg_names(Rs, Target)].
+reg_names(Rs, Target) ->
+   Regs = 
+    case Target of
+      hipe_sparc_specific ->
+	hipe_sparc:keep_registers(Rs);
+      _ ->
+	Rs
+    end,
+  [Target:reg_nr(X) || X <- Regs].
 
 
 
@@ -847,7 +851,7 @@ precolor(Xs, Cols, Target) ->
    ?report("    yielded ~p~n", [Cs]),
    {Cs,NewCol}.
 
-precolor0([], Cols, Target) ->
+precolor0([], Cols, _Target) ->
    {[], Cols};
 precolor0([R|Rs], Cols, Target) ->
    {Cs, Cols1} = precolor0(Rs, Cols, Target),

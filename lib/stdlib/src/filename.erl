@@ -73,10 +73,10 @@ absname(Name, AbsBase) ->
 
 %% Handles volumerelative names (on Windows only).
 
-absname_vr(["/"|Rest1], [Volume|Rest2], _AbsBase) ->
+absname_vr(["/"|Rest1], [Volume|_], _AbsBase) ->
     %% Absolute path on current drive.
     join([Volume|Rest1]);
-absname_vr([[X, $:]|Rest1], [[X|_]|Rest2], AbsBase) ->
+absname_vr([[X, $:]|Rest1], [[X|_]|_], AbsBase) ->
     %% Relative to current directory on current drive.
     absname(join(Rest1), AbsBase);
 absname_vr([[X, $:]|Name], _, _AbsBase) ->
@@ -100,11 +100,11 @@ absname_pretty(Abspath, Relpath, []) ->
     %% AbsBase _must_ begin with a vxworks device name
     {device, _Rest, Dev} = vxworks_first(Abspath),
     absname_pretty(Abspath, Relpath, [lists:reverse(Dev)]);
-absname_pretty(Abspath, [], AbsBase) ->
+absname_pretty(_Abspath, [], AbsBase) ->
     join(lists:reverse(AbsBase));
 absname_pretty(Abspath, [[$.]|Rest], AbsBase) ->
     absname_pretty(Abspath, Rest, AbsBase);
-absname_pretty(Abspath, [[$.,$.]|Rest], [First|AbsRest]) ->
+absname_pretty(Abspath, [[$.,$.]|Rest], [_|AbsRest]) ->
     absname_pretty(Abspath, Rest, AbsRest);
 absname_pretty(Abspath, [First|Rest], AbsBase) ->
     absname_pretty(Abspath, Rest, [First|AbsBase]).
@@ -242,7 +242,7 @@ dirname([], [DrvSep, Dl], File, {_DirSep2, DrvSep}) ->
 	[$/|_] -> [Dl, DrvSep, $/];
 	_ -> [Dl, DrvSep]
     end;
-dirname([], Dir, File, _Seps) ->
+dirname([], Dir, _, _) ->
     lists:reverse(Dir).
     
 %% Given a filename string, returns the file extension,
@@ -365,7 +365,9 @@ pathtype(Name) when list(Name) ->
 			    absolute;
 			_ ->
 			    relative
-		    end
+		    end;
+	{ose,_} -> unix_pathtype(Name)
+	    
     end.
 
 
@@ -419,7 +421,7 @@ rootname([Char|Rest], Root, Ext, OsType) when integer(Char) ->
     rootname(Rest, Root, [Char|Ext], OsType);
 rootname([List|Rest], Root, Ext, OsType) when list(List) ->
     rootname(List++Rest, Root, Ext, OsType);
-rootname([], Root, Ext, _OsType) ->
+rootname([], Root, _Ext, _OsType) ->
     lists:reverse(Root).
 
 %% Returns all characters in the filename, except the given extension.
@@ -455,7 +457,8 @@ split(Name) when list(Name) ->
     case os:type() of
 	{unix, _}  -> unix_split(Name);
 	{win32, _} -> win32_split(Name);
-	vxworks -> vxworks_split(Name)
+	vxworks -> vxworks_split(Name);
+	{ose,_} -> unix_split(Name)
     end.
 
 %% If a VxWorks filename starts with '[/\].*[^/\]' '[/\].*:' or '.*:' 
@@ -544,10 +547,11 @@ separators() ->
     case os:type() of
 	{unix, _}  -> {false, false};
 	{win32, _} -> {$\\, $:};
-	vxworks -> {$\\, false}
+	vxworks -> {$\\, false};
+	{ose,_} -> {false, false}
     end.
 
-
+
 %% find_src(Module) --
 %% find_src(Module, Rules) --
 %%
@@ -619,7 +623,7 @@ try_file(undefined, ObjFilename, Mod, Rules) ->
 	{ok, File} -> try_file(File, ObjFilename, Mod, Rules);
 	Error -> Error
     end;
-try_file(Src, _ObjFilename, Mod, Rules) ->
+try_file(Src, _ObjFilename, Mod, _Rules) ->
     List = apply(Mod, module_info, [compile]),
     {value, {options, Options}} = lists:keysearch(options, 1, List),
     {ok, Cwd} = file:get_cwd(),
@@ -663,8 +667,8 @@ filter_options(_Base, [], Result) ->
 
 get_source_file(Obj, Mod, Rules) ->
     case catch(apply(Mod, module_info, [source_file])) of
-	{'EXIT', Reason} ->
-	    source_by_rules(dirname(Obj), atom_to_list(Mod), Rules);
+	{'EXIT', _Reason} ->
+	    source_by_rules(dirname(Obj), packages:last(Mod), Rules);
 	File ->
 	    {ok, File}
     end.
@@ -696,7 +700,7 @@ readable_file(File) ->
 	    true;
 	{ok, #file_info{type=regular, access=read_write}} ->
 	    true;
-	Other ->
+	_Other ->
 	    false
     end.
 
@@ -737,7 +741,7 @@ vxworks_first2(Devicep, [$/|T], FirstComp) ->
     {Devicep, [$/|T], FirstComp};
 vxworks_first2(Devicep, [$\\|T], FirstComp) ->
     {Devicep, [$/|T], FirstComp};
-vxworks_first2(Devicep, [$:|T], FirstComp)->
+vxworks_first2(_Devicep, [$:|T], FirstComp)->
     {device, T, [$:|FirstComp]};
 vxworks_first2(Devicep, [H|T], FirstComp) when list(H) ->
     vxworks_first2(Devicep, H++T, FirstComp);

@@ -200,8 +200,8 @@ trace(What, Args) ->
 %% Internal functions
 %%====================================================================
 
-eval_function(_Mod, Fun, As0, Bs, Cm, Lc, Le, F, LineNo, _Called) when
-  function(Fun) ->
+eval_function(_Mod, Fun, As0, Bs, Cm, Lc, Le, F, LineNo, _Called)
+  when is_function(Fun) ->
     push(Bs, F, Cm, Lc, Le, LineNo),
     case lambda(Fun, As0) of
 	undef ->
@@ -257,7 +257,7 @@ eval_function(Mod, Name, As, Bs, Cm, Lc, Le, F, LineNo, Called) ->
 	    exit({undef,[{Mod,Name,As}|in_fnk(F)]}, Cm, LineNo, Bs)
     end.
 
-lambda(Fun, As0) when function(Fun) ->
+lambda(Fun, As0) when is_function(Fun) ->
     {module, Mod} = erlang:fun_info(Fun, module),
     case fun_call_clauses(Mod, Fun) of
 	{Name, Arity, Cs} ->
@@ -276,12 +276,10 @@ fun_call_clauses(Mod, Fun) ->
     {new_index, Index} = erlang:fun_info(Fun, new_index),
     {new_uniq, Uniq} = erlang:fun_info(Fun, new_uniq),
     case fun_call_clauses_1(Mod, {'fun',Mod,Index,Uniq}) of
-	Data when tuple(Data) -> Data;
-	Error ->
-	    {index,OldIndex} = erlang:fun_info(Fun, index),
-	    {uniq,OldUniq} = erlang:fun_info(Fun, uniq),
-	    fun_call_clauses_1(Mod, {'fun',Mod,OldIndex,OldUniq})
+	Data when is_tuple(Data) -> Data;
+	Error -> Error
     end.
+
 fun_call_clauses_1(Mod, Key) ->
     case cached(Key) of
 	false ->
@@ -313,11 +311,9 @@ function(Mod, Name, Args, local) ->
 		[{{Mod,Name,Arity,Exp},Clauses}] ->
 		    cache(Key, {Exp,Clauses}),
 		    Clauses;
-		Other ->
-		    undef
+		Other -> undef
 	    end;
-	{_Exp,Cs} ->
-	    Cs
+	{_Exp,Cs} -> Cs
     end;
 function(Mod, Name, Args, extern) ->
     Arity = length(Args),
@@ -475,9 +471,10 @@ expr({match,LineNo,Lhs,Rhs0},Bs0,Cm,Lc,Le,F) ->
     end;
 
 %% Construct a fun
-expr({make_fun,LineNo,Index,Uniq,OldIndex,OldUniq,Free0},Bs,Cm,Lc,Le,F) ->
-    Free = get_free_vars(Free0,Bs),
-    {value,erts_debug:make_fun({get(self),Cm,Index,Uniq,OldIndex,OldUniq,Free}),Bs};
+expr({make_fun,LineNo,Index,Uniq,Free0}, Bs, Cm, Lc, Le, F) ->
+    Free = get_free_vars(Free0, Bs),
+    Fun = erts_debug:make_fun({get(self),Cm,Index,Uniq,Free}),
+    {value,Fun,Bs};
 
 %% Local function call
 expr({local_call,LineNo,Func,As0},Bs0,Cm,Lc,Le,F) ->
@@ -506,7 +503,7 @@ expr({bif,LineNo,Mod,Func,As0},Bs0,Cm,Lc,Le,F) ->
     Debugged = get(self),
     trace(bif,{Le,LineNo,Func,As}),
     Debugged ! {sys,self(),{catch_bif(get_catch_lev()),Mod,Func,As,
-			       clean_mfa(F),false}},
+			    clean_mfa(F),false}},
     dbg_imeta:main_meta_loop(Debugged,Bs,Le,Lc,Cm,LineNo,F);
 
 %% Call to a BIF that spawns a new process

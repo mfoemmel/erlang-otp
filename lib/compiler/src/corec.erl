@@ -64,11 +64,11 @@ env_default_opts() ->
 		    case erl_parse:parse_term(Tokens ++ [{dot, 1}]) of
 			{ok,List} when list(List) -> List;
 			{ok,Term} -> [Term];
-			{error,Reason} ->
+			{error,_Reason} ->
 			    io:format("Ignoring bad term in ~s\n", [Key]),
 			    []
 		    end;
-		{error, {_,_,Reason}, _} ->
+		{error, {_,_,_}, _} ->
 		    io:format("Ignoring bad term in ~s\n", [Key]),
 		    []
 	    end
@@ -86,8 +86,8 @@ do_compile(Input, Opts0) ->
 %% listing file would have been generated).
 
 output_generated(Opts) ->
-    any(fun ({save_binary,F}) -> true;
-	    (Other) -> false
+    any(fun ({save_binary,_}) -> true;
+	    (_) -> false
 	end, passes(file, Opts)).
 
 expand_opt(report, Os) -> [report_errors,report_warnings|Os];
@@ -148,7 +148,7 @@ internal_comp(Passes, File, Suffix, St0) ->
 		      ofile=objfile(Base, St0)},
     Run = case member(time, St1#compile.options) of
 	      true  -> fun run_tc/2;
-	      false -> fun({Name,Fun}, St) -> catch Fun(St) end
+	      false -> fun({_,Fun}, St) -> catch Fun(St) end
 	  end,
     case fold_comp(Passes, Run, St1) of
 	{ok,St2} -> comp_ret_ok(St2);
@@ -166,13 +166,13 @@ fold_comp([{Name,Pass}|Ps], Run, St0) ->
 	    Es = [{St0#compile.ifile,[{none,?MODULE,{bad_return,Name,Other}}]}],
 	    {error,St0#compile{errors=St0#compile.errors ++ Es}}
     end;
-fold_comp([], Run, St) -> {ok,St}.
+fold_comp([], _, St) -> {ok,St}.
 
 os_process_size() ->
     case os:type() of
 	{unix, sunos} ->
-	    Size0 = os:cmd("ps -o vsz -p " ++ os:getpid() ++ " | tail -1"),
-	    Size = list_to_integer(lib:nonl(Size0));
+	    Size = os:cmd("ps -o vsz -p " ++ os:getpid() ++ " | tail -1"),
+	    list_to_integer(lib:nonl(Size));
 	_ ->
 	    0
     end.	    
@@ -224,8 +224,8 @@ passes(file, Opts) ->
     %% If the last pass saves the resulting binary to a file,
     %% insert a first pass to remove the file.
     case lists:last(Fs) of
-	{save_binary,Fun} -> [?pass(remove_file)|Fs];
-	Other -> Fs
+	{save_binary,_} -> [?pass(remove_file)|Fs];
+	_Other -> Fs
     end.
 
 %% select_passes([Command], Opts) ->  [{Name,Function}]
@@ -270,7 +270,7 @@ select_passes([{pass,Mod}|Ps], Opts) ->
 		end
 	end,
     [{Mod,F}|select_passes(Ps, Opts)];
-select_passes([{listing,Ext}|Ps], Opts) ->
+select_passes([{listing,Ext}|_], _Opts) ->
     [{listing,fun (St) -> listing(Ext, St) end}];
 select_passes([{iff,Flag,Pass}|Ps], Opts) ->
     select_cond(Flag, true, Pass, Ps, Opts);
@@ -278,12 +278,12 @@ select_passes([{unless,Flag,Pass}|Ps], Opts) ->
     select_cond(Flag, false, Pass, Ps, Opts);
 select_passes([{Name,Fun}|Ps], Opts) when function(Fun) ->
     [{Name,Fun}|select_passes(Ps, Opts)];
-select_passes([], Opts) -> [];
+select_passes([], _Opts) -> [];
 select_passes([List|Ps], Opts) when list(List) ->
     Nested = select_passes(List, Opts),
     case lists:last(Nested) of
-	{listing,Fun} -> Nested;
-	Other         -> Nested ++ select_passes(Ps, Opts)
+	{listing,_} -> Nested;
+	_           -> Nested ++ select_passes(Ps, Opts)
     end.
 
 select_cond(Flag, ShouldBe, Pass, Ps, Opts) ->
@@ -344,7 +344,7 @@ parse_module(St) ->
 	{ok,Bin} ->
 	    %%case io:request(If, {get_until,"",core_scan,tokens,[1]}) of
 	    case core_scan:string(binary_to_list(Bin)) of
-		{ok,Toks,Epos} ->
+		{ok,Toks,_} ->
 		    case core_parse:parse(Toks) of
 			{ok,Mod} ->
 			    Name = (Mod#c_module.name)#c_atom.val,
@@ -353,7 +353,7 @@ parse_module(St) ->
 			    Es = [{St#compile.ifile,[E]}],
 			    {error,St#compile{errors=St#compile.errors ++ Es}}
 		    end;
-		{error,E,Epos} ->
+		{error,E,_} ->
 		    Es = [{St#compile.ifile,[E]}],
 		    {error,St#compile{errors=St#compile.errors ++ Es}}
 	    end;
@@ -375,7 +375,7 @@ foldl_core_transforms(St, [T|Ts]) ->
     Fun = fun(S) -> T:module(S#compile.code, S#compile.options) end,
     Run = case member(time, St#compile.options) of
 	      true  -> fun run_tc/2;
-	      false -> fun({N,F}, S) -> catch F(S) end
+	      false -> fun({_,F}, S) -> catch F(S) end
 	  end,
     case Run({Name, Fun}, St) of
 	{'EXIT',R} ->
@@ -442,12 +442,12 @@ save_binary(St) ->
 	    case file:rename(Tfile, St#compile.ofile) of
 		ok ->
 		    {ok,St};
-		{error,E} ->
+		{error,_} ->
 		    file:delete(Tfile),
 		    Es = [{St#compile.ofile,[{none,?MODULE,{rename,Tfile}}]}],
 		    {error,St#compile{errors=St#compile.errors ++ Es}}
 	    end;
-	{error,E} ->
+	{error,_} ->
 	    Es = [{Tfile,[{compile,write_error}]}],
 	    {error,St#compile{errors=St#compile.errors ++ Es}}
     end.
@@ -477,7 +477,7 @@ write_binary(Name, Bin, St) ->
 report_errors(St) ->
     case member(report_errors, St#compile.options) of
 	true ->
-	    lists:foreach(fun ({{F,L},Eds}) -> list_errors(F, Eds);
+	    lists:foreach(fun ({{F,_},Eds}) -> list_errors(F, Eds);
 			      ({F,Eds}) -> list_errors(F, Eds) end,
 			  St#compile.errors);
 	false -> ok
@@ -486,7 +486,7 @@ report_errors(St) ->
 report_warnings(St) ->
     case member(report_warnings, St#compile.options) of
 	true ->
-	    lists:foreach(fun ({{F,L},Eds}) -> list_warnings(F, Eds);
+	    lists:foreach(fun ({{F,_},Eds}) -> list_warnings(F, Eds);
 			      ({F,Eds}) -> list_warnings(F, Eds) end,
 			  St#compile.warnings);
 	false -> ok
@@ -500,7 +500,7 @@ list_errors(F, [{Line,Mod,E}|Es]) ->
 list_errors(F, [{Mod,E}|Es]) ->
     io:fwrite("~s: ~s\n", [F,apply(Mod, format_error, [E])]),
     list_errors(F, Es);
-list_errors(F, []) ->
+list_errors(_, []) ->
     ok.
 
 %% list_warnings(File, ErrorDescriptors) -> ok
@@ -511,7 +511,7 @@ list_warnings(F, [{Line,Mod,E}|Es]) ->
 list_warnings(F, [{Mod,E}|Es]) ->
     io:fwrite("~s: Warning: ~s\n", [F,apply(Mod, format_error, [E])]),
     list_warnings(F, Es);
-list_warnings(F, []) ->
+list_warnings(_, []) ->
     ok.
 
 %% erlfile(Dir, Base) -> ErlFile
@@ -533,7 +533,7 @@ outfile(Base, Ext, Opts) when atom(Ext) ->
 outfile(Base, Ext, Opts) ->
     Obase = case keysearch(outdir, 1, Opts) of
 		{value, {outdir, Odir}} -> filename:join(Odir, Base);
-		Other -> Base			% Not found or bad format
+		_Other -> Base			% Not found or bad format
 	    end,
     Obase++"."++Ext.
 
@@ -553,7 +553,7 @@ listing(LFun, Ext, St) ->
 	    LFun(Lf, St#compile.code),
 	    ok = file:close(Lf),
 	    {ok,St};
-	{error,E} ->
+	{error,_} ->
 	    Es = [{Lfile,[{none,compile,write_error}]}],
 	    {error,St#compile{errors=St#compile.errors ++ Es}}
     end.
@@ -569,7 +569,7 @@ help([{iff,Flag,{listing,Ext}}|T]) ->
 help([{iff,Flag,{Name,Fun}}|T]) when function(Fun) ->
     io:fwrite("~p - Run ~s\n", [Flag,Name]),
     help(T);
-help([{iff,Flag,Action}|T]) ->
+help([{iff,_,Action}|T]) ->
     help(Action),
     help(T);
 help([{unless,Flag,{pass,Pass}}|T]) ->
@@ -580,10 +580,10 @@ help([{unless,no_postopt=Flag,List}|T]) when list(List) ->
     io:fwrite("~p - Skip all post optimisation\n", [Flag]),
     help(List),
     help(T);
-help([{unless,Flag,Action}|T]) ->
+help([{unless,_,Action}|T]) ->
     help(Action),
     help(T);
-help([H|T]) ->
+help([_|T]) ->
     help(T);
 help(_) ->
     ok.
@@ -605,7 +605,7 @@ make_erl_options(Opts) ->
     %% This way of extracting will work even if the record passed
     %% has more fields than known during compilation.
 
-    Includes0 = Opts#options.includes,
+    Includes = Opts#options.includes,
     Defines = Opts#options.defines,
     Outdir = Opts#options.outdir,
     Warning = Opts#options.warning,
@@ -614,14 +614,6 @@ make_erl_options(Opts) ->
     Optimize = Opts#options.optimize,
     OutputType = Opts#options.output_type,
     Cwd = Opts#options.cwd,
-
-    Includes = 
-	case Opts#options.ilroot of
-	    undefined ->
-		Includes0;
-	    Ilroot ->
-		[Ilroot|Includes0]
-	end,
 
     Options =
 	case Verbose of
@@ -635,7 +627,7 @@ make_erl_options(Opts) ->
  	case Optimize of
 	    0 -> [no_kernopt,no_postopt];
 	    1 -> [no_postopt];
-	    Other -> []
+	    _Other -> []
 	end ++
 	lists:map(
 	      fun ({Name, Value}) ->

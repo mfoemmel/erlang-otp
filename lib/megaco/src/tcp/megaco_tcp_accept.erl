@@ -67,7 +67,7 @@ net_accept(TcpRec, SupPid, ListenFd, Parent) ->
 					     TcpRec#megaco_tcp{socket=S}) of
 		{ok, Pid} ->
 		    gen_tcp:controlling_process(S, Pid);
-		{error, Reason} ->
+		{error, _Reason} ->
 		    gen_tcp:close(S)	
 	    end;
 	{error, Reason} ->

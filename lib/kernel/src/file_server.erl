@@ -35,6 +35,8 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
 	 terminate/2, code_change/3]).
 
+-define(FILE_IO_SERVER_TABLE, file_io_servers).
+
 -define(FILE_SERVER, file_server_2).      % Registered name
 -define(FILE_IO_SERVER, file_io_server).  % Module
 -define(PRIM_FILE, prim_file).            % Module
@@ -70,6 +72,7 @@ init([]) ->
     process_flag(trap_exit, true),
     case ?PRIM_FILE:start() of
 	{ok, Handle} ->
+	    ets:new(?FILE_IO_SERVER_TABLE, [named_table]),
 	    {ok, Handle};
 	{error, Reason} ->
 	    {stop, Reason}
@@ -86,12 +89,26 @@ init([]) ->
 %%----------------------------------------------------------------------
 handle_call({open, Name, ModeList}, {Pid, _Tag} = _From, Handle)
   when list(ModeList) ->
-    {reply, ?FILE_IO_SERVER:start(Pid, Name, ModeList), Handle};
+    Child = ?FILE_IO_SERVER:start_link(Pid, Name, ModeList),
+    case Child of
+	{ok, P} when pid(P) ->
+	    ets:insert(?FILE_IO_SERVER_TABLE, {P, Name});
+	_ ->
+	    ok
+    end,
+    {reply, Child, Handle};
 
 %% Obsolete - needed only by R7 slave nodes
 handle_call({open, Name, Mode}, {Pid, _Tag} = _From, Handle) 
   when integer(Mode) ->
-    {reply, ?FILE_IO_SERVER:start(Pid, Name, mode_list(Mode)), Handle};
+    Child = ?FILE_IO_SERVER:start_link(Pid, Name, mode_list(Mode)),
+    case Child of
+	{ok, P} when pid(P) ->
+	    ets:insert(?FILE_IO_SERVER_TABLE, {P, Name});
+	_ ->
+	    ok
+    end,
+    {reply, Child, Handle};
 handle_call({open, _Name, _Mode}, _From, Handle) ->
     {reply, {error, einval}, Handle};
 
@@ -199,6 +216,11 @@ handle_cast(Msg, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
+
+handle_info({'EXIT', Pid, Reason}, Handle) when pid(Pid) ->
+    ets:delete(?FILE_IO_SERVER_TABLE, Pid),
+    {noreply, Handle};
+
 handle_info({'EXIT', Handle, Reason}, Handle) ->
     error_logger:error_msg('Port controlling ~w terminated in ~w',
 			   [?FILE_SERVER, ?MODULE]),
@@ -247,12 +269,16 @@ do_start(Start) ->
 
 %% Should mimic gen_server:Start
 do_start(Start, Node, Name) ->
-    Filer = rpc:call(Node, erlang, whereis, [Name]),
-    case catch do_start_slave(Start, Filer, Name) of
-	{'EXIT', Reason} ->
-	    {error, Reason};
-	Result ->
-	    Result
+    case rpc:call(Node, erlang, whereis, [Name]) of
+	Filer when pid(Filer); Filer == undefined ->
+	    case catch do_start_slave(Start, Filer, Name) of
+		{'EXIT', Reason} ->
+		    {error, Reason};
+		Result ->
+		    Result
+	    end;
+	Other ->
+	    {error, {no_master, Other}}
     end.
 
 %% May exit upon failure, return {ok, SlavePid} if all well.
@@ -294,7 +320,8 @@ relay_start(Parent, Token, Filer, Name) when pid(Filer) ->
     process_flag(trap_exit, true),
     Parent ! {started, Token},
     relay_loop(Parent, Filer, FilerMonitor);
-relay_start(Parent, Token, _Filer, _Name) ->
+relay_start(Parent, Token, undefined, _Name) ->
+    %% Dummy process to keep kernel supervisor happy
     process_flag(trap_exit, true),
     Parent ! {started, Token},
     receive

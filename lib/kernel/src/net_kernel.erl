@@ -63,7 +63,8 @@
 -export([publish_on_node/1, update_publish_nodes/1]).
 
 %% Internal Exports 
--export([do_spawn_link/5, 
+-export([do_spawn/3,
+	 spawn_func/6,
 	 ticker/2,
 	 ticker_loop/2,
 	 do_nodeup/2,
@@ -322,17 +323,20 @@ handle_call({disconnect, Node}, From, State) ->
 %% 
 %% The spawn/4 BIF ends up here.
 %% 
-handle_call({spawn,M,F,A,Gleader}, {From,Tag}, State) when pid(From) ->
-    Pid = (catch spawn(M,F,A)),
-    catch group_leader(Gleader,Pid),
-    {reply,Pid,State};
+handle_call({spawn,M,F,A,Gleader},{From,Tag},State) when pid(From) ->
+    do_spawn([no_link,{From,Tag},M,F,A,Gleader],[],State);
 
 %% 
 %% The spawn_link/4 BIF ends up here.
 %% 
-handle_call({spawn_link,M,F,A,Gleader}, {From,Tag}, State) when pid(From) ->
-    catch spawn(net_kernel,do_spawn_link,[{From,Tag},M,F,A,Gleader]),
-    {noreply,State};
+handle_call({spawn_link,M,F,A,Gleader},{From,Tag},State) when pid(From) ->
+    do_spawn([link,{From,Tag},M,F,A,Gleader],[],State);
+
+%% 
+%% The spawn_opt/5 BIF ends up here.
+%% 
+handle_call({spawn_opt,M,F,A,O,L,Gleader},{From,Tag},State) when pid(From) ->
+    do_spawn([L,{From,Tag},M,F,A,Gleader],O,State);
 
 %% 
 %% Only allow certain nodes.
@@ -1015,13 +1019,27 @@ safesend(Pid, Mess) -> Pid ! Mess.
 send_list([P|T], M) -> safesend(P, M), send_list(T, M);
 send_list([], _) -> ok.
 
+do_spawn(SpawnFuncArgs, SpawnOpts, State) ->
+    case catch spawn_opt(?MODULE, spawn_func, SpawnFuncArgs, SpawnOpts) of
+	{'EXIT', {Reason,_}} ->    
+	    {reply, {'EXIT', {Reason,[]}}, State};
+	{'EXIT', Reason} ->    
+	    {reply, {'EXIT', {Reason,[]}}, State};
+	_ ->
+	    {noreply,State}
+    end.
+
 %% This code is really intricate. The link will go first and then comes
 %% the pid, This means that the client need not do a network link.
 %% If the link message would not arrive, the runtime system  shall
 %% generate a nodedown message
 
-do_spawn_link({From,Tag},M,F,A,Gleader) ->
+spawn_func(link,{From,Tag},M,F,A,Gleader) ->
     link(From),
+    gen_server:reply({From,Tag},self()),  %% ahhh
+    group_leader(Gleader,self()),
+    apply(M,F,A);
+spawn_func(_,{From,Tag},M,F,A,Gleader) ->
     gen_server:reply({From,Tag},self()),  %% ahhh
     group_leader(Gleader,self()),
     apply(M,F,A).
@@ -1258,7 +1276,7 @@ start_protos(Name,Ps, Node) ->
 
 start_protos(Name, [Proto | Ps], Node, Ls) ->
     Mod = list_to_atom(Proto ++ "_dist"),
-    case Mod:listen(Name) of
+    case catch Mod:listen(Name) of
 	{ok, {Socket, Address, Creation}} ->
 	    AcceptPid = Mod:accept(Socket),
 	    (catch erlang:setnode(Node, Creation)), %% May fail.

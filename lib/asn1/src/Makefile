@@ -40,6 +40,8 @@ CT_MODULES= \
 	asn1ct_constructed_per \
 	asn1ct_constructed_ber \
 	asn1ct_gen_ber \
+	asn1ct_constructed_ber_bin_v2 \
+	asn1ct_gen_ber_bin_v2 \
 	asn1ct_value \
 	asn1ct_tok \
 	asn1ct_parser2
@@ -47,14 +49,16 @@ CT_MODULES= \
 RT_MODULES= \
 	asn1rt \
 	asn1rt_per \
-	asn1rt_ber \
 	asn1rt_per_bin \
 	asn1rt_per_v1 \
 	asn1rt_ber_bin \
+	asn1rt_ber_bin_v2 \
 	asn1rt_per_bin_rt2ct \
-	asn1rt_ber_v1 \
+	asn1rt_driver_handler \
 	asn1rt_check
 
+#	asn1rt_ber_v1 \
+#	asn1rt_ber \
 # the rt module to use is defined in asn1_records.hrl
 # and must be updated when an incompatible change is done in the rt modules
 

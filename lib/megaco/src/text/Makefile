@@ -17,10 +17,6 @@
 #
 include $(ERL_TOP)/make/target.mk
 
-ifeq ($(TYPE),debug)
-ERL_COMPILE_FLAGS += -Ddebug -W
-endif
-
 EBIN = ../../ebin
 MEGACO_INCLUDEDIR = ../../include
 
@@ -48,16 +44,31 @@ include modules.mk
 
 ERL_FILES = $(MODULES:%=%.erl)	
 
-TARGET_FILES =  \
-	$(INTERNAL_YRL_FILES:%.yrl=%.erl) \
+ERL_TARGET_FILES = \
+	$(INTERNAL_YRL_FILES:%.yrl=%.erl)
+
+BEAM_TARGET_FILES = \
 	$(INTERNAL_YRL_FILES:%.yrl=$(EBIN)/%.$(EMULATOR)) \
 	$(MODULES:%=$(EBIN)/%.$(EMULATOR))
+
+TARGET_FILES = $(ERL_TARGET_FILES) $(BEAM_TARGET_FILES)
+
 
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
+ifeq ($(TYPE),debug)
+ERL_COMPILE_FLAGS += -Ddebug
+endif
+
+ifeq ($(WARN_UNUSED_WARS),true)
+ERL_COMPILE_FLAGS += +warn_unused_vars
+endif
+
 ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
-ERL_COMPILE_FLAGS += -I../../include
+ERL_COMPILE_FLAGS += -I../../include \
+                     +'{parse_transform,sys_pre_attributes}' \
+                     +'{attribute,insert,app_vsn,$(APP_VSN)}'
 
 
 # ----------------------------------------------------
@@ -74,6 +85,13 @@ clean:
 
 docs:
 
+info:
+	@echo "INTERNAL_YRL_FILES = $(INTERNAL_YRL_FILES)"
+	@echo ""
+	@echo "INTERNAL_HRL_FILES = $(INTERNAL_HRL_FILES)"
+	@echo ""
+
+
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
@@ -89,10 +107,10 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
 	$(INSTALL_DIR)  $(RELSYSDIR)/ebin
-	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
+	$(INSTALL_DATA) $(BEAM_TARGET_FILES) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR)  $(RELSYSDIR)/src
 	$(INSTALL_DIR)  $(RELSYSDIR)/src/text
-	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_YRL_FILE) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src/text
+	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_YRL_FILES) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src/text
 
 
 release_docs_spec:

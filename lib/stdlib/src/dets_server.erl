@@ -44,6 +44,8 @@
 %%-define(DEBUGF(X,Y), io:format(X, Y)).
 -define(DEBUGF(X,Y), void).
 
+-compile({inline, [{pid2name_1,1}]}).
+
 %%%----------------------------------------------------------------------
 %%% API
 %%%----------------------------------------------------------------------
@@ -80,10 +82,7 @@ open_file(Tab, OpenArgs) ->
 
 pid2name(Pid) ->
     ensure_started(),
-    case ets:lookup(?OWNERS, Pid) of
-        [] -> undefined;
-        [{_Pid,Tab}] -> {ok, Tab}
-    end.
+    pid2name_1(Pid).
 
 users(Tab) ->
     call({users, Tab}).
@@ -125,36 +124,15 @@ handle_call(all, _From, State) ->
 handle_call({close, Tab}, {From, _Tag}, State) ->
     Res = handle_close(State, From, Tab, normal),
     {reply, Res, State};
-handle_call(echo, _From, State) ->
-    {reply, ok, State};
 handle_call({open, File}, {From, _Tag}, State) ->
-    Pid = spawn(dets, do_open_file, [File, get(verbose)]),
-    receive
-        {Pid, {ok, Tab}} ->
-            Store = State#state.store,
-            do_link(Store, From),
-            true = ets:insert(Store, {From, Tab}),
-            true = ets:insert(?REGISTRY, {Tab, 1, Pid}),
-            true = ets:insert(?OWNERS, {Pid, Tab}),
-            {reply, {ok, Tab}, State};
-        {Pid, Error} ->
-            {reply, Error, State}
-    end;
+    Reply = do_open(State, From, [File, get(verbose)]),
+    {reply, Reply, State};
 handle_call({open, Tab, OpenArgs}, {From, _Tag}, State) ->
     Store = State#state.store,
     case ets:lookup(?REGISTRY, Tab) of
         [] -> 
-            Pid = spawn(dets, do_open_file, [Tab, OpenArgs, get(verbose)]),
-            receive
-                {Pid, {ok, Result}} ->
-                    do_link(Store, From),
-                    true = ets:insert(Store, {From, Tab}),
-                    true = ets:insert(?REGISTRY, {Tab, 1, Pid}),
-                    true = ets:insert(?OWNERS, {Pid, Tab}),
-                    {reply, {ok, Result}, State};
-                {Pid, Error} ->
-                    {reply, Error, State}
-            end;
+	    Reply = do_open(State, From, [Tab, OpenArgs, get(verbose)]),
+	    {reply, Reply, State};
         [{Tab, _Counter, Pid}] ->
             Pid ! ?DETS_CALL(self(), {add_user, Tab, OpenArgs}),
             receive
@@ -192,10 +170,22 @@ handle_cast(_Msg, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 handle_info({'EXIT', Pid, _Reason}, State) ->
-    %% First we need to figure out which tables that Pid are using.
     Store = State#state.store,
-    All = ets:lookup(Store, Pid),
-    handle_all(State, All),
+    case pid2name_1(Pid) of
+	{ok, Tab} -> 
+	    %% A table was killed.
+            true = ets:delete(?REGISTRY, Tab),
+            true = ets:delete(?OWNERS, Pid),
+            Users = ets:select(State#state.store, [{{'$1', Tab}, [], ['$1']}]),
+            true = ets:match_delete(Store, {'_', Tab}),
+            lists:foreach(fun(User) -> do_unlink(Store, User) end, Users);
+	undefined ->
+	    %% First we need to figure out which tables that Pid are using.
+	    All = ets:lookup(Store, Pid),
+	    handle_all(State, All)
+    end,
+    {noreply, State};
+handle_info(_Message, State) ->
     {noreply, State}.
 
 %%----------------------------------------------------------------------
@@ -221,10 +211,13 @@ code_change(_OldVsn, State, _Extra) ->
 ensure_started() ->
     case whereis(?SERVER_NAME) of
 	undefined -> 
+	    DetsSup = {dets_sup, {dets_sup, start_link, []}, permanent,
+		      1000, supervisor, [dets_sup]},
+	    _ = supervisor:start_child(kernel_safe_sup, DetsSup),
 	    DetsServer = {?SERVER_NAME, {?MODULE, start_link, []},
 			  permanent, 2000, worker, [?MODULE]},
-            supervisor:start_child(kernel_safe_sup, DetsServer),
-            ok = gen_server:call(?SERVER_NAME, echo, infinity);
+            _ = supervisor:start_child(kernel_safe_sup, DetsServer),
+	    ok;
 	_ -> ok
     end.
 
@@ -247,6 +240,32 @@ set_verbose(true) ->
     put(verbose, yes);
 set_verbose(_) ->
     erase(verbose).
+
+%% Inlined.
+pid2name_1(Pid) ->
+    case ets:lookup(?OWNERS, Pid) of
+        [] -> undefined;
+        [{_Pid,Tab}] -> {ok, Tab}
+    end.
+
+do_open(State, From, Args) ->
+    case supervisor:start_child(dets_sup, [self()]) of 
+	{ok, Pid} ->
+	    case dets:internal_open(Pid, Args) of
+		{ok, Tab} = R ->
+		    link(Pid),
+		    Store = State#state.store,
+		    do_link(Store, From),
+		    true = ets:insert(Store, {From, Tab}),
+		    true = ets:insert(?REGISTRY, {Tab, 1, Pid}),
+		    true = ets:insert(?OWNERS, {Pid, Tab}),
+		    R;
+		Error ->
+		    Error
+	    end;
+	Error ->
+	    Error
+    end.
 
 stop_all(How, S) ->
     F = fun({{links, _}, _}, _) -> 
@@ -280,6 +299,7 @@ handle_close(S, From, Tab, How) ->
 		    true = ets:delete(?REGISTRY, Tab),
 		    true = ets:delete(?OWNERS, Pid),
 		    true = ets:match_delete(Store, {From, Tab}),
+		    unlink(Pid),
 		    Pid ! ?DETS_CALL(self(), close),
 		    receive {Pid, {closed, Res}} -> Res end;
 		[{Tab, _Counter, Pid}] ->

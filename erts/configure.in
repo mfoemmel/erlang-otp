@@ -79,10 +79,13 @@ AC_ARG_ENABLE(megaco_flex_scanner_lineno,
 [  --disable-megaco-flex-scanner-lineno    disable megaco flex scanner lineno])
 
 AC_ARG_ENABLE(hipe,
-[  --enable-hipe           enable hipe support])
+[  --disable-hipe          disable hipe support])
 
-AC_ARG_ENABLE(unified-heap,
-[  --enable-unified-heap      enable unified heap model])
+AC_ARG_ENABLE(tsp,
+[  --enable-tsp            compile tsp app])
+
+AC_ARG_ENABLE(shared-heap,
+[  --enable-shared-heap    enable shared heap model])
 
 AC_ARG_ENABLE(elib-malloc,
 [  --enable-elib-malloc    use elib_malloc instead of normal malloc])
@@ -112,12 +115,30 @@ AC_ARG_ENABLE(threads,
 AC_ARG_ENABLE(kernel-poll,
 [  --enable-kernel-poll    enable kernel poll support])
 
+AC_SUBST(PERFCTR_PATH)
+AC_ARG_WITH(perfctr,
+[  --with-perfctr=PATH     specify location of perfctr include and lib
+  --without-perfctr       don't use perfctr (default)])
+
+if test "x$with_perfctr" = "xno" -o "x$with_perfctr" = "x" ; then
+    PERFCTR_PATH=
+else
+    if test ! -f "$with_perfctr/usr.lib/libperfctr.a" ; then
+	AC_MSG_ERROR(Invalid path to option --with-perfctr=PATH)
+    fi
+    PERFCTR_PATH="$with_perfctr"
+    AC_DEFINE(USE_PERFCTR)
+fi
+
 dnl Magic test for clearcase.
+OTP_RELEASE=
 if test -d ../../system; then
 	OTP_EXTRA_FLAGS=-DOTP_RELEASE
+	OTP_RELEASE=yes
 else
 	OTP_EXTRA_FLAGS=
 fi
+AC_SUBST(OTP_RELEASE)
 
 dnl ----------------------------------------------------------------------
 dnl Checks for programs.
@@ -185,7 +206,6 @@ AC_PROG_RANLIB
 
 
 AC_PROG_YACC
-AC_PROG_AWK
 LM_PROG_PERL5
 if test "$ac_cv_path_PERL" = false; then
   AC_MSG_ERROR([Perl version 5 is required to build the emulator!])
@@ -365,6 +385,31 @@ if test "$have_gethostbyname_r" = yes; then
 		;;
 	esac
 fi
+dnl Check for usage of sockaddr_in in netdb.h
+dnl somewhat ugly check, I check for presence of the string and that 
+dnl compilation works. If either fails I assume it's not needed.
+dnl Seems only to be needed on a patched version of solaris2.5.1, with
+dnl netdb.h  version  1.18.
+AC_MSG_CHECKING([if netdb.h requires netinet/in.h to be previously included])
+AC_EGREP_CPP(sockaddr_in, 
+	     [#include <netdb.h>],
+	     AC_TRY_COMPILE([#include <netinet/in.h>
+			     #include <netdb.h>], 
+			    [return 0;],
+			    need_in_h=yes, 
+                            need_in_h=no),
+             need_in_h=no)
+
+if test $need_in_h = yes; then
+	AC_DEFINE(NETDB_H_NEEDS_IN_H)
+	AC_MSG_RESULT(yes)
+else
+	AC_MSG_RESULT(no)
+fi
+
+dnl Check if we have these, in which case we'll try to build
+dnl inet_gethost with ipv6 support.
+AC_CHECK_FUNCS([getipnodebyname getipnodebyaddr])
 dnl h_errno isn't always declared in netdb.h, and with some definitions
 dnl (e.g. function call for thread-safe) a simple 'extern int' may conflict
 dnl (we do assume that h_errno exists at all...)
@@ -426,6 +471,73 @@ AC_CHECK_SIZEOF(int, 4)dnl Assumes all cross compiling is to 32bit uP
 AC_CHECK_SIZEOF(long, 4)dnl Assumes all cross compiling is to 32bit uP
 AC_CHECK_SIZEOF(void *, 4)dnl Assumes all cross compiling is to 32bit uP
 AC_CHECK_SIZEOF(unsigned long long, 0)
+
+BITS64=
+
+if test $ac_cv_sizeof_void_p = 8; then
+  BITS64=yes
+fi
+AC_SUBST(BITS64)
+
+
+dnl AC_CHECK_SIZEOF(size_t, 4)dnl Assumes all cross compiling is to 32bit uP
+dnl
+dnl The disabled one above does not include stddef.h, alas!
+dnl
+AC_CACHE_CHECK([size of size_t], ac_cv_sizeof_size_t, 
+AC_TRY_RUN([
+#include <sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stddef.h>
+int main(int argc, char **argv) {
+    FILE *f = fopen("conftestval", "w");
+    if (! f)
+	exit(1); /* Failed */
+    fprintf(f, "%d\n", (int) sizeof(size_t));
+    exit(0); /* OK */
+}
+], ac_cv_sizeof_size_t=`cat conftestval`
+,  ac_cv_sizeof_size_t=0
+,  ac_cv_sizeof_size_t=4))
+AC_DEFINE_UNQUOTED(SIZEOF_SIZE_T, $ac_cv_sizeof_size_t)
+
+dnl A standard size check does not include sys/types.h
+dnl
+AC_CACHE_CHECK([size of off_t], ac_cv_sizeof_off_t, 
+AC_TRY_RUN([
+#include <sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stddef.h>
+int main(int argc, char **argv) {
+    FILE *f = fopen("conftestval", "w");
+    if (! f)
+	exit(1); /* Failed */
+    fprintf(f, "%d\n", (int) sizeof(off_t));
+    exit(0); /* OK */
+}
+], ac_cv_sizeof_off_t=`cat conftestval`
+,  ac_cv_sizeof_off_t=0
+,  ac_cv_sizeof_off_t=4))
+AC_DEFINE_UNQUOTED(SIZEOF_OFF_T, $ac_cv_sizeof_off_t)
+
+AC_MSG_CHECKING([int/long/void*/size_t sizes])
+AC_TRY_RUN([
+#include <stdlib.h>
+#include <stddef.h>
+int main(int argc, char **argv) {
+    if (sizeof(void *) >= 4 &&
+	sizeof(void *) == sizeof(size_t) &&
+	(sizeof(void *) == sizeof(int) || sizeof(void *) == sizeof(long))) {
+	exit(0); /* OK */
+    }
+    exit(1); /* Failed */
+}
+],AC_MSG_RESULT(ok)
+,AC_MSG_RESULT(failed)
+AC_MSG_ERROR([Cannot handle this combination of int/long/void*/size_t sizes])
+,AC_MSG_RESULT(ok))
 
 AC_C_BIGENDIAN
 
@@ -653,26 +765,49 @@ dnl (using the --disable, --enable and --with switches).
 dnl ----------------------------------------------------------------------
 
 #
+# Check if we should compile TSP app
+#
+
+TSP_APP=
+if test X${enable_tsp} = Xyes; then
+  TSP_APP=tsp
+fi
+AC_SUBST(TSP_APP)
+
+#
 # Check if we should enable HiPE.
 #
 
+HIPE_ENABLED=
+HIPE_APP=
+
+# if not disabled, autoenable HiPE on known supported platforms
+if test X${enable_hipe} != Xno; then
+  case "$ARCH-$OPSYS" in
+    ultrasparc-sol2|x86-sol2|x86-linux)
+      enable_hipe=yes
+      ;;
+  esac
+fi
+
 if test X${enable_hipe} = Xyes; then
-  HIPE_ENABLED=yes
-  AC_DEFINE(HIPE)
-  HIPE_APP=hipe
-else
-  HIPE_ENABLED=
-  HIPE_APP=
+  if test X$ac_cv_sizeof_void_p != X4; then
+	AC_MSG_WARN([HiPE is not supported in 64-bit builds])
+  else
+     HIPE_ENABLED=yes
+     AC_DEFINE(HIPE)
+     HIPE_APP=hipe
+  fi
 fi
 AC_SUBST(HIPE_APP)
 AC_SUBST(HIPE_ENABLED)
 
 #
-# Check if we should enable the unified heap model.
+# Check if we should enable the shared heap model.
 #
 
-if test X${enable_unified_heap} = Xyes; then
-  AC_DEFINE(UNIFIED_HEAP)
+if test X${enable_shared_heap} = Xyes; then
+  AC_DEFINE(SHARED_HEAP)
 fi
 
 #
@@ -854,9 +989,6 @@ dnl If set to --without-ssl we disable the use of SSL
 dnl If set to --with-ssl=PATH we use that path as the prefix, i.e. we
 dnl use "PATH/include" and "PATH/lib".
 
-# Remove all SKIP files from previous runs
-/bin/rm -f $ERL_TOP/lib/*/SKIP
-
 AC_SUBST(SSL_APP)
 AC_SUBST(CRYPTO_APP)
 AC_SUBST(SSL_INCLUDE)
@@ -940,6 +1072,14 @@ esac
 dnl
 dnl Then there are a number of apps which needs a java compiler...
 dnl
+need_java="jinterface ic/java_src orber/java_src
+	   mnesia_session/examples/person/java_session"
+
+# Remove all SKIP files from previous runs
+for a in $need_java ; do
+  /bin/rm -f $ERL_TOP/lib/$a/SKIP
+done
+
 AC_CHECK_PROGS(JAVAC, javac guavac gcj jikes bock)
 if test -n "$JAVAC"; then
   dnl Make sure it's at least JDK 1.2
@@ -954,9 +1094,6 @@ fi
 if test -z "$JAVAC"; then
   AC_MSG_WARN([Could not find any usable java compiler, will skip: jinterface])
 
-  need_java="jinterface ic/java_src orber/java_src
-		 mnesia_session/examples/person/java_session"
-
   for a in $need_java ; do
 	echo "No Java compiler found" > $ERL_TOP/lib/$a/SKIP
   done
@@ -966,15 +1103,39 @@ dnl
 dnl Orber has a c++ example, this isn't the right way to check for
 dnl it, but....
 dnl
-dnl ...why not use AC_PROG_CXX? [sverkerw]
-dnl
 CXXFLAGS=
 AC_SUBST(CXXFLAGS)
-AC_PROG_CXX
-if test "$ac_cv_prog_CXX" = false; then
+dnl this deliberately does not believe that 'gcc' is a C++ compiler
+AC_CHECK_PROGS(CXX, $CCC c++ g++ CC cxx cc++ cl, false)
+
+# Remove SKIP file from previous run
+/bin/rm -f $ERL_TOP/lib/orber/SKIP
+
+if test "$CXX" = false; then
   echo "No C++ compiler found" > $ERL_TOP/lib/orber/SKIP
 fi
 
+#
+# Currently if we compile for 64 bits we want to compile
+# some external port programs using 32 bits
+#
+
+# If not defined we trust the C compiler in $CC to do 32 bits
+if test -z "$CC32"; then
+  CC32="$CC"
+fi
+
+if test -z "$CFLAGS32"; then
+  if test $ac_cv_sizeof_void_p != 4; then
+    # We are compiling default 64 bits and use -m32 for 32 bit compilations
+    CFLAGS32="$CFLAGS -m32"
+  else
+    CFLAGS32="$CFLAGS"
+  fi
+fi
+
+AC_SUBST(CC32)
+AC_SUBST(CFLAGS32)
 
 
 dnl ----------------------------------------------------------------------
@@ -991,16 +1152,19 @@ erts_dirs="
   $erts/obj.debug.beam/$host						
 									
   $erts/obj.instr.beam
-  $erts/obj.instr.beam/$host						
+  $erts/obj.instr.beam/$host
+
+  $erts/obj.shared.beam
+  $erts/obj.shared.beam/$host
+
+  $erts/obj.purify.beam
+  $erts/obj.purify.beam/$host
       									
-  $erts/obj.purify.beam				
-  $erts/obj.purify.beam/$host		
+  $erts/obj.quantify.beam
+  $erts/obj.quantify.beam/$host
       									
-  $erts/obj.quantify.beam			
-  $erts/obj.quantify.beam/$host		
-      									
-  $erts/obj.purecov.beam				
-  $erts/obj.purecov.beam/$host		
+  $erts/obj.purecov.beam
+  $erts/obj.purecov.beam/$host
 "
 for d in ${erl_top}/bin ${erl_top}/bin/$host $erts_dirs ;
 do
@@ -1035,7 +1199,6 @@ dnl
   $srcdir/$lib/crypto/c_src/$host/Makefile:$lib/crypto/c_src/Makefile.in
   $srcdir/$lib/orber/c_src/$host/Makefile:$lib/orber/c_src/Makefile.in
   $srcdir/$lib/odbc/c_src/$host/Makefile:$lib/odbc/c_src/Makefile.in
-  $srcdir/$lib/comet/c_src/$host/Makefile:$lib/comet/c_src/Makefile.in
   $srcdir/$lib/runtime_tools/c_src/$host/Makefile:$lib/runtime_tools/c_src/Makefile.in
   $srcdir/$lib/asn1/c_src/$host/Makefile:$lib/asn1/c_src/Makefile.in
   )

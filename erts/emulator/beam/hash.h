@@ -66,20 +66,36 @@ typedef struct hash
     int is_allocated;    /* 0 iff hash structure is on stack or is static */
     char* name;          /* Table name (static string, for debugging) */
     int size;		 /* Number of slots */
-    int ix;              /* Size index in prime table */
+    int size20percent;   /* 20 percent of number of slots */
+    int size80percent;   /* 80 percent of number of slots */
+    int ix;              /* Size index in size table */
     int used;		 /* Number of slots used */
     HashBucket** bucket; /* Vector of bucket pointers (objects) */
+#ifdef INSTRUMENT
+    int from_buckets;
+#endif
 } Hash;
 
-EXTERN_FUNCTION(Hash*, hash_new, (char*, int, HashFunctions));
-EXTERN_FUNCTION(Hash*, hash_init, (Hash*, char*, int, HashFunctions));
-EXTERN_FUNCTION(void,  hash_delete, (Hash*));
-EXTERN_FUNCTION(void,  hash_get_info, (HashInfo*, Hash*));
-EXTERN_FUNCTION(void,  hash_info, (CIO, Hash*));
-EXTERN_FUNCTION(int,   hash_table_sz, (Hash *));
+#ifdef INSTRUMENT
+#define hash_new(N, S, F) hash_new_from(111, 110, (N), (S), (F))
+#define hash_init(H, N, S, F) hash_init_from(110, (H), (N), (S), (F))
+Hash* hash_new_from(int, int, char*, int, HashFunctions);
+Hash* hash_init_from(int, Hash*, char*, int, HashFunctions);
+#else
+#define hash_new_from(FT, FB, N, S, F) hash_new((N), (S), (F))
+#define hash_init_from(FB, H, N, S, F) hash_init((H), (N), (S), (F))
+Hash* hash_new(char*, int, HashFunctions);
+Hash* hash_init(Hash*, char*, int, HashFunctions);
+#endif
 
-EXTERN_FUNCTION(void*, hash_get, (Hash*, void*));
-EXTERN_FUNCTION(void*, hash_put, (Hash*, void*));
-EXTERN_FUNCTION(void*, hash_erase, (Hash*, void*));
+void  hash_delete(Hash*);
+void  hash_get_info(HashInfo*, Hash*);
+void  hash_info(CIO, Hash*);
+int   hash_table_sz(Hash *);
+
+void* hash_get(Hash*, void*);
+void* hash_put(Hash*, void*);
+void* hash_erase(Hash*, void*);
+void  hash_foreach(Hash*, void (*func)(void *, void *), void *);
 
 #endif

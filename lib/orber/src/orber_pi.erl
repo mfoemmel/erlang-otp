@@ -175,7 +175,7 @@
 
 
 %%--------------- DEFINES ------------------------------------
--define(is_SystemExc(S), corba:check_exception_type(S) == ?SYSTEM_EXCEPTION).
+-define(is_SystemExc(S), orber_exceptions:type(S) == ?SYSTEM_EXCEPTION).
 
 -define(write_ErrorMsg(Txt, Arg),
 error_logger:error_msg("========== PortableInterceptors ===========~n"

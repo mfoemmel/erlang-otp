@@ -53,25 +53,25 @@
 get_kanno(Kthing) -> element(2, Kthing).
 %%set_kanno(Kthing, Anno) -> setelement(2, Kthing, Anno).
 
-module(#k_mdef{anno=A,name=M,exports=Es,attributes=As,body=Fs0}, Options) ->
+module(#k_mdef{name=M,exports=Es,attributes=As,body=Fs0}, _Opts) ->
     Fs1 = map(fun function/1, Fs0),
     {ok,{M,Es,As,Fs1}}.
 
 %% function(Kfunc) -> Func.
 
-function(#k_fdef{anno=A,func=F,arity=Ar,vars=Vs,body=Kb}) ->
+function(#k_fdef{func=F,arity=Ar,vars=Vs,body=Kb}) ->
     %%ok = io:fwrite("life ~w: ~p~n", [?LINE,{F,Ar}]),
     As = var_list(Vs),
     Vdb0 = foldl(fun ({var,N}, Vdb) -> new_var(N, 0, Vdb) end, [], As),
     %% Force a top-level match!
     B0 = case Kb of
 	     #k_match{} -> Kb;
-	     Other ->
+	     _ ->
 		 Ka = get_kanno(Kb),
 		 #k_match{anno=#k{us=Ka#k.us,ns=[],a=Ka#k.a},
 			  vars=Vs,body=Kb,ret=[]}
 	 end,
-    {B1,MaxI,Vdb1} = body(B0, 1, Vdb0),
+    {B1,_,Vdb1} = body(B0, 1, Vdb0),
     {function,F,Ar,As,B1,Vdb1}.
 
 %% body(Kbody, I, Vdb) -> {[Expr],MaxI,Vdb}.
@@ -109,10 +109,10 @@ guard(#k_guard_not{anno=A,arg=Not}, I, Vdb0) ->
     Gnot = guard(Not, I+1, Vdb0),
     #l{ke={guard_not,Gnot},i=I,a=A#k.a,vdb=Vdb};
 guard(#k_guard_and{anno=A,args=As}, I, Vdb0) ->
-    {Es,MaxI,Vdb1} = guard_and_list(As, I+1, Vdb0),
+    {Es,_,Vdb1} = guard_and_list(As, I+1, Vdb0),
     #l{ke={guard_and,Es},i=I,a=A#k.a,vdb=Vdb1};
 guard(#k_guard_or{anno=A,args=As}, I, Vdb0) ->
-    {Es,MaxI,Vdb1} = guard_or_list(As, I+1, Vdb0),
+    {Es,_,Vdb1} = guard_or_list(As, I+1, Vdb0),
     #l{ke={guard_or,Es},i=I,a=A#k.a,vdb=Vdb1};
 guard(#k_protected{anno=A,body=Ts,ret=Rs}, I, Vdb) ->
     %% Lock variables that are alive before the protect and used afterwards.
@@ -122,7 +122,7 @@ guard(#k_protected{anno=A,body=Ts,ret=Rs}, I, Vdb) ->
     Pdb2 = use_vars(A#k.ns, MaxI+1, Pdb1),	%Save "return" values
     #l{ke={protected,T,var_list(Rs)},i=I,a=A#k.a,vdb=Pdb2};
 guard(#k_seq{}=G, I, Vdb0) ->
-    {Es,MaxI,Vdb1} = guard_body(G, I, Vdb0),
+    {Es,_,Vdb1} = guard_body(G, I, Vdb0),
     #l{ke={block,Es},i=I,vdb=Vdb1,a=[]};
 guard(G, I, Vdb) -> guard_expr(G, I, Vdb).
 
@@ -183,32 +183,32 @@ guard_or_list([G|Gs], I, Vdb0) ->
 
 %% guard_expr(Call, I, Vdb) -> Expr
 
-guard_expr(#k_test{anno=A,op=Op,args=As}, I, Vdb) ->
+guard_expr(#k_test{anno=A,op=Op,args=As}, I, _Vdb) ->
     #l{ke={test,test_op(Op),atomic_list(As)},i=I,a=A#k.a};
-guard_expr(#k_bif{anno=A,op=Op,args=As,ret=Rs}, I, Vdb) ->
+guard_expr(#k_bif{anno=A,op=Op,args=As,ret=Rs}, I, _Vdb) ->
     #l{ke={bif,bif_op(Op),atomic_list(As),var_list(Rs)},i=I,a=A#k.a};
-guard_expr(#k_put{anno=A,arg=Arg,ret=Rs}, I, Vdb) ->
+guard_expr(#k_put{anno=A,arg=Arg,ret=Rs}, I, _Vdb) ->
     #l{ke={set,var_list(Rs),literal(Arg)},i=I,a=A#k.a};
 guard_expr(G, I, Vdb) -> guard(G, I, Vdb).
 
 %% expr(Kexpr, I, Vdb) -> Expr.
 
-expr(#k_call{anno=A,op=#k_internal{}=Op,args=As,ret=Rs}, I, Vdb) ->
-    internal_call(A, Op, As, Rs, I, Vdb);
-expr(#k_call{anno=A,op=Op,args=As,ret=Rs}, I, Vdb) ->
+expr(#k_call{anno=A,op=#k_internal{}=Op,args=As,ret=Rs}, I, _Vdb) ->
+    internal_call(A, Op, As, Rs, I);
+expr(#k_call{anno=A,op=Op,args=As,ret=Rs}, I, _Vdb) ->
     #l{ke={call,call_op(Op),atomic_list(As),var_list(Rs)},i=I,a=A#k.a};
-expr(#k_enter{anno=A,op=Op,args=As}, I, Vdb) ->
+expr(#k_enter{anno=A,op=Op,args=As}, I, _Vdb) ->
     #l{ke={enter,call_op(Op),atomic_list(As)},i=I,a=A#k.a};
-expr(#k_bif{anno=A,op=Op,args=As,ret=[]}, I, Vdb) ->
+expr(#k_bif{anno=A,op=Op,args=As,ret=[]}, I, _Vdb) ->
     case Op of
 	#k_internal{name=dsetelement,arity=3} -> ok;
-	Other ->
+	_ ->
 	    ok = io:fwrite("v3_life:expr/3:~w - ~p~n", [?LINE,Op])
     end,
 %     %% Must generate unique variable here.
 %     #l{ke={bif,bif_op(Op),atomic_list(As),[{var,I}]},i=I,a=A#k.a};
     #l{ke={bif,bif_op(Op),atomic_list(As),[]},i=I,a=A#k.a};
-expr(#k_bif{anno=A,op=Op,args=As,ret=Rs}, I, Vdb) ->
+expr(#k_bif{anno=A,op=Op,args=As,ret=Rs}, I, _Vdb) ->
     #l{ke={bif,bif_op(Op),atomic_list(As),var_list(Rs)},i=I,a=A#k.a};
 expr(#k_match{anno=A,body=Kb,ret=Rs}, I, Vdb) ->
     %% Work out imported variables which need to be locked.
@@ -220,27 +220,27 @@ expr(#k_catch{anno=A,body=Kb,ret=[R]}, I, Vdb) ->
     %% Don't lock variables that are only used inside the catch.
     %% Add catch tag 'variable'.
     Cdb0 = vdb_sub(I, I+1, Vdb),
-    {Es,Cmax,Cdb1} = body(Kb, I+1, add_var({catch_tag,I}, I, 1000000, Cdb0)),
+    {Es,_,Cdb1} = body(Kb, I+1, add_var({catch_tag,I}, I, 1000000, Cdb0)),
     #l{ke={'catch',Es,variable(R)},i=I,vdb=Cdb1,a=A#k.a};
 expr(#k_receive{anno=A,var=V,body=Kb,timeout=T,action=Ka,ret=Rs}, I, Vdb) ->
     %% Work out imported variables which need to be locked.
     Rdb = vdb_sub(I, I+1, Vdb),
     M = match(Kb, A#k.us, I+1, new_var(V#k_var.name, I, Rdb)),
-    {Tes,MaxI,Adb} = body(Ka, I+1, Rdb),
+    {Tes,_,Adb} = body(Ka, I+1, Rdb),
     #l{ke={receive_loop,atomic(T),variable(V),M,
 	   #l{ke=Tes,i=I+1,vdb=Adb,a=[]},var_list(Rs)},
        i=I,vdb=use_vars(A#k.us, I+1, Vdb),a=A#k.a};
-expr(#k_receive_accept{anno=A}, I, Vdb) ->
+expr(#k_receive_accept{anno=A}, I, _Vdb) ->
     #l{ke=receive_accept,i=I,a=A#k.a};
-expr(#k_receive_reject{anno=A}, I, Vdb) ->
+expr(#k_receive_reject{anno=A}, I, _Vdb) ->
     #l{ke=receive_reject,i=I,a=A#k.a};
-expr(#k_receive_next{anno=A}, I, Vdb) ->
+expr(#k_receive_next{anno=A}, I, _Vdb) ->
     #l{ke=receive_next,i=I,a=A#k.a};
-expr(#k_put{anno=A,arg=Arg,ret=Rs}, I, Vdb) ->
+expr(#k_put{anno=A,arg=Arg,ret=Rs}, I, _Vdb) ->
     #l{ke={set,var_list(Rs),literal(Arg)},i=I,a=A#k.a};
-expr(#k_break{anno=A,args=As}, I, Vdb) ->
+expr(#k_break{anno=A,args=As}, I, _Vdb) ->
     #l{ke={break,atomic_list(As)},i=I,a=A#k.a};
-expr(#k_return{anno=A,args=As}, I, Vdb) ->
+expr(#k_return{anno=A,args=As}, I, _Vdb) ->
     #l{ke={return,atomic_list(As)},i=I,a=A#k.a}.
 
 %% call_op(Op) -> Op.
@@ -249,16 +249,11 @@ expr(#k_return{anno=A,args=As}, I, Vdb) ->
 %%  Do any necessary name translations here to munge into beam format.
 
 call_op(#k_local{name=N}) -> N; 
-call_op(#k_remote{mod=#k_atom{val=erlang},name=#k_atom{val='++'}}) ->
-    {remote,{atom,erlang},{atom,append}};
-call_op(#k_remote{mod=#k_atom{val=erlang},name=#k_atom{val='--'}}) ->
-    {remote,{atom,erlang},{atom,subtract}};
-call_op(#k_remote{mod=M,name=N}) ->
-    {remote,atomic(M),atomic(N)};
+call_op(#k_remote{mod=M,name=N}) -> {remote,atomic(M),atomic(N)};
 call_op(Other) -> variable(Other).
 
 bif_op(#k_internal{name=dsetelement,arity=3}) -> dsetelement;
-bif_op(#k_internal{name=make_fun,arity=Ar}) -> make_fun;
+bif_op(#k_internal{name=make_fun}) -> make_fun;
 bif_op(#k_remote{mod=#k_atom{val=erlang},name=#k_atom{val=N}}) -> N.
 
 test_op(#k_remote{mod=#k_atom{val=erlang},name=#k_atom{val=N}}) -> N.
@@ -269,7 +264,7 @@ test_op(#k_remote{mod=#k_atom{val=erlang},name=#k_atom{val=N}}) -> N.
 internal_call(A, #k_internal{name=make_fun},
 	      [#k_atom{val=Fun},#k_int{val=Arity},
 	       #k_int{val=Index},#k_int{val=Uniq}|Free],
-	      Rs, I, Vdb) ->
+	      Rs, I) ->
     #l{ke={call,{make_fun,Fun,Arity,Index,Uniq},var_list(Free),var_list(Rs)},
        i=I,a=A#k.a}.
 
@@ -292,7 +287,7 @@ match(#k_guard{anno=A,clauses=Kcs}, Ls, I, Vdb0) ->
     #l{ke={guard,Cs},i=I,vdb=Vdb1,a=A#k.a};
 match(Other, Ls, I, Vdb0) ->
     Vdb1 = use_vars(Ls, I, Vdb0),
-    {B,MaxI,Vdb2} = body(Other, I+1, Vdb1),
+    {B,_,Vdb2} = body(Other, I+1, Vdb1),
     #l{ke={block,B},i=I,vdb=Vdb2,a=[]}.
 
 type_clause(#k_type_clause{anno=A,type=T,values=Kvs}, Ls, I, Vdb0) ->
@@ -302,7 +297,7 @@ type_clause(#k_type_clause{anno=A,type=T,values=Kvs}, Ls, I, Vdb0) ->
     #l{ke={type_clause,type(T),Vs},i=I,vdb=Vdb1,a=A#k.a}.
 
 val_clause(#k_val_clause{anno=A,val=V,body=Kb}, Ls0, I, Vdb0) ->
-    {Used,New} = match_pat_vars(V),
+    {_Used,New} = match_pat_vars(V),
     %% Not clear yet how Used should be used.
     Bus = (get_kanno(Kb))#k.us,
     %%ok = io:format("Ls0 = ~p, Used=~p\n  New=~p, Bus=~p\n", [Ls0,Used,New,Bus]),
@@ -432,7 +427,7 @@ match_pat_list_vars(Ps) ->
 new_var(V, I, Vdb) ->
     case vdb_find(V, Vdb) of
 	{V,F,L} when I < F -> vdb_store(V, I, L, Vdb);
-	{V,F,L} -> Vdb;
+	{V,_,_} -> Vdb;
 	error -> vdb_store(V, I, I, Vdb)
     end.
 
@@ -442,7 +437,7 @@ new_vars(Vs, I, Vdb0) ->
 use_var(V, I, Vdb) ->
     case vdb_find(V, Vdb) of
 	{V,F,L} when I > L -> vdb_store(V, F, I, Vdb);
-	{V,F,L} -> Vdb;
+	{V,_,_} -> Vdb;
 	error -> vdb_store(V, I, I, Vdb)
     end.
 
@@ -467,10 +462,10 @@ vdb_find(V, Vdb) ->
 %vdb_find(V, [{V1,F,L}=Vd|Vdb]) when V > V1 -> vdb_find(V, Vdb);
 %vdb_find(V, []) -> error.
 
-vdb_store(V, F, L, [{V1,F1,L1}=Vd|Vdb]) when V > V1 ->
+vdb_store(V, F, L, [{V1,_,_}=Vd|Vdb]) when V > V1 ->
     [Vd|vdb_store(V, F, L, Vdb)];
-vdb_store(V, F, L, [{V1,F1,L1}=Vd|Vdb]) when V < V1 -> [{V,F,L},Vd|Vdb];
-vdb_store(V, F, L, [{V1,F1,L1}=Vd|Vdb]) -> [{V,F,L}|Vdb]; %V == V1
+vdb_store(V, F, L, [{V1,_,_}=Vd|Vdb]) when V < V1 -> [{V,F,L},Vd|Vdb];
+vdb_store(V, F, L, [{_V1,_,_}|Vdb]) -> [{V,F,L}|Vdb]; %V == V1
 vdb_store(V, F, L, []) -> [{V,F,L}].
 
 %% vdb_sub(Min, Max, Vdb) -> Vdb.

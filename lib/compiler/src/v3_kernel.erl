@@ -54,7 +54,7 @@
 %%
 %% Letrec's are handled rather naively.  All the functions in one
 %% letrec are handled as one block to find the free variables.  While
-%% this is not optimal it reflects how letrec's oftern are used.  We
+%% this is not optimal it reflects how letrec's often are used.  We
 %% don't have to worry about variable shadowing and nested letrec's as
 %% this is handled in the variable/function name translation.  There
 %% is a little bit of trickery to ensure letrec transformations fit
@@ -121,7 +121,7 @@ function(#c_def{anno=Af,name=#c_fname{id=F,arity=Arity},val=Body}, St0) ->
     %%ok = io:fwrite("kern: ~p~n", [{F,Arity}]),
     St1 = St0#kern{func={F,Arity},vcount=0,fcount=0,ds=sets:new()},
     {#ifun{anno=Ab,vars=Kvs,body=B0},[],St2} = expr(Body, new_sub(), St1),
-    {B1,Bu,St3} = ubody(B0, return, St2),
+    {B1,_,St3} = ubody(B0, return, St2),
     %%B1 = B0, St3 = St2,				%Null second pass
     {#k_fdef{anno=#k{us=[],ns=[],a=Af ++ Ab},
 	     func=F,arity=Arity,vars=Kvs,body=B1},St3}.
@@ -135,7 +135,7 @@ body(#c_values{anno=A,es=Ces}, Sub, St0) ->
     {Kes,Pe,St1} = atomic_list(Ces, Sub, St0),
     %%{Kes,Pe,St1} = expr_list(Ces, Sub, St0),
     {#ivalues{anno=A,args=Kes},Pe,St1};
-body(#ireceive_next{anno=A}, Sub, St) ->
+body(#ireceive_next{anno=A}, _, St) ->
     {#k_receive_next{anno=A},[],St};
 body(Ce, Sub, St0) ->
     expr(Ce, Sub, St0).
@@ -166,14 +166,14 @@ ungexpr(#c_cons{hd=H,tl=T}=Cons, Vbs) ->
     Cons#c_cons{hd=ungexpr(H, Vbs),tl=ungexpr(T, Vbs)};
 ungexpr(#c_tuple{es=Es}=Tup, Vbs) ->
     Tup#c_tuple{es=ungexpr_list(Es, Vbs)};
-ungexpr(#c_let{vars=[V],arg=A0,body=B}=Let, Vbs0) ->
+ungexpr(#c_let{vars=[V],arg=A0,body=B}, Vbs0) ->
     A1 = ungexpr(A0, Vbs0),
     Vbs1 = orddict:store(V#c_var.name, A1, Vbs0),
     ungexpr(B, Vbs1);
 ungexpr(#c_seq{arg=Arg,body=Body}=Seq, Vbs) ->
     Seq#c_seq{arg=ungexpr(Arg, Vbs),
 	      body=ungexpr(Body, Vbs)};
-ungexpr(#c_let{vars=Vs,arg=A,body=B}=Let, Vbs) ->
+ungexpr(#c_let{arg=A,body=B}=Let, Vbs) ->
     %% Difficult to get bindings so leave as let.
     Let#c_let{arg=ungexpr(A, Vbs),
 	      body=ungexpr(B, Vbs)};
@@ -190,7 +190,7 @@ ungexpr(#c_try{expr=B,body=#c_atom{val=false}}=Prot, Vbs) ->
 			     false -> Acc
 			 end
 		 end, Prot#c_try{expr=ungexpr(B, [])}, Vbs);
-ungexpr(E, Vbs) ->
+ungexpr(E, _Vbs) ->
     case core_lib:is_atomic(E) of
 	true -> E;
 	false ->
@@ -236,10 +236,16 @@ gexpr(#c_try{expr=Ce,body=#c_atom{val=false}}, Sub, St0) ->
 gexpr(Ce, Sub, St0) ->
     %% Now we break out of our special handling.
     %%ok = io:fwrite("~w: ~p~n", [?LINE,Ce]),
-    {Ke,Pe,St1} = body(Ce, Sub, St0),
-    {Ge,St2} = gexpr_test(Ke, St1),
-    %%ok = io:fwrite("~w: ~p~n", [?LINE,pre_seq(Pe, Ge)]),
-    {pre_seq(Pe, Ge),St2}.
+    case body(Ce, Sub, St0) of
+	{_,[#iset{arg=#k_call{op=#k_remote{mod=#k_atom{val=erlang},
+ 					   name=#k_atom{val=fault},
+					   arity=1}}}|_],_} ->
+	    {#k_atom{val=false},St0};
+	{Ke,Pe,St1} ->
+	    {Ge,St2} = gexpr_test(Ke, St1),
+	    %%ok = io:fwrite("~w: ~p~n", [?LINE,pre_seq(Pe, Ge)]),
+	    {pre_seq(Pe, Ge),St2}
+    end.
 
 gexpr_and(#c_call{module=#c_atom{val='erlang'},
 		  name=#c_atom{val='and'},
@@ -297,17 +303,17 @@ gexpr_test_add(Ke, St0) ->
 
 expr(#c_var{anno=A,name=V}, Sub, St) ->
     {#k_var{anno=A,name=get_vsub(V, Sub)},[],St};
-expr(#c_char{anno=A,val=C}, Sub, St) ->
+expr(#c_char{anno=A,val=C}, _Sub, St) ->
     {#k_int{anno=A,val=C},[],St};		%Convert to integers!
-expr(#c_int{anno=A,val=I}, Sub, St) ->
+expr(#c_int{anno=A,val=I}, _Sub, St) ->
     {#k_int{anno=A,val=I},[],St};
-expr(#c_float{anno=A,val=F}, Sub, St) ->
+expr(#c_float{anno=A,val=F}, _Sub, St) ->
     {#k_float{anno=A,val=F},[],St};
-expr(#c_atom{anno=A,val=At}, Sub, St) ->
+expr(#c_atom{anno=A,val=At}, _Sub, St) ->
     {#k_atom{anno=A,val=At},[],St};
-expr(#c_string{anno=A,val=S}, Sub, St) ->
+expr(#c_string{anno=A,val=S}, _Sub, St) ->
     {#k_string{anno=A,val=S},[],St};
-expr(#c_nil{anno=A}, Sub, St) ->
+expr(#c_nil{anno=A}, _Sub, St) ->
     {#k_nil{anno=A},[],St};
 expr(#c_cons{anno=A,hd=Ch,tl=Ct}, Sub, St0) ->
     %% Do cons in two steps, first the expressions left to right, then
@@ -321,9 +327,18 @@ expr(#c_tuple{anno=A,es=Ces}, Sub, St0) ->
     {Kes,Ep,St1} = atomic_list(Ces, Sub, St0),
     {#k_tuple{anno=A,es=Kes},Ep,St1};
 expr(#c_binary{anno=A,segs=Cv}, Sub, St0) ->
-    {Kv,Ep,St1} = atomic_bin(Cv, Sub, St0, 0),
-    {#k_binary{anno=A,segs=Kv},Ep,St1};
-expr(#c_fname{anno=A,id=F,arity=Ar}=Fname, Sub, St) ->
+    case catch atomic_bin(Cv, Sub, St0, 0) of
+	{'EXIT',R} -> exit(R);
+	bad_element_size ->
+	    Erl = #c_atom{val=erlang},
+	    Name = #c_atom{val=fault},
+	    Args = [#c_atom{val=badarg}],
+	    Fault = #c_call{module=Erl,name=Name,args=Args},
+	    expr(Fault, Sub, St0);
+	{Kv,Ep,St1} ->
+	    {#k_binary{anno=A,segs=Kv},Ep,St1}
+    end;
+expr(#c_fname{anno=A,arity=Ar}=Fname, Sub, St) ->
     %% A local in an expression.
     %% For now, these are wrapped into a fun by reverse
     %% etha-conversion, but really, there should be exactly one
@@ -338,7 +353,7 @@ expr(#c_fun{anno=A,vars=Cvs,body=Cb}, Sub0, St0) ->
     %%ok = io:fwrite("~w: ~p~n", [?LINE,{{Cvs,Sub0,St0},{Kvs,Sub1,St1}}]),
     {Kb,Pb,St2} = body(Cb, Sub1, St1),
     {#ifun{anno=A,vars=Kvs,body=pre_seq(Pb, Kb)},[],St2};
-expr(#c_seq{anno=A,arg=Ca,body=Cb}, Sub, St0) ->
+expr(#c_seq{arg=Ca,body=Cb}, Sub, St0) ->
     {Ka,Pa,St1} = body(Ca, Sub, St0),
     case is_exit_expr(Ka) of
 	true -> {Ka,Pa,St1};
@@ -356,11 +371,11 @@ expr(#c_let{anno=A,vars=Cvs,arg=Ca,body=Cb}, Sub0, St0) ->
 	    %%ok = io:fwrite("~w: ~p~n", [?LINE,{Kps,Sub1,St1,St2}]),
 	    %% Break known multiple values into separate sets.
 	    Sets = case Ka of
-		       #ivalues{args=Kas}=Br ->
+		       #ivalues{args=Kas} ->
 			   foldr2(fun (V, Val, Sb) ->
 					  [#iset{vars=[V],arg=Val}|Sb] end,
 				  [], Kps, Kas);
-		       Other ->
+		       _Other ->
 			   [#iset{anno=A,vars=Kps,arg=Ka}]
 		   end,
 	    {Kb,Pb,St3} = body(Cb, Sub1, St2),
@@ -383,7 +398,7 @@ expr(#c_letrec{anno=A,defs=Cfs,body=Cb}, Sub0, St0) ->
 			 end, St1, Fs0),
     {Kb,Pb,St3} = body(Cb, Sub1, St2),
     {Kb,[#iletrec{anno=A,defs=Fs1}|Pb],St3};
-expr(#c_case{anno=A,arg=Ca,clauses=Ccs}, Sub, St0) ->
+expr(#c_case{arg=Ca,clauses=Ccs}, Sub, St0) ->
     {Ka,Pa,St1} = body(Ca, Sub, St0),		%This is a body!
     {Kvs,Pv,St2} = match_vars(Ka, St1),		%Must have variables here!
     {Km,St3} = kmatch(Kvs, Ccs, Sub, St2),
@@ -423,15 +438,15 @@ expr(#c_call{anno=A,module=M0,name=F0,args=Cargs}, Sub, St0) ->
 				   args=Kargs}
 		   end,
 	    {Call,Ap,St1};
-	Other when St0#kern.extinstr == false -> %Old explicit apply
+	_Other when St0#kern.extinstr == false -> %Old explicit apply
 	    Call = #c_call{anno=A,
 			   module=#c_atom{val=erlang},
 			   name=#c_atom{val=apply},
 			   args=[M0,F0,make_list(Cargs)]},
 	    expr(Call, Sub, St0);
-	Other ->				%New instruction in R8.
+	_Other ->				%New instruction in R8.
 	    Call = #k_call{anno=A,
-			   op=#k_remote{mod=M0,name=F0,arity=Ar},
+			   op=#k_remote{mod=M1,name=F1,arity=Ar},
 			   args=Kargs},
 	    {Call,Ap,St1}
     end;
@@ -457,16 +472,16 @@ expr(#c_try{expr=Ce,body=#c_atom{val=false}}, Sub, St0) ->
     {Ke,Ep,St1} = body(Ce, Sub, St0),
     {#k_protected{body=pre_seq(Ep, Ke)},[],St1};
 %% Handle internal expressions.
-expr(#ireceive_accept{anno=A}, Sub, St) -> {#k_receive_accept{anno=A},[],St};
-expr(#ireceive_reject{anno=A}, Sub, St) -> {#k_receive_reject{anno=A},[],St}.
+expr(#ireceive_accept{anno=A}, _Sub, St) -> {#k_receive_accept{anno=A},[],St};
+expr(#ireceive_reject{anno=A}, _Sub, St) -> {#k_receive_reject{anno=A},[],St}.
 
 %% expr_list([Cexpr], Sub, State) -> {[Kexpr],[PreKexpr],State}.
 
-expr_list(Ces, Sub, St) ->
-    foldr(fun (Ce, {Kes,Esp,St0}) ->
-		  {Ke,Ep,St1} = expr(Ce, Sub, St0),
-		  {[Ke|Kes],Ep ++ Esp,St1}
-	  end, {[],[],St}, Ces).
+% expr_list(Ces, Sub, St) ->
+%     foldr(fun (Ce, {Kes,Esp,St0}) ->
+% 		  {Ke,Ep,St1} = expr(Ce, Sub, St0),
+% 		  {[Ke|Kes],Ep ++ Esp,St1}
+% 	  end, {[],[],St}, Ces).
 
 %% match_vars(Kexpr, State) -> {[Kvar],[PreKexpr],State}.
 %%  Force return from body into a list of variables.
@@ -520,22 +535,28 @@ force_atomic(Ke, St0) ->
 	    {V,[#iset{vars=[V],arg=Ke}],St1}
     end.
 
-force_atomic_list(Kes, St) ->
-    foldr(fun (Ka, {As,Asp,St0}) ->
-		  {A,Ap,St1} = force_atomic(Ka, St0),
-		  {[A|As],Ap ++ Asp,St1}
-	  end, {[],[],St}, Kes).
+% force_atomic_list(Kes, St) ->
+%     foldr(fun (Ka, {As,Asp,St0}) ->
+% 		  {A,Ap,St1} = force_atomic(Ka, St0),
+% 		  {[A|As],Ap ++ Asp,St1}
+% 	  end, {[],[],St}, Kes).
 
 atomic_bin([#c_bin_seg{anno=A,val=E0,size=S0,unit=U,type=T,flags=Fs0}|Es0],
 	   Sub, St0, B0) ->
     {E,Ap1,St1} = atomic(E0, Sub, St0),
     {S1,Ap2,St2} = atomic(S0, Sub, St1),
+    validate_bin_element_size(S1),
     {B1,Fs1} = aligned(B0, S1, U, Fs0),
     {Es,Ap3,St3} = atomic_bin(Es0, Sub, St2, B1),
     {#k_bin_seg{anno=A,size=S1,unit=U,type=T,flags=Fs1,seg=E,next=Es},
      Ap1++Ap2++Ap3,St3};
-atomic_bin([], Sub, St, Bits) -> {#k_bin_end{},[],St}.
+atomic_bin([], _Sub, St, _Bits) -> {#k_bin_end{},[],St}.
 
+validate_bin_element_size(#k_var{}) -> ok;
+validate_bin_element_size(#k_int{val=V}) when V >= 0 -> ok;
+validate_bin_element_size(#k_atom{val=all}) -> ok;
+validate_bin_element_size(_) -> throw(bad_element_size).
+    
 %% atomic_list([Cexpr], Sub, State) -> {[Kexpr],[PreKexpr],State}.
 
 atomic_list(Ces, Sub, St) ->
@@ -554,7 +575,7 @@ is_atomic(#k_atom{}) -> true;
 %%is_atomic(#k_string{}) -> true;
 is_atomic(#k_nil{}) -> true;
 is_atomic(#k_var{}) -> true;
-is_atomic(Other) -> false.
+is_atomic(_) -> false.
 
 %% variable(Cexpr, Sub, State) -> {Kvar,[PreKexpr],State}.
 %%  Convert a Core expression making sure the result is a variable.
@@ -592,7 +613,7 @@ pattern(#c_float{anno=A,val=F}, Sub, St) ->
     {#k_float{anno=A,val=F},Sub,St};
 pattern(#c_atom{anno=A,val=At}, Sub, St) ->
     {#k_atom{anno=A,val=At},Sub,St};
-pattern(#c_string{anno=A,val=S}, Sub, St) ->
+pattern(#c_string{val=S}, Sub, St) ->
     L = foldr(fun (C, T) -> #k_cons{hd=#k_int{val=C},tl=T} end,
 	      #k_nil{}, S),
     {L,Sub,St};
@@ -630,7 +651,7 @@ pattern_bin([#c_bin_seg{anno=A,val=E0,size=S0,unit=U,type=T,flags=Fs0}|Es0],
     {Es,Sub2,St3} = pattern_bin(Es0, Sub1, St2, B1),
     {#k_bin_seg{anno=A,size=S1,unit=U,type=T,flags=Fs1,seg=E,next=Es},
      Sub2,St3};
-pattern_bin([], Sub, St, Bits) -> {#k_bin_end{},Sub,St}.
+pattern_bin([], Sub, St, _Bits) -> {#k_bin_end{},Sub,St}.
 
 %% pattern_list([Cexpr], Sub, State) -> {[Kexpr],Sub,State}.
 
@@ -662,8 +683,8 @@ set_vsub(V, S, Vsub) ->
 
 subst_vsub(V, S, Vsub0) ->
     %% Fold chained substitutions.
-    Vsub1 = orddict:map(fun (O, V1) when V1 =:= V -> S;
-			    (O, V1) -> V1
+    Vsub1 = orddict:map(fun (_, V1) when V1 =:= V -> S;
+			    (_, V1) -> V1
 			end, Vsub0),
     orddict:store(V, S, Vsub1).
 
@@ -732,25 +753,25 @@ is_remote_bif(erlang, N, A) ->
 			arith -> true;
 			bool -> true;
 			comp -> true;
-			Other -> false		%List, send or not an op
+			_Other -> false		%List, send or not an op
 		    end
 	    end
     end;
-is_remote_bif(M, N, A) -> false.
+is_remote_bif(_, _, _) -> false.
 
 is_internal_bif(dsetelement, 3) -> true;
-is_internal_bif(N, A) -> false.
+is_internal_bif(_, _) -> false.
 
 %% bif_vals(Name, Arity) -> integer().
 %% bif_vals(Mod, Name, Arity) -> integer().
 %%  Determine how many return values a BIF has.  Provision for BIFs to
-%%  return multiple values.  Only used in bodies where a BIF maybe
+%%  return multiple values.  Only used in bodies where a BIF may be
 %%  called for effect only.
 
 bif_vals(dsetelement, 3) -> 0;
-bif_vals(N, A) -> 1.
+bif_vals(_, _) -> 1.
 
-bif_vals(M, N, A) -> 1.
+bif_vals(_, _, _) -> 1.
 
 %% foldr2(Fun, Acc, List1, List2) -> Acc.
 %%  Fold over two lists.
@@ -758,15 +779,15 @@ bif_vals(M, N, A) -> 1.
 foldr2(Fun, Acc0, [E1|L1], [E2|L2]) ->
     Acc1 = Fun(E1, E2, Acc0),
     foldr2(Fun, Acc1, L1, L2);
-foldr2(Fun, Acc, [], []) -> Acc.
+foldr2(_, Acc, [], []) -> Acc.
 
 %% first([A]) -> [A].
 %% last([A]) -> A.
 
 last([L]) -> L;
-last([H|T]) -> last(T).
+last([_|T]) -> last(T).
 
-first([L]) -> [];
+first([_]) -> [];
 first([H|T]) -> [H|first(T)].
 
 %% This code implements the algorithm for an optimizing compiler for
@@ -887,7 +908,7 @@ guard_value(#c_call{module=#c_atom{val=erlang},
 	unknown ->
 	    case guard_value(Cb) of
 		false -> false;
-		Other -> unknown
+		_Other -> unknown
 	    end
     end;
 guard_value(#c_call{module=#c_atom{val=erlang},
@@ -899,12 +920,12 @@ guard_value(#c_call{module=#c_atom{val=erlang},
 	unknown ->
 	    case guard_value(Cb) of
 		true -> true;
-		Other -> unknown
+		_Other -> unknown
 	    end
     end;
 guard_value(#c_try{expr=E,body=#c_atom{val=false}}) ->
     guard_value(E);    % Simple check in protected
-guard_value(Other) -> unknown.
+guard_value(_) -> unknown.
 
 %% partition([Clause]) -> [[Clause]].
 %%  Partition a list of clauses into groups which either contain
@@ -997,7 +1018,7 @@ select(T, Cs) -> [ C || C <- Cs, clause_con(C) == T ].
 %%  At this point all the clauses have the same constructor, we must
 %%  now separate them according to value.
 
-match_value(Us, T, [], Def, St) -> {[],St};
+match_value(_, _, [], _, St) -> {[],St};
 match_value(Us, T, Cs0, Def, St0) ->
     Css = group_value(T, Cs0),
     %%ok = io:format("match_value ~p ~p~n", [T, Css]),
@@ -1019,11 +1040,11 @@ group_value(k_binary, Cs) -> [Cs];
 group_value(k_bin_end, Cs) -> [Cs];
 group_value(k_bin_seg, Cs) ->
     group_bin_seg(Cs);
-group_value(T, Cs) ->
+group_value(_, Cs) ->
     %% group_value(Cs).
     Cd = foldl(fun (C, Gcs0) -> dict:append(clause_val(C), C, Gcs0) end,
 	       dict:new(), Cs),
-    dict:fold(fun (V, Vcs, Css) -> [Vcs|Css] end, [], Cd).
+    dict:fold(fun (_, Vcs, Css) -> [Vcs|Css] end, [], Cd).
 
 group_bin_seg([C1|Cs]) ->
     V1 = clause_val(C1),
@@ -1045,18 +1066,18 @@ group_bin_seg([]) -> [].
 %%  select clause for this value and continue matching.  Rename
 %%  aliases as well.
 
-match_clause([U|Us], T, Cs0, Def, St0) ->
+match_clause([U|Us], _, Cs0, Def, St0) ->
     {Match,Vs,St1} = get_match(get_con(Cs0), St0),
     {Cs1,St2} = new_clauses(Cs0, U, St1),
     {B,St3} = match(Vs ++ Us, Cs1, Def, St2),
     {#k_val_clause{val=Match,body=B},St3}.
 
-get_con([C|Cs]) -> arg_arg(clause_arg(C)).	%Get the constructor
+get_con([C|_]) -> arg_arg(clause_arg(C)).	%Get the constructor
 
 get_match(#k_cons{}, St0) ->
     {[H,T],St1} = new_vars(2, St0),
     {#k_cons{hd=H,tl=T},[H,T],St1};
-get_match(M=#k_binary{}, St0) ->
+get_match(#k_binary{}, St0) ->
     {[V]=Mes,St1} = new_vars(1, St0),
     {#k_binary{segs=V},Mes,St1};
 get_match(#k_bin_seg{}=Seg, St0) ->
@@ -1075,7 +1096,7 @@ new_clauses(Cs0, U, St) ->
 				 #k_tuple{es=Es} -> Es ++ As;
 				 #k_binary{segs=E}  -> [E|As];
 				 #k_bin_seg{seg=S,next=N} -> [S,N|As];
-				 Other -> As
+				 _Other -> As
 			     end,
 		      Vs = arg_alias(Arg),
 		      Sub1 = foldl(fun (#k_var{name=V}, Acc) ->
@@ -1112,7 +1133,7 @@ build_alt(First, Then) -> #k_alt{first=First,then=Then}.
 build_match(Us, #k_alt{}=Km) -> #k_match{vars=Us,body=Km};
 build_match(Us, #k_select{}=Km) -> #k_match{vars=Us,body=Km};
 build_match(Us, #k_guard{}=Km) -> #k_match{vars=Us,body=Km};
-build_match(Us, Km) -> Km.
+build_match(_, Km) -> Km.
 
 %% clause_arg(Clause) -> FirstArg.
 %% clause_con(Clause) -> Constructor.
@@ -1137,7 +1158,7 @@ arg_arg(#ialias{pat=Con}) -> Con;
 arg_arg(Con) -> Con.
 
 arg_alias(#ialias{vars=As}) -> As;
-arg_alias(Con) -> [].
+arg_alias(_Con) -> [].
 
 arg_con(Arg) ->
     case arg_arg(Arg) of
@@ -1163,7 +1184,7 @@ arg_val(Arg) ->
 	#k_tuple{es=Es} -> length(Es);
 	#k_bin_seg{size=S,unit=U,type=T,flags=Fs} -> {S,U,T,Fs};
 	#k_bin_end{} -> 0;
-	#k_binary{segs=Es} -> 0
+	#k_binary{} -> 0
     end.
 
 %% ubody(Expr, Break, State) -> {Expr,[UsedVar],State}.
@@ -1181,7 +1202,7 @@ arg_val(Arg) ->
 % 	    Used = union(Eu, subtract(Bu, Ns)),
 % 	    {#k_seq{anno=#k{us=Used,ns=Ns,a=A},arg=E1,body=B1},Used,St2}
 %     end;
-ubody(#iset{anno=A,vars=[],arg=#iletrec{}=Let,body=B0}, Br, St0) ->
+ubody(#iset{vars=[],arg=#iletrec{}=Let,body=B0}, Br, St0) ->
     %% An iletrec{} should never be last.
     St1 = iletrec_funs(Let, St0),
     ubody(B0, Br, St1);
@@ -1194,7 +1215,7 @@ ubody(#iset{anno=A,vars=Vs,arg=E0,body=B0}, Br, St0) ->
 ubody(#ivalues{anno=A,args=As}, return, St) ->
     Au = lit_list_vars(As),
     {#k_return{anno=#k{us=Au,ns=[],a=A},args=As},Au,St};
-ubody(#ivalues{anno=A,args=As}, {break,Vbs}, St) ->
+ubody(#ivalues{anno=A,args=As}, {break,_Vbs}, St) ->
     Au = lit_list_vars(As),
     {#k_break{anno=#k{us=Au,ns=[],a=A},args=As},Au,St};
 ubody(E, return, St0) ->
@@ -1215,10 +1236,10 @@ ubody(E, {break,Rs}, St0) ->
 	    ubody(pre_seq(Pa, #ivalues{args=[Ea]}), {break,Rs}, St1)
     end.
 
-iletrec_funs(#iletrec{anno=A,defs=Fs}, St0) ->
+iletrec_funs(#iletrec{defs=Fs}, St0) ->
     %% Use union of all free variables.
     %% First just work out free variables for all functions.
-    Free = foldl(fun ({N,#ifun{vars=Vs,body=Fb0}}, Free0) ->
+    Free = foldl(fun ({_,#ifun{vars=Vs,body=Fb0}}, Free0) ->
 			 {_,Fbu,_} = ubody(Fb0, return, St0),
 			 Ns = lit_list_vars(Vs),
 			 Free1 = subtract(Fbu, Ns),
@@ -1231,7 +1252,7 @@ iletrec_funs(#iletrec{anno=A,defs=Fs}, St0) ->
 		end, St0, Fs),
     %% Now regenerate local functions to use free variable information.
     St2 = foldl(fun ({N,#ifun{anno=Fa,vars=Vs,body=Fb0}}, Lst0) ->
-			{Fb1,Fbu,Lst1} = ubody(Fb0, return, Lst0),
+			{Fb1,_,Lst1} = ubody(Fb0, return, Lst0),
 			Arity = length(Vs) + length(FreeVs),
 			Fun = #k_fdef{anno=#k{us=[],ns=[],a=Fa},
 				      func=N,arity=Arity,
@@ -1247,7 +1268,7 @@ is_exit_expr(#k_call{op=#k_remote{mod=erlang,name=exit,arity=1}}) -> true;
 is_exit_expr(#k_call{op=#k_remote{mod=erlang,name=fault,arity=1}}) -> true;
 is_exit_expr(#k_call{op=#k_internal{name=match_fail,arity=1}}) -> true;
 is_exit_expr(#k_receive_next{}) -> true;
-is_exit_expr(Other) -> false.
+is_exit_expr(_) -> false.
 
 %% is_enter_expr(Kexpr) -> bool().
 %%  Test whether Kexpr is "enterable", i.e. can handle return from
@@ -1257,7 +1278,7 @@ is_enter_expr(#k_call{}) -> true;
 is_enter_expr(#k_match{}) -> true;
 is_enter_expr(#k_receive{}) -> true;
 is_enter_expr(#k_receive_next{}) -> true;
-is_enter_expr(Other) -> false.
+is_enter_expr(_) -> false.
 
 %% uguard(Expr, State) -> {Expr,[UsedVar],State}.
 %%  Tag the guard sequence with its used variables.
@@ -1366,11 +1387,11 @@ uexpr(#k_receive{anno=A,var=V,body=B0,timeout=T,action=A0}, Br, St0) ->
     {#k_receive{anno=#k{us=Used,ns=lit_list_vars(Rs),a=A},
 		var=V,body=B1,timeout=T,action=A1,ret=Rs},
      Used,St2};
-uexpr(#k_receive_accept{anno=A}, Br, St) ->
+uexpr(#k_receive_accept{anno=A}, _, St) ->
     {#k_receive_accept{anno=#k{us=[],ns=[],a=A}},[],St};
-uexpr(#k_receive_reject{anno=A}, Br, St) ->
+uexpr(#k_receive_reject{anno=A}, _, St) ->
     {#k_receive_reject{anno=#k{us=[],ns=[],a=A}},[],St};
-uexpr(#k_receive_next{anno=A}, Br, St) ->
+uexpr(#k_receive_next{anno=A}, _, St) ->
     {#k_receive_next{anno=#k{us=[],ns=[],a=A}},[],St};
 uexpr(#k_catch{anno=A,body=B0}, {break,Rs0}, St0) ->
     {Rb,St1} = new_var(St0),
@@ -1550,9 +1571,9 @@ aligned(B, S, U, Fs) ->
     {incr_bits(B, S, U),Fs}.
 
 incr_bits(B, #k_int{val=S}, U) when integer(B) -> B + S*U;
-incr_bits(B, #k_atom{val=all}, U) -> 0;		%Always aligned
-incr_bits(B, S, 8) -> B;
-incr_bits(B, S, U) -> unknown.
+incr_bits(_, #k_atom{val=all}, _) -> 0;		%Always aligned
+incr_bits(B, _, 8) -> B;
+incr_bits(_, _, _) -> unknown.
 
 make_list(Es) ->
     foldr(fun (E, Acc) -> #c_cons{hd=E,tl=Acc} end, #c_nil{}, Es).
@@ -1561,4 +1582,4 @@ make_list(Es) ->
 
 integers(N, M) when N =< M ->
     [N|integers(N + 1, M)];
-integers(N, M) -> [].
+integers(_, _) -> [].

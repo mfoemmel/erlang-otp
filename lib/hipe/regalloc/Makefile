@@ -44,7 +44,8 @@ MODULES = hipe_degree hipe_ig hipe_ig_moves hipe_moves \
 	  hipe_coalescing_regalloc \
 	  hipe_graph_coloring_regalloc \
 	  hipe_ls_regalloc \
-	  hipe_sparc_specific hipe_x86_specific \
+	  hipe_sparc_specific hipe_sparc_specific_fp \
+	  hipe_x86_specific hipe_x86_specific_fp
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
@@ -94,5 +95,6 @@ release_spec: opt
 release_docs_spec:
 
 $(EBIN)/hipe_coalescing_regalloc.beam: ../main/hipe.hrl
-$(EBIN)/hipe_ls_regalloc.beam: ../main/hipe.hrl
-$(EBIN)/hipe_ls_uc_regalloc.beam: ../main/hipe.hrl
+$(EBIN)/hipe_ls_regalloc.beam: ../main/hipe.hrl ../util/hipe_vector.hrl
+$(EBIN)/hipe_ls_uc_regalloc.beam: ../main/hipe.hrl ../util/hipe_vector.hrl
+$(EBIN)/hipe_temp_map: ../main/hipe.hrl

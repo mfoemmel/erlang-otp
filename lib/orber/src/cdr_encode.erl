@@ -90,11 +90,11 @@ enc_parameters(_, [], [], Message, Len) ->
 enc_parameters(_, [], P, _, _) -> 
     orber:debug_level_print("[~p] cdr_encode:encode_parameters(~p); to many parameters.", 
 			    [?LINE, P], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=103, completion_status=?COMPLETED_MAYBE});
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 17), completion_status=?COMPLETED_MAYBE});
 enc_parameters(_, _, [], TC, _) -> 
     orber:debug_level_print("[~p] cdr_encode:encode_parameters(~p); to few parameters.", 
 			    [?LINE, TC], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=103, completion_status=?COMPLETED_MAYBE});
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 17), completion_status=?COMPLETED_MAYBE});
 enc_parameters(Version, [PT1 |TypeList], [ P1 | Parameters], Message, Len) ->
     {Message1, Len1} = enc_type(PT1, Version, P1, Message, Len),
     enc_parameters(Version, TypeList, Parameters, Message1, Len1).
@@ -208,6 +208,17 @@ enc_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_CodeSets,
     Bytes = list_to_binary(lists:reverse(Bytes1)),
     enc_used_contexts(Version, T, 
 		      [#'IOP_ServiceContext'{context_id=?IOP_CodeSets,
+					     context_data = Bytes}|Ctxs]);
+enc_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_BI_DIR_IIOP,
+						  context_data = BiDirCtx}|T], 
+		  Ctxs) ->
+    %% Encode ByteOrder
+    {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
+    {Bytes1, Len1} = enc_type(?IIOP_BIDIRIIOPSERVICECONTEXT, Version, BiDirCtx, 
+			      Bytes0, Len0),
+    Bytes = list_to_binary(lists:reverse(Bytes1)),
+    enc_used_contexts(Version, T, 
+		      [#'IOP_ServiceContext'{context_id=?IOP_BI_DIR_IIOP,
 					     context_data = Bytes}|Ctxs]);
 enc_used_contexts(Version, [H|T], Ctxs) ->
     enc_used_contexts(Version, T, [H|Ctxs]).
@@ -389,16 +400,13 @@ enc_locate_reply(Version, RequestId, LocStatus, TypeCode, Data) ->
     enc_giop_message_header(Version, 'locate_reply', Flags, Len2 - ?GIOP_HEADER_SIZE, 
 			    lists:reverse(Message2)).
 
-enc_locate_reply_body(Version, TypeCode, Data, Message, Len) when Version == {1,2} ->
+enc_locate_reply_body(Version, TypeCode, Data, Message, Len) ->
     %% In CORBA-2.3.1 the LocateReply body didn't align the body (8-octet
     %% boundry) for IIOP-1.2. This have been changed in later specs.
     %% Un-comment the line below when we want to be CORBA-2.4 compliant.
-    %% DO NOT forget to change Rest to Rest1 and Len to Len1!!!!!!!!!!
-%    {Message1, Len1} = enc_align(Message, Len, 8),
-    enc_type(TypeCode, Version, Data, Message, Len);
-enc_locate_reply_body(Version, TypeCode, Data, Message, Len) ->
+    %% But in CORB-2.6 this was changed once again (i.e. no alignment).
+    %% The best solution is to keep it as is.
     enc_type(TypeCode, Version, Data, Message, Len).
-    
 
 enc_locate_status(Version, Status, Mess, Len) ->
     L = enc_giop_locate_status_type(Status),
@@ -567,9 +575,10 @@ enc_type({'tk_except', IFRId, Name, ElementList}, Version, Value, Bytes, Len) ->
     enc_exception(Version, Name, IFRId, Value, ElementList, Bytes, Len);
 enc_type({'tk_fixed', Digits, Scale}, Version, Value, Bytes, Len) ->
     enc_fixed(Version, Digits, Scale, Value, Bytes, Len);
-enc_type(Type, _, _, _, _) ->
-    orber:debug_level_print("[~p] cdr_encode:type(~p).", [?LINE, Type], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=104, completion_status=?COMPLETED_MAYBE}).
+enc_type(Type, _, Value, _, _) ->
+    orber:debug_level_print("[~p] cdr_encode:type(~p, ~p)
+Incorrect TypeCode or unsupported type.", [?LINE, Type, Value], ?DEBUG_LEVEL),
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 13), completion_status=?COMPLETED_MAYBE}).
 
 
 
@@ -672,7 +681,7 @@ enc_array(Version, Array, Size, TypeCode, Bytes, Len) when size(Array) == Size -
 enc_array(_,Array, Size, _, _, _) ->
     orber:debug_level_print("[~p] cdr_encode:enc_array(~p, ~p). Incorrect size.", 
 			    [?LINE, Array, Size], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=105, completion_status=?COMPLETED_MAYBE}).
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 15), completion_status=?COMPLETED_MAYBE}).
 
 %%-----------------------------------------------------------------
 %% Func: enc_string/4
@@ -704,7 +713,7 @@ enc_wstring(Version, String, Bytes, Len) ->
     %% The terminating null character is also a wchar.
     {cdrlib:enc_unsigned_short(0, Bytes3), Len3+2};
 enc_wstring(Version, String, Bytes, Len) ->
-    corba:raise(#'MARSHAL'{minor=105, completion_status=?COMPLETED_MAYBE}).
+    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE}).
 
 %%-----------------------------------------------------------------
 %% Func: enc_union/5
@@ -712,17 +721,19 @@ enc_wstring(Version, String, Bytes, Len) ->
 enc_union(Version, {_, Label, Value}, DiscrTC, Default, TypeCodeList, Bytes, Len) ->
     {ByteSequence, Len1} = enc_type(DiscrTC, Version, Label, Bytes, Len),
     Label2 = stringify_enum(DiscrTC,Label),
-    enc_union(Version, {Label2, Value},TypeCodeList, Default, ByteSequence, Len1).
+    enc_union2(Version, {Label2, Value},TypeCodeList, Default, 
+	      ByteSequence, Len1, undefined).
 
-enc_union(_,What, [], Default, Bytes, Len) when Default < 0 ->
+enc_union2(_,What, [], Default, Bytes, Len, _) when Default < 0 ->
     {Bytes, Len};
-enc_union(_,What, [], Default, _, _) -> 
-    orber:debug_level_print("[~p] cdr_encode:enc_union(~p). Not found.", [?LINE, What], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=106, completion_status=?COMPLETED_MAYBE});
-enc_union(Version, {Label,Value} ,[{Label, Name, Type} |List], Default, Bytes, Len) ->
+enc_union2(Version, {_, Value}, [], Default, Bytes, Len, Type) -> 
     enc_type(Type, Version, Value, Bytes, Len);
-enc_union(Version, Union,[_ | List], Default, Bytes, Len) ->
-    enc_union(Version, Union, List, Default, Bytes, Len).
+enc_union2(Version, {Label,Value} ,[{Label, Name, Type} |List], Default, Bytes, Len, _) ->
+    enc_type(Type, Version, Value, Bytes, Len);
+enc_union2(Version, Union ,[{default, Name, Type} |List], Default, Bytes, Len, _) ->
+    enc_union2(Version, Union, List, Default, Bytes, Len, Type);
+enc_union2(Version, Union,[_ | List], Default, Bytes, Len, DefaultType) ->
+    enc_union2(Version, Union, List, Default, Bytes, Len, DefaultType).
 
 stringify_enum({tk_enum, _,_,_}, Label) ->
     atom_to_list(Label);
@@ -972,7 +983,17 @@ enc_type_code({'tk_abstract_interface', RepId, Name}, Version, Message, Len) ->
     {Message1, Len1} = enc_type('tk_ulong', Version, 32, Message, Len),
     {Message2, _} = enc_byte_order(Version, []),
     {ComplexParams, Len2} = enc_type({'tk_struct', "", "", 
-				      [{"repository ID", {'tk_string', 0}},
+				      [{"RepositoryId", {'tk_string', 0}},
+				       {"name", {'tk_string', 0}}]},
+				     Version,
+				     {"", RepId, Name},
+				     Message2, 1),
+    encode_complex_tc_paramters(lists:reverse(ComplexParams), Len2, Message1, Len1);
+enc_type_code({'tk_local_interface', RepId, Name}, Version, Message, Len) ->
+    {Message1, Len1} = enc_type('tk_ulong', Version, 33, Message, Len),
+    {Message2, _} = enc_byte_order(Version, []),
+    {ComplexParams, Len2} = enc_type({'tk_struct', "", "", 
+				      [{"RepositoryId", {'tk_string', 0}},
 				       {"name", {'tk_string', 0}}]},
 				     Version,
 				     {"", RepId, Name},
@@ -987,7 +1008,7 @@ enc_type_code({'none', Indirection}, Version, Message, Len) ->  %% placeholder
 enc_type_code(Type, _, _, _) ->
     orber:debug_level_print("[~p] cdr_encode:enc_type_code(~p); No match.", 
 			    [?LINE, Type], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=108, completion_status=?COMPLETED_MAYBE}).
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 7), completion_status=?COMPLETED_MAYBE}).
 
 check_enum({'tk_enum', _, _, _}) ->
     true;

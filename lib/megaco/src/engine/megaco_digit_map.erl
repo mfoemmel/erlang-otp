@@ -71,7 +71,7 @@ parse(DigitMapBody) when list(DigitMapBody) ->
 	{error, Reason} ->
 	    {error, Reason}
     end;
-parse(DigitMapBody) ->
+parse(_DigitMapBody) ->
     {error, not_a_digit_map_body}.
 
 parse_digit_map(Chars) ->
@@ -79,7 +79,7 @@ parse_digit_map(Chars) ->
 
 parse_digit_map(Chars, Line, DS, STL) ->
     case megaco_text_scanner:skip_sep_chars(Chars, Line) of
-	{[], Line2} when DS /= [] ->
+	{[], _Line2} when DS /= [] ->
 	    case parse_digit_string(DS) of
 		{ok, DS2} ->
 		    ST = #state_transition{mode = state_dependent,
@@ -96,7 +96,7 @@ parse_digit_map(Chars, Line, DS, STL) ->
 		    parse_digit_map(Chars2, Line2, DS, STL);
 		$) when DS /= [] ->
 		    case megaco_text_scanner:skip_sep_chars(Chars2, Line2) of
-			{[], Line3} ->
+			{[], _Line3} ->
 			    case parse_digit_string(DS) of
 				{ok, DS2} ->
 				    ST = #state_transition{mode = state_dependent,
@@ -199,7 +199,7 @@ parse_digit_letter([Char | Chars], DL, DS) ->
 	BadChar ->
 	    {error, {illegal_char_between_square_brackets, BadChar}}
     end;
-parse_digit_letter([], DL, DS) ->
+parse_digit_letter([], _DL, _DS) ->
     {error, square_bracket_mismatch}.
 
 %%----------------------------------------------------------------------
@@ -252,14 +252,14 @@ eval(DigitMapBody, Timers) ->
 
 collect(Event, State, Timers, STL, Letters) ->
     case handle_event(Event, State, Timers, STL, Letters) of
-	{completed, Timers2, STL2, Letters2} ->
+	{completed, _Timers2, _STL2, Letters2} ->
 	    completed(Letters2);
 	{State2, Timers2, STL2, Letters2} ->
 	    MaxWait = choose_timer(State2, Event, Timers2),
 	    %% ok = io:format("Timer: ~p ~p~n~p~n~p~n",
 	    %%                [State2, MaxWait, Timers2, STL2]),
 	    receive
-		{?MODULE, FromPid, Event2} ->
+		{?MODULE, _FromPid, Event2} ->
 		    %% ok = io:format("Got event: ~p~n", [Event2]),
 		    collect(Event2, State2, Timers2, STL2, Letters2)
 	    after MaxWait ->
@@ -277,7 +277,7 @@ choose_timer(State, start, T) ->
 	Extra == infinity -> infinity;
 	true              -> Timer + Extra
     end;
-choose_timer(State, Event, T) ->
+choose_timer(State, _Event, T) ->
     do_choose_timer(State, T).
 
 do_choose_timer(State, T) ->
@@ -314,9 +314,9 @@ unexpected_event(Event, STL, Letters) ->
 %%----------------------------------------------------------------------
 handle_event(inter_event_timeout, optional_event, Timers, STL, Letters) ->
     {completed, Timers, STL, Letters};
-handle_event(cancel, State, Timers, STL, Letters) ->
+handle_event(cancel, _State, _Timers, STL, Letters) ->
     unexpected_event(cancel, STL, Letters);
-handle_event(start, State, Timers, STL, Letters) ->
+handle_event(start, _State, Timers, STL, Letters) ->
     {State2, Timers2, STL2} = compute(Timers, STL),
     {State2, Timers2, STL2, Letters};
 handle_event(Event, State, Timers, STL, Letters) ->
@@ -340,7 +340,7 @@ handle_event(Event, State, Timers, STL, Letters) ->
 	    end
     end.
 
-match_event(Event, [ST | OldSTL] = All, NewSTL, Collect)
+match_event(Event, [ST | OldSTL], NewSTL, Collect)
   when record(ST, state_transition) ->
     case ST#state_transition.next of
 	{single, Event} ->
@@ -354,9 +354,9 @@ match_event(Event, [ST | OldSTL] = All, NewSTL, Collect)
 	    match_event(Event, OldSTL, NewSTL, Collect)
     end;
 match_event(Event, [H | T], NewSTL, Collect) when list(H) ->
-    {NewSTL2, Letters2} = match_event(Event, H, NewSTL, Collect),
+    {NewSTL2, _Letters} = match_event(Event, H, NewSTL, Collect),
     match_event(Event, T, NewSTL2, Collect);
-match_event(Event, [], NewSTL, Collect) ->
+match_event(_Event, [], NewSTL, Collect) ->
     {NewSTL, Collect}.
     
 %%----------------------------------------------------------------------
@@ -414,7 +414,7 @@ compute_cont([Next | Cont] = All, Mode, GlobalMode, State, STL) ->
 		    {State, GlobalMode2, [ST | STL]}
 	    end
     end;
-compute_cont([], GlobalMode, Mode, _State, STL) ->
+compute_cont([], GlobalMode, _Mode, _State, STL) ->
     {optional_event, GlobalMode, STL}.
 
 make_cont(Mode, [Next | Cont2], Cont) ->
@@ -440,7 +440,7 @@ report(Pid, [H | T])->
 	{error, Reason} ->
 	    {error, Reason}
     end;
-report(Pid, [])->
+report(_Pid, [])->
     ok;
 report(Pid, Event) when pid(Pid) ->
     case Event of

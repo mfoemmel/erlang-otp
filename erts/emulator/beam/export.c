@@ -62,7 +62,9 @@ static Export*
 export_alloc(Export* tmpl)
 {
     Export* obj = (Export*) fix_alloc(export_desc);
-
+    
+    obj->fake_op_func_info_for_hipe[0] = 0;
+    obj->fake_op_func_info_for_hipe[1] = 0;
     obj->code[0] = tmpl->code[0];
     obj->code[1] = tmpl->code[1];
     obj->code[2] = tmpl->code[2];
@@ -171,10 +173,12 @@ Export*
 erts_export_put(Eterm mod, Eterm func, int arity)
 {
     Export e;
-
+    
     ASSERT(is_atom(mod));
     ASSERT(is_atom(func));
-
+    
+    e.fake_op_func_info_for_hipe[0] = 0;
+    e.fake_op_func_info_for_hipe[1] = 0;
     e.code[0] = mod;
     e.code[1] = func;
     e.code[2] = arity;

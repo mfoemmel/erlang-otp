@@ -28,6 +28,8 @@
 	 handle_event/2
 	]).
 
+-define(default_rows,50).
+
 -record(moduleInfo, {module, menubtn}).
 -record(procInfo, {pid, row}).
 -record(breakInfo, {point, status, break}).
@@ -69,7 +71,7 @@ create_win(GS, Title, Menus) ->
 			 {bg, grey}, {fg, black},
 			 {vscroll, right}, {hscroll, bottom},
 			 calc_columnwidths(736),
-			 {rows, {1,50}}]),
+			 {rows, {1,?default_rows}}]),
     gs:gridline(Grid, [{row, 1}, {bw, 5}, {fg, blue},
 		       {text, {1,"Pid"}}, {text, {2,"Initial Call"}},
 		       {text, {3,"Name"}}, {text, {4,"Status"}},
@@ -158,6 +160,9 @@ add_process(WinInfo, Pid, Name, {Mod,Func,Args}, Status, Info) ->
     Row = (WinInfo#winInfo.row)+1,
     GridLine = case gs:read(Grid, {obj_at_row, Row}) of
 		   undefined ->
+		       if Row>?default_rows -> gs:config(Grid,[{rows,{1,Row}}]);
+			  true -> ok
+		       end,
 		       gs:gridline(Grid, [{row, Row}, {bw, 5}, {fg, black},
 					  {click, true},
 					  {doubleclick, true}]);
@@ -201,17 +206,26 @@ clear_processes(WinInfo) ->
     Grid = WinInfo#winInfo.grid,
     Max = WinInfo#winInfo.row,
     clear_processes(Grid, 2, Max),
+    gs:config(Grid,[{rows,{1,?default_rows}}]),
     WinInfo#winInfo{row=1, focus=0, processes=[]}.
 
 clear_processes(Grid, Row, Max) when Row=<Max ->
     GridLine = gs:read(Grid, {obj_at_row, Row}),
+    case gs:read(GridLine,{text,4}) of
+	"exit" -> 
+	    Pid = list_to_pid(gs:read(GridLine,{text,1})),
+	    dbg_ui_winman:clear_process(dbg_ui_trace:title(Pid));
+	_ -> 
+	    ok
+    end,
+	    
     Options = [{fg, black},
 	       {{text,1}, ""}, {{text,2},""}, {{text,3},""},
 	       {{text,4}, ""}, {{text,5},""},
 	       {data, []}],
     gs:config(GridLine, Options),
     clear_processes(Grid, Row+1, Max);
-clear_processes(Grid, Row, Max) when Row>Max ->
+clear_processes(_Grid, Row, Max) when Row>Max ->
     done.
 
 %%--------------------------------------------------------------------
@@ -305,7 +319,7 @@ clear_breaks(WinInfo, Mod) ->
 handle_event({gs, _Id, configure, _Data, [W, H |_]}, WinInfo) ->
     configure(WinInfo, {W, H}),
     ignore;
-handle_event({gs, _Id, destroy, _Data, _Arg}, WinInfo) ->
+handle_event({gs, _Id, destroy, _Data, _Arg}, _WinInfo) ->
     stopped;
 handle_event({gs, _Id, motion, _Data, [X,Y]}, WinInfo) ->
     {LastX, LastY} = dbg_ui_win:motion(X, Y),
@@ -313,20 +327,20 @@ handle_event({gs, _Id, motion, _Data, [X,Y]}, WinInfo) ->
     {coords, {gs:read(Win, x)+LastX-5, gs:read(Win, y)+LastY-5}};
 
 %% Menus and keyboard shortcuts
-handle_event({gs, _Id, keypress, _Data, [Key,_,_,1]}, WinInfo) when
+handle_event({gs, _Id, keypress, _Data, [Key,_,_,1]}, _WinInfo) when
   Key/='Up', Key/='Down', Key/=p, Key/=n ->
     {shortcut, Key};
-handle_event({gs, _Id, click, {dbg_ui_winman, Win}, _Arg}, WinInfo) ->
+handle_event({gs, _Id, click, {dbg_ui_winman, Win}, _Arg}, _WinInfo) ->
     dbg_ui_winman:raise(Win),
     ignore;
-handle_event({gs, _Id, click, {menuitem, Name}, _Arg}, WinInfo) ->
+handle_event({gs, _Id, click, {menuitem, Name}, _Arg}, _WinInfo) ->
     Name;
-handle_event({gs, _Id, click, {menu, Menu}, _Arg}, WinInfo) ->
+handle_event({gs, _Id, click, {menu, Menu}, _Arg}, _WinInfo) ->
     Names = dbg_ui_win:selected(Menu),
     {Menu, Names};
-handle_event({gs, _Id, click, {break, Point, What}, _Arg}, WinInfo) ->
+handle_event({gs, _Id, click, {break, Point, What}, _Arg}, _WinInfo) ->
     {break, Point, What};
-handle_event({gs, _Id, click, {module, Mod, What}, _Arg}, WinInfo) ->
+handle_event({gs, _Id, click, {module, Mod, What}, _Arg}, _WinInfo) ->
     {module, Mod, What};
 
 %% Process grid
@@ -334,17 +348,22 @@ handle_event({gs, _Id, keypress, _Data, [Key|_]}, WinInfo) when
   Key=='Up'; Key=='Down' ->
     Dir = if Key=='Up' -> up; Key=='Down' -> down end,
     Row = move(WinInfo, Dir),
-    WinInfo2 = highlight(WinInfo, Row),
-    {value, #procInfo{pid=Pid}} =
-	lists:keysearch(Row, #procInfo.row, WinInfo#winInfo.processes),
-    {focus, Pid, WinInfo2};
+
+    if Row>1 ->
+	    WinInfo2 = highlight(WinInfo, Row),
+	    {value, #procInfo{pid=Pid}} =
+		lists:keysearch(Row, #procInfo.row, WinInfo#winInfo.processes),
+	    {focus, Pid, WinInfo2};
+       true ->
+	    ignore
+    end;
 handle_event({gs, _Id, click, {gridline, Pid}, [_Col,Row|_]}, WinInfo) ->
     WinInfo2 = highlight(WinInfo, Row),
     {focus, Pid, WinInfo2};
-handle_event({gs, _Id, doubleclick, _Data, _Arg}, WinInfo) ->
+handle_event({gs, _Id, doubleclick, _Data, _Arg}, _WinInfo) ->
     default;
 
-handle_event(GSEvent, WinInfo) ->
+handle_event(_GSEvent, _WinInfo) ->
     ignore.
 
 move(WinInfo, Dir) ->

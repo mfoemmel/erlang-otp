@@ -8,9 +8,9 @@
 %%  History  :	* 2000-09-06 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: happi $
-%%              $Date: 2001/07/25 10:32:43 $
-%%              $Revision: 1.2 $
+%%              $Author: kostis $
+%%              $Date: 2002/05/13 11:29:54 $
+%%              $Revision: 1.4 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -40,7 +40,7 @@ traverse_code([I|Is], Acc) ->
       Source = hipe_sparc:multimove_src(I),
       NewAcc = make_moves(Dests, Source, Acc, hipe_sparc:info(I), [], false),
       traverse_code(Is, NewAcc);
-    Other ->
+    _Other ->
       traverse_code(Is, [I|Acc])
   end;
 traverse_code([], Acc) ->
@@ -93,7 +93,7 @@ save([{_,S}|More] , Acc, Pos, Info) ->
       save(More,
 	   [hipe_sparc:store_create(hipe_sparc:mk_reg(hipe_sparc_registers:stack_pointer()),
 			       hipe_sparc:mk_imm(Pos * 4),
-			       uw,
+			       w,
 			       S, 
 			       Info)|Acc],
 	   Pos + 1,
@@ -154,7 +154,7 @@ spill_rewrite_mm([D|Ds], [S|Ss], Acc, Info, Mapping, Unresolved,
       case Dest of
 	{spill, Off1} ->
 	  spill_rewrite_mm(Ds, Ss, 
-			   [hipe_sparc:store_create(SpillAreaReg, hipe_sparc:mk_imm(Off1*4), uw, ScratchReg, []),
+			   [hipe_sparc:store_create(SpillAreaReg, hipe_sparc:mk_imm(Off1*4), w, ScratchReg, []),
 			    hipe_sparc:move_create(ScratchReg, S, Info)
 			    |Acc],
 			   Info,
@@ -181,8 +181,8 @@ spill_rewrite_mm([D|Ds], [S|Ss], Acc, Info, Mapping, Unresolved,
 		{spill, Off2} ->
 		  spill_rewrite_mm(Ds, Ss, 
 				   [hipe_sparc:store_create(SpillAreaReg, 
-						       hipe_sparc:mk_imm(Off1*4), uw, ScratchReg, []),
-				    hipe_sparc:load_create(ScratchReg, uw, SpillAreaReg, 
+						       hipe_sparc:mk_imm(Off1*4), w, ScratchReg, []),
+				    hipe_sparc:load_create(ScratchReg, w, SpillAreaReg, 
 						      hipe_sparc:mk_imm(Off2*4), [])|
 				    Acc], Info,
 				   Mapping, Unresolved, [D|Overwritten],
@@ -192,7 +192,7 @@ spill_rewrite_mm([D|Ds], [S|Ss], Acc, Info, Mapping, Unresolved,
 		  spill_rewrite_mm(Ds, Ss, 
 				   [hipe_sparc:store_create(SpillAreaReg, 
 							    hipe_sparc:mk_imm(Off1*4), 
-							    uw, SR, [])|Acc],
+							    w, SR, [])|Acc],
 				   Info,
 				   Mapping, Unresolved, [D|Overwritten],
 				   SpillAreaReg, ScratchReg)
@@ -236,19 +236,19 @@ save([{Dest,Source}|More], Acc, StackIndex, Info, SpillAreaReg, ScratchReg) ->
       case Source of
 	{spill, Off2} ->
 	  save(More,
-	       [hipe_sparc:store_create(SpillAreaReg, hipe_sparc:mk_imm(Off1*4), uw, ScratchReg, []),
+	       [hipe_sparc:store_create(SpillAreaReg, hipe_sparc:mk_imm(Off1*4), ScratchReg),
 		hipe_sparc:load_create(ScratchReg, uw, SP, hipe_sparc:mk_imm(StackIndex*4), [])|
 		Acc] ++
-	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex*4), uw, ScratchReg, []),
+	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex*4), ScratchReg),
 		hipe_sparc:load_create(ScratchReg, uw, SpillAreaReg, hipe_sparc:mk_imm(Off2*4), [])],
 	       StackIndex + 1, Info, SpillAreaReg, ScratchReg);
 	{reg, SourceR} ->
 	  save(More,
 	       [hipe_sparc:store_create(SpillAreaReg,hipe_sparc:mk_imm( Off1),
-				   uw, ScratchReg, []),
+				   ScratchReg),
 		hipe_sparc:load_create(ScratchReg, uw, SP, hipe_sparc:mk_imm(StackIndex*4), [])|
 		Acc] ++
-	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex*4), uw, SourceR, [])],
+	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex*4), SourceR)],
 	       StackIndex + 1, Info, SpillAreaReg, ScratchReg)
       end;
     {reg, DestR} ->
@@ -257,14 +257,14 @@ save([{Dest,Source}|More], Acc, StackIndex, Info, SpillAreaReg, ScratchReg) ->
 	  save(More,
 	       [hipe_sparc:load_create(DestR, uw, SP, hipe_sparc:mk_imm(StackIndex*4), [])|
 		Acc] ++
-	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex*4), uw, ScratchReg, []),
+	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex*4), ScratchReg),
 		hipe_sparc:load_create(ScratchReg, uw, SpillAreaReg, hipe_sparc:mk_imm(Off2*4), [])],
 	       StackIndex + 1, Info, SpillAreaReg, ScratchReg);
 	{reg, SourceR} ->
 	  save(More,
 	       [hipe_sparc:load_create(DestR, uw, SP, hipe_sparc:mk_imm(StackIndex*4), [])|
 		Acc] ++
-	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex*4), uw, SourceR, [])],
+	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex*4), SourceR)],
 	       StackIndex + 1, Info, SpillAreaReg, ScratchReg)
       end
   end;

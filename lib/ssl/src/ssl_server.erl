@@ -957,7 +957,7 @@ extension() ->
     "." ++ lists:map(fun(X) ->
 			     X + $a - $A
 		     end,
-		     erlang:info(machine)).
+		     erlang:system_info(machine)).
 
 debug_flag() ->
     get_env(debug, "-d").

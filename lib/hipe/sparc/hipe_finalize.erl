@@ -1,3 +1,12 @@
+%% -*- erlang-indent-level: 2 -*-
+%% ====================================================================
+%%  File    :  hipe_finalize
+%%  Purpose :
+%% ====================================================================
+%% @doc
+%@end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 -module(hipe_finalize).
 
 -export([straighten/2,
@@ -12,29 +21,24 @@
 %% hipe:compile({beam_inv_opcodes,opcode,1},[o2,time]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% Makes the code possible to linearize without code duplication.
-% Basic blocks are merged when possible.
-%
+%%
+%% Makes the code possible to linearize without code duplication.
+%% Basic blocks are merged when possible.
+%%
 
-straighten(CFG, Options) ->
+straighten(CFG, _Options) ->
   %% hipe_sparc_cfg:pp(CFG),
-  case property_lists:get_bool(old_straighten, Options) of
-    true ->  old_straighten(CFG);
-    false ->
-      {Low, High} = hipe_sparc_cfg:label_range(CFG),
-      hipe_gensym:set_label(High),
-      ?TIME_STMNT(Lbls = hipe_sparc_cfg:depth_first_ordering(CFG),
-		  "Ordering took: ",
-		  Otime),
-      ?TIME_STMNT(CFG1 = straighten(Lbls,CFG,CFG,none_visited()),
-		  "Straigthtening took: ",
-		  STime),
-      ?IF_DEBUG(hipe_sparc_cfg:pp(CFG1),true),
-      NewHigh = hipe_gensym:get_label(),
-      hipe_sparc_cfg:label_range_update(CFG1,{Low, NewHigh})
-  end.
-
+  {Low, High} = hipe_sparc_cfg:label_range(CFG),
+  hipe_gensym:set_label(sparc,High),
+  ?TIME_STMNT(Lbls = hipe_sparc_cfg:depth_first_ordering(CFG),
+	      "Ordering took: ",
+	      Otime),
+  ?TIME_STMNT(CFG1 = straighten(Lbls,CFG,CFG,none_visited()),
+	      "Straigthtening took: ",
+	      STime),
+  ?IF_DEBUG(hipe_sparc_cfg:pp(CFG1),true),
+  NewHigh = hipe_gensym:get_label(sparc),
+  hipe_sparc_cfg:label_range_update(CFG1,{Low, NewHigh}).
 
 
 straighten([Lbl|Ls],CFG,NewCFG,Visited) ->
@@ -54,9 +58,6 @@ straighten([Lbl|Ls],CFG,NewCFG,Visited) ->
 	    Jmp
 	end,
       FallTrough = cond_false_label(Jmp0),
-      Taken = cond_true_label(Jmp0),
-  %%    case visited(FallTrough, Vis0) of
-%%	true ->
 	  %% We have to insert a goto (the falltrough is
 	  %% somewhere else (or duplicate the code))
 	  ?debug_msg("Need goto to ~w~n", [FallTrough]),
@@ -66,10 +67,6 @@ straighten([Lbl|Ls],CFG,NewCFG,Visited) ->
 	  Goto = hipe_sparc:goto_create(FallTrough, []),
 	  GotoBB = hipe_bb:mk_bb([Goto]),
 	  CFG0 = hipe_sparc_cfg:bb_add(NewCFG, NewFTName, GotoBB),
-%	false ->
-%	  CFG0 = CFG,
-%	  Jmp1 = Jmp0
-%      end,
       NewBBCode = hipe_bb:butlast(BB) ++ [Jmp1],
       NewBB = hipe_bb:code_update(BB, NewBBCode),
       CFG1 = hipe_sparc_cfg:bb_update(CFG0, Lbl, NewBB),
@@ -88,125 +85,10 @@ straighten([Lbl|Ls],CFG,NewCFG,Visited) ->
 straighten([],_,CFG,_) -> CFG.
 
 
-%% --------------------------------------------------------
-
-old_straighten(CFG) ->
-  Start = hipe_sparc_cfg:start(CFG),
-  {Low, High} = hipe_sparc_cfg:label_range(CFG),
-  hipe_gensym:set_label(High),
-  Vis = none_visited(),
-  ?TIME_STMNT({CFG1, Vis0} = straighten(Start, CFG, Vis),
-	      "Straghtening took: ",
-	      STime),
-  CFG2 = 
-    hipe_sparc_cfg:label_range_update(CFG1, {Low,hipe_gensym:get_label()}),
-  CFG2.
-
-
-
-straighten(Lbl, CFG, Vis) ->
-  case visited(Lbl, Vis) of
-    true ->
-      %% io:format("Block ~w done~n", [Lbl]),
-      {CFG, Vis};
-    false ->
-      SuccMap = hipe_sparc_cfg:succ_map(CFG),
-      Succ = hipe_sparc_cfg:succ(SuccMap, Lbl),
-      %% io:format("Str: ~w -> ~w~n", [Lbl, Succ]),
-      case Succ of
-	[] ->
-	  {CFG, visit(Lbl, Vis)};
-	[S] ->
-	  straighten_single_succ(Lbl, S, CFG, Vis);
-	_ ->
-	  straighten_multiple_succ(Lbl, CFG, Vis)
-      end
-  end.
-
-
-
-%
-% Lbl is a basic block with a single successor (Succ), if this successors
-% only predecessor is Lbl we merge the blocks.
-%
-
-straighten_single_succ(Lbl, Succ, CFG, Vis) ->
-   PredMap = hipe_sparc_cfg:pred_map(CFG),
-   Pred = hipe_sparc_cfg:pred(PredMap, Succ),
-   %% If we duplicated code, we could accept successors with
-   %% multiple predecessors.
-  {CFG3, Vis3} = 
-    case Pred of
-      [Lbl] ->
-	 %% Now we know that S got a single successor with Lbl as
-	 %% it's only predecessor.
-	 %% io:format("Gluing ~w to ~w~n", [Lbl, Succ]),
-	 BB = hipe_sparc_cfg:bb(CFG, Lbl),
-	 BBsucc = hipe_sparc_cfg:bb(CFG, Succ),
-	 NewCode = hipe_bb:butlast(BB) ++ hipe_bb:code(BBsucc),
-	 NewBB = hipe_bb:code_update(BB, NewCode),
-	 CFG0 = hipe_sparc_cfg:bb_update(CFG, Lbl, NewBB),
-	 CFG1 = hipe_sparc_cfg:bb_remove(CFG0, Succ),
-	 straighten(Lbl, CFG1, Vis);
-      _ ->
-	 Vis0 = visit(Lbl, Vis),
-	 straighten(Succ, CFG, Vis0)
-   end,
-   {CFG3, Vis3}.
-
-
-%
-% Lbl is a basic block with multiple (2?) successors.
-%
-
-straighten_multiple_succ(Lbl, CFG, Vis) ->
-  BB = hipe_sparc_cfg:bb(CFG, Lbl),
-  Jmp = hipe_bb:last(BB),
-  case is_cond(Jmp) of
-    true ->
-      %% Switch the jump so the common case is not taken
-      Pred = cond_pred(Jmp),
-      Jmp0 =
-	if Pred >= 0.5 ->
-	    %% io:format("Switching ~w~n", [Jmp]),
-	    switch_cond(Jmp);
-	   true ->
-	    Jmp
-	end,
-      %% The common case is now *not* taken i.e it's a fall trough
-      FallTrough = cond_false_label(Jmp0),
-      Taken = cond_true_label(Jmp0),
-      {CFG2, Jmp2} = 
-	case visited(FallTrough, Vis) of
-	  true ->
-	    %% We have to insert a goto (the falltrough is
-	    %% somewhere else (or duplicate the code))
-	    %% io:format("Need goto to ~w~n", [FallTrough]),
-	    NewFT = hipe_sparc:label_create_new(),
-	    NewFTName = hipe_sparc:label_name(NewFT),
-	    Jmp1 = cond_false_label_update(Jmp0, NewFTName),
-	    Goto = hipe_sparc:goto_create(FallTrough, []),
-	    GotoBB = hipe_bb:mk_bb([Goto]),
-	    CFG0 = hipe_sparc_cfg:bb_add(CFG, NewFTName, GotoBB),
-	    {CFG0, Jmp1};
-	  false ->
-	    {CFG, Jmp0}
-	end,
-      NewBB = hipe_bb:code_update(BB, hipe_bb:butlast(BB)++[Jmp2]),
-      CFG3 = hipe_sparc_cfg:bb_update(CFG2, Lbl, NewBB),
-      Vis0 = visit(Lbl, Vis),
-      {CFG4, Vis1} = straighten(FallTrough, CFG3, Vis0),
-      straighten(Taken, CFG4, Vis1);
-    false ->
-      exit({hipe_sparc_cfg, "this is odd"})
-  end.
-
-%% ------------------------------------------------------
-
-%
-% A couple of functions that gives a common interface to 
-% both b- and br- branches
-%
+%% -------------------------------------------------------------------
+%% A couple of functions that provide a common interface to both b-
+%% and br- branches
+%% -------------------------------------------------------------------
 
 is_cond(I) ->
    case hipe_sparc:type(I) of
@@ -222,13 +104,6 @@ cond_pred(I) ->
       b -> hipe_sparc:b_pred(I)
    end.
    
-
-cond_true_label(B) ->
-   case hipe_sparc:type(B) of
-      br -> hipe_sparc:br_true_label(B);
-      b -> hipe_sparc:b_true_label(B)
-   end.
-
 
 cond_false_label(B) ->
    case hipe_sparc:type(B) of
@@ -251,9 +126,9 @@ switch_cond(B) ->
    end.
 
 
-%
-% Negate the cc and change the labels of a register branch
-%
+%%
+%% Negate the cc and change the labels of a register branch
+%%
 
 switch_br(B) ->
    CC = hipe_sparc:cc_negate(hipe_sparc:br_regcond(B)),
@@ -266,9 +141,9 @@ switch_br(B) ->
    hipe_sparc:br_pred_update(B2, Pred).
 
 
-%
-% Negate the cc and change the labels of a branch
-%
+%%
+%% Negate the cc and change the labels of a branch
+%%
 
 switch_b(B) ->
    CC = hipe_sparc:cc_negate(hipe_sparc:b_cond(B)),
@@ -281,13 +156,11 @@ switch_b(B) ->
    hipe_sparc:b_pred_update(B2, Pred).
 
 
-
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% Does the final layout of the code and fills delay slots. After
-% this pass the code can't be converted back to a CFG.
-%
+%%
+%% Does the final layout of the code and fills delay slots.  After
+%% this pass the code cannot be converted back to a CFG.
+%%
 
 %finalize(CFG) ->
 %   Start = hipe_sparc_cfg:start(CFG),
@@ -313,7 +186,7 @@ switch_b(B) ->
 %	 Vis0 = visit(Label, Vis),
 %	 BB = hipe_sparc_cfg:bb(CFG, Label),
 %	 Fallthrough = hipe_sparc_cfg:fallthrough(CFG, Label),
-%	 Cond = hipe_sparc_cfg:cond(CFG, Label),
+%	 Cond = hipe_sparc_cfg:conditional(CFG, Label),
 %	 %% If Label got only one successor thats not been visited we can
 %	 %% remove the jump.
 %	 case {Fallthrough, Cond} of
@@ -486,26 +359,19 @@ none_visited() ->
 visit(X, Vis) -> 
    hipe_hash:update(X, visited, Vis).
 
-visited(X, Vis) ->
-   case hipe_hash:lookup(X, Vis) of
-      not_found -> false;
-      {found,_} -> true
-   end.
-
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% Replaces big immediates with registers that are defined with
-% a 'sethi' and an 'or'. 
-%
-% NEWSFLASH! This also checks if arg1 to an alu operation is an immediate
-% and rectifies that situation.
-%
-% NEWSFLASH! 990823
-% This also checks if the source of a store operation is an immediate
-% and rectifies that situation.
-%
+%%
+%% Replaces big immediates with registers that are defined with
+%% a 'sethi' and an 'or'. 
+%%
+%% NEWSFLASH! This also checks if arg1 to an alu operation is an immediate
+%% and rectifies that situation.
+%%
+%% NEWSFLASH! 990823
+%% This also checks if the source of a store operation is an immediate
+%% and rectifies that situation.
+%%
 
 split_constants(CFG) ->
   Labels = hipe_sparc_cfg:labels(CFG),
@@ -515,9 +381,9 @@ split_constants(CFG) ->
 	    RMax = hipe_sparc:highest_reg(Code),
 	    RMax =< High
 	  end),
-  hipe_gensym:set_var(High+1),
+  hipe_gensym:set_var(sparc,High+1),
   NewCFG = split_bbs(Labels, CFG),
-  hipe_sparc_cfg:var_range_update(NewCFG, {Low, hipe_gensym:get_var()}).
+  hipe_sparc_cfg:var_range_update(NewCFG, {Low, hipe_gensym:get_var(sparc)}).
 
 
 split_bbs([], CFG) ->
@@ -534,7 +400,7 @@ split_bbs([Lbl|Lbls], CFG) ->
    end.
 
 
-split_instrs([], RevCode, unchanged) ->
+split_instrs([], _RevCode, unchanged) ->
    unchanged;
 split_instrs([], RevCode, changed) ->
    lists:reverse(RevCode);
@@ -552,9 +418,9 @@ split_instrs([I0|Is], RevCode, Status) ->
    end.
 
 
-%
-% Ensure that correct addressing modes are used.
-%
+%%
+%% Ensure that correct addressing modes are used.
+%%
 fix_addressing_mode(I) ->
   case hipe_sparc:type(I) of
      alu ->
@@ -595,7 +461,7 @@ fix_addressing_mode(I) ->
 	 case loadstore_operand(Src0, Off0) of
 	    {Src1, Off1} ->
 	       [hipe_sparc:load_off_update(hipe_sparc:load_src_update(I, Src1), Off1)];
-	    NoChange -> unchanged
+	    _NoChange -> unchanged
 	 end;
       store ->
 	 Dst0 = hipe_sparc:store_dest(I),

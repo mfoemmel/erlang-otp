@@ -1,32 +1,27 @@
 {"%VSN%",
  [ 
-   {"4.0.1",
+   {"4.0.2",
     [
-     {update, mnesia,soft, soft_purge, soft_purge, []},
+     {add_module, mnesia_frag_old_hash},
+     {add_module, mnesia_frag_hash},
+     {update, mnesia_index, soft, soft_purge, soft_purge, []},
+     {update, mnesia, soft, soft_purge, soft_purge, [mnesia_index]},
+     {update, mnesia_frag, soft, soft_purge, soft_purge, 
+      [mnesia, mnesia_frag_old_hash, mnesia_frag_hash]},
+
      {update, mnesia_bup, soft, soft_purge, soft_purge, []},
-     {update, mnesia_checkpoint, soft, soft_purge, soft_purge, []},
-     {update, mnesia_controller, soft, soft_purge, soft_purge, []},
-     {update, mnesia_loader, soft, soft_purge, soft_purge, []},
-     {update, mnesia_dumper, soft, soft_purge, soft_purge, [mnesia_controller]},
-     {update, mnesia_schema, soft, soft_purge, soft_purge, [mnesia_dumper, mnesia_controller]},
-     {update, mnesia_lib, soft, soft_purge, soft_purge, []},
-     {update, mnesia_index, soft, soft_purge, soft_purge, []}
+     {update, mnesia_controller, soft, soft_purge, soft_purge, 
+      [mnesia_monitor,mnesia_loader]},
+     {update, mnesia_loader, soft, soft_purge, soft_purge, [mnesia_monitor]},
+     {update, mnesia_monitor, soft, soft_purge, soft_purge, []},
+     {update, mnesia_schema, soft, soft_purge, soft_purge, []},
+     {update, mnesia_tm, soft, soft_purge, soft_purge, []}
     ]
    }
- ],
- [    	
-   {"4.0.1",
-    [
-     {update, mnesia,soft, soft_purge, soft_purge, []},
-     {update, mnesia_bup, soft, soft_purge, soft_purge, []},
-     {update, mnesia_checkpoint, soft, soft_purge, soft_purge, []},
-     {update, mnesia_controller, soft, soft_purge, soft_purge, [mnesia_dumper, mnesia_schema]},
-     {update, mnesia_loader, soft, soft_purge, soft_purge, []},
-     {update, mnesia_dumper, soft, soft_purge, soft_purge, [mnesia_schema]},
-     {update, mnesia_schema, soft, soft_purge, soft_purge, []},
-     {update, mnesia_lib, soft, soft_purge, soft_purge, []},
-     {update, mnesia_index, soft, soft_purge, soft_purge, []}
-    ]
-   }	
-  ] 
+  ],
+ [
+  {"4.0.2",  %% Cannot be downgraded ...
+   []
+  }
+ ] 
 }.

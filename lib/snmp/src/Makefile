@@ -22,7 +22,9 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # Application version
 # ----------------------------------------------------
 include ../vsn.mk
-VSN=$(SNMPEA_VSN)
+
+VSN     = $(SNMPEA_VSN)
+APP_VSN = "snmp-$(VSN)"
 
 # ----------------------------------------------------
 # Release directory specification
@@ -37,7 +39,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/snmp-$(VSN)
 # NOTE: The MIB compiler is compiled from the directory ../mc_dummy;
 # thus it is not included here!
 
-MODULES=  \
+MODULES = \
 	snmp_acm \
 	snmp_agent \
 	snmp_agent_sup \
@@ -127,6 +129,8 @@ endif
 # ----------------------------------------------------
 ERL_FLAGS += 
 ERL_COMPILE_FLAGS += -I../include \
+                     +'{parse_transform,sys_pre_attributes}' \
+                     +'{attribute,insert,app_vsn,$(APP_VSN)}' \
                      -I$(ERL_TOP)/lib/stdlib \
                      $(SNMP_FLAGS)
 
@@ -142,6 +146,10 @@ clean:
 	rm -f core *~
 
 docs:
+
+info:
+	@echo "VSN:     $(VSN)"
+	@echo "APP_VSN: $(APP_VSN)"
 
 
 # ----------------------------------------------------

@@ -145,13 +145,28 @@ make_description(Message) ->
 %% verbosity stuff
 %%----------------------------------------------------------------------
 
-t(F,A) -> snmp_compile_lib:t(F,A).
-d(F,A) -> snmp_compile_lib:d(F,A).
-l(F,A) -> snmp_compile_lib:l(F,A).
-i(F,A) -> snmp_compile_lib:i(F,A).
+t(F,A)   -> snmp_compile_lib:t(F,A).
+d(F,A)   -> snmp_compile_lib:d(F,A).
+l(F,A)   -> snmp_compile_lib:l(F,A).
+i(F,A)   -> snmp_compile_lib:i(F,A).
+i(F,A,L) -> snmp_compile_lib:i(F,A,L).
+w(F,A)   -> snmp_compile_lib:w(F,A).
+w(F,A,L) -> snmp_compile_lib:w(F,A,L).
 
-
+%% Verbosity level is selected from three (historical reasons)
+%% options: warnings, debug and verbosity
+%% - If warnings is true, then verbosity is _atleast_ warning
+%%   (even if the verbosity flag is set to silence)
+%% - If debug is true, the verbosity is _atleast_ log
+%% - Otherwise, verbosity is used as is.
 get_verbosity(Options) ->
+    WarningsSeverity = 
+	case snmp_compile_lib:key1search(warnings,Options) of
+	    true ->
+		warning;
+	    _ ->
+		silence
+	end,
     case snmp_compile_lib:key1search(verbosity,Options) of
 	undefined ->
 	    %% Backward compatible: If not defined the try debug and convert
@@ -159,8 +174,10 @@ get_verbosity(Options) ->
 		true ->
 		    log;
 		false ->
-		    silence
+		    WarningsSeverity
 	    end;
+	silence ->
+	    WarningsSeverity;
 	Verbosity ->
 	    Verbosity
     end.
@@ -187,17 +204,16 @@ init(From,MibFileName,Options) ->
 
 
 c_impl(File) ->
-    P = snmp_parse(File),
+    {ok, Mib} = snmp_parse(File),
     t("Syntax analysis:~n"
-      "   ~p",[P]),
-    MibName = compile_parsed_data(P),
+      "   ~p",[Mib]),
+    MibName = compile_parsed_data(Mib),
     CData = get(cdata),
     t("Compiler output:~n"
       "   ~p",[CData]),
     save(File, MibName,get(options)).
 
-compile_parsed_data({ok,{MibVer,MibName,{{import,Imports},Line},
-			 Definitions}})->
+compile_parsed_data({MibVer,MibName,{{import,Imports},Line}, Definitions})->
     snmp_compile_lib:import(Imports),
     DeprecatedFlag = get_deprecated(get(options)),
     d("compile_parsed_data -> DeprecatedFlag: ~p",[DeprecatedFlag]),
@@ -211,11 +227,11 @@ definitions_loop([{{object_type,ObjName,_Type,_Access,
 		    _Index},Line}|T],
 		 DeprecatedFlag) 
     when  DeprecatedFlag == false ->
-    l("defloop -> object_type (deprecated):~n"
-      "   ObjName: ~p~n"
-      "   Line:    ~p",[ObjName,Line]),
+%     l("defloop -> object_type (deprecated):~n"
+%       "   ObjName: ~p~n"
+%       "   Line:    ~p",[ObjName,Line]),
     %% May be implemented but the compiler chooses not to.
-    snmp_compile_lib:warning("~w is deprecated. Ignored.",[ObjName],Line),
+    i("~w is deprecated. Ignored.",[ObjName],Line),
     definitions_loop(T,false);
 
 %% A obsolete object
@@ -427,13 +443,16 @@ definitions_loop([{{trap,TrapName,EnterPrise, Variables,
     CDATA = get(cdata),
     snmp_compile_lib:check_trap_name(EnterPrise, Line, CDATA#cdata.mes),
     Descriptions = make_description(Message1),
-    Trap = #trap{trapname = TrapName, enterpriseoid=EnterPrise,
-		 specificcode = SpecificCode,
-		 oidobjects = lists:map({snmp_compile_lib,trap_variable_info},
-					[Line, CDATA#cdata.mes],
-					Variables), 
-		description = Descriptions},
-    lists:map({snmp_compile_lib,check_trap}, [Trap, Line], CDATA#cdata.traps),
+    OidObjects   = snmp_misc:map({snmp_compile_lib,trap_variable_info},
+				 [Line, CDATA#cdata.mes],
+				 Variables), 
+    Trap = #trap{trapname      = TrapName, 
+		 enterpriseoid = EnterPrise,
+		 specificcode  = SpecificCode,
+		 oidobjects    = OidObjects,
+		 description   = Descriptions},
+    snmp_misc:map({snmp_compile_lib,check_trap}, [Trap, Line], 
+		  CDATA#cdata.traps),
     snmp_compile_lib:add_cdata(#cdata.traps, [Trap]),
     definitions_loop(T, DeprecatedFlag);    
 
@@ -469,12 +488,12 @@ definitions_loop([{{notification,TrapName,Variables,Status,
     CDATA = get(cdata),
     snmp_compile_lib:register_oid(Line,TrapName,FatherName,SubIndex),
     Descriptions = make_description(Message1),
-    Notif = #notification{
-      trapname = TrapName,
-      description = Descriptions,
-      oidobjects = lists:map({snmp_compile_lib,trap_variable_info},
-			     [Line, CDATA#cdata.mes],
-			     Variables)},
+    OidObjects   = snmp_misc:map({snmp_compile_lib,trap_variable_info},
+				  [Line, CDATA#cdata.mes],
+				  Variables),
+    Notif = #notification{trapname    = TrapName,
+			  description = Descriptions,
+			  oidobjects  = OidObjects},
     snmp_compile_lib:check_notification(Notif, Line, CDATA#cdata.traps),
     snmp_compile_lib:add_cdata(#cdata.traps, [Notif]),
     definitions_loop(T, DeprecatedFlag);    
@@ -493,12 +512,12 @@ definitions_loop([{{object_group,Name,GroupObjects,deprecated},Line}|T],
       "   GroupObjects: ~p~n"
       "   Line:         ~p",[Name,GroupObjects,Line]),
     GroupBool = get_group_check(get(options)),
-    case GroupBool==true of
-	true->
+    case GroupBool of
+	true ->
 	    %% May be implemented but the compiler chooses not to.
-	    snmp_compile_lib:warning("~w is deprecated. Ignored.",[Name],Line),
+	    i("~w is deprecated. Ignored.",[Name],Line),
 	    definitions_loop(T, DeprecatedFlag);
-	false->
+	_ ->
 	    definitions_loop(T, DeprecatedFlag)
     end;
 
@@ -521,15 +540,15 @@ definitions_loop([{{object_group,Name,GroupObjects,_Status},Line}|T],
     ensure_macro_imported('OBJECT-GROUP', Line),
     GroupBool = hd([Value || {Option,Value} <-get(options), 
 			     Option==group_check]),
-    case GroupBool==true of
-	true->
+    case GroupBool of
+	true ->
 	    snmp_compile_lib:add_cdata(#cdata.objectgroups,
 				       [{Name,GroupObjects,Line}]),
 	    CDATA=get(cdata),
 	    Objects=snmp_compile_lib:check_access_group(CDATA#cdata.mes),
 	    snmp_compile_lib:check_def(Objects,GroupObjects,Line),
 	    definitions_loop(T, DeprecatedFlag);
-	false->
+	_ ->
 	    definitions_loop(T, DeprecatedFlag)
     end;
 
@@ -540,12 +559,12 @@ definitions_loop([{{notification_group,Name,GroupObjects,deprecated},Line}|T],
       "   GroupObjects: ~p~n"
       "   Line:         ~p",[Name,GroupObjects,Line]),
     GroupBool = get_group_check(get(options)),
-    case GroupBool==true of
-	true->
+    case GroupBool of
+	true ->
 	    %% May be implemented but the compiler chooses not to.
-	    snmp_compile_lib:warning("~w is deprecated. Ignored.",[Name],Line),
+	    i("~w is deprecated. Ignored.",[Name],Line),
 	    definitions_loop(T, DeprecatedFlag);
-	false->
+	_ ->
 	    definitions_loop(T, DeprecatedFlag)
     end;
 
@@ -567,14 +586,14 @@ definitions_loop([{{notification_group,Name,NotificationObjects,_Status},Line}
       "   Line:                ~p",[Name,NotificationObjects,Line]),
     ensure_macro_imported('NOTIFICATION-GROUP', Line),
     GroupBool = get_group_check(get(options)),
-    case GroupBool==true of
-	true->
+    case GroupBool of
+	true ->
 	    snmp_compile_lib:add_cdata(#cdata.notificationgroups,[{Name,NotificationObjects,Line}]),
 	    CDATA=get(cdata),
 	    Objects = snmp_compile_lib:check_notification_trap(CDATA#cdata.traps),
 	    snmp_compile_lib:check_def(Objects,NotificationObjects,Line),
 	    definitions_loop(T, DeprecatedFlag);
-	false->
+	_ ->
 	    definitions_loop(T, DeprecatedFlag)
     end;
 
@@ -628,9 +647,8 @@ definitions_loop([{{sequence,SeqName,{fieldList,FieldList}},Line}|T],
 		 DeprecatedFlag) ->
     l("defloop -> sequence (fieldList):~n"
       "   SeqName: ~p~n"
-      "   Line:    ~n",[SeqName,Line]),
-    snmp_compile_lib:warning("Unexpected SEQUENCE ~w, ignoring.",
-			     [SeqName],Line),
+      "   Line:    ~p",[SeqName,Line]),
+    w("Unexpected SEQUENCE ~w, ignoring.",[SeqName],Line),
     definitions_loop(T,DeprecatedFlag);
 
 definitions_loop([{Obj,Line}|T], DeprecatedFlag) ->
@@ -683,8 +701,7 @@ define_cols([{{object_type,NameOfCol,Type1,Access,{variable,Defval},Status,
 		'not-accessible';
 	    Status == deprecated, DeprecatedBool == false ->
 		%% The compiler chooses not to implement the column.
-		snmp_compile_lib:warning("~w is deprecated. Ignored.",
-					 [NameOfCol],Oline),
+		i("~w is deprecated. Ignored.",[NameOfCol],Oline),
 		'not-accessible';
 	   true -> Access
 	end,

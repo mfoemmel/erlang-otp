@@ -1,8 +1,8 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-%		   INFORMATION ON BUILTIN FUNCTIONS
-%
+%%
+%%		   INFORMATION ON BUILTIN FUNCTIONS
+%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_bif).
@@ -11,21 +11,17 @@
 
 %======================================================================
 
-is_bif({M,F,A}) when atom(M), atom(F), integer(A) -> 
-    case hipe_bifs:bif_address(M,F,A) of
-	I when integer(I) ->
-	    true;
-	false -> 
-	false
-%	case {M,F,A} of
-%	  {lists,map,2} -> true;
-%	  _ -> false
-%	end
-    end;
+is_bif({M,F,A}) -> 
+  case hipe_bifs:bif_address(M,F,A) of
+    I when is_integer(I) ->
+      true;
+    false -> 
+      false
+  end;
 is_bif({hipe_bs_primop,_}) -> true; 
-is_bif(Atom) when atom(Atom) ->
-  case catch hipe_bifs:primop_address(Atom) of
-    Address when integer(Address) ->  
+is_bif(Atom) when is_atom(Atom) ->
+  case hipe_bifs:primop_address(Atom) of
+    Address when is_integer(Address) ->  
       true;
     _ -> 
       case Atom of
@@ -44,10 +40,16 @@ is_bif(Atom) when atom(Atom) ->
 	suspend_msg -> true;
 	call_fun -> true;
 	enter_fun -> true;
+	fp_add -> true;
+	fp_sub -> true;
+	fp_mul -> true;
+	fp_div -> true;
+	fcheckerror -> true;
+	conv_to_float -> true;
 	_ -> false
       end
   end;
-is_bif(Tuple) when tuple(Tuple) ->
+is_bif(Tuple) when is_tuple(Tuple) ->
   case element(1, Tuple) of
     mkfun -> true;
     unsafe_element -> true;
@@ -59,10 +61,10 @@ is_bif(Tuple) when tuple(Tuple) ->
 is_bif(_) ->
     false.
 
-%======================================================================
-%
-% False if a bif always succeeds, true otherwise
-%
+%%======================================================================
+%%
+%% False if a bif always succeeds, true otherwise
+%%
 
 fails(0,_BifName) ->
     false;
@@ -95,66 +97,66 @@ error_type(Bif) ->
   end.
       
 
-%======================================================================
-%
-% Returns the module name of the bif
-%
+%%======================================================================
+%%
+%% Returns the module name of the bif
+%%
 
-bif_module(Arity,BifName) ->
+bif_module(_Arity,_BifName) ->
     erlang.
 
-%======================================================================
-% pure(Bif) ->	% XXX: Needs updating
-%    case Bif of
-%        bif_abs_1 -> true;
-%        bif_append_2 -> true;
-%        bif_atom_to_list_1 -> true;
-%        bif_binary_to_list_1 -> true;
-%        bif_binary_to_list_3 -> true;
-%        bif_binary_to_term_1 -> true;
-%        bif_concat_binary_1 -> true;
-%        bif_do_integer_arith_3 -> true;
-%        bif_do_integer_bnot_1 -> true;
-%        bif_do_mixed_arith_3 -> true;
-%        bif_do_mixed_comp_3 -> true;
-%        bif_element_2 -> true;
-%        bif_float_1 -> true;
-%        bif_float_to_list_1 -> true;
-%        bif_float_to_words_1 -> true;
-%        bif_hash_2 -> true;
-%        bif_hd_1 -> true;
-%        bif_integer_to_list_1 -> true;
-%        bif_length_1 -> true;
-%        bif_list_to_atom_1 -> true;
-%        bif_list_to_binary_1 -> true;
-%        bif_list_to_float_1 -> true;
-%        bif_list_to_integer_1 -> true;
-%        bif_list_to_pid_1 -> true;
-%        bif_list_to_tuple_1 -> true;
-%        bif_math_2 -> true;
-%        bif_math_3 -> true;
-%        bif_math1_2 -> true;
-%        bif_math1_cos_1 -> true;
-%        bif_math1_sin_1 -> true;
-%        bif_math1_sqrt_1 -> true;
-%        bif_math2_atan2_2 -> true;
-%        bif_math2_pow_2 -> true;
-%        bif_pid_to_list_1 -> true;
-%        bif_round_1 -> true;
-%        bif_self_0 -> true;
-%        bif_setelement_3 -> true;
-%        bif_size_1 -> true;
-%        bif_split_binary_2 -> true;
-%        bif_subtract_2 -> true;
-%        bif_term_to_binary_1 -> true;
-%        bif_tl_1 -> true;
-%        bif_trunc_1 -> true;
-%        bif_tuple_to_list_1 -> true;
-%        bif_type_2 -> true;
-%       _ -> false
-%    end.
+%%======================================================================
+%% pure(Bif) ->	% XXX: Needs updating
+%%    case Bif of
+%%        bif_abs_1 -> true;
+%%        bif_append_2 -> true;
+%%        bif_atom_to_list_1 -> true;
+%%        bif_binary_to_list_1 -> true;
+%%        bif_binary_to_list_3 -> true;
+%%        bif_binary_to_term_1 -> true;
+%%        bif_concat_binary_1 -> true;
+%%        bif_do_integer_arith_3 -> true;
+%%        bif_do_integer_bnot_1 -> true;
+%%        bif_do_mixed_arith_3 -> true;
+%%        bif_do_mixed_comp_3 -> true;
+%%        bif_element_2 -> true;
+%%        bif_float_1 -> true;
+%%        bif_float_to_list_1 -> true;
+%%        bif_float_to_words_1 -> true;
+%%        bif_hash_2 -> true;
+%%        bif_hd_1 -> true;
+%%        bif_integer_to_list_1 -> true;
+%%        bif_length_1 -> true;
+%%        bif_list_to_atom_1 -> true;
+%%        bif_list_to_binary_1 -> true;
+%%        bif_list_to_float_1 -> true;
+%%        bif_list_to_integer_1 -> true;
+%%        bif_list_to_pid_1 -> true;
+%%        bif_list_to_tuple_1 -> true;
+%%        bif_math_2 -> true;
+%%        bif_math_3 -> true;
+%%        bif_math1_2 -> true;
+%%        bif_math1_cos_1 -> true;
+%%        bif_math1_sin_1 -> true;
+%%        bif_math1_sqrt_1 -> true;
+%%        bif_math2_atan2_2 -> true;
+%%        bif_math2_pow_2 -> true;
+%%        bif_pid_to_list_1 -> true;
+%%        bif_round_1 -> true;
+%%        bif_self_0 -> true;
+%%        bif_setelement_3 -> true;
+%%        bif_size_1 -> true;
+%%        bif_split_binary_2 -> true;
+%%        bif_subtract_2 -> true;
+%%        bif_term_to_binary_1 -> true;
+%%        bif_tl_1 -> true;
+%%        bif_trunc_1 -> true;
+%%        bif_tuple_to_list_1 -> true;
+%%        bif_type_2 -> true;
+%%       _ -> false
+%%    end.
 
-known_heap_need(Bif) when atom(Bif) ->
+known_heap_need(Bif) when is_atom(Bif) ->
   case Bif of
     cons -> true;
     mktuple -> true;
@@ -162,13 +164,17 @@ known_heap_need(Bif) when atom(Bif) ->
     unsafe_tl -> true;
     unsafe_element -> true;
     element -> true;
+    fp_add -> true;
+    fp_div -> true;
+    fp_mul -> true;
+    fp_sub -> true;
     _ -> false
   end;
 known_heap_need(Bif) ->
   case Bif of
     {erlang, element,2} -> true;
-    {unsafe_element, N}  -> true;
-    {unsafe_update_element, N}  -> true;
+    {unsafe_element,_N} -> true;
+    {unsafe_update_element,_N}  -> true;
     {erlang, self, 0} -> true;
     {erlang, length, 1} -> true;
     {erlang, size, 1} -> true;

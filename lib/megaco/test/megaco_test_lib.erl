@@ -150,7 +150,7 @@ t(Bad, Config) ->
 eval(Mod, Fun, Config) ->
     TestCase = {?MODULE, Mod, Fun},
     Label = lists:concat(["TEST CASE: ", Fun]),
-    event_tracer:report(40, ?MODULE, Mod, Label ++ " started",
+    megaco:report_event(40, ?MODULE, Mod, Label ++ " started",
 			[TestCase, Config]),
     global:register_name(megaco_test_case_sup, self()),
     Flag = process_flag(trap_exit, true),
@@ -169,23 +169,23 @@ wait_for_evaluator(Pid, Mod, Fun, Config, Errors) ->
     Label = lists:concat(["TEST CASE: ", Fun]),
     receive
 	{done, Pid, ok} when Errors == [] ->
-	    event_tracer:report(40, Mod, ?MODULE, Label ++ " ok",
+	    megaco:report_event(40, Mod, ?MODULE, Label ++ " ok",
 				[TestCase, Config]),
 	    {ok, {Mod, Fun}, Errors};
 	{done, Pid, {ok, _}} when Errors == [] ->
-	    event_tracer:report(40, Mod, ?MODULE, Label ++ " ok",
+	    megaco:report_event(40, Mod, ?MODULE, Label ++ " ok",
 				[TestCase, Config]),
 	    {ok, {Mod, Fun}, Errors};
 	{done, Pid, Fail} ->
-	    event_tracer:report(20, Mod, ?MODULE, Label ++ " failed",
+	    megaco:report_event(20, Mod, ?MODULE, Label ++ " failed",
 				[TestCase, Config, {return, Fail}, Errors]),
 	    {failed, {Mod,Fun}, Fail};
 	{'EXIT', Pid, {skipped, Reason}} -> 
-	    event_tracer:report(20, Mod, ?MODULE, Label ++ " skipped",
+	    megaco:report_event(20, Mod, ?MODULE, Label ++ " skipped",
 				[TestCase, Config, {skipped, Reason}]),
 	    {skipped, {Mod, Fun}, Errors};
 	{'EXIT', Pid, Reason} -> 
-	    event_tracer:report(20, Mod, ?MODULE, Label ++ " crashed",
+	    megaco:report_event(20, Mod, ?MODULE, Label ++ " crashed",
 				[TestCase, Config, {'EXIT', Reason}]),
 	    {crashed, {Mod, Fun}, [{'EXIT', Reason} | Errors]};
 	{fail, Pid, Reason} ->
@@ -249,7 +249,7 @@ error(Actual, Mod, Line) ->
     global:send(megaco_global_logger, {failed, Mod, Line}),
     log("<ERROR> Bad result: ~p~n", [Actual], Mod, Line),
     Label = lists:concat([Mod, "(", Line, ") unexpected result"]),
-    event_tracer:report(60, Mod, Mod, Label,
+    megaco:report_event(60, Mod, Mod, Label,
 			[{line, Mod, Line}, {error, Actual}]),
     case global:whereis_name(megaco_test_case_sup) of
 	undefined -> 

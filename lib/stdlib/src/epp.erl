@@ -13,7 +13,7 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id $
 %%
 -module(epp).
 
@@ -22,7 +22,6 @@
 -export([open/2,open/3,close/1,format_error/1]).
 -export([scan_erl_form/1,parse_erl_form/1,macro_defs/1]).
 -export([parse_file/3]).
--export([server/4]).
 
 %% Epp state record.
 -record(epp, {file,				%Current file
@@ -52,7 +51,8 @@ open(File, Path) ->
     open(File, Path, []).
 
 open(File, Path, Pdm) ->
-    Epp = spawn_link(epp, server, [self(),File,Path,Pdm]),
+    Self = self(),
+    Epp = spawn_link(fun() -> server(Self, File, Path, Pdm) end),
     wait_epp_reply(Epp).
 
 close(Epp) ->
@@ -134,7 +134,6 @@ server(Pid, Name, Path, Pdm) ->
     process_flag(trap_exit, true),
     case file:open(Name, read) of
 	{ok,File} ->
-	    put(sys_path, Path),
 	    put(user_path, Path),
 	    Ms0 = predef_macros(Name),
 	    case user_predef(Pdm, Ms0) of
@@ -172,7 +171,7 @@ predef_macros(File) ->
 
 user_predef([{M,Val}|Pdm], Ms) when atom(M) ->
     case dict:find({atom,M}, Ms) of
-	{ok,Def} ->
+	{ok,_Def} ->
 	    {error,{redefine,M}};
 	error ->
 	    Exp = erl_parse:tokens(erl_parse:abstract(Val)),
@@ -180,12 +179,12 @@ user_predef([{M,Val}|Pdm], Ms) when atom(M) ->
     end;
 user_predef([M|Pdm], Ms) when atom(M) ->
     case dict:find({atom,M}, Ms) of
-	{ok,Def} ->
+	{ok,_Def} ->
 	    {error,{redefine,M}};
 	error ->
 	    user_predef(Pdm, dict:store({atom,M}, {none,[{atom,1,true}]}, Ms))
     end;
-user_predef([Md|Pdm], Ms) -> {error,{bad,Md}};
+user_predef([Md|_Pdm], _Ms) -> {error,{bad,Md}};
 user_predef([], Ms) -> {ok,Ms}.
 
 %% wait_request(EppState) -> RequestFrom
@@ -224,7 +223,7 @@ wait_req_skip(St, Sis) ->
 %%  current file is changed. Note it is an error to exit a file if we are
 %%  in a conditional. These functions never return.
 
-enter_file(Path, NewName, Li, From, St)
+enter_file(_Path, _NewName, Li, From, St)
   when length(St#epp.sstk) >= 8 ->
     epp_reply(From, {error,{Li,epp,{depth,"include"}}}),
     wait_req_scan(St);
@@ -232,7 +231,7 @@ enter_file(Path, NewName, Li, From, St) ->
     case file:path_open(Path, NewName, read) of
 	{ok,NewF,Pname} ->
 	    wait_req_scan(enter_file(NewF, Pname, From, St));
-	{error,E} ->
+	{error,_E} ->
 	    epp_reply(From, {error,{Li,epp,{include,file,NewName}}}),
 	    wait_req_scan(St)
     end.
@@ -301,25 +300,25 @@ scan_toks(From, St) ->
 	    true				%This serious, just exit!
     end.
 
-scan_toks([{'-',Lh},{atom,Ld,define}|Toks], From, St) ->
+scan_toks([{'-',_Lh},{atom,Ld,define}|Toks], From, St) ->
     scan_define(Toks, Ld, From, St);
-scan_toks([{'-',Lh},{atom,Ld,undef}|Toks], From, St) ->
+scan_toks([{'-',_Lh},{atom,Ld,undef}|Toks], From, St) ->
     scan_undef(Toks, Ld, From, St);
-scan_toks([{'-',Lh},{atom,Li,include}|Toks], From, St) ->
+scan_toks([{'-',_Lh},{atom,Li,include}|Toks], From, St) ->
     scan_include(Toks, Li, From, St);
-scan_toks([{'-',Lh},{atom,Li,include_lib}|Toks], From, St) ->
+scan_toks([{'-',_Lh},{atom,Li,include_lib}|Toks], From, St) ->
     scan_include_lib(Toks, Li, From, St);
-scan_toks([{'-',Lh},{atom,Li,ifdef}|Toks], From, St) ->
+scan_toks([{'-',_Lh},{atom,Li,ifdef}|Toks], From, St) ->
     scan_ifdef(Toks, Li, From, St);
-scan_toks([{'-',Lh},{atom,Li,ifndef}|Toks], From, St) ->
+scan_toks([{'-',_Lh},{atom,Li,ifndef}|Toks], From, St) ->
     scan_ifndef(Toks, Li, From, St);
-scan_toks([{'-',Lh},{atom,Le,else}|Toks], From, St) ->
+scan_toks([{'-',_Lh},{atom,Le,else}|Toks], From, St) ->
     scan_else(Toks, Le, From, St);
-scan_toks([{'-',Lh},{atom,Le,'if'}|Toks], From, St) ->
+scan_toks([{'-',_Lh},{atom,Le,'if'}|Toks], From, St) ->
     scan_if(Toks, Le, From, St);
-scan_toks([{'-',Lh},{atom,Le,elif}|Toks], From, St) ->
+scan_toks([{'-',_Lh},{atom,Le,elif}|Toks], From, St) ->
     scan_elif(Toks, Le, From, St);
-scan_toks([{'-',Lh},{atom,Le,endif}|Toks], From, St) ->
+scan_toks([{'-',_Lh},{atom,Le,endif}|Toks], From, St) ->
     scan_endif(Toks, Le, From, St);
 scan_toks(Toks0, From, St) ->
     case catch expand_macros(Toks0, {St#epp.macs, St#epp.uses}) of
@@ -331,17 +330,26 @@ scan_toks(Toks0, From, St) ->
 	    wait_req_scan(St)
     end.
 
-scan_module([{'-',Lh},{atom,Lm,module},{'(',Ll},{atom,Ln,Mod},{')',Lr}|_], Ms) ->
-    Ms1 = dict:store({atom,'MODULE'}, {none,[{atom,Ln,Mod}]}, Ms),
-    dict:store({atom,'MODULE_STRING'}, {none,[{string,Ln,atom_to_list(Mod)}]},
-	       Ms1);
-scan_module(Ts, Ms) -> Ms.
+scan_module([{'-',_Lh},{atom,_Lm,module},{'(',_Ll}|Ts], Ms) ->
+    scan_module_1(Ts,[],Ms);
+scan_module(_Ts, Ms) -> Ms.
+
+scan_module_1([{atom,Ln,A},{')',_Lr}|_Ts], As, Ms) ->
+    Mod = lists:concat(lists:reverse([A|As])),
+    Ms1 = dict:store({atom,'MODULE'}, {none,[{atom,Ln,list_to_atom(Mod)}]},
+		     Ms),
+    dict:store({atom,'MODULE_STRING'}, {none,[{string,Ln,Mod}]},Ms1);
+scan_module_1([{atom,_Ln,A},{'.',_Lr}|Ts], As, Ms) ->
+    scan_module_1(Ts, [".",A|As], Ms);
+scan_module_1([{'.',_Lr}|Ts], As, Ms) ->
+    scan_module_1(Ts, As, Ms);
+scan_module_1(_Ts, _As, Ms) -> Ms.
 
 %% scan_define(Tokens, DefineLine, From, EppState)
 
-scan_define([{'(',Lp},{atom,Lm,M},{',',Lc}|Toks], Ld, From, St) ->
+scan_define([{'(',_Lp},{atom,Lm,M},{',',_Lc}|Toks], _Ld, From, St) ->
     case dict:find({atom,M}, St#epp.macs) of
-	{ok,Def} ->
+	{ok,_Def} ->
 	    epp_reply(From, {error,{Lm,epp,{redefine,M}}}),
 	    wait_req_scan(St);
 	error ->
@@ -349,9 +357,9 @@ scan_define([{'(',Lp},{atom,Lm,M},{',',Lc}|Toks], Ld, From, St) ->
 			     {atom, M},
 			     {none,macro_expansion(Toks)})
     end;
-scan_define([{'(',Lp},{atom,Lm,M},{'(',Lc}|Toks], Ld, From, St) ->
+scan_define([{'(',_Lp},{atom,Lm,M},{'(',_Lc}|Toks], Ld, From, St) ->
     case dict:find({atom,M}, St#epp.macs) of
-	{ok,Def} ->
+	{ok,_Def} ->
 	    epp_reply(From, {error,{Lm,epp,{redefine,M}}}),
 	    wait_req_scan(St);
 	error ->
@@ -365,9 +373,9 @@ scan_define([{'(',Lp},{atom,Lm,M},{'(',Lc}|Toks], Ld, From, St) ->
 		    wait_req_scan(St)
 	    end
     end;
-scan_define([{'(',Lp},{var,Lm,M},{',',Lc}|Toks], Ld, From, St) ->
+scan_define([{'(',_Lp},{var,Lm,M},{',',_Lc}|Toks], _Ld, From, St) ->
     case dict:find({atom,M}, St#epp.macs) of
-	{ok,Def} ->
+	{ok,_Def} ->
 	    epp_reply(From, {error,{Lm,epp,{redefine,M}}}),
 	    wait_req_scan(St);
 	error ->
@@ -375,9 +383,9 @@ scan_define([{'(',Lp},{var,Lm,M},{',',Lc}|Toks], Ld, From, St) ->
 			     {atom, M},
 			     {none,macro_expansion(Toks)})
     end;
-scan_define([{'(',Lp},{var,Lm,M},{'(',Lc}|Toks], Ld, From, St) ->
+scan_define([{'(',_Lp},{var,Lm,M},{'(',_Lc}|Toks], Ld, From, St) ->
     case dict:find({atom,M}, St#epp.macs) of
-	{ok,Def} ->
+	{ok,_Def} ->
 	    epp_reply(From, {error,{Lm,epp,{redefine,M}}}),
 	    wait_req_scan(St);
 	error ->
@@ -391,7 +399,7 @@ scan_define([{'(',Lp},{var,Lm,M},{'(',Lc}|Toks], Ld, From, St) ->
 		    wait_req_scan(St)
 	    end
     end;
-scan_define(Toks, Ld, From, St) ->
+scan_define(_Toks, Ld, From, St) ->
     epp_reply(From, {error,{Ld,epp,{bad,define}}}),
     wait_req_scan(St).
 
@@ -409,7 +417,7 @@ scan_define_cont(F, St, M, Def) ->
     U = dict:store(M, macro_uses(Def), St#epp.uses),
     scan_toks(F, St#epp{uses=U, macs=Ms}).
 
-macro_uses({Args, Tokens}) ->
+macro_uses({_Args, Tokens}) ->
     Uses0 = macro_ref(Tokens),
     lists:usort(Uses0).
 
@@ -419,7 +427,7 @@ macro_ref([{'?', _}, {atom, _, A} | Rest]) ->
     [{atom, A} | macro_ref(Rest)];
 macro_ref([{'?', _}, {var, _, A} | Rest]) ->
     [{atom, A} | macro_ref(Rest)];
-macro_ref([Token | Rest]) ->
+macro_ref([_Token | Rest]) ->
     macro_ref(Rest).
 
 all_macro_uses(D0) ->
@@ -434,21 +442,23 @@ add_macro_uses([{Key, Def} | Rest], D0) ->
 
 %% scan_undef(Tokens, UndefLine, From, EppState)
 
-scan_undef([{'(',Llp},{atom,Lm,M},{')',Lrp},{dot,Ld}], Lu, From, St) ->
+scan_undef([{'(',_Llp},{atom,_Lm,M},{')',_Lrp},{dot,_Ld}], _Lu, From, St) ->
     scan_toks(From, St#epp{macs=dict:erase({atom,M}, St#epp.macs),
 			   uses=all_macro_uses(St#epp.macs)});
-scan_undef([{'(',Llp},{var,Lm,M},{')',Lrp},{dot,Ld}], Lu, From,St) ->
+scan_undef([{'(',_Llp},{var,_Lm,M},{')',_Lrp},{dot,_Ld}], _Lu, From,St) ->
     scan_toks(From, St#epp{macs=dict:erase({atom,M}, St#epp.macs),
 			   uses=all_macro_uses(St#epp.macs)});
-scan_undef(Toks, Lu, From,St) ->
+scan_undef(_Toks, Lu, From,St) ->
     epp_reply(From, {error,{Lu,epp,{bad,undef}}}),
     wait_req_scan(St).
 
 %% scan_include(Tokens, IncludeLine, From, St)
 
-scan_include([{'(',Llp},{string,Lf,NewName},{')',Lrp},{dot,Ld}], Li, From, St) ->
+scan_include([{'(',_Llp},{string,_Lf,NewName0},{')',_Lrp},{dot,_Ld}], Li, 
+	     From, St) ->
+    NewName = expand_var(NewName0),
     enter_file(get(user_path), NewName, Li, From, St);
-scan_include(Toks, Li, From, St) ->
+scan_include(_Toks, Li, From, St) ->
     epp_reply(From, {error,{Li,epp,{bad,include}}}),
     wait_req_scan(St).
 
@@ -458,34 +468,38 @@ scan_include(Toks, Li, From, St) ->
 %%  is a library name, find its true directory and try with that.
 
 find_lib_dir(NewName) ->
-    Sc = string:chr(NewName, $/),
-    Lib = string:substr(NewName, 1, Sc-1),
-    Rest = string:substr(NewName, Sc+1),
+    [Lib | Rest] = filename:split(NewName),
     {code:lib_dir(Lib), Rest}.
 
-scan_include_lib([{'(',Llp},{string,Lf,NewName},{')',Lrp},{dot,Ld}], Li,
+scan_include_lib([{'(',_Llp},{string,_Lf,_NewName0},{')',_Lrp},{dot,_Ld}], Li,
+		 From, St)
+  when length(St#epp.sstk) >= 8 ->
+    epp_reply(From, {error,{Li,epp,{depth,"include_lib"}}}),
+    wait_req_scan(St);
+scan_include_lib([{'(',_Llp},{string,_Lf,NewName0},{')',_Lrp},{dot,_Ld}], Li,
 		 From, St) ->
+    NewName = expand_var(NewName0),
     case file:path_open(get(user_path), NewName, read) of
 	{ok,NewF,Pname} ->
 	    wait_req_scan(enter_file(NewF, Pname, From, St));
-	{error,E1} ->
+	{error,_E1} ->
 	    case catch find_lib_dir(NewName) of
 		{LibDir, Rest} when list(LibDir) ->
-		    LibName = LibDir ++ "/" ++ Rest,
+		    LibName = filename:join([LibDir | Rest]),
 		    case file:open(LibName, read) of
 			{ok,NewF} ->
 			    wait_req_scan(enter_file(NewF, LibName, From, St));
-			{error,E2} ->
+			{error,_E2} ->
 			    epp_reply(From,
 				      {error,{Li,epp,{include,lib,NewName}}}),
 			    wait_req_scan(St)
 		    end;
-		Error ->
+		_Error ->
 		    epp_reply(From, {error,{Li,epp,{include,lib,NewName}}}),
 		    wait_req_scan(St)
 	    end
     end;
-scan_include_lib(Toks, Li, From, St) ->
+scan_include_lib(_Toks, Li, From, St) ->
     epp_reply(From, {error,{Li,epp,{bad,include_lib}}}),
     wait_req_scan(St).
 
@@ -494,39 +508,39 @@ scan_include_lib(Toks, Li, From, St) ->
 %%  Handle the conditional parsing of a file.
 %%  Report a badly formed if[n]def test and then treat as undefined macro.
 
-scan_ifdef([{'(',Llp},{atom,Lm,M},{')',Lrp},{dot,Ld}], Li, From, St) ->
+scan_ifdef([{'(',_Llp},{atom,_Lm,M},{')',_Lrp},{dot,_Ld}], _Li, From, St) ->
     case dict:find({atom,M}, St#epp.macs) of
-	{ok,Def} ->
+	{ok,_Def} ->
 	    scan_toks(From, St#epp{istk=[ifdef|St#epp.istk]});
 	error ->
 	    skip_toks(From, St, [ifdef])
     end;
-scan_ifdef([{'(',Llp},{var,Lm,M},{')',Lrp},{dot,Ld}], Li, From, St) ->
+scan_ifdef([{'(',_Llp},{var,_Lm,M},{')',_Lrp},{dot,_Ld}], _Li, From, St) ->
     case dict:find({atom,M}, St#epp.macs) of
-	{ok,Def} ->
+	{ok,_Def} ->
 	    scan_toks(From, St#epp{istk=[ifdef|St#epp.istk]});
 	error ->
 	    skip_toks(From, St, [ifdef])
     end;
-scan_ifdef(Toks, Li, From, St) ->
+scan_ifdef(_Toks, Li, From, St) ->
     epp_reply(From, {error,{Li,epp,{bad,ifdef}}}),
     wait_req_skip(St, [ifdef]).
 
-scan_ifndef([{'(',Llp},{atom,Lm,M},{')',Lrp},{dot,Ld}], Li, From, St) ->
+scan_ifndef([{'(',_Llp},{atom,_Lm,M},{')',_Lrp},{dot,_Ld}], _Li, From, St) ->
     case dict:find({atom,M}, St#epp.macs) of
-	{ok,Def} ->
+	{ok,_Def} ->
 	    skip_toks(From, St, [ifndef]);
 	error ->
 	    scan_toks(From, St#epp{istk=[ifndef|St#epp.istk]})
     end;
-scan_ifndef([{'(',Llp},{var,Lm,M},{')',Lrp},{dot,Ld}], Li, From, St) ->
+scan_ifndef([{'(',_Llp},{var,_Lm,M},{')',_Lrp},{dot,_Ld}], _Li, From, St) ->
     case dict:find({atom,M}, St#epp.macs) of
-	{ok,Def} ->
+	{ok,_Def} ->
 	    skip_toks(From, St, [ifndef]);
 	error ->
 	    scan_toks(From, St#epp{istk=[ifndef|St#epp.istk]})
     end;
-scan_ifndef(Toks, Li, From, St) ->
+scan_ifndef(_Toks, Li, From, St) ->
     epp_reply(From, {error,{Li,epp,{bad,ifndef}}}),
     wait_req_scan(St).
 
@@ -534,18 +548,18 @@ scan_ifndef(Toks, Li, From, St) ->
 %%  If we are in an if body then convert to else and skip, if we are in an
 %%  else or not in anything report an error.
 
-scan_else([{dot,Ld}], Le, From, St) ->
+scan_else([{dot,_Ld}], Le, From, St) ->
     case St#epp.istk of
 	[else|Cis] ->
 	    epp_reply(From, {error,{Le,epp,{illegal,"repeated",else}}}),
 	    wait_req_skip(St#epp{istk=Cis}, [else]);
-	[I|Cis] ->
+	[_I|Cis] ->
 	    skip_toks(From, St#epp{istk=Cis}, [else]);
 	[] ->
 	    epp_reply(From, {error,{Le,epp,{illegal,"unbalanced",else}}}),
 	    wait_req_scan(St)
     end;
-scan_else(Toks, Le, From, St) ->
+scan_else(_Toks, Le, From, St) ->
     epp_reply(From, {error,{Le,epp,{bad,else}}}),
     wait_req_scan(St).
 
@@ -553,7 +567,7 @@ scan_else(Toks, Le, From, St) ->
 %%  Handle the conditional parsing of a file.
 %%  Report a badly formed if test and then treat as false macro.
 
-scan_if(Toks, Le, From, St) ->
+scan_if(_Toks, Le, From, St) ->
     epp_reply(From, {error,{Le,epp,{'NYI','if'}}}),
     wait_req_skip(St, ['if']).
 
@@ -561,22 +575,22 @@ scan_if(Toks, Le, From, St) ->
 %%  Handle the conditional parsing of a file.
 %%  Report a badly formed if test and then treat as false macro.
 
-scan_elif(Toks, Le, From, St) ->
+scan_elif(_Toks, Le, From, St) ->
     epp_reply(From, {error,{Le,epp,{'NYI','elif'}}}),
     wait_req_skip(St, ['elif']).
 
 %% scan_endif(Tokens, EndifLine, From, EppState)
 %%  If we are in an if body then exit it, else report an error.
 
-scan_endif([{dot,Ld}], Le, From, St) ->
+scan_endif([{dot,_Ld}], Le, From, St) ->
     case St#epp.istk of
-	[I|Cis] ->
+	[_I|Cis] ->
 	    scan_toks(From, St#epp{istk=Cis});
 	[] ->
 	    epp_reply(From, {error,{Le,epp,{illegal,"unbalanced",endif}}}),
 	    wait_req_scan(St)
     end;
-scan_endif(Toks, Le, From, St) ->
+scan_endif(_Toks, Le, From, St) ->
     epp_reply(From, {error,{Le,epp,{bad,endif}}}),
     wait_req_scan(St).
 
@@ -586,19 +600,19 @@ scan_endif(Toks, Le, From, St) ->
 
 skip_toks(From, St, [I|Sis]) ->
     case io:scan_erl_form(St#epp.file, '', St#epp.line) of
-	{ok,[{'-',Lh},{atom,Li,ifdef}|Toks],Cl} ->
+	{ok,[{'-',_Lh},{atom,_Li,ifdef}|_Toks],Cl} ->
 	    skip_toks(From, St#epp{line=Cl}, [ifdef,I|Sis]);
-	{ok,[{'-',Lh},{atom,Li,ifndef}|Toks],Cl} ->
+	{ok,[{'-',_Lh},{atom,_Li,ifndef}|_Toks],Cl} ->
 	    skip_toks(From, St#epp{line=Cl}, [ifndef,I|Sis]);
-	{ok,[{'-',Lh},{atom,Li,'if'}|Toks],Cl} ->
+	{ok,[{'-',_Lh},{atom,_Li,'if'}|_Toks],Cl} ->
 	    skip_toks(From, St#epp{line=Cl}, ['if',I|Sis]);
-	{ok,[{'-',Lh},{atom,Le,else}|Toks],Cl}->
+	{ok,[{'-',_Lh},{atom,Le,else}|_Toks],Cl}->
 	    skip_else(Le, From, St#epp{line=Cl}, [I|Sis]);
-	{ok,[{'-',Lh},{atom,Le,endif}|Toks],Cl} ->
+	{ok,[{'-',_Lh},{atom,_Le,endif}|_Toks],Cl} ->
 	    skip_toks(From, St#epp{line=Cl}, Sis);
-	{ok,Toks,Cl} ->
+	{ok,_Toks,Cl} ->
 	    skip_toks(From, St#epp{line=Cl}, [I|Sis]);
-	{error,E,Cl} ->
+	{error,_E,Cl} ->
 	    skip_toks(From, St#epp{line=Cl}, [I|Sis]);
 	{eof,Cl} ->
 	    leave_file(From, St#epp{line=Cl,istk=[I|Sis]});
@@ -612,26 +626,26 @@ skip_toks(From, St, []) ->
 skip_else(Le, From, St, [else|Sis]) ->
     epp_reply(From, {error,{Le,epp,{illegal,"repeated",else}}}),
     wait_req_skip(St, [else|Sis]);
-skip_else(Le, From, St, [I]) ->
+skip_else(_Le, From, St, [_I]) ->
     scan_toks (From, St#epp{istk=[else|St#epp.istk]});
-skip_else(Le, From, St, Sis) ->
+skip_else(_Le, From, St, Sis) ->
     skip_toks(From, St, Sis).
 
 %% macro_pars(Tokens, ArgStack)
 %% macro_expansion(Tokens)
 %%  Extract the macro parameters and the expansion from a macro definition.
 
-macro_pars([{')',Lp}, {',',Ld}|Ex], Args) ->
+macro_pars([{')',_Lp}, {',',_Ld}|Ex], Args) ->
     {ok, {lists:reverse(Args), macro_expansion(Ex)}};
-macro_pars([{var,_,Name}, {')',Lp}, {',',Ld}|Ex], Args) ->
+macro_pars([{var,_,Name}, {')',_Lp}, {',',_Ld}|Ex], Args) ->
     false = lists:member(Name, Args),		%Prolog is nice
     {ok, {lists:reverse([Name|Args]), macro_expansion(Ex)}};
-macro_pars([{var,L,Name}, {',',_}|Ts], Args) ->
+macro_pars([{var,_L,Name}, {',',_}|Ts], Args) ->
     false = lists:member(Name, Args),           
     macro_pars(Ts, [Name|Args]).
 
-macro_expansion([{')',Lp},{dot,Ld}]) -> [];
-macro_expansion([{dot,Ld}]) -> [];		%Be nice, allow no right paren!
+macro_expansion([{')',_Lp},{dot,_Ld}]) -> [];
+macro_expansion([{dot,_Ld}]) -> [];		%Be nice, allow no right paren!
 macro_expansion([T|Ts]) ->
     [T|macro_expansion(Ts)].
 
@@ -657,7 +671,7 @@ expand_macros(Type, Lm, M, Toks, Ms0) ->
 	    throw({error,Lm,{undefined,M}})
     end.
 
-check_uses([], Anc, U, Lm) ->
+check_uses([], _Anc, _U, _Lm) ->
     ok;
 check_uses([M|Rest], Anc, U, Lm) ->
     case lists:member(M, Anc) of
@@ -679,42 +693,42 @@ get_macro_uses(M, U) ->
     end.
 
 %% Macro expansion
-expand_macros([{'?',Lq},{atom,Lm,M}|Toks], Ms) ->
+expand_macros([{'?',_Lq},{atom,Lm,M}|Toks], Ms) ->
     expand_macros(atom, Lm, M, Toks, Ms);
 %% Special macros
-expand_macros([{'?',Lq},{var,Lm,'LINE'}|Toks], Ms) ->
+expand_macros([{'?',_Lq},{var,Lm,'LINE'}|Toks], Ms) ->
     [{integer,Lm,Lm}|expand_macros(Toks, Ms)];
-expand_macros([{'?',Lq},{var,Lm,M}|Toks], Ms) ->
+expand_macros([{'?',_Lq},{var,Lm,M}|Toks], Ms) ->
     expand_macros(atom, Lm, M, Toks, Ms);
 %% Illegal macros
-expand_macros([{'?',Lq},{Type,Lt}|Toks], Ms) ->
+expand_macros([{'?',_Lq},{Type,Lt}|_Toks], _Ms) ->
     throw({error,Lt,{call,[$?|atom_to_list(Type)]}});
-expand_macros([{'?',Lq},{Type,Lt,What}|Toks], Ms) ->
+expand_macros([{'?',_Lq},{_Type,Lt,What}|_Toks], _Ms) ->
     throw({error,Lt,{call,[$?|io_lib:write(What)]}});
 
 expand_macros([T|Ts], Ms) ->
     [T|expand_macros(Ts, Ms)];
-expand_macros([], Ms) -> [].
+expand_macros([], _Ms) -> [].
 
 %% bind_args(Tokens, MacroLine, MacroName, ArgumentVars, Bindings)
 %%  Collect the arguments to a macro call and check for correct number.
 
-bind_args([{'(',Llp},{')',Lrp}|Toks], Lm, M, [], Bs) ->
+bind_args([{'(',_Llp},{')',_Lrp}|Toks], _Lm, _M, [], Bs) ->
     {Bs,Toks};
-bind_args([{'(',Llp}|Toks0], Lm, M, [A|As], Bs) ->
+bind_args([{'(',_Llp}|Toks0], Lm, M, [A|As], Bs) ->
     {Arg,Toks1} = macro_arg(Toks0, [], []),
     macro_args(Toks1, Lm, M, As, dict:store(A, Arg, Bs));
-bind_args(Toks, Lm, M, As, Bs) ->
+bind_args(_Toks, Lm, M, _As, _Bs) ->
     throw({error,Lm,{mismatch,M}}).
 
-macro_args([{')',Lrp}|Toks], Lm, M, [], Bs) ->
+macro_args([{')',_Lrp}|Toks], _Lm, _M, [], Bs) ->
     {Bs,Toks};
-macro_args([{',',Lc}|Toks0], Lm, M, [A|As], Bs) ->
+macro_args([{',',_Lc}|Toks0], Lm, M, [A|As], Bs) ->
     {Arg,Toks1} = macro_arg(Toks0, [], []),
     macro_args(Toks1, Lm, M, As, dict:store(A, Arg, Bs));
-macro_args([], Lm, M, As, Bs) ->
+macro_args([], Lm, M, _As, _Bs) ->
     throw({error,Lm,{arg_error,M}});
-macro_args(Toks, Lm, M, As, Bs) ->
+macro_args(_Toks, Lm, M, _As, _Bs) ->
     throw({error,Lm,{mismatch,M}}).
 
 %% macro_arg([Tok], [ClosePar], [ArgTok]) -> {[ArgTok],[RestTok]}.
@@ -746,7 +760,7 @@ macro_arg([{Rb,Lrb}|Toks], [Rb|E], Arg) ->	%Found matching close
     macro_arg(Toks, E, [{Rb,Lrb}|Arg]);
 macro_arg([T|Toks], E, Arg) ->
     macro_arg(Toks, E, [T|Arg]);
-macro_arg([], E, Arg) ->
+macro_arg([], _E, Arg) ->
     {lists:reverse(Arg),[]}.
 
 %% expand_macro(MacroDef, MacroLine, RestTokens, Bindings)
@@ -755,7 +769,7 @@ macro_arg([], E, Arg) ->
 %%  argument values, inserting the line number of first the macro call
 %%  and then the macro arguments, i.e. simulate textual expansion.
 
-expand_macro([{var,Lv,V}|Ts], L, Rest, Bs) ->
+expand_macro([{var,_Lv,V}|Ts], L, Rest, Bs) ->
     case dict:find(V, Bs) of
 	{ok,Val} ->
 	    %% lists:append(Val, expand_macro(Ts, L, Rest, Bs));
@@ -763,7 +777,7 @@ expand_macro([{var,Lv,V}|Ts], L, Rest, Bs) ->
 	error ->
 	    [{var,L,V}|expand_macro(Ts, L, Rest, Bs)]
     end;
-expand_macro([{'?', _}, {'?', _}, {var,Lv,V}|Ts], L, Rest, Bs) ->
+expand_macro([{'?', _}, {'?', _}, {var,_Lv,V}|Ts], L, Rest, Bs) ->
     case dict:find(V, Bs) of
 	{ok,Val} ->
 	    %% lists:append(Val, expand_macro(Ts, L, Rest, Bs));
@@ -773,9 +787,9 @@ expand_macro([{'?', _}, {'?', _}, {var,Lv,V}|Ts], L, Rest, Bs) ->
     end;
 expand_macro([T|Ts], L, Rest, Bs) ->
     [setelement(2, T, L)|expand_macro(Ts, L, Rest, Bs)];
-expand_macro([], L, Rest, Bs) -> Rest.
+expand_macro([], _L, Rest, _Bs) -> Rest.
 
-expand_arg([A|As], Ts, L, Rest, Bs) ->
+expand_arg([A|As], Ts, _L, Rest, Bs) ->
     [A|expand_arg(As, Ts, element(2, A), Rest, Bs)];
 expand_arg([], Ts, L, Rest, Bs) ->
     expand_macro(Ts, L, Rest, Bs).
@@ -823,3 +837,19 @@ wait_epp_reply(Epp) ->
     receive
 	{epp_reply,Epp,Rep} -> Rep
     end.
+
+expand_var([$$ | _] = NewName) ->
+    case catch expand_var1(NewName) of
+	{ok, ExpName} ->
+	    ExpName;
+	_ ->
+	    NewName
+    end;
+expand_var(NewName) ->
+    NewName.
+
+expand_var1(NewName) ->
+    [[$$ | Var] | Rest] = filename:split(NewName),
+    Value = os:getenv(Var),
+    true = Value =/= false,
+    {ok, filename:join([Value | Rest])}.

@@ -53,9 +53,14 @@ void init_db(void);
 void db_proc_dead(Eterm pid);
 void db_info(CIO, int);
 DbTable* db_get_table(Process *p, Eterm id, int what);
+void erts_db_foreach_table(void (*)(DbTable *, void *), void *);
+void erts_db_foreach_offheap(DbTable *,
+			     void (*func)(ErlOffHeap *, void *),
+			     void *);
 
 extern int user_requested_db_max_tabs; /* set in erl_init */
 extern Export ets_select_delete_continue_exp;
+extern Export ets_select_count_continue_exp;
 extern Export ets_select_continue_exp;
 #endif
 

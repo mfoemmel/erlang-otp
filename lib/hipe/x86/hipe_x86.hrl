@@ -10,7 +10,7 @@
 %%% label_type	::= 'label' | 'constant'
 %%% aluop	::= <an atom denoting a binary alu op>
 %%% term	::= <any Erlang term>
-%%% cond	::= <an atom denoting a condition code>
+%%% cc		::= <an atom denoting a condition code>
 %%% pred	::= <a real number between 0.0 and 1.0 inclusive>
 %%% isfail	::= 'true' | 'false'
 %%% npop	::= <a 32-bit natural number which is a multiple of 4>
@@ -22,7 +22,7 @@
 %%% value	::= int32 | atom | {label, label_type}
 %%%
 %%% mem		::= {x86_mem, base, off, type}
-%%% base	::= temp (XXX BUG: top x86_mem's base may also be x86_mem b4 RA)
+%%% base	::= temp | []		(XXX BUG: not quite true before RA)
 %%% off		::= imm | temp
 %%%
 %%% src		::= temp | mem | imm
@@ -36,18 +36,19 @@
 %%%
 %%% jtab	::= label	(equiv. to {x86_imm,{label,'constant'}})
 %%%
-%%% sdesc	::= {x86_sdesc, exnlab, fsize, arity, skip}
+%%% sdesc	::= {x86_sdesc, exnlab, fsize, arity, live}
 %%% exnlab	::= [] | label
 %%% fsize	::= <int32>		(frame size in words)
-%%% skip	::= <list of int32>	(word offsets)
+%%% live	::= <tuple of int32>	(word offsets)
 %%% arity	::= int32
 
 -record(x86_temp, {reg, type, allocatable}).
 -record(x86_imm, {value}).
 -record(x86_mem, {base, off, type}).
+-record(x86_fpreg, {reg, pseudo}).
 -record(x86_mfa, {m, f, a}).
 -record(x86_prim, {prim}).
--record(x86_sdesc, {exnlab, fsize, arity, skip}).
+-record(x86_sdesc, {exnlab, fsize, arity, live}).
 
 %%% Basic instructions.
 %%% These follow the AT&T convention, i.e. op src,dst (dst := dst op src)
@@ -57,26 +58,32 @@
 
 -record(alu, {aluop, src, dst}).
 -record(call, {'fun', sdesc}).
--record(cmovcc, {cond, src, dst}).
+-record(cmovcc, {cc, src, dst}).
 -record(cmp, {src, dst}).		% a 'sub' alu which doesn't update dst
 -record(comment, {term}).
 -record(dec, {dst}).
+-record(finit, {}).
+-record(fmov, {src, dst}).
+-record(fop, {op, src, dst}).
 -record(inc, {dst}).
--record(jcc, {cond, label}).
+-record(jcc, {cc, label}).
 -record(jmp_fun, {'fun'}).		% tailcall, direct or indirect
 -record(jmp_label, {label}).		% local jmp, direct
 -record(jmp_switch, {temp, jtab, labels}).	% local jmp, indirect
 -record(label, {label, isfail}).
 -record(lea, {mem, temp}).
 -record(move, {src, dst}).
+-record(movsx, {src, dst}).
+-record(movzx, {src, dst}).
 -record(nop, {}).
+-record(prefix_fs, {}).
 -record(pseudo_call, {dsts, 'fun', arity, contlab, exnlab}). % dsts is [] or [EAX]
--record(pseudo_jcc, {cond, true_label, false_label, pred}).
--record(pseudo_tailcall, {'fun', args}).
+-record(pseudo_jcc, {cc, true_label, false_label, pred}).
+-record(pseudo_tailcall, {'fun', arity, stkargs}).
+-record(pseudo_tailcall_prepare, {}).
 -record(push, {src}).
 -record(ret, {npop}).			% EAX is live-in
+%%% Function definitions.
 
-%%% A function definition contains the function name, list of formals,
-%%% list of instructions, data, and the var and label ranges.
-
--record(defun, {mfa, formals, code, data, var_range, label_range}).
+-record(defun, {mfa, formals, code, data, isclosure, isleaf,
+		var_range, label_range}).

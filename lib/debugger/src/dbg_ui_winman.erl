@@ -21,6 +21,7 @@
 %% External exports
 -export([start/0]).
 -export([insert/2, is_started/1,
+	 clear_process/1,
 	 raise/1,
 	 windows_menu/1, update_windows_menu/1]).
 
@@ -66,6 +67,13 @@ is_started(Title) ->
 	false ->
 	    false
     end.
+
+%%--------------------------------------------------------------------
+%% clear_process(Title)
+%%   Title = string()
+%%--------------------------------------------------------------------
+clear_process(Title) ->
+    gen_server:cast(?MODULE, {clear_process, Title}).
 
 %%--------------------------------------------------------------------
 %% raise(Win)
@@ -118,10 +126,22 @@ handle_cast({insert, Pid, Title, Win}, State) ->
     link(Pid),
     Wins = State#state.wins ++ [#win{owner=Pid, title=Title, win=Win}],
     inform_all(Wins),
+    {noreply, State#state{wins=Wins}};
+
+handle_cast({clear_process, Title}, State) ->
+    OldWins = State#state.wins,
+    Wins = case lists:keysearch(Title, #win.title, OldWins) of
+		 {value, #win{owner=Pid}} ->     
+		   Msg = {dbg_ui_winman, destroy},
+		   Pid ! Msg,
+		   lists:keydelete(Title, #win.title, OldWins);
+	       false -> 
+		   OldWins
+    end,
     {noreply, State#state{wins=Wins}}.
 
 handle_info({'EXIT', Pid, _Reason}, State) ->
-    [Mon | Wins] = State#state.wins,
+    [Mon | _Wins] = State#state.wins,
     if
 	Pid==Mon#win.owner -> {stop, normal, State};
 	true ->
@@ -130,11 +150,11 @@ handle_info({'EXIT', Pid, _Reason}, State) ->
 	    {noreply, State#state{wins=Wins2}}
     end.
 
-terminate(Reason, State) ->
+terminate(_Reason, State) ->
     delete_all(State#state.wins),
     ok.
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 

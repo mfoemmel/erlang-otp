@@ -13,13 +13,15 @@
 %% Portions created by Ericsson are Copyright 2000, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id $
 %%
 -module(xref_utils).
 
 -export([xset/2]).
 
 -export([is_directory/1, file_info/1, fa_to_mfa/2]).
+
+-export([is_string/2, is_path/1]).
 
 -export([module_filename/2, application_filename/1, application_filename/2]).
 
@@ -39,7 +41,7 @@
 
 -export([options/2]).
 
--export([subprocess/4]).
+-export([subprocess/2]).
 
 -export([format_error/1]).
 
@@ -126,6 +128,32 @@ application_filename(AppName) ->
 
 application_filename(Dir, AppName) ->
     filename:join(to_list(Dir), application_filename(AppName)).
+
+%% -> bool()
+is_string([], _) ->
+    false;
+is_string(Term, C) ->
+    is_string1(Term, C).
+
+is_string1([H | T], C) when H > C, H < 127 -> 
+    is_string1(T, C);
+is_string1([], _) -> 
+    true;
+is_string1(_, _) -> 
+    false.
+    
+%% -> bool()
+is_path([S | Ss]) ->
+    case is_string(S, 31) of
+	true -> 
+	    is_path(Ss);
+	false ->
+	    false
+    end;
+is_path([]) -> 
+    true;
+is_path(_) -> 
+    false.
 
 %====================================
 % Release and application functions.
@@ -232,10 +260,18 @@ scan_directory(File, Recurse, Collect, Watch) ->
     [L | {E,J,U}] = find_files_dir(File, Recurse, Collect, Watch, Init),
     {reverse(L), reverse(E), reverse(J), reverse(U)}.
 
+%% {Dir, Basename} | false
 split_filename(File, Extension) ->
-    Dir = filename:dirname(File),
-    Basename = filename:basename(File, Extension),
-    {Dir, Basename++Extension}.    
+    case catch begin 
+		   Dir = filename:dirname(File),
+		   Basename = filename:basename(File, Extension),
+		   {Dir, Basename++Extension}
+	       end of
+	{'EXIT', _} ->
+	    false;
+	R ->
+	    R
+    end.
 
 %% list_path(Path, Extensions) -> 
 %%    {[{Module, {integer(), Directory, Basename}}], [error()]}
@@ -298,7 +334,10 @@ is_funfun(erlang, spawn_link, 1) -> true;
 is_funfun(erlang, spawn_link, 2) -> true;
 is_funfun(erlang, spawn_link, 3) -> true;
 is_funfun(erlang, spawn_link, 4) -> true;
+is_funfun(erlang, spawn_opt, 2) -> true;
+is_funfun(erlang, spawn_opt, 3) -> true;
 is_funfun(erlang, spawn_opt, 4) -> true;
+is_funfun(erlang, spawn_opt, 5) -> true;
 is_funfun(erts_debug, apply, 4) -> true;
 is_funfun(_, _, _) -> false.
 
@@ -441,8 +480,8 @@ find_beam(Culprit) ->
 options(Options, Valid) ->
     split_options(Options, [], [], [], Valid).
 
-subprocess(Mod, Fun, Args, Opts) ->
-    Pid = spawn_opt(Mod, Fun, Args, Opts),
+subprocess(Fun, Opts) ->
+    Pid = spawn_opt(Fun, Opts),
     receive 
 	{Pid, Reply} -> Reply
     end.

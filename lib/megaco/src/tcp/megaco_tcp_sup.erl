@@ -96,5 +96,5 @@ init([]) ->
 %% Func: terminate/2
 %% Description: Termination function for the supervisor
 %%-----------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.

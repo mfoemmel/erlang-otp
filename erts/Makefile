@@ -38,11 +38,6 @@ debug opt docs clean:
 # - don't use them in scripts or assume they will always stay like this!
 #
 
-# Build a standalone emulator (unsupported for now)
-sae:
-	@cd sae && $(MAKE)
-	@cd emulator && $(MAKE) -f $(TARGET)/Makefile sae
-
 # Make erl and erlc scripts in $(ERL_TOP)/bin which runs the compiled version
 local_setup:
 ifneq ($(TARGET),win32)
@@ -84,5 +79,5 @@ release release_docs:
 
 # ----------------------------------------------------------------------
 
-.PHONY: debug opt docs clean sae local_setup configure release \
+.PHONY: debug opt docs clean local_setup configure release \
 	release_docs run_test_cases

@@ -51,11 +51,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#ifndef __STDC__
-#include <varargs.h>
-#else
 #include <stdarg.h>
-#endif
 
 #include <stdio.h>
 #include <math.h>

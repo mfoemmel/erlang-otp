@@ -714,9 +714,9 @@ resize(Object, Width, Height) ->
 
 name_occupied(Name) ->
     case gs:read(Name,id) of
-	{error,Reason} ->
+	{error,_Reason} ->
 	     false;
-	Id -> true
+	_Id -> true
     end.
 
 

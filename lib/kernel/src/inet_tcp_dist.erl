@@ -71,7 +71,7 @@ select(Node) ->
 %% ------------------------------------------------------------
 
 listen(Name) ->
-    case inet_tcp:listen(0, [{active, false}, {packet,2}]) of
+    case do_listen([{active, false}, {packet,2}]) of
 	{ok, Socket} ->
 	    TcpAddress = get_tcp_address(Socket),
 	    {_,Port} = TcpAddress#net_address.address,
@@ -80,6 +80,32 @@ listen(Name) ->
 	Error ->
 	    Error
     end.
+
+do_listen(Options) ->
+    {First,Last} = case application:get_env(kernel,inet_dist_listen_min) of
+		       {ok,N} when integer(N) ->
+			   case application:get_env(kernel,
+						    inet_dist_listen_max) of
+			       {ok,M} when integer(M) ->
+				   {N,M};
+			       _ ->
+				   {N,N}
+			   end;
+		       _ ->
+			   {0,0}
+		   end,
+    do_listen(First,Last,Options).
+
+do_listen(First,Last,_) when First > Last ->
+    {error,eaddrinuse};
+do_listen(First,Last,Options) ->
+    case inet_tcp:listen(First, Options) of
+	{error, eaddrinuse} ->
+	    do_listen(First+1,Last,Options);
+	Other ->
+	    Other
+    end.
+	    
 
 %% ------------------------------------------------------------
 %% Accepts new connection attempts from other Erlang nodes.

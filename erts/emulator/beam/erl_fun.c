@@ -94,6 +94,42 @@ erts_put_fun_entry2(Eterm mod, int old_uniq, int old_index,
     return fe;
 }
 
+struct my_key {
+    Eterm mod;
+    byte* uniq;
+    int index;
+    ErlFunEntry* fe;
+};
+
+static void
+search(void* b, void* data)
+{
+    struct my_key* key = (struct my_key *) data;
+    ErlFunEntry* fe = (ErlFunEntry *) b;
+
+    if (fe->module == key->mod &&
+	fe->index == key->index &&
+	memcmp(fe->uniq, key->uniq, 16) == 0) {
+	key->fe = fe;
+    }
+}
+
+ErlFunEntry*
+erts_put_debug_fun_entry(Eterm mod, byte* uniq, int index)
+{
+    struct my_key key;
+
+    key.mod = mod;
+    key.uniq = uniq;
+    key.index = index;
+    key.fe = NULL;
+    hash_foreach(&erts_fun_table, search, &key);
+    if (key.fe != NULL) {
+	key.fe->refc++;
+    }
+    return key.fe;
+}
+
 ErlFunEntry*
 erts_get_fun_entry(Eterm mod, int uniq, int index)
 {
@@ -112,6 +148,7 @@ erts_erase_fun_entry(ErlFunEntry* fe)
     hash_erase(&erts_fun_table, (void *) fe);
 }
 
+#ifndef SHARED_HEAP
 void
 erts_cleanup_funs(ErlFunThing* funp)
 {
@@ -123,6 +160,7 @@ erts_cleanup_funs(ErlFunThing* funp)
 	funp = funp->next;
     }
 }
+#endif
 
 void
 erts_cleanup_funs_on_purge(Eterm* start, Eterm* end)

@@ -188,7 +188,7 @@ event(DB, Gstkid, Etype, Edata, Args) ->
 
 
 %% widget specific events
-wid_event(DB, Gstkid, Etype, Edata, Args) ->
+wid_event(DB, Gstkid, Etype, Edata, _Args) ->
     SO = Gstkid#gstkid.widget_data,
     TkW = SO#so.object,
     CurIdx = tcl2erl:ret_int([TkW," index active;"]),
@@ -269,7 +269,7 @@ option(Option, Gstkid, MainW,DB, Listbox) ->
 %% Return 	: The value of the option or invalid_option
 %%		  [OptionValue | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-read_option(Option,GstkId,MainW,DB,Listbox) ->
+read_option(Option,GstkId,_MainW,DB,Listbox) ->
     case Option of
 	fg            -> tcl2erl:ret_color([Listbox," cg -fg"]);
 	font          -> gstk_db:opt(DB,GstkId,font,undefined);
@@ -308,7 +308,7 @@ cbind(DB, Gstkid, Listbox, Etype, {true, Edata}) ->
 cbind(DB, Gstkid, Listbox, Etype, true) ->    
     cbind(DB, Gstkid, Listbox, Etype, {true, []});
  
-cbind(DB, Gstkid, Listbox, Etype, On) ->    
+cbind(DB, Gstkid, Listbox, Etype, _On) ->    
     Button = case Etype of
                  click       -> " <Button-1> {}";
                  doubleclick -> " <Double-Button-1> {}"

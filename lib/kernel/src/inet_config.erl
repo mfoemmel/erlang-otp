@@ -38,8 +38,27 @@
 %%
 %%
 init() ->
+    OsType = os:type(),
+    case OsType of
+	{ose,_} ->
+	    case init:get_argument(loader) of
+		{ok,[["inet"]]} ->			
+		    %% port already started by prim_loader
+		    ok;
+		Other ->
+		    %% Setup reserved port for ose_inet driver (only OSE)
+		    case catch erlang:open_port_prim({spawn,ose_inet},[binary]) of
+			{'EXIT',Why} ->
+			    error("can't open port for ose_inet: ~p", [Why]);
+			OseInetPort ->
+			    erlang:display({ose_inet_port,OseInetPort})
+		    end
+	    end;
+	_ ->
+	    ok
+    end,
     set_hostname(),
-    case os:type() of
+    case OsType of
 	{unix, Type} ->
 	    %% The Etc variable enables us to run tests with other configuration files than
 	    %% the normal ones 
@@ -92,11 +111,18 @@ init() ->
 			_ -> 
 			    ok
 		    end;
+		netbsd ->
+		    case os:version() of
+			{Major,Minor,_} when Major >= 1, Minor >= 4 ->
+			    load_resolv(filename:join(Etc,"nsswitch.conf"), nsswitch_conf);
+			_ ->
+			    ok
+		    end;
 		_ ->
 		    ok
 	    end,
-	    add_dns_lookup(inet_db:res_option(lookup));
-
+	    add_dns_lookup(inet_db:res_option(lookup)),
+	    handle_native_lookup();
 	{win32, Type} ->
 	    win32_load_from_registry(Type),
 	    inet_db:set_lookup([native]);
@@ -109,6 +135,34 @@ init() ->
 		    no_ERLRESCONF;
 		Resolv ->
 		    load_resolv(Resolv, resolv)
+	    end;
+	{ose,Type} ->
+	    inet_db:set_lookup([file, dns]),
+	    case os:getenv("NAMESERVER") of
+		false ->
+		    case os:getenv("RESOLVFILE") of
+			false ->
+			    erlang:display('Warning: No NAMESERVER or RESOLVFILE specified!'),
+			    no_resolv;
+			Resolv ->
+			    load_resolv(Resolv, resolv)
+		    end;
+		Ns ->
+		    {ok,IP} = inet_parse:address(Ns),
+		    inet_db:add_rc_list([{nameserver,IP}])
+	    end,
+	    case os:getenv("DOMAIN") of
+		false ->
+		    no_domain;
+		D ->
+		    ok = inet_db:add_rc_list([{domain,D}])
+	    end,
+	    case os:getenv("HOSTSFILE") of
+		false ->
+		    erlang:display('Warning: No HOSTSFILE spedified!'),
+		    no_hosts_file;
+		File ->
+		    load_hosts(File, ose)
 	    end;
 	_ ->
 	    false
@@ -152,6 +206,29 @@ standalone_host() ->
 		    ok
 	    end
     end.
+
+
+handle_native_lookup() ->
+    case is_native(inet_db:res_option(lookup)) of
+	true ->
+	    inet_db:set_lookup([native]),
+	    ok;
+	_ ->
+	    ok
+    end.
+
+is_native([]) ->
+    false;
+is_native([yp|T]) ->
+    true;
+is_native([nis|T]) ->
+    true;
+is_native([nisplus|T]) ->
+    true;
+is_native([wins|T]) ->
+    true;
+is_native([H|T]) ->
+    is_native(T).
 
 add_dns_lookup(L) ->
     case lists:member(dns,L) of

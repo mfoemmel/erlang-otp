@@ -64,7 +64,7 @@
 -define(DRV,    efile).
 -define(FD_DRV, efile).
 
--define(LARGEFILESIZE, (1 bsl 31)).
+-define(LARGEFILESIZE, (1 bsl 63)).
 
 %% Driver commands
 -define(FILE_OPEN,             1).
@@ -83,8 +83,6 @@
 -define(FILE_TRUNCATE,         14).
 -define(FILE_READ_FILE,        15).
 -define(FILE_WRITE_INFO,       16).
--define(FILE_PREAD,            17).
--define(FILE_PWRITE,           18).
 -define(FILE_LSTAT,            19).
 -define(FILE_READLINK,         20).
 -define(FILE_LINK,             21).
@@ -182,8 +180,8 @@ open_int({Driver, Portopts}, File, Mode, Setopts) ->
 	    Error
     end;
 open_int(Port, File, Mode, Setopts) ->
-    case (catch list_to_binary([?FILE_OPEN, 
-				i32(Mode band ?EFILE_MODE_MASK), File, 0])) of
+    M = Mode band ?EFILE_MODE_MASK,
+    case (catch list_to_binary([<<?FILE_OPEN, M:32>>, File, 0])) of
 	{'EXIT', _} ->
 	    {error, einval};
 	Cmd ->
@@ -258,13 +256,17 @@ pwrite_int(Port, [{Offs, Bin} | T], N, Spec, Data)
   when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
        binary(Bin) ->
     Size = size(Bin),
-    pwrite_int(Port, T, N+1, [<<Offs:32, Size:32>> | Spec], [Bin | Data]);
+    pwrite_int(Port, T, N+1, 
+	       [<<Offs:64/signed, Size:64>> | Spec], 
+	       [Bin | Data]);
 pwrite_int(Port, [{Offs, Bytes} | T], N, Spec, Data)
   when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
        list(Bytes) ->
     Bin = list_to_binary(Bytes), % Might throw badarg
     Size = size(Bin),
-    pwrite_int(Port, T, N+1, [<<Offs:32, Size:32>> | Spec], [Bin | Data]);
+    pwrite_int(Port, T, N+1, 
+	       [<<Offs:64/signed, Size:64>> | Spec], 
+	       [Bin | Data]);
 pwrite_int(Port, [_|_], _N, _Spec, _Data) ->
     {error, einval}.
 
@@ -273,11 +275,11 @@ pwrite_int(Port, [_|_], _N, _Spec, _Data) ->
 %% Returns {error, Reason} | ok.
 pwrite(#file_descriptor{module = ?MODULE, data = {Port, _}}, Offs, Bytes) 
        when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE ->
-    case drv_command(Port, [?FILE_PWRITE, i32(Offs) | Bytes]) of
-	{ok, _Size} ->
-	    ok;
-	{error, _} = Error ->
-	    Error
+    case pwrite_int(Port, [{Offs, Bytes}], 0, [], []) of
+	{error, {_, Reason}} ->
+	    {error, Reason};
+	Result ->
+	    Result
     end;
 pwrite(#file_descriptor{module = ?MODULE}, _, _) ->
     {error, einval}.
@@ -291,7 +293,7 @@ sync(#file_descriptor{module = ?MODULE, data = {Port, _}}) ->
 %% Returns {ok, Data} | eof | {error, Reason}.
 read(#file_descriptor{module = ?MODULE, data = {Port, _}}, Size)
   when integer(Size), 0 =< Size, Size < ?LARGEFILESIZE ->
-    case drv_command(Port, [?FILE_READ|i32(Size)]) of
+    case drv_command(Port, <<?FILE_READ, Size:64>>) of
 	{ok, {0, _Data}} ->
 	    eof;
 	{ok, 0} ->
@@ -302,7 +304,7 @@ read(#file_descriptor{module = ?MODULE, data = {Port, _}}, Size)
 	    %% Garbage collecting here might help if the current processes
 	    %% has some old binaries left.
 	    erlang:garbage_collect(),
-	    case drv_command(Port, [?FILE_READ|i32(Size)]) of
+	    case drv_command(Port, <<?FILE_READ, Size:64>>) of
 		{ok, {0, _Data}} ->
 		    eof;
 		{ok, {_Size, Data}} ->
@@ -330,7 +332,8 @@ pread(#file_descriptor{module = ?MODULE}, _) ->
 pread_int(Port, [], 0, []) ->
     {ok, []};
 pread_int(Port, [], N, Spec) ->
-    Command = list_to_binary([<<?FILE_PREADV, N:32>> | lists:reverse(Spec)]),
+    Command = list_to_binary([<<?FILE_PREADV, 0:32, N:32>> 
+			      | lists:reverse(Spec)]),
     case drv_command(Port, Command) of
 	{ok, _} = Result ->
 	    Result;
@@ -340,7 +343,7 @@ pread_int(Port, [], N, Spec) ->
 pread_int(Port, [{Offs, Size} | T], N, Spec)
   when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
        integer(Size), 0 =< Size, Size < ?LARGEFILESIZE ->
-    pread_int(Port, T, N+1, [<<Offs:32, Size:32>> | Spec]);
+    pread_int(Port, T, N+1, [<<Offs:64/signed, Size:64>> | Spec]);
 pread_int(Port, [_|_], _N, _Spec) ->
     {error, einval}.
 
@@ -350,7 +353,8 @@ pread_int(Port, [_|_], _N, _Spec) ->
 pread(#file_descriptor{module = ?MODULE, data = {Port, _}}, Offs, Size) 
   when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
        integer(Size), 0 =< Size, Size < ?LARGEFILESIZE ->
-    case drv_command(Port, <<?FILE_PREADV, 1:32, Offs:32, Size:32>>) of
+    case drv_command(Port, 
+		     <<?FILE_PREADV, 0:32, 1:32, Offs:64/signed, Size:64>>) of
 	{ok, [eof]} ->
 	    eof;
 	{ok, [Data]} ->
@@ -358,18 +362,12 @@ pread(#file_descriptor{module = ?MODULE, data = {Port, _}}, Offs, Size)
 	{error, _} = Error ->
 	    Error
     end;
-%     case drv_command(Port, [?FILE_PREAD, i32(Offs), i32(Size)]) of
-% 	{ok, {0, _Data}} ->
-% 	    eof;
-% 	{ok, {_Size, Data}} ->
-% 	    {ok, Data};
-% 	{error, _} = Error ->
-% 	    Error
-%     end;
 pread(#file_descriptor{module = ?MODULE}, _, _) ->
     {error, einval}.
 
 
+
+%% XXX here ???
 
 %% Returns {ok, Position} | {error, Reason}.
 position(#file_descriptor{module = ?MODULE, data = {Port, _}}, At) ->
@@ -377,7 +375,7 @@ position(#file_descriptor{module = ?MODULE, data = {Port, _}}, At) ->
 	{error, _} = Error ->
 	    Error;
 	{ok, Offs, Whence} ->
-	    drv_command(Port, <<?FILE_LSEEK, Offs:32/signed, Whence:32>>)
+	    drv_command(Port, <<?FILE_LSEEK, Offs:64/signed, Whence:32>>)
     end.
 
 %% Returns {error, Reaseon} | ok.
@@ -405,15 +403,14 @@ ipread_s32bu_p32bu(#file_descriptor{module = ?MODULE, data = {Port, _}},
 		   Offs,
 		   MaxSize)
   when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
-       integer(MaxSize), 0 =< MaxSize, MaxSize < ?LARGEFILESIZE ->
+       integer(MaxSize), 0 =< MaxSize, MaxSize < (1 bsl 31) ->
     drv_command(Port, <<?FILE_IPREAD, ?IPREAD_S32BU_P32BU,
-		       Offs:32/big-unsigned, 
-		       MaxSize:32/big-unsigned>>);
+		       Offs:64, MaxSize:32>>);
 ipread_s32bu_p32bu(#file_descriptor{module = ?MODULE} = Handle,
 		   Offs,
 		   MaxSize)
   when integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE ->
-    ipread_s32bu_p32bu(Handle, Offs, ?LARGEFILESIZE-1).
+    ipread_s32bu_p32bu(Handle, Offs, (1 bsl 31)-1).
 
 
 
@@ -856,10 +853,15 @@ drv_command({Driver, Portopts}, Command, Fun, ExtraArgs) ->
 drv_get_response([Port]) ->
     erlang:bump_reductions(100),
     receive
-	{Port, {data, [Response|Rest]}} ->
-	    translate_response(Response, Rest);
+	{Port, {data, [Response|Rest] = Data}} ->
+	    case catch translate_response(Response, Rest) of
+		{'EXIT', Reason} ->
+		    {error, {bad_response_from_port, Data, Reason}};
+		Result ->
+		    Result
+	    end;
 	{'EXIT', Port, Reason} ->
-	    {error, port_died}
+	    {error, {port_died, Reason}}
     end.
 
 drv_get_responses([Port, Result]) ->
@@ -911,14 +913,14 @@ open_mode([delayed_write|Rest], Mode, Portopts, Setopts) ->
     open_mode([{delayed_write, 64*1024, 2000}|Rest], Mode, Portopts, Setopts);
 open_mode([{delayed_write, Size, Delay}|Rest], Mode, Portopts, Setopts) 
   when integer(Size), 0 =< Size, Size < ?LARGEFILESIZE,
-       integer(Delay), 0 =< Delay, Delay < 1 bsl 32 ->
+       integer(Delay), 0 =< Delay, Delay < 1 bsl 64 ->
     open_mode(Rest, Mode, Portopts, 
-	      [<<?FILE_SETOPT, ?FILE_OPT_DELAYED_WRITE, Size:32, Delay:32>> 
+	      [<<?FILE_SETOPT, ?FILE_OPT_DELAYED_WRITE, Size:64, Delay:64>> 
 	       | Setopts]);
 open_mode([{read_ahead, Size}|Rest], Mode, Portopts, Setopts)
   when integer(Size), 0 =< size, Size < ?LARGEFILESIZE ->
     open_mode(Rest, Mode, Portopts,
-	      [<<?FILE_SETOPT, ?FILE_OPT_READ_AHEAD, Size:32>> | Setopts]);
+	      [<<?FILE_SETOPT, ?FILE_OPT_READ_AHEAD, Size:64>> | Setopts]);
 open_mode([read_ahead|Rest], Mode, Portopts, Setopts) ->
     open_mode([{read_ahead, 64*1024}|Rest], Mode, Portopts, Setopts);
 open_mode([], Mode, Portopts, Setopts) ->
@@ -964,52 +966,54 @@ translate_response(?FILE_RESP_OK, Data) ->
     {ok, Data};
 translate_response(?FILE_RESP_ERROR, List) when list(List) ->
     {error, list_to_atom(List)};
-translate_response(?FILE_RESP_NUMBER, [X1, X2, X3, X4]) ->
-    {ok, i32(X1, X2, X3, X4)};
-translate_response(?FILE_RESP_DATA, [X1, X2, X3, X4|Data]) ->
-    {ok, {i32(X1, X2, X3, X4), Data}};
+translate_response(?FILE_RESP_NUMBER, List) ->
+    {N, []} = get_uint64(List),
+    {ok, N};
+translate_response(?FILE_RESP_DATA, List) ->
+    {N, Data} = get_uint64(List),
+    {ok, {N, Data}};
 translate_response(?FILE_RESP_INFO, List) when list(List) ->
-    {ok, transform_ints(getints(List))};
-translate_response(?FILE_RESP_NUMERR, [X1, X2, X3, X4 | List]) ->
-    {error, {i32(X1, X2, X3, X4), list_to_atom(List)}};
+    {ok, transform_info_ints(get_uint32s(List))};
+translate_response(?FILE_RESP_NUMERR, L0) ->
+    {N, L1} = get_uint64(L0),
+    {error, {N, list_to_atom(L1)}};
 translate_response(?FILE_RESP_LDATA, List) ->
     {ok, transform_ldata(List)};
+translate_response(?FILE_RESP_N2DATA, 
+		   <<Offset:64, 0:64, Size:64>>) ->
+    {ok, {Size, Offset, eof}};
+translate_response(?FILE_RESP_N2DATA, 
+		   [<<Offset:64, 0:64, Size:64>> | <<>>]) ->
+    {ok, {Size, Offset, eof}};
 translate_response(?FILE_RESP_N2DATA = X, 
-		   [X1,X2,X3,X4, Y1,Y2,Y3,Y4, Z1,Z2,Z3,Z4 | D] = Data) ->
-    Offset = i32(X1,X2,X3,X4),
-    ReadSize = i32(Y1,Y2,Y3,Y4),
-    Size = i32(Z1,Z2,Z3,Z4), 
-    case {ReadSize, D} of
+		   [<<_:64, 0:64, _:64>> | _] = Data) ->
+    {error, {bad_response_from_port, [X | Data]}};
+translate_response(?FILE_RESP_N2DATA = X, 
+		   [<<_:64, _:64, _:64>> | <<>>] = Data) ->
+    {error, {bad_response_from_port, [X | Data]}};
+translate_response(?FILE_RESP_N2DATA, 
+		   [<<Offset:64, _ReadSize:64, Size:64>> | D]) ->
+    {ok, {Size, Offset, D}};
+translate_response(?FILE_RESP_N2DATA = X, L0) when list(L0) ->
+    {Offset, L1}    = get_uint64(L0),
+    {ReadSize, L2} = get_uint64(L1),
+    {Size, L3}      = get_uint64(L2),
+    case {ReadSize, L3} of
 	{0, []} ->
 	    {ok, {Size, Offset, eof}};
 	{0, _} ->
-	    {error, {bad_response_from_port, X, Data}};
+	    {error, {bad_response_from_port, [X | L0]}};
 	{_, []} ->
-	    {error, {bad_response_from_port, X, Data}};
+	    {error, {bad_response_from_port, [X | L0]}};
 	_ ->
-	    {ok, {Size, Offset, D}}
+	    {ok, {Size, Offset, L3}}
     end;
-translate_response(?FILE_RESP_N2DATA, 
-		   <<Offset:32, 0:32, Size:32>>) ->
-    {ok, {Size, Offset, eof}};
-translate_response(?FILE_RESP_N2DATA, 
-		   [<<Offset:32, 0:32, Size:32>> | <<>>]) ->
-    {ok, {Size, Offset, eof}};
-translate_response(?FILE_RESP_N2DATA = X, 
-		   [<<_:32, 0:32, _:32>> | _] = Data) ->
-    {error, {bad_response_from_port, X, Data}};
-translate_response(?FILE_RESP_N2DATA = X, 
-		   [<<_:32, _:32, _:32>> | <<>>] = Data) ->
-    {error, {bad_response_from_port, X, Data}};
-translate_response(?FILE_RESP_N2DATA, 
-		   [<<Offset:32, _ReadSize:32, Size:32>> | D]) ->
-    {ok, {Size, Offset, D}};
 translate_response(?FILE_RESP_EOF, []) ->
     eof;
 translate_response(X, Data) ->
-    {error, {bad_response_from_port, X, Data}}.
+    {error, {bad_response_from_port, [X | Data]}}.
 
-transform_ints(Ints) ->
+transform_info_ints(Ints) ->
     [HighSize, LowSize, Type|Tail0] = Ints,
     Size = HighSize * 16#100000000 + LowSize,
     [Ay, Am, Ad, Ah, Ami, As|Tail1]  = Tail0,
@@ -1043,66 +1047,71 @@ file_access(2) -> read;
 file_access(3) -> read_write.
 
 int_to_bytes(Int) when integer(Int) ->
-    i32(Int);
+    <<Int:32>>;
 int_to_bytes(undefined) ->
-    [255, 255, 255, 255].
+    <<-1:32>>.
 
 date_to_bytes(undefined) ->
-    MinusOne = [255, 255, 255, 255],
-    [MinusOne, MinusOne, MinusOne, MinusOne, MinusOne, MinusOne];
+    <<-1:32, -1:32, -1:32, -1:32, -1:32, -1:32>>;
 date_to_bytes({{Y, Mon, D}, {H, Min, S}}) ->
-    [i32(Y), i32(Mon), i32(D), i32(H), i32(Min), i32(S)].
-    
-i32(Int) when binary(Int) ->
-    i32(binary_to_list(Int));
+    <<Y:32, Mon:32, D:32, H:32, Min:32, S:32>>.
 
-i32(Int)  when integer(Int) -> [(Int bsr 24) band 255,
-				(Int bsr 16) band 255,
-				(Int bsr  8) band 255,
-				Int band 255];
-i32([X1,X2,X3,X4]) ->
+% uint64([[X1, X2, X3, X4] = Y1 | [X5, X6, X7, X8] = Y2]) ->
+%     (uint32(Y1) bsl 32) bor uint32(Y2).
+
+% uint64(X1, X2, X3, X4, X5, X6, X7, X8) ->
+%     (uint32(X1, X2, X3, X4) bsl 32) bor uint32(X5, X6, X7, X8).
+
+% uint32([X1,X2,X3,X4]) ->
+%     (X1 bsl 24) bor (X2 bsl 16) bor (X3 bsl 8) bor X4.
+
+uint32(X1,X2,X3,X4) ->
     (X1 bsl 24) bor (X2 bsl 16) bor (X3 bsl 8) bor X4.
 
-i32(X1,X2,X3,X4) ->
-    (X1 bsl 24) bor (X2 bsl 16) bor (X3 bsl 8) bor X4.
-    
-getints([X1,X2,X3,X4|Tail]) ->
-    [i32(X1,X2,X3,X4) | getints(Tail)];
-getints([]) -> [].
+get_uint64(L0) ->
+    {X1, L1} = get_uint32(L0),
+    {X2, L2} = get_uint32(L1),
+    {(X1 bsl 32) bor X2, L2}.
+
+get_uint32([X1,X2,X3,X4|List]) ->
+    {(((((X1 bsl 8) bor X2) bsl 8) bor X3) bsl 8) bor X4, List}.
+
+get_uint32s([X1,X2,X3,X4|Tail]) ->
+    [uint32(X1,X2,X3,X4) | get_uint32s(Tail)];
+get_uint32s([]) -> [].
 
 
 
-transform_ldata(<<0:32>>) ->
+%% Binary mode
+transform_ldata(<<0:32, 0:32>>) ->
     [];
-transform_ldata([<<N:32, Sizes/binary>> | Datas]) ->
+transform_ldata([<<0:32, N:32, Sizes/binary>> | Datas]) ->
     transform_ldata(N, Sizes, Datas, []);
-%% Binary mode above, list mode below
-transform_ldata([X1,X2,X3,X4 | List]) ->
-    transform_ldata(i32(X1,X2,X3,X4), List).
-
 %% List mode
-transform_ldata(0, []) ->
-    [];
-transform_ldata(N, List) ->
-    transform_ldata(N, List, []).
+transform_ldata([_,_,_,_,_,_,_,_|_] = L0) ->
+    {0, L1} = get_uint32(L0),
+    {N, L2} = get_uint32(L1),
+    transform_ldata(N, L2, []).
 
 %% List mode
 transform_ldata(0, List, Sizes) ->
     transform_ldata(0, List, lists:reverse(Sizes), []);
-transform_ldata(N, [X1,X2,X3,X4 | List], Sizes) ->
-    transform_ldata(N-1, List, [i32(X1,X2,X3,X4) | Sizes]).
+transform_ldata(N, L0, Sizes) ->
+    {Size, L1} = get_uint64(L0),
+    transform_ldata(N-1, L1, [Size | Sizes]).
 
-transform_ldata(1, <<0:32>>, <<>>, R) ->
+%% Binary mode
+transform_ldata(1, <<0:64>>, <<>>, R) ->
     lists:reverse(R, [eof]);
-transform_ldata(1, <<Size:32>>, Data, R) 
+transform_ldata(1, <<Size:64>>, Data, R) 
   when binary(Data), size(Data) == Size ->
     lists:reverse(R, [Data]);
-transform_ldata(N, <<0:32, Sizes/binary>>, [<<>> | Datas], R) ->
+transform_ldata(N, <<0:64, Sizes/binary>>, [<<>> | Datas], R) ->
     transform_ldata(N-1, Sizes, Datas, [eof | R]);
-transform_ldata(N, <<Size:32, Sizes/binary>>, [Data | Datas], R) 
+transform_ldata(N, <<Size:64, Sizes/binary>>, [Data | Datas], R) 
   when binary(Data), size(Data) == Size ->
     transform_ldata(N-1, Sizes, Datas, [Data | R]);
-%% Binary mode above, list mode below
+%% List mode
 transform_ldata(0, [], [], R) ->
     lists:reverse(R);
 transform_ldata(0, List, [0 | Sizes], R) ->

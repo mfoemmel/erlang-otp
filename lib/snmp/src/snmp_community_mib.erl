@@ -186,7 +186,7 @@ loop_c2v_rows([], _Addr) ->
 %% Func: vacm2community(Vacm, {TDomain, TAddr}) -> 
 %%         {ok, Community} | undefined
 %% Types: Vacm = {SecName, ContextEngineId, ContextName}
-%% Purpose: Follows the steps in draft-ietf-snmpv3-coex-03 section
+%% Purpose: Follows the steps in RFC 2576 section
 %%          5.2.3 in order to find a community string to be used
 %%          in a notification.
 %%-----------------------------------------------------------------
@@ -303,9 +303,13 @@ snmpTargetAddrExtTable(get_next, RowIndex, Cols) ->
     NCols = conv1(Cols),
     conv2(next(snmpTargetAddrExtTable, RowIndex, NCols));
 snmpTargetAddrExtTable(set, RowIndex, Cols) ->
-    snmp_generic:table_func(set, RowIndex, Cols, db(snmpTargetAddrExtTable));
-snmpTargetAddrExtTable(Op, Arg1, Arg2) ->
-    snmp_generic:table_func(Op, Arg1, Arg2, db(snmpTargetAddrExtTable)).
+    NCols = conv3(Cols),
+    snmp_generic:table_func(set, RowIndex, NCols, 
+			    db(snmpTargetAddrExtTable));
+snmpTargetAddrExtTable(is_set_ok, RowIndex, Cols) ->
+    NCols = conv3(Cols),
+    snmp_generic:table_func(is_set_ok, RowIndex, NCols, 
+			    db(snmpTargetAddrExtTable)).
 
 db(snmpTargetAddrExtTable) -> {snmpTargetAddrTable, persistent};
 db(X) -> {X, persistent}.
@@ -334,6 +338,11 @@ conv2([{[Col | Oid], Val} | T]) ->
 conv2([X | T]) ->
     [X | conv2(T)];
 conv2(X) -> X.
+
+
+conv3([{Idx, Val}|T]) -> [{Idx+10, Val} | conv3(T)];
+conv3([]) -> [].
+
 
 get(Name, RowIndex, Cols) ->
     snmp_generic:handle_table_get(db(Name), RowIndex, Cols, foi(Name)).

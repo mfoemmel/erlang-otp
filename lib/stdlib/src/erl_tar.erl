@@ -35,23 +35,23 @@
 
 open(Name, Mode) ->
     case open_mode(Mode) of
-	{ok, Access, Opts} ->
-	    open1(Name, Access, Opts);
+	{ok, Access, Raw, Opts} ->
+	    open1(Name, Access, Raw, Opts);
 	{error, Reason} ->
 	    {error, {Name, Reason}}
     end.
 
-open1({binary, Bin}, read, Opts) ->
+open1({binary, Bin}, read, _Raw, Opts) ->
     case file:open(Bin, [ram, binary, read|Opts]) of
 	{ok, File} ->
 	    {ok, {read, File}};
 	Error ->
 	    Error
     end;
-open1({file, Fd}, read, Opts) ->
+open1({file, Fd}, read, _Raw, _Opts) ->
     {ok, {read, Fd}};
-open1(Name, Access, Opts) ->
-    case file:open(Name, [raw, binary, Access|Opts]) of
+open1(Name, Access, Raw, Opts) ->
+    case file:open(Name, Raw ++ [binary, Access|Opts]) of
 	{ok, File} ->
 	    {ok, {Access, File}};
 	{error, Reason} ->
@@ -98,13 +98,10 @@ create(Name, Filenames) ->
     create(Name, Filenames, []).
 
 %% Creates a tar archive Name containing the given files.
-%% Accepted options: verbose, compressed
+%% Accepted options: verbose, compressed, cooked
 
 create(Name, FileList, Options) ->
-    Mode = case lists:member(compressed, Options) of
-	       true ->  [compressed];
-	       false -> []
-	   end,
+    Mode = lists:filter(fun(X) -> (X==compressed) or (X==cooked) end,Options),
     case open(Name, [write|Mode]) of
 	{ok, TarFile} ->
 	    Add = fun(Nm) -> add(TarFile, Nm, Nm, Options) end,
@@ -141,7 +138,7 @@ table(Name) ->
     table(Name, []).
 
 %% Returns a list of names of the files in the tar file Name.
-%% Options accepted: compressed, verbose.
+%% Options accepted: compressed, verbose, cooked.
 
 table(Name, Opts) ->
     foldl_read(Name, fun table1/4, [], table_opts(Opts)).
@@ -214,6 +211,8 @@ month(12) -> "Dec".
 format_error(bad_header) -> "Bad directory header";
 format_error(eof) -> "Unexpected end of file";
 format_error(unsupported_file_type) -> "File type not supported";
+format_error({symbolic_link_too_long, Name}) ->
+    lists:flatten(io_lib:format("~s: ~s", [Name, symbolic_link_too_long]));
 format_error({Name, Reason}) ->
     lists:flatten(io_lib:format("~s: ~s", [Name, format_error(Reason)]));
 format_error(Atom) when atom(Atom) ->
@@ -272,7 +271,7 @@ format_error(Term) ->
 -define(record_size, 512).
 -define(block_size, (512*20)).
 
-
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%
@@ -286,12 +285,17 @@ add1(TarFile, Name, NameInArchive, Opts) ->
 	    Header = create_header(NameInArchive, Info),
 	    add1(TarFile, Name, Header, Bin, Opts);
 	{ok, PointsTo, Info} when Info#file_info.type == symlink ->
-	    Info2 = Info#file_info{size=0},
-	    Header = create_header(NameInArchive, Info2, PointsTo),
-	    add1(TarFile, Name, Header, list_to_binary([]), Opts);
-	{ok, Bin, Info} when Info#file_info.type == directory ->
+	    if
+		length(PointsTo) > 100 ->
+		    {error, {symbolic_link_too_long, PointsTo}};
+		true ->
+		    Info2 = Info#file_info{size=0},
+		    Header = create_header(NameInArchive, Info2, PointsTo),
+		    add1(TarFile, Name, Header, list_to_binary([]), Opts)
+	    end;
+	{ok, _, Info} when Info#file_info.type == directory ->
 	    add_directory(TarFile, Name, NameInArchive, Info, Opts);
-	{ok, Bin, #file_info{type=Type}} ->
+	{ok, _, #file_info{type=Type}} ->
 	    {error, {bad_file_type, Name, Type}};
 	{error, Reason} ->
 	    {error, {Name, Reason}};
@@ -353,7 +357,7 @@ file_type(directory) -> $5.
 to_octal(Int, Count) when Count > 1 ->
     to_octal(Int, Count-1, [0]).
 
-to_octal(Int, 0, Result) -> Result;
+to_octal(_, 0, Result) -> Result;
 to_octal(Int, Count, Result) ->
     to_octal(Int div 8, Count-1, [Int rem 8 + $0|Result]).
 
@@ -383,7 +387,7 @@ split_filename([Comp|Rest], Prefix, Suffix, Len)
     split_filename(Rest, Prefix, [Comp|Suffix], Len+length(Comp)+1);
 split_filename([Comp|Rest], Prefix, Suffix, Len) ->
     split_filename(Rest, [Comp|Prefix], Suffix, Len+length(Comp)+1);
-split_filename([], Prefix, Suffix, Len) ->
+split_filename([], Prefix, Suffix, _) ->
     {filename:join(Prefix),filename:join(Suffix)}.
 
 
@@ -422,8 +426,10 @@ extract_opts([{cwd, Cwd}|Rest], Opts) ->
 extract_opts([{files, Files}|Rest], Opts) ->
     Set = ordsets:list_to_set(Files),
     extract_opts(Rest, Opts#read_opts{files=Set});
-extract_opts([compressed|Rest], Opts) ->
-    extract_opts(Rest, Opts#read_opts{open_mode=[compressed]});
+extract_opts([compressed|Rest], Opts=#read_opts{open_mode=OpenMode}) ->
+    extract_opts(Rest, Opts#read_opts{open_mode=[compressed|OpenMode]});
+extract_opts([cooked|Rest], Opts=#read_opts{open_mode=OpenMode}) ->
+    extract_opts(Rest, Opts#read_opts{open_mode=[cooked|OpenMode]});
 extract_opts([verbose|Rest], Opts) ->
     extract_opts(Rest, Opts#read_opts{verbose=true});
 extract_opts([Other|Rest], Opts) ->
@@ -433,8 +439,10 @@ extract_opts([], Opts) ->
 
 %% Common options for all read operations.
 
-read_opts([compressed|Rest], Opts) ->
-    read_opts(Rest, Opts#read_opts{open_mode=[compressed]});
+read_opts([compressed|Rest], Opts=#read_opts{open_mode=OpenMode}) ->
+    read_opts(Rest, Opts#read_opts{open_mode=[compressed|OpenMode]});
+read_opts([cooked|Rest], Opts=#read_opts{open_mode=OpenMode}) ->
+    read_opts(Rest, Opts#read_opts{open_mode=[cooked|OpenMode]});
 read_opts([verbose|Rest], Opts) ->
     read_opts(Rest, Opts#read_opts{verbose=true});
 read_opts([_|Rest], Opts) ->
@@ -472,20 +480,19 @@ foldl_read1(Fun, Accu0, File, Opts) ->
 	    foldl_read1(Fun, NewAccu, File, Opts)
     end.
 
-table1(eof, File, Options, Result) ->
+table1(eof, _, _, Result) ->
     {ok, lists:reverse(Result)};
 table1(Header, File, #read_opts{verbose=true}, Result) when record(Header, tar_header) ->
     #tar_header{name=Name, size=Size, mtime=Mtime, typeflag=Type,
 		mode=Mode, uid=Uid, gid=Gid} = Header,
     ok = skip(File, Size),
     {ok, [{Name, Type, Size, posix_to_erlang_time(Mtime), Mode, Uid, Gid}|Result]};
-table1(Header, File, Opts, Result) when record(Header, tar_header) ->
+table1(Header, File, _, Result) when record(Header, tar_header) ->
     Name = Header#tar_header.name,
     ok = skip(File, Header#tar_header.size),
     {ok, [Name|Result]}.
 
-extract1(eof, File, Opts, []) ->
-    ok;
+extract1(eof, _, _, []) -> ok;
 extract1(Header, File, Opts, Result) ->
     Name = Header#tar_header.name,
     ok = extract2(File, Header, Opts, check_extract(Name, Opts)),
@@ -494,13 +501,12 @@ extract1(Header, File, Opts, Result) ->
 extract2(File, Header, Opts, true) ->
     {ok, Bin} = get_element(File, Header),
     write_extracted_element(Header, Bin, Opts);
-extract2(File, Header, Opts, false) ->
+extract2(File, Header, _, false) ->
     skip(File, Header#tar_header.size).
 
 %% Checks if the file Name should be extracted.
 
-check_extract(Name, #read_opts{files=all}) ->
-    true;
+check_extract(_, #read_opts{files=all}) -> true;
 check_extract(Name, #read_opts{files=Files}) ->
     ordsets:is_element(Name, Files).
 
@@ -622,13 +628,13 @@ get_element(File, #tar_header{size = 0}) ->
     {ok,<<>>};
 get_element(File, #tar_header{size = Size}) ->
     case file:read(File, Size) of
-	{ok,Bin}=Res when size(Bin) == Size ->
+	{ok,Bin}=Res when size(Bin) =:= Size ->
 	    skip_to_next(File),
 	    Res;
-	{ok,List} when length(List) == Size ->
+	{ok,List} when length(List) =:= Size ->
 	    skip_to_next(File),
 	    {ok,list_to_binary(List)};
-	{ok,Bin} -> throw({error,eof});
+	{ok,_} -> throw({error,eof});
 	{error, Reason} -> throw({error, Reason});
 	eof -> throw({error,eof})
     end.
@@ -673,11 +679,11 @@ write_extracted_element(Header, Bin, Opts) ->
     Created = 
 	case Header#tar_header.typeflag of
 	    regular ->
-		write_extracted_file(Name, Header, Bin, Opts);
+		write_extracted_file(Name, Bin, Opts);
 	    directory ->
-		create_extracted_dir(Name, Header, Opts);
+		create_extracted_dir(Name, Opts);
 	    symlink ->
-		create_symlink(Name, Header, Opts);
+		create_symlink(Name, Header);
 	    Other ->				% Ignore.
 		read_verbose(Opts, "x ~s - unsupported type ~p~n",
 			     [Name, Other]),
@@ -688,7 +694,7 @@ write_extracted_element(Header, Bin, Opts) ->
 	not_written -> ok
     end.
 
-create_extracted_dir(Name, Header, Opts) ->
+create_extracted_dir(Name, Opts) ->
     case file:make_dir(Name) of
 	ok -> ok;
 	{error,enotsup} ->
@@ -699,7 +705,7 @@ create_extracted_dir(Name, Header, Opts) ->
 	{error,Reason} -> throw({error, Reason})
     end.
 
-create_symlink(Name, Header, Opts) ->
+create_symlink(Name, Header) ->
     case file:make_symlink(Header#tar_header.linkname, Name) of
 	ok -> ok;
 	{error,eexist} -> not_written;
@@ -707,7 +713,7 @@ create_symlink(Name, Header, Opts) ->
 	{error,Reason} -> throw({error, Reason})
     end.
 
-write_extracted_file(Name, Header, Bin, Opts) ->
+write_extracted_file(Name, Bin, Opts) ->
     Write =
 	case Opts#read_opts.keep_old_files of
 	    true ->
@@ -736,8 +742,7 @@ write_file(Name, Bin) ->
 	    throw({error, Reason})
     end.
 
-set_extracted_file_info(Name, #tar_header{typeflag = symlink}) ->
-    ok;
+set_extracted_file_info(_, #tar_header{typeflag = symlink}) -> ok;
 set_extracted_file_info(Name, #tar_header{mode=Mode, mtime=Mtime}) ->
     Info = #file_info{mode=Mode, mtime=posix_to_erlang_time(Mtime)},
     file:write_file_info(Name, Info).
@@ -751,7 +756,7 @@ make_dirs1([Dir, Next|Rest], Type) ->
     case file:read_file_info(Dir) of
 	{ok, #file_info{type=directory}} ->
 	    make_dirs1([filename:join(Dir, Next)|Rest], Type);
-	{ok, #file_info{type=Other}} ->
+	{ok, #file_info{}} ->
 	    throw({error, enotdir});
 	{error, _} ->
 	    case file:make_dir(Dir) of
@@ -761,11 +766,10 @@ make_dirs1([Dir, Next|Rest], Type) ->
 		    throw({error, Reason})
 	    end
     end;
-make_dirs1([File], file) ->
-    ok;
+make_dirs1([_], file) -> ok;
 make_dirs1([Dir], dir) ->
     file:make_dir(Dir);
-make_dirs1([], Type) ->
+make_dirs1([], _) ->
     %% There must be something wrong here.  The list was not supposed
     %% to be empty.
     throw({error, enoent}).
@@ -782,7 +786,7 @@ read_verbose(#read_opts{verbose=true}, Format, Args) ->
 read_verbose(_, _, _) ->
     ok.
 
-
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%
 %%% 	Utility functions.
@@ -891,19 +895,21 @@ foreach_while_ok(Fun, [First|Rest]) ->
 foreach_while_ok(_, []) -> ok.
     
 open_mode(Mode) ->
-    open_mode(Mode, false, []).
+    open_mode(Mode, false, [raw], []).
 
-open_mode(read, _, _) ->
-    {ok, read, []};
-open_mode(write, _, _) ->
-    {ok, write, []};
-open_mode([read|Rest], false, Opts) ->
-    open_mode(Rest, read, Opts);
-open_mode([write|Rest], false, Opts) ->
-    open_mode(Rest, write, Opts);
-open_mode([compressed|Rest], Access, Opts) ->
-    open_mode(Rest, Access, [compressed|Opts]);
-open_mode([], Access, Opts) ->
-    {ok, Access, Opts};
-open_mode(_, _, _) ->
+open_mode(read, _, Raw, _) ->
+    {ok, read, Raw, []};
+open_mode(write, _, Raw, _) ->
+    {ok, write, Raw, []};
+open_mode([read|Rest], false, Raw, Opts) ->
+    open_mode(Rest, read, Raw, Opts);
+open_mode([write|Rest], false, Raw, Opts) ->
+    open_mode(Rest, write, Raw, Opts);
+open_mode([compressed|Rest], Access, Raw, Opts) ->
+    open_mode(Rest, Access, Raw, [compressed|Opts]);
+open_mode([cooked|Rest], Access, _Raw, Opts) ->
+    open_mode(Rest, Access, [], Opts);
+open_mode([], Access, Raw, Opts) ->
+    {ok, Access, Raw, Opts};
+open_mode(_, _, _, _) ->
     {error, einval}.

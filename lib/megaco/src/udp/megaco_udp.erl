@@ -118,7 +118,7 @@ create_send_handle(Socket, Addr, Port) ->
 send_message(SH, Data) when record(SH, send_handle) ->
     #send_handle{socket = Socket, addr = Addr, port = Port} = SH,
     gen_udp:send(Socket, Addr, Port, Data);
-send_message(SH, Data) ->
+send_message(SH, _Data) ->
     {error, {bad_send_handle, SH}}.
 
 %%-----------------------------------------------------------------
@@ -190,7 +190,7 @@ parse_options([{Tag, Val} | T], UdpRec, Mand) ->
     end;
 parse_options([], UdpRec, []) ->
     {ok, UdpRec};
-parse_options([], UdpRec, Mand) ->
+parse_options([], _UdpRec, Mand) ->
     {error, {missing_options, Mand}};
-parse_options(BadList, UdpRec, Mand) ->
+parse_options(BadList, _UdpRec, _Mand) ->
     {error, {bad_option_list, BadList}}.

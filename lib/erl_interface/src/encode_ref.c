@@ -27,24 +27,8 @@ int ei_encode_ref(char *buf, int *index, const erlang_ref *p)
   int len = strlen(p->node);
   int i;
 
-  if (p->len == 1) {
-      if (!buf) s += 9 + len;
-      else {
-	  put8(s,ERL_REFERENCE_EXT);
-
-	  /* first the nodename */
-	  put8(s,ERL_ATOM_EXT);
-
-	  put16be(s,len);
-  
-	  memmove(s, p->node, len);
-	  s += len;
-
-	  /* now the integers */
-	  put32be(s,p->n[0]);
-	  put8(s,(p->creation & 0x03));
-      }
-  } else {
+  /* Always encode as an extended reference; all participating parties
+     are now expected to be able to decode extended references. */
       if (!buf) s += 1 + 2 + (3+len) + p->len*4 + 1;
       else {
 	  put8(s,ERL_NEW_REFERENCE_EXT);
@@ -66,7 +50,6 @@ int ei_encode_ref(char *buf, int *index, const erlang_ref *p)
 	      put32be(s,p->n[i]);
 
       }
-  }
   
   *index += s-s0;
   

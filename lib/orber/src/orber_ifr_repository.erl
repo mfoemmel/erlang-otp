@@ -148,7 +148,7 @@ lookup_id({ObjType,ObjID}, Search_id) ?tcheck(ir_Repository, ObjType) ->
 		false ->
 		    H;
 		true ->
-		    corba:raise(#'INTERNAL'{minor=1200, completion_status=?COMPLETED_NO})
+		    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
 	    end
     end.
 

@@ -34,6 +34,7 @@
 #include "external.h"
 #include "beam_load.h"
 #include "beam_bp.h"
+#include "erl_binary.h"
 
 void dbg_bt(Process* p, Eterm* sp);
 void dbg_where(Eterm* addr, Eterm x0, Eterm* reg);
@@ -106,9 +107,10 @@ erts_debug_make_fun_1(Process* p, Eterm tuple)
     Eterm* tp;
     Eterm creator;
     Eterm module;
-    Eterm old_index;
-    Eterm old_uniq;
+    Eterm index;
+    Eterm uniq;
     Eterm env;
+    byte* uniq_p;
     int num_free;
     unsigned needed;
     ErlFunThing* funp;
@@ -123,22 +125,29 @@ erts_debug_make_fun_1(Process* p, Eterm tuple)
 	BIF_ERROR(p, BADARG);
     }
     tp = tuple_val(tuple);
-    if (tp[0] != make_arityval(7)) {
+    if (tp[0] != make_arityval(5)) {
 	goto error;
     }
-    if (!is_pid(creator = tp[1])) {
+
+    creator = tp[1];
+    module = tp[2];
+    index = tp[3];
+    uniq = tp[4];
+    env = tp[5];
+
+    if (is_not_pid(creator)) {
 	goto error;
     }
-    if (!is_atom(module = tp[2])) {
+    if (is_not_atom(module)) {
 	goto error;
     }
-    if (!is_small(old_index = tp[5])) { /* OldIndex */
+    if (is_not_small(index)) {	/* Index */
 	goto error;
     }
-    if (!is_small(old_uniq = tp[6])) { /* OldUniq */
+    if (is_not_binary(uniq) || binary_size(uniq) != 16) { /* Uniq */
 	goto error;
     }
-    env = tp[7];
+
     if ((num_free = list_length(env)) < 0) {
 	goto error;
     }
@@ -150,12 +159,17 @@ erts_debug_make_fun_1(Process* p, Eterm tuple)
     needed = ERL_FUN_SIZE + num_free;
     funp = (ErlFunThing *) HAlloc(p, needed);
     funp->thing_word = HEADER_FUN;
-    funp->next = p->off_heap.funs;
-    p->off_heap.funs = funp;
+#ifndef SHARED_HEAP
+    funp->next = MSO(p).funs;
+    MSO(p).funs = funp;
+#endif
     funp->num_free = num_free;
-    funp->creator = creator;
-    funp->fe = erts_put_fun_entry(module, unsigned_val(old_uniq),
-				  unsigned_val(old_index));
+    funp->creator = creator;	/* const or within process */
+    GET_BINARY_BYTES(uniq, uniq_p);
+    funp->fe = erts_put_debug_fun_entry(module, uniq_p, signed_val(index));
+    if (funp->fe == NULL) {
+	goto error;
+    }
     for (i = 0; i < num_free; i++) {
 	Eterm* ep = list_val(env);
 	funp->env[i] = CAR(ep);
@@ -274,11 +288,7 @@ find_code(Eterm* addr)
 void
 dbg_bt(Process* p, Eterm* sp)
 {
-#ifdef UNIFIED_HEAP
-    Eterm* stack = p->stack;
-#else
-    Eterm* stack = p->hend;
-#endif
+    Eterm* stack = STACK_START(p);
 
     while (sp < stack) {
 	if (is_CP(*sp)) {

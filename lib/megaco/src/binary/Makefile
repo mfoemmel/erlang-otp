@@ -17,10 +17,6 @@
 #
 include $(ERL_TOP)/make/target.mk
 
-ifeq ($(TYPE),debug)
-ERL_COMPILE_FLAGS += -Ddebug -W
-endif
-
 EBIN = ../../ebin
 MEGACO_INCLUDEDIR = ../../include
 
@@ -32,13 +28,6 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # ----------------------------------------------------
 include ../../vsn.mk
 VSN=$(MEGACO_VSN)
-
-# Must find some smarter way to figure out this
-# per_bin included as of 1.3.2 of ASN.1
-# USE_PER_BIN = $(shell (erlc megaco_asn1_make_util.erl; erl -noshell -run megaco_asn1_make_util asn1version_check 1.3.2 -s erlang halt; rm -f megaco_asn1_make_util.beam))
-
-# Fix this later...
-USE_PER_BIN = yes
 
 
 # ----------------------------------------------------
@@ -58,12 +47,10 @@ ERL_FILES = $(MODULES:%=%.erl)
 TARGET_FILES =  \
 	$(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
-SPECS = $(BER_ASN1_SPEC) \
+SPECS = $(BER_ASN1_SPEC)     \
         $(BER_BIN_ASN1_SPEC) \
-        $(PER_ASN1_SPEC)
-ifeq ($(USE_PER_BIN),yes)
-SPECS += $(PER_BIN_ASN1_SPEC)
-endif
+        $(PER_ASN1_SPEC)     \
+        $(PER_BIN_ASN1_SPEC) 
 
 SPEC_BINS = $(SPECS:%=%.erl) $(SPECS:%=%.hrl) $(SPECS:%=%.asn1db)
 
@@ -71,8 +58,23 @@ SPEC_BINS = $(SPECS:%=%.erl) $(SPECS:%=%.hrl) $(SPECS:%=%.asn1db)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
+ifeq ($(TYPE),debug)
+ERL_COMPILE_FLAGS += -Ddebug
+endif
+
+ifeq ($(WARN_UNUSED_WARS),true)
+ERL_COMPILE_FLAGS += +warn_unused_vars
+endif
+
+# This is valid together with the -bber_bin and -bper_bin options
+ifneq ($(DONT_USE_BIN_OPTIMIZE),true)
+OPTIMIZE = +optimize
+endif
+
 ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
-ERL_COMPILE_FLAGS += -I../../include 
+ERL_COMPILE_FLAGS += -I../../include \
+                     +'{parse_transform,sys_pre_attributes}' \
+                     +'{attribute,insert,app_vsn,$(APP_VSN)}'
 
 
 # ----------------------------------------------------
@@ -103,7 +105,11 @@ info:
 # Special Build Targets
 # ----------------------------------------------------
 
-asn1: ber ber_bin per # per_bin
+ifeq ($(USE_PER_BIN_OPT),yes)
+asn1: ber ber_bin per per_bin per_bin_opt
+else
+asn1: ber ber_bin per per_bin
+endif
 
 ber: 
 	$(ERLC) -bber     $(BER_ASN1_SPEC).set.asn
@@ -116,6 +122,9 @@ per:
 
 per_bin: 
 	$(ERLC) -bper_bin $(PER_BIN_ASN1_SPEC).set.asn
+
+per_bin_opt: 
+	$(ERLC) -bper_bin +optimize $(PER_BIN_OPT_ASN1_SPEC).set.asn
 
 
 # ----------------------------------------------------

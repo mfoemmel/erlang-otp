@@ -46,7 +46,7 @@ start(Options) ->
     case gs:assq(type,NewOpt) of
 	{value,multiselect} ->
 	    spawn_link(?MODULE,multiselect_init,[self(),NewOpt]);
-	{value,Type} ->
+	{value,_Type} ->
 	    spawn_link(?MODULE,open_save_init,[self(),NewOpt]),
 	    receive
 		{fd_result,X} ->
@@ -61,40 +61,40 @@ set_state(Opts) ->
 	    case gs:assq(dir,Opts) of
 		false ->
 		    [{dir,Dir}|Opts];
-		{value,V} ->
+		{value,_V} ->
 		    Opts
 	    end
     end.
 
 make_window(Title, Options) ->
-    W = gs:window(win,gs:start(),[{configure,true},
-				  {title,Title},{width,?WIDTH},
-				  {height,?HEIGHT}]),
+    _W = gs:window(win,gs:start(),[{configure,true},
+				   {title,Title},{width,?WIDTH},
+				   {height,?HEIGHT}]),
     Marg = {fixed,5},
     P = gs:frame(resizer, win,[{packer_x,[Marg,{stretch,1},Marg]},
 			       {packer_y,[Marg,
 					  {stretch,10},
 					  {stretch,1,2*?BUTTH},
 					  Marg]}]),
-    F = gs:frame(buttframe,resizer,[{packer_x,
-				     [{stretch,1},{fixed,?BUTTW},{stretch,1},
-				      {fixed,?BUTTW},{stretch,1},
-				      {fixed,?BUTTW},{stretch,1}]},
-				    {packer_y,[{stretch,1},
-					       {fixed,?BUTTH},
-					       {stretch,1}]},
-				    {pack_x,2},{pack_y,3}]),
+    _F = gs:frame(buttframe,resizer,[{packer_x,
+				      [{stretch,1},{fixed,?BUTTW},{stretch,1},
+				       {fixed,?BUTTW},{stretch,1},
+				       {fixed,?BUTTW},{stretch,1}]},
+				     {packer_y,[{stretch,1},
+						{fixed,?BUTTH},
+						{stretch,1}]},
+				     {pack_x,2},{pack_y,3}]),
     {ok, DefaultDir} = file:get_cwd(),
 
     SaveOptions = get_save_options(Options),
 
-    FD = tool_genfd:create(P,[{dir, get_val_or_default(dir,
-						       Options,
-						       DefaultDir)},
-			      {extensions,
-			       get_val_or_default(extensions,Options,[])},
-			      {hidden,[]}|
-			      SaveOptions]).    
+    _FD = tool_genfd:create(P,[{dir, get_val_or_default(dir,
+							Options,
+							DefaultDir)},
+			       {extensions,
+				get_val_or_default(extensions,Options,[])},
+			       {hidden,[]}|
+			       SaveOptions]).    
 
 
 
@@ -135,7 +135,7 @@ open_save_loop(State) ->
 		{selection,{Dir,{[NewDir],[]}}} ->
 		    tool_genfd:set_dir(FD,Dir++"/"++NewDir),
 		    open_save_loop(State);
-		{selection,{Dir,{[],[]}}} ->
+		{selection,{_Dir,{[],[]}}} ->
 		    gs:config(open_save,beep),
 		    open_save_loop(State);
 		{selection,{Dir,{[],[File]}}} ->
@@ -169,12 +169,12 @@ open_save_init(From, Options) ->
 			   {value,open} ->
 			       {"Open file", "Open", fun exists/1};
 			   {value,save} ->
-			       {"Save file", "Save", fun (File) -> true end}
+			       {"Save file", "Save", fun (_File) -> true end}
 		       end,
     FD = make_window(Title,Options),
     gs:button(open_save,buttframe,[{label,{text,Butt}},{pack_x,2},{pack_y,2}]),
-    C=gs:button(cancel,buttframe,[{label,{text,"Cancel"}},
-				  {pack_x,6},{pack_y,2}]),
+    _C=gs:button(cancel,buttframe,[{label,{text,"Cancel"}},
+				   {pack_x,6},{pack_y,2}]),
     gs:config(win,{map,true}),
     gs:config(resizer,[{width,?WIDTH},{height,?HEIGHT}]),
     X=open_save_loop(#bstate{file_dialog=FD,misc=Fun,old_wh={?WIDTH,?HEIGHT}}),
@@ -230,14 +230,14 @@ multi_select_loop(State) ->
 		{selection,{Dir,{[NewDir],[]}}} ->
 		    tool_genfd:set_dir(FD,Dir++"/"++NewDir),
 		    multi_select_loop(State);
-		{selection,{Dir,{[],[]}}} ->
+		{selection,{_Dir,{[],[]}}} ->
 		    gs:config(select,beep),
 		    multi_select_loop(State);
 		{selection,{Dir,{[],[File]}}} ->
 		    select_one(Owner,Dir,File, State)
 	    end;
 	{gs,all,click,_,_} ->
-	    {selection,{Dir,{Dirs,Files}}} =
+	    {selection,{Dir,{_Dirs,Files}}} =
 		tool_genfd:get_all(State#bstate.file_dialog),
 	    lists:foreach(
 	      fun (File) ->

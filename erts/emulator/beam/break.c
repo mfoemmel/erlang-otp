@@ -33,14 +33,14 @@
 #include "erl_version.h"
 
 /* Forward declarations */
-static FUNCTION(void, process_killer, (_VOID_));
-FUNCTION(void, do_break, (_VOID_));
-FUNCTION(void, erl_crash_dump, (char *, int, char *, va_list));
+static void process_killer(void);
+void do_break(void);
+void erl_crash_dump(char *, int, char *, va_list);
 #ifdef DEBUG
-static FUNCTION(void, bin_check, (_VOID_));
+static void bin_check(void);
 #endif
 
-static FUNCTION(void, print_garb_info, (Process* p, CIO to));
+static void print_garb_info(Process* p, CIO to);
 #ifdef OPPROF
 static void dump_frequencies(void);
 #endif
@@ -50,25 +50,23 @@ CIO to;
 {
 }
 
-static void port_info(to)
-CIO to;
+static void
+port_info(CIO to)
 {
     int i;
     erl_printf(to,"\nPort Information\n");
     erl_printf(to,"--------------------------------------------------\n");
-    for (i = 0; i < erl_max_ports; i++)
+    for (i = 0; i < erts_max_ports; i++)
 	print_port_info(i,to);
 }
 
-/* display information for all processes */
-
-void process_info(to)
-CIO to;
+void
+process_info(CIO to)
 {
     int i;
     erl_printf(to,"\nProcess Information\n");
     erl_printf(to,"--------------------------------------------------\n");
-    for (i = 0; i < max_process; i++) {
+    for (i = 0; i < erts_max_processes; i++) {
 	if ((process_tab[i] != NULL) && (process_tab[i]->i != ENULL)) {
 	   if (process_tab[i]->status != P_EXITING)
 	      print_process_info(process_tab[i],to);
@@ -80,14 +78,15 @@ CIO to;
     port_info(to);
 }
 
-static void process_killer()
+static void
+process_killer(void)
 {
-    int i,j;
+    int i, j;
     Process* rp;
 
     erl_printf(COUT,"\n\nProcess Information\n\n");
     erl_printf(COUT,"--------------------------------------------------\n");
-    for (i = max_process-1; i >= 0; i--) {
+    for (i = erts_max_processes-1; i >= 0; i--) {
 	if (((rp = process_tab[i]) != NULL) && rp->i != ENULL) {
 	    int br;
 	    print_process_info(rp,COUT);
@@ -112,16 +111,9 @@ static void process_killer()
     }
 }
 			       
-
-static void display_ref(Ref *ref, CIO to)
-{
-    /* Kludge */
-    display(make_ref(ref), to);
-}
-
 /* Display info about an individual Erlang process */
-void print_process_info(p,to)
-Process *p; CIO to;
+void
+print_process_info(Process *p, CIO to)
 {
     int garbing = 0;
     int running = 0;
@@ -202,14 +194,14 @@ Process *p; CIO to;
 
 	mp = p->msg.first;
 	while (mp != NULL) {
-	    display(mp->mesg, to);
+	    display(ERL_MESSAGE_TERM(mp), to);
 	    if ((mp = mp->next) != NULL)
 		erl_printf(to, ",");
 	}
 	erl_printf(to, "]\n");
     }
 
-#ifndef UNIFIED_HEAP
+#ifndef SHARED_HEAP
     {
        long s = 0;
        ErlHeapFragment *m = p->mbuf;
@@ -255,14 +247,35 @@ Process *p; CIO to;
 	    if (lnk->type == LNK_LINK1) {
 	       erl_printf(to,"{");
 	       if (lnk->item == p->id) {
+		  ErlLink **lnkp;
 		  erl_printf(to,"to,");
-		  display(lnk->data, to);
+
+		  if (is_atom(lnk->data)) {
+		      DistEntry *dep;
+
+		      ASSERT(is_node_name_atom(lnk->data));
+		      dep = erts_sysname_to_connected_dist_entry(lnk->data);
+		      lnkp = (dep
+			      ? find_link_by_ref(&dep->links, lnk->ref)
+			      : NULL);
+			  
+		      erl_printf(to,"{");
+		      if (lnkp)
+			  display((*lnkp)->data, to);
+		      else
+			  erl_printf(to, "undefined"); /* An error */
+		      erl_printf(to,",");
+		      display(lnk->data, to);
+		      erl_printf(to,"}");
+		  }
+		  else
+		      display(lnk->data, to);
 	       } else {
 		  erl_printf(to,"from,");
 		  display(lnk->item, to);
 	       }
 	       erl_printf(to,",");
-	       display_ref(&lnk->ref, to);
+	       display(lnk->ref, to);
 	       erl_printf(to,"}");
 	    } else {
 	       display(lnk->item, to);
@@ -288,62 +301,44 @@ Process *p; CIO to;
     }
     
     /* print the number of reductions etc */
-#ifdef UNIFIED_HEAP
+#ifdef SHARED_HEAP
     erl_printf(to,"Reductions %d heap_sz %d old_heap_sz=%d \n",
-               p->reds, global_heap_sz,
-               (global_old_heap == NULL) ? 0 :
-               global_old_hend - global_old_heap );
-    erl_printf(to,"Heap unused=%d OldHeap unused=%d\n",
-               global_hend - global_htop,
-               (global_old_heap == NULL) ? 0 :
-               global_old_hend - global_old_heap);
 #else
     erl_printf(to,"Reductions %d stack+heap %d old_heap_sz=%d \n",
-	       p->reds, p->heap_sz,
-	       (p->old_heap == NULL) ? 0 : 
-	       p->old_hend - p->old_heap );
-    erl_printf(to,"Heap unused=%d OldHeap unused=%d\n",
-	       p->stop - p->htop, 
-	       (p->old_heap == NULL) ? 0 : 
-	       p->old_hend - p->old_heap);
 #endif
+               p->reds, p->heap_sz,
+               (OLD_HEAP(p) == NULL) ? 0 :
+               OLD_HEND(p) - OLD_HEAP(p) );
+    erl_printf(to,"Heap unused=%d OldHeap unused=%d\n",
+               p->hend - p->htop,
+	       (OLD_HEAP(p) == NULL) ? 0 : 
+	       OLD_HEND(p) - OLD_HEAP(p));
 
     if (garbing) {
 	print_garb_info(p, to);
     }
     
     erl_printf(to, "Stack dump:\n");
-    stack_dump2(p, to);
+    erts_stack_dump(p, to);
 
     erl_printf(to,"--------------------------------------------------\n");
 }
 
 static void
-print_garb_info(p, to)
-Process* p;
-CIO to;
+print_garb_info(Process* p, CIO to)
 {
     erl_printf(to, "new heap: %-8s %-8s %-8s %-8s\n",
 	       "start", "top", "sp", "end");
-#ifdef UNIFIED_HEAP
-    erl_printf(to, "          %08X %08X %08X %08X\n",
-               global_heap, global_htop, p->stop, global_hend);
-    erl_printf(to, "old heap: %-8s %-8s %-8s\n",
-               "start", "top", "end");
-    erl_printf(to, "          %08X %08X %08X\n",
-               global_old_heap, global_old_htop, global_old_hend);
-#else
     erl_printf(to, "          %08X %08X %08X %08X\n",
 	       p->heap, p->htop, p->stop, p->hend);
     erl_printf(to, "old heap: %-8s %-8s %-8s\n",
-	       "start", "top", "end");
+               "start", "top", "end");
     erl_printf(to, "          %08X %08X %08X\n",
-	       p->old_heap, p->old_htop, p->old_hend);
-#endif
+               OLD_HEAP(p), OLD_HTOP(p), OLD_HEND(p));
 }
 
-void info(to)
-CIO to;
+void
+info(CIO to)
 {
     erl_printf(to,"--------------------------------------------------\n");
     atom_info(to);
@@ -351,16 +346,21 @@ CIO to;
     export_info(to);
     register_info(to);
     erts_fun_info(to);
+    erts_node_table_info(to);
+    erts_dist_table_info(to);
     erts_sl_alloc_info(to);
     erl_printf(to, "Allocated binary data %d\n", tot_bin_allocated);
     erl_printf(to, "Allocated by process_desc %d\n", fix_info(process_desc));
     erl_printf(to, "Allocated by table_desc %d\n", fix_info(table_desc));
-    erl_printf(to, "Allocated by link_desc %d\n", fix_info(link_desc));
     erl_printf(to, "Allocated by atom_desc %d\n", fix_info(atom_desc));
     erl_printf(to, "Allocated by export_desc %d\n", fix_info(export_desc));
     erl_printf(to, "Allocated by module_desc %d\n", fix_info(module_desc));
     erl_printf(to, "Allocated by preg_desc %d\n", fix_info(preg_desc));
+    erl_printf(to, "Allocated by plist_desc %d\n", fix_info(plist_desc));
     erl_printf(to, "Allocated by erts_fun_desc %d\n", fix_info(erts_fun_desc));
+    erl_printf(to, "Allocated by link_desc %d\n", fix_info(link_desc));
+    erl_printf(to, "Allocated by link_sh_desc %d\n", fix_info(link_sh_desc));
+    erl_printf(to, "Allocated by link_lh %u\n", erts_tot_link_lh_size);
 #ifdef INSTRUMENT
     {
       SysAllocStat sas;
@@ -372,8 +372,8 @@ CIO to;
     erl_printf(to,"--------------------------------------------------\n");
 }
 
-void loaded(to)
-CIO to;
+void
+loaded(CIO to)
 {
     int i, old = 0, cur = 0;
     erl_printf(to,"--------------------------------------------------\n");
@@ -396,9 +396,8 @@ CIO to;
 }
 
 
-/* break handler */
-/* Used in sys.c */
-void do_break()
+void
+do_break(void)
 {
     int i;
     erl_printf(COUT, "\nBREAK: (a)bort (c)ontinue (p)roc info (i)nfo (l)oaded\n");
@@ -416,6 +415,8 @@ void do_break()
 		   * 'a' to avoid infinite loop.
 		   */
 	    halt_0(0);
+	case 'A':		/* Halt generating crash dump */
+	    erl_exit(1, "Crash dump requested by user");
 	case 'c':
 	    return;
 	case 'p':
@@ -527,11 +528,13 @@ bin_check(void)
     ProcBin *bp;
     int i, printed;
 
-    for (i=0; i < max_process; i++) {
+    for (i=0; i < erts_max_processes; i++) {
 	if ((rp = process_tab[i]) == NULL)
 	    continue;
+#ifndef SHARED_HEAP
 	if (!(bp = rp->off_heap.mso))
 	    continue;
+#endif
 	printed = 0;
 	while (bp) {
 	    if (printed == 0) {
@@ -540,8 +543,10 @@ bin_check(void)
 		erl_printf(COUT," holding binary data \n");
 		printed = 1;
 	    }
-	    erl_printf(COUT,"0x%08x orig_size: %d, norefs = %d\n",
-		       (int)bp->val, bp->val->orig_size, bp->val->refc);
+	    erl_printf(COUT,"0x%08lx orig_size: %ld, norefs = %ld\n",
+		       (unsigned long)bp->val, 
+		       (long)bp->val->orig_size, 
+		       (long)bp->val->refc);
 
 	    bp = bp->next;
 	}
@@ -555,7 +560,8 @@ bin_check(void)
 #endif
 
 /* XXX THIS SHOULD SHOULD BE IN SYSTEM !!!! */
-void erl_crash_dump(char *file, int line, char* fmt, va_list args)
+void
+erl_crash_dump(char *file, int line, char* fmt, va_list args)
 {
     int fd;
     time_t now;

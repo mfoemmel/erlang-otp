@@ -10,8 +10,8 @@
 %%               New scheme for handling of catches.
 %%  CVS      :
 %%              $Author: happi $
-%%              $Date: 2001/08/02 11:11:21 $
-%%              $Revision: 1.4 $
+%%              $Date: 2002/05/13 16:51:07 $
+%%              $Revision: 1.9 $
 %% ====================================================================
 %%  TODO     :  
 %%
@@ -70,14 +70,14 @@
 
 update_catches(CFG, Options) ->
   ?IF_DEBUG(hipe_icode_cfg:pp(CFG),ok),
-  ?option_start_time("Init", Options),
+  ?opt_start_timer("Init"),
   ?option_time(Icode = hipe_icode_cfg:linearize(CFG),Options,"Linear"),
-  Code = hipe_icode:icode_code(Icode),
   
   hipe_gensym:init(icode),
-  {IVMin, IVMax} = hipe_icode:icode_var_range(Icode),
-  {ILMin, ILMax} = hipe_icode:icode_label_range(Icode),
+  {_IVMin, IVMax} = hipe_icode:icode_var_range(Icode),
+  {_ILMin, ILMax} = hipe_icode:icode_label_range(Icode),
   ?ASSERT(begin
+	    Code = hipe_icode:icode_code(Icode),
 	    ActualVmax = hipe_icode:highest_var(Code),
 	    ActualLmax = hipe_icode:highest_label(Code),
 	    ((ActualVmax =< IVMax) 
@@ -96,16 +96,21 @@ update_catches(CFG, Options) ->
   
   State0 = empty_state(CFG),
   
-  ?option_stop_time("Init", Options),  
+  ?opt_stop_timer("Init"),  
 
-  ?option_time(State1 = fixpoint(State0), "Find catches",Options),
+  ?opt_start_timer("Find catches"),
+  State1 = fixpoint(State0), 
+  ?opt_stop_timer("Find catches"),
   
-  ?option_time(Icode2 = hipe_icode_cfg:linearize(cfg(State1)),Options,"Linear"),
+  ?opt_start_timer("Linear"),
+  Icode2 = hipe_icode_cfg:linearize(cfg(State1)),
+  ?opt_stop_timer("Linear"),
   Code2 = hipe_icode:icode_code(Icode2),
   
   MFA = hipe_icode:icode_fun(Icode2),
-  ?option_time(NewCode = rewrite(Code2, reset_visited(State1), MFA),
-				       "Update", Options),
+  ?opt_start_timer("Update"),
+  NewCode = rewrite(Code2, reset_visited(State1), MFA),
+  ?opt_stop_timer("Update"),
   
   ICode2 = hipe_icode:icode_code_update(Icode,NewCode),
   
@@ -135,7 +140,7 @@ find_catches([L|Labels], State) ->
       Code = hipe_bb:code(BB),
 
       case catches_in(L,State) of
-	{ConflictingPred, CatchesIn, CI2} ->
+	{ConflictingPred, CatchesIn, _CI2} ->
 	  %% This block is used by several catches
 	  %% TODO: A new block is needed for one of the catches.
 	  L2i = hipe_icode:mk_new_label(),
@@ -151,7 +156,7 @@ find_catches([L|Labels], State) ->
 					  hipe_bb:mk_bb(PredCode)),
 	  
 	  State0 = set_cfg(State, CFG1),
-	  ?debug_msg("Multi In: ~w ~w ~w\n",[CatchesIn,ConflictingPred,CI2]),
+
 	  check_multicatch(Code, CatchesIn, State),
 	  State1 = visit(L,State0),
 	  State2 = catches_out(L,CatchesIn,State1),
@@ -196,12 +201,10 @@ in_catch([I|Is], Cs, State) ->
   case hipe_icode:type(I) of
     remove_catch ->
       Id = hipe_icode:remove_catch_label(I),
-      %% msg("Leaving catch: ~w\n",[Id]),
       case Cs of
 	[Id|Rest] ->
 	  in_catch(Is, Rest, State);
-	Other ->
-	  ?debug_msg("Strange Leaving catch: ~w in catches ~w\n",[Id,Other]),
+	_Other ->
 	  in_catch(Is, Cs, State)
       end;
     
@@ -215,7 +218,7 @@ in_catch([I|Is], Cs, State) ->
       case Cs of
 	[Id|Rest] ->
 	  in_catch(Is, Rest, State3);
-	Other ->
+	_Other ->
 	  in_catch(Is, Cs, State3)
       end;
     pushcatch ->
@@ -237,8 +240,7 @@ in_catch([I|Is], Cs, State) ->
 rewrite(Code, State, MFA) ->
   rewrite(Code, [], State, [], MFA).
 
-rewrite([], Catches, State, Acc, _) ->
-  %% msg("Acc: ~w\n",[Acc]),
+rewrite([], _Catches, _State, Acc, _) ->
   lists:reverse(Acc);
 rewrite([I|Is], Catches, State, Acc, MFA) ->
   ?debug_msg("~w ~w\n",[I, Catches]),
@@ -246,7 +248,10 @@ rewrite([I|Is], Catches, State, Acc, MFA) ->
     label ->
       L = hipe_icode:label_name(I),
       CatchesIn = catches_in(L,State),
-      rewrite(Is, CatchesIn, State, [I|Acc], MFA);
+      rewrite(Is, CatchesIn, State, 
+	      [hipe_icode:info_update(I,
+				      [X ||
+					X<-hipe_icode:info(I), X =/= entry]	   )|Acc], MFA);
     remove_catch ->
       Id = hipe_icode:remove_catch_label(I),
       % msg("Leaving catch: ~w\n",[Id]),
@@ -272,25 +277,56 @@ rewrite([I|Is], Catches, State, Acc, MFA) ->
       case Catches of
 	[C|Rest] ->
 	  if InGuard == true ->
-	      ?EXIT({guardincatch,I});
-	     true -> ok
-	  end,
+	      %% If the catch contains guardlike instructions
+	      %%  then we already have a fail label.
+	      rewrite(Is, [C|Rest], State, [I|Acc], MFA);
+
+	     true -> %% Not in a guard.
 	     
-	  NewCall = hipe_icode:call_set_fail(I, C),
-	  rewrite(Is, [C|Rest], State, [NewCall|Acc], MFA);
+	      NewCall = hipe_icode:call_set_fail(I, C),
+	      case  hipe_icode:call_continuation(I) of 
+		[] -> %% This was a fallthrough before.
+		  NewLab = hipe_icode:mk_new_label(),
+		  LabName = hipe_icode:label_name(NewLab),
+		  NewCall2 = hipe_icode:call_set_continuation(NewCall,LabName),
+		  rewrite(Is, [C|Rest], State, [NewLab,NewCall2|Acc], MFA);
+		_ -> %% Has a continuation
+		  rewrite(Is, [C|Rest], State, [NewCall|Acc], MFA)
+	      end
+	  end;
 	[] ->
 	  if InGuard == true ->
-	      rewrite(Is, [], State, [I|Acc], MFA);
+	      case  hipe_icode:call_continuation(I) of 
+		[] -> %% This was a fallthrough before.
+		  NewLab = hipe_icode:mk_new_label(),
+		  LabName = hipe_icode:label_name(NewLab),
+		  NewCall = hipe_icode:call_set_continuation(I,LabName),
+		  rewrite(Is, [], State, [NewLab,NewCall|Acc], MFA);
+		_ ->
+		  rewrite(Is, [], State, [I|Acc], MFA)
+	      end;
 	     true ->
-	      rewrite(Is, [], State, [hipe_icode:call_set_fail(I,[])|Acc], MFA)
+	      case hipe_icode:call_continuation(I) of 
+		[] -> rewrite(Is, [], State, [I|Acc], MFA);
+		Cont ->
+		  NewI = hipe_icode:call_set_continuation(hipe_icode:call_set_fail(I,[]),[]),
+		  Goto=hipe_icode:mk_goto(Cont),
+		  rewrite(Is, [], State, [Goto,NewI|Acc], MFA)
+	      end
 	  end;
  	unknown ->
-	  rewrite(Is, Catches, State,[hipe_icode:call_set_fail(I,[])|Acc], MFA)
+	  case hipe_icode:call_continuation(I) of 
+	    [] -> rewrite(Is, Catches, State, [I|Acc], MFA);
+	    Cont ->
+	      NewI = hipe_icode:call_set_continuation(hipe_icode:call_set_fail(I,[]),[]),
+	      Goto=hipe_icode:mk_goto(Cont),
+	      rewrite(Is, Catches, State, [Goto,NewI|Acc], MFA)
+	  end
       end;
 
     enter ->
       case Catches of
-	[C|Rest] -> %% This could be turned into an Assert...
+	[_|_] -> %% This could be turned into an Assert...
 	  %% Doing a tailcall in a catch is not good!
 	  ?EXIT({tailcallincatch,I});
  	_ ->

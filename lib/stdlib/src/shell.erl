@@ -31,13 +31,32 @@ start(NoCtrlG) ->
     code:ensure_loaded(user_default),
     spawn(shell, server, [NoCtrlG]).
 
+default_packages() ->
+    [].
+%%%     ['erl','erl.lang'].
+
+default_modules() ->
+    [].
+%%%     [{pdict, 'erl.lang.proc.pdict'},
+%%%      {keylist, 'erl.lang.list.keylist'},
+%%%      {debug, 'erl.system.debug'}].
+
 server(NoCtrlG)->
     put(no_control_g, NoCtrlG),
     server().
     
 server() ->
     %% Our spawner has fixed the process groups.
-    Bs = erl_eval:new_bindings(),
+    Bs0 = erl_eval:new_bindings(),
+    Bs = lists:foldl(fun ({K, V}, D) ->
+			     erl_eval:add_binding({module,K}, V, D)
+		     end,
+		     lists:foldl(fun (P, D) ->
+					 import_all(P, D)
+				 end,
+				 Bs0, default_packages()),
+		     default_modules()),
+    %% io:fwrite("Imported modules: ~p.\n", [erl_eval:bindings(Bs)]),
     process_flag(trap_exit, true),
     case get(no_control_g) of
 	true ->
@@ -306,6 +325,51 @@ local_func(f, [{var,_,Name}], Bs, Shell) ->
     {value,ok,erl_eval:del_binding(Name, Bs)};
 local_func(f, [Other], Bs, Shell) ->
     exit({function_clause,{shell,f,1}});
+local_func(which, [{atom,_,M}], Bs, Shell) ->
+    case erl_eval:binding({module,M}, Bs) of
+	{value, M1} ->
+	    {value,M1,Bs};
+	unbound ->
+	    {value,M,Bs}
+    end;
+local_func(which, [Other], Bs, Shell) ->
+    exit({function_clause,{shell,which,1}});
+local_func(import, [M], Bs, Shell) ->
+    case erl_parse:package_segments(M) of
+	error -> exit({badarg,[{shell,import,1}]});
+	M1 ->
+	    Mod = package_to_string(M1),
+	    case packages:is_valid(Mod) of
+		true ->
+		    Key = list_to_atom(packages:last(Mod)),
+		    Mod1 = list_to_atom(Mod),
+		    {value,ok,erl_eval:add_binding({module,Key}, Mod1, Bs)};
+		false ->
+		    exit({{bad_module_name, Mod}, [{shell,import,1}]})
+	    end
+    end;
+local_func(import, [Other], Bs, Shell) ->
+    exit({function_clause,[{shell,import,1}]});
+local_func(import_all, [P], Bs0, Shell) ->
+    case erl_parse:package_segments(P) of
+	error -> exit({badarg,[{shell,import_all,1}]});
+	P1 ->
+	    Name = package_to_string(P1),
+	    case packages:is_valid(Name) of
+		true ->
+		    Bs1 = import_all(Name, Bs0),
+		    {value,ok,Bs1};
+		false ->
+		    exit({{bad_package_name, Name},
+			  [{shell,import_all,1}]})
+	    end
+    end;
+local_func(import_all, [Other], Bs, Shell) ->
+    exit({function_clause,[{shell,import_all,1}]});
+local_func(use, [M], Bs, Shell) ->
+    local_func(import, [M], Bs, Shell);
+local_func(use_all, [M], Bs, Shell) ->
+    local_func(import_all, [M], Bs, Shell);
 local_func(history, [{integer,_,N}], Bs, Shell) ->
     {value,history(N),Bs};
 local_func(history, [Other], Bs, Shell) ->
@@ -328,6 +392,15 @@ local_func(F, As0, Bs0, Shell) when atom(F) ->
 local_func(F, As0, Bs0, Shell) ->
     {As,Bs} = erl_eval:expr_list(As0, Bs0, {eval,{shell,local_func},[Shell]}),
     {value,apply(F, As),Bs}.
+
+import_all(P, Bs0) ->
+    Ms = packages:find_modules(P),
+    lists:foldl(fun (M, Bs) ->
+			Key = list_to_atom(M),
+			M1 = list_to_atom(packages:concat(P, M)),
+			erl_eval:add_binding({module,Key}, M1, Bs)
+		end,
+		Bs0, Ms).
 
 shell_req(Shell, Req) ->
     Shell ! {shell_req,self(),Req},
@@ -392,3 +465,8 @@ history(L) when integer(L), L >= 0 ->
 
 results(L) when integer(L), L >= 0 ->
     set_env(stdlib, shell_saved_results, L, ?DEF_RESULTS).
+
+%% In syntax trees, module/package names are atoms or lists of atoms.
+
+package_to_string(A) when atom(A) -> atom_to_list(A);
+package_to_string(L) when list(L) -> packages:concat(L).

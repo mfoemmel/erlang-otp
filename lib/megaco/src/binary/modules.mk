@@ -8,16 +8,12 @@ MODULES = \
 	megaco_ber_bin_media_gateway_control \
 	megaco_per_encoder \
 	megaco_per_media_gateway_control \
+	megaco_per_bin_encoder \
+	megaco_per_bin_media_gateway_control \
 	megaco_binary_name_resolver \
 	megaco_binary_term_id \
 	megaco_binary_term_id_gen \
 	megaco_binary_transformer
-
-ifeq ($(USE_PER_BIN),yes)
-MODULES += megaco_per_bin_media_gateway_control \
-           megaco_per_bin_encoder
-endif
-
 
 INTERNAL_HRL_FILES = 
 

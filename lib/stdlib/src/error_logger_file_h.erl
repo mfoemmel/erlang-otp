@@ -56,7 +56,7 @@ init(File, PrevHandler) ->
 	    Error
     end.
     
-handle_event({Type, GL, Msg}, State) when node(GL) /= node() ->
+handle_event({_Type, GL, _Msg}, State) when node(GL) /= node() ->
     {ok, State};
 handle_event(Event, {Fd, File, PrevHandler}) ->
     write_event(Fd, tag_event(Event)),
@@ -64,7 +64,7 @@ handle_event(Event, {Fd, File, PrevHandler}) ->
 handle_event(_, State) ->
     {ok, State}.
 
-handle_info({'EXIT', Fd, _Reason}, {Fd, File, PrevHandler}) ->
+handle_info({'EXIT', Fd, _Reason}, {Fd, _File, PrevHandler}) ->
     case PrevHandler of
 	[] ->
 	    remove_handler;
@@ -89,7 +89,7 @@ handle_call(_Query, State) ->
 terminate(_Reason, _State) ->
     [].
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%% ------------------------------------------------------

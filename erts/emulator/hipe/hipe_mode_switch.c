@@ -25,17 +25,15 @@
  */
 int hipe_modeswitch_debug = 0;
 
-#define HIPE_DEBUG 1
+#define HIPE_DEBUG 0
 
 #if HIPE_DEBUG > 1	/* include DPRINTF() logging */
 
-#define STR2(X)	#X
-#define STR(X)	STR2(X)
 #define DPRINTF(fmt, args...) \
 do { \
-    if (hipe_modeswitch_debug > 0 ) { \
-      printf(__FUNCTION__ ", line " STR(__LINE__) ": " fmt "\r\n", ##args); \
-      fflush(stdout); \
+    if( hipe_modeswitch_debug > 0 ) { \
+	printf("%s, line %u: " fmt "\r\n", __FUNCTION__, __LINE__ , ##args); \
+	fflush(stdout); \
     } \
 } while( 0 )
 
@@ -90,18 +88,15 @@ do { \
 void hipe_check_pcb(Process *p, const char *file, unsigned line)
 {
 #if HIPE_DEBUG > 2
-#ifdef UNIFIED_HEAP
-    if( hipe_modeswitch_debug > 0 ) {
-       printf("%s, line %u: p %p = {htop %p, stop %p, nstack %p, nsp %p, nstend %p}\r\n", file, line, p, global_htop, p->stop, p->hipe.nstack, p->hipe.nsp, p->hipe.nstend);
-    }
-#else
     if( hipe_modeswitch_debug > 0 ) {
         printf("%s, line %u: p %p = {htop %p, stop %p, nstack %p, nsp %p, nstend %p}\r\n", file, line, p, p->htop, p->stop, p->hipe.nstack, p->hipe.nsp, p->hipe.nstend);
     }
 #endif
-#endif
     HIPE_ASSERT3(p != NULL, file, line);
-#ifndef UNIFIED_HEAP
+#ifdef SHARED_HEAP
+    HIPE_ASSERT3(p->htop <= p->hend, file, line);
+    HIPE_ASSERT3(p->stop >= p->send, file, line);
+#else
     HIPE_ASSERT3(p->htop <= p->stop, file, line);
 #endif
     HIPE_ASSERT3(p->hipe.nstack <= p->hipe.nstend, file, line);
@@ -126,12 +121,12 @@ static void hipe_check_nstack(Process *p, unsigned nwords);
 #include "hipe_x86_glue.h"
 #endif
 
-#define BeamOpCode(Op)		((uint32)BeamOp(Op))
+#define BeamOpCode(Op)		((Uint)BeamOp(Op))
 
-uint32 hipe_beam_pc_return[1];	/* needed in hipe_debug.c */
-uint32 hipe_beam_pc_throw[1];	/* needed in hipe_debug.c */
-uint32 hipe_beam_pc_resume[1];	/* needed by hipe_set_timeout() */
-static uint32 hipe_beam_pc_reschedule[1];
+Uint hipe_beam_pc_return[1];	/* needed in hipe_debug.c */
+Uint hipe_beam_pc_throw[1];	/* needed in hipe_debug.c */
+Uint hipe_beam_pc_resume[1];	/* needed by hipe_set_timeout() */
+static Uint hipe_beam_pc_reschedule[1];
 static Eterm hipe_beam_catch_throw;
 
 void hipe_mode_switch_init(void)
@@ -147,27 +142,27 @@ void hipe_mode_switch_init(void)
 	make_catch(beam_catches_cons(hipe_beam_pc_throw, BEAM_CATCHES_NIL));
 }
 
-void hipe_set_call_trap(uint32 *bfun, void *nfun, int is_closure)
+void hipe_set_call_trap(Uint *bfun, void *nfun, int is_closure)
 {
     HIPE_ASSERT(bfun[-5] == BeamOpCode(op_i_func_info_IaaI));
     bfun[0] =
 	is_closure
 	? BeamOpCode(op_hipe_trap_call_closure)
 	: BeamOpCode(op_hipe_trap_call);
-    bfun[-4] = (uint32)nfun;
+    bfun[-4] = (Uint)nfun;
 }
 
 static __inline__ void
 hipe_push_beam_trap_frame(Process *p, Eterm reg[], unsigned arity)
 {
     /* ensure that at least 2 words are available on the BEAM stack */
-#ifdef UNIFIED_HEAP
+#ifdef SHARED_HEAP
     if (p->stop - 2 < p->send) {
       int used_stack = p->stack - p->stop;
-      int new_sz = next_heap_size(p->stack_sz + 2, 0);
+      int new_sz = erts_next_heap_size(p->stack_sz + 2, 0);
       Eterm *new_stack =
         (Eterm*)safe_alloc_from(917, sizeof(Eterm) * new_sz);
-      printf("hipe_push_beam_trap_frame\n");
+      DPRINTF("Enlarging stack. This is untested in unified heap!");
       sys_memmove((new_stack + new_sz) - used_stack, p->stop,
                   used_stack * sizeof(Eterm));
 #ifdef DEBUG
@@ -199,9 +194,26 @@ static __inline__ void hipe_pop_beam_trap_frame(Process *p)
     p->stop += 2;
 }
 
-unsigned hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
+#if defined(__i386__)
+#define NR_ARG_REGS	X86_NR_ARG_REGS
+#elif defined(__sparc__)
+#define NR_ARG_REGS	HIPE_SPARC_ARGS_IN_REGS
+#endif
+
+Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 {
     unsigned result;
+#if NR_ARG_REGS > 5
+    /* When NR_ARG_REGS > 5, we need to protect the process' input
+       reduction count (which BEAM stores in def_arg_reg[5]) from
+       being clobbered by the arch glue code. */
+    Eterm reds_in = p->def_arg_reg[5];
+#endif
+#if NR_ARG_REGS > 4
+    Eterm o_reds = p->def_arg_reg[4];
+#endif
+
+    p->i = NULL;
 
     DPRINTF("cmd == %#x (%s)", cmd, code_str(cmd));
     HIPE_CHECK_PCB(p);
@@ -273,6 +285,7 @@ unsigned hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  result = hipe_return_to_native(p);
 	  break;
       }
+    do_resume:
       case HIPE_MODE_SWITCH_CMD_RESUME: {
 	  /* BEAM just executed hipe_beam_pc_resume[] */
 	  /* BEAM called native, which suspended. */
@@ -313,12 +326,26 @@ unsigned hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
       case HIPE_MODE_SWITCH_RES_TRAP: {
 	  /* Native code called a BIF, which "failed" with a TRAP to BEAM.
 	   *
-	   * p->fvalue is the callee's Export*
-	   * p->arity is the callee's arity
-	   * p->def_arg_reg[] contains the parameters (on SPARC)
+	   * p->def_arg_reg[0] is the callee's Export*
+	   * p->def_arg_reg[1..] contains the parameters
+	   * the BIF and the new callee may have different arities
+	   *
+	   * We treat this as a normal call, after we shift the
+	   * parameters down.
+	   *
+	   * PRE: 0 <= BIF's arity <= 3
+	   *	  0 <= callee's arity <= 3
+	   *	  3 <= NR_ARG_REGS
 	   */
-	  p->i = ((Export*)(p->fvalue))->address;
+	  unsigned int i;
+
+	  p->i = ((Export*)(p->def_arg_reg[0]))->address;
+	  p->arity = p->i[-1];
 	  result = HIPE_MODE_SWITCH_RES_CALL;
+
+	  for(i = 0; i < p->arity; ++i)	/* arity <= 3 */
+	      p->def_arg_reg[i] = p->def_arg_reg[i+1];
+
 	  /*FALLTHROUGH*/
       }
       case HIPE_MODE_SWITCH_RES_CALL: {
@@ -326,7 +353,8 @@ unsigned hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	   *
 	   * p->i is the callee's BEAM code
 	   * p->arity is the callee's arity
-	   * p->def_arg_reg[] contains the parameters (on SPARC)
+	   * p->def_arg_reg[] contains the register parameters
+	   * p->hipe.nsp[] contains the stacked parameters
 	   */
 	  if( hipe_call_from_native_is_recursive(p, reg) ) {
 	      /* BEAM called native, which now calls BEAM */
@@ -384,14 +412,13 @@ unsigned hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
       case HIPE_MODE_SWITCH_RES_RESCHEDULE: {
 	  hipe_reschedule_from_native(p);
 	  p->i = hipe_beam_pc_reschedule;
-	  result = HIPE_MODE_SWITCH_RES_SUSPEND;
-	  break;
+	  goto do_schedule;
       }
       case HIPE_MODE_SWITCH_RES_SUSPEND: {
 	  p->i = hipe_beam_pc_resume;
 	  p->arity = 0;
 	  add_to_schedule_q(p);
-	  break;
+	  goto do_schedule;
       }
       case HIPE_MODE_SWITCH_RES_WAIT:
       case HIPE_MODE_SWITCH_RES_WAIT_TIMEOUT: {
@@ -399,14 +426,61 @@ unsigned hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  p->i = hipe_beam_pc_resume;
 	  p->arity = 0;
 	  p->status = P_WAITING;
-	  result = HIPE_MODE_SWITCH_RES_SUSPEND;
-	  break;
+      do_schedule:
+	  {
+#if !(NR_ARG_REGS > 5)
+	      int reds_in = p->def_arg_reg[5];
+#endif
+	      p = schedule(p, reds_in - p->fcalls);
+	  }
+	  {
+	      Eterm *argp;
+	      int i;
+	  
+	      argp = p->arg_reg;
+	      for(i = p->arity; --i >= 0;)
+		  reg[i] = argp[i];
+	  }
+	  {
+#if !(NR_ARG_REGS > 5)
+	      Eterm reds_in;
+#endif
+#if !(NR_ARG_REGS > 4)
+	      Eterm o_reds;
+#endif
+
+	      reds_in = p->fcalls;
+	      o_reds = 0;
+	      if( p->ct != NULL ) {
+		  o_reds = reds_in;
+		  reds_in = 0;
+		  p->fcalls = 0;
+	      }
+	      p->def_arg_reg[4] = o_reds;
+	      p->def_arg_reg[5] = reds_in;
+	      if( p->i == hipe_beam_pc_resume ) {
+		  p->i = NULL;
+		  p->arity = 0;
+		  goto do_resume;
+	      }
+	  }
+	  HIPE_CHECK_PCB(p);
+	  result = HIPE_MODE_SWITCH_RES_CALL;
+	  p->def_arg_reg[3] = result;
+	  return p;
       }
       default:
 	erl_exit(1, "hipe_mode_switch: result %#x\r\n", result);
     }
     HIPE_CHECK_PCB(p);
-    return result;
+    p->def_arg_reg[3] = result;
+#if NR_ARG_REGS > 4
+    p->def_arg_reg[4] = o_reds;
+#endif
+#if NR_ARG_REGS > 5
+    p->def_arg_reg[5] = reds_in;
+#endif
+    return p;
 }
 
 #define HIPE_INITIAL_NSTACK_SIZE	128
@@ -425,11 +499,29 @@ Eterm *hipe_inc_nstack(Process *p)
     unsigned old_size = p->hipe.nstend - old_nstack;
     unsigned new_size = hipe_next_nstack_size(old_size);
     Eterm *new_nstack = safe_realloc((char*)old_nstack, new_size*sizeof(Eterm));
+    /*
+      printf("nstack 0x%08x nsp 0x%08x nstend 0x%08x \n\r",
+      p->hipe.nstack,  p->hipe.nsp, p->hipe.nstend);
+    */
+
     p->hipe.nstend = new_nstack + new_size;
     if( new_nstack != old_nstack ) {
 	p->hipe.nsp = new_nstack + (p->hipe.nsp - old_nstack);
 	p->hipe.nstack = new_nstack;
+	/* Adjust greay and black markers. */
+	if( p->hipe.nstgraylim )
+	  p->hipe.nstgraylim = 
+	    new_nstack + (p->hipe.nstgraylim - old_nstack);
+	if( p->hipe.nstblacklim )
+	  p->hipe.nstblacklim = 
+	    new_nstack + (p->hipe.nstblacklim - old_nstack);
+
     }
+    /*
+      printf("New\n\rnstack 0x%08x nsp 0x%08x nstend 0x%08x \n\r",
+      p->hipe.nstack,  p->hipe.nsp, p->hipe.nstend);
+    */
+
     return p->hipe.nsp;
 }
 #endif
@@ -442,10 +534,18 @@ Eterm *hipe_inc_nstack(Process *p)
     unsigned new_size = hipe_next_nstack_size(old_size);
     Eterm *new_nstack = safe_alloc(new_size*sizeof(Eterm));
     unsigned used_size = p->hipe.nstend - p->hipe.nsp;
+
     sys_memcpy(new_nstack+new_size-used_size, p->hipe.nsp, used_size*sizeof(Eterm));
+    if( p->hipe.nstgraylim )
+	p->hipe.nstgraylim = new_nstack + new_size - (p->hipe.nstend - p->hipe.nstgraylim);
+    if( p->hipe.nstblacklim )
+	p->hipe.nstblacklim = new_nstack + new_size - (p->hipe.nstend - p->hipe.nstblacklim);
+    if( p->hipe.nstack )
+	sys_free(p->hipe.nstack);
     p->hipe.nstack = new_nstack;
     p->hipe.nstend = new_nstack + new_size;
     p->hipe.nsp = new_nstack + new_size - used_size;
+
     return p->hipe.nsp;
 }
 #endif

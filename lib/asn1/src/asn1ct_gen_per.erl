@@ -56,7 +56,7 @@ gen_encode(Erules,Type) when record(Type,typedef) ->
 %%	    exit({error,{asn1,{unknown,Other}}})
 %%    end.
 
-gen_encode(Erules,Typename,#'ComponentType'{name=Cname,typespec=Type,prop=Prop}) ->
+gen_encode(Erules,Typename,#'ComponentType'{name=Cname,typespec=Type}) ->
     NewTypename = [Cname|Typename],
     gen_encode(Erules,NewTypename,Type);
 
@@ -64,7 +64,7 @@ gen_encode(Erules,Typename,Type) when record(Type,type) ->
     InnerType = asn1ct_gen:get_inner(Type#type.def),
     ObjFun =
 	case lists:keysearch(objfun,1,Type#type.tablecinf) of
-	    {value,{_,Name}} ->
+	    {value,{_,_Name}} ->
 %%		lists:concat([", ObjFun",Name]);
 		", ObjFun";
 	    false ->
@@ -134,7 +134,7 @@ gen_encode_prim(Erules,D,DoTag) ->
 	    end,
     gen_encode_prim(Erules,D,DoTag,Value).
 
-gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
+gen_encode_prim(_Erules,D,_DoTag,Value) when record(D,type) ->
     Constraint = D#type.constraint,
     case D#type.def of
 	'INTEGER' ->
@@ -218,7 +218,7 @@ emit_enc_enumerated_cases(C, [H], Count) ->
     emit_enc_enumerated_case(C, H, Count),
     emit([";",nl,"EnumVal -> exit({error,{asn1, {enumerated_not_in_range, EnumVal}}})"]),
     emit([nl,"end"]);
-emit_enc_enumerated_cases(C, ['EXT_MARK'|T], Count) ->
+emit_enc_enumerated_cases(C, ['EXT_MARK'|T], _Count) ->
     emit_enc_enumerated_cases(C, T, 0);
 emit_enc_enumerated_cases(C, [H1,H2|T], Count) ->
     emit_enc_enumerated_case(C, H1, Count),
@@ -227,13 +227,13 @@ emit_enc_enumerated_cases(C, [H1,H2|T], Count) ->
     
 
 
-emit_enc_enumerated_case(C, {asn1_enum,High}, _) ->
+emit_enc_enumerated_case(_C, {asn1_enum,High}, _) ->
     emit([
 	  "{asn1_enum,EnumV} when integer(EnumV), EnumV > ",High," -> ",
 	  "[{bit,1},?RT_PER:encode_small_number(EnumV)]"]);
-emit_enc_enumerated_case(C, 'EXT_MARK', Count) ->
+emit_enc_enumerated_case(_C, 'EXT_MARK', _Count) ->
     true;
-emit_enc_enumerated_case(C, {1,EnumName}, Count) ->
+emit_enc_enumerated_case(_C, {1,EnumName}, Count) ->
     emit(["'",EnumName,"' -> [{bit,1},?RT_PER:encode_small_number(",Count,")]"]);
 emit_enc_enumerated_case(C, {0,EnumName}, Count) ->
     emit(["'",EnumName,"' -> [{bit,0},?RT_PER:encode_integer(",{asis,C},", ",Count,")]"]);
@@ -244,7 +244,7 @@ emit_enc_enumerated_case(C, EnumName, Count) ->
 %% Object code generating for encoding and decoding
 %% ------------------------------------------------
 
-gen_obj_code(Erules,Module,Obj) when record(Obj,typedef) ->
+gen_obj_code(_Erules,_Module,Obj) when record(Obj,typedef) ->
     ObjName = Obj#typedef.name,
     Def = Obj#typedef.typespec,
     #'Externaltypereference'{module=Mod,type=ClassName} = 

@@ -32,6 +32,18 @@
 #include <sys/types.h>
 #include <sys/uio.h>
 #endif
+
+#ifdef _OSE_
+#include "efs.h"
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#ifdef _OSE_SFK_
+#include <string.h>
+#endif
+#endif /* _OSE_ */
+
 #ifdef VXWORKS
 #include <ioLib.h>
 #include <dosFsLib.h>
@@ -74,6 +86,42 @@ extern STATUS copy(char *, char *);
 #endif
 
 
+/*
+ * Macros for testing file types.
+ */
+
+#ifdef _OSE_
+
+#define ISDIR(st) S_ISDIR(((st).st_mode))
+#define ISREG(st) S_ISREG(((st).st_mode))
+#define ISDEV(st) (S_ISCHR(((st).st_mode)) || S_ISBLK(((st).st_mode)))
+#define ISLNK(st) S_ISLNK(((st).st_mode))
+#ifdef NO_UMASK
+#define FILE_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
+#define DIR_MODE  (S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)
+#else
+#define FILE_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)
+#define DIR_MODE  (S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP | S_IROTH | \
+                   S_IWOTH | S_IXOTH)
+#endif 
+
+#else  /* !_OSE_ */
+
+#define ISDIR(st) (((st).st_mode & S_IFMT) == S_IFDIR)
+#define ISREG(st) (((st).st_mode & S_IFMT) == S_IFREG)
+#define ISDEV(st) \
+  (((st).st_mode&S_IFMT) == S_IFCHR || ((st).st_mode&S_IFMT) == S_IFBLK)
+#define ISLNK(st) (((st).st_mode & S_IFLNK) == S_IFLNK)
+#ifdef NO_UMASK
+#define FILE_MODE 0644
+#define DIR_MODE  0755
+#else
+#define FILE_MODE 0666
+#define DIR_MODE  0777
+#endif
+
+#endif /* _OSE_ */
+
 #ifdef VXWORKS /* Currently only used on vxworks */
 
 #define EF_ALLOC(S)		sys_alloc_from(200, (S))
@@ -106,24 +154,6 @@ static void *ef_safe_realloc(void *op, Uint s)
 
 #endif /* #if 0 */
 #endif /* #ifdef VXWORKS */
-
-/*
- * Macros for testing file types.
- */
-  
-#define ISDIR(st) (((st).st_mode & S_IFMT) == S_IFDIR)
-#define ISREG(st) (((st).st_mode & S_IFMT) == S_IFREG)
-#define ISDEV(st) \
-  (((st).st_mode&S_IFMT) == S_IFCHR || ((st).st_mode&S_IFMT) == S_IFBLK)
-#define ISLNK(st) (((st).st_mode & S_IFLNK) == S_IFLNK)
-
-#ifdef NO_UMASK
-#define FILE_MODE 0644
-#define DIR_MODE  0755
-#else
-#define FILE_MODE 0666
-#define DIR_MODE  0777
-#endif
 
 #define IS_DOT_OR_DOTDOT(s) \
     (s[0] == '.' && (s[1] == '\0' || (s[1] == '.' && s[2] == '\0')))
@@ -302,7 +332,16 @@ path_size(char *pathname)
     return count_path_length(currdir,pathname);
 }
     
-#endif
+#endif /* VXWORKS */
+
+#ifdef _OSE_
+static int 
+ose_enotsup(Efile_error *errInfo) 
+{
+    errInfo->posix_errno = errInfo->os_errno = ENOTSUP;
+    return 0;
+}
+#endif /* _OSE_ */
 
 int
 efile_mkdir(Efile_error* errInfo,	/* Where to return error codes. */
@@ -380,12 +419,18 @@ efile_delete_file(Efile_error* errInfo,	/* Where to return error codes. */
 		  char* name)		/* Name of file to delete. */
 {
     CHECK_PATHLEN(name,errInfo);
+#ifdef _OSE_
+    if (remove(name) == 0) {
+	return 1;
+    }
+#else
     if (unlink(name) == 0) {
 	return 1;
     }
     if (errno == EISDIR) {	/* Linux sets the wrong error code. */
 	errno = EPERM;
     }
+#endif
     return check_error(-1, errInfo);
 }
 
@@ -452,7 +497,7 @@ efile_rename(Efile_error* errInfo,	/* Where to return error codes. */
     if (errno == ENOTEMPTY) {
 	errno = EEXIST;
     }
-#if defined (sparc) && !defined(VXWORKS)
+#if defined (sparc) && !defined(VXWORKS) && !defined(_OSE_)
     /*
      * SunOS 4.1.4 reports overwriting a non-empty directory with a
      * directory as EINVAL instead of EEXIST (first rule out the correct
@@ -523,7 +568,7 @@ efile_getdcwd(Efile_error* errInfo,	/* Where to return error codes. */
 	      int drive,		/* 0 - current, 1 - A, 2 - B etc. */
 	      char* buffer,		/* Where to return the current 
 					   directory. */
-	      unsigned size)		/* Size of buffer. */
+	      size_t size)		/* Size of buffer. */
 {
     if (drive == 0) {
 	if (getcwd(buffer, size) == NULL)
@@ -564,7 +609,7 @@ efile_readdir(Efile_error* errInfo,	/* Where to return error codes. */
 						   open directory.*/
 	      char* buffer,		/* Pointer to buffer for 
 					   one filename. */
-	      unsigned int size)	/* Size of buffer. */
+	      size_t size)		/* Size of buffer. */
 {
     DIR *dp;			/* Pointer to directory structure. */
     struct dirent* dirp;	/* Pointer to directory entry. */
@@ -607,7 +652,7 @@ efile_openfile(Efile_error* errInfo,	/* Where to return error codes. */
 	       int flags,		/* Flags to user for opening. */
 	       int* pfd,		/* Where to store the file 
 					   descriptor. */
-	       unsigned int *pSize)	/* Where to store the size of the 
+	       off_t *pSize)		/* Where to store the size of the 
 					   file. */
 {
     struct stat statbuf;
@@ -764,7 +809,7 @@ efile_fileinfo(Efile_error* errInfo, Efile_info* pInfo,
     CHECK_PATHLEN(name, errInfo);
 
     if (info_for_link) {
-#ifdef VXWORKS
+#if (defined(VXWORKS) || defined(_OSE_))
 	result = stat(name, &statbuf);
 #else
 	result = lstat(name, &statbuf);
@@ -832,7 +877,11 @@ efile_fileinfo(Efile_error* errInfo, Efile_info* pInfo,
     pInfo->mode = statbuf.st_mode;
     pInfo->links = statbuf.st_nlink;
     pInfo->major_device = statbuf.st_dev;
+#ifdef _OSE_
+    pInfo->minor_device = 0;
+#else
     pInfo->minor_device = statbuf.st_rdev;
+#endif
     pInfo->inode = statbuf.st_ino;
     pInfo->uid = statbuf.st_uid;
     pInfo->gid = statbuf.st_gid;
@@ -877,10 +926,12 @@ efile_write_info(Efile_error *errInfo, Efile_info *pInfo, char *name)
      * POSIX_CHOWN_RESTRICTED is not set.  Others will succeed as long as 
      * you don't try to chown a file to someone besides youself.
      */
-    
+
+#ifndef _OSE_    
     if (chown(name, pInfo->uid, pInfo->gid) && errno != EPERM) {
 	return check_error(-1, errInfo);
     }
+#endif
 
     if (pInfo->mode != -1) {
 	mode_t newMode = pInfo->mode & (S_ISUID | S_ISGID |
@@ -894,6 +945,8 @@ efile_write_info(Efile_error *errInfo, Efile_info *pInfo, char *name)
     }
 
 #endif /* !VXWORKS */
+
+#ifndef _OSE_
 
     if (pInfo->accessTime.year != -1 && pInfo->modifyTime.year != -1) {
 	struct utimbuf tval;
@@ -926,6 +979,7 @@ efile_write_info(Efile_error *errInfo, Efile_info *pInfo, char *name)
 	return check_error(utime(name, &tval), errInfo);
 #endif
     }
+#endif /* !_OSE_ */
     return 1;
 }
 
@@ -936,9 +990,9 @@ efile_write(Efile_error* errInfo,	/* Where to return error codes. */
 					   opened. */
 	    int fd,			/* File descriptor to write to. */
 	    char* buf,			/* Buffer to write. */
-	    unsigned int count)		/* Number of bytes to write. */
+	    size_t count)		/* Number of bytes to write. */
 {
-    int written;		/* Bytes written in last operation. */
+    ssize_t written;			/* Bytes written in last operation. */
 
 #ifdef VXWORKS
     if (flags & EFILE_MODE_APPEND) {
@@ -952,6 +1006,7 @@ efile_write(Efile_error* errInfo,	/* Where to return error codes. */
 	    else
 		written = 0;
 	}
+	ASSERT(written <= count);
 	buf += written;
 	count -= written;
     }
@@ -967,13 +1022,12 @@ efile_writev(Efile_error* errInfo,   /* Where to return error codes */
 				      * The structs are unchanged 
 				      * after the call */
 	     int iovcnt,             /* Number of structs in vector */
-	     int size)               /* Number of bytes to write */
+	     size_t size)            /* Number of bytes to write */
 {
     int cnt = 0;                     /* Buffers so far written */
     int p = 0;                       /* Position in next buffer */
 
     ASSERT(iovcnt >= 0);
-    ASSERT(size >= 0);
     
 #ifdef VXWORKS
     if (flags & EFILE_MODE_APPEND) {
@@ -1050,11 +1104,11 @@ efile_read(Efile_error* errInfo,     /* Where to return error codes. */
 	   int flags,		     /* Flags given when file was opened. */
 	   int fd,		     /* File descriptor to read from. */
 	   char* buf,		     /* Buffer to read into. */
-	   unsigned int count,	     /* Number of bytes to read. */
-	   unsigned int *pBytesRead) /* Where to return number of 
+	   size_t count,	     /* Number of bytes to read. */
+	   size_t *pBytesRead)	     /* Where to return number of 
 					bytes read. */
 {
-    int n;
+    ssize_t n;
 
     for (;;) {
 	if ((n = read(fd, buf, count)) >= 0)
@@ -1062,7 +1116,7 @@ efile_read(Efile_error* errInfo,     /* Where to return error codes. */
 	else if (errno != EINTR)
 	    return check_error(-1, errInfo);
     }
-    *pBytesRead = (unsigned) n;
+    *pBytesRead = (size_t) n;
     return 1;
 }
 
@@ -1081,26 +1135,27 @@ efile_read(Efile_error* errInfo,     /* Where to return error codes. */
 int
 efile_pread(Efile_error* errInfo,     /* Where to return error codes. */
 	    int fd,		      /* File descriptor to read from. */
-	    int offset,               /* Offset in bytes from BOF. */
+	    off_t offset,             /* Offset in bytes from BOF. */
 	    char* buf,		      /* Buffer to read into. */
-	    unsigned int count,	      /* Number of bytes to read. */
-	    unsigned int *pBytesRead) /* Where to return 
+	    size_t count,	      /* Number of bytes to read. */
+	    size_t *pBytesRead)	      /* Where to return 
 					 number of bytes read. */
 {
 
 #if defined(HAVE_PREAD) && defined(HAVE_PWRITE)
-    int n;
+    ssize_t n;
     for (;;) {
 	if ((n = pread(fd, buf, count, offset)) >= 0)
 	    break;
 	else if (errno != EINTR)
 	    return check_error(-1, errInfo);
     }
-    *pBytesRead = (unsigned) n;
+    *pBytesRead = (size_t) n;
     return 1;
 #else
     {
-	int res, location;
+	int res;
+	off_t location;
 	if ((res = efile_seek(errInfo, fd, offset, EFILE_SEEK_SET, 
 			      &location)))
 	    return efile_read(errInfo, 0, fd, buf, count, pBytesRead);
@@ -1116,12 +1171,12 @@ int
 efile_pwrite(Efile_error* errInfo,  /* Where to return error codes. */
 	     int fd,		    /* File descriptor to write to. */
 	     char* buf,		    /* Buffer to write. */
-	     unsigned count,	    /* Number of bytes to write. */
-	     int offset)            /* where to write it */
+	     size_t count,	    /* Number of bytes to write. */
+	     off_t offset)	    /* where to write it */
 { 
 
 #if defined(HAVE_PREAD) && defined(HAVE_PWRITE)
-    int written;		/* Bytes written in last operation. */
+    ssize_t written;		    /* Bytes written in last operation. */
 
     while (count > 0) {
 	if ((written = pwrite(fd, buf, count, offset)) < 0) {
@@ -1130,6 +1185,7 @@ efile_pwrite(Efile_error* errInfo,  /* Where to return error codes. */
 	    else
 		written = 0;
 	}
+	ASSERT(written <= count);
 	buf += written;
 	count -= written;
 	offset += written;
@@ -1137,7 +1193,8 @@ efile_pwrite(Efile_error* errInfo,  /* Where to return error codes. */
     return 1;
 #else  /* For unix systems that don't support pread() and pwrite() */    
     {
-	int location, res;
+	int res;
+	off_t location;
 	if ((res = efile_seek(errInfo, fd, offset, 
 			      EFILE_SEEK_SET, &location)))
 	    return efile_write(errInfo, 0, fd, buf, count);
@@ -1151,13 +1208,13 @@ efile_pwrite(Efile_error* errInfo,  /* Where to return error codes. */
 int
 efile_seek(Efile_error* errInfo,      /* Where to return error codes. */
 	   int fd,                    /* File descriptor to do the seek on. */
-	   int offset,                /* Offset in bytes from the given 
+	   off_t offset,              /* Offset in bytes from the given 
 					 origin. */ 
 	   int origin,                /* Origin of seek (SEEK_SET, SEEK_CUR,
 				         SEEK_END). */ 
-	   unsigned int *new_location)/* Resulting new location in file. */
+	   off_t *new_location)       /* Resulting new location in file. */
 {
-    int result;
+    off_t result;
 
     switch (origin) {
     case EFILE_SEEK_SET: origin = SEEK_SET; break;
@@ -1184,7 +1241,7 @@ efile_seek(Efile_error* errInfo,      /* Where to return error codes. */
 	errno = EINVAL;
     if (result < 0)
 	return check_error(-1, errInfo);
-    *new_location = (unsigned) result;
+    *new_location = result;
     return 1;
 }
 
@@ -1317,36 +1374,50 @@ efile_truncate_file(Efile_error* errInfo, int *fd, int flags)
 }
 
 int
-efile_readlink(Efile_error* errInfo, char* name, char* buffer, unsigned size)
+efile_readlink(Efile_error* errInfo, char* name, char* buffer, size_t size)
 {
+#ifdef _OSE_
+    return ose_enotsup(errInfo);
+#else
 #ifdef VXWORKS
     return vxworks_enotsup(errInfo);
 #else
-    int len = readlink(name, buffer, size-1);
+    int len;
+    ASSERT(size > 0);
+    len = readlink(name, buffer, size-1);
     if (len == -1) {
 	return check_error(-1, errInfo);
     }
     buffer[len] = '\0';
     return 1;
 #endif
+#endif
 }
 
 int
 efile_link(Efile_error* errInfo, char* old, char* new)
 {
+#ifdef _OSE_
+    return ose_enotsup(errInfo);
+#else
 #ifdef VXWORKS
     return vxworks_enotsup(errInfo);
 #else
     return check_error(link(old, new), errInfo);
+#endif
 #endif
 }
 
 int
 efile_symlink(Efile_error* errInfo, char* old, char* new)
 {
+#ifdef _OSE_
+    return ose_enotsup(errInfo);
+#else
 #ifdef VXWORKS
     return vxworks_enotsup(errInfo);
 #else
     return check_error(symlink(old, new), errInfo);
+#endif
 #endif
 }

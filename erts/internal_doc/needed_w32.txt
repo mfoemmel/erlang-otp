@@ -2,23 +2,24 @@
 Tools and stuff needed to build OTP for Win32.
 ----------------------------------------------
 
-Theese are the tools necessary to build and install Erlang/OTP for Win32 using the
-current build/install/test environment.
+Theese are the tools necessary to build and install Erlang/OTP for
+Win32 using the current build/install/test environment.
 
-Note 1: I might have missed something here, just blame me for it and I'll fix it ASAP
+Note 1: I might have missed something here, just blame me for it and
+	I'll fix it ASAP 
 Note 2: '\\' prefixed paths are Windows shared paths
 
 ClearCase for Windows NT
 ------------------------
-Internal Location:  \\eoomer\D_DISK\OTP-program\Clearcase32
-Version:            3.2
+Internal Location:  \\eoomer\D_DISK\Clearcase4\setup.exe
+Version:            4
 Things to consider: Not absolutely necessary, you can build using a plain 
 		    NFS mounted drive, but that is not recommended.
 		    Use 'omake', not nmake or clearmake.
 
-NFS client for Windows NT (NFS Maestro)
--------------------------
-Internal Location:   \\Eomer\D_DISK\OTP-program\nfs-maestro
+NFS client for Windows NT (DiskAccess)
+--------------------------------------
+Internal Location:  \\Eomer\D_DISK\OTP-program\DiskAccess\dan3intel.exe
 Things to consider: read in README
 
 Microsoft Visual C++ 6.0
@@ -27,76 +28,65 @@ Internal Location:  Ingvar Meyer
 Things to consider: Make sure you have all the VC environment variables set
 		    (VCVARS32.BAT)
 
-
 GCC 2.8.1 for Win32 (Mingw32, NOT CygWin32)
 -------------------------------------------
 Available at:       http://agnes.dida.physik.uni-essen.de/~janjaap/mingw32/
-Internal location:  \\Eomer\D_DISK\OTP-program\mingw32\
+Internal location:  \\Eomer\D_DISK\OTP-program\mingw32\mingw32...zip
 Things to consider: Read the installation page at the above URL.
 		    Make sure you have the environment set.
 Untested
-
-
-GNU SED for Win32
------------------
-Available at:       http://www.itribe.net/virtunix/contributors.html
-Internal location:  \\Eomer\D_DISK\OTP-program\GNU Sed\sed-3.02-1.tar.gz
-Things to consider: 
-
-Untested
-
 
 Perl 5 for Win32
 ----------------
 Available at:       http://www.ActiveState.com/
 Internal location:  \\Eomer\D_DISK\OTP-program\Perl5_w32\APi522.exe
-Things to consider: Associate .pl files with Perl to make the scripts work properly.
+Things to consider: Associate .pl files with Perl to make the scripts
+		    work properly.
 
-Wise 6.1
---------
-Available at:	Ingvar Meyer, the serial number can found back of the CD cover
-Updata to 6.1 available at: \\Eomer\D_DISK\OTP-program\WiseUpgrade
-
+Wise 6.0.1
+----------
+Available at:      Ingvar Meyer, the serial number can found back of the CD
+		   cover.
+Update to 6.0.1 available at:
+	           \\Eomer\D_DISK\OTP-program\WiseUpgrade\wise601.exe
 
 A brief description of what the files in the install_nt/wise directory do
-----------------------------------------------------------
-Makefile  -  Pretty obvious.
-             Two main targets defined: 'default' and 'install'
-             'default' will build the OTP installation executable into the current
-	               directory. TESTROOT must be set on the make command line.
+-------------------------------------------------------------------------
+
+Makefile - Pretty obvious. Two main targets defined: 'default' and
+           'install'.
+
+	   'default' will build the OTP installation executable into
+		     the current directory. TESTROOT must be set on
+		     the make command line.
                        
-             'install' will ensure that 'default' is up to date and then uninstalls
-	               any version of Erlang conflicting with the version it wants to
-		       install (the one built with 'default'), and then installs the
-		       new Erlang version. All this is handled by the Perl script
-		       'autorun.pl'. TESTROOT must be set on the make command line.
+           'install' will ensure that 'default' is up to date and then
+	             uninstalls any version of Erlang conflicting with
+	             the version it wants to install (the one built
+	             with 'default'), and then installs the new Erlang
+	             version. All this is handled by the Perl script
+	             'autorun.pl'. TESTROOT must be set on the make
+	             command line.
 
-erlang.wse - This is the main WISE script used to create the installation. Sed
-	     transforms this file into erlang-main.wse substituting some variables.
+erlang.wse - This is the main WISE script used to create the
+	     installation. Sed transforms this file into
+	     erlang-main.wse substituting some variables.
 
-data-files.wse - This file is generated with the genwse.pl Perl script. It has all the
-                 main data files needed by the installation (eg. jam|erl|hrl|etc..)
+data-files.wse - This file is generated with the genwse.pl Perl
+                 script. It has all the main data files needed by the
+                 installation (eg. jam|erl|hrl|etc..)
 
-doc-files.wse -  Theese files are also generated by the genwse.pl script and holds
-                     HTML documentation. When building progress builds,
-		     theese files will normally be (almost) empty.
-		     (Don't be alarmed by warning/error messages during creation of
-		      theese files ifyou don't have any documentation built).
-autorun.pl.in - This is the source for autorun.pl run through sed during 'install'
-		build. It manages removal and installation of the Erlang installation.
+doc-files.wse - These files are also generated by the genwse.pl script
+                and holds HTML documentation. When building progress
+                builds, theese files will normally be (almost) empty.
+                (Don't be alarmed by warning/error messages during
+                creation of theese files ifyou don't have any
+                documentation built).
 
-
-Last modification made by Ingvar Meyer (2000-02-02).
-
-
-
-
-
-
+autorun.pl.in - This is the source for autorun.pl run through sed
+                during 'install' build. It manages removal and
+                installation of the Erlang installation.
 
 
-
-
-
-
-
+Modified by Ingvar Meyer (2000-02-02).
+Updated by Raimo Niskanen (2002-01-22).

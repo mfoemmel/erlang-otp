@@ -38,8 +38,11 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 CC = @CC@
 #CC = gcc
+LD = @DED_LD@
+LIBS = @LIBS@
 
 LIBDIR = $(ERL_TOP)/lib/asn1/priv/lib/$(TARGET)
+OBJDIR = $(ERL_TOP)/lib/asn1/priv/obj/$(TARGET)
 
 # ----------------------------------------------------
 # Application version
@@ -57,7 +60,8 @@ RELSYSDIR = $(RELEASE_PATH)/lib/asn1-$(VSN)
 # FLAGS
 # ----------------------------------------------------
 DRIVER_INCLUDES = -I$(ERL_TOP)/erts/emulator/beam
-CFLAGS = $(DRIVER_INCLUDES) @DED_CFLAGS@ @DED_LDFLAGS@ -shared
+CFLAGS = $(DRIVER_INCLUDES) @DED_CFLAGS@
+LDFLAGS = @DED_LDFLAGS@
 
 # ----------------------------------------------------
 # Target Specs
@@ -65,21 +69,36 @@ CFLAGS = $(DRIVER_INCLUDES) @DED_CFLAGS@ @DED_LDFLAGS@ -shared
 
 C_FILES = asn1_erl_driver.c
 
-SHARED_OBJ_FILES = $(LIBDIR)/asn1_erl_drv.so
 
+ifeq ($(findstring win32,$(TARGET)),win32)
+SHARED_OBJ_FILES = $(LIBDIR)/asn1_erl_drv.dll
+OBJ_FILES = $(OBJDIR)/asn1_erl_drv.obj
+else
+SHARED_OBJ_FILES = $(LIBDIR)/asn1_erl_drv.so
+OBJ_FILES = $(OBJDIR)/asn1_erl_drv.o
+endif
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
 
+ifeq ($(findstring win32,$(TARGET)),win32)
+opt: 
+	@echo "This must be built with NMAKE on Windows"
+else
+
 opt: $(OBJDIR) $(LIBDIR) $(SHARED_OBJ_FILES)
-	rm -f ../priv/bin/asn1_erl_drv*
-	ln -s $(SHARED_OBJ_FILES) ../priv/bin
+	rm -f ../priv/lib/asn1_erl_drv*
+	ln -s $(SHARED_OBJ_FILES) ../priv/lib
+
+endif
+
 
 debug: opt
 
 clean:
 	rm -f core *~ 
 	rm -f $(LIBDIR)/*
+	rm -f $(OBJDIR)/*
 
 docs:
 
@@ -88,8 +107,11 @@ docs:
 # ----------------------------------------------------
 
 
-$(LIBDIR)/asn1_erl_drv.so: $(C_FILES) $(LIBDIR)
-	$(CC) $(CFLAGS) -o $(SHARED_OBJ_FILES) $(C_FILES) 
+$(OBJ_FILES): $(C_FILES) $(OBJDIR)
+	$(CC) -c $(CFLAGS) -o $(OBJ_FILES) $(C_FILES) 
+
+$(SHARED_OBJ_FILES): $(OBJ_FILES) $(LIBDIR)
+	$(LD) $(LDFLAGS) -o $(SHARED_OBJ_FILES) $(OBJ_FILES) -lc $(LIBS) 
 
 $(LIBDIR):
 	-mkdir -p $(LIBDIR)
@@ -105,7 +127,10 @@ $(OBJDIR):
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
-	$(INSTALL_DIR) $(RELSYSDIR)/priv/bin
-	$(INSTALL_DATA) $(SHARED_OBJ_FILES) $(RELSYSDIR)/priv/bin
+	$(INSTALL_DIR) $(RELSYSDIR)/priv/lib
+	$(INSTALL_DATA) $(SHARED_OBJ_FILES) $(RELSYSDIR)/priv/lib
+	$(INSTALL_DIR) $(RELSYSDIR)/c_src
+	$(INSTALL_DATA) $(C_FILES) $(RELSYSDIR)/c_src
 
 release_docs_spec:
+

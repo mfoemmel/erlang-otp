@@ -1,5 +1,5 @@
 %% Copyright (c) 1997 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <00/09/06 14:24:59 happi>
+%% Time-stamp: <02/05/10 23:55:29 happi>
 %% ====================================================================
 %%  Filename : 	hipe_sparc_size.erl
 %%  Module   :	hipe_sparc_size
@@ -7,9 +7,9 @@
 %%  Notes    : 
 %%  History  :	* 1997-11-06 Erik Johansson (happi@csd.uu.se): Created.
 %% CVS:
-%%    $Author: richardc $
-%%    $Date: 2001/03/26 18:37:09 $
-%%    $Revision: 1.1.1.1 $
+%%    $Author: happi $
+%%    $Date: 2002/05/12 13:48:32 $
+%%    $Revision: 1.2 $
 %% ====================================================================
 %% Exported functions (short description):
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -57,6 +57,6 @@ icount(I) ->
       %% r1 <- r5
       %% r2 <- r6
       length(hipe_sparc:multimove_dest(I))*2;
-    Other ->
+    _Other ->
       1
   end.

@@ -97,6 +97,9 @@ create(DB, Gstkid, Opts) ->
 	{error,Reason} -> {error,Reason};
 	Cmd when list(Cmd) ->
 	    BindCmd = gstk_generic:bind(DB, Gstkid, TkW, configure, true),
+%	    io:format("\nWINDOW1: ~p\n",[TkW]),
+%	    io:format("\nWINDOW1: ~p\n",[Cmd]),
+%	    io:format("\nWINDOW1: ~p\n",[BindCmd]),
 	    gstk:exec(["toplevel ", TkW,Cmd,$;,BindCmd]),
 	    NGstkid
     end.
@@ -187,7 +190,9 @@ destroy_win(ID) ->
 %%
 %% Return 	: A tuple {OptionType, OptionCmd}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
--define(REGEXP,"regexp {([0-9]+)x([0-9]+)\\+(\\-*[0-9]+)\\+(\\-*[0-9]+)} ").
+%-define(REGEXP,"regexp {(\\d+)x(\\d+)\\+?(-?\\d+)\\+?(-?\\d+)} ").
+% FIXME: Is this ok? Always positive?
+-define(REGEXP,"regexp {(\\d+)x(\\d+)\\+(\\d+)\\+(\\d+)} ").
 
 option(Option, Gstkid, TkW, DB,_) ->
     case Option of
@@ -195,34 +200,34 @@ option(Option, Gstkid, TkW, DB,_) ->
 	{x,               X} -> 
 	    {c, 
 	    [?REGEXP,"[wm ge ",TkW, "] g w h x y;wm ge ", TkW,
-	     " $w\\x$h\\+", gstk:to_ascii(X), "\\+$y;update idletasks"]};
+	     " ${w}x$h",signed(X),"+$y;update idletasks"]};
 	{y,               Y} -> 
 	    {c,[?REGEXP,"[wm ge ",TkW, "] g w h x y;wm ge ", TkW,
-		" $w\\x$h\\+$x\\+",gstk:to_ascii(Y),"; update idletasks"]};
-	{width,       Width} ->
+		" ${w}x$h+$x",signed(Y),"; update idletasks"]};
+	{width,       Width} when Width >= 0 ->	% FIXME: Needed test?
 	    case gstk_db:opt_or_not(DB,Gstkid,width) of
 		{value,Width} -> none;
-		Q ->
+		_Q ->
 		    gstk_db:insert_opt(DB,Gstkid,{width,Width}),
-		    {c,[?REGEXP,"[wm ge ",TkW, "] g w h x y;wm ge ", TkW,
-			" ", gstk:to_ascii(Width),
-			"\\x$h\\+$x\\+$y;update idletasks"]}
+		    {c,[?REGEXP,"[wm ge ",TkW, "] g w h x y;wm ge ", TkW," ",
+			gstk:to_ascii(Width),"x$h+$x+$y;update idletasks"]}
 	    end;
-    	{height,     Height} -> 
+    	{height,     Height} when Height >= 0 -> % FIXME: Needed test?
 	    case gstk_db:opt_or_not(DB,Gstkid,height) of
 		{value,Height} -> none;
-		Q ->
+		_Q ->				% FIXME: Why different?
 		    gstk_db:insert_opt(DB,Gstkid,{height,Height}),
 		    {c,
-		     ["wm ge ",TkW," [winfo w ", TkW, "]x",gstk:to_ascii(Height),
+		     ["wm ge ",TkW,
+		      " [winfo w ", TkW, "]x",gstk:to_ascii(Height),
 		      ";update idletasks"]}
 	    end;
-	{width_height, {W,H}} ->
+	{width_height, {W,H}} when W >= 0, H >= 0 ->
 	    case {gstk_db:opt_or_not(DB,Gstkid,width),
 		  gstk_db:opt_or_not(DB,Gstkid,height)} of
 		{{value,W},{value,H}} ->
 		    none;
-		OtherSize -> 
+		_OtherSize -> 
 		    gstk_db:insert_opt(DB,Gstkid,{height,H}),
 		    gstk_db:insert_opt(DB,Gstkid,{width,W}),
 		    {c, ["update idletasks;wm ge ", TkW, " ",
@@ -231,7 +236,7 @@ option(Option, Gstkid, TkW, DB,_) ->
 	    end;
 	{xy,             {X,Y}} -> 
 	    {c, [?REGEXP,"[wm ge ",TkW, "] g w h x y;wm ge ", TkW,
-		 " $w\\x$h\\+", signed(X),"\\+", signed(Y),
+		 " ${w}x$h", signed(X),signed(Y),
 		 ";update idletasks"]};
 	{bg,          Color} -> {s, [" -bg ", gstk:to_color(Color)]};
 	{map,          true} -> {c, ["wm deiconify ", TkW]};
@@ -278,7 +283,7 @@ mk_eref(false, DB, Gstkid, Etype) ->
     gstk_db:delete_event(DB, Gstkid, Etype),
     dummy;
 mk_eref(true,DB,Gstkid,Etype) ->
-    Eref = gstk_db:insert_event(DB, Gstkid, Etype, []).
+    gstk_db:insert_event(DB, Gstkid, Etype, []).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -315,9 +320,9 @@ geo_str(TkW) ->
 
 
 
-%%------------------------------------------------------------------------------
+%%----------------------------------------------------------------------
 %%			       PRIMITIVES
-%%------------------------------------------------------------------------------
+%%----------------------------------------------------------------------
 
 %% Return {+,-}Int  to be used in a geometry option
 signed(X) when X>=0 ->
@@ -359,7 +364,3 @@ collect_geo_opts([Opt|Opts],Geo,Rest) ->
 collect_geo_opts([],Geo,Rest) -> {Geo,Rest}.
     
 %%% ----- Done -----
-
-
-
-

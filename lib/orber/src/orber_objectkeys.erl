@@ -266,8 +266,8 @@ register(Objkey, Pid, Type) when pid(Pid) ->
 				     {register, Objkey, Pid, Type}, 
 				     infinity));
 register(Objkey, Pid, Type) ->
-    orber:debug_level_print("[~p] orber_objectkeys:register(~p, ~p); Not a Pid ~p", 
-			    [?LINE, Objkey, Type, Pid], ?DEBUG_LEVEL),
+    orber:dbg("[~p] orber_objectkeys:register(~p, ~p); Not a Pid ~p", 
+	      [?LINE, Objkey, Type, Pid], ?DEBUG_LEVEL),
     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
 delete(Objkey) ->
@@ -384,13 +384,13 @@ handle_call({register, Objkey, Pid, Type}, From, State) ->
 		      [X] when pid(X#orber_objkeys.pid) ->
 			  %% Object exists, i.e., trying to create an object with
 			  %% the same name.
-			  orber:debug_level_print("[~p] orber_objectkeys:register(~p, ~p); Object already exists.", 
-						  [?LINE, Objkey, Type], ?DEBUG_LEVEL),
+			  orber:dbg("[~p] orber_objectkeys:register(~p, ~p); Object already exists.", 
+				    [?LINE, Objkey, Type], ?DEBUG_LEVEL),
 			  {'EXCEPTION', #'BAD_PARAM'{completion_status=?COMPLETED_NO}};
 		      Why ->
 			  %% Something else occured.
-			  orber:debug_level_print("[~p] orber_objectkeys:register(~p, ~p); error reading from DB(~p)", 
-						  [?LINE, Objkey, Type, Why], ?DEBUG_LEVEL),
+			  orber:dbg("[~p] orber_objectkeys:register(~p, ~p); error reading from DB(~p)", 
+				      [?LINE, Objkey, Type, Why], ?DEBUG_LEVEL),
 			  {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}
 		  end
 	  end,
@@ -426,7 +426,7 @@ handle_call({get_pid, Objkey}, From, State) ->
 	    {reply, X#orber_objkeys.pid, State};
 	{atomic, [X]} when X#orber_objkeys.pid == dead ->
 	    {reply,
-	     {'EXCEPTION', #'COMM_FAILURE'{completion_status=?COMPLETED_NO}},
+	     {'EXCEPTION', #'TRANSIENT'{completion_status=?COMPLETED_NO}},
 	     State};
 	Res ->
 	    {reply, 
@@ -513,15 +513,15 @@ get_key_from_pid(Pid) ->
 	[Keys] -> 
 	    Keys#orber_objkeys.object_key;
 	_ ->
-	    corba:raise(#'OBJECT_NOT_EXIST'{minor=102, completion_status=?COMPLETED_NO})
+	    corba:raise(#'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO})
     end.
 
-remove_keys([], _) ->
-    ok;
-remove_keys([H|T], R) when H#orber_objkeys.persistent==false ->
-    _F = ?delete_function({orber_objkeys, H#orber_objkeys.object_key}),
-    write_result(mnesia:transaction(_F)),
-    remove_keys(T, R).
+%remove_keys([], _) ->
+%    ok;
+%remove_keys([H|T], R) when H#orber_objkeys.persistent==false ->
+%    _F = ?delete_function({orber_objkeys, H#orber_objkeys.object_key}),
+%    write_result(mnesia:transaction(_F)),
+%    remove_keys(T, R).
 
 %%-----------------------------------------------------------------
 %% Check a read transaction
@@ -530,9 +530,9 @@ query_result(?query_check(Qres)) ->
 	[Hres] ->
 	    Hres#orber_objkeys.pid;
 	[] ->
-	    {'EXCEPTION', #'OBJECT_NOT_EXIST'{minor=103, completion_status=?COMPLETED_NO}};
+	    {'EXCEPTION', #'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO}};
 	Other ->
-	    orber:debug_level_print("[~p] orber_objectkeys:query_result(); DB lookup failed(~p)", 
+	    orber:dbg("[~p] orber_objectkeys:query_result(); DB lookup failed(~p)", 
 				    [?LINE, Other], ?DEBUG_LEVEL),
 	    {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}
     end.
@@ -541,8 +541,8 @@ query_result(?query_check(Qres)) ->
 %% Check a write transaction
 write_result({atomic,ok}) -> ok;
 write_result(Foo) ->
-    orber:debug_level_print("[~p] orber_objectkeys:query_result(); DB write failed(~p)", 
-			    [?LINE, Foo], ?DEBUG_LEVEL),
+    orber:dbg("[~p] orber_objectkeys:query_result(); DB write failed(~p)", 
+	      [?LINE, Foo], ?DEBUG_LEVEL),
     {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}.
 
 

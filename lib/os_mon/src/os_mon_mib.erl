@@ -29,9 +29,9 @@
 %%% snmp_shadow_table.  Here the update functions are implemented.
 %%%-----------------------------------------------------------------
 -record(loadTable,
-	{erlNodeId, loadSystemTotalMemory, loadSystemUsedMemory,
+	{loadErlNodeName, loadSystemTotalMemory, loadSystemUsedMemory,
 	 loadLargestErlProcess, loadLargestErlProcessUsedMemory,
-	 loadCpuLoad}).
+	 loadCpuLoad, loadCpuLoad5, loadCpuLoad15}).
 
 -define(loadShadowArgs, 
 	{loadTable, integer, record_info(fields, loadTable), 5000,
@@ -120,12 +120,8 @@ update_load_table() ->
     delete_all(loadTable),
     lists:foreach(
       fun(Node) ->
-	      case otp_mib:get_node_id(Node) of
-		  {ok, Idx} ->
-		      Load = rpc:call(Node, os_mon_mib, get_load, [Idx]),
-		      ok = mnesia:dirty_write(Load);
-		  undefined -> ok
-	      end
+	      Load = rpc:call(Node, os_mon_mib, get_load, [Node]),
+	      ok = mnesia:dirty_write(Load)
       end, [node() | nodes()]).
 
 delete_all(Name) -> delete_all(mnesia:dirty_first(Name), Name).
@@ -135,19 +131,24 @@ delete_all(Key, Name) ->
     ok = mnesia:dirty_delete({Name, Key}),
     delete_all(Next, Name).
 
-get_load(Id) ->
+get_load(Node) ->
     {Total, Allocated, {Pid, PidAllocated}} = memsup:get_memory_data(),
-    #loadTable{erlNodeId = Id,
+    #loadTable{loadErlNodeName = atom_to_list(Node),
 	       loadSystemTotalMemory = Total,
 	       loadSystemUsedMemory = Allocated,
 	       loadLargestErlProcess = pid_to_str(Pid),
 	       loadLargestErlProcessUsedMemory = PidAllocated,
-	       loadCpuLoad = get_cpu_load()}.
+	       loadCpuLoad = get_cpu_load(avg1),
+	       loadCpuLoad5 = get_cpu_load(avg5),
+	       loadCpuLoad15 = get_cpu_load(avg15)}.
 
-get_cpu_load() ->
-    Avg1 = cpu_sup:avg1(),
-    D = 50,
-    100 - (D * 100) div (D + Avg1).
+get_cpu_load(X) when X == avg1; X == avg5; X == avg15 ->
+    case erlang:round(apply(cpu_sup, X, [])/2.56) of
+	Large when Large > 100 ->
+	    100;
+	Load ->
+	    Load
+    end.
 
 pid_to_str(Pid) -> lists:flatten(io_lib:format("~w", [Pid])).
     

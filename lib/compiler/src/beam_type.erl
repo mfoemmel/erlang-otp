@@ -44,22 +44,22 @@ opt([{block,Body0}|Is], Rs, Acc, Ts0) ->
 opt([I|Is], Rs, Acc, Ts0) ->
     Ts = update(I, Ts0),
     opt(Is, Rs, [I|Acc], Ts);
-opt([], Rs, Acc, Ts) -> reverse(Acc).
+opt([], _, Acc, _) -> reverse(Acc).
 
 %% simplify(Instruction, TypeDb) -> NewInstruction
 %%  Simplify an instruction using type information (this is
 %%  technically a "strength reduction").
 
-simplify([{set,[D],[{integer,Index},Reg],{bif,element,F}}=I0|Is]=Is0, Ts0, Rs0, Acc0) ->
+simplify([{set,[D],[{integer,Index},Reg],{bif,element,_}}=I0|Is]=Is0, Ts0, Rs0, Acc0) ->
     I = case max_tuple_size(Reg, Ts0) of
 	    Sz when 0 < Index, Index =< Sz ->
 		{set,[D],[Reg],{get_tuple_element,Index-1}};
-	    Other -> I0
+	    _Other -> I0
     end,
     Ts = update(I, Ts0),
     {Rs,Acc} = flush(Rs0, Is0, Acc0),
     simplify(Is, Ts, Rs, [I|Acc]);
-simplify([{set,[D0],[A],{bif,'-',{f,0}}=Bif}=I|Is]=Is0, Ts0, Rs0, Acc0)
+simplify([{set,[D0],[A],{bif,'-',{f,0}}}=I|Is]=Is0, Ts0, Rs0, Acc0)
   when Rs0 =/= no_float_opt ->
     case tdb_find(A, Ts0) of
 	float ->
@@ -69,12 +69,12 @@ simplify([{set,[D0],[A],{bif,'-',{f,0}}=Bif}=I|Is]=Is0, Ts0, Rs0, Acc0)
 	    Acc = [{set,[D],[Areg],{bif,fnegate,{f,0}}}|clearerror(Acc1)],
 	    Ts = tdb_update([{D0,float}], Ts0),
 	    simplify(Is, Ts, Rs, Acc);
-	Other ->
+	_Other ->
 	    Ts = update(I, Ts0),
 	    {Rs,Acc} = flush(Rs0, Is0, Acc0),
 	    simplify(Is, Ts, Rs, [I|Acc])
     end;
-simplify([{set,[D0],[A,B],{bif,Op0,{f,0}}=Bif}=I|Is]=Is0, Ts0, Rs0, Acc0)
+simplify([{set,[D0],[A,B],{bif,Op0,{f,0}}}=I|Is]=Is0, Ts0, Rs0, Acc0)
   when Rs0 =/= no_float_opt ->
     case float_op(Op0, A, B, Ts0) of
 	no ->
@@ -103,7 +103,7 @@ clearerror(Is) ->
 
 clearerror([{set,[],[],fclearerror}|_], OrigIs) -> OrigIs;
 clearerror([{set,[],[],fcheckerror}|_], OrigIs) -> [{set,[],[],fclearerror}|OrigIs];
-clearerror([I|Is], OrigIs) -> clearerror(Is, OrigIs);
+clearerror([_|Is], OrigIs) -> clearerror(Is, OrigIs);
 clearerror([], OrigIs) -> [{set,[],[],fclearerror}|OrigIs].
 
 %% update(Instruction, TypeDb) -> NewTypeDb
@@ -116,9 +116,9 @@ update({set,[D],[S],move}, Ts0) ->
 	      Info -> [{D,Info}]
 	  end,
     tdb_update(Ops, Ts0);
-update({set,[D],[{integer,I},Reg],{bif,element,F}}, Ts0) ->
+update({set,[D],[{integer,I},Reg],{bif,element,_}}, Ts0) ->
     tdb_update([{Reg,{tuple,I}},{D,kill}], Ts0);
-update({set,[D],[Index,Reg],{bif,element,F}}, Ts0) ->
+update({set,[D],[_Index,Reg],{bif,element,_}}, Ts0) ->
     tdb_update([{Reg,{tuple,0}},{D,kill}], Ts0);
 update({set,[D],[S],{bif,float,{f,0}}}, Ts0) ->
     %% Make sure we reject non-numeric literal argument.
@@ -128,7 +128,7 @@ update({set,[D],[S],{bif,float,{f,0}}}, Ts0) ->
     end;
 update({set,[D],[S1,S2],{bif,'/',{f,0}}}, Ts0) ->
     %% Make sure we reject non-numeric literals.
-    case possibly_numeric(S1) and possibly_numeric(S2) of
+    case possibly_numeric(S1) andalso possibly_numeric(S2) of
 	true ->  tdb_update([{D,float}], Ts0);
 	false -> Ts0
     end;
@@ -143,20 +143,20 @@ update({set,[D],[S1,S2],{bif,Op,{f,0}}}, Ts0) ->
 		{_,_} -> tdb_update([{D,kill}], Ts0)
 	    end
     end;
-update({set,[],Src,Op}, Ts0) -> Ts0;
-update({set,[D],Src,Op}, Ts0) ->
+update({set,[],_Src,_Op}, Ts0) -> Ts0;
+update({set,[D],_Src,_Op}, Ts0) ->
     tdb_update([{D,kill}], Ts0);
-update({set,[D1,D2],Src,Op}, Ts0) ->
+update({set,[D1,D2],_Src,_Op}, Ts0) ->
     tdb_update([{D1,kill},{D2,kill}], Ts0);
-update({allocate,R,Info}, Ts) -> Ts;
-update({'%live',R}, Ts) -> Ts;
+update({allocate,_,_}, Ts) -> Ts;
+update({'%live',_}, Ts) -> Ts;
 
 %% Instructions outside of blocks.
-update({test,is_float,Fail,[Src]}, Ts0) ->
+update({test,is_float,_Fail,[Src]}, Ts0) ->
     tdb_update([{Src,float}], Ts0);
-update({test,test_arity,Fail,[Src,Arity]}, Ts0) ->
+update({test,test_arity,_Fail,[Src,Arity]}, Ts0) ->
     tdb_update([{Src,{tuple,Arity}}], Ts0);
-update({test,Test,Fail,Other}, Ts) -> Ts;
+update({test,_Test,_Fail,_Other}, Ts) -> Ts;
 update({call_ext,1,{extfunc,math,Math,1}}, Ts) ->
     case is_math_bif(Math, 1) of
 	true -> tdb_update([{{x,0},float}], Ts);
@@ -174,8 +174,8 @@ update({call_ext,3,{extfunc,erlang,setelement,3}}, Ts0) ->
 	 end,
     Ts1 = tdb_kill_xregs(Ts0),
     tdb_update([{{x,0},Op}], Ts1);
-update({call,Arity,Func}, Ts) -> tdb_kill_xregs(Ts);
-update({call_ext,Arity,Func}, Ts) -> tdb_kill_xregs(Ts);
+update({call,_Arity,_Func}, Ts) -> tdb_kill_xregs(Ts);
+update({call_ext,_Arity,_Func}, Ts) -> tdb_kill_xregs(Ts);
 
 %% The instruction is unknown.  Kill all information.
 update(_, _) -> tdb_new().
@@ -207,25 +207,25 @@ possibly_numeric({x,_}) -> true;
 possibly_numeric({y,_}) -> true;
 possibly_numeric({integer,_}) -> true;
 possibly_numeric({float,_}) -> true;
-possibly_numeric(Other) -> false.
+possibly_numeric(_) -> false.
 
 max_tuple_size(Reg, Ts) ->
     case tdb_find(Reg, Ts) of
 	{tuple,Sz} -> Sz;
-	Other -> 0
+	_Other -> 0
     end.
 
-float_op('/', A, B, Ts) ->
-    case possibly_numeric(A) and possibly_numeric(B) of
+float_op('/', A, B, _) ->
+    case possibly_numeric(A) andalso possibly_numeric(B) of
 	true -> {yes,fdiv};
 	false -> no
     end;
-float_op(Op, {float,_}, B, Ts) ->
+float_op(Op, {float,_}, B, _) ->
     case possibly_numeric(B) of
 	true -> arith_op(Op);
 	false -> no
     end;
-float_op(Op, A, {float,_}, Ts) ->
+float_op(Op, A, {float,_}, _) ->
     case possibly_numeric(A) of
 	true -> arith_op(Op);
 	false -> no
@@ -247,14 +247,14 @@ find_dest(V, Rs0) ->
 	    {FR,Rs}
     end.
 
-load_reg({float,_}=F, Ts, Rs0, Is0) ->
+load_reg({float,_}=F, _, Rs0, Is0) ->
     Rs = put_reg(F, Rs0, clean),
     {ok,FR} = find_reg(F, Rs),
     Is = [{set,[FR],[F],fmove}|Is0],
     {Rs,Is};
 load_reg(V, Ts, Rs0, Is0) ->
     case find_reg(V, Rs0) of
-	{ok,FR} -> {Rs0,Is0};
+	{ok,_FR} -> {Rs0,Is0};
 	error ->
 	    Rs = put_reg(V, Rs0, clean),
 	    {ok,FR} = find_reg(V, Rs),
@@ -270,13 +270,13 @@ arith_op('+') -> {yes,fadd};
 arith_op('-') -> {yes,fsub};
 arith_op('*') -> {yes,fmul};
 arith_op('/') -> {yes,fdiv};
-arith_op(Op) -> no.
+arith_op(_) -> no.
 
-flush(no_float_opt, Is, Acc) -> {no_float_opt,Acc};
-flush(Rs, [{set,[D],[],{put_tuple,_}}|Is]=Is0, Acc0) ->
+flush(no_float_opt, _, Acc) -> {no_float_opt,Acc};
+flush(Rs, [{set,[_],[],{put_tuple,_}}|_]=Is0, Acc0) ->
     Acc = flush_all(Rs, Is0, Acc0),
     {[],Acc};
-flush(Rs0, [{set,Ds,Ss,Op}=I|Is]=Is0, Acc0) ->
+flush(Rs0, [{set,Ds,Ss,_Op}|_], Acc0) ->
     Save = gb_sets:from_list(Ss),
     Acc = save_regs(Rs0, Save, Acc0),
     Rs1 = foldl(fun(S, A) -> mark(S, A, clean) end, Rs0, Ss),
@@ -287,8 +287,8 @@ flush(Rs0, Is, Acc0) ->
     Acc = flush_all(Rs0, Is, Acc0),
     {[],Acc}.
 
-flush_all(no_float_opt, Is, Acc) -> Acc;
-flush_all([{I,{float,_},_}|Rs], Is, Acc) ->
+flush_all(no_float_opt, _, Acc) -> Acc;
+flush_all([{_,{float,_},_}|Rs], Is, Acc) ->
     flush_all(Rs, Is, Acc);
 flush_all([{I,V,dirty}|Rs], Is, Acc) ->
     case is_killed(V, Is) of
@@ -297,7 +297,7 @@ flush_all([{I,V,dirty}|Rs], Is, Acc) ->
     end;
 flush_all([{_,_,clean}|Rs], Is, Acc) -> flush_all(Rs, Is, Acc);
 flush_all([free|Rs], Is, Acc) -> flush_all(Rs, Is, Acc);
-flush_all([], Is, Acc) -> Acc.
+flush_all([], _, Acc) -> Acc.
 
 save_regs(Rs, Save, Acc) ->
     foldl(fun(R, A) -> save_reg(R, Save, A) end, Acc, Rs).
@@ -307,40 +307,33 @@ save_reg({I,V,dirty}, Save, Acc) ->
 	true -> [{set,[V],[{fr,I}],fmove}|checkerror(Acc)];
 	false -> Acc
     end;
-save_reg(Other, Save, Acc) -> Acc.
+save_reg(_, _, Acc) -> Acc.
 
 kill_regs(Rs, Kill) ->
     map(fun(R) -> kill_reg(R, Kill) end, Rs).
 
-kill_reg({I,V,_}=R, Kill) ->
+kill_reg({_,V,_}=R, Kill) ->
     case gb_sets:is_member(V, Kill) of
 	true -> free;
 	false -> R
     end;
-kill_reg(R, Kill) -> R.
+kill_reg(R, _) -> R.
 
-is_killed(R, [{set,Ds,Ss,Op}|Is]) ->
-    case member(R, Ss) of
-	true -> false;
-	false ->
-	    case member(R, Ds) of
-		true -> true;
-		false -> is_killed(R, Is)
-	    end
-    end;
-is_killed({x,R}, [{'%live',Live}|Is]) when R >= Live -> true;
-is_killed(R, Is) -> false.
+is_killed(R, [{set,Ds,Ss,_Op}|Is]) ->
+    not member(R, Ss) andalso (member(R, Ds) orelse is_killed(R, Is));
+is_killed({x,R}, [{'%live',Live}|_]) when R >= Live -> true;
+is_killed(_, _) -> false.
 
 mark(V, [{I,V,_}|Rs], Mark) -> [{I,V,Mark}|Rs];
 mark(V, [R|Rs], Mark) -> [R|mark(V, Rs, Mark)];
-mark(V, [], Mark) -> [].
+mark(_, [], _) -> [].
 
-fetch_reg(V, [{I,V,_}|SRs]) -> {fr,I};
-fetch_reg(V, [SR|SRs]) -> fetch_reg(V, SRs).
+fetch_reg(V, [{I,V,_}|_]) -> {fr,I};
+fetch_reg(V, [_|SRs]) -> fetch_reg(V, SRs).
 
-find_reg(V, [{I,V,_}|SRs]) -> {ok,{fr,I}};
-find_reg(V, [SR|SRs]) -> find_reg(V, SRs);
-find_reg(V, []) -> error.
+find_reg(V, [{I,V,_}|_]) -> {ok,{fr,I}};
+find_reg(V, [_|SRs]) -> find_reg(V, SRs);
+find_reg(_, []) -> error.
 
 put_reg(V, Rs, Dirty) -> put_reg_1(V, Rs, Dirty, 0).
 
@@ -357,12 +350,12 @@ checkerror_1([{set,_,_,{bif,fsub,_}}|T], OrigIs) -> checkerror_2(T, OrigIs);
 checkerror_1([{set,_,_,{bif,fmul,_}}|T], OrigIs) -> checkerror_2(T, OrigIs);
 checkerror_1([{set,_,_,{bif,fdiv,_}}|T], OrigIs) -> checkerror_2(T, OrigIs);
 checkerror_1([{set,_,_,{bif,fnegate,_}}|T], OrigIs) -> checkerror_2(T, OrigIs);
-checkerror_1([I|Is], OrigIs) -> checkerror_1(Is, OrigIs);
+checkerror_1([_|Is], OrigIs) -> checkerror_1(Is, OrigIs);
 checkerror_1([], OrigIs) -> [{set,[],[],fcheckerror}|OrigIs].
 
 checkerror_2([{set,[],[],fcheckerror}|_], OrigIs) -> OrigIs;
 checkerror_2([{set,[],[],fclearerror}|_], OrigIs) -> checkerror_2([], OrigIs);
-checkerror_2([I|Is], OrigIs) -> checkerror_2(Is, OrigIs);
+checkerror_2([_|Is], OrigIs) -> checkerror_2(Is, OrigIs);
 checkerror_2([], OrigIs) -> [{set,[],[],fcheckerror}|OrigIs].
     
 
@@ -384,10 +377,10 @@ tdb_new() -> [].
 %%  Returns type information or the atom error if there are no type
 %%  information available for Register.
 
-tdb_find(Key, [{K,Info}|Db]) when Key < K -> error;
-tdb_find(Key, [{Key,Info}|Db]) -> Info;
+tdb_find(Key, [{K,_}|_]) when Key < K -> error;
+tdb_find(Key, [{Key,Info}|_]) -> Info;
 tdb_find(Key, [_|Db]) -> tdb_find(Key, Db);
-tdb_find(Key, []) -> error.
+tdb_find(_, []) -> error.
 
 %% tdb_update([UpdateOp], Db) -> NewDb
 %%        UpdateOp = {Register,kill}|{Register,NewInfo}
@@ -404,41 +397,41 @@ tdb_find(Key, []) -> error.
 %%  {tuple,10}.
 
 tdb_update(Uis0, Ts0) ->
-    Uis1 = filter(fun ({{x,R},Op}) -> true;
-		      ({{y,R},Op}) -> true;
+    Uis1 = filter(fun ({{x,_},_Op}) -> true;
+		      ({{y,_},_Op}) -> true;
 		      (_) -> false
 		  end, Uis0),
     tdb_update1(lists:sort(Uis1), Ts0).
 
-tdb_update1([{Key,kill}|Ops], [{K,Old}|_]=Db) when Key < K ->
+tdb_update1([{Key,kill}|Ops], [{K,_Old}|_]=Db) when Key < K ->
     tdb_update1(remove_key(Key, Ops), Db);
-tdb_update1([{Key,NewInfo}=New|Ops], [{K,Old}|_]=Db) when Key < K ->
+tdb_update1([{Key,_New}=New|Ops], [{K,_Old}|_]=Db) when Key < K ->
     [New|tdb_update1(Ops, Db)];
-tdb_update1([{Key,kill}|Ops], [{Key,OldInfo}|Db]) ->
+tdb_update1([{Key,kill}|Ops], [{Key,_}|Db]) ->
     tdb_update1(remove_key(Key, Ops), Db);
 tdb_update1([{Key,NewInfo}|Ops], [{Key,OldInfo}|Db]) ->
     [{Key,merge_type_info(NewInfo, OldInfo)}|tdb_update1(Ops, Db)];
-tdb_update1([{Key,Op}|_]=Ops, [Old|Db]) ->
+tdb_update1([{_,_}|_]=Ops, [Old|Db]) ->
     [Old|tdb_update1(Ops, Db)];
 tdb_update1([{Key,kill}|Ops], []) ->
     tdb_update1(remove_key(Key, Ops), []);
-tdb_update1([{Key,NewInfo}=New|Ops], []) ->
+tdb_update1([{_,_}=New|Ops], []) ->
     [New|tdb_update1(Ops, [])];
 tdb_update1([], Db) -> Db.
 
 %% tdb_kill_xregs(Db) -> NewDb
 %%  Kill all information about x registers.
 
-tdb_kill_xregs([{{x,R},Type}|Db]) -> tdb_kill_xregs(Db);
-tdb_kill_xregs([{{y,R},Type}|_]=Db) -> Db;
+tdb_kill_xregs([{{x,_},_Type}|Db]) -> tdb_kill_xregs(Db);
+tdb_kill_xregs([{{y,_},_Type}|_]=Db) -> Db;
 tdb_kill_xregs([Any|Db]) -> [Any|tdb_kill_xregs(Db)];
 tdb_kill_xregs([]) -> [].
     
-remove_key(Key, [{Key,Op}|Ops]) -> remove_key(Key, Ops);
-remove_key(Key, Ops) -> Ops.
+remove_key(Key, [{Key,_Op}|Ops]) -> remove_key(Key, Ops);
+remove_key(_, Ops) -> Ops.
     
 merge_type_info(I, I) -> I;
 merge_type_info({tuple,Sz1}, {tuple,Sz2}=Max) when Sz1 < Sz2 -> Max;
-merge_type_info({tuple,Sz1}=Max, {tuple,Sz2}) -> Max;
+merge_type_info({tuple,_}=Max, {tuple,_}) -> Max;
 merge_type_info(float, {tuple,_}) -> float;
 merge_type_info({tuple,_}=Tuple, float) -> Tuple.

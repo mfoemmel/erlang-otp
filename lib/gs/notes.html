@@ -17,27 +17,33 @@
 
 <CENTER><H1>GS Release Notes</H1></CENTER>
 
-<H2>GS 1.4.0</H2>
-  <H3>Improvements and new features</H3>
-  <UL>
-    <LI>Code has been cleared up to get rid of compiler warnings.<BR>
-      Own Id: OTP-3803
-    </LI>
-    <LI>Some internal modules and processes in GS were prefixed with
-      <CODE>gtk</CODE>. This prefix has been changed to <CODE>gstk</CODE>
-      not to clash with modules that interface to the graphical toolkit GTk.
-      <BR>
-      Own Id: OTP-4065
-    </LI>
-  </UL>
+<h2>Gs 1.5.0</h2>
 
-  <H3>Fixed errors and malfunctions</H3>
-  <UL>
-    <LI>A reference to a function in toolbar_lib (in the Toolbar
-      application) has been removed.<BR>
-      Own Id: OTP-3967
-    </LI>
-  </UL>
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    <CODE>gs:read(Canvas, {hit, {X,Y}})</CODE> crashed when executed over
+    an image object.<br>
+    (Own Id: OTP-4167)<p>
+  </li>
+
+</ul>
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+    GS now uses Tcl/Tk 8.3 (Tcl/Tk 8.2 on Windows) for better look and feel.
+  </li>
+
+</ul>
+
 
 <P>There are also release notes for <A HREF="notes_history.html">older
   versions</A>.</P>

@@ -22,7 +22,11 @@ TYPEMARKER = .debug
 TYPE_FLAGS = -Wall -ggdb -DDEBUG @DEBUG_FLAGS@
 else
 TYPEMARKER =
-TYPE_FLAGS = -Wall -O2 -DDEBUG_DIST
+ifeq ($(findstring ose,$(TARGET)),ose)
+  TYPE_FLAGS = -XO
+else
+  TYPE_FLAGS = -Wall -O2 -DDEBUG_DIST
+endif
 endif
 
 include $(ERL_TOP)/make/$(TARGET)/otp.mk

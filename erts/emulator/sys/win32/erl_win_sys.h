@@ -172,3 +172,15 @@ int _finite(double x);
 #define ERTS_FP_ERROR(f, Action) if (!_finite(f)) { Action; } else {}
 #define ERTS_SAVE_FP_EXCEPTION()
 #define ERTS_RESTORE_FP_EXCEPTION()
+
+#define SIZEOF_SHORT   2
+#define SIZEOF_INT     4
+#define SIZEOF_LONG    4
+#define SIZEOF_VOID_P  4
+#define SIZEOF_SIZE_T  4
+#define SIZEOF_OFF_T   4
+
+/*
+ * Seems to be missing.
+ */
+typedef long ssize_t;

@@ -71,7 +71,9 @@
 -record(state, {supervisor, pending_negotiators = [], 
 		going_down = [], tm_started = false, early_connects = []}).
 
--define(current_protocol_version, {7,5}).
+-define(current_protocol_version, {7,6}).
+
+-define(previous_protocol_version, {7,5}).
 
 start() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE,
@@ -164,7 +166,7 @@ protocol_version() ->
 %% A sorted list of acceptable protocols the
 %% preferred protocols are first in the list
 acceptable_protocol_versions() ->
-    [protocol_version(), {7,4}].
+    [protocol_version(), ?previous_protocol_version].
     
 needs_protocol_conversion(Node) ->
     case {?catch_val({protocol, Node}), protocol_version()} of
@@ -300,7 +302,6 @@ non_empty_dir() ->
 %%----------------------------------------------------------------------
 
 handle_call({mktab, Tab, Args}, From, State) ->
-    %% dbg_out("mktab ~p ~p~n", [Tab, From]),
     case catch ?ets_new_table(Tab, Args) of
 	{'EXIT', ExitReason} ->
 	    Msg = "Cannot create ets table",
@@ -386,8 +387,8 @@ handle_call({negotiate_protocol, Mon, Version, Protocols}, From, State)
 	    %% in this release we should be able to handle the previous 
 	    %% protocol
 	    case hd(Protocols) of
-		{7,4} ->
-		    accept_protocol(Mon, MyVersion, {7,4}, From, State);
+		?previous_protocol_version ->
+		    accept_protocol(Mon, MyVersion, ?previous_protocol_version, From, State);
 		_ ->
 		    verbose("Connection with ~p rejected. "
 			    "version = ~p, protocols = ~p, "

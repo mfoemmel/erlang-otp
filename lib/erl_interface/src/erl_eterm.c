@@ -751,6 +751,7 @@ erl_copy_term (ETERM *ep)
     case ERL_SMALL_BIG:
 	ERL_INT_VALUE(cp) = ERL_INT_VALUE(ep);
 	break;
+    case ERL_U_INTEGER:
     case ERL_U_SMALL_BIG:
 	ERL_INT_UVALUE(cp) = ERL_INT_UVALUE(ep);
 	break;
@@ -946,6 +947,7 @@ int erl_print_term(FILE *fp, ETERM *ep)
     case ERL_SMALL_BIG:
       ch_written += fprintf(fp, "%d", ERL_INT_VALUE(ep));
       break;
+    case ERL_U_INTEGER:
     case ERL_U_SMALL_BIG:
       ch_written += fprintf(fp, "%d", ERL_INT_UVALUE(ep));
       break;

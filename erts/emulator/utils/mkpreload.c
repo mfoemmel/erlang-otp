@@ -129,6 +129,7 @@ void error(char *fmt, ...)
     fprintf(stderr, "%s : ", program);
     vfprintf(stderr, fmt, args);
     fprintf(stderr, "\n");
+    va_end(args);
     exit(1);
 }
 
@@ -147,7 +148,7 @@ char* name;
 {
     FileEntry* ent;
     int type;
-    int n;
+    size_t n;
 
     /* match .jam, .beam & .beam.c suffux */
     n = strlen(name);

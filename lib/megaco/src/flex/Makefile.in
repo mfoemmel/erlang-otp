@@ -17,10 +17,6 @@
 #
 include $(ERL_TOP)/make/target.mk
 
-ifeq ($(TYPE),debug)
-ERL_COMPILE_FLAGS += -Ddebug -W
-endif
-
 EBIN = ../../ebin
 MEGACO_INCLUDEDIR = ../../include
 
@@ -133,14 +129,20 @@ endif
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
+ifeq ($(TYPE),debug)
+ERL_COMPILE_FLAGS += -Ddebug
+endif
+
 ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
-ERL_COMPILE_FLAGS += -I../../include
+ERL_COMPILE_FLAGS += -I../../include \
+                     +'{parse_transform,sys_pre_attributes}' \
+                     +'{attribute,insert,app_vsn,$(APP_VSN)}'
 
 ifeq ($(MFS_DEBUG),true)
 CFLAGS += -DMFS_DEBUG=true
 endif
 
-CFLAGS += $(DRIVER_INCLUDES) $(DRV_FLAGS) -funroll-loops -Wall -Wno-unused 
+CFLAGS += $(DRIVER_INCLUDES) $(DRV_FLAGS) -funroll-loops -Wall 
 
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER_LINENO),true)
 LEX_FLAGS = -Ca

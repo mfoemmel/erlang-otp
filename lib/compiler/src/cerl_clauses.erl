@@ -10,14 +10,18 @@
 %% under the License.
 %% 
 %% The Initial Developer of the Original Code is Richard Carlsson.
-%% Copyright (C) 1999-2001 Richard Carlsson.
+%% Copyright (C) 1999-2002 Richard Carlsson.
 %% Portions created by Ericsson are Copyright 2001, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
 %%     $Id$
 
-%% =====================================================================
-%% Utility functions for Core Erlang `case'/`receive' clauses.
+%% @doc Utility functions for Core Erlang case/receive clauses.
+%%
+%% <p>Syntax trees are defined in the module <a
+%% href=""><code>cerl</code></a>.</p>
+%%
+%% @type cerl() = cerl:cerl()
 
 -module(cerl_clauses).
 
@@ -32,26 +36,20 @@
 -import(lists, [reverse/1]).
 
 
-%% =====================================================================
-%% is_catchall(Clause) -> bool()
+%% ---------------------------------------------------------------------
+
+%% @spec is_catchall(Clause::cerl()) -> bool()
 %%
-%%	    Clause = coreErlang()
+%% @doc Returns <code>true</code> if an abstract clause is a
+%% catch-all, otherwise <code>false</code>. A clause is a catch-all if
+%% all its patterns are variables, and its guard expression always
+%% evaluates to <code>true</code>; cf. <code>eval_guard/1</code>.
 %%
-%%	    cerl:is_c_clause(Clause)
+%% <p>Note: <code>Clause</code> must have type
+%% <code>clause</code>.</p>
 %%
-%%	Returns `true' if the clause is a catch-all clause (i.e., if its
-%%	patterns are variables and its guard expression yields `true';
-%%	cf. `eval_guard'). Otherwise returns `false'.
-%%
-%% have_catchall(Clauses) -> bool()
-%%
-%%	    Clauses = [Clause]
-%%	    Clause = coreErlang()
-%%
-%%	    cerl:is_c_clause(Clause)
-%%
-%%	Returns `true' if any of the clauses in `Clauses' is a catch-all
-%%	clause; otherwise `false'.
+%% @see eval_guard/1
+%% @see any_catchall/1
 
 is_catchall(C) ->
     case all_vars(clause_pats(C)) of
@@ -76,6 +74,18 @@ all_vars([C | Cs]) ->
 all_vars([]) ->
     true.
 
+
+%% @spec any_catchall(Clauses::[cerl()]) -> bool()
+%%
+%% @doc Returns <code>true</code> if any of the abstract clauses in
+%% the list is a catch-all, otherwise <code>false</code>.  See
+%% <code>is_catchall/1</code> for details.
+%%
+%% <p>Note: each node in <code>Clauses</code> must have type
+%% <code>clause</code>.</p>
+%%
+%% @see is_catchall/1
+
 any_catchall([C | Cs]) ->
     case is_catchall(C) of
 	true ->
@@ -87,19 +97,20 @@ any_catchall([]) ->
     false.
 
 
-%% =====================================================================
-%% eval_guard(Expr) -> false | {value, Term}
+%% @spec eval_guard(Expr::cerl()) -> none | {value, term()}
 %%
-%%	    Expr = coreErlang()
-%%	    Term = term()
+%% @doc Tries to reduce a guard expression to a single constant value,
+%% if possible. The returned value is <code>{value, Term}</code> if
+%% the guard expression <code>Expr</code> always yields the constant
+%% value <code>Term</code>, and otherwise returns <code>false</code>.
 %%
-%%	Returns `{value, Term}' if the clause guard expression `Expr'
-%%	always yields the constant value `Term', and otherwise returns
-%%	`false'. Note that even though guard expressions should only
-%%	yield boolean values, this function does not require `Term' to
-%%	be either `true' or `false'. Also note that only simple
-%%	constructs like `values', `let', etc., are examined recursively;
-%%	general constant folding is not performed.
+%% <p>Note that although guard expressions should only yield boolean
+%% values, this function does not guarantee that <code>Term</code> is
+%% either <code>true</code> or <code>false</code>. Also note that only
+%% simple constructs like let-expressions are examined recursively;
+%% general constant folding is not performed.</p>
+%%
+%% @see is_catchall/1
 
 %% This function could possibly be improved further, but constant
 %% folding should in general be performed elsewhere.
@@ -113,7 +124,7 @@ eval_guard(E) ->
 		[E1] ->
 		    eval_guard(E1);
 		_ ->
-		    false
+		    none
 	    end;
 	'try' ->
 	    eval_guard(try_expr(E));
@@ -124,65 +135,74 @@ eval_guard(E) ->
 	'letrec' ->
 	    eval_guard(letrec_body(E));
 	_ ->
-	    false
+	    none
     end.
 
 
-%% =====================================================================
-%% reduce(Clauses) -> {true, {{Clause, Data}, Bindings}}
-%%                  | {false, Clauses1}
-%% reduce(Clauses, Exprs) -> {true, {{Clause, Data}, Bindings}}
-%%                         | {false, Clauses1}
+%% ---------------------------------------------------------------------
+
+%% @spec reduce(Clauses) -> {true, {Clauses, Bindings}}
+%%                        | {false, Clauses}
 %%
-%%	    Clauses = Clauses1 = [{Clause, Data}]
-%%	    Clause = coreErlang()
-%%	    Data = term()
-%%	    Exprs = [Expr]
-%%	    Expr = any | coreErlang()
-%%	    Bindings = [{Var, coreErlang()}]
-%%	    Var = coreErlang()
-%%
-%%	    cerl:is_c_clause(Clause)
-%%	    cerl:is_c_var(Var)
-%%
-%%	This function takes a list `Clauses' of pairs of `clause' syntax
-%%	trees and respective associated arbitrary terms, and a list of
-%%	switch expressions `Exprs', which may be empty. Leaving out
-%%	`Exprs' is equivalent to passing the empty list. The function
-%%	tries to uniquely select a single clause or discard unselectable
-%%	clauses. A clause can only be selected if its guard expression
-%%	always yields the atom `true', and a clause whose guard
-%%	expression always yields the atom `false' can never be selected;
-%%	other guard expressions are considered to have unknown value,
-%%	cf. `eval_guard'. All clauses in the list must have the same
-%%	number of patterns. If `Exprs' is not the empty list, it must
-%%	have the same length as the number of patterns in each clause.
-%%
-%%	If a particular clause could be selected, the function returns
-%%	`{true, {{Clause, Data}, Bindings}}', where the pair `{Clause,
-%%	Data}' is the corresponding pair in `Clauses'. Note that this
-%%	will not be the case if the length of `Exprs' is not the same as
-%%	the number of patterns in the clauses. `Bindings' is then a list
-%%	of pairs associating the variables in the patterns of `Clause'
-%%	with the corresponding subexpressions in `Exprs'. The list is
-%%	given in innermost-first order; see the `match' function.
-%%
-%%	If no clause could be definitely selected, the function returns
-%%	`{false, NewClauses}', where `NewClauses' is the list of pairs
-%%	`{Clause, Data}' in `Clauses' for which the clauses are not
-%%	definitely unselectable, in the same relative order.
+%% @equiv reduce(Cs, [])
 
 reduce(Cs) ->
     reduce(Cs, []).
+
+%% @spec reduce(Clauses::[Entry], Exprs::[Expr]) ->
+%%           {true, {Entry, Bindings}}
+%%         | {false, [Entry]}
+%%
+%%    Entry = {cerl(), term()}
+%%    Expr = any | cerl()
+%%    Bindings = [{cerl(), cerl()}]
+%%
+%% @doc Selects a single clause, if possible, or otherwise reduces the
+%% list of selectable clauses. The input is a list
+%% <code>Clauses</code> of pairs of abstract clauses (i.e., syntax
+%% trees of type <code>clause</code>) and respective associated "user
+%% data" (arbitrary terms), and a list of switch expressions
+%% <code>Exprs</code>. The function tries to uniquely select a single
+%% clause or discard unselectable clauses, with respect to the switch
+%% expressions. All abstract clauses in the list must have the same
+%% number of patterns. If <code>Exprs</code> is not the empty list, it
+%% must have the same length as the number of patterns in each clause;
+%% see <code>match_list/2</code> for details.
+%% 
+%% <p>A clause can only be selected if its guard expression always
+%% yields the atom <code>true</code>, and a clause whose guard
+%% expression always yields the atom <code>false</code> can never be
+%% selected.  Other guard expressions are considered to have unknown
+%% value; cf. <code>eval_guard/1</code>.</p>
+%%
+%% <p>If a particular clause can be selected, the function returns
+%% <code>{true, {{Clause, Data}, Bindings}}</code>, where
+%% <code>{Clause, Data}</code> is the corresponding entry in
+%% <code>Clauses</code>, and <code>Bindings</code> is a list of pairs
+%% <code>{Var, SubExpr}</code> associating the variables occurring in
+%% the patterns of <code>Clause</code> with the corresponding
+%% subexpressions in <code>Exprs</code>. The list of bindings is given
+%% in innermost-first order; see the <code>match/2</code> function for
+%% details.</p>
+%% 
+%% <p>If no clause could be definitely selected, the function returns
+%% <code>{false, NewClauses}</code>, where <code>NewClauses</code> is
+%% the list of entries in <code>Clauses</code> that remain after
+%% eliminating unselectable clauses, preserving the relative
+%% order.</p>
+%%
+%% @see eval_guard/1
+%% @see match/2
+%% @see match_list/2
 
 reduce(Cs, Es) ->
     reduce(Cs, Es, []).
 
 reduce([C0 | Cs], Es, Cs1) ->
-    {C, D} = C0,
+    {C, _} = C0,
     Ps = clause_pats(C),
     case match_list(Ps, Es) of
-	false ->
+	none ->
 	    %% Here, we know that the current clause cannot possibly be
 	    %% selected, so we drop it and visit the rest.
 	    reduce(Cs, Es, Cs1);
@@ -204,7 +224,7 @@ reduce([C0 | Cs], Es, Cs1) ->
 		    {false, reverse([C0 | Cs1])};
 		{value, false} ->
 		    %% This clause can never be selected, since its
-		    %% guard is never `true', so we drop it.
+		    %% guard is never 'true', so we drop it.
 		    reduce(Cs, Es, Cs1);
 		_ ->
 		    %% We are not sure if this clause might be selected
@@ -219,67 +239,72 @@ reduce([], _, Cs) ->
     {false, reverse(Cs)}.
 
 
-%% =====================================================================
-%% match(Pattern, Expr) -> false | {false, Bindings} | {true, Bindings}
+%% ---------------------------------------------------------------------
+
+%% @spec match(Pattern::cerl(), Expr) ->
+%%           none | {true, Bindings} | {false, Bindings}
 %%
-%%	    Pattern = coreErlang()
-%%	    Expr = any | coreErlang()
-%%	    Bindings = [{Var, Expr}]
-%%	    Var = coreErlang()
+%%     Expr = any | cerl()
+%%     Bindings = [{cerl(), Expr}]
 %%
-%%	    cerl:is_c_var(Var)
+%% @doc Matches a pattern against an expression. The returned value is
+%% <code>none</code> if a match is impossible, <code>{true,
+%% Bindings}</code> if <code>Pattern</code> definitely matches
+%% <code>Expr</code>, and <code>{false, Bindings}</code> if a match is
+%% not definite, but cannot be excluded. <code>Bindings</code> is then
+%% a list of pairs <code>{Var, SubExpr}</code>, associating each
+%% variable in the pattern with either the corresponding subexpression
+%% of <code>Expr</code>, or with the atom <code>any</code> if no
+%% matching subexpression exists. (Recall that variables may not be
+%% repeated in a Core Erlang pattern.) The list of bindings is given
+%% in innermost-first order; this should only be of interest if
+%% <code>Pattern</code> contains one or more alias patterns. If the
+%% returned value is <code>{true, []}</code>, it implies that the
+%% pattern and the expression are syntactically identical.
 %%
-%%	Matches the syntax tree `Pattern' against the syntax tree
-%%	`Expr', or the atom `any'. Returns `false' if a match is
-%%	impossible, `{false, Bindings}' if a match cannot be excluded,
-%%	and `{true, Bindings}' if `Pattern' definitely matches `Expr'.
-%%	`Bindings' is then a list of pairs associating each variable in
-%%	`Pattern' with the corresponding subexpression of `Expr', or
-%%	with the atom `any' if no such subexpression is known. The list
-%%	is given in innermost-first order (only of interest if `Pattern'
-%%	contains one or more alias patterns). Recall that variables may
-%%	not be repeated in a Core Erlang pattern. If the function
-%%	returns `{yes, []}', the pattern and the expression were
-%%	identical.
+%% <p>Instead of a syntax tree, the atom <code>any</code> can be
+%% passed for <code>Expr</code> (or, more generally, be used for any
+%% subtree of <code>Expr</code>, in as much the abstract syntax tree
+%% implementation allows it); this means that it cannot be decided
+%% whether the pattern will match or not, and the corresponding
+%% variable bindings will all map to <code>any</code>. The typical use
+%% is for producing bindings for <code>receive</code> clauses.</p>
 %%
-%%	Note: Binary-syntax patterns are never structurally matched
-%%	against binary-syntax expressions by this function.
+%% <p>Note: Binary-syntax patterns are never structurally matched
+%% against binary-syntax expressions by this function.</p>
 %%
-%%	Examples:
+%% <p>Examples:
+%% <ul>
+%%   <li>Matching a pattern "<code>{X, Y}</code>" against the
+%%   expression "<code>{foo, f(Z)}</code>" yields <code>{true,
+%%   Bindings}</code> where <code>Bindings</code> associates
+%%   "<code>X</code>" with the subtree "<code>foo</code>" and
+%%   "<code>Y</code>" with the subtree "<code>f(Z)</code>".</li>
 %%
-%%	  - Matching a pattern `{X, Y}' against the expression `{foo,
-%%	  f(Z)}' yields `{true, Bindings}' where `Bindings' associates
-%%	  `X' with the subtree `foo' and `Y' with the subtree `f(Z)'.
+%%   <li>Matching pattern "<code>{X, {bar, Y}}</code>" against
+%%   expression "<code>{foo, f(Z)}</code>" yields <code>{false,
+%%   Bindings}</code> where <code>Bindings</code> associates
+%%   "<code>X</code>" with the subtree "<code>foo</code>" and
+%%   "<code>Y</code>" with <code>any</code> (because it is not known
+%%   if "<code>{foo, Y}</code>" might match the run-time value of
+%%   "<code>f(Z)</code>" or not).</li>
 %%
-%%	  - Matching pattern `{X, {bar, Y}}' against the expression
-%%	  `{foo, f(Z)}' yields `{false, Bindings}' where `Bindings'
-%%	  associates `X' with the subtree `foo' and `Y' with the *atom*
-%%	  `any' (because it is not known if the value of `f(Z)' might
-%%	  match `{foo, Y}' or not).
+%%   <li>Matching pattern "<code>{foo, bar}</code>" against expression
+%%   "<code>{foo, f()}</code>" yields <code>{false, []}</code>,
+%%   telling us that there might be a match, but we cannot deduce any
+%%   bindings.</li>
 %%
-%%	  - Matching `{foo, bar}' against expression `{foo, f()}' yields
-%%	  `{false, []}', telling us that there might be a match, but we
-%%	  cannot deduce any bindings.
+%%   <li>Matching <code>{foo, X = {bar, Y}}</code> against expression
+%%   "<code>{foo, {bar, baz}}</code>" yields <code>{true,
+%%   Bindings}</code> where <code>Bindings</code> associates
+%%   "<code>Y</code>" with "<code>baz</code>", and "<code>X</code>"
+%%   with "<code>{bar, baz}</code>".</li>
 %%
-%%	  - Matching `X = {foo, Y}' against expression `{foo, bar}'
-%%	  yields `{true, Bindings}' where `Bindings' associates `Y' with
-%%	  the subtree `bar', and `X' with `{Foo, bar}'.
-%%
-%% match_list(Patterns, Exprs) -> false | {false, Bindings}
-%%			        | {true, Bindings}
-%%
-%%	    Patterns = [coreErlang()]
-%%	    Exprs = [Expr]
-%%	    Expr = any | coreErlang()
-%%	    Bindings = [{Var, Expr}]
-%%	    Var = coreErlang()
-%%
-%%	    cerl:is_c_var(Var)
-%%
-%%	Like `match', but matching a sequence of patterns against a
-%%	corresponding sequence of expressions (and/or `any' atoms). If
-%%	`Exprs' is the empty list, it is equivalent to passing a list of
-%%	`any' atoms of the same length as `Patterns'.
+%%   <li>Matching a pattern "<code>{X, Y}</code>" against
+%%   <code>any</code> yields <code>{false, Bindings}</code> where
+%%   <code>Bindings</code> associates both "<code>X</code>" and
+%%   "<code>Y</code>" with <code>any</code>.</li>
+%% </ul></p>
 
 match(P, E) ->
     match(P, E, []).
@@ -302,7 +327,7 @@ match(P, E, Bs) ->
 	       true ->
 		    case is_data(E) of
 			true ->
-			    false;
+			    none;
 			false ->
 			    {false, Bs}
 		    end
@@ -315,15 +340,15 @@ match_1(P, E, Bs) ->
     case is_data(P) of
 	true when E == any ->
 	    %% If we don't know the structure of the value of E at this
-	    %% point, we just match the subpatterns against `any', and
+	    %% point, we just match the subpatterns against 'any', and
 	    %% make sure the result is a "maybe".
 	    Ps = data_es(P),
 	    Es = lists:duplicate(length(Ps), any),
 	    case match_list(Ps, Es, Bs) of
 		{_, Bs1} ->
 		    {false, Bs1};
-		false ->
-		    false
+		none ->
+		    none
 	    end;
 	true ->
 	    %% Test if the expression represents a constructor
@@ -335,18 +360,32 @@ match_1(P, E, Bs) ->
 		    if T1 =:= T2 ->
 			    match_list(data_es(P), data_es(E), Bs);
 		       true ->
-			    false
+			    none
 		    end;
 		false ->
 		    %% We don't know the run-time structure of E, and P
 		    %% is not a variable or an alias pattern, so we
-		    %% match against `any' instead.
+		    %% match against 'any' instead.
 		    match_1(P, any, Bs)
 	    end;
 	false ->
 	    %% Strange pattern - give up, but don't say "no match".
 	    {false, Bs}
     end.
+
+
+%% @spec match_list(Patterns::[cerl()], Exprs::[Expr]) ->
+%%           none | {true, Bindings} | {false, Bindings}
+%%
+%%     Expr = any | cerl()
+%%     Bindings = [{cerl(), cerl()}]
+%%
+%% @doc Like <code>match/2</code>, but matching a sequence of patterns
+%% against a sequence of expressions. Passing an empty list for
+%% <code>Exprs</code> is equivalent to passing a list of
+%% <code>any</code> atoms of the same length as <code>Patterns</code>.
+%%
+%% @see match/2
 
 match_list([], []) ->
     {true, []};    % no patterns always match
@@ -364,14 +403,12 @@ match_list([P | Ps], [E | Es], Bs) ->
 	    case match_list(Ps, Es, Bs1) of
 		{_, Bs2} ->
 		    {false, Bs2};
-		false ->
-		    false
+		none ->
+		    none
 	    end;
-	false ->
-	    false
+	none ->
+	    none
     end;
 match_list([], [], Bs) ->
     {true, Bs}.
 
-
-%% =====================================================================

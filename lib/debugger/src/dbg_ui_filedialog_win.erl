@@ -70,10 +70,10 @@ create_win(GS, Title, {X,Y}, Mode, Filter, Extra, FileName) ->
     gs:label(Win, [{label, {text,"Files"}}, {align, sw},
 		   {x, Xmid+Pad/2+2}, {y, Y2},
 		   {width,Wlbl}, {height,Hlbl}]),
-    gs:listbox('Dirs', Win, [{x, Pad}, {y, Y2+Hlbl},
+    gs:listbox('Dirs', Win, [{x, Pad}, {y, Y2+Hlbl}, {vscroll,right},
 			     {width, W/2-Pad/2}, {height, Hlb},
 			     {click, true}, {doubleclick, true}]),
-    gs:listbox('Files', Win, [{x, Xmid+Pad/2}, {y, Y2+Hlbl},
+    gs:listbox('Files', Win, [{x, Xmid+Pad/2}, {y, Y2+Hlbl}, {vscroll,right},
 			      {width, W/2-Pad/2}, {height, Hlb},
 			      {click, true}, {doubleclick, true}]),
 
@@ -139,6 +139,7 @@ tag(WinInfo, File0) ->
 
 tag(Str) -> [$*|Str].
 untag([$*|Str]) -> Str;
+untag([$(|Str]) -> [$)|Rts] = lists:reverse(Str),lists:reverse(Rts);
 untag(Str) -> Str.
 
 member(E, L) ->        member(E, L, 0).
@@ -284,6 +285,8 @@ extra_filter([File|Files], Dir, Fun) ->
 	    [relfile(Dir, File) | extra_filter(Files, Dir, Fun)];
 	{true,tag} ->
 	    [[$*|relfile(Dir,File)] | extra_filter(Files, Dir, Fun)];
+	{true,disable} ->
+	    [[$(|relfile(Dir,File)]++[$)] | extra_filter(Files, Dir, Fun)];
 	{error, _Reason} -> extra_filter(Files, Dir, Fun)
     end;
 extra_filter([], _Dir, _Fun) -> [].

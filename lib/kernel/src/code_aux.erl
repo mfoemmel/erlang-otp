@@ -21,6 +21,7 @@
 -export([
 	 to_atom/1,
 	 to_list/1,
+	 to_path/1,
 	 objfile_extension/0,
 	 sticky/2,
 	 do_purge/1]).
@@ -41,6 +42,9 @@ to_list(X) when atom(X) -> atom_to_list(X).
 
 to_atom(X) when atom(X) -> X;
 to_atom(X) when list(X) -> list_to_atom(X).
+
+to_path(X) ->
+    filename:join(packages:split(X)).
 
 
 

@@ -16,9 +16,12 @@
 %%     $Id$
 %%
 -module(httpd_socket).
--export([start/1,listen/2,listen/3,accept/2,accept/3,
-	 deliver/3,send/3,recv/4,close/2,
-	 peername/2,resolve/1,config/1,
+-export([start/1,
+	 listen/2, listen/3, accept/2, accept/3,
+	 deliver/3, send/3, recv/4, 
+	 close/2,
+	 peername/2, resolve/1, config/1,
+	 controlling_process/3,
 	 active_once/2]).
 
 -include("httpd.hrl").
@@ -74,8 +77,23 @@ listen({ssl,SSLConfig},Addr,Port) ->
 	    Error
     end.
 
+
 sock_opt(undefined,Opt) -> [{packet,0},{active,false}|Opt];
 sock_opt(Addr,Opt)      -> [{ip, Addr},{packet,0},{active,false}|Opt].
+
+%% -define(packet_type_http,true).
+%% -define(packet_type_httph,true).
+
+%% -ifdef(packet_type_http).
+%% sock_opt(undefined,Opt) -> [{packet,http},{active,false}|Opt];
+%% sock_opt(Addr,Opt)      -> [{ip, Addr},{packet,http},{active,false}|Opt].
+%% -elif(packet_type_httph).
+%% sock_opt(undefined,Opt) -> [{packet,httph},{active,false}|Opt];
+%% sock_opt(Addr,Opt)      -> [{ip, Addr},{packet,httph},{active,false}|Opt].
+%% -else.
+%% sock_opt(undefined,Opt) -> [{packet,0},{active,false}|Opt];
+%% sock_opt(Addr,Opt)      -> [{ip, Addr},{packet,0},{active,false}|Opt].
+%% -endif.
 
 
 %% active_once
@@ -115,10 +133,27 @@ accept({ssl,_SSLConfig},ListenSocket, T) ->
 	    Error
     end.
 
+
+%% controlling_process
+
+controlling_process(ip_comm, Socket, Pid) ->
+    gen_tcp:controlling_process(Socket, Pid);
+controlling_process({ssl, _}, Socket, Pid) ->
+    ssl:controlling_process(Socket, Pid).
+
+
 %% deliver
 
 deliver(SocketType, Socket, IOListOrBinary)  ->
     case send(SocketType, Socket, IOListOrBinary) of
+% 	{error, einval} ->
+% 	    ?vlog("deliver failed for reason: einval"
+% 		  "~n   SocketType: ~p"
+% 		  "~n   Socket:     ~p"
+% 		  "~n   Data:       ~p",
+% 		  [SocketType, Socket, type(IOListOrBinary)]),
+% 	    (catch close(SocketType, Socket)), 
+% 	    socket_closed;
 	{error, _Reason} ->
 	    ?vlog("deliver(~p) failed for reason:"
 		  "~n   Reason: ~p",[SocketType,_Reason]),
@@ -127,6 +162,42 @@ deliver(SocketType, Socket, IOListOrBinary)  ->
 	_ ->
 	    ok
     end.
+
+% type(L) when list(L) ->
+%     {list, L};
+% type(B) when binary(B) ->
+%     Decoded = 
+% 	case (catch binary_to_term(B)) of
+% 	    {'EXIT', _} ->
+% 		%% Oups, not a term, try list
+% 		case (catch binary_to_list(B)) of
+% 		    %% Oups, not a list either, give up
+% 		    {'EXIT', _} ->
+% 			{size, size(B)};
+% 		    L ->
+% 		    {list, L}
+% 		end;
+	    
+% 	    T ->
+% 		{term, T}
+% 	end,
+%     {binary, Decoded};
+% type(T) when tuple(T) ->
+%     {tuple, T};
+% type(I) when integer(I) ->
+%     {integer, I};
+% type(F) when float(F) ->
+%     {float, F};
+% type(P) when pid(P) ->
+%     {pid, P};
+% type(P) when port(P) ->
+%     {port, P};
+% type(R) when reference(R) ->
+%     {reference, R};
+% type(T) ->
+%     {term, T}.
+
+     
 
 send(ip_comm,Socket,Data) ->
     ?DEBUG("send(ip_comm) -> ~p bytes on socket ~p",[data_size(Data),Socket]),
@@ -305,4 +376,4 @@ ssl_ca_certificate_file(ConfigDB) ->
 
 
 error_report(Where,M,F,Error) ->
-    error_logger:error_report([{?MODULE, Where}, {apply, {M, F, []}},Error]).
+    error_logger:error_report([{?MODULE, Where}, {apply, {M, F, []}}, Error]).

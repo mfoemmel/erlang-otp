@@ -168,9 +168,8 @@ typedef enum {
     matchTryMeElse,
     matchCaller,
     matchHalt,
-    matchGetTraceControlWord,
-    matchSetTraceControlWord,
-    matchSilent
+    matchSilent,
+    matchSetSeqTokenFake
 } MatchOps;
 
 /*
@@ -233,7 +232,7 @@ typedef struct dmc_context {
     int num_match;
     int current_match;
     int eheap_need;
-    Uint32 cflags;
+    Uint cflags;
     DMC_STACK_TYPE(Uint) *labels;
     int is_guard; /* 1 if in guard, 0 if in body */
     int special; /* 1 if the head in the match was a single expression */ 
@@ -261,6 +260,25 @@ static Process match_pseudo_process;
 static Uint trace_control_word;
 
 
+Eterm
+erts_ets_copy_object(Eterm obj, Process* to)
+{
+    Uint size = size_object(obj);
+    Eterm* hp = HAlloc(to, size);
+    Eterm res;
+
+    res = copy_struct(obj, size, &hp, &MSO(to));
+#ifdef DEBUG
+    if (eq(obj, res) == 0) {
+	erl_exit(1, "copy not equal to source\n");
+    }
+#endif
+    return res;
+}
+
+/* This needs to be here, before the bif table... */
+
+static Eterm db_set_trace_control_word_fake_1(Process *p, Eterm val);
 
 /*
 ** The table of callable bif's, i e guard bif's and 
@@ -427,13 +445,13 @@ static DMCGuardBif guard_tab[] =
     },
     {
 	am_Div,
-	&sdiv_2,
+	&div_2,
 	2,
 	DBIF_ALL
     },
     {
 	am_div,
-	&div_2,
+	&intdiv_2,
 	2,
 	DBIF_ALL
     },
@@ -550,6 +568,12 @@ static DMCGuardBif guard_tab[] =
 	&db_set_trace_control_word_1,
 	1,
 	DBIF_TRACE_BODY
+    },
+    {
+	am_set_tcw_fake,
+	&db_set_trace_control_word_fake_1,
+	1,
+	DBIF_TRACE_BODY
     }
 };
 
@@ -637,6 +661,9 @@ static Eterm dpm_array_to_list(Process *psp, Eterm *arr, int arity);
 
 static Eterm match_spec_test(Process *p, Eterm against, Eterm spec, int trace);
 
+static Eterm seq_trace_fake(Process *p, Eterm arg1);
+
+
 /*
 ** Interface routines.
 */
@@ -658,6 +685,16 @@ BIF_RETTYPE db_set_trace_control_word_1(Process *p, Eterm new)
 	BIF_ERROR(p, BADARG);
     old = make_small_or_big(trace_control_word, p);
     trace_control_word = val;
+    BIF_RET(old);
+}
+
+static Eterm db_set_trace_control_word_fake_1(Process *p, Eterm new) 
+{
+    Uint val;
+    Eterm old;
+    if (!term_to_Uint(new, &val))
+	BIF_ERROR(p, BADARG);
+    old = make_small_or_big(trace_control_word, p);
     BIF_RET(old);
 }
 
@@ -716,7 +753,7 @@ Binary *erts_match_set_compile(Process *p, Eterm matchexpr) {
 }
 
 Binary *db_match_set_compile(Process *p, Eterm matchexpr, 
-			     int flags) 
+			     Uint flags) 
 {
     Eterm l;
     Eterm t;
@@ -757,7 +794,7 @@ Binary *db_match_set_compile(Process *p, Eterm matchexpr,
 	if (!is_tuple(t) || arityval((tp = tuple_val(t))[0]) != 3) {
 	    goto error;
 	}
-	if (!(flags == DCOMP_TRACE) || (!is_list(tp[1]) && 
+	if (!(flags & DCOMP_TRACE) || (!is_list(tp[1]) && 
 					!is_nil(tp[1]))) {
 	    t = tp[1];
 	} else {
@@ -813,7 +850,7 @@ Eterm erts_match_set_lint(Process *p, Eterm matchexpr) {
     return db_match_set_lint(p, matchexpr, DCOMP_TRACE);
 }
 
-Eterm db_match_set_lint(Process *p, Eterm matchexpr, int flags) 
+Eterm db_match_set_lint(Process *p, Eterm matchexpr, Uint flags) 
 {
     Eterm l;
     Eterm t;
@@ -864,7 +901,7 @@ Eterm db_match_set_lint(Process *p, Eterm matchexpr, int flags)
 			-1, 0UL, dmcError);
 	    goto done;
 	}
-	if (!(flags == DCOMP_TRACE) || (!is_list(tp[1]) && 
+	if (!(flags & DCOMP_TRACE) || (!is_list(tp[1]) && 
 					!is_nil(tp[1]))) {
 	    t = tp[1];
 	} else {
@@ -972,7 +1009,7 @@ Binary *db_match_compile(Eterm *matchexpr,
 			 Eterm *guards, 
 			 Eterm *body,
 			 int num_progs,
-			 Uint32 flags, 
+			 Uint flags, 
 			 DMCErrInfo *err_info)
 {
     DMCHeap heap;
@@ -1126,7 +1163,7 @@ restart:
 	    (DMC_STACK_NUM(text) == 1 + clause_start && 
 	     DMC_PEEK(text, clause_start) == matchSkip);
 
-	if (flags == DCOMP_TRACE) {
+	if (flags & DCOMP_TRACE) {
 	    if (context.special) {
 		if (DMC_PEEK(text, clause_start) == matchBind) {
 		    DMC_POKE(text, clause_start, matchArrayBind);
@@ -1162,7 +1199,7 @@ restart:
 	     context.guardexpr[context.current_match]) != retOk) 
 	    goto error;
 	context.is_guard = 0;
-	if ((context.cflags == DCOMP_TABLE) && 
+	if ((context.cflags & DCOMP_TABLE) && 
 	    !is_list(context.bodyexpr[context.current_match])) {
 	    if (context.err_info) {
 		add_dmc_err(context.err_info, 
@@ -1297,6 +1334,25 @@ void erts_match_set_free(Binary *bprog)
     sys_free(bprog);
 }
 
+void
+erts_match_prog_foreach_offheap(Binary *bprog,
+				void (*func)(ErlOffHeap *, void *),
+				void *arg)
+{
+    MatchProg *prog;
+    ErlHeapFragment *tmp;
+    if (bprog == NULL)
+	return;
+    prog = Binary2MatchProg(bprog);
+    tmp = prog->term_save; 
+    while (tmp) {
+	(*func)(&(tmp->off_heap), arg);
+	tmp = tmp->next;
+    }
+    if (prog->saved_program_buf)
+	(*func)(&(prog->saved_program_buf->off_heap), arg);
+}
+
 /*
 ** This is not the most efficient way to do it, but it's a rare
 ** and not especially nice case when this is used.
@@ -1368,10 +1424,9 @@ Eterm db_prog_match(Process *p, Binary *bprog, Eterm term,
     ** so that data returned survive until a) the program is free'd, or
     ** b) this function is called again.
     */
-#ifdef UNIFIED_HEAP
-    if (psp->off_heap.mso || psp->off_heap.funs) {
-#else
-    if (psp->mbuf || psp->off_heap.mso || psp->off_heap.funs) {
+#ifndef SHARED_HEAP
+    if (psp->mbuf || psp->off_heap.mso || psp->off_heap.funs
+	|| psp->off_heap.externals) {
 	ErlHeapFragment *bp = psp->mbuf;
 	ErlHeapFragment *sbp;
 	while (bp != NULL) {
@@ -1380,11 +1435,11 @@ Eterm db_prog_match(Process *p, Binary *bprog, Eterm term,
 	    bp = sbp;
 	}
 	psp->mbuf = NULL;
-#endif
-	erts_cleanup_offheap(&psp->off_heap);
-	psp->off_heap.mso = NULL;
-	psp->off_heap.funs = NULL;
-	psp->off_heap.overhead = 0;
+	erts_cleanup_offheap(&MSO(psp));
+	MSO(psp).mso = NULL;
+	MSO(psp).funs = NULL;
+	MSO(psp).externals = NULL;
+	MSO(psp).overhead = 0;
 	/* Never GC'ed, dont touch old_mso */
 	psp->arith_avail = 0;
 	psp->arith_heap = NULL;
@@ -1392,6 +1447,7 @@ Eterm db_prog_match(Process *p, Binary *bprog, Eterm term,
 	p->arith_check_me = NULL;
 #endif
     }
+#endif
 
     *return_flags = 0U;
 
@@ -1500,10 +1556,9 @@ restart:
 	case matchEqRef:
 	    if (!is_ref(*ep))
 		FAIL();
-	    tp = ref_val(*ep);
-	    if (!eqref(tp, pc))
+	    if (!eq(*ep, make_internal_ref(pc)))
 		FAIL();
-	    i = REF_ARITY(pc);
+	    i = thing_arityval(*pc);
 	    pc += i+1;
 	    ++ep;
 	    break;
@@ -1700,6 +1755,15 @@ restart:
 	    }
 	    --esp;
 	    break;
+	case matchSetSeqTokenFake:
+	    t = seq_trace_fake(p, esp[-1]);
+	    if (is_non_value(t)) {
+		esp[-2] = FAIL_TERM;
+	    } else {
+		esp[-2] = t;
+	    }
+	    --esp;
+	    break;
 	case matchGetSeqToken:
 	    if (SEQ_TRACE_TOKEN(p) == NIL) 
 		*esp++ = NIL;
@@ -1715,9 +1779,18 @@ restart:
 		ASSERT(is_immed(ehp[1]));
 		ASSERT(is_immed(ehp[2]));
 		ASSERT(is_immed(ehp[3]));
-		ASSERT(is_immed(ehp[4]));
 		ASSERT(is_immed(ehp[5]));
- 		ehp += 6;
+		if(!is_immed(ehp[4])) {
+		    Eterm *sender = &ehp[4];
+		    ehp += 6;
+		    *sender = copy_struct(*sender,
+					  size_object(*sender),
+					  &ehp,
+					  &MSO(psp));
+		}
+		else
+		    ehp += 6;
+
 	    } 
 	    break;
 	case matchEnableTrace:
@@ -1731,13 +1804,10 @@ restart:
 	    break;
 	case matchEnableTrace2:
 	    n = erts_trace_flag2bit(esp[-2]);
-	    if (n != 0 && ((is_pid(esp[-1]) && 
-			    pid_node(esp[-1]) == THIS_NODE &&
-			    pid_number(esp[-1]) < max_process && 
-			    (pid_creation(esp[-1]) == this_creation ||
-			     pid_creation(esp[-1]) == 0) &&
-			    (tmpp = process_tab[pid_number(esp[-1])])) ||
-			   (is_atom(esp[-1]) &&
+	    if (n != 0 && ((is_internal_pid(esp[-1]) &&
+			    internal_pid_index(esp[-1]) < erts_max_processes && 
+			    (tmpp = process_tab[internal_pid_index(esp[-1])]))
+			   || (is_atom(esp[-1]) &&
 			    (tmpp = whereis_process(esp[-1]))))) {
 		/* Always take over the tracer of the current process */
 		tmpp->tracer_proc = p->tracer_proc;
@@ -1762,13 +1832,10 @@ restart:
 	    break;
 	case matchDisableTrace2:
 	    n = erts_trace_flag2bit(esp[-2]);
-	    if (n != 0 && ((is_pid(esp[-1]) && 
-			    pid_node(esp[-1]) == THIS_NODE &&
-			    pid_number(esp[-1]) < max_process && 
-			    (pid_creation(esp[-1]) == this_creation ||
-			     pid_creation(esp[-1]) == 0) &&
-			    (tmpp = process_tab[pid_number(esp[-1])])) ||
-			   (is_atom(esp[-1]) &&
+	    if (n != 0 && ((is_internal_pid(esp[-1]) &&
+			    internal_pid_index(esp[-1]) < erts_max_processes && 
+			    (tmpp = process_tab[internal_pid_index(esp[-1])]))
+			   || (is_atom(esp[-1]) &&
 			    (tmpp = whereis_process(esp[-1]))))) {
 		tmpp->flags &= ~n;
 		if (!(p->flags & TRACE_FLAGS)) {
@@ -1842,14 +1909,15 @@ success:
 /*
  * Convert a match program to a "magic" binary to return up to erlang
  */
-Eterm db_make_mp_binary(Process *p, Binary *mp) {
+Eterm db_make_mp_binary(Process *p, Binary *mp, Eterm **hpp) {
     ProcBin *pb;
     mp->refc++;
-    pb = (ProcBin *) HAlloc(p, PROC_BIN_SIZE);
+    pb = (ProcBin *) *hpp;
+    *hpp += PROC_BIN_SIZE;
     pb->thing_word = HEADER_PROC_BIN;
     pb->size = 0;
-    pb->next = p->off_heap.mso;
-    p->off_heap.mso = pb;
+    pb->next = MSO(p).mso;
+    MSO(p).mso = pb;
     pb->val = mp;
     pb->bytes = mp->orig_bytes;
     return make_binary(pb);
@@ -2071,8 +2139,11 @@ void* db_get_term(DbTerm* old, Uint offset, Eterm obj)
 	p = (DbTerm*) ((void *)(((char *) structp) + offset));
     }
     p->size = size;
-    p->off_heap.mso = 0;
-    p->off_heap.funs = 0;
+    p->off_heap.mso = NULL;
+    p->off_heap.externals = NULL;
+#ifndef SHARED_HEAP
+    p->off_heap.funs = NULL;
+#endif
     p->off_heap.overhead = 0;
 
     top = p->v;
@@ -2137,7 +2208,10 @@ int db_realloc_counter(void** bp, DbTerm *b, Uint offset, Uint sz,
    
     new->size = new_sz;
     new->off_heap.mso = NULL;
+    new->off_heap.externals = NULL;
+#ifndef SHARED_HEAP
     new->off_heap.funs = NULL;
+#endif
     new->off_heap.overhead = 0;
     top = new->v;
 
@@ -2388,11 +2462,11 @@ static DMCRet dmc_one_term(DMCContext *context,
 	    DMC_PUSH(*stack, c);
 	    break;
 	case (_TAG_HEADER_REF >> _TAG_PRIMARY_SIZE):
-	    n = thing_arityval(*ref_val(c));
+	    n = thing_arityval(*internal_ref_val(c));
 	    DMC_PUSH(*text, matchEqRef);
-	    DMC_PUSH(*text, *ref_val(c));
+	    DMC_PUSH(*text, *internal_ref_val(c));
 	    for (i = 1; i <= n; ++i) {
-		DMC_PUSH(*text, (Uint) ref_val(c)[i]);
+		DMC_PUSH(*text, (Uint) internal_ref_val(c)[i]);
 	    }
 	    break;
 	case (_TAG_HEADER_POS_BIG >> _TAG_PRIMARY_SIZE):
@@ -2409,7 +2483,7 @@ static DMCRet dmc_one_term(DMCContext *context,
 	    DMC_PUSH(*text, (Uint) float_val(c)[1]);
 	    DMC_PUSH(*text, (Uint) float_val(c)[2]);
 	    break;
-	default: /* BINARY,FUN or VECTOR */
+	default: /* BINARY, FUN, VECTOR, or EXTERNAL */
 	    /*
 	    ** Make a private copy...
 	    */
@@ -2604,7 +2678,7 @@ static DMCRet dmc_whole_expression(DMCContext *context,
 				   Eterm t,
 				   int *constant)
 {
-    if (context->cflags == DCOMP_TRACE) {
+    if (context->cflags & DCOMP_TRACE) {
 	/* Hmmm, convert array to list... */
 	if (context->special) {
 	   DMC_PUSH(*text, matchPushArrayAsListU);
@@ -2837,7 +2911,7 @@ static DMCRet dmc_message(DMCContext *context,
     int c;
     
 
-    if (context->cflags != DCOMP_TRACE) {
+    if (!(context->cflags & DCOMP_TRACE)) {
 	RETURN_ERROR("Special form 'message' used in wrong dialect.",
 		     context, 
 		     *constant);
@@ -2896,7 +2970,7 @@ static DMCRet dmc_return_trace(DMCContext *context,
     Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     
-    if (context->cflags != DCOMP_TRACE) {
+    if (!(context->cflags & DCOMP_TRACE)) {
 	RETURN_ERROR("Special form 'return_trace' used in wrong dialect.",
 		     context, 
 		     *constant);
@@ -2928,7 +3002,7 @@ static DMCRet dmc_is_seq_trace(DMCContext *context,
     Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     
-    if (context->cflags != DCOMP_TRACE) {
+    if (!(context->cflags & DCOMP_TRACE)) {
 	RETURN_ERROR("Special form 'is_seq_trace' used in wrong dialect.",
 		     context, 
 		     *constant);
@@ -2957,7 +3031,7 @@ static DMCRet dmc_set_seq_token(DMCContext *context,
     int c;
     
 
-    if (context->cflags != DCOMP_TRACE) {
+    if (!(context->cflags & DCOMP_TRACE)) {
 	RETURN_ERROR("Special form 'set_seq_token' used in wrong dialect.",
 		     context, 
 		     *constant);
@@ -2985,7 +3059,11 @@ static DMCRet dmc_set_seq_token(DMCContext *context,
     if (c) { 
 	do_emit_constant(context, text, p[2]);
     }
-    DMC_PUSH(*text, matchSetSeqToken);
+    if (context->cflags & DCOMP_FAKE_DESTRUCTIVE) {
+	DMC_PUSH(*text, matchSetSeqTokenFake);
+    } else {
+	DMC_PUSH(*text, matchSetSeqToken);
+    }
     --context->stack_used; /* Remove two and add one */
     return retOk;
 }
@@ -2999,7 +3077,7 @@ static DMCRet dmc_get_seq_token(DMCContext *context,
     Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
 
-    if (context->cflags != DCOMP_TRACE) {
+    if (!(context->cflags & DCOMP_TRACE)) {
 	RETURN_ERROR("Special form 'get_seq_token' used in wrong dialect.",
 		     context, 
 		     *constant);
@@ -3016,7 +3094,10 @@ static DMCRet dmc_get_seq_token(DMCContext *context,
 
     *constant = 0;
     DMC_PUSH(*text, matchGetSeqToken);
-    context->eheap_need += 6;     /* A 5-tuple is built */
+    context->eheap_need += (6 /* A 5-tuple is built */
+			    + EXTERNAL_THING_HEAD_SIZE + 2 /* Sender can
+							      be an external
+							      pid */);
     if (++context->stack_used > context->stack_need)
  	context->stack_need = context->stack_used;
     return retOk;
@@ -3036,7 +3117,7 @@ static DMCRet dmc_display(DMCContext *context,
     int c;
     
 
-    if (context->cflags != DCOMP_TRACE) {
+    if (!(context->cflags & DCOMP_TRACE)) {
 	RETURN_ERROR("Special form 'display' used in wrong dialect.",
 		     context, 
 		     *constant);
@@ -3073,7 +3154,7 @@ static DMCRet dmc_process_dump(DMCContext *context,
     Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     
-    if (context->cflags != DCOMP_TRACE) {
+    if (!(context->cflags & DCOMP_TRACE)) {
 	RETURN_ERROR("Special form 'process_dump' used in wrong dialect.",
 		     context, 
 		     *constant);
@@ -3106,7 +3187,7 @@ static DMCRet dmc_enable_trace(DMCContext *context,
     int c;
     
 
-    if (context->cflags != DCOMP_TRACE) {
+    if (!(context->cflags & DCOMP_TRACE)) {
 	RETURN_ERROR("Special form 'enable_trace' used in wrong dialect.",
 		     context, 
 		     *constant);
@@ -3166,7 +3247,7 @@ static DMCRet dmc_disable_trace(DMCContext *context,
     int c;
     
 
-    if (context->cflags != DCOMP_TRACE) {
+    if (!(context->cflags & DCOMP_TRACE)) {
 	RETURN_ERROR("Special form 'disable_trace' used in wrong dialect.",
 		     context, 
 		     *constant);
@@ -3225,7 +3306,7 @@ static DMCRet dmc_caller(DMCContext *context,
     Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
      
-    if (context->cflags != DCOMP_TRACE) {
+    if (!(context->cflags & DCOMP_TRACE)) {
 	RETURN_ERROR("Special form 'caller' used in wrong dialect.",
 		     context, 
 		     *constant);
@@ -3260,7 +3341,7 @@ static DMCRet dmc_silent(DMCContext *context,
     DMCRet ret;
     int c;
      
-    if (context->cflags != DCOMP_TRACE) {
+    if (!(context->cflags & DCOMP_TRACE)) {
 	RETURN_ERROR("Special form 'silent' used in wrong dialect.",
 		     context, 
 		     *constant);
@@ -3341,9 +3422,17 @@ static DMCRet dmc_fun(DMCContext *context,
  	return dmc_caller(context, heap, text, t, constant);
     case am_silent:
  	return dmc_silent(context, heap, text, t, constant);
+    case am_set_tcw:
+	if (context->cflags & DCOMP_FAKE_DESTRUCTIVE) {
+	    b = dmc_lookup_bif(am_set_tcw_fake, ((int) a) - 1);
+	} else {
+	    b = dmc_lookup_bif(p[1], ((int) a) - 1);
+	}
+	break;
+    default:
+	b = dmc_lookup_bif(p[1], ((int) a) - 1);
     }
 
-    b = dmc_lookup_bif(p[1], ((int) a) - 1);
 
     if (b == NULL) {
 	if (context->err_info != NULL) {
@@ -3357,8 +3446,9 @@ static DMCRet dmc_fun(DMCContext *context,
     } 
     ASSERT(b->arity == ((int) a) - 1);
     if (! (b->flags & 
-	   (1 << (context->cflags + 
-		  (context->is_guard ? DBIF_GUARD : DBIF_BODY))))) {
+	   (1 << 
+	    ((context->cflags & DCOMP_DIALECT_MASK) + 
+	      (context->is_guard ? DBIF_GUARD : DBIF_BODY))))) {
 	/* Body clause used in wrong context. */
 	if (context->err_info != NULL) {
 	    /* Ugly, should define a better RETURN_TERM_ERROR interface... */
@@ -3503,7 +3593,7 @@ static DMCRet compile_guard_expr(DMCContext *context,
 	if (l != NIL) 
 	    RETURN_ERROR("Match expression is not a proper list.",
 			 context, constant);
-	if (!(context->is_guard) && (context->cflags == DCOMP_TABLE)) {
+	if (!(context->is_guard) && (context->cflags & DCOMP_TABLE)) {
 	    ASSERT(matchWaste == DMC_TOP(*text));
 	    (void) DMC_POP(*text);
 	    DMC_PUSH(*text, matchReturn); /* Same impact on stack as 
@@ -3801,12 +3891,11 @@ static Eterm match_spec_test(Process *p, Eterm against, Eterm spec, int trace)
 	return THE_NON_VALUE;
     }
     if (trace) {
-	/* I WANT to use the erts_... routines here, to test them properly */
-	lint_res = erts_match_set_lint(p, spec); 
-	mps = erts_match_set_compile(p, spec);
+	lint_res = db_match_set_lint(p, spec, DCOMP_TRACE | DCOMP_FAKE_DESTRUCTIVE);
+	mps = db_match_set_compile(p, spec, DCOMP_TRACE | DCOMP_FAKE_DESTRUCTIVE);
     } else {
-	lint_res = db_match_set_lint(p, spec, DCOMP_TABLE);
-	mps = db_match_set_compile(p, spec, DCOMP_TABLE);
+	lint_res = db_match_set_lint(p, spec, DCOMP_TABLE | DCOMP_FAKE_DESTRUCTIVE);
+	mps = db_match_set_compile(p, spec, DCOMP_TABLE | DCOMP_FAKE_DESTRUCTIVE);
     }
     
     if (mps == NULL) {
@@ -3850,7 +3939,7 @@ static Eterm match_spec_test(Process *p, Eterm against, Eterm spec, int trace)
 	}
 	sz = size_object(res);
 	hp = HAlloc(p, 5 + ((ret_flags) ? 2 : 0) + sz);
-	res = copy_struct(res, sz, &hp, &p->off_heap);
+	res = copy_struct(res, sz, &hp, &MSO(p));
 	if (!ret_flags) {
 	    flg = NIL;
 	} else {
@@ -3860,11 +3949,21 @@ static Eterm match_spec_test(Process *p, Eterm against, Eterm spec, int trace)
 	if (trace) {
 	    sys_free(arr);
 	}
+	erts_match_set_free(mps);
 	ret = TUPLE4(hp, am_atom_put("ok",2), res, flg, lint_res);
     }
     return ret;
 }
 
+static Eterm seq_trace_fake(Process *p, Eterm arg1)
+{
+    Eterm result = seq_trace_info_1(p,arg1);
+    if (is_tuple(result) && *tuple_val(result) == 2) {
+	return (tuple_val(result))[2];
+    }
+    return result;
+}
+    
 #ifdef DMC_DEBUG
 /*
 ** Disassemble match program
@@ -4127,6 +4226,10 @@ static void db_match_dis(Binary *bp)
 	    ++t;
 	    erl_printf(COUT,"SetSeqToken\r\n");
 	    break;
+	case matchSetSeqTokenFake:
+	    ++t;
+	    erl_printf(COUT,"SetSeqTokenFake\r\n");
+	    break;
 	case matchGetSeqToken:
 	    ++t;
 	    erl_printf(COUT,"GetSeqToken\r\n");
@@ -4158,14 +4261,6 @@ static void db_match_dis(Binary *bp)
  	case matchCaller:
  	    ++t;
  	    erl_printf(COUT,"Caller\r\n");
- 	    break;
- 	case matchGetTraceControlWord:
- 	    ++t;
- 	    erl_printf(COUT,"GetTraceControlWord\r\n");
- 	    break;
- 	case matchSetTraceControlWord:
- 	    ++t;
- 	    erl_printf(COUT,"SetTraceControlWord\r\n");
  	    break;
 	default:
 	    erl_printf(COUT,"??? (0x%08x)\r\n", *t);

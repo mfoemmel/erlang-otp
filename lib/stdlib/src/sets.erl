@@ -26,7 +26,7 @@
 %% end of the segments tuple we keep an empty segment which we use
 %% when we expand the segments.  The segments are expanded by doubling
 %% every time n reaches maxn instead of increasing the tuple one
-%% element at a time.  It is easier and does seem detrimental to
+%% element at a time.  It is easier and does not seem detrimental to
 %% speed.  The same applies when contracting the segments.
 %%
 %% Note that as the order of the keys is undefined we may freely
@@ -54,7 +54,7 @@
 -define(expand_load, 5).
 -define(contract_load, 3).
 
-%% Define a hastset.  The default values are the standard ones.
+%% Define a hash set.  The default values are the standard ones.
 -record(sets,
 	{size=0,				%Number of elements
 	 n=?seg_size,				%Number of active slots
@@ -76,7 +76,7 @@ new() ->
 %%  Return 'true' if Set is a set of elements, else 'false'.
 
 is_set(#sets{}) -> true;
-is_set(Other) -> false.
+is_set(_) -> false.
 
 %% size(Set) -> int().
 %%  Return the number of elements in Set.
@@ -111,8 +111,8 @@ add_element(E, S0) ->
     {S1,Ic} = on_bucket(fun (B0) -> add_bkt_el(E, B0, B0) end, S0, Slot),
     maybe_expand(S1, Ic).
 
-add_bkt_el(E, [E|B], Bkt) -> {Bkt,0};
-add_bkt_el(E, [Other|B], Bkt) ->
+add_bkt_el(E, [E|_], Bkt) -> {Bkt,0};
+add_bkt_el(E, [_|B], Bkt) ->
     add_bkt_el(E, B, Bkt);
 add_bkt_el(E, [], Bkt) -> {[E|Bkt],1}.
 
@@ -128,7 +128,7 @@ del_bkt_el(E, [E|Bkt]) -> {Bkt,1};
 del_bkt_el(E, [Other|Bkt0]) ->
     {Bkt1,Dc} = del_bkt_el(E, Bkt0),
     {[Other|Bkt1],Dc};
-del_bkt_el(E, []) -> {[],0}.
+del_bkt_el(_, []) -> {[],0}.
 
 %% union(Set1, Set2) -> Set
 %%  Return the union of Set1 and Set2.
@@ -193,7 +193,7 @@ fold(F, Acc, D) -> fold_set(F, Acc, D).
 
 filter(F, D) -> filter_set(F, D).
 
-%% Depreciated interface.
+%% Deprecated interface.
 
 new_set() -> new().
 
@@ -245,15 +245,15 @@ fold_set(F, Acc, D) ->
 fold_segs(F, Acc, Segs, I) when I >= 1 ->
     Seg = element(I, Segs),
     fold_segs(F, fold_seg(F, Acc, Seg, size(Seg)), Segs, I-1);
-fold_segs(F, Acc, Segs, I) -> Acc.
+fold_segs(_, Acc, _, _) -> Acc.
 
 fold_seg(F, Acc, Seg, I) when I >= 1 ->
     fold_seg(F, fold_bucket(F, Acc, element(I, Seg)), Seg, I-1);
-fold_seg(F, Acc, Seg, I) -> Acc.
+fold_seg(_, Acc, _, _) -> Acc.
 
 fold_bucket(F, Acc, [E|Bkt]) ->
     fold_bucket(F, F(E, Acc), Bkt);
-fold_bucket(F, Acc, []) -> Acc.
+fold_bucket(_, Acc, []) -> Acc.
 
 filter_set(F, D) ->
     Segs0 = tuple_to_list(D#sets.segs),
@@ -264,13 +264,13 @@ filter_seg_list(F, [Seg|Segs], Fss, Fc0) ->
     Bkts0 = tuple_to_list(Seg),
     {Bkts1,Fc1} = filter_bkt_list(F, Bkts0, [], Fc0),
     filter_seg_list(F, Segs, [list_to_tuple(Bkts1)|Fss], Fc1);
-filter_seg_list(F, [], Fss, Fc) ->
+filter_seg_list(_, [], Fss, Fc) ->
     {lists:reverse(Fss, []),Fc}.
 
 filter_bkt_list(F, [Bkt0|Bkts], Fbs, Fc0) ->
     {Bkt1,Fc1} = filter_bucket(F, Bkt0, [], Fc0),
     filter_bkt_list(F, Bkts, [Bkt1|Fbs], Fc1);
-filter_bkt_list(F, [], Fbs, Fc) ->
+filter_bkt_list(_, [], Fbs, Fc) ->
     {lists:reverse(Fbs),Fc}.
 
 filter_bucket(F, [E|Bkt], Fb, Fc) ->
@@ -278,7 +278,7 @@ filter_bucket(F, [E|Bkt], Fb, Fc) ->
 	true -> filter_bucket(F, Bkt, [E|Fb], Fc);
 	false -> filter_bucket(F, Bkt, Fb, Fc+1)
     end;
-filter_bucket(F, [], Fb, Fc) -> {Fb,Fc}.
+filter_bucket(_, [], Fb, Fc) -> {Fb,Fc}.
 
 %% get_bucket_s(Segments, Slot) -> Bucket.
 %% put_bucket_s(Segments, Slot, Bucket) -> NewSegments.
@@ -350,7 +350,7 @@ rehash([E|T], Slot1, Slot2, MaxN) ->
 	Slot1 -> [[E|L1]|L2];
 	Slot2 -> [L1|[E|L2]]
     end;
-rehash([], Slot1, Slot2, MaxN) -> [[]|[]].
+rehash([], _, _, _) -> [[]|[]].
 
 %% mk_seg(Size) -> Segment.
 

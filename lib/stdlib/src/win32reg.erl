@@ -253,7 +253,7 @@ i32([X1, X2, X3, X4]) ->
 i32_on_head([X1, X2, X3, X4 | Rest]) ->
     {ok, (X1 bsl 24) bor (X2 bsl 16) bor (X3 bsl 8) bor X4, Rest}.
 
-parse_key([$\\|Rest], Reg) ->
+parse_key([$\\|Rest], _) ->
     parse_root(Rest, []);
 parse_key(Key, Reg) ->
     parse_relative(Key, Reg).
@@ -292,6 +292,7 @@ split_key([$\\|Rest], Current, Result) ->
 split_key([C|Rest], Current, Result) ->
     split_key(Rest, [C|Current], Result);
 split_key([], [], Result) ->
+    %%% XXX Is this really correct?
     [];
 split_key([], Current, Result) ->
     [lists:reverse(Current)|Result].

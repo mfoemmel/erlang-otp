@@ -27,6 +27,7 @@
 %% Instead of always renaming variables and function variables, this
 %% implementation uses the "no-shadowing strategy" of Peyton Jones and
 %% Marlow ("Secrets of the Glasgow Haskell Compiler Inliner", 1999).
+%%
 %% =====================================================================
 
 %% TODO: inline single-source-reference operands without size limit.
@@ -52,15 +53,15 @@
 	       cons_tl/1, data_arity/1, data_es/1, data_type/1,
 	       fun_body/1, fun_vars/1, get_ann/1, int_val/1,
 	       is_c_atom/1, is_c_cons/1, is_c_fun/1, is_c_int/1,
-	       is_c_int/2, is_c_list/1, is_c_seq/1, is_c_tuple/1,
-	       is_c_var/1, is_data/1, is_literal/1, is_literal_term/1,
-	       let_arg/1, let_body/1, let_vars/1, letrec_body/1,
-	       letrec_defs/1, list_length/1, list_elements/1,
-	       update_data/3, make_list/1, make_nonlit_data/2,
-	       module_attrs/1, module_defs/1, module_exports/1,
-	       module_name/1, primop_args/1, primop_name/1,
-	       receive_action/1, receive_clauses/1, receive_timeout/1,
-	       seq_arg/1, seq_body/1, set_ann/2, try_body/1, try_expr/1,
+	       is_c_list/1, is_c_seq/1, is_c_tuple/1, is_c_var/1,
+	       is_data/1, is_literal/1, is_literal_term/1, let_arg/1,
+	       let_body/1, let_vars/1, letrec_body/1, letrec_defs/1,
+	       list_length/1, list_elements/1, update_data/3,
+	       make_list/1, make_data_skel/2, module_attrs/1,
+	       module_defs/1, module_exports/1, module_name/1,
+	       primop_args/1, primop_name/1, receive_action/1,
+	       receive_clauses/1, receive_timeout/1, seq_arg/1,
+	       seq_body/1, set_ann/2, try_body/1, try_expr/1,
 	       try_vars/1, tuple_es/1, tuple_arity/1, type/1,
 	       values_es/1, var_name/1]).
 
@@ -83,17 +84,17 @@ debug_counters() -> false.
 %% never been observed even on very ill-conditioned programs.
 %%
 %% Size limits between 6 and 18 tend to actually shrink the code,
-%% because of the simplifications made possible by inlining. The default
-%% size limit of 16 seems to be optimal for this purpose, often
-%% shrinking the executable code by up to 10%. Size limits between 18
-%% and 30 generally give the same code size as if no inlining was done
-%% (i.e., code duplication balances out the simplifications at these
-%% levels). A size limit between 1 and 5 tends to inline small functions
-%% and propagate constants, but does not cause much simplifications do
-%% be done, so the net effect will be a slight increase in code size.
-%% For size limits above 30, the executable code size tends to increase
-%% with about 10% per 100 units, with some variations depending on the
-%% sizes of functions in the source code.
+%% because of the simplifications made possible by inlining. A limit of
+%% 16 seems to be optimal for this purpose, often shrinking the
+%% executable code by up to 10%. Size limits between 18 and 30 generally
+%% give the same code size as if no inlining was done (i.e., code
+%% duplication balances out the simplifications at these levels). A size
+%% limit between 1 and 5 tends to inline small functions and propagate
+%% constants, but does not cause much simplifications do be done, so the
+%% net effect will be a slight increase in code size. For size limits
+%% above 30, the executable code size tends to increase with about 10%
+%% per 100 units, with some variations depending on the sizes of
+%% functions in the source code.
 %%
 %% Typically, about 90% of the maximum speedup achievable is already
 %% reached using a size limit of 30, and 98% is reached at limits around
@@ -102,7 +103,7 @@ debug_counters() -> false.
 %% effects will slow the program down.
 
 default_effort() -> 150.
-default_size() -> 16.
+default_size() -> 24.
 
 %% Base costs/weights for different kinds of expressions. If these are
 %% modified, the size limits above may have to be adjusted.
@@ -162,7 +163,7 @@ weight(module) -> 1.    % Like a letrec with a constant body
 %% compilation pass.
 
 core_transform(Code, Opts) ->
-    case property_lists:get_bool(inline, Opts) of
+    case proplists:get_bool(inline, Opts) of
 	true ->
 	    Code1 = cerl:from_records(Code),
 	    Code2 = transform(Code1, Opts),
@@ -199,9 +200,9 @@ start(Reply, Tree, Ctxt, Opts) ->
         _ ->
             ok
     end,
-    Size = max(1, property_lists:get_value(inline_size, Opts)),
-    Effort = max(1, property_lists:get_value(inline_effort, Opts)),
-    case property_lists:get_bool(verbose, Opts) of
+    Size = max(1, proplists:get_value(inline_size, Opts)),
+    Effort = max(1, proplists:get_value(inline_effort, Opts)),
+    case proplists:get_bool(verbose, Opts) of
 	true ->
 	    io:fwrite("Inlining: inline_size=~w inline_effort=~w\n",
 		      [Size, Effort]);
@@ -215,8 +216,8 @@ start(Reply, Tree, Ctxt, Opts) ->
 %%% Initialization is not needed at present. Note that the code in
 %%% `inline_init' is not up-to-date with this module.
 %%%     {Tree1, S1} = inline_init:init(Tree, S),
-%%%     {Tree2, S2} = i(Tree1, Ctxt, S1),
-    {Tree2, S2} = i(Tree, Ctxt, S),
+%%%     {Tree2, _S2} = i(Tree1, Ctxt, S1),
+    {Tree2, _S2} = i(Tree, Ctxt, S),
     report_debug(),
     Reply ! {self(), Tree2}.
 
@@ -324,13 +325,13 @@ i(E, Ctxt, Ren, Env, S0) ->
                 call ->
                     i_call(E, Ctxt, Ren, Env, S);
                 primop ->
-                    i_primop(E, Ctxt, Ren, Env, S);
+                    i_primop(E, Ren, Env, S);
                 'try' ->
                     i_try(E, Ctxt, Ren, Env, S);
                 'catch' ->
                     i_catch(E, Ctxt, Ren, Env, S);
 		binary ->
-		    i_binary(E, Ctxt, Ren, Env, S);
+		    i_binary(E, Ren, Env, S);
                 module ->
                     i_module(E, Ctxt, Ren, Env, S)
             end
@@ -410,7 +411,7 @@ i_var(E, Ctxt, Ren, Env, S) ->
                             %% argument expression; just residualize it.
                             residualize_var(R, S);
                         Opnd ->
-			    i_var_1(R, Opnd, Ctxt, Ren, Env, S)
+			    i_var_1(R, Opnd, Ctxt, Env, S)
                     end;
                 error ->
                     %% The variable is unbound. (It has not been
@@ -425,7 +426,7 @@ i_var(E, Ctxt, Ren, Env, S) ->
 %% Note that we must first set the "inner-pending" flag, and clear the
 %% flag afterwards.
 
-i_var_1(R, Opnd, Ctxt, Ren, Env, S) ->
+i_var_1(R, Opnd, Ctxt, Env, S) ->
     %% If the operand is already "inner-pending", it is residualised.
     %% (In Lisp/C, if the variable might be assigned to, it should also
     %% be residualised.)
@@ -789,7 +790,7 @@ i_clause_head(C, Ts, Ren, Env, S) ->
     Ps = clause_pats(C),
     Bs = case cerl_clauses:match_list(Ps, Ts) of
 	     {_, Bs1} -> Bs1;
-	     false -> []
+	     none -> []
 	 end,
 
     %% The patterns must be visited for renaming; cf. `i_pattern'. We
@@ -831,7 +832,7 @@ add_match_bindings(Bs, E) ->
 	    E;
 	false ->
 	    Vs = [V || {V, E} <- Bs, E /= any],
-	    Es = [hd(get_ann(E)) || {V, E} <- Bs, E /= any],
+	    Es = [hd(get_ann(E)) || {_V, E} <- Bs, E /= any],
 	    c_let(Vs, c_values(Es), E)
     end.
 
@@ -1074,10 +1075,10 @@ i_call_1(Static, M, F, Arity, As, E, Ctxt, Ren, Env, S) ->
 		    %% It is allowed to evaluate this at compile time.
 		    case all_static(As1) of
 			true ->
-			    i_call_3(M, F, As1, E, Ctxt, Ren, Env, S1);
+			    i_call_3(M, F, As1, E, Ctxt, Env, S1);
 			false ->
 			    %% See if the call can be rewritten instead.
-			    i_call_4(M, F, As1, E, Ctxt, Ren, Env, S1)
+			    i_call_4(M, F, As1, E, Ctxt, Env, S1)
 		    end;
 		false ->
 		    i_call_2(M, F, As1, E, S1)
@@ -1095,7 +1096,7 @@ i_call_2(M, F, As, E, S) ->
 %% Attempt to evaluate the call to yield a literal; if that fails, try
 %% to rewrite the expression.
 
-i_call_3(M, F, As, E, Ctxt, Ren, Env, S) ->
+i_call_3(M, F, As, E, Ctxt, Env, S) ->
     %% Note that we extract the results of argument expessions here; the
     %% expressions could still be sequences with side effects.
     Vs = [concrete(result(A)) || A <- As],
@@ -1112,16 +1113,16 @@ i_call_3(M, F, As, E, Ctxt, Ren, Env, S) ->
 		    {make_seq(c_values(As), abstract(V)), S2};
 		false ->
 		    %% The result could not be represented as a literal.
-		    i_call_4(M, F, As, E, Ctxt, Ren, Env, S)
+		    i_call_4(M, F, As, E, Ctxt, Env, S)
 	    end;
 	_ ->
 	    %% The evaluation attempt did not complete normally.
-	    i_call_4(M, F, As, E, Ctxt, Ren, Env, S)
+	    i_call_4(M, F, As, E, Ctxt, Env, S)
     end.
 
 %% Rewrite the expression, if possible, otherwise residualise it.
 
-i_call_4(M, F, As, E, Ctxt, Ren, Env, S) ->
+i_call_4(M, F, As, E, Ctxt, Env, S) ->
     case reduce_bif_call(atom_val(M), atom_val(F), As, Env) of
         false ->
             %% Nothing more to be done - residualise the call.
@@ -1138,7 +1139,7 @@ i_call_4(M, F, As, E, Ctxt, Ren, Env, S) ->
 %% probably being too special. Also, we have no knowledge about their
 %% side effects.
 
-i_primop(E, Ctxt, Ren, Env, S) ->
+i_primop(E, Ren, Env, S) ->
     %% Visit the arguments for value.
     {As, S1} = mapfoldl(fun (E, S) ->
 				i(E, value, Ren, Env, S)
@@ -1215,7 +1216,7 @@ i_receive(E, Ctxt, Ren, Env, S) ->
             %% and the expiry expression is the integer zero, the
             %% expression reduces to the expiry body.
 	    if Cs == [] ->
-		    case is_c_int(T, 0) of
+		    case is_c_int(T) andalso (int_val(T) == 0) of
 			true ->
 			    {B, S3};
 			false ->
@@ -1267,16 +1268,16 @@ i_module(E, Ctxt, Ren, Env, S) ->
 %% context we can't remove them. (We don't bother to identify cases of
 %% "safe" unused binaries which could be removed.)
 
-i_binary(E, Ctxt, Ren, Env, S) ->
+i_binary(E, Ren, Env, S) ->
     %% Visit the segments for value.
     {Es, S1} = mapfoldl(fun (E, S) ->
-				i_bin_seg(E, value, Ren, Env, S)
+				i_bin_seg(E, Ren, Env, S)
 			end,
 			S, binary_segs(E)),
     S2 = count_size(weight(binary), S1),
     {update_c_binary(E, Es), S2}.
 
-i_bin_seg(E, Ctxt, Ren, Env, S) ->
+i_bin_seg(E, Ren, Env, S) ->
     %% It is not necessary to visit the Unit, Type and Flags fields,
     %% since these are always literals.
     {Val, S1} = i(bin_seg_val(E), value, Ren, Env, S),
@@ -1620,7 +1621,7 @@ copy_1(R, Opnd, E, Ctxt, Env, S) ->
 
 copy_inline(R, Opnd, E, Ctxt, Env, S) ->
     S1 = st__mark_outer_pending(Opnd#opnd.loc, S),
-    case catch {ok, copy_inline_1(R, Opnd, E, Ctxt, Env, S1)} of
+    case catch {ok, copy_inline_1(R, E, Ctxt, Env, S1)} of
         {ok, {E1, S2}} ->
             {E1, st__clear_outer_pending(Opnd#opnd.loc, S2)};
         {'EXIT', X} ->
@@ -1636,13 +1637,13 @@ copy_inline(R, Opnd, E, Ctxt, Env, S) ->
 %% If the current effort counter was passive, we use a new active effort
 %% counter with the inherited limit for this particular inlining.
 
-copy_inline_1(R, Opnd, E, Ctxt, Env, S) ->
+copy_inline_1(R, E, Ctxt, Env, S) ->
     case effort_is_active(S) of
         true ->
-            copy_inline_2(R, Opnd, E, Ctxt, Env, S);
+            copy_inline_2(R, E, Ctxt, Env, S);
         false ->
             S1 = new_active_effort(get_effort_limit(S), S),
-            case catch {ok, copy_inline_2(R, Opnd, E, Ctxt, Env, S1)} of
+            case catch {ok, copy_inline_2(R, E, Ctxt, Env, S1)} of
                 {ok, {E1, S2}} ->
                     %% Revert to the old effort counter.
                     {E1, revert_effort(S, S2)};
@@ -1668,7 +1669,7 @@ copy_inline_1(R, Opnd, E, Ctxt, Env, S) ->
 %% budget is not spent on the first few call sites (in an inlined
 %% function body) forcing the remaining call sites to be residualised.
 
-copy_inline_2(R, Opnd, E, Ctxt, Env, S) ->
+copy_inline_2(R, E, Ctxt, Env, S) ->
     Limit = case size_is_active(S) of
                 true ->
                     get_size_limit(S) - get_size_value(S);
@@ -1962,7 +1963,7 @@ safe_context(Ctxt) ->
 %% or a function variable. The latter kind also contains an arity number
 %% which should be preserved upon renaming.
 
-ref_to_var(#ref{name = Name, loc = L}) ->
+ref_to_var(#ref{name = Name}) ->
     %% If we were maintaining "source-referenced" flags, the annotation
     %% `add_ann([#source_ref{loc = L}], E)' should also be done here, to
     %% make the algorithm reapplicable. This is however not necessary
@@ -2088,7 +2089,7 @@ make_template(E, Vs0, Env0) ->
 					  {T, {Vs1, Env1}}
 				  end,
 				  {Vs0, Env0}, data_es(E)),
-	    T = make_nonlit_data(data_type(E), Ts),
+	    T = make_data_skel(data_type(E), Ts),
 	    E1 = update_data(E, data_type(E),
 			     [hd(get_ann(T)) || T <- Ts]),
 	    V = new_var(Env1),
@@ -2129,7 +2130,7 @@ equivalent_clauses_1(E, [C | Cs], Env) ->
 	false ->
 	    false
     end;
-equivalent_clauses_1(E, [], Env) ->
+equivalent_clauses_1(_, [], _Env) ->
     true.
 
 %% Two expressions are equivalent if and only if they yield the same
@@ -2186,12 +2187,12 @@ equivalent_lists(_, _, _) ->
     false.
 
 %% Return `false' or `{true, EffectExpr, ValueExpr}'. The environment is
-%% used for new-variable generation.
+%% passed for new-variable generation.
 
 reduce_bif_call(M, F, As, Env) ->
     reduce_bif_call_1(M, F, length(As), As, Env).
 
-reduce_bif_call_1(erlang, element, 2, [X, Y], Env) ->
+reduce_bif_call_1(erlang, element, 2, [X, Y], _Env) ->
     case is_c_int(X) and is_c_tuple(Y) of
 	true ->
 	    %% We are free to change the relative evaluation order of
@@ -2208,7 +2209,7 @@ reduce_bif_call_1(erlang, element, 2, [X, Y], Env) ->
 	false ->
 	    false
     end;
-reduce_bif_call_1(erlang, hd, 1, [X], Env) ->
+reduce_bif_call_1(erlang, hd, 1, [X], _Env) ->
     case is_c_cons(X) of
 	true ->
 	    %% Cf. `element/2' above.
@@ -2216,7 +2217,7 @@ reduce_bif_call_1(erlang, hd, 1, [X], Env) ->
 	false ->
 	    false
     end;
-reduce_bif_call_1(erlang, length, 1, [X], Env) ->
+reduce_bif_call_1(erlang, length, 1, [X], _Env) ->
     case is_c_list(X) of
 	true ->
 	    %% Cf. `erlang:size/1' below.
@@ -2224,7 +2225,7 @@ reduce_bif_call_1(erlang, length, 1, [X], Env) ->
 	false ->
 	    false
     end;
-reduce_bif_call_1(erlang, list_to_tuple, 1, [X], Env) ->
+reduce_bif_call_1(erlang, list_to_tuple, 1, [X], _Env) ->
     case is_c_list(X) of
 	true ->
 	    %% This does not actually preserve all the evaluation order
@@ -2260,7 +2261,7 @@ reduce_bif_call_1(erlang, setelement, 3, [X, Y, Z], Env) ->
 	false ->
 	    false
     end;
-reduce_bif_call_1(erlang, size, 1, [X], Env) ->
+reduce_bif_call_1(erlang, size, 1, [X], _Env) ->
     case is_c_tuple(X) of
 	true ->
 	    %% Just evaluate the tuple for effect and use the size (the
@@ -2269,7 +2270,7 @@ reduce_bif_call_1(erlang, size, 1, [X], Env) ->
 	false ->
 	    false
     end;
-reduce_bif_call_1(erlang, tl, 1, [X], Env) ->
+reduce_bif_call_1(erlang, tl, 1, [X], _Env) ->
     case is_c_cons(X) of
 	true ->
 	    %% Cf. `element/2' above.
@@ -2277,7 +2278,7 @@ reduce_bif_call_1(erlang, tl, 1, [X], Env) ->
 	false ->
 	    false
     end;
-reduce_bif_call_1(erlang, tuple_to_list, 1, [X], Env) ->
+reduce_bif_call_1(erlang, tuple_to_list, 1, [X], _Env) ->
     case is_c_tuple(X) of
 	true ->
 	    %% This actually introduces slightly stronger constraints on
@@ -2286,7 +2287,7 @@ reduce_bif_call_1(erlang, tuple_to_list, 1, [X], Env) ->
 	false ->
 	    false
     end;
-reduce_bif_call_1(M, F, A, As, Env) ->
+reduce_bif_call_1(_M, _F, _A, _As, _Env) ->
     false.
 
 effort_is_active(S) ->
@@ -2375,7 +2376,7 @@ kill_id_anns([]) ->
 %% General utilities
 
 max(X, Y) when X > Y -> X;
-max(X, Y) -> Y.
+max(_, Y) -> Y.
 
 %% The atom `ok', is widely used in Erlang for "void" values.
 
@@ -2635,17 +2636,17 @@ st__clear_outer_pending(L, S) ->
     S.
 
 st__new_app_loc(S) ->
-    V = {L, S1} = st__new_loc(S),
+    V = {L, _S1} = st__new_loc(S),
     ets:insert(S#state.app_flags, #app_flags{lab = L}),
     V.
 
 st__new_ref_loc(S) ->
-    V = {L, S1} = st__new_loc(S),
+    V = {L, _S1} = st__new_loc(S),
     ets:insert(S#state.var_flags, #var_flags{lab = L}),
     V.
 
 st__new_opnd_loc(S) ->
-    V = {L, S1} = st__new_loc(S),
+    V = {L, _S1} = st__new_loc(S),
     ets:insert(S#state.opnd_flags, #opnd_flags{lab = L}),
     V.
 
@@ -2738,13 +2739,13 @@ format({warning, D}, Vs) ->
     ["warning: ", format(D, Vs)];
 format({"", L, D}, Vs) when integer(L), L > 0 ->
     [io_lib:fwrite("~w: ", [L]), format(D, Vs)];
-format({"", L, D}, Vs) ->
+format({"", _L, D}, Vs) ->
     format(D, Vs);
 format({F, L, D}, Vs) when integer(L), L > 0 ->
     [io_lib:fwrite("~s:~w: ", [filename(F), L]), format(D, Vs)];
-format({F, L, D}, Vs) ->
+format({F, _L, D}, Vs) ->
     [io_lib:fwrite("~s: ", [filename(F)]), format(D, Vs)];
-format({F, L, D}, Vs) ->
+format({_F, _L, D}, Vs) ->
     format(D, Vs);
 format(S, Vs) when list(S) ->
     [io_lib:fwrite(S, Vs), $\n].

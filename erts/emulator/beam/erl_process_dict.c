@@ -58,8 +58,7 @@
 ((is_small(Term)) ? unsigned_val(Term) :		\
  ((is_atom(Term)) ? 					\
   (atom_tab(atom_val(term))->slot.bucket.hvalue) :	\
-  make_hash(Term, 0)))
-
+  make_hash2(Term)))
 
 /* Memory allocation macros */
 #define PD_ALLOC(Siz) safe_alloc_from(340, (Siz))
@@ -83,7 +82,7 @@ static int pd_hash_erase_all(Process *p);
    this is for speed and the fact that get cannot fail. */
 static Eterm pd_hash_get(Process *p, Eterm id); 
 static int pd_hash_get_keys(Process *p, Eterm value, Eterm *ret) ;
-static int pd_hash_get_all(Process *p, ProcDict *pd, unsigned int flags, Eterm *ret);
+static Eterm pd_hash_get_all(Process *p, ProcDict *pd);
 static int pd_hash_put(Process *p, Eterm id, Eterm value, Eterm *ret);
 
 static int shrink(Process *p); 
@@ -190,11 +189,8 @@ void dictionary_dump(ProcDict *pd, CIO to)
 */
 Eterm dictionary_copy(Process *p, ProcDict *pd) 
 {
-    Eterm ret;
     PD_CHECK(pd);
-    if (pd_hash_get_all(p, pd, PD_GET_OTHER_PROCESS, &ret) != PDICT_OK)
-	return NIL;
-    return ret;
+    return copy_object(pd_hash_get_all(p, pd), p);
 }
 
 
@@ -206,8 +202,7 @@ BIF_ADECL_0
 {
     Eterm ret;
     PD_CHECK(BIF_P->dictionary);
-    pd_hash_get_all(BIF_P, BIF_P->dictionary, 0UL, &ret); /* Cannot actually 
-							     fail */
+    ret = pd_hash_get_all(BIF_P, BIF_P->dictionary);
     PD_CHECK(BIF_P->dictionary);
     BIF_RET(ret);
 }
@@ -255,8 +250,7 @@ BIF_ADECL_0
 {
     Eterm ret;
     PD_CHECK(BIF_P->dictionary);
-    pd_hash_get_all(BIF_P, BIF_P->dictionary, 0UL, &ret); /* cannot actually 
-							   fail */
+    ret = pd_hash_get_all(BIF_P, BIF_P->dictionary);
     pd_hash_erase_all(BIF_P);
     PD_CHECK(BIF_P->dictionary);
     BIF_RET(ret);
@@ -495,47 +489,37 @@ done:
 }
 	
 
-static int pd_hash_get_all(Process *p, ProcDict *pd, unsigned int flags, Eterm *ret)
+static Eterm
+pd_hash_get_all(Process *p, ProcDict *pd)
 {
-    Eterm *hp, *hp2;
+    Eterm* hp;
+    Eterm* heap_start;
     Eterm res = NIL;
     Eterm tmp, tmp2;
     unsigned int i, num;
-    int copy = !!(flags & PD_GET_OTHER_PROCESS);
 
-    if (pd == NULL)
-	goto done;
+    if (pd == NULL) {
+	return res;
+    }
     num = HASH_RANGE(pd);
-    hp = HAlloc(p, pd->numElements * 2);
-
+    heap_start = hp = HAlloc(p, pd->numElements * 2);
+    
     for (i = 0; i < num; ++i) {
 	tmp = ARRAY_GET(pd, i);
 	if (is_boxed(tmp)) {
 	    ASSERT(is_tuple(tmp));
-	    if (copy) {
-		Uint siz = size_object(tmp);
-		hp2 = HAlloc(p, siz);
-		tmp = copy_struct(tmp, siz, &hp2, &(p->off_heap));
-	    }
 	    res = CONS(hp, tmp, res);
 	    hp += 2;
 	} else if (is_list(tmp)) {
 	    while (tmp != NIL) {
 		tmp2 = TCAR(tmp);
-		if (copy) {
-		    Uint siz = size_object(tmp2);
-		    hp2 = HAlloc(p, siz);
-		    tmp2 = copy_struct(tmp2, siz, &hp2, &(p->off_heap));
-		}
 		res = CONS(hp, tmp2, res);
 		hp += 2;
 		tmp = TCDR(tmp);
 	    }
 	}
     }
-done:
-    *ret = res;
-    return PDICT_OK;
+    return res;
 }
 
 static int pd_hash_put(Process *p, Eterm id, Eterm value, Eterm *ret)
@@ -910,7 +894,11 @@ print_pid(Process *p)
     char static buf[64];
 
     Uint obj = p->id;
-    sprintf(buf, "<%ld.%ld.%ld>", pid_node(obj), pid_number(obj), pid_serial(obj));
+    sprintf(buf,
+	    "<%lu.%lu.%lu>",
+	    pid_channel_no(obj),
+	    pid_number(obj),
+	    pid_serial(obj));
     return buf;
 }
 

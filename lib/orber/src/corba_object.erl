@@ -67,8 +67,8 @@ get_interface(Obj) ->
 	%% If all we get is an empty list there are no such
 	%% object registered in the IFR.
 	[] ->
-	    orber:debug_level_print("[~p] corba_object:get_interface(~p); TypeID ~p not found in IFR.", 
-				    [?LINE, Obj, TypeId], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] corba_object:get_interface(~p); TypeID ~p not found in IFR.", 
+		      [?LINE, Obj, TypeId], ?DEBUG_LEVEL),
 	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 	[#ir_InterfaceDef{ir_Internal_ID=Ref}] ->
 	    orber_ifr_interfacedef:describe_interface({ir_InterfaceDef, Ref})
@@ -80,7 +80,7 @@ is_nil(Object) when record(Object, 'IOP_IOR') ->
 is_nil({I,T,K,P,O,F}) ->
     iop_ior:check_nil({I,T,K,P,O,F});
 is_nil(Obj) ->
-    orber:debug_level_print("[~p] corba_object:is_nil(~p); Invalid object reference.", 
+    orber:dbg("[~p] corba_object:is_nil(~p); Invalid object reference.", 
 			    [?LINE, Obj], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
 
@@ -102,13 +102,13 @@ get_policy(Obj, PolicyType) when integer(PolicyType) ->
 	{'internal_registered', _, _, _, _} ->
 	    orber_policy_server:get_policy(Obj, PolicyType);
 	_ ->
-	    orber:debug_level_print("[~p] corba_object:get_policy(~p); Invalid object reference.", 
-				    [?LINE, Obj], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] corba_object:get_policy(~p); Invalid object reference.", 
+		      [?LINE, Obj], ?DEBUG_LEVEL),
 	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
     end;
 get_policy(_, PT) ->
-    orber:debug_level_print("[~p] corba_object:get_policy(~p); Invalid Policy.", 
-			    [?LINE, PT], ?DEBUG_LEVEL),
+    orber:dbg("[~p] corba_object:get_policy(~p); Invalid Policy.", 
+	      [?LINE, PT], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
     
 
@@ -131,8 +131,8 @@ is_a(Obj, Logical_type_id) ->
 			%% If all we get is an empty list there are no such
 			%% object registered in the IFR.
 			[] ->
-			    orber:debug_level_print("[~p] corba_object:is_a(~p); TypeID ~p not found in IFR.", 
-						    [?LINE, Obj, Logical_type_id], ?DEBUG_LEVEL),
+			    orber:dbg("[~p] corba_object:is_a(~p); TypeID ~p not found in IFR.", 
+				      [?LINE, Obj, Logical_type_id], ?DEBUG_LEVEL),
 			    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 			[#ir_InterfaceDef{ir_Internal_ID=Ref}] ->
 			    orber_ifr_interfacedef:is_a({ir_InterfaceDef,Ref}, 
@@ -140,8 +140,8 @@ is_a(Obj, Logical_type_id) ->
 		    end
 	    end;
 	_ ->
-	    orber:debug_level_print("[~p] corba_object:is_a(~p, ~p); Invalid object reference.", 
-				    [?LINE, Obj, Logical_type_id], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] corba_object:is_a(~p, ~p); Invalid object reference.", 
+		      [?LINE, Obj, Logical_type_id], ?DEBUG_LEVEL),
 	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
     end.
 
@@ -164,9 +164,9 @@ existent_helper(Obj, Op) ->
 		{'EXCEPTION', X} ->
 		    corba:raise(X);
 		{'EXIT', R} ->
-		    orber:debug_level_print("[~p] corba_object:non_existent(~p); exit(~p).", 
-					    [?LINE, Obj], ?DEBUG_LEVEL),
-		    exit(R);
+		    orber:dbg("[~p] corba_object:non_existent(~p); exit(~p).", 
+			      [?LINE, Obj], ?DEBUG_LEVEL),
+		    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO});
 		_ ->
 		    false
 	    end;

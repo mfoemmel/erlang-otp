@@ -15,37 +15,95 @@
 %% 
 %%     $Id$
 %%
-%% Purpose : Basically Core Erlang as records.
+%% Purpose : Core Erlang syntax trees as records.
 
 %% It would be nice to incorporate some generic functions as well but
 %% this could make including this file difficult.
-%% N.B. the annotation field is ALWAYS the first field!
 
--record(c_int, {anno=[],val}).
--record(c_float, {anno=[],val}).
--record(c_atom, {anno=[],val}).
--record(c_char, {anno=[],val}).
--record(c_string, {anno=[],val}).
+%% Note: the annotation list is *always* the first record field.
+%% Thus it is possible to define the macros:
+%% -define(get_ann(X), element(2, X)).
+%% -define(set_ann(X, Y), setelement(2, X, Y)).
+
+-record(c_int, {anno=[], val}).		% val :: integer()
+
+-record(c_float, {anno=[], val}).	% val :: float()
+
+-record(c_atom, {anno=[], val}).	% val :: atom()
+
+-record(c_char, {anno=[], val}).	% val :: char()
+
+-record(c_string, {anno=[], val}).	% val :: string()
+
 -record(c_nil, {anno=[]}).
--record(c_binary, {anno=[],segs}).
--record(c_bin_seg, {anno=[],val,size,unit,type,flags}).
--record(c_cons, {anno=[],hd,tl}).
--record(c_tuple, {anno=[],es}).
--record(c_var, {anno=[],name}).
--record(c_fname, {anno=[],id,arity}).
--record(c_values, {anno=[],es}).	%Only used for multiple values
--record(c_fun, {anno=[],vars,body}).
--record(c_seq, {anno=[],arg,body}).
--record(c_let, {anno=[],vars,arg,body}).
--record(c_letrec, {anno=[],defs,body}).
--record(c_def, {anno=[],name,val}).
--record(c_case, {anno=[],arg,clauses}).
--record(c_clause, {anno=[],pats,guard,body}).
--record(c_alias, {anno=[],var,pat}).
--record(c_receive, {anno=[],clauses,timeout,action}).
--record(c_apply, {anno=[],op,args}).
--record(c_call, {anno=[],module,name,args}).
--record(c_primop, {anno=[],name,args}).
--record(c_try, {anno=[],expr,vars,body}).
--record(c_catch, {anno=[],body}).
--record(c_module, {anno=[],name,exports,attrs,defs}).
+
+-record(c_binary, {anno=[], segs}).	% segs :: [#ce_bin_seg{}]
+
+-record(c_bin_seg, {anno=[],val,	% val :: Tree,
+		    size,		% size :: Tree,
+		    unit,		% unit :: integer(),
+		    type,		% type :: atom(),
+		    flags}).		% flags :: [atom()],
+
+-record(c_cons, {anno=[], hd,		% hd :: Tree,
+		 tl}).			% tl :: Tree
+
+-record(c_tuple, {anno=[], es}).	% es :: [Tree]
+
+-record(c_var, {anno=[], name}).	% name :: integer() | atom()
+
+-record(c_fname, {anno=[], id,		% id :: atom(),
+		  arity}).		% arity :: integer()
+
+-record(c_values, {anno=[], es}).	% es :: [Tree]
+
+-record(c_fun, {anno=[], vars,		% vars :: [Tree],
+		body}).			% body :: Tree
+
+-record(c_seq, {anno=[], arg,		% arg :: Tree,
+		body}).			% body :: Tree
+
+-record(c_let, {anno=[], vars,		% vars :: [Tree],
+		arg,			% arg :: Tree,
+		body}).			% body :: Tree
+
+-record(c_letrec, {anno=[], defs,	% defs :: [#ce_def{}],
+		   body}).		% body :: Tree
+
+-record(c_def, {anno=[], name,		% name :: Tree,
+		val}).			% val :: Tree,
+
+-record(c_case, {anno=[], arg,		% arg :: Tree,
+		 clauses}).		% clauses :: [Tree]
+
+-record(c_clause, {anno=[], pats,	% pats :: [Tree],
+		   guard,		% guard :: Tree,
+		   body}).		% body :: Tree
+
+-record(c_alias, {anno=[], var,		% var :: Tree,
+		  pat}).		% pat :: Tree
+
+-record(c_receive, {anno=[], clauses,	% clauses :: [Tree],
+		    timeout,		% timeout :: Tree,
+		    action}).		% action :: Tree
+
+-record(c_apply, {anno=[], op,		% op :: Tree,
+		  args}).		% args :: [Tree]
+
+-record(c_call, {anno=[], module,	% module :: Tree,
+		 name,			% name :: Tree,
+		 args}).		% args :: [Tree]
+
+-record(c_primop, {anno=[], name,	% name :: Tree,
+		   args}).		% args :: [Tree]
+
+-record(c_try, {anno=[], expr,		% expr :: Tree,
+		vars,			% vars :: [Tree],
+		body}).			% body :: Tree
+
+-record(c_catch, {anno=[], body}).	% body :: Tree
+
+-record(c_module, {anno=[], name,	% name :: Tree,
+		   exports,		% exports :: [Tree],
+		   attrs,		% attrs :: [#ce_def{}],
+		   defs}).		% defs :: [#ce_def{}]

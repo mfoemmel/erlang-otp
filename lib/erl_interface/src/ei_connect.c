@@ -25,7 +25,6 @@
 
 #include <stdlib.h>
 #include <sys/types.h>
-#include <stdarg.h>
 #include <fcntl.h>
 
 #ifdef __WIN32__
@@ -1363,6 +1362,17 @@ recv_challenge (int fd, unsigned *challenge,
     *version = get16be(s);
     *flags = get32be(s);
     *challenge = get32be(s);
+
+    if (!(*flags & DFLAG_EXTENDED_REFERENCES)) {
+#ifdef DEBUG_DIST
+	if (ei_trace_distribution > 2) {
+	    fprintf(stderr,"<- RECV_CHALLENGE peer cannot handle extended references\n");
+	}
+#endif
+	erl_errno = EIO;
+	goto error;
+    }
+
     if (getpeername(fd, (struct sockaddr *) &sin, &sin_len) < 0) {
 #ifdef DEBUG_DIST
 	if (ei_trace_distribution > 2) {
@@ -1643,6 +1653,17 @@ recv_name (int fd,
     }
     *version = get16be(s);
     *flags = get32be(s);
+
+    if (!(*flags & DFLAG_EXTENDED_REFERENCES)) {
+#ifdef DEBUG_DIST
+	if (ei_trace_distribution > 2) {
+	    fprintf(stderr,"<- RECV_CHALLENGE peer cannot handle extended references\n");
+	}
+#endif
+	erl_errno = EIO;
+	goto error;
+    }
+
     if (getpeername(fd, (struct sockaddr *) &sin, &sin_len) < 0) {
 #ifdef DEBUG_DIST
 	if (ei_trace_distribution > 2) {

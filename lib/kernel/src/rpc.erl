@@ -305,7 +305,7 @@ send_nodes([], _Name,  _Req, Monitors) ->
 start_monitor(Node, Name) ->
     if node() == nonode@nohost, Node /= nonode@nohost ->
 	    Ref = make_ref(),
-	    self() ! {'DOWN', Ref, process, Name, noconnection},
+	    self() ! {'DOWN', Ref, process, {Name, Node}, noconnection},
 	    {Node, Ref};
        true ->
 	    case catch erlang:monitor(process, {Name, Node}) of

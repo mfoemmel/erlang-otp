@@ -70,10 +70,10 @@ encode_message(Config, MegaMsg, AsnMod, io_list) ->
 	{error, Reason} ->
 	    {error, Reason} 
     end;
-encode_message(Config, MegaMsg, AsnMod, Type)
+encode_message(Config, MegaMsg, _AsnMod, _Type)
   when record(MegaMsg, 'MegacoMessage')  ->
     {error, {bad_encoding_config, Config}};
-encode_message(Config, MegaMsg, AsnMod, Type) ->
+encode_message(_Config, MegaMsg, _AsnMod, _Type) ->
     {error, {no_megaco_message, MegaMsg}}.
 	 
 %%----------------------------------------------------------------------
@@ -108,8 +108,8 @@ decode_message(Config, Bin, AsnMod, io_list)
 	{error, Reason} ->
 	    {error, Reason}
     end;
-decode_message(Config, Bin, AsnMod, Type) when binary(Bin) ->
+decode_message(Config, Bin, _AsnMod, _Type) when binary(Bin) ->
     {error, {bad_encoding_config, Config}};
-decode_message(Config, BadBin, AsnMod, Type) ->
+decode_message(_Config, _BadBin, _AsnMod, _Type) ->
     {error, no_binary}.
     

@@ -1,64 +1,6 @@
 {"%VSN%",
- [{"1.0.3", 
-   [
-    {load_module, megaco,           soft_purge, soft_purge, []},
-    {load_module, megaco_text_scanner,  soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser,  soft_purge, soft_purge, 
-     [megaco_text_scanner]},
-    {load_module, megaco_messenger, soft_purge, soft_purge, 
-     [megaco_text_scanner, megaco_text_parser]}
-   ]
-  },
-  {"1.0.2", 
-   [
-    {load_module, megaco,           soft_purge, soft_purge, [et_selector]},
-    {load_module, et_selector,      soft_purge, soft_purge, []},
-    {load_module, megaco_filter,    soft_purge, soft_purge, [et_selector]},
-    {load_module, megaco_text_scanner, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser,  soft_purge, soft_purge, 
-     [megaco_text_scanner, megaco_flex_scanner_handler, megaco_filter]},
-    {load_module, megaco_messenger,    soft_purge, soft_purge, 
-     [megaco_text_scanner, megaco_text_parser]},
-    {load_module, megaco_user,         soft_purge, soft_purge, 
-     [megaco_messenger]},
+ [],
 
-    {update, megaco_config, {advanced, upgrade_from_pre_1_0_3}, 
-     soft_purge, soft_purge, []},
-    {update, megaco_flex_scanner_handler, {advanced, flex_scanner}, 
-     soft_purge, soft_purge, []}
-   ]
-  }
- ],
-
- [{"1.0.3", 
-   [
-    {load_module, megaco,           soft_purge, soft_purge, []},
-    {load_module, megaco_text_scanner,  soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser,  soft_purge, soft_purge, 
-     [megaco_text_scanner]},
-    {load_module, megaco_messenger, soft_purge, soft_purge, 
-     [megaco_text_scanner, megaco_text_parser]}
-   ]
-  },
-  {"1.0.2", 
-   [
-    {load_module, et_selector,         soft_purge, soft_purge, []},
-    {load_module, megaco,              soft_purge, soft_purge, [et_selector]},
-    {load_module, megaco_filter,       soft_purge, soft_purge, []},
-    {load_module, megaco_text_scanner, soft_purge, soft_purge, []},
-    {load_module, megaco_text_parser,  soft_purge, soft_purge, 
-     [megaco_text_scanner, megaco_flex_scanner_handler, megaco_filter]},
-    {load_module, megaco_messenger,    soft_purge, soft_purge, 
-     [megaco_text_scanner, megaco_text_parser]},
-    {load_module, megaco_user,         soft_purge, soft_purge, 
-     [megaco_messenger]},
-
-    {update, megaco_config, {advanced, downgrade_to_pre_1_0_3}, 
-     soft_purge, soft_purge, []},
-    {update, megaco_flex_scanner_handler, {advanced, flex_scanner}, 
-     soft_purge, soft_purge, []}
-   ]
-  }
- ]
+ []
 }.
 

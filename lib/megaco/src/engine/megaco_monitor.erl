@@ -144,7 +144,7 @@ init([Parent]) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 
-handle_call({apply_at_exit, M, F, A, Pid}, From, S) ->
+handle_call({apply_at_exit, M, F, A, Pid}, _From, S) ->
     Ref = erlang:monitor(process, Pid),
     AAE = #apply_at_exit{ref       = Ref,
 			 pid       = Pid,
@@ -183,7 +183,7 @@ handle_info({cancel_apply_at_exit, Ref}, S) ->
 	undefined ->
 	    %% Reply = {error, {already_cancelled, {apply_at_exit, Ref}}},
 	    {noreply, S};
-	AAE ->
+	_AAE ->
 	    erlang:demonitor(Ref),
 	    {noreply, S}
     end;
@@ -192,7 +192,7 @@ handle_info({apply_after, M, F, A}, S) ->
     handle_apply(M, F, A, apply_after),
     {noreply, S};
 
-handle_info({'DOWN', Ref, process, Pid, Reason}, S) ->
+handle_info({'DOWN', Ref, process, _Pid, Reason}, S) ->
     case erase({?MODULE, Ref}) of
 	undefined ->
 	    {noreply, S};
@@ -219,7 +219,7 @@ handle_info(Info, S) ->
 %% Purpose: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%----------------------------------------------------------------------
@@ -227,12 +227,12 @@ terminate(Reason, State) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change(OldVsn, S, Extra) ->
+code_change(_OldVsn, S, _Extra) ->
     {ok, S}.
 
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
 
-handle_apply(M, F, A, ErrorTag) ->
+handle_apply(M, F, A, _ErrorTag) ->
     spawn(M, F, A).

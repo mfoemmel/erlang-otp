@@ -194,6 +194,7 @@
 -define(SEG2SEGARRPART(S), ((S) bsr ?SEGPARTSZ_LOG2)).
 
 -define(PHASH, 0).
+-define(PHASH2, 1).
 
 %% BIG is used for hashing. BIG must be greater than the maximum
 %% number of slots, currently 32 M (MAXSLOTS).
@@ -231,7 +232,15 @@
 %% BUMP is used when repairing files.
 -define(BUMP, 16).
 
--define(HASH_PARMS, '$hash').
+%%% '$hash' is the value of HASH_PARMS in R8, '$hash2' is the value in R9.
+%%%
+%%% The fields of the ?HASH_PARMS records are the same, but having
+%%% different tags makes bchunk_init on R8 nodes reject data from R9
+%%% nodes, and vice versa. This is overkill, and due to an oversight.
+%%% What should have been done in R8 was to check the hash method, not
+%%% only the type of the table and the key position. R8 nodes cannot
+%%% handle the phash2 method.
+-define(HASH_PARMS, '$hash2').
 
 -define(BCHUNK_FORMAT_VERSION, 1).
 
@@ -271,18 +280,21 @@ prep_table_copy(Fd, Tab, Fname, Type, Kp, Ram, CacheSz, Auto, Parms) ->
 		     bchunk_format_version = ?BCHUNK_FORMAT_VERSION,
 		     n = N, m = M, next = Next,
 		     min = Min, max = Max,
+		     hash_method = HashMethodCode,
 		     no_objects = NoObjects, no_keys = NoKeys, 
 		     no_colls = _NoColls} 
 	        when integer(N), integer(M), integer(Next), 
 		     integer(Min), integer(Max), 
 		     integer(NoObjects), integer(NoKeys),
 		     NoObjects >= NoKeys ->
+            HashMethod = code_to_hash_method(HashMethodCode),
 	    case hash_invars(N, M, Next, Min, Max) of
 		false ->
 		    throw(badarg);
 		true ->
-		    init_file(Fd, Tab, Fname, Type, Kp, Min, Max, Ram, CacheSz,
-			      Auto, false, M, N, Next, NoObjects, NoKeys)
+		    init_file(Fd, Tab, Fname, Type, Kp, Min, Max, Ram, 
+			      CacheSz, Auto, false, M, N, Next, HashMethod,
+			      NoObjects, NoKeys)
 	    end;
 	_ ->
 	    throw(badarg)
@@ -303,10 +315,10 @@ initiate_file(Fd, Tab, Fname, Type, Kp, MinSlots0, MaxSlots0,
     M = Next = MinSlots,
     N = 0,
     init_file(Fd, Tab, Fname, Type, Kp, MinSlots, MaxSlots, Ram, CacheSz,
-	      Auto, DoInitSegments, M, N, Next, 0, 0).
+	      Auto, DoInitSegments, M, N, Next, phash2, 0, 0).
 
 init_file(Fd, Tab, Fname, Type, Kp, MinSlots, MaxSlots, Ram, CacheSz,
-	  Auto, DoInitSegments, M, N, Next, NoObjects, NoKeys) ->
+	  Auto, DoInitSegments, M, N, Next, HashMethod, NoObjects, NoKeys) ->
     Ftab = dets_utils:init_alloc(?BASE),
 
     Head0 = #head{
@@ -323,7 +335,7 @@ init_file(Fd, Tab, Fname, Type, Kp, MinSlots, MaxSlots, Ram, CacheSz,
       freelists = Ftab,
       no_collections = orddict:new(),
       auto_save = Auto,
-      hash_bif = phash,
+      hash_bif = HashMethod,
       keypos = Kp,
       min_no_slots = MinSlots,
       max_no_slots = MaxSlots,
@@ -366,8 +378,9 @@ init_file(Fd, Tab, Fname, Type, Kp, MinSlots, MaxSlots, Ram, CacheSz,
     true = hash_invars(Head),
     {ok, Head}.
 
-slots2(NoSlots) ->
-    segs2slots(no_segs(NoSlots)).
+%% Returns a power of two not less than 256.
+slots2(NoSlots) when NoSlots >= 256 ->
+    ?POW(dets_utils:log2(NoSlots)).
 
 init_parts(Head, PartNo, NoParts, Zero, Ws) when PartNo < NoParts ->
     PartPos = ?SEGARRADDR(PartNo),
@@ -546,9 +559,6 @@ no_parts(NoSlots) ->
 
 no_segs(NoSlots) ->
     ((NoSlots - 1)  div ?SEGSZP) + 1.
-
-segs2slots(NoSegs) ->
-    NoSegs * ?SEGSZP.
 
 %%%
 %%% Repair, conversion and initialization of a dets file.
@@ -883,16 +893,22 @@ bchunk_init(Head, InitFun) ->
     case catch {Ref, InitFun(read)} of
 	{Ref, end_of_input} ->
 	    {error, {init_fun, end_of_input}};
+	{Ref, {[], NInitFun}} when function(NInitFun) ->
+	    bchunk_init(Head, NInitFun);
 	{Ref, {[ParmsBin | L], NInitFun}} 
 	                when list(L), function(NInitFun) ->
 	    #head{fptr = Fd, type = Type, keypos = Kp, 
 		  auto_save = Auto, cache = Cache, 
 		  filename = Fname, ram_file = Ram,
-		  name = Tab} = Head,
+		  name = Tab, hash_bif = HashBif} = Head,
+	    HashMethod = hash_method_to_code(HashBif),
 	    case catch binary_to_term(ParmsBin) of
 		Parms when record(Parms, ?HASH_PARMS),
 			   Parms#?HASH_PARMS.type == Type,
-			   Parms#?HASH_PARMS.keypos == Kp ->
+			   Parms#?HASH_PARMS.keypos == Kp,
+			   Parms#?HASH_PARMS.hash_method == HashMethod,
+			   Parms#?HASH_PARMS.bchunk_format_version ==
+			         ?BCHUNK_FORMAT_VERSION ->
 		    #?HASH_PARMS{hash_method = HashMethod, 
 				 no_objects = NoObjects, 
 				 no_keys = NoKeys, 
@@ -902,12 +918,10 @@ bchunk_init(Head, InitFun) ->
 			prep_table_copy(Fd, Tab, Fname, Type, 
 					Kp, Ram, CacheSz, 
 					Auto, Parms),
-		    Head2 = Head1#head{hash_bif = 
-				       code_to_hash_method(HashMethod)},
 		    SizeT = ets:new(dets_init, []),
 		    {NewHead, Bases, SegAddr, SegEnd} = 
 			prepare_file_init(NoObjects, NoKeys, 
-					  NoObjsPerSize, SizeT, Head2),
+					  NoObjsPerSize, SizeT, Head1),
 		    ECache = ?VEXT(size(Bases), ?VEMPTY, [0 | []]),
 		    Input = 
 			fun(close) ->
@@ -1623,8 +1637,18 @@ slot_objs(H, Slot) ->
     Objects.
 
 %% Inlined.
+h(I, phash2) -> erlang:phash2(I); % -> [0..2^27-1]
 h(I, phash) -> erlang:phash(I, ?BIG) - 1.
 
+db_hash(Key, Head) when Head#head.hash_bif == phash2 ->
+    H = erlang:phash2(Key),
+    Hash = ?REM2(H, Head#head.m),
+    if
+	Hash < Head#head.n ->
+	    ?REM2(H, Head#head.m2); % H rem (2 * m)
+	true ->
+	    Hash
+    end;
 db_hash(Key, Head) ->
     H = h(Key, Head#head.hash_bif),
     Hash = H rem Head#head.m,
@@ -1635,8 +1659,10 @@ db_hash(Key, Head) ->
 	    Hash
     end.
 
+hash_method_to_code(phash2) -> ?PHASH2;
 hash_method_to_code(phash) -> ?PHASH.
 
+code_to_hash_method(?PHASH2) -> phash2;
 code_to_hash_method(?PHASH) -> phash;
 code_to_hash_method(_) -> undefined.
 
@@ -1731,8 +1757,10 @@ re_hash_slots([FB | Bins], [E | L], Head, Z, BinFS, BinTS, WsB) ->
 	{[], 0, _ML, _MSz} -> %% Optimization.
 	    re_hash_slots(Bins, L, Head, Z, [Z | BinFS], [B1 | BinTS], WsB);
 	{KL, KSz, ML, MSz} ->
-	    {Head1, FS1, Ws1} = updated(Head, P1, Sz1, KSz, Pos1, KL, true),
-	    {NewHead, TS2, Ws2} = updated(Head1, 0, 0, MSz, Pos2, ML, true),
+	    {Head1, FS1, Ws1} = 
+		updated(Head, P1, Sz1, KSz, Pos1, KL, true, foo, bar),
+	    {NewHead, TS2, Ws2} = 
+		updated(Head1, 0, 0, MSz, Pos2, ML, true, foo, bar),
 	    NewBinFS = case FS1 of
 			   [{Pos1,Bin1}] -> [Bin1 | BinFS];
 			   [] -> BinFS
@@ -1966,10 +1994,11 @@ eval_buckets([], [], Head, LU, Ws, NoObjs, NoKeys) ->
 eval_bucket_keys(WLs, SlotPos, Pos, OldSize, KeyObjs, Head, Ws, LU) ->
     {NLU, Bins, BSize, No, KNo, Ch} = 
          eval_slot(WLs, KeyObjs, Head#head.type, LU, [], 0, 0, 0, false),
-    {NewHead, W1, W2} = updated(Head, Pos, OldSize, BSize, SlotPos, Bins, Ch),
+    {NewHead, W1, W2} = 
+	updated(Head, Pos, OldSize, BSize, SlotPos, Bins, Ch, No, KNo),
     {NewHead, NLU, W2++W1++Ws, No, KNo}.
 
-updated(Head, Pos, OldSize, BSize, SlotPos, Bins, Ch) ->
+updated(Head, Pos, OldSize, BSize, SlotPos, Bins, Ch, DeltaNoOs, DeltaNoKs) ->
     BinsSize = BSize + ?OHDSZ,
     if 
 	Pos == 0, BSize == 0 ->
@@ -1993,16 +2022,26 @@ updated(Head, Pos, OldSize, BSize, SlotPos, Bins, Ch) ->
 	Pos =/= 0, BSize > 0 ->
 	    %% Doubtful. The scan function has to be careful since
 	    %% partly scanned objects may be overwritten.
-	    Overwrite = if
-			    %% Make sure that if the table is fixed,
-			    %% nothing is overwritten. This is used by
-			    %% bchunk, which assumes that it traverses
-			    %% exactly those objects present when
-			    %% chunking started (the table must have
-			    %% been fixed).
-			    Head#head.fixed =/= false -> false;
-			    OldSize == BinsSize -> same;
-			    true -> sz2pos(OldSize) == sz2pos(BinsSize)
+	    Overwrite0 = if
+			     OldSize == BinsSize -> same;
+			     true -> sz2pos(OldSize) == sz2pos(BinsSize)
+			 end,
+            Overwrite = if 
+			    Head#head.fixed =/= false ->
+				%% Make sure that if the table is
+				%% fixed, nothing is overwritten,
+				%% unless the number of objects and
+				%% the number of keys remain the same.
+				%% This is used by bchunk, which
+				%% assumes that it traverses exactly
+				%% the same number of objects and keys
+				%% (and collections) as were present
+				%% when chunking started (the table
+				%% must have been fixed).
+				(Overwrite0 =/= false) and 
+				(DeltaNoOs == 0) and (DeltaNoKs == 0);
+			    true ->
+				Overwrite0
 			end,
 	    if 
 		Overwrite == same ->

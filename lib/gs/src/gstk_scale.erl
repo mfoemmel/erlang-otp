@@ -195,17 +195,16 @@ read_option(Option,Gstkid,TkW,DB,_) ->
 %% Config bind
 %%
 cbind(DB, Gstkid, Etype, On) ->
-    TkW = Gstkid#gstkid.widget,
     Cmd = case On of
 	      {true, Edata} ->
 		  Eref = gstk_db:insert_event(DB, Gstkid, Etype, Edata),
-		  [" -com {erlsend ", Eref, "}"];
+		  [" -command {erlsend ", Eref, "}"];
 	      true ->
 		  Eref = gstk_db:insert_event(DB, Gstkid, Etype, ""),
-		  [" -com {erlsend ", Eref, "}"];
-	      Other ->
-		  Eref = gstk_db:delete_event(DB, Gstkid, Etype),
-		  " -com {}"
+		  [" -command {erlsend ", Eref, "}"];
+	      _Other ->
+		  gstk_db:delete_event(DB, Gstkid, Etype),
+		  " -command {}"
 	  end,
     {s, Cmd}.
 

@@ -48,7 +48,7 @@ new(No_temporaries, Target) ->
 % Returns: 
 %   An updated degree data structure.
 %%%----------------------------------------------------------------------
-inc(Node, Degree) when integer(Node) ->
+inc(Node, Degree) when is_integer(Node) ->
     case hipe_vectors_wrapper:get(Degree, Node) of
 	inf ->
 	    Degree;
@@ -69,7 +69,7 @@ inc(Node, Degree) when integer(Node) ->
 % Returns: 
 %   An updated degree data structure.
 %%%----------------------------------------------------------------------
-dec(Node, Degree) when integer(Node) ->
+dec(Node, Degree) when is_integer(Node) ->
     case hipe_vectors_wrapper:get(Degree, Node) of
 	inf ->
 	    Degree;
@@ -116,7 +116,7 @@ is_simple(Node, K, Degree) ->
 % Returns: 
 %   The degree of Node
 %%%----------------------------------------------------------------------
-degree(Node, Degree) when integer(Node) ->
+degree(Node, Degree) when is_integer(Node) ->
     hipe_vectors_wrapper:get(Degree, Node).
 
 

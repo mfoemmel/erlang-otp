@@ -1,0 +1,71 @@
+#
+# Copyright (C) 1997, Ericsson Telecommunications
+# Author: Patrik Winroth
+#
+# This sed program file is intended to be used when creating Makefiles
+# for vxworks from the generic Makefile.in that is found in a number
+# of directories (see configure.vxworks).
+#
+# This is the general part that is common for all architectures.
+#
+
+s|@erts_rootdir@|/clearcase/otp/erts|
+
+s|@LIBOBJS@|$(OBJDIR)/elib_malloc.o|
+s|@DLOAD_LIB@||
+s|@LDFLAGS@|-r|
+# FIXME: A bit strange to clear out remaining DED_*
+s|@DED_LDFLAGS@||
+s|@DED_CFLAGS@||
+s|@GCCLIB@|libgcc.a|
+s|@DEFS@||
+s|@DEXPORT@||
+s|@DCFLAGS@||
+s|@THR_DEFS@||
+s|@THR_LIBS@||
+s|@cc_root@|/clearcase/otp/|
+# Define OSE even though cross-compiling. 
+s|@HCFLAGS@|-DOSE|
+s|@HCLIBS@||
+
+# Conditional inclusion of applications
+s|@HIPE_APP@||
+s|@SSL_APP@|ssl|
+s|@CRYPTO_APP@|crypto|
+
+# The target tools prefix, prepended to all cc,ld,as etc commands
+s|@VXTTPREFIX@|GCC_EXEC_PREFIX=@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/ @WIND_BASE@/host/@HOST_TYPE@/bin/|
+
+# Install programs etc
+s|@PERL@|perl|
+s|@INSTALL@|/usr/ucb/install -c|
+s|@INSTALL_PROGRAM@|${INSTALL}|
+s|@INSTALL_SCRIPT@|${INSTALL}|
+s|@INSTALL_DATA@|${INSTALL} -m 644|
+s|@INSTALL_DIR@|$(INSTALL) -d|
+s|@ERLANG_OSTYPE@|ose|
+s|@os_mon_programs@||
+s|@erlexec@|erl.exec|
+s|@EMU_LIBOBJS@||
+
+# General CFLAGS
+# use elib_malloc
+s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R -DENABLE_ELIB_MALLOC -DELIB_HEAP_USER -DELIB_SORTED_BLOCKS -DWORDS_BIGENDIAN|
+# don't use elib_malloc
+#s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R -DWORDS_BIGENDIAN|
+s|@WFLAGS@||
+s|@HIPE_ENABLED@||
+s|@DIAB_OPTS@|-Xdebug-struct-all -Xforce-declarations -Xforce-prototypes -Xsmall-const=0 -Xstrings-in-text -Xsmall-data=0|
+s|@DIAB_INCLS@|-I/ldisk/ose/4.4/powerpc/include/diab|
+s|@OSE_INCLS@|-I/ldisk/ose/4.4/powerpc/std-include -I/ldisk/ose/4.4/powerpc/include -I/ldisk/ose/4.4/powerpc/conf -I/ldisk/ose/4.4/powerpc/krn-750/include -I/ldisk/ose/4.4/powerpc/bsp-powercore680/include -I/ldisk/ose/4.4/examples/common/include|
+s|@OSE_DEFS@|-DPOWERPC -DOSE_DELTA -DBIG_ENDIAN -D_OSE_ -D_OSE_PPC750_|
+
+# What is this anyway?
+# Disable it and see what breaks.
+#s|@ded_soname@||
+
+# Only variable substituted directly
+s|$(LDFLAGS)|-r|
+# XXX What is EFFLAGS? Not used in the emulator Makefile.in anyway.
+s|$(EFLAGS)|-DENABLE_ELIB_MALLOC -DELIB_HEAP_USER -DELIB_SORTED_BLOCKS|
+

@@ -25,6 +25,10 @@
 #define HAVE_CONFLICTING_FREAD_DECLARATION
 #endif
 
+#if(defined(_OSE_) && defined(POWERPC))
+#define HAVE_CONFLICTING_FREAD_DECLARATION
+#endif
+
 #include "zutil.h"
 #include "gzio.h"
 
@@ -151,10 +155,14 @@ local gzFile gz_open (path, mode, fd)
             return s->destroy(s), (gzFile)Z_NULL;
         }
     } else {
+#if (defined(_OSE_SFK_) && defined(fread))
+	s->reader = zzfread;
+#else
 #ifndef HAVE_CONFLICTING_FREAD_DECLARATION
 	extern int fread();
 #endif
 	s->reader = fread;
+#endif
         err = inflateInit2(&(s->stream), -MAX_WBITS);
         s->stream.next_in  = s->inbuf = (Byte*)ALLOC(Z_BUFSIZE);
 

@@ -2,7 +2,7 @@
 %%
 %%			COMMON SUBEXPRESSIONS
 %%
-%% Get rid of pesky CSE's in Sparc code.
+%% Get rid of pesky CSE's in RTL code.
 %%
 %% - works per basic block
 %% - probably slow
@@ -13,8 +13,7 @@
 -module(hipe_rtl_cse).
 -export([block/1,blocks/1,cfg/1,ebb/1,fix/1]).
 
-% Performed on RTL code
-
+%% Performed on RTL code
 
 % test(CFG) ->
 %     io:format('==================== LOCAL CSE ====================~n',[]),
@@ -58,7 +57,7 @@ block(Blk) ->
 
 ebb(CFG) ->
     EBBs = hipe_rtl_ebb:cfg(CFG),
-    NewCFG = cse_ebbs(EBBs,CFG,empty_cache()).
+    cse_ebbs(EBBs,CFG,empty_cache()).
 
 % cse_ebb(EBB,CFG) ->
 %    cse_ebb(EBB,CFG,empty_cache()).
@@ -76,7 +75,7 @@ cse_ebb(EBB,CFG,Cache) ->
 	    cse_ebbs(SuccEBBs,NewCFG,NewCache)
     end.
 
-cse_ebbs([],CFG,Cache) -> CFG;
+cse_ebbs([],CFG,_Cache) -> CFG;
 cse_ebbs([EBB|EBBs],CFG,Cache) ->
     cse_ebbs(EBBs, cse_ebb(EBB,CFG,Cache), Cache).
 
@@ -161,13 +160,6 @@ i(Instr) ->
 		    false ->
 			{barrier,none,none}
 		end;
-	    jsr -> 
-		{barrier,none,none};
-	    %% What is esr??
-	    esr -> 
-		{barrier,none,none};
-	    jmp_link ->
-		{barrier,none,none};
 	    %% The following two
 	    enter -> 
 		{barrier,none,none};
@@ -182,7 +174,7 @@ i(Instr) ->
 
 % *** UNFINISHED ***
 
-pure_bif(X) when atom(X) -> true;
+pure_bif(X) when is_atom(X) -> true;
 pure_bif(_) -> false.
 
 move(Xs,Ys,Instr) ->
@@ -200,7 +192,7 @@ move_list([X|Xs],[Y|Ys]) ->
 
 empty_cache() -> [].
 
-scan_cache([],E) -> not_found;
+scan_cache([],_) -> not_found;
 scan_cache([{E,X,_}|_],E) -> {found,X};
 scan_cache([_|Xs],E) -> scan_cache(Xs,E).
 
@@ -249,7 +241,7 @@ fix(CFG) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-analyze_all([],CFG,Succ,In) -> In;
+analyze_all([],_CFG,_Succ,In) -> In;
 analyze_all([L|Ls],CFG,Succ,In) ->
     analyze_block(L,Ls,CFG,Succ,In).
 
@@ -259,7 +251,7 @@ analyze_block(L,Ls,CFG,Succ,In) ->
     { NewLs, NewIn } = prop_succ(hipe_rtl_cfg:succ(Succ,L),Ls,OutCache,In),
     analyze_all(NewLs,CFG,Succ,NewIn).
 
-prop_succ([],Ls,OutCache,In) -> {Ls,In};
+prop_succ([],Ls,_OutCache,In) -> {Ls,In};
 prop_succ([S|Ss],Ls,OutCache,In) ->
     case changed(S,OutCache,In) of
 	{yes,NewIn} ->
@@ -270,7 +262,7 @@ prop_succ([S|Ss],Ls,OutCache,In) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-cse_blks([],CFG,In) ->
+cse_blks([],CFG,_In) ->
     CFG;
 cse_blks([L|Ls],CFG,In) ->
     NewBlk = hipe_bb:mk_bb(cse(hipe_bb:code(hipe_rtl_cfg:bb(CFG,L)),cache_of(L,In))),

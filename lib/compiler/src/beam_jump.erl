@@ -85,7 +85,7 @@
 %%%       the test can be inverted).  Example:
 %%%
 %%%       is_eq L1 {x,1} {x,2}
-%%%       jmp L2
+%%%       jump L2
 %%%       L1:
 %%%
 %%%       will be changed to
@@ -109,15 +109,15 @@
 	     labels				% Set of referenced labels.
 	    }).
 
-module({Mod,Exp,Attr,Fs,Lc}, Opt) ->
+module({Mod,Exp,Attr,Fs,Lc}, _Opt) ->
     {ok,{Mod,Exp,Attr,map(fun function/1, Fs),Lc}}.
 
 function({function,Name,Arity,CLabel,Asm0}) ->
-    [{label,Fc},Fi,{label,Entry}|_] = Asm0,
+    [{label,Fc},_Fi,{label,Entry}|_] = Asm0,
     Lbls = ordsets:list_to_set([Fc,Entry]),
     St0 = #st{fc=Fc,mcode=dict:new(),mlbl=dict:new(),labels=Lbls},
     {Asm1,St} = opt(Asm0, [], St0),
-    Asm = remove_unused_labels(Asm1, St0),
+    Asm = remove_unused_labels(Asm1, St),
     {function,Name,Arity,CLabel,Asm}.
 
 
@@ -134,22 +134,22 @@ opt([{test,Test0,{f,Lnum}=Lbl,Ops0}=I|Is0], Acc, St) ->
 		no ->
 		    opt(Is0, [I|Acc], label_used(Lbl, St))
 	    end;
-	Other ->
+	_Other ->
 	    opt(Is0, [I|Acc], label_used(Lbl, St))
     end;
-opt([{select_val,R,Fail,{list,Vls}}=I|Is], Acc, St) ->
+opt([{select_val,_R,Fail,{list,Vls}}=I|Is], Acc, St) ->
     skip_unreachable(Is, [I|Acc], label_used([Fail|Vls], St));
-opt([{select_tuple_arity,R,Fail,{list,Vls}}=I|Is], Acc, St) ->
+opt([{select_tuple_arity,_R,Fail,{list,Vls}}=I|Is], Acc, St) ->
     skip_unreachable(Is, [I|Acc], label_used([Fail|Vls], St));
-opt([{'catch',R,Lbl}=I|Is], Acc, St) ->
+opt([{'catch',_R,Lbl}=I|Is], Acc, St) ->
     opt(Is, [I|Acc], label_used(Lbl, St));
 opt([{label,L1},{jump,{f,L2}}=I|Is], [Prev|Acc], St0) ->
     St1 = St0#st{mlbl=dict:append(L2, L1, St0#st.mlbl)},
     opt([Prev,I|Is], Acc, label_used({f,L2}, St1));
-opt([{label,L},{case_end,R}=I|Is], [Prev|Acc], St0) ->
+opt([{label,L},{case_end,_R}=I|Is], [Prev|Acc], St0) ->
     St1 = St0#st{mcode=dict:append([I], L, St0#st.mcode)},
     opt([Prev,I|Is], Acc, St1);
-opt([{label,L},{badmatch,R}=I|Is], [Prev|Acc], St0) ->
+opt([{label,L},{badmatch,_R}=I|Is], [Prev|Acc], St0) ->
     St1 = St0#st{mcode=dict:append([I], L, St0#st.mcode)},
     opt([Prev,I|Is], Acc, St1);
 opt([{label,L},if_end=I|Is], [Prev|Acc], St0) ->
@@ -168,33 +168,33 @@ opt([{jump,{f,Lbl}},{label,Lbl}=I|Is], Acc, St) ->
     opt([I|Is], Acc, St);
 opt([{jump,Lbl}=I|Is], Acc, St) ->
     skip_unreachable(Is, [I|Acc], label_used(Lbl, St));
-opt([{loop_rec,Lbl,R}=I|Is], Acc, St) ->
+opt([{loop_rec,Lbl,_R}=I|Is], Acc, St) ->
     opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{bif,Name,Lbl,As,R}=I|Is], Acc, St) ->
+opt([{bif,_Name,Lbl,_As,_R}=I|Is], Acc, St) ->
     opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{bs_put_integer,Lbl,Bits,Unit,Fl,Val}=I|Is], Acc, St) ->
+opt([{bs_put_integer,Lbl,_Bits,_Unit,_Fl,_Val}=I|Is], Acc, St) ->
     opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{bs_put_binary,Lbl,Bits,Unit,Fl,Val}=I|Is], Acc, St) ->
+opt([{bs_put_binary,Lbl,_Bits,_Unit,_Fl,_Val}=I|Is], Acc, St) ->
     opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{bs_put_float,Lbl,Bits,Unit,Fl,Val}=I|Is], Acc, St) ->
+opt([{bs_put_float,Lbl,_Bits,_Unit,_Fl,_Val}=I|Is], Acc, St) ->
     opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{bs_final,Lbl,R}=I|Is], Acc, St) ->
+opt([{bs_final,Lbl,_R}=I|Is], Acc, St) ->
     opt(Is, [I|Acc], label_used(Lbl, St));
 opt([{call_ext,1,{extfunc,erlang,exit,1}}=I|Is], Acc, St) ->
     opt_exit(I, Is, Acc, St);
-opt([{call_ext_last,1,{extfunc,erlang,exit,1},D}=I|Is], Acc, St) ->
+opt([{call_ext_last,1,{extfunc,erlang,exit,1},_D}=I|Is], Acc, St) ->
     opt_exit(I, Is, Acc, St);
 opt([{call_ext_only,1,{extfunc,erlang,exit,1}}=I|Is], Acc, St) ->
     opt_exit(I, Is, Acc, St);
 opt([{call_ext,1,{extfunc,erlang,fault,1}}=I|Is], Acc, St) ->
     opt_exit(I, Is, Acc, St);
-opt([{call_ext_last,1,{extfunc,erlang,fault,1},D}=I|Is], Acc, St) ->
+opt([{call_ext_last,1,{extfunc,erlang,fault,1},_D}=I|Is], Acc, St) ->
     opt_exit(I, Is, Acc, St);
 opt([{call_ext_only,1,{extfunc,erlang,fault,1}}=I|Is], Acc, St) ->
     opt_exit(I, Is, Acc, St);
 opt([{call_ext,1,{extfunc,erlang,fault,2}}=I|Is], Acc, St) ->
     opt_exit(I, Is, Acc, St);
-opt([{call_ext_last,1,{extfunc,erlang,fault,2},D}=I|Is], Acc, St) ->
+opt([{call_ext_last,1,{extfunc,erlang,fault,2},_D}=I|Is], Acc, St) ->
     opt_exit(I, Is, Acc, St);
 opt([{call_ext_only,1,{extfunc,erlang,fault,2}}=I|Is], Acc, St) ->
     opt_exit(I, Is, Acc, St);
@@ -234,7 +234,7 @@ invert_test(_, _) -> no.
 
 opt_exit(Exit, Is, [{block,_},{label,_},{func_info,_,_,_}|_]=Acc, St) ->
     skip_unreachable(Is, [Exit|Acc], St);
-opt_exit(Exit, Is, [{kill,Y}|Acc], St) ->
+opt_exit(Exit, Is, [{kill,_Y}|Acc], St) ->
     opt_exit(Exit, Is, Acc, St);
 opt_exit(Exit, Is, [{block,B},{label,L},Dead|More]=Acc, St0) ->
     case is_unreachable_after(Dead) of
@@ -272,7 +272,7 @@ skip_unreachable([{label,L}|Is], Acc, St) ->
 	true  -> opt([{label,L}|Is], Acc, St);
 	false -> skip_unreachable(Is, Acc, St)
     end;
-skip_unreachable([I|Is], Acc, St) ->
+skip_unreachable([_|Is], Acc, St) ->
     skip_unreachable(Is, Acc, St);
 skip_unreachable([], Acc, St) ->
     opt([], Acc, St).
@@ -283,9 +283,9 @@ label_used({f,0}, St) -> St;
 label_used({f,L}, St) ->St#st{labels=ordsets:add_element(L, St#st.labels)};
 label_used([H|T], St0) -> label_used(T, label_used(H, St0));
 label_used([], St) -> St;
-label_used(Other, St) -> St.
+label_used(_Other, St) -> St.
 
-%% Test is label is used.
+%% Test if label is used.
 
 is_label_used(L, St) ->
     ordsets:is_element(L, St#st.labels).
@@ -293,24 +293,24 @@ is_label_used(L, St) ->
 %% is_unreachable_after(Instruction) -> true|false
 %%  Returns true if code after Instruction is unreachable.
 
-is_unreachable_after({func_info,M,F,A}) -> true;
+is_unreachable_after({func_info,_M,_F,_A}) -> true;
 is_unreachable_after(return) -> true;
 is_unreachable_after(if_end) -> true;
 is_unreachable_after({case_end,_}) -> true;
 is_unreachable_after({badmatch,_}) -> true;
-is_unreachable_after({call_ext_last,Ar,ExtFunc,D}) -> true;
-is_unreachable_after({call_ext_only,Ar,ExtFunc}) -> true;
-is_unreachable_after({call_last,Ar,Lbl,D}) -> true;
-is_unreachable_after({call_only,Ar,Lbl}) -> true;
-is_unreachable_after({jump,Lbl}) -> true;
+is_unreachable_after({call_ext_last,_Ar,_ExtFunc,_D}) -> true;
+is_unreachable_after({call_ext_only,_Ar,_ExtFunc}) -> true;
+is_unreachable_after({call_last,_Ar,_Lbl,_D}) -> true;
+is_unreachable_after({call_only,_Ar,_Lbl}) -> true;
+is_unreachable_after({jump,_Lbl}) -> true;
 is_unreachable_after({call_ext,1,{extfunc,erlang,exit,1}}) -> true;
 is_unreachable_after({call_ext,1,{extfunc,erlang,throw,1}}) -> true;
 is_unreachable_after({call_ext,1,{extfunc,erlang,fault,1}}) -> true;
 is_unreachable_after({call_ext,1,{extfunc,erlang,fault,2}}) -> true;
-is_unreachable_after({select_val,R,Lbl,Cases}) -> true;
-is_unreachable_after({select_tuple_arity,R,Lbl,Cases}) -> true;
+is_unreachable_after({select_val,_R,_Lbl,_Cases}) -> true;
+is_unreachable_after({select_tuple_arity,_R,_Lbl,_Cases}) -> true;
 is_unreachable_after({wait,_}) -> true;
-is_unreachable_after(I) -> false.
+is_unreachable_after(_) -> false.
 
 %%%
 %%% Remove any remaining unused labels.
@@ -330,37 +330,16 @@ remove_unused_labels([{label,L}=I|Is], St, Acc) ->
     end;
 remove_unused_labels([I|Is], St, Acc) ->
     remove_unused_labels(Is, St, [I|Acc]);
-remove_unused_labels([], St, Acc) ->
-    reverse(Acc).
+remove_unused_labels([], _St, Acc) -> reverse(Acc).
 
-lbl([{test,Test0,Lbl,Ops0}|Is], St) ->
-    lbl(Is, label_used(Lbl, St));
-lbl([{select_val,R,Fail,{list,Vls}}|Is], St) ->
-    lbl(Is, label_used([Fail|Vls], St));
-lbl([{select_tuple_arity,R,Fail,{list,Vls}}|Is], St) ->
-    lbl(Is, label_used([Fail|Vls], St));
-lbl([{'catch',R,Lbl}|Is], St) ->
-    lbl(Is, label_used(Lbl, St));
-lbl([{jump,Lbl}|Is], St) ->
-    lbl(Is, label_used(Lbl, St));
-lbl([{loop_rec,Lbl,R}|Is], St) ->
-    lbl(Is, label_used(Lbl, St));
 lbl([{loop_rec_end,Lbl}|Is], St) ->
     lbl(Is, label_used(Lbl, St));
 lbl([{wait,Lbl}|Is], St) ->
     lbl(Is, label_used(Lbl, St));
-lbl([{wait_timeout,Lbl,To}|Is], St) ->
+lbl([{wait_timeout,Lbl,_To}|Is], St) ->
     lbl(Is, label_used(Lbl, St));
-lbl([{bif,Name,Lbl,As,R}|Is], St) ->
+lbl([{bif,_Name,Lbl,_As,_R}|Is], St) ->
     lbl(Is, label_used(Lbl, St));
-lbl([{bs_put_integer,Lbl,Bits,Unit,Fl,Val}|Is], St) ->
-    lbl(Is, label_used(Lbl, St));
-lbl([{bs_put_binary,Lbl,Bits,Unit,Fl,Val}|Is], St) ->
-    lbl(Is, label_used(Lbl, St));
-lbl([{bs_put_float,Lbl,Bits,Unit,Fl,Val}|Is], St) ->
-    lbl(Is, label_used(Lbl, St));
-lbl([{bs_final,Lbl,R}=I|Is], St) ->
-    lbl(Is, label_used(Lbl, St));
-lbl([I|Is], St) ->
+lbl([_|Is], St) ->
     lbl(Is, St);
 lbl([], St) -> St.

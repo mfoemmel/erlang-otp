@@ -1,6 +1,7 @@
-	$Id$
-	hipe_x86_encode USAGE GUIDE
-	Revision 0.3, 2001-03-01
+$Id$
+
+hipe_x86_encode USAGE GUIDE
+Revision 0.4, 2001-10-09
 
 This document describes how to use the hipe_x86_encode.erl module.
 
@@ -26,16 +27,18 @@ instructions to their binary representation, as lists of bytes.
 Instructions and operands have to match actual x86 instructions
 and operands exactly. The mapping from "abstract" instructions
 to correct x86 instructions has to be done before the instructions
-are passed to the x86_encode module. (This mapping should be
-done in the not-yet-implemented hipe_x86_assemble module.)
+are passed to the hipe_x86_encode module. (In HiPE, this mapping
+is done by the hipe_x86_assemble module.)
 
 The hipe_x86_encode module handles arithmetic operations on 32-bit
 integers, data movement of 8, 16, and 32-bit words, and most
-control flow operations. A flat 32-bit address space without
-segments is assumed, which is what Unix and Linux systems use.
+control flow operations. A 32-bit address and operand size process
+mode is assumed, which is what Unix and Linux systems use.
 
-Operations and registers related to segments, operating system
-control, floating-point, MMX, SIMD, or 3dnow! are not implemented.
+Operations and registers related to floating-point, MMX, SIMD, 3dnow!,
+or operating system control are not implemented. Segment registers
+are supported minimally: a 'prefix_fs' pseudo-instruction can be
+used to insert an FS segment register override prefix.
 
 Instruction Syntax
 ------------------

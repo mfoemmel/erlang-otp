@@ -1,6 +1,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2000 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <01/08/05 18:03:49 happi>
+%% Time-stamp: <02/05/13 16:39:08 happi>
 %% ====================================================================
 %%  Filename : 	sparc_memory_regalloc.erl
 %%  Module   :	sparc_memory_regalloc
@@ -11,325 +11,155 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: happi $
-%%              $Date: 2001/08/05 16:04:57 $
-%%              $Revision: 1.2 $
+%%              $Date: 2002/05/13 16:51:09 $
+%%              $Revision: 1.10 $
 %% ====================================================================
 %%  Exports  :
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_sparc_ra_memory).
--export([alloc/2]).
+-export([alloc/2, split_constants/1]).
 -define(HIPE_INSTRUMENT_COMPILER, true). %% Turn on instrumentation.
 -include("../main/hipe.hrl").
 
 alloc(SparcCfg, Options) ->
-  EntryPoints = [start(SparcCfg)|fail_entrypoints(SparcCfg)], 
-  
-  {Code, NoSpills, NewConstTab}  = 
-    traverse(EntryPoints, SparcCfg, 
-	     hipe_sparc_cfg:data(SparcCfg)),
+  {Map, SpillPos} = spill(SparcCfg),
+  %% io:format("ListMap:~w\n",[Map]),
+  %% hipe_sparc_cfg:pp(SparcCfg),
+  TempMap = hipe_temp_map:cols2tuple(Map, hipe_sparc_specific),
+  %%  io:format("Map:~w\n",[TempMap]),
 
-  ?add_spills(Options, NoSpills),
-
-  %% Create linear sparc datastructure
-  Sparc = make_sparc(Code, SparcCfg),
-  NewSparcCgf = init(Sparc, fail_entrypoints(SparcCfg)),  
-  FinalSparcCfg = hipe_sparc_cfg:update_data(NewSparcCgf,
-					     NewConstTab),
-
-  %% return CFG and the new const table.
-  FinalSparcCfg.
-
-make_sparc(Code, SparcCfg) ->
-  Fun = function(SparcCfg),
-  VarRange = var_range(SparcCfg),
-  LabelRange= label_range(SparcCfg),
-  Data = hipe_sparc_cfg:data(SparcCfg),
-  mk_sparc(Fun, Code, Data, VarRange, LabelRange).
-
-traverse(EntryPoints, SparcCFG, ConstTab) ->
-  traverse(EntryPoints, %% To do list
-	   [],          %% Visited
-	   [],          %% NewCode
-	   empty_allocation(),          %% Allocations
-	   SparcCFG,    %% The CFG
-	   succ_map(SparcCFG), %% Successormap
-	   pred_map(SparcCFG),  %% Predecessors
-	   ConstTab
-	  ).
-
-traverse([L|ToDo], Visited, NewCode, 
-	 Allocations, CFG, SuccMap, PredMap, ConstTab) ->
-
-  %% Check if we already have processed this BB
-  case lists:member(L, Visited) of
-    false -> %% This is the first time we see this Block
-      Code = hipe_bb:code(bb(CFG,L)),
-      {NewNewCode, NewAllocation, NewConstTab} = 
-	traverse_code([label_create(L,[])|Code], 
-		      Allocations,
-		      NewCode,          %% Code
-		      ConstTab
-		     ),
-
-
-      %% The code is reversed so the first instruction is the jump (at the end...)
-      [Jmp|BBCode] = NewNewCode,
-
-      Succ = succ(SuccMap, L),
-      NewToDo = order_succ(Jmp, Succ, ToDo),
-
-      %% Indicate that we are done with this BB.
-      NewVisited = [L|Visited],
-
-      traverse(NewToDo, [L|Visited], 
-	       NewNewCode,
-	       NewAllocation,
-	       CFG,
-	       SuccMap, PredMap, NewConstTab);
-    
-    true -> %% We have seen this BB already, ignore it.
-      traverse(ToDo, Visited, NewCode,
-	       Allocations, 
-	       CFG, SuccMap, PredMap, ConstTab)
-  end;
-traverse([], _, Code,  Allocation, _, _, _, ConstTab) -> 
-  {lists:reverse(Code), no_spills(Allocation), ConstTab}.
-
-order_succ(_,   [],    ToDo) -> ToDo;
-order_succ(_,   [Succ],ToDo) -> [Succ|ToDo];
-order_succ(Jmp, [Taken, NotTaken], ToDo) ->
-  Pred = cond_pred(Jmp),
-  if Pred >= 0.5 -> [Taken, NotTaken | ToDo];
-     true -> [NotTaken, Taken | ToDo]
-  end;
-order_succ(Jmp, Multi, ToDo) ->
-  Multi ++ ToDo. %% This is not realy supported.
-
-cond_pred(I) ->
-   case hipe_sparc:type(I) of
-      br -> hipe_sparc:br_pred(I);
-      b -> hipe_sparc:b_pred(I);
-      _ -> 0.5
-   end.
-
-
-
-
-traverse_code([I|Is], Allocation, Code, ConstTab) ->
-  Uses = uses(I),
-
-
-  %% TODO:
-  %% When allocating make sure all regs used in the instruction are kept, 
-  %%  i.e. not spilled to make room for the other registers...
+  NewCfg =
+    hipe_sparc_ra_post_ls:rewrite(SparcCfg, TempMap, Options),
+  %%  hipe_sparc_cfg:pp(NewCfg),
+%%  {SparcCfg2, NextPos} = hipe_sparc_caller_saves:rewrite(
+%%			   NewCfg, TempMap,  
+%%			   SpillPos+1,
+%%			   Options),
+  ?add_spills(Options, SpillPos+1),
  
-  %% For each use make sure it is allocated, otherwise unspill it.
-  %% (There *can't* be a reg that is neither allocated nor spilled.)
-  {UseSubst, Regallocation, Free, NewCode} = 
-    allocate_uses(Uses,     %% Used temps
-		   Allocation,
-		   [],       %% Substlist
-		   Code      %% Acccode
-		  ),
-  Defs = defines(I),
-  %% For each def see if it is allocated otherwise allocate it.
-  {NewAllocation, DefSubst, StoreCode, NewConstTab} = 
-    allocate_defs(Defs, Allocation, Regallocation, Free, ConstTab),
+  %% hipe_sparc_cfg:pp(SparcCfg2),
+%%  {SparcCfg2, TempMap, NextPos}.
+  {NewCfg, TempMap, SpillPos+1}.
 
 
-  %% Rewrite the instruction.
-  NewI = subst_defines(subst_uses(I, UseSubst), DefSubst),
+spill(Cfg) ->
+  {_,Last} = hipe_sparc_cfg:var_range(Cfg),
+  Map = hipe_vectors:empty(Last+1,undef),
+  Code = hipe_sparc:sparc_code(hipe_sparc_cfg:linearize(Cfg)),
+  {NewMap, SpillPos} = traverse(Code,Map),
+  {[{T-1,Pos} || {T,Pos} <- hipe_vectors:list(NewMap),
+	 Pos =/= undef],
+   SpillPos}.
 
-  traverse_code(Is, NewAllocation, 
-		StoreCode ++ [NewI|NewCode], NewConstTab);
-traverse_code([], Allocation, Code, ConstTab) ->
-  {Code, Allocation, ConstTab}.
-
-
-
-
-
-allocate_defs(Defs, SpillAllocation, Allocation, Free, ConstTab) ->
-  allocate_defs(Defs, SpillAllocation, Allocation, Free, [], [], ConstTab).
-
-allocate_defs([Temp|Temps],  SpillAllocation, Allocation, Free,
-	      Substs, StoreCode, ConstTab) ->
-  case is_precolored(Temp) of
-    true ->
-      
-      allocate_defs(Temps, SpillAllocation,  Allocation, Free, 
-		    [{mk_reg(Temp),
-		      mk_reg(physical_name(Temp))}|
-		      Substs], StoreCode, ConstTab);
-    _ ->
-      {Pos, NewSpillAllocation, NewConstTab} =
-	case spill_allocated(Temp, SpillAllocation) of
-	  false ->
-	    allocate_new(Temp, SpillAllocation, ConstTab);
-	  SPos -> {SPos, SpillAllocation, ConstTab}
-	end,
-      {PhysReg, NewAllocation, NewFree} =
-	case allocated(Temp, Allocation) of 
-	  false -> 
-	    allocate(Temp, Free, Allocation);
-	  Reg ->
-	    {Reg, Allocation, Free}
-	end,
-      NewSpillCode = get_spill_code(PhysReg, Pos),
-      Mapping = [{mk_reg(Temp), mk_reg(PhysReg)}| Substs],
-      allocate_defs(Temps, NewSpillAllocation,  NewAllocation, NewFree, Mapping, 
-		    NewSpillCode ++ StoreCode, NewConstTab)
-  end;
-allocate_defs([], SpillAllocation, Allocation, Free, DefSubsts,
-	      StoreCode, ConstTab) ->
-  {SpillAllocation, DefSubsts, StoreCode, ConstTab}.
+traverse(Code, Map) ->
+  lists:foldl(fun map/2, {Map,0}, Code).
 
 
-allocate_uses(Uses, SpillAllocation, Substs, Code) ->
-  allocate_uses(Uses, empty_regalloc(), free_regs(), SpillAllocation, Substs, Code).
+map(I,Map) ->
+  {Def,Use} = hipe_sparc:def_use(I),
+  lists:foldl(fun map_temp/2, Map, Def++Use).
+   
+map_temp(T,{Map,SpillPos}) ->
+  RealTemp = hipe_sparc:reg_nr(T),
+  Temp = RealTemp+1,
 
-allocate_uses([Temp|Temps], Allocation, Free, SpillAllocation, Substs, Code) ->
-  case is_precolored(Temp) of
-    true ->
-      allocate_uses(Temps, Allocation, Free , SpillAllocation, 
-		    [{mk_reg(Temp),
-		      mk_reg(physical_name(Temp))}|Substs],
-		    Code);
-    false ->
-      {PhysReg, NewAllocation, NewFree} =
-	case allocated(Temp, Allocation) of 
-	  false -> 
-	    allocate(Temp, Free, Allocation);
-	  Reg ->
-	    {Reg, Allocation, Free}
-	end,
-      case spill_allocated(Temp, SpillAllocation) of
+  case hipe_vectors:get(Map,Temp) of
+    undef ->
+      case hipe_sparc_registers:is_precolored(RealTemp) of
+	true ->
+	  {
+	  hipe_vectors:set(Map,Temp,
+			   {reg, hipe_sparc_registers:physical_name(RealTemp)}),
+	  SpillPos};
 	false ->
-	  ?EXIT(this_shouldnthappen);
-	SpillPos ->
-	  NewSpillCode = get_unspill_code(PhysReg, SpillPos),
-	  allocate_uses(Temps, NewAllocation, NewFree , SpillAllocation, 
-			[{mk_reg(Temp), mk_reg(PhysReg)}| Substs],
-			NewSpillCode ++ Code)
-      end
-  end;
-allocate_uses([],Allocation, Free, SpillAllocation, Substs, Code) ->
-  {Substs, Allocation, Free, Code}.
-      
-get_unspill_code(PhysReg, Pos) ->
-  TempReg = mk_reg(hipe_sparc_registers:temp0()),
-
-  [hipe_sparc:load_create(mk_reg(PhysReg), uw, TempReg,
-			  hipe_sparc:mk_imm(0), [{reg,unspill}]),
-   hipe_sparc:load_address_create(TempReg, Pos, constant, [])].
-
-      
-get_spill_code(PhysReg, Pos) ->
-  TempReg = mk_reg(hipe_sparc_registers:temp0()),
-  [hipe_sparc:store_create(TempReg, hipe_sparc:mk_imm(0), uw, hipe_sparc:mk_reg(PhysReg), [{reg,spill}]),
-   hipe_sparc:load_address_create(TempReg, Pos, constant, [])].
-
-  
-
-
-
-
-%% ------------------------------------------------------------
-%% Spillallocation structure.
-
-
-empty_allocation() ->
-  {0,[]}.
-no_spills({N,_}) ->
-  N.
-
-spill_allocated(Temp, {Last, SpillAllocation}) ->
-  case lists:keysearch(Temp, 1, SpillAllocation) of
-    {value, {_,Pos}} ->
-      Pos;
-    _ -> false
+	  {hipe_vectors:set(Map,Temp,
+			    {spill,SpillPos}),
+	   SpillPos +1}
+      end;
+    _ ->
+      {Map,SpillPos}
   end.
 
-allocate_new(Temp, {Last, SpillAllocation}, ConstTab) ->
-  {NewConstTab, SpillArea} = 
-    hipe_consttab:insert_block(ConstTab, 4 , word, [0]),
 
-  {SpillArea, {Last + 1, [{Temp, SpillArea} | SpillAllocation]}, NewConstTab}.
+%% Fixes big immediates, can be introduced as stack offsets 
+%% due to excessive spilling.
 
-%% ------------------------------------------------------------
-allocated(Temp, Allocation) ->
-  case lists:keysearch(Temp, 1, Allocation) of
-    {value, {_,PhysReg}} ->
-      PhysReg;
-    _ -> false
+split_constants(CFG) ->
+   Labels = hipe_sparc_cfg:labels(CFG),
+   split_bbs(Labels, CFG).
+
+
+split_bbs([], CFG) ->
+  CFG;
+split_bbs([Lbl|Lbls], CFG) ->
+  BB = hipe_sparc_cfg:bb(CFG, Lbl),
+  Code = hipe_bb:code(BB),
+  case split_instrs(Code, [], unchanged) of
+    unchanged ->
+      split_bbs(Lbls, CFG);
+    NewCode ->
+      NewCFG = 
+	hipe_sparc_cfg:bb_update(CFG, Lbl, hipe_bb:code_update(BB, NewCode)),
+      split_bbs(Lbls, NewCFG)
   end.
 
-allocate(Temp, Free, Allocation) ->
-  PhysReg = hd(Free),
-  {PhysReg, 
-   [{Temp,PhysReg} | Allocation],
-   tl(Free)}.
+split_instrs([], _RevCode, unchanged) ->
+  unchanged;
+split_instrs([], RevCode, changed) ->
+  lists:reverse(RevCode);
+split_instrs([I|Is], RevCode, Status) ->
+  case split_instr(I) of
+    unchanged ->
+      split_instrs(Is, [I|RevCode], Status);
+    NewCode ->
+      split_instrs(Is, NewCode++RevCode, changed)
+  end.
 
-empty_regalloc() ->  
-  [].
-%% ------------------------------------------------------------
+split_instr(I) ->
+  Uses = hipe_sparc:imm_uses(I),
+  case big_constants(Uses) of
+    [] -> unchanged;
+    {Code, Subst} -> [hipe_sparc:subst(I, Subst) | Code]
+  end.
 
-free_regs() ->
-  hipe_sparc_registers:allocatable() -- [hipe_sparc_registers:temp0()].
+big_constants([]) ->
+  {[], []};
+big_constants([V|Vs]) ->
+  C = hipe_sparc:imm_value(V),
 
-is_precolored(Temp) -> hipe_sparc_registers:is_precolored(Temp).
-init(Sparc, Entries) -> hipe_sparc_cfg:init(Sparc, Entries).
-bb(CFG,L) -> hipe_sparc_cfg:bb(CFG,L).
+  %% Since this is the naive allocator any allocatable register should
+  %% do as a temp reg.
+  TempReg = hipe_sparc:mk_reg(hd(hipe_sparc_registers:allocatable())), 
+  case is_big(C) of
+    true ->
+      Low = low10(C),
+      Code =
+	if Low =:= 0 ->
+	    [hipe_sparc:sethi_create(
+	       TempReg,
+	       hipe_sparc:mk_imm(high22(C)),[])];
+	   true ->	     
+	    [hipe_sparc:alu_create(TempReg, TempReg, 'or', 
+				   hipe_sparc:mk_imm(Low), []),
+	     hipe_sparc:sethi_create(TempReg,hipe_sparc:mk_imm(high22(C)),[])]
+	end,
+      {MoreCode, MoreSubst} = big_constants(Vs),
+      {Code++MoreCode, [{V, TempReg} | MoreSubst]};
+    false ->
+      big_constants(Vs)
+  end.
 
+is_big(X) ->
+  if X > 16#fff ->
+      true;
+     X < -4096 -> 
+      true;
+     true ->
+      false
+  end.
 
-physical_name(R) -> hipe_sparc_registers:physical_name(R).
-
-start(SparcCfg) -> hipe_sparc_cfg:start(SparcCfg).
-fail_entrypoints(SparcCfg) -> hipe_sparc_cfg:fail_entrypoints(SparcCfg).
-
-%% allocatable() -> [1,2]. 
-
-function(SparcCfg) -> hipe_sparc_cfg:function(SparcCfg).
-var_range(SparcCfg) -> hipe_sparc_cfg:var_range(SparcCfg).
-label_range(SparcCfg) -> hipe_sparc_cfg:label_range(SparcCfg).
-mk_sparc(Fun, Code, Data, VarRange, LabelRange) ->
-  hipe_sparc:mk_sparc(Fun, Code, Data, VarRange, LabelRange).
-
-
-
-
-mk_reg(R) -> hipe_sparc:mk_reg(R).
-
-label_create(L,Info) -> hipe_sparc:label_create(L,Info).
-subst_defines(I, Subst) -> hipe_sparc:subst_defines(I, Subst).
-subst_uses(I, Subst) -> hipe_sparc:subst_uses(I, Subst).
-
-uses(I)->
-  regnames(hipe_sparc:uses(I)).
-
-defines(I) ->
-  regnames(hipe_sparc:defines(I)).
-
-regnames([R|Rs]) ->
-  [hipe_sparc:reg_nr(R)|regnames(Rs)];
-regnames([]) -> [].
-
-
-
-
-
-
-succ(SuccMap, L)->
-  hipe_sparc_cfg:succ(SuccMap, L).
-
-
-
-succ_map(CFG) ->
-  hipe_sparc_cfg:succ_map(CFG).
-
-pred_map(CFG) ->
-  hipe_sparc_cfg:pred_map(CFG).
-
+high22(X) -> X bsr 10.
+low10(X) -> X band 16#3ff.
 

@@ -25,7 +25,6 @@
 
 #include <stdlib.h>
 #include <sys/types.h>
-#include <stdarg.h>
 #include <fcntl.h>
 
 #ifdef __WIN32__

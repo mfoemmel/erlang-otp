@@ -16,6 +16,7 @@
 
 -module(hipe_rtl_liveness).
 
+-include("../util/hipe_vector.hrl").
 -include("../flow/liveness.inc").
 
 

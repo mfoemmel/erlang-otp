@@ -76,11 +76,12 @@ connect(normal, Host, Port, Options, Timeout) ->
 	{error, timeout} ->
 	    orber:debug_level_print("[~p] orber_socket:connect(normal, ~p, ~p, ~p);
 Timeout after ~p msec.", [?LINE, Host, Port, Options, Timeout], ?DEBUG_LEVEL),
-	    corba:raise(#'TIMEOUT'{minor=101, completion_status=?COMPLETED_NO});
+	    corba:raise(#'COMM_FAILURE'{minor=(?ORBER_VMCID bor 4),
+					completion_status=?COMPLETED_NO});
 	Error ->
 	    orber:debug_level_print("[~p] orber_socket:connect(normal, ~p, ~p, ~p);
 Failed with reason: ~p", [?LINE, Host, Port, Options, Error], ?DEBUG_LEVEL),
-	    corba:raise(#'COMM_FAILURE'{minor=100, completion_status=?COMPLETED_NO})
+	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end;
 connect(ssl, Host, Port, Options, Timeout) ->
     case catch ssl:connect(Host, Port, Options, Timeout) of
@@ -89,11 +90,12 @@ connect(ssl, Host, Port, Options, Timeout) ->
 	{error, timeout} ->
 	    orber:debug_level_print("[~p] orber_socket:connect(ssl, ~p, ~p, ~p); 
 Timeout after ~p msec.", [?LINE, Host, Port, Options, Timeout], ?DEBUG_LEVEL),
-	    corba:raise(#'TIMEOUT'{minor=103, completion_status=?COMPLETED_NO});
+	    corba:raise(#'COMM_FAILURE'{minor=(?ORBER_VMCID bor 4), 
+					completion_status=?COMPLETED_NO});
 	Error ->
 	    orber:debug_level_print("[~p] orber_socket:connect(ssl, ~p, ~p, ~p); 
 Failed with reason: ~p", [?LINE, Host, Port, Options, Error], ?DEBUG_LEVEL),
-	    corba:raise(#'COMM_FAILURE'{minor=110, completion_status=?COMPLETED_NO})
+	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end.
 
 multi_connect(CurrentPort, Max, Type, Host, Port, Options, _) when CurrentPort > Max ->
@@ -101,7 +103,7 @@ multi_connect(CurrentPort, Max, Type, Host, Port, Options, _) when CurrentPort >
 Unable to use any of the sockets defined by 'iiop_out_ports'.
 Either all ports are in use or to many connections already exists.", 
 			    [?LINE, Type, Host, Port, Options], ?DEBUG_LEVEL),
-    corba:raise(#'IMP_LIMIT'{minor=100, completion_status=?COMPLETED_NO});
+    corba:raise(#'IMP_LIMIT'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});
 multi_connect(CurrentPort, Max, normal, Host, Port, Options, Timeout) ->
     case catch gen_tcp:connect(Host, Port, [{port, CurrentPort}|Options], Timeout) of
 	{ok, Socket} ->
@@ -141,11 +143,11 @@ Looks like the listen port is already in use. Check if another Orber is started
 on the same node and uses the same listen port (iiop_port). But it may also
 be used by any other application; confirm with 'netstat'.",
 [?LINE, Port, Options1], ?DEBUG_LEVEL),
-	    corba:raise(#'COMM_FAILURE'{minor=111, completion_status=?COMPLETED_NO});
+	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
 	Error ->
 	    orber:debug_level_print("[~p] orber_socket:listen(normal, ~p, ~p); 
 Failed with reason: ~p", [?LINE, Port, Options1, Error], ?DEBUG_LEVEL),
-	    corba:raise(#'COMM_FAILURE'{minor=101, completion_status=?COMPLETED_NO})
+	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end;
 listen(ssl, Port, Options) ->
     Options1 = case orber:ip_address_variable_defined() of
@@ -164,11 +166,11 @@ Looks like the listen port is already in use. Check if another Orber is started
 on the same node and uses the same listen port (iiop_port). But it may also
 be used by any other application; confirm with 'netstat'.",
 [?LINE, Port, Options1], ?DEBUG_LEVEL),
-	    corba:raise(#'COMM_FAILURE'{minor=111, completion_status=?COMPLETED_NO});
+	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
 	Error ->
 	    orber:debug_level_print("[~p] orber_socket:listen(ssl, ~p, ~p);
 Failed with reason: ~p", [?LINE, Port, Options1, Error], ?DEBUG_LEVEL),
-	    corba:raise(#'COMM_FAILURE'{minor=111, completion_status=?COMPLETED_NO})
+	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end.
 
 %%-----------------------------------------------------------------
@@ -181,7 +183,7 @@ accept(normal, ListenSocket) ->
 	Error ->
 	    orber:debug_level_print("[~p] orber_socket:accept(normal, ~p); 
 Failed with reason: ~p", [?LINE, ListenSocket, Error], ?DEBUG_LEVEL),
-	    corba:raise(#'COMM_FAILURE'{minor=102, completion_status=?COMPLETED_NO})
+	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end;
 accept(ssl, ListenSocket) ->
     case catch ssl:accept(ListenSocket) of
@@ -190,7 +192,7 @@ accept(ssl, ListenSocket) ->
 	Error ->
 	    orber:debug_level_print("[~p] orber_socket:accept(ssl, ~p);
 Failed with reason: ~p", [?LINE, ListenSocket, Error], ?DEBUG_LEVEL),
-	    corba:raise(#'COMM_FAILURE'{minor=112, completion_status=?COMPLETED_NO})
+	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end.
 
 %%-----------------------------------------------------------------

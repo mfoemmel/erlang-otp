@@ -534,9 +534,9 @@ compute_states(Nonterminals, TerminalTab, Rootsymbol, Endsymbol, Rules) ->
     IndexedTab = make_rule_index(Nonterminals, Rules),
     Lc_table = make_left_corner_table(Nonterminals, TerminalTab, Rules),
 
-    Start_item = {1, [Endsymbol], [Rootsymbol]},
-    State0 = compute_closure([Start_item], [Start_item], TerminalTab,
-			     IndexedTab, Lc_table),
+    StartItem0 = [{1,[Endsymbol],[Rootsymbol]}],
+    StartItem = gb_trees:from_orddict([{1,{[Endsymbol],[Rootsymbol]}}]),
+    State0 = compute_closure(StartItem0, StartItem, TerminalTab, IndexedTab, Lc_table),
 
     StateTab = ets:new(yecc_states, []),
     RulePointerTab = ets:new(yecc_rule_pointers, [duplicate_bag]),
@@ -652,10 +652,7 @@ init_terminal_table(TerminalTab, []) ->
     TerminalTab.
     
 is_terminal(Tab, Terminal) ->
-    case ets:lookup(Tab, Terminal) of
-	[] -> false;
-	_ -> true
-    end.
+    ets:member(Tab, Terminal).
 		
 get_current_symbols(State) ->
     lists:usort(get_current_symbols1(State)).
@@ -670,8 +667,10 @@ get_current_symbols1([{_, _, Rhs} | Items]) ->
 	    [Symbol | get_current_symbols1(Items)]
     end.
 
-compute_state([], _, New_state, TerminalTab, Rules, Lc_table) ->
-    lists:keysort(1, compute_closure(New_state, New_state, TerminalTab, Rules,
+compute_state([], _, NewState0, TerminalTab, Rules, Lc_table) ->
+    NewState = gb_trees:from_orddict(NewState0),
+    NewItems = [{I,X,Y} || {I,{X,Y}} <- NewState0],
+    lists:keysort(1, compute_closure(NewItems, NewState, TerminalTab, Rules,
 				     Lc_table));
 compute_state([{Rule_pointer, Lookahead, Rhs} | Items], Symbol, New_state,
 	      TerminalTab, Rules, Lc_table) ->
@@ -680,16 +679,16 @@ compute_state([{Rule_pointer, Lookahead, Rhs} | Items], Symbol, New_state,
 	    compute_state(Items, Symbol, New_state, TerminalTab, Rules, Lc_table);
 	[Symbol | Rhs1] ->
 	    compute_state(Items, Symbol,
-			  [{Rule_pointer + 1, Lookahead, Rhs1} | New_state],
+			  [{Rule_pointer + 1,{Lookahead,Rhs1}} | New_state],
 			  TerminalTab, Rules, Lc_table);
 	_ ->
 	    compute_state(Items, Symbol, New_state, TerminalTab, Rules, Lc_table)
     end.
 
-compute_closure([], State, _, _, _) ->
-    State;
-compute_closure([{Rule_pointer, Lookahead, Rhs} | Items], State,
-		TerminalTab, Rules, Lc_table) ->
+compute_closure([], State, TerminalTab, Rules, Lc_table) ->
+    [{I,X,Y} || {I,{X,Y}} <- gb_trees:to_list(State)];
+compute_closure([Item|Items], State, TerminalTab, Rules, Lc_table) ->
+    {Rule_pointer,Lookahead,Rhs} = Item,
     case Rhs of
 	[] ->
 	    compute_closure(Items, State, TerminalTab, Rules, Lc_table);
@@ -715,45 +714,28 @@ compute_closure1([{Rule_nmbr, Rule} | Tail], New_lookahead, Items,
 			      [_ | Rhs0] ->
 				  {Rule_nmbr bor 1, Rhs0}
 			  end,
-    case check_item(Rule_pointer, State, New_lookahead) of
-	old ->
-	    compute_closure1(Tail, New_lookahead, Items, State,
-			     TerminalTab, Rules, Lc_table);
-	add ->
-	    New_item = {Rule_pointer, New_lookahead, Rhs},
-	    compute_closure1(Tail, New_lookahead, [New_item | Items],
-			     [New_item | State], TerminalTab, Rules, Lc_table);
-	merge ->
+    case gb_trees:lookup(Rule_pointer, State) of
+	{value,{Lookahead2,OldRhs}} ->
+	    case ord_subset(New_lookahead, Lookahead2) of
+		true ->				%Old
+		    compute_closure1(Tail, New_lookahead, Items, State,
+				     TerminalTab, Rules, Lc_table);
+		false ->			%Merge
+		    Lookahead = ord_merge(Lookahead2, New_lookahead),
+		    NewState = gb_trees:update(Rule_pointer,
+					       {Lookahead,OldRhs}, State),
+		    compute_closure1(Tail, New_lookahead,
+				     [{Rule_pointer, New_lookahead, Rhs} | Items],
+				     NewState,
+				     TerminalTab, Rules, Lc_table)
+	    end;
+	none ->					%New
+	    NewItem = {Rule_pointer, New_lookahead, Rhs},
 	    compute_closure1(Tail, New_lookahead,
-			     [{Rule_pointer, New_lookahead, Rhs} | Items],
-			     merge_items(Rule_pointer, State, New_lookahead),
+			     [NewItem|Items],
+			     gb_trees:insert(Rule_pointer, {New_lookahead,Rhs}, State),
 			     TerminalTab, Rules, Lc_table)
     end.
-
-check_item(RulePtr, Items, Lookahead1) ->
-    case lists:keysearch(RulePtr, 1, Items) of
-	{value,{RulePtr, Lookahead2, _}} ->
-	    case ord_subset(Lookahead1, Lookahead2) of
-		true -> old;
-		false -> merge
-	    end;
-	false -> add
-    end.
-
-
-%% Profiling shows that this function was a bottle-neck.
-%% Measurements show that this tail-recursive version is
-%% faster than the recursive version.
-
-merge_items(RulePtr, Items, La) ->
-    merge_items(RulePtr, Items, La, []).
-
-merge_items(Rule_pointer, [{Rule_pointer, Lookahead1, Rhs} | Items],
-	    Lookahead2, Acc) ->
-    Items ++ [{Rule_pointer, ord_merge(Lookahead1, Lookahead2), Rhs} | Acc];
-merge_items(Rule_pointer, [Item | Items], Lookahead, Acc) ->
-    merge_items(Rule_pointer, Items, Lookahead, [Item|Acc]).
-
 
 %% Check if some old state is a superset of our New_state
 check_states(New_state, StateTab, RulePointerTab) ->
@@ -1621,12 +1603,12 @@ output_parse_actions3(Port, State, Terminal,
 	case Code of
 	    [{var, _, '__1'}] when Nmbr_of_daughters == 1 ->
 		io:format(Port,
-			  'yeccpars2(~w, ~w, __Ss, __Stack, __T, __Ts, __Tzr) ->~n',
-			  [State, Terminal]),
+			  'yeccpars2(~w, ~s, __Ss, __Stack, __T, __Ts, __Tzr) ->~n',
+			  [State, quoted_atom(Terminal)]),
 		false;
 	    _ ->
-		io:format(Port, 'yeccpars2(~w, ~w, __Ss,~s, __T, __Ts, __Tzr) ->~n',
-			  [State, Terminal,
+		io:format(Port, 'yeccpars2(~w, ~s, __Ss,~s, __T, __Ts, __Tzr) ->~n',
+			  [State, quoted_atom(Terminal),
 			   pp_exprs([create_stack(Nmbr_of_daughters)])]),
 		case length(Code) of
 		    1 ->
@@ -1648,8 +1630,8 @@ output_parse_actions3(Port, State, Terminal,
 	0 ->
 	    Next_state = goto_lookup(State, Head, GotoTab),
 	    io:format(Port,
-		      ' yeccpars2(~w, ~w, [~w | __Ss], ~s, __T, __Ts, __Tzr);~n',
-		      [Next_state, Terminal, State,
+		      ' yeccpars2(~w, ~s, [~w | __Ss], ~s, __T, __Ts, __Tzr);~n',
+		      [Next_state, quoted_atom(Terminal), State,
 		       if Open_stack == true -> "[__Val | __Stack]";
 			   true -> "__Stack" end]);
 	1 ->
@@ -1669,25 +1651,28 @@ output_parse_actions3(Port, State, Terminal,
 			  true -> "__Stack" end])
     end;
 output_parse_actions3(Port, State, Terminal, {shift, New_state, _}, Rules, _) ->
-    io:format(Port, 'yeccpars2(~w, ~w, __Ss, __Stack, __T, __Ts, __Tzr) ->~n',
-	      [State, Terminal]),
+    io:format(Port, 'yeccpars2(~w, ~s, __Ss, __Stack, __T, __Ts, __Tzr) ->~n',
+	      [State, quoted_atom(Terminal)]),
     io:format(Port,
 	      ' yeccpars1(__Ts, __Tzr, ~w, [~w | __Ss], [__T | __Stack]);~n',
 	      [New_state, State]);
 output_parse_actions3(Port, State, Terminal, accept, _, _) ->
-    io:format(Port, 'yeccpars2(~w, ~w, _, __Stack, _, _, _) ->~n',
-	      [State, Terminal]),
+    io:format(Port, 'yeccpars2(~w, ~s, _, __Stack, _, _, _) ->~n',
+	      [State, quoted_atom(Terminal)]),
     io:format(Port, ' {ok, hd(__Stack)};~n', []);
 output_parse_actions3(Port, State, Terminal, error, _, _) ->
-    io:format(Port, 'yeccpars2(~w, ~w, _, _, __T, _, _) ->~n',
-	      [State, Terminal]),
+    io:format(Port, 'yeccpars2(~w, ~s, _, _, __T, _, _) ->~n',
+	      [State, quoted_atom(Terminal)]),
 %    io:format(Port, ' yeccerror(element(2, __T), __T);~n', []);
     io:format(Port, ' yeccerror(__T);~n', []);
 output_parse_actions3(Port, State, Terminal, Other, _, _) ->
-    io:format(Port, 'yeccpars2(~w, ~w, _, _, _, _, _) ->~n',
-	      [State, Terminal]),
+    io:format(Port, 'yeccpars2(~w, ~s, _, _, _, _, _) ->~n',
+	      [State, quoted_atom(Terminal)]),
     io:format(Port, ' ~w;~n', [Other]).
 
+quoted_atom(Atom) ->
+    [$'|atom_to_list(Atom)++"'"].
+    
 create_stack(0) ->
     {var, 0, '__Stack'};
 create_stack(N) when N > 0 ->

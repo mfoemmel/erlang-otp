@@ -467,7 +467,7 @@ handle_call({get, Vars}, _From, S) ->
 		    {noError, 0, NewVarbinds} ->
 			ResVarbinds = lists:keysort(#varbind.org_index,
 						    NewVarbinds),
-			lists:map({?MODULE, tr_varbind}, [], ResVarbinds);
+			snmp_misc:map({?MODULE, tr_varbind}, [], ResVarbinds);
 		    {ErrorStatus, ErrIndex, _} ->
 			N = lists:nth(ErrIndex, Vars),
 			{error, {ErrorStatus, N}}
@@ -592,48 +592,20 @@ terminate(_Reason, _S) ->
 %% Upgrade
 %%
 code_change(_Vsn, S, _Extra) ->
-    put(auth_module, snmp_acm),
     NS = worker_restart(S),
     {ok, NS};
 
 %% Downgrade
 %%
 code_change({down, _Vsn}, S, _Extra) ->
-    worker_code_change(S),
-    {ok, S}.
+    NS = worker_restart(S),
+    {ok, NS}.
 
-%% Worker code replacement.  
-%%
-%% This code is very 3.1.2 specific. The worker_loop/1 was not tail
-%% recursive in pre-3.1.2 versions. 
 
-%% At update we force the workers into this module version by a
-%% `code_change' message, then we terminate them with a
-%% `terminate' message, and finally we recreate them. It is important
-%% that the `terminate' receive clause in worker_loop/1 has an
-%% explicite `exit(normal)'; otherwise each worker might fall back
-%% into a possibly old version of this module.
-%%
-%% At downgrade we just force the workers into the old module by a
-%% `code_change' message.
-%%
-worker_code_change(S) ->
-    code_change_worker(S#state.worker),
-    code_change_worker(S#state.set_worker).
-    
 worker_restart(S) ->
-    worker_code_change(S),
-    Worker = restart_worker(S#state.worker),
+    Worker    = restart_worker(S#state.worker),
     SetWorker = restart_worker(S#state.set_worker),
     S#state{worker = Worker, set_worker = SetWorker}.
-
-code_change_worker(Pid) when pid(Pid) ->
-    %% The `code_change' message ignored by worker_loop/1 in this
-    %% module version, but is *very* important in previous versions, in
-    %% order that worker processes enter into this module version. 
-    Pid ! code_change;
-code_change_worker(_) ->
-    undefined.
 
 restart_worker(Pid) when pid(Pid) -> 
     Pid ! terminate, 
@@ -1261,11 +1233,11 @@ restore_duplicates(Dup, [{Col, Val, OrgIndex} | T]) ->
     [{Val, OrgIndex} | restore_duplicates(Dup, T)].
 
 %% Maps the column number to Index.
-col_to_index(0, _) -> 0;
-col_to_index(Col, [{Col, _, Index}|_]) ->
-    Index;
-col_to_index(Col, [_|Cols]) ->
-    col_to_index(Col, Cols).
+% col_to_index(0, _) -> 0;
+% col_to_index(Col, [{Col, _, Index}|_]) ->
+%     Index;
+% col_to_index(Col, [_|Cols]) ->
+%     col_to_index(Col, Cols).
 
 %%-----------------------------------------------------------------
 %% Three cases:
@@ -1700,9 +1672,9 @@ do_get_bulk(MibView, NonRepeaters, MaxRepetitions, PduMS, Varbinds) ->
 	    {ErrorStatus, Index, []}
     end.
 
-sz(L) when list(L) -> length(L);
-sz(B) when binary(B) -> size(B);
-sz(_) -> unknown.
+% sz(L) when list(L) -> length(L);
+% sz(B) when binary(B) -> size(B);
+% sz(_) -> unknown.
 
 split_vbs(N, Varbinds, Res) when N =< 0 -> {Res, Varbinds};
 split_vbs(N, [H | T], Res) -> split_vbs(N-1, T, [H | Res]);

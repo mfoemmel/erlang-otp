@@ -94,14 +94,14 @@ connect(RH, RemoteMid, SendHandle, ControlPid)
   when record(RH, megaco_receive_handle) ->
     case megaco_config:connect(RH, RemoteMid, SendHandle, ControlPid) of
         {ok, ConnData} ->
-            do_connect(RH, ConnData);
+            do_connect(ConnData);
         {error, Reason} ->
             {error, Reason}
     end;
-connect(BadHandle, CH, SendHandle, ControlPid) ->
+connect(BadHandle, _CH, _SendHandle, _ControlPid) ->
     {error, {bad_receive_handle, BadHandle}}.
 
-do_connect(RH, CD) ->
+do_connect(CD) ->
     CH       = CD#conn_data.conn_handle,
     Version  = CD#conn_data.protocol_version,
     UserMod  = CD#conn_data.user_mod,
@@ -111,7 +111,7 @@ do_connect(RH, CD) ->
     ?report_debug(CD, "return: connect", [{return, Res}]),
     case Res of
         ok ->
-           monitor_process(CH, RH, CD#conn_data.control_pid);
+           monitor_process(CH, CD#conn_data.control_pid);
         {error, ED} when record(ED,'ErrorDescriptor') ->
             megaco_config:disconnect(CH),
             {error, {connection_refused, CD, ED}};
@@ -120,7 +120,7 @@ do_connect(RH, CD) ->
             {error, {connection_refused, CD, Error}}
     end.
 
-monitor_process(CH, RH, ControlPid) when node(ControlPid) == node() ->
+monitor_process(CH, ControlPid) when node(ControlPid) == node() ->
     M = ?MODULE,
     F = disconnect_local,
     A = [CH],
@@ -132,7 +132,7 @@ monitor_process(CH, RH, ControlPid) when node(ControlPid) == node() ->
             disconnect(CH, {config_update, Reason}),
             {error, Reason}
     end;
-monitor_process(CH, RH, ControlPid) when node(ControlPid) /= node() ->
+monitor_process(CH, ControlPid) when node(ControlPid) /= node() ->
     RemoteNode = node(ControlPid),
     UserMonitorPid = whereis(megaco_monitor),
     Args = [CH, ControlPid, UserMonitorPid],
@@ -161,7 +161,7 @@ monitor_process(CH, RH, ControlPid) when node(ControlPid) /= node() ->
 connect_remote(CH, ControlPid, UserMonitorPid)
   when node(ControlPid) == node(), node(UserMonitorPid) /= node() ->
     case megaco_config:lookup_local_conn(CH) of
-        [ConnData] ->
+        [_ConnData] -> 
             UserNode = node(UserMonitorPid),
             M = ?MODULE,
             F = disconnect_remote,
@@ -203,7 +203,7 @@ disconnect(ConnHandle, DiscoReason)
                     case rpc:multicall(Nodes, M, F, A) of
                         {Res, []} ->
 			    Check = fun(ok) -> false;
-				       ({error, {no_connection, CH}}) -> false;
+				       ({error, {no_connection, _CH}}) -> false;
 				       (_) -> true
 				    end,
                             case lists:filter(Check, Res) of
@@ -212,7 +212,7 @@ disconnect(ConnHandle, DiscoReason)
                                 Bad ->
                                     {error, {remote_disconnect_error, ConnHandle, Bad}}
                             end;
-                        {Res, Bad} ->
+                        {_Res, Bad} ->
                             {error, {remote_disconnect_crash, ConnHandle, Bad}}
                     end;
                 false when RemoteConnData == [] ->
@@ -231,7 +231,7 @@ disconnect(ConnHandle, DiscoReason)
             {error, Reason}
     end;
 disconnect(BadHandle, Reason) ->
-    {error, {bad_conn_handle, BadHandle}}.
+    {error, {bad_conn_handle, BadHandle, Reason}}.
 
 disconnect_local(Reason, ConnHandle) ->
     disconnect(ConnHandle, {no_controlling_process, Reason}).
@@ -285,7 +285,7 @@ process_received_message(ReceiveHandle, ControlPid, SendHandle, Bin) ->
                 {messageError, Error} ->
                     handle_message_error(ConnData, Error)
             end;
-        {silent_fail, ConnData, {Code, Reason, Error}} ->
+        {silent_fail, ConnData, {_Code, Reason, Error}} ->
             ?report_debug(ConnData, Reason, [no_reply, Error]),
             ignore;
         {verbose_fail, ConnData, {Code, Reason, Error}} ->
@@ -321,17 +321,19 @@ prepare_message(RH, SH, Bin, Pid)
 			{error, {already_connected, _ConnHandle}} ->
 			    do_prepare_message(RH, CH, SH, MegaMsg, Pid, Bin);
 			{error, {connection_refused, ConnData, Reason}} ->
-                            {verbose_fail, ConnData, prepare_error({error, {connection_refused, Reason}})};
+			    Error = prepare_error({error, {connection_refused, Reason}}),
+                            {verbose_fail, ConnData, Error};
                         {error, Reason} ->
                             ConnData = fake_conn_data(RH, RemoteMid, SH, Pid),
-                            {verbose_fail, ConnData, prepare_error({error, Reason})}
+			    Error    = prepare_error({error, Reason}),
+                            {verbose_fail, ConnData, Error}
                     end
             end;
         Error ->
             ConnData = fake_conn_data(RH, SH, Pid),
             handle_syntax_error_callback(RH, ConnData, prepare_error(Error))
     end;
-prepare_message(RH, SendHandle, Bin, ControlPid) ->
+prepare_message(RH, SendHandle, _Bin, ControlPid) ->
     ConnData = fake_conn_data(RH, SendHandle, ControlPid),
     Error    = prepare_error({'EXIT', {bad_receive_handle, RH}}),
     {verbose_fail, ConnData, Error}.
@@ -353,11 +355,11 @@ do_prepare_message(RH, CH, SendHandle, MegaMsg, ControlPid, Bin) ->
 	    disconnect(CH, Reason),
 	    RemoteMid = CH#megaco_conn_handle.remote_mid,
 	    ConnData = fake_conn_data(RH, RemoteMid, SendHandle, ControlPid),
-
-	    {silent_fail, ConnData, prepare_error({error, Reason})}
+	    Error = prepare_error({error, Reason}),
+	    {silent_fail, ConnData, Error}
     end.
 
-check_message_auth(ConnHandle, ConnData, MegaMsg, Bin) ->
+check_message_auth(_ConnHandle, ConnData, MegaMsg, Bin) ->
     MsgAuth   = MegaMsg#'MegacoMessage'.authHeader,
     Mess      = MegaMsg#'MegacoMessage'.mess,
     Version   = Mess#'Message'.version,
@@ -365,8 +367,7 @@ check_message_auth(ConnHandle, ConnData, MegaMsg, Bin) ->
     ConnAuth  = ConnData2#conn_data.auth_data,
     ?report_trace(ConnData2, "receive bytes", [{bytes, Bin}]),
     if
-	MegaMsg#'MegacoMessage'.authHeader == asn1_NOVALUE,
-	ConnData2#conn_data.auth_data == asn1_NOVALUE ->
+	MsgAuth == asn1_NOVALUE, ConnAuth == asn1_NOVALUE ->
             {ok, ConnData2, MegaMsg};
 	true -> 
 	    ED = #'ErrorDescriptor'{errorCode = ?megaco_unauthorized,
@@ -392,7 +393,7 @@ handle_syntax_error_callback(ReceiveHandle, ConnData, PrepError) ->
             {silent_fail, ConnData, PrepError};
         {no_reply,#'ErrorDescriptor'{errorCode=Code2,errorText=Reason2}} ->
             {verbose_fail, ConnData, {Code2,Reason2,Error}};
-        Bad ->
+        _Bad ->
             {verbose_fail, ConnData, PrepError}
     end.
 
@@ -402,17 +403,56 @@ fake_conn_data(CH) when record(CH, megaco_conn_handle) ->
 	    RemoteMid = CH#megaco_conn_handle.remote_mid,
 	    fake_conn_data(RH, RemoteMid, no_send_handle, no_control_pid);
 	{'EXIT', _} ->
-	    fake_conn_data(CH#megaco_conn_handle.local_mid)
-    end;
-fake_conn_data(UserMid) ->
-    RH = megaco_config:user_info(UserMid, receive_handle),
-    fake_conn_data(RH, no_send_handle, no_control_pid).
+	    UserMid = CH#megaco_conn_handle.local_mid,
+	    case catch megaco_config:user_info(UserMid, receive_handle) of
+		{'EXIT', _} -> % No such user
+		    #conn_data{conn_handle        = CH,
+			       serial             = undefined_serial,
+			       control_pid        = no_control_pid,
+			       monitor_ref        = undefined_monitor_ref,
+			       send_mod           = no_send_mod,
+			       send_handle        = no_send_handle,
+			       encoding_mod       = no_encoding_mod,
+			       encoding_config    = no_encoding_config,
+			       reply_action       = undefined};
+		RH ->
+		    fake_conn_data(RH, no_send_handle, no_control_pid)
+	    end
+    end.
 
 fake_conn_data(RH, SendHandle, ControlPid) ->
     fake_conn_data(RH, unknown_remote_mid, SendHandle, ControlPid).
 
 fake_conn_data(RH, RemoteMid, SendHandle, ControlPid) ->
-    megaco_config:init_conn_data(RH, RemoteMid, SendHandle, ControlPid).
+    case catch megaco_config:init_conn_data(RH, RemoteMid, SendHandle, ControlPid) of
+	{'EXIT', _} -> % No such user
+	    fake_user_data(RH, RemoteMid, SendHandle, ControlPid);
+	CH ->
+	    CH
+    end.
+
+fake_user_data(RH, RemoteMid, SendHandle, ControlPid) ->
+    LocalMid = RH#megaco_receive_handle.local_mid,
+    RH2 = RH#megaco_receive_handle{local_mid = default},
+    case catch megaco_config:init_conn_data(RH2, RemoteMid, SendHandle, ControlPid) of
+	{'EXIT', _} -> % Application stopped?
+	    ConnHandle     = #megaco_conn_handle{local_mid  = LocalMid,
+						 remote_mid = RemoteMid},
+	    EncodingMod    = RH#megaco_receive_handle.encoding_mod,
+	    EncodingConfig = RH#megaco_receive_handle.encoding_config,
+	    SendMod        = RH#megaco_receive_handle.send_mod,
+	    #conn_data{conn_handle        = ConnHandle,
+		       serial             = undefined_serial,
+		       control_pid        = ControlPid,
+		       monitor_ref        = undefined_monitor_ref,
+		       send_mod           = SendMod,
+		       send_handle        = SendHandle,
+		       encoding_mod       = EncodingMod,
+		       encoding_config    = EncodingConfig,
+		       reply_action       = undefined};
+	ConnData ->
+	    ConnData
+    end.
 
 prepare_error(Error) ->
     case Error of
@@ -574,7 +614,7 @@ do_prepare_ack(ConnData, T, AckList) ->
         [Rep] when Rep#reply.state == waiting_for_ack ->
             %% Don't care about Msg and Rep version diff
             [{ConnData, Rep, T} | AckList];
-        [Rep] ->
+        [_Rep] ->
             %% Protocol violation from the sender of this ack
             ?report_important(ConnData, "<ERROR> discard trans",
 			      [T, {error, "got ack before reply was sent"}]),
@@ -617,7 +657,7 @@ handle_requests([], Pending) ->
     Pending.
 
 %%opt_garb_binary(timeout, Bin) -> garb_binary; % Need msg at restart of timer
-opt_garb_binary(Timer, Bin)   -> Bin.
+opt_garb_binary(_Timer, Bin)   -> Bin.
 
 handle_long_request({ConnData, Rep, RequestData}) ->
     ?report_trace(ConnData, "callback: trans long request",
@@ -811,7 +851,6 @@ handle_ack_callback(ConnData, AckStatus, discard_ack = AckAction, T) ->
         ok ->
             ok;
         {error, Reason} ->
-            Serial = ConnData#conn_data.serial,
             ?report_trace(ConnData, "handle ack",
                           [T, AckAction, {error, Reason}])
     end;
@@ -825,7 +864,7 @@ handle_ack_callback(ConnData, AckStatus, {handle_ack, AckData}, T) ->
     ?report_debug(ConnData, "return: trans ack", [T, AckData, {return, Res}]),
     Res.
 
-handle_message_error(ConnData, Error) 
+handle_message_error(ConnData, _Error) 
   when ConnData#conn_data.monitor_ref == undefined_monitor_ref ->
     %% May occur if another process already has setup a
     %% temporary connection, but the handle_connect callback
@@ -864,27 +903,27 @@ call(ConnHandle, Actions, Options) ->
 cast(ConnHandle, Actions, Options) ->
     call_or_cast(cast, ConnHandle, Actions, Options).
 
-call_or_cast(Action, ConnHandle, Actions, Options)
+call_or_cast(CallOrCast, ConnHandle, Actions, Options)
   when record(ConnHandle, megaco_conn_handle) ->
     case prepare_send_options(ConnHandle, Options) of
         {ok, ConnData} ->
             case encode_request(ConnData, Actions) of
                 {ok, Bin} ->
                     TransId = to_local_trans_id(ConnData),
-                    send_request(ConnData, ConnHandle, TransId, Action, Bin),
-		    case Action of
+                    send_request(ConnData, ConnHandle, TransId, CallOrCast, Bin),
+		    case CallOrCast of
 			call -> wait_for_reply(TransId);
 			cast -> ok
 		    end;
                 {error, Reason} ->
 		    Version = ConnData#conn_data.protocol_version,
-                    return_error(Action, Version, {error, Reason})
+                    return_error(CallOrCast, Version, {error, Reason})
             end;
         {error, Reason} ->
-            return_error(Action, 1, {error, Reason})
+            return_error(CallOrCast, 1, {error, Reason})
     end;
-call_or_cast(Action, ConnHandle, Actions, Options) ->
-    return_error(Action, 1, {error, {bad_megaco_conn_handle, ConnHandle}}).
+call_or_cast(CallOrCast, ConnHandle, _Actions, _Options) ->
+    return_error(CallOrCast, 1, {error, {bad_megaco_conn_handle, ConnHandle}}).
 
 return_error(Action, Version, Error) ->
     case Action of
@@ -1014,7 +1053,7 @@ override_send_options(ConnData, [{Key, Val} | Tail]) ->
         user_args when list(Val) ->
             ConnData2 = ConnData#conn_data{user_args = Val},
             override_send_options(ConnData2, Tail);
-        Bad ->
+        _Bad ->
             {error, {bad_send_option, {Key, Val}}}
     end;
 override_send_options(ConnData, []) ->
@@ -1202,7 +1241,7 @@ return_reply(ConnData, TransId, UserReply) ->
         call when pid(UserData) ->
 	    ?report_trace(ConnData, "callback: (call) trans reply", [UserReply]),
             Pid = UserData,
-            UserData ! {?MODULE, TransId, Version, UserReply};
+            Pid ! {?MODULE, TransId, Version, UserReply};
         cast ->
 	    ?report_trace(ConnData, "callback: (cast) trans reply", [UserReply]),
 	    UserMod    = ConnData#conn_data.user_mod,
@@ -1301,7 +1340,25 @@ do_request_timeout(ConnHandle, TransId, ConnData, Req) ->
 reply_timeout(ConnHandle, TransId, Timer) ->
     case Timer of
         timeout ->
-            megaco_monitor:delete_reply(TransId); % Trace ??
+            %% OTP-4378
+            case megaco_monitor:lookup_reply(TransId) of
+                [Rep] when Rep#reply.state == waiting_for_ack ->
+                    Serial = (Rep#reply.trans_id)#trans_id.serial,
+                    ConnData = 
+                        case megaco_config:lookup_local_conn(ConnHandle) of
+                            [ConnData0] ->
+                                ConnData0;
+                            [] ->
+                                fake_conn_data(ConnHandle)
+                        end,
+                    
+                    ConnData2 = ConnData#conn_data{serial = Serial},
+                    T = #'TransactionAck'{firstAck = Serial},
+                    handle_ack(ConnData2, {error, timeout}, Rep, T);
+                _ ->
+                    megaco_monitor:delete_reply(TransId)
+            end;
+
         Timer ->
             case megaco_monitor:lookup_reply(TransId) of
                 [] ->
@@ -1395,4 +1452,3 @@ decr(Int)      -> Int - 1.
 
 error_msg(F, A) ->
     catch error_logger:error_msg(F, A).
-

@@ -13,7 +13,7 @@
  * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
  * AB. All Rights Reserved.''
  * 
- *     $Id$
+ *     $Id $
  */
 /*
 ** General hash functions
@@ -57,8 +57,7 @@ static const int h_size_table[] = {
 **
 */
 
-void hash_get_info(hi, h)
-HashInfo *hi; Hash *h;
+void hash_get_info(HashInfo *hi, Hash *h)
 {
     int size = h->size;
     int i;
@@ -91,8 +90,7 @@ HashInfo *hi; Hash *h;
 **
 */
 
-void hash_info(to, h)
-CIO to; Hash* h;
+void hash_info(CIO to, Hash* h)
 {
     HashInfo hi;
 
@@ -123,11 +121,20 @@ hash_table_sz(Hash *h)
 ** init a pre allocated or static hash structure
 ** and allocate buckets.
 */
-Hash* hash_init(h, name, size, fun)
-Hash* h; char* name; int size; HashFunctions fun;
+#ifdef INSTRUMENT
+Hash* hash_init_from(int from_buckets, Hash* h, char* name, int size,
+		     HashFunctions fun)
+#else
+Hash* hash_init(Hash* h, char* name, int size, HashFunctions fun)
+#define from_buckets (-1)
+#endif
 {
     int sz;
     int ix = 0;
+
+#ifdef INSTRUMENT
+    h->from_buckets = from_buckets;
+#endif
 
     while (h_size_table[ix] != -1 && h_size_table[ix] < size)
 	ix++;
@@ -137,7 +144,7 @@ Hash* h; char* name; int size; HashFunctions fun;
     size = h_size_table[ix];
     sz = size*sizeof(HashBucket*);
 
-    if ((h->bucket = (HashBucket**) sys_alloc_from(110,sz)) == NULL)
+    if ((h->bucket = (HashBucket**) sys_alloc_from(from_buckets, sz)) == NULL)
 	erl_exit(1, "can't allocate hash buckets (%d)\n", sz);
 
     sys_memzero(h->bucket, sz);
@@ -145,32 +152,42 @@ Hash* h; char* name; int size; HashFunctions fun;
     h->name = name;
     h->fun = fun;
     h->size = size;
+    h->size20percent = h->size/5;
+    h->size80percent = (4*h->size)/5;
     h->ix = ix;
     h->used = 0;
     return h;
+#undef from_buckets
 }
 
 /*
 ** Create a new hash table
 */
-Hash* hash_new(name, size, fun)
-char* name; int size; HashFunctions fun;
+#ifdef INSTRUMENT
+Hash* hash_new_from(int from_table, int from_buckets, char* name, int size,
+		    HashFunctions fun)
+#else
+Hash* hash_new(char* name, int size, HashFunctions fun)
+#define from_table (-1)
+#define from_buckets (-1)
+#endif
 {
     Hash* h;
 
-    if ((h = (Hash*) sys_alloc_from(111,sizeof(Hash))) == (Hash*) 0)
+    if ((h = (Hash*) sys_alloc_from(from_table, sizeof(Hash))) == (Hash*) 0)
 	return (Hash*) 0;
 
-    h = hash_init(h, name, size, fun);
+    h = hash_init_from(from_buckets, h, name, size, fun);
     h->is_allocated =  1;
     return h;
+#undef from_table
+#undef from_buckets
 }
 
 /*
 ** Delete hash table and all objects
 */
-void hash_delete(h)
-Hash* h;
+void hash_delete(Hash* h)
 {
     int old_size = h->size;
     int i;
@@ -192,13 +209,17 @@ Hash* h;
 /*
 ** Rehash all objects
 */
-static void rehash(h, grow)
-Hash* h; int grow;
+static void rehash(Hash* h, int grow)
 {
     int sz;
     int old_size = h->size;
     HashBucket** new_bucket;
     int i;
+#ifdef INSTRUMENT
+    int from_buckets = h->from_buckets;
+#else
+#define from_buckets (-1)
+#endif
 
     if (grow) {
 	if ((h_size_table[h->ix+1]) == -1)
@@ -211,9 +232,11 @@ Hash* h; int grow;
 	h->ix--;
     }
     h->size = h_size_table[h->ix];
+    h->size20percent = h->size/5;
+    h->size80percent = (4*h->size)/5;
     sz = h->size*sizeof(HashBucket*);
 
-    if ((new_bucket = (HashBucket**) sys_alloc_from(110,sz)) == NULL)
+    if ((new_bucket = (HashBucket**) sys_alloc_from(from_buckets,sz)) == NULL)
 	erl_exit(1, "can't allocate hash buckets (%d)\n", sz);
     sys_memzero(new_bucket, sz);
 
@@ -233,14 +256,14 @@ Hash* h; int grow;
     }
     sys_free(h->bucket);
     h->bucket = new_bucket;
+#undef from_buckets
 }
 
 /*
 ** Find an object in the hash table
 **
 */
-void* hash_get(h, tmpl)
-Hash* h; void* tmpl;
+void* hash_get(Hash* h, void* tmpl)
 {
     HashValue hval = h->fun.hash(tmpl);
     int ix = hval % h->size;
@@ -257,8 +280,7 @@ Hash* h; void* tmpl;
 /*
 ** Find or insert an object in the hash table
 */
-void* hash_put(h, tmpl)
-Hash* h; void* tmpl;
+void* hash_put(Hash* h, void* tmpl)
 {
     HashValue hval = h->fun.hash(tmpl);
     int ix = hval % h->size;
@@ -278,7 +300,7 @@ Hash* h; void* tmpl;
     b->next = h->bucket[ix];
     h->bucket[ix] = b;
 
-    if (h->used > (4*h->size)/5)  /* rehash at 80% */
+    if (h->used > h->size80percent)  /* rehash at 80% */
 	rehash(h, 1);
     return (void*) b;
 }
@@ -286,8 +308,7 @@ Hash* h; void* tmpl;
 ** Erase hash entry return template if erased
 ** return 0 if not erased
 */
-void* hash_erase(h, tmpl)
-Hash* h; void* tmpl;
+void* hash_erase(Hash* h, void* tmpl)
 {
     HashValue hval = h->fun.hash(tmpl);
     int ix = hval % h->size;
@@ -303,7 +324,7 @@ Hash* h; void* tmpl;
 	    h->fun.free((void*)b);
 	    if (h->bucket[ix] == NULL)
 		h->used--;
-	    if (h->used < h->size/5)  /* rehash at 20% */
+	    if (h->used < h->size20percent)  /* rehash at 20% */
 		rehash(h, 0);
 	    return tmpl;
 	}
@@ -312,3 +333,17 @@ Hash* h; void* tmpl;
     }
     return (void*)0;
 }
+
+void hash_foreach(Hash* h, void (*func)(void *, void *), void *func_arg2)
+{
+    int i;
+
+    for (i = 0; i < h->size; i++) {
+	HashBucket* b = h->bucket[i];
+	while(b != (HashBucket*) 0) {
+	    (*func)((void *) b, func_arg2);
+	    b = b->next;
+	}
+    }
+}
+

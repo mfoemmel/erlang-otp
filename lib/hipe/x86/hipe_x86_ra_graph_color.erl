@@ -9,27 +9,27 @@
 %%  History  :	* 2001-07-26 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: happi $
-%%              $Date: 2001/09/04 15:01:29 $
-%%              $Revision: 1.6 $
+%%              $Author: toli6207 $
+%%              $Date: 2002/07/05 14:58:05 $
+%%              $Revision: 1.8 $
 %% ====================================================================
 %%  Exports  :
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_x86_ra_graph_color).
--export([ra/2]).
+-export([ra/3]).
 -include("hipe_x86.hrl").
 -define(HIPE_INSTRUMENT_COMPILER, true). %% Turn on instrumentation.
 -include("../main/hipe.hrl").
 
-ra(X86Defun,Options) ->
+ra(X86Defun, SpillIndex, Options) ->
   ?inc_counter(ra_calls_counter,1), 
   SpillLimit =
     hipe_x86_specific:number_of_temporaries(hipe_x86_cfg:init(X86Defun)),
-  alloc(X86Defun, 0, SpillLimit, Options).
+  alloc(X86Defun, SpillLimit, SpillIndex, Options).
 
-alloc(X86Defun, SpillIndex, SpillLimit, Options) ->
+alloc(X86Defun, SpillLimit, SpillIndex, Options) ->
   ?inc_counter(ra_iteration_counter,1), 
   X86Cfg = hipe_x86_cfg:init(X86Defun),
   {Coloring, NewSpillIndex} = 
@@ -47,7 +47,7 @@ alloc(X86Defun, SpillIndex, SpillLimit, Options) ->
     _ -> 
       %% Since SpillLimit is used as a low-water-mark
       %% the list of temps not to spill is uninteresting.
-      alloc( NewX86Defun, 0, SpillLimit, Options)
+      alloc( NewX86Defun, SpillLimit, SpillIndex, Options)
   end.
 
 

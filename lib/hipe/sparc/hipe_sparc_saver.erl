@@ -19,7 +19,8 @@
 %%   ColdSize:size,  ColdCode:code,     ColdRefs:refs
 %%  ]
 %%  Where
-%%   version:   {Major:integer, Minor:integer, Increment:integer}
+%%   version:   {{Major:integer, Minor:integer, Increment:integer},
+%%                    SYSTEM-CHECKSUM}
 %%   size:      integer
 %%   constmap:  [ConstNo:integer, Offset:integer, Need:integer,
 %%               Type:consttype, Exported:bool, 
@@ -46,17 +47,18 @@
 %-define(DEBUG,true).
 %-endif.
 -include("../main/hipe.hrl").
+-include("../rtl/hipe_literals.hrl").
 
 %%
 %%
 %%
  
-save(CompiledCode, Closures, Flags) ->
+save(CompiledCode, Closures, _Flags) ->
     {ConstSize,ConstMap, RefsFromConsts} =
 	hipe_sparc_linker:pack_constants(CompiledCode),
     %%  io:format("Const Size ~w\n",[ConstSize]),
     {HotSize,ColdSize,Map,Code} = get_code(CompiledCode),
-    {HAddr,CAddr,AccHCode,AccCCode,AccHRefs,AccCRefs} = 
+    {_HAddr,_CAddr,AccHCode,AccCCode,AccHRefs,AccCRefs} = 
 	hipe_sparc_linker:assemble(Code,Map,ConstMap),
     AsmCode = {{HotSize,AccHCode,AccHRefs},
 	       {ColdSize,AccCCode,AccCRefs}},
@@ -66,15 +68,15 @@ mk_external(ConstSize, ConstMap, RefsFromConsts, ExportMap, AsmCode, Closures) -
   {{HotSize,AccHCode,AccHRefs},
    {ColdSize,AccCCode,AccCRefs}} = AsmCode,
   
-  term_to_binary([?version(),
+  term_to_binary([{?version(),?HIPE_SYSTEM_CRC},
 		  ConstSize,
 		  slim_constmap(ConstMap),
 		  mk_labelmap(RefsFromConsts, ExportMap, HotSize),
 		  slim_exportmap(ExportMap, HotSize, Closures),
 		  HotSize,words32towords8(AccHCode),
-		  slim_refs(AccHRefs),
+		  hipe_pack_constants:slim_refs(AccHRefs),
 		  ColdSize,words32towords8(AccCCode),
-		  slim_refs(AccCRefs)]).
+		  hipe_pack_constants:slim_refs(AccCRefs)]).
 
 
 
@@ -101,7 +103,7 @@ get_code([],HotSize,ColdSize,Map,Acc) ->
 
 slim_constmap(Map) ->
   slim_constmap(Map,[]).
-slim_constmap([{MFA, Label, ConstNo,
+slim_constmap([{_MFA, _Label, ConstNo,
 		Offset, Need, Type, Term, Export}|Rest],Acc) ->
   slim_constmap(Rest, [ConstNo, Offset, Need, Type, Export, Term| Acc]);
 slim_constmap([],Acc) -> Acc.
@@ -121,12 +123,9 @@ mk_labelmap([{MFA, Labels}| Rest], ExportMap, Acc, HotSize) ->
 	({L,Pos}) ->
 	  {Pos,find_offset({MFA,L}, ExportMap, HotSize)};
 	({sorted,Base,OrderedLabels}) ->
-	  {sorted, Base, lists:map(
-			   fun ({L,Order}) ->
-			       {Order, find_offset({MFA,L}, ExportMap, HotSize)}
-			   end,
-			   OrderedLabels)
-	   }
+	  {sorted, Base, [{Order, find_offset({MFA,L}, ExportMap, HotSize)}
+			  || {L,Order} <- OrderedLabels]
+	  }
       end,
       Labels),
   %% msg("Map: ~w Map\n",[Map]),
@@ -135,7 +134,7 @@ mk_labelmap([{MFA, Labels}| Rest], ExportMap, Acc, HotSize) ->
 
 mk_labelmap([],_,Acc,_) -> Acc.
 
-find_offset({MFA,L},[{{MFA,L},Mode,Adr}|Rest], HotSize) ->
+find_offset({MFA,L},[{{MFA,L},Mode,Adr}|_Rest], HotSize) ->
   case Mode of
     hot -> Adr;
     cold -> Adr + HotSize
@@ -143,7 +142,7 @@ find_offset({MFA,L},[{{MFA,L},Mode,Adr}|Rest], HotSize) ->
 find_offset(L,[_|Rest], HotSize) ->
   find_offset(L,Rest,HotSize);
 find_offset(L,[],_) ->
-  exit({label_not_found,L}).
+  ?EXIT({label_not_found,L}).
 
 
 slim_exportmap(Map, HotSize, Closures) ->
@@ -159,7 +158,7 @@ slim_exportmap1([{{{M,F,A},entry},Mode,Adr}|Rest], HotSize, Acc) ->
   slim_exportmap1(Rest, HotSize, [{NewAdr,M,F,A}|Acc]);
 slim_exportmap1([_|Rest], HotSize, Acc) ->
   slim_exportmap1(Rest, HotSize, Acc);
-slim_exportmap1([], HotSize, Acc) -> Acc.
+slim_exportmap1([], _HotSize, Acc) -> Acc.
 
 slim_sorted_exportmap([{Adr,M,F,A}|Rest], Closures) ->
   IsClosure = lists:member({M,F,A}, Closures),
@@ -167,34 +166,3 @@ slim_sorted_exportmap([{Adr,M,F,A}|Rest], Closures) ->
 slim_sorted_exportmap([],_) -> [].
 
 
-slim_refs([]) -> [];
-slim_refs(Refs) ->
-  [Ref|Rest] = lists:keysort(1,Refs),
-  compact_ref_types(Rest,element(1,Ref),[Ref],[]).
-
-compact_ref_types([Ref|Refs],Type,AccofType,Acc) ->
-  case element(1,Ref) of
-    Type ->
-      compact_ref_types(Refs,Type,[Ref|AccofType], Acc);
-    NewType ->
-      compact_ref_types(Refs, NewType,[Ref], [{Type,compact_dests(AccofType)}|Acc])
-  end;
-compact_ref_types([],Type,AccofType,Acc) ->
-  [{Type,compact_dests(AccofType)}|Acc].
-
-
-compact_dests([]) -> [];
-compact_dests(Refs) ->
-  [Ref|Rest] = lists:keysort(3,Refs),
-  compact_dests(Rest,element(3,Ref),[element(2,Ref)],[]).
-
-
-compact_dests([Ref|Refs],Dest,AccofDest,Acc) ->
-  case element(3,Ref) of
-    Dest ->
-      compact_dests(Refs,Dest,[element(2,Ref)|AccofDest], Acc);
-    NewDest ->
-      compact_dests(Refs, NewDest,[element(2,Ref)], [{Dest,AccofDest}|Acc])
-  end;
-compact_dests([],Dest,AccofDest,Acc) ->
-  [{Dest,AccofDest}|Acc].

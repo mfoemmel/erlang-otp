@@ -89,3 +89,4 @@ void erts_bs_put_string(byte* iptr, Uint num_bytes);
 #define BSF_LITTLE 2		/* Field is little-endian (otherwise big-endian). */
 #define BSF_SIGNED 4		/* Field is signed (otherwise unsigned). */
 #define BSF_EXACT 8		/* Size in bs_init is exact. */
+#define BSF_NATIVE 16		/* Native endian. */

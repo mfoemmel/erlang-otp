@@ -20,12 +20,18 @@
 #define __ERL_MESSAGE_H__
 
 struct proc_bin;
+struct external_thing_;
 
 typedef struct erl_mesg {
-    struct erl_mesg* next;  /* Next message */
-    Eterm mesg;            /* The message (in buffer or heap) */
-    Eterm seq_trace_token; /* Token: NIL if not used */
+    struct erl_mesg* next;	/* Next message */
+    Eterm m[2];			/* m[0] = message, m[1] = seq trace token */
 } ErlMessage;
+
+#define ERL_MESSAGE_TERM(mp) ((mp)->m[0])
+#define ERL_MESSAGE_TOKEN(mp) ((mp)->m[1])
+
+/* Size of default message buffer (erl_message.c) */
+#define ERL_MESSAGE_BUF_SZ 500
 
 typedef struct {
     ErlMessage* first;
@@ -41,7 +47,10 @@ typedef struct {
 
 typedef struct erl_off_heap {
     struct proc_bin* mso;	/* List of associated binaries. */
+#ifndef SHARED_HEAP
     struct erl_fun_thing* funs;	/* List of funs. */
+#endif
+    struct external_thing_* externals; /* List of external things. */
     int overhead;		/* Administrative overhead (used to force GC). */
 } ErlOffHeap;
 
@@ -92,7 +101,6 @@ void free_message(ErlMessage *);
 ErlHeapFragment* new_message_buffer(Uint);
 void free_message_buffer(ErlHeapFragment *);
 void queue_message_tt(struct process*, ErlHeapFragment*, Eterm, Eterm);
-#define queue_message(a, b, c) queue_message_tt(a, b, c, NIL)
 void deliver_exit_message_tt(Eterm, struct process*, Eterm, Eterm);
 #define deliver_exit_message(a, b, c) deliver_exit_message_tt(a, b, c, NIL)
 void send_message(struct process*, struct process*, Eterm);

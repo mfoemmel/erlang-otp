@@ -170,7 +170,7 @@ obsolete(erlang, old_binary_to_term, 1) ->
 obsolete(erlang, info, 1) ->
     {true, {erlang, system_info, 1}};
 obsolete(erlang, hash, 2) ->
-    {true, {erlang, phash, 2}};
+    {true, {erlang, phash2, 2}};
 
 obsolete(file, file_info, 1) ->
     {true, {file, read_file_info, 1}};

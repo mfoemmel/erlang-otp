@@ -83,7 +83,7 @@
    so that a request will not use a slot with a name that we
    want to resuse later incrementing the "creation" */
 
-
+
 /* forward declarations */
 
 static void do_request _ANSI_ARGS_((EpmdVars*,int,Connection*,char*,int));
@@ -105,7 +105,7 @@ static int reply _ANSI_ARGS_((EpmdVars*,int,char *,int));
 static void dbg_print_buf _ANSI_ARGS_((EpmdVars*,char *,int));
 static void print_names _ANSI_ARGS_((EpmdVars*));
 
-
+
 void run(g)
      EpmdVars *g;
 {
@@ -130,7 +130,7 @@ void run(g)
    * because addresses will be reused even if they are still in use.
    */
   
-#ifndef __WIN32__
+#if (!defined(__WIN32__) && !defined(_OSE_))
   /* We ignore the SIGPIPE signal that is raised when we call write
      twice on a socket closed by the other end. */
   signal(SIGPIPE, SIG_IGN);
@@ -148,14 +148,18 @@ void run(g)
      accept function is called. We set the listen socket
      to be non blocking to prevent us from being hanging
      in accept() waiting for the next request. */
-  
-#if defined(__WIN32__) || defined(NO_FCNTL)
+#ifdef _OSE_  
+  opt = 1;
+  if (ioctl(listensock, FIONBIO, (char*)&opt) != 0)
+#else
+#if (defined(__WIN32__) || defined(NO_FCNTL))
   opt = 1;
   if (ioctl(listensock, FIONBIO, &opt) != 0) /* Gives warning in VxWorks */
 #else
   opt = fcntl(listensock, F_GETFL, 0);
   if (fcntl(listensock, F_SETFL, opt | O_NONBLOCK) == -1)
 #endif /* __WIN32__ || VXWORKS */
+#endif /* _OSE_ */
     dbg_perror(g,"failed to set non-blocking mode of listening socket %d",
 	       listensock);
 
@@ -164,6 +168,18 @@ void run(g)
     SET_ADDR_ANY(iserv_addr, FAMILY, sport);
   }
   
+#ifdef _OSE_
+  {
+    int optlen = sizeof(opt);
+    opt = 1;
+    if(getsockopt(listensock, SOL_SOCKET, SO_REUSEADDR,
+		  (void*)&opt, &optlen) < 0)
+      fprintf(stderr, "\n\nGETSOCKOPT FAILS! %d\n\n", errno);
+    else if(opt == 1)
+      fprintf(stderr, "SO_REUSEADDR is set!\n");
+  }
+#endif
+
   if(bind(listensock,(struct sockaddr*) &iserv_addr, sizeof(iserv_addr)) < 0 )
     {
       if (errno == EADDRINUSE)
@@ -357,7 +373,7 @@ static void do_read(g,s)
 	epmd_conn_close(g,s);		/* Normal close */
     }
 }
-
+
 static int do_accept(g,listensock)
      EpmdVars *g;
      int listensock;
@@ -378,7 +394,7 @@ static int do_accept(g,listensock)
 
     return conn_open(g,msgsock);
 }
-
+
 static void do_request(g, fd, s, buf, bsize)
      EpmdVars *g;
      int fd;

@@ -13,13 +13,13 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id $
 %%
 -module(xref_reader).
 
 -export([module/4]).
 
--import(lists, [keysearch/3, member/2, reverse/1, sort/1]).
+-import(lists, [keysearch/3, member/2, reverse/1]).
 
 -record(xrefr, 
 	{module=[],
@@ -65,9 +65,8 @@ forms([], S) ->
 	   l_call_at = LCallAt, x_call_at = XCallAt,
 	   el = LC, ex = XC, x = X, 
 	   lattrs = AL, xattrs = AX, battrs = B, unresolved = U} = S,
-    Unresolved = sort(U),
     Attrs = {AL, AX, B},
-    {ok, M, {DefAt, LCallAt, XCallAt, LC, XC, X, Attrs}, Unresolved}.
+    {ok, M, {DefAt, LCallAt, XCallAt, LC, XC, X, Attrs}, U}.
 
 form({attribute, Line, xref, Calls}, S) -> % experimental
     #xrefr{module = M, function = Fun, 
@@ -234,8 +233,8 @@ external_call(Mod, Fun, ArgsList, Line, X, S) ->
     Arity = length(ArgsList),
     W = case xref_utils:is_funfun(Mod, Fun, Arity) of
 	    true when erlang == Mod, apply == Fun, 2 == Arity -> apply2;
-	    true when erlang == Mod, spawn_opt == Fun, 4 == Arity -> spawn_opt;
 	    true when erts_debug == Mod, apply == Fun, 4 == Arity -> debug4;
+	    true when erlang == Mod, spawn_opt == Fun -> Arity - 1;
 	    true -> Arity;
 	    false when Mod == erlang ->
 		case erl_internal:type_test(Fun, Arity) of
@@ -257,16 +256,14 @@ external_call(Mod, Fun, ArgsList, Line, X, S) ->
 	    expr_list(ArgsList, S1);
 	{apply2, [{tuple, _, [M,F]}, ArgsTerm]} ->
 	    eval_args(M, F, ArgsTerm, Line, S1, ArgsList, []);
-	{1, [{tuple, _, [M,F]}]} ->	
-	    eval_args(M, F, list2term([]), Line, S1, ArgsList, []);
-	{2, [Node, {tuple, _, [M,F]}]} ->
-	    eval_args(M, F, list2term([]), Line, S1, ArgsList, [Node]);
-	{3, [M, F, ArgsTerm]} ->
-	    eval_args(M, F, ArgsTerm, Line, S1, ArgsList, []);
-	{4, [Node, M, F, ArgsTerm]} ->
-	    eval_args(M, F, ArgsTerm, Line, S1, ArgsList, [Node]);
-	{spawn_opt, [M, F, ArgsTerm, Opts]} ->
-	    eval_args(M, F, ArgsTerm, Line, S1, ArgsList, [Opts]);
+	{1, [{tuple, _, [M,F]} | R]} ->	% R = [] unless spawn_opt
+	    eval_args(M, F, list2term([]), Line, S1, ArgsList, R);
+	{2, [Node, {tuple, _, [M,F]} | R]} -> % R = [] unless spawn_opt
+	    eval_args(M, F, list2term([]), Line, S1, ArgsList, [Node | R]);
+	{3, [M, F, ArgsTerm | R]} -> % R = [] unless spawn_opt
+	    eval_args(M, F, ArgsTerm, Line, S1, ArgsList, R);
+	{4, [Node, M, F, ArgsTerm | R]} -> % R = [] unless spawn_opt
+	    eval_args(M, F, ArgsTerm, Line, S1, ArgsList, [Node | R]);
 	{debug4, [M, F, ArgsTerm, _]} ->
 	    eval_args(M, F, ArgsTerm, Line, S1, ArgsList, []);
 	_Else -> % apply2, 1 or 2
@@ -313,8 +310,8 @@ funarg({var, _, Var}, S) -> member(Var, S#xrefr.funvars);
 funarg(_, _S) -> false.
 
 fun_args(apply2, [FunArg, Args]) -> {FunArg, Args};
-fun_args(1, [FunArg]) -> {FunArg, []};
-fun_args(2, [_Node, FunArg]) -> {FunArg, []}.
+fun_args(1, [FunArg | Args]) -> {FunArg, Args};
+fun_args(2, [_Node, FunArg | Args]) -> {FunArg, Args}.
 
 list2term([A | As]) -> 
     {cons, 0, A, list2term(As)};

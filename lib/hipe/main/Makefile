@@ -64,7 +64,7 @@ ERL_COMPILE_FLAGS +=
 # ----------------------------------------------------
 
 $(EBIN)/hipe.beam: hipe.hrl
-
+$(EBIN)/hipe.beam: ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_main.beam: hipe.hrl
 
 debug opt: $(TARGET_FILES) 

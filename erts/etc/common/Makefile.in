@@ -25,7 +25,11 @@ else
 ifeq ($(TYPE),purify)
 PURIFY = purify
 TYPEMARKER =
+ifeq ($(findstring ose,$(TARGET)),ose)
+TYPE_FLAGS = -g -XO -DPURIFY
+else
 TYPE_FLAGS = -g -O2 -DPURIFY
+endif
 else
 PURIFY =
 TYPEMARKER =
@@ -51,11 +55,16 @@ DRVDIR    = $(ERL_TOP)/erts/emulator/drivers/@ERLANG_OSTYPE@
 ERLINTDIR = $(ERL_TOP)/lib/erl_interface/src
 VXETC     = ../vxworks
 UXETC     = ../unix
+OSEETC	  = ../ose
 
 ifeq ($(findstring vxworks,$(TARGET)), vxworks)
 ERLEXEC = erl.exec
+else 
+ifeq ($(findstring ose,$(TARGET)), ose)
+ERLEXEC =
 else
 ERLEXEC = erlexec
+endif
 endif
 
 # ----------------------------------------------------
@@ -80,6 +89,21 @@ INSTALL_LIBS = $(OBJDIR)/reclaim.o
 INSTALL_OBJS = $(OBJDIR)/heart.o
 TEXTFILES = $(BINDIR)/erl_script.sam
 else
+ifeq ($(findstring ose,$(TARGET)), ose)
+INSTALL_TOP = $(OSEETC)/README.OSE
+INSTALL_MISC = $(OSEETC)/Makefile $(OSEETC)/board.con $(OSEETC)/heap.con \
+		$(OSEETC)/mmh.con $(OSEETC)/osemain.con $(OSEETC)/ospp.con \
+	        $(OSEETC)/pmd.con \
+		$(OSEETC)/erl.exec.c $(OSEETC)/erl_inet_cfg.c \
+		$(OSEETC)/erl_ose_init.c $(OSEETC)/erl_port_dummy.c \
+		$(OSEETC)/erl_user_port_map.c $(OSEETC)/startefs.c \
+		$(OSEETC)/startinet.c $(OSEETC)/startshell.c \
+		$(OSEETC)/time_server.c
+INSTALL_SRC =
+INSTALL_LIBS =
+INSTALL_OBJS =
+INSTALL_INCLUDES =
+else
 INET_GETHOST = $(BINDIR)/inet_gethost
 INSTALL_EMBEDDED_PROGS += $(BINDIR)/erlc $(BINDIR)/run_erl $(BINDIR)/to_erl
 INSTALL_EMBEDDED_DATA = ../unix/start.src ../unix/start_erl.src
@@ -92,16 +116,21 @@ INSTALL_OBJS =
 INSTALL_INCLUDES =
 TEXTFILES = Install erl.src
 endif
+endif
 
 INSTALL_NOTES = \
 	$(ERL_TOP)/erts/notes.html \
 	$(ERL_TOP)/erts/notes_history.html
 
+ifneq ($(findstring ose,$(TARGET)), ose)
 INSTALL_PROGS =              \
 	$(INET_GETHOST)      \
 	$(BINDIR)/heart      \
 	$(BINDIR)/$(ERLEXEC) \
 	$(INSTALL_EMBEDDED_PROGS)
+else
+INSTALL_PROGS =
+endif
 
 
 etc:	$(INSTALL_PROGS) $(INSTALL_LIBS) $(TEXTFILES)
@@ -109,6 +138,19 @@ etc:	$(INSTALL_PROGS) $(INSTALL_LIBS) $(TEXTFILES)
 docs:
 
 clean:
+	rm -f $(INSTALL_PROGS)
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erlexec.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erl_io.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erlc.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/heart.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/heart_config.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/inet_gethost.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/rdate.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/reclaim.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/run_erl.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/to_erl.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/vxcall.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/wd_keeper.o
 	rm -f *~ core
 
 #
@@ -233,9 +275,13 @@ ifneq ($(INSTALL_OBJS),)
 endif
 	$(INSTALL_DIR) $(RELEASE_PATH)/erts-$(VSN)/bin
 ifneq ($(findstring vxworks,$(TARGET)), vxworks)
+ifneq ($(findstring ose,$(TARGET)), ose)
 	$(INSTALL_SCRIPT) erl.src $(RELEASE_PATH)/erts-$(VSN)/bin
 endif
+endif
+ifneq ($(INSTALL_PROGS),)
 	$(INSTALL_PROGRAM) $(INSTALL_PROGS) $(RELEASE_PATH)/erts-$(VSN)/bin
+endif
 	$(INSTALL_SCRIPT) $(INSTALL_TOP) $(RELEASE_PATH)
 ifneq ($(INSTALL_MISC),)
 	$(INSTALL_DIR) $(RELEASE_PATH)/misc

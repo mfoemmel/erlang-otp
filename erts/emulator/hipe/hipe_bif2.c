@@ -15,6 +15,7 @@
 #include "big.h"
 #include "hipe_debug.h"
 #include "hipe_mode_switch.h"
+#include "hipe_stack.h"
 
 BIF_RETTYPE hipe_bifs_show_estack_1(BIF_ALIST_1)
 BIF_ADECL_1
@@ -98,6 +99,17 @@ BIF_RETTYPE hipe_bifs_in_native_0(BIF_ALIST_0)
 BIF_ADECL_0
 { 
   BIF_RET(am_false);
+}
+
+
+BIF_RETTYPE hipe_bifs_heap_architecture_0(BIF_ALIST_0)
+BIF_ADECL_0
+{ 
+#ifdef SHARED_HEAP
+  BIF_RET(am_shared);
+#else
+  BIF_RET(am_private);
+#endif
 }
 
 

@@ -68,9 +68,9 @@ dispose(Object) ->
 		{'internal', Key, _, _, _} ->
 		    case orber_objectkeys:get_pid(Key) of
 			{error, Reason} ->
-			    orber:debug_level_print("[~p] corba_boa:dispose(~p); object not found(~p)", 
-						    [?LINE, Object, Reason], ?DEBUG_LEVEL),
-			    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
+			    orber:dbg("[~p] corba_boa:dispose(~p); object not found(~p)", 
+				      [?LINE, Object, Reason], ?DEBUG_LEVEL),
+			    corba:raise(#'TRANSIENT'{completion_status=?COMPLETED_NO});
 			Pid ->
 			    gen_server:call(Pid, stop)
 		    end;
@@ -88,8 +88,8 @@ dispose(Object) ->
 			    end
 		    end;
 		{'external', _} -> 
-		    orber:debug_level_print("[~p] corba_boa:dispose(~p); external object.", 
-					    [?LINE, Object], ?DEBUG_LEVEL),
+		    orber:dbg("[~p] corba_boa:dispose(~p); external object.", 
+			      [?LINE, Object], ?DEBUG_LEVEL),
 		    %% Must be fixed !!!!!!!!
 		    corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO})
 	    end;
@@ -99,8 +99,8 @@ dispose(Object) ->
 		    Module:terminate(normal, Other),
 		    ok;
 		Why ->
-		    orber:debug_level_print("[~p] corba_boa:dispose(~p); probably subobject key set(~p)", 
-					    [?LINE, Object, Why], ?DEBUG_LEVEL),
+		    orber:dbg("[~p] corba_boa:dispose(~p); probably subobject key set(~p)", 
+			      [?LINE, Object, Why], ?DEBUG_LEVEL),
 		    corba:raise(#'NO_PERMISSION'{completion_status=?COMPLETED_NO})
 	    end
     end.

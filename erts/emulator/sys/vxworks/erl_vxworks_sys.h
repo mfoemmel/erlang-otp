@@ -18,6 +18,9 @@
 #ifndef __ERL_VXWORKS_SYS_H__
 #define __ERL_VXWORKS_SYS_H__
 
+/* stdarg.h don't work without this one... */
+#include <vxWorks.h>
+
 #include <stdio.h>
 #include <math.h>
 #include <limits.h>
@@ -159,5 +162,12 @@ extern int sys_init_hrtime(void);
 extern SysHrTime sys_gethrtime(void);
 extern void sys_gettimeofday(SysTimeval *tvp);
 extern clock_t sys_times(SysTimes *t);
+
+#define SIZEOF_SHORT   2
+#define SIZEOF_INT     4
+#define SIZEOF_LONG    4
+#define SIZEOF_VOID_P  4
+#define SIZEOF_SIZE_T  4
+#define SIZEOF_OFF_T   4
 
 #endif /* __ERL_VXWORKS_SYS_H__ */

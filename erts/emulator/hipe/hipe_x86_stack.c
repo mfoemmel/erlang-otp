@@ -7,6 +7,10 @@
 #include "bif.h"
 #include "hipe_bif0.h"		/* for hipe_find_sdesc() */
 #include "hipe_stack.h"
+#include "hipe_x86_asm.h"	/* for X86_NR_ARG_REGS */
+
+extern void nbif_fail(void);
+extern void nbif_stack_trap_ra(void);
 
 /*
  * These are C-wrappers for non-HiPE BIFs that may trigger a native
@@ -38,26 +42,148 @@ BIF_ADECL_1
 }
 
 /*
- * Output a raw nstack dump if a stack walk procedure fails.
- * Can't use hipe_print_nstack() since it assumes the stack
- * is clean and traversable.
+ * hipe_print_nstack() is called from hipe_bifs:show_nstack/1.
  */
-static void dump_nstack(Process *p)
+static void print_slot(Eterm *sp, unsigned int live)
 {
-    Eterm *sp, *end;
+    Eterm val = *sp;
+    printf(" | 0x%08lx | 0x%08lx | ", (long)sp, val);
+    if( live )
+	ldisplay(val, COUT, 30);
+    printf("\r\n");
+}
+
+void hipe_print_nstack(Process *p)
+{
+    Eterm *nsp;
+    Eterm *nsp_end;
+    struct sdesc sdesc0;
+    const struct sdesc *sdesc1;
+    const struct sdesc *sdesc;
+    unsigned long ra;
+    unsigned long exnra;
+    unsigned int mask;
+    unsigned int sdesc_size;
+    unsigned int i;
+    unsigned int nstkarity;
+
+    nsp = p->hipe.nsp;
+    nsp_end = p->hipe.nstend;
+
+    nstkarity = p->hipe.narity - X86_NR_ARG_REGS;
+    if( (int)nstkarity < 0 )
+	nstkarity = 0;
+    sdesc0.summary = nstkarity;
+    sdesc0.livebits[0] = ~1;
+    sdesc = &sdesc0;
 
     printf(" |      NATIVE  STACK      |\r\n");
-    sp = p->hipe.nsp;
-    end = p->hipe.nstend;
-    printf(" | Address    | Contents   |\r\n");
-    while( sp < end ) {
-	Eterm val = sp[0];
-	printf(" | 0x%08x | 0x%08lx | ", (unsigned int)sp, val);
-	ldisplay(val, COUT, 30);
-	printf("\r\n");
-	sp += 1;
-    }
     printf(" |------------|------------|\r\n");
+    printf(" | heap       | 0x%08lx |\r\n", (unsigned long)p->heap);
+#ifndef SHARED_HEAP
+    printf(" | high_water | 0x%08lx |\r\n", (unsigned long)p->high_water);
+#endif
+    printf(" | hend       | 0x%08lx |\r\n", (unsigned long)p->htop);
+#ifndef SHARED_HEAP
+    printf(" | old_heap   | 0x%08lx |\r\n", (unsigned long)p->old_heap);
+    printf(" | old_hend   | 0x%08lx |\r\n", (unsigned long)p->old_hend);
+#endif
+    printf(" | nsp        | 0x%08lx |\r\n", (unsigned long)p->hipe.nsp);
+    printf(" | nstend     | 0x%08lx |\r\n", (unsigned long)p->hipe.nstend);
+    printf(" | nstblacklim| 0x%08lx |\r\n", (unsigned long)p->hipe.nstblacklim);
+    printf(" | nstgraylim | 0x%08lx |\r\n", (unsigned long)p->hipe.nstgraylim);
+    printf(" |------------|------------|\r\n");
+    printf(" | Address    | Contents   |\r\n");
+
+    for(;;) {
+	printf(" |------------|------------|\r\n");
+	if( nsp >= nsp_end ) {
+	    if( nsp == nsp_end )
+		return;
+	    fprintf(stderr, "%s: passed end of stack\r\n", __FUNCTION__);
+	    break;
+	}
+	ra = nsp[sdesc_fsize(sdesc)];
+	if( ra == (unsigned long)nbif_stack_trap_ra )
+	    sdesc1 = hipe_find_sdesc((unsigned long)p->hipe.ngra);
+	else
+	    sdesc1 = hipe_find_sdesc(ra);
+	sdesc_size = sdesc_fsize(sdesc) + 1 + sdesc_arity(sdesc);
+	i = 0;
+	mask = sdesc->livebits[0];
+	for(;;) {
+	    if( i == sdesc_fsize(sdesc) ) {
+		printf(" | 0x%08lx | 0x%08lx | ", (long)&nsp[i], ra);
+		if( ra == (unsigned long)nbif_stack_trap_ra )
+		    printf("STACK TRAP, ORIG RA 0x%08lx", (unsigned long)p->hipe.ngra);
+		else
+		    printf("NATIVE RA");
+		if( (exnra = sdesc_exnra(sdesc1)) != 0 )
+		    printf(", EXNRA 0x%08lx", exnra);
+		printf("\r\n");
+	    } else {
+		print_slot(&nsp[i], (mask & 1));
+	    }
+	    if( ++i >= sdesc_size )
+		break;
+	    if( i & 31 )
+		mask >>= 1;
+	    else
+		mask = sdesc->livebits[i >> 5];
+	}
+	nsp += sdesc_size;
+	sdesc = sdesc1;
+    }
+    abort();
+}
+
+#define MINSTACK	128
+#define NSKIPFRAMES	4
+
+void hipe_update_stack_trap(Process *p, const struct sdesc *sdesc)
+{
+    Eterm *nsp;
+    Eterm *nsp_end;
+    unsigned long ra;
+    int n;
+
+    nsp = p->hipe.nsp;
+    nsp_end = p->hipe.nstend;
+    if( (char*)nsp_end - (char*)nsp < MINSTACK*sizeof(Eterm*) ) {
+	p->hipe.nstgraylim = NULL;
+	return;
+    }
+    n = NSKIPFRAMES;
+    for(;;) {
+	nsp += sdesc_fsize(sdesc);
+	if( nsp >= nsp_end ) {
+	    p->hipe.nstgraylim = NULL;
+	    return;
+	}
+	ra = nsp[0];
+	if( --n <= 0 )
+	    break;
+	nsp += 1 + sdesc_arity(sdesc);
+	sdesc = hipe_find_sdesc(ra);
+    }
+    p->hipe.nstgraylim = nsp + 1 + sdesc_arity(sdesc);
+    p->hipe.ngra = (void(*)(void))ra;
+    nsp[0] = (unsigned long)nbif_stack_trap_ra;
+}
+
+/*
+ * hipe_handle_stack_trap() is called when the mutator returns to
+ * nbif_stack_trap_ra, which marks the gray/white stack boundary frame.
+ * The gray/white boundary is moved back one or more frames.
+ *
+ * The function head below is "interesting".
+ */
+void (*hipe_handle_stack_trap(Process *p))(void)
+{
+    void (*ngra)(void) = p->hipe.ngra;
+    const struct sdesc *sdesc = hipe_find_sdesc((unsigned long)ngra);
+    hipe_update_stack_trap(p, sdesc);
+    return ngra;
 }
 
 /*
@@ -74,88 +200,40 @@ void hipe_find_handler(Process *p)
     Eterm *nsp;
     Eterm *nsp_end;
     unsigned long ra;
+    unsigned long exnra;
     unsigned int arity;
-    struct sdesc *sdesc;
-    extern void nbif_fail(void);
+    const struct sdesc *sdesc;
+    unsigned int nstkarity;
 
     nsp = p->hipe.nsp;
     nsp_end = p->hipe.nstend;
-    arity = p->hipe.narity;
+    nstkarity = p->hipe.narity - X86_NR_ARG_REGS;
+    if( (int)nstkarity < 0 )
+	nstkarity = 0;
+    arity = nstkarity;
 
     while( nsp < nsp_end ) {
 	ra = nsp[0];
+	if( ra == (unsigned long)nbif_stack_trap_ra )
+	    ra = (unsigned long)p->hipe.ngra;
 	sdesc = hipe_find_sdesc(ra);
-	if( !sdesc ) {
-	    fprintf(stderr, "%s: ra %#lx at sp %#lx has no sdesc!\r\n",
-		    __FUNCTION__, ra, (long)nsp);
-	    break;
-	}
-	/* nsp = nsp + 1 + arity + sdesc->fsize; */
+	/* nsp = nsp + 1 + arity + sdesc_fsize(sdesc); */
 	nsp += 1;		/* skip ra */
 	nsp += arity;		/* skip actuals */
-	if( sdesc->exnra &&
+	if( (exnra = sdesc_exnra(sdesc)) != 0 &&
 	    (p->catches >= 0 ||
-	     sdesc->exnra == (unsigned long)nbif_fail) ) {
-	    p->hipe.ncallee = (void(*)(void)) sdesc->exnra;
+	     exnra == (unsigned long)nbif_fail) ) {
+	    p->hipe.ncallee = (void(*)(void)) exnra;
 	    p->hipe.nsp = nsp;
 	    p->hipe.narity = 0;
+	    /* update the gray/white boundary if we threw past it */
+	    if( p->hipe.nstgraylim && nsp >= p->hipe.nstgraylim )
+		hipe_update_stack_trap(p, sdesc);
 	    return;
 	}
-	nsp += sdesc->fsize;
-	arity = sdesc->arity;
+	nsp += sdesc_fsize(sdesc);
+	arity = sdesc_arity(sdesc);
     }
     fprintf(stderr, "%s: no native CATCH found!\r\n", __FUNCTION__);
-    dump_nstack(p);
-    abort();
-}
-
-/*
- * hipe_clean_nstack() is called from ggc.c:setup_rootset()
- * to ensure that non-traceable stack slots contain zeros.
- * The native stack MUST contain a stack frame as it appears on
- * entry to a function (return address, actuals, caller's frame).
- * p->hipe.narity MUST contain the arity (number of actuals).
- */
-void hipe_clean_nstack(Process *p)
-{
-    Eterm *nsp;
-    Eterm *nsp_end;
-    unsigned long ra;
-    unsigned int arity;
-    struct sdesc *sdesc;
-    unsigned int i;
-
-    nsp = p->hipe.nsp;
-    nsp_end = p->hipe.nstend;
-    arity = p->hipe.narity;
-
-    for(;;) {
-	if( nsp >= nsp_end ) {
-	    if( nsp == nsp_end )
-		return;
-	    fprintf(stderr, "%s: passed end of stack\r\n", __FUNCTION__);
-	    break;
-	}
-	ra = nsp[0];
-	sdesc = hipe_find_sdesc(ra);
-	if( !sdesc ) {
-	    fprintf(stderr, "%s: ra %#lx at sp %#lx has no sdesc\r\n",
-		    __FUNCTION__, ra, (long)nsp);
-	    break;
-	}
-	if( !sdesc->altra )
-	    return;
-	nsp[0] = sdesc->altra;
-	/* nsp = nsp + 1 + arity + sdesc->fsize; */
-	nsp += 1;		/* skip ra */
-	nsp += arity;		/* skip actuals */
-	for(i = 0; i < sdesc->nskip; ++i) {
-	    unsigned int off = sdesc->skip[i];
-	    nsp[off] = 0;
-	}
-	nsp += sdesc->fsize;
-	arity = sdesc->arity;
-    }
-    dump_nstack(p);
     abort();
 }

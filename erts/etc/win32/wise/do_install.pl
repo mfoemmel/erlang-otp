@@ -58,8 +58,6 @@ sub sanity_checks {
 	unless -d "$rootdir\\lib";
     die "Failed! (Bin dir not found) \n"
 	unless -d "$rootdir\\bin";
-    die "Failed! (Misc dir not found) \n"
-	unless -d "$rootdir\\misc";
     die "Failed! (Usr dir not found) \n"
 	unless -d "$rootdir\\usr";
     die "Failed! (Usr\\Include dir not found) \n"

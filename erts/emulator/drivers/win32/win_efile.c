@@ -480,7 +480,7 @@ efile_getdcwd(errInfo, drive, buffer, size)
 Efile_error* errInfo;		/* Where to return error codes. */
 int drive;			/* 0 - current, 1 - A, 2 - B etc. */
 char* buffer;			/* Where to return the current directory. */
-unsigned size;			/* Size of buffer. */
+size_t size;			/* Size of buffer. */
 {
     if (_getdcwd(drive, buffer, size) == NULL)
 	return check_error(-1, errInfo);
@@ -496,7 +496,7 @@ Efile_error* errInfo;		/* Where to return error codes. */
 char* name;			/* Name of directory to open. */
 EFILE_DIR_HANDLE* dir_handle;	/* Directory handle of open directory. */
 char* buffer;			/* Pointer to buffer for one filename. */
-unsigned size;			/* Size of buffer. */
+size_t size;			/* Size of buffer. */
 {
     HANDLE dir;			/* Handle to directory. */
     char wildcard[MAX_PATH];	/* Wildcard to search for. */
@@ -566,7 +566,7 @@ Efile_error* errInfo;		/* Where to return error codes. */
 char* name;			/* Name of directory to open. */
 int flags;			/* Flags to use for opening. */
 int* pfd;			/* Where to store the file descriptor. */
-unsigned* pSize;		/* Where to store the size of the file. */
+off_t* pSize;			/* Where to store the size of the file. */
 {
     BY_HANDLE_FILE_INFORMATION fileInfo; /* File information from a handle. */
     HANDLE fd;			/* Handle to open file. */
@@ -900,8 +900,8 @@ efile_pwrite(errInfo, fd, buf, count, offset)
 Efile_error* errInfo;		/* Where to return error codes. */
 int fd;				/* File descriptor to write to. */
 char* buf;			/* Buffer to write. */
-unsigned count;			/* Number of bytes to write. */
-int offset;                     /* where to write it */
+size_t count;			/* Number of bytes to write. */
+off_t offset;			/* where to write it */
 {
     int res, location;
 
@@ -917,10 +917,10 @@ int
 efile_pread(errInfo, fd, offset, buf, count, pBytesRead)
 Efile_error* errInfo;		/* Where to return error codes. */
 int fd;				/* File descriptor to read from. */
-int offset;                     /* Offset in bytes from BOF. */
+off_t offset;			/* Offset in bytes from BOF. */
 char* buf;			/* Buffer to read into. */
-unsigned count;			/* Number of bytes to read. */
-unsigned* pBytesRead;		/* Where to return number of bytes read. */
+size_t count;			/* Number of bytes to read. */
+size_t* pBytesRead;		/* Where to return number of bytes read. */
 {
     int res, location;
 
@@ -939,7 +939,7 @@ Efile_error* errInfo;		/* Where to return error codes. */
 int flags;			/* Flags given when file was opened. */
 int fd;				/* File descriptor to write to. */
 char* buf;			/* Buffer to write. */
-unsigned count;			/* Number of bytes to write. */
+size_t count;			/* Number of bytes to write. */
 {
     DWORD written;		/* Bytes written in last operation. */
 
@@ -964,7 +964,7 @@ efile_writev(Efile_error* errInfo,   /* Where to return error codes */
 				      * The structs are unchanged 
 				      * after the call */
 	     int iovcnt,             /* Number of structs in vector */
-	     int size)               /* Number of bytes to write */
+	     size_t size)            /* Number of bytes to write */
 {
     int cnt;                         /* Buffers so far written */
 
@@ -997,8 +997,8 @@ Efile_error* errInfo;		/* Where to return error codes. */
 int flags;			/* Flags given when file was opened. */
 int fd;				/* File descriptor to read from. */
 char* buf;			/* Buffer to read into. */
-unsigned count;			/* Number of bytes to read. */
-unsigned* pBytesRead;		/* Where to return number of bytes read. */
+size_t count;			/* Number of bytes to read. */
+size_t* pBytesRead;		/* Where to return number of bytes read. */
 {
     if (!ReadFile((HANDLE) fd, buf, count, (DWORD *) pBytesRead, NULL))
 	return set_error(errInfo);
@@ -1009,11 +1009,11 @@ int
 efile_seek(errInfo, fd, offset, origin, new_location)
 Efile_error* errInfo;		/* Where to return error codes. */
 int fd;				/* File descriptor to do the seek on. */
-int offset;			/* Offset in bytes from the given origin. */
+off_t offset;			/* Offset in bytes from the given origin. */
 int origin;			/* Origin of seek (SEEK_SET, SEEK_CUR,
 				 * SEEK_END).
 				 */
-unsigned* new_location;		/* Resulting new location in file. */
+off_t* new_location;		/* Resulting new location in file. */
 {
     DWORD result;
 
@@ -1194,7 +1194,7 @@ dos_to_posix_mode(int attr, const char *name)
 }
 
 int
-efile_readlink(Efile_error* errInfo, char* name, char* buffer, unsigned size)
+efile_readlink(Efile_error* errInfo, char* name, char* buffer, size_t size)
 {
     errno = ENOTSUP;
     return check_error(-1, errInfo);

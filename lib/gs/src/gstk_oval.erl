@@ -75,7 +75,7 @@ create(DB, Gstkid, Opts) ->
 	    {bad_result, Error};
 	{Coords, NewOpts} ->
 	    Ngstkid=gstk_canvas:upd_gstkid(DB, Gstkid, Opts),
-	    #gstkid{id=Id,widget=CanvasTkW}=Ngstkid,
+	    #gstkid{widget=CanvasTkW}=Ngstkid,
 	    MCmd = [CanvasTkW, " create ov ", Coords],
 	    gstk_canvas:mk_cmd_and_call(NewOpts,Ngstkid, CanvasTkW, MCmd, DB)
     end.
@@ -124,7 +124,7 @@ delete(DB, Gstkid) ->
 %%
 %% Return 	: [true | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-destroy(DB, Canvas, Item) ->
+destroy(_DB, Canvas, Item) ->
     gstk:exec([Canvas, " delete ", gstk:to_ascii(Item)]).
 
 
@@ -154,7 +154,7 @@ event(DB, Gstkid, Etype, Edata, Args) ->
 %%		  MainW   - The main tk-widget
 %% Return 	: A tuple {OptionType, OptionCmd}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-option(Option, Gstkid, Canvas, DB, AItem) ->
+option(Option, _Gstkid, _Canvas, _DB, _AItem) ->
     case Option of
 	{fg,          Color} -> {s, [" -outline ", gstk:to_color(Color)]};
 	{bw,            Int} -> {s, [" -w ", gstk:to_ascii(Int)]};
@@ -171,7 +171,7 @@ option(Option, Gstkid, Canvas, DB, AItem) ->
 %% Return 	: The value of the option or invalid_option
 %%		  [OptionValue | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-read_option(Option, Gstkid, Canvas, DB, AItem) ->
+read_option(Option, Gstkid, Canvas, _DB, AItem) ->
     case Option of
 	bw       -> tcl2erl:ret_int([Canvas, " itemcg ", AItem, " -w"]);
 	fg       -> tcl2erl:ret_color([Canvas, " itemcg ", AItem," -outline"]);

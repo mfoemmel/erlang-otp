@@ -17,5 +17,9 @@
  */
 
 #define VECTOR_SIZE(Vec) (signed_val(((vector_val(Vec))[1])))
+#define VECTOR_ARRAY_SIZE(Vec) \
+ ((signed_val(((vector_val(Vec))[1])) < 5) ? 5 : (signed_val(((vector_val(Vec))[1]))))
+
 Eterm erts_unchecked_vector_get(int index, Eterm Vec);
 Eterm* erts_copy_vector(Eterm vec, Eterm* hp, Eterm* resp);
+void erts_flatten_vector(Eterm* array, Eterm vec);

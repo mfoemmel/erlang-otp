@@ -183,21 +183,21 @@ suspend_loop(SysState, Parent, Mod, Debug, Misc) ->
 	    apply(Mod, system_terminate, [Reason, Parent, Debug, Misc])
     end.
 
-do_cmd(_, suspend, _Parent, Mod, Debug, Misc) ->
+do_cmd(_, suspend, _Parent, _Mod, Debug, Misc) ->
     {suspended, ok, Debug, Misc};
-do_cmd(_, resume, _Parent, Mod, Debug, Misc) ->
+do_cmd(_, resume, _Parent, _Mod, Debug, Misc) ->
     {running, ok, Debug, Misc};
 do_cmd(SysState, get_status, Parent, Mod, Debug, Misc) ->
     Res = get_status(SysState, Parent, Mod, Debug, Misc),
     {SysState, Res, Debug, Misc};
-do_cmd(SysState, {debug, What}, _Parent, Mod, Debug, Misc) ->
+do_cmd(SysState, {debug, What}, _Parent, _Mod, Debug, Misc) ->
     {Res, NDebug} = debug_cmd(What, Debug),
     {SysState, Res, NDebug, Misc};
 do_cmd(suspended, {change_code, Module, Vsn, Extra}, _Parent,
        Mod, Debug, Misc) ->
     {Res, NMisc} = do_change_code(Mod, Module, Vsn, Extra, Misc),
     {suspended, Res, Debug, NMisc};
-do_cmd(SysState, Other, _Parent, Mod, Debug, Misc) ->
+do_cmd(SysState, Other, _Parent, _Mod, Debug, Misc) ->
     {SysState, {error, {unknown_system_msg, Other}}, Debug, Misc}.
 
 get_status(SysState, Parent, Mod, Debug, Misc) ->

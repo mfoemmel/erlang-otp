@@ -12,10 +12,10 @@ bif hipe_bifs:gc_timer_get/0
 bif hipe_bifs:gc_timer_clear/0
 bif hipe_bifs:send_timer_get/0
 bif hipe_bifs:send_timer_clear/0
-bif hipe_bifs:copy_timer_get/0
-bif hipe_bifs:copy_timer_clear/0
 bif hipe_bifs:gc_info/0
 bif hipe_bifs:clear_gc_info/0
 bif hipe_bifs:bench_info/0
 bif hipe_bifs:clear_bench_info/0
 bif hipe_bifs:message_info/0
+bif hipe_bifs:get_hrvtime/0
+bif hipe_bifs:stop_hrvtime/0

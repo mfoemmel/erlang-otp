@@ -19,6 +19,8 @@
 #ifndef __ERL_TERM_H
 #define __ERL_TERM_H
 
+struct erl_node_; /* Declared in erl_node_tables.h */
+
 /*
  * Defining ET_DEBUG to 1 causes all type-specific data access
  * macros to perform runtime type checking. This is very useful
@@ -26,8 +28,12 @@
  * be disabled during benchmarking or release.
  */
 /* #define ET_DEBUG 1 */
-#if defined(DEBUG) && !defined(ET_DEBUG)
-#define ET_DEBUG 1
+#ifndef ET_DEBUG
+#  ifdef DEBUG
+#    define ET_DEBUG 1
+#  else
+#    define ET_DEBUG 0
+#  endif
 #endif
 
 #if ET_DEBUG
@@ -76,12 +82,14 @@
  *	1000	REFC_BINARY	|		|
  *	1001	HEAP_BINARY	| BINARIES	|
  *	1010	SUB_BINARY	|		|
+ *      1100    EXTERNAL_PID  |                 |
+ *      1101    EXTERNAL_PORT | EXTERNAL THINGS |
+ *      1110    EXTERNAL_REF  |                 |
  *
  * COMMENTS:
  *
  * - The tag is zero for arityval and non-zero for thing headers.
  * - A single bit differentiates between positive and negative bignums.
- * - A single bit differentiates between binaries and non-binaries.
  *
  * XXX: globally replace XXX_SUBTAG with TAG_HEADER_XXX
  */
@@ -93,10 +101,13 @@
 #define REF_SUBTAG		(0x4 << _TAG_PRIMARY_SIZE) /* REF */
 #define FUN_SUBTAG		(0x5 << _TAG_PRIMARY_SIZE) /* FUN */
 #define FLOAT_SUBTAG		(0x6 << _TAG_PRIMARY_SIZE) /* FLOAT */
-#define _BINARY_XXX_MASK	(0x7 << _TAG_PRIMARY_SIZE)
+#define _BINARY_XXX_MASK	(0x3 << _TAG_PRIMARY_SIZE)
 #define REFC_BINARY_SUBTAG	(0x8 << _TAG_PRIMARY_SIZE) /* BINARY */
 #define HEAP_BINARY_SUBTAG	(0x9 << _TAG_PRIMARY_SIZE) /* BINARY */
 #define SUB_BINARY_SUBTAG	(0xA << _TAG_PRIMARY_SIZE) /* BINARY */
+#define EXTERNAL_PID_SUBTAG	(0xC << _TAG_PRIMARY_SIZE) /* EXTERNAL_PID */
+#define EXTERNAL_PORT_SUBTAG	(0xD << _TAG_PRIMARY_SIZE) /* EXTERNAL_PORT */
+#define EXTERNAL_REF_SUBTAG	(0xE << _TAG_PRIMARY_SIZE) /* EXTERNAL_REF */
 
 #define _TAG_HEADER_ARITYVAL	(TAG_PRIMARY_HEADER|ARITYVAL_SUBTAG)
 #define _TAG_HEADER_VECTOR	(TAG_PRIMARY_HEADER|VECTOR_SUBTAG)
@@ -108,6 +119,9 @@
 #define _TAG_HEADER_REFC_BIN	(TAG_PRIMARY_HEADER|REFC_BINARY_SUBTAG)
 #define _TAG_HEADER_HEAP_BIN	(TAG_PRIMARY_HEADER|HEAP_BINARY_SUBTAG)
 #define _TAG_HEADER_SUB_BIN	(TAG_PRIMARY_HEADER|SUB_BINARY_SUBTAG)
+#define _TAG_HEADER_EXTERNAL_PID  (TAG_PRIMARY_HEADER|EXTERNAL_PID_SUBTAG)
+#define _TAG_HEADER_EXTERNAL_PORT (TAG_PRIMARY_HEADER|EXTERNAL_PORT_SUBTAG)
+#define _TAG_HEADER_EXTERNAL_REF  (TAG_PRIMARY_HEADER|EXTERNAL_REF_SUBTAG)
 
 #define _TAG_HEADER_MASK	0x3F
 #define _HEADER_SUBTAG_MASK	0x3C	/* 4 bits for subtag */
@@ -169,7 +183,7 @@ _ET_DECLARE_CHECKED(Eterm*,list_val,Eterm);
 #define CDR(x)  *((x)+1)
 
 /* generic tagged pointer (boxed or list) access methods */
-#define _unchecked_ptr_val(x)	((Eterm*)((x) & ~0x3))
+#define _unchecked_ptr_val(x)	((Eterm*)((x) & ~((Uint) 0x3)))
 #define ptr_val(x)		_unchecked_ptr_val((x))	/*XXX*/
 #define _unchecked_offset_ptr(x,offs)	((x)+((offs)*sizeof(Eterm)))
 #define offset_ptr(x,offs)	_unchecked_offset_ptr(x,offs)	/*XXX*/
@@ -200,9 +214,11 @@ _ET_DECLARE_CHECKED(Sint,signed_val,Eterm);
 #endif
 
 /* NIL access methods */
-#define NIL		((~0 << _TAG_IMMED2_SIZE) | _TAG_IMMED2_NIL)
+#define NIL		((~((Uint) 0) << _TAG_IMMED2_SIZE) | _TAG_IMMED2_NIL)
 #define is_nil(x)	((x) == NIL)
 #define is_not_nil(x)	((x) != NIL)
+
+#define MAX_ATOM_INDEX (~(~((Uint) 0) << (sizeof(Uint)*8 - _TAG_IMMED2_SIZE)))
 
 /* atom access methods */
 #define make_atom(x)	(((x) << _TAG_IMMED2_SIZE) + _TAG_IMMED2_ATOM)
@@ -270,7 +286,7 @@ _ET_DECLARE_CHECKED(Eterm*,binary_val,Eterm);
 #define HEADER_PROC_BIN	_make_header(PROC_BIN_SIZE-1,_TAG_HEADER_REFC_BIN)
 
 /* fun objects */
-#define HEADER_FUN		_make_header(ERL_FUN_SIZE-1,_TAG_HEADER_FUN)
+#define HEADER_FUN		_make_header(ERL_FUN_SIZE-2,_TAG_HEADER_FUN)
 #define is_fun_header(x)	(((x) & _TAG_HEADER_MASK) == _TAG_HEADER_FUN)
 #define make_fun(x)		make_boxed((Eterm*)(x))
 #define is_fun(x)		(is_boxed((x)) && is_fun_header(*boxed_val((x))))
@@ -301,7 +317,11 @@ _ET_DECLARE_CHECKED(Eterm*,big_val,Eterm);
 #define big_val(x)		_ET_APPLY(big_val,(x))
 
 /* flonum ("float") access methods */
+#ifdef ARCH_64
+#define HEADER_FLONUM   _make_header(1,_TAG_HEADER_FLOAT)
+#else
 #define HEADER_FLONUM	_make_header(2,_TAG_HEADER_FLOAT)
+#endif
 #define make_float(x)	make_boxed((x))
 #define is_float(x)	(is_boxed((x)) && *boxed_val((x)) == HEADER_FLONUM)
 #define is_not_float(x)	(!is_float(x))
@@ -318,14 +338,32 @@ typedef union float_def
     byte   fb[sizeof(ieee754_8)];
     Uint16 fs[sizeof(ieee754_8) / sizeof(Uint16)];
     Uint32 fw[sizeof(ieee754_8) / sizeof(Uint32)];
+#ifdef ARCH_64
+    Uint   fdw;
+#endif
 } FloatDef;
 
+#ifdef ARCH_64
+#define GET_DOUBLE(x, f) (f).fdw = *(float_val(x)+1)
+
+#define PUT_DOUBLE(f, x)  *(x) = HEADER_FLONUM, \
+                          *((x)+1) = (f).fdw
+#define GET_DOUBLE_DATA(p, f) (f).fdw = *((Uint *) (p))
+#define PUT_DOUBLE_DATA(f,p) *((Uint *) (p)) = (f).fdw
+#else
 #define GET_DOUBLE(x, f) (f).fw[0] = *(float_val(x)+1), \
                          (f).fw[1] = *(float_val(x)+2)
 
 #define PUT_DOUBLE(f, x)  *(x) = HEADER_FLONUM, \
                           *((x)+1) = (f).fw[0], \
 			  *((x)+2) = (f).fw[1]
+#define GET_DOUBLE_DATA(p, f) (f).fw[0] = *((Uint *) (p)),\
+                              (f).fw[1] = *(((Uint *) (p))+1)
+#define PUT_DOUBLE_DATA(f,p) *((Uint *) (p)) = (f).fw[0],\
+                             *(((Uint *) (p))+1) = (f).fw[1]
+#endif
+#define DOUBLE_DATA_WORDS (sizeof(ieee754_8)/sizeof(Eterm))
+#define FLOAT_SIZE_OBJECT (DOUBLE_DATA_WORDS+1)
 
 /* tuple access methods */
 #define make_tuple(x)	make_boxed((x))
@@ -401,163 +439,444 @@ _ET_DECLARE_CHECKED(Eterm*,tuple_val,Eterm);
 	(t)[8] = (e8), \
         make_tuple(t))
 
-/* pid layout
-**
-**    Serial  Number     Node    Creat  Tag 
-**   +---------------------------------------+
-**   |  3  |  15       |   8    |   2 |  4   |
-**   +---------------------------------------+
-*/
-#define _PID_SERIAL_BITS	3
-#define _PID_NODE_BITS   	8
-#define _PID_CREAT_BITS  	2
-#define _PID_NUMBER_BITS 	15
-
-#define MAX_NODE	(1 << _PID_NODE_BITS)
-
-/* Minimum NUMBER of processes for a small system to start */
-#define MIN_PROCESS	16
-
-/* Maximum NUMBER of process identifiers */
-#define MAX_PROCESS	(1 << _PID_NUMBER_BITS)
-
-/* Maximum NUMBER of serial numbers */
-#define MAX_SERIAL	(1 << _PID_SERIAL_BITS)
-
-/* MAX value for the creation field in pid, port and reference */
-#define MAX_CREATION	(1 << _PID_CREAT_BITS)
-
-#define make_pid3(Ser,Node,Number,Creation) \
-  ((Eterm)(((Ser)<<29)|((Number)<<14)|((Node)<<6)|((Creation)<<4)|_TAG_IMMED1_PID))
-
-#define make_pid(Ser,Node,Number) \
-  make_pid3(Ser,Node,Number,ORIG_CREATION)
-
-#define is_pid(x)	(((x) & _TAG_IMMED1_MASK) == _TAG_IMMED1_PID)
-#define is_not_pid(x)	(!is_pid(x))
-
-#define _GETBITS(X,Pos,Size) (((X) >> (Pos)) & ~(~0 << (Size)))
-
 /* This macro get Size bits starting at low order position Pos
    and adjusts the bits to the right 
-   bits are numbered from 1 - 32 */
+   bits are numbered from 0 - (sizeof(Uint)*8-1) */
 
-#define _unchecked_pid_serial(x)	_GETBITS(x,29,_PID_SERIAL_BITS)
-_ET_DECLARE_CHECKED(Uint,pid_serial,Eterm);
-#define pid_serial(x)	_ET_APPLY(pid_serial,(x))
+#define _GETBITS(X,Pos,Size) (((X) >> (Pos)) & ~(~((Uint) 0) << (Size)))
 
-#define _unchecked_pid_number(x)	_GETBITS(x,14,_PID_NUMBER_BITS)
-_ET_DECLARE_CHECKED(Uint,pid_number,Eterm);
-#define pid_number(x)	_ET_APPLY(pid_number,(x))
-
-#define _unchecked_pid_node(x)		_GETBITS(x,6,_PID_NODE_BITS)
-_ET_DECLARE_CHECKED(Uint,pid_node,Eterm);
-#define pid_node(x)	_ET_APPLY(pid_node,(x))
-
-#define _unchecked_pid_creation(x)	_GETBITS(x,4,_PID_CREAT_BITS)
-_ET_DECLARE_CHECKED(Uint,pid_creation,Eterm);
-#define pid_creation(x)	_ET_APPLY(pid_creation,(x))
-
-/* port layout
-**
-**  Node   Number           Creat   Tag
-** +------------------------------------+
-** |   8   |  18              | 2 |  4  |
-** +------------------------------------+
-*/
-#define PORT_NUMBER_BITS	18
-
-/* Highest port-ID part in a term of type Port 
-   Not necessarily the same as the variable erl_max_ports
-   which defines the maximum number of simultaneous Ports
-   in the Erlang node. MAX_PORT is a hard upper limit.
-*/
-#define MAX_PORT       (1 << PORT_NUMBER_BITS)
-
-#define make_port3(Node,Number,Creation) \
- ((Eterm)(((Node)<<24)|((Number)<<6)|((Creation)<<4)|_TAG_IMMED1_PORT))
-#define make_port2(Node,Number) make_port3(Node,Number,ORIG_CREATION)
-
-#define is_port(x)	(((x) & _TAG_IMMED1_MASK) == _TAG_IMMED1_PORT)
-#define is_not_port(x)	(!is_port(x))
-
-#define _unchecked_port_node(x)		_GETBITS(x,24,_PID_NODE_BITS)
-_ET_DECLARE_CHECKED(Uint,port_node,Eterm);
-#define port_node(x)	_ET_APPLY(port_node,(x))
-
-#define _unchecked_port_number(x)	_GETBITS(x,6,PORT_NUMBER_BITS)
-_ET_DECLARE_CHECKED(Uint,port_number,Eterm);
-#define port_number(x)	_ET_APPLY(port_number,(x))
-
-#define _unchecked_port_creation(x)	_unchecked_pid_creation(x)
-_ET_DECLARE_CHECKED(Uint,port_creation,Eterm);
-#define port_creation(x)	_ET_APPLY(port_creation,(x))
-
-#define _is_pid_or_port(x)	(is_pid(x) || is_port(x))
-#define _unchecked_pid_or_port_creation(x)	_unchecked_pid_creation(x)
-_ET_DECLARE_CHECKED(Uint,pid_or_port_creation,Eterm);
-#define pid_or_port_creation(x)	_ET_APPLY(pid_or_port_creation,(x))
-
-/* refhead layout (a.k.a. "old refs")
-**
-**  Node   Number           Creat   Tag
-** +------------------------------------+
-** |   8   |  18              | 2 |  4  |
-** +------------------------------------+
-*/
-#define _REF_NUMBER_BITS	18
-
-/* Maximum number of references in the system */
-#define MAX_REFERENCE	(1 << _REF_NUMBER_BITS)
-
-/*XXX: don't actually need a tag */
-#define make_ref3(Node,Number,Creation) \
- ((Uint)(((Node)<<24) | ((Number)<<6) | ((Creation)<<4) | _TAG_IMMED1_PORT))
-
-#define make_ref2(Node,Number) make_ref3(Node,Number,ORIG_CREATION)
-
-#define _refhead_node(x)	_GETBITS(x,24,_PID_NODE_BITS)
-#define _refhead_creation(x)	_GETBITS(x,4,_PID_CREAT_BITS)
-
-/* ref layout (a.k.a. "new refs")
- *
- *	+---------------+
- * -->	| thing word	|
- *	|---------------|
- *	| ref head	|
- *	|---------------|
- *	| word 0	|
- *	| word 1	|
- *	| word 2	|
- *	+---------------+
+/*
+ * Observe! New layout for pids, ports and references in R9 (see also note
+ * in erl_node_container_utils.h).
  */
-#define REF_WORDS	3
+
+
+/*
+ * Creation in node specific data (pids, ports, refs)
+ */
+
+#define _CRE_SIZE  		2
+
+/* MAX value for the creation field in pid, port and reference */
+#define MAX_CREATION	(1 << _CRE_SIZE)
+
+/*
+ *  PID layout (internal pids):
+ *
+ *   |3 3 2 2 2 2 2 2|2 2 2 2 1 1 1 1|1 1 1 1 1 1    |               |
+ *   |1 0 9 8 7 6 5 4|3 2 1 0 9 8 7 6|5 4 3 2 1 0 9 8|7 6 5 4 3 2 1 0|
+ *   |               |               |               |               |
+ *   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *   |0 0 0 0 0 0 0 0 0 0|n n n n n n n n n n n n n n n n n n|0 0|1 1|
+ *   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *
+ *  n : number
+ *
+ *  Old pid layout:
+ *
+ *   |3 3 2 2 2 2 2 2|2 2 2 2 1 1 1 1|1 1 1 1 1 1    |               |
+ *   |1 0 9 8 7 6 5 4|3 2 1 0 9 8 7 6|5 4 3 2 1 0 9 8|7 6 5 4 3 2 1 0|
+ *   |               |               |               |               |
+ *   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *   |s s s|n n n n n n n n n n n n n n n|N N N N N N N N|c c|0 0|1 1|
+ *   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *
+ *  s : serial
+ *  n : number
+ *  c : creation
+ *  N : node number
+ *
+ */
+
+#define _PID_SER_SIZE		3
+#define _PID_NUM_SIZE 		15
+
+#define _PID_DATA_SIZE		28
+#define _PID_DATA_SHIFT		(_TAG_IMMED1_SIZE)
+
+#define _GET_PID_DATA(X)	_GETBITS((X),_PID_DATA_SHIFT,_PID_DATA_SIZE)
+#define _GET_PID_NUM(X)		_GETBITS((X),0,_PID_NUM_SIZE)
+#define _GET_PID_SER(X)		_GETBITS((X),_PID_NUM_SIZE,_PID_SER_SIZE)
+
+#define make_pid_data(Ser, Num) \
+  ((Uint) ((Ser) << _PID_NUM_SIZE | (Num)))
+
+#define make_internal_pid(X) \
+  ((Eterm) (((X) << _PID_DATA_SHIFT) | _TAG_IMMED1_PID))
+
+#define is_internal_pid(x)	(((x) & _TAG_IMMED1_MASK) == _TAG_IMMED1_PID)
+#define is_not_internal_pid(x)	(!is_internal_pid((x)))
+
+#define _unchecked_internal_pid_data(x) _GET_PID_DATA((x))
+_ET_DECLARE_CHECKED(Uint,internal_pid_data,Eterm);
+#define internal_pid_data(x) _ET_APPLY(internal_pid_data,(x))
+
+#define _unchecked_internal_pid_node(x) erts_this_node
+_ET_DECLARE_CHECKED(struct erl_node_*,internal_pid_node,Eterm);
+#define internal_pid_node(x) _ET_APPLY(internal_pid_node,(x))
+
+#define internal_pid_number(x) _GET_PID_NUM(internal_pid_data((x)))
+#define internal_pid_serial(x) _GET_PID_SER(internal_pid_data((x)))
+
+#define internal_pid_data_words(x) (1)
+
+/* 
+ *  PORT layout (internal ports):
+ *
+ *  |3 3 2 2 2 2 2 2|2 2 2 2 1 1 1 1|1 1 1 1 1 1    |               |
+ *  |1 0 9 8 7 6 5 4|3 2 1 0 9 8 7 6|5 4 3 2 1 0 9 8|7 6 5 4 3 2 1 0|
+ *  |               |               |               |               |
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |0 0 0 0 0 0 0 0 0 0|n n n n n n n n n n n n n n n n n n|0 1|1 1|
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *
+ *  n : number
+ *
+ * Old port layout:
+ *
+ *  |3 3 2 2 2 2 2 2|2 2 2 2 1 1 1 1|1 1 1 1 1 1    |               |
+ *  |1 0 9 8 7 6 5 4|3 2 1 0 9 8 7 6|5 4 3 2 1 0 9 8|7 6 5 4 3 2 1 0|
+ *  |               |               |               |               |
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |N N N N N N N N|n n n n n n n n n n n n n n n n n n|c c|0 1|1 1|
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *
+ *  s : serial
+ *  n : number
+ *  c : creation
+ *  N : node number
+ *
+ */
+#define _PORT_NUM_SIZE		18
+
+#define _PORT_DATA_SIZE		28
+#define _PORT_DATA_SHIFT	(_TAG_IMMED1_SIZE)
+
+#define _GET_PORT_DATA(X)	_GETBITS((X),_PORT_DATA_SHIFT,_PORT_DATA_SIZE)
+#define _GET_PORT_NUM(X)	_GETBITS((X), 0, _PORT_NUM_SIZE)
+
+
+#define make_internal_port(X) \
+  ((Eterm) (((X) << _PORT_DATA_SHIFT) | _TAG_IMMED1_PORT))
+
+#define is_internal_port(x)	(((x) & _TAG_IMMED1_MASK) == _TAG_IMMED1_PORT)
+#define is_not_internal_port(x)	(!is_internal_port(x))
+
+#define _unchecked_internal_port_data(x) _GET_PORT_DATA((x))
+_ET_DECLARE_CHECKED(Uint,internal_port_data,Eterm);
+#define internal_port_data(x) _ET_APPLY(internal_port_data,(x))
+
+#define internal_port_number(x) _GET_PORT_NUM(internal_port_data((x)))
+
+#define _unchecked_internal_port_node(x) erts_this_node
+_ET_DECLARE_CHECKED(struct erl_node_*,internal_port_node,Eterm);
+#define internal_port_node(x) _ET_APPLY(internal_port_node,(x))
+
+#define internal_port_data_words(x) (1)
+/*
+ *  Ref layout (internal references):
+ *
+ *  |3 3 2 2 2 2 2 2|2 2 2 2 1 1 1 1|1 1 1 1 1 1    |               |
+ *  |1 0 9 8 7 6 5 4|3 2 1 0 9 8 7 6|5 4 3 2 1 0 9 8|7 6 5 4 3 2 1 0|
+ *  |               |               |               |               |
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1|0 1 0 0|0 0| Thing
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |0 0 0 0 0 0 0 0 0 0 0 0 0 0|r r r r r r r r r r r r r r r r r r| Data 0
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r| Data 1
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r| Data 2
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *
+ *
+ *  r : reference number
+ *  c : creation
+ *
+ *
+ * Old "heap ref" layout:
+ *
+ *
+ *  |3 3 2 2 2 2 2 2|2 2 2 2 1 1 1 1|1 1 1 1 1 1    |               |
+ *  |1 0 9 8 7 6 5 4|3 2 1 0 9 8 7 6|5 4 3 2 1 0 9 8|7 6 5 4 3 2 1 0|
+ *  |               |               |               |               |
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 1|0 1 0 0|0 0| Thing
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |N N N N N N N N|0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0|c c|0 1 1 1| Head
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |0 0 0 0 0 0 0 0 0 0 0 0 0 0|r r r r r r r r r r r r r r r r r r| Word 0
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r| Word 1
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r r| Word 2
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *
+ *  r : reference number
+ *  c : creation
+ *  N : node index
+ *
+ * Old "one-word ref" layout:
+ *
+ *  |3 3 2 2 2 2 2 2|2 2 2 2 1 1 1 1|1 1 1 1 1 1    |               |
+ *  |1 0 9 8 7 6 5 4|3 2 1 0 9 8 7 6|5 4 3 2 1 0 9 8|7 6 5 4 3 2 1 0|
+ *  |               |               |               |               |
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |N N N N N N N N|r r r r r r r r r r r r r r r r r r|c c|T T T T|
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *
+ *  r : reference number
+ *  c : creation
+ *  N : node index
+ *
+ */
+#define _REF_NUM_SIZE		18
+
+/* Old maximum number of references in the system */
+#define MAX_REFERENCE		(1 << _REF_NUM_SIZE)
+#define REF_MASK		(~(~((Uint)0) << _REF_NUM_SIZE))
+#define ERTS_MAX_REF_NUMBERS	3
+#define ERTS_REF_NUMBERS	ERTS_MAX_REF_NUMBERS
+
+#ifdef ARCH_64
+#  define ERTS_REF_WORDS	(ERTS_REF_NUMBERS/2 + 1)
+#else
+#  define ERTS_REF_WORDS	ERTS_REF_NUMBERS
+#endif
 
 typedef struct {
-    Eterm t;			/* thing word */
-    Uint h;			/* "head", like an old ref (NOT Eterm!) */
-    Uint w[REF_WORDS];
-} Ref;
+  Eterm      header;
+  Uint       data[ERTS_REF_WORDS];
+} RefThing;
 
-#define make_ref_header(sz)	_make_header((sz),_TAG_HEADER_REF)
-#define _is_ref_header(x)	(((x) & _TAG_HEADER_MASK) == _TAG_HEADER_REF)
-#define make_ref(x)	make_boxed((Eterm*)(x))
-#define is_ref(x)	(is_boxed((x)) && _is_ref_header(*boxed_val((x))))
-#define is_not_ref(x)	(!is_ref((x)))
-#define _unchecked_ref_val(x)	_unchecked_boxed_val((x))
-_ET_DECLARE_CHECKED(Eterm*,ref_val,Eterm);
-#define ref_val(x)	_ET_APPLY(ref_val,(x))
+#define REF_THING_SIZE (sizeof(RefThing)/sizeof(Uint))
+#define REF_THING_HEAD_SIZE (sizeof(Eterm)/sizeof(Uint))
 
-/* Ref *r1, *r2; */
-#define eqref(r1,r2)	(eq(make_ref(r1), make_ref(r2)))
+#define make_ref_thing_header(DW) \
+  _make_header((DW)+REF_THING_HEAD_SIZE-1,_TAG_HEADER_REF)
 
-#define ref_ptr(x)	((Ref*)ref_val(x))
-#define REF_ARITY(xp)	thing_arityval(*(xp))
-#define ref_arity(x)	REF_ARITY(ref_val(x))
+#ifdef ARCH_64
 
-#define ref_node(x)	_refhead_node(ref_ptr(x)->h)
-#define ref_creation(x)	_refhead_creation(ref_ptr(x)->h)
-#define ref_number(x)	(ref_ptr(x)->w[0])
+/*
+ * Ref layout on a 64-bit little endian machine:
+ *
+ * 63             31             0
+ * +--------------+--------------+
+ * |         Thing word          |
+ * +--------------+--------------+
+ * |  Data 0      | 32-bit arity |
+ * +--------------+--------------+
+ * |  Data 2      | Data 1       |
+ * +--------------+--------------+
+ *
+ * Data is stored as an Uint32 array with 32-bit arity as first number.
+ */
+
+#define write_ref_thing(Hp, R0, R1, R2)					\
+do {									\
+  ((RefThing *) (Hp))->header  = make_ref_thing_header(ERTS_REF_WORDS);	\
+  ((Uint32 *) ((RefThing *) (Hp))->data)[0] = ERTS_REF_NUMBERS;		\
+  ((Uint32 *) ((RefThing *) (Hp))->data)[1] = (R0);			\
+  ((Uint32 *) ((RefThing *) (Hp))->data)[2] = (R1);			\
+  ((Uint32 *) ((RefThing *) (Hp))->data)[3] = (R2);			\
+} while (0)
+
+#else
+
+#define write_ref_thing(Hp, R0, R1, R2)					\
+do {									\
+  ((RefThing *) (Hp))->header  = make_ref_thing_header(ERTS_REF_WORDS);	\
+  ((Uint32 *) ((RefThing *) (Hp))->data)[0] = (R0);			\
+  ((Uint32 *) ((RefThing *) (Hp))->data)[1] = (R1);			\
+  ((Uint32 *) ((RefThing *) (Hp))->data)[2] = (R2);			\
+} while (0)
+
+#endif
+
+#define is_ref_thing_header(x)	(((x) & _TAG_HEADER_MASK) == _TAG_HEADER_REF)
+#define make_internal_ref(x)	make_boxed((Eterm*)(x))
+
+#define _unchecked_ref_thing_ptr(x) \
+  ((RefThing*) _unchecked_internal_ref_val(x))
+#define ref_thing_ptr(x) \
+  ((RefThing*) internal_ref_val(x))
+
+#define is_internal_ref(x) \
+  (_unchecked_is_boxed((x)) && is_ref_thing_header(*boxed_val((x))))
+#define is_not_internal_ref(x) \
+  (!is_internal_ref((x)))
+
+#define _unchecked_internal_ref_val(x) _unchecked_boxed_val((x))
+_ET_DECLARE_CHECKED(Eterm*,internal_ref_val,Eterm);
+#define internal_ref_val(x) _ET_APPLY(internal_ref_val,(x))
+
+#define _unchecked_internal_ref_data_words(x) \
+ (_unchecked_thing_arityval(*_unchecked_internal_ref_val(x)))
+_ET_DECLARE_CHECKED(Uint,internal_ref_data_words,Eterm);
+#define internal_ref_data_words(x) _ET_APPLY(internal_ref_data_words,(x))
+
+#define _unchecked_internal_ref_data(x) (_unchecked_ref_thing_ptr(x)->data)
+_ET_DECLARE_CHECKED(Uint*,internal_ref_data,Eterm);
+#define internal_ref_data(x) _ET_APPLY(internal_ref_data,(x))
+
+#define _unchecked_internal_ref_node(x) erts_this_node
+_ET_DECLARE_CHECKED(struct erl_node_*,internal_ref_node,Eterm);
+#define internal_ref_node(x) _ET_APPLY(internal_ref_node,(x))
+
+/*
+ *
+ *  External thing layout (external pids, ports, and refs):
+ *
+ *  |3 3 2 2 2 2 2 2|2 2 2 2 1 1 1 1|1 1 1 1 1 1    |               |
+ *  |1 0 9 8 7 6 5 4|3 2 1 0 9 8 7 6|5 4 3 2 1 0 9 8|7 6 5 4 3 2 1 0|
+ *  |               |               |               |               |
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |A A A A A A A A A A A A A A A A A A A A A A A A A A|t t t t|0 0| Thing
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |N N N N N N N N N N N N N N N N N N N N N N N N N N N N N N N N| Next
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |E E E E E E E E E E E E E E E E E E E E E E E E E E E E E E E E| ErlNode
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  |X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X X| Data 0
+ *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ *  .                                                               .   .
+ *  .                                                               .   .
+ *  .                                                               .   .
+ *
+ *  A : Arity
+ *  t : External pid thing tag  (1100)
+ *  t : External port thing tag (1101)
+ *  t : External ref thing tag  (1110)
+ *  N : Next (external thing) pointer
+ *  E : ErlNode pointer
+ *  X : Type specific data
+ *
+ *  External pid and port layout:
+ *    External pids and ports only have one data word (Data 0) which has
+ *    the same layout as internal pids resp. internal ports.
+ *
+ *  External refs layout:
+ *    External refs has the same layout for the data words as in the internal
+ *    ref. 
+ *
+ */
+
+typedef struct external_thing_ {
+  /*                                 ----+                        */
+  Eterm                   header;     /* |                        */
+  struct external_thing_ *next;       /*  > External thing head   */
+  struct erl_node_       *node;       /* |                        */
+  /*                                 ----+                        */
+  Uint                  data[1];
+} ExternalThing;
+
+#define EXTERNAL_THING_HEAD_SIZE (sizeof(ExternalThing)/sizeof(Uint) - 1)
+
+#define make_external_pid_header(DW) \
+  _make_header((DW)+EXTERNAL_THING_HEAD_SIZE-1,_TAG_HEADER_EXTERNAL_PID)
+#define is_external_pid_header(x) \
+  (((x) & _TAG_HEADER_MASK) == _TAG_HEADER_EXTERNAL_PID)
+
+#define make_external_port_header(DW) \
+  _make_header((DW)+EXTERNAL_THING_HEAD_SIZE-1,_TAG_HEADER_EXTERNAL_PORT)
+#define is_external_port_header(x) \
+  (((x) & _TAG_HEADER_MASK) == _TAG_HEADER_EXTERNAL_PORT)
+
+#define make_external_ref_header(DW) \
+  _make_header((DW)+EXTERNAL_THING_HEAD_SIZE-1,_TAG_HEADER_EXTERNAL_REF)
+#define is_external_ref_header(x) \
+  (((x) & _TAG_HEADER_MASK) == _TAG_HEADER_EXTERNAL_REF)
+
+#define is_external_header(x) \
+  (((x) & (_TAG_HEADER_MASK-_BINARY_XXX_MASK)) == _TAG_HEADER_EXTERNAL_PID)
+
+#define is_external(x) \
+  (is_boxed((x)) && is_external_header(*boxed_val((x))))
+#define is_external_pid(x) \
+  (is_boxed((x)) && is_external_pid_header(*boxed_val((x))))
+#define is_external_port(x) \
+  (is_boxed((x)) && is_external_port_header(*boxed_val((x))))
+#define is_external_ref(x) \
+  (_unchecked_is_boxed((x)) && is_external_ref_header(*boxed_val((x))))
+
+#define _unchecked_is_external(x) \
+  (_unchecked_is_boxed((x)) && is_external_header(*_unchecked_boxed_val((x))))
+
+#define is_not_external(x)	(!is_external((x)))
+#define is_not_external_pid(x)	(!is_external_pid((x)))
+#define is_not_external_port(x)	(!is_external_port((x)))
+#define is_not_external_ref(x)	(!is_external_ref((x)))
+
+
+#define make_external(x)		make_boxed((Eterm *) (x))
+
+#define make_external_pid		make_external
+#define make_external_port		make_external
+#define make_external_ref		make_external
+
+#define _unchecked_external_val(x) _unchecked_boxed_val((x))
+_ET_DECLARE_CHECKED(Eterm*,external_val,Eterm);
+#define external_val(x) _ET_APPLY(external_val,(x))
+
+#define external_thing_ptr(x) ((ExternalThing *) external_val((x)))
+#define _unchecked_external_thing_ptr(x) \
+  ((ExternalThing *) _unchecked_external_val((x)))
+
+#define _unchecked_external_data_words(x) \
+  (_unchecked_thing_arityval(_unchecked_external_thing_ptr((x))->header) \
+   + (1 - EXTERNAL_THING_HEAD_SIZE))
+_ET_DECLARE_CHECKED(Uint,external_data_words,Eterm);
+#define external_data_words(x) _ET_APPLY(external_data_words,(x))
+
+#define _unchecked_external_data(x) (_unchecked_external_thing_ptr((x))->data)
+#define _unchecked_external_node(x) (_unchecked_external_thing_ptr((x))->node)
+
+#define external_data(x) (external_thing_ptr((x))->data)
+#define external_node(x) (external_thing_ptr((x))->node)
+
+#define _unchecked_external_pid_data_words(x) \
+  _unchecked_external_data_words((x))
+_ET_DECLARE_CHECKED(Uint,external_pid_data_words,Eterm);
+#define external_pid_data_words(x) _ET_APPLY(external_pid_data_words,(x))
+
+#define _unchecked_external_pid_data(x) _unchecked_external_data((x))[0]
+_ET_DECLARE_CHECKED(Uint,external_pid_data,Eterm);
+#define external_pid_data(x) _ET_APPLY(external_pid_data,(x))
+
+#define _unchecked_external_pid_node(x) _unchecked_external_node((x))
+_ET_DECLARE_CHECKED(struct erl_node_*,external_pid_node,Eterm);
+#define external_pid_node(x) _ET_APPLY(external_pid_node,(x))
+
+#define external_pid_number(x) _GET_PID_NUM(external_pid_data((x)))
+#define external_pid_serial(x) _GET_PID_SER(external_pid_data((x)))
+
+#define _unchecked_external_port_data_words(x) \
+  _unchecked_external_data_words((x))
+_ET_DECLARE_CHECKED(Uint,external_port_data_words,Eterm);
+#define external_port_data_words(x) _ET_APPLY(external_port_data_words,(x))
+
+#define _unchecked_external_port_data(x) _unchecked_external_data((x))[0]
+_ET_DECLARE_CHECKED(Uint,external_port_data,Eterm);
+#define external_port_data(x) _ET_APPLY(external_port_data,(x))
+
+#define _unchecked_external_port_node(x) _unchecked_external_node((x))
+_ET_DECLARE_CHECKED(struct erl_node_*,external_port_node,Eterm);
+#define external_port_node(x) _ET_APPLY(external_port_node,(x))
+
+#define external_port_number(x) _GET_PORT_NUM(external_port_data((x)))
+
+#define _unchecked_external_ref_data_words(x) \
+  _unchecked_external_data_words((x))
+_ET_DECLARE_CHECKED(Uint,external_ref_data_words,Eterm);
+#define external_ref_data_words(x) _ET_APPLY(external_ref_data_words,(x))
+
+#define _unchecked_external_ref_data(x) _unchecked_external_data((x))
+_ET_DECLARE_CHECKED(Uint*,external_ref_data,Eterm);
+#define external_ref_data(x) _ET_APPLY(external_ref_data,(x))
+
+#define _unchecked_external_ref_node(x) _unchecked_external_node((x))
+_ET_DECLARE_CHECKED(struct erl_node_*,external_ref_node,Eterm);
+#define external_ref_node(x) _ET_APPLY(external_ref_node,(x))
 
 /* number tests */
 
@@ -661,19 +980,22 @@ _ET_DECLARE_CHECKED(Uint,y_reg_index,Uint);
  *   of the tag_val_def() function
  */
 
-#define BINARY_DEF	0
-#define LIST_DEF	1
-#define NIL_DEF		2
-#define VECTOR_DEF      3
-#define TUPLE_DEF	4
-#define PID_DEF		5
-#define PORT_DEF	6
-#define FUN_DEF		7
-#define REF_DEF		8
-#define ATOM_DEF	9
-#define FLOAT_DEF	10
-#define BIG_DEF		11
-#define SMALL_DEF	12
+#define BINARY_DEF		0x0
+#define LIST_DEF		0x1
+#define NIL_DEF			0x2
+#define VECTOR_DEF      	0x3
+#define TUPLE_DEF		0x4
+#define PID_DEF			0x5
+#define EXTERNAL_PID_DEF	0x6
+#define PORT_DEF		0x7
+#define EXTERNAL_PORT_DEF	0x8
+#define FUN_DEF			0x9
+#define REF_DEF			0xa
+#define EXTERNAL_REF_DEF	0xb
+#define ATOM_DEF		0xc
+#define FLOAT_DEF		0xd
+#define BIG_DEF			0xe
+#define SMALL_DEF		0xf
 
 #if ET_DEBUG
 extern unsigned tag_val_def_debug(Eterm, const char*, unsigned);
@@ -696,3 +1018,4 @@ extern unsigned tag_val_def(Eterm);
 #define FLOAT_FLOAT	_NUMBER_CODE(FLOAT_DEF,FLOAT_DEF)
 
 #endif	/* __ERL_TERM_H */
+

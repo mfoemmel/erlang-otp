@@ -54,7 +54,7 @@ create(PgName,Node)    ->
 %% manager runs fails, the process group will continue 
 %% to function.
 
-standby(PgName,Node) ->
+standby(_PgName, _Node) ->
     ok.
 
 
@@ -64,7 +64,7 @@ standby(PgName,Node) ->
 join(PgName,Pid)  when atom(PgName) -> 
     global:send(PgName, {join,self(),Pid}),
     receive
-	{P,{members,Members}} ->
+	{_P,{members,Members}} ->
 	    Members
     end.
 
@@ -89,13 +89,13 @@ esend(Pg,Mess) when pid(Pg) ->
 members(PgName) when atom(PgName) ->
     global:send(PgName, {self() ,members}),
     receive
-	{P,{members,Members}} ->
+	{_P,{members,Members}} ->
 	    Members
     end;
 members(Pg) when pid(Pg) ->
     Pg ! {self,members},
     receive
-	{P,{members,Members}} ->
+	{_P,{members,Members}} ->
 	    Members
     end.
 

@@ -32,7 +32,7 @@
 
 -export([config_data/0, menu/2, configure/2, info/2, nameservice/2, 
 	 default_selection/2, ifr_select/2, ifr_data/2, create/2,
-	 delete_ctx/2, add_ctx/2, delete_obj/2]).
+	 delete_ctx/2, add_ctx/2, delete_obj/2, flash_msg/2]).
 
 %%----------------------------------------------------------------------
 %%-------------- Defines & Includes ------------------------------------

@@ -6,9 +6,42 @@
 %%
 
 -module(hipe_sparc_ra_graph_color).
--export([alloc/2]).
+-export([alloc/2, lf_alloc/2]).
 -define(HIPE_INSTRUMENT_COMPILER, true). %% Turn on instrumentation.
 -include("../main/hipe.hrl").
+
+
+lf_alloc(SparcCfg, Options) ->
+   {_, SpillLimit} = hipe_sparc_cfg:var_range(SparcCfg),
+   lf_alloc(SparcCfg, SpillLimit, Options).
+
+lf_alloc(SparcCfg, SpillLimit, Options) ->
+  ?inc_counter(ra_iteration_counter,1), 
+ 
+   {Map, NewSpillIndex} = 
+     hipe_graph_coloring_regalloc:regalloc(SparcCfg, 0, SpillLimit,						   hipe_sparc_specific),
+
+  TempMap = hipe_temp_map:cols2tuple(Map, hipe_sparc_specific),
+
+  {NewCfg, DontSpill} =
+    hipe_sparc_ra_postconditions:rewrite(
+      SparcCfg, TempMap, [], Options),
+ 
+  %% io:format("~w/n~w/n",[Map,TempMap]),
+  case DontSpill of
+    [] -> 
+      ?add_spills(Options, NewSpillIndex),
+      %%      {SparcCfg2, NextPos} = hipe_sparc_caller_saves:rewrite(
+      %%		    NewCfg, TempMap, NewSpillIndex, Options),
+      
+      %%      {SparcCfg2, TempMap, NextPos};
+      {NewCfg, TempMap, NewSpillIndex};
+    _ -> 
+      %% Since SpillLimit is used as a low-water-mark
+      %% the list of temps not to spill is uninteresting.
+      lf_alloc( NewCfg, SpillLimit, Options)
+  end.
+
 
 
 %
@@ -52,7 +85,7 @@ alloc(SparcCfg, PrevSpillArea, SpillIndex, SpillLimit, Locs, Options) ->
      true ->
        Labels = hipe_sparc_cfg:labels(SparcCfg),
        {Low, High} = hipe_sparc_cfg:var_range(SparcCfg),
-       hipe_gensym:set_var(High),
+       hipe_gensym:set_var(sparc,High),
        {CFG1, SpillArea} = 
 	 case PrevSpillArea of
 	   unspilled ->
@@ -67,7 +100,7 @@ alloc(SparcCfg, PrevSpillArea, SpillIndex, SpillLimit, Locs, Options) ->
 	 {SpillCfg, Locs0} = spill_rewrite_bbs(Labels, CFG1, Spills, 
 					       SpillArea, Locs),
 	 CFG2 = hipe_sparc_cfg:var_range_update(SpillCfg,
-						{Low, hipe_gensym:get_var()}),
+						{Low, hipe_gensym:get_var(sparc)}),
 	 alloc(CFG2, SpillArea, NewSpillIndex, SpillLimit,Locs0, Options)
    end.
 
@@ -78,7 +111,7 @@ alloc(SparcCfg, PrevSpillArea, SpillIndex, SpillLimit, Locs, Options) ->
 
 spilled([]) ->
    false;
-spilled([{_, {spill, _}} | Cs]) ->
+spilled([{_, {spill, _}} | _Cs]) ->
    true;
 spilled([_ | Cs]) ->
    spilled(Cs).
@@ -90,7 +123,7 @@ spilled([_ | Cs]) ->
 
 spill_regs([]) ->
    [];
-spill_regs([{RegNr, {reg, _}} | Colors]) ->
+spill_regs([{_RegNr, {reg, _}} | Colors]) ->
    spill_regs(Colors);
 spill_regs([{RegNr, {spill, SpillIndex}} | Colors]) ->
    SpillIndexImm = hipe_sparc:mk_imm(SpillIndex*4),
@@ -102,7 +135,7 @@ spill_regs([{RegNr, {spill, SpillIndex}} | Colors]) ->
 % Rewrite a cfg where spills occured
 %
 
-spill_rewrite_bbs([], CFG, Spills, SpillArea, Locs) ->
+spill_rewrite_bbs([], CFG, _Spills, _SpillArea, Locs) ->
    {CFG, Locs};
 spill_rewrite_bbs([Lbl|Lbls], CFG, Spills, SpillArea, Locs) ->
    BB = hipe_sparc_cfg:bb(CFG, Lbl),
@@ -113,7 +146,7 @@ spill_rewrite_bbs([Lbl|Lbls], CFG, Spills, SpillArea, Locs) ->
    spill_rewrite_bbs(Lbls, NewCFG, Spills, SpillArea, Locs+Locs0).
 
 
-spill_rewrite_instrs([], Spills, SpillArea) ->
+spill_rewrite_instrs([], _Spills, _SpillArea) ->
    {[], 0};
 spill_rewrite_instrs([I|Is], Spills, SpillArea) ->
    {NewI, Locs0} = spill_rewrite_instr(I, Spills, SpillArea),
@@ -141,7 +174,7 @@ spill_rewrite_instr(I, Spills, SpillArea) ->
 	 %%  instruction is a branch.
 	 0 -> 
 	   {[C1, LA] ++ Loads ++ [C2, NewI], length(UseSubst)+length(DefSubst)};
-	 Other ->
+	 _Other ->
 	   {[C1, LA] ++ Loads ++ [NewI] ++ Stores ++ [C2], length(UseSubst)+length(DefSubst)}
        end
    end.
@@ -159,7 +192,7 @@ make_loads([], AccLoads, AccSubsts, _) ->
 make_stores([{Rd, Offsetd}|Rest], AccStores, AccSubsts, SpillAreaReg) ->
   Tmpd = hipe_sparc:mk_new_reg(),
   make_stores(Rest,
-	      [hipe_sparc:store_create(SpillAreaReg, Offsetd, uw, Tmpd, [])|
+	      [hipe_sparc:store_create(SpillAreaReg, Offsetd, Tmpd)|
 	      AccStores],
 	      [{Rd, Tmpd}|AccSubsts],
 	      SpillAreaReg);
@@ -168,7 +201,7 @@ make_stores([], AccStores, AccSubsts, _) ->
 
 get_spills([], _, _) ->
    [];
-get_spills([R|Rs], [], Spills) ->
+get_spills([_|Rs], [], Spills) ->
    get_spills(Rs, Spills, Spills);
 get_spills([R|Rs], [{R, Info}|_], Spills) ->
    [{R, Info} | get_spills(Rs, Spills, Spills)];
@@ -190,7 +223,7 @@ cols2tuple(Map) ->
 % Rewrite a cfg to use the allocated registers
 %
 
-rewrite_bbs([], CFG, ColTuple) ->
+rewrite_bbs([], CFG, _ColTuple) ->
    CFG;
 rewrite_bbs([Lbl|Lbls], CFG, ColTuple) ->
    BB = hipe_sparc_cfg:bb(CFG, Lbl),
@@ -201,7 +234,7 @@ rewrite_bbs([Lbl|Lbls], CFG, ColTuple) ->
    rewrite_bbs(Lbls, NewCFG, ColTuple).
 
 
-rewrite_instrs([], ColTuple) ->
+rewrite_instrs([], _ColTuple) ->
    [];
 rewrite_instrs([I|Is], ColTuple) ->
    [rewrite_instr(I, ColTuple) | rewrite_instrs(Is, ColTuple)].
@@ -315,7 +348,7 @@ color_arg(Arg, ColTuple) ->
 	 case hipe_temp_map:find(hipe_sparc:reg_nr(Arg), ColTuple) of
 	    {reg, NewRgNr} ->
 	       hipe_sparc:mk_reg(NewRgNr);
-	    {spill, SpillIndex} ->
+	    {spill, _SpillIndex} ->
 	       exit({sparc, spilled})
 	 end;
       false ->

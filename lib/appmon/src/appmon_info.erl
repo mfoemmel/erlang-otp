@@ -318,11 +318,9 @@ handle_cast(Other, State) ->
 handle_info(stop, State) ->
     {stop, normal, State};
 handle_info({do_it, Key}, State) ->
-    case catch do_work(Key, State) of
-	ok -> ok;
-	Other -> io:format("Bad error: flame the responsible ~p~n", [Other]) 
-    end,
+    ok = do_work(Key, State),
     {noreply, State};
+
 handle_info({'EXIT', Pid, Reason}, State) ->
     case State#state.starter of
 	Pid ->

@@ -68,7 +68,7 @@ str_to_term(Str) ->
     case scan(Str) of
 	{tokens,Tokens} -> 
 	    case catch parse_term(Tokens) of
-		{Type, Term,[]} -> {term,Term};
+		{_Type, Term,[]} -> {term,Term};
 		_ -> {string, Str}
 	    end;
 	_ -> {string, Str}
@@ -121,36 +121,36 @@ parse_term(['-',{integer,Integer}|R]) -> {integer,-Integer,R};
 parse_term(['-',{float,Float}|R]) -> {float,-Float,R};
 parse_term(['+',{integer,Integer}|R]) -> {integer,Integer,R};
 parse_term(['+',{float,Float}|R]) -> {float,Float,R};
-parse_term(['['|R]) -> {list,Term,C}=parse_list(['['|R]);
-parse_term(['{'|R]) -> {tuple,Term,C}=parse_tuple(['{'|R]);
+parse_term(['['|R]) -> {list,_Term,_C}=parse_list(['['|R]);
+parse_term(['{'|R]) -> {tuple,_Term,_C}=parse_tuple(['{'|R]);
 parse_term([Char|R]) -> {char,Char,R}.
 
 %%--- parse list ---
 parse_list(['[',']'|C]) ->
     {list, [], C};
 parse_list(['['|R]) ->
-    {list,List,C}= list_args(R,[]).
+    {list,_List,_C}= list_args(R,[]).
 
 list_args(Toks,Ack) ->
     cont_list(parse_term(Toks),Ack).
 
-cont_list({Tag, Term,[','|C]},Ack) -> 
+cont_list({_Tag, Term,[','|C]},Ack) -> 
     list_args(C,[Term|Ack]);
-cont_list({Tag, Term,[']'|C]},Ack) -> 
+cont_list({_Tag, Term,[']'|C]},Ack) -> 
     {list,lists:reverse([Term|Ack]),C}.
 
 %%--- parse tuple ---
 parse_tuple(['{','}'|C]) ->
     {tuple,{}, C};
 parse_tuple(['{'|R]) ->
-    {tuple,Tuple,C}=tuple_args(R,[]).
+    {tuple,_Tuple,_C}=tuple_args(R,[]).
 
 tuple_args(Toks,Ack) ->
     cont_tuple(parse_term(Toks),Ack).
 
-cont_tuple({Tag, Term,[','|C]},Ack) -> 
+cont_tuple({_Tag, Term,[','|C]},Ack) -> 
     tuple_args(C,[Term|Ack]);
-cont_tuple({Tag, Term,['}'|C]},Ack) ->
+cont_tuple({_Tag, Term,['}'|C]},Ack) ->
     {tuple,list_to_tuple(lists:reverse([Term|Ack])),C}.
 
 %%--- parse call ---
@@ -162,14 +162,14 @@ parse_call([{atom,Mod},':',{atom,Func}|R]) ->
 parse_fun_args(['(',')'|C]) ->
     {fun_args,[],C};
 parse_fun_args(['('|R]) ->
-    {fun_args,Fun_args,C}=fun_args(R,[]).
+    {fun_args,_Fun_args,_C}=fun_args(R,[]).
 
 fun_args(Toks,Ack) ->
     cont_fun(parse_term(Toks),Ack).
 
-cont_fun({Type,Term,[','|C]},Ack) -> 
+cont_fun({_Type,Term,[','|C]},Ack) -> 
     fun_args(C,[Term|Ack]);
-cont_fun({Type,Term,[')'|C]},Ack) ->
+cont_fun({_Type,Term,[')'|C]},Ack) ->
     {fun_args,lists:reverse([Term|Ack]),C}.
 
 %%--- parse sequence of terms ---
@@ -179,7 +179,7 @@ parse_term_seq(Toks) ->
 p_term_seq([],Ack) ->
     {term_seq, lists:reverse(Ack)};    % never any continuation left  
 p_term_seq(Toks,Ack) ->
-    {Type,Term,C} = parse_term(Toks),
+    {_Type,Term,C} = parse_term(Toks),
     p_term_seq(C,[Term|Ack]).
 
 
@@ -251,7 +251,7 @@ scan_string([$"|R],Ack1,Ack2) ->
     scan(R,[{string,lists:reverse(Ack1)}|Ack2]);
 scan_string([X|R],Ack1,Ack2) when integer(X) ->
     scan_string(R,[X|Ack1],Ack2);
-scan_string([],Ack1,Ack2) ->
+scan_string([],_Ack1,_Ack2) ->
     throw({error,"unterminated string."}).
 
 
@@ -292,7 +292,7 @@ ret_tuple(Str) ->
 		{tokens,Toks} ->
 		    {term_seq,Seq} = parse_term_seq(Toks),
 		    list_to_tuple(Seq);
-		Other -> 
+		_Other -> 
 		    {error,'bad result from ret_tuple.'}
 	    end;
 	Bad_result -> Bad_result
@@ -318,7 +318,7 @@ parse_coords(S, Coords) ->
         {ok, [X, Y], []} -> [{round(X), round(Y)}|Coords];
         {ok, [X,Y], Rest} ->
             parse_coords(Rest, [{round(X), round(Y)}|Coords]);
-        Q -> error
+        _ -> error
     end.
 
 ret_pack(Key, TkW) ->
@@ -329,34 +329,34 @@ ret_place(Key, TkW) ->
     Str = ret_list(["place info ", TkW]),
     pick_out(Str, Key).
 
-pick_out([Key, Value | Rest], Key) -> Value;
-pick_out([Key, {} | Rest], Key)    -> 0;
+pick_out([Key, Value | _Rest], Key) -> Value;
+pick_out([Key, {} | _Rest], Key)    -> 0;
 pick_out(['-' | Rest], Key)        -> pick_out(Rest, Key);
 pick_out([_, _ | Rest], Key)       -> pick_out(Rest, Key);
-pick_out(Other, Key) -> Other.
+pick_out(Other, _Key) -> Other.
 
 
 ret_x(Str) ->
     case ret_geometry(Str) of
-	{W,H,X,Y} -> X;
+	{_W,_H,X,_Y} -> X;
 	Other -> Other
     end.
 
 ret_y(Str) ->
     case ret_geometry(Str) of
-	{W,H,X,Y} -> Y;
+	{_W,_H,_X,Y} -> Y;
 	Other -> Other
     end.
 
 ret_width(Str) ->
     case ret_geometry(Str) of
-	{W,H,X,Y} -> W;
+	{W,_H,_X,_Y} -> W;
 	Other -> Other
     end.
 
 ret_height(Str) ->
     case ret_geometry(Str) of
-	{W,H,X,Y} -> H;
+	{_W,H,_X,_Y} -> H;
 	Other -> Other
     end.
 
@@ -377,7 +377,7 @@ ret_list(Str) ->
 		{tokens,Toks} ->
 		    {term_seq,Seq} = parse_term_seq(Toks),
 		    Seq;
-		Other -> 
+		_Other -> 
 		    {error,'bad result from ret_list'}
 	    end;
 	Bad_result -> Bad_result
@@ -469,9 +469,9 @@ ret_color(Str) ->
 	    {hex2dec([R1,$0]),hex2dec([G1,$0]),hex2dec([B1,$0])};
 	{result,[$#,R1,R2,G1,G2,B1,B2]} ->
 	    {hex2dec([R1,R2]),hex2dec([G1,G2]),hex2dec([B1,B2])};
-	{result,[$#,R1,R2,R3,G1,G2,G3,B1,B2,B3]} ->
+	{result,[$#,R1,R2,_R3,G1,G2,_G3,B1,B2,_B3]} ->
 	    {hex2dec([R1,R2]),hex2dec([G1,G2]),hex2dec([B1,B2])};
-	{result,[$#,R1,R2,R3,R4,G1,G2,G3,G4,B1,B2,B3,B4]} ->
+	{result,[$#,R1,R2,_R3,_R4,G1,G2,_G3,_G4,B1,B2,_B3,_B4]} ->
 	    {hex2dec([R1,R2]),hex2dec([G1,G2]),hex2dec([B1,B2])};
 	{result,[Char|Word]} when Char>=$A, Char=<$Z ->
 	    list_to_atom([Char+32|Word]);
@@ -485,8 +485,8 @@ ret_color(Str) ->
 
 ret_stipple(Str) ->
     case gstk:call(Str) of
-	{result, Any} -> true;
-	Other -> false
+	{result, _Any} -> true;
+	_Other -> false
     end.
 
 

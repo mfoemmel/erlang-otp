@@ -79,6 +79,7 @@ static int xprintf(FILE* fp, ei_x_buff* x, const char* fmt, ...)
 	r = vsprintf(tmpbuf, fmt, ap);
 	ei_x_append_buf(x, tmpbuf, strlen(tmpbuf));
     }
+    va_end(ap);
     return r;
 }
 

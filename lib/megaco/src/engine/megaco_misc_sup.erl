@@ -46,7 +46,7 @@ start() ->
     SupName = {local,?MODULE},
     supervisor:start_link(SupName, ?MODULE, []).
 
-stop(StartArgs) ->
+stop(_StartArgs) ->
     ok.
 
 init([]) -> % Supervisor
@@ -56,7 +56,6 @@ init(BadArg) ->
 
 init() ->
     Flags     = {one_for_one, 0, 1},
-    KillAfter = timer:seconds(1),
     Workers   = [],
     {ok, {Flags, Workers}}.
 

@@ -1106,6 +1106,18 @@ send_prepare([Rhead|Rtail], VC, Alarm) ->
 		    send_info(Rtail, 'CosTransactions_Resource', rollback),
 		    {rollback, VC}
 	    end;
+	{'EXCEPTION',E} when record(E, 'TIMEOUT') ->
+	    ?tr_error_msg("Coordinator:prepare( ~p )~nObject unreachable.~n",
+			  [Rhead]),
+	    %% Since we use presumed abort we will rollback the transaction.
+	    send_info(Rtail, 'CosTransactions_Resource', rollback),
+	    {rollback, VC};
+	{'EXCEPTION',E} when record(E, 'TRANSIENT') ->
+	    ?tr_error_msg("Coordinator:prepare( ~p )~nObject unreachable.~n",
+			  [Rhead]),
+	    %% Since we use presumed abort we will rollback the transaction.
+	    send_info(Rtail, 'CosTransactions_Resource', rollback),
+	    {rollback, VC};
 	{'EXCEPTION',E} when record(E, 'COMM_FAILURE') ->
 	    ?tr_error_msg("Coordinator:prepare( ~p )~nObject unreachable.~n",
 			  [Rhead]),
@@ -1418,6 +1430,30 @@ evaluate_answer(E, Rhead, Vote, Exc, Log, Local)
   when Vote == commit, record(E, 'TRANSACTION_ROLLEDBACK') ->
     ?etr_log(Log, {heuristic, {Rhead, ?tr_mixed}}),
     {Exc#exc{mixed = true}, ?etr_add_raisedH(Local, Rhead), []};
+evaluate_answer(E, Rhead, Vote, Exc, Log, Local) when record(E, 'TIMEOUT') ->
+    ?tr_error_msg("Coordinator:~p( ~p ) Object unreachable.~nReason: ~p~n",
+		  [Vote, Rhead, E]),
+    case catch corba_object:non_existent(Rhead) of
+	true ->
+	    %% Since we have presumed abort, the child will
+	    %% assume rollback if this server do not exist any more.
+	    ?etr_log(Log, {heuristic, {Rhead, ?tr_hazard}}),
+	    {Exc#exc{hazard = true}, Local, []};
+	_ ->
+	    {Exc, Local, [Rhead]}
+    end;
+evaluate_answer(E, Rhead, Vote, Exc, Log, Local) when record(E, 'TRANSIENT') ->
+    ?tr_error_msg("Coordinator:~p( ~p ) Object unreachable.~nReason: ~p~n",
+		  [Vote, Rhead, E]),
+    case catch corba_object:non_existent(Rhead) of
+	true ->
+	    %% Since we have presumed abort, the child will
+	    %% assume rollback if this server do not exist any more.
+	    ?etr_log(Log, {heuristic, {Rhead, ?tr_hazard}}),
+	    {Exc#exc{hazard = true}, Local, []};
+	_ ->
+	    {Exc, Local, [Rhead]}
+    end;
 evaluate_answer(E, Rhead, Vote, Exc, Log, Local) when record(E, 'COMM_FAILURE') ->
     ?tr_error_msg("Coordinator:~p( ~p ) Object unreachable.~nReason: ~p~n",
 		  [Vote, Rhead, E]),

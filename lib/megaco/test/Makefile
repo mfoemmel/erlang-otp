@@ -59,16 +59,18 @@ TARGET_FILES = $(MODULES:%=%.$(EMULATOR))
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin 
+ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin \
+	 -pa $(ERL_TOP)/lib/et/ebin
 
 ERL_COMPILE_FLAGS += -pa $(ERL_TOP)/lib/test_server/ebin \
 	-I$(ERL_TOP)/lib/test_server/include
 
 ERL_PATH = -pa ../../megaco/examples/simple \
            -pa ../../megaco/ebin \
+           -pa ../../et/ebin
 
 ifndef SUITE
-SUITE=megaco_SUITE
+SUITE = megaco_SUITE
 endif
 
 
@@ -121,9 +123,19 @@ codec_tickets: make
             -s megaco_codec_test tickets \
             -s erlang halt
 
+conf: make
+	erl -noshell -sname megaco $(ERL_PATH) \
+            -s megaco_test_lib t megaco_config_test \
+            -s erlang halt
+
 app: make
 	erl -noshell -sname megaco $(ERL_PATH) \
             -s megaco_test_lib t megaco_app_test \
+            -s erlang halt
+
+appup: make
+	erl -noshell -sname megaco $(ERL_PATH) \
+            -s megaco_test_lib t megaco_appup_test \
             -s erlang halt
 
 mess: make

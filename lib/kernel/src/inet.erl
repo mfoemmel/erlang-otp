@@ -490,6 +490,7 @@ gethostbyname_tm(Name, Type, Timer, [native | Opts]) ->
     %% Fixme: add (global) timeout to gethost_native
     case inet_gethost_native:gethostbyname(Name, Type) of
 	{error,formerr} -> {error, einval};
+	{error,timeout} -> {error, timeout};
 	{error,_} -> gethostbyname_tm(Name,Type,Timer,Opts);
 	Result -> Result
     end;

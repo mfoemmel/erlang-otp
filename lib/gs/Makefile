@@ -22,11 +22,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # Macros
 #
 
-ifeq ($(findstring win32,$(TARGET)),win32)
-SUB_DIRECTORIES =  src win contribs examples doc/src
-else
-SUB_DIRECTORIES =  src c_src contribs examples doc/src
-endif
+SUB_DIRECTORIES =  src tcl contribs examples doc/src
 
 include vsn.mk
 VSN = $(GS_VSN)

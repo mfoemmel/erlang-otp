@@ -152,7 +152,7 @@ encode_wildcard([?asn_choose],Pos,TotBits,RemainingIdLevels) ->
     encode_choose(Pos-1,TotBits,RemainingIdLevels);
 encode_wildcard([?asn_all],Pos,TotBits,RemainingIdLevels) ->
     encode_all(Pos-1,TotBits,RemainingIdLevels);
-encode_wildcard([Val|Rest],Pos,TotBits,_RemainingIdLevels) ->
+encode_wildcard([Val|_Rest],Pos,_TotBits,_RemainingIdLevels) ->
     exit({invalid_level_content,{Pos-1,Val}}).
 
 %% This is the last level specified in the id list.
@@ -223,7 +223,7 @@ encode_ids(W,[[]],C,R,E,Wf) when length(C) > 0 ->
 encode_ids(W,[],C,R,E,false) when length(C) > 0 ->
     exit({unexpected_eof_data,{W,C,R,E}}).
 
-encode_ids1(R,[0|Es]) ->
+encode_ids1(_R,[0|Es]) ->
     [0|Es];
 encode_ids1(R,[E|Es]) ->
     [(E bsl R)|Es].
@@ -265,9 +265,9 @@ encode_id_level1(true,[$$],C,R,E) ->
     encode_id_level2(C,R,E,$$);
 encode_id_level1(true,[$*],C,R,E) ->
     encode_id_level2(C,R,E,$*);
-encode_id_level1(false,[$$],C,R,E) ->
+encode_id_level1(false,[$$],C,R,_E) ->
     exit({wildcard_error,{$$,C,R}});
-encode_id_level1(false,[$*],C,R,E) ->
+encode_id_level1(false,[$*],C,R,_E) ->
     exit({wildcard_error,{$*,C,R}});
 encode_id_level1(_W,[L|_Ls],C,R,_E) ->
     exit({invalid_level_content,{C,R,L}}).
@@ -311,11 +311,11 @@ decode_ids(E,Config) when integer(Config) ->
     
 
 %% The [0] is the result of all the bits of the byte has been shifted out.
-decode_ids(B,[0],[],Acc) ->
+decode_ids(_B,[0],[],Acc) ->
     lists:reverse(Acc);
-decode_ids(B,[E],[],Acc) ->
+decode_ids(_B,[E],[],Acc) ->
     exit({id_config_mismatch,{two_much_data,E,Acc}});
-decode_ids(B,E,[],Acc) ->
+decode_ids(_B,E,[],Acc) ->
     exit({id_config_mismatch,{two_much_data,E,Acc}});
 decode_ids(B,E,[L|Ls],Acc) ->
     case (catch decode_id_level(B,E,L,[])) of
@@ -419,7 +419,7 @@ decode_ids4(Type,O,[H|T]) ->
 %% L: Number of nits in level
 decode_id_level(B,E,0,Acc) ->
     {lists:reverse(Acc),E,B};
-decode_id_level(8,[H|T],L,Acc) ->
+decode_id_level(8,[_H|T],L,Acc) ->
     decode_id_level(0,T,L,Acc);
 decode_id_level(B,[H|T],L,Acc) ->
     Acc1 = [decode_id_level1(H band 16#80) | Acc],

@@ -51,14 +51,14 @@ int atom_desc;
 int module_desc;
 int preg_desc;
 int link_desc;
+int link_sh_desc;
 int plist_desc;
-int mesg_desc;
 int erts_fun_desc;
 
 void
 init_alloc(void)
 {
-    init_fix_alloc(13);
+    init_fix_alloc(14);
     process_desc = new_fix_size(sizeof(Process));
     table_desc = new_fix_size(sizeof(DbTable));
     atom_desc = new_fix_size(sizeof(Atom));
@@ -66,9 +66,9 @@ init_alloc(void)
     module_desc = new_fix_size(sizeof(Module));
 
     preg_desc = new_fix_size(sizeof(RegProc));
-    link_desc = new_fix_size(sizeof(ErlLink));
+    link_desc = new_fix_size(ERL_LINK_SIZE*sizeof(Uint));
+    link_sh_desc = new_fix_size(ERL_LINK_SH_SIZE*sizeof(Uint));
     plist_desc = new_fix_size(sizeof(ProcessList));
-    mesg_desc  = new_fix_size(sizeof(ErlMessage));
     erts_fun_desc = new_fix_size(sizeof(ErlFunEntry));
 }
 

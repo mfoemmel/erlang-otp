@@ -36,17 +36,23 @@ init_copy(void)
 /*
  *  Copy object "obj" to process p.
  */
-void
-copy_object(Eterm obj, Process* to, Uint extra, Eterm* res, Process* from)
+Eterm
+copy_object(Eterm obj, Process* to)
 {
+#ifdef SHARED_HEAP
+    return obj;
+#else
     Uint size = size_object(obj);
-    Eterm* hp = HAlloc(to, size+extra);
+    Eterm* hp = HAlloc(to, size);
+    Eterm res;
 
-    *res = copy_struct(obj, size, &hp, &to->off_heap);
+    res = copy_struct(obj, size, &hp, &to->off_heap);
 #ifdef DEBUG
-    if (eq(obj, *res) == 0) {
+    if (eq(obj, res) == 0) {
 	erl_exit(1, "copy not equal to source\n");
     }
+#endif
+    return res;
 #endif
 }
 
@@ -96,39 +102,37 @@ size_object(Eterm obj)
 		case VECTOR_SUBTAG:
 		    {
 			int i;
-			int n;
-			ptr = vector_val(obj);
+			int real_n = VECTOR_ARRAY_SIZE(obj);
+			Eterm* vec = safe_alloc((real_n+1)*sizeof(Eterm));
+
 			arity = vector_arity(hdr);
-			n = VECTOR_SIZE(obj);
-			sum += arity + 1 + n + 1;
-			for (i = 1; i <= n; i++) {
-			    Eterm tmp = erts_unchecked_vector_get(i, obj);
+			sum += arity + 1 + real_n + 1;
+			erts_flatten_vector(vec, obj);
+			for (i = 1; i <= real_n; i++) {
+			    Eterm tmp = vec[i];
 			    if (!IS_CONST(tmp)) {
 				ESTACK_PUSH(s, tmp);
 			    }
 			}
+			sys_free(vec);
 			goto size_common;
 		    }
 		case FUN_SUBTAG:
 		    {
 			Eterm* bptr = fun_val(obj);
 			ErlFunThing* funp = (ErlFunThing *) bptr;
-			unsigned num_free = funp->num_free;
+			unsigned eterms = 1 /* creator */ + funp->num_free;
 			unsigned sz = thing_arityval(hdr);
 
-			sum += sz + 1 + num_free;
-			if (num_free == 0) {
-			    goto size_common;
-			} else {
-			    bptr += sz + 1;
-			    while (num_free-- > 1) {
-				obj = *bptr++;
-				if (!IS_CONST(obj)) {
-				    ESTACK_PUSH(s, obj);
-				}
-			    }
-			    obj = *bptr;
+			sum += 1 /* header */ + sz + eterms;
+			bptr += 1 /* header */ + sz;
+			while (eterms-- > 1) {
+			  obj = *bptr++;
+			  if (!IS_CONST(obj)) {
+			    ESTACK_PUSH(s, obj);
+			  }
 			}
+			obj = *bptr;
 			break;
 		    }
 		case SUB_BINARY_SUBTAG:
@@ -179,9 +183,10 @@ size_object(Eterm obj)
 Eterm
 copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 {
-#define COPIED(x) (ptr_val(x) >= hstart && ptr_val(x) < hend)
-    Eterm* hstart;
-    Eterm* hend;
+#define in_area(ptr,start,nbytes) \
+    ((unsigned long)((char*)(ptr) - (char*)(start)) < (nbytes))
+    char* hstart;
+    Uint hsize;
     Eterm* htop;
     Eterm* hbot;
     Eterm* hp;
@@ -198,11 +203,10 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
     if (IS_CONST(obj))
 	return obj;
 
-    hstart = *hpp;
-    hend   = hstart + sz;
-    htop   = hstart;
-    hbot   = hend;
-    hp     = hstart;
+    hp = htop = *hpp;
+    hbot   = htop + sz;
+    hstart = (char *)htop;
+    hsize = (char*) hbot - hstart;
     const_tuple = 0;
 
     /* Copy the object onto the heap */
@@ -224,7 +228,7 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 	    break;
 	case TAG_PRIMARY_LIST:
 	    objp = list_val(obj);
-	    if (objp >= hstart && objp < hend) {
+	    if (in_area(objp,hstart,hsize)) {
 		hp++;
 		break;
 	    }
@@ -259,7 +263,7 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 	    }
 	    
 	case TAG_PRIMARY_BOXED:
-	    if (COPIED(obj)) {
+	    if (in_area(boxed_val(obj),hstart,hsize)) {
 		hp++;
 		break;
 	    }
@@ -352,16 +356,38 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 		{
 		    ErlFunThing* funp = (ErlFunThing *) objp;
 
-		    i =  thing_arityval(hdr) + 1 + funp->num_free;
+		    i =  thing_arityval(hdr) + 2 + funp->num_free;
 		    tp = htop;
 		    while (i--)  {
 			*htop++ = *objp++;
 		    }
+#ifndef SHARED_HEAP
 		    funp = (ErlFunThing *) tp;
 		    funp->next = off_heap->funs;
 		    off_heap->funs = funp;
 		    funp->fe->refc++;
+#endif
 		    *argp = make_fun(tp);
+		}
+		break;
+	    case EXTERNAL_PID_SUBTAG:
+	    case EXTERNAL_PORT_SUBTAG:
+	    case EXTERNAL_REF_SUBTAG:
+		{
+		  ExternalThing *etp = (ExternalThing *) htop;
+
+		  i =  thing_arityval(hdr) + 1;
+		  tp = htop;
+
+		  while (i--)  {
+		    *htop++ = *objp++;
+		  }
+
+		  etp->next = off_heap->externals;
+		  off_heap->externals = etp;
+		  etp->node->refc++;
+
+		  *argp = make_external(tp);
 		}
 		break;
 	    default:
@@ -388,9 +414,9 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 	erl_exit(1, "Internal error: copy_struct: htop, hbot overrun\n");
     }
     ASSERT(htop == hbot);
-    *hpp = hend;
+    *hpp = (Eterm *) (hstart+hsize);
     return res;
-#undef COPIED
+#undef in_area
 }
 
 /*
@@ -440,16 +466,36 @@ copy_shallow(Eterm* ptr, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 		break;
 	    case FUN_SUBTAG:
 		{
+#ifndef SHARED_HEAP
 		    ErlFunThing* funp = (ErlFunThing *) (hp-1);
+#endif
 		    int tari = thing_arityval(val);
 
 		    sz -= tari;
 		    while (tari--) {
 			*hp++ = *tp++;
 		    }
+#ifndef SHARED_HEAP
 		    funp->next = off_heap->funs;
 		    off_heap->funs = funp;
 		    funp->fe->refc++;
+#endif
+		}
+		break;
+	    case EXTERNAL_PID_SUBTAG:
+	    case EXTERNAL_PORT_SUBTAG:
+	    case EXTERNAL_REF_SUBTAG:
+		{
+		    ExternalThing* etp = (ExternalThing *) (hp-1);
+		    int tari = thing_arityval(val);
+
+		    sz -= tari;
+		    while (tari--) {
+			*hp++ = *tp++;
+		    }
+		    etp->next = off_heap->externals;
+		    off_heap->externals = etp;
+		    etp->node->refc++;
 		}
 		break;
 	    default:

@@ -27,6 +27,7 @@
 	 load_file/1,
 	 ensure_loaded/1,
 	 load_abs/1,
+	 load_abs/2,
 	 load_binary/3,
 	 delete/1,
 	 purge/1,
@@ -41,6 +42,8 @@
 	 priv_dir/1,
 	 stick_dir/1,
 	 unstick_dir/1,
+	 stick_mod/1,
+	 unstick_mod/1,
 	 is_sticky/1,
 	 get_object_code/1,
 	 add_path/1,
@@ -73,6 +76,7 @@
 %% replace_path(Name,Dir)       -> true | {error, What}
 %% load_file(File)		-> {error,What} | {module, Mod}
 %% load_abs(File)		-> {error,What} | {module, Mod}
+%% load_abs(File,Mod)		-> {error,What} | {module, Mod}
 %% load_binary(Mod,File,Bin)    -> {error,What} | {module,Mod}
 %% ensure_loaded(Module)	-> {error,What} | {module, Mod}
 %% delete(Module)
@@ -99,7 +103,8 @@ objfile_extension() ->
 
 load_file(Mod)     ->  call({load_file,Mod}).
 ensure_loaded(Mod) ->  call({ensure_loaded,Mod}).
-load_abs(File)     ->  call({load_abs,File}).
+load_abs(File)     ->  call({load_abs,File,[]}).
+load_abs(File,M)   ->  call({load_abs,File,M}).
 load_binary(Mod,File,Bin) -> call({load_binary,Mod,File,Bin}).
 delete(Mod)        ->  call({delete,Mod}).
 purge(Mod)         ->  call({purge,Mod}).
@@ -115,6 +120,8 @@ compiler_dir()     ->  call({dir,compiler_dir}).
 priv_dir(Name)     ->  call({dir,{priv_dir,Name}}).
 stick_dir(Dir)     ->  call({stick_dir,Dir}).
 unstick_dir(Dir)   ->  call({unstick_dir,Dir}).
+stick_mod(Dir)     ->  call({stick_mod,Dir}).
+unstick_mod(Dir)   ->  call({unstick_mod,Dir}).
 is_sticky(Mod)     ->  call({is_sticky,Mod}).
 set_path(PathList) ->  call({set_path,PathList}).
 get_path()         ->  call(get_path).
@@ -161,15 +168,11 @@ do_start(F,Flags) ->
     ets:module_info(module),
     code_server:module_info(module),
     code_aux:module_info(module),
+    packages:module_info(module),
     string:module_info(module),
     file:module_info(module),
-    case erlang:system_info(hipe_architecture) of
-        ultrasparc -> hipe_sparc_loader:module_info(module);
-	x86 -> hipe_x86_loader:module_info(module);
-	undefined -> ok
-    end,
-    hipe_unified_loader:module_info(module),
     lists_sort:module_info(module),
+    catch load_hipe_modules(),
 
     Mode = get_mode(Flags),
     case init:get_argument(root) of 
@@ -193,6 +196,14 @@ do_start(F,Flags) ->
 	Other ->
 	    error_logger:error_msg("Can not start code server ~w ~n",[Other]),
 	    {error, crash}
+    end.
+
+load_hipe_modules() ->
+    hipe_unified_loader:module_info(module),
+    case erlang:system_info(hipe_architecture) of
+	ultrasparc -> hipe_sparc_loader:module_info(module);
+	x86 -> hipe_x86_loader:module_info(module);
+	undefined -> ok
     end.
 
 do_stick_dirs() ->
@@ -225,34 +236,36 @@ get_mode(Flags) ->
 %% In that case return the name of the file which contains
 %% the loaded object code
 
-which(Module) when atom (Module) ->
+which(Module) when atom(Module) ->
     case is_loaded(Module) of
-        false ->
-            which2(Module);
-        {file, File} ->
-            File
+	false ->
+	    which2(Module);
+	{file, File} ->
+	    File
     end.
 
 which2(Module) ->
-    Ext = objfile_extension(),
-    File = lists:concat([Module, Ext]),
+    Base = code_aux:to_path(Module),
+    File = filename:basename(Base) ++ objfile_extension(),
     Path = get_path(),
-    which(File,Path).
+    which(File, filename:dirname(Base), Path).
 
-which(_,[]) ->
+which(_,_,[]) ->
     non_existing;
-
-which(Module,[Directory|Tail]) ->
-    case file:list_dir(Directory) of
+which(File,Base,[Directory|Tail]) ->
+    Path = if Base == "." -> Directory;
+	      true -> filename:join(Directory, Base)
+	   end,
+    case file:list_dir(Path) of
 	{ok,Files} ->
-	    case lists:member(Module,Files) of
+	    case lists:member(File,Files) of
 		true ->
-		    filename:append(Directory, Module);
+		    filename:append(Path, File);
 		false ->
-		    which(Module,Tail)
+		    which(File,Base,Tail)
 	    end;
 	_ ->
-	    which(Module,Tail)
+	    which(File,Base,Tail)
     end.
 
 
@@ -303,6 +316,3 @@ has_ext(Ext, Extlen,File) ->
 	Ext -> true;
 	_ -> false
     end.
-
-
-

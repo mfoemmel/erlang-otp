@@ -5,6 +5,7 @@ TEST_SPEC_FILE = megaco.spec
 MODULES = \
 	megaco_SUITE \
 	megaco_app_test \
+	megaco_appup_test \
 	megaco_binary_term_id_test \
 	megaco_call_flow_test \
 	megaco_codec_test \

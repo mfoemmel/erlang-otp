@@ -1,6 +1,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <01/03/01 12:21:53 happi>
+%% Time-stamp: <2002-09-13 16:00:05 richardc>
 %% ====================================================================
 %%  Filename : 	hipe_data_pp.erl
 %%  Module   :	hipe_data_pp
@@ -10,8 +10,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: richardc $
-%%              $Date: 2001/03/26 18:37:08 $
-%%              $Revision: 1.1.1.1 $
+%%              $Date: 2002/10/01 12:30:04 $
+%%              $Revision: 1.4 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -21,15 +21,15 @@
 -export([pp/4]).
 
 %% --------------------------------------------------------------------
-%% Prety print
+%% Pretty print
 
 pp(Dev, Table, CodeType, Pre) ->
   Ls = hipe_consttab:labels(Table),
   lists:map(fun ({{_,ref},_}) -> ok;
 		({L,E}) -> 
-		pp_element(Dev, L, E, CodeType, Pre) end, 
-	    lists:map(fun (L) -> {L,hipe_consttab:lookup(L, Table)} end, 
-		      Ls)).
+		    pp_element(Dev, L, E, CodeType, Pre)
+	    end, 
+	    [{L,hipe_consttab:lookup(L, Table)} || L <- Ls]).
 
 pp_element(Dev, Name, Element, CodeType, Prefix) ->
   
@@ -52,9 +52,9 @@ pp_element(Dev, Name, Element, CodeType, Prefix) ->
     sparc ->
       if Exported==true ->
 	  io:format(Dev, "    .global ~s_dl_~w\n", [Prefix,Name]),
-	  io:format(Dev, "~s_dl_~w: ", [Prefix, Name]);
+	  io:format(Dev, "~s_dl_~w: .word ", [Prefix, Name]);
 	 true ->
-	  io:format(Dev, ".~s_dl_~w: ", [Prefix, Name])
+	  io:format(Dev, ".~s_dl_~w: .word ", [Prefix, Name])
       end;
     _ -> 
       io:format(Dev, "~w ", [Name])
@@ -107,7 +107,7 @@ pp_block(Dev, {word, Data}, CodeType, Prefix) ->
       ok
   end,
   pp_wordlist(Dev, Data, CodeType, Prefix);
-pp_block(Dev, {byte, Data}, CodeType, Prefix) ->
+pp_block(Dev, {byte, Data}, CodeType, _Prefix) ->
   case CodeType of 
     rtl ->
       io:format(Dev, ".byte\n   ",[]);
@@ -122,7 +122,7 @@ pp_block(Dev, {byte, Data}, CodeType, Prefix) ->
       io:format(Dev, "      ;; ~s\n   ",[Data]);
     _ -> ok
   end;
-pp_block(Dev, {dword, Data}, CodeType, Prefix) ->
+pp_block(Dev, {dword, Data}, CodeType, _Prefix) ->
   case CodeType of 
     rtl ->
       io:format(Dev, ".dword\n",[]);
@@ -152,7 +152,7 @@ pp_wordlist(Dev, [D|Rest], CodeType, Prefix) ->
       io:format(Dev, "      ~w\n",[D])
   end,
   pp_wordlist(Dev, Rest, CodeType, Prefix);
-pp_wordlist(Dev, [], CodeType, Prefix) ->
+pp_wordlist(_Dev, [], _CodeType, _Prefix) ->
   ok.
 
 pp_bytelist(Dev, [D], CodeType) ->
@@ -171,7 +171,7 @@ pp_bytelist(Dev, [D|Rest], CodeType) ->
       io:format(Dev, "~w,",[D])
   end,
   pp_bytelist(Dev, Rest, CodeType);
-pp_bytelist(Dev, [], CodeType) ->
+pp_bytelist(Dev, [], _CodeType) ->
   io:format(Dev, "\n",[]).
 
 pp_dwordlist(Dev, [D|Rest], CodeType) ->
@@ -182,5 +182,5 @@ pp_dwordlist(Dev, [D|Rest], CodeType) ->
       io:format(Dev, "      ~w\n",[D])
   end,
   pp_dwordlist(Dev, Rest, CodeType);
-pp_dwordlist(Dev, [], CodeType) ->
+pp_dwordlist(_Dev, [], _CodeType) ->
   ok.

@@ -79,12 +79,12 @@ reverse([A, B | L]) ->
 %% nth(N, L) returns the N`th element of the list L
 %% nthtail(N, L) returns the N`th tail of the list L
 
-nth(1, [H|T]) -> H;
+nth(1, [H|_]) -> H;
 nth(N, [_|T]) when N > 1 ->
     nth(N - 1, T).
 
-nthtail(1, [H|T]) -> T;
-nthtail(N, [H|T]) when N > 1 ->
+nthtail(1, [_|T]) -> T;
+nthtail(N, [_|T]) when N > 1 ->
     nthtail(N - 1, T);
 nthtail(0, L) when list(L) -> L.
 
@@ -92,7 +92,7 @@ nthtail(0, L) when list(L) -> L.
 
 prefix([X|PreTail], [X|Tail]) ->
     prefix(PreTail, Tail);
-prefix([], List) -> true;
+prefix([], _List) -> true;
 prefix(_,_) -> false.
 
 
@@ -101,7 +101,7 @@ prefix(_,_) -> false.
 suffix(Suffix, Suffix) -> true;
 suffix(Suffix, [_|Tail]) ->
     suffix(Suffix, Tail);
-suffix(Suffix, []) -> false.
+suffix(_, []) -> false.
 
 %% last(List) returns the last element in a list.
 
@@ -124,7 +124,7 @@ seq(Min, Max, Incr) when Min >= Max, Incr < 0 ->
 seq(M, M, 0) when integer(M) ->
     [M].
 
-seq(Min, Min, I, L) -> [Min|L];
+seq(Min, Min, _, L) -> [Min|L];
 seq(Min, Max, I, L) -> seq(Min, Max-I, I, [Max|L]).
 
 %% sum(L) suns the sum of the elements in L
@@ -169,7 +169,7 @@ sublist(List, L) when integer(L), list(List) ->
 
 sublist_2([H|T], L) when L > 0 ->
     [H|sublist_2(T, L-1)];
-sublist_2(List, 0) ->
+sublist_2(_, 0) ->
     [];
 sublist_2(List, L) when list(List), L > 0 ->
     [].
@@ -180,7 +180,7 @@ sublist_2(List, L) when list(List), L > 0 ->
 delete(Item, [Item|Rest]) -> Rest;
 delete(Item, [H|Rest]) ->
     [H|delete(Item, Rest)];
-delete(Item, []) -> [].
+delete(_, []) -> [].
 
 %% sort(List) -> L
 %%  sorts the list L
@@ -314,7 +314,7 @@ flatlength(List) ->
 
 flatlength([H|T], L) when list(H) ->
     flatlength(H, flatlength(T, L));
-flatlength([H|T], L) ->
+flatlength([_|T], L) ->
     flatlength(T, L + 1);
 flatlength([], L) -> L.
 
@@ -352,7 +352,7 @@ keydelete(K,N,L) when integer(N), N > 0 ->
 keydelete3(Key, N, [H|T]) when element(N, H) == Key -> T;
 keydelete3(Key, N, [H|T]) ->
     [H|keydelete3(Key, N, T)];
-keydelete3(Key, N, []) -> [].
+keydelete3(_, _, []) -> [].
 
 keyreplace(K,N,L,New) when integer(N), N > 0 ->
     keyreplace3(K,N,L,New).
@@ -361,7 +361,7 @@ keyreplace3(Key, Pos, [Tup|Tail], New) when element(Pos, Tup) == Key ->
     [New|Tail];
 keyreplace3(Key, Pos, [H|T], New) ->
     [H|keyreplace3(Key, Pos, T, New)];
-keyreplace3(Key, Pos, [], New) -> [].
+keyreplace3(_, _, [], _) -> [].
 
 keysort(Index, L) when integer(Index), Index > 0 ->
     case L of
@@ -627,31 +627,30 @@ all(Pred, [Hd|Tail]) ->
 	true -> all(Pred, Tail);
 	false -> false
     end;
-all(Pred, []) -> true. 
+all(_, []) -> true. 
 
 any(Pred, [Hd|Tail]) ->
     case Pred(Hd) of
 	true -> true;
 	false -> any(Pred, Tail)
     end;
-any(Pred, []) -> false. 
+any(_, []) -> false. 
 
 map(F, [H|T]) ->
     [F(H)|map(F, T)];
-map(F, []) ->
-    [].
+map(_, []) -> [].
 
 flatmap(F, [Hd|Tail]) ->
     F(Hd) ++ flatmap(F, Tail);
-flatmap(F, []) -> [].
+flatmap(_, []) -> [].
 
 foldl(F, Accu, [Hd|Tail]) ->
     foldl(F, F(Hd, Accu), Tail);
-foldl(F, Accu, []) -> Accu.
+foldl(_, Accu, []) -> Accu.
 
 foldr(F, Accu, [Hd|Tail]) ->
     F(Hd, foldr(F, Accu, Tail));
-foldr(F, Accu, []) -> Accu.
+foldr(_, Accu, []) -> Accu.
 
 filter(Pred, List) -> [ E || E <- List, Pred(E) ].
 
@@ -664,38 +663,38 @@ zf(F, [Hd|Tail]) ->
 	false ->
 	    zf(F, Tail)
     end;
-zf(F, []) -> [].
+zf(_, []) -> [].
 
 foreach(F, [Hd|Tail]) ->
     F(Hd),
     foreach(F, Tail);
-foreach(F, []) -> ok.
+foreach(_, []) -> ok.
 
 mapfoldl(F, Accu0, [Hd|Tail]) ->
     {R,Accu1} = F(Hd, Accu0),
     {Rs,Accu2} = mapfoldl(F, Accu1, Tail),
     {[R|Rs],Accu2};
-mapfoldl(F, Accu, []) -> {[],Accu}.
+mapfoldl(_, Accu, []) -> {[],Accu}.
 
 mapfoldr(F, Accu0, [Hd|Tail]) ->
     {Rs,Accu1} = mapfoldr(F, Accu0, Tail),
     {R,Accu2} = F(Hd, Accu1),
     {[R|Rs],Accu2};
-mapfoldr(F, Accu, []) -> {[],Accu}.
+mapfoldr(_, Accu, []) -> {[],Accu}.
 
 takewhile(Pred, [Hd|Tail]) ->
     case Pred(Hd) of
 	true -> [Hd|takewhile(Pred, Tail)];
 	false -> []
     end;
-takewhile(Pred, []) -> [].
+takewhile(_, []) -> [].
 
 dropwhile(Pred, [Hd|Tail]) ->
     case Pred(Hd) of
 	true -> dropwhile(Pred, Tail);
 	false -> [Hd|Tail]
     end;
-dropwhile(Pred, []) -> [].
+dropwhile(_, []) -> [].
 
 splitwith(Pred, List) -> splitwith(Pred, List, []).
 
@@ -704,7 +703,7 @@ splitwith(Pred, [Hd|Tail], Taken) ->
 	true -> splitwith(Pred, Tail, [Hd|Taken]);
 	false -> {reverse(Taken), [Hd|Tail]}
     end;
-splitwith(Pred, [], Taken) -> {reverse(Taken),[]}.
+splitwith(_, [], Taken) -> {reverse(Taken),[]}.
 
 %% Versions of the above functions with extra arguments.
 
@@ -713,29 +712,28 @@ all(Pred, Eas, [Hd|Tail]) ->
 	true -> all(Pred, Eas, Tail);
 	false -> false
     end;
-all(Pred, Eas, []) -> true. 
+all(_, _, []) -> true. 
 
 any(Pred, Eas, [Hd|Tail]) ->
     case apply(Pred, [Hd|Eas]) of
 	true -> true;
 	false -> any(Pred, Eas, Tail)
     end;
-any(Pred, Eas, []) -> false. 
+any(_, _, []) -> false. 
 
 map(F, Eas, List) -> [ apply(F, [E|Eas]) || E <- List ].
 
 flatmap(F, Eas, [Hd|Tail]) ->
     apply(F, [Hd|Eas]) ++ flatmap(F, Eas, Tail);
-flatmap(F, Eas, []) -> [].
+flatmap(_, _, []) -> [].
 
 foldl(F, Eas, Accu, [Hd|Tail]) ->
     foldl(F, Eas, apply(F, [Hd,Accu|Eas]), Tail);
-foldl(F, Eas, Accu, []) -> Accu.
+foldl(_, _, Accu, []) -> Accu.
 
 foldr(F, Eas, Accu, [Hd|Tail]) ->
     apply(F, [Hd,foldr(F, Eas, Accu, Tail)|Eas]);
-foldr(F, Eas, Accu, []) ->
-    Accu.
+foldr(_, _, Accu, []) -> Accu.
 
 filter(Pred, Eas, List) -> [ E || E <- List, apply(Pred, [E|Eas]) ].
 
@@ -748,24 +746,24 @@ zf(F, Eas, [Hd|Tail]) ->
 	false ->
 	    zf(F, Eas, Tail)
     end;
-zf(F, Eas, []) -> [].
+zf(_, _, []) -> [].
 
 foreach(F, Eas, [Hd|Tail]) ->
     apply(F, [Hd|Eas]),
     foreach(F, Eas, Tail);
-foreach(F, Eas, []) -> ok.
+foreach(_, _, []) -> ok.
 
 mapfoldl(F, Eas, Accu0, [Hd|Tail]) ->
     {R,Accu1} = apply(F, [Hd,Accu0|Eas]),
     {Rs,Accu2} = mapfoldl(F, Eas, Accu1, Tail),
     {[R|Rs],Accu2};
-mapfoldl(F, Eas, Accu, []) -> {[],Accu}.
+mapfoldl(_, _, Accu, []) -> {[],Accu}.
 
 mapfoldr(F, Eas, Accu0, [Hd|Tail]) ->
     {Rs,Accu1} = mapfoldr(F, Eas, Accu0, Tail),
     {R,Accu2} = apply(F, [Hd,Accu1|Eas]),
     {[R|Rs],Accu2};
-mapfoldr(F, Eas, Accu, []) -> {[],Accu}.
+mapfoldr(_, _, Accu, []) -> {[],Accu}.
 
 %% takewhile/2, dropwhile/2 and splitwith/2 do not have versions with
 %% extra arguments as this going to be discontinued.

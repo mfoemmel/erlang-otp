@@ -46,8 +46,10 @@ void ei_init_nothreads()
 #if !defined(VXWORKS) && !defined(__WIN32__)
 
 #ifndef NO_PRAGMA_WEAK
-/* above symbols must be weak since 
+/* the symbols below must be weak since
  * they are multiply defined 
+ * Please remember to put the #pragma weak declarations before
+ * the actual function definitions: gcc-3.1 breaks otherwise.
  */
 #pragma weak erl_m_create
 #pragma weak erl_m_destroy

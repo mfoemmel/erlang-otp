@@ -22,7 +22,10 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # Application version
 # ----------------------------------------------------
 include ../vsn.mk
-VSN=$(INETS_VSN)
+
+VSN     = $(INETS_VSN)
+APP_VSN = "inets-$(VSN)"
+
 
 # ----------------------------------------------------
 # Release directory specification
@@ -32,16 +35,25 @@ RELSYSDIR = $(RELEASE_PATH)/lib/inets-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-MODULES= ftp \
+MODULES = \
+	ftp \
+	http \
+	http_lib \
+	httpc_handler \
+	httpc_manager \
+	uri \
 	httpd \
+	httpd_acceptor \
+	httpd_acceptor_sup \
 	httpd_conf \
 	httpd_example \
 	httpd_manager \
-	httpd_listener \
+	httpd_misc_sup \
 	httpd_parse \
-	httpd_request \
+	httpd_request_handler \
 	httpd_response \
 	httpd_socket \
+	httpd_sup \
 	httpd_util \
 	httpd_verbosity \
 	inets_sup \
@@ -51,8 +63,8 @@ MODULES= ftp \
 	mod_auth_plain \
 	mod_auth_dets \
 	mod_auth_mnesia \
+	mod_auth_server \
 	mod_browser \
-	mod_security \
 	mod_cgi \
 	mod_dir \
 	mod_disk_log \
@@ -61,11 +73,17 @@ MODULES= ftp \
 	mod_head \
 	mod_htaccess \
 	mod_include \
-	mod_log
+	mod_log \
+	mod_range \
+	mod_responsecontrol \
+	mod_trace \
+	mod_security \
+	mod_security_server
 
-HRL_FILES= httpd.hrl mod_auth.hrl
+HRL_FILES = httpd.hrl httpd_verbosity.hrl mod_auth.hrl \
+            http.hrl jnets_httpd.hrl
 
-ERL_FILES= $(MODULES:%=%.erl)
+ERL_FILES = $(MODULES:%=%.erl)
 
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 
@@ -105,7 +123,10 @@ ifeq ($(INETS_DEBUG),e)
 endif
 
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += $(INETS_FLAGS)
+ERL_COMPILE_FLAGS += $(INETS_FLAGS) \
+                     +'{parse_transform,sys_pre_attributes}' \
+                     +'{attribute,insert,app_vsn,$(APP_VSN)}'
+
 
 # ----------------------------------------------------
 # Targets

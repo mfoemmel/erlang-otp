@@ -30,7 +30,7 @@
 	 read_file_info/1, write_file_info/2,
 	 read_link_info/1, read_link/1,
 	 make_link/2, make_symlink/2,
-	 read_file/1, write_file/2]).
+	 read_file/1, write_file/2, write_file/3]).
 %% Specialized
 -export([ipread_s32bu_p32bu/3]).
 %% Generic file contents.
@@ -44,7 +44,7 @@
 -export([change_owner/2, change_owner/3, change_group/2,
 	 change_mode/2, change_time/2, change_time/3]).
 
-
+-export([pid2name/1]).
 
 %%% Obsolete exported functions
 
@@ -58,9 +58,11 @@
 -export([ipread_s32bu_p32bu_int/3]).
 
 
-
 %%% Includes and defines
 -include("file.hrl").
+
+-define(FILE_IO_SERVER_TABLE, file_io_servers).
+
 -define(OLD_FILE_SERVER, file_server). % Registered name
 -define(FILE_SERVER, file_server_2).   % Registered name
 -define(PRIM_FILE, prim_file).         % Module
@@ -240,6 +242,19 @@ format_error({Line, Mod, Reason}) ->
 format_error(ErrorId) ->
     erl_posix_msg:message(ErrorId).
 
+pid2name(Pid) when pid(Pid) ->
+    case whereis(file_server) of
+	undefined ->
+	    undefined;
+	_ ->
+	    case ets:lookup(?FILE_IO_SERVER_TABLE, Pid) of
+		[{_, Name} | _] ->
+		    {ok, Name};
+		_ ->
+		    undefined
+	    end
+    end.
+
 %%%-----------------------------------------------------------------
 %%% File server functions.
 %%% Functions that do not operate on a single open file.
@@ -297,6 +312,31 @@ make_symlink(Old, New) ->
 write_file(Name, Bin) ->
     check_and_call(write_file, [file_name(Name), check_binary(Bin)]).
 
+%% This whole operation should be moved to the file_server and prim_file
+%% when it is time to change file server protocol again.
+%% Meanwhile, it is implemented here, slihtly less efficient.
+%%
+write_file(Name, Bin, ModeList) when list(ModeList) ->
+    case check_binary(Bin) of
+	B when binary(B) ->
+	    case open(Name, [binary, write | 
+			     lists:delete(binary, 
+					  lists:delete(write, ModeList))]) of
+		{ok, Handle} ->
+		    case write(Handle, B) of
+			ok ->
+			    close(Handle);
+			E1 ->
+			    close(Handle),
+			    E1
+		    end;
+		E2 ->
+		    E2
+	    end;
+	E3 ->
+	    E3
+    end.
+
 %% Obsolete function.
 file_info(Name) ->
     case read_file_info(Name) of
@@ -345,15 +385,21 @@ open(Item, ModeList) when list(ModeList) ->
     case lists:member(raw, ModeList) of
 	%% Raw file, use ?PRIM_FILE to handle this file
 	true ->
-	    Args = [file_name(Item) | ModeList],
-	    case check_args(Args) of
-		ok ->
-		    [FileName | _] = Args,
-		    %% We rely on the returned Handle (in {ok, Handle})
-		    %% being a pid() or a #file_descriptor{}
-		    ?PRIM_FILE:open(FileName, ModeList);
-		Error ->
-		    Error
+	    %% check if raw file mode is disabled
+	    case catch application:get_env(kernel, raw_files) of
+		{ok,false} ->
+		    open(Item, lists:delete(raw, ModeList));
+		_ ->				% undefined | {ok,true}
+		    Args = [file_name(Item) | ModeList],
+		    case check_args(Args) of
+			ok ->
+			    [FileName | _] = Args,
+			    %% We rely on the returned Handle (in {ok, Handle})
+			    %% being a pid() or a #file_descriptor{}
+			    ?PRIM_FILE:open(FileName, ModeList);
+			Error ->
+			    Error
+		    end
 	    end;
 	false ->
 	    case lists:member(ram, ModeList) of

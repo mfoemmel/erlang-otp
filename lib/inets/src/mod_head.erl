@@ -31,7 +31,7 @@ do(Info) ->
 		{StatusCode,PhraseArgs,Reason} ->
 		    {proceed,Info#mod.data};
 		%% No status code has been generated!
-		undefined ->
+		_undefined ->
 		    case httpd_util:key1search(Info#mod.data,response) of
 			%% No response has been generated!
 			undefined ->
@@ -41,7 +41,7 @@ do(Info) ->
 			    {proceed,Info#mod.data};
 			%% A response has been generated!
 			{StatusCode,Response} ->
-			    make_head(Info,StatusCode,Response)
+			    {proceed,Info#mod.data}
 		    end
 	    end;
 	%% Not a HEAD method!
@@ -57,26 +57,14 @@ do_head(Info) ->
     %% Does the file exists?
     case file:read_file_info(Path) of
 	{ok,FileInfo} ->
-	    MimeType=httpd_util:lookup_mime_default(Info#mod.config_db,
-						    Suffix,"text/plain"),
-	    Response=["Content-Type: ",MimeType,"\r\n",
-		      "Content-Length: ",
-		      integer_to_list(FileInfo#file_info.size),
-		      "\r\n\r\n"],
-	    {proceed,[{response,{200,Response}}|Info#mod.data]};
+	    MimeType=httpd_util:lookup_mime_default(Info#mod.config_db,Suffix,"text/plain"),
+	    Length=io_lib:write(FileInfo#file_info.size),
+	    Head=[{content_type,MimeType},{content_length,Length},{code,200}],
+	    {proceed,[{response,{response,Head,nobody}}|Info#mod.data]};
 	{error,Reason} ->
 	    {proceed,
 	     [{status,read_file_info_error(Reason,Info,Path)}|Info#mod.data]}
     end.
-
-make_head(Info,StatusCode,Response) ->
-    MimeType = httpd_util:key1search(Info#mod.data,mime_type,"text/plain"),
-    NewResponse = ["Content-type: ",MimeType,"\r\n",
-		   "Content-length: ",
-		   integer_to_list(httpd_util:flatlength(Response)),
-		   "\r\n\r\n"],
-    {proceed,lists:keyreplace(response,1,Info#mod.data,
-			      {response,{StatusCode,NewResponse}})}.
 
 %% read_file_info_error - Handle file info read failure
 %%

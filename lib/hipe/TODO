@@ -1,0 +1,61 @@
+Bugfix
+======
+ Find elusive bug2.
+ "Correct" error messages
+ P->current (Fix observable behaviour?)
+ New callingconvention for guardbifs (Recognize at load time).
+ Long branches:
+   timer:tc(hipe,c,[megaco_text_parser,[{timeout,infinity}]]).
+   {4801210531,
+     {error,[{problem,too_long_branch},{address,3381732},{length,-828622}]}}
+
+
+
+Performance
+===========
+
+ Core Erlang -> Icode
+ Better handling of multimove in regalloc.
+ Faster closure creation. (Can static fields be preallocated?)
+ FP - arithmetic.
+ Inline BS-instructions.
+ Type info in Icode.
+ Expand pseudo-ops before scheduler (SPARC)
+ Stack maps for SPARC + Make frames in Sparc not in RTL.
+ Coalesce spill locations.
+
+Feature
+=======
+
+ module_info() -> beam/native. 
+ Stack traces from stack maps.
+
+Cleanup
+=======
+
+ Speedup renaming and other bottlenecks in the compiler.
+ Only calls with fail lable should end basic blocks.
+ Remove fail-entry-points from RTL (sparc/x86). 
+ Cleanup hipe_*_reigsters.erl and interface/rules with regalloc.
+ HiPE in bootstrap.
+ Cleanup and merge loaders. (Better handling of data.) 	
+ Reexamine switching code.
+
+Extensions
+==========
+
+ Design strategy for finding all processes holding a certain closure. 
+ Design strategy for native code unloading.
+ mbufs: In guards -> throw away, in bifs -> trigger special GC. (fix for native.)
+ Unified heap + process optimization (+ PE).
+ Incremental GC.
+
+
+Other
+=====
+
+ Unified heap paper.
+ BMs from Telia promotor, AXD301.
+ KT2 projects.
+ Release party HiPE 1.0
+ DVP 4th-year project in Erlang.

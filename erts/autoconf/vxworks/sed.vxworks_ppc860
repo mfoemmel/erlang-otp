@@ -9,7 +9,8 @@
 #
 s|@host@|vxworks_ppc860|
 s|@system_type@|vxworks_ppc860|
-s|@CC@|@TTPREFIX@ccppc|
+s|@ARCH@|ppc860|
+s|@CC@|@TTPREFIX@ccppc -mlongcall|
 s|@HCC@|gcc|
 s|@LD@|@TTPREFIX@ldppc|
 s|@STRIP@|@TTPREFIX@stripppc|
@@ -18,6 +19,7 @@ s|@LIBS@||
 s|@GCCLIBFLAGS@|-L@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/powerpc-wrs-vxworks/cygnus-2.7.2-960126/soft-float -lgcc|
 s|@DED_LD@|@TTPREFIX@ldppc|
 s|@DED_CFLAGS@|@CFLAGS@|
+s|@DEBUG_CFLAGS@|@CFLAGS@|
 # generate dwarf debug code on PPC ..
 s|@DEBUG_FLAGS@|-gdwarf|
 # remove -g option (go for dwarf)

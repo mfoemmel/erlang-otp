@@ -16,20 +16,13 @@
 %%     $Id$
 %%
 -module(mod_auth).
--behaviour(gen_server).
 
 
 %% The functions that the webbserver call on startup stop
 %% and when the server traverse the modules.
 -export([do/1, load/2, store/2, remove/1]).
 
-%% The callback functions to the mod_auth_api part
--export([init/1,
-	 handle_call/3, handle_cast/2, handle_info/2,
-	 terminate/2, code_change/3]).
-
-
-%%User entries to the genserver.
+%% User entries to the gen-server.
 -export([add_user/2, add_user/5, add_user/6, 
 	 add_group_member/3, add_group_member/4, add_group_member/5, 
 	 list_users/1, list_users/2, list_users/3, 
@@ -39,8 +32,7 @@
 	 delete_group/2, delete_group/3, delete_group/4,
 	 get_user/2, get_user/3, get_user/4, 
 	 list_group_members/2, list_group_members/3, list_group_members/4,
-	 update_password/6, update_password/5,
-	 verbosity/3]).
+	 update_password/6, update_password/5]).
 
 -include("httpd.hrl").
 -include("mod_auth.hrl").
@@ -49,8 +41,6 @@
 -include("httpd_verbosity.hrl").
 
 -define(NOPASSWORD,"NoPassword").
-
--record(state,{tab}).
 
 
 %% do
@@ -151,7 +141,7 @@ require(Info, Directory, DirectoryData) ->
 	undefined when ValidUsers == undefined ->
 	    authorized;
 	_ ->
-	    case httpd_util:key1search(ParsedHeader, "Authorization") of
+	    case httpd_util:key1search(ParsedHeader, "authorization") of
 		%% Authorization required!
 		undefined ->
 		    case httpd_util:key1search(DirectoryData, auth_name) of
@@ -509,11 +499,11 @@ store({directory,Directory0, DirData0}, ConfigList) ->
     end.
 
 
-add_auth_password(Dir,Pwd0,ConfigList)->    
+add_auth_password(Dir, Pwd0, ConfigList) ->    
     Addr = httpd_util:key1search(ConfigList, bind_address),
     Port = httpd_util:key1search(ConfigList, port),
-    start(Addr,Port),
-    add_password(Addr,Port,Dir,Pwd0).
+    mod_auth_server:start(Addr, Port),
+    mod_auth_server:add_password(Addr, Port, Dir, Pwd0).
     
 %% remove
 
@@ -531,97 +521,43 @@ remove(ConfigDB) ->
 		   Address
 	   end,
     [{port, Port}] = lookup(ConfigDB, port),
-    stop(Addr,Port),
+    mod_auth_server:stop(Addr, Port),
     ok.
 
 
 
-%%
-%% External API
-%
-%
-add_password(Addr,Port,Dir,Pwd0)->
-    Name = make_name(Addr,Port),
-    gen_server:call(whereis(Name),{add_auth_pass,Dir,Pwd0}).
 
+%% --------------------------------------------------------------------
 
-start(Addr,Port)->
-    SName = make_name(Addr,Port),
-    Verbosity = get(auth_verbosity),
-    case whereis(SName) of
-	undefined ->
-	    case gen_server:start_link({local,SName},?MODULE,[Verbosity],
-				       [{timeout,infinity}]) of
-		{ok, Pid} ->
-		    put(auth_server, Pid),
-		    ok;
-		{error, Reason} ->
-		    exit({failed_start_auth_server, Reason});
-		_ ->
-		    ok
-	    end;
-	_ ->
-	    ok
-    end.
+%% update_password
 
+update_password(Port, Dir, Old, New, New)->
+    update_password(undefined, Port, Dir, Old, New, New).
 
-verbosity(Addr,Port,Verbosity) ->
-    SName = make_name(Addr,Port),
-    case (catch gen_server:call(whereis(SName), {verbosity,Verbosity})) of
-	{'EXIT',Reason} ->
-	    {error,Reason};
-	OldVerbosity ->
-	    OldVerbosity
-    end.
+update_password(Addr, Port, Dir, Old, New, New) when list(New) ->
+    mod_auth_server:update_password(Addr, Port, Dir, Old, New);
 
-stop(Addr,Port)->
-    Name = make_name(Addr,Port),
-    case (catch gen_server:call(whereis(Name),stop)) of
-	{'EXIT',Reason} ->
-	    {error,Reason};
-	StopVal ->
-	    StopVal
-    end.
+update_password(_Addr, _Port, _Dir, _Old, New, New) ->
+    {error, badtype};
+update_password(_Addr, _Port, _Dir, _Old, New, New1) ->
+    {error, notqeual}.
 
-
-update_password(Port,Dir,Old,New,New)->
-    update_password(undefined,Port,Dir,Old,New,New).
-
-update_password(Addr,Port,Dir,Old,New,New)when list(New)->
-    Name = make_name(Addr,Port),
-    case (catch gen_server:call(whereis(Name),{update_auth_pass,Dir,Old,New})) of
-	{'EXIT',Reason} ->
-	    {error,Reason};
-	PwdRet ->
-	    PwdRet
-    end;
-	    
-
-update_password(Addr,Port,Dir,Old,New,New)->
-    {error,badtype};
-update_password(Addr,Port,Dir,Old,New,New1)->
-    {error,notqeual}.
 
 %% add_user
-add_user(UserName,Opt)->
-    case getOptions(Opt,mandatory) of
-	{Addr,Port,Dir,AuthPwd}->
-	    case getOptions(Opt,userData) of
-		{error,Reason}->
-		    {error,Reason};
-		{UserData,Password}->
-		    Name = make_name(Addr,Port),
-		    User=[#httpd_user{username=UserName, 
-				      password=Password,
-				      user_data=UserData}],
-		    case (catch gen_server:call(whereis(Name),{add_user,Addr,Port,Dir,User,AuthPwd})) of
-			{'EXIT',Reason} ->
-			    {error,Reason};
-			AddUserResponse ->
-			    AddUserResponse 
-		    end;
-		{error,Reason}->
-		    {error,Reason}
+
+add_user(UserName, Opt) ->
+    case get_options(Opt, mandatory) of
+	{Addr, Port, Dir, AuthPwd}->
+	    case get_options(Opt, userData) of
+		{error, Reason}->
+		    {error, Reason};
+		{UserData, Password}->
+		    User = [#httpd_user{username  = UserName, 
+					password  = Password,
+					user_data = UserData}],
+		    mod_auth_server:add_user(Addr, Port, Dir, User, AuthPwd);
+		{error, Reason} ->
+		    {error, Reason}
 	    end
     end.
 
@@ -629,450 +565,185 @@ add_user(UserName,Opt)->
 add_user(UserName, Password, UserData, Port, Dir) ->
     add_user(UserName, Password, UserData, undefined, Port, Dir).
 add_user(UserName, Password, UserData, Addr, Port, Dir) ->
-    Name = make_name(Addr,Port),
-    User=[#httpd_user{username=UserName, 
-			  password=Password,
-			  user_data=UserData}],
-    case (catch gen_server:call(whereis(Name),{add_user,Addr,Port,Dir,User,?NOPASSWORD})) of
-	{'EXIT',Reason} ->
-	    {error,Reason};
-	AddUserResponse ->
-	    AddUserResponse 
-    end.
+    User = [#httpd_user{username  = UserName, 
+			password  = Password,
+			user_data = UserData}],
+    mod_auth_server:add_user(Addr, Port, Dir, User, ?NOPASSWORD).
+
 
 %% get_user
-get_user(UserName,Opt) ->
-    case getOptions(Opt,mandatory) of
-	{Addr,Port,Dir,AuthPwd}->
-	    Name = make_name(Addr,Port),
-	    case (catch gen_server:call(whereis(Name),{get_user,Addr,Port,Dir,UserName,AuthPwd})) of
-		{'EXIT',Reason} ->
-		    {error,Reason};
-		GetUserResp->
-		    GetUserResp 
-	    end;
-	{error,Reason}->
-	    {error,Reason}
+
+get_user(UserName, Opt) ->
+    case get_options(Opt, mandatory) of
+	{Addr, Port, Dir, AuthPwd} ->
+	    mod_auth_server:get_user(Addr, Port, Dir, UserName, AuthPwd);
+	{error, Reason} ->
+	    {error, Reason}
     end.
 
 get_user(UserName, Port, Dir) ->
     get_user(UserName, undefined, Port, Dir).
 get_user(UserName, Addr, Port, Dir) ->
-    Name = make_name(Addr,Port),
-    case (catch gen_server:call(whereis(Name),{get_user,Addr,Port,Dir,UserName,?NOPASSWORD})) of
-	{'EXIT',Reason} ->
-	    {error,Reason};
-        GetUserResp->
-	    GetUserResp
-    end.
+    mod_auth_server:get_user(Addr, Port, Dir, UserName, ?NOPASSWORD).
 
 
 %% add_group_member
-add_group_member(GroupName,UserName,Opt)->
-    case getOptions(Opt,mandatory) of
-	{Addr,Port,Dir,AuthPwd}->
-	    Name = make_name(Addr,Port),
-	    case (catch gen_server:call(whereis(Name),{add_group_member,Addr,Port,Dir,GroupName,UserName,AuthPwd}))of
-		{'EXIT',Reason} ->
-		    {error,Reason};
-		AddResp ->
-		    AddResp 
-	    end;	
-	{error,Reason}->
-	    {error,Reason}
+
+add_group_member(GroupName, UserName, Opt)->
+    case get_options(Opt, mandatory) of
+	{Addr, Port, Dir, AuthPwd}->
+	    mod_auth_server:add_group_member(Addr, Port, Dir, 
+					     GroupName, UserName, AuthPwd);
+	{error, Reason} ->
+	    {error, Reason}
     end.
 
 add_group_member(GroupName, UserName, Port, Dir) ->
     add_group_member(GroupName, UserName, undefined, Port, Dir).
 
 add_group_member(GroupName, UserName, Addr, Port, Dir) ->
-    Name = make_name(Addr,Port),
-    case (catch gen_server:call(whereis(Name),{add_group_member,Addr,Port,Dir,GroupName,UserName,?NOPASSWORD})) of
-	{'EXIT',Reason} ->
-	    {error,Reason};
-	AddResp ->
-	    AddResp 
-    end.
-
+    mod_auth_server:add_group_member(Addr, Port, Dir, 
+				     GroupName, UserName, ?NOPASSWORD).
 
 
 %% delete_group_member
-delete_group_member(GroupName,UserName,Opt)->
-    case getOptions(Opt,mandatory) of
-	{Addr,Port,Dir,AuthPwd}->
-	    Name = make_name(Addr,Port),
-	    case (catch gen_server:call(whereis(Name),{delete_group_member,Addr,Port,Dir,GroupName,UserName,AuthPwd})) of
-		{'EXIT',Reason} ->
-		    {error,Reason};
-		DelResp ->
-		    DelResp 
-	    end;
-	{error,Reason}->
-	    {error,Reason}
+
+delete_group_member(GroupName, UserName, Opt) ->
+    case get_options(Opt, mandatory) of
+	{Addr, Port, Dir, AuthPwd} ->
+	    mod_auth_server:delete_group_member(Addr, Port, Dir, 
+						GroupName, UserName, AuthPwd);
+	{error, Reason} ->
+	    {error, Reason}
     end.
 
 delete_group_member(GroupName, UserName, Port, Dir) ->
     delete_group_member(GroupName, UserName, undefined, Port, Dir).
 delete_group_member(GroupName, UserName, Addr, Port, Dir) ->
-    Name = make_name(Addr,Port),
-    case (catch gen_server:call(whereis(Name),{delete_group_member,Addr,Port,Dir,GroupName,UserName,?NOPASSWORD})) of
-	{'EXIT',Reason} ->
-	    {error,Reason};
-	DelResp->
-	    DelResp 
-    end.
-    
+    mod_auth_server:delete_group_member(Addr, Port, Dir, 
+					GroupName, UserName, ?NOPASSWORD).
+
+
 %% list_users
+
 list_users(Opt) ->
-    case getOptions(Opt,mandatory) of
-	{Addr,Port,Dir,AuthPwd}->
-	    Name = make_name(Addr,Port),
-	    case (catch gen_server:call(whereis(Name),{list_users,Addr,Port,Dir,AuthPwd})) of
-		{'EXIT',Reason} ->
-		    {error,Reason};
-		Response ->
-		    Response 
-	    end;
-	{error,Reason}->
-	    {error,Reason}
+    case get_options(Opt, mandatory) of
+	{Addr, Port, Dir, AuthPwd} ->
+	    mod_auth_server:list_users(Addr, Port, Dir, AuthPwd);
+	{error, Reason} ->
+	    {error, Reason}
     end.
 
 list_users(Port, Dir) ->
     list_users(undefined, Port, Dir).
 list_users(Addr, Port, Dir) ->
-    ?DEBUG("list_users -> ~n"
-	   "     Addr: ~p~n"
-	   "     Port: ~p~n"
-	   "     Dir:  ~p",
-	   [Addr,Port,Dir]),
-    Name = make_name(Addr,Port),
-    case (catch gen_server:call(whereis(Name),{list_users,Addr,Port,Dir,?NOPASSWORD}))of
-	{'EXIT',Reason} ->
-	    {error,Reason};
-	Response ->
-	    Response 
-    end.
+    mod_auth_server:list_users(Addr, Port, Dir, ?NOPASSWORD).
+
     
 %% delete_user
-delete_user(UserName,Opt) ->
-    case getOptions(Opt,mandatory) of
-	{Addr,Port,Dir,AuthPwd}->
-	    Name = make_name(Addr,Port),
-	    case (catch gen_server:call(whereis(Name),{delete_user,Addr,Port,Dir,UserName,AuthPwd}))of
-		{'EXIT',Reason} ->
-		    {error,Reason};
-		Response ->
-		    Response 
-	    end;
-	{error,Reason}->
-	    {error,Reason}
+
+delete_user(UserName, Opt) ->
+    case get_options(Opt, mandatory) of
+	{Addr, Port, Dir, AuthPwd} ->
+	    mod_auth_server:delete_user(Addr, Port, Dir, UserName, AuthPwd);
+	{error, Reason} ->
+	    {error, Reason}
     end.
 
 delete_user(UserName, Port, Dir) ->
     delete_user(UserName, undefined, Port, Dir).
 delete_user(UserName, Addr, Port, Dir) ->
-    Name = make_name(Addr,Port),
-    case (catch gen_server:call(whereis(Name),{delete_user,Addr,Port,Dir,UserName,?NOPASSWORD}))of
-	  {'EXIT',Reason} ->
-		 {error,Reason};
-	  Response ->
-		 Response 
-    end.
+    mod_auth_server:delete_user(Addr, Port, Dir, UserName, ?NOPASSWORD).
 	  
-	  %% delete_group
-delete_group(GroupName,Opt) ->
-    case getOptions(Opt,mandatory) of
-	{Addr,Port,Dir,AuthPwd}->
-	    Name = make_name(Addr,Port),
-	    case (catch gen_server:call(whereis(Name),{delete_group,Addr,Port,Dir,GroupName,AuthPwd}))of
-		{'EXIT',Reason} ->
-		    {error,Reason};
-		Response ->
-		    Response 
-	    end;
-	{error,Reason}->
-	    {error,Reason}
+
+%% delete_group
+
+delete_group(GroupName, Opt) ->
+    case get_options(Opt, mandatory) of
+	{Addr, Port, Dir, AuthPwd}->
+	    mod_auth_server:delete_group(Addr, Port, Dir, GroupName, AuthPwd);
+	{error, Reason} ->
+	    {error, Reason}
     end.
 
 delete_group(GroupName, Port, Dir) ->
     delete_group(GroupName, undefined, Port, Dir).
 delete_group(GroupName, Addr, Port, Dir) ->
-    Name = make_name(Addr,Port),
-    case (catch gen_server:call(whereis(Name),{delete_group,Addr,Port,Dir,GroupName,?NOPASSWORD})) of
-	{'EXIT',Reason} ->
-	    {error,Reason};
-	Response ->
-	    Response 
-    end.
+    mod_auth_server:delete_group(Addr, Port, Dir, GroupName, ?NOPASSWORD).
+
 
 %% list_groups
+
 list_groups(Opt) ->
-    case getOptions(Opt,mandatory) of
-	{Addr,Port,Dir,AuthPwd}->
-	    Name = make_name(Addr,Port),
-	    case catch (gen_server:call(whereis(Name),{list_groups,Addr,Port,Dir,AuthPwd})) of
-		{'EXIT',Reason} ->
-		    {error,Reason};
-		Response ->
-		    Response 
-	    end;
-	{error,Reason}->
-	    {error,Reason}
+    case get_options(Opt, mandatory) of
+	{Addr, Port, Dir, AuthPwd}->
+	    mod_auth_server:list_groups(Addr, Port, Dir, AuthPwd);
+	{error, Reason} ->
+	    {error, Reason}
     end.
 
 list_groups(Port, Dir) ->
     list_groups(undefined, Port, Dir).
 list_groups(Addr, Port, Dir) ->
-    Name = make_name(Addr,Port),
-    case (catch gen_server:call(whereis(Name),{list_groups,Addr,Port,Dir,?NOPASSWORD}) ) of
-	{'EXIT',Reason} ->
-	    {error,Reason};
-	Response ->
-	    Response 
-    end.
+    mod_auth_server:list_groups(Addr, Port, Dir, ?NOPASSWORD).
+
 
 %% list_group_members
+
 list_group_members(GroupName,Opt) ->
-    case getOptions(Opt,mandatory) of
-	{Addr,Port,Dir,AuthPwd}->
-	    Name = make_name(Addr,Port),
-	    case (catch gen_server:call(whereis(Name),{list_group_members,Addr,Port,Dir,GroupName,AuthPwd})) of
-		{'EXIT',Reason} ->
-		    {error,Reason};
-		Response ->
-		    Response 
-	    end;
-	{error,Reason}->
-	    {error,Reason}
+    case get_options(Opt, mandatory) of
+	{Addr, Port, Dir, AuthPwd} ->
+	    mod_auth_server:list_group_members(Addr, Port, Dir, GroupName, 
+					       AuthPwd);
+	{error, Reason} ->
+	    {error, Reason}
     end.
 
 list_group_members(GroupName, Port, Dir) ->
     list_group_members(GroupName, undefined, Port, Dir).
 list_group_members(GroupName, Addr, Port, Dir) ->
-    Name = make_name(Addr,Port),
-    case (catch gen_server:call(whereis(Name),{list_group_members,Addr,Port,Dir,GroupName,?NOPASSWORD})) of
-	{'EXIT',Reason} ->
-	    {error,Reason};
-	Response ->
-	    Response 
-    end.
+    mod_auth_server:list_group_members(Addr, Port, Dir, GroupName, ?NOPASSWORD).
 
 
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                                                                  %%
-%%The genserver callback functions                                  %%
-%%                                                                  %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-init([undefined]) ->
-    init([?default_verbosity]);
-
-init([Verbosity]) ->
-    put(sname,auth),
-    put(verbosity,Verbosity),
-    ?vlog("starting",[]),
-    {ok,#state{tab = ets:new(auth_pwd,[set,protected])}}.
-
-terminate(Reason,State) ->
-    ets:delete(State#state.tab),
-    ok.
-
-
-%% Add a user
-handle_call({add_user,Addr,Port,Dir,User,AuthPwd},_From,State)->
-    {reply,api_call(Addr, Port, Dir, add_user,User,AuthPwd,State),State};
-
-%% Get data about a user
-handle_call({get_user,Addr,Port,Dir,UserName,AuthPwd},_From,State)->
-    {reply,api_call(Addr, Port, Dir, get_user, [UserName],AuthPwd,State),State};
-
-%% Add a group member
-handle_call({add_group_member,Addr,Port,Dir,GroupName,UserName,AuthPwd},_From,State)->
-    {reply,api_call(Addr, Port, Dir, add_group_member, [GroupName, UserName],AuthPwd,State),State};
-
-%% delete a group
-handle_call({delete_group_member,Addr,Port,Dir,GroupName,UserName,AuthPwd},_From,State)->
-    {reply,api_call(Addr, Port, Dir, delete_group_member, [GroupName, UserName],AuthPwd,State),State};
-
-%% List all users thats standalone users
-handle_call({list_users,Addr,Port,Dir,AuthPwd},_From,State)->
-    {reply,api_call(Addr, Port, Dir, list_users, [],AuthPwd,State),State};
-
-%% Delete a user
-handle_call({delete_user,Addr,Port,Dir,UserName,AuthPwd},_From,State)->
-    {reply,api_call(Addr, Port, Dir, delete_user, [UserName],AuthPwd,State),State};
-
-%% Delete a group
-handle_call({delete_group,Addr,Port,Dir,GroupName,AuthPwd},_From,State)->
-    {reply,api_call(Addr, Port, Dir, delete_group, [GroupName],AuthPwd,State),State};
-
-%% List the current groups
-handle_call({list_groups,Addr,Port,Dir,AuthPwd},_From,State)->
-    {reply,api_call(Addr, Port, Dir, list_groups, [],AuthPwd,State),State};
-
-%% List the members of the given group
-handle_call({list_group_members,Addr,Port,Dir,GroupName,AuthPwd},_From,State)->
-    {reply,api_call(Addr, Port, Dir, list_group_members, [GroupName],AuthPwd,State),State};
-
-
-handle_call({add_auth_pass,Dir,Pwd0},_From,State)->
-    {reply,add_auth_pass(Dir,Pwd0,State),State};
-
-%% Update the password for a directory
-  
-handle_call({update_auth_pass,Dir,Old,New},_From,State)->
-    case getPassword(State,Dir) of
-	OldPwd when binary(OldPwd)->
-	    case erlang:md5(Old) of
-		OldPwd ->
-		    %%The old password is right update the authPwd to the new
-		    update_password(Dir,New,State),
-		    {reply,ok,State};
-		_->
-		    {reply,{error,error_new},State}
-	    end;
-	_->
-	    {reply,{error,error_old},State}
-    end;
-
-handle_call(stop,_From,State)->
-    {stop,normal,State};
-
-handle_call({verbosity,Verbosity},_From,State)->
-    OldVerbosity = put(verbosity,Verbosity),
-    ?vlog("set verbosity:  ~p -> ~p",[Verbosity,OldVerbosity]),
-    {reply,OldVerbosity,State}.
-
-handle_info(Info,State)->
-    {noreply,State}.
-
-handle_cast(Request,State)->
-    {noreply,State}.
-    
-
-%% code_change({down, ToVsn}, State, Extra)
-%% 
-code_change({down, _}, #state{tab = Tab}, downgrade_to_2_6_0) ->
-    ?vlog("downgrade to 2.6.0", []),
-    {ok, {state, Tab, undefined}};
-code_change({down, _}, State, _) ->
-    ?vlog("downgrade to 2.6.x", []),
-    {ok, State};
-
-
-%% code_change(FromVsn, State, Extra)
-%%
-code_change(_, {mod_state, Tab, _}, upgrade_from_2_6_0) ->
-    ?vlog("upgrade from 2.6.0", []),
-    {ok, #state{tab = Tab}};
-code_change(_, State, _) ->
-    ?vlog("upgrade from 2.6.x", []),
-    {ok, State}.
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%                                                                  %%
-%% The functions that really changes the data in the database       %%
-%% of users to different directories                                %%
-%%                                                                  %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
-
-%% API gateway
-
-api_call(Addr, Port, Dir, Func, Args,Password,State) ->
-    case controlPassword(Password,State,Dir) of
-	ok->
-	    ConfigName = httpd_util:make_name("httpd_conf",Addr,Port),
-	    case ets:match_object(ConfigName, {directory, Dir, '$1'}) of
-		[{directory, Dir, DirData}] ->
-		    AuthMod = auth_mod_name(DirData),
-		    ?DEBUG("api_call -> call ~p:~p",[AuthMod,Func]),
-		    Ret = (catch apply(AuthMod, Func, [DirData|Args])),
-		    ?DEBUG("api_call -> Ret: ~p",[ret]),
-		    Ret;
-		O ->
-		    ?DEBUG("api_call -> O: ~p",[O]),
-		    {error, no_such_directory}
-	    end;
-	bad_password ->
-	    {error,bad_password}
-    end.
-
-controlPassword(Password,State,Dir)when Password=:="DummyPassword"->
-    bad_password;
-
-controlPassword(Password,State,Dir)->
-    case getPassword(State,Dir) of
-	Pwd when binary(Pwd)->
-	    case erlang:md5(Password) of
-		Pwd ->
-		    ok;
-		_->
-		    bad_password
-	    end;
-	_ ->
-	    bad_password
-    end.
-
-    
-getPassword(State,Dir)->
-    case lookup(State#state.tab, Dir) of
-	[{_,Pwd}]->
-	    Pwd;
-	_ ->
-	    {error,bad_password}
-    end.
-
-update_password(Dir,New,State)->
-    ets:insert(State#state.tab,{Dir,erlang:md5(New)}).
-
-add_auth_pass(Dir,Pwd0,State)->
-    case getPassword(State,Dir) of
-	PwdExists when binary(PwdExists) ->
-	    {error,dir_protected};
-	{error,_} ->
-	    update_password(Dir,Pwd0,State)
-    end.
-	    
 
 %% Opt = [{port, Port},
 %%        {addr, Addr},
 %%        {dir,  Dir},
 %%        {authPassword, AuthPassword} | FunctionSpecificData]
-getOptions(Opt,mandatory)->    
-    case httpd_util:key1search(Opt,port,undef) of
+get_options(Opt, mandatory)->    
+    case httpd_util:key1search(Opt, port, undefined) of
 	Port when integer(Port) ->
-	    case httpd_util:key1search(Opt,dir,undef) of
+	    case httpd_util:key1search(Opt, dir, undefined) of
 		Dir when list(Dir) ->
-		    Addr=httpd_util:key1search(Opt,addr,undefined),
-		    AuthPwd=httpd_util:key1search(Opt,authPassword,"NoPassword"),
-		    {Addr,Port,Dir,AuthPwd};
+		    Addr = httpd_util:key1search(Opt,
+						 addr,
+						 undefined),
+		    AuthPwd = httpd_util:key1search(Opt,
+						    authPassword,
+						    ?NOPASSWORD),
+		    {Addr, Port, Dir, AuthPwd};
 		_->
-		    {error,bad_dir}
+		    {error, bad_dir}
 	    end;
 	_ ->
-	    {error,bad_dir}
+	    {error, bad_dir}
     end;
-%%FunctionSpecificData={userData,UserData}|{password,Password}
-getOptions(Opt,userData)->
-    case httpd_util:key1search(Opt,userData,undefined) of
-	undefined->
-	    {error,no_userdata};
+
+%% FunctionSpecificData = {userData, UserData} | {password, Password}
+get_options(Opt, userData)->
+    case httpd_util:key1search(Opt, userData, undefined) of
+	undefined ->
+	    {error, no_userdata};
 	UserData ->
-	    case httpd_util:key1search(Opt,password,undefined)of
+	    case httpd_util:key1search(Opt, password, undefined) of
 		undefined->
-		    {error,no_password};
+		    {error, no_password};
 		Pwd ->
-		    {UserData,Pwd}
+		    {UserData, Pwd}
 	    end
     end.
 
 
 lookup(Db, Key) ->
     ets:lookup(Db, Key).
-
-
-make_name(Addr,Port) ->
-    httpd_util:make_name("httpd_auth",Addr,Port).
 

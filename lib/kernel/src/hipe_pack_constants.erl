@@ -1,10 +1,8 @@
 %%% $Id$
--module(hipe_pack_constants).
--export([pack_constants/1]).
--include("hipe_ext_format.hrl").
 
-%pack_constants(MFA, ConstTab) ->
-%  pack_constants([{MFA,[],ConstTab}]).
+-module(hipe_pack_constants).
+-export([pack_constants/1,slim_refs/1]).
+-include("hipe_ext_format.hrl").
 
 pack_constants(Data) ->
   pack_constants(Data,0,0,[],[]).
@@ -24,7 +22,7 @@ pack_constants([{MFA,_,ConstTab}|Rest],AccSize,ConstNo,Acc,Refs) ->
 		 Map++Acc, NewRefs);
 pack_constants([], Size, _, Acc, Refs) -> {Size, Acc, Refs}.
 
-pack_labels([{Label,ref}|Labels],MFA,ConstTab,AccSize, ConstNo, Acc, Refs) ->
+pack_labels([{_Label,ref}|Labels],MFA,ConstTab,AccSize, ConstNo, Acc, Refs) ->
   pack_labels(Labels,MFA,ConstTab,AccSize, ConstNo, Acc, Refs);
 pack_labels([Label|Labels],MFA,ConstTab,AccSize, ConstNo, Acc, Refs) ->
   Const = hipe_consttab:lookup(Label,ConstTab),
@@ -50,7 +48,6 @@ pack_labels([Label|Labels],MFA,ConstTab,AccSize, ConstNo, Acc, Refs) ->
 	  {ElementType, ElementData} ->
 	    decompose_block(ElementType, ElementData, Start);
 	  {ElementType, ElementData, SortOrder} ->
-	      ElementSize = hipe_consttab:size_of(ElementType),
 	    {TblData, TblRefs} = get_sorted_refs(ElementData, SortOrder),
 	    {hipe_consttab:decompose({ElementType, TblData}), [{sorted,Start,TblRefs}]}
 	end
@@ -84,13 +81,44 @@ get_refs([],_,_) ->
 get_sorted_refs([{label,L}|Rest], [Ordering|Os]) ->
   {NewData, Refs} = get_sorted_refs(Rest, Os),
   {[0|NewData],[{L,Ordering}|Refs]};
-get_sorted_refs([D|Rest], [Ordering|Os]) ->
+get_sorted_refs([D|Rest], [_Ordering|Os]) ->
   {NewData, Refs} = get_sorted_refs(Rest, Os),
   {[D|NewData],Refs};
 get_sorted_refs([],[]) ->
   {[],[]}.
 
-% find_const({MFA,Label},[{MFA,Label,ConstNo,Addr,_, _, _,_}|_])->
-%   {Addr, ConstNo};
-% find_const(N,[_|R]) ->
-%   find_const(N,R).
+
+
+slim_refs([]) -> [];
+slim_refs(Refs) ->
+  [Ref|Rest] = lists:keysort(1,Refs),
+  compact_ref_types(Rest,element(1,Ref),[Ref],[]).
+
+compact_ref_types([Ref|Refs],Type,AccofType,Acc) ->
+  case element(1,Ref) of
+    Type ->
+      compact_ref_types(Refs,Type,[Ref|AccofType], Acc);
+    NewType ->
+      compact_ref_types(Refs, NewType,[Ref], 
+			[{Type,lists:sort(compact_dests(AccofType))}|
+			 Acc])
+  end;
+compact_ref_types([],Type,AccofType,Acc) ->
+  [{Type,lists:sort(compact_dests(AccofType))}|Acc].
+
+
+compact_dests([]) -> [];
+compact_dests(Refs) ->
+  [Ref|Rest] = lists:keysort(3,Refs),
+  compact_dests(Rest,element(3,Ref),[element(2,Ref)],[]).
+
+
+compact_dests([Ref|Refs],Dest,AccofDest,Acc) ->
+  case element(3,Ref) of
+    Dest ->
+      compact_dests(Refs,Dest,[element(2,Ref)|AccofDest], Acc);
+    NewDest ->
+      compact_dests(Refs, NewDest,[element(2,Ref)], [{Dest,AccofDest}|Acc])
+  end;
+compact_dests([],Dest,AccofDest,Acc) ->
+  [{Dest,AccofDest}|Acc].

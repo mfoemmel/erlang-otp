@@ -69,7 +69,7 @@
 module(#c_module{exports=Es,defs=Ds0}=Mod, Opts) ->
     case inline_option(10, 0, Opts) of
 	{Thresh,Fs} when integer(Thresh), Thresh > 0; Fs /= [] ->
-	    case property_lists:get_bool(verbose, Opts) of
+	    case proplists:get_bool(verbose, Opts) of
 		true ->
 		    io:format("Old inliner: threshold=~p functions=~p\n",
 			      [Thresh,Fs]);
@@ -77,22 +77,22 @@ module(#c_module{exports=Es,defs=Ds0}=Mod, Opts) ->
 	    end,
 	    Ds1 = inline(Ds0, #inline{exports=Es,thresh=Thresh,inline=Fs}),
 	    {ok,Mod#c_module{defs=Ds1}};
-	Other -> {ok,Mod}
+	_Other -> {ok,Mod}
     end.
     
-inline_option(OnVal, OffVal, Opts) ->
-    foldl(fun ({inline,{F,A}=Val}, {T,Fs}) ->
+inline_option(_OnVal, OffVal, Opts) ->
+    foldl(fun ({inline,{_,_}=Val}, {T,Fs}) ->
 		  {T,[Val|Fs]};
 	      ({inline,Val}, {T,Fs}) when list(Val) ->
 		  {T,Val ++ Fs};
-	      ({inline,Val}, {T,Fs}) when integer(Val) ->
+	      ({inline,Val}, {_,Fs}) when integer(Val) ->
 		  {Val,Fs};
 
 	      %% Clashes with Richard's new inliner.
 	      %%(inline, {T,Fs}) -> {OnVal,Fs};
 
-	      (noinline, {T,Fs}) -> {OffVal,Fs};
-	      (Opt, Def) -> Def
+	      (noinline, {_,Fs}) -> {OffVal,Fs};
+	      (_Opt, Def) -> Def
 	  end, {0,[]}, Opts).
 
 %% inline([Func], Stat) -> [Func].
@@ -101,7 +101,7 @@ inline_option(OnVal, OffVal, Opts) ->
 inline(Fs0, St0) ->
     %% Generate list of augmented functions.
     Fs1 = map(fun (#c_def{name=#c_fname{id=F,arity=A},
-			  val=#c_fun{vars=Vs,body=B}}=Def) ->
+			  val=#c_fun{body=B}}=Def) ->
 		      Weight = core_lib:fold(fun weight_func/2, 0, B),
 		      #fstat{func=F,arity=A,def=Def,weight=Weight}
 	      end, Fs0),
@@ -129,7 +129,7 @@ inline(Fs0, St0) ->
     %% Use fixed inline functions on all functions.
     Fs3 = lists:map(fun (F) -> inline_func(F, Is2) end, Fs2),
     %% Regenerate module body.
-    map(fun (#fstat{def=Def,inline=I,modified=M}) ->
+    map(fun (#fstat{def=Def,modified=M}) ->
 		case M of
 		    true -> sys_core_fold:function(Def);
 		    false -> Def
@@ -138,8 +138,8 @@ inline(Fs0, St0) ->
 
 %% is_inlineable(Fstat, Thresh, [Inline]) -> bool().
 
-is_inlineable(#fstat{weight=W}, Thresh, Ofs) when W =< Thresh -> true;
-is_inlineable(#fstat{func=F,arity=A}, Thresh, Ofs) ->
+is_inlineable(#fstat{weight=W}, Thresh, _Ofs) when W =< Thresh -> true;
+is_inlineable(#fstat{func=F,arity=A}, _Thresh, Ofs) ->
     member({F,A}, Ofs).
 
 %% inline_inline(Ifun, [Inline]) -> Ifun.
@@ -153,8 +153,8 @@ inline_inline(#ifun{body=B,weight=Iw}=If, Is) ->
 			 #ifun{vars=Vs,body=B,weight=W} when W < Iw ->
 			     #c_let{vars=Vs,
 				     arg=core_lib:make_values(As),
-				     body=B};
-			 Other -> Call
+				    body=kill_id_anns(B)};
+			 _Other -> Call
 		     end;
 		 (Core) -> Core
 	     end,
@@ -170,16 +170,16 @@ inline_func(#fstat{def=F0}=Fstat, Is) ->
 			 #ifun{vars=Vs,body=B} ->
 			     {#c_let{vars=Vs,
 				     arg=core_lib:make_values(As),
-				     body=B},
+				     body=kill_id_anns(B)},
 			      true};			%Have modified
-			 Other -> {Call,Mod}
+			 _Other -> {Call,Mod}
 		     end;
 		 (Core, Mod) -> {Core,Mod}
 	     end,
     {F1,Mod} = core_lib:mapfold(Inline, false, F0),
     Fstat#fstat{def=F1,modified=Mod}.
 
-weight_func(Core, Acc) -> Acc + 1.
+weight_func(_Core, Acc) -> Acc + 1.
 
 %% match_fail_fun() -> fun/1.
 %% Return a function to use with map to fix inlineable functions
@@ -196,6 +196,21 @@ match_fail_fun() ->
 
 %% find_inl(Func, Arity, [Inline]) -> #ifun{} | no.
 
-find_inl(F, A, [#ifun{func=F,arity=A}=If|Is]) -> If;
-find_inl(F, A, [If|Is]) -> find_inl(F, A, Is);
-find_inl(F, A, []) -> no.
+find_inl(F, A, [#ifun{func=F,arity=A}=If|_]) -> If;
+find_inl(F, A, [_|Is]) -> find_inl(F, A, Is);
+find_inl(_, _, []) -> no.
+
+%% kill_id_anns(Body) -> Body'
+
+kill_id_anns(Body) ->
+    core_lib:map(fun(#c_fun{anno=A0}=CFun) ->
+			 A = kill_id_anns_1(A0),
+			 CFun#c_fun{anno=A};
+		    (Expr) -> Expr
+		 end, Body).
+
+kill_id_anns_1([{'id',_}|As]) ->
+    kill_id_anns_1(As);
+kill_id_anns_1([A|As]) ->
+    [A|kill_id_anns_1(As)];
+kill_id_anns_1([]) -> [].

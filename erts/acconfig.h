@@ -24,11 +24,14 @@
 #undef HIPE
 
 /*
- * Do we want the unified heap model?
+ * Do we want the shared heap model?
  */
 
-/* Define to enable unified heap model. */
-#undef UNIFIED_HEAP
+/* Define to enable shared heap model. */
+#undef SHARED_HEAP
+
+/* Define to enable hrvtime() on Linux/x86 systems with perfctr extension. */
+#undef USE_PERFCTR
 
 /*
  * elib_malloc options.
@@ -47,6 +50,8 @@
 /*
  *  Misc. system calls and include files.
  */
+/* Define if netdb.h needs struct sockaddr_in ans in.h CAN be included before*/
+#undef NETDB_H_NEEDS_IN_H
 
 /* Define if you have the <sys/uio.h> header file. */
 #undef HAVE_UIO_H
@@ -68,6 +73,12 @@
 
 /* define if gethrvtime() works and uses ioctl() to /proc/self */
 #undef HAVE_GETHRVTIME_PROCFS_IOCTL
+
+/* The number of bytes in a size_t.  */
+#undef SIZEOF_SIZE_T
+
+/* The number of bytes in an off_t.  */
+#undef SIZEOF_OFF_T
 
 
 /*

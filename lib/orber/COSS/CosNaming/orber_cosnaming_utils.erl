@@ -56,13 +56,12 @@
 %% DEFAULT VALUES:
 %%
 %% IIOP:
-%%  - port:         2089
+%%  - port:         2809
 %%  - iiop version: 1.0
 -define(DEF_VERS,      {1,0}).
--define(DEF_PORT,      2089).
+-define(DEF_PORT,      2809).
 -define(DEF_KEY,       "NameService").
 -define(HTTP_DEF_PORT, 80).
-
 
 %% DEBUG INFO
 -define(DEBUG_LEVEL, 5).
@@ -382,7 +381,7 @@ lookup({corbaname, Addresses, Key, ""}) ->
     %% Not Name-string defined, which is the same as corbaloc.
     lookup({corbaloc, Addresses, Key});
 lookup({corbaname, [[iiop, Vers, Host, Port]|Addresses], Key, Name}) ->
-    NS = iop_ior:create_external(Vers, "", Host, Port, Key),
+    NS = iop_ior:create_external(Vers, key2id(Key), Host, Port, Key),
     case catch 'CosNaming_NamingContext':resolve(NS, Name) of
 	{'EXCEPTION', _} ->
 	    lookup({corbaname, Addresses, Key, Name});
@@ -395,7 +394,7 @@ lookup({corbaname, [_|Addresses], Key, Name}) ->
 lookup({corbaloc, [], Key}) ->
     corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{});
 lookup({corbaloc, [[iiop, Vers, Host, Port]|Addresses], Key}) ->
-    ObjRef = iop_ior:create_external(Vers, "", Host, Port, Key),
+    ObjRef = iop_ior:create_external(Vers, key2id(Key), Host, Port, Key),
     OldVal = put(orber_forward_notify, true),
     case catch corba_object:non_existent(ObjRef) of
 	{location_forward, Result} ->
@@ -485,6 +484,58 @@ create_connection(Host,Port, Timeout) ->
 	Error ->
 	    corba:raise(#'COMM_FAILURE'{minor=99, completion_status=?COMPLETED_NO})
     end.
+
+%%----------------------------------------------------------------------
+%% Function   : key2id
+%% Arguments  : An objectkey (e.g. NameService)
+%% Description: 
+%% Returns    : The associated IFR-id
+%%----------------------------------------------------------------------
+key2id(Key) ->
+    %% We need this test to avoid returning an exit if an XX:typeID()
+    %% fails (e.g. the module doesn't exist).
+    case catch key2id_helper(Key) of
+	{ok, Id} ->
+	    Id;
+	_ ->
+	    ""
+    end.
+
+
+key2id_helper("NameService") -> 
+    {ok, 'CosNaming_NamingContext':typeID()};
+key2id_helper("RootPOA") -> 
+    {ok, "IDL:omg.org/PortableServer/POA:1.0"};
+key2id_helper("POACurrent") -> 
+    {ok, "IDL:omg.org/PortableServer/Current:1.0"};
+key2id_helper("InterfaceRepository") -> 
+    {ok, "IDL:omg.org/CORBA/Repository:1.0"};
+key2id_helper("TradingService") -> 
+    {ok, "IDL:omg.org/CosTrading/Lookup:1.0"};
+key2id_helper("TransactionCurrent") -> 
+    {ok, "IDL:omg.org/CosTransactions/Current:1.0"};
+key2id_helper("DynAnyFactory") -> 
+    {ok, "IDL:omg.org/DynamicAny/DynAnyFactory:1.0"};
+key2id_helper("ORBPolicyManager") -> 
+    {ok, "IDL:omg.org/CORBA/PolicyManager:1.0"};
+key2id_helper("PolicyCurrent") -> 
+    {ok, "IDL:omg.org/CORBA/PolicyCurrent:1.0"};
+key2id_helper("NotificationService") -> 
+    {ok, 'CosNotifyChannelAdmin_EventChannelFactory':typeID()};
+key2id_helper("TypedNotificationService") -> 
+    {ok, "IDL:omg.org/CosTypedNotifyChannelAdmin::TypedEventChannelFactory:1.0"};
+key2id_helper("CodecFactory") -> 
+    {ok, "IDL:omg.org/IOP/CodecFactory:1.0"};
+key2id_helper("PICurrent") -> 
+    {ok, "IDL:omg.org/PortableInterceptors/Current:1.0"};
+%% Should we use SecurityLevel1 instead?? This key can be either.
+key2id_helper("SecurityCurrent") -> 
+    {ok, "IDL:omg.org/SecurityLevel2/Current:1.0"};
+%% Unknown - use the empty string. Might not work for all other ORB's but it's
+%% the only option we've got.
+key2id_helper(_) -> 
+    {ok, ""}.
+    
 
 
 %%----------------------------------------------------------------------

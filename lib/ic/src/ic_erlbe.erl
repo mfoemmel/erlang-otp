@@ -470,7 +470,7 @@ gen_end_of_call(erl_corba, G, N, X) ->
 	    emit(Fd, ";\n"),
 	    nl(Fd),
 	    emit(Fd, "handle_call(Req, From, State) ->\n"),
-	    emit(Fd, "    {reply, catch corba:raise(#'BAD_OPERATION'{completion_status='COMPLETED_NO'}), State}.\n");
+	    emit(Fd, "    {reply, catch corba:raise(#'BAD_OPERATION'{minor=1163001857, completion_status='COMPLETED_NO'}), State}.\n");
 	exit ->
 	    emit(Fd, ".\n"),
 	    nl(Fd),
@@ -498,7 +498,7 @@ gen_end_of_cast(erl_corba, G, N, X) ->
 	    emit(Fd, ";\n"),
 	    nl(Fd),
 	    emit(Fd, "handle_cast(Req, State) ->\n"),
-	    emit(Fd, "    {reply, catch corba:raise(#'BAD_OPERATION'{completion_status='COMPLETED_NO'}), State}.\n");
+	    emit(Fd, "    {noreply, State}.\n");
 	exit ->
 	    emit(Fd, ".\n"),
 	    nl(Fd), nl(Fd)
@@ -524,7 +524,7 @@ emit_skel_footer(erl_corba, G, N, X) ->
 	    emit(Fd, "    ~p:handle_info(Info, State).\n\n", 
 		 [list_to_atom(ic_genobj:impl(G))]);
 	false ->
-	    emit(Fd, "    {reply, catch corba:raise(#'BAD_OPERATION'{completion_status='COMPLETED_NO'}), State}.\n\n")
+	    emit(Fd, "    {noreply, State}.\n\n")
     end,
     nl(Fd),
     emit(Fd, "code_change(OldVsn, State, Extra) ->\n"),    

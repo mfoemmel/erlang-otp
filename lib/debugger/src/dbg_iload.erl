@@ -93,37 +93,13 @@ abstr(Bin) when binary(Bin) -> binary_to_term(Bin);
 abstr(Term) -> Term.
 
 store_funs(Db, Mod) ->
-    store_funs(get(funs), Db, Mod),
-    store_funs2(get(funs), Db, Mod).
+    store_funs_1(get(funs), Db, Mod).
 
-store_funs([{Name,_,_,OldIndex,Uniq,Arity,Cs}|Fs], Db, Mod) ->
-    dbg_idb:insert(Db, {Mod,Name,Arity,false}, renumber_funs(Cs)),
-    store_funs(Fs, Db, Mod);
-store_funs([], Db, Mod) -> ok.
-
-store_funs2([{Name,Index,Uniq,I,OldUniq,Arity,Cs}|Fs], Db, Mod) ->
-    OldIndex = case get({I,OldUniq}) of
-		   undefined -> I;
-		   Other -> Other
-	       end,
-    dbg_idb:insert(Db, {'fun',Mod,OldIndex,OldUniq}, {Name,Arity,Cs}),
-    case {Index,Uniq} of
-	{none,none} -> ok;
-	_ -> dbg_idb:insert(Db, {'fun',Mod,Index,Uniq}, {Name,Arity,Cs})
-    end,
-    store_funs2(Fs, Db, Mod);
-store_funs2([], Db, Mod) -> ok.
-
-renumber_funs({make_fun,Lf,Index,Uniq,OldIndex0,OldUniq,Free}) ->
-    OldIndex = get(fun_count),
-    put(fun_count, OldIndex+1),
-    put({OldIndex0,Uniq}, OldIndex),
-    {make_fun,Lf,Index,Uniq,OldIndex,OldUniq,Free};
-renumber_funs([H|T]) ->
-    [renumber_funs(H)|renumber_funs(T)];
-renumber_funs(Tuple) when tuple(Tuple) ->
-    list_to_tuple(renumber_funs(tuple_to_list(Tuple)));
-renumber_funs(Other) -> Other.
+store_funs_1([{Name,Index,Uniq,_,_,Arity,Cs}|Fs], Db, Mod) ->
+    dbg_idb:insert(Db, {Mod,Name,Arity,false}, Cs),
+    dbg_idb:insert(Db, {'fun',Mod,Index,Uniq}, {Name,Arity,Cs}),
+    store_funs_1(Fs, Db, Mod);
+store_funs_1([], Db, Mod) -> ok.
 
 store_forms([{function,Line,module_info,0,Cs0}|Fs], Mod, Db, Exp, Attr) ->
     Cs = [{clause,0,[],[], [{module_info_0,0,Mod}]}],
@@ -136,7 +112,6 @@ store_forms([{function,Line,module_info,1,Cs0}|Fs], Mod, Db, Exp, Attr) ->
 store_forms([{function,Line,Name,Arity,Cs0}|Fs], Mod, Db, Exp, Attr) ->
     FA = {Name,Arity},
     put(current_function, FA),
-    put(fun_count_in_current, 0),
     Cs = clauses(Cs0),
     Exported = lists:member(FA, Exp),
     dbg_idb:insert(Db, {Mod,Name,Arity,Exported}, Cs),
@@ -381,20 +356,7 @@ expr({'receive',Line,Cs0,To0,ToEs0}) ->
     {'receive',Line,Cs1,To1,ToEs1};
 expr({'fun',Line,{clauses,Cs0},{OldUniq,Hvss,Free}}) ->
     %% Old format (abstract_v1).
-    OldIndex = get(fun_count),
-
-    {F,A} = get(current_function),
-    I_in_func = get(fun_count_in_current),
-    I_in_func = put(fun_count_in_current, I_in_func+1),
-    Name = new_fun_name(I_in_func, F, A),
-    Cs = fun_clauses(Cs0, Hvss, Free),
-
-    put(fun_count, OldIndex+1),
-    [{clause,_,H,G,B}|_] = Cs,
-    Arity = length(H),
-
-    put(funs, [{Name,none,none,OldIndex,OldUniq,Arity,Cs}|get(funs)]),
-    {make_fun,Line,none,none,OldIndex,OldUniq,Free};
+    exit({?MODULE,old_funs});
 expr({'fun',Line,{clauses,Cs0},{Index,OldUniq,Hvss,Free,Name}}) ->
     %% New R8 format (abstract_v2).
 
@@ -406,7 +368,7 @@ expr({'fun',Line,{clauses,Cs0},{Index,OldUniq,Hvss,Free,Name}}) ->
     Uniq = get(mod_md5),
     
     put(funs, [{Name,Index,Uniq,OldIndex,OldUniq,Arity,Cs}|get(funs)]),
-    {make_fun,Line,Index,Uniq,OldIndex,OldUniq,Free};
+    {make_fun,Line,Index,Uniq,Free};
 expr({'fun',Line,{function,F,A},{Index,OldUniq,Name}}) ->
     %% New R8 format (abstract_v2).
     As = new_vars(A, Line),
@@ -416,7 +378,7 @@ expr({'fun',Line,{function,F,A},{Index,OldUniq,Name}}) ->
     Uniq = get(mod_md5),
 
     put(funs, [{Name,Index,Uniq,OldIndex,OldUniq,A,Cs}|get(funs)]),
-    {make_fun,Line,Index,Uniq,OldIndex,OldUniq,[]};
+    {make_fun,Line,Index,Uniq,[]};
 expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,self}},[]}) ->
     self;
 expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,throw}},As0}) when length(As0) == 1 ->
@@ -579,11 +541,6 @@ free_vars(Vs, Hvs, Line) ->
 	  true -> {var,Line,'_'};
 	  false -> {var,Line,V}
       end || V <- Vs ].
-
-new_fun_name(I, F, A) ->
-    Name = "-" ++ atom_to_list(F) ++ "/" ++ integer_to_list(A)
-	++ "-fun-" ++ integer_to_list(I) ++ "-",
-    list_to_atom(Name).
 
 %% new_var_name() -> VarName.
 

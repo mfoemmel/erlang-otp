@@ -3,6 +3,7 @@
 
 -module(hipe_x86_liveness).
 -export([analyse/1]).
+-include("../util/hipe_vector.hrl").
 -include("../flow/liveness.inc").
 
 analyse(CFG) -> analyze(CFG).

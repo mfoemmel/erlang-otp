@@ -34,11 +34,11 @@ RELSYSDIR = $(RELEASE_PATH)/lib/stdlib-$(VSN)
 # ----------------------------------------------------
 MODULES= \
 	beam_lib \
-	bplus_tree \
 	c \
 	calendar \
 	dets \
 	dets_server \
+	dets_sup \
 	dets_utils \
 	dets_v8 \
 	dets_v9 \
@@ -81,13 +81,14 @@ MODULES= \
 	lists_sort \
 	log_mf_h \
 	math \
+	ms_transform \
 	otp_internal \
 	orddict \
 	ordsets \
 	pg \
 	pool \
 	proc_lib \
-	property_lists \
+	proplists \
 	queue \
 	random \
 	regexp \
@@ -101,11 +102,15 @@ MODULES= \
 	supervisor_bridge \
 	sys \
 	timer \
-	unix \
 	vector \
 	win32reg
 
-HRL_FILES= ../include/erl_compile.hrl
+HRL_FILES= \
+	../include/erl_compile.hrl \
+	../include/erl_bits.hrl \
+	../include/ms_transform.hrl
+
+INTERNAL_HRL_FILES= dets.hrl
 
 ERL_FILES= $(MODULES:%=%.erl)
 
@@ -124,7 +129,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
+ERL_FLAGS +=
 ERL_COMPILE_FLAGS += -I../include -I../../kernel/include
 
 # ----------------------------------------------------
@@ -143,6 +148,12 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 
+# Dirty workaround to make sure that the atom "try" is always quoted.
+# Can be removed in R10. (I really mean it.)
+erl_parse.erl: erl_parse.yrl
+	$(ERLC) $(YRL_FLAGS) erl_parse.yrl
+	$(PERL) -pi -e "s/try,/'try',/g" erl_parse.erl
+
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
@@ -157,6 +168,7 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(ERL_FILES) erl_parse.yrl $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/include
 	$(INSTALL_DATA) $(HRL_FILES) $(RELSYSDIR)/include
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin

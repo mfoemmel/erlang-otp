@@ -1,159 +1,24 @@
 {"%VSN%",
- [{"2.6.6",
-   [
-    {update, mod_auth, soft, soft_purge, soft_purge, []},
-    {load_module, mod_cgi, soft_purge, soft_purge, []}
-   ]
-  },
-  {"2.6.5",
-   [
-    {update, mod_auth, soft, soft_purge, soft_purge, [httpd_socket]},
-    {load_module, httpd_request, soft_purge, soft_purge, [httpd_socket]},
-    {load_module, httpd_socket, soft_purge, soft_purge, []},
-    {update, mod_auth, soft, soft_purge, soft_purge, [httpd_socket]}
-   ]
-  },
-  {"2.6.4",
-   [
-    {update, mod_auth, soft, soft_purge, soft_purge, [httpd_socket]},
-    {load_module, httpd_request, soft_purge, soft_purge, 
-     [httpd_socket, mod_disk_log]},
-    {load_module, httpd_socket, soft_purge, soft_purge, []},
-    {load_module, mod_disk_log, soft_purge, soft_purge, []},
-    {update, mod_auth, soft, soft_purge, soft_purge, [httpd_socket]}
-   ]
-  },
-  {"2.6.3",
-   [
-    {load_module, httpd_request, soft_purge, soft_purge, 
-     [httpd_socket, mod_disk_log]},
-    {load_module, httpd_socket, soft_purge, soft_purge, []},
-    {load_module, mod_disk_log, soft_purge, soft_purge, []},
-    {update, mod_auth, soft, soft_purge, soft_purge, [httpd_socket]}
-   ]
-  },
-  {"2.6.2",
-   [
-    {load_module, httpd_request, soft_purge, soft_purge, [httpd_socket]},
-    {load_module, httpd_socket, soft_purge, soft_purge, []},
-    {load_module, mod_disk_log, soft_purge, soft_purge, []},
-    {update, mod_auth, soft, soft_purge, soft_purge, [httpd_socket]},
-    {update, httpd_manager, soft, soft_purge, soft_purge, 
-     [httpd_request, mod_disk_log]}
-   ]
-  },
-  {"2.6.1",
-   [
-    {load_module, httpd_request, soft_purge, soft_purge, [httpd_socket]},
-    {load_module, httpd_socket, soft_purge, soft_purge, []},
-    {load_module, mod_disk_log, soft_purge, soft_purge,  []},
-    {update, mod_auth, soft, soft_purge, soft_purge, [httpd_socket]},
-    {update, httpd_manager, soft, soft_purge, soft_purge, 
-     [httpd_request, mod_disk_log]}
-   ]
-  },
-  {"2.6.0",
-   [
-    {update, inets_sup, soft, soft_purge, soft_purge, [httpd]},
-    {load_module, httpd, soft_purge, soft_purge, [httpd_manager]},
-    {update, httpd_manager, soft, soft_purge, soft_purge, [httpd_listener, 
-                                                           mod_auth, 
-                                                           mod_security]},
-    {update, httpd_listener, soft, soft_purge, soft_purge, [httpd_request]},
-    {load_module, httpd_request, soft_purge, soft_purge, [httpd_response, 
-                                                          httpd_socket]},
-    {load_module, httpd_response,  soft_purge, soft_purge, []},
-    {load_module, httpd_socket,    soft_purge, soft_purge, []},
-    {load_module, httpd_verbosity, soft_purge, soft_purge, []},
-    {update, mod_auth, {advanced, upgrade_from_2_6_0}, soft_purge, soft_purge, 
-     [mod_auth_plain, httpd_verbosity]},
-    {load_module, mod_auth_plain, soft_purge, soft_purge, []},
-    {update, mod_security, soft, soft_purge, soft_purge, [httpd_verbosity]},
-    {load_module, mod_disk_log, soft_purge, soft_purge, []}
-   ]
-  },
-  {"2.5.6",
-   [
-    {restart_application,inets}
-   ]
-  }
+ [
+  {"2.6.7", [{restart_application, inets}]},
+  {"2.6.6", [{restart_application, inets}]},
+  {"2.6.5", [{restart_application, inets}]},
+  {"2.6.4", [{restart_application, inets}]},
+  {"2.6.3", [{restart_application, inets}]},
+  {"2.6.2", [{restart_application, inets}]},
+  {"2.6.1", [{restart_application, inets}]},
+  {"2.6.0", [{restart_application, inets}]},
+  {"2.5.6", [{restart_application, inets}]}
  ],
- [{"2.6.6",
-   [
-    {update, mod_auth, soft, soft_purge, soft_purge, []},
-    {load_module, mod_cgi, soft_purge, soft_purge, []}
-   ]
-  },
-  {"2.6.5",
-   [
-    {load_module, httpd_request, soft_purge, soft_purge, [httpd_socket]},
-    {load_module, httpd_socket, soft_purge, soft_purge, []},
-    {update, mod_auth, soft, soft_purge, soft_purge, [httpd_socket]}
-   ]
-  },
-  {"2.6.4",
-   [
-    {load_module, httpd_request, soft_purge, soft_purge, 
-     [httpd_socket, mod_disk_log]},
-    {load_module, httpd_socket, soft_purge, soft_purge, []},
-    {load_module, mod_disk_log, soft_purge, soft_purge, []},
-    {update, mod_auth, soft, soft_purge, soft_purge, [httpd_socket]}
-   ]
-  },
-  {"2.6.3",
-   [
-    {load_module, httpd_request, soft_purge, soft_purge, 
-     [httpd_socket, mod_disk_log]},
-    {load_module, httpd_socket, soft_purge, soft_purge, []},
-    {load_module, mod_disk_log, soft_purge, soft_purge, []},
-    {update, mod_auth, soft, soft_purge, soft_purge, [httpd_socket]}
-   ]
-  },
-  {"2.6.2",
-   [
-    {load_module, httpd_request, soft_purge, soft_purge, [httpd_socket]},
-    {load_module, httpd_socket, soft_purge, soft_purge, []},
-    {load_module, mod_disk_log, soft_purge, soft_purge, []},
-    {update, httpd_manager, soft, soft_purge, soft_purge, 
-     [httpd_request, mod_disk_log]},
-    {update, mod_auth, soft, soft_purge, soft_purge, [httpd_socket]}
-   ]
-  },
-  {"2.6.1",
-   [
-    {load_module, httpd_request, soft_purge, soft_purge, [httpd_socket]},
-    {load_module, httpd_socket, soft_purge, soft_purge, []},
-    {load_module, mod_disk_log, soft_purge, soft_purge, []},
-    {update, httpd_manager, soft, soft_purge, soft_purge, 
-     [httpd_request, mod_disk_log]},
-    {update, mod_auth, soft, soft_purge, soft_purge, [httpd_socket]}
-   ]
-  },
-  {"2.6.0",
-   [
-    {update, inets_sup, soft, soft_purge, soft_purge, [httpd]},
-    {load_module, httpd, soft_purge, soft_purge, [httpd_manager]},
-    {update, httpd_manager, soft, soft_purge, soft_purge, [httpd_listener,
-                                                           mod_auth,
-                                                           mod_security]},
-    {update, httpd_listener, soft, soft_purge, soft_purge, [httpd_request]},
-    {load_module, httpd_request, soft_purge, soft_purge, [httpd_response, 
-                                                          httpd_socket]},
-    {load_module, httpd_response, soft_purge, soft_purge, []},
-    {load_module, httpd_socket, soft_purge, soft_purge, []},
-    {load_module, httpd_verbosity, soft_purge, soft_purge, []},
-    {update, mod_auth, {advanced, downgrade_to_2_6_0}, soft_purge, soft_purge, 
-     [mod_auth_plain, httpd_verbosity]},
-    {load_module, mod_auth_plain, soft_purge, soft_purge, []},
-    {update, mod_security, soft, soft_purge, soft_purge, [httpd_verbosity]},
-    {load_module, mod_disk_log, soft_purge, soft_purge, []}
-   ]
-  },
-  {"2.5.6",
-   [
-    {restart_application, inets}
-   ]
-  }
+ [{"2.6.7", [{restart_application, inets}]},
+  {"2.6.6", [{restart_application, inets}]},
+  {"2.6.5", [{restart_application, inets}]},
+  {"2.6.4", [{restart_application, inets}]},
+  {"2.6.3", [{restart_application, inets}]},
+  {"2.6.2", [{restart_application, inets}]},
+  {"2.6.1", [{restart_application, inets}]},
+  {"2.6.0", [{restart_application, inets}]},
+  {"2.5.6", [{restart_application, inets}]}
  ]
 }.
 

@@ -53,7 +53,7 @@ fix_down(Vec, K, N) ->
 		    case vector:get(J+1, Vec) of
 			C2 when C1 < C2, Elem < C2 ->
 			    fix_down(store(Vec, K, C2, J+1, Elem), J+1, N);
-			C2 when Elem < C1 ->
+			_ when Elem < C1 ->
 			    fix_down(store(Vec, K, C1, J, Elem), J, N);
 			_ -> Vec
 		    end

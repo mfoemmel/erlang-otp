@@ -166,10 +166,10 @@ delete(DB, Gstkid) ->
 event(DB, Gstkid, Etype, Edata, Args) ->
     Arg2 = case Etype of
 	      click ->
-		  [Text, Grp | Rest] = Args,
-		  {G, Gid, V} = Gstkid#gstkid.widget_data,
+		  [Text, _Grp | Rest] = Args,
+		  {G, _Gid, V} = Gstkid#gstkid.widget_data,
 		  [Text, G, V | Rest];
-	      Other3 ->
+	      _Other ->
 		  Args
 	  end,
     gstk_generic:event(DB, Gstkid, Etype, Edata, Arg2).
@@ -230,7 +230,7 @@ read_option(Option,Gstkid, TkW,DB,_) ->
 		   TkW," cg -val]"],
 	    case tcl2erl:ret_tuple(Cmd) of
 		{X, X} -> true;
-		Other  -> false
+		_Other  -> false
 	    end;
 
 	click         -> gstk_db:is_inserted(DB, Gstkid, click);
@@ -323,15 +323,15 @@ cbind(DB, Gstkid, Etype, On) ->
     Cmd = case On of
 	      {true, Edata} ->
 		  Eref = gstk_db:insert_event(DB, Gstkid, Etype, Edata),
-		  [" -com {erlsend ", Eref,
+		  [" -command {erlsend ", Eref,
 		   " \\\"[", TkW, " cg -text]\\\" [", TkW, " cg -var]}"];
 	      true ->
 		  Eref = gstk_db:insert_event(DB, Gstkid, Etype, ""),
-		  [" -com {erlsend ", Eref,
+		  [" -command {erlsend ", Eref,
 		   " \\\"[", TkW, " cg -text]\\\" [", TkW, " cg -var]}"];
-	      Other ->
-		  Eref = gstk_db:delete_event(DB, Gstkid, Etype),
-		  " -com {}"
+	      _Other ->
+		  gstk_db:delete_event(DB, Gstkid, Etype),
+		  " -command {}"
 	  end,
     {s, Cmd}.
 

@@ -946,8 +946,8 @@ digit_t* x; dsize_t xl; short xsgn; digit_t* r;
 ** Arithmetic left shift or right
 ** 32UPDATE
 */
-static dsize_t I_lshift(x, xl, y, sign, r)
-digit_t* x; dsize_t xl; sint32 y; short sign; digit_t* r;
+static dsize_t I_lshift(digit_t* x, dsize_t xl, Sint y, 
+			short sign, digit_t* r)
 {
     if (y == 0) {
 	MOVE_DIGITS(r, x, xl);

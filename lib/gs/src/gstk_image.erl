@@ -200,7 +200,7 @@ delete(DB, Gstkid) ->
 %%
 %% Return 	: [true | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-destroy(DB, Canvas, Item) ->
+destroy(_DB, Canvas, Item) ->
     gstk:exec([Canvas, " delete ", gstk:to_ascii(Item)]).
 
 
@@ -221,7 +221,7 @@ event(DB, Gstkid, Etype, Edata, Args) ->
 %%
 %% Return 	: A tuple {OptionType, OptionCmd}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-option(Option, Gstkid, Canvas, DB, AItem) ->
+option(Option, Gstkid, _Canvas, _DB, _AItem) ->
     case Option of
 	{bitmap,     Bitmap} ->
 	    {ok, BF,_} = regexp:gsub(Bitmap, [92,92], "/"),
@@ -249,7 +249,7 @@ option(Option, Gstkid, Canvas, DB, AItem) ->
 %% Return 	: The value of the option or invalid_option
 %%		  [OptionValue | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-read_option(Option, Gstkid, Canvas, DB, AItem) ->
+read_option(Option, Gstkid, Canvas, _DB, AItem) ->
     case Option of
 	anchor   -> tcl2erl:ret_atom([Canvas," itemcget ",AItem," -anchor"]);
 	bg       -> tcl2erl:ret_color([Canvas, " itemcget ", AItem, " -ba"]);
@@ -287,7 +287,7 @@ pickout_coords([{coords,Coords} | Rest], Opts) when length(Coords) == 1 ->
     end;
 pickout_coords([Opt | Rest], Opts) ->
     pickout_coords(Rest, [Opt|Opts]);
-pickout_coords([], Opts) ->
+pickout_coords([], _Opts) ->
     {error, "An image must have two coordinates"}.
 
 coords({X,Y}) when number(X),number(Y) ->
@@ -303,9 +303,9 @@ coords([]) ->
     [].
 
 
-pickout_type([{bitmap,Str}|Options]) ->
+pickout_type([{bitmap,_Str}|_Options]) ->
     bitmap;
-pickout_type([{gif,Str}|Options])  ->
+pickout_type([{gif,_Str}|_Options])  ->
     gif;
 pickout_type([]) ->
     none;

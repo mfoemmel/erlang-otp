@@ -1,0 +1,147 @@
+/*
+ *****************************************************************************
+ *                      POST-MORTEM DEBUG CONFIGURATION
+ *
+ *     $Workfile$
+ *     Document no: @(#) 560/OSE113-1 $Version:   /main/tb_ri24/17  $
+ *     $Author:   vobadm  $
+ *     $Date:   07/20/01 14:30:45  $
+ *                                                                         
+ *       Copyright (C) 1998 by ENEA OSE SYSTEMS AB. All rights reserved.
+ *                                                                         
+ *****************************************************************************
+
+	CONTENTS
+	--------
+
+	1  Description
+	2  History of development
+	3  Definitions
+
+ *****************************************************************************
+ */
+
+/*
+ *****************************************************************************
+ * 1  DESCRIPTION.
+ *****************************************************************************
+ * 
+ * This file contains the post-mortem debug configuration in a system
+ * which uses the PMD - OSE Post-Mortem Debug Support.
+ *
+ */
+
+/*
+ *****************************************************************************
+ * 2  HISTORY OF DEVELOPMENT.
+ *****************************************************************************
+ *
+ *    $Log: $
+ */                 
+
+/*
+ *****************************************************************************
+ * 3  DEFINITIONS.
+ *****************************************************************************
+ */
+
+/*
+ * 1 PMD MEMORY AREA CONFIGURATION.
+ *
+ *   There MUST always be PMD memory area defined, or no dumps can be saved.
+ *   The dump area will reserve at minimum of 66 KB for internal use, and we
+ *   recommend a dump area size of at least one fourth of application used
+ *   memory in order to be able to save enough information when the
+ *   post-mortem dump shall be created.
+ *   
+ *
+ *     PMD_AREA ( <base_addr>, <size> )
+ *
+ *   example: (Applications uses around 2 MB, reserve 512KB dump area)
+ *
+ *     PMD_AREA ( 0x380000, 0x80000 )
+ */
+
+PMD_AREA ( 0x380000, 0x80000 )
+
+/*
+ * 2 PMD WORK AREA.
+ *
+ *   PMD uses some memory for intermediate results, e.g. buffers for
+ *   compression routines, etc.
+ *   This work area will be placed in the .bss section.
+ *   The minimum requirement is 64 KB.
+ *
+ *     WORK_AREA_SIZE ( <size> )
+ *
+ *   example: (Work area size of 128 KB)
+ *
+ *     WORK_AREA_SIZE ( 0x20000 )
+ */
+
+WORK_AREA_SIZE ( 0x20000 )
+
+/*
+ * 3 DECLARING SYMBOLS IN CONFIGURATION FILE.
+ *
+ *   Use this entry to declare references to external variables or constants
+ *   that you might want to use in any of the other configuration entries,
+ *   such as "REGION"
+ *
+ *     DECLARE ( <expr> )
+ *
+ *       <expr>        A declaration of an external variable or constant.
+ *
+ *   example: Declaration of linker generated symbols,
+ *            for use in the REGION declarations.
+ *
+ *     DECLARE( extern char __TEXT_START[] )
+ *     DECLARE( extern char __DATA_ROM[] )
+ *     DECLARE( extern char __DATA_RAM[] )
+ *     DECLARE( extern char __DATA_END[] )
+ *     DECLARE( extern char __BSS_START[] )
+ *     DECLARE( extern char __BSS_END[] )
+ *     DECLARE( extern char __MMS_BSS_START[] )
+ *     DECLARE( extern char __MMS_BSS_END[] )
+ *
+ */
+
+DECLARE( extern char __TEXT_START[] )
+DECLARE( extern char __DATA_ROM[] )
+DECLARE( extern char __DATA_RAM[] )
+DECLARE( extern char __DATA_END[] )
+DECLARE( extern char __BSS_START[] )
+DECLARE( extern char __BSS_END[] )
+DECLARE( extern char __MMS_BSS_START[] )
+DECLARE( extern char __MMS_BSS_END[] )
+
+/*
+ * 4 KERNEL REGIONS.
+ *
+ *   PMD needs to know where regions of text, data and bss are present,
+ *   in order to be able to dump memory regions. Enter regions that comprise
+ *   the kernel regions, it should not contain regions that are not used
+ *   by the kernel, such as the MMS memory for example.
+ *
+ *     REGION ( <type>, <base_addr>, <size>, <descr> )
+ *
+ *       <type>        One of TEXT, DATA, BSS, OTHER. Regions will normally
+ *                     be included in a dump with the exception of TEXT,
+ *                     that needs to be explicitly asked for.
+ *       <base_addr>   Start of the region.
+ *       <size>        Size of the region.
+ *       <descr>       A textual description of the region.
+ *
+ *   example: three regions, with the usage of declared symbols instead of
+ *            addresses like "0x20000".
+ *
+ *     REGION ( TEXT, __TEXT_START, __DATA_ROM - __TEXT_START, \"Kernel text\" )
+ *     REGION ( TEXT, __DATA_ROM, __DATA_END - __DATA_RAM, \"Kernel const data\" )
+ *     REGION ( DATA, __DATA_RAM, __DATA_END - __DATA_RAM, \"Kernel data\" )
+ *     REGION ( BSS, __BSS_START, __MMS_BSS_END - __BSS_START, \"Kernel bss\" )
+ */
+
+REGION ( TEXT, __TEXT_START, __DATA_ROM - __TEXT_START, \"Kernel text\" )
+REGION ( TEXT, __DATA_ROM, __DATA_END - __DATA_RAM, \"Kernel const data\" )
+REGION ( DATA, __DATA_RAM, __DATA_END - __DATA_RAM, \"Kernel data\" )
+REGION ( BSS, __BSS_START, __MMS_BSS_END - __BSS_START, \"Kernel bss\" )

@@ -10,13 +10,24 @@ translate(RTL) ->	% RTL function -> x86 defun
     hipe_gensym:set_var(hipe_x86_registers:first_virtual()),
     hipe_gensym:set_label(x86, hipe_gensym:get_label(rtl)),
     Map0 = vmap_empty(),
-    {Formals, Map1} = conv_formals(hipe_rtl:rtl_params(RTL), Map0, []),
+    {Formals, Map1} = conv_formals(hipe_rtl:rtl_params(RTL), Map0),
     OldData = hipe_rtl:rtl_data(RTL),
-    {Code, NewData} = conv_insn_list(hipe_rtl:rtl_code(RTL), Map1, OldData),
+    {Code0, NewData} = conv_insn_list(hipe_rtl:rtl_code(RTL), Map1, OldData),
+    {RegFormals,_} = split_args(Formals),
+    Code =
+	case RegFormals of
+	    [] -> Code0;
+	    _ -> [hipe_x86:mk_label(hipe_gensym:get_next_label(x86), false) |
+		  move_formals(RegFormals, Code0)]
+	end,
     {LabelsLo, _} = hipe_rtl:rtl_label_range(RTL),
     NewLabels = {LabelsLo, hipe_gensym:get_label(x86)},
+    IsClosure = hipe_rtl:rtl_is_closure(RTL),
+    IsLeaf = hipe_rtl:rtl_is_leaf(RTL),
     hipe_x86:mk_defun(conv_mfa(hipe_rtl:rtl_fun(RTL)),
 		      Formals,
+		      IsClosure,
+		      IsLeaf,
 		      Code,
 		      NewData,
 		      {1, hipe_gensym:get_var()},
@@ -24,7 +35,7 @@ translate(RTL) ->	% RTL function -> x86 defun
 
 conv_insn_list([H|T], Map, Data) ->
     {NewH, NewMap, NewData1} = conv_insn(H, Map, Data),
-    %% io:format("~w \n  ==>\n ~w\n- - - - - - - - -\n",[H,NewH]),
+     %% io:format("~w \n  ==>\n ~w\n- - - - - - - - -\n",[H,NewH]),
     {NewT, NewData2} = conv_insn_list(T, NewMap, NewData1),
     {NewH ++ NewT, NewData2};
 conv_insn_list([], _, Data) ->
@@ -46,8 +57,8 @@ conv_insn(I, Map, Data) ->
 	    {Dst, Map0} = conv_dst(hipe_rtl:alub_dst(I), Map),
 	    {Src1, Map1} = conv_src(hipe_rtl:alub_src1(I), Map0),
 	    {Src2, Map2} = conv_src(hipe_rtl:alub_src2(I), Map1),
-	    Cond = conv_cond(hipe_rtl:alub_cond(I)),
-	    I1 = [hipe_x86:mk_pseudo_jcc(Cond,
+	    Cc = conv_cond(hipe_rtl:alub_cond(I)),
+	    I1 = [hipe_x86:mk_pseudo_jcc(Cc,
 					 hipe_rtl:alub_true_label(I),
 					 hipe_rtl:alub_false_label(I),
 					 hipe_rtl:alub_pred(I))],
@@ -57,14 +68,13 @@ conv_insn(I, Map, Data) ->
 	    %% <unused> = src1 - src2; if COND goto label
 	    {Src1, Map0} = conv_src(hipe_rtl:branch_src1(I), Map),
 	    {Src2, Map1} = conv_src(hipe_rtl:branch_src2(I), Map0),
-	    Cond = conv_cond(hipe_rtl:branch_cond(I)),
-	    I2 = conv_branch(Src1, Cond, Src2,
+	    Cc = conv_cond(hipe_rtl:branch_cond(I)),
+	    I2 = conv_branch(Src1, Cc, Src2,
 			     hipe_rtl:branch_true_label(I),
 			     hipe_rtl:branch_false_label(I),
 			     hipe_rtl:branch_pred(I)),
 	    {I2, Map1, Data};
 	call ->
-	    %%	push <exn handler>
 	    %%	push <arg1>
 	    %%	...
 	    %%	push <argn>
@@ -85,13 +95,17 @@ conv_insn(I, Map, Data) ->
 	enter ->
 	    {Args, Map0} = conv_src_list(hipe_rtl:enter_args(I), Map),
 	    {Fun, Map1} = conv_fun(hipe_rtl:enter_fun(I), Map0),
-	    I2 = [hipe_x86:mk_pseudo_tailcall(Fun, Args)],
+	    I2 = conv_tailcall(Fun, Args),
 	    {I2, Map1, Data};
 	fail_to ->		% for SPARC this is eliminated by hipe_frame
 	    {Src, Map0} = conv_src(hipe_rtl:fail_to_reason(I), Map),
 	    Dst = mk_eax(),
-	    I2 = [hipe_x86:mk_move(Src, Dst),
-		  hipe_x86:mk_jmp_label(hipe_rtl:fail_to_label(I))],
+	    I2 = case hipe_rtl:fail_to_label(I) of
+		   [] -> [hipe_x86:mk_move(Src, Dst)];
+                   FailToLabel ->
+		     [hipe_x86:mk_move(Src, Dst),
+		      hipe_x86:mk_jmp_label(FailToLabel)]
+		 end,
 	    {I2, Map0, Data};
 	goto ->
 	    I2 = [hipe_x86:mk_jmp_label(hipe_rtl:goto_label(I))],
@@ -105,14 +119,25 @@ conv_insn(I, Map, Data) ->
 	    {Dst, Map0} = conv_dst(hipe_rtl:load_dst(I), Map),
 	    {Src, Map1} = conv_src(hipe_rtl:load_src(I), Map0),
 	    {Off, Map2} = conv_src(hipe_rtl:load_offset(I), Map1),
-	    Type = typeof_dst(Dst),
-	    I2 = case hipe_x86:is_imm(Src) of
-		     false ->
-			 [hipe_x86:mk_move(hipe_x86:mk_mem(Src, Off, Type), Dst)];
-		     true ->
-			 %% XXX: this is temporary until rtl_prop gets fixed
-			 io:format(standard_io, "hipe_rtl_to_x86: ERROR: ignoring bogus RTL load ~w\n", [I]),
-			 [hipe_x86:mk_comment(I)]
+	    I2 = case {hipe_rtl:load_size(I), hipe_rtl:load_sign(I)} of
+		     {byte, signed} ->
+			 [hipe_x86:mk_movsx(hipe_x86:mk_mem(Src, Off, 'byte'), Dst)];
+		     {byte, unsigned} ->
+			 [hipe_x86:mk_movzx(hipe_x86:mk_mem(Src, Off, 'byte'), Dst)];
+		     {halfword, signed} ->
+			 [hipe_x86:mk_movsx(hipe_x86:mk_mem(Src, Off, 'halfword'), Dst)];
+		     {halfword, unsigned} ->
+			 [hipe_x86:mk_movzx(hipe_x86:mk_mem(Src, Off, 'halfword'), Dst)];
+		     _ ->
+			 Type = typeof_dst(Dst),
+			 case hipe_x86:is_imm(Src) of
+			     false ->
+				 [hipe_x86:mk_move(hipe_x86:mk_mem(Src, Off, Type), Dst)];
+			     true ->
+				 %% XXX: this is temporary until rtl_prop gets fixed
+				 io:format(standard_io, "hipe_rtl_to_x86: ERROR: ignoring bogus RTL load ~w\n", [I]),
+				 [hipe_x86:mk_comment(I)]
+			 end
 		 end,
 	    {I2, Map2, Data};
 	load_address ->
@@ -155,7 +180,7 @@ conv_insn(I, Map, Data) ->
 	    %% from hipe_rtl2sparc, but we use a hairy addressing mode
 	    %% instead of doing the arithmetic manually
 	    Labels = hipe_rtl:switch_labels(I),
-	    LMap = lists:map(fun (L) -> {label,L} end, Labels),
+	    LMap = [{label,L} || L <- Labels],
 	    {NewData, JTabLab} =
 		case hipe_rtl:switch_sort_order(I) of
 		    [] ->
@@ -170,6 +195,45 @@ conv_insn(I, Map, Data) ->
 	    %% ("r = Index; r *= 4; r += &JTab; jmp *r" isn't as nice)
 	    I2 = [hipe_x86:mk_jmp_switch(Index, JTabLab, Labels)],
 	    {I2, Map1, NewData};
+	fload ->
+	    {Dst, Map0} = conv_dst(hipe_rtl:fload_dst(I), Map),
+	    {Src, Map1} = conv_src(hipe_rtl:fload_src(I), Map0),
+	    {Off, Map2} = conv_src(hipe_rtl:fload_offset(I), Map1),
+	    I2 = [hipe_x86:mk_fmov(hipe_x86:mk_mem(Src, Off, 'double'),Dst)],
+	    {I2, Map2, Data};
+	fstore ->
+	    {Dst, Map0} = conv_dst(hipe_rtl:fstore_dst(I), Map),
+	    {Src, Map1} = conv_src(hipe_rtl:fstore_src(I), Map0),
+	    {Off, Map2} = conv_src(hipe_rtl:fstore_offset(I), Map1),
+	    I2 = [hipe_x86:mk_fmov(Src, hipe_x86:mk_mem(Dst, Off, 'double'))],
+	    {I2, Map2, Data};
+	fp ->
+	    {Dst, Map0} = conv_dst(hipe_rtl:fp_dst(I), Map),
+	    {Src1, Map1} = conv_src(hipe_rtl:fp_src1(I), Map0),
+	    {Src2, Map2} = conv_src(hipe_rtl:fp_src2(I), Map1),
+	    Op = hipe_rtl:fp_op(I),
+	    I2 = conv_fop(Dst, Src1, Op, Src2),
+	    {I2, Map2, Data};
+	fmov ->
+	    {Dst, Map0} = conv_dst(hipe_rtl:fmov_dst(I), Map),
+	    {Src, Map1} = conv_src(hipe_rtl:fmov_src(I), Map0),
+	    I2 =
+		case hipe_rtl:fmov_negate(I) of
+		    true ->
+			if Src =:= Dst ->
+				[hipe_x86:mk_fop(fchs, [], Dst)];
+			   true-> %% I don't think this can happen, but...
+				[hipe_x86:mk_fmov(Src, Dst),
+				 hipe_x86:mk_fop(fchs, [], Dst)]
+			end;
+		    _ -> [hipe_x86:mk_fmov(Src, Dst)]
+		end,
+	    {I2, Map1, Data};
+	fconv ->
+	    {Dst, Map0} = conv_dst(hipe_rtl:fconv_dst(I), Map),
+	    {Src, Map1} = conv_src(hipe_rtl:fconv_src(I), Map0),
+	    I2 = [hipe_x86:mk_fmov(Src, Dst)],
+	    {I2, Map1, Data};
 	X ->
 	    %% gctest??
 	    %% jmp, jmp_link, jsr, esr, multimove,
@@ -205,27 +269,27 @@ conv_alu(Dst, Src1, BinOp, Src2, Tail) ->
 %%% Finalise the conversion of a conditional branch operation, taking
 %%% care to not introduce more temps and moves than necessary.
 
-conv_branch(Src1, Cond, Src2, TrueLab, FalseLab, Pred) ->
+conv_branch(Src1, Cc, Src2, TrueLab, FalseLab, Pred) ->
     case hipe_x86:is_imm(Src1) of
 	false ->
-	    mk_branch(Src1, Cond, Src2, TrueLab, FalseLab, Pred);
+	    mk_branch(Src1, Cc, Src2, TrueLab, FalseLab, Pred);
 	true ->
 	    case hipe_x86:is_imm(Src2) of
 		false ->
-		    NewCond = commute_cond(Cond),
-		    mk_branch(Src2, NewCond, Src1, TrueLab, FalseLab, Pred);
+		    NewCc = commute_cc(Cc),
+		    mk_branch(Src2, NewCc, Src1, TrueLab, FalseLab, Pred);
 		true ->
 		    %% two immediates, let the optimiser clean it up
 		    Tmp = new_untagged_temp(),
 		    [hipe_x86:mk_move(Src1, Tmp) |
-		     mk_branch(Tmp, Cond, Src2, TrueLab, FalseLab, Pred)]
+		     mk_branch(Tmp, Cc, Src2, TrueLab, FalseLab, Pred)]
 	    end
     end.
 
-mk_branch(Src1, Cond, Src2, TrueLab, FalseLab, Pred) ->
+mk_branch(Src1, Cc, Src2, TrueLab, FalseLab, Pred) ->
     %% PRE: not(is_imm(Src1))
     [hipe_x86:mk_cmp(Src2, Src1),
-     hipe_x86:mk_pseudo_jcc(Cond, TrueLab, FalseLab, Pred)].
+     hipe_x86:mk_pseudo_jcc(Cc, TrueLab, FalseLab, Pred)].
 
 %%% Convert an RTL ALU or ALUB binary operator.
 
@@ -249,6 +313,8 @@ binop_commutes(BinOp) ->
 	'or'	-> true;
 	'and'	-> true;
 	'xor'	-> true;
+	'fadd'  -> true;
+	'fmul'  -> true;
 	_	-> false
     end.
 
@@ -268,11 +334,11 @@ conv_cond(Cond) ->
 	leu	-> 'be';
 	overflow -> 'o';
 	not_overflow -> 'no';
-	_	-> exit({?MODULE, {"unknown cond", Cond}})
+	_	-> exit({?MODULE, {"unknown rtl cond", Cond}})
     end.
 
-commute_cond(Cond) ->	% if x cond y, then y commute_cond(cond) x
-    case Cond of
+commute_cc(Cc) ->	% if x Cc y, then y commute_cc(Cc) x
+    case Cc of
 	'e'	-> 'e';		% ==, ==
 	'ne'	-> 'ne';	% !=, !=
 	'g'	-> 'l';		% >, <
@@ -284,41 +350,88 @@ commute_cond(Cond) ->	% if x cond y, then y commute_cond(cond) x
 	'le'	-> 'ge';	% <=, >=
 	'be'	-> 'ae';	% <=u, >=u
 	%% overflow/not_overflow: n/a
-	_	-> exit({?MODULE, {"unknown cond", Cond}})
+	_	-> exit({?MODULE, {"unknown cc", Cc}})
     end.
 
 %%% Test if Dst and Src are the same operand.
 
 same_opnd(Dst, Src) -> Dst =:= Src.
 
+%%% Finalise the conversion of a tailcall instruction.
+
+conv_tailcall(Fun, Args) ->
+    Arity = length(Args),
+    {RegArgs,StkArgs} = split_args(Args),
+    move_actuals(RegArgs,
+		 [hipe_x86:mk_pseudo_tailcall_prepare(),
+		  hipe_x86:mk_pseudo_tailcall(Fun, Arity, StkArgs)]).
+
+split_args(Args) ->
+    split_args(0, hipe_x86_registers:nr_args(), Args, []).
+split_args(I, N, [Arg|Args], RegArgs) when I < N ->
+    Reg = hipe_x86_registers:arg(I),
+    Temp = hipe_x86:mk_temp(Reg, 'tagged'),
+    split_args(I+1, N, Args, [{Arg,Temp}|RegArgs]);
+split_args(_, _, StkArgs, RegArgs) ->
+    {RegArgs, StkArgs}.
+
+move_actuals([], Rest) -> Rest;
+move_actuals([{Src,Dst}|Actuals], Rest) ->
+    move_actuals(Actuals, [hipe_x86:mk_move(Src, Dst) | Rest]).
+
+move_formals([], Rest) -> Rest;
+move_formals([{Dst,Src}|Formals], Rest) ->
+    move_formals(Formals, [hipe_x86:mk_move(Src, Dst) | Rest]).
+
 %%% Finalise the conversion of a call instruction.
 
 conv_call(Dsts, Fun, Args, ContLab, ExnLab) ->
+    %% The backend does not support pseudo_calls without a
+    %% continuation label, so we make sure each call has one.
     {RealDsts, RealContLab, Tail} =
 	case do_call_results(Dsts) of
 	    {[], []} ->
 		%% Avoid consing up a dummy basic block if the moves list
 		%% is empty, as is typical for calls to suspend/0.
-		%% This would be subsumed by a general "optimise the CFG"
-		%% module, but we don't have that one yet :-(
-		{[], ContLab, []};
+		%% This should be subsumed by a general "optimise the CFG"
+		%% module, and could probably be removed.
+                case ContLab of
+	            [] ->
+                        NewContLab = hipe_gensym:get_next_label(x86),
+                        {[],NewContLab,[hipe_x86:mk_label(NewContLab, false)]};
+                    _ ->
+		        {[], ContLab, []}
+                end;
 	    {Moves, NewDsts} ->
 		%% Change the call to continue at a new basic block.
-		%% In this block, move the result registers to the Dsts,
+		%% In this block move the result registers to the Dsts,
 		%% then continue at the call's original continuation.
-		NewContLab = hipe_gensym:get_next_label(x86),
-		{NewDsts, NewContLab,
-		 [hipe_x86:mk_label(NewContLab, false) |
-		  Moves ++
-		  [hipe_x86:mk_jmp_label(ContLab)]]}
+		%%
+	        %% This should be fixed to propagate "fallthrough calls"
+                %% When the rest of the backend supports them.
+                NewContLab = hipe_gensym:get_next_label(x86),
+	        case ContLab of
+	            [] -> %% This is just a fallthrough
+                          %% No jump back after the moves.
+                        {NewDsts, NewContLab,
+		         [hipe_x86:mk_label(NewContLab, false) |
+		         Moves]};
+	            _ ->  %% The call has a continuation
+                          %% jump to it.
+		        {NewDsts, NewContLab,
+		         [hipe_x86:mk_label(NewContLab, false) |
+		         Moves ++
+		         [hipe_x86:mk_jmp_label(ContLab)]]}
+	        end
 	end,
     CallInsn = hipe_x86:mk_pseudo_call(RealDsts, Fun, length(Args),
 				       RealContLab, ExnLab),
-    do_call_args(Args, [CallInsn | Tail]).
+    {RegArgs,StkArgs} = split_args(Args),
+    do_push_args(StkArgs, move_actuals(RegArgs, [CallInsn | Tail])).
 
-do_call_args([Arg|Args], Tail) ->
-    [hipe_x86:mk_push(Arg) | do_call_args(Args, Tail)];
-do_call_args([], Tail) ->
+do_push_args([Arg|Args], Tail) ->
+    [hipe_x86:mk_push(Arg) | do_push_args(Args, Tail)];
+do_push_args([], Tail) ->
     Tail.
 
 do_call_results([]) ->
@@ -342,9 +455,9 @@ conv_fun(Fun, Map) ->
 		    conv_dst(Fun, Map);
 		false ->
 		    case Fun of
-			Prim when atom(Prim) ->
+			Prim when is_atom(Prim) ->
 			    {hipe_x86:mk_prim(Prim), Map};
-			{M,F,A} when atom(M), atom(F), integer(A) ->
+			{M,F,A} when is_atom(M), is_atom(F), is_integer(A) ->
 			    {hipe_x86:mk_mfa(M,F,A), Map};
 			_ ->
 			    exit({?MODULE,conv_fun,Fun})
@@ -382,7 +495,12 @@ conv_dst(Opnd, Map) ->
 	    true ->
 		{hipe_rtl:var_name(Opnd), 'tagged'};
 	    false ->
-		{hipe_rtl:reg_name(Opnd), 'untagged'}
+		case hipe_rtl:is_fpreg(Opnd) of
+		    true ->
+			{hipe_rtl:fpreg_name(Opnd), 'double'};
+		    false ->
+			{hipe_rtl:reg_name(Opnd), 'untagged'}
+		end
 	end,
     case hipe_x86_registers:is_precoloured(Name) of
 	true ->
@@ -412,16 +530,22 @@ conv_dst_list([O|Os], Map) ->
 conv_dst_list([], Map) ->
     {[], Map}.
 
-conv_formals([O|Os], Map, Res) ->
+conv_formals(Os, Map) ->
+    conv_formals(hipe_x86_registers:nr_args(), Os, Map, []).
+
+conv_formals(N, [O|Os], Map, Res) ->
     Type =
 	case hipe_rtl:is_var(O) of
 	    true -> 'tagged';
-	    false -> 'untagged'
+	    false ->'untagged'
 	end,
-    Dst = hipe_x86:mk_new_nonallocatable_temp(Type),
+    Dst =
+	if N > 0 -> hipe_x86:mk_new_temp(Type);	% allocatable
+	   true -> hipe_x86:mk_new_nonallocatable_temp(Type)
+	end,
     Map1 = vmap_bind(Map, O, Dst),
-    conv_formals(Os, Map1, [Dst|Res]);
-conv_formals([], Map, Res) ->
+    conv_formals(N-1, Os, Map1, [Dst|Res]);
+conv_formals(_, [], Map, Res) ->
     {lists:reverse(Res), Map}.
 
 %%% typeof_src -- what's src's type?
@@ -469,3 +593,29 @@ vmap_lookup(VMap, Opnd) ->
 
 vmap_bind(VMap, Opnd, Temp) ->
     [{Opnd, Temp} | VMap].
+
+conv_fop(Dst, Src1, Op, Src2) ->
+    case same_opnd(Dst, Src1) of
+	true ->			% x = x op y
+	    [hipe_x86:mk_fop(Op, Src2, Dst)];		% x op= y
+	false ->		% z = x op y, where z != x
+	    case same_opnd(Dst, Src2) of
+		false ->	% z = x op y, where z != x && z != y
+		    [hipe_x86:mk_fmov(Src1, Dst),			% z = x
+		     hipe_x86:mk_fop(Op, Src2, Dst)];	% z op= y
+		true ->		% y = x op y, where y != x
+		    case binop_commutes(Op) of
+			true ->	% y = y op x
+			    [hipe_x86:mk_fop(Op, Src1, Dst)]; % y op= x
+			false ->% y = x op y, where op doesn't commute
+			    Op0 = reverse_op(Op),
+			    [hipe_x86:mk_fop(Op0, Src1, Dst)]
+		    end
+	    end
+    end.
+
+reverse_op(Op) ->
+    case Op of
+	'fsub' -> 'fsubr';
+	'fdiv' -> 'fdivr'
+    end.

@@ -381,7 +381,7 @@ Erlang code.
 tok_val(T) -> element(3, T).
 tok_line(T) -> element(2, T).
 
-abstract(T, N) -> abstract(T).
+abstract(T, _N) -> abstract(T).
 
 abstract(Term) -> core_lib:make_literal(Term).
 

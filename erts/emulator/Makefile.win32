@@ -4,11 +4,11 @@
 #
 # How to build a release:
 #
-#	omake -E -EN -f Makefile.win32 GCC=1 NODEBUG=1
+#	omake -W -EN -f Makefile.win32 GCC=1 NODEBUG=1
 #
 # How to build a debug release:
 #
-#	omake -E -EN -f Makefile.win32
+#	omake -W -EN -f Makefile.win32
 #
 
 include ../vsn.mk
@@ -111,7 +111,8 @@ BOOTBEAMS 	= $(BOOTBEAMDIR)\otp_ring0.beam \
                   $(BOOTBEAMDIR)\init.beam \
                   $(BOOTBEAMDIR)\erl_prim_loader.beam \
                   $(BOOTBEAMDIR)\prim_inet.beam \
-                  $(BOOTBEAMDIR)\prim_file.beam
+                  $(BOOTBEAMDIR)\prim_file.beam \
+                  $(BOOTBEAMDIR)\erlang.beam
 
 GENOPTAB = $(ROOT)\lib\compiler\src\genop.tab
 
@@ -122,7 +123,9 @@ INIT_OBJS_SAE = $(OBJDIR)\erl_main_sae.obj	$(OBJDIR)\preload_sae.obj
 ERLOBJS = \
 	$(OBJDIR)\erl_atom_table.obj \
 	$(OBJDIR)\erl_bif_table.obj \
+	$(OBJDIR)\erl_pbifs.obj \
 	$(OBJDIR)\atom.obj \
+	$(OBJDIR)\benchmark.obj \
 	$(OBJDIR)\bif.obj \
 	$(OBJDIR)\big.obj \
 	$(OBJDIR)\binary.obj \
@@ -138,6 +141,7 @@ ERLOBJS = \
 	$(OBJDIR)\erl_init.obj \
 	$(OBJDIR)\erl_math.obj \
 	$(OBJDIR)\erl_message.obj \
+	$(OBJDIR)\erl_node_tables.obj \
 	$(OBJDIR)\erl_process.obj \
 	$(OBJDIR)\erl_process_dict.obj \
 	$(OBJDIR)\erl_arith.obj \
@@ -157,6 +161,7 @@ ERLOBJS = \
 	$(OBJDIR)\external.obj \
 	$(OBJDIR)\fix_alloc.obj \
 	$(OBJDIR)\ggc.obj \
+	$(OBJDIR)\erl_gc.obj \
 	$(OBJDIR)\hash.obj \
 	$(OBJDIR)\index.obj \
 	$(OBJDIR)\io.obj \
@@ -285,15 +290,11 @@ ENTRY_OBJ=$(ETCOBJDIR)\port_entry.obj
 PORT_ENTRY_POINT=erl_port_entry
 ERL_ENTRY_LFLAGS=$(ERL_LFLAGS) -link -entry:$(PORT_ENTRY_POINT)
 
-
 #
 # Targets
 #
 
 all:    $(ENTRY_OBJ) $(TARGET)\beam_opcodes.h resources build_tools erl_libs \
-!ifdef NO_BEAM_DLL
-	$(BINDIR)\$(EMULATOR) \
-!endif
 	others
 
 $(ENTRY_OBJ):  $(ENTRY_SRC)
@@ -310,29 +311,12 @@ erl_libs: $(ERL_RUNTIME_LIB)
 $(ERL_RUNTIME_LIB): $(ERLOBJS)
 	lib -out:$*.lib $(ERLOBJS)
 
-!ifdef NO_BEAM_DLL
-$(BINDIR)\$(EMULATOR): $(SYSOBJS) $(DRVOBJS) $(BEAMOBJS) \
-   $(ERL_RUNTIME_LIB)  $(ZLIBDIR)\zlib.lib $(SYSDIR)\erl.def $(BEAMS_RES)
-	link $(LINKDEBUG) -nologo -pdb:none -incremental:no \
-		$(WIN32_LIBS_NO_LIBCMT) $(ERL_LIBCMT) \
-		$(SYSOBJS) $(DRVOBJS) \
-		$(BEAMOBJS) $(ERL_RUNTIME_LIB) $(ZLIBDIR)\zlib.lib \
-		$(BEAMS_RES) -def:$(SYSDIR)\erl.def \
-		-out:$(BINDIR)\$(EMULATOR) \
-		-implib:$(BINDIR)\$(ERLDLLLIB)
-!ifdef PURIFY
-	purify /Run=no /Replace=yes $(BINDIR)\$(EMULATOR)
-!endif
-!endif
-
 $(BINDIR)\$(BEAM_DLL): $(DLL_SYSOBJS) $(DRVOBJS) $(BEAMOBJS) \
-	$(ERL_RUNTIME_LIB)  $(ZLIBDIR)\zlib.lib $(SYSDIR)\erl.def $(BEAMS_RES) \
-	$(OBJDIR)\erl_api.obj
+	$(ERL_RUNTIME_LIB)  $(ZLIBDIR)\zlib.lib $(SYSDIR)\erl.def $(BEAMS_RES)
 	link $(LINKDEBUG) -nologo -pdb:none -incremental:no  \
 		-dll \
 		$(WIN32_LIBS_NO_LIBCMT) $(ERL_LIBCMT) \
 		$(DLL_SYSOBJS) $(DRVOBJS)  \
-		$(OBJDIR)\erl_api.obj \
 		$(BEAMOBJS) $(ERL_RUNTIME_LIB) $(ZLIBDIR)\zlib.lib \
 		$(BEAMS_RES) -def:$(SYSDIR)\erl.def -implib:$(BINDIR)\$(ERLDLLLIB) \
 		-out:$(BINDIR)\$(BEAM_DLL)
@@ -352,17 +336,17 @@ $(OBJDIR)\erl_start.obj: $(SYSDIR)\erl_start.c
 # Microsoft's linker understands.
 
 CGCC=gcc
-GCC_CFLAGS=-Wall -O3 $(GCCDEBUG) \
+GCC_CFLAGS=-Wall -O3 $(GCCDEBUG) -fomit-frame-pointer \
 	-D_WIN32 -DNT  -D__WIN32__ -DWINDOWS \
 	-idirafter win32 -idirafter sys/win32 \
 	-idirafter ../etc/win32 -idirafter drivers/common \
 	-idirafter drivers/win32 -idirafter ./beam
 
-# Converting gcc's PE to Microsofts
+# Converting gcc's PE to Microsoft's
 
 $(OBJDIR)\beam_emu.obj: $(OBJDIR)\beam_emu.o $(BINDIR)\coffix.exe
 	$(CP) $*.o $*.obj
-	$(BINDIR)\coffix -e $*.obj
+	$(BINDIR)\coffix.exe -e $*.obj
 
 # The emulator loop, gives +2000 EStones on a pentium II 266 MHz
 $(OBJDIR)\beam_emu.o: 	beam\beam_emu.c $(TARGET)\beam_cold.h \
@@ -392,20 +376,13 @@ others: $(BINDIR)\inet_gethost.exe \
 	$(BINDIR)\werl.exe $(BINDIR)\erlsrv.exe \
 	$(BINDIR)\start_erl.exe 
 
-ERL_OBJS = $(ETCOBJDIR)\erl.obj $(ETCOBJDIR)\win_erlexec.obj
-WERL_OBJS = $(ETCOBJDIR)\werl.obj $(ETCOBJDIR)\win_erlexec.obj
-
 DLL_ERL_OBJS = $(ETCOBJDIR)\dll_erl.obj $(ETCOBJDIR)\dll_win_erlexec.obj # $(ETCOBJDIR)\dll_erl.res
 
 DLL_WERL_OBJS = $(ETCOBJDIR)\dll_werl.obj $(ETCOBJDIR)\dll_win_erlexec.obj
 
-!ifdef NO_BEAM_DLL
-$(BINDIR)\erl.exe: $(ERL_OBJS) $(BINDIR)\$(EMULATOR)
-	$(CC) -Zi -Fe$@ $(ERL_OBJS) $(ERL_RES) advapi32.lib user32.lib
+DDL_ERL_MAIN_SAE_OBJS = $(OBJDIR)\erl_main_sae.obj $(ETCOBJDIR)\dll_win_erlexec.obj
 
-$(BINDIR)\werl.exe: $(WERL_OBJS) $(BINDIR)\$(EMULATOR)
-	$(CC) -Zi -Fe$@ $(WERL_OBJS) $(ERL_RES) advapi32.lib user32.lib
-!else
+
 $(BINDIR)\erl.exe: $(DLL_ERL_OBJS) $(BINDIR)\$(BEAM_DLL)
 	$(CC) $(ERL_CLIBCMT) $(ERL_DEBUG) $(BEAM_DEBUG) \
 		-Fe$@ $(DLL_ERL_OBJS) $(ERL_RES) \
@@ -417,7 +394,12 @@ $(BINDIR)\werl.exe: $(DLL_WERL_OBJS) $(BINDIR)\$(BEAM_DLL)
 		-Fe$@ $(DLL_WERL_OBJS) $(ERL_RES) \
 		$(BINDIR)\$(ERLDLLLIB) \
 		advapi32.lib user32.lib
-!endif
+
+$(BINDIR)\erl_main_sae.exe: $(DDL_ERL_MAIN_SAE_OBJS) $(BINDIR)\$(BEAM_DLL)
+	$(CC) $(ERL_CLIBCMT) $(ERL_DEBUG) $(BEAM_DEBUG) \
+		-Fe$@ $(DDL_ERL_MAIN_SAE_OBJS) $(ERL_RES) \
+		$(BINDIR)\$(ERLDLLLIB) \
+		advapi32.lib user32.lib
 
 $(BINDIR)\erlc.exe: $(ETCOBJDIR)\erlc.obj
 	$(CC) -Fe$@ $** $(SETARGV) $(ERL_RES) $(WINSOCK)
@@ -485,11 +467,6 @@ $(ETCOBJDIR)\dll_win_erlexec.obj: $(ETCDIR)\win_erlexec.c
 		-DBUILD_TYPE=\"$(BUILD_TYPE)\" $(ETCDIR)\win_erlexec.c \
 		-DERL_RUN_SHARED_LIB=1
 
-$(OBJDIR)\erl_api.obj: $(BEAMDIR)\erl_api.c
-	$(CC) $(ERL_CFLAGS) $(BROWSERETC) -Fo$@ \
-		-DBUILD_TYPE=\"$(BUILD_TYPE)\" $(BEAMDIR)\erl_api.c \
-		-DERL_RUN_SHARED_LIB=1 -DBUILD_BEAM_DLL=1
-
 $(ETCOBJDIR)\dll_werl.obj: $(GENETCDIR)\erlexec.c
 	$(CC) $(ERL_CFLAGS) $(BROWSERETC) -Fo$@ \
 		-DBUILD_TYPE=\"$(BUILD_TYPE)\" -DWIN32_WERL \
@@ -536,15 +513,19 @@ $(OBJDIR)\driver_tab.obj: $(TARGET)\driver_tab.c
 	$(CC) $(ERL_CFLAGS) -Fo$(OBJDIR)\driver_tab.obj $(TARGET)\driver_tab.c
 
 $(TARGET)\erl_bif_table.c $(TARGET)\erl_bif_table.h \
-$(TARGET)\erl_atom_table.c $(TARGET)\erl_atom_table.h: \
+$(TARGET)\erl_atom_table.c $(TARGET)\erl_atom_table.h \
+$(TARGET)\erl_pbifs.c: \
 	beam\bif.tab beam\atom.names
 	perl utils\make_tables -src $(TARGET) -include $(TARGET) beam\atom.names beam\bif.tab
 
 $(OBJDIR)\erl_atom_table.obj: $(TARGET)\erl_atom_table.c
 	$(CC) $(ERL_CFLAGS) -Fo$(OBJDIR)\ $(TARGET)\erl_atom_table.c
 
+$(OBJDIR)\erl_pbifs.obj: $(TARGET)\erl_pbifs.c
+	$(CC) $(ERL_CFLAGS) -Fo$(OBJDIR)\ $(TARGET)\erl_pbifs.c
+
 $(TARGET)\erl_version.h: ../vsn.mk
-	perl utils\make_version -o $@ $(VSN)$(SERIALNO)
+	perl utils\make_version -o $@ $(VSN)$(SERIALNO) $(TARGET)
 
 $(BEAMS_RES): $(BOOTBEAMS) $(ETCDIR)\erlang.ico $(BINDIR)\mkpreload.exe
 	$(BINDIR)\mkpreload.exe -rc -o $(TARGET)\beams.rc $(BOOTBEAMS)
@@ -560,6 +541,7 @@ $(ETCDIR)\beam_icon.ico: $(ETCDIR)\jam_icon.ico
 	copy $(ETCDIR)\jam_icon.ico $(ETCDIR)\beam_icon.ico
 $(ETCDIR)\beam.rc: $(ETCDIR)\jam.rc
 	copy $(ETCDIR)\jam.rc $(ETCDIR)\beam.rc
+
 $(OBJDIR)\bif.obj: $(TARGET)\erl_bif_table.h $(TARGET)\erl_version.h
 
 $(OBJDIR)\break.obj: $(TARGET)\erl_version.h

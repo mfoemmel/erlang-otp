@@ -36,15 +36,13 @@
 
 -export([format_error/1]).
 
-%% Internal exports.
--export([abst/4]).
--export([inter_graph/6]).
 %% The following functions are exported for testing purposes only:
 -export([do_add_module/4, do_add_application/2, do_add_release/2, 
 	 do_remove_module/2]).
 
 -import(lists, 
-	[filter/2, flatten/1, foldl/3, map/2, member/2, reverse/1, sort/1]).
+	[filter/2, flatten/1, foldl/3, map/2, member/2, reverse/1, 
+	 sort/1, usort/1]).
 
 -import(sofs, 
 	[constant_function/2, converse/1, difference/2, domain/1,
@@ -128,11 +126,10 @@ add_module(State, File, Options) ->
     ValOptions = option_values([builtins, verbose, warnings], State),
     case xref_utils:options(Options, ValOptions) of
 	{[[OB], [OV], [OW]], []} ->
-	    Splitname = xref_utils:split_filename(File, ?Suffix),
-	    case catch do_add_module(Splitname, [], OB, OV, OW, State) of
+	    case catch do_add_a_module(File, [], OB, OV, OW, State) of
 		{ok, [Module], NewState} ->
 		    {ok, Module, NewState};
-		{ok, [], NewState} ->
+		{ok, [], _NewState} ->
 		    error({no_debug_info, File});
 		Error ->
 		    Error
@@ -245,7 +242,7 @@ set_library_path(State, code_path, _Options) ->
     S1 = State#xref{library_path = code_path, libraries = dict:new()},
     {ok, take_down(S1)};
 set_library_path(State, Path, Options) ->
-    case is_path(Path) of
+    case xref_utils:is_path(Path) of
 	true ->
 	    ValidOptions = option_values([verbose], State),
 	    case xref_utils:options(Options, ValidOptions) of
@@ -278,7 +275,7 @@ q(S, Q) ->
 q(S, Q, Options) when atom(Q) ->
     q(S, atom_to_list(Q), Options);
 q(S, Q, Options) ->
-    case is_string(Q, 1) of
+    case xref_utils:is_string(Q, 1) of
 	true -> 
 	    case set_up(S, Options) of
 		{ok, S1} ->
@@ -468,6 +465,8 @@ format_error({error, Module, Error}) ->
 format_error({invalid_options, Options}) ->
     io_lib:format("Unknown option(s) or invalid option value(s): ~p~n", 
 		  [Options]);
+format_error({invalid_filename, Term}) ->
+    io_lib:format("A file name (a string) was expected: ~p~n", [Term]);
 format_error({no_debug_info, FileName}) ->
     io_lib:format("The BEAM file ~p has no debug info~n", [FileName]);
 format_error({invalid_path, Term}) ->
@@ -554,13 +553,12 @@ do_replace_module(Module, File, OV, OW, State) ->
     {ok, OldXMod, State1} = do_remove_module(State, Module),
     OldApp = OldXMod#xref_mod.app_name,
     OB = OldXMod#xref_mod.builtins,
-    Splitname = xref_utils:split_filename(File, ?Suffix),
-    case do_add_module(Splitname, OldApp, OB, OV, OW, State1) of
+    case do_add_a_module(File, OldApp, OB, OV, OW, State1) of
 	{ok, [Module], NewState} ->
 	    {ok, Module, NewState};
 	{ok, [ReadModule], _State} ->
 	    throw_error({module_mismatch, Module, ReadModule});
-	{ok, [], NewState} ->
+	{ok, [], _NewState} ->
 	    throw_error({no_debug_info, File})
     end.
 
@@ -574,6 +572,7 @@ do_replace_application(Appl, Dir, OB, OV, OW, State) ->
 
 %% -> {ok, ReleaseName, NewState} | throw(Error)
 do_add_release(Dir, RelName, OB, OV, OW, State) ->
+    ok = is_filename(Dir),
     case xref_utils:release_directory(Dir, true, "ebin") of
 	{ok, ReleaseDirName, ApplDir, Dirs} ->
 	    ApplDirs = xref_utils:select_last_application_version(Dirs),
@@ -608,6 +607,7 @@ add_rel_appls([], [Release], _OB, _OV, _OW, NewState) ->
     {ok, Release, NewState}.
 
 do_add_application(Dir0, Release, Name, OB, OV, OW, State) ->
+    ok = is_filename(Dir0),
     case xref_utils:select_application_directories([Dir0], "ebin") of
 	{ok, [ApplD]} ->
 	    add_appldir(ApplD, Release, Name, OB, OV, OW, State);
@@ -644,6 +644,7 @@ do_add_application(S, XApp) ->
 
 %% -> {ok, Modules, NewState} | throw(Error)
 do_add_directory(Dir, AppName, Bui, Rec, Ver, War, State) ->
+    ok = is_filename(Dir),
     {FileNames, Errors, Jams, Unreadable} =
 	xref_utils:scan_directory(Dir, Rec, [?Suffix], [".jam"]),
     warnings(War, jam, Jams),	
@@ -662,6 +663,16 @@ do_add_modules([File | Files], AppName, OB, OV, OW, State, Modules) ->
     do_add_modules(Files, AppName, OB, OV, OW, NewState, M ++ Modules).
 
 %% -> {ok, Module, State} | throw(Error)
+do_add_a_module(File, AppName, Builtins, Verbose, Warnings, State) ->
+    case xref_utils:split_filename(File, ?Suffix) of
+	false ->
+	    throw_error({invalid_filename, File});
+	Splitname ->
+	    do_add_module(Splitname, AppName, Builtins, Verbose, 
+			  Warnings, State)
+    end.
+
+%% -> {ok, Module, State} | throw(Error)
 %% Options: verbose, warnings, builtins
 do_add_module({Dir, Basename}, AppName, Builtins, Verbose, Warnings, State) ->
     File = filename:join(Dir, Basename),
@@ -674,15 +685,19 @@ do_add_module({Dir, Basename}, AppName, Builtins, Verbose, Warnings, State) ->
 do_add_module1(Dir, File, AppName, Builtins, Verbose, Warnings, State) ->
     message(Verbose, reading_beam, [File]),
     Mode = State#xref.mode,
-    case xref_utils:subprocess(?MODULE, abst, [self(), File, Builtins, Mode],
-				[link, {min_heap_size,100000}]) of
-	{ok, M, no_abstract_code} when Verbose == true ->
+    Me = self(),
+    Fun = fun() -> Me ! {self(), abst(File, Builtins, Mode)} end,
+    case xref_utils:subprocess(Fun, [link, {min_heap_size,100000}]) of
+	{ok, _M, no_abstract_code} when Verbose == true ->
 	    message(Verbose, skipped_beam, []),
 	    {ok, [], [], State};
-	{ok, M, no_abstract_code} when Verbose == false ->
+	{ok, _M, no_abstract_code} when Verbose == false ->
 	    message(Warnings, no_debug_info, [File]),
 	    {ok, [], [], State};
-	{ok, M, Data, UnresCalls}  ->
+	{ok, M, Data, UnresCalls0}  ->
+	    %% Remove duplicates. Identical unresolved calls on the
+	    %% same line are counted as _one_ unresolved call.
+	    UnresCalls = usort(UnresCalls0),
 	    message(Verbose, done, []),
 	    NoUnresCalls = length(UnresCalls),
 	    case NoUnresCalls of
@@ -703,11 +718,7 @@ do_add_module1(Dir, File, AppName, Builtins, Verbose, Warnings, State) ->
 	    throw(Error)
     end.
 
-abst(Pid, File, Builtins, Mode) ->
-    Reply = abst0(File, Builtins, Mode),
-    Pid ! {self(), Reply}.
-	    
-abst0(File, Builtins, Mode) when Mode == functions ->
+abst(File, Builtins, Mode) when Mode == functions ->
     case beam_lib:chunks(File, [abstract_code, exports]) of
 	{ok, {M, [{abstract_code, NoA},_X]}} when NoA == no_abstract_code ->
 	    {ok, M, NoA};
@@ -722,7 +733,7 @@ abst0(File, Builtins, Mode) when Mode == functions ->
 	Error when element(1, Error) == error ->
 	    Error
     end;
-abst0(File, Builtins, Mode) when Mode == modules ->
+abst(File, Builtins, Mode) when Mode == modules ->
     case beam_lib:chunks(File, [exports, imports]) of
 	{ok, {Mod, [{exports,X0}, {imports,I0}]}} ->
 	    X1 = xref_utils:fa_to_mfa(X0, Mod),
@@ -793,9 +804,10 @@ do_add_module(S, M, XMod, Unres0, Data) when S#xref.mode == functions ->
     LC = union(LC1, ALC),
 
     %% {EE, ECallAt} = inter_graph(X, L, LC, XC, LCallAt, XCallAt),
-    {EE, ECallAt} = xref_utils:subprocess(?MODULE, inter_graph, 
-				      [self(), X, L, LC, XC, CallAt],
-				      [link, {min_heap_size,100000}]),
+    Self = self(),
+    Fun = fun() -> inter_graph(Self, X, L, LC, XC, CallAt) end, 
+    {EE, ECallAt} = 
+	xref_utils:subprocess(Fun, [link, {min_heap_size,100000}]),
 
     [DefAt2,L2,X2,LCallAt2,XCallAt2,CallAt2,LC2,XC2,EE2,ECallAt2] =
 	pack([DefAt,L,X,LCallAt,XCallAt,CallAt,LC,XC,EE,ECallAt]),
@@ -1487,30 +1499,17 @@ no_sum([], C, UC, LC, XC, UFC, L, X, EV, NoM) ->
      {no_functions, {L,X}}, 
      {no_inter_function_calls, EV}].
 
-is_path([S | Ss]) ->
-    case is_string(S, 31) of
-	true -> 
-	    is_path(Ss);
+%% -> ok | throw(Error)
+is_filename(F) when atom(F) ->
+    ok;
+is_filename(F) ->
+    case xref_utils:is_string(F, 31) of
+	true ->
+	    ok;
 	false ->
-	    false
-    end;
-is_path([]) -> 
-    true;
-is_path(_) -> 
-    false.
+	    throw_error({invalid_filename, F})
+    end.
 
-is_string([], _) ->
-    false;
-is_string(Term, C) ->
-    is_string1(Term, C).
-
-is_string1([H | T], C) when H > C, H < 127 -> 
-    is_string1(T, C);
-is_string1([], _) -> 
-    true;
-is_string1(_, _) -> 
-    false.
-    
 module_file(XMod) ->
     xref_utils:module_filename(XMod#xref_mod.dir, XMod#xref_mod.name).
 

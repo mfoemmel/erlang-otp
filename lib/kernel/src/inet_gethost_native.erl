@@ -16,69 +16,423 @@
 %%     $Id$
 %%
 -module(inet_gethost_native).
+-behaviour(supervisor_bridge).
 
-%%-compile(export_all).
-%%-export([Function/Arity, ...]).
+%% Supervisor bridge exports
+-export([start_link/0, init/1, terminate/2, start_raw/0, run_once/0]).
 
--behaviour(gen_server).
+%% Server export
+-export([server_init/2, main_loop/1]).
 
-%% External exports
--export([start_link/0]).
-
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
-
-%% api exports to be used only from inet_* modules
+%% API exports
 -export([gethostbyname/1, gethostbyname/2, gethostbyaddr/1]).
 
--export([test/0]).
-%% internal export for server loop
+%%% Exports for sys:handle_system_msg/6
+-export([system_continue/3, system_terminate/4, system_code_change/4]).
 
-%% These constants are int inet_int.hrl (remove if this file is in kernel)
--include("inet_int.hrl").
--include_lib("inet.hrl").
+-include_lib("kernel/include/inet.hrl").
+
+-define(PROCNAME_SUP, inet_gethost_native_sup).
+
+-define(OP_GETHOSTBYNAME,1).
+-define(OP_GETHOSTBYADDR,2).
+-define(OP_CANCEL_REQUEST,3).
+
+-define(PROTO_IPV4,1).
+-define(PROTO_IPV6,2).
+
+-define(UNIT_ERROR,0).
+-define(UNIT_IPV4,4).
+-define(UNIT_IPV6,16).
+
+-define(PORT_PROGRAM, "inet_gethost").
+-define(DEFAULT_POOLSIZE, 4).
+-define(REQUEST_TIMEOUT, (inet_db:res_option(timeout)*4)).
+
+-define(MAX_TIMEOUT, 16#7FFFFFF).
+
+%-define(DEBUG,1).
+-ifdef(DEBUG).
+-define(dbg(A,B), io:format(A,B)).
+-else.
+-define(dbg(A,B), noop).
+-endif.
+
+-define(SEND_AFTER(A,B,C),erlang:send_after(A,B,C)).
+-define(CANCEL_TIMER(A),erlang:cancel_timer(A)).
+
+%% In erlang, IPV6 addresses are built as 8-tuples of 16bit values (not 16-tuples of octets).
+%% This macro, meant to be used in guards checks one such 16bit value in the 8-tuple.
+-define(VALID_V6(Part), integer(Part), Part < 65536).
+%% The regular IPV4 addresses are represented as 4-tuples of octets, this macro,
+%% meant to be used in guards, check one such octet.
+-define(VALID_V4(Part), integer(Part), Part < 256).
+
+% Requests, one per unbique request to the PORT program, may be more than one client!!!
+-record(request, {
+	  rid, % Request id as sent to port
+	  op,
+	  proto,
+	  rdata,
+	  clients = [] % Can be more than one client per request (Pid's). 
+}).
 
 
--define(GETHOSTBYNAME,  1).
--define(GETHOSTBYADDR,  2).
+% Statistics, not used yet.
+-record(statistics, {
+	  netdb_timeout = 0,
+	  netdb_internal = 0,
+	  port_crash = 0,
+	  notsup = 0,
+	  host_not_found = 0,
+	  try_again = 0,
+	  no_recovery = 0,
+	  no_data = 0
+}).
 
--define(REPLY_OK,    0).
--define(REPLY_ERROR, 1).
+% The main loopstate...
+-record(state, {
+	  port = noport, % Port() connected to the port program
+	  timeout = 8000, % Timeout value from inet_db:res_option
+	  requests, % Table of request
+	  req_index, % Table of {{op,proto,rdata},rid}
+	  parent,    % The supervisor bridge
+	  pool_size = 4, % Number of C processes in pool.
+	  statistics % Statistics record (records error causes).
+}).
 
--record(state, {port}).
+%% The supervisor bridge code
+init([]) -> % Called by supervisor_bridge:start_link
+    Ref = make_ref(),
+    SaveTE = process_flag(trap_exit,true),
+    Pid = spawn_link(?MODULE,server_init,[self(),Ref]),
+    receive
+	Ref ->
+	    process_flag(trap_exit,SaveTE),
+	    {ok, Pid, Pid};
+	{'EXIT', Pid, Message} ->
+	    process_flag(trap_exit,SaveTE),
+	    {error, Message}
+    after 10000 ->
+	    process_flag(trap_exit,SaveTE),
+	    {error, {timeout, ?MODULE}}
+    end.
 
-%%
-%% Gethostbyname
-%% returns {ok, HostEnt} 
-%% or
-%%     {error, notfound}   when not found
-%%     {error, formerr}    badly formated argument
-%%     {error, einval}     invalid argument or
-%%                         includes internal formating error or
-%%                         reply code overflow
-%%
-%%     {error, Reason}     Port failure etc (abnormal)
-%%
-%%
+start_link() ->
+    supervisor_bridge:start_link({local, ?PROCNAME_SUP}, ?MODULE, []).
+
+%% Only used in fallback situations, no supervisor, no bridge, serve only until
+%% no requests present...
+start_raw() ->
+    spawn(?MODULE,run_once,[]).
+
+run_once() ->
+    Pool = get_poolsize(),
+    ExtraArgs = get_extra_args(),
+    Port = open_port({spawn, ?PORT_PROGRAM++" "++integer_to_list(Pool)++" "++
+		      ExtraArgs},
+		     [{packet,4},eof,binary]),
+    Timeout = ?REQUEST_TIMEOUT,
+    {Pid, R, Request} = receive
+			 {{Pid0,R0}, {?OP_GETHOSTBYNAME, Proto0, Name0}} ->
+			     {Pid0, R0, [<<1:32, ?OP_GETHOSTBYNAME:8, Proto0:8>>, Name0,0]};
+			{{Pid1,R1}, {?OP_GETHOSTBYNAME, Proto1, Name1}}  ->
+			     {Pid1, R1, [<<1:32, ?OP_GETHOSTBYNAME:8, Proto1:8>>, Name1,0]}
+		     after Timeout ->
+			     exit(normal)
+		     end,
+    (catch port_command(Port, Request)),
+    receive
+	{Port, {data, <<1:32, BinReply/binary>>}} ->
+	    Pid ! {R, {ok, BinReply}}
+    after Timeout ->
+	    Pid ! {R,{error,timeout}}
+    end.
+
+terminate(Reason,Pid) ->
+    (catch exit(Pid,kill)),
+    ok.
+
+%%-----------------------------------------------------------------------
+%% Server API
+%%-----------------------------------------------------------------------
+server_init(Starter, Ref) ->
+    process_flag(trap_exit,true),
+    case whereis(?MODULE) of
+	undefined ->
+	    case (catch register(?MODULE,self())) of
+		true ->
+		    Starter ! Ref;
+		_->
+		    exit({already_started,whereis(?MODULE)})
+	    end;
+	Winner ->
+	   exit({already_started,Winner})
+    end,
+    Pool = get_poolsize(),
+    ExtraArgs = get_extra_args(),
+    Port = open_port({spawn, ?PORT_PROGRAM++" "++integer_to_list(Pool)++" "++
+		      ExtraArgs},
+		     [{packet,4},eof,binary]),
+    Timeout = ?REQUEST_TIMEOUT,
+    put(rid,0),
+    put(num_requests,0),
+    RequestTab = ets:new(ign_requests,[{keypos,2},set,protected]),
+    RequestIndex = ets:new(ign_req_index,[set,protected]),
+    State = #state{port = Port, timeout = Timeout, requests = RequestTab,
+		   req_index = RequestIndex, 
+		   pool_size = Pool,
+		   statistics = #statistics{},
+		   parent = Starter},
+    main_loop(State).
+
+main_loop(State) ->
+    receive
+	Any -> 
+	    handle_message(Any,State)
+    end.
+
+handle_message({{Pid,_} = Client, {?OP_GETHOSTBYNAME, Proto, Name} = R}, 
+	       State) when pid(Pid) ->
+    NewState = do_handle_call(R,Client,State,
+			      [<<?OP_GETHOSTBYNAME:8, Proto:8>>, Name,0]),
+    main_loop(NewState);
+
+handle_message({{Pid,_} = Client, {?OP_GETHOSTBYADDR, Proto, Data} = R}, 
+	       State) when pid(Pid) ->
+    NewState = do_handle_call(R,Client,State,
+			      <<?OP_GETHOSTBYADDR:8, Proto:8, Data/binary>>),
+    main_loop(NewState);
+
+handle_message({Port, {data, Data}}, State = #state{port = Port}) ->
+    NewState = case Data of
+		   <<RID:32, BinReply/binary>> ->
+		       case BinReply of
+			   <<Unit, _/binary>> when Unit =:= ?UNIT_ERROR;
+						   Unit =:= ?UNIT_IPV4;
+						   Unit =:= ?UNIT_IPV6 ->
+			       case pick_request(State,RID) of
+				   false ->
+				       State;
+				   Req ->
+				       lists:foreach(fun({P,R,TR}) ->
+							     ?CANCEL_TIMER(TR),
+							     P ! {R,
+								  {ok,
+								   BinReply}}
+						     end,
+						     Req#request.clients),
+				       State
+			       end;
+			   _UnitError ->
+			       %% Unexpected data, let's restart it, 
+			       %% it must be broken.
+			       NewPort=restart_port(State),
+			       State#state{port=NewPort}
+		       end;
+		   _BasicFormatError ->
+		       NewPort=restart_port(State),
+		       State#state{port=NewPort}
+	       end,    
+    main_loop(NewState);
+	
+handle_message({'EXIT', Port, Reason}, State = #state{port = Port}) -> 
+    ?dbg("Port died.~n",[]),
+    NewPort=restart_port(State),
+    main_loop(State#state{port=NewPort});
+
+handle_message({Port,eof}, State = #state{port = Port}) ->
+    ?dbg("Port eof'ed.~n",[]),
+    NewPort=restart_port(State),
+    main_loop(State#state{port=NewPort});
+
+handle_message({timeout, Pid, RID}, State) ->
+    case pick_client(State,RID,Pid) of
+	false ->
+	    false;
+	{more, {P,R,_}} ->
+	    P ! {R,{error,timeout}};
+	{last, {LP,LR,_}} ->
+	    LP ! {LR, {error,timeout}},
+	    %% Remove the whole request structure...
+	    pick_request(State, RID),
+	    %% Also cancel the request to the port program...
+	    (catch port_command(State#state.port, 
+				<<RID:32,?OP_CANCEL_REQUEST>>))
+    end,
+    main_loop(State);
+
+handle_message({system, From, Req}, State) ->
+	    sys:handle_system_msg(Req, From, State#state.parent, ?MODULE, [], 
+				  State);
+
+handle_message(_, State) -> % Stray messages from dying ports etc.
+    main_loop(State).
+
+
+do_handle_call(R,Client0,State,RData) ->
+    Req = find_request(State,R),
+    Timeout = State#state.timeout,
+    {P,Ref} = Client0,
+    TR = ?SEND_AFTER(Timeout,self(),{timeout, P, Req#request.rid}),
+    Client = {P,Ref,TR},
+    case Req#request.clients of
+	[] ->
+	    RealRData = [<<(Req#request.rid):32>>|RData],
+	    (catch port_command(State#state.port, RealRData)),
+	    ets:insert(State#state.requests,Req#request{clients = [Client]});
+	Tail ->
+	    ets:insert(State#state.requests,Req#request{clients = [Client | Tail]})
+    end,
+    State.
+
+find_request(State, R = {Op, Proto, Data}) ->
+    case ets:lookup(State#state.req_index,R) of
+	[{R, Rid}] ->
+	    [Ret] = ets:lookup(State#state.requests,Rid),
+	    Ret;
+	[] ->
+	    NRid = get_rid(),
+	    Req = #request{rid = NRid, op = Op, proto = Proto, rdata = Data},
+	    ets:insert(State#state.requests, Req),
+	    ets:insert(State#state.req_index,{R,NRid}),
+	    put(num_requests,get(num_requests) + 1),
+	    Req
+    end.
+    
+pick_request(State, RID) ->
+    case ets:lookup(State#state.requests, RID) of
+	[] ->
+	    false;
+	[R] ->
+	    #request{rid = NRid, op = Op, proto = Proto, rdata = Data} = R,
+	    ets:delete(State#state.requests,RID),
+	    ets:delete(State#state.req_index,{Op,Proto,Data}),
+	    put(num_requests,get(num_requests) - 1),
+	    R
+    end.
+
+pick_client(State,RID,Clid) ->
+    case ets:lookup(State#state.requests, RID) of
+	[] ->
+	    false;
+	[R] ->
+	    case R#request.clients of
+		[SoleClient] ->
+		    {last, SoleClient}; % Note, not removed, the caller 
+					% should cleanup request data
+		CList ->
+		    case lists:keysearch(Clid,1,CList) of
+			{value, Client} ->
+			    NCList = lists:keydelete(Clid,1,CList),
+			    ets:insert(State#state.requests, 
+				       R#request{clients = NCList}),
+			    {more, Client};
+			false ->
+			    false
+		    end
+	    end
+    end.
+
+get_rid () ->
+    New = (get(rid) + 1) rem 16#7FFFFFF,
+    put(rid,New),
+    New.
+
+
+foreach(Fun,Table) ->
+    foreach(Fun,Table,ets:first(Table)).
+
+foreach(Fun,Table,'$end_of_table') ->
+    ok;
+foreach(Fun,Table,Key) ->
+    [Object] = ets:lookup(Table,Key),
+    Fun(Object),
+    foreach(Fun,Table,ets:next(Table,Key)).
+
+restart_port(State = #state{port = Port, requests = Requests}) ->
+    (catch port_close(Port)),
+    NewPort = open_port({spawn, ?PORT_PROGRAM++" "++
+			 integer_to_list(get_poolsize())++" "++
+			 get_extra_args()},
+			[{packet,4},eof,binary]),
+    foreach(fun(#request{rid = Rid, op = Op, proto = Proto, rdata = Rdata}) ->
+		    case Op of 
+			?OP_GETHOSTBYNAME ->
+			    port_command(NewPort,[<<Rid:32,?OP_GETHOSTBYNAME:8,
+						  Proto:8>>,
+						  Rdata,0]);
+			?OP_GETHOSTBYADDR ->
+			    port_command(NewPort,
+					 <<Rid:32,?OP_GETHOSTBYADDR:8, Proto:8,
+					 Rdata/binary>>)
+		    end
+	    end,
+	    Requests),
+    NewPort.
+			    
+    
+
+
+get_extra_args() ->
+    FirstPart = case application:get_env(kernel, gethost_prioritize) of
+		    {ok, false} ->
+			" -ng";
+		    _ ->
+			""
+		end,
+    case application:get_env(kernel, gethost_extra_args) of
+	{ok, L} when list(L) ->
+	    FirstPart++" "++L;
+	_ ->
+	    FirstPart++""
+    end.
+
+get_poolsize() ->
+    case application:get_env(kernel, gethost_poolsize) of
+	{ok,I} when integer(I) ->
+	    I;
+	_ ->
+	    ?DEFAULT_POOLSIZE
+    end.
+
+%%------------------------------------------------------------------
+%% System messages callbacks
+%%------------------------------------------------------------------
+
+system_continue(_Parent, _, State) ->
+    main_loop(State).
+
+system_terminate(Reason, _Parent, _, _State) ->
+    exit(Reason).
+
+system_code_change(State, _Module, _OldVsn, _Extra) ->
+    {ok, State}. %% Nothing to do in this version.
+
+
+%%-----------------------------------------------------------------------
+%% Client API
+%%-----------------------------------------------------------------------
+
 gethostbyname(Name) ->
     gethostbyname(Name, inet).
 
 gethostbyname(Name, inet) when list(Name) ->
-    getit(?GETHOSTBYNAME, [ ?INET_AF_INET, Name]);
+    getit(?OP_GETHOSTBYNAME, ?PROTO_IPV4, Name);
 gethostbyname(Name, inet6) when list(Name) ->
-    getit(?GETHOSTBYNAME, [?INET_AF_INET6,Name]);
+    getit(?OP_GETHOSTBYNAME, ?PROTO_IPV6, Name);
 gethostbyname(Name, Type) when atom(Name) ->
     gethostbyname(atom_to_list(Name), Type);
 gethostbyname(_, _)  ->
     {error, formerr}.
 
-gethostbyaddr({A,B,C,D}) when integer(A+B+C+D) ->
-    getit(?GETHOSTBYADDR, [?INET_AF_INET, [A,B,C,D]]);
-gethostbyaddr({0,0,0,0,0,16#ffff,G,H}) when integer(G+H) ->
+gethostbyaddr({A,B,C,D}) when ?VALID_V4(A), ?VALID_V4(B), ?VALID_V4(C), ?VALID_V4(D) ->
+    getit(?OP_GETHOSTBYADDR, ?PROTO_IPV4, <<A,B,C,D>>);
+gethostbyaddr({0,0,0,0,0,16#ffff,G,H}) when ?VALID_V6(G), ?VALID_V6(H) ->
     gethostbyaddr({G div 256, G rem 256, H div 256, H rem 256});
-gethostbyaddr({A,B,C,D,E,F,G,H}) when integer(A+B+C+D+E+F+G+H) ->
-    getit(?GETHOSTBYADDR, [?INET_AF_INET6,
-			   inet:ip_to_bytes({A,B,C,D,E,F,G,H})]);
+gethostbyaddr({A,B,C,D,E,F,G,H}) when ?VALID_V6(A), ?VALID_V6(B), ?VALID_V6(C), ?VALID_V6(D),
+				      ?VALID_V6(E), ?VALID_V6(F), ?VALID_V6(G), ?VALID_V6(H) ->
+    getit(?OP_GETHOSTBYADDR, ?PROTO_IPV6, <<A:16,B:16,C:16,D:16,E:16,F:16,G:16,H:16>>);
 gethostbyaddr(Addr) when list(Addr) ->
     case inet_parse:address(Addr) of
         {ok, IP} -> gethostbyaddr(IP);
@@ -88,140 +442,29 @@ gethostbyaddr(Addr) when atom(Addr) ->
     gethostbyaddr(atom_to_list(Addr));
 gethostbyaddr(_) -> {error, formerr}.
 
-
-
-%%%----------------------------------------------------------------------
-%%% API
-%%%----------------------------------------------------------------------
-
-start_link() ->
-    gen_server:start_link({local, inet_gethost_native}, inet_gethost_native, [], []).
-
-%%%----------------------------------------------------------------------
-%%% Callback functions from gen_server
-%%%----------------------------------------------------------------------
-
-%%----------------------------------------------------------------------
-%% Func: init/1
-%% Returns: {ok, State}          |
-%%          {ok, State, Timeout} |
-%%          ignore               |
-%%          {stop, Reason}
-%%----------------------------------------------------------------------
-init([]) ->
-    process_flag(trap_exit,true),
-    Port = open_port({spawn, "inet_gethost"}, [{packet,2},eof]),
-    {ok, #state{port=Port}, infinity}.
-
-%%----------------------------------------------------------------------
-%% Func: handle_call/3
-%% Returns: {reply, Reply, State}          |
-%%          {reply, Reply, State, Timeout} |
-%%          {noreply, State}               |
-%%          {noreply, State, Timeout}      |
-%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%          {stop, Reason, State}            (terminate/2 is called)
-%%----------------------------------------------------------------------
-handle_call({Cmd,Data}, From, State) ->
-    Timeout = inet_db:res_option(timeout)*4,
-    Port = State#state.port,
-    case catch erlang:port_command(Port, [Cmd,Data]) of
-	{'EXIT', {badarg,_}} ->
-	    {stop, einval,{error,einval}, State};
-	{'EXIT', Reason} -> 
-	    {stop, Reason, {error, Reason}, State};
-	true ->
-	    receive
-		{Port, {data, Reply}} ->
-		    {reply, {ok, Reply}, State};
-		{'EXIT', Port, Reason} ->
-		    Port1 = maybe_restart_port(Port,State),
-		    {reply, {error, Reason}, State#state{port = Port1}}
-	    after Timeout ->
-		    Port1 = maybe_restart_port(Port,State),
-		    {reply, {error, timeout}, State#state{port = Port1}}
-	    end
+getit(Op, Proto, Data) ->
+    Pid = ensure_started(),
+    Ref = make_ref(),
+    Pid ! {{self(),Ref}, {Op, Proto, Data}},
+    receive
+	{Ref, {ok,BinHostent}} ->
+	    parse_address(BinHostent);
+	{Ref, Error} -> 
+	    Error
+    after 5000 ->
+	    Ref2 = erlang:monitor(process,Pid),
+	    Res2 = receive
+		       {Ref, {ok,BinHostent}} ->
+			   parse_address(BinHostent);
+		       {Ref, Error} -> 
+			   Error;
+		       {'DOWN', Ref2, process, 
+			Pid, Reason} ->
+			   {error, Reason}
+		   end,
+	    catch erlang:demonitor(Ref2),
+	    Res2
     end.
-
-%%----------------------------------------------------------------------
-%% Func: handle_cast/2
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
-%%----------------------------------------------------------------------
-handle_cast(Msg, State) ->
-    {noreply, State}.
-
-%%----------------------------------------------------------------------
-%% Func: handle_info/2
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
-%%----------------------------------------------------------------------
-handle_info({'EXIT', Port, Reason},State) -> 
-    NewPort=maybe_restart_port(Port,State),
-    {noreply,State#state{port=NewPort}};
-handle_info({Port,eof}, State) ->
-    NewPort=maybe_restart_port(Port,State),
-    {noreply,State#state{port=NewPort}}.
-
-%%----------------------------------------------------------------------
-%% Func: terminate/2
-%% Purpose: Shutdown the server
-%% Returns: any (ignored by gen_server)
-%%----------------------------------------------------------------------
-terminate(Reason, State) ->
-    ok.
-
-
-maybe_restart_port(ClosedPort,#state{port=ClosedPort})  ->
-    catch erlang:port_close(ClosedPort),
-    NewPort = open_port({spawn, "inet_gethost"}, 
-			[{packet,2},eof]),
-    NewPort;
-maybe_restart_port(ClosedPort,#state{port=LivingPort}) ->
-    catch erlang:port_close(ClosedPort),
-    LivingPort.
-%%%----------------------------------------------------------------------
-%%% Internal functions
-%%%----------------------------------------------------------------------
-
-%%
-%% Test cases
-%%
-test() ->
-    {ok, Host} = inet:gethostname(),
-    %% test current host
-    {ok, Hent} = gethostbyname(Host),
-    %% test unknown host
-    {error, notfound} = gethostbyname(kalle_anka_blurf),
-    %% test bad arguments
-    {error, formerr} = gethostbyname(12),
-    %% test bigger name than buffer side on port
-    {error, einval} = gethostbyname(lists:duplicate(1024, $x)),
-    %% test bad list arguemtns
-    {error, einval} = gethostbyname([$f,$o,$o,kalle,$b]),
-    
-    %% test current host
-    {ok, _} = gethostbyaddr(hd(Hent#hostent.h_addr_list)),
-    {error, notfound} = gethostbyaddr({0,0,0,0}),
-
-    {error, einval} = gethostbyaddr({0,0,0,500}),
-
-    {ok, _} = gethostbyaddr("127.0.0.1"),     %% this may not be true!!!
-    {error, formerr} = gethostbyaddr({1,[]}),
-    {error, formerr} = gethostbyaddr("abcd"),
-    ok.
-
-getit(Cmd, Data) ->
-    ensure_started(),
-    Timeout = inet_db:res_option(timeout)*5,
-    case gen_server:call(inet_gethost_native, {Cmd, Data}, Timeout) of
-	{ok, Reply} ->
-	     reply(Reply);
-	Error -> Error
-    end.
-    
 
 do_start(Sup,C) ->
     {Child,_,_,_,_,_} = C,
@@ -238,78 +481,113 @@ do_start(Sup,C) ->
     end.
 
 ensure_started() ->
-    case whereis(inet_gethost_native) of
+    case whereis(?MODULE) of
 	undefined -> 
-	    C = {inet_gethost_native, {?MODULE, start_link, []}, temporary, 
+	    C = {?PROCNAME_SUP, {?MODULE, start_link, []}, temporary, 
 		 1000, worker, [?MODULE]},
 	    case whereis(kernel_safe_sup) of
 		undefined ->
-		    do_start(net_sup,C);
+		    case whereis(net_sup) of
+			undefined ->
+			    %% Icky fallback, run once without supervisor
+			    start_raw();
+			_ ->
+			    do_start(net_sup,C),
+			    case whereis(?MODULE) of
+				undefined ->
+				    exit({could_not_start_server, ?MODULE});
+				Pid0 ->
+				    Pid0
+			    end
+		    end;
 		_ ->
-		    do_start(kernel_safe_sup,C)
+		    do_start(kernel_safe_sup,C),
+		    case whereis(?MODULE) of
+			undefined ->
+			    exit({could_not_start_server, ?MODULE});
+			Pid1 ->
+			    Pid1
+		    end
 	    end;
-	_ -> 
-	    ok
+	Pid -> 
+	    Pid
     end.
 
-reply([?REPLY_ERROR | Reason]) -> {error, list_to_atom(Reason)};
-reply([?REPLY_OK, 4, ?INET_AF_INET, NAddr, NAlias | T]) ->
-    {AddrList, T1} = getaddr(T, 4, NAddr, []),
-    {Aliases, Name}  = getaliases(T1, NAlias, []),
-    {ok, #hostent { h_name = Name,
-		    h_aliases = Aliases,
-		    h_addrtype = inet,
-		    h_length = 4,
-		    h_addr_list = AddrList
-		   } };
-reply([?REPLY_OK, 16, ?INET_AF_INET6, NAddr, NAlias | T]) ->
-    {AddrList, T1} = getaddr(T, 16, NAddr, []),
-    {Aliases, Name}  = getaliases(T1, NAlias, []),
-    {ok, #hostent { h_name = Name,
-		    h_aliases = Aliases,
-		    h_addrtype = inet6,
-		    h_length = 16,
-		    h_addr_list = AddrList
-		   } };
-reply(_) ->
-    {error, einval}.
-
-getaddr(T, _, 0, Acc) ->
-    {lists:reverse(Acc), T};
-getaddr([X1,X2,X3,X4,X5,X6,X7,X8,X9,X10,X11,X12,X13,X14,X15,X16|T],16,N,Acc) ->
-    getaddr(T, 16, N-1, [inet:bytes_to_ip6(X1,X2,X3,X4,X5,X6,X7,X8,
-					   X9,X10,X11,X12,X13,X14,X15,X16)]);
-getaddr([A,B,C,D | T], 4, N, Acc) ->
-    getaddr(T, 4, N-1, [{A,B,C,D} | Acc]).
-
-getaliases(T, 0, Acc) ->
-    {lists:reverse(Acc), T};
-getaliases(T, N, Acc) ->
-    {Alias, T1} = getstr(T, []),
-    getaliases(T1, N-1, [Alias | Acc]).
+parse_address(BinHostent) ->
+    case catch 
+	begin
+	    case BinHostent of
+		<<?UNIT_ERROR, Errstring/binary>> -> 
+		    {error, list_to_atom(listify(Errstring))};
+		<<?UNIT_IPV4, Naddr:32, T0/binary>> ->
+		    {T1,Addresses} = pick_addresses_v4(Naddr, T0),
+		    [Name | Names] = pick_names(T1),
+		    {ok, #hostent{h_addr_list = Addresses, h_addrtype = inet,
+				  h_aliases = Names, h_length = ?UNIT_IPV4, 
+				  h_name = Name}};
+		<<?UNIT_IPV6, Naddr:32, T0/binary>> ->
+		    {T1,Addresses} = pick_addresses_v6(Naddr, T0),
+		    [Name | Names] = pick_names(T1),
+		    {ok, #hostent{h_addr_list = Addresses, h_addrtype = inet6,
+				  h_aliases = Names, h_length = ?UNIT_IPV6, 
+				  h_name = Name}};
+		Else ->
+		    {error, {internal_error, {malformed_response, BinHostent}}}
+	    end
+	end of
+	{'EXIT', Reason} ->
+	    Reason;
+	Normal ->
+	    Normal
+    end.
+	    
+listify(Bin) ->
+    N = size(Bin) - 1,
+    <<Bin2:N/binary, Ch>> = Bin,
+    case Ch of
+	0 ->
+	    listify(Bin2);
+	_ ->
+	    binary_to_list(Bin)
+    end.
     
-getstr([0 | T], Acc) ->
-    {lists:reverse(Acc), T};
-getstr([C|T], Acc) ->
-    getstr(T, [C|Acc]).
+pick_addresses_v4(0,Tail) ->
+    {Tail,[]};
+pick_addresses_v4(N,<<A,B,C,D,Tail/binary>>) ->
+    {NTail, OList} = pick_addresses_v4(N-1,Tail),
+    {NTail, [{A,B,C,D} | OList]}.
 
+pick_addresses_v6(0,Tail) ->
+    {Tail,[]};
+pick_addresses_v6(Num,<<A:16,B:16,C:16,D:16,E:16,F:16,G:16,H:16,
+		  Tail/binary>>) ->
+    {NTail, OList} = pick_addresses_v6(Num-1,Tail),
+    {NTail, [{A,B,C,D,E,F,G,H} | OList]}.
 
+ndx(Ch,Bin) ->
+    ndx(Ch,0,size(Bin),Bin).
 
+ndx(_,N,N,_) ->
+    undefined;
+ndx(Ch,I,N,Bin) ->
+    case Bin of
+	<<_:I/binary,Ch,_/binary>> ->
+	    I;
+	_ ->
+	    ndx(Ch,I+1,N,Bin)
+    end.
 
+pick_names(<<Length:32,Namelist/binary>>) ->
+    pick_names(Length,Namelist).
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+pick_names(0,<<>>) ->
+    [];
+pick_names(0,_) ->
+    exit({error,format_error});
+pick_names(N,<<>>) ->
+    exit({error,format_error});
+pick_names(N,Bin) ->
+    Ndx = ndx(0,Bin),
+    <<Str:Ndx/binary,0,Rest/binary>> = Bin,
+    [binary_to_list(Str)|pick_names(N-1,Rest)].
 

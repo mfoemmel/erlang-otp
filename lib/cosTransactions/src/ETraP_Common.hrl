@@ -298,7 +298,7 @@ error_logger:error_msg("============ CosTransactions ==============~n"
 	Context#context{hashMax = HM}).
 
 -define(tr_reset_local(Context), 
-	Context#context{local = undefined}
+	Context#context{local = undefined}).
 
 -define(tr_set_local(Context, Local), 
 	Context#context{local = Local}).

@@ -92,7 +92,7 @@ init_transform([{attribute, delete, Name} | Tail], S) ->
     init_transform(Tail, S#state{pre_ops = PreOps});
 init_transform([], S) ->
     S;
-init_transform([H | T], S) ->
+init_transform([_ | T], S) ->
     init_transform(T, S);
 init_transform(BadOpt, S) ->
     report_error("Illegal option (ignored): ~p~n", [BadOpt], S),
@@ -168,7 +168,7 @@ attrs([{replace, Name, NewVal} | T], Line, S) ->
 attrs([{insert, Name, NewVal} | T], Line, S) ->
     report_verbose("Insert attribute ~p: ~p~n", [Name, NewVal], S),
     [{attribute, Line, Name, NewVal} | attrs(T, Line, S)];
-attrs([], Line, S) ->
+attrs([], _, _) ->
     [].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -126,11 +126,11 @@ check_users([]) ->
     ok.
 
 
-maybe_create_table(Name) ->
-    case snmp_local_db:table_exists(db(Name)) of
-	true -> ok;
-	_ -> snmp_local_db:table_create(db(Name))
-    end.
+% maybe_create_table(Name) ->
+%     case snmp_local_db:table_exists(db(Name)) of
+% 	true -> ok;
+% 	_ -> snmp_local_db:table_create(db(Name))
+%     end.
 
 init_tabs(Users) ->
     ?vdebug("create usm user table",[]),

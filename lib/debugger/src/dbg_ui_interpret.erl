@@ -65,7 +65,7 @@ init(Monitor, GS, Pos, Title, Dir, Mode) ->
 				File -> {true, tag};
 				_ -> true % {error,not_loaded} | File2
 			    end;
-			Error -> {error, Error}
+			_Error -> {true,disable}
 		    end
 	    end,
 			
@@ -152,6 +152,6 @@ interpret_all(State, Dir, [File0|Files]) ->
 interpret_all(_State, _Dir, []) ->
     true.
 
-format_error(no_beam) -> "No BEAM file";
-format_error(no_debug_info) -> "No debug_info in BEAM file";
-format_error(badarg) -> "Not an Erlang module".
+format_error({error,no_beam}) -> "No BEAM file";
+format_error({error,no_debug_info}) -> "No debug_info in BEAM file";
+format_error({error,badarg}) -> "Not an Erlang module".

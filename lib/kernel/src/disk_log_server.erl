@@ -47,7 +47,14 @@ start() ->
 
 open({ok, A}) ->
     ensure_started(),
-    gen_server:call(disk_log_server, {open, A}, infinity);
+    case gen_server:call(disk_log_server, {open, A}, infinity) of
+	{waiting, Pid, From} ->
+	    receive {Pid, From, Reply} ->
+		    Reply
+	    end;
+	Reply ->
+	    Reply
+    end;
 open(Other) ->
     Other.
 
@@ -78,8 +85,8 @@ init([]) ->
     ets:new(?DISK_LOG_PID_TABLE, [named_table, set]),
     {ok, []}.
 
-handle_call({open, A}, _From, State) ->
-    Reply = do_open(A),
+handle_call({open, A}, From, State) ->
+    Reply = do_open(A, From),
     {reply, Reply, State};
 handle_call({dist_open, A}, _From, State) ->
     Reply = do_dist_open(A),
@@ -111,18 +118,18 @@ terminate(_Reason, _) ->
 ensure_started() ->
     case whereis(disk_log_server) of
 	undefined ->
+	    LogSup = {disk_log_sup, {disk_log_sup, start_link, []}, permanent,
+		      1000, supervisor, [disk_log_sup]},
+	    supervisor:start_child(kernel_safe_sup, LogSup),
 	    LogServer = {disk_log_server,
 			 {disk_log_server, start_link, []},
 			 permanent, 2000, worker, [disk_log_server]},
-	    LogSup = {disk_log_sup, {disk_log_sup, start_link, []}, permanent,
-		      1000, supervisor, [disk_log_sup]},
 	    supervisor:start_child(kernel_safe_sup, LogServer),
-	    supervisor:start_child(kernel_safe_sup, LogSup),
 	    ok;
 	_ -> ok
     end.
 
-do_open(A) ->
+do_open(A, From) ->
     Name = A#arg.name,
     {IsDistributed, MyNode} = init_distributed(A),
     case IsDistributed of
@@ -133,7 +140,7 @@ do_open(A) ->
 			false ->
 			    []
 		    end,
-	    open_distributed(A, Local);
+	    open_distributed(A, Local, From);
 	false ->
 	    case get_local_pid(Name) of
 		{local, Pid} ->
@@ -172,7 +179,7 @@ do_dist_open(A) ->
     end.
 
 start_log(Name, A) ->
-    case supervisor:start_child(disk_log_sup, []) of 
+    case supervisor:start_child(disk_log_sup, [self()]) of 
 	{ok, Pid} ->
 	    link(Pid),
 	    put(Pid, Name),
@@ -255,9 +262,16 @@ init_distributed(#arg{distributed = {true, Nodes}}) ->
 init_distributed(_) ->
     {false, false}.
 
-open_distributed(A, Res) ->
+open_distributed(A, Res, From) ->
     {true, N1} = A#arg.distributed,
     Nodes = N1 -- [node()],
+    Fun = fun() -> open_distr_rpc(Nodes, A, Res, From) end,
+    Pid = spawn(Fun),
+    {waiting, Pid, From}.
+
+%% Spawning a process is a means to avoid deadlock when
+%% disk_log_servers mutually open disk_logs.
+open_distr_rpc(Nodes, A, Res, {FromPid,_Tag} = From) ->
     {Replies, BadNodes} =
 	rpc:multicall(Nodes, disk_log_server, dist_open, [A]),
     AllReplies = Res ++ Replies,
@@ -265,7 +279,10 @@ open_distributed(A, Res) ->
     Old = find_old_nodes(Nodes, AllReplies, BadNodes),
     NotOk = lists:map(fun(BadNode) -> {BadNode, {error, nodedown}} end, 
 		      BadNodes ++ Old),
-    {Ok, Bad ++ NotOk}.
+    Reply = {Ok, Bad ++ NotOk},
+    %% Send the reply to the waiting client:
+    FromPid ! {self(), From, Reply},
+    exit(normal).
 
 cr([{badrpc, {'EXIT', _}} | T], Nodes, Bad) ->
     %% This clause can be removed in next release.

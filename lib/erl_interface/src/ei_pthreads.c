@@ -103,10 +103,13 @@ int erl_m_unlock(void *l)
 
 /*
  * Thread-specific erl_errno variable.
+ *
+ * The second line below will give a "missing braces around initializer"
+ * on Solaris but the code will work.
  */
 
 static pthread_key_t erl_errno_key;
-static pthread_once_t erl_errno_key_once = { PTHREAD_ONCE_INIT };
+static pthread_once_t erl_errno_key_once = PTHREAD_ONCE_INIT;
 
 /*
  * Destroy per-thread erl_errno locus

@@ -8,10 +8,12 @@
 %  hipe_dict_hash:  uses the stdlib `dict' module (dynamic hashing).
 %  hipe_gb_hash:  uses the `gb_trees' module (general balanced trees).
 %  hipe_pure_hash:  written in a purely functional style; may copy a lot
+%  hipe_vhash:  uses the new (R8) vectors. 
 
 %-define(impl,hipe_dict_hash).
 -define(impl,hipe_gb_hash).
 %-define(impl,hipe_pure_hash).
+%-define(impl,hipe_vhash).
 
 -module(hipe_hash).
 

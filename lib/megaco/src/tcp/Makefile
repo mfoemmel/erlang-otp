@@ -17,10 +17,6 @@
 #
 include $(ERL_TOP)/make/target.mk
 
-ifeq ($(TYPE),debug)
-ERL_COMPILE_FLAGS += -Ddebug -W
-endif
-
 EBIN = ../../ebin
 MEGACO_INCLUDEDIR = ../../include
 
@@ -55,8 +51,18 @@ TARGET_FILES =  \
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
+ifeq ($(TYPE),debug)
+ERL_COMPILE_FLAGS += -Ddebug
+endif
+
+ifeq ($(WARN_UNUSED_WARS),true)
+ERL_COMPILE_FLAGS += +warn_unused_vars
+endif
+
 ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
-ERL_COMPILE_FLAGS += -I../../include
+ERL_COMPILE_FLAGS += -I../../include \
+                     +'{parse_transform,sys_pre_attributes}' \
+                     +'{attribute,insert,app_vsn,$(APP_VSN)}'
 
 
 # ----------------------------------------------------

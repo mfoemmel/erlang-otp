@@ -1,6 +1,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <01/08/05 18:05:48 happi>
+%% Time-stamp: <02/09/17 23:07:37 happi>
 %% ====================================================================
 %%  Filename : 	hipe_sparc_ra.erl
 %%  Module   :	hipe_sparc_ra
@@ -9,9 +9,9 @@
 %%  History  :	* 2001-07-20 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2001/08/08 14:53:19 $
-%%              $Revision: 1.5 $
+%%              $Author: happi $
+%%              $Date: 2002/09/17 21:17:05 $
+%%              $Revision: 1.19 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -22,32 +22,126 @@
 -define(HIPE_INSTRUMENT_COMPILER, true). %% Turn on instrumentation.
 -include("../main/hipe.hrl").
 
-allocate(Fun, SparcCfg, Options) ->
-  ?when_option(time, Options, ?start_timer("Regalloc")),
+allocate(_Fun, SparcCfg, Options) ->
+  ?inc_counter(ra_caller_saves_counter,count_caller_saves(SparcCfg)),
+  ?opt_start_timer("Regalloc"),
   ?start_ra_instrumentation(Options, 
 			    hipe_sparc_size:count_instrs_cfg(SparcCfg),
 			    element(2,hipe_sparc_cfg:var_range(SparcCfg))),
-  
-  NewCfg = 
-    case property_lists:get_value(regalloc,Options) of
+
+  {NewCfg,TempMap, NextPos}  = 
+    case proplists:get_value(regalloc,Options) of
       linear_scan ->
-	hipe_sparc_ra_ls:alloc(SparcCfg, Options);
+	hipe_sparc_ra_ls:alloc(
+	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
       graph_color ->
-	hipe_sparc_ra_graph_color:alloc(SparcCfg, Options);
-      optimistic_ls ->
-	hipe_sparc_ra_ols:alloc(SparcCfg, Options);
+	hipe_sparc_ra_graph_color:lf_alloc(
+	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
       coalescing ->
-	hipe_sparc_ra_coalescing:alloc( 
+	hipe_sparc_ra_coalescing:lf_alloc( 
 	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
       naive ->
-	hipe_sparc_ra_memory:alloc(SparcCfg, Options);
+	hipe_sparc_ra_memory:alloc(
+	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
+%       cs ->
+%	hipe_sparc_ra_cs:alloc(
+%	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
+%       newls ->
+%	hipe_sparc_ra_new_ls:alloc(
+%	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
+      
       _ -> %% linear_scan made default register allocator
-	hipe_sparc_ra_ls:alloc(SparcCfg, Options)
+	hipe_sparc_ra_ls:alloc(
+	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options)
     end,
-
-  ?when_option(time, Options, ?stop_timer("Regalloc done")),
+  
+  ?opt_stop_timer("Regalloc done"),
   ?stop_ra_instrumentation(Options, 
 			    hipe_sparc_size:count_instrs_cfg(NewCfg),
 			    element(2,hipe_sparc_cfg:var_range(NewCfg))),
 
-  NewCfg.
+  {NewCfg2, FpMap, NextPos2}  = 
+    case get(hipe_inline_fp) of
+      true ->  
+	hipe_sparc_ra_fp_ls:alloc(NewCfg, Options, NextPos, TempMap);
+      _ -> 
+	{NewCfg, [], NextPos}
+    end,
+  
+  {NewCfg3, NextPos3}  = 
+    hipe_sparc_caller_saves:rewrite(
+      NewCfg2, TempMap, FpMap, NextPos2, Options),
+
+  {{NewCfg3,TempMap, NextPos3}, FpMap}.
+
+
+%% This is only a info gathering function used for benchmarking
+%% purposes. 
+count_caller_saves(CFG) ->
+  Liveness = hipe_sparc_liveness:analyze(CFG),
+  count_caller_saves(CFG, Liveness, hipe_sparc_specific).
+
+count_caller_saves(CFG, Liveness, T) ->
+  %% Count how many temps are live over a call.
+  length(
+    %% Fold the count for each basic block.
+    lists:foldr(
+      %% For each BB, take the set of CallerSaves from previous BBs
+      fun(L, CallerSaves) -> 
+	  %% Just keep temps that are not precolored.
+	  [ X || 
+	    %% Get the set of caller saves (from {Liveness, CS}).
+	    X <- element(2,
+	      %% Fold each instruction in the BB (backwards).
+	      lists:foldr(
+		%% For each instruction
+		fun(I,{LiveOut,CS}) ->
+		    %% Calculate live-in
+		    UsesSet = ordsets:from_list(uses(I,T)),
+		    DefsSet = ordsets:from_list(defines(I,T)),
+		    LiveOverI = 
+		      ordsets:subtract(LiveOut,
+				       DefsSet),      
+		      NewCS = 
+			case hipe_sparc:type(I) of
+			  %% If this is a call instruction, keep the CS-temps.
+			  call_link ->
+			    ordsets:union(CS,LiveOverI);
+			  _ -> CS
+			end,
+		    NewLiveOut = 
+		      ordsets:union(LiveOverI, UsesSet),
+		    {NewLiveOut,NewCS}
+		end,
+		%% Start with live out of the BB
+		{ordsets:from_list(liveout(Liveness,L,T)),
+		 CallerSaves},
+		%% Get the instructions in the BB.
+		hipe_bb:code(T:bb(CFG,L)))),
+	    %% Filter
+	    not T:is_precolored(X)]	
+      end,
+      [],
+      %% Get BBs
+      T:labels(CFG))).
+
+liveout(Liveness,L, Target)->
+  regnames(Target:liveout(Liveness,L), Target).
+
+uses(I, Target)->
+  regnames(Target:uses(I), Target).
+
+defines(I, Target) ->
+  regnames(Target:defines(I), Target).
+
+regnames(Regs2, Target) ->
+  Regs = 
+    case Target of
+      hipe_sparc_specific ->
+	hipe_sparc:keep_registers(Regs2);
+      hipe_sparc_specific_fp->
+	hipe_sparc:keep_fp_registers(Regs2);
+      _ ->
+	Regs2
+    end,
+  [Target:reg_nr(X) || X <- Regs].

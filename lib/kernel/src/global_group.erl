@@ -151,8 +151,6 @@ request(Req, Time) ->
 	    {error, global_group_not_runnig}
     end.
 
-nodes(N) -> erlang:nodes(N).
-
 %%%====================================================================================
 %%% gen_server start
 %%%

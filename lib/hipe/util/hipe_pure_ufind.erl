@@ -1,17 +1,17 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-%		       NONDESTRUCTIVE UNION-FIND
-%
-% Union-find with path compression; requires a fixed number of
-% equivalence classes to be merged. This implementation will create
-% new versions of the datastructures.
-%
-%  init(N): initializes N equivalence classes with self as value
-%     (i.e., class N has value N)
-%  list(U): list the {Index,EquivClass} pairs of U
-%  union(X,Y,U): merge equivalence classes X and Y (must be integers!)
-%  find(X,U): returns {Value,NewU}
-%  only_find(X,U): returns Index (no path compression is done)
+%%
+%%		       NONDESTRUCTIVE UNION-FIND
+%%
+%% Union-find with path compression; requires a fixed number of
+%% equivalence classes to be merged. This implementation will create
+%% new versions of the datastructures.
+%%
+%%  init(N): initializes N equivalence classes with self as value
+%%     (i.e., class N has value N)
+%%  list(U): list the {Index,EquivClass} pairs of U
+%%  union(X,Y,U): merge equivalence classes X and Y (must be integers!)
+%%  find(X,U): returns {Value,NewU}
+%%  only_find(X,U): returns Index (no path compression is done)
 
 -module(hipe_pure_ufind).
 -export([init/1,
@@ -33,32 +33,32 @@ mklist(M,N) -> [M|mklist(M+1,N)].
 list(U) ->
     list_all(1,size(U),U).
 
-list_all(M,N,U) when M > N ->
+list_all(M,N,_U) when M > N ->
     [];
 list_all(M,N,U) -> 
     {V,NewU} = find(M,U),
     [{M,V}|list_all(M+1,N,NewU)].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% Equivalence classes are represented as a vector of integers.
-% Initially, each position i has the value i, but as classes are
-% merged, i will get value j, j value k, etc.
-%   Find traces such a chain until it finds an index i with value i;
-% this is the true value.
-%   Union merges two classes by dereferencing both, then
-% setting one to point to the other.
-%
-% Note: there must _never_ be nontrivial circular chains x -> y -> ... -> x
-%  or the algorithm will loop!
-%   This is the reason for doing 'find' on both elements in union.
-%  A second method is given as union2/3, which is slightly more complex
-%  but sometimes avoids an extra find-operation.
-%
-% I haven't measured which one is the fastest in practice.
+%%
+%% Equivalence classes are represented as a vector of integers.
+%% Initially, each position i has the value i, but as classes are
+%% merged, i will get value j, j value k, etc.
+%%   Find traces such a chain until it finds an index i with value i;
+%% this is the true value.
+%%   Union merges two classes by dereferencing both, then
+%% setting one to point to the other.
+%%
+%% Note: there must _never_ be nontrivial circular chains x -> y -> ... -> x
+%%  or the algorithm will loop!
+%%   This is the reason for doing 'find' on both elements in union.
+%%  A second method is given as union2/3, which is slightly more complex
+%%  but sometimes avoids an extra find-operation.
+%%
+%% I haven't measured which one is the fastest in practice.
 
-% FIND:
-% - dereference chain of indices until a self-pointer occurs.
+%% FIND:
+%% - dereference chain of indices until a self-pointer occurs.
 
 find(X,U) ->
     case element(X,U) of
@@ -118,7 +118,7 @@ union2(X,Y,U) ->
 	    if V < W ->
 		    setelement(W,NewU,V);
 	       V > W ->
-		    setelement(NewU,V,W);
+		    setelement(V, NewU,W);
 	       V == W ->
 		    NewU    % V == W
 	    end;

@@ -47,7 +47,18 @@ PRE_LOADED_MODULES = \
 	init \
 	prim_file \
 	prim_inet \
-	otp_ring0
+	otp_ring0 \
+	erlang
+
+ifndef HIPE_ENABLED
+HIPE_MODULES =
+else
+HIPE_MODULES = \
+	hipe_sparc_loader \
+	hipe_x86_loader \
+	hipe_unified_loader \
+	hipe_pack_constants
+endif
 
 MODULES = \
 	application \
@@ -64,15 +75,12 @@ MODULES = \
 	disk_log_sup \
 	dist_ac \
 	dist_util \
-	erl_atom_cache \
 	erl_boot_server \
 	erl_ddll \
 	erl_distribution \
 	erl_epmd \
-	erl_external \
 	erl_open_port \
 	erl_reply \
-	erlang \
 	erts_debug \
 	error_handler \
 	error_logger \
@@ -87,10 +95,6 @@ MODULES = \
 	global_search \
 	group \
 	heart \
-	hipe_sparc_loader \
-	hipe_x86_loader \
-	hipe_unified_loader \
-	hipe_pack_constants \
 	inet \
 	inet6_tcp \
 	inet6_tcp_dist \
@@ -111,6 +115,7 @@ MODULES = \
 	net_adm \
 	net_kernel \
 	os \
+	packages \
 	pg2 \
 	ram_file \
 	rpc \
@@ -130,10 +135,12 @@ INTERNAL_HRL_FILES= application_master.hrl disk_log.hrl \
         socks5.hrl inet_boot.hrl inet_config.hrl inet_int.hrl \
 	dist.hrl dist_util.hrl
 
-ERL_FILES= $(PRE_LOADED_MODULES:%=%.erl) $(MODULES:%=%.erl)
+ERL_FILES= $(PRE_LOADED_MODULES:%=%.erl) $(MODULES:%=%.erl) $(HIPE_MODULES:%=%.erl)
 
 NON_PRECIOUS_TARGETS = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) \
+		       $(HIPE_MODULES:%=$(EBIN)/%.$(EMULATOR)) \
 		       $(APP_TARGET) $(APPUP_TARGET)
+
 TARGET_FILES = $(PRE_LOADED_MODULES:%=$(EBIN)/%.$(EMULATOR)) $(NON_PRECIOUS_TARGETS)
 
 APP_FILE= kernel.app
@@ -174,10 +181,15 @@ docs:
 
 $(EBIN)/hipe_sparc_loader.$(EMULATOR): hipe_sparc_loader.erl
 	$(ERLC) $(ERL_COMPILE_FLAGS) -o$(EBIN) \
-              -I../../hipe/main -I../../hipe/sparc $<
+              -I../../hipe/main -I../../hipe/rtl -I../../hipe/sparc $<
 
+ifdef HIPE_ENABLED
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(KERNEL_VSN);' $< > $@
+else
+$(APP_TARGET): $(APP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(KERNEL_VSN);' -e '/hipe/d' $< > $@
+endif
 
 $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(KERNEL_VSN);' $< > $@
@@ -192,6 +204,17 @@ EPMD_FLAGS = -Depmd_port_no=$(EPMD_PORT_NO)	\
 $(EBIN)/erl_epmd.beam: $(ESRC)/erl_epmd.erl
 	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) $(EPMD_FLAGS) \
 		-o$(EBIN) $<
+
+ifdef HIPE_ENABLED
+HIPE_MKLITERALS=$(ERL_TOP)/bin/$(TARGET)/hipe_mkliterals
+
+../../hipe/rtl/hipe_literals.hrl: $(HIPE_MKLITERALS)
+	$(HIPE_MKLITERALS) -e > $@
+
+$(EBIN)/hipe_unified_loader.beam: ../../hipe/main/hipe.hrl hipe_ext_format.hrl
+$(EBIN)/hipe_sparc_loader.beam: ../../hipe/main/hipe.hrl
+$(EBIN)/hipe_x86_loader.beam: ../../hipe/rtl/hipe_literals.hrl ../../hipe/main/hipe.hrl
+endif
 
 # ----------------------------------------------------
 # Release Target

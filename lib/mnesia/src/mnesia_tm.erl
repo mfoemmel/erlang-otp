@@ -116,6 +116,8 @@ val(Var) ->
 	_VaLuE_ -> _VaLuE_ 
     end.
 
+reply({From,Ref}, R) ->
+    From ! {?MODULE, Ref, R};
 reply(From, R) ->
     From ! {?MODULE, node(), R}.
 
@@ -128,8 +130,9 @@ req(R) ->
 	undefined ->
 	    {error, {node_not_running, node()}};
 	Pid ->
-	    Pid ! {self(), R},
-	    rec(Pid)
+	    Ref = make_ref(), 
+	    Pid ! {{self(), Ref}, R},
+	    rec(Pid, Ref)
     end.
 
 rec() ->
@@ -145,6 +148,23 @@ rec(Pid) when pid(Pid) ->
     end;
 rec(undefined) ->
     {error, {node_not_running, node()}}.
+
+rec(Pid, Ref) ->
+    receive
+	{?MODULE, Ref, Reply} ->
+	    Reply;
+	{'EXIT', Pid, _} ->
+	    {error, {node_not_running, node()}}
+    end.   
+
+tmlink({From, Ref}) when reference(Ref) ->
+    link(From);
+tmlink(From) ->
+    link(From).
+tmpid({Pid, Ref}) when pid(Pid) ->
+    Pid;
+tmpid(Pid) ->
+    Pid.
 
 %% Returns a list of participant transaction Tid's
 mnesia_down(Node) ->
@@ -171,11 +191,8 @@ block_tab(Tab) ->
 unblock_tab(Tab) ->
     req({unblock_tab, Tab}).
 
-doit_loop(State) ->
-    #state{coordinators = Coordinators,
-	   participants = Participants,
-	   supervisor = Sup}
-	= State,
+doit_loop(#state{coordinators = Coordinators, participants = Participants, supervisor = Sup} 
+	  = State) ->
     receive
 	{From, {async_dirty, Tid, Commit, Tab}} ->
 	    case lists:member(Tab, State#state.blocked_tabs) of
@@ -206,10 +223,10 @@ doit_loop(State) ->
 	                  "local transaction store",
 		    reply(From, {error, {system_limit, Msg, Reason}}, State);
 		Etab ->
-		    link(From),
+		    tmlink(From),
 		    C = mnesia_recover:incr_trans_tid_serial(),
 		    ?ets_insert(Etab, {nodes, node()}),
-		    Tid = #tid{pid = From, counter = C},
+		    Tid = #tid{pid = tmpid(From), counter = C},
 		    A2 = [{Tid , [Etab]} | Coordinators],
 		    S2 = State#state{coordinators = A2},
 		    reply(From, {new_tid, Tid, Etab}, S2)
@@ -222,7 +239,7 @@ doit_loop(State) ->
 	    Pid = 
 		case Protocol of
 		    asym_trans when node(Tid#tid.pid) /= node() ->
-			Args = [From, Tid, Commit, DiscNs, RamNs],
+			Args = [tmpid(From), Tid, Commit, DiscNs, RamNs],
 			spawn_link(?MODULE, commit_participant, Args);		
 		    _ when node(Tid#tid.pid) /= node() -> %% *_sym_trans
 			reply(From, {vote_yes, Tid}),
@@ -382,7 +399,7 @@ doit_loop(State) ->
 		false ->
 		    verbose("Wrong dirty Op blocked on ~p ~p ~p", 
 			    [node(), Tab, From]),
-		    From ! {?MODULE, node(), unblocked},
+		    reply(From, unblocked),
 		    doit_loop(State);
 		true ->
 		    Item = {Tab, unblock_me, From}, 
@@ -450,7 +467,7 @@ process_dirty_queue(Tab, [Item | Queue]) ->
 	    do_sync_dirty(From, Tid, Commit, Tab),
 	    Queue2;
 	{Tab, unblock_me, From} ->
-	    From ! {?MODULE, node(), unblocked},
+	    reply(From, unblocked),
 	    Queue2;
 	_ ->
 	    [Item | Queue2]
@@ -1409,6 +1426,7 @@ multi_commit(asym_trans, Tid, CR, Store) ->
 	    mnesia_recover:note_decision(Tid, aborted),
 	    ?eval_debug_fun({?MODULE, multi_commit_asym_do_abort}, [{tid, Tid}]),
 	    tell_participants(Pids, {Tid, {do_abort, Reason}}),
+	    do_abort(Tid, Local),
 	    {do_abort, Reason}
     end.
 

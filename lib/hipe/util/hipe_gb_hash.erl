@@ -7,9 +7,9 @@
 %%  History  :	* 2000-03-07 Erik Johansson (happi@csd.uu.se): Created.
 %%		* 2000-10-30 richardc@csd.uu.se: Updated.
 %% CVS:
-%%    $Author: richardc $
-%%    $Date: 2001/03/26 18:37:09 $
-%%    $Revision: 1.1.1.1 $
+%%    $Author: kostis $
+%%    $Date: 2002/05/03 13:52:45 $
+%%    $Revision: 1.2 $
 %% ====================================================================
 %% Exported functions (short description):
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -30,13 +30,13 @@
 init(Xs) ->
     update_all(Xs,empty()).
 
-init(Xs,Opts) ->
+init(Xs,_Opts) ->
     update_all(Xs,empty()).
 
 empty() ->
     gb_trees:empty().
 
-empty(X) ->
+empty(_) ->
     gb_trees:empty().
 
 lookup(X,T) ->

@@ -24,7 +24,7 @@ attribute attr_val
 function function_clauses function_clause
 clause_args clause_guard clause_body
 expr expr_100 expr_150 expr_160 expr_200 expr_300 expr_400 expr_500
-expr_600 expr_700 expr_800
+expr_600 expr_700 expr_800 expr_900
 expr_max
 list tail
 list_comprehension lc_expr lc_exprs
@@ -122,9 +122,15 @@ expr_700 -> function_call : '$1'.
 expr_700 -> record_expr : '$1'.
 expr_700 -> expr_800 : '$1'.
 
-expr_800 -> expr_max ':' expr_max :
+expr_800 -> expr_900 ':' expr_max :
 	{remote,line('$2'),'$1','$3'}.
-expr_800 -> expr_max : '$1'.
+expr_800 -> expr_900 : '$1'.
+
+expr_900 -> '.' atom :
+	{record_field,line('$1'),{atom,line('$1'),''},'$2'}.
+expr_900 -> expr_900 '.' atom :
+	{record_field,line('$2'),'$1','$3'}.
+expr_900 -> expr_max : '$1'.
 
 expr_max -> var : '$1'.
 expr_max -> atomic : '$1'.
@@ -208,8 +214,6 @@ record_expr -> expr_max '#' atom '.' atom :
 	{record_field,line('$2'),'$1',element(3, '$3'),'$5'}.
 record_expr -> expr_max '#' atom record_tuple :
 	{record,line('$2'),'$1',element(3, '$3'),'$4'}.
-record_expr -> expr_max '.' atom :
-	{record_field,line('$2'),'$1','$3'}.
 
 record_tuple -> '{' '}' : [].
 record_tuple -> '{' record_fields '}' : '$2'.
@@ -365,10 +369,10 @@ Erlang code.
 
 -export([parse_form/1,parse_exprs/1,parse_term/1]).
 -export([normalise/1,abstract/1,tokens/1,tokens/2]).
--export([abstract/2]).
+-export([abstract/2, package_segments/1]).
 -export([inop_prec/1,preop_prec/1,func_prec/0,max_prec/0]).
 
--compile({inline,[{mkop,3},{mkop,2},{line,1}]}).	%Thrilling!
+-compile(inline).
 
 %% mkop(Op, Arg) -> {op,Line,Op,Arg}.
 %% mkop(Left, Op, Right) -> {op,Line,Op,Left,Right}.
@@ -417,32 +421,55 @@ parse_term(Tokens) ->
 
 build_attribute({atom,La,module}, Val) ->
     case Val of
-	[{atom,Lm,Module}] -> {attribute,La,module,Module};
-	Other -> return_error(La, "bad module declaration")
+	[{atom,Lm,Module}] ->
+	    {attribute,La,module,Module};
+	[Name] ->
+	    case package_segments(Name) of
+		error ->
+		    error_bad_decl(La, module);
+		Module ->
+		    {attribute,La,module,Module}
+	    end;
+	Other ->
+	    error_bad_decl(La, module)
     end;
 build_attribute({atom,La,export}, Val) ->
     case Val of
 	[ExpList] ->
 	    {attribute,La,export,farity_list(ExpList)};
-	Other -> return_error(La, "bad export declaration")
+	Other -> error_bad_decl(La, export)
     end;
 build_attribute({atom,La,import}, Val) ->
     case Val of
+	[Name] ->
+	    case package_segments(Name) of
+		error ->
+		    error_bad_decl(La, import);
+		Module ->
+		    {attribute,La,import,Module}
+	    end;
 	[{atom,Lm,Mod},ImpList] ->
 	    {attribute,La,import,{Mod,farity_list(ImpList)}};
-	Other -> return_error(La, "bad import declaration")
+	[Name, ImpList] ->
+	    case package_segments(Name) of
+		error ->
+		    error_bad_decl(La, import);
+		Module ->
+		    {attribute,La,import,{Module,farity_list(ImpList)}}
+	    end;
+	Other -> error_bad_decl(La, import)
     end;
 build_attribute({atom,La,record}, Val) ->
     case Val of
 	[{atom,Ln,Record},RecTuple] ->
 	    {attribute,La,record,{Record,record_tuple(RecTuple)}};
-	Other -> return_error(La, "bad record declaration")
+	Other -> error_bad_decl(La, record)
     end;
 build_attribute({atom,La,file}, Val) ->
     case Val of
 	[{string,Ln,Name},{integer,Ll,Line}] ->
 	    {attribute,La,file,{Name,Line}};
-	Other -> return_error(La, "bad file declaration")
+	Other -> error_bad_decl(La, file)
     end;
 build_attribute({atom,La,Attr}, Val) ->
     case Val of
@@ -450,6 +477,9 @@ build_attribute({atom,La,Attr}, Val) ->
 	    {attribute,La,Attr,term(Expr)};
 	Other -> return_error(La, "bad attribute")
     end.
+
+error_bad_decl(L, S) ->
+    return_error(L, io_lib:format("bad ~w declaration", [S])).
 
 farity_list({cons,Lc,{op,Lo,'/',{atom,La,A},{integer,Li,I}},Tail}) ->
     [{A,I}|farity_list(Tail)];
@@ -475,6 +505,18 @@ term(Expr) ->
 	{'EXIT',R} -> return_error(line(Expr), "bad attribute");
 	Term -> Term
     end.
+
+package_segments(Name) ->
+    package_segments(Name, []).
+
+package_segments({record_field,_,F1,F2}, Fs) ->
+    package_segments(F1, [F2 | Fs]);
+package_segments({atom,La,A}, [F | Fs]) ->
+    [A | package_segments(F, Fs)];
+package_segments({atom,La,A}, []) ->
+    [A];
+package_segments(_, _) ->
+    error.
 
 %% build_function([Clause]) -> {function,Line,Name,Arity,[Clause]}
 
@@ -693,4 +735,4 @@ preop_prec('#') -> {700,800}.
 
 func_prec() -> {800,700}.
 
-max_prec() -> 900.
+max_prec() -> 1000.

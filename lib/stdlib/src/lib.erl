@@ -22,7 +22,7 @@
 
 flush_receive() ->
     receive
-	Any ->
+	_Any ->
 	    flush_receive()
     after
 	0 ->
@@ -43,7 +43,7 @@ progname() ->
     case init:get_argument(progname) of
 	{ok, [[Prog]]} ->
 	    list_to_atom(Prog);
-	Other ->
+	_Other ->
 	    no_prog_name
     end.
 
@@ -86,7 +86,7 @@ eval_str(Str) when list(Str) ->
 				Other ->
 				    {error, ?result("*** eval: ~p", [Other])}
 			    end;
-			{error, {Line, Mod, Args}} ->
+			{error, {_Line, Mod, Args}} ->
 			    Msg = ?result("*** ~s",[apply(Mod,format_error,
 							     [Args])]),
 			    {error, Msg}

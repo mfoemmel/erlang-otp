@@ -26,6 +26,7 @@
 %%-----------------------------------------------------------------
 -module(orber_typedefs).
 
+-include("orber_iiop.hrl").
 -include_lib("orber/include/corba.hrl").
 -include_lib("orber/include/ifr_types.hrl").
 
@@ -62,7 +63,8 @@ get_op_def(Objkey, Op) ->
     get_op_def_1(List, Op).
 
 get_op_def_1([], Op) ->
-    exit(#'BAD_OPERATION'{completion_status='COMPLETED_NO'}); 
+    corba:raise(#'BAD_OPERATION'{minor = (?ORBER_VMCID bor 4),
+				 completion_status='COMPLETED_NO'});
 get_op_def_1([{Op, Types} | Rest], Op) ->
     Types;
 get_op_def_1([_ | Rest], Op) ->
@@ -73,9 +75,9 @@ get_op_def_1([_ | Rest], Op) ->
 %%
 get_exception_def(Exception) ->
     [Exc, TypeId | _] = tuple_to_list(Exception),
-    case corba:check_exception_type(Exc) of
+    case orber_exceptions:type(Exc) of
 	?SYSTEM_EXCEPTION ->
-	    {?SYSTEM_EXCEPTION, corba:get_system_exception_typedef(Exc)};
+	    {?SYSTEM_EXCEPTION, orber_exceptions:get_system_exception_typedef(Exc)};
 	?USER_EXCEPTION ->
 	    Rep = orber_ifr:find_repository(),
 	    ExceptionDef = orber_ifr:'Repository_lookup_id'(Rep, TypeId),
@@ -102,7 +104,8 @@ get_Op_def({TypeId, _, _}, Op) ->
     A.
 
 get_Op_def_1([], _) ->
-    exit(#'BAD_OPERATION'{completion_status='COMPLETED_NO'}); 
+    corba:raise(#'BAD_OPERATION'{minor = (?ORBER_VMCID bor 4),
+				 completion_status='COMPLETED_NO'});
 get_Op_def_1([#contained_description{kind=dk_Operation, value=#operationdescription{name=Op, result=Result, parameters=Parameters}}|_], Op) ->
     {In, Out} = get_parameters(Parameters,{[],[]}),
     {Result, lists:reverse(In), lists:reverse(Out)};

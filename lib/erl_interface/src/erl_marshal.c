@@ -245,9 +245,12 @@ extern int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
 	*(*ext)++ = i &0xff;
 	*(*ext)++ = ERL_PID_CREATION(ep);
 	return 0;
-    case ERL_REF:
-	if (dist >= 4 && ERL_REF_LEN(ep) > 1) {
+    case ERL_REF: {
 	    int len, j;
+
+	    /* Always encode as an extended reference; all
+	       participating parties are now expected to be
+	       able to decode extended references. */
 
 	    *(*ext)++ = ERL_NEW_REFERENCE_EXT;
 
@@ -270,22 +273,6 @@ extern int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
 		*(*ext)++ = (i >>8) &0xff;
 		*(*ext)++ = i &0xff;
 	    }
-	} else {
-	    *(*ext)++ = ERL_REFERENCE_EXT;
-	    /* First poke in node as an atom */
-	    i = strlen(ERL_REF_NODE(ep));
-	    *(*ext)++ = ERL_ATOM_EXT;
-	    *(*ext)++ = (i >>8) &0xff;
-	    *(*ext)++ = i &0xff;
-	    memcpy(*ext, ERL_REF_NODE(ep), i);
-	    *ext += i;
-	    /* Then the integer fields */
-	    i = ERL_REF_NUMBERS(ep)[0];
-	    *(*ext)++ = (i >>24) &0xff;
-	    *(*ext)++ = (i >>16) &0xff;
-	    *(*ext)++ = (i >>8) &0xff;
-	    *(*ext)++ = i &0xff;
-	    *(*ext)++ = ERL_REF_CREATION(ep);
 	}
 	return 0;
     case ERL_PORT:
@@ -1316,75 +1303,104 @@ static int cmpbytes(unsigned char* s1,int l1,unsigned char* s2,int l2)
 
 } /* cmpbytes */
 
+#define CMP_EXT_ERROR_CODE 4711
+
+#define CMP_EXT_INT32_BE(AP, BP)				\
+do {								\
+    if ((AP)[0] != (BP)[0]) return (AP)[0] < (BP)[0] ? -1 : 1;	\
+    if ((AP)[1] != (BP)[1]) return (AP)[1] < (BP)[1] ? -1 : 1;	\
+    if ((AP)[2] != (BP)[2]) return (AP)[2] < (BP)[2] ? -1 : 1;	\
+    if ((AP)[3] != (BP)[3]) return (AP)[3] < (BP)[3] ? -1 : 1;	\
+} while (0)
+
+#define CMP_EXT_SKIP_ATOM(EP)					\
+do {								\
+    if ((EP)[0] != ERL_ATOM_EXT)				\
+	return CMP_EXT_ERROR_CODE;				\
+    (EP) += 3 + ((EP)[1] << 8 | (EP)[2]);			\
+} while (0)
+
 /* 
  * We now know that both byte arrays are of the same type.
  */
 static int compare_top_ext(unsigned char**, unsigned char **); /* forward */
+static int cmp_exe2(unsigned char **e1, unsigned char **e2);
 
 static int cmp_refs(unsigned char **e1, unsigned char **e2)
 {
-    int l1, l2;
-    int t1, t2;
-    int n1, n2, n;
-    int c1 = 0, c2 = 0;
-    int ret, i;
+    int tmp, n1, n2;
+    unsigned char *node1, *node2, *id1, *id2, cre1, cre2;
 
-    t1 = *(*e1)++;
-    t2 = *(*e2)++;
-
-    if (t1 == ERL_REFERENCE_EXT) {
-	JUMP_ATOM(e1,i); 
+    if (*((*e1)++) == ERL_REFERENCE_EXT) {
+	node1 = *e1;
+	CMP_EXT_SKIP_ATOM(*e1);
 	n1 = 1;
+	id1 = *e1;
+	cre1 = (*e1)[4];
+	*e1 += 5;
     } else {
-	l1 = (**e1 << 8) | (*e1)[1];
-	*e1 += 2;
-	JUMP_ATOM(e1,i);
-	n1 = (l1 - (i+3) - 1) / 4;
-	c1 = **e1;
-	*e1 += 1;
+	n1 = get16be(*e1);
+	node1 = *e1;
+	CMP_EXT_SKIP_ATOM(*e1);
+	cre1 = **e1;
+	id1 = (*e1) + 1 + (n1 - 1)*4;
+	*e1 = id1 + 4;
     }
 
-    if (t2 == ERL_REFERENCE_EXT) {
-	JUMP_ATOM(e2,i); 
+    if (*((*e2)++) == ERL_REFERENCE_EXT) {
+	node2 = *e2;
+	CMP_EXT_SKIP_ATOM(*e2);
 	n2 = 1;
+	id2 = *e2;
+	cre2 = (*e2)[4];
+	*e2 += 5;
     } else {
-	l2 = (**e2 << 8) | (*e2)[1];
-	*e2 += 2;
-	JUMP_ATOM(e2,i);
-	n2 = (l2 - (i+3) - 1) / 4;
-	c2 = **e2;
-	*e2 += 1;
+	n2 = get16be(*e2);
+	node2 = *e2;
+	CMP_EXT_SKIP_ATOM(*e2);
+	cre2 = **e2;
+	id2 = (*e2) + 1 + (n2 - 1)*4;
+	*e2 = id2 + 4;
     }
 
-    n = n1;
-    if (n > n2)
-	n = n2;
-    ret = cmpbytes(*e1,4*n,*e2,4*n);
+    /* First compare node names... */
+    tmp = cmp_exe2(&node1, &node2);
+    if (tmp != 0)
+	return tmp;
 
-    *e1 += 4*n1;
-    *e2 += 4*n2;
+    /* ... then creations ... */
+    if (cre1 != cre2)
+	return cre1 < cre2 ? -1 : 1;
 
-    if (t1 == ERL_REFERENCE_EXT)
-	c1 = *(*e1)++;
-    if (t2 == ERL_REFERENCE_EXT)
-	c2 = *(*e2)++;
-
-    if (ret == 0) {
-	if (c1 < c2)
-	    ret = -1;
-	else if (c1 > c2)
-	    ret = 1;
+    /* ... and then finaly ids. */
+    if (n1 != n2) {
+	unsigned char zero[] = {0, 0, 0, 0};
+	if (n1 > n2)
+	    do {
+		CMP_EXT_INT32_BE(id1, zero);
+		id1 -= 4;
+		n1--;
+	    } while (n1 > n2);
 	else
-	    ret = 0;
+	    do {
+		CMP_EXT_INT32_BE(zero, id2);
+		id2 -= 4;
+		n2--;
+	    } while (n2 > n1);
     }
-    return ret;
+    
+    for (; n1 > 0; n1--, id1 -= 4, id2 -= 4)
+	CMP_EXT_INT32_BE(id1, id2);
+
+    return 0;
 }
 
 static int cmp_exe2(unsigned char **e1, unsigned char **e2)
 {
   int min,  ret,i,j,k;
   double ff1, ff2;
-  
+  unsigned char *tmp1, *tmp2;
+
   *e2 += 1;
   switch (*(*e1)++) 
     {
@@ -1413,14 +1429,40 @@ static int cmp_exe2(unsigned char **e1, unsigned char **e2)
       *e2 += (j + 2);
       return ret;
     case ERL_PID_EXT:
-      JUMP_ATOM(e1,i); 
-      JUMP_ATOM(e2,i);
-      ret = cmpbytes(*e1,9, *e2,9);
-      *e1 += 9; *e2 += 9; return ret;
+      /* First compare node names ... */
+      if (**e1 != ERL_ATOM_EXT || **e2 != ERL_ATOM_EXT)
+	  return CMP_EXT_ERROR_CODE;
+      ret = cmp_exe2(e1, e2);
+      *e1 += 9; *e2 += 9;
+      if (ret != 0)
+	  return ret;
+      /* ... then creations ... */
+      tmp1 = *e1 - 1; tmp2 = *e2 - 1;
+      if (*tmp1 != *tmp2)
+	  return *tmp1 < *tmp2 ? -1 : 1;
+      /* ... then serials ... */
+      tmp1 -= 4; tmp2 -= 4;
+      CMP_EXT_INT32_BE(tmp1, tmp2);
+      /* ... and then finaly ids. */
+      tmp1 -= 4; tmp2 -= 4;
+      CMP_EXT_INT32_BE(tmp1, tmp2);
+      return 0;
     case ERL_PORT_EXT:
-      JUMP_ATOM(e1,i); JUMP_ATOM(e2,i);
-      ret = cmpbytes(*e1,5, *e2,5);
-      *e1 += 5; *e2 += 5; return ret;
+      /* First compare node names ... */
+      if (**e1 != ERL_ATOM_EXT || **e2 != ERL_ATOM_EXT)
+	  return CMP_EXT_ERROR_CODE;
+      ret = cmp_exe2(e1, e2);
+      *e1 += 5; *e2 += 5;
+      if (ret != 0)
+	  return ret;
+      /* ... then creations ... */
+      tmp1 = *e1 - 1; tmp2 = *e2 - 1;
+      if (*tmp1 != *tmp2)
+	  return *tmp1 < *tmp2 ? -1 : 1;
+      /* ... and then finaly ids. */
+      tmp1 -= 4; tmp2 -= 4;
+      CMP_EXT_INT32_BE(tmp1, tmp2);
+      return 0;
     case ERL_NIL_EXT: return 0;
     case ERL_LIST_EXT:
       i = (**e1 << 24) | ((*e1)[1] << 16) |((*e1)[2] << 8) | (*e1)[3];

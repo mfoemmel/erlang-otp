@@ -992,7 +992,7 @@ encode_bin_bit_string(C,{Unused,BinBits},NamedBitList) ->
 	    N when N>1 ->
 		IntList = binary_to_list(BinBits),
 		[H|T] = lists:reverse(IntList),
-		Bl1 = RemoveZerosIfNNL({NamedBitList,lists:sublist(int_to_bitlist(H),8-Unused)}),% lists:sublist obsolete if trailing bits are zero !
+		Bl1 = RemoveZerosIfNNL({NamedBitList,lists:reverse(int_to_bitlist(H,8-Unused))}),% lists:sublist obsolete if trailing bits are zero !
 		{[{octet,X} || X <- lists:reverse(T)],size(BinBits)-1,
 		 [{bit,X} || X <- Bl1]};
 	    1 ->
@@ -1139,6 +1139,13 @@ int_to_bitlist(0) ->
     [];
 int_to_bitlist(Int) when integer(Int), Int >= 0 ->
     [Int band 1 | int_to_bitlist(Int bsr 1)].
+
+int_to_bitlist(Int,0) ->
+    [];
+int_to_bitlist(0,N) ->
+    [0|int_to_bitlist(0,N-1)];
+int_to_bitlist(Int,N) ->
+    [Int band 1 | int_to_bitlist(Int bsr 1, N-1)].
 
 
 %%%%%%%%%%%%%%%%%%

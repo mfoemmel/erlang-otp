@@ -1,14 +1,14 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-%			DEAD CODE ELIMINATION
-%
-% Runs one pass of dead code elimination. Note that we should iterate
-% this to eliminate all dead code.
-%
-% Another approach is to employ use-def chains + marking, which is
-% probably a lot faster. Still, this is simple enough and might come
-% in useful. If we can save a lot of time, rewrite it to the use-def
-% algorithm.
+%%
+%%			DEAD CODE ELIMINATION
+%%
+%% Runs one pass of dead code elimination. Note that we should iterate
+%% this to eliminate all dead code.
+%%
+%% Another approach is to employ use-def chains + marking, which is
+%% probably a lot faster. Still, this is simple enough and might come
+%% in useful. If we can save a lot of time, rewrite it to the use-def
+%% algorithm.
 
 -module(hipe_dead_code).
 -export([eliminate/1]).
@@ -20,7 +20,7 @@
 eliminate(CFG) ->
     dce_blocks(?cfg:labels(CFG),?liveness:analyze(CFG),CFG).
 
-dce_blocks([],Live,CFG) -> CFG;
+dce_blocks([],_Live,CFG) -> CFG;
 dce_blocks([L|Ls],Live,CFG) ->
     dce_blocks(Ls,Live,
 	       dce_block(L,?cfg:bb(CFG,L),?liveness:liveout(Live,L),CFG)).
@@ -44,7 +44,7 @@ live_vars(X,Live) ->
     union(U,diff(Live,D)).
 
 dead(X,Live) ->
-    {D,U} = def_use(X),
+    {D,_} = def_use(X),
     case intersect(D,Live) of
 	[] ->
 	    true;
@@ -53,10 +53,10 @@ dead(X,Live) ->
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% Here, we would like to use real sets.
-% - convert liveness to use set-module
-% - convert def_use to return sets
+%%
+%% Here, we would like to use real sets.
+%% - convert liveness to use set-module
+%% - convert def_use to return sets
 
 union([],Ys) -> Ys;
 union([X|Xs],Ys) ->
@@ -67,7 +67,7 @@ union([X|Xs],Ys) ->
 	  [X|union(Xs,Ys)]
     end.
 
-diff([],Ys) -> [];
+diff([],_) -> [];
 diff([X|Xs],Ys) ->
     case member(X,Ys) of
        true ->
@@ -76,7 +76,7 @@ diff([X|Xs],Ys) ->
 	  [X|diff(Xs,Ys)]
     end.
 
-intersect([],Ys) -> [];
+intersect([],_) -> [];
 intersect([X|Xs],Ys) ->
    case member(X,Ys) of 
       true ->
@@ -85,13 +85,13 @@ intersect([X|Xs],Ys) ->
 	 intersect(Xs,Ys)
    end.
 
-member(X,[]) -> false;
+member(_,[]) -> false;
 member(X,[X|_]) -> true;
 member(X,[_|Xs]) -> member(X,Xs).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% *** PORTING ***
+%%
+%% *** PORTING ***
 
 def_use(X) ->
     { ?code:defines(X), ?code:uses(X) }.
@@ -102,4 +102,3 @@ eliminable(X) ->
       true;
     _ -> false
   end.
-

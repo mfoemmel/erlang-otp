@@ -13,10 +13,8 @@ Register Usage
 %ebp (aka P) is the current process' "Process*".
 %esi (aka HP) is the current process' heap pointer.
 
-The first return value from a function is placed in %eax, the second
-(if any) is placed in %edx.
-
-The caller-save registers are used as temporary scratch registers.
+The caller-save registers are used as temporary scratch registers
+and for parameters in function calls.
 
 [XXX: Eventually, when we have better register allocation in place,
 the current "Process*" may be put in %fs instead, which will make
@@ -24,11 +22,15 @@ the current "Process*" may be put in %fs instead, which will make
 
 Calling Convention
 ------------------
-Parameters are pushed on the stack, in left-to-right order.
+The first 3 parameters are passed in %eax, %edx, and %ecx.
+Remaining parameters are pushed on the stack, in left-to-right order.
 Left-to-right order is used to cater for the BEAM interpreter's
 calling convention for closures.
 
-The callee deallocates the actual parameters from the stack
+The first return value from a function is placed in %eax, the second
+(if any) is placed in %edx.
+
+The callee deallocates the stacked actual parameters from the stack
 before returning, by using the "ret $N" instruction. This is
 required for correct implementation of tailcalls.
 
@@ -47,7 +49,7 @@ describes certain static properties of that call:
 - The call site's return address, used as key for lookups.
 - The caller's local exception handler code address, if present.
 - The caller's (fixed) frame size, in words.
-- The set of "dead" or "untraceable" words in the caller's frame.
+- The set of live and traceable words in the caller's frame.
 - The caller's arity. If f/N recursively calls g/M, then the
   call site's arity is N, not M. (M is not a function of the
   return address, due to the presence of tailcalls.)
@@ -68,16 +70,9 @@ and a branch is made to the handler with the exception value in %eax.
 
 Garbage Collection Interface
 ----------------------------
-At any point where a garbage collection may occur, the
-stack must contain only valid tagged Erlang terms. Thus:
-- Return addresses must be 32-bit aligned. This means that
-  call instructions may have to be prefixed with NOPs.
-- Values which are not tagged Erlang terms may not be live
-  across function calls.
-- Stack slots containing uninitialised or dead values must be
-  overwritten with zeroes before garbage collection.
-  This is handled by the runtime system, using the compiler-
-  generated stack descriptors.
+[gc-points are call sites. each call site has a stack descriptor.
+the descriptor allows the gc to traverse the stack and to find
+all live Erlang terms.]
 
 BIFs
 ----

@@ -1,13 +1,29 @@
+/* ``The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved via the world wide web at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+ * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+ * AB. All Rights Reserved.''
+ * 
+ *     $Id$
+ */
 #include <stdlib.h>
 #include <stdio.h>
 #include "erl_driver.h"
 
 
-
-#define OK 0
-#define ERROR -1
-#define COMPL_ERROR 1
-#define MEMORY_ERROR 0
+#define ASN1_OK 0
+#define ASN1_ERROR -1
+#define ASN1_COMPL_ERROR 1
+#define ASN1_MEMORY_ERROR 0
 
 #define CEIL(X,Y) ((X-1) / Y + 1)
 
@@ -102,10 +118,10 @@ int asn1_drv_control(ErlDrvData   handle,
 /*     printf("error when allocating memory\n"); */
     a_data = (asn1_data *)handle;
     set_port_control_flags(a_data->port, 0);
-    return MEMORY_ERROR;
+    return ASN1_MEMORY_ERROR;
   }
   complete_buf = drv_binary->orig_bytes;
-  if ((complete_len = complete(&drv_binary,complete_buf,buf,buf_len)) == ERROR)
+  if ((complete_len = complete(&drv_binary,complete_buf,buf,buf_len)) == ASN1_ERROR)
     {
       /* error handling due to failure in complete */
 /*       printf("error when running complete\n\r"); */
@@ -113,7 +129,7 @@ int asn1_drv_control(ErlDrvData   handle,
       a_data = (asn1_data *)handle;
       set_port_control_flags(a_data->port, 0);
       **res_buf = '1';
-      return COMPL_ERROR;
+      return ASN1_COMPL_ERROR;
     }
   /* now the message is complete packed, return to Erlang */
   if (complete_len < buf_len) {
@@ -124,7 +140,7 @@ int asn1_drv_control(ErlDrvData   handle,
       driver_free_binary(drv_binary);
       a_data = (asn1_data *)handle;
       set_port_control_flags(a_data->port, 0);
-      return MEMORY_ERROR;
+      return ASN1_MEMORY_ERROR;
     }else
       drv_binary=tmp;
   }
@@ -208,8 +224,8 @@ int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
       no_bits =  (int)*(++in_ptr);
       val = *(++in_ptr);
       counter -= 2;
-      if ((ret=insert_least_sign_bits(no_bits,val,&ptr,&unused)) == ERROR)
-	return ERROR;
+      if ((ret=insert_least_sign_bits(no_bits,val,&ptr,&unused)) == ASN1_ERROR)
+	return ASN1_ERROR;
       buf_space -= ret;
       break;
 
@@ -220,8 +236,8 @@ int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
       no_bytes = (int)*(++in_ptr);
       counter -= (no_bytes + 1);
       if ((counter<0) || 
-	  (ret=insert_octets(no_bytes,&in_ptr,&ptr,&unused)) == ERROR)
-	return ERROR;
+	  (ret=insert_octets(no_bytes,&in_ptr,&ptr,&unused)) == ASN1_ERROR)
+	return ASN1_ERROR;
       buf_space -= ret;
       break;
 
@@ -234,8 +250,8 @@ int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
       no_bytes = no_bytes | (int)*(++in_ptr);
       counter -= (2 + no_bytes);
       if ((counter<0) || 
-	  (ret=insert_octets(no_bytes,&in_ptr,&ptr,&unused)) == ERROR)
-	return ERROR;
+	  (ret=insert_octets(no_bytes,&in_ptr,&ptr,&unused)) == ASN1_ERROR)
+	return ASN1_ERROR;
       buf_space -= ret;
       break;
 
@@ -250,8 +266,8 @@ int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
 /*        printf("%d: case 30: in_unused=%d, no_bytes=%d,counter=%d\n\r",__LINE__,in_unused,no_bytes,counter); */
       ret = -4711;
       if ((counter<0) || 
-	  (ret=insert_octets_except_unused(no_bytes,&in_ptr,&ptr,&unused,in_unused)) == ERROR)
-	return ERROR;
+	  (ret=insert_octets_except_unused(no_bytes,&in_ptr,&ptr,&unused,in_unused)) == ASN1_ERROR)
+	return ASN1_ERROR;
 /*        printf("%d: ret=%d\n\r",__LINE__, ret); */
       buf_space -= ret;
       break;
@@ -268,8 +284,8 @@ int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
       no_bytes = no_bytes | (int)*(++in_ptr);
       counter -= (3 + no_bytes);
       if ((counter<0) || 
-	  (ret=insert_octets_except_unused(no_bytes,&in_ptr,&ptr,&unused,in_unused)) == ERROR)
-	return ERROR;
+	  (ret=insert_octets_except_unused(no_bytes,&in_ptr,&ptr,&unused,in_unused)) == ASN1_ERROR)
+	return ASN1_ERROR;
       buf_space -= ret;
       break;
 
@@ -299,15 +315,15 @@ int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
 	buf_size += needed;
 	buf_space += needed;
 	if (realloc_memory(drv_binary,buf_size,&ptr,
-			   &complete_buf) == ERROR)
-	  return ERROR;
+			   &complete_buf) == ASN1_ERROR)
+	  return ASN1_ERROR;
       }
 
       counter -= (2 + no_bytes);
      if ((counter<0) || 
 	  (ret=insert_octets_as_bits_exact_len(desired_len,no_bytes,&in_ptr,
-					       &ptr,&unused)) == ERROR)
-	return ERROR;
+					       &ptr,&unused)) == ASN1_ERROR)
+	return ASN1_ERROR;
       buf_space -= ret;
       break;
       
@@ -326,15 +342,15 @@ int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
 	buf_size += needed;
 	buf_space += needed;
 	if (realloc_memory(drv_binary,buf_size,&ptr,
-			   &complete_buf) == ERROR)
-	  return ERROR;
+			   &complete_buf) == ASN1_ERROR)
+	  return ASN1_ERROR;
       }
 
       counter -= (3 + no_bytes);
       if ((counter<0) || 
 	  (ret=insert_octets_as_bits_exact_len(desired_len,no_bytes,&in_ptr,
-					       &ptr,&unused)) == ERROR)
-	return ERROR;
+					       &ptr,&unused)) == ASN1_ERROR)
+	return ASN1_ERROR;
       buf_space -= ret;
       break;
       
@@ -353,15 +369,15 @@ int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
 	buf_size += needed;
 	buf_space += needed;
 	if (realloc_memory(drv_binary,buf_size,&ptr,
-			   &complete_buf) == ERROR)
-	  return ERROR;
+			   &complete_buf) == ASN1_ERROR)
+	  return ASN1_ERROR;
       }
 
       counter -= (3 + no_bytes);
       if ((counter<0) || 
 	  (ret=insert_octets_as_bits_exact_len(desired_len,no_bytes,&in_ptr,
-					       &ptr,&unused)) == ERROR)
-	return ERROR;
+					       &ptr,&unused)) == ASN1_ERROR)
+	return ASN1_ERROR;
       buf_space -= ret;
       break;
       
@@ -382,15 +398,15 @@ int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
 	buf_size += needed;
 	buf_space += needed;
 	if (realloc_memory(drv_binary,buf_size,&ptr,
-			   &complete_buf) == ERROR)
-	  return ERROR;
+			   &complete_buf) == ASN1_ERROR)
+	  return ASN1_ERROR;
       }
 
       counter -= (4 + no_bytes);
       if ((counter<0) || 
 	  (ret=insert_octets_as_bits_exact_len(desired_len,no_bytes,&in_ptr,
-					       &ptr,&unused)) == ERROR)
-	return ERROR;
+					       &ptr,&unused)) == ASN1_ERROR)
+	return ASN1_ERROR;
       buf_space -= ret;
       break;
       
@@ -410,8 +426,8 @@ int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
 	buf_size += needed;
 	buf_space += needed;
 	if (realloc_memory(drv_binary,buf_size,&ptr,
-			   &complete_buf) == ERROR)
-	  return ERROR;
+			   &complete_buf) == ASN1_ERROR)
+	  return ASN1_ERROR;
       }
 
       counter -= (2 + no_bytes);
@@ -420,8 +436,8 @@ int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
       
       if((counter<0) || 
 	 (ret=insert_bits_as_bits(desired_len,no_bytes,&in_ptr,
-				  &ptr,&unused)) == ERROR)
-	return ERROR;
+				  &ptr,&unused)) == ASN1_ERROR)
+	return ASN1_ERROR;
       buf_space -= ret;
       break;
       
@@ -440,15 +456,15 @@ int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
 	buf_size += needed;
 	buf_space += needed;
 	if (realloc_memory(drv_binary,buf_size,&ptr,
-			   &complete_buf) == ERROR)
-	  return ERROR;
+			   &complete_buf) == ASN1_ERROR)
+	  return ASN1_ERROR;
       }
 
       counter -= (3 + no_bytes);
       if((counter<0) || 
 	 (ret=insert_bits_as_bits(desired_len,no_bytes,&in_ptr,
-				  &ptr,&unused)) == ERROR)
-	return ERROR;
+				  &ptr,&unused)) == ASN1_ERROR)
+	return ASN1_ERROR;
       buf_space -= ret;
       break;
       
@@ -469,20 +485,20 @@ int complete(ErlDrvBinary **drv_binary,unsigned char *complete_buf,
 	buf_size += needed;
 	buf_space += needed;
 	if (realloc_memory(drv_binary,buf_size,&ptr,
-			   &complete_buf) == ERROR)
-	  return ERROR;
+			   &complete_buf) == ASN1_ERROR)
+	  return ASN1_ERROR;
       }
 
       counter -= (4 + no_bytes);
       if((counter<0) || 
 	 (ret=insert_bits_as_bits(desired_len,no_bytes,&in_ptr,
-				  &ptr,&unused)) == ERROR)
-	return ERROR;
+				  &ptr,&unused)) == ASN1_ERROR)
+	return ASN1_ERROR;
       buf_space -= ret;
       break;
       
     default:
-      return ERROR;
+      return ASN1_ERROR;
     }
     in_ptr++;
   }
@@ -508,14 +524,14 @@ int realloc_memory(ErlDrvBinary **drv_binary,
   if ((tmp_bin=driver_realloc_binary(*drv_binary,amount)) == NULL) {
     /*error handling due to memory allocation failure */
 /*     printf("error when allocating memory\n"); */
-    return ERROR;
+    return ASN1_ERROR;
   }else {
     i = *ptr - *complete_buf;
     *drv_binary=tmp_bin;
     *complete_buf = (*drv_binary)->orig_bytes;
     *ptr = *complete_buf + i;
   }
-  return OK;
+  return ASN1_OK;
 }
 
 
@@ -539,7 +555,7 @@ int insert_most_sign_bits(int no_bits,
     *unused = 8 - (no_bits - *unused);
   }
   *output_ptr = ptr;
-  return OK;
+  return ASN1_OK;
 }
 
 
@@ -611,14 +627,14 @@ int insert_bits_as_bits(int desired_no,
 
   if (desired_no == (no_bytes * 8)) {
     if(insert_octets_unaligned(no_bytes,&in_ptr,output_ptr,*unused)
-       == ERROR)
-      return ERROR;
+       == ASN1_ERROR)
+      return ASN1_ERROR;
   }
   else if (desired_no < (no_bytes * 8)) {
 /*     printf("insert_bits_as_bits 1\n\r"); */
     if(insert_octets_unaligned(desired_no/8,&in_ptr,output_ptr,*unused)
-       == ERROR)
-      return ERROR;
+       == ASN1_ERROR)
+      return ASN1_ERROR;
 /*     printf("insert_bits_as_bits 2\n\r"); */
     val = *++in_ptr;
 /*     printf("val = %d\n\r",(int)val); */
@@ -628,13 +644,13 @@ int insert_bits_as_bits(int desired_no,
   }
   else {
     if(insert_octets_unaligned(no_bytes,&in_ptr,output_ptr,*unused) 
-       == ERROR)
-      return ERROR;
+       == ASN1_ERROR)
+      return ASN1_ERROR;
     pad_bits(desired_no - (no_bytes * 8),output_ptr,unused);
   }
 /*   printf("*unused = %d\n\r",*unused); */
   *input_ptr = in_ptr;
-  return OK;
+  return ASN1_OK;
 }
 
 
@@ -650,20 +666,20 @@ insert_octets_as_bits_exact_len(int desired_len,
   int ret2 = 0;
 
   if (desired_len == in_buff_len) {
-    if ((ret = insert_octets_as_bits(in_buff_len,in_ptr,ptr,unused)) == ERROR)
-      return ERROR;
+    if ((ret = insert_octets_as_bits(in_buff_len,in_ptr,ptr,unused)) == ASN1_ERROR)
+      return ASN1_ERROR;
   }
   else if(desired_len > in_buff_len) {
-    if((ret = insert_octets_as_bits(in_buff_len,in_ptr,ptr,unused)) == ERROR)
-      return ERROR;
+    if((ret = insert_octets_as_bits(in_buff_len,in_ptr,ptr,unused)) == ASN1_ERROR)
+      return ASN1_ERROR;
     /* now pad with zero bits */
 /*     printf("~npad_bits: called with %d bits padding~n~n~r",desired_len - in_buff_len); */
-    if ((ret2=pad_bits(desired_len - in_buff_len,ptr,unused)) == ERROR)
-      return ERROR;
+    if ((ret2=pad_bits(desired_len - in_buff_len,ptr,unused)) == ASN1_ERROR)
+      return ASN1_ERROR;
   }
   else {/* desired_len < no_bits */
-    if ((ret=insert_octets_as_bits(desired_len,in_ptr,ptr,unused)) == ERROR)
-      return ERROR;
+    if ((ret=insert_octets_as_bits(desired_len,in_ptr,ptr,unused)) == ASN1_ERROR)
+      return ASN1_ERROR;
     /* now remove no_bits - desired_len bytes from in buffer */
     *in_ptr += (in_buff_len - desired_len);
   }
@@ -675,7 +691,7 @@ insert_octets_as_bits_exact_len(int desired_len,
 /* insert_octets_as_bits takes no_bytes bytes from the buffer that input_ptr
    points at and inserts the least significant bit of it in the buffer that
    output_ptr points at. Each byte in the input buffer must be 1 or 0
-   otherwise the function returns ERROR. The output buffer is concatenated
+   otherwise the function returns ASN1_ERROR. The output buffer is concatenated
    without alignment.
  */
 int insert_octets_as_bits(int no_bytes,
@@ -707,7 +723,7 @@ int insert_octets_as_bits(int no_bytes,
       }
       break;
     default:
-      return ERROR;
+      return ASN1_ERROR;
     }
     no_bytes--;
   }
@@ -791,12 +807,12 @@ int insert_octets_except_unused(int no_bytes,
   if (in_unused == 0){
 /*      printf("%d: insert_octets_except_unused: if\n\r",__LINE__); */
     if ((ret = insert_octets_unaligned(no_bytes,&in_ptr,&ptr,
-				       *unused)) == ERROR)
-      return ERROR;
+				       *unused)) == ASN1_ERROR)
+      return ASN1_ERROR;
   }
     else {
 /*        printf("%d: insert_octets_except_unused: else\n\r",__LINE__); */
-      if ((ret=insert_octets_unaligned(no_bytes - 1,&in_ptr,&ptr,*unused)) != ERROR) {
+      if ((ret=insert_octets_unaligned(no_bytes - 1,&in_ptr,&ptr,*unused)) != ASN1_ERROR) {
 	val = (int) *(++in_ptr);
 	no_bits = 8 - in_unused;
 	/* no_bits is always less than *unused since the buffer is
@@ -818,7 +834,7 @@ int insert_octets_except_unused(int no_bytes,
 	  *unused = 8 - (no_bits - *unused);
 	}
       } else
-	return ERROR;
+	return ASN1_ERROR;
     }
   *input_ptr = in_ptr;
   *output_ptr = ptr;

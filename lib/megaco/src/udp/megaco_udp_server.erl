@@ -89,14 +89,14 @@ init(Arg) ->
 %% Func: terminate/2
 %% Description: Termination function for the generic server
 %%-----------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------------
 %% Func: handle_call/3
 %% Description: Handling call messages (really just stop and garbage)
 %%-----------------------------------------------------------------
-handle_call(stop, From, UdpRec) ->
+handle_call(stop, _From, UdpRec) ->
     Reply = do_stop(UdpRec),
     {stop, shutdown, Reply, UdpRec};
 handle_call(Request, From, UdpRec) ->
@@ -154,7 +154,7 @@ handle_received_message(Mod, RH, Parent, SH, Msg) ->
 %% Func: code_change/3
 %% Descrition: Handles code change messages during upgrade.
 %%-----------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 do_stop(UdpRec) ->

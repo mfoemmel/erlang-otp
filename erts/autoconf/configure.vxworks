@@ -33,7 +33,7 @@ target=$host
 
 # Find out the HOST and WIND_BASE environment
 HOST_TYPE=${HOST_TYPE:=sun4-solaris2}
-WIND_BASE=${WIND_BASE:=/home/tornado/wind}
+WIND_BASE=${WIND_BASE:=`ypmatch tornado passwd | awk -F: '{print $6}'`/wind}
 
 # These are created by autoconf.
 MKDIRS="${ERL_TOP}/lib/os_mon/priv/bin/$target
@@ -42,6 +42,8 @@ MKDIRS="${ERL_TOP}/lib/os_mon/priv/bin/$target
         ${ERL_TOP}/lib/orber/priv/bin/$target
         ${ERL_TOP}/lib/ic/priv/lib/$target
         ${ERL_TOP}/lib/ic/priv/obj/$target
+        ${ERL_TOP}/lib/asn1/priv/lib/$target
+        ${ERL_TOP}/lib/asn1/priv/obj/$target
         ${ERL_TOP}/lib/erl_interface/obj/$target
         ${ERL_TOP}/lib/erl_interface/obj.debug/$target
         ${ERL_TOP}/lib/erl_interface/bin/$target
@@ -49,6 +51,11 @@ MKDIRS="${ERL_TOP}/lib/os_mon/priv/bin/$target
         ${ERL_TOP}/lib/runtime_tools/priv/obj/$target
 	${ERL_TOP}/erts/obj/$target
 	${ERL_TOP}/erts/obj.debug/$target
+	${ERL_TOP}/erts/obj.instr.beam/$target
+	${ERL_TOP}/erts/obj.shared.beam/$target
+	${ERL_TOP}/erts/obj.purify.beam/$target
+	${ERL_TOP}/erts/obj.quantify.beam/$target
+	${ERL_TOP}/erts/obj.purecov.beam/$target
 	${ERL_TOP}/bin/$target"
 for tag in '' '.debug' '.instr' '.purify' '.quantify' '.purecov'; do
    MKDIRS="$MKDIRS ${ERL_TOP}/erts/obj$tag.beam/$target"
@@ -70,6 +77,7 @@ epmd_dir=${ERL_TOP}/erts/epmd/src
 os_mon_dir=${ERL_TOP}/lib/os_mon/c_src
 orber_dir=${ERL_TOP}/lib/orber/c_src
 ic_dir=${ERL_TOP}/lib/ic/c_src
+asn1_dir=${ERL_TOP}/lib/asn1/c_src
 internal_tools_dir=${ERL_TOP}
 libdir=${ERL_TOP}/lib
 tsdir=$libdir/test_server/src
@@ -84,6 +92,7 @@ CONFIG_FILES="${ERL_TOP}/erts/emulator/$host/Makefile
 	    $os_mon_dir/$host/Makefile
 	    $zlibdir/$host/Makefile
 	    $ic_dir/$host/Makefile
+	    $asn1_dir/$host/Makefile
 	    $runtime_tools_dir/$host/Makefile
 	    $orber_dir/$host/Makefile"
 

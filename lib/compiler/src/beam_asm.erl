@@ -50,13 +50,12 @@ assemble({Mod,Exp,Attr,Asm,NumLabels}, Abst, Opts) ->
     assemble(Exp, Attr, Asm, NumLabels, Dict0, Abst, Opts).
 
 assemble(Exp, Attr, Asm, NumLabels, Dict0, Abst, Opts) ->
-    %% Divided into two functions to avoid saving Asm on the stack.  (Hack!)
     NumFuncs = length(Asm),
     {Code,Dict1} = assemble(Asm, Exp, Dict0, []),
     build_file(Code, Attr, Dict1, NumLabels, NumFuncs, Abst, Opts).
 
-assemble([{function, Name, Arity, Entry, Asm}| T], Exp, Dict0, Acc) ->
-    Dict1 = case member({Name, Arity}, Exp) of
+assemble([{function,Name,Arity,Entry,Asm}|T], Exp, Dict0, Acc) ->
+    Dict1 = case member({Name,Arity}, Exp) of
 		true ->
 		    beam_dict:export(Name, Arity, Entry, Dict0);
 		false ->
@@ -64,9 +63,9 @@ assemble([{function, Name, Arity, Entry, Asm}| T], Exp, Dict0, Acc) ->
 	    end,
     {Code, Dict2} = assemble_function(Asm, Acc, Dict1),
     assemble(T, Exp, Dict2, Code);
-assemble([], Exp, Dict0, Acc) ->
-    {IntCodeEnd, Dict1} = make_op(int_code_end, Dict0),
-    {list_to_binary(lists:reverse(Acc, [IntCodeEnd])), Dict1}.
+assemble([], _Exp, Dict0, Acc) ->
+    {IntCodeEnd,Dict1} = make_op(int_code_end, Dict0),
+    {list_to_binary(lists:reverse(Acc, [IntCodeEnd])),Dict1}.
 
 assemble_function([H|T], Acc, Dict0) ->
     {Code, Dict} = make_op(H, Dict0),
@@ -110,7 +109,7 @@ build_file(Code, Attr, Dict, NumLabels, NumFuncs, Abst, Opts) ->
 
     %% Create the string table chunk.
 
-    {StringSize, StringTab} = beam_dict:string_table(Dict),
+    {_,StringTab} = beam_dict:string_table(Dict),
     StringChunk = chunk(<<"StrT">>, StringTab),
 
     %% Create the fun table chunk. It is important not to build an empty chunk,
@@ -224,9 +223,9 @@ bif_type(fdiv, 2)   -> {op, fdiv};
 bif_type(_, _)      -> bif.
 
 make_op(Comment, Dict) when element(1, Comment) == '%' ->
-    {[], Dict};
-make_op({'%live',R}, Dict) ->
-    {[], Dict};
+    {[],Dict};
+make_op({'%live',_R}, Dict) ->
+    {[],Dict};
 make_op({bif, Bif, nofail, [], Dest}, Dict) ->
     encode_op(bif0, [{extfunc, erlang, Bif, 0}, Dest], Dict);
 make_op({bif, Bif, Fail, Args, Dest}, Dict) ->
@@ -323,12 +322,13 @@ flag_to_bit(little)  -> 16#02;
 flag_to_bit(big)     -> 16#00;
 flag_to_bit(signed)  -> 16#04;
 flag_to_bit(unsigned)-> 16#00;
-flag_to_bit(exact)   -> 16#08.
+flag_to_bit(exact)   -> 16#08;
+flag_to_bit(native) ->  16#10.
     
-encode_list([H|T], Dict, Acc) when list(H) ->
-    exit({illegal_nested_listed, encode_arg, [H|T]});
+encode_list([H|T], _Dict, _Acc) when is_list(H) ->
+    exit({illegal_nested_listed,encode_arg,[H|T]});
 encode_list([H|T], Dict0, Acc) ->
-    {Enc, Dict} = encode_arg(H, Dict0),
+    {Enc,Dict} = encode_arg(H, Dict0),
     encode_list(T, Dict, [Enc|Acc]);
 encode_list([], Dict, Acc) ->
     {lists:reverse(Acc), Dict}.

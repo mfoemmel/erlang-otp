@@ -203,13 +203,13 @@ cbind(DB, Gstkid, Etype, On) ->
     Cmd = case On of
 	      {true, Edata} ->
 		  Eref = gstk_db:insert_event(DB, Gstkid, Etype, Edata),
-		  [" -com {erlsend ", Eref, " \\\"[", TkW, " cg -text]\\\"}"];
+		  [" -command {erlsend ", Eref, " \\\"[", TkW, " cg -text]\\\"}"];
 	      true ->
 		  Eref = gstk_db:insert_event(DB, Gstkid, Etype, ""),
-		  [" -com {erlsend ", Eref, " \\\"[", TkW, " cg -text]\\\"}"];
-	      Other ->
-		  Eref = gstk_db:delete_event(DB, Gstkid, Etype),
-		  " -com {}"
+		  [" -command {erlsend ", Eref, " \\\"[", TkW, " cg -text]\\\"}"];
+	      _Other ->
+		  gstk_db:delete_event(DB, Gstkid, Etype),
+		  " -command {}"
 	  end,
     {s, Cmd}.
 

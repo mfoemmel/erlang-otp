@@ -105,6 +105,9 @@
 #define HZ 60
 #endif
 
+#ifdef NETDB_H_NEEDS_IN_H
+#include <netinet/in.h>
+#endif
 #include <netdb.h>
 
 /*

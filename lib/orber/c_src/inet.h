@@ -36,4 +36,4 @@
 #define SERVICE "oiad"
 #define PROTO "tcp"
 
-#endif /* _inet_h */
+#endif _inet_h

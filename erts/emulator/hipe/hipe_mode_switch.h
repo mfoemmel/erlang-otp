@@ -15,9 +15,9 @@
 #define HIPE_MODE_SWITCH_RES_RETURN		5
 #define HIPE_MODE_SWITCH_RES_CALL		6
 #define HIPE_MODE_SWITCH_RES_THROW		7
-#define HIPE_MODE_SWITCH_RES_SUSPEND		8
 
 /* additional result codes for hipe_mode_switch() <- native return */
+#define HIPE_MODE_SWITCH_RES_SUSPEND		8
 #define HIPE_MODE_SWITCH_RES_WAIT		9
 #define HIPE_MODE_SWITCH_RES_WAIT_TIMEOUT	10
 #define HIPE_MODE_SWITCH_RES_RESCHEDULE		11
@@ -41,14 +41,14 @@
 int hipe_modeswitch_debug;
 
 void hipe_mode_switch_init(void);
-void hipe_set_call_trap(uint32 *bfun, void *nfun, int is_closure);
-unsigned hipe_mode_switch(Process*, unsigned, Eterm*);
+void hipe_set_call_trap(Uint *bfun, void *nfun, int is_closure);
+Process *hipe_mode_switch(Process*, unsigned, Eterm*);
 Eterm *hipe_inc_nstack(Process *p);
 void hipe_set_closure_stub(ErlFunEntry *fe, unsigned num_free);
 
-extern uint32 hipe_beam_pc_return[];
-extern uint32 hipe_beam_pc_throw[];
-extern uint32 hipe_beam_pc_resume[];
+extern Uint hipe_beam_pc_return[];
+extern Uint hipe_beam_pc_throw[];
+extern Uint hipe_beam_pc_resume[];
 
 #endif	/* ASM */
 

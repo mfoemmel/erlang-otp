@@ -41,6 +41,7 @@ alloc(SparcCfg, Options) ->
   ?count_spills({put(loads,0),put(stores,0),put(temps,0)}),
   {Coloring, NewSpillIndex} = 
     hipe_ls_regalloc:regalloc(SparcCfg,
+
 			      (hipe_sparc_registers:allocatable() -- 
                                    hipe_sparc_registers:fixed()),
 			      [hipe_sparc_cfg:start(SparcCfg)] ++ 

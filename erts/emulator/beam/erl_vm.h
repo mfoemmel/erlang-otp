@@ -18,6 +18,12 @@
 #ifndef __ERL_VM_H__
 #define __ERL_VM_H__
 
+/* #define HEAP_FRAG_ELIM_TEST 1 */
+
+#if defined(HEAP_FRAG_ELIM_TEST) && (defined(HIPE) || defined(SHARED_HEAP))
+#  undef HEAP_FRAG_ELIM_TEST
+#endif
+
 #define BEAM 1
 #define EMULATOR "BEAM"
 #define SEQ_TRACE 1
@@ -28,58 +34,70 @@
 
 #define INPUT_REDUCTIONS   (2 * CONTEXT_REDS)
 
-#ifdef UNIFIED_HEAP
+#ifdef SHARED_HEAP
 #define S_DEFAULT_SIZE  233     /* defaulf stack size */
-#define H_DEFAULT_SIZE  500000  /* default heap min size */
+#define H_DEFAULT_SIZE  100000  /* default heap min size */
 #else
 #define H_DEFAULT_SIZE  233	/* default (heap + stack) min size */
 #endif
 
 #define CP_SIZE			1
 
-/* Allocate heap memory */
-#ifdef UNIFIED_HEAP
-#define HAlloc(p, sz) \
-    (((global_hend - global_htop <= (sz))) ? \
-        arith_alloc((p),(sz)) : (global_htop = global_htop + (sz), \
-                                 global_htop - (sz)))
-
-#define HRelease(p, ptr)                                \
-  if (global_heap <= (ptr) && (ptr) < global_htop) {    \
-      global_htop = (ptr);                                \
-  } else {}
-#else
+/*
+ * Allocate heap memory, first on the ordinary heap;
+ * failing that, in a heap fragment.
+ */
 #define HAlloc(p, sz)                                   \
   (ASSERT_EXPR((sz) >= 0),                              \
-   (((((p)->stop - (p)->htop) <= (sz)))                 \
-    ? arith_alloc((p),(sz))                             \
-    : ((p)->htop = (p)->htop + (sz), (p)->htop - (sz))))
+   ((((HEAP_LIMIT(p) - HEAP_TOP(p)) <= (sz)))           \
+    ? erts_heap_alloc((p),(sz))                         \
+    : (HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
 
 #define HRelease(p, ptr)				\
-  if ((p)->heap <= (ptr) && (ptr) < (p)->htop) {	\
-      (p)->htop = (ptr);				\
+  if (HEAP_START(p) <= (ptr) && (ptr) < HEAP_TOP(p)) {	\
+      HEAP_TOP(p) = (ptr);				\
   } else {}
+
+
+#ifdef SHARED_HEAP
+#  define ARITH_HEAP(p)     erts_global_arith_heap
+#  define ARITH_AVAIL(p)    erts_global_arith_avail
+#  define ARITH_LOWEST_HTOP(p) erts_global_arith_lowest_htop
+#  define ARITH_CHECK_ME(p) erts_global_arith_check_me
+extern Eterm* erts_global_arith_heap;
+extern Uint erts_global_arith_avail;
+extern Eterm* erts_global_arith_lowest_htop;
+#  ifdef DEBUG
+extern Eterm* erts_global_arith_check_me;
+#  endif
+#else
+#  define ARITH_HEAP(p)     (p)->arith_heap
+#  define ARITH_AVAIL(p)    (p)->arith_avail
+#  define ARITH_LOWEST_HTOP(p) (p)->arith_lowest_htop
+#  define ARITH_CHECK_ME(p) (p)->arith_check_me
 #endif
 
 /* Allocate memory on secondary arithmetic heap. */
+
 #if defined(DEBUG)
 #  define ARITH_MARKER 0xaf5e78cc
 #  define ArithCheck(p) \
-      ASSERT(p->arith_check_me[0] == ARITH_MARKER);
+      ASSERT(ARITH_CHECK_ME(p)[0] == ARITH_MARKER);
 #  define ArithAlloc(p, need) \
    (ASSERT_EXPR((need) >= 0), \
-    (((p)->arith_avail < (need)) ? \
-     arith_alloc((p), (need)) : \
-     (((p)->arith_heap += (need)), ((p)->arith_avail -= (need)), \
-      ((p)->arith_check_me = (p)->arith_heap), \
-      ((p)->arith_heap - (need)))))
+    ((ARITH_AVAIL(p) < (need)) ? \
+     erts_arith_alloc((p), (p)->htop, (need)) : \
+     ((ARITH_HEAP(p) += (need)), (ARITH_AVAIL(p) -= (need)), \
+      (ARITH_CHECK_ME(p) = ARITH_HEAP(p)), \
+      (ARITH_HEAP(p) - (need)))))
 #else
 #  define ArithCheck(p)
 #  define ArithAlloc(p, need) \
-    (((p)->arith_avail < (need)) ? \
-      arith_alloc((p), (need)) : \
-      (((p)->arith_heap += (need)), ((p)->arith_avail -= (need)), \
-       ((p)->arith_heap - (need))))
+    ((ARITH_AVAIL(p) < (need)) ? \
+      erts_arith_alloc((p), (p)->htop, (need)) : \
+      ((ARITH_HEAP(p) += (need)), \
+       (ARITH_AVAIL(p) -= (need)), \
+       (ARITH_HEAP(p) - (need))))
 #endif
 
 /*
@@ -102,8 +120,6 @@ extern int num_instructions;	/* Number of instruction in opc[]. */
 /* some constants for various  table sizes etc */
 
 #define ATOM_TEXT_SIZE  32768	/* Increment for allocating atom text space */
-
-extern int erl_max_ports;		/* Maximum number of ports. */
 
 /*
  * Temporary buffer used in a lot of places.  In some cases, this size

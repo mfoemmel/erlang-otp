@@ -185,7 +185,7 @@ delete(DB, Gstkid) ->
     case Gstkid#gstkid.widget_data of
 	{radio, _, Gid, _} -> gstk_db:delete_bgrp(DB, Gid);
 	{check, _, Gid}    -> gstk_db:delete_bgrp(DB, Gid);
-	Other              -> true
+	_Other              -> true
     end,
    {Parent, Id, gstk_menuitem, [Id, Parent]}.
 
@@ -216,17 +216,17 @@ destroy(DB, Id, Parent) ->
 event(DB, Gstkid, Etype, Edata, Args) ->
     Arg2 = 
 	case Gstkid#gstkid.widget_data of
-	    {radio, G, GID, V} ->
-		[Grp, Text, Idx | Args1] = Args,
+	    {radio, G, _GID, V} ->
+		[_Grp, Text, Idx | Args1] = Args,
 		[Text, Idx, G, V | Args1];
-	    {check, G, Gid} ->
+	    {check, G, _Gid} ->
 		[Bool, Text, Idx | Args1] = Args,
 		RBool = case Bool of
 			    0 -> false;
 			    1 -> true
 			end,
 		[Text, Idx, G, RBool | Args1];
-	    Other2 ->
+	    _Other2 ->
 		Args
 	end,
     gstk_generic:event(DB, Gstkid, Etype, Edata, Arg2).
@@ -243,29 +243,29 @@ event(DB, Gstkid, Etype, Edata, Args) ->
 %%		  TkW     - The  tk-widget
 %% Return 	: A tuple {OptionType, OptionCmd}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-option({click,true}, Gstkid, TkW, DB, {separator,Index}) ->
+option({click,true}, _Gstkid, _TkW, _DB, {separator,_Index}) ->
     none;  % workaround to be able to have {click,true} as default.
-option(Option, Gstkid, TkW, DB, {separator,Index}) ->
+option(_Option, _Gstkid, _TkW, _DB, {separator,_Index}) ->
     invalid_option;
 
-option({menu,{Menu,_RestOfExternalId}}, Gstkid, TkW, DB, {cascade,Index}) ->
+option({menu,{Menu,_RestOfExternalId}}, _Gstkid, _TkW, DB, {cascade,_Index}) ->
     Mgstkid = gstk_db:lookup_gstkid(DB, Menu),
     MenuW = Mgstkid#gstkid.widget,
     {s, [" -menu ", MenuW]};
 
-option({select,false}, Gstkid, TkW, DB, {check,Index}) ->
+option({select,false}, _Gstkid, TkW, _DB, {check,Index}) ->
     {c, ["set x [", TkW, " entrycg ", gstk:to_ascii(Index),
 	 " -var];global $x;set $x 0"]};
-option({select,true}, Gstkid, TkW, DB, {check,Index}) ->
+option({select,true}, _Gstkid, TkW, _DB, {check,Index}) ->
     {c, ["set x [", TkW, " entrycg ", gstk:to_ascii(Index),
 	 " -var];global $x;set $x 1"]};
 
-option({value,Val}, Gstkid, TkW, DB, {radio,Index}) ->
+option({value,Val}, _Gstkid, _TkW, _DB, {radio,_Index}) ->
     {s, [" -val ", gstk:to_ascii(Val)]};
-option({select,false}, Gstkid, TkW, DB, {radio,Index}) ->
+option({select,false}, _Gstkid, TkW, _DB, {radio,Index}) ->
     {c, ["set x [", TkW, " entrycg ", gstk:to_ascii(Index),
 	 " -var];global $x;set $x {}"]};
-option({select,true}, Gstkid, TkW, DB, {radio,Index}) ->
+option({select,true}, _Gstkid, TkW, _DB, {radio,Index}) ->
     {c, ["set x [", TkW, " entrycg ", gstk:to_ascii(Index),
 	 " -var]; set y [", TkW, " entrycg ", gstk:to_ascii(Index),
 	 " -val]; global $x; set $x $y"]};
@@ -288,7 +288,7 @@ option(Option, Gstkid, TkW, DB, {Kind,Index}) ->
         {enable,       true} -> {s, " -st normal"};
         {enable,      false} -> {s, " -st disabled"};
         {fg,          Color} -> {s, [" -foreg ", gstk:to_color(Color)]};
-	Other -> 
+	_Other -> 
 	    case lists:member(Kind,[radio,check]) of
 		true -> 
 		    case Option of
@@ -306,7 +306,7 @@ option(Option, Gstkid, TkW, DB, {Kind,Index}) ->
 %% Return 	: The value of the option or invalid_option
 %%		  [OptionValue | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-read_option(Option,GstkId,TkW,DB,_) ->
+read_option(Option,GstkId,_TkW,DB,_) ->
     ItemId = GstkId#gstkid.id,
     MenuId = GstkId#gstkid.parent,
     MenuGstkid = gstk_db:lookup_gstkid(DB, MenuId),
@@ -343,14 +343,14 @@ read_group(Gstkid, Option) ->
     case Gstkid#gstkid.widget_data of
 	{_, G, _, _} -> G;
 	{_, G, _}    -> G;
-	Other1 -> {bad_result,{Gstkid#gstkid.objtype, invalid_option, Option}}
+	_Other -> {bad_result,{Gstkid#gstkid.objtype, invalid_option, Option}}
     end.
 
 read_groupid(Gstkid, Option) ->
     case Gstkid#gstkid.widget_data of
 	{_, _, Gid, _} -> Gid;
 	{_, _, Gid}    -> Gid;
-	Other1 -> {bad_result,{Gstkid#gstkid.objtype, invalid_option, Option}}
+	_Other -> {bad_result,{Gstkid#gstkid.objtype, invalid_option, Option}}
     end.
 
 
@@ -364,13 +364,13 @@ read_select(TkMenu, Idx, Gstkid) ->
 		   " entrycg ", gstk:to_ascii(Idx)," -val]"],
 	    case tcl2erl:ret_tuple(Cmd) of
 		{X, X} -> true;
-		Other  -> false
+		_Other  -> false
 	    end;
 	{check, _, _} ->
 	    Cmd = ["set x [", TkMenu, " entrycg ", gstk:to_ascii(Idx),
 		   " -var];global $x;set $x"],
 	    tcl2erl:ret_bool(Cmd);
-	Other ->
+	_Other ->
 	    {error,{invalid_option,menuitem,select}}
     end.
 
@@ -519,7 +519,7 @@ parse_opts([Option | Rest], TkMenu, Idx, Type, Options) ->
     case Option of
 	{index,    I} -> parse_opts(Rest, TkMenu, I, Type, Options);
 	{itemtype, T} -> parse_opts(Rest, TkMenu, Idx, T, Options);
-	Other         -> parse_opts(Rest, TkMenu, Idx, Type,[Option | Options])
+	_Other         -> parse_opts(Rest, TkMenu, Idx, Type,[Option | Options])
     end;
 parse_opts([], TkMenu, Index, Type, Options) ->
     RealIdx =
@@ -537,28 +537,28 @@ find_last_index(TkMenu) ->
 	Other -> gs:error("Couldn't find index ~p~n",[Other])
     end.
 
-cbind({true, Edata}, Gstkid, TkMenu, Index, Type, DB) ->
+cbind({true, Edata}, Gstkid, TkMenu, _Index, Type, DB) ->
     Eref = gstk_db:insert_event(DB, Gstkid, click, Edata),
     case Type of
 	normal ->
-	    Cmd = [" -com {set x [",TkMenu, " index active];erlsend ", Eref,
+	    Cmd = [" -command {set x [",TkMenu, " index active];erlsend ", Eref,
 		   " \\\"[",TkMenu," entrycg $x -label]\\\" $x}"],
 	    {s, Cmd};
 	check ->
-	    Cmd = [" -com {set x [",TkMenu, " index active];erlsend ", Eref,
+	    Cmd = [" -command {set x [",TkMenu, " index active];erlsend ", Eref,
 		   " \[expr \$[", TkMenu, " entrycg $x -var]\] \\\"[",
 		   TkMenu, " entrycg $x -label]\\\" $x}"],
 	    {s, Cmd};
 	radio ->
-	    Cmd = [" -com {set x [",TkMenu, " index active];erlsend ", Eref,
+	    Cmd = [" -command {set x [",TkMenu, " index active];erlsend ", Eref,
 		   " [", TkMenu, " entrycg $x -var] \\\"[",
 		   TkMenu, " entrycg $x -label]\\\" $x}"],
 	    {s, Cmd};
-	Other ->
+	_Other ->
 	    none
     end;
 
-cbind({false, _}, Gstkid, TkMenu, Index, Type, DB) ->
+cbind({false, _}, Gstkid, _TkMenu, _Index, _Type, DB) ->
     gstk_db:delete_event(DB, Gstkid, click),
     none;
 

@@ -23,7 +23,6 @@
  *         	Erlang/OTP; Ericsson Utvecklings AB; February 2002
  */
 
-
 /*
  * See the sl_alloc(3) man page for a comprehensive description
  * of sl_alloc and its use in the ERTS.
@@ -33,22 +32,16 @@
  * of ways.
  *
  * Here is the beginning of the "will be done in the future list":
- * 1. Remove the "carrier order search" (cos) feature which proved
- *    not to be very useful (and cluttered the implementation).
- * 2. Remove the carrier field in block headers (which is only needed
- *    by the cos feature) and remove the bucket fields (etc) in
- *    the mbc header (which only is used by the cos feature). This
- *    will both make block headers shrink and the minimum blocks size
- *    shrink. 
- * 3. Optimize.
- * 4. Cleanup the code.
+ * 1. Optimize.
+ * 2. Cleanup the code.
  * ...
  *
  * Here are parts of the "will probably be done in the future" list
  * (unordered):
+ * * Other special treatment of sbcs than malloc of sbcs when high
+ *   sbc load.
  * * Implement special treatment of blocks smaller than the minimum
- *   block size (currently no blocks like this are allocated trough
- *   sl_alloc in the ERTS).
+ *   block size.
  * ...
  *
  */
@@ -65,7 +58,6 @@
 
 #include "global.h"
 #include "erl_sl_alloc.h"
-#include "big.h"
 #include <float.h>
 
 #ifdef DEBUG
@@ -103,6 +95,7 @@
 #define SL_ALLOC_OPT		EXPORT(alloc_opt)
 
 #define MEMCPY			sys_memcpy
+#define MEMZERO			sys_memzero
 
 #define MALLOC_FUNC		INSTR_IMPORT(alloc)
 #define REALLOC_FUNC		INSTR_IMPORT(realloc)
@@ -240,23 +233,49 @@ static void thread_safe_init(void)
 
 #endif /* #ifdef THREAD_SAFE_SL_ALLOC */
 
-#if SIZEOF_LONG == 8
-typedef unsigned long BucketMask_t;
-#elif SIZEOF_UNSIGNED_LONG_LONG == 8
-typedef unsigned long long BucketMask_t;
+#define NO_OF_BKT_IX_BITS (8)
+#ifdef ARCH_64
+#  define SUB_MASK_IX_SHIFT (6)
 #else
-typedef unsigned long BucketMask_t;
+#  define SUB_MASK_IX_SHIFT (5)
 #endif
+#define NO_OF_BKTS (((Word_t)1) << NO_OF_BKT_IX_BITS)
+#define NO_OF_SUB_MASKS (NO_OF_BKTS/(((Word_t)1) << SUB_MASK_IX_SHIFT))
+#define MAX_SUB_MASK_IX \
+  ((((Word_t)1) << (NO_OF_BKT_IX_BITS - SUB_MASK_IX_SHIFT)) - 1)
+#define MAX_SUB_BKT_IX ((((Word_t)1) << SUB_MASK_IX_SHIFT) - 1)
+#define MAX_BKT_IX (NO_OF_BKTS - 1)
 
-#define NO_OF_BKTS (sizeof(BucketMask_t)*8)
+#define IX2SBIX(IX) ((IX) & (~(~((Word_t)0) << SUB_MASK_IX_SHIFT)))
+#define IX2SMIX(IX) ((IX) >> SUB_MASK_IX_SHIFT)
+#define MAKE_BKT_IX(SMIX, SBIX)	\
+  ((((Word_t)(SMIX)) << SUB_MASK_IX_SHIFT) | ((Word_t)(SBIX)))
+
+#define SET_BKT_MASK_IX(IX)						\
+do {									\
+    int sub_mask_ix__ = IX2SMIX((IX));					\
+    bucket_masks.main |= (((Word_t)1) << sub_mask_ix__);		\
+    bucket_masks.sub[sub_mask_ix__] |= (((Word_t)1) << IX2SBIX((IX)));	\
+} while (0)
+
+#define UNSET_BKT_MASK_IX(IX)						\
+do {									\
+    int sub_mask_ix__ = IX2SMIX((IX));					\
+    bucket_masks.sub[sub_mask_ix__] &= ~(((Word_t)1) << IX2SBIX((IX)));	\
+    if (!bucket_masks.sub[sub_mask_ix__])				\
+	bucket_masks.main &= ~(((Word_t)1) << sub_mask_ix__);		\
+} while (0)
+	
 
 typedef union {char c[8]; long l; double d;} Unit_t;
-
-typedef Uint Carrier_t;
+typedef Uint Word_t;
 
 typedef struct {
-    Uint misc;
-    Carrier_t *carrier; /* Will be removed in next version */
+    Word_t misc;
+} Carrier_t;
+
+typedef struct {
+    Word_t misc;
 } Block_t;
 
 typedef struct FreeBlock_t_ {
@@ -278,29 +297,29 @@ typedef struct MBCarrier_t_ {
     Carrier_t head;
     struct MBCarrier_t_ *prev;
     struct MBCarrier_t_ *next;
-    BucketMask_t non_empty_buckets;
-    FreeBlock_t *buckets[NO_OF_BKTS];
 } MBCarrier_t;
 
-#define MAX_PRE_CALCED_MBC_GROWTH_FACT	30
+typedef struct {
+    Word_t main;
+    Word_t sub[NO_OF_SUB_MASKS];
+} BucketMask_t; 
 
-static double mbc_growth_fact[MAX_PRE_CALCED_MBC_GROWTH_FACT];
-static int max_mbcgf_calced;
-
-static BucketMask_t non_empty_buckets;
-static FreeBlock_t *common_buckets[NO_OF_BKTS];
-static int blocks_in_buckets[NO_OF_BKTS];
+static BucketMask_t bucket_masks;
+static FreeBlock_t *buckets[NO_OF_BKTS];
 static Uint max_blk_search;
 
 static int sl_alloc_disabled;
 static int use_old_sl_alloc;
 
-static Uint main_carrier_units;
+static Uint main_carrier_size;
+static Carrier_t *main_carrier;
 
 /* Double linked list of all multi block carriers */
 static MBCarrier_t *first_mb_carrier;
 static MBCarrier_t *last_mb_carrier;
-static MBCarrier_t *last_aux_mb_carrier;
+static char *last_aux_mb_carrier_start;
+static char *last_aux_mb_carrier_end;
+
 
 /* Some statistics ... */
 static ErtsSlAllocCallCounter sl_alloc_calls;
@@ -313,61 +332,71 @@ static ErtsSlAllocCallCounter malloc_calls;
 static ErtsSlAllocCallCounter free_calls;
 static ErtsSlAllocCallCounter realloc_calls;
 
-static Uint mmap_sb_carriers;
-static Uint malloc_sb_carriers;
-static Uint mmap_mb_carriers;
-static Uint malloc_mb_carriers;
-static Uint tot_mmap_sb_carrier_units;
-static Uint tot_malloc_sb_carrier_units;
-static Uint tot_mmap_mb_carrier_units;
-static Uint tot_malloc_mb_carrier_units;
-static Uint mmap_mbc_blks;
-static Uint malloc_mbc_blks;
-static Uint tot_mmap_sbc_blk_units;
-static Uint tot_malloc_sbc_blk_units;
-static Uint tot_mmap_mbc_blk_units;
-static Uint tot_malloc_mbc_blk_units;
-static Uint max_mbc_blk_units;
-static Uint max_mbc_blks;
-static Uint max_sbc_blk_units;
-static Uint max_sbc_blks;
+static Uint no_of_mmap_sbcs;
+static Uint no_of_malloc_sbcs;
+static Uint max_no_of_sbcs;
+static Uint max_no_of_sbcs_ever;
+static Uint mmap_sbcs_total_size;
+static Uint malloc_sbcs_total_size;
+static Uint max_sbcs_total_size;
+static Uint max_sbcs_total_size_ever;
+
+static Uint sbc_blocks_total_size;
+static Uint max_sbc_blocks_total_size;
+static Uint max_sbc_blocks_total_size_ever;
+
+static Uint no_of_mmap_mbcs;
+static Uint no_of_malloc_mbcs;
+static Uint max_no_of_mbcs;
+static Uint max_no_of_mbcs_ever;
+static Uint mmap_mbcs_total_size;
+static Uint malloc_mbcs_total_size;
+static Uint max_mbcs_total_size;
+static Uint max_mbcs_total_size_ever;
+
+static Uint no_of_mbc_blocks;
+static Uint max_no_of_mbc_blocks;
+static Uint max_no_of_mbc_blocks_ever;
+static Uint mbc_blocks_total_size;
+static Uint max_mbc_blocks_total_size;
+static Uint max_mbc_blocks_total_size_ever;
 
 /* Single block carrier threshold
  * (blocks >= sbc_threshold will be allocated
  * in a single block carrier).
  */
 static Uint sbc_threshold;
-static Uint sbc_move_threshold;
+static Uint sbc_shrink_threshold;
+static double sbc_move_threshold;
 /* Max number of mmap carriers */
 static Uint max_mmap_carriers;
-/* Search each carrier in order for a free block that fits? */
-static int use_carrier_order_search;
 
-static Uint mbc_growth_ratio;
-static Uint smallest_mbc_units;
-static Uint largest_mbc_units;
+static Uint mbc_growth_stages;
+static Uint smallest_mbc_size;
+static Uint largest_mbc_size;
 
-/* Used by bucket_index() */
-static Uint bkt_max_d;
+/* Used by BKT_IX() */
+static Uint bkt_max_size_d;
 static Uint bkt_intrvl_d;
 
 #if USE_MMAP
-static Uint page_units;
+static Uint page_size;
 #endif
 
 #ifndef NO_SL_ALLOC_STAT_ETERM
 
 /* Atoms used by erts_sl_alloc_stat_eterm() ... */
 static Eterm AM_singleblock_carrier_threshold;
+static Eterm AM_singleblock_carrier_shrink_threshold;
 static Eterm AM_singleblock_carrier_move_threshold;
+static Eterm AM_mmap_singleblock_carrier_load_threshold;
 static Eterm AM_max_mmap_carriers;
 static Eterm AM_singleblock_carriers;
 static Eterm AM_multiblock_carriers;
-static Eterm AM_carrier_order_search;
 static Eterm AM_main_carrier_size;
 static Eterm AM_smallest_multiblock_carrier_size;
 static Eterm AM_largest_multiblock_carrier_size;
-static Eterm AM_multiblock_carrier_growth_ratio;
+static Eterm AM_multiblock_carrier_growth_stages;
 static Eterm AM_max_block_search_depth;
 static Eterm AM_malloc;
 static Eterm AM_mmap;
@@ -376,7 +405,9 @@ static Eterm AM_blocks;
 static Eterm AM_carriers_size;
 static Eterm AM_blocks_size;
 static Eterm AM_adm_size;
+static Eterm AM_max_carriers;
 static Eterm AM_max_blocks;
+static Eterm AM_max_carriers_size;
 static Eterm AM_max_blocks_size;
 static Eterm AM_calls;
 static Eterm AM_sl_alloc;
@@ -389,6 +420,8 @@ static Eterm AM_mmap;
 static Eterm AM_munmap;
 static Eterm AM_mremap;
 static Eterm AM_unknown;
+static Eterm AM_release;
+static Eterm AM_settings;
 
 #endif
 
@@ -404,10 +437,25 @@ static int mmap_fd;
 #define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
 #define MAX(X, Y) ((X) > (Y) ? (X) : (Y))
 #define FLOOR(X, I) (((X)/(I))*(I))
-#define CEIL(X, I)  ((((X) - 1)/(I) + 1)*(I))
+#define CEILING(X, I)  ((((X) - 1)/(I) + 1)*(I))
 
-#define B2U(B) ((Uint) ((B)-1)/sizeof(Unit_t)+1)
-#define U2B(U) ((Uint) (U)*sizeof(Unit_t))
+#undef  WORD_MASK
+#define INV_WORD_MASK	((Word_t) (sizeof(Word_t) - 1))
+#define WORD_MASK	(~INV_WORD_MASK)
+#define WORD_FLOOR(X)	((X) & WORD_MASK)
+#define WORD_CEILING(X)	WORD_FLOOR((X) + INV_WORD_MASK)
+
+#undef  UNIT_MASK
+#define INV_UNIT_MASK	((Word_t) (sizeof(Unit_t) - 1))
+#define UNIT_MASK	(~INV_UNIT_MASK)
+#define UNIT_FLOOR(X)	((X) & UNIT_MASK)
+#define UNIT_CEILING(X)	UNIT_FLOOR((X) + INV_UNIT_MASK)
+
+#undef  PAGE_MASK
+#define INV_PAGE_MASK	((Word_t) (page_size - 1))
+#define PAGE_MASK	(~INV_PAGE_MASK)
+#define PAGE_FLOOR(X)	((X) & PAGE_MASK)
+#define PAGE_CEILING(X)	PAGE_FLOOR((X) + INV_PAGE_MASK)
 
 #define ONE_GIGA (1000000000)
 
@@ -452,13 +500,13 @@ do {									\
 
 #endif /* #ifdef MAP_ANON */
 
-#define DO_MUNMAP(C) \
-  (INC_CC(munmap_calls), munmap((void *) (C), (size_t) U2B(CARRIER_UNITS((C)))))
+#define DO_MUNMAP(C, SZ) \
+  (INC_CC(munmap_calls), munmap((void *) (C), (size_t) (SZ)))
 
 #ifdef DEBUG
-#define MUNMAP(C) ASSERT(0 == DO_MUNMAP((C)))
+#define MUNMAP(C, SZ) ASSERT(0 == DO_MUNMAP((C), (SZ)))
 #else
-#define MUNMAP(C) ((void) DO_MUNMAP((C)))
+#define MUNMAP(C, SZ) ((void) DO_MUNMAP((C), (SZ)))
 #endif
 
 #if HAVE_MREMAP
@@ -468,7 +516,7 @@ do {									\
 
 #define MREMAP(C, S) \
   (INC_CC(mremap_calls), \
-   mremap((void *) (C), (size_t) U2B(CARRIER_UNITS((C))), (S), MREMAP_MAYMOVE))
+   mremap((void *) (C), (size_t) CARRIER_SZ((C)), (S), MREMAP_MAYMOVE))
 
 #endif /* #if HAVE_MREMAP */
 
@@ -482,125 +530,161 @@ do {									\
 
 /* ... */
 
-#define UNITS_SHIFT		3
-#define UNITS_MASK		(~(~0 << (sizeof(Uint)*8-3)))
-#define FLAG_MASK		0x7
+#define SZ_MASK			(~((Word_t) 0) << 3)
+#define FLG_MASK		(~(SZ_MASK))
 
 /* Blocks ... */
 
-#define THIS_BLK_FREE_FLAG 	(1 << 0)
-#define PREV_BLK_FREE_FLAG 	(1 << 1)
-#define SINGLE_BLK_FLAG 	(1 << 2)
+#define SBC_BLK_FTR_FLG		(((Word_t) 1) << 0)
+#define UNUSED1_BLK_FTR_FLG	(((Word_t) 1) << 1)
+#define UNUSED2_BLK_FTR_FLG	(((Word_t) 1) << 2)
 
-#define MIN_BLK_UNITS  (B2U(CEIL(sizeof(FreeBlock_t) + sizeof(Uint), \
-				 sizeof(Unit_t))))
-#define ABLK_HDR_UNITS (B2U(CEIL(sizeof(AllocBlock_t), sizeof(Unit_t))))
+#define MIN_BLK_SZ  UNIT_CEILING(sizeof(FreeBlock_t) + sizeof(Word_t))
+#define ABLK_HDR_SZ (sizeof(AllocBlock_t))
+#define FBLK_FTR_SZ (sizeof(Word_t))
 
-#define MEM2BLK(P) ((Block_t *) (((Unit_t *) (P)) - ABLK_HDR_UNITS))
-#define BLK2MEM(P) ((void *)    (((Unit_t *) (P)) + ABLK_HDR_UNITS))
+#define UMEMSZ2BLKSZ(SZ)						\
+  (ABLK_HDR_SZ + (SZ) <= MIN_BLK_SZ					\
+   ? MIN_BLK_SZ								\
+   : UNIT_CEILING(ABLK_HDR_SZ + (SZ)))
 
-#define SET_FREE_BLK_UNITS(B, U)			\
-  do {							\
-    SET_BLK_UNITS((B), (U));				\
-    if (!IS_LAST_BLK(B))				\
-	*((Uint *) (((Unit_t *) (B)) + (U) - 1)) = (U);	\
-  } while (0)
-#define SET_BLK_UNITS(B, U) \
-  (((Block_t *) (B))->misc = \
-   ((((Block_t *) (B))->misc & FLAG_MASK) | ((U) << UNITS_SHIFT)))
-#define SET_BLK_CARRIER(B, C) \
-  (((Block_t *) (B))->carrier = (Carrier_t *) (C))
+#define UMEM2BLK(P) ((Block_t *) (((char *) (P)) - ABLK_HDR_SZ))
+#define BLK2UMEM(P) ((void *)    (((char *) (P)) + ABLK_HDR_SZ))
+
+#define PREV_BLK_SZ(B) \
+  ((Uint) (*(((Word_t *) (B)) - 1) & SZ_MASK))
+
+#define SET_BLK_SZ_FTR(B, SZ) \
+  (*((Word_t *) (((char *) (B)) + (SZ) - sizeof(Word_t))) = (SZ))
+
+#define THIS_FREE_BLK_HDR_FLG 	(((Word_t) 1) << 0)
+#define PREV_FREE_BLK_HDR_FLG 	(((Word_t) 1) << 1)
+#define LAST_BLK_HDR_FLG 	(((Word_t) 1) << 2)
+
+#define SET_BLK_SZ(B, SZ) \
+  (ASSERT(((SZ) & FLG_MASK) == 0), \
+   (((Block_t *) (B))->misc = ((((Block_t *) (B))->misc & FLG_MASK) | (SZ))))
 #define SET_BLK_FREE(B) \
-  (((Block_t *) (B))->misc |= THIS_BLK_FREE_FLAG)
+  (((Block_t *) (B))->misc |= THIS_FREE_BLK_HDR_FLG)
 #define SET_BLK_ALLOCED(B) \
-  (((Block_t *) (B))->misc &= ~THIS_BLK_FREE_FLAG)
+  (((Block_t *) (B))->misc &= ~THIS_FREE_BLK_HDR_FLG)
 #define SET_PREV_BLK_FREE(B) \
-  (((Block_t *) (B))->misc |= PREV_BLK_FREE_FLAG)
+  (((Block_t *) (B))->misc |= PREV_FREE_BLK_HDR_FLG)
 #define SET_PREV_BLK_ALLOCED(B) \
-  (((Block_t *) (B))->misc &= ~PREV_BLK_FREE_FLAG)
-#define SET_SINGLE_BLK(B) \
-  (((Block_t *) (B))->misc |= SINGLE_BLK_FLAG)
-#define SET_MULTI_BLK(B) \
-  (((Block_t *) (B))->misc &= ~SINGLE_BLK_FLAG)
+  (((Block_t *) (B))->misc &= ~PREV_FREE_BLK_HDR_FLG)
+#define SET_LAST_BLK(B) \
+  (((Block_t *) (B))->misc |= LAST_BLK_HDR_FLG)
+#define SET_NOT_LAST_BLK(B) \
+  (((Block_t *) (B))->misc &= ~LAST_BLK_HDR_FLG)
 
-#define MEM_UNITS(B) \
-  (BLK_UNITS(B) - (ABLK_HDR_UNITS))
-#define BLK_UNITS(B) \
-  ((((Block_t *) (B))->misc >> UNITS_SHIFT) & UNITS_MASK)
-#define BLK_CARRIER(B) \
-  (((Block_t *) (B))->carrier)
+#define SBH_THIS_FREE		THIS_FREE_BLK_HDR_FLG
+#define SBH_THIS_ALLOCED	((Word_t) 0)
+#define SBH_PREV_FREE		PREV_FREE_BLK_HDR_FLG
+#define SBH_PREV_ALLOCED	((Word_t) 0)
+#define SBH_LAST_BLK		LAST_BLK_HDR_FLG
+#define SBH_NOT_LAST_BLK	((Word_t) 0)
+
+#define SET_BLK_HDR(B, Sz, F) \
+  (ASSERT(((Sz) & FLG_MASK) == 0), ((Block_t *) (B))->misc = ((Sz) | (F)))
+
+#define BLK_UMEM_SZ(B) \
+  (BLK_SZ(B) - (ABLK_HDR_SZ))
+#define BLK_SZ(B) \
+  (((Block_t *) (B))->misc & SZ_MASK)
 #define IS_PREV_BLK_FREE(B) \
-  (((Block_t*)(B))->misc & PREV_BLK_FREE_FLAG)
+  (((Block_t*)(B))->misc & PREV_FREE_BLK_HDR_FLG)
 #define IS_PREV_BLK_ALLOCED(B) \
   (!IS_PREV_BLK_FREE((B)))
 #define IS_FREE_BLK(B) \
-  (((Block_t*)(B))->misc & THIS_BLK_FREE_FLAG)
+  (((Block_t*)(B))->misc & THIS_FREE_BLK_HDR_FLG)
 #define IS_ALLOCED_BLK(B) \
   (!IS_FREE_BLK((B)))  
+#define IS_LAST_BLK(B) \
+  (((Block_t*)(B))->misc & LAST_BLK_HDR_FLG)
+#define IS_NOT_LAST_BLK(B) \
+  (!IS_LAST_BLK((B)))
+
+#define IS_FIRST_BLK(B) \
+  (IS_PREV_BLK_FREE((B)) && (PREV_BLK_SZ((B)) == 0))
+#define IS_NOT_FIRST_BLK(B) \
+  (!IS_FIRST_BLK((B)))
+
+#define SET_SBC_BLK_FTR(FTR) \
+  ((FTR) = (0 | SBC_BLK_FTR_FLG))
+#define SET_MBC_BLK_FTR(FTR) \
+  ((FTR) = 0)
+
 #define IS_SBC_BLK(B) \
-  (((Block_t*)(B))->misc & SINGLE_BLK_FLAG)
+  (IS_PREV_BLK_FREE((B)) && (((Word_t *) (B))[-1] & SBC_BLK_FTR_FLG))
 #define IS_MBC_BLK(B) \
   (!IS_SBC_BLK((B)))
 
-#define IS_LAST_BLK(B) \
- (((Unit_t *) BLK_CARRIER((B))) + CARRIER_UNITS(BLK_CARRIER((B))) \
-    == ((Unit_t *) (B)) + BLK_UNITS((B)))
-#define IS_FIRST_BLK(B) \
-  (MBC2MEM(BLK_CARRIER((B))) == ((void *) (B)))
-
 #define NXT_BLK(B) \
-  ((Block_t *) (((Unit_t *) (B)) + BLK_UNITS((B))))
+  ((Block_t *) (((char *) (B)) + BLK_SZ((B))))
 #define PREV_BLK(B) \
-  ((Block_t *) (((Unit_t *) (B)) - *((Uint *) (((Unit_t *) (B)) - 1))))
+  ((Block_t *) (((char *) (B)) - PREV_BLK_SZ((B))))
 
 /* Carriers ... */
 
-#define MIN_MBC_FIRST_FREE_UNITS	B2U(4*1024)
-#define MIN_MBC_UNITS			B2U(16*1024)
+#define MIN_MBC_FIRST_FREE_SZ		(4*1024)
+#define MIN_MBC_SZ			(16*1024)
 
-#define MMAP_CARRIER_FLAG		(1 << 0)
-#define SINGLE_BLK_CARRIER_FLAG		(1 << 1)
-#define MAIN_CARRIER_FLAG		(1 << 2)
+#define MMAP_CARRIER_HDR_FLAG		(((Word_t) 1) << 0)
+#define SBC_CARRIER_HDR_FLAG		(((Word_t) 1) << 1)
 
-#define SBC_HDR_UNITS B2U(CEIL(sizeof(SBCarrier_t), sizeof(Unit_t)))
-#define MBC_HDR_UNITS B2U(CEIL(sizeof(MBCarrier_t), sizeof(Unit_t)))
+#define SBC_HDR_SZ \
+  (UNIT_CEILING(sizeof(SBCarrier_t) + FBLK_FTR_SZ + ABLK_HDR_SZ) - ABLK_HDR_SZ)
+#define MBC_HDR_SZ \
+  (UNIT_CEILING(sizeof(MBCarrier_t) + FBLK_FTR_SZ + ABLK_HDR_SZ) - ABLK_HDR_SZ)
 
-#define MBC2MEM(P) ((void *) (((Unit_t *) (P))+MBC_HDR_UNITS))
+#define BLK2SBC(B) \
+  ((SBCarrier_t *) (((char *) (B)) - SBC_HDR_SZ))
+#define FBLK2MBC(B) \
+  ((MBCarrier_t *) (((char *) (B)) - MBC_HDR_SZ))
 
-#define SBC2BLK(P) ((AllocBlock_t *) ((Unit_t *) (P))+SBC_HDR_UNITS)
-#define SBC2MEM(P) ((void *) (((Unit_t *) (P))+SBC_HDR_UNITS+ABLK_HDR_UNITS))
+#define MBC2FBLK(P) \
+  ((Block_t *) (((char *) (P)) + MBC_HDR_SZ))
+#define SBC2BLK(P) \
+  ((Block_t *) (((char *) (P)) + SBC_HDR_SZ))
+#define SBC2UMEM(P) \
+  ((void *) (((char *) (P)) + (SBC_HDR_SZ + ABLK_HDR_SZ)))
 
 #define IS_MMAP_CARRIER(C) \
-  (*((Carrier_t*)(C)) & MMAP_CARRIER_FLAG)
+  (((Carrier_t *) (C))->misc & MMAP_CARRIER_HDR_FLAG)
 #define IS_MALLOC_CARRIER(C) \
   (!IS_MMAP_CARRIER((C)))
 #define IS_SB_CARRIER(C) \
-  (*((Carrier_t*)(C)) & SINGLE_BLK_CARRIER_FLAG)
+  (((Carrier_t *) (C))->misc & SBC_CARRIER_HDR_FLAG)
 #define IS_MB_CARRIER(C) \
   (!IS_SB_CARRIER((C)))
 #define IS_MAIN_CARRIER(C) \
-  (*((Carrier_t*)(C)) & MAIN_CARRIER_FLAG)
+  (main_carrier && ((Carrier_t *) (C)) == main_carrier)
 #define IS_AUX_CARRIER(C) \
   (!IS_MAIN_CARRIER((C)))
 
-#define CARRIER_UNITS(C) \
-  ((*((Carrier_t*)(C)) >> UNITS_SHIFT) & UNITS_MASK)
+#define CARRIER_SZ(C) \
+  (((Carrier_t *) (C))->misc & SZ_MASK)
 
 #define SET_MMAP_CARRIER(C) \
-  (*((Carrier_t*)(C)) |= MMAP_CARRIER_FLAG)
+  (((Carrier_t *) (C))->misc |= MMAP_CARRIER_HDR_FLAG)
 #define SET_MALLOC_CARRIER(C) \
-  (*((Carrier_t*)(C)) &= ~MMAP_CARRIER_FLAG)
+  (((Carrier_t *) (C))->misc &= ~MMAP_CARRIER_HDR_FLAG)
 #define SET_SB_CARRIER(C) \
-  (*((Carrier_t*)(C)) |= SINGLE_BLK_CARRIER_FLAG)
+  (((Carrier_t *) (C))->misc |= SBC_CARRIER_HDR_FLAG)
 #define SET_MB_CARRIER(C) \
-  (*((Carrier_t*)(C)) &= ~SINGLE_BLK_CARRIER_FLAG)
+  (((Carrier_t *) (C))->misc &= ~SBC_CARRIER_HDR_FLAG)
 #define SET_MAIN_CARRIER(C) \
-  (*((Carrier_t*)(C)) |= MAIN_CARRIER_FLAG)
+  (main_carrier = (Carrier_t *) (C))
 #define SET_AUX_CARRIER(C) \
-  (*((Carrier_t*)(C)) &= ~MAIN_CARRIER_FLAG)
+  (IS_MAIN_CARRIER((C)) ? SET_MAIN_CARRIER(NULL) : ((Carrier_t *) NULL))
 
-#define SET_CARRIER_UNITS(C, U) \
-  (*((Carrier_t*)(C)) = (*((Carrier_t*)(C)) & FLAG_MASK) | ((U) << UNITS_SHIFT))
+#define SET_CARRIER_SZ(C, SZ) \
+  (ASSERT(((SZ) & FLG_MASK) == 0), \
+   (((Carrier_t *) (C))->misc = (((Carrier_t *) (C))->misc & FLG_MASK) | (SZ)))
+
+#define IS_BLK_ON_LAST_AUX_MBC(B) \
+  (((char *) (B)) < last_aux_mb_carrier_end \
+   && last_aux_mb_carrier_start <= ((char *) (B)))
 
 #define CA_TYPE_SINGLEBLOCK			0
 #define CA_TYPE_MULTIBLOCK			1
@@ -610,330 +694,487 @@ do {									\
 #define CA_FLAG_KEEP_MALLOC_CARRIER	       	(1 << 2)
 
 #if HARD_DEBUG
-static void check_sb_carrier(SBCarrier_t *);
-static void check_mb_carrier(MBCarrier_t *);
+static void check_blk_carrier(Block_t *);
 #endif
 
 
 /* Statistics updating ... */
 
-#define STAT_SBC_BLK_ALLOC					\
-    if (max_sbc_blks < (mmap_sb_carriers			\
-			+ malloc_sb_carriers))			\
-	max_sbc_blks = (mmap_sb_carriers			\
-			+ malloc_sb_carriers);			\
-    if (max_sbc_blk_units < (tot_mmap_sbc_blk_units		\
-			     + tot_malloc_sbc_blk_units))	\
-	max_sbc_blk_units = (tot_mmap_sbc_blk_units		\
-			     + tot_malloc_sbc_blk_units)
+#ifdef DEBUG
+#define DEBUG_CHECK_CARRIER_NO_SZ                               \
+    ASSERT((no_of_mmap_sbcs && mmap_sbcs_total_size)		\
+	   || (!no_of_mmap_sbcs && !mmap_sbcs_total_size));	\
+    ASSERT((no_of_malloc_sbcs && malloc_sbcs_total_size)	\
+	   || (!no_of_malloc_sbcs && !malloc_sbcs_total_size));	\
+    ASSERT((no_of_mmap_mbcs && mmap_mbcs_total_size)		\
+	   || (!no_of_mmap_mbcs && !mmap_mbcs_total_size));	\
+    ASSERT((no_of_malloc_mbcs && malloc_mbcs_total_size)	\
+	   || (!no_of_malloc_mbcs && !malloc_mbcs_total_size));	\
+    
+#else
+#define DEBUG_CHECK_CARRIER_NO_SZ
+#endif
 
-#define STAT_MMAP_SB_CARRIER_ALLOC(CU, BU)			\
+#define STAT_SBC_ALLOC(BSZ)					\
+    sbc_blocks_total_size += (BSZ);				\
+    if (max_sbc_blocks_total_size < sbc_blocks_total_size)	\
+	max_sbc_blocks_total_size = sbc_blocks_total_size;	\
+    if (max_no_of_sbcs < no_of_mmap_sbcs + no_of_malloc_sbcs)	\
+	max_no_of_sbcs = no_of_mmap_sbcs + no_of_malloc_sbcs;	\
+    if (max_sbcs_total_size < (mmap_sbcs_total_size		\
+			       + malloc_sbcs_total_size))	\
+	max_sbcs_total_size = (mmap_sbcs_total_size		\
+			       + malloc_sbcs_total_size)
+
+
+#define STAT_MMAP_SBC_ALLOC(CSZ, BSZ)				\
 do {								\
-    mmap_sb_carriers++;						\
-    tot_mmap_sb_carrier_units += (CU);				\
-    tot_mmap_sbc_blk_units += (BU);				\
-    STAT_SBC_BLK_ALLOC;						\
+    no_of_mmap_sbcs++;						\
+    mmap_sbcs_total_size += (CSZ);				\
+    STAT_SBC_ALLOC((BSZ));					\
+    DEBUG_CHECK_CARRIER_NO_SZ;					\
 } while (0)
 
-#define STAT_MMAP_SB_CARRIER_FREE(CU, BU)			\
+#define STAT_MALLOC_SBC_ALLOC(CSZ, BSZ)				\
 do {								\
-    ASSERT(mmap_sb_carriers > 0);				\
-    mmap_sb_carriers--;						\
-    ASSERT(tot_mmap_sb_carrier_units >= (CU));			\
-    tot_mmap_sb_carrier_units -= (CU);				\
-    ASSERT(tot_mmap_sbc_blk_units >= (BU));			\
-    tot_mmap_sbc_blk_units -= (BU);				\
+    no_of_malloc_sbcs++;					\
+    malloc_sbcs_total_size += (CSZ);				\
+    STAT_SBC_ALLOC((BSZ));					\
+    DEBUG_CHECK_CARRIER_NO_SZ;					\
 } while (0)
 
-#define STAT_MALLOC_SB_CARRIER_ALLOC(CU, BU)			\
+
+#define STAT_SBC_FREE(BSZ)					\
+    ASSERT(sbc_blocks_total_size >= (BSZ));			\
+    sbc_blocks_total_size -= (BSZ)
+
+#define STAT_MMAP_SBC_FREE(CSZ, BSZ)				\
 do {								\
-    malloc_sb_carriers++;					\
-    tot_malloc_sb_carrier_units += (CU);			\
-    tot_malloc_sbc_blk_units += (BU);				\
-    STAT_SBC_BLK_ALLOC;						\
+    ASSERT(no_of_mmap_sbcs > 0);				\
+    no_of_mmap_sbcs--;						\
+    ASSERT(mmap_sbcs_total_size >= (CSZ));			\
+    mmap_sbcs_total_size -= (CSZ);				\
+    STAT_SBC_FREE((BSZ));					\
+    DEBUG_CHECK_CARRIER_NO_SZ;					\
 } while (0)
 
-#define STAT_MALLOC_SB_CARRIER_FREE(CU, BU)			\
+#define STAT_MALLOC_SBC_FREE(CSZ, BSZ)				\
 do {								\
-    ASSERT(malloc_sb_carriers > 0);				\
-    malloc_sb_carriers--;					\
-    ASSERT(tot_malloc_sb_carrier_units >= (CU));		\
-    tot_malloc_sb_carrier_units -= (CU);			\
-    ASSERT(tot_malloc_sbc_blk_units >= (BU));			\
-    tot_malloc_sbc_blk_units -= (BU);				\
+    ASSERT(no_of_malloc_sbcs > 0);				\
+    no_of_malloc_sbcs--;					\
+    ASSERT(malloc_sbcs_total_size >= (CSZ));			\
+    malloc_sbcs_total_size -= (CSZ);				\
+    STAT_SBC_FREE((BSZ));					\
+    DEBUG_CHECK_CARRIER_NO_SZ;					\
 } while (0)
 
-#define STAT_MMAP_MB_CARRIER_ALLOC(U)				\
+#define STAT_MBC_ALLOC						\
+    if (max_no_of_mbcs < no_of_mmap_mbcs + no_of_malloc_mbcs)	\
+	max_no_of_mbcs = no_of_mmap_mbcs + no_of_malloc_mbcs;	\
+    if (max_mbcs_total_size < (mmap_mbcs_total_size		\
+			       + malloc_mbcs_total_size))	\
+	max_mbcs_total_size = (mmap_mbcs_total_size		\
+			       + malloc_mbcs_total_size)
+
+
+#define STAT_MMAP_MBC_ALLOC(CSZ)				\
 do {								\
-    mmap_mb_carriers++;						\
-    tot_mmap_mb_carrier_units += (U);				\
+    no_of_mmap_mbcs++;						\
+    mmap_mbcs_total_size += (CSZ);				\
+    STAT_MBC_ALLOC;						\
+    DEBUG_CHECK_CARRIER_NO_SZ;					\
 } while (0)
 
-#define STAT_MMAP_MB_CARRIER_FREE(U)				\
+#define STAT_MALLOC_MBC_ALLOC(CSZ)				\
 do {								\
-    ASSERT(mmap_mb_carriers > 0);				\
-    mmap_mb_carriers--;						\
-    ASSERT(tot_mmap_mb_carrier_units >= (U));			\
-    tot_mmap_mb_carrier_units -= (U);				\
+    no_of_malloc_mbcs++;					\
+    malloc_mbcs_total_size += (CSZ);				\
+    STAT_MBC_ALLOC;						\
+    DEBUG_CHECK_CARRIER_NO_SZ;					\
 } while (0)
 
-#define STAT_MALLOC_MB_CARRIER_ALLOC(U)				\
+#define STAT_MMAP_MBC_FREE(CSZ)					\
 do {								\
-    malloc_mb_carriers++;					\
-    tot_malloc_mb_carrier_units += (U);				\
+    ASSERT(no_of_mmap_mbcs > 0);				\
+    no_of_mmap_mbcs--;						\
+    ASSERT(mmap_mbcs_total_size >= (CSZ));			\
+    mmap_mbcs_total_size -= (CSZ);				\
+    DEBUG_CHECK_CARRIER_NO_SZ;					\
 } while (0)
 
-#define STAT_MALLOC_MB_CARRIER_FREE(U)				\
+#define STAT_MALLOC_MBC_FREE(CSZ)				\
 do {								\
-    ASSERT(malloc_mb_carriers > 0);				\
-    malloc_mb_carriers--;					\
-    ASSERT(tot_malloc_mb_carrier_units >= (U));			\
-    tot_malloc_mb_carrier_units -= (U);				\
+    ASSERT(no_of_malloc_mbcs > 0);				\
+    no_of_malloc_mbcs--;					\
+    ASSERT(malloc_mbcs_total_size >= (CSZ));			\
+    malloc_mbcs_total_size -= (CSZ);				\
+    DEBUG_CHECK_CARRIER_NO_SZ;					\
 } while (0)
 
-#define STAT_MBC_BLK_ALLOC					\
-    if (max_mbc_blks < mmap_mbc_blks + malloc_mbc_blks)		\
-	max_mbc_blks = mmap_mbc_blks + malloc_mbc_blks;		\
-    if (max_mbc_blk_units < (tot_mmap_mbc_blk_units		\
-			     + tot_malloc_mbc_blk_units))	\
-	max_mbc_blk_units = (tot_mmap_mbc_blk_units		\
-			     + tot_malloc_mbc_blk_units)
-
-#define STAT_MMAP_MBC_BLK_ALLOC(U)				\
+#define STAT_MBC_BLK_ALLOC(BSZ)					\
 do {								\
-    mmap_mbc_blks++;						\
-    tot_mmap_mbc_blk_units += (U);				\
-    STAT_MBC_BLK_ALLOC;						\
+    no_of_mbc_blocks++;						\
+    if (max_no_of_mbc_blocks < no_of_mbc_blocks)		\
+	max_no_of_mbc_blocks = no_of_mbc_blocks;		\
+    mbc_blocks_total_size += (BSZ);				\
+    if (max_mbc_blocks_total_size < mbc_blocks_total_size)	\
+	max_mbc_blocks_total_size = mbc_blocks_total_size;	\
 } while (0)
 
-#define STAT_MMAP_MBC_BLK_FREE(U)				\
+#define STAT_MBC_BLK_FREE(BSZ)					\
 do {								\
-    ASSERT(mmap_mbc_blks > 0);					\
-    mmap_mbc_blks--;						\
-    ASSERT(tot_mmap_mbc_blk_units >= (U));			\
-    tot_mmap_mbc_blk_units -= (U);				\
+    ASSERT(no_of_mbc_blocks > 0);				\
+    no_of_mbc_blocks--;						\
+    ASSERT(mbc_blocks_total_size >= (BSZ));			\
+    mbc_blocks_total_size -= (BSZ);				\
 } while (0)
 
-#define STAT_MALLOC_MBC_BLK_ALLOC(U)				\
-do {								\
-    malloc_mbc_blks++;						\
-    tot_malloc_mbc_blk_units += (U);				\
-    STAT_MBC_BLK_ALLOC;						\
+#define SBC_LOAD_CHANGE_INTERVAL 1000
+#define SBC_REQ_VEC_SZ 10
+static double mmap_sbc_load_threshold;
+static double sbc_requests_acc;
+static Uint requests;
+static Uint sbc_requests;
+static Uint sbc_request_vec_ix;
+static Uint sbc_request_vec[SBC_REQ_VEC_SZ];
+static int sbc_mmap_allowed;
+
+#define INIT_SBC_LOAD_CHECK()						\
+do {									\
+    Uint start_val = (Uint) ((mmap_sbc_load_threshold - 1)		\
+			     * SBC_LOAD_CHANGE_INTERVAL / 100 / 2);	\
+    for (sbc_request_vec_ix = SBC_REQ_VEC_SZ - 1;			\
+	 sbc_request_vec_ix;						\
+	 sbc_request_vec_ix--)						\
+	sbc_request_vec[sbc_request_vec_ix] = start_val;		\
+    sbc_requests_acc = SBC_REQ_VEC_SZ * start_val;			\
+    sbc_mmap_allowed = 1;						\
+    requests = 0;							\
+    sbc_requests = 0;							\
 } while (0)
 
-#define STAT_MALLOC_MBC_BLK_FREE(U)				\
-do {								\
-    ASSERT(malloc_mbc_blks > 0);				\
-    malloc_mbc_blks--;						\
-    ASSERT(tot_malloc_mbc_blk_units >= (U));			\
-    tot_malloc_mbc_blk_units -= (U);				\
+#define SBC_LOAD \
+  (100*((sbc_requests_acc + sbc_requests) \
+	/ (requests + (SBC_LOAD_CHANGE_INTERVAL * SBC_REQ_VEC_SZ))))
+#define IS_SBC_MMAP_ALLOWED() \
+  (sbc_mmap_allowed \
+   ? ((SBC_LOAD > mmap_sbc_load_threshold) ? (sbc_mmap_allowed = 0) : 1) \
+   : ((SBC_LOAD > mmap_sbc_load_threshold - 1) ? 0 : (sbc_mmap_allowed = 1)))
+
+#define NOTICE_SBC_REQUEST() (sbc_requests++)
+
+#define NOTICE_REQUEST()						\
+do {									\
+    requests++;								\
+    if (requests >= SBC_LOAD_CHANGE_INTERVAL) {				\
+	sbc_requests_acc -= sbc_request_vec[sbc_request_vec_ix];	\
+	sbc_request_vec[sbc_request_vec_ix] = sbc_requests;		\
+	sbc_requests_acc += sbc_requests;				\
+	sbc_request_vec_ix++;						\
+	if(sbc_request_vec_ix >= SBC_REQ_VEC_SZ)			\
+	    sbc_request_vec_ix = 0;					\
+	sbc_requests = 0;						\
+	requests = 0;							\
+    }									\
 } while (0)
+
+/* Debug stuff... */
+#ifdef DEBUG
+static Uint carrier_alignment;
+#define DEBUG_SAVE_ALIGNMENT(C)						\
+do {									\
+    Uint algnmnt__ = sizeof(Unit_t) - (((Uint) (C)) % sizeof(Unit_t));	\
+    carrier_alignment = MIN(carrier_alignment, algnmnt__);		\
+    ASSERT(((Uint) (C)) % sizeof(Word_t) == 0);				\
+} while (0)
+#define DEBUG_CHECK_ALIGNMENT(P)					\
+do {									\
+    ASSERT(sizeof(Unit_t) - (((Uint) (P)) % sizeof(Unit_t))		\
+	   >= carrier_alignment);					\
+    ASSERT(((Uint) (P)) % sizeof(Word_t) == 0);				\
+} while (0)
+
+#else
+#define DEBUG_SAVE_ALIGNMENT(C)
+#define DEBUG_CHECK_ALIGNMENT(P)
+#endif
+
 
 /* Buckets ... */
 
-#define BKT_INTRVL_A		1
-#define BKT_INTRVL_B		16
-#define BKT_INTRVL_C		96
+#define BKT_INTRVL_A		(1*sizeof(Unit_t))
+#define BKT_INTRVL_B		(16*sizeof(Unit_t))
+#define BKT_INTRVL_C		(96*sizeof(Unit_t))
 #define BKT_INTRVL_D		bkt_intrvl_d
 
-#define BKT_MIN_A		MIN_BLK_UNITS
-#define BKT_MIN_B		CEIL(BKT_MAX_A+BKT_INTRVL_A, BKT_INTRVL_B)
-#define BKT_MIN_C		CEIL(BKT_MAX_B+BKT_INTRVL_B, BKT_INTRVL_C)
-#define BKT_MIN_D		CEIL(BKT_MAX_C+BKT_INTRVL_C, BKT_INTRVL_D)
+#define BKT_MIN_SIZE_A		MIN_BLK_SZ
+#define BKT_MIN_SIZE_B		(BKT_MAX_SIZE_A + 1)
+#define BKT_MIN_SIZE_C		(BKT_MAX_SIZE_B + 1)
+#define BKT_MIN_SIZE_D		(BKT_MAX_SIZE_C + 1)
 
-#define BKT_MAX_A		(BKT_MIN_A + (NO_OF_BKTS/4-1)*BKT_INTRVL_A)
-#define BKT_MAX_B		(BKT_MIN_B + (NO_OF_BKTS/4-1)*BKT_INTRVL_B)
-#define BKT_MAX_C		(BKT_MIN_C + (NO_OF_BKTS/4-1)*BKT_INTRVL_C)
-#define BKT_MAX_D		bkt_max_d
+#define BKT_MAX_SIZE_A		((NO_OF_BKTS/4)*BKT_INTRVL_A+BKT_MIN_SIZE_A-1)
+#define BKT_MAX_SIZE_B		((NO_OF_BKTS/4)*BKT_INTRVL_B+BKT_MIN_SIZE_B-1)
+#define BKT_MAX_SIZE_C		((NO_OF_BKTS/4)*BKT_INTRVL_C+BKT_MIN_SIZE_C-1)
+#define BKT_MAX_SIZE_D		bkt_max_size_d
 
-#define PBKT_RES(U, INT, MIN, BASE) (((U)+(INT)-(MIN))/(INT)+(BASE)-1)
 
-#define PBKT_RES_A(U) PBKT_RES((U), BKT_INTRVL_A, BKT_MIN_A, 0)
-#define PBKT_RES_B(U) PBKT_RES((U), BKT_INTRVL_B, BKT_MIN_B, NO_OF_BKTS/4)
-#define PBKT_RES_C(U) PBKT_RES((U), BKT_INTRVL_C, BKT_MIN_C, NO_OF_BKTS/2)
-#define PBKT_RES_D(U) PBKT_RES((U), BKT_INTRVL_D, BKT_MIN_D, NO_OF_BKTS*3/4)
+#define BKT_MAX_IX_A		((NO_OF_BKTS*1)/4 - 1)
+#define BKT_MAX_IX_B		((NO_OF_BKTS*2)/4 - 1)
+#define BKT_MAX_IX_C		((NO_OF_BKTS*3)/4 - 1)
+#define BKT_MAX_IX_D		((NO_OF_BKTS*4)/4 - 1)
 
-#define GBKT_RES(U, INT, MIN, BASE) (((U)+2*(INT)-(MIN)-1)/(INT)+(BASE)-1)
-#define GBKT_RES_A(U) PBKT_RES_A((U))
-#define GBKT_RES_B(U) GBKT_RES((U), BKT_INTRVL_B, BKT_MIN_B, NO_OF_BKTS/4)
-#define GBKT_RES_C(U) GBKT_RES((U), BKT_INTRVL_C, BKT_MIN_C, NO_OF_BKTS/2)
-#define GBKT_RES_D(U) GBKT_RES((U), BKT_INTRVL_D, BKT_MIN_D, NO_OF_BKTS*3/4)
+#define BKT_MIN_IX_A		(0)
+#define BKT_MIN_IX_B		(BKT_MAX_IX_A + 1)
+#define BKT_MIN_IX_C		(BKT_MAX_IX_B + 1)
+#define BKT_MIN_IX_D		(BKT_MAX_IX_C + 1)
 
-static int
-bucket_index(Uint units)
+
+static Uint bkt_max_size_d;
+static Uint bkt_intrvl_d;
+
+static void
+init_bucket_index(Uint sbct)
 {
-    ASSERT(units >= MIN_BLK_UNITS);
-
-    if (units <= BKT_MAX_A)
-	return PBKT_RES_A(units);
-    if (units <= BKT_MAX_B)
-	return PBKT_RES_B(units);
-    if (units <= BKT_MAX_C)
-	return PBKT_RES_C(units);
-    if (units <= BKT_MAX_D)
-	return MIN(NO_OF_BKTS - 2, PBKT_RES_D(units));
-    
-    return NO_OF_BKTS - 1;
+    bkt_intrvl_d = 0;
+    if (sbct > BKT_MIN_SIZE_D-1)
+	bkt_intrvl_d =
+	    UNIT_CEILING((3*(sbct-BKT_MIN_SIZE_D-1)/(NO_OF_BKTS/4-1)+1)/2);
+    if (bkt_intrvl_d < BKT_INTRVL_C)
+	bkt_intrvl_d = BKT_INTRVL_C;
+    bkt_max_size_d = (NO_OF_BKTS/4)*bkt_intrvl_d + BKT_MIN_SIZE_D - 1;
 }
 
+#define BKT_IX_(SZ)							\
+  ((SZ) <= BKT_MAX_SIZE_A						\
+   ? (((SZ) - BKT_MIN_SIZE_A)/BKT_INTRVL_A + BKT_MIN_IX_A)		\
+   : ((SZ) <= BKT_MAX_SIZE_B						\
+      ? (((SZ) - BKT_MIN_SIZE_B)/BKT_INTRVL_B + BKT_MIN_IX_B)		\
+      : ((SZ) <= BKT_MAX_SIZE_C						\
+	 ? (((SZ) - BKT_MIN_SIZE_C)/BKT_INTRVL_C + BKT_MIN_IX_C)	\
+	 : ((SZ) <= BKT_MAX_SIZE_D					\
+	    ? (((SZ) - BKT_MIN_SIZE_D)/BKT_INTRVL_D + BKT_MIN_IX_D)	\
+	    : (NO_OF_BKTS - 1)))))
+
+#define BKT_MIN_SZ_(IX)							\
+  ((IX) <= BKT_MAX_IX_A							\
+   ? (((IX) - BKT_MIN_IX_A)*BKT_INTRVL_A + BKT_MIN_SIZE_A)		\
+   : ((IX) <= BKT_MAX_IX_B						\
+      ? (((IX) - BKT_MIN_IX_B)*BKT_INTRVL_B + BKT_MIN_SIZE_B)		\
+      : ((IX) <= BKT_MAX_IX_C						\
+	 ? (((IX) - BKT_MIN_IX_C)*BKT_INTRVL_C + BKT_MIN_SIZE_C)	\
+	 : (((IX) - BKT_MIN_IX_D)*BKT_INTRVL_D + BKT_MIN_SIZE_D))))
+
+#ifdef DEBUG
+
 static int
-find_bucket(BucketMask_t bucket_mask, Uint min_bucket)
+BKT_IX(Uint size)
+{
+    int ix;
+    ASSERT(size >= MIN_BLK_SZ);
+
+    ix = BKT_IX_(size);
+
+    ASSERT(0 <= ix && ix <= BKT_MAX_IX_D);
+
+    return ix;
+}
+
+static Uint
+BKT_MIN_SZ(int ix)
+{
+    Uint size;
+    ASSERT(0 <= ix && ix <= BKT_MAX_IX_D);
+
+    size = BKT_MIN_SZ_(ix);
+
+#if HARD_DEBUG
+    ASSERT(ix == BKT_IX(size));
+    ASSERT(size == MIN_BLK_SZ || ix - 1 == BKT_IX(size - 1));
+#endif
+
+    return size;
+}
+
+#else
+
+#define BKT_IX BKT_IX_
+#define BKT_MIN_SZ BKT_MIN_SZ_
+
+#endif
+
+static int
+find_bucket(int min_index)
 {
     int min, mid, max;
+    int sub_mask_ix, sub_bkt_ix;
+    int ix = -1;
 
-    min = min_bucket;
+#undef  GET_MIN_BIT
+#define GET_MIN_BIT(MinBit, BitMask, Min, Max)		\
+    min = (Min);					\
+    max = (Max);					\
+    while(max != min) {					\
+	mid = ((max - min) >> 1) + min;			\
+	if((BitMask)					\
+	   & (~(~((Word_t) 0) << (mid + 1)))		\
+	   & (~((Word_t) 0) << min))			\
+	    max = mid;					\
+	else						\
+	    min = mid + 1;				\
+    }							\
+    (MinBit) = min
 
-    if(bucket_mask & (((BucketMask_t) 1) << min))
-	return min;
 
-    if((bucket_mask & (~((BucketMask_t) 0) << min)) == 0)
+    ASSERT(bucket_masks.main < (((Word_t) 1) << (MAX_SUB_MASK_IX+1)));
+
+    sub_mask_ix = IX2SMIX(min_index);
+
+    if ((bucket_masks.main & (~((Word_t) 0) << sub_mask_ix)) == 0)
 	return -1;
 
     /* There exists a non empty bucket; find it... */
 
-    max = NO_OF_BKTS - 1;
-
-    while(max != min) {
-	mid = (max - min)/2 + min;
-	if(bucket_mask
-	   & (~(~((BucketMask_t) 0) << (mid + 1)))
-	   & (~((BucketMask_t) 0) << min))
-	    max = mid;
+    if (bucket_masks.main & (((Word_t) 1) << sub_mask_ix)) {
+	sub_bkt_ix = IX2SBIX(min_index);
+	if ((bucket_masks.sub[sub_mask_ix]
+	     & (~((Word_t) 0) << sub_bkt_ix)) == 0) {
+	    sub_mask_ix++;
+	    sub_bkt_ix = 0;
+	    if ((bucket_masks.main & (~((Word_t) 0)<< sub_mask_ix)) == 0)
+		return -1;
+	}
 	else
-	    min = mid + 1;
+	    goto find_sub_bkt_ix;
+    }
+    else {
+	sub_mask_ix++;
+	sub_bkt_ix = 0;
     }
 
-    ASSERT(bucket_mask & (((BucketMask_t) 1) << min));
-    ASSERT(!(bucket_mask
-	     & (~(~((BucketMask_t) 0) << min))
-	     & (~((BucketMask_t) 0) << min_bucket)));
+    ASSERT(sub_mask_ix <= MAX_SUB_MASK_IX);
+    /* Has to be a bit > sub_mask_ix */
+    ASSERT(bucket_masks.main & (~((Word_t) 0) << (sub_mask_ix)));
+    GET_MIN_BIT(sub_mask_ix, bucket_masks.main, sub_mask_ix, MAX_SUB_MASK_IX);
 
-    return min;
+ find_sub_bkt_ix:
+    ASSERT(sub_mask_ix <= MAX_SUB_MASK_IX);
+    ASSERT(sub_bkt_ix <= MAX_SUB_BKT_IX);
+
+    if ((bucket_masks.sub[sub_mask_ix] & (((Word_t) 1) << sub_bkt_ix)) == 0) {
+	ASSERT(sub_mask_ix + 1 <= MAX_SUB_BKT_IX);
+	/* Has to be a bit > sub_bkt_ix */
+	ASSERT(bucket_masks.sub[sub_mask_ix] & (~((Word_t) 0) << sub_bkt_ix));
+
+	GET_MIN_BIT(sub_bkt_ix,
+		    bucket_masks.sub[sub_mask_ix],
+		    sub_bkt_ix+1,
+		    MAX_SUB_BKT_IX);
+
+	ASSERT(sub_bkt_ix <= MAX_SUB_BKT_IX);
+    }
+
+    ix = MAKE_BKT_IX(sub_mask_ix, sub_bkt_ix);
+
+    ASSERT(0 <= ix && ix < NO_OF_BKTS); 
+
+    return ix;
+
+#undef  GET_MIN_BIT
+
 }
 
 static FreeBlock_t *
-search_free_blocks(FreeBlock_t *blk_list, Uint units)
+search_bucket(int ix, Uint size)
 {
     int i;
-    Uint blk_units;
-    Uint cand_units = 0;
-    FreeBlock_t *blk = NULL;
-    FreeBlock_t *cand_blk = NULL;
-    MBCarrier_t *cand_carrier = NULL;
+    Uint min_sz;
+    Uint blk_sz;
+    Uint cand_sz = 0;
+    FreeBlock_t *blk;
+    FreeBlock_t *cand = NULL;
+    int blk_on_lambc;
+    int cand_on_lambc = 0;
 
-    for (blk = blk_list, i = 0;
+    ASSERT(0 <= ix && ix <= NO_OF_BKTS - 1);
+
+    if (!buckets[ix])
+	return NULL;
+
+    min_sz = BKT_MIN_SZ(ix);
+    if (min_sz < size)
+	min_sz = size;
+
+    for (blk = buckets[ix], i = 0;
 	 blk && i < max_blk_search;
 	 blk = blk->next, i++) {
-	blk_units = BLK_UNITS(blk);
 
-	if (blk_units == units
-	    && (MBCarrier_t *) BLK_CARRIER(blk) != last_aux_mb_carrier)
+	blk_sz = BLK_SZ(blk);
+	blk_on_lambc = IS_BLK_ON_LAST_AUX_MBC(blk);
+
+	if (blk_sz == min_sz && !blk_on_lambc)
 	    return blk;
 
-	if (blk_units >= units
-	    && (!cand_blk
-		|| ((MBCarrier_t *) BLK_CARRIER(blk) != last_aux_mb_carrier
-		    && (cand_carrier == last_aux_mb_carrier
-			|| blk_units < cand_units))
-		|| ((MBCarrier_t *) BLK_CARRIER(blk) == last_aux_mb_carrier
-		    && cand_carrier == last_aux_mb_carrier
-		    && blk_units < cand_units))) {
-	    cand_units = blk_units;
-	    cand_blk = blk;
-	    cand_carrier = (MBCarrier_t *) BLK_CARRIER(blk);
+	if (blk_sz >= min_sz
+	    && (!cand
+		|| (!blk_on_lambc && (cand_on_lambc || blk_sz < cand_sz))
+		|| (blk_on_lambc && cand_on_lambc && blk_sz < cand_sz))) {
+	    cand_sz = blk_sz;
+	    cand = blk;
+	    cand_on_lambc = blk_on_lambc;
 	}
 
     }
-    return cand_blk;
+    return cand;
 }
 
 static FreeBlock_t *
-find_free_block(Uint units)
+find_free_block(Uint size)
 {
-    int bi, unsafe_bi, min_bi;
+    int unsafe_bi, min_bi;
     FreeBlock_t *blk;
-    MBCarrier_t *c;
 
-    unsafe_bi = bucket_index(units);
+    unsafe_bi = BKT_IX(size);
     
-    min_bi = find_bucket(non_empty_buckets, unsafe_bi);
+    min_bi = find_bucket(unsafe_bi);
     if (min_bi < 0)
 	return NULL;
 
-    if (use_carrier_order_search) {
-	for (c = first_mb_carrier; c; c = c->next) {
-	    bi = find_bucket(c->non_empty_buckets, min_bi);
-	    if (bi < 0)
-		continue;
-	    if (bi == unsafe_bi) {
-		blk = search_free_blocks(c->buckets[bi], units);
-		if (blk)
-		    return blk;
-		if (bi < NO_OF_BKTS - 1) {
-		    bi = find_bucket(c->non_empty_buckets, bi + 1);
-		    if (bi < 0)
-			continue;
-		}
-		else
-		    continue;
-	    }
-	    else {
-		ASSERT(bi > unsafe_bi);
-	    }
-	    ASSERT(c->buckets[bi]);
-	    /* We search a safe bucket */
-	    blk = search_free_blocks(c->buckets[bi], units);
-	    ASSERT(blk);
+    if (min_bi == unsafe_bi) {
+	blk = search_bucket(min_bi, size);
+	if (blk)
 	    return blk;
-	}
-	
-    }
-    else {
-	if (min_bi == unsafe_bi) {
-	    blk = search_free_blocks(common_buckets[min_bi], units);
-	    if (blk)
-		return blk;
-	    if (min_bi < NO_OF_BKTS - 1) {
-		min_bi = find_bucket(non_empty_buckets, min_bi + 1);
-		if (min_bi < 0)
-		    return NULL;
-	    }
-	    else
+	if (min_bi < NO_OF_BKTS - 1) {
+	    min_bi = find_bucket(min_bi + 1);
+	    if (min_bi < 0)
 		return NULL;
 	}
-	else {
-	    ASSERT(min_bi > unsafe_bi);
-	}
-	ASSERT(common_buckets[min_bi]);
-	/* We search a safe bucket */
-	blk = search_free_blocks(common_buckets[min_bi], units);
-	ASSERT(blk);
-	return blk;
+	else
+	    return NULL;
+    }
+    else {
+	ASSERT(min_bi > unsafe_bi);
     }
 
-    return NULL;
+    /* We are guaranteed to find a block that fits in this bucket */
+    blk = search_bucket(min_bi, size);
+    ASSERT(blk);
+    return blk;
 }
 
 static void
 link_free_block(FreeBlock_t *blk)
 {
+    Uint sz;
     int i;
-    FreeBlock_t **buckets;
 
-    i = bucket_index(BLK_UNITS(blk));
+    sz = BLK_SZ(blk);
 
+    ASSERT(sz >= MIN_BLK_SZ);
 
-    if (use_carrier_order_search) {
-	MBCarrier_t *c = (MBCarrier_t *) BLK_CARRIER(blk);
-	buckets = c->buckets;
-	c->non_empty_buckets |= ((BucketMask_t) 1) << i;
-    }
-    else {
-	buckets = common_buckets;
-    }
+    i = BKT_IX(sz);
 
-    blocks_in_buckets[i]++;
-    non_empty_buckets |= ((BucketMask_t) 1) << i;
+    SET_BKT_MASK_IX(i);
+
     blk->prev = NULL;
     blk->next = buckets[i];
     if (blk->next) {
@@ -947,20 +1188,10 @@ static void
 unlink_free_block(FreeBlock_t *blk)
 {
     int i;
-    BucketMask_t *non_mt_bkts;
-    FreeBlock_t **buckets;
+    Uint sz;
 
-    i = bucket_index(BLK_UNITS(blk));
-
-    if (use_carrier_order_search) {
-	MBCarrier_t *c = (MBCarrier_t *) BLK_CARRIER(blk);
-	buckets = c->buckets;
-	non_mt_bkts = &c->non_empty_buckets;
-    }
-    else {
-	buckets = common_buckets;
-	non_mt_bkts = &non_empty_buckets;
-    }
+    sz = BLK_SZ(blk);
+    i = BKT_IX(sz);
 
     if (!blk->prev) {
 	ASSERT(buckets[i] == blk);
@@ -971,68 +1202,30 @@ unlink_free_block(FreeBlock_t *blk)
     if (blk->next)
 	blk->next->prev = blk->prev;
 
-    ASSERT(blocks_in_buckets[i] > 0);
-    blocks_in_buckets[i]--;
-
     if (!buckets[i])
-	*non_mt_bkts &= ~(((BucketMask_t) 1) << i);
-    if (use_carrier_order_search && blocks_in_buckets[i] == 0)
-	non_empty_buckets &= ~(((BucketMask_t) 1) << i);
+	UNSET_BKT_MASK_IX(i);
 }
-
-static double
-calc_mbc_growth_fact(int cs)
-{
-    double ratio = ((double)(100 + mbc_growth_ratio))/((double) 100);
-
-    ASSERT(cs >= 0);
-    ASSERT(cs > max_mbcgf_calced);
-
-    if (cs >= MAX_PRE_CALCED_MBC_GROWTH_FACT) {
-	double gf = pow(ratio, (double) cs);
-	if (gf == HUGE_VAL)
-	    return -1.0;
-	return gf;
-    }
-
-    while (max_mbcgf_calced < cs) {
-	max_mbcgf_calced++;
-
-	if (DBL_MAX/ratio < mbc_growth_fact[max_mbcgf_calced-1])
-	    mbc_growth_fact[max_mbcgf_calced] = -1.0;
-	else
-	    mbc_growth_fact[max_mbcgf_calced] =
-		mbc_growth_fact[max_mbcgf_calced-1] * ratio;
-    }
-
-    return mbc_growth_fact[cs];
-}
-
 
 static Uint
-next_mbc_units(void)
+next_mbc_size(void)
 {
-    double gf;
-    Uint units;
-    int cs;
+    Uint size;
+    int cs = no_of_mmap_mbcs + no_of_malloc_mbcs - (main_carrier ? 1 : 0);
 
-    cs = mmap_mb_carriers + malloc_mb_carriers;
     ASSERT(cs >= 0);
+    ASSERT(largest_mbc_size >= smallest_mbc_size);
 
-    gf = cs > max_mbcgf_calced ? calc_mbc_growth_fact(cs) : mbc_growth_fact[cs];
-
-    if (gf < 0 || DBL_MAX/gf < smallest_mbc_units)
-	units = largest_mbc_units;
+    if (cs >= mbc_growth_stages)
+	size = largest_mbc_size;
     else
-	units = (Uint) smallest_mbc_units*gf;
+	size = ((Uint) (cs*(((double) (largest_mbc_size-smallest_mbc_size))
+			    /((double) mbc_growth_stages))
+			+ smallest_mbc_size));
 
-    if (units < MIN_MBC_UNITS)
-	units = MIN_MBC_UNITS;
+    if (size < MIN_MBC_SZ)
+	size = MIN_MBC_SZ;
 
-    if (units > largest_mbc_units)
-	units = largest_mbc_units;
-
-    return units - MBC_HDR_UNITS;
+    return size - MBC_HDR_SZ;
 }
 
 static Carrier_t *carrier_alloc(Uint, Uint, Uint);
@@ -1047,67 +1240,63 @@ static void carrier_free(Carrier_t *);
 static void *
 mbc_alloc(size_t size)
 {
-    Uint units;
+    Uint is_last_blk;
+    Uint blk_sz;
     Block_t *blk;
-    Uint nxt_units;
+    Uint nxt_blk_sz;
     MBCarrier_t *carrier;
     Block_t *nxt_blk;
 
     ASSERT(size);
     ASSERT(size < sbc_threshold);
 
-    units = B2U(size) + ABLK_HDR_UNITS;
+    blk_sz = UMEMSZ2BLKSZ(size);
 
-    if (units < MIN_BLK_UNITS)
-	units = MIN_BLK_UNITS;
-
-    blk = (Block_t *) find_free_block(units);
+    blk = (Block_t *) find_free_block(blk_sz);
 
     if (!blk) {
-	Uint c_units = next_mbc_units();
-	if (c_units - MIN_MBC_FIRST_FREE_UNITS < units)
-	    c_units = units + MIN_MBC_FIRST_FREE_UNITS;
+	Uint c_sz = next_mbc_size();
+	if (c_sz - MIN_MBC_FIRST_FREE_SZ < blk_sz)
+	    c_sz = blk_sz + MIN_MBC_FIRST_FREE_SZ;
 
-	carrier = (MBCarrier_t *) carrier_alloc(CA_TYPE_MULTIBLOCK,
-						c_units,
-						0);
+	carrier = (MBCarrier_t *) carrier_alloc(CA_TYPE_MULTIBLOCK, c_sz, 0);
 	if (!carrier) {
 	    /*
 	     * Emergency! We couldn't allocate the carrier as we wanted.
 	     * If it's a relatively small request, we try one more time
 	     * with a small mbc; otherwise, we place it in a sbc.
 	     */
-	    if (MIN_MBC_UNITS - MIN_MBC_FIRST_FREE_UNITS >= units)
+	    if (MIN_MBC_SZ - MIN_MBC_FIRST_FREE_SZ >= blk_sz)
 		carrier = (MBCarrier_t *) carrier_alloc(CA_TYPE_MULTIBLOCK,
-							MIN_MBC_UNITS,
+							MIN_MBC_SZ,
 							0);
 
 	    if (!carrier) {
 		/* The only thing left to do is to try to place it in a sbc. */
 		SBCarrier_t *sbc;
 		sbc = (SBCarrier_t *) carrier_alloc(CA_TYPE_SINGLEBLOCK,
-						    B2U(size),
+						    size,
 						    CA_FLAG_FORCE_MALLOC);
-		return sbc ? SBC2MEM(sbc) : NULL;
+		return sbc ? SBC2UMEM(sbc) : NULL;
 	    }
 	}
 	
-	blk = (Block_t *) MBC2MEM(carrier);
+	blk = (Block_t *) MBC2FBLK(carrier);
 
-	ASSERT(BLK_UNITS(blk) >= units);
+	ASSERT(BLK_SZ(blk) >= blk_sz);
+	ASSERT(IS_MBC_BLK(blk));
 #if HARD_DEBUG
 	link_free_block((FreeBlock_t *) blk);
-	check_mb_carrier(carrier);
+	check_blk_carrier(blk);
 	unlink_free_block((FreeBlock_t *) blk);
 #endif
 
     }
     else {
-	carrier = (MBCarrier_t *) BLK_CARRIER(blk);
-
 	ASSERT(IS_FREE_BLK(blk));
+	ASSERT(IS_MBC_BLK(blk));
 #if HARD_DEBUG
-	check_mb_carrier(carrier);
+	check_blk_carrier(blk);
 #endif
 
 	unlink_free_block((FreeBlock_t *) blk);
@@ -1115,113 +1304,161 @@ mbc_alloc(size_t size)
 
 
     ASSERT(blk);
-    ASSERT(IS_MBC_BLK(blk));
 
     SET_BLK_ALLOCED(blk);
 
+#ifdef DEBUG
+    nxt_blk = NULL;
+#endif
 
-    if (BLK_UNITS(blk) - MIN_BLK_UNITS >= units) {
+    is_last_blk = IS_LAST_BLK(blk);
+
+    if (BLK_SZ(blk) - MIN_BLK_SZ >= blk_sz) {
 	/* Shrink block... */
-	nxt_units = BLK_UNITS(blk) - units;
-	SET_BLK_UNITS(blk, units);
+	nxt_blk_sz = BLK_SZ(blk) - blk_sz;
+	SET_BLK_SZ(blk, blk_sz);
 
 	nxt_blk = NXT_BLK(blk);
-	SET_BLK_FREE(nxt_blk);
-	SET_PREV_BLK_ALLOCED(nxt_blk);
-	SET_MULTI_BLK(nxt_blk);
-	SET_BLK_CARRIER(nxt_blk, BLK_CARRIER(blk));
-	SET_FREE_BLK_UNITS(nxt_blk, nxt_units);
+	SET_BLK_HDR(nxt_blk,
+		    nxt_blk_sz,
+		    SBH_THIS_FREE|SBH_PREV_ALLOCED|SBH_NOT_LAST_BLK);
+
+	if (is_last_blk) {
+	    SET_NOT_LAST_BLK(blk);
+	    SET_LAST_BLK(nxt_blk);
+	}
+	else
+	    SET_BLK_SZ_FTR(nxt_blk, nxt_blk_sz);
+
 	link_free_block((FreeBlock_t *) nxt_blk);
 
+	ASSERT(IS_NOT_LAST_BLK(blk));
+	ASSERT(IS_FREE_BLK(nxt_blk));
+	ASSERT(is_last_blk ? IS_LAST_BLK(nxt_blk) : IS_NOT_LAST_BLK(nxt_blk));
+	ASSERT(is_last_blk || nxt_blk == PREV_BLK(NXT_BLK(nxt_blk)));
+	ASSERT(is_last_blk || IS_PREV_BLK_FREE(NXT_BLK(nxt_blk)));
+	ASSERT(nxt_blk_sz == BLK_SZ(nxt_blk));
+	ASSERT(nxt_blk_sz % sizeof(Unit_t) == 0);
+	ASSERT(nxt_blk_sz >= MIN_BLK_SZ);
     }
     else {
-	if (!IS_LAST_BLK(blk)) {
+	if (!is_last_blk) {
 	    nxt_blk = NXT_BLK(blk);
 	    SET_PREV_BLK_ALLOCED(nxt_blk);
 	}
-	units = BLK_UNITS(blk);
+	blk_sz = BLK_SZ(blk);
+
+	ASSERT(is_last_blk ? IS_LAST_BLK(blk) : IS_NOT_LAST_BLK(blk));
     }
 
-    if (IS_MMAP_CARRIER(carrier)) 
-	STAT_MMAP_MBC_BLK_ALLOC(units);
-    else
-	STAT_MALLOC_MBC_BLK_ALLOC(units);
+    STAT_MBC_BLK_ALLOC(blk_sz);
+
+    ASSERT(IS_ALLOCED_BLK(blk));
+    ASSERT(blk_sz == BLK_SZ(blk));
+    ASSERT(blk_sz % sizeof(Unit_t) == 0);
+    ASSERT(blk_sz >= MIN_BLK_SZ);
+    ASSERT(blk_sz >= size + ABLK_HDR_SZ);
+    ASSERT(IS_MBC_BLK(blk));
+
+    ASSERT(!nxt_blk || IS_PREV_BLK_ALLOCED(nxt_blk));
+    ASSERT(!nxt_blk || IS_MBC_BLK(nxt_blk));
 
 #if HARD_DEBUG
-    check_mb_carrier(carrier);
+    check_blk_carrier(blk);
 #endif
 
-    ASSERT(BLK_UNITS(blk) >= MIN_BLK_UNITS);
-
-    return BLK2MEM(blk);
+    return BLK2UMEM(blk);
 }
 
 static void
 mbc_free(void *p)
 {
-    Uint units;
-    MBCarrier_t *carrier;
+    int is_first_blk;
+    int is_last_blk;
+    Uint blk_sz;
     Block_t *blk;
     Block_t *nxt_blk;
 
     ASSERT(p);
 
-    blk = MEM2BLK(p);
-    units = BLK_UNITS(blk);
-    carrier = (MBCarrier_t *) BLK_CARRIER(blk);
+    blk = UMEM2BLK(p);
+    blk_sz = BLK_SZ(blk);
+
     ASSERT(IS_MBC_BLK(blk));
-    ASSERT(units >= MIN_BLK_UNITS);
+    ASSERT(blk_sz >= MIN_BLK_SZ);
 
 #if HARD_DEBUG
-    check_mb_carrier(carrier);
+    check_blk_carrier(blk);
 #endif
 
-    if (IS_MMAP_CARRIER(carrier)) 
-	STAT_MMAP_MBC_BLK_FREE(units);
-    else
-	STAT_MALLOC_MBC_BLK_FREE(units);
+    STAT_MBC_BLK_FREE(blk_sz);
 
-    if (!IS_FIRST_BLK(blk) && IS_PREV_BLK_FREE(blk)) {
+    is_first_blk = IS_FIRST_BLK(blk);
+    is_last_blk = IS_LAST_BLK(blk);
+
+    if (!is_first_blk && IS_PREV_BLK_FREE(blk)) {
 	/* Coalesce with previous block... */
 	blk = PREV_BLK(blk);
 	unlink_free_block((FreeBlock_t *) blk);
 
-	units += BLK_UNITS(blk);
-	ASSERT(carrier == (MBCarrier_t *) BLK_CARRIER(blk));
+	blk_sz += BLK_SZ(blk);
+	is_first_blk = IS_FIRST_BLK(blk);
+	SET_BLK_SZ(blk, blk_sz);
     }
     else {
 	SET_BLK_FREE(blk);
     }
 
-    SET_FREE_BLK_UNITS(blk, units);
-
-    ASSERT(IS_MBC_BLK(blk));
-
-    if (!IS_LAST_BLK(blk)) {
+    if (is_last_blk)
+	SET_LAST_BLK(blk);
+    else {
 	nxt_blk = NXT_BLK(blk);
 	if (IS_FREE_BLK(nxt_blk)) {
 	    /* Coalesce with next block... */
 	    unlink_free_block((FreeBlock_t *) nxt_blk);
-	    units += BLK_UNITS(nxt_blk);
-	    SET_FREE_BLK_UNITS(blk, units);
+	    blk_sz += BLK_SZ(nxt_blk);
+	    SET_BLK_SZ(blk, blk_sz);
+
+	    is_last_blk = IS_LAST_BLK(nxt_blk);
+	    if (is_last_blk) 
+		SET_LAST_BLK(blk);
+	    else {
+		SET_NOT_LAST_BLK(blk);
+		SET_BLK_SZ_FTR(blk, blk_sz);
+	    }
 	}
-	else
+	else {
 	    SET_PREV_BLK_FREE(nxt_blk);
+	    SET_NOT_LAST_BLK(blk);
+	    SET_BLK_SZ_FTR(blk, blk_sz);
+	}
+
     }
 
+    ASSERT(is_last_blk  ? IS_LAST_BLK(blk)  : IS_NOT_LAST_BLK(blk));
+    ASSERT(is_first_blk ? IS_FIRST_BLK(blk) : IS_NOT_FIRST_BLK(blk));
+    ASSERT(IS_FREE_BLK(blk));
+    ASSERT(is_first_blk || IS_PREV_BLK_ALLOCED(blk));
+    ASSERT(is_last_blk  || IS_PREV_BLK_FREE(NXT_BLK(blk)));
+    ASSERT(blk_sz == BLK_SZ(blk));
+    ASSERT(is_last_blk || blk == PREV_BLK(NXT_BLK(blk)));
+    ASSERT(blk_sz % sizeof(Unit_t) == 0);
+    ASSERT(IS_MBC_BLK(blk));
 
-    if (IS_AUX_CARRIER(carrier) && IS_FIRST_BLK(blk) && IS_LAST_BLK(blk)) {
+    if (is_first_blk
+	&& is_last_blk
+	&& IS_AUX_CARRIER(FBLK2MBC(blk))) {
 #if HARD_DEBUG
 	link_free_block((FreeBlock_t *) blk);
-	check_mb_carrier(carrier);
+	check_blk_carrier(blk);
 	unlink_free_block((FreeBlock_t *) blk);
 #endif
-	carrier_free((Carrier_t *) carrier);
+	carrier_free((Carrier_t *) FBLK2MBC(blk));
     }
     else {
 	link_free_block((FreeBlock_t *) blk);
 #if HARD_DEBUG
-	check_mb_carrier(carrier);
+	check_blk_carrier(blk);
 #endif
     }
 }
@@ -1230,90 +1467,106 @@ static void *
 mbc_realloc(void *p, size_t size)
 {
     void *new_p;
-    Uint old_units;
+    Uint old_blk_sz;
     Block_t *blk;
 #ifndef MBC_REALLOC_ALWAYS_MOVES
-    Uint units;
-    Uint nxt_units;
+    Uint blk_sz;
     Block_t *nxt_blk;
-    MBCarrier_t *carrier;
+    Uint nxt_blk_sz;
+    int is_last_blk;
 #endif /* #ifndef MBC_REALLOC_ALWAYS_MOVES */
 
     ASSERT(p);
     ASSERT(size);
     ASSERT(size < sbc_threshold);
 
-    blk = (Block_t *) MEM2BLK(p);
-    old_units = BLK_UNITS(blk);
+    blk = (Block_t *) UMEM2BLK(p);
+    old_blk_sz = BLK_SZ(blk);
 
-    ASSERT(old_units >= MIN_BLK_UNITS);
+    ASSERT(old_blk_sz >= MIN_BLK_SZ);
 
 #ifndef MBC_REALLOC_ALWAYS_MOVES
 
-
-    units = B2U(size) + ABLK_HDR_UNITS;
-    if (units < MIN_BLK_UNITS)
-	units = MIN_BLK_UNITS;
+    blk_sz = UMEMSZ2BLKSZ(size);
 
     ASSERT(IS_ALLOCED_BLK(blk));
     ASSERT(IS_MBC_BLK(blk));
 
-    if (old_units == units)
+    if (old_blk_sz == blk_sz)
 	return p;
 
-    if ((IS_LAST_BLK(blk) || IS_ALLOCED_BLK(NXT_BLK(blk)))
-	&& (old_units - MIN_BLK_UNITS < units && units < old_units))
+    is_last_blk = IS_LAST_BLK(blk);
+
+    if ((is_last_blk || IS_ALLOCED_BLK(NXT_BLK(blk)))
+	&& (old_blk_sz - MIN_BLK_SZ < blk_sz && blk_sz < old_blk_sz))
 	return p;
 
-    if (units < old_units) {
+    if (blk_sz < old_blk_sz) {
 	/* Shrink block... */
-	carrier = (MBCarrier_t *) BLK_CARRIER(blk);
+	Block_t *nxt_nxt_blk;
 
 #if HARD_DEBUG
-	check_mb_carrier(carrier);
+	check_blk_carrier(blk);
 #endif
 
-	nxt_units = old_units - units;
-	SET_BLK_UNITS(blk, units);
+	nxt_blk_sz = old_blk_sz - blk_sz;
+	SET_BLK_SZ(blk, blk_sz);
+	SET_NOT_LAST_BLK(blk);
 
 	nxt_blk = NXT_BLK(blk);
-	SET_BLK_FREE(nxt_blk);
-	SET_PREV_BLK_ALLOCED(nxt_blk);
-	SET_MULTI_BLK(nxt_blk);
-	SET_BLK_CARRIER(nxt_blk, carrier);
-	SET_FREE_BLK_UNITS(nxt_blk, nxt_units);
+	SET_BLK_HDR(nxt_blk,
+		    nxt_blk_sz,
+		    SBH_THIS_FREE|SBH_PREV_ALLOCED|SBH_NOT_LAST_BLK);
 
-	if (IS_MMAP_CARRIER(carrier)) {
-	    STAT_MMAP_MBC_BLK_FREE(old_units);
-	    STAT_MMAP_MBC_BLK_ALLOC(units);
-	}
+	STAT_MBC_BLK_FREE(old_blk_sz);
+	STAT_MBC_BLK_ALLOC(blk_sz);
+
+	ASSERT(BLK_SZ(blk) >= MIN_BLK_SZ);
+
+	if (is_last_blk)
+	    SET_LAST_BLK(nxt_blk);
 	else {
-	    STAT_MALLOC_MBC_BLK_FREE(old_units);
-	    STAT_MALLOC_MBC_BLK_ALLOC(units);
-	}
-
-	ASSERT(BLK_UNITS(blk) >= MIN_BLK_UNITS);
-
-	blk = nxt_blk;
-	units = nxt_units;
-
-	if (!IS_LAST_BLK(blk)) {
-	    nxt_blk = NXT_BLK(blk);
-	    if (IS_FREE_BLK(nxt_blk)) {
+	    nxt_nxt_blk = NXT_BLK(nxt_blk);
+	    if (IS_FREE_BLK(nxt_nxt_blk)) {
 		/* Coalesce with next free block... */
-		units += BLK_UNITS(nxt_blk);
-		unlink_free_block((FreeBlock_t *) nxt_blk);
-		SET_FREE_BLK_UNITS(blk, units);
-		ASSERT(!IS_LAST_BLK(blk) ? IS_PREV_BLK_FREE(NXT_BLK(blk)) : 1);
+		nxt_blk_sz += BLK_SZ(nxt_nxt_blk);
+		unlink_free_block((FreeBlock_t *) nxt_nxt_blk);
+		SET_BLK_SZ(nxt_blk, nxt_blk_sz);
+
+		is_last_blk = IS_LAST_BLK(nxt_nxt_blk);
+		if (is_last_blk)
+		    SET_LAST_BLK(nxt_blk);
+		else
+		    SET_BLK_SZ_FTR(nxt_blk, nxt_blk_sz);
 	    }
-	    else
-		SET_PREV_BLK_FREE(nxt_blk);
+	    else {
+		SET_BLK_SZ_FTR(nxt_blk, nxt_blk_sz);
+		SET_PREV_BLK_FREE(nxt_nxt_blk);
+	    }
 	}
 
-	link_free_block((FreeBlock_t *) blk);
+	link_free_block((FreeBlock_t *) nxt_blk);
+
+
+	ASSERT(IS_ALLOCED_BLK(blk));
+	ASSERT(blk_sz == BLK_SZ(blk));
+	ASSERT(blk_sz % sizeof(Unit_t) == 0);
+	ASSERT(blk_sz >= MIN_BLK_SZ);
+	ASSERT(blk_sz >= size + ABLK_HDR_SZ);
+	ASSERT(IS_MBC_BLK(blk));
+    
+	ASSERT(IS_FREE_BLK(nxt_blk));
+	ASSERT(IS_PREV_BLK_ALLOCED(nxt_blk));
+	ASSERT(nxt_blk_sz == BLK_SZ(nxt_blk));
+	ASSERT(nxt_blk_sz % sizeof(Unit_t) == 0);
+	ASSERT(nxt_blk_sz >= MIN_BLK_SZ);
+	ASSERT(IS_MBC_BLK(nxt_blk));
+	ASSERT(is_last_blk ? IS_LAST_BLK(nxt_blk) : IS_NOT_LAST_BLK(nxt_blk));
+	ASSERT(is_last_blk || nxt_blk == PREV_BLK(NXT_BLK(nxt_blk)));
+	ASSERT(is_last_blk || IS_PREV_BLK_FREE(NXT_BLK(nxt_blk)));
 
 #if HARD_DEBUG
-	check_mb_carrier(carrier);
+	check_blk_carrier(blk);
 #endif
 
 	return p;
@@ -1321,58 +1574,85 @@ mbc_realloc(void *p, size_t size)
 
     /* Need larger block... */
 
-    if (!IS_LAST_BLK(blk)) {
+    if (!is_last_blk) {
 	nxt_blk = NXT_BLK(blk);
-	if (IS_FREE_BLK(nxt_blk)
-	    && units <= old_units + BLK_UNITS(nxt_blk)) {
+	if (IS_FREE_BLK(nxt_blk) && blk_sz <= old_blk_sz + BLK_SZ(nxt_blk)) {
 	    /* Grow into next block... */
-	    carrier = (MBCarrier_t *) BLK_CARRIER(blk);
+
 #if HARD_DEBUG
-	    check_mb_carrier(carrier);
+	    check_blk_carrier(blk);
 #endif
 
 	    unlink_free_block((FreeBlock_t *) nxt_blk);
-	    nxt_units = BLK_UNITS(nxt_blk) - (units - old_units);
+	    nxt_blk_sz = BLK_SZ(nxt_blk) - (blk_sz - old_blk_sz);
 
-	    if (nxt_units < MIN_BLK_UNITS) {
-		units += nxt_units;
+	    is_last_blk = IS_LAST_BLK(nxt_blk);
+	    if (nxt_blk_sz < MIN_BLK_SZ) {
+		blk_sz += nxt_blk_sz;
 
-		SET_BLK_UNITS(blk, units);
+		SET_BLK_SZ(blk, blk_sz);
 
-		if (!IS_LAST_BLK(blk)) {
+		if (is_last_blk) {
+		    SET_LAST_BLK(blk);
+#ifdef DEBUG
+		    nxt_blk = NULL;
+#endif
+		}
+		else {
 		    nxt_blk = NXT_BLK(blk);
 		    SET_PREV_BLK_ALLOCED(nxt_blk);
+#ifdef DEBUG
+		    nxt_blk_sz = BLK_SZ(nxt_blk);
+#endif
 		}
 	    }
 	    else {
-		SET_BLK_UNITS(blk, units);
+		SET_BLK_SZ(blk, blk_sz);
 
 		nxt_blk = NXT_BLK(blk);
-		SET_BLK_FREE(nxt_blk);
-		SET_PREV_BLK_ALLOCED(nxt_blk);
-		SET_MULTI_BLK(nxt_blk);
-		SET_BLK_CARRIER(nxt_blk, carrier);
-		SET_FREE_BLK_UNITS(nxt_blk, nxt_units);
+		SET_BLK_HDR(nxt_blk,
+			    nxt_blk_sz,
+			    SBH_THIS_FREE|SBH_PREV_ALLOCED|SBH_NOT_LAST_BLK);
+
+		if (is_last_blk)
+		    SET_LAST_BLK(nxt_blk);
+		else
+		    SET_BLK_SZ_FTR(nxt_blk, nxt_blk_sz);
+
 		link_free_block((FreeBlock_t *) nxt_blk);
 
-		ASSERT(!IS_LAST_BLK(nxt_blk)
-		       ? IS_PREV_BLK_FREE(NXT_BLK(nxt_blk))
-		       : 1);
+		ASSERT(IS_FREE_BLK(nxt_blk));
 	    }
 
-	    if (IS_MMAP_CARRIER(carrier)) {
-		STAT_MMAP_MBC_BLK_FREE(old_units);
-		STAT_MMAP_MBC_BLK_ALLOC(units);
-	    }
-	    else {
-		STAT_MALLOC_MBC_BLK_FREE(old_units);
-		STAT_MALLOC_MBC_BLK_ALLOC(units);
-	    }
+	    STAT_MBC_BLK_FREE(old_blk_sz);
+	    STAT_MBC_BLK_ALLOC(blk_sz);
 
-	    ASSERT(BLK_UNITS(blk) >= MIN_BLK_UNITS);
+
+	    ASSERT(IS_ALLOCED_BLK(blk));
+	    ASSERT(blk_sz == BLK_SZ(blk));
+	    ASSERT(blk_sz % sizeof(Unit_t) == 0);
+	    ASSERT(blk_sz >= MIN_BLK_SZ);
+	    ASSERT(blk_sz >= size + ABLK_HDR_SZ);
+	    ASSERT(IS_MBC_BLK(blk));
+
+	    ASSERT(!nxt_blk || IS_PREV_BLK_ALLOCED(nxt_blk));
+	    ASSERT(!nxt_blk || nxt_blk_sz == BLK_SZ(nxt_blk));
+	    ASSERT(!nxt_blk || nxt_blk_sz % sizeof(Unit_t) == 0);
+	    ASSERT(!nxt_blk || nxt_blk_sz >= MIN_BLK_SZ);
+	    ASSERT(!nxt_blk || IS_MBC_BLK(nxt_blk));
+	    ASSERT(!nxt_blk || (is_last_blk
+				? IS_LAST_BLK(nxt_blk)
+				: IS_NOT_LAST_BLK(nxt_blk)));
+	    ASSERT(!nxt_blk || is_last_blk
+		   || IS_ALLOCED_BLK(nxt_blk)
+		   || nxt_blk == PREV_BLK(NXT_BLK(nxt_blk)));
+	    ASSERT(!nxt_blk || is_last_blk
+		   || IS_ALLOCED_BLK(nxt_blk)
+		   || IS_PREV_BLK_FREE(NXT_BLK(nxt_blk)));
 #if HARD_DEBUG
-	    check_mb_carrier(carrier);
+	    check_blk_carrier(blk);
 #endif
+
 	    return p;
 	}
     }
@@ -1384,48 +1664,54 @@ mbc_realloc(void *p, size_t size)
     new_p = mbc_alloc(size);
     if (!new_p)
 	return NULL;
-    MEMCPY(new_p, p, MIN(size, U2B(old_units - ABLK_HDR_UNITS)));
+    MEMCPY(new_p, p, MIN(size, old_blk_sz - ABLK_HDR_SZ));
     mbc_free(p);
     return new_p;
 }
 
+
 static Carrier_t *
-carrier_alloc(Uint type, Uint data_units, Uint flags)
+carrier_alloc(Uint type, Uint data_size, Uint flags)
 {
     Carrier_t *carrier;
 #if USE_MMAP
-    Uint mmap_carrier_units;
+    Uint mmap_carrier_size;
     int mmapped = 0;
 #endif
-    Uint block_units;
-    Uint carrier_units;
+    Uint block_size;
+    Uint carrier_size;
+
+    block_size = UMEMSZ2BLKSZ(data_size);
 
     if (type == CA_TYPE_SINGLEBLOCK) {
-	block_units = data_units + ABLK_HDR_UNITS;
-	carrier_units = block_units + SBC_HDR_UNITS;
+	carrier_size = block_size + SBC_HDR_SZ;
     }
     else {
 	ASSERT(type == CA_TYPE_MULTIBLOCK);
-	block_units = data_units;
-	carrier_units = MBC_HDR_UNITS + data_units;
+	carrier_size = block_size + MBC_HDR_SZ;
+#if HARD_DEBUG
+	if (sizeof(Unit_t) == sizeof(Word_t))
+	    carrier_size += sizeof(Word_t);
+#endif
     }
+    carrier_size = UNIT_CEILING(carrier_size);
 
 #if USE_MMAP
-    if (mmap_mb_carriers + mmap_sb_carriers >= max_mmap_carriers
+    if (no_of_mmap_mbcs + no_of_mmap_sbcs >= max_mmap_carriers
 	|| flags & CA_FLAG_FORCE_MALLOC)
 	goto malloc_carrier;
-    mmap_carrier_units = CEIL(carrier_units, page_units);
+    mmap_carrier_size = PAGE_CEILING(carrier_size);
 
-    carrier = (Carrier_t *) MMAP(U2B(mmap_carrier_units));
+    carrier = (Carrier_t *) MMAP(mmap_carrier_size);
     if (carrier != (Carrier_t *) MAP_FAILED) {
-	carrier_units = mmap_carrier_units;
+	carrier_size = mmap_carrier_size;
 	SET_MMAP_CARRIER(carrier);
 	mmapped++;
     }
     else {
     malloc_carrier:
 #endif
-	carrier = (Carrier_t *) MALLOC(U2B(carrier_units));
+	carrier = (Carrier_t *) MALLOC(carrier_size);
 	if (!carrier)
 	    return NULL;
 	SET_MALLOC_CARRIER(carrier);
@@ -1438,33 +1724,50 @@ carrier_alloc(Uint type, Uint data_units, Uint flags)
     else
 	SET_AUX_CARRIER(carrier);
 
-    SET_CARRIER_UNITS(carrier, carrier_units);
+    SET_CARRIER_SZ(carrier, carrier_size);
 
     if (type == CA_TYPE_SINGLEBLOCK) {
 	SBCarrier_t *sb_carrier = (SBCarrier_t *) carrier;
+	Block_t *blk = SBC2BLK(sb_carrier);
 
 	SET_SB_CARRIER(sb_carrier);
-	SET_BLK_ALLOCED(SBC2BLK(sb_carrier));
-	SET_PREV_BLK_ALLOCED(SBC2BLK(sb_carrier));
-	SET_SINGLE_BLK(SBC2BLK(sb_carrier));
-	SET_BLK_CARRIER(SBC2BLK(sb_carrier), sb_carrier);
-	SET_BLK_UNITS(SBC2BLK(sb_carrier), block_units);
+
+	SET_SBC_BLK_FTR(((Word_t *)blk)[-1]);
+	SET_BLK_HDR(blk,
+		    block_size,
+		    SBH_THIS_ALLOCED|SBH_PREV_FREE|SBH_LAST_BLK);
+
 
 #if USE_MMAP
-	if (mmapped)
-	    STAT_MMAP_SB_CARRIER_ALLOC(carrier_units, block_units);
+	if (mmapped) {
+	    STAT_MMAP_SBC_ALLOC(carrier_size, block_size);
+	    ASSERT(carrier_size % page_size == 0);
+	}
 	else
 #endif
-	    STAT_MALLOC_SB_CARRIER_ALLOC(carrier_units, block_units);
+	    STAT_MALLOC_SBC_ALLOC(carrier_size, block_size);
+
+
+	ASSERT(IS_SBC_BLK(blk));
+	ASSERT(IS_FIRST_BLK(blk));
+	ASSERT(IS_LAST_BLK(blk));
+	ASSERT(block_size == BLK_SZ(blk));
+	ASSERT(block_size % sizeof(Unit_t) == 0);
 
 #if HARD_DEBUG
-	check_sb_carrier(sb_carrier);
+	check_blk_carrier(blk);
 #endif
     }
     else {
-	int i;
 	FreeBlock_t *blk;
 	MBCarrier_t *mb_carrier = (MBCarrier_t *) carrier;
+
+#if HARD_DEBUG
+	if (sizeof(Unit_t) == sizeof(Word_t))
+	    carrier_size -= sizeof(Word_t);
+#endif
+
+	block_size = UNIT_FLOOR(carrier_size - MBC_HDR_SZ);
 
 	SET_MB_CARRIER(carrier);
 
@@ -1482,167 +1785,208 @@ carrier_alloc(Uint type, Uint data_units, Uint flags)
 	    last_mb_carrier = mb_carrier;
 	}
 
-	last_aux_mb_carrier = (IS_AUX_CARRIER(last_mb_carrier)
-			       ? last_mb_carrier
-			       : NULL);
+	if (last_aux_mb_carrier_start != (char *) last_mb_carrier
+	    && last_mb_carrier
+	    && IS_AUX_CARRIER(last_mb_carrier)) {
+	    last_aux_mb_carrier_start = (char *) last_mb_carrier;
+	    last_aux_mb_carrier_end = (((char *) last_mb_carrier)
+				       + CARRIER_SZ(last_mb_carrier));
+	}
+	else {
+	    last_aux_mb_carrier_start = NULL;
+	    last_aux_mb_carrier_end = NULL;
+	}
 
-	mb_carrier->non_empty_buckets = 0;
+	blk = (FreeBlock_t *) MBC2FBLK(mb_carrier);
 
-	for (i = 0; i < NO_OF_BKTS; i++)
-	    mb_carrier->buckets[i] = NULL;
+	SET_MBC_BLK_FTR(((Word_t *)blk)[-1]);
+	SET_BLK_HDR(blk,
+		    block_size,
+		    SBH_THIS_FREE|SBH_PREV_FREE|SBH_LAST_BLK);
 
-	blk = (FreeBlock_t *) MBC2MEM(mb_carrier);
-	SET_BLK_FREE(blk);
-	SET_PREV_BLK_ALLOCED(blk);
-	SET_MULTI_BLK(blk);
-	SET_BLK_CARRIER(blk, mb_carrier);
-	SET_FREE_BLK_UNITS(blk, carrier_units - MBC_HDR_UNITS);
+	ASSERT(IS_MBC_BLK(blk));
+	ASSERT(IS_FIRST_BLK(blk));
+	ASSERT(IS_LAST_BLK(blk));
+	ASSERT(block_size == BLK_SZ(blk));
+	ASSERT(block_size % sizeof(Unit_t) == 0);
 
 #if USE_MMAP
 	if (mmapped)
-	    STAT_MMAP_MB_CARRIER_ALLOC(carrier_units);
+	    STAT_MMAP_MBC_ALLOC(carrier_size);
 	else
 #endif
-	    STAT_MALLOC_MB_CARRIER_ALLOC(carrier_units);
+	    STAT_MALLOC_MBC_ALLOC(carrier_size);
+
+#if HARD_DEBUG
+	*((MBCarrier_t **) NXT_BLK(blk)) = mb_carrier;
+#endif
 
     }
+
+    DEBUG_SAVE_ALIGNMENT(carrier);
+
     return carrier;
 }
 
 static SBCarrier_t *
-sb_carrier_resize(SBCarrier_t *carrier, Uint new_data_units, Uint flags)
+sb_carrier_resize(SBCarrier_t *carrier, Uint new_data_size, Uint flags)
 {
 #if USE_MMAP
-    Uint new_mmap_carrier_units;
+    Uint new_mmap_carrier_size;
 #endif
+    Block_t *blk;
     SBCarrier_t *new_carrier;
-    Uint old_carrier_units;
-    Uint old_block_units;
-    Uint new_block_units;
-    Uint new_carrier_units;
+    Uint old_carrier_size;
+    Uint old_block_size;
+    Uint new_block_size;
+    Uint new_carrier_size;
+#ifdef DEBUG
+    int is_mmapped;
+#endif
+
+    blk = SBC2BLK(carrier);
 
 #if HARD_DEBUG
-    check_sb_carrier(carrier);
+    check_blk_carrier(blk);
 #endif
 
     ASSERT(IS_SB_CARRIER(carrier));
-    ASSERT(IS_SBC_BLK(SBC2BLK(carrier)));
+    ASSERT(IS_SBC_BLK(blk));
 
-    new_block_units = new_data_units + ABLK_HDR_UNITS;
-    new_carrier_units = new_block_units + SBC_HDR_UNITS;
+    new_block_size = UMEMSZ2BLKSZ(new_data_size);
+    new_carrier_size = UNIT_CEILING(new_block_size + SBC_HDR_SZ);
 
-    old_carrier_units = CARRIER_UNITS(carrier);
-    old_block_units = BLK_UNITS(SBC2BLK(carrier));
+    old_carrier_size = CARRIER_SZ(carrier);
+    old_block_size = BLK_SZ(blk);
 
 #if USE_MMAP
 
     if (IS_MMAP_CARRIER(carrier)) {
-
-	if (mmap_mb_carriers + mmap_sb_carriers > max_mmap_carriers
-	    || flags & CA_FLAG_FORCE_MALLOC)
+#ifdef DEBUG
+	    is_mmapped = 1;
+#endif
+	STAT_MMAP_SBC_FREE(old_carrier_size, old_block_size);
+	
+	if (flags & CA_FLAG_FORCE_MALLOC)
 	    goto force_malloc;
 
-	STAT_MMAP_SB_CARRIER_FREE(old_carrier_units, old_block_units);
-	
-	new_mmap_carrier_units = CEIL(new_carrier_units, page_units);
-	if (new_mmap_carrier_units == old_carrier_units) {
-#if !USE_MREMAP
-	no_carrier_change:
-#endif
-	    SET_BLK_UNITS(SBC2BLK(carrier), new_block_units);
-	    STAT_MMAP_SB_CARRIER_ALLOC(old_carrier_units, new_block_units);
+	new_mmap_carrier_size = PAGE_CEILING(new_carrier_size);
+	if (old_carrier_size >= new_mmap_carrier_size
+	    && ((((double) (old_carrier_size - new_mmap_carrier_size))
+		 /((double) old_carrier_size))
+		< ((double) sbc_shrink_threshold))) {
+	    SET_BLK_SZ(SBC2BLK(carrier), new_block_size);
+	    STAT_MMAP_SBC_ALLOC(old_carrier_size, new_block_size);
 	    return carrier;
 	}
 
 #if USE_MREMAP
-	new_carrier = (SBCarrier_t*) MREMAP(carrier,
-					    U2B(new_mmap_carrier_units));
+	new_carrier = (SBCarrier_t*) MREMAP(carrier, new_mmap_carrier_size);
 	if (new_carrier != (SBCarrier_t *) MAP_FAILED) {
-	    new_carrier_units = new_mmap_carrier_units;
-	    STAT_MMAP_SB_CARRIER_ALLOC(new_carrier_units, new_block_units);
+	    new_carrier_size = new_mmap_carrier_size;
+	    STAT_MMAP_SBC_ALLOC(new_carrier_size, new_block_size);
 	    goto final_touch;
 	} /* else goto force_malloc; */
 #else
 
-	if ((new_mmap_carrier_units < old_carrier_units)
-	    && ((100*((float) (old_carrier_units - new_mmap_carrier_units))
-		 /((float) old_carrier_units))
-		< (float) sbc_move_threshold)) {
-	    /* Less unused than move threshold; reuse old carrier... */
-	    goto no_carrier_change;
+	if (new_mmap_carrier_size < old_carrier_size) {
+	    /* Shrink carrier ... */
+	    MUNMAP((void *) (((char *) carrier) + new_mmap_carrier_size),
+		   old_carrier_size - new_mmap_carrier_size);
+	    STAT_MMAP_SBC_ALLOC(new_mmap_carrier_size, new_block_size);
+	    new_carrier_size = new_mmap_carrier_size;
+	    new_carrier = carrier;
+	    goto final_touch;
 	}
 
-	new_carrier = (SBCarrier_t *) MMAP(U2B(new_mmap_carrier_units));
+	new_carrier = (SBCarrier_t *) MMAP(new_mmap_carrier_size);
 	if (new_carrier != (SBCarrier_t *) MAP_FAILED) {
-	    new_carrier_units = new_mmap_carrier_units;
-	    STAT_MMAP_SB_CARRIER_ALLOC(new_carrier_units, new_block_units);
+	    new_carrier_size = new_mmap_carrier_size;
+	    STAT_MMAP_SBC_ALLOC(new_carrier_size, new_block_size);
 	}
 #endif
 	else {
 	force_malloc:
-	    new_carrier = (SBCarrier_t *) MALLOC(U2B(new_carrier_units));
+#ifdef DEBUG
+	    is_mmapped = 0;
+#endif
+	    new_carrier = (SBCarrier_t *) MALLOC(new_carrier_size);
 	    if (!new_carrier)
 		return NULL;
 	    SET_MALLOC_CARRIER(carrier); /* Will be copied into new_carrier */
-	    STAT_MALLOC_SB_CARRIER_ALLOC(new_carrier_units, new_block_units);
+	    STAT_MALLOC_SBC_ALLOC(new_carrier_size, new_block_size);
 	}
 	MEMCPY((void *) new_carrier,
 	       (void *) carrier,
-	       U2B(SBC_HDR_UNITS + MIN(new_block_units, old_block_units)));
-	MUNMAP(carrier);
+	       SBC_HDR_SZ + MIN(new_block_size, old_block_size));
+	MUNMAP(carrier, old_carrier_size);
 
     }
     else {
-	if (mmap_mb_carriers + mmap_sb_carriers < max_mmap_carriers
-	    && !(flags & CA_FLAG_KEEP_MALLOC_CARRIER)) {
-	    new_mmap_carrier_units = CEIL(new_carrier_units, page_units);
-	    new_carrier = (SBCarrier_t *) MMAP(U2B(new_mmap_carrier_units));
+	if (!(flags & CA_FLAG_KEEP_MALLOC_CARRIER)
+	    && !(flags & CA_FLAG_FORCE_MALLOC)
+	    && no_of_mmap_mbcs + no_of_mmap_sbcs < max_mmap_carriers) {
+	    new_mmap_carrier_size = PAGE_CEILING(new_carrier_size);
+	    new_carrier = (SBCarrier_t *) MMAP(new_mmap_carrier_size);
 	    if (new_carrier == (SBCarrier_t *) MAP_FAILED)
 		goto try_realloc;
 
-	    new_carrier_units = new_mmap_carrier_units;
+	    new_carrier_size = new_mmap_carrier_size;
 	    MEMCPY((void *) new_carrier,
 		   (void *) carrier,
-		   U2B(SBC_HDR_UNITS + MIN(new_block_units, old_block_units)));
+		   SBC_HDR_SZ + MIN(new_block_size, old_block_size));
 	    SET_MMAP_CARRIER(new_carrier);
 	    FREE((void *) carrier);
 
-	    STAT_MALLOC_SB_CARRIER_FREE(old_carrier_units, old_block_units);
-	    STAT_MMAP_SB_CARRIER_ALLOC(new_carrier_units, new_block_units);
+	    STAT_MALLOC_SBC_FREE(old_carrier_size, old_block_size);
+	    STAT_MMAP_SBC_ALLOC(new_carrier_size, new_block_size);
+#ifdef DEBUG
+	    is_mmapped = 1;
+#endif
 	}
 	else {
 	try_realloc:
 #endif
+#ifdef DEBUG
+	    is_mmapped = 0;
+#endif
 	    new_carrier = (SBCarrier_t *) REALLOC((void *) carrier,
-						  U2B(new_carrier_units));
+						  new_carrier_size);
 	    if (!new_carrier)
 		return NULL;
 
-	    STAT_MALLOC_SB_CARRIER_FREE(old_carrier_units, old_block_units);
-	    STAT_MALLOC_SB_CARRIER_ALLOC(new_carrier_units, new_block_units);
+	    STAT_MALLOC_SBC_FREE(old_carrier_size, old_block_size);
+	    STAT_MALLOC_SBC_ALLOC(new_carrier_size, new_block_size);
 #if USE_MMAP
 	}
     }
-#endif
 
-#if USE_MREMAP
  final_touch:
 #endif
-    SET_BLK_UNITS(SBC2BLK(new_carrier), new_block_units);
-    SET_CARRIER_UNITS(new_carrier, new_carrier_units);
-    SET_BLK_CARRIER(SBC2BLK(new_carrier), new_carrier);
 
+    blk = SBC2BLK(new_carrier);
+    SET_BLK_SZ(blk, new_block_size);
+    SET_CARRIER_SZ(new_carrier, new_carrier_size);
 
     ASSERT(IS_SB_CARRIER(new_carrier));
     ASSERT(IS_SBC_BLK(SBC2BLK(new_carrier)));
+    ASSERT(new_carrier_size == CARRIER_SZ(new_carrier));
+#if USE_MMAP
+    ASSERT((is_mmapped && IS_MMAP_CARRIER(new_carrier))
+	   || (!is_mmapped && IS_MALLOC_CARRIER(new_carrier)));
+    ASSERT(!is_mmapped || new_carrier_size % page_size == 0);
+#endif
 
 #if HARD_DEBUG
-    check_sb_carrier(new_carrier);
+    check_blk_carrier(blk);
 #endif
+
+    DEBUG_SAVE_ALIGNMENT(new_carrier);
 
     return new_carrier;
 
 }
+
 
 static void
 carrier_free(Carrier_t *carrier)
@@ -1650,39 +1994,28 @@ carrier_free(Carrier_t *carrier)
 #if USE_MMAP
     Uint mmapped = 0;
 #endif
-    Uint carrier_units = CARRIER_UNITS(carrier);
+    Uint carrier_size = CARRIER_SZ(carrier);
 
     if (IS_SB_CARRIER(carrier)) {
 	SBCarrier_t *sbc = (SBCarrier_t *) carrier;
-	Uint block_units = BLK_UNITS(SBC2BLK(sbc));
+	Block_t *blk = SBC2BLK(sbc);
+	Uint block_size = BLK_SZ(blk);
 #if HARD_DEBUG
-	check_sb_carrier(sbc);
+	check_blk_carrier(blk);
 #endif
 #if USE_MMAP
 	if (IS_MMAP_CARRIER(carrier)) {
 	    mmapped++;
-	    STAT_MMAP_SB_CARRIER_FREE(carrier_units, block_units);
+	    STAT_MMAP_SBC_FREE(carrier_size, block_size);
 	}
 	else
 #endif
-	    STAT_MALLOC_SB_CARRIER_FREE(carrier_units, block_units);
+	    STAT_MALLOC_SBC_FREE(carrier_size, block_size);
     }
     else {
 	MBCarrier_t *mbc = (MBCarrier_t *) carrier;
 
-	ASSERT(IS_FIRST_BLK(MBC2MEM(mbc)) && IS_LAST_BLK(MBC2MEM(mbc)));
-
-#ifdef DEBUG
-	{
-	    int i;
-	    if (use_carrier_order_search) {
-		ASSERT(!mbc->non_empty_buckets);
-		for (i = 0; i < NO_OF_BKTS; i++) {
-		    ASSERT(!mbc->buckets[i]);
-		}
-	    }
-	}
-#endif
+	ASSERT(IS_FIRST_BLK(MBC2FBLK(mbc)) && IS_LAST_BLK(MBC2FBLK(mbc)));
 
 	if (first_mb_carrier == mbc) {
 	    first_mb_carrier = mbc->next;
@@ -1698,42 +2031,42 @@ carrier_free(Carrier_t *carrier)
 	    ASSERT(mbc->next);
 	    mbc->next->prev = mbc->prev;
 	}
-
 	
-	last_aux_mb_carrier = (IS_AUX_CARRIER(last_mb_carrier)
-			       ? last_mb_carrier
-			       : NULL);
+	if (last_aux_mb_carrier_start != (char *) last_mb_carrier
+	    && last_mb_carrier
+	    && IS_AUX_CARRIER(last_mb_carrier)) {
+	    last_aux_mb_carrier_start = (char *) last_mb_carrier;
+	    last_aux_mb_carrier_end = (((char *) last_mb_carrier)
+				       + CARRIER_SZ(last_mb_carrier));
+	}
+	else {
+	    last_aux_mb_carrier_start = NULL;
+	    last_aux_mb_carrier_end = NULL;
+	}
 
 #if USE_MMAP
 	if (IS_MMAP_CARRIER(mbc)) {
 	    mmapped++;
-	    STAT_MMAP_MB_CARRIER_FREE(carrier_units);
+	    STAT_MMAP_MBC_FREE(carrier_size);
 	}
 	else
 #endif
-	    STAT_MALLOC_MB_CARRIER_FREE(carrier_units);
+	    STAT_MALLOC_MBC_FREE(carrier_size);
     }
 
 #if USE_MMAP
     if (mmapped)
-	MUNMAP(carrier);
+	MUNMAP(carrier, carrier_size);
     else
 #endif
 	FREE(carrier);
 }
 
-static int
-set_sbc_threshold(Uint sbcl)
-{
-    sbc_threshold = sbcl;
-    bkt_max_d = B2U(sbc_threshold);
-    if (bkt_max_d < BKT_MAX_C + BKT_INTRVL_C*(NO_OF_BKTS/4))
-	bkt_max_d = BKT_MAX_C + BKT_INTRVL_C*(NO_OF_BKTS/4);
-    bkt_intrvl_d = (BKT_MAX_D - BKT_MAX_C)/(NO_OF_BKTS/4);
-    return 1;
-}
-
 #ifndef NO_SL_ALLOC_STAT_ETERM
+
+/*
+ * sl_alloc_stat_eterm() help functions
+ */
 
 static void
 init_atoms(void)
@@ -1745,16 +2078,18 @@ init_atoms(void)
 	return;
     }
 
+
     INIT_AM(singleblock_carrier_threshold);
+    INIT_AM(singleblock_carrier_shrink_threshold);
     INIT_AM(singleblock_carrier_move_threshold);
+    INIT_AM(mmap_singleblock_carrier_load_threshold);
     INIT_AM(max_mmap_carriers);
     INIT_AM(singleblock_carriers);
     INIT_AM(multiblock_carriers);
-    INIT_AM(carrier_order_search);
     INIT_AM(main_carrier_size);
     INIT_AM(smallest_multiblock_carrier_size);
     INIT_AM(largest_multiblock_carrier_size);
-    INIT_AM(multiblock_carrier_growth_ratio);
+    INIT_AM(multiblock_carrier_growth_stages);
     INIT_AM(max_block_search_depth);
     INIT_AM(malloc);
     INIT_AM(mmap);
@@ -1763,7 +2098,9 @@ init_atoms(void)
     INIT_AM(carriers_size);
     INIT_AM(blocks_size);
     INIT_AM(adm_size);
+    INIT_AM(max_carriers);
     INIT_AM(max_blocks);
+    INIT_AM(max_carriers_size);
     INIT_AM(max_blocks_size);
     INIT_AM(calls);
     INIT_AM(sl_alloc);
@@ -1776,11 +2113,277 @@ init_atoms(void)
     INIT_AM(munmap);
     INIT_AM(mremap);
     INIT_AM(unknown);
+    INIT_AM(release);
+    INIT_AM(settings);
     
     atoms_need_init = 0;
 
     UNLOCK;
 
+}
+
+#define bld_uint	erts_bld_uint
+#define bld_cons	erts_bld_cons
+#define bld_tuple	erts_bld_tuple
+#define bld_string	erts_bld_string
+
+static void
+add_2tup(Uint **hpp, Uint *szp, Eterm *addlp, Eterm el1, Eterm el2)
+{
+    *addlp = bld_cons(hpp, szp, bld_tuple(hpp, szp, 2, el1, el2), *addlp);
+}
+
+static void
+add_3tup(Uint **hpp, Uint *szp, Eterm *addlp, Eterm el1, Eterm el2, Eterm el3)
+{
+    *addlp = bld_cons(hpp, szp, bld_tuple(hpp, szp, 3, el1, el2, el3), *addlp);
+}
+
+static void
+add_max_val_term(Uint **hpp, Uint *szp, Eterm *addlp, Eterm name,
+		 ErtsSlAllocMaxVal *mvp)
+{
+    add_3tup(hpp,
+	     szp,
+	     addlp,
+	     name,
+	     bld_uint(hpp, szp, mvp->last),
+	     bld_uint(hpp, szp, mvp->ever));
+}
+
+static void
+add_carrier_stat_base_term(Uint **hpp, Uint *szp, Eterm *addlp, Eterm type,
+			   ErtsSlAllocCarriersStatBase *csbp)
+{
+    if (csbp->carriers) {
+	Eterm list = NIL;
+	add_2tup(hpp,
+		 szp,
+		 &list,
+		 AM_carriers_size,
+		 bld_uint(hpp, szp, csbp->carriers_size));
+	add_2tup(hpp,
+		 szp,
+		 &list,
+		 AM_carriers,
+		 bld_uint(hpp, szp, csbp->carriers));
+	add_2tup(hpp, szp, addlp, type, list);
+    }
+}
+
+static void
+add_carrier_stat_term(Uint **hpp, Uint *szp, Eterm *addlp, Eterm type,
+		      ErtsSlAllocCarriersStat *csp, int add_max_vals)
+{
+    Eterm list = NIL;
+
+    add_carrier_stat_base_term(hpp, szp, &list, AM_malloc, &csp->malloc);
+    add_carrier_stat_base_term(hpp, szp, &list, AM_mmap, &csp->mmap);
+
+    if (add_max_vals) {
+	add_max_val_term(hpp,
+			 szp,
+			 &list,
+			 AM_max_carriers_size,
+			 &csp->max_carriers_size);
+	add_max_val_term(hpp,
+			 szp,
+			 &list,
+			 AM_max_carriers,
+			 &csp->max_carriers);
+	add_max_val_term(hpp,
+			 szp,
+			 &list,
+			 AM_max_blocks_size,
+			 &csp->max_blocks_size);
+	add_max_val_term(hpp,
+			 szp,
+			 &list,
+			 AM_max_blocks,
+			 &csp->max_blocks);
+    }
+
+    add_2tup(hpp,
+	     szp,
+	     &list,
+	     AM_carriers_size,
+	     bld_uint(hpp,
+		      szp,
+		      csp->malloc.carriers_size + csp->mmap.carriers_size));
+    add_2tup(hpp,
+	     szp,
+	     &list,
+	     AM_carriers,
+	     bld_uint(hpp,
+		      szp,
+		      csp->malloc.carriers + csp->mmap.carriers));
+    add_2tup(hpp,
+	     szp,
+	     &list,
+	     AM_adm_size,
+	     (csp->adm_size == 0 && csp->blocks_size > 0
+	      ? AM_unknown
+	      : bld_uint(hpp, szp, csp->adm_size)));
+    add_2tup(hpp,
+	     szp,
+	     &list,
+	     AM_blocks_size,
+	     bld_uint(hpp, szp, csp->blocks_size));
+    add_2tup(hpp,
+	     szp,
+	     &list,
+	     AM_blocks,
+	     bld_uint(hpp, szp, csp->blocks));
+
+    add_2tup(hpp, szp, addlp, type, list);
+}
+
+static void
+add_calls_term(Uint **hpp, Uint *szp, Eterm *addlp, Eterm called_func,
+	       ErtsSlAllocCallCounter *cc)
+{
+    add_3tup(hpp,
+	     szp,
+	     addlp,
+	     called_func,
+	     bld_uint(hpp, szp, cc->giga_calls),
+	     bld_uint(hpp, szp, cc->calls));
+}
+
+static Eterm
+stat_term(Uint **hpp, Uint *szp, ErtsSlAllocStat *sp)
+{
+    Eterm string;
+    Eterm list;
+    Eterm res_list = NIL;
+
+    ASSERT(hpp || szp);
+
+    if (szp)
+	*szp = 0;
+
+    /* Calls ... */
+    if (!sp->old_sl_alloc_enabled) {
+	list = NIL;
+	add_calls_term(hpp, szp, &list, AM_realloc, &sp->realloc_calls);
+	add_calls_term(hpp, szp, &list, AM_free, &sp->free_calls);
+	add_calls_term(hpp, szp, &list, AM_malloc, &sp->malloc_calls);
+#if USE_MMAP
+#if USE_MREMAP
+	add_calls_term(hpp, szp, &list, AM_mremap, &sp->mremap_calls);
+#endif
+	add_calls_term(hpp, szp, &list, AM_munmap, &sp->munmap_calls);
+	add_calls_term(hpp, szp, &list, AM_mmap, &sp->mmap_calls);
+#endif
+	add_calls_term(hpp, szp, &list, AM_sl_alloc, &sp->sl_realloc_calls);
+	add_calls_term(hpp, szp, &list, AM_sl_free, &sp->sl_free_calls);
+	add_calls_term(hpp, szp, &list, AM_sl_alloc, &sp->sl_alloc_calls);
+
+	add_2tup(hpp, szp, &res_list, AM_calls, list);
+    }
+
+    /* Carriers state ... */
+    add_carrier_stat_term(hpp,
+			  szp,
+			  &res_list,
+			  AM_singleblock_carriers,
+			  &sp->singleblock,
+			  !sp->old_sl_alloc_enabled);
+    if (!sp->old_sl_alloc_enabled)
+	add_carrier_stat_term(hpp,
+			      szp,
+			      &res_list,
+			      AM_multiblock_carriers,
+			      &sp->multiblock,
+			      1);
+
+    /* Settings ... */
+
+    list = NIL;
+    if (!sp->old_sl_alloc_enabled) {
+	add_2tup(hpp,
+		 szp,
+		 &list,
+		 AM_main_carrier_size,
+		 bld_uint(hpp, szp, sp->main_carrier_size));
+	add_2tup(hpp,
+		 szp,
+		 &list,
+		 AM_smallest_multiblock_carrier_size,
+		 bld_uint(hpp,
+			  szp,
+			  sp->smallest_multiblock_carrier_size));
+	add_2tup(hpp,
+		 szp,
+		 &list,
+		 AM_largest_multiblock_carrier_size,
+		 bld_uint(hpp,
+			  szp,
+			  sp->largest_multiblock_carrier_size));
+	add_2tup(hpp,
+		 szp,
+		 &list,
+		 AM_multiblock_carrier_growth_stages,
+		 bld_uint(hpp,
+			  szp,
+			  sp->multiblock_carrier_growth_stages));
+	add_2tup(hpp,
+		 szp,
+		 &list,
+		 AM_max_block_search_depth,
+		 bld_uint(hpp, szp, sp->max_block_search_depth));
+	add_2tup(hpp,
+		 szp,
+		 &list,
+		 AM_mmap_singleblock_carrier_load_threshold,
+		 bld_uint(hpp,
+			  szp,
+			  sp->mmap_singleblock_carrier_load_threshold));
+	add_2tup(hpp,
+		 szp,
+		 &list,
+		 AM_singleblock_carrier_shrink_threshold,
+		 bld_uint(hpp,
+			  szp,
+			  sp->singleblock_carrier_shrink_threshold));
+    }
+    add_2tup(hpp,
+	     szp,
+	     &list,
+	     AM_max_mmap_carriers,
+	     bld_uint(hpp, szp, sp->max_mmap_carriers));
+    add_2tup(hpp,
+	     szp,
+	     &list,
+	     AM_singleblock_carrier_move_threshold,
+	     bld_uint(hpp,
+		      szp,
+		      sp->singleblock_carrier_move_threshold));
+    add_2tup(hpp,
+	     szp,
+	     &list,
+	     AM_singleblock_carrier_threshold,
+	     bld_uint(hpp,
+		      szp,
+		      sp->singleblock_carrier_threshold));
+
+    if (!sp->old_sl_alloc_enabled)
+	string = bld_string(hpp, szp, ERTS_SL_ALLOC_RELEASE);
+    else
+	string = bld_string(hpp, szp, ERTS_OLD_SL_ALLOC_RELEASE);
+
+    add_2tup(hpp, szp, &list, AM_release, string);
+
+    add_2tup(hpp, szp, &res_list, AM_settings, list);
+
+    if (!sp->old_sl_alloc_enabled)
+	string = bld_string(hpp, szp, ERTS_SL_ALLOC_VERSION);
+    else
+	string = bld_string(hpp, szp, ERTS_OLD_SL_ALLOC_VERSION);
+
+    add_2tup(hpp, szp, &res_list, am_version, string);
+
+    return res_list;
 }
 
 #endif /* #ifndef NO_SL_ALLOC_STAT_ETERM */
@@ -1812,15 +2415,22 @@ SL_ALLOC(Uint size)
     INC_CC(sl_alloc_calls);
 
     if (size >= sbc_threshold) {
-	SBCarrier_t *sbc = (SBCarrier_t *) carrier_alloc(CA_TYPE_SINGLEBLOCK,
-							 B2U(size),
-							 0);
-	res = sbc ? SBC2MEM(sbc) : NULL;
+	SBCarrier_t *sbc;
+	sbc = (SBCarrier_t *) carrier_alloc(CA_TYPE_SINGLEBLOCK,
+					    size,
+					    (IS_SBC_MMAP_ALLOWED()
+					     ? 0
+					     : CA_FLAG_FORCE_MALLOC));
+	res = sbc ? SBC2UMEM(sbc) : NULL;
+	NOTICE_SBC_REQUEST();
     }
     else
 	res = mbc_alloc(size);
 
+    NOTICE_REQUEST();
     UNLOCK;
+
+    DEBUG_CHECK_ALIGNMENT(res);
 
     return res;
 }
@@ -1868,65 +2478,65 @@ SL_REALLOC(void *p, Uint save_size, Uint size)
 
     INC_CC(sl_realloc_calls);
     
-    blk = MEM2BLK(p);
+    blk = UMEM2BLK(p);
 
     if (size < sbc_threshold) {
 	if (IS_MBC_BLK(blk))
 	    res = mbc_realloc(p, size);
 	else {
-	    Uint units = B2U(size);
-#if USE_MREMAP
-	    if (100*((float) (page_units-SBC_HDR_UNITS-ABLK_HDR_UNITS-units))
-		/((float) page_units) < (float) sbc_move_threshold)
+#if USE_MMAP
+	    if (IS_MALLOC_CARRIER(BLK2SBC(blk))
+		|| (100 * (((double) (page_size
+				     - (SBC_HDR_SZ + ABLK_HDR_SZ)
+				     - size)) / ((double) page_size))
+		    < sbc_move_threshold))
 		/* Data won't be copied into a new carrier... */
-		goto do_carrier_resize;	    
-#else
-	    Uint carrier_units = CARRIER_UNITS(BLK_CARRIER(blk));
-
-
-	    if (100*((float) (carrier_units-SBC_HDR_UNITS-ABLK_HDR_UNITS-units))
-		/((float) carrier_units) < (float) sbc_move_threshold) {
-		/* Data won't be moved into a new carrier... */
-		ASSERT(carrier_units - SBC_HDR_UNITS >= units);
 		goto do_carrier_resize;
-	    }
-#endif
 
 	    res = mbc_alloc(size);
 	    if (res) {
 		MEMCPY((void*) res,
 		       (void*) p,
-		       MIN(U2B(BLK_UNITS(blk) - ABLK_HDR_UNITS), size));
-		carrier_free(BLK_CARRIER(blk));
+		       MIN(BLK_SZ(blk) - ABLK_HDR_SZ, size));
+		carrier_free((Carrier_t *) BLK2SBC(blk));
 	    }
+#else
+	    goto do_carrier_resize;
+#endif
 	}
     }
     else {
 	SBCarrier_t *sbc;
 	if(IS_SBC_BLK(blk)) {
+	    NOTICE_SBC_REQUEST();
 	do_carrier_resize:
-	    sbc = sb_carrier_resize((SBCarrier_t *) BLK_CARRIER(blk),
-				    B2U(size),
-				    0);
-	    res = sbc ? SBC2MEM(sbc) : NULL;
+	    sbc = sb_carrier_resize((SBCarrier_t *) BLK2SBC(blk),
+				    size, CA_FLAG_KEEP_MALLOC_CARRIER);
+	    res = sbc ? SBC2UMEM(sbc) : NULL;
 	}
 	else {
 	    sbc = (SBCarrier_t *) carrier_alloc(CA_TYPE_SINGLEBLOCK,
-						B2U(size),
-						0);
+						size,
+						(IS_SBC_MMAP_ALLOWED()
+						 ? 0
+						 : CA_FLAG_FORCE_MALLOC));
 	    if (sbc) {
-		res = SBC2MEM(sbc);
+		res = SBC2UMEM(sbc);
 		MEMCPY((void*) res,
 		       (void*) p,
-		       MIN(U2B(BLK_UNITS(blk) - ABLK_HDR_UNITS), size));
+		       MIN(BLK_SZ(blk) - ABLK_HDR_SZ, size));
 		mbc_free(p);
 	    }
 	    else
 		res = NULL;
+	    NOTICE_SBC_REQUEST();
 	}
     }
 
+    NOTICE_REQUEST();
     UNLOCK;
+
+    DEBUG_CHECK_ALIGNMENT(res);
 
     return res;
 }
@@ -1955,9 +2565,9 @@ SL_FREE(void *p)
 	
 	INC_CC(sl_free_calls);
 
-	blk = MEM2BLK(p);
+	blk = UMEM2BLK(p);
 	if (IS_SBC_BLK(blk))
-	    carrier_free(BLK_CARRIER(blk));
+	    carrier_free((Carrier_t *) BLK2SBC(blk));
 	else
 	    mbc_free(p);
 
@@ -1971,81 +2581,100 @@ void
 SL_ALLOC_INFO(CIO to)
 {
     ErtsSlAllocStat esas;
-    Uint carriers_size;
-    Uint blocks_size;
-    Uint adm_size;
-    Uint blocks;
-    Uint carriers;
-    Uint mmaps;
 
     ASSERT(initialized);
 
-    if(sl_alloc_disabled) {
+    SL_ALLOC_STAT(&esas, 0);
+
+    if(!esas.sl_alloc_enabled) {
 	erl_printf(to, "sl_alloc: disabled\n");
 	return;
     }
 
-    if(use_old_sl_alloc) {
-	erts_old_sl_alloc_info(to);
+    if (esas.old_sl_alloc_enabled) {
+	erl_printf(to,
+		   "sl_alloc: ver(%s)\n",
+		   ERTS_OLD_SL_ALLOC_VERSION);
+	erl_printf(to,
+		   "          sbc: cno(%u:%u), csz(%u:%u), \n",
+		   esas.singleblock.malloc.carriers
+		   + esas.singleblock.mmap.carriers,
+		   esas.singleblock.mmap.carriers,
+		   esas.singleblock.malloc.carriers_size
+		   + esas.singleblock.mmap.carriers_size,
+		   esas.singleblock.mmap.carriers_size);
+	erl_printf(to,
+		   "               bno(%u), bsz(%u), asz(unknown)\n",
+		   esas.singleblock.blocks,
+		   esas.singleblock.blocks_size);
 	return;
     }
-
-    SL_ALLOC_STAT(&esas);
-
-    carriers_size = (esas.singleblock.mmap.carriers_size
-		     + esas.singleblock.malloc.carriers_size
-		     + esas.multiblock.mmap.carriers_size
-		     + esas.multiblock.malloc.carriers_size);
-    blocks_size = (esas.singleblock.mmap.blocks_size
-		   + esas.singleblock.malloc.blocks_size
-		   + esas.multiblock.mmap.blocks_size
-		   + esas.multiblock.malloc.blocks_size);
-    adm_size = (esas.singleblock.mmap.adm_size
-		+ esas.singleblock.malloc.adm_size
-		+ esas.multiblock.mmap.adm_size
-		+ esas.multiblock.malloc.adm_size);
-    blocks = (esas.singleblock.mmap.no_blocks
-	      + esas.singleblock.malloc.no_blocks
-	      + esas.multiblock.mmap.no_blocks
-	      + esas.multiblock.malloc.no_blocks);
-    carriers = (esas.singleblock.mmap.no_carriers
-		+ esas.singleblock.malloc.no_carriers
-		+ esas.multiblock.mmap.no_carriers
-		+ esas.multiblock.malloc.no_carriers);
-    mmaps = (esas.singleblock.mmap.no_carriers
-	     + esas.multiblock.mmap.no_carriers);
     
-    erl_printf(to, "sl_alloc: carriers size(%u), blocks size(%u), "
-	       "adm size(%u), free size(%u), blocks(%u), carriers(%u), "
-	       "mmaps(%u)\n", carriers_size, blocks_size, adm_size,
-	       carriers_size - blocks_size - adm_size, blocks, carriers, mmaps);
+    erl_printf(to,
+	       "sl_alloc: ver(%s)\n",
+	       ERTS_SL_ALLOC_VERSION);
+    erl_printf(to,
+	       "          sbc: cno(%u:%u), csz(%u:%u), \n",
+	       esas.singleblock.malloc.carriers
+	       + esas.singleblock.mmap.carriers,
+	       esas.singleblock.mmap.carriers,
+	       esas.singleblock.malloc.carriers_size
+	       + esas.singleblock.mmap.carriers_size,
+	       esas.singleblock.mmap.carriers_size);
+    erl_printf(to,
+	       "               mcno(%u), mcsz(%u),\n",
+	       esas.singleblock.max_carriers.ever,
+	       esas.singleblock.max_carriers_size.ever);
+    erl_printf(to,
+	       "               bno(%u), bsz(%u), asz(%u),\n",
+	       esas.singleblock.blocks,
+	       esas.singleblock.blocks_size,
+	       esas.singleblock.adm_size);
+    erl_printf(to,
+	       "               mbno(%u), mbsz(%u)\n",
+	       esas.singleblock.max_blocks.ever,
+	       esas.singleblock.max_blocks_size.ever);
+    erl_printf(to,
+	       "          mbc: cno(%u:%u), csz(%u:%u), \n",
+	       esas.multiblock.malloc.carriers
+	       + esas.multiblock.mmap.carriers,
+	       esas.multiblock.mmap.carriers,
+	       esas.multiblock.malloc.carriers_size
+	       + esas.multiblock.mmap.carriers_size,
+	       esas.multiblock.mmap.carriers_size);
+    erl_printf(to,
+	       "               mcno(%u), mcsz(%u), \n",
+	       esas.multiblock.max_carriers.ever,
+	       esas.multiblock.max_carriers_size.ever);
+    erl_printf(to,
+	       "               bno(%u), bsz(%u), asz(%u),\n",
+	       esas.multiblock.blocks,
+	       esas.multiblock.blocks_size,
+	       esas.multiblock.adm_size);
+    erl_printf(to,
+	       "               mbno(%u), mbsz(%u)\n",
+	       esas.multiblock.max_blocks.ever,
+	       esas.multiblock.max_blocks_size.ever);
+	       
 }
 
-/* -- erts_sl_alloc_stat() ------------------------------------------------- */
+/* -- erts_sl_alloc_stat_eterm() ------------------------------------------- */
 
 #ifndef NO_SL_ALLOC_STAT_ETERM
 
 Eterm
-SL_ALLOC_STAT_ETERM(Process *p)
+SL_ALLOC_STAT_ETERM(Process *p, int begin_max_period)
 {
-#undef  ADD_2TUP
-#undef  ADD_3TUP
-#undef  MAX_HP_WORDS
-#define ADD_2TUP(L, F, S)    L = CONS(hp+3, TUPLE2(hp, F, S), L);    hp += 3+2
-#define ADD_3TUP(L, F, S, T) L = CONS(hp+4, TUPLE3(hp, F, S, T), L); hp += 4+2
-#define MAX_HEAP_WORDS ((4+2 /* 3-tup + cons*/)*9 \
-			+ (3+2 /* 2-tup + cons*/)*41 \
-			+ (MAX(sizeof(ERTS_SL_ALLOC_VERSION), \
-			       sizeof(ERTS_OLD_SL_ALLOC_VERSION))-1)*2 /*cons*/)
+    Uint sz;
     Eterm *hp;
-    Eterm list;
     ErtsSlAllocStat esas;
     Eterm res;
 #ifdef DEBUG
     Eterm *hp_end;
 #endif
 
-    SL_ALLOC_STAT(&esas);
+    SL_ALLOC_STAT(&esas, begin_max_period);
+
 
     if (!esas.sl_alloc_enabled) {
 	Eterm INIT_AM(disabled);
@@ -2055,143 +2684,23 @@ SL_ALLOC_STAT_ETERM(Process *p)
     if (atoms_need_init)
 	init_atoms();
 
-    hp = HAlloc(p, MAX_HEAP_WORDS);
+    /* Calculate heap need for stat term ... */
+    (void) stat_term(NULL, &sz, &esas);
+
+    ASSERT(sz > 0);
+
+    hp = HAlloc(p, sz);
 
 #ifdef DEBUG
-    hp_end = hp + MAX_HEAP_WORDS;
+    hp_end = hp + sz;
 #endif
 
-    res = NIL;
+    /* Write stat term ... */
+    res = stat_term(&hp, NULL, &esas);
 
-    /* Calls ... */
-
-    if (!esas.old_sl_alloc_enabled) {
-#undef  ADD_CALLS
-#define ADD_CALLS(A, CC)						\
-	/* list = ADD_3TUP(list, ...); bug fixed by Per Bergkvist. */	\
-	ADD_3TUP(list,							\
-		 A,							\
-		 make_small_or_big(CC.giga_calls, p),			\
-		 make_small_or_big(CC.calls, p))
-
-	list = NIL;
-	ADD_CALLS(AM_realloc,    esas.realloc_calls);
-	ADD_CALLS(AM_free,       esas.free_calls);
-	ADD_CALLS(AM_malloc,     esas.malloc_calls);
-#if USE_MMAP
-#if USE_MREMAP
-	ADD_CALLS(AM_mremap,     esas.mremap_calls);
-#endif
-	ADD_CALLS(AM_munmap,     esas.munmap_calls);
-	ADD_CALLS(AM_mmap,       esas.mmap_calls);
-#endif
-	ADD_CALLS(AM_sl_realloc, esas.sl_realloc_calls);
-	ADD_CALLS(AM_sl_free,    esas.sl_free_calls);
-	ADD_CALLS(AM_sl_alloc,   esas.sl_alloc_calls);
-
-#undef  ADD_CALLS
-
-	ADD_2TUP(res, AM_calls, list);
-    }
-
-    /* Carriers state ... */
-
-#define ADD_CARRIERS_STAT_BASE(BTYPE, ATYPE)				\
-    if (esas.BTYPE.ATYPE.no_carriers) {					\
-	Eterm tmp_ = NIL;						\
-	ADD_2TUP(tmp_,							\
-		 AM_adm_size,						\
-		 esas.BTYPE.ATYPE.adm_size == 0				\
-		 ? AM_unknown						\
-		 : make_small_or_big(esas.BTYPE.ATYPE.adm_size, p));	\
-	ADD_2TUP(tmp_,							\
-		 AM_blocks_size,					\
-		 make_small_or_big(esas.BTYPE.ATYPE.blocks_size, p));	\
-	ADD_2TUP(tmp_,							\
-		 AM_carriers_size,					\
-		 make_small_or_big(esas.BTYPE.ATYPE.carriers_size, p));	\
-	ADD_2TUP(tmp_,							\
-		 AM_blocks,						\
-		 make_small_or_big(esas.BTYPE.ATYPE.no_blocks, p));	\
-	ADD_2TUP(tmp_,							\
-		 AM_carriers,						\
-		 make_small_or_big(esas.BTYPE.ATYPE.no_carriers, p));	\
-	ADD_2TUP(list, AM_ ## ATYPE, tmp_);				\
-    }
-
-#define ADD_CARRIERS_STAT(BTYPE)					\
-    list = NIL;								\
-    ADD_CARRIERS_STAT_BASE(BTYPE, malloc);				\
-    ADD_CARRIERS_STAT_BASE(BTYPE, mmap);				\
-    if (esas.BTYPE.max_blocks) {					\
-	ADD_2TUP(list,							\
-		 AM_max_blocks_size,					\
-		 make_small_or_big(esas.BTYPE.max_blocks_size, p));	\
-	ADD_2TUP(list,							\
-		 AM_max_blocks,						\
-		 make_small_or_big(esas.BTYPE.max_blocks, p));		\
-    }									\
-    ADD_2TUP(res,  AM_ ## BTYPE ## _carriers, list)
-
-    ADD_CARRIERS_STAT(singleblock);    /* Adds a maximum of 15 2tup+cons */
-    if (!esas.old_sl_alloc_enabled) {
-	ADD_CARRIERS_STAT(multiblock); /* Adds a maximum of 15 2tup+cons */
-    }
-
-#undef  ADD_CARRIERS_STAT
-#undef  ADD_CARRIERS_STAT_BASE
-
-    if (!esas.old_sl_alloc_enabled) {
-	ADD_2TUP(res,
-		 AM_carrier_order_search,
-		 esas.carrier_order_search ? am_true : am_false);
-	ADD_2TUP(res,
-		 AM_main_carrier_size,
-		 make_small_or_big(esas.main_carrier_size, p));
-	ADD_2TUP(res,
-		 AM_smallest_multiblock_carrier_size,
-		 make_small_or_big(esas.smallest_multiblock_carrier_size,
-				   p));
-	ADD_2TUP(res,
-		 AM_largest_multiblock_carrier_size,
-		 make_small_or_big(esas.largest_multiblock_carrier_size, p));
-	ADD_2TUP(res,
-		 AM_multiblock_carrier_growth_ratio,
-		 make_small_or_big(esas.multiblock_carrier_growth_ratio, p));
-	ADD_2TUP(res,
-		 AM_max_block_search_depth,
-		 make_small_or_big(esas.max_block_search_depth, p));
-    }
-    ADD_2TUP(res,
-	     AM_max_mmap_carriers,
-	     make_small_or_big(esas.max_mmap_carriers, p));
-    ADD_2TUP(res,
-	     AM_singleblock_carrier_move_threshold,
-	     make_small_or_big(esas.singleblock_carrier_move_threshold, p));
-    ADD_2TUP(res,
-	     AM_singleblock_carrier_threshold,
-	     make_small_or_big(esas.singleblock_carrier_threshold, p));
-
-    if (esas.old_sl_alloc_enabled)
-	list = buf_to_intlist(&hp,
-			      (byte*) ERTS_OLD_SL_ALLOC_VERSION,
-			      sizeof(ERTS_OLD_SL_ALLOC_VERSION) - 1,
-			      NIL);
-    else
-	list = buf_to_intlist(&hp,
-			      (byte*) ERTS_SL_ALLOC_VERSION,
-			      sizeof(ERTS_SL_ALLOC_VERSION) - 1,
-			      NIL);
-    ADD_2TUP(res, am_version, list);
-
-    ASSERT(hp <= hp_end);
-
-    HRelease(p, hp);
+    ASSERT(hp == hp_end);
 
     return res;
-
-#undef ADD_2TUP
-#undef ADD_3TUP
 }
 
 #endif /* #ifndef NO_SL_ALLOC_STAT_ETERM */
@@ -2199,117 +2708,98 @@ SL_ALLOC_STAT_ETERM(Process *p)
 /* -- erts_sl_alloc_stat() ------------------------------------------------- */
 
 void
-SL_ALLOC_STAT(ErtsSlAllocStat *p)
+SL_ALLOC_STAT(ErtsSlAllocStat *p, int begin_max_period)
 {
     ASSERT(initialized);
 
-    
     if (use_old_sl_alloc) {
 	ErtsOldSlAllocStat eosas;
 	erts_old_sl_alloc_stat(&eosas);
-	p->sl_alloc_enabled = eosas.sl_alloc_enabled;
-	p->old_sl_alloc_enabled = 1;
-	p->singleblock_carrier_threshold = eosas.mmap_threshold;
-	p->singleblock_carrier_move_threshold = 80;
-	p->max_mmap_carriers = eosas.mmap_max;
-	p->smallest_multiblock_carrier_size = 0;
-	p->largest_multiblock_carrier_size = 0;
-	p->multiblock_carrier_growth_ratio = 0;
-	p->carrier_order_search = 0;
-	p->main_carrier_size = 0;
-	p->singleblock.max_blocks = 0;
-	p->singleblock.max_blocks_size = 0;
-	p->singleblock.mmap.no_carriers = eosas.mmapped_chunks;
-	p->singleblock.mmap.no_blocks = eosas.mmapped_chunks;
-	p->singleblock.mmap.carriers_size = eosas.mmapped_chunks_size;
-	p->singleblock.mmap.blocks_size = eosas.mmapped_blocks_size;
-	p->singleblock.mmap.adm_size = 0;
-	p->singleblock.malloc.no_carriers = 0;
-	p->singleblock.malloc.no_blocks = 0;
-	p->singleblock.malloc.carriers_size = 0;
-	p->singleblock.malloc.blocks_size = 0;
-	p->singleblock.malloc.adm_size = 0;
-	p->multiblock.max_blocks = 0;
-	p->multiblock.max_blocks_size = 0;
-	p->multiblock.mmap.no_carriers = 0;
-	p->multiblock.mmap.no_blocks = 0;
-	p->multiblock.mmap.carriers_size = 0;
-	p->multiblock.mmap.blocks_size = 0;
-	p->multiblock.mmap.adm_size = 0;
-	p->multiblock.malloc.no_carriers = 0;
-	p->multiblock.malloc.no_blocks = 0;
-	p->multiblock.malloc.carriers_size = 0;
-	p->multiblock.malloc.blocks_size = 0;
-	p->multiblock.malloc.adm_size = 0;
 
-	ZERO_CC(p->mmap_calls);
-	ZERO_CC(p->munmap_calls);
-	ZERO_CC(p->mremap_calls);
-	ZERO_CC(p->malloc_calls);
-	ZERO_CC(p->realloc_calls);
-	ZERO_CC(p->free_calls);
-	ZERO_CC(p->sl_alloc_calls);
-	ZERO_CC(p->sl_realloc_calls);
-	ZERO_CC(p->sl_free_calls);
+	MEMZERO((void *) p, sizeof(ErtsSlAllocStat));
+
+	p->sl_alloc_enabled = eosas.sl_alloc_enabled;
+	p->old_sl_alloc_enabled = 1; 
+	if (eosas.mmap_max >= 0) {
+	    p->singleblock_carrier_threshold = (Uint) eosas.mmap_threshold;
+	    p->singleblock_carrier_move_threshold = 80;
+	    p->max_mmap_carriers = (Uint) eosas.mmap_max;
+
+	    p->singleblock.blocks = (Uint) eosas.mmapped_chunks;
+	    p->singleblock.blocks_size = eosas.mmapped_blocks_size;
+	    p->singleblock.mmap.carriers = eosas.mmapped_chunks;
+	    p->singleblock.mmap.carriers_size = eosas.mmapped_chunks_size;
+	}
 
 	return;
     }
+
+    if (max_no_of_sbcs_ever < max_no_of_sbcs)
+	max_no_of_sbcs_ever = max_no_of_sbcs;
+    if (max_sbcs_total_size_ever < max_sbcs_total_size)
+	max_sbcs_total_size_ever = max_sbcs_total_size;
+    if (max_sbc_blocks_total_size_ever < max_sbc_blocks_total_size)
+	max_sbc_blocks_total_size_ever = max_sbc_blocks_total_size;
+
+
+    if (max_no_of_mbcs_ever < max_no_of_mbcs)
+	max_no_of_mbcs_ever = max_no_of_mbcs;
+    if (max_mbcs_total_size_ever < max_mbcs_total_size)
+	max_mbcs_total_size_ever = max_mbcs_total_size;
+    if (max_no_of_mbc_blocks_ever < max_no_of_mbc_blocks)
+	max_no_of_mbc_blocks_ever = max_no_of_mbc_blocks;
+    if (max_mbc_blocks_total_size_ever < max_mbc_blocks_total_size)
+	max_mbc_blocks_total_size_ever = max_mbc_blocks_total_size;
 
     p->sl_alloc_enabled = !sl_alloc_disabled;
     p->old_sl_alloc_enabled = 0;
 
     p->singleblock_carrier_threshold = sbc_threshold;
+    p->singleblock_carrier_shrink_threshold = sbc_shrink_threshold;
     p->singleblock_carrier_move_threshold = sbc_move_threshold;
+    p->mmap_singleblock_carrier_load_threshold = mmap_sbc_load_threshold;
     p->max_mmap_carriers = max_mmap_carriers;
-    p->carrier_order_search = use_carrier_order_search;
-    p->main_carrier_size = U2B(main_carrier_units);
-    p->smallest_multiblock_carrier_size = U2B(smallest_mbc_units);
-    p->largest_multiblock_carrier_size = U2B(largest_mbc_units);
-    p->multiblock_carrier_growth_ratio = mbc_growth_ratio;
+    p->main_carrier_size = main_carrier_size;
+    p->smallest_multiblock_carrier_size = smallest_mbc_size;
+    p->largest_multiblock_carrier_size = largest_mbc_size;
+    p->multiblock_carrier_growth_stages = mbc_growth_stages;
     p->max_block_search_depth = max_blk_search;
 
-    p->singleblock.max_blocks = max_sbc_blks;
-    p->singleblock.max_blocks_size = U2B(max_sbc_blk_units);
+    p->singleblock.blocks = no_of_mmap_sbcs + no_of_malloc_sbcs;
+    p->singleblock.blocks_size = sbc_blocks_total_size;
+    p->singleblock.adm_size = ((no_of_mmap_sbcs + no_of_malloc_sbcs)
+			       *(SBC_HDR_SZ + ABLK_HDR_SZ));
+    p->singleblock.max_blocks.ever = max_no_of_sbcs_ever;
+    p->singleblock.max_blocks.last = max_no_of_sbcs;
+    p->singleblock.max_blocks_size.ever = max_sbc_blocks_total_size_ever;
+    p->singleblock.max_blocks_size.last = max_sbc_blocks_total_size;
+    p->singleblock.max_carriers.ever = max_no_of_sbcs_ever;
+    p->singleblock.max_carriers.last = max_no_of_sbcs;
+    p->singleblock.max_carriers_size.ever = max_sbcs_total_size_ever;
+    p->singleblock.max_carriers_size.last = max_sbcs_total_size;
+    p->singleblock.mmap.carriers = no_of_mmap_sbcs;
+    p->singleblock.mmap.carriers_size = mmap_sbcs_total_size;
+    p->singleblock.malloc.carriers = no_of_malloc_sbcs;
+    p->singleblock.malloc.carriers_size = malloc_sbcs_total_size;
 
-    p->singleblock.mmap.no_carriers = mmap_sb_carriers;
-    p->singleblock.mmap.no_blocks = mmap_sb_carriers;
-    p->singleblock.mmap.carriers_size = U2B(tot_mmap_sb_carrier_units);
-    p->singleblock.mmap.blocks_size = (U2B(tot_mmap_sbc_blk_units
-					    - (mmap_sb_carriers
-					       *ABLK_HDR_UNITS)));
-    p->singleblock.mmap.adm_size = U2B(mmap_sb_carriers
-					*SBC_HDR_UNITS);
+    p->multiblock.blocks = no_of_mbc_blocks;
+    p->multiblock.blocks_size = mbc_blocks_total_size;
+    p->multiblock.adm_size = (no_of_mbc_blocks*ABLK_HDR_SZ
+			      + ((no_of_mmap_mbcs+no_of_malloc_mbcs)
+				 *MBC_HDR_SZ));
+    p->multiblock.max_blocks.ever = max_no_of_mbc_blocks_ever;
+    p->multiblock.max_blocks.last = max_no_of_mbc_blocks;
+    p->multiblock.max_blocks_size.ever = max_mbc_blocks_total_size_ever;
+    p->multiblock.max_blocks_size.last = max_mbc_blocks_total_size;
+    p->multiblock.max_carriers.ever = max_no_of_mbcs_ever;
+    p->multiblock.max_carriers.last = max_no_of_mbcs;
+    p->multiblock.max_carriers_size.ever = max_mbcs_total_size_ever;
+    p->multiblock.max_carriers_size.last = max_mbcs_total_size;
+    p->multiblock.mmap.carriers = no_of_mmap_mbcs;
+    p->multiblock.mmap.carriers_size = mmap_mbcs_total_size;
+    p->multiblock.malloc.carriers = no_of_malloc_mbcs;
+    p->multiblock.malloc.carriers_size = malloc_mbcs_total_size;
 
-    p->singleblock.malloc.no_carriers = malloc_sb_carriers;
-    p->singleblock.malloc.no_blocks = malloc_sb_carriers;
-    p->singleblock.malloc.carriers_size = U2B(tot_malloc_sb_carrier_units);
-    p->singleblock.malloc.blocks_size = (U2B(tot_malloc_sbc_blk_units
-					      - (malloc_sb_carriers
-						 *ABLK_HDR_UNITS)));
-    p->singleblock.malloc.adm_size = U2B(malloc_sb_carriers
-					  *SBC_HDR_UNITS);
-
-    p->multiblock.max_blocks = max_mbc_blks;
-    p->multiblock.max_blocks_size = U2B(max_mbc_blk_units);
-
-    p->multiblock.mmap.no_carriers = mmap_mb_carriers;
-    p->multiblock.mmap.no_blocks = mmap_mbc_blks;
-    p->multiblock.mmap.carriers_size = U2B(tot_mmap_mb_carrier_units);
-    p->multiblock.mmap.blocks_size = (U2B(tot_mmap_mbc_blk_units
-					    - (mmap_mbc_blks
-					       *ABLK_HDR_UNITS)));
-    p->multiblock.mmap.adm_size = U2B(mmap_mb_carriers*MBC_HDR_UNITS
-				       + mmap_mbc_blks*ABLK_HDR_UNITS);
-
-    p->multiblock.malloc.no_carriers = malloc_mb_carriers;
-    p->multiblock.malloc.no_blocks = malloc_mbc_blks;
-    p->multiblock.malloc.carriers_size = U2B(tot_malloc_mb_carrier_units);
-    p->multiblock.malloc.blocks_size = (U2B(tot_malloc_mbc_blk_units
-					    - (malloc_mbc_blks
-					       *ABLK_HDR_UNITS)));
-    p->multiblock.malloc.adm_size = U2B(malloc_mb_carriers*MBC_HDR_UNITS
-					 + malloc_mbc_blks*ABLK_HDR_UNITS);
-    
     p->mmap_calls = mmap_calls;
     p->munmap_calls = munmap_calls;
     p->mremap_calls = mremap_calls;
@@ -2320,6 +2810,16 @@ SL_ALLOC_STAT(ErtsSlAllocStat *p)
     p->sl_realloc_calls = sl_realloc_calls;
     p->sl_free_calls = sl_free_calls;
 
+    if (begin_max_period) {
+	max_no_of_sbcs = no_of_mmap_sbcs + no_of_malloc_sbcs;
+	max_sbcs_total_size = mmap_sbcs_total_size + malloc_sbcs_total_size;
+	max_sbc_blocks_total_size = sbc_blocks_total_size;
+
+	max_no_of_mbcs = no_of_mmap_mbcs + no_of_malloc_mbcs;
+	max_mbcs_total_size = mmap_mbcs_total_size + malloc_mbcs_total_size;
+	max_no_of_mbc_blocks = no_of_mbc_blocks;
+	max_mbc_blocks_total_size = mbc_blocks_total_size;
+    }
 }
 
 /* -- erts_sl_alloc_init() ------------------------------------------------- */
@@ -2328,7 +2828,6 @@ void
 SL_ALLOC_INIT(ErtsSlAllocInit *arg)
 {
     int i;
-    Uint page_size;
 
     atoms_need_init = 1;
 
@@ -2343,16 +2842,18 @@ SL_ALLOC_INIT(ErtsSlAllocInit *arg)
 	arg->sbcmt = ERTS_SL_ALLOC_DEFAULT_SBC_MOVE_THRESHOLD;
     if (arg->sbct < 0)
 	arg->sbct = ERTS_SL_ALLOC_DEFAULT_SBC_THRESHOLD;
+    if (arg->sbcst < 0)
+	arg->sbcst = ERTS_SL_ALLOC_DEFAULT_SBC_SHRINK_THRESHOLD;
+    if (arg->msbclt < 0)
+	arg->msbclt = ERTS_SL_ALLOC_DEFAULT_MMAP_SBC_LOAD_THRESHOLD;
     if (arg->mmc < 0)
 	arg->mmc = ERTS_SL_ALLOC_DEFAULT_MAX_MMAP_CARRIERS;
-    if (arg->cos < 0)
-	arg->cos = ERTS_SL_ALLOC_DEFAULT_CARRIER_ORDER_SEARCH;
     if (arg->scs < 0)
 	arg->scs = ERTS_SL_ALLOC_DEFAULT_SMALLEST_CARRIER_SIZE;
     if (arg->lcs < 0)
 	arg->lcs = ERTS_SL_ALLOC_DEFAULT_LARGEST_CARRIER_SIZE;
-    if (arg->cgr < 0)
-	arg->cgr = ERTS_SL_ALLOC_DEFAULT_CARRIER_GROWTH_RATIO;
+    if (arg->mbcgs < 0)
+	arg->mbcgs = ERTS_SL_ALLOC_DEFAULT_CARRIER_GROWTH_STAGES;
     if (arg->mbsd < 0)
 	arg->mbsd = ERTS_SL_ALLOC_DEFAULT_MAX_BLOCK_SEARCH_DEPTH;
 
@@ -2380,48 +2881,69 @@ SL_ALLOC_INIT(ErtsSlAllocInit *arg)
 	return;
     }
 
-    main_carrier_units = arg->mcs ? B2U(arg->mcs) : 0;
+    main_carrier_size = arg->mcs ? arg->mcs : 0;
     max_blk_search = arg->mbsd = MAX(1, arg->mbsd);
-    mbc_growth_ratio = arg->cgr;
-    smallest_mbc_units = B2U(arg->scs);
-    largest_mbc_units = B2U(arg->lcs);
-    use_carrier_order_search = arg->cos;
+    if (arg->mbcgs < 1)
+	mbc_growth_stages = arg->mbcgs = 1;
+    else
+	mbc_growth_stages = arg->mbcgs;
+    smallest_mbc_size = arg->scs;
+    if (arg->lcs < smallest_mbc_size)
+	largest_mbc_size = arg->lcs = smallest_mbc_size;
+    else
+	largest_mbc_size = arg->lcs;
+#if USE_MMAP
     max_mmap_carriers = arg->mmc;
-    set_sbc_threshold(arg->sbct);
+#else
+    max_mmap_carriers = arg->mmc = 0;
+#endif
+    sbc_threshold = arg->sbct;
+    sbc_shrink_threshold = arg->sbcst;
     sbc_move_threshold = arg->sbcmt;
+    mmap_sbc_load_threshold = arg->msbclt;
 
-    mbc_growth_fact[0] = 1.0;
-    max_mbcgf_calced = 0;
+    init_bucket_index(sbc_threshold);
 
-    non_empty_buckets		= (BucketMask_t) 0;
-    for (i = 0; i < NO_OF_BKTS; i++) {
- 	common_buckets[i]	= NULL;
-	blocks_in_buckets[i]	= 0;
-    }
+    bucket_masks.main = 0;
+    for (i = 0; i < NO_OF_SUB_MASKS; i++)
+	bucket_masks.sub[i] = 0;
 
-    first_mb_carrier		= NULL;
-    last_mb_carrier		= NULL;
-    last_aux_mb_carrier		= NULL;
+    for (i = 0; i < NO_OF_BKTS; i++)
+ 	buckets[i] = NULL;
 
-    mmap_sb_carriers		= 0;
-    malloc_sb_carriers		= 0;
-    mmap_mb_carriers		= 0;
-    malloc_mb_carriers		= 0;
+    first_mb_carrier = NULL;
+    last_mb_carrier = NULL;
+    last_aux_mb_carrier_start = NULL;
+    last_aux_mb_carrier_end = NULL;
 
-    tot_mmap_sb_carrier_units	= 0;
-    tot_malloc_sb_carrier_units	= 0;
-    tot_mmap_mb_carrier_units	= 0;
-    tot_malloc_mb_carrier_units	= 0;
+    no_of_mmap_sbcs = 0;
+    no_of_malloc_sbcs = 0;
+    max_no_of_sbcs = 0;
+    max_no_of_sbcs_ever = 0;
+    mmap_sbcs_total_size = 0;
+    malloc_sbcs_total_size = 0;
+    max_sbcs_total_size = 0;
+    max_sbcs_total_size_ever = 0;
 
-    mmap_mbc_blks		= 0;
-    malloc_mbc_blks		= 0;
-    max_mbc_blks                = 0;
+    sbc_blocks_total_size = 0;
+    max_sbc_blocks_total_size = 0;
+    max_sbc_blocks_total_size_ever = 0;
 
-    tot_mmap_sbc_blk_units	= 0;
-    tot_malloc_sbc_blk_units	= 0;
-    tot_mmap_mbc_blk_units	= 0;
-    tot_malloc_mbc_blk_units	= 0;
-    max_mbc_blk_units		= 0;
+    no_of_mmap_mbcs = 0;
+    no_of_malloc_mbcs = 0;
+    max_no_of_mbcs = 0;
+    max_no_of_mbcs_ever = 0;
+    mmap_mbcs_total_size = 0;
+    malloc_mbcs_total_size = 0;
+    max_mbcs_total_size = 0;
+    max_mbcs_total_size_ever = 0;
+
+    no_of_mbc_blocks = 0;
+    max_no_of_mbc_blocks = 0;
+    max_no_of_mbc_blocks_ever = 0;
+    mbc_blocks_total_size = 0;
+    max_mbc_blocks_total_size = 0;
+    max_mbc_blocks_total_size_ever = 0;
 
     ZERO_CC(mmap_calls);
     ZERO_CC(munmap_calls);
@@ -2440,32 +2962,36 @@ SL_ALLOC_INIT(ErtsSlAllocInit *arg)
 	erl_exit(-1, "Page size (%d) not evenly divideble by internal unit "
 		 "size of sl_alloc (%d)\n", page_size, sizeof(Unit_t));
 
-    page_units = B2U(page_size);
-
 #ifndef MAP_ANON
     mmap_fd = GET_MMAP_FD;
 #endif
 #endif /* #if USE_MMAP */
 
-    if (main_carrier_units) {
+#ifdef DEBUG
+    carrier_alignment = sizeof(Unit_t);
+#endif
+
+    main_carrier = NULL;
+    if (main_carrier_size) {
 	MBCarrier_t *mbc;
 	mbc = (MBCarrier_t *) carrier_alloc(CA_TYPE_MULTIBLOCK,
-					    main_carrier_units,
+					    main_carrier_size,
 					    CA_FLAG_FORCE_MALLOC
 					    | CA_FLAG_MAIN_CARRIER);
 	if (!mbc)
 	    erl_exit(-1,
 		     "Failed to allocate sl_alloc main carrier (size=%d)\n",
-		     U2B(main_carrier_units));
-	
-	link_free_block((FreeBlock_t *) MBC2MEM(mbc));
+		     main_carrier_size);
+
+	link_free_block((FreeBlock_t *) MBC2FBLK(mbc));
 
 	ASSERT(IS_MAIN_CARRIER(mbc));
 #if HARD_DEBUG
-	check_mb_carrier(mbc);
+	check_blk_carrier((Block_t *) MBC2FBLK(mbc));
 #endif
     }
 
+    INIT_SBC_LOAD_CHECK();
 
 #ifdef DEBUG
     initialized = 1;
@@ -2479,114 +3005,134 @@ SL_ALLOC_INIT(ErtsSlAllocInit *arg)
 #if HARD_DEBUG
 
 static void
-check_sb_carrier(SBCarrier_t *c)
+check_blk_carrier(Block_t *iblk)
 {
-    AllocBlock_t *blk = SBC2BLK(c);
+    if (IS_SBC_BLK(iblk)) {
+	SBCarrier_t *sbc = (SBCarrier_t *) BLK2SBC(iblk);
 
-    ASSERT(IS_SB_CARRIER(c));
-    ASSERT(IS_AUX_CARRIER(c));
-    ASSERT(IS_SBC_BLK(blk));
-    ASSERT(IS_ALLOCED_BLK(blk));
-    ASSERT(CARRIER_UNITS(c) - SBC_HDR_UNITS >= BLK_UNITS(blk));
-    if (IS_MMAP_CARRIER(c)) {
-	ASSERT(CARRIER_UNITS(c) % page_units == 0);
-    }
-}
-
-static void
-check_mb_carrier(MBCarrier_t *c)
-{
-    Uint units;
-    int i;
-    int bi;
-    int found;
-    int first_blk = 1;
-    Block_t *prev_blk;
-    Block_t *blk;
-    FreeBlock_t *fblk;
-    FreeBlock_t **buckets;
-    BucketMask_t non_mt_bkts;
-
-    ASSERT(IS_MB_CARRIER(c));
-    if (IS_MMAP_CARRIER(c)) {
-	ASSERT(CARRIER_UNITS(c) % page_units == 0);
-    }
-
-    blk = (Block_t *) MBC2MEM(c);
-
-    if (use_carrier_order_search) {
-	buckets = c->buckets;
-	non_mt_bkts = c->non_empty_buckets;
+	ASSERT(SBC2BLK(sbc) == iblk);
+	ASSERT(IS_ALLOCED_BLK(iblk));
+	ASSERT(IS_FIRST_BLK(iblk));
+	ASSERT(IS_LAST_BLK(iblk));
+	ASSERT(CARRIER_SZ(sbc) - SBC_HDR_SZ >= BLK_SZ(iblk));
+#if USE_MMAP
+	if (IS_MMAP_CARRIER(sbc)) {
+	    ASSERT(CARRIER_SZ(sbc) % page_size == 0);
+	}
+#endif
     }
     else {
-	buckets = common_buckets;
-	non_mt_bkts = non_empty_buckets;
-    }
+	MBCarrier_t *mbc = NULL;
+	Block_t *prev_blk = NULL;
+	Block_t *blk;
+	FreeBlock_t *fblk;
+	char *carrier_end;
+	Uint tot_blk_sz;
+	Uint blk_sz;
+	int i;
+	int bi;
+	int found;
 
-    ASSERT(IS_FIRST_BLK(blk));
+	blk = iblk;
+	tot_blk_sz = 0;
 
-    do {
-	ASSERT(c == (MBCarrier_t *) BLK_CARRIER(blk));
-	ASSERT(IS_MBC_BLK(blk));
-	units = BLK_UNITS(blk);
+	while (1) {
 
-	if(IS_FREE_BLK(blk)) {
-	    if (((Unit_t *) blk) + units < ((Unit_t *) c) + CARRIER_UNITS(c)) {
-		ASSERT(*((Uint *) (((Unit_t *) blk) + units - 1)) == units);
+	    if (prev_blk) {
+		ASSERT(NXT_BLK(prev_blk) == blk);
+		if (IS_FREE_BLK(prev_blk)) {
+		    ASSERT(IS_PREV_BLK_FREE(blk));
+		    ASSERT(prev_blk == PREV_BLK(blk));
+		}
+		else {
+		    ASSERT(IS_PREV_BLK_ALLOCED(blk));
+		}
 	    }
 
-	    bi = bucket_index(units);
+	    if (mbc) {
+		if (blk == iblk)
+		    break;
+		ASSERT(((Block_t *) mbc) < blk && blk < iblk);
+	    }
+	    else
+		ASSERT(blk >= iblk);
 
-	    ASSERT(non_mt_bkts & ((BucketMask_t) 1) << bi);
+
+	    ASSERT(IS_MBC_BLK(blk));
+
+	    blk_sz = BLK_SZ(blk);
+
+	    ASSERT(blk_sz % sizeof(Unit_t) == 0);
+	    ASSERT(blk_sz >= MIN_BLK_SZ);
+
+	    tot_blk_sz += blk_sz;
+
+	    if(IS_FREE_BLK(blk)) {
+		if (IS_NOT_LAST_BLK(blk))
+		    ASSERT(*((Word_t *) (((char *) blk)+blk_sz-sizeof(Word_t)))
+			   == blk_sz);
+
+		bi = BKT_IX(blk_sz);
+
+		ASSERT(bucket_masks.main & (((Word_t) 1) << IX2SMIX(bi)));
+		ASSERT(bucket_masks.sub[IX2SMIX(bi)]
+		       & (((Word_t) 1) << IX2SBIX(bi)));
+		
+		found = 0;
+		for (fblk = buckets[bi]; fblk; fblk = fblk->next)
+		    if (blk == (Block_t *) fblk)
+			found++;
+		ASSERT(found == 1);
+	    }
+	    else
+		bi = -1;
 
 	    found = 0;
-	    for (fblk = buckets[bi]; fblk; fblk = fblk->next)
-		if (blk == (Block_t *) fblk)
-		    found++;
-	    ASSERT(found == 1);
-	}
-	else
-	    bi = -1;
+	    for (i = 0; i < NO_OF_BKTS; i++) {
+		if (i == bi)
+		    continue; /* Already checked */
+		for (fblk = buckets[i]; fblk; fblk = fblk->next)
+		    if (blk == (Block_t *) fblk)
+			found++;
+	    }
 
-	found = 0;
-	for (i = 0; i < NO_OF_BKTS; i++) {
-	    if (i == bi)
-		continue; /* Already checked */
-	    for (fblk = buckets[i]; fblk; fblk = fblk->next)
-		if (blk == (Block_t *) fblk)
-		    found++;
-	}
+	    ASSERT(found == 0);
 
-	ASSERT(found == 0);
-
-	if (first_blk)
-	    first_blk = 0;
-	else {
-	    ASSERT(NXT_BLK(prev_blk) == blk);
-	    if (IS_FREE_BLK(prev_blk)) {
-		ASSERT(IS_PREV_BLK_FREE(blk));
-		ASSERT(prev_blk == PREV_BLK(blk));
+	    if (IS_LAST_BLK(blk)) {
+		carrier_end = ((char *) NXT_BLK(blk)) + sizeof(Word_t);
+		mbc = *((MBCarrier_t **) NXT_BLK(blk));
+		prev_blk = NULL;
+		blk = MBC2FBLK(mbc);
+		ASSERT(IS_FIRST_BLK(blk));
 	    }
 	    else {
-		ASSERT(IS_PREV_BLK_ALLOCED(blk));
+		prev_blk = blk;
+		blk = NXT_BLK(blk);
 	    }
 	}
-	prev_blk = blk;
-	blk = NXT_BLK(blk);
-    } while (((Unit_t *) blk) < ((Unit_t *) c) + CARRIER_UNITS(c));
 
-    ASSERT(IS_LAST_BLK(prev_blk));
+	ASSERT(IS_MB_CARRIER(mbc));
+	ASSERT(((char *) mbc) + MBC_HDR_SZ + tot_blk_sz  + sizeof(Word_t)
+	       == carrier_end);
+	ASSERT(((char *) mbc) + CARRIER_SZ(mbc) == carrier_end);
 
-    for(bi = 0; bi < NO_OF_BKTS; bi++) {
-	if (use_carrier_order_search)
-	    ASSERT(c->non_empty_buckets & (((BucketMask_t) 1) << bi)
-		   ? non_empty_buckets & (((BucketMask_t) 1) << bi)
-		   : 1);
-	ASSERT(non_mt_bkts & (((BucketMask_t) 1) << bi)
-	       ? buckets[bi] != NULL
-	       : buckets[bi] == NULL);
+	for(bi = 0; bi < NO_OF_BKTS; bi++) {
+	    if ((bucket_masks.main & (((Word_t) 1) << IX2SMIX(bi)))
+		&& (bucket_masks.sub[IX2SMIX(bi)]
+		    & (((Word_t) 1) << IX2SBIX(bi)))) {
+		ASSERT(buckets[bi] != NULL);
+	    }
+	    else {
+		ASSERT(buckets[bi] == NULL);
+	    }
+	}
+
+#if USE_MMAP
+	if (IS_MMAP_CARRIER(mbc)) {
+	    ASSERT(CARRIER_SZ(mbc) % page_size == 0);
+	}
+#endif
     }
-
 
 }
 

@@ -1,27 +1,27 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-%			HASH TABLES IN ERLANG
-%
-% These use our declarative vectors.
-%
-% Provides:
-%   init(Xs{,Options}): initializes a hash table with Xs as {Key,Value} pairs.
-%      Options is a list of pairs {Option_name,Option_value}.
-%      If they are not given, a "good" set of values is used.
-%
-%   lookup(Key,HT): returns {found,Value} or not_found.
-%
-%   insert(Key,Value,HT): if Key exists in HT, throw exception.
-%      Otherwise, return new hash table.
-%
-%   update(Key,Value,HT): as insert/3, but replaces old value if
-%      Key is present.
-%
-%   list(HT): returns a (not necessarily ordered) list of {Key,Value} pairs.
-%
-% Representation of hash table found in hash.hrl.
-%
-% At present, table is not rehashed when it becomes too full.
+%%
+%%			HASH TABLES IN ERLANG
+%%
+%% These use our declarative vectors.
+%%
+%% Provides:
+%%   init(Xs{,Options}): initializes a hash table with Xs as {Key,Value} pairs.
+%%      Options is a list of pairs {Option_name,Option_value}.
+%%      If they are not given, a "good" set of values is used.
+%%
+%%   lookup(Key,HT): returns {found,Value} or not_found.
+%%
+%%   insert(Key,Value,HT): if Key exists in HT, throw exception.
+%%      Otherwise, return new hash table.
+%%
+%%   update(Key,Value,HT): as insert/3, but replaces old value if
+%%      Key is present.
+%%
+%%   list(HT): returns a (not necessarily ordered) list of {Key,Value} pairs.
+%%
+%% Representation of hash table found in hash.hrl.
+%%
+%% At present, table is not rehashed when it becomes too full.
 
 -define(vectors,hipe_pure_vectors).
 
@@ -107,7 +107,7 @@ update_all([{K,V}|Xs],HT) ->
     update_all(Xs,update(K,V,HT)).
 
 lookup_all([],HT) -> HT;
-lookup_all([{K,V}|Xs],HT) ->
+lookup_all([{K,_V}|Xs],HT) ->
     lookup_all(Xs,lookup(K,HT)).
 
 delete_all([],HT) -> HT;
@@ -157,12 +157,12 @@ update_bucket(K,V,[{K0,V0}|Xs]) ->
 	    {Incr,[{K0,V0}|Ys]}
     end.
 
-search_bucket(K,[]) -> not_found;
+search_bucket(_K,[]) -> not_found;
 search_bucket(K,[{K,V}|_]) -> {found,V};
 search_bucket(K,[_|Xs]) -> search_bucket(K,Xs).
 
-delete_bucket(K,[]) -> {0,[]};
-delete_bucket(K,[{K,V}|Xs]) -> {1,Xs};
+delete_bucket(_K,[]) -> {0,[]};
+delete_bucket(K,[{K,_V}|Xs]) -> {1,Xs};
 delete_bucket(K,[X|Xs]) -> 
     {Incr,Ys} = delete_bucket(K,Xs),
     {Incr,[X|Ys]}.
@@ -195,28 +195,28 @@ rehash_table(Direction,HT) ->
     HT0#hashtable{occupancy=length(Items)}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-% The new size depends on:
-% - did the table shrink?
-% - what is old size?
-% - what is est. new size?
-% - what is desired occupancy ratio?
-%
-% The trick is to avoid repeated resizing of the table.
-% - table may oscillate between sizes if insert-delete sequences occur
-% - table may shrink repeatedly if resized 
-%
-% Returns {Size,MinOcc,MaxOcc}
-%
-% *** UNFINISHED ***
-% 
+%%
+%% The new size depends on:
+%% - did the table shrink?
+%% - what is old size?
+%% - what is est. new size?
+%% - what is desired occupancy ratio?
+%%
+%% The trick is to avoid repeated resizing of the table.
+%% - table may oscillate between sizes if insert-delete sequences occur
+%% - table may shrink repeatedly if resized 
+%%
+%% Returns {Size,MinOcc,MaxOcc}
+%%
+%% *** UNFINISHED ***
+%% 
 
 ideal_size(inc,HT) ->
     ?ENTER(ideal_size,2),
-    Size = HT#hashtable.size,
-    MinOcc = HT#hashtable.min_occ,
+    %% Size = HT#hashtable.size,
+    %% MinOcc = HT#hashtable.min_occ,
     MinOccRatio = HT#hashtable.min_occ_ratio,
-    MaxOcc = HT#hashtable.max_occ,
+    %% MaxOcc = HT#hashtable.max_occ,
     MaxOccRatio = HT#hashtable.max_occ_ratio,
     NewSize = round(2 * HT#hashtable.size),
     NewMinOcc = round(MinOccRatio * NewSize),
@@ -224,10 +224,10 @@ ideal_size(inc,HT) ->
     {NewSize,NewMinOcc,NewMaxOcc};
 ideal_size(dec,HT) ->
     ?ENTER(ideal_size,2),
-    Size = HT#hashtable.size,
-    MinOcc = HT#hashtable.min_occ,
+    %% Size = HT#hashtable.size,
+    %% MinOcc = HT#hashtable.min_occ,
     MinOccRatio = HT#hashtable.min_occ_ratio,
-    MaxOcc = HT#hashtable.max_occ,
+    %% MaxOcc = HT#hashtable.max_occ,
     MaxOccRatio = HT#hashtable.max_occ_ratio,
     NewSize = round(0.5 * HT#hashtable.size),
     NewMinOcc = round(MinOccRatio * NewSize),

@@ -1,6 +1,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2000 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <01/08/01 21:42:44 happi>
+%% Time-stamp: <02/05/13 14:57:10 happi>
 %% ====================================================================
 %%  Filename : 	hipe_icode_heap_test.erl
 %%  Module   :	hipe_icode_heap_test
@@ -9,9 +9,9 @@
 %%  History  :	* 2000-11-07 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2001/10/01 07:53:22 $
-%%              $Revision: 1.3 $
+%%              $Author: pegu2945 $
+%%              $Date: 2002/07/03 14:42:39 $
+%%              $Revision: 1.8 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -32,6 +32,8 @@
 
 cfg(CFG) ->
   Icode = hipe_icode_cfg:linearize(CFG),
+  CFG2 = hipe_icode_cfg:init(Icode),
+
   Code = hipe_icode:icode_code(Icode),
   ActualVmax = hipe_icode:highest_var(Code),
   ActualLmax = hipe_icode:highest_label(Code),
@@ -39,16 +41,15 @@ cfg(CFG) ->
   hipe_gensym:set_label(icode,ActualLmax+1),
   hipe_gensym:set_var(icode,ActualVmax+1),
 
-  EBBs = hipe_icode_ebb:cfg(CFG),
-  Start = hipe_icode_cfg:start_label(CFG),
-
-  {EBBcode,Visited} = ebbs(EBBs,[], CFG),
-  %% io:format("Visited ~w\n",[Visited]),
-  %% io:format("EBBs ~w\n",[EBBs]),
+  EBBs = hipe_icode_ebb:cfg(CFG2),
+  {EBBcode,_Visited} = ebbs(EBBs,[], CFG2),
   NewCode = add_gc_tests(EBBcode),
   NewIcode = hipe_icode:icode_code_update(Icode,NewCode),
-  %% hipe_icode:pp(NewIcode),
-  hipe_icode_cfg:init(NewIcode).
+  
+  NewCFG = hipe_icode_cfg:init(NewIcode),
+  %% hipe_icode_cfg:pp(NewCFG),
+  NewCFG.
+
 
 ebbs([EBB|EBBs], Visited, CFG) ->
   case hipe_icode_ebb:type(EBB) of
@@ -101,7 +102,20 @@ add_gc_tests([]) -> [].
 need([I|Is] , Need, Code) ->
   case split(I) of 
     true -> 
-      {Need + need(I), Is,  lists:reverse([I|Code])};
+      case hipe_icode:type(I) of
+	call ->
+	  case hipe_icode:call_continuation(I) of
+	    [] -> %% Was fallthrough.
+	      NewLab = hipe_icode:mk_new_label(),
+	      LabName = hipe_icode:label_name(NewLab),
+	      NewCall = hipe_icode:call_set_continuation(I,LabName),
+	      {Need + need(I), [NewLab|Is],  lists:reverse([NewCall|Code])};
+	    _ ->
+	      {Need + need(I), Is,  lists:reverse([I|Code])}
+	    end;
+	_ ->
+	  {Need + need(I), Is,  lists:reverse([I|Code])}
+      end;
     false ->
       need(Is, Need + need(I), [I|Code])
   end;
@@ -112,17 +126,20 @@ need(I) ->
   case hipe_icode:type(I) of 
     call ->
       primop_need(I);
+    unsafe_tag_float ->
+      3;
     _ -> 
       0
   end.
 	      
 primop_need(I) ->
   case hipe_icode:call_fun(I) of
+
     cons ->
       2;
     mktuple ->
       length(hipe_icode:call_args(I)) + 1;
-    {mkfun,MFA,MagicNum,Index} ->
+    {mkfun,_MFA,_MagicNum,_Index} ->
       NumFree = length(hipe_icode:call_args(I)),
       ?ERL_FUN_SIZE + NumFree;
     _ ->

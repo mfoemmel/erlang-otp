@@ -48,19 +48,24 @@ extern ErlDrvEntry spawn_driver_entry;
 extern ErlDrvEntry *driver_tab[];
 
 DE_List*   driver_list;	/* Where should this be defined? */
-Port* erts_port;
+Port*      erts_port;
 Uint       bytes_out;          /* No bytes sent out of the system */
 Uint       bytes_in;           /* No bytes gotten into the system */
 
-int erl_max_ports;
+Uint erts_max_ports;
+Uint erts_port_tab_index_mask;
+
+const ErlDrvTermData driver_term_nil = (ErlDrvTermData)NIL;
+
+
 
 static FUNCTION(void, terminate_port, (int));
 
-#define NUM2PORT(ix) ( ( ((ix) < 0) || ((ix)>=erl_max_ports) || \
+#define NUM2PORT(ix) ( ( ((ix) < 0) || ((ix)>=erts_max_ports) || \
 			(erts_port[(ix)].status == FREE)) ? NULL : &erts_port[ix])
 
 #define IOQ(ix) ( ( ((ix) < 0) || \
-                    ((ix) >= erl_max_ports) || \
+                    ((ix) >= erts_max_ports) || \
                     (erts_port[(ix)].status == FREE)) ? NULL : \
                    &erts_port[(ix)].ioq )
 
@@ -90,9 +95,9 @@ typedef struct line_buf_context {
 /* The 'number' field in a port now has two parts: the lowest bits
    contain the index in the port table, and the higher bits are a counter
    which is incremented each time we look for a free port and start from
-   the beginning of the table. erl_max_ports is the number of file descriptors,
+   the beginning of the table. erts_max_ports is the number of file descriptors,
    rounded up to a power of 2.
-   To get the index from a port, use the macro 'port_index';
+   To get the index from a port, use the macro 'internal_port_index';
    'port_number' returns the whole number field.
 */
 
@@ -108,7 +113,7 @@ get_free_port(void)
 
     i = last_port + 1;
     while(1) {
-	if (i == erl_max_ports) {
+	if (i == erts_max_ports) {
 	    i = 0;
 	    if (++port_extra_n >= port_extra_limit)
 	       port_extra_n = 0;
@@ -176,7 +181,7 @@ setup_port(int port_num, Eterm pid, ErlDrvEntry *driver, long ret, char *name)
     prt->drv_data = ret;
     prt->bytes_in = 0;
     prt->bytes_out = 0;
-    prt->dslot = -1;
+    prt->dist_entry = NULL;
     prt->reg = NULL;
     sys_memset(&prt->tm, 0, sizeof(ErlTimer));
     if (prt->name != NULL) {
@@ -199,7 +204,7 @@ wake_process_later(Eterm this_port, Process *process)
     ProcessList** p;
     ProcessList* new_p;
 
-    port_pos = port_index(this_port);
+    port_pos = internal_port_index(this_port);
     if (erts_port[port_pos].status == FREE)
 	return;
 
@@ -207,7 +212,7 @@ wake_process_later(Eterm this_port, Process *process)
 	/* Empty loop body */;
 
     new_p = (ProcessList *) fix_alloc_from(163,plist_desc);
-    new_p->pid = process->id;
+    new_p->pid = process->id; /* Internal pid */
     new_p->next = NULL;
     *p = new_p;
 }
@@ -235,9 +240,9 @@ open_driver(ErlDrvEntry* driver,	/* Pointer to driver entry. */
        return -2;
     }
 
-    erts_port[port_num].id = make_port2(THIS_NODE,
-					port_num +
-					(port_extra_n << port_extra_shift));
+    erts_port[port_num].id = make_internal_port(port_num +
+						(port_extra_n
+						 << port_extra_shift));
 
     if (driver == &spawn_driver_entry) {
 	char *p;
@@ -669,18 +674,6 @@ int write_port(Eterm caller_id, int ix, Eterm list)
     
 }
 
-static int fits_in_bits(unsigned int n)
-{
-   int i;
-
-   i = 0;
-   while (n > 0) {
-      i++;
-      n >>= 1;
-   }
-   return i;
-}
-
 /* initialize the port array */
 void init_io(void)
 {
@@ -691,31 +684,36 @@ void init_io(void)
 
     maxports = getenv("ERL_MAX_PORTS");
     if (maxports != NULL) 
-	erl_max_ports = atoi(maxports);
+	erts_max_ports = atoi(maxports);
     else
-	erl_max_ports = 0;
+	erts_max_ports = 0;
 
     last_port = 0;
-    if (erl_max_ports < 1024)
-	erl_max_ports = 1024;
+    if (erts_max_ports > ERTS_MAX_PORTS)
+	erts_max_ports = ERTS_MAX_PORTS;
+    else if (erts_max_ports < 1024)
+	erts_max_ports = 1024;
 
-    port_extra_shift = fits_in_bits(erl_max_ports - 1);
-    port_extra_limit = 1 << (PORT_NUMBER_BITS - port_extra_shift);
+    port_extra_shift = erts_fit_in_bits(erts_max_ports - 1);
+    port_extra_limit = 1 << (ERTS_PORTS_BITS - port_extra_shift);
     port_extra_n = 0;
 
-    if (erl_max_ports < (1 << port_extra_shift))
-       erl_max_ports = 1 << port_extra_shift;
+    erts_port_tab_index_mask = ~(~0 << port_extra_shift);
+    erts_max_ports = 1 << port_extra_shift;
 
     driver_list = NULL;
 
-    erts_port = (Port *) erts_definite_alloc(erl_max_ports * sizeof(Port));
+    if (erts_max_ports * sizeof(Port) <= erts_max_ports)
+	erl_exit(-1, "Can't allocate (>) %lu bytes of memory\n", ~0);
+
+    erts_port = (Port *) erts_definite_alloc(erts_max_ports * sizeof(Port));
     if(!erts_port)
-	erts_port = (Port *) safe_alloc_from(160,erl_max_ports * sizeof(Port));
+	erts_port = (Port *) safe_alloc_from(160,erts_max_ports * sizeof(Port));
 
     bytes_out = 0;
     bytes_in = 0;
 
-    for (i = 0; i < erl_max_ports; i++) {
+    for (i = 0; i < erts_max_ports; i++) {
 	erts_port[i].status = FREE;
 	erts_port[i].name = NULL;
 	erts_port[i].links = NULL;
@@ -943,16 +941,27 @@ int eol;
     } else {
 	need += (hlen + len)*2;
     }
-    if (is_not_pid(to))
+    if (is_not_internal_pid(to))
 	return;
-    rp = process_tab[pid_number(to)];
+    if (internal_pid_index(to) >= erts_max_processes)
+	return;
+    rp = process_tab[internal_pid_index(to)];
+
     if (INVALID_PID(rp, to))
 	return;
 
+#ifdef SHARED_HEAP
+    if(rp->status != P_RUNNING) {
+	hp = erts_global_alloc(need);
+    } else {
+        hp = HAlloc(rp, need);
+    }
+#else
     /*
      * XXX Multi-thread note: Allocating on another process's heap.
      */
     hp = HAlloc(rp, need);
+#endif
 
     listp = NIL;
     if ((prt->status & BINARY_IO) == 0) {
@@ -970,14 +979,14 @@ int eol;
 	pb = (ProcBin *) hp;
 	pb->thing_word = HEADER_PROC_BIN;
 	pb->size = len;
-	pb->next = rp->off_heap.mso;
-	rp->off_heap.mso = pb;
+	pb->next = MSO(rp).mso;
+	MSO(rp).mso = pb;
 	pb->val = bptr;
 	pb->bytes = bptr->orig_bytes;
 	hp += PROC_BIN_SIZE;
 
 	tot_bin_allocated += len;
-	rp->off_heap.overhead += pb->size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
+	MSO(rp).overhead += pb->size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
 	listp = make_binary(pb);
     }
 
@@ -1064,17 +1073,27 @@ deliver_vec_message(
 	need += (hlen+csize)*2;
     }
 
-    if (is_not_pid(to))
+    if (is_not_internal_pid(to))
 	return;
-    rp = process_tab[pid_number(to)];
+
+    if (internal_pid_index(to) >= erts_max_processes)
+	return;
+    rp = process_tab[internal_pid_index(to)];
     if (INVALID_PID(rp, to))
 	return;
 
-
+#ifdef SHARED_HEAP
+    if(rp->status != P_RUNNING) {
+	hp = erts_global_alloc(need);
+    } else {
+        hp = HAlloc(rp, need);
+    }
+#else
     /*
      * XXX Multi-thread note: Allocating on another process's heap.
      */
     hp = HAlloc(rp, need);
+#endif
 
     listp = NIL;
     iov += (vsize-1);  /* start from end (for concat) */
@@ -1099,13 +1118,13 @@ deliver_vec_message(
 	    }
 	    pb->thing_word = HEADER_PROC_BIN;
 	    pb->size = iov->iov_len;
-	    pb->next = rp->off_heap.mso;
-	    rp->off_heap.mso = pb;
+	    pb->next = MSO(rp).mso;
+	    MSO(rp).mso = pb;
 	    pb->val = ErlDrvBinary2Binary(b);
 	    pb->bytes = base;
 	    hp += PROC_BIN_SIZE;
 	    
-	    rp->off_heap.overhead += iov->iov_len / BINARY_OVERHEAD_FACTOR /
+	    MSO(rp).overhead += iov->iov_len / BINARY_OVERHEAD_FACTOR /
 		sizeof(Eterm);
 
 	    if (listp == NIL)  /* compatible with deliver_bin_message */
@@ -1171,8 +1190,8 @@ void flush_port(int ix)
 
 
 /* stop and delete a port that is CLOSING */
-static void terminate_port(ix)
-int ix;
+static void
+terminate_port(int ix)
 {
     Port* prt = &erts_port[ix];
     ErlDrvEntry *drv;
@@ -1199,6 +1218,8 @@ int ix;
 	prt->bp = NULL;
 	prt->data = am_undefined;
     }
+
+    ASSERT(prt->dist_entry == NULL);
 }
 
 
@@ -1207,18 +1228,18 @@ int ix;
    away the reason, so we can do a BIF_ERROR(USER_EXIT, ...) later.
 */
 
-static void schedule_exit2(Process *rp, Eterm reason)
+static void
+schedule_exit2(Process *rp, Eterm reason)
 {
-   if (rp->status == P_RUNNING)
-   {
-      rp->status = P_EXITING;
-      rp->fvalue = reason;
+   if (rp->status == P_RUNNING) {
+       rp->status = P_EXITING;
+       rp->fvalue = reason;
+   } else {
+       schedule_exit(rp, reason);
    }
-   else
-      schedule_exit(rp, reason);
 }
 
-/* 'from' is sending 'this_port' an exit signal, (this_port must be local).
+/* 'from' is sending 'this_port' an exit signal, (this_port must be internal).
  * If reason is normal we don't do anything, *unless* from is our connected
  * process in which case we close the port. Any other reason kills the port.
  * If 'from' is ourself we always die.
@@ -1227,15 +1248,22 @@ static void schedule_exit2(Process *rp, Eterm reason)
  * that is to kill a port till reason kill. Then the port is stopped.
  * 
  */
-void do_exit_port(Eterm this_port, Eterm from, Eterm reason)
+void
+do_exit_port(Eterm this_port, Eterm from, Eterm reason)
 {
    Eterm item;
    Process *rp;
-   int ix = port_index(this_port);
-   int slot;
-   Port* p = &erts_port[ix];
+   int ix;
+   DistEntry *dep;
+   Port* p;
    ErlLink* lnk;
-   Eterm rreason = (reason == am_kill) ? am_killed : reason;
+   Eterm rreason;
+
+   ASSERT(is_internal_port(this_port));
+
+   ix = internal_port_index(this_port);
+   p = &erts_port[ix];
+   rreason = (reason == am_kill) ? am_killed : reason;
 
    if ((p->status == FREE) ||
        (p->status & EXITING) ||
@@ -1265,40 +1293,36 @@ void do_exit_port(Eterm this_port, Eterm from, Eterm reason)
       item = lnk->item;
       switch(lnk->type) {
        case LNK_LINK:
-	 if (is_pid(item)) {
-	    if ((slot = pid_node(item)) != THIS_NODE)
-	       dist_exit(slot, this_port, item, rreason);
-	    else {
+	   if (is_external_pid(item)) {
+	       dep = external_pid_dist_entry(item);
+	       if(dep != erts_this_dist_entry)
+		   dist_exit(dep, this_port, item, rreason);
+	   }
+	   else if (is_internal_pid(item)) {
 	       if ((rp = pid2proc(item)) != NULL) {
 		  del_link(find_link(&rp->links,LNK_LINK,this_port,NIL));
 		  if (rp->flags & F_TRAPEXIT)
-		     deliver_exit_message(this_port, rp, rreason);
+		      deliver_exit_message(this_port, rp, rreason);
 		  else if (rreason != am_normal)
-		     schedule_exit2(rp, rreason);
+		      schedule_exit2(rp, rreason);
 	       }
 	    }
-	 }
-	 break;
+	   break;
 
 /* Arndt's comment: how can this case arise? A port can't have a link
    to a node, can it? */
        case LNK_NODE:
-	 del_link(find_link(&dist_addrs[lnk->data].links,LNK_NODE,
-			    this_port,NIL));
-	 break;
-
-#ifdef MONITOR_ENHANCE
-       case LNK_LINK1:
-         {
-	    Eterm ref;
-
-	    ref = lnk->ref;
-	    rp = pid2proc(item);
-	    del_link(find_link_by_ref(&rp->links, ref));
-	    queue_monitor_message(rp, ref, am_port, p->id);
-	    break;
-	 }
-#endif
+	   ASSERT(is_node_name_atom(item));
+	   dep = erts_sysname_to_connected_dist_entry(item);
+	   if(dep)
+	       del_link(find_link(&dep->links,LNK_NODE,this_port,NIL));
+	   else {
+	       /* XXX Is this possible? Shouldn't this link
+		  previously have been removed if the node
+		  had previously been disconnected. */
+	       ASSERT(0);
+	   }
+	   break;
 
        case LNK_OMON:
        case LNK_TMON:	    
@@ -1309,10 +1333,11 @@ void do_exit_port(Eterm this_port, Eterm from, Eterm reason)
       del_link(&lnk);
    }
 
-   if ((p->status & DISTRIBUTION) && (p->dslot != -1)) {
-      do_net_exits(p->dslot);
-      p->dslot = -1;
-      p->status &= ~DISTRIBUTION;
+   if ((p->status & DISTRIBUTION) && p->dist_entry) {
+       do_net_exits(p->dist_entry);
+       DEREF_DIST_ENTRY(p->dist_entry); 
+       p->dist_entry = NULL; 
+       p->status &= ~DISTRIBUTION;
    }
 
    if ((reason != am_kill) && (p->ioq.size > 0)) {
@@ -1339,9 +1364,9 @@ void port_command(Eterm caller_id, Eterm port_id, Eterm command)
     Eterm pid;
     Process* rp;
 
-    if (port_node(port_id) != THIS_NODE)
+    if (is_not_internal_port(port_id))
 	return;
-    ix = port_index(port_id);
+    ix = internal_port_index(port_id);
     if ((erts_port[ix].status == FREE) || (erts_port[ix].status & CLOSING))
 	return;
 
@@ -1362,8 +1387,7 @@ void port_command(Eterm caller_id, Eterm port_id, Eterm command)
 			if (write_port(caller_id, ix, tp[2]) == 0)
 			    return;
 		    }
-		    if ((tp[1] == am_connect) && is_pid(tp[2]) &&
-			(pid_node(tp[2]) == THIS_NODE)) {
+		    if ((tp[1] == am_connect) && is_internal_pid(tp[2])) {
 			erts_port[ix].connected = tp[2];
 			deliver_result(port_id, pid, am_connected);
 			return;
@@ -1399,7 +1423,7 @@ port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
     ErlDrvEntry* drv;
     int n;
 
-    prt->caller = p->id;
+    prt->caller = p->id; /* Internal pid */
     drv = prt->drv_ptr;
 
     if (drv->control == NULL) {
@@ -1445,22 +1469,28 @@ port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
 	sys_free(to_port);
 
     if ((n >= 0) && (prt->control_flags & PORT_CONTROL_FLAG_BINARY)) {
-	Eterm* hp;
 	ErlDrvBinary *b = (ErlDrvBinary*)port_resp;
-	ProcBin* pb;
 
-	hp = HAlloc(p, PROC_BIN_SIZE);
-	pb = (ProcBin *) hp;
+	if (b == NULL) {
+	    *resp = NIL;
+	    return ret;
+	} else {
+	    Eterm* hp;
+	    ProcBin* pb;
 
-	pb->thing_word = HEADER_PROC_BIN;
-	pb->size = b->orig_size;
-	pb->next = p->off_heap.mso;
-	p->off_heap.mso = pb;
-	pb->val = ErlDrvBinary2Binary(b);
-	pb->bytes = b->orig_bytes;
-	p->off_heap.overhead += b->orig_size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
-	*resp = make_binary(pb);
-	return ret;
+	    hp = HAlloc(p, PROC_BIN_SIZE);
+	    pb = (ProcBin *) hp;
+
+	    pb->thing_word = HEADER_PROC_BIN;
+	    pb->size = b->orig_size;
+	    pb->next = MSO(p).mso;
+	    MSO(p).mso = pb;
+	    pb->val = ErlDrvBinary2Binary(b);
+	    pb->bytes = b->orig_bytes;
+	    MSO(p).overhead += b->orig_size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
+	    *resp = make_binary(pb);
+	    return ret;
+	}
     }
     if (n < 0) {
 	ret = 0;
@@ -1528,6 +1558,8 @@ print_port_info(int i, CIO fp)
 void
 set_busy_port(ErlDrvPort port_num, int on)
 {
+    Process* proc;
+
     if (on) {
         erts_port[port_num].status |= PORT_BUSY;
     } else {
@@ -1548,28 +1580,30 @@ set_busy_port(ErlDrvPort port_num, int on)
             Eterm pid0;
             ProcessList* pl = p->next;
 
-            pid0 = p->pid;	/* Get first pid (should be sceduled last) */
+            pid0 = p->pid;	/* Get first pid (should be scheduled last) */
             fix_free(plist_desc, (Eterm *) p);
 
+	    ASSERT(is_internal_pid(pid0));
             p = pl;
             while (p != NULL) {
                 Eterm pid = p->pid;
                 pl = p->next;
-		if (pid_number(pid) < max_process) {
-                    Process* proc = process_tab[pid_number(pid)];
-                    if (!INVALID_PID(proc, pid)) {
-                        erl_resume(proc);
+		ASSERT(is_internal_pid(pid));
+		if (internal_pid_index(pid) < erts_max_processes) {
+		    proc = process_tab[internal_pid_index(pid)];
+		    if (!INVALID_PID(proc, pid)) {
+			erl_resume(proc);
 		    }
-                }
+		}
                 fix_free(plist_desc,(Eterm *) p);
                 p = pl;
             }
-
-	    if (pid_number(pid0) < max_process) {
-                Process* proc = process_tab[pid_number(pid0)];
-                if (!INVALID_PID(proc, pid0))
-                    erl_resume(proc);
-            }
+	    
+	    if (internal_pid_index(pid0) < erts_max_processes) {
+		proc = process_tab[internal_pid_index(pid0)];
+		if (!INVALID_PID(proc, pid0))
+		    erl_resume(proc);
+	    }
         }
     }
 }
@@ -1577,6 +1611,16 @@ set_busy_port(ErlDrvPort port_num, int on)
 void set_port_control_flags(ErlDrvPort port_num, int flags)
 {
     erts_port[port_num].control_flags = flags;
+}
+
+int get_port_flags(ErlDrvPort ix) { 
+    Port* prt = NUM2PORT(ix);
+
+    if (prt == NULL)
+	return 0;
+
+    return (prt->status & BINARY_IO ? PORT_FLAG_BINARY : 0) 
+	| (prt->status & LINEBUF_IO ? PORT_FLAG_LINE : 0);
 }
 
 
@@ -1651,6 +1695,33 @@ int async_ready(int ix, void* data)
     return need_free;
 }
 
+void event_ready(int ix, int hndl, ErlDrvEventData event_data) {
+    Port* p = &erts_port[ix];
+
+    if (p->status == FREE) {
+	cerr_pos = 0;
+	erl_printf(CBUF, "#Port<0.%d>: %s: "
+		   "Event driver gone away without deselecting!\n", 
+		   ix, p->name ? p->name : "(unknown)" );
+	send_error_to_logger(NIL);
+	driver_event((ErlDrvPort)ix, (ErlDrvEvent)hndl, NULL);
+    } else if (! p->drv_ptr->event) {
+	cerr_pos = 0;
+	erl_printf(CBUF, "#Port<0.%d>: %s: "
+		   "Event driver does not implement ->event()!\n", 
+		   ix, p->name ? p->name : "(unknown)" );
+	send_error_to_logger(NIL);
+	driver_event((ErlDrvPort)ix, (ErlDrvEvent)hndl, NULL);
+    } else {
+	(*p->drv_ptr->event)((ErlDrvData)p->drv_data, 
+			     (ErlDrvEvent)hndl, 
+			     event_data);
+	if ((p->status & CLOSING) && (p->ioq.size == 0)) {
+	    terminate_port(ix);
+	}
+    }
+}
+
 
 /* timer wrapper MUST check for closing */
 static void port_timeout_proc(p)
@@ -1662,7 +1733,7 @@ Port* p;
 	return;
     (*drv->timeout)((ErlDrvData)p->drv_data);
     if ((p->status & CLOSING) && (p->ioq.size == 0)) {
-	terminate_port(port_index(p->id));
+	terminate_port(internal_port_index(p->id));
     }
 }
 
@@ -1672,25 +1743,25 @@ int ix;
 int status;
 {
    Port* prt = NUM2PORT(ix);
-   ErlHeapFragment* bp;
    Eterm* hp;
    Eterm tuple;
    Process *rp;
    Eterm pid;
 
    pid = prt->connected;
-   rp = process_tab[pid_number(pid)];
+   ASSERT(is_internal_pid(pid));
+   if (internal_pid_index(pid) >= erts_max_processes)
+       return;
+   rp = process_tab[internal_pid_index(pid)];
    if (INVALID_PID(rp, pid))
       return;
 
-   bp = new_message_buffer(3+3);
-   hp = bp->mem;
+   hp = HAlloc(rp, 3+3);
    tuple = TUPLE2(hp, am_exit_status, make_small(status));
    hp += 3;
    tuple = TUPLE2(hp, prt->id, tuple);
-   hp += 3;
 
-   queue_message_tt(rp, bp, tuple, am_undefined);
+   queue_message_tt(rp, NULL, tuple, am_undefined);
 }
 
 
@@ -1710,7 +1781,6 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
     int need = 0;
     int depth = 0;
     int max_depth = 0;
-    ErlHeapFragment* bp;
     Eterm* hp;
     ErlDrvTermData* ptr;
     ErlDrvTermData* ptr_end;
@@ -1718,11 +1788,13 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
     Eterm mess = NIL;		/* keeps compiler happy */
     Process* rp;
 
-    if (is_not_pid(to))		/* e.g. dist_port_command set caller = NIL */
+    if (is_not_internal_pid(to)) /* e.g. dist_port_command set caller = NIL */
 	return 0;
     if (prt->status & CLOSING)
 	return 0;
-    rp = process_tab[pid_number(to)];
+    if (internal_pid_index(to) >= erts_max_processes)
+	return 0;
+    rp = process_tab[internal_pid_index(to)];
     if (INVALID_PID(rp, to))
 	return 0;
 
@@ -1804,8 +1876,7 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 	return -1;
 
     /* Create message buffer */
-    bp = new_message_buffer(need);
-    hp = bp->mem;
+    hp = HAlloc(rp, need);
 
     /* +1 needed for case basic type, then max_depth=0 is not set */
     /* FIXME: since we know the depth we could add a macro ESTACK2 where 
@@ -1854,13 +1925,13 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 	    pb = (ProcBin *) hp;
 	    pb->thing_word = HEADER_PROC_BIN;
 	    pb->size =  ptr[1];
-	    pb->next = rp->off_heap.mso;
-	    rp->off_heap.mso = pb;
+	    pb->next = MSO(rp).mso;
+	    MSO(rp).mso = pb;
 	    pb->val = ErlDrvBinary2Binary(b);
 	    pb->bytes = ((byte*) b->orig_bytes) + ptr[2];
 	    mess =  make_binary(pb);
 	    hp += PROC_BIN_SIZE;
-	    rp->off_heap.overhead += pb->size / 
+	    MSO(rp).overhead += pb->size / 
 		BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
 	    ptr += 3;
 	    break;
@@ -1916,7 +1987,7 @@ driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 
     DESTROY_ESTACK(stack);
 
-    queue_message_tt(rp, bp, mess, am_undefined);  /* send message */
+    queue_message_tt(rp, NULL, mess, am_undefined);  /* send message */
     return 1;
 }
 
@@ -1961,7 +2032,7 @@ int driver_output_binary(ErlDrvPort ix, char* hbuf, int hlen,
     prt->bytes_in += (hlen + len);
     bytes_in += (hlen + len);
     if (prt->status & DISTRIBUTION) {
-	return net_mess2(prt->dslot, (byte*)hbuf, hlen,
+	return net_mess2(prt->dist_entry, (byte*)hbuf, hlen,
 			 (byte*)(bin->orig_bytes+offs), len);
     }
     else
@@ -1990,9 +2061,9 @@ int driver_output2(ErlDrvPort ix, char* hbuf, int hlen, char* buf, int len)
     bytes_in += (hlen + len);
     if (prt->status & DISTRIBUTION) {
 	if (len == 0)
-	    return net_mess2(prt->dslot, NULL, 0, (byte*)hbuf, hlen);
+	    return net_mess2(prt->dist_entry, NULL, 0, (byte*)hbuf, hlen);
 	else
-	    return net_mess2(prt->dslot, (byte*)hbuf,hlen,(byte*)buf,len);
+	    return net_mess2(prt->dist_entry, (byte*)hbuf,hlen,(byte*)buf,len);
     }
     else if(prt->status & LINEBUF_IO)
 	deliver_linebuf_message(prt, prt->connected, hbuf, hlen, buf, len);
@@ -2606,8 +2677,7 @@ int driver_exit(ErlDrvPort ix, int err)
 
     /* unlink port from connected */
     if ((rp = pid2proc(prt->connected)) != NULL)
-        del_link(find_link(&rp->links, LNK_LINK,
-                           make_port2(THIS_NODE, ix), NIL));
+        del_link(find_link(&rp->links, LNK_LINK, prt->id, NIL));
 
     if (err == 0)
         return driver_failure_term(ix, am_normal, 0);

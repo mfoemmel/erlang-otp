@@ -2,8 +2,10 @@
 %%%
 %%% hipe_tagscheme.erl
 %%%
-%%% XXX: This is specific for Erlang 5.0 / R7.
-%%%
+%%% XXX: This is specific for Erlang 5.0 / R9.
+%%% 
+%%%  020904: Happi - added support for external pids and ports.
+%%%     
 
 -module(hipe_tagscheme).
 
@@ -14,8 +16,10 @@
 -export([save_CP/4, restore_CP/4]).
 -export([test_is_boxed/4, get_header/2]).
 -export([test_nil/4, test_cons/4, test_flonum/4, test_fixnum/4,
-	 test_tuple/4, test_atom/4, test_bignum/4, test_pid/4,
-	 test_port/4, test_ref/4, test_fun/4, test_binary/4, test_list/4,
+	 test_tuple/4, test_atom/4, test_bignum/4, 
+	 test_any_pid/4,test_any_port/4,
+	 test_internal_pid/4,
+	 test_internal_port/4, test_ref/4, test_fun/4, test_binary/4, test_list/4,
 	 test_integer/4, test_number/4, test_constant/4, test_tuple_N/5]).
 -export([untag_fixnum/2]).
 -export([test_two_fixnums/3,
@@ -27,7 +31,10 @@
 -export([unsafe_closure_element/3]).
 -export([mk_fun_header/0, tag_fun/2, untag_fun/2,
 	 if_fun_get_arity_and_address/5]).
+-export([unsafe_untag_float/2, unsafe_tag_float/3]).
+-export([unsafe_mk_sub_binary/4, unsafe_mk_float/3]).
 
+-include("hipe_icode2rtl.hrl").
 -include("hipe_literals.hrl").
 -undef(TAG_PRIMARY_BOXED).
 -undef(TAG_IMMED2_MASK).
@@ -64,13 +71,17 @@
 -define(TAG_HEADER_REF,     ((16#4 bsl ?TAG_PRIMARY_SIZE) bor ?TAG_PRIMARY_HEADER)).
 -define(TAG_HEADER_FUN,     ((16#5 bsl ?TAG_PRIMARY_SIZE) bor ?TAG_PRIMARY_HEADER)).
 -define(TAG_HEADER_FLOAT,   ((16#6 bsl ?TAG_PRIMARY_SIZE) bor ?TAG_PRIMARY_HEADER)).
--define(BINARY_XXX_MASK, (16#7 bsl ?TAG_PRIMARY_SIZE)).
+-define(BINARY_XXX_MASK, (16#3 bsl ?TAG_PRIMARY_SIZE)).
 -define(TAG_HEADER_REFC_BIN,((16#8 bsl ?TAG_PRIMARY_SIZE) bor ?TAG_PRIMARY_HEADER)).
 -define(TAG_HEADER_HEAP_BIN,((16#9 bsl ?TAG_PRIMARY_SIZE) bor ?TAG_PRIMARY_HEADER)).
 -define(TAG_HEADER_SUB_BIN, ((16#A bsl ?TAG_PRIMARY_SIZE) bor ?TAG_PRIMARY_HEADER)).
+-define(TAG_HEADER_EXTERNAL_PID, ((16#C bsl ?TAG_PRIMARY_SIZE) bor ?TAG_PRIMARY_HEADER)).
+-define(TAG_HEADER_EXTERNAL_PORT,((16#D bsl ?TAG_PRIMARY_SIZE) bor ?TAG_PRIMARY_HEADER)).
+-define(TAG_HEADER_EXTERNAL_REF, ((16#E bsl ?TAG_PRIMARY_SIZE) bor ?TAG_PRIMARY_HEADER)).
 
 -define(TAG_HEADER_MASK, 16#3F).
 -define(HEADER_ARITY_OFFS, 6).
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -89,11 +100,11 @@ mk_non_value()	-> ?THE_NON_VALUE.
 -define(MIN_SMALL, (-(1 bsl (?SMALL_BITS - 1)))).
 
 is_fixnum(N) when N =< ?MAX_SMALL, N >= ?MIN_SMALL -> true;
-is_fixnum(N) -> false.
+is_fixnum(_) -> false.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--define(HEADER_FUN, mk_header(?ERL_FUN_SIZE-1,?TAG_HEADER_FUN)).
+-define(HEADER_FUN, mk_header(?ERL_FUN_SIZE-2,?TAG_HEADER_FUN)).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -166,11 +177,43 @@ mask_and_compare(X, Mask, Value, TrueLab, FalseLab, Pred) ->
 test_immed1(X, Value, TrueLab, FalseLab, Pred) ->
     mask_and_compare(X, ?TAG_IMMED1_MASK, Value, TrueLab, FalseLab, Pred).
 
-test_pid(X, TrueLab, FalseLab, Pred) ->
+test_internal_pid(X, TrueLab, FalseLab, Pred) ->
     test_immed1(X, ?TAG_IMMED1_PID, TrueLab, FalseLab, Pred).
 
-test_port(X, TrueLab, FalseLab, Pred) ->
+test_any_pid(X, TrueLab, FalseLab, Pred) ->
+    NotInternalPidLab = hipe_rtl:mk_new_label(),
+    [test_internal_pid(X, TrueLab, hipe_rtl:label_name(NotInternalPidLab), Pred),
+     NotInternalPidLab,
+     test_external_pid(X, TrueLab,FalseLab,Pred)].
+
+test_external_pid(X, TrueLab, FalseLab, Pred) ->
+  Tmp = hipe_rtl:mk_new_reg(),
+  HalfTrueLab = hipe_rtl:mk_new_label(),
+  ExternalPidMask = ?TAG_HEADER_MASK,
+  [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
+   HalfTrueLab,
+   get_header(Tmp, X),
+   mask_and_compare(Tmp, ExternalPidMask, ?TAG_HEADER_EXTERNAL_PID,
+		    TrueLab, FalseLab, Pred)].
+
+test_internal_port(X, TrueLab, FalseLab, Pred) ->
     test_immed1(X, ?TAG_IMMED1_PORT, TrueLab, FalseLab, Pred).
+
+test_any_port(X, TrueLab, FalseLab, Pred) ->
+    NotInternalPortLab = hipe_rtl:mk_new_label(),
+    [test_internal_port(X, TrueLab, hipe_rtl:label_name(NotInternalPortLab), Pred),
+     NotInternalPortLab,
+     test_external_port(X, TrueLab,FalseLab,Pred)].
+
+test_external_port(X, TrueLab, FalseLab, Pred) ->
+  Tmp = hipe_rtl:mk_new_reg(),
+  HalfTrueLab = hipe_rtl:mk_new_label(),
+  ExternalPortMask = ?TAG_HEADER_MASK,
+  [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
+   HalfTrueLab,
+   get_header(Tmp, X),
+   mask_and_compare(Tmp, ExternalPortMask, ?TAG_HEADER_EXTERNAL_PORT,
+		    TrueLab, FalseLab, Pred)].
 
 test_fixnum(X, TrueLab, FalseLab, Pred) ->
     test_immed1(X, ?TAG_IMMED1_SMALL, TrueLab, FalseLab, Pred).
@@ -201,11 +244,16 @@ test_tuple_N(X, N, TrueLab, FalseLab, Pred) ->
 test_ref(X, TrueLab, FalseLab, Pred) ->
     Tmp = hipe_rtl:mk_new_reg(),
     HalfTrueLab = hipe_rtl:mk_new_label(),
+    TwoThirdsTrueLab = hipe_rtl:mk_new_label(),
     [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
      HalfTrueLab,
      get_header(Tmp, X),
      mask_and_compare(Tmp, ?TAG_HEADER_MASK, ?TAG_HEADER_REF,
-		      TrueLab, FalseLab, Pred)].
+		      TrueLab, hipe_rtl:label_name(TwoThirdsTrueLab), Pred),
+     TwoThirdsTrueLab,
+     mask_and_compare(Tmp, ?TAG_HEADER_MASK, ?TAG_HEADER_EXTERNAL_REF,
+		      TrueLab, FalseLab, Pred)
+    ].
 
 test_fun(X, TrueLab, FalseLab, Pred) ->
     Tmp = hipe_rtl:mk_new_reg(),
@@ -317,11 +365,29 @@ fixnum_le(Arg1, Arg2, TrueLab, FalseLab, Pred) ->
 %%% (16X+tag)-((16Y+tag)-tag) = 16X+tag-16Y = 16(X-Y)+tag
 fixnum_addsub(AluOp, Arg1, Arg2, Res, OtherLab) ->
     Tmp = hipe_rtl:mk_new_reg(),
-    NoOverflowLab = hipe_rtl:mk_new_label(),
-    [hipe_rtl:mk_alu(Tmp, Arg2, sub, hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
-     hipe_rtl:mk_alub(Res, Arg1, AluOp, Tmp, overflow, hipe_rtl:label_name(OtherLab),
-		 hipe_rtl:label_name(NoOverflowLab), 0.01),
-     NoOverflowLab].
+    %% XXX: Consider moving this test to the users of fixnum_addsub.
+    case Arg1 =/= Res andalso Arg2 =/= Res of 
+        true -> 
+	    %% Args differ from res.
+	    NoOverflowLab = hipe_rtl:mk_new_label(),
+	   [hipe_rtl:mk_alu(Tmp, Arg2, sub, 
+			    hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
+	    hipe_rtl:mk_alub(Res, Arg1, AluOp, Tmp, overflow, 
+			     hipe_rtl:label_name(OtherLab),
+			     hipe_rtl:label_name(NoOverflowLab), 0.01),
+	    NoOverflowLab];
+        false ->
+            %% At least one of the arguments is the same as Res.
+            Tmp2 = hipe_rtl:mk_new_var(),
+            NoOverflowLab = hipe_rtl:mk_new_label(),
+            [hipe_rtl:mk_alu(Tmp, Arg2, sub, 
+			     hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
+	     hipe_rtl:mk_alub(Tmp2, Arg1, AluOp, Tmp, overflow, 
+			      hipe_rtl:label_name(OtherLab),
+			      hipe_rtl:label_name(NoOverflowLab), 0.01),
+	     NoOverflowLab,
+	     hipe_rtl:mk_move(Res, Tmp2)]
+    end.
 
 %%% ((16X+tag) div 16) * ((16Y+tag)-tag) + tag = X*16Y+tag = 16(XY)+tag
 fixnum_mul(Arg1, Arg2, Res, OtherLab) ->
@@ -456,3 +522,49 @@ if_fun_get_arity_and_address(ArityReg, AddressReg, FunP, BadFunLab, Pred) ->
 		      hipe_rtl:mk_imm(-(?TAG_PRIMARY_BOXED)+
 				      ?EFT_NATIVE_ADDRESS))],
     IsFunCode ++ GetArityCode.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Floating point stuff.
+%
+
+unsafe_untag_float(Dst, Src) ->
+    %% The tag is 2. Use 2 as offset and we don't have to untag.
+    [hipe_rtl:mk_fload(Dst, Src, hipe_rtl:mk_imm(2))].
+
+unsafe_tag_float(Dst, Src, Options) ->
+  HP = hipe_rtl:mk_reg(hipe_rtl_arch:heap_pointer_reg()),
+  Head = hipe_rtl:mk_imm(mk_header(2, ?TAG_HEADER_FLOAT)),
+  
+  Code = [hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), Head),
+	  hipe_rtl:mk_fstore(HP, hipe_rtl:mk_imm(4), Src),
+	  tag_flonum(Dst, HP),
+	  hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(12))],
+  case ?AddGC(Options) of
+    true -> [hipe_rtl:mk_gctest(3)|Code];
+    false -> Code
+  end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Binary stuff
+%
+
+unsafe_mk_sub_binary(Dst, Size, Offs, Orig) -> 
+    HP = hipe_rtl:mk_reg(hipe_rtl_arch:heap_pointer_reg()),  
+    Head = hipe_rtl:mk_imm(mk_header(2, ?TAG_HEADER_SUB_BIN)),
+    [hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), Head),
+     hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(4), Size),
+     hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(8), Offs),
+     hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(12), Orig),
+     tag_boxed(Dst, HP),
+     hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(16))].
+
+unsafe_mk_float(Dst, FloatLo, FloatHi) ->
+    HP = hipe_rtl:mk_reg(hipe_rtl_arch:heap_pointer_reg()),   
+    Head = hipe_rtl:mk_imm(mk_header(2, ?TAG_HEADER_FLOAT)),
+    [hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), Head),
+     hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(4), FloatLo),
+     hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(8), FloatHi),
+     tag_boxed(Dst, HP),
+     hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(12))].

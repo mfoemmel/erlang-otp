@@ -20,7 +20,7 @@
 
 <!--- ################################################################# --->
 
-<h2>Tools 2.0</h2>
+<h2>Tools 2.1</h2>
 
 
 <!--- ----------------------------------------------------------------- --->
@@ -30,8 +30,16 @@
 <ul>
 
   <li>
-    xref bug fix: variables LM and AM were not always disjoint.<br>
-    (Own Id: OTP-3921)<p>
+    An error could occur when stopping cover, and thus unloading all
+    cover-compiled modules, if any of these modules was used by the code
+    server itself.<br>
+    (Own Id: OTP-4269)<p>
+  </li>
+
+  <li>
+    Some bug fixes in <code>fprof</code> regarding complicated call stack
+    scenarios that caused it to crash.<br>
+    (Own Id: OTP-4506)<p>
   </li>
 
 </ul>
@@ -44,66 +52,21 @@
 <ul>
 
   <li>
-    <p>Coast was much too slow and ineffiecient, especially for large
-    modules. Also, it was discovered that Coast in some cases returned
-    erroneous values.</p> <p>Consequently, Coast has been discontinued and
-    is replaced with a new tool <b>Cover</b> with similar interface and
-    functionality. Refer to the Tools User's Guide and Reference Manual for
-    more information about Cover.</p><br>
-    (*** POTENTIAL INCOMPATIBILITY ***)<br>
-    (Own Id: OTP-3622)<p>
+    More memory block types (most of the existing ones) are now identified
+    by the instrumented emulator.<br>
+    (Own Id: OTP-4313)<br>
+    (Aux Id: OTP-4267, OTP-4312, OTP-4314)<p>
   </li>
 
   <li>
-    The functions <code>xref:m/1</code> and <code>xref:d/1</code> return a
-    list of undefined functions in case the BEAM files do not contain debug
-    information.<br>
-    (Own Id: OTP-3879)<p>
-  </li>
-
-  <li>
-    <code>xref</code> represents unresolved calls with calls where the
-    module, the function or the number of arguments are atoms and integers
-    that are unlikely to occur in an Erlang system. Calls to
-    <code>erlang:apply/2</code> and the like are included among the
-    external calls. This is in contrast to R7 where calls to
-    <code>apply</code> and <code>spawn</code> were used for representing
-    unresolved calls.<br>
-    (*** POTENTIAL INCOMPATIBILITY ***)<br>
-    (Own Id: OTP-3948)<p>
-  </li>
-
-  <li>
-    The default value of the Xref option <code>verbose</code> has been
-    changed from <code>true</code> to <code>false</code>. The function
-    <code>xm/1</code>, which cross reference checks a module by calling
-    <code>xref:m/1</code>, has been added to the <code>c</code> module.<br>
-    (Own Id: OTP-4101)<p>
-  </li>
-
-  <li>
-    Added a web based user interface to Cover.<br>
-    (Own Id: OTP-4105)<br>
-    (Aux Id: OTP-4104)<p>
-  </li>
-
-  <li>
-    The old cross reference tool <code>exref</code> has now been removed,
-    use the new tool <code>xref</code> instead.<br>
-    (Own Id: OTP-4140)<p>
+    There is a new tool <code>cprof</code>, a call count profiler. It is
+    something inbetween <code>cover</code> and <code>fprof</code>, and can
+    be used to get a picture of which functions are most frequently called.
+    See <code>tools</code> user's guide and reference manual.<br>
+    (Own Id: OTP-4507)<p>
   </li>
 
 </ul>
-
-<h2>Tools 1.6.3</h2>
-<h3>Improvements and new features</h3>
-<ul>
-  <li>
-    A preliminary version of the new Fprof tool has been added.<br>
-   (Own Id: OTP-4010)<p>
-  </li>
-</ul>
-
 
 
 There are also release notes for

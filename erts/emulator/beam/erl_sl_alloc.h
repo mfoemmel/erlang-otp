@@ -26,7 +26,7 @@
 #define ERL_SL_ALLOC_H__
 
 #define ERTS_SL_ALLOC_RELEASE			"2"
-#define ERTS_SL_ALLOC_VERSION			"1.9.3"
+#define ERTS_SL_ALLOC_VERSION			"2.0"
 
 #define ERTS_OLD_SL_ALLOC_RELEASE		"1"
 #define ERTS_OLD_SL_ALLOC_VERSION		"1.0"
@@ -55,17 +55,27 @@
 \*                                                                           */
 
 /* Default settings */
+#ifdef PURIFY
+#define ERTS_SL_ALLOC_DEFAULT_ENABLED 			(0)
+#else
 #define ERTS_SL_ALLOC_DEFAULT_ENABLED 			(HAVE_MMAP)
-#define ERTS_SL_ALLOC_DEFAULT_OLD_ENABLED 		(1)
-#define ERTS_SL_ALLOC_DEFAULT_CARRIER_ORDER_SEARCH 	(0)
-#define ERTS_SL_ALLOC_DEFAULT_MAX_MMAP_CARRIERS 	(64)
-#define ERTS_SL_ALLOC_DEFAULT_SBC_THRESHOLD		(128*1024)
+#endif
+#define ERTS_SL_ALLOC_DEFAULT_OLD_ENABLED 		(0)
+#define ERTS_SL_ALLOC_DEFAULT_MAX_MMAP_CARRIERS 	(256)
+#define ERTS_SL_ALLOC_DEFAULT_SBC_THRESHOLD		(512*1024)
+#define ERTS_SL_ALLOC_DEFAULT_SBC_SHRINK_THRESHOLD	(80)
 #define ERTS_SL_ALLOC_DEFAULT_SBC_MOVE_THRESHOLD	(80)
-#define ERTS_SL_ALLOC_DEFAULT_MAIN_CARRIER_SIZE 	(1280*1024)
-#define ERTS_SL_ALLOC_DEFAULT_SMALLEST_CARRIER_SIZE	(1280*1024)
-#define ERTS_SL_ALLOC_DEFAULT_LARGEST_CARRIER_SIZE	(50*1024*1024)
-#define ERTS_SL_ALLOC_DEFAULT_CARRIER_GROWTH_RATIO	(25)
+#define ERTS_SL_ALLOC_DEFAULT_MMAP_SBC_LOAD_THRESHOLD	(10)
+#define ERTS_SL_ALLOC_DEFAULT_MAIN_CARRIER_SIZE 	(1024*1024)
+#define ERTS_SL_ALLOC_DEFAULT_SMALLEST_CARRIER_SIZE	(1024*1024)
+#define ERTS_SL_ALLOC_DEFAULT_LARGEST_CARRIER_SIZE	(5*1024*1024)
+#define ERTS_SL_ALLOC_DEFAULT_CARRIER_GROWTH_STAGES	(10)
 #define ERTS_SL_ALLOC_DEFAULT_MAX_BLOCK_SEARCH_DEPTH	(3)
+
+typedef struct {
+    Uint ever;
+    Uint last;
+} ErtsSlAllocMaxVal;
 
 typedef struct {
     Uint32 giga_calls;
@@ -73,16 +83,18 @@ typedef struct {
 } ErtsSlAllocCallCounter;
 
 typedef struct {
-    Uint no_carriers;
-    Uint no_blocks;
+    Uint carriers;
     Uint carriers_size;
-    Uint blocks_size;
-    Uint adm_size;
 } ErtsSlAllocCarriersStatBase;
 
 typedef struct {
-    Uint max_blocks;
-    Uint max_blocks_size;
+    Uint blocks;
+    Uint blocks_size;
+    Uint adm_size;
+    ErtsSlAllocMaxVal max_blocks;
+    ErtsSlAllocMaxVal max_blocks_size;
+    ErtsSlAllocMaxVal max_carriers;
+    ErtsSlAllocMaxVal max_carriers_size;
     ErtsSlAllocCarriersStatBase mmap;
     ErtsSlAllocCarriersStatBase malloc;
 } ErtsSlAllocCarriersStat;
@@ -91,13 +103,14 @@ typedef struct {
     Uint sl_alloc_enabled;
     Uint old_sl_alloc_enabled;
     Uint singleblock_carrier_threshold;
+    Uint singleblock_carrier_shrink_threshold;
     Uint singleblock_carrier_move_threshold;
+    Uint mmap_singleblock_carrier_load_threshold;
     Uint max_mmap_carriers;
     Uint main_carrier_size;
-    Uint carrier_order_search;
     Uint smallest_multiblock_carrier_size;
     Uint largest_multiblock_carrier_size;
-    Uint multiblock_carrier_growth_ratio;
+    Uint multiblock_carrier_growth_stages;
     Uint max_block_search_depth;
     ErtsSlAllocCarriersStat singleblock;
     ErtsSlAllocCarriersStat multiblock;
@@ -117,14 +130,18 @@ typedef struct {
     int eosla;
     int mcs;
     int sbct;
+    int sbcst;
     int sbcmt;
+    int msbclt;
     int mmc;
-    int cos;
     int scs;
     int lcs;
-    int cgr;
+    int mbcgs;
     int mbsd;
 } ErtsSlAllocInit;
+
+#define ERTS_SL_ALLOC_INIT_DEFAULT_INITIALIZER \
+  {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}
 
 #ifdef INSTRUMENT
 
@@ -157,8 +174,8 @@ void *erts_sl_realloc(void *, Uint, Uint);
 void  erts_sl_free(void *);
 void  erts_sl_alloc_init(ErtsSlAllocInit *);
 void  erts_sl_alloc_info(CIO);
-Eterm erts_sl_alloc_stat_eterm(Process *);
-void  erts_sl_alloc_stat(ErtsSlAllocStat *);
+Eterm erts_sl_alloc_stat_eterm(Process *, int);
+void  erts_sl_alloc_stat(ErtsSlAllocStat *, int);
 void *erts_safe_sl_alloc(Uint);
 void *erts_safe_sl_realloc(void *, Uint, Uint);
 

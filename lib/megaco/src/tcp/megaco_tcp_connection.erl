@@ -91,16 +91,16 @@ init(Arg) ->
 %% Func: terminate/2
 %% Description: Termination function for the generic server
 %%-----------------------------------------------------------------
-terminate(Reason, TcpRec) ->
+terminate(_Reason, _TcpRec) ->
     ok.
 
 %%-----------------------------------------------------------------
 %% Func: handle_call/3
 %% Description: Handling call messages (really just stop and garbage)
 %%-----------------------------------------------------------------
-handle_call(stop, From, TcpRec) ->
+handle_call(stop, _From, TcpRec) ->
     {stop, shutdown, ok, TcpRec};
-handle_call(_, _, TcpRec) ->
+handle_call(_Call, _From, TcpRec) ->
     {noreply, TcpRec}.
 
 %%-----------------------------------------------------------------
@@ -117,11 +117,11 @@ handle_cast(_, TcpRec) ->
 %% Description: Handling non call/cast messages. Incomming messages
 %%              from the socket and exit messages.
 %%-----------------------------------------------------------------
-handle_info({tcp_closed, Socket}, TcpRec) ->
+handle_info({tcp_closed, _Socket}, TcpRec) ->
     {stop, shutdown, TcpRec};
-handle_info({tcp_error, Socket}, TcpRec) ->
+handle_info({tcp_error, _Socket}, TcpRec) ->
     {stop, shutdown, TcpRec};
-handle_info({tcp, Socket, <<3:8, X:8, Length:16, Msg/binary>>}, TcpRec) 
+handle_info({tcp, Socket, <<3:8, _X:8, Length:16, Msg/binary>>}, TcpRec) 
   when Length < ?GC_MSG_LIMIT ->
     Mod = TcpRec#megaco_tcp.module,
     RH = TcpRec#megaco_tcp.receive_handle,
@@ -129,14 +129,14 @@ handle_info({tcp, Socket, <<3:8, X:8, Length:16, Msg/binary>>}, TcpRec)
     apply(Mod, receive_message, [RH, self(), Socket, Msg]),
     inet:setopts(Socket, [{active, once}]),
     {noreply, TcpRec};
-handle_info({tcp, Socket, <<3:8, X:8, Length:16, Msg/binary>>}, TcpRec) ->
+handle_info({tcp, Socket, <<3:8, _X:8, Length:16, Msg/binary>>}, TcpRec) ->
     Mod = TcpRec#megaco_tcp.module,
     RH = TcpRec#megaco_tcp.receive_handle,
     Socket = TcpRec#megaco_tcp.socket,
     receive_message(Mod, RH, Socket, Length, Msg),
     inet:setopts(Socket, [{active, once}]),
     {noreply, TcpRec};
-handle_info({tcp, Socket, Msg}, TcpRec) ->
+handle_info({tcp, _Socket, Msg}, TcpRec) ->
     error_logger:error_report([{megaco_tcp, {bad_tpkt_packet, Msg}}]),
     {noreply, TcpRec};
 handle_info(X, TcpRec) ->
@@ -161,7 +161,7 @@ handle_received_message(Mod, RH, Parent, SH, Msg) ->
 %% Func: code_change/3
 %% Descrition: Handles code change messages during upgrade.
 %%-----------------------------------------------------------------
-code_change(OldVsn, C, Extra) ->
+code_change(_OldVsn, C, _Extra) ->
     {ok, C}.
 
 

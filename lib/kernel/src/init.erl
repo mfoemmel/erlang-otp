@@ -13,7 +13,7 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id: init.erl,v 1.2 2000/06/08 21:58:05 tony Exp $
+%%     $Id $
 %%
 %%
 %%           New initial version of init.
@@ -49,8 +49,7 @@
 	 get_argument/1,script_id/0]).
 
 % internal exports
--export([do_boot/3,fetch_loaded/0,ensure_loaded/1,timer/1,
-	 make_permanent/2]).
+-export([fetch_loaded/0,ensure_loaded/1,make_permanent/2]).
 
 % old interface functions kept for backward compability.
 -export([get_flag/1,get_flags/0]).
@@ -132,9 +131,9 @@ prepare_run_args({_, L=[]}) ->
     bs2as(L);
 prepare_run_args({_, L=[_]}) ->
     bs2as(L);
-prepare_run_args({s, L=[M,F|Args]}) ->
+prepare_run_args({s, [M,F|Args]}) ->
     [b2a(M), b2a(F) | bs2as(Args)];
-prepare_run_args({run, L=[M,F|Args]}) ->
+prepare_run_args({run, [M,F|Args]}) ->
     [b2a(M), b2a(F) | bs2ss(Args)].
 
 b2a(Bin) when binary(Bin) ->
@@ -147,7 +146,7 @@ b2s(Bin) when binary(Bin) ->
 b2s(L) when list(L) ->
     L.
 
-map(F, []) ->
+map(_F, []) ->
     [];
 map(F, [X|Rest]) ->
     [F(X) | map(F, Rest)].
@@ -178,7 +177,7 @@ boot(Start,Flags,Args) ->
 		   bootpid = BootPid},
     boot_loop(BootPid,State).
 
-%%% Convert a term to a printable string, if possible
+%%% Convert a term to a printable string, if possible.
 to_string(X) when list(X) ->
     X;						% assume it's a string..
 to_string(X) when atom(X) ->
@@ -189,7 +188,7 @@ to_string(X) when float(X) ->
     float_to_list(X);
 to_string(X) when integer(X) ->
     integer_to_list(X);
-to_string(X) ->
+to_string(_X) ->
     "".						% can't do anything with it
 
 things_to_string([X|Rest]) ->
@@ -227,7 +226,7 @@ boot_loop(BootPid, State) ->
 	    crash("init terminating in do_boot", [Reason]);
 	{'EXIT',Pid,Reason} ->
 	    Kernel = State#state.kernel,
-	    terminate(Pid,Kernel,Reason), %% If Pid is a Kernel pid, halt() !
+	    terminate(Pid,Kernel,Reason), %% If Pid is a Kernel pid, halt()!
 	    boot_loop(BootPid,State);
 	{stop,Reason} ->
 	    stop(Reason,State);
@@ -268,7 +267,7 @@ new_kernelpid({Name,{ok,Pid}},BootPid,State) when pid(Pid) ->
     BootPid ! {self(),ok,Pid},
     Kernel = State#state.kernel,
     State#state{kernel = [{Name,Pid}|Kernel]};
-new_kernelpid({Name,ignore},BootPid,State) ->
+new_kernelpid({_Name,ignore},BootPid,State) ->
     BootPid ! {self(),ignore},
     State;
 new_kernelpid({Name,What},BootPid,State) ->
@@ -282,7 +281,7 @@ loop(State) ->
     receive
 	{'EXIT',Pid,Reason} ->
 	    Kernel = State#state.kernel,
-	    terminate(Pid,Kernel,Reason), %% If Pid is a Kernel pid, halt() !
+	    terminate(Pid,Kernel,Reason), %% If Pid is a Kernel pid, halt()!
 	    loop(State);
 	{stop,Reason} ->
 	    stop(Reason,State);
@@ -369,7 +368,7 @@ make_permanent(Boot,Config,Flags0,State) ->
 	    {Error,State}
     end.
 
-set_flag(Flag,false,Flags) ->
+set_flag(_Flag,false,Flags) ->
     {ok,Flags};
 set_flag(Flag,Value,Flags) when list(Value) ->
     case catch list_to_binary(Value) of
@@ -426,14 +425,14 @@ shutdown_pids(Heart,BootPid,State) ->
     kill_all_ports(Heart),
     flush_timout(Timer).
 
-get_heart([{heart,Pid}|Kernel]) -> Pid;
+get_heart([{heart,Pid}|_Kernel]) -> Pid;
 get_heart([_|Kernel])           -> get_heart(Kernel);
 get_heart(_)                    -> false.
 
 
-shutdown([{heart,Pid}|Kernel],BootPid,Timer,State) ->
+shutdown([{heart,_Pid}|Kernel],BootPid,Timer,State) ->
     shutdown(Kernel,BootPid,Timer,State);
-shutdown([{Name,Pid}|Kernel],BootPid,Timer,State) ->
+shutdown([{_Name,Pid}|Kernel],BootPid,Timer,State) ->
     shutdown_kernel_pid(Pid,BootPid,shutdown,Timer,State),
     shutdown(Kernel,BootPid,Timer,State);
 shutdown(_,_,_,_) ->
@@ -442,8 +441,8 @@ shutdown(_,_,_,_) ->
 
 %%
 %% A kernel pid must handle the special case message
-%% {'EXIT',Parent,Reason} and terminate upon it !!!
-shutdown_kernel_pid(Pid,BootPid,kill,_,_) ->
+%% {'EXIT',Parent,Reason} and terminate upon it!
+shutdown_kernel_pid(Pid,_BootPid,kill,_,_) ->
     exit(Pid,kill);
 shutdown_kernel_pid(Pid,BootPid,Reason,Timer,State) ->
     Pid ! {'EXIT',BootPid,Reason},
@@ -451,7 +450,7 @@ shutdown_kernel_pid(Pid,BootPid,Reason,Timer,State) ->
 
 %%
 %% We have to handle init requests here in case a process
-%% performs such a request and cant shutdown (deadlock).
+%% performs such a request and cannot shutdown (deadlock).
 %% Keep all other exit messages in case it was another
 %% kernel process. Resend this messages and handle later.
 %%
@@ -483,7 +482,7 @@ resend(_) ->
     ok.
 
 %%
-%% Kill all existing pids in the system (except init and heart)
+%% Kill all existing pids in the system (except init and heart).
 kill_all_pids(Heart) ->
     case get_pids(Heart) of
 	[] ->
@@ -517,7 +516,7 @@ kill_em([]) ->
 %% i.e. ports still existing after all processes have been killed.
 %%
 %% If we are running the threaded system with the async driver,
-%% then let the port (created by the system) stay around.
+%% then let the port (created by the system) stays around.
 %%
 kill_all_ports(Heart) ->
     kill_all_ports(Heart,erlang:ports()).
@@ -556,11 +555,11 @@ sub([],L)    -> L.
     
 del(Item, [Item|T]) -> T;
 del(Item, [H|T])    -> [H|del(Item, T)];
-del(Item, [])       -> [].
+del(_Item, [])      -> [].
 
 %%% -------------------------------------------------
 %%% If the terminated Pid is one of the processes
-%%% added to the Kernel, take down the system brutal.
+%%% added to the Kernel, take down the system brutally.
 %%% We are not sure that ANYTHING can work anymore,
 %%% i.e. halt the system.
 %%% Sleep awhile, it is thus possible for the
@@ -571,7 +570,7 @@ del(Item, [])       -> [].
 terminate(Pid,Kernel,Reason) ->
     case kernel_pid(Pid,Kernel) of
 	{ok,Name} ->
-	    sleep(500), %% Flush error printouts !
+	    sleep(500), %% Flush error printouts!
 	    erlang:display({"Kernel pid terminated",Name,Reason}),
 	    crash("Kernel pid terminated", [Name, Reason]);
 	_ ->
@@ -589,10 +588,10 @@ sleep(T) -> receive after T -> ok end.
 
 %%% -------------------------------------------------
 %%% Start the loader. 
-%%% The loader shall run for ever !!
+%%% The loader shall run for ever!
 %%% -------------------------------------------------
 
-start_prim_loader(Init,Id,Pgm,Nodes,Root,Path,{Pa,Pz}) ->
+start_prim_loader(Init,Id,Pgm,Nodes,Path,{Pa,Pz}) ->
     case erl_prim_loader:start(Id,Pgm,Nodes) of
 	{ok,Pid} when Path == false ->
 	    InitPath = append(Pa,["."|Pz]),
@@ -604,7 +603,7 @@ start_prim_loader(Init,Id,Pgm,Nodes,Root,Path,{Pa,Pz}) ->
 	    add_to_kernel(Init,Pid),
 	    Pid;
 	{error,Reason} ->
-	    erlang:display({"can not start loader",Reason}),
+	    erlang:display({"cannot start loader",Reason}),
 	    exit(Reason)
     end.
 
@@ -630,22 +629,26 @@ prim_load_flags(Flags) ->
 %%% -------------------------------------------------
 
 do_boot(Flags,Start) ->
-    spawn_link(init,do_boot,[self(),Flags,Start]).
+    Self = self(),
+    spawn_link(fun() -> do_boot(Self,Flags,Start) end).
 
 do_boot(Init,Flags,Start) ->
     process_flag(trap_exit,true),
-    {Pgm,Nodes,Id,Path} = prim_load_flags(Flags),
+    {Pgm0,Nodes,Id,Path} = prim_load_flags(Flags),
     Root = b2s(get_flag('-root',Flags)),
     PathFls = path_flags(Flags),
-    LoadPid = start_prim_loader(Init,b2a(Id),b2s(Pgm),bs2as(Nodes),
-				Root,bs2ss(Path),PathFls),
+    Pgm = b2s(Pgm0),
+    _Pid = start_prim_loader(Init,b2a(Id),Pgm,bs2as(Nodes),
+			     bs2ss(Path),PathFls),
     BootFile = bootfile(Flags,Root),
     BootList = get_boot(BootFile,Root),
     Embedded = b2a(get_flag('-mode',Flags,false)),
     Deb = b2a(get_flag('-init_debug',Flags,false)),
     BootVars = get_flag_args('-boot_var',Flags),
+    ParallelLoad = 
+	(Pgm == "efile") and (erlang:system_info(thread_pool_size) > 0),
     eval_script(BootList,Init,PathFls,{Root,BootVars},Path,
-		{true,Embedded},Deb),
+		{true,Embedded,ParallelLoad},Deb),
 
     %% To help identifying Purify windows that pop up,
     %% print the node name into the Purify log.
@@ -666,13 +669,13 @@ get_boot(BootFile0,Root) ->
     case get_boot(BootFile) of
 	{ok, CmdList} ->
 	    CmdList;
-	not_found -> %% Check for default
+	not_found -> %% Check for default.
 	    BootF = concat([Root,"/bin/",BootFile]),
 	    case get_boot(BootF)  of
 		{ok, CmdList} ->
 		    CmdList;
 		not_found ->
-		    exit({'can not get bootfile',list_to_atom(BootFile)});
+		    exit({'cannot get bootfile',list_to_atom(BootFile)});
 		_ ->
 		    exit({'bootfile format error',list_to_atom(BootF)})
 	    end;
@@ -708,23 +711,29 @@ eval_script([{progress,Info}|CfgL],Init,PathFs,Vars,P,Ph,Deb) ->
 eval_script([{preLoaded,_}|CfgL],Init,PathFs,Vars,P,Ph,Deb) ->
     eval_script(CfgL,Init,PathFs,Vars,P,Ph,Deb);
 eval_script([{path,Path}|CfgL],Init,{Pa,Pz},Vars,false,Ph,Deb) ->
-    RealPath = append([Pa,append([fix_path(Path,Vars),Pz])]),
+    RealPath = make_path(Pa, Pz, Path, Vars),
     erl_prim_loader:set_path(RealPath),
     eval_script(CfgL,Init,{Pa,Pz},Vars,false,Ph,Deb);
 eval_script([{path,_}|CfgL],Init,PathFs,Vars,P,Ph,Deb) ->
     %% Ignore, use the command line -path flag.
     eval_script(CfgL,Init,PathFs,Vars,P,Ph,Deb);
-eval_script([{kernel_load_completed}|CfgL],Init,PathFs,Vars,P,{_,embedded},Deb) ->
-    eval_script(CfgL,Init,PathFs,Vars,P,{true,embedded},Deb);
-eval_script([{kernel_load_completed}|CfgL],Init,PathFs,Vars,P,{_,E},Deb) ->
-    eval_script(CfgL,Init,PathFs,Vars,P,{false,E},Deb);
-eval_script([{primLoad,Mods}|CfgL],Init,PathFs,Vars,P,{true,E},Deb)
+eval_script([{kernel_load_completed}|CfgL],Init,PathFs,Vars,P,{_,embedded,Par},Deb) ->
+
+    eval_script(CfgL,Init,PathFs,Vars,P,{true,embedded,Par},Deb);
+eval_script([{kernel_load_completed}|CfgL],Init,PathFs,Vars,P,{_,E,Par},Deb) ->
+    eval_script(CfgL,Init,PathFs,Vars,P,{false,E,Par},Deb);
+eval_script([{primLoad,Mods}|CfgL],Init,PathFs,Vars,P,{true,E,Par},Deb)
   when list(Mods) ->
-    load_modules(Mods),
-    eval_script(CfgL,Init,PathFs,Vars,P,{true,E},Deb);
-eval_script([{primLoad,Mods}|CfgL],Init,PathFs,Vars,P,{false,E},Deb) ->
-    %% Do not load know, code_server does that dynamically !!
-    eval_script(CfgL,Init,PathFs,Vars,P,{false,E},Deb);
+    if 
+	Par == true ->
+	    par_load_modules(Mods,Init);
+	true ->
+	    load_modules(Mods)
+    end,
+    eval_script(CfgL,Init,PathFs,Vars,P,{true,E,Par},Deb);
+eval_script([{primLoad,_Mods}|CfgL],Init,PathFs,Vars,P,{false,E,Par},Deb) ->
+    %% Do not load now, code_server does that dynamically!
+    eval_script(CfgL,Init,PathFs,Vars,P,{false,E,Par},Deb);
 eval_script([{kernelProcess,Server,{Mod,Fun,Args}}|CfgL],Init,
 	    PathFs,Vars,P,Ph,Deb) ->
     debug(Deb,{start,Server}),
@@ -750,9 +759,46 @@ load_modules([Mod|Mods]) ->
 load_modules([]) ->
     ok.
     
+%%% An optimization: erl_prim_loader gets the chance of loading many
+%%% files in parallel, using threads. This will reduce the seek times,
+%%% and loaded code can be processed while other threads are waiting
+%%% for the disk. The optimization is not tried unless the loader is
+%%% "efile" and there is a non-empty pool of threads.
+%%%
+%%% Many threads are needed to get a good result, so it would be
+%%% beneficial to load several applications in parallel. However,
+%%% measurements show that the file system handles one directory at a
+%%% time, regardless if parallel threads are created for files on
+%%% several directories (a guess: writing the meta information when
+%%% the file was last read ('mtime'), forces the file system to sync
+%%% between directories).
+
+par_load_modules(Mods,Init) ->
+    Ext = extension(),
+    ModFiles = map(fun(Mod) -> {Mod,concat([Mod,Ext])} end, Mods),
+    Self = self(),
+    Fun = fun(Mod, BinCode, FullName) ->
+		  case catch load_mod_code(Mod, BinCode, FullName) of
+		      {ok, _} ->
+			  Init ! {Self,loaded,{Mod,FullName}},
+			  ok;
+		      _EXIT ->
+			  {error, Mod}
+		  end
+	  end,
+    case erl_prim_loader:get_files(ModFiles, Fun) of
+	ok ->
+	    ok;
+	{error,Mod} ->
+	    exit({'cannot load',Mod,get_files})
+    end.
+
+make_path(Pa, Pz, Path, Vars) ->
+    append([Pa,append([fix_path(Path,Vars),Pz])]).
+
 %% For all Paths starting with $ROOT add rootdir and for those
-%% starting with $xxx/ expand $xxx to the value supplied with -boot_var !
-%% If $xxx can not be expanded this process terminates.
+%% starting with $xxx/, expand $xxx to the value supplied with -boot_var!
+%% If $xxx cannot be expanded this process terminates.
 
 fix_path([Path|Ps], Vars) when atom(Path) ->
     [add_var(atom_to_list(Path), Vars)|fix_path(Ps, Vars)];
@@ -783,13 +829,13 @@ get_var_value(Var,[Vars|VarList]) ->
 	    get_var_value(Var,VarList)
     end;
 get_var_value(Var,[]) ->
-    exit(list_to_atom(concat(["can not expand \$", Var, " in bootfile"]))).
+    exit(list_to_atom(concat(["cannot expand \$", Var, " in bootfile"]))).
 
 get_var_val(Var,[Var,Value|_]) -> {ok, Value};
 get_var_val(Var,[_,_|Vars])    -> get_var_val(Var,Vars);
 get_var_val(_,_)               -> false.
 
-%% Servers that are located in the init kernel is linked
+%% Servers that are located in the init kernel are linked
 %% and supervised by init.
 
 start_in_kernel(Server,Mod,Fun,Args,Init) ->
@@ -797,16 +843,16 @@ start_in_kernel(Server,Mod,Fun,Args,Init) ->
     Init ! {self(),started,{Server,Res}},
     receive
 	{Init,ok,Pid} ->
-	    unlink(Pid),  %% Just for sure ...
+	    unlink(Pid),  %% Just for sure...
 	    ok;
 	{Init,ignore} ->
 	    ignore
     end.
 
-%% Do start all processes specified at command line using -s !!!
+%% Do start all processes specified at command line using -s!
 %% Use apply here instead of spawn to ensure syncronicity for
 %% those servers that wish to have it so.
-%% Disadvantage: any thing started with -s that does not
+%% Disadvantage: anything started with -s that does not
 %% eventually spawn will hang the startup routine.
 
 start_em([S|Tail]) ->
@@ -852,25 +898,28 @@ start_it([M,F|Args]) ->
 load_mod(Mod, File) ->
     case erl_prim_loader:get_file(File) of
 	{ok,BinCode,FullName} ->
-	    case erlang:module_loaded(Mod) of
-		false ->
-		    case erlang:load_module(Mod, BinCode) of
-			{module,Mod} -> {ok,FullName};
-			Other ->
-			    exit({'can not load',Mod,Other})
-		    end;
-		_ ->       % Already loaded, i.e. heart during restart !
-		    {ok,FullName}
-	    end;
+	    load_mod_code(Mod, BinCode, FullName);
 	_ ->
-	    exit({'can not load',Mod,get_file})
+	    exit({'cannot load',Mod,get_file})
+    end.
+
+load_mod_code(Mod, BinCode, FullName) ->
+    case erlang:module_loaded(Mod) of
+	false ->
+	    case erlang:load_module(Mod, BinCode) of
+		{module,Mod} -> {ok,FullName};
+		Other ->
+		    exit({'cannot load',Mod,Other})
+	    end;
+	_ -> % Already loaded.
+	    {ok,FullName}
     end.
 
 %% --------------------------------------------------------
 %% If -shutdown_time is specified at the command line
 %% this timer will inform the init process that it has to
-%% force processes to terminate. It can not be handled
-%% sotfly any longer.
+%% force processes to terminate. It cannot be handled
+%% softly any longer.
 %% --------------------------------------------------------
 
 shutdown_timer(Flags) ->
@@ -880,7 +929,7 @@ shutdown_timer(Flags) ->
 	Time ->
 	    case catch list_to_integer(binary_to_list(Time)) of
 		T when integer(T) ->
-		    Pid = spawn(init,timer,[T]),
+		    Pid = spawn(fun() -> timer(T) end),
 		    receive
 			{Pid, started} ->
 			    Pid
@@ -943,10 +992,10 @@ check(<<"-run">>) -> start_arg2;
 check(<<"--">>) -> end_args;
 check(X) when binary(X) ->
     case binary_to_list(X) of
-	[$-|Rest] -> flag;
-	Chars     -> arg			%Even empty atoms
+	[$-|_Rest] -> flag;
+	_Chars     -> arg			%Even empty atoms
     end;
-check(X) -> arg.				%This should never occur
+check(_X) -> arg.				%This should never occur
 
 get_args([B|Bs], As) ->
     case check(B) of
@@ -980,7 +1029,7 @@ get_flag(F,Flags) ->
 	    V;
 	{value,{F,V}} ->
 	    V;
-	{value,{F}} -> % Flag given !
+	{value,{F}} -> % Flag given!
 	    true;
 	_ ->
 	    exit(list_to_atom(concat(["no ",F," flag"])))
@@ -1069,7 +1118,7 @@ concat([S|T]) ->				%String
 concat([]) ->
     [].
 
-append(L, Z) -> erlang:append(L, Z).
+append(L, Z) -> L ++ Z.
 
 append([E]) -> E;
 append([H|T]) ->
@@ -1083,10 +1132,10 @@ reverse([H|T], Y) ->
     reverse(T, [H|Y]);
 reverse([], X) -> X.
 			
-search(Key, [H|T]) when tuple(H), element(1, H) == Key ->
+search(Key, [H|_T]) when tuple(H), element(1, H) == Key ->
     {value, H};
 search(Key, [_|T]) -> search(Key, T);
-search(Key, []) -> false.
+search(_Key, []) -> false.
 
 extension() -> 
     case erlang:system_info(machine) of

@@ -24,6 +24,8 @@
 	 net_load_table/4,
 	 send_table/3]).
 
+-export([old_node_init_table/5]). %% Spawned old node protocol conversion hack
+
 -import(mnesia_lib, [set/2, fatal/2, verbose/2, dbg_out/2]).
 
 -include("mnesia.hrl").
@@ -49,7 +51,7 @@ disc_load_table(Tab, Reason) ->
 		     {type, Type}]),
     do_get_disc_copy2(Tab, Reason, Storage, Type).
 
-do_get_disc_copy2(Tab, Reason, Storage, Type) when Storage == unknown ->
+do_get_disc_copy2(Tab, _Reason, Storage, _Type) when Storage == unknown ->
     verbose("Local table copy of ~p has recently been deleted, ignored.~n",
 	    [Tab]),
     {loaded, ok};  %% ?
@@ -152,6 +154,7 @@ do_get_disc_copy2(Tab, Reason, Storage, Type) when Storage == disc_only_copies -
 -define(MAX_TRANSFER_SIZE, 7500). 
 -define(MAX_RAM_FILE_SIZE, 1000000).
 -define(MAX_RAM_TRANSFERS, (?MAX_RAM_FILE_SIZE div ?MAX_TRANSFER_SIZE) + 1).
+-define(MAX_NOPACKETS, 20).
 
 net_load_table(Tab, Reason, Ns, Cs)
         when Reason == add_table_copy ->
@@ -159,14 +162,14 @@ net_load_table(Tab, Reason, Ns, Cs)
 net_load_table(Tab, Reason, Ns, _Cs) ->
     try_net_load_table(Tab, Reason, Ns, val({Tab, cstruct})).
 
-try_net_load_table(Tab, Reason, [], Cs) ->
+try_net_load_table(Tab, _Reason, [], _Cs) ->
     verbose("Copy failed. No active replicas of ~p are available.~n", [Tab]),
     {not_loaded, none_active};
 try_net_load_table(Tab, Reason, Ns, Cs) ->
     Storage = mnesia_lib:cs_to_storage_type(node(), Cs),
     do_get_network_copy(Tab, Reason, Ns, Storage, Cs).
 
-do_get_network_copy(Tab, Reason, Ns, unknown, Cs) ->
+do_get_network_copy(Tab, _Reason, _Ns, unknown, _Cs) ->
     verbose("Local table copy of ~p has recently been deleted, ignored.~n", [Tab]),
     {not_loaded, storage_unknown};
 do_get_network_copy(Tab, Reason, Ns, Storage, Cs) ->
@@ -177,7 +180,8 @@ do_get_network_copy(Tab, Reason, Ns, Storage, Cs) ->
 		    [{tab, Tab}, {reason, Reason}, 
 		     {nodes, Ns}, {storage, Storage}]),
     mnesia_controller:start_remote_sender(Node, Tab, self(), Storage),
-    case tab_receiver(nopid, Node, Tab, undefined, Storage, Cs, ?MAX_RAM_TRANSFERS, first) of
+    OldNode = mnesia_monitor:needs_protocol_conversion(Node),
+    case tab_receiver(Node, Tab, Storage, Cs, OldNode) of
 	ok ->
 	    set({Tab, load_node}, Node),
 	    set({Tab, load_reason}, Reason),
@@ -191,62 +195,64 @@ do_get_network_copy(Tab, Reason, Ns, Storage, Cs) ->
 snmpify(Tab, Storage) ->
     do_snmpify(Tab, val({Tab, snmp}), Storage).
 
-do_snmpify(Tab, [], _Storage) ->
+do_snmpify(_Tab, [], _Storage) ->
     ignore;
 do_snmpify(Tab, Us, Storage) ->
     Snmp = mnesia_snmp_hook:create_table(Us, Tab, Storage),
     set({Tab, {index, snmp}}, Snmp).
 
-tab_receiver(Pid, Node, Tab, TabRef, Storage, Cs, RamLeft, State) ->
+tab_receiver(Node, Tab, Storage, Cs, PConv) ->
     receive
-	{SenderPid, {first, TabSize}} when State == first ->
-	    SenderPid ! {self(), more},
-	    CreatedTabs = init_table(Tab, TabSize, Storage, Cs),
-	    mnesia_tm:block_tab(Tab),
-	    tab_receiver(SenderPid, Node, Tab, CreatedTabs, Storage, Cs, RamLeft, more);
+	{SenderPid, {first, TabSize}} ->
+	    do_init_table(Node, Tab, Storage, Cs, PConv, SenderPid, TabSize, false);
+	{SenderPid, {first, TabSize, DetsData}} ->
+	    do_init_table(Node, Tab, Storage, Cs, PConv, SenderPid, TabSize, {SenderPid,DetsData});	
+	{SenderPid, {no_more, DatBin}} when PConv == false ->
+	    finish_copy(Storage, Tab, Cs, SenderPid, DatBin);
 	
-	{Pid, {more, Recs}} when State == more ->
-	    Pid ! {self(), more},
-	    insert_records(TabRef, Recs),
-	    opt_ram_to_disc(Tab, Storage, Cs, RamLeft),
-	    tab_receiver(Pid, Node, Tab, TabRef, Storage, Cs, RamLeft - 1, State);
-
-	{Pid, {no_more, DatBin}} when State == more ->
-	    subscr_receiver(Tab, TabRef, Storage, Cs#cstruct.record_name),
-	    case handle_last(Tab, Storage, Cs#cstruct.type, DatBin) of
-		ok ->
-		    mnesia_index:init_index(Tab, Storage),
-		    snmpify(Tab, Storage),
-		    Pid ! {self(), no_more},
-		    mnesia_tm:unblock_tab(Tab),
-		    ok;
-		{error, Reason} ->
-		    Msg = "Failed to handle last",
+	%% Protocol conversion hack
+	{SenderPid, {no_more, DatBin}} when pid(PConv) ->
+	    PConv ! {SenderPid, no_more},
+	    receive 
+		{old_init_table_complete, ok} ->
+		    finish_copy(Storage, Tab, Cs, SenderPid, DatBin);
+		{old_init_table_complete, Reason} ->
+		    Msg = "OLD: [d]ets:init table failed",
 		    dbg_out("~s: ~p: ~p~n", [Msg, Tab, Reason]),
 		    down(Tab, Storage)
 	    end;
+
+	{actual_tabrec, Pid} ->	
+	    tab_receiver(Node, Tab, Storage, Cs, Pid);
 	
+	{SenderPid, {more, [Recs]}} when pid(PConv) ->  
+	    PConv ! {SenderPid, {more, Recs}}, %% Forward Msg to OldNodes 
+	    tab_receiver(Node, Tab, Storage, Cs, PConv);
+
+	{'EXIT', PConv, Reason} ->  %% [d]ets:init process crashed 
+	    Msg = "Receiver crashed",
+	    dbg_out("~s: ~p: ~p~n", [Msg, Tab, Reason]),
+	    down(Tab, Storage);
+	
+	%% Protocol conversion hack
 	{copier_done, Node} ->
-	    dbg_out("Sender of table ~p crashed on node ~p (~p)~n",
-		    [Tab, Node, State]),
+	    dbg_out("Sender of table ~p crashed on node ~p ~n", [Tab, Node]),
 	    down(Tab, Storage);
 	
 	{'EXIT', Pid, Reason} ->
 	    handle_exit(Pid, Reason),
-	    tab_receiver(Pid, Node, Tab, TabRef, Storage, Cs, RamLeft, State)
+	    tab_receiver(Node, Tab, Storage, Cs, PConv)
     end.
 
-init_table(Tab, TabSize, Storage, Cs) ->
-    case Storage of
-	unknown ->
-	    no_need;
-	disc_only_copies ->
+create_table(Tab, TabSize, Storage, Cs) ->
+    if 
+	Storage == disc_only_copies ->
 	    mnesia_lib:lock_table(Tab) ,
 	    Tmp = mnesia_lib:tab2tmp(Tab),
 	    Size = lists:max([TabSize, 256]),
 	    Args = [{file, Tmp},
 		    {keypos, 2},
-		    {ram_file, true},
+%%		    {ram_file, true},
 		    {estimated_no_objects, Size},
 		    {repair, mnesia_monitor:get_env(auto_repair)},
 		    {type, mnesia_lib:disk_type(Tab, Cs#cstruct.type)}],
@@ -258,30 +264,113 @@ init_table(Tab, TabSize, Storage, Cs) ->
 		    fatal("do_get_network_copy open ~w Tab ~w cstruct ~w ~s ~n",
 			  [Else, Tab, Cs, Tmp])
 	    end;
-	_ -> %% ram_copies or disc_copies
+	(Storage == ram_copies) or (Storage == disc_copies) ->
 	    Args = [{keypos, 2}, public, named_table, Cs#cstruct.type],
 	    mnesia_monitor:mktab(Tab, Args), % exits upon failure
 	    {Storage, Tab}
     end.
 
-opt_ram_to_disc(Tab, disc_only_copies, Cs, 0) -> 
-    dets:close(Tab), % Flush dets table in ram to disc
-    Tmp = mnesia_lib:tab2tmp(Tab),
-    Args = [{file, Tmp},
-	    {keypos, 2},
-	    {repair, mnesia_monitor:get_env(auto_repair)},
-	    {type, mnesia_lib:disk_type(Tab, Cs#cstruct.type)}],
-    case dets:open_file(Tab, Args) of
-	{ok, _} ->
-	    ok;
-	Else ->
-	    fatal("do_get_network_copy reopen ~w Tab ~w cstruct ~w ~s ~n",
-		  [Else, Tab, Cs, Tmp])
-    end;
-opt_ram_to_disc(_, _, _, _) ->  %% Disc table but not time to flush
-    ignore. 
+do_init_table(Node, Tab, Storage, Cs, PConv, SenderPid, TabSize, DetsInfo) ->
+    create_table(Tab, TabSize, Storage, Cs),
+    %% Debug info
+    put(mnesia_table_receiver, {Tab, node(SenderPid), SenderPid}),
+    MeMyselfAndI = self(),
+    Init = fun(read) ->
+		   Receiver = 
+		       if 
+			   PConv == true -> 
+			       MeMyselfAndI ! {actual_tabrec, self()},
+			       MeMyselfAndI; %% Old mnesia
+			   PConv == false -> self()
+		       end,
+		   SenderPid ! {Receiver, more},
+		   get_data(SenderPid, Receiver)
+	   end,
+    mnesia_tm:block_tab(Tab),
+    case init_table(Tab, Storage, Init, PConv, DetsInfo) of
+	ok -> 
+	    tab_receiver(Node, Tab, Storage, Cs, PConv);
+	Reason ->
+	    Msg = "[d]ets:init table failed",
+	    dbg_out("~s: ~p: ~p~n", [Msg, Tab, Reason]),
+	    down(Tab, Storage)
+    end.
 
-subscr_receiver(Tab, TabRef, Storage, RecName) ->
+make_table_fun(Pid, TabRec) ->
+    fun(close) ->
+	    ok;
+       (read) ->
+	    get_data(Pid, TabRec)	   
+    end.
+
+get_data(Pid, TabRec) ->
+    receive 
+	{Pid, {more, Recs}} ->
+	    Pid ! {TabRec, more},
+	    {Recs, make_table_fun(Pid,TabRec)};
+	{Pid, no_more} ->
+	    end_of_input;
+	{copier_done, Node} ->
+	    case node(Pid) of
+		Node -> 
+		    {copier_done, Node};
+		_ ->
+		    get_data(Pid, TabRec)
+	    end;
+	{'EXIT', Pid, Reason} ->
+	    handle_exit(Pid, Reason),
+	    get_data(Pid, TabRec)
+    end.
+
+init_table(Tab, disc_only_copies, Fun, false, DetsInfo) ->
+    ErtsVer = erlang:system_info(version),
+    case DetsInfo of
+	{Sender, ErtsVer}  ->  
+	    case catch dets:init_table(Tab, Fun, [{format, bchunk}]) of
+		{'EXIT',{undef,[{dets,init_table,_}|_]}} ->
+		    Sender ! {self(), {old_protocol, Tab}},
+		    dets:init_table(Tab, Fun);  %% Old dets version
+		{'EXIT', What} ->
+		    exit(What);
+		Else ->
+		    Else
+	    end;
+	_ ->
+	    dets:init_table(Tab, Fun)
+    end;
+init_table(Tab, _, Fun, false, _DetsInfo) ->
+    case catch ets:init_table(Tab, Fun) of
+	true ->
+	    ok;
+	{'EXIT', Else} -> Else
+    end;
+init_table(Tab, Storage, Fun, true, _DetsInfo) ->  %% Old Nodes    
+    spawn_link(?MODULE, old_node_init_table, [Tab, Storage, Fun, self(), false]),
+    ok.
+
+old_node_init_table(Tab, Storage, Fun, TabReceiver, DetsInfo) ->    
+    Res = init_table(Tab, Storage, Fun, false, DetsInfo),
+    TabReceiver ! {old_init_table_complete, Res},
+    unlink(TabReceiver),
+    ok.
+
+finish_copy(Storage, Tab, Cs, SenderPid, DatBin) ->
+    TabRef = {Storage, Tab},
+    subscr_receiver(TabRef, Cs#cstruct.record_name),
+    case handle_last(TabRef, Cs#cstruct.type, DatBin) of
+	ok -> 
+	    mnesia_index:init_index(Tab, Storage),
+	    snmpify(Tab, Storage),
+	    SenderPid ! {self(), no_more},
+	    mnesia_tm:unblock_tab(Tab),
+	    ok;
+	{error, Reason} ->
+	    Msg = "Failed to handle last",
+	    dbg_out("~s: ~p: ~p~n", [Msg, Tab, Reason]),
+	    down(Tab, Storage)
+    end.
+
+subscr_receiver(TabRef = {_, Tab}, RecName) ->
     receive
 	{mnesia_table_event, {Op, Val, _Tid}} ->
 	    if
@@ -290,11 +379,11 @@ subscr_receiver(Tab, TabRef, Storage, RecName) ->
 		true ->
 		    handle_event(TabRef, Op, setelement(1, Val, RecName))
 	    end,
-	    subscr_receiver(Tab, TabRef, Storage, RecName);
+	    subscr_receiver(TabRef, RecName);
 
 	{'EXIT', Pid, Reason} ->
 	    handle_exit(Pid, Reason),
-	    subscr_receiver(Tab, TabRef, Storage, RecName)
+	    subscr_receiver(TabRef, RecName)
     after 0 ->
 	    ok
     end.
@@ -308,8 +397,7 @@ handle_event(TabRef, delete_object, OldRec) ->
 handle_event(TabRef, clear_table, {_Tab, _Key}) ->
     db_match_erase(TabRef, '_').
 
-
-handle_last(Tab, disc_copies, _Type, nobin) ->
+handle_last({disc_copies, Tab}, _Type, nobin) ->
     Ret = mnesia_log:ets2dcd(Tab),
     Fname = mnesia_lib:tab2dat(Tab),  
     case mnesia_lib:exists(Fname) of 
@@ -320,7 +408,7 @@ handle_last(Tab, disc_copies, _Type, nobin) ->
     end,
     Ret;
 
-handle_last(Tab, disc_only_copies, Type, nobin) ->
+handle_last({disc_only_copies, Tab}, Type, nobin) ->
     case mnesia_lib:swap_tmp_files([Tab]) of
 	[] ->
 	    Args = [{file, mnesia_lib:tab2dat(Tab)},
@@ -333,9 +421,9 @@ handle_last(Tab, disc_only_copies, Type, nobin) ->
 	    {error, {"Cannot swap tmp files", Tab, L}}
     end;
 
-handle_last(Tab, ram_copies, _Type, nobin) ->
+handle_last({ram_copies, _Tab}, _Type, nobin) ->
     ok;
-handle_last(Tab, ram_copies, _Type, DatBin) ->
+handle_last({ram_copies, Tab}, _Type, DatBin) ->
     case mnesia_monitor:use_dir() of
 	true ->
 	    mnesia_lib:lock_table(Tab),
@@ -349,7 +437,6 @@ handle_last(Tab, ram_copies, _Type, DatBin) ->
     end.
 
 down(Tab, Storage) ->
-    %% dbg_out("DOWN ~p (~p)~n", [Tab, Storage]),
     case Storage of
 	ram_copies ->
 	    catch ?ets_delete_table(Tab);
@@ -376,12 +463,6 @@ flush_subcrs() ->
 	    done
     end.
 
-insert_records(TabRef, [Recs | Tail]) ->
-    db_put(TabRef, Recs),
-    insert_records(TabRef, Tail);
-insert_records(TabRef, []) ->
-    ok.
-
 db_erase({ram_copies, Tab}, Key) ->
     true = ?ets_delete(Tab, Key);
 db_erase({disc_copies, Tab}, Key) ->
@@ -406,6 +487,13 @@ db_put({disc_only_copies, Tab}, Val) ->
 %% This code executes at the remote site where the data is
 %% executes in a special copier process.
 
+calc_nokeys(Storage, Tab) ->
+    %% Calculate #keys per transfer
+    Key = mnesia_lib:db_first(Storage, Tab),
+    Recs = mnesia_lib:db_get(Storage, Tab, Key),
+    BinSize = size(term_to_binary(Recs)),
+    (?MAX_TRANSFER_SIZE div BinSize) + 1.
+
 send_table(Pid, Tab, RemoteS) ->
     case ?catch_val({Tab, storage_type}) of
 	{'EXIT', _} ->
@@ -414,23 +502,31 @@ send_table(Pid, Tab, RemoteS) ->
 	    {error, {no_exists, Tab}};
 	Storage ->
 	    %% Send first
-	    TabSize = mnesia:table_info(Tab, size),
-	    Pid ! {self(), {first, TabSize}},
+	    TabSize = mnesia:table_info(Tab, size),	    
+	    Pconvert = mnesia_monitor:needs_protocol_conversion(node(Pid)),
 	    
-	    %% Calculate #keys per transfer
-	    Key = mnesia_lib:db_first(Storage, Tab),
-	    Recs = mnesia_lib:db_get(Storage, Tab, Key),
-	    BinSize = size(term_to_binary(Recs)),
-	    KeysPerTransfer = (?MAX_TRANSFER_SIZE div BinSize) + 1,
+	    UseDetsChunk = 
+		Storage == RemoteS andalso 
+		Storage == disc_only_copies andalso 
+		Pconvert == false,	    
+	    if 
+		UseDetsChunk == true ->
+		    DetsInfo = erlang:system_info(version),
+		    Pid ! {self(), {first, TabSize, DetsInfo}};
+		true  ->
+		    Pid ! {self(), {first, TabSize}}
+	    end,
 	    
+	    KeysPerTransfer = calc_nokeys(Storage, Tab),
+
 	    %% Debug info
 	    put(mnesia_table_sender, {Tab, node(Pid), Pid}),
 
+	    {Init, Chunk} = reader_funcs(UseDetsChunk, Tab, Storage, KeysPerTransfer),
+	    
 	    SendIt = fun() ->
 			     prepare_copy(Pid, Tab, Storage),
-			     send_more(Pid, Tab, Storage, 
-				       mnesia_lib:db_init_chunk(Storage, Tab,
-								KeysPerTransfer)),
+			     send_more(Pid, 1, Chunk, Init(), Tab, Pconvert),
 			     finish_copy(Pid, Tab, Storage, RemoteS)
 		     end,
 
@@ -485,29 +581,62 @@ update_where_to_write(Tab, Node) ->
 update_where_to_write([], _, _) -> 
     ok;
 update_where_to_write([H|T], Tab, AddNode) ->
-    case mnesia_monitor:needs_protocol_conversion(H) of
-	true ->
-	    rpc:call(H,  mnesia_lib, add, [{Tab, where_to_write}, AddNode]);
-	false ->
-	    rpc:call(H,  mnesia_controller, call, [{update_where_to_write, [add, Tab, AddNode], self()}])
-    end,
+    rpc:call(H,  mnesia_controller, call, 
+	     [{update_where_to_write, [add, Tab, AddNode], self()}]),
     update_where_to_write(T, Tab, AddNode).
 
-
-send_more(Pid, Tab, Storage, DataState) ->
+send_more(Pid, N, Chunk, DataState, Tab, OldNode) ->
     receive
-	{Pid, more} ->
-	    case DataState of 
-		{Recs, Cont} ->
-		    Pid ! {self(), {more, [Recs]}}, %% Build list to handle old mnesia nodes
-		    send_more(Pid, Tab, Storage, mnesia_lib:db_chunk(Storage, Cont));
-		'$end_of_table' -> 
-		    ok
+	{NewPid, more} ->
+	    case send_packet(N - 1, NewPid, Chunk, DataState, OldNode) of 
+		New when integer(New) -> 
+		    New - 1;
+		NewData ->
+		    send_more(NewPid, ?MAX_NOPACKETS, Chunk, NewData, Tab, OldNode)
 	    end;
+	{_NewPid, {old_protocol, Tab}} ->
+	    Storage =  val({Tab, storage_type}),
+	    {Init, NewChunk} = 
+		reader_funcs(false, Tab, Storage, calc_nokeys(Storage, Tab)),
+	    send_more(Pid, 1, NewChunk, Init(), Tab, OldNode);
+
 	{copier_done, Node} when Node == node(Pid)->
 	    verbose("Receiver of table ~p crashed on ~p (more)~n", [Tab, Node]),
 	    throw(receiver_died)
     end.
+
+reader_funcs(UseDetsChunk, Tab, Storage, KeysPerTransfer) ->
+    case UseDetsChunk of
+	false ->
+	    {fun() -> mnesia_lib:db_init_chunk(Storage, Tab, KeysPerTransfer) end,
+	     fun(Cont) -> mnesia_lib:db_chunk(Storage, Cont) end};
+	true ->
+	    {fun() -> dets_bchunk(Tab, start) end,
+	     fun(Cont) -> dets_bchunk(Tab, Cont) end}
+    end.
+
+dets_bchunk(Tab, Chunk) -> %% Arrg
+    case dets:bchunk(Tab, Chunk) of
+	{Cont, Data} -> {Data, Cont};
+	Else -> Else
+    end.	    
+
+send_packet(N, Pid, _Chunk, '$end_of_table', OldNode) ->
+    case OldNode of
+	true -> ignore; %% Old nodes can't handle the new no_more
+	false ->  Pid ! {self(), no_more}
+    end,
+    N;
+send_packet(N, Pid, Chunk, {[], Cont}, OldNode) ->
+    send_packet(N, Pid, Chunk, Chunk(Cont), OldNode);
+send_packet(N, Pid, Chunk, {Recs, Cont}, OldNode) when N < ?MAX_NOPACKETS ->
+    case OldNode of
+	true -> Pid ! {self(), {more, [Recs]}}; %% Old need's wrapping list
+	false -> Pid ! {self(), {more, Recs}}
+    end,
+    send_packet(N+1, Pid, Chunk, Chunk(Cont), OldNode);
+send_packet(_N, _Pid, _Chunk, DataState, _OldNode) ->
+    DataState.
 
 finish_copy(Pid, Tab, Storage, RemoteS) ->
     RecNode = node(Pid),
@@ -520,10 +649,8 @@ finish_copy(Pid, Tab, Storage, RemoteS) ->
 		cleanup_tab_copier(Pid, Storage, Tab),
 		mnesia_checkpoint:tm_add_copy(Tab, RecNode),
 		Pid ! {self(), {no_more, DatBin}},
-%%		dbg_out("Sent last ~p to ~p ~n", [Tab, {node(Pid), Pid}]),
 		receive
 		    {Pid, no_more} -> % Dont bother about the spurious 'more' message
-%%			dbg_out("Sender done ~p ~n", [Tab]),
 			no_more;
 		    {copier_done, Node} when Node == node(Pid)->
 			verbose("Tab receiver ~p crashed (more): ~p~n", [Tab, Node]),
@@ -544,10 +671,10 @@ dat2bin(Tab, ram_copies, ram_copies) ->
 	{ok, DatBin} -> DatBin;
 	_ -> nobin
     end;
-dat2bin(_Tab, _LocalS, RemoteS) ->
+dat2bin(_Tab, _LocalS, _RemoteS) ->
     nobin.
 
 handle_exit(Pid, Reason) when node(Pid) == node() ->
     exit(Reason);
-handle_exit(Pid, Reason) ->  %% Not from our node, this will be handled by 
+handle_exit(_Pid, _Reason) ->  %% Not from our node, this will be handled by 
     ignore.                  %% mnesia_down soon.

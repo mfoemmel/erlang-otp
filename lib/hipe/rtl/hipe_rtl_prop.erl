@@ -13,12 +13,27 @@
 
 -module(hipe_rtl_prop).
 -export([cfg/1]).
-
+-include("../main/hipe.hrl").
 
 cfg(CFG) ->
+  ?opt_start_timer("Rtl Prop"),
+  ?opt_start_timer("EBBs"),
   EBBs = hipe_rtl_ebb:cfg(CFG),
+
+  ?opt_stop_timer("EBBs"),
+  ?opt_start_timer("Prop"),
   CFG0 = prop_ebbs(EBBs, CFG),
-  dead_code_ebbs(EBBs, CFG0, hipe_rtl_liveness:analyze(CFG0)).
+  ?opt_stop_timer("Prop"),
+  
+  ?opt_start_timer("Liveness"),
+  Liveness = hipe_rtl_liveness:analyze(CFG0),
+  ?opt_stop_timer("Liveness"),
+  ?opt_start_timer("Dead code"),
+  EBBs2 = hipe_rtl_ebb:cfg(CFG0),
+  CFG1 = dead_code_ebbs(EBBs2, CFG0, Liveness),
+  ?opt_stop_timer("Dead code"),
+  ?opt_stop_timer("RtlProp"),
+  CFG1.
 
 
 %%
@@ -52,23 +67,27 @@ prop_ebb(Ebb, Env, CFG) ->
   end.
 
 
-prop_succ([], Env, CFG) ->
+prop_succ([], _Env, CFG) ->
   CFG;
 prop_succ([EBB|EBBs], Env, CFG) ->
   NewCFG = prop_ebb(EBB, Env, CFG),
   prop_succ(EBBs, Env, NewCFG).
 
+prop_instrs(Is, Env) ->
+  {NewIs, NewEnv} = lists:mapfoldl(fun prop_instr/2, Env, Is),
+  {lists:flatten(NewIs), NewEnv}.
 
-prop_instrs([], Env) ->
-  {[], Env};
-prop_instrs([I|Is], Env) ->
-  {NewI, Env0} = prop_instr(I, Env),
-  {NewIs, NewEnv} = prop_instrs(Is, Env0),
-  %% io:format("I ~w to ~w\n",[I,NewI]),
-  case NewI of
-    [_|_] -> {NewI++NewIs, NewEnv};	%% alub -> [move, goto]
-    _ -> {[NewI|NewIs], NewEnv}
-  end.
+
+%prop_instrs([], Env) ->
+%  {[], Env};
+%prop_instrs([I|Is], Env) ->
+%  {NewI, Env0} = prop_instr(I, Env),
+%  {NewIs, NewEnv} = prop_instrs(Is, Env0),
+%  %% io:format("I ~w to ~w\n",[I,NewI]),
+%  case NewI of
+%    [_|_] -> {NewI++NewIs, NewEnv};	%% alub -> [move, goto]
+%    _ -> {[NewI|NewIs], NewEnv}
+%  end.
 
 
 %%
@@ -79,15 +98,13 @@ prop_instr(I, Env) ->
   NewEnv = unbind(hipe_rtl:defines(I), Env),
   case hipe_rtl:type(I) of
     move ->
-      Srcs = [hipe_rtl:multimove_src(I)],
-      Dsts = [hipe_rtl:multimove_dst(I)],
+      Srcs = [hipe_rtl:move_src(I)],
+      Dsts = [hipe_rtl:move_dst(I)],
       bind_all(Srcs, Dsts, I, NewEnv);
     multimove ->
       Srcs = hipe_rtl:multimove_src(I),
       Dsts = hipe_rtl:multimove_dst(I),
       bind_all(Srcs, Dsts, I, NewEnv);
-    jsr ->
-      {I, new_env()};
     _ ->
       Uses = hipe_rtl:uses(I),
       %% Map = [{U, lookup(U, Env)} || U <- Uses],
@@ -97,7 +114,7 @@ prop_instr(I, Env) ->
   end.
 
 
-map_all([], Env) ->
+map_all([], _Env) ->
   [];
 map_all([V|Vs], Env) ->
   [{V, lookup(V, Env)} | map_all(Vs, Env)].
@@ -107,7 +124,7 @@ bind_all(Srcs, Dsts, I, Env) ->
   bind_all(Srcs, Dsts, I, Env, Env).
 
 %%%
-%% We have two envs, Env wher we do lookups and
+%% We have two envs, Env where we do lookups and
 %%                   NewEnv where the new bindings are entered.
 bind_all([Src|Srcs], [Dst|Dsts], I, Env, NewEnv) ->
   case hipe_rtl:is_imm(Src) of
@@ -203,14 +220,6 @@ eval(I, Env) ->
 	_ ->
 	  {I, Env}
       end;
-    jsr ->
-      {I, new_env()};
-    esr ->
-      {I, new_env()};
-    jmp ->
-      {I, new_env()};
-    jmp_link ->
-      {I, new_env()};
     enter ->
       {I, new_env()};
     return ->
@@ -230,6 +239,7 @@ eval_constant_alu(Arg1, Op, Arg2) ->
       hipe_rtl:mk_imm(Arg1 bsr Arg2);
     'srl' ->
       %% sanity check: Arg1 must denote an unsigned machine word
+      %% XXX: Reconsider if we go 64-bit.
       if Arg1 >= 0, Arg1 =< 16#ffffffff -> ok;
 	 true -> exit({?MODULE, eval_constant_alu, {Op, Arg1}})
       end,
@@ -247,19 +257,34 @@ eval_constant_alu(Arg1, Op, Arg2) ->
   end.
 
 eval_constant_alub(Val1, Op, Val2, Cond) ->
-  case Op of
-    'and' ->
-      Val3 = Val1 band Val2,
+  Val3 = 
+    case Op of
+      'and' ->
+	Val1 band Val2;
+      'sub' ->
+	Val1 - Val2;
+      _ ->
+	fail
+    end,
+  if Val3 =:= fail ->
+      eval_constant_alub_fail(Val1, Op, Val2, Cond);
+     true ->
       case Cond of
 	'eq' ->
 	  {Val3, Val3 =:= 0};
 	'ne' ->
 	  {Val3, Val3 =/= 0};
+	'overflow' ->
+	  %% XXX: Fix this at some point.
+	  %% We do a safe approximation
+	  if (Val3 < 4096) and (Val3 >= 0) ->
+	      {Val3, false};
+	     %% Were not sure if this will overflow...
+	     true -> []
+	  end;
 	_ ->
 	  eval_constant_alub_fail(Val1, Op, Val2, Cond)
-      end;
-    _ ->
-      eval_constant_alub_fail(Val1, Op, Val2, Cond)
+      end
   end.
 
 eval_constant_alub_fail(Val1, Op, Val2, Cond) ->
@@ -273,7 +298,7 @@ eval_constant_alub_fail(Val1, Op, Val2, Cond) ->
 %% Dead code elimination
 %%%
 
-dead_code_ebbs([], CFG, Live) ->
+dead_code_ebbs([], CFG, _Live) ->
   CFG;
 dead_code_ebbs([EBB|EBBs], CFG, Live) ->
   {CFG0, _} = dead_code_ebb(EBB, CFG, Live),
@@ -288,7 +313,7 @@ dead_code_ebb(EBB, CFG, Live) ->
       {CFG0, LiveOut} =
 	case Succ of
 	  [] ->
-	    {CFG,hipe_rtl_liveness:liveout(Live, Lbl)};
+	    {CFG,gb_sets:from_list(hipe_rtl_liveness:liveout(Live, Lbl))};
 	  _ ->
 	    dead_code_succ(Succ, CFG, Live)
 	end,
@@ -299,16 +324,17 @@ dead_code_ebb(EBB, CFG, Live) ->
       {NewCFG, LiveIn};
     leaf ->
       Lbl = hipe_rtl_ebb:leaf_next(EBB),
-      {CFG, hipe_rtl_liveness:livein(Live, Lbl)}
+
+      {CFG, gb_sets:from_list(hipe_rtl_liveness:livein(Live, Lbl))}
   end.
 
 
-dead_code_succ([], CFG, Live) ->
-  {CFG, ordsets:new()};
+dead_code_succ([], CFG, _Live) ->
+  {CFG, gb_sets:new()};
 dead_code_succ([EBB|EBBs], CFG, Live) ->
   {CFG0, LiveOut0} = dead_code_ebb(EBB, CFG, Live),
   {NewCFG, LiveOut1} = dead_code_succ(EBBs, CFG0, Live),
-  {NewCFG, ordsets:union(LiveOut0, LiveOut1)}.
+  {NewCFG, gb_sets:union(LiveOut0, LiveOut1)}.
 
 
 dead_code_instrs([], LiveOut) ->
@@ -316,8 +342,8 @@ dead_code_instrs([], LiveOut) ->
 dead_code_instrs([I|Is], LiveOut) ->
   {NewIs, LiveOut0} = dead_code_instrs(Is, LiveOut),
   NewI = simplify_mm(I, LiveOut0),
-  Def = ordsets:from_list(hipe_rtl:defines(NewI)),
-  Dead = ordsets:intersection(LiveOut0, Def) == ordsets:new(),
+  Def = gb_sets:from_list(hipe_rtl:defines(NewI)),
+  Dead = gb_sets:size(gb_sets:intersection(LiveOut0, Def)) == 0,
   case {hipe_rtl:is_pure(NewI), Dead} of
     {true, true} ->
       {NewIs, LiveOut0};
@@ -326,8 +352,8 @@ dead_code_instrs([I|Is], LiveOut) ->
 	true ->
 	  {NewIs, LiveOut0};
 	false ->
-	  Use = ordsets:from_list(hipe_rtl:uses(I)),
-	  LiveIn = ordsets:union(Use, ordsets:subtract(LiveOut0, Def)),
+	  Use = gb_sets:from_list(hipe_rtl:uses(I)),
+	  LiveIn = gb_sets:union(Use, gb_sets:subtract(LiveOut0, Def)),
 	  {[NewI|NewIs], LiveIn}
       end
   end.
@@ -338,10 +364,8 @@ dead_code_instrs([I|Is], LiveOut) ->
 %%
 
 dead_move(X) ->
-  (hipe_rtl:is_move(X) and
+  (hipe_rtl:is_move(X) andalso
    (hipe_rtl:move_src(X) =:= hipe_rtl:move_dst(X))).
-
-
 
 
 %% Simplify multimoves
@@ -363,7 +387,7 @@ simplify_mm(Ss, Ds, LiveOut) ->
 simplify_mm([S|Srcs],[S|Dsts], SAcc, DAcc, LiveOut) ->
   simplify_mm(Srcs, Dsts, SAcc, DAcc, LiveOut);
 simplify_mm([S|Srcs],[D|Dsts], SAcc, DAcc, LiveOut) ->
-  case ordsets:is_element(D, LiveOut) of
+  case gb_sets:is_element(D, LiveOut) of
     true -> %% The dest is live after the instruction.
       simplify_mm(Srcs, Dsts, [S|SAcc] , [D|DAcc],LiveOut);
     false -> %% The dest is dead, move unnecessary.
@@ -373,49 +397,72 @@ simplify_mm([], [], SAcc, DAcc, _) ->
   {SAcc, DAcc}.
 
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% the environment, Rewrite if we go global.
 %%
-
+%% An environment has two mappings If x is bound to y then
+%% map 1 contains {x,y} and map 2 contains {y,[x|_]}
 new_env() ->
-  [].
+  {gb_trees:empty(),gb_trees:empty()}.
 
 
 %%
 %% Find what X is bound to (as a last restort varaibles are bound 
-%% to themself).
+%% to themselves).
 %%
 
-lookup(X, []) ->
-  X;
-lookup(X, [{X, Y}|_]) ->
-  Y;
-lookup(X, [_|Map]) ->
-  lookup(X, Map).
+
+lookup(X,{Map,_}) ->
+    case gb_trees:lookup(X,Map) of
+	{value, Y} -> Y;
+	none -> X
+    end.
 
 
 %%
 %% Bind X to Y in Map
 %%
 
-bind(Map, X, Y) -> 
-  [{X, Y} | Map].
+bind({Map1,Map2}, X, Y) -> 
+  NewMap2 =
+     case gb_trees:lookup(Y,Map2) of
+       none -> gb_trees:enter(Y,[X],Map2);
+       {value,Ys} ->
+	 gb_trees:enter(Y,[X|Ys],Map2)
+    end, 
+    {gb_trees:enter(X,Y,Map1),
+     NewMap2}.
+
 
 
 %%
 %% Kill bindings with references to X
 %%
-
-kill(X, []) ->
-  [];
-kill(X, [{X,_}|Xs]) ->
-  kill(X, Xs);
-kill(X, [{_,X}|Xs]) ->
-  kill(X, Xs);
-kill(X, [D|Xs]) ->
-  [D | kill(X,Xs)].
+kill(X,M = {Map1,Map2}) ->
+  %% First check if anyting is bound to X.
+  M1 = {M11,M12} =
+    case gb_trees:lookup(X,Map2) of
+      none -> M;
+      {value,Y1s} -> %% All Y1s bound to X
+	{lists:foldl(
+	   fun (Y1,MapAcc) ->
+	       gb_trees:delete_any(Y1,MapAcc)
+	   end,Map1,Y1s),
+	 gb_trees:delete(X,Map2)}
+    end,
+  %% Now check if X is bound to anything.
+  case gb_trees:lookup(X,M11) of
+    {value,Y2} -> %% X bound to Y2
+      {gb_trees:delete(X,M11),
+       case gb_trees:lookup(Y2,M12) of
+	 none -> M12;
+       {value,Y2s} ->
+	 gb_trees:enter(Y2,lists:delete(X,Y2s),M12)
+       end}; 
+    none -> 
+      M1
+  end.	     
 
 
 unbind([], Map) ->

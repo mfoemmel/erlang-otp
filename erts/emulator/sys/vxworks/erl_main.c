@@ -19,7 +19,7 @@
 #  include "config.h"
 #endif
 #include "sys.h"
-#include "erl_api.h"
+#include "erl_vm.h"
 
 #if defined(__GNUC__)
 /*
@@ -40,5 +40,5 @@ __asm__(".equ __eabi, 0");
 void 
 erl_main(int argc, char **argv)
 {
-    ErlOtpStart(argc, argv);
+    erl_start(argc, argv);
 }

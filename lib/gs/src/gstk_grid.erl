@@ -85,22 +85,22 @@ config(DB, Gstkid, Options) ->
     end.
     
 
-option(Option, Gstkid, TkW, DB,State) ->
+option(Option, Gstkid, _TkW, DB,State) ->
     case Option of
 	{rows,{From,To}} ->
 	    Ngstkid = reconfig_rows(From,To,Gstkid),
 	    gstk_db:insert_opt(DB,Gstkid,Option),
 	    gstk_db:update_widget(DB,Ngstkid),
 	    {none,Ngstkid};
-	{fg,Color} ->
+	{fg,_Color} ->
 	    reconfig_grid(DB,Option,State),
 	    gstk_db:insert_opt(DB,Gstkid,Option),
 	    none;
-	{bg,Color} ->
+	{bg,_Color} ->
 	    reconfig_grid(DB,Option,State),
 	    gstk_db:insert_opt(DB,Gstkid,Option),
 	    none;
-	{font,Font} ->
+	{font,_Font} ->
 	    reconfig_grid(DB,Option,State),
 	    gstk_db:insert_opt(DB,Gstkid,Option),
 	    none;
@@ -114,10 +114,10 @@ option(Option, Gstkid, TkW, DB,State) ->
 	    {result,_} = gstk:call(["resize_grid_cols ",State#state.tkcanvas,
 				   " [list ",asc_tcl_colw(ColWs),"]"]),
 	    none;
-	{cellheight,Height} ->
+	{cellheight,_Height} ->
 	    gstk_db:insert_opt(DB,Gstkid,Option),
 	    none;	
-	Q ->
+	_ ->
 	    invalid_option
     end.
 
@@ -197,7 +197,7 @@ read(DB,Gstkid,Opt) ->
 	    gstk_generic:read_option(DB, Gstkid, Opt,State)
       end.
 
-read_option(Option,Gstkid,TkW,DB,State) -> 
+read_option(Option,Gstkid,_TkW,DB,State) -> 
     case Option of
 	{obj_at_row,Row} ->
 	    case ets:lookup(State#state.cell_pos,{1,Row}) of
@@ -207,7 +207,7 @@ read_option(Option,Gstkid,TkW,DB,State) ->
 			GridLine ->
 			    gstk:make_extern_id(GridLine, DB)
 		    end;
-		Q -> undefined
+		_ -> undefined
 	    end;
 	Opt -> gstk_db:opt(DB,Gstkid#gstkid.id,Opt,undefined)
     end.
@@ -224,7 +224,6 @@ delete(DB, Gstkid) ->
     ets:delete(CP),
     ets:delete(CIs),
     ets:delete(IDs),
-    TkCanvas = Gstkid#gstkid.widget,
     {Gstkid#gstkid.parent, Gstkid#gstkid.id, gstk_grid, [C]}.
 
 %%----------------------------------------------------------------------

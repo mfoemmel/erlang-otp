@@ -170,7 +170,7 @@ start_portprogram() ->
 %% Func: get_memory_usage(Port)
 %% Purpose: Function which finds out how much memory is in use by
 %%          using the external portprogram.
-%% Returns: {ok, {Allocated, Total}} | {error, Reason}
+%% Returns: {Allocated, Total}
 %%-----------------------------------------------------------------
 get_memory_usage(Port) ->
     Port ! {self(), {command, [?MEM_SHOW]}},
@@ -192,7 +192,7 @@ get_total(Port, Alloc) ->
 %% Func: get_memory_usage_win32(_Port)
 %% Purpose: Find out how much memory is in use by asking the os_mon_sysinfo
 %% process.
-%% Returns {ok,Allocated,Total}} | {error, Reason}
+%% Returns {Allocated,Total}
 %%-----------------------------------------------------------------
 get_memory_usage_win32(_Port) ->
     [Result|_] = os_mon_sysinfo:get_mem_info(),
@@ -206,6 +206,7 @@ get_memory_usage_win32(_Port) ->
 
 %%-----------------------------------------------------------------
 %% get_memory_usage_linux(_Port)
+%% Returns {Allocated,Total}
 %%-----------------------------------------------------------------
 get_memory_usage_linux(_) ->
     {ok,F} = file:open("/proc/meminfo",[read,raw]),
@@ -219,6 +220,7 @@ get_memory_usage_linux(_) ->
 %% get_memory_usage_freebsd(_Port)
 %%
 %% Look in /usr/include/sys/vmmeter.h for the format of struct vmmeter
+%% Returns {Allocated,Total}
 %%-----------------------------------------------------------------
 get_memory_usage_freebsd(_) ->
     PageSize  = freebsd_sysctl("vm.stats.vm.v_page_size"),
@@ -244,22 +246,16 @@ freebsd_sysctl(Def) ->
 get_system_memory_usage(Port) ->
     case os:type() of
 	{win32,_} ->
-	    case get_memory_usage_win32(Port) of
-		{ok, {Alloced,Tot}} ->
-		    [{total_memory, Tot},
-		     {free_memory, Tot - Alloced},
-		     {system_total_memory, Tot}];
-		{error, Reason} ->
-		    {error, Reason};
-		_ ->
-		    {error, port_terminated}
-	    end;
+	    {Alloced,Tot} = get_memory_usage_win32(Port),
+	    [{total_memory, Tot},
+	     {free_memory, Tot - Alloced},
+	     {system_total_memory, Tot}];
 	{unix,linux} ->
-	    {ok,{Alloced,Tot}} = get_memory_usage_linux([]),
+	    {Alloced,Tot} = get_memory_usage_linux([]),
 	    [{total_memory,Tot},{free_memory, Tot-Alloced},
 	     {system_total_memory,Tot}]; % correct unless setrlimit() set
 	{unix,freebsd} ->
-	    {ok,{Alloced,Tot}} = get_memory_usage_freebsd([]),
+	    {Alloced,Tot} = get_memory_usage_freebsd([]),
 	    [{total_memory,Tot},{free_memory, Tot-Alloced},
 	     {system_total_memory,Tot}];
 	_ -> 

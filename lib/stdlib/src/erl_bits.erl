@@ -59,34 +59,6 @@ set_bit([T0|Ts], Bt) ->
     end;
 set_bit([], Bt) -> {ok,Bt}.
 
-% set_bit([], Type, Unit, Sign, End) ->
-%     {ok,#bittype{type=Type,unit=Unit,sign=Sign,endian=End}}.
-
-% set_bit(T, Bt) ->
-%     foldl(fun (integer, T) ->
-% 		  T#bittype{type=merge_field(integer, T#bittype.type)};
-% 	      (float, T) ->
-% 		  T#bittype{type=merge_field(float, T#bittype.type)};
-% 	      (binary, T) ->
-% 		  T#bittype{type=merge_field(binary, T#bittype.type)};
-% 	      (Type, Bt) when Type == integer;
-% 			      Type == float;
-% 			      Type == binary ->
-% 		  T#bittype{type=merge_field(Type, T#bittype.type)};
-% 	      ({unit,Sz}, T) when integer(Sz), Sz > 0, Sz =< 256 ->
-% 		  T#bittype{unit=merge_field(Sz, T#bittype.unit)};
-% 	      (big, T) ->
-% 		  T#bittype{endian=merge_field(big, T#bittype.endian)};
-% 	      (little, T) ->
-% 		  T#bittype{endian=merge_field(little, T#bittype.endian)};
-% 	      (signed, T) ->
-% 		  T#bittype{sign=merge_field(signed, T#bittype.sign)};
-% 	      (unsigned, T) ->
-% 		  T#bittype{sign=merge_field(unsigned, T#bittype.sign)};
-% 	      (Other, T) ->
-% 		  throw({error,{undefined_bittype,Other}})
-% 	  end, Bt, Ts).
-
 update_type({unit,Sz}, Type) when integer(Sz), Sz > 0, Sz =< 256 ->
     Type#bittype { unit = Sz };
 update_type(integer,      Type) -> Type#bittype { type   = integer};
@@ -94,6 +66,7 @@ update_type(float,        Type) -> Type#bittype { type   = float};
 update_type(binary,       Type) -> Type#bittype { type   = binary};
 update_type(big,          Type) -> Type#bittype { endian = big };
 update_type(little,       Type) -> Type#bittype { endian = little };
+update_type(native,       Type) -> Type#bittype { endian = native };
 update_type(signed,       Type) -> Type#bittype { sign   = signed };
 update_type(unsigned,     Type) -> Type#bittype { sign   = unsigned };
 update_type(Name, _) -> throw({error,{undefined_bittype,Name}}).

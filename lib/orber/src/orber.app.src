@@ -93,7 +93,8 @@
 	'orber_web_server',
 	'orber_iiop_tracer',
 	'orber_iiop_tracer_silent',
-	'fixed'
+	'fixed',
+	'orber_exceptions'
      ]	
   },
   {registered, [orber_sup, orber_iiop_sup, orber_iiop_net, orber_iiop_outsup, 

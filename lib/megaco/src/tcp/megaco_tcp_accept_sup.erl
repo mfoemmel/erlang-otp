@@ -72,7 +72,7 @@ start_link() ->
 %% Func: init/1
 %% Description: Init funcion for the supervisor
 %%-----------------------------------------------------------------
-init(Options) ->
+init(_Options) ->
     SupFlags = {simple_one_for_one, 500, 100},
     ChildSpec = [
 		 {megaco_accept,
@@ -86,7 +86,7 @@ init(Options) ->
 %% Func: terminate/2
 %% Description: Termination function for the supervisor
 %%-----------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------------

@@ -47,7 +47,7 @@ enc_ActionReply(Val) ->
     State = ?INIT_INDENT,
     enc_ActionReply(Val, State).
 
-enc_AuthenticationHeader(asn1_NOVALUE, State) ->
+enc_AuthenticationHeader(asn1_NOVALUE, _State) ->
     [];
 enc_AuthenticationHeader(Val, State)
   when record(Val, 'AuthenticationHeader') ->
@@ -187,12 +187,13 @@ enc_V4hex(Val, State) ->
     enc_DIGIT(Val, State, 0, 255).
 
 enc_IP6Address(Val, State)
-  when record(Val, 'IP6Address') ->
+  when record(Val, 'IP6Address'),
+       list(Val#'IP6Address'.address),
+       length(Val#'IP6Address'.address) == 16 ->
     exit(ipv6_not_supported), %% BUGBUG: nyi
     [
      $[,
-     [A1, A2, A3, A4, A5, A6, A7, A8,
-      A9, A10, A11, A12, A13, A14, A15, A16] = Val#'IP6Address'.address,
+     Val#'IP6Address'.address,
      $],
      case Val#'IP6Address'.portNumber of
 	 asn1_NOVALUE ->
@@ -504,8 +505,6 @@ enc_TopologyRequest(Val, State)
 enc_TopologyRequest1(Val, State)
   when record(Val, 'TopologyRequest') ->
     [
-     ?TopologyToken,
-     ?LBRKT_INDENT(State),
      fun(S) ->
 	     [
 	      enc_TerminationID(Val#'TopologyRequest'.terminationFrom, S),
@@ -518,8 +517,7 @@ enc_TopologyRequest1(Val, State)
 		  oneway ->  ?OnewayToken
 	      end
 	     ]
-     end(?INC_INDENT(State)),
-     ?RBRKT_INDENT(State)
+     end(?INC_INDENT(State))
     ].
 
 enc_AmmRequest(Val, State)
@@ -652,7 +650,7 @@ enc_AuditDescriptor(Val, State)
      end
     ].
 
-enc_auditItem(Val, State) ->
+enc_auditItem(Val, _State) ->
     case Val of
 	muxToken               -> ?MuxToken;
 	modemToken             -> ?ModemToken;
@@ -668,7 +666,7 @@ enc_auditItem(Val, State) ->
 
 enc_TerminationAudit({'TerminationAudit',Val}, State) ->
     enc_TerminationAudit(Val, State);
-enc_TerminationAudit([], State) ->
+enc_TerminationAudit([], _State) ->
     [];
 enc_TerminationAudit([Mand | Opt], State) ->
   [enc_AuditReturnParameter(Mand, State),
@@ -744,7 +742,7 @@ enc_NotifyReply(Val, State)
 	 asn1_NOVALUE ->
 	     exit(asn1_not_compliant_with_abnf);
 	 TermId ->
-	     enc_TerminationIDList1(Val#'NotifyReply'.terminationID, State)
+	     enc_TerminationIDList1(TermId, State)
      end,
      case Val#'NotifyReply'.errorDescriptor of
 	 asn1_NOVALUE ->
@@ -903,12 +901,12 @@ enc_TerminationIDListN(TidList, State) ->
 enc_TerminationID(Tid, State)
   when record(Tid,  megaco_term_id) ->
     List = [{Tid#megaco_term_id.id, fun enc_tid_component/2 }],
-    enc_list(List, State, fun(S) -> ?SLASH end, false).    
+    enc_list(List, State, fun(_S) -> ?SLASH end, false).    
 
 enc_tid_component(Component, State) ->
     [enc_tid_sub_component(Sub, State) || Sub <- Component].
 
-enc_tid_sub_component(Sub, State) ->
+enc_tid_sub_component(Sub, _State) ->
     case Sub of
 	all    -> ?megaco_all;
 	choose -> ?megaco_choose;
@@ -999,7 +997,7 @@ enc_LocalControlDescriptor(Val, State)
      ?RBRKT_INDENT(State)
     ].
 
-enc_reservedGroupMode(Val, State) ->
+enc_reservedGroupMode(Val, _State) ->
     [
      ?ReservedGroupToken,
      ?EQUAL,
@@ -1009,7 +1007,7 @@ enc_reservedGroupMode(Val, State) ->
      end
     ].
 
-enc_reservedValueMode(Val, State) ->
+enc_reservedValueMode(Val, _State) ->
     [
      ?ReservedValueToken,
      ?EQUAL,
@@ -1021,7 +1019,7 @@ enc_reservedValueMode(Val, State) ->
 
 enc_StreamMode({'StreamMode',Val}, State) ->
     enc_StreamMode(Val, State);
-enc_StreamMode(Val, State) ->
+enc_StreamMode(Val, _State) ->
     [
      ?ModeToken,
      ?EQUAL,
@@ -1086,7 +1084,7 @@ enc_LocalRemoteDescriptor(Val, State)
 
 enc_PropertyGroup({'PropertyGroup',Val}, RequiresV, State) ->
     enc_PropertyGroup(Val, RequiresV, State);
-enc_PropertyGroup([H | T] = List, mand_v, State) when record(H, 'PropertyParm'), H#'PropertyParm'.name == "v" ->
+enc_PropertyGroup([H | _T] = List, mand_v, State) when record(H, 'PropertyParm'), H#'PropertyParm'.name == "v" ->
     enc_PropertyGroup(List, opt_v, State);
 enc_PropertyGroup(PG, opt_v, State) ->
     [
@@ -1169,7 +1167,7 @@ enc_TerminationStateDescriptor(Val, State)
      ?RBRKT_INDENT(State)
     ].
 
-enc_eventBufferControl(Val, State) ->
+enc_eventBufferControl(Val, _State) ->
     [
 
      ?BufferToken,
@@ -1182,7 +1180,7 @@ enc_eventBufferControl(Val, State) ->
     
 enc_serviceState({'ServiceState',Val}, State) ->
     enc_serviceState(Val, State);
-enc_serviceState(Val, State) ->
+enc_serviceState(Val, _State) ->
     [
      ?ServiceStatesToken,
      ?EQUAL,
@@ -1204,7 +1202,7 @@ enc_MuxDescriptor(Val, State)
 
 enc_MuxType({'MuxType',Val}, State) ->
     enc_MuxType(Val, State);
-enc_MuxType(Val, State) ->
+enc_MuxType(Val, _State) ->
     case Val of
 	h221 -> ?H221Token;
 	h223 -> ?H223Token;
@@ -1263,7 +1261,7 @@ decompose_requestedActions(Val)
      {[Val#'RequestedActions'.signalsDescriptor], fun enc_SignalsDescriptor/2}
     ].
 
-enc_keepActive(Val, State) ->
+enc_keepActive(Val, _State) ->
     case Val of
 	true -> [?KeepActiveToken];
 	false -> []
@@ -1458,7 +1456,7 @@ enc_notifyCompletion(List, State) when list(List) ->
      ?RBRKT_INDENT(State)
     ].
 
-enc_notifyCompletionItem(Val, State) ->
+enc_notifyCompletionItem(Val, _State) ->
     case Val of
 	onTimeOut                   -> ?TimeOutToken;
         onInterruptByEvent          -> ?InterruptByEventToken;
@@ -1468,7 +1466,7 @@ enc_notifyCompletionItem(Val, State) ->
 
 enc_SignalType({'SignalType',Val}, State) ->
     enc_SignalType(Val, State);
-enc_SignalType(Val, State) ->
+enc_SignalType(Val, _State) ->
     case Val of
 	brief ->   ?BriefToken;
 	onOff ->   ?OnOffToken;
@@ -1492,7 +1490,7 @@ enc_sigOther(Val, State)
 
 enc_RequestID({'RequestID',Val}, State) ->
     enc_RequestID(Val, State);
-enc_RequestID(Val, State) when Val == ?megaco_all_request_id ->
+enc_RequestID(Val, _State) when Val == ?megaco_all_request_id ->
     "*";
 enc_RequestID(Val, State) ->
     enc_UINT32(Val, State).
@@ -1514,7 +1512,7 @@ enc_ModemDescriptor(Val, State)
 
 enc_ModemType({'ModemType',Val}, State)->
     enc_ModemType(Val, State);
-enc_ModemType(Val, State) ->
+enc_ModemType(Val, _State) ->
     %% BUGBUG: Does not handle extensionParameter
     case Val of
         v18    	  -> ?V18Token;
@@ -1555,7 +1553,7 @@ enc_DigitMapValue(Val, State)
      enc_STRING(Val#'DigitMapValue'.digitMapBody, State, 0, infinity)
     ].
 
-enc_timer(asn1_NOVALUE, Prefix, State) ->
+enc_timer(asn1_NOVALUE, _Prefix, _State) ->
     [];
 enc_timer(Timer, Prefix, State) ->
     [
@@ -1592,7 +1590,7 @@ enc_ServiceChangeParm(Val, State)
 
 enc_ServiceChangeMethod({'ServiceChangeMethod',Val}, State) ->
     enc_ServiceChangeMethod(Val, State);
-enc_ServiceChangeMethod(Val, State) ->
+enc_ServiceChangeMethod(Val, _State) ->
     [
      ?MethodToken,
      ?EQUAL,
@@ -1748,7 +1746,7 @@ enc_TimeNotation(Val, State)
 %% BUGBUG: the dd/ce ds parameter that may possibly be empty.
 enc_Value({'Value',Val}, State) ->
     enc_Value(Val, State);
-enc_Value(String, State) ->
+enc_Value(String, _State) ->
     case quoted_string_count(String, 0, true) of
 	{_, 0} ->
 	    [?DQUOTE, String, ?DQUOTE];
@@ -1781,11 +1779,11 @@ do_enc_OCTET_STRING([H | T], State, Min, Max, Count) ->
 	_ ->
 	    [H | do_enc_OCTET_STRING(T, State, Min, Max, Count + 1)]
     end;
-do_enc_OCTET_STRING([], State, Min, Max, Count) ->
+do_enc_OCTET_STRING([], _State, Min, Max, Count) ->
     verify_count(Count, Min, Max),
     [].
 
-enc_QUOTED_STRING(String, State) when list(String) ->
+enc_QUOTED_STRING(String, _State) when list(String) ->
     {_IsSafe, Count} = quoted_string_count(String, 0, true),
     verify_count(Count, 1, infinity),
     [?DQUOTE, String, ?DQUOTE].
@@ -1808,7 +1806,7 @@ do_enc_HEXDIG([Octet | Rest], State, Min, Max, Count, Acc)
 do_enc_HEXDIG([], State, Min, Max, Count, Acc)
   when integer(Min), Count < Min ->
     do_enc_HEXDIG([0], State, Min, Max, Count, Acc);
-do_enc_HEXDIG([], State, Min, Max, Count, Acc)
+do_enc_HEXDIG([], _State, Min, Max, Count, Acc)
   when integer(Min), Count < Min ->
     verify_count(Count, Min, Max),
     lists:reverse(Acc).
@@ -1816,7 +1814,7 @@ do_enc_HEXDIG([], State, Min, Max, Count, Acc)
 enc_DIGIT(Val, State, Min, Max) ->
     enc_integer(Val, State, Min, Max).
 
-enc_STRING(String, State, Min, Max) when list(String) ->
+enc_STRING(String, _State, Min, Max) when list(String) ->
     verify_count(length(String), Min, Max),
     String.
 
@@ -1826,7 +1824,7 @@ enc_UINT16(Val, State) ->
 enc_UINT32(Val, State) ->
     enc_integer(Val, State, 0, 4294967295).
 
-enc_integer(Val, State, Min, Max) ->
+enc_integer(Val, _State, Min, Max) ->
     verify_count(Val, Min, Max),
     integer_to_list(Val).
 
@@ -1845,14 +1843,14 @@ enc_list([{Elems, ElemEncoder} | Tail], State, SepEncoder, NeedsSep) ->
 	    [List,
 	     enc_list(Tail, State, SepEncoder, true)]
     end;
-enc_list([], State, SepEncoder, NeedsSep) ->
+enc_list([], _State, _SepEncoder, _NeedsSep) ->
     [];
-enc_list(asn1_NOVALUE, State, SepEncoder, NeedsSep) ->
+enc_list(asn1_NOVALUE, _State, _SepEncoder, _NeedsSep) ->
     [].
 
-do_enc_list(asn1_NOVALUE, State, ElemEncoder, SepEncoder, NeedsSep) ->
+do_enc_list(asn1_NOVALUE, _State, _ElemEncoder, _SepEncoder, _NeedsSep) ->
     [];
-do_enc_list([], State, ElemEncoder, SepEncoder, NeedsSep) ->
+do_enc_list([], _State, _ElemEncoder, _SepEncoder, _NeedsSep) ->
     [];
 do_enc_list([asn1_NOVALUE | T], State, ElemEncoder, SepEncoder, NeedsSep) ->
     do_enc_list(T, State, ElemEncoder, SepEncoder, NeedsSep);
@@ -1870,7 +1868,7 @@ do_enc_list([H | T], State, ElemEncoder, SepEncoder, NeedsSep)
     end.
 
 %% Add brackets if list is non-empty
-enc_opt_brackets([], State) ->
+enc_opt_brackets([], _State) ->
     [];
 enc_opt_brackets(List, State) when list(List) ->
     [?LBRKT_INDENT(State), List, ?RBRKT_INDENT(State)].

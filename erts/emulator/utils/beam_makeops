@@ -1094,7 +1094,11 @@ sub tr_parse_op {
 	$_ = $1;
     } elsif (m@^\$bif:(\w+):(\w+)/(\d)(.*)@) {
 	$cond = 'is_bif';
-	$cond_val = "BIF_$2_$3";
+	if ($1 eq 'erlang') {
+	    $cond_val = "BIF_$2_$3";
+	} else {
+	    $cond_val = "BIF_$1_$2_$3";
+	}
 	$_ = $4;
     } elsif (m@^\$func:(\w+):(\w+)/(\d)(.*)@) {
 	$cond = 'is_func';

@@ -176,7 +176,7 @@ conn_info(CD, Item) when record(CD, conn_data) ->
         _ ->
             exit({no_such_item, Item})
     end;
-conn_info(BadHandle, Item) ->
+conn_info(BadHandle, _Item) ->
     {error, {no_such_connection, BadHandle}}.
 
 update_conn_info(CH, Item, Val) when record(CH, megaco_conn_handle) ->
@@ -184,7 +184,7 @@ update_conn_info(CH, Item, Val) when record(CH, megaco_conn_handle) ->
 update_conn_info(CD, Item, Val) when record(CD, conn_data) ->
     CH = CD#conn_data.conn_handle,
     call({update_conn_data, CH, Item, Val});
-update_conn_info(BadHandle, Item, Val) ->
+update_conn_info(BadHandle, _Item, _Val) ->
     {error, {no_such_connection, BadHandle}}.
 
 system_info(Item) ->
@@ -226,7 +226,7 @@ lookup_local_conn(Handle) ->
 
 connect(RH, RemoteMid, SendHandle, ControlPid) ->
     case RemoteMid of
-	{MidType, MidValue} when atom(MidType) ->
+	{MidType, _MidValue} when atom(MidType) ->
 	    call({connect, RH, RemoteMid, SendHandle, ControlPid});
 	preliminary_mid ->
 	    call({connect, RH, RemoteMid, SendHandle, ControlPid});
@@ -274,7 +274,7 @@ incr_trans_id_counter(ConnHandle) ->
                     ConnData2 = ConnData#conn_data{serial = Serial},
                     Max       = ConnData#conn_data.max_serial,
                     if
-                        Max == infinity ->
+                        Max == infinity, Serial =< 4294967295 ->
                             {ok, ConnData2};
                         Serial =< Max ->
                             {ok, ConnData2};
@@ -308,7 +308,6 @@ reset_trans_id_counter(ConnData, ConnHandle, LocalMid, Item) ->
             end
     end.
 
-
 call(Request) ->
     case catch gen_server:call(?SERVER, Request, infinity) of
 	{'EXIT', _} ->
@@ -328,6 +327,7 @@ call(Request) ->
 %%          ignore               |
 %%          {stop, Reason}
 %%----------------------------------------------------------------------
+
 init([Parent]) ->
     process_flag(trap_exit, true),
     case (catch do_init()) of
@@ -337,14 +337,13 @@ init([Parent]) ->
 	    {stop, Else}
     end.
 
-
 do_init() ->
     ets:new(megaco_config,      [public, named_table, {keypos, 1}]),
     ets:new(megaco_local_conn,  [public, named_table, {keypos, 2}]),
     ets:new(megaco_remote_conn, [public, named_table, {keypos, 2}, bag]),
     init_scanner(),
+    init_user_defaults(),
     init_users().
-
 
 init_scanner() ->
     case get_env(scanner, undefined) of
@@ -358,7 +357,6 @@ init_scanner() ->
 	{M, F, A, Mods} when atom(M), atom(F), list(A), list(Mods) ->
 	    start_scanner(M, F, A, Mods)
     end.
-    
 
 start_scanner(M, F, A, Mods) ->
     case megaco_misc_sup:start_permanent_worker(M, F, A, Mods) of
@@ -370,9 +368,35 @@ start_scanner(M, F, A, Mods) ->
 	    throw({scanner_start_failed, Else})
     end.
 
+init_user_defaults() ->
+    init_user_default(min_trans_id,       1),
+    init_user_default(max_trans_id,       infinity), 
+    init_user_default(request_timer,      #megaco_incr_timer{}),
+    init_user_default(long_request_timer, infinity),
+    init_user_default(auto_ack,           false),
+    init_user_default(pending_timer,      timer:seconds(30)),
+    init_user_default(reply_timer,        timer:seconds(30)),
+    init_user_default(send_mod,           megaco_tcp),
+    init_user_default(encoding_mod,       megaco_pretty_text_encoder),
+    init_user_default(protocol_version,   1),
+    init_user_default(auth_data,          asn1_NOVALUE),
+    init_user_default(encoding_config,    []),
+    init_user_default(user_mod,           megaco_user),
+    init_user_default(user_args,          []),
+    init_user_default(reply_data,         undefined).
+
+init_user_default(Item, Default) when Item /= mid ->
+    Val = get_env(Item, Default),
+    case do_update_user(default, Item, Val) of
+	ok ->
+	    ok;
+	{error, Reason} ->
+	    throw(Reason)
+    end.
 
 init_users() ->
-    init_users( get_env(users, []) ).
+    Users = get_env(users, []),
+    init_users(Users).
 
 init_users([]) ->
     ok;
@@ -386,7 +410,6 @@ init_users([{UserMid, Config} | Rest]) ->
 init_users(BadConfig) ->
     throw({bad_config, users, BadConfig}).
 
-
 %%----------------------------------------------------------------------
 %% Func: handle_call/3
 %% Returns: {reply, Reply, State}          |
@@ -397,42 +420,42 @@ init_users(BadConfig) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 
-handle_call({incr_counter, Item, Incr}, From, S) ->
+handle_call({incr_counter, Item, Incr}, _From, S) ->
     Reply = incr_counter(Item, Incr),
     {reply, Reply, S};
 
-handle_call({incr_trans_id_counter, ConnHandle}, From, S) ->
+handle_call({incr_trans_id_counter, ConnHandle}, _From, S) ->
     Reply = incr_trans_id_counter(ConnHandle),
     {reply, Reply, S};
 
-handle_call({receive_handle, UserMid}, From, S) ->
+handle_call({receive_handle, UserMid}, _From, S) ->
     case catch make_receive_handle(UserMid) of
 	{'EXIT', _} ->
 	    {reply, {error, {no_receive_handle, UserMid}}, S};
 	RH ->
 	    {reply, {ok, RH}, S}
     end;
-handle_call({connect, RH, RemoteMid, SendHandle, ControlPid}, From, S) ->
+handle_call({connect, RH, RemoteMid, SendHandle, ControlPid}, _From, S) ->
     Reply = handle_connect(RH, RemoteMid, SendHandle, ControlPid),
     {reply, Reply, S};
-handle_call({connect_remote, CH, UserNode, Ref}, From, S) ->
+handle_call({connect_remote, CH, UserNode, Ref}, _From, S) ->
     Reply = handle_connect_remote(CH, UserNode, Ref),
     {reply, Reply, S};
 
-handle_call({disconnect, ConnHandle}, From, S) ->
+handle_call({disconnect, ConnHandle}, _From, S) ->
     Reply = handle_disconnect(ConnHandle),
     {reply, Reply, S};
-handle_call({disconnect_remote, CH, UserNode}, From, S) ->
+handle_call({disconnect_remote, CH, UserNode}, _From, S) ->
     Reply = handle_disconnect_remote(CH, UserNode),
     {reply, Reply, S};
 
-handle_call({start_user, UserMid, Config}, From, S) ->
+handle_call({start_user, UserMid, Config}, _From, S) ->
     Reply = handle_start_user(UserMid, Config),
     {reply, Reply, S};
-handle_call({stop_user, UserMid}, From, S) ->
+handle_call({stop_user, UserMid}, _From, S) ->
     Reply = handle_stop_user(UserMid),
     {reply, Reply, S};
-handle_call({update_conn_data, CH, Item, Val}, From, S) ->
+handle_call({update_conn_data, CH, Item, Val}, _From, S) ->
     case lookup_local_conn(CH) of
         [] ->
             {reply, {error, {no_such_connection, CH}}, S};
@@ -440,7 +463,7 @@ handle_call({update_conn_data, CH, Item, Val}, From, S) ->
             Reply = handle_update_conn_data(CD, Item, Val),
             {reply, Reply, S}
     end;
-handle_call({update_user_info, UserMid, Item, Val}, From, S) ->
+handle_call({update_user_info, UserMid, Item, Val}, _From, S) ->
     case catch user_info(UserMid, mid) of
         {'EXIT', _} ->
             {reply, {error, {no_such_user, UserMid}}, S};
@@ -459,6 +482,7 @@ handle_call(Request, From, S) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
+
 handle_cast(Msg, S) ->
     ok = error_logger:format("~p(~p): handle_cast(~p, ~p)~n",
                              [?MODULE, self(), Msg, S]),
@@ -470,6 +494,7 @@ handle_cast(Msg, S) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
+
 handle_info({'EXIT', Pid, Reason}, S) when Pid == S#state.parent_pid ->
     {stop, Reason, S};
 
@@ -483,7 +508,8 @@ handle_info(Info, S) ->
 %% Purpose: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
+
+terminate(_Reason, _State) ->
     ok.
 
 %%----------------------------------------------------------------------
@@ -491,60 +517,26 @@ terminate(Reason, State) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change(_Vsn, S, downgrade_to_pre_1_0_3) ->
-%     io:format("megaco_config:code_change(down) -> entry~n", []),
-    case ets:lookup(megaco_config, text_config) of
-	[{text_config, [Conf]}] ->
-% 	    io:format("megaco_config:code_change(down) -> Conf: ~w~n", [Conf]),
-	    ets:delete(megaco_config, text_config),
-	    ets:insert(megaco_config, {scanner, {[Conf], {undefined, undefined, []}}});
-	O ->
-% 	    io:format("megaco_config:code_change(down) -> O: ~w~n", [O]),
-	    ets:delete(megaco_config, text_config) %% Just in case
-    end,
-%     io:format("megaco_config:code_change(down) -> exit~n", []),
+
+code_change(_Vsn, S, _Extra) ->
     {ok, S};
 
-code_change(_Vsn, S, upgrade_from_pre_1_0_3) ->
-%     io:format("megaco_config:code_change(up) -> entry~n", []),
-    case ets:lookup(megaco_config, scanner) of
-	[{scanner, {[Conf], MFA}}] ->
-% 	    io:format("megaco_config:code_change(up) -> Conf: ~w, MFA: ~w~n", 
-% 		      [Conf, MFA]),
-	    ets:delete(megaco_config, scanner),
-	    ets:insert(megaco_config, {text_config, [Conf]});
-	O ->
-% 	    io:format("megaco_config:code_change(up) -> O: ~w~n", [O]),
-	    ets:delete(megaco_config, scanner),  %% Just in case
-	    ets:insert(megaco_config, {text_config, []})
-    end,
-%     io:format("megaco_config:code_change(up) -> exit~n", []),
+code_change(_Vsn, S, _Extra) ->
     {ok, S}.
 
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
 
+handle_start_user(default, _Config) ->
+    {error, bad_user_mid};
 handle_start_user(Mid, Config) ->
     case catch user_info(Mid, mid) of
         {'EXIT', _} ->
-            ok = do_update_user(Mid, min_trans_id,     	 1),
-            ok = do_update_user(Mid, max_trans_id,     	 infinity),
-            ok = do_update_user(Mid, request_timer,    	 #megaco_incr_timer{}),
-            ok = do_update_user(Mid, long_request_timer, infinity),
-            ok = do_update_user(Mid, auto_ack,         	 false),
-            ok = do_update_user(Mid, pending_timer,    	 timer:seconds(30)),
-            ok = do_update_user(Mid, reply_timer,      	 timer:seconds(30)),
-            ok = do_update_user(Mid, send_mod,         	 megaco_tcp),
-            ok = do_update_user(Mid, encoding_mod,     	 megaco_pretty_text_encoder),
-            ok = do_update_user(Mid, protocol_version, 	 1),
-            ok = do_update_user(Mid, auth_data,        	 asn1_NOVALUE),
-            ok = do_update_user(Mid, encoding_config,  	 []),
-            ok = do_update_user(Mid, user_mod,         	 megaco_user),
-            ok = do_update_user(Mid, user_args,        	 []),
-            ok = do_update_user(Mid, reply_data,       	 undefined),
+	    DefaultConfig = user_info(default, all),
+            do_handle_start_user(Mid, DefaultConfig),
             do_handle_start_user(Mid, Config);
-        _Local_Mid ->
+        _LocalMid ->
             {error, {user_already_exists, Mid}}
     end.
 
@@ -615,7 +607,7 @@ verify_int(Val)      -> verify_strict_int(Val).
 
 verify_int(Int, infinity) ->
     verify_int(Int);
-verify_int(infinity, Max) ->
+verify_int(infinity, _Max) ->
     true;
 verify_int(Int, Max) ->
     verify_strict_int(Int) and verify_strict_int(Max) and (Int =< Max).
@@ -724,7 +716,7 @@ handle_connect(RH, RemoteMid, SendHandle, ControlPid) ->
 				   {remote_mid, RemoteMid}]),
 		    {ok, ConnData}
 	    end;
-        [ConnData] ->
+        [_ConnData] ->
             {error, {already_connected, ConnHandle}}
     end.
 

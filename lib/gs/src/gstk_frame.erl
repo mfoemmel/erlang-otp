@@ -161,13 +161,13 @@ event(DB, Gstkid, Etype, Edata, Args) ->
 %%
 %% Return 	: A tuple {OptionType, OptionCmd}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-option(Option, Gstkid, TkW, DB,_) ->
+option(Option, Gstkid, _TkW, DB,_) ->
     case Option of
 	{bg,          Color} -> {s, [" -bg ", gstk:to_color(Color)]};
-	{packer_x, Pack} ->
+	{packer_x, _Pack} ->
             gstk_db:insert_opt(DB,Gstkid,Option),
 	    none;
-	{packer_y, Pack} ->
+	{packer_y, _Pack} ->
 	    gstk_db:insert_opt(DB,Gstkid,Option),
 	    none;
 	{width, W} ->
@@ -191,7 +191,7 @@ xpack(W,DB,Gstkid) ->
 	    pack_children(pack_x,x,width,DB,
 			  gstk_db:lookup_kids(DB,Gstkid#gstkid.id),
 			  ColSiz);
-	Else -> []
+	_Else -> []
     end.
 
 ypack(H,DB,Gstkid) ->
@@ -202,7 +202,7 @@ ypack(H,DB,Gstkid) ->
 	    pack_children(pack_y,y,height,DB,
 			  gstk_db:lookup_kids(DB,Gstkid#gstkid.id),
 			  ColSiz);
-	Else -> []
+	_Else -> []
     end.
 
 merge_pack_cmds([{Id,Opts1}|Cmds1],[{Id,Opts2}|Cmds2]) ->
@@ -241,7 +241,7 @@ find_pos(_StartPos,Pos,Pos,AccPixelPos,AccPixelSize,[Size|_]) ->
 find_pos(StartPos,StopPos,Pos,AccPixelPos,0,[Size|Sizes])
   when Pos < StartPos ->
     find_pos(StartPos,StopPos,Pos+1,Size+AccPixelPos,0,Sizes);
-find_pos(StartPos,StopPos,Pos,AccPixelPos,AccPixelSize,[Size|Sizes])
+find_pos(_StartPos,StopPos,Pos,AccPixelPos,AccPixelSize,[Size|Sizes])
   when Pos < StopPos ->
     find_pos(Pos,StopPos,Pos+1,AccPixelPos,Size+AccPixelSize,Sizes).
 
@@ -269,7 +269,7 @@ keep_packed([],_,_) ->
 %% Return 	: The value of the option or invalid_option
 %%		  [OptionValue | {bad_result, Reason}]
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-read_option(Option,Gstkid,TkW,DB,_) -> 
+read_option(Option,Gstkid,TkW,_DB,_) -> 
     case Option of
 	bg            -> tcl2erl:ret_color([TkW," cg -bg"]);
 	_ -> {bad_result, {Gstkid#gstkid.objtype, invalid_option, Option}}

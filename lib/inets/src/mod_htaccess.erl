@@ -1,89 +1,58 @@
+%% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%% 
+%%     $Id$
+%%
+
 -module(mod_htaccess).
--export([do/1,load/2]).
+
+-export([do/1, load/2]).
 -export([debug/0]).
+
 -include("httpd.hrl").
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Debug methods                                                     %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%      
-%----------------------------------------------------------------------
-% Simulate the webserver by calling do/1 with apropiate parameters
-%----------------------------------------------------------------------
-debug()->
-    Conf=getConfigData(),
-    Uri=getUri(),
-    {_Proceed,Data}=getDataFromAlias(Conf,Uri),
-    Init_data=#init_data{peername={socket,"127.0.0.1"}},
-    ParsedHeader=headerparts(),
-    do(#mod{init_data=Init_data,
-	    data=Data,
-	    config_db=Conf,
-	    request_uri=Uri,
-	    parsed_header=ParsedHeader,
-	   method="GET"}).
-	    
-%----------------------------------------------------------------------
-%Add authenticate data to the fake http-request header
-%----------------------------------------------------------------------
-headerparts()->
-    [{"Authorization","Basic " ++ httpd_util:encode_base64("lotta:potta")}].
 
-getDataFromAlias(Conf,Uri)->
-    mod_alias:do(#mod{config_db=Conf,request_uri=Uri}).
-
-getUri()->
-    "/appmon/test/test.html".
-
-getConfigData()->
-    Tab=ets:new(test_inets,[bag,public]),
-    ets:insert(Tab,{server_name,"localhost"}),
-    ets:insert(Tab,{bind_addresss,{127,0,0,1}}),
-    ets:insert(Tab,{erl_script_alias,{"/webcover/erl",["webcover"]}}),
-    ets:insert(Tab,{erl_script_alias,{"/erl",["webappmon"]}}),
-    ets:insert(Tab,{com_type,ip_comm}),
-    ets:insert(Tab,{modules,[mod_alias,mod_auth,mod_header]}),
-    ets:insert(Tab,{default_type,"text/plain"}),
-    ets:insert(Tab,{server_root,
-		    "/home/gandalf/marting/exjobb/webtool-1.0/priv/root"}),
-    ets:insert(Tab,{port,8888}),
-    ets:insert(Tab,{document_root,
-		    "/home/gandalf/marting/exjobb/webtool-1.0/priv/root"}),
-    ets:insert(Tab,
-	       {alias,
-		{"/appmon"
-		 ,"/home/gandalf/marting/exjobb/webappmon-1.0/priv"}}),
-    ets:insert(Tab,{alias,
-		    {"/webcover"
-		     ,"/home/gandalf/marting/exjobb/webcover-1.0/priv"}}),
-    ets:insert(Tab,{access_file,[".htaccess","kalle","pelle"]}),
-    Tab.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Public methods  that interface the eswapi                         %%
+%% Public methods that interface the eswapi                         %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
+
 %----------------------------------------------------------------------
-%Public method called by the webbserver to insert the data about
-%Names on accessfiles
+% Public method called by the webbserver to insert the data about
+% Names on accessfiles
 %----------------------------------------------------------------------
 load([$A,$c,$c,$e,$s,$s,$F,$i,$l,$e,$N,$a,$m,$e|FileNames],Context)->
     CleanFileNames=httpd_conf:clean(FileNames),
     %%io:format("\n The filenames is:" ++ FileNames ++ "\n"),
     {ok,[],{access_files,string:tokens(CleanFileNames," ")}}.
 
+
 %----------------------------------------------------------------------
-%Public method that the webbserver calls to control the page 
+% Public method that the webbserver calls to control the page 
 %----------------------------------------------------------------------
-%Klar                                                     
 do(Info)->
     case httpd_util:key1search(Info#mod.data,status) of
 	{Status_code,PhraseArgs,Reason}->
 	    {proceed,Info#mod.data};
-	undefined->
-	    controlPath(Info)
+	undefined ->
+	    control_path(Info)
     end.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                  %%
-%%The functions that start the control if there is a accessfile     %%
+%% The functions that start the control if there is a accessfile    %%
 %% and if so controls if the dir is allowed or not                  %%
 %%                                                                  %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -94,9 +63,10 @@ do(Info)->
 %{proceed,[{status,401....}|Info#mod.data]}
 %{proceed,[{status,500....}|Info#mod.data]}
 %----------------------------------------------------------------------
-controlPath(Info)->
-    Path=mod_alias:path(Info#mod.data,Info#mod.config_db,
-			Info#mod.request_uri),
+control_path(Info) ->
+    Path = mod_alias:path(Info#mod.data,
+			  Info#mod.config_db,
+			  Info#mod.request_uri),
     case isErlScriptOrNotAccessibleFile(Path,Info) of
 	true->
 	    {proceed,Info#mod.data};
@@ -112,6 +82,7 @@ controlPath(Info)->
 		    controlAllowedMethod(Info,AccessData)
 	    end
     end.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                  %%
@@ -145,6 +116,8 @@ allowedRequestMethod(Info,AccessData)->
 	[{limit,Methods}]->
 	    isLimitedRequestMethod(Info,Methods)
     end.
+
+
 %----------------------------------------------------------------------
 %Check the specified accessmethods in the .htaccesfile against the users 
 %accessmethod
@@ -159,6 +132,8 @@ isLimitedRequestMethod(Info,Methods)->
 	false ->
 	    allow
     end.
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                  %%
 %% These methods controls that the user comes from an allowwed net  %%
@@ -181,6 +156,8 @@ authenticateUser(Info,AccessData)->
 	    {proceed,[{status,{403,Info#mod.request_uri,
 	    "Restricted area not allowed from your network"}}|Info#mod.data]}
     end.
+
+
 %----------------------------------------------------------------------
 %The network the user comes from is allowed to view the resources 
 %control whether the user needsto supply a password or not 
@@ -202,6 +179,8 @@ authenticateUser2(Info,AccessData)->
 	    ets:delete(AccessData),
 	    {proceed,Info#mod.data}
     end.
+
+
 %----------------------------------------------------------------------
 %The user must send a userId and a password to get the resource
 %Control if its already in the http-request
@@ -265,12 +244,16 @@ controlNet(Info,AccessData)->
 	{allow,AllowedNetworks,deny,DeniedNetworks}->		 
 	    controlAllowDeny(AllowedNetworks,DeniedNetworks,UserNetwork)
     end.
+
+
 %----------------------------------------------------------------------
 %Returns the users IP-Number
 %----------------------------------------------------------------------
 getUserNetworkAddress(Info)->
     {_Socket,Address}=(Info#mod.init_data)#init_data.peername,
     Address.
+
+
 %----------------------------------------------------------------------
 %Control the users Ip-number against the ip-numbers in the .htaccessfile
 %----------------------------------------------------------------------
@@ -287,6 +270,8 @@ controlIfAllowed(AllowedNetworks,UserNetwork,IfAllowed,IfDenied)->
 	_Error->
 	    IfDenied
     end.
+
+
 %---------------------------------------------------------------------%
 %The Denycontrol isn't neccessary to preform since the allow control  %
 %override the deny control                                            %
@@ -303,6 +288,8 @@ controlDenyAllow(DeniedNetworks,AllowedNetworks,UserNetwork)->
 		  deny
 	  end
     end.
+
+
 %----------------------------------------------------------------------%
 %Control that the user is in the allowed list if so control that the   %
 %network is in the denied list                             
@@ -326,6 +313,8 @@ memberNetwork(Networks,UserNetwork,IfTrue,IfFalse)->
 	false->
 	    IfFalse
     end.
+
+
 %----------------------------------------------------------------------
 %regexp match the users ip-address against the networks in the list of 
 %ipadresses or subnet addresses.
@@ -345,6 +334,7 @@ memberNetwork(Networks,UserNetwork)->
 	    true
     end.
 
+
 %----------------------------------------------------------------------
 %Creates a regexp from an ip-number i.e "127.0.0-> "^127[.]0[.]0.*"
 %"127.0.0.-> "^127[.]0[.]0[.].*"
@@ -361,6 +351,7 @@ formatRegexp(Net)->
 	    NetRegexp++".*"
     end.
 
+
 %----------------------------------------------------------------------
 %If the user has specified if the allow or deny check shall be preformed
 %first get that order if no order is specified take 
@@ -376,6 +367,7 @@ getAllowDenyOrder(AccessData)->
 	     deny,ets:lookup(AccessData,deny)}
     end.
                                                                       
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                  %%
 %% The methods that validates the user                              %%
@@ -397,12 +389,13 @@ authenticateUser(Info,AccessData,AllowedUsers)->
 	    challenge 
     end.
 
+
 %----------------------------------------------------------------------
 %Returns the Autheticating data in the http-request
 %----------------------------------------------------------------------
 getAuthenticatingDataFromHeader(Info)->              
     PrsedHeader=Info#mod.parsed_header,
-    case httpd_util:key1search(PrsedHeader,"Authorization" ) of
+    case httpd_util:key1search(PrsedHeader,"authorization" ) of
 	undefined->
 	    {error,nouser};
 	[$B,$a,$s,$i,$c,$\ |EncodedString]->
@@ -416,6 +409,8 @@ getAuthenticatingDataFromHeader(Info)->
 	BadCredentials ->
 	    {error,BadCredentials}
     end.
+
+
 %----------------------------------------------------------------------
 %Returns a list of all members of the allowed groups
 %----------------------------------------------------------------------
@@ -451,6 +446,7 @@ authenticateUser(Info,AccessData,{{users,Users},{groups,Groups}},User)->
 	    deny
     end;
     
+
 %----------------------------------------------------------------------
 %Controls that the user is a member in one of the allowed group
 %----------------------------------------------------------------------
@@ -467,6 +463,8 @@ authenticateUser(Info,AccessData,{groups,AllowedGroups},{user,User,PassWord})->
 	{error,BadData}->
 	    deny
     end;
+
+
 %----------------------------------------------------------------------
 %Control that the user is one of the allowed users and that the passwd is ok
 %----------------------------------------------------------------------
@@ -486,6 +484,7 @@ authenticateUser(Info,AccessData,{users,AllowedUsers},{user,User,PassWord})->
 	    challenge
     end.
 
+
 %----------------------------------------------------------------------
 %Control that the user User={user,"UserName","PassWd"} is
 %member of the list of Users
@@ -497,6 +496,7 @@ checkPassWord(Users,User)->
 	false->
 	    challenge
     end.
+
 
 %----------------------------------------------------------------------
 %Get the users in the specified file
@@ -510,6 +510,8 @@ getUsers({file,FileName},UserOrGroup)->
         {error,Reason} ->
 	    {error,{Reason,FileName}}
     end;
+
+
 %----------------------------------------------------------------------
 %The method that starts the lokkong for user files
 %----------------------------------------------------------------------
@@ -522,6 +524,7 @@ getUsers(AccessData,UserOrGroup)->
 	    {error,noUsers}
     end.
     
+
 %----------------------------------------------------------------------
 %Reads data from the filehandle File to the list FileData and when its
 %reach the end it returns the list in a tuple {user_file|group_file,FileData}
@@ -536,12 +539,14 @@ getUsers({stream,File},FileData,UserOrGroup)->
 	    getUsers({stream,File},
 		     formatUser(Line,FileData,UserOrGroup),UserOrGroup)
     end.
+
                                                                       
 %----------------------------------------------------------------------
 %If the line is a comment remove it
 %----------------------------------------------------------------------
 formatUser([$#|UserDataComment],FileData,_UserOrgroup)->
     FileData;
+
 
 %----------------------------------------------------------------------
 %The user name in the file is Username:Passwd\n 
@@ -562,12 +567,16 @@ formatUser(UserData,FileData,UserOrGroup)->
 	_Error ->
 	    FileData
     end.
+
+
 %----------------------------------------------------------------------
 %if everything is right GroupData is on the form
 % ["groupName:", "Member1", "Member2", "Member2"
 %----------------------------------------------------------------------
 parseGroupData([GroupName|GroupData],FileData)->
     [{group,formatGroupName(GroupName),GroupData}|FileData].
+
+
 %----------------------------------------------------------------------
 %the line in the file is GroupName: Member1 Member2 .....MemberN
 %Remove the : from the group name
@@ -578,7 +587,7 @@ formatGroupName(GroupName)->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                  %%
-%%  Functions that parses the accessfiles                          %%
+%%  Functions that parses the accessfiles                           %%
 %%                                                                  %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %----------------------------------------------------------------------
@@ -592,7 +601,6 @@ isErlScriptOrNotAccessibleFile(Path,Info)->
 	{error,_Reason} ->
 	    true
     end.
-
 
 
 %----------------------------------------------------------------------
@@ -609,6 +617,7 @@ getHtAccessData(Path,Info)->
 	{error,Reason} ->
 	    {error,Reason}
     end.
+
 
 %----------------------------------------------------------------------
 %returns the names of the accessfiles
@@ -631,6 +640,7 @@ getData(Path,Info,HtAccessFileNames)->
 	    getData2(HtAccessFileNames,SplittedPath,Info)
 	end.
 
+
 %----------------------------------------------------------------------
 %Add to together the data in the Splittedpath up to the path 
 %that is the alias or the document root
@@ -643,6 +653,8 @@ getData2(HtAccessFileNames,SplittedPath,Info)->
 	{ok,StartPath,RestOfSplittedPath} ->
 	    getData2(HtAccessFileNames,StartPath,RestOfSplittedPath,Info)
     end.
+
+
 %----------------------------------------------------------------------
 %HtAccessFilenames is a list the names the accesssfiles can have
 %Path is the shortest match agains all alias and documentroot
@@ -658,6 +670,7 @@ getData2(HtAccessFileNames,StartPath,RestOfSplittedPath,Info)->
 	    loadAccessFilesData(Files)
     end.
 
+
 %----------------------------------------------------------------------
 %Loads the data in the accessFiles specifiied by 
 % AccessFiles=["/hoem/public/html/accefile",
@@ -665,6 +678,7 @@ getData2(HtAccessFileNames,StartPath,RestOfSplittedPath,Info)->
 %----------------------------------------------------------------------
 loadAccessFilesData(AccessFiles)->
     loadAccessFilesData(AccessFiles,ets:new(accessData,[])).
+
 
 %----------------------------------------------------------------------
 %Returns the found data
@@ -678,6 +692,7 @@ contextToValues(AccessData)->
 	_Error->
 	    {error,errorInAccessFile}
     end.
+
 
 insertContext(AccessData,[])->
     ok;
@@ -714,7 +729,6 @@ insertContext(AccessData,[Elem|Values])->
     ets:insert(AccessData,Elem),
     insertContext(AccessData,Values).
     
-
 
 insertDenyAllowContext(AccessData,{AllowDeny,From})->
     case From of
@@ -943,8 +957,10 @@ getLimits(Limits)->
 	{error,_Error}->
 	    error
     end.
+
+
 %----------------------------------------------------------------------
-%Transform the order to prefrom deny allow control to a tuple of atoms
+% Transform the order to prefrom deny allow control to a tuple of atoms
 %----------------------------------------------------------------------
 getOrder(Order)->
     [First|Rest]=lists:map(fun(Part)->
@@ -958,8 +974,9 @@ getOrder(Order)->
 	_Error->
 	    error
     end.
+
 %----------------------------------------------------------------------
-%The string AllowDeny is "from all" or "from Subnet1 Subnet2...SubnetN"
+% The string AllowDeny is "from all" or "from Subnet1 Subnet2...SubnetN"
 %----------------------------------------------------------------------
 getAllowDenyData(AllowDeny)->
     case string:tokens(AllowDeny," \n\r") of
@@ -974,7 +991,7 @@ getAllowDenyData(AllowDeny)->
 	    errror
     end.
 %----------------------------------------------------------------------
-%Fix the string that describes who is allowed to se the page
+% Fix the string that describes who is allowed to se the page
 %----------------------------------------------------------------------
 getRequireData(Require)->
     [UserOrGroup|UserData]=string:tokens(Require," \n\r"),
@@ -986,14 +1003,16 @@ getRequireData(Require)->
 	_Whatever ->
 	    error
     end.
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                  %%
-% Methods that collects the searchways to the accessfiles            %%
+%% Methods that collects the searchways to the accessfiles          %%
 %%                                                                  %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %----------------------------------------------------------------------
-%Get the whole path to the different accessfiles
+% Get the whole path to the different accessfiles
 %----------------------------------------------------------------------	
 getHtAccessFiles(HtAccessFileNames,Path,RestOfSplittedPath)->
     getHtAccessFiles(HtAccessFileNames,Path,RestOfSplittedPath,[]).
@@ -1060,6 +1079,61 @@ getRootPath(PresumtiveRootPath,[Part],Info)->
 	    {error,Part}
     end.
 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%Debug methods                                                     %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%      
+%----------------------------------------------------------------------
+% Simulate the webserver by calling do/1 with apropiate parameters
+%----------------------------------------------------------------------
+debug()->
+    Conf=getConfigData(),
+    Uri=getUri(),
+    {_Proceed,Data}=getDataFromAlias(Conf,Uri),
+    Init_data=#init_data{peername={socket,"127.0.0.1"}},
+    ParsedHeader=headerparts(),
+    do(#mod{init_data=Init_data,
+	    data=Data,
+	    config_db=Conf,
+	    request_uri=Uri,
+	    parsed_header=ParsedHeader,
+	   method="GET"}).
+	    
+%----------------------------------------------------------------------
+%Add authenticate data to the fake http-request header
+%----------------------------------------------------------------------
+headerparts()->
+    [{"authorization","Basic " ++ httpd_util:encode_base64("lotta:potta")}].
+
+getDataFromAlias(Conf,Uri)->
+    mod_alias:do(#mod{config_db=Conf,request_uri=Uri}).
+
+getUri()->
+    "/appmon/test/test.html".
+
+getConfigData()->
+    Tab=ets:new(test_inets,[bag,public]),
+    ets:insert(Tab,{server_name,"localhost"}),
+    ets:insert(Tab,{bind_addresss,{127,0,0,1}}),
+    ets:insert(Tab,{erl_script_alias,{"/webcover/erl",["webcover"]}}),
+    ets:insert(Tab,{erl_script_alias,{"/erl",["webappmon"]}}),
+    ets:insert(Tab,{com_type,ip_comm}),
+    ets:insert(Tab,{modules,[mod_alias,mod_auth,mod_header]}),
+    ets:insert(Tab,{default_type,"text/plain"}),
+    ets:insert(Tab,{server_root,
+		    "/home/gandalf/marting/exjobb/webtool-1.0/priv/root"}),
+    ets:insert(Tab,{port,8888}),
+    ets:insert(Tab,{document_root,
+		    "/home/gandalf/marting/exjobb/webtool-1.0/priv/root"}),
+    ets:insert(Tab,
+	       {alias,
+		{"/appmon"
+		 ,"/home/gandalf/marting/exjobb/webappmon-1.0/priv"}}),
+    ets:insert(Tab,{alias,
+		    {"/webcover"
+		     ,"/home/gandalf/marting/exjobb/webcover-1.0/priv"}}),
+    ets:insert(Tab,{access_file,[".htaccess","kalle","pelle"]}),
+    Tab.
 
 
 

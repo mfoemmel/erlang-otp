@@ -17,39 +17,40 @@
 #     $Id$
 #
 use strict;
-use File::Basename;
 
 # Create the file erl_version.h
 #
 # Usage:
-#    make_version [ -o outputfile ] version-specifier
+#    make_version [ -o outputfile ] version architecture
 #
 # Output goes to ./erl_version.h (or to "outputfile" if specified)
 #
 
-my $progname = basename($0);
-my $outputfile = "./erl_version.h";
+my $time_str   = localtime;
+my $outputfile = "erl_version.h";
 
-while (@ARGV && $ARGV[0] =~ /^-(\w+)/) {
-    my $opt = shift;
-    if ($opt eq '-o') {
-	$outputfile = shift;
-	die "No output file specified" unless defined $outputfile;
-    } else {
-	usage("bad option: $opt");
-    }
+@ARGV or die "No arguments given to 'make_version'";
+
+if ($ARGV[0] eq '-o') {
+  shift;			# Remove -o
+  $outputfile = shift;
+  defined $outputfile or die "No output file specified";
 }
 
 my $version = shift;
-die "No version name specified" unless defined $version;
-my $time_str = localtime;
+defined $version or die "No version name specified";
 
-open(FILE, ">$outputfile") || die "Couldn't create $outputfile";
+my $architecture = shift;
+defined $architecture or die "No architecture specified";
+$architecture =~ s&^.*[/\\]&&;	# Remove directory part if any
+
+open(FILE, ">$outputfile") or die "Can't create $outputfile: $!";
 
 print FILE <<EOF;
-/* This file was created by $progname -- don't modify. */
+/* This file was created by 'make_version' -- don't modify. */
 #define ERLANG_VERSION "$version"
 #define ERLANG_COMPILE_DATE "$time_str"
+#define ERLANG_ARCHITECTURE "$architecture"
 EOF
 
 close(FILE);

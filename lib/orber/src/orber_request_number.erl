@@ -30,6 +30,8 @@
 
 -behaviour(gen_server).
 
+-include_lib("orber/src/orber_iiop.hrl").
+
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
@@ -62,10 +64,10 @@ init(Opts) ->
 terminate(Reason, State) ->
 	    ok.
 %% Max is ulong 0 .. 2^32-1
-handle_call(get, From, State) when State < 4294967295 ->
+handle_call(get, From, State) when State < ?ULONGMAX ->
     {reply, State, State+1};
 handle_call(get, From, State) ->
-    {reply, 0, 0};
+    {reply, ?ULONGMAX, 0};
 handle_call(reset, From, State) ->
     {reply, ok, 0}.
 

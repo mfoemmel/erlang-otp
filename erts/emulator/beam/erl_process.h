@@ -21,10 +21,13 @@
 
 #include "erl_message.h"
 #include "erl_process_dict.h"
+#include "erl_node_tables.h"
 
 #ifdef HIPE
 #include "hipe_process.h"
 #endif
+
+#define ERTS_DEFAULT_MAX_PROCESSES (1 << 15)
 
 /*
 ** Timer entry:
@@ -56,23 +59,42 @@ struct saved_calls {
    Export *ct[1];
 };
 
+#ifndef HEAP_FRAG_ELIM_TEST
+# define ERTS_SSB_PUT(p, a) do { } while(0)
+#else
+/*
+ * Sequentical Store Buffer used to implement a write barrier for vector
+ * operations.
+ */
+typedef struct erl_ssb {
+    Eterm** next;
+    Eterm** end;
+    Eterm* buf[1];
+} ErlSSB;
+
+#define ERTS_SSB_PUT(p, a)			\
+  if ((p)->ssb->next < (p)->ssb->end) {		\
+    *(p)->ssb->next++ = (a);			\
+  } else {					\
+    erts_ssb_expand_put((p), (a));		\
+  }
+#endif
+
 extern Export exp_send, exp_receive, exp_timeout;
 
 typedef struct process {
     Eterm* htop;		/* Heap top */
     Eterm* stop;		/* Stack top */
-#ifdef UNIFIED_HEAP
-    Eterm* hend;                /* Heap end */
-    Eterm* stack;               /* Stack start */
-    Eterm* send;                /* Stack end */
-    Uint stack_sz;              /* Size of stack in words */
-    Uint min_heap_size;         /* Minimum size of heap (in words). */
-    Uint active;                /* Active since last fullsweep? */
-#else
     Eterm* heap;		/* Heap start */
     Eterm* hend;		/* Heap end */
     Uint heap_sz;		/* Size of heap in words */
-    Uint min_heap_size;		/* Minimum size of heap (in words). */
+    Uint min_heap_size;         /* Minimum size of heap (in words). */
+#ifdef SHARED_HEAP
+    Eterm* stack;               /* Stack start */
+    Eterm* send;                /* Stack end */
+    Uint stack_sz;              /* Size of stack in words */
+    Uint active;                /* Active since last fullsweep? */
+#else
     Uint16 gen_gcs;		/* Number of (minor) generational GCs. */
     Uint16 max_gen_gcs;		/* Max minor gen GCs before fullsweep. */
 #endif
@@ -83,7 +105,10 @@ typedef struct process {
     struct hipe_process_state hipe;
 #endif
 
-#ifndef UNIFIED_HEAP
+    /* XXX: It would be highly advantageous for HiPE/x86 to also have
+       the arity, def_arg_reg, i, and fcalls fields here at low offsets. */
+
+#ifndef SHARED_HEAP
     /*
      * Heap pointers for generational GC.
      */
@@ -102,21 +127,25 @@ typedef struct process {
     int    prio;		/* Priority of process */
     Uint reds;			/* No of reductions for this process  */
     Eterm error_handler;	/* Module atom for the error handler */
-    Eterm tracer_proc;		/* If proc is traced, this is the tracer */
-    Eterm group_leader;		/* Pid in charge */
+    Eterm tracer_proc;		/* If proc is traced, this is the tracer
+				   (can NOT be boxed) */
+    Eterm group_leader;		/* Pid in charge
+				   (can be boxed) */
     Uint flags;			/* Trap exit, trace  flags etc */
     Eterm fvalue;		/* Exit & Throw value (failure reason) */
-    Uint freason;	    /* Reason for detected failure */
+    Uint freason;		/* Reason for detected failure */
     Sint fcalls;		/* 
 				 * Number of reductions left to execute.
 				 * Only valid for the current process.
 				 */
-    int    dslot;		/* Distribution slot to use if F_DISTRIBUTION */
+    DistEntry *dist_entry;	/* Distribution slot to use if F_DISTRIBUTION */
 
     ErlTimer tm;		/* Timer entry */
 
     struct process *next;	/* Pointer to next process in list */
+#ifndef SHARED_HEAP
     ErlOffHeap off_heap;	/* Off-heap data updated by copy_struct(). */
+#endif
     struct reg_proc *reg;	/* NULL iff not registered */
     Eterm reg_atom;		/* atom for formerly registered name, */
 				/* when exiting */
@@ -124,8 +153,9 @@ typedef struct process {
     struct erl_link* links;         /* List of links */
 
     ErlMessageQueue msg;	/* Message queue */
-#ifndef UNIFIED_HEAP
+#ifndef SHARED_HEAP
     ErlHeapFragment* mbuf;	/* Pointer to message buffer list */
+    ErlHeapFragment* halloc_mbuf; /* Pointer to first HAlloc() mbuf */
     Uint mbuf_sz;		/* Size of all message buffers */
 #endif
 
@@ -152,11 +182,18 @@ typedef struct process {
     /*
      * Secondary heap for arithmetic operations.
      */
+#ifndef HEAP_FRAG_ELIM_TEST
+    Eterm* saved_htop;		/* Saved HTOP. */
+#endif
+
+#ifndef SHARED_HEAP
     Eterm* arith_heap;		/* Current heap pointer. */
     Uint arith_avail;		/* Available space on arithmetic heap. */
-#ifdef DEBUG
-    char* arith_file;		/* Filename of last ArithAlloc(). */
-    int arith_line;		/* And linenumber. */
+    Eterm* arith_lowest_htop;
+#endif
+#if (defined(DEBUG) || defined(PURIFY)) && !defined(SHARED_HEAP)
+    char* arith_file;
+    int arith_line;
     Eterm* arith_check_me;	/* Address to check for overwrite. */
 #endif
 
@@ -168,48 +205,29 @@ typedef struct process {
 				 */
     Eterm* arg_reg;		/* Pointer to argument registers. */
     unsigned max_arg_reg;	/* Maximum number of argument registers available. */
+#if defined(HIPE) && defined(__sparc__)
+    Eterm def_arg_reg[16];	/* Default array for argument registers. */
+#else
     Eterm def_arg_reg[6];	/* Default array for argument registers. */
+#endif
+
+#ifdef HEAP_FRAG_ELIM_TEST
+    ErlSSB* ssb;		/*
+				 * Sequential store buffer. NULL if no vectors
+				 * in this process.
+				 */
+#endif
 } Process;
 
-#ifdef UNIFIED_HEAP
-/*
- * Macros to store live processes in the active_procs array.
- * The array is used in GC and the macros are called from erl_message.c
- * and erl_process.c
- */
-
-#define ADD_TO_ROOTSET(p) \
-do { \
-    int active_index = 0; \
-    while ((active_procs[active_index] != NULL) && \
-           (active_procs[active_index] != (Process*)NIL) && \
-           (active_procs[active_index] != p)) \
-    { \
-        active_index++; \
-    }  \
-    if (active_procs[active_index] != p) \
-    { \
-        if (active_procs[active_index] == NULL) \
-            active_procs[active_index+1] = NULL; \
-        active_procs[active_index] = p; \
-    } \
-} while(0)
-
-#define REMOVE_FROM_ROOTSET(p) \
-do { \
-    int active_index = 0; \
-    while ((active_procs[active_index] != NULL) && \
-           (active_procs[active_index] != p)) \
-    { \
-        active_index++;  \
-    } \
-    if (active_procs[active_index] != NULL) \
-      active_procs[active_index] = (Process*)NIL; \
-} while (0)
+#ifdef HEAP_FRAG_ELIM_TEST
+void erts_ensure_ssb(Process* p);
+void erts_ssb_expand_put(Process* p, Eterm* addr);
+#else
+# define erts_ensure_ssb(p) (FLAGS(p) |= F_NEED_FULLSWEEP)
 #endif
 
 /*
- * The MBUF_GC_FACTOR descides how easily a process is subject to GC 
+ * The MBUF_GC_FACTOR decides how easily a process is subject to GC 
  * due to message buffers allocated outside the heap.
  * The larger the factor, the easier the process gets GCed.
  * On a small memory system with lots of processes, this makes a significant 
@@ -285,19 +303,25 @@ typedef struct {
 
 #define KILL_CATCHES(p) (p)->catches = -1
 
-extern Eterm* arith_alloc(Process* p, Uint need);
+Eterm* erts_arith_alloc(Process* p, Eterm* htop, Uint need);
+Eterm* erts_heap_alloc(Process* p, Uint need);
+#ifdef SHARED_HEAP
+Eterm* erts_global_alloc(Uint need);
+#endif
 
 extern Process** process_tab;
-#ifdef UNIFIED_HEAP
-extern Process** active_procs;
+#ifdef SHARED_HEAP
+extern Uint erts_num_active_procs;
+extern Process** erts_active_procs;
 #endif
-extern Uint max_process;
+extern Uint erts_max_processes;
+Uint erts_process_tab_index_mask;
 extern Uint erts_default_process_flags;
 extern Eterm erts_default_tracer;
 
-#define INVALID_PID(p, pid) (p == NULL || \
-			     p->id != pid || \
-			     p->status == P_EXITING)
+#define INVALID_PID(p, pid)	((p) == NULL				\
+				 || (p)->id != (pid)			\
+				 || (p)->status == P_EXITING)
 
 /* Invalidate trace port if anything suspicious, for instance
  * that the port is a distribution port or it is busy.
@@ -341,7 +365,7 @@ extern Eterm erts_default_tracer;
 #define F_TRACE_ARITY_ONLY   (1 << 19)
 #define F_TRACE_RETURN_TO    (1 << 20) /* Return_to trace when breakpoint tracing */
 #define F_TRACE_SILENT       (1 << 21) /* No call trace msg suppress */
-#define F_DEFAULT_TRACER     (1 << 22) /* May be (has been) default tracer */
+#define F_TRACER             (1 << 22) /* May be (has been) tracer */
 
 #define TRACE_FLAGS (  F_TRACE_PROCS | F_TRACE_CALLS \
 		     | F_TRACE_SOS |  F_TRACE_SOS1| F_TRACE_RECEIVE  \
@@ -377,9 +401,8 @@ void init_scheduler(void);
 int  sched_q_len(void);
 void add_to_schedule_q(Process*);
 int  remove_proc_from_sched_q(Process*);
-int  schedule(void);
+Process *schedule(Process*, int);
 Eterm erl_create_process(Process*, Eterm, Eterm, Eterm, ErlSpawnOpts*);
-void delete_process(Process*);
 void schedule_exit(Process*, Eterm);
 void do_exit(Process*, Eterm);
 void set_timer(Process*, Uint);
@@ -389,5 +412,6 @@ void process_info_zombies(CIO);
 
 void erts_init_empty_process(Process *p);
 void erts_cleanup_empty_process(Process* p);
+void erts_stack_dump(Process *, CIO);
 
 #endif

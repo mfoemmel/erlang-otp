@@ -30,7 +30,7 @@
 %% speed.  The same applies when contracting the segments.
 %%
 %% Note that as the order of the keys is undefined we may freely
-%% reorder keys within in a bucket.
+%% reorder keys within a bucket.
 
 -module(dict).
 
@@ -84,9 +84,9 @@ is_key(Key, D) ->
     Bkt = get_bucket(D, Slot),
     find_key(Key, Bkt).
 
-find_key(K, [?kv(K,Val)|Bkt]) -> true;
+find_key(K, [?kv(K,_Val)|_]) -> true;
 find_key(K, [_|Bkt]) -> find_key(K, Bkt);
-find_key(K, []) -> false.
+find_key(_, []) -> false.
 
 %% to_list(Dictionary) -> [{Key,Value}].
 
@@ -109,7 +109,7 @@ fetch(Key, D) ->
     Bkt = get_bucket(D, Slot),
     fetch_val(Key, Bkt).
 
-fetch_val(K, [?kv(K,Val)|Bkt]) -> Val;
+fetch_val(K, [?kv(K,Val)|_]) -> Val;
 fetch_val(K, [_|Bkt]) -> fetch_val(K, Bkt).
 
 %% find(Key, Dictionary) -> {ok,Value} | error.
@@ -119,14 +119,14 @@ find(Key, D) ->
     Bkt = get_bucket(D, Slot),
     find_val(Key, Bkt).
 
-find_val(K, [?kv(K,Val)|Bkt]) -> {ok,Val};
+find_val(K, [?kv(K,Val)|_]) -> {ok,Val};
 find_val(K, [_|Bkt]) -> find_val(K, Bkt);
-find_val(K, []) -> error.
+find_val(_, []) -> error.
 
 %% fetch_keys(Dictionary) -> [Key].
 
 fetch_keys(D) ->
-    fold(fun (Key, Val, Keys) -> [Key|Keys] end, [], D).
+    fold(fun (Key, _Val, Keys) -> [Key|Keys] end, [], D).
 
 %% erase(Key, Dictionary) -> NewDictionary.
 %%  Erase all elements with key Key.
@@ -137,11 +137,11 @@ erase(Key, D0) ->
 			D0, Slot),
     maybe_contract(D1, Dc).
 
-erase_key(Key, [?kv(Key,Val)|Bkt]) -> {Bkt,1};
+erase_key(Key, [?kv(Key,_Val)|Bkt]) -> {Bkt,1};
 erase_key(Key, [E|Bkt0]) ->
     {Bkt1,Dc} = erase_key(Key, Bkt0),
     {[E|Bkt1],Dc};
-erase_key(Key, []) -> {[],0}.
+erase_key(_, []) -> {[],0}.
 
 %% store(Key, Value, Dictionary) -> Dictionary.
 
@@ -153,7 +153,7 @@ store(Key, Val, D0) ->
 
 %% store_bkt_val(Key, Val, Bucket) -> {NewBucket,PutCount}.
 
-store_bkt_val(Key, New, [?kv(Key,Old)|Bkt]) -> {[?kv(Key,New)|Bkt],0};
+store_bkt_val(Key, New, [?kv(Key,_Old)|Bkt]) -> {[?kv(Key,New)|Bkt],0};
 store_bkt_val(Key, New, [Other|Bkt0]) ->
     {Bkt1,Ic} = store_bkt_val(Key, New, Bkt0),
     {[Other|Bkt1],Ic};
@@ -249,7 +249,7 @@ app_list_bkt(Key, L, []) -> {[?kv(Key,L)],1}.
 
 update(Key, F, D0) ->
     Slot = get_slot(D0, Key),
-    {D1,Uv} = on_bucket(fun (B0) -> update_bkt(Key, F, B0) end,
+    {D1,_Uv} = on_bucket(fun (B0) -> update_bkt(Key, F, B0) end,
 			D0, Slot),
     D1.
 
@@ -268,12 +268,12 @@ update(Key, F, Init, D0) ->
 			D0, Slot),
     maybe_expand(D1, Ic).
 
-update_bkt(Key, F, I, [?kv(Key,Val)|Bkt]) ->
+update_bkt(Key, F, _, [?kv(Key,Val)|Bkt]) ->
     {[?kv(Key,F(Val))|Bkt],0};
 update_bkt(Key, F, I, [Other|Bkt0]) ->
     {Bkt1,Ic} = update_bkt(Key, F, I, Bkt0),
     {[Other|Bkt1],Ic};
-update_bkt(Key, F, I, []) -> {[?kv(Key,I)],1}.
+update_bkt(Key, _, I, []) -> {[?kv(Key,I)],1}.
 
 %% update_counter(Key, Incr, Dictionary) -> Dictionary.
 
@@ -367,15 +367,15 @@ fold_dict(F, Acc, D) ->
 fold_segs(F, Acc, Segs, I) when I >= 1 ->
     Seg = element(I, Segs),
     fold_segs(F, fold_seg(F, Acc, Seg, size(Seg)), Segs, I-1);
-fold_segs(F, Acc, Segs, I) -> Acc.
+fold_segs(_, Acc, _, _) -> Acc.
 
 fold_seg(F, Acc, Seg, I) when I >= 1 ->
     fold_seg(F, fold_bucket(F, Acc, element(I, Seg)), Seg, I-1);
-fold_seg(F, Acc, Seg, I) -> Acc.
+fold_seg(_, Acc, _, _) -> Acc.
 
 fold_bucket(F, Acc, [?kv(Key,Val)|Bkt]) ->
     fold_bucket(F, F(Key, Val, Acc), Bkt);
-fold_bucket(F, Acc, []) -> Acc.
+fold_bucket(_, Acc, []) -> Acc.
 
 map_dict(F, D) ->
     Segs0 = tuple_to_list(D#dict.segs),
@@ -386,15 +386,15 @@ map_seg_list(F, [Seg|Segs]) ->
     Bkts0 = tuple_to_list(Seg),
     Bkts1 = map_bkt_list(F, Bkts0),
     [list_to_tuple(Bkts1)|map_seg_list(F, Segs)];
-map_seg_list(F, []) -> [].
+map_seg_list(_, []) -> [].
 
 map_bkt_list(F, [Bkt0|Bkts]) ->
     [map_bucket(F, Bkt0)|map_bkt_list(F, Bkts)];
-map_bkt_list(F, []) -> [].
+map_bkt_list(_, []) -> [].
 
 map_bucket(F, [?kv(Key,Val)|Bkt]) ->
     [?kv(Key,F(Key, Val))|map_bucket(F, Bkt)];
-map_bucket(F, []) -> [].
+map_bucket(_, []) -> [].
 
 filter_dict(F, D) ->
     Segs0 = tuple_to_list(D#dict.segs),
@@ -405,13 +405,13 @@ filter_seg_list(F, [Seg|Segs], Fss, Fc0) ->
     Bkts0 = tuple_to_list(Seg),
     {Bkts1,Fc1} = filter_bkt_list(F, Bkts0, [], Fc0),
     filter_seg_list(F, Segs, [list_to_tuple(Bkts1)|Fss], Fc1);
-filter_seg_list(F, [], Fss, Fc) ->
+filter_seg_list(_, [], Fss, Fc) ->
     {lists:reverse(Fss, []),Fc}.
 
 filter_bkt_list(F, [Bkt0|Bkts], Fbs, Fc0) ->
     {Bkt1,Fc1} = filter_bucket(F, Bkt0, [], Fc0),
     filter_bkt_list(F, Bkts, [Bkt1|Fbs], Fc1);
-filter_bkt_list(F, [], Fbs, Fc) ->
+filter_bkt_list(_, [], Fbs, Fc) ->
     {lists:reverse(Fbs),Fc}.
 
 filter_bucket(F, [?kv(Key,Val)=E|Bkt], Fb, Fc) ->
@@ -419,7 +419,7 @@ filter_bucket(F, [?kv(Key,Val)=E|Bkt], Fb, Fc) ->
 	true -> filter_bucket(F, Bkt, [E|Fb], Fc);
 	false -> filter_bucket(F, Bkt, Fb, Fc+1)
     end;
-filter_bucket(F, [], Fb, Fc) ->
+filter_bucket(_, [], Fb, Fc) ->
     {lists:reverse(Fb),Fc}.
 
 %% get_bucket_s(Segments, Slot) -> Bucket.
@@ -486,13 +486,13 @@ maybe_contract_segs(T) -> T.
 %% rehash(Bucket, Slot1, Slot2, MaxN) -> [Bucket1|Bucket2].
 %%  Yes, we should return a tuple, but this is more fun.
 
-rehash([?kv(Key,Bag)=KeyBag|T], Slot1, Slot2, MaxN) ->
+rehash([?kv(Key,_Bag)=KeyBag|T], Slot1, Slot2, MaxN) ->
     [L1|L2] = rehash(T, Slot1, Slot2, MaxN),
     case erlang:phash(Key, MaxN) of
 	Slot1 -> [[KeyBag|L1]|L2];
 	Slot2 -> [L1|[KeyBag|L2]]
     end;
-rehash([], Slot1, Slot2, MaxN) -> [[]|[]].
+rehash([], _Slot1, _Slot2, _MaxN) -> [[]|[]].
 
 %% mk_seg(Size) -> Segment.
 

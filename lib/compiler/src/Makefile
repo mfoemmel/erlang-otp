@@ -40,6 +40,7 @@ MODULES =  \
 	v3_core_opt \
 	sys_core_fold \
 	sys_core_inline \
+	sys_core_dsetel \
 	core_lib \
 	corec \
 	core_scan \
@@ -87,7 +88,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
+ERL_FLAGS += +warn_unused_vars +inline +'{inline_size,24}'
 ERL_COMPILE_FLAGS += -I../../stdlib/include -W
 
 # ----------------------------------------------------
@@ -105,6 +106,14 @@ clean:
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
+# Dirty workaround to handle non-quoted "try"s.
+# Can be removed in R10. (I really mean it.)
+
+# Dirty workaround to make sure that the atom "try" is always quoted.
+# Can be removed in R10. (I really mean it.)
+core_parse.erl: core_parse.yrl
+	$(ERLC) $(YRL_FLAGS) core_parse.yrl
+	$(PERL) -pi -e "s/try,/'try',/g" core_parse.erl
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@

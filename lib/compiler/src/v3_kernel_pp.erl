@@ -61,16 +61,26 @@ format_anno(Anno, Ctxt, ObjFun) ->
      "-| ",io_lib:write(Anno),
      " )"].
 
-format_1(#k_atom{val=A}, Ctxt) -> core_atom(A);
+format_1(#k_atom{val=A}, _Ctxt) -> core_atom(A);
 %%format_1(#k_char{val=C}, Ctxt) -> io_lib:write_char(C);
-format_1(#k_float{val=F}, Ctxt) -> float_to_list(F);
-format_1(#k_int{val=I}, Ctxt) -> integer_to_list(I);
-format_1(#k_nil{}, Ctxt) -> "[]";
-format_1(#k_string{val=S}, Ctxt) -> io_lib:write_string(S);
-format_1(#k_var{name=V}, Ctxt) ->
-    case atom_to_list(V) of
-	[C|Cs] when C == $_; C >= $A, C =< $Z -> [C|Cs];
-	Cs -> [$_|Cs]
+format_1(#k_float{val=F}, _Ctxt) -> float_to_list(F);
+format_1(#k_int{val=I}, _Ctxt) -> integer_to_list(I);
+format_1(#k_nil{}, _Ctxt) -> "[]";
+format_1(#k_string{val=S}, _Ctxt) -> io_lib:write_string(S);
+format_1(#k_var{name=V}, _Ctxt) ->
+    %% See core_pp for details.
+    if atom(V) ->
+	    S = atom_to_list(V),
+	    case S of
+		[C | _] when C >= $A, C =< $Z ->
+		    S;
+		[$_ | _] ->
+		    [$_, $X | S];
+		_ ->
+		    [$_ | S]
+	    end;
+       integer(V) ->
+	    [$_ | integer_to_list(V)]
     end;
 format_1(#k_cons{hd=H,tl=T}, Ctxt) ->
     Txt = ["["|format(H, ctxt_bump_indent(Ctxt, 1))],
@@ -85,10 +95,10 @@ format_1(#k_binary{segs=S}, Ctxt) ->
 format_1(#k_bin_seg{}=S, Ctxt) ->
     [format_bin_seg_1(S, Ctxt),
      format_bin_seg(S#k_bin_seg.next, ctxt_bump_indent(Ctxt, 2))];
-format_1(#k_bin_end{}, Ctxt) -> "#<>#";
+format_1(#k_bin_end{}, _Ctxt) -> "#<>#";
 format_1(#k_local{name=N,arity=A}, Ctxt) ->
     "local " ++ format_fa_pair({N,A}, Ctxt);
-format_1(#k_remote{mod=M,name=N,arity=A}, Ctxt) ->
+format_1(#k_remote{mod=M,name=N,arity=A}, _Ctxt) ->
     %% This is for our internal translator.
     io_lib:format("remote ~s:~s/~w", [format(M),format(N),A]);
 format_1(#k_internal{name=N,arity=A}, Ctxt) ->
@@ -218,9 +228,9 @@ format_1(#k_receive{var=V,body=B,timeout=T,action=A,ret=Rs}, Ctxt) ->
      "end",
      format_ret(Rs, Ctxt1)
     ];
-format_1(#k_receive_accept{}, Ctxt) -> "receive_accept";
-format_1(#k_receive_reject{}, Ctxt) -> "receive_reject";
-format_1(#k_receive_next{}, Ctxt) -> "receive_next";
+format_1(#k_receive_accept{}, _Ctxt) -> "receive_accept";
+format_1(#k_receive_reject{}, _Ctxt) -> "receive_reject";
+format_1(#k_receive_next{}, _Ctxt) -> "receive_next";
 format_1(#k_break{args=As}, Ctxt) ->
     ["<",
      format_hseq(As, ",", ctxt_bump_indent(Ctxt, 1), fun format/2),
@@ -285,7 +295,7 @@ format_1(#ifun{vars=Vs,body=B}, Ctxt) ->
      nl_indent(Ctxt1)
      | format(B, Ctxt1)
     ];
-format_1(Type, Ctxt) ->
+format_1(Type, _Ctxt) ->
     ["** Unsupported type: ",
      io_lib:write(Type)
      | " **"
@@ -303,7 +313,7 @@ format_ret(Rs, Ctxt) ->
 %% format_hseq([Thing], Separator, Context, Fun) -> Txt.
 %%  Format a sequence horizontally.
 
-format_hseq([H], Sep, Ctxt, Fun) ->
+format_hseq([H], _Sep, Ctxt, Fun) ->
     Fun(H, Ctxt);
 format_hseq([H|T], Sep, Ctxt, Fun) ->
     Txt = [Fun(H, Ctxt)|Sep],
@@ -314,14 +324,14 @@ format_hseq([], _, _, _) -> "".
 %% format_vseq([Thing], LinePrefix, LineSuffix, Context, Fun) -> Txt.
 %%  Format a sequence vertically.
 
-format_vseq([H], Pre, Suf, Ctxt, Fun) ->
+format_vseq([H], _Pre, _Suf, Ctxt, Fun) ->
     Fun(H, Ctxt);
 format_vseq([H|T], Pre, Suf, Ctxt, Fun) ->
     [Fun(H, Ctxt),Suf,nl_indent(Ctxt),Pre|
      format_vseq(T, Pre, Suf, Ctxt, Fun)];
 format_vseq([], _, _, _, _) -> "".
 
-format_fa_pair({F,A}, Ctxt) -> [core_atom(F),$/,integer_to_list(A)].
+format_fa_pair({F,A}, _Ctxt) -> [core_atom(F),$/,integer_to_list(A)].
 
 %% format_attribute({Name,Val}, Context) -> Txt.
 
@@ -330,13 +340,13 @@ format_attribute({Name,Val}, Ctxt) when list(Val) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, width(Txt,Ctxt)+4),
     [Txt," = ",
      $[,format_vseq(Val, "", ",", Ctxt1,
-		    fun (A, C) -> io_lib:write(A) end),$]
+		    fun (A, _) -> io_lib:write(A) end),$]
     ];
 format_attribute({Name,Val}, Ctxt) ->
     Txt = format(#k_atom{val=Name}, Ctxt),
     [Txt," = ",io_lib:write(Val)].
 
-format_list_tail(#k_nil{anno=[]}, Ctxt) -> "]";
+format_list_tail(#k_nil{anno=[]}, _Ctxt) -> "]";
 format_list_tail(#k_cons{anno=[],hd=H,tl=T}, Ctxt) ->
     Txt = [$,|format(H, Ctxt)],
     Ctxt1 = ctxt_bump_indent(Ctxt, width(Txt, Ctxt)),
@@ -344,7 +354,7 @@ format_list_tail(#k_cons{anno=[],hd=H,tl=T}, Ctxt) ->
 format_list_tail(Tail, Ctxt) ->
     ["|",format(Tail, ctxt_bump_indent(Ctxt, 1)), "]"].
 
-format_bin_seg(#k_bin_end{anno=[]}, Ctxt) -> "";
+format_bin_seg(#k_bin_end{anno=[]}, _Ctxt) -> "";
 format_bin_seg(#k_bin_seg{anno=[],next=N}=Seg, Ctxt) ->
     Txt = [$,|format_bin_seg_1(Seg, Ctxt)],
     [Txt|format_bin_seg(N, ctxt_bump_indent(Ctxt, width(Txt, Ctxt)))];
@@ -377,7 +387,7 @@ format_bin_seg_1(#k_bin_seg{size=S,unit=U,type=T,flags=Fs,seg=Seg}, Ctxt) ->
 
 indent(Ctxt) -> indent(Ctxt#ctxt.indent, Ctxt).
 
-indent(N, Ctxt) when N =< 0 -> "";
+indent(N, _Ctxt) when N =< 0 -> "";
 indent(N, Ctxt) ->
     T = Ctxt#ctxt.tab_width,
     string:chars($\t, N div T, string:chars($\s, N rem T)).
@@ -388,7 +398,7 @@ nl_indent(Ctxt) -> [$\n|indent(Ctxt)].
 unindent(T, Ctxt) ->
     unindent(T, Ctxt#ctxt.indent, Ctxt, []).
 
-unindent(T, N, Ctxt, C) when N =< 0 ->
+unindent(T, N, _Ctxt, C) when N =< 0 ->
     [T|C];
 unindent([$\s|T], N, Ctxt, C) ->
     unindent(T, N - 1, Ctxt, C);
@@ -401,11 +411,11 @@ unindent([$\t|T], N, Ctxt, C) ->
     end;
 unindent([L|T], N, Ctxt, C) when list(L) ->
     unindent(L, N, Ctxt, [T|C]);
-unindent([H|T], N, Ctxt, C) ->
+unindent([H|T], _, _Ctxt, C) ->
     [H|[T|C]];
 unindent([], N, Ctxt, [H|T]) ->
     unindent(H, N, Ctxt, T);
-unindent([], N, Ctxt, []) -> [].
+unindent([], _, _Ctxt, []) -> [].
 
 
 width(Txt, Ctxt) ->
@@ -413,15 +423,15 @@ width(Txt, Ctxt) ->
 
 width([$\t|T], A, Ctxt, C) ->
     width(T, A + Ctxt#ctxt.tab_width, Ctxt, C);
-width([$\n|T], A, Ctxt, C) ->
+width([$\n|T], _, Ctxt, C) ->
     width(unindent([T|C], Ctxt), Ctxt);
 width([H|T], A, Ctxt, C) when list(H) ->
     width(H, A, Ctxt, [T|C]);
-width([H|T], A, Ctxt, C) ->
+width([_|T], A, Ctxt, C) ->
     width(T, A + 1, Ctxt, C);
 width([], A, Ctxt, [H|T]) ->
     width(H, A, Ctxt, T);
-width([], A, Ctxt, []) -> A.
+width([], A, _Ctxt, []) -> A.
 
 ctxt_bump_indent(Ctxt, Dx) ->
     Ctxt#ctxt{indent=Ctxt#ctxt.indent + Dx}.

@@ -1,8 +1,11 @@
-/* $Id$
- * hipe_x86_glue.S
+/*
+ * $Id$
  */
 
 #include "hipe_x86_asm.h"
+#include "hipe_literals.h"
+#define ASM
+#include "hipe_mode_switch.h"
 
 	.section ".text"
 
@@ -24,18 +27,17 @@ x86_call_to_native:
 	movl	20(%esp), P
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
+	/* get argument registers */
+	LOAD_ARG_REGS
 	/* call the target */
-	movl	P_NCALLEE(P), %eax
-	.align	4
-	.byte	0x89, 0xDB	# movl %ebx, %ebx (2-byte nop)
-	.byte	0xFF, 0xD0	# call *%eax
+	call	*P_NCALLEE(P)
 /*
  * We export this return address so that hipe_mode_switch() can discover
  * when native code tailcalls emulated code.
  *
  * This is where native code returns to emulated code.
  */
-nbif_return:	# this label must be 4-byte aligned
+nbif_return:
 	movl	%eax, P_ARG0(P)			# save retval
 	movl	$HIPE_MODE_SWITCH_RES_RETURN, %eax
 /* FALLTHROUGH
@@ -55,18 +57,19 @@ nbif_return:	# this label must be 4-byte aligned
 
 /*
  * Native code calls emulated code via a linker-generated
- * stub which should look as follows:
+ * stub (hipe_x86_loader.erl) which should look as follows:
  *
  * stub for f/N:
- *	movl	$<f's BEAM code address>, %eax
- *	movl	$<N>, %edx
+ *	movl	$<f's BEAM code address>, P_BEAM_IP(P)
+ *	movb	$<N>, P_ARITY(P)
  *	jmp	nbif_callemu
+ *
+ * XXX: Different stubs for different number of register parameters?
  */
 	.align	4
 	.global	nbif_callemu
 nbif_callemu:
-	movl	%eax, P_BEAM_IP(P)
-	movl	%edx, P_ARITY(P)
+	STORE_ARG_REGS
 	movl	$HIPE_MODE_SWITCH_RES_CALL, %eax
 	jmp	.exit
 
@@ -74,13 +77,78 @@ nbif_callemu:
  * Native code calls an emulated-mode closure via a stub defined below.
  *
  * The closure is appended as the last actual parameter, and parameters
- * are pushed in left-to-right order. Hence, the closure parameter is
- * always at the bottom of the stack, just above the return address.
+ * beyond the first few passed in registers are pushed onto the stack in
+ * left-to-right order.
+ * Hence, the location of the closure parameter only depends on the number
+ * of parameters in registers, not the total number of parameters.
  */
+#if X86_NR_ARG_REGS == 5
 	.align	4
-	.global	nbif_closure_call_emu
-nbif_closure_call_emu:
+	.global nbif_ccallemu5
+nbif_ccallemu5:
+	movl	ARG4, P_ARG4(P)
+	movl	4(%esp), ARG4
+	/*FALLTHROUGH*/
+#endif
+
+#if X86_NR_ARG_REGS >= 4
+	.align	4
+	.global nbif_ccallemu4
+nbif_ccallemu4:
+	movl	ARG3, P_ARG3(P)
+#if X86_NR_ARG_REGS > 4
+	movl	ARG4, ARG3
+#else
+	movl	4(%esp), ARG3
+#endif
+	/*FALLTHROUGH*/
+#endif
+
+#if X86_NR_ARG_REGS >= 3
+	.align	4
+	.global nbif_ccallemu3
+nbif_ccallemu3:
+	movl	ARG2, P_ARG2(P)
+#if X86_NR_ARG_REGS > 3
+	movl	ARG3, ARG2
+#else
+	movl	4(%esp), ARG2
+#endif
+	/*FALLTHROUGH*/
+#endif
+
+#if X86_NR_ARG_REGS >= 2
+	.align	4
+	.global nbif_ccallemu2
+nbif_ccallemu2:
+	movl	ARG1, P_ARG1(P)
+#if X86_NR_ARG_REGS > 2
+	movl	ARG2, ARG1
+#else
+	movl	4(%esp), ARG1
+#endif
+	/*FALLTHROUGH*/
+#endif
+
+#if X86_NR_ARG_REGS >= 1
+	.align	4
+	.global nbif_ccallemu1
+nbif_ccallemu1:
+	movl	ARG0, P_ARG0(P)
+#if X86_NR_ARG_REGS > 1
+	movl	ARG1, ARG0
+#else
+	movl	4(%esp), ARG0
+#endif
+	/*FALLTHROUGH*/
+#endif
+
+	.align	4
+	.global nbif_ccallemu0
+nbif_ccallemu0:
+#if X86_NR_ARG_REGS == 0
 	movl	4(%esp), %eax
+#endif
 	movl	%eax, P_CLOSURE(P)
 	movl	$HIPE_MODE_SWITCH_RES_CALL_CLOSURE, %eax
 	jmp	.exit
@@ -167,6 +235,8 @@ x86_tailcall_to_native:
 	movl	20(%esp), P
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
+	/* get argument registers */
+	LOAD_ARG_REGS
 	/* jump to the target label */
 	jmp	*P_NCALLEE(P)
 
@@ -189,7 +259,7 @@ x86_throw_to_native:
 	SWITCH_C_TO_ERLANG
 	/* find and invoke the handler */
 	xorl	%eax, %eax	# p->narity == 0
-	jmp	.find_exn_handler
+	/*FALLTHROUGH*/
 
 /*
  * Find and invoke catch handler (it must exist).
@@ -249,17 +319,18 @@ nbif_3_simple_exception:
 	jne	.find_exn_handler
 	/*
 	 * A BIF failed with freason TRAP:
-	 * - the BIF stored the callee's Export* in p->fvalue
-	 * - the BIF stored the actual parameters in p->def_arg_reg[]
-	 * - the arity is the same as the BIF's; our glue put it in %eax
+	 * - the BIF stored the callee's Export* in p->def_arg_reg[0]
+	 * - the BIF stored the actual parameters in p->def_arg_reg[1..]
 	 */
-	movl	%eax, P_ARITY(P)
 	movl	$HIPE_MODE_SWITCH_RES_TRAP, %eax
 	jmp	.exit
 
 /*
  * We end up here when a BIF called from native signals an
  * exceptional condition, and RESCHEDULE can occur.
+ * %edx contains the address of the nbif which failed.
+ * TEMP0 is the first actual parameter, if X86_NR_ARG_REGS > 0.
+ * TEMP1 is the second actual parameter (if defined), if X86_NR_ARG_REGS > 1.
  */
 	.global	nbif_1_hairy_exception
 	.global	nbif_2_hairy_exception
@@ -275,9 +346,18 @@ nbif_2_hairy_exception:
 .nbif_hairy_exception:
 	cmpl	$FREASON_RESCHEDULE, P_FREASON(P)
 	jne	.nbif_simple_exception
-	/* handle reschedule: resumption address in %edx, arity in %eax */
+	/* handle reschedule */
 	movl	%edx, P_NCALLEE(P)
+#if X86_NR_ARG_REGS == 0
 	movl	$0, P_ARITY(P)	# arity unused -- args on nstack
+#elif X86_NR_ARG_REGS == 1
+	movl	$1, P_ARITY(P)		# 1 even if arity is 2
+	movl	TEMP0, P_ARG0(P)
+#else
+	movl	%eax, P_ARITY(P)	# 1 or 2
+	movl	TEMP0, P_ARG0(P)
+	movl	TEMP1, P_ARG1(P)
+#endif
 	movl	$HIPE_MODE_SWITCH_RES_RESCHEDULE, %eax
 	jmp	.exit
 
@@ -288,4 +368,44 @@ nbif_2_hairy_exception:
 	.align	4
 nbif_test:
 	movl	$((42<<4)+15), %eax	# make_small(42)
+	ret
+
+/*
+ * nbif_stack_trap_ra: trap return address for maintaining
+ * the gray/white stack boundary
+ */
+	.global	nbif_stack_trap_ra
+	.align	4
+nbif_stack_trap_ra:			# a return address, not a function
+	movl	%eax, TEMP1		# save retval
+	SWITCH_ERLANG_TO_C_QUICK
+	pushl	P
+	call	hipe_handle_stack_trap	# must not cons; preserves TEMP1
+	addl	$4, %esp
+	movl	%eax, %edx		# original RA
+	SWITCH_C_TO_ERLANG_QUICK
+	movl	TEMP1, %eax		# restore retval
+	jmp	*%edx			# resume at original RA
+
+
+/*
+ * nbif_clear_fp_exception
+ * see the ERTS_FP_CHECK_INIT() macro
+ */
+	.global	nbif_clear_fp_exception
+	.align	4
+nbif_clear_fp_exception:
+	fwait
+	movl	$0, erl_fp_exception
+	ret
+
+/*
+ * nbif_check_fp_exception
+ * see the ERTS_FP_ERROR() macro
+ */
+	.global	nbif_check_fp_exception
+	.align	4
+nbif_check_fp_exception:
+	fwait
+	movl	erl_fp_exception, %eax
 	ret

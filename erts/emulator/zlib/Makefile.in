@@ -12,7 +12,11 @@
 #    make install prefix=$HOME
 
 ARFLAGS = rc
-TYPE_FLAGS = -O3
+ifeq ($(findstring ose,$(TARGET)),ose)
+  TYPE_FLAGS =
+else
+  TYPE_FLAGS = -O3
+endif
 CFLAGS = @CFLAGS@ @DEFS@ $(TYPE_FLAGS)
 #CFLAGS=-O -DMAX_WBITS=14 -DMAX_MEM_LEVEL=7
 #CFLAGS=-g -DDEBUG
@@ -53,7 +57,7 @@ tests release_tests:
 docs release_docs release_docs_spec:
 
 clean:
-	rm -f $(O) $(OBJDIR)/libz.a
+	rm -f $(OBJS) $(OBJDIR)/libz.a
 
 #### end OTP targets
 

@@ -26,7 +26,7 @@
 
 -export([parse_transform/2]).
 
-parse_transform(Forms, Options) ->
+parse_transform(Forms, _Options) ->
     forms(Forms).
 
 %% forms(Fs) -> lists:map(fun (F) -> form(F) end, Fs).
@@ -122,7 +122,7 @@ patterns([]) -> [].
 %% -type pattern(Pattern) -> Pattern.
 %%  N.B. Only valid patterns are included here.
 
-string_to_conses([], Line, Tail) ->
+string_to_conses([], _Line, Tail) ->
     Tail;
 string_to_conses([E|Rest], Line, Tail) ->
     {cons, Line, {integer, Line, E}, string_to_conses(Rest, Line, Tail)}.
@@ -158,11 +158,11 @@ pattern({record_field,Line,Rec0,Field0}) ->
 pattern({bin,Line,Fs}) ->
     Fs2 = pattern_grp(Fs),
     {bin,Line,Fs2};
-pattern({op,Line,'++',{nil,_},R}) ->
+pattern({op,_Line,'++',{nil,_},R}) ->
     pattern(R);
-pattern({op,Line,'++',{cons,Li,{integer,L2,I},T},R}) ->
+pattern({op,_Line,'++',{cons,Li,{integer,L2,I},T},R}) ->
     pattern({cons,Li,{integer,L2,I},{op,Li,'++',T,R}});
-pattern({op,Line,'++',{string,Li,L},R}) ->
+pattern({op,_Line,'++',{string,Li,L},R}) ->
     pattern(string_to_conses(L, Li, R));
 pattern({op,Line,Op,A}) ->
     {op,Line,Op,A};

@@ -128,7 +128,7 @@
 behaviour_info(callbacks) ->
     [{init,1},{handle_event,3},{handle_sync_event,4},{handle_info,3},
      {terminate,3},{code_change,4}];
-behaviour_info(Other) ->
+behaviour_info(_Other) ->
     undefined.
 
 %%% ---------------------------------------------------
@@ -271,8 +271,8 @@ loop(Parent, Name, StateName, StateData, Mod, Time, Debug) ->
 system_continue(Parent, Debug, [Name, StateName, StateData, Mod, Time]) ->
     loop(Parent, Name, StateName, StateData, Mod, Time, Debug).
 
-system_terminate(Reason, Parent, Debug,
-		 [Name, StateName, StateData, Mod, Time]) ->
+system_terminate(Reason, _Parent, Debug,
+		 [Name, StateName, StateData, Mod, _Time]) ->
     terminate(Reason, Name, [], Mod, StateName, StateData, Debug).
 
 system_code_change([Name, StateName, StateData, Mod, Time],
@@ -308,7 +308,7 @@ print_event(Dev, return, {Name, StateName}) ->
     io:format(Dev, "*DBG* ~p switched to state ~w~n",
 	      [Name, StateName]).
 
-handle_msg(Msg, Parent, Name, StateName, StateData, Mod, Time) -> %No debug here
+handle_msg(Msg, Parent, Name, StateName, StateData, Mod, _Time) -> %No debug here
     From = from(Msg),
     case catch dispatch(Msg, Mod, StateName, StateData) of
 	{next_state, NStateName, NStateData} ->	    
@@ -335,7 +335,7 @@ handle_msg(Msg, Parent, Name, StateName, StateData, Mod, Time) -> %No debug here
 		      Name, Msg, Mod, StateName, StateData, [])
     end.
 
-handle_msg(Msg, Parent, Name, StateName, StateData, Mod, Time, Debug) ->
+handle_msg(Msg, Parent, Name, StateName, StateData, Mod, _Time, Debug) ->
     From = from(Msg),
     case catch dispatch(Msg, Mod, StateName, StateData) of
 	{next_state, NStateName, NStateData} ->
@@ -423,15 +423,15 @@ error_info(Reason, Name, Msg, StateName, StateData, Debug) ->
     sys:print_log(Debug),
     ok.
 
-get_msg_str({'$gen_event', Event}) ->
+get_msg_str({'$gen_event', _Event}) ->
     "** Last event in was ~p~n";
-get_msg_str({'$gen_sync_event', Event}) ->
+get_msg_str({'$gen_sync_event', _Event}) ->
     "** Last sync event in was ~p~n";
-get_msg_str({'$gen_all_state_event', Event}) ->
+get_msg_str({'$gen_all_state_event', _Event}) ->
     "** Last event in was ~p (for all states)~n";
-get_msg_str({'$gen_sync_all_state_event', Event}) ->
+get_msg_str({'$gen_sync_all_state_event', _Event}) ->
     "** Last sync event in was ~p (for all states)~n";
-get_msg_str(Msg) ->
+get_msg_str(_Msg) ->
     "** Last message in was ~p~n".
 
 get_msg({'$gen_event', Event}) -> Event;
@@ -444,7 +444,7 @@ get_msg(Msg) -> Msg.
 %% Status information
 %%-----------------------------------------------------------------
 format_status(Opt, StatusData) ->
-    [PDict, SysState, Parent, Debug, [Name, StateName, StateData, Mod, Time]] =
+    [PDict, SysState, Parent, Debug, [Name, StateName, StateData, Mod, _Time]] =
 	StatusData,
     Header = lists:concat(["Status for state machine ", Name]),
     Log = sys:get_debug(log, Debug, []),

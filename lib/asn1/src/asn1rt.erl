@@ -19,7 +19,7 @@
 
 %% Runtime functions for ASN.1 (i.e encode, decode)
 
--export([encode/2,encode/3,decode/3,load_driver/0]).
+-export([encode/2,encode/3,decode/3,load_driver/0,unload_driver/0,info/1]).
     
 encode(Module,{Type,Term}) ->
     encode(Module,Type,Term).
@@ -41,10 +41,29 @@ decode(Module,Type,Bytes) ->
     end.
 	
 load_driver() ->
-    case asn1rt_per_bin_rt2ct:start_drv(self()) of
+    asn1rt_driver_handler:load_driver(),
+    receive
+	driver_ready ->
+	    ok;
+	Err={error,Reason} ->
+	    Err;
+	Error ->
+	    {error,Error}
+    end.
+
+unload_driver() ->
+    case catch asn1rt_driver_handler:unload_driver() of
 	ok ->
 	    ok;
 	Error ->
-	    Error
+	    {error,Error}
     end.
-    
+
+
+info(Module) ->
+    case catch apply(Module,info,[]) of
+	{'EXIT',{undef,Reason}} ->
+	    {error,{asn1,{undef,Module,info}}};
+	Result ->
+	    {ok,Result}
+    end.

@@ -39,7 +39,7 @@
 
 format(Node) -> format(Node, #ctxt{});
 format(Node) -> case catch format(Node, #ctxt{}) of
-		    {'EXIT',R} -> io_lib:format("~p",[Node]);
+		    {'EXIT',_} -> io_lib:format("~p",[Node]);
 		    Other -> Other
 		end.
 
@@ -57,13 +57,13 @@ format(Node, Ctxt) ->
 	    ]
     end.
 
-format_1(#c_char{val=C}, Ctxt) -> io_lib:write_char(C);
-format_1(#c_int{val=I}, Ctxt) -> integer_to_list(I);
-format_1(#c_float{val=F}, Ctxt) -> float_to_list(F);
-format_1(#c_atom{val=A}, Ctxt) -> core_atom(A);
-format_1(#c_nil{}, Ctxt) -> "[]";
-format_1(#c_string{val=S}, Ctxt) -> io_lib:write_string(S);
-format_1(#c_var{name=V}, Ctxt) ->
+format_1(#c_char{val=C}, _) -> io_lib:write_char(C);
+format_1(#c_int{val=I}, _) -> integer_to_list(I);
+format_1(#c_float{val=F}, _) -> float_to_list(F);
+format_1(#c_atom{val=A}, _) -> core_atom(A);
+format_1(#c_nil{}, _) -> "[]";
+format_1(#c_string{val=S}, _) -> io_lib:write_string(S);
+format_1(#c_var{name=V}, _) ->
     %% Internal variable names may be:
     %%     - atoms representing proper Erlang variable names, or
     %%     any atoms that may be printed without single-quoting
@@ -160,7 +160,7 @@ format_1(#c_receive{clauses=Cs,timeout=T,action=A}, Ctxt) ->
      nl_indent(Ctxt1),
      format(A, Ctxt1)
     ];
-format_1(#c_fname{id=I,arity=A}, Ctxt) ->
+format_1(#c_fname{id=I,arity=A}, _) ->
     [core_atom(I),$/,integer_to_list(A)];
 format_1(#c_fun{vars=Vs,body=B}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
@@ -243,7 +243,7 @@ format_1(#c_module{name=N,exports=Es,attrs=As,defs=Ds}, Ctxt) ->
      nl_indent(Ctxt)
      | "end"
     ];
-format_1(Type, Ctxt) ->
+format_1(Type, _) ->
     ["** Unsupported type: ",
      io_lib:write(Type)
      | " **"
@@ -315,7 +315,7 @@ format_guard_1(E, Ctxt) -> format_1(E, Ctxt).	%Anno already done
 %% format_hseq([Thing], Separator, Context, Fun) -> Txt.
 %%  Format a sequence horizontally on the same line with Separator between.
 
-format_hseq([H], Sep, Ctxt, Fun) ->
+format_hseq([H], _, Ctxt, Fun) ->
     Fun(H, Ctxt);
 format_hseq([H|T], Sep, Ctxt, Fun) ->
     Txt = [Fun(H, Ctxt)|Sep],
@@ -328,14 +328,14 @@ format_hseq([], _, _, _) -> "".
 %%  to the beginning of each line and LineSuffix to the end of each
 %%  line.  No prefix on the first line or suffix on the last line.
 
-format_vseq([H], Pre, Suf, Ctxt, Fun) ->
+format_vseq([H], _Pre, _Suf, Ctxt, Fun) ->
     Fun(H, Ctxt);
 format_vseq([H|T], Pre, Suf, Ctxt, Fun) ->
     [Fun(H, Ctxt),Suf,nl_indent(Ctxt),Pre|
      format_vseq(T, Pre, Suf, Ctxt, Fun)];
 format_vseq([], _, _, _, _) -> "".
 
-format_list_tail(#c_nil{anno=[]}, Ctxt) -> "]";
+format_list_tail(#c_nil{anno=[]}, _) -> "]";
 format_list_tail(#c_cons{anno=[],hd=H,tl=T}, Ctxt) ->
     Txt = [$,|format(H, Ctxt)],
     Ctxt1 = ctxt_bump_indent(Ctxt, width(Txt, Ctxt)),
@@ -345,7 +345,7 @@ format_list_tail(Tail, Ctxt) ->
 
 indent(Ctxt) -> indent(Ctxt#ctxt.indent, Ctxt).
 
-indent(N, Ctxt) when N =< 0 -> "";
+indent(N, _) when N =< 0 -> "";
 indent(N, Ctxt) ->
     T = Ctxt#ctxt.tab_width,
     string:chars($\t, N div T, string:chars($\s, N rem T)).
@@ -356,7 +356,7 @@ nl_indent(Ctxt) -> [$\n|indent(Ctxt)].
 unindent(T, Ctxt) ->
     unindent(T, Ctxt#ctxt.indent, Ctxt, []).
 
-unindent(T, N, Ctxt, C) when N =< 0 ->
+unindent(T, N, _, C) when N =< 0 ->
     [T|C];
 unindent([$\s|T], N, Ctxt, C) ->
     unindent(T, N - 1, Ctxt, C);
@@ -369,30 +369,30 @@ unindent([$\t|T], N, Ctxt, C) ->
     end;
 unindent([L|T], N, Ctxt, C) when list(L) ->
     unindent(L, N, Ctxt, [T|C]);
-unindent([H|T], N, Ctxt, C) ->
+unindent([H|T], _, _, C) ->
     [H|[T|C]];
 unindent([], N, Ctxt, [H|T]) ->
     unindent(H, N, Ctxt, T);
-unindent([], N, Ctxt, []) -> [].
+unindent([], _, _, []) -> [].
 
 
 width(Txt, Ctxt) ->
     case catch width(Txt, 0, Ctxt, []) of
-	{'EXIT',R} -> exit({bad_text,Txt});
+	{'EXIT',_} -> exit({bad_text,Txt});
 	Other -> Other
     end.
 
 width([$\t|T], A, Ctxt, C) ->
     width(T, A + Ctxt#ctxt.tab_width, Ctxt, C);
-width([$\n|T], A, Ctxt, C) ->
+width([$\n|T], _, Ctxt, C) ->
     width(unindent([T|C], Ctxt), Ctxt);
 width([H|T], A, Ctxt, C) when list(H) ->
     width(H, A, Ctxt, [T|C]);
-width([H|T], A, Ctxt, C) ->
+width([_|T], A, Ctxt, C) ->
     width(T, A + 1, Ctxt, C);
 width([], A, Ctxt, [H|T]) ->
     width(H, A, Ctxt, T);
-width([], A, Ctxt, []) -> A.
+width([], A, _, []) -> A.
 
 ctxt_bump_indent(Ctxt, Dx) ->
     Ctxt#ctxt{indent = Ctxt#ctxt.indent + Dx}.

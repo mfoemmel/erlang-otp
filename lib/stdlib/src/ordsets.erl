@@ -24,7 +24,7 @@
 -export([subtract/2,is_subset/2]).
 -export([fold/3,filter/2]).
 
-%% Depreciated interface.
+%% Deprecated interface.
 
 -export([new_set/0,set_to_list/1,list_to_set/1,subset/2]).
 
@@ -41,8 +41,8 @@ is_set([]) -> true.
 
 is_set([E2|Es], E1) when E1 < E2 ->
     is_set(Es, E2);
-is_set([E2|Es], E1) -> false;
-is_set([], E1) -> true.
+is_set([_|_], _) -> false;
+is_set([], _) -> true.
 
 %% size(OrdSet) -> int().
 %%  Return the number of elements in OrdSet.
@@ -64,34 +64,34 @@ from_list(L) ->
 %%  Return 'true' if Element is an element of OrdSet, else 'false'.
 
 is_element(E, [H|Es]) when E > H -> is_element(E, Es);
-is_element(E, [H|Es]) when E < H -> false;
-is_element(E, [H|Es]) -> true;			%E == H
-is_element(E, []) -> false.
+is_element(E, [H|_]) when E < H -> false;
+is_element(_E, [_H|_]) -> true;			%E == H
+is_element(_, []) -> false.
 
 %% add_element(Element, OrdSet) -> OrdSet.
 %%  Return OrdSet with Element inserted in it.
 
 add_element(E, [H|Es]) when E > H -> [H|add_element(E, Es)];
-add_element(E, [H|Es]=Set) when E < H -> [E|Set];
-add_element(E, [H|Es]=Set) -> Set;		%E == H
+add_element(E, [H|_]=Set) when E < H -> [E|Set];
+add_element(_E, [_H|_]=Set) -> Set;		%E == H
 add_element(E, []) ->[E].
 
 %% del_element(Element, OrdSet) -> OrdSet.
 %%  Return OrdSet but with Element removed.
 
 del_element(E, [H|Es]) when E > H -> [H|del_element(E, Es)];
-del_element(E, [H|Es]=Set) when E < H -> Set;
-del_element(E, [H|Es]) -> Es;			%E == H
-del_element(E, []) ->[].
+del_element(E, [H|_]=Set) when E < H -> Set;
+del_element(_E, [_H|Es]) -> Es;			%E == H
+del_element(_, []) ->[].
 
 %% union(OrdSet1, OrdSet2) -> OrdSet
 %%  Return the union of OrdSet1 and OrdSet2.
 
-union([E1|Es1], [E2|Es2]=Set2) when E1 < E2 ->
+union([E1|Es1], [E2|_]=Set2) when E1 < E2 ->
     [E1|union(Es1, Set2)];
-union([E1|Es1]=Set1, [E2|Es2]) when E1 > E2 ->
+union([E1|_]=Set1, [E2|Es2]) when E1 > E2 ->
     [E2|union(Es2, Set1)];			% switch arguments!
-union([E1|Es1], [E2|Es2]) ->			%E1 == E2
+union([E1|Es1], [_E2|Es2]) ->			%E1 == E2
     [E1|union(Es1, Es2)];
 union([], Es2) -> Es2;
 union(Es1, []) -> Es1.
@@ -110,15 +110,15 @@ union1(S1, []) -> S1.
 %% intersection(OrdSet1, OrdSet2) -> OrdSet.
 %%  Return the intersection of OrdSet1 and OrdSet2.
 
-intersection([E1|Es1], [E2|Es2]=Set2) when E1 < E2 ->
+intersection([E1|Es1], [E2|_]=Set2) when E1 < E2 ->
     intersection(Es1, Set2);
-intersection([E1|Es1]=Set1, [E2|Es2]) when E1 > E2 ->
+intersection([E1|_]=Set1, [E2|Es2]) when E1 > E2 ->
     intersection(Es2, Set1);			% switch arguments!
-intersection([E1|Es1], [E2|Es2]) ->		%E1 == E2
+intersection([E1|Es1], [_E2|Es2]) ->		%E1 == E2
     [E1|intersection(Es1, Es2)];
-intersection([], Es2) ->
+intersection([], _) ->
     [];
-intersection(Es1, []) ->
+intersection(_, []) ->
     [].
 
 %% intersection([OrdSet]) -> OrdSet.
@@ -136,34 +136,34 @@ intersection1(S1, []) -> S1.
 %%  Return all and only the elements of OrdSet1 which are not also in
 %%  OrdSet2.
 
-subtract([E1|Es1], [E2|Es2]=Set2) when E1 < E2 ->
+subtract([E1|Es1], [E2|_]=Set2) when E1 < E2 ->
     [E1|subtract(Es1, Set2)];
-subtract([E1|Es1]=Set1, [E2|Es2]) when E1 > E2 ->
+subtract([E1|_]=Set1, [E2|Es2]) when E1 > E2 ->
     subtract(Set1, Es2);
-subtract([E1|Es1], [E2|Es2]) ->			%E1 == E2
+subtract([_E1|Es1], [_E2|Es2]) ->		%E1 == E2
     subtract(Es1, Es2);
-subtract([], Es2) -> [];
+subtract([], _) -> [];
 subtract(Es1, []) -> Es1.
 
 %% is_subset(OrdSet1, OrdSet2) -> bool().
 %%  Return 'true' when every element of OrdSet1 is also a member of
 %%  OrdSet2, else 'false'.
 
-is_subset([E1|Es1], [E2|Es2]) when E1 < E2 ->	%E1 not in Set2
+is_subset([E1|_], [E2|_]) when E1 < E2 ->	%E1 not in Set2
     false;
-is_subset([E1|Es1]=Set1, [E2|Es2]) when E1 > E2 ->
+is_subset([E1|_]=Set1, [E2|Es2]) when E1 > E2 ->
     is_subset(Set1, Es2);
-is_subset([E1|Es1], [E2|Es2]) ->		%E1 == E2
+is_subset([_E1|Es1], [_E2|Es2]) ->		%E1 == E2
     is_subset(Es1, Es2);
-is_subset([], Es2) -> true;
-is_subset(Es1, []) -> false.
+is_subset([], _) -> true;
+is_subset(_, []) -> false.
 
 %% fold(Fun, Accumulator, OrdSet) -> Accumulator.
 %%  Fold function Fun over all elements in OrdSet and return Accumulator.
 
 fold(F, Acc, [E|Es]) ->
     fold(F, F(E, Acc), Es);
-fold(F, Acc, []) -> Acc.
+fold(_, Acc, []) -> Acc.
 
 %% filter(Fun, OrdSet) -> OrdSet.
 %%  Filter OrdSet with Fun.
@@ -173,7 +173,7 @@ filter(F, [E|Es]) ->
 	true -> [E|filter(F, Es)]; 
 	false -> filter(F, Es)
     end;
-filter(F, []) -> [].
+filter(_, []) -> [].
 
 %% Depreciated interface.
 

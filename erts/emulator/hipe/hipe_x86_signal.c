@@ -26,7 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#if __GLIBC__ == 2 && __GLIBC_MINOR__ == 2
+#if __GLIBC__ == 2 && (__GLIBC_MINOR__ == 2 || __GLIBC_MINOR__ == 3)
 /*
  * __libc_sigaction() is the core routine.
  * Without libpthread, sigaction() and __sigaction() are both aliases

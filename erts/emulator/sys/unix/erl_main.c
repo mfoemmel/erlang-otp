@@ -19,11 +19,12 @@
 #  include "config.h"
 #endif
 #include "sys.h"
-#include "erl_api.h"
+#include "erl_vm.h"
+#include "global.h"
 
 int
 main(int argc, char **argv)
 {
-    ErlOtpStart(argc, argv);
+    erl_start(argc, argv);
     return 0;
 }

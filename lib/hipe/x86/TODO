@@ -3,18 +3,26 @@ rtl_to_x86:
   this might improve the reduction test code slightly (X is
   the pseudo for FCALLS)
 * recognise alu(Z,X,add,Y) and turn it into 'lea'.
+* rewrite tailcalls as parallel assignments before regalloc
 
 x86:
 * Use separate constructors for real regs (x86_reg) and pseudos (x86_temp).
+* separate constructor for shift ops? (now alu + special treatment)
 
 Frame:
+* drop tailcall rewrite
+
+Registers:
+* make the 2 regs now reserved for frame's tailcall rewrite available for arg passing
 
 Optimizations:
+* replace jcc cc,L1; jmp L0; L1: with jcc <not cc> L0; L1: (length:len/2)
 * Kill move X,X insns, either in frame or finalise
-* Add jmp-to-jmp direct optimization
-* Finish the new register allocator
 * Instruction scheduling module
 
 Loader:
 
 Assembler:
+
+Encode:
+* allow symbolic literals and export backpatch info; then simplify assembler

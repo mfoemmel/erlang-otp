@@ -1,21 +1,21 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
-%		       FAST DECLARATIVE VECTORS
-%
-% Non-destructive, slow vectors. (Updates are O(vec_size), lookups O(1))
-%
-% NOTE: Vectors start at index 1 !
-%   Should this be changed to 0-based indexing? (Better for n-dim arrays?)
-%
-% Operations:
-%   vector_to_list(Vec)
-%   list_to_vector(Xs)
-%   set(Vec,Index,Elt)
-%   get(Vec,Index)
-%   vsize(Vec): returns the size of the vector (integer)
-%   is_vector(Vec): returns 'true' or 'false'
+%%
+%%		       FAST DECLARATIVE VECTORS
+%%
+%% Non-destructive, slow vectors. (Updates are O(vec_size), lookups O(1))
+%%
+%% NOTE: Vectors start at index 1 !
+%%   Should this be changed to 0-based indexing? (Better for n-dim arrays?)
+%%
+%% Operations:
+%%   vector_to_list(Vec)
+%%   list_to_vector(Xs)
+%%   set(Vec,Index,Elt)
+%%   get(Vec,Index)
+%%   vsize(Vec): returns the size of the vector (integer)
+%%   is_vector(Vec): returns 'true' or 'false'
 %   verify_vector(Vec): returns 'true' or 'false'. Traverses the vector
-%       and checks that the data structure is valid (i.e., unbuggy :-)
+%%       and checks that the data structure is valid (i.e., unbuggy :-)
 
 -module(hipe_pure_vectors).
 -compile(export_all).
@@ -36,8 +36,8 @@
 	 first_index/0
 	]).
 
-% Vector representation: simply a tuple.
-% - this is a compatibility library for hipe's fast vectors.
+%% Vector representation: simply a tuple.
+%% - this is a compatibility library for hipe's fast vectors.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -52,7 +52,7 @@ first_index() -> 1.
 list(Vec) ->
     add_indices(vector_to_list(Vec),1).
 
-add_indices([],N) -> [];
+add_indices([],_N) -> [];
 add_indices([X|Xs],N) ->
     [{N,X}|add_indices(Xs,N+1)].
 
@@ -60,7 +60,7 @@ add_indices([X|Xs],N) ->
 
 verify_vector(X) -> is_vector(X).
 
-is_vector(X) when tuple(X) -> true;
+is_vector(X) when is_tuple(X) -> true;
 is_vector(_) -> false.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -69,7 +69,6 @@ list_to_vector(Xs) ->
     list_to_tuple(Xs).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%
 
 vector_to_list(V) ->
     tuple_to_list(V).
@@ -87,12 +86,12 @@ set_all(Vec,[Ix|Ixs],[V|Vs]) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-get(Vec,Ix) when integer(Ix), Ix > 0, Ix =< size(Vec) ->
+get(Vec,Ix) when is_integer(Ix), Ix > 0, Ix =< size(Vec) ->
     element(Ix,Vec).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-get_all(Vec,[]) -> [];
+get_all(_Vec,[]) -> [];
 get_all(Vec,[Ix|Ixs]) ->
     [get(Vec,Ix)|get_all(Vec,Ixs)].
 
@@ -108,7 +107,6 @@ empty(N,Elt) ->
     list_to_vector(mklist(N,Elt)).
 
 
-
-mklist(0,Elt) -> [];
+mklist(0,_Elt) -> [];
 mklist(N,Elt) when N > 0 ->
     [Elt|mklist(N-1,Elt)].

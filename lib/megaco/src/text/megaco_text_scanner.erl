@@ -47,7 +47,7 @@ tokens(Chars, Line, Acc) ->
 	    {ok, lists:reverse(Tokens), Line};
 	{token, Token, Rest, LatestLine} ->
 	    tokens(Rest, LatestLine, [Token | Acc]);
-	{bad_token, Token, Rest, LatestLine} ->
+	{bad_token, Token, _Rest, _LatestLine} ->
 	    {error, {bad_token, [Token, Acc]}, Line}
     end.
 
@@ -88,7 +88,7 @@ comment_chars([Char | Rest], Line) ->
 	    sep_chars(Rest, Line);
 	_ when Char == 22 ->
 	    comment_chars(Rest, Line);
-	Bad ->
+	_ ->
 	    {bad_token, {'SEP', Line, Char}, Rest, Line}
     end;
 comment_chars([] = All, Line) ->
@@ -104,7 +104,7 @@ sep_chars([Char | Rest] = All, Line) ->
 	    sep_chars(Rest, Line);
 	end_of_line ->
 	    sep_chars(Rest, Line + 1);
-	Bad ->
+	_ ->
 	    {bad_token, {'SEP', Line, Char}, Rest, Line}
     end;
 sep_chars([] = All, Line) ->
@@ -139,7 +139,7 @@ skip_sep_chars([Char | Rest] = All, Line) ->
 	    skip_sep_chars(Rest, Line);
 	end_of_line ->
 	    skip_sep_chars(Rest, Line + 1);
-	Other ->
+	_ ->
 	    {All, Line}
     end;
 skip_sep_chars([] = All, Line) ->
@@ -157,7 +157,7 @@ skip_comment_chars([Char | Rest] = All, Line) ->
 	    skip_comment_chars(Rest, Line);
 	end_of_line ->
 	    skip_sep_chars(Rest, Line + 1);
-	Other ->
+	_ ->
 	    {All, Line}
     end;
 skip_comment_chars([] = All, Line) ->
@@ -173,17 +173,17 @@ quoted_chars([Char | Rest], Acc, Line) ->
 	    quoted_chars(Rest, [Char | Acc], Line);
 	double_quote -> 
 	    {token, {'QuotedChars', Line, lists:reverse(Acc)}, Rest, Line};
-	Bad ->
+	_ ->
 	    {bad_token, {'QuotedChars', Line, Char}, Rest, Line}
     end;
-quoted_chars([] = All, Acc, Line) ->
+quoted_chars([] = All, _Acc, Line) ->
     {bad_token, {'QuotedChars', Line, end_of_input}, All, Line}.
     
 safe_chars([Char | Rest] = All, Acc, LowerAcc, Line) ->
     case ?classify_char(Char) of
 	safe_char ->
 	    safe_chars(Rest, [Char | Acc], [?LOWER(Char) | LowerAcc], Line);
-	Other ->
+	_ ->
 	    LowerSafeChars = lists:reverse(LowerAcc),
 	    TokenTag = select_token(LowerSafeChars),
 	    SafeChars = lists:reverse(Acc),
@@ -208,7 +208,7 @@ safe_chars([Char | Rest] = All, Acc, LowerAcc, Line) ->
 		    {token, {TokenTag, Line, LowerSafeChars}, All, Line}
 	    end
     end;
-safe_chars([] = All, Acc, LowerAcc, Line) ->
+safe_chars([] = All, _Acc, LowerAcc, Line) ->
     LowerSafeChars = lists:reverse(LowerAcc),
     TokenTag = select_token(LowerSafeChars),
     %%SafeChars = lists:reverse(Acc),
@@ -218,7 +218,7 @@ collect_safe_chars([Char | Rest] = All, LowerAcc) ->
     case ?classify_char(Char) of
 	safe_char ->
 	    collect_safe_chars(Rest, [?LOWER(Char) | LowerAcc]);
-	Other ->
+	_ ->
 	    {All, lists:reverse(LowerAcc)}
     end;
 collect_safe_chars([] = Rest, LowerAcc) ->
@@ -322,7 +322,7 @@ octet_string([Char | Rest] = All, Acc, Line) ->
 	    octet_string(Rest, [Char | Acc], Line);
 	Char == ?BackslashToken ->
 	    case Rest of
-		[?RbrktToken | Rest2] ->
+		[?RbrktToken | _Rest2] ->
 		    %% OTP-4357
 		    octet_string(Rest, [?RbrktToken, ?BackslashToken | Acc], Line);
 		_ ->

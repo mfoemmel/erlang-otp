@@ -35,7 +35,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/1, request/5, reply/6, locate/5, locate_reply/5]).
+-export([start/2, request/5, reply/6, locate/5, locate_reply/5]).
 
 
 
@@ -43,18 +43,21 @@
 %% Internal exports
 %%-----------------------------------------------------------------
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-	 code_change/3, terminate/2, stop/2]).
+	 code_change/3, terminate/2, stop/2, fragment/2, fragmented/3]).
 
 %%-----------------------------------------------------------------
 %% Macros
 %%-----------------------------------------------------------------
 -define(DEBUG_LEVEL, 8).
 
+-record(state, {client, timeout, buffer = [], fragmented, bytes}).
+
 %%-----------------------------------------------------------------
 %% External interface functions
 %%-----------------------------------------------------------------
-start(ReplyTo) ->
-    gen_server:start_link(orber_iiop_outrequest, ReplyTo, []).
+start(ReplyTo, Timeout) ->
+    gen_server:start_link(orber_iiop_outrequest, #state{client = ReplyTo, 
+							timeout = Timeout}, []).
 
 request(Pid, Socket, SocketType, Timeout, Msg) ->
     gen_server:cast(Pid, {request, Socket, SocketType, Timeout, Msg}).
@@ -67,6 +70,12 @@ locate(Pid, Msg, Socket, SocketType, Timeout) ->
 
 locate_reply(Pid, ReplyHeader, Rest, Len, ByteOrder) ->
     gen_server:cast(Pid, {locate_reply, ReplyHeader, Rest, Len, ByteOrder}).
+
+fragment(Pid, GIOPHdr) ->
+    gen_server:cast(Pid, {fragment, GIOPHdr}).
+
+fragmented(Pid, GIOPHdr, Bytes) ->
+    gen_server:cast(Pid, {fragmented, GIOPHdr, Bytes}).
 
 %%-----------------------------------------------------------------
 %% Internal interface functions
@@ -95,13 +104,13 @@ terminate(Reason, State) ->
 %%-----------------------------------------------------------------
 %% Func: handle_call/3
 %%-----------------------------------------------------------------
-handle_call(stop, From, ReplyTo) ->
-    gen_server:reply(ReplyTo, 
-		     {'EXCEPTION', #'COMM_FAILURE'{minor=107, 
+handle_call(stop, From, State) ->
+    gen_server:reply(State#state.client, 
+		     {'EXCEPTION', #'COMM_FAILURE'{minor=(?ORBER_VMCID bor 3), 
 						   completion_status=?COMPLETED_MAYBE}}),
-    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_call(~p); stopped", 
-			    [?LINE, ReplyTo], ?DEBUG_LEVEL),
-    {stop, normal, ok, []};
+    orber:dbg("[~p] orber_iiop_outrequest:handle_call(~p); stopped", 
+	      [?LINE, State], ?DEBUG_LEVEL),
+    {stop, normal, ok, State};
 handle_call(X, _, State) ->
     ?PRINTDEBUG2("orber_iiop_outrequest:handle_call(~p) - Unknown", [X]),
     {noreply, State}.
@@ -109,40 +118,104 @@ handle_call(X, _, State) ->
 %%-----------------------------------------------------------------
 %% Func: handle_cast/2
 %%-----------------------------------------------------------------
-handle_cast({request, Socket, SocketType, Timeout, Msg}, ReplyTo) ->
+handle_cast({request, Socket, SocketType, Timeout, Msg}, State) ->
     orber_socket:write(SocketType, Socket, Msg),
     if
 	integer(Timeout) ->
 	    ?PRINTDEBUG2("IIOP request has set user defined timeout: ~p", [Timeout]),
-	    {noreply, ReplyTo, Timeout};
+	    {noreply, State, Timeout};
 	true ->
 	    ?PRINTDEBUG2("IIOP request has set the iiop_timeout: ~p", 
-			 [orber:iiop_timeout()]),
-	    {noreply, ReplyTo, orber:iiop_timeout()}
+			 [State#state.timeout]),
+	    {noreply, State, State#state.timeout}
     end;
-handle_cast({reply, ReplyHeader, Rest, Len, ByteOrder, Bytes}, ReplyTo) ->
-    gen_server:reply(ReplyTo, {reply, ReplyHeader, Rest, Len, ByteOrder, Bytes}),
-    {stop, normal, []};
-handle_cast({locate_request, Request, Socket, SocketType, Timeout}, ReplyTo) ->
-    %% Here we must handle Interceptors
+handle_cast({reply, ReplyHeader, Rest, Len, ByteOrder, Bytes}, State) ->
+    gen_server:reply(State#state.client, 
+		     {reply, ReplyHeader, Rest, Len, ByteOrder, Bytes}),
+    {stop, normal, State};
+handle_cast({locate_request, Request, Socket, SocketType, Timeout}, State) ->
     orber_socket:write(SocketType, Socket, Request),
     if
 	integer(Timeout) ->
-	    {noreply, ReplyTo, Timeout};
+	    {noreply, State, Timeout};
 	true ->
-	    {noreply, ReplyTo, orber:iiop_timeout()}
+	    {noreply, State, State#state.timeout}
     end;
-handle_cast({locate_reply, ReplyHdr, Rest, Len, ByteOrder}, ReplyTo) ->
-    %% Here we must handle Interceptors
-    gen_server:reply(ReplyTo, {locate_reply, ReplyHdr, Rest, Len, ByteOrder}),
-    {stop, normal, []};
-handle_cast(stop, ReplyTo) ->
-    gen_server:reply(ReplyTo, 
-		     {'EXCEPTION', #'COMM_FAILURE'{minor=107, 
+handle_cast({locate_reply, ReplyHdr, Rest, Len, ByteOrder}, State) ->
+    gen_server:reply(State#state.client, 
+		     {locate_reply, ReplyHdr, Rest, Len, ByteOrder}),
+    {stop, normal, State};
+handle_cast({fragment, #giop_message{byte_order = ByteOrder,
+				     message    = Message,
+				     fragments  = true} = GIOPHdr}, State) ->
+    %% There are more framents to come; just collect this message and wait for
+    %% the rest.
+    case catch cdr_decode:dec_message_header(null, GIOPHdr, Message) of
+	{_, #fragment_header{}, FragBody, _, _} ->
+	    {noreply, State#state{buffer=[FragBody|State#state.buffer]}, 
+	     State#state.timeout};
+	Other ->
+	    gen_server:reply(State#state.client, 
+			     {'EXCEPTION', #'MARSHAL'{minor=(?ORBER_VMCID bor 18), 
+						      completion_status=?COMPLETED_YES}}),
+	    orber:dbg("[~p] orber_iiop_outrequest:handle_cast(~p); stopped", 
+		      [?LINE, State], ?DEBUG_LEVEL),
+	    {stop, normal, State}
+    end;	    
+handle_cast({fragment, #giop_message{byte_order = ByteOrder,
+				     message    = Message} = GIOPHdr}, 
+	    #state{fragmented = InitGIOPHdr} = State) ->
+    %% This is the last fragment. Now we can but together the fragments, decode
+    %% the reply and send it to the client.
+    case catch cdr_decode:dec_message_header(null, GIOPHdr, Message) of
+	{_, #fragment_header{}, FragBody, _, _} ->
+	    %% This buffer is all the fragments concatenated.
+	    Buffer = lists:reverse([FragBody|State#state.buffer]),
+	    
+	    %% Create a GIOP-message which is exactly as if hadn't been fragmented.
+	    NewGIOP = InitGIOPHdr#giop_message
+			{message = list_to_binary([InitGIOPHdr#giop_message.message|Buffer]),
+			 fragments = false},
+	    case catch orber_iiop_outproxy:checkheaders(NewGIOP) of
+		{'reply', ReplyHeader, Rest, Len, ByteOrder} ->
+		    %% We must keep create a copy of all bytes, as if the message
+		    %% wasn't fragmented, to be able handle TypeCode indirection.
+		    gen_server:reply(State#state.client, 
+				     {reply, ReplyHeader, Rest, Len, ByteOrder, 
+				      list_to_binary([State#state.bytes|Buffer])});
+		{'locate_reply', ReplyHdr, Rest, Len, ByteOrder} ->
+		    gen_server:reply(State#state.client,
+				     {locate_reply, ReplyHdr, Rest, Len, ByteOrder});
+		Error ->
+		    gen_server:reply(State#state.client, 
+				     {'EXCEPTION', #'MARSHAL'{minor=(?ORBER_VMCID bor 18),
+							      completion_status=?COMPLETED_YES}}),
+		    orber:dbg("[~p] orber_iiop_outrequest:handle_cast(~p, ~p);
+Unable to decode Reply or LocateReply header", 
+			      [?LINE, NewGIOP, State], ?DEBUG_LEVEL)
+	    end,
+	    {stop, normal, State#state{buffer=Buffer, fragmented = NewGIOP}};
+	Other ->
+	    gen_server:reply(State#state.client, 
+			     {'EXCEPTION', #'MARSHAL'{minor=(?ORBER_VMCID bor 18),
+						      completion_status=?COMPLETED_YES}}),    
+	    orber:dbg("[~p] orber_iiop_outrequest:handle_cast(~p); stopped", 
+		      [?LINE, State], ?DEBUG_LEVEL),
+	    {stop, normal, State}
+    end;
+handle_cast({fragmented, #giop_message{byte_order = ByteOrder,
+				       message    = Message,
+				       fragments  = true} = GIOPHdr, 
+	     Bytes}, State) ->
+    %% This the initial message (i.e. a LocateReply or Reply).
+    {noreply, State#state{fragmented = GIOPHdr, bytes = Bytes}, State#state.timeout};
+handle_cast(stop, State) ->
+    gen_server:reply(State#state.client, 
+		     {'EXCEPTION', #'COMM_FAILURE'{minor=(?ORBER_VMCID bor 3), 
 						   completion_status=?COMPLETED_MAYBE}}),    
-    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(~p); stopped", 
-			    [?LINE, ReplyTo], ?DEBUG_LEVEL),
-    {stop, normal, []};
+    orber:dbg("[~p] orber_iiop_outrequest:handle_cast(~p); stopped", 
+	      [?LINE, State], ?DEBUG_LEVEL),
+    {stop, normal, State};
 handle_cast(X, State) ->
     ?PRINTDEBUG2("orber_iiop_outrequest:handle_cast(~p) - Unknown", [X]),
     {noreply, State}.
@@ -150,20 +223,19 @@ handle_cast(X, State) ->
 %%-----------------------------------------------------------------
 %% Func: handle_info/2
 %%-----------------------------------------------------------------
-handle_info(stop, ReplyTo) ->
-    gen_server:reply(ReplyTo, 
-		     {'EXCEPTION', #'COMM_FAILURE'{minor=107, 
+handle_info(stop, State) ->
+    gen_server:reply(State#state.client, 
+		     {'EXCEPTION', #'COMM_FAILURE'{minor=(?ORBER_VMCID bor 3), 
 						   completion_status=?COMPLETED_MAYBE}}),    
-    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_info(~p); stopped", 
-			    [?LINE, ReplyTo], ?DEBUG_LEVEL),
-    {stop, normal, ReplyTo};
-handle_info(timeout, ReplyTo) ->
-    gen_server:reply(ReplyTo, 
-		     {'EXCEPTION', #'COMM_FAILURE'{minor=107, 
-						   completion_status=?COMPLETED_MAYBE}}),
-    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_info(~p); timeout", 
-			    [?LINE, ReplyTo], ?DEBUG_LEVEL),
-    {stop, normal, ReplyTo};
+    orber:dbg("[~p] orber_iiop_outrequest:handle_info(~p); stopped", 
+	      [?LINE, State], ?DEBUG_LEVEL),
+    {stop, normal, State};
+handle_info(timeout, State) ->
+    gen_server:reply(State#state.client, 
+		     {'EXCEPTION', #'TIMEOUT'{completion_status=?COMPLETED_MAYBE}}),
+    orber:dbg("[~p] orber_iiop_outrequest:handle_info(~p); timeout", 
+	      [?LINE, State], ?DEBUG_LEVEL),
+    {stop, normal, State};
 handle_info(X,State) ->
     ?PRINTDEBUG2("orber_iiop_outrequest:handle_info(~p) - Unknown", [X]),
     {noreply, State}.

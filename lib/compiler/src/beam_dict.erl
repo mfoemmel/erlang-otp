@@ -172,7 +172,7 @@ lookup_store(Key, Dict, NextIndex) ->
 lookup_store1(Key, [Pair|Dict], NextIndex) when Key > element(2, Pair) ->
     {Index, NewDict} = lookup_store1(Key, Dict, NextIndex),
     {Index, [Pair|NewDict]};
-lookup_store1(Key, [{Index, Key}|Dict], NextIndex) ->
+lookup_store1(Key, [{Index, Key}|_Dict], _NextIndex) ->
     throw(Index);
 lookup_store1(Key, Dict, NextIndex) ->
     {NextIndex, [{NextIndex, Key}|Dict]}.
@@ -192,5 +192,5 @@ old_string([C|Str], [C|Pool], Index) ->
     end;
 old_string(Str, [_|Pool], Index) ->
     old_string(Str, Pool, Index+1);
-old_string(Str, [], Index) ->
+old_string(_Str, [], _Index) ->
     false.

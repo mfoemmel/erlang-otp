@@ -70,12 +70,12 @@ request({Host, Port, InitObjkey, Index, TaggedProfile, HostData},
 	Op, Parameters, TypeCodes, ResponseExpected, Timeout, IOR) ->
     {{Proxy, Ctx, Interceptors}, ObjKey, Version} =
 	connect(Host, Port, InitObjkey, Timeout, [Index], HostData,
-		TaggedProfile, IOR, []),
+		TaggedProfile, IOR),
     RequestId = orber_request_number:get(),
     Message = encode_request(Interceptors, Version, ObjKey, RequestId, 
 			     ResponseExpected, Op, Parameters, Ctx, TypeCodes),
     case orber_iiop_outproxy:request(Proxy, ResponseExpected, Timeout, 
-					   Message, RequestId) of
+				     Message, RequestId) of
 	{'EXCEPTION', MsgExc} ->
 	    corba:raise(MsgExc);
 	_ when ResponseExpected == false ->
@@ -217,7 +217,7 @@ locate({Host, Port, InitObjkey, Index, TaggedProfile, HostData},
        Timeout, IOR) ->
     {{Proxy, Ctx, Interceptors}, ObjKey, Version} =
 	connect(Host, Port, InitObjkey, Timeout, [Index], HostData,
-		TaggedProfile, IOR, []),
+		TaggedProfile, IOR),
     RequestId = orber_request_number:get(),
     Result = 
 	case catch cdr_encode:enc_locate_request(Version, ObjKey,  RequestId) of
@@ -228,7 +228,7 @@ locate({Host, Port, InitObjkey, Index, TaggedProfile, HostData},
 	    {'EXIT', EncR} ->
 		orber:dbg("[~p] orber_iiop_outrequest:handle_cast(locate_request, ~p); exit(~p)", 
 					[?LINE, ObjKey, EncR], ?DEBUG_LEVEL),
-		corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
+		corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
 	    Request ->
 		orber_iiop_outproxy:locate(Proxy, Request, RequestId, Timeout)
 	end,
@@ -258,19 +258,6 @@ locate({Host, Port, InitObjkey, Index, TaggedProfile, HostData},
 	    end
     end.
  	    
-
-
-
-ssl_client_cacertfile_option() ->
-    case orber:ssl_client_cacertfile() of
-	[] ->
-	    [];
-	X when list(X) ->
-	    [{cacertfile, X}];
-	_ ->
-	    []
-    end.
-
 %%%-----------------------------------------------------------------
 %%% Func: cancel/1
 %%%-----------------------------------------------------------------
@@ -448,35 +435,24 @@ decode_reply_body(Interceptors, ObjKey, Op, ReplyHeader, Version, TypeCodes,
 
 connect(Host, Port, Objkey, Timeout, Index, #host_data{protocol = ssl,
 						       ssl_data = SSLData} = HostData,
-	TaggedProfile, IOR, []) ->
-    %% This way we'll only lookup the SSL-data once. 
-    SocketOptions = [{certfile, orber:ssl_client_certfile()},
-		     {verify, orber:ssl_client_verify()},
-		     {depth, orber:ssl_client_depth()} |
-		     ssl_client_cacertfile_option()],
-    connect2([{Host, SSLData}], Objkey, Timeout, Index, HostData, 
-	     TaggedProfile, IOR, SocketOptions);
-connect(Host, Port, Objkey, Timeout, Index, HostData, TaggedProfile, IOR, SocketOptions) ->
-    connect2([{Host, Port}], Objkey, Timeout, Index, HostData, TaggedProfile, IOR, SocketOptions).
+	TaggedProfile, IOR) ->
+    connect2([{Host, SSLData}], Objkey, Timeout, Index, HostData, TaggedProfile, IOR);
+connect(Host, Port, Objkey, Timeout, Index, HostData, TaggedProfile, IOR) ->
+    connect2([{Host, Port}], Objkey, Timeout, Index, HostData, TaggedProfile, IOR).
 
-connect2(HostPort, Objkey, Timeout, Index, HostData, TaggedProfile, IOR, 
-	 SocketOptions) ->
-    case try_connect(HostPort, HostData#host_data.protocol, SocketOptions, Timeout,
-		     HostData) of
+connect2(HostPort, Objkey, Timeout, Index, HostData, TaggedProfile, IOR) ->
+    case try_connect(HostPort, HostData#host_data.protocol, Timeout, HostData) of
 	error ->
 	    Alts = iop_ior:get_alt_addr(TaggedProfile),
-	    case try_connect(Alts, HostData#host_data.protocol, SocketOptions, Timeout,
-			     HostData) of
+	    case try_connect(Alts, HostData#host_data.protocol, Timeout, HostData) of
 		error ->
 		    case iop_ior:get_key(IOR, Index) of
 			undefined ->
-			    corba:raise(#'COMM_FAILURE'
-					{minor=126, completion_status = ?COMPLETED_NO});
+			    corba:raise(#'COMM_FAILURE'{completion_status = ?COMPLETED_NO});
 			{'external', {NewHost, NewPort, NewObjkey, NewIndex,
 				      NewTaggedProfile, NewHostData}} ->
-			    connect(NewHost, NewPort, NewObjkey, Timeout, 
-				    [NewIndex|Index], NewHostData, NewTaggedProfile, 
-				    IOR, SocketOptions);
+			    connect(NewHost, NewPort, NewObjkey, Timeout, [NewIndex|Index], 
+				    NewHostData, NewTaggedProfile, IOR);
 			What ->
 			    orber:dbg("[~p] orber_iiop:connect2(~p)
 Illegal IOR; contains a mixture of local and external profiles.", [?LINE, IOR], ?DEBUG_LEVEL),
@@ -489,40 +465,39 @@ Illegal IOR; contains a mixture of local and external profiles.", [?LINE, IOR], 
 	    {X, Objkey, HostData#host_data.version}
     end.
 
-try_connect([], _, _, _, _) ->
+try_connect([], _, _, _) ->
     error;
-try_connect([{Host, Port}|T], normal, SocketOptions, Timeout, HostData) ->
-    case catch orber_iiop_pm:connect(Host, Port, normal, [], Timeout,
+try_connect([{Host, Port}|T], normal, Timeout, HostData) ->
+    case catch orber_iiop_pm:connect(Host, Port, normal, Timeout,
 				     HostData#host_data.charset,
 				     HostData#host_data.wcharset) of
 	{'EXCEPTION', PMExc} ->
-	    try_connect(T, normal, SocketOptions, Timeout, HostData);
+	    try_connect(T, normal, Timeout, HostData);
 	{'EXIT',{timeout,_}} ->
 	    orber:dbg("[~p] orber_iiop:try_connect(~p, ~p, ~p)
 Connect attempt timed out", [?LINE, Host, Port, Timeout], ?DEBUG_LEVEL),
-	    try_connect(T, normal, SocketOptions, Timeout, HostData);
+	    try_connect(T, normal, Timeout, HostData);
 	{'EXIT', What} ->
 	    orber:dbg("[~p] orber_iiop:try_connect(~p, ~p, ~p)
 Connect attempt resulted in: ~p", [?LINE, Host, Port, Timeout, What], ?DEBUG_LEVEL),
-	    try_connect(T, normal, SocketOptions, Timeout, HostData);
+	    try_connect(T, normal, Timeout, HostData);
 	X ->
 	    X
     end;
-try_connect([{Host, Port}|T], SocketType, SocketOptions, Timeout, HostData) ->
-    case catch orber_iiop_pm:connect(Host, Port, SocketType, 
-				     SocketOptions, Timeout,
+try_connect([{Host, Port}|T], SocketType, Timeout, HostData) ->
+    case catch orber_iiop_pm:connect(Host, Port, SocketType, Timeout,
 				     HostData#host_data.charset,
 				     HostData#host_data.wcharset) of
 	{'EXCEPTION', PMExc} ->
-	    try_connect(T, SocketType, SocketOptions, Timeout, HostData);
+	    try_connect(T, SocketType, Timeout, HostData);
 	{'EXIT',{timeout,_}} ->
 	    orber:dbg("[~p] orber_iiop:try_connect(~p, ~p, ~p)
 Connect attempt timed out", [?LINE, Host, Port, Timeout], ?DEBUG_LEVEL),
-	    try_connect(T, SocketType, SocketOptions, Timeout, HostData);
+	    try_connect(T, SocketType, Timeout, HostData);
 	{'EXIT', What} ->
 	    orber:dbg("[~p] orber_iiop:try_connect(~p, ~p, ~p)
 Connect attempt resulted in: ~p", [?LINE, Host, Port, Timeout, What], ?DEBUG_LEVEL),
-	    try_connect(T, SocketType, SocketOptions, Timeout, HostData);
+	    try_connect(T, SocketType, Timeout, HostData);
 	X ->
 	    X
     end.

@@ -1,5 +1,5 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Copyright (c) 2000 by Erik Johansson.  All Rights Reserved 
+%% -*- erlang-indent-level: 2 -*-
 %% ====================================================================
 %%  Filename : 	hipe.hrl
 %%  Purpose  :  To define some usefull macros for debugging
@@ -12,8 +12,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: happi $
-%%              $Date: 2001/10/03 15:10:49 $
-%%              $Revision: 1.17 $
+%%              $Date: 2002/09/20 10:34:06 $
+%%              $Revision: 1.31 $
 %% ====================================================================
 %%
 %%
@@ -50,26 +50,34 @@
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--define(version(),{1,0,0}).
+-define(version(),{2,0,0}).
+-define(majorvnr,element(1,?version())).
+-define(minorvnr,element(2,?version())).
+-define(incrementvnr,element(3,?version())).
 -define(msgtagmap(M), 
 	case M of 
-	  hipe -> "Compiler ";
-	  hipe_main -> "Compiler ";
-	  hipe_update_catches -> "Compiler ";
+	  hipe -> "";
+	  hipe_main -> "";
+	  hipe_update_catches -> "";
 	  hipe_sparc_loader -> "Loader   ";
-	  hipe_beam_to_icode -> "BEAM Dis.";
+	  hipe_beam_to_icode -> "";
+	  hipe_sparc_ra -> ""; 
+	  hipe_sparc_caller_saves -> ""; 
+	  hipe_icode_cfg -> ""; 
+	  hipe_rtl_cfg -> ""; 
+	  hipe_sparc_cfg -> ""; 
+	  hipe_x86_cfg -> ""; 
 	  _ ->  atom_to_list(M)
 	end).
 
--define(MSGTAG, 
-	(fun () ->
-	  
-	  {Major, Minor, Increment} = ?version(),
-	  "[HiPE " ++ ?msgtagmap(?MODULE) ++
-	    "(v " ++ integer_to_list(Major) ++ "."
-	    ++ integer_to_list(Minor) ++ "."
-	    ++ integer_to_list(Increment) ++ ")] "
-	 end)()).
+
+-define(MMSGTAG(Mod), 
+	"<HiPE " ++ ?msgtagmap(Mod) ++
+	"(v " ++ integer_to_list(?majorvnr) ++ "."
+	++ integer_to_list(?minorvnr) ++ "."
+	++ integer_to_list(?incrementvnr) ++ ")> ").
+-define(MSGTAG,?MMSGTAG(?MODULE)).
+
 
 %%
 %% Define the message macros with or without logging,
@@ -78,11 +86,15 @@
 -ifdef(HIPE_LOGGING).
 -define(msg(Msg, Args),
    error_logger:info_msg(?MSGTAG ++ Msg, Args)).
+-define(mmsg(Msg, Args, Mod),
+   error_logger:info_msg(?MMSGTAG(Mod) ++ Msg, Args)).
 -define(untagged_msg(Msg, Args),
 	error_logger:info_msg(Msg, Args)).
 -else.
 -define(msg(Msg, Args),
-   io:format(?MSGTAG ++ Msg, Args)).
+	io:format(?MSGTAG ++ Msg, Args)).
+-define(mmsg(Msg, Args, Mod),
+	io:format(?MMSGTAG(Mod) ++ Msg, Args)).
 -define(untagged_msg(Msg, Args),
    io:format(Msg, Args)).
 -endif.
@@ -122,12 +134,12 @@
 %% Define the exit macro
 %%
 -ifdef(VERBOSE).
--define(EXIT(Reason),exit({?MODULE,?LINE,Reason})).
+-define(EXIT(Reason),erlang:fault({?MODULE,?LINE,Reason})).
 -else.
 -define(EXIT(Reason),
  	?msg("EXITED with reason ~w @~w:~w\n",
  	    [Reason,?MODULE,?LINE]),
- 	exit({?MODULE,?LINE,Reason})).
+ 	erlang:fault({?MODULE,?LINE,Reason})).
 -endif.
 
 
@@ -159,7 +171,7 @@
 % Use this to display info, save stuff and so on.
 % Vars cannot be exported from Action
 -define(when_option(__Opt,__Opts,__Action),
-	case property_lists:get_bool(__Opt,__Opts) of
+	case proplists:get_bool(__Opt,__Opts) of
 	    true -> __Action; false -> ok end).
 
 
@@ -170,56 +182,18 @@
 -define(TIME_STMNT(STMNT,Msg,Timer),
 	Timer = hipe_timing:start_timer(),
 	STMNT,
-	?msg(Msg ++ "~.2f s\n",[hipe_timing:stop_timer(Timer)/1000])).
+	?untagged_msg(Msg ++ "~.2f s\n",[hipe_timing:stop_timer(Timer)/1000])).
 -else.
 -define(TIME_STMNT(STMNT,Msg,Timer),STMNT).
 -endif.
 
 
--define(start_timer(Text),
-	fun(__Timers) ->
-	    fun(__Space) ->
-		fun( {__Total,__Last}) ->
-		    put(hipe_timers,[__Total|__Timers]),
-		    ?msg("[@~6w]"++__Space ++ "> ~s~n",[__Total,Text])
-		end (erlang:statistics(runtime))
-	    end (lists:duplicate(length(__Timers),$|))
-	end (case get(hipe_timers) of
-	       undefined -> [];
-	       _ -> get(hipe_timers)
-	     end)).
-
--define(stop_timer(Text),
-	fun([StartTime|Timers]) -> 
-	    fun(Space) ->
-		fun( {__Total,__Last}) ->
-		    put(hipe_timers,Timers),
-		    ?msg("[@~6w]"++Space ++ "< ~s: ~w~n",
-			 [__Total, Text, __Total-StartTime])
-		end(erlang:statistics(runtime))
-	    end(lists:duplicate(length(Timers),$|));
-	   (_) ->
-	    fun( {__Total,__Last}) ->
-		put(hipe_timers, []),
-		?msg("[@~6w]< ~s: ~w~n",
-		     [__Total, Text, __Total])
-	    end(erlang:statistics(runtime))
-	
-	end(get(hipe_timers))).
-
--define(start_hipe_timer(Timer),
-	put({hipe,Timer}, erlang:statistics(runtime))).
--define(stop_hipe_timer(Timer),
-	put(Timer,
-	    get(Timer) +
-	    element(1,erlang:statistics(runtime)) - 
-	    element(1,get({hipe,Timer})))).
--define(get_hipe_timer_val(Timer),
-	get(Timer)).
--define(set_hipe_timer_val(Timer, Val),
-	put(Timer, Val)).
-
-
+-define(start_timer(Text), hipe_timing:start(Text, ?MODULE)).
+-define(stop_timer(Text), hipe_timing:stop(Text, ?MODULE)).
+-define(start_hipe_timer(Timer), hipe_timing:start_hipe_timer(Timer)).
+-define(stop_hipe_timer(Timer), hipe_timing:stop_hipe_timer(Timer)).
+-define(get_hipe_timer_val(Timer), get(Timer)).
+-define(set_hipe_timer_val(Timer, Val), put(Timer, Val)).
 -define(option_time(Stmnt, Text, Options),
 	?when_option(time, Options, ?start_timer(Text)),
 	fun(R) ->
@@ -232,6 +206,11 @@
 
 -define(option_stop_time(Text,Options),
 	?when_option(time, Options, ?stop_timer(Text))).
+
+-define(opt_start_timer(Text),
+	hipe_timing:start_optional_timer(Text,?MODULE)).
+-define(opt_stop_timer(Text),
+	hipe_timing:stop_optional_timer(Text,?MODULE)).
 		     
 %% Turn on instrumentation of the compiler.
 -ifdef(HIPE_INSTRUMENT_COMPILER).
@@ -253,6 +232,15 @@
 			 get(regalloctime) + 
 			 (element(1,erlang:statistics(runtime))
 			  -element(1,get(regalloctime1)))))).
+-define(start_time_caller_saves(Options),
+	?when_option(timeregalloc, Options, 
+		     put(callersavetime1,erlang:statistics(runtime)))).
+-define(stop_time_caller_saves(Options),
+	?when_option(timeregalloc, Options, 
+		     put(callersavetime,
+			 get(callersavetime) + 
+			 (element(1,erlang:statistics(runtime))
+			  -element(1,get(callersavetime1)))))).
 
 -define(count_pre_ra_temps(Options, NoTemps),
 	?when_option(count_temps, Options,
@@ -308,12 +296,12 @@
 		     put(spilledtemps, get(spilledtemps) + NoSpills))).
 
 -define(optional_start_timer(Timer, Options),
-	case lists:member(Timer, property_lists:get_value(timers,Options++[{timers,[]}])) of
+	case lists:member(Timer, proplists:get_value(timers,Options++[{timers,[]}])) of
 	  true -> ?start_hipe_timer(Timer);
 	  false -> true
 	end).
 -define(optional_stop_timer(Timer, Options),
-	case lists:member(Timer, property_lists:get_value(timers,Options++[{timers,[]}])) of
+	case lists:member(Timer, proplists:get_value(timers,Options++[{timers,[]}])) of
 	  true -> ?stop_hipe_timer(Timer);
 	  false -> true
 	end).
@@ -324,6 +312,8 @@
 -define(count_post_ra_instructions(Options, NoInstrs),no_instrumentation).
 -define(start_time_regalloc(Options),no_instrumentation).
 -define(stop_time_regalloc(Options),no_instrumentation).
+-define(start_time_caller_saves(Options),no_instrumentation).
+-define(stop_time_caller_saves(Options),no_instrumentation).
 -define(count_pre_ra_temps(Options, NoTemps),no_instrumentation).
 -define(count_post_ra_temps(Options, NoTemps),no_instrumentation).
 -define(start_ra_instrumentation(Options, NoInstrs, NoTemps),no_instrumentation).

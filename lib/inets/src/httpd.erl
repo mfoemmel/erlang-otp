@@ -37,6 +37,75 @@
 
 -include("httpd.hrl").
 
+-define(D(F, A), io:format("~p:" ++ F ++ "~n", [?MODULE|A])).
+
+
+%% start
+
+start() ->
+    start("/var/tmp/server_root/conf/8888.conf").
+
+start(ConfigFile) ->
+    %% ?D("start(~s) -> entry", [ConfigFile]),
+    start(ConfigFile, []).
+
+start(ConfigFile, Verbosity) when list(ConfigFile), list(Verbosity) ->
+    httpd_sup:start(ConfigFile, Verbosity).
+
+
+%% start_link
+
+start_link() ->
+    start("/var/tmp/server_root/conf/8888.conf").
+
+start_link(ConfigFile) ->
+    start_link(ConfigFile, []).
+
+start_link(ConfigFile, Verbosity) when list(ConfigFile), list(Verbosity) ->
+    httpd_sup:start_link(ConfigFile, Verbosity).
+
+
+%% stop
+
+stop() ->
+  stop(8888).
+
+stop(Port) when integer(Port) ->
+    stop(undefined, Port);
+stop(Pid) when pid(Pid) ->
+    httpd_sup:stop(Pid);
+stop(ConfigFile) when list(ConfigFile) ->
+    %% ?D("stop(~s) -> entry", [ConfigFile]),
+    httpd_sup:stop(ConfigFile).
+
+stop(Addr, Port) when integer(Port) ->
+    httpd_sup:stop(Addr, Port).
+
+
+%% start_child
+
+start_child() ->
+    start_child("/var/tmp/server_root/conf/8888.conf").
+
+start_child(ConfigFile) ->
+    start_child(ConfigFile, []).
+
+start_child(ConfigFile, Verbosity) ->
+    inets_sup:start_child(ConfigFile, Verbosity).
+
+
+%% stop_child
+
+stop_child() ->
+  stop_child(8888).
+
+stop_child(Port) ->
+    stop_child(undefined,Port).
+
+stop_child(Addr, Port) when integer(Port) ->
+    inets_sup:stop_child(Addr, Port).
+
+
 %% multi_start
 
 multi_start(MultiConfigFile) ->
@@ -54,25 +123,6 @@ mstart([],Results) ->
 mstart([H|T],Results) ->
     Res = start(H),
     mstart(T,[Res|Results]).
-
-
-%% start
-
-start() ->
-    start("/var/tmp/server_root/conf/8888.conf").
-
-start(ConfigFile) ->
-    start(ConfigFile, []).
-
-start(ConfigFile, Verbosity) when list(Verbosity) ->
-    ?LOG("start -> ConfigFile = ~s",[ConfigFile]),
-    case httpd_conf:load(ConfigFile) of
-	{ok,ConfigList} ->
-	    httpd_manager:start(ConfigFile, ConfigList, Verbosity);
-	{error,Reason} ->
-	    error_logger:error_report(Reason),
-	    {stop,Reason}
-    end.
 
 
 %% multi_start_link
@@ -93,42 +143,6 @@ mstart_link([H|T],Results) ->
     Res = start_link(H),
     mstart_link(T,[Res|Results]).
 
-%% start_link
-
-start_link() ->
-    start("/var/tmp/server_root/conf/8888.conf").
-
-start_link(ConfigFile) ->
-    start_link(ConfigFile, []).
-
-start_link(ConfigFile, Verbosity) when list(Verbosity) ->
-    ?LOG("start_link -> ConfigFile = ~s",[ConfigFile]),
-    case httpd_conf:load(ConfigFile) of
-	{ok,ConfigList} ->
-	    httpd_manager:start_link(ConfigFile, ConfigList, Verbosity);
-	{error,Reason} ->
-	    {stop,Reason}
-    end.
-
-%% start_child
-
-start_child() ->
-  start_child("/var/tmp/server_root/conf/8888.conf").
-
-start_child(ConfigFile) ->
-  case httpd_conf:load(ConfigFile) of
-    {ok,ConfigList} ->
-      Port = httpd_util:key1search(ConfigList,port,80),
-      Addr = httpd_util:key1search(ConfigList,bind_address),
-      Name = make_name(Addr,Port),
-      ?LOG("start_child -> Name = ~p",[Name]),
-      supervisor:start_child(inets,{Name,{httpd,start,[ConfigFile]},
-				    transient,brutal_kill,worker,
-				    [httpd_manager]});
-    {error,Reason} ->
-      {stop,Reason}
-  end.
-
 
 %% multi_stop
 
@@ -147,48 +161,6 @@ mstop([],Results) ->
 mstop([H|T],Results) ->
     Res = stop(H),
     mstop(T,[Res|Results]).
-
-
-%% stop
-
-stop() ->
-  stop(8888).
-
-stop(Pid) when pid(Pid) ->
-    httpd_manager:stop(Pid);
-stop(Port) when integer(Port) ->
-    stop(undefined,Port);
-stop(ConfigFile) when list(ConfigFile) ->
-    case get_addr_and_port(ConfigFile) of
-	{ok,Addr,Port} ->
-	    stop(Addr,Port);
-	Error ->
-	    Error
-    end.
-
-stop(Addr,Port) when integer(Port) ->
-  Name = make_name(Addr,Port),
-  ?LOG("stop -> Name = ~p",[Name]),
-  case whereis(Name) of
-    Pid when pid(Pid) ->
-      httpd_manager:stop(Pid);
-    _ ->
-      not_started
-  end.
-
-%% stop_child
-
-stop_child() ->
-  stop_child(8888).
-
-stop_child(Port) ->
-    stop_child(undefined,Port).
-
-stop_child(Addr,Port) when integer(Port) ->
-  Name = make_name(Addr,Port),
-  ?LOG("stop_child -> Name = ~p",[Name]),
-  supervisor:terminate_child(inets,Name),
-  supervisor:delete_child(inets,Name).
 
 
 %% multi_restart

@@ -146,7 +146,26 @@ TARGET_FILES= \
 # Java related programs and Flags
 # ----------------------------------------------------
 
-CLASSPATH = $(ERL_TOP)/lib/jinterface/priv/OtpErlang.jar:$(ERL_TOP)/lib/ic/priv/ic.jar
+APP_DIR = $(ERL_TOP)/lib/mnesia_session
+
+INCLUDE_DIR := $(APP_DIR)/include
+
+IC_DIR := $(ERL_TOP)/lib/ic
+
+JI_DIR := $(ERL_TOP)/lib/jinterface
+APP_BUILD_DIR = $(shell (dirname $(shell (dirname $(shell (dirname $(shell pwd)))))))
+ 
+IC_BUILD_DIR := $(shell echo 'io:format("~s~n",[code:lib_dir(ic)]),halt().' | erl | sed 's,^[0-9]*> *,,g' | tail +2)
+ 
+JI_BUILD_DIR := $(shell echo 'io:format("~s~n",[code:lib_dir(jinterface)]),halt().' | erl | sed 's,^[0-9]*> *,,g' | tail +2)
+
+APP_BUILD_DIR = $(shell (dirname $(shell (dirname $(shell (dirname $(shell pwd)))))))
+ 
+IC_BUILD_DIR := $(shell echo 'io:format("~s~n",[code:lib_dir(ic)]),halt().' | erl | sed 's,^[0-9]*> *,,g' | tail +2)
+ 
+EI_BUILD_DIR := $(shell echo 'io:format("~s~n",[code:lib_dir(erl_interface)]),halt().' | erl | sed 's,^[0-9]*> *,,g' | tail +2)
+
+CLASSPATH = $(JI_DIR)/priv/OtpErlang.jar:$(JI_BUILD_DIR)/priv/OtpErlang.jar:$(IC_DIR)/priv/ic.jar:$(IC_BUILD_DIR)/priv/ic.jar
 
 JAVA_FLAGS= -d .
 JAVA_OPTIONS = 

@@ -69,8 +69,8 @@ to_tuple(T) -> {T}.
 o_request(Io, Request) ->
     case request(Io, Request) of
 	{error, Reason} ->
-	    L = [Name | Args] = tuple_to_list(to_tuple(Request)),
-	    {'EXIT',{undef,[Current|Mfas]}} = (catch erlang:fault(undef)),
+	    [Name | Args] = tuple_to_list(to_tuple(Request)),
+	    {'EXIT',{undef,[_Current|Mfas]}} = (catch erlang:fault(undef)),
 	    MFA = {io, Name, [Io | Args]},
 	    exit({conv_reason(Name, Reason),[MFA|Mfas]});
 %	    erlang:fault(conv_reason(Name, Reason), [Name, Io | Args]);
@@ -116,13 +116,13 @@ read(Prompt) ->
 
 read(Io, Prompt) ->
     case request(Io, {get_until,Prompt,erl_scan,tokens,[1]}) of
-	{ok,Toks,EndLine} ->
+	{ok,Toks,_EndLine} ->
 	    erl_parse:parse_term(Toks);
 %	{error, Reason} when atom(Reason) ->
 %	    erlang:fault(conv_reason(read, Reason), [Io, Prompt]);
-	{error,E,EndLine} ->
+	{error,E,_EndLine} ->
 	    {error,E};
-	{eof,EndLine} ->
+	{eof,_EndLine} ->
 	    eof;
 	Other ->
 	    Other
@@ -130,7 +130,6 @@ read(Io, Prompt) ->
 
 %% Formatted writing and reading.
 
-conv_reason(Req, Reason) -> badarg;
 conv_reason(_, arguments) -> badarg;
 conv_reason(_, terminated) -> ebadf;
 conv_reason(_, Reason) -> Reason.
@@ -291,8 +290,7 @@ io_requests([R|Rs], Cont, Tail) ->
     [io_request(R)|io_requests(Rs, Cont, Tail)];
 io_requests([], [Rs|Cont], Tail) ->
     io_requests(Rs, Cont, Tail);
-io_requests([], [], Tail) ->
-    [].
+io_requests([], [], _Tail) -> [].
 
 io_request({write,Term}) ->
     {put_chars,io_lib,write,[Term]};

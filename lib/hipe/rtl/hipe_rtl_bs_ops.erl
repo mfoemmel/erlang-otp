@@ -1,7 +1,7 @@
 %% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2001 by Erik Johansson.  All Rights Reserved 
-%% Time-stamp: <01/06/19 20:38:17 happi>
+%% Time-stamp: <02/05/13 14:53:23 happi>
 %% ====================================================================
 %%  Filename : 	hipe_rtl_bs_ops.erl
 %%  Module   :	hipe_rtl_bs_ops
@@ -10,9 +10,9 @@
 %%  History  :	* 2001-06-14 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: mikpe $
-%%              $Date: 2001/09/10 16:23:54 $
-%%              $Revision: 1.3 $
+%%              $Author: pegu2945 $
+%%              $Date: 2002/09/13 15:26:20 $
+%%              $Revision: 1.9 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -54,7 +54,7 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
 	    gen_test_sideffect_bs_call(bs_start_match,
 				       Args, TrueLblName, FalseLblName);
 
-	  {bs_put_binary_all, Flags} ->
+	  {bs_put_binary_all, _Flags} ->
 	    gen_test_sideffect_bs_call(bs_put_binary_all,Args,
 				       TrueLblName,FalseLblName);
 
@@ -73,7 +73,7 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
 
 	    end;
 	  %% put float
-	  {bs_put_float, Flags, Size} ->
+	  {bs_put_float, Size, Flags} ->
 
 	    SizeReg = hipe_rtl:mk_new_reg(),
 	    FlagsReg = hipe_rtl:mk_new_reg(),
@@ -182,10 +182,7 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
 
 
 
-	  {bs_get_binary_all, Flags} -> 
-	    TmpV1 = hipe_rtl:mk_new_var(),
-	    RetLabel =  hipe_rtl:mk_new_label(),
-	    OkLabel =  hipe_rtl:mk_new_label(),
+	  {bs_get_binary_all, _Flags} -> 
 	    [Dst1] = Dst, 
 	    gen_bs_call(bs_get_binary_all,
 			[],
@@ -217,9 +214,8 @@ gen_rtl(BsOP,Args, Dst,TrueLblName, FalseLblName, ConstTab) ->
 
 	  {bs_restore, Index} ->
 	    Tmp1 = hipe_rtl:mk_new_reg(),
-	    [hipe_rtl:mk_move(Tmp1, hipe_rtl:mk_imm(Index))|
-	     gen_test_sideffect_bs_call(bs_restore,
-					[Tmp1],TrueLblName,FalseLblName)];
+	    [hipe_rtl:mk_move(Tmp1, hipe_rtl:mk_imm(Index)),
+	     hipe_rtl:mk_call([],bs_restore,[Tmp1],c, TrueLblName,[])];
 
 	  {bs_save, Index} ->
 	    Tmp1 = hipe_rtl:mk_new_reg(),
@@ -268,11 +264,15 @@ gen_test_sideffect_bs_call(Name,Args,TrueLblName,FalseLblName) ->
    hipe_rtl:mk_branch(Tmp1, eq, hipe_rtl:mk_imm(0), 
 		      FalseLblName, TrueLblName, 0.01)].
 
+
 gen_make_size(DstReg, UnitImm, BitsVar, FalseLblName) ->
   MulDoneLabel =  hipe_rtl:mk_new_label(),
   MulOkLabel =  hipe_rtl:mk_new_label(),
+  PosNumOkLabel = hipe_rtl:mk_new_label(),
   UnitVar = hipe_rtl:mk_new_var(),
   TmpVar = hipe_rtl:mk_new_var(),
+  ZeroVar = hipe_rtl:mk_new_var(),
+  ZeroConst = hipe_rtl:mk_imm(hipe_tagscheme:mk_fixnum(0)),
   UnitConst = hipe_rtl:mk_imm(hipe_tagscheme:mk_fixnum(UnitImm)),
   [hipe_rtl:mk_move(UnitVar, UnitConst),  
    hipe_rtl:mk_call([TmpVar], '*', [BitsVar, UnitVar], c,
@@ -282,4 +282,9 @@ gen_make_size(DstReg, UnitImm, BitsVar, FalseLblName) ->
    hipe_tagscheme:test_fixnum(TmpVar, hipe_rtl:label_name(MulOkLabel), 
 			      FalseLblName, 0.99),
    MulOkLabel,
+   hipe_rtl:mk_move(ZeroVar, ZeroConst),  
+   hipe_tagscheme:fixnum_ge(TmpVar, ZeroVar, hipe_rtl:label_name(PosNumOkLabel), FalseLblName, 0.99), 
+   PosNumOkLabel,
    hipe_tagscheme:untag_fixnum(DstReg, TmpVar)].
+
+

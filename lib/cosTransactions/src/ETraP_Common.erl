@@ -133,7 +133,7 @@ try_timeout(TimeoutAt) ->
 %%            Wait - sleep Wait seconds before next try.
 %% Returns  : see effect
 %% Exception: 
-%% Effect   : Retries repeatidly untill anything else besides
+%% Effect   : Retries repeatedly until anything else besides
 %%            'EXIT', 'COMM_FAILURE' or 'OBJECT_NOT_EXIST'
 %%------------------------------------------------------------
 
@@ -151,11 +151,20 @@ send_stubborn(M, F, A, MaxR, Wait, Times) ->
 	    NewTimes = Times +1,
 	    timer:sleep(Wait),
 	    send_stubborn(M, F, A, MaxR, Wait, NewTimes);
+	{'EXCEPTION', E} when record(E, 'TRANSIENT')->
+	    NewTimes = Times +1,
+	    timer:sleep(Wait),
+	    send_stubborn(M, F, A, MaxR, Wait, NewTimes);
+	{'EXCEPTION', E} when record(E, 'TIMEOUT')->
+	    NewTimes = Times +1,
+	    timer:sleep(Wait),
+	    send_stubborn(M, F, A, MaxR, Wait, NewTimes);
 	{'EXIT', _} ->
 	    NewTimes = Times +1,
 	    timer:sleep(Wait),
 	    send_stubborn(M, F, A, MaxR, Wait, NewTimes);
 	Other ->
+	    ?debug_print("~p:~p(~p) Resulted in: ~p~n", [M,F,A, Other]),    
 	    Other
     end.
 

@@ -341,6 +341,38 @@
 	 per_bin_msg24/1, 
 	 per_bin_msg25/1, 
 
+% 	 per_bin_opt/1,
+% 	 per_bin_opt_msg1a/1, per_bin_opt_msg1b/1, 
+% 	 per_bin_opt_msg2/1, 
+% 	 per_bin_opt_msg3/1, 
+% 	 per_bin_opt_msg4/1, 
+% 	 per_bin_opt_msg5/1, 
+% 	 per_bin_opt_msg6a/1, per_bin_opt_msg6b/1, 
+% 	 per_bin_opt_msg7/1, 
+% 	 per_bin_opt_msg8a/1, per_bin_opt_msg8b/1, 
+% 	 per_bin_opt_msg9/1, 
+% 	 per_bin_opt_msg10/1, 
+% 	 per_bin_opt_msg11/1, 
+% 	 per_bin_opt_msg12/1, 
+% 	 per_bin_opt_msg13/1, 
+% 	 per_bin_opt_msg14/1, 
+% 	 per_bin_opt_msg15/1, 
+% 	 per_bin_opt_msg16/1, 
+% 	 per_bin_opt_msg17/1, 
+% 	 per_bin_opt_msg18/1, 
+% 	 per_bin_opt_msg19/1, 
+% 	 per_bin_opt_msg20/1, 
+% 	 per_bin_opt_msg21/1, 
+% 	 per_bin_opt_msg22a/1, 
+% 	 per_bin_opt_msg22b/1, 
+% 	 per_bin_opt_msg22c/1, 
+% 	 per_bin_opt_msg22d/1, 
+% 	 per_bin_opt_msg22e/1, 
+% 	 per_bin_opt_msg22f/1, 
+% 	 per_bin_opt_msg23/1, 
+% 	 per_bin_opt_msg24/1, 
+% 	 per_bin_opt_msg25/1, 
+
 	 tickets/1, 
 
 	 compact_tickets/1, 
@@ -366,6 +398,7 @@
 	 ber_bin_time_test/1,
 	 per_time_test/1,
 	 per_bin_time_test/1,
+% 	 per_bin_opt_time_test/1,
 	 erl_dist_time_test/1,
 	 erl_dist_compressed_time_test/1,
 
@@ -378,9 +411,8 @@
 
 %% ----
 
-
 -define(TIME_TEST_COUNT_TIME, 2*1000*1000). % 2 seconds
--define(TIME_TEST_TIMEOUT,    10000).       % 10 seconds
+-define(TIME_TEST_TIMEOUT,    30000).       % 10 seconds
 
 
 -define(DEFAULT_PORT, 55555).
@@ -443,7 +475,7 @@ tickets() ->
 %% ----
 %% To manually run the time test, in the test directory, type:
 %% 
-%% erl -sname megaco -pa ../../megaco/examples/simple -pa ../../megaco/ebin
+%% erl -sname megaco -pa ../../megaco/examples/simple -pa ../../megaco/ebin -pa ../../et/ebin
 %% DelCases = [ber_time_test, bin_time_test, erl_dist_compressed_time_test],
 %% megaco_codec_test:tt("/tmp", DelCases).
 %%
@@ -490,8 +522,12 @@ tt(Path, DeleteCases) ->
 tt_official([Path]) when list(Path) ->
     tt_official(Path);
 tt_official(Path) when list(Path) ->
-    DelCases = [pretty, compact,
-		per_time_test, ber_time_test, bin_time_test,
+    DelCases = [pretty, 
+		compact,
+		per_time_test, 
+		%% per_bin_opt_time_test, 
+		ber_time_test, 
+		bin_time_test,
 		erl_dist_compressed_time_test],
     tt(Path, DelCases).
 
@@ -510,6 +546,7 @@ tt_texts(Path) when list(Path) ->
 		ber_bin_time_test,
 		per_time_test,
 		per_bin_time_test,
+		%% per_bin_opt_time_test,
 		erl_dist_time_test,
 		erl_dist_compressed_time_test],
     tt(Path, DelCases).
@@ -518,12 +555,16 @@ tt_texts(Path) when list(Path) ->
 tt_bins([Path]) when list(Path) ->
     tt_bins(Path);
 tt_bins(Path) when list(Path) ->
+    %% BMK
     DelCases = [pretty_time_test,
 		flex_pretty_time_test,
 		compact_time_test,
 		flex_compact_time_test,
 		erl_dist_time_test,
 		erl_dist_compressed_time_test],
+
+
+
     tt(Path, DelCases).
 
 
@@ -1002,7 +1043,8 @@ binary(suite) ->
      ber,
      ber_bin,
      per,
-     per_bin
+     per_bin %% ,
+     %% per_bin_opt
     ].
 
 time_test(suite) ->
@@ -1016,6 +1058,7 @@ time_test(suite) ->
      ber_bin_time_test,
      per_time_test,
      per_bin_time_test,
+     %% per_bin_opt_time_test,
      erl_dist_time_test,
      erl_dist_compressed_time_test
     ].
@@ -1353,6 +1396,41 @@ per_bin(suite) ->
      per_bin_msg24,
      per_bin_msg25
     ].
+
+
+% per_bin_opt(suite) ->
+%     [
+%      per_bin_opt_msg1a, per_bin_opt_msg1b, 
+%      per_bin_opt_msg2, 
+%      per_bin_opt_msg3, 
+%      per_bin_opt_msg4, 
+%      per_bin_opt_msg5, 
+%      per_bin_opt_msg6a, per_bin_opt_msg6b, 
+%      per_bin_opt_msg7, 
+%      per_bin_opt_msg8a, per_bin_opt_msg8b, 
+%      per_bin_opt_msg9, 
+%      per_bin_opt_msg10, 
+%      per_bin_opt_msg11,
+%      per_bin_opt_msg12,
+%      per_bin_opt_msg13,
+%      per_bin_opt_msg14,
+%      per_bin_opt_msg15,
+%      per_bin_opt_msg16,
+%      per_bin_opt_msg17,
+%      per_bin_opt_msg18,
+%      per_bin_opt_msg19,
+%      per_bin_opt_msg20,
+%      per_bin_opt_msg21,
+%      per_bin_opt_msg22a,
+%      per_bin_opt_msg22b,
+%      per_bin_opt_msg22c,
+%      per_bin_opt_msg22d,
+%      per_bin_opt_msg22e,
+%      per_bin_opt_msg22f,
+%      per_bin_opt_msg23,
+%      per_bin_opt_msg24,
+%      per_bin_opt_msg25
+%     ].
 
 
 tickets(suite) ->
@@ -3831,6 +3909,240 @@ per_bin_msg25(Config) when list(Config) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% per_bin_opt_msg1a(suite) ->
+%     [];
+% per_bin_opt_msg1a(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg1a()),
+%     ok.
+
+% per_bin_opt_msg1b(suite) ->
+%     [];
+% per_bin_opt_msg1b(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg1b()),
+%     ok.
+
+% per_bin_opt_msg2(suite) ->
+%     [];
+% per_bin_opt_msg2(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg2()),
+%     ok.
+
+% per_bin_opt_msg3(suite) ->
+%     [];
+% per_bin_opt_msg3(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg3()),
+%     ok.
+
+% per_bin_opt_msg4(suite) ->
+%     [];
+% per_bin_opt_msg4(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg4()),
+%     ok.
+
+% per_bin_opt_msg5(suite) ->
+%     [];
+% per_bin_opt_msg5(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg5()),
+%     ok.
+
+% per_bin_opt_msg6a(suite) ->
+%     [];
+% per_bin_opt_msg6a(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg6a()),
+%     ok.
+
+% per_bin_opt_msg6b(suite) ->
+%     [];
+% per_bin_opt_msg6b(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg6b()),
+%     ok.
+
+% per_bin_opt_msg7(suite) ->
+%     [];
+% per_bin_opt_msg7(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg7()),
+%     ok.
+
+% per_bin_opt_msg8a(suite) ->
+%     [];
+% per_bin_opt_msg8a(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg8a()),
+%     ok.
+
+% per_bin_opt_msg8b(suite) ->
+%     [];
+% per_bin_opt_msg8b(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg8b()),
+%     ok.
+
+% per_bin_opt_msg9(suite) ->
+%     [];
+% per_bin_opt_msg9(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg9()),
+%     ok.
+
+% per_bin_opt_msg10(suite) ->
+%     [];
+% per_bin_opt_msg10(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg10()),
+%     ok.
+
+% per_bin_opt_msg11(suite) ->
+%     [];
+% per_bin_opt_msg11(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg11()),
+%     ok.
+
+% per_bin_opt_msg12(suite) ->
+%     [];
+% per_bin_opt_msg12(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg12()),
+%     ok.
+
+% per_bin_opt_msg13(suite) ->
+%     [];
+% per_bin_opt_msg13(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg13()),
+%     ok.
+
+% per_bin_opt_msg14(suite) ->
+%     [];
+% per_bin_opt_msg14(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg14()),
+%     ok.
+
+% per_bin_opt_msg15(suite) ->
+%     [];
+% per_bin_opt_msg15(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg15()),
+%     ok.
+
+% per_bin_opt_msg16(suite) ->
+%     [];
+% per_bin_opt_msg16(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg16()),
+%     ok.
+
+% per_bin_opt_msg17(suite) ->
+%     [];
+% per_bin_opt_msg17(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg17()),
+%     ok.
+
+% per_bin_opt_msg18(suite) ->
+%     [];
+% per_bin_opt_msg18(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg18()),
+%     ok.
+
+% per_bin_opt_msg19(suite) ->
+%     [];
+% per_bin_opt_msg19(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg19()),
+%     ok.
+
+% per_bin_opt_msg20(suite) ->
+%     [];
+% per_bin_opt_msg20(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg20()),
+%     ok.
+
+% per_bin_opt_msg21(suite) ->
+%     [];
+% per_bin_opt_msg21(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg21()),
+%     ok.
+
+% per_bin_opt_msg22a(suite) ->
+%     [];
+% per_bin_opt_msg22a(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg22a()),
+%     ok.
+
+% per_bin_opt_msg22b(suite) ->
+%     [];
+% per_bin_opt_msg22b(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg22b()),
+%     ok.
+
+% per_bin_opt_msg22c(suite) ->
+%     [];
+% per_bin_opt_msg22c(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg22c()),
+%     ok.
+
+% per_bin_opt_msg22d(suite) ->
+%     [];
+% per_bin_opt_msg22d(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg22d()),
+%     ok.
+
+% per_bin_opt_msg22e(suite) ->
+%     [];
+% per_bin_opt_msg22e(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg22e()),
+%     ok.
+
+% per_bin_opt_msg22f(suite) ->
+%     [];
+% per_bin_opt_msg22f(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg22f()),
+%     ok.
+
+% per_bin_opt_msg23(suite) ->
+%     [];
+% per_bin_opt_msg23(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg23()),
+%     ok.
+
+% per_bin_opt_msg24(suite) ->
+%     [];
+% per_bin_opt_msg24(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg24()),
+%     ok.
+
+% per_bin_opt_msg25(suite) ->
+%     [];
+% per_bin_opt_msg25(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     {equal, 'MegacoMessage'} = do(megaco_per_bin_opt_encoder, [], msg25()),
+%     ok.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 %% # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 %% Ticket test cases:
 
@@ -4248,6 +4560,25 @@ per_bin_time_test(Config) when list(Config) ->
     end.
    
 
+% per_bin_opt_time_test(suite) ->
+%     [];
+% per_bin_opt_time_test(Config) when list(Config) ->
+%     ?ACQUIRE_NODES(1, Config),
+%     case (catch do_time_test(megaco_per_bin_opt_encoder, "Per bin")) of
+% 	Res when list(Res) ->
+% 	    {ok, {per_bin_opt, Res}};
+% 	{'EXIT', Reason} ->
+% 	    ?LOG("per_bin_opt exit: ~n~p~n", [Reason]),
+% 	    exit(Reason);
+% 	{error, Reason} ->
+% 	    ?LOG("per_bin_opt error: ~n~p~n", [Reason]),
+% 	    exit(Reason);
+% 	Error ->
+% 	    ?LOG("per_bin_opt other: ~n~p~n", [Error]),
+% 	    exit(Error)
+%     end.
+   
+
 erl_dist_time_test(suite) ->
     [];
 erl_dist_time_test(Config) when list(Config) ->
@@ -4275,7 +4606,7 @@ do_time_test(Codec, Desc) ->
 do_time_test(Codec, Desc, Conf) when atom(Codec), list(Conf) ->
     Msgs    = do_time_test_msgs(),
     %% Double of the measure time: 
-    %% 2 * measure time for a message * number of messages
+    %% 5 * measure time for a message * number of messages
     %% For most codec's this differ for encode and decode, but...
     Timeout = 5 * (?TIME_TEST_COUNT_TIME) * length(Msgs), 
     Fun1    = fun({_, _,   _, Count}) -> Count end,
@@ -4369,7 +4700,7 @@ do_time_test_encode(Timeout, Codec, Desc, Conf, Msg) ->
 	{'EXIT', Pid, Reason} ->
 	    ?LOG("time tester ~s exited: ~n~p~n", [Desc, Reason]),
 	    exit({time_tester_crash, Reason})
-    after ?TIME_TEST_TIMEOUT ->
+    after Timeout ->
 	    exit(no_result_from_time_tester)
     end.
 
@@ -4398,29 +4729,30 @@ do_time_test_decode(Timeout, Codec, Desc, Conf, Msg) ->
 	{'EXIT', Pid, Reason} ->
 	    ?LOG("time tester ~s exited: ~n~p~n", [Desc, Reason]),
 	    exit({time_tester_crash, Reason})
-    after ?TIME_TEST_TIMEOUT ->
+    after Timeout ->
 	    exit(no_result_from_time_tester)
     end.
 
 
-do_time_test_codec(Desc, Codec, Func, Conf, M) ->
-    Pid = spawn_link(?MODULE, do_time_tester, 
-		     [self(), {Codec, Func, [Conf, M]}]),
-    receive
-        {measure_result, Pid, Res} ->
-            {ok, Res};
-        {error, Pid, Error} ->
-            {error, Error};
-	{'EXIT', Pid, Reason} ->
-	    ?LOG("time tester ~s exited: ~n~p~n", [Desc, Reason]),
-	    exit({time_tester_crash, Reason})
-    after ?TIME_TEST_TIMEOUT -> 
-	    exit(no_result_from_time_tester)
-    end.
+%% do_time_test_codec(Desc, Codec, Func, Conf, M) ->
+%%     Pid = spawn_link(?MODULE, do_time_tester, 
+%% 			[self(), {Codec, Func, [Conf, M]}]),
+%%     receive
+%% 	   {measure_result, Pid, Res} ->
+%% 	       {ok, Res};
+%% 	   {error, Pid, Error} ->
+%% 	       {error, Error};
+%% 	   {'EXIT', Pid, Reason} ->
+%% 	       ?LOG("time tester ~s exited: ~n~p~n", [Desc, Reason]),
+%% 	       exit({time_tester_crash, Reason})
+%%     after ?TIME_TEST_TIMEOUT -> 
+%% 	       exit(no_result_from_time_tester)
+%%     end.
 
 
 do_time_tester(Parent, MFA) ->
     {ok, Count} = time_test_warmup(MFA, 1000),
+    %% io:format("~nCount: ~p~n", [Count]),
     Res = timer:tc(?MODULE, do_time_tester_loop, [MFA, Count, dummy]),
     case Res of
 	{Time, {ok, M}} ->
@@ -4435,7 +4767,8 @@ do_time_tester(Parent, MFA) ->
 %% above does. But with the diff:
 %% 1) Warmup to ensure that all used code are loaded
 %% 2) To aproximate the encoding time, to ensure that 
-%%    the real encode is done with enough iterations.
+%%    the real encode is done with enough iterations
+%%    (not to many, not to few).
 time_test_warmup(MFA, MCount) ->
     Res = timer:tc(?MODULE, do_time_tester_loop, [MFA, MCount, dummy]),
     case Res of

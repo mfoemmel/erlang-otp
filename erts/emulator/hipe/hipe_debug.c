@@ -18,11 +18,10 @@
 #include "beam_load.h"
 #include "hipe_mode_switch.h"
 #include "hipe_debug.h"
-#include "hipe_stack.h"
 
-extern uint32 beam_apply[];
+extern Uint beam_apply[];
 
-static void print_beam_pc(uint32 *pc)
+static void print_beam_pc(Uint *pc)
 {
     if( pc == hipe_beam_pc_return ) {
 	printf("return-to-native");
@@ -61,7 +60,7 @@ static void raw_slot(Eterm *pos, Eterm val, const char *type)
 
 static void catch_slot(Eterm *pos, Eterm val, int is_native)
 {
-    uint32 *pc = catch_pc(val);
+    Uint *pc = catch_pc(val);
     printf(" | 0x%08x | 0x%08x | CATCH 0x%08x (%s ",
 	   (unsigned int)pos,
 	   (unsigned int)val,
@@ -130,30 +129,13 @@ static void print_stack(Eterm *sp, Eterm *end, int is_native)
 void hipe_print_estack(Process *p)
 {
     printf(" |       BEAM  STACK       |\r\n");
-#ifdef UNIFIED_HEAP
-    print_stack(p->stop, p->stack, 0);
-#else
-    print_stack(p->stop, p->hend, 0);
-#endif
-}
-
-void hipe_print_nstack(Process *p)
-{
-    hipe_clean_nstack(p);
-    printf(" |      NATIVE  STACK      |\r\n");
-    /* this will print SPARC and x86 stack in different chronology :-( */
-    print_stack(hipe_nstack_start(p), hipe_nstack_start(p) + hipe_nstack_used(p), 1);
+    print_stack(p->stop, STACK_START(p), 0);
 }
 
 void hipe_print_heap(Process *p)
 {
-#ifdef UNIFIED_HEAP
-    Eterm *pos = global_heap;
-    Eterm *end = global_htop;
-#else
     Eterm *pos = p->heap;
     Eterm *end = p->htop;
-#endif
 
     printf("From: 0x%08x  to  0x%08x\n\r",(unsigned int)pos,(unsigned int)end);
     printf(" |         H E A P         |\r\n");
@@ -183,13 +165,8 @@ void hipe_print_heap(Process *p)
 
 void hipe_check_heap(Process *p)
 {
-#ifdef UNIFIED_HEAP
-    Eterm *pos = global_heap;
-    Eterm *end = global_htop;
-#else
     Eterm *pos = p->heap;
     Eterm *end = p->htop;
-#endif
 
     printf("Check heap from: 0x%08x  to:  0x%08x\n\r",(unsigned int)pos,
                                                       (unsigned int)end);
@@ -220,13 +197,13 @@ void hipe_print_pcb(Process *p)
     
     U("htop       ", htop);
     U("hend       ", hend);
+    U("heap       ", heap);
+    U("heap_sz    ", heap_sz);
     U("stop       ", stop);
-#ifdef UNIFIED_HEAP
+#ifdef SHARED_HEAP
     U("stack      ", stack);
     U("send       ", send);
 #else
-    U("heap       ", heap);
-    U("heap_sz    ", heap_sz);
     U("gen_gcs    ", gen_gcs);
     U("max_gen_gcs", max_gen_gcs);
     U("high_water ", high_water);
@@ -248,14 +225,13 @@ void hipe_print_pcb(Process *p)
     U("fvalue     ", fvalue);
     U("freason    ", freason);
     U("fcalls     ", fcalls);
-    U("dslot      ", dslot);
     /*XXX: ErlTimer tm; */
     U("next       ", next);
     /*XXX: ErlOffHeap off_heap; */
     U("reg        ", reg);
     U("reg_atom   ", reg_atom);
     U("links      ", links);
-#ifndef UNIFIED_HEAP
+#ifndef SHARED_HEAP
     /*XXX: ErlMessageQueue msg; */
     U("mbuf       ", mbuf);
     U("mbuf_sz    ", mbuf_sz);
@@ -273,8 +249,10 @@ void hipe_print_pcb(Process *p)
     P("cp         ", cp);
     P("i          ", i);
     U("catches    ", catches);
+#ifndef SHARED_HEAP
     U("arith_heap ", arith_heap);
     U("arith_avail", arith_avail);
+#endif
 #ifdef DEBUG
     U("arith_file ", arith_file);
     U("arith_line ", arith_line);

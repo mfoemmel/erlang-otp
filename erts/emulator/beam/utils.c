@@ -45,92 +45,197 @@
 #define HAVE_MALLOPT 0
 #endif
 
-#ifdef UNIFIED_HEAP
-  #define HEAP_SIZE global_heap_sz
-  #define MBUF      global_mbuf
-  #define MBUF_SIZE global_mbuf_sz
-#else
-  #define HEAP_SIZE p->heap_sz
-  #define MBUF      p->mbuf
-  #define MBUF_SIZE p->mbuf_sz
-#endif
-
-/* Imported from drv/gzio.c. Why not in any header file? */
-ErlDrvBinary* gzinflate_buffer(char*, int);
-
 /* Forward */
 static int is_printable_string(Eterm);
 
-Eterm*
-arith_alloc(Process* p, Uint need)
+static Eterm*
+do_alloc(Process* p, Eterm* last_htop, Uint need)
 {
     ErlHeapFragment* bp;
     Uint n;
+#ifdef DEBUG
+    Uint i;
+#endif
 
-    if (need <= p->arith_avail) {
-	Eterm* hp = p->arith_heap;
+    /*
+     * Allocate a new arith heap.
+     */
 
-	p->arith_heap += need;
-	p->arith_avail -= need;
-	return hp;
+#ifdef SHARED_HEAP
+    n = need;
+#else
+    n = p->min_heap_size/2 + need;
+#endif
+
+#ifdef DEBUG
+    n++;
+#endif
+    bp = (ErlHeapFragment*)
+	erts_safe_sl_alloc_from(822,
+				sizeof(ErlHeapFragment)
+				+ ((n-1)*sizeof(Eterm)));
+#ifdef DEBUG
+    n--;
+#endif
+    ARITH_AVAIL(p) = n - need;
+    ARITH_HEAP(p) = bp->mem + need;
+#ifdef DEBUG
+    for (i = 0; i <= n; i++) {
+	bp->mem[i] = ARITH_MARKER;
     }
-
-    if (need > 64 && p->arith_avail > 7) {
-	/*
-	 * Allocate in a new block; don't update the arith heap.
-	 */
-	n = need;
-	bp = (ErlHeapFragment*)
-	    erts_safe_sl_alloc_from(821,
-				    sizeof(ErlHeapFragment)
-				    + ((n-1)*sizeof(Eterm)));
-    } else {
-#ifdef DEBUG
-	int i;
+    ARITH_CHECK_ME(p) = ARITH_HEAP(p);
 #endif
-	/*
-	 * Allocate a new arith heap.
-	 */
-	n = p->min_heap_size/2 + need;
-#ifdef DEBUG
-	n++;
-#endif
-	bp = (ErlHeapFragment*)
-	    erts_safe_sl_alloc_from(822,
-				    sizeof(ErlHeapFragment)
-				    + ((n-1)*sizeof(Eterm)));
-#ifdef DEBUG
-	n--;
-#endif
-	p->arith_avail = n - need;
-	p->arith_heap = bp->mem + need;
-#ifdef DEBUG
-	for (i = 0; i <= n; i++) {
-	    bp->mem[i] = ARITH_MARKER;
+#ifdef HEAP_FRAG_ELIM_TEST
+    if (ARITH_LOWEST_HTOP(p) == NULL) {
+	if (SAVED_HEAP_TOP(p) != NULL) {
+	    last_htop = SAVED_HEAP_TOP(p);
 	}
-	p->arith_check_me = p->arith_heap;
-#endif
+	if (last_htop != NULL) {
+	    ARITH_LOWEST_HTOP(p) = last_htop;
+	}
     }
-
-    bp->next = MBUF;
-    MBUF = bp;
+#endif
+    bp->next = MBUF(p);
+    MBUF(p) = bp;
     bp->size = n;
-    MBUF_SIZE += n;
+    MBUF_SIZE(p) += n;
     bp->off_heap.mso = NULL;
+#ifndef SHARED_HEAP
     bp->off_heap.funs = NULL;
+#endif
+    bp->off_heap.externals = NULL;
     bp->off_heap.overhead = 0;
 
+#ifdef HEAP_FRAG_ELIM_TEST
+    /*
+     * Unconditionally force a garbage collection.
+     */
+    MSO(p).overhead = HEAP_SIZE(p);
+    BUMP_ALL_REDS(p);
+#else
     /*
      * Test if time to do GC; if so bump the reduction count to force
      * a context switch.
      */
-
-    p->off_heap.overhead += (sizeof(ErlHeapFragment)/sizeof(Eterm) - 1); 
-    if (((MBUF_SIZE + p->off_heap.overhead)*MBUF_GC_FACTOR) >= HEAP_SIZE) {
+    MSO(p).overhead += (sizeof(ErlHeapFragment)/sizeof(Eterm) - 1); 
+    if (((MBUF_SIZE(p) + MSO(p).overhead)*MBUF_GC_FACTOR) >= HEAP_SIZE(p)) {
 	BUMP_ALL_REDS(p);
     }
+#endif
     return bp->mem;
 }
+
+Eterm*
+erts_arith_alloc(Process* p, Eterm* last_htop, Uint need)
+{
+    return do_alloc(p, last_htop, need);
+}
+
+Eterm*
+erts_heap_alloc(Process* p, Uint need)
+{
+    Eterm* hp;
+
+#ifdef HEAP_FRAG_ELIM_TEST
+    if (need <= ARITH_AVAIL(p)) {
+	Eterm* hp = ARITH_HEAP(p);
+
+	ARITH_HEAP(p) += need;
+	ARITH_AVAIL(p) -= need;
+	return hp;
+    }
+#endif
+
+#ifdef SHARED_HEAP
+    if (p->htop == NULL) {
+	if (need <= global_hend - global_htop) {
+	    hp = global_htop;
+	    global_htop += need;
+	    return hp;
+	} else if (global_htop != NULL) {
+	    /*
+	     * Garbage collect the global heap.
+	     */
+	    Process p;
+
+	    p.htop = global_htop;
+	    p.heap = global_heap;
+	    p.hend = global_hend;
+	    p.heap_sz = global_heap_sz;
+	    p.send = NULL;
+	    p.stop = NULL;
+	    p.fvalue = NIL;
+	    p.group_leader = NIL;
+	    p.seq_trace_token = NIL;
+	    p.dictionary = NULL;
+	    p.debug_dictionary = NULL;
+#ifdef HEAP_FRAG_ELIM_TEST
+	    p.ssb = NULL;
+#endif
+	    p.status = 0;
+	    p.flags = 0;
+	    p.tracer_proc = NIL;
+	    (void) erts_garbage_collect(&p, need, NULL, 0);
+	    global_htop = p.htop;
+	    global_heap = p.heap;
+	    global_hend = p.hend;
+	    global_heap_sz = p.heap_sz;
+	    hp = global_htop;
+	    global_htop += need;
+	    return hp;
+	} else {
+	    return erts_global_alloc(need);
+	}
+    }
+#endif
+    hp = do_alloc(p, p->htop, need);
+
+#ifdef HEAP_FRAG_ELIM_TEST
+    if (SAVED_HEAP_TOP(p) == NULL) {
+	SAVED_HEAP_TOP(p) = HEAP_TOP(p);
+	HEAP_TOP(p) = HEAP_LIMIT(p);
+	MSO(p).overhead = HEAP_SIZE(p);
+	HALLOC_MBUF(p) = MBUF(p);
+    }
+    ARITH_AVAIL(p) = 0;
+    ARITH_HEAP(p) = NULL;
+#endif
+    return hp;
+}
+
+#ifdef SHARED_HEAP
+Eterm*
+erts_global_alloc(Uint need)
+{
+    if (need <= global_hend - global_htop) {
+	Eterm* hp = global_htop;
+	global_htop += need;
+	return hp;
+    } else {
+	/*
+	 * Either there is no enough room on the global heap, or the heap pointers
+	 * are "owned" by the running process.
+	 */
+	ErlHeapFragment* bp = 
+	    (ErlHeapFragment*)
+		erts_safe_sl_alloc_from(822,
+					sizeof(ErlHeapFragment)
+					+ ((need-1)*sizeof(Eterm)));
+	bp->next = MBUF(dummy);
+	MBUF(dummy) = bp;
+	if (HALLOC_MBUF(dummy) == NULL) {
+	    HALLOC_MBUF(dummy) = bp;
+	}
+	bp->size = need;
+	MBUF_SIZE(dummy) += need;
+	bp->off_heap.mso = NULL;
+	bp->off_heap.externals = NULL;
+	bp->off_heap.overhead = 0;
+	MSO(dummy).overhead += (sizeof(ErlHeapFragment)/sizeof(Eterm) - 1); 
+	return bp->mem;
+    }
+}
+#endif
 
 #ifdef INSTRUMENT
 /* Does what arith_alloc does, but only ensures that the space is
@@ -141,27 +246,27 @@ void arith_ensure_alloc(Process* p, Uint need)
     Uint n;
     Eterm* hp;
 #ifdef DEBUG
-    int i;
+    Uint i;
 #endif
 
-    if (p->arith_avail >= need)
+    if (ARITH_AVAIL(p) >= need)
 	return;
 
     n = (need < 128) ? 128 : need;
     bp = new_message_buffer(n+1);
-    bp->next = MBUF;
-    MBUF = bp;
-    MBUF_SIZE += n+1;
-    p->arith_avail = n;
+    bp->next = MBUF(p);
+    MBUF(p) = bp;
+    MBUF_SIZE(p) += n+1;
+    ARITH_AVAIL(p) = n;
     hp = bp->mem;
 #ifdef DEBUG
     for (i = 0; i <= n; i++) {
 	hp[i] = ARITH_MARKER;
     }
 #endif
-    p->arith_heap = hp;
+    ARITH_HEAP(p) = hp;
 #ifdef DEBUG
-    p->arith_check_me = p->arith_heap;
+    ARITH_CHECK_ME(p) = ARITH_HEAP(p);
 #endif
 }
 #endif
@@ -227,7 +332,7 @@ double_to_integer(Process* p, double x)
     Eterm* hp;
 
     if ((x < (double) (MAX_SMALL+1)) && (x > (double) (MIN_SMALL-1))) {
-	sint32 xi = x;
+	Sint xi = x;
 	return make_small(xi);
     }
 
@@ -244,13 +349,12 @@ double_to_integer(Process* p, double x)
 	x /= D_BASE;         /* "shift" right */
 	ds++;
     }
-    sz = ((ds+1) >> 1);          /* number of words */
+    sz = BIG_NEED_SIZE(ds);          /* number of words */
 
     /*
      * Beam note: This function is called from guard bifs (round/1 and trunc/1),
      * which are not allowed to build anything at all on the heap.
-     * Therefore it is essential to use the ArithAlloc() macro instead of HAlloc()
-     * (on Jam, ArithAlloc() is just an alias for HAlloc()).
+     * Therefore it is essential to use the ArithAlloc() macro instead of HAlloc().
      */
     hp = ArithAlloc(p, sz+1);
     res = make_big(hp);
@@ -264,36 +368,98 @@ double_to_integer(Process* p, double x)
 	xp[i] = d;        /* store digit */
 	x -= d;           /* remove integer part */
     }
-    if (ds & 1)  /* odd ds need to zero high word */
-	xp[ds] = 0;
+    while ((ds & (BIG_DIGITS_PER_WORD-1)) != 0) {
+	xp[ds++] = 0;
+    }
 
     if (is_negative) {
-	*hp = make_neg_bignum_header(sz);
+	*hp = make_neg_bignum_header(sz-1);
     } else {
-	*hp = make_pos_bignum_header(sz);
+	*hp = make_pos_bignum_header(sz-1);
     }
-    hp += (sz + 1);
     return res;
 }
 
+Uint erts_tot_link_lh_size;
+
 /*
  * Create a new link with ref.
+ *
+ * item: pid, port, atom, small, or NIL.
+ * data: pid, port, atom, small, or NIL.
+ * ref:  reference, or NIL
  */
 ErlLink*
 new_ref_link(ErlLink* next, ErlLinkType type, Eterm item, Eterm data, Eterm ref)
 {
-    ErlLink* lnk = (ErlLink*) fix_alloc(link_desc);
+    /* item, data, and ref are allowed to be pids, ports, refs, or any
+       immediate Erlang term */
+
+#define CP_LINK_VAL(To, Hp, From)					\
+do {									\
+    if (IS_CONST(From))							\
+	(To) = (From);							\
+    else {								\
+	Uint i__;							\
+	Uint len__;							\
+	ASSERT((Hp));							\
+	ASSERT(is_internal_ref((From)) || is_external((From)));		\
+	(To) = make_boxed((Hp));					\
+	len__ = thing_arityval(*boxed_val((From))) + 1;			\
+	for(i__ = 0; i__ < len__; i__++)				\
+	    (*((Hp)++)) = boxed_val((From))[i__];			\
+	if (is_external((To))) {					\
+	    external_thing_ptr((To))->next = NULL;			\
+	    external_thing_ptr((To))->node->refc++;			\
+	}								\
+    }									\
+} while (0)
+
+    ErlLink* lnk;
+    Uint *hp;
+    Uint link_size = ERL_LINK_SIZE;
+
+    if(!IS_CONST(item))
+	link_size += NC_HEAP_SIZE(item);
+    if(!IS_CONST(data))
+	link_size += NC_HEAP_SIZE(data);
+    if(!IS_CONST(ref))
+	link_size += NC_HEAP_SIZE(ref);
+
+    ASSERT(link_size >= ERL_LINK_SIZE);
+
+    if (link_size == ERL_LINK_SIZE) {
+	lnk = (ErlLink*) fix_alloc(link_desc);
+	hp = NULL;
+    }
+    else if (link_size <= ERL_LINK_SH_SIZE) {
+	lnk = (ErlLink*) fix_alloc(link_sh_desc);
+	hp = lnk->heap;
+    }
+    else {
+	erts_tot_link_lh_size += link_size*sizeof(Uint);
+	lnk = (ErlLink*) safe_alloc_from(370, link_size*sizeof(Uint));
+	hp = lnk->heap;
+    }
 
     lnk->next = next;
     lnk->type = type;
-    lnk->item = item;
-    lnk->data = data;
-    if (ref == NIL) {
-	lnk->ref.t = NIL;
-    } else {
-	sys_memcpy(&lnk->ref, ref_ptr(ref), sizeof(Ref));
-    }
+
+    CP_LINK_VAL(lnk->item, hp, item);
+    CP_LINK_VAL(lnk->data, hp, data);
+    CP_LINK_VAL(lnk->ref,  hp, ref);
+
+    ASSERT(!hp || (Uint) hp <= (Uint) (lnk + link_size));
+    ASSERT(next == lnk->next);
+    ASSERT(type == lnk->type);
+    ASSERT(EQ(item, lnk->item));
+    ASSERT(EQ(data, lnk->data));
+    ASSERT(EQ(ref,  lnk->ref));
+
     return lnk;
+
+#undef CP_LINK_VAL
+
 }
 
 /*
@@ -312,13 +478,68 @@ void del_link(lnk)
 ErlLink** lnk;
 {
     ErlLink* tlink;
+    ErlNode *node;
+    Uint link_size;
 
     if (lnk != NULL) {
 	tlink = *lnk;
 	*lnk = tlink->next;
-	fix_free(link_desc, (Eterm *)tlink);
+	link_size = ERL_LINK_SIZE;
+
+	if (!IS_CONST(tlink->item)) {
+	    link_size += NC_HEAP_SIZE(tlink->item);
+	    if(is_external(tlink->item)) {
+		node = external_thing_ptr(tlink->item)->node;
+		DEREF_ERL_NODE(node);
+	    }
+	}
+	if (!IS_CONST(tlink->data)) {
+	    link_size += NC_HEAP_SIZE(tlink->data);
+	    if(is_external(tlink->data)) {
+		node = external_thing_ptr(tlink->data)->node;
+		DEREF_ERL_NODE(node);
+	    }
+	}
+	if (!IS_CONST(tlink->ref)) {
+	    link_size += NC_HEAP_SIZE(tlink->ref);
+	    if(is_external(tlink->ref)) {
+		node = external_thing_ptr(tlink->ref)->node;
+		DEREF_ERL_NODE(node);
+	    }
+	}
+
+#ifdef DEBUG
+	ASSERT(link_size >= ERL_LINK_SIZE);
+	sys_memset((void *) tlink, 0x0f, link_size*sizeof(Uint));
+#endif
+
+	if (link_size == ERL_LINK_SIZE)
+	    fix_free(link_desc, (void *) tlink);
+	else if (link_size <= ERL_LINK_SH_SIZE)
+	    fix_free(link_sh_desc, (void *) tlink);
+	else {
+	    erts_tot_link_lh_size -= link_size*sizeof(Uint);
+	    sys_free((void *) tlink);
+	}
     }
 }
+
+#ifdef DEBUG
+
+static ErlLink** 
+not_opt_find_link_by_ref(ErlLink** first, Eterm ref)
+{
+    ErlLink *lnk, *prev;
+
+    ASSERT(is_ref(ref));
+
+    for (prev = NULL, lnk = *first; lnk; prev = lnk, lnk = lnk->next)
+	if (eq(lnk->ref, ref))
+	    return (prev == NULL) ? first : &prev->next;
+    return NULL;
+}
+
+#endif
 
 /*
 ** Find a link, given the value of the ref field
@@ -326,17 +547,124 @@ ErlLink** lnk;
 ** otherwise a pointer to a pointer to it is returned (fit with del_link)
 */
 ErlLink** 
-find_link_by_ref(ErlLink** first, Ref *ref)
+find_link_by_ref(ErlLink** first, Eterm ref)
 {
-    ErlLink* lnk = *first;
-    ErlLink* prev = NULL;
+    ErlLink *lnk, *prev;
+    ErlNode *anode;
+    Uint alen, blen;
+    Uint32 *anum, *bnum;
+    ErlLink **res;
+#ifdef DEBUG
+    ErlLink **not_opt_res = not_opt_find_link_by_ref(first, ref);
+#endif
 
-    while (lnk != NULL) {
-	if (!is_nil(lnk->ref.t) && eqref(&lnk->ref,ref)) {
-	    return (prev == NULL) ? first : &prev->next;
+    if (is_internal_ref(ref)) {
+	anode = internal_ref_node(ref);
+	alen = internal_ref_no_of_numbers(ref);
+	anum = internal_ref_numbers(ref);
+    }
+    else {
+	ASSERT(is_external_ref(ref));
+	anode = external_ref_node(ref);
+	alen = external_ref_no_of_numbers(ref);
+	anum = external_ref_numbers(ref);
+    }
+
+    ASSERT(alen > 0);
+
+    for (prev = NULL, lnk = *first; lnk; prev = lnk, lnk = lnk->next) {
+	/* Inlining of
+	 * "if (eq(lnk->ref, ref))
+	 *      return (prev == NULL) ? first : &prev->next;"
+	 */
+
+	if (is_nil(lnk->ref))
+	    continue;
+
+	if (is_internal_ref(lnk->ref)) {
+	    ASSERT(internal_ref_no_of_numbers(lnk->ref) > 0);
+
+
+	    bnum = internal_ref_numbers(lnk->ref);
+	    if (anum[0] != bnum[0])
+		continue;
+	    if (anode != internal_ref_node(lnk->ref))
+		continue;
+	    blen = internal_ref_no_of_numbers(lnk->ref);
 	}
-	prev = lnk;
-	lnk = lnk->next;
+	else {
+	    ASSERT(is_external_ref(lnk->ref));
+	    ASSERT(external_ref_no_of_numbers(lnk->ref) > 0);
+
+
+	    bnum = external_ref_numbers(lnk->ref);
+	    if (anum[0] != bnum[0])
+		continue;
+	    if (anode != external_ref_node(lnk->ref))
+		continue;
+	    blen = external_ref_no_of_numbers(lnk->ref);
+	}
+
+
+	if (alen == 3 && blen == 3) { /* Most refs are of length 3 */
+
+	    if (anum[1] != bnum[1] || anum[2] != bnum[2])
+		continue;
+
+	found_it:
+	    res = (prev == NULL) ? first : &prev->next;
+	    ASSERT(not_opt_res == res);
+	    return res;
+
+	}
+	else {
+	    Uint common_len;
+	    Uint i;
+
+	    common_len = alen;
+	    if (blen < alen)
+		common_len = blen;
+
+	    for (i = 1; i < common_len; i++)
+		if (anum[i] != bnum[i])
+		    continue;
+
+	    if(alen != blen) {
+
+		if (alen > blen) {
+		    for (i = common_len; i < alen; i++)
+			if (anum[i] != 0)
+			    continue;
+		}
+		else {
+		    for (i = common_len; i < blen; i++)
+			if (bnum[i] != 0)
+			    continue;
+		}
+		
+	    }
+
+	    goto found_it;
+	}
+    }
+
+    ASSERT(not_opt_res == NULL);
+    return NULL;
+}
+
+static ERTS_INLINE ErlLink**
+gen_find_link(ErlLink** first, ErlLinkType type, Eterm item, Eterm data)
+{
+    ErlLink *lnk;
+    ErlLink *prev;
+
+    for (lnk = *first, prev = NULL; lnk; prev = lnk, lnk = lnk->next) {
+	if (lnk->type != type)
+	    continue;
+	if (!EQ(lnk->item, item))
+	    continue;
+	if (is_nil(data) || EQ(lnk->data, data))
+	    return (prev == NULL) ? first : &prev->next;
     }
     return NULL;
 }
@@ -349,18 +677,76 @@ find_link_by_ref(ErlLink** first, Ref *ref)
 ErlLink**
 find_link(ErlLink** first, ErlLinkType type, Eterm item, Eterm data)
 {
-    ErlLink* lnk = *first;
-    ErlLink* prev = NULL;
+    ErlLink *lnk = *first;
+    ErlLink *prev = NULL;
+    ErlLink **res;
 
-    while(lnk != NULL) {
-	if ((lnk->type == type) && (lnk->item == item)) {
-	    if ((data == NIL) || (lnk->data == data))
-		return (prev == NULL) ? first : &prev->next;
+    /* First a couple of optimized special cases that are common... */
+    
+    if (is_immed(item)) {
+	if (is_immed(data) || is_external_pid(data)) {
+	    /* Local links, node monitors, and remote links in a dist entries
+	       will be handled here. */
+	    for (; lnk; prev = lnk, lnk = lnk->next) {
+		if (lnk->type != type)
+		    continue;
+		if (lnk->item != item)
+		    continue;
+		if (is_nil(data)) {
+		found_it:
+		    res = (prev == NULL) ? first : &prev->next;
+		    ASSERT(res == gen_find_link(first, type, item, data));
+		    return res;
+		}
+		if (data == lnk->data)
+		    goto found_it;
+		if (is_not_external_pid(lnk->data))
+		    continue;
+		if (external_node(data) != external_node(lnk->data))
+		    continue;
+		if (external_pid_data(data) != external_pid_data(lnk->data))
+		    continue;
+		goto found_it;
+	    }
+	not_found:
+	    ASSERT(NULL == gen_find_link(first, type, item, data));
+	    return NULL;
 	}
-	prev = lnk;
-	lnk = lnk->next;
     }
-    return NULL;
+    else if (is_external_pid(item) && is_nil(data)) {
+	/* Remote links stored in process structs will be handled here. */
+	for (; lnk; prev = lnk, lnk = lnk->next) {
+	    if (lnk->type != type)
+		continue;
+	    if (is_not_external_pid(lnk->item))
+		continue;
+	    if (external_node(item) != external_node(lnk->item))
+		continue;
+	    if (external_pid_data(item) != external_pid_data(lnk->item))
+		continue;
+	    goto found_it;
+	}
+	goto not_found;
+    }
+
+    /* ... and then the general case. */
+    return gen_find_link(first, type, item, data);
+}
+
+Uint
+erts_link_size(ErlLink* elp)
+{
+    Uint size;
+    if (!elp)
+	return 0;
+    size = ERL_LINK_SIZE*sizeof(Uint);
+    if(!IS_CONST(elp->item))
+	size += NC_HEAP_SIZE(elp->item)*sizeof(Uint);
+    if(!IS_CONST(elp->data))
+	size += NC_HEAP_SIZE(elp->data)*sizeof(Uint);
+    if(!IS_CONST(elp->ref))
+	size += NC_HEAP_SIZE(elp->ref)*sizeof(Uint);
+    return size;
 }
 
 /*
@@ -382,11 +768,149 @@ list_length(Eterm list)
     return i;
 }
 
+Uint erts_fit_in_bits(Uint n)
+{
+   Uint i;
+
+   i = 0;
+   while (n > 0) {
+      i++;
+      n >>= 1;
+   }
+   return i;
+}
+
+/* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
+ * Some Erlang term building utility functions (to be used when performance  *
+ * isn't critical).                                                          *
+ *                                                                           *
+ * Add more functions like these here (and function prototypes in global.h)  *
+ * when needed.                                                              *
+ *                                                                           *
+\*                                                                           */
+
+Eterm
+erts_bld_uint(Uint **hpp, Uint *szp, Uint ui)
+{
+    Eterm res = THE_NON_VALUE;
+    if (IS_USMALL(0, ui)) {
+	if (hpp)
+	    res = make_small(ui);
+    }
+    else {
+	if (szp)
+	    *szp += BIG_UINT_HEAP_SIZE;
+	if (hpp) {
+	    res = uint_to_big(ui, *hpp);
+	    *hpp += BIG_UINT_HEAP_SIZE;
+	}
+    }
+    return res;
+}
+
+Eterm
+erts_bld_cons(Uint **hpp, Uint *szp, Eterm car, Eterm cdr)
+{
+    Eterm res = THE_NON_VALUE;
+    if (szp)
+	*szp += 2;
+    if (hpp) {
+	res = CONS(*hpp, car, cdr);
+	*hpp += 2;
+    }
+    return res;
+}
+
+Eterm
+erts_bld_tuple(Uint **hpp, Uint *szp, Uint arity, ...)
+{
+    Eterm res = THE_NON_VALUE;
+
+    ASSERT(arity < (((Uint)1) << (sizeof(Uint)*8 - _HEADER_ARITY_OFFS)));
+
+    if (szp)
+	*szp += arity + 1;
+    if (hpp) {
+
+	res = make_tuple(*hpp);
+	*((*hpp)++) = make_arityval(arity);
+
+	if (arity > 0) {
+	    Uint i;
+	    va_list argp;
+
+	    va_start(argp, arity);
+	    for (i = 0; i < arity; i++)
+		*((*hpp)++) = va_arg(argp, Eterm);
+	    va_end(argp);
+	}
+    }
+    return res;
+}
+
+Eterm
+erts_bld_string(Uint **hpp, Uint *szp, char *str)
+{
+    Eterm res = THE_NON_VALUE;
+    Sint i = strlen(str);
+    if (szp)
+	*szp += i*2;
+    if (hpp) {
+	res = NIL;
+	while (--i >= 0) {
+	    res = CONS(*hpp, make_small(str[i]), res);
+	    *hpp += 2;
+	}
+    }
+    return res;
+}
+
+Eterm
+erts_bld_list(Uint **hpp, Uint *szp, Sint length, Eterm terms[])
+{
+    Eterm list = THE_NON_VALUE;
+    if (szp)
+	*szp += 2*length;
+    if (hpp) {
+	Sint i = length;
+	list = NIL;
+
+	while (--i >= 0) {
+	    list = CONS(*hpp, terms[i], list);
+	    *hpp += 2;
+	}
+    }
+    return list;
+}
+
+Eterm
+erts_bld_2tup_list(Uint **hpp, Uint *szp,
+		   Sint length, Eterm terms1[], Uint terms2[])
+{
+    Eterm res = THE_NON_VALUE;
+    if (szp)
+	*szp += 5*length;
+    if (hpp) {
+	Sint i = length;
+	res = NIL;
+
+	while (--i >= 0) {
+	    res = CONS(*hpp+3, TUPLE2(*hpp, terms1[i], terms2[i]), res);
+	    *hpp += 5;
+	}
+    }
+    return res;
+}
+
+
+/*                                                                           *\
+ *                                                                           *
+\* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 /* make a hash index from an erlang term */
 
 /*
-** There are two hash functions.
+** There are three hash functions.
 ** make_broken_hash: the one used for backward compatibility
 ** is called from the bif erlang:hash/2. Should never be used
 ** as it a) hashes only a part of binaries, b) hashes bignums really poorly,
@@ -438,7 +962,9 @@ list_length(Eterm list)
 ** in the handling of lists, that is an optimization.
 ** Everything else is like in the old hash (make_broken_hash()).
 **
-*/ 
+** make_hash2() is faster than make_hash, in particular for bignums
+** and binaries, and produces better hash values. 
+*/
 
 /* some prime numbers just above 2 ^ 28 */
 
@@ -538,13 +1064,19 @@ make_hash(Eterm term, Uint32 hash)
 	}
 
     case PID_DEF:
-	UINT32_HASH_RET(pid_number(term),FUNNY_NUMBER5,FUNNY_NUMBER6);
+	UINT32_HASH_RET(internal_pid_number(term),FUNNY_NUMBER5,FUNNY_NUMBER6);
+    case EXTERNAL_PID_DEF:
+	UINT32_HASH_RET(external_pid_number(term),FUNNY_NUMBER5,FUNNY_NUMBER6);
 
     case PORT_DEF:
-	UINT32_HASH_RET(port_number(term),FUNNY_NUMBER9,FUNNY_NUMBER10);
+	UINT32_HASH_RET(internal_port_number(term),FUNNY_NUMBER9,FUNNY_NUMBER10);
+    case EXTERNAL_PORT_DEF:
+	UINT32_HASH_RET(external_port_number(term),FUNNY_NUMBER9,FUNNY_NUMBER10);
 
     case REF_DEF:
-	UINT32_HASH_RET(ref_number(term),FUNNY_NUMBER9,FUNNY_NUMBER10);
+	UINT32_HASH_RET(internal_ref_numbers(term)[0],FUNNY_NUMBER9,FUNNY_NUMBER10);
+    case EXTERNAL_REF_DEF:
+	UINT32_HASH_RET(external_ref_numbers(term)[0],FUNNY_NUMBER9,FUNNY_NUMBER10);
 
     case FLOAT_DEF: 
 	{
@@ -634,7 +1166,328 @@ make_hash(Eterm term, Uint32 hash)
 	return 0;
     }
 #undef UINT32_HASH_RET
+#undef SINT32_HASH_RET
 }
+
+/* Hash function suggested by Bob Jenkins. */
+
+#define MIX(a,b,c)                 \
+do {                               \
+  a -= b; a -= c; a ^= (c>>13);    \
+  b -= c; b -= a; b ^= (a<<8);     \
+  c -= a; c -= b; c ^= (b>>13);    \
+  a -= b; a -= c; a ^= (c>>12);    \
+  b -= c; b -= a; b ^= (a<<16);    \
+  c -= a; c -= b; c ^= (b>>5);     \
+  a -= b; a -= c; a ^= (c>>3);     \
+  b -= c; b -= a; b ^= (a<<10);    \
+  c -= a; c -= b; c ^= (b>>15);    \
+} while(0)
+
+#define HCONST 0x9e3779b9UL /* the golden ratio; an arbitrary value */
+
+Uint32
+block_hash(byte *k, unsigned length, Uint32 initval)
+{
+   Uint32 a,b,c;
+   unsigned len;
+
+   /* Set up the internal state */
+   len = length;
+   a = b = HCONST;
+   c = initval;           /* the previous hash value */
+
+   while (len >= 12)
+   {
+      a += (k[0] +((Uint32)k[1]<<8) +((Uint32)k[2]<<16) +((Uint32)k[3]<<24));
+      b += (k[4] +((Uint32)k[5]<<8) +((Uint32)k[6]<<16) +((Uint32)k[7]<<24));
+      c += (k[8] +((Uint32)k[9]<<8) +((Uint32)k[10]<<16)+((Uint32)k[11]<<24));
+      MIX(a,b,c);
+      k += 12; len -= 12;
+   }
+
+   c += length;
+   switch(len)              /* all the case statements fall through */
+   {
+   case 11: c+=((Uint32)k[10]<<24);
+   case 10: c+=((Uint32)k[9]<<16);
+   case 9 : c+=((Uint32)k[8]<<8);
+      /* the first byte of c is reserved for the length */
+   case 8 : b+=((Uint32)k[7]<<24);
+   case 7 : b+=((Uint32)k[6]<<16);
+   case 6 : b+=((Uint32)k[5]<<8);
+   case 5 : b+=k[4];
+   case 4 : a+=((Uint32)k[3]<<24);
+   case 3 : a+=((Uint32)k[2]<<16);
+   case 2 : a+=((Uint32)k[1]<<8);
+   case 1 : a+=k[0];
+     /* case 0: nothing left to add */
+   }
+   MIX(a,b,c);
+   return c;
+}
+
+Uint32
+make_hash2(Eterm term)
+{
+    Uint32 hash;
+
+/* (HCONST * {2, ..., 13}) mod 2^32 */
+#define HCONST_2 0x3c6ef372UL
+#define HCONST_3 0xdaa66d2bUL
+#define HCONST_4 0x78dde6e4UL
+#define HCONST_5 0x1715609dUL
+#define HCONST_6 0xb54cda56UL
+#define HCONST_7 0x5384540fUL
+#define HCONST_8 0xf1bbcdc8UL
+#define HCONST_9 0x8ff34781UL
+#define HCONST_10 0x2e2ac13aUL
+#define HCONST_11 0xcc623af3UL
+#define HCONST_12 0x6a99b4acUL
+#define HCONST_13 0x08d12e65UL
+
+#define UINT32_HASH_2(Expr1, Expr2, AConst)       \
+         do {                                     \
+	    Uint32 a,b;                           \
+	    a = AConst + (Uint32) (Expr1);        \
+	    b = AConst + (Uint32) (Expr2);        \
+	    MIX(a,b,hash);                        \
+	 } while(0)
+
+#define UINT32_HASH(Expr, AConst) UINT32_HASH_2(Expr, 0, AConst)
+
+#define SINT32_HASH(Expr, AConst)                 \
+	do {					  \
+            Sint32 y = (Sint32) (Expr);           \
+	    if (y < 0) {			  \
+		UINT32_HASH(-y, AConst);          \
+	    } 					  \
+	    UINT32_HASH(y, AConst);          	  \
+	} while(0)
+
+    ASSERT(SMALL_BITS <= 32);
+
+    /* Optimization. Simple cases before declaration of estack. */
+    if (primary_tag(term) == TAG_PRIMARY_IMMED1) {
+	switch (term & _TAG_IMMED1_MASK) {
+	case _TAG_IMMED1_IMMED2:
+	    switch (term & _TAG_IMMED2_MASK) {
+	    case _TAG_IMMED2_ATOM:
+		return atom_tab(atom_val(term))->slot.bucket.hvalue;
+	    }
+	    break;
+	case _TAG_IMMED1_SMALL:
+	    hash = 0;
+	    SINT32_HASH(signed_val(term), HCONST);
+	    return hash;
+	}
+    };
+    {
+    Eterm tmp;
+    DECLARE_ESTACK(s);
+
+    hash = 0;
+    for (;;) {
+	switch (primary_tag(term)) {
+	case TAG_PRIMARY_LIST:
+	{
+	    int c = 0;
+	    Uint32 s = 0;
+	    Eterm* ptr = list_val(term);
+	    while (is_byte(*ptr)) {
+		/* Optimization for strings. */
+		s = (s << 8) + unsigned_val(*ptr);
+		if (c == 3) {
+		    UINT32_HASH(s, HCONST_4);
+		    c = s = 0;
+		} else {
+		    c++;
+		}
+		term = CDR(ptr);
+		if (is_not_list(term))
+		    break;
+		ptr = list_val(term);
+	    }
+	    if (c > 0)
+		UINT32_HASH(s, HCONST_4);
+	    if (is_list(term)) {
+		term = *ptr;
+		tmp = *++ptr;
+		ESTACK_PUSH(s, tmp);	    
+	    }
+	}
+	break;
+	case TAG_PRIMARY_BOXED:
+	{
+	    Eterm hdr = *boxed_val(term);
+	    ASSERT(is_header(hdr));
+	    switch (hdr & _TAG_HEADER_MASK) {
+	    case ARITYVAL_SUBTAG:
+	    {
+		int i;
+		int arity = header_arity(hdr);
+		Eterm* elem = tuple_val(term);
+		UINT32_HASH(arity, HCONST_9);
+		if (arity == 0) /* Empty tuple */ 
+		    goto hash2_common;
+		for (i = arity; i >= 2; i--) {
+		    tmp = elem[i];
+		    ESTACK_PUSH(s, tmp);
+		}
+		term = elem[1];
+	    }
+	    break;
+	    case VECTOR_SUBTAG:
+	    {
+		int i;
+		int siz = VECTOR_SIZE(term);
+
+		UINT32_HASH(siz, HCONST_8);
+		if (siz == 0) 
+		    goto hash2_common;
+		for (i=siz; i > 1; i--) {
+		    tmp = erts_unchecked_vector_get(i, term);
+		    ESTACK_PUSH(s, tmp);
+		}
+		term = erts_unchecked_vector_get(1, term);
+	    }
+	    break;
+	    case FUN_SUBTAG:
+	    {
+		ErlFunThing* funp = (ErlFunThing *) fun_val(term);
+		Uint num_free = funp->num_free;
+
+		UINT32_HASH_2
+		    (num_free, 
+		     atom_tab(atom_val(funp->fe->module))->slot.bucket.hvalue,
+		     HCONST);
+		UINT32_HASH_2
+		    (funp->fe->old_index, funp->fe->old_uniq, HCONST);
+		if (num_free == 0) {
+		    goto hash2_common;
+		} else {
+		    Eterm* bptr = funp->env + num_free - 1;
+		    while (num_free-- > 1) {
+			term = *bptr--;
+			ESTACK_PUSH(s, term);
+		    }
+		    term = *bptr;
+		}
+	    }
+	    break;
+	    case REFC_BINARY_SUBTAG:
+	    case HEAP_BINARY_SUBTAG:
+	    case SUB_BINARY_SUBTAG:
+	    {
+		byte* bptr;
+		unsigned sz = binary_size(term);
+		Uint32 con = HCONST_13 + hash;
+			
+		GET_BINARY_BYTES(term, bptr);
+		hash = (sz == 0) ? con : block_hash(bptr, sz, con);
+		goto hash2_common;
+	    }
+	    break;
+	    case POS_BIG_SUBTAG:
+	    case NEG_BIG_SUBTAG:
+	    {
+		Eterm* ptr = big_val(term);
+		Uint i = 0;
+		Uint n = BIG_SIZE(ptr);
+		Uint32 con = BIG_SIGN(ptr) ? HCONST_10 : HCONST_11;
+
+		do {
+		    digit_t d1 = i < n ? BIG_DIGIT(ptr, i++) : 0;
+		    digit_t d2 = i < n ? BIG_DIGIT(ptr, i++) : 0;
+		    digit_t d3 = i < n ? BIG_DIGIT(ptr, i++) : 0;
+		    digit_t d4 = i < n ? BIG_DIGIT(ptr, i++) : 0;
+		    UINT32_HASH_2((((Uint32) d2) << 16) + (Uint32) d1,
+				  (((Uint32) d4) << 16) + (Uint32) d3, con);
+		} while (i < n);
+		goto hash2_common;
+	    }
+	    break;
+	    case REF_SUBTAG:
+		UINT32_HASH(internal_ref_numbers(term)[0], HCONST_7);
+		goto hash2_common;
+		break;
+	    case EXTERNAL_REF_SUBTAG:
+		UINT32_HASH(external_ref_numbers(term)[0], HCONST_7);
+		goto hash2_common;
+		break;
+	    case EXTERNAL_PID_SUBTAG:
+		UINT32_HASH(external_pid_number(term), HCONST_5);
+		goto hash2_common;
+	    case EXTERNAL_PORT_SUBTAG:
+		UINT32_HASH(external_port_number(term), HCONST_6);
+		goto hash2_common;
+	    case FLOAT_SUBTAG:
+	    {
+		FloatDef ff;
+		GET_DOUBLE(term, ff);
+#if defined(WORDS_BIGENDIAN)
+		UINT32_HASH_2(ff.fw[0], ff.fw[1], HCONST_12);
+#else
+		UINT32_HASH_2(ff.fw[1], ff.fw[0], HCONST_12);
+#endif
+		goto hash2_common;
+	    }
+	    break;
+		    
+	    default:
+		erl_exit(1, "Invalid tag in make_hash2(0x%X)\n", term);
+	    }
+	}
+	break;
+	case TAG_PRIMARY_IMMED1:
+	    switch (term & _TAG_IMMED1_MASK) {
+	    case _TAG_IMMED1_PID:
+		UINT32_HASH(internal_pid_number(term), HCONST_5);
+		goto hash2_common;
+	    case _TAG_IMMED1_PORT:
+		UINT32_HASH(internal_port_number(term), HCONST_6);
+		goto hash2_common;
+	    case _TAG_IMMED1_IMMED2:
+		switch (term & _TAG_IMMED2_MASK) {
+		case _TAG_IMMED2_ATOM:
+		    if (hash == 0)
+			hash = atom_tab(atom_val(term))->slot.bucket.hvalue;
+		    else
+			UINT32_HASH(atom_tab(atom_val(term))->slot.bucket.hvalue,
+				    HCONST_3);
+		    goto hash2_common;
+		case _TAG_IMMED2_NIL:
+		    if (hash == 0)
+			hash = 3468870702UL;
+		    else
+			UINT32_HASH(NIL_DEF, HCONST_2);
+		    goto hash2_common;
+		default:
+		    erl_exit(1, "Invalid tag in make_hash2(0x%X)\n", term);
+		}
+	    case _TAG_IMMED1_SMALL:
+		SINT32_HASH(signed_val(term), HCONST);
+		goto hash2_common;
+	    }
+	    break;
+	default:
+	    erl_exit(1, "Invalid tag in make_hash2(0x%X)\n", term);
+	hash2_common:
+	    if (ESTACK_ISEMPTY(s)) {
+		DESTROY_ESTACK(s);
+		return hash;
+	    }
+	    term = ESTACK_POP(s);
+	}
+    }
+    }
+#undef UINT32_HASH_2
+#undef UINT32_HASH
+#undef SINT32_HASH
+}
+
+#undef HCONST
+#undef MIX
 
 #ifdef ARCH_64
 Uint32
@@ -682,13 +1535,19 @@ make_broken_hash(Eterm term, Uint hash)
 	}
 
     case PID_DEF:
-	return hash*FUNNY_NUMBER5 + pid_number(term);
+	return hash*FUNNY_NUMBER5 + internal_pid_number(term);
+    case EXTERNAL_PID_DEF:
+	return hash*FUNNY_NUMBER5 + external_pid_number(term);
 
     case PORT_DEF:
-	return hash*FUNNY_NUMBER9 + port_number(term);
+	return hash*FUNNY_NUMBER9 + internal_port_number(term);
+    case EXTERNAL_PORT_DEF:
+	return hash*FUNNY_NUMBER9 + external_port_number(term);
 
     case REF_DEF:
-	return hash*FUNNY_NUMBER9 + ref_number(term);
+	return hash*FUNNY_NUMBER9 + internal_ref_numbers(term)[0];
+    case EXTERNAL_REF_DEF:
+	return hash*FUNNY_NUMBER9 + external_ref_numbers(term)[0];
 
     case FLOAT_DEF: 
 	{
@@ -714,15 +1573,42 @@ make_broken_hash(Eterm term, Uint hash)
     case BIG_DEF:
 	{
 	    Eterm* ptr  = big_val(term);
-	    Uint arity = BIG_ARITY(ptr);
 	    int is_neg = BIG_SIGN(ptr);
-	    int i = arity;
+	    Uint arity = BIG_ARITY(ptr);
 	    
+#ifdef ARCH_64
+	    Uint i = 0;
+	    Uint n = BIG_SIZE(ptr);
+	    ptr++;
+	    arity = (n + 1) >> 1;
+
+	    do {
+#if defined(WORDS_BIGENDIAN)
+		hash = hash*FUNNY_NUMBER2 + (Uint32) (((Uint) *ptr) >> 32);
+		i += 2;
+		if (i < n) {
+		    hash = hash*FUNNY_NUMBER2 + (Uint32) *ptr;
+		    i += 2;
+		}
+#else
+		hash = hash*FUNNY_NUMBER2 + (Uint32) *ptr;
+		i += 2;
+		if (i < n) {
+		    hash = hash*FUNNY_NUMBER2 + (Uint32) (((Uint) *ptr) >> 32);
+		    i += 2;
+		}
+#endif
+		ptr++; 
+	    } while (i < n);
+#else
+	    int i = arity;
+
 	    ptr++;
 	    while (i--) {
 		hash = hash*FUNNY_NUMBER2 + *ptr++;
 	    }
-	
+#endif
+
 	    if (is_neg)
 		return hash*FUNNY_NUMBER3 + arity;
 	    else
@@ -761,38 +1647,41 @@ make_broken_hash(Eterm term, Uint hash)
     }
 }
 
-int send_error_to_logger(Eterm gleader)
+int
+send_error_to_logger(Eterm gleader)
 {
     Process* p;
-    ErlHeapFragment* bp;
     Eterm* hp;
     Eterm name;
     Eterm res;
     Eterm gl;
     Eterm list;
+    Uint gl_sz;
     int i;
     
-    if (is_nil(gleader))
-	gl = am_noproc;
-    else
-	gl = gleader;
     if ((i = cerr_pos) == 0)
 	return 0;
     name = am_error_logger;
     if ((p = whereis_process(name)) == NULL)  {
-	erl_printf(CERR,"%s",tmp_buf);
-	return(0);
+	erl_printf(CERR, "%s", tmp_buf);
+	return 0;
     }
     /* !!!!!!! Uhhh  */
     if (p->status == P_EXITING || p->status == P_RUNNING) {
-	erl_printf(CERR,"%s",tmp_buf);
-	return(0);
+	erl_printf(CERR, "%s", tmp_buf);
+	return 0;
     }
-    bp = new_message_buffer(i*2 + 4);
-    hp = bp->mem;
+
+    gl_sz = IS_CONST(gleader) ? 0 : size_object(gleader);
+    hp = HAlloc(p, i*2 + gl_sz + 4);
+    gl = (is_nil(gleader)
+	  ? am_noproc
+	  : (IS_CONST(gleader)
+	     ? gleader
+	     : copy_struct(gleader,gl_sz,&hp,&MSO(p))));
     list = buf_to_intlist(&hp, tmp_buf, i, NIL);
     res = TUPLE3(hp, am_emulator, gl, list);
-    queue_message(p, bp, res);
+    queue_message_tt(p, NULL, res, NIL);
     return 1;
 }
 
@@ -803,7 +1692,9 @@ void *safe_alloc_from(int from, Uint len)
     void *buf;
 
     if ((buf = sys_alloc_from(from, len)) == NULL)
-	erl_exit(1, "Can't allocate %d bytes of memory\n", len);
+	erl_exit(erts_initialized ? 1 : -1,
+		 "Can't allocate %lu bytes of memory\n",
+		 (unsigned long) len);
     return(buf);
 }
 
@@ -812,7 +1703,9 @@ void *safe_realloc_from(int from, void* ptr, Uint len)
     void *buf;
 
     if ((buf = sys_realloc_from(from, ptr, len)) == NULL)
-	erl_exit(1, "Can't reallocate %d bytes of memory\n", len);
+	erl_exit(erts_initialized ? 1 : -1,
+		 "Can't reallocate %lu bytes of memory\n",
+		 (unsigned long) len);
     return(buf);
 }
 
@@ -821,7 +1714,9 @@ void *erts_safe_sl_alloc_from(int from, Uint len)
     void *buf;
 
     if ((buf = erts_sl_alloc_from(from, len)) == NULL)
-	erl_exit(1, "Can't allocate %d bytes of memory\n", len);
+	erl_exit(erts_initialized ? 1 : -1,
+		 "Can't allocate %lu bytes of memory\n",
+		 (unsigned long) len);
     return(buf);
 }
 
@@ -831,7 +1726,9 @@ void *erts_safe_sl_realloc_from(int from, void* ptr, Uint save_size,
     void *buf;
 
     if ((buf = erts_sl_realloc_from(from, ptr, save_size, size)) == NULL)
-	erl_exit(1, "Can't reallocate %d bytes of memory\n", size);
+	erl_exit(erts_initialized ? 1 : -1,
+		 "Can't reallocate %lu bytes of memory\n",
+		 (unsigned long) size);
     return(buf);
 }
 
@@ -863,7 +1760,9 @@ void *safe_alloc(Uint len)
     void *buf;
 
     if ((buf = sys_alloc(len)) == NULL)
-	erl_exit(1, "Can't allocate %d bytes of memory\n", len);
+	erl_exit(erts_initialized ? 1 : -1,
+		 "Can't allocate %lu bytes of memory\n",
+		 (unsigned long) len);
     return(buf);
 }
 
@@ -873,7 +1772,9 @@ void *safe_realloc(void* ptr, Uint len)
     void *buf;
 
     if ((buf = sys_realloc(ptr, len)) == NULL)
-	erl_exit(1, "Can't reallocate %d bytes of memory\n", len);
+	erl_exit(erts_initialized ? 1 : -1,
+		 "Can't reallocate %lu bytes of memory\n",
+		 (unsigned long) len);
     return(buf);
 }
 
@@ -882,7 +1783,9 @@ void *erts_safe_sl_alloc(Uint len)
     void *buf;
 
     if ((buf = erts_sl_alloc(len)) == NULL)
-	erl_exit(1, "Can't allocate %d bytes of memory\n", len);
+	erl_exit(erts_initialized ? 1 : -1,
+		 "Can't allocate %lu bytes of memory\n",
+		 (unsigned long) len);
     return(buf);
 }
 
@@ -891,7 +1794,9 @@ void *erts_safe_sl_realloc(void* ptr, Uint save_size, Uint size)
     void *buf;
 
     if ((buf = erts_sl_realloc(ptr, save_size, size)) == NULL)
-	erl_exit(1, "Can't reallocate %d bytes of memory\n", size);
+	erl_exit(erts_initialized ? 1 : -1,
+		 "Can't reallocate %lu bytes of memory\n",
+		 (unsigned long) size);
     return(buf);
 }
 
@@ -920,7 +1825,7 @@ eq(Eterm a, Eterm b)
 		{
 		    Eterm* aa;
 		    Eterm* bb;
-		    int i;
+		    Sint i;
   
 		    aa = tuple_val(a);
 		    if (!is_boxed(b) || *boxed_val(b) != *aa)
@@ -979,30 +1884,102 @@ eq(Eterm a, Eterm b)
 		    }
 		    return 1;
 		}
+
+	    case EXTERNAL_PID_SUBTAG:
+	    case EXTERNAL_PORT_SUBTAG: {
+		ExternalThing *ap;
+		ExternalThing *bp;
+
+		if(is_not_external(b))
+		    return 0;
+
+		ap = external_thing_ptr(a);
+		bp = external_thing_ptr(b);
+
+		if(ap->header != bp->header)
+		    return 0;
+		if(ap->node != bp->node)
+		    return 0;
+
+		ASSERT(1 == external_data_words(a));
+		ASSERT(1 == external_data_words(b));
+
+		if(ap->data[0] != bp->data[0])
+		    return 0;
+		return 1;
+	    }
+	    case EXTERNAL_REF_SUBTAG: {
+		/*
+		 * Observe!
+		 *  When comparing refs we need to compare ref numbers
+		 * (32-bit words) *not* ref data words.
+		 */
+		Uint32 *anum;
+		Uint32 *bnum;
+		Uint common_len;
+		Uint alen;
+		Uint blen;
+		Uint i;
+
+		if(is_not_external_ref(b))
+		    return 0;
+
+		if(external_node(a) != external_node(b))
+		    return 0;
+
+		anum = external_ref_numbers(a);
+		bnum = external_ref_numbers(b);
+		alen = external_ref_no_of_numbers(a);
+		blen = external_ref_no_of_numbers(b);
+
+		goto ref_common;
 	    case REF_SUBTAG:
-		{
-		    int alen;
-		    int blen;
-		    int len;
-		    int i;
   
-		    if (is_not_ref(b))
+		    if (is_not_internal_ref(b))
 			return 0;
-		    alen = ref_arity(a);
-		    blen = ref_arity(b);
-		    if (ref_ptr(a)->h != ref_ptr(b)->h)
+		    alen = internal_ref_no_of_numbers(a);
+		    blen = internal_ref_no_of_numbers(b);
+		    anum = internal_ref_numbers(a);
+		    bnum = internal_ref_numbers(b);
+
+	    ref_common:
+		    ASSERT(alen > 0 && blen > 0);
+
+		    if (anum[0] != bnum[0])
 			return 0;
-  
-		    len = alen;
-		    if (len > blen)
-			len = blen;
- 
-		    for (i = len-2; i >= 0; i--) {
-			if (ref_ptr(a)->w[i] != ref_ptr(b)->w[i])
-			    return 0;
+
+		    if (alen == 3 && blen == 3) {
+			/* Most refs are of length 3 */
+			if (anum[1] == bnum[1] && anum[2] == bnum[2])
+			    return 1;
+			return 0;
 		    }
+
+		    common_len = alen;
+		    if (blen < alen)
+			common_len = blen;
+
+		    for (i = 1; i < common_len; i++)
+			if (anum[i] != bnum[i])
+			    return 0;
+
+		    if(alen != blen) {
+
+			if (alen > blen) {
+			    for (i = common_len; i < alen; i++)
+				if (anum[i] != 0)
+				    return 0;
+			}
+			else {
+			    for (i = common_len; i < blen; i++)
+				if (bnum[i] != 0)
+				    return 0;
+			}
+			
+		    }
+
 		    return 1;
-		}
+	    }
 	    case POS_BIG_SUBTAG:
 	    case NEG_BIG_SUBTAG:
 		{
@@ -1138,6 +2115,18 @@ cmp(Eterm a, Eterm b)
     int a_tag;
     int b_tag;
 
+#undef  CMP_NODES
+#define CMP_NODES(AN, BN)						\
+    do {								\
+	if((AN) != (BN)) {						\
+	    if((AN)->sysname != (BN)->sysname)				\
+		return cmp_atoms((AN)->sysname, (BN)->sysname);		\
+	    ASSERT((AN)->creation != (BN)->creation);			\
+	    return ((AN)->creation < (BN)->creation) ? -1 : 1;		\
+	}								\
+    } while (0)
+
+
  tailrecur:
     if (a == b) {		/* Equal values or pointers. */
 	return 0;
@@ -1200,31 +2189,91 @@ cmp(Eterm a, Eterm b)
 	    GET_DOUBLE(b, bf);
 	    return float_comp(af.fd, bf.fd);
 	}
-    case REF_DEF:
-	if (is_not_ref(b))
-	    break;
-        {
-	    int alen = ref_arity(a);
-	    int blen = ref_arity(b);
-	    int len;
+    case REF_DEF: {
+	/*
+	 * Observe!
+	 *  When comparing refs we need to compare ref numbers (32-bit words)
+	 *  *not* ref data words.
+	 */
+	Uint alen;
+	Uint blen;
+	Sint i;
+	Uint32 *anum;
+	Uint32 *bnum;
+	ErlNode *anode;
+	ErlNode *bnode;
 
-	    if (ref_ptr(a)->h < ref_ptr(b)->h)
-		return -1;
-	    else if (ref_ptr(a)->h > ref_ptr(b)->h)
-		return 1;
-
-	    len = alen;
-	    if (len > blen)
-		len = blen;
-
-	    for (i = len-2; i >= 0; i--) {
-		if (ref_ptr(a)->w[i] < ref_ptr(b)->w[i])
-		    return -1;
-		else if (ref_ptr(a)->w[i] > ref_ptr(b)->w[i])
-		    return 1;
-	    }
-	    return 0;
+	if (is_internal_ref(b)) {
+	    bnode = erts_this_node;
+	    bnum = internal_ref_numbers(b);
+	    blen = internal_ref_no_of_numbers(b);
 	}
+	else if(is_external_ref(b)) {
+	    bnode = external_ref_node(b);
+	    bnum = external_ref_numbers(b);
+	    blen = external_ref_no_of_numbers(b);
+	}
+	else
+	    break;
+
+	anode = erts_this_node;
+	anum = internal_ref_numbers(a);
+	alen = internal_ref_no_of_numbers(a);
+
+    ref_common:
+
+	CMP_NODES(anode, bnode);
+
+	ASSERT(alen > 0 && blen > 0);
+
+	if(alen != blen) {
+	    
+	    if (alen > blen) {
+		do {
+		    if (anum[alen - 1] != 0)
+			return 1;
+		    alen--;
+		} while (alen > blen);
+	    }
+	    else {
+		do {
+		    if (bnum[blen - 1] != 0)
+			return -1;
+		    blen--;
+		} while (alen < blen);
+	    }
+	    
+	}
+
+	ASSERT(alen == blen);
+
+	for (i = (Sint) alen - 1; i >= 0; i--)
+	    if (anum[i] != bnum[i])
+		return anum[i] < bnum[i] ? -1 : 1;
+
+	return 0;
+
+    case EXTERNAL_REF_DEF:
+
+	if (is_internal_ref(b)) {
+	    bnode = erts_this_node;
+	    bnum = internal_ref_numbers(b);
+	    blen = internal_ref_no_of_numbers(b);
+	}
+	else if(is_external_ref(b)) {
+	    bnode = external_ref_node(b);
+	    bnum = external_ref_numbers(b);
+	    blen = external_ref_no_of_numbers(b);
+	}
+	else
+	    break;
+
+	anode = external_ref_node(a);
+	anum = external_ref_numbers(a);
+	alen = external_ref_no_of_numbers(a);
+
+	goto ref_common;
+    }
     case BIG_DEF:
 	if (is_not_big(b))
 	    break;
@@ -1285,28 +2334,91 @@ cmp(Eterm a, Eterm b)
 	    }
 	    return 0;
 	}
-    case PID_DEF:
-	if (is_not_pid(b))
-	    break;
-	if ((! (pid_node(a) == pid_node(b))) && /*  different nodes */
-	    (pid_number(a) == pid_number(b)) &&
-	    (pid_serial(a) == pid_serial(b))) { /* equal numbers */
-	    
-	    Eterm atoma, atomb;
-	    i = pid_node(a); /* index in atom table */
-	    j = pid_node(b);
-	    atoma = dist_addrs[i].sysname;
-	    atomb = dist_addrs[j].sysname;
-	    return(cmpbytes(atom_tab(atom_val(atoma))->name,
-			    atom_tab(atom_val(atoma))->len,
-			    atom_tab(atom_val(atomb))->name,
-			    atom_tab(atom_val(atomb))->len));
+
+    case PID_DEF: {
+	Uint adata;
+	Uint bdata;
+	ErlNode *anode;
+	ErlNode *bnode;
+
+	if(is_internal_pid(b)) {
+	    bnode = erts_this_node;
+	    bdata = internal_pid_data(b);
 	}
-	return (a < b) ? -1 : 1;
-    case PORT_DEF:
-	if (is_not_port(b))
+	else if (is_external_pid(b)) {
+	    bnode = external_pid_node(b);
+	    bdata = external_pid_data(b);
+	}
+	else
 	    break;
-	return (a < b) ? -1 : 1;
+	
+	anode = erts_this_node;
+	adata = internal_pid_data(a);
+
+    pid_port_common:
+
+	CMP_NODES(anode, bnode);
+
+	if (adata != bdata)
+	    return adata < bdata ? -1 : 1;
+
+	return 0;
+
+    case EXTERNAL_PID_DEF:
+
+	if(is_internal_pid(b)) {
+	    bnode = erts_this_node;
+	    bdata = internal_pid_data(b);
+	}
+	else if (is_external_pid(b)) {
+	    bnode = external_pid_node(b);
+	    bdata = external_pid_data(b);
+	}
+	else
+	    break;
+
+	anode = external_pid_node(a);
+	adata = external_pid_data(a);
+
+	goto pid_port_common;
+
+    case PORT_DEF:
+
+	if(is_internal_port(b)) {
+	    bnode = erts_this_node;
+	    bdata = internal_port_data(b);
+	}
+	else if (is_external_port(b)) {
+	    bnode = external_port_node(b);
+	    bdata = external_port_data(b);
+	}
+	else
+	    break;
+	
+	anode = erts_this_node;
+	adata = internal_port_data(a);
+
+	goto pid_port_common;
+
+    case EXTERNAL_PORT_DEF:
+
+	if(is_internal_port(b)) {
+	    bnode = erts_this_node;
+	    bdata = internal_port_data(b);
+	}
+	else if (is_external_port(b)) {
+	    bnode = external_port_node(b);
+	    bdata = external_port_data(b);
+	}
+	else
+	    break;
+
+	anode = external_port_node(a);
+	adata = external_port_data(a);
+
+	goto pid_port_common;
+
+    }
     case VECTOR_DEF:
 	if (is_not_vector(b))
 	    break;
@@ -1364,29 +2476,92 @@ cmp(Eterm a, Eterm b)
 	    return b_tag - a_tag;
 	}
     }
+
+#undef CMP_NODES
+
 }
 
 Process*
 pid2proc(Eterm pid)
 {
+    Uint pix;
     Process *rp;
-    int i;
-    int pix;
-
-    if (is_not_pid(pid) || 
-	(pid_node(pid) != THIS_NODE) || 
-	((pix = pid_number(pid)) >= max_process))
+    if (is_not_internal_pid(pid))
 	return NULL;
-    i = pid_creation(pid);
-    if ((i != this_creation) && (i != 0))
+    pix = internal_pid_index(pid);
+    if(pix >= erts_max_processes)
 	return NULL;
-
     rp = process_tab[pix];
     if (INVALID_PID(rp, pid))
 	return NULL;
     return rp;
 }
 
+void
+erts_cleanup_externals(ExternalThing *etp)
+{
+    ExternalThing *tetp;
+
+    tetp = etp;
+
+    while(tetp) {
+	DEREF_ERL_NODE(tetp->node);
+	tetp = tetp->next;
+    }
+}
+
+Eterm
+store_external_or_ref_(Uint **hpp, ExternalThing **etpp, Eterm ns)
+{
+    Uint i;
+    Uint size;
+    Uint *from_hp;
+    Uint *to_hp = *hpp;
+
+    ASSERT(is_external(ns) || is_internal_ref(ns));
+
+    if(is_external(ns)) {
+	from_hp = external_val(ns);
+	size = thing_arityval(*from_hp) + 1;
+	*hpp += size;
+
+	for(i = 0; i < size; i++)
+	    to_hp[i] = from_hp[i];
+
+	((ExternalThing *) to_hp)->node->refc++;
+
+	((ExternalThing *) to_hp)->next = *etpp;
+	*etpp = (ExternalThing *) to_hp;
+
+	return make_external(to_hp);
+    }
+
+    /* Internal ref */
+    from_hp = internal_ref_val(ns);
+
+    size = thing_arityval(*from_hp) + 1;
+
+    *hpp += size;
+
+    for(i = 0; i < size; i++)
+	to_hp[i] = from_hp[i];
+
+    return make_internal_ref(to_hp);
+}
+
+Eterm
+store_external_or_ref_in_proc_(Process *proc, Eterm ns)
+{
+    Uint sz;
+    Uint *hp;
+
+    ASSERT(is_external(ns) || is_internal_ref(ns));
+
+    sz = NC_HEAP_SIZE(ns);
+    ASSERT(sz > 0);
+    hp = HAlloc(proc, sz);
+    return store_external_or_ref_(&hp, &MSO(proc).externals, ns);
+}
 
 static int dcount;
 
@@ -1398,12 +2573,13 @@ static int
 display1(Eterm obj, CIO fd)
 {
     int i, k;
+    Uint32 *ref_num;
     Eterm* nobj;
 
     if (dcount-- <= 0) return(1);
 
     if (is_CP(obj)) {
-	erl_printf(fd, "<cp/header:%08X>", obj);
+	erl_printf(fd, "<cp/header:%08lX>", (unsigned long) obj);
 	return 0;
     }
 
@@ -1430,18 +2606,31 @@ display1(Eterm obj, CIO fd)
 	erl_putc('}', fd);
 	break;
     case REF_DEF:
-	erl_printf(fd, "#Ref<%d", ref_node(obj));
-	for (i = ref_arity(obj)-2; i >= 0; i--)
-	    erl_printf(fd, ".%lu", ref_ptr(obj)->w[i]);
+	erl_printf(fd, "#Ref<%lu", internal_ref_channel_no(obj));
+	ref_num = internal_ref_numbers(obj);
+	for (i = internal_ref_no_of_numbers(obj)-1; i >= 0; i--)
+	    erl_printf(fd, ".%lu", (unsigned long) ref_num[i]);
+	erl_printf(fd, ">");
+	break;
+    case EXTERNAL_REF_DEF:
+	erl_printf(fd, "#Ref<%lu", external_ref_channel_no(obj));
+	ref_num = external_ref_numbers(obj);
+	for (i = external_ref_no_of_numbers(obj)-1; i >= 0; i--)
+	    erl_printf(fd, ".%lu", (unsigned long) ref_num[i]);
 	erl_printf(fd, ">");
 	break;
     case PID_DEF:
-	erl_printf(fd, "<%d.%d.%d>",
-		   pid_node(obj), pid_number(obj), pid_serial(obj));
+    case EXTERNAL_PID_DEF:
+	erl_printf(fd, "<%lu.%lu.%lu>",
+		   (unsigned long) pid_channel_no(obj),
+		   (unsigned long) pid_number(obj),
+		   (unsigned long) pid_serial(obj));
 	break;
     case PORT_DEF:
-	erl_printf(fd, "#Port<%d.%d>", port_node(obj),
-		   port_number(obj));
+    case EXTERNAL_PORT_DEF:
+	erl_printf(fd, "#Port<%lu.%lu>",
+		   (unsigned long) port_channel_no(obj),
+		   (unsigned long) port_number(obj));
 	break;
     case LIST_DEF:
 	if (is_printable_string(obj)) {
@@ -1492,14 +2681,18 @@ display1(Eterm obj, CIO fd)
     case FLOAT_DEF: {
 	    FloatDef ff;
 	    GET_DOUBLE(obj, ff);
-	    erl_printf(fd, "%.20e", ff.fd);
+#ifdef _OSE_
+	    erl_printf(fd, "%e", ff.fd);
+#else
+	    erl_printf(fd, "%e", ff.fd);
+#endif
 	}
 	break;
     case BINARY_DEF:
 	{
 	    ProcBin* pb = (ProcBin *) binary_val(obj);
-	    erl_printf(fd, pb->size == 1 ? "<<%d byte>>" : "<<%d bytes>>",
-		       pb->size);
+	    erl_printf(fd, pb->size == 1 ? "<<%lu byte>>" : "<<%lu bytes>>",
+		       (unsigned long) pb->size);
 	}
 	break;
     case FUN_DEF:
@@ -1517,10 +2710,10 @@ display1(Eterm obj, CIO fd)
 	}
 	break;
     case VECTOR_DEF:
-	erl_printf(fd, "#Vector<%d>", signed_val(vector_val(obj)[1]));
+	erl_printf(fd, "#Vector<%ld>", (long) signed_val(vector_val(obj)[1]));
 	break;
     default:
-	erl_printf(fd, "<unknown:%x>", obj);
+	erl_printf(fd, "<unknown:%lx>", (unsigned long) obj);
     }
     return(0);
 }
@@ -1545,7 +2738,7 @@ void ldisplay(Eterm obj, CIO fd, int count)
 {
     dcount = count;
     display1(obj, fd);
-    if (dcount <= 0) erl_printf(fd, "... "); /* Show that more items exit */
+    if (dcount <= 0) erl_printf(fd, "... "); /* Show that more items exist */
 }
 
 
@@ -1977,23 +3170,6 @@ is_printable_string(Eterm list)
     return 0;
 }
 
-int
-do_load(Eterm group_leader,	/* Group leader or NIL if none. */
-	Eterm mod,		/* Module name as an atom. */
-	byte* code,		/* Points to the code to load */
-	int size)		/* Size of code to load. */
-{
-    ErlDrvBinary* bin;
-    int result;
-
-    if ((bin = (ErlDrvBinary *) gzinflate_buffer(code, size)) == NULL) {
-	return -1;
-    }
-    result = bin_load(group_leader, mod, bin->orig_bytes, bin->orig_size);
-    driver_free_binary(bin);
-    return result;
-}
-
 typedef union { char c; short s; int i; long l; float f; double d; } align_t;
 
 static align_t *definite_block;
@@ -2063,7 +3239,7 @@ typedef union most_strict {
 typedef struct mem_link
 {
    struct mem_link *prev, *next;
-   unsigned long size;
+   Uint size;
    int type;
    Eterm p;			/* which process allocated */
    Most_strict align;
@@ -2173,9 +3349,9 @@ sys_alloc_stat(SysAllocStat *sasp)
 }
 
 #ifdef INSTRUMENT
-extern Eterm current_process;
+extern Eterm current_erl_process;
 
-static void link_in(mem_link *l, unsigned size, int from)
+static void link_in(mem_link *l, Uint size, int from)
 {
    l->next = mem_anchor;
    if (mem_anchor != NULL)
@@ -2186,7 +3362,7 @@ static void link_in(mem_link *l, unsigned size, int from)
       l->type = from;
    mem_anchor = l;
 
-   l->p = current_process;
+   l->p = current_erl_process;
 }
 
 static void link_out(mem_link *l)
@@ -2287,7 +3463,7 @@ instr_realloc(int from,
    char *p, *new_p;
    mem_link *l;
    int old_type;
-   unsigned old_size;
+   Uint old_size;
 
    if (need_instr_init)
        instr_init();
@@ -2375,7 +3551,7 @@ sys_realloc(void* ptr, Uint size)
 void
 sys_free(void* ptr)
 {
-  return instr_free(sys_free2, ptr);
+  instr_free(sys_free2, ptr);
 }
 
 void *
@@ -2393,7 +3569,7 @@ erts_sl_realloc(void* ptr, Uint save_size, Uint size)
 void
 erts_sl_free(void* ptr)
 {
-  return instr_free(erts_sl_free2, ptr);
+  instr_free(erts_sl_free2, ptr);
 }
 
 static void dump_memory_to_stream(FILE *f)
@@ -2407,14 +3583,16 @@ static void dump_memory_to_stream(FILE *f)
       if (is_non_value(l->p))
 	 fprintf(f, "{%d, %lu, %lu, undefined}.\n",
 		 l->type,
-		 ((unsigned long) l) + sizeof(mem_link),
-		 l->size);
+		 (unsigned long) ((size_t) l + sizeof(mem_link)),
+		 (unsigned long) l->size);
       else
-	 fprintf(f, "{%d, %lu, %lu, {%ld,%ld,%ld}}.\n",
+	 fprintf(f, "{%d, %lu, %lu, {%lu,%lu,%lu}}.\n",
 		 l->type,
-		 ((unsigned long) l) + sizeof(mem_link),
-		 l->size,
-		 pid_node(l->p),pid_number(l->p),pid_serial(l->p));
+		 (unsigned long) ((size_t) l + sizeof(mem_link)),
+		 (unsigned long) l->size,
+		 (unsigned long) pid_channel_no(l->p),
+		 (unsigned long) pid_number(l->p),
+		 (unsigned long) pid_serial(l->p));
       l = l->next;
    }
 }
@@ -2467,7 +3645,7 @@ collect_memory(Process *process)
     l = mem_anchor;
     while (l != NULL)
     {
-	if ((unsigned) l > MAX_SMALL)
+	if ((Uint) l > MAX_SMALL)
 	    need_big += 1;
 	if (l->size > MAX_SMALL)
 	    need_big += 1;
@@ -2495,14 +3673,15 @@ collect_memory(Process *process)
 	    pid = am_undefined;
 	else
 	{
+
 	    pid = TUPLE3(hp,
-			 make_small(pid_node(l->p)),
-			 make_small(pid_number(l->p)),
-			 make_small(pid_serial(l->p)));
+			 make_small_or_big(pid_channel_no(l->p), process),
+			 make_small_or_big(pid_number(l->p), process),
+			 make_small_or_big(pid_serial(l->p), process));
 	    hp += 4;
 	}
 
-	p = ((unsigned) l) + sizeof(mem_link);
+	p = ((Uint) l) + sizeof(mem_link);
 	tup = TUPLE4(hp,
 		     make_small(l->type),
 		     make_small_or_big(p, process),
@@ -2523,13 +3702,13 @@ collect_memory(Process *process)
 	{
 	    hp = HAlloc(process, 4);
 	    pid = TUPLE3(hp,
-			 make_small(pid_node(l->p)),
+			 make_small(pid_channel_no(l->p)),
 			 make_small(pid_number(l->p)),
 			 make_small(pid_serial(l->p)));
 	}
 
 	hp = HAlloc(process, 5);
-	p = ((unsigned) l) + sizeof(mem_link);
+	p = ((Uint) l) + sizeof(mem_link);
 	tup = TUPLE4(hp,
 		     make_small(l->type),
 		     make_small_or_big(p, process),
@@ -2574,12 +3753,13 @@ void pinfo()
 void pp(p)
 Process *p;
 {
-    print_process_info(p,CERR);
+    if(p)
+	print_process_info(p,CERR);
 }
     
 void ppi(Eterm pid)
 {
-    pp(process_tab[pid_number(pid)]);
+    pp(pid2proc(pid));
 }
 
 void td(Eterm x)
@@ -2591,22 +3771,14 @@ void td(Eterm x)
 void
 ps(Process* p, Eterm* stop)
 {
-#ifdef UNIFIED_HEAP
-    Eterm* sp = p->stack-1;
+    Eterm* sp = STACK_START(p) - 1;
 
-    if (stop <= p->send) {
-        stop = p->send + 1;
+    if (stop <= STACK_END(p)) {
+        stop = STACK_END(p) + 1;
     }
-#else
-    Eterm* sp = p->hend-1;
-
-    if (stop <= p->htop) {
-	stop = p->htop + 1;
-    }
-#endif
 
     while(sp >= stop) {
-	erl_printf(COUT,"%08lx: ", (Eterm) sp);
+	erl_printf(COUT,"%08lx: ", (unsigned long) (Eterm) sp);
 	ldisplay(*sp, COUT, 75);
 	erl_putc('\r', COUT);
 	erl_putc('\n', COUT);
@@ -2614,4 +3786,3 @@ ps(Process* p, Eterm* stop)
     }
 }
 #endif
-

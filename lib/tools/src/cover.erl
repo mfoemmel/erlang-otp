@@ -350,7 +350,12 @@ terminate(Reason, State) ->
 			  case code:which(Module) of
 			      ?TAG ->
 				  code:purge(Module),
-				  code:delete(Module);
+				  case code:load_file(Module) of
+				      {module, Module} ->
+					  ignore;
+				      {error, _Reason} ->
+					  code:delete(Module)
+				  end;
 			      _ ->
 				  ignore
 			  end

@@ -38,10 +38,12 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 MODULES = hipe_hash hipe_internal \
-	 hipe_beam_vectors \
+	hipe_beam_vectors \
 	hipe_pure_hash hipe_pure_ufind hipe_pure_vectors \
-	hipe_timing hipe_ufind hipe_vectors \
-	hipe_gb_hash hipe_dict_hash
+	hipe_timing hipe_ufind hipe_vector_ufind \
+	hipe_vectors \
+	hipe_vector \
+	hipe_gb_hash hipe_dict_hash hipe_vhash
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
@@ -91,4 +93,5 @@ release_spec: opt
 release_docs_spec:
 
 
-
+$(EBIN)/hipe_timing.beam: ../main/hipe.hrl
+$(EBIN)/hipe_vector.beam: hipe_vector.hrl

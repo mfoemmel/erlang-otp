@@ -77,20 +77,18 @@ expr_bit({bin_element, Line, E, Size0, Options0}, Bs0, Fun, Call_maketype) ->
 size_or_all(all, All) -> All;
 size_or_all(N, _All)  -> N.
 
-to_binary(B0, Size0, [binary,{unit,Unit}|_]) when binary(B0) ->
+to_binary(B0, Size0, [binary,{unit,Unit}|_]) when is_binary(B0) ->
     Size1 = size_or_all(Size0, size(B0)),
     binary_to_bits(B0, Size1*Unit);
-to_binary(I, Size0, [integer,{unit,Unit}|Options]) when integer(I) ->
-    Little = lists:member(little, Options),
+to_binary(I, Size0, [integer,{unit,Unit}|Opts]) when is_integer(I) ->
     Size = Size0*Unit,
     L = i_to_bytes(I, Size),
     Bits = binary_to_bits(list_to_binary(L), Size),
-    to_little_endian(Bits, Little);
-to_binary(F, Size0, [float,{unit,Unit}|Options]) when float(F) ->
-    Little = lists:member(little, Options),
+    to_little_endian(Bits, Opts);
+to_binary(F, Size0, [float,{unit,Unit}|Opts]) when is_float(F) ->
     Size = Size0*Unit,
     Bits = float_to_ieee(F, Size),
-    to_little_endian(Bits, Little);
+    to_little_endian(Bits, Opts);
 to_binary(_, _, _) ->
     error(badarg).
 
@@ -130,27 +128,35 @@ bits_to_bytes(_, _) -> exit(badarg).
 %%% with less than 8 bits, the rest is at the start of the sequence for
 %%% big-endian, at the end for little-endian.
 
-%% to_little_endian(Bits, Little_p)
-to_little_endian(B, false) -> B;
-to_little_endian(B, true) ->
-    %% an incomplete byte is at the start in the input
-    L = length(B),
-    P = L rem 8,
-    {Piece, Rest} = split_list(P, B),
-    R_big = bits_to_bytes(Rest),
-    R_little = lists:reverse(R_big),
-    bytes_to_bits(R_little) ++ Piece.
+to_little_endian(B, Opts) ->
+    case is_little_endian(Opts) of
+	false -> B;
+	true ->
+	    %% an incomplete byte is at the start in the input
+	    L = length(B),
+	    P = L rem 8,
+	    {Piece, Rest} = split_list(P, B),
+	    R_big = bits_to_bytes(Rest),
+	    R_little = lists:reverse(R_big),
+	    bytes_to_bits(R_little) ++ Piece
+    end.
 
-%% from_little_endian(Bits, Little_p)
-from_little_endian(B, false) -> B;
-%% an incomplete byte is at the end in the input
-from_little_endian(B, true) ->
-    L = length(B),
-    P = L rem 8,
-    {Rest, Piece} = split_list(L-P, B),
-    R_little = bits_to_bytes(Rest),
-    R_big = lists:reverse(R_little),
-    Piece ++ bytes_to_bits(R_big).
+from_little_endian(B, Opts) ->
+    case is_little_endian(Opts) of
+	false -> B;
+	true ->
+	    %% an incomplete byte is at the end in the input
+	    L = length(B),
+	    P = L rem 8,
+	    {Rest, Piece} = split_list(L-P, B),
+	    R_little = bits_to_bytes(Rest),
+	    R_big = lists:reverse(R_little),
+	    Piece ++ bytes_to_bits(R_big)
+    end.
+
+is_little_endian(Opts) ->
+    member(little, Opts) orelse (erlang:system_info(endian) == little andalso
+				 member(native, Opts)).
 
 float_to_ieee(F, Size) ->
     Bin = case catch <<F:Size/float>> of
@@ -166,7 +172,7 @@ make_bit_type(Line, default, Type0) ->
 	{ok,all,Bt} -> {{atom,Line,all},erl_bits:as_list(Bt)};
 	{ok,Size,Bt} -> {{integer,Line,Size},erl_bits:as_list(Bt)}
     end;
-make_bit_type(Line, Size, Type0) ->		%Integer or 'all'
+make_bit_type(_Line, Size, Type0) ->		%Integer or 'all'
     {ok,Size,Bt} = erl_bits:set_bit_type(Size, Type0),
     {Size,erl_bits:as_list(Bt)}.
 
@@ -194,7 +200,7 @@ bits_to_int2([Bit|Rest], Acc) ->
     bits_to_int2(Rest, Acc+Acc+Bit).
 
 match_field({bin_element,_,{string,_,S},default,default},
-	    Bin, Bs, Mfun, _Efun, _Call_maketype) ->
+	    Bin, Bs, _Mfun, _Efun, _Call_maketype) ->
     Tail = foldl(fun(C, <<C:8,Tail/binary>>) -> Tail;
 		    (C, Bits0) ->
 			 {Bits,Tail} = get_bits(Bits0, 8),
@@ -208,6 +214,7 @@ match_field({bin_element,_,E,default,[binary|_]}, Bin, Bs0, Mfun, _Efun, _) ->
 match_field({bin_element, _,E,Size0,Options0}, Bin, Bs0, Mfun, Efun,
 	    Call_maketype) ->
     {Size1,Options} = maketype(Size0, Options0, Call_maketype),
+    match_check_size(Size1),
     case Efun(Size1, Bs0) of
 	{value,all,Bs1} when binary(Bin) ->
 	    {match,Bs2} = Mfun(E, Bin, Bs1),
@@ -219,23 +226,28 @@ match_field({bin_element, _,E,Size0,Options0}, Bin, Bs0, Mfun, Efun,
 	    {Bs2,Tail}
     end.
 
-match_thing(binary, Opts, Size, Bin) when Size rem 8 =:= 0, binary(Bin) ->
+match_thing(binary, _Opts, Size, Bin) when Size rem 8 =:= 0, binary(Bin) ->
     split_binary(Bin, Size div 8);
-match_thing(binary, Opts, Size, Bin) ->
+match_thing(binary, _Opts, Size, Bin) ->
     {Bits,Tail} = get_bits(Bin, Size),
     {list_to_binary(bits_to_bytes(Bits)),Tail};
 match_thing(integer, Opts, Size, Bin) ->
     {Bits0,Tail} = get_bits(Bin, Size),
-    Bits1 = from_little_endian(Bits0, member(little, Opts)),
+    Bits1 = from_little_endian(Bits0, Opts),
     {bits_to_int(Bits1, member(signed, Opts)),Tail};
 match_thing(float, Opts, Size, Bin) ->
     {Bits0,Tail} = get_bits(Bin, Size),
-    Bits1 = from_little_endian(Bits0, member(little, Opts)),
+    Bits1 = from_little_endian(Bits0, Opts),
     <<Float:Size/float>> = list_to_binary(bits_to_bytes(Bits1)),
     {Float,Tail};
 match_thing(Type, Opts, Size, Bin) ->
     erlang:display({Type,Opts,Size,Bin}),
     exit(badarg).
+
+match_check_size({var,_,_}) -> ok;
+match_check_size({integer,_,_}) -> ok;
+match_check_size({value,_,_}) -> ok;		%From the debugger.
+match_check_size(_) -> throw(invalid).
 
 get_bits(Bin0, N) when binary(Bin0), N rem 8 =:= 0 ->
     <<Bin:N/binary-unit:1,Tail/binary>> = Bin0,

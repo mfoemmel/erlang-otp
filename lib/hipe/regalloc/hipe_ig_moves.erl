@@ -96,7 +96,7 @@ set_worklist_moves(Worklist_moves, IG_moves) -> IG_moves#igraph_moves{worklist_m
 %   An updated ig_moves data structure
 %
 %%%----------------------------------------------------------------------
-add(movelist, Instruction, Temporary, IG_moves) when integer(Temporary) ->
+add(movelist, Instruction, Temporary, IG_moves) when is_integer(Temporary) ->
     Movelist = movelist(IG_moves),
     Assoc_moves = hipe_vectors_wrapper:get(Movelist, Temporary),
     New_movelist = hipe_vectors_wrapper:set(Movelist, Temporary, ordsets:add_element(Instruction, Assoc_moves)),

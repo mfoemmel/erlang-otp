@@ -23,7 +23,7 @@
 
 -import(lists, [reverse/1,keysearch/3,keydelete/3]).
 
-module({Mod,Exp,Attr,Forms0,Lbl}, Opts) ->
+module({Mod,Exp,Attr,Forms0,Lbl}, _Opts) ->
     Forms = [function(F) || F <- Forms0],
     {ok,{Mod,Exp,Attr,Forms,Lbl}}.
 
@@ -35,15 +35,20 @@ function({function,Name,Arity,CLabel,Asm0}=Func) ->
 	    {function,Name,Arity,CLabel,Asm}
     end.
 
-needed([{bs_save,Name}|T], N, BsUsed, Dict) ->
+needed([{bs_save,_Name}|T], N, _BsUsed, Dict) ->
     needed(T, N, true, Dict);
-needed([{label,Lbl},{bs_restore,Name}|T], N, BsUsed, Dict) ->
+needed([{label,_Lbl},{bs_restore,Name}|T], N, _BsUsed, Dict) ->
     case keysearch(Name, 1, Dict) of
 	{value,{Name,_}} -> needed(T, N, true, Dict);
 	false -> needed(T, N+1, true, [{Name,N}|Dict])
     end;
-needed([H|T], N, BsUsed, Dict) -> needed(T, N, BsUsed, Dict);
-needed([], N, BsUsed, Dict) -> {BsUsed,Dict}.
+needed([{bs_init,_,_}|T], N, _, Dict) ->
+    needed(T, N, true, Dict);
+needed([{bs_start_match,_,_}|T], N, _, Dict) ->
+    needed(T, N, true, Dict);
+needed([_|T], N, BsUsed, Dict) ->
+    needed(T, N, BsUsed, Dict);
+needed([], _, BsUsed, Dict) -> {BsUsed,Dict}.
 
 replace([{bs_save,Name}=Save,{bs_restore,Name}|T], Dict, Acc) ->
     replace([Save|T], Dict, Acc);
@@ -61,7 +66,7 @@ replace([{bs_restore,Name}|T], Dict, Acc) ->
 	false ->
 	    replace(T, Dict, Acc)
     end;
-replace([{bs_put_integer,_,{integer,_},_,Fl0,{integer,_}}=H|T]=List, Dict, Acc) ->
+replace([{bs_put_integer,_,{integer,_},_,_,{integer,_}}=H|T]=List, Dict, Acc) ->
     case collect_string(List, [], 0) of
 	{Len,Str,Rest} when Len >= 2 ->
 	    replace(Rest, Dict, [{bs_put_string,Len,{string,Str}}|Acc]);
@@ -69,19 +74,18 @@ replace([{bs_put_integer,_,{integer,_},_,Fl0,{integer,_}}=H|T]=List, Dict, Acc) 
 	    replace(T, Dict, [H|Acc])
     end;
 replace([{test,bs_test_tail,F,[Bits]}|T], Dict,
-	[{test,bs_skip_bits,F,[{integer,I},Unit,Flags]}|Acc]) ->
+	[{test,bs_skip_bits,F,[{integer,I},Unit,_Flags]}|Acc]) ->
     replace(T, Dict, [{test,bs_test_tail,F,[Bits+I*Unit]}|Acc]);
 replace([{test,bs_skip_bits,F,[{integer,I1},Unit1,_]}|T], Dict,
 	[{test,bs_skip_bits,F,[{integer,I2},Unit2,Flags]}|Acc]) ->
     replace(T, Dict, [{test,bs_skip_bits,F,[{integer,I1*Unit1+I2*Unit2},1,Flags]}|Acc]);
 replace([H|T], Dict, Acc) ->
     replace(T, Dict, [H|Acc]);
-replace([], Dict, Acc) -> reverse(Acc).
+replace([], _, Acc) -> reverse(Acc).
 
-collect_string([{bs_put_integer,_,{integer,Sz},Unit,Flags,{integer,V}}|T]=List,
+collect_string([{bs_put_integer,_,{integer,Sz},Unit,_Flags,{integer,V}}|T],
 	       Acc, Len) when Sz*Unit =:= 8 ->
     Byte = V band 16#FF,
     collect_string(T, [Byte|Acc], Len+1);
-collect_string(Rest, Acc, Len) -> {Len,reverse(Acc),Rest}.
-
-    
+collect_string(Rest, Acc, Len) ->
+    {Len,reverse(Acc),Rest}.

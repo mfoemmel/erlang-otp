@@ -50,14 +50,17 @@ typedef struct erl_fun_entry {
 
 typedef struct erl_fun_thing {
     Eterm thing_word;		/* Subtag FUN_SUBTAG. */
+#ifndef SHARED_HEAP
     struct erl_fun_thing* next;	/* Next fun in mso list. */
-    Eterm creator;		/* Pid of creator process (contains node). */
+#endif
     ErlFunEntry* fe;		/* Pointer to fun entry. */
 #ifdef HIPE
     Eterm* native_address;	/* Native code for the fun. */
 #endif
     Uint arity;			/* The arity of the fun. */
     Uint num_free;		/* Number of free variables (in env). */
+  /* -- The following may be compound Erlang terms ---------------------- */
+    Eterm creator;		/* Pid of creator process (contains node). */
     Eterm env[1];		/* Environment (free variables). */
 } ErlFunThing;
 
@@ -69,6 +72,7 @@ void erts_fun_info(CIO to);
 
 ErlFunEntry* erts_put_fun_entry(Eterm mod, int uniq, int index);
 ErlFunEntry* erts_get_fun_entry(Eterm mod, int uniq, int index);
+ErlFunEntry* erts_put_debug_fun_entry(Eterm mod, byte* uniq, int index);
 
 ErlFunEntry* erts_put_fun_entry2(Eterm mod, int old_uniq, int old_index,
 				byte* uniq, int index, int arity);
@@ -76,7 +80,9 @@ ErlFunEntry* erts_get_fun_entry2(Eterm mod, int old_uniq, int old_index,
 				byte* uniq, int index, int arity);
 
 void erts_erase_fun_entry(ErlFunEntry* fe);
+#ifndef SHARED_HEAP
 void erts_cleanup_funs(ErlFunThing* funp);
+#endif
 void erts_cleanup_funs_on_purge(Eterm* start, Eterm* end);
 void erts_dump_fun_entries(CIO fd);
 

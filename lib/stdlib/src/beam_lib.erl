@@ -81,8 +81,6 @@ format_error({error, Module, Error}) ->
     Module:format_error(Error);
 format_error({unknown_chunk, File, ChunkName}) ->
     io_lib:format("~p: Cannot find chunk ~p~n", [File, ChunkName]);
-format_error({module_mismatch, File, Module}) ->
-    io_lib:format("~p: Module name in object code is ~p~n", [File, Module]);
 format_error({invalid_chunk, File, ChunkId}) ->
     io_lib:format("~p: Invalid contents of chunk ~p~n", [File, ChunkId]);
 format_error({not_a_beam_file, File}) ->
@@ -208,15 +206,19 @@ strip_file(File) ->
 		     {ok, {Mod, Chunk0}} = read_chunk_data(File, Ids),
 		     Chunk0
 	     end,
-    {ok, Stripped} = build_module(Chunks),
+    {ok, Stripped0} = build_module(Chunks),
     case File of
-	_ when binary(File) ->
+	_ when is_binary(File) ->
+	    {ok, Fd} = ram_file:open(Stripped0, [write, binary]),
+	    {ok, _} = ram_file:compress(Fd),
+	    {ok, Stripped} = ram_file:get_file(Fd),
+	    ok = ram_file:close(Fd),
 	    {ok, {Mod, Stripped}};
 	_ ->
 	    FileName = beam_filename(File),
 	    case file:open(FileName, [raw, binary, write, compressed]) of
 		{ok, Fd} ->
-		    case file:write(Fd, Stripped) of
+		    case file:write(Fd, Stripped0) of
 			ok ->
 			    file:close(Fd),
 			    {ok, {Mod, FileName}};
@@ -322,7 +324,6 @@ get_data(Cs, Id, FD, Size, Pos, Pos2, _Mod, Data) when Id == "Atom" ->
     {NFD, Chunk} = get_chunk(Id, Pos, Size, FD),
     <<_Num:32, Chunk2/binary>> = Chunk,
     {Module, _} = extract_atom(Chunk2),
-    verify_modname(NFD, Module),
     C = case Cs of
 	    info -> 
 		{Id, Pos, Size};
@@ -419,7 +420,7 @@ attributes([], R) ->
 attributes(L, R) ->
     K = element(1, hd(L)),
     {L1, L2} = splitwith(fun(T) -> element(1, T) == K end, L),
-    V = append([A || {N, A} <- L1]),
+    V = append([A || {_, A} <- L1]),
     attributes(L2, [{K, V} | R]).
 
 %% Extract symbols
@@ -472,7 +473,13 @@ extract_atom(<<Len, B/binary>>) ->
 
 -record(bb, {pos = 0, bin, source}).
 
-open_file(Binary) when binary(Binary) ->
+open_file(<<"FOR1",_/binary>>=Binary) ->
+    #bb{bin = Binary, source = Binary};
+open_file(Binary0) when is_binary(Binary0) ->
+    {ok, Fd} = ram_file:open(Binary0, [write, binary]),
+    {ok, _} = ram_file:uncompress(Fd),
+    {ok, Binary} = ram_file:get_file(Fd),
+    ok = ram_file:close(Fd),
     #bb{bin = Binary, source = Binary};
 open_file(FileName) ->
     case file:open(FileName, [read, raw, binary, compressed]) of
@@ -517,18 +524,6 @@ beam_filename(Bin) when binary(Bin) ->
     Bin;
 beam_filename(File) ->
     filename:rootname(File, ".beam") ++ ".beam".
-
-verify_modname(BB, _Mod) when binary(BB#bb.source) ->
-    ok;
-verify_modname(BB, Mod) ->
-    FileName = BB#bb.source,
-    case {filename:rootname(filename:basename(FileName), ".beam"), 
-	  atom_to_list(Mod)} of
-	{Same, Same} ->
-	    ok;
-	_NotSame ->
-	    error({module_mismatch, FileName, Mod})
-    end.
 
 %% -> ok | throw(Error)
 assert_directory(FileName) ->

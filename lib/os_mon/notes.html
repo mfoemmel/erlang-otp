@@ -20,7 +20,7 @@
 
 <!--- ################################################################# --->
 
-<h2>Os_mon 1.5.0</h2>
+<h2>Os_mon 1.6.0</h2>
 
 
 <!--- ----------------------------------------------------------------- --->
@@ -30,13 +30,21 @@
 <ul>
 
   <li>
-    Gen_server calls to the memsup server of the os_mon application could
-    fail due to slow responses from the memsup port program. The memory
-    polling is now handled by a separate process making answers from memsup
-    more or less instant. <br> The disksup server of the os_mon application
-    is modified so that it does not use os:cmd() on Unix systems.<br>
-    (Own Id: OTP-4000)<br>
-    (Aux Id: Seq5275)<p>
+    Corrected return value from memsup:init/1 in error case.<br>
+    (Own Id: OTP-4289)<p>
+  </li>
+
+  <li>
+    process_memory_high_watermark alarm was erroneously set when 1/4 of the
+    limit had been reached. This bug has now been corrected.<br>
+    (Own Id: OTP-4344)<br>
+    (Aux Id: Seq7375, (OTP-4317 see below))<p>
+  </li>
+
+  <li>
+    A bug which caused <code>memsup:get_system_memory_data()</code> to fail
+    on linux/freebsd/win32 has been fixed.<br>
+    (Own Id: OTP-4489)<p>
   </li>
 
 </ul>
@@ -49,9 +57,24 @@
 <ul>
 
   <li>
-    Support for os_mon disksup, memsup and cpu_sup for Linux was added.
-    Code was contributed by Miguel Barreiro Paz &lt;enano@fi.udc.es&gt;.<br>
-    (Own Id: OTP-3996)<p>
+    cpu_sup:util/0 and cpu_sup:util/1 which returns information about cpu
+    utilization have been added. For further information see cpu_sup(3).<br>
+    (Own Id: OTP-4249)<br>
+    (Aux Id: Seq7278, Seq7332)<p>
+  </li>
+
+  <li>
+    Nodename is now used as key in loadtable (os_mon mib).<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-4501)<br>
+    (Aux Id: seq7435, seq7549, seq7596)<p>
+  </li>
+
+  <li>
+    The loadCpuLoad5, loadCpuLoad15 values has been added to the os_mon
+    mib.<br>
+    (Own Id: OTP-4502)<br>
+    (Aux Id: seq7435, seq7549, seq7596)<p>
   </li>
 
 </ul>

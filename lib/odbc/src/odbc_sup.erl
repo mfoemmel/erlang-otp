@@ -21,12 +21,20 @@
 
 -export([init/1]).
 
-
-
 init([Name]) ->
-    Flags = {simple_one_for_one, 0, 3600},
-    MFA = {odbc, start_link_sup, []},
+    RestartStrategy = simple_one_for_one,
+    MaxR = 0,
+    MaxT = 3600,
+    StartFunc = {odbc, start_link_sup, []},
+    Restart = temporary, % E.g. should not be restarted
+    Shutdown = 1000,
     Modules = [odbc],
-    Workers = [{Name, MFA, temporary, brutal_kill, worker, Modules}],
-    {ok, {Flags, Workers}}.
+    Type = worker,
+    ChildSpec = {Name, StartFunc, Restart, Shutdown, Type, Modules},
+    {ok, {{RestartStrategy, MaxR, MaxT}, [ChildSpec]}}.
+
+
+
+
+
 

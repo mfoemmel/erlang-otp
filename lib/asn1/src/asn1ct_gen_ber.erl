@@ -29,6 +29,7 @@
 -export([gen_encode_prim/4]).
 -export([gen_dec_prim/8]).
 -export([gen_objectset_code/2, gen_obj_code/3]).
+-export([re_wrap_erule/1]).
 
 -import(asn1ct_gen, [emit/1,demit/1]).
 
@@ -283,12 +284,6 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
     end.
 
 
-emit_encode_func(Name,Value) when atom(Name) ->
-    emit_encode_func(atom_to_list(Name),Value);
-emit_encode_func(Name,Value) ->
-    Fname = "?RT_BER:encode_" ++ Name,
-    emit([Fname,"(",Value,")"]).
-
 emit_encode_func(Name,Value,Tags) when atom(Name) ->
     emit_encode_func(atom_to_list(Name),Value,Tags);
 emit_encode_func(Name,Value,Tags) ->
@@ -403,7 +398,7 @@ gen_decode_user(Erules,D) when record(D,typedef) ->
 	    BytesVar = asn1ct_gen:mk_var(asn1ct_name:curr(bytes)),
 	    LenVar = asn1ct_gen:mk_var(asn1ct_name:curr(len)),
 	    asn1ct_name:new(len),
-	    gen_dec_prim(ber, Def#type{def='ASN1_OPEN_TYPE'}, 
+	    gen_dec_prim(Erules, Def#type{def='ASN1_OPEN_TYPE'}, 
 			 BytesVar, Tag, "TagIn",no_length, 
 			 ?PRIMITIVE,"OptOrMand"),
 	    emit({".",nl,nl});
@@ -411,7 +406,7 @@ gen_decode_user(Erules,D) when record(D,typedef) ->
 	    BytesVar = asn1ct_gen:mk_var(asn1ct_name:curr(bytes)),
 	    LenVar = asn1ct_gen:mk_var(asn1ct_name:curr(len)),
 	    asn1ct_name:new(len),
-	    gen_dec_prim(ber, Def, BytesVar, Tag, "TagIn",no_length, 
+	    gen_dec_prim(Erules, Def, BytesVar, Tag, "TagIn",no_length, 
 			 ?PRIMITIVE,"OptOrMand"),
 	    emit({".",nl,nl});
 	{constructed,bif} ->
@@ -544,7 +539,7 @@ gen_dec_prim(Erules,Att,BytesVar,DoTag,TagIn,Length,Form,OptOrMand) ->
 		      BytesVar,",",{asis,Constraint},","}),
 		true;
 	    'ASN1_OPEN_TYPE' ->
-		emit(["?RT_BER:decode_open_type(",
+		emit(["?RT_BER:decode_open_type(",re_wrap_erule(Erules),",",
 		      BytesVar,","]),
 		false;
 	    Other ->
@@ -561,8 +556,10 @@ gen_dec_prim(Erules,Att,BytesVar,DoTag,TagIn,Length,Form,OptOrMand) ->
 		       _ -> {asis,opt_or_default}
 		   end,
     case {TagIn,NewTypeName} of
-	{_,'ASN1_OPEN_TYPE'} ->
+	{[],'ASN1_OPEN_TYPE'} ->
 	    emit([{asis,DoTag},")"]);
+	{_,'ASN1_OPEN_TYPE'} ->
+	    emit([TagIn,"++",{asis,DoTag},")"]);
 	{[],_} ->
 	    emit([{asis,DoTag},NewLength,", ",NewOptOrMand,")"]);
 	_ when list(TagIn) ->
@@ -604,10 +601,10 @@ gen_obj_code(Erules,Module,Obj) when record(Obj,typedef) ->
     gen_encode_constr_type(EncConstructed),
     emit(nl),
     DecConstructed =
-	gen_decode_objectfields(Class#classdef.typespec,ObjName,Fields,[]),
+	gen_decode_objectfields(Erules,Class#classdef.typespec,ObjName,Fields,[]),
     emit(nl),
     gen_decode_constr_type(DecConstructed);
-gen_obj_code(Erules,Module,Obj) when record(Obj,pobjectdef) ->
+gen_obj_code(_Erules,_Module,Obj) when record(Obj,pobjectdef) ->
     ok.
 
 gen_encode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
@@ -682,7 +679,7 @@ gen_encode_constr_type([{Name,Def}|Rest]) ->
 gen_encode_constr_type([]) ->
     ok.
 
-gen_decode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
+gen_decode_objectfields(Erules,Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
     Fields = Class#objectclass.fields,
     MaybeConstr =
     case is_typefield(Fields,FieldName) of
@@ -701,7 +698,7 @@ gen_decode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
 	    CAcc =
 	    case Type#typedef.name of
 		{primitive,bif} ->
-		    gen_dec_prim(ber,Def,"Bytes",Tag,"TagIn",no_length,
+		    gen_dec_prim(Erules,Def,"Bytes",Tag,"TagIn",no_length,
 				 ?PRIMITIVE,Prop),
 		    [];
 		{constructed,bif} ->
@@ -745,10 +742,10 @@ gen_decode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
 	{false,_} ->
 	    []
     end,
-    gen_decode_objectfields(Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
-gen_decode_objectfields(C,O,[H|T],CAcc) ->
-    gen_decode_objectfields(C,O,T,CAcc);
-gen_decode_objectfields(_,_,[],CAcc) ->
+    gen_decode_objectfields(Erules,Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
+gen_decode_objectfields(Erules,C,O,[H|T],CAcc) ->
+    gen_decode_objectfields(Erules,C,O,T,CAcc);
+gen_decode_objectfields(_,_,_,[],CAcc) ->
     CAcc.
 
 gen_decode_constr_type([{Name,Def}|Rest]) ->
@@ -807,16 +804,18 @@ gen_objectset_code(Erules,ObjSet) ->
     emit({nl,"%%================================",nl}),
     case ClassName of
 	{Module,ExtClassName} ->
-	    gen_objset_code(ObjSetName,UniqueFName,Set,ExtClassName,ClassDef);
+	    gen_objset_code(Erules,ObjSetName,UniqueFName,Set,
+			    ExtClassName,ClassDef);
 	_ ->
-	    gen_objset_code(ObjSetName,UniqueFName,Set,ClassName,ClassDef)
+	    gen_objset_code(Erules,ObjSetName,UniqueFName,Set,
+			    ClassName,ClassDef)
     end,
     emit(nl).
 
-gen_objset_code(ObjSetName,UniqueFName,Set,ClassName,ClassDef)->
+gen_objset_code(Erules,ObjSetName,UniqueFName,Set,ClassName,ClassDef)->
     ClassFields = (ClassDef#classdef.typespec)#objectclass.fields,
     gen_objset_enc(ObjSetName,UniqueFName,Set,ClassName,ClassFields),
-    gen_objset_dec(ObjSetName,UniqueFName,Set,ClassName,ClassFields).
+    gen_objset_dec(Erules,ObjSetName,UniqueFName,Set,ClassName,ClassFields).
 
 gen_objset_enc(_,{unique,undefined},_,_,_) ->
     %% There is no unique field in the class of this object set
@@ -929,31 +928,31 @@ indent(N) ->
     lists:duplicate(N,32). % 32 = space
 
 
-gen_objset_dec(_,{unique,undefined},_,_,_) ->
+gen_objset_dec(_,_,{unique,undefined},_,_,_) ->
     %% There is no unique field in the class of this object set
     %% don't bother about the constraint
     ok;
-gen_objset_dec(ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],ClName,ClFields)->
+gen_objset_dec(Erules,ObjSName,UniqueName,[{ObjName,Val,Fields},T|Rest],ClName,ClFields)->
     emit({"'getdec_",ObjSName,"'(",{asis,UniqueName},",",{asis,Val},") ->",nl}),
     case ObjName of
 	no_name ->
-	    gen_inlined_dec_funs(Fields,ClFields);
+	    gen_inlined_dec_funs(Erules,Fields,ClFields);
 	Other ->
 	    emit({"    fun 'dec_",ObjName,"'/4"})
     end,
     emit({";",nl}),
-    gen_objset_dec(ObjSName,UniqueName,[T|Rest],ClName,ClFields);
-gen_objset_dec(ObjSetName,UniqueName,[{ObjName,Val,Fields}],ClName,ClFields) ->
+    gen_objset_dec(Erules,ObjSName,UniqueName,[T|Rest],ClName,ClFields);
+gen_objset_dec(Erules,ObjSetName,UniqueName,[{ObjName,Val,Fields}],ClName,ClFields) ->
     emit({"'getdec_",ObjSetName,"'(",{asis,UniqueName},",",{asis,Val},") ->",nl}),
     case ObjName of
 	no_name ->
-	    gen_inlined_dec_funs(Fields,ClFields);
+	    gen_inlined_dec_funs(Erules,Fields,ClFields);
 	Other ->
 	    emit({"    fun 'dec_",ObjName,"'/4"})
     end,
     emit({".",nl,nl}),
     ok;
-gen_objset_dec(ObjSetName,UniqueName,['EXTENSIONMARK'],ClName,ClFields) ->
+gen_objset_dec(_,ObjSetName,UniqueName,['EXTENSIONMARK'],ClName,ClFields) ->
     emit({"'getdec_",ObjSetName,"'(Any1, Any2) ->",nl}),
     emit({indent(3),"fun(Attr1, Bytes, Tag, RestPrimFieldName) ->",nl}),
     emit({indent(6),"Len = case Bytes of",nl,indent(9),
@@ -962,10 +961,10 @@ gen_objset_dec(ObjSetName,UniqueName,['EXTENSIONMARK'],ClName,ClFields) ->
     emit({indent(6),"{Bytes,[],Len}",nl}),
     emit({indent(3),"end.",nl,nl}),
     ok;
-gen_objset_dec(_,_,[],_,_) ->
+gen_objset_dec(_,_,_,[],_,_) ->
     ok.
 
-gen_inlined_dec_funs(Fields,[{typefield,Name,Prop}|Rest]) ->
+gen_inlined_dec_funs(Erules,Fields,[{typefield,Name,Prop}|Rest]) ->
     DecProp = case Prop of
 		  'OPTIONAL' -> opt_or_default;
 		  {'DEFAULT',_} -> opt_or_default;
@@ -975,23 +974,23 @@ gen_inlined_dec_funs(Fields,[{typefield,Name,Prop}|Rest]) ->
 	{value,{_,Type}} when record(Type,type) ->
 	    emit({indent(3),"fun(Type, Bytes, TagIn, RestPrimFieldName) ->",
 		  nl,indent(6),"case Type of",nl}),
-	    emit_inner_of_decfun(Type,DecProp),
-	    gen_inlined_dec_funs1(Fields,Rest);
+	    emit_inner_of_decfun(Erules,Type,DecProp),
+	    gen_inlined_dec_funs1(Erules,Fields,Rest);
 	{value,{_,Type}} when record(Type,typedef) ->
 	    emit({indent(3),"fun(Type, Bytes, TagIn, RestPrimFieldName) ->",
 		  nl,indent(6),"case Type of",nl}),
 	    emit({indent(9),{asis,Name}," ->",nl}),
-	    emit_inner_of_decfun(Type,DecProp),
-	    gen_inlined_dec_funs1(Fields,Rest);
+	    emit_inner_of_decfun(Erules,Type,DecProp),
+	    gen_inlined_dec_funs1(Erules,Fields,Rest);
 	false ->
-	    gen_inlined_dec_funs(Fields,Rest)
+	    gen_inlined_dec_funs(Erules,Fields,Rest)
     end;
-gen_inlined_dec_funs(Fields,[H|Rest]) ->
-    gen_inlined_dec_funs(Fields,Rest);
-gen_inlined_dec_funs(_,[]) ->
+gen_inlined_dec_funs(Erules,Fields,[H|Rest]) ->
+    gen_inlined_dec_funs(Erules,Fields,Rest);
+gen_inlined_dec_funs(_,_,[]) ->
     ok.
 
-gen_inlined_dec_funs1(Fields,[{typefield,Name,Prop}|Rest]) ->
+gen_inlined_dec_funs1(Erules,Fields,[{typefield,Name,Prop}|Rest]) ->
     DecProp = case Prop of
 		  'OPTIONAL' -> opt_or_default;
 		  {'DEFAULT',_} -> opt_or_default;
@@ -1000,31 +999,31 @@ gen_inlined_dec_funs1(Fields,[{typefield,Name,Prop}|Rest]) ->
     case lists:keysearch(Name,1,Fields) of
 	{value,{_,Type}} when record(Type,type) ->
 	    emit({";",nl}),
-	    emit_inner_of_decfun(Type,DecProp);
+	    emit_inner_of_decfun(Erules,Type,DecProp);
 	{value,{_,Type}} when record(Type,typedef) ->
 	    emit({";",nl,indent(9),{asis,Name}," ->",nl}),
-	    emit_inner_of_decfun(Type,DecProp);
+	    emit_inner_of_decfun(Erules,Type,DecProp);
 	false ->
 	    ok
     end,
-    gen_inlined_dec_funs1(Fields,Rest);
-gen_inlined_dec_funs1(Fields,[H|Rest])->
-    gen_inlined_dec_funs1(Fields,Rest);
-gen_inlined_dec_funs1(_,[]) ->
+    gen_inlined_dec_funs1(Erules,Fields,Rest);
+gen_inlined_dec_funs1(Erules,Fields,[H|Rest])->
+    gen_inlined_dec_funs1(Erules,Fields,Rest);
+gen_inlined_dec_funs1(_,_,[]) ->
     emit({nl,indent(6),"end",nl}),
     emit({indent(3),"end"}).
 
-emit_inner_of_decfun(#typedef{name={ExtName,Name},typespec=Type},Prop) ->
+emit_inner_of_decfun(_,#typedef{name={ExtName,Name},typespec=Type},Prop) ->
     OTag = Type#type.tag,
     Tag = [X#tag{class=decode_class(X#tag.class)}|| X <- OTag],
     emit({indent(12),"'",ExtName,"':'dec_",Name,"'(Bytes, ",Prop,
 	  ", TagIn ++ ",{asis,Tag},")"});
-emit_inner_of_decfun(#typedef{name=Name,typespec=Type},Prop) ->
+emit_inner_of_decfun(_,#typedef{name=Name,typespec=Type},Prop) ->
     OTag = Type#type.tag,
     Tag = [X#tag{class=decode_class(X#tag.class)}|| X <- OTag],
     emit({indent(12),"'dec_",Name,"'(Bytes, ",Prop,", TagIn ++ ",
 	  {asis,Tag},")"});
-emit_inner_of_decfun(Type,Prop) when record(Type,type) ->
+emit_inner_of_decfun(Erules,Type,Prop) when record(Type,type) ->
     OTag = Type#type.tag,
     Tag = [X#tag{class=decode_class(X#tag.class)}|| X <- OTag],
     CurrMod = get(currmod),
@@ -1034,7 +1033,7 @@ emit_inner_of_decfun(Type,Prop) when record(Type,type) ->
     case WhatKind of
 	{primitive,bif} -> 
 	    emit({indent(9),Def," ->",nl,indent(12)}),
-	    gen_dec_prim(ber,Type,"Bytes",Tag,"TagIn",no_length,
+	    gen_dec_prim(Erules,Type,"Bytes",Tag,"TagIn",no_length,
 			 ?PRIMITIVE,Prop);
 %	TRef when record(TRef,typereference) ->
 %	    T = TRef#typereference.val,
@@ -1143,7 +1142,19 @@ get_constraint(C,Key) ->
 	    V
     end.
 
-
+%% if the original option was ber and it has been wrapped to ber_bin
+%% turn it back to ber
+re_wrap_erule(ber_bin) ->
+    case get(encoding_options) of
+	Options when list(Options) ->
+	    case lists:member(ber,Options) of
+		true -> ber;
+		_ -> ber_bin
+	    end;
+	_ -> ber_bin
+    end;
+re_wrap_erule(Erule) ->
+    Erule.
 
 
 

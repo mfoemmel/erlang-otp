@@ -38,7 +38,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 MODULES = hipe_bwd_cprop hipe_dead_code \
-	  hipe_rename hipe_schedule hipe_schedule_prio \
+	  hipe_schedule hipe_schedule_prio \
 	  hipe_target_machine hipe_ultra_mod2 hipe_ultra_prio
 
 # hipe_expr_table hipe_def_table hipe_reach 

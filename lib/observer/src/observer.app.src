@@ -1,0 +1,13 @@
+{application, observer,
+   [{description, "OBSERVER version 1"},
+    {vsn, "%VSN%"},
+    {modules, [etop,
+	       etop_gui,
+	       etop_tr,
+	       etop_txt,
+	       ttb]},
+    {registered, []},
+    {applications, [kernel, stdlib]},
+    {env, []}]}.
+
+

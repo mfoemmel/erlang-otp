@@ -224,10 +224,10 @@ set_field(Objref,FieldName,Value) ->
 %%%----------------------------------------------------------------------
 %%% Write a list of records to the database
 
-mnesia_write_list([]) -> true;
-mnesia_write_list([Obj | Obj_tail]) ->
-    mnesia:write(Obj),
-    mnesia_write_list(Obj_tail).    
+%mnesia_write_list([]) -> true;
+%mnesia_write_list([Obj | Obj_tail]) ->
+%    mnesia:write(Obj),
+%    mnesia_write_list(Obj_tail).    
 
 %%%----------------------------------------------------------------------
 %%% Check a write transaction

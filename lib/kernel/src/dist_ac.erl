@@ -16,13 +16,15 @@
 %%     $Id$
 %%
 -module(dist_ac).
--vsn('$Revision: /main/release/r8b_patch/1').
 
 -behaviour(gen_server).
 
 %% External exports
--export([start_link/0, load_application/2,
-	 takeover_application/2, permit_application/2, permit_only_loaded_application/2]).
+-export([start_link/0,
+	 load_application/2,
+	 takeover_application/2,
+	 permit_application/2,
+	 permit_only_loaded_application/2]).
 
 -export([get_known_nodes/0]).
 

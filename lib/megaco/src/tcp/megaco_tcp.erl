@@ -82,7 +82,7 @@ start_transport() ->
 listen(SupPid, Parameters) ->
     ProcList = supervisor:which_children(SupPid),
     case lists:keysearch(megaco_tcp, 1, ProcList) of
-	{value, {Name, Pid, Type, Modules}} ->
+	{value, {_Name, Pid, _Type, _Modules}} ->
 	    gen_server:call(Pid, {add_listener, Parameters}, infinity);
 	false ->
 	    {error, no_tcp_server}
@@ -121,12 +121,12 @@ connect(SupPid, Parameters) ->
 		    Error = {error, {gen_tcp_connect, Reason}},
 		    ?tcp_debug(TcpRec, "tcp connect failed", [Error]),
 		    Error;
-		{'EXIT', Reason} = Exit ->
+		{'EXIT', _Reason} = Exit ->
 		    Error = {error, {gen_tcp_connect, Exit}},
 		    ?tcp_debug(TcpRec, "tcp connect failed", [Error]),
 		    Error
 	    end;
-	{error, Reason} = Error->
+	{error, _Reason} = Error->
 	    ?tcp_debug(#megaco_tcp{}, "tcp connect failed",
 		       [Error, {options, Parameters}]),
 	    Error
@@ -192,7 +192,7 @@ start_connection(SupPid, TcpRec) ->
     ProcList = supervisor:which_children(SupPid),
 
     case lists:keysearch(megaco_tcp_connection_sup, 1, ProcList) of
-	{value, {Name, ConnSupPid, Type, Modules}} ->
+	{value, {_Name, ConnSupPid, _Type, _Modules}} ->
 	    ?tcp_debug(TcpRec, "tcp connect", []),
 	    case supervisor:start_child(ConnSupPid, [TcpRec]) of
 		{ok, Pid} ->
@@ -223,7 +223,7 @@ init({SupPid, _}) ->
 %% Func: terminate/1
 %% Description: Termination function for the generic server
 %%-----------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------------
@@ -247,7 +247,7 @@ start_tcp_listener(P, State) ->
 %% Func: handle_call/3
 %% Description: Handling call messages (really just garbage)
 %%-----------------------------------------------------------------
-handle_call({add_listener, Parameters}, From, State) ->
+handle_call({add_listener, Parameters}, _From, State) ->
     start_tcp_listener(Parameters, State);
 handle_call(Request, From, State) ->
     error_logger:error_report([{?MODULE, {garbage_call, Request, From}}]),
@@ -277,7 +277,7 @@ handle_info(Info, State) ->
 %% Func: code_change/3
 %% Descrition: Handles code change messages during upgrade.
 %%-----------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%-----------------------------------------------------------------
@@ -306,7 +306,7 @@ setup(SupPid, Options) ->
 			{ok, Pid} ->
 			    ?tcp_debug(TcpRec, "tcp listen setup", []),
 			    {ok, Pid, {TcpRec, Listen}};
-			{error, Reason} = Error ->
+			{error, _Reason} = Error ->
 			    ?tcp_debug(TcpRec, "tcp listen setup failed", 
 				       [Error]),
 			    Error
@@ -315,12 +315,12 @@ setup(SupPid, Options) ->
 		    Error = {error, {gen_tcp_listen, Reason}},
 		    ?tcp_debug(TcpRec, "tcp listen setup failed", [Error]),
 		    Error;
-		{'EXIT', Reason} = Exit ->
+		{'EXIT', _Reason} = Exit ->
 		    Error = {error, {gen_tcp_listen, Exit}},
 		    ?tcp_debug(TcpRec, "tcp listen setup failed", [Error]),
 		    Error
 	    end;
-	{error, Reason} = Error ->
+	{error, _Reason} = Error ->
 	    ?tcp_debug(#megaco_tcp{}, "tcp listen setup failed",
 		       [Error, {options, Options}]),
 	    Error
@@ -405,9 +405,9 @@ parse_options([{Tag, Val} | T], TcpRec, Mand) ->
     end;
 parse_options([], TcpRec, []) ->
     {ok, TcpRec};
-parse_options([], TcpRec, Mand) ->
+parse_options([], _TcpRec, Mand) ->
     {error, {missing_options, Mand}};
-parse_options(BadList, TcpRec, Mand) ->
+parse_options(BadList, _TcpRec, _Mand) ->
     {error, {bad_option_list, BadList}}.
 
 
@@ -421,7 +421,7 @@ get_pid_from_supervisor(SupPid, ProcName) ->
     %% ProcList of type [{Name, Pid, Type, Modules}| Rest]
     
     case lists:keysearch(ProcName, 1, ProcList) of
-	{value, {Name, Pid, Type, Modules}} ->
+	{value, {_Name, Pid, _Type, _Modules}} ->
 	    {ok, Pid};
 	false ->
 		{error, no_such_process}

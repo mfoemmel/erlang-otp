@@ -361,22 +361,6 @@ res_mkquery(Dname, Class, Type) ->
 	Error -> Error
     end.
 
-res_mkiquery(?IQUERY, Address, Class, Type) ->
-    ID = res_option(next_id),
-    Recurse = res_option(recurse),
-    Rec = #dns_rec  { header =  #dns_header { id = ID, opcode = ?IQUERY, 
-					     rd = Recurse,
-					     rcode = ?NOERROR },
-		     anlist = [#dns_rr { domain = "",
-					type = Type,
-					class = Class,
-					data = Address }] },
-    ?dbg("IQuery: ~p~n", [Rec]),
-    case inet_dns:encode(Rec) of
-	{ok, Buffer} -> {ok, ID, Buffer};
-	Error -> Error
-    end.
-
 %%
 %% Send a query to the nameserver and return a reply
 %% We first use socket server then we add the udp version

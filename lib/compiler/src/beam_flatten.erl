@@ -22,7 +22,7 @@
 -export([module/2]).
 -import(lists, [reverse/1, reverse/2, map/2]).
 
-module({Mod,Exp,Attr,Fs,Lc}, Opt) ->
+module({Mod,Exp,Attr,Fs,Lc}, _Opt) ->
     {ok,{Mod,Exp,Attr,map(fun function/1, Fs),Lc}}.
 
 function({function,Name,Arity,CLabel,Asm}) ->
@@ -55,7 +55,7 @@ norm({set,[],[],fcheckerror}) -> {fcheckerror,{f,0}};
 norm({'%',_}=Comment)   -> Comment;
 norm({'%live',R})                  -> {'%live',R}.
 
-norm_allocate({Any,nostack,Nh,[]}, Regs) -> [{test_heap,Nh,Regs}];
+norm_allocate({_Any,nostack,Nh,[]}, Regs) -> [{test_heap,Nh,Regs}];
 norm_allocate({zero,0,Nh,[]}, Regs) -> norm_allocate({nozero,0,Nh,[]}, Regs);
 norm_allocate({zero,Ns,0,[]}, Regs) -> [{allocate_zero,Ns,Regs}];
 norm_allocate({zero,Ns,Nh,[]}, Regs) -> [{allocate_heap_zero,Ns,Nh,Regs}];

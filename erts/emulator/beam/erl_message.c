@@ -16,8 +16,8 @@
  *     $Id$
  */
 /*
-**     Message passing primitives
-*/
+ * Message passing primitives.
+ */
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -29,15 +29,49 @@
 #include "erl_message.h"
 #include "erl_process.h"
 
+static ErlMessage erl_message_buf[ERL_MESSAGE_BUF_SZ];
+static ErlMessage *erl_message_buf_end;
+static ErlMessage *free_erl_message = NULL;
+
 void
 init_message(void)
 {
+    int i;
+
+    erl_message_buf_end = erl_message_buf + ERL_MESSAGE_BUF_SZ;
+
+    /* Setup free list */
+    free_erl_message = &erl_message_buf[0];
+    for (i = 0; i < ERL_MESSAGE_BUF_SZ - 1; i++)
+	erl_message_buf[i].next = &erl_message_buf[i + 1];
+    erl_message_buf[ERL_MESSAGE_BUF_SZ - 1].next = NULL;
+    ASSERT(&erl_message_buf[ERL_MESSAGE_BUF_SZ - 1] < erl_message_buf_end);
+}
+
+static ErlMessage *
+alloc_message(void)
+{
+    ErlMessage *res;
+
+    if (free_erl_message) {
+	res = free_erl_message;
+	free_erl_message = free_erl_message->next;
+    }
+    else
+	res = (ErlMessage *) erts_safe_sl_alloc_from(34, sizeof(ErlMessage));
+
+    return res;
 }
 
 void
 free_message(ErlMessage* mp)
 {
-    fix_free(mesg_desc, (Eterm *) mp);
+    if (mp < erl_message_buf_end && mp >= erl_message_buf) {
+	mp->next = free_erl_message;
+	free_erl_message = mp;
+    }
+    else
+	erts_sl_free((void *) mp);
 }
 
 /* Allocate message buffer (size in words) */
@@ -52,7 +86,10 @@ new_message_buffer(Uint size)
     bp->next = NULL;
     bp->size = size;
     bp->off_heap.mso = NULL;
+#ifndef SHARED_HEAP
     bp->off_heap.funs = NULL;
+#endif
+    bp->off_heap.externals = NULL;
     bp->off_heap.overhead = 0;
     return bp;
 }
@@ -63,11 +100,15 @@ erts_cleanup_offheap(ErlOffHeap *offheap)
     if (offheap->mso) {
 	erts_cleanup_mso(offheap->mso);
     }
+#ifndef SHARED_HEAP
     if (offheap->funs) {
 	erts_cleanup_funs(offheap->funs);
     }
+#endif
+    if (offheap->externals) {
+	erts_cleanup_externals(offheap->externals);
+    }
 }
-
 
 void
 free_message_buffer(ErlHeapFragment* bp)
@@ -83,27 +124,26 @@ queue_message_tt(Process* receiver, ErlHeapFragment* bp,
 {
     ErlMessage* mp;
 
-    mp = (ErlMessage*) fix_alloc(mesg_desc);
-    mp->mesg = message;
+    mp = alloc_message();
+    ERL_MESSAGE_TERM(mp) = message;
+    ERL_MESSAGE_TOKEN(mp) = seq_trace_token;
     mp->next = NULL;
-    mp->seq_trace_token = seq_trace_token;
     LINK_MESSAGE(receiver, mp);
-#ifdef UNIFIED_HEAP
+
+#ifdef SHARED_HEAP
     receiver->active = 1;
 #endif
 
     if (bp != NULL) {
 	/* Link the message buffer */
-#ifdef UNIFIED_HEAP
-        bp->next = global_mbuf;
-        global_mbuf = bp;
-        global_mbuf_sz += bp->size;
-#else
-	bp->next = receiver->mbuf;
-	receiver->mbuf = bp;
-	receiver->mbuf_sz += bp->size;
-#endif
-	receiver->off_heap.overhead += (sizeof(ErlHeapFragment)/sizeof(Eterm) - 1); 
+        bp->next = MBUF(receiver);
+        MBUF(receiver) = bp;
+        MBUF_SIZE(receiver) += bp->size;
+	MSO(receiver).overhead +=
+	    (sizeof(ErlHeapFragment) / sizeof(Eterm) - 1);
+	if (ARITH_LOWEST_HTOP(receiver) == NULL) {
+	    ARITH_LOWEST_HTOP(receiver) = receiver->htop;
+	}
 
 	/* Move any binaries into the process */
 	if (bp->off_heap.mso != NULL) {
@@ -111,21 +151,34 @@ queue_message_tt(Process* receiver, ErlHeapFragment* bp,
 	    while (*next_p != NULL) {
 		next_p = &((*next_p)->next);
 	    }
-	    *next_p = receiver->off_heap.mso;
-	    receiver->off_heap.mso = bp->off_heap.mso;
+	    *next_p = MSO(receiver).mso;
+	    MSO(receiver).mso = bp->off_heap.mso;
 	    bp->off_heap.mso = NULL;
-	    receiver->off_heap.overhead += bp->off_heap.overhead;
+	    MSO(receiver).overhead += bp->off_heap.overhead;
 	}
 
 	/* Move any funs into the process */
+#ifndef SHARED_HEAP
 	if (bp->off_heap.funs != NULL) {
 	    ErlFunThing** next_p = &bp->off_heap.funs;
 	    while (*next_p != NULL) {
 		next_p = &((*next_p)->next);
 	    }
-	    *next_p = receiver->off_heap.funs;
-	    receiver->off_heap.funs = bp->off_heap.funs;
+	    *next_p = MSO(receiver).funs;
+	    MSO(receiver).funs = bp->off_heap.funs;
 	    bp->off_heap.funs = NULL;
+	}
+#endif
+
+	/* Move any external things into the process */
+	if (bp->off_heap.externals != NULL) {
+	    ExternalThing** next_p = &bp->off_heap.externals;
+	    while (*next_p != NULL) {
+		next_p = &((*next_p)->next);
+	    }
+	    *next_p = MSO(receiver).externals;
+	    MSO(receiver).externals = bp->off_heap.externals;
+	    bp->off_heap.externals = NULL;
 	}
     }
 
@@ -151,46 +204,54 @@ send_message(Process* sender, Process* receiver, Eterm message)
     ErlHeapFragment* bp = NULL;
     Uint msize;
     Eterm token = NIL;
-#ifdef BENCH_STAT
-    hrtime_t send_start;
-    hrtime_t copy_start;
+    NEW_TIMER(send);
+    NEW_TIMER(copy);
+    NEW_TIMER(size);
 
+    STOP_TIMER(system);
+#ifdef __BENCHMARK__
     messages_sent++;
+#endif
+
+#ifdef CALCULATE_MESSAGE_SIZES
     msize = size_object(message);
     if (msize < 1000) message_sizes[msize]++;
     else message_sizes[999]++;
-    send_start = sys_gethrtime();
 #endif
 
-#ifndef UNIFIED_HEAP
+#ifndef SHARED_HEAP
+    START_TIMER(size);
     msize = size_object(message);
+    STOP_TIMER(size);
 #endif
+    START_TIMER(send);
     if (SEQ_TRACE_TOKEN(sender) != NIL) {
-#ifdef UNIFIED_HEAP
+#ifdef SHARED_HEAP
+        SWAP_TIMER(send,size);
         msize = size_object(message);
+        SWAP_TIMER(size,send);
 #endif
 	seq_trace_update_send(sender);
 	seq_trace_output(SEQ_TRACE_TOKEN(sender), message, SEQ_TRACE_SEND, 
 			 receiver->id, sender);
 	bp = new_message_buffer(msize + 6 /* TUPLE5 */);
 	hp = bp->mem;
-#ifdef BENCH_STAT
-        copy_start = sys_gethrtime();
-#endif
+        SWAP_TIMER(send,copy);
 	token = copy_struct(SEQ_TRACE_TOKEN(sender), 6 /* TUPLE5 */, 
-			    &hp, &receiver->off_heap);
-#ifdef BENCH_STAT
-        copy_time += sys_gethrtime() - copy_start;
-#endif
-#ifdef UNIFIED_HEAP
+			    &hp, &MSO(receiver));
+	message = copy_struct(message, msize, &hp, &MSO(receiver));
+	SWAP_TIMER(copy,send);
+	queue_message_tt(receiver, bp, message, token);
+	SWAP_TIMER(send,system);
+#ifdef SHARED_HEAP
     } else {
-        ErlMessage* mp = (ErlMessage*) fix_alloc(mesg_desc);
-        mp->mesg = message;
+        ErlMessage* mp = alloc_message();
+        ERL_MESSAGE_TERM(mp) = message;
+        ERL_MESSAGE_TOKEN(mp) = NIL;
         mp->next = NULL;
-        mp->seq_trace_token = NIL;
         LINK_MESSAGE(receiver, mp);
         receiver->active = 1;
-
+	
         if (receiver->status == P_WAITING) {
             add_to_schedule_q(receiver);
         } else if (receiver->status == P_SUSPENDED) {
@@ -199,29 +260,37 @@ send_message(Process* sender, Process* receiver, Eterm message)
         if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
             trace_receive(receiver, message);
         }
-#ifdef BENCH_STAT
-        send_time += sys_gethrtime() - send_start;
-#endif
+        SWAP_TIMER(send,system);
         return;
-    }
 #else
-    } else if (msize <= 64) {
-	ErlMessage* mp = (ErlMessage*) fix_alloc(mesg_desc);
-
-	/*
-	 * XXX Multi-thread note: Allocating on another process's heap.
-	 */
-	hp = HAlloc(receiver, msize);
-#ifdef BENCH_STAT
-        copy_start = sys_gethrtime();
-#endif
-	message = copy_struct(message, msize, &hp, &receiver->off_heap);
-#ifdef BENCH_STAT
-        copy_time += sys_gethrtime() - copy_start;
-#endif
-	mp->mesg = message;
+    } else if (sender == receiver) {
+	ErlMessage* mp = alloc_message();
+	ERL_MESSAGE_TERM(mp) = message;
+	ERL_MESSAGE_TOKEN(mp) = NIL;
 	mp->next = NULL;
-	mp->seq_trace_token = NIL;
+	LINK_MESSAGE(receiver, mp);
+
+	if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
+	    trace_receive(receiver, message);
+	}
+        SWAP_TIMER(send,system);
+	return;
+    } else {
+	ErlMessage* mp = alloc_message();
+
+	if (receiver->stop - receiver->htop <= msize) {
+            STOP_TIMER(send);
+	    erts_garbage_collect(receiver, msize, receiver->arg_reg, receiver->arity);
+            START_TIMER(send);
+	}
+	hp = receiver->htop;
+	receiver->htop = hp + msize;
+        SWAP_TIMER(send,copy);
+	message = copy_struct(message, msize, &hp, &receiver->off_heap);
+        SWAP_TIMER(copy,send);
+	ERL_MESSAGE_TERM(mp) = message;
+	ERL_MESSAGE_TOKEN(mp) = NIL;
+	mp->next = NULL;
 	LINK_MESSAGE(receiver, mp);
 
 	if (receiver->status == P_WAITING) {
@@ -232,26 +301,10 @@ send_message(Process* sender, Process* receiver, Eterm message)
 	if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
 	    trace_receive(receiver, message);
 	}
-#ifdef BENCH_STAT
-    send_time += sys_gethrtime() - send_start;
-#endif
+        SWAP_TIMER(send,system);
 	return;
-    } else {
-	bp = new_message_buffer(msize);
-	hp = bp->mem;
+#endif /* SHARED_HEAP */
     }
-#endif
-#ifdef BENCH_STAT
-    copy_start = sys_gethrtime();
-#endif
-    message = copy_struct(message, msize, &hp, &receiver->off_heap);
-#ifdef BENCH_STAT
-    copy_time += sys_gethrtime() - copy_start;
-#endif
-    queue_message_tt(receiver, bp, message, token);
-#ifdef BENCH_STAT
-    send_time += sys_gethrtime() - send_start;
-#endif
 }
 
 /*
@@ -264,33 +317,44 @@ deliver_exit_message_tt(Eterm from, Process *to, Eterm reason, Eterm token)
 {
     Eterm mess;
     Eterm save;
+    Eterm from_copy;
     Uint sz_reason;
-    ErlHeapFragment* bp;
-    Eterm* hp;
     Uint sz_token;
+    Uint sz_from;
+    Eterm* hp;
     Eterm temptoken;
 
     if (token != NIL) {
+	ErlHeapFragment* bp;
+
 	ASSERT(is_tuple(token));
 	sz_reason = size_object(reason);
 	sz_token = size_object(token);
-	bp = new_message_buffer(sz_reason + 4 + sz_token);
+	sz_from = size_object(from);
+	bp = new_message_buffer(sz_reason + sz_from + sz_token + 4);
 	hp = bp->mem;
-	mess = copy_struct(reason, sz_reason, &hp, &to->off_heap);
-	save = TUPLE3(hp, am_EXIT, from, mess);
+	mess = copy_struct(reason, sz_reason, &hp, &MSO(to));
+	from_copy = copy_struct(from, sz_from, &hp, &MSO(to));
+	save = TUPLE3(hp, am_EXIT, from_copy, mess);
 	hp += 4;
 	/* the trace token must in this case be updated by the caller */
 	seq_trace_output(token, save, SEQ_TRACE_SEND, to->id, NULL);
-	temptoken = copy_struct(token, sz_token, &hp, &to->off_heap);
+	temptoken = copy_struct(token, sz_token, &hp, &MSO(to));
 	queue_message_tt(to, bp, save, temptoken);
     } else {
 	sz_reason = size_object(reason);
-	bp = new_message_buffer(sz_reason + 4);
-	hp = bp->mem;
-	mess = copy_struct(reason, sz_reason, &hp, &to->off_heap);
-	save = TUPLE3(hp, am_EXIT, from, mess);
-	hp += 4;
-	queue_message_tt(to, bp, save, NIL);
+	sz_from = IS_CONST(from) ? 0 : size_object(from);
+#ifdef SHARED_HEAP
+	hp = erts_global_alloc(sz_reason+sz_from+4);
+#else
+	hp = HAlloc(to, sz_reason+sz_from+4);
+#endif
+	mess = copy_struct(reason, sz_reason, &hp, &MSO(to));
+	from_copy = (IS_CONST(from)
+		     ? from
+		     : copy_struct(from, sz_from, &hp, &MSO(to)));
+	save = TUPLE3(hp, am_EXIT, from_copy, mess);
+	queue_message_tt(to, NULL, save, NIL);
     }
 }
 
@@ -299,18 +363,20 @@ deliver_result(Eterm sender, Eterm pid, Eterm res)
 {
     Eterm tuple;
     Process *rp;
-    ErlHeapFragment* bp;
     Eterm* hp;
     Uint sz_res;
 
-    rp = process_tab[pid_number(pid)];
+    ASSERT(is_internal_port(sender)
+	   && is_internal_pid(pid)
+	   && internal_pid_index(pid) < erts_max_processes);
+
+    rp = process_tab[internal_pid_index(pid)];
+
     if (!INVALID_PID(rp, pid)) {
 	sz_res = size_object(res);
-	bp = new_message_buffer(sz_res + 3);
-	hp = bp->mem;
-	res = copy_struct(res, sz_res, &hp, &rp->off_heap);
+	hp = HAlloc(rp, sz_res + 3);
+	res = copy_struct(res, sz_res, &hp, &MSO(rp));
 	tuple = TUPLE2(hp, sender, res);
-	hp += 3;
-	queue_message_tt(rp, bp, tuple, NIL);
+	queue_message_tt(rp, NULL, tuple, NIL);
     }
 }

@@ -48,7 +48,7 @@ typedef struct iovec SysIOVec;
 #  else
 typedef struct {
     char* iov_base;
-    int   iov_len;
+    size_t iov_len;
 } SysIOVec;
 #  endif
 #endif
@@ -65,9 +65,21 @@ typedef struct {
 
 #define DO_READ	 (1 << 0)
 #define DO_WRITE (1 << 1)
+#ifdef _OSE_
+#define DO_START (1 << 2)
+#define DO_STOP  (1 << 3)
+#endif /* _OSE_ */
 
-#define PORT_CONTROL_FLAG_BINARY	1
-#define PORT_CONTROL_FLAG_HEAVY		2
+/* Values for set_port_control_flags() */
+
+#define PORT_CONTROL_FLAG_BINARY	(1 << 0)
+#define PORT_CONTROL_FLAG_HEAVY		(1 << 1)
+
+/* Values for get_port_flags() */
+
+#define PORT_FLAG_BINARY                (1 << 0)
+#define PORT_FLAG_LINE                  (1 << 1)
+
 
 /*
  * A binary as seen in a driver. Note that a binary should never be
@@ -75,8 +87,8 @@ typedef struct {
  */
 
 typedef struct erl_drv_binary {
-    int orig_size;        /* total length of binary */
-    int refc;             /* number of references to this binary */
+    long orig_size;        /* total length of binary */
+    long refc;             /* number of references to this binary */
     char orig_bytes[1];   /* the data (char instead of byte!) */
 } ErlDrvBinary;
 
@@ -91,6 +103,14 @@ typedef struct _erl_drv_event* ErlDrvEvent; /* An event to be selected on. */
 typedef struct _erl_drv_port* ErlDrvPort; /* A port descriptor. */
 #endif
 typedef struct _erl_drv_port* ErlDrvThreadData; /* Thread data. */
+
+#if !defined(__WIN32__) && !defined(USE_SELECT)
+struct erl_drv_event_data {
+    short events;
+    short revents;
+};
+#endif
+typedef struct erl_drv_event_data *ErlDrvEventData; /* Event data */
 
 /*
  * Error codes that can be return from driver.
@@ -172,6 +192,10 @@ typedef struct erl_drv_entry {
 		   int len, char **rbuf, int rlen, unsigned int *flags); 
                                 /* Works mostly like 'control', a syncronous
 				   call into the driver. */
+    void (*event)(ErlDrvData drv_data, ErlDrvEvent event,
+		  ErlDrvEventData event_data);
+                                /* Called when an event selected by 
+				   driver_event() has occurred */
 } ErlDrvEntry;
 
 /*
@@ -202,7 +226,12 @@ typedef struct erl_drv_entry {
  * These are the functions available for driver writers.
  */
 
+#ifdef _OSE_
+EXTERN int driver_sig_pending(ErlDrvPort port, void *sig);
+#endif /* _OSE_ */
 EXTERN int driver_select(ErlDrvPort port, ErlDrvEvent event, int mode, int on);
+EXTERN int driver_event(ErlDrvPort port, ErlDrvEvent event, 
+			ErlDrvEventData event_data);
 EXTERN int driver_output(ErlDrvPort port, char *buf, int len);
 EXTERN int driver_output2(ErlDrvPort port, char *hbuf, int hlen, 
 			  char *buf, int len);
@@ -231,10 +260,13 @@ EXTERN int driver_failure(ErlDrvPort port, int error);
 EXTERN int driver_exit (ErlDrvPort port, int err);
 
 /*
- * Change port attributes
+ * Port attributes
  */
 EXTERN void set_busy_port(ErlDrvPort port, int on);
 EXTERN void set_port_control_flags(ErlDrvPort port, int flags);
+
+EXTERN int  get_port_flags(ErlDrvPort port);
+
 
 /* Binary interface */
 
@@ -300,7 +332,8 @@ typedef unsigned long ErlDrvTermData;
 #define ERL_DRV_ATOM        ((ErlDrvTermData) 2)  /* driver_mk_atom(string) */
 #define ERL_DRV_INT         ((ErlDrvTermData) 3)  /* int */
 #define ERL_DRV_PORT        ((ErlDrvTermData) 4)  /* driver_mk_port(ix) */
-#define ERL_DRV_BINARY      ((ErlDrvTermData) 5)  /* ErlDriverBinary*, int */
+#define ERL_DRV_BINARY      ((ErlDrvTermData) 5)  /* ErlDriverBinary*, 
+						   * int size, int offs */
 #define ERL_DRV_STRING      ((ErlDrvTermData) 6)  /* char*, int */
 #define ERL_DRV_TUPLE       ((ErlDrvTermData) 7)  /* int */
 #define ERL_DRV_LIST        ((ErlDrvTermData) 8)  /* int */
@@ -312,6 +345,8 @@ EXTERN ErlDrvTermData driver_mk_atom(char*);
 EXTERN ErlDrvTermData driver_mk_port(ErlDrvPort);
 EXTERN ErlDrvTermData driver_connected(ErlDrvPort);
 EXTERN ErlDrvTermData driver_caller(ErlDrvPort);
+extern const ErlDrvTermData driver_term_nil;
+
 
 /* output term data to the port owner */
 EXTERN int driver_output_term(ErlDrvPort ix, ErlDrvTermData* data, int len);

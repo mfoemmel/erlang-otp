@@ -47,7 +47,12 @@ find_executable(Name, Path) ->
 	relative ->
 	    find_executable1(Name, split_path(Path), Extensions);
 	_ ->
-	    verify_executable(Name, Extensions)
+	    case verify_executable(Name, Extensions) of
+		{ok, Complete} ->
+		    Complete;
+		error ->
+		    false
+	    end
     end.
 
 find_executable1(Name, [Base|Rest], Extensions) ->
@@ -198,11 +203,11 @@ unix_get_data(Port, Sofar) ->
 eot(Bs) ->
     eot(Bs, []).
 
-eot([4| Bs], As) ->
+eot([4| _Bs], As) ->
     {done, lists:reverse(As)};
 eot([B| Bs], As) ->
     eot(Bs, [B| As]);
-eot([], As) ->
+eot([], _As) ->
     more.
 
 %%

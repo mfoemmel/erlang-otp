@@ -22,7 +22,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # Macros
 # ----------------------------------------------------
 
-SUB_DIRECTORIES = src examples doc/src
+SUB_DIRECTORIES = src doc/src
 
 include vsn.mk
 VSN = $(MNESIA_SESSION_VSN)

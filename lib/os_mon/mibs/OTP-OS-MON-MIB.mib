@@ -104,16 +104,27 @@ loadEntry OBJECT-TYPE
     STATUS      current
     DESCRIPTION
         "A conceptual row in the loadTable."
-    INDEX   { erlNodeId }
+    INDEX   { loadErlNodeName }
     ::= { loadTable 1 }
 
 LoadEntry ::= SEQUENCE {
+    loadErlNodeName                 DisplayString,
     loadSystemTotalMemory           Gauge32,
     loadSystemUsedMemory            Gauge32,
     loadLargestErlProcess           DisplayString,
     loadLargestErlProcessUsedMemory Gauge32,
-    loadCpuLoad                     Integer32        
+    loadCpuLoad                     Integer32,
+    loadCpuLoad5                    Integer32,
+    loadCpuLoad15                   Integer32
     }
+
+loadErlNodeName OBJECT-TYPE
+    SYNTAX      DisplayString
+    MAX-ACCESS  not-accessible
+    STATUS      current
+    DESCRIPTION
+        "The name of the erlang node, e.g. erlnode@host1."
+    ::= { loadEntry 1 }
 
 loadSystemTotalMemory OBJECT-TYPE
     SYNTAX      Gauge32
@@ -122,7 +133,7 @@ loadSystemTotalMemory OBJECT-TYPE
     STATUS      current
     DESCRIPTION
         "The amount of total memory in the system."
-    ::= { loadEntry 1 }
+    ::= { loadEntry 2 }
 
 loadSystemUsedMemory OBJECT-TYPE
     SYNTAX      Gauge32
@@ -131,7 +142,7 @@ loadSystemUsedMemory OBJECT-TYPE
     STATUS      current
     DESCRIPTION
         "The amount of used memory."
-    ::= { loadEntry 2 }
+    ::= { loadEntry 3 }
 
 loadLargestErlProcess OBJECT-TYPE
     SYNTAX      DisplayString
@@ -140,7 +151,7 @@ loadLargestErlProcess OBJECT-TYPE
     DESCRIPTION
         "The process identifier (Pid) of the largest Erlang
         process."
-    ::= { loadEntry 3 }
+    ::= { loadEntry 4 }
 
 loadLargestErlProcessUsedMemory OBJECT-TYPE
     SYNTAX      Gauge32
@@ -150,16 +161,34 @@ loadLargestErlProcessUsedMemory OBJECT-TYPE
     DESCRIPTION
         "The amount of memory used by the largest Erlang
         process."
-    ::= { loadEntry 4 }
+    ::= { loadEntry 5 }
 
 loadCpuLoad OBJECT-TYPE
     SYNTAX      Integer32 (0..100)
     MAX-ACCESS  read-only
     STATUS      current
     DESCRIPTION
-        "The load in percent of the CPU where the Erlang
-        node runs."
-    ::= { loadEntry 5}
+        "The average load the last minute in percent of the CPU
+	where the Erlang node runs."
+    ::= { loadEntry 6 }
+
+loadCpuLoad5 OBJECT-TYPE
+    SYNTAX      Integer32 (0..100)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The average load the last 5 minutes in percent of the CPU
+	where the Erlang node runs."
+    ::= { loadEntry 7}
+
+loadCpuLoad15 OBJECT-TYPE
+    SYNTAX      Integer32 (0..100)
+    MAX-ACCESS  read-only
+    STATUS      current
+    DESCRIPTION
+        "The average load the last 15 minutes in percent of the CPU
+	where the Erlang node runs."
+    ::= { loadEntry 8}
 
 diskAlmostFullThreshold OBJECT-TYPE
     SYNTAX      Integer32 (0..100)
@@ -321,7 +350,9 @@ loadGroup OBJECT-GROUP
               loadSystemUsedMemory,
               loadLargestErlProcess,
               loadLargestErlProcessUsedMemory,
-              loadCpuLoad }
+              loadCpuLoad,
+              loadCpuLoad5,
+              loadCpuLoad15}
     STATUS  current
     DESCRIPTION
             "A collection of objects providing basic instrumentation

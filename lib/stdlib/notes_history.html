@@ -7,6 +7,264 @@
 <P>This document describes the release notes for older versions
 of the <CODE>stdlib</CODE> application.
 
+<h2>Stdlib 1.10</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    The shell allowed patterns which did not have pattern syntax (for
+    example function calls); they became patterns which always failed to
+    match. Now they cause an exit instead, similar to unbound variables.<br>
+    (Own Id: OTP-3284)<p>
+  </li>
+
+  <li>
+    <code>dets:all/0</code> failed if it was called before any other dets
+    calls had been made.<br>
+    (Own Id: OTP-3621)<br>
+    (Aux Id: Seq 4590)<p>
+  </li>
+
+  <li>
+    In the documentation for <code>erl_lint</code> in OTP R6 and R7, the
+    prefix "warn_" for the optional warning options
+    <code>warn_unused_vars</code> and <code>warn_format</code> was left
+    out.<br>
+    (Own Id: OTP-3730)<p>
+  </li>
+
+  <li>
+    Spurious format warnings were given by <code>erl_lint</code> for
+    correct calls to <code>format/1</code>.<br>
+    (Own Id: OTP-3731)<p>
+  </li>
+
+  <li>
+    The hash function used in dict and sets is now erlang:phash/2 rather
+    than the broken erlang:hash/2.<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-3802)<p>
+  </li>
+
+  <li>
+    In earlier releases of OTP, the manual entry for
+    <code>sys:change_code</code> was incorrect.<br>
+    (Own Id: OTP-3806)<br>
+    (Aux Id: Seq 5034)<p>
+  </li>
+
+  <li>
+    The functions in the <code>calendar</code> module now have better error
+    checking, exiting for type errors. In particular,
+    <code>is_valid_date/[1,3]</code> no longer return <code>true</code> for
+    any invalid dates.<br>
+    (Own Id: OTP-3925)<br>
+    (Aux Id: seq5187)<p>
+  </li>
+
+  <li>
+    c:memory/[0,1] could previously fail erroneously with a badmatch. This
+    problem has been solved.<br>
+    (Own Id: OTP-4017)<p>
+  </li>
+
+  <li>
+    Bug fix: <code>intersection/1</code> in the <code>sets</code> and
+    <code>ordsets</code> modules no longer accepts the empty list as
+    argument. The reason is that intersection of an empty set is undefined.<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-4045)<p>
+  </li>
+
+</ul>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+    It is no longer necessary to set a seed explicitly before using
+    <code>random:uniform</code>; now <code>uniform:seed/0</code> will be
+    called automatically. In addition, new functions exist for handling
+    random numbers in a functional way.<br>
+    (Own Id: OTP-3104)<br>
+    (Aux Id: Seq 1681)<p>
+  </li>
+
+  <li>
+    New functions added to <code>beam_lib</code>: <code>cmp/2</code>,
+    <code>cmp_dirs/2</code>, <code>diff_dirs/2</code>,
+    <code>strip/1</code>, <code>strip_files/1</code>, and
+    <code>strip_release/1</code>. New chunks names recognized by
+    <code>beam_lib</code>: <code>labeled_exports</code> and
+    <code>labeled_locals</code>.<br>
+    (Own Id: OTP-3738)<br>
+    (Aux Id: OTP-2686)<p>
+  </li>
+
+  <li>
+    All functions in <code>beam_lib</code> module now accept a binary as
+    well as a filename.<br>
+    (Own Id: OTP-3760)<p>
+  </li>
+
+  <li>
+    The <code>dets</code> module has been partly rewritten.
+    <code>finsert/2</code> accepts a list of objects. <code>info/2</code>
+    accepts the new item tags <code>access</code>, <code>ram_file</code>
+    and <code>auto_save</code>, and the item tags <code>memory</code> and
+    <code>pid</code> have been documented. The read cache has been removed
+    and the <code>cache_size</code> option is ignored (incompatibility).
+    Many functions have been more efficiently implemented than before, this
+    holds in particular when there are several threads. The repair of Dets
+    tables has been rewritten, and is significantly faster than before. New
+    functions are: <code>to_ets/2</code> (adds Dets objects to an Ets
+    table); <code>foldl/3</code> and <code>foldr/3</code> (iterate over the
+    objects of a Dets table); <code>from_ets/2</code> (replaces Dets
+    objects by Ets objects); <code>select/1,2,3</code> (select Dets objects
+    using match specifications (see the ERTS User&acute;s Guide for a
+    description of match specifications)); <code>match/1,3</code> (match
+    Dets objects in chunks); <code>select_delete/2</code> (deletes Dets
+    objects using match specifications); <code>delete_all_objects/1</code>
+    (deletes all objects of a Dets table efficiently);
+    <code>init_table/2</code> (initiates a Dets table using a function to
+    gather objects); <code>pid2name/1</code> (returns the name of the Dets
+    table handled by a pid).<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-3786)<br>
+    (Aux Id: OTP-3746, OTP-3782, OTP-1831)<p>
+  </li>
+
+  <li>
+    A new API, member/2 has been added to ets and dets. This function makes
+    it possible to check for key prescence in a table without reading out
+    the actual data associated with the key.<br>
+    (Own Id: OTP-3804)<br>
+    (Aux Id: Seq 5029)<p>
+  </li>
+
+  <li>
+    <CODE>lists:merge3/3</CODE> is a new function that merges three sorted
+    lists. <CODE>lists:merge/1</CODE> is a new function that merges a list
+    of sorted lists.<br>
+    (Own Id: OTP-3880)<p>
+  </li>
+
+  <li>
+    Hidden nodes and hidden global groups have been introduced. This makes
+    it possible to establish hidden connections between Erlang nodes. See
+    global_group(3), and erl(1).<br>
+    (Own Id: OTP-3916)<br>
+    (Aux Id: OTP-3963)<p>
+  </li>
+
+  <li>
+    The new module <code>file_sorter</code> sorts terms on files.<br>
+    (Own Id: OTP-3926)<p>
+  </li>
+
+  <li>
+    The number of commands that are saved in the shell can now be changed
+    from the default number 20. The number of command results can be
+    changed independently. See the documentation for the <code>shell</code>
+    module.<br>
+    (Own Id: OTP-4035)<br>
+    (Aux Id: Seq 7035)<p>
+  </li>
+
+  <li>
+    The new module <code>sofs</code> manipulates sets of sets.<br>
+    (Own Id: OTP-4039)<p>
+  </li>
+
+  <li>
+    <CODE>usort/1</CODE>, <CODE>umerge/{1,2}</CODE>,
+    <CODE>umerge3/3</CODE>, <CODE>ukeysort/2</CODE>,
+    <CODE>ukeymerge/3</CODE>, <CODE>usort/2</CODE>, and
+    <CODE>umerge/3</CODE> are new functions in the <CODE>lists</CODE>
+    module. They work as <CODE>sort/1</CODE>, <CODE>merge/1</CODE> and so
+    on, but remove duplicates.<br>
+    (Own Id: OTP-4041)<p>
+  </li>
+
+  <li>
+    <code>dets:is_dets_file/1</code> is a new function that recognizes Dets
+    tables.<br>
+    (Own Id: OTP-4083)<br>
+    (Aux Id: Seq7090)<p>
+  </li>
+
+  <li>
+    A modified format of Dets tables has been introduced in order to
+    enhance performance, in particular when there are threads and for
+    tables of type <code>bag</code> or <code>duplicate_bag</code>. The
+    modified format preserves the time order of object insertions. The new
+    <code>open_file/2</code> option <code>version</code> sets the version
+    of new tables. Default is the version of the modified format. Opening a
+    table of the hitherto default format does not convert the table unless
+    the option <code>{repair,force}</code> is given.<br>
+    (Own Id: OTP-4108)<p>
+  </li>
+
+  <li>
+    It is now possible to have the compiler check user-defined behaviours
+    and not only the pre-defined OTP behaviours (gen_server etc.). <br>
+    This is done by adding a function <CODE>behaviour_info/1</CODE> to the
+    behaviour module. <CODE>behaviour_info(callbacks)</CODE> should return
+    a list of <CODE>{FunctionName,Arity}</CODE> which defines the callback
+    functions the behaviour uses. <br> When a callback module with the
+    attribute <CODE>-behaviour(Behaviour)</CODE> is compiled, its exported
+    functions will be compared with the list returned by
+    <CODE>Behaviour:behaviour_info(callbacks)</CODE> and a warning will be
+    issued if any callback function is missing. <br> Note that the user
+    must ensure that the module <CODE>Behaviour</CODE> is present at
+    compile-time and can be found in the current code path.<br>
+    (Own Id: OTP-4125)<p>
+  </li>
+
+  <li>
+    Process termination when the process owns ETS tables is made
+    considerably faster.<br>
+    (Own Id: OTP-4154)<br>
+    (Aux Id: OTP-3547)<p>
+  </li>
+
+  <li>
+    Due to the handling of the ETS name-to-table translations, a ets call
+    when the named table did not exist could take considerable time before
+    throwing "badarg". This is no longer the case.<br>
+    (Own Id: OTP-4155)<br>
+    (Aux Id: OTP-3547)<p>
+  </li>
+
+  <li>
+    The following new functions are added to the ets modules: ets:select/2
+    ets:select/3 ets:select/1 ets:match/3 ets:match/1 ets:match_object/3
+    ets:match_object/1 ets:member/2 ets:delete_all_objects/1
+    ets:delete_object/2 ets:from_dets/2 ets:to_dets/2 ets:test_ms/2 - See
+    the ETS manual page for details. Furthermore the ets:insert/2 function
+    now also accepts a list of objects to be inserted.<br>
+    (Own Id: OTP-4156)<br>
+    (Aux Id: OTP-3547)<p>
+  </li>
+
+  <li>
+    Ets:safe_fixtable/2 is made more efficient. Fixation is done without
+    message passing and structures are held internally by the emulator.<br>
+    (Own Id: OTP-4157)<br>
+    (Aux Id: OTP-3547)<p>
+  </li>
+
+</ul>
+
 
 <H2>Stdlib 1.9.4</H2>
 <H3>Fixed errors and malfunctions</H3>

@@ -342,7 +342,7 @@ static size_t pagesize_;
 #define MIN(A, B) ((A) < (B) ? (A) : (B))
 
 #undef  PAGE_MASK
-#define PAGE_MASK (PAGE_SIZE - 1)
+#define PAGE_MASK ((Uint) PAGE_SIZE - 1)
 
 /* Mmap chunks are requested in pages. MMAP_CHUNK_SIZE() returns needed
    chunk size given block size */

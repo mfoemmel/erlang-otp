@@ -67,20 +67,20 @@
 } while(0)
 
 #define BIF_TRAP(p, Trap_) do { \
-      (p)->fvalue = (Eterm) (Trap_); \
+      (p)->def_arg_reg[0] = (Eterm) (Trap_); \
       (p)->freason = TRAP; \
       return THE_NON_VALUE; \
  } while(0)
 
 #define BIF_TRAP0(Trap_,p)          BIF_TRAP(p, Trap_)
 
-#define BIF_TRAP1(Trap_,p,a0)       do { (p)->def_arg_reg[0] = (a0); \
+#define BIF_TRAP1(Trap_,p,a0)       do { (p)->def_arg_reg[1] = (a0); \
 					  BIF_TRAP0(Trap_, p); } while (0)
 
-#define BIF_TRAP2(Trap_,p,a0,a1)    do { (p)->def_arg_reg[1] = (a1); \
+#define BIF_TRAP2(Trap_,p,a0,a1)    do { (p)->def_arg_reg[2] = (a1); \
 					  BIF_TRAP1(Trap_, p, a0); } while (0)
 
-#define BIF_TRAP3(Trap_,p,a0,a1,a2) do { (p)->def_arg_reg[2] = (a2); \
+#define BIF_TRAP3(Trap_,p,a0,a1,a2) do { (p)->def_arg_reg[3] = (a2); \
 					  BIF_TRAP2(Trap_, p, a0, a1); } while (0)
 
 #include "erl_bif_table.h"

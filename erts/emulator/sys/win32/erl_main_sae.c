@@ -24,10 +24,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-#ifndef ERL_RUN_SHARED_LIB
-#error "Can only be used with beam DLL!"
-#endif
-
 #ifndef __WIN32__
 #error "Win32 version only!"
 #endif
@@ -38,6 +34,8 @@ enum {
     RES_ENV = 0, RES_RING0, RES_CODE, N_RES
 };
 
+int nohup = 0;
+int keep_window = 0;
 
 /* We're compiling for a tool, just call the exported API */
 
@@ -60,8 +58,7 @@ int main(int argc, char** argv)
     long res_size[N_RES];
     int i;
 
-    DebugBreak();
-    for (i = 0; i < N_RES; ++i) {	// load resources
+    for (i = 0; i < N_RES; ++i) {	/* load resources */
         hRes = FindResource(hModule, MAKEINTRESOURCE(1), res_names[i]);
 	if (i > 0 && hRes == NULL) 
 	    exit(98);

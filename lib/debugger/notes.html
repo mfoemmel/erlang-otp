@@ -20,7 +20,7 @@
 
 <!--- ################################################################# --->
 
-<h2>Debugger 2.0</h2>
+<h2>Debugger 2.1</h2>
 
 
 <!--- ----------------------------------------------------------------- --->
@@ -30,19 +30,17 @@
 <ul>
 
   <li>
-    Parts of the code, mainly for the GUI, has been rewritten in order
-    to make Debugger more robust and efficient. The functionality remains
-    the same but behaviour and appearance have changed slightly. Modules
-    must have been compiled with the option <CODE>debug_info</CODE> set
-    in order to be interpreted, only modules for which this is true are
-    shown in the Interpret window.
-    (Own Id: OTP-4201)<br>
+    The Debugger can now handle more than 50 processes without crashing.
+    <br> Attach windows for dead processes will now disappear if
+    Edit->Clear is selcted. <br> All modules in a directory are now shown
+    in the interpret dialog, but modules which are not compiled with the
+    debug_info flag are shown in parenthesis. <br> A few other bugs related
+    to error handling and popup windows are also fixed.<br>
+    (Own Id: OTP-4495)<p>
   </li>
 
   <li>
-    The "Interpret Dialog" window no longer hangs if one tries to
-    debug-compile a module residing in a sticky directory.<br>
-    (Own Id: OTP-2665)<p>
+    The Debugger handles funs somewhat better.
   </li>
 
 </ul>

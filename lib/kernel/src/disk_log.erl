@@ -19,7 +19,7 @@
 
 %% Efficient file based log - process part
 
--export([start/0, istart_link/0, 
+-export([start/0, istart_link/1, 
 	 log/2, log_terms/2, blog/2, blog_terms/2,
 	 alog/2, alog_terms/2, balog/2, balog_terms/2,
 	 close/1, lclose/1, lclose/2, sync/1, open/1, 
@@ -31,7 +31,7 @@
 	 accessible_logs/0]).
 
 %% Internal exports
--export([init/1, internal_open/2,
+-export([init/2, internal_open/2,
 	 system_continue/3, system_terminate/4, system_code_change/4]).
 
 %% To be used by wrap_log_reader only.
@@ -40,7 +40,7 @@
 %% To be used for debugging only:
 -export([pid2name/1]).
 
--record(state, {queue = [], messages = [], parent, cnt = 0, args,
+-record(state, {queue = [], messages = [], parent, server, cnt = 0, args,
 		error_status = ok,   %% ok | {error, Reason}
 		cache_error = ok     %% cache write error after timeout
 	       }).
@@ -274,8 +274,8 @@ chunk_info(BadCont) ->
 accessible_logs() ->
     disk_log_server:accessible_logs().
 
-istart_link() ->  
-    {ok, proc_lib:spawn_link(disk_log, init, [self()])}.
+istart_link(Server) ->  
+    {ok, proc_lib:spawn_link(disk_log, init, [self(), Server])}.
 
 %% Only for backwards compatibility, could probably be removed.
 start() ->
@@ -309,26 +309,10 @@ check_arg([], Res) ->
 	    {error, {badarg, repair_read_only}};
 	Res#arg.type == halt, tuple(Res#arg.size) ->
 	    {error, {badarg, size}};
-	Res#arg.type == wrap, Res#arg.size == infinity ->
-	    case disk_log_1:read_size_file(Res#arg.file) of
-		{0, 0} ->
-		    {error, {badarg, size}};
-		{FileSz, NoOf} ->
-		    check_arg([], Res#arg{size = {FileSz, NoOf}})
-	    end;
-	Res#arg.type == wrap, tuple(Res#arg.size) ->
-	    case disk_log_1:read_size_file(Res#arg.file) of
-		{0, 0} ->
-		    Ret;
-		OldSize when OldSize == Res#arg.size ->
-		    Ret;
-		_OldSize when Res#arg.repair == truncate ->
-		    Ret;
-		OldSize ->
-		    {error, {size_mismatch, OldSize, Res#arg.size}}
-	    end;
 	Res#arg.type == wrap ->
-	    {error, {badarg, size}};
+	    {OldSize, Version} = 
+		disk_log_1:read_size_file_version(Res#arg.file),
+	    check_wrap_arg(Ret, OldSize, Version);
 	true ->
 	    Ret
     end;
@@ -353,8 +337,8 @@ check_arg([{size, Int}|Tail], Res) when integer(Int), Int > 0 ->
 check_arg([{size, infinity}|Tail], Res) ->
     check_arg(Tail, Res#arg{size = infinity});
 check_arg([{size, {MaxB,MaxF}}|Tail], Res) when integer(MaxB), integer(MaxF),
-						MaxB > 0, MaxF > 0, 
-						MaxF < ?MAX_FILES ->
+						MaxB > 0, MaxB =< ?MAX_BYTES,
+						MaxF > 0, MaxF < ?MAX_FILES ->
     check_arg(Tail, Res#arg{size = {MaxB, MaxF}});
 check_arg([{type, wrap}|Tail], Res) ->
     check_arg(Tail, Res#arg{type = wrap});
@@ -383,13 +367,32 @@ check_arg([{mode, read_write}|Tail], Res) ->
 check_arg(Arg, _) ->
     {error, {badarg, Arg}}.
 
+check_wrap_arg({ok, Res}, {0,0}, _Version) when Res#arg.size == infinity ->
+    {error, {badarg, size}};
+check_wrap_arg({ok, Res}, OldSize, Version) when Res#arg.size == infinity ->
+    NewRes = Res#arg{size = OldSize},
+    check_wrap_arg({ok, NewRes}, OldSize, Version);
+check_wrap_arg({ok, Res}, {0,0}, Version) ->
+    {ok, Res#arg{version = Version}};
+check_wrap_arg({ok, Res}, OldSize, Version) when OldSize == Res#arg.size ->
+    {ok, Res#arg{version = Version}};
+check_wrap_arg({ok, Res}, _OldSize, Version) when Res#arg.repair == truncate,
+						  tuple(Res#arg.size) ->
+    {ok, Res#arg{version = Version}};
+check_wrap_arg({ok, Res}, OldSize, _Version) when tuple(Res#arg.size) ->
+    {error, {size_mismatch, OldSize, Res#arg.size}};
+check_wrap_arg({ok, _Res}, _OldSize, _Version) ->
+    {error, {badarg, size}};
+check_wrap_arg(Ret, _OldSize, _Version) ->
+    Ret.
+
 %%%-----------------------------------------------------------------
 %%% Server functions
 %%%-----------------------------------------------------------------
-init(Parent) ->
+init(Parent, Server) ->
     ?PROFILE(ep:do()),
     process_flag(trap_exit, true),
-    loop(#state{parent = Parent}).
+    loop(#state{parent = Parent, server = Server}).
 
 loop(State) when State#state.messages == [] ->
     receive
@@ -727,7 +730,11 @@ handle({From, close}, S) ->
 handle({From, info}, S) ->
     reply(From, do_info(get(log), S#state.cnt), S);
 handle({'EXIT', From, Reason}, S) when From == S#state.parent ->
-    %% Parent orders shutdown
+    %% Parent orders shutdown.
+    _ = do_stop(S),
+    exit(Reason);
+handle({'EXIT', From, Reason}, S) when From == S#state.server ->
+    %% The server is gone.
     _ = do_stop(S),
     exit(Reason);
 handle({'EXIT', From, _Reason}, S) ->
@@ -1014,7 +1021,8 @@ do_open(A) ->
 	     filename = A#arg.file,
 	     size = A#arg.size,
 	     head = mk_head(A#arg.head, A#arg.format),
-	     mode = A#arg.mode},
+	     mode = A#arg.mode,
+	     version = A#arg.version},
     do_open2(L, A).
 	    
 mk_head({head, Term}, internal) -> {ok, term_to_binary(Term)};
@@ -1066,7 +1074,8 @@ do_change_size(L, NewSize) when L#log.type == halt ->
 	    {big, CurB}
     end;
 do_change_size(L, NewSize) when L#log.type == wrap ->
-    {ok, Handle} = disk_log_1:change_size_wrap(L#log.extra, NewSize),
+    #log{extra = Extra, version = Version} = L,
+    {ok, Handle} = disk_log_1:change_size_wrap(Extra, NewSize, Version),
     erase(is_full),
     put(log, L#log{extra = Handle}),
     ok.
@@ -1090,7 +1099,7 @@ check_head(_Head, _Format) ->
 
 check_size(wrap, {NewMaxB,NewMaxF}) when
   integer(NewMaxB), integer(NewMaxF),
-  NewMaxB > 0, NewMaxF > 0, NewMaxF < ?MAX_FILES ->
+  NewMaxB > 0, NewMaxB =< ?MAX_BYTES, NewMaxF > 0, NewMaxF < ?MAX_FILES ->
     ok;
 check_size(halt, NewSize) when integer(NewSize), NewSize > 0 ->
     ok;
@@ -1144,9 +1153,10 @@ do_open2(L, #arg{type = halt, format = internal, name = Name,
 	    Error
     end;
 do_open2(L, #arg{type = wrap, format = internal, size = {MaxB, MaxF}, 
-		 name = Name, repair = Repair, file = FName, mode = Mode}) ->
+		 name = Name, repair = Repair, file = FName, mode = Mode,
+		 version = V}) ->
     case catch 
-      disk_log_1:mf_int_open(FName, MaxB, MaxF, Repair, Mode, L#log.head) of
+      disk_log_1:mf_int_open(FName, MaxB, MaxF, Repair, Mode, L#log.head, V) of
 	{ok, Handle, Cnt} ->
 	    {ok, {ok, Name}, L#log{type = wrap,
 				   format_type = wrap_int, 
@@ -1169,9 +1179,10 @@ do_open2(L, #arg{type = halt, format = external, file = FName, name = Name,
 	    Error
     end;
 do_open2(L, #arg{type = wrap, format = external, size = {MaxB, MaxF},
-		 name = Name, file = FName, repair = Repair, mode = Mode}) ->
+		 name = Name, file = FName, repair = Repair, mode = Mode,
+		 version = V}) ->
     case catch 
-      disk_log_1:mf_ext_open(FName, MaxB, MaxF, Repair, Mode, L#log.head) of
+      disk_log_1:mf_ext_open(FName, MaxB, MaxF, Repair, Mode, L#log.head, V) of
 	{ok, Handle, Cnt} ->
 	    {ok, {ok, Name}, L#log{type = wrap,
 				   format_type = wrap_ext, 

@@ -36,6 +36,19 @@
 #define DONT_USE_MAIN
 #endif
 
+#ifdef _OSE_
+#define NO_SYSLOG
+#define NO_SYSCONF
+#define NO_DAEMON
+#define DONT_USE_MAIN
+#ifndef HAVE_SYS_TIME_H
+#define HAVE_SYS_TIME_H
+#endif
+#ifndef HAVE_UNISTD_H
+#define HAVE_UNISTD_H
+#endif
+#endif
+
 /* ************************************************************************ */
 /* Standard includes                                                        */
 
@@ -63,11 +76,11 @@
 #  include <rpc/rpc.h>
 #else /* ! VXWORKS */
 #ifndef __WIN32__
-#  if TIME_WITH_SYS_TIME
+#  ifdef TIME_WITH_SYS_TIME
 #    include <sys/time.h>
 #    include <time.h>
 #  else
-#    if HAVE_SYS_TIME_H
+#    ifdef HAVE_SYS_TIME_H
 #       include <sys/time.h>
 #    else
 #       include <time.h>
@@ -76,8 +89,7 @@
 #endif
 #endif /* ! VXWORKS */
 
-
-#ifndef __WIN32__
+#if (!defined(__WIN32__) && !defined(_OSE_))
 #  include <netinet/in.h>
 #  include <sys/socket.h>
 #  include <sys/stat.h>
@@ -90,10 +102,12 @@
 #  include <netinet/tcp.h>
 #endif /* ! WIN32 */
 
-
+#ifndef _OSE_
 #include <ctype.h>
-#include <errno.h>
 #include <signal.h>
+#endif
+
+#include <errno.h>
 
 #ifndef NO_SYSLOG
 #  include <syslog.h>
@@ -107,12 +121,14 @@
 #  include <unistd.h>
 #endif
 
-#if defined(__STDC__) || defined(_MSC_VER)
-#  include <stdarg.h>
-#else
-#  include <varargs.h>
-#  define const
+#include <stdarg.h>
+
+#ifdef _OSE_
+#  include "ose.h"
+#  include "inet.h"
+#  include "sys/stat.h"
 #endif
+
 
 /* ************************************************************************ */
 /* Replace some functions by others by making the function name a macro */
@@ -128,6 +144,10 @@
 #ifdef VXWORKS
 #define sleep(n) taskDelay((n) * sysClkRateGet())
 #endif /* VXWORKS */
+
+#ifdef _OSE_
+#define sleep(n) delay((n))
+#endif
 
 #ifdef USE_BCOPY
 #  define memcpy(a, b, c) bcopy((b), (a), (c))

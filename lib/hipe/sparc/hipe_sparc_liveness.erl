@@ -15,6 +15,7 @@
 
 -module(hipe_sparc_liveness).
 
+-include("../util/hipe_vector.hrl").
 -include("../flow/liveness.inc").
 
 
@@ -48,12 +49,10 @@ cfg_bb_update(CFG, L, NewBB) ->
 
 
 uses(Instr) ->
-   hipe_sparc:uses(Instr).
-
+  hipe_sparc:uses(Instr).
 
 defines(Instr) ->
-   hipe_sparc:defines(Instr).
-
+  hipe_sparc:defines(Instr).
 
 mk_comment(Text) ->
    hipe_sparc:comment_create(Text, []).

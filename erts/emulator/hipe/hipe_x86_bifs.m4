@@ -1,8 +1,10 @@
-/* $Id$
- * hipe_x86_bifs.m4
+changecom(`/*', `*/')dnl
+/*
+ * $Id$
  */
 
-#include "hipe_x86_asm.h"
+include(`hipe/hipe_x86_asm.m4')
+#`include' "hipe_literals.h"
 
 /*
  * These m4 macros expand to assembly code which
@@ -32,7 +34,7 @@
 define(standard_bif_interface_0,
 `
 #ifndef HAVE_$1
-#define HAVE_$1
+#`define' HAVE_$1
 	.section ".text"
 	.align	4
 	.global	$1
@@ -51,7 +53,7 @@ $1:
 	/* throw exception if failure, otherwise return */
 	testl	%eax,%eax
 	jz	nbif_0_simple_exception
-	ret		/* return and pop 0 words */
+	NBIF_RET(0)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -59,19 +61,19 @@ $1:
 define(standard_bif_interface_1,
 `
 #ifndef HAVE_$1
-#define HAVE_$1
+#`define' HAVE_$1
 	.section ".text"
 	.align	4
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	movl	%esp, %eax
+	NBIF_COPY_ESP(1)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NSP_ARG(1,0)(%eax)
+	pushl	NBIF_ARG(1,0)
 	pushl	P
 	call	$2
 	addl	`$'8, %esp
@@ -82,7 +84,7 @@ $1:
 	/* throw exception if failure, otherwise return */
 	testl	%eax,%eax
 	jz	nbif_1_simple_exception
-	ret	`$'4	/* return and pop 1 word */
+	NBIF_RET(1)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -90,20 +92,20 @@ $1:
 define(standard_bif_interface_2,
 `
 #ifndef HAVE_$1
-#define HAVE_$1
+#`define' HAVE_$1
 	.section ".text"
 	.align	4
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	movl	%esp, %eax
+	NBIF_COPY_ESP(2)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NSP_ARG(2,1)(%eax)
-	pushl	NSP_ARG(2,0)(%eax)
+	pushl	NBIF_ARG(2,1)
+	pushl	NBIF_ARG(2,0)
 	pushl	P
 	call	$2
 	addl	`$'12, %esp
@@ -114,7 +116,7 @@ $1:
 	/* throw exception if failure, otherwise return */
 	testl	%eax,%eax
 	jz	nbif_2_simple_exception
-	ret	`$'8	/* return and pop 2 words */
+	NBIF_RET(2)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -122,21 +124,21 @@ $1:
 define(standard_bif_interface_3,
 `
 #ifndef HAVE_$1
-#define HAVE_$1
+#`define' HAVE_$1
 	.section ".text"
 	.align	4
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	movl	%esp, %eax
+	NBIF_COPY_ESP(3)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NSP_ARG(3,2)(%eax)
-	pushl	NSP_ARG(3,1)(%eax)
-	pushl	NSP_ARG(3,0)(%eax)
+	pushl	NBIF_ARG(3,2)
+	pushl	NBIF_ARG(3,1)
+	pushl	NBIF_ARG(3,0)
 	pushl	P
 	call	$2
 	addl	`$'16, %esp
@@ -147,7 +149,7 @@ $1:
 	/* throw exception if failure, otherwise return */
 	testl	%eax,%eax
 	jz	nbif_3_simple_exception
-	ret	`$'12	/* return and pop 3 words */
+	NBIF_RET(3)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -162,19 +164,22 @@ $1:
 define(expensive_bif_interface_1,
 `
 #ifndef HAVE_$1
-#define HAVE_$1
+#`define' HAVE_$1
 	.section ".text"
 	.align	4
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	movl	%esp, %eax
+	NBIF_COPY_ESP(1)
+
+	/* save actual parameters in case we must reschedule */
+	NBIF_SAVE_RESCHED_ARGS(1)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NSP_ARG(1,0)(%eax)
+	pushl	NBIF_ARG(1,0)
 	pushl	P
 	call	$2
 	addl	`$'8, %esp
@@ -185,7 +190,7 @@ $1:
 	/* throw exception if failure, otherwise return */
 	testl	%eax,%eax
 	jz	$1_failed
-	ret	`$'4	/* return and pop 1 word */
+	NBIF_RET(1)
 $1_failed:
 	movl	$1, %edx	/* resumption address */
 	jmp	nbif_1_hairy_exception
@@ -196,20 +201,23 @@ $1_failed:
 define(expensive_bif_interface_2,
 `
 #ifndef HAVE_$1
-#define HAVE_$1
+#`define' HAVE_$1
 	.section ".text"
 	.align	4
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	movl	%esp, %eax
+	NBIF_COPY_ESP(2)
+
+	/* save actual parameters in case we must reschedule */
+	NBIF_SAVE_RESCHED_ARGS(2)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NSP_ARG(2,1)(%eax)
-	pushl	NSP_ARG(2,0)(%eax)
+	pushl	NBIF_ARG(2,1)
+	pushl	NBIF_ARG(2,0)
 	pushl	P
 	call	$2
 	addl	`$'12, %esp
@@ -220,7 +228,7 @@ $1:
 	/* throw exception if failure, otherwise return */
 	testl	%eax,%eax
 	jz	$1_failed
-	ret	`$'8	/* return and pop 2 words */
+	NBIF_RET(2)
 $1_failed:
 	movl	$1, %edx	/* resumption address */
 	jmp	nbif_2_hairy_exception
@@ -229,17 +237,18 @@ $1_failed:
 #endif')
 
 /*
- * nofail_bif_interface_0(nbif_name, cbif_name)
- * nofail_bif_interface_1(nbif_name, cbif_name)
- * nofail_bif_interface_2(nbif_name, cbif_name)
+ * nofail_primop_interface_0(nbif_name, cbif_name)
+ * nofail_primop_interface_1(nbif_name, cbif_name)
+ * nofail_primop_interface_2(nbif_name, cbif_name)
  *
- * Generate native interface for a BIF with 0-2 parameters and
- * no failure mode.
+ * Generate native interface for a primop with implicit P
+ * parameter, 0-2 ordinary parameters and no failure mode.
+ * Also used for guard BIFs.
  */
-define(nofail_bif_interface_0,
+define(nofail_primop_interface_0,
 `
 #ifndef HAVE_$1
-#define HAVE_$1
+#`define' HAVE_$1
 	.section ".text"
 	.align	4
 	.global	$1
@@ -256,27 +265,27 @@ $1:
 	SWITCH_C_TO_ERLANG
 
 	/* return */
-	ret		/* return and pop 0 words */
+	NBIF_RET(0)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
 
-define(nofail_bif_interface_1,
+define(nofail_primop_interface_1,
 `
 #ifndef HAVE_$1
-#define HAVE_$1
+#`define' HAVE_$1
 	.section ".text"
 	.align	4
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	movl	%esp, %eax
+	NBIF_COPY_ESP(1)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NSP_ARG(1,0)(%eax)
+	pushl	NBIF_ARG(1,0)
 	pushl	P
 	call	$2
 	addl	`$'8, %esp
@@ -285,28 +294,28 @@ $1:
 	SWITCH_C_TO_ERLANG
 
 	/* return */
-	ret	`$'4	/* return and pop 1 word */
+	NBIF_RET(1)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
 
-define(nofail_bif_interface_2,
+define(nofail_primop_interface_2,
 `
 #ifndef HAVE_$1
-#define HAVE_$1
+#`define' HAVE_$1
 	.section ".text"
 	.align	4
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	movl	%esp, %eax
+	NBIF_COPY_ESP(2)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C
 
 	/* make the call on the C stack */
-	pushl	NSP_ARG(2,1)(%eax)
-	pushl	NSP_ARG(2,0)(%eax)
+	pushl	NBIF_ARG(2,1)
+	pushl	NBIF_ARG(2,0)
 	pushl	P
 	call	$2
 	addl	`$'12, %esp
@@ -315,21 +324,22 @@ $1:
 	SWITCH_C_TO_ERLANG
 
 	/* return */
-	ret	`$'8	/* return and pop 2 words */
+	NBIF_RET(2)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
 
 /*
- * nocons_nofail_bif_interface_0(nbif_name, cbif_name)
+ * nocons_nofail_primop_interface_0(nbif_name, cbif_name)
  *
- * Generate native interface for a BIF with 0 parameters and
- * no failure mode. The BIF must not CONS or gc.
+ * Generate native interface for a primop with implicit P
+ * parameter, 0 ordinary parameters, and no failure mode.
+ * The primop cannot CONS or gc.
  */
-define(nocons_nofail_bif_interface_0,
+define(nocons_nofail_primop_interface_0,
 `
 #ifndef HAVE_$1
-#define HAVE_$1
+#`define' HAVE_$1
 	.section ".text"
 	.align	4
 	.global	$1
@@ -346,25 +356,25 @@ $1:
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
-	ret		/* return and pop 0 words */
+	NBIF_RET(0)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
 
 /* 
- * noproc_bif_interface_0(nbif_name, cbif_name)
- * noproc_bif_interface_1(nbif_name, cbif_name)
- * noproc_bif_interface_2(nbif_name, cbif_name)
- * noproc_bif_interface_3(nbif_name, cbif_name)
+ * noproc_primop_interface_0(nbif_name, cbif_name)
+ * noproc_primop_interface_1(nbif_name, cbif_name)
+ * noproc_primop_interface_2(nbif_name, cbif_name)
+ * noproc_primop_interface_3(nbif_name, cbif_name)
  *
- * Generate native interface for a BIF with 0-3 parameters,
- * no failure mode, and no implicit process struct parameter.
- * These BIFs cannot CONS or gc.
+ * Generate native interface for a primop with no implicit P
+ * parameter, 0-3 ordinary parameters, and no failure mode.
+ * The primop cannot CONS or gc.
  */
-define(noproc_bif_interface_0,
+define(noproc_primop_interface_0,
 `
 #ifndef HAVE_$1
-#define HAVE_$1
+#`define' HAVE_$1
 	.section ".text"
 	.align	4
 	.global	$1
@@ -379,27 +389,27 @@ $1:
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
-	ret		/* return and pop 0 words */
+	NBIF_RET(0)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
 
-define(noproc_bif_interface_1,
+define(noproc_primop_interface_1,
 `
 #ifndef HAVE_$1
-#define HAVE_$1
+#`define' HAVE_$1
 	.section ".text"
 	.align	4
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	movl	%esp, %eax
+	NBIF_COPY_ESP(1)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C_QUICK
 
 	/* make the call on the C stack */
-	pushl	NSP_ARG(1,0)(%eax)
+	pushl	NBIF_ARG(1,0)
 	call	$2
 	addl	`$'4, %esp
 
@@ -407,28 +417,28 @@ $1:
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
-	ret	`$'4	/* return and pop 1 word */
+	NBIF_RET(1)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
 
-define(noproc_bif_interface_2,
+define(noproc_primop_interface_2,
 `
 #ifndef HAVE_$1
-#define HAVE_$1
+#`define' HAVE_$1
 	.section ".text"
 	.align	4
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	movl	%esp, %eax
+	NBIF_COPY_ESP(2)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C_QUICK
 
 	/* make the call on the C stack */
-	pushl	NSP_ARG(2,1)(%eax)
-	pushl	NSP_ARG(2,0)(%eax)
+	pushl	NBIF_ARG(2,1)
+	pushl	NBIF_ARG(2,0)
 	call	$2
 	addl	`$'8, %esp
 
@@ -436,29 +446,29 @@ $1:
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
-	ret	`$'8	/* return and pop 2 words */
+	NBIF_RET(2)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
 
-define(noproc_bif_interface_3,
+define(noproc_primop_interface_3,
 `
 #ifndef HAVE_$1
-#define HAVE_$1
+#`define' HAVE_$1
 	.section ".text"
 	.align	4
 	.global	$1
 $1:
 	/* copy native stack pointer */
-	movl	%esp, %eax
+	NBIF_COPY_ESP(3)
 
 	/* switch to C stack */
 	SWITCH_ERLANG_TO_C_QUICK
 
 	/* make the call on the C stack */
-	pushl	NSP_ARG(3,2)(%eax)
-	pushl	NSP_ARG(3,1)(%eax)
-	pushl	NSP_ARG(3,0)(%eax)
+	pushl	NBIF_ARG(3,2)
+	pushl	NBIF_ARG(3,1)
+	pushl	NBIF_ARG(3,0)
 	call	$2
 	addl	`$'12, %esp
 
@@ -466,7 +476,42 @@ $1:
 	SWITCH_C_TO_ERLANG_QUICK
 
 	/* return */
-	ret	`$'12	/* return and pop 3 words */
+	NBIF_RET(3)
+	.size	$1,.-$1
+	.type	$1,@function
+#endif')
+
+/*
+ * callee_save_primop_interface_0(nbif_name, cbif_name)
+ *
+ * Generate native interface for a primop with implicit P
+ * parameters, 0 ordinary parameters, and no failure mode.
+ * The caller does not have to save and restore caller-save
+ * registers, since the interface takes care of that.
+ * This is currently only used for internal calls to inc_stack_0.
+ */
+define(callee_save_primop_interface_0,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	.section ".text"
+	.align	4
+	.global	$1
+$1:
+	/* switch to C stack */
+	SWITCH_ERLANG_TO_C
+
+	/* make the call on the C stack */
+	NBIF_SAVE_CALLER_SAVE
+	pushl	P
+	call	$2
+	NBIF_RESTORE_CALLER_SAVE(1)
+
+	/* switch to native stack */
+	SWITCH_C_TO_ERLANG
+
+	/* return */
+	NBIF_RET(0)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -490,7 +535,7 @@ standard_bif_interface_2(nbif_add_2, erts_mixed_plus)
 standard_bif_interface_2(nbif_sub_2, erts_mixed_minus)
 standard_bif_interface_2(nbif_mul_2, erts_mixed_times)
 standard_bif_interface_2(nbif_div_2, erts_mixed_div)
-standard_bif_interface_2(nbif_intdiv_2, div_2)
+standard_bif_interface_2(nbif_intdiv_2, intdiv_2)
 standard_bif_interface_2(nbif_rem_2, rem_2)
 standard_bif_interface_2(nbif_bsl_2, bsl_2)
 standard_bif_interface_2(nbif_bsr_2, bsr_2)
@@ -500,53 +545,51 @@ standard_bif_interface_2(nbif_bxor_2, bxor_2)
 standard_bif_interface_1(nbif_bnot_1, bnot_1)
 
 /*
- * Internal primop BIFs.
+ * Miscellaneous primops.
  */
-nofail_bif_interface_1(nbif_gc_1, hipe_gc)
-nofail_bif_interface_0(nbif_inc_stack_0, hipe_inc_nstack)
-nocons_nofail_bif_interface_0(nbif_clear_timeout, hipe_clear_timeout)
+nofail_primop_interface_1(nbif_gc_1, hipe_gc)
+callee_save_primop_interface_0(nbif_inc_stack_0, hipe_inc_nstack)
+nocons_nofail_primop_interface_0(nbif_clear_timeout, hipe_clear_timeout)
 standard_bif_interface_1(nbif_set_timeout, hipe_set_timeout)
+standard_bif_interface_1(nbif_conv_big_to_float, hipe_conv_big_to_float)
 
 /*
  * Mbox primops with implicit P parameter.
  */
-nocons_nofail_bif_interface_0(nbif_get_msg, hipe_get_msg)
-nocons_nofail_bif_interface_0(nbif_select_msg, hipe_select_msg)
-nocons_nofail_bif_interface_0(nbif_mbox_empty, hipe_mbox_empty)
-nocons_nofail_bif_interface_0(nbif_next_msg, hipe_next_msg)
+nocons_nofail_primop_interface_0(nbif_get_msg, hipe_get_msg)
+nocons_nofail_primop_interface_0(nbif_select_msg, hipe_select_msg)
+nocons_nofail_primop_interface_0(nbif_mbox_empty, hipe_mbox_empty)
+nocons_nofail_primop_interface_0(nbif_next_msg, hipe_next_msg)
 
 /*
  * Binary-syntax primops with implicit P parameter.
  * XXX: only get_integer conses on the ordinary heap
  */
-nofail_bif_interface_2(nbif_bs_get_integer, erts_bs_get_integer)
-nofail_bif_interface_2(nbif_bs_get_binary, erts_bs_get_binary)
-nofail_bif_interface_2(nbif_bs_get_float, erts_bs_get_float)
-nofail_bif_interface_0(nbif_bs_get_binary_all, erts_bs_get_binary_all)
-nofail_bif_interface_0(nbif_bs_final, erts_bs_final)
+nofail_primop_interface_2(nbif_bs_get_integer, erts_bs_get_integer)
+nofail_primop_interface_2(nbif_bs_get_binary, erts_bs_get_binary)
+nofail_primop_interface_2(nbif_bs_get_float, erts_bs_get_float)
+nofail_primop_interface_0(nbif_bs_get_binary_all, erts_bs_get_binary_all)
+nofail_primop_interface_0(nbif_bs_final, erts_bs_final)
 
 /*
- * Binary-syntax primops without any P parameter.
+ * Primops without any P parameter.
  * These cannot CONS or gc.
  */
-noproc_bif_interface_1(nbif_bs_start_match, erts_bs_start_match)
-noproc_bif_interface_1(nbif_bs_skip_bits, erts_bs_skip_bits)
-noproc_bif_interface_0(nbif_bs_skip_bits_all, erts_bs_skip_bits_all)
-noproc_bif_interface_1(nbif_bs_test_tail, erts_bs_test_tail)
-noproc_bif_interface_1(nbif_bs_save, erts_bs_save)
-noproc_bif_interface_1(nbif_bs_restore, erts_bs_restore)
-noproc_bif_interface_0(nbif_bs_init, erts_bs_init)
-noproc_bif_interface_3(nbif_bs_put_integer, erts_bs_put_integer)
-noproc_bif_interface_2(nbif_bs_put_binary, erts_bs_put_binary)
-noproc_bif_interface_1(nbif_bs_put_binary_all, erts_bs_put_binary_all)
-noproc_bif_interface_3(nbif_bs_put_float, erts_bs_put_float)
-noproc_bif_interface_2(nbif_bs_put_string, erts_bs_put_string)
-
-/*
- * BIFs with no implicit process struct argument.
- */
-noproc_bif_interface_2(nbif_cmp_2, cmp)
-noproc_bif_interface_2(nbif_eq_2, eq)
+noproc_primop_interface_1(nbif_bs_start_match, erts_bs_start_match)
+noproc_primop_interface_1(nbif_bs_skip_bits, erts_bs_skip_bits)
+noproc_primop_interface_0(nbif_bs_skip_bits_all, erts_bs_skip_bits_all)
+noproc_primop_interface_1(nbif_bs_test_tail, erts_bs_test_tail)
+noproc_primop_interface_1(nbif_bs_save, erts_bs_save)
+noproc_primop_interface_1(nbif_bs_restore, erts_bs_restore)
+noproc_primop_interface_0(nbif_bs_init, erts_bs_init)
+noproc_primop_interface_3(nbif_bs_put_integer, erts_bs_put_integer)
+noproc_primop_interface_2(nbif_bs_put_binary, erts_bs_put_binary)
+noproc_primop_interface_1(nbif_bs_put_binary_all, erts_bs_put_binary_all)
+noproc_primop_interface_3(nbif_bs_put_float, erts_bs_put_float)
+noproc_primop_interface_2(nbif_bs_put_string, erts_bs_put_string)
+noproc_primop_interface_0(nbif_bs_get_matchbuffer, hipe_bs_get_matchbuffer)
+noproc_primop_interface_2(nbif_cmp_2, cmp)
+noproc_primop_interface_2(nbif_eq_2, eq)
 
 /*
  * BIFs that may trigger a native stack walk with p->narity != 0.
@@ -559,11 +602,11 @@ standard_bif_interface_1(nbif_garbage_collect_1, hipe_x86_garbage_collect_1)
  * BIF_LIST(ModuleAtom,FunctionAtom,Arity,CFun,Index)
  */
 define(BIF_LIST,`standard_bif_interface_$3(nbif_$4, $4)')
-include(`erl_bif_list.h')
+include(TARGET/`erl_bif_list.h')
 
 /*
  * Guard BIFs.
  * GBIF_LIST(FunctionAtom,Arity,CFun)
  */
-define(GBIF_LIST,`nofail_bif_interface_$2(gbif_$3, $3)')
-include(`hipe_gbif_list.h')
+define(GBIF_LIST,`nofail_primop_interface_$2(gbif_$3, $3)')
+include(`hipe/hipe_gbif_list.h')

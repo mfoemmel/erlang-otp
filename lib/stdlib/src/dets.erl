@@ -66,8 +66,9 @@
 %% To be used by Mnesia only.
 -export([fixtable/2]).
 
-%% Internal.
--export([do_open_file/2, do_open_file/3]).
+%% Internal exports.
+-export([istart_link/1, init/2, internal_open/2,
+	 system_continue/3, system_terminate/4, system_code_change/4]).
 
 %% Debug.
 -export([file_info/1,
@@ -300,6 +301,9 @@ insert(Tab, Objs) when list(Objs) ->
 insert(Tab, Obj) ->
     badarg(treq(Tab, {insert, [Obj]}), [Tab, Obj]).
 
+internal_open(Pid, Args) ->
+    req(Pid, {internal_open, Args}).
+
 lookup(Tab, Key) ->
     badarg(treq(Tab, {lookup_keys, [Key]}), [Tab, Key]).
 
@@ -319,7 +323,7 @@ match(Tab, Pat, N) ->
     badarg(init_chunk_match(Tab, Pat, bindings, N), [Tab, Pat, N]).
     
 match(State) when State#dets_cont.what == bindings ->
-    chunk_match(State);
+    badarg(chunk_match(State), [State]);
 match(Term) ->
     erlang:fault(badarg, [Term]).
 
@@ -356,7 +360,7 @@ match_object(Tab, Pat, N) ->
     badarg(init_chunk_match(Tab, Pat, object, N), [Tab, Pat, N]).
     
 match_object(State) when State#dets_cont.what == object ->
-    chunk_match(State);
+    badarg(chunk_match(State), [State]);
 match_object(Term) ->
     erlang:fault(badarg, [Term]).
 
@@ -388,8 +392,7 @@ open_file(File) ->
 open_file(Tab, Args) when list(Args) ->
     case catch defaults(Tab, Args) of
         OpenArgs when record(OpenArgs, open_args) ->
-            einval(dets_server:open_file(Tab, OpenArgs),
-		   [Tab, Args]);
+            einval(dets_server:open_file(Tab, OpenArgs), [Tab, Args]);
 	_ ->
 	    erlang:fault(badarg, [Tab, Args])
     end;
@@ -411,7 +414,7 @@ select(Tab, Pat, N) ->
     badarg(init_chunk_match(Tab, Pat, select, N), [Tab, Pat, N]).
     
 select(State) when State#dets_cont.what == select ->
-    chunk_match(State);
+    badarg(chunk_match(State), [State]);
 select(Term) ->
     erlang:fault(badarg, [Term]).
 
@@ -428,6 +431,9 @@ start() ->
 
 stop() ->
     dets_server:stop().
+
+istart_link(Server) ->
+    {ok, proc_lib:spawn_link(dets, init, [self(), Server])}.
 
 sync(Tab) ->
     badarg(treq(Tab, sync), [Tab]).
@@ -545,7 +551,7 @@ init_chunk_match(Tab, Pat, What, N) when integer(N), N >= 0; N == default ->
 	{Spec, MP} ->
 	    case req(dets_server:get_pid(Tab), {match, MP, Spec, N}) of
 		{done, L} ->
-		    {L, #dets_cont{what = What, bin = eof}};
+		    {L, #dets_cont{tab = Tab, what = What, bin = eof}};
 		{cont, State} ->
 		    chunk_match(State#dets_cont{what = What, tab = Tab});
 		Error ->
@@ -557,21 +563,25 @@ init_chunk_match(Tab, Pat, What, N) when integer(N), N >= 0; N == default ->
 init_chunk_match(_Tab, _Pat, _What, _) ->
     badarg.
 
-chunk_match(#dets_cont{bin = eof}) ->
-    '$end_of_table';
 chunk_match(State) ->
-    Proc = dets_server:get_pid(State#dets_cont.tab),
-    case req(Proc, {match_init, State}) of
-	{cont, {Bins, NewState}} ->
-	    MP = NewState#dets_cont.match_program,
-	    case catch do_foldl_bins(Bins, MP) of
-		{'EXIT', _} ->
-		    req(Proc, {corrupt, bad_object});
-		Terms ->
-		    {Terms, NewState}
-	    end;
-	Error ->
-	    Error
+    case catch dets_server:get_pid(State#dets_cont.tab) of
+	{'EXIT', _Reason} ->
+	    badarg;
+	_Proc when State#dets_cont.bin == eof ->
+	    '$end_of_table';
+	Proc ->
+	    case req(Proc, {match_init, State}) of
+		{cont, {Bins, NewState}} ->
+		    MP = NewState#dets_cont.match_program,
+		    case catch do_foldl_bins(Bins, MP) of
+			{'EXIT', _} ->
+			    req(Proc, {corrupt, bad_object});
+			Terms ->
+			    {Terms, NewState}
+		    end;
+		Error ->
+		    Error
+	    end
     end.
 
 do_foldl_bins(Bins, true) ->
@@ -781,60 +791,9 @@ badarg_exit(Reply, _A) ->
 %%% Server functions
 %%%-----------------------------------------------------------------
 
-do_open_file(Fname, Verbose) ->
+init(Parent, Server) ->
     process_flag(trap_exit, true),
-    case catch fopen(Fname) of
-	{error, Reason} ->
-	    Error = err({error, Reason}),
-	    ?SERVER_NAME ! {self(), Error},
-	    exit(normal);
-	{ok, Head} ->
-	    ?SERVER_NAME ! {self(), {ok, Head#head.name}},
-	    maybe_put(verbose, Verbose),
-	    open_file_loop(Head);
-	{'EXIT', _Reason} = Error ->
-	    ?SERVER_NAME ! {self(), Error},
-	    exit(normal);
-	Bad ->
-	    error_logger:format
-	      ("** dets: Bug was found in open_file/1, reply was ~w.~n", 
-	       [Bad]),
-	    ?SERVER_NAME ! {self(), {error, {dets_bug, Fname, Bad}}},
-	    exit(normal)
-    end.
-
-do_open_file(Tab, OpenArgs, Verb) ->
-    ?PROFILE(ep:do()),
-    process_flag(trap_exit, true),
-    case catch fopen(Tab, OpenArgs) of
-	{error, {tooshort, _}} ->
-	    file:delete(OpenArgs#open_args.file),
-	    do_open_file(Tab, OpenArgs, Verb);
-	{error, Reason} ->
-	    Error = err({error, Reason}),
-	    ?SERVER_NAME ! {self(), Error},
-	    exit(normal);
-	{ok, Head} ->
-	    ?SERVER_NAME ! {self(), {ok, Tab}},
-	    maybe_put(verbose, Verb),
-	    open_file_loop(Head);
-	{'EXIT', _Reason} = Error ->
-	    ?SERVER_NAME ! {self(), Error},
-	    exit(normal);
-	Bad ->
-	    error_logger:format
-	      ("** dets: Bug was found in open_file/2, arguments were~n"
-	       "** dets: ~w and reply was ~w.~n", 
-	       [OpenArgs, Bad]),
-	    Err = {error, {dets_bug, Tab, {open_file, OpenArgs}, Bad}},
-	    ?SERVER_NAME ! {self(), Err},
-	    exit(normal)
-    end.
-
-maybe_put(_, undefined) ->
-    ignore;
-maybe_put(K, V) ->
-    put(K, V).
+    open_file_loop(#head{parent = Parent, server = Server}).
 
 open_file_loop(Head) ->
     open_file_loop(Head, 0).
@@ -862,10 +821,21 @@ open_file_loop(Head, N) ->
 		    From ! {self(), {error, {dets_bug, Name, Op, Bad}}},
 		    open_file_loop(Head, N)
 	    end;
+	{'EXIT', Pid, Reason} when Pid == Head#head.parent ->
+	    %% Parent orders shutdown.
+	    _NewHead = do_stop(Head),
+	    exit(Reason);
+	{'EXIT', Pid, Reason} when Pid == Head#head.server ->
+	    %% The server is gone.
+	    _NewHead = do_stop(Head),
+	    exit(Reason);
 	{'EXIT', Pid, _Reason} ->
 	    %% A process fixing the table exits.
 	    H2 = remove_fix(Head, Pid, close),
 	    open_file_loop(H2, N);
+	{system, From, Req} ->
+	    sys:handle_system_msg(Req, From, Head#head.parent, 
+				  ?MODULE, [], Head);
 	Message ->
 	    error_logger:format("** dets: unexpected message (ignored): ~w~w",
 				[Message]),
@@ -937,6 +907,16 @@ apply_op(Op, From, Head, N) ->
 	    {H2, Res} = finfo(Head, Tag),
 	    From ! {self(), Res},
 	    H2;
+	{internal_open, Args} ->
+	    ?PROFILE(ep:do()),
+	    case do_open_file(Args, Head#head.parent, Head#head.server) of
+		{ok, Tab, H2} -> 
+		    From ! {self(), {ok, Tab}},
+		    H2;
+		Error -> 
+		    From ! {self(), Error},
+		    exit(normal)
+	    end;
 	may_grow when Head#head.update_mode =/= saved ->
 	    if
 		Head#head.update_mode == dirty ->
@@ -1184,6 +1164,23 @@ lookup_reply([P], O) ->
 lookup_reply(P, O) ->
     P ! {self(), O}.
 
+%%-----------------------------------------------------------------
+%% Callback functions for system messages handling.
+%%-----------------------------------------------------------------
+system_continue(_Parent, _, Head) ->
+    open_file_loop(Head).
+
+system_terminate(Reason, _Parent, _, Head) ->
+    _NewHead = do_stop(Head),
+    exit(Reason).
+
+%%-----------------------------------------------------------------
+%% Code for upgrade.
+%%-----------------------------------------------------------------
+system_code_change(State, _Module, _OldVsn, _Extra) ->
+    {ok, State}.
+
+
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
@@ -1392,6 +1389,10 @@ remove_fix(Head, Pid, How) ->
 	    end
     end.
 
+do_stop(Head) ->
+    unlink_fixing_procs(Head),
+    fclose(Head).
+
 unlink_fixing_procs(Head) ->
     case Head#head.fixed of
 	false ->
@@ -1479,6 +1480,46 @@ finfo(H, _) -> {H, undefined}.
 file_size(Fd, FileName) -> 
     {ok, Pos} = dets_utils:position(Fd, FileName, eof),
     Pos.
+
+do_open_file([Fname, Verbose], Parent, Server) ->
+    case catch fopen(Fname) of
+	{error, _Reason} = Error ->
+	    err(Error);
+	{ok, Head} ->
+	    maybe_put(verbose, Verbose),
+	    {ok, Head#head.name, Head#head{parent = Parent, server = Server}};
+	{'EXIT', _Reason} = Error ->
+	    Error;
+	Bad ->
+	    error_logger:format
+	      ("** dets: Bug was found in open_file/1, reply was ~w.~n", 
+	       [Bad]),
+	    {error, {dets_bug, Fname, Bad}}
+    end;
+do_open_file([Tab, OpenArgs, Verb], Parent, Server) ->
+    case catch fopen(Tab, OpenArgs) of
+	{error, {tooshort, _}} ->
+	    file:delete(OpenArgs#open_args.file),
+	    do_open_file([Tab, OpenArgs, Verb], Parent, Server);
+	{error, _Reason} = Error ->
+	    err(Error);
+	{ok, Head} ->
+	    maybe_put(verbose, Verb),
+	    {ok, Tab, Head#head{parent = Parent, server = Server}};
+	{'EXIT', _Reason} = Error ->
+	    Error;
+	Bad ->
+	    error_logger:format
+	      ("** dets: Bug was found in open_file/2, arguments were~n"
+	       "** dets: ~w and reply was ~w.~n", 
+	       [OpenArgs, Bad]),
+	    {error, {dets_bug, Tab, {open_file, OpenArgs}, Bad}}
+    end.
+
+maybe_put(_, undefined) ->
+    ignore;
+maybe_put(K, V) ->
+    put(K, V).
 
 %% -> {Head, Result}, Result = ok | Error | {thrown, Error} | badarg
 finit(Head, InitFun, _Format, _NoSlots) when Head#head.access == read ->
@@ -1889,13 +1930,14 @@ fopen_existing_file(Tab, OpenArgs) ->
 					     ?DEFAULT_CACHE, Tab, true),
 	    case catch compact(NewSourceHead) of
 		ok ->
-		    file:close(Fd),
 		    erlang:garbage_collect(),
 		    fopen(Tab, OpenArgs#open_args{repair = false});
 		_Err ->
+                    _ = file:close(Fd),
 		    io:format(user, "dets: compaction of file ~p failed, "
 			      "now repairing ...~n", [Fname]),
-                    do_repair(Fd, Tab, Fname, FH, MinSlots, MaxSlots, 
+                    {ok, Fd2, _FH} = read_file_header(Fname, Acc, Ram),
+                    do_repair(Fd2, Tab, Fname, FH, MinSlots, MaxSlots, 
 			      Version, OpenArgs)
 	    end;
 	{repair, Mess} ->
@@ -1993,7 +2035,7 @@ module2version(not_used) -> 9.
 %% -> ok | throw(Error) 
 %% For version 9 tables only.
 compact(SourceHead) ->
-    #head{name = Tab, filename = Fname, type = Type, keypos = Kp,
+    #head{name = Tab, filename = Fname, fptr = SFd, type = Type, keypos = Kp,
 	  ram_file = Ram, auto_save = Auto} = SourceHead,
     Tmp = lists:concat([Fname, ".TMP"]),
     file:delete(Tmp),
@@ -2019,6 +2061,7 @@ compact(SourceHead) ->
 	{ok, NewHead} ->
 	    R = case fclose(NewHead) of
 		    ok ->
+                        ok = file:close(SFd),
 			%% Save (rename) Fname first?
 			dets_utils:rename(Tmp, Fname);
 		    E ->

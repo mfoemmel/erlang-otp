@@ -360,7 +360,7 @@ del_path(G,V1,V2) ->
 %%
 
 get_cycle(G, V) ->
-    case one_path(out_neighbours(G,V), V, [], [V], [V], {2,infinity}, G) of
+    case one_path(out_neighbours(G,V), V, [], [V], [V], {2,infinity}, G, 1) of
 	false ->
 	    case lists:member(V, out_neighbours(G, V)) of
 		true -> [V];
@@ -376,7 +376,7 @@ get_cycle(G, V) ->
 %%
 
 get_path(G, V1, V2) ->
-    one_path(out_neighbours(G, V1), V2, [], [V1], [V1], {1,infinity}, G).
+    one_path(out_neighbours(G, V1), V2, [], [V1], [V1], {1,infinity}, G, 1).
 
 %%
 %% prune_path (evaluate conditions on path)
@@ -384,35 +384,35 @@ get_path(G, V1, V2) ->
 %% short : if path is to short
 %% ok    : if path is ok
 %%
-prune_path(_Path, {_Min,Max}) when Max == infinite ->
+prune_path(Counter, {Min,_Max}) when Counter < Min ->
+    short;
+prune_path(_Counter, {_Min,Max}) when Max == infinity ->
     ok;
-prune_path(Path, {Min,Max}) ->
-    N = length(Path),
-    if
-	N < Min -> short;
-	N > Max -> long;
-	true -> ok
-    end.
+prune_path(Counter, {_Min,Max}) when Counter > Max ->
+    long;
+prune_path(_Counter, {_Min, _Max}) ->
+    ok.
 
-one_path([W|Ws], W, Cont, Xs, Ps, Prune, G) ->
-    case prune_path(Ps, Prune) of
-	long  -> one_path([], W, Cont, Xs, Ps, Prune, G);
-	short -> one_path(Ws, W, Cont, Xs, Ps, Prune, G);
+one_path([W|Ws], W, Cont, Xs, Ps, Prune, G, Counter) ->
+    case prune_path(Counter, Prune) of
+	long  -> one_path([], W, Cont, Xs, Ps, Prune, G, Counter);
+	short -> one_path(Ws, W, Cont, Xs, Ps, Prune, G, Counter);
 	ok -> lists:reverse([W|Ps])
     end;
-one_path([V|Vs], W, Cont, Xs, Ps, Prune, G) ->
-    case prune_path(Ps, Prune) of
-	long -> one_path([], W, Cont, Xs, Ps, Prune, G);
+one_path([V|Vs], W, Cont, Xs, Ps, Prune, G, Counter) ->
+    case prune_path(Counter, Prune) of
+	long -> one_path([], W, Cont, Xs, Ps, Prune, G, Counter);
 	_ ->
 	    case lists:member(V, Xs) of
-		true ->  one_path(Vs, W, Cont, Xs, Ps, Prune, G);
+		true ->  one_path(Vs, W, Cont, Xs, Ps, Prune, G, Counter);
 		false -> one_path(out_neighbours(G, V), W, 
-				  [{Vs,Ps} | Cont], [V|Xs], [V|Ps], Prune, G)
+				  [{Vs,Ps} | Cont], [V|Xs], [V|Ps], 
+				  Prune, G, Counter+1)
 	    end
     end;
-one_path([], W, [{Vs,Ps}|Cont], Xs, _, Prune, G) ->
-    one_path(Vs, W, Cont, Xs, Ps, Prune, G);
-one_path([], _, [], _, _, _, _) -> false.
+one_path([], W, [{Vs,Ps}|Cont], Xs, _, Prune, G, Counter) ->
+    one_path(Vs, W, Cont, Xs, Ps, Prune, G, Counter-1);
+one_path([], _, [], _, _, _, _, _Counter) -> false.
 
 %%
 %% Like get_cycle/2, but a cycle of length one is preferred.

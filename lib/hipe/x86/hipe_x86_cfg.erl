@@ -3,9 +3,12 @@
 
 -module(hipe_x86_cfg).
 
--export([linearise/1, is_branch/1, cfg_formals/1]).
+-export([linearise/1, is_branch/1, params/1, arity/1, redirect_jmp/3]).
+%% To avoid warnings...
+-export([find_new_label/2]).
 
 -include("hipe_x86.hrl").
+-include("../main/hipe.hrl").
 -include("../flow/cfg.inc").
 
 init(Defun) ->
@@ -16,8 +19,13 @@ init(Defun) ->
     VarRange = hipe_x86:defun_var_range(Defun),
     LabRange = hipe_x86:defun_label_range(Defun),
     Data = hipe_x86:defun_data(Defun),
-    Extra = {hipe_x86:defun_mfa(Defun), hipe_x86:defun_formals(Defun)},
-    CFG0 = mk_empty_cfg(StartLab, VarRange, LabRange, Data, Extra),
+    IsClosure = hipe_x86:defun_is_closure(Defun),
+    Name = hipe_x86:defun_mfa(Defun),
+    IsLeaf = hipe_x86:defun_is_leaf(Defun),
+    Formals = hipe_x86:defun_formals(Defun),
+    Extra = [],
+    CFG0 = mk_empty_cfg(Name, StartLab, VarRange, LabRange, Data,
+			IsClosure, IsLeaf, Formals, Extra),
     take_bbs(Code, CFG0).
 
 is_branch(I) ->
@@ -32,11 +40,6 @@ is_branch(I) ->
 	_ -> false
     end.
 
-%%% Note: When there are two successors [L0, L1], flow/cfg.inc will
-%%% consider the first (L0) to be the "conditional" or "unlikely"
-%%% successor, and the second (L1) to be the "fallthrough" successor.
-%%% See cond/2, fallthrough/2, and lin_succ/3 in flow/cfg.inc.
-
 branch_successors(Branch) ->
     case Branch of
 	#jmp_fun{} -> [];
@@ -45,9 +48,9 @@ branch_successors(Branch) ->
 	#pseudo_call{contlab=ContLab, exnlab=ExnLab} ->
 	    case ExnLab of
 		[] -> [ContLab];
-		_ -> [ExnLab, ContLab]	% order matters here :-(
+		_ -> [ContLab,ExnLab]
 	    end;
-	#pseudo_jcc{true_label=TrueLab, false_label=FalseLab} -> [TrueLab, FalseLab];
+	#pseudo_jcc{true_label=TrueLab,false_label=FalseLab} -> [FalseLab,TrueLab];
 	#pseudo_tailcall{} -> [];
 	#ret{} -> []
     end.
@@ -69,6 +72,10 @@ redirect_jmp(I, Old, New) ->
 	_ -> I
     end.
 
+%%% XXX: fix if labels can occur in operands
+redirect_ops(_Labels, CFG, _Map) -> 
+  CFG.
+
 mk_goto(Label) ->
     hipe_x86:mk_jmp_label(Label).
 
@@ -87,22 +94,27 @@ label_annot(Label) ->
 mk_label(Name, IsFail) ->	% IsFail came from label_annot/1
     hipe_x86:mk_label(Name, IsFail).
 
+is_comment(I) ->
+    hipe_x86:is_comment(I).
+
+is_goto(I) ->
+    hipe_x86:is_jmp_label(I).
+
 pp(CFG) ->
     hipe_x86_pp:pp(linearise(CFG)).
 
 linearise(CFG) ->	% -> defun, not insn list
-    Fun = cfg_fun(CFG),
-    Formals = cfg_formals(CFG),
+    Fun = function(CFG),
+    Formals = params(CFG),
     Code = linearize_cfg(CFG),
     Data = data(CFG),
     VarRange = var_range(CFG),
     LabelRange = label_range(CFG),
-    hipe_x86:mk_defun(Fun, Formals, Code, Data, VarRange, LabelRange).
+    IsClosure = is_closure(CFG),
+    IsLeaf = is_leaf(CFG),
+    hipe_x86:mk_defun(Fun, Formals, IsClosure, IsLeaf,
+		      Code, Data, VarRange, LabelRange).
 
-cfg_fun(CFG) ->
-    {MFA, _} = extra(CFG),	% see init/1
-    MFA.
-
-cfg_formals(CFG) ->
-    {_, Formals} = extra(CFG),	% see init/1
-    Formals.
+arity(CFG) ->
+    #x86_mfa{a=Arity} = function(CFG),
+    Arity.

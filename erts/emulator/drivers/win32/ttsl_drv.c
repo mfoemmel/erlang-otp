@@ -66,7 +66,7 @@ static ErlDrvData ttysl_start(ErlDrvPort, char*);
 static void ttysl_stop(ErlDrvData);
 static void ttysl_from_erlang(ErlDrvData, char*, int);
 static void ttysl_from_tty(ErlDrvData, ErlDrvEvent);
-static sint16 get_sint16();
+static Sint16 get_sint16(char *s);
 
 static ErlDrvPort ttysl_port;
 
@@ -207,14 +207,15 @@ static void ttysl_from_tty(ErlDrvData ttysl_data, ErlDrvEvent fd)
 /*
  * Gets signed 16 bit integer from binary buffer.
  */
-static sint16 get_sint16(s)
-char *s;
+static Sint16
+get_sint16(char *s)
 {
     return ((*s << 8) | ((byte*)s)[1]);
 }
 
 
-static int start_lbuf()
+static int 
+start_lbuf(void)
 {
     if (!lbuf && !(lbuf = (byte*) malloc(lbuf_size)))
 	return FALSE;

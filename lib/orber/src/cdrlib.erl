@@ -71,10 +71,10 @@ enc_short(X, Message) when integer(X), X >= ?SHORTMIN, X =< ?SHORTMAX ->
     [<<X:16/big-signed-integer>> | Message];
 enc_short(X, Message) when integer(X) -> 
     orber:dbg("[~p] cdrlib:enc_short(~p); Out of range.", [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO});
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});
 enc_short(X, Message) ->
     orber:dbg("[~p] cdrlib:enc_short(~p); not integer.", [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 2), completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
 %% Func: dec_short/2
@@ -95,11 +95,11 @@ enc_unsigned_short(X, Message) when integer(X), X >= ?USHORTMIN, X =< ?USHORTMAX
 enc_unsigned_short(X, Message) when integer(X) -> 
     orber:dbg("[~p] cdrlib:enc_unsigned_short(~p); Out of range.", 
 	      [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO});
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});
 enc_unsigned_short(X, Message) ->
     orber:dbg("[~p] cdrlib:enc_unsigned_short(~p); not integer >= 0", 
 			    [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 2), completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
 %% Func: dec_unsigned_short/2
@@ -119,11 +119,11 @@ enc_long(X, Message) when integer(X), X >= ?LONGMIN, X =< ?LONGMAX ->
     [<<X:32/big-signed-integer>> | Message];
 enc_long(X, Message) when integer(X) -> 
     orber:dbg("[~p] cdrlib:enc_long(~p); Out of range.",[?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO});
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});
 enc_long(X, Message) ->
     orber:dbg("[~p] cdrlib:enc_long(~p); not integer.", 
 			    [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 2), completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
 %% Func: dec_long/2
@@ -144,11 +144,11 @@ enc_unsigned_long(X, Message) when integer(X), X >= ?ULONGMIN, X =< ?ULONGMAX ->
 enc_unsigned_long(X, Message) when integer(X) ->
     orber:dbg("[~p] cdrlib:enc_unsigned_long(~p); Out of range.", 
 	      [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO});
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});
 enc_unsigned_long(X, Message) ->
     orber:dbg("[~p] cdrlib:enc_unsigned_long(~p); not integer >=0 ", 
 			    [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 2), completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
 %% Func: dec_unsigned_long/2
@@ -169,7 +169,7 @@ enc_bool(false, Message) -> [<<0:8>>| Message];
 enc_bool(X, Message) ->
     orber:dbg("[~p] cdrlib:enc_bool(~p); Must be 'true' or 'false'", 
 	      [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 3), completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
 %% Func: dec_bool/1
@@ -179,7 +179,7 @@ dec_bool(<<0:8,Rest/binary>>) -> {false, Rest};
 dec_bool(<<X:8,Rest/binary>>) ->
     orber:dbg("[~p] cdrlib:dec_bool(~p); Not a boolean (1 or 0).", 
 	      [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 3), completion_status=?COMPLETED_NO}).
 
 
 %%-----------------------------------------------------------------
@@ -189,7 +189,7 @@ enc_float(X, Message) when number(X) ->
     [<<X:32/big-float>> | Message];
 enc_float(X, Message) ->
     orber:dbg("[~p] cdrlib:enc_float(~p); not a number.", [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=101, completion_status=?COMPLETED_NO}).
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 4), completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
 %% Func: dec_float/2
@@ -206,7 +206,7 @@ enc_double(X, Message) when number(X) ->
     [<<X:64/big-float>> | Message];
 enc_double(X, Message) ->
     orber:dbg("[~p] cdrlib:enc_double(~p); not a number.", [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=101, completion_status=?COMPLETED_NO}).
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 4), completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
 %% Func: dec_double/2
@@ -222,23 +222,17 @@ dec_double(little, <<Double:64/little-float,Rest/binary>>) ->
 %%-----------------------------------------------------------------
 %% Func: enc_char/2
 %%-----------------------------------------------------------------
-enc_char(X, Message) when integer(X) -> 
+enc_char(X, Message) when integer(X), X =< 255, X >= 0 -> 
     [<<X:8>> | Message];
-
 enc_char(X,_) -> 
-    orber:dbg("[~p] cdrlib:enc_char(~p); not an integer.", 
-			    [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=102,completion_status=?COMPLETED_NO}).
+    orber:dbg("[~p] cdrlib:enc_char(~p); not a char.", [?LINE, X], ?DEBUG_LEVEL),
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 6),completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
 %% Func: dec_char/1
 %%-----------------------------------------------------------------
-dec_char(<<Char:8,Rest/binary>>) when integer(Char) ->
-    {Char, Rest};
-dec_char([X0 | R]) ->
-    orber:dbg("[~p] cdrlib:dec_char(~p); not an integer.", 
-			    [?LINE, X0], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=102,completion_status=?COMPLETED_NO}).
+dec_char(<<Char:8,Rest/binary>>) ->
+    {Char, Rest}.
 
 %%-----------------------------------------------------------------
 %% octet
@@ -246,9 +240,12 @@ dec_char([X0 | R]) ->
 %%-----------------------------------------------------------------
 %% Func: enc_octet/2
 %%-----------------------------------------------------------------
-enc_octet(X, Message) -> 
-    [<<X:8/big-unsigned-integer>> | Message].
-
+enc_octet(X, Message) when integer(X), X =< 255, X >= 0 -> 
+    [<<X:8/big-unsigned-integer>> | Message];
+enc_octet(X, Message) ->
+    orber:dbg("[~p] cdrlib:enc_octet(~p); not an octet.", [?LINE, X], ?DEBUG_LEVEL),
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 6),completion_status=?COMPLETED_NO}).
+   
 %%-----------------------------------------------------------------
 %% Func: dec_octet/1
 %%-----------------------------------------------------------------
@@ -268,7 +265,8 @@ enc_enum(Enum, ElemList, Message) ->
 getEnumValue([],Enum, _) -> 
     orber:dbg("[~p] cdrlib:enc_enum/enc_r_enum(~p); not exist.", 
 			    [?LINE, Enum], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=102,completion_status=?COMPLETED_NO});
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 5),
+			   completion_status=?COMPLETED_NO});
 getEnumValue([Enum |List], Enum, N) ->
     N;
 getEnumValue([_ |List], Enum, N) ->
@@ -283,7 +281,8 @@ dec_enum(ByteOrder, ElemList, Message) ->
 	{'EXIT', _} ->
 	    orber:dbg("[~p] cdrlib:dec_enum(~p, ~p); not defined.", 
 				    [?LINE, N, ElemList], ?DEBUG_LEVEL),
-	    corba:raise(#'MARSHAL'{minor=102,completion_status=?COMPLETED_NO});
+	    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 5),
+				   completion_status=?COMPLETED_NO});
 	X ->
 	    {list_to_atom(X), Rest}
     end.
@@ -304,11 +303,11 @@ enc_longlong(X, Message) when integer(X), X >= ?LONGLONGMIN, X =< ?LONGLONGMAX -
 enc_longlong(X, Message) when integer(X) -> 
     orber:dbg("[~p] cdrlib:enc_longlong(~p); Out of range.", 
 	      [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO});
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});
 enc_longlong(X, Message) ->
     orber:dbg("[~p] cdrlib:enc_longlong(~p); not integer.", 
 			    [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 2), completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
 %% Func: dec_longlong/2
@@ -326,11 +325,11 @@ enc_unsigned_longlong(X, Message) when integer(X), X >= ?ULONGLONGMIN, X =< ?ULO
 enc_unsigned_longlong(X, Message) when integer(X) ->
     orber:dbg("[~p] cdrlib:enc_unsigned_longlong(~p); Out of range.", 
 	      [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO});
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});
 enc_unsigned_longlong(X, Message) ->
     orber:dbg("[~p] cdrlib:enc_unsigned_longlong(~p); not integer >= 0.", 
 			    [?LINE, X], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 2), completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
 %% Func: dec_unsigned_longlong/2
@@ -368,7 +367,7 @@ dec_unsigned_longlong(little, <<ULongLong:64/little-unsigned-integer,Rest/binary
 %     (F bsr 8) band 16#ff,
 %     F band 16#ff | Message];
 %enc_longdouble(X, Message) ->
-%    corba:raise(#'MARSHAL'{minor=101, completion_status=?COMPLETED_NO}).
+%    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 4), completion_status=?COMPLETED_NO}).
 
 %%%-----------------------------------------------------------------
 %%% Func: dec_longdouble/2

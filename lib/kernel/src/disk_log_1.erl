@@ -21,17 +21,17 @@
 
 -export([int_open/4, ext_open/4, logl/1, close/3, truncate/3, chunk/5, 
          sync/2, write_cache/2]).
--export([mf_int_open/6, mf_int_log/3, mf_int_close/2, mf_int_inc/2, 
+-export([mf_int_open/7, mf_int_log/3, mf_int_close/2, mf_int_inc/2, 
 	 mf_ext_inc/2, mf_int_chunk/4, mf_int_chunk_step/3, 
 	 mf_sync/1, mf_write_cache/1]).
--export([mf_ext_open/6, mf_ext_log/3, mf_ext_close/2]).
+-export([mf_ext_open/7, mf_ext_log/3, mf_ext_close/2]).
 
 -export([print_index_file/1]).
 -export([read_index_file/1]).
--export([read_size_file/1]).
+-export([read_size_file/1, read_size_file_version/1]).
 -export([chunk_read_only/5]).
 -export([mf_int_chunk_read_only/4]).
--export([change_size_wrap/2]).
+-export([change_size_wrap/3]).
 -export([get_wrap_size/1]).
 -export([is_head/1]).
 -export([position/3, truncate_at/3, fwrite/4, fclose/2]).
@@ -47,6 +47,12 @@
 
 %% Following that, (the head), comes the logged items/terms
 %% each logged item looks like [4_byte_size, MAGICHEAD, term_as_binary ...]
+
+%%% There are three formats of wrap log files (so far). Only the size
+%%% file and the index file differ between versions.
+%%% Version 0: no "siz" file
+%%% Version 1: "siz" file, 4 byte sizes
+%%% Version 2: 8 byte sizes (large files support)
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -514,13 +520,14 @@ is_head(_Bin) ->
     no.
 
 %%-----------------------------------------------------------------
-%% Func: mf_int_open/6, mf_ext_open/6
+%% Func: mf_int_open/7, mf_ext_open/7
 %% Args: FName = string()
 %%       MaxB = integer() 
 %%       MaxF = integer()
 %%       Repair = truncate | true | false
 %%       Mode = read_write | read_only
 %%       Head = none | {ok, Bin} | {M, F, A}
+%%       Version = integer()
 %% Purpose: An ADT for wrapping logs.  mf_int_ writes binaries (mf_ext_
 %%          writes bytes)
 %%          to files called FName.1, FName.2, ..., FName.MaxF.  
@@ -536,10 +543,9 @@ is_head(_Bin) ->
 %% -> {ok, handle(), Cnt} 
 %%  | {repaired, handle(), Rec, Bad, Cnt) 
 %%  | throw(FileError)
-mf_int_open(FName, MaxB, MaxF, Repair, Mode, Head) when MaxF > 0, 
-							MaxF < ?MAX_FILES -> 
+mf_int_open(FName, MaxB, MaxF, Repair, Mode, Head, Version) -> 
     {First, Sz, TotSz, NFiles} = read_index_file(Repair, FName, MaxF),
-    write_size_file(Mode, FName, MaxB, MaxF),
+    write_size_file(Mode, FName, MaxB, MaxF, Version),
     NewMaxF = if 
 		  NFiles > MaxF ->
 		      {MaxF, NFiles};
@@ -733,16 +739,15 @@ mf_sync(#handle{filename = FName, cur_fdc = FdC} = Handle) ->
 
 %% -> ok | throw(FileError)
 mf_int_close(#handle{filename = FName, curF = CurF, cur_name = FileName, 
-		  cur_fdc = CurFdC, cur_cnt = CurCnt}, Mode) ->
+		     cur_fdc = CurFdC, cur_cnt = CurCnt}, Mode) ->
     close(CurFdC, FileName, Mode),
     write_index_file(Mode, FName, CurF, CurF, CurCnt),
     ok.
 
 %% -> {ok, handle(), Cnt} | throw(FileError)
-mf_ext_open(FName, MaxB, MaxF, Repair, Mode, Head) when MaxF > 0, 
-							MaxF < ?MAX_FILES -> 
+mf_ext_open(FName, MaxB, MaxF, Repair, Mode, Head, Version) -> 
     {First, Sz, TotSz, NFiles} = read_index_file(Repair, FName, MaxF),
-    write_size_file(Mode, FName, MaxB, MaxF),
+    write_size_file(Mode, FName, MaxB, MaxF, Version),
     NewMaxF = if 
 		  NFiles > MaxF ->
 		      {MaxF, NFiles};
@@ -853,10 +858,10 @@ mf_ext_close(#handle{filename = FName, curF = CurF,
     Res.
 
 %% -> {ok, handle()} | throw(FileError)
-change_size_wrap(Handle, {NewMaxB, NewMaxF}) ->
+change_size_wrap(Handle, {NewMaxB, NewMaxF}, Version) ->
     FName = Handle#handle.filename,
     {_MaxB, MaxF} = get_wrap_size(Handle),
-    write_size_file(read_write, FName, NewMaxB, NewMaxF),
+    write_size_file(read_write, FName, NewMaxB, NewMaxF, Version),
     if
 	NewMaxF > MaxF ->
 	    remove_files(FName, MaxF + 1, NewMaxF),
@@ -905,15 +910,21 @@ ext_file_open(FName, NewFile, OldFile, OldCnt, Head, Repair, Mode) ->
     end.
 
 %%-----------------------------------------------------------------
-%% The old file format for index file (CurFileNo > 0):
+%% The old file format for index file (CurFileNo > 0), Version 0:
 %%
 %% CurFileNo SizeFile1 SizeFile2  ... SizeFileN
 %%   1 byte   4 bytes    4 bytes       4 bytes
 %%
-%% The new file format for index file (NewFormat = 0):
+%% The new file format for index file (NewFormat = 0), version 1:
 %%
 %% NewFormat CurFileNo SizeFile1 SizeFile2  ... SizeFileN
 %%   1 byte   4 bytes    4 bytes       4 bytes
+%%
+%% The current file format for index file (sizes in bytes), version 2:
+%%
+%% 0 (1) 0 (4) FileFormatVersion (1) CurFileNo (4) SizeFile1 (8) ...
+%%
+%% (SizeFileI refers to number of items on the log file.)
 %%-----------------------------------------------------------------
 
 -define(index_file_name(F), add_ext(F, "idx")).
@@ -934,12 +945,16 @@ read_index_file(FName) ->
     case open_read(FileName) of
 	{ok, Fd} ->
 	    R = case file:read(Fd, ?MAX_CHUNK_SIZE) of
+		    {ok, <<0, 0:32, Version, CurF:32, Tail/binary>>}
+		             when Version == ?VERSION, 
+				  0 < CurF, CurF < ?MAX_FILES -> 
+			parse_index(CurF, Version, 1, Tail, Fd, 0, 0, 0);
 		    {ok, <<0, CurF:32, Tail/binary>>} 
 		             when 0 < CurF, CurF < ?MAX_FILES -> 
-			parse_index(CurF, 1, Tail, Fd, 0, 0, 0);
+			parse_index(CurF, 1, 1, Tail, Fd, 0, 0, 0);
 		    {ok, <<CurF, Tail/binary>>} when 0 < CurF -> 
-			parse_index(CurF, 1, Tail, Fd, 0, 0, 0);
-		    _ErrorOrEofeof ->
+			parse_index(CurF, 1, 1, Tail, Fd, 0, 0, 0);
+		    _ErrorOrEof ->
 			{1, 0, 0, 0}
 		end,
 	    file:close(Fd),
@@ -948,17 +963,25 @@ read_index_file(FName) ->
 	    {1, 0, 0, 0}
     end.
 
-parse_index(CurF, CurF, <<CurSz:32, Tail/binary>>, Fd, _, TotSz, NFiles) ->
-    parse_index(CurF, CurF+1, Tail, Fd, CurSz, TotSz, NFiles+1);
-parse_index(CurF, N, <<Sz:32, Tail/binary>>, Fd, CurSz, TotSz, NFiles) ->
-    parse_index(CurF, N+1, Tail, Fd, CurSz, TotSz + Sz, NFiles+1);
-parse_index(CurF, N, B, Fd, CurSz, TotSz, NFiles) ->
+parse_index(CurF, V, CurF, <<CurSz:64, Tail/binary>>, Fd, _, TotSz, NFiles)
+          when V == ?VERSION ->
+    parse_index(CurF, V, CurF+1, Tail, Fd, CurSz, TotSz, NFiles+1);
+parse_index(CurF, V, N, <<Sz:64, Tail/binary>>, Fd, CurSz, TotSz, NFiles)
+          when V == ?VERSION ->
+    parse_index(CurF, V, N+1, Tail, Fd, CurSz, TotSz + Sz, NFiles+1);
+parse_index(CurF, V, CurF, <<CurSz:32, Tail/binary>>, Fd, _, TotSz, NFiles)
+          when V < ?VERSION ->
+    parse_index(CurF, V, CurF+1, Tail, Fd, CurSz, TotSz, NFiles+1);
+parse_index(CurF, V, N, <<Sz:32, Tail/binary>>, Fd, CurSz, TotSz, NFiles)
+          when V < ?VERSION ->
+    parse_index(CurF, V, N+1, Tail, Fd, CurSz, TotSz + Sz, NFiles+1);
+parse_index(CurF, V, N, B, Fd, CurSz, TotSz, NFiles) ->
     case file:read(Fd, ?MAX_CHUNK_SIZE) of
-	eof when B == <<>> ->
+	eof when 0 == size(B) ->
 	    {CurF, CurSz, TotSz, NFiles};	    
 	{ok, Bin} ->
             NewB = list_to_binary([B, Bin]),
-	    parse_index(CurF, N, NewB, Fd, CurSz, TotSz, NFiles);
+	    parse_index(CurF, V, N, NewB, Fd, CurSz, TotSz, NFiles);
 	_ErrorOrEof ->
 	    {1, 0, 0, 0}
     end.
@@ -971,40 +994,51 @@ write_index_file(read_write, FName, NewFile, OldFile, OldCnt) ->
     FileName = ?index_file_name(FName),
     case open_update(FileName) of
 	{ok, Fd} ->
-	    case file:read(Fd, 1) of
-		eof ->
-		    fwrite_close2(Fd, FileName, <<0, NewFile:32>>);
-		{ok, <<0>>} ->
-		    pwrite_close2(Fd, FileName, 1, <<NewFile:32>>);
-		{ok, <<_>>} -> % old format, do conversion
-		    case file:read_file(FileName) of
-			{ok, <<_CurF, Tail/binary>>} ->
-			    position_close2(Fd, FileName, bof),
-			    fwrite_close2(Fd, FileName, <<0, NewFile:32>>),
-			    fwrite_close2(Fd, FileName, Tail);
-			Error ->
-			    file_error_close(Fd, FileName, Error)
-		    end;
-		Error ->
-		    file_error_close(Fd, FileName, Error)
-	    end,
+	    {Offset, SzSz} = 
+		case file:read(Fd, 6) of
+		    eof ->
+			Bin = <<0, 0:32, ?VERSION, NewFile:32>>,
+			fwrite_close2(Fd, FileName, Bin),
+			{10, 8};
+		    {ok, <<0, 0:32, _Version>>} ->
+			pwrite_close2(Fd, FileName, 6, <<NewFile:32>>),
+			{10, 8};
+		    {ok, <<0, _/binary>>} ->
+			pwrite_close2(Fd, FileName, 1, <<NewFile:32>>),
+			{5, 4};
+		    {ok, <<_,_/binary>>} ->
+                        %% Very old format, convert to the latest format!
+			case file:read_file(FileName) of
+			    {ok, <<_CurF, Tail/binary>>} ->
+				position_close2(Fd, FileName, bof),
+				Bin = <<0, 0:32, ?VERSION, NewFile:32>>,
+				fwrite_close2(Fd, FileName, Bin),
+				NewTail = to_8_bytes(Tail, []),
+				fwrite_close2(Fd, FileName, NewTail),
+				{10, 8};
+			    Error ->
+				file_error_close(Fd, FileName, Error)
+			end;
+		    Error ->
+			file_error_close(Fd, FileName, Error)
+		end,
 
-	    OffSet = 5, 
-	    NewPos = OffSet + (NewFile - 1)*4,
+	    NewPos = Offset + (NewFile - 1)*SzSz,
+	    OldCntBin = <<OldCnt:SzSz/unit:8>>,
 	    if
 		OldFile > 0 ->
-		    R = file:pread(Fd, NewPos, 4),
-		    OldPos = OffSet + (OldFile - 1)*4,
-		    pwrite_close2(Fd, FileName, OldPos, <<OldCnt:32>>),
+		    R = file:pread(Fd, NewPos, SzSz),
+		    OldPos = Offset + (OldFile - 1)*SzSz,
+		    pwrite_close2(Fd, FileName, OldPos, OldCntBin),
 		    file:close(Fd),
 		    case R of
-			{ok, <<Lost:32>>} -> Lost;
+			{ok, <<Lost:SzSz/unit:8>>} -> Lost;
 			{ok, _} -> 0; % Should be reported?
 			eof    -> 0;
 			Error2 -> file_error(FileName, Error2)
 		    end;
 		true -> 	
-		    pwrite_close2(Fd, FileName, NewPos, <<OldCnt:32>>),
+		    pwrite_close2(Fd, FileName, NewPos, OldCntBin),
 		    file:close(Fd),
 		    0
 	    end;
@@ -1012,19 +1046,26 @@ write_index_file(read_write, FName, NewFile, OldFile, OldCnt) ->
 	    file_error(FileName, E)
     end.
 
+to_8_bytes(B, NT) when size(B) == 0 ->
+    NT;
+to_8_bytes(<<N:32,T/binary>>, NT) ->
+    to_8_bytes(T, [NT | <<N:64>>]).
+
 %% -> ok | throw(FileError)
 index_file_trunc(FName, N) ->
     FileName = ?index_file_name(FName),
     case open_update(FileName) of
 	{ok, Fd} ->
-	    case file:read(Fd, 1) of
+	    case file:read(Fd, 6) of
 		eof ->
 		    file:close(Fd),
 		    ok;
-		{ok, <<0>>} ->
-		    truncate_index_file(Fd, FileName, 5, N);
-		{ok, <<_>>} ->
-		    truncate_index_file(Fd, FileName, 1, N);
+		{ok, <<0, 0:32, Version>>} when Version == ?VERSION ->
+		    truncate_index_file(Fd, FileName, 10, 8, N);
+		{ok, <<0, _/binary>>} ->
+		    truncate_index_file(Fd, FileName, 5, 4, N);
+		{ok, <<_, _/binary>>} -> % cannot happen
+		    truncate_index_file(Fd, FileName, 1, 4, N);
 		Error ->
 		    file_error_close(Fd, FileName, Error)
 	    end;
@@ -1032,8 +1073,8 @@ index_file_trunc(FName, N) ->
 	    file_error(FileName, Error)
     end.
 
-truncate_index_file(Fd, FileName, Offset, N) ->
-    Pos = Offset + N*4,
+truncate_index_file(Fd, FileName, Offset, N, SzSz) ->
+    Pos = Offset + N*SzSz,
     case Pos > file_size(FileName) of
 	true ->
 	    file:close(Fd);
@@ -1046,44 +1087,69 @@ truncate_index_file(Fd, FileName, Offset, N) ->
 print_index_file(File) ->
     io:format("-- Index begin --~n"),
     case file:read_file(File) of
+	{ok, <<0, 0:32, Version, CurF:32, Tail/binary>>} 
+	         when Version == ?VERSION, 0 < CurF, CurF < ?MAX_FILES ->
+	    io:format("cur file: ~w~n", [CurF]),
+	    loop_index(1, Version, Tail);
 	{ok, <<0, CurF:32, Tail/binary>>} when 0 < CurF, CurF < ?MAX_FILES ->
 	    io:format("cur file: ~w~n", [CurF]),
-	    loop_index(1, Tail);
+	    loop_index(1, 1, Tail);
 	{ok, <<CurF, Tail/binary>>} when 0 < CurF ->
 	    io:format("cur file: ~w~n", [CurF]),
-	    loop_index(1, Tail);
+	    loop_index(1, 1, Tail);
 	_Else ->
 	    ok
     end,
     io:format("-- end --~n").    
 
-loop_index(N, <<Sz:32, Tail/binary>>) ->
+loop_index(N, V, <<Sz:64, Tail/binary>>) when V == ?VERSION ->
     io:format(" ~p  items: ~w~n", [N, Sz]),
-    loop_index(N+1, Tail);
-loop_index(_, _) ->
+    loop_index(N+1, V, Tail);
+loop_index(N, V, <<Sz:32, Tail/binary>>) when V < ?VERSION ->
+    io:format(" ~p  items: ~w~n", [N, Sz]),
+    loop_index(N+1, V, Tail);
+loop_index(_, _, _) ->
     ok.
 
 -define(size_file_name(F), add_ext(F, "siz")).
 
+%% Version 0: no size file
+%% Version 1: <<MaxSize:32, MaxFiles:32>>
+%% Version 2: <<Version:8, MaxSize:64, MaxFiles:32>>
+
 %% -> ok | throw(FileError)
-write_size_file(read_only, _FName, _NewSize, _NewMaxFiles) ->
+write_size_file(read_only, _FName, _NewSize, _NewMaxFiles, _Version) ->
     ok;
-write_size_file(read_write, FName, NewSize, NewMaxFiles) ->
+write_size_file(read_write, FName, NewSize, NewMaxFiles, Version) ->
     FileName = ?size_file_name(FName),
-    case file:write_file(FileName, <<NewSize:32, NewMaxFiles:32>>) of
+    Bin = if 
+	      Version ==  ?VERSION ->
+		  <<Version, NewSize:64, NewMaxFiles:32>>;
+	      true ->
+		  <<NewSize:32, NewMaxFiles:32>>
+	  end,
+    case file:write_file(FileName, Bin) of
 	ok -> 
 	    ok;
 	E -> 
 	    file_error(FileName, E)
     end.
 	    
-%% -> {NoBytes, NoFiles}
+%% -> {NoBytes, NoFiles}.
 read_size_file(FName) ->
+    {Size,_Version} = read_size_file_version(FName),
+    Size.
+
+%% -> {{NoBytes, NoFiles}, Version}, Version = integer() | undefined
+read_size_file_version(FName) ->
     case file:read_file(?size_file_name(FName)) of
+	{ok, <<Version, Size:64, MaxFiles:32>>} when Version == ?VERSION ->
+	    {{Size, MaxFiles}, Version};
 	{ok, <<Size:32, MaxFiles:32>>} ->
-	    {Size, MaxFiles};
+	    {{Size, MaxFiles}, 1};
 	_ ->
-	    {0, 0}
+	    %% The oldest version too...
+	    {{0, 0}, ?VERSION}
     end.
 
 conv({More, Terms}, FileNo) when record(More, continuation) ->

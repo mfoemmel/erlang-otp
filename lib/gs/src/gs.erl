@@ -141,7 +141,7 @@ creation_error(#gstkid{objtype=Ot}, BadResult) ->
 
 create_tree(ParentId,[{Type,Name,Options,Children}|R]) ->
     case create(Type,Name,ParentId,Options) of
-	{error,Reason} -> {error,{create_tree,aborted_at,Type,Name}};
+	{error,_Reason} -> {error,{create_tree,aborted_at,Type,Name}};
 	Id ->
 	    case create_tree(Id,Children) of
 		ok -> create_tree(ParentId,R);
@@ -152,7 +152,7 @@ create_tree(ParentId,[{Type,Name,Options}|R]) when atom(Name) ->
     create_tree(ParentId,[{Type,Name,Options,[]}|R]);
 create_tree(ParentId,[{Type,Options,Children}|R]) ->
     case create(Type,ParentId,Options) of
-	{error,Reason} -> {error,{create_tree,aborted_at,Type,Options}};
+	{error,_Reason} -> {error,{create_tree,aborted_at,Type,Options}};
 	Id ->
 	    case create_tree(Id,Children) of
 		ok -> create_tree(ParentId,R);
@@ -363,7 +363,7 @@ gridline(Name,ParentId,Options) ->
 foreach(F, ExtraArgs, [H | T]) ->
     apply(F, [H | ExtraArgs]),
     foreach(F, ExtraArgs, T);
-foreach(F, ExtraArgs, []) -> ok.
+foreach(_F, _ExtraArgs, []) -> ok.
 
 %%----------------------------------------------------------------------
 %% ASSociation with eQual key (scheme standard)

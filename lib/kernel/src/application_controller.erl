@@ -1139,6 +1139,12 @@ handle_info(_, S) ->
     {noreply, S}.
 
 terminate(Reason, S) ->
+    case application:get_env(kernel, shutdown_func) of
+	{ok, {M, F}} ->
+	    catch M:F(Reason);
+	_ ->
+	    ok
+    end,
     foreach(fun({_AppName, Id}) when pid(Id) -> 
 		    exit(Id, shutdown),
 		    receive
@@ -1395,14 +1401,10 @@ make_appl_i({application, Name, Opts})
 	    Other -> throw({error, {badstartspec, Other}})
 	end,
     Phases = get_opt(start_phases, Opts, undefined),
-%    Phases = [],
     Env = get_opt(env, Opts, []),
     MaxP = get_opt(maxP, Opts, infinity),
     MaxT = get_opt(maxT, Opts, infinity),
     IncApps = get_opt(included_applications, Opts, []),
-%    {#appl_data{name = Name, regs = Regs, mod = Mod,  mods = Mods,
-%		maxP = MaxP, maxT = MaxT},
-%     Env, IncApps, Descr, Vsn, Apps};
     {#appl_data{name = Name, regs = Regs, mod = Mod, phases = Phases, mods = Mods,
 		inc_apps = IncApps, maxP = MaxP, maxT = MaxT},
      Env, IncApps, Descr, Id, Vsn, Apps};
@@ -1437,7 +1439,7 @@ do_change_appl({ok, {ApplData, ApplEnv, IncApps, Descr, Id, Vsn, Apps2}},
     NewEnv2 = merge_app_env(NewEnv, CmdLineEnv),
     NewEnv3 = keyreplaceadd(included_applications, 1, NewEnv2,
 			    {included_applications, IncApps}),
-    change_appl(Appl, NewEnv3, Vsn, Descr, Apps2);
+    change_appl(Appl, ApplData, NewEnv3, Vsn, Descr, Apps2);
 do_change_appl({error, R}, _Appl, _ConfData) ->
     throw({error, R}).
 
@@ -1703,15 +1705,14 @@ get_new_appl(Name, [{application, Name, App} | _]) ->
 get_new_appl(Name, [_ | T]) -> get_new_appl(Name, T);
 get_new_appl(Name, []) -> false.
 
-change_appl(Appl, Env, Vsn, Descr, Apps) ->
-    ApplData = Appl#appl.appl_data,
+change_appl(Appl, AppelData, Env, Vsn, Descr, Apps) ->
     if
 	Env /= [] ->
 	    del_env(Appl#appl.name),
 	    add_env(Appl#appl.name, Env);
 	true -> ok
     end,
-    Appl#appl{vsn = Vsn, descr = Descr, apps = Apps}.
+    Appl#appl{appl_data = AppelData, vsn = Vsn, descr = Descr, apps = Apps}.
 
 %%-----------------------------------------------------------------
 %% Info messages sent to error_logger

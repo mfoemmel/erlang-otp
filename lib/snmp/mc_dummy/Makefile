@@ -39,13 +39,14 @@ PARSER_SRC = ../src/snmp_mib_gram.yrl
 
 PARSER_MODULE=$(PARSER_SRC:%.yrl=%)
 
-MODULES= $(PARSER_MODULE) \
+MODULES = $(PARSER_MODULE) \
 	../src/snmp \
 	../src/snmp_compile \
 	../src/snmp_compile_lib \
 	../src/snmp_mib_to_hrl \
 	../src/snmp_misc \
-        ../src/snmp_tok
+	../src/snmp_tok \
+	../src/snmp_verbosity
 
 ERL_FILES = $(MODULES:%=%.erl)
 

@@ -62,7 +62,7 @@ code_change(OldVsn, State, Extra) ->
 get_absolute_name(OE_THIS, State, []) ->
     orber:debug_level_print("[~p] OrberApp_IFR_impl:get_absolute_name(); no TypeID supplied.", 
 			    [?LINE], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE});
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 11), completion_status=?COMPLETED_MAYBE});
 
 get_absolute_name(OE_THIS, State, TypeID) ->
     Rep = orber_ifr:find_repository(),
@@ -86,7 +86,7 @@ change_colons_to_underscore([], Acc) ->
 get_user_exception_type(OE_THIS, State, []) -> 
     orber:debug_level_print("[~p] OrberApp_IFR_impl:get_user_exception_type(); no TypeID supplied.", 
 			    [?LINE], ?DEBUG_LEVEL),
-    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE});
+    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 11), completion_status=?COMPLETED_MAYBE});
 
 get_user_exception_type(OE_THIS, State, TypeId) -> 
     Rep = orber_ifr:find_repository(),

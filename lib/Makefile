@@ -27,8 +27,8 @@ OTHER_SUB_DIRECTORIES =	\
   appmon erl_interface os_mon tools runtime_tools
 ifdef BUILD_ALL
 OTHER_SUB_DIRECTORIES += mnesia jinterface ic mnemosyne asn1 debugger \
-  eva inets mnesia_session orber pman tv cosTransactions cosEvent \
-  cosTime cosNotification cosProperty cosFileTransfer
+  eva inets mnesia_session orber pman tv observer cosTransactions cosEvent \
+  cosTime cosNotification cosProperty cosFileTransfer cosEventDomain
 endif
 else
 
@@ -37,35 +37,45 @@ ERTS_SUB_DIRECTORIES = stdlib snmp sasl kernel compiler
 ifdef BUILD_ALL
 ifeq ($(findstring win32,$(TARGET)),win32)
 OTHER_SUB_DIRECTORIES = 			\
-  appmon asn1 emacs erl_interface jinterface eva gs inets ic \
+  appmon asn1 erl_interface jinterface eva gs inets ic \
   mnesia mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools pman \
-  $(SSL_APP) toolbar tools tv debugger odbc runtime_tools \
-  cosTransactions cosEvent cosTime cosNotification comet cosProperty \
-  cosFileTransfer megaco webtool
+  $(SSL_APP) toolbar tools tv observer debugger odbc runtime_tools \
+  cosTransactions cosEvent cosTime cosNotification cosProperty \
+  cosFileTransfer cosEventDomain et megaco webtool
 else
 OTHER_SUB_DIRECTORIES = \
-  appmon asn1 emacs erl_interface jinterface eva debugger gs inets \
+  appmon asn1 erl_interface jinterface eva debugger gs inets \
   ic mnesia  mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools \
-  pman $(SSL_APP) toolbar tools tv \
+  pman $(SSL_APP) toolbar tools tv observer \
   runtime_tools cosTransactions cosEvent cosTime cosNotification \
-  cosProperty cosFileTransfer megaco webtool
+  cosProperty cosFileTransfer cosEventDomain et megaco webtool
 ifeq ($(findstring sparc-sun-solaris,$(TARGET)),sparc-sun-solaris)
   OTHER_SUB_DIRECTORIES += odbc
 endif
-OTHER_SUB_DIRECTORIES += $(HIPE_APP)
+OTHER_SUB_DIRECTORIES += $(HIPE_APP) $(TSP_APP)
 endif
 endif
 endif
 
 ifdef BOOTSTRAP
 SUB_DIRECTORIES = \
-  $(ERTS_SUB_DIRECTORIES) parsetools jinterface ic \
-  mnemosyne/src mnemosyne/include orber/include eva/include asn1/src
+  stdlib compiler jinterface orber/include eva/include
+else
+ifdef SECONDARY_BOOTSTRAP
+SUB_DIRECTORIES = kernel parsetools asn1 $(HIPE_APP)
+else
+ifdef TERTIARY_BOOTSTRAP
+SUB_DIRECTORIES = snmp_dummy snmp
+else
+ifdef FOURTH_BOOTSTRAP
+SUB_DIRECTORIES = sasl jinterface ic
 else
 SUB_DIRECTORIES = $(ERTS_SUB_DIRECTORIES) $(OTHER_SUB_DIRECTORIES)
+endif
+endif
+endif
 endif
 
 
 # ----------------------------------------------------------------------
 include $(ERL_TOP)/make/otp_subdir.mk
-

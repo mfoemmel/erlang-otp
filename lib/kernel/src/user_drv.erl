@@ -45,10 +45,14 @@ start(Pname, Shell) ->
 start(Iname, Oname, Shell) ->
     spawn(user_drv, server, [Iname,Oname,Shell]).
 
+%% server(Pid, Shell)
 %% server(Pname, Shell)
 %% server(Iname, Oname, Shell)
 %%  The initial calls to run the user driver. These start the port(s)
 %%  then call server1/3 to set everything else up.
+
+server(Pid, Shell) when pid(Pid) ->
+    server1(Pid, Pid, Shell);
 
 server(Pname, Shell) ->
     process_flag(trap_exit, true),

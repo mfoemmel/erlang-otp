@@ -85,6 +85,12 @@ handle_call({stick_dir,Dir}, {From, Tag}, S) ->
 handle_call({unstick_dir,Dir}, {From,Tag}, S) ->
     {reply,stick_dir(Dir, false, S),S};
 
+handle_call({stick_mod,Mod}, {From, Tag}, S) ->
+    {reply,stick_mod(Mod, true, S),S};
+
+handle_call({unstick_mod,Mod}, {From,Tag}, S) ->
+    {reply,stick_mod(Mod, false, S),S};
+
 handle_call({dir,Dir},{From,Tag}, S) ->
     Root = S#state.root,
     Resp = do_dir(Root,Dir,S#state.namedb),
@@ -125,12 +131,12 @@ handle_call(get_path,{From,Tag}, S) ->
     {reply,S#state.path,S};
 
 %% Messages to load, delete and purge modules/files.
-handle_call({load_abs,File},{From,Tag}, S) ->
+handle_call({load_abs,File,Mod},{From,Tag}, S) ->
     case modp(File) of
 	false ->
 	    {reply,{error,badarg},S};
 	_ ->
-	    Status = load_abs(File, S#state.moddb),
+	    Status = load_abs(File,Mod,S#state.moddb),
 	    {reply,Status,S}
     end;
 
@@ -729,6 +735,15 @@ stick_dir(Dir, Stick, St) ->
 	Error -> Error
     end.
 
+stick_mod(M, Stick, St) ->
+  Db = St#state.moddb,
+  case Stick of
+    true ->
+      ets:insert(Db, {{sticky,M},true});
+    false ->
+      ets:delete(Db, {sticky,M})
+  end.
+
 get_mods([File|Tail], Extension) ->
     case filename:extension(File) of
 	Extension ->
@@ -775,11 +790,15 @@ modp(List) when list(List) -> int_list(List);
 modp(_)                    -> false.
 
 
-load_abs(File, Db) ->
+load_abs(File, Mod0, Db) ->
     Ext = code_aux:objfile_extension(),
     FileName0 = lists:concat([File, Ext]),
     FileName = filename:absname(FileName0),
-    Mod = list_to_atom(filename:basename(FileName0, Ext)),
+    Mod = if Mod0 == [] ->
+		  list_to_atom(filename:basename(FileName0, Ext));
+	     true ->
+		  Mod0
+	  end,
     case erl_prim_loader:get_file(FileName) of
 	{ok,Bin,_} ->
 	    try_load_module(FileName, Mod, Bin, Db);
@@ -814,21 +833,33 @@ try_load_module(File, Mod, Bin, Db) ->
     end.
 
 load_native_code(Mod, Bin) ->
+    %% During bootstrapping of Open Source Erlang, we don't have any hipe
+    %% loader modules, but the Erlang emulator might be hipe enabled.
+    %% Therefore we must test for that the loader modules are available
+    %% before trying to to load native code.
+    case erlang:module_loaded(hipe_unified_loader) of
+	false -> no_native;
+	true -> load_native_code_1(Mod, Bin)
+    end.
+
+load_native_code_1(Mod, Bin) ->
+    %% At this stage, we know that the hipe loader modules are loaded.
     case erlang:system_info(hipe_architecture) of
 	ultrasparc ->
-	    hipe_sparc_loader:patch_to_emu(Mod),
+	    hipe_unified_loader:patch_to_emu(Mod),
 	    load_native_code(Mod, Bin, "HS8P",
 			     fun(M, B) -> 
-				     hipe_sparc_loader:load_module(M, B, Bin) 
+				     hipe_unified_loader:load_module(M, B, Bin) 
 			     end);
 	x86 ->
-	    hipe_x86_loader:patch_to_emu(Mod),
+	    hipe_unified_loader:patch_to_emu(Mod),
 	    load_native_code(Mod, Bin, "HX86",
 			     fun(M, B) -> 
-				     hipe_x86_loader:load_module(M, B, Bin) 
+				     hipe_unified_loader:load_module(M, B, Bin) 
 			     end);
-	  
-	_ -> no_native
+	_ ->
+	    %% Can't happen (in principle).
+	    no_native
     end.
 
 
@@ -851,7 +882,7 @@ load_file(Mod, Path, Db) ->
     end.
 
 mod_to_bin([Dir|Tail], Mod) ->
-    File = filename:append(Dir, code_aux:to_list(Mod) ++ code_aux:objfile_extension()),
+    File = filename:append(Dir, code_aux:to_path(Mod) ++ code_aux:objfile_extension()),
     case erl_prim_loader:get_file(File) of
 	error -> 
 	    mod_to_bin(Tail, Mod);
@@ -860,7 +891,7 @@ mod_to_bin([Dir|Tail], Mod) ->
     end;
 mod_to_bin([], Mod) ->
     %% At last, try also erl_prim_loader's own method
-    File = lists:concat([Mod,code_aux:objfile_extension()]),
+    File = code_aux:to_path(Mod) ++ code_aux:objfile_extension(),
     case erl_prim_loader:get_file(File) of
 	error -> 
 	    error;     % No more alternatives !

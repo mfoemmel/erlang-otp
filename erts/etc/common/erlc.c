@@ -36,13 +36,6 @@
 
 #define ASIZE(a) (sizeof(a)/sizeof(a[0]))
 
-#if defined(__STDC__) || defined(_MSC_VER)
-#  define var_start(x, y) va_start(x, y)
-#  define USE_STDARG
-#else
-#  define var_start(x, y) va_start(x)
-#endif
-
 static int debug = 0;		/* Bit flags for debug printouts. */
 
 static char** eargv_base;	/* Base of vector. */
@@ -113,9 +106,7 @@ char *strerror(int errnum)
 #endif /* !HAVE_STRERROR */
 
 int
-main(argc, argv)
-int argc;
-char** argv;
+main(int argc, char** argv)
 {
     char cwd[MAXPATHLEN];	/* Current working directory. */
     char** rpc_eargv;		/* Pointer to the beginning of arguments
@@ -124,12 +115,20 @@ char** argv;
 				 */
     int eargv_size;
     int eargc_base;		/* How many arguments in the base of eargv. */
+    char** orig_argv = argv;
     char* emulator;
+    int can_use_ecc = 1;	/* All files are .erl files. */
 
     emulator = getenv("ERLC_EMULATOR");
     if (emulator == NULL) {
 	emulator = get_default_emulator(argv[0]);
+    } else {
+	can_use_ecc = 0;
     }
+
+#if defined(__WIN32__) || defined(VXWORKS)
+    can_use_ecc = 0;		/* There is no ecc for Windows yet. */
+#endif
 
     /*
      * Allocate the argv vector to be used for arguments to Erlang.
@@ -203,6 +202,7 @@ char** argv;
 		    char* def = process_opt(&argc, &argv, 0);
 		    char* equals;
 		    
+		    def = strsave(def);	/* Do not clobber original. */
 		    if ((equals = strchr(def, '=')) == NULL) {
 			PUSH2("@d", def);
 		    } else {
@@ -214,12 +214,6 @@ char** argv;
 		break;
 	    case 'h':
 		usage();
-		break;
-	    case 'i':
-		if (strcmp(argv[1], "-ilroot") != 0)
-		    goto error;
-		argv[1] = "-i";
-		PUSH2("@ilroot", process_opt(&argc, &argv, 0));
 		break;
 	    case 'I':
 		PUSH2("@i", process_opt(&argc, &argv, 0));
@@ -247,6 +241,7 @@ char** argv;
 		    } else {
 			char option[4];
 
+			can_use_ecc = 0; /* ecc cannot handle -pa/-pz */
 			UNSHIFT(process_opt(&argc, &argv, 1));
 			option[0] = '-';
 			option[1] = 'p';
@@ -332,8 +327,21 @@ char** argv;
 
     PUSH("@files");
     while (argc > 1) {
+	char* p;
+	if ((p = strrchr(argv[1], '.')) == NULL || strcmp(p, ".erl") != 0) {
+	    can_use_ecc = 0;
+	}
 	PUSH(argv[1]);
 	argc--, argv++;
+    }
+
+    /*
+     * If all files were .erl files, we can use ecc.
+     */
+
+    if (can_use_ecc) {
+	orig_argv[0] = "ecc";
+	return run_erlang(orig_argv[0], orig_argv);
     }
 
     /*
@@ -354,10 +362,7 @@ char** argv;
 }
 
 static char*
-process_opt(pArgc, pArgv, offset)
-int* pArgc;
-char*** pArgv;
-int offset;
+process_opt(int* pArgc, char*** pArgv, int offset)
 {
     int argc = *pArgc;
     char** argv = *pArgv;
@@ -456,7 +461,6 @@ usage(void)
 	{"-Dname", "define name"},
 	{"-Dname=value", "define name to have value"},
 	{"-help", "shows this help text"},
-	{"-ilroot", "root for include library"},
 	{"-I path", "where to search for include files"},
 	{"-o name", "name output directory or file"},
 	{"-pa path", "add path to Erlang's code path"},
@@ -480,18 +484,12 @@ usage(void)
 }
 
 static void
-#if defined(USE_STDARG)
 error(char* format, ...)
-#else
-error(format, va_alist)
-     char* format;
-     va_dcl
-#endif
 {
     char sbuf[1024];
     va_list ap;
     
-    var_start(ap, format);
+    va_start(ap, format);
     vsprintf(sbuf, format, ap);
     va_end(ap);
     fprintf(stderr, "erlc: %s\n", sbuf);

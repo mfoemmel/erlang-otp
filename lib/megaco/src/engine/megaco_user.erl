@@ -42,14 +42,14 @@
 %% Invoked when a new connection is established
 %%----------------------------------------------------------------------
 
-handle_connect(ConnHandle, ProtocolVersion) ->
+handle_connect(_ConnHandle, _ProtocolVersion) ->
     ok.
 
 %%----------------------------------------------------------------------
 %% Invoked when a connection is teared down
 %%----------------------------------------------------------------------
 
-handle_disconnect(ConnHandle, ProtocolVersion, Reason) ->
+handle_disconnect(ConnHandle, _ProtocolVersion, Reason) ->
     megaco:cancel(ConnHandle, Reason), % Cancel the outstanding messages
     ok.
 
@@ -57,21 +57,21 @@ handle_disconnect(ConnHandle, ProtocolVersion, Reason) ->
 %% Invoked when  a received message had syntax errors
 %%----------------------------------------------------------------------
 
-handle_syntax_error(ReceiveHandle, ProtocolVersion, ErrorDescriptor) ->
+handle_syntax_error(_ReceiveHandle, _ProtocolVersion, _ErrorDescriptor) ->
     reply.
 
 %%----------------------------------------------------------------------
 %% Invoked when a received message contained no transactions
 %%----------------------------------------------------------------------
 
-handle_message_error(ConnHandle, ProtocolVersion, ErrorDescriptor) ->
+handle_message_error(_ConnHandle, _ProtocolVersion, _ErrorDescriptor) ->
     no_reply.
 
 %%----------------------------------------------------------------------
 %% Invoked for each transaction request
 %%----------------------------------------------------------------------
 
-handle_trans_request(ConnHandle, ProtocolVersion, ActionRequests) ->
+handle_trans_request(_ConnHandle, ProtocolVersion, _ActionRequests) ->
     case ProtocolVersion of
 	1 ->
 	    ED = #'ErrorDescriptor'{errorCode = ?megaco_not_implemented,
@@ -87,7 +87,7 @@ handle_trans_request(ConnHandle, ProtocolVersion, ActionRequests) ->
 %% Optionally invoked for a time consuming transaction request
 %%----------------------------------------------------------------------
 
-handle_trans_long_request(ConnHandle, ProtocolVersion, ReqData) ->
+handle_trans_long_request(_ConnHandle, _ProtocolVersion, _ReqData) ->
     ED = #'ErrorDescriptor'{errorCode = ?megaco_not_implemented,
                             errorText = "Long trans requests not handled"},
     {discard_ack,  ED}.
@@ -99,19 +99,19 @@ handle_trans_long_request(ConnHandle, ProtocolVersion, ReqData) ->
 handle_trans_reply(ConnHandle, _, {error, {send_message_failed, Reason}}, _) ->
     megaco:disconnect(ConnHandle, {send_message_failed, Reason}),
     ok;
-handle_trans_reply(ConnHandle, ProtocolVersion, ActualReply, ReplyData) ->
+handle_trans_reply(_ConnHandle, _ProtocolVersion, _ActualReply, _ReplyData) ->
     ok.
 
 %%----------------------------------------------------------------------
 %% Optionally invoked for a transaction acknowledgement
 %%----------------------------------------------------------------------
 
-handle_trans_ack(ConnHandle, ProtocolVersion, AckStatus, AckData) ->
+handle_trans_ack(_ConnHandle, _ProtocolVersion, _AckStatus, _AckData) ->
     ok.
 
 %%----------------------------------------------------------------------
 %% Invoked when  an unexpected message has been received
 %%----------------------------------------------------------------------
 
-handle_unexpected_trans(ConnHandle, ProtocolVersion, Trans) ->
+handle_unexpected_trans(_ConnHandle, _ProtocolVersion, _Trans) ->
     ok.

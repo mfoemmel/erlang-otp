@@ -27,6 +27,7 @@
 #include "sys.h"
 #include "erl_driver.h"
 #include <stdlib.h>
+#include <stdarg.h>
 
 #ifdef __WIN32__
 #  include "erl_version.h"
@@ -58,16 +59,9 @@
 #define sleep(seconds) Sleep(seconds*1000)
 #endif
 
-
-#if defined(__STDC__) || defined(_MSC_VER)
-#define var_start(x, y) va_start(x, y)
-#define USE_STDARG
-#else
-#define var_start(x, y) va_start(x)
-#endif
-
 #define ELIB_SUFFIX	".elib"
 #define INSTR_SUFFIX	".instr"
+#define SHARED_SUFFIX	".shared"
 
 void usage(const char *switchname);
 void start_epmd(char *epmd);
@@ -83,7 +77,6 @@ static void get_parameters(int argc, char** argv);
 static void add_arg(char *new_arg);
 static void add_args(char *first_arg, ...);
 static void add_Eargs(char *new_arg);
-static int dirq(const char *dirpath);
 static void *emalloc(size_t size);
 static void *erealloc(void *p, size_t size);
 static void efree(void *p);
@@ -125,8 +118,10 @@ static int verbose = 0;		/* If non-zero, print some extra information. */
 static int start_detached = 0;	/* If non-zero, the emulator should be
 				 * started detached (in the background).
 				 */
-static int instrumented = 0;	/* If non-zero, start jam47.instr.exe (or
-				 * whatever) instead of jam47.exe */
+static int instrumented = 0;	/* If non-zero, start beam.instr or beam.instr.exe
+				 * instead of beam or beam.exe. */
+static int shared = 0;		/* If non-zero, start beam.shared or beam.shared.exe
+				 * instead of beam or beam.exe. */
 
 #ifdef __WIN32__
 static char* key_val_name = ERLANG_VERSION; /* Used by the registry
@@ -148,10 +143,11 @@ static char* progname;		/* Name of this program. */
 static char* home;		/* Path of user's home directory. */
 
 /*
-   Add the elib and instr suffixes to the program name if needed,
-   except on Windows, where we insert it just before ".EXE".
-*/
-static char *add_extra_suffixes(char *prog, int elib, int instr)
+ * Add the elib and instr suffixes to the program name if needed,
+ * except on Windows, where we insert it just before ".EXE".
+ */
+static char*
+add_extra_suffixes(char *prog, int elib, int instr, int shared)
 {
    char *res;
    char *p;
@@ -166,40 +162,47 @@ static char *add_extra_suffixes(char *prog, int elib, int instr)
 		don't need an extra suffix for it */
 #endif
 
-   if (!elib && !instr)
+   if (!elib && !instr && !shared) {
        return prog;
+   }
 
    len = strlen(prog);
 
-   p = emalloc(len
-	       + (elib ? strlen(ELIB_SUFFIX) : 0)
-	       + (instr ? strlen(INSTR_SUFFIX) : 0)
+   /* Worst-case allocation */
+   p = emalloc(len +
+	       strlen(ELIB_SUFFIX) +
+	       strlen(INSTR_SUFFIX) +
+	       strlen(SHARED_SUFFIX) +
 	       + 1);
    res = p;
    p = write_str(p, prog);
 
 #ifdef __WIN32__
    exe_p = res + len - 4;
-   if (exe_p >= res)
-   {
+   if (exe_p >= res) {
       if (exe_p[0] == '.' &&
 	  (exe_p[1] == 'e' || exe_p[1] == 'E') &&
 	  (exe_p[2] == 'x' || exe_p[2] == 'X') &&
-	  (exe_p[3] == 'e' || exe_p[3] == 'E'))
-      {
+	  (exe_p[3] == 'e' || exe_p[3] == 'E')) {
 	  p = exe_p;
 	  exe = 1;
       }
    }
 #endif
 
-   if (elib)
+   if (elib) {
        p = write_str(p, ELIB_SUFFIX);
-   if (instr)
+   }
+   if (shared) {
+       p = write_str(p, SHARED_SUFFIX);
+   }
+   if (instr) {
        p = write_str(p, INSTR_SUFFIX);
+   }
 #ifdef __WIN32__
-   if (exe)
+   if (exe) {
        p = write_str(p, ".exe");
+   }
 #endif
 
    return res;
@@ -275,8 +278,11 @@ main(int argc, char **argv)
 	    }
 	}
 	else if (argv[i][0] == '-') {
-	    if (strcmp(argv[i], "-instr") == 0)
+	    if (strcmp(argv[i], "-instr") == 0) {
 		instrumented = 1;
+	    } else if (strcmp(argv[i], "-shared") == 0) {
+		shared = 1;
+	    }
 	}
 	i++;
     }
@@ -296,7 +302,7 @@ main(int argc, char **argv)
 	    usage("+m");
     }
 #if !defined(__WIN32__)
-    emu = add_extra_suffixes(emu, use_elib, instrumented);
+    emu = add_extra_suffixes(emu, use_elib, instrumented, shared);
     sprintf(tmpStr, "%s" DIRSEP "%s" BINARY_EXT, bindir, emu);
     emu = strsave(tmpStr);
 #endif
@@ -326,29 +332,9 @@ main(int argc, char **argv)
 	    switch (argv[i][0]) {
 	      case '-':
 		switch (argv[i][1]) {
-#if defined(__WIN32__) && defined(DEBUG)
-		  case 'b':
-		    if (strcmp(argv[i], "-bc") == 0) {
-			static char bc[] = "bcpro.exe";
-			int i;
-
-			/*
-			 * Run the emulator under control of BoundsChecker, by
-			 * moving up all arguments and putting into arg0.
-			 * Note that we find the path to bcpro, because the code
-			 * which starts the emulator uses execv/spawnv, which don't
-			 * search the path.
-			 */
-
-			for (i = EargsCnt; i > 0; i--)
-			    Eargsp[i] = Eargsp[i-1];
-			EargsCnt++;
-			_searchenv(bc, "PATH", tmpStr);
-			if (tmpStr[0] == '\0')
-			    error("Can't find %s in PATH", bc);
-			Eargsp[0] = emu = strsave(tmpStr);
-		    }
-		    else if (strcmp(argv[i], "-boot") == 0) {
+#ifdef __WIN32__
+		case 'b':
+		    if (strcmp(argv[i], "-boot") == 0) {
 			if (boot_script)
 			    error("Conflicting -start_erl and -boot options");
 			if (i+1 >= argc)
@@ -360,9 +346,8 @@ main(int argc, char **argv)
 			add_arg(argv[i]);
 		    }
 		    break;
-#endif	
-
-		  case 'c':
+#endif
+		case 'c':
 		    if (strcmp(argv[i], "-compile") == 0) {
 			/*
 			 * Note that the shell script erl.exec does an recursive call
@@ -470,8 +455,6 @@ main(int argc, char **argv)
 			add_arg(argv[i+1]);
 			isdistributed = 1;
 			i++;
-		    } else if (strcmp(argv[i], "-noshell") == 0) {
-			add_args("-noshell", "-noinp_shell", NULL);
 		    } else if (strcmp(argv[i], "-noinput") == 0) {
 			add_args("-noshell", "-noinput", NULL);
 		    } else if (strcmp(argv[i], "-nohup") == 0) {
@@ -520,26 +503,6 @@ main(int argc, char **argv)
 			add_arg(argv[i]);
 		    break;
 
-		  case 'x':
-		    if (argv[i][2] != '\0') {
-			add_arg(argv[i]);
-		    } else {
-#ifdef __WIN32__
-			error("'-x' supported on Unix only.");
-#else
-			sprintf(tmpStr, "%s/lib/xerl", rootdir);
-			if (dirq(tmpStr)) {
-			    sprintf(tmpStr, "%s/lib/pxw", rootdir);
-			    if (dirq(tmpStr)) {
-				add_args("-x", "-noshell", NULL);
-				break;
-			    }
-			}
-			error("You need the 'xerl' and 'pxw' bundles to run 'erl -x'");
-#endif
-		    }
-		    break;
-
 		  default:
 		    add_arg(argv[i]);
 		    break;
@@ -568,9 +531,9 @@ main(int argc, char **argv)
 		      i++;
 		      break;
 		  case 'S': {
-		      char *sub_flags[] = {"e", "r", "mmc", "mcs", "cos",
-					   "scs", "lcs", "cgr", "sbct",
-					   "mbsd", "sbcmt", NULL};
+		      char *sub_flags[] = {"e", "r", "mmc", "mcs", "scs",
+					   "lcs", "sbct", "mbsd", "mbcgs",
+					   "sbcmt", "msbclt", NULL};
 		      if (is_one_of_strs(argv[i]+2, sub_flags)) {
 			  if (i+1 >= argc
 			      || argv[i+1][0] == '-'
@@ -713,23 +676,12 @@ usage(const char *switchname)
 	  "[+P MAX_PROCS] [+A THREADS] [+m MALLOC_LIB] "
 
 	  "[+Se BOOL] [+Sr RELEASE] [+Ssbct SIZE_IN_KB] [+Smmc AMOUNT] "
-	  "[+Ssbcmt RATIO] [+Smcs SIZE_IN_KB] [+Sscs SIZE_IN_KB] "
-	  "[+Slcs SIZE_IN_KB] [+Scgr RATE_IN_PERC]  [+Smbsd BLOCKS] "
-	  "[+Scos BOOL] "
+	  "[+Ssbcmt RATIO] [+Smsbclt RATIO] [+Smcs SIZE_IN_KB] "
+	  "[+Sscs SIZE_IN_KB] [+Slcs SIZE_IN_KB] [+Smbcgs STAGES] "
+	  "[+Smbsd BLOCKS] "
 
 	  "[args ...]\n");
   exit(1);
-}
-
-static int
-dirq(const char *dirpath)
-{
-    struct stat statbuf;
-
-    if (stat(dirpath, &statbuf) == -1)
-	return 0;
-
-    return (statbuf.st_mode & S_IFDIR);
 }
 
 void
@@ -803,19 +755,12 @@ add_Eargs(char *new_arg)
 }
 
 #if !defined(__WIN32__)
-
-#if defined(USE_STDARG)
 void error(char* format, ...)
-#else
-void error(format, va_alist)
-     char* format;
-     va_dcl
-#endif
 {
     char sbuf[1024];
     va_list ap;
 
-    var_start(ap, format);
+    va_start(ap, format);
     vsprintf(sbuf, format, ap);
     va_end(ap);
     fprintf(stderr, "erlexec: %s\n", sbuf);

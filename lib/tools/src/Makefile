@@ -37,8 +37,10 @@ MODULES= cover               \
 	cover_web	     \
 	eprof                \
 	fprof                \
+	cprof                \
 	instrument           \
 	make		     \
+	tags		     \
 	xref		     \
 	xref_base	     \
 	xref_compiler	     \

@@ -128,7 +128,7 @@ static void dyn_stop(ErlDrvData d)
 static int unload(void* arg1, void* arg2)
 {
     DE_List* de = (DE_List*) arg1;
-    int ix = (int) arg2;
+    int ix = (int) (long) arg2;
     DE_Handle* dh;
     int j;
 
@@ -136,7 +136,7 @@ static int unload(void* arg1, void* arg2)
     /*
      * Kill all ports that depend on this driver.
      */
-    for (j = 0; j < erl_max_ports; j++) {
+    for (j = 0; j < erts_max_ports; j++) {
 	if (erts_port[j].status != FREE &&
 	    erts_port[j].drv_ptr == de->drv) {
 	    driver_failure(j, -1);

@@ -23,11 +23,10 @@
 	 delete_index/3,
 	 del_object_index/5,
 	 clear_index/4,
-	 match_object/5,
 	 dirty_match_object/3,
+	 dirty_select/3,
 	 dirty_read/3,
 	 dirty_read2/3,
-	 realkeys/3,
 
 	 db_put/2,
 	 db_get/2,
@@ -133,38 +132,40 @@ clear_index2([{Pos, Ixt} | Tail], Tab, K, Obj) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-realkeys(Tab, Pos, IxKey) ->
-    Index = get_index_table(Tab, Pos),
-    db_get(Index, IxKey).
-    %% a list on the form [{IxKey, RealKey1} , ....
-    
-%%%% REMOVE after next rel....not used anymore
-match_object(Tid, Store, Tab, Pat, Pos) ->
-    %% Assume that we are on the node where the replica is
-    mnesia_locker:rlock_table(Tid, Store, Tab), %% ignore return value
-    dirty_match_object(Tab, Pat, Pos).
-
 dirty_match_object(Tab, Pat, Pos) ->
     %% Assume that we are on the node where the replica is
     case element(2, Pat) of
 	'_' ->
 	    IxKey = element(Pos, Pat),
-	    RealKeys = mnesia_index:realkeys(Tab, Pos, IxKey),
+	    RealKeys = realkeys(Tab, Pos, IxKey),
 	    merge(RealKeys, Tab, Pat, []);
 	Else ->
 	    mnesia_lib:db_match_object(Tab, Pat)
     end.
 
-merge([{IxKey, RealKey}|Tail], Tab, Pat0, Ack) ->
+merge([{IxKey, RealKey} | Tail], Tab, Pat, Ack) ->
     %% Assume that we are on the node where the replica is
-    PatternL = setelement(2, Pat0, RealKey),
-    L0 = mnesia_lib:db_match_object(Tab, PatternL),
-    merge(Tail, Tab, Pat0, L0 ++ Ack);
+    Pat2 = setelement(2, Pat, RealKey),
+    Recs = mnesia_lib:db_match_object(Tab, Pat2),
+    merge(Tail, Tab, Pat, Recs ++ Ack);
+merge([], _, _, Ack) ->
+    Ack.
 
-merge([], _, _, Ack) -> Ack.
+realkeys(Tab, Pos, IxKey) ->
+    Index = get_index_table(Tab, Pos),
+    db_get(Index, IxKey). % a list on the form [{IxKey, RealKey1} , ....
+    
+dirty_select(Tab, Spec, Pos) ->
+    %% Assume that we are on the node where the replica is
+    %% Returns the records without applying the match spec
+    %% The actual filtering is handled by the caller
+    IxKey = element(Pos, Spec),
+    RealKeys = realkeys(Tab, Pos, IxKey),
+    StorageType = val({Tab, storage_type}),
+    lists:append([mnesia_lib:db_get(StorageType, Tab, Key) || Key <- RealKeys]).
 
 dirty_read(Tab, IxKey, Pos) ->
-    ResList = mnesia:dirty_rpc(Tab, mnesia_index, dirty_read2,
+    ResList = mnesia:dirty_rpc(Tab, ?MODULE, dirty_read2,
 			       [Tab, IxKey, Pos]),
     case val({Tab, setorbag}) of
 	bag ->
