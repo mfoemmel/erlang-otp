@@ -1,6 +1,6 @@
 Document Type: WSE
 item: Global
-  Version=6.01
+  Version=6.0
   Title=Erlang OTP Setup
   Flags=00010100
   Languages=65 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
@@ -994,6 +994,16 @@ item: Copy Local File
   Flags=0000000011000010
 end
 item: Copy Local File
+  Source=%MAINDIR%\%ERTS_DIR%\bin\beam.dll
+  Destination=%MAINDIR%\bin\beam.dll
+  Flags=0000000011000010
+end
+item: Copy Local File
+  Source=%MAINDIR%\%ERTS_DIR%\bin\beam.dll
+  Destination=%MAINDIR%\bin\beam.dll
+  Flags=0000000011000010
+end
+item: Copy Local File
   Source=%MAINDIR%\%ERTS_DIR%\bin\erlc.exe
   Destination=%MAINDIR%\bin\erlc.exe
   Flags=0000000011000010
@@ -1195,6 +1205,15 @@ item: Delete File
   Pathname=%MAINDIR%\ws2setup.exe
 end
 item: Get System Information
+  Variable=SYS
+  Flags=00000001
+end
+item: If/While Statement
+  Variable=SYS
+  Value=5
+  Flags=00000011
+end
+item: Get System Information
   Variable=SERVICEPACK
   Flags=00010010
 end
@@ -1238,6 +1257,8 @@ item: Custom Dialog Set
 end
 item: End Block
 end
+item: End Block
+end
 item: Else Statement
 end
 item: Check Configuration
@@ -1257,18 +1278,18 @@ item: Custom Dialog Set
   Display Variable=DISPLAY
   item: Dialog
     Title=Winsock 2
-    Width=217
-    Height=104
+    Width=259
+    Height=134
     Font Name=Helv
     Font Size=8
     item: Static
-      Rectangle=44 6 212 60
+      Rectangle=83 6 251 60
       Enabled Color=00000000000000001111111111111111
       Create Flags=01010000000000000000000000000000
-      Text=You are running Windows 95/98. If you are running Windows 95, you will need to have Winsock 2 installed in order for Erlang to run. If you are running Windows 98 or another TCP/IP package than Winsock, you should skip this part of the installation. To let this program install Winsock 2 for you, press the Install Winsock button.
+      Text=You are running Windows 95/98. If you are running Windows 95, you need to install Winsock 2 in order to make Erlang run properly. If you are running Windows 98 or another TCP/IP package than Winsock, you should skip this part of the installation. To let this program install Winsock 2 for you, press the Install Winsock 2 button.
     end
     item: Push Button
-      Rectangle=107 69 166 84
+      Rectangle=135 70 194 85
       Alternate=0%MAINDIR%\ws2setup.exe%MAINDIR%
       Action=6
       Enabled Color=00000000000000001111111111111111
@@ -1276,7 +1297,7 @@ item: Custom Dialog Set
       Text=Install Winsock 2
     end
     item: Push Button
-      Rectangle=169 69 210 84
+      Rectangle=200 70 241 85
       Action=1
       Enabled Color=00000000000000001111111111111111
       Create Flags=01010000000000010000000000000001

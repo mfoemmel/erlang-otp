@@ -263,7 +263,7 @@ named_table(true) -> [named_table];
 named_table(false) -> [].
 
 insert_all(Tab, [Val|T]) ->
-    erlang:insert(Tab, Val),
+    ets:insert(Tab, Val),
     insert_all(Tab,T);
 insert_all(Tab,[]) -> Tab.
 
@@ -330,8 +330,6 @@ i(Tab) ->
     i(Tab, 40).
 i(Tab, Height) ->
     i(Tab, Height, 80).
-i(Tab, Height, Width) when integer(Tab) ->
-    i({Tab, info(Tab, owner)}, Height, Width);
 i(Tab, Height, Width) ->
     First = ets:first(Tab),
     display_items(Height, Width, Tab, First, 1, 1).

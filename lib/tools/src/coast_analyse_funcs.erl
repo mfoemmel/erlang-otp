@@ -227,33 +227,6 @@ get_known_modules(CompiledModules) ->
 
 
 
-analyse_loop(InFd, OutFd) ->
-    analyse_loop2(epp:parse_erl_form(InFd), InFd, OutFd).
-
-
-
-
-
-analyse_loop2({ok,Form}, InFd, OutFd) ->
-    {Flag, Form1} = merge_bump_data(Form, false),
-    case Flag of
-        true ->
-            io:format(OutFd, "~s~n", [erl_pp:form(Form1)]);
-        false ->
-            done
-    end,
-    analyse_loop(InFd, OutFd);
-analyse_loop2({eof, _}, InFd, OutFd) ->
-    epp:close(InFd),
-    file:close(OutFd),
-    ok;
-analyse_loop2({error, {Line, Mod, Reason}}, InFd, OutFd) ->
-    {error, {Line, Mod, Reason}}.
-
-
-
-
-
 mod_calls_int([{{M,_,_},TN1,EM1,INR1}, {{M,F,A},TN2,EM2,INR2} | T], Acc) ->
     mod_calls_int([{{M,F,A},TN1 + TN2,EM1 + EM2,0} | T], Acc);
 mod_calls_int([{{M,_,_},TN,EM,INR} | T], Acc) ->
@@ -712,67 +685,9 @@ read_file(InFd, Line, LineNo, OutFd, Mod, Func, Arity, MaxLengthN) ->
 
 					      
 		    
-		
-	    
-	    
-
-
-
-
-
-
-merge_bump_data({attribute, Line, module, Mod}, Flag) ->
-    put(module, Mod),
-    {Flag, {attribute, Line, module, Mod}};
-merge_bump_data({function, Line, Name, Arity, Clauses}, Flag) ->
-    {Flag1, Clauses1} = merge_bump_data1(Clauses, Flag),
-    {Flag1, {function, Line, Name, Arity, Clauses1}};
-merge_bump_data(X, Flag) ->
-    {Flag, X}.
-
-
-
-merge_bump_data1([H|T], Flag) ->
-    {Flag1, H1} = merge_bump_data1(H, Flag),
-    {Flag2, T1} = merge_bump_data1(T, Flag1),
-    {Flag2, [H1 | T1]};
-merge_bump_data1({call, Line, {remote, _, {atom, _, coast}, {atom, _, bump}}, Args}, Flag) ->
-    [{atom, L1, Mod}, {atom, L2, Func}, {integer, L3, Arity},
-     {integer, L4, Index}, {integer, L5, ClauseNo}, 
-     {integer, L6, ClauseLine}, {integer, L7, SrcLine}, {atom, L8, TraceMode}] = Args,
-    Key = {Mod, Func, Arity, Index, ClauseNo, ClauseLine, SrcLine},
-    case ets:lookup(?TABLE_NAME, Key) of
-	[{Key, 0, _, _}] ->
-            %% if there is a single zero change the flag to true
-            {true, {string, Line, "#### Not Covered!"}};
-	[{Key, 1, _, _}] ->
-            {true, {string, Line, 
-		    lists:flatten(io_lib:format("---- ~w pass", [1]))}};
-	[{Key, N, _, _}] ->
-            {true, {string, Line, 
-		    lists:flatten(io_lib:format("---- ~w passes", [N]))}};
-	[] ->
-	    {true, {string, Line, 
-		    lists:flatten(io_lib:format("???? No information found!!!"))}}
-    end;
-merge_bump_data1(X, Flag) when tuple(X) ->
-    {Flag1, L} = merge_bump_data1(tuple_to_list(X), Flag),
-    {Flag1, list_to_tuple(L)};
-merge_bump_data1(X, Flag) ->
-    {Flag, X}.
-
-
-
-
 uniq([H1, H2 | T]) when H1 == H2 ->
     uniq([H1 | T]);
 uniq([H | T]) ->
     [H | uniq(T)];
 uniq([]) ->
     [].
-
-
-
-
-
-

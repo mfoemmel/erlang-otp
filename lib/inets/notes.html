@@ -1,117 +1,208 @@
-<HTML>
-<HEAD>
-  <TITLE>Inets Release Notes</TITLE>
-</HEAD>
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<html>
+<head>
+   <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+   <meta name="GENERATOR" content="Mozilla/4.5 [en] (X11; I; SunOS 5.7 sun4u) [Netscape]">
+   <title>Inets Release Notes</title>
+</head>
+<body bgcolor="#FFFFFF">
 
-<BODY BGCOLOR="#FFFFFF">
+<center>
+<h1>
+Inets Release Notes</h1></center>
 
-<CENTER><H1>Inets Release Notes</H1></CENTER>
+<h2>Inets 2.5.3</h2>
 
-<H2>Inets 2.5.1</H2>
-<H3>Improvements and new features</H3>
+<h3>Improvements and new features</h3>
 
-<UL>
+<ul>
+<li>It's now possible to perform runtime upgrade/downgrade</li>
+<br>of the HTTPD server from/to 2.5.1.
+<br>The upgrade/downgrade is rather crude: An application restart!
+<li>Further improvment of handling of lack-of-resources situations.</li>
+</ul>
 
-<LI>
-New option added to httpd_core: BindAddress. BindAddress defines
-which address the server will listen to.
-<br>
-Bugs reported since R5 has been fixed.
-<br>Own Id: OTP-3295
+<h3>Fixed errors and malfunctions</h3>
 
+<ul>
+<li>CGI related problem with executable files on win32.</li>
+<br>A problem related to the win32 platform and cgi caused HTTPD to fail to 
+<br>detect executable files if the file name (of the retrieved file) 
+<br>contained a "executanle" extension (i.e. '.exe', '.com' or '.bat').
+<br>Own Id: OTP-3627
 
-</UL>
+<li>Heavy load state incorrect.</li>
+<br>A special heavy load listener process was created when HTTPD reaches
+<br>the heavy load state. The next request was be rejected, regardless of 
+<br>the actual state at that time.
+<br>Own Id: OTP-3528
 
-<H2>Inets 2.5</H2>
-<H3>Fixed errors and malfunctions</H3>
+</ul>
 
-<UL>
+<h3>Known bugs and problems</h3>
 
-<LI>
-Possible error codes from http_socket were not handled. Corrected.
-<br>Own Id: OTP-3214<br>
-Aux Id: Seq 3752
+<ul>
+No known problems.
+</ul>
 
+<h2>
+Inets 2.5.2</h2>
 
-</UL>
-<H3>Improvements and new features</H3>
+<h3>
+Improvements and new features</h3>
 
-<UL>
+<ul>
+<li>
+Now possible to run more then one HTTP server in a node listening
+to the same port number but different addresses.</li>
 
-<LI>
-Errors in the examples and documentation were corrected.
-<br>Own Id: OTP-3263<br>
-Aux Id: seq 3921
+<br>Own Id: OTP-3493</ul>
 
+<h3>
+Fixed errors and malfunctions</h3>
 
-</UL>
+<ul>
+<li>
+Status code 404 incorrectly used instead of 500.</li>
 
-<H2>Inets 2.3</H2>
-<H3>Fixed errors and malfunctions</H3>
+<br>Own Id: OTP-3402
+<li>
+Handling of lack of resources (to many open files, ...) improved.</li>
 
-<UL>
+<br>Own Id: OTP-3403, OTP-3461
+<li>
+Use of obsolete and not recommended functions removed.</li>
 
-<LI>
-ftp:open crashed if connection was closed before a complete welcome message was received,
-this is now fixed.
-<br>Own Id: OTP-2723<br>
-Aux Id: HA98434, seq 1151
+<br>Functions httpd_conf:is_directory/1 and httpd_conf:is_file/1 has changed
+so that when they are called with a path which is not a directory (in the
+first case) or file (in the second case) then the return value will be
+<i>{error,FileInfo},</i>
+where FileInfo is now a file_info record according to <i>kernel/include/file.hrl.</i>
+<br>Own Id: OTP-3405
+<li>
+Call of non-existing function 'inet:getaddr/1' in httpd_conf:load/2 Corrected.</li>
 
+<br>Own Id: OTP-3457
+<li>
+Call to non-existing module 'http_conf' in mod_auth:load/2. Corrected.</li>
 
-</UL>
-<H3>Improvements and new features</H3>
+<br>Own Id: OTP-3459
+<li>
+An error (module mod_include) in the parsing of SHTML files could cause 
+the handling process to crash. The reason was the reading of files was 
+done in chunks. If a directive or comment starts at the end of a chunk
+but ends in the next chunk, this was taken as EOF and an exception was
+thrown. This exception was not handled which caused the process to crash.</li>
 
-<UL>
+<br>Own Id: OTP-3527
+<li>
+The FTP failure 'File system full' during file transfer is not handled properly.</li>
 
-<LI>
-The authentication modules have been rewritten with support for 
-dets, plain and mnesia authentication databases. There is also
-a new module called 'mod_secrity', which implements security
-event logging and notification. Both the mod_auth and
-mod_security modules have an API for the programmer that
-implements functions they will require to have full control
-over access restricted parts of a site.
-NOTE: The mod_auth_mnesia module does not implement the API
-previously found there, please see the mod_auth
-documentation.
-<br>Own Id: OTP-2281<br>
-Aux Id: seq 740,OTP-2273
+<br>Own Id: OTP-3268, OTP-3503</ul>
 
+<h3>
+Known bugs and problems</h3>
 
-<LI>
-Support for the sockets application has been removed from INETS, use SocketType ssl or ip_comm
-instead.
+<ul>
+<li>
+It is not possible to perform runtime upgrade from older versions.
+This is temporary and will be <i>fixed</i> in the next release</li>
+</ul>
+
+<h2>
+Inets 2.5.1</h2>
+
+<h3>
+Improvements and new features</h3>
+
+<ul>
+<li>
+New option added to httpd_core: BindAddress. BindAddress defines which
+address the server will listen to.</li>
+
+<br>Bugs reported since R5 has been fixed.
+<br>Own Id: OTP-3295</ul>
+
+<h2>
+Inets 2.5</h2>
+
+<h3>
+Fixed errors and malfunctions</h3>
+
+<ul>
+<li>
+Possible error codes from http_socket were not handled. Corrected.</li>
+
+<br>Own Id: OTP-3214
+<br>Aux Id: Seq 3752</ul>
+
+<h3>
+Improvements and new features</h3>
+
+<ul>
+<li>
+Errors in the examples and documentation were corrected.</li>
+
+<br>Own Id: OTP-3263
+<br>Aux Id: seq 3921</ul>
+
+<h2>
+Inets 2.3</h2>
+
+<h3>
+Fixed errors and malfunctions</h3>
+
+<ul>
+<li>
+ftp:open crashed if connection was closed before a complete welcome message
+was received, this is now fixed.</li>
+
+<br>Own Id: OTP-2723
+<br>Aux Id: HA98434, seq 1151</ul>
+
+<h3>
+Improvements and new features</h3>
+
+<ul>
+<li>
+The authentication modules have been rewritten with support for dets, plain
+and mnesia authentication databases. There is also a new module called
+'mod_secrity', which implements security event logging and notification.
+Both the mod_auth and mod_security modules have an API for the programmer
+that implements functions they will require to have full control over access
+restricted parts of a site. NOTE: The mod_auth_mnesia module does not implement
+the API previously found there, please see the mod_auth documentation.</li>
+
+<br>Own Id: OTP-2281
+<br>Aux Id: seq 740,OTP-2273
+<li>
+Support for the sockets application has been removed from INETS, use SocketType
+ssl or ip_comm instead.</li>
+
 <br>Own Id: OTP-2848
+<li>
+The HTTP server has got improved efficiency through recognition of the
+'If-Modified-Since' header field.</li>
 
-
-<LI>
-The HTTP server has got improved efficiency through recognition of the 'If-Modified-Since'
-header field.
 <br>Own Id: OTP-2870
+<li>
+CGI scripts are now supported on Windows aswell as UNIX platforms.</li>
 
-
-<LI>
-CGI scripts are now supported on Windows aswell as UNIX platforms.
 <br>Own Id: OTP-2915
+<li>
+mod_auth now supports the 'deny from' directive.</li>
 
-
-<LI>
-mod_auth now supports the 'deny from' directive.
 <br>Own Id: OTP-2982
+<li>
+The HTTP server now experimentaly supports persistent connections (as defined
+in RFC2068). This is the first step towards HTTP/1.1 support. Enabling
+this feature may greatly improve performance, as the server then uses the
+same TCP connection for more than one HTTP request. Two new configuration
+directives are defined for httpd_core: KeepAlive max-requests KeepAliveTimeout
+seconds</li>
 
-
-<LI>
-The HTTP server now experimentaly supports persistent connections (as defined in RFC2068). This is the first step towards HTTP/1.1 support. Enabling this feature may greatly improve performance, as the server then uses the same TCP connection for more than one HTTP request.
-Two new configuration directives are defined for httpd_core:
-KeepAlive  max-requests
-KeepAliveTimeout  seconds
-<br>Own Id: OTP-3032
-
-
-</UL>
- 
+<br>Own Id: OTP-3032</ul>
 You can find older release note
-<A HREF="notes_history.html">here</A>.
- 
+<a href="notes_history.html">here</a>.
 </body>
 </html>

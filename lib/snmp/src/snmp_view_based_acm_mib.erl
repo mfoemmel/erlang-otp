@@ -29,6 +29,7 @@
 -include("SNMP-VIEW-BASED-ACM-MIB.hrl").
 -include("snmp_vacm.hrl").
 
+
 %%-----------------------------------------------------------------
 %% Func: configure/1
 %% Args: Dir is the directory where the configuration files are found.

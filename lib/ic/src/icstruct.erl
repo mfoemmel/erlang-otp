@@ -246,8 +246,48 @@ gen_struct_member(Fd, G, N, X, Name, Type) ->
 		Name]).
 
 
-emit_typedef(G, N, X, erlang) -> 
-    ok;
+emit_typedef(G, N, X, erlang) ->
+    case X of
+	{typedef,_,[{array,_,_}],_} -> %% Array but not a typedef of
+	                               %% an array definition
+	    case ic_options:get_opt(G, be) of
+		noc ->
+		    mkFileArrObj(G,N,X,erlang);
+		_ ->
+		    %% Search the table to see if the type is local or inherited.
+		    PTab = ic_genobj:pragmatab(G),
+		    Id = ic_forms:get_id2(X),
+		    case ets:match(PTab,{file_data_local,'_','_',typedef,N,Id,ic_util:to_undersc([Id | N]),'_','_'}) of
+			[[]] ->
+			    %% Local, create erlang file for the array
+			    mkFileArrObj(G,N,X,erlang);
+			_ ->
+			    %% Inherited, do nothing
+			    ok
+		    end
+	    end;
+	
+	{typedef,{sequence,_,_},_,{tk_sequence,_,_}} -> %% Sequence but not a typedef of
+	                                                %% a typedef of a sequence definition
+	    case ic_options:get_opt(G, be) of
+		noc ->
+		    mkFileRecObj(G,N,X,erlang);
+		_ ->
+		    %% Search the table to see if the type is local or inherited.
+		    PTab = ic_genobj:pragmatab(G),
+		    Id = ic_forms:get_id2(X),
+		    case ets:match(PTab,{file_data_local,'_','_',typedef,N,Id,ic_util:to_undersc([Id | N]),'_','_'}) of
+			[[]] ->
+			    %% Local, create erlang file for the sequence
+			    mkFileRecObj(G,N,X,erlang);
+			_ ->
+			    %% Inherited, do nothing
+			    ok
+		    end
+	    end;
+	_ ->
+	    ok
+    end;
 emit_typedef(G, N, X, c) ->
     B = ic_forms:get_body(X),
     if
@@ -1299,7 +1339,8 @@ emit_union(G, N, X, c) -> %% Not supported in c backend
 
 %%------------------------------------------------------------
 %%
-%% emit erlang modules for objects with record definitions..
+%% emit erlang modules for objects with record definitions
+%% (such as unions or structs), or sequences 
 %%
 %%------------------------------------------------------------
 mkFileRecObj(G,N,X,erlang) ->
@@ -1323,6 +1364,35 @@ mkFileRecObj(G,N,X,erlang) ->
 	    exit(Other)
     end;
 mkFileRecObj(_,_,_,_) ->
+    true.
+
+
+%%------------------------------------------------------------
+%%
+%% emit erlang modules for objects with array definitions..
+%%
+%%------------------------------------------------------------
+mkFileArrObj(G,N,X,erlang) ->
+    SName = 
+	ic_util:to_undersc([ic_forms:get_id2(X) | N]),
+    FName =  
+	ic_file:join(ic_options:get_opt(G, stubdir),ic_file:add_dot_erl(SName)),
+    
+    case file:rawopen(FName, {binary, write}) of
+	{ok, Fd} ->
+	    HrlFName = filename:basename(ic_genobj:include_file(G)),
+
+	    ic_codegen:emit_stub_head(G, Fd, SName, erlang),
+	    ic_codegen:emit(Fd, "-include(~p).\n\n",[HrlFName]),
+	    emit_exports(G,Fd),
+	    emit_arr_methods(G,N,X,SName,Fd),  
+	    ic_codegen:nl(Fd),
+	    ic_codegen:nl(Fd),
+	    file:close(Fd);
+	Other -> 
+	    exit(Other)
+    end;
+mkFileArrObj(_,_,_,_) ->
     true.
 
 
@@ -1364,3 +1434,24 @@ emit_rec_methods(G,N,X,Name,Fd) ->
 	    ic_codegen:emit(Fd, "%% returns name\n",[]),
 	    ic_codegen:emit(Fd, "name() -> ~p.\n\n",[Name])
     end.
+
+
+
+
+%%------------------------------------------------------------
+%%
+%% emit erlang module functions which represent arrays, yields
+%% record information such as type code, identity and name.
+%%
+%%------------------------------------------------------------
+emit_arr_methods(G,N,X,Name,Fd) ->
+
+    IR_ID = ictk:get_IR_ID(G, N, X),
+    TK = ic_forms:get_type_code(G, N, X),
+
+    ic_codegen:emit(Fd, "%% returns type code\n",[]),
+    ic_codegen:emit(Fd, "tc() -> ~p.\n\n",[TK]),
+    ic_codegen:emit(Fd, "%% returns id\n",[]),
+    ic_codegen:emit(Fd, "id() -> ~p.\n\n",[IR_ID]),
+    ic_codegen:emit(Fd, "%% returns name\n",[]),
+    ic_codegen:emit(Fd, "name() -> ~p.\n\n",[Name]).

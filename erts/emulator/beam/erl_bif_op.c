@@ -90,25 +90,25 @@ BIF_ADECL_1
 BIF_RETTYPE sgt_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    BIF_RET(cmp(BIF_ARG_1, BIF_ARG_2) > 0 ? am_true : am_false);
+    BIF_RET(cmp_gt(BIF_ARG_1, BIF_ARG_2) ? am_true : am_false);
 }
 
 BIF_RETTYPE sge_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    BIF_RET(cmp(BIF_ARG_1, BIF_ARG_2) >= 0 ? am_true : am_false);
+    BIF_RET(cmp_ge(BIF_ARG_1, BIF_ARG_2) ? am_true : am_false);
 }
 
 BIF_RETTYPE slt_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    BIF_RET(cmp(BIF_ARG_1, BIF_ARG_2) < 0 ? am_true : am_false);
+    BIF_RET(cmp_lt(BIF_ARG_1, BIF_ARG_2) ? am_true : am_false);
 }
 
 BIF_RETTYPE sle_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    BIF_RET(cmp(BIF_ARG_1, BIF_ARG_2) <= 0 ? am_true : am_false);
+    BIF_RET(cmp_le(BIF_ARG_1, BIF_ARG_2) ? am_true : am_false);
 }
 
 BIF_RETTYPE seq_2(BIF_ALIST_2)
@@ -120,7 +120,7 @@ BIF_ADECL_2
 BIF_RETTYPE seqeq_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    BIF_RET(cmp(BIF_ARG_1, BIF_ARG_2) == 0 ? am_true : am_false);
+    BIF_RET(cmp_eq(BIF_ARG_1, BIF_ARG_2) ? am_true : am_false);
 }
 
 BIF_RETTYPE sneq_2(BIF_ALIST_2)
@@ -132,7 +132,7 @@ BIF_ADECL_2
 BIF_RETTYPE sneqeq_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    BIF_RET(cmp(BIF_ARG_1, BIF_ARG_2) != 0 ? am_true : am_false);
+    BIF_RET(cmp_ne(BIF_ARG_1, BIF_ARG_2) ? am_true : am_false);
 }
 
 BIF_RETTYPE is_atom_1(BIF_ALIST_1)
@@ -211,7 +211,7 @@ BIF_ADECL_1
 BIF_RETTYPE is_reference_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    if (is_refer(BIF_ARG_1)) {
+    if (is_ref(BIF_ARG_1)) {
 	BIF_RET(am_true);
     }
     BIF_RET(am_false);
@@ -229,8 +229,7 @@ BIF_ADECL_1
 BIF_RETTYPE is_binary_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    if (is_binary(BIF_ARG_1) &&
-	(thing_subtag(*ptr_val(BIF_ARG_1)) != FUN_SUBTAG)) {
+    if (is_binary(BIF_ARG_1)) {
 	BIF_RET(am_true);
     }
     BIF_RET(am_false);
@@ -239,19 +238,11 @@ BIF_ADECL_1
 BIF_RETTYPE is_function_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    Eterm *t;
-
-    if (is_binary(BIF_ARG_1) &&
-	(thing_subtag(*ptr_val(BIF_ARG_1)) == FUN_SUBTAG)) {
+    if (is_fun(BIF_ARG_1)) {
 	BIF_RET(am_true);
+    } else {
+	BIF_RET(am_false);
     }
-#ifdef ALLOW_FUN_TUPLES
-    else if (is_tuple(BIF_ARG_1) && arityval(*(t = ptr_val(BIF_ARG_1))) == 5
-	&& t[1] == am_fun) {
- 	BIF_RET(am_true);
-    }
-#endif
-    BIF_RET(am_false);
 }
 
 /* Record test cannot actually be a bif. The epp processor is involved in
@@ -268,7 +259,7 @@ BIF_ADECL_3
     }
 
     if (is_tuple(BIF_ARG_1) && 
-	arityval(*(t = ptr_val(BIF_ARG_1))) == signed_val(BIF_ARG_3)
+	arityval(*(t = tuple_val(BIF_ARG_1))) == signed_val(BIF_ARG_3)
 	&& t[1] == BIF_ARG_2) {
  	BIF_RET(am_true);
     }

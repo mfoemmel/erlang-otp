@@ -38,7 +38,7 @@ HASH_OBJS = $(OBJDIR)\hash_dohash.obj $(OBJDIR)\hash_foreach.obj $(OBJDIR)\hash_
 REG_OBJS = $(OBJDIR)\reg_close.obj $(OBJDIR)\reg_delete.obj $(OBJDIR)\reg_dirty.obj $(OBJDIR)\reg_dump.obj $(OBJDIR)\reg_free.obj $(OBJDIR)\reg_get.obj $(OBJDIR)\reg_getf.obj $(OBJDIR)\reg_geti.obj $(OBJDIR)\reg_getp.obj $(OBJDIR)\reg_gets.obj $(OBJDIR)\reg_make.obj $(OBJDIR)\reg_open.obj $(OBJDIR)\reg_purge.obj $(OBJDIR)\reg_resize.obj $(OBJDIR)\reg_restore.obj $(OBJDIR)\reg_set.obj $(OBJDIR)\reg_setf.obj $(OBJDIR)\reg_seti.obj $(OBJDIR)\reg_setp.obj $(OBJDIR)\reg_sets.obj $(OBJDIR)\reg_stat.obj $(OBJDIR)\reg_tabstat.obj
 
 
-EI_OBJS = $(IDL_OBJS) $(HASH_OBJS) $(REG_OBJS)
+EI_OBJS = $(IDL_OBJS) $(HASH_OBJS) $(REG_OBJS) $(OBJDIR)\erl_error.obj
 
 # Now, we want to create something else to... Multithreaded DLL linked and
 # Dito debug
@@ -55,7 +55,7 @@ INCL_EMUL_RUNTIME = -I..\..\..\system\emulator\runtime
 
 CC = cl -DEPMD_PORT=$(EPMD_PORT_NO) -nologo
 LIBRARIAN = lib
-#CC_DEBUG = -Zi
+CC_DEBUG = -Zi
 INCL_PATHS = $(INCL_HERE) $(INCL_ETC) $(INCL_EMUL_RUNTIME)
 
 .SUFFIXES: .mdobj .mddobj

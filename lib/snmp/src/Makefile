@@ -75,11 +75,17 @@ MODULES=  \
 	snmp_user_based_sm_mib \
 	snmp_usm \
 	snmp_vacm \
+        snmp_verbosity \
 	snmp_view_based_acm_mib
 
 ERL_FILES = $(MODULES:%=%.erl)
 
-HRL_FILES = snmp_vacm.hrl
+HRLS =  snmp_verbosity \
+	snmp_compile \
+        snmp_debug  \
+	snmp_vacm
+
+HRL_FILES = $(HRLS:%=%.hrl)
 
 TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
@@ -95,10 +101,28 @@ APPUP_SRC = $(APPUP_FILE).src
 APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
 
 # ----------------------------------------------------
+# SNMP FLAGS
+# ----------------------------------------------------
+ifeq ($(SNMP_DEFAULT_VERBOSITY),)
+  SNMP_FLAGS = -Ddefault_verbosity=silence
+endif
+
+#ifeq ($(SNMP_DEBUG),)
+#  SNMP_DEBUG = d
+#endif
+
+ifeq ($(SNMP_DEBUG),d)
+  SNMP_FLAGS += -Dsnmp_debug
+endif
+
+
+# ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += -I../include -I$(ERL_TOP)/lib/stdlib
+ERL_COMPILE_FLAGS += -I../include \
+                     -I$(ERL_TOP)/lib/stdlib \
+                     $(SNMP_FLAGS)
 
 # ----------------------------------------------------
 # Targets

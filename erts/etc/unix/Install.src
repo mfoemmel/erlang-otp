@@ -152,7 +152,7 @@ fi
 # We always run ranlib unless Solaris/SunOS 5
 # but ignore failures.
 #
-if [ "X$TARGET" != "Xsunos5" ]; then 
+if [ "X$TARGET" != "Xsunos5" -a -d $ERL_ROOT/usr/lib ]; then 
     cd $ERL_ROOT/usr/lib
     for library in lib*.a
     do

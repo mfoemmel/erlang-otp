@@ -127,16 +127,6 @@ AC_CHECK_FUNC(wait3, , AC_DEFINE(NO_WAIT3))
 AC_CHECK_FUNC(uname, , AC_DEFINE(NO_UNAME))
 
 #--------------------------------------------------------------------
-#	On a few very rare systems, all of the libm.a stuff is
-#	already in libc.a.  Set compiler flags accordingly.
-#	Also, Linux requires the "ieee" library for math to work
-#	right (and it must appear before "-lm").
-#--------------------------------------------------------------------
-
-AC_CHECK_FUNC(sin, MATH_LIBS="", MATH_LIBS="-lm")
-AC_CHECK_LIB(ieee, main, [MATH_LIBS="-lieee $MATH_LIBS"])
-
-#--------------------------------------------------------------------
 #	Supply substitutes for missing POSIX header files.  Special
 #	notes:
 #	    - stdlib.h doesn't define strtol, strtoul, or
@@ -600,7 +590,8 @@ TCL_LIB_VERSIONS_OK=ok
 case $system in
     AIX-*)
 	SHLIB_CFLAGS=""
-	SHLIB_LD="$fullSrcDir/ldAix /bin/ld -bhalt:4 -bM:SRE -bE:lib.exp -H512 -T512"
+	#SHLIB_LD="$fullSrcDir/ldAix /bin/ld -bhalt:4 -bM:SRE -bE:lib.exp -H512 -T512"
+	SHLIB_LD="ld -G -bnoentry -bexpall"
 	SHLIB_LD_LIBS='${LIBS}'
 	SHLIB_SUFFIX=".so"
 	if test "$have_dl" = yes; then
@@ -827,7 +818,9 @@ case $system in
 	;;
     SunOS-5*)
 	SHLIB_CFLAGS="-KPIC"
-	SHLIB_LD="/usr/ccs/bin/ld -G -z text"
+	# '-z text' breaks with SunOS 5.6 and up on x86, don't use it
+	#SHLIB_LD="/usr/ccs/bin/ld -G -z text"
+	SHLIB_LD="/usr/ccs/bin/ld -G"
 	SHLIB_LD_LIBS=""
 	SHLIB_SUFFIX=".so"
 	DL_OBJS=""
@@ -1331,11 +1324,13 @@ fi
 #	already in libc.a.  Set compiler flags accordingly.
 #	Also, Linux requires the "ieee" library for math to
 #	work right (and it must appear before "-lm").
+#	No, this is only true for older Linux systems, and causes
+#	problems for the etk_drv build with most newer ones - skip it.
 #--------------------------------------------------------------------
 
 MATH_LIBS=""
 AC_CHECK_FUNC(sin, , MATH_LIBS="-lm")
-AC_CHECK_LIB(ieee, main, [MATH_LIBS="-lieee $MATH_LIBS"])
+#AC_CHECK_LIB(ieee, main, [MATH_LIBS="-lieee $MATH_LIBS"])
 
 #--------------------------------------------------------------------
 #	If this system doesn't have a memmove procedure, use memcpy
@@ -1397,51 +1392,48 @@ AC_ARG_ENABLE(threads, [  --disable-threads         do not use threads],
                           esac ],
                         [ tcl_ok=threads-ok ])
 
+THR_LIBS=
+THR_DEFS=
+
 case "$tcl_ok" in
     threads-*)
-        THR_LIBS=
-        THR_DEFS="-DUSE_THREADS -D_REENTRANT"
         AC_MSG_RESULT([yes])
         found_threads=0
 
         # Check for Solaris threads
         if test "$found_threads" = "0"; then
-                found_threads=1
                 AC_CHECK_LIB(thread, thr_create, 
                         [THR_LIBS="-lthread"
-                         THR_DEFS="$THR_DEFS -DSOLARIS_THREADS"],
-                        found_threads=0)
+                         THR_DEFS="-DSOLARIS_THREADS"
+                         found_threads=1])
         fi
 
         # Check for POSIX threads
         if test "$found_threads" = "0"; then
-                found_threads=1
                 AC_CHECK_LIB(pthread, pthread_create,
                         [THR_LIBS="-lpthread"
-                         THR_DEFS="$THR_DEFS -DPOSIX_THREADS -D_THREAD_SAFE"],
-                        found_threads=0)
+                         THR_DEFS="-DPOSIX_THREADS -D_THREAD_SAFE"
+                         found_threads=1])
         fi
 
         # FreeBSD has pthreads in special c library, c_r
         if test "$found_threads" = "0"; then
-                found_threads=1
                 AC_CHECK_LIB(c_r, pthread_create,
                         [THR_LIBS="-lc_r"
-                         THR_DEFS="$THR_DEFS -DPOSIX_THREADS -D_THREAD_SAFE"],
-                        found_threads=0)
+                         THR_DEFS="-DPOSIX_THREADS -D_THREAD_SAFE"
+                         found_threads=1])
         fi
 
         case "$found_threads"-"$tcl_ok" in
             0-threads-ok)
-                # common stuff
-                AC_SUBST(THR_LIBS)
-                AC_SUBST(THR_DEFS)
+                # no threads found
                 ;;
             0-threads-error)
                 # If user specifically asked for threads give an error msg.
                 AC_MSG_ERROR([don't know how to enable threads])
                 ;;
             *)
+                THR_DEFS="-DUSE_THREADS -D_REENTRANT $THR_DEFS"
                 ;;
         esac
         ;;
@@ -1449,6 +1441,9 @@ case "$tcl_ok" in
         AC_MSG_RESULT([no])
         ;;
 esac
+
+AC_SUBST(THR_LIBS)
+AC_SUBST(THR_DEFS)
 
 #------------------------------------------------------------------------------
 # Find INADDR_LOOPBACK definition (overkill?)

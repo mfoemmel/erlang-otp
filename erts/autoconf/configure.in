@@ -1,5 +1,4 @@
-dnl
-dnl Process this file with autoconf to produce a configure script for Erlang.
+dnl Process this file with autoconf to produce a configure script. -*-m4-*-
 dnl
 dnl
 dnl The string "FIXME convbreak" means that there is a break of
@@ -31,6 +30,8 @@ case "${srcdir}" in
 esac
 
 ## Now, make sure that ERL_TOP is set and is the same as srcdir
+##
+## (what's wrong with simply setting ERL_TOP?  [sverkerw])
 if test -z "$ERL_TOP" || test ! -d $ERL_TOP ; then
   AC_MSG_ERROR(You need to set the environment variable ERL_TOP!)
 fi
@@ -94,6 +95,12 @@ AC_ARG_ENABLE(threads,
     *)  enable_threads=threads-error ;;
   esac ], enable_threads=nothreads)
 
+dnl Magic test for clearcase.
+if test -d ../../system; then
+	OTP_EXTRA_FLAGS=-DOTP_RELEASE
+else
+	OTP_EXTRA_FLAGS=
+fi
 
 dnl ----------------------------------------------------------------------
 dnl Checks for programs.
@@ -105,7 +112,7 @@ dnl
 dnl Flags to the C compiler
 dnl
 dnl make sure we find config.h
-CFLAGS="$CFLAGS -I${ERL_TOP}/erts/autoconf/$host"
+CFLAGS="$CFLAGS -I${ERL_TOP}/erts/autoconf/$host $OTP_EXTRA_FLAGS"
 DEBUG_FLAGS=-g
 if test "x$GCC" = xyes; then
   # until the emulator can handle this, I suggest we turn it off!
@@ -117,6 +124,10 @@ else
 fi
 AC_SUBST(DEBUG_FLAGS)
 AC_SUBST(WFLAGS)
+
+dnl some tests below will call this if we haven't already - and autoconf
+dnl can't handle those tests being done conditionally at runtime
+AC_PROG_CPP
 
 AC_PROG_RANLIB
 AC_PROG_LEX
@@ -169,10 +180,10 @@ dnl "missing" library functions.
 AC_SUBST(LIBOBJS)
 
 dnl Which sysv4 would this be, and what is it for???
+dnl XXX: replace with feature tests.
 case $host_os in
   sysv4*)
     AC_DEFINE(SOCKOPT_CONNECT_STAT)
-    AC_DEFINE(NO_SA_LEN)
     AC_DEFINE(NO_PRAGMA_WEAK)
     LIBS="$LIBS -lgen -lc -L /usr/ucblib -lucb"
     ;;
@@ -181,29 +192,34 @@ esac
 # Check how to export functions from the emulator executable, needed
 # when dynamically loaded drivers are loaded (so that they can find
 # emulator functions).
+# OS'es with ELF executables using the GNU linker (Linux and recent *BSD,
+# in rare cases Solaris) typically need '-Wl,-export-dynamic' (i.e. pass
+# -export-dynamic to the linker - also known as -rdynamic and some other
+# variants); some sysVr4 system(s) instead need(s) '-Wl,-Bexport'.
+# AIX 4.x (perhaps only for x>=2) wants -Wl,-bexpall,-brtl and doesn't
+# reliably return an error for others, thus we separate it out.
+# Otherwise we assume that if the linker accepts the flag, it is needed.
+AC_MSG_CHECKING(for extra flags needed to export symbols)
 DEXPORT=""
 case $host_os in
-  linux*)
-    DEXPORT="-rdynamic"
-    ;;
-  sysv4*)
-    DEXPORT="-Wl,-Bexport"
-    ;;
-  freebsd3*|freebsd4*)
-    DEXPORT="-export-dynamic"
-    ;;
-  solaris*)
-    # If you are using gcc + gnu ld on solaris (why would you?) then
-    # you need to pass -E to gnu ld.
-    if test "x$GCC" = xyes; then
-      save=$LDFLAGS
-      LDFLAGS=-Wl,-E
-      AC_TRY_LINK(,,[DEXPORT=-Wl,-E])
-      LDFLAGS=$save
-    fi
+	aix4*)
+		DEXPORT=-Wl,-bexpall,-brtl
+	;;
+	*)
+		save_ldflags="$LDFLAGS"
+		LDFLAGS=-Wl,-export-dynamic
+		AC_TRY_LINK(,,[DEXPORT=-Wl,-export-dynamic], [
+			LDFLAGS=-Wl,-Bexport
+			AC_TRY_LINK(,,[DEXPORT=-Wl,-Bexport],
+				AC_MSG_RESULT(none))])
+		LDFLAGS="$save_ldflags"
+	;;
+  bsdi*)
+    DEXPORT="-rdynamic " 
     ;;
 esac
 AC_SUBST(DEXPORT)
+test "x$DEXPORT" != x && AC_MSG_RESULT([$DEXPORT])
 
 # Check for Solaris/ultrasparc /dev/perfmon interface
 # (also needs gcc specific asm instructions)
@@ -270,7 +286,39 @@ if test "$erl_checkBoth" = 1; then
     AC_CHECK_FUNC(accept, erl_checkNsl=0, [LIBS=$tk_oldLibs])
 fi
 AC_CHECK_FUNC(gethostbyname, , AC_CHECK_LIB(nsl, main, [LIBS="$LIBS -lnsl"]))
-AC_CHECK_FUNC(gethostbyname_r,AC_DEFINE(HAVE_GETHOSTBYNAME_R))
+AC_CHECK_FUNC(gethostbyname_r,have_gethostbyname_r=yes)
+if test "$have_gethostbyname_r" = yes; then
+	# OK, so we have gethostbyname_r() - but do we know how to call it...?
+	# (if not, HAVE_GETHOSTBYNAME_R will not be defined at all)
+	case $host_os in
+		solaris2*)
+			AC_DEFINE(HAVE_GETHOSTBYNAME_R, GHBN_R_SOLARIS)
+		;;
+		aix4*)
+			# AIX version also needs "struct hostent_data" defn
+			AC_TRY_COMPILE([#include <netdb.h>],
+				[struct hostent_data hd;],
+				AC_DEFINE(HAVE_GETHOSTBYNAME_R, GHBN_R_AIX))
+		;;
+		*)
+			AC_EGREP_CPP(yes,[#include <stdio.h>
+			  #ifdef __GLIBC__
+			  yes
+			  #endif
+			  ], AC_DEFINE(HAVE_GETHOSTBYNAME_R, GHBN_R_GLIBC))
+		;;
+	esac
+fi
+dnl h_errno isn't always declared in netdb.h, and with some definitions
+dnl (e.g. function call for thread-safe) a simple 'extern int' may conflict
+dnl (we do assume that h_errno exists at all...)
+AC_CACHE_CHECK([for h_errno declaration in netdb.h],
+  ac_cv_decl_h_errno,
+[AC_TRY_COMPILE([#include <netdb.h>], [int err = h_errno;],
+  ac_cv_decl_h_errno=yes, ac_cv_decl_h_errno=no)])
+if test $ac_cv_decl_h_errno = yes; then
+  AC_DEFINE(H_ERRNO_DECLARED)
+fi
 
 
 dnl ----------------------------------------------------------------------
@@ -286,7 +334,7 @@ dnl Interactive UX needs <net/errno.h> for socket related error codes.
 dnl Some Linuxes needs <sys/socketio.h> instead of <sys/sockio.h>
 dnl
 AC_CHECK_HEADERS(fcntl.h limits.h unistd.h syslog.h dlfcn.h ieeefp.h \
-                 thread.h pthread.h \
+                 thread.h pthread.h poll.h sys/stropts.h \
                  sys/ioctl.h sys/time.h sys/uio.h sys/sockio.h sys/socketio.h \
                  net/errno.h)
 
@@ -314,13 +362,14 @@ LM_STRUCT_EXCEPTION
 
 AC_CHECK_SIZEOF(long, 4)dnl Assumes all cross compiling is to 32bit uP
 
+AC_C_BIGENDIAN
 
 dnl ----------------------------------------------------------------------
 dnl Checks for library functions.
 dnl ----------------------------------------------------------------------
 
 AC_CHECK_FUNCS([ieee_handler fpsetmask finite res_gethostbyname dlopen \
-		pread pwrite writev memmove strerror \
+		poll pread pwrite writev memmove strerror \
 		gethrtime localtime_r gmtime_r])
 AC_FUNC_SETVBUF_REVERSED
 AC_FUNC_VFORK
@@ -339,7 +388,29 @@ dnl ----------------------------------------------------------------------
 LM_SYS_IPV6
 LM_SYS_MULTICAST
 ERL_TIME_CORRECTION
-ERL_EXTRA_POINTER_BITS
+
+dnl
+dnl Some operating systems allow you to redefine FD_SETSIZE to be able
+dnl to select on more than the default number of file descriptors.
+dnl We first discovered this in BSD/OS where the default is ridiculously
+dnl low (256). But since we use a lot of file descriptors we found the
+dnl need to go over the limit in other os's as well. Since FD_SETSIZE 
+dnl must be defined before pulling in sys/types.h the actual number
+dnl of file descriptors is set in acconfig.h and will thus be in config.h
+dnl which *always* should be included first.
+dnl
+
+AC_MSG_CHECKING([whether to redefine FD_SETSIZE])
+case $host_os in
+  bsdi*)
+	AC_DEFINE(REDEFINE_FD_SETSIZE)
+	AC_MSG_RESULT(yes)
+	;;
+  *)
+	AC_MSG_RESULT(no)
+	;;
+esac
+
 
 
 dnl ----------------------------------------------------------------------
@@ -348,12 +419,10 @@ dnl (using the --disable, --enable and --with switches).
 dnl ----------------------------------------------------------------------
 
 #
-# Check if we should use elib_malloc. On Linux it works well as a
-# remedy for variable pointer bits so let's hope it might do that on
-# other systems that have this affliction.
+# Check if we should use elib_malloc.
 #
-if test X${enable_elib_malloc} = Xyes || \
-   test X${erl_cv_extra_pointer_bits} = Xvariable; then
+
+if test X${enable_elib_malloc} = Xyes; then
  AC_DEFINE(ENABLE_ELIB_MALLOC)
  AC_DEFINE(ELIB_HEAP_SBRK)
  AC_DEFINE(ELIB_ALLOC_IS_CLIB)
@@ -378,13 +447,14 @@ case "$enable_threads" in
     THR_DEFS="-DUSE_THREADS -D_REENTRANT"
     found_threads=0
 
-    # Check for Solaris threads
-    if test "$found_threads" = "0"; then
-      AC_CHECK_LIB(thread, thr_create, [found_threads=1
-	  THR_LIBS="-lthread"
-	  THR_DEFS="$THR_DEFS -DSOLARIS_THREADS"],
-        found_threads=0)
-    fi
+#    We prefer pthreads even if Solaris threads are available.
+#    # Check for Solaris threads
+#    if test "$found_threads" = "0"; then
+#      AC_CHECK_LIB(thread, thr_create, [found_threads=1
+#	  THR_LIBS="-lthread"
+#	  THR_DEFS="$THR_DEFS -DSOLARIS_THREADS"],
+#        found_threads=0)
+#    fi
 
     # Check for POSIX threads
     if test "$found_threads" = "0"; then
@@ -474,32 +544,50 @@ dnl crypto
 #
 # XXX By now only the Solaris 2 linker and the GNU linker are supported.
 # -- Peter
+# XXX (And AIX)
 #--------------------------------------------------------------------
+if test "x$GCC" = xyes; then
+	DED_CFLAGS="$CFLAGS -fPIC"
+else
+	DED_CFLAGS="$CFLAGS"
+fi
 DED_LD=ld
+# I don't think anything really needs the soname stuff
+# - nullify it here and we'll find out  /Per
+ded_soname=""
+AC_MSG_CHECKING(for linker flags for loadable drivers)
 case $host_os in
 	solaris2*|sysv4*)
 		DED_LDFLAGS="-G"
-		ded_soname="-h"
 	;;
-	# assume GNU linker
+	aix4*)
+		DED_LDFLAGS="-G -bnoentry -bexpall"
+	;;
+	freebsd2*)
+		# Non-ELF GNU linker
+		DED_LDFLAGS="-Bshareable"
+	;;
 	*)
-		DED_LDFLAGS="-share"
-		ded_soname="-soname"
+		# assume GNU linker and ELF
+		DED_LDFLAGS="-shared"
 	;;
 esac
+AC_MSG_RESULT([$DED_LDFLAGS])
 
+AC_SUBST(DED_CFLAGS)
 AC_SUBST(DED_LD)
 AC_SUBST(DED_LDFLAGS)
 AC_SUBST(ded_soname)
 
 dnl
-dnl crypto also needs ssleay
+dnl SSL and CRYPTO needs the library ssleay
 dnl
 AC_SUBST(SSLEAY_ROOT)
 SSLEAY_ROOT=
 if test -d ${ERL_TOP}/lib/ssl/usr/ssleay; then
-  SSLEAY_ROOT='$(ERL_TOP)/ssl/usr/ssleay/$(TARGET)'
+  SSLEAY_ROOT='$(ERL_TOP)/lib/ssl/usr/ssleay/$(TARGET)'
 else
+  echo "I could not find ssleay" > ${ERL_TOP}/lib/ssl/SKIP
   echo "I could not find ssleay" > ${ERL_TOP}/lib/crypto/SKIP
 fi
 
@@ -518,15 +606,25 @@ esac
 dnl
 dnl Then there are a number of apps which needs a java compiler...
 dnl
-AC_CHECK_PROG(JAVAC, javac, javac, false)
-if test "$ac_cv_prog_JAVAC" = false; then
-  AC_MSG_WARN([I could not find javac, will skip: jinterface jive])
+AC_CHECK_PROGS(JAVAC, javac guavac gcj jikes bock)
+if test -n "$JAVAC"; then
+  dnl Make sure it's at least JDK 1.2
+  AC_CACHE_CHECK(for JDK version 1.2, 
+     ac_cv_prog_javac_ver_1_2,
+     [ERL_TRY_LINK_JAVA([], [java.util.Iterator iter;],
+        ac_cv_prog_javac_ver_1_2=yes, ac_cv_prog_javac_ver_1_2=no)])
+  if test $ac_cv_prog_javac_ver_1_2 = no; then
+    unset -v JAVAC
+  fi
+fi
+if test -z "$JAVAC"; then
+  AC_MSG_WARN([Could not find any usable java compiler, will skip: jinterface])
 
-  need_java="jinterface jive ic/java_src orber/java_src
+  need_java="jinterface ic/java_src orber/java_src
 		 mnesia_session/examples/person/java_session"
 
   for a in $need_java ; do
-	echo "I Could not find javac" > $ERL_TOP/lib/$a/SKIP
+	echo "No Java compiler found" > $ERL_TOP/lib/$a/SKIP
   done
 fi
 
@@ -534,11 +632,13 @@ dnl
 dnl Orber has a c++ example, this isn't the right way to check for
 dnl it, but....
 dnl
+dnl ...why not use AC_PROG_CXX? [sverkerw]
+dnl
 CXXFLAGS=
 AC_SUBST(CXXFLAGS)
 AC_CHECK_PROG(CXX, g++, g++, false)
 if test "$ac_cv_prog_CXX" = false; then
-  echo "I could not find a c++ compiler" > $ERL_TOP/lib/orber/SKIP
+  echo "No C++ compiler found" > $ERL_TOP/lib/orber/SKIP
 fi
 
 
@@ -600,6 +700,7 @@ dnl
   $srcdir/$lib/crypto/c_src/$host/Makefile:$lib/crypto/c_src/Makefile.in
   $srcdir/$lib/orber/c_src/$host/Makefile:$lib/orber/c_src/Makefile.in
   $srcdir/$lib/odbc/src/$host/Makefile:$lib/odbc/src/Makefile.in
+  $srcdir/$lib/comet/c_src/$host/Makefile:$lib/comet/c_src/Makefile.in
   $srcdir/$lib/runtime_tools/c_src/$host/Makefile:$lib/runtime_tools/c_src/Makefile.in
   )
     

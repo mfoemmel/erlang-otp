@@ -18,9 +18,8 @@
 %%
 %%----------------------------------------------------------------------
 %% File    : orber_ifr_interfacedef.erl
-%% Author  : Per Danielsson <pd@gwaihir>
 %% Purpose : Code for Interfacedef
-%% Created : 14 May 1997 by Per Danielsson <pd@gwaihir>
+%% Created : 14 May 1997
 %%----------------------------------------------------------------------
 
 -module(orber_ifr_interfacedef).
@@ -75,12 +74,6 @@
 -include("orber_ifr.hrl").
 -include("ifr_objects.hrl").
 -include_lib("orber/include/ifr_types.hrl").
-
-%%%----------------------------------------------------------------------
-%%% Local defines
-%% Prefix allowed.
--define(IFRDEF_22, "IDL:omg.org/").
--define(IFRDEF_20, "IDL:").
 
 
 %%%======================================================================
@@ -230,22 +223,10 @@ move({ObjType, ObjID}, New_container, New_name, New_version)
 
 is_a({ObjType, ObjID}, Interface_id) ?tcheck(ir_InterfaceDef, ObjType) ->
     Base_interfaces = '_get_base_interfaces'({ObjType, ObjID}),
-    %%To be backward compatible (2.2->2.0) we must recognize two IFR id types
-    %%"IDL:omg.org/Name:x.x" and "IDL:Name:x.x"
-    Interface_id2 = case lists:prefix(?IFRDEF_22, Interface_id) of
-			true ->
-			    ?IFRDEF_20++lists:nthtail(length(?IFRDEF_22),
-						      Interface_id);
-			_ ->
-			    ?IFRDEF_22++lists:nthtail(length(?IFRDEF_20), 
-						      Interface_id)
-		    end,
     lists:any(fun(X) ->
 		      case catch orber_ifr_contained:'_get_id'(X) of
 			  Interface_id ->
 			      'true';
-			  Interface_id2 ->
-			      true;
 			  _ ->
 			      'false'
 		      end

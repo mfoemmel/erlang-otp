@@ -39,6 +39,19 @@ CIO to; IndexTable* t;
 
 
 /*
+ * Returns size of table in bytes. Stored objects not included.
+ */
+int 
+index_table_sz(IndexTable *t)
+{
+  return (sizeof(IndexTable)
+          - sizeof(Hash)
+          + t->size*sizeof(IndexSlot*)
+          +  hash_table_sz(&(t->htable)));
+}
+
+
+/*
 ** init a pre allocated or static hash structure
 ** and allocate buckets.
 */

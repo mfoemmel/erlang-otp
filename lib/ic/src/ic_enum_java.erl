@@ -64,30 +64,28 @@ emit_enum_class(G, N, X, EnumName) ->
 
     EList = enum_member_name_list(G, N, X),
     %%?PRINTDEBUG2("EList: ~p", [EList]),
-    ic_codegen:emit(Fd, "final public class ~s {\n",[EnumName]),
+    ic_codegen:emit(Fd, ["final public class ",EnumName," {\n\n"
 
-    ic_codegen:emit(Fd, "   // instance variables\n", []),
+			 "   // instance variables\n"]),
+
     emit_enum_member_int_values_initialization(G, N, X, Fd, EList),
     emit_enum_public_instance_variables(G, N, X, Fd, EnumName, EList),
-    ic_codegen:emit(Fd, "   private int _value;\n", []),
-    ic_codegen:nl(Fd),
 
-    ic_codegen:emit(Fd, "   // constructors\n", []),
-    ic_codegen:emit(Fd, "   private ~s(int __value) {\n", [EnumName]),
-    ic_codegen:emit(Fd, "      _value = __value;\n", []),
-    ic_codegen:emit(Fd, "   }\n", []),
- 
+    ic_codegen:emit(Fd, ["   private int _value;\n\n"
 
-    ic_codegen:emit(Fd, "   // methods\n", []),
-
-    ic_codegen:emit(Fd, "   public int value() {\n", []),
-    ic_codegen:emit(Fd, "      return _value;\n", []),
-    ic_codegen:emit(Fd, "   }\n", []),
+			 "   // constructors\n"
+			 "   private ",EnumName,"(int __value) {\n"
+			 "      _value = __value;\n"
+			 "   }\n\n"
+			 
+			 "   // methods\n"
+			 "   public int value() {\n"
+			 "      return _value;\n"
+			 "   }\n"]),
  
     emit_enum_from_int_function(G, N, X, Fd, EnumName, EList),
-    ic_codegen:nl(Fd),
-
-    ic_codegen:emit(Fd, "}\n", []),
+ 
+    ic_codegen:emit(Fd, "\n}\n"),
     file:close(Fd).
 
 %%-----------------------------------------------------------------
@@ -97,32 +95,27 @@ emit_holder_class(G, N, X, EnumName) ->
     EName = string:concat(EnumName, "Holder"),
     {Fd, _} = ic_file:open_java_file(G, N, EName), 
     
-    ic_codegen:emit(Fd, "final public class ~sHolder {\n",[EnumName]),
+    ic_codegen:emit(Fd, ["final public class ",EnumName,"Holder {\n\n"
 
-    ic_codegen:nl(Fd),
-    ic_codegen:emit(Fd, "   // instance variables\n", []),
-    ic_codegen:emit(Fd, "   public ~s value;\n", [EnumName]),
-    ic_codegen:nl(Fd),
+			 "   // instance variables\n"
+			 "   public ",EnumName," value;\n\n"
 
-    ic_codegen:emit(Fd, "   // constructors\n", []),
-    ic_codegen:emit(Fd, "   public ~sHolder() {}\n", [EnumName]),
-    ic_codegen:emit(Fd, "   public ~sHolder(~s initial) {\n", [EnumName, EnumName]),
-    ic_codegen:emit(Fd, "      value = initial;\n", []),
-    ic_codegen:emit(Fd, "   }\n", []),
-    ic_codegen:nl(Fd),
+			 "   // constructors\n"
+			 "   public ",EnumName,"Holder() {}\n\n"
 
-    ic_codegen:emit(Fd, "   // methods\n", []),
-    ic_codegen:emit(Fd, "   public void _marshal(~sOtpOutputStream out) throws java.lang.Exception {\n",
-		    [?ERLANGPACKAGE]),
-    ic_codegen:emit(Fd, "      ~sHelper.marshal(out, value);\n", [EnumName]),
-    ic_codegen:emit(Fd, "   }\n", []),
-    ic_codegen:nl(Fd),
-    ic_codegen:emit(Fd, "   public void _unmarshal(~sOtpInputStream in) throws java.lang.Exception {\n",
-		    [?ERLANGPACKAGE]),  
-    ic_codegen:emit(Fd, "      value = ~sHelper.unmarshal(in);\n", [EnumName]),
-    ic_codegen:emit(Fd, "   }\n", []),
-    ic_codegen:nl(Fd),
-    ic_codegen:emit(Fd, "}\n", []),
+			 "   public ",EnumName,"Holder(",EnumName," initial) {\n"
+			 "      value = initial;\n"
+			 "   }\n\n"
+
+			 "   // methods\n"
+			 "   public void _marshal(",?ERLANGPACKAGE,"OtpOutputStream out) throws java.lang.Exception {\n"
+			 "      ",EnumName,"Helper.marshal(out, value);\n"
+			 "   }\n\n"
+			 
+			 "   public void _unmarshal(",?ERLANGPACKAGE,"OtpInputStream in) throws java.lang.Exception {\n"
+			 "      value = ",EnumName,"Helper.unmarshal(in);\n"
+			 "   }\n\n"
+			 "}\n"]),
     file:close(Fd).
 
 
@@ -134,73 +127,66 @@ emit_helper_class(G, N, X, EnumName) ->
     WEList = enum_member_atom_list(G, N, X),
     {Fd, _} = ic_file:open_java_file(G, N, EName), 
     
-    ic_codegen:emit(Fd, "public class ~sHelper {\n",[EnumName]),
+    ic_codegen:emit(Fd, ["public class ",EnumName,"Helper {\n\n"
 
-    ic_codegen:emit(Fd, "   // constructors\n", []),
-    ic_codegen:emit(Fd, "   private ~sHelper() {}\n", [EnumName]),
-    ic_codegen:nl(Fd),
+			 "   // constructors\n"
+			 "   private ",EnumName,"Helper() {}\n\n"
     
-    ic_codegen:emit(Fd, "   // methods\n", []),
+			 "   // methods\n"
 
-    ic_codegen:emit(Fd, "   public static void marshal(~sOtpOutputStream _out, ~s _value)\n",
-		    [?ERLANGPACKAGE, EnumName]),
-    ic_codegen:emit(Fd, "     throws java.lang.Exception {\n\n"), 
+			 "   public static void marshal(",?ERLANGPACKAGE,"OtpOutputStream _out, ",EnumName," _value)\n"
+			 "     throws java.lang.Exception {\n\n"]),
+    
     emit_enum_write_function(G, N, X, Fd, EnumName),
-    ic_codegen:emit(Fd, "   }\n\n", []),
+    
+    ic_codegen:emit(Fd, ["   }\n\n"
 
-    ic_codegen:emit(Fd, "   public static ~s unmarshal(~sOtpInputStream _in)\n",
-		    [EnumName, ?ERLANGPACKAGE]),
-    ic_codegen:emit(Fd, "     throws java.lang.Exception {\n\n"),
+			 "   public static ",EnumName," unmarshal(",?ERLANGPACKAGE,"OtpInputStream _in)\n"
+			 "     throws java.lang.Exception {\n\n"]),
+
     emit_enum_read_function(G, N, X, Fd, EnumName),
-    ic_codegen:nl(Fd),
-    ic_codegen:emit(Fd, "   }\n\n", []),
+
+    ic_codegen:emit(Fd, "\n   }\n\n"),
 
     emit_enum_private_member_variables(Fd, WEList),
 
-    ic_codegen:nl(Fd),
-    ic_codegen:emit(Fd, "   // Get integer value of enum from string\n", []),
-    ic_codegen:emit(Fd, "   private static int _getIntFromName(String name)"
-		    " throws java.lang.Exception {\n",
-		    []), 
-    ic_codegen:emit(Fd, "      for(int i = 0; i < _memberCount; i++) {\n", []),
-    ic_codegen:emit(Fd, "         if (name.equals(_members[i]))\n", []),
-    ic_codegen:emit(Fd, "            return i;\n", []),
-    ic_codegen:emit(Fd, "      }\n", []),
-    ic_codegen:emit(Fd, "      throw new ~sOtpErlangDataException"
-		    "(\"\");\n",
-		    [?ERLANGPACKAGE]),
-    ic_codegen:emit(Fd, "   }\n\n", []),
-    
-    ic_codegen:emit(Fd, "   public static String id() {\n", []), 
-    ic_codegen:emit(Fd, "      return ~p;\n",[ictk:get_IR_ID(G, N, X)]),
-    ic_codegen:emit(Fd, "   }\n\n", []),
-
-    ic_codegen:emit(Fd, "   public static String name() {\n"), 
-    ic_codegen:emit(Fd, "      return ~p;\n",[EnumName]),
-    ic_codegen:emit(Fd, "   }\n\n"),
+    ic_codegen:emit(Fd, ["\n   // Get integer value of enum from string\n"
+			 "   private static int _getIntFromName(String name) throws java.lang.Exception {\n" 
+			 "      for(int i = 0; i < _memberCount; i++) {\n"
+			 "         if (name.equals(_members[i]))\n"
+			 "            return i;\n"
+			 "      }\n"
+			 "      throw new java.lang.Exception(\"\");\n"
+			 "   }\n\n"
+			 
+			 "   public static String id() {\n"
+			 "      return \"",ictk:get_IR_ID(G, N, X),"\";\n"
+			 "   }\n\n"
+			 
+			 "   public static String name() {\n" 
+			 "      return \"",EnumName,"\";\n"
+			 "   }\n\n"]),
     
     ic_jbe:emit_type_function(G, N, X, Fd),
 
-    ic_codegen:emit(Fd, "   public static void insert(~sAny _any, ~s _this)\n",
-		    [?ICPACKAGE,EnumName]),
-    ic_codegen:emit(Fd, "     throws java.lang.Exception {\n\n"),
-   
-    ic_codegen:emit(Fd, "     ~sOtpOutputStream _os = \n",[?ERLANGPACKAGE]),
-    ic_codegen:emit(Fd, "       new ~sOtpOutputStream();\n\n",[?ERLANGPACKAGE]), 
-    
-    ic_codegen:emit(Fd, "     _any.type(type());\n"),     
-    ic_codegen:emit(Fd, "     marshal(_os, _this);\n"),
-    ic_codegen:emit(Fd, "     _any.insert_Streamable(_os);\n"),
-    ic_codegen:emit(Fd, "   }\n\n"),
-
-    ic_codegen:emit(Fd, "   public static ~s extract(~sAny _any)\n",
-		    [EnumName,?ICPACKAGE]),
-    ic_codegen:emit(Fd, "     throws java.lang.Exception {\n\n"),
-  
-    ic_codegen:emit(Fd, "     return unmarshal(_any.extract_Streamable());\n"),
-    ic_codegen:emit(Fd, "   }\n\n"),
-
-    ic_codegen:emit(Fd, "}\n", []),
+    ic_codegen:emit(Fd, ["   public static void insert(",?ICPACKAGE,"Any _any, ",EnumName," _this)\n"
+			 "     throws java.lang.Exception {\n\n"
+			 
+			 "     ",?ERLANGPACKAGE,"OtpOutputStream _os = \n"
+			 "       new ",?ERLANGPACKAGE,"OtpOutputStream();\n\n"
+			 
+			 "     _any.type(type());\n"
+			 "     marshal(_os, _this);\n"
+			 "     _any.insert_Streamable(_os);\n"
+			 "   }\n\n"
+			 
+			 "   public static ",EnumName," extract(",?ICPACKAGE,"Any _any)\n"
+			 "     throws java.lang.Exception {\n\n"
+			 
+			 "     return unmarshal(_any.extract_Streamable());\n"
+			 "   }\n\n"
+			 
+			 "}\n"]),
     file:close(Fd).
 
 %%-----------------------------------------------------------------
@@ -209,8 +195,7 @@ emit_helper_class(G, N, X, EnumName) ->
 emit_enum_public_instance_variables(G, N, X, Fd, EnumName, []) ->
     ok;
 emit_enum_public_instance_variables(G, N, X, Fd, EnumName, [Enumerator |EList]) ->
-    ic_codegen:emit(Fd, "   public static final ~s ~s = new ~s(_~s);\n",
-		    [EnumName, Enumerator, EnumName, Enumerator]),
+    ic_codegen:emit(Fd, ["   public static final ",EnumName," ",Enumerator," = new ",EnumName,"(_",Enumerator,");\n"]),
     emit_enum_public_instance_variables(G, N, X, Fd, EnumName, EList).
 
 %%-----------------------------------------------------------------
@@ -218,7 +203,7 @@ emit_enum_public_instance_variables(G, N, X, Fd, EnumName, [Enumerator |EList]) 
 %%-----------------------------------------------------------------
 emit_enum_member_int_values_initialization(G, N, X, Fd, EList) ->
     InitString = emit_enum_member_int_values_initialization_1(G, N, X, Fd, EList, 0),
-    ic_codegen:emit(Fd, "   public static final int ~s;\n", [InitString]).
+    ic_codegen:emit(Fd, ["   public static final int ",InitString,";\n"]).
 
 
 %%-----------------------------------------------------------------
@@ -240,51 +225,47 @@ emit_enum_member_int_values_initialization_1(G, N, X, Fd, [Enumerator |EList], N
 %% Func:  emit_enum_from_int_function/6
 %%-----------------------------------------------------------------
 emit_enum_from_int_function(G, N, X, Fd, EnumName, EList) ->
-    ic_codegen:emit(Fd, "   public static final ~s from_int(int __value) "
-		    " throws java.lang.Exception {\n", [EnumName]),
-    ic_codegen:emit(Fd, "      switch (__value) {\n", []),
+    ic_codegen:emit(Fd, 
+		    ["   public static final ",EnumName," from_int(int __value)  throws java.lang.Exception {\n"
+		     "      switch (__value) {\n"]),
     emit_enum_from_int_function_switchbody(Fd, EList),
-    ic_codegen:emit(Fd, "      }\n", []),
-    ic_codegen:emit(Fd, "   }\n", []).
+    ic_codegen:emit(Fd, ["      }\n"
+			 "   }\n"]).
     
 %%-----------------------------------------------------------------
 %% Func:  emit_enum_from_int_function_switchbody/2
 %%-----------------------------------------------------------------
 emit_enum_from_int_function_switchbody(Fd, []) ->
-    ic_codegen:emit(Fd, "         default:\n", []),
-    ic_codegen:emit(Fd, "            throw new ~s"
-		    "OtpErlangDataException(\"\");\n",
-		    [?ERLANGPACKAGE]);
+    ic_codegen:emit(Fd, ["         default:\n"
+			 "            throw new java.lang.Exception(\"\");\n"]);
 emit_enum_from_int_function_switchbody(Fd, [Enumerator |EList]) ->
-    ic_codegen:emit(Fd, "         case _~s:\n", [Enumerator]),
-    ic_codegen:emit(Fd, "            return ~s;\n", [Enumerator]),    
+    ic_codegen:emit(Fd, ["         case _",Enumerator,":\n"
+			 "            return ",Enumerator,";\n"]),    
     emit_enum_from_int_function_switchbody(Fd, EList).
 
 %%-----------------------------------------------------------------
 %% Func:  emit_enum_private_member_variables/2
 %%-----------------------------------------------------------------
 emit_enum_private_member_variables(Fd, EList) ->
-    ic_codegen:emit(Fd, "   private static final int _memberCount = ~p;\n",
-		    [length(EList)]),
-    ic_codegen:emit(Fd, "   private static String[] _members  = {\n", []),
+    ic_codegen:emit(Fd, ["   private static final int _memberCount = ",integer_to_list(length(EList)),";\n"
+			 "   private static String[] _members  = {\n"]),
     emit_enum_private_member_variables_1(Fd, EList),
-    ic_codegen:emit(Fd, "   };\n", []).
+    ic_codegen:emit(Fd, "   };\n").
 
 %%-----------------------------------------------------------------
 %% Func:  emit_enum_private_member_variables_1/2
 %%-----------------------------------------------------------------
 emit_enum_private_member_variables_1(Fd, [Enumerator]) ->
-    ic_codegen:emit(Fd, "      ~p\n", [Enumerator]);
+    ic_codegen:emit(Fd, ["      \"",Enumerator,"\"\n"]);
 emit_enum_private_member_variables_1(Fd, [Enumerator |EList]) ->
-    ic_codegen:emit(Fd, "      ~p,\n", [Enumerator]),
+    ic_codegen:emit(Fd, ["      \"",Enumerator,"\",\n"]),
     emit_enum_private_member_variables_1(Fd, EList).
 
 %%-----------------------------------------------------------------
 %% Func:  emit_enum_read_function/5
 %%-----------------------------------------------------------------
 emit_enum_read_function(G, N, X, Fd, EnumName) ->
-    ic_codegen:emit(Fd, "     return ~s.from_int(_getIntFromName(_in.read_atom()));",
-		    [EnumName]).
+    ic_codegen:emit(Fd, ["     return ",EnumName,".from_int(_getIntFromName(_in.read_atom()));"]).
 
 %%-----------------------------------------------------------------
 %% Func:  emit_enum_write_function/5
@@ -320,5 +301,11 @@ enum_member_atom_list(G, N, X) ->
 		  ic_forms:get_id2(Enumerator)
 	  end,
 	  ic_forms:get_body(X)).
+
+
+
+
+
+
 
 

@@ -204,12 +204,12 @@ do_start(F,Flags) ->
     %% the code_server.
     %% Otherwise a dead-lock may occur when the code_server is starting.
 
-    ets:module_info(module),			% Use ets
-    fixtable_server:module_info(module),        % Used by ets
-    code_server:module_info(module),		% Use code_server
-    code_server_int:module_info(module),	% Use code_server_int
-    code_aux:module_info(module),		% Use code_aux
-
+    ets:module_info(module),
+    fixtable_server:module_info(module),
+    code_server:module_info(module),
+    code_server_int:module_info(module),
+    code_aux:module_info(module),
+    string:module_info(module),
 
     Mode = get_mode(Flags),
     case init:get_argument(root) of 

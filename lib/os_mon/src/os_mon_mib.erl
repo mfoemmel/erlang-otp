@@ -99,7 +99,7 @@ disk_table(new) ->
     snmp_shadow_table:table_func(new, ?diskShadowArgs);
 disk_table(delete) ->
     Tab = diskAlloc,
-    case ?verify(mnesia:delete_table_copy(Tab, node()),
+    case ?verify(mnesia:del_table_copy(Tab, node()),
 		 [delete_table_copy, Tab, node()]) of
 	{atomic, ok} ->
 	    snmp_shadow_table:table_func(delete, ?diskShadowArgs);

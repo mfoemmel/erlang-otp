@@ -18,36 +18,25 @@
 #ifndef _ERL_MALLOC_H
 #define _ERL_MALLOC_H
 
+#include "portability.h"
 #include "erl_eterm.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+__ERL_BEGIN_DECL
 
+extern void erl_init_malloc __ERL_P((Erl_Heap*,long));
+extern void *erl_malloc __ERL_P((long));
+extern void erl_free __ERL_P((void*));
 
-#ifdef __STDC__
-extern void erl_init_malloc(Erl_Heap*,long);
-extern void *erl_malloc(long);
-extern void erl_free(void*);
-extern ETERM *erl_alloc_eterm(unsigned char);
-extern void erl_free_term(ETERM*);
-extern void erl_free_compound(ETERM*);
-extern void erl_free_array(ETERM**,int);
-extern int erl_current_fix_desc(void);
-#else
-extern void erl_init_malloc();
-extern void *erl_malloc();
-extern void erl_free();
-extern ETERM *erl_alloc_eterm();
-extern void erl_free_term();
-extern void erl_free_compound();
-extern void erl_free_array();
-extern int erl_current_fix_desc();
-#endif
+extern ETERM * eterm_ref __ERL_P((ETERM *));
+extern void eterm_unref __ERL_P((ETERM *));
 
-#ifdef __cplusplus
-}
-#endif
+extern ETERM *erl_alloc_eterm __ERL_P((unsigned char));
+extern void erl_free_term __ERL_P((ETERM*));
+extern void erl_free_compound __ERL_P((ETERM*));
+extern void erl_free_array __ERL_P((ETERM**,int));
+extern int erl_current_fix_desc __ERL_P((void));
+
+__ERL_END_DECL
 
 #endif
 

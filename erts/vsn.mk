@@ -1,5 +1,5 @@
-VSN = 4.9.1
-SYSTEM_VSN = R6B
+VSN = 5.0.1
+SYSTEM_VSN = R7B
 
 # Port number 4365 in 4.2
 # Port number 4366 in 4.3

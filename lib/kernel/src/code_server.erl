@@ -371,29 +371,62 @@ make_path(BundleDir,Bundles0) ->
     make_path(BundleDir,Bundles,[],[]).
 
 choose_bundles(Bundles) ->
-    Bs = lists:sort(lists:map(fun(B) -> cr_b(B) end,
-			      Bundles)),
-    lists:map(fun({Name,FullName}) -> FullName end,
+    Bs = lists:sort(lists:map(fun(B) -> cr_b(B) end,Bundles)),
+    lists:map(fun({Name,NumVsn,FullName}) -> FullName end,
 	      choose(lists:reverse(Bs),[])).
 
 cr_b(FullName) ->
-    case split(lists:reverse(FullName)) of
-	{ok,Name} ->
-	    {Name,FullName};
+    case split(FullName, "-") of
+	Toks when length(Toks) > 1 ->
+	    VsnStr = lists:last(Toks),
+	    case vsn_to_num(VsnStr) of
+		{ok, VsnNum} ->
+		    Name = join(lists:sublist(Toks,length(Toks)-1),"-"),
+		    {Name,VsnNum,FullName};
+		_ ->
+		    {FullName, [0], FullName}
+	    end;
 	_ ->
-	    {FullName,FullName}
+	    {FullName,[0],FullName}
     end.
 
-split([$-|Name]) -> {ok,lists:reverse(Name)};
-split([_|T])     -> split(T);
-split(_)         -> false.
+%% Convert "X.Y.Z. ..." to [K, L, M| ...]
+vsn_to_num(Vsn) ->
+    case is_vsn(Vsn) of
+	true ->
+	    {ok, [list_to_integer(S) || S <- split(Vsn, ".")]};
+	_  ->
+	    false
+    end.
 
-choose([{Name,FullName}|Bs],Ack) ->
+is_vsn(Str) when list(Str) ->
+    Vsns = split(Str, "."),
+    lists:all(fun is_numstr/1, Vsns);
+is_vsn(_) ->
+    false.
+
+is_numstr(Cs) ->
+    lists:all(fun (C) when $0 =< C, C =< $9 -> 
+		      true; 
+		  (_) -> false end, Cs).
+
+split(Cs, S) ->
+    string:tokens(Cs, S).
+    
+join([H1, H2| T], S) ->
+    H1 ++ S ++ join([H2| T], S);
+join([H], _) ->
+    H;
+join([], _) ->
+    [].
+
+
+choose([{Name,NumVsn,FullName}|Bs],Ack) ->
     case lists:keymember(Name,1,Ack) of
 	true ->
 	    choose(Bs,Ack);
 	_ ->
-	    choose(Bs,[{Name,FullName}|Ack])
+	    choose(Bs,[{Name,NumVsn,FullName}|Ack])
     end;
 choose([],Ack) ->
     Ack.

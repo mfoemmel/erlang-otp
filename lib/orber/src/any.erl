@@ -18,8 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: any.erl
-%% Author: Lars Thorsen
-%% 
 %% Description:
 %%    This file conatins the interface for the any type
 %%
@@ -53,24 +51,23 @@ create(TC, V) ->
 	true ->
 	    #any{typecode=TC, value=V};
 	false ->
-	    {error, bad_typecode}
+	    corba:raise(#'BAD_TYPECODE'{completion_status=?COMPLETED_NO})
     end.
-
 
 set_typecode(Any, TC) ->
     case orber_tc:check_tc(TC) of
 	true ->
 	    Any#any{typecode=TC};
 	false ->
-	    {error, bad_typecode}
+	    corba:raise(#'BAD_TYPECODE'{completion_status=?COMPLETED_NO})
     end.
 
 get_typecode(Any) ->
     Any#any.typecode.
-
 
 set_value(Any, V) ->
      Any#any{value=V}.
 
 get_value(Any) ->
     Any#any.value.
+

@@ -17,15 +17,21 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <errno.h>
-#include <unistd.h>
 #include <sys/types.h>
+#include <string.h>
+#ifdef __WIN32__
+#include <winsock2.h>
+#include <direct.h>
+#include <windows.h>
+#include <winbase.h>
+#else /* not __WIN32__ */
+#include <errno.h> 
+#include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
+#include <arpa/inet.h> 
 #include <netdb.h>
+#endif
 #include "rmod_random__s.h"
 
 /* Used functions */

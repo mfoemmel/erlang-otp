@@ -38,6 +38,7 @@
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
 start() ->
     ensure_started().
 
@@ -55,6 +56,7 @@ create(Name) ->
     ok.
 
 delete(Name) ->
+    ensure_started(),
     global:trans({{?MODULE, Name}, self()},
 		 fun() ->
 			 gen_server:multi_call(?MODULE, {delete, Name})
@@ -62,6 +64,7 @@ delete(Name) ->
     ok.
 
 join(Name, Pid) when pid(Pid) ->
+    ensure_started(),
     case ets:lookup(pg2_table, {members, Name}) of
 	[] ->
 	    {error, {no_such_group, Name}};
@@ -75,6 +78,7 @@ join(Name, Pid) when pid(Pid) ->
     end.
 
 leave(Name, Pid) when pid(Pid) ->
+    ensure_started(),
     case ets:lookup(pg2_table, {members, Name}) of
         [] ->
             {error, {no_such_group, Name}};
@@ -88,18 +92,21 @@ leave(Name, Pid) when pid(Pid) ->
     end.
     
 get_members(Name) ->
+    ensure_started(),
     case ets:lookup(pg2_table, {members, Name}) of
 	[{_, Members}] -> Members;
 	[] -> {error, {no_such_group, Name}}
     end.
 
 get_local_members(Name) ->
+    ensure_started(),
     case ets:lookup(pg2_table, {local_members, Name}) of
 	[{_, Members}] -> Members;
 	[] -> {error, {no_such_group, Name}}
     end.
 
 which_groups() ->
+    ensure_started(),
     ets:filter(pg2_table,
 	       fun([{{members, Group}, _}]) ->
 		       {true, Group};

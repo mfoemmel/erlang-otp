@@ -29,7 +29,9 @@
 %% Used variables are defined.
 %% Variables in let and funs.
 %% Patterns case clauses.
-%% Vectors only as multiple values/variables/patterns.
+%% Values only as multiple values/variables/patterns.
+%% Return same number of values as requested
+%% Correct number of arguments
 %%
 %% Checks to add:
 %%
@@ -42,7 +44,7 @@
 -export([module/1,module/2,format_error/1]).
 
 -import(lists, [reverse/1,all/2,foldl/3]).
--import(ordsets, [add_element/2,is_element/2,subtract/2]).
+-import(ordsets, [add_element/2,is_element/2,subtract/2,union/2]).
 
 -include("core_parse.hrl").
 
@@ -55,6 +57,8 @@
 	       errors=[],			%Errors
 	       warnings=[]}).			%Warnings
 
+%%-deftype retcount() -> any | unknown | int().
+
 %% format_error(Error)
 %%  Return a string describing the error.
 
@@ -64,12 +68,24 @@ format_error({undefined_function,{F,A}}) ->
     io_lib:format("function ~w/~w undefined", [F,A]);
 format_error({illegal_expr,{F,A}}) ->
     io_lib:format("illegal expression in ~w/~w", [F,A]);
+format_error({illegal_pattern,{F,A}}) ->
+    io_lib:format("illegal pattern in ~w/~w", [F,A]);
+format_error({pattern_mismatch,{F,A}}) ->
+    io_lib:format("pattern count mismatch in ~w/~w", [F,A]);
+format_error({return_mismatch,{F,A}}) ->
+    io_lib:format("return count mismatch in ~w/~w", [F,A]);
+format_error({arg_mismatch,{F,A}}) ->
+    io_lib:format("argument count mismatch in ~w/~w", [F,A]);
 format_error({unbound_var,N,{F,A}}) ->
     io_lib:format("unbound variable ~s in ~w/~w", [N,F,A]);
+format_error({duplicate_var,N,{F,A}}) ->
+    io_lib:format("duplicate variable ~s in ~w/~w", [N,F,A]);
 format_error({not_var,{F,A}}) ->
     io_lib:format("expecting variable in ~w/~w", [F,A]);
 format_error({not_pattern,{F,A}}) ->
-    io_lib:format("expecting pattern in ~w/~w", [F,A]).
+    io_lib:format("expecting pattern in ~w/~w", [F,A]);
+format_error({not_bs_pattern,{F,A}}) ->
+    io_lib:format("expecting bit syntax pattern in ~w/~w", [F,A]).
 
 %% module(CoreMod) ->
 %% module(CoreMod, [CompileOption]) ->
@@ -139,128 +155,194 @@ function(#c_fdef{func=F,arity=Ar,body=B}, St0) ->
     St1 = St0#lint{func=Func,defined=add_element(Func, St0#lint.defined)},
     %% Body must be a fun!
     case B of
-	#c_fun{} -> expr(B, [], St1);
+	#c_fun{} -> expr(B, [], any, St1);
 	Other -> add_error({illegal_expr,St1#lint.func}, St1)
     end.
 
-%% body(Expr, [DefVar], State) -> State.
+%% body(Expr, [DefVar], RetCount, State) -> State.
 
-body(#c_vector{es=Es}, Ds, St) ->
-    expr_list(Es, Ds, St);
-body(E, Ds, St) ->
-    expr(E, Ds, St).
+body(#c_values{es=Es}, Ds, Rc, St) ->
+    return_match(Rc, length(Es), expr_list(Es, Ds, St));
+body(E, Ds, Rt, St0) ->
+    St1 = expr(E, Ds, Rt, St0),
+    case core_lib:is_literal_top(E) of
+	true -> return_match(Rt, 1, St1); 
+	false -> St1
+    end.
 
-%% expr(Expr, [DefVar], State) -> State.
+%% expr(Expr, [DefVar], Rt, State) -> State.
 
-expr(#c_var{name=N}, Ds, St) -> expr_var(N, Ds, St);
-expr(#c_int{}, Ds, St) -> St;
-expr(#c_float{}, Ds, St) -> St;
-expr(#c_atom{}, Ds, St) -> St;
-expr(#c_char{}, Ds, St) -> St;
-expr(#c_string{}, Ds, St) -> St;
-expr(#c_nil{}, Ds, St) -> St;
-expr(#c_cons{head=H,tail=T}, Ds, St) ->
+expr(#c_var{name=N}, Ds, Rt, St) -> expr_var(N, Ds, St);
+expr(#c_int{}, Ds, Rt, St) -> St;
+expr(#c_float{}, Ds, Rt, St) -> St;
+expr(#c_atom{}, Ds, Rt, St) -> St;
+expr(#c_char{}, Ds, Rt, St) -> St;
+expr(#c_string{}, Ds, Rt, St) -> St;
+expr(#c_nil{}, Ds, Rt, St) -> St;
+expr(#c_cons{head=H,tail=T}, Ds, Rt, St) ->
     expr_list([H,T], Ds, St);
-expr(#c_tuple{es=Es}, Ds, St) ->
+expr(#c_tuple{es=Es}, Ds, Rt, St) ->
     expr_list(Es, Ds, St);
-expr(#c_let{vars=Vs,arg=Arg,body=B}, Ds0, St0) ->
-    St1 = body(Arg, Ds0, St0),			%This is a body
-    {Ds1,St2} = let_vars(Vs, Ds0, St1),
-    body(B, Ds1, St2);
-expr(#c_seq{arg=Arg,body=B}, Ds, St0) ->
-    St1 = expr(Arg, Ds, St0),
-    body(B, Ds, St1);
-expr(#c_fun{vars=Vs,body=B}, Ds0, St0) ->
-    {Ds1,St1} = var_list(Vs, Ds0, St0),
-    body(B, Ds1, St1);
-expr(#c_case{arg=Arg,clauses=Cs}, Ds, St0) ->
-    St1 = body(Arg, Ds, St0),
-    clauses(Cs, Ds, St1);
-expr(#c_receive{clauses=Cs,timeout=T,action=A}, Ds, St0) ->
-    St1 = expr(T, Ds, St0),
-    St2 = body(A, Ds, St1),
-    clauses(Cs, Ds, St2);
-expr(#c_catch{body=B}, Ds, St) ->
-    body(B, Ds, St);
-expr(#c_call{op=Op,args=As}, Ds, St0) ->
-    St1 = call_op(Op, Ds, St0),
+expr(#c_bin{es=V}, Ds, Rt, St) ->
+    bin_elem_list(V, Ds, St);
+expr(#c_local{}, Ds, Rt, St) -> return_match(Rt, 1, St);
+expr(#c_fun{vars=Vs,body=B}, Ds, Rt, St0) ->
+    {Vvs,St1} = variable_list(Vs, St0),
+    return_match(Rt, 1, body(B, union(Vvs, Ds), any, St1));
+expr(#c_seq{arg=Arg,body=B}, Ds, Rt, St0) ->
+    St1 = expr(Arg, Ds, any, St0),		%Ignore values
+    body(B, Ds, Rt, St1);
+expr(#c_let{vars=Vs,arg=Arg,body=B}, Ds, Rt, St0) ->
+    St1 = body(Arg, Ds, let_varcount(Vs), St0),	%This is a body
+    {Lvs,St2} = variable_list(Vs, St1),
+    body(B, union(Lvs, Ds), Rt, St2);
+expr(#c_case{arg=Arg,clauses=Cs}, Ds, Rt, St0) ->
+    Pc = case_patcount(Cs),
+    St1 = body(Arg, Ds, Pc, St0),
+    clauses(Cs, Ds, Pc, Rt, St1);
+expr(#c_receive{clauses=Cs,timeout=T,action=A}, Ds, Rt, St0) ->
+    St1 = expr(T, Ds, 1, St0),
+    St2 = body(A, Ds, Rt, St1),
+    clauses(Cs, Ds, 1, Rt, St2);
+expr(#c_call{op=Op,args=As}, Ds, Rt, St0) ->
+    St1 = call_op(Op, Ds, length(As), St0),
     expr_list(As, Ds, St1);
-expr(#c_local{}, Ds, St) -> St;
-expr(Other, Ds, St) ->
+expr(#c_catch{body=B}, Ds, Rt, St) ->
+    return_match(Rt, 1, body(B, Ds, 1, St));
+expr(Other, Ds, Rt, St) ->
+    io:fwrite("clint: ~p~n", [Other]),
     add_error({illegal_expr,St#lint.func}, St).
 
 %% expr_list([Expr], [DefVar], State) -> State.
 
 expr_list(Es, Ds, St0) ->
-    foldl(fun (E, St) -> expr(E, Ds, St) end, St0, Es).
+    foldl(fun (E, St) -> expr(E, Ds, 1, St) end, St0, Es).
 
-%% call_op(Op, [DefVar], State) -> State.
+%% bin_elem_list([Elem], [DefVar], State) -> State.
+
+bin_elem_list(Es, Ds, St0) ->
+    foldl(fun (E, St) -> bin_elem(E, Ds, St) end, St0, Es).
+
+bin_elem(#c_bin_elem{val=V,size=S,type=T}, Ds, St0) ->
+    St1 = bit_type(T, St0),
+    expr_list([V,S], Ds, St1).
+
+%% let_varcount([Var]) -> int().
+
+let_varcount([]) -> any;			%Ignore values
+let_varcount(Es) -> length(Es).
+
+%% case_patcount([Clause]) -> int().
+
+case_patcount([#c_clause{pats=Ps}|Cs]) -> length(Ps).
+
+%% clauses([Clause], [DefVar], PatCount, RetCount, State) -> State.
+
+clauses(Cs, Ds, Pc, Rt, St0) ->
+    foldl(fun (C, St) -> clause(C, Ds, Pc, Rt, St) end, St0, Cs).
+
+%% clause(Clause, [DefVar], PatCount, RetCount, State) -> State.
+
+clause(#c_clause{pats=Ps,guard=G,body=B}, Ds0, Pc, Rt, St0) ->
+    St1 = pattern_match(Pc, length(Ps), St0),
+    {Pvs,St2} = pattern_list(Ps, Ds0, St1),
+    Ds1 = union(Pvs, Ds0),
+    St3 = expr(G, Ds1, any, St2),
+    body(B, Ds1, Rt, St3).
+
+%% call_op(Op, [DefVar], ArgCount, State) -> State.
 %%  A call op is either an internal, remote or an expression.
 
-call_op(#c_internal{}, Ds, St) -> St; 
-call_op(#c_remote{}, Ds, St) -> St;
-call_op(E, Ds, St) -> expr(E, Ds, St).
+call_op(#c_internal{arity=Ar}, Ds, Ac, St) -> arg_match(Ac, Ar, St); 
+call_op(#c_remote{arity=Ar}, Ds, Ac, St) -> arg_match(Ac, Ar, St);
+call_op(E, Ds, Ac, St) -> expr(E, Ds, 1, St).	%Hard to check
 
-%% let_vars([Var], [DefVar], State) -> {[DefVar],State}.
+%% variable(Var, [PatVar], State) -> {[Var],State}.
 
-let_vars(#c_vector{es=Vs}, Ds, St) ->
-    var_list(Vs, Ds, St);
-let_vars(Var, Ds, St) ->
-    variable(Var, Ds, St).
-
-%% clauses([Clause], [DefVar], State) -> State.
-
-clauses(Cs, Ds, St0) ->
-    foldl(fun (C, St) -> clause(C, Ds, St) end, St0, Cs).
-
-%% clause(Clause, [DefVar], State) -> State.
-
-clause(#c_clause{pat=P,guard=G,body=B}, Ds0, St0) ->
-    {Ds1,St1} = case_pats(P, Ds0, St0),
-    St2 = expr(G, Ds1, St1),
-    body(B, Ds1, St2).
-
-%% case_pats([Var], [DefVar], State) -> {[DefVar],State}.
-
-case_pats(#c_vector{es=Ps}, Ds, St) ->
-    pat_list(Ps, Ds, St);
-case_pats(Pat, Ds, St) ->
-    pattern(Pat, Ds, St).
-
-%% variable(Var, [DefVar], State) -> {[DefVar],State}.
-
-variable(#c_var{name=N}, Ds, St) ->
-    {add_element(N, Ds),St};
+variable(#c_var{name=N}, Ps, St) ->
+    case is_element(N, Ps) of
+	true -> {[],add_error({duplicate_var,N,St#lint.func}, St)};
+	false -> {[N],St}
+    end;
 variable(Other, Ds, St) -> {Ds,add_error({not_var,St#lint.func}, St)}.
 
-%% var_list([Var], [DefVar], State) -> {[DefVar],State}.
+%% variable_list([Var], State) -> {[Var],State}.
+%% variable_list([Var], [PatVar], State) -> {[Var],State}.
 
-var_list(Vs, Ds0, St0) ->
-    foldl(fun (V, {Ds,St}) -> variable(V, Ds, St) end, {Ds0,St0}, Vs).
+variable_list(Vs, St) -> variable_list(Vs, [], St).
 
-%% pattern(Var, [DefVar], State) -> {[DefVar],State}.
+variable_list(Vs, Ps, St) ->
+    foldl(fun (V, {Ps0,St0}) ->
+		  {Vvs,St1} = variable(V, Ps0, St),
+		  {union(Vvs, Ps0),St1}
+	  end, {Ps,St}, Vs).
 
-pattern(#c_var{name=N}, Ds, St) ->
-    {add_element(N, Ds),St};
-pattern(#c_int{}, Ds, St) -> {Ds,St};
-pattern(#c_float{}, Ds, St) -> {Ds,St};
-pattern(#c_atom{}, Ds, St) -> {Ds,St};
-pattern(#c_char{}, Ds, St) -> {Ds,St};
-pattern(#c_string{}, Ds, St) -> {Ds,St};
-pattern(#c_nil{}, Ds, St) -> {Ds,St};
-pattern(#c_cons{head=H,tail=T}, Ds, St) ->
-    pat_list([H,T], Ds, St);
-pattern(#c_tuple{es=Es}, Ds, St) ->
-    pat_list(Es, Ds, St);
-pattern(#c_alias{var=V,pat=P}, Ds0, St0) ->
-    {Ds1,St1} = variable(V, Ds0, St0),
-    pattern(P, Ds1, St1);
-pattern(Other, Ds, St) -> {Ds,add_error({not_pattern,St#lint.func}, St)}.
+%% pattern(Pattern, [DefVar], State) -> {[PatVar],State}.
+%% pattern(Pattern, [DefVar], [PatVar], State) -> {[PatVar],State}.
+%%  Patterns are complicated by sizes in binaries.  These are pure
+%%  input variables which create no bindings.  We, therefor, need to
+%%  carry around the original defined variables to get the correct
+%%  handling.
 
-%% pat_list([Var], [DefVar], State) -> {[DefVar],State}.
+pattern(P, Ds, St) -> pattern(P, Ds, [], St).
 
-pat_list(Ps, Ds0, St0) ->
-    foldl(fun (P, {Ds,St}) -> pattern(P, Ds, St) end, {Ds0,St0}, Ps).
+pattern(#c_var{name=N}, Ds, Ps, St) ->
+    pat_var(N, Ds, Ps, St);
+pattern(#c_int{}, Ds, Ps, St) -> {Ps,St};
+pattern(#c_float{}, Ds, Ps, St) -> {Ps,St};
+pattern(#c_atom{}, Ds, Ps, St) -> {Ps,St};
+pattern(#c_char{}, Ds, Ps, St) -> {Ps,St};
+pattern(#c_string{}, Ds, Ps, St) -> {Ps,St};
+pattern(#c_nil{}, Ds, Ps, St) -> {Ps,St};
+pattern(#c_cons{head=H,tail=T}, Ds, Ps, St) ->
+    pattern_list([H,T], Ds, Ps, St);
+pattern(#c_tuple{es=Es}, Ds, Ps, St) ->
+    pattern_list(Es, Ds, Ps, St);
+pattern(#c_bin{es=Es}, Ds, Ps, St) ->
+    pat_bin(Es, Ds, Ps, St);
+pattern(#c_alias{var=V,pat=P}, Ds, Ps, St0) ->
+    {Vvs,St1} = variable(V, Ps, St0),
+    pattern(P, Ds, union(Vvs, Ps), St1);
+pattern(Other, Ds, Ps, St) -> {Ps,add_error({not_pattern,St#lint.func}, St)}.
+
+pat_var(N, Ds, Ps, St) ->
+    case is_element(N, Ps) of
+	true -> {Ps,add_error({duplicate_var,N,St#lint.func}, St)};
+	false -> {add_element(N, Ps),St}
+    end.
+
+%% pat_bin_list([Elem], [DefVar], [PatVar], State) -> {[PatVar],State}.
+
+pat_bin(Es, Ds, Ps0, St0) ->
+    foldl(fun (E, {Ps,St}) -> pat_element(E, Ds, Ps, St) end, {Ps0,St0}, Es).
+
+pat_element(#c_bin_elem{val=V,size=S,type=T}, Ds, Ps, St0) ->
+    St1 = bit_type(T, St0),
+    St2 = pat_bit_expr(S, Ds, 1, St1),
+    pattern(V, Ds, Ps, St2);
+pat_element(Other, Ds, Ps, St) ->
+    {Ps,add_error({not_bs_pattern,St#lint.func}, St)}.
+
+pat_bit_expr(#c_int{}, Ds, Rt, St) -> St;
+pat_bit_expr(#c_var{name=N}, Ds, Rt, St) ->
+    expr_var(N, Ds, St);
+pat_bit_expr(#c_string{}, Ds, Rt, St) -> St;
+pat_bit_expr(Other, Ds, Rt, St) ->
+    add_error({illegal_expr,St#lint.func}, St).    
+
+bit_type(Type, St) ->
+    case erl_bits:set_bit_type(default, Type) of
+	{ok,S,Bt} -> St; 
+	{error,E} -> add_error({E,St#lint.func}, St)
+    end.
+
+%% pattern_list([Var], [DefVar], State) -> {[PatVar],State}.
+%% pattern_list([Var], [DefVar], [PatVar], State) -> {[PatVar],State}.
+
+pattern_list(Pats, Ds, St) -> pattern_list(Pats, Ds, [], St).
+
+pattern_list(Pats, Ds, Ps0, St0) ->
+    foldl(fun (P, {Ps,St}) -> pattern(P, Ds, Ps, St) end, {Ps0,St0}, Pats).
 
 %% expr_var(VarName, [DefVar], State) -> State.
 
@@ -269,3 +351,24 @@ expr_var(N, Ds, St) ->
 	true -> St;
 	false -> add_error({unbound_var,N,St#lint.func}, St)
     end.
+
+%% pattern_match(Required, Supplied, State) -> State.
+
+pattern_match(N, N, St) -> St;
+pattern_match(Req, Sup, St) ->
+    add_error({pattern_mismatch,St#lint.func}, St).
+
+%% return_match(Required, Supplied, State) -> State.
+
+return_match(any, Sup, St) -> St;
+return_match(Req, unknown, St) -> St;
+return_match(N, N, St) -> St;
+return_match(Req, Sup, St) ->
+    add_error({return_mismatch,St#lint.func}, St).
+
+%% arg_match(Required, Supplied, State) -> State.
+
+arg_match(Req, unknown, St) -> St;
+arg_match(N, N, St) -> St;
+arg_match(Req, Sup, St) ->
+    add_error({arg_mismatch,St#lint.func}, St).

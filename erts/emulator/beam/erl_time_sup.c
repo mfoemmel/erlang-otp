@@ -163,8 +163,9 @@ typedef Sint64 Milli;
 static clock_t init_ct;
 static Sint64 ct_wrap;
 static Milli init_tv_m;
-static Milli correction; 
-static Milli last_ct_diff; 
+static Milli correction_supress; 
+static Milli last_ct_diff;
+static Milli last_cc; 
 static clock_t last_ct;
 
 SysTimes dummy_tms;
@@ -176,21 +177,25 @@ SysTimes dummy_tms;
 static void init_tolerant_timeofday(void)
 {
     last_ct = init_ct = KERNEL_TICKS();
+    last_cc = 0;
     init_tv_m = (((Milli) inittv.tv_sec) * 1000) + 
 	(inittv.tv_usec / 1000);
     ct_wrap = 0;
-    correction = 0;
+    correction_supress = 0;
 }
+
 
 static void get_tolerant_timeofday(SysTimeval *tvp)
 {
     clock_t current_ct;
     SysTimeval current_tv;
     Milli ct_diff;
-    Milli since_last;
     Milli tv_diff;
     Milli current_correction;
-    long ack_correction; /* Never more than a long (?) */
+    long act_correction; /* Never more than a long (?) */
+    Milli max_adjust;
+
+#define TICK_MS (1000 / SYS_CLK_TCK)
 
     current_ct = KERNEL_TICKS();
     sys_gettimeofday(&current_tv);
@@ -202,36 +207,71 @@ static void get_tolerant_timeofday(SysTimeval *tvp)
 	ct_wrap += ((Sint64) 1) << ((sizeof(clock_t) * 8) - 1);
     }
     last_ct = current_ct;
-    ct_diff = (((ct_wrap + current_ct) - init_ct) * 1000) / SYS_CLK_TCK;
+    ct_diff = ((ct_wrap + current_ct) - init_ct) * TICK_MS;
 
-    since_last = ct_diff - last_ct_diff;
-    last_ct_diff = ct_diff;
+    /*
+     * We will adjust the time in milliseconds and we allow for 1% 
+     * adjustments, but if this function is called more often then every 100 
+     * millisecond (which is obviously possible), we will never adjust, so 
+     * we accumulate small times by setting last_ct_diff iff max_adjust > 0
+     */
+    if ((max_adjust = (ct_diff - last_ct_diff)/100) > 0)
+	last_ct_diff = ct_diff;
 
     tv_diff = ((((Milli) current_tv.tv_sec) * 1000) + 
 	       (current_tv.tv_usec / 1000)) - init_tv_m;
 
-    current_correction = ct_diff - tv_diff;
+    current_correction = ((ct_diff - tv_diff) / TICK_MS) * TICK_MS; /* trunc */
 
-    ack_correction = current_correction + correction;
-
-    if (ack_correction > 10) { /* We correct more then 1/100 */
-	Milli cc = since_last / 100; /* correct 1 % */
-	if (cc > ack_correction)
-	    correction -= ack_correction;
-	else
-	    correction -= cc;
-	ack_correction = current_correction + correction;
-    } else if (ack_correction < -10) {
-	Milli cc = since_last / 100;
-	if (cc > -ack_correction) 
-	    correction -= ack_correction;
-	else
-	    correction += cc;
-	ack_correction = current_correction + correction;
+    /* 
+     * We allow the current_correction value to wobble a little, as it
+     * suffers from the low resolution of the kernel ticks. 
+     * if it hasn't changed more than one tick in either direction, 
+     * we will keep the old value.
+     */
+    if ((last_cc > current_correction + TICK_MS) ||
+	(last_cc < current_correction - TICK_MS)) {
+	last_cc = current_correction;
+    } else {
+	current_correction = last_cc;
     }
-
-    current_tv.tv_sec += ack_correction / 1000;
-    current_tv.tv_usec += (ack_correction % 1000) * 1000;
+    
+    /*
+     * As time goes, we try to get the actual correction to 0, 
+     * that is, make erlangs time correspond to the systems dito.
+     * The act correction is what we seem to need (current_correction)
+     * minus the correction suppression. The correction supression
+     * will change slowly (max 1% of elapsed time) but in millisecond steps.
+     */
+    act_correction = current_correction - correction_supress;
+    if (max_adjust > 0) {
+	/*
+	 * Here we slowly adjust erlangs time to correspond with the 
+	 * system time by changing the correction_supress variable.
+	 * It can change max_adjust milliseconds which is 1% of elapsed time
+	 */
+	if (act_correction > 0) {
+	    if (current_correction - correction_supress > max_adjust) {
+		correction_supress += max_adjust;
+	    } else {
+		correction_supress = current_correction;
+	    }
+	    act_correction = current_correction - correction_supress;
+	} else if (act_correction < 0) {
+	    if (correction_supress - current_correction > max_adjust) {
+		correction_supress -= max_adjust;
+	    } else {
+		correction_supress = current_correction;
+	    }
+	    act_correction = current_correction - correction_supress;
+	}
+    }
+    /*
+     * The actual correction will correct the timeval so that system 
+     * time warps gets smothed down.
+     */
+    current_tv.tv_sec += act_correction / 1000;
+    current_tv.tv_usec += (act_correction % 1000) * 1000;
 
     if (current_tv.tv_usec >= 1000000) {
 	++current_tv.tv_sec ;
@@ -241,6 +281,7 @@ static void get_tolerant_timeofday(SysTimeval *tvp)
 	current_tv.tv_usec += 1000000;
     }
     *tvp = current_tv;
+#undef TICK_MS
 }
 
 #endif /* CORRECT_USING_TIMES */

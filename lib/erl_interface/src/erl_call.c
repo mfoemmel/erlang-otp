@@ -177,6 +177,7 @@ static void usage() {
 /*
  * Get host entry (by address or name)
  */
+/* XXX: will fail on names like '2fun4you'.  */
 static struct hostent* get_hostent(char *host)
 {
   if (isdigit(*host)) {
@@ -184,6 +185,7 @@ static struct hostent* get_hostent(char *host)
     int b1, b2, b3, b4;
     long addr;
       
+    /* XXX: Use inet_aton() (or inet_pton() and get v6 for free). */
     if (sscanf(host, "%d.%d.%d.%d", &b1, &b2, &b3, &b4) != 4) return NULL;
     addr = inet_addr(host);
     ip_addr.s_addr = htonl(addr);

@@ -37,19 +37,12 @@
 	       body_indent = 4,
 	       tab_width = 8}).
 
-format(Node) -> format(Node, #ctxt{}).
+format(Node) -> case catch format(Node, #ctxt{}) of
+		    {'EXIT',R} -> io_lib:format("~p",[Node]);
+		    Other -> Other
+		end.
 
 format(Node, Ctxt) ->
-    case Ctxt#ctxt.class of
-	expr -> format_0(Node, Ctxt);
-	term -> format_0(Node, Ctxt);
-	pattern -> format_0(Node, Ctxt);
-	Other -> format_1(Node, Ctxt)		%clause, fdef
-    end.
-
-canno(Cthing) -> element(2, Cthing).
-
-format_0(Node, Ctxt) ->
     case canno(Node) of
 	[] ->
 	    format_1(Node, Ctxt);
@@ -62,13 +55,24 @@ format_0(Node, Ctxt) ->
 	    ]
     end.
 
+canno(Cthing) -> element(2, Cthing).
+
 format_1(#c_atom{name=A}, Ctxt) -> core_atom(A);
 format_1(#c_char{val=C}, Ctxt) -> io_lib:write_char(C);
 format_1(#c_float{val=F}, Ctxt) -> float_to_list(F);
 format_1(#c_int{val=I}, Ctxt) -> integer_to_list(I);
 format_1(#c_nil{}, Ctxt) -> "[]";
 format_1(#c_string{val=S}, Ctxt) -> io_lib:write_string(S);
-format_1(#c_var{name=V}, Ctxt) -> [$_|atom_to_list(V)];
+format_1(#c_var{name=V}, Ctxt) ->
+    case atom_to_list(V) of
+	[C|Cs] when C == $_; C >= $A, C =< $Z -> [C|Cs];
+	Cs -> [$_|Cs]
+    end;
+format_1(#c_bin{}=Type, Ctxt) ->
+    ["<<",
+     io_lib:write(Type),
+     ">>"
+    ];
 format_1(#c_tuple{es=Es}, Ctxt) ->
     [${,
      format_hseq(Es, ",", ctxt_bump_indent(Ctxt, 1), fun format/2),
@@ -79,7 +83,7 @@ format_1(Cons, Ctxt) when record(Cons, c_cons) ->
      format_list_elements(Cons, ctxt_bump_indent(Ctxt, 1)),
      $]
     ];
-format_1(#c_vector{es=Es}, Ctxt) ->
+format_1(#c_values{es=Es}, Ctxt) ->
     [$<,
      format_hseq(Es, ",", ctxt_bump_indent(Ctxt, 1), fun format/2),
      $>
@@ -89,9 +93,9 @@ format_1(#c_alias{var=V,pat=P}, Ctxt) ->
     [Txt|format(P, ctxt_bump_indent(Ctxt, width(Txt, Ctxt)))];
 format_1(#c_let{vars=Vs,arg=A,body=B}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
-    ["let ",
-     format(Vs, ctxt_bump_indent(Ctxt, 4)),
-     " =",
+    ["let <",
+     format_hseq(Vs, ",", ctxt_bump_indent(Ctxt, 5), fun format/2),
+     "> =",
      nl_indent(Ctxt1),
      format(A, Ctxt1),
      nl_indent(Ctxt),
@@ -120,9 +124,11 @@ format_1(#c_case{arg=A,clauses=Cs}, Ctxt) ->
      nl_indent(Ctxt)
      | "end"
     ];
-format_1(#c_clause{pat=P,guard=G,body=B}, Ctxt) ->
+format_1(#c_clause{pats=Ps,guard=G,body=B}, Ctxt) ->
     %% Context class should be `clause'.
-    Ptxt = format(P, ctxt_set_class(Ctxt, pattern)),
+    Ptxt = ["<",
+	    format_hseq(Ps, ", ", ctxt_bump_indent(Ctxt, 1), fun format/2),
+	    ">"],
     Ctxt2 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
     [Ptxt,
      " when ",
@@ -134,7 +140,7 @@ format_1(#c_clause{pat=P,guard=G,body=B}, Ctxt) ->
 format_1(#c_fun{vars=Vs,body=B}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
     ["fun (",
-     format_hseq(Vs, ", ", ctxt_bump_indent(Ctxt, 5), fun format/2),
+     format_hseq(Vs, ",", ctxt_bump_indent(Ctxt, 5), fun format/2),
      ") ->",
      nl_indent(Ctxt1)
      | format(B, Ctxt1)

@@ -54,19 +54,21 @@ get_services() ->
   end.
 
 child_spec([],_) ->
-  [];
+    [];
 child_spec([{httpd,ConfigFile}|Rest],N) ->
     [{{httpd,N},{httpd,start_link,[ConfigFile]},transient,brutal_kill,worker,
       [ftp,
        httpd,
        httpd_conf,
        httpd_example,
+       httpd_manager,
        httpd_listener,
        httpd_parse,
        httpd_request,
        httpd_response,
        httpd_socket,
        httpd_util,
+       httpd_verbosity,
        inets_sup,
        mod_actions,
        mod_alias,

@@ -621,11 +621,47 @@ public class OtpOutputStream {
    *
    * @param s the string to write.
    **/
+  public void write_string(String s) { 
+    int len = s.length();
+    
+    switch(len) {
+    case 0:
+      this.write_nil();
+      break;
+    default:
+      byte[] bytebuf = s.getBytes();
+
+      /* switch to se if the length of
+	 the byte array is equal to the 
+	 length of the list */
+      if (bytebuf.length == len) { /* Usual */
+	this.write1(OtpExternal.stringTag);
+	this.write2BE(len);
+	this.writeN(bytebuf);
+      } 
+      else { /* Unicode */
+	char[] charbuf = s.toCharArray();
+	
+	this.write_list_head(len);
+	
+	for(int i = 0; i<len; i++)
+	  this.write_char(charbuf[i]);
+	
+	this.write_nil();
+      }
+    }
+  }
+
+
+/*  
+  This does not work when char > 1 byte Unicode is used
+  
   public void write_string(String s) {
     this.write1(OtpExternal.stringTag);
     this.write2BE(s.length());
     this.writeN(s.getBytes());
   }
+*/
 
   /**
    * Write an arbitrary Erlang term to the stream.
@@ -637,4 +673,12 @@ public class OtpOutputStream {
     o.encode(this);
   }
 }
+
+
+
+
+
+
+
+
 

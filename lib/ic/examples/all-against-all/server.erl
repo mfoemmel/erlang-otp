@@ -16,33 +16,8 @@
 %%     $Id$
 %%
 -module(server).
--export([init/1, terminate/2, start/0]).
--export([produce/1,init/4]).
+-export([start/0]).
 
-
-init(Env) ->
-    {ok, []}.
-
-terminate(From, Reason) ->
-    ok.
-
-
-produce(_Random)  ->
-    case catch random:uniform() of
-	{'EXIT',_} ->
-	    true;
-	RUnif ->
-            {reply,RUnif,[]}
-     end.
-
-
-init(_Random,S1,S2,S3)  ->
-    case catch random:seed(S1,S2,S3) of
-	{'EXIT',_} ->
-	    true;
-	_ ->
-            {noreply,[]}
-    end.
 
 
 %% This starts up the random number server
@@ -50,6 +25,8 @@ start() ->
     %% Start the gen server
     {ok,Pid} = rmod_random:oe_create([],{local,'rmod_random_impl'}),
     true.
+
+
 
 
 

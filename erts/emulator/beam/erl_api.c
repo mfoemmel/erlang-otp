@@ -29,7 +29,9 @@
 #include "big.h"
 #include "dist.h"
 #include "erl_version.h"
+#include "erl_api.h"
 
+APIEXTERN 
 void
 ErlInit(void)
 {
@@ -37,13 +39,23 @@ ErlInit(void)
     erl_init();
 }
 
+APIEXTERN 
+void
+ErlOtpStart(int argc, char** argv)
+{
+    erl_start(argc, argv);
+}
+
+
+APIEXTERN 
 int
 ErlLoadModule(char* modname, void* code, unsigned size)
 {
     Eterm module_name = am_atom_put(modname, sys_strlen(modname));
-    return do_load(0, module_name, code, size);
+    return do_load(NIL, module_name, code, size);
 }
 
+APIEXTERN 
 void
 ErlCreateInitialProcess(char* modname, void* code, unsigned size,
 			int argc, char** argv)
@@ -51,8 +63,16 @@ ErlCreateInitialProcess(char* modname, void* code, unsigned size,
     erl_first_process(modname, code, size, argc, argv);
 }
 
+APIEXTERN 
 void
 ErlScheduleLoop(void)
 {
     erl_sys_schedule_loop();
+}
+
+APIEXTERN
+int
+ErlGetConsoleKey(void)
+{
+    return sys_get_key(0);
 }

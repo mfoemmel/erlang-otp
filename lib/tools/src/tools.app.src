@@ -15,7 +15,15 @@
 	     coast_analyse_funcs,
 	     coast_comm_funcs,
 	     coast_compile_funcs,
-	     coast_server
+	     coast_server,
+	     xref,
+	     xref_base,
+	     xref_compiler,
+	     xref_parser,
+	     xref_reader,
+	     xref_scanner,
+	     xref_utils,
+	     xsets
 	    ]
   },
   {registered,[]},

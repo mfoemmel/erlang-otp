@@ -19,6 +19,8 @@
 #ifndef __GLOBAL_H__
 #define __GLOBAL_H__
 
+#include "sys.h"
+#include "erl_vm.h"
 #include "hash.h"
 #include "index.h"
 #include "atom.h"
@@ -28,22 +30,6 @@
 
 #include "erl_process.h"
 #include "driver.h"
-
-#define REF_WORDS	3
-
-typedef struct {
-    uint32 t;			/* thing word */
-    uint32 h;			/* "head", like an old ref */
-    uint32 w[REF_WORDS];
-} Ref;
-
-/* Ref *r1, *r2; */
-#define eqref(r1, r2)		(eq(make_refer(r1), make_refer(r2)))
-
-#define refer_arity(x)		REFER_ARITY(ptr_val(x))
-#define REFER_ARITY(xp)		((uint32)thing_arityval(*(xp)))
-
-#define ref_ptr(obj)		((Ref *) ptr_val(obj))
 
 typedef enum {
     LNK_UNDEF = 0,
@@ -84,14 +70,12 @@ EXTERN_FUNCTION(ErlLink**, find_link_by_ref, (ErlLink**,Ref*));
 #define D_REAL_BUSY 4
 #define D_RESERVED  8   /* Set-cookie called thing */
 
-#define DIST_DATA   100  /* data on input command (from inet_drv) */
-#define DIST_SEND   22   /* send command byte  (to inet_drv) */
 
 #define MAXINDX 255
 
 typedef struct cache {
-    uint32 in_arr[MAXINDX];
-    uint32 out_arr[MAXINDX];
+    Eterm in_arr[MAXINDX];
+    Eterm out_arr[MAXINDX];
 } ErlCache;
 
 typedef struct dist_entry {
@@ -140,8 +124,9 @@ typedef struct line_buf {  /* Buffer used in line oriented I/O */
 } LineBuf;
 
 typedef struct port {
-    uint32 id;                   /* The Port id of this port */
-    uint32 connected;            /* A connected process */
+    Eterm id;                   /* The Port id of this port */
+    Eterm connected;            /* A connected process */
+    Eterm caller;		/* Current caller. */
     uint32 status;   		 /* Status and type flags */
     ErlLink* links;              /* List of links */
     uint32 bytes_in;             /* Number of bytes read */
@@ -158,13 +143,26 @@ typedef struct port {
     int control_flags;		 /* Flags for port_control()  */
 } Port;
 
+/* Driver handle (wrapper for old plain handle) */
+#define ERL_DE_OK      0
+#define ERL_DE_UNLOAD  1
+#define ERL_DE_RELOAD  2
+
+typedef struct {
+    void* handle;           /* Handle for DLL or SO (for dynamic drivers). */
+    int   ref_count;
+    int   status;
+    int   (*cb)();
+    void** ca[4];           /* max 4 args now */
+} DE_Handle;
+
 /*
  * This structure represents a link to the next driver.
  */
 
 typedef struct de_list {
     DriverEntry *drv;		/* Pointer to entry for driver. */
-    void* handle;		/* Handle for DLL or SO (for dynamic drivers). */
+    DE_Handle* de_hndl;	     /* Handle for DLL or SO (for dynamic drivers). */
     struct de_list *next;	/* Pointer to next. */
 } DE_List;
 
@@ -175,7 +173,7 @@ extern DE_List *driver_list;
  */
 #define DRIVER_TAB_SIZE 16
 
-#define get_port_index(p)	((get_number_port(p)) % (erl_max_ports))
+#define port_index(p)	((port_number(p)) % (erl_max_ports))
 
 /*
 ** Just like the driver binary but with initial flags
@@ -240,7 +238,8 @@ typedef struct erl_fun_thing {
     Eterm env[1];		/* Environment (free variables). */
 } ErlFunThing;
 
-#define ERL_FUN_SIZE (sizeof(ErlFunThing)/sizeof(Eterm))
+/* ERL_FUN_SIZE does _not_ include space for the environment */
+#define ERL_FUN_SIZE ((sizeof(ErlFunThing)/sizeof(Eterm))-1)
 
 /* arrays that get malloced at startup */
 extern Port* erts_port;
@@ -262,17 +261,16 @@ extern uint32 display_loads;	/* print info about loaded modules */
 extern uint32 do_time;		/* set at clock interupt */
 extern uint32 last_reds;	/* to calculate no of reds since last call */
 extern int    MAXDIST;
-extern int switch_gc_threshold; /* Switch from fullsweep GC to 
-				   generational when live data >= 
-				   this many words (default value)*/
 
 #define HS_FIBONACCI 0		/* Fibonacci */
-#define HS_POWER_TWO 1		/* Powers of two */
-#define HS_POWER_TWO_MINUS_ONE 2 /* Powers of two minus one word */
+#define HS_FIBONACCI_SLOW 1	/* Fibonacci with slowdown for big heaps */
+#define HS_POWER_TWO 2		/* Powers of two */
+#define HS_POWER_TWO_MINUS_ONE 3 /* Powers of two minus one word */
+
 extern int heap_series;		/* Series to use for heap size. */
 extern int erts_backtrace_depth;
+extern Uint16 erts_max_gen_gcs;
 
-extern int typeval[16];         /* tag_val_def -> type code */
 extern uint32 bif_gc;           /* gc calls by bif */
 extern int bif_reductions;      /* reductions + fcalls (when doing call_bif) */
 extern int stackdump_on_exit;
@@ -287,7 +285,6 @@ extern int preg_desc;
 extern int link_desc;
 extern int plist_desc;
 extern int mesg_desc;
-
 
 #ifdef DEBUG
 extern uint32 verbose;		/* noisy mode = 1 */
@@ -304,47 +301,52 @@ extern uint32 instr_send_sizes[INSTR_SEND_SIZES_MAX];
  *
  * Use it like this:
  *
- * ErlStack Stack;
- * INIT_ESTACK(Stack)
+ * DECLARE_ESTACK(Stack)	(At the start of a block)
  * ...
  * ESTACK_PUSH(Stack, Term)
  * ...
- * if ((Term = ESTACK_POP(Stack)) == 0) {
+ * if (ESTACK_ISEMPTY(Stack)) {
  *    Stack is empty
  * } else {
+ *    Term = ESTACK_POP(Stack);
  *    Process popped Term here
  * }
  * ...
  * DESTROY_ESTACK(Stack)
  */
  
-typedef struct erl_stack {
-    uint32* sp;
-    uint32* start;
-    uint32* end;
-    uint32 default_stack[16];
-} ErlStack;
+Eterm* erl_grow_stack(Eterm* ptr, size_t new_size);
+#define ESTK_CONCAT(a,b) a##b
+#define ESTK_SUBSCRIPT(s,i) *((Eterm *)((byte *)ESTK_CONCAT(s,_start) + (i)))
+#define DEF_ESTACK_SIZE (16*sizeof(Eterm))
 
-void erl_grow_stack(ErlStack* s);
+#define DECLARE_ESTACK(s)						\
+    Eterm ESTK_CONCAT(s,_default_stack)[DEF_ESTACK_SIZE/sizeof(Eterm)];	\
+    Eterm* ESTK_CONCAT(s,_start) = ESTK_CONCAT(s,_default_stack);	\
+    size_t ESTK_CONCAT(s,_sp) = 0;					\
+    size_t ESTK_CONCAT(s,_size) = DEF_ESTACK_SIZE
 
-#define INIT_ESTACK(s) do { \
-   (s).start = (s).default_stack; \
-   (s).end = (s).default_stack + \
-	     sizeof((s).default_stack)/sizeof((s).default_stack[0]); \
-   (s).sp = (s).start; \
+#define DESTROY_ESTACK(s)						\
+do {									\
+    if (ESTK_CONCAT(s,_start) != ESTK_CONCAT(s,_default_stack)) {	\
+	sys_free(ESTK_CONCAT(s,_start));				\
+    }									\
 } while(0)
 
-#define DESTROY_ESTACK(s) do { \
-   if ((s).start != (s).default_stack) sys_free((s).start); \
+#define ESTACK_PUSH(s, x)							\
+do {										\
+    if (ESTK_CONCAT(s,_sp) == ESTK_CONCAT(s,_size)) {				\
+	ESTK_CONCAT(s,_size) *= 2;						\
+	ESTK_CONCAT(s,_start) =							\
+	    erl_grow_stack(ESTK_CONCAT(s,_start), ESTK_CONCAT(s,_size));	\
+    }										\
+    ESTK_SUBSCRIPT(s,ESTK_CONCAT(s,_sp)) = (x);					\
+    ESTK_CONCAT(s,_sp) += sizeof(Eterm);					\
 } while(0)
 
-#define ESTACK_PUSH(s, x) do { \
-   if ((s).sp == (s).end) erl_grow_stack(&(s)); \
-   *(s).sp++ = (x); \
-} while(0)
-
-#define ESTACK_POP(s) (((s).sp == (s).start) ? 0 : *--(s).sp)
-
+#define ESTACK_ISEMPTY(s) (ESTK_CONCAT(s,_sp) == 0)
+#define ESTACK_POP(s)								\
+((ESTK_CONCAT(s,_sp) -= sizeof(Eterm)), ESTK_SUBSCRIPT(s,ESTK_CONCAT(s,_sp)))
 
 /* flags  for the port status info*/
 
@@ -362,7 +364,8 @@ void erl_grow_stack(ErlStack* s);
 /* binary.c */
 
 Eterm new_binary(Process*, byte*, int);
-EXTERN_FUNCTION(ProcBin*, copy_binary, (ProcBin**, ProcBin*));
+Eterm new_binary_arith(Process*, byte*, int);
+Eterm erts_realloc_binary(Eterm bin, size_t size);
 void erts_cleanup_mso(ProcBin* pb);
 
 /* bif.c */
@@ -382,8 +385,9 @@ EXTERN_FUNCTION(void, info, (CIO));
 EXTERN_FUNCTION(void, loaded, (CIO));
 
 /* config.c */
-EXTERN_FUNCTION(void, erl_exit, (int n, char*, _DOTS_));
-EXTERN_FUNCTION(void, erl_exit0, (char *, int, int n, char*, _DOTS_));
+
+void __noreturn erl_exit(int n, char*, ...);
+void __noreturn erl_exit0(char *, int, int n, char*, ...);
 EXTERN_FUNCTION(void, erl_error, (char*, va_list));
 
 #define ERL_EXIT0(n,f)		erl_exit0(__FILE__, __LINE__, n, f)
@@ -393,9 +397,8 @@ EXTERN_FUNCTION(void, erl_error, (char*, va_list));
 
 /* copy.c */
 void init_copy(void);
-EXTERN_FUNCTION(int, copy_object, (uint32, Process*, uint32, uint32*,Process*));
-EXTERN_FUNCTION(int, copy_objects, (uint32*,int,Process*,uint32,uint32*,Process*));
-EXTERN_FUNCTION(uint32, size_object, (uint32));
+void copy_object(Eterm, Process*, uint32, Eterm*, Process*);
+Uint size_object(Eterm);
 Eterm copy_struct(Eterm, uint32, Eterm**, ErlOffHeap*);
 Eterm copy_shallow(uint32*, uint32, uint32**, ErlOffHeap*);
 
@@ -439,24 +442,17 @@ EXTERN_FUNCTION(int, decode_size, (byte*, int));
 EXTERN_FUNCTION(void, init_alloc, (_VOID_));
 EXTERN_FUNCTION(int, init_fix_alloc, (int));
 EXTERN_FUNCTION(int, fix_info, (int));
+EXTERN_FUNCTION(int, fix_used, (int));
 EXTERN_FUNCTION(int, new_fix_size, (int));
-EXTERN_FUNCTION(void, fix_release, (int));
 EXTERN_FUNCTION(void, fix_free, (int, uint32*));
 EXTERN_FUNCTION(uint32*, fix_alloc, (int));
 
 /* ggc.c */
-EXTERN_FUNCTION(void, init_gc, (_VOID_));
+void init_gc(void);
 int erts_garbage_collect(Process*, int, Eterm*, int);
-EXTERN_FUNCTION(int, next_heap_size, (int, int));
-
-EXTERN_FUNCTION(void, heap_compact, (Process*, uint32));
-EXTERN_FUNCTION(void, heap_add, (Process*, uint32));
-EXTERN_FUNCTION(void, stack_dump2, (Process *, CIO));
-#ifdef HARDDEBUG
-EXTERN_FUNCTION(void, check_heap, (Process*));
-EXTERN_FUNCTION(void, check_stack, (Process*));
-EXTERN_FUNCTION(void, check_heap_before, (Process*));
-#endif
+int next_heap_size(int, int);
+void stack_dump2(Process *, CIO);
+Eterm erts_heap_sizes(Process* p);
 
 /* io.c */
 
@@ -467,10 +463,10 @@ EXTERN_FUNCTION(void, close_port, (uint32));
 EXTERN_FUNCTION(void, init_io, (_VOID_));
 EXTERN_FUNCTION(void, cleanup_io, (_VOID_));
 EXTERN_FUNCTION(void, do_exit_port, (uint32, uint32, uint32));
-EXTERN_FUNCTION(void, port_command, (uint32, uint32));
+void port_command(Eterm, uint32, uint32);
 EXTERN_FUNCTION(int, port_control, (Process*, Port*, uint32,
 				    uint32, uint32*));
-EXTERN_FUNCTION(int, write_port, (int p, uint32 list));
+int write_port(Eterm caller_id, int p, Eterm list);
 EXTERN_FUNCTION(void, print_port_info, (int, CIO));
 EXTERN_FUNCTION(void, dist_port_command, (Port*, byte*, int));
 EXTERN_FUNCTION(void, input_ready, (int, int));
@@ -502,38 +498,54 @@ EXTERN_FUNCTION(void, p_slpq, (_VOID_));
 EXTERN_FUNCTION(void, erl_suspend, (Process*, uint32));
 EXTERN_FUNCTION(void, erl_resume, (Process*));
 
-EXTERN_FUNCTION(uint32*, halloc, (Process*, uint32));
 EXTERN_FUNCTION(int, list_length, (uint32));
 Export* erts_find_function(Eterm, Eterm, int);
 int erts_is_builtin(Eterm, Eterm, int);
 EXTERN_FUNCTION(uint32, double_to_integer, (Process*, double));
-EXTERN_FUNCTION(uint32, make_hash, (uint32, uint32));
+extern Uint32 make_broken_hash(Eterm, Uint32);
+extern Uint32 make_phash(Eterm, Uint32);
+extern Uint32 make_hash(Eterm, Uint32);
 
-EXTERN_FUNCTION(int, send_error_to_logger, (uint32));
+EXTERN_FUNCTION(int, send_error_to_logger, (Eterm));
 EXTERN_FUNCTION(void*, safe_alloc, (uint32));
 EXTERN_FUNCTION(void*, safe_realloc, (char*,uint32));
-EXTERN_FUNCTION(int, eq, (uint32, uint32));
-EXTERN_FUNCTION(int, cmp, (uint32, uint32));
 EXTERN_FUNCTION(Process*, pid2proc, (uint32));
 EXTERN_FUNCTION(void, display, (uint32, CIO));
 EXTERN_FUNCTION(void, ldisplay, (uint32, CIO, int));
 EXTERN_FUNCTION(void, print_atom, (int, CIO));
 
+extern int eq(Eterm, Eterm);
+#define EQ(x,y) (((x) == (y)) || (is_not_both_immed((x),(y)) && eq((x),(y))))
+
+extern int cmp(Eterm, Eterm);
+#define cmp_lt(a,b)	(cmp((a),(b)) < 0)
+#define cmp_le(a,b)	(cmp((a),(b)) <= 0)
+#define cmp_eq(a,b)	(cmp((a),(b)) == 0)
+#define cmp_ne(a,b)	(cmp((a),(b)) != 0)
+#define cmp_ge(a,b)	(cmp((a),(b)) >= 0)
+#define cmp_gt(a,b)	(cmp((a),(b)) > 0)
+
+#define CMP_LT(a,b)	((a) != (b) && cmp_lt((a),(b)))
+#define CMP_GE(a,b)	((a) == (b) || cmp_ge((a),(b)))
+#define CMP_EQ(a,b)	((a) == (b) || cmp_eq((a),(b)))
+#define CMP_NE(a,b)	((a) != (b) && cmp_ne((a),(b)))
+
+int term_to_Uint(Eterm term, Uint *up);
+
 void trace_send(Process*, Eterm, Eterm);
 void trace_receive(Process*, Eterm);
-void erts_trace_call_or_ret(Process* p, Eterm mod, Eterm name, unsigned arity,
-			    Eterm* args, Eterm what);
-Uint32 erts_call_trace(Process *p, Export* ep, Eterm* args);
+Uint32 erts_call_trace(Process *p, Eterm mfa[], Binary *match_spec, Eterm* args, int local);
 void erts_trace_return(Process* p, Eterm* fi, Eterm retval);
+void erts_trace_return_to(Process *p, Uint *pc);
 void trace_sched(Process*, Eterm);
 void trace_proc(Process*, Eterm, Eterm);
 void save_calls(Process *p, Export *);
 void trace_gc(Process *p, uint32 what);
 Uint erts_trace_flag2bit(Eterm flag);
+Eterm erts_bif_trace(int bif_index, Process* p, 
+		     Eterm arg1, Eterm arg2, Eterm arg3, Uint *I);
 
 EXTERN_FUNCTION(int,  member, (uint32, uint32));
-EXTERN_FUNCTION(double, bytes_to_float, (byte*));
-EXTERN_FUNCTION(void, float_to_bytes, (byte*, double));
 EXTERN_FUNCTION(void, bin_write, (CIO, byte*, int));
 EXTERN_FUNCTION(int, intlist_to_buf, (uint32, byte*, int));
 EXTERN_FUNCTION(char*, int_to_buf, (int, char*));
@@ -548,10 +560,6 @@ EXTERN_FUNCTION(uint32, collect_memory, (Process *));
 EXTERN_FUNCTION(void, dump_memory_to_fd, (int));
 EXTERN_FUNCTION(int, dump_memory_data, (const char *));
 
-int erts_setup_func_trace(Export* ep, void* match_prog);
-int erts_reset_func_trace(Export* ep);
-int erts_trace_state(Export* ep);
-
 Eterm erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2);
 Eterm erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2);
 Eterm erts_mixed_times(Process* p, Eterm arg1, Eterm arg2);
@@ -565,8 +573,6 @@ Eterm erts_bxor(Process* p, Eterm arg1, Eterm arg2);
 Uint erts_current_reductions(Process* current, Process *p);
 
 #ifdef DEBUG
-EXTERN_FUNCTION(int, check_struct, (uint32));
-
 EXTERN_FUNCTION(void, upp, (byte*, int));
 EXTERN_FUNCTION(void, pat, (uint32));
 EXTERN_FUNCTION(void, pinfo, (_VOID_));
@@ -582,6 +588,13 @@ EXTERN_FUNCTION(void, seq_trace_output_exit, (uint32, uint32, uint32, uint32, ui
 EXTERN_FUNCTION(int, seq_trace_update_send, (Process*));
 
 EXTERN_FUNCTION(Eterm, erts_seq_trace, (Process *, Eterm, Eterm, int));
+
+int erts_set_trace_pattern(Eterm* mfa, int specified, Binary* match_prog_set,
+			   int on, int is_local);
+
+extern int erts_match_spec_is_on;
+extern Binary* erts_default_match_spec;
+extern int erts_match_local_functions;
 
 /*
 ** Call_trace uses this API for the parameter matching functions
@@ -613,5 +626,13 @@ extern void erts_match_set_free(Binary *mpsp);
 extern Eterm erts_match_set_get_source(Binary *mpsp);
 
 #define MATCH_SET_RETURN_TRACE 0x1 /* return trace requested */
+#define MATCH_SET_RETURN_TO_TRACE 0x2 /* Misleading name, it is not actually
+					 set by the match program, but by the
+					 breakpoint functions */
+
+/*
+** Flag values when tracing bif
+*/
+#define BIF_TRACE_AS_LOCAL 0x1
 
 #endif

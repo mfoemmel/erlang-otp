@@ -39,6 +39,9 @@ int erl_init_sthreads(void *x, long y)
 #ifdef DEBUG
   fprintf(stderr,"erl_interface using Solaris threads\n");
 #endif
+
+  erl_errno_key_alloc();
+
   erl_common_init(x,y);
   return 0; /*success */
 }
@@ -87,6 +90,58 @@ int erl_m_unlock(void *l)
   if (!erl_locking_init_done) return 0;
   return mutex_unlock(l);
 } 
+
+
+/*
+ * Thread-specific erl_errno variable.
+ */
+
+static thread_key_t erl_errno_key;
+
+/*
+ * Destroy per-thread erl_errno locus
+ */
+static void
+erl_errno_destroy (void * ptr)
+{
+    free(ptr);
+}
+
+/*
+ * Allocate erl_errno key.
+ */
+static void
+erl_errno_key_alloc (void)
+{
+    thr_keycreate(&erl_errno_key, erl_errno_destroy);
+}
+
+/*
+ * Allocate (and initialize) per-thread erl_errno locus.
+ */
+static void
+erl_errno_alloc (void)
+{
+    int * locus;
+    thr_setspecific(erl_errno_key, malloc(sizeof(__erl_errno)));
+    thr_getspecific(erl_errno_key, &locus); *locus = 0;
+}
+
+/*
+ * Return a pointer to the erl_errno locus.
+ */
+volatile int *
+__erl_errno_place (void)
+{
+    int * locus;
+    thr_getspecific(erl_errno_key, &locus);
+    if (locus == NULL)
+    {
+	erl_errno_alloc();
+	thr_getspecific(erl_errno_key, &locus);
+    }
+    return locus;
+}
 
 #endif /* THREAD_H */
 #endif /* !VXWORKS && !__WIN32__ */

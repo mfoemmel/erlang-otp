@@ -33,10 +33,10 @@ import java.net.InetAddress;
  * this is done automatically by {@link OtpSelf#connect(OtpPeer)
  * OtpSelf.connect()} when necessary.
  *
- * <p> The methods {@link #publishPort(OtpServer) publishPort()} and
- * {@link #unPublishPort(OtpServer) unPublishPort()} will fail if an
+ * <p> The methods {@link #publishPort(OtpLocalNode) publishPort()} and
+ * {@link #unPublishPort(OtpLocalNode) unPublishPort()} will fail if an
  * Epmd process is not running on the localhost. Additionally {@link
- * #lookupPort(OtpNode) lookupPort()} will fail if there is no Epmd
+ * #lookupPort(AbstractNode) lookupPort()} will fail if there is no Epmd
  * process running on the host where the specified node is running.
  * See the Erlang documentation for information about starting Epmd.
  *
@@ -86,7 +86,7 @@ public class OtpEpmd {
    * @exception java.io.IOException if there was no response from the
    * name server.
    **/
-  public static int lookupPort(OtpNode node)
+  public static int lookupPort(AbstractNode node)
     throws IOException {
     try {
       return r4_lookupPort(node);
@@ -108,7 +108,7 @@ public class OtpEpmd {
    * @exception java.io.IOException if there was no response from the
    * name server.
    **/
-  public static boolean publishPort(OtpServer node)
+  public static boolean publishPort(OtpLocalNode node)
     throws IOException {
     Socket s = null;
     
@@ -119,7 +119,7 @@ public class OtpEpmd {
       s = r3_publish(node);
     }
 
-    if (s != null) node.epmd = s;
+    node.setEpmd(s);
 
     return (s != null);
   }
@@ -133,7 +133,7 @@ public class OtpEpmd {
    *
    * <p> This method does not report any failures.
    **/
-  public static void unPublishPort(OtpServer node) {
+  public static void unPublishPort(OtpLocalNode node) {
     Socket s = null;
 
     try {
@@ -159,7 +159,7 @@ public class OtpEpmd {
     }
   }    
 
-  private static int r3_lookupPort(OtpNode node) 
+  private static int r3_lookupPort(AbstractNode node) 
     throws IOException {
     int port = 0;
     Socket s = null;
@@ -210,7 +210,7 @@ public class OtpEpmd {
     return port;
   }
 
-  private static int r4_lookupPort(OtpNode node) 
+  private static int r4_lookupPort(AbstractNode node) 
     throws IOException {
     int port = 0;
     Socket s = null;
@@ -283,7 +283,7 @@ public class OtpEpmd {
     return port;
   }
 
-  private static Socket r3_publish(OtpServer node)
+  private static Socket r3_publish(OtpLocalNode node)
     throws IOException {
     Socket s = null;
 
@@ -343,7 +343,7 @@ public class OtpEpmd {
    * If we manage to successfully communicate with an r4 epmd, we return
    * either the socket, or null, depending on the result.
    */
-  private static Socket r4_publish(OtpServer node)
+  private static Socket r4_publish(OtpLocalNode node)
     throws IOException {
     Socket s = null;
 

@@ -17,13 +17,18 @@
  */
 package com.ericsson.otp.erlang;
 
+import java.io.Serializable;
+
 /**
  * Provides a Java representation of Erlang lists. Lists are created
  * from zero or more arbitrary Erlang terms.
  *
  * <p> The arity of the list is the number of elements it contains.
  **/
-public class OtpErlangList extends OtpErlangObject {
+public class OtpErlangList extends OtpErlangObject implements Serializable, Cloneable {
+  // don't change this!
+  static final long serialVersionUID = 5999112769036676548L;
+
   private OtpErlangObject[] elems = null;
 
   // todo: use a linked structure to make a proper list with append,
@@ -75,9 +80,20 @@ public class OtpErlangList extends OtpErlangObject {
    * @param elems the array of terms from which to create the list.
    **/
   public OtpErlangList(OtpErlangObject[] elems) {
-    if ((elems != null) && (elems.length > 0)) {
-      this.elems = new OtpErlangObject[elems.length];
-      System.arraycopy(elems,0,this.elems,0,this.elems.length);
+    this(elems,0,elems.length);
+  }
+
+  /**
+   * Create a list from an array of arbitrary Erlang terms.
+   *
+   * @param elems the array of terms from which to create the list.
+   * @param start the offset of the first term to insert.
+   * @param count the number of terms to insert.
+   **/
+  public OtpErlangList(OtpErlangObject[] elems, int start, int count) {
+    if ((elems != null) && (count > 0)) {
+      this.elems = new OtpErlangObject[count];
+      System.arraycopy(elems,start,this.elems,0,count);
     }
   }
 
@@ -178,11 +194,13 @@ public class OtpErlangList extends OtpErlangObject {
    **/
   public void encode(OtpOutputStream buf) {
     int arity = arity();
-    
-    buf.write_list_head(arity);
 
-    for (int i=0; i<arity; i++) {
-      buf.write_any(elems[i]);
+    if (arity > 0) {
+      buf.write_list_head(arity);
+
+      for (int i=0; i<arity; i++) {
+	buf.write_any(elems[i]);
+      }
     }
     
     buf.write_nil();
@@ -192,25 +210,15 @@ public class OtpErlangList extends OtpErlangObject {
    * Determine if two lists are equal. Lists are equal if they have
    * the same arity and all of the elements are equal.
    *
-   * @param o the object to compare to.
-   *
-   * @return true if o is a list and the lists contain the same
-   * elements, false otherwise.
-   **/
-  public boolean equals(Object o) {
-    return false;
-  }
-
-  /**
-   * Determine if two lists are equal. Lists are equal if they have
-   * the same arity and all of the elements are equal.
-   *
-   * @param l the list to compare to.
+   * @param o the list to compare to.
    *
    * @return true if the lists have the same arity and all the
    * elements are equal.
    **/
-  public boolean equals(OtpErlangList l) {
+  public boolean equals(Object o) {
+    if (!(o instanceof OtpErlangList)) return false;
+
+    OtpErlangList l = (OtpErlangList)o;
     int a = this.arity();
     
     if (a != l.arity()) return false;
@@ -222,4 +230,9 @@ public class OtpErlangList extends OtpErlangObject {
     return true;
   }
 
+  public Object clone() {
+    OtpErlangList newList = (OtpErlangList)(super.clone());
+    newList.elems = (OtpErlangObject[])elems.clone();
+    return newList;
+  }
 }

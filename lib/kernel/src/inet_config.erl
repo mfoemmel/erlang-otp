@@ -17,10 +17,8 @@
 %%
 -module(inet_config).
 
-%% System dependant inet configurations
-
 -include("inet_config.hrl").
--include("inet.hrl").
+-include_lib("kernel/include/inet.hrl").
 
 -import(lists, [foreach/2, member/2, reverse/1]).
 
@@ -62,6 +60,8 @@ init() ->
 		    end;
 		freebsd -> %% we may have to check version (2.2.2)
 		    load_resolv(filename:join(Etc,"host.conf"), host_conf_freebsd);
+		'bsd/os' ->
+		    load_resolv(filename:join(Etc,"irs.conf"), host_conf_bsdos);
 		linux ->
 		    load_resolv(filename:join(Etc,"host.conf"),host_conf_linux),
 
@@ -166,29 +166,23 @@ set_hostname() ->
     end.
 
 set_hostname({ok,Name}) when length(Name) > 0 ->
-    [Host | Dms] = string:tokens(Name, "."),
+    {Host, Domain} = lists:splitwith(fun($.) -> false;
+					(_)  -> true
+				     end, Name),
     inet_db:set_hostname(Host),
-    case set_search_dom(reverse(Dms), "") of
-	"" -> ok;
-	Domain ->
-	    inet_db:set_domain(Domain)
-    end;
-set_hostname(_) ->
-    error("could not read hostname~n", []).
-	    
-set_search_dom([],_) -> 
-    "";
-set_search_dom([X], Dm) ->
-    Domain = join_dom(X, Dm),
+    set_search_dom(Domain).
+
+set_search_dom([$.|Domain]) ->
+    %% leading . not removed by dropwhile above.
+    inet_db:set_domain(Domain),
     inet_db:ins_search(Domain),
     Domain;
-set_search_dom([X|Xs],Dm) ->
-    Domain = join_dom(X, Dm),
+set_search_dom([]) ->
+    [];
+set_search_dom(Domain) ->
+    inet_db:set_domain(Domain),
     inet_db:ins_search(Domain),
-    set_search_dom(Xs, Domain).
-
-join_dom(Dm, "") -> Dm;
-join_dom(Dm1,Dm2) -> Dm1 ++ "." ++ Dm2.
+    Domain.
 
 %%
 %% Load resolver data
@@ -274,10 +268,13 @@ win32_load_from_registry(Type) ->
     Result.
 
 win32_load1(Reg,Type,HFileKey) ->
-    Names = [HFileKey, "Domain", "EnableDNS", "NameServer", "SearchList"],
+    Names = [HFileKey, "Domain", "DhcpDomain", 
+	     "EnableDNS", "NameServer", "SearchList"],
     case win32_get_strings(Reg, Names) of
-	[DBPath0, Domain, EnableDNS, NameServers0, Search] ->
-	    inet_db:set_domain(Domain),
+	[DBPath0, Domain, DhcpDomain, 
+	 EnableDNS, NameServers0, Search] ->
+	    inet_db:set_domain(
+	      case Domain of "" -> DhcpDomain; _ -> Domain end),
 	    NameServers = win32_split_line(NameServers0,Type),
 	    AddNs = fun(Addr) ->
 			    case inet_parse:address(Addr) of
@@ -480,6 +477,7 @@ parse_inetrc([$\t|Str], Line, Ack) ->
     parse_inetrc(Str, Line, Ack);
 parse_inetrc([], _, Ack) ->
     {ok, reverse(Ack)};
+
 
 %% The clauses above are here due to a bug in erl_scan (OTP-1449).
 

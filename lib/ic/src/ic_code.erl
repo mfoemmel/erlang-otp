@@ -36,7 +36,9 @@
 
 -export([type_expand_null/3, type_expand_void/3, type_expand_float/3, type_expand_double/3]).
 -export([type_expand_short/3, type_expand_ushort/3, type_expand_long/3, type_expand_ulong/3]).
--export([type_expand_char/3, type_expand_boolean/3, type_expand_octet/3, type_expand_any/3]).
+-export([type_expand_longlong/3, type_expand_ulonglong/3]).
+-export([type_expand_char/3, type_expand_wchar/3, type_expand_boolean/3]).
+-export([type_expand_octet/3, type_expand_any/3,  type_expand_wstring/3]).
 -export([type_expand_object/3, type_expand_string/3, type_expand_struct/7, type_expand_union/7]).
 -export([type_expand_enum/4, type_expand_sequence/7, type_expand_array/7, type_expand_error/3]).
 
@@ -385,10 +387,16 @@ type_expand(_G,_N,_X,Fd,Tabs,Name,tk_ushort) ->
     type_expand_ushort(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,tk_long) ->
     type_expand_long(Fd,Tabs,Name);
+type_expand(_G,_N,_X,Fd,Tabs,Name,tk_longlong) ->  %% LLONG
+    type_expand_longlong(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,tk_ulong) ->
     type_expand_ulong(Fd,Tabs,Name);
+type_expand(_G,_N,_X,Fd,Tabs,Name,tk_ulonglong) ->  %% ULLONG
+    type_expand_ulonglong(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,tk_char) ->
     type_expand_char(Fd,Tabs,Name);
+type_expand(_G,_N,_X,Fd,Tabs,Name,tk_wchar) ->  %% WCHAR
+    type_expand_wchar(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,tk_boolean) ->
     type_expand_boolean(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,tk_octet) ->
@@ -399,6 +407,8 @@ type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_objref, IFRId, ObjTabs, ObjName}) ->
     type_expand_object(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_string, Length}) ->
     type_expand_string(Fd,Tabs,Name);
+type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_wstring, Length}) -> %% WSTRING
+    type_expand_wstring(Fd,Tabs,Name);
 type_expand(G,N,X,Fd,Tabs,Name,{tk_union, IFRId, UnionName, DTC, DNr, LblList}) ->
     type_expand_union(G,N,X,Fd,Tabs,Name,{tk_union, IFRId, UnionName, DTC, DNr, LblList});
 type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_enum, IFRId, EnumName, ElemNameList}) ->
@@ -436,11 +446,20 @@ type_expand_ushort(Fd,Tabs,Name) ->
 type_expand_long(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = long()~n",[Tabs,Name]).
 
+type_expand_longlong(Fd,Tabs,Name) ->                      %% LLONG
+    ic_codegen:emit(Fd,"%%~s ~s = long_Long()~n",[Tabs,Name]).
+
 type_expand_ulong(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = unsigned_Long()~n",[Tabs,Name]).
 
+type_expand_ulonglong(Fd,Tabs,Name) ->                     %% ULLONG
+    ic_codegen:emit(Fd,"%%~s ~s = unsigned_Long_Long()~n",[Tabs,Name]).
+
 type_expand_char(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = char()~n",[Tabs,Name]).
+
+type_expand_wchar(Fd,Tabs,Name) ->                         %% WCHAR
+    ic_codegen:emit(Fd,"%%~s ~s = wchar()~n",[Tabs,Name]).
 
 type_expand_boolean(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = boolean()~n",[Tabs,Name]).
@@ -459,6 +478,9 @@ type_expand_object(Fd,Tabs,Name) ->
 
 type_expand_string(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = String()~n",[Tabs,Name]).
+
+type_expand_wstring(Fd,Tabs,Name) ->                       %% WSTRING
+    ic_codegen:emit(Fd,"%%~s ~s = WString()~n",[Tabs,Name]).
 
 type_expand_struct(G,N,X,Fd,Tabs,Name,{tk_struct, IFRId, StructName, TcList}) ->
     ScopedStructName = getScopedName(G,N,StructName,IFRId),

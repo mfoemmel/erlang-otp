@@ -1,2 +1,2 @@
 
-MNESIA_VSN = 3.8.2
+MNESIA_VSN = 3.9.2

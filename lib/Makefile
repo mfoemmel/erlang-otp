@@ -27,7 +27,8 @@ OTHER_SUB_DIRECTORIES =	\
   appmon erl_interface os_mon tools runtime_tools
 ifdef BUILD_ALL
 OTHER_SUB_DIRECTORIES += mnesia jinterface ic mnemosyne asn1 debugger \
-  eva inets mesh mnesia_session orber pman tv cosTransactions cosEvent
+  eva inets mesh mnesia_session orber pman tv cosTransactions cosEvent \
+  cosTime cosNotification
 endif
 else
 
@@ -36,16 +37,16 @@ ERTS_SUB_DIRECTORIES = stdlib snmp sasl kernel compiler
 ifdef BUILD_ALL
 ifeq ($(findstring win32,$(TARGET)),win32)
 OTHER_SUB_DIRECTORIES = 			\
-  appmon asn1 emacs erl_interface jinterface eva gs inets jive ic \
+  appmon asn1 emacs erl_interface jinterface eva gs inets ic \
   mnesia mnemosyne mnesia_session crypto orber os_mon parsetools pman \
   ssl toolbar tools tv debugger mesh odbc runtime_tools \
-  cosTransactions cosEvent etk
+  cosTransactions cosEvent etk cosTime cosNotification comet
 else
 OTHER_SUB_DIRECTORIES = \
-  appmon asn1 emacs erl_interface jinterface eva debugger gs inets jive \
+  appmon asn1 emacs erl_interface jinterface eva debugger gs inets \
   ic mnesia  mnemosyne mnesia_session crypto orber os_mon parsetools \
   pman ssl toolbar tools tv mesh \
-  runtime_tools cosTransactions cosEvent etk
+  runtime_tools cosTransactions cosEvent etk cosTime cosNotification
 ifeq ($(findstring sparc-sun-solaris,$(TARGET)),sparc-sun-solaris)
   OTHER_SUB_DIRECTORIES += odbc
 endif

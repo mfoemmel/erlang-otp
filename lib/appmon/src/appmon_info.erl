@@ -99,7 +99,7 @@
 -module(appmon_info).
 %% For CC that doesn't understand fnutts.
 
--export([start_link/1, start_link/2, start_link/3, stop/0]).
+-export([start_link/3, start_link2/3, stop/0]).
 
 -export([app_ctrl/2, app_ctrl/4,
 	 load/2, load/4,
@@ -124,7 +124,7 @@
 %%	db is the database used in the app task.
 %%
 
--record(state, {opts=[], work=[], clients=[]}).
+-record(state, {starter, opts=[], work=[], clients=[]}).
 -record(db, {q, p, links, links2}).
 
 
@@ -153,13 +153,13 @@
 %% Do not use gen_server:start_link because we do not want the
 %% appmon_info to die when initiating process dies unless special
 %% conditions apply.
+%% Uhu, we don't??? Made a fix so that this proces DOES indeed die
+%% if it's starter dies. /Gunilla
 start_link(Node, Client, Opts) ->
-    rpc:call(Node, ?MODULE, start_link, [Client, Opts]).
-start_link(Client) ->
-    start_link(Client, []).
-start_link(Client, Opts) ->
+    rpc:call(Node, ?MODULE, start_link2, [self(), Client, Opts]).
+start_link2(Starter, Client, Opts) ->
     Name = {local, ?MODULE},
-    Args = {Opts, Client},
+    Args = {Starter, Opts, Client},
     %% Check for existence because gen_server gives error when trie
     %% multiple times
     case whereis(?MODULE) of
@@ -252,12 +252,12 @@ status() ->
 %%
 %%----------------------------------------------------------------------
 
-init({Opts, Pid}) ->
+init({Starter, Opts, Pid}) ->
     %%io:format("init opts: ~p, pid: ~p, ~n", [Opts, Pid]),
     link(Pid),
     process_flag(trap_exit, true),
     WorkStore = ets:new(workstore, [set, public]),
-    {ok, #state{opts=Opts, work=WorkStore, clients=[Pid]}}.
+    {ok, #state{starter=Starter, opts=Opts, work=WorkStore, clients=[Pid]}}.
 
 terminate(Reason, State) ->
     tell("Terminating ~p ~p~n", [?MODULE, node()], 5, State#state.opts),
@@ -320,17 +320,19 @@ handle_info({do_it, Key}, State) ->
     end,
     {noreply, State};
 handle_info({'EXIT', Pid, Reason}, State) ->
-%%    io:format("ns got EXIT: Pid: ~p, Reason: ~p, List: ~p~n",
-%%	      [Pid, Reason, State#state.clients]),
-    Work = State#state.work,
-    del_work(ets:match(Work, {{'$1', '$2', Pid}, '_', '_', '_'}), Pid, Work),
-%%    del_work2(ets:tab2list(Work), Pid, Work),
-    case lists:delete(Pid, State#state.clients) of
-	[] -> case get_opt(stay_resident, State#state.opts) of
-		  true -> {noreply, State#state{clients=[]}};
-		  _ -> {stop, normal, State}
-	      end;
-	NewClients -> {noreply, State#state{clients=NewClients}}
+    case State#state.starter of
+	Pid ->
+	    {stop, Reason, State};
+	_Other ->
+	    Work = State#state.work,
+	    del_work(ets:match(Work, {{'$1', '$2', Pid}, '_', '_', '_'}), Pid, Work),
+	    case lists:delete(Pid, State#state.clients) of
+		[] -> case get_opt(stay_resident, State#state.opts) of
+			  true -> {noreply, State#state{clients=[]}};
+			  _ -> {stop, normal, State}
+		      end;
+		NewClients -> {noreply, State#state{clients=NewClients}}
+	    end
     end;
 handle_info(Other, State) ->
 %%    io:format("gad: ~p~n", [Other]),

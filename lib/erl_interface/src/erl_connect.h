@@ -97,7 +97,7 @@ extern int erl_receive_msg(int, unsigned char*, int, ErlMessage*);
 extern int erl_xreceive_msg(int, unsigned char**, int*, ErlMessage*);
 
 extern ETERM *erl_rpc(int,char*,char*,ETERM*);
-extern void erl_rpc_to(int,char*,char*,ETERM*);
+extern int erl_rpc_to(int,char*,char*,ETERM*);
 extern int erl_rpc_from(int,int,ErlMessage*);
 
 extern int erl_accept(int,ErlConnect*);

@@ -17,7 +17,7 @@ esac
 for dir in ../obj*; do
     test ! -d $dir/$target && mkdir $dir/$target
 done
-test ! -d ../bin/$target && mkdir ../bin/$target
+test ! -d ../../bin/$target && mkdir ../../bin/$target
 
 #
 # Create Makefiles for Windows.
@@ -34,6 +34,7 @@ CONFIG_FILES="../emulator/$host/Makefile
 	  ../../lib/runtime_tools/c_src/$host/Makefile
 	  ../../lib/ssl/c_src/$host/Makefile
 	  ../../lib/odbc/src/$host/Makefile
+	  ../../lib/comet/c_src/$host/Makefile
 	  ../../make/$host/otp.mk"
 
 for file in $CONFIG_FILES; do

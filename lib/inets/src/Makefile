@@ -36,12 +36,14 @@ MODULES= ftp \
 	httpd \
 	httpd_conf \
 	httpd_example \
+	httpd_manager \
 	httpd_listener \
 	httpd_parse \
 	httpd_request \
 	httpd_response \
 	httpd_socket \
 	httpd_util \
+	httpd_verbosity \
 	inets_sup \
 	mod_actions \
 	mod_alias \
@@ -77,8 +79,31 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
+# DONT_USE_VERBOSITY = -Ddont_use_verbosity=true
+INETS_FLAGS = -D'SERVER_SOFTWARE="inets/$(VSN)"' \
+              -Ddefault_verbosity=info \
+              $(DONT_USE_VERBOSITY)
+
+# INETS_DEBUG_DEFAULT = l
+ifeq ($(INETS_DEBUG),)
+  INETS_DEBUG = $(INETS_DEBUG_DEFAULT)
+endif
+
+ifeq ($(INETS_DEBUG),c)
+  INETS_FLAGS += -Dinets_cdebug -Dinets_debug -Dinets_log -Dinets_error
+endif
+ifeq ($(INETS_DEBUG),d)
+  INETS_FLAGS += -Dinets_debug -Dinets_log -Dinets_error
+endif
+ifeq ($(INETS_DEBUG),l)
+  INETS_FLAGS += -Dinets_log -Dinets_error
+endif
+ifeq ($(INETS_DEBUG),e)
+  INETS_FLAGS += -Dinets_error
+endif
+
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += -D'SERVER_SOFTWARE="inets/$(VSN)"' 
+ERL_COMPILE_FLAGS += $(INETS_FLAGS)
 
 # ----------------------------------------------------
 # Targets
@@ -115,3 +140,7 @@ release_spec: opt
 
 release_docs_spec:
 
+info:
+	@echo "INETS_DEBUG       = $(INETS_DEBUG)"
+	@echo "INETS_FLAGS       = $(INETS_FLAGS)"
+	@echo "ERL_COMPILE_FLAGS = $(ERL_COMPILE_FLAGS)"

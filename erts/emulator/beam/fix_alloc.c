@@ -93,6 +93,40 @@ int desc;
     return n*NOPERBLOCK*f->item_size;
 }
 
+/* Calculate number of used bytes allocated by 'desc' */
+int fix_used(int desc)
+{
+    FixAlloc* f = &fa[desc];
+    FixAllocBlock* b = f->blocks;
+    uint32 *fp;
+    int n = 0;
+    int allocated;
+#ifdef DEBUG
+    int used;
+#endif
+
+    while (b) {
+        n++;
+        b = b->next;
+    }
+    allocated = n*NOPERBLOCK*f->item_size;
+
+    n = 0;
+    fp = f->freelist;
+    while(fp) {
+      n++;
+      fp = (uint32 *) *fp;
+    }
+#ifdef DEBUG
+    used = allocated - n*f->item_size;
+    ASSERT(used >= 0);
+    return used;
+#else
+    return allocated - n*f->item_size;
+#endif
+
+}
+
 
 /* Returns a small integer which must be used in all subsequent */
 /* calls to fix_alloc() and fix_free() of this size             */
@@ -116,41 +150,12 @@ int size;
     return(-1); /* Pedantic (lint does not know about erl_exit) */
 }
 
-#if !defined(NO_FIX_ALLOC)
-/* Release all memory allocated to desc back to std malloc()
-** Redefined (tony): release memory only NOT the item type
-*/
-
-void fix_release(desc)
-int desc;
-{
-    FixAllocBlock *bl;
-    FixAlloc *f = &fa[desc];
-
-    bl = f->blocks;
-    while (bl) {
-	FixAllocBlock* bl_next = bl->next;
-	sys_free(bl);
-	bl = bl_next;
-    }
-    f->freelist = NULL;
-    f->blocks = NULL;
-
-#ifdef PURIFY
-    purify_map_pool(desc, free);
-#endif    
-}
-#endif
-
 void fix_free(desc, ptr)
 int desc; uint32 *ptr;
 {
 #if defined(NO_FIX_ALLOC)
     sys_free(ptr);
 #elif defined(PURIFY)
-#ifdef __WIN32__
-    purify_clear_pool_id(desc, ptr);
-#endif
     free(ptr);
 #else
     FixAlloc *f = &fa[desc];
@@ -176,7 +181,6 @@ int desc;
     ret = sys_alloc(f->item_size);
 #elif defined(PURIFY)
     ret = (uint32* ) malloc(f->item_size);
-    purify_set_pool_id(ret, desc);
 #else
     if (f->freelist == NULL) {  /* Gotta alloc some more mem */
 	char *ptr;

@@ -24,11 +24,13 @@
 #
 
 label L
-i_func_info a a I
+i_func_info I a a I
 int_code_end
 
 i_module_info_0 a
 i_module_info_1 a
+i_breakpoint
+i_return_to_trace
 
 return
 
@@ -415,14 +417,14 @@ return_trace
 # Note: There is no 'move_return y r', since there never are any y registers
 # when we do move_return (if we have y registers, we must do move_deallocate_return).
 
-move S r | return | is_trace_off() => move_return S r
+move S r | return => move_return S r
 
 %macro: move_return MoveReturn -nonext
 move_return x r
 move_return c r
 move_return n r
 
-move S r | deallocate D | return | is_trace_off() => move_deallocate_return S r D
+move S r | deallocate D | return => move_deallocate_return S r D
 
 %macro: move_deallocate_return MoveDeallocateReturn -nonext
 move_deallocate_return x r P
@@ -430,7 +432,7 @@ move_deallocate_return y r P
 move_deallocate_return c r P
 move_deallocate_return n r P
 
-deallocate D | return | is_trace_off() => deallocate_return D
+deallocate D | return => deallocate_return D
 
 %macro: deallocate_return DeallocateReturn -nonext
 deallocate_return P
@@ -685,6 +687,20 @@ call_ext_last u==2 Bif=u$bif:erlang:check_process_code/2 D => i_call_ext_last Bi
 call_ext_only u==2 Bif=u$bif:erlang:check_process_code/2 => i_call_ext_only Bif
 
 #
+# The BIFs erlang:garbage_collect/0,1 must be called like functions,
+# to allow them to invoke the garbage collector. (The stack pointer must
+# be saved and p->arity must be zeroed, which is not done on ordinary BIF calls.)
+#
+
+call_ext u==0 Bif=u$bif:erlang:garbage_collect/0 => i_call_ext Bif
+call_ext_last u==0 Bif=u$bif:erlang:garbage_collect/0 D => i_call_ext_last Bif D
+call_ext_only u==0 Bif=u$bif:erlang:garbage_collect/0 => i_call_ext_only Bif
+
+call_ext u==1 Bif=u$bif:erlang:garbage_collect/1 => i_call_ext Bif
+call_ext_last u==1 Bif=u$bif:erlang:garbage_collect/1 D => i_call_ext_last Bif D
+call_ext_only u==1 Bif=u$bif:erlang:garbage_collect/1 => i_call_ext_only Bif
+
+#
 # The process_info/1,2 BIF should be called like a function, to force
 # the emulator to set c_p->current before calling it (a BIF call doesn't
 # set it).
@@ -794,9 +810,6 @@ call_bif3 e
 bif0 Bif=u$bif:erlang:self/0 Dst=d => self Dst
 bif0 Bif=u$bif:erlang:node/0 Dst=d => node Dst
 
-bif1 Jump=j u$bif:erlang:hd/1 S Dst => hd Jump S Dst
-bif1 Jump=j u$bif:erlang:tl/1 S Dst => tl Jump S Dst
-
 bif2 Jump=j u$bif:erlang:element/2 S1=ow S2=ow Dst=d => badarg Jump
 bif2 Jump=j u$bif:erlang:element/2 S1=ow S2=s Dst=d => badarg Jump
 bif2 Jump=j u$bif:erlang:element/2 S1=s S2=ow Dst=d => badarg Jump
@@ -820,9 +833,6 @@ node x
 %cold
 node y
 %hot
-
-hd j s d
-tl j s d
 
 i_fast_element j I s d
 i_element j s s d
@@ -887,11 +897,144 @@ is_function f y
 is_function f r
 is_function Fail=f cwo => jump Fail
 
-# Trace instructions.
-
 func_info M=a F=a A=u | label L => gen_func_info(M, F, A, L)
 
-return | is_trace_on() => i_trace_return
+#
+# Matching binaries: Getting started.
+#
+%cold
+%macro: bs_start_match BsStartMatch -fail_action
+bs_start_match f x
+bs_start_match f y
+bs_start_match f r
+bs_start_match Fail=f icwoa => jump Fail
 
-i_trace_info
-i_trace_return
+bs_save I
+bs_restore I
+
+#
+# Fetching integers from binaries.
+#
+bs_get_integer Fail=f Sz=s Unit=u Flags=u Dst=d => \
+			gen_get_integer(Fail, Sz, Unit, Flags, Dst)
+%macro: i_bs_get_integer_imm BsGetIntegerImm -fail_action -gen_dest
+%macro: i_bs_get_integer BsGetInteger -fail_action -gen_dest
+i_bs_get_integer_imm f I I d
+i_bs_get_integer f s I d
+
+#
+# Fetching integers from binaries.
+#
+bs_get_binary Fail=f Sz=s Unit=u Flags=u Dst=d => \
+			gen_get_binary(Fail, Sz, Unit, Flags, Dst)
+%macro: i_bs_get_binary_imm BsGetBinaryImm -fail_action -gen_dest
+%macro: i_bs_get_binary BsGetBinary -fail_action -gen_dest
+%macro: i_bs_get_binary_all BsGetBinaryAll -fail_action -gen_dest
+i_bs_get_binary_imm f I I d
+i_bs_get_binary f s I d
+i_bs_get_binary_all f d
+
+#
+# Fetching floats from binaries.
+#
+bs_get_float Fail=f Sz=s Unit=u Flags=u Dst=d => \
+			gen_get_float(Fail, Sz, Unit, Flags, Dst)
+
+%macro: i_bs_get_float BsGetFloat -fail_action -gen_dest
+i_bs_get_float f s I d
+
+#
+# Skipping uninteresting bits.
+#
+bs_skip_bits Fail=f Sz=s Unit=u Flags=u => gen_skip_bits(Fail, Sz, Unit, Flags)
+
+%macro: i_bs_skip_bits_imm BsSkipBitsImm -fail_action
+i_bs_skip_bits_imm f I
+
+%macro: i_bs_skip_bits BsSkipBits -fail_action
+i_bs_skip_bits f x I
+i_bs_skip_bits f r I
+i_bs_skip_bits f y I
+
+%macro: i_bs_skip_bits_all BsSkipBitsAll -fail_action
+i_bs_skip_bits_all f
+
+%macro: i_bs_skip_bits_all_aligned BsSkipBitsAllAligned -fail_action
+i_bs_skip_bits_all_aligned
+
+#
+# Testing the tail.
+#
+bs_test_tail Fail=f Bits=u==0 => bs_test_zero_tail Fail
+bs_test_tail Fail=f Bits=u => bs_test_tail_imm Fail Bits
+bs_test_zero_tail f
+bs_test_tail_imm f I
+
+#
+# Some optimisations.
+#
+i_bs_get_binary_all Fail Dst | bs_test_tail f u==0 => i_bs_get_binary_all Fail Dst
+i_bs_skip_bits_all_aligned | bs_test_tail f u==0 =>
+i_bs_skip_bits_all Fail | bs_test_tail f u==0 => i_bs_skip_bits_all Fail
+
+#
+# Constructing binaries
+#
+%cold
+
+bs_init Size Flags=u | bs_need_buf Bits=u | assign_heap_bin_flag(Flags, Bits) => \
+	i_bs_init
+bs_init Size Flags | reset_heap_bin_flag() => i_bs_init
+bs_need_buf Bits =>
+
+bs_final Fail Dst | generate_heap_bin() => i_bs_final_heap Dst
+bs_final Fail Dst => i_bs_final Fail Dst
+
+i_bs_init
+i_bs_final_heap d
+i_bs_final j d
+
+#
+# Storing integers into binaries.
+#
+
+bs_put_integer Fail=j Sz=s Unit=u Flags=u Big=w => \
+	i_put_big Big x | bs_put_integer Fail Sz Unit Flags x
+bs_put_integer Fail=j Sz=s Unit=u Flags=u Bad=o => badarg Fail
+bs_put_integer Fail=j Sz=s Unit=u Flags=u Src=s => \
+			gen_put_integer(Fail, Sz, Unit, Flags, Src)
+
+%macro: i_bs_put_integer BsPutInteger
+%macro: i_bs_put_integer_imm BsPutIntegerImm
+
+i_bs_put_integer j s I s
+i_bs_put_integer_imm j I I s
+
+bs_put_float Fail=j Sz=s Unit=u Flags=u Bad=w => badarg Fail
+bs_put_float Fail=j Sz=s Unit=u Flags=u Float=o => \
+	i_put_float Float x | bs_put_float Fail Sz Unit Flags x
+
+bs_put_float Fail=j Sz=s Unit=u Flags=u Src=s => \
+			gen_put_float(Fail, Sz, Unit, Flags, Src)
+i_bs_put_float j s I s
+
+bs_put_binary Fail=j Sz=s Unit=u Flags=u Bad=ow => badarg Fail
+bs_put_binary Fail=j Sz=s Unit=u Flags=u Src=s => \
+			gen_put_binary(Fail, Sz, Unit, Flags, Src)
+
+%macro: i_bs_put_binary BsPutBinary
+i_bs_put_binary j s I s
+
+%macro: i_bs_put_binary_imm BsPutBinaryImm
+i_bs_put_binary_imm j I s
+
+%macro: i_bs_put_binary_all BsPutBinaryAll
+i_bs_put_binary_all j s
+
+#
+# Warning: The bs_put_string instruction is specially treated in the loader.
+# Don't change the instruction format unless you change the loader too.
+#
+bs_put_string I I
+
+%hot

@@ -26,7 +26,10 @@
 
 #include <stdio.h>
 #include "sys.h"
+#include "driver.h"
 #include "elib_stat.h"
+
+extern erl_mutex_t erl_mutex_sys _ANSI_ARGS_((int mno));
 
 /* To avoid clobbering of names becaure of reclaim on VxWorks,
    we undefine all possible malloc, calloc etc. */
@@ -58,10 +61,6 @@ typedef unsigned char EByte;       /* Assume 8-bit byte */
 #define elib_printf fprintf
 #define elib_putc   fputc
 
-#define DECL_MUTEX(x)
-#define MUTEX_INIT(x)
-#define MUTEX_LOCK(x)
-#define MUTEX_UNLOCK(x)
 
 #if defined(__STDC__) || defined(__WIN32__)
 #define CONCAT(x,y) x##y
@@ -224,7 +223,7 @@ static EWord eheap_size = 0;
 
 /* we must have room for head,tail,next,prev */
 
-DECL_MUTEX(heap_lock)
+erl_mutex_t heap_lock;
 static int heap_locked;
 
 /* Fixed block pointer chains:
@@ -242,7 +241,7 @@ static FreeBlock* h_dynamic[DYNAMIC];
 
 static int elib_need_init = 1;
 
-static FUNCTION(void, deallocate, (AllocatedBlock*));
+static FUNCTION(void, deallocate, (AllocatedBlock*, int));
 
 /*
 ** Unlink a free block
@@ -394,16 +393,23 @@ EWord nw;
     while(1) {
 	int ix = log2(nw >> FIXED_BASE);
 
-#ifndef ELIB_RT_ALLOC
 	/* scan for first fit */
 	if ((p = h_dynamic[ix]) != 0) {
-	    while(p != 0) {
-		if (SIZEOF(p) >= nw)
+	    int limit = 256;	/* Max number of blocks to look at. */
+
+	    /*
+	     * We don't want to go on searching this list forever,
+	     * since it might turn out that all blocks are too small.
+	     */
+	    while (p != 0 && limit-- > 0) {
+		if (SIZEOF(p) >= nw) {
 		    return p;
+		}
 		p = p->next;
+		limit--;
 	    }
 	}
-#endif
+
 	ix++;
 	/* scan for first fit (they must all be greater than nw) */
 	while(ix < DYNAMIC && ((p = h_dynamic[ix]) == 0))
@@ -446,7 +452,10 @@ EWord* addr; EWord sz;
     if (!elib_need_init)
 	return;
 
-    MUTEX_INIT(&heap_lock);
+    heap_lock = erl_mutex_sys(0);
+
+    erl_mutex_lock(heap_lock);
+
 
     for (i = 0; i < FIXED; i++)
 	h_fixed[i] = 0;
@@ -517,6 +526,7 @@ EWord* addr; EWord sz;
     eheap_size += sz;
 
     elib_need_init = 0;
+    erl_mutex_unlock(heap_lock);
     heap_locked = 0;
 }
 
@@ -569,7 +579,7 @@ EWord sz;
     /* Patch old tail with new appended size */
     heap_tail->hdr = (heap_tail->hdr & FREE_ABOVE_BIT) |
 	(MIN_WORD_SIZE+1+(sz-5));
-    deallocate(heap_tail);
+    deallocate(heap_tail, 0);
 
     heap_tail = tail;
 
@@ -915,8 +925,12 @@ EWord nb; int clear;
     else
 	nw = ALIGN_SIZE(nb);
 
-    if ((p = alloc_block(nw)) == 0)
+    erl_mutex_lock(heap_lock);
+
+    if ((p = alloc_block(nw)) == 0) {
+	erl_mutex_unlock(heap_lock);	
 	return 0;
+    }
 
     unlink_block(p);
     split_block(p, nw, SIZEOF(p));
@@ -927,6 +941,8 @@ EWord nb; int clear;
 	while(nw--)
 	    *pp++ = 0;
     }
+
+    erl_mutex_unlock(heap_lock);
     return (AllocatedBlock*) p;
 }
 
@@ -940,12 +956,15 @@ EWord nb; int clear;
 ** p points to the block header!
 **
 */
-static void deallocate(p)
-AllocatedBlock* p;
+static void deallocate(p, need_lock)
+AllocatedBlock* p; int need_lock;
 {
     FreeBlock* q;
     EWord szq;
     EWord szp;
+
+    if (need_lock)
+	erl_mutex_lock(heap_lock);
 
     szp = SIZEOF(p);
 
@@ -971,6 +990,9 @@ AllocatedBlock* p;
     p->v[szp-1] = szp;
 
     link_block((FreeBlock*) p, szp);
+
+    if (need_lock)
+	erl_mutex_unlock(heap_lock);
 }
 
 /*
@@ -991,6 +1013,8 @@ AllocatedBlock* p; EWord nb; int preserve;
     else
 	nw = ALIGN_SIZE(nb);
 
+    erl_mutex_lock(heap_lock);
+
     sz = szp = SIZEOF(p);
 
     /* Merge with block below */
@@ -1003,6 +1027,7 @@ AllocatedBlock* p; EWord nb; int preserve;
 
     if (nw <= szp) {
 	split_block(p, nw, szp);
+	erl_mutex_unlock(heap_lock);
 	return p;
     }
     else {
@@ -1023,6 +1048,7 @@ AllocatedBlock* p; EWord nb; int preserve;
 			*pp++ = *dp++;
 		}
 		split_block(p, nw, szp);
+		erl_mutex_unlock(heap_lock);
 		return p;
 	    }
 	}
@@ -1036,6 +1062,8 @@ AllocatedBlock* p; EWord nb; int preserve;
 	p->hdr = (p->hdr & FREE_ABOVE_BIT) | szp;
 	p->v[szp] &= ~FREE_ABOVE_BIT;
 
+	erl_mutex_unlock(heap_lock);
+
 	npp = allocate(nb, 0);
 	if(npp == NULL)
 	    return NULL;
@@ -1044,11 +1072,25 @@ AllocatedBlock* p; EWord nb; int preserve;
 	    while(sz--)
 		*pp++ = *dp++;
 	}
-	deallocate(p);
+	deallocate(p, 1);
 	return npp;
     }
 }
 
+/*
+** What malloc() and friends should do (and return) when the heap is
+** exhausted.  [sverkerw]
+*/
+static void* heap_exhausted()
+{
+    /* Choose behaviour */
+#if 1
+    /* Crash-and-burn --- leave a usable corpse (hopefully) */
+    abort();
+#endif    
+    /* The usual ANSI-compliant behaviour
+    return 0;
+}
 
 /*
 ** Allocate size bytes of memory
@@ -1066,7 +1108,7 @@ size_t nb;
 	ELIB_ALIGN_CHECK(p->v);
 	return p->v;
     }
-    return 0;
+    return heap_exhausted();
 }
 
 
@@ -1085,7 +1127,7 @@ size_t nelem; size_t size;
 	ELIB_ALIGN_CHECK(p->v);
 	return p->v;
     }
-    return 0;
+    return heap_exhausted();
 }
 
 /*
@@ -1096,7 +1138,7 @@ void ELIB_PREFIX(free, (p))
 EWord* p;
 {
     if (p != 0)
-	deallocate((AllocatedBlock*)(p-1));
+	deallocate((AllocatedBlock*)(p-1), 1);
 }
 
 /*
@@ -1118,7 +1160,7 @@ EWord* p; size_t nb;
 	    }
 	}
 	else
-	    deallocate(pp);
+	    deallocate(pp, 1);
     }
     else if (nb > 0) {
 	if (elib_need_init)
@@ -1127,6 +1169,8 @@ EWord* p; size_t nb;
 	    ELIB_ALIGN_CHECK(pp->v);
 	    return pp->v;
 	}
+	else
+	    return heap_exhausted();
     }
     return 0;
 }
@@ -1148,7 +1192,7 @@ EWord* p; int nb;
 	    }
 	}
 	else
-	    deallocate(pp);
+	    deallocate(pp, 1);
     }
     else if (nb > 0) {
 	if (elib_need_init)
@@ -1157,6 +1201,8 @@ EWord* p; int nb;
 	    ELIB_ALIGN_CHECK(pp->v);
 	    return pp->v;
 	}
+	else
+	    return heap_exhausted();
     }
     return 0;
 }

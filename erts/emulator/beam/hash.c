@@ -84,6 +84,20 @@ CIO to; Hash* h;
     erl_printf(to, "depth(%d)\n", max_depth);
 }
 
+
+/*
+ * Returns size of table in bytes. Stored objects not included.
+ */
+int 
+hash_table_sz(Hash *h)
+{
+  int i;
+  for(i=0;h->name[i];i++);
+  i++;
+  return sizeof(Hash) + h->size*sizeof(HashBucket*) + i;
+}
+
+
 /*
 ** init a pre allocated or static hash structure
 ** and allocate buckets.

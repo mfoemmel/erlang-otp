@@ -28,6 +28,9 @@
 #include "bif.h"
 #include "beam_load.h"
 #include "big.h"
+#include "beam_bp.h"
+#include "beam_catches.h"
+#include "erl_binary.h"
 
 Eterm erts_preloaded(Process* p);
 
@@ -36,15 +39,18 @@ static void delete_code(Module* modp);
 static void delete_export_references(Eterm module);
 static int purge_module(int module);
 
+int erts_match_spec_is_on = 0;
+Binary* erts_default_match_spec = NULL;
+int erts_match_local_functions = 0;
+
 Eterm
 load_module_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    uint32   reason;
-    uint32*  hp;
+    Eterm   reason;
+    Eterm*  hp;
     int      i;
     int      sz;
-    ProcBin* bptr;
     byte*    code;
     
     if (is_not_atom(BIF_ARG_1) || is_not_binary(BIF_ARG_2)) {
@@ -52,9 +58,8 @@ BIF_ADECL_2
     }
     
     hp = HAlloc(BIF_P, 3);
-    bptr = (ProcBin*) ptr_val(BIF_ARG_2);
-    sz = bptr->size;
-    code = bptr->bytes;
+    GET_BINARY_BYTES(BIF_ARG_2, code);
+    sz = binary_size(BIF_ARG_2);
     if ((i = do_load(BIF_P->group_leader, BIF_ARG_1, code, sz)) < 0) { 
 	switch (i) {
 	case -1: reason = am_badfile; break; 
@@ -63,6 +68,11 @@ BIF_ADECL_2
 	default: reason = am_badfile; break;
 	}
 	BIF_RET(TUPLE2(hp, am_error, reason));
+    }
+    if (erts_match_spec_is_on) {
+	Eterm mfa[1] = {BIF_ARG_1};
+	(void) erts_set_trace_pattern(mfa, 1, erts_default_match_spec, 1,
+				      erts_match_local_functions);
     }
     BIF_RET(TUPLE2(hp, am_module, BIF_ARG_1));
 }
@@ -73,7 +83,7 @@ BIF_ADECL_1
     if (is_not_atom(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if (purge_module(unsigned_val(BIF_ARG_1)) < 0) {
+    if (purge_module(atom_val(BIF_ARG_1)) < 0) {
 	BIF_ERROR(BIF_P, BADARG);
     }
     BIF_RET(am_true);
@@ -90,13 +100,13 @@ BIF_ADECL_2
     error:
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if (is_not_pid(BIF_ARG_1) || (get_node(BIF_ARG_1) != THIS_NODE) ||
-	(get_number(BIF_ARG_1) >= max_process)) {
+    if (is_not_pid(BIF_ARG_1) || (pid_node(BIF_ARG_1) != THIS_NODE) ||
+	(pid_number(BIF_ARG_1) >= max_process)) {
 	goto error;
     }
-    rp = process_tab[get_number(BIF_ARG_1)];
+    rp = process_tab[pid_number(BIF_ARG_1)];
     if (INVALID_PID(rp, BIF_ARG_1)) {
-	goto error;
+	BIF_RET(am_false);
     }
     modp = erts_get_module(BIF_ARG_2);
     return check_process_code(rp, modp);
@@ -119,7 +129,7 @@ BIF_ADECL_1
     if (modp->old_code != 0) {
 	cerr_pos = 0;
 	erl_printf(CBUF, "Module ");
-	print_atom(unsigned_val(BIF_ARG_1), CBUF);
+	print_atom(atom_val(BIF_ARG_1), CBUF);
 	erl_printf(CBUF, " must be purged before loading\n");
 	send_error_to_logger(BIF_P->group_leader);
 	goto error;
@@ -263,7 +273,7 @@ check_process_code(Process* rp, Module* modp)
      * Check all continuation pointers stored on the stack.
      */
     for (sp = rp->stop; sp < rp->hend; sp++) {
-	if (is_CP(*sp) && INSIDE(cp_ptr_val(*sp))) {
+	if (is_CP(*sp) && INSIDE(cp_val(*sp))) {
 	    return am_true;
 	}
     }
@@ -313,9 +323,11 @@ purge_module(int module)
      * Remove the old code.
      */
     code = modp->old_code;
+    beam_catches_delmod(modp->old_catches, code, modp->old_code_length);
     sys_free((char *) code);
     modp->old_code = NULL;
     modp->old_code_length = 0;
+    modp->old_catches = BEAM_CATCHES_NIL;
 
     /*
      * Remove the code from the address table too.
@@ -343,10 +355,19 @@ purge_module(int module)
 static void 
 delete_code(Module* modp)
 {
+    /*
+     * Clear breakpoints if any
+     */
+    if (modp->code != NULL && modp->code[MI_NUM_BREAKPOINTS] > 0) {
+	erts_clear_module_break(modp);
+	modp->code[MI_NUM_BREAKPOINTS] = 0;
+    }
     modp->old_code = modp->code;
     modp->old_code_length = modp->code_length;
+    modp->old_catches = modp->catches;
     modp->code = NULL;
     modp->code_length = 0;
+    modp->catches = BEAM_CATCHES_NIL;
 }
 
 

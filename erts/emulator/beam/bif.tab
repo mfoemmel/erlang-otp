@@ -15,6 +15,16 @@
 # 
 #     $Id$
 #
+
+#
+# File format:
+#
+# Lines starting with '#' are ignored.
+#
+# <bif-decl> ::= "bif" <bif> [<C-name>]
+# <bif> ::= <module> ":" <name> "/" <arity>
+#
+
 bif erlang:abs/1
 bif erlang:append/2
 bif erlang:apply/3
@@ -47,6 +57,7 @@ bif erlang:group_leader/0
 bif erlang:group_leader/2
 bif erlang:halt/0
 bif erlang:hash/2
+bif erlang:phash/2
 bif erlang:hd/1
 bif erlang:info/1
 bif erlang:integer_to_list/1
@@ -100,6 +111,7 @@ bif erlang:split_binary/2
 bif erlang:statistics/1
 bif erlang:subtract/2
 bif erlang:term_to_binary/1
+bif erlang:term_to_binary/2
 bif erlang:throw/1
 bif erlang:time/0
 bif erlang:tl/1
@@ -111,15 +123,12 @@ bif erlang:unlink/1
 bif erlang:unregister/1
 bif erlang:whereis/1
 bif erlang:spawn_opt/2
-bif erlang:float_to_words/1
 bif erlang:halt/1
 bif erlang:setnode/2
 bif erlang:setnode/3
 bif erlang:dist_exit/3
 bif erlang:dist_unlink/2
 bif erlang:dist_link/2
-bif erlang:binary_to_dist/1
-bif erlang:dist_to_binary/1
 
 bif erlang:port_command/2
 bif erlang:port_control/3
@@ -128,37 +137,43 @@ bif erlang:port_connect/2
 
 # Tracing & debugging.
 bif erlang:trace_pattern/2
+bif erlang:trace_pattern/3
 bif erlang:trace/3
 bif erlang:trace_info/2
 bif erlang:suspend_process/1
 bif erlang:resume_process/1
 
-bif erlang:m_cos/1
-bif erlang:m_cosh/1
-bif erlang:m_sin/1
-bif erlang:m_sinh/1
-bif erlang:m_tan/1
-bif erlang:m_tanh/1
-bif erlang:m_acos/1
-bif erlang:m_acosh/1
-bif erlang:m_asin/1
-bif erlang:m_asinh/1
-bif erlang:m_atan/1
-bif erlang:m_atanh/1
-bif erlang:m_erf/1
-bif erlang:m_erfc/1
-bif erlang:m_exp/1
-bif erlang:m_log/1
-bif erlang:m_log10/1
-bif erlang:m_sqrt/1
-bif erlang:m_atan2/2
-bif erlang:m_pow/2
+# Used to implemented in the erlang:info/1 BIF.
+bif erlang:yield/0
+bif erlang:bump_reductions/1
+
+bif math:cos/1
+bif math:cosh/1
+bif math:sin/1
+bif math:sinh/1
+bif math:tan/1
+bif math:tanh/1
+bif math:acos/1
+bif math:acosh/1
+bif math:asin/1
+bif math:asinh/1
+bif math:atan/1
+bif math:atanh/1
+bif math:erf/1
+bif math:erfc/1
+bif math:exp/1
+bif math:log/1
+bif math:log10/1
+bif math:sqrt/1
+bif math:atan2/2
+bif math:pow/2
 
 bif erlang:old_binary_to_term/1
 
 bif erlang:start_timer/3
 bif erlang:send_after/3
 bif erlang:cancel_timer/1
+bif erlang:read_timer/1
 
 bif erlang:make_tuple/2
 bif erlang:append_element/2
@@ -264,14 +279,12 @@ bif ets:match_spec_compile/1
 bif ets:match_spec_run/2
 bif ets:match_spec_run/3
 
-### XXX Remove me!!!
-# bif ets:testnisse/2
-
 #
 # Bifs in os module.
 #
 
 bif os:putenv/2
+bif os:getenv/0
 bif os:getenv/1
 bif os:getpid/0
 
@@ -284,6 +297,16 @@ bif lists:member/2
 bif lists:reverse/2
 bif lists:keymember/3
 bif lists:keysearch/3
+
+#
+# Vector bifs.
+#
+
+bif vector:new/2
+bif vector:from_list/1
+bif vector:to_list/2
+bif vector:get/2
+bif vector:set/3
 
 #
 # Bifs for debugging.

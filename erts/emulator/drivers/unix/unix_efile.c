@@ -42,7 +42,18 @@
  */
 extern STATUS copy(char *, char *);
 #include <errno.h>
-#endif /* VXWORKS */
+#else /* UNIX */
+#  if defined(HAVE_FCNTL_H) && defined(HAVE_F_DUPFD)
+#    include <fcntl.h>
+     static int try_dup = -1;
+#    if defined(NO_SYSCONF)
+#      include <sys/param.h>
+#      define MAX_FILES()	NOFILE
+#    else
+#      define MAX_FILES()	sysconf(_SC_OPEN_MAX)
+#    endif
+#  endif
+#endif /* !VXWORKS */
 
 #ifdef SUNOS4
 #  define getcwd(buf, size) getwd(buf)
@@ -281,8 +292,29 @@ efile_rmdir(Efile_error* errInfo,	/* Where to return error codes. */
 	    char* name)			/* Name of directory to delete. */
 {
     CHECK_PATHLEN(name, errInfo);
+    if (rmdir(name) == 0) {
+	return 1;
+    }
+    if (errno == ENOTEMPTY) {
+	errno = EEXIST;
+    }
+    if (errno == EEXIST) {
+	int saved_errno = errno;
+	struct stat file_stat;
+	struct stat cwd_stat;
 
-    return check_error(rmdir(name), errInfo);
+	/*
+	 *  The error code might be wrong if this is the current directory.
+	 */
+
+	if (stat(name, &file_stat) == 0 && stat(".", &cwd_stat) == 0 &&
+	    file_stat.st_ino == cwd_stat.st_ino &&
+	    file_stat.st_dev == cwd_stat.st_dev) {
+	    saved_errno = EINVAL;
+	}
+	errno = saved_errno;
+    }
+    return check_error(-1, errInfo);
 }
 
 int
@@ -290,8 +322,13 @@ efile_delete_file(Efile_error* errInfo,	/* Where to return error codes. */
 		  char* name)		/* Name of file to delete. */
 {
     CHECK_PATHLEN(name,errInfo);
-
-    return check_error(unlink(name), errInfo);
+    if (unlink(name) == 0) {
+	return 1;
+    }
+    if (errno == EISDIR) {	/* Linux sets the wrong error code. */
+	errno = EPERM;
+    }
+    return check_error(-1, errInfo);
 }
 
 /*
@@ -307,8 +344,8 @@ efile_delete_file(Efile_error* errInfo,	/* Where to return error codes. */
  *	fail.  
  *
  * Results:
- *	If the directory was successfully created, returns TCL_OK.
- *	Otherwise the return value is TCL_ERROR and errno is set to
+ *	If the directory was successfully created, returns 1.
+ *	Otherwise the return value is 0 and errno is set to
  *	indicate the error.  Some possible values for errno are:
  *
  *	EACCES:     src or dst parent directory can't be read and/or written.
@@ -604,7 +641,23 @@ efile_openfile(Efile_error* errInfo,	/* Where to return error codes. */
 	errno = EISDIR;
 	return check_error(-1, errInfo);
     }
+
+#if !defined(VXWORKS) && defined(HAVE_FCNTL_H) && defined(HAVE_F_DUPFD)
+    if (try_dup < 0) {
+	try_dup = MAX_FILES() > 1024;
+    }
+    if (try_dup) {
+	if ((*pfd = fcntl(fd,F_DUPFD,1024)) < 0) {
+	    *pfd = fd;
+	} else {
+	    close(fd);
+	}
+    } else {
+	*pfd = fd;
+    }
+#else
     *pfd = fd;
+#endif
     *pSize = statbuf.st_size;
     return 1;
 }

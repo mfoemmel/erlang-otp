@@ -28,11 +28,9 @@
 
 -export([compile/1, 
 	 compile/2, 
-%	 compile/3,
 	 compile_all/0, 
 	 compile_all/1, 
 	 compile_all/2, 
-%	 compile_all/3, 
 	 run/3,
 	 mod_calls/1, 
 	 func_calls/1, 
@@ -45,8 +43,6 @@
 	 source_files/1, 
 	 clear/1, 
 	 clear_all/0, 
-%	 remove/1, 
-%	 remove_all/0,
 	 quit/0	 
 	]).
 
@@ -80,14 +76,6 @@ compile(File, Options) ->
 
 
 
-%compile(File, Options, trace) ->
-%    compile_common(File, coastify, Options, trace, []);
-%compile(File, Options, Other) ->
-%    compile_common(File, coastify, Options, no_trace, []).
-
-
-
-
 compile_all() ->
     case  file:get_cwd() of
 	{ok, Dir} ->
@@ -114,20 +102,6 @@ compile_all(Dir) ->
 
 compile_all(Dir, Options) ->
     compile_all_common(Dir, Options, no_trace).
-
-
-
-
-%compile_all(Dir, Options, TraceMode) ->
-%    compile_all_common(Dir, Options, TraceMode).
-
-
-%%remove(File) ->
-%%    compile_common(File, uncoastify, [], no_trace, []).
-
-
-%%remove_all() ->
-%%    compile_common(known_modules(), uncoastify, [], no_trace, []).
 
 
 
@@ -278,24 +252,12 @@ send_msg_to_server(Msg, Args) when list(Args) ->
     ?COAST_SERVER_NAME ! {Msg, self(), Args},
     receive
 	{Msg, ?COAST_SERVER_NAME, Data} ->
-	    Data;
-	Other ->
-	    io:format("Received message:  ~p~n", [Other])
+	    Data
     end;
 send_msg_to_server(Msg, Arg) ->
     send_msg_to_server(Msg, [Arg]).
 
     
-
-
-
-%handle_trace(trace_off, _Mod, _Index) ->
-%    done;
-%handle_trace(trace_on, Mod, Index) ->
-%    TraceList = trace_lookup(),
-%    ets:insert(?TABLE_NAME, {trace, [{Mod,Index} | TraceList]}).
-
-
 
 
 
@@ -355,33 +317,6 @@ check_kind_of_call({LastMod,LastFunc,LastArity,LastCallDirection}, {Mod,Func,Ari
 	    {1, 1, 0}
     end.
     
-
-
-%check_kind_of_call({LastMod,LastFunc,LastArity}, 
-%		   {Mod,Func,Arity}, TotN, ExtModN, IntNonRecN) ->
-%    case LastMod of
-%	Mod ->
-%	    case {LastFunc, LastArity} of
-%		{Func, Arity} ->
-%		    {TotN + 1, ExtModN, IntNonRecN};
-%		_OtherTuple ->
-%		       %% Here we may actually count returning from
-%		       %% a function call as a non-recursive call.
-%		       %% However, this doesn't matter, since we only
-%		       %% are interested in those values when it comes
-%		       %% to the first line in a function clause! (And
-%		       %% we cannot reach that line from a function call...)
-%		       %% For a normal line we are only interested in the 
-%		       %% total number of times that line has been passed.  :-)
-%		    {TotN + 1, ExtModN, IntNonRecN + 1}
-%	    end;
-%	_OtherMod ->
-%	    {TotN + 1, ExtModN + 1, IntNonRecN}
-%    end.
-
-
-
-
 
 
 exit_if_shell_process(Module) ->
@@ -482,9 +417,7 @@ compile_common2(File, CoastifyMode, Options, TraceMode) ->
 	{error, ?COAST_SERVER_NAME, Reason} ->
 	    {error, Reason};
 	{file_compiled, ?COAST_SERVER_NAME} ->
-	    {ok, File};
-	Other ->
-	    io:format("Received message:  ~p~n", [Other])
+	    {ok, File}
     end.
 	    
 
@@ -495,8 +428,11 @@ compile_all_common(Dir, Options, TraceMode) ->
     case file:list_dir(Dir) of
         {ok, Files} ->
             compile_all_common(Dir, lists:sort(Files), Options, TraceMode, []);
-        _ ->
-            true
+        {error, enoent} ->
+            {error, "No such directory"};
+
+	OtherError ->
+	    {error, "Cannot read directory"}
     end.
 
 
@@ -540,17 +476,3 @@ compile_all_common(Dir, [H | T], Options, TraceMode, CompiledFiles) ->
     end;
 compile_all_common(Dir, [], _Options, TraceMode, CompiledFiles) -> 
     {ok, lists:reverse(CompiledFiles)}.
-
-
-
-
-
-%trace_lookup() ->
-%    case ets:lookup(?TABLE_NAME, trace) of
-%	[{_Any, TraceList}] ->
-%	    TraceList;
-%	[] ->
-%	    []
-%    end.
-
-

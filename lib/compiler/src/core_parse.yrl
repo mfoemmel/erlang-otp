@@ -13,7 +13,7 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id: core_parse.yrl,v 1.1.1.1 1999/11/25 13:52:22 erlang Exp $
 %%
 %% Core Erlang YECC parser grammar
 
@@ -30,12 +30,12 @@ constant constants atomic_constant tuple_constant cons_constant
 tail_constant
 
 pattern patterns real_pattern atomic_pattern tuple_pattern
-cons_pattern tail_pattern vector_pattern
+cons_pattern tail_pattern
 
 expressions expression real_expression literal atomic_literal nil
-tuple cons tail vector
+tuple cons tail values_expr
 
-sequence let_expr let_vars case_expr fun_expr application
+sequence let_expr case_expr fun_expr application
 application_op local_function_reference remote_function_reference
 internal_function_reference catch_expr try_expr receive_expr variable
 variables clauses clause
@@ -141,7 +141,7 @@ tail_constant -> ',' constant tail_constant : ['$2'|'$3'].
 
 pattern -> real_pattern : '$1'.
 pattern -> '(' real_pattern '-|' annotation_list ')' :
-	c_set_anno('$2', '$4').
+	core_lib:set_anno('$2', '$4').
 
 patterns -> pattern ',' patterns : ['$1' | '$3'].
 patterns -> pattern : ['$1'].
@@ -150,7 +150,6 @@ real_pattern -> atomic_pattern : '$1'.
 real_pattern -> var : #c_var{name=tok_val('$1')}.
 real_pattern -> tuple_pattern : '$1'.
 real_pattern -> cons_pattern : '$1'.
-real_pattern -> vector_pattern : '$1'.
 real_pattern -> var '=' pattern :
 		    #c_alias{var=#c_var{name=tok_val('$1')},pat='$3'}.
 
@@ -167,34 +166,31 @@ tail_pattern -> '|' pattern ']' : '$2'.
 tail_pattern -> ',' pattern tail_pattern :
 		    #c_cons{head='$2',tail='$3'}.
 
-vector_pattern -> '<' '>' : #c_vector{es=[]}.
-vector_pattern -> '<' patterns '>' : #c_vector{es='$2'}.
-
 %% Expressions
 
 expression -> real_expression : '$1'.
 expression -> '(' real_expression '-|' annotation_list ')' :
-	c_set_anno('$2', '$4').
+	core_lib:set_anno('$2', '$4').
 
 expressions -> expression ',' expressions : ['$1' | '$3'].
 expressions -> expression : ['$1'].
 
 real_expression -> literal : '$1'.
-real_expression -> var : '$1'.
+real_expression -> var : #c_var{name=tok_val('$1')}.
 real_expression -> local_function_reference : '$1'.
+real_expression -> values_expr : '$1'.
+real_expression -> fun_expr : '$1'.
 real_expression -> sequence : '$1'.
 real_expression -> let_expr : '$1'.
 real_expression -> case_expr : '$1'.
-real_expression -> fun_expr : '$1'.
+real_expression -> receive_expr : '$1'.
 real_expression -> application : '$1'.
 real_expression -> catch_expr : '$1'.
 real_expression -> try_expr : '$1'.
-real_expression -> receive_expr : '$1'.
 
 literal -> atomic_literal : '$1'.
 literal -> tuple : '$1'.
 literal -> cons : '$1'.
-literal -> vector : '$1'.
 
 atomic_literal -> integer : #c_int{val=tok_val('$1')}.
 atomic_literal -> float : #c_float{val=tok_val('$1')}.
@@ -212,8 +208,8 @@ tail -> ']' : #c_nil{}.
 tail -> '|' expression ']' : '$2'.
 tail -> ',' expression tail : #c_cons{head='$2',tail='$3'}.
 
-vector -> '<' '>' : #c_vector{es=[]}.
-vector -> '<' expressions '>' : #c_vector{es='$2'}.
+values_expr -> '<' '>' : #c_values{es=[]}.
+values_expr -> '<' expressions '>' : #c_values{es='$2'}.
 
 variable -> var : #c_var{name=tok_val('$1')}.
 variable -> '(' var '-|' annotation_list ')' :
@@ -222,14 +218,18 @@ variable -> '(' var '-|' annotation_list ')' :
 local_function_reference ->
     local atom '/' integer : #c_local{name=tok_val('$2'),arity=tok_val('$4')}.
 
+fun_expr -> 'fun' '(' ')' '->' expression :
+	#c_fun{vars=[],body='$5'}.
+fun_expr -> 'fun' '(' variables ')' '->' expression :
+	#c_fun{vars='$3',body='$6'}.
+
 sequence -> do expression then expression :
 	#c_seq{arg='$2',body='$4'}.
 
-let_expr -> 'let' let_vars '=' expression in expression :
-	#c_let{vars='$2',arg='$4',body='$6'}.
-
-let_vars -> variable : '$1'.
-let_vars -> '<' variables '>' : #c_vector{es='$2'}.
+let_expr -> 'let' '<' '>' '=' expression in expression :
+	#c_let{vars=[],arg='$5',body='$7'}.
+let_expr -> 'let' '<' variables '>' '=' expression in expression :
+	#c_let{vars='$3',arg='$6',body='$8'}.
 
 variables -> variable ',' variables : ['$1' | '$3'].
 variables -> variable : ['$1'].
@@ -240,15 +240,22 @@ case_expr -> 'case' expression 'of' clauses 'end' :
 clauses -> clause clauses : ['$1' | '$2'].
 clauses -> clause : ['$1'].
 
-clause -> pattern 'when' expression '->' expression :
-	#c_clause{pat='$1',guard='$3',body='$5'}.
-clause -> pattern '->' expression :
-	#c_clause{pat='$1',guard=#c_atom{name=true},body='$3'}.
+clause -> '<' '>' 'when' expression '->' expression :
+	#c_clause{pats=[],guard='$6',body='$6'}.
+clause -> '<' patterns '>' 'when' expression '->' expression :
+	#c_clause{pats='$2',guard='$5',body='$7'}.
 
-fun_expr -> 'fun' '(' ')' '->' expression :
-	#c_fun{vars=[],body='$5'}.
-fun_expr -> 'fun' '(' variables ')' '->' expression :
-	#c_fun{vars='$3',body='$6'}.
+receive_expr -> 'receive' clauses 'end' : 
+	#c_receive{clauses='$2',
+		   timeout=#c_atom{name=infinity},
+		   action=#c_atom{name=true}}.
+receive_expr -> 'receive' clauses 'after' expression '->' expression 'end' :
+	#c_receive{clauses='$2',timeout='$4',action='$6'}.
+receive_expr -> 'receive' 'after' expression '->' expression 'end' :
+	#c_receive{clauses=[],timeout='$3',action='$5'}.
+receive_expr -> 'receive' 'end' :
+	#c_receive{clauses=[],
+		   timeout=#c_atom{name=infinity},action=#c_atom{name=true}}.
 
 application -> '(' application_op ')' '(' ')' :
 	#c_call{op='$2',args=[]}.
@@ -273,19 +280,6 @@ try_expr -> 'try' expression 'catch' '(' variable ',' variable ')' '->'
     expression :
 	#c_try{expr='$2',vars=['$5','$7'],body='$10'}.
 
-receive_expr -> 'receive' clauses 'end' : 
-	#c_receive{clauses='$2',
-		   timeout=#c_atom{name=infinity},
-		   action=#c_atom{name=true}}.
-receive_expr -> 'receive' clauses 'after' expression '->' expression 'end' :
-	#c_receive{clauses='$2',timeout='$4',action='$6'}.
-receive_expr -> 'receive' 'after' expression '->' expression 'end' :
-	#c_receive{clauses=[],timeout='$3',action='$5'}.
-receive_expr -> 'receive' 'end' :
-	#c_receive{clauses=[],
-		   timeout=#c_atom{name=infinity},action=#c_atom{name=true}}.
-
-
 %% ====================================================================== %%
 
 
@@ -298,28 +292,8 @@ Erlang code.
 tok_val(T) -> element(3, T).
 tok_line(T) -> element(2, T).
 
-c_set_anno(Thing, Anno) -> setelement(2, Thing, Anno).
-
 abstract(T, N) -> abstract(T).
 
-abstract(I) when integer(I) -> #c_int{val=I};
-abstract(F) when float(F) -> #c_float{val=F};
-abstract(A) when atom(A) -> #c_atom{name=A};
-abstract([]) -> #c_nil{};
-abstract(L) when list(L) ->
-    case io_lib:printable_list(L) of
-	true -> #c_string{val=L};
-	false ->
-	    #c_cons{head=abstract(hd(L)),tail=abstract(tl(L))}
-    end;
-abstract(T) when tuple(T) ->
-    #c_tuple{es=[ abstract(E) || E <- tuple_to_list(T) ]}.
+abstract(Term) -> core_lib:make_literal(Term).
 
-normalise(#c_int{val=I}) -> I;
-normalise(#c_float{val=F}) -> F;
-normalise(#c_atom{name=A}) -> A;
-normalise(#c_nil{}) -> [];
-normalise(#c_cons{head=H,tail=T}) ->
-    [normalise(H)|normalise(T)];
-normalise(#c_tuple{es=Es}) ->
-    list_to_tuple([ normalise(E) || E <- Es ]).
+normalise(Core) -> core_lib:literal_value(Core).

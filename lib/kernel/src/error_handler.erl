@@ -57,7 +57,7 @@ undefined_lambda(Module, Fun, Args) ->
     end.
 
 %%
-%% Crash providing a beatiful stack back trace.
+%% Crash providing a beautiful stack backtrace.
 %%
 crash(Fun, Args) ->
     crash({Fun,Args}).

@@ -33,6 +33,7 @@ if test -d c_src/$system_type ; then
     TCL_H_DIR="$system_type"
     tcltklibs=""
     AC_MSG_RESULT(prebuilt in c_src/$system_type)
+    confdirs=""
 else
     TK_LIB='$(LIBDIR)/tk4.2/unix/$(TK_LIB_FILE)'
     TCL_LIB='$(LIBDIR)/tcl7.6/unix/$(TCL_LIB_FILE)'
@@ -41,8 +42,9 @@ else
     TCL2C='$(LIBDIR)/tcl7.6/unix/tcl2c'
     tcltklibs="tcltklibs"
     AC_MSG_RESULT(using sources in c_src/lib)
-    AC_CONFIG_SUBDIRS(c_src/lib/tcl7.6/unix c_src/lib/tk4.2/unix)
+    confdirs="c_src/lib/tcl7.6/unix c_src/lib/tk4.2/unix"
 fi
+AC_CONFIG_SUBDIRS($confdirs)
 
 AC_PROG_CC
 AC_PROG_RANLIB

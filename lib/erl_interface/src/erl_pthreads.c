@@ -36,13 +36,20 @@
 #include <stdio.h>
 #endif
 
+#include "erl_error.h"
+
 extern int erl_locking_init_done;
 extern void erl_common_init(void *, long);
-int erl_init_pthreads(void *x, long y)
+
+static pthread_key_t erl_errno_key;
+
+int 
+erl_init_pthreads (void *x, long y)
 {
 #ifdef DEBUG
   fprintf(stderr,"erl_interface using POSIX threads\n");
 #endif
+
   erl_common_init(x,y);
   return 0; /*success */
 }
@@ -91,6 +98,57 @@ int erl_m_unlock(void *l)
   if (!erl_locking_init_done) return 0;
   return pthread_mutex_unlock(l);
 } 
+
+
+/*
+ * Thread-specific erl_errno variable.
+ */
+
+static pthread_key_t erl_errno_key;
+static pthread_once_t erl_errno_key_once = PTHREAD_ONCE_INIT;
+
+/*
+ * Destroy per-thread erl_errno locus
+ */
+static void
+erl_errno_destroy (void * ptr)
+{
+    free(ptr);
+}
+
+/*
+ * Allocate erl_errno key.
+ */
+static void
+erl_errno_key_alloc (void)
+{
+    pthread_key_create(&erl_errno_key, erl_errno_destroy);
+}
+
+/*
+ * Allocate (and initialize) per-thread erl_errno locus.
+ */
+static void
+erl_errno_alloc (void)
+{
+    pthread_once(&erl_errno_key_once, erl_errno_key_alloc);
+    pthread_setspecific(erl_errno_key, malloc(sizeof(__erl_errno)));
+    *(int *)pthread_getspecific(erl_errno_key) = 0;
+}
+
+/*
+ * Return a pointer to the erl_errno locus.
+ */
+volatile int *
+__erl_errno_place (void)
+{
+    if (pthread_getspecific(erl_errno_key) == NULL)
+    {
+	erl_errno_alloc();
+    }
+    return (int *)pthread_getspecific(erl_errno_key);
+}
+
 
 #endif /* HAVE_PTHREAD_H || HAVE_MIT_PTHREAD_H */
 #endif /* !VXWORKS && !__WIN32__ */

@@ -47,22 +47,20 @@ import java.net.ServerSocket;
  * </pre>
  *
  * @see OtpSelf
- **/
+ *
+ @deprecated the functionality of this class has been moved to {@link OtpSelf}.
+**/
 public class OtpServer extends OtpSelf {
-  private int port;
-  private ServerSocket sock; 
-
-  Socket epmd; // epmd publish handle
-  
   /** Create an {@link OtpServer} from an existing {@link OtpSelf}.
    *
    * @param self an existing self node.
    *
    * @exception java.io.IOException if a ServerSocket could not be created.
+   *
    **/
   public OtpServer(OtpSelf self) 
     throws IOException {
-    this(self.node(),self.cookie(),0);
+    super(self.node(),self.cookie());
   }
 
   /**
@@ -80,7 +78,7 @@ public class OtpServer extends OtpSelf {
    **/
   public OtpServer(String node, String cookie) 
     throws IOException {
-    this(node,cookie,0);
+    super(node,cookie);
   }
 
   /**
@@ -95,106 +93,10 @@ public class OtpServer extends OtpSelf {
    *
    * @exception java.io.IOException if a ServerSocket could not be
    * created or if the chosen port number was not available.
+   *
    **/
   public OtpServer(String node, String cookie, int port) 
     throws IOException {
-    super(node,cookie);
-
-    sock = new ServerSocket(port);
-
-    if (port != 0) this.port = port;
-    else this.port = sock.getLocalPort();
-  }
-
-  /**
-   * Get the port number used by this node.
-   *
-   * @return the port number this server node is accepting
-   * connections on.
-   **/
-  public int port() {
-    return port;
-  }
-
-
-  /**
-   * Make public the information needed by remote nodes that may wish
-   * to connect to this one. This method establishes a connection to
-   * the Erlang port mapper (Epmd) and registers the server node's
-   * name and port so that remote nodes are able to connect.
-   *
-   * <p> This method will fail if an Epmd process is not running on
-   * the localhost. See the Erlang documentation for information about
-   * starting Epmd.
-   *
-   * <p> Note that once this method has been called, the node is
-   * expected to be available to accept incoming connections. For that
-   * reason you should make sure that you call {@link #accept()}
-   * shortly after calling {@link #publishPort()}. When you no longer
-   * intend to accept connections you should call {@link
-   * #unPublishPort()}.
-   *
-   * @return true if the operation was successful, false if the node
-   * was already registered.
-   *
-   * @exception java.io.IOException if the port mapper could not be contacted.
-   **/
-  public boolean publishPort() 
-    throws IOException {
-    if (epmd != null) return false; // already published
-    
-    OtpEpmd.publishPort(this);
-    return (epmd != null);
-  }
-
-
-  /**
-   * Unregister the server node's name and port number from the Erlang
-   * port mapper, thus preventing any new connections from remote
-   * nodes.
-   **/
-  public void unPublishPort() {
-    // unregister with epmd
-    OtpEpmd.unPublishPort(this); 
-    
-    // close the local descriptor (if we have one)
-    try {
-      if (epmd != null) epmd.close();
-    }
-    catch (IOException e) {/* ignore close errors */}
-    epmd = null;
-  }
-
-  /**
-   * Accept an incoming connection from a remote node. A call to this
-   * method will block until an incoming connection is at least
-   * attempted.
-   *
-   * @return a connection to a remote node.
-   *
-   * @exception java.io.IOException if a remote node attempted to
-   * connect but no common protocol was found.
-   *
-   * @exception OtpAuthException if a remote node attempted to
-   * connect, but was not authorized to connect.
-   **/
-  public OtpConnection accept()
-    throws IOException, OtpAuthException 
-  {
-    Socket newsock=null;
-    
-    while (true) {
-      try {
-	newsock = sock.accept();
-	return new OtpConnection(this,newsock);
-      }
-      catch (IOException e) {
-	try {
-	  if (newsock != null) newsock.close();
-	}
-	catch (IOException f) {/* ignore close errors */}
-	throw e;
-      }
-    }
+    super(node,cookie,port);
   }
 }

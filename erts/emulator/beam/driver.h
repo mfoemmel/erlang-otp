@@ -111,7 +111,9 @@ typedef struct driver_entry {
     F_PTR control;	 /* "ioctl" for drivers (invoked by port_command/3) */
     F_PTR timeout;       /* Reserved */
     F_PTR outputv;       /* Reserved */
+    F_PTR ready_async;   /* Completion routine for driver_async */
 } DriverEntry;
+
 
 /* These are the kernel functions available for driver writers */
 
@@ -136,7 +138,7 @@ EXTERN int driver_failure_eof _ANSI_ARGS_((int));
 EXTERN int driver_failure_atom _ANSI_ARGS_((int, char *));
 EXTERN int driver_failure_posix _ANSI_ARGS_((int, int));
 EXTERN int driver_failure _ANSI_ARGS_((int, int));
-
+EXTERN int driver_exit _ANSI_ARGS_ ((int, int));
 
 EXTERN char* erl_errno_id _ANSI_ARGS_((int error));
 EXTERN void set_busy_port _ANSI_ARGS_((int, int));
@@ -175,6 +177,83 @@ EXTERN void *driver_dl_open _ANSI_ARGS_((char *));
 EXTERN void *driver_dl_sym _ANSI_ARGS_((void *, char *));
 EXTERN int driver_dl_close _ANSI_ARGS_((void *));
 EXTERN char *driver_dl_error _ANSI_ARGS_((void));
+
+/* Async IO functions */
+EXTERN long driver_async _ANSI_ARGS_((int,
+				      unsigned int*,
+				      void (*)(void*), 
+				      void *,
+				      void (*)(void*)));
+EXTERN int driver_async_cancel _ANSI_ARGS_((long));
+
+EXTERN int driver_attach _ANSI_ARGS_((int));
+EXTERN int driver_detach _ANSI_ARGS_((int));
+
+/* Threads */
+typedef void* erl_mutex_t;
+typedef void* erl_cond_t;
+typedef void* erl_thread_t;
+
+EXTERN erl_mutex_t erl_mutex_create _ANSI_ARGS_((void));
+EXTERN int erl_mutex_destroy _ANSI_ARGS_((erl_mutex_t));
+EXTERN int erl_mutex_lock _ANSI_ARGS_((erl_mutex_t));
+EXTERN int erl_mutex_unlock _ANSI_ARGS_((erl_mutex_t));
+
+EXTERN erl_cond_t erl_cond_create _ANSI_ARGS_((void));
+EXTERN int erl_cond_destroy _ANSI_ARGS_((erl_cond_t));
+EXTERN int erl_cond_signal _ANSI_ARGS_((erl_cond_t));
+EXTERN int erl_cond_broadcast _ANSI_ARGS_((erl_cond_t));
+EXTERN int erl_cond_wait _ANSI_ARGS_((erl_cond_t, erl_mutex_t));
+EXTERN int erl_cond_timedwait _ANSI_ARGS_((erl_cond_t, erl_mutex_t, long));
+
+EXTERN int erl_thread_create _ANSI_ARGS_((erl_thread_t*,
+					 void* (*func)(void*),
+					 void* arg,
+					 int detached));
+EXTERN erl_thread_t erl_thread_self _ANSI_ARGS_((void));
+EXTERN void erl_thread_exit _ANSI_ARGS_((void*));
+EXTERN int  erl_thread_join _ANSI_ARGS_((erl_thread_t, void**));
+EXTERN int  erl_thread_kill _ANSI_ARGS_((erl_thread_t));
+
+
+typedef unsigned long DriverTermData;
+
+#define TERM_DATA(x) ((DriverTermData) (x))
+
+/* Possible types to send from driver          Argument type */
+#define ERL_DRV_NIL         ((DriverTermData) 1)  /* None */
+#define ERL_DRV_ATOM        ((DriverTermData) 2)  /* driver_mk_atom(string) */
+#define ERL_DRV_INT         ((DriverTermData) 3)  /* int */
+#define ERL_DRV_PORT        ((DriverTermData) 4)  /* driver_mk_port(ix) */
+#define ERL_DRV_BINARY      ((DriverTermData) 5)  /* ErlDriverBinary*, int */
+#define ERL_DRV_STRING      ((DriverTermData) 6)  /* char*, int */
+#define ERL_DRV_TUPLE       ((DriverTermData) 7)  /* int */
+#define ERL_DRV_LIST        ((DriverTermData) 8)  /* int */
+#define ERL_DRV_STRING_CONS ((DriverTermData) 9)  /* char*, int */
+#define ERL_DRV_PID         ((DriverTermData) 10) /* driver_connected,... */
+
+/* DriverTermData is the type to use for casts when building 
+ * terms that should be sent to connected process,
+ * for instance a tuple on the form {tcp, Port, [Tag|Binary]}
+ *
+ * DriverTermData spec[] = {
+ *    ERL_DRV_ATOM, driver_mk_atom("tcp"),
+ *    ERL_DRV_PORT, driver_mk_port(drv->ix),
+ *             ERL_DRV_INT, REPLY_TAG,
+ *             ERL_DRV_BIN, 50, TERM_DATA(buffer),
+ *             ERL_DRV_LIST, 2,
+ *    ERL_DRV_TUPLE, 3,
+ *  }       
+ *             
+ */
+
+EXTERN DriverTermData driver_mk_atom _ANSI_ARGS_ ((char*));
+EXTERN DriverTermData driver_mk_port _ANSI_ARGS_ ((int));
+EXTERN DriverTermData driver_connected _ANSI_ARGS_((int));
+EXTERN DriverTermData driver_caller _ANSI_ARGS_((int));
+
+EXTERN int driver_output_term _ANSI_ARGS_((int, DriverTermData *, int));
+EXTERN int driver_send_term _ANSI_ARGS_((int, DriverTermData, DriverTermData *, int));
 
 #endif
 

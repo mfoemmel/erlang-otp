@@ -29,9 +29,11 @@
 -record(c_var, {anno=[],name}).
 -record(c_nil, {anno=[]}).
 
+-record(c_bin, {anno=[],es}).
+-record(c_bin_elem, {anno=[],val,size,type}).
 -record(c_tuple, {anno=[],es}).
 -record(c_cons, {anno=[],head,tail}).
--record(c_vector, {anno=[],es}).		%Only used for multiple values
+-record(c_values, {anno=[],es}).		%Only used for multiple values
 
 -record(c_alias, {anno=[],var,pat}).
 
@@ -45,12 +47,9 @@
 -record(c_let, {anno=[],vars,arg,body}).
 -record(c_seq, {anno=[],arg,body}).
 -record(c_case, {anno=[],arg,clauses}).
--record(c_clause, {anno=[],pat,guard,body}).
+-record(c_clause, {anno=[],pats,guard,body}).
 -record(c_fun, {anno=[],vars,body}).
 -record(c_call, {anno=[],op,args}).
 -record(c_try, {anno=[],expr,vars,body}).
 -record(c_catch, {anno=[],body}).
 -record(c_receive, {anno=[],clauses,timeout,action}).
-
-%%c_get_anno(Thing) -> element(2, Thing).
-%%c_set_anno(Thing, Anno) -> setelement(2, Thing, Anno).

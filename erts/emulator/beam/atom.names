@@ -15,6 +15,23 @@
 # 
 #     $Id$
 #
+
+#
+# File format:
+#
+# Lines starting with '#' are ignored.
+#
+# <atom-decl> ::= "atom" <atom>+
+# <atom> ::= <atom-name> | 
+#            "'" <printname> "'" |
+#            <C-name> "=" "'" <printname> "'"
+# <atom-name> ::= [a-z][a-zA-Z_0-9]*
+# <C-name> ::=  [A-Z][a-zA-Z_0-9]*
+# <printname> ::= .*
+#
+# (although some characters may poison the Perl parser)
+#
+
 #
 # Frequently used atoms.
 #
@@ -34,6 +51,10 @@ atom DOWN='DOWN'
 atom EXIT='EXIT'
 atom all
 atom allocated
+atom allocated_areas
+atom atom_desc
+atom atom_space
+atom atom_table
 atom and
 atom andthen
 atom arity
@@ -46,7 +67,10 @@ atom binary
 atom bnot
 atom bor
 atom bxor
+atom bsl
+atom bsr
 atom call
+atom caller
 atom case_clause
 atom catchlevel
 atom cd
@@ -55,6 +79,7 @@ atom close
 atom closed
 atom command
 atom compile
+atom compressed
 atom connect
 atom connected
 atom const
@@ -93,11 +118,15 @@ atom error_logger
 atom exit_status
 atom existing
 atom exiting
+atom export_desc
+atom export_table
 atom exports
 atom false
 atom fd
+atom fixed_deletion_desc
 atom flags
-atom fullsweep
+atom fullsweep_after
+atom fullsweep_if_old_binaries
 atom fun
 atom function
 atom functions
@@ -105,13 +134,14 @@ atom function_clause
 atom garbage_collection
 atom gc_end
 atom gc_start
-atom gc_switch
 atom Ge='>='
 atom generational
 atom getenv
 atom getting_linked
+atom global
 atom Gt='>'
 atom heap_size
+atom heap_sizes
 atom hidden
 atom hide
 atom high
@@ -132,11 +162,13 @@ atom keypos
 atom kill
 atom killed
 atom label
-atom lambda_clause
 atom last_calls
 atom Le='=<'
 atom line
+atom link_desc
 atom links
+atom loaded_code
+atom local
 atom low
 atom Lt='<'
 atom machine
@@ -145,13 +177,18 @@ atom max
 atom max_tables max_processes
 atom mbuf_size
 atom memory
+atom mesg_desc
 atom message
 atom message_queue_len
 atom messages
 atom min_heap_size
 atom Minus='-'
 atom module
+atom module_desc
 atom module_info
+atom module_table
+atom monitored_by
+atom monitors
 atom more
 atom name
 atom named_table
@@ -172,8 +209,8 @@ atom not
 atom not_purged
 atom notalive
 atom nouse_stdio
-atom old_call_trace
 atom old_heap_size
+atom on_load
 atom or
 atom ordered_set
 atom orelse
@@ -183,13 +220,18 @@ atom out
 atom output
 atom owner
 atom packet
+atom plist_desc
 atom Plus='+'
 atom pid
 atom port
+atom preg_desc
 atom print
 atom priority
 atom private
 atom process
+atom process_desc
+atom process_count
+atom process_limit
 atom process_dump
 atom procs
 atom protected
@@ -200,6 +242,7 @@ atom quantify
 atom receive
 atom recent_size
 atom reductions
+atom register_table
 atom registered_name
 atom rem
 atom return_from
@@ -222,16 +265,19 @@ atom set_on_spawn
 atom set_seq_token
 atom stack_size
 atom start
+atom static
 atom status
 atom stderr_to_stdout
 atom stop
 atom stream
 atom suspend
 atom suspended
-atom switch
 atom system_limit
 atom system_version
+atom SYSTEM='SYSTEM'
 atom table
+atom table_desc
+atom thread_pool_size
 atom timeout
 atom timeout_value
 atom Times='*'

@@ -140,9 +140,6 @@
 %%
 %% time - if true then time is measured during compilation
 %%
-%% use_leex - tries to use a leex scanner. Can have the values 1, 2,
-%% or boolean() for different styles of leex scanners
-%%
 %% 
 %%--------------------------------------------------------------------
 allowed_opt(default_opts, V)		-> true;
@@ -151,7 +148,6 @@ allowed_opt(tokens, V)			-> is_bool(V);
 allowed_opt(form, V)			-> is_bool(V);
 allowed_opt(tform, V)			-> is_bool(V);
 allowed_opt(time, V)			-> is_bool(V);
-allowed_opt(use_leex, V)		-> is_intorbool(V);
 allowed_opt(maxerrs, V)			-> is_intorinfinity(V);
 allowed_opt(maxwarns, V)		-> is_intorinfinity(V);
 allowed_opt(nowarn, V)			-> is_bool(V);
@@ -186,6 +182,8 @@ allowed_opt(preproc_cmd, V)		-> true;
 allowed_opt(preproc_flags, V)		-> true;
 allowed_opt(this, V)			-> true;
 allowed_opt({this, _}, V)		-> is_bool(V);
+allowed_opt(from, V)			-> true;
+allowed_opt({from, _}, V)		-> is_bool(V);
 allowed_opt(handle_info, V)		-> true;
 allowed_opt({handle_info, _}, V)	-> is_bool(V);
 allowed_opt(timeout, V)		        -> true;
@@ -298,6 +296,10 @@ do_add_opt(G, this, V) ->
     ?insert(G#genobj.options, {option, {this, V}}, true);
 do_add_opt(G, {this, V}, false) ->
     ?insert(G#genobj.options, {option, {this, V}}, force_false);
+do_add_opt(G, from, V) ->
+    ?insert(G#genobj.options, {option, {from, V}}, true);
+do_add_opt(G, {from, V}, false) ->
+    ?insert(G#genobj.options, {option, {from, V}}, force_false);
 do_add_opt(G, scoped_op_calls, V) when V /= true, V /= false ->
     ?insert(G#genobj.options, {option, {scoped_op_calls, V}}, false);
 do_add_opt(G, K, V) ->

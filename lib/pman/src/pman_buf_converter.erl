@@ -166,7 +166,7 @@ save_loop_init(Fd,Raw) ->
 	      ]),
     io:format(Fd,"%%% ~n~n",[]),
 
-    Print = lists:map({pman_buf_utils,textformat},[],Raw),
+    Print = lists:map({pman_buf_utils,textformat},Raw),
     receive
 	{buffer,Text} when list(Text) ->
 	    io:format(Fd,Text,[]),
@@ -177,7 +177,7 @@ save_loop_init(Fd,Raw) ->
 save_loop(Fd) ->
     receive
 	{raw,Raw} ->
-	    Print = lists:map({pman_buf_utils,textformat},[],Raw),
+	    Print = lists:map({pman_buf_utils,textformat},Raw),
 	    io:format(Fd,Print,[]),
 	    save_loop(Fd);
 	buffer -> true

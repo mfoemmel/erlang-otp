@@ -41,14 +41,12 @@
 #define MATHERR_BADARITH make_small(BADARITH)
 #define MATHERR_UNDEF    make_small(UNDEF)
 
-static double undef_math_func_1(x)
-double x;
+static double undef_math_func_1(double x)
 {
     return x;
 }
 
-static double undef_math_func_2(x, y)
-double x, y;
+static double undef_math_func_2(double x, double y)
 {
     return x+y;
 }
@@ -135,7 +133,7 @@ uint32 arg1; uint32 arg2;
     return MATHERR_BADARITH;
 }
 
-BIF_RETTYPE m_cos_1(BIF_ALIST_1)
+BIF_RETTYPE math_cos_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, cos, BIF_ARG_1);
@@ -144,7 +142,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_cosh_1(BIF_ALIST_1)
+BIF_RETTYPE math_cosh_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, cosh, BIF_ARG_1);
@@ -153,7 +151,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_sin_1(BIF_ALIST_1)
+BIF_RETTYPE math_sin_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, sin, BIF_ARG_1);
@@ -162,7 +160,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_sinh_1(BIF_ALIST_1)
+BIF_RETTYPE math_sinh_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, sinh, BIF_ARG_1);
@@ -171,7 +169,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_tan_1(BIF_ALIST_1)
+BIF_RETTYPE math_tan_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, tan, BIF_ARG_1);
@@ -181,7 +179,7 @@ BIF_ADECL_1
 }
 
 
-BIF_RETTYPE m_tanh_1(BIF_ALIST_1)
+BIF_RETTYPE math_tanh_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, tanh, BIF_ARG_1);
@@ -191,7 +189,7 @@ BIF_ADECL_1
 }
 
 
-BIF_RETTYPE m_acos_1(BIF_ALIST_1)
+BIF_RETTYPE math_acos_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, acos, BIF_ARG_1);
@@ -200,7 +198,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_acosh_1(BIF_ALIST_1)
+BIF_RETTYPE math_acosh_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, acosh, BIF_ARG_1);
@@ -209,7 +207,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_asin_1(BIF_ALIST_1)
+BIF_RETTYPE math_asin_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, asin, BIF_ARG_1);
@@ -218,7 +216,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_asinh_1(BIF_ALIST_1)
+BIF_RETTYPE math_asinh_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, asinh, BIF_ARG_1);
@@ -227,7 +225,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_atan_1(BIF_ALIST_1)
+BIF_RETTYPE math_atan_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, atan, BIF_ARG_1);
@@ -236,7 +234,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_atanh_1(BIF_ALIST_1)
+BIF_RETTYPE math_atanh_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, atanh, BIF_ARG_1);
@@ -245,7 +243,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_erf_1(BIF_ALIST_1)
+BIF_RETTYPE math_erf_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, erf, BIF_ARG_1);
@@ -254,7 +252,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_erfc_1(BIF_ALIST_1)
+BIF_RETTYPE math_erfc_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, erfc, BIF_ARG_1);
@@ -263,7 +261,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_exp_1(BIF_ALIST_1)
+BIF_RETTYPE math_exp_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, exp, BIF_ARG_1);
@@ -272,7 +270,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_log_1(BIF_ALIST_1)
+BIF_RETTYPE math_log_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, log, BIF_ARG_1);
@@ -282,7 +280,7 @@ BIF_ADECL_1
 }
 
 
-BIF_RETTYPE m_log10_1(BIF_ALIST_1)
+BIF_RETTYPE math_log10_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, log10, BIF_ARG_1);
@@ -291,7 +289,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_sqrt_1(BIF_ALIST_1)
+BIF_RETTYPE math_sqrt_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     uint32 res = math_call_1(BIF_P, sqrt, BIF_ARG_1);
@@ -300,7 +298,7 @@ BIF_ADECL_1
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_atan2_2(BIF_ALIST_2)
+BIF_RETTYPE math_atan2_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
     uint32 res = math_call_2(BIF_P, atan2, BIF_ARG_1, BIF_ARG_2);
@@ -309,7 +307,7 @@ BIF_ADECL_2
     BIF_RET(res);
 }
 
-BIF_RETTYPE m_pow_2(BIF_ALIST_2)
+BIF_RETTYPE math_pow_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
     uint32 res = math_call_2(BIF_P, pow, BIF_ARG_1, BIF_ARG_2);

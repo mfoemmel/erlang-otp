@@ -33,7 +33,9 @@ dump_to_textfile(File) ->
     dump_to_textfile(mnesia_lib:is_running(), file:open(File, write)).
 dump_to_textfile(yes, {ok, F}) ->
     Tabs = lists:delete(schema, mnesia_lib:local_active_tables()),
-    Defs = lists:map(fun(T) -> {T, mnesia_lib:val({T, attributes})} end,
+    Defs = lists:map(fun(T) -> {T, [{record_name, mnesia_lib:val({T, record_name})},
+				    {attributes, mnesia_lib:val({T, attributes})}]} 
+		     end,
 		     Tabs),
     io:format(F, "~p.~n", [{tables, Defs}]),
     lists:foreach(fun(T) -> dump_tab(F, T) end, Tabs),
@@ -43,8 +45,8 @@ dump_to_textfile(_,_) -> error.
     
 dump_tab(F, T) ->
     W = mnesia_lib:val({T, wild_pattern}),
-    {atomic,All} = mnesia:transaction(fun() -> mnesia:match_object(W) end),
-    lists:foreach(fun(Term) -> io:format(F,"~p.~n", [Term]) end, All).
+    {atomic,All} = mnesia:transaction(fun() -> mnesia:match_object(T, W, read) end),
+    lists:foreach(fun(Term) -> io:format(F,"~p.~n", [setelement(1, Term, T)]) end, All).
 
 
 ensure_started() ->
@@ -72,24 +74,26 @@ del_data(Bad, [], Ack) ->
 %% Tis the place to call the validate func in mnesia_schema
 validate_tab({Tabname, List}) ->
     {Tabname, List};
+validate_tab({Tabname, RecName, List}) ->
+    {Tabname, RecName, List};
 validate_tab(_) -> error(badtab).
 
-make_tabs([{Tab, Attrs} | Tail]) ->
-    case catch mnesia:table_info(Tab, size) of
+make_tabs([{Tab, Def} | Tail]) ->
+    case catch mnesia:table_info(Tab, where_to_read) of
 	{'EXIT', _} -> %% non-existing table
-	    case mnesia:create_table(Tab, [{attributes, [Attrs]}]) of
+	    case mnesia:create_table(Tab, Def) of
 		{aborted, Reason} ->
 		    io:format("** Failed to create table ~w ~n"
 			      "** Reason = ~w, Args = ~p~n", 
-			      [Tab, Reason, Attrs]),
+			      [Tab, Reason, Def]),
 		    [Tab | make_tabs(Tail)];
 		_ -> 
 		    io:format("New table ~w~n", [Tab]),
 		    make_tabs(Tail)
 	    end;
-	_ ->
-	    io:format("** Table ~w already exists, just entering data~n",
-		      [Tab]),
+	Node ->
+	    io:format("** Table ~w already exists on ~p, just entering data~n",
+		      [Tab, Node]),
 	    make_tabs(Tail)
     end;
 
@@ -98,7 +102,11 @@ make_tabs([]) ->
 
 load_data(L) ->
     mnesia:transaction(fun() ->
-			       F = fun(X) -> mnesia:write(X) end,
+			       F = fun(X) -> 
+					   Tab = element(1, X),
+					   RN = mnesia:table_info(Tab, record_name),
+					   Rec = setelement(1, X, RN),
+					   mnesia:write(Tab, Rec, write) end,
 			       lists:foreach(F, L)
 		       end).
 
@@ -124,7 +132,7 @@ collect(_) ->
 
 collect_data(Tabs, [{Line, Term} | Tail]) when tuple(Term) ->
     case lists:keysearch(element(1, Term), 1, Tabs) of
-	{value, {Tab, Attr}} ->
+	{value, _} ->
 	    [Term | collect_data(Tabs, Tail)];
 	Other ->
 	    io:format("Object:~p at line ~w unknown\n", [Term,Line]),

@@ -24,7 +24,7 @@ ERL_DEBUG	= -D_DEBUG -DDEBUG -DHARDDEBUG -Zi
 TTYPE		= debug
 LINKTYPE	= -debug
 !else
-ERL_DEBUG 	= -DDEBUG -Zi
+ERL_DEBUG 	= -DDEBUG -Zi -Yd
 TTYPE		= debug
 LINKTYPE	= -debug
 !endif
@@ -65,7 +65,7 @@ DEFINES =  $(ERL_INCLUDES) -DNT -D__WIN32__ -DWINDOWS -DWIN32 -D_WIN32 -D_MT
 ERL_CFLAGS_COMMON = -c -MT $(DEFINES) -W3
 
 ERL_CFLAGS = $(ERL_DEBUG) $(ERL_CFLAGS_COMMON)
-ERL_LFLAGS = $(LINKTYPE) -nologo -pdb:none -incremental:no -nodefaultlib \
+ERL_LFLAGS = $(LINKTYPE)  -incremental:no -nodefaultlib \
 	-subsystem:console,4.0 
 
 #WIN32_LIBS = kernel32.lib advapi32.lib gdi32.lib user32.lib \

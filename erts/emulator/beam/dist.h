@@ -24,6 +24,7 @@
 #define DFLAG_EXTENDED_REFERENCES 0x04
 #define DFLAG_DIST_MONITOR        0x08
 #define DFLAG_FUN_TAGS            0x10
+#define DFLAG_DIST_MONITOR_NAME   0x20
 
 /* All flags that should be enabled when term_to_binary/1 is used. */
 #define TERM_TO_BINARY_DFLAGS (DFLAG_EXTENDED_REFERENCES|DFLAG_FUN_TAGS)
@@ -72,7 +73,7 @@ EXTERN_FUNCTION(int, dist_group_leader, (int, uint32, uint32));
 EXTERN_FUNCTION(int, dist_exit2, (int, uint32, uint32, uint32));
 #endif
 
-EXTERN_FUNCTION(int, dist_demonitor, (int, uint32, uint32, Ref *));
+EXTERN_FUNCTION(int, dist_demonitor, (int, uint32, uint32, Ref *, int));
 EXTERN_FUNCTION(int, dist_monitor, (int, uint32, uint32, Ref *));
 EXTERN_FUNCTION(int, dist_m_exit, (int, uint32, uint32, Ref *, uint32));
 

@@ -1626,9 +1626,9 @@ create_menus() ->
 			 {" Sort by Name ",radio,sort_table_name,9,no_char},
 			 {" Sort by Id ",radio,sort_table_id,9,no_char},
 			 {" Sort by Owner PID ",radio,sort_owner_pid,15,no_char},
-			 {" Sort by Owner Name ",radio,sort_owner_name,9,no_char}
-%			 separator,
-%			 {" Error Messages in Haiku ",check,show_haiku,1,no_char}
+			 {" Sort by Owner Name ",radio,sort_owner_name,9,no_char},
+			 separator,
+			 {" Error Messages in Haiku ",check,show_haiku,1,no_char}
 			], 
 			OptionsMenu) ++
 	create_menulist([{" ETS Tables ",radio,show_ets,1,e},

@@ -18,7 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: orber_iiop_inproxy.erl
-%% Author: Lars Thorsen
 %% 
 %% Description:
 %%    This file contains the IIOP "proxy" for incomming connections
@@ -45,6 +44,10 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 code_change/3, terminate/2, stop/0]).
 
+%%-----------------------------------------------------------------
+%% Macros
+%%-----------------------------------------------------------------
+-define(DEBUG_LEVEL, 7).
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -86,9 +89,12 @@ init({connect, Type, Socket}) ->
 %%-----------------------------------------------------------------
 terminate(Reason, {Socket, Type, IncRequests}) ->
     ?PRINTDEBUG2("in proxy for socket ~p terminated with reason: ~p", [Socket, Reason]),
-    %% Kill all proxies before terminating
-    %%kill_all_proxies(IncRequests, ets:first(IncRequests)),
+    %% We may want to kill all proxies before terminating, but the best
+    %% option should be to let the repuest complete (especially for one-way
+    %% functions it's a better alternative.
+    %% kill_all_proxies(IncRequests, ets:first(IncRequests)),
     ets:delete(IncRequests),
+    orber:debug_level_print("[~p] orber_iiop_inproxy:terminate(~p)", [?LINE, Reason], ?DEBUG_LEVEL),
     ok.
 
 kill_all_proxies(_, '$end_of_table') ->

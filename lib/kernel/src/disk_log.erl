@@ -22,10 +22,13 @@
 -export([start/0, istart_link/0, 
 	 log/2, log_terms/2, blog/2, blog_terms/2,
 	 alog/2, alog_terms/2, balog/2, balog_terms/2,
-	 close/1, sync/1, open/1, truncate/1, truncate/2, btruncate/2,
+	 close/1, lclose/1, lclose/2, sync/1, open/1, 
+	 truncate/1, truncate/2, btruncate/2,
 	 reopen/2, reopen/3, breopen/3, inc_wrap_file/1, change_size/2,
-	 change_notify/3, change_header/2, chunk/2, chunk/3, chunk_step/3, 
-	 block/1, block/2, unblock/1, info/0, info/1, format_error/1]).
+	 change_notify/3, change_header/2, 
+	 chunk/2, chunk/3, chunk_step/3, chunk_info/1,
+	 block/1, block/2, unblock/1, info/1, format_error/1,
+	 accessible_logs/0]).
 
 %% Internal exports
 -export([init/1, internal_open/2,
@@ -83,6 +86,12 @@ balog_terms(Log, Bytess) ->
 close(Log) -> 
     req(Log, close).
 
+lclose(Log) ->
+    lclose(Log, node()).
+
+lclose(Log, Node) ->
+    lreq(Log, close, Node).
+
 truncate(Log) -> 
     req(Log, {truncate, none, truncate, 1}).
 
@@ -130,10 +139,6 @@ format_error(Error) ->
 
 info(Log) -> 
     sreq(Log, info).
-
-info() -> % debug
-    lists:map(fun({Log, _}) -> sreq(Log, info) end,
-	      ets:tab2list(disk_log_names)).
 	      
 
 %% This function Takes 3 args, a Log, a Continuation and N.
@@ -150,8 +155,9 @@ chunk(Log, Cont, N) when integer(N), N > 0 ->
 
 ichunk(Log, start, N) ->
     sreq(Log, {chunk, 0, [], N});
-ichunk(Log, {more, Pos, B}, N) ->
-    sreq(Log, {chunk, Pos, B, N});
+ichunk(_Log, More, N) when record(More, continuation) ->
+    req2(More#continuation.pid, 
+	 {chunk, More#continuation.pos, More#continuation.b, N});
 ichunk(_Log, {error, Reason}, _) ->
     {error, Reason}.
 
@@ -160,11 +166,20 @@ chunk_step(Log, Cont, N) when integer(N) ->
 
 ichunk_step(Log, start, N) ->
     sreq(Log, {chunk_step, 0, [], N});
-ichunk_step(Log, {more, Pos, B}, N) ->
-    sreq(Log, {chunk_step, Pos, B, N});
+ichunk_step(_Log, More, N) when record(More, continuation) ->
+    req2(More#continuation.pid, 
+	 {chunk_step, More#continuation.pos, More#continuation.b, N});
 ichunk_step(_Log, {error, Reason}, _) ->
     {error, Reason}.
 
+
+chunk_info(More) when record(More, continuation) ->
+   [{node, node(More#continuation.pid)}];
+chunk_info(BadCont) ->
+   {error, {no_continuation, BadCont}}.
+
+accessible_logs() ->
+    disk_log_server:accessible_logs().
 
 istart_link() ->  
     {ok, proc_lib:spawn_link(disk_log, init, [self()])}.
@@ -632,7 +647,7 @@ handle({From, {internal_open, A}}, S) ->
 		    put(log, opening_pid(A#arg.linkto, A#arg.notify, L)),
 		    reply(From, Res, S#state{args=A, cnt=Cnt});
 		Res ->
-		    do_exit(S, From, Res, ?failure(Res, open, 1))
+		    do_fast_exit(S, From, Res, ?failure(Res, open, 1))
 	    end;
 	L ->
 	    TestH = mk_head(A#arg.head, A#arg.format),
@@ -757,6 +772,12 @@ system_code_change(State, _Module, _OldVsn, _Extra) ->
 %%% Internal functions
 %%%----------------------------------------------------------------------
 do_exit(S, From, Message, Reason) ->
+    do_stop(S),    
+    disk_log_server:close(self()),
+    From ! {disk_log, self(), Message},
+    exit(Reason).
+
+do_fast_exit(S, From, Message, Reason) ->
     do_stop(S),
     From ! {disk_log, self(), Message},
     exit(Reason).
@@ -1045,6 +1066,8 @@ do_format_error({error, Module, Error}) ->
     Module:format_error(Error);
 do_format_error({error, Reason}) ->
     do_format_error(Reason);
+do_format_error({Node, Error = {error, _Reason}}) ->
+    lists:append(io_lib:format("~p: ", [Node]), do_format_error(Error));
 do_format_error({badarg, Arg}) ->
     io_lib:format("The argument ~p is missing, not recognized or "
 		  "not wellformed~n", [Arg]);
@@ -1083,6 +1106,9 @@ do_format_error({arg_mismatch, Option, FirstValue, ArgValue}) ->
 		  "the current value ~p~n", [ArgValue, Option, FirstValue]);
 do_format_error({name_already_open, Log}) ->
     io_lib:format("The disk log ~p has already opened another file~n", [Log]);
+do_format_error({node_already_open, Log}) ->
+    io_lib:format("The distribution option of the disk log ~p does not match "
+		  "already open log~n", [Log]);
 do_format_error({open_read_write, Log}) ->
     io_lib:format("The disk log ~p has already been opened read-write~n", 
 		  [Log]);
@@ -1095,6 +1121,9 @@ do_format_error({not_internal_wrap, Log}) ->
 do_format_error(no_such_log) ->
     io_lib:format("There is no disk log with the given name~n", []);
 do_format_error(nonode) ->
+    io_lib:format("There seems to be no node up that can handle "
+		  "the request~n", []);
+do_format_error(nodedown) ->
     io_lib:format("There seems to be no node up that can handle "
 		  "the request~n", []);
 do_format_error({corrupt_log_file, FileName}) ->
@@ -1113,6 +1142,8 @@ do_format_error(end_of_log) ->
 do_format_error({invalid_index_file, FileName}) ->
     io_lib:format("The wrap log index file ~s cannot be used~n",
 		  [FileName]);
+do_format_error({no_continuation, BadCont}) ->
+    io_lib:format("The term ~p is not a chunk continuation~n", [BadCont]);
 do_format_error({file_error, FileName, Reason}) ->
     io_lib:format("~s: ~p~n", [FileName, file:format_error(Reason)]);
 do_format_error(E) ->
@@ -1128,6 +1159,15 @@ do_info(L, Cnt) ->
 	       halt ->
 		   Extra#halt.size
 	   end,
+    Distribution =
+	case disk_log_server:get_log_pids(Name) of
+	    {local, _Pid} -> 
+		local;
+	    {distributed, Pids} ->
+		lists:map(fun(P) -> node(P) end, Pids);		
+	    undefined -> % "cannot happen"
+		[]
+	end,
     RW = case Type of
 	     wrap when Mode == read_write ->
 		 #handle{curB = CurB, curF = CurF, 
@@ -1170,7 +1210,9 @@ do_info(L, Cnt) ->
 	      {users, Users}] ++
 	     HeadL ++
 	     [{mode, Mode},
-	      {status, Status}
+	      {status, Status},
+	      {node, node()},
+	      {distributed, Distribution}
 	     ],
     Common ++ RW.
 
@@ -1367,35 +1409,61 @@ reply(To, Rep, S) ->
 
 req(Log, R) ->
     case disk_log_server:get_log_pids(Log) of
-	[Pid] ->
+	{local, Pid} ->
 	    monitor_request(Pid, R);
 	undefined ->
 	    {error, no_such_log};
-	Pids ->
+	{distributed, Pids} ->
 	    multi_req({self(), R}, Pids)
     end.
 
 multi_req(Msg, Pids) ->
-    lists:foreach(fun(Pid) ->
-			  erlang:monitor_node(node(Pid), true), Pid ! Msg
+    Refs = 
+	lists:map(fun(Pid) ->
+			  Ref = erlang:monitor(process, Pid),
+			  Pid ! Msg,
+			  {Pid, Ref}
 		  end, Pids),
-    lists:foldl(fun(Pid, Reply) ->
+    lists:foldl(fun({Pid, Ref}, Reply) ->
 			receive
+			    {'DOWN', Ref, process, Pid, _Info} ->
+				Reply;
 			    {disk_log, Pid, _Reply} ->
-				erlang:monitor_node(node(Pid), false),
-				ok;
-			    {nodedown, Node} when Node == node(Pid) ->
-				Reply
+				erlang:demonitor(Ref),
+				receive 
+				    {'DOWN', Ref, process, Pid, _Reason} ->
+					ok
+				after 0 -> 
+					ok
+				end
 			end
-		end, {error, nonode}, Pids).
+		end, {error, nonode}, Refs).
 
 sreq(Log, R) ->
-    case disk_log_server:get_log_pids(Log) of
+    case nearby_pid(Log, node()) of
 	undefined ->
 	    {error, no_such_log};
-	Pids ->
-	    Pid = get_near_pid(Pids, node()),
+	Pid ->
 	    monitor_request(Pid, R)
+    end.
+
+%% Local req - always talk to log on Node
+lreq(Log, R, Node) ->
+    case nearby_pid(Log, Node) of
+	Pid when pid(Pid), node(Pid) == Node ->
+	    monitor_request(Pid, R);
+	_Else ->
+	    {error, no_such_log}
+    end.
+
+nearby_pid(Log, Node) ->
+    case disk_log_server:get_log_pids(Log) of
+	undefined ->
+	    undefined;
+	{local, Pid} ->
+	    Pid;
+	{distributed, Pids} ->
+	    get_near_pid(Pids, Node)
     end.
 
 get_near_pid([Pid | _], Node) when node(Pid) == Node -> Pid;
@@ -1419,8 +1487,7 @@ monitor_request(Pid, Req) ->
     end.
 
 req2(Pid, R) ->
-    Pid ! {self(), R},
-    receive {disk_log, Pid, Reply} -> Reply end.
+    monitor_request(Pid, R).
 
 merge_head(none, Head) ->
     Head;
@@ -1454,7 +1521,10 @@ notify(Log, R) ->
     case disk_log_server:get_log_pids(Log) of
 	undefined ->
 	    {error, no_such_log};
-	Pids ->
+	{local, Pid} ->
+	    Pid ! R,
+	    ok;
+	{distributed, Pids} ->
 	    lists:foreach(fun(Pid) -> Pid ! R end, Pids),
 	    ok
     end.

@@ -33,6 +33,15 @@
 #include <ctype.h>
 #include <sys/utsname.h>
 
+#if !defined(USE_SELECT)
+#  ifdef HAVE_POLL_H
+#    include <poll.h>
+#  endif
+#  ifdef HAVE_SYS_STROPTS_H
+#    include <sys/stropts.h>	/* some keep INFTIM here */
+#  endif
+#endif /* !USE_SELECT */
+
 #ifdef ISC32
 #include <sys/bsdtypes.h>
 #endif
@@ -45,9 +54,14 @@
 #endif
 
 #ifdef NO_SYSCONF
-#include <sys/param.h>
-#define MAX_FILES()	NOFILE
-#define TICKS_PER_SEC()	HZ
+#  ifdef USE_SELECT
+#    include <sys/param.h>
+#    define MAX_FILES()		NOFILE
+#  else
+#    include <limits.h>
+#    define MAX_FILES()		OPEN_MAX
+#  endif
+#  define TICKS_PER_SEC()	HZ
 #else
 #define MAX_FILES()	sysconf(_SC_OPEN_MAX)
 #define TICKS_PER_SEC()	sysconf(_SC_CLK_TCK)
@@ -70,6 +84,12 @@ extern char **environ;
 
 EXTERN_FUNCTION(void, input_ready, (int, int));
 EXTERN_FUNCTION(void, output_ready, (int, int));
+#ifdef USE_THREADS
+EXTERN_FUNCTION(void, async_ready, (int, int));
+EXTERN_FUNCTION(int, init_async, (int));
+EXTERN_FUNCTION(int, exit_async, (_VOID_));
+#endif
+EXTERN_FUNCTION(int, check_async_ready, (_VOID_));
 EXTERN_FUNCTION(int, driver_output, (int, char*, int));
 EXTERN_FUNCTION(int, driver_failure, (int, int));
 EXTERN_FUNCTION(int, driver_interrupt, (int, int));
@@ -80,9 +100,10 @@ EXTERN_FUNCTION(int, schedule, (_VOID_));
 EXTERN_FUNCTION(void, set_busy_port, (int, int));
 EXTERN_FUNCTION(void, do_break, (_VOID_));
 
-static FUNCTION(int, start_cat, (int ofd));
 
 void erl_crash_dump(char* fmt, va_list args);
+
+#ifdef USE_SELECT
 
 #define NULLFDS ((fd_set *) 0)
 
@@ -91,11 +112,27 @@ static fd_set output_fds;
 static fd_set read_fds;  /* Gotta be global */
 static fd_set write_fds;
 
+#else
+
+struct readyfd {
+    int    iport;
+    int    oport;
+    struct pollfd pfd;
+};
+
+static struct pollfd*  poll_fds;      /* Allocated at startup */
+static struct readyfd* ready_fds;     /* Collect after poll */
+static int             nof_ready_fds; /* Number of fds after poll */
+
+#endif
+
 static int max_fd;
 
 #ifdef DEBUG
 static int debug_log = 0;
 #endif
+
+static int children_died;
 
 /* We maintain a linked fifo queue of these structs in order */
 /* to manage unfinnished reads/and writes on differenet fd's */
@@ -109,11 +146,16 @@ typedef struct pend {
 } Pend;
 
 static struct fd_data {
-    int inport, outport;
-    char *buf, *cpos;
-    int sz, remain;  /* for input on fd */
+    int   inport;
+    int   outport;
+#if !defined(USE_SELECT)
+    int   pix;       /* index in poll_fds array */
+#endif
+    char  *buf;
+    char  *cpos;
+    int   sz;
+    int   remain;  /* for input on fd */
     Pend* pending;   /* pending outputs */
-
 } *fd_data;			/* indexed by fd */
     
 
@@ -167,46 +209,6 @@ void sys_tty_reset(void)
   }
 }
 
-#ifdef DEBUG
-/*
- * Looks for the given option in the argv vector.  If it is found,
- * it will be removed from the argv vector.
- *
- * If the return value indicates that the option was found and removed,
- * it is the responsibility of the caller to decrement the value of argc.
- *
- * Returns: 0 if the option wasn't found, 1 if it was found
- */
-
-static int
-get_and_remove_option(argc, argv, option)
-    int argc;			/* Number of arguments. */
-    char* argv[];		/* The argument vector. */
-    char* option;		/* Option to search for and remove. */
-{
-    int i;
-
-    for (i = 1; i < argc; i++) {
-	if (strcmp(argv[i], option) == 0) {
-	    argc--;
-	    while (i < argc) {
-		argv[i] = argv[i+1];
-		i++;
-	    }
-	    argv[i] = NULL;
-	    return 1;
-	}
-    }
-    return 0;
-}
-#endif
-
-/*
- * XXX This declaration should not be here.
- */
-void erl_sys_schedule_loop(void);
-
-#if defined(STANDALONE_ERLANG)
 void
 erl_sys_init(void)
 {
@@ -218,6 +220,13 @@ erl_sys_init(void)
 
     if ((max_files = MAX_FILES()) < 0)
 	erl_exit(1, "Can't get no. of available file descriptors\n");
+
+    /* Note: this is if MAX_FILES() differ from FD_SETSIZE which it */
+    /* does by deafult on e.g. BSDI  */
+#if defined(USE_SELECT) && defined(FD_SETSIZE)
+    if (max_files > FD_SETSIZE) 
+	max_files = FD_SETSIZE;
+#endif
 
 #ifdef NO_FPE_SIGNALS
 #ifdef SIGFPE
@@ -231,67 +240,6 @@ erl_sys_init(void)
     /* also so that we can reset on exit (break handler or not) */
     if (isatty(0)) {
 	tcgetattr(0,&initial_tty_mode);
-    }
-}
-#else
-void
-erl_sys_init(void)
-{
-    /* Dummy! */
-}
-
-/* This is the system's main function (which may or may not be called "main")
-   - do general system-dependent initialization
-   - call erl_start() to parse arguments and do other init
-   - arrange for schedule() to be called forever, and i/o to be done
-*/
-void main(argc, argv)
-int argc;
-char **argv;
-{
-#ifdef USE_SETLINEBUF
-    setlinebuf(stdout);
-#else
-    setvbuf(stdout, (char *)NULL, _IOLBF, BUFSIZ);
-#endif
-
-    if ((max_files = MAX_FILES()) < 0)
-	erl_exit(1, "Can't get no. of available file descriptors\n");
-
-#ifdef NO_FPE_SIGNALS
-#ifdef SIGFPE
-    sys_sigset(SIGFPE, SIG_IGN); /* Ignore so we can test for NaN and Inf */
-#endif
-#else
-    init_fpe_handler();
-#endif
-
-#ifdef DEBUG
-    if (get_and_remove_option(argc, argv, "-debug")) {
-	argc--;
-	debug_log = 1;
-    }
-#endif
-
-    /* we save this so the break handler can set and reset it properly */
-    /* also so that we can reset on exit (break handler or not) */
-    if (isatty(0)) {
-      tcgetattr(0,&initial_tty_mode);
-    }
-
-    erl_start(argc, argv);
-    erl_sys_schedule_loop();
-}
-#endif
-
-void
-erl_sys_schedule_loop(void)
-{
-    for (;;) {
-	while (schedule()) {
-	    check_io(0);	/* Poll for I/O. */
-	}
-	check_io(1);		/* Wait for I/O or a timeout. */
     }
 }
 
@@ -600,6 +548,7 @@ const struct driver_entry spawn_driver_entry = {
     NULL,
     NULL,
     NULL,
+    NULL
 };
 const struct driver_entry fd_driver_entry = {
     null_func,
@@ -614,6 +563,7 @@ const struct driver_entry fd_driver_entry = {
     NULL,
     NULL,
     outputv,
+    NULL
 };
 const struct driver_entry vanilla_driver_entry = {
     null_func,
@@ -622,29 +572,46 @@ const struct driver_entry vanilla_driver_entry = {
     output,
     ready_input,
     ready_output,
-    "vanilla"
+    "vanilla",
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL
 };
+
+#ifdef USE_THREADS
+
+static int  async_drv_init();
+static long async_drv_start();
+static int  async_drv_stop();
+static int  async_drv_input();
+
+/* INTERNAL use only */
+
+struct driver_entry async_driver_entry = {
+    async_drv_init,
+    async_drv_start,
+    async_drv_stop,
+    null_func,
+    async_drv_input,
+    null_func,
+    "async",
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL
+};
+
+#endif
 
 /* Handle SIGCHLD signals. */
 static RETSIGTYPE onchld()
 {
-    int status;
-    int pid;
-
-    /* Must wait until no more dead children, since multiple children
-       dying "simultaneously" may result in a single SIGCHLD being caught. */
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
-    {
-       int i;
-
-       for (i = 0; i < max_files; i++)
-	  if (driver_data[i].pid == pid)
-	  {
-	     driver_data[i].alive = 0;
-	     driver_data[i].status = status;
-	     break;
-	  }
-    }
+    children_died = 1;
 }
 
 static int set_driver_data(port_num,
@@ -988,146 +955,144 @@ static long fd_start(port_num, name, opts)
 	return(-1);
 
     /*
-     * Note about nonblocking I/O.
+     * Historical:
+     *
+     * "Note about nonblocking I/O.
      *
      * At least on Solaris, setting the write end of a TTY to nonblocking,
      * will set the input end to nonblocking as well (and vice-versa).
      * If erl is run in a pipeline like this:  cat | erl
      * the input end of the TTY will be the standard input of cat.
-     * And cat is not prepared to handle nonblocking I/O.
+     * And cat is not prepared to handle nonblocking I/O."
      *
-     * Therefore, if the output fd points to a TTY, 
-     * and the input fd does not point to a TTY we create a pipe and
-     * fork off a "cat" process that will copy its standard input to
-     * standard output.  We can safely set the write end of the pipe
-     * to nonblocking. [OTP-2027]
+     * Actually, the reason for this is not that the tty itself gets set
+     * in non-blocking mode, but that the "input end" (cat's stdin) and
+     * the "output end" (erlang's stdout) are typically the "same" file
+     * descriptor, dup()'ed from a single fd by one of this process'
+     * ancestors.
+     *
+     * The workaround for this problem used to be a rather bad kludge,
+     * interposing an extra process ("internal cat") between erlang's
+     * stdout and the original stdout, allowing erlang to set its stdout
+     * in non-blocking mode without affecting the stdin of the preceding
+     * process in the pipeline - and being a kludge, it caused all kinds
+     * of weird problems.
+     *
+     * So, this is the current logic:
+     *
+     * The only reason to set non-blocking mode on the output fd at all is
+     * if it's something that can cause a write() to block, of course,
+     * i.e. primarily if it points to a tty, socket, pipe, or fifo. 
+     *
+     * If we don't set non-blocking mode when we "should" have, and output
+     * becomes blocked, the entire runtime system will be suspended - this
+     * is normally bad of course, and can happen fairly "easily" - e.g. user
+     * hits ^S on tty - but doesn't necessarily happen.
+     * 
+     * If we do set non-blocking mode when we "shouldn't" have, the runtime
+     * system will end up seeing EOF on the input fd (due to the preceding
+     * process dying), which typically will cause the entire runtime system
+     * to terminate immediately (due to whatever erlang process is seeing
+     * the EOF taking it as a signal to halt the system). This is *very* bad.
+     * 
+     * I.e. we should take a conservative approach, and only set non-
+     * blocking mode when we a) need to, and b) are reasonably certain
+     * that it won't be a problem. And as in the example above, the problem
+     * occurs when input fd and output fd point to different "things".
+     *
+     * However, determining that they are not just the same "type" of
+     * "thing", but actually the same instance of that type of thing, is
+     * unreasonably complex in many/most cases.
+     *
+     * Also, with pipes, sockets, and fifos it's far from obvious that the
+     * user *wants* non-blocking output: If you're running erlang inside
+     * some complex pipeline, you're probably not running a real-time system
+     * that must never stop, but rather *want* it to suspend if the output
+     * channel is "full".
+     *
+     * So, the bottom line: We will only set the output fd non-blocking if
+     * it points to a tty, and either a) the input fd also points to a tty,
+     * or b) we can make sure that setting the output fd non-blocking
+     * doesn't interfere with someone else's input, via a somewhat milder
+     * kludge than the above.
+     *
+     * Also keep in mind that while this code is almost exclusively run as
+     * a result of an erlang open_port({fd,0,1}, ...), that isn't the only
+     * case - it can be called with any old pre-existing file descriptors,
+     * the relations between which (if they're even two) we can only guess
+     * at - still, we try our best...
      */
-    
+
     if (opts->read_write & DO_READ) {
 	init_fd_data(opts->ifd, port_num);
     }
     if (opts->read_write & DO_WRITE) {
-	if (isatty(opts->ofd) && !isatty(opts->ifd)) {
-	    opts->ofd = start_cat(opts->ofd);
-	}
-	SET_NONBLOCKING(opts->ofd);
-        init_fd_data(opts->ofd, port_num);
-    }
-    return(set_driver_data(port_num, opts->ifd, opts->ofd,
-			   opts->packet_bytes, opts->read_write, 0, -1));
-}
+	init_fd_data(opts->ofd, port_num);
 
-static int cat_pid = -1;
+	/* If we don't have a read end, all bets are off - no non-blocking. */
+	if (opts->read_write & DO_READ) {
 
-void sys_stop_cat()
-{
-   int status;
+	    if (isatty(opts->ofd)) { /* output fd is a tty:-) */
 
-   /* If we have a 'cat' process running, we want to wait for it to
-      do all its pending output, before we exit ourselves. Here, we
-      send SIGTERM to the 'cat' process, so it finishes, and then
-      wait for it. The wait will most likely be interrupted by the
-      SIGCHLD handler, but the important thing is that the 'cat' processing
-      will have been finished when this function returns.
-      [OTP-2947]
+		if (isatty(opts->ifd)) { /* input fd is also a tty */
 
-      It all started with OTP-2027 (see above).
+		    /* To really do this "right", we should also check that
+		       input and output fd point to the *same* tty - but
+		       this seems like overkill; ttyname() isn't for free,
+		       and this is a very common case - and it's hard to
+		       imagine a scenario where setting non-blocking mode
+		       here would cause problems - go ahead and do it. */
 
-      A previous solution closed stdout, and counted on this being
-      detected by the 'cat' process, but it wasn't, in case other
-      subprocesses had been spawned which used the same stdout.
-      [OTP-2599]
+		    SET_NONBLOCKING(opts->ofd);
 
-      The story continues: if the 'cat' process isn't in a read when the
-      signal comes, it will enter the read and never come out. A better
-      solution is to close stdin in the signal handler.
-      A remaining problem is that there may be pending input to be read;
-      it will be lost.
-      So now I do a fcntl(..., O_NDELAY) instead. We don't lose data,
-      and we don't hang.
-      [OTP-3019]
-      */
+		} else {	/* output fd is a tty, input fd isn't */
 
-   if (cat_pid != -1) {
-      kill(cat_pid, SIGTERM);
-      (void) waitpid(cat_pid, &status, 0);
-   }
-}
+		    /* This is a "problem case", but also common (see the
+		       example above) - i.e. it makes sense to try a bit
+		       harder before giving up on non-blocking mode: Try to
+		       re-open the tty that the output fd points to, and if
+		       successful replace the original one with the "new" fd
+		       obtained this way, and set *that* one in non-blocking
+		       mode. (Yes, this is a kludge.)
 
-static void finish(int code)
-{
-   int e = errno;
-   fcntl(0, F_SETFL, O_NDELAY);
-   errno = e;
-}
+		       However, re-opening the tty may fail in a couple of
+		       (unusual) cases:
 
-static int start_cat(ofd)
-int ofd;
-{
-    int pid;
-    int fd[2];
+		       1) The name of the tty (or an equivalent one, i.e.
+			  same major/minor number) can't be found, because
+			  it actually lives somewhere other than /dev (or
+			  wherever ttyname() looks for it), and isn't
+			  equivalent to any of those that do live in the
+			  "standard" place - this should be *very* unusual.
 
-    if (pipe(fd) < 0) 
-	return ofd;
+		       2) Permissions on the tty don't allow us to open it -
+			  it's perfectly possible to have an fd open to an
+			  object whose permissions wouldn't allow us to open
+			  it. This is not as unusual as it sounds, one case
+			  is if the user has su'ed to someone else (not
+			  root) - we have a read/write fd open to the tty
+			  (because it has been inherited all the way down
+			  here), but we have neither read nor write
+			  permission for the tty.
 
-    block_signals();		/* Child must have SIGINT blocked. */
+		       In these cases, we finally give up, and don't set the
+		       output fd in non-blocking mode. */
 
-    if ((pid = fork()) == 0) { /* Child */
-	int i;
+		    char *tty;
+		    int nfd;
 
-	signal(SIGTERM, finish);
-
-	/*
-	 * Set up fd 0 to read end of pipe, and fd 1 to ofd.  Close all
-	 * other filedescriptors (except for stderr).
-	 */
-	dup2(fd[0], 0);
-	dup2(ofd, 1);
-	for (i = 3; i < max_files; i++)
-	    (void) close(i);
-
-	/*
-	 * Copy standard input to standard output.
-	 */
-	for (;;) {
-	    char sbuf[1024];
-	    int n;
-	    int written;
-	    char *s;
-
-	    n = read(0, sbuf, sizeof(sbuf));
-	    if (n == -1 && (errno == ERRNO_BLOCK || errno == EINTR)) {
-		continue;
-	    } else if (n <= 0) {
-		exit(0);
-	    }
-
-	    s = sbuf;
-	    while (n > 0) {
-		written = write(1, s, n);
-		if (written < 0) {
-		    if (errno != EINTR) {
-			exit(1);
+		    if ((tty = ttyname(opts->ofd)) != NULL &&
+			(nfd = open(tty, O_WRONLY)) != -1) {
+			dup2(nfd, opts->ofd);
+			close(nfd);
+			SET_NONBLOCKING(opts->ofd);
 		    }
-		} else {
-		    s += written;
-		    n -= written;
 		}
 	    }
 	}
     }
-
-    cat_pid = pid;
-
-    /*
-     * Cleanup for parent.  Close the original ofd and replace it with the
-     * write end of the pipe.  Also close the read end of the pipe.
-     */
-    unblock_signals();
-    close(ofd);
-    dup2(fd[1], ofd);
-    close(fd[1]);
-    return ofd;
+    return(set_driver_data(port_num, opts->ifd, opts->ofd,
+			   opts->packet_bytes, opts->read_write, 0, -1));
 }
 
 static void clear_fd_data(fd) 
@@ -1251,7 +1216,7 @@ ErlIOVec* ev;
     else {
 	int vsize = ev->vsize > MAX_VSIZE ? MAX_VSIZE : ev->vsize;
 
-	n = writev(ofd, ev->iov, vsize);
+	n = writev(ofd, (const void *) (ev->iov), vsize);
 	if (n == ev->size)
 	    return 0;
 	if (n < 0) {
@@ -1331,7 +1296,7 @@ int packet_size, sofar;
 {
     int res;
     int remaining = packet_size - sofar;
-    SET_BLOCKING(fd);
+    SET_BLOCKING(fd);  /* FIXME !!!!!!!! */
     if (read_fill(fd, buf+sofar, remaining) != remaining)
 	return -1;
     switch (packet_size) {
@@ -1367,6 +1332,13 @@ int res;			/* Result: 0 (eof) or -1 (error) */
 
 	  driver_report_exit(driver_data[ready_fd].port_num,
 			     status);
+       }
+       else if (driver_data[ready_fd].report_exit) {
+	   /* We have eof and want to report exit status, but the process
+	      hasn't exited yet. Select the fd again, so we come back
+	      here. */
+	   (void) driver_select(port_num, ready_fd, DO_READ|DO_WRITE, 1);
+	   return 0;
        }
        driver_failure_eof(port_num);
     } else {
@@ -1547,11 +1519,103 @@ int ready_fd;
     return 0;
 }
 
+/*
+**
+*/
+#if !defined(USE_SELECT)
+
+int driver_select(int ix, int fd, int mode, int on)
+{
+    if ((fd < 0) || (fd >= max_files))
+	return -1;
+
+    if (on) {
+	if (mode & (DO_READ|DO_WRITE)) {
+	    int pix = fd_data[fd].pix;  /* index to poll_fds */
+
+	    if (pix < 0) {  /* add new slot */
+		max_fd++;   /* FIXME: panic if max_fds >= max_files */
+
+		pix = max_fd;
+		fd_data[fd].pix = pix;
+	    }
+	    poll_fds[pix].fd = fd;
+	    if (mode & DO_READ) {
+		fd_data[fd].inport = ix;
+		poll_fds[pix].events |= POLLIN;
+	    }
+	    if (mode & DO_WRITE) {
+		fd_data[fd].outport = ix;
+		poll_fds[pix].events |= POLLOUT;
+	    }
+	}
+    }
+    else {
+	int pix = fd_data[fd].pix;  /* index to poll_fds */
+	int rix;                    /* index to ready_fds */
+
+	if (pix < 0) 	           /* driver deselected already */
+	    return -1;
+	/* Find index of this ready fd */
+	for (rix = 0; rix < nof_ready_fds; rix++)
+	    if (ready_fds[rix].pfd.fd == fd)
+		break;
+	if (mode & DO_READ) {
+	    poll_fds[pix].events &= ~POLLIN;
+	    /* Erase POLLIN event from poll result being processed */
+	    if ((rix < nof_ready_fds)
+		&& (ready_fds[rix].pfd.events & POLLIN)) 
+		ready_fds[rix].pfd.revents &= ~POLLIN;
+	}
+	if (mode & DO_WRITE) {
+	    poll_fds[pix].events &= ~POLLOUT;
+	    /* Erase POLLOUT event from poll result being processed */
+	    if ((rix < nof_ready_fds)
+		&& (ready_fds[rix].pfd.events & POLLOUT)) 
+		ready_fds[rix].pfd.revents &= ~POLLOUT;
+	}
+	if (poll_fds[pix].events == 0) {
+	    /* Erase all events from poll result being processed */
+	    if (rix < nof_ready_fds)
+		ready_fds[rix].pfd.revents = 0;
+
+	    /* delete entry by moving the last entry to pix position */
+	    /* FIXME: panic if max_fd == -1 */
+
+	    fd_data[fd].pix  = -1;
+
+	    if (pix != max_fd) {
+		int rfd = poll_fds[max_fd].fd;
+		poll_fds[pix] = poll_fds[max_fd];
+		fd_data[rfd].pix = pix;
+	    }
+
+	    /* Need to clear at least .events since it is or'ed when
+	     * this slot is reused - might as well clear everything.
+	     */
+	    poll_fds[max_fd].fd      = -1;
+	    poll_fds[max_fd].events  = 0;
+	    poll_fds[max_fd].revents = 0;
+	    
+	    max_fd--;
+	}
+    }
+    return 0;
+}
+
+#else
+
 /* Interface function available to driver writers */
 int driver_select(this_port, fd, mode, on)
 int this_port, fd, mode, on;
 {
-
+#if defined(FD_SETSIZE)
+    if (fd >= FD_SETSIZE) {
+	erl_exit(1,"driver_select called with too large file descriptor %d"
+		 "(FD_SETSIZE == %d)",
+		 fd,FD_SETSIZE);
+    }
+#endif
     if (fd >= 0 && fd < max_files) {
 	if (on) {
 	    if (mode & DO_READ) {
@@ -1582,6 +1646,107 @@ int this_port, fd, mode, on;
 	return(-1);
 }
 
+#endif
+
+/*
+** Async opertation support
+*/
+#ifdef USE_THREADS
+
+static int async_fd[2];
+
+/* called from threads !! */
+void sys_async_ready(int fd)
+{
+    int r;
+    r = write(fd, "0", 1);  /* signal main thread fd MUST be async_fd[1] */
+    DEBUGF(("sys_async_ready: r = %d\r\n", r));
+}
+
+static int async_drv_init()
+{
+    async_fd[0] = -1;
+    async_fd[1] = -1;
+    return 0;
+}
+
+static long async_drv_start(int port_num, char* name, SysDriverOpts* opts)
+{
+    if (async_fd[0] != -1)
+	return -1;
+    if (pipe(async_fd) < 0)
+	return -1;
+
+    DEBUGF(("async_drv_start: %d\r\n", port_num));
+
+    driver_select(port_num, async_fd[0], DO_READ, 1);
+
+    if (init_async(async_fd[1]) < 0)
+	return -1;
+    return port_num;
+}
+
+
+static int async_drv_stop(int port_num)
+{
+    DEBUGF(("async_drv_stop: %d\r\n", port_num));
+
+    exit_async();
+
+    driver_select(port_num, async_fd[0], DO_READ, 0);
+
+    close(async_fd[0]);
+    close(async_fd[1]);
+    async_fd[0] = async_fd[1] = -1;
+    return 0;
+}
+
+
+static int async_drv_input(int port_num, int fd)  
+{
+    char buf[1];
+
+    DEBUGF(("async_drv_input\r\n"));
+    read(fd, buf, 1);     /* fd MUST be async_fd[0] */
+    check_async_ready();  /* invoke all async_ready */
+    return 0;
+}
+
+#endif
+
+
+/* Lifted out from check_io() */
+static void do_break_handling()
+{
+    struct termios temp_mode;
+    int saved = 0;
+    
+    /* during break we revert to initial settings */
+    /* this is done differently for oldshell */
+    if (using_oldshell) {
+	SET_BLOCKING(1);
+    }
+    else if (isatty(0)) {
+	tcgetattr(0,&temp_mode);
+	tcsetattr(0,TCSANOW,&initial_tty_mode);
+	saved = 1;
+    }
+    
+    /* call the break handling function, reset the flag */
+    do_break();
+    break_requested = 0;
+    fflush(stdout);
+    
+    /* after break we go back to saved settings */
+    if (using_oldshell) {
+	SET_NONBLOCKING(1);
+    }
+    else if (saved) {
+	tcsetattr(0,TCSANOW,&temp_mode);
+    }
+}
+
+
 
 /* See if there is any i/o pending. If do_wait is 1 wait for i/o.
    Both are done using "select". NULLTV (ie 0) causes select to wait.
@@ -1593,6 +1758,7 @@ int this_port, fd, mode, on;
    Note: it is extremley important that this function always calls
    deliver_time() before returning.
 */
+#ifdef USE_SELECT
 static void check_io(do_wait)
 int do_wait;
 {
@@ -1608,7 +1774,8 @@ int do_wait;
     if (do_wait) {
 	erts_time_remaining(&wait_time);
 	sel_time = &wait_time;
-    } else if (max_fd == -1) {  /* No need to poll. (QNX's select crashes;-) */
+    } else if (max_fd == -1) {  /* No need to poll. 
+				 * (QNX's select crashes;-) */
 	erts_deliver_time(NULL); /* sync the machine's idea of time */
         return;
     } else {			/* poll only */
@@ -1623,36 +1790,8 @@ int do_wait;
     erts_deliver_time(NULL); /* sync the machine's idea of time */
 
     /* break handling moved here, signal handler just sets flag */
-    if (break_requested) {
-      struct termios temp_mode;
-      int saved = 0;
- 
-      /* during break we revert to initial settings */
-      /* this is done differently for oldshell */
-      if (using_oldshell) {
-	SET_BLOCKING(1);
-      }
-      else if (isatty(0)) {
-	tcgetattr(0,&temp_mode);
-	tcsetattr(0,TCSANOW,&initial_tty_mode);
-	saved = 1;
-      }
- 
-      /* call the break handling function, reset the flag */
-      do_break();
-      break_requested = 0;
-      fflush(stdout);
-       
-      /* after break we go back to saved settings */
-      if (using_oldshell) {
-	SET_NONBLOCKING(1);
-      }
-      else if (saved) {
-	tcsetattr(0,TCSANOW,&temp_mode);
-      }
-
-      return;
-    }
+    if (break_requested) 
+	do_break_handling();
 
     if (i <= 0) {
 	/* probably an interrupt or poll with no input */
@@ -1662,47 +1801,58 @@ int do_wait;
 	    for (i = 0; i <= local_max_fd; i++) {
 		if (FD_ISSET(i, &input_fds)) {
 		    poll.tv_sec  = 0;	/* zero time - used for polling */
-		    poll.tv_usec = 0;	/* Initiate each time, Linux select() may */
+		    poll.tv_usec = 0;	/* Initiate each time, 
+					 * Linux select() may */
 		    sel_time = &poll;	/* modify it */
 		    FD_ZERO(&err_set);
 		    FD_SET(i, &err_set);
 		    if (select(max_fd + 1, &err_set, NULL, NULL, sel_time) == -1){
 			/* bad read FD found */
-			erl_printf(CBUF, "Bad input_fd in select! fd,port,driver,name: %d,%d,%s,%s\n", 
+			erl_printf(CBUF, "Bad input_fd in select! "
+				   "fd,port,driver,name: %d,%d,%s,%s\n", 
 				   i, fd_data[i].inport, 
-				   erts_port[fd_data[i].inport].drv_ptr->driver_name,
+				   erts_port[fd_data[i].inport].drv_ptr
+				   ->driver_name,
 				   erts_port[fd_data[i].inport].name);
-			send_error_to_logger(0);
+			send_error_to_logger(NIL);
 			/* remove the bad fd */
 			FD_CLR(i, &input_fds);
 		    }
 		}
 		if (FD_ISSET(i, &output_fds)) {
 		    poll.tv_sec  = 0;	/* zero time - used for polling */
-		    poll.tv_usec = 0;	/* Initiate each time, Linux select() may */
+		    poll.tv_usec = 0;	/* Initiate each time, 
+					 * Linux select() may */
 		    sel_time = &poll;	/* modify it */
 		    FD_ZERO(&err_set);
 		    FD_SET(i, &err_set);
-		    if (select(max_fd + 1, NULL, &err_set, NULL, sel_time) == -1){
+		    if (select(max_fd + 1, NULL, &err_set, NULL, sel_time) 
+			== -1) {
 			/* bad write FD found */
-			erl_printf(CBUF, "Bad output_fd in select! fd,port,driver,name: %d,%d,%s,%s\n", 
+			erl_printf(CBUF, "Bad output_fd in select! "
+				   "fd,port,driver,name: %d,%d,%s,%s\n", 
 				   i, fd_data[i].outport, 
-				   erts_port[fd_data[i].outport].drv_ptr->driver_name,
+				   erts_port[fd_data[i].outport].drv_ptr->
+				   driver_name,
 				   erts_port[fd_data[i].outport].name);
-			send_error_to_logger(0);
+			send_error_to_logger(NIL);
 			/* remove the bad fd */
 			FD_CLR(i, &output_fds);
 		    }
 		}
 	    }
-	    return;
-	} else {
-	    return;
 	}
+	return;
     }
     /* do the write's first */
     for(i =0; i <= local_max_fd; i++) {
-	if (FD_ISSET(i, &write_fds))
+	if (FD_ISSET(i, &write_fds)) /* No need to check output_fds here
+				      * since output_ready can deselect
+				      * it's input fd brother, but not the
+				      * other way around. This because
+				      * output_ready is run before
+				      * input_ready.
+				      */
 	    output_ready(fd_data[i].outport, i);
     }
     for (i = 0; i <= local_max_fd; i++) {
@@ -1710,6 +1860,130 @@ int do_wait;
 	    input_ready(fd_data[i].inport, i);
     }
 }
+
+#else /* poll() implementation of check_io() */
+
+static void check_io(do_wait)
+int do_wait;
+{
+    SysTimeval wait_time;
+    int r, i;
+    int max_fd_plus_one = max_fd + 1;
+    int timeout;		/* In milliseconds */
+    struct readyfd* rp;
+    struct readyfd* qp;
+
+    /* Figure out timeout value */
+    if (do_wait) {
+	erts_time_remaining(&wait_time);
+	timeout = wait_time.tv_sec * 1000 + wait_time.tv_usec / 1000;
+    } else if (max_fd == -1) {  /* No need to poll. */
+	erts_deliver_time(NULL); /* sync the machine's idea of time */
+        return;
+    } else {			/* poll only */
+	timeout = 0;
+    }
+
+    if ((r = poll(poll_fds, max_fd_plus_one, timeout)) > 0) {
+	int rr = r;
+	/* collect ready fds into the ready_fds stucture,
+	 * this makes the calls to input ready/output ready
+	 * independant of the poll_fds array 
+	 ** (accessed via call to driver_select etc)
+	 */
+	rp = ready_fds;
+	for (i = 0; rr && (i < max_fd_plus_one); i++) {
+	    short revents = poll_fds[i].revents;
+	    
+	    if (revents != 0) {
+		int fd = poll_fds[i].fd;
+		rp->pfd = poll_fds[i]; /* COPY! */
+		rp->iport = fd_data[fd].inport;
+		rp->oport = fd_data[fd].outport;
+		rp++;
+		rr--;
+	    }
+	}
+	nof_ready_fds = r;
+    } else {
+	nof_ready_fds = 0;
+	rp = NULL; /* avoid 'uninitialized' warning */
+    }
+
+    erts_deliver_time(NULL); /* sync the machine's idea of time */
+
+    if (break_requested) 
+	do_break_handling();
+
+    if (r == 0)     /* timeout */
+	return;
+
+    if (r < 0) {
+	if (errno == ERRNO_BLOCK || errno == EINTR)
+	    return;
+	erl_printf(CBUF, "poll() error %d (%s)\n", errno, erl_errno_id(errno));
+	send_error_to_logger(NIL);
+	return;
+    }
+
+    ASSERT(rp);
+    ASSERT(nof_ready_fds > 0);
+
+    /* Note: this is *not* the same behaviour as in the select
+     *       implementation, where *all* write ready file descriptors
+     *       are done first.
+     */
+
+    for (qp = ready_fds; qp < rp; qp++) {
+	int   fd      = qp->pfd.fd;
+	short revents = qp->pfd.revents;
+
+	if (revents & (POLLIN|POLLOUT)) {
+	    if (revents & POLLOUT)
+		output_ready(qp->oport, fd);
+	    if (revents & (POLLIN|POLLHUP))
+		input_ready(qp->iport, fd);
+	}
+	else if (revents & (POLLERR|POLLHUP)) {
+	    /* let the driver handle the error condition */
+	    if (qp->pfd.events & POLLIN)
+		input_ready(qp->iport, fd);
+	    else
+		output_ready(qp->oport, fd);
+	}
+	else if (revents & POLLNVAL) {
+	    if (qp->pfd.events & POLLIN) {
+		erl_printf(CBUF, "Bad input fd in poll()! fd,port,driver,name:"
+			   " %d,%d,%s,%s\n", fd,
+			   qp->iport, 
+			   erts_port[qp->iport].drv_ptr->driver_name,
+			   erts_port[qp->iport].name);
+	    } 
+	    else if (qp->pfd.events & POLLOUT) {
+		erl_printf(CBUF,
+			   "Bad output fd in poll()! fd,port,driver,name:"
+			   " %d,%d,%s,%s\n", fd,
+			   qp->oport,
+			   erts_port[qp->oport].drv_ptr->driver_name,
+			   erts_port[qp->oport].name);
+	    } 
+	    else {
+		erl_printf(CBUF, "Bad fd in poll(), %d!\n", fd);
+	    }
+	    send_error_to_logger(NIL);
+
+	    /* unmap entry */
+	    if (qp->pfd.events & POLLIN)
+		driver_select(qp->iport, fd, DO_READ|DO_WRITE, 0);
+	    if (qp->pfd.events & POLLOUT) {
+		if (!(qp->pfd.events & POLLIN) || (qp->iport != qp->oport))
+		    driver_select(qp->oport, fd, DO_READ|DO_WRITE, 0);
+	    }
+	}
+    }
+}
+
+#endif
 
 /* Fills in the systems representation of the jam/beam process identifier.
 ** The Pid is put in STRING representation in the supplied buffer,
@@ -1735,13 +2009,61 @@ uint32 size;
     tmp_buf = buf;
     tmp_buf_size = size;
     cerr_pos = 0;
-    FD_ZERO(&input_fds);
-    FD_ZERO(&output_fds);
+
     if ((fd_data = (struct fd_data *)
 	 sys_alloc_from(180,max_files * sizeof(struct fd_data))) == NULL)
 	erl_exit(1, "Can't allocate %d bytes of memory\n",
 		 max_files * sizeof(struct fd_data));
+
+#ifdef USE_SELECT
+    FD_ZERO(&input_fds);
+    FD_ZERO(&output_fds);
+
+#else
+    poll_fds =  (struct pollfd *)
+	sys_alloc_from(182, max_files * sizeof(struct pollfd));
+    ready_fds =  (struct readyfd *)
+	sys_alloc_from(182, max_files * sizeof(struct readyfd));
+
+    if (poll_fds == NULL)
+	erl_exit(1, "Can't allocate %d bytes of memory\n",
+		 max_files * sizeof(struct pollfd));
+
+    if (ready_fds == NULL)
+	erl_exit(1, "Can't allocate %d bytes of memory\n",
+		 max_files * sizeof(struct readyfd));
+
+    {
+	int i;
+
+	for (i=0; i < max_files; i++) {
+	    poll_fds[i].fd      = -1;
+	    poll_fds[i].events  = 0;
+	    poll_fds[i].revents = 0;
+
+	    fd_data[i].pix = -1;
+	}
+    }
+#endif
+
     max_fd = -1;
+
+#ifdef USE_THREADS
+    {
+	/* This is speical stuff, starting a driver from the 
+	 * system routines, but is a nice way of handling stuff
+	 * the erlang way
+	 */
+	SysDriverOpts dopts;
+	int ret;
+
+	sys_memset((void*)&dopts, 0, sizeof(SysDriverOpts));
+	add_driver_entry(&async_driver_entry);
+	/* FIXME: 7 == NIL */
+	ret = open_driver(&async_driver_entry, 7, "async", &dopts);
+	DEBUGF(("open_driver = %d\n", ret));
+    }
+#endif
 }
 
 
@@ -2156,13 +2478,12 @@ int ch; CIO where;
 	sys_printf(where, "%c", ch);
 }
 
-#if !defined(STANDALONE_ERLANG)
 /* Return a pointer to a vector of names of preloaded modules */
 
 Preload*
 sys_preloaded(void)
 {
-    return pre_loaded;
+    return (Preload *) pre_loaded;
 }
 
 /* Return a pointer to preloaded code for module "module" */
@@ -2177,7 +2498,6 @@ void sys_preload_end(Preload* p)
 {
     /* Nothing */
 }
-#endif
 
 /* Read a key from console (?) */
 
@@ -2198,6 +2518,23 @@ int fd;
 
 
 #ifdef DEBUG
+
+#if 0
+/* handy debug function that prints the current state of poll_fds[] */
+static void print_poll_fds()
+{
+    int i;
+    fprintf(stderr, "print_poll_fds() max_fd=%d\n\r", max_fd);
+    for (i=0; i<max_fd+1; i++) {
+	int fd=poll_fds[i].fd;
+	fprintf(stderr, "poll_fds[%d].fd=%d events=0x%x revents=0x%x "
+		"fd_data[%d].pix=%d inport=%d outport=%d\n\r",
+		i, fd, poll_fds[i].events, poll_fds[i].revents,
+		fd, fd_data[fd].pix, fd_data[fd].inport, fd_data[fd].outport);
+    }
+}
+#endif
+
 #if (0) /* unused? */
 static void  sdbg()
 {
@@ -2256,4 +2593,45 @@ va_dcl
 }
 
 #endif /* DEBUG */
+
+static void check_children()
+{
+    int pid;
+    int status;
+
+    if (children_died) {
+	sys_sigblock(SIGCHLD);
+	while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
+	{
+	    int i;
+
+	    for (i = 0; i < max_files; i++)
+		if (driver_data[i].pid == pid)
+		{
+		    driver_data[i].alive = 0;
+		    driver_data[i].status = status;
+		    break;
+		}
+	}
+	sys_sigrelease(SIGCHLD);
+	children_died = 0;
+    }
+}
+
+void
+erl_sys_schedule_loop(void)
+{
+    for (;;) {
+	while (schedule()) {
+	    check_io(0);	/* Poll for I/O. */
+	    check_async_ready(); /* Check async compleations */
+	    check_children();
+	}
+	if (check_async_ready())
+	    check_io(0);
+	else
+	    check_io(1);	/* Wait for I/O or a timeout. */
+	check_children();
+    }
+}
 

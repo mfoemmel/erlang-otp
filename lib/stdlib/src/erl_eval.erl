@@ -22,6 +22,8 @@
 -export([exprs/2,exprs/3,expr/2,expr/3,expr_list/2,expr_list/3]).
 -export([new_bindings/0,bindings/1,binding/2,add_binding/3,del_binding/2]).
 
+-export([is_constant_expr/1, partial_eval/1]).
+
 %% The following exports are here for backwards compatibility.
 -export([seq/2,seq/3,arg_list/2,arg_list/3]).
 
@@ -216,6 +218,11 @@ expr({op,_,Op,L0,R0}, Bs0, Lf) ->
     {value,L,Bs1} = expr(L0, Bs0, Lf),
     {value,R,Bs2} = expr(R0, Bs0, Lf),
     {value,eval_op(Op, L, R),merge_bindings(Bs1, Bs2)};
+expr({bin,_,Fs}, Bs0, Lf) ->
+    eval_bits:expr_grp(Fs,Bs0,
+		       fun(E, B) -> expr(E, B, Lf) end,
+		       [],
+		       true);
 expr({remote,_,M,F}, Bs, Lf) ->
     exit({{badexpr,':'},[{erl_eval,expr,3}]});
 expr({field,_,Rec,F}, Bs, Lf) ->
@@ -561,20 +568,31 @@ match1({cons,_,H,T}, [H1|T1], Bs0) ->
     match1(T, T1, Bs);
 match1({tuple,_,Elts}, Tuple, Bs) when length(Elts) == size(Tuple) ->
     match_tuple(Elts, Tuple, 1, Bs);
+match1({bin, _, Fs}, B, Bs0) when binary(B) ->
+    eval_bits:match_bits(Fs, B, Bs0,
+			 fun(L, R, Bs) -> match1(L, R, Bs) end,
+			 fun(E, Bs) -> expr(E, Bs, none) end,
+			 true);
 match1({op,Line,'++',{nil,_},R}, Term, Bs) ->
     match1(R, Term, Bs);
 match1({op,_,'++',{cons,Li,{integer,L2,I},T},R}, Term, Bs) ->
     match1({cons,Li,{integer,L2,I},{op,Li,'++',T,R}}, Term, Bs);
 match1({op,_,'++',{string,Li,L},R}, Term, Bs) ->
     match1(string_to_conses(L, Li, R), Term, Bs);
-match1({op,_,'-',A}, Term, Bs) when integer(Term) ->
-    match1(A, -Term, Bs);
-match1({op,_,'-',A}, Term, Bs) when float(Term) ->
-    match1(A, -Term, Bs);
-match1({op,_,'+',A}, Term, Bs) when integer(Term) ->
-    match1(A, Term, Bs);
-match1({op,_,'+',A}, Term, Bs) when float(Term) ->
-    match1(A, Term, Bs);
+match1({op,Line,Op,A}, Term, Bs) ->
+    case partial_eval({op,Line,Op,A}) of
+	{op,Line,Op,A} ->
+	    throw(nomatch);
+	X ->
+	    match1(X, Term, Bs)
+    end;
+match1({op,Line,Op,L,R}, Term, Bs) ->
+    case partial_eval({op,Line,Op,L,R}) of
+	{op,Line,Op,L,R} ->
+	    throw(nomatch);
+	X ->
+	    match1(X, Term, Bs)
+    end;
 match1(_, _, _) ->
     throw(nomatch).
 
@@ -606,29 +624,121 @@ match_list1([], [], Bs) ->
 %% add_binding(Name, Value, Bindings)
 %% del_binding(Name, Bindings)
 
-new_bindings() -> dict:new().
+new_bindings() -> orddict:new().
 
-bindings(Bs) -> dict:dict_to_list(Bs).
+bindings(Bs) -> orddict:dict_to_list(Bs).
 
 binding(Name, Bs) ->
-    case dict:find(Name, Bs) of
+    case orddict:find(Name, Bs) of
 	{ok,Val} -> {value,Val};
 	error -> unbound
     end.
 
-add_binding(Name, Val, Bs) -> dict:store(Name, Val, Bs).
+add_binding(Name, Val, Bs) -> orddict:store(Name, Val, Bs).
 
-del_binding(Name, Bs) -> dict:erase(Name, Bs).
+del_binding(Name, Bs) -> orddict:erase(Name, Bs).
 
 add_bindings(Bs1, Bs2) ->
-    foldl(fun ({Name,Val}, Bs) -> dict:store(Name, Val, Bs) end,
-	  Bs2, dict:dict_to_list(Bs1)).
+    foldl(fun ({Name,Val}, Bs) -> orddict:store(Name, Val, Bs) end,
+	  Bs2, orddict:dict_to_list(Bs1)).
 
 merge_bindings(Bs1, Bs2) ->
     foldl(fun ({Name,Val}, Bs) ->
-		  case dict:find(Name, Bs) of
+		  case orddict:find(Name, Bs) of
 		      {ok,Val} -> Bs;		%Already with SAME value
 		      {ok,V1} -> exit({{badmatch,V1},[{erl_eval,expr,3}]});
-		      error -> dict:store(Name, Val, Bs)
+		      error -> orddict:store(Name, Val, Bs)
 		  end end,
-	  Bs2, dict:dict_to_list(Bs1)).
+	  Bs2, orddict:dict_to_list(Bs1)).
+
+
+%%----------------------------------------------------------------------------
+%%
+%% Evaluate expressions:
+%% constants and 
+%% op A
+%% L op R
+%% Things that evaluate to constants are accepted
+%% and guard_bifs are allowed in constant expressions
+%%----------------------------------------------------------------------------
+
+is_constant_expr(Expr) ->
+    case eval_expr(Expr) of
+        {ok, X} when number(X) -> true;
+        _ -> false
+    end.
+
+eval_expr(Expr) ->
+    case catch ev_expr(Expr) of
+        X when integer(X) -> {ok, X};
+        X when float(X) -> {ok, X};
+        X when atom(X) -> {ok,X};
+        {'EXIT',Reason} -> {error, Reason};
+        _ -> {error, badarg}
+    end.
+
+partial_eval(Expr) ->
+    Line = line(Expr),
+    case catch ev_expr(Expr) of
+	X when integer(X) -> ret_expr(Expr,{integer,Line,X});
+	X when float(X) -> ret_expr(Expr,{float,Line,X});
+	X when atom(X) -> ret_expr(Expr,{atom,Line,X});
+	_ ->
+	    Expr
+    end.
+
+ev_expr({op,Ln,Op,L,R}) -> eval(Op, ev_expr(L), ev_expr(R));
+ev_expr({op,Ln,Op,A}) -> eval(Op, ev_expr(A));
+ev_expr({integer,_,X}) -> X;
+ev_expr({float,_,X})   -> X;
+ev_expr({atom,_,X})    -> X;
+ev_expr({tuple,_,Es}) ->
+    list_to_tuple(lists:map(fun(X) -> ev_expr(X) end, Es));
+ev_expr({nil,_}) -> [];
+ev_expr({cons,_,H,T}) -> [ev_expr(H) | ev_expr(T)].
+%ev_expr({call,Line,{atom,_,F},As}) ->
+%    true = erl_internal:guard_bif(F, length(As)),
+%    apply(erlang, F, lists:map(fun(X) -> ev_expr(X) end, As));
+%ev_expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,F}},As}) ->
+%    true = erl_internal:guard_bif(F, length(As)),
+%    apply(erlang, F, lists:map(fun(X) -> ev_expr(X) end, As)).
+
+				    
+%% (we can use 'apply' here now, instead of enumerating the operators)
+
+eval('+', X, Y) -> X + Y;
+eval('-', X, Y) -> X - Y;
+eval('*', X, Y) -> X * Y;
+eval('/', X, Y) -> X / Y;
+eval('div', X, Y) -> X div Y;
+eval('rem', X, Y) -> X rem Y;
+eval('band', X, Y) -> X band Y;
+eval('bor', X, Y) -> X bor Y;
+eval('bxor', X, Y) -> X bxor Y;
+eval('bsl', X, Y) -> X bsl Y;
+eval('bsr', X, Y) -> X bsr Y;
+eval('and', X, Y) -> X and Y;
+eval('or',  X, Y) -> X or Y;
+eval('xor', X, Y) -> X xor Y;
+eval('==',  X, Y) -> X == Y;
+eval('/=',  X, Y) -> X /= Y;
+eval('=<',  X, Y) -> X =< Y;
+eval('<',   X, Y) -> X < Y;
+eval('>=',  X, Y) -> X >= Y;
+eval('>',   X, Y) -> X > Y;
+eval('=:=', X, Y) -> X =:= Y;
+eval('=/=', X, Y) -> X =/= Y;
+eval('++', X, Y) -> X ++ Y;
+eval('--', X, Y) -> X -- Y.
+
+eval('+', X) -> 0 + X;
+eval('-', X) -> 0 - X;
+eval('bnot', X) -> bnot X;
+eval('not', X) ->  not X.
+
+ret_expr(Old, New) ->
+%%    io:format("~w: reduced ~s => ~s~n",
+%%	      [line(Old), erl_pp:expr(Old), erl_pp:expr(New)]),
+    New.
+
+line(Expr) -> element(2, Expr).

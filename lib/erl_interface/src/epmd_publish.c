@@ -57,49 +57,12 @@ extern int ei_trace_distribution;
 #endif
 
 
-#if (0)
-static int epmd_send(int fd, char *buf, int len)
-{
-  int i,sent=0;
-
-  while (sent < len) {
-    i = writesocket(fd, buf+sent, len-sent);
-    if (i < 0) {
-      if (errno == EINTR) continue;
-      else return i; 
-    }
-
-    if (i == 0) break;
-    sent += i;
-  }
-  return sent;
-}
-
-
-/* read from epmd */
-static int epmd_recv(int fd, char *buf, int len)
-{
-  int i,recd=0;
-  
-  while (recd < len) {
-    i = readsocket(fd, buf+recd, len-recd);
-    if (i < 0) {
-      if (errno == EINTR) continue;
-      else return i; 
-    }
-
-    if (i == 0) break;
-    recd += i;
-  }
-
-  return recd;
-}
-#endif
 
 
 /* publish our listen port and alive name */
 /* return the (useless) creation number */
-static int ei_epmd_r3_publish(int port, const char *alive)
+static int 
+ei_epmd_r3_publish (int port, const char *alive)
 {
   char buf[SMALLBUF];
   char *s = buf;
@@ -117,6 +80,7 @@ static int ei_epmd_r3_publish(int port, const char *alive)
 
   if (writesocket(fd, buf, len+2) != len+2) {
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
@@ -126,6 +90,7 @@ static int ei_epmd_r3_publish(int port, const char *alive)
 
   if (readsocket(fd, buf, 3) != 3) {
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
@@ -135,6 +100,7 @@ static int ei_epmd_r3_publish(int port, const char *alive)
     if (ei_trace_distribution > 2) fprintf(stderr,"<- ALIVE_NOK result=%d (failure)\n",res);
 #endif
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
@@ -159,7 +125,8 @@ static int ei_epmd_r3_publish(int port, const char *alive)
 /* publish our listen port and alive name */
 /* return the (useless) creation number */
 /* this protocol is a lot more complex than the old one */
-static int ei_epmd_r4_publish(int port, const char *alive)
+static int 
+ei_epmd_r4_publish (int port, const char *alive)
 {
   char buf[SMALLBUF];
   char *s = buf;
@@ -189,6 +156,7 @@ static int ei_epmd_r4_publish(int port, const char *alive)
 
   if (writesocket(fd, buf, len+2) != len+2) {
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
@@ -204,7 +172,7 @@ static int ei_epmd_r4_publish(int port, const char *alive)
     if (ei_trace_distribution > 2) fprintf(stderr,"<- CLOSE\n");
 #endif
     closesocket(fd);
-    return -2;
+    return -2;			/* version mismatch */
   }
   /* Don't close fd here! It keeps us registered with epmd */
   s = buf;
@@ -216,6 +184,7 @@ static int ei_epmd_r4_publish(int port, const char *alive)
     }
 #endif
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
@@ -228,6 +197,7 @@ static int ei_epmd_r4_publish(int port, const char *alive)
     if (ei_trace_distribution > 2) fprintf(stderr," result=%d (fail)\n",res);
 #endif
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
@@ -247,7 +217,8 @@ static int ei_epmd_r4_publish(int port, const char *alive)
   return fd;
 }
 
-extern int erl_epmd_publish(int port, const char *alive)
+extern int 
+erl_epmd_publish (int port, const char *alive)
 {
   int i;
 

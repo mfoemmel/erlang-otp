@@ -24,7 +24,8 @@
 %% This module contains the user interface to the snmp toolkit.
 %%----------------------------------------------------------------------
 
--export([c/1, c/2, debug/2, is_consistent/1, mib_to_hrl/1, config/0,
+-export([debug/2, verbosity/2, dump_mibs/0, dump_mibs/1,
+	 c/1, c/2, is_consistent/1, mib_to_hrl/1, config/0,
 	 current_request_id/0, current_community/0, current_address/0,
 	 current_context/0,
 	 current_net_if_data/0, name_to_oid/1, oid_to_name/1,
@@ -42,6 +43,7 @@
 -export([passwd2localized_key/3, localize_key/3]).
 -export([add_agent_caps/2, del_agent_caps/1, get_agent_caps/0]).
 -export([log_to_txt/2, log_to_txt/3, log_to_txt/4, log_to_txt/5,
+	 log_to_txt/6, log_to_txt/7,
 	 change_log_size/1]).
 
 c(File) -> snmp_compile:compile(File).
@@ -49,7 +51,37 @@ c(File, Options) -> snmp_compile:compile(File, Options).
 
 config() -> snmp_config:config().
 
+%% Note that verbosity for the agents is actually only implemented 
+%% (properly) for the master agent.
+verbosity(all,Verbosity) -> 
+    catch snmp_agent:verbosity(snmp_sub_agents,Verbosity),
+    catch snmp_agent:verbosity(snmp_master_agent,Verbosity),
+    catch snmp_agent:verbosity(snmp_net_if,Verbosity),
+    catch snmp_agent:verbosity(snmp_mib,Verbosity),
+    catch snmp_symbolic_store:verbosity(Verbosity),
+    catch snmp_note_store:verbosity(Verbosity),
+    catch snmp_local_db:verbosity(Verbosity);
+verbosity(snmp_master_agent,Verbosity) -> 
+    catch snmp_agent:verbosity(snmp_master_agent,Verbosity);
+verbosity(snmp_net_if,Verbosity) -> 
+    catch snmp_agent:verbosity(snmp_net_if,Verbosity);
+verbosity(snmp_mib,Verbosity) -> 
+    catch snmp_agent:verbosity(snmp_mib,Verbosity);
+verbosity(snmp_symbolic_store,Verbosity) -> 
+    catch snmp_symbolic_store:verbosity(Verbosity);
+verbosity(snmp_note_store,Verbosity) -> 
+    catch snmp_note_store:verbosity(Verbosity);
+verbosity(snmp_local_db,Verbosity) -> 
+    catch snmp_local_db:verbosity(Verbosity);
+verbosity(Agent,{subagents,Verbosity}) -> 
+    catch snmp_agent:verbosity(Agent,{snmp_sub_agents,Verbosity});
+verbosity(Agent,Verbosity) -> 
+    catch snmp_agent:verbosity(Agent,Verbosity).
+
 debug(Agent, Flag) -> snmp_agent:debug(Agent, Flag).
+
+dump_mibs()     -> snmp_agent:dump_mibs(snmp_master_agent).
+dump_mibs(File) -> snmp_agent:dump_mibs(snmp_master_agent,File).
 
 is_consistent(Filenames) ->
     snmp_compile_lib:is_consistent(Filenames).
@@ -111,15 +143,9 @@ current_net_if_data() ->
 %% Returns: current time as a DateAndTime type (defined in rfc1903)
 %%-----------------------------------------------------------------
 date_and_time() ->
-    case catch erlang:now() of
-	{'EXIT', _} -> % We don't have info about UTC
-	        short_time(calendar:local_time());
-	
-	Now ->
-	        UTC = calendar:now_to_universal_time(Now),
-	        Local = calendar:universal_time_to_local_time(UTC),
-	        date_and_time(Local, UTC)
-    end.
+    UTC   = calendar:universal_time(),
+    Local = calendar:universal_time_to_local_time(UTC),
+    date_and_time(Local, UTC).
  
 date_and_time(Local, UTC) ->
     DiffSecs = calendar:datetime_to_gregorian_seconds(Local) -
@@ -286,6 +312,10 @@ log_to_txt(LogDir, Mibs, OutFile, LogName) ->
     snmp_log:log_to_txt(LogDir, Mibs, OutFile, LogName).
 log_to_txt(LogDir, Mibs, OutFile, LogName, LogFile) -> 
     snmp_log:log_to_txt(LogDir, Mibs, OutFile, LogName, LogFile).
+log_to_txt(LogDir, Mibs, OutFile, LogName, LogFile, Start) -> 
+    snmp_log:log_to_txt(LogDir, Mibs, OutFile, LogName, LogFile, Start).
+log_to_txt(LogDir, Mibs, OutFile, LogName, LogFile, Start, Stop) -> 
+    snmp_log:log_to_txt(LogDir, Mibs, OutFile, LogName, LogFile, Start, Stop).
 
 change_log_size(NewSize) -> snmp_log:change_log_size(NewSize).
 

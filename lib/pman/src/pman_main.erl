@@ -102,6 +102,9 @@ init(PidCaller, OSModuleExcluded) ->
     %% to have been started.
     PidCaller ! {initialization_complete, self()},
 
+    %% Initiate a 'catch all' trace pattern so call tracing works
+    erlang:trace_pattern({'_', '_', '_'}, true, [local]),
+
     loop(New_Pman_data).
 
 
@@ -162,25 +165,6 @@ update_nodes_menu(Pman_data) ->
 
 
     Pman_data#gs_pman{nodes=OSNodesNew}.
-
-%% ----------------------------------------------------------------
-%% Returns: {New,Dead} where elements in New appeared only in
-%%          Nodes, while elements in Dead appeared only in Old.
-%% ----------------------------------------------------------------
-
-%clean_up_nodes(New,Old) ->
-%    clean_up_nodes(New,Old,[]).
-
-%clean_up_nodes([],Dead,Sofar) ->
-%    {Sofar,Dead};
-%clean_up_nodes([Node|Nodes],Old,Sofar) ->
-%    case lists:member(Node,Old) of
-%	true ->
-%	    clean_up_nodes(Nodes,lists:delete(Node,Old),Sofar);
-%	false ->
-%	    clean_up_nodes(Nodes,Old,[Node|New])
-%    end.
-
 
 %% ---------------------------------------------------------------
 %% Focus is the highlited process in the grid. This set of 
@@ -284,21 +268,6 @@ set_focus(OSPid,Pman_data) ->
 	    enable_pid_actions(),
 	    Pman_data#gs_pman{focus = Pos + 1}
     end.
-
-%% Hide all the visible processes, updating the edit menu.
-
-hide_all(Size, _   , HiddenModules) when Size < 2 -> HiddenModules;
-hide_all(Size, Grid, HiddenModules) -> 
-    GridLine = gs:read(Grid, {obj_at_row,Size}),
-    {_, _, {Mod,_,_}} = gs:read(GridLine,data),
-    case  pman_primitive:remove_mod(HiddenModules, Mod) of
-	{true, New_HiddenModules} ->
-	    pman_win:add_menu(edit,[Mod],"Show"),
-	    hide_all(Size-1, Grid, New_HiddenModules);
-	false ->
-	    hide_all(Size-1, Grid, HiddenModules)
-    end.
-
 
 %%
 %% Restore saved options from file
@@ -477,7 +446,7 @@ execute_cmd('All Links',Pman_data,Data,Args) ->
     case get_pid_in_focus(Pman_data) of
 	false      -> Pman_data;
 	{true,{pidfunc,Pid,_}} ->
-	    {links,Pids} = pman_primitive:pinfo(Pid, links),
+	    {links,Pids} = pman_process:pinfo(Pid, links),
 	    pman_shell:start_list(Pids,
 				  self(),
 				  Pman_data#gs_pman.options), 

@@ -57,15 +57,15 @@ endif
 SHELL   = /bin/sh
 CC      = @CC@
 WFLAGS  = @WFLAGS@
-CFLAGS  = @CFLAGS@ @DEFS@ $(TYPE_FLAGS) $(WFLAGS) $(STANDALONE_FLAGS)
+CFLAGS  = @CFLAGS@ @DEFS@ $(TYPE_FLAGS) $(WFLAGS) @THR_DEFS@
 HCC     = @HCC@
 LD      = @LD@
+DEXPORT = @DEXPORT@
 RANLIB  = @RANLIB@
 STRIP   = strip
 PERL    = @PERL@
 
-
-LIBS    = @LIBS@ -L$(ERL_TOP)/erts/obj/$(TARGET) -lz
+LIBS    = @LIBS@ @THR_LIBS@ -L$(ERL_TOP)/erts/obj/$(TARGET) -lz
 
 OBJDIR = $(ERL_TOP)/erts/obj$(TYPEMARKER).beam/$(TARGET)
 BINDIR = $(ERL_TOP)/bin/$(TARGET)
@@ -79,7 +79,7 @@ EMULATOR_EXECUTABLE = beam$(TYPEMARKER)
 # ----------------------------------------------------------------------
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
-all: generate zlib $(BINDIR)/$(EMULATOR_EXECUTABLE)
+all: generate zlib $(BINDIR)/$(EMULATOR_EXECUTABLE) # $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE)
 
 # Unsupported at the moment
 sae: $(TARGET)/preload_sae.c generate zlib $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE)
@@ -145,18 +145,22 @@ $(TARGET)/driver_tab.c:	Makefile.in
 	$(PERL) utils/make_driver_tab -o $@ $(DRV_OBJS)
 
 # preloaded code
-$(TARGET)/preload.c: $(ERL_TOP)/lib/kernel/ebin/init.beam \
+# Note: if you change this list, also change RELSRC_PRELOAD in
+#       /clearcase/otp/system/build/Makefile
+$(TARGET)/preload.c: $(ERL_TOP)/lib/kernel/ebin/otp_ring0.beam \
+			$(ERL_TOP)/lib/kernel/ebin/init.beam \
+			$(ERL_TOP)/lib/kernel/ebin/prim_inet.beam \
 			$(ERL_TOP)/lib/kernel/ebin/erl_prim_loader.beam
 	$(PERL) utils/make_preload -old $^ > $@
 
 # preloaded code - sae
 $(TARGET)/preload_sae.c: $(ERL_TOP)/erts/sae/ebin/ring0.beam
-	$(PERL) utils/make_preload $^ > $@
+	$(PERL) utils/make_preload -old $^ > $@
 
 # ----------------------------------------------------------------------
 # Pattern rules
 #
-INCLUDES  =  -Ibeam -Isys/$(OSTYPE) -I$(TARGET)
+INCLUDES  =  -Ibeam -Isys/$(OSTYPE) -I$(TARGET) -Izlib
 
 # Need to include etc dir on VxWorks
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
@@ -173,7 +177,7 @@ $(OBJDIR)/%.o: sys/$(OSTYPE)/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(OBJDIR)/%.o: drivers/common/%.c
-	$(CC) $(CFLAGS) $(INCLUDES) -Izlib -c $< -o $@
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
 $(OBJDIR)/%.o: drivers/$(OSTYPE)/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -c $< -o $@
@@ -192,13 +196,6 @@ $(OBJDIR)/ggc.o: beam/ggc.c
 	$(CC) $(subst O2,O3, $(CFLAGS)) $(INCLUDES) -fno-inline -c $< -o $@
 endif
 
-$(OBJDIR)/sys_sae.o: sys/$(OSTYPE)/sys.c beam/sys.h
-	$(CC) $(CFLAGS) $(INCLUDES) -DSTANDALONE_ERLANG -c $< -o $@
-
-$(OBJDIR)/erl_init_sae.o: beam/erl_init.c $(TARGET)/erl_version.h
-	$(CC) $(subst O2,O3, $(CFLAGS)) $(INCLUDES) -DSTANDALONE_ERLANG \
-		-c $< -o $@
-
 # ----------------------------------------------------------------------
 # Build necessary beam files if they are not already in place. To force
 # rebuilding (is this a good idea?) add a dummy dependency to this target.
@@ -211,20 +208,18 @@ $(ERL_TOP)/lib/%.beam $(ERL_TOP)/erts/sae/ebin/%.beam:
 # ----------------------------------------------------------------------
 # Object files
 #
-INIT_OBJS = \
-	$(OBJDIR)/sys.o			$(OBJDIR)/erl_init.o \
-	$(OBJDIR)/preload.o
+INIT_OBJS = $(OBJDIR)/erl_main.o		$(OBJDIR)/preload.o
 
-INIT_OBJS_SAE = \
-	$(OBJDIR)/erl_start.o		$(OBJDIR)/sys_sae.o \
-	$(OBJDIR)/erl_init_sae.o	$(OBJDIR)/preload_sae.o
+INIT_OBJS_SAE = $(OBJDIR)/erl_main_sae.o	$(OBJDIR)/preload_sae.o
 
 EMU_OBJS = \
 	$(OBJDIR)/beam_emu.o		$(OBJDIR)/beam_opcodes.o \
 	$(OBJDIR)/beam_load.o		$(OBJDIR)/beam_bif_load.o \
-	$(OBJDIR)/beam_debug.o
+	$(OBJDIR)/beam_debug.o		$(OBJDIR)/beam_bp.o \
+	$(OBJDIR)/beam_catches.o
 
 RUN_OBJS = \
+	$(OBJDIR)/erl_init.o \
 	$(OBJDIR)/erl_atom_table.o	$(OBJDIR)/erl_bif_table.o \
 	$(OBJDIR)/erl_bif_info.o	$(OBJDIR)/erl_bif_op.o \
 	$(OBJDIR)/erl_bif_os.o		$(OBJDIR)/erl_bif_lists.o \
@@ -244,10 +239,13 @@ RUN_OBJS = \
 	$(OBJDIR)/index.o		$(OBJDIR)/atom.o \
 	$(OBJDIR)/module.o		$(OBJDIR)/export.o \
 	$(OBJDIR)/register.o		$(OBJDIR)/break.o \
+	$(OBJDIR)/erl_async.o		$(OBJDIR)/sys_threads.o \
 	$(OBJDIR)/ggc.o			$(OBJDIR)/erl_posix_str.o \
-	$(OBJDIR)/erl_math.o
+	$(OBJDIR)/erl_bits.o 		$(OBJDIR)/erl_math.o \
+	$(OBJDIR)/erl_vector.o		$(OBJDIR)/erl_term.o
 
 OS_OBJS =					\
+	$(OBJDIR)/sys.o \
 	$(OBJDIR)/driver_tab.o		$(OBJDIR)/unix_efile.o \
 	$(OBJDIR)/unix_ddll_drv.o	$(OBJDIR)/gzio.o \
 	$(OBJDIR)/elib_malloc.o		$(OBJDIR)/elib_memmove.o
@@ -255,6 +253,10 @@ OS_OBJS =					\
 DRV_OBJS =					\
 	$(OBJDIR)/efile_drv.o		$(OBJDIR)/ddll_drv.o \
 	$(OBJDIR)/inet_drv.o		$(OBJDIR)/ram_file_drv.o
+
+ifeq ($(findstring vxworks,$(TARGET)),vxworks)
+	OS_OBJS += $(OBJDIR)/int64.o 
+endif
 
 ifneq ($(findstring vxworks,$(TARGET)),vxworks)
 DRV_OBJS += $(OBJDIR)/ttsl_drv.o
@@ -264,6 +266,31 @@ BASE_OBJS = $(RUN_OBJS) $(EMU_OBJS) $(OS_OBJS) $(EXTRA_BASE_OBJS)
 
 OBJS =	$(BASE_OBJS) $(DRV_OBJS)
 
+
+ifeq ($(findstring vxworks,$(TARGET)),vxworks)
+########################################
+# Extract what we need from libgcc.a
+########################################
+GCCLIBFLAGS=@GCCLIBFLAGS@
+STRIP=@STRIP@
+SYMPREFIX=@SYMPREFIX@
+
+NEEDFUNCTIONS=__divdi3 __moddi3
+KEEPSYMS=$(NEEDFUNCTIONS:%=-K $(SYMPREFIX)%)
+
+$(OBJDIR)/int64.o: $(TARGET)/int64.c
+	$(CC) -o $(OBJDIR)/int64tmp.o -c $(TARGET)/int64.c
+	$(LD) -o $(OBJDIR)/int64.o $(OBJDIR)/int64tmp.o $(LDFLAGS) $(GCCLIBFLAGS)
+	$(STRIP) $(KEEPSYMS) $(OBJDIR)/int64.o
+
+$(TARGET)/int64.c:
+	echo 'void dummy(void); void dummy(void) {' > $(TARGET)/int64.c
+	for x in $(NEEDFUNCTIONS); do echo 'extern void '$$x'();' \
+		>> $(TARGET)/int64.c; done 
+	for x in $(NEEDFUNCTIONS); do echo $$x'();' >> $(TARGET)/int64.c; done
+	echo '}'  >> $(TARGET)/int64.c 
+
+endif
 
 # ----------------------------------------------------------------------
 # The emulator itself
@@ -287,4 +314,5 @@ depend:
 		sed 's|^\([^:]*:\)|$$(OBJDIR)/\1|g' > $(TARGET)/depend.mk
 
 -include $(TARGET)/depend.mk
+
 

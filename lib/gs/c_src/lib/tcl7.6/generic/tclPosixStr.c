@@ -114,7 +114,7 @@ Tcl_ErrnoId()
 #ifdef ECONNRESET
 	case ECONNRESET: return "ECONNRESET";
 #endif
-#if defined(EDEADLK) && (!defined(EWOULDBLOCK) || (EDEADLK != EWOULDBLOCK)) && (!defined(EDEADLOCK) || (EDEADLK != EDEADLOCK))
+#if defined(EDEADLK) && (!defined(EWOULDBLOCK) || (EDEADLK != EWOULDBLOCK))
 	case EDEADLK: return "EDEADLK";
 #endif
 #if defined(EDEADLOCK) && (!defined(EDEADLK) || (EDEADLOCK != EDEADLK))
@@ -336,7 +336,7 @@ Tcl_ErrnoId()
 #ifdef ENXIO
 	case ENXIO: return "ENXIO";
 #endif
-#ifdef EOPNOTSUPP
+#if defined(EOPNOTSUPP) && (!defined(ENOTSUP) || (EOPNOTSUPP != ENOTSUP))
 	case EOPNOTSUPP: return "EOPNOTSUPP";
 #endif
 #ifdef EPERM
@@ -560,7 +560,7 @@ Tcl_ErrnoMsg(err)
 #ifdef ECONNRESET
 	case ECONNRESET: return "connection reset by peer";
 #endif
-#if defined(EDEADLK) && (!defined(EWOULDBLOCK) || (EDEADLK != EWOULDBLOCK)) && (!defined(EDEADLOCK) || (EDEADLK != EDEADLOCK))
+#if defined(EDEADLK) && (!defined(EWOULDBLOCK) || (EDEADLK != EWOULDBLOCK))
 	case EDEADLK: return "resource deadlock avoided";
 #endif
 #if defined(EDEADLOCK) && (!defined(EDEADLK) || (EDEADLOCK != EDEADLK))
@@ -783,7 +783,7 @@ Tcl_ErrnoMsg(err)
 #ifdef ENXIO
 	case ENXIO: return "no such device or address";
 #endif
-#ifdef EOPNOTSUPP
+#if defined(EOPNOTSUPP) && (!defined(ENOTSUP) || (EOPNOTSUPP != ENOTSUP))
 	case EOPNOTSUPP: return "operation not supported on socket";
 #endif
 #ifdef EPERM
@@ -986,7 +986,7 @@ Tcl_SignalId(sig)
 #ifdef SIGPROF
 	case SIGPROF: return "SIGPROF";
 #endif
-#if defined(SIGPWR) && (!defined(SIGXFSZ) || (SIGPWR != SIGXFSZ))
+#if defined(SIGPWR) && (!defined(SIGXFSZ) || (SIGPWR != SIGXFSZ)) && (!defined(SIGLOST) || (SIGPWR != SIGLOST))
 	case SIGPWR: return "SIGPWR";
 #endif
 #ifdef SIGQUIT
@@ -1118,7 +1118,7 @@ Tcl_SignalMsg(sig)
 #ifdef SIGPROF
 	case SIGPROF: return "profiling alarm";
 #endif
-#if defined(SIGPWR) && (!defined(SIGXFSZ) || (SIGPWR != SIGXFSZ))
+#if defined(SIGPWR) && (!defined(SIGXFSZ) || (SIGPWR != SIGXFSZ)) && (!defined(SIGLOST) || (SIGPWR != SIGLOST))
 	case SIGPWR: return "power-fail restart";
 #endif
 #ifdef SIGQUIT

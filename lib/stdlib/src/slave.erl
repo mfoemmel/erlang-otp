@@ -17,6 +17,15 @@
 %%
 -module(slave).
 
+%% If the macro DEBUG is defined during compilation, 
+%% debug printouts are done through erlang:display/1.
+%% Activate this feature by starting the compiler 
+%% with> erlc -DDEBUG ... 
+%% or by> setenv ERL_COMPILER_FLAGS DEBUG 
+%% before running make (in the OTP make system)
+%% (the example is for tcsh)
+
+
 -export([pseudo/1,
 	 pseudo/2,
 	 start/1, start/2, start/3,
@@ -28,6 +37,14 @@
 -export([wait_for_slave/6, slave_start/1, wait_for_master_to_die/2]).
 
 -import(error_logger, [error_msg/2]).
+
+
+-ifdef(DEBUG).
+-define(dbg(Tag,Data), erlang:display({Tag,Data})).
+-else.
+-define(dbg(Tag,Data), true).
+-endif.
+
 
 %% Start a list of pseudo servers on the local node
 pseudo([Master | ServerList]) ->
@@ -269,9 +286,11 @@ long_or_short() ->
 %% It will wait for the master node to terminate.
 
 slave_start([Master, Waiter]) ->
+    ?dbg({?MODULE, slave_start}, [[Master, Waiter]]),
     spawn(?MODULE, wait_for_master_to_die, [Master, Waiter]).
 
 wait_for_master_to_die(Master, Waiter) ->
+    ?dbg({?MODULE, wait_for_master_to_die}, [Master, Waiter]),
     process_flag(trap_exit, true),
     monitor_node(Master, true),
     {Waiter, Master} ! {self(), slave_started},
@@ -280,6 +299,8 @@ wait_for_master_to_die(Master, Waiter) ->
 wloop(Master) ->
     receive
 	{nodedown, Master} ->
+	    ?dbg({?MODULE, wloop}, 
+		 [[Master], {received, {nodedown, Master}}, halting_node] ),
 	    halt();
 	_Other ->
 	    wloop(Master)

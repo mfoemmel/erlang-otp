@@ -43,6 +43,7 @@
 -record(enumerator,	{id}).
 -record(sequence,	{type, length=0}).
 -record(string,		{length=0}).
+-record(wstring,	{length=0}).      %% WSTRING
 -record(array,		{id, size}).
 -record(attr,		{readonly, type, id, tk}).
 -record(except,		{id, body, tk}).

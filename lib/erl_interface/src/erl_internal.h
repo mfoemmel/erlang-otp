@@ -37,9 +37,14 @@ extern "C" {
   } else { \
      erl_assert_error(#e, __FILE__, __LINE__); \
   }
-extern void erl_assert_error(char* expr, char* file, int line);
+
+extern void erl_assert_error(char* expr, char* file, int line) 
+	__attribute__ ((__noreturn__));
+
 #else
+
 #define ASSERT(e)
+
 #endif
 
 #ifdef __cplusplus

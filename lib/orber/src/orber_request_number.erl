@@ -61,9 +61,11 @@ init(Opts) ->
 
 terminate(Reason, State) ->
 	    ok.
-
-handle_call(get, From, State) ->
+%% Max is ulong 0 .. 2^32-1
+handle_call(get, From, State) when State < 4294967295 ->
     {reply, State, State+1};
+handle_call(get, From, State) ->
+    {reply, 0, 0};
 handle_call(reset, From, State) ->
     {reply, ok, 0}.
 

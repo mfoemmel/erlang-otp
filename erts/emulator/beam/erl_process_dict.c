@@ -57,7 +57,7 @@
 #define MAKE_HASH(Term) 				\
 ((is_small(Term)) ? unsigned_val(Term) :		\
  ((is_atom(Term)) ? 					\
-  (atom_tab(unsigned_val(term))->slot.bucket.hvalue) :	\
+  (atom_tab(atom_val(term))->slot.bucket.hvalue) :	\
   make_hash(Term, 0)))
 
 
@@ -67,16 +67,12 @@
 #define PD_REALLOC(Ptr, Siz) safe_realloc(Ptr, Siz)
 
 
-#define TCAR(Term) CAR(ptr_val(Term))
-#define TCDR(Term) CDR(ptr_val(Term))
+#define TCAR(Term) CAR(list_val(Term))
+#define TCDR(Term) CDR(list_val(Term))
 
 /* Array access macro */ 
 #define ARRAY_GET(PDict, Index) (((PDict)->size > (Index)) ? \
 				 (PDict)->data[Index] : NIL)
-
-/* The tag used by NIL */
-#define NIL_TAG ATOM
-
 
 /*
 ** Forward decalarations
@@ -375,20 +371,17 @@ static int pd_hash_erase(Process *p, Eterm id, Eterm *ret)
 	return PDICT_OK;
     hval = pd_hash_value(p->dictionary, id);
     old = ARRAY_GET(p->dictionary, hval);
-    switch (tag_val_def(old)) {
-    case NIL_TAG:
-	break;
-    case TUPLE_DEF:
-	if (eq(ptr_val(old)[1], id)) {
+    if (is_boxed(old)) {	/* Tuple */
+	ASSERT(is_tuple(old));
+	if (eq(tuple_val(old)[1], id)) {
 	    array_put(&(p->dictionary), hval, NIL);
 	    --(p->dictionary->numElements);
-	    *ret = ptr_val(old)[2];
+	    *ret = tuple_val(old)[2];
 	}
-	break;
-    case LIST_DEF:
+    } else if (is_list(old)) {
 	/* Find cons cell for identical value */
 	i = 0;
-	for (tmp = old; tmp != NIL && !eq(ptr_val(TCAR(tmp))[1], id); 
+	for (tmp = old; tmp != NIL && !eq(tuple_val(TCAR(tmp))[1], id); 
 	     tmp = TCDR(tmp))
 	    ++i;
 	if (tmp != NIL) {
@@ -403,18 +396,17 @@ static int pd_hash_erase(Process *p, Eterm id, Eterm *ret)
 	    if (TCDR(nlist) == NIL)
 		nlist = TCAR(nlist);
 	    array_put(&(p->dictionary), hval, nlist);
-	    *ret = ptr_val(TCAR(tmp))[2];
+	    *ret = tuple_val(TCAR(tmp))[2];
 	    --(p->dictionary->numElements);
 	}
-	break;
-    default:
+    } else if (is_not_nil(old)) {
 #ifdef DEBUG
 	erl_printf(CERR,"Process dictionary for process %s is broken, trying to "
 		   "display term found in line %d:\n", print_pid(p),__LINE__);
 	display(old,CERR);
 	erl_printf(CERR,"\n");
 #endif
-	erl_exit(1, "Damadged process dictionary found during erase/1.");
+	erl_exit(1, "Damaged process dictionary found during erase/1.");
     }
     if ((range = HASH_RANGE(p->dictionary)) > INITIAL_SIZE && 
 	range / 2  > (p->dictionary->numElements))
@@ -441,22 +433,17 @@ static Eterm pd_hash_get(Process *p, Eterm id)
 	return am_undefined;
     hval = pd_hash_value(pd, id);
     tmp = ARRAY_GET(pd, hval);
-    switch tag_val_def(tmp) {
-    case NIL_TAG:
-	break;
-    case TUPLE_DEF:
-	if (eq(ptr_val(tmp)[1], id)) {
-	    return ptr_val(tmp)[2];
+    if (is_boxed(tmp)) {	/* Tuple */
+	ASSERT(is_tuple(tmp));
+	if (eq(tuple_val(tmp)[1], id)) {
+	    return tuple_val(tmp)[2];
 	}
-	break;
-    case LIST_DEF:
-	for (; tmp != NIL && !eq(ptr_val(TCAR(tmp))[1], id); tmp = TCDR(tmp))
+    } else if (is_list(tmp)) {
+	for (; tmp != NIL && !eq(tuple_val(TCAR(tmp))[1], id); tmp = TCDR(tmp))
 	    ;
 	if (tmp != NIL)
-	    return ptr_val(TCAR(tmp))[2];
-	break;
-    default:
-
+	    return tuple_val(TCAR(tmp))[2];
+    } else if (is_not_nil(tmp)) {
 #ifdef DEBUG
 	erl_printf(CERR,"Process dictionary for process %s is broken, "
 		   "trying to "
@@ -464,8 +451,7 @@ static Eterm pd_hash_get(Process *p, Eterm id)
 	display(tmp,CERR);
 	erl_printf(CERR,"\n");
 #endif
-
-	erl_exit(1,"Damadged process dictionary foung during get/1.");
+	erl_exit(1, "Damaged process dictionary foung during get/1.");
     }
     return am_undefined;
 }
@@ -486,25 +472,21 @@ static int pd_hash_get_keys(Process *p, Eterm value, Eterm *ret)
     num = HASH_RANGE(pd);
     for (i = 0; i < num; ++i) {
 	tmp = ARRAY_GET(pd, i);
-	switch (tag_val_def(tmp)) {
-	case TUPLE_DEF:
-	    if (eq(ptr_val(tmp)[2], value)) {
+	if (is_boxed(tmp)) {
+	    ASSERT(is_tuple(tmp));
+	    if (eq(tuple_val(tmp)[2], value)) {
 		hp = HAlloc(p, 2);
-		res = CONS(hp, ptr_val(tmp)[1], res);
+		res = CONS(hp, tuple_val(tmp)[1], res);
 	    }
-	    break;
-	case LIST_DEF:
+	} else if (is_list(tmp)) {
 	    while (tmp != NIL) {
 		tmp2 = TCAR(tmp);
-		if (eq(ptr_val(tmp2)[2], value)) {
+		if (eq(tuple_val(tmp2)[2], value)) {
 		    hp = HAlloc(p, 2);
-		    res = CONS(hp, ptr_val(tmp2)[1], res);
+		    res = CONS(hp, tuple_val(tmp2)[1], res);
 		}
 		tmp = TCDR(tmp);
 	    }
-	    break;
-	default:
-	    break;
 	}
     }
 done:
@@ -528,8 +510,8 @@ static int pd_hash_get_all(Process *p, ProcDict *pd, unsigned int flags, Eterm *
 
     for (i = 0; i < num; ++i) {
 	tmp = ARRAY_GET(pd, i);
-	switch (tag_val_def(tmp)) {
-	case TUPLE_DEF:
+	if (is_boxed(tmp)) {
+	    ASSERT(is_tuple(tmp));
 	    if (copy) {
 		Uint siz = size_object(tmp);
 		hp2 = HAlloc(p, siz);
@@ -537,8 +519,7 @@ static int pd_hash_get_all(Process *p, ProcDict *pd, unsigned int flags, Eterm *
 	    }
 	    res = CONS(hp, tmp, res);
 	    hp += 2;
-	    break;
-	case LIST_DEF:
+	} else if (is_list(tmp)) {
 	    while (tmp != NIL) {
 		tmp2 = TCAR(tmp);
 		if (copy) {
@@ -550,9 +531,6 @@ static int pd_hash_get_all(Process *p, ProcDict *pd, unsigned int flags, Eterm *
 		hp += 2;
 		tmp = TCDR(tmp);
 	    }
-	    break;
-	default:
-	    break;
 	}
     }
 done:
@@ -580,27 +558,25 @@ static int pd_hash_put(Process *p, Eterm id, Eterm value, Eterm *ret)
     hp = HAlloc(p, 3);
     tpl = TUPLE2(hp, id, value);
     old = ARRAY_GET(p->dictionary, hval);
-    switch tag_val_def(old) {
-    case NIL_TAG:
+    if (is_nil(old)) {
 	array_put(&(p->dictionary), hval, tpl);
 	++(p->dictionary->numElements);
-	break;
-    case TUPLE_DEF:
-	if (eq(ptr_val(old)[1],id)) {
+    } else if (is_boxed(old)) {
+	ASSERT(is_tuple(old));
+	if (eq(tuple_val(old)[1],id)) {
 	    array_put(&(p->dictionary), hval, tpl);
-	    *ret = ptr_val(old)[2];
+	    *ret = tuple_val(old)[2];
 	} else {
 	    hp = HAlloc(p, 4);
 	    tmp = CONS(hp, old, NIL);
 	    hp += 2;
 	    ++(p->dictionary->numElements);
 	    array_put(&(p->dictionary), hval, CONS(hp, tpl, tmp));
-	} 
-	break;
-    case LIST_DEF:
+	}
+    } else if (is_list(old)) {
 	/* Find cons cell for identical value */
 	i = 0;
-	for (tmp = old; tmp != NIL && !eq(ptr_val(TCAR(tmp))[1], id); 
+	for (tmp = old; tmp != NIL && !eq(tuple_val(TCAR(tmp))[1], id); 
 	     tmp = TCDR(tmp))
 	    ++i;
 	if (is_nil(tmp)) {
@@ -618,11 +594,9 @@ static int pd_hash_put(Process *p, Eterm id, Eterm value, Eterm *ret)
 		hp += 2;
 	    }
 	    array_put(&(p->dictionary), hval, CONS(hp, tpl, nlist));
-	    *ret = ptr_val(TCAR(tmp))[2];
+	    *ret = tuple_val(TCAR(tmp))[2];
 	}
-	break;
-    default:
-
+    } else {
 #ifdef DEBUG
 	erl_printf(CERR,"Process dictionary for process %s is broken, trying to "
 		   "display term found in line %d:\n", print_pid(p),__LINE__);
@@ -630,7 +604,7 @@ static int pd_hash_put(Process *p, Eterm id, Eterm value, Eterm *ret)
 	erl_printf(CERR,"\n");
 #endif
 
-	erl_exit(1,"Damadged process dictionary found during put/2.");
+	erl_exit(1, "Damaged process dictionary found during put/2.");
     }
     if (HASH_RANGE(p->dictionary) <= p->dictionary->numElements)
 	return grow(p);
@@ -729,7 +703,7 @@ static int grow(Process *p)
 	++pd->splitPosition; /* For the hashes */
 	l = ARRAY_GET(pd, pos);
 	if (is_tuple(l)) {
-	    if (pd_hash_value(pd, ptr_val(l)[1]) != pos) {
+	    if (pd_hash_value(pd, tuple_val(l)[1]) != pos) {
 		array_put(&(p->dictionary), pos + 
 			  p->dictionary->homeSize, l);
 		array_put(&(p->dictionary), pos, NIL);
@@ -742,7 +716,7 @@ static int grow(Process *p)
 	    hp = HAlloc(p,j*2);
 	
 	    while (l != NIL) {
-		if (pd_hash_value(pd, ptr_val(TCAR(l))[1]) == pos) 
+		if (pd_hash_value(pd, tuple_val(TCAR(l))[1]) == pos) 
 		    l1 = CONS(hp, TCAR(l), l1);
 		else
 		    l2 = CONS(hp, TCAR(l), l2);
@@ -904,22 +878,21 @@ static void pd_check(ProcDict *pd)
     ASSERT(HASH_RANGE(pd) <= MAX_HASH);
     for (i = 0, num = 0; i < pd->used; ++i) {
 	Eterm t = pd->data[i];
-	switch tag_val_def(t) {
-	case NIL_TAG:
+	if (is_nil(t)) {
 	    continue;
-	case TUPLE_DEF:
+	} else if (is_tuple(t)) {
 	    ++num;
-	    ASSERT(arityval(*ptr_val(t)) == 2);
+	    ASSERT(arityval(*tuple_val(t)) == 2);
 	    continue;
-	case LIST_DEF:
+	} else if (is_list(t)) {
 	    while (t != NIL) {
 		++num;
 		ASSERT(is_tuple(TCAR(t)));
-		ASSERT(arityval(*(ptr_val(TCAR(t)))) == 2);
+		ASSERT(arityval(*(tuple_val(TCAR(t)))) == 2);
 		t = TCDR(t);
 	    }
 	    continue;
-	default:
+	} else {
 	    erl_exit(1, 
 		     "Found tag 0x%08x in process dictionary at position %d",
 		     (unsigned long) t, (int) i);
@@ -937,7 +910,7 @@ print_pid(Process *p)
     char static buf[64];
 
     Uint obj = p->id;
-    sprintf(buf, "<%ld.%ld.%ld>", get_node(obj), get_number(obj), get_serial(obj));
+    sprintf(buf, "<%ld.%ld.%ld>", pid_node(obj), pid_number(obj), pid_serial(obj));
     return buf;
 }
 

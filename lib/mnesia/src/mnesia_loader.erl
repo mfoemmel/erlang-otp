@@ -146,8 +146,8 @@ do_get_disc_copy2(Tab, Reason, Storage, Type) when Storage == disc_only_copies -
 %%                                      Release read lock on table
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--define(MAX_TRANSFER_SIZE, 4000).
--define(MAX_RAM_FILE_SIZE, 400000).
+-define(MAX_TRANSFER_SIZE, 7500). 
+-define(MAX_RAM_FILE_SIZE, 1000000).
 -define(MAX_RAM_TRANSFERS, (?MAX_RAM_FILE_SIZE div ?MAX_TRANSFER_SIZE) + 1).
 
 net_load_table(Tab, Reason, Ns, Cs)
@@ -212,7 +212,6 @@ tab_receiver(Pid, Node, Tab, TabRef, Storage, Cs, RamLeft, State) ->
 	    subscr_receiver(Tab, TabRef, Storage, Cs#cstruct.record_name),
 	    case handle_last(Tab, Storage, Cs#cstruct.type, DatBin) of
 		ok ->
-%%	            mnesia_index:add_ix_files(Tab, Storage),
 		    mnesia_index:init_index(Tab, Storage),
 		    snmpify(Tab, Storage),
 		    Pid ! {self(), no_more},
@@ -412,7 +411,9 @@ send_table(Pid, Tab, RemoteS) ->
 	    
 	    SendIt = fun() ->
 			     prepare_copy(Pid, Tab, Storage),
-			     send_more(Pid, Tab, Storage, Key, KeysPerTransfer),
+			     send_more(Pid, Tab, Storage, 
+				       mnesia_lib:db_first(Storage, Tab),
+				       KeysPerTransfer),
 			     finish_copy(Pid, Tab, Storage, RemoteS)
 		     end,
 
@@ -436,7 +437,7 @@ send_table(Pid, Tab, RemoteS) ->
 prepare_copy(Pid, Tab, Storage) ->
     Trans =
 	fun() ->
-		mnesia:read_lock_table(Tab),
+		mnesia:write_lock_table(Tab),
 		mnesia_subscr:subscribe(Pid, {table, Tab}),
 		update_where_to_write(Tab, node(Pid)),
 		mnesia_lib:db_fixtable(Storage, Tab, true),
@@ -460,8 +461,19 @@ update_where_to_write(Tab, Node) ->
 		    true -> Current;
 		    false -> [Node | Current]
 		end,
-	    rpc:multicall(Ns, mnesia_lib, add, [{Tab, where_to_write}, Node])
+	    update_where_to_write(Ns, Tab, Node)
     end.
+
+update_where_to_write([], _, _) -> 
+    ok;
+update_where_to_write([H|T], Tab, AddNode) ->
+    case mnesia_monitor:needs_protocol_conversion(H) of
+	true ->
+	    rpc:call(H,  mnesia_lib, add, [{Tab, where_to_write}, AddNode]);
+	false ->
+	    rpc:call(H,  mnesia_controller, call, [{update_where_to_write, [add, Tab, AddNode], self()}])
+    end,
+    update_where_to_write(T, Tab, AddNode).
 
 send_more(Pid, Tab, Storage, '$end_of_table', _KeysPerTransfer) ->
     ok; 

@@ -167,7 +167,7 @@ transform_one({cd, Dir}) ->
     Bin = list_to_binary(Dir ++ [0]),
     {cd, Bin};
 transform_one({env, List}) ->
-    Env = lists:reverse(erlang:info(getenv)),
+    Env = lists:reverse(os:getenv()),
     Bin = make_binary(merge_env(List, Env)),
     {env, Bin};
 transform_one(X) ->

@@ -18,9 +18,8 @@
 %%
 %%----------------------------------------------------------------------
 %% File    : orber_ifr_repository.erl
-%% Author  : Per Danielsson <pd@gwaihir>
 %% Purpose : Code for Repository
-%% Created : 14 May 1997 by Per Danielsson <pd@gwaihir>
+%% Created : 14 May 1997
 %%----------------------------------------------------------------------
 
 -module(orber_ifr_repository).
@@ -139,7 +138,16 @@ lookup_id({ObjType,ObjID}, Search_id) ?tcheck(ir_Repository, ObjType) ->
 	[] ->
 	    [];
 	[ObjRef] ->
-	    ObjRef
+	    ObjRef;
+	[H|T] ->
+	    %% This case is just a safety-guard; orber_ifr_container:contents
+	    %% sometimes return duplicates due to inheritance.
+	    case lists:any(fun(X) -> X =/= H end, T) of
+		false ->
+		    H;
+		true ->
+		    corba:raise(#'INTERNAL'{minor=1200, completion_status=?COMPLETED_NO})
+	    end
     end.
 
 get_primitive({ObjType,ObjID}, Kind) ?tcheck(ir_Repository, ObjType) ->

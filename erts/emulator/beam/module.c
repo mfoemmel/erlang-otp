@@ -96,7 +96,7 @@ erts_get_module(Eterm mod)
     int index;
 
     ASSERT(is_atom(mod));
-    e.module = unsigned_val(mod);
+    e.module = atom_val(mod);
     index = index_get(&module_table, (void*) &e);
     if (index == -1) {
 	return NULL;
@@ -112,7 +112,7 @@ erts_put_module(Eterm mod)
     int index;
 
     ASSERT(is_atom(mod));
-    e.module = unsigned_val(mod);
+    e.module = atom_val(mod);
     e.slot.index = -1;
     index = index_put(&module_table, (void*) &e);
     return module_code(index);

@@ -132,10 +132,14 @@ is_string([]) -> true;
 is_string([Tkn | Str]) when integer(Tkn), Tkn >= 0, Tkn =< 255 ->
     is_string(Str);
 is_string(X) -> false.
-    
-is_oid(List) when list(List), length(List) =< 128 ->
-    is_oid2(List);
+
+
+is_oid([E1, E2| Rest]) when length(Rest) =< 126, E1 *40 + E2 =< 255 ->
+    is_oid2(Rest);
+is_oid([E1]) when E1 =< 2 ->
+    true;
 is_oid(_) -> false.
+
 is_oid2([]) -> true;
 is_oid2([Nbr | RestOid]) when integer(Nbr), 0 =< Nbr, Nbr =< 2147483647 ->
     is_oid2(RestOid);
@@ -218,11 +222,21 @@ is_priv(SecLevel) ->
 
 is_reportable([MsgFlag]) ->
     4 == (MsgFlag band 4).
-	     
-is_reportable_pdu(report) -> false;
-is_reportable_pdu('get-response') -> false;
-is_reportable_pdu('snmpv2-trap') -> false;
-is_reportable_pdu(_) -> true.
+
+%% [OTP-3416] 
+%% [RFC 2571] Confirmed Class: GetRequest-PDU, GetNextRequest-PDU, 
+%% GetBulkRequest-PDU, SetRequest-PDU, and InformRequest-PDU. 
+%% Unconfirmed Class: Report-PDU, Trapv2-PDU, and GetResponse-PDU. 
+%% [RFC 2572] The reportableFlag MUST always be zero when the message 
+%% contains a PDU from the Unconfirmed Class; it MUST always be one 
+%% for a PDU from the Confirmed Class, 
+%%
+is_reportable_pdu('get-request') -> true;
+is_reportable_pdu('get-next-request') -> true;
+is_reportable_pdu('get-bulk-request') -> true;
+is_reportable_pdu('set-request') -> true;
+is_reportable_pdu('inform-request') -> true;
+is_reportable_pdu(_) -> false.
 
 mk_msg_flags(PduType, SecLevel) ->
     Flags1 = case is_reportable_pdu(PduType) of

@@ -21,7 +21,7 @@
 
 -export([main/1]).
 
--import(os, [getenv/1, putenv/2]).
+-import(os, [getenv/1,putenv/2]).
 
 -record(st, {prog,				% Name of program.
 	     all_args,
@@ -34,7 +34,6 @@
 %% -keep_window
 %% -detached
 %% -v
-%% -version (same as +V)
 %% -x
 %% +e, ERL_MAX_ETS_TABLES
 %% +h size
@@ -47,21 +46,22 @@
 %% Error handling for HOME
 %%
 
-%% Needed BIFs:
-%% erts_misc:display_string/1 (on stderr)
-%% erts_misc:display_nl/0 (on stderr)
-%% os:putenv/2
-%% os:getenv/1
-%% 
 %% Needed modules:
 %%  file_prim
 
 %% Not supported.
 %% -man
+%% -x
 
 main([Prog|Argv]) ->
-    parse(Argv, [], #st{prog=getenv("PROGNAME")}).
+    parse(Argv, [], #st{prog=progname()}).
 
+progname() ->
+    case getenv("PROGNAME") of
+	false -> "erl";
+	Name -> Name
+    end.
+	    
 parse([Arg|As], Init, St) ->
     case arg(Arg, As) of
 	ignore ->
@@ -71,14 +71,15 @@ parse([Arg|As], Init, St) ->
 	{init,Ias,MoreArgs} ->
 	    parse(MoreArgs, reverse(Ias, Init), St);
 	{error,String} ->
-	    erlang:display(list_to_atom(String)),
+	    erlang:display_string(String),
+	    erlang:display_nl(),
 	    halt(1)
     end;
 parse([], Init0, St) ->
     fix_path(),
     Home = get_home(),
     Root = get_root(),
-    Init1 = reverse(Init0, []),
+    Init1 = reverse(Init0),
     Init2 = ["-root",Root,"-progname",St#st.prog,"--",
 	     "-home",Home|Init1],
     Init = [list_to_atom(Arg) || Arg <- Init2],
@@ -111,8 +112,15 @@ arg("-nohup", As) ->
     {error,"Not implemented yet"};
 arg("-sname"=Opt, As0) ->
     name(Opt, As0);
+arg("-version", As0) ->
+    arg("+V", As0);
 arg("-x", As) ->
     {error,"The '-x' option is no longer supported"};
+arg("+e", As0) ->
+    {error,"Not implemented yet"};
+arg("+V", As0) ->
+    erlang:display_string(erlang:info(system_version)),
+    halt();
 arg(Arg, As) ->
     include.
 
@@ -167,8 +175,8 @@ usage(Opt) ->
 
 %%% Utility functions.
 
-reverse([], Acc) -> Acc;
-reverse([H|T], Acc) -> reverse(T, [H|Acc]).
+reverse(List) -> lists:reverse(List, []).
+reverse(List, Acc) -> lists:reverse(List, Acc).
 
 platform() ->
     case erlang:info(os_type) of

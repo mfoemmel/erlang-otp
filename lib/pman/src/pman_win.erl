@@ -317,31 +317,6 @@ remove_menu(List) when list(List)->
 remove_menu(Object) ->
     gse:destroy(Object).
 
-%%remove_menu([]) ->  ok;
-%%remove_menu([Id|Ids]) ->
-%%    gs:destroy(Id),
-%%    remove_menu(Ids);
-%%remove_menu(Id) ->
-%%    gs:destroy(Id).
-
-
-%% -----------------------------------------------------------------------
-%% Enable and disable menus Items
-
-%enable_list(List) ->
-%    lists:foreach({gse,enable},List).
-%
-%disable_list(List) ->
-%    lists:foreach({gse,disable},List).
-
-menus_enable([],_) -> ok;
-menus_enable([Menu|Menus],Bool) -> 
-    menu_enable(Menu,Bool),
-    menus_enable(Menus,Bool).
-
-menu_enable(Menu_id,Bool) ->
-    gs:config(Menu_id,{enable,Bool}).
-
 
 %% -----------------------------------------------------------------------
 %% If the trace window opened is supposed to trace a real pid, let us add 
@@ -777,10 +752,6 @@ format(Format) -> format(Format, []).
 format(Format, Args) ->
    io_lib:format(Format, Args).
    
-
-format1([]) -> "";
-format1([H|T]) ->
-    lists:flatten(io_lib:format("~p~n", [H]), format1(T)).
 
 kvformat(S, [Item],Buff) ->
     lists:reverse([format("\n~s~p]\n",[S,Item])|Buff]);

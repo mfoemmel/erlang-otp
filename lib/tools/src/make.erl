@@ -26,9 +26,9 @@
 
 -export([all/0,all/1,files/1,files/2]).
 
--import(lists, [member/2, append/2, suffix/2, sublist/3, keydelete/3]).
-
 -export([process_1_file/4]).
+
+-include_lib("kernel/include/file.hrl").
 
 all() ->
     all([]).
@@ -53,9 +53,9 @@ extract({error,What}) ->
     [].
 
 extract1([F|Fs]) ->
-    case suffix(".erl", F) of
+    case lists:suffix(".erl", F) of
 	true ->
-	    [sublist(F, 1, length(F) - 4)|extract1(Fs)];
+	    [lists:sublist(F, 1, length(F) - 4)|extract1(Fs)];
 	false ->
 	    extract1(Fs)
     end;
@@ -70,12 +70,13 @@ files(Fs, Opts) ->
 	true ->
 	    F = process_flag(trap_exit, true),
 	    Ns = [node()|nodes()],
-	    Res = par_make(Fs, member(noexec, Opts), load_opt(Opts), 
+	    Res = par_make(Fs, lists:member(noexec, Opts), load_opt(Opts), 
 			   fix(Opts), Ns, []),
-	    process_flag(trap_exit, F), Res;
+	    process_flag(trap_exit, F),
+	    Res;
 	
 	false ->
-	    process(Fs, member(noexec, Opts), load_opt(Opts), Opts)
+	    process(Fs, lists:member(noexec, Opts), load_opt(Opts), Opts)
     end.
 
 %% Any flags that are not recognixed as make flags are passed directly
@@ -103,13 +104,13 @@ par_make([Job|Fs0], NoExec, Load, Opts,[], Pids) ->
 		    par_make([Job|Fs0], NoExec, Load, Opts,[], Pids);
 		{value,{_, Oldjob}} ->
 		    par_make([Oldjob,Job|Fs0], NoExec, Load, Opts,[],
-			     keydelete(Pid,1,Pids))
+			     lists:keydelete(Pid,1,Pids))
 	    end;
 	{'EXIT', Pid, {parmake,Reason}} ->
 	    Id = spawn_link(node(Pid), make, process_1_file, 
 			    [Job,NoExec, Load, Opts]),
 	    par_make(Fs0, NoExec, Load, Opts, [], 
-		     [{Id,Job} | keydelete(Pid,1,Pids)])
+		     [{Id,Job} | lists:keydelete(Pid,1,Pids)])
     end;
 par_make([], NoExec, Load, Opts,Nodes, Pids) ->
     receive
@@ -119,19 +120,19 @@ par_make([], NoExec, Load, Opts,Nodes, Pids) ->
 		    par_make([], NoExec, Load, Opts,[], Pids);
 		{value,{_, Oldjob}} ->
 		    par_make([Oldjob], NoExec, Load, Opts,[],
-			     keydelete(Pid,1,Pids))
+			     lists:keydelete(Pid,1,Pids))
 	    end;
 
 	{'EXIT', Pid, {parmake,Reason}} ->
-	    par_make([], NoExec, Load, Opts,Nodes,keydelete(Pid,1,Pids))
+	    par_make([], NoExec, Load, Opts,Nodes,lists:keydelete(Pid,1,Pids))
     end.
 
 load_opt(Opts) ->
-    case member(netload,Opts) of
+    case lists:member(netload,Opts) of
 	true -> 
 	    netload;
 	false ->
-	    case member(load,Opts) of
+	    case lists:member(load,Opts) of
 		true ->
 		    load;
 		_ ->
@@ -156,7 +157,8 @@ process_1_file(File, NoExec, Load, Opts) ->
     exit({parmake, R}).
 
 recompilep(File, NoExec, Load, Opts) ->
-    case exists(append(File, code:objfile_extension())) of
+    case exists(lists:append(filename:basename(File),
+			     code:objfile_extension())) of
 	true ->
 	    recompilep1(File, NoExec, Load, Opts);
 	false ->
@@ -164,8 +166,9 @@ recompilep(File, NoExec, Load, Opts) ->
     end.
  
 recompilep1(File, NoExec, Load, Opts ) ->
-    {ok, Erl} = file:file_info(append(File, ".erl")),
-    {ok, Obj} = file:file_info(append(File, code:objfile_extension())),
+    {ok, Erl} = file:read_file_info(lists:append(File, ".erl")),
+    {ok, Obj} = file:read_file_info(lists:append(filename:basename(File),
+						 code:objfile_extension())),
     case {readable(Erl), writable(Obj)} of
 	{true, true} ->
 	    recompilep1(Erl, Obj, File, NoExec, Load, Opts);
@@ -173,11 +176,29 @@ recompilep1(File, NoExec, Load, Opts ) ->
 	    error
     end.
 
-recompilep1({_, _, _, _, Te, _, _},
-	    {_, _, _, _, To, _, _}, File, NoExec, Load, Opts) when Te > To ->
+recompilep1(#file_info{mtime=Te},
+	    #file_info{mtime=To}, File, NoExec, Load, Opts) when Te > To ->
     recompile(File, NoExec, Load, Opts);
-recompilep1(_, _, _, NoExec, Load, Opts) ->
-    false.
+recompilep1(_Erl, #file_info{mtime=To}, File, NoExec, Load, Opts) ->
+    recompile2(To, File, NoExec, Load, Opts).
+
+%% recompile2(ObjMTime, File, NoExec, Load, Opts)
+%% Check if file is of a later date than include files.
+recompile2(ObjMTime, File, NoExec, Load, Opts) ->
+    IncludePath = include_opt(Opts),
+    case check_includes(lists:append(File, ".erl"), IncludePath, ObjMTime) of
+	true ->
+	    recompile(File, NoExec, Load, Opts);
+	false ->
+	    false
+    end.
+
+include_opt([{i,Path}|Rest]) ->
+    [Path|include_opt(Rest)];
+include_opt([_First|Rest]) ->
+    include_opt(Rest);
+include_opt([]) ->
+    [].
 
 %% recompile(File, NoExec, Load, Opts)
 %% Actually recompile and load the file, depending on the flags.
@@ -196,22 +217,55 @@ recompile(File, false, netload, Opts) ->
     c:nc(File, Opts).
 
 exists(File) ->
-    case file:file_info(File) of
+    case file:read_file_info(File) of
 	{ok, _} ->
 	    true;
 	_ ->
 	    false
     end.
 
-readable({_,_,read_write,_,_,_,_}) -> true;
-readable({_,_,read      ,_,_,_,_}) -> true;
+readable(#file_info{access=read_write}) -> true;
+readable(#file_info{access=read})       -> true;
 readable(_) -> false.
 
-writable({_,_,read_write,_,_,_,_}) -> true;
-writable({_,_,write     ,_,_,_,_}) -> true;
+writable(#file_info{access=read_write}) -> true;
+writable(#file_info{access=write})      -> true;
 writable(_) -> false.
 
 coerce_2_list(X) when atom(X) ->
     atom_to_list(X);
 coerce_2_list(X) ->
     X.
+
+%%% If you an include file is found with a modification
+%%% time larger than the modification time of the object
+%%% file, return true. Otherwise return false.
+check_includes(File, IncludePath, ObjMTime) ->
+    Path = [filename:dirname(File)|IncludePath], 
+    case epp:open(File, Path, []) of
+	{ok, Epp} ->
+	    check_includes2(Epp, File, ObjMTime);
+	Error ->
+	    false
+    end.
+    
+check_includes2(Epp, File, ObjMTime) ->
+    case epp:parse_erl_form(Epp) of
+	{ok, {attribute, 1, file, {File, 1}}} ->
+	    check_includes2(Epp, File, ObjMTime);
+	{ok, {attribute, 1, file, {IncFile, 1}}} ->
+	    case file:read_file_info(IncFile) of
+		{ok, #file_info{mtime=MTime}} when MTime > ObjMTime ->
+		    epp:close(Epp),
+		    true;
+		_ ->
+		    check_includes2(Epp, File, ObjMTime)
+	    end;
+	{ok, _} ->
+	    check_includes2(Epp, File, ObjMTime);
+	{eof, _} ->
+	    epp:close(Epp),
+	    false;
+	{error, Error} ->
+	    check_includes2(Epp, File, ObjMTime)
+    end.

@@ -63,6 +63,8 @@
 ** Where...
 ** Filename, a string:
 **    The filename where the trace output is to be written.
+** Port control messages handled:
+** 'f' -> '\0' (ok) | '\1' ++ String (error) : Flush file.
 **
 ** The package written to the file looks like this:
 ** +--+--------+-----------------------------------+
@@ -108,6 +110,8 @@ static ErlDrvData trace_file_start(ErlDrvPort port, char *buff);
 static void trace_file_stop(ErlDrvData handle);
 static void trace_file_output(ErlDrvData handle, char *buff, int bufflen);
 static void trace_file_finish(void);
+static int trace_file_control(ErlDrvData handle, unsigned int command, 
+			      char* buf, int count, char** res, int res_size);
 
 /*
 ** Internal routines
@@ -131,7 +135,8 @@ ErlDrvEntry trace_file_driver_entry = {
 			      descriptor ready */
     "trace_file_drv",      /* char *driver_name, the argument to open_port */
     trace_file_finish,     /* F_PTR finish, called when unloaded */
-    NULL,                  /* F_PTR control, port_command callback */
+    NULL,                  /* void * that is not used (BC) */
+    trace_file_control,    /* F_PTR control, port_control callback */
     NULL,                  /* F_PTR timeout, reserved */
     NULL                   /* F_PTR outputv, reserved */
 };
@@ -210,6 +215,23 @@ static void trace_file_output(ErlDrvData handle, char *buff, int bufflen)
 }
 
 /*
+** Control message from erlang, we handle $f, which is flush.
+*/
+static int trace_file_control(ErlDrvData handle, unsigned int command, 
+			      char* buf, int count, char** res, int res_size)
+{
+    if (command == 'f') {
+	TraceFileData *data = (TraceFileData *) handle;
+	my_flush(data);
+	if (res_size < 1) {
+	    *res = malloc(1);
+	}
+	**res = '\0';
+	return 1;
+    } 
+    return -1;
+}
+/*
 ** Driver unloaded
 */
 static void trace_file_finish(void)
@@ -239,12 +261,6 @@ static void *my_alloc(size_t size)
 }
 
 
-static int do_write(FILETYPE fd, unsigned char *buff, int siz) 
-{
-    fprintf(stderr, "Writing %d bytes to file.\r\n", siz);
-    return write(fd, buff, siz);
-}
-
 static int my_write(TraceFileData *data, unsigned char *buff, int siz) 
 {
     int wrote;
@@ -257,13 +273,13 @@ static int my_write(TraceFileData *data, unsigned char *buff, int siz)
     
     wrote = data->buff_siz - data->buff_pos;
     memcpy(data->buff + data->buff_pos, buff, wrote);
-    if (do_write(data->fd, data->buff, data->buff_siz) != data->buff_siz) {
+    if (write(data->fd, data->buff, data->buff_siz) != data->buff_siz) {
 	return -1;
     }
     data->buff_pos = 0;
     if (siz - wrote >= data->buff_siz) {
 	/* Write directly, no need to buffer... */
-	if (do_write(data->fd, buff + wrote, siz - wrote) != 
+	if (write(data->fd, buff + wrote, siz - wrote) != 
 	    siz - wrote) {
 	    return -1;
 	}
@@ -277,6 +293,7 @@ static int my_write(TraceFileData *data, unsigned char *buff, int siz)
 static void my_flush(TraceFileData *data)
 {
     write(data->fd, data->buff, data->buff_pos);
+    data->buff_pos = 0;
 }
 
 /*

@@ -23,6 +23,7 @@
 %% do
 
 do(Info) ->
+    ?DEBUG("do -> entry",[]),
     case httpd_util:key1search(Info#mod.data,status) of
 	%% A status code has been generated!
 	{StatusCode,PhraseArgs,Reason} ->
@@ -32,43 +33,45 @@ do(Info) ->
 	    case httpd_util:key1search(Info#mod.data,response) of
 		%% No response has been generated!
 		undefined ->
-		    {ShortPath,Path,AfterPath}=
-			real_name(Info#mod.config_db,Info#mod.request_uri,
-				  httpd_util:multi_lookup(Info#mod.config_db,
-							  alias)),
-		    %% Relocate if a trailing slash is missing else proceed!
-		    LastChar = lists:last(ShortPath),
-		    case file:read_file_info(ShortPath) of 
-			{ok,FileInfo} when FileInfo#file_info.type ==
-					   directory,LastChar /= $/ ->
-			    ServerName = httpd_util:lookup(
-					   Info#mod.config_db,server_name),
-			    Port = port_string(httpd_util:lookup(
-					       Info#mod.config_db,port,80)),
-			    URL = "http://"++ServerName++Port++
-				Info#mod.request_uri++"/",
-			    ReasonPhrase = httpd_util:reason_phrase(301),
-			    Message = httpd_util:message(301,URL,
-							 Info#mod.config_db),
-			    {proceed,
-			     [{response,
-			       {301, ["Location: ", URL, "\r\n"
-				      "Content-Type: text/html\r\n",
-				      "\r\n",
-				      "<HTML>\n<HEAD>\n<TITLE>",ReasonPhrase,
-				      "</TITLE>\n</HEAD>\n"
-				      "<BODY>\n<H1>",ReasonPhrase,
-				      "</H1>\n", Message, 
-				      "\n</BODY>\n</HTML>\n"]}}|
-			      [{real_name,{Path,AfterPath}}|Info#mod.data]]};
-			NoFile ->
-			    {proceed,
-			     [{real_name,{Path,AfterPath}}|Info#mod.data]}
-		    end;
+		    do_alias(Info);
 		%% A response has been generated or sent!
 		Response ->
 		    {proceed,Info#mod.data}
 	    end
+    end.
+
+do_alias(Info) ->
+    ?DEBUG("do_alias -> Request URI: ~p",[Info#mod.request_uri]),
+    {ShortPath,Path,AfterPath} =
+	real_name(Info#mod.config_db,Info#mod.request_uri,
+		  httpd_util:multi_lookup(Info#mod.config_db,alias)),
+    %% Relocate if a trailing slash is missing else proceed!
+    LastChar = lists:last(ShortPath),
+    case file:read_file_info(ShortPath) of 
+	{ok,FileInfo} when FileInfo#file_info.type == directory,LastChar /= $/ ->
+	    ?LOG("do_alias -> ~n"
+		 "      ShortPath: ~p~n"
+		 "      LastChar:  ~p~n"
+		 "      FileInfo:  ~p",
+		 [ShortPath,LastChar,FileInfo]),
+	    ServerName = httpd_util:lookup(Info#mod.config_db,server_name),
+	    Port = port_string(httpd_util:lookup(Info#mod.config_db,port,80)),
+	    URL = "http://"++ServerName++Port++Info#mod.request_uri++"/",
+	    ReasonPhrase = httpd_util:reason_phrase(301),
+	    Message = httpd_util:message(301,URL,Info#mod.config_db),
+	    {proceed,
+	     [{response,
+	       {301, ["Location: ", URL, "\r\n"
+		      "Content-Type: text/html\r\n",
+		      "\r\n",
+		      "<HTML>\n<HEAD>\n<TITLE>",ReasonPhrase,
+		      "</TITLE>\n</HEAD>\n"
+		      "<BODY>\n<H1>",ReasonPhrase,
+		      "</H1>\n", Message, 
+		      "\n</BODY>\n</HTML>\n"]}}|
+	      [{real_name,{Path,AfterPath}}|Info#mod.data]]};
+	NoFile ->
+	    {proceed,[{real_name,{Path,AfterPath}}|Info#mod.data]}
     end.
 
 port_string(80) ->
@@ -137,7 +140,8 @@ path(Data, ConfigDB, RequestURI) ->
     case httpd_util:key1search(Data,real_name) of
 	undefined ->
 	    DocumentRoot = httpd_util:lookup(ConfigDB, document_root, ""),
-	    {Path,AfterPath} = httpd_util:split_path(DocumentRoot++RequestURI),
+	    {Path,AfterPath} = 
+		httpd_util:split_path(DocumentRoot++RequestURI),
 	    Path;
 	{Path,AfterPath} ->
 	    Path

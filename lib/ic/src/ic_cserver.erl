@@ -1032,17 +1032,23 @@ emit_variable_defs(G, Fd, N, X, Name, R, ArgNames, ParameterTypes) ->
 		    emit(Fd,"~s\n\n",[RestVars]);
 		"CORBA_unsigned_long" -> 
 		    emit(Fd,"~s    ~s oe_result = 0;\n\n",[RestVars,RType]);
+		"CORBA_unsigned_long_long" -> 
+		    emit(Fd,"~s    ~s oe_result = 0;\n\n",[RestVars,RType]);
 		"CORBA_unsigned_short" -> 
 		    emit(Fd,"~s    ~s oe_result = 0;\n\n",[RestVars,RType]);		
 		"CORBA_short" ->
 		    emit(Fd,"~s    ~s oe_result = 0;\n\n",[RestVars,RType]);
 		"CORBA_long" ->
 		    emit(Fd,"~s    ~s oe_result = 0;\n\n",[RestVars,RType]);
+		"CORBA_long_long" ->
+		    emit(Fd,"~s    ~s oe_result = 0;\n\n",[RestVars,RType]);
 		"CORBA_float" ->
 		    emit(Fd,"~s    ~s oe_result = 0;\n\n",[RestVars,RType]);
 		"CORBA_double" ->
 		    emit(Fd,"~s    ~s oe_result = 0;\n\n",[RestVars,RType]);
 		"CORBA_char" ->
+		    emit(Fd,"~s    ~s oe_result = 0;\n\n",[RestVars,RType]);
+		"CORBA_wchar" ->  %% WCHAR
 		    emit(Fd,"~s    ~s oe_result = 0;\n\n",[RestVars,RType]);
 		"CORBA_boolean" ->
 		    emit(Fd,"~s    ~s oe_result = 0;\n\n",[RestVars,RType]);
@@ -1094,6 +1100,10 @@ gen_ret_type(G, N, Type) ->
 		      record(Type, string) ->
 			  "*";
 		      Ctype == "CORBA_char *" ->
+			  "";
+		      record(Type, wstring) ->  %% WSTRING
+			  "*";
+		      Ctype == "CORBA_wchar *" ->  %% WSTRING
 			  "";
 		      true ->
 			  case ictype:isArray(G, N, Type) of
@@ -1160,6 +1170,10 @@ gen_dec_par_list(G, N, X, [{in, Arg} |Args], [Type|Types]) ->
 		record(Type, string) ->
 		    [ "&" ++ Arg | gen_dec_par_list(G, N, X, Args, Types)];
 		Ctype == "CORBA_char *" ->
+		    [ Arg | gen_dec_par_list(G, N, X, Args, Types)];
+		record(Type, wstring) ->  %% WSTRING
+		    [ "&" ++ Arg | gen_dec_par_list(G, N, X, Args, Types)];
+		Ctype == "CORBA_wchar *" ->  %% WSTRING
 		    [ Arg | gen_dec_par_list(G, N, X, Args, Types)];
 		true ->
 		    [ "&" ++ Arg | gen_dec_par_list(G, N, X, Args, Types)]
@@ -1264,6 +1278,10 @@ gen_par_list(G, N, X, [Type |Types], [{Attr, Arg}|Args]) ->
 				  "*";
 			      Ctype == "CORBA_char *" ->
 				  "";
+			      record(Type, wstring) ->  %% WSTRING
+				  "*";
+			      Ctype == "CORBA_wchar *" ->  %% WSTRING
+				  "";
 			      true ->
 				  "*"
 			  end;
@@ -1295,6 +1313,10 @@ gen_par_list_for_decoder(G, N, X, [Type |Types], [{Attr, Arg}|Args]) ->
 			      record(Type, string) ->
 				  "**";
 			      Ctype == "CORBA_char *" ->
+				  "";
+			      record(Type, wstring) ->  %% WSTRING
+				  "**";
+			      Ctype == "CORBA_wchar *" ->  %% WSTRING
 				  "";
 			      true ->
 				  case ictype:isArray(G, N, Type) of
@@ -1330,6 +1352,10 @@ gen_par_list_for_encoder(G, N, X, [Type |Types], [{Attr, Arg}|Args]) ->
 		      record(Type, string) ->
 			  "*";
 		      Ctype == "CORBA_char *" ->
+			  "";
+		      record(Type, wstring) ->  %% WSTRING
+			  "*";
+		      Ctype == "CORBA_wchar *" ->  %% WSTRING
 			  "";
 		      true ->
 			  case ictype:isArray(G, N, Type) of
@@ -1372,6 +1398,10 @@ gen_par_list_for_decoder_prototypes(G, N, X, [Type |Types], [{Attr, Arg}|Args]) 
 				  "**";
 			      Ctype == "CORBA_char *" ->
 				  "";
+			      record(Type, wstring) ->  %% WSTRING
+				  "**";
+			      Ctype == "CORBA_wchar *" ->  %% WSTRING
+				  "";
 			      true ->
 				  case ictype:isArray(G, N, Type) of
 				      true ->
@@ -1411,6 +1441,10 @@ gen_par_list_for_encoder_prototypes(G, N, X, [Type |Types], [{Attr, Arg}|Args]) 
 			  "*";
 		      Ctype == "CORBA_char *" ->
 			  "";
+		      record(Type, wstring) ->  %% WSTRING
+			  "*";
+		      Ctype == "CORBA_wchar *" ->  %% WSTRING
+			  "";
 		      true ->
 			  case ictype:isArray(G, N, Type) of
 			      true ->
@@ -1449,6 +1483,10 @@ gen_par_list_for_callback_prototypes(G, N, X, [Type |Types], [{Attr, Arg}|Args])
 			      record(Type, string) ->
 				  "*" ++ RefVal;
 			      Ctype == "CORBA_char *" ->
+				  "" ++ RefVal;
+			      record(Type, wstring) ->  %% WSTRING
+				  "*" ++ RefVal;
+			      Ctype == "CORBA_wchar *" ->  %% WSTRING
 				  "" ++ RefVal;
 			      true ->
 				  case ictype:isArray(G, N, Type) of
@@ -1492,6 +1530,10 @@ gen_var_decl_list(G, N, X, [Type |Types], [{Attr, Arg}|Args]) ->
 				      Ctype ++ "* " ++ Arg ++ " = NULL";
 				  Ctype == "CORBA_char *" ->
 				      Ctype ++ " " ++ Arg ++ " = NULL";
+				  record(Type, wstring) ->  %% WSTRING
+				      Ctype ++ "* " ++ Arg ++ " = NULL";
+				  Ctype == "CORBA_wchar *" ->  %% WSTRING
+				      Ctype ++ " " ++ Arg ++ " = NULL";
 				  true ->
 				      case ictype:isArray(G, N, Type) of
 					  true ->
@@ -1526,10 +1568,16 @@ emit_constant(G, N, ConstRecord) ->
 	    emit(Fd, "#define __~s__\n\n", [UCName]),
 
 	    emit(Fd, "/* Constant: ~s */\n", [CName]),
-	    emit(Fd, "#define ~s ~p\n\n", [CName, ConstRecord#const.val]),
+
+	    if record(ConstRecord#const.type,wstring) -> %% If wstring, add 'L' 
+		    emit(Fd, "#define ~s L~p\n\n", [CName, ConstRecord#const.val]);
+	       true ->
+		    emit(Fd, "#define ~s ~p\n\n", [CName, ConstRecord#const.val])
+	    end,
 
 	    emit(Fd, "#endif\n\n")
     end.
+
 
 
 %%------------------------------------------------------------
@@ -1626,6 +1674,8 @@ gen_cc_type(G, N, S, _) when list(S) ->
     S;
 gen_cc_type(G, N, S, _) when record(S, string) ->
     "CORBA_char";
+gen_cc_type(G, N, S, _) when record(S, wstring) ->  %% WSTRING
+    "CORBA_wchar";
 gen_cc_type(G, N, {boolean, _}, _) ->
     "CORBA_boolean";
 gen_cc_type(G, N, {octet, _}, _) ->
@@ -1637,8 +1687,12 @@ gen_cc_type(G, N, {unsigned, U}, _) ->
 	{short,_} ->
 	    "CORBA_unsigned_short";
 	{long,_} ->
-	    "CORBA_unsigned_long"
+	    "CORBA_unsigned_long";
+	{'long long',_} ->
+	    "CORBA_unsigned_long_long"
     end;
+gen_cc_type(G, N, {'long long', _}, _) ->
+    "CORBA_long_long";
 gen_cc_type(G, N, {T, _}, _) ->
     "CORBA_" ++ atom_to_list(T).
 
@@ -1697,13 +1751,18 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer)  when list(T) -> %% Already a
 					 [LName]),
 				    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
 				    emit(Fd, "    return oe_error_code;\n  }\n\n");
+				tk_ulonglong -> 
+				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_ulonglong(oe_env, ~s)) < 0) {\n", 
+					 [LName]),
+				    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
+				    emit(Fd, "    return oe_error_code;\n  }\n\n");
 				tk_short ->
 				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, (long) ~s)) < 0) {\n",
 					 [LName]),
 				    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
 				    emit(Fd, "    return oe_error_code;\n  }\n\n");
-				tk_long ->
-				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, ~s)) < 0) {\n",
+				tk_longlong ->
+				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_longlong(oe_env, ~s)) < 0) {\n",
 					 [LName]),
 				    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
 				    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -1735,6 +1794,11 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer)  when list(T) -> %% Already a
 				    emit(Fd, "  }\n\n");
 				tk_char ->
 				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_char(oe_env, ~s)) < 0) {\n",
+					 [LName]),
+				    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
+				    emit(Fd, "    return oe_error_code;\n  }\n\n");
+				tk_wchar ->  %% WCHAR
+				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_wchar(oe_env, ~s)) < 0) {\n",
 					 [LName]),
 				    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
 				    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -1770,6 +1834,11 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer)  when record(T, string) ->
 	 [LName]),
     emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Cannot encode string\");\n"),
     emit(Fd, "    return oe_error_code;\n  }\n\n");
+gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer)  when record(T, wstring) ->  %% WSTRING
+    emit(Fd, "  if ((oe_error_code = oe_ei_encode_wstring(oe_env, ~s)) < 0) {\n", 
+	 [LName]),
+    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Cannot encode string\");\n"),
+    emit(Fd, "    return oe_error_code;\n  }\n\n");
 gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer) ->
     case T of
 	{unsigned, {short, _}} -> 
@@ -1782,6 +1851,11 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer) ->
 		 [LName]),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
+	{unsigned, {'long long', _}} -> 
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_ulonglong(oe_env, ~s)) < 0) {\n", 
+		 [LName]),
+	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
+	    emit(Fd, "    return oe_error_code;\n  }\n\n");
 	{short, _} ->
 	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, (long) ~s)) < 0) {\n",
 		 [LName]),
@@ -1789,6 +1863,11 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer) ->
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
 	{long, _} ->
 	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, ~s)) < 0) {\n",
+		 [LName]),
+	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
+	    emit(Fd, "    return oe_error_code;\n  }\n\n");
+	{'long long', _} ->
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_longlong(oe_env, ~s)) < 0) {\n",
 		 [LName]),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -1820,6 +1899,11 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer) ->
 	    emit(Fd, "  }\n\n");
 	{char, _} ->
 	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_char(oe_env, ~s)) < 0) {\n",
+		 [LName]),
+	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
+	    emit(Fd, "    return oe_error_code;\n  }\n\n");
+	{wchar, _} ->  %% WCHAR
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_wchar(oe_env, ~s)) < 0) {\n",
 		 [LName]),
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -1913,6 +1997,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring,
 		    emit(Fd, "  if ((oe_error_code = ei_decode_ulong(~s, &oe_env->_iin, ~s~s)) < 0)\n", 
 			 [InBuffer, Refstring, LName]),
 		    emit(Fd, "    return oe_error_code;\n\n");
+
+		ulonglong -> 
+		    emit(Fd, "  if ((oe_error_code = oe_ei_decode_ulonglong(~s, &oe_env->_iin, ~s~s)) < 0)\n", 
+			 [InBuffer, Refstring, LName]),
+		    emit(Fd, "    return oe_error_code;\n\n");
 		
 		short ->
 		    emit(Fd, "  {\n"),
@@ -1926,6 +2015,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring,
 		
 		long ->
 		    emit(Fd, "  if ((oe_error_code = ei_decode_long(~s, &oe_env->_iin, ~s~s)) < 0)\n",
+			 [InBuffer, Refstring, LName]),
+		    emit(Fd, "    return oe_error_code;\n\n");
+		
+		longlong ->
+		    emit(Fd, "  if ((oe_error_code = oe_ei_decode_longlong(~s, &oe_env->_iin, ~s~s)) < 0)\n",
 			 [InBuffer, Refstring, LName]),
 		    emit(Fd, "    return oe_error_code;\n\n");
 		
@@ -1962,6 +2056,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring,
 		    emit(Fd, "  if ((oe_error_code = ei_decode_char(~s, &oe_env->_iin, ~s~s)) < 0)\n",
 			 [InBuffer, Refstring, LName]),
 		    emit(Fd, "    return oe_error_code;\n\n");
+
+		wchar ->  %% WCHAR
+		    emit(Fd, "  if ((oe_error_code = oe_ei_decode_wchar(~s, &oe_env->_iin, ~s~s)) < 0)\n",
+			 [InBuffer, Refstring, LName]),
+		    emit(Fd, "    return oe_error_code;\n\n");
 		
 		octet ->
 		    emit(Fd, "  if ((oe_error_code = ei_decode_char(~s, &oe_env->_iin, ~s~s)) < 0)\n",
@@ -1994,6 +2093,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring,
     emit(Fd, "    if ((oe_error_code = ei_decode_string(~s, &oe_env->_iin, ~s~s)) < 0)\n", 
 	 [InBuffer, Refstring, LName]), 
     emit(Fd, "      return oe_error_code;\n\n");
+gen_decoding_fun(G, N, Fd, T, LName, Refstring,
+		 InBuffer, Align, NextPos, DecType)  when record(T, wstring) ->  %% WSTRING
+    emit(Fd, "    if ((oe_error_code = oe_ei_decode_wstring(~s, &oe_env->_iin, ~s~s)) < 0)\n", 
+	 [InBuffer, Refstring, LName]), 
+    emit(Fd, "      return oe_error_code;\n\n");
 gen_decoding_fun(G, N, Fd, T, LName, Refstring, InBuffer, Align, NextPos, DecType) ->
     case T of
 	{void, _} ->
@@ -2015,6 +2119,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring, InBuffer, Align, NextPos, DecTyp
 		 [InBuffer, Refstring, LName]),
 	    emit(Fd, "    return oe_error_code;\n\n");
 
+	{unsigned, {'long long', _}} -> 
+	    emit(Fd, "  if ((oe_error_code = oe_ei_decode_ulonglong(~s, &oe_env->_iin, ~s~s)) < 0)\n", 
+		 [InBuffer, Refstring, LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+
 	{short,_} ->
 	    emit(Fd, "  {\n"),
 	    emit(Fd, "    long oe_~s;\n",[LName]),
@@ -2027,6 +2136,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring, InBuffer, Align, NextPos, DecTyp
 
 	{long, _} ->
 	    emit(Fd, "  if ((oe_error_code = ei_decode_long(~s, &oe_env->_iin, ~s~s)) < 0)\n",
+		 [InBuffer, Refstring, LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+
+	{'long long', _} ->
+	    emit(Fd, "  if ((oe_error_code = oe_ei_decode_longlong(~s, &oe_env->_iin, ~s~s)) < 0)\n",
 		 [InBuffer, Refstring, LName]),
 	    emit(Fd, "    return oe_error_code;\n\n");
 
@@ -2061,6 +2175,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring, InBuffer, Align, NextPos, DecTyp
 
 	{char, _} ->
 	    emit(Fd, "  if ((oe_error_code = ei_decode_char(~s, &oe_env->_iin, ~s~s)) < 0)\n",
+		 [InBuffer, Refstring, LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+
+	{wchar, _} ->  %% WCHAR
+	    emit(Fd, "  if ((oe_error_code = oe_ei_decode_wchar(~s, &oe_env->_iin, ~s~s)) < 0)\n",
 		 [InBuffer, Refstring, LName]),
 	    emit(Fd, "    return oe_error_code;\n\n");
 

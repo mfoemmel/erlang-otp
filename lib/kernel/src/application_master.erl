@@ -274,21 +274,23 @@ start_it(Tag, State, From, Type) ->
     ApplData = State#state.appl_data,
     case {ApplData#appl_data.phases, ApplData#appl_data.mod} of
 	{undefined, _} ->
-	    start_it_old(Tag, State, From, Type, ApplData);
+	    start_it_old(Tag, From, Type, ApplData);
 	{Phases, {application_starter, [M, A]}} ->
-	    IncApps = ApplData#appl_data.inc_apps,
-	    start_it_new(Tag, State, From, Type, ApplData, M, start, A, Phases, [M]);
+	    start_it_new(Tag, From, Type, M, A, Phases, 
+			 [ApplData#appl_data.name]);
 	{Phases, {M, A}} ->
-	    start_it_new(Tag, State, From, Type, ApplData, M, start, A, Phases, [M]);
+	    start_it_new(Tag, From, Type, M, A, Phases, 
+			 [ApplData#appl_data.name]);
 	{OtherP, OtherM} ->
-	    From ! {Tag, {error, {bad_keys, {{mod, OtherM}, {start_phases, OtherP}}}}}
+	    From ! {Tag, {error, {bad_keys, {{mod, OtherM}, 
+					     {start_phases, OtherP}}}}}
     end.
 
 
 %%%-----------------------------------------------------
 %%% No start phases are defined
 %%%-----------------------------------------------------
-start_it_old(Tag, State, From, Type, ApplData) ->
+start_it_old(Tag, From, Type, ApplData) ->
     {M,A} = ApplData#appl_data.mod,
     case catch M:start(Type, A) of
 	{ok, Pid} ->
@@ -307,15 +309,16 @@ start_it_old(Tag, State, From, Type, ApplData) ->
 	    From ! {Tag, {error, {Reason, {M,start,[Type,A]}}}};
 	Other ->
 	    Call = io_lib:format("~p:start(~p,~p) -> ~p",[M, Type, A, Other]), 
-	    From ! {Tag, {error, "invalid return value from " ++ lists:flatten(Call)}}
+	    From ! {Tag, {error, "invalid return value from " ++ 
+			  lists:flatten(Call)}}
     end.
 
 
 %%%-----------------------------------------------------
 %%% Start phases are defined
 %%%-----------------------------------------------------
-start_it_new(Tag, State, From, Type, ApplData, M, F, A, Phases, Apps) ->
-    case catch start_the_app(Type, M, F, A, Phases, Apps) of
+start_it_new(Tag, From, Type, M, A, Phases, Apps) ->
+    case catch start_the_app(Type, M, A, Phases, Apps) of
 	{ok, Pid, AppState} ->
 	    From ! {Tag, {ok, self()}},
 	    loop_it(From, Pid, M, AppState);    
@@ -329,8 +332,8 @@ start_it_new(Tag, State, From, Type, ApplData, M, F, A, Phases, Apps) ->
 %%% Start the application in the defined phases, 
 %%% but first the supervisors are starter.
 %%%=====================================================
-start_the_app(Type, M, F, A, Phases, Apps) ->
-    case start_supervisor(Type, M, F, A) of
+start_the_app(Type, M, A, Phases, Apps) ->
+    case start_supervisor(Type, M, A) of
  	{ok, Pid, AppState} ->
 	    link(Pid),
 	    case application_starter:start(Phases, Type, Apps) of
@@ -347,18 +350,18 @@ start_the_app(Type, M, F, A, Phases, Apps) ->
 %%%-------------------------------------------------------------
 %%% Start the supervisors
 %%%-------------------------------------------------------------
-start_supervisor(Type, M, F, A) ->
-    case catch M:F(Type, A) of
+start_supervisor(Type, M, A) ->
+    case catch M:start(Type, A) of
 	{ok, Pid} ->
 	    {ok, Pid, []};
 	{ok, Pid, AppState} ->
 	    {ok, Pid, AppState};
 	{errors, Reason} ->
-	    {error, {Reason, {M, F, [Type, A]}}};
+	    {error, {Reason, {M, start, [Type, A]}}};
 	{'EXIT', normal} ->
 	    {error, "application exited with reason: normal"};
 	Other ->
-	    {error, {bad_return, {{M, F, [Type, A]}, Other}}}
+	    {error, {bad_return, {{M, start, [Type, A]}, Other}}}
     end.
 
 
@@ -374,24 +377,40 @@ loop_it(Parent, Child, Mod, AppState) ->
 	    Parent ! {self(), Child, Mod},
 	    loop_it(Parent, Child, Mod, AppState);
 	{Parent, terminate} ->
+	    NewAppState = prep_stop(Mod, AppState),
 	    exit(Child, shutdown),
 	    receive
 		{'EXIT', Child, _} -> ok
 	    end,
-	    catch Mod:stop(AppState),
+	    catch Mod:stop(NewAppState),
 	    exit(normal);
 	{'EXIT', Parent, Reason} ->
+	    NewAppState = prep_stop(Mod, AppState),
 	    exit(Child, Reason),
 	    receive
 		{'EXIT', Child, Reason2} ->
 		    exit(Reason2)
 	    end,
-	    catch Mod:stop(AppState);
+	    catch Mod:stop(NewAppState);
 	{'EXIT', Child, Reason} -> % forward *all* exit reasons (inc. normal)
-	    catch Mod:stop(AppState),
+	    NewAppState = prep_stop(Mod, AppState),
+	    catch Mod:stop(NewAppState),
 	    exit(Reason);
 	_ ->
 	    loop_it(Parent, Child, Mod, AppState)
+    end.
+
+prep_stop(Mod, AppState) ->
+    case catch Mod:prep_stop(AppState) of
+	{'EXIT', {undef, _}} ->
+	    AppState;
+	{'EXIT', Reason} ->
+	    error_logger:error_report([{?MODULE, shutdown_error},
+				       {Mod, {prep_stop, [AppState]}},
+				       {error_info, Reason}]),
+	    AppState;
+	NewAppState ->
+	    NewAppState
     end.
 
 get_child_i(Child) ->

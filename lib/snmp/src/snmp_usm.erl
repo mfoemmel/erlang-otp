@@ -25,13 +25,9 @@
 -include("SNMP-USER-BASED-SM-MIB.hrl").
 -include("SNMPv2-TC.hrl").
 
-%% Debug macro
--define(pdebug(Format, X), 
-	case get(debug) of 
-	    undefined -> ok;
-	    _ -> io:format(lists:concat(["** SNMP USM debug: \n   ",
-					 Format, "\n"]), X)
-	end.
+-define(VMODULE,"USM").
+-include("snmp_verbosity.hrl").
+
 
 %%%-----------------------------------------------------------------
 %%% This module implements the User Based Security Model for SNMP,
@@ -45,6 +41,7 @@
 -define(twelwe_zeros, [0,0,0,0,0,0,0,0,0,0,0,0]).
 
 -define(i32(Int), (Int bsr 24) band 255, (Int bsr 16) band 255, (Int bsr 8) band 255, Int band 255.
+
 
 %%-----------------------------------------------------------------
 %% Func: passwd2localized_key/3
@@ -136,17 +133,17 @@ process_incoming_msg(Packet, Data, SecParams, SecLevel) ->
 		Res
 	end,
     #usmSecurityParameters{msgAuthoritativeEngineID = MsgAuthEngineID,
-			   msgUserName = MsgUserName} =
-	UsmSecParams,
-    ?pdebug("authEngineID: \"~s\", userName: \"~s\"",
-	    [MsgAuthEngineID, MsgUserName]),
+			   msgUserName = MsgUserName} = UsmSecParams,
+    ?vlog("~n   authEngineID: \"~s\", userName: \"~s\"",
+	  [MsgAuthEngineID, MsgUserName]),
     %% 3.2.3
     case snmp_user_based_sm_mib:is_engine_id_known(MsgAuthEngineID) of
 	true ->
 	    ok;
 	false ->
 	    SecData1 = [MsgUserName],
-	    error(usmStatsUnknownEngineIDs, ?usmStatsUnknownEngineIDs,
+	    error(usmStatsUnknownEngineIDs, 
+		  ?usmStatsUnknownEngineIDs_instance, %% OTP-3542
 		  undefined, [{sec_data, SecData1}])
     end,
     %% 3.2.4
@@ -156,7 +153,8 @@ process_incoming_msg(Packet, Data, SecParams, SecLevel) ->
 		User;
 	    _ -> % undefined or not active user
 		SecData2 = [MsgUserName],
-		error(usmStatsUnknownUserNames, ?usmStatsUnknownUserNames,
+		error(usmStatsUnknownUserNames, 
+		      ?usmStatsUnknownUserNames_instance, %% OTP-3542
 		      undefined, [{sec_data, SecData2}])
 	end,
     SecName = element(?usmUserSecurityName, UsmUser),
@@ -222,9 +220,11 @@ is_auth(AuthProtocol, AuthKey, AuthParams, Packet, SecName,
 	true ->
 	    %% 3.2.7
 	    SnmpEngineID = snmp_framework_mib:get_engine_id(),
+	    ?vtrace("SnmpEngineID: ~p",[SnmpEngineID]),
 	    case MsgAuthEngineID of
 		SnmpEngineID -> %% 3.2.7a
 		    SnmpEngineBoots = snmp_framework_mib:get_engine_boots(),
+		    ?vtrace("SnmpEngineBoots: ~p",[SnmpEngineBoots]),
 		    SnmpEngineTime = snmp_framework_mib:get_engine_time(),
 		    InTimeWindow =
 			if
@@ -243,6 +243,7 @@ is_auth(AuthProtocol, AuthKey, AuthParams, Packet, SecName,
 		    end;
 		_ -> %% 3.2.7b - we're non-authoritative
 		    SnmpEngineBoots = get_engine_boots(MsgAuthEngineID),
+		    ?vtrace("SnmpEngineBoots: ~p",[SnmpEngineBoots]),
 		    SnmpEngineTime = get_engine_time(MsgAuthEngineID),
 		    LatestRecvTime = get_engine_latest_time(MsgAuthEngineID),
 		    UpdateLCD =
@@ -347,6 +348,7 @@ generate_outgoing_msg(Message, SecEngineID, SecName, SecData, SecLevel) ->
     {ScopedPduData, MsgPrivParams} =
 	encrypt(ScopedPduBytes, PrivProtocol, PrivKey, SecLevel),
     SnmpEngineID = snmp_framework_mib:get_engine_id(),
+    ?vtrace("SnmpEngineID: ~p",[SnmpEngineID]),
     %% 3.1.6
     {MsgAuthEngineBoots, MsgAuthEngineTime} =
 	case snmp_misc:is_auth(SecLevel) of

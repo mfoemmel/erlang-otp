@@ -19,7 +19,7 @@
 
 
 %% Toplevel generation functions
--export([reg_gen/3, unreg_gen/1]).
+-export([reg_gen/3, unreg_gen/3]).
 
 
 %% Utilities
@@ -67,19 +67,27 @@ reg_gen(G, N, X) ->
             %% modules and interfaces are created.
 	    emit(Fd, "    include_reg_test(~s),\n",[?IFRID(G)]),
 	    
-	    reg2(G, S, N, "Repository_create_", Var, X),
+	    reg2(G, S, N, Var, X),
 	    nl(Fd),
 	    emit(Fd, "    ok.\n"),
 
             %% Write function implementation that checks 
             %% existance of included modules and interfaces.
-	    emit(Fd, "~s",[check_include_regs(G)]);
+	    emit(Fd, "~s",[check_include_regs(G)]),
+
+	    %% Write functopn that registers modules only if  
+            %% they are not registered.
+	    register_if_unregistered(Fd);
 	false -> ok
     end.
 
 
 
 %% reg2 is top level registration 
+
+reg2(G, S, N, Var, X) ->
+    reg2(G, S, N, "Repository_create_", Var, X).
+
 reg2(G, S, N, C, V, X)  when list(X) -> reg2_list(G, S, N, C, V, X);
 
 reg2(G, S, N, C, V, X) when record(X, module) ->
@@ -181,6 +189,8 @@ check_include_regs(G) ->
 		check_incl_refs(G,IfrId,IMs)
     end.
 
+
+
 check_incl_refs(_,_,[]) ->
     io_lib:format("  true.\n",[]);
 check_incl_refs(G,IfrId,[[First]|Rest]) ->
@@ -190,6 +200,27 @@ check_incl_refs(G,IfrId,[[First]|Rest]) ->
 	io_lib:format("    _  ->~n      true~n  end,~n",[]) ++
 	check_incl_refs(G,IfrId,Rest).
 
+
+
+%% This function will return module ref, it will
+%% also register module if not registered.
+register_if_unregistered(Fd) ->
+    emit(Fd, "\n\n%% Fetch top module reference, register if unregistered.\n"),
+    emit(Fd, "oe_get_top_module(OE_IFR, ID, Name, Version) ->\n"),
+    emit(Fd, "  case orber_ifr:'Repository_lookup_id'(OE_IFR, ID) of\n"),
+    emit(Fd, "    [] ->\n"),
+    emit(Fd, "      orber_ifr:'Repository_create_module'(OE_IFR, ID, Name, Version);\n"),
+    emit(Fd, "    Mod  ->\n"),
+    emit(Fd, "      Mod\n",[]),
+    emit(Fd, "   end.\n\n"),
+    emit(Fd, "%% Fetch module reference, register if unregistered.\n"),
+    emit(Fd, "oe_get_module(OE_IFR, OE_Parent, ID, Name, Version) ->\n"),
+    emit(Fd, "  case orber_ifr:'Repository_lookup_id'(OE_IFR, ID) of\n"),
+    emit(Fd, "    [] ->\n"),
+    emit(Fd, "      orber_ifr:'ModuleDef_create_module'(OE_Parent, ID, Name, Version);\n"),
+    emit(Fd, "    Mod  ->\n"),
+    emit(Fd, "      Mod\n",[]),
+    emit(Fd, "   end.\n").
 
 
 
@@ -204,7 +235,7 @@ do_typedef(G, S, N, C, V, X) ->
 
 	    lists:foreach(
 	      fun(Id) ->
-		      r_emit_raw(Fd, "", C, Thing, V, 
+		      r_emit_raw(G, X, Fd, "", C, Thing, V, 
 				 get_IR_ID(G, N, Id), get_id2(Id),
 				 IR_VSN, ", ~s", 
 				 [get_idltype_tk(G, S, N, 
@@ -258,12 +289,12 @@ look_for_types(G, S, N, C, V, L) when list(L) ->
 look_for_types(G, S, N, C, V, {Name, TK}) ->	% member
     look_for_types(G, S, N, C, V, TK);
 look_for_types(G, S, N, C, V, {tk_union, IFRID, Name, DT, Def, L}) ->
-    io:format("Found new union~n", []),
+    %%io:format("Found new union~n", []),
     ok;
 look_for_types(G, S, N, C, V, {Label, Name, TK}) ->	% case_dcl
     look_for_types(G, S, N, C, V, TK);
 look_for_types(G, S, N, C, V, {tk_struct, IFRID, Name, L}) ->
-    io:format("Found new struct~n", []),
+    %%io:format("Found new struct~n", []),
     ok;
 look_for_types(G, S, N, C, V, X) ->
     ok.
@@ -328,9 +359,9 @@ r_emit2(G, S, N, C, V, X) ->
 r_emit2(G, S, N, C, V, X, F, A) ->
     case icgen:is_stubfile_open(G) of
 	false -> ok;
-	true -> 
+	true ->
 	    {NewV, Str} = get_assign(G, V, X),
-	    r_emit_raw(icgen:stubfiled(G), Str, 
+	    r_emit_raw(G, X, icgen:stubfiled(G), Str, 
 		       C, get_thing_name(X), V, 
 		       get_IR_ID(G, N, X), get_id2(X), get_IR_VSN(G, N, X), 
 		       F, A),
@@ -365,11 +396,22 @@ r_emit2(G, S, N, C, V, X, F, A) ->
 %%
 %%r_emit_raw(Fd, AssignStr, Create, Thing, Var, IR_ID, Id, IR_VSN) ->
 %%    r_emit_raw(Fd, AssignStr, Create, Thing, Var, IR_ID, Id, IR_VSN, "", []).
-r_emit_raw(Fd, AssignStr, Create, Thing, Var, IR_ID, Id, IR_VSN, F, A) ->
+r_emit_raw(_G, X, Fd, AssignStr, "Repository_create_", Thing, Var, IR_ID, Id, IR_VSN, F, A) 
+  when record(X, module) ->
+    emit(Fd, "~n    ~s~p(~s, \"~s\", \"~s\", \"~s\"~s),~n", 
+	 [AssignStr, to_atom("oe_get_top_"++Thing), Var, IR_ID, Id, 
+	  IR_VSN, io_lib:format(F, A)]);
+r_emit_raw(G, X, Fd, AssignStr, "ModuleDef_create_", Thing, Var, IR_ID, Id, IR_VSN, F, A) 
+  when record(X, module) ->
+    emit(Fd, "~n    ~s~p(~s, ~s, \"~s\", \"~s\", \"~s\"~s),~n", 
+	 [AssignStr, to_atom("oe_get_"++Thing), ?IFRID(G), Var, IR_ID, Id, 
+	  IR_VSN, io_lib:format(F, A)]);
+r_emit_raw(_G, _X, Fd, AssignStr, Create, Thing, Var, IR_ID, Id, IR_VSN, F, A) ->
     emit(Fd, "~n    ~s~p:~p(~s, \"~s\", \"~s\", \"~s\"~s),~n", 
 	 [AssignStr, ?IFRMOD, to_atom(Create++Thing), Var, IR_ID, Id, 
 	  IR_VSN, io_lib:format(F, A)]).
 
+			 
 
 
 %% Used by r_emit. Returns tuple {Var, Str} where Var is the resulting
@@ -608,7 +650,8 @@ get_EXC_ID(G, S, N, X, ScopedId) ->
 
 %% unreg_gen/1 uses the information stored in pragma table
 %% to decide which modules are to be unregistered
-unreg_gen(G) ->
+unreg_gen(G, N, X) ->
+
     ?DBG("UNReg Gen: ~n", []),
     S = icgen:tktab(G),
     case icgen:is_stubfile_open(G) of
@@ -620,21 +663,41 @@ unreg_gen(G) ->
 	    emit(Fd, "    ~s = ~p:find_repository(),\n",
 		 [Var, ?IFRMOD]),
 	    nl(Fd),
-	    case ScopedIds = ic_pragma:get_local_refs(G) of
-		none ->
-		    true;
-		ScopedIds -> 
-		    lists:foreach(
-		      fun([ScopedId]) ->
-			      emit(Fd, "    ~p:destroy(~p:'Repository_lookup_id'(~s, ~p)),~n",
-				   [?IFRMOD,?IFRMOD,Var,ic_pragma:get_alias(G,ScopedId)])
-		      end, ScopedIds)
-	    end,
-	    emit(Fd, "    ok.\n");
+
+	    unreg2(G, N, X),
+	    emit(Fd, "    ok.\n\n"),
+	    destroy(Fd);
 	false -> ok
     end.
 
 
+destroy(Fd) ->
+emit(Fd,"
+
+oe_destroy_if_empty(OE_IFR,IFR_ID) ->
+    case orber_ifr:'Repository_lookup_id'(OE_IFR, IFR_ID) of
+	[] ->
+	    ok;
+	Ref ->
+	    case orber_ifr:contents(Ref, \'dk_All\', \'true\') of
+		[] ->
+		    orber_ifr:destroy(Ref),
+		    ok;
+		_ ->
+		    ok
+	    end
+    end.
+
+oe_destroy(OE_IFR,IFR_ID) ->
+    case orber_ifr:'Repository_lookup_id'(OE_IFR, IFR_ID) of
+	[] ->
+	    ok;
+	Ref ->
+	    orber_ifr:destroy(Ref),
+	    ok
+    end.
+
+",[]).
 
 
 
@@ -643,6 +706,86 @@ unreg_gen(G) ->
 
 
 
+
+
+%% unreg2 is top level registration 
+
+unreg2(G, N, X) ->
+    emit(icgen:stubfiled(G),"~s",[lists:flatten(unreg3(G, N, X))]).
+
+unreg3(G, N, X)  when list(X) -> 
+    unreg3_list(G, N, X, []);
+
+unreg3(G, N, X) when record(X, module) ->
+    unreg3_list(G, [get_id2(X) | N], get_body(X), [unreg_collect(G, N, X)]);
+
+unreg3(G, N, X) when record(X, const) ->
+    unreg_collect(G, N, X);
+
+unreg3(G, N, X) when record(X, struct) ->
+    unreg_collect(G, N, X);
+
+unreg3(G, N, X) when record(X, except) ->
+    unreg_collect(G, N, X);
+
+unreg3(G, N, X) when record(X, union) ->
+    unreg_collect(G, N, X);
+
+unreg3(G, N, X) when record(X, enum) ->
+    unreg_collect(G, N, X);
+
+unreg3(G, N, X) when record(X, typedef) ->
+    unreg_collect(G, N, X);
+
+unreg3(G, N, X) when record(X, interface) ->
+    unreg_collect(G, N, X);
+
+unreg3(G, N, X) when record(X, op) -> [];
+
+unreg3(G, N, X) when record(X, attr) -> [];
+
+unreg3(G, N, X)  when record(X, preproc) -> [];
+
+unreg3(G, N, X)  when record(X, pragma) -> [];
+
+unreg3(G, N, X) ->  [].
+
+
+unreg3_list(G, N, [], Found) -> 
+    Found;
+unreg3_list(G, N, List, Found) ->
+    CurrentFileName = icgen:idlfile(G), 
+    unreg3_list(G, N, {CurrentFileName,true}, List, Found).
+
+%% The filter function + loop 
+unreg3_list(G, N, {CFN,Status}, [], Found) -> 
+    Found;
+unreg3_list(G, N, {CFN,Status}, [X | Xs], Found) ->
+    case Status of 
+	true ->
+	    case X of
+		{preproc,_,{_,_,FileName},[{_,_,"1"}]} ->
+		    unreg3_list(G, N, {CFN,false}, Xs, Found);
+		_ ->
+		    unreg3_list(G, N, {CFN,Status}, Xs, [unreg3(G, N, X) | Found])
+	    end;
+	false ->
+	    case X of
+		{preproc,_,{_,_,CFN},[{_,_,"2"}]} ->
+		    unreg3_list(G, N, {CFN,true}, Xs,[unreg3(G, N, X) | Found]);
+		_ ->
+		    unreg3_list(G, N, {CFN,Status}, Xs, Found)
+	    end
+    end.
+
+
+
+unreg_collect(G, N, X) when record(X, module) ->
+    io_lib:format("    oe_destroy_if_empty(OE_IFR, ~p),\n", 
+	      [get_IR_ID(G, N, X)]);
+unreg_collect(G, N, X) ->
+    io_lib:format("    oe_destroy(OE_IFR, ~p),\n", 
+	      [get_IR_ID(G, N, X)]).
 
 
 

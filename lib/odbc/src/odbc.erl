@@ -2474,9 +2474,9 @@ init(Args) ->
     case os:find_executable(?ServerProg, ?ServerDir) of
 	FileName when list(FileName) ->
 	    NativeFileName = filename:nativename(FileName),
-	    Port = open_port({spawn,
-			      NativeFileName ++ CNodeArg ++ HostArg ++
-			      BufArg ++ CookieArg ++ EPidArg},
+	    Command =  NativeFileName ++ CNodeArg ++ HostArg ++
+			      BufArg ++ CookieArg ++ EPidArg,
+	    Port = open_port({spawn,Command},
 			     [{line, 256}, in, exit_status]),
 
     % Check if the C node is running

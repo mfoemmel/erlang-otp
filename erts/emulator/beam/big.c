@@ -24,7 +24,8 @@
 #include "erl_vm.h"
 #include "global.h"
 #include "big.h"
-
+#include "error.h"
+#include "bif.h"
 /*
 ** compare two number vectors
 ** 32OK
@@ -1071,7 +1072,7 @@ uint32 x; Process* p;
 uint32 uint32_to_big(x, y)
 uint32 x; uint32* y;
 {
-    *y = make_thing(1, POSITIVE_BIG_SUBTAG);
+    *y = make_pos_bignum_header(1);
     BIG_DIGIT(y, 0) = DLOW(x);
     BIG_DIGIT(y, 1) = DHIGH(x);
     return make_big(y);
@@ -1086,10 +1087,10 @@ uint32 small_to_big(x, y)
 sint32 x; uint32* y;
 {
     if (x >= 0) {
-	*y = make_thing(1, POSITIVE_BIG_SUBTAG);
+	*y = make_pos_bignum_header(1);
     } else {
 	x = -x;
-	*y = make_thing(1, NEGATIVE_BIG_SUBTAG);
+	*y = make_neg_bignum_header(1);
     }
     BIG_DIGIT(y, 0) = DLOW(x);
     BIG_DIGIT(y, 1) = DHIGH(x);
@@ -1105,7 +1106,7 @@ double big_to_double(x)
 {
     double d = 0.0;
     double d_base = 1.0;
-    uint32* xp = ptr_val(x);
+    uint32* xp = big_val(x);
     digit_t* s = BIG_V(xp);
     dsize_t xl = BIG_SIZE(xp);
     short xsgn = BIG_SIGN(xp);
@@ -1135,7 +1136,7 @@ double big_to_double(x)
 int big_decimal_estimate(x)
     uint32 x;
 {
-    uint32* xp = ptr_val(x);
+    uint32* xp = big_val(x);
     int lg = I_lg(BIG_V(xp), BIG_SIZE(xp));
     int lg10 = ((lg+1)*28/93)+1;
 
@@ -1150,7 +1151,7 @@ char* big_to_decimal(y, p, n)
 uint32 y; char* p; int n;
 {
     char* q = p+(n-1);
-    uint32* yp = ptr_val(y);
+    uint32* yp = big_val(y);
     digit_t* x = BIG_V(yp);
     dsize_t xl = BIG_SIZE(yp);
     short sign = BIG_SIGN(yp);
@@ -1216,7 +1217,7 @@ uint32 y; char* p; int n;
 uint32 big_to_list(x, hp)
 uint32 x; uint32** hp;
 {
-    uint32* xp = ptr_val(x);
+    uint32* xp = big_val(x);
     digit_t* dx = BIG_V(xp);
     dsize_t xl = BIG_SIZE(xp);
     short sign = BIG_SIGN(xp);
@@ -1287,7 +1288,7 @@ static uint32 big_norm(x, xl, sign)
     if (xl == 1) {
 	uint32 y = BIG_DIGIT(x, 0);
 	if (sign)
-	    return make_small(-y);
+	    return make_small(-((Sint32)y));
 	else
 	    return make_small(y);
     }
@@ -1295,7 +1296,7 @@ static uint32 big_norm(x, xl, sign)
 	uint32 y = BIG_DIGIT(x,0) + BIG_DIGIT(x,1)*D_BASE;
 	if (IS_USMALL(sign, y)) {
 	    if (sign)
-		return make_small(-y);
+		return make_small(-((Sint32)y));
 	    else
 		return make_small(y);
 	}
@@ -1304,9 +1305,9 @@ static uint32 big_norm(x, xl, sign)
     if ((arity = ((xl+1) >> 1)) > BIG_ARITY_MAX)
 	return NIL;		/* signal error (too big) */
     if (sign) {
-	*x = make_thing(arity, NEGATIVE_BIG_SUBTAG);
+	*x = make_neg_bignum_header(arity);
     } else {
-	*x = make_thing(arity, POSITIVE_BIG_SUBTAG);
+	*x = make_pos_bignum_header(arity);
     }
 
     /* Its VERY important to patch a zero if odd number of digits! */
@@ -1322,8 +1323,8 @@ static uint32 big_norm(x, xl, sign)
 int big_comp(x, y)
 uint32 x; uint32 y;
 {
-    uint32* xp = ptr_val(x);
-    uint32* yp = ptr_val(y);
+    uint32* xp = big_val(x);
+    uint32* yp = big_val(y);
 
     if (BIG_SIGN(xp) == BIG_SIGN(yp)) {
 	int c = I_comp(BIG_V(xp), BIG_SIZE(xp), BIG_V(yp), BIG_SIZE(yp));
@@ -1343,8 +1344,8 @@ uint32 x; uint32 y;
 int big_ucomp(x, y)
 uint32 x; uint32 y;
 {
-    uint32* xp = ptr_val(x);
-    uint32* yp = ptr_val(y);
+    uint32* xp = big_val(x);
+    uint32* yp = big_val(y);
 
     return I_comp(BIG_V(xp), BIG_SIZE(xp), BIG_V(yp), BIG_SIZE(yp));
 }
@@ -1354,10 +1355,10 @@ uint32 x; uint32 y;
 ** 32UPDATE
 */
 int bytes_eq_big(xp, xsz, xsgn, y)
-byte* xp; dsize_t xsz; short xsgn; uint32 y;
+byte* xp; dsize_t xsz; int xsgn; uint32 y;
 {
     if (is_big(y)) {
-	uint32* yp = ptr_val(y);
+	uint32* yp = big_val(y);
 	dsize_t ysz = big_bytes(y); /* ysz in bytes */
 	short sgny = BIG_SIGN(yp);
 	digit_t* ywp = BIG_V(yp);
@@ -1420,7 +1421,7 @@ byte* xp; dsize_t xsz; short xsgn; uint32 y;
 dsize_t big_bytes(x)
     uint32 x;
 {
-    uint32* xp = ptr_val(x);
+    uint32* xp = big_val(x);
     dsize_t sz = BIG_SIZE(xp);
     digit_t d = BIG_DIGIT(xp, sz-1);
 
@@ -1435,7 +1436,7 @@ dsize_t big_bytes(x)
 ** 32UPDATE
 */
 uint32 bytes_to_big(xp, xsz, xsgn, r)
-byte* xp; dsize_t xsz; short xsgn; uint32* r;
+byte* xp; dsize_t xsz; int xsgn; uint32* r;
 {
     digit_t* rwp = BIG_V(r);
     dsize_t rsz = 0;
@@ -1487,29 +1488,45 @@ uint32 x; byte* p;
 }
 
 /*
-** Store digits in the array of bytes pointed to by p
-** 32UPDATE
-*/
+ * Converts a positive term (small or bignum) to an Uint.
+ *
+ * Fails returning 0 if the term is neither a small nor a bignum,
+ * if it's negative, or the big number does not fit in an Uint.
+ * Otherwise returns a non-zero value.
+ */
+
 int
-big_to_unsigned(uint32 x, unsigned* u)
+term_to_Uint(Eterm term, Uint *up)
 {
-    digit_t* xr = big_v(x);
-    dsize_t  xl = big_size(x);
-    unsigned uval = 0;
-    int n = 0;
+   int i;
 
-    ASSERT(sizeof(unsigned) == 4);
-    if (xl > 2 || big_sign(x)) {
-	return 0;
-    }
-    while (xl-- > 0) {
-	uval |= *xr++ << n;
-	n += 16;
-    }
-    *u = uval;
-    return 1;
+   if (is_small(term)) {
+       i = signed_val(term);
+       if (i < 0) {
+	   return 0;
+       }
+       *up = (Uint) i;
+       return 1;
+   } else if (is_big(term)) {
+       digit_t* xr = big_v(term);
+       dsize_t  xl = big_size(term);
+       Uint uval = 0;
+       int n = 0;
+
+       ASSERT(sizeof(Uint) == 4);
+       if (xl > 2 || big_sign(term)) {
+	   return 0;
+       }
+       while (xl-- > 0) {
+	   uval |= *xr++ << n;
+	   n += 16;
+       }
+       *up = uval;
+       return 1;
+   } else {
+      return 0;
+  }
 }
-
 
 /*
 ** Add and subtract
@@ -1544,8 +1561,8 @@ uint32* r;
 uint32 big_plus(x, y, r)
 uint32 x; uint32 y; uint32* r;
 {
-    uint32* xp = ptr_val(x);
-    uint32* yp = ptr_val(y);
+    uint32* xp = big_val(x);
+    uint32* yp = big_val(y);
 
     return B_plus_minus(BIG_V(xp),BIG_SIZE(xp),BIG_SIGN(xp),
 			BIG_V(yp),BIG_SIZE(yp),BIG_SIGN(yp), r);
@@ -1559,8 +1576,8 @@ uint32 x; uint32 y; uint32* r;
 uint32 big_minus(x, y, r)
 uint32 x; uint32 y; uint32* r;
 {
-    uint32* xp = ptr_val(x);
-    uint32* yp = ptr_val(y);
+    uint32* xp = big_val(x);
+    uint32* yp = big_val(y);
 
     return B_plus_minus(BIG_V(xp),BIG_SIZE(xp),BIG_SIGN(xp),
 			BIG_V(yp),BIG_SIZE(yp),!BIG_SIGN(yp), r);
@@ -1572,7 +1589,7 @@ uint32 x; uint32 y; uint32* r;
 uint32 big_minus_small(x, y, r)
     uint32 x; uint32 y; uint32* r;
 {
-    uint32* xp = ptr_val(x);
+    uint32* xp = big_val(x);
 
     if (BIG_SIGN(xp))
 	return big_norm(r, D_add(BIG_V(xp),BIG_SIZE(xp),y, BIG_V(r)), 
@@ -1590,8 +1607,8 @@ uint32 big_minus_small(x, y, r)
 uint32 big_times(x, y, r)
 uint32 x; uint32 y; uint32* r;
 {
-    uint32* xp = ptr_val(x);
-    uint32* yp = ptr_val(y);
+    uint32* xp = big_val(x);
+    uint32* yp = big_val(y);
     short sign = BIG_SIGN(xp) != BIG_SIGN(yp);
     dsize_t xsz = BIG_SIZE(xp);
     dsize_t ysz = BIG_SIZE(yp);
@@ -1625,8 +1642,8 @@ uint32 x; uint32 y; uint32* r;
 uint32 big_div(x, y, q)
 uint32 x; uint32 y; uint32* q;
 {
-    uint32* xp = ptr_val(x);
-    uint32* yp = ptr_val(y);
+    uint32* xp = big_val(x);
+    uint32* yp = big_val(y);
     short sign = BIG_SIGN(xp) != BIG_SIGN(yp);
     dsize_t xsz = BIG_SIZE(xp);
     dsize_t ysz = BIG_SIZE(yp);
@@ -1655,8 +1672,8 @@ uint32 x; uint32 y; uint32* q;
 uint32 big_rem(x, y, r)
     uint32 x; uint32 y; uint32* r;
 {
-    uint32* xp = ptr_val(x);
-    uint32* yp = ptr_val(y);
+    uint32* xp = big_val(x);
+    uint32* yp = big_val(y);
     short sign = BIG_SIGN(xp);
     dsize_t xsz = BIG_SIZE(xp);
     dsize_t ysz = BIG_SIZE(yp);
@@ -1678,7 +1695,7 @@ uint32 big_rem(x, y, r)
 uint32 big_neg(x, r)
 uint32 x; uint32* r;
 {
-    uint32* xp = ptr_val(x);
+    uint32* xp = big_val(x);
     dsize_t xsz = BIG_SIZE(xp);
     short xsgn = BIG_SIGN(xp);
     
@@ -1690,8 +1707,8 @@ uint32 x; uint32* r;
 uint32 big_band(x, y, r)
 uint32 x; uint32 y; uint32* r;
 {
-    uint32* xp = ptr_val(x);
-    uint32* yp = ptr_val(y);
+    uint32* xp = big_val(x);
+    uint32* yp = big_val(y);
     short xsgn = BIG_SIGN(xp);
     short ysgn = BIG_SIGN(yp);
     short sign = xsgn && ysgn;
@@ -1712,8 +1729,8 @@ uint32 x; uint32 y; uint32* r;
 uint32 big_bor(x, y, r)
 uint32 x; uint32 y; uint32* r;
 {
-    uint32* xp = ptr_val(x);
-    uint32* yp = ptr_val(y);
+    uint32* xp = big_val(x);
+    uint32* yp = big_val(y);
     short xsgn = BIG_SIGN(xp);
     short ysgn = BIG_SIGN(yp);
     short sign = (xsgn || ysgn);
@@ -1734,8 +1751,8 @@ uint32 x; uint32 y; uint32* r;
 uint32 big_bxor(x, y, r)
     uint32 x; uint32 y; uint32* r;
 {
-    uint32* xp = ptr_val(x);
-    uint32* yp = ptr_val(y);
+    uint32* xp = big_val(x);
+    uint32* yp = big_val(y);
     short xsgn = BIG_SIGN(xp);
     short ysgn = BIG_SIGN(yp);
     short sign = (xsgn != ysgn);
@@ -1755,7 +1772,7 @@ uint32 big_bxor(x, y, r)
 uint32 big_bnot(x,  r)
     uint32 x; uint32* r;
 {
-    uint32* xp = ptr_val(x);
+    uint32* xp = big_val(x);
     short sign = !BIG_SIGN(xp);
     dsize_t xsz = BIG_SIZE(xp);
 
@@ -1766,7 +1783,7 @@ uint32 big_bnot(x,  r)
 uint32 big_lshift(x, y, r)
     uint32 x; sint32 y; uint32* r;
 {
-    uint32* xp = ptr_val(x);
+    uint32* xp = big_val(x);
     short sign = BIG_SIGN(xp);
     dsize_t xsz = BIG_SIZE(xp);
 
@@ -1779,7 +1796,7 @@ uint32 big_lshift(x, y, r)
 uint32 big_plus_small(x, y, r)
     uint32 x; uint32 y; uint32* r;
 {
-    uint32* xp = ptr_val(x);
+    uint32* xp = big_val(x);
 
     if (BIG_SIGN(xp))
 	return big_norm(r, D_sub(BIG_V(xp),BIG_SIZE(xp),y, BIG_V(r)), 
@@ -1792,8 +1809,45 @@ uint32 big_plus_small(x, y, r)
 uint32 big_times_small(x, y, r)
     uint32 x; uint32 y; uint32* r;
 {
-    uint32* xp = ptr_val(x);
+    uint32* xp = big_val(x);
 
     return big_norm(r, D_mul(BIG_V(xp),BIG_SIZE(xp),y, BIG_V(r)),
 		    BIG_SIGN(xp));
 }
+
+int big_fits_in_sint32(Eterm b)
+{
+    Eterm *p = big_val(b);
+    if (BIG_ARITY(p) > 1)
+	return 0;
+    if (BIG_SIGN(p)) 
+	return (BIG_DIGIT(p,1) <= 0x7FFF) || (BIG_DIGIT(p,1) == 0x8000 &&
+					      BIG_DIGIT(p,0) == 0);
+    else
+	return BIG_DIGIT(p,1) <= 0x7FFF;
+}
+
+int big_fits_in_uint32(Eterm b)
+{
+    Eterm *p = big_val(b);
+    return (BIG_ARITY(p) <= 1 && !BIG_SIGN(p));
+}
+
+/*
+** Expects the big to fit.
+*/
+Uint32 big_to_uint32(Eterm b)
+{
+    Eterm *p = big_val(b);
+    return (((Uint32) BIG_DIGIT(p,1)) << 16) | ((Uint32) BIG_DIGIT(p,0));
+}
+
+Sint32 big_to_sint32(Eterm b)
+{
+    Sint32 res;
+    Eterm *p = big_val(b);
+    res = ((Sint32) ((((Uint32) BIG_DIGIT(p,1)) << 16) | 
+		     ((Uint32) BIG_DIGIT(p,0))));
+    return (BIG_SIGN(p)) ? -res : res;
+}
+

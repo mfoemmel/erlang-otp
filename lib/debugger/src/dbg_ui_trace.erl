@@ -325,15 +325,6 @@ loop(Trace) ->
 		    loop(Trace)
 	    end;
 
-	%% Handle message from interpreter server that signals that
-	%% the currently debugged process is no longer interpreted.
-
-	%%	{P, old_code, Module} ->
-	%%	    io:format("~w:loop/1: Received {P,old_code,~w} msg~n",
-	%%		      [~MODULE,Module]),
-	%%	    loop(old_code(Trace, Module));
-
-
 	{IntServer, no_interpret, Module} ->
 	    loop(Trace);
 
@@ -408,7 +399,15 @@ loop(Trace) ->
 	    New_meta = int:attach(Pid, Reason, {}),
 	    loop(Trace#trace{meta = New_meta}); 
 
-	{'EXIT', LinkedPid, _Reason} when LinkedPid == Trace#trace.rec_edit ->
+	{'EXIT', LinkedPid, Reason} when LinkedPid == Trace#trace.rec_edit ->
+	    case Reason of
+		normal ->
+		    ignore;
+		_ ->
+		    Text = ["Error in Record Editor",
+			    lists:flatten(io_lib:format("~p", [Reason]))],
+		    tool_utils:notify(gs:start(), Text)
+	    end,
 	    loop (Trace#trace{rec_edit = undefined});
 
 	{'EXIT', LinkedPid, Reason} ->
@@ -729,42 +728,6 @@ exit_file(Trace,Mod,Line,Reason) ->
     Trace#trace{cm=Mod, breaks=Breaks,line=Line}.
 
 
-%% Handle the event of the Module becoming uniterpreted
-%%
-
-%%% old_code(Trace,Module) -> #trace.
-%%% Called whenever an the code is uniterpreted.
-
-
-
-old_code(Trace,Module) ->
-    dbg_ui_aux:disable_menus(?STEP_ACTIONS ++
-				  ?MESSAGE_ACTIONS ++
-				  ?STACK_ACTIONS ++
-				  ?TIMEOUT_ACTIONS ++
-				  ?STOP_ACTIONS ++
-				  ?WHERE_ACTIONS ++
-				  ['Kill' ]),
-
-
-    dbg_ui_aux:enable_menus([]),
-    dbg_ui_aux:stack_buttons(Trace#trace.stack_flag,1,1,bottom),
-    dbg_ui_aux:back_trace_button(Trace),
-    Reason = uninterpreted,
-    dbg_ui_trace_win:update_label(Reason,0,Module),
-
-    Str = io_lib:format("<**exited:~s~n",[dbg_pretty:term(Reason)]),
-    dbg_ui_trace_win:print_shell(Str,normal),
-
-    Trace#trace{state={{exit,Reason} ,unknown,unknown},
-		cm=Module, 
-		breaks =[], 
-		stack = empty_stack(),coords = {0,0},
-		line = 0}.
-
-
-
-    
 %%% record_editor  /2
 %%%
 

@@ -1,0 +1,119 @@
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+# 
+#     $Id$
+#
+
+KERNEL = $(ERL_TOP)/lib/kernel/ebin
+
+PRIMES_MOD = $(ERL_TOP)/erts/sae/ebin/primes.beam
+PRIMES_BUNDLE = $(ERL_TOP)/erts/sae/bundles/primes.bundle
+PRIMES_BIN = $(ERL_TOP)/erts/sae/bin/primes.exe
+
+OBJDIR	  = $(ERL_TOP)/erts/obj/win32
+
+# ----------------------------------------------------
+# Release directory specification
+# ----------------------------------------------------
+RELSYSDIR = $(RELEASE_PATH)/sae
+
+# ----------------------------------------------------
+# Target Specs
+# ----------------------------------------------------
+MODULES= \
+	ring0 \
+	elink \
+	primes \
+	ebundle
+
+ERL_FILES= $(MODULES:%=%.erl)
+
+TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+
+ERLC= erlc
+
+# ----------------------------------------------------
+# FLAGS
+# ----------------------------------------------------
+ERL_FLAGS += 
+ERL_COMPILE_FLAGS += -I../include -I../../kernel/include
+
+ROOT = $(ERL_TOP)
+EMUDIR = $(ROOT)/erts/emulator
+
+DEFINES =  -DNT -D__WIN32__ -DWINDOWS -DWIN32 -D_WIN32 -DERL_RUN_SHARED_LIB=1
+
+ERL_INCLUDES  =	-I$(EMUDIR)\beam \
+		-I$(EMUDIR)\drivers\common \
+		-I$(EMUDIR)\sys\win32 \
+		-I$(EMUDIR)\drivers\win32 \
+		-I$(ROOT)\erts\etc\common \
+		-I$(ROOT)\erts\etc\win32
+
+ERL_CFLAGS_COMMON = -c -MDd $(DEFINES) -W3 $(ERL_INCLUDES)
+
+BINDIR		= $(ROOT)\bin\win32
+
+# ----------------------------------------------------
+# Targets
+# ----------------------------------------------------
+
+all: $(PRIMES_BIN)
+
+debug opt: $(TARGET_FILES) $(PRIMES_BIN)
+
+
+clean:
+	rm -f $(TARGET_FILES)
+	rm -f core
+
+#$(PRIMES_BUNDLE): $(PRIMES_MOD)
+#	erl -noshell -pa ../ebin -s ebundle win32 $(PRIMES_BUNDLE) $(PRIMES_MOD)
+
+$(OBJDIR)/primes.res: primes.rc $(PRIMES_BUNDLE) ring0.beam
+	rc -fo$@ primes.rc
+
+$(PRIMES_BIN): $(OBJDIR)/erl_main_sae.obj $(OBJDIR)/primes.res
+	$(CC) -Zi -Fe$@ -MDd $(ERL_DEBUG) $(BINDIR)\erl_dll.lib \
+		$** advapi32.lib user32.lib
+
+$(OBJDIR)/erl_main_sae.obj: $(ERL_TOP)/erts/emulator/sys/win32/erl_main_sae.c
+	$(CC) -Zi $(ERL_CFLAGS_COMMON) -Fo$@ $<
+
+# ----------------------------------------------------
+# Special Build Targets
+# ----------------------------------------------------
+
+# If .beam files in lib aren't built we use this rule.
+$(ERL_TOP)/lib/%.beam:
+	cd $(@D)/../src && $(MAKE) ../ebin/$(@F)
+
+# ----------------------------------------------------
+# Release Target
+# ---------------------------------------------------- 
+
+release_spec: opt
+
+# release_docs_spec:
+
+# ----------------------------------------------------
+# erlc pattern Target
+# ---------------------------------------------------- 
+
+#$(ERL_TOP)/erts/sae/ebin/%.beam: %.erl
+#	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o../ebin/ $<
+
+
+

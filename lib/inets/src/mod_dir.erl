@@ -23,6 +23,7 @@
 %% do
 
 do(Info) ->
+    ?DEBUG("do -> entry",[]),
     case Info#mod.method of
 	"GET" ->
 	    case httpd_util:key1search(Info#mod.data,status) of
@@ -34,7 +35,7 @@ do(Info) ->
 		    case httpd_util:key1search(Info#mod.data,response) of
 			%% No response has been generated!
 			undefined ->
-			    do_mod_dir(Info);
+			    do_dir(Info);
 			%% A response has been generated or sent!
 			Response ->
 			    {proceed,Info#mod.data}
@@ -45,45 +46,61 @@ do(Info) ->
 	    {proceed,Info#mod.data}
     end.
 
-do_mod_dir(Info) ->
+do_dir(Info) ->
+    ?DEBUG("do_dir -> Request URI: ~p",[Info#mod.request_uri]),
     Path = mod_alias:path(Info#mod.data,Info#mod.config_db,
 			  Info#mod.request_uri),
     DefaultPath = mod_alias:default_index(Info#mod.config_db,Path),
     %% Is it a directory?
     case file:read_file_info(DefaultPath) of
 	{ok,FileInfo} when FileInfo#file_info.type == directory ->
-	    DecodedRequestURI=
+	    DecodedRequestURI =
 		httpd_util:decode_hex(Info#mod.request_uri),
+	    ?DEBUG("do_dir -> ~n"
+		   "      Path:              ~p~n"
+		   "      DefaultPath:       ~p~n"
+		   "      DecodedRequestURI: ~p",
+		   [Path,DefaultPath,DecodedRequestURI]),
 	    case dir(DefaultPath,
 		     string:strip(DecodedRequestURI,right,$/),
 		     Info#mod.config_db) of
 		{ok, Dir} ->
-		    Response=["Content-Type: text/html\r\n",
-			      "Content-Length: ",
-			      integer_to_list(httpd_util:flatlength(Dir)),
-			      "\r\n\r\n",Dir],	
+		    Response = ["Content-Type: text/html\r\n",
+				"Content-Length: ",
+				integer_to_list(httpd_util:flatlength(Dir)),
+				"\r\n\r\n",Dir],	
 		    {proceed,[{response,{200,Response}},
 			      {mime_type,"text/html"}|Info#mod.data]};
 		{error, Reason} ->
-		    {proceed,[{status,{404,none,Reason}}|Info#mod.data]}
+		    ?ERROR("do_dir -> dir operation failed: ~p",[Reason]),
+		    {proceed,
+		     [{status,{404,Info#mod.request_uri,Reason}}|
+		      Info#mod.data]}
 	    end;
 	{ok,FileInfo} ->
+	    ?DEBUG("do_dir -> ~n"
+		   "      Path:        ~p~n"
+		   "      DefaultPath: ~p~n"
+		   "      FileInfo:    ~p",
+		   [Path,DefaultPath,FileInfo]),
 	    {proceed,Info#mod.data};
 	{error,Reason} ->
-	    {proceed,[{status,{404,Info#mod.request_uri,
-			       ?NICE("Can't access "++DefaultPath)}}|
-		      Info#mod.data]}
+	    ?LOG("do_dir -> failed reading file info (~p) for: ~p",
+		 [Reason,DefaultPath]),
+	    {proceed,
+	     [{status,read_file_info_error(Reason,Info,DefaultPath)}|
+	      Info#mod.data]}
     end.
 
 dir(Path,RequestURI,ConfigDB) ->
-  case file:list_dir(Path) of
-    {ok,FileList} ->
-      SortedFileList=lists:sort(FileList),
-      {ok,[header(Path,RequestURI),
-	   body(Path,RequestURI,ConfigDB,SortedFileList),
-	   footer(Path,SortedFileList)]};
-    {error,Reason} ->
-      {error,?NICE("Can't open directory "++Path)}
+    case file:list_dir(Path) of
+	{ok,FileList} ->
+	    SortedFileList=lists:sort(FileList),
+	    {ok,[header(Path,RequestURI),
+		 body(Path,RequestURI,ConfigDB,SortedFileList),
+		 footer(Path,SortedFileList)]};
+	{error,Reason} ->
+	    {error,?NICE("Can't open directory "++Path++": "++Reason)}
   end.
 
 %% header
@@ -230,3 +247,22 @@ icon("tcl") -> "/icons/script.gif";
 icon("tex") -> "/icons/tex.gif";
 icon("core") -> "/icons/tex.gif";
 icon(_) -> undefined.
+
+
+read_file_info_error(eacces,Info,Path) ->
+    read_file_info_error(403,Info,Path,
+			 ": Missing search permissions for one "
+			 "of the parent directories");
+read_file_info_error(enoent,Info,Path) ->
+    read_file_info_error(404,Info,Path,"");
+read_file_info_error(enotdir,Info,Path) ->
+    read_file_info_error(404,Info,Path,
+			 ": A component of the file name is not a directory");
+read_file_info_error(_,Info,Path) ->
+    read_file_info_error(500,none,Path,"").
+
+read_file_info_error(StatusCode,none,Path,Reason) ->
+    {StatusCode,none,?NICE("Can't access "++Path++Reason)};
+read_file_info_error(StatusCode,Info,Path,Reason) ->
+    {StatusCode,Info#mod.request_uri,
+     ?NICE("Can't access "++Path++Reason)}.

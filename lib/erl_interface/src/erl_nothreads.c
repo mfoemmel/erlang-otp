@@ -26,6 +26,8 @@
 #include <stdio.h>
 #endif
 
+#include "erl_error.h"
+
 extern int erl_locking_init_done;
 extern void erl_common_init(void *, long);
 int erl_init_nothreads(void *x, long y)
@@ -49,6 +51,9 @@ int erl_m_lock(void *l)    { return 0; }
 int erl_m_trylock(void *l) { return 0; } 
 int erl_m_unlock(void *l)  { return 0; } 
 
+volatile int * 
+__erl_errno_place (void) { return &__erl_errno; }
+
 #ifndef NO_PRAGMA_WEAK
 /* above symbols must be weak since 
  * they are multiply defined 
@@ -58,6 +63,7 @@ int erl_m_unlock(void *l)  { return 0; }
 #pragma weak erl_m_lock
 #pragma weak erl_m_trylock
 #pragma weak erl_m_unlock
+#pragma weak __erl_errno_place
 
 #endif
 

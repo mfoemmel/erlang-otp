@@ -66,7 +66,7 @@ erts_debug_make_fun_1(Process* p, Eterm tuple)
     error:
 	BIF_ERROR(p, BADARG);
     }
-    tp = ptr_val(tuple);
+    tp = tuple_val(tuple);
     if (tp[0] != make_arityval(5)) {
 	goto error;
     }
@@ -91,9 +91,9 @@ erts_debug_make_fun_1(Process* p, Eterm tuple)
      * Create the fun struct and fill it in.
      */
 
-    needed = ERL_FUN_SIZE + num_free - 1;
+    needed = ERL_FUN_SIZE + num_free;
     funp = (ErlFunThing *) HAlloc(p, needed);
-    funp->thing_word = make_thing(ERL_FUN_SIZE-2, FUN_SUBTAG);
+    funp->thing_word = HEADER_FUN;
     funp->next = p->off_heap.funs;
     p->off_heap.funs = funp;
     funp->modp = erts_put_module(module);
@@ -102,11 +102,11 @@ erts_debug_make_fun_1(Process* p, Eterm tuple)
     funp->num_free = num_free;
     funp->creator = creator;
     for (i = 0; i < num_free; i++) {
-	Eterm* ep = ptr_val(env);
+	Eterm* ep = list_val(env);
 	funp->env[i] = CAR(ep);
 	env = CDR(ep);
     }
-    return make_binary(funp);
+    return make_fun(funp);
 }
 
 Eterm
@@ -116,20 +116,14 @@ erts_debug_disassemble_1(Process* p, Eterm addr)
     Eterm* tp;
     Eterm bin;
     Eterm mfa;
-    Eterm* funcinfo;
+    Eterm* funcinfo = NULL;	/* Initialized to eliminate warning. */
     Uint* code_base;
-    Uint* code_ptr;
+    Uint* code_ptr = NULL;	/* Initialized to eliminate warning. */
     Uint instr;
-    unsigned uaddr;
+    Uint uaddr;
     int i;
 
-    if (is_small(addr) && signed_val(addr) > 0) {
-	code_ptr = (Uint *) unsigned_val(addr);
-	
-	if ((funcinfo = find_code(code_ptr)) == NULL) {
-	    BIF_RET(am_false);
-	}
-    } else if (is_big(addr) && big_to_unsigned(addr, &uaddr)) {
+    if (term_to_Uint(addr, &uaddr)) {
 	code_ptr = (Uint *) uaddr;
 	if ((funcinfo = find_code(code_ptr)) == NULL) {
 	    BIF_RET(am_false);
@@ -142,7 +136,7 @@ erts_debug_disassemble_1(Process* p, Eterm addr)
 	int arity;
 	int n;
 
-	tp = ptr_val(addr);
+	tp = tuple_val(addr);
 	if (tp[0] != make_arityval(3)) {
 	error:
 	    BIF_ERROR(p, BADARG);
@@ -161,16 +155,24 @@ erts_debug_disassemble_1(Process* p, Eterm addr)
 	 */
 
 	if ((ep = erts_find_function(mod, name, arity)) != NULL) {
-	    code_ptr = ((Eterm *) ep->address) - 4;
-	    funcinfo = code_ptr+1;
+	    /* XXX: add "&& ep->address != ep->code+3" condition?
+	     * Consider a traced function.
+	     * Its ep will have ep->address == ep->code+3.
+	     * erts_find_function() will return the non-NULL ep.
+	     * Below we'll try to derive a code_ptr from ep->address.
+	     * But this code_ptr will point to the start of the Export,
+	     * not the function's func_info instruction. BOOM !?
+	     */
+	    code_ptr = ((Eterm *) ep->address) - 5;
+	    funcinfo = code_ptr+2;
 	} else if (modp == NULL || (code_base = modp->code) == NULL) {
 	    BIF_RET(am_undef);
 	} else {
 	    n = code_base[MI_NUM_FUNCTIONS];
 	    for (i = 0; i < n; i++) {
 		code_ptr = (Uint *) code_base[MI_FUNCTIONS+i];
-		if (code_ptr[2] == name && code_ptr[3] == arity) {
-		    funcinfo = code_ptr+1;
+		if (code_ptr[3] == name && code_ptr[4] == arity) {
+		    funcinfo = code_ptr+2;
 		    break;
 		}
 	    }
@@ -186,7 +188,7 @@ erts_debug_disassemble_1(Process* p, Eterm addr)
     erl_printf(CBUF, "%08X: ", code_ptr);
     instr = (Uint) code_ptr[0];
     for (i = 0; i < NUM_SPECIFIC_OPS; i++) {
-	if (instr == (Uint) beam_ops[i] && opc[i].name[0] != '\0') {
+	if (instr == (Uint) BeamOp(i) && opc[i].name[0] != '\0') {
 	    code_ptr += print_op(CBUF, i, opc[i].sz-1, code_ptr+1) + 1;
 	    break;
 	}
@@ -209,7 +211,7 @@ static Eterm*
 find_code(Eterm* addr)
 {
     if (beam_debug_apply <= addr && addr < beam_debug_apply+beam_debug_apply_size) {
-	return beam_debug_apply+1;
+	return beam_debug_apply+2;
     }
     return find_function_from_pc(addr);
 }
@@ -221,7 +223,7 @@ dbg_bt(Process* p, Eterm* sp)
 
     while (sp < stack) {
 	if (is_CP(*sp)) {
-	    Eterm* addr = find_function_from_pc(cp_ptr_val(*sp));
+	    Eterm* addr = find_function_from_pc(cp_val(*sp));
 	    if (addr) {
 		sys_printf(CERR, "%08X: ", addr);
 		display(addr[0], CERR);
@@ -316,11 +318,11 @@ print_op(CIO to, int op, int size, Eterm* addr)
 	    packed >>= 10;
 	    break;
 	case '2':	/* Shift 12 steps */
-	    *ap++ = packed & 0x3ff;
+	    *ap++ = packed & 0xfff;
 	    packed >>= 12;
 	    break;
 	case '6':	/* Shift 16 steps */
-	    *ap++ = packed & 0x3ff;
+	    *ap++ = packed & 0xffff;
 	    packed >>= 16;
 	    break;
 	case 'p':
@@ -347,11 +349,11 @@ print_op(CIO to, int op, int size, Eterm* addr)
 	    erl_printf(to, "x(0)");
 	    break;
 	case 'x':		/* x(N) */
-	    erl_printf(to, "x(%d)", ap[0]/4);
+	    erl_printf(to, "x(%d)", reg_index(ap[0]));
 	    ap++;
 	    break;
 	case 'y':		/* y(N) */
-	    erl_printf(to, "y(%d)", ap[0]/4-1);
+	    erl_printf(to, "y(%d)", reg_index(ap[0]) - CP_SIZE);
 	    ap++;
 	    break;
 	case 'n':		/* Nil */
@@ -360,11 +362,11 @@ print_op(CIO to, int op, int size, Eterm* addr)
 	case 's':		/* Any source (tagged constant or register) */
 	    tag = beam_reg_tag(*ap);
 	    if (tag == X_REG_DEF) {
-		erl_printf(to, "x(%d)", x_reg_number(*ap) >> 2);
+		erl_printf(to, "x(%d)", x_reg_index(*ap));
 		ap++;
 		break;
 	    } else if (tag == Y_REG_DEF) {
-		erl_printf(to, "y(%d)", (y_reg_number(*ap) >> 2) - 1);
+		erl_printf(to, "y(%d)", y_reg_index(*ap) - CP_SIZE);
 		ap++;
 		break;
 	    } else if (tag == R_REG_DEF) {
@@ -372,23 +374,24 @@ print_op(CIO to, int op, int size, Eterm* addr)
 		ap++;
 		break;
 	    }
-	case 'a':		/* Tagged constant */
+	    /*FALLTHROUGH*/
+	case 'a':		/* Tagged atom */
 	case 'i':		/* Tagged integer */
 	case 'c':		/* Tagged constant */
 	    display(*ap, to);
 	    ap++;
 	    break;
 	case 'A':
-	    erl_printf(to, "%d", unsigned_val(ap[0]));
+	    erl_printf(to, "%d", arityval(ap[0]));
 	    ap++;
 	    break;
 	case 'd':		/* Destination (x(0), x(N), y(N)) */
 	    switch (beam_reg_tag(*ap)) {
 	    case X_REG_DEF:
-		erl_printf(to, "x(%d)", (x_reg_number(*ap) >> 2));
+		erl_printf(to, "x(%d)", x_reg_index(*ap));
 		break;
 	    case Y_REG_DEF:
-		erl_printf(to, "y(%d)", (y_reg_number(*ap) >> 2) - 1);
+		erl_printf(to, "y(%d)", y_reg_index(*ap) - CP_SIZE);
 		break;
 	    case R_REG_DEF:
 		erl_printf(to, "x(0)");
@@ -453,8 +456,8 @@ print_op(CIO to, int op, int size, Eterm* addr)
 	    }
 	    ap++;
 	    break;
-	case 'P':		/* Untagged integer. */
-	    erl_printf(to, "%d", (*ap-1)/4);
+	case 'P':	/* Byte offset into tuple (see beam_load.c) */
+	    erl_printf(to, "%d", (*ap / sizeof(uint32*)) - 1);
 	    ap++;
 	    break;
 	case 'w':

@@ -20,7 +20,7 @@
 
 -export([nmake/1, omake/1, waitnode/1, restart/1,
 	 setdir/1, run_tests/1, run_command/1]).
--export([serv_nmake/2, serv_omake/2, serv_restart/0, serv_run_tests/1,
+-export([serv_nmake/2, serv_omake/2, serv_restart/0, serv_run_tests/2,
 	 serv_run_command/1]).
 
 waitnode([NtNode]) ->
@@ -88,18 +88,18 @@ setdir([NtNode, Dir0]) ->
 		    io:format("halt(0)~n"),
 		    halt();
 		Error ->
-		    io:format("halt(1) (Error: ~p)~n", [Error]),
+		    io:format("halt(1) (Error: ~p) (~p not found) ~n", [Error, Dir]),
 		    halt(1)
 	    end;
 	no ->
 	    halt(1)
     end.
 
-run_tests([NtNode, Vsn0]) ->
+run_tests([NtNode, Vsn0, Logdir]) ->
     Vsn = atom_to_list(Vsn0),
     case nt_node_alive(NtNode) of
 	yes ->
-	    case rpc:call(NtNode, ntbuild, serv_run_tests, [Vsn]) of
+	    case rpc:call(NtNode, ntbuild, serv_run_tests, [Vsn, Logdir]) of
 		ok ->
 		    io:format("halt(0)~n"),
 		    halt();
@@ -157,6 +157,7 @@ omake([NtNode, Path, Options]) ->
 		    halt();
 		Error ->
 		    io:format("RPC To Windows Node Failed: ~p~n", [Error]),
+		    io:format("~p        ~p~n", [Dir, Opt]),
 		    io:format("halt(1)~n"),
 		    halt(1)
 	    end;
@@ -194,17 +195,20 @@ nt_node_alive(NtNode, quiet) ->
 %%-----------------------
 %% serv_run_tests()
 %% Runs the tests.
-serv_run_tests(Vsn) ->
+serv_run_tests(Vsn, Logdir) ->
     {ok, Cwd}=file:get_cwd(),
+    io:format("serv_run_tests ~p ~p ~n", [Vsn, Logdir]),
+    Cmd0= "set central_log_dir=" ++ Logdir,
     Erl = "C:/progra~1/erl"++Vsn++"/bin/erl",
-    Cmd = Erl++" -sname a -setcookie a -noshell -noinput -s ts install -s ts run -s ts save -s erlang halt",
-    Dir = "C:/temp/test_suite/test_server",
+    Cmd1 = Erl++" -sname a -setcookie a -noshell -noinput -s ts install -s ts run -s ts save -s erlang halt",
+%%    Dir = "C:/temp/test_suite/test_server",
+    Cmd= Cmd0 ++ "/r/n" ++ Cmd1,
+    Dir = "C:/temp/test_server/p7a/test_server",
     file:set_cwd(Dir),
     Res=run_make_bat(Dir, Cmd),
     file:set_cwd(Cwd),
     Res.
-    
-    
+
 %%-----------------------
 %% serv_run_command()
 %% Runs a command.
@@ -295,7 +299,7 @@ get_data_from_port(Port) ->
 
 run_make_bat(Dir, Make) ->
     {Name, Exe, Script}=create_make_script(Dir, Make),
-    io:format("Exe:~p  Cwd:~p~n",[Exe, Dir]),
+    io:format("Exe:~p  Cwd:~p Script:~p ~n",[Exe, Dir, Script]),
     case file:write_file(Name, Script) of
 	ok ->
 	    case catch open_port({spawn, Exe}, [stderr_to_stdout, stream, hide,
@@ -318,7 +322,7 @@ create_make_script(Dir, Make) ->
      ["@echo off\r\n",
       "@cd ", Dir, "\r\n",
       Make++"\r\n",
-      "if errorlevel 1 echo *error*\r\n",
+      "if errorlevel 1 echo *run_make_bs error*\r\n",
       "if not errorlevel 1 echo *ok*\r\n"]}.
 
 

@@ -2,7 +2,11 @@ This is a short description on the use of Erlang,C or Java
 client and servers against each other.
 The base is a client that initiates and uses a random number 
 generator that lies on an server.
- 
+
+There are two make files, one for Unix and one for Windows,
+the Unix make file is just named "Makefile", while the Windows
+is named "Makefile.win32".
+
 Instructions.
  
 1) On Makefile :
@@ -91,7 +95,7 @@ Instructions.
      the Otp's classes and the current directory.
      Your classpath should look like this :
  
-     .:<OTPROOT>/lib/ic-3.8.1/priv/ic.jar:<OTPROOT>/lib/jinterface_0.9.2/priv/OtpErlang.jar
+     .:<OTPROOT>/lib/ic-4.0/priv/ic.jar:<OTPROOT>/lib/jinterface_1.1/priv/OtpErlang.jar
  
      where :
  

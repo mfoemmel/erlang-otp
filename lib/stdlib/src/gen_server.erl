@@ -90,14 +90,16 @@
 	 cast/2, reply/2,
 	 abcast/2, abcast/3,
 	 multi_call/2, multi_call/3, multi_call/4,
-	 safe_multi_call/2, safe_multi_call/3, safe_multi_call/4,
+	 %% safe_multi_call/2, safe_multi_call/3, safe_multi_call/4,
 	 system_continue/3,
 	 system_terminate/4,
 	 system_code_change/4,
 	 format_status/2]).
 
 %% Internal exports
--export([init_it/6, print_event/3, safe_send/2]).
+-export([init_it/6, print_event/3
+	 %%, safe_send/2
+	]).
 
 -import(error_logger , [format/2]).
 
@@ -200,83 +202,99 @@ abcast([], _,_) -> abcast.
 multi_call(Name, Req) ->
     multi_call([node() | nodes()], Name, Req, infinity).
 
-multi_call(Nodes, Name, Req) ->
+multi_call(Nodes, Name, Req) 
+  when list(Nodes), atom(Name) ->
     Tag = make_ref(),
-    send_nodes(Nodes, Name, Tag, Req),
-    rec_nodes(Tag, Nodes, Name, undefined).
+    Monitors = send_nodes(Nodes, Name, Tag, Req, []),
+    rec_nodes(Tag, Monitors, Name, undefined).
 
 multi_call(Nodes, Name, Req, infinity) ->
     multi_call(Nodes, Name, Req);
-multi_call(Nodes, Name, Req, Timeout) ->
-    TimerId = erlang:start_timer(Timeout, self(), ok),
+multi_call(Nodes, Name, Req, Timeout) 
+  when list(Nodes), atom(Name), integer(Timeout), Timeout >= 0 ->
     Tag = make_ref(),
-    send_nodes(Nodes, Name, Tag, Req),
-    rec_nodes(Tag, Nodes, Name, TimerId).
+    Monitors = send_nodes(Nodes, Name, Tag, Req, []),
+    TimerId = erlang:start_timer(Timeout, self(), ok),
+    rec_nodes(Tag, Monitors, Name, TimerId).
 
-send_nodes([Node|Tail], Name, Tag, Req) ->
-    monitor_node(Node, true),
+
+send_nodes([Node|Tail], Name, Tag, Req, Monitors)
+  when atom(Node) ->
+    Monitor = start_monitor(Node, Name),
     %% Handle non-existing names in rec_nodes.
     catch {Name, Node} ! {'$gen_call', {self(), {Tag, Node}}, Req},
-    send_nodes(Tail, Name, Tag, Req);
-send_nodes([], _, _, _) -> done.
+    send_nodes(Tail, Name, Tag, Req, [Monitor | Monitors]);
+send_nodes([Node|Tail], Name, Tag, Req, Monitors) ->
+    %% Skip non-atom Node
+    send_nodes(Tail, Name, Tag, Req, Monitors);
+send_nodes([], _Name, _Tag, _Req, Monitors) -> 
+    Monitors.
 
-safe_multi_call(Name, Req) ->
-    safe_multi_call([node() | nodes()], Name, Req, infinity).
-
-safe_multi_call(Nodes, Name, Req) ->
-    Tag = make_ref(),
-    Bad = safe_send_nodes(Nodes, Name, Tag, Req, []),
-    {Replies, Bad2} = rec_nodes(Tag, Nodes -- Bad, Name, undefined),
-    {Replies, Bad2 ++ Bad}.
-
-safe_multi_call(Nodes, Name, Req, infinity) ->
-    safe_multi_call(Nodes, Name, Req);
-safe_multi_call(Nodes, Name, Req, Timeout) ->
-    TimerId = erlang:start_timer(Timeout, self(), ok),
-    Tag = make_ref(),
-    Bad = safe_send_nodes(Nodes, Name, Tag, Req, []),
-    {Replies, Bad2} = rec_nodes(Tag, Nodes -- Bad, Name, TimerId),
-    {Replies, Bad2 ++ Bad}.
-
-safe_send_nodes([Node|Tail], Name, Tag, Req, Bad) ->
-    monitor_node(Node, true),
-    Msg = {'$gen_call', {self(), {Tag, Node}}, Req},
-    case catch rpc:block_call(Node, ?MODULE, safe_send, [Name, Msg]) of
-	true ->
-	    safe_send_nodes(Tail, Name, Tag, Msg, Bad);
-	_ -> % false or badrpc
-	    monitor_node(Node, false),
-	    safe_send_nodes(Tail, Name, Tag, Msg, [Node | Bad])
-    end;
-safe_send_nodes([], _, _, _, Bad) -> Bad.
-
-%% Executed in the rpc server's context - need to be fast and non-blocking!
-safe_send(Name, Msg) ->
-    case erlang:whereis(Name) of
-	Pid when pid(Pid) ->
-	    Pid ! Msg,
-	    true;
-	undefined ->
-	    false
+start_monitor(Node, Name) when atom(Node), atom(Name) ->
+    if node() == nonode@nohost, Node /= nonode@nohost ->
+	    Ref = make_ref(),
+	    self() ! {'DOWN', Ref, process, Name, noconnection},
+	    {Node, Ref};
+       true ->
+	    case catch erlang:monitor(process, {Name, Node}) of
+		{'EXIT', _} ->
+		    %% Remote node is R6
+		    monitor_node(Node, true),
+		    Node;
+		Ref when reference(Ref) ->
+		    {Node, Ref}
+	    end
     end.
+
+%% Cancels a monitor started with Ref=erlang:monitor(_, _).
+unmonitor(Ref) when reference(Ref) ->
+    erlang:demonitor(Ref),
+    receive
+	{'DOWN', Ref, _, _, _} ->
+	    true
+    after 0 ->
+	    true
+    end.
+
+
+%% Against old nodes:
+%% If no reply has been delivered within 2 secs. (per node) check that
+%% the server really exists and wait for ever for the answer.
+%%
+%% Against contemporary nodes:
+%% Wait for reply, server 'DOWN', or timeout from TimerId.
 
 
 rec_nodes(Tag, Nodes, Name, TimerId) -> 
     rec_nodes(Tag, Nodes, Name, [], [], 2000, TimerId).
 
-%% If no reply has been delivered within 2 secs. (per node) check that
-%% the server really exists and wait for ever for the answer.
-
+rec_nodes(Tag, [{N,R}|Tail], Name, Badnodes, Replies, Time, TimerId ) ->
+    receive
+	{'DOWN', R, _, _, _} ->
+	    rec_nodes(Tag, Tail, Name, [N|Badnodes], Replies, Time, TimerId);
+	{{Tag, N}, Reply} ->  %% Tag is bound !!!
+	    unmonitor(R), 
+	    rec_nodes(Tag, Tail, Name, Badnodes, 
+		      [{N,Reply}|Replies], Time, TimerId);
+	{timeout, TimerId, _} ->	
+	    unmonitor(R),
+	    %% Collect all replies that already have arrived
+	    rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies)
+    end;
 rec_nodes(Tag, [N|Tail], Name, Badnodes, Replies, Time, TimerId) ->
+    %% R6 node
     receive
 	{nodedown, N} ->
 	    monitor_node(N, false),
 	    rec_nodes(Tag, Tail, Name, [N|Badnodes], Replies, 2000, TimerId);
 	{{Tag, N}, Reply} ->  %% Tag is bound !!!
+	    receive {nodedown, N} -> ok after 0 -> ok end,
 	    monitor_node(N, false),
 	    rec_nodes(Tag, Tail, Name, Badnodes,
 		      [{N,Reply}|Replies], 2000, TimerId);
 	{timeout, TimerId, _} ->	
+	    receive {nodedown, N} -> ok after 0 -> ok end,
+	    monitor_node(N, false),
 	    %% Collect all replies that already have arrived
 	    rec_nodes_rest(Tag, Tail, Name, [N | Badnodes], Replies)
     after Time ->
@@ -285,6 +303,7 @@ rec_nodes(Tag, [N|Tail], Name, Badnodes, Replies, Time, TimerId) ->
 		    rec_nodes(Tag, [N|Tail], Name, Badnodes,
 			      Replies, infinity, TimerId);
 		_ -> % badnode
+		    receive {nodedown, N} -> ok after 0 -> ok end,
 		    monitor_node(N, false),
 		    rec_nodes(Tag, Tail, Name, [N|Badnodes],
 			      Replies, 2000, TimerId)
@@ -304,16 +323,31 @@ rec_nodes(_, [], _, Badnodes, Replies, _, TimerId) ->
     {Replies, Badnodes}.
 
 %% Collect all replies that already have arrived
+rec_nodes_rest(Tag, [{N,R}|Tail], Name, Badnodes, Replies) ->
+    receive
+	{'DOWN', R, _, _, _} ->
+	    rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies);
+	{{Tag, N}, Reply} -> %% Tag is bound !!!
+	    unmonitor(R),
+	    rec_nodes_rest(Tag, Tail, Name, Badnodes, [{N,Reply}|Replies])
+    after 0 ->
+	    unmonitor(R),
+	    rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies)
+    end;
 rec_nodes_rest(Tag, [N|Tail], Name, Badnodes, Replies) ->
+    %% R6 node
     receive
 	{nodedown, N} ->
 	    monitor_node(N, false),
 	    rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies);
 	{{Tag, N}, Reply} ->  %% Tag is bound !!!
+	    receive {nodedown, N} -> ok after 0 -> ok end,
 	    monitor_node(N, false),
 	    rec_nodes_rest(Tag, Tail, Name, Badnodes, [{N,Reply}|Replies])
     after 0 ->
-	    {Replies, [N | Badnodes] ++ Tail}
+	    receive {nodedown, N} -> ok after 0 -> ok end,
+	    monitor_node(N, false),
+	    rec_nodes_rest(Tag, Tail, Name, [N|Badnodes], Replies)
     end;
 rec_nodes_rest(Tag, [], Name, Badnodes, Replies) ->
     {Replies, Badnodes}.
@@ -407,8 +441,11 @@ print_event(Dev, {in, Msg}, Name) ->
 	_ ->
 	    io:format(Dev, "*DBG* ~p got ~p~n", [Name, Msg])
     end;
-print_event(Dev, {out, Msg, To}, Name) ->
-    io:format(Dev, "*DBG* ~p sent ~p to ~w~n", [Name, Msg, To]);
+print_event(Dev, {out, Msg, To, State}, Name) ->
+    io:format(Dev, "*DBG* ~p sent ~p to ~w, new state ~w~n", 
+	      [Name, Msg, To, State]);
+print_event(Dev, {noreply, State}, Name) ->
+    io:format(Dev, "*DBG* ~p new state ~w~n", [Name, State]);
 print_event(Dev, Event, Name) ->
     io:format(Dev, "*DBG* ~p dbg  ~p~n", [Name, Event]).
 
@@ -444,10 +481,10 @@ handle_msg(Msg, Parent, Name, State, Mod, Time) ->
 handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, Time, Debug) ->
     case catch apply(Mod, handle_call, [Msg, From, State]) of
 	{reply, Reply, NState} ->
-	    Debug1 = reply(Name, From, Reply, Debug),
+	    Debug1 = reply(Name, From, Reply, NState, Debug),
 	    loop(Parent, Name, NState, Mod, infinity, Debug1);
 	{reply, Reply, NState, Time1} ->
-	    Debug1 = reply(Name, From, Reply, Debug),
+	    Debug1 = reply(Name, From, Reply, NState, Debug),
 	    loop(Parent, Name, NState, Mod, Time1, Debug1);
 	{noreply, NState} ->
 	    Debug1 = sys:handle_debug(Debug, {gen_server, print_event}, Name,
@@ -460,7 +497,7 @@ handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, Time, Debug) ->
 	{stop, Reason, Reply, NState} ->
 	    {'EXIT', R} = 
 		(catch terminate(Reason, Name, Msg, Mod, NState, Debug)),
-	    reply(Name, From, Reply, Debug),
+	    reply(Name, From, Reply, NState, Debug),
 	    exit(R);
 	Other ->
 	    handle_common_reply(Other, Parent, Name, Msg, Mod, State, Debug)
@@ -502,9 +539,10 @@ handle_common_reply(Reply, Parent, Name, Msg, Mod, State, Debug) ->
     end.
 
 
-reply(Name, {To, Tag}, Reply, Debug) ->
+reply(Name, {To, Tag}, Reply, State, Debug) ->
     reply({To, Tag}, Reply),
-    sys:handle_debug(Debug, {gen_server, print_event}, Name, {out, Reply, To}).
+    sys:handle_debug(Debug, {gen_server, print_event}, Name, 
+		     {out, Reply, To, State} ).
 
 %%% ---------------------------------------------------
 %%% Terminate the server.

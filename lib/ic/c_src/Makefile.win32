@@ -42,7 +42,15 @@ C_FILES = \
 	oe_ei_encode_ref.c          \
 	oe_ei_encode_term.c         \
 	oe_ei_encode_tuple_header.c \
-	oe_ei_encode_list_header.c
+	oe_ei_encode_list_header.c  \
+	oe_ei_encode_longlong.c     \
+	oe_ei_encode_ulonglong.c    \
+	oe_ei_encode_wchar.c        \
+	oe_ei_encode_wstring.c      \
+	oe_ei_decode_longlong.c     \
+	oe_ei_decode_ulonglong.c    \
+	oe_ei_decode_wchar.c        \
+	oe_ei_decode_wstring.c
 
 OBJ_FILES = \
 	$(OBJDIR)\ic.obj \
@@ -58,7 +66,15 @@ OBJ_FILES = \
 	$(OBJDIR)\oe_ei_encode_ref.obj          \
 	$(OBJDIR)\oe_ei_encode_term.obj         \
 	$(OBJDIR)\oe_ei_encode_tuple_header.obj \
-	$(OBJDIR)\oe_ei_encode_list_header.obj
+	$(OBJDIR)\oe_ei_encode_list_header.obj  \
+	$(OBJDIR)\oe_ei_encode_longlong.obj     \
+	$(OBJDIR)\oe_ei_encode_ulonglong.obj    \
+	$(OBJDIR)\oe_ei_encode_wchar.obj        \
+	$(OBJDIR)\oe_ei_encode_wstring.obj      \
+	$(OBJDIR)\oe_ei_decode_longlong.obj     \
+	$(OBJDIR)\oe_ei_decode_ulonglong.obj    \
+	$(OBJDIR)\oe_ei_decode_wchar.obj        \
+	$(OBJDIR)\oe_ei_decode_wstring.obj
 
 
 LIBRARY = $(LIBDIR)\ic.lib

@@ -79,7 +79,15 @@ C_FILES = \
 	oe_ei_encode_ref.c          \
 	oe_ei_encode_term.c         \
 	oe_ei_encode_tuple_header.c \
-	oe_ei_encode_list_header.c
+	oe_ei_encode_list_header.c  \
+	oe_ei_encode_longlong.c     \
+	oe_ei_encode_ulonglong.c    \
+	oe_ei_encode_wchar.c        \
+	oe_ei_encode_wstring.c      \
+	oe_ei_decode_longlong.c     \
+	oe_ei_decode_ulonglong.c    \
+	oe_ei_decode_wchar.c        \
+	oe_ei_decode_wstring.c
 
 LIBRARY = $(LIBDIR)/libic.a
 endif

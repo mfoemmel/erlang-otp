@@ -803,10 +803,9 @@ configure (Editor, W, H) ->
 %%%
 
 db_start() ->
-    %% XXX There must certainly be a better to do this.
-    case lists:member(?PMAN_DB, ets:all()) of
-	true -> ?PMAN_DB;
-	false -> ets:new(?PMAN_DB, [public, named_table])
+    case ets:info(?PMAN_DB) of
+	undefined -> ets:new(?PMAN_DB, [public, named_table]);
+	_ -> ?PMAN_DB
     end.
 
 

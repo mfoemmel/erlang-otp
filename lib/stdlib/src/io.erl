@@ -227,7 +227,7 @@ request(Request) ->
 
 request(standard_io, Request) ->
     request(group_leader(), Request);
-request(Pid, Request) when node(Pid) == node() ->
+request(Pid, Request) when pid(Pid) ->
     Mref = erlang:monitor(process,Pid),
     Pid ! {io_request,self(),Pid,io_request(Request)},
     wait_io_mon_reply(Pid,Mref);
@@ -237,33 +237,10 @@ request(Name, Request) when atom(Name) ->
 	    {error, arguments};
 	Pid ->
 	    request(Pid, Request)
-    end;
-request(Io, Request) -> % Io must be on another node
-    case catch Io ! {io_request,self(),Io,io_request(Request)} of
-	{'EXIT', R} -> {error, arguments};
-	_ -> 
-	    wait_io_reply(Io) % until monitor/2 can handle pids on other nodes 
     end.
-
-    
-%request(Io, Request) ->
-%    case io_request(Io, io_request(Request)) of
-%	{error, E} ->
-%	    {error, E};
-%	_ ->
-%	    wait_io_reply(Io)
-%    end.
 
 requests(Requests) ->				%Requests as atomic action
     requests(default_output(), Requests).
-
-%requests(Io, Requests) ->			%Requests as atomic action
-%    case io_request(Io, {requests,io_requests(Requests)}) of
-%	{error, E} ->
-%	    {error, E};
-%	_ ->
-%	    wait_io_reply(Io)
-%    end.
 
 requests(Io, Requests) ->                       %Requests as atomic action
     request(Io, {requests,io_requests(Requests)}).
@@ -274,14 +251,6 @@ default_input() ->
 
 default_output() ->
     group_leader().
-
-%io_request(standard_io, Request) ->
-%    group_leader() ! {io_request,self(),standard_io,Request};
-%io_request(Io, Request) ->
-%    case catch Io ! {io_request,self(),Io,Request} of
-%	{'EXIT', R} -> {error, arguments};
-%	X -> X
-%    end.
 
 wait_io_mon_reply(From, Mref) ->
     receive
@@ -306,33 +275,6 @@ wait_io_mon_reply(From, Mref) ->
 	    {error,terminated}
     end.
 
-wait_io_reply(From) ->
-    wait_io_reply(From, status_p(From)).
-
-wait_io_reply(From, undefined) ->
-    {error, terminated};
-wait_io_reply(From, _) ->
-    receive
-	{io_reply,From,Reply} ->
-	    Reply;
-	{'EXIT',From,Reason} ->			%In case we are trapping exits
-	    {error,terminated}
-    end.
-
-status_p(P) when pid(P), node(P) == node()  ->
-    case erlang:is_process_alive(P) of
-	true ->
-	    true;
-	false ->
-	    undefined
-    end;
-status_p(undefined) ->
-    undefined;
-status_p(standard_io) ->
-    status_p(group_leader());
-status_p(N) when atom(N) -> 
-    status_p(whereis(N));
-status_p(_) -> {status, remote}.
 
     
 %% io_requests(Requests)

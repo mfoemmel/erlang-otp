@@ -160,8 +160,9 @@ predef_macros(File) ->
     Ms1 = dict:store({atom,'FILE'}, {none,[{string,1,File}]}, Ms0),
     Ms2 = dict:store({atom,'LINE'}, {none,[{integer,1,1}]}, Ms1),
     Ms3 = dict:store({atom,'MODULE'}, undefined, Ms2),
+    Ms31 = dict:store({atom,'MODULE_STRING'}, undefined, Ms3),
     Machine = list_to_atom(erlang:info(machine)),
-    Ms4 = dict:store({atom,'MACHINE'}, {none,[{atom,1,Machine}]}, Ms3),
+    Ms4 = dict:store({atom,'MACHINE'}, {none,[{atom,1,Machine}]}, Ms31),
     dict:store({atom,Machine}, {none,[{atom,1,true}]}, Ms4).
 
 %% user_predef(PreDefMacros, Macros) ->
@@ -320,7 +321,9 @@ scan_toks(Toks0, From, St) ->
     end.
 
 scan_module([{'-',Lh},{atom,Lm,module},{'(',Ll},{atom,Ln,Mod},{')',Lr}|_], Ms) ->
-    dict:store({atom,'MODULE'}, {none,[{atom,Ln,Mod}]}, Ms);
+    Ms1 = dict:store({atom,'MODULE'}, {none,[{atom,Ln,Mod}]}, Ms),
+    dict:store({atom,'MODULE_STRING'}, {none,[{string,Ln,atom_to_list(Mod)}]},
+	       Ms1);
 scan_module(Ts, Ms) -> Ms.
 
 %% scan_define(Tokens, DefineLine, From, EppState)
@@ -727,6 +730,8 @@ macro_arg([{')',Lrp}|Toks], [], Arg) ->
     {lists:reverse(Arg),[{')',Lrp}|Toks]};
 macro_arg([{'(',Llp}|Toks], E, Arg) ->
     macro_arg(Toks, [')'|E], [{'(',Llp}|Arg]);
+macro_arg([{'<<',Lls}|Toks], E, Arg) ->
+    macro_arg(Toks, ['>>'|E], [{'<<',Lls}|Arg]);
 macro_arg([{'[',Lls}|Toks], E, Arg) ->
     macro_arg(Toks, [']'|E], [{'[',Lls}|Arg]);
 macro_arg([{'{',Llc}|Toks], E, Arg) ->
@@ -760,6 +765,14 @@ expand_macro([{var,Lv,V}|Ts], L, Rest, Bs) ->
 	error ->
 	    [{var,L,V}|expand_macro(Ts, L, Rest, Bs)]
     end;
+expand_macro([{'?', _}, {'?', _}, {var,Lv,V}|Ts], L, Rest, Bs) ->
+    case dict:find(V, Bs) of
+	{ok,Val} ->
+	    %% lists:append(Val, expand_macro(Ts, L, Rest, Bs));
+	    expand_arg(stringify(Val), Ts, L, Rest, Bs);
+	error ->
+	    [{var,L,V}|expand_macro(Ts, L, Rest, Bs)]
+    end;
 expand_macro([T|Ts], L, Rest, Bs) ->
     [setelement(2, T, L)|expand_macro(Ts, L, Rest, Bs)];
 expand_macro([], L, Rest, Bs) -> Rest.
@@ -768,6 +781,34 @@ expand_arg([A|As], Ts, L, Rest, Bs) ->
     [A|expand_arg(As, Ts, element(2, A), Rest, Bs)];
 expand_arg([], Ts, L, Rest, Bs) ->
     expand_macro(Ts, L, Rest, Bs).
+
+%%% stringify(L) returns a list of one token: a string which when
+%%% tokenized would yield the token list L.
+
+%tst(Str) ->
+%    {ok, T, _} = erl_scan:string(Str),
+%    [{string, _, S}] = stringify(T),
+%    S.
+
+token_src({dot, _}) ->
+    ".";
+token_src({X, _}) when atom(X) ->
+    atom_to_list(X);
+token_src({var, _, X}) ->
+    atom_to_list(X);
+token_src({string, _, X}) ->
+    lists:flatten(io_lib:format("~p", [X]));
+token_src({_, _, X}) ->
+    lists:flatten(io_lib:format("~w", [X])).
+
+stringify1([]) ->
+    [];
+stringify1([T | Tokens]) ->
+    [io_lib:format(" ~s", [token_src(T)]) | stringify1(Tokens)].
+
+stringify(L) ->
+    [$\s | S] = lists:flatten(stringify1(L)),
+    [{string, 1, S}].
 
 %% epp_request(Epp, Request)
 %% epp_reply(From, Reply)

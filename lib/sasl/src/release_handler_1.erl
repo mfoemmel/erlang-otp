@@ -102,11 +102,11 @@ eval_script(Script, Apps, LibDirs, Opts) ->
 split_instructions(Script) ->
     split_instructions(Script, []).
 split_instructions([point_of_no_return | T], Before) ->
-    {Before, [point_of_no_return | T]};
+    {lists:reverse(Before), [point_of_no_return | T]};
 split_instructions([H | T], Before) ->
     split_instructions(T, [H | Before]);
 split_instructions([], Before) ->
-    {[], Before}.
+    {[], lists:reverse(Before)}.
 
 %%-----------------------------------------------------------------
 %% Func: check_old_processes/1
@@ -472,14 +472,31 @@ start(Procs) ->
 %%       manually, by adding/deleting children.
 %% Returns: [{SuperPid, ChildName, ChildPid, Mods}]
 %%-----------------------------------------------------------------
+%% OTP-3452. For each application the first item contains the pid
+%% of the top supervisor, and the name of the supervisor call-back module.  
+%%-----------------------------------------------------------------
+
 get_supervised_procs() ->
     lists:foldl(
       fun(Application, Procs) ->
 	      case application_controller:get_master(Application) of
 		  Pid when pid(Pid) ->
-		      {Root, Mod} = application_master:get_child(Pid),
-		      get_procs(supervisor:which_children(Root), Root) ++
-			  [{undefined, undefined, Root, [Mod]} | Procs];
+		      {Root, _AppMod} = application_master:get_child(Pid),
+		      case get_supervisor_module(Root) of
+			  {ok, SupMod} ->
+			      get_procs(supervisor:which_children(Root), 
+					Root) ++
+				  [{undefined, undefined, Root, [SupMod]} | 
+				   Procs];
+			  {error, _} ->
+			      error_logger:error_msg("release_handler: "
+						     "cannot find top "
+						     "supervisor for "
+						    "application ~w~n", 
+						    [Application]),
+			      get_procs(supervisor:which_children(Root), 
+					Root) ++ Procs
+		      end;
 		  _ -> Procs
 	      end
       end,
@@ -505,6 +522,42 @@ get_procs(_, _Sup) ->
 get_dynamic_mods(Pid) ->
     {ok,Res} = gen:call(Pid, self(), get_modules),
     Res.
+
+%% XXXX
+%% Note: The following is a terrible hack done in order to resolve the
+%% problem stated in ticket OTP-3452.
+
+%% XXXX NOTE WELL: This record is from supervisor.erl. Also the record
+%% name is really `state'. 
+-record(supervisor_state, {name,
+                strategy,
+                children = [],
+                dynamics = [],
+                intensity,
+                period,
+                restarts = [],
+                module,
+                args}).
+
+%% Return the name of the call-back module that implements the
+%% (top) supervisor SupPid.
+%% Returns: {ok, Module} | {error,undefined}
+%%
+get_supervisor_module(SupPid) ->
+    case catch get_supervisor_module1(SupPid) of
+	{ok, Module} when atom(Module) ->
+	    {ok, Module};
+	_Other ->
+	    io:format("~w: reason: ~w~n", [SupPid, _Other]),
+	    {error, undefined}
+    end.
+
+get_supervisor_module1(SupPid) ->
+    {status, Pid, {module, Mod}, 
+     [_PDict, _SysState, _Parent, _Dbg, Misc]} = sys:get_status(SupPid),
+    [_Name, State, _Type, _Time] = Misc,
+    %% Cannot use #supervisor_state{module = Module} = State.
+    {ok, element(#supervisor_state.module, State)}.
 
 %%-----------------------------------------------------------------
 %% Func: do_soft_purge/3

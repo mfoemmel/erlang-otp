@@ -184,6 +184,7 @@ Terminals
 	'void'
 	';'
 	'char'
+	'wchar'          %% WCHAR
 	'|'
 	'inout'
 	'}'
@@ -203,6 +204,7 @@ Terminals
 	'<string_literal>'
 	'raises'
 	'string'
+	'wstring'
 	'default'
 	'short'
 	'%'
@@ -537,6 +539,7 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 
 %% (41)
 '<signed_long_int>' -> 'long' : '$1' .
+'<signed_long_int>' -> 'long' 'long': {'long long', element(2,'$2')} .
 
 
 %% (42)
@@ -550,6 +553,7 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 
 %% (44)
 '<unsigned_long_int>' -> 'unsigned' 'long' : '$2' .
+'<unsigned_long_int>' -> 'unsigned' 'long' 'long' : {'long long', element(2,'$2')} . %% ULLONG
 
 
 %% (45)
@@ -558,6 +562,7 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 
 %% (46)
 '<char_type>' -> 'char' : '$1' .
+'<char_type>' -> 'wchar' : '$1' .    %% WCHAR
 
 
 %% (47)
@@ -697,6 +702,10 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
   : #string{length='$3'} .
 '<string_type>' -> 'string' : #string{} .
 
+'<string_type>' -> 'wstring' '<' '<positive_int_const>' '>'   %% WSTRING 
+  : #wstring{length='$3'} .
+'<string_type>' -> 'wstring' : #wstring{} .                   %% WSTRING
+
 
 %% (63)
 '<array_declarator>' -> '<identifier>' 'OorM_<fixed_array_size>'
@@ -827,6 +836,7 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 
 
 Erlang code.
+%%-----------------------------------------------------------
 
 
 

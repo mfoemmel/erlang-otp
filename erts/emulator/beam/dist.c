@@ -40,7 +40,7 @@
 byte *dist_buf;
 int dist_buf_size;
 
-/* distribution trap functions (normally small numbers) */
+/* distribution trap functions */
 Export* dsend_trap = NULL;
 Export* dlink_trap = NULL;
 Export* dunlink_trap = NULL;
@@ -60,22 +60,27 @@ int        MAXDIST;
 
 /* local variables */
 static Process *net_kernel;    /* we don't want to look it up */
-static uint32*    dmem;
+static Eterm* dmem;
 
 #define DMEM_SIZE	(14+2+REF_WORDS) /* Enough to hold any control msg */
 
 /* forward declarations */
 
 static FUNCTION(int, clear_dist_entry, (int));
-static FUNCTION(int, pack_and_send, (int, uint32, uint32, int));
+static int pack_and_send(int, Eterm, Eterm, int);
 
 void clear_cache(slot)
 int slot;
 {
     ErlCache* cp;
 
-    if ((cp = dist_addrs[slot].cache) != NULL)
-	sys_memset(cp, 0, sizeof(ErlCache));
+    if ((cp = dist_addrs[slot].cache) != NULL) {
+	int i;
+	for(i = 0; i < sizeof(cp->in_arr)/sizeof(cp->in_arr[0]); ++i) {
+	    cp->in_arr[i] = THE_NON_VALUE;
+	    cp->out_arr[i] = THE_NON_VALUE;
+	}
+    }
 }
 
 void delete_cache(slot)
@@ -210,14 +215,19 @@ int slot;
 		break;
 
 	    case LNK_LINK1:
-		if (get_node(item) != THIS_NODE) {
-		   break;
+		if (pid_node(item) != THIS_NODE) {
+		   /* We are being monitored */
+		   if ((rp = pid2proc(lnk->data)) == NULL)
+		      break;
+		   del_link(find_link_by_ref(&rp->links, &lnk->ref));
+		} else {
+		   /* We are monitoring */
+		   if ((rp = pid2proc(item)) == NULL)
+		      break;
+		   queue_monitor_message(rp, &lnk->ref, am_process, 
+					 lnk->data, am_noconnection);
+		   del_link(find_link_by_ref(&rp->links, &lnk->ref));
 		}
-		if ((rp = pid2proc(item)) == NULL)
-		   break;
-		queue_monitor_message(rp, &lnk->ref, am_process, lnk->data,
-				      am_noconnection);
-		del_link(find_link_by_ref(&rp->links, &lnk->ref));
 		break;
 
 	    case LNK_NODE:
@@ -281,8 +291,8 @@ void init_dist()
     dist_buf_size = TMP_BUF_SIZE - 20;
 
     i = sys_max_files() * 2;  
-    if (i > (1 << P_NODE))
-	MAXDIST = 1 << P_NODE;
+    if (i > MAX_NODE)
+	MAXDIST = MAX_NODE;
     else 
 	MAXDIST = i;
 
@@ -340,80 +350,52 @@ int slot;
 int dist_link(slot, local, remote)
 int slot; uint32 remote; uint32 local;
 {
-    uint32 cid = dist_addrs[slot].cid;
-    uint32 ctl = TUPLE3(dmem, make_small(DOP_LINK), local, remote);
-    uint32 mctl;
+    Eterm ctl = TUPLE3(dmem, make_small(DOP_LINK), local, remote);
 
-    if (is_port(cid))
-	return pack_and_send(slot,ctl,0, 0);
-    else if (is_pid(cid)) {
-	mctl = TUPLE2(dmem+4, am_dist, ctl);
-	send_msg(cid, mctl);
-	return 0;
-    }
-    return 0;
+    ASSERT(is_port(dist_addrs[slot].cid));
+    return pack_and_send(slot, ctl, THE_NON_VALUE, 0);
 }
 
 
 int dist_unlink(slot, local, remote)
 int slot; uint32 remote; uint32 local;
 {
-    uint32 cid = dist_addrs[slot].cid;
-    uint32 ctl = TUPLE3(dmem, make_small(DOP_UNLINK), local, remote);
-    uint32 mctl;
+    Eterm ctl = TUPLE3(dmem, make_small(DOP_UNLINK), local, remote);
 
-    if (is_port(cid))
-	return pack_and_send(slot,ctl,0, 0);
-    else if (is_pid(cid)) {
-	mctl = TUPLE2(dmem+4, am_dist, ctl);
-	send_msg(cid, mctl);
-	return 0;
-    }
-    return 0;
+    ASSERT(is_port(dist_addrs[slot].cid));
+    return pack_and_send(slot, ctl, THE_NON_VALUE, 0);
 }
 
 int dist_m_exit(slot, watcher, watched, ref0, reason)
 int slot; uint32 watcher; uint32 watched; Ref *ref0; uint32 reason;
 {
-    uint32 cid = dist_addrs[slot].cid;
     uint32 ref, ref1;
     uint32 rsize;
     uint32 ctl;
-    uint32 mctl;
     uint32 *hp = dmem;
 
-    ref1 = make_refer(ref0);
+    ref1 = make_ref(ref0);
     rsize = size_object(ref1);
 
-    ref = copy_struct(ref1, rsize,
-		      &hp, NULL);
-    ctl = TUPLE5(hp,
-		 make_small(DOP_MONITOR_P_EXIT),
+    ref = copy_struct(ref1, rsize, &hp, NULL);
+    ctl = TUPLE5(hp, make_small(DOP_MONITOR_P_EXIT),
 		 watched, watcher, ref, reason);
 
     del_link(find_link_by_ref(&dist_addrs[slot].links, ref_ptr(ref)));
 
-    if (is_port(cid))
-	return pack_and_send(slot,ctl,0, 1);
-    else if (is_pid(cid)) {
-	mctl = TUPLE2(hp+6, am_dist, ctl);
-	send_msg(cid, mctl);
-	return 0;
-    }
-    return 0;
+    ASSERT(is_port(dist_addrs[slot].cid));
+    return pack_and_send(slot, ctl, THE_NON_VALUE, 1);
 }
 
 int dist_monitor(slot, watcher, watched, ref0)
 int slot; uint32 watcher; uint32 watched; Ref *ref0;
 {
-    uint32 cid = dist_addrs[slot].cid;
     uint32 ref, ref1;
     uint32 rsize;
     uint32 ctl;
-    uint32 mctl;
     uint32 *hp = dmem;
 
-    ref1 = make_refer(ref0);
+    ref1 = make_ref(ref0);
     rsize = size_object(ref1);
 
     ref = copy_struct(ref1, rsize,
@@ -422,27 +404,19 @@ int slot; uint32 watcher; uint32 watched; Ref *ref0;
 		 make_small(DOP_MONITOR_P),
 		 watcher, watched, ref);
 
-    if (is_port(cid))
-	return pack_and_send(slot,ctl,0, 0);
-    else if (is_pid(cid)) {
-	mctl = TUPLE2(hp+5, am_dist, ctl);
-	send_msg(cid, mctl);
-	return 0;
-    }
-    return 0;
+    ASSERT(is_port(dist_addrs[slot].cid));
+    return pack_and_send(slot, ctl, THE_NON_VALUE, 0);
 }
 
-int dist_demonitor(slot, watcher, watched, ref0)
-int slot; uint32 watcher; uint32 watched; Ref *ref0;
+int dist_demonitor(slot, watcher, watched, ref0, force)
+int slot; uint32 watcher; uint32 watched; Ref *ref0; int force;
 {
-    uint32 cid = dist_addrs[slot].cid;
     uint32 ref, ref1;
     uint32 rsize;
     uint32 ctl;
-    uint32 mctl;
     uint32 *hp = dmem;
 
-    ref1 = make_refer(ref0);
+    ref1 = make_ref(ref0);
     rsize = size_object(ref1);
 
     ref = copy_struct(ref1, rsize,
@@ -451,22 +425,14 @@ int slot; uint32 watcher; uint32 watched; Ref *ref0;
 		 make_small(DOP_DEMONITOR_P),
 		 watcher, watched, ref);
 
-    if (is_port(cid))
-	return pack_and_send(slot,ctl,0, 0);
-    else if (is_pid(cid)) {
-	mctl = TUPLE2(hp+5, am_dist, ctl);
-	send_msg(cid, mctl);
-	return 0;
-    }
-    return 0;
+    ASSERT(is_port(dist_addrs[slot].cid));
+    return pack_and_send(slot, ctl, THE_NON_VALUE, force);
 }
 
 int
 dist_send(Process* sender, int slot, Eterm remote, Eterm message)
 {
-    uint32 cid = dist_addrs[slot].cid;
     uint32 ctl;
-    uint32 mctl;
     uint32 cookie = dist_addrs[slot].out_cookie;
     unsigned long version = dist_addrs[slot].version;
     uint32 token = NIL;
@@ -481,28 +447,19 @@ dist_send(Process* sender, int slot, Eterm remote, Eterm message)
 	seq_trace_output(token, message, SEQ_TRACE_SEND, remote);
     }
 
-    if (is_port(cid)) {
-        if (version > 0 && token != NIL)
-	   ctl = TUPLE4(dmem,make_small(DOP_SEND_TT),cookie, remote,
-			token);
-	else
-	   ctl = TUPLE3(dmem,make_small(DOP_SEND),cookie, remote);
-	return pack_and_send(slot, ctl, message, 0);
-    }
-    else if (is_pid(cid)) {
-	ctl = TUPLE4(dmem,make_small(DOP_SEND), cookie, remote, message);
-	mctl = TUPLE2(dmem+5, am_dist, ctl);
-	send_msg(cid, mctl);
-    }
-    return 0;
+    ASSERT(is_port(dist_addrs[slot].cid));
+    if (version > 0 && token != NIL)
+	ctl = TUPLE4(dmem,make_small(DOP_SEND_TT),cookie, remote,
+		     token);
+    else
+	ctl = TUPLE3(dmem,make_small(DOP_SEND),cookie, remote);
+    return pack_and_send(slot, ctl, message, 0);
 }
 
 int
 dist_reg_send(Process* sender, int slot, Eterm remote_name, Eterm message)
 {
-    uint32 cid = dist_addrs[slot].cid;
     uint32 ctl;
-    uint32 mctl;
     uint32 cookie = dist_addrs[slot].out_cookie;
     unsigned long version = dist_addrs[slot].version;
     uint32 token = NIL;
@@ -517,23 +474,14 @@ dist_reg_send(Process* sender, int slot, Eterm remote_name, Eterm message)
 	seq_trace_output(token, message, SEQ_TRACE_SEND, remote_name);
     }
 
-    if (is_port(cid)) {
-        if (version > 0 && token != NIL)
-	   ctl = TUPLE5(dmem,make_small(DOP_REG_SEND_TT),
-			sender->id, cookie, remote_name, token);
-	else
-	   ctl = TUPLE4(dmem,make_small(DOP_REG_SEND),
-			sender->id, cookie, remote_name);
-	return pack_and_send(slot, ctl, message, 0);
-    }
-    else if (is_pid(cid)) {
-	ctl = TUPLE5(dmem,make_small(DOP_REG_SEND),
-		     sender->id, cookie, remote_name,
-		     message);
-	mctl = TUPLE2(dmem+6, am_dist, ctl);
-	send_msg(cid, mctl);
-    }
-    return 0;
+    ASSERT(is_port(dist_addrs[slot].cid));
+    if (version > 0 && token != NIL)
+	ctl = TUPLE5(dmem,make_small(DOP_REG_SEND_TT),
+		     sender->id, cookie, remote_name, token);
+    else
+	ctl = TUPLE4(dmem,make_small(DOP_REG_SEND),
+		     sender->id, cookie, remote_name);
+    return pack_and_send(slot, ctl, message, 0);
 }
 
 /* local has died, deliver the exit signal to remote
@@ -544,9 +492,8 @@ dist_reg_send(Process* sender, int slot, Eterm remote_name, Eterm message)
 int dist_exit_tt(slot, local, remote, reason, token)
 int slot; uint32 local; uint32 remote; uint32 reason; uint32 token;
 {
-    uint32 cid = dist_addrs[slot].cid;
-    uint32 mctl;
-    uint32 ctl;
+    Eterm ctl;
+
     if (dist_addrs[slot].version > 0 && token != NIL) {	
 	/* token should be updated by caller */
 	seq_trace_output_exit(token, reason, SEQ_TRACE_SEND, remote, local);
@@ -555,65 +502,37 @@ int slot; uint32 local; uint32 remote; uint32 reason; uint32 token;
 	ctl = TUPLE4(dmem, make_small(DOP_EXIT), local, remote, reason);
     }
     del_link(find_link(&dist_addrs[slot].links, LNK_LINK, local, remote));
-    if (is_port(cid))
-	return pack_and_send(slot, ctl, 0, 1);  /* forced, i.e ignore busy */
-    else if (is_pid(cid)) {
-	mctl = TUPLE2(dmem+5, am_dist, ctl);
-	send_msg(cid, mctl);
-    }
-    return 0;
+    ASSERT(is_port(dist_addrs[slot].cid));
+    return pack_and_send(slot, ctl, THE_NON_VALUE, 1);  /* forced, i.e ignore busy */
 }
 
 int dist_exit(slot, local, remote, reason)
 int slot; uint32 local; uint32 remote; uint32 reason;
 {
-    uint32 cid = dist_addrs[slot].cid;
-    uint32 mctl;
     uint32 ctl = TUPLE4(dmem, make_small(DOP_EXIT), local, remote, reason);
     del_link(find_link(&dist_addrs[slot].links, LNK_LINK, local, remote));
-    if (is_port(cid))
-	return pack_and_send(slot, ctl, 0, 1);  /* forced, i.e ignore busy */
-    else if (is_pid(cid)) {
-	mctl = TUPLE2(dmem+5, am_dist, ctl);
-	send_msg(cid, mctl);
-    }
-    return 0;
+    ASSERT(is_port(dist_addrs[slot].cid));
+    return pack_and_send(slot, ctl, THE_NON_VALUE, 1);  /* forced, i.e ignore busy */
 }
 
 /* internal version of dist_exit2 that force send through busy port */
 int dist_exit2(slot, local, remote, reason)
 int slot; uint32 local; uint32 remote; uint32 reason;
 {
-    uint32 cid = dist_addrs[slot].cid;
-    uint32 ctl = TUPLE4(dmem, make_small(DOP_EXIT2),
-			local, remote, reason);
-    uint32 mctl;
+    Eterm ctl = TUPLE4(dmem, make_small(DOP_EXIT2), local, remote, reason);
 
-    if (is_port(cid))
-	return pack_and_send(slot, ctl, 0, 0);
-    else if (is_pid(cid)) {
-	mctl = TUPLE2(dmem+5, am_dist, ctl);
-	send_msg(cid, mctl);
-    }
-    return 0;
+    ASSERT(is_port(dist_addrs[slot].cid));
+    return pack_and_send(slot, ctl, THE_NON_VALUE, 0);
 }
 
 
 int dist_group_leader(slot, leader, remote)
 int slot; uint32 leader; uint32 remote;
 {
-    uint32 cid = dist_addrs[slot].cid;
-    uint32 ctl = TUPLE3(dmem, make_small(DOP_GROUP_LEADER), 
-			leader, remote);
-    uint32 mctl;
+    Eterm ctl = TUPLE3(dmem, make_small(DOP_GROUP_LEADER), leader, remote);
 
-    if (is_port(cid))
-	return pack_and_send(slot, ctl, 0, 0);
-    else if (is_pid(cid)) {
-	mctl = TUPLE2(dmem+4, am_dist, ctl);
-	send_msg(cid, mctl);
-    }
-    return 0;
+    ASSERT(is_port(dist_addrs[slot].cid));
+    return pack_and_send(slot, ctl, THE_NON_VALUE, 0);
 }
 
 /*
@@ -641,11 +560,13 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
     uint32 message;
     uint32 reason;
     Process* rp;
-    ErlHeapFragment* ctl = NULL;
     ErlHeapFragment* msg = NULL;
-    uint32* hp;
+    Eterm ctl_default[64];
+    Eterm* ctl = ctl_default;
+    ErlOffHeap off_heap;
+    Eterm* hp;
     int type;
-    uint32 token;
+    Eterm token;
 
     if (net_kernel == NULL)  /* XXX check if this may trig */
 	return 0;
@@ -669,29 +590,34 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 #ifdef MESS_DEBUG
     print_pass_through(slot, t, len-1);
 #endif
-    if ((i = decode_size(t, len-1)) == -1) {
+    if ((ctl_len = decode_size(t, len-1)) == -1) {
 	PURIFY_MSG("data error");
 	goto data_error;
     }
-    ctl_len = i;
-    ctl = new_message_buffer(i);
-    hp = ctl->mem;
-    if ((arg = from_external(slot, &hp, &t, &ctl->off_heap)) == 0) {
+    if (ctl_len > sizeof(ctl)/sizeof(ctl[0])) {
+	ctl = safe_alloc(ctl_len * sizeof(Eterm));
+    }
+    hp = ctl;
+
+    off_heap.mso = NULL;
+    off_heap.funs = NULL;
+    off_heap.overhead = 0;
+    arg = from_external(slot, &hp, &t, &off_heap);
+    if (is_non_value(arg)) {
 	PURIFY_MSG("data error");
 	goto data_error;
     }
+    ctl_len = t - buf;
+    len -= ctl_len;
 
-    len -= t-buf;
-
-    tuple = ptr_val(arg);
     if (is_not_tuple(arg) || 
-	(arityval(*tuple) < 1) ||
+	(tuple = tuple_val(arg), arityval(*tuple) < 1) ||
 	is_not_small(tuple[1]))
     {
 	cerr_pos = 0;
 	erl_printf(CBUF, "Invalid distribution message: ");
 	ldisplay(arg, CBUF, 200);
-	send_error_to_logger(0);
+	send_error_to_logger(NIL);
 	goto data_error;
     }
 
@@ -731,9 +657,16 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
     case DOP_MONITOR_P:
 	watcher = tuple[2];
 	watched = tuple[3];  /* local proc to monitor */
-	ref = tuple[4];
+	ref     = tuple[4];
 
-	if ((rp = pid2proc(watched)) == NULL) {
+	if (is_atom(watched)) {
+	    rp = whereis_process(atom_val(watched));
+	    if ((rp == NULL) || (rp->status == P_EXITING)) {
+		dist_m_exit(slot, watcher, watched, ref_ptr(ref), am_noproc);
+		break;
+	    } else
+		watched = rp->id;
+	} else if ((rp = pid2proc(watched)) == NULL) {
 	   dist_m_exit(slot, watcher, watched, ref_ptr(ref), am_noproc);
 	   break;
 	}
@@ -745,18 +678,16 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 
     case DOP_DEMONITOR_P:
 	/* watcher = tuple[2]; */
-	watched = tuple[3];
+	/* watched = tuple[3]; May be an atom in case of monitor name */
 	ref = tuple[4];
 
+	lnkp = find_link_by_ref(&dist_addrs[slot].links, ref_ptr(ref));
+	if (lnkp == NULL)
+	    break;
+	watched = (*lnkp)->data;
 	if ((rp = pid2proc(watched)) == NULL)
 	   break;
-
-	lnkp = find_link_by_ref(&rp->links, ref_ptr(ref));
-	if (lnkp == NULL)
-	   break;
-	
-	del_link(lnkp);
-	del_link(find_link_by_ref(&dist_addrs[slot].links, ref_ptr(ref)));
+	del_link(find_link_by_ref(&rp->links, ref_ptr(ref)));
 	break;
 
     case DOP_NODE_LINK: /* XXX never sent ?? */
@@ -770,83 +701,81 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 	    PURIFY_MSG("data error");
 	    goto data_error;
 	}
-	if (type == DOP_REG_SEND_TT) {
-	   from = tuple[2];
-	   to = tuple[4];
-	   token = tuple[5];
-	} else {
-	   from = tuple[2];
-	   to = tuple[4];
-	   token = NIL;
-	}
-	msg = new_message_buffer(i+5+ctl_len);
+	from = tuple[2];
+	to = tuple[4];
+
+	msg = new_message_buffer(i+ctl_len);
 	hp = msg->mem;
-	if ((message = from_external(slot, &hp, &t, &msg->off_heap)) == 0) {
+	message = from_external(slot, &hp, &t, &msg->off_heap);
+	if (is_non_value(message)) {
 	    PURIFY_MSG("data error");
 	    goto data_error;
 	}
-
-	token = copy_struct(token, size_object(token), &hp, NULL);
+	
+	if (type == DOP_REG_SEND) {
+	    token = NIL;
+	} else {
+	    token = tuple[5];
+	    token = copy_struct(token, size_object(token), &hp, NULL);
+	}
 
 	if (tuple[3] != dist_addrs[slot].in_cookie) {
 	    res = TUPLE4(hp, from, am_badcookie, to, message);
 	    dist_addrs[slot].out_cookie = am_badcookie;
 	    queue_message_tt(net_kernel, msg, res, token);
-	}
-	else if ((rp = whereis_process(unsigned_val(to))) == NULL) {
-	    /* Now receiver on this node -- silently ignore this message */
+	} else if ((rp = whereis_process(atom_val(to))) == NULL) {
+	    /* No receiver on this node -- silently ignore this message */
 	    free_message_buffer(msg);
-	}
-	else
+	} else {
 	    queue_message_tt(rp, msg, message, token);
+	}
 	break;
 
     case DOP_SEND_TT:
     case DOP_SEND:
-	/* ordinary send  */
-	if (type == DOP_SEND_TT) {
-	   to = tuple[3];
-	   token = tuple[4];
-	} else {
-	   to = tuple[3];
-	   token = NIL;
-	}
-
 	if ((i = decode_size(t, len)) == -1) {
 	    PURIFY_MSG("data error");
 	    goto data_error;
 	}
-	msg = new_message_buffer(i+5+ctl_len);
+	msg = new_message_buffer(i+ctl_len);
 	hp = msg->mem;
-	if ((message = from_external(slot, &hp, &t, &msg->off_heap)) == 0) {
+
+	/*
+	 * We must decode the message even if the receiver is
+	 * invalid in order to keep the atom cache up to date.
+	 */
+ 
+	message = from_external(slot, &hp, &t, &msg->off_heap);
+	if (is_non_value(message)) {
 	    PURIFY_MSG("data error");
 	    goto data_error;
 	}
 
-	token = copy_struct(token, size_object(token), &hp, NULL);
-
-	if ((rp = pid2proc(to)) == NULL) {
-	    /* We'll throw away the message but must still decode
-	       it to make sure our cache is up-to-date - bung it
-	       on net_kernel's heap and let the gc throw it away */
-	    free_message_buffer(msg);
-	    msg = NULL;
+	if (type == DOP_SEND) {
+	    token = NIL;
+	} else {
+	    token = tuple[4];
+	    token = copy_struct(token, size_object(token), &hp, NULL);
 	}
-	else if (tuple[2] != dist_addrs[slot].in_cookie) {
+
+	to = tuple[3];
+	if ((rp = pid2proc(to)) == NULL) {
+	    free_message_buffer(msg);
+	} else if (tuple[2] != dist_addrs[slot].in_cookie) {
 	    res = TUPLE4(hp, dist_addrs[slot].sysname, am_badcookie, 
 			 to, message);
 	    dist_addrs[slot].out_cookie = am_badcookie;
 	    queue_message_tt(net_kernel, msg, res, token);
-	}
-	else
+	} else {
 	    queue_message_tt(rp, msg, message, token);
+	}
 	break;
 
     case DOP_MONITOR_P_EXIT:
 	watched = tuple[2];  /* remote proc which died */
 	watcher = tuple[3];
-	ref = tuple[4];
-	reason = tuple[5];
+	ref     = tuple[4];
+	reason  = tuple[5];
 
 	if ((rp = pid2proc(watcher)) == NULL)
 	   break;
@@ -875,17 +804,23 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 	   token = tuple[4];
 	   reason = tuple[5];
 	}
-	i = get_creation(to);
+	i = pid_or_port_creation(to);
 	if ((i != 0) && (i != this_creation))
 	    break;
 	del_link(find_link(&dist_addrs[slot].links, LNK_LINK, to, from));
 
 	if (is_pid(to)) {
-	    rp = process_tab[get_number(to)];
+	    rp = process_tab[pid_number(to)];
 	    if (INVALID_PID(rp, to))
 		break;
 	    del_link(find_link(&rp->links, LNK_LINK, from, NIL));
+#if 0
+	    /* Arndt: Maybe it should never be 'kill', but it can be,
+	       namely when a linked process does exit(kill). Until we know
+	       whether that is incorrect and what should happen instead,
+	       we leave the assertion out. */
 	    ASSERT(reason != am_kill); /* should never be kill (killed) */
+#endif
 	    if (rp->flags & F_TRAPEXIT)
 		/* token updated by remote node */
 		deliver_exit_message_tt(from, rp, reason, token); 
@@ -893,7 +828,7 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 		schedule_exit(rp, reason);
 	}
 	else if (is_port(to)) {
-	    int ix = get_port_index(to);
+	    int ix = port_index(to);
 	    if (erts_port[ix].status != FREE) {
 		del_link(find_link(&erts_port[ix].links,LNK_LINK,from,NIL));
 	    }
@@ -915,11 +850,11 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 	   token = tuple[4];
 	   reason = tuple[5];
 	}
-	i = get_creation(to);
+	i = pid_creation(to);
 	if ((i != 0) && (i != this_creation))
 	    break;
 	if (is_pid(to)) {
-	    rp = process_tab[get_number(to)];
+	    rp = process_tab[pid_number(to)];
 	    if (INVALID_PID(rp, to))
 		break;
 	    if (reason == am_kill)
@@ -935,7 +870,7 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
     case DOP_GROUP_LEADER:
 	from = tuple[2];   /* Group leader  */
 	to = tuple[3];     /* new member */
-	rp = process_tab[get_number(to)];
+	rp = process_tab[pid_number(to)];
 	if (INVALID_PID(rp, to))
 	    break;
 	rp->group_leader = from;
@@ -945,21 +880,29 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 	cerr_pos = 0;
 	erl_printf(CBUF, "Illegal value in distribution dispatch switch: ");
 	ldisplay(arg, CBUF, 200);
-	send_error_to_logger(0);
+	send_error_to_logger(NIL);
 	PURIFY_MSG("data error");
 	goto data_error;
     }
 
-    if (ctl)
-	free_message_buffer(ctl);
+    if (off_heap.mso) {
+	erts_cleanup_mso(off_heap.mso);
+    }
+    if (ctl != ctl_default) {
+	sys_free(ctl);
+    }
     return 0;
 
  data_error:
-    if (ctl)
-	free_message_buffer(ctl);
-    if (msg)
+    if (off_heap.mso) {
+	erts_cleanup_mso(off_heap.mso);
+    }
+    if (ctl != ctl_default) {
+	sys_free(ctl);
+    }
+    if (msg) {
 	free_message_buffer(msg);
-
+    }
     do_exit_port(dist_addrs[slot].cid, dist_addrs[slot].cid, am_killed);
     return -1;
 }
@@ -972,14 +915,14 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 */
 
 int sysname_to_dist_slot(sysname) 
-uint32 sysname;
+Eterm sysname;
 {
     int start;
     int pos;
 
     if (sysname == this_node)
 	return 0;  /* special case */
-    start = pos =atom_tab(unsigned_val(sysname))->slot.bucket.hvalue % MAXDIST;
+    start = pos = atom_tab(atom_val(sysname))->slot.bucket.hvalue % MAXDIST;
 
     while (1) {
 	if ((dist_addrs[pos].sysname == sysname) &&
@@ -993,7 +936,7 @@ uint32 sysname;
 }
 
 int find_or_insert_dist_slot(sysname)
-uint32 sysname;
+Eterm sysname;
 {
     int start;
     int pos;
@@ -1003,7 +946,7 @@ uint32 sysname;
 	return 0; /* ok */
     if (is_not_atom(sysname))
 	return -1;
-    start = pos =atom_tab(unsigned_val(sysname))->slot.bucket.hvalue % MAXDIST;
+    start = pos = atom_tab(atom_val(sysname))->slot.bucket.hvalue % MAXDIST;
 
     while (1) {
 	/* Keep sysnames on clear */
@@ -1035,7 +978,7 @@ uint32 sysname;
 		if (done == 0) {
 		    cerr_pos = 0;
 		    erl_printf(CBUF, "Out of space in dist table");
-		    send_error_to_logger(0);
+		    send_error_to_logger(NIL);
 		    return -1;
 		}
 		pos = (pos + 1) % MAXDIST;
@@ -1060,12 +1003,12 @@ uint32 sysname;
 /*         1 on resend  */
 
 
-static int pack_and_send(slot, ctl, mess, force_busy)
-int slot; uint32 ctl; uint32 mess; int force_busy;
+static int 
+pack_and_send(int slot, Eterm ctl, Eterm mess, int force_busy)
 {
     byte *t;
     Port* p;
-    uint32 cid = dist_addrs[slot].cid;
+    Eterm cid = dist_addrs[slot].cid;
 
     if (this_node == am_Noname)
 	return -1;
@@ -1073,13 +1016,13 @@ int slot; uint32 ctl; uint32 mess; int force_busy;
 	return 0;
     if (dist_addrs[slot].status & D_EXITING) /* ??? */
 	return 0; /* Ignore it */
-    p = &erts_port[get_port_index(cid)];
+    p = &erts_port[port_index(cid)];
     if (p->status & EXITING)
 	return 0;
     if (!force_busy && (p->status & PORT_BUSY))
 	return 1;
 #ifdef MESS_DEBUG
-    if (mess != 0) {
+    if (is_value(mess)) {
 	erl_printf(CERR,">>ctl+mess>> ");
 	display(ctl,CERR);
 	erl_printf(CERR," && ");
@@ -1093,10 +1036,9 @@ int slot; uint32 ctl; uint32 mess; int force_busy;
     }
 #endif
     t = dist_buf;
-    *t++ = DIST_SEND;             /* send command to driver */
     *t++ = PASS_THROUGH;          /* not needed !!! */
     to_external(slot, ctl, &t);
-    if (mess != 0)
+    if (is_value(mess))
 	to_external(slot, mess, &t);
     dist_port_command(p, dist_buf, t-dist_buf);
     return 0;
@@ -1186,7 +1128,8 @@ int slot; byte *t; int len;
     }
     ctl = new_message_buffer(i);
     hp = ctl->mem;
-    if ((i = from_external(slot, &hp, &t, &ctl->mso)) == 0) {
+    i = from_external(slot, &hp, &t, &ctl->mso);
+    if (is_non_value(i)) {
 	erl_printf(CERR,"Bailing out in from_external control message\n\r");
 	upp(orig, len);
 	erl_exit(1, "Bailing out in from_external control message\n");
@@ -1205,7 +1148,8 @@ int slot; byte *t; int len;
     }
     msg = new_message_buffer(i);
     hp = msg->mem;
-    if ((i = from_external(slot, &hp, &t, &msg->mso)) == 0) {
+    i = from_external(slot, &hp, &t, &msg->mso);
+    if (is_non_value(i)) {
 	erl_printf(CERR,"Bailing out in from_external second element\n\r");
 	upp(orig, len);
 	erl_exit(1, "Bailing out in from_external second element\n");
@@ -1220,15 +1164,11 @@ int slot; byte *t; int len;
 
 
 /****************************************************************************
-
-
   DISTRIBUTION BIFS:
 
             setnode/2     -- start distribution
             setnode/3     -- set node controller
 
-	    set_cookie/2  -- set output cookie on node
-            get_cookie/0  -- return node cookie
             node/1        -- return objects node name
             node/0        -- return this node name
             nodes/0       -- return a list of all (non hidden) nodes
@@ -1239,9 +1179,6 @@ int slot; byte *t; int len;
             dist_exit/3       -- send exit signals from remote to local process
             dist_link/2       -- link a remote process to a local
             dist_unlink/2     -- unlink a remote from a local
-	    dist_to_binary/1  -- convert term into distribution binaries
-            binary_to_dist/1  -- convert dist binary to term
-
 ****************************************************************************/
 
 
@@ -1276,8 +1213,8 @@ BIF_ADECL_2
     if ((n = signed_val(BIF_ARG_2)) < 0)
 	goto error;
     /* valid node name ? */
-    if (!is_node_name(atom_tab(unsigned_val(BIF_ARG_1))->name,
-		      atom_tab(unsigned_val(BIF_ARG_1))->len))
+    if (!is_node_name(atom_tab(atom_val(BIF_ARG_1))->name,
+		      atom_tab(atom_val(BIF_ARG_1))->len))
 	goto error;
 
     if (BIF_ARG_1 == am_Noname) /* cant use this name !! */
@@ -1298,7 +1235,7 @@ BIF_ADECL_2
 	dexit_trap->address == NULL)
 	goto error;
 
-    if ((net_kernel = whereis_process(unsigned_val(am_net_kernel))) == NULL)
+    if ((net_kernel = whereis_process(atom_val(am_net_kernel))) == NULL)
 	goto error;
     /* By setting dslot==0 (this node slot) and DISTRIBUTION on
        net_kernel do_net_exist will be called when net_kernel
@@ -1359,17 +1296,18 @@ BIF_ADECL_3
     /*
      * Check and pick out arguments
      */
-    if (is_not_atom(BIF_ARG_1) || 
-	((is_not_pid(BIF_ARG_2) && is_not_port(BIF_ARG_2))) ||
-	(this_node == am_Noname))
+    if (is_not_atom(BIF_ARG_1) ||
+	is_not_port(BIF_ARG_2) ||
+	(this_node == am_Noname)) {
 	goto error;
+    }
 
-    if (!is_node_name(atom_tab(unsigned_val(BIF_ARG_1))->name,
-		      atom_tab(unsigned_val(BIF_ARG_1))->len))
+    if (!is_node_name(atom_tab(atom_val(BIF_ARG_1))->name,
+		      atom_tab(atom_val(BIF_ARG_1))->len))
 	goto error;
     if (!is_tuple(BIF_ARG_3))
 	goto error;
-    tp = ptr_val(BIF_ARG_3);
+    tp = tuple_val(BIF_ARG_3);
     if (*tp++ != make_arityval(4))
 	goto error;
     if (!is_small(*tp))
@@ -1397,24 +1335,14 @@ BIF_ADECL_3
 	goto error;
 
     if (is_port(BIF_ARG_2)) {
-	int n = get_node_port(BIF_ARG_2);
-	int ix = get_port_index(BIF_ARG_2);
+	int n = port_node(BIF_ARG_2);
+	int ix = port_index(BIF_ARG_2);
 	if ((n != THIS_NODE) || (erts_port[ix].status == FREE) ||
 	    (erts_port[ix].status & EXITING) || (erts_port[ix].dslot != -1))
 	    goto error;
 	erts_port[ix].status |= DISTRIBUTION;
 	erts_port[ix].dslot = slot;
     }
-    else {
-	Process* p = pid2proc(BIF_ARG_2);
-	if ((p == NULL) || (p->dslot != -1))
-	    goto error;
-	else {
-	    p->flags |= F_DISTRIBUTION;
-	    p->dslot = slot;
-	}
-    }
-
 
     if (!(flags & DFLAG_PUBLISHED)) {
 	delete_cache(slot);
@@ -1454,9 +1382,9 @@ BIF_ADECL_3
 
     /* Check that it is a process or port */
     if (is_pid(remote))
-	rslot = get_node(remote);
+	rslot = pid_node(remote);
     else if (is_port(remote))
-	rslot = get_node_port(remote);
+	rslot = port_node(remote);
     else
 	goto error;
 
@@ -1468,7 +1396,7 @@ BIF_ADECL_3
 	goto error;
 
     /* Check that local is local */
-    if (is_pid(local) && (get_node(local) == THIS_NODE)) {
+    if (is_pid(local) && (pid_node(local) == THIS_NODE)) {
 	if ((lp = pid2proc(local)) == NULL)
 	    BIF_RET(am_true); /* ignore */
 
@@ -1484,7 +1412,7 @@ BIF_ADECL_3
 	}
     }
     else if (is_port(local)) {
-	if (get_node_port(local) != THIS_NODE)
+	if (port_node(local) != THIS_NODE)
 	    goto error;
 	do_exit_port(local, remote, BIF_ARG_2);
 	if (BIF_P->status != P_RUNNING) {
@@ -1519,7 +1447,7 @@ BIF_ADECL_2
     local = BIF_ARG_1;
     remote = BIF_ARG_2;
 
-    if (is_not_pid(remote) || (get_node(remote) != slot))
+    if (is_not_pid(remote) || (pid_node(remote) != slot))
 	goto error;
     if (is_pid(local)) {
 	if ((lp = pid2proc(local)) == NULL) {
@@ -1561,7 +1489,7 @@ BIF_ADECL_2
 	goto error;
 
     /* Remote must be a process */
-    if (is_not_pid(remote) || (get_node(remote) != slot))
+    if (is_not_pid(remote) || (pid_node(remote) != slot))
 	goto error;
 
     if (is_pid(local)) {
@@ -1584,59 +1512,6 @@ BIF_ADECL_2
 }
 
 
-#if 0
-/**********************************************************************/
-/* set_cookie(Node, Atom) -> Bool */
-
-BIF_RETTYPE set_cookie_2(BIF_ALIST_2)
-BIF_ADECL_2
-{
-    int i;
-    int slot;
-
-    if (is_not_atom(BIF_ARG_1) || is_not_atom(BIF_ARG_2) ||
-	(this_node == am_Noname))
-	goto error;
-
-    /* set our own cookie, we also set the cookis to all other nodes
-     * to the same cookie 
-     */
-    if (BIF_ARG_1 == this_node) {
-	for (i = 0; i < MAXDIST; i++)
-	    dist_addrs[i].in_cookie = BIF_ARG_2;
-	dist_addrs[THIS_NODE].out_cookie = BIF_ARG_2;
-	dist_addrs[THIS_NODE].in_cookie = BIF_ARG_2;
-	BIF_RET(am_true);
-    }
-
-    if (!is_node_name(atom_tab(unsigned_val(BIF_ARG_1))->name,
-		      atom_tab(unsigned_val(BIF_ARG_1))->len))
-	goto error;
-
-    if ((slot = find_or_insert_dist_slot(BIF_ARG_1)) < 0)
-	goto error;
-    if (dist_addrs[slot].cid == NIL)
-	dist_addrs[slot].status |= D_RESERVED;
-    dist_addrs[slot].out_cookie = BIF_ARG_2;
-
-    BIF_RET(am_true);
-
- error:
-    BIF_ERROR(BIF_P, BADARG);
-}
-
-/**********************************************************************/
-/* get_cookie() -> Atom */
-
-BIF_RETTYPE get_cookie_0(BIF_ALIST_0)
-BIF_ADECL_0
-{
-    if (this_node == am_Noname)
-	BIF_RET(am_nocookie);
-    BIF_RET(dist_addrs[THIS_NODE].in_cookie);
-}
-
-#endif
 /**********************************************************************/
 /* node(Object) -> Node */
 
@@ -1645,11 +1520,11 @@ BIF_ADECL_1
 { 
     int val;
     if (is_pid(BIF_ARG_1))
-	val = get_node(BIF_ARG_1);
+	val = pid_node(BIF_ARG_1);
     else if ((is_port(BIF_ARG_1)))
-	val = get_node_port(BIF_ARG_1);
-    else if (is_refer(BIF_ARG_1))
-	val = get_node_reference(BIF_ARG_1);
+	val = port_node(BIF_ARG_1);
+    else if (is_ref(BIF_ARG_1))
+	val = ref_node(BIF_ARG_1);
     else {
 	BIF_ERROR(BIF_P, BADARG);
     }
@@ -1747,117 +1622,4 @@ BIF_ADECL_2
 	del_link(find_link(&BIF_P->links, LNK_NODE, BIF_ARG_1, NIL));
 	BIF_RET(am_true);
     }
-}
-
-
-/**********************************************************************/
-/* binary_to_dist(Binary) -> Term */
-
-BIF_RETTYPE binary_to_dist_1(BIF_ALIST_1)
-BIF_ADECL_1
-{
-    int slot = BIF_P->dslot;
-    ProcBin* pb;
-    byte* c;
-    byte* end;
-    uint32 i;
-    uint32 res;
-    uint32 list;
-    uint32 last = NIL;		/* suppress use-before-set warning */
-    uint32* hp;
-    if (!(BIF_P->flags & F_DISTRIBUTION) || (slot == -1))
-	goto error;
-    if (is_not_binary(BIF_ARG_1))
-	goto error;
-    pb = (ProcBin*) ptr_val(BIF_ARG_1);
-    c = pb->bytes;
-    end = c + pb->size;
-
-    /* construct the list [T1,T2...Tn] */
-    list = NIL;
-    while(c < end) {
-	if ((i = decode_size(c, 0x7FFFFFFF)) == -1)
-	    goto error;
-	hp = HAlloc(BIF_P, i+2);
-	if ((res = from_external(slot, &hp, &c, &BIF_P->off_heap)) == 0)
-	    goto error;
-	res = CONS(hp, res, NIL);
-	hp += 2;
-	if (list == NIL)
-	    list = res;
-	else
-	    CDR(ptr_val(last)) = res;
-	last = res;
-    }
-    BIF_RET(list);
-
- error:
-    BIF_ERROR(BIF_P, BADARG);
-}
-
-/**********************************************************************/
-/*
-** dist_to_binary(Term) -> Binary  
-**
-** Term: size(Term) == 4
-**	{send, Sender, {Receiver, Message}}
-**	{link, Source, Destination}
-**	{unlink, Source, Destination}
-**	{exit, Source, {Receiver, Reason}}
-**	{exit2, Sender, {Receiver, Reason}}
-**	{group_leader, Source, {Member, Leader}}
-**
-** Source | Sender MUST Be local processes (badarg otherwise)
-**
-*/
-
-BIF_RETTYPE dist_to_binary_1(BIF_ALIST_1)
-BIF_ADECL_1
-{
-    int slot = BIF_P->dslot;
-    Eterm list = BIF_ARG_1;
-    Eterm bin;
-    int size;
-    ProcBin *pb;
-    byte *c;
-    unsigned dist_flags;
-
-    if (slot > 0)
-	dist_flags = dist_addrs[slot].flags;
-    else
-	dist_flags = TERM_TO_BINARY_DFLAGS;
-
-    if (!(BIF_P->flags & F_DISTRIBUTION) || (slot == -1)) goto error;
-    if (is_not_list(list)) goto error;
-
-    /* Determine the buffer size (actuallly too big!!!) */
-    size = 0;
-    while (is_list(list)) {
-	Eterm* cons = ptr_val(list);
-	Eterm term = CAR(cons);
-	size += encode_size_struct(term, dist_flags);
-	list = CDR(cons);
-    }
-    if (list != NIL) goto error;
-
-    bin = new_binary(BIF_P, (byte*) NULL, size);
-    pb = (ProcBin*) ptr_val(bin);
-    c = pb->bytes;
-
-    list = BIF_ARG_1;
-    while (is_list(list)) {
-	uint32* cons = ptr_val(list);
-	uint32  term = CAR(cons);
-	to_external(slot, term, &c);
-	list = CDR(cons);
-    }
-    if (c > (pb->bytes + size))
-	erl_exit(1, "Internal error in dist_to_binary %d\n", (c-pb->bytes));
-    /* adjust the size !!! */
-    pb->size = c - pb->bytes;
-
-    BIF_RET(bin);
-
- error:
-    BIF_ERROR(BIF_P, BADARG);
 }

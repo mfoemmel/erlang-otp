@@ -58,8 +58,11 @@ LIBRARY = $(OBJDIR)/libInitialReference.a
 endif
 endif
 
-CC_FILES = InitialReference.cc
-HH_FILES = InitialReference.hh
+CC_FILES = \
+	InitialReference.cc
+
+HH_FILES = \
+	InitialReference.hh
 
 TARGET_FILES= $(PROGRAMS:%=$(BINDIR)/%)
 OBJ_FILES= $(C_FILES:%.c=$(OBJDIR)/%.o) 

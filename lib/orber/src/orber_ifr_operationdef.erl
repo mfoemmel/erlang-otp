@@ -18,9 +18,8 @@
 %%
 %%----------------------------------------------------------------------
 %% File    : orber_ifr_operationdef.erl
-%% Author  : Per Danielsson <pd@gwaihir>
 %% Purpose : Code for Operationdef
-%% Created : 14 May 1997 by Per Danielsson <pd@gwaihir>
+%% Created : 14 May 1997
 %%----------------------------------------------------------------------
 
 -module(orber_ifr_operationdef).
@@ -84,8 +83,6 @@ cleanup_for_destroy({ObjType,ObjID}) ?tcheck(ir_OperationDef, ObjType) ->
 			orber_ifr_idltype:cleanup_for_destroy(Idl)
 	      end,
 	      '_get_params'({ObjType,ObjID})) ++
-	lists:map(fun(X) -> orber_ifr_exceptiondef:cleanup_for_destroy(X) end,
-		  '_get_exceptions'({ObjType,ObjID})) ++
 	orber_ifr_idltype:cleanup_for_destroy('_get_result_def'({ObjType,
 								 ObjID})) ++
 	orber_ifr_contained:cleanup_for_destroy({ObjType,ObjID}).

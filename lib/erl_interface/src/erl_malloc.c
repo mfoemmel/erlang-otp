@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include "erl_eterm.h"
 #include "erl_error.h"
+#include "erl_malloc.h"
 #include "erl_fix_alloc.h"
 #include "erl_internal.h"
 
@@ -27,16 +28,19 @@ void erl_init_malloc(Erl_Heap *hp, long heap_size)
   erl_init_eterm_alloc();
 } /* erl_init_malloc */
 
-void *erl_malloc(long size)
+void *
+erl_malloc (long size)
 {
-  unsigned char *res;
+  void *res;
 
-  if (!(res = (unsigned char*) malloc(size)))
-    erl_err_sys("<ERROR> erl_malloc: Failed to allocate more memory");
-  return (void *) res;
+  if ((res =  malloc(size)) == NULL)
+      erl_err_sys("<ERROR> erl_malloc: Failed to allocate more memory");
+  
+  return res;
 } /* erl_malloc */
 
-void erl_free(void *ptr)
+void 
+erl_free (void *ptr)
 {
   free(ptr);
 } /* erl_free */
@@ -61,6 +65,43 @@ ETERM *erl_alloc_eterm(unsigned char type)
 #define COMPOUND     1
 #define NOT_COMPOUND 0
 static void _erl_free_term(); /* forward */
+
+
+/*
+ * Increment (up) term T's reference count.
+ */
+ETERM *
+eterm_ref (ETERM *t)
+{
+    switch(ERL_COUNT(t))
+    {
+    default:			/* n |--> n+1 (== fast case)*/
+	ERL_COUNT(t)++;
+	return t;
+    case ERL_MAX_COUNT:		/* +inf |--> +inf (== latch-up) */	
+	return t;
+    }
+}
+ 
+/*
+ * Decrement (down) term T's reference count. Free the term if the
+ * count drops to zero. 
+ */
+void
+eterm_unref (ETERM *t)
+{
+    switch(ERL_COUNT(t))
+    {
+    default:			/* n |--> n-1 (== fast case)*/
+	ERL_COUNT(t)--;
+	return;
+    case 1:			/* 1 |--> 0 (== time to die)*/
+	erl_free_term(t);
+	return;
+    case ERL_MAX_COUNT:		/* +inf |--> +inf (== latch-up) */
+	return;
+    }
+}
       
 /* 
  * Free a term, but don't deallocate it until
@@ -76,7 +117,18 @@ void erl_free_term(ETERM *ep)
  * counter value. Use this when you have 
  * built compound terms such as lists or tuples.
  */
-void erl_free_compound(ETERM *ep)
+
+/*
+ * Tearing down term structures no-matter-what is a horrible idea if
+ * any term happens to be shared (with some other structure or even
+ * with yourself).
+ */
+__SYM_WARNING(erl_free_compound, 
+	      "the `erl_free_compound' function is dangerous "
+	      "and should not be used.");
+
+void 
+erl_free_compound (ETERM *ep)
 {
   _erl_free_term(ep, EXTERNAL, COMPOUND);
 } /* erl_free_compound */
@@ -99,13 +151,20 @@ do { 							\
     external = (External);				\
     compound = (Compound);				\
     /* Clear header info */				\
-    ERL_TYPE(ep)  = 0;					\
+    ERL_TYPE(ep)  = ERL_UNDEF;				\
     erl_eterm_free((unsigned int *) ep);		\
     ep = sep;						\
     goto restart;      	       			        \
 } while(0)
 
-static void _erl_free_term(ETERM *ep, int external, int compound)
+#define FREE_AND_CLEAR(ptr)			\
+do {						\
+    erl_free(ptr);				\
+    (ptr) = NULL;				\
+} while (0)
+
+static void 
+_erl_free_term (ETERM *ep, int external, int compound)
 {
 restart:
     if (ep == NULL) 
@@ -115,15 +174,15 @@ restart:
 	switch(ERL_TYPE(ep)) 
 	    {
 	    case ERL_ATOM:
-		erl_free(ep->uval.aval.a);
+		FREE_AND_CLEAR(ERL_ATOM_PTR(ep));
 		break;
 	    case ERL_VARIABLE:
-		erl_free(ep->uval.vval.name);
+		FREE_AND_CLEAR(ERL_VAR_NAME(ep));
 		/* Note: It may be unbound ! */
-		if (ep->uval.vval.v) {
-		    ERL_COUNT(ep->uval.vval.v)--;
+		if (ERL_VAR_VALUE(ep) != NULL) {
+		    ERL_COUNT(ERL_VAR_VALUE(ep))--;
 		    /* Cleanup and Restart with the actual value */
-		    RESTART(ep->uval.vval.v, INTERNAL, compound);
+		    RESTART(ERL_VAR_VALUE(ep), INTERNAL, compound);
 		}
 		break;
 	    case ERL_LIST: 
@@ -136,31 +195,38 @@ restart:
 	    case ERL_TUPLE: 
 		{
 		    int i;
-		    for (i=0; i<ep->uval.tval.size; i++) 
-			if (ep->uval.tval.elems[i]) {
-			    ERL_COUNT(ep->uval.tval.elems[i])--;
-			    _erl_free_term(ep->uval.tval.elems[i], 
+		    for (i=0; i < ERL_TUPLE_SIZE(ep); i++) 
+			if (ERL_TUPLE_ELEMENT(ep, i)) {
+			    ERL_COUNT(ERL_TUPLE_ELEMENT(ep, i))--;
+			    _erl_free_term(ERL_TUPLE_ELEMENT(ep, i), 
 					   INTERNAL, compound);
 			}
-		    erl_free(ep->uval.tval.elems);
+		    FREE_AND_CLEAR(ERL_TUPLE_ELEMS(ep));
 		}
 	    break;
 	    case ERL_BINARY:
-		erl_free(ep->uval.bval.b);
+		FREE_AND_CLEAR(ERL_BIN_PTR(ep));
+		break;
+	    case ERL_PID:
+		FREE_AND_CLEAR(ERL_PID_NODE(ep));
+		break;
+	    case ERL_PORT:
+		FREE_AND_CLEAR(ERL_PORT_NODE(ep));
+		break;
+	    case ERL_REF:
+		FREE_AND_CLEAR(ERL_REF_NODE(ep));
 		break;
 	    case ERL_EMPTY_LIST:
-	    case ERL_PID:
-	    case ERL_PORT:
-	    case ERL_REF:
 	    case ERL_INTEGER:
 	    case ERL_SMALL_BIG:
 	    case ERL_U_SMALL_BIG:
 	    case ERL_FLOAT:
 		break;
 	    } /* switch */
+
 	/* Clear header info for those cases where we are done */
-	ERL_TYPE(ep)  = 0;
-	erl_eterm_free((unsigned int *) ep);
+	ERL_TYPE(ep)  = ERL_UNDEF;
+	erl_eterm_free(ep);
     } else if (external) {
 	ERL_COUNT(ep)--;
 	external = INTERNAL;
@@ -168,6 +234,7 @@ restart:
     }
 } /* _erl_free_term */
 #undef RESTART
+#undef FREE_AND_CLEAR
 
 void erl_free_array(ETERM **arr, int size)
 {
@@ -177,3 +244,10 @@ void erl_free_array(ETERM **arr, int size)
     erl_free_term(arr[i]);
 
 } /* erl_free_array */
+
+
+/*
+ * Local Variables:
+ * compile-command: "cd ..; ERL_TOP=/clearcase/otp/erts make -k"
+ * End:
+ */

@@ -57,8 +57,6 @@ int main()
   ETERM *reply;
   ETERM *rpc_args;
 
-  tv.tv_sec = 1;
-  tv.tv_usec = 0;
   cookie = get_cookie();
   creation = (time(NULL) % 3) + 1; /* "random" in range 1-3 */
   erl_init(NULL,0);
@@ -78,6 +76,7 @@ int main()
   FD_SET( lfd , &orig_readmask );
 
   while (1) {
+    tv.tv_sec = 1; tv.tv_usec = 0; /* don't assume BSD bug in select() */
     readmask = orig_readmask;
     if ((rc = select(FD_SETSIZE,&readmask, (fd_set *) NULL,
 		     (fd_set *) NULL, 

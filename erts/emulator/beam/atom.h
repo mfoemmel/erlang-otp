@@ -32,6 +32,7 @@ typedef struct atom
 {
     IndexSlot slot;  /* MUST BE LOCATED AT TOP OF STRUCT!!! */
     int len;         /* length of atom name */
+    int ord0;        /* ordinal value of first 3 bytes + 7 bits */
     byte* name;      /* name of atom */
 } Atom;
 

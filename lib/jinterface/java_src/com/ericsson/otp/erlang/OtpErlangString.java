@@ -17,10 +17,15 @@
  */
 package com.ericsson.otp.erlang;
 
+import java.io.Serializable;
+
 /**
  * Provides a Java representation of Erlang strings. 
  **/
-public class OtpErlangString extends OtpErlangObject {
+public class OtpErlangString extends OtpErlangObject implements Serializable, Cloneable {
+  // don't change this!
+  static final long serialVersionUID = -7053595217604929233L;
+  
   private String str;
 
   /**
@@ -78,41 +83,24 @@ public class OtpErlangString extends OtpErlangObject {
   }
 
   /**
-   * Determine if two strings are equal. Strings are equal if they
-   * represent the same sequence of characters.
+   * Determine if two strings are equal. They are equal if they
+   * represent the same sequence of characters. This method can be
+   * used to compare OtpErlangStrings with each other and with
+   * Strings.
    *
-   * @param o the object to compare to.
+   * @param o the OtpErlangString or String to compare to.
    *
    * @return true if the strings consist of the same sequence of
-   * characters, false otherwise.
+   * characters, false otherwise. 
    **/
   public boolean equals(Object o) {
+    if (o instanceof String) {
+      return this.str.compareTo((String)o) == 0;
+    }
+    else if (o instanceof OtpErlangString) {
+      return this.str.compareTo(((OtpErlangString)o).str) == 0;
+    }
+
     return false;
-  }
-
-  /**
-   * Determine if two strings are equal. Strings are equal if they
-   * represent the same sequence of characters.
-   *
-   * @param s the String to compare to.
-   *
-   * @return true if the strings consist of the same sequence of
-   * characters, false otherwise.
-   **/
-  public boolean equals(String s) {
-    return this.str.compareTo(s) == 0;
-  }
-
-  /**
-   * Determine if two strings are equal. Strings are equal if they
-   * represent the same sequence of characters.
-   *
-   * @param s the string to compare to.
-   *
-   * @return true if the strings consist of the same sequence of
-   * characters, false otherwise.
-   **/
-  public boolean equals(OtpErlangString s) {
-    return this.str.compareTo(s.str) == 0;
   }
 }

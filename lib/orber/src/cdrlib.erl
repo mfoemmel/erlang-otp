@@ -18,7 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: cdrlib.erl
-%% Author: Lars Thorsen
 %% 
 %% Description:
 %%    CDR basic type encode/decode functions
@@ -46,8 +45,8 @@
 	  %% IIOP 1.1 - 
 	  %%enc_wchar/2, enc_r_wchar/2, dec_wchar/2,
 	  enc_longlong/2, enc_r_longlong/2, dec_longlong/2,
-	  enc_unsigned_longlong/2, enc_r_unsigned_longlong/2, dec_unsigned_longlong/2,
-	  enc_longdouble/2, enc_r_longdouble/2, dec_longdouble/2
+	  enc_unsigned_longlong/2, enc_r_unsigned_longlong/2, dec_unsigned_longlong/2
+	  %%enc_longdouble/2, enc_r_longdouble/2, dec_longdouble/2
 	  %%enc_wstring/2, enc_r_wstring/2, dec_wstring/2,
 	  %%enc_fixed/4, enc_r_fixed/4, dec_fixed/2
 	 ]).
@@ -58,6 +57,11 @@
 -export([]).
 
 %%-----------------------------------------------------------------
+%% Macros
+%%-----------------------------------------------------------------
+-define(DEBUG_LEVEL, 10).
+
+%%-----------------------------------------------------------------
 %% short
 %%-----------------------------------------------------------------
 %%-----------------------------------------------------------------
@@ -66,6 +70,8 @@
 enc_short(X, Message) when integer(X) -> 
     [((X) bsr 8) band 16#ff, (X) band 16#ff | Message];
 enc_short(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_short(~p); not integer.", 
+			    [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -74,6 +80,8 @@ enc_short(X, Message) ->
 enc_r_short(X, Message) when integer(X) -> 
     [(X) band 16#ff, ((X) bsr 8) band 16#ff | Message];
 enc_r_short(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_r_short(~p); not integer.", 
+			    [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -104,6 +112,8 @@ dec_short([X1,X0 | R], little) ->
 enc_unsigned_short(X, Message) when integer(X), X >= 0 -> 
     enc_short(X, Message);
 enc_unsigned_short(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_unsigned_short(~p); not integer >= 0", 
+			    [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -112,6 +122,8 @@ enc_unsigned_short(X, Message) ->
 enc_r_unsigned_short(X, Message) when integer(X), X >= 0 -> 
     enc_r_short(X, Message);
 enc_r_unsigned_short(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_r_unsigned_short(~p); not integer >= 0", 
+			    [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -133,6 +145,8 @@ enc_long(X, Message) when integer(X) ->
     [((X) bsr 24) band 16#ff, ((X) bsr 16) band 16#ff,
      ((X) bsr 8) band 16#ff, (X) band 16#ff| Message];
 enc_long(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_long(~p); not integer.", 
+			    [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -142,6 +156,8 @@ enc_r_long(X, Message) when integer(X) ->
     [(X) band 16#ff, ((X) bsr 8) band 16#ff,
      ((X) bsr 16) band 16#ff, ((X) bsr 24) band 16#ff | Message];
 enc_r_long(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_r_long(~p); not integer.", 
+			    [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -173,6 +189,8 @@ dec_long([X3,X2,X1,X0 | R],little) ->
 enc_unsigned_long(X, Message) when integer(X), X >= 0 ->
     enc_long(X,Message);
 enc_unsigned_long(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_unsigned_long(~p); not integer >=0 ", 
+			    [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -181,6 +199,8 @@ enc_unsigned_long(X, Message) ->
 enc_r_unsigned_long(X, Message) when integer(X), X >= 0 ->
     enc_r_long(X,Message);
 enc_r_unsigned_long(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_r_unsigned_long(~p); not integer >=0 ", 
+			    [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -225,6 +245,7 @@ enc_float(X, Message) when number(X) ->
      (F bsr 8) band 16#ff,
      (F band 16#ff) | Message];
 enc_float(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_float(~p); not a number.", [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=101, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -238,6 +259,7 @@ enc_r_float(X, Message) when number(X) ->
      (S bsl 7) bor ((E bsr 1) band 16#7f)
      | Message];
 enc_r_float(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_r_float(~p); not a number.", [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=101, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -287,6 +309,7 @@ enc_double(X, Message) when number(X) ->
      (F bsr 8) band 16#ff,
      (F band 16#ff) | Message];
 enc_double(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_double(~p); not a number.", [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=101, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -304,6 +327,7 @@ enc_r_double(X, Message) when number(X) ->
      (S bsl 7) bor ((E bsr 4) band 16#7f)
      | Message];
 enc_r_double(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_r_double(~p); not a number.", [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=101, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -384,7 +408,9 @@ exp_up(X, E) ->  {E, X}.
 enc_char(X, Message) when integer(X) -> 
     [X | Message];
 
-enc_char(_,_) -> 
+enc_char(X,_) -> 
+    orber:debug_level_print("[~p] cdrlib:enc_char(~p); not an integer.", 
+			    [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=102,completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -394,6 +420,8 @@ dec_char([X0 | R]) when integer(X0) ->
     { X0, R};
 
 dec_char([X0 | R]) ->
+    orber:debug_level_print("[~p] cdrlib:dec_char(~p); not an integer.", 
+			    [?LINE, X0], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=102,completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -428,7 +456,9 @@ enc_r_enum(Enum, ElemList, Message) ->
     Val = getEnumValue(ElemList,Enum, 0),
     enc_r_unsigned_long(Val, Message).
 
-getEnumValue([],_, _) -> 
+getEnumValue([],Enum, _) -> 
+    orber:debug_level_print("[~p] cdrlib:enc_enum/enc_r_enum(~p); not exist.", 
+			    [?LINE, Enum], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=102,completion_status=?COMPLETED_NO});
 getEnumValue([Enum |List], Enum, N) ->
     N;
@@ -442,6 +472,8 @@ dec_enum(ElemList, Message, ByteOrder) ->
     {N, Rest}  = dec_unsigned_long(Message, ByteOrder),
     case catch lists:nth(N + 1, ElemList) of
 	{'EXIT', _} ->
+	    orber:debug_level_print("[~p] cdrlib:dec_enum(~p, ~p); not defined.", 
+				    [?LINE, N, ElemList], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{minor=102,completion_status=?COMPLETED_NO});
 	X ->
 	    {list_to_atom(X), Rest}
@@ -464,6 +496,8 @@ enc_longlong(X, Message) when integer(X) ->
      ((X) bsr 24) band 16#ff, ((X) bsr 16) band 16#ff,
      ((X) bsr 8) band 16#ff, (X) band 16#ff| Message];
 enc_longlong(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_longlong(~p); not integer.", 
+			    [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -474,6 +508,8 @@ enc_r_longlong(X, Message) when integer(X) ->
      ((X) bsr 24) band 16#ff, ((X) bsr 32) band 16#ff, ((X) bsr 40) band 16#ff,
      ((X) bsr 48) band 16#ff, ((X) bsr 56) band 16#ff | Message];
 enc_r_longlong(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_r_longlong(~p); not integer.", 
+			    [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -486,6 +522,14 @@ dec_longlong([X7,X6,X5,X4,X3,X2,X1,X0 | R], big) ->
 	    {X - 16#10000000000000000, R};
        true  ->
 	    {X, R}
+    end;
+dec_longlong([X7,X6,X5,X4,X3,X2,X1,X0 | R], little) ->
+    X = (X0 bsl 56) + (X1 bsl 48) + (X2 bsl 40) + (X3 bsl 32) +
+	(X4 bsl 24) + (X5 bsl 16) + (X6 bsl 8) + X7,
+    if X0 >= 16#80 ->
+	    {X - 16#10000000000000000, R};
+       true  ->
+	    {X, R}
     end.
 
 
@@ -495,6 +539,8 @@ dec_longlong([X7,X6,X5,X4,X3,X2,X1,X0 | R], big) ->
 enc_unsigned_longlong(X, Message) when integer(X), X >= 0 ->
     enc_longlong(X, Message);
 enc_unsigned_longlong(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_unsigned_longlong(~p); not integer >= 0.", 
+			    [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -503,6 +549,8 @@ enc_unsigned_longlong(X, Message) ->
 enc_r_unsigned_longlong(X, Message) when integer(X), X >= 0 ->
     enc_r_longlong(X, Message);
 enc_r_unsigned_longlong(X, Message) ->
+    orber:debug_level_print("[~p] cdrlib:enc_r_unsigned_longlong(~p); not integer >= 0.", 
+			    [?LINE, X], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=100, completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
@@ -510,100 +558,103 @@ enc_r_unsigned_longlong(X, Message) ->
 %%-----------------------------------------------------------------
 dec_unsigned_longlong([X7,X6,X5,X4,X3,X2,X1,X0 | R], big) ->
     {(X7 bsl 56) + (X6 bsl 48) + (X5 bsl 40) + (X4 bsl 32) +
-     (X3 bsl 24) + (X2 bsl 16) + (X1 bsl 8) + X0, R}.
+     (X3 bsl 24) + (X2 bsl 16) + (X1 bsl 8) + X0, R};
+dec_unsigned_longlong([X7,X6,X5,X4,X3,X2,X1,X0 | R],little) ->
+    {(X0 bsl 56) + (X1 bsl 48) + (X2 bsl 40) + (X3 bsl 32) +
+     (X4 bsl 24) + (X5 bsl 16) + (X6 bsl 8) + X7, R}.
 
-%%-----------------------------------------------------------------
-%% long double [S=1 | E=15 | F=112]
-%% X = (-1)^S * 2^(E-16383) * 1.F
-%%-----------------------------------------------------------------
--define(LONGDOUBLE_BASE, 16#10000000000000000000000000000).
--define(LONGDOUBLE_BIAS, 16383).
-%%-----------------------------------------------------------------
-%% Func: enc_longdouble/2
-%%-----------------------------------------------------------------
-enc_longdouble(X, Message) when number(X) ->
-    {S, E, F} = enc_ieee(X, ?LONGDOUBLE_BASE, ?LONGDOUBLE_BIAS),
-    [ (S bsl 7) bor ((E bsr 8) band 16#7f),
-     E band 16#ff,
-     (F bsr 104) band 16#ff,
-     (F bsr 96) band 16#ff,
-     (F bsr 88) band 16#ff,
-     (F bsr 80) band 16#ff,
-     (F bsr 72) band 16#ff,
-     (F bsr 64) band 16#ff,
-     (F bsr 56) band 16#ff,
-     (F bsr 48) band 16#ff,
-     (F bsr 40) band 16#ff,
-     (F bsr 32) band 16#ff,
-     (F bsr 24) band 16#ff,
-     (F bsr 16) band 16#ff,
-     (F bsr 8) band 16#ff,
-     F band 16#ff | Message];
-enc_longdouble(X, Message) ->
-    corba:raise(#'MARSHAL'{minor=101, completion_status=?COMPLETED_NO}).
+%%%-----------------------------------------------------------------
+%%% long double [S=1 | E=15 | F=112]
+%%% X = (-1)^S * 2^(E-16383) * 1.F
+%%%-----------------------------------------------------------------
+%-define(LONGDOUBLE_BASE, 16#10000000000000000000000000000).
+%-define(LONGDOUBLE_BIAS, 16383).
+%%%-----------------------------------------------------------------
+%%% Func: enc_longdouble/2
+%%%-----------------------------------------------------------------
+%enc_longdouble(X, Message) when number(X) ->
+%    {S, E, F} = enc_ieee(X, ?LONGDOUBLE_BASE, ?LONGDOUBLE_BIAS),
+%    [ (S bsl 7) bor ((E bsr 8) band 16#7f),
+%     E band 16#ff,
+%     (F bsr 104) band 16#ff,
+%     (F bsr 96) band 16#ff,
+%     (F bsr 88) band 16#ff,
+%     (F bsr 80) band 16#ff,
+%     (F bsr 72) band 16#ff,
+%     (F bsr 64) band 16#ff,
+%     (F bsr 56) band 16#ff,
+%     (F bsr 48) band 16#ff,
+%     (F bsr 40) band 16#ff,
+%     (F bsr 32) band 16#ff,
+%     (F bsr 24) band 16#ff,
+%     (F bsr 16) band 16#ff,
+%     (F bsr 8) band 16#ff,
+%     F band 16#ff | Message];
+%enc_longdouble(X, Message) ->
+%    corba:raise(#'MARSHAL'{minor=101, completion_status=?COMPLETED_NO}).
 
-%%-----------------------------------------------------------------
-%% Func: enc_r_longdouble/2
-%%-----------------------------------------------------------------
-enc_r_longdouble(X, Message) when number(X) ->
-    {S, E, F} = enc_ieee(X, ?LONGDOUBLE_BASE, ?LONGDOUBLE_BIAS),
-    [F band 16#ff,
-     (F bsr 8) band 16#ff,
-     (F bsr 16) band 16#ff,
-     (F bsr 24) band 16#ff,
-     (F bsr 32) band 16#ff,
-     (F bsr 40) band 16#ff,
-     (F bsr 48) band 16#ff,
-     (F bsr 56) band 16#ff,
-     (F bsr 64) band 16#ff,
-     (F bsr 72) band 16#ff,
-     (F bsr 80) band 16#ff,
-     (F bsr 88) band 16#ff,
-     (F bsr 96) band 16#ff,
-     (F bsr 104) band 16#ff,
-     E band 16#ff,
-     (S bsl 7) bor ((E bsr 8) band 16#7f) | Message];
-enc_r_longdouble(X, Message) ->
-    corba:raise(#'MARSHAL'{minor=101, completion_status=?COMPLETED_NO}).
+%%%-----------------------------------------------------------------
+%%% Func: enc_r_longdouble/2
+%%%-----------------------------------------------------------------
+%enc_r_longdouble(X, Message) when number(X) ->
+%    {S, E, F} = enc_ieee(X, ?LONGDOUBLE_BASE, ?LONGDOUBLE_BIAS),
+%    [F band 16#ff,
+%     (F bsr 8) band 16#ff,
+%     (F bsr 16) band 16#ff,
+%     (F bsr 24) band 16#ff,
+%     (F bsr 32) band 16#ff,
+%     (F bsr 40) band 16#ff,
+%     (F bsr 48) band 16#ff,
+%     (F bsr 56) band 16#ff,
+%     (F bsr 64) band 16#ff,
+%     (F bsr 72) band 16#ff,
+%     (F bsr 80) band 16#ff,
+%     (F bsr 88) band 16#ff,
+%     (F bsr 96) band 16#ff,
+%     (F bsr 104) band 16#ff,
+%     E band 16#ff,
+%     (S bsl 7) bor ((E bsr 8) band 16#7f) | Message];
+%enc_r_longdouble(X, Message) ->
+%    corba:raise(#'MARSHAL'{minor=101, completion_status=?COMPLETED_NO}).
 
-%%-----------------------------------------------------------------
-%% Func: dec_longdouble/2
-%%-----------------------------------------------------------------
-dec_longdouble([X15,X14,X13,X12,X11,X10,X9,X8,X7,X6,X5,X4,X3,X2,X1,X0 | R], big) ->
+%%%-----------------------------------------------------------------
+%%% Func: dec_longdouble/2
+%%%-----------------------------------------------------------------
+%dec_longdouble([X15,X14,X13,X12,X11,X10,X9,X8,X7,X6,X5,X4,X3,X2,X1,X0 | R], big) ->
 
-    E = (X15 band 16#7f) bsl 8 + X14,
+%    E = (X15 band 16#7f) bsl 8 + X14,
 
-    F = (X13 bsl 104) + (X12 bsl 96) + 
-	(X11 bsl 88) + (X10 bsl 80) + (X9 bsl 72) + 
-	(X8 bsl 64) + (X7 bsl 56) + (X6 bsl 48) + 
-	(X5 bsl 40) + (X4 bsl 32) + (X3 bsl 24) + 
-	(X2 bsl 16) + (X1 bsl 8) + X0,
+%    F = (X13 bsl 104) + (X12 bsl 96) + 
+%	(X11 bsl 88) + (X10 bsl 80) + (X9 bsl 72) + 
+%	(X8 bsl 64) + (X7 bsl 56) + (X6 bsl 48) + 
+%	(X5 bsl 40) + (X4 bsl 32) + (X3 bsl 24) + 
+%	(X2 bsl 16) + (X1 bsl 8) + X0,
 
-    if
-	E == 0, F == 0 -> 
-	    { 0.0, R};
-	X15 >= 16#80 ->
-	    { - math:pow(2, E-?LONGDOUBLE_BIAS) * (1 + F / ?LONGDOUBLE_BASE), R};
-	true ->
-	    { math:pow(2, E-?LONGDOUBLE_BIAS) * (1 + F / ?LONGDOUBLE_BASE), R}
-    end;
-dec_longdouble([X15,X14,X13,X12,X11,X10,X9,X8,X7,X6,X5,X4,X3,X2,X1,X0  | R], little) ->
+%    if
+%	E == 0, F == 0 -> 
+%	    { 0.0, R};
+%	X15 >= 16#80 ->
+%	    { - math:pow(2, E-?LONGDOUBLE_BIAS) * (1 + F / ?LONGDOUBLE_BASE), R};
+%	true ->
+%	    { math:pow(2, E-?LONGDOUBLE_BIAS) * (1 + F / ?LONGDOUBLE_BASE), R}
+%    end;
+%dec_longdouble([X15,X14,X13,X12,X11,X10,X9,X8,X7,X6,X5,X4,X3,X2,X1,X0  | R], little) ->
 
-    E = (X0 band 16#7f) bsl 8 + X1,
+%    E = (X0 band 16#7f) bsl 8 + X1,
 
-    F = 
-	(X2 bsl 104) + (X3 bsl 96) + 
-	(X4 bsl 88) + (X5 bsl 80) + (X6 bsl 72) +
-	(X7 bsl 64) + (X8 bsl 56) + (X9 bsl 48) +
-	(X10 bsl 40) + (X11 bsl 32) + (X12 bsl 24) +
-	(X13 bsl 16) + (X14 bsl 8) + X15,
+%    F = 
+%	(X2 bsl 104) + (X3 bsl 96) + 
+%	(X4 bsl 88) + (X5 bsl 80) + (X6 bsl 72) +
+%	(X7 bsl 64) + (X8 bsl 56) + (X9 bsl 48) +
+%	(X10 bsl 40) + (X11 bsl 32) + (X12 bsl 24) +
+%	(X13 bsl 16) + (X14 bsl 8) + X15,
 
-    if
-	E == 0, F == 0 -> 
-	    { 0.0, R};
-	X0 >= 16#80 ->
-	    { - math:pow(2, E-?DOUBLE_BIAS) * (1 + F / ?DOUBLE_BASE), R};
-	true ->
-	    { math:pow(2, E-?DOUBLE_BIAS) * (1 + F / ?DOUBLE_BASE), R}
-    end.
+%    if
+%	E == 0, F == 0 -> 
+%	    { 0.0, R};
+%	X0 >= 16#80 ->
+%	    { - math:pow(2, E-?DOUBLE_BIAS) * (1 + F / ?DOUBLE_BASE), R};
+%	true ->
+%	    { math:pow(2, E-?DOUBLE_BIAS) * (1 + F / ?DOUBLE_BASE), R}
+%    end.
 

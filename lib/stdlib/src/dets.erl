@@ -80,11 +80,17 @@
 -define(A4, 120).
 -define(ACTIVE_AS_LIST, [?A1,?A2,?A3,?A4]).
 -define(MAGIC, 16#0abcdef).   %% dets magic, won't ever change
--define(FILE_FORMAT_VERSION, 8). %% 6 in the R1A release , this is 8(b)
+-define(FILE_FORMAT_VERSION, 8). %% 6 in the R1A release, this is 8(c)
 -define(CAN_BUMP_BY_REPAIR, [6, 7]).
 -define(CAN_CONVERT_FREELIST, [8]).
 %% Two different formats of freelists between 8(a) and 8(b)
-%% 8(b) is reqognized by the CLOSED_PROPERLY2 indicator 
+%% 8(b) is recognized by the CLOSED_PROPERLY2 indicator.
+%% The 8(c) format uses a different hashing algorithm, erlang:phash.
+%% this is noted by a CLOSED_PROPERLY_NEW_HASH(_NEED_COMPACTING) written
+%% instead of the CLOSED_PROPERLY2(_NEED_COMPACTING) in the CLOSED_PROPERLY 
+%% field. 8(b) files are only converted to 8(c) if repair is done, so we need
+%% compatability with 8(b) for a LONG time.
+%% dets:info(Tab,hash) will give 'hash' for 8(b) files and 'phash' for 8(c).
 -define(SET, 1).
 -define(BAG, 2).
 -define(DUPLICATE_BAG, 3).
@@ -119,7 +125,8 @@
 	  cache,           %% A #cache{} record
 	  auto_save,       %% Integer | infinity 
 	  update_mode,     %% saved | dirty
-	  fixed = false    %% fixed table ?
+	  fixed = false,   %% fixed table ?
+	  hash_bif         %% hash bif used for this file {phash|hash}
 	 }).
 
 -record(info, {    
@@ -153,6 +160,8 @@
 -define(CLOSED_PROPERLY,1).
 -define(CLOSED_PROPERLY2,2).
 -define(CLOSED_PROPERLY2_NEED_COMPACTING,3).
+-define(CLOSED_PROPERLY_NEW_HASH,4). %% Format 8(c) rather than 8(b)
+-define(CLOSED_PROPERLY_NEW_HASH_NEED_COMPACTING,5). %% Format 8(c)
 -define(FILE_FORMAT_VERSION_POS, 16).
 -define(D_POS, 20).
 -define(CHAIN_LEN, 1).  %% medium chain len
@@ -284,9 +293,19 @@
 chain(Head, Slot) ->
     Pos = ?HEADSZ + (4 * (Slot div ?SEGSZ)),
     F = Head#head.fptr,
-    Segment = pread_4(F, Pos),
+    Segment = seg_cache(F, Pos),
     FinalPos = Segment + (4 * (Slot rem ?SEGSZ)),
     {FinalPos, pread_4(F, FinalPos)}.
+
+seg_cache(F, Pos) ->
+    case get(Pos) of
+	undefined ->
+	    Segment = pread_4(F, Pos),
+	    put(Pos, Segment),
+	    Segment;
+	Segment ->
+	    Segment
+    end.
 
 
 %% Read the {Next, Size} field from the file
@@ -394,6 +413,16 @@ fopen2(Tab, Fname, Type, Kp, Rep, Est, Ram, CacheSz, Auto, Acc) ->
     end.
 
 
+fopen_existing_file(F, Tab, Fname, Type, Kp, force, Est, Ram, CacheSz, Auto, Acc) ->
+    io:format(user,"dets: file ~p, repair forced.~n",[Tab]),
+    file:close(F),
+    case fsck(Tab, Type, Kp, Fname, 8) of
+	{error, R} -> 
+	    {error, R};
+	ok ->
+	    fopen(Tab, Fname, Type, Kp, false, Est, Ram, CacheSz, Auto, Acc)
+    end;
+    
 fopen_existing_file(F, Tab, Fname, Type, Kp, Rep, Est, Ram, CacheSz, Auto, Acc) ->
     case read_head(F, Fname, Acc) of
 	{error, Reason} when Acc == read ->
@@ -521,6 +550,7 @@ fopen_init_file(F, Tab, Fname, Type, Kp, Est, Ram, CacheSz, Auto, read_write) ->
       cache = Cache,
       auto_save = Auto,
       update_mode = saved,
+      hash_bif = phash,
       keypos = Kp},
     %% and a new nice Info structure
     Info = #info{
@@ -563,28 +593,34 @@ read_head(F, Fn, Access) ->
 					     ?CAN_CONVERT_FREELIST) of
 			       true ->
 				   {ok,{convert_freelist,
-					FH#fileheader.version}};
+					FH#fileheader.version},hash};
 			       false ->
 				   {error, not_closed} % should not happen
 			   end;
 		       FH#fileheader.closed_properly == 
 		       ?CLOSED_PROPERLY2  ->
-			   {ok,true};
+			   {ok,true,hash};
 		       FH#fileheader.closed_properly == 
 		       ?CLOSED_PROPERLY2_NEED_COMPACTING  ->
-			   {ok, need_compacting};
+			   {ok, need_compacting,hash};
+		       FH#fileheader.closed_properly == 
+		       ?CLOSED_PROPERLY_NEW_HASH  ->
+			   {ok,true,phash};
+		       FH#fileheader.closed_properly == 
+		       ?CLOSED_PROPERLY_NEW_HASH_NEED_COMPACTING  ->
+			   {ok, need_compacting,phash};
 		       FH#fileheader.closed_properly == 0 ->
 			   file:close(F),
 			   {error, not_closed};
 		       FH#fileheader.closed_properly > 
-		       ?CLOSED_PROPERLY2_NEED_COMPACTING  ->
+		       ?CLOSED_PROPERLY_NEW_HASH_NEED_COMPACTING  ->
 			   file:close(F),
 			   {error, not_closed};
 		       true ->
-			   {ok,true}
+			   {ok,true,phash}
 		   end,
 	    case Test of
-		{ok,ExtraInfo} ->
+		{ok,ExtraInfo,HashAlg} ->
 		    H = #head{
 		      m = FH#fileheader.m,
 		      next = FH#fileheader.next,
@@ -593,6 +629,7 @@ read_head(F, Fn, Access) ->
 		      n = FH#fileheader.n,
 		      type = FH#fileheader.type,
 		      update_mode = saved,
+		      hash_bif = HashAlg,
 		      keypos = FH#fileheader.keypos},
 		    I = #info{filename = Fn, access = Access},
 		    {ok, H, I, ExtraInfo};
@@ -714,7 +751,7 @@ do_fsck(Head, Tab, Cp, Fz, F, I, Bump) ->
 	    case in_range(F, Cp, Fz, Sz, Magic) of
 		{true, active} ->
 		    {ok, Bin} = file:pread(F, Cp+12, Sz),
-		    case catch erlang:old_binary_to_term(Bin) of
+		    case catch erlang:binary_to_term(Bin) of
 			{'EXIT', _} ->
 			    do_fsck(Head, Tab , Cp + Bump, Fz, F, I+1,Bump);
 			Term when Bump == 8 ->
@@ -767,13 +804,20 @@ perform_save(H, I) when H#head.update_mode == dirty ->
     ok = file:pwrite(F, ?FREELIST_POS, ?int32(Pos)),
     ok = file:pwrite(F, Pos, [?ZERO, ?int32(Size), ?FREE_AS_LIST, B]),
     
+    {ClosedProperly, ClosedProperlyNeedCompacitng} = 
+	case H#head.hash_bif of
+	    hash ->
+		{?CLOSED_PROPERLY2, ?CLOSED_PROPERLY2_NEED_COMPACTING};
+	    phash ->
+		{?CLOSED_PROPERLY_NEW_HASH, ?CLOSED_PROPERLY_NEW_HASH_NEED_COMPACTING}
+	end,
     if 
 	Size > 1000, Size > H#head.no_items ->
 	    ok = file:pwrite(F, ?CLOSED_PROPERLY_POS, 
-			     ?int32(?CLOSED_PROPERLY2_NEED_COMPACTING));
+			     ?int32(ClosedProperlyNeedCompacitng));
 	true ->
 	    ok = file:pwrite(F, ?CLOSED_PROPERLY_POS, 
-			     ?int32(?CLOSED_PROPERLY2))
+			     ?int32(ClosedProperly))
     end,
     ok = file:pwrite(F,?FILE_FORMAT_VERSION_POS,?int32(?FILE_FORMAT_VERSION)),
     {ok,Pos2} = file:position(F, eof),
@@ -1166,6 +1210,7 @@ finfo(H, I, filename) -> I#info.filename;
 finfo(H, I, memory) -> file_size(H#head.fptr);
 finfo(H, I, pid) -> self();
 finfo(H, I, fixed) -> H#head.fixed;
+finfo(H, I, hash) -> H#head.hash_bif;
 finfo(_, _,_) -> err(info, badarg).
 
 fslot(H, Slot) when Slot >= H#head.next ->
@@ -1400,10 +1445,10 @@ finsert(Head, Object) ->
 
 
 
-h(I) -> erlang:hash(I, ?BIG) - 1.  %% stupid BIF has 1 counts.
+h(I,HF) -> erlang:HF(I, ?BIG) - 1.  %% stupid BIF has 1 counts.
 
 db_hash(Key, Head) ->
-    H = h(Key),
+    H = h(Key,Head#head.hash_bif),
     Hash = H rem Head#head.m,
     if
 	Hash < Head#head.n ->
@@ -1459,7 +1504,7 @@ re_hash_chain(H2, Prev, Chain, Kp) ->
     case prterm(F, Chain) of
 	{ok, Next, Size, Term} ->
 	    Key = element(Kp, Term),
-	    New = h(Key) rem (2 * H2#head.m),
+	    New = h(Key,H2#head.hash_bif) rem (2 * H2#head.m),
 	    if
 		New == (H2#head.n) ->
 		    %% object remains in this chain
@@ -1487,13 +1532,15 @@ re_hash_chain(H2, Prev, Chain, Kp) ->
 
 
 zero(F, I) ->
-    zero(F, I, 1).
-zero(F, I, Times) ->
-    L = list_to_binary(lists:duplicate(4 * I, 0)),
-    do_zero(F, L, Times).
+    ok = file:write(F, make_zeros(4*I)).
 
-do_zero(F, L, 0) -> ok;
-do_zero(F, L, Times) -> ok = file:write(F, L), do_zero(F, L, Times-1).
+make_zeros(0) -> [];
+make_zeros(N) when N rem 2 == 0 ->
+    P = make_zeros(N div 2),
+    [P|P];
+make_zeros(N) ->
+    P = make_zeros(N div 2),
+    [0,P|P].
 
 %% Read term from file at position Pos
 prterm(F, Pos) ->
@@ -1506,18 +1553,23 @@ prterm(F, Pos) ->
     end.
 
 prterm2(F, Pos) ->
-    Res = file:pread(F, Pos, 8),
+    ReadAhead = 512,
+    Res = file:pread(F, Pos, 8+4+ReadAhead),
     ?DEBUGF("file:pread(~p, ~p, 8) -> ~p~n", [F, Pos, Res]),
     {ok, B} = Res,
-    {B1, B2} = split_binary(B, 4),
-    {Next, Sz} = {i32(B1), i32(B2)},
+    Next = i32(binary_to_list(B, 1, 4)),
+    Sz = i32(binary_to_list(B, 5, 8)),
     ?DEBUGF("{Next, Sz} = ~p~n",[{Next, Sz}]),
-    %% skip over the status field
-    {ok, Bin} = file:pread(F, Pos + 12, Sz),
-    Term = erlang:old_binary_to_term(Bin),
+    {_, Bin0} = split_binary(B, 12),
+    Bin = case size(Bin0) of
+	      Actual when Actual >= Sz ->
+		  Bin0;
+	      Actual ->
+		  {ok, Bin1} = file:pread(F, Pos + 12 + Actual, Sz-Actual),
+		  list_to_binary([Bin0|Bin1])
+	  end,
+    Term = erlang:binary_to_term(Bin),
     {ok, Next, Sz, Term}.
-
-
 
 %% Can't be used at the bucket level!!!!
 %% Only when we go down a chain
@@ -1536,7 +1588,7 @@ rterm2(F) ->
     {Next, Sz} = {i32(B1), i32(B2)},
     file:position(F, {cur, 4}), %% skip over the status field
     {ok, Bin} = file:read(F, Sz),
-    Term = erlang:old_binary_to_term(Bin),
+    Term = erlang:binary_to_term(Bin),
     {ok, Next, Sz, Term}.
 
 i32(Int) when binary(Int) ->
@@ -2213,7 +2265,7 @@ repl({type, T}, Defs) ->
 repl({keypos, P}, Defs) when integer(P) , P > 0 ->
     lists:keyreplace(keypos, 1, Defs, {keypos, P});
 repl({repair, T}, Defs) ->
-    mem(T, [true, false]),
+    mem(T, [true, false, force]),
     lists:keyreplace(repair, 1, Defs, {repair, T});
 repl({ram_file, Bool}, Defs) ->
     mem(Bool, [true, false]),
@@ -2397,14 +2449,14 @@ init_freelist(Head, {convert_freelist,Version}) ->
     {0, Size, Status} = pread_12(F, Pos),
     {ok,  B} = file:pread(F, Pos+12, Size),
 
-    FreeList = lists:reverse(erlang:old_binary_to_term(B)),
+    FreeList = lists:reverse(erlang:binary_to_term(B)),
     init_slots_from_old_file(FreeList,Ftab);
 init_freelist(Head, _) ->
     F = Head#head.fptr,
     Pos = pread_4(F, ?FREELIST_POS),
     {0, Size, Status} = pread_12(F, Pos),
     {ok,  B} = file:pread(F, Pos+12, Size),
-    erlang:old_binary_to_term(B). % if we stored the bplus_tree as is
+    erlang:binary_to_term(B). % if we stored the bplus_tree as is
 
 init_slots_from_old_file([{Slot,Addr}|T],Ftab) ->
     init_slot(Slot,[{Slot,Addr}|T],Ftab);
@@ -2424,7 +2476,7 @@ init_slot(Slot,[{Slot1,Addr}|T],Ftab) ->
 init_alloc0() ->
     Empty = bplus_empty_tree(),
     %% initiate a tuple with ?MAXBUD "Empty" elements
-    list_to_tuple(lists:duplicate(?MAXBUD,Empty)).
+    erlang:make_tuple(?MAXBUD, Empty).
 
 init_alloc() ->
     Ftab = init_alloc0(),

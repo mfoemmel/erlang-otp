@@ -327,6 +327,7 @@ display(File, F, A) ->
 %% pretty print various stuff
 
 pp({tk_string, _}) -> "string";
+pp({tk_wstring, _}) -> "wstring";
 pp(tk_long) -> "long";
 pp(tk_short) -> "short";
 pp(tk_ushort) -> "unsigned short";
@@ -335,6 +336,7 @@ pp(tk_float) -> "float";
 pp(tk_double) -> "double";
 pp(tk_boolean) -> "boolean";
 pp(tk_char) -> "char";
+pp(tk_wchar) -> "wchar";
 pp(tk_octet) -> "octet";
 pp(tk_null) -> "null";
 pp(tk_void) -> "void";

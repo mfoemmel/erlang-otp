@@ -39,6 +39,8 @@ CT_MODULES= \
 	asn1ct_constructed_per \
 	asn1ct_constructed_ber \
 	asn1ct_gen_ber \
+	asn1ct_constructed_ber_bin \
+	asn1ct_gen_ber_bin \
 	asn1ct_value \
 	asn1ct_tok 
 
@@ -47,7 +49,8 @@ RT_MODULES= \
 	asn1rt_per \
 	asn1rt_ber \
 	asn1rt_per_v1 \
-	asn1rt_ber_v1
+	asn1rt_ber_bin \
+	asn1rt_ber_v1 
 
 # the rt module to use is defined in asn1_records.hrl
 # and must be updated when an incompatible change is done in the rt modules

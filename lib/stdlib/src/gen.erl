@@ -64,20 +64,28 @@ start(GenMod, LinkP, Mod, Args, Options) ->
 do_spawn(GenMod, link, Mod, Args, Options) ->
     Time = timeout(Options),
     proc_lib:start_link(gen, init_it,
-			[GenMod, self(), self(), Mod, Args, Options], Time);
+			[GenMod, self(), self(), Mod, Args, Options], 
+			Time,
+			spawn_opts(Options));
 do_spawn(GenMod, _, Mod, Args, Options) ->
     Time = timeout(Options),
     proc_lib:start(gen, init_it,
-		   [GenMod, self(), self, Mod, Args, Options], Time).
+		   [GenMod, self(), self, Mod, Args, Options], 
+		   Time,
+		   spawn_opts(Options)).
 do_spawn(GenMod, link, Name, Mod, Args, Options) ->
     Time = timeout(Options),
     proc_lib:start_link(gen, init_it,
 			[GenMod, self(), self(), Name, Mod, Args, Options],
-			Time);
+			Time,
+			spawn_opts(Options));
 do_spawn(GenMod, _, Name, Mod, Args, Options) ->
     Time = timeout(Options),
     proc_lib:start(gen, init_it,
-		   [GenMod, self(), self, Name, Mod, Args, Options], Time).
+		   [GenMod, self(), self, Name, Mod, Args, Options], 
+		   Time,
+		   spawn_opts(Options)).
+
 
 %%-----------------------------------------------------------------
 %% Initiate the new process.
@@ -113,88 +121,150 @@ init_it2(GenMod, Starter, Parent, Name, Mod, Args, Options) ->
 call(Process, Label, Request) -> 
     call(Process, Label, Request, ?default_timeout).
 
-call(Pid, Label, Request, Timeout) when node(Pid) == node() ->
-    Mref = erlang:monitor(process,Pid),
-    Pid ! {Label, {self(), Mref}, Request},
-    wait_resp_mon(Pid, Mref, Timeout);
-
-call(Pid, Label, Request, Timeout) when pid(Pid) ->
-    Node = node(Pid),
-    set_monitor_node(Node),
-    Mref = make_ref(),
-    Pid ! {Label, {self(),Mref}, Request},
-    Res = wait_resp(Pid, Node, Mref, Timeout),
-    reset_monitor_node(Node),
-    Res;
-call(Name, Label, Request, Timeout) when atom(Name) ->
-    Pid = whereis(Name),
-    Mref = case catch erlang:monitor(process,Pid) of
-	_Mref when reference(_Mref) ->
-             _Mref;
-	_ -> exit(noproc)
-    end,
-    Pid ! {Label, {self(),Mref}, Request},
-    wait_resp_mon(Pid, Mref, Timeout);
-call({global, Name}, Label, Request, Timeout) ->
-    Mref = make_ref(),
-    case catch global:send(Name, {Label, {self(),Mref}, Request}) of
+%% Local or remote by pid
+call(Pid, Label, Request, Timeout) 
+  when pid(Pid), Timeout == infinity;
+       pid(Pid), integer(Timeout), Timeout >= 0 ->
+    do_call(Pid, Label, Request, Timeout);
+%% Local by name
+call(Name, Label, Request, Timeout) 
+  when atom(Name), Timeout == infinity;
+       atom(Name), integer(Timeout), Timeout >= 0 ->
+    case whereis(Name) of
 	Pid when pid(Pid) ->
-	    Node = node(Pid),
-	    set_monitor_node(Node),
-	    Res = wait_resp(Pid, Node, Mref, Timeout),
-	    reset_monitor_node(Node),
-	    Res;
-	{'EXIT', _} ->
-	    %% We know that the process won't answer, but we want the same
-	    %% semantics for all cases.  Thus, we wait for the reponse...
-	    wait_resp(undefined, Mref, Timeout)
+	    do_call(Pid, Label, Request, Timeout);
+	undefined ->
+	    exit(noproc)
     end;
-call({Name, Node}, Label, Request, Timeout) when node() == Node ->
+%% Global by name
+call({global, Name}=Process, Label, Request, Timeout)
+  when Timeout == infinity;
+       integer(Timeout), Timeout >= 0 ->
+    case where(Process) of
+	Pid when pid(Pid) ->
+	    do_call(Pid, Label, Request, Timeout);
+	undefined ->
+	    exit(noproc)
+    end;
+%% Local by name in disguise
+call({Name, Node}, Label, Request, Timeout)
+  when Node == node(), Timeout == infinity;
+       Node == node(), integer(Timeout), Timeout >= 0 ->
     call(Name, Label, Request, Timeout);
-call({Name, Node}, Label, Request, Timeout) ->
-    set_monitor_node(Node),
-    Mref = make_ref(),
-    {Name, Node} ! {Label, {self(),Mref}, Request},
-    Res = wait_resp(self(), Node, Mref, Timeout), %% dummy pid == self()
-    reset_monitor_node(Node),
-    Res.
-
-
-%%
-%% If monitor_node/2 tries to set up a connection to
-%% a non-existing node (or the connection fails)
-%% we dont want to try to set up the connection twice
-%% which is done if we first performs a monitor_node and
-%% when the distributed send !!
-set_monitor_node(Node) ->
-    monitor_node(Node, true),
-    receive
-	{nodedown, Node} -> exit({nodedown, Node})
-    after 0              -> ok
+%% Remote by name
+call({Name, Node}=Process, Label, Request, Timeout)
+  when atom(Node), Timeout == infinity;
+       atom(Node), integer(Timeout), Timeout >= 0 ->
+    if
+ 	node() == nonode@nohost ->
+ 	    exit({nodedown, Node});
+ 	true ->
+ 	    do_call(Process, Label, Request, Timeout)
     end.
 
-reset_monitor_node(Node) -> monitor_node(Node, false).
+do_call(Process, Label, Request, Timeout) ->
+    %% We trust the arguments to be correct, i.e
+    %% Process is either a local or remote pid,
+    %% or a {Name, Node} tuple (of atoms) and in this 
+    %% case this node (node()) _is_ distributed and Node /= node().
+    Node = case Process of
+	       {S, N} ->
+		   N;
+	       _ when pid(Process) ->
+		   node(Process);
+	       _ ->
+		   self()
+	   end,
+    case catch erlang:monitor(process, Process) of
+	Mref when reference(Mref) ->
+	    receive
+		{'DOWN', Mref, _, Pid1, noconnection} when pid(Pid1) ->
+		    exit({nodedown, node(Pid1)});
+		{'DOWN', Mref, _, _, noconnection} ->
+		    exit({nodedown, Node});
+		{'DOWN', Mref, _, _, _} ->
+		    exit(noproc)
+	    after 0 ->
+		    catch Process ! {Label, {self(), Mref}, Request},
+		    wait_resp_mon(Process, Mref, Timeout)
+	    end;
+	{'EXIT', _} ->
+	    %% Old node is not supporting the monitor.
+	    %% The other possible case -- this node is not distributed
+	    %% -- should have been handled earlier.
+	    %% Do the best possible with monitor_node/2.
+	    %% This code may hang indefinitely if the Process 
+	    %% does not exist. It is only used for old remote nodes.
+	    monitor_node(Node, true),
+	    receive
+		{nodedown, Node} -> 
+		    monitor_node(Node, false),
+		    exit({nodedown, Node})
+	    after 0 -> 
+		    Mref = make_ref(),
+		    Process ! {Label, {self(),Mref}, Request},
+		    Res = wait_resp(Node, Mref, Timeout),
+		    monitor_node(Node, false),
+		    Res
+	    end
+    end.
 
-wait_resp_mon(Pid, Mref, Timeout) ->
+wait_resp_mon(Process, Mref, Timeout) ->
+    Node = case Process of
+	       {S, N} ->
+		   N;
+	       _ when pid(Process) ->
+		   node(Process);
+	       _ ->
+		   self()
+	   end,
     receive
 	{Mref, Reply} ->
 	    erlang:demonitor(Mref),
 	    receive 
-		{'DOWN', Mref, _, _, _Reason} -> true
-	    after 0 -> true
-	    end,
-	    {ok,Reply};
-	{'EXIT', Pid, What} ->
+		{'DOWN', Mref, _, _, _} -> 
+		    {ok, Reply}
+	    after 0 -> 
+		    {ok, Reply}
+	    end;
+	{'DOWN', Mref, _, Pid, Reason} when pid(Pid) ->
 	    receive
-		{'DOWN', Mref, _, _, _Reason} -> true
-	    after 0 -> true
-	    end,
-	    exit(What);
-	{'DOWN', Mref, _, _, Reason} ->
-	    receive
-		{'EXIT', Pid, What} -> exit(What)
-	    after 0 -> exit(Reason)
-	    end
+		{'EXIT', Pid, noconnection} -> 
+		    exit({nodedown, Node});
+		{'EXIT', Pid, What} -> 
+		    exit(What)
+	    after 1 -> % Give 'EXIT' message time to arrive
+		    case Reason of
+			noconnection ->
+			    exit({nodedown, Node});
+			_ ->
+			    exit(Reason)
+		    end
+	    end;
+	{'DOWN', Mref, _, _, noconnection} ->
+	    %% Here is a hole, when the monitor is remote by name
+	    %% and the remote node goes down, we will never find 
+	    %% out the Pid and cannot know which 'EXIT' message
+	    %% to read out. This awkward case should have been 
+	    %% handled earlier (except for against rex) 
+	    %% by not using remote monitor by name.
+	    case Process of
+		_ when pid(Process) ->
+		    receive
+			{'EXIT', Process, noconnection} ->
+			    exit({nodedown, Node});
+			{'EXIT', Process, What} ->
+			    exit(What)
+		    after 1 -> % Give 'EXIT' message time to arrive
+			    exit({nodedown, node(Process)})
+		    end;
+		_ ->
+		    exit({nodedown, Node})
+	    end;
+	%% {'DOWN', Mref, _, _, noproc} ->
+	%%     exit(noproc);
+	{'DOWN', Mref, Tag, Item, Reason} ->
+	    exit(Reason)
     after Timeout ->
 	    erlang:demonitor(Mref),
 	    receive
@@ -204,24 +274,15 @@ wait_resp_mon(Pid, Mref, Timeout) ->
 	    exit(timeout)
     end.
 
-wait_resp(Pid, Tag, Timeout) ->
-    receive
-	{Tag, Reply} ->
-	    {ok,Reply};
-	{'EXIT', Pid, What} ->
-	    exit(What)
-    after Timeout ->
-	    exit(timeout)
-    end.
-wait_resp(Pid, Node, Tag, Timeout) ->
+wait_resp(Node, Tag, Timeout) ->
     receive
 	{Tag, Reply} ->
 	    {ok,Reply};
 	{nodedown, Node} ->
-	    exit({nodedown, Node});
-	{'EXIT', Pid, What} ->
-	    exit(What)
+	    monitor_node(Node, false),
+	    exit({nodedown, Node})
     after Timeout ->
+	    monitor_node(Node, false),
 	    exit(timeout)
     end.
 
@@ -258,6 +319,14 @@ timeout(Options) ->
 	    Time;
 	_ ->
 	    infinity
+    end.
+
+spawn_opts(Options) ->
+    case opt(spawn_opt, Options) of
+	{ok, Opts} ->
+	    Opts;
+	_ ->
+	    []
     end.
 
 opt(Op, [{Op, Value}|Options]) ->

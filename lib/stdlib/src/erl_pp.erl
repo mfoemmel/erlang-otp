@@ -262,8 +262,10 @@ expr({'fun',_,{clauses,Cs}}, I, Prec, Hook) ->
     ["fun ",
      fun_clauses(Cs, I+4, Hook),
      " end"];
-expr({'fun',_,{clauses,Cs},_Extra}, I, Prec, Hook) ->
-    ["fun ",
+expr({'fun',_,{clauses,Cs},Extra}, I, Prec, Hook) ->
+    [io_lib:format("% fun-info: ~p~n", [Extra]),
+     string:chars($\s, I),
+     "fun ",
      fun_clauses(Cs, I+4, Hook),
      " end"];
 expr({'query',_,Lc}, I, Prec, Hook) ->
@@ -301,6 +303,9 @@ expr({remote,_,M,F}, I, Prec, Hook) ->
     Ml = expr(M, I, L, Hook),
     El = [Ml,":",expr(F, indentation(Ml, I)+1, R, Hook)],
     maybe_paren(P, Prec, El);
+%% BIT SYNTAX:
+expr({bin,_,Fs}, I, Prec, Hook) ->
+    bit_grp(Fs,I,Prec,Hook);
 %% Special case for straight values.
 expr({value,_,Val}, _, _,_) ->
     write(Val);
@@ -311,6 +316,59 @@ expr(Expr, Indentation, Precedence, {Mod,Func,Eas}) when Mod /= 'fun' ->
     apply(Mod, Func, [Expr,Indentation,Precedence,{Mod,Func,Eas}|Eas]);
 expr(Expr, Indentation, Precedence, Func) ->
     Func(Expr, Indentation, Precedence, Func).
+
+%% BITS:
+bit_grp(Fs,I,Prec,Hook) ->
+    ["<<", bit_elems(Fs,I,Prec,Hook),">>"].
+
+bit_elems([E], I, Prec, Hook) ->
+    [ bit_elem(E, I, Prec, Hook) ];
+bit_elems([E1,E2],I,Prec,Hook) ->
+    [ bit_elem(E1,I,Prec,Hook), separator(E2), bit_elem(E2,I,Prec,Hook) ];
+bit_elems([E|Es],I,Prec,Hook) ->
+    [ bit_elem(E,I,Prec,Hook), ",", bit_elems(Es,I,Prec,Hook) ];
+bit_elems([],I,Prec,Hook) ->
+    [].
+
+bit_elem({bin_tail,_,Var}, I, Prec, Hook) ->
+    expr(Var,I,Prec,Hook);
+bit_elem({bin,_,Fs}, I, Prec, Hook) ->
+    bit_grp(Fs,I,Prec,Hook);
+bit_elem({bin_element,_,Expr,Sz,Types}, I, Prec, Hook) ->
+    Expr1 = 
+	if Sz =/= default ->
+		{remote, 0, Expr, Sz};
+	   true ->
+		Expr
+	end,
+    Expr2 =
+	if Types =/= default ->
+		{op, 0, '/', Expr1, bit_elem_types(lists:reverse(Types))};
+	   true ->
+		Expr1
+	end,
+    expr(Expr2,I,Prec,Hook).
+
+bit_elem_types([T]) ->
+    case T of
+	{A, B} ->
+	    {remote, 0,
+	     erl_parse:abstract(A),
+	     erl_parse:abstract(B)};
+	_ ->
+	    erl_parse:abstract(T)
+    end;    
+bit_elem_types([T | Rest]) ->
+    {op, 0, '-', bit_elem_types(Rest), bit_elem_types([T])}.
+
+separator(Elem) ->
+    case element(1,Elem) of
+        bin_tail -> "|";
+        bin  -> ",";
+        bin_element -> ","
+    end.
+
+%%% end of BITS
 
 record_fields(Fs, I, Hook) ->
     I1 = I + 1,

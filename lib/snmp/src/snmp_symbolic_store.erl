@@ -29,6 +29,9 @@
 %% snmp_agent_table, owned by the snmp_supervisor.
 %%----------------------------------------------------------------------
 -include("snmp_types.hrl").
+-include("snmp_verbosity.hrl").
+-include("snmp_debug.hrl").
+
 
 %% API
 -export([aliasname_to_oid/1, oid_to_aliasname/1, enum_to_int/2, 
@@ -36,16 +39,27 @@
 	 table_info/1, add_table_infos/2, delete_table_infos/1,
 	 variable_info/1, add_variable_infos/2, delete_variable_infos/1,
 	 get_notification/1, set_notification/2, delete_notifications/1,
-	 start_link/1, add_types/2, delete_types/1]).
+	 start_link/1, start_link/2, add_types/2, delete_types/1]).
 
 %% Internal exports
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
+	code_change/3]).
+
+-export([verbosity/1]).
+
+-ifndef(default_verbosity).
+-define(default_verbosity,silence).
+-endif.
 
 -record(state, {tab}).
 
 start_link(Prio) ->
+    start_link(Prio,[]).
+
+start_link(Prio,Opts) ->
     gen_server:start_link({local, snmp_symbolic_store}, snmp_symbolic_store,
-			  [Prio], []).
+			  [Prio,Opts], []).
+
 %%----------------------------------------------------------------------
 %% Returns: {value, Oid} | false
 %%----------------------------------------------------------------------
@@ -119,50 +133,66 @@ delete_notifications(MibName) ->
     gen_server:call(snmp_symbolic_store, {delete_notifications, MibName},
 		    infinity).
 
+verbosity(Verbosity) -> 
+    gen_server:cast(snmp_symbolic_store,{verbosity,Verbosity}).
+
 %%----------------------------------------------------------------------
 %% Implementation
 %%----------------------------------------------------------------------
 
-init([Prio]) ->
+init([Prio,Opts]) ->
     process_flag(priority, Prio),
+    put(sname,ss),
+    put(verbosity,get_verbosity(Opts)),
+    ?vlog("starting",[]),
     %% type = bag solves the problem with import and multiple
     %% object/type definitions.
     S = #state{tab = ets:new(snmp_symbolic_ets, [bag, private])},
+    ?vdebug("started",[]),
     {ok, S}.
 
 handle_call({table_info, TableName}, _From, S) ->
+    ?vlog("table info: ~p",[TableName]),
     Res = 
 	case ets:lookup(S#state.tab, {table_info, TableName}) of
 	    [{_Key, _MibName, Info}] -> {value, Info};
 	    _ -> false
 	end,
+    ?vdebug("table info result: ~p",[Res]),
     {reply, Res, S};
 
 handle_call({variable_info, VariableName}, _From, S) ->
+    ?vlog("variable info: ~p",[VariableName]),
     Res = 
 	case ets:lookup(S#state.tab, {variable_info, VariableName}) of
 	    [{_Key, _MibName, Info}] -> {value, Info};
 	    _ -> false
 	end,
+    ?vdebug("variable info result: ~p",[Res]),
     {reply, Res, S};
 
 handle_call({aliasname_to_oid, Aliasname}, _From, S) ->
+    ?vlog("aliasname to oid: ~p",[Aliasname]),
     Res =
 	case ets:lookup(S#state.tab, {alias, Aliasname}) of
 	    [{_Key, _MibName, {Oid, _Enums}}|_] -> {value, Oid};
 	    _ -> false
 	end,
+    ?vdebug("aliasname to oid result: ~p",[Res]),
     {reply, Res, S};
 
 handle_call({oid_to_aliasname, Oid}, _From, S) ->
+    ?vlog("oid to aliasname: ~p",[Oid]),
     Res = 
 	case ets:lookup(S#state.tab, {alias, Oid}) of
 	    [{_Key, _MibName, Aliasname}|_] -> {value, Aliasname};
 	    _ -> false
 	end,
+    ?vdebug("oid to aliasname result: ~p",[Res]),
     {reply, Res, S};
 
 handle_call({enum_to_int, TypeOrObjName, Enum}, _From, S) ->
+    ?vlog("enum to int: ~p, ~p",[TypeOrObjName,Enum]),
     Res = 
 	case ets:lookup(S#state.tab, {alias, TypeOrObjName}) of
 	    [{_Key, _MibName, {_Oid, Enums}}|_] ->
@@ -181,9 +211,11 @@ handle_call({enum_to_int, TypeOrObjName, Enum}, _From, S) ->
 			false
 		end
 	end,
+    ?vdebug("enum to int result: ~p",[Res]),
     {reply, Res, S};
 
 handle_call({int_to_enum, TypeOrObjName, Int}, _From, S) ->
+    ?vlog("int to enum: ~p, ~p",[TypeOrObjName,Int]),
     Res = 
 	case ets:lookup(S#state.tab, {alias, TypeOrObjName}) of
 	    [{_Key, _MibName, {_Oid, Enums}}|_] ->
@@ -202,27 +234,40 @@ handle_call({int_to_enum, TypeOrObjName, Int}, _From, S) ->
 			false
 		end
 	end,
+    ?vdebug("int to enum result: ~p",[Res]),
     {reply, Res, S};
 
 handle_call({set_notification, MibName, Trap}, _From, S) ->
+    ?vlog("set notification:"
+	  "~n   ~p~n   ~p",[MibName,Trap]),
     set_notif(S#state.tab, MibName, Trap),
     {reply, true, S};
 
 handle_call({delete_notifications, MibName}, _From, S) ->
+    ?vlog("delete notification: ~p",[MibName]),
     delete_notif(S#state.tab, MibName),
     {reply, true, S};
 
 handle_call({get_notification, Key}, _From, S) ->
+    ?vlog("get notification: ~p",[Key]),
     Res = get_notif(S#state.tab, Key),
+    ?vdebug("get notification result: ~p",[Res]),
     {reply, Res, S};
 
 handle_call(stop, _From, S) -> 
+    ?vlog("stop",[]),
     {stop, normal, ok, S}.
 
+handle_cast({verbosity,Verbosity}, State) ->
+    ?vlog("verbosity: ~p -> ~p",[get(verbosity),Verbosity]),
+    put(verbosity,snmp_verbosity:validate(Verbosity)),
+    {noreply, State};
+    
 handle_cast(_, S) ->
     {noreply, S}.
     
 handle_info({add_aliasnames, MibName, MEs}, S) ->
+    ?vlog("add aliasnames for ~p:",[MibName]),
     lists:foreach(
       fun(#me{aliasname = AN, oid = Oid, asn1_type = AT}) ->
 	      Enums =
@@ -234,17 +279,21 @@ handle_info({add_aliasnames, MibName, MEs}, S) ->
 			  end;
 		      _ -> []
 		  end,
+	      ?vlog("add alias~n   ~p -> {~p,~p}",[AN,Oid,Enums]),
 	      ets:insert(S#state.tab, {{alias, AN}, MibName, {Oid,Enums}}),
+	      ?vlog("add alias~n   ~p -> ~p",[Oid,AN]),
 	      ets:insert(S#state.tab, {{alias, Oid}, MibName, AN})
       end, MEs),
     {noreply, S};
 
 handle_info({add_types, MibName, Types}, S) ->
+    ?vlog("add types for ~p:",[MibName]),
     Ets = S#state.tab,
     lists:foreach(
       fun(#asn1_type{assocList = Alist, aliasname = Name}) ->
 	      case snmp_misc:assq(enums, Alist) of
 		  {value, Es} ->
+		      ?vlog("add type~n   ~p -> ~p",[Name,Es]),
 		      ets:insert(Ets, {{type, Name}, MibName, Es});
 		  false -> done
 	      end
@@ -252,39 +301,181 @@ handle_info({add_types, MibName, Types}, S) ->
     {noreply, S};
 
 handle_info({delete_aliasname_ets, MibName}, S) ->
+    ?vlog("delete aliasname ets: ~p",[MibName]),
     ets:match_delete(S#state.tab, {{alias, '_'}, MibName, '_'}),
     {noreply, S};
 
 handle_info({delete_types, MibName}, S) ->
+    ?vlog("delete types: ~p",[MibName]),
     ets:match_delete(S#state.tab, {{type, '_'}, MibName, '_'}),
     {noreply, S};
 
 
 handle_info({add_table_infos, MibName, TableInfos}, S) ->
+    ?vlog("add table infos for ~p:",[MibName]),
     lists:foreach(fun({Name, TableInfo}) ->
 			  Key = {table_info, Name},
+			  ?vlog("add table info~n   ~p -> ~p",
+				[Name,TableInfo]),
 			  ets:insert(S#state.tab, {Key, MibName, TableInfo})
 		  end, TableInfos),
     {noreply, S};
 
 handle_info({delete_table_infos, MibName}, S) ->
+    ?vlog("delete table infos: ~p",[MibName]),
     ets:match_delete(S#state.tab, {{table_info, '_'}, MibName, '_'}),
     {noreply, S};
 
 handle_info({add_variable_infos, MibName, VariableInfos}, S) ->
+    ?vlog("add variable infos for ~p:",[MibName]),
     lists:foreach(fun({Name, VariableInfo}) ->
 			  Key = {variable_info, Name},
-			  ets:insert(S#state.tab, {Key, MibName, VariableInfo})
+			  ?vlog("add variable info~n   ~p -> ~p",
+				[Name,VariableInfo]),
+			  ets:insert(S#state.tab, {Key,MibName,VariableInfo})
 		  end, VariableInfos),
     {noreply, S};
 
 handle_info({delete_variable_infos, MibName}, S) ->
+    ?vlog("delete variable infos: ~p",[MibName]),
     ets:match_delete(S#state.tab, {{variable_info, '_'}, MibName, '_'}),
     {noreply, S}.
 
 
-terminate(_Reason, S) ->
+terminate(Reason, S) ->
+    ?vlog("terminate: ~p",[Reason]),
     ets:delete(S#state.tab).
+
+
+%%----------------------------------------------------------
+%% Code change
+%%----------------------------------------------------------
+
+% downgrade
+code_change({down, Vsn}, State, downgrade_to_3_1_4) ->
+    ?debug("code_change(down) -> entry with~n"
+	   "  Vsn:   ~p~n"
+	   "  State: ~p~n"
+	   "  Extra: ~p",
+      [Vsn,State,downgrade_to_3_1_4]),
+    ets_downgrade(State#state.tab),
+    ?debug("downgrade done",[]),
+    {ok, State};
+code_change({down, Vsn}, State, downgrade_to_3_1_3) ->
+    ?debug("code_change(down) -> entry with~n"
+	   "  Vsn:   ~p~n"
+	   "  State: ~p~n"
+	   "  Extra: ~p",
+      [Vsn,State,downgrade_to_3_1_3]),
+    ets_downgrade(State#state.tab),
+    ?debug("downgrade done",[]),
+    {ok, State};
+code_change({down, Vsn}, State, downgrade_to_3_0_9_2) ->
+    ?debug("code_change(down) -> entry with~n"
+	   "  Vsn:   ~p~n"
+	   "  State: ~p~n"
+	   "  Extra: ~p",
+      [Vsn,State,downgrade_to_3_0_9_2]),
+    ets_downgrade(State#state.tab),
+    ?debug("downgrade done",[]),
+    {ok, State};
+
+% upgrade
+code_change(Vsn, State, upgrade_from_3_1_4) ->
+    ?debug("code_change -> entry with~n"
+	   "  Vsn:   ~p~n"
+	   "  State: ~p~n"
+	   "  Extra: ~p",
+      [Vsn,State,upgrade_from_3_1_4]),
+    ets_upgrade(State#state.tab),
+    ?debug("upgrade done",[]),
+    {ok, State};
+code_change(Vsn, State, upgrade_from_3_1_3) ->
+    ?debug("code_change -> entry with~n"
+	   "  Vsn:   ~p~n"
+	   "  State: ~p~n"
+	   "  Extra: ~p",
+      [Vsn,State,upgrade_from_3_1_3]),
+    ets_upgrade(State#state.tab),
+    ?debug("upgrade done",[]),
+    {ok, State};
+code_change(Vsn, State, upgrade_from_3_0_9_2) ->
+    ?debug("code_change -> entry with~n"
+	   "  Vsn:   ~p~n"
+	   "  State: ~p~n"
+	   "  Extra: ~p",
+      [Vsn,State,upgrade_from_3_0_9_2]),
+    ets_upgrade(State#state.tab),
+    ?debug("upgrade done",[]),
+    {ok, State}.
+
+
+%% Upgrade the ets table, i.e. upgrade all trap- and notification-records
+ets_upgrade(Tab) -> 
+    ?debug("upgrade ets-table",[]),
+    ets_update(Tab,up).
+
+%% Downgrade the ets table, i.e. downgrade all trap- and notification-records
+ets_downgrade(Tab) ->
+    ?debug("downgrade ets-table",[]),
+    ets_update(Tab,down).
+
+ets_update(Tab,How) ->
+    ?debug("~pgrade ets-table",[How]),
+    Traps = ets:match_object(Tab,{{trap,'_'},'_','_'}),
+    ?debug("~p elements to ~pgrade",[length(Traps),How]),
+    ets_update(Tab,Traps,How).
+
+ets_update(_Tab,[],How) ->
+    ?debug("ets table ~pgraded",[How]),
+    ok;
+ets_update(Tab,[{{trap,Key},MibName,Trap}|Traps],How) ->
+    trap_update(Tab,Key,MibName,Trap,How),
+    ets_update(Tab,Traps,How).
+
+
+trap_update(Tab,Key,MibName,Trap,How) ->
+    ?debug("update trap-record with key = ~p",[Key]),
+    NTrap = trap_update(How,Trap),  % Create the new trap record
+    ets:delete(Tab,{trap,Key}),     % Delete current record from table
+    ets:insert(Tab,{{trap,Key},MibName,NTrap}). % Insert new record into table
+    
+trap_update(up,Trap)   -> trap_upgrade(Trap);
+trap_update(down,Trap) -> trap_downgrade(Trap).
+    
+trap_upgrade({trap,TrapName,EnterpriseOid,SpecificCode,OidObjects}) ->
+    ?debug("upgrade trap-record with name = ~p",[TrapName]),
+    #trap{trapname      = TrapName, 
+	  enterpriseoid = EnterpriseOid,
+	  specificcode  = SpecificCode, 
+	  oidobjects    = OidObjects};
+trap_upgrade({notification,TrapName,Oid,OidObjects}) ->
+    ?debug("upgrade notification-record with name = ~p",[TrapName]),
+    #notification{trapname   = TrapName, 
+		  oid        = Oid, 
+		  oidobjects = OidObjects};
+trap_upgrade(Any) ->
+    ?debug("trap upgrade: ignoring ~p",[Any]),
+    Any.
+    
+
+trap_downgrade(Trap) when record(Trap,trap) ->
+    #trap{trapname      = TrapName, 
+	  enterpriseoid = EnterpriseOid,
+	  specificcode  = SpecificCode, 
+	  oidobjects    = OidObjects} = Trap,
+    ?debug("downgrade trap-record with name = ~p",[TrapName]),
+    {trap,TrapName,EnterpriseOid,SpecificCode,OidObjects};
+trap_downgrade(Trap) when record(Trap,notification) ->
+    #notification{trapname   = TrapName, 
+		  oid        = Oid, 
+		  oidobjects = OidObjects} = Trap,
+    ?debug("downgrade notification-record with name = ~p",[TrapName]),
+    {notification,TrapName,Oid,OidObjects};
+trap_downgrade(Any) ->
+    ?debug("trap downgrade: ignoring ~p",[Any]),
+    Any.
+    
 
 %%-----------------------------------------------------------------
 %% Store traps
@@ -310,3 +501,9 @@ set_notif(Tab, MibName, Trap) ->
 
 delete_notif(Tab, MibName) ->
     ets:match_delete(Tab, {{trap, '_'}, MibName, '_'}).
+
+
+%% -------------------------------------
+
+get_verbosity(L) -> snmp_misc:get_option(verbosity,L,?default_verbosity).
+

@@ -18,7 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: corba_object.erl
-%% Author: Lars Thorsen
 %% 
 %% Description:
 %%    This file contains the CORBA::Object interface
@@ -43,6 +42,7 @@
 	 is_a/2,
 	 is_remote/1,
 	 non_existent/1,
+	 not_existent/1,
 	 is_equivalent/2,
 	 hash/2,
 	 create_request/6]).
@@ -52,18 +52,14 @@
 %%-----------------------------------------------------------------
 -export([]).
 
-%%%----------------------------------------------------------------------
-%%% Local defines
-%% Prefix allowed.
--define(IFRDEF_22, "IDL:omg.org/").
--define(IFRDEF_20, "IDL:").
+%%-----------------------------------------------------------------
+%% Macros
+%%-----------------------------------------------------------------
+-define(DEBUG_LEVEL, 5).
 
 %%------------------------------------------------------------
 %% Implementation of standard interface
 %%------------------------------------------------------------
-%%get_implementation(Obj) ->
-%%    exit(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO}).
-
 get_interface(Obj) ->
     TypeId = iop_ior:get_typeID(Obj),
     Rep = orber_ifr:find_repository(),
@@ -71,6 +67,8 @@ get_interface(Obj) ->
 	%% If all we get is an empty list there are no such
 	%% object registered in the IFR.
 	[] ->
+	    orber:debug_level_print("[~p] corba_object:get_interface(~p); TypeID ~p not found in IFR.", 
+				    [?LINE, Obj, TypeId], ?DEBUG_LEVEL),
 	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 	Int ->
 	    orber_ifr_interfacedef:describe_interface(Int)
@@ -84,7 +82,9 @@ is_nil({I,T,K,P,O,F}) ->
 %% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
 is_nil({I,T,K,P}) ->
     iop_ior:check_nil({I,T,K,P});
-is_nil(_) ->
+is_nil(Obj) ->
+    orber:debug_level_print("[~p] corba_object:is_nil(~p); Invalid object reference.", 
+			    [?LINE, Obj], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
 
 %%duplicate(Obj) ->
@@ -105,9 +105,13 @@ get_policy(Obj, PolicyType) when integer(PolicyType) ->
 	{'internal_registered', _} ->
 	    orber_policy_server:get_policy(Obj, PolicyType);
 	_ ->
+	    orber:debug_level_print("[~p] corba_object:get_policy(~p); Invalid object reference.", 
+				    [?LINE, Obj], ?DEBUG_LEVEL),
 	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
     end;
-get_policy(_, _) ->
+get_policy(_, PT) ->
+    orber:debug_level_print("[~p] corba_object:get_policy(~p); Invalid Policy.", 
+			    [?LINE, PT], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
     
 
@@ -119,39 +123,34 @@ is_a(Obj, Logical_type_id) ->
 			       {orber_tc:boolean(),[orber_tc:string(0)],[]},
 			       true);
 	{_Local, _Key} ->
-	    TypeId = iop_ior:get_typeID(Obj),
-	    %%To be backward compatible (2.2->2.0) we must recognize two 
-	    %% IFR id types:
-	    %%"IDL:omg.org/Name:x.x" and "IDL:Name:x.x"
-	    Id2 = case lists:prefix(?IFRDEF_22, Logical_type_id) of
-		      true ->
-			  ?IFRDEF_20++lists:nthtail(length(?IFRDEF_22),
-						    Logical_type_id);
-		      _ ->
-			  ?IFRDEF_22++lists:nthtail(length(?IFRDEF_20), 
-						    Logical_type_id)
-		  end,
-	    if
-		TypeId == Logical_type_id ->
+	    case iop_ior:get_typeID(Obj) of
+		Logical_type_id ->
 		    true;
-		TypeId == Id2 ->
-		    true;
-		true ->
+		TypeId ->
 		    Rep = orber_ifr:find_repository(),
 		    case orber_ifr_repository:lookup_id(Rep, TypeId) of
 			%% If all we get is an empty list there are no such
 			%% object registered in the IFR.
 			[] ->
+			    orber:debug_level_print("[~p] corba_object:get_interface(~p); TypeID ~p not found in IFR.", 
+						    [?LINE, Obj, Logical_type_id], ?DEBUG_LEVEL),
 			    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 			Int ->
 			    orber_ifr_interfacedef:is_a(Int, Logical_type_id)
 		    end
 	    end;
 	_ ->
+	    orber:debug_level_print("[~p] corba_object:get_policy(~p, ~p); Invalid object reference.", 
+				    [?LINE, Obj, Logical_type_id], ?DEBUG_LEVEL),
 	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
     end.
 
 non_existent(Obj) ->
+    existent_helper(Obj, '_non_existent').
+not_existent(Obj) ->
+    existent_helper(Obj, '_not_existent').
+
+existent_helper(Obj, Op) ->
     {Location, Key} = iop_ior:get_key(Obj),
     if
 	Location == 'internal' ->
@@ -161,19 +160,26 @@ non_existent(Obj) ->
 		{'EXCEPTION', X} ->
 		    corba:raise(X);
 		{'EXIT', R} ->
+		    orber:debug_level_print("[~p] corba_object:non_existent(~p); exit(~p).", 
+					    [?LINE, Obj], ?DEBUG_LEVEL),
 		    exit(R);
 		_ ->
 		    false
 	    end;
 	Location == 'internal_registered' ->
-	    case whereis(Key) of
-		undefined ->
-		    true;
-		P ->
-		    false
+	    case Key of
+		{pseudo, _} ->
+		    false;
+		_->
+		    case whereis(Key) of
+			undefined ->
+			    true;
+			P ->
+			    false
+		    end
 	    end;
 	Location == 'external' ->
-	    orber_iiop:request(Key, '_not_existent', [], 
+	    orber_iiop:request(Key, Op, [], 
 			       {orber_tc:boolean(), [],[]}, 'true');
 	true -> 	
 	    false

@@ -94,7 +94,7 @@ terminate(Reason, State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 code_change(OldVsn, State, Extra) ->
-    exit(not_supported).
+    {ok, State}.
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -126,12 +126,22 @@ handle_system_event({mnesia_up, Node}, State) ->
 handle_system_event({mnesia_down, Node}, State) ->
     case mnesia:system_info(fallback_activated) of
 	true ->
-	    Msg = "A fallback is installed and Mnesia "
-		  "must be restarted. Forcing shutdown "
-		  "after mnesia_down from ~p...~n",
-	    report_fatal(Msg, [Node], nocore, State#state.dumped_core),
-	    mnesia:lkill(),
-	    exit(fatal);
+	    case mnesia_monitor:get_env(fallback_error_function) of
+		{mnesia, lkill} ->
+		    Msg = "A fallback is installed and Mnesia "
+			"must be restarted. Forcing shutdown "
+			"after mnesia_down from ~p...~n",
+		    report_fatal(Msg, [Node], nocore, State#state.dumped_core),
+		    mnesia:lkill(),
+		    exit(fatal);
+		{UserMod, UserFunc} ->
+		    Msg = "Warning: A fallback is installed and Mnesia got mnesia_down "
+			"from ~p. ~n",
+		    report_info(Msg, [Node]),
+		    apply(UserMod, UserFunc, []),
+		    Nodes = lists:delete(Node, State#state.nodes),
+		    {ok, State#state{nodes = Nodes}}
+	    end;
 	false ->
 	    Nodes = lists:delete(Node, State#state.nodes),
 	    {ok, State#state{nodes = Nodes}}

@@ -34,9 +34,9 @@ RELSYSDIR = $(RELEASE_PATH)/lib/cosEvent-$(VSN)
 # ----------------------------------------------------
 
 MODULES = \
-	OrberEventChannelAdmin_EventChannel_impl \
 	CosEventChannelAdmin_SupplierAdmin_impl \
 	CosEventChannelAdmin_ConsumerAdmin_impl \
+	OrberEventChannelAdmin_EventChannel_impl \
 	OrberEventChannelAdmin_ProxyPullConsumer_impl \
 	OrberEventChannelAdmin_ProxyPullSupplier_impl \
 	OrberEventChannelAdmin_ProxyPushConsumer_impl \
@@ -55,7 +55,9 @@ GEN_ERL_FILES1 = \
 	CosEventChannelAdmin_ProxyPullSupplier.erl \
 	CosEventChannelAdmin_ProxyPushConsumer.erl \
 	CosEventChannelAdmin_ProxyPushSupplier.erl \
-	CosEventChannelAdmin_SupplierAdmin.erl
+	CosEventChannelAdmin_SupplierAdmin.erl \
+	CosEventChannelAdmin_AlreadyConnected.erl \
+	CosEventChannelAdmin_TypeError.erl
 
 GEN_ERL_FILES2 = \
 	oe_OrberEventChannelAdmin.erl \
@@ -64,8 +66,6 @@ GEN_ERL_FILES2 = \
 	OrberEventChannelAdmin_ProxyPullSupplier.erl \
 	OrberEventChannelAdmin_ProxyPushConsumer.erl \
 	OrberEventChannelAdmin_ProxyPushSupplier.erl \
-	CosEventChannelAdmin_AlreadyConnected.erl \
-	CosEventChannelAdmin_TypeError.erl
 
 GEN_ERL_FILES3 = \
 	oe_event_channel_factory.erl \
@@ -82,6 +82,8 @@ GEN_ERL_FILES4 = \
 GEN_ERL_FILES =  \
 	$(GEN_ERL_FILES1) $(GEN_ERL_FILES2) $(GEN_ERL_FILES3) $(GEN_ERL_FILES4)
 
+EXTERNAL_INC_PATH = ../include
+
 GEN_HRL_FILES1 = \
 	oe_CosEventChannelAdmin.hrl \
 	CosEventChannelAdmin.hrl \
@@ -92,6 +94,8 @@ GEN_HRL_FILES1 = \
 	CosEventChannelAdmin_ProxyPushConsumer.hrl \
 	CosEventChannelAdmin_ProxyPushSupplier.hrl \
 	CosEventChannelAdmin_SupplierAdmin.hrl
+
+EXTERNAL_GEN_HRL_FILES1 = $(GEN_HRL_FILES1:%=$(EXTERNAL_INC_PATH)/%)
 
 GEN_HRL_FILES2 = \
 	oe_OrberEventChannelAdmin.hrl \
@@ -115,8 +119,10 @@ GEN_HRL_FILES4 = \
 	CosEventComm_PushConsumer.hrl \
 	CosEventComm_PushSupplier.hrl
 
+EXTERNAL_GEN_HRL_FILES4 = $(GEN_HRL_FILES4:%=$(EXTERNAL_INC_PATH)/%)
+
 GEN_HRL_FILES = \
-	$(GEN_HRL_FILES1) $(GEN_HRL_FILES2) $(GEN_HRL_FILES3) $(GEN_HRL_FILES4)
+	$(EXTERNAL_GEN_HRL_FILES1) $(GEN_HRL_FILES2) $(GEN_HRL_FILES3) $(EXTERNAL_GEN_HRL_FILES4)
 
 TARGET_FILES = \
 	$(GEN_ERL_FILES:%.erl=$(EBIN)/%.$(EMULATOR)) \
@@ -165,10 +171,11 @@ docs:
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
-$(GEN_ERL_FILES1) $(GEN_HRL_FILES1): CosEventChannelAdmin.idl
+$(GEN_ERL_FILES1) $(EXTERNAL_GEN_HRL_FILES1): CosEventChannelAdmin.idl
 	erlc $(ERL_FLAGS) +'{handle_info, "CosEventChannelAdmin::ConsumerAdmin"}' \
 		+'{handle_info, "CosEventChannelAdmin::SupplierAdmin"}' \
 		CosEventChannelAdmin.idl
+	mv $(GEN_HRL_FILES1) $(EXTERNAL_INC_PATH)
 
 $(GEN_ERL_FILES2) $(GEN_HRL_FILES2): OrberEventChannelAdmin.idl
 	erlc $(ERL_FLAGS) +'handle_info' \
@@ -188,9 +195,9 @@ $(GEN_ERL_FILES2) $(GEN_HRL_FILES2): OrberEventChannelAdmin.idl
 $(GEN_ERL_FILES3) $(GEN_HRL_FILES3): event_channel_factory.idl
 	erlc $(ERL_FLAGS) event_channel_factory.idl
 
-$(GEN_ERL_FILES4) $(GEN_HRL_FILES4): CosEventComm.idl
+$(GEN_ERL_FILES4) $(EXTERNAL_GEN_HRL_FILES4): CosEventComm.idl
 	erlc $(ERL_FLAGS) CosEventComm.idl
-
+	mv $(GEN_HRL_FILES4) $(EXTERNAL_INC_PATH)
 # ----------------------------------------------------
 # Release Target
 # ---------------------------------------------------- 
@@ -198,6 +205,8 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 
 release_spec: opt
+	$(INSTALL_DIR) $(RELSYSDIR)
+	$(INSTALL_DATA) ../info $(RELSYSDIR)
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(APP_TARGET) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR) $(RELSYSDIR)/src

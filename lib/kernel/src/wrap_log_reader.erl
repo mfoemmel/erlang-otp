@@ -281,7 +281,9 @@ open_int(FName) ->
 %%============================================================================
 read_a_chunk(Fd, N, start, {File, _, _}) ->
     disk_log_1:chunk_read_only(Fd, File, 0, [], N);
-read_a_chunk(Fd, N, {more, Pos, B}, {File, _, _}) ->
+read_a_chunk(Fd, N, More, {File, _, _}) ->
+    Pos = More#continuation.pos,
+    B = More#continuation.b,
     disk_log_1:chunk_read_only(Fd, File, Pos, B, N).
 
 

@@ -18,8 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: CosNaming_BindingIterator_impl.erl
-%% Author: Lars Thorsen
-%% 
 %% Creation date: 970902
 %% Modified:
 %%
@@ -34,7 +32,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([init/1, terminate/2]).
+-export([init/1, terminate/2, code_change/3]).
 -export([next_one/1, next_n/2, destroy/1]).
 
 %%-----------------------------------------------------------------
@@ -60,6 +58,9 @@ init(State) ->
 %%-----------------------------------------------------------------
 terminate(Reason, State) ->
     ok.
+
+code_change(OldVsn, State, Extra) ->
+    {ok, State}.
 
 next_one({SubObjectKey, Counter}) ->
     _RF = ?read_function({orber_CosNaming, SubObjectKey}),

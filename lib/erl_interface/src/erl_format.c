@@ -539,8 +539,8 @@ ETERM *erl_format(char *fmt, ... )
  */
 static int ematch(ETERM *p, ETERM *t)
 {
-  char type_p;
-  char type_t;
+    unsigned int type_p;
+    unsigned int type_t;
   ETERM *tmp;
 
   /* two NULLs are equal, one is not... */
@@ -599,19 +599,19 @@ static int ematch(ETERM *p, ETERM *t)
     break;
 	
   case ERL_PID:
-    if ((strcmp(p->uval.pidval.node, t->uval.pidval.node) == 0) &&
-	(p->uval.pidval.number == t->uval.pidval.number) &&
-	(p->uval.pidval.serial == t->uval.pidval.serial) &&
-	(p->uval.pidval.creation == t->uval.pidval.creation))
+    if ((strcmp(ERL_PID_NODE(p), ERL_PID_NODE(t)) == 0) &&
+	(ERL_PID_NUMBER(p) == ERL_PID_NUMBER(t)) &&
+	(ERL_PID_SERIAL(p) == ERL_PID_SERIAL(t)) &&
+	(ERL_PID_CREATION(p) == ERL_PID_CREATION(t)))
       return ERL_TRUE;
     else
       return ERL_FALSE;
     break;
 	
   case ERL_PORT:
-    if ((strcmp(p->uval.portval.node, t->uval.portval.node) == 0) &&
-	(p->uval.portval.number == t->uval.portval.number) &&
-	(p->uval.portval.creation == t->uval.portval.creation))
+    if ((strcmp(ERL_PORT_NODE(p), ERL_PORT_NODE(t)) == 0) &&
+	(ERL_PORT_NUMBER(p) == ERL_PORT_NUMBER(t)) &&
+	(ERL_PORT_CREATION(p) == ERL_PORT_CREATION(t)))
       return ERL_TRUE;
     else
       return ERL_FALSE;
@@ -620,16 +620,17 @@ static int ematch(ETERM *p, ETERM *t)
   case ERL_REF: {
       int i, len;
 
-      if (strcmp(p->uval.refval.node, t->uval.refval.node) != 0 ||
-	  p->uval.refval.creation != t->uval.refval.creation)
+      if (strcmp(ERL_REF_NODE(p), ERL_REF_NODE(t)) != 0 ||
+	  ERL_REF_CREATION(p) != ERL_REF_CREATION(t))
 	  return ERL_FALSE;
 
-      len = p->uval.refval.len;
-      if (len > t->uval.refval.len)
-	  len = t->uval.refval.len;
+      /* XXX: {len=1, n={42}} and {len=3, n={42, 17, 13}} tests equal. */
+      len = ERL_REF_LEN(p);
+      if (len > ERL_REF_LEN(t))
+	  len = ERL_REF_LEN(t);
 
       for (i = 0; i < len; i++)
-	  if (p->uval.refval.n[i] != t->uval.refval.n[i])
+	  if (ERL_REF_NUMBERS(p)[i] != ERL_REF_NUMBERS(t)[i])
 	  return ERL_FALSE;
 
       return ERL_TRUE;

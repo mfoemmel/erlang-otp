@@ -25,6 +25,8 @@
 
 -module(dbg_ui_interpret).
 
+-include_lib("kernel/include/file.hrl").
+
 -export([start/5,fs_init/6,get_event/2]).
 
 -define(BUTTONX,70).
@@ -346,43 +348,46 @@ fs_loop(Win, Dir, Owner, Size, Table, Interpreted, MPid, IPid) ->
 	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted, MPid, IPid)
     end.
 
-%%% up(Dir,Owner) -> ok.
-%%% The user wants to move up one pos in the list box.
-%%% Dir: Current working directory
-%%% Dir,Owner used when clicked is called.
+%% up(Dir,Owner) -> ok.
+%% down(Dir,Owner) -> ok.
+%% The user wants to move up (or down) one pos in the list box.
+%% Dir: Current working directory
+%% Dir,Owner used when clicked is called.
 
-up(Dir,Owner) ->
-    Last = gs:read(lb,size) -1,
+up(Dir, Owner) ->
+    move({Dir, Owner}, lb,
+	 fun(0, Last) -> Last;
+	    (Pos, _) -> Pos-1
+	 end).
+		   
+down(Dir, Owner) ->
+    move({Dir, Owner}, lb,
+	 fun(Last, Last) -> 0;
+	    (Pos, _) -> Pos+1
+	 end).
+		   
+%% move({Dir, Owner}, ObjId, StepFun) -> ok.
+
+%% Move the selection in the list box ObjId to
+%% StepFun(CurrentIndex, LastIndex). Also move the list box view so
+%% the selection stays visible. Finally call clicked/2 (if anything
+%% *was* selected, that is).
+
+%% FIXME: If we leave via clicked/2, `true' might be returned instead
+%% of `ok'. As the return value isn't actually used anywhere, this
+%% should only be fixed for general neatness.
+move({Dir, Owner}, ObjId, StepFun) ->
     case gs:read(lb,selection) of
-	[0] ->
-	    gs:config(lb,{selection,clear}),
-	    gs:config(lb,{selection,Last});
-	[Pos]  ->
-	    gs:config(lb,{selection,clear}),
-	    gs:config(lb,{selection,Pos-1});
+	[Pos|_] when integer(Pos) ->		%at least one selection
+	    LastPos = gs:read(ObjId, size)-1,
+	    NewPos = StepFun(Pos, LastPos),
+	    gs:config(ObjId, {selection,clear}),
+	    gs:config(ObjId, {selection,NewPos}),
+	    gs:config(ObjId, {see,NewPos}),
+	    clicked(Dir, Owner);
 	_ ->
 	    ok
-    end,
-    clicked(Dir,Owner).
-
-%%% down(Dir,Owner) -> ok.
-%%% The user wants to move down one pos in the list box.
-%%% Dir: Current working directory
-%%% Dir,Owner used when clicked is called.
-
-down(Dir,Owner) ->
-    Last = gs:read(lb,size) -1,
-    case gs:read(lb,selection) of
-	[Last] -> 
-	    gs:config(lb,{selection,clear}),
-	    gs:config(lb,{selection,0});
-	[Pos]  ->
-	    gs:config(lb,{selection,clear}),
-	    gs:config(lb,{selection,Pos+1});
-	_ -> 
-	    ok
-    end,
-    clicked(Dir,Owner).  
+    end.
 
 %%% refresh(Dir,Interpretedd) -> Items. Update the elements in the
 %%%                                entry box.
@@ -558,10 +563,10 @@ check_file(Dir,File) ->
 	       volumerelative ->
 		   File ++ "/"
 	   end,
-    case file:file_info(Path) of
-	{ok,{_,directory,_,_,_,_,_}} ->
+    case file:read_file_info(Path) of
+	{ok,#file_info{type=directory}} ->
 	    {dir,Path};
-	{ok,{_,regular,_,_,_,_,_}} ->
+	{ok,#file_info{type=regular}} ->
 	    case filename:extension(Path) of
 		".erl" ->
 		    FileName = filename:basename(Path),
@@ -592,13 +597,13 @@ get_files (Dir, Interpreted) ->
 
 
 get_files (Dir, [H | T], Interpreted, Buffer) ->
-    case file:file_info (filename:join (Dir, H)) of
-        {ok, {_, directory, _, _, _, _, _}} ->
+    case file:read_file_info (filename:join (Dir, H)) of
+        {ok, #file_info{type=directory}} ->
 	    H1 = lists:append (" ", H), 
 	    H2 = lists:append (H1, "/"),
 	    get_files (Dir, T, Interpreted, [H2 | Buffer]);
 
-        {ok, {_, regular, _, _, _, _, _}} ->
+        {ok, #file_info{type=regular}} ->
 	    case lists:member (H, Interpreted) of
 		true ->
 		    H1 = lists:append (?SYMBOL, H),

@@ -730,23 +730,29 @@ compute_closure1([{Rule_nmbr, Rule} | Tail], New_lookahead, Items,
 			     TerminalTab, Rules, Lc_table)
     end.
 
-check_item(Rule_pointer, [{Rule_pointer, Lookahead2, _} | _], Lookahead1) ->
-    case ord_subset(Lookahead1, Lookahead2) of
-	true ->
-	    old;
-	false ->
-	    merge
-    end;
-check_item(Rule_pointer, [_ | Items], Lookahead) ->
-    check_item(Rule_pointer, Items, Lookahead);
-check_item(_, [], _) ->
-    add.
+check_item(RulePtr, Items, Lookahead1) ->
+    case lists:keysearch(RulePtr, 1, Items) of
+	{value,{RulePtr, Lookahead2, _}} ->
+	    case ord_subset(Lookahead1, Lookahead2) of
+		true -> old;
+		false -> merge
+	    end;
+	false -> add
+    end.
+
+
+%% Profiling shows that this function was a bottle-neck.
+%% Measurements show that this tail-recursive version is
+%% faster than the recursive version.
+
+merge_items(RulePtr, Items, La) ->
+    merge_items(RulePtr, Items, La, []).
 
 merge_items(Rule_pointer, [{Rule_pointer, Lookahead1, Rhs} | Items],
-	    Lookahead2) ->
-    [{Rule_pointer, ord_merge(Lookahead1, Lookahead2), Rhs} | Items];
-merge_items(Rule_pointer, [Item | Items], Lookahead) ->
-    [Item | merge_items(Rule_pointer, Items, Lookahead)].
+	    Lookahead2, Acc) ->
+    Items ++ [{Rule_pointer, ord_merge(Lookahead1, Lookahead2), Rhs} | Acc];
+merge_items(Rule_pointer, [Item | Items], Lookahead, Acc) ->
+    merge_items(Rule_pointer, Items, Lookahead, [Item|Acc]).
 
 
 %% Check if some old state is a superset of our New_state
@@ -1722,16 +1728,16 @@ intersect([H | T], L) ->
 	    intersect(T, L)
     end.
 
-ord_merge(L, []) -> 
-    L;
-ord_merge([], L) ->
-    L;
-ord_merge([H | T1], [H | T2]) ->
-    [H | ord_merge(T1, T2)];
-ord_merge([H1 | T1], [H2 | T2]) when H1 < H2 ->
-    [H1 | ord_merge(T1, [H2 | T2])];
-ord_merge(L, [H | T]) ->
-    [H | ord_merge(L, T)].
+ord_merge([H1|Es1], [H2|_]=Es2) when H1 < H2 ->
+    [H1|ord_merge(Es1, Es2)];
+ord_merge([H1|Es1], [H2|Es2]) when H1 =:= H2 ->
+    [H1|ord_merge(Es1, Es2)];
+ord_merge([H1|_]=Es1, [H2|Es2]) ->
+    [H2|ord_merge(Es1, Es2)];
+ord_merge([], Es2) ->
+    Es2;
+ord_merge(Es1, []) ->
+    Es1.
 
 ord_subset([H | T1], [H | T2]) ->
     ord_subset(T1, T2);

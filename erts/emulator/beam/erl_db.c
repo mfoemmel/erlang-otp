@@ -47,17 +47,17 @@
 #define TERM_GETKEY(tb, obj) db_getkey((tb)->common.keypos, (obj)) 
 /* 
 ** The id in a tab_entry slot is
-** 0 if it's never been used
-** USED if it's been freed
+** DB_NOTUSED if it's never been used
+** DB_USED if it's been freed
+** An occupied slot has an (atom|small) id equal to the table's id
 ** This is so that we shall be able to terminate a search when we
 ** reach a point in the table that is impossible to reach if the id
 ** is there, we have to consider that tables can be removed thogh, so if
 ** we come to a removed slot, we must continue the search
 */
 
-#define USED 0xffffffff
-#define ISFREE(i) ((db_tables[i].id == USED) || (db_tables[i].id == 0))
-#define ISNOTUSED(i) (db_tables[i].id == 0)
+#define ISFREE(i)	((db_tables[i].id == DB_USED) || ISNOTUSED(i))
+#define ISNOTUSED(i)	(db_tables[i].id == DB_NOTUSED)
 
 /* 
 ** Globals 
@@ -264,7 +264,7 @@ BIF_ADECL_3
 	BIF_ERROR(BIF_P, BADARG);
     }
     if (is_tuple(BIF_ARG_3)) { /* key position specified */
-	eTerm *tpl = ptr_val(BIF_ARG_3);
+	eTerm *tpl = tuple_val(BIF_ARG_3);
 	if (arityval(*tpl) != 2 || !is_small(tpl[1]) ||
 	    !(is_small(tpl[2]) || is_big(tpl[2]))) {
 	    BIF_ERROR(BIF_P, BADARG);
@@ -313,7 +313,7 @@ BIF_ADECL_2
 	BIF_ERROR(BIF_P, BADARG);
     }
     if (is_not_tuple(BIF_ARG_2) || 
-	(arityval(*ptr_val(BIF_ARG_2)) < tb->common.keypos)) {
+	(arityval(*tuple_val(BIF_ARG_2)) < tb->common.keypos)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
     if (IS_HASH_TABLE(tb->common.status)) {
@@ -364,7 +364,7 @@ BIF_ADECL_2
     }
 
     /* Ok, a named table, find a new slot for it */
-    newslot = unsigned_val(BIF_ARG_2) % db_max_tabs;
+    newslot = atom_val(BIF_ARG_2) % db_max_tabs;
     while (1) {
 	if (ISFREE(newslot))
 	    break;
@@ -378,7 +378,7 @@ BIF_ADECL_2
     db_tables[newslot].t = tb;
     tb->common.id = tb->common.the_name = BIF_ARG_2;
     tb->common.slot = newslot;
-    db_tables[oldslot].id = USED;
+    db_tables[oldslot].id = DB_USED;
     db_tables[oldslot].t = NULL;
     BIF_RET(tb->common.id);
 }
@@ -421,7 +421,7 @@ BIF_ADECL_2
 
     list = BIF_ARG_2;
     while(is_list(list)) {
-	val = *ptr_val(list);
+	val = CAR(list_val(list));
 	if (val == am_bag) {
 	    status |= DB_BAG;
 	    status &= ~(DB_SET | DB_DUPLICATE_BAG | DB_ORDERED_SET);
@@ -436,7 +436,7 @@ BIF_ADECL_2
 	}
 	/*TT*/
 	else if (is_tuple(val)) {
-	    eTerm *tp = ptr_val(val);
+	    eTerm *tp = tuple_val(val);
 
 	    if ((arityval(tp[0]) == 2) && (tp[1] == am_keypos) &&
 		is_small(tp[2]) && (signed_val(tp[2]) > 0)) {
@@ -462,7 +462,7 @@ BIF_ADECL_2
 	else {
 	    BIF_ERROR(BIF_P, BADARG);
 	}
-	list = *(ptr_val(list) + 1);
+	list = CDR(list_val(list));
     }
     if (is_not_nil(list)) /* it must be a well formed list */
 	    BIF_ERROR(BIF_P, BADARG);
@@ -471,7 +471,7 @@ BIF_ADECL_2
     if (++last_slot == db_max_tabs) 
 	last_slot = 0;
     if (is_named) {
-	slot = unsigned_val(BIF_ARG_1) % db_max_tabs;
+	slot = atom_val(BIF_ARG_1) % db_max_tabs;
 	while (1) {
 	    if (ISFREE(slot)) {
 		ret = BIF_ARG_1;
@@ -632,7 +632,7 @@ BIF_ADECL_1
     if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE)) == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    db_tables[tb->common.slot].id = USED;
+    db_tables[tb->common.slot].id = DB_USED;
     db_tables[tb->common.slot].t = NULL;
 
     no_tabs--;
@@ -991,9 +991,9 @@ BIF_ADECL_1
     if (mp == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
     }
+    mp->refc++;
     pb = (ProcBin *) HAlloc(BIF_P, PROC_BIN_SIZE);
-    pb->thing_word = make_thing(PROC_BIN_SIZE-1, 
-				REFC_BINARY_SUBTAG);
+    pb->thing_word = HEADER_PROC_BIN;
     pb->size = 0;
     pb->next = BIF_P->off_heap.mso;
     BIF_P->off_heap.mso = pb;
@@ -1017,16 +1017,15 @@ BIF_ADECL_3
 
 
     if (!(is_list(BIF_ARG_1) || BIF_ARG_1 == NIL) || !is_binary(BIF_ARG_2)) {
+    error:
 	BIF_ERROR(BIF_P, BADARG);
     }
     
-    bp = (ProcBin*) ptr_val(BIF_ARG_2);
-    if (thing_subtag(bp->thing_word) == FUN_SUBTAG) {
-	BIF_ERROR(BIF_P, BADARG);
+    bp = (ProcBin*) binary_val(BIF_ARG_2);
+    if (thing_subtag(bp->thing_word) != REFC_BINARY_SUBTAG) {
+	goto error;
     }
-    
     mp = bp->val;
-    
     if (!(mp->flags & BIN_FLAG_MATCH_PROG)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
@@ -1035,10 +1034,9 @@ BIF_ADECL_3
 	BIF_RET(NIL);
     }
 
-    for (lst = BIF_ARG_1; is_list(lst); lst = CDR(ptr_val(lst))) {
-	if ((res = db_prog_match(BIF_P,mp,
-				 CAR(ptr_val(lst)),
-				 0,&dummy)) != 0) {
+    for (lst = BIF_ARG_1; is_list(lst); lst = CDR(list_val(lst))) {
+	res = db_prog_match(BIF_P, mp, CAR(list_val(lst)), 0, &dummy);
+	if (is_value(res)) {
 	    sz = size_object(res);
 	    hp = HAlloc(BIF_P, sz + 2);
 	    res = copy_struct(res, sz, &hp, &(BIF_P->off_heap));
@@ -1090,7 +1088,7 @@ void init_db(void)
     db_tables = safe_alloc(sizeof(struct tab_entry)*db_max_tabs);
     no_tabs = 0;
     for (i=0; i<db_max_tabs; i++) {
-	db_tables[i].id = 0;
+	db_tables[i].id = DB_NOTUSED;
 	db_tables[i].t = NULL;
     }
     db_am_eot = am_magic_word("$end_of_table");
@@ -1111,7 +1109,7 @@ void db_proc_dead(eTerm pid)
 	if ((tb != NULL)  && (tb->common.owner == pid)) {
 	    free_table(tb);
 	    no_tabs--;
-	    db_tables[i].id = USED;
+	    db_tables[i].id = DB_USED;
 	    db_tables[i].t = NULL;
 	}
     }
@@ -1142,11 +1140,14 @@ DbTable* db_get_table(Process *p, eTerm id, int what)
 {
     int i, j;
 
-    if (!is_table_id(id)) {
+    if (is_small(id))
+	j = unsigned_val(id);
+    else if (is_atom(id))
+	j = atom_val(id);
+    else
 	return NULL;
-    }
 
-    i = j = unsigned_val(id) % db_max_tabs;
+    i = j = j % db_max_tabs;
     while (1) {
 	if (db_tables[i].id == id) {
 	    DbTable* tb = db_tables[i].t;

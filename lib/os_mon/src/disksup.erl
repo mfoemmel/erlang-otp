@@ -136,7 +136,7 @@ set_disk_alarm(AlarmCode, Id) ->
 clear_disk_alarm(AlarmCode, Id) ->
     case get({AlarmCode, Id}) of
 	set ->
-	    alarm_handler:clear_alarm({{AlarmCode, Id}, []}),
+	    alarm_handler:clear_alarm({AlarmCode, Id}),
 	    erase({AlarmCode, Id});
 	_ ->
 	    ok

@@ -30,6 +30,8 @@
 #include "dist.h"
 #include "erl_version.h"
 
+extern int fixed_deletion_desc;
+
 #define ASIZE(a) (sizeof(a)/sizeof(a[0]))
 
 #if defined(HAVE_SOLARIS_SPARC_PERFMON)
@@ -90,8 +92,9 @@ process_info_1(Process* p, Eterm pid)
     for (i = 0; i < ASIZE(keys); i++) {
 	Eterm item;
 
-	if ((item = process_info_2(p, pid, keys[i])) == 0) {
-	    return 0;
+	item = process_info_2(p, pid, keys[i]);
+	if (is_non_value(item)) {
+	    return THE_NON_VALUE;
 	}
 	if (item == am_undefined) {
 	    return am_undefined;
@@ -108,7 +111,7 @@ process_info_1(Process* p, Eterm pid)
     hp = HAlloc(p, 2*(ASIZE(keys)+2));
 
     if (is_tuple(tmp)) {
-	Eterm* tp = ptr_val(tmp);
+	Eterm* tp = tuple_val(tmp);
 	if (tp[2] != NIL) {
 	    result = CONS(hp, tmp, result);
 	    hp += 2;
@@ -139,18 +142,18 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
     uint32 item, term, list;
-    uint32 res;
+    Eterm res;
     Process *rp;
-    uint32* hp;
+    Eterm* hp;
     int i, j;
-    uint32 pid = BIF_ARG_1;
+    Eterm pid = BIF_ARG_1;
 
-    if (is_not_pid(pid) || (get_node(pid) != THIS_NODE) ||
-	(get_number(pid) >= max_process)) {
+    if (is_not_pid(pid) || (pid_node(pid) != THIS_NODE) ||
+	(pid_number(pid) >= max_process)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
 
-    i = get_creation(pid);
+    i = pid_creation(pid);
     if ((i != this_creation) && (i != 0))
 	BIF_RET(am_undefined);
 
@@ -158,7 +161,7 @@ BIF_ADECL_2
 	BIF_ERROR(BIF_P, BADARG);
 
     item = BIF_ARG_2;
-    rp = process_tab[get_number(BIF_ARG_1)];
+    rp = process_tab[pid_number(BIF_ARG_1)];
 
     /* if the process is not active return undefined */
     if (INVALID_PID(rp, BIF_ARG_1))
@@ -186,7 +189,6 @@ BIF_ADECL_2
 	if (rp->current == NULL) {
 	    rp->current = find_function_from_pc(rp->i);
 	}
-	ASSERT(rp->current != NULL);
 	if (rp->current == NULL) {
 	    hp = HAlloc(BIF_P, 3);
 	    res = am_undefined;
@@ -207,7 +209,6 @@ BIF_ADECL_2
 
 		rp->current = current;
 	    }
-		
 
 	    hp = HAlloc(BIF_P, 3+4);
 	    res = TUPLE3(hp, rp->current[0],
@@ -301,6 +302,79 @@ BIF_ADECL_2
 	    }
 	    lnk = lnk->next;
 	}
+    } else if (item == am_monitors) {
+	int n = 0;
+	ErlLink* lnk;
+
+	/* lnk->item is the monitor link origin end */
+	lnk = rp->links;
+	while(lnk != NULL) {
+	    if ((lnk->type == LNK_LINK1)
+		&& (rp->id == lnk->item) ) {
+		n += 5; /* For a cons cell and a 2-tuple */
+		if (is_small(lnk->data))
+		    /* Monitor by name. Will need an additional 2-tuple. */
+		    n += 3;
+		else if (is_not_pid(lnk->data))
+		    ASSERT(0);
+	    }
+	    lnk = lnk->next;
+	}
+	hp = HAlloc(BIF_P, 3 + n);
+	lnk = rp->links;
+	while(lnk != NULL) {
+	    if ((lnk->type == LNK_LINK1)
+		&& (rp->id == lnk->item) ) {
+		if (is_small(lnk->data)) {
+		    /* Monitor by name. 
+		     * Build {process, {Name, Node}} and cons it. 
+		     */
+		    Eterm     t1, t2;
+		    Sint      slot = unsigned_val(lnk->data);
+		    ErlLink** dist_lnkp =
+			find_link_by_ref(&dist_addrs[slot].links, &lnk->ref);
+		    ASSERT(dist_lnkp != NULL);
+		    t1 = TUPLE2(hp, (*dist_lnkp)->data, 
+			       dist_addrs[slot].sysname );
+		    hp += 3;
+		    t2 = TUPLE2(hp, am_process, t1);
+		    hp += 3;
+		    res = CONS(hp, t2, res);
+		    hp += 2;
+		} else if (is_pid(lnk->data)) {
+		    /* Monitor by pid. Build {process, Pid} and cons it. */
+		    Eterm t;
+		    t = TUPLE2(hp, am_process, lnk->data);
+		    hp += 3;
+		    res = CONS(hp, t, res);
+		    hp += 2;
+		} else
+		    ASSERT(0);
+	    }
+	    lnk = lnk->next;
+	}
+    } else if (item == am_monitored_by) {
+	int n = 0;
+	ErlLink* lnk;
+
+	/* lnk->item is the monitor link origin end */
+	lnk = rp->links;
+	while(lnk != NULL) {
+	    if ((lnk->type == LNK_LINK1)
+		&& (rp->id != lnk->item) )
+		n++;
+	    lnk = lnk->next;
+	}
+	hp = HAlloc(BIF_P, 3 + 2*n);
+	lnk = rp->links;
+	while(lnk != NULL) {
+	    if ((lnk->type == LNK_LINK1)
+		&& (rp->id != lnk->item) ) {
+		res = CONS(hp, lnk->item, res);
+		hp += 2;
+	    }
+	    lnk = lnk->next;
+	}
     } else if (item == am_dictionary) {
 	res = dictionary_copy(BIF_P, rp->dictionary);
 	hp = HAlloc(BIF_P, 3);
@@ -335,22 +409,18 @@ BIF_ADECL_2
 	if (rp->old_heap != NULL && rp->old_hend != NULL) {
 	    size += (rp->old_hend - rp->old_heap) * sizeof(Eterm);
 	}
+	if (rp->reg) {
+	    size += sizeof(struct reg_proc);
+	}
+	size += rp->msg.len * sizeof(ErlMessage);
 	hp = HAlloc(BIF_P, 3);
 	res = make_small_or_big(size, BIF_P);
-    } else if(item == am_garbage_collection){
-	uint32 gc;
-	if (!IS_GEN_GC(rp) && rp->gc_switch > 0)
-	    gc = am_fullsweep;
-	else
-	    gc = am_generational;
-	hp = HAlloc(BIF_P, 6);
-	if (rp->gc_switch == 0)
-	    res = TUPLE2(hp, gc, make_small(0));
-	else if(rp->gc_switch >= MAX_SMALL)
-	    res = TUPLE2(hp, gc, am_infinity);
-	else
-	    res = TUPLE2(hp, gc, make_small(rp->gc_switch));
+    } else if (item == am_garbage_collection){
+	hp = HAlloc(BIF_P, 3+2+3);
+	res = TUPLE2(hp, am_fullsweep_after, make_small(rp->max_gen_gcs));
 	hp += 3;
+	res = CONS(hp, res, NIL);
+	hp += 2;
     } else if (item == am_group_leader) {
 	hp = HAlloc(BIF_P, 3);
 	res = rp->group_leader;
@@ -435,10 +505,8 @@ BIF_ADECL_2
     BIF_RET(TUPLE2(hp, item, res));
 }
 
-/**********************************************************************/
-
 /*
- * This function takes care of calls to erlang:info/1 when the argument
+ * This function takes care of calls to erlang:system_info/1 when the argument
  * is a tuple.
  */
 static BIF_RETTYPE
@@ -450,31 +518,23 @@ info_1_tuple(Process* BIF_P,	/* Pointer to current process. */
 
     sel = *tp++;
 
-    if (sel == am_reductions) {
-	int reds;
-	
-	if (arity != 2)
-	    return 0;
-	if (is_not_integer(*tp) || ((reds = signed_val(*tp)) < 0))
-	    return 0;
-	if (reds > CONTEXT_REDS)
-	    reds = CONTEXT_REDS;
-	BIF_RET2(am_true, reds);
+    if (0) {
+	;
 #ifdef INSTRUMENT
     } else if (sel == am_allocated) {
 	int len;
 
 	if (!is_string(*tp))
-	    return 0;
+	    return THE_NON_VALUE;
        
 	if ((len = intlist_to_buf(*tp, tmp_buf, TMP_BUF_SIZE-1)) < 0)
-	    return 0;
+	    return THE_NON_VALUE;
 	tmp_buf[len] = '\0';
 
 	if (dump_memory_data(tmp_buf))
 	    BIF_RET(am_true);
 	else
-	    return 0;		/* Return {error, Errno} instead? */
+	    return THE_NON_VALUE;	/* Return {error, Errno} instead? */
 #endif
 #ifdef PURIFY
     } else if (sel == am_purify) {
@@ -493,7 +553,7 @@ info_1_tuple(Process* BIF_P,	/* Pointer to current process. */
 		tmp_buf[iopos] = 0;
 		purify_printf("%s\n", tmp_buf);
 	    } else {
-		return 0;
+		return THE_NON_VALUE;
 	    }
 	    BIF_RET(am_true);
 	}
@@ -520,7 +580,7 @@ info_1_tuple(Process* BIF_P,	/* Pointer to current process. */
 	int rc;
 
 	if (arity != 2 || !is_small(*tp)) {
-	    return 0;
+	    return THE_NON_VALUE;
 	}
 	tmp = signed_val(*tp);
 	if ((fd = open("/dev/perfmon", O_RDONLY)) == -1) {
@@ -534,27 +594,66 @@ info_1_tuple(Process* BIF_P,	/* Pointer to current process. */
 	BIF_RET(am_true);
 #endif
     }
-    return 0;
+    return THE_NON_VALUE;
 }
 
 BIF_RETTYPE info_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res;
-    uint32* hp;
+    return system_info_1(BIF_P, BIF_ARG_1);
+}
+
+
+BIF_RETTYPE system_info_1(BIF_ALIST_1)
+BIF_ADECL_1
+{
+    Eterm res;
+    Eterm* hp;
+    Eterm val;
+    unsigned count;
+    int i;
 
     cerr_pos = 0;
 
     if (is_tuple(BIF_ARG_1)) {
-	uint32* tp = ptr_val(BIF_ARG_1);
+	Eterm* tp = tuple_val(BIF_ARG_1);
 	uint32 arity = *tp++;
-	res = info_1_tuple(BIF_P, tp, unsigned_val(arity));
-	if (res == 0)
+	res = info_1_tuple(BIF_P, tp, arityval(arity));
+	if (is_non_value(res))
 	    goto error;
 	return res;
-    } else if (BIF_ARG_1 == am_info)
+    } else if (BIF_ARG_1 == am_sequential_tracer) {
+	if (is_pid(system_seq_tracer) || is_port(system_seq_tracer)) {
+	    val = system_seq_tracer;
+	} else {
+	    val = am_false;
+	}
+	hp = HAlloc(BIF_P, 3);
+	res = TUPLE2(hp, am_sequential_tracer, val);
+	BIF_RET(res);
+    } else if (BIF_ARG_1 == am_garbage_collection){
+	hp = HAlloc(BIF_P, 3+2);
+	res = TUPLE2(hp, am_fullsweep_after, make_small(erts_max_gen_gcs));
+	hp += 3;
+	res = CONS(hp, res, NIL);
+	BIF_RET(res);
+    } else if (BIF_ARG_1 == am_fullsweep_after){
+	hp = HAlloc(BIF_P, 3);
+	res = TUPLE2(hp, am_fullsweep_after, make_small(erts_max_gen_gcs));
+	BIF_RET(res);
+    } else if (BIF_ARG_1 == am_process_count) {
+	count = 0;
+	for (i = 0; i < max_process; i++) {
+	    if (process_tab[i] != NULL) {
+		count++;
+	    }
+	}
+	BIF_RET(make_small(count));
+    } else if (BIF_ARG_1 == am_process_limit) {
+	BIF_RET(make_small(max_process));
+    } else if (BIF_ARG_1 == am_info) {
 	info(CBUF);
-    else if (BIF_ARG_1 == am_procs)
+    } else if (BIF_ARG_1 == am_procs)
 	process_info(CBUF);
     else if (BIF_ARG_1 == am_loaded)
 	loaded(CBUF);
@@ -576,6 +675,10 @@ BIF_ADECL_1
 	sys_strcpy((char *)(tmp_buf+n), " [source]");
 	n = strlen(tmp_buf);
 #endif	
+#ifdef ET_DEBUG
+	sys_strcpy((char *)(tmp_buf+n), " [type-assertions]");
+	n = strlen(tmp_buf);
+#endif	
 #ifdef DEBUG
 	sys_strcpy((char *)(tmp_buf+n), " [debug-compiled]");
 	n = strlen(tmp_buf);
@@ -584,31 +687,15 @@ BIF_ADECL_1
 	sys_strcpy((char *)(tmp_buf+n), " [instrumented]");
 	n = strlen(tmp_buf);
 #endif	
+#ifdef USE_THREADS
+	sys_strcpy((char *)(tmp_buf+n), " [threads]");
+	n = strlen(tmp_buf);
+#endif	
 	tmp_buf[n] = '\n';
 	tmp_buf[n+1] = '\0';
 	n++;
 	hp = HAlloc(BIF_P, n*2);
 	BIF_RET(buf_to_intlist(&hp, tmp_buf, n, NIL));
-    }
-    else if (BIF_ARG_1 == am_getenv) {
-       GETENV_STATE state;
-       char *cp;
-       uint32 ret, str;
-       int len;
-
-       init_getenv_state(&state);
-
-       ret = NIL;
-       while ((cp = getenv_string(&state)) != NULL)
-       {
-	  len = strlen(cp);
-	  hp = HAlloc(BIF_P, len*2);
-	  str = buf_to_intlist(&hp, cp, len, NIL);
-	  hp = HAlloc(BIF_P, 2);
-	  ret = CONS(hp, str, ret);
-       }
-
-       BIF_RET(ret);
     }
 #ifdef INSTRUMENT
     else if (BIF_ARG_1 == am_allocated) {
@@ -618,6 +705,181 @@ BIF_ADECL_1
        BIF_RET(val);
     }
 #endif
+    else if (BIF_ARG_1 == am_allocated_areas) {
+#undef DEBUG_AA_2TUPS
+#ifdef DEBUG
+#define DEBUG_AA_2TUPS 1
+#else
+#define DEBUG_AA_2TUPS 0
+#endif
+#undef  NO_AA_2TUPS
+#define NO_AA_2TUPS  (7 + DEBUG_AA_2TUPS)
+#undef  NO_AA_3TUPS
+#define NO_AA_3TUPS  11
+#undef  NO_AA_TUPS
+#define NO_AA_TUPS   (NO_AA_2TUPS+NO_AA_3TUPS)
+#undef  AA_WORDS
+#define AA_WORDS     (2*NO_AA_TUPS+3*NO_AA_2TUPS+4*NO_AA_3TUPS)
+
+      uint32 tuples[NO_AA_TUPS];
+      int i;
+      int code_sz = 0;
+#ifdef DEBUG
+      uint32 *endp;
+#endif
+
+      for (i = 0; i < module_code_size; i++) {
+        if (module_code(i) != NULL &&
+            ((module_code(i)->code_length != 0) ||
+             (module_code(i)->old_code_length != 0))) {
+          code_sz += module_code(i)->code_length;
+          if (module_code(i)->old_code_length != 0) {
+            code_sz += module_code(i)->old_code_length;
+          }
+        }
+      }
+
+      hp = HAlloc(BIF_P, AA_WORDS);
+
+#ifdef DEBUG
+      endp = hp + AA_WORDS;
+#endif
+
+      i = 0;
+      tuples[i++] = TUPLE2(hp,
+                           am_static,
+                           make_small_or_big(MAXDIST * sizeof(DistEntry)
+                                             /* Distribution table */
+
+                                             + max_process * sizeof(Process*)
+                                             /* Process table */
+
+                                             + erl_max_ports * sizeof(Port)
+                                             /* Port table */
+
+                                             + TMP_BUF_SIZE * sizeof(byte)
+                                             /* Tmp buffer */
+
+                                             + 14 /* XXX */ * sizeof(uint32)
+                                             /* Tmp buffer 
+                                                (dmem in dist.c) */
+
+                                             + 64+1 /* XXX */
+                                             /* fix alloc descs
+                                                (dbuf in erl_message.c) */ 
+
+                                             /* XXX continue ... */,
+                                             BIF_P));
+      hp += 3;
+      tuples[i++] = TUPLE3(hp,
+                           am_atom_space,
+                           make_small_or_big(reserved_atom_space, BIF_P),
+                           make_small_or_big(atom_space, BIF_P));
+      hp += 4;
+      tuples[i++] = TUPLE2(hp,
+                           am_binary,
+                           make_small_or_big(tot_bin_allocated, BIF_P));
+      hp += 3;
+      tuples[i++] = TUPLE2(hp,
+                           am_atom_table,
+                           make_small_or_big(index_table_sz(&atom_table),
+                                             BIF_P));
+      hp += 3;
+      tuples[i++] = TUPLE2(hp,
+                           am_module_table,
+                           make_small_or_big(index_table_sz(&module_table),
+                                             BIF_P));
+      hp += 3;
+      tuples[i++] = TUPLE2(hp,
+                           am_export_table,
+                           make_small_or_big(index_table_sz(&export_table),
+                                             BIF_P));
+      hp += 3;
+      tuples[i++] = TUPLE2(hp,
+                           am_register_table,
+                           make_small_or_big(hash_table_sz(&process_reg),
+                                             BIF_P));
+      hp += 3;
+      tuples[i++] = TUPLE2(hp,
+                           am_loaded_code,
+                           make_small_or_big(code_sz, BIF_P));
+      hp += 3;
+      tuples[i++] = TUPLE3(hp,
+                           am_process_desc,
+                           make_small_or_big(fix_info(process_desc), BIF_P),
+                           make_small_or_big(fix_used(process_desc), BIF_P));
+      hp += 4;
+      tuples[i++] = TUPLE3(hp,
+                           am_table_desc,
+                           make_small_or_big(fix_info(table_desc), BIF_P),
+                           make_small_or_big(fix_used(table_desc), BIF_P));
+      hp += 4;
+      tuples[i++] = TUPLE3(hp,
+                           am_link_desc,
+                           make_small_or_big(fix_info(link_desc), BIF_P),
+                           make_small_or_big(fix_used(link_desc), BIF_P));
+      hp += 4;
+      tuples[i++] = TUPLE3(hp,
+                           am_atom_desc,
+                           make_small_or_big(fix_info(atom_desc), BIF_P),
+                           make_small_or_big(fix_used(atom_desc), BIF_P));
+      hp += 4;
+      tuples[i++] = TUPLE3(hp,
+                           am_export_desc,
+                           make_small_or_big(fix_info(export_desc), BIF_P),
+                           make_small_or_big(fix_used(export_desc), BIF_P));
+      hp += 4;
+      tuples[i++] = TUPLE3(hp,
+                           am_module_desc,
+                           make_small_or_big(fix_info(module_desc), BIF_P),
+                           make_small_or_big(fix_used(module_desc), BIF_P));
+      hp += 4;
+      tuples[i++] = TUPLE3(hp,
+                           am_preg_desc,
+                           make_small_or_big(fix_info(preg_desc), BIF_P),
+                           make_small_or_big(fix_used(preg_desc), BIF_P));
+      hp += 4;
+      tuples[i++] = TUPLE3(hp,
+                           am_mesg_desc,
+                           make_small_or_big(fix_info(mesg_desc), BIF_P),
+                           make_small_or_big(fix_used(mesg_desc), BIF_P));
+      hp += 4;
+      tuples[i++] = TUPLE3(hp,
+                           am_plist_desc,
+                           make_small_or_big(fix_info(plist_desc), BIF_P),
+                           make_small_or_big(fix_used(plist_desc), BIF_P));
+      hp += 4;
+      tuples[i++] = TUPLE3(hp,
+                           am_fixed_deletion_desc,
+                           make_small_or_big(fix_info(fixed_deletion_desc),
+                                             BIF_P),
+                           make_small_or_big(fix_used(fixed_deletion_desc),
+                                             BIF_P));
+      hp += 4;
+#ifdef DEBUG
+      tuples[i++] = TUPLE2(hp,
+                           am_SYSTEM,
+                           make_small_or_big(tot_allocated, BIF_P));
+      hp += 3;
+#endif
+
+      ASSERT(i == NO_AA_TUPS);
+
+      res = NIL;
+      for(i--; i >= 0; i--) {
+        res = CONS(hp, tuples[i], res);
+        hp += 2;
+      }
+#ifdef DEBUG
+      ASSERT(endp == hp);
+#endif
+      BIF_RET(res);
+#undef DEBUG_AA_2TUPS
+#undef NO_AA_2TUPS
+#undef NO_AA_3TUPS
+#undef NO_AA_TUPS
+#undef AA_WORDS
+    }
     else if (BIF_ARG_1 == am_os_type) {
        uint32 type = am_atom_put(os_type, strlen(os_type));
        uint32 flav, tup;
@@ -627,6 +889,17 @@ BIF_ADECL_1
        hp = HAlloc(BIF_P, 3);
        tup = TUPLE2(hp, type, flav);
        BIF_RET(tup);
+    }
+    else if (BIF_ARG_1 == am_thread_pool_size) {
+	extern int erts_async_max_threads;
+	int n;
+	
+#ifdef USE_THREADS
+	n = erts_async_max_threads;
+#else
+	n = 0;
+#endif
+	BIF_RET(make_small(n));
     }
     else if (BIF_ARG_1 == am_os_version) {
        int major, minor, build;
@@ -651,37 +924,24 @@ BIF_ADECL_1
 	BIF_RET(buf_to_intlist(&hp, (byte*)EMULATOR, n, NIL));
     }
     else if (BIF_ARG_1 == am_garbage_collection) {
-	if (switch_gc_threshold == 0)
-	    BIF_RET(am_generational);
-	else if(switch_gc_threshold >= MAX_SMALL)
-	    BIF_RET(am_fullsweep);
-	else {
-	    uint32 tup;
-	    hp = HAlloc(BIF_P, 3);
-	    tup = TUPLE2(hp, am_switch, make_small(switch_gc_threshold));
-	    BIF_RET(tup);
-	}
+	BIF_RET(am_generational);
     } else if (BIF_ARG_1 == am_instruction_counts) {
 	int i;
 	hp = HAlloc(BIF_P, num_instructions*5);
 	res = NIL;
 	for (i = num_instructions-1; i >= 0; i--) {
-	    uint32 tuple;
-	    uint32 atom = am_atom_put(opc[i].name, strlen(opc[i].name));
-	    uint32 count;
+	    Eterm tuple;
+	    Eterm atom = am_atom_put(opc[i].name, strlen(opc[i].name));
+	    Eterm count = make_small_or_big(opc[i].count, BIF_P);
 
-	    if (IS_USMALL(0, opc[i].count)) {
-		count = make_small(opc[i].count);
-	    } else {
-		uint32* num_hp = ArithAlloc(BIF_P, 2);
-		count = uint32_to_big(opc[i].count, num_hp);
-	    }
 	    tuple = TUPLE2(hp, atom, count);
 	    hp += 3;
 	    res = CONS(hp, tuple, res);
 	    hp += 2;
 	}
 	BIF_RET(res);
+    } else if (BIF_ARG_1 == am_heap_sizes) {
+	return erts_heap_sizes(BIF_P);
 #if defined(__GNUC__) && defined(HAVE_SOLARIS_SPARC_PERFMON)
     } else if (BIF_ARG_1 == am_ultrasparc_read_tick1) {
 	register unsigned high asm("%l0");
@@ -767,8 +1027,9 @@ port_info_1(Process* p, Eterm pid)
     for (i = 0; i < ASIZE(keys); i++) {
 	Eterm item;
 
-	if ((item = port_info_2(p, pid, keys[i])) == 0) {
-	    return 0;
+	item = port_info_2(p, pid, keys[i]);
+	if (is_non_value(item)) {
+	    return THE_NON_VALUE;
 	}
 	if (item == am_undefined) {
 	    return am_undefined;
@@ -812,18 +1073,18 @@ BIF_ADECL_2
     int count;
     int portix;
 
-    if (is_not_port(portid) || (get_node_port(portid) != THIS_NODE) ||
-	((portix = get_port_index(portid)) >= erl_max_ports)) {
+    if (is_not_port(portid) || (port_node(portid) != THIS_NODE) ||
+	((portix = port_index(portid)) >= erl_max_ports)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    i = get_creation(portid);
+    i = port_creation(portid);
     if (((i != this_creation) && (i != 0)) || (erts_port[portix].status == FREE)) {
 	BIF_RET(am_undefined);
     }
 
     if (item == am_id) {
 	hp = HAlloc(BIF_P, 3);
-	res = make_small(get_number_port(portid));
+	res = make_small(port_number(portid));
     }
     else if (item == am_links) {
 	int n = 0;
@@ -874,14 +1135,11 @@ BIF_ADECL_2
 Eterm
 fun_info_2(Process* p, Eterm fun, Eterm what)
 {
-    if (is_binary(fun)) {
-	ErlFunThing* funp = (ErlFunThing *) ptr_val(fun);
+    if (is_fun(fun)) {
+	ErlFunThing* funp = (ErlFunThing *) fun_val(fun);
 	Eterm val;
 	Eterm* hp;
 
-	if (thing_subtag(funp->thing_word) != FUN_SUBTAG) {
-	    goto error;
-	}
 	switch (what) {
 	case am_pid:
 	    hp = HAlloc(p, 3);
@@ -917,53 +1175,6 @@ fun_info_2(Process* p, Eterm fun, Eterm what)
 	}
 	return TUPLE2(hp, what, val);
     }
-#if defined ALLOW_FUN_TUPLES
-    else if (is_tuple(fun)) {
-	Eterm* tp = ptr_val(fun);
-	Eterm* ep;
-	Eterm val;
-	Eterm* hp;
-
-	if (tp[0] != make_arityval(5) || tp[1] != am_fun || !is_tuple(tp[5])) {
-	    goto error;
-	}
-	ep = ptr_val(tp[5]);
-	switch (what) {
-	case am_pid:
-	    hp = HAlloc(p, 3);
-	    val = am_undefined;
-	    break;
-	case am_module:
-	    hp = HAlloc(p, 3);
-	    val = tp[2];
-	    break;
-	case am_index:
-	    hp = HAlloc(p, 3);
-	    val = tp[3];
-	    break;
-	case am_uniq:
-	    hp = HAlloc(p, 3);
-	    val = tp[4];
-	    break;
-	case am_env:
-	    {
-		Uint num_free = arityval(ep[0]);
-		int i;
-
-		hp = HAlloc(p, 3 + 2*num_free);
-		val = NIL;
-		for (i = num_free; i > 0; i--) {
-		    val = CONS(hp, ep[i], val);
-		    hp += 2;
-		}
-	    }
-	    break;
-	default:
-	    goto error;
-	}
-	return TUPLE2(hp, what, val);
-    }
-#endif
 
  error:
     BIF_ERROR(p, BADARG);

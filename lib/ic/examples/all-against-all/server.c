@@ -17,19 +17,24 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <errno.h>
-#include <unistd.h>
 #include <sys/types.h>
+#include <string.h>
+#ifdef __WIN32__
+#include <winsock2.h>
+#include <direct.h>
+#include <windows.h>
+#include <winbase.h>
+#else /* not __WIN32__ */
+#include <errno.h> 
+#include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
+#include <arpa/inet.h> 
 #include <netdb.h>
+#endif
 #include "rmod_random__s.h"
 
 /* Used functions */
-extern int gethostname(char *buf, int buflen);
 static int getport(int sockd);
 static int getlisten(int port);
 static int init(int *sd, int *portnr, int *epmd_fd);
@@ -138,11 +143,27 @@ static int init(int *sd, int *portnr, int *epmd_fd)
 {
   char host[HOSTNAMESZ];
   char servernode[NODENAMESZ];
-  struct hostent *h;
+  struct hostent *h; 
+  int error = 0;
 
-  /* get the host name */
-  if ((gethostname(host,HOSTNAMESZ)))
-    fprintf(stderr,"can't find own hostname\n");
+#ifdef __WIN32__
+  WORD wVersionRequested;
+  WSADATA wsaData;
+
+  wVersionRequested = MAKEWORD(1, 1);
+  if ((error = WSAStartup(wVersionRequested, &wsaData))) {
+      fprintf(stderr,"Can't initialize windows sockets: %d",error);
+  }        
+#endif
+ /* get the host name */
+  error = gethostname(host,HOSTNAMESZ);
+  if (error) {
+#ifdef __WIN32__
+      fprintf(stderr,"can't find own hostname (error = %ld) !\n",WSAGetLastError());
+#else /* not __WIN32__ */
+      fprintf(stderr,"can't find own hostname !\n");
+#endif
+  }
   else {
     /* identify host */
     if (!(h = erl_gethostbyname(host)))
@@ -234,3 +255,4 @@ static int getlisten(int port)
 
   return sockd;
 }
+

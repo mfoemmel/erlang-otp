@@ -20,7 +20,7 @@
 
 
 /* Assign your own node name here */
-#define CLNODENAME "client"
+#define CLNODENAME "c50"
 #define SNODENAME "babbis"
 #define SREGNAME "rmod_random_impl"
 #define COOKIE "flash"
@@ -28,9 +28,6 @@
 #define OUTBUFSZ 1024
 #define HOSTNAMESZ 256
 
-
-/* Usefull functions */
-extern int gethostname(char *buf, int buflen);
 
 
 /* Stopping node */
@@ -50,6 +47,7 @@ int main(){
   
   double result=0;
   int i=0;
+  int error = 0;
   erlang_pid pid;
   char host[HOSTNAMESZ];
   char server_node[HOSTNAMESZ];
@@ -57,7 +55,24 @@ int main(){
   CORBA_Environment *env;
   
   /* Initiate names */
-  gethostname(host,HOSTNAMESZ);
+#ifdef __WIN32__
+  WORD wVersionRequested;
+  WSADATA wsaData;
+
+  wVersionRequested = MAKEWORD(1, 1);
+  if ((error = WSAStartup(wVersionRequested, &wsaData))) {
+      fprintf(stderr,"Can't initialize windows sockets: %d",error);
+      return 0;
+  }
+#endif
+  error = gethostname(host,HOSTNAMESZ);
+  if (error) {
+#ifdef __WIN32__
+      fprintf(stderr,"can't find own hostname (error = %ld) !\n",WSAGetLastError());
+#else /* not __WIN32__ */
+      fprintf(stderr,"can't find own hostname !\n");
+#endif
+  }
   sprintf(client_node,"%s@%s",CLNODENAME,host);
   sprintf(server_node,"%s@%s",SNODENAME,host);
     
@@ -133,4 +148,3 @@ int main(){
 
   return 0;
 }
-

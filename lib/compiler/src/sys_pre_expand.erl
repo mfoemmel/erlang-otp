@@ -31,6 +31,8 @@
 		  union/1,union/2,intersection/1,intersection/2,subtract/2]).
 -import(lists,   [member/2,map/2,foldl/3,foldr/3]).
 
+-include("../include/erl_bits.hrl").
+
 -record(expand, {module=[],			%Module name
 		 exports=[],			%Exports
 		 imports=[],			%Imports
@@ -39,7 +41,10 @@
 		 attributes=[],			%Attributes
 		 defined=[],			%Defined functions
 		 vcount=0,			%Variable counter
-		 func=[]}).			%Current function
+		 func=[],			%Current function
+		 bitdefault,
+		 bittypes
+		}).
 
 %% module(Forms, CompileOptions)
 %%	{ModuleName,Exports,TransformedForms}
@@ -56,7 +61,10 @@ module(Fs, Opts) ->
     %% Build initial expand record.
     St0 = #expand{exports=PreExp,
 		  compile=Opts,
-		  defined=PreDef},
+		  defined=PreDef,
+		  bitdefault = erl_bits:system_bitdefault(),
+		  bittypes = erl_bits:system_bittypes()
+		 },
     %% Expand the functions.
     {Tfs,St1} = forms(Fs, foldl(fun define_function/2, St0, Fs)),
     %% Get the correct list of exported functions.
@@ -142,7 +150,7 @@ function(L, N, A, Cs0, St0) ->
 %%  Expand function clauses.
 
 clauses([{clause,Line,H0,G0,B0}|Cs0], St0) ->
-    {H,Hvs,St1} = head(H0, St0),
+    {H,Hvs,Hus,St1} = head(H0, St0),
     {G,Gvs,Gus,St2} = guard(G0, Hvs, St1),
     {B,Bvs,Bus,St3} = exprs(B0, union(Hvs, Gvs), St2),
     {Cs,St4} = clauses(Cs0, St3),
@@ -150,46 +158,48 @@ clauses([{clause,Line,H0,G0,B0}|Cs0], St0) ->
 clauses([], St) -> {[],St}.
 
 %% head(HeadPatterns, State) ->
-%%	{TransformedPatterns,Variables,State'}
+%%	{TransformedPatterns,Variables,UsedVariables,State'}
 
 head(As, St) -> pattern_list(As, St).
 
 %% pattern(Pattern, State) ->
-%%	{TransformedPattern,Variables,State'}
+%%	{TransformedPattern,Variables,UsedVariables,State'}
+%% BITS: added used variables for bit patterns with varaible length
+%%
 
-string_to_conses(Line, Cs, Tail) ->
-    foldr(fun (C, T) -> {cons,Line,{integer,Line,C},T} end, Tail, Cs).
-
-pattern({var,Line,'_'}, St) ->			%Ignore anonymous variable.
-    {{var,Line,'_'},[],St};
-pattern({var,Line,V}, St) ->
-    {{var,Line,V},[V],St};
-pattern({integer,Line,I}, St) ->
-    {{integer,Line,I},[],St};
-pattern({float,Line,F}, St) ->
-    {{float,Line,F},[],St};
-pattern({atom,Line,A}, St) ->
-    {{atom,Line,A},[],St};
-pattern({string,Line,S}, St) ->
-    {{string,Line,S},[],St};
-pattern({nil,Line}, St) ->
-    {{nil,Line},[],St};
+pattern({var,Line,'_'}=Var, St) ->		%Ignore anonymous variable.
+    {Var,[],[],St};
+pattern({var,Line,V}=Var, St) ->
+    {Var,[V],[],St};
+pattern({integer,Line,I}=Int, St) ->
+    {Int,[],[],St};
+pattern({float,Line,F}=Float, St) ->
+    {Float,[],[],St};
+pattern({atom,Line,A}=Atom, St) ->
+    {Atom,[],[],St};
+pattern({string,Line,S}=String, St) ->
+    {String,[],[],St};
+pattern({nil,Line}=Nil, St) ->
+    {Nil,[],[],St};
 pattern({cons,Line,H,T}, St0) ->
-    {TH,THvs,St1} = pattern(H, St0),
-    {TT,TTvs,St2} = pattern(T, St1),
-    {{cons,Line,TH,TT},union(THvs, TTvs),St2};
+    {TH,THvs,Hus,St1} = pattern(H, St0),
+    {TT,TTvs,Tus,St2} = pattern(T, St1),
+    {{cons,Line,TH,TT},union(THvs, TTvs),union(Hus,Tus),St2};
 pattern({tuple,Line,Ps}, St0) ->
-    {TPs,TPsvs,St1} = pattern_list(Ps, St0),
-    {{tuple,Line,TPs},TPsvs,St1};
+    {TPs,TPsvs,Tus,St1} = pattern_list(Ps, St0),
+    {{tuple,Line,TPs},TPsvs,Tus,St1};
 %%pattern({struct,Line,Tag,Ps}, St0) ->
 %%    {TPs,TPsvs,St1} = pattern_list(Ps, St0),
 %%    {{tuple,Line,[{atom,Line,Tag}|TPs]},TPsvs,St1};
 pattern({record_index,Line,Name,Field}, St) ->
-    {index_expr(Line, Field, Name, record_fields(Name, St)),[],St};
+    {index_expr(Line, Field, Name, record_fields(Name, St)),[],[],St};
 pattern({record,Line,Name,Pfs}, St0) ->
     Fs = record_fields(Name, St0),
-    {TMs,TMsvs,St1} = pattern_list(pattern_fields(Fs, Pfs), St0),
-    {{tuple,Line,[{atom,Line,Name}|TMs]},TMsvs,St1};
+    {TMs,TMsvs,Us,St1} = pattern_list(pattern_fields(Fs, Pfs), St0),
+    {{tuple,Line,[{atom,Line,Name}|TMs]},TMsvs,Us,St1};
+pattern({bin,Line,Es0}, St0) ->
+    {Es1,Esvs,Esus,St1} = pattern_bin(Es0, St0),
+    {{bin,Line,Es1},Esvs,Esus,St1};
 pattern({op,Line,'++',{nil,_},R}, St) ->
     pattern(R, St);
 pattern({op,Line,'++',{cons,Li,H,T},R}, St) ->
@@ -197,24 +207,20 @@ pattern({op,Line,'++',{cons,Li,H,T},R}, St) ->
 pattern({op,Line,'++',{string,Li,L},R}, St) ->
     pattern(string_to_conses(Li, L, R), St);
 pattern({match,Line,Pat1, Pat2}, St0) ->
-    {TH,Hvt,St1} = pattern(Pat2, St0),
-    {TT,Tvt,St2} = pattern(Pat1, St1),
-    {{match,Line,TT,TH}, union(Hvt,Tvt), St2};
-%% The following are necessary to be able to handle unary +,- in patterns.
-pattern({op,Line,'+',{integer,Li,I}}, St) ->
-    {{integer,Li,I},[],St};
-pattern({op,Line,'-',{integer,Li,I}}, St) ->
-    {{integer,Li,-I},[],St};
-pattern({op,Line,'+',{float,Lf,F}}, St) ->
-    {{float,Lf,F},[],St};
-pattern({op,Line,'-',{float,Lf,F}}, St) ->
-    {{float,Lf,-F},[],St}.
+    {TH,Hvt,Hus,St1} = pattern(Pat2, St0),
+    {TT,Tvt,Tus,St2} = pattern(Pat1, St1),
+    {{match,Line,TT,TH}, union(Hvt,Tvt), union(Hus,Tus), St2};
+%% Compile-time pattern expressions, including unary operators.
+pattern({op,Line,Op,A}, St) ->
+    { erl_eval:partial_eval({op,Line,Op,A}), [], [], St};
+pattern({op,Line,Op,L,R}, St) ->
+    { erl_eval:partial_eval({op,Line,Op,L,R}), [], [], St}.
 
-pattern_list([P|Ps], St0) ->
-    {TP,TPvs,St1} = pattern(P, St0),
-    {TPs,TPsvs,St2} = pattern_list(Ps, St1),
-    {[TP|TPs],union(TPvs, TPsvs),St2};
-pattern_list([], St) -> {[],[],St}.
+pattern_list([P0|Ps0], St0) ->
+    {P,Pvs,Pus,St1} = pattern(P0, St0),
+    {Ps,Psvs,Psus,St2} = pattern_list(Ps0, St1),
+    {[P|Ps],union(Pvs, Psvs),union(Pus, Psus),St2};
+pattern_list([], St) -> {[],[],[],St}.
 
 %% guard(Guard, VisibleVariables, State) ->
 %%	{TransformedGuard,NewVariables,UsedVariables,State'}
@@ -299,6 +305,9 @@ expr({record_field,Line,R,Name,F}, Vs, St) ->
 expr({record,Line,R,Name,Us}, Vs, St0) ->
     {Ue,St1} = record_update(R, Name, record_fields(Name, St0), Us, St0),
     expr(Ue, Vs, St1);
+expr({bin,Line,Es0}, Vs, St0) ->
+    {Es1,Esvs,Esus,St1} = expr_bin(Es0, Vs, St0),
+    {{bin,Line,Es1},Esvs,Esus,St1};
 expr({block,Line,Es0}, Vs, St0) ->
     {Es,Esvs,Esus,St1} = exprs(Es0, Vs, St0),
     {{block,Line,Es},Esvs,Esus,St1};
@@ -362,10 +371,10 @@ expr({'catch',Line,E0}, Vs, St0) ->
     {{'catch',Line,E},[],Eus,St1};
 expr({match,Line,P0,E0}, Vs, St0) ->
     {E,Evs,Eus,St1} = expr(E0, Vs, St0),
-    {P,Pvs,St2} = pattern(P0, St1),
+    {P,Pvs,Pus,St2} = pattern(P0, St1),
     {{match,Line,P,E},
      union(subtract(Pvs, Vs), Evs),
-     union(intersection(Pvs, Vs), Eus),St2};
+     union(intersection(Pvs, Vs), union(Eus,Pus)),St2};
 expr({op,Line,'++',{lc,Ll,E,Qs},L2}, Vs, St) ->
     lc_tq(Ll, E, Qs, L2, Vs, St);
 expr({op,Ll,'++',{string,L1,S1},{string,L2,S2}}, Vs, St) ->
@@ -402,11 +411,11 @@ expr_list([], Vs, St) ->
 %%  and really new.
 
 icr_clauses([{clause,Line,H0,G0,B0}|Cs0], Vs, St0) ->
-    {H,Hvs,St1} = head(H0, St0),		%Hvs is really used!
+    {H,Hvs,Hus,St1} = head(H0, St0),		%Hvs is really used!
     {G,Gvs,Gus,St2} = guard(G0, union(Hvs, Vs), St1),
     {B,Bvs,Bus,St3} = exprs(B0, union([Vs,Hvs,Gvs]), St2),
     New = subtract(union([Hvs,Gvs,Bvs]), Vs),	%Really new
-    Used = intersection(union([Hvs,Gus,Bus]), Vs), %Really used
+    Used = intersection(union([Hvs,Hus,Gus,Bus]), Vs), %Really used
     {Cs,Csvs,Csus,St4} = icr_clauses(Cs0, Vs, St3),
     {[{clause,Line,H,G,B}|Cs],[New|Csvs],[Used|Csus],St4};
 icr_clauses([], Vs, St) ->
@@ -487,17 +496,16 @@ fun_tq(Lf, {clauses,Cs0}, Vs, St0) ->
     {{'fun',Lf,{clauses,Cs1},{Uniq,Hvss,Free}},[],Ufrees,St1}.
 
 fun_clauses([{clause,L,H0,G0,B0}|Cs0], Vs, St0) ->
-    {H,Hvs,St1} = head(H0, St0),
+    {H,Hvs,Hus,St1} = head(H0, St0),
     {G,Gvs,Gus,St2} = guard(G0, union(Hvs, Vs), St1),
     {B,Bvs,Bus,St3} = exprs(B0, union([Vs,Hvs,Gvs]), St2),
     %% Free variables cannot be new anywhere in the clause.
-    Free = subtract(union(Gus, Bus), union([Hvs,Gvs,Bvs])),
+    Free = subtract(union([Gus,Hus,Bus]), union([Hvs,Gvs,Bvs])),
     %%io:format(" Gus :~p~n Bvs :~p~n Bus :~p~n Free:~p~n" ,[Gus,Bvs,Bus,Free]),
     {Cs,Hvss,Frees,St4} = fun_clauses(Cs0, Vs, St3),
     {[{clause,L,H,G,B}|Cs],[Hvs|Hvss],[Free|Frees],St4};
 fun_clauses([], Vs, St) -> {[],[],[],St}.
-
-
+
 %% normalise_fields([RecDef]) -> [Field].
 %%  Normalise the field definitions to always have a default value. If
 %%  none has been given then use 'undefined'.
@@ -636,6 +644,60 @@ record_setel(R, Name, Fs, Us) ->
 		  {call,Lf,{atom,Lf,setelement},[I,Acc,Val]} end,
 	  R, Us).
 
+%% pattern_bin([Element], State) -> {[Element],[Variable],[UsedVar],State}.
+
+pattern_bin(Es0, St) ->
+    Es1 = bin_expand_strings(Es0),
+    foldr(fun (E, Acc) -> pattern_element(E, Acc) end, {[],[],[],St}, Es1).
+
+pattern_element({bin_element,Line,Expr,Size,Type}, {Es,Esvs,Esus,St0}) ->
+    {Expr1,Vs1,Us1,St1} = pattern(Expr, St0),
+    {Size1,Vs2,Us2,St2} = pat_bit_size(Size, St1),
+    {Size2,Type1} = make_bit_type(Line, Size1,Type),
+    {[{bin_element,Line,Expr1,Size2,Type1}|Es],
+      union([Vs1,Vs2,Esvs]),union([Us1,Us2,Esus]),St2}.
+
+pat_bit_size(default, St) -> {default,[],[],St};
+pat_bit_size({atom,La,all}=All, St) -> {All,[],[],St};
+pat_bit_size({var,Lv,V}=Var, St) -> {Var,[],[V],St};
+pat_bit_size(Size, St) ->
+    Line = element(2, Size),
+    {value,Sz,Bs} = erl_eval:expr(Size, erl_eval:new_bindings()),
+    {{integer,Line,Sz},[],[],St}.
+
+make_bit_type(Line, default, Type0) ->
+    case erl_bits:set_bit_type(default, Type0) of
+	{ok,all,Bt} -> {{atom,Line,all},erl_bits:as_list(Bt)};
+	{ok,Size,Bt} -> {{integer,Line,Size},erl_bits:as_list(Bt)}
+    end;
+make_bit_type(Line, Size, Type0) ->		%Integer or 'all'
+    {ok,Size,Bt} = erl_bits:set_bit_type(Size, Type0),
+    {Size,erl_bits:as_list(Bt)}.
+
+%% expr_bin([Element], [VisibleVar], State) ->
+%%              {[Element],[NewVar],[UsedVar],State}.
+
+expr_bin(Es0, Vs, St) ->
+    Es1 = bin_expand_strings(Es0),
+    foldr(fun (E, Acc) -> bin_element(E, Vs, Acc) end, {[],[],[],St}, Es1).
+
+bin_element({bin_element,Line,Expr,Size,Type}, Vs, {Es,Esvs,Esus,St0}) ->
+    {Expr1,Vs1,Us1,St1} = expr(Expr, Vs, St0),
+    {Size1,Vs2,Us2,St2} = if Size == default -> {default,[],[],St1};
+			     true -> expr(Size, Vs, St1)
+			  end,
+    {Size2,Type1} = make_bit_type(Line, Size1, Type),
+    {[{bin_element,Line,Expr1,Size2,Type1}|Es],
+     union([Vs1,Vs2,Esvs]),union([Us1,Us2,Esus]),St2}.
+
+bin_expand_strings(Es0) ->
+    foldr(fun ({bin_element,Line,{string,_,S},default,default}, Es) ->
+		  foldr(fun (C, Es) ->
+				[{bin_element,Line,{integer,Line,C},default,default}|Es]
+			end, Es, S);
+	      (E, Es) -> [E|Es]
+	  end, [], Es0).
+
 %% new_var_name(State) -> {VarName,State}.
 
 new_var_name(St) ->
@@ -662,6 +724,9 @@ new_vars(0, L, St, Vs) -> {Vs,St}.
 
 make_list(Ts, Line) ->
     foldr(fun (H, T) -> {cons,Line,H,T} end, {nil,Line}, Ts).
+
+string_to_conses(Line, Cs, Tail) ->
+    foldr(fun (C, T) -> {cons,Line,{integer,Line,C},T} end, Tail, Cs).
 
 %% call_fault(Line, Reason) -> Expr.
 %%  Build a call to erlang:fault/1 with reason Reason.

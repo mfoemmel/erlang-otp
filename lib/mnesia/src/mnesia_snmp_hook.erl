@@ -83,16 +83,16 @@ update({Op, MnesiaTab, MnesiaKey, SnmpKey}) ->
     Tree = mnesia_lib:val({MnesiaTab, {index, snmp}}),
     update(Op, Tree, MnesiaKey, SnmpKey).
 
-update(Op, Tree, MnesiaKey, SnmpKey) ->
+update(Op, Tree, MnesiaKey, _) ->
     case Op of
 	write ->
 	    b_insert(Tree, MnesiaKey, MnesiaKey);
 	update_counter ->
 	    ignore;
 	delete ->
-	    b_delete(Tree, SnmpKey);
+	    b_delete(Tree, MnesiaKey);
 	delete_object ->
-	    b_delete(Tree, SnmpKey)
+	    b_delete(Tree, MnesiaKey)
     end,
     ok.
 
@@ -268,4 +268,4 @@ system_terminate(Reason, Parent, Debug, Tree) ->
     exit(Reason).
 
 system_code_change(State, Module, OldVsn, Extra) ->
-    exit(not_supported).
+    {ok, State}.

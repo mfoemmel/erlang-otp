@@ -32,12 +32,12 @@ do_vxworks:
 	HOST_TYPE=$(HOST_TYPE) WIND_BASE=$(WIND_BASE) ./configure.vxworks $(TARGET)
 else
 
-ifneq (,$(findstring linux,$(TARGET)))
-CONFIG_FLAGS = --enable-elib-malloc
+ifneq (,$(findstring solaris,$(TARGET)))
+CONFIG_FLAGS = --enable-threads
 endif
 
 ifneq (,$(findstring univel-sysv4,$(TARGET)))
-CONFIG_FLAGS = --enable-elib-malloc --x-libraries=/usr/lib/X11
+CONFIG_FLAGS = --x-libraries=/usr/lib/X11
 endif
 
 ifeq ($(TARGET),free_source)

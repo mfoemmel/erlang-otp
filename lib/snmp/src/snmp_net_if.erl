@@ -17,36 +17,36 @@
 %%
 -module(snmp_net_if).
 
--export([start_link/1, get_log_type/1, set_log_type/2]).
+-export([start_link/1, start_link/2, 
+	 get_log_type/1, set_log_type/2, verbosity/2]).
 -export([system_continue/3, system_terminate/4, system_code_change/4]).
--export([init/2]).
+-export([init/3]).
 
 -include("snmp_types.hrl").
+-include("snmp_verbosity.hrl").
 
 -record(state, {parent, master_agent, usock, mpd_state, log,
 		reqs = [], debug = false}).
 
-%% Debug macros
--define(pdebug(Format, X), 
-	case get(debug) of 
-	    undefined -> ok;
-	    _ -> io:format(lists:concat(["** SNMP Net if debug: \n   ",
-					 Format, "\n"]), X)
-	end.
+-ifndef(default_verbosity).
+-define(default_verbosity,silence).
+-endif.
 
--define(ipdebug(Format, X), 
-	case get(debug) of 
-	    undefined -> ok;
-	    _ -> io:format(Format, X)
-	end.
-					
 %%%-----------------------------------------------------------------
 %%% This module implements the default Network Interface part
 %%% of the SNMP agent. It uses UDP, and read the agent.conf to find
 %%% the UDP port.
+%%%
+%%% Opts = [Opt]
+%%% Opt  = {verbosity,silence | log | debug}
 %%%-----------------------------------------------------------------
 start_link(MasterAgent) ->
-    proc_lib:start_link(?MODULE, init, [MasterAgent, self()]).
+    start_link(MasterAgent,[]).
+
+start_link(MasterAgent,Opts) ->
+    proc_lib:start_link(?MODULE, init, [MasterAgent, self(), Opts]).
+
+verbosity(Pid,Verbosity) -> Pid ! {verbosity,Verbosity}.
 
 get_log_type(Pid) ->
     Pid ! {self(), get_log_type},
@@ -62,8 +62,11 @@ set_log_type(Pid, Type) ->
     Pid ! {set_log_type, Type}.
 
 
-init(MasterAgent, Parent) ->
+init(MasterAgent, Parent, Opts) ->
     process_flag(trap_exit, true),
+    put(sname,nif),
+    put(verbosity,get_verbosity(Opts)),
+    ?vlog("starting",[]),
     {value, UDPPort} = snmp_framework_mib:intAgentUDPPort(get),
     {value, IPAddress} = snmp_framework_mib:intAgentIpAddress(get),
     Vsns = snmp_misc:get_vsns(),
@@ -92,8 +95,10 @@ init(MasterAgent, Parent) ->
 		       master_agent = MasterAgent, mpd_state = MpdState,
 		       usock = Id, log = Log},
 	    proc_lib:init_ack({ok, self()}),
+	    ?vdebug("started",[]),
 	    loop(S);
 	{error, Reason} ->
+	    ?vinfo("Failed to open UDP socket: ~p",[Reason]),
 	    proc_lib:init_ack({error, {udp, UDPPort, Reason}})
     end.
 
@@ -109,7 +114,7 @@ gen_udp_open(Port, Opts) ->
 loop(S) ->
     receive
 	{udp, _UdpId, Ip, Port, Packet} ->
-	    ?pdebug("net_if got packet from ~w:~w~n", [Ip, Port]),
+	    ?vlog("~n   got paket from ~w:~w",[Ip,Port]),
 	    put(n1,erlang:now()),
 	    LogF = case S#state.log of
 		       false -> nofunc;
@@ -121,7 +126,7 @@ loop(S) ->
 	    case snmp_mpd:process_packet(Packet, snmpUDPDomain, {Ip, Port}, 
 					 S#state.mpd_state, LogF) of
 		{ok, Vsn, Pdu, PduMS, ACMData} ->
-		    ?pdebug("got pdu from ~w:~w ~p", [Ip, Port, Pdu]),
+		    ?vlog("~n   got pdu from ~w:~w ~p", [Ip, Port, Pdu]),
 		    Type = Pdu#pdu.type,
 		    case Type of
 			'get-response' ->
@@ -132,16 +137,18 @@ loop(S) ->
 				 ACMData, {Ip, Port}, []}
 		    end;
 		{discarded, Reason} ->
-		    ?pdebug("got packet from ~p, discarded for reason: ~p", 
-			    [{Ip, Port}, Reason]);
+		    ?vlog("~n   packet from ~p, "
+			  "discarded for reason: ~p",
+			  [{Ip, Port}, Reason]);
 		{discarded, Reason, ReportPacket} ->
-		   ?pdebug("got packet from ~p, sending report for reason: ~p", 
-			    [{Ip, Port}, Reason]),
+		   ?vlog("~n   packet from ~p => "
+			 "sending report for reason: ~p", 
+			 [{Ip, Port}, Reason]),
 		    gen_udp:send(S#state.usock, Ip, Port, ReportPacket)
 		end,
 	    loop(S);
 	{snmp_response, Vsn, RePdu, Type, ACMData, {Ip, Port}, []} ->
-	    ?pdebug("reply pdu: ~p", [RePdu]),
+	    ?vlog("~n   reply pdu: ~p", [RePdu]),
 	    LogF = case S#state.log of
 		       false -> nofunc;
 		       Log ->
@@ -149,23 +156,32 @@ loop(S) ->
 				   snmp_log:log(Log, Type2, Data, {Ip, Port})
 			   end
 		   end,
-	    case snmp_mpd:generate_response_msg(Vsn,RePdu,Type,ACMData,LogF) of
+	    case snmp_mpd:generate_response_msg(Vsn,RePdu,Type,
+						ACMData,LogF) of
 		{ok, Packet} ->
 		    N2 = erlang:now(),
 		    NT = subtr(N2, get(n1)),
-		    ?pdebug("Time in agent: ~w mysec~n", [NT]),
+		    ?vinfo("time in agent: ~w mysec", [NT]),
 		    gen_udp:send(S#state.usock, Ip, Port, Packet);
-		{discarded, _Reason} ->
+		{discarded, Reason} ->
+		    ?vlog("~n   reply discarded for reason: ~p", [Reason]),
 		    ok
 	    end,
 	    loop(S);
 	{send_pdu, Vsn, Pdu, MsgData, To} ->
+	    ?vdebug("~n   send pdu: ~p"
+		    "~n   to ~p", [Pdu,To]),
 	    NewS = handle_send_pdu(S, Vsn, Pdu, MsgData, To, undefined),
 	    loop(NewS);
 	{send_pdu_req, Vsn, Pdu, MsgData, To, From} ->
+	    ?vdebug("~n   send pdu request: ~p"
+		    "~n   to ~p"
+		    "~n   from ~p", 
+		    [Pdu,To,toname(From)]),
 	    NewS = handle_send_pdu(S, Vsn, Pdu, MsgData, To, From),
 	    loop(NewS);
 	{discarded_pdu, _Vsn, _ReqId, _ACMData, Variable, _Extra} ->
+	    ?vdebug("~n   discard PDU: ~p", [Variable]),
 	    snmp_mpd:discarded_pdu(Variable),
 	    loop(S);
 	{From, get_log_type} ->
@@ -173,18 +189,19 @@ loop(S) ->
 	    loop(S);
 	{set_log_type, Type} ->
 	    loop(S#state{log = Type});
-	{debug, true} ->
-	    put(debug, true),
-	    loop(S);
-	{debug, false} ->
-	    erase(debug),
+	{verbosity,Verbosity} ->
+	    ?vlog("verbosity: ~p -> ~p",[get(verbosity),Verbosity]),
+	    put(verbosity,snmp_verbosity:validate(Verbosity)),
 	    loop(S);
 	{'EXIT', Parent, Reason} when Parent == S#state.parent ->
+	    ?vlog("~n   parent (~p) exited: ~p", [Parent,Reason]),
 	    exit(Reason);
 	{'EXIT', Pid, Reason} ->
+	    ?vlog("~n   ~p exited: ~p", [Pid,Reason]),
 	    NewS = clear_reqs(Pid, S),
 	    loop(NewS);
 	{system, From, Msg} ->
+	    ?vdebug("system signal ~p from ~p", [Msg,From]),
 	    sys:handle_system_msg(Msg, From, S#state.parent, ?MODULE, [], S);
 	_ ->
 	    loop(S)
@@ -193,25 +210,27 @@ loop(S) ->
 handle_send_pdu(S, Vsn, Pdu, MsgData, To, From) ->
     case snmp_mpd:generate_msg(Vsn, Pdu, MsgData, To) of
 	{ok, Addresses} ->
-	    ?pdebug("sending pdu ~p, to the following mgrs:", [Pdu]),
 	    lists:foreach(fun({snmpUDPDomain, {Ip, Port}, Packet}) ->
-				  ?ipdebug("    ~w:~w~n",[Ip,Port]),
+				  ?vlog("~n   sending pdu ~p~n"
+					"~n   to mgr: ~p:~p",
+					[Pdu,Ip,Port]),
 				  log(S#state.log, Pdu#pdu.type, Packet,
 				      {Ip, Port}),
 				  gen_udp:send(S#state.usock, Ip,
 					       Port, Packet);
 			     (_X) ->
-				  io:format(user, "** bad res: ~p\n", [_X]),
+				  ?vlog("** bad res: ~p\n", [_X]),
 				  ok
 			  end, Addresses);
 	{discarded, Reason} ->
-	    ?pdebug("do not send too big pdu ~p", [Pdu]),
+	    ?vlog("~n   PDU ~p not sent due to ~p", [Pdu,Reason]),
 	    ok
     end,
     case From of
 	undefined ->
 	    S;
 	Pid ->
+	    ?vtrace("~n   link to ~p and add to request list", [Pid]),
 	    link(Pid),
 	    NReqs = snmp_misc:keyreplaceadd(Pid, 2, S#state.reqs, 
 					    {Pdu#pdu.request_id, From}),
@@ -221,9 +240,10 @@ handle_send_pdu(S, Vsn, Pdu, MsgData, To, From) ->
 handle_response(Vsn, Pdu, From, S) ->
     case lists:keysearch(Pdu#pdu.request_id, 1, S#state.reqs) of
 	{value, {_, Pid}} ->
+	    ?vlog("~n   send response to receiver ~p", [Pid]),
 	    Pid ! {snmp_response_received, Vsn, Pdu, From};
 	_ ->
-	    ?pdebug("No receiver available for response pdu", [])
+	    ?vlog("~n   No receiver available for response pdu", [])
     end.
 
 clear_reqs(Pid, S) ->
@@ -235,6 +255,18 @@ log(false, _Type, _Packet, _Address) ->
     ok;
 log(Log, Type, Packet, Address) ->
     snmp_log:log(Log, Type, Packet, Address).
+
+
+toname(P) when pid(P) ->
+    case process_info(P,registered_name) of
+	{registered_name,Name} ->
+	    Name;
+	_ ->
+	    P
+    end;
+toname(Else) ->
+    Else.
+
 
 %%%-----------------------------------------------------------------
 %%% System messages
@@ -255,3 +287,10 @@ subtr({X1,Y1,Z1}, {X1,Y1,Z2}) ->
     Z1 - Z2;
 subtr({X1,Y1,Z1}, {X1,Y2,Z2}) ->
     ((Y1 * 1000000) + Z1) - ((Y2 * 1000000) + Z2).
+
+
+get_verbosity([]) ->
+    ?default_verbosity;
+get_verbosity(L) ->
+    snmp_misc:get_option(net_if_verbosity,L,?default_verbosity).
+

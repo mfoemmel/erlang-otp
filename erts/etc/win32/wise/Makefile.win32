@@ -8,7 +8,7 @@
 include ../../../vsn.mk
 include ../../../../lib/gs/vsn.mk
 
-WISEDIR=D:\Progra~1\Wise
+#WISEDIR=D:\Progra~1\Wise
 WISE=$(WISEDIR)\Wise32.exe 
 WISE_SCRIPTS = erl_vsn.wse erlang-main.wse data-files.wse doc-files.wse \
 	       psdoc-files.wse test-files.wse
@@ -23,6 +23,7 @@ RM = del
 #
 
 install: $(EXE_FILE_NAME) autorun.pl
+	@echo Test12
 	@autorun.pl
 
 clean:
@@ -39,11 +40,13 @@ $(EXE_FILE_NAME): $(WISE_SCRIPTS)
 	@$(WISE) /C erlang-main.wse
 
 erlang-main.wse: erlang.wse
+	@echo Test13
 	sed 	-e 's;%EXE_FILE_NAME%;$(EXE_FILE_NAME);' \
 		-e "s;%WISED%;$(NTWISEDIR);" \
 		erlang.wse >erlang-main.wse
 
 erl_vsn.wse: erl_vsn.wse.in
+	@echo Test14
 	echo $(EMULATOR)
 	sed -e "s;%SERIAL_NO%;$(SERIALNO);" \
 	    -e "s;%SYSTEM_VSN%;$(SYSTEM_VSN);" \

@@ -19,7 +19,7 @@
 -module(tv_io_lib_format).
 
 
--export([fwrite/2,indentation/2]).
+-export([fwrite/2,fwrite_g/1,indentation/2]).
 
 
 %% fwrite(Format, ArgList) -> [Char].
@@ -292,6 +292,9 @@ float_data([D|Cs], Ds) ->
 %% fwrite_g(Float, Field, Adjust, Precision, PadChar)
 %%  Use the f form if Float is > 0.1 and < 10^4, else the e form.
 %%  Precision always means the # of significant digits.
+
+fwrite_g(Fl) ->
+    fwrite_g(Fl, none, right, none, $\s).
 
 fwrite_g(Fl, F, Adj, none, Pad) ->
     fwrite_g(Fl, F, Adj, 6, Pad);

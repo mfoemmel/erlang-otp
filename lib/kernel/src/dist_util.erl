@@ -68,11 +68,12 @@
 
 handshake_other_started(HSData) ->
     {Flags,Node,Version} = recv_name(HSData),
-    is_allowed(HSData),
-    mark_pending(HSData#hs_data{other_flags = Flags,
-				other_version = Version,
-				other_node = Node,
-				other_started = true}).
+    NewHSData = HSData#hs_data{other_flags = Flags,
+			       other_version = Version,
+			       other_node = Node,
+			       other_started = true},
+    is_allowed(NewHSData),
+    mark_pending(NewHSData).
 %%
 %% check if connecting node is allowed to connect
 %% with allow-node-scheme
@@ -387,10 +388,10 @@ con_loop(Kernel, Node, Socket, TcpAddress,
 			     MyNode, Type, NewTick, MFTick,  
 			     MFGetstat);
 		{error, not_responding} ->
-		    error_msg("** Node ~p not responding **~n"
-			      "** Removing (timedout) connection **~n",
-			      [Node]),
-		    ?shutdown(Node);
+ 		    error_msg("** Node ~p not responding **~n"
+ 			      "** Removing (timedout) connection **~n",
+ 			      [Node]),
+ 		    ?shutdown(Node);
 		Other ->
 		    ?shutdown(Node)
 	    end;
@@ -414,24 +415,21 @@ con_loop(Kernel, Node, Socket, TcpAddress,
 
 send_name(#hs_data{socket = Socket, this_node = Node, 
 		   f_send = FSend, 
+		   this_flags = Flags,
 		   other_version = Version}) ->
     ?trace("send_name: node=~w, version=~w\n",
 	   [Node,Version]),
-    Fl = ?int32(?DFLAG_PUBLISHED bor ?DFLAG_ATOM_CACHE bor 
-		?DFLAG_EXTENDED_REFERENCES bor ?DFLAG_DIST_MONITOR bor
-		?DFLAG_FUN_TAGS),
     ?to_port(FSend, Socket, 
-	     [$n, ?int16(Version), Fl, atom_to_list(Node)]).
+	     [$n, ?int16(Version), ?int32(Flags), atom_to_list(Node)]).
 
 send_challenge(#hs_data{socket = Socket, this_node = Node, 
-			other_version = Version, f_send = FSend},
+			other_version = Version, 
+			this_flags = Flags,
+			f_send = FSend},
 	       Challenge ) ->
     ?trace("send: challenge=~w version=~w\n",
 	   [Challenge,Version]),
-    Fl = ?int32(?DFLAG_PUBLISHED bor ?DFLAG_ATOM_CACHE bor 
-		?DFLAG_EXTENDED_REFERENCES bor ?DFLAG_DIST_MONITOR bor
-		?DFLAG_FUN_TAGS),
-    ?to_port(FSend, Socket, [$n,?int16(Version), Fl,
+    ?to_port(FSend, Socket, [$n,?int16(Version), ?int32(Flags),
 			     ?int32(Challenge), 
 			     atom_to_list(Node)]).
 

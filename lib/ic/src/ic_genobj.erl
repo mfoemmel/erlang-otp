@@ -74,6 +74,8 @@ new(Opts) ->
     ic_options:add_opt(G, default_opts, true),
     ic_options:read_cfg(G, Opts),	       % Read any config files
     ic_options:add_opt(G, Opts, true),
+    ic_symtab:symtab_add_faked_included_types(G), % Add CORBA::<Types> that as if they
+                                                  % were defined in an included file
     G.
 
 

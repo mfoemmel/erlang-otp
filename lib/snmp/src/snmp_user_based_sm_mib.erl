@@ -28,6 +28,9 @@
 -include("SNMPv2-TC.hrl").
 -include("snmp_types.hrl").
 
+-define(VMODULE,"USM_MIB").
+-include("snmp_verbosity.hrl").
+
 %% Columns not accessible via SNMP
 -define(usmUserAuthKey, 14).
 -define(usmUserPrivKey, 15).
@@ -628,11 +631,15 @@ get_auth_proto(RowIndex, Cols) ->
 	{value, {_, Protocol}} ->
 	    Protocol;
 	false ->
-	    {value, Protocol} =
-		snmp_generic:table_get_element(db(usmUserTable),
-					       RowIndex,
-					       ?usmUserAuthProtocol),
-	    Protocol
+	    %% OTP-3596
+	    case snmp_generic:table_get_element(db(usmUserTable),
+						RowIndex,
+						?usmUserAuthProtocol) of
+		{value, Protocol} ->
+		    Protocol;
+		_ ->
+		    undefined
+	    end
     end.
 
 %% Pre: the user exixt
@@ -643,11 +650,15 @@ get_priv_proto(RowIndex, Cols) ->
 	{value, {_, Protocol}} ->
 	    Protocol;
 	false ->
-	    {value, Protocol} =
-		snmp_generic:table_get_element(db(usmUserTable),
-					       RowIndex,
-					       ?usmUserPrivProtocol),
-	    Protocol
+	    %% OTP-3596
+	    case snmp_generic:table_get_element(db(usmUserTable),
+						RowIndex,
+						?usmUserPrivProtocol) of
+		{value, Protocol} ->
+		    Protocol;
+		_ ->
+		    undefined
+	    end
     end.
 
 

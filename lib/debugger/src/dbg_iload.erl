@@ -178,7 +178,17 @@ pattern({op,Line1,'+',{integer,Line,I}}) ->
 pattern({op,Line1,'-',{float,Line,I}}) ->
     {value,Line,-I};
 pattern({op,Line1,'+',{float,Line,I}}) ->
-    {value,Line,I}.
+    {value,Line,I};
+%% BITS:
+pattern({bin,Line,Grp}) ->
+    Grp1 = pattern_list(Grp),
+    {bin,Line,Grp1};
+pattern({bin_element,Line,Expr,Size,Type}) ->
+    Expr1 = pattern(Expr),
+    Size1 = expr(Size),
+    {bin_element,Line,Expr1,Size1,Type};
+pattern({bin_tail,Line,{var,Ln,V}}) ->
+    {bin_tail,Line,{var,Ln,V}}.
 
 %%  These patterns are processed "in parallel" for purposes of variable
 %%  definition etc.
@@ -392,6 +402,17 @@ expr({remote,Line,M0,F0}) ->
     M1 = expr(M0),
     F1 = expr(F0),
     {remote,Line,M1,F1};
+%% BITS:
+expr({bin,Line,Grp}) ->
+    Grp1 = expr_list(Grp),
+    {bin,Line,Grp1};
+expr({bin_element,Line,Expr,Size,Type}) ->
+    Expr1 = expr(Expr),
+    Size1 = expr(Size),
+    {bin_element,Line,Expr1,Size1,Type};
+expr({bin_tail,Line,V}) ->
+    V1 = expr(V),
+    {bin_tail,Line,V1};
 expr(Other) ->
     exit({?MODULE,{unknown_expr,Other}}).
 

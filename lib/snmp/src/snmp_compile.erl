@@ -17,11 +17,6 @@
 %%
 -module(snmp_compile).
 
-%%%-----------------------------------------------------------------
-%%% Changes:
-%%%    981217 - mbj added code to handle forward referneces in OIDs
-%%%-----------------------------------------------------------------
-
 %% API
 -export([compile/1, compile/2]).
 
@@ -43,10 +38,11 @@ compile([AtomFilename]) when atom(AtomFilename) ->
 compile(FileName) -> compile(FileName, []).
 
 look_at(Mib) ->
-    io:format("~p", [snmp_compile_lib:look_at(Mib)]).
+    io:format("~p ~n", [snmp_compile_lib:look_at(Mib)]).
 
 %%----------------------------------------------------------------------
-%% Options: {debug, Bool}                        Default: false
+%% Options:
+%%          {deprecated, Bool}                            false
 %%          {group_check, Bool}                           true
 %%          {db, volatile|persistent|mnesia}              volatile
 %%          {i, [import_dir_string()]}                    ["./"]
@@ -54,11 +50,13 @@ look_at(Mib) ->
 %%          {i, [import_dir_string()]}                    [""]
 %%          {warnings, Bool}                              true
 %%          {outdir, string()}                            "./"
+%%          {description, Bool}                           false
+%%          {verbosity, trace|debug|log|info|silence}     silence
 %%----------------------------------------------------------------------
 
 compile(FileName, Options) when list(FileName) ->
     true = snmp_misc:is_string(FileName),
-    Opts = insert_default_options(Options, [{debug, false}, 
+    Opts = insert_default_options(Options, [{deprecated, false},
 					    {group_check, true},
 					    {i, ["./"]},
 					    {db, volatile},
@@ -97,6 +95,8 @@ check_options([{outdir, Str} | T]) when list(Str) ->
     check_options(T);
 check_options([{debug, Atom} | T]) when atom(Atom) ->
     check_options(T);
+check_options([{deprecated, Atom} | T]) when atom(Atom) ->
+    check_options(T);		     
 check_options([{group_check, Atom} | T]) when atom(Atom) ->
     check_options(T);
 check_options([{warnings, Atom} | T]) when atom(Atom) ->
@@ -113,17 +113,69 @@ check_options([{il, []} | T]) ->
     check_options(T);
 check_options([{il, [Str|_]} | T]) when list(Str) ->
     check_options(T);
+check_options([{description, Atom}| T]) when atom(Atom) ->
+    check_options(T);
+check_options([{verbosity, V} | T]) when atom(V) ->
+    snmp_compile_lib:vvalidate(V),
+    check_options(T);
 check_options([Opt|_]) ->
     {error, {invalid_option, Opt}}.
+
+
+get_group_check(Options) ->
+    snmp_compile_lib:key1search(group_check,Options,false).
+
+get_deprecated(Options) ->
+    snmp_compile_lib:key1search(deprecated,Options,false).
+
+get_description(Options) ->
+    snmp_compile_lib:key1search(description,Options,false).
+
+make_description(Message) ->
+    case get(description) of
+	true ->
+	    Message;
+	_ -> 
+	    undefined
+    end.
+
+    
+		
+%%----------------------------------------------------------------------
+%% verbosity stuff
+%%----------------------------------------------------------------------
+
+t(F,A) -> snmp_compile_lib:t(F,A).
+d(F,A) -> snmp_compile_lib:d(F,A).
+l(F,A) -> snmp_compile_lib:l(F,A).
+i(F,A) -> snmp_compile_lib:i(F,A).
+
+
+get_verbosity(Options) ->
+    case snmp_compile_lib:key1search(verbosity,Options) of
+	undefined ->
+	    %% Backward compatible: If not defined the try debug and convert
+	    case snmp_compile_lib:key1search(debug,Options,false) of
+		true ->
+		    log;
+		false ->
+		    silence
+	    end;
+	Verbosity ->
+	    Verbosity
+    end.
 
 
 %%----------------------------------------------------------------------
 %% The compile process.
 %%----------------------------------------------------------------------
+
 init(From,MibFileName,Options) ->
     {A,B,C} = now(),
     random:seed(A,B,C),
     put(options,Options),
+    put(verbosity,get_verbosity(Options)),
+    put(description, get_description(Options)),
     File = filename:rootname(MibFileName, ".mib"),
     put(filename, filename:basename(File ++ ".mib")),
     R = case catch c_impl(File) of
@@ -136,47 +188,94 @@ init(From,MibFileName,Options) ->
 
 c_impl(File) ->
     P = snmp_parse(File),
+    t("Syntax analysis:~n"
+      "   ~p",[P]),
     MibName = compile_parsed_data(P),
+    CData = get(cdata),
+    t("Compiler output:~n"
+      "   ~p",[CData]),
     save(File, MibName,get(options)).
 
-compile_parsed_data({ok,{MibVer,MibName,{{import,Imports},Line},Definitions}})->
+compile_parsed_data({ok,{MibVer,MibName,{{import,Imports},Line},
+			 Definitions}})->
     snmp_compile_lib:import(Imports),
-    definitions_loop(Definitions),
+    DeprecatedFlag = get_deprecated(get(options)),
+    d("compile_parsed_data -> DeprecatedFlag: ~p",[DeprecatedFlag]),
+    definitions_loop(Definitions, DeprecatedFlag),
     MibName.
 
-
+%% A deprecated object
 definitions_loop([{{object_type,ObjName,_Type,_Access,
-		    _Kind,deprecated,_Index},Line}|T]) ->
+		    _Kind,deprecated,
+		    {'DESCRIPTION', Message1},
+		    _Index},Line}|T],
+		 DeprecatedFlag) 
+    when  DeprecatedFlag == false ->
+    l("defloop -> object_type (deprecated):~n"
+      "   ObjName: ~p~n"
+      "   Line:    ~p",[ObjName,Line]),
     %% May be implemented but the compiler chooses not to.
     snmp_compile_lib:warning("~w is deprecated. Ignored.",[ObjName],Line),
-    definitions_loop(T);
+    definitions_loop(T,false);
 
+%% A obsolete object
 definitions_loop([{{object_type,ObjName,_Type,_Access,
-		    _Kind,obsolete,_Index},Line}|T]) ->
+		    _Kind,obsolete,
+		    {'DESCRIPTION', Message1},
+		    _Index},Line}|T], 
+		 DeprecatedFlag) ->
+    l("defloop -> object_type (obsolete):~n"
+      "   ObjName: ~p~n"
+      "   Line:    ~p",[ObjName,Line]),
     %% No need to implement a obsolete object
     ensure_macro_imported('OBJECT-TYPE', Line),
-    definitions_loop(T);
+    definitions_loop(T, DeprecatedFlag);
 
 %% Defining a table
 definitions_loop([{{object_type,NameOfTable,
-		    {{sequence_of, SeqName},_},Taccess,Kind,
-		    Tstatus,Tindex},Tline},
+		    {{sequence_of, SeqName},_},Taccess,Kind, Tstatus,
+		    {'DESCRIPTION', Message1},
+		    Tindex},Tline},
 		  {{object_type,NameOfEntry,{{type,SeqName},TEline},
 		    'not-accessible',
-		    {table_entry,IndexingInfo},
-		    Estatus,{NameOfTable,[1]}},Eline},
-		  {{sequence,SeqName,{fieldList,FieldList}},Sline}|ColsEtc]) ->
+		    {table_entry,IndexingInfo},Estatus, 
+		    {'DESCRIPTION', Message2},
+		    {NameOfTable,[1]}},Eline},
+		  {{sequence,SeqName,{fieldList,FieldList}},Sline}|ColsEtc],
+		 DeprecatedFlag) ->
+    l("defloop -> [object_type(sequence_of),object_type(type,[1]),sequence]:~n"
+      "   NameOfTable:  ~p~n"
+      "   SeqName:      ~p~n"
+      "   Taccess:      ~p~n"
+      "   Kind:         ~p~n"
+      "   Tstatus:      ~p~n"
+      "   Tindex:       ~p~n"
+      "   Tline:        ~p~n"
+      "   NameOfEntry:  ~p~n"
+      "   TEline:       ~p~n"
+      "   IndexingInfo: ~p~n"
+      "   Estatus:      ~p~n"
+      "   Eline:        ~p~n"
+      "   FieldList:    ~p~n"
+      "   Sline:        ~p",
+      [NameOfTable,SeqName,Taccess,Kind,Tstatus,
+       Tindex,Tline,
+       NameOfEntry,TEline,IndexingInfo,Estatus,Eline,
+       FieldList,Sline]),
     ensure_macro_imported('OBJECT-TYPE', Tline),
     test_table(NameOfTable,Taccess,Kind,Tindex,Tline),
     {Tfather,Tsubindex} = Tindex,
     snmp_compile_lib:register_oid(Tline,NameOfTable,Tfather,Tsubindex),
+    Description1 = make_description(Message1),
     TableME = #me{aliasname = NameOfTable,
-		  entrytype = table, access = 'not-accessible'},
+		  entrytype = table, access = 'not-accessible',
+		  description = Description1},
     snmp_compile_lib:register_oid(TEline,NameOfEntry,NameOfTable,[1]),
-    TableEntryME = #me{aliasname = NameOfEntry, entrytype = table_entry,
-		       assocList=[{table_entry_with_sequence,
-				   SeqName}], 
-		       access = 'not-accessible' },
+    Description2 = make_description(Message2),
+    TableEntryME = #me{aliasname   = NameOfEntry, entrytype = table_entry,
+		       assocList   = [{table_entry_with_sequence, SeqName}], 
+		       access      = 'not-accessible',
+		       description = Description2 },
     {ColMEs,RestObjs} = define_cols(ColsEtc,1,FieldList,NameOfEntry,
 				    NameOfTable,[]),
     TableInfo = snmp_compile_lib:make_table_info(Eline, NameOfTable,
@@ -184,38 +283,73 @@ definitions_loop([{{object_type,NameOfTable,
     snmp_compile_lib:add_cdata(#cdata.mes, [TableEntryME,
 			      TableME#me{assocList=[{table_info, TableInfo}]} |
 				       ColMEs]),
-    definitions_loop(RestObjs);
+    definitions_loop(RestObjs, 	DeprecatedFlag);
 
 definitions_loop([{{object_type,NameOfTable,
-		    {{sequence_of, SeqName},_},Taccess,Kind,
-		    Tstatus,Tindex},Tline},
+		    {{sequence_of, SeqName},_},Taccess,Kind, Tstatus,
+		    {'DESCRIPTION', Message1}, 
+		    Tindex},Tline},
 		  {{object_type,NameOfEntry,{{type,SeqName},_line},
 		    'not-accessible',
-		    {table_entry,IndexingInfo},
-		    Estatus,BadOID},Eline},
-		  {{sequence,SeqName,{fieldList,FieldList}},Sline}|ColsEtc]) ->
+		    {table_entry,IndexingInfo}, Estatus, 
+		    {'DESCRIPTION', Message2},
+		    BadOID},Eline},
+		  {{sequence,SeqName,{fieldList,FieldList}},Sline}|ColsEtc],
+		 DeprecatedFlag) ->
+    l("defloop -> "
+      "[object_type(sequence_of),object_type(type),sequence(fieldList)]:~n"
+      "   NameOfTable:  ~p~n"
+      "   SeqName:      ~p~n"
+      "   Taccess:      ~p~n"
+      "   Kind:         ~p~n"
+      "   Tstatus:      ~p~n"
+      "   Tindex:       ~p~n"
+      "   Tline:        ~p~n"
+      "   NameOfEntry:  ~p~n"
+      "   IndexingInfo: ~p~n"
+      "   Estatus:      ~p~n"
+      "   BadOID:       ~p~n"
+      "   Eline:        ~p~n"
+      "   FieldList:    ~p~n"
+      "   Sline:        ~p",
+      [NameOfTable,SeqName,Taccess,Kind,Tstatus,
+       Tindex,Tline,
+       NameOfEntry,IndexingInfo,Estatus,BadOID,Eline,
+       FieldList,Sline]),
     ensure_macro_imported('OBJECT-TYPE', Tline),
     snmp_compile_lib:print_error("Bad TableEntry OID definition (~w)",
 				 [BadOID],Eline),
     test_table(NameOfTable,Taccess,Kind,Tindex,Tline),
     {Tfather,Tsubindex} = Tindex,
     snmp_compile_lib:register_oid(Tline,NameOfTable,Tfather,Tsubindex),
-    TableME = #me{aliasname = NameOfTable,
-		  entrytype = table, access = 'not-accessible'},
+    Description1 = make_description(Message1),
+    TableME = #me{aliasname   = NameOfTable,
+		  entrytype   = table, 
+		  access       = 'not-accessible',
+		  description = Description1
+		 },
+    Description2 = make_description(Message2),
     TableEntryME = #me{aliasname = NameOfEntry, entrytype = table_entry,
-		       assocList=[{table_entry_with_sequence,
-				   SeqName}], 
-		       access = 'not-accessible' },
+		       access      = 'not-accessible',
+		       assocList   = [{table_entry_with_sequence,SeqName}],
+		       description = Description2 
+		        },
     {ColMEs,RestObjs} = define_cols(ColsEtc,1,FieldList,NameOfEntry,
 				    NameOfTable,[]),
     TableInfo = snmp_compile_lib:make_table_info(Eline, NameOfTable,
 						 IndexingInfo,ColMEs),
     snmp_compile_lib:add_cdata(#cdata.mes, [TableEntryME,
 			      TableME#me{assocList=[{table_info, TableInfo}]} |
-				       ColMEs]),
-    definitions_loop(RestObjs);
+					    ColMEs]),
+    definitions_loop(RestObjs, 	DeprecatedFlag);
 
-definitions_loop([{{new_type,Macro,NewTypeName,OldType},Line}|T]) ->
+definitions_loop([{{new_type,Macro,NewTypeName,OldType},Line}|T],
+		 DeprecatedFlag) ->
+    l("defloop -> new_type:~n"
+      "   Macro:       ~p~n"
+      "   NewTypeName: ~p~n"
+      "   OldType:     ~p~n"
+      "   Line:        ~p",[Macro,NewTypeName,OldType,Line]),
     ensure_macro_imported(Macro,Line),
     Types = (get(cdata))#cdata.asn1_types,
     case lists:keysearch(NewTypeName, #asn1_type.aliasname, Types) of
@@ -229,133 +363,232 @@ definitions_loop([{{new_type,Macro,NewTypeName,OldType},Line}|T]) ->
 				       [ASN1#asn1_type{aliasname=NewTypeName,
 						       imported = false}])
     end,
-    definitions_loop(T);
+    definitions_loop(T,	DeprecatedFlag );
 
 %% Plain variable
 definitions_loop([{{object_type,NewVarName,
-		    Type,Access,{variable,DefVal},
-		    Status,{FatherName,SubIndex}},Line} |T]) ->
+		    Type,Access,{variable,DefVal}, Status,
+		    {'DESCRIPTION', Message1}, 
+		    {FatherName,SubIndex}},Line} |T],
+		 DeprecatedFlag) ->
+    l("defloop -> object_type (variable):~n"
+      "   NewVarName: ~p~n"
+      "   Type:       ~p~n"
+      "   Access:     ~p~n"
+      "   DefVal:     ~p~n"
+      "   Status:     ~p~n"
+      "   FatherName: ~p~n"
+      "   SubIndex:   ~p~n"
+      "   Line:       ~p",
+      [NewVarName,Type,Access,DefVal,Status,
+       FatherName,SubIndex,Line]),
     snmp_compile_lib:test_father(FatherName, NewVarName, SubIndex, Line),
     ASN1type = snmp_compile_lib:make_ASN1type(Type),
     snmp_compile_lib:register_oid(Line, NewVarName, FatherName, SubIndex),
-    NewME = #me{aliasname = NewVarName, asn1_type = ASN1type,
-		entrytype = variable, assocList = DefVal,
-		access = Access },  
+    Description1 = make_description(Message1),
+    NewME = #me{aliasname   = NewVarName, asn1_type = ASN1type,
+		entrytype   = variable, 	access = Access,
+		description = Description1, 
+		assocList   = DefVal},  
         NewME2 = snmp_compile_lib:resolve_defval(NewME),
     %% hmm, should this be done in resolve_defval?
     VI=snmp_compile_lib:make_variable_info(NewME2), 
     snmp_compile_lib:add_cdata(#cdata.mes,
 			       [NewME2#me{assocList = [{variable_info, VI}]}]),
-    definitions_loop(T);
+    definitions_loop(T, DeprecatedFlag);
 
-definitions_loop([{{internal,Macro,NewVarName,FatherName,SubIndex},Line}|T]) ->
+definitions_loop([{{internal,Macro,NewVarName,FatherName,SubIndex},Line}|T],
+		 DeprecatedFlag) ->
+    l("defloop -> internal:~n"
+      "   Macro:      ~p~n"
+      "   NewVarName: ~p~n"
+      "   FatherName: ~p~n"
+      "   SubIndex:   ~p~n"
+      "   Line:       ~p",[Macro,NewVarName,FatherName,SubIndex,Line]),
     ensure_macro_imported(Macro,Line),
     snmp_compile_lib:register_oid(Line,NewVarName,FatherName,SubIndex),
     snmp_compile_lib:add_cdata(
       #cdata.mes,
       [snmp_compile_lib:makeInternalNode2(false, NewVarName)]),
-    definitions_loop(T);    
+    definitions_loop(T, DeprecatedFlag);    
 
-definitions_loop([{{trap,TrapName,EnterPrise,
-		    Variables,SpecificCode},Line}|T]) ->
+%% A trap message
+definitions_loop([{{trap,TrapName,EnterPrise, Variables, 
+		    {'DESCRIPTION', Message1},
+		    SpecificCode},Line}|T],
+		 DeprecatedFlag) ->
+    l("defloop -> trap:~n"
+      "   TrapName:     ~p~n"
+      "   EnterPrise:   ~p~n"
+      "   Variables:    ~p~n"
+      "   SpecificCode: ~p~n"
+      "   Line:         ~p",
+      [TrapName,EnterPrise,Variables,SpecificCode,Line]),
     CDATA = get(cdata),
     snmp_compile_lib:check_trap_name(EnterPrise, Line, CDATA#cdata.mes),
+    Descriptions = make_description(Message1),
     Trap = #trap{trapname = TrapName, enterpriseoid=EnterPrise,
 		 specificcode = SpecificCode,
 		 oidobjects = lists:map({snmp_compile_lib,trap_variable_info},
 					[Line, CDATA#cdata.mes],
-					Variables)},
+					Variables), 
+		description = Descriptions},
     lists:map({snmp_compile_lib,check_trap}, [Trap, Line], CDATA#cdata.traps),
     snmp_compile_lib:add_cdata(#cdata.traps, [Trap]),
-    definitions_loop(T);    
+    definitions_loop(T, DeprecatedFlag);    
 
 definitions_loop([{{object_type,NameOfEntry,Type,Eaccess,{table_entry,Index},
-		    Estatus,SubIndex},Eline}|T]) ->
+		    Estatus,SubIndex},Eline}|T],DeprecatedFlag) ->
+    l("defloop -> object_type (table_entry):~n"
+      "   NameOfEntry: ~p~n"
+      "   Type:        ~p~n"
+      "   Eaccess:     ~p~n"
+      "   Index:       ~p~n"
+      "   Estatus:     ~p~n"
+      "   SubIndex:    ~p~n"
+      "   SubIndex:    ~p~n"
+      "   Eline:       ~p",
+      [NameOfEntry,Type,Eaccess,Index,Estatus,SubIndex,Eline]),
     snmp_compile_lib:print_error("Misplaced TableEntry definition (~w)",
 				 [NameOfEntry],Eline),
-    definitions_loop(T);
+    definitions_loop(T, DeprecatedFlag);
 
 definitions_loop([{{notification,TrapName,Variables,Status,
-		    {FatherName,SubIndex}},Line}|T]) ->
+		    {'DESCRIPTION', Message1},
+		    {FatherName,SubIndex}},Line}|T],
+		 DeprecatedFlag) ->
+    l("defloop -> notification:~n"
+      "   TrapName:    ~p~n"
+      "   Variables:   ~p~n"
+      "   Status:      ~p~n"
+      "   FartherName: ~p~n"
+      "   SubIndex:    ~p~n"
+      "   Line:        ~p",
+      [TrapName,Variables,Status,FatherName,SubIndex,Line]),
     ensure_macro_imported('NOTIFICATION-TYPE', Line),
     CDATA = get(cdata),
     snmp_compile_lib:register_oid(Line,TrapName,FatherName,SubIndex),
+    Descriptions = make_description(Message1),
     Notif = #notification{
       trapname = TrapName,
+      description = Descriptions,
       oidobjects = lists:map({snmp_compile_lib,trap_variable_info},
 			     [Line, CDATA#cdata.mes],
 			     Variables)},
     snmp_compile_lib:check_notification(Notif, Line, CDATA#cdata.traps),
     snmp_compile_lib:add_cdata(#cdata.traps, [Notif]),
-    definitions_loop(T);    
+    definitions_loop(T, DeprecatedFlag);    
 
-definitions_loop([{{module_compliance,Name},Line}|T]) ->
+definitions_loop([{{module_compliance,Name},Line}|T], DeprecatedFlag) ->
+    l("defloop -> module_compliance:~n"
+      "   Name: ~p~n"
+      "   Line: ~p",[Name,Line]),
     ensure_macro_imported('MODULE-COMPLIANCE', Line),
-    definitions_loop(T);
+    definitions_loop(T, DeprecatedFlag);
 
-definitions_loop([{{object_group,Name,GroupObjects,deprecated},Line}|T]) ->
-    GroupBool = hd([Value || {Option,Value} <-get(options), Option==group_check]),
+definitions_loop([{{object_group,Name,GroupObjects,deprecated},Line}|T],
+		 DeprecatedFlag) ->
+    l("defloop -> object_group (deprecated):~n"
+      "   Name:         ~p~n"
+      "   GroupObjects: ~p~n"
+      "   Line:         ~p",[Name,GroupObjects,Line]),
+    GroupBool = get_group_check(get(options)),
     case GroupBool==true of
 	true->
 	    %% May be implemented but the compiler chooses not to.
 	    snmp_compile_lib:warning("~w is deprecated. Ignored.",[Name],Line),
-	    definitions_loop(T);
+	    definitions_loop(T, DeprecatedFlag);
 	false->
-	    definitions_loop(T)
+	    definitions_loop(T, DeprecatedFlag)
     end;
 
-definitions_loop([{{object_group,Name,GroupObjects,obsolete},Line}|T]) ->
+definitions_loop([{{object_group,Name,GroupObjects,obsolete},Line}|T],
+		 DeprecatedFlag) ->
+    l("defloop -> object_group (obsolete):~n"
+      "   Name:         ~p~n"
+      "   GroupObjects: ~p~n"
+      "   Line:         ~p",[Name,GroupObjects,Line]),
     %% No need to implement a obsolete group
     ensure_macro_imported('OBJECT-GROUP', Line),
-    definitions_loop(T);
+    definitions_loop(T,DeprecatedFlag);
 
-definitions_loop([{{object_group,Name,GroupObjects,_Status},Line}|T]) ->
+definitions_loop([{{object_group,Name,GroupObjects,_Status},Line}|T],
+		 DeprecatedFlag) ->
+    l("defloop -> object_group:~n"
+      "   Name:         ~p~n"
+      "   GroupObjects: ~p~n"
+      "   Line:         ~p",[Name,GroupObjects,Line]),
     ensure_macro_imported('OBJECT-GROUP', Line),
-    GroupBool = hd([Value || {Option,Value} <-get(options), Option==group_check]),
+    GroupBool = hd([Value || {Option,Value} <-get(options), 
+			     Option==group_check]),
     case GroupBool==true of
 	true->
-	    snmp_compile_lib:add_cdata(#cdata.objectgroups,[{Name,GroupObjects,Line}]),
+	    snmp_compile_lib:add_cdata(#cdata.objectgroups,
+				       [{Name,GroupObjects,Line}]),
 	    CDATA=get(cdata),
 	    Objects=snmp_compile_lib:check_access_group(CDATA#cdata.mes),
 	    snmp_compile_lib:check_def(Objects,GroupObjects,Line),
-	    definitions_loop(T);
+	    definitions_loop(T, DeprecatedFlag);
 	false->
-	    definitions_loop(T)
+	    definitions_loop(T, DeprecatedFlag)
     end;
 
-definitions_loop([{{notification_group,Name,GroupObjects,deprecated},Line}|T]) ->
-    GroupBool = hd([Value || {Option,Value} <-get(options), Option==group_check]),
+definitions_loop([{{notification_group,Name,GroupObjects,deprecated},Line}|T],
+		 DeprecatedFlag) ->
+    l("defloop -> notification_group (deprecated):~n"
+      "   Name:         ~p~n"
+      "   GroupObjects: ~p~n"
+      "   Line:         ~p",[Name,GroupObjects,Line]),
+    GroupBool = get_group_check(get(options)),
     case GroupBool==true of
 	true->
 	    %% May be implemented but the compiler chooses not to.
 	    snmp_compile_lib:warning("~w is deprecated. Ignored.",[Name],Line),
-	    definitions_loop(T);
+	    definitions_loop(T, DeprecatedFlag);
 	false->
-	    definitions_loop(T)
+	    definitions_loop(T, DeprecatedFlag)
     end;
 
-definitions_loop([{{notification_group,Name,GroupObjects,obsolete},Line}|T]) ->
+definitions_loop([{{notification_group,Name,GroupObjects,obsolete},Line}|T],
+		 DeprecatedFlag) ->
+    l("defloop -> notification_group (obsolete):~n"
+      "   Name:         ~p~n"
+      "   GroupObjects: ~p~n"
+      "   Line:         ~p",[Name,GroupObjects,Line]),
     %% No need to implement a obsolete object
     ensure_macro_imported('NOTIFICATION-GROUP', Line),
-    definitions_loop(T);
+    definitions_loop(T, DeprecatedFlag);
 
-definitions_loop([{{notification_group,Name,NotificationObjects,_Status},Line}|T]) ->
+definitions_loop([{{notification_group,Name,NotificationObjects,_Status},Line}
+		  |T], DeprecatedFlag) ->
+    l("defloop -> notification_group: ~n"
+      "   Name:                ~p~n"
+      "   NotificationObjects: ~p~n"
+      "   Line:                ~p",[Name,NotificationObjects,Line]),
     ensure_macro_imported('NOTIFICATION-GROUP', Line),
-    GroupBool = hd([Value || {Option,Value} <-get(options), Option==group_check]),
+    GroupBool = get_group_check(get(options)),
     case GroupBool==true of
 	true->
 	    snmp_compile_lib:add_cdata(#cdata.notificationgroups,[{Name,NotificationObjects,Line}]),
 	    CDATA=get(cdata),
 	    Objects = snmp_compile_lib:check_notification_trap(CDATA#cdata.traps),
 	    snmp_compile_lib:check_def(Objects,NotificationObjects,Line),
-	    definitions_loop(T);
+	    definitions_loop(T, DeprecatedFlag);
 	false->
-	    definitions_loop(T)
+	    definitions_loop(T, DeprecatedFlag)
     end;
 
 definitions_loop([{{object_type,NameOfTable,
 		    {{sequence_of, SeqName},_},Taccess,Kind,
-		    Tstatus,Tindex},Tline}, Entry,Seq|T]) ->
+		    Tstatus,Tindex},Tline}, Entry,Seq|T],
+		DeprecatedFlag) ->
+    l("defloop -> object_type (sequence_of)~n"
+      "   NameOfTable: ~p~n"
+      "   SeqName:     ~p~n"
+      "   Tline:       ~p~n"
+      "   Entry:       ~p~n"
+      "   Seq:         ~p",
+      [NameOfTable,SeqName,Tline,Entry,Seq]),
     case Entry of
 	{{object_type,NameOfEntry,{{type,SeqName},_line},
 		    'not-accessible',
@@ -366,37 +599,52 @@ definitions_loop([{{object_type,NameOfTable,
 		    snmp_compile_lib:error("Internal error. Correct incorrect "
 					   "table.",[],Tline);
 		Else ->
+		    i("defloop -> Invalid sequence: Else = ~p",[Else]),
 		    snmp_compile_lib:print_error(
 		      "Invalid SEQUENCE OF '~p'.",
 		      [safe_elem(1,safe_elem(2,Seq))],Tline)
 	    end;
 	Else ->
+	    i("defloop -> Invalid table entry: Else = ~p",[Else]),
 	    snmp_compile_lib:print_error(
 	      "Invalid TableEntry '~p' (check STATUS, Sequence name, Oid)",
 	      [safe_elem(1,safe_elem(2,Entry))],Tline)
     end,
-    definitions_loop(T);
+    definitions_loop(T, DeprecatedFlag);
 
 definitions_loop([{{object_type,NameOfTable,
 		    {{sequence_of, SeqName},_},Taccess,Kind,
-		    Tstatus,Tindex},Tline}|T]) ->
+		    Tstatus,Tindex},Tline}|T],
+		DeprecatedFlag) ->
+    l("defloop -> object_type (sequence_of):~n"
+      "   object_type: ~p~n"
+      "   sequence_of: ~p~n"
+      "   Tline:       ~p",[NameOfTable,SeqName,Tline]),
     snmp_compile_lib:print_error("Invalid statements following table ~p.",
 				 [NameOfTable],Tline),
-    definitions_loop(T);
+    definitions_loop(T, DeprecatedFlag);
 
-definitions_loop([{{sequence,SeqName,{fieldList,FieldList}},Line}|T]) ->
+definitions_loop([{{sequence,SeqName,{fieldList,FieldList}},Line}|T],
+		 DeprecatedFlag) ->
+    l("defloop -> sequence (fieldList):~n"
+      "   SeqName: ~p~n"
+      "   Line:    ~n",[SeqName,Line]),
     snmp_compile_lib:warning("Unexpected SEQUENCE ~w, ignoring.",
 			     [SeqName],Line),
-    definitions_loop(T);
+    definitions_loop(T,DeprecatedFlag);
 
-definitions_loop([{Obj,Line}|T]) ->
+definitions_loop([{Obj,Line}|T], DeprecatedFlag) ->
+    i("defloop -> unknown Error ~n"
+      "   Obj:  ~p~n"
+      "   Line: ~p",[Obj,Line]),
     snmp_compile_lib:print_error("Unknown Error in MIB. "
 	 "Can't describe the error better than this: ~999p ignored."
 	 " Please send a trouble report to support@erlang.ericsson.se.",
 				 [Obj],Line),
-    definitions_loop(T);
+    definitions_loop(T, DeprecatedFlag);
 
-definitions_loop([]) ->
+definitions_loop([], _DeprecatedFlag) ->
+    l("defloop -> done",[]),
     ok.
 
 safe_elem(N,T) ->
@@ -408,22 +656,32 @@ safe_elem(N,T) ->
 
 %% A correct column
 define_cols([{{object_type,NameOfCol,Type1,Access,{variable,Defval},Status,
-	    {NameOfEntry,[SubIndex]}},Oline}|Rest],SubIndex,
+	       {'DESCRIPTION', Message1},
+	       {NameOfEntry,[SubIndex]}},Oline}|Rest],SubIndex,
 	 [{NameOfCol,Type2}|Fields],NameOfEntry,TableName,ColMEs) ->
+    l("defcols -> object_type (variable):~n"
+      "   NameOfCol:  ~p~n"
+      "   Type1:      ~p~n"
+      "   Access:     ~p~n"
+      "   Status      ~p~n"
+      "   NameOfEntry ~p~n"
+      "   Oline:      ~p",
+      [NameOfCol,Type1,Access,Status,NameOfEntry,Oline]),
+    DeprecatedBool = get_deprecated(get(options)),
     ASN1type = snmp_compile_lib:make_ASN1type(Type1),
     case (snmp_compile_lib:make_ASN1type(Type2))#asn1_type.bertype of
 	T2 when T2 == ASN1type#asn1_type.bertype -> ok;
 	Else ->
 	    snmp_compile_lib:error(
-	      "Types for ~p differs from the SEQUENCE definition. "
-	      ,[NameOfCol],Oline)
+	      "Types for ~p differs from the SEQUENCE definition. ",
+	      [NameOfCol],Oline)
     end,
     NewAccess = % a simple way to get the obsolete behaviour
 	if
 	    Status == obsolete ->
 		%% Be quiet and don't implement
 		'not-accessible';
-	    Status == deprecated ->
+	    Status == deprecated, DeprecatedBool == false ->
 		%% The compiler chooses not to implement the column.
 		snmp_compile_lib:warning("~w is deprecated. Ignored.",
 					 [NameOfCol],Oline),
@@ -431,12 +689,13 @@ define_cols([{{object_type,NameOfCol,Type1,Access,{variable,Defval},Status,
 	   true -> Access
 	end,
     snmp_compile_lib:register_oid(Oline,NameOfCol,NameOfEntry,[SubIndex]),
+    Description1 = make_description(Message1),
     ColumnME = snmp_compile_lib:resolve_defval(
-		 #me{oid = SubIndex,
-		     aliasname = NameOfCol, asn1_type = ASN1type,
-		     entrytype = table_column, access = NewAccess,
-		     assocList = [{table_name,TableName} |
-				  Defval]}),
+		 #me{oid         = SubIndex,
+		     aliasname   = NameOfCol, asn1_type = ASN1type,
+		     entrytype   = table_column, access = NewAccess,
+		     description = Description1,
+		     assocList   = [{table_name,TableName} | Defval]}),
     define_cols(Rest,SubIndex+1,Fields,NameOfEntry,TableName,
 	     [ColumnME|ColMEs]);
 
@@ -444,19 +703,29 @@ define_cols([{{object_type,NameOfCol,Type1,Access,{variable,Defval},Status,
 %% Implemented as a not-accessible column so Col always is index in
 %% row tuple.
 define_cols([{{object_type,NameOfCol,Type1,Access,Kind,Status,
+	        {'DESCRIPTION', Message},
 	    {NameOfEntry,[SubIndex]}},Oline}|Rest],ExpectedSubIndex,
 	    Fields,NameOfEntry,TableName,ColMEs) 
   when SubIndex > ExpectedSubIndex ->
+    l("defcols -> object_type (non consecutive cols):~n"
+      "   NameOfCol:  ~p~n"
+      "   Type1:      ~p~n"
+      "   Access:     ~p~n"
+      "   Status      ~p~n"
+      "   NameOfEntry ~p~n"
+      "   Oline:      ~p",
+      [NameOfCol,Type1,Access,Status,NameOfEntry,Oline]),
     Int = {{type, 'INTEGER'},Oline},
-    GeneratedColumn =
+    GeneratedColumn =  
 	%% be sure to use an invalid column name here!
-	{{object_type,'$no_name$',Int,'not-accessible',
-	  {variable,[{defval,0}]},current,
-	  {NameOfEntry,[ExpectedSubIndex]}},Oline},
-    define_cols([GeneratedColumn,
-		 {{object_type,NameOfCol,Type1,Access,Kind,Status,
+	{{object_type, '$no_name$', Int, 'not-accessible',
+	  {variable, [{defval,0}]}, current, {'DESCRIPTION', undefined},
+	  {NameOfEntry, [ExpectedSubIndex]}}, Oline},
+    define_cols([GeneratedColumn, 
+                {{object_type, NameOfCol, Type1, Access, Kind, Status,
+                   {'DESCRIPTION', undefined},
 		   {NameOfEntry,[SubIndex]}},Oline}|Rest],ExpectedSubIndex,
-		[{'$no_name$',Int}|Fields],NameOfEntry,
+		[{'$no_name$', Int}|Fields],NameOfEntry,
 		TableName,ColMEs) ;
 
 %% Ok. done. All fields are eaten.
@@ -466,6 +735,7 @@ define_cols(Rest,SubIndex,[],NameOfEntry,TableName,ColMEs) ->
 
 %% The name of the field and object is the same
 define_cols([{{object_type,NameOfCol,Type1,Access,Kind,Status,
+	        {'DESCRIPTION', Message},
 	       SubIndex},Oline}|Rest],SubIndex2,[{NameOfCol,Type2}|Fields],
 	    NameOfEntry,TableName,ColMEs) ->
     SIok = case SubIndex of
@@ -504,6 +774,7 @@ define_cols([{{object_type,NameOfCol,Type1,Access,Kind,Status,
 
 %% It's an object-type but everything else is wrong
 define_cols([{{object_type,NameOfCol,Type1,Access,Kind,Status,
+	        {'DESCRIPTION', Message},
 	       SubIndex},Oline}|Rest],SubIndex2,Fields,
 	    NameOfEntry,TableName,ColMEs) ->
     snmp_compile_lib:print_error(
@@ -571,7 +842,10 @@ save(Filename, MibName,Options) ->
 				   [MibNameL, File1])
     end.
     
-
+%% Snmp_parse takes a text file as a input and the output is a list of tokens. 
+%% Input: FileName (file of mibs)
+%% Output: {ok, Mib} where MIB is a tuple of Tokens.
+%%         {error, {LineNbr, Mod, Msg} an error on line number LineNb.
 
 
 snmp_parse(FileName) ->
@@ -582,6 +856,7 @@ snmp_parse(FileName) ->
 	{ok, TokPid} ->
 	    Toks = snmp_tok:get_all_tokens(TokPid),
 	    set_version(Toks),
+%	    debug("Lexical analysis:", Toks),
 	    put(cdata,snmp_compile_lib:make_cdata(FileName ++ ".funcs")),
 	    snmp_tok:stop(TokPid),
 	    Res = if list(Toks) ->
@@ -661,3 +936,4 @@ reserved_words() -> [ 'ACCESS', 'BEGIN', 'BIT', 'CONTACT-INFO',
 'MIN-ACCESS',
 'BITS'
 ].
+

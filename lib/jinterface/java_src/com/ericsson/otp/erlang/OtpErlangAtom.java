@@ -16,13 +16,17 @@
  *     $Id$
  */
 package com.ericsson.otp.erlang;
+import java.io.Serializable;
 
 /**
  * Provides a Java representation of Erlang atoms. Atoms can be
  * created from strings whose length is not more than {@link
  * #maxAtomLength maxAtomLength} characters.
  **/
-public class OtpErlangAtom extends OtpErlangObject {
+public class OtpErlangAtom extends OtpErlangObject implements Serializable, Cloneable {
+  // don't change this!
+  static final long serialVersionUID = -3204386396807876641L;
+  
   /** The maximun allowed length of an atom, in characters */
   public static final int maxAtomLength = 0xff; // one byte length
   
@@ -34,17 +38,17 @@ public class OtpErlangAtom extends OtpErlangObject {
    *
    * @param atom the string to create the atom from.
    * 
-   * @exception OtpErlangDataException if the string is empty ("") or contains
-   * more than {@link #maxAtomLength maxAtomLength} characters.
+   * @exception java.lang.IllegalArgumentException if the string is
+   * empty ("") or contains more than {@link #maxAtomLength
+   * maxAtomLength} characters.
    **/
-  public OtpErlangAtom(String atom)
-    throws OtpErlangDataException {
+  public OtpErlangAtom(String atom) {
     if (atom == null || atom.length() < 1) {
-      throw new OtpErlangDataException("Atom must be non-empty");
+      throw new java.lang.IllegalArgumentException("Atom must be non-empty");
     }
     
     if (atom.length() > maxAtomLength) {
-      throw new OtpErlangDataException("Atom may not exceed "
+      throw new java.lang.IllegalArgumentException("Atom may not exceed "
 				       + maxAtomLength + " characters");
     }
     this.atom = atom;
@@ -116,25 +120,17 @@ public class OtpErlangAtom extends OtpErlangObject {
   }
 
   /**
-   * Determine if two atoms are equal. 
-   *
-   * @param o the object to compare to.
-   *
-   * @return true if o is a atom and the atoms are equal, false
-   * otherwise.
-   **/
-  public boolean equals(Object o) {
-    return false;
-  }
-
-  /**
    * Determine if two atoms are equal.
    *
-   * @param atom the other atom to compare to.
+   * @param o the other object to compare to.
    *
    * @return true if the atoms are equal, false otherwise.
    **/
-  public boolean equals(OtpErlangAtom atom) {
+  public boolean equals(Object o) {
+
+    if (!(o instanceof OtpErlangAtom)) return false;
+
+    OtpErlangAtom atom = (OtpErlangAtom)o;
     return this.atom.compareTo(atom.atom) == 0;
   }
 

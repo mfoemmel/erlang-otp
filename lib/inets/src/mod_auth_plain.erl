@@ -25,15 +25,15 @@
 -export([store_directory_data/2]).
 
 
--export([get_user/2,
-	 list_group_members/2,
-	 add_user/2,
-	 add_group_member/3,
-	 list_users/1,
-	 delete_user/2,
-	 list_groups/1,
-	 delete_group_member/3,
-	 delete_group/2,
+-export([get_user/2, 
+	 list_group_members/2, 
+	 add_user/2, 
+	 add_group_member/3, 
+	 list_users/1, 
+	 delete_user/2, 
+	 list_groups/1, 
+	 delete_group_member/3, 
+	 delete_group/2, 
 	 remove/1]).
 
 %%
@@ -60,29 +60,46 @@ add_user(DirData, UStruct) ->
     end.
 
 get_user(DirData, User) ->
+    ?DEBUG("get_user -> User: ~p",[User]),
     PwDB = httpd_util:key1search(DirData, auth_user_file),
     case ets:lookup(PwDB, User) of
 	[{User, PassWd, Data}] ->
+	    ?DEBUG("get_user -> ~n"
+		   "    PassWd: ~p~n"
+		   "    Data:   ~p",[PassWd,Data]),
 	    {ok, #httpd_user{username=User, password=PassWd, user_data=Data}};
 	_ ->
 	    {error, no_such_user}
     end.
 
 list_users(DirData) ->
+    ?DEBUG("list_users -> ~n"
+	   "     DirData: ~p", [DirData]),
     PWDB = httpd_util:key1search(DirData, auth_user_file),
     case ets:match(PWDB, '$1') of
 	Records when list(Records) ->
-	    {ok, lists:foldr(fun({U,P,D}, A) -> [U|A] end, [], lists:flatten(Records))};
-	_ ->
+	    ?DEBUG("list_users -> ~n"
+		   "     Records: ~p", [Records]),
+	    {ok, lists:foldr(fun({User,PassWd,Data}, A) -> [User|A] end, 
+			     [], lists:flatten(Records))};
+	O ->
+	    ?DEBUG("list_users -> ~n"
+		   "     O: ~p", [O]),
 	    {ok, []}
     end.
 
 delete_user(DirData, UserName) ->
+    ?DEBUG("delete_user -> UserName: ~p",[UserName]),
     PWDB = httpd_util:key1search(DirData, auth_user_file),
     case ets:lookup(PWDB, UserName) of
 	[{UserName, SomePassword, SomeData}] ->
+	    ?DEBUG("delete_user -> ~n"
+		   "    SomePassword: ~p~n"
+		   "    SomeData:     ~p",[SomePassword,SomeData]),
 	    ets:delete(PWDB, UserName),
-	    lists:foreach(fun(Group) -> delete_group_member(DirData, Group, UserName) end, 
+	    lists:foreach(fun(Group) -> 
+				  delete_group_member(DirData, Group, UserName) 
+			  end, 
 			  list_groups(DirData)),
 	    true;
 	_ ->
@@ -95,93 +112,134 @@ delete_user(DirData, UserName) ->
 %%
   
 add_group_member(DirData, Group, UserName) ->
+    ?DEBUG("add_group_members -> ~n"
+	   "    Group:    ~p~n"
+	   "    UserName: ~p",[Group,UserName]),
     GDB = httpd_util:key1search(DirData, auth_group_file),
     case ets:lookup(GDB, Group) of
 	[{Group, Users}] ->
 	    case lists:member(UserName, Users) of
 		true ->
+		    ?DEBUG("add_group_members -> already member in group",[]),
 		    true;
 		false ->
+		    ?DEBUG("add_group_members -> add",[]),
 		    ets:insert(GDB, {Group, [UserName|Users]}),
 		    true
 	    end;
 	[] ->
+	    ?DEBUG("add_group_members -> create grouo",[]),
 	    ets:insert(GDB, {Group, [UserName]}),
 	    true;
 	Other ->
+	    ?ERROR("add_group_members -> Other: ~p",[Other]),
 	    {error, Other}
     end.
 
 list_group_members(DirData, Group) ->
+    ?DEBUG("list_group_members -> Group: ~p",[Group]),
     GDB = httpd_util:key1search(DirData, auth_group_file),
     case ets:lookup(GDB, Group) of
 	[{Group, Users}] ->
+	    ?DEBUG("list_group_members -> Users: ~p",[Users]),
 	    {ok, Users};
 	_ ->
 	    {error, no_such_group}
     end.
 
 list_groups(DirData) ->
+    ?DEBUG("list_groups -> entry",[]),
     GDB = httpd_util:key1search(DirData, auth_group_file),
     case ets:match(GDB, '$1') of
 	[] ->
+	    ?DEBUG("list_groups -> []",[]),
 	    {ok, []};
 	Groups0 when list(Groups0) ->
-	    {ok, httpd_util:uniq(lists:foldr(fun({G, U}, A) ->
-						     [G|A]
-					     end,
-					     [],
-					     lists:flatten(Groups0)))};
+	    ?DEBUG("list_groups -> Groups0: ~p",[Groups0]),
+	    {ok, httpd_util:uniq(lists:foldr(fun({G, U}, A) -> [G|A] end,
+					     [], lists:flatten(Groups0)))};
 	_ ->
 	    {ok, []}
     end.
 
 delete_group_member(DirData, Group, User) ->
+    ?DEBUG("list_group_members -> ~n"
+	   "     Group: ~p~n"
+	   "     User:  ~p",[Group,User]),
     GDB = httpd_util:key1search(DirData, auth_group_file),
     UDB = httpd_util:key1search(DirData, auth_user_file),
     case ets:lookup(GDB, Group) of
 	[{Group, Users}] when list(Users) ->
 	    case lists:member(User, Users) of
 		true ->
+		    ?DEBUG("list_group_members -> deleted from group",[]),
 		    ets:delete(GDB, Group),
 		    ets:insert(GDB, {Group, lists:delete(User, Users)}),
 		    true;
 		false ->
+		    ?DEBUG("list_group_members -> not member",[]),
 		    {error, no_such_group_member}
 	    end;
 	_ ->
+	    ?ERROR("list_group_members -> no such group",[]),
 	    {error, no_such_group}
     end.
 
 delete_group(DirData, Group) ->
+    ?DEBUG("list_group_members -> Group: ~p",[Group]),
     GDB = httpd_util:key1search(DirData, auth_group_file),
     case ets:lookup(GDB, Group) of
 	[{Group, Users}] ->
+	    ?DEBUG("list_group_members -> delete",[]),
 	    ets:delete(GDB, Group),
 	    true;
 	_ ->
+	    ?ERROR("delete_group -> no such group",[]),
 	    {error, no_such_group}
     end.
 
 
 store_directory_data(Directory, DirData) ->
+    ?CDEBUG("store_directory_data -> ~n"
+	    "      Directory: ~p~n"
+	    "      DirData:   ~p",
+	    [Directory, DirData]),
     PWFile = httpd_util:key1search(DirData, auth_user_file),
+    ?CDEBUG("store_directory_data -> ~n"
+	    "      PWFile: ~p",[PWFile]),
     GroupFile = httpd_util:key1search(DirData, auth_group_file),
+    ?CDEBUG("store_directory_data -> ~n"
+	    "      GroupFile: ~p",[GroupFile]),
     case load_passwd(PWFile) of
 	{ok, PWDB} ->
 	    case load_group(GroupFile) of
 		{ok, GRDB} ->
-		    {ok, PasswdDB} = store_passwd(PWDB),
-		    {ok, GroupDB} = store_group(GRDB),
+		    %% Address and port is included in the file names...
+		    Addr = httpd_util:key1search(DirData, bind_address),
+		    Port = httpd_util:key1search(DirData, port),
+		    {ok, PasswdDB} = store_passwd(Addr,Port,PWDB),
+		    ?CDEBUG("store_directory_data -> ~n"
+			    "      PasswdDB: ~p",[PasswdDB]),
+		    {ok, GroupDB} = store_group(Addr,Port,GRDB),
+		    ?CDEBUG("store_directory_data -> ~n"
+			    "      GroupDB: ~p",[GroupDB]),
 		    NDD1 = lists:keyreplace(auth_user_file, 1, DirData, 
 					    {auth_user_file, PasswdDB}),
+		    ?CDEBUG("store_directory_data -> ~n"
+			    "      NDD1: ~p",[NDD1]),
 		    NDD2 = lists:keyreplace(auth_group_file, 1, NDD1, 
 					    {auth_group_file, GroupDB}),
+		    ?CDEBUG("store_directory_data -> ~n"
+			    "      NDD2: ~p",[NDD2]),
 		    {ok, NDD2};
 		Err ->
+		    ?ERROR("failed storing directory data: "
+			   "load group error: ~p",[Err]),
 		    {error, Err}
 	    end;
 	Err2 ->
+	    ?ERROR("failed storing directory data: "
+		   "load passwd error: ~p",[Err2]),
 	    {error, Err2}
     end.
 
@@ -261,8 +319,9 @@ parse_group(Stream, GroupList, Line) ->
 
 %% store_passwd
 
-store_passwd(PasswdList) ->
-    PasswdDB = ets:new(httpd_passwd, [set, public]),
+store_passwd(Addr,Port,PasswdList) ->
+    Name = httpd_util:make_name("httpd_passwd",Addr,Port),
+    PasswdDB = ets:new(Name, [set, public]),
     store_passwd(PasswdDB, PasswdList).
 
 store_passwd(PasswdDB, []) ->
@@ -273,8 +332,9 @@ store_passwd(PasswdDB, [User|Rest]) ->
 
 %% store_group
 
-store_group(GroupList) ->
-    GroupDB = ets:new(httpd_group, [set, public]),
+store_group(Addr,Port,GroupList) ->
+    Name = httpd_util:make_name("httpd_group",Addr,Port),
+    GroupDB = ets:new(Name, [set, public]),
     store_group(GroupDB, GroupList).
 
 

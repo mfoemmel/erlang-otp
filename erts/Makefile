@@ -84,4 +84,5 @@ release release_docs:
 
 # ----------------------------------------------------------------------
 
-.PHONY: debug opt docs clean sae local_setup configure release release_docs
+.PHONY: debug opt docs clean sae local_setup configure release \
+	release_docs run_test_cases

@@ -29,7 +29,7 @@
 #include "erl_locking.h"
 #include "erl_internal.h"
 
-#define ERL_IS_BYTE(x) (ERL_IS_INTEGER(x) && ((x)->uval.ival.i & ~0xFF) == 0)
+#define ERL_IS_BYTE(x) (ERL_IS_INTEGER(x) && (ERL_INT_VALUE(x) & ~0xFF) == 0)
 
 static void iolist_to_buf(ETERM* term, char** bufp);
 
@@ -53,13 +53,14 @@ void erl_common_init(void *hp,long heap_size)
  * Create an INTEGER. Depending on its value it 
  * may end up as a BigNum.
  */
-ETERM *erl_mk_int(int i)
+ETERM *
+erl_mk_int (int i)
 {
     ETERM *ep;
 
     ep = erl_alloc_eterm(ERL_INTEGER);
     ERL_COUNT(ep) = 1;
-    ep->uval.ival.i = i;
+    ERL_INT_VALUE(ep) = i;
     return ep;
 }
 
@@ -67,33 +68,36 @@ ETERM *erl_mk_int(int i)
  * Create an UNSIGNED INTEGER. Depending on its 
  * value it may end up as a BigNum.
  */
-ETERM *erl_mk_uint(unsigned int u)
+ETERM *
+erl_mk_uint (unsigned int u)
 {
     ETERM *ep;
 
     ep = erl_alloc_eterm(ERL_U_INTEGER);
     ERL_COUNT(ep) = 1;
-    ep->uval.uival.u = u;
+    ERL_INT_UVALUE(ep) = u;
     return ep;
 }
 
 /*
  * Create a FLOAT.
  */
-ETERM *erl_mk_float(double d)
+ETERM *
+erl_mk_float (double d)
 {
     ETERM *ep;
 
     ep = erl_alloc_eterm(ERL_FLOAT);
     ERL_COUNT(ep) = 1;
-    ep->uval.fval.f = d;
+    ERL_FLOAT_VALUE(ep) = d;
     return ep;
 }
 
 /*
  * Create an ATOM 
  */
-ETERM *erl_mk_atom(char *s)
+ETERM *
+erl_mk_atom (char *s)
 {
   ETERM *ep;
 
@@ -102,9 +106,13 @@ ETERM *erl_mk_atom(char *s)
 
   ep = erl_alloc_eterm(ERL_ATOM);
   ERL_COUNT(ep) = 1;
-  ep->uval.aval.len = strlen(s);
-  ep->uval.aval.a = (char *) erl_malloc(1 + ep->uval.aval.len );
-  strcpy(ep->uval.aval.a, s);
+  ERL_ATOM_SIZE(ep) = strlen(s);
+  if ((ERL_ATOM_PTR(ep) = strdup(s)) == NULL)
+  {
+      erl_free_term(ep);
+      erl_errno = ENOMEM;
+      return NULL;
+  }
   return ep;
 } 
 
@@ -138,7 +146,7 @@ ETERM *erl_mk_estring(char *s, int len)
 
 	integer = erl_alloc_eterm(ERL_INTEGER);
 	ERL_COUNT(integer) = 1;
-	integer->uval.ival.i = s[i];
+	ERL_INT_VALUE(integer) = s[i];
 
 	cons = erl_alloc_eterm(ERL_LIST);
 	ERL_COUNT(cons) = 1;
@@ -164,10 +172,15 @@ ETERM *erl_mk_pid(const char *node,
 
     ep = erl_alloc_eterm(ERL_PID);
     ERL_COUNT(ep) = 1;
-    strcpy(ep->uval.pidval.node, node);
-    ep->uval.pidval.number   = number & 0x7fff; /* 15 bits */
-    ep->uval.pidval.serial   = serial & 0x07;  /* 3 bits */
-    ep->uval.pidval.creation = creation & 0x03; /* 2 bits */
+    if ((ERL_PID_NODE(ep) = strdup(node)) == NULL)
+    {	     
+	erl_free_term(ep);
+	erl_errno = ENOMEM;
+	return NULL;
+    }
+    ERL_PID_NUMBER(ep)   = number & 0x7fff; /* 15 bits */
+    ERL_PID_SERIAL(ep)   = serial & 0x07;  /* 3 bits */
+    ERL_PID_CREATION(ep) = creation & 0x03; /* 2 bits */
     return ep;
 }
 
@@ -185,62 +198,79 @@ ETERM *erl_mk_port(const char *node,
 
     ep = erl_alloc_eterm(ERL_PORT);
     ERL_COUNT(ep) = 1;
-    strcpy(ep->uval.portval.node, node);
-    ep->uval.portval.number   = number & 0x3ffff; /* 18 bits */
-    ep->uval.portval.creation = creation & 0x03; /* 2 bits */
+    if ((ERL_PORT_NODE(ep) = strdup(node)) == NULL)
+    {	     
+	erl_free_term(ep);
+	erl_errno = ENOMEM;
+	return NULL;
+    }
+    ERL_PORT_NUMBER(ep)   = number & 0x3ffff; /* 18 bits */
+    ERL_PORT_CREATION(ep) = creation & 0x03; /* 2 bits */
     return ep;
+}
+
+/*
+ * Create any kind of reference.
+ */
+ETERM *
+__erl_mk_reference (const char *node,
+		    size_t len,
+		    unsigned int n[],
+		    unsigned char creation)
+{
+    ETERM * t;
+
+    if (node == NULL) return NULL;
+
+    t = erl_alloc_eterm(ERL_REF);
+    ERL_COUNT(t) = 1;
+
+    if ((ERL_REF_NODE(t) = strdup(node)) == NULL)
+    {	     
+	erl_free_term(t);
+	erl_errno = ENOMEM;
+	return NULL;
+    }
+    ERL_REF_LEN(t) = len;
+    ERL_REF_NUMBERS(t)[0]   = n[0] & 0x3ffff; /* 18 bits */
+    ERL_REF_NUMBERS(t)[1]   = n[1];
+    ERL_REF_NUMBERS(t)[2]   = n[2];
+    ERL_REF_CREATION(t) = creation & 0x03; /* 2 bits */
+
+    return t;
 }
 
 /*
  * Create a REFERENCE.
  */
-ETERM *erl_mk_ref(const char *node, 
-		  unsigned int number, 
-		  unsigned char creation)
+ETERM *
+erl_mk_ref (const char *node, 
+	    unsigned int number, 
+	    unsigned char creation)
 {
-    ETERM *ep;
-
-    if (!node) return NULL;
-    /* ASSERT(node != NULL); */
-
-    ep = erl_alloc_eterm(ERL_REF);
-    ERL_COUNT(ep) = 1;
-    strcpy(ep->uval.refval.node, node);
-    ep->uval.refval.len   = 1;
-    ep->uval.refval.n[0]   = number & 0x3ffff; /* 18 bits */
-    ep->uval.refval.n[1]   = 0;
-    ep->uval.refval.n[2]   = 0;
-    ep->uval.refval.creation = creation & 0x03; /* 2 bits */
-    return ep;
+    unsigned int n[3] = {0, 0, 0};
+    n[0] = number;
+    return __erl_mk_reference(node, 1, n, creation);
 }
 
 /*
  * Create a long REFERENCE.
  */
-ETERM *erl_mk_long_ref(const char *node, 
-		       unsigned int n1, unsigned int n2, unsigned int n3,
-		       unsigned char creation)
+ETERM *
+erl_mk_long_ref (const char *node, 
+		 unsigned int n1, unsigned int n2, unsigned int n3,
+		 unsigned char creation)
 {
-    ETERM *ep;
-
-    if (!node) return NULL;
-    /* ASSERT(node != NULL); */
-
-    ep = erl_alloc_eterm(ERL_REF);
-    ERL_COUNT(ep) = 1;
-    strcpy(ep->uval.refval.node, node);
-    ep->uval.refval.len   = 3;
-    ep->uval.refval.n[0]   = n3 & 0x3ffff; /* 18 bits */
-    ep->uval.refval.n[1]   = n2;
-    ep->uval.refval.n[2]   = n1;
-    ep->uval.refval.creation = creation & 0x03; /* 2 bits */
-    return ep;
+    unsigned int n[3] = {0, 0, 0};
+    n[0] = n3; n[1] = n2; n[2] = n1;
+    return __erl_mk_reference(node, 3, n, creation);
 }
 
 /*
  * Create a BINARY.
  */
-ETERM *erl_mk_binary(char *b, int size)
+ETERM *
+erl_mk_binary (char *b, int size)
 {
     ETERM *ep;
 
@@ -249,9 +279,9 @@ ETERM *erl_mk_binary(char *b, int size)
 
     ep = erl_alloc_eterm(ERL_BINARY);
     ERL_COUNT(ep) = 1;
-    ep->uval.bval.size = size;
-    ep->uval.bval.b = (unsigned char *) erl_malloc(ep->uval.bval.size);
-    memcpy(ep->uval.bval.b, b, ep->uval.bval.size);
+    ERL_BIN_SIZE(ep) = size;
+    ERL_BIN_PTR(ep) = (unsigned char *) erl_malloc(ERL_BIN_SIZE(ep));
+    memcpy(ERL_BIN_PTR(ep), b, ERL_BIN_SIZE(ep));
     return ep;
 }
 
@@ -259,7 +289,8 @@ ETERM *erl_mk_binary(char *b, int size)
  * Create a TUPLE. For each element in the tuple
  * bump its reference counter.
  */
-ETERM *erl_mk_tuple(ETERM **arr,int size)
+ETERM *
+erl_mk_tuple (ETERM **arr,int size)
 {
     ETERM *ep;
     int i;
@@ -270,12 +301,12 @@ ETERM *erl_mk_tuple(ETERM **arr,int size)
 	
     ep = erl_alloc_eterm(ERL_TUPLE);
     ERL_COUNT(ep) = 1;
-    ep->uval.tval.size = size;
-    ep->uval.tval.elems = (ETERM**) erl_malloc((1 + size) * (sizeof(ETERM*)));
+    ERL_TUPLE_SIZE(ep) = size;
+    ERL_TUPLE_ELEMS(ep) = (ETERM**) erl_malloc((size) * (sizeof(ETERM*)));
     for (i = 0; i < size; i++) {
       /* ASSERT(arr[i] != NULL); */
       ERL_COUNT(arr[i])++;
-      ep->uval.tval.elems[i] = arr[i];
+      ERL_TUPLE_ELEMENT(ep, i) = arr[i];
     }
     return ep;
 }
@@ -285,28 +316,30 @@ ETERM *erl_mk_tuple(ETERM **arr,int size)
  * and bump the reference counter of the new one.
  * Return 1 on success, otherwise 0.
  */
-int erl_setelement(int ix, ETERM *ep, ETERM *vp)
+int 
+erl_setelement (int ix, ETERM *ep, ETERM *vp)
 {
   if ((!ep) || (!vp)) return 0;
   /* ASSERT(ep != NULL);
    * ASSERT(vp != NULL);
    */
 
-    if ((ERL_TYPE(ep) == ERL_TUPLE) && (ix <= ep->uval.tval.size)) {
-	erl_free_term(ep->uval.tval.elems[ix-1]);
-	ep->uval.tval.elems[ix-1] = vp;
-	ERL_COUNT(vp)++;
-	return 1;
-    }  
-    erl_err_msg("<ERROR> erl_setelement: Bad type to setelement or out of range \n");
-    return 0;
+  if ((ERL_TYPE(ep) == ERL_TUPLE) && (ix <= ERL_TUPLE_SIZE(ep))) {
+      erl_free_term(ERL_TUPLE_ELEMENT(ep, ix-1));
+      ERL_TUPLE_ELEMENT(ep, ix-1) = vp;
+      ERL_COUNT(vp)++;
+      return 1;
+  }  
+  erl_err_msg("<ERROR> erl_setelement: Bad type to setelement or out of range \n");
+  return 0;
 }
 
 /* 
  * Extract an ELEMENT from a TUPLE. Bump the 
  * reference counter on the extracted object.
  */
-ETERM *erl_element(int ix, ETERM *ep)
+ETERM *
+erl_element (int ix, ETERM *ep)
 {
   if ((!ep) || (ix < 0)) return NULL;
   /*
@@ -314,9 +347,9 @@ ETERM *erl_element(int ix, ETERM *ep)
    * ASSERT(ix >= 0);
    */
 
-    if ((ERL_TYPE(ep) == ERL_TUPLE) &&  (ix <= ep->uval.tval.size)) {
-	ERL_COUNT(ep->uval.tval.elems[ix-1])++;
-	return ep->uval.tval.elems[ix-1];
+  if ((ERL_TYPE(ep) == ERL_TUPLE) &&  (ix <= ERL_TUPLE_SIZE(ep))) {
+      ERL_COUNT(ERL_TUPLE_ELEMENT(ep, ix-1))++;
+      return ERL_TUPLE_ELEMENT(ep, ix-1);
     }
     else 
 	return NULL;
@@ -361,7 +394,8 @@ ETERM *erl_cons(ETERM *hd, ETERM *tl)
  * Extract the HEAD of a LIST. Bump the reference 
  * counter on the head object.
  */
-ETERM *erl_hd(ETERM *ep)
+ETERM *
+erl_hd (ETERM *ep)
 {
   if (!ep) return NULL;
   /* ASSERT(ep != NULL); */
@@ -369,15 +403,16 @@ ETERM *erl_hd(ETERM *ep)
     if (ERL_TYPE(ep) != ERL_LIST) {
 	return (ETERM *) NULL; 
     }
-    ERL_COUNT(ep->uval.lval.head)++;
-    return ep->uval.lval.head;
+    ERL_COUNT(ERL_CONS_HEAD(ep))++;
+    return ERL_CONS_HEAD(ep);
 }
 
 /* 
  * Extract the TAIL of a LIST. Bump the reference
  * counter on the tail object.
  */
-ETERM *erl_tl(ETERM *ep)
+ETERM *
+erl_tl (ETERM *ep)
 {
     ETERM *tl;
 
@@ -401,7 +436,8 @@ ETERM *erl_tl(ETERM *ep)
  * This is done because of the use of erl_cons.
  */
 
-ETERM *erl_mk_list(ETERM **arr, int size)
+ETERM *
+erl_mk_list (ETERM **arr, int size)
 {
     ETERM *ep;
     int i;
@@ -427,7 +463,8 @@ ETERM *erl_mk_list(ETERM **arr, int size)
 /* 
  * Create an empty VARIABLE. 
  */
-ETERM *erl_mk_var(char *s)
+ETERM *
+erl_mk_var (char *s)
 {
     ETERM *ep;
 
@@ -437,10 +474,14 @@ ETERM *erl_mk_var(char *s)
 
     ep = erl_alloc_eterm(ERL_VARIABLE);
     ERL_COUNT(ep) = 1;
-    ep->uval.vval.len  = strlen(s);
-    ep->uval.vval.name = (char *) erl_malloc(1 + ep->uval.vval.len );
-    strcpy(ep->uval.vval.name, s);
-    ep->uval.vval.v = (ETERM *) NULL;
+    ERL_VAR_LEN(ep) = strlen(s);    
+    if ((ERL_VAR_NAME(ep) = strdup(s)) == NULL)
+    {
+	erl_free_term(ep);
+	erl_errno = ENOMEM;
+	return NULL;
+    }   
+    ERL_VAR_VALUE(ep) = (ETERM *) NULL;
     return ep;
 }
 
@@ -449,7 +490,8 @@ ETERM *erl_mk_var(char *s)
  * If the content is non-nil then bump its
  * reference counter.
  */
-ETERM *erl_var_content(ETERM *ep, char *name)
+ETERM *
+erl_var_content (ETERM *ep, char *name)
 {
   int i;
   ETERM *vp;
@@ -461,13 +503,13 @@ ETERM *erl_var_content(ETERM *ep, char *name)
   switch(ERL_TYPE(ep)) 
     {
     case ERL_VARIABLE:
-      if (strcmp((const char *) ep->uval.vval.name, (const char *) name) == 0) {
-	if ((vp = ep->uval.vval.v)) {
-	  ERL_COUNT(vp)++;
-	  return vp;
+	if (strcmp(ERL_VAR_NAME(ep), name) == 0) {
+	    if ((vp = ERL_VAR_VALUE(ep)) != NULL) {
+		ERL_COUNT(vp)++;
+		return vp;
+	    }
 	}
-      }
-      break;
+	break;
 
     case ERL_LIST:
       while (ep && (ERL_TYPE(ep) != ERL_EMPTY_LIST)) {
@@ -477,8 +519,11 @@ ETERM *erl_var_content(ETERM *ep, char *name)
       break;
 
     case ERL_TUPLE:
-      for (i=0; i<ep->uval.tval.size; i++) 
-	if ((vp = erl_var_content(ep->uval.tval.elems[i], name))) return vp;
+      for (i=0; i < ERL_TUPLE_SIZE(ep); i++) 
+	  if ((vp = erl_var_content(ERL_TUPLE_ELEMENT(ep, i), name)))
+	  {
+	      return vp;
+	  }
       break;
     
     default:
@@ -494,7 +539,8 @@ ETERM *erl_var_content(ETERM *ep, char *name)
  * Return the SIZE of a TUPLE or a BINARY.
  * At failure -1 is returned.
  */
-int erl_size(ETERM *ep)
+int 
+erl_size (ETERM *ep)
 {
   if (!ep) return -1;
   
@@ -502,15 +548,15 @@ int erl_size(ETERM *ep)
 
   switch (ERL_TYPE(ep)) {
   case ERL_TUPLE:
-    return ep->uval.tval.size;
-    break;
-  case ERL_BINARY:
-    return ep->uval.bval.size;
-    break;
-  }
+      return ERL_TUPLE_SIZE(ep);
 
-  /* all others */
-  return -1;
+  case ERL_BINARY:
+      return ERL_BIN_SIZE(ep);
+
+  default:
+      return -1;
+
+  }
 }
 
 /*
@@ -602,7 +648,8 @@ erl_iolist_to_string(term)
  * an ETERM pointer pointing to a binary term.
  */
 
-ETERM*erl_iolist_to_binary(ETERM* term)
+ETERM *
+erl_iolist_to_binary (ETERM* term)
 {
     ETERM *dest;
     int size;
@@ -649,8 +696,7 @@ ETERM*erl_iolist_to_binary(ETERM* term)
  */
 
 int
-erl_iolist_length(term)
-    ETERM* term;
+erl_iolist_length (ETERM* term)
 {
     int len = 0;
 
@@ -665,7 +711,7 @@ erl_iolist_length(term)
 		return i;
 	    len += i;
 	} else if (ERL_IS_BINARY(obj)) {
-	    len += obj->uval.bval.size;
+	    len += ERL_BIN_SIZE(obj);
 	} else if (!ERL_IS_EMPTY_LIST(obj)) {
 	    return(-1);
 	}
@@ -674,7 +720,7 @@ erl_iolist_length(term)
     if (ERL_IS_EMPTY_LIST(term))
 	return len;
     else if (ERL_IS_BINARY(term))
-	return len + term->uval.bval.size;
+	return len + ERL_BIN_SIZE(term);
     else
 	return -1;
 }
@@ -682,7 +728,13 @@ erl_iolist_length(term)
 /*
  * Return a brand NEW COPY of an ETERM.
  */
-ETERM *erl_copy_term(ETERM *ep)
+/*
+ * FIXME: Deep (the whole tree) or shallow (just the top term) copy?
+ * The documentation never says, but the code as written below will
+ * make a deep copy. This should be documented.
+ */
+ETERM *
+erl_copy_term (ETERM *ep)
 {
     int i;
     ETERM *cp;
@@ -696,30 +748,40 @@ ETERM *erl_copy_term(ETERM *ep)
     switch(ERL_TYPE(cp)) {
     case ERL_INTEGER:
     case ERL_SMALL_BIG:
-	cp->uval.ival.i = ep->uval.ival.i;
+	ERL_INT_VALUE(cp) = ERL_INT_VALUE(ep);
 	break;
     case ERL_U_SMALL_BIG:
-	cp->uval.uival.u = ep->uval.uival.u;
+	ERL_INT_UVALUE(cp) = ERL_INT_UVALUE(ep);
 	break;
     case ERL_FLOAT:
-	cp->uval.fval.f = ep->uval.fval.f;
+	ERL_FLOAT_VALUE(cp) = ERL_FLOAT_VALUE(ep);
 	break;
     case ERL_ATOM:
-	cp->uval.aval.len = ep->uval.aval.len;
-	cp->uval.aval.a = (char*) erl_malloc(1 + ep->uval.aval.len);
-	memcpy(cp->uval.aval.a, ep->uval.aval.a, ep->uval.aval.len );
-	cp->uval.aval.a[cp->uval.aval.len] = 0x0; /* OTP-2956 */
+	ERL_ATOM_SIZE(cp) = ERL_ATOM_SIZE(ep);
+	ERL_ATOM_PTR(cp) = strdup(ERL_ATOM_PTR(ep));
+	if (ERL_ATOM_PTR(cp) == NULL)
+	{
+	    erl_free_term(cp);
+	    erl_errno = ENOMEM;
+	    return NULL;
+	}
 	break;
     case ERL_PID:
-	memcpy((void *) &cp->uval.pidval, (const void *) &ep->uval.pidval, sizeof(Erl_Pid));
+	/* XXX: First copy the bit pattern, then duplicate the node
+           name and plug in. Somewhat ugly (also done with port and
+           ref below). */
+	memcpy(&cp->uval.pidval, &ep->uval.pidval, sizeof(Erl_Pid));
+	ERL_PID_NODE(cp) = strdup(ERL_PID_NODE(ep));
 	ERL_COUNT(cp) = 1;
 	break;
     case ERL_PORT:
-	memcpy((void *) &cp->uval.portval, (const void *) &ep->uval.portval, sizeof(Erl_Port));
+	memcpy(&cp->uval.portval, &ep->uval.portval, sizeof(Erl_Port));
+	ERL_PORT_NODE(cp) = strdup(ERL_PORT_NODE(ep));
 	ERL_COUNT(cp) = 1;
 	break;
     case ERL_REF:
-	memcpy((void *) &cp->uval.refval, (const void *) &ep->uval.refval, sizeof(Erl_Ref));
+	memcpy(&cp->uval.refval, &ep->uval.refval, sizeof(Erl_Ref));
+	ERL_REF_NODE(cp) = strdup(ERL_REF_NODE(ep));
 	ERL_COUNT(cp) = 1;
 	break;
     case ERL_LIST:
@@ -729,15 +791,15 @@ ETERM *erl_copy_term(ETERM *ep)
     case ERL_EMPTY_LIST:
 	break;
     case ERL_TUPLE:
-	cp->uval.tval.size = i = ep->uval.tval.size;
-	cp->uval.tval.elems = (ETERM**) erl_malloc(i * sizeof(ETERM*));
-	for(i=0; i<ep->uval.tval.size; i++) 
-	    cp->uval.tval.elems[i] = erl_copy_term(ep->uval.tval.elems[i]);
+	i = ERL_TUPLE_SIZE(cp) = ERL_TUPLE_SIZE(ep);
+	ERL_TUPLE_ELEMS(cp) = (ETERM**) erl_malloc(i * sizeof(ETERM*));
+	for(i=0; i < ERL_TUPLE_SIZE(ep); i++) 
+	    ERL_TUPLE_ELEMENT(cp,i) = erl_copy_term(ERL_TUPLE_ELEMENT(ep, i));
 	break;
     case ERL_BINARY:
-	cp->uval.bval.size = ep->uval.bval.size;
-	cp->uval.bval.b = (unsigned char *) erl_malloc(ep->uval.bval.size);
-	memcpy(cp->uval.bval.b, ep->uval.bval.b, ep->uval.bval.size);
+	ERL_BIN_SIZE(cp) = ERL_BIN_SIZE(ep);
+	ERL_BIN_PTR(cp) = (unsigned char *) erl_malloc(ERL_BIN_SIZE(ep));
+	memcpy(ERL_BIN_PTR(cp), ERL_BIN_PTR(ep), ERL_BIN_SIZE(ep));
 	break;
     default:
 	erl_err_msg("<ERROR> erl_copy_term: wrong type encountered !");
@@ -757,8 +819,9 @@ extern int fprintf();
 static int print_string(FILE* fp, ETERM* ep);
 static int is_printable_list(ETERM* term);
 
+
 /*
- * PRINT out an ETERM.
+ * PRINT out an ETERM.  
  */
 
 int erl_print_term(FILE *fp, ETERM *ep)
@@ -773,49 +836,48 @@ int erl_print_term(FILE *fp, ETERM *ep)
     switch(ERL_TYPE(ep)) 
     {
     case ERL_ATOM:
-      if (!islower(ep->uval.aval.a[0]))
-	doquote = 1;
-      else 
-	for (i=1; i<ep->uval.aval.len; i++) {
-	  if (isalnum(ep->uval.aval.a[i]) || (ep->uval.aval.a[i]=='_'))
-	    continue;
-	  else {
+	/* XXX: what if some weird locale is in use? */
+	if (!islower(ERL_ATOM_PTR(ep)[0]))
 	    doquote = 1;
-	    break;
-	  }
-	} /* for */
-      if (doquote) {
-	putc('\'', fp);
-	ch_written++; 
-      }
-      i=0;
-      while (i < ep->uval.aval.len) { 
-	putc(ep->uval.aval.a[i++], fp);
-	ch_written++;
-      }
-      if (doquote) {
-	putc('\'', fp);
-	ch_written++;
-      }
-      break;
+
+	for (i = 0; !doquote && i < ERL_ATOM_SIZE(ep); i++) 
+	{
+	    doquote = !(isalnum(ERL_ATOM_PTR(ep)[i]) 
+			|| (ERL_ATOM_PTR(ep)[i] == '_'));
+	}
+
+	if (doquote) {
+	    putc('\'', fp);
+	    ch_written++; 
+	}
+	fputs(ERL_ATOM_PTR(ep), fp);
+	ch_written += ERL_ATOM_SIZE(ep);	
+	if (doquote) {
+	    putc('\'', fp);
+	    ch_written++;
+	}
+	break;
+
     case ERL_VARIABLE:
-      if (!isupper(ep->uval.vval.name[0])) {
-	doquote = 1;
-	putc('\'', fp);
-	ch_written++;
-      }
-      while (i < ep->uval.vval.len) { 
-	putc(ep->uval.vval.name[i++], fp);
-	ch_written++;
-      }
-      if (doquote) {
-	putc('\'', fp);
-	ch_written++;
-      }
-      break;
+	if (!isupper(ERL_VAR_NAME(ep)[0])) {
+	    doquote = 1;
+	    putc('\'', fp);
+	    ch_written++;
+	}
+	
+	fputs(ERL_VAR_NAME(ep), fp);
+	ch_written += ERL_VAR_LEN(ep);
+	
+	if (doquote) {
+	    putc('\'', fp);
+	    ch_written++;
+	}
+	break;
+
     case ERL_PID:
-      ch_written += fprintf(fp, "<%s.%d.%d>", ep->uval.pidval.node,
-	      ep->uval.pidval.number, ep->uval.pidval.serial);
+	ch_written += fprintf(fp, "<%s.%d.%d>", 
+			    ERL_PID_NODE(ep), 
+			    ERL_PID_NUMBER(ep), ERL_PID_SERIAL(ep));
       break;
     case ERL_PORT:
       ch_written += fprintf(fp, "#Port");
@@ -852,9 +914,9 @@ int erl_print_term(FILE *fp, ETERM *ep)
     case ERL_TUPLE:
       putc('{', fp);
       ch_written++;
-      for (i=0; i<ep->uval.tval.size; i++) {
-	ch_written += erl_print_term(fp, ep->uval.tval.elems[j++] );
-	if (i != ep->uval.tval.size-1) {
+      for (i=0; i < ERL_TUPLE_SIZE(ep); i++) {
+	ch_written += erl_print_term(fp, ERL_TUPLE_ELEMENT(ep, j++) );
+	if (i != ERL_TUPLE_SIZE(ep)-1) {
 	  putc(',', fp);
 	  ch_written++;
 	}
@@ -867,13 +929,13 @@ int erl_print_term(FILE *fp, ETERM *ep)
       break;
     case ERL_INTEGER:
     case ERL_SMALL_BIG:
-      ch_written += fprintf(fp, "%d",ep->uval.ival.i);
+      ch_written += fprintf(fp, "%d", ERL_INT_VALUE(ep));
       break;
     case ERL_U_SMALL_BIG:
-      ch_written += fprintf(fp, "%d",ep->uval.uival.u);
+      ch_written += fprintf(fp, "%d", ERL_INT_UVALUE(ep));
       break;
     case ERL_FLOAT:
-      ch_written += fprintf(fp, "%f", ep->uval.fval.f);
+      ch_written += fprintf(fp, "%f", ERL_FLOAT_VALUE(ep));
       break;
     default:
       ch_written = -10000;
@@ -890,7 +952,7 @@ print_string(FILE* fp, ETERM* ep)
     putc('"', fp);
     ch_written++;
     while (ERL_IS_CONS(ep)) {
-	int c = HEAD(ep)->uval.ival.i;
+	int c = ERL_INT_VALUE(HEAD(ep));
 
 	if (c >= ' ') {
 	    putc(c, fp);
@@ -931,8 +993,8 @@ is_printable_list(term)
 	if (!ERL_IS_BYTE(head)) {
 	    return 0;
 	}
-	if (head->uval.ival.i < ' ') {
-	    switch (head->uval.ival.i) {
+	if (ERL_INT_VALUE(head) < ' ') {
+	    switch (ERL_INT_VALUE(head)) {
 	    case '\n':
 	    case '\r':
 	    case '\t':
@@ -1002,3 +1064,10 @@ iolist_to_buf(term, bufp)
     }
     *bufp = dest;
 }
+
+
+/*
+ * Local Variables:
+ * compile-command: "cd ..; ERL_TOP=/clearcase/otp/erts make -k"
+ * End:
+ */

@@ -18,20 +18,17 @@
 #ifndef _ERL_FIX_ALLOC_H
 #define _ERL_FIX_ALLOC_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include "portability.h"
 
+__ERL_BEGIN_DECL
 
-extern int erl_init_eterm_alloc(void);
-void erl_eterm_release(void);
-extern void erl_eterm_free(void*);
-extern void *erl_eterm_alloc(void);
-extern void erl_eterm_statistics(unsigned long*,unsigned long*);
+extern int erl_init_eterm_alloc __ERL_P((void));
+void erl_eterm_release __ERL_P((void));
+extern void erl_eterm_free __ERL_P((void*));
+extern void *erl_eterm_alloc __ERL_P((void));
+extern void erl_eterm_statistics __ERL_P((unsigned long*,unsigned long*));
 
-#ifdef __cplusplus
-}
-#endif
+__ERL_END_DECL
 
 #endif
 

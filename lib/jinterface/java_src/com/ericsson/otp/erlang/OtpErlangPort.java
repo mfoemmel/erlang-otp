@@ -17,10 +17,15 @@
  */
 package com.ericsson.otp.erlang;
 
+import java.io.Serializable;
+
 /**
  * Provides a Java representation of Erlang ports. 
  **/
-public class OtpErlangPort extends OtpErlangObject {
+public class OtpErlangPort extends OtpErlangObject implements Serializable, Cloneable {
+  // don't change this!
+  static final long serialVersionUID = 4037115468007644704L;
+  
   private String node;
   private int id;
   private int creation;
@@ -30,11 +35,15 @@ public class OtpErlangPort extends OtpErlangObject {
    * meaninful to do so, this constructor is private...
    *
    * @param self the local node.
+   *
+   @deprecated use OtpLocalNode:createPort() instead
    */
   private OtpErlangPort(OtpSelf self) {
-    this.id = self.count();
-    this.creation = self.creation();;
-    this.node = self.node();
+    OtpErlangPort p = self.createPort();
+    
+    this.id = p.id;
+    this.creation = p.creation;
+    this.node = p.node;
   }
 
   /**
@@ -71,7 +80,7 @@ public class OtpErlangPort extends OtpErlangObject {
     this.id = id & 0x3ffff; // 18 bits
     this.creation = creation & 0x03 ; // 2 bits
   }
-
+  
   /**
    * Get the id number from the port.
    *
@@ -121,26 +130,17 @@ public class OtpErlangPort extends OtpErlangObject {
 
   /**
    * Determine if two ports are equal. Ports are equal if their
-   * components are equal. 
-   *
-   * @param o the object to compare to.
-   *
-   * @return true if o is a port and the ports are equal, false
-   * otherwise.
-   **/
-  public boolean equals(Object o) {
-    return false;
-  }
-
-  /**
-   * Determine if two ports are equal. Ports are equal if their
    * components are equal.
    *
-   * @param port the other port to compare to.
+   * @param o the other port to compare to.
    *
    * @return true if the ports are equal, false otherwise.
    **/
-  public boolean equals(OtpErlangPort port) {
+  public boolean equals(Object o) {
+    if (!(o instanceof OtpErlangPort)) return false;
+
+    OtpErlangPort port = (OtpErlangPort)o;
+
     return ((this.creation == port.creation) &&
 	    (this.id == port.id) &&
 	    (node.compareTo(port.node) == 0));

@@ -300,6 +300,13 @@ expr({send,Line,T0,M0}, Bs0, Cm, Lc, Le, F) ->
     Bs = merge_bindings(Bs2, Bs1, Cm, Line, F),
     eval_send(Line, T, M, Bs, Cm, F);
 
+expr({bin,_,Fs}, Bs0, Cm, Lc, Le, F) ->
+    eval_bits:expr_grp(Fs,Bs0,
+		       fun(E,B) -> expr(E,B,Cm,Lc,Le,F) end,
+		       [],
+		       false);
+
+
 %% Brutal exit on unknown expressions/clauses/values/etc.
 %%
 expr(E, _, _, _, _, _) ->			%Not Yet Implemented
@@ -1051,12 +1058,17 @@ match1({match,Line,Pat1,Pat2}, Term, Bs0) ->
 match1({cons,_,H,T}, [H1|T1], Bs0) ->
     {match,Bs} = match1(H, H1, Bs0),
     match1(T, T1, Bs);
-match1({tuple,_,Elts}, Tuple, Bs) when length(Elts) == size(Tuple) ->
+match1({tuple,_,Elts}, Tuple, Bs) when tuple(Tuple), length(Elts) =:= size(Tuple) ->
     match_tuple(Elts, Tuple, 1, Bs);
+match1({bin,_,Fs}, B, Bs0) when binary(B) ->
+    eval_bits:match_bits(Fs, B, Bs0,
+			 fun(L,R,Bs) -> match1(L,R,Bs) end,
+			 fun(E,Bs) -> expr(E,Bs,foo,foo,foo,foo) end,
+			 false);
 match1(_, _, _) ->
     throw(nomatch).
 
-match_tuple([E|Es], Tuple, I, Bs0) when integer(I) ->
+match_tuple([E|Es], Tuple, I, Bs0) ->
     {match,Bs} = match1(E, element(I, Tuple), Bs0),
     match_tuple(Es, Tuple, I+1, Bs);
 match_tuple([], _, _, Bs) ->

@@ -18,7 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: corba_boa.erl
-%% Author: Lars Thorsen
 %% 
 %% Description:
 %%    This file contains the CORBA::BOA interface
@@ -51,6 +50,11 @@
 -export([]).
 
 %%-----------------------------------------------------------------
+%% Macros
+%%-----------------------------------------------------------------
+-define(DEBUG_LEVEL, 5).
+
+%%-----------------------------------------------------------------
 %% External functions
 %%-----------------------------------------------------------------
 %create(Id, Interface, Implementation) ->
@@ -63,15 +67,43 @@ dispose(Object) ->
 	    {Location, Key} = iop_ior:get_key(Object),
 	    if
 		Location == 'internal' ->
-		    gen_server:call(orber_objectkeys:get_pid(Key), stop);
+		    case orber_objectkeys:get_pid(Key) of
+			{error, Reason} ->
+			    orber:debug_level_print("[~p] corba_boa:dispose(~p); object not found(~p)", 
+						    [?LINE, Object, Reason], ?DEBUG_LEVEL),
+			    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
+			Pid ->
+			    gen_server:call(Pid, stop)
+		    end;
 		Location == 'internal_registered' -> 	
-		    gen_server:call(Key, stop);
+		    case Key of
+			{pseudo, Module} ->
+			    Module:terminate(normal, undefined),
+			    ok;
+			_ ->
+			    case whereis(Key) of
+				undefined ->
+				    corba:raise(#'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO});
+				Pid ->
+				    gen_server:call(Pid, stop)
+			    end
+		    end;
 		Location == 'external' -> 
+		    orber:debug_level_print("[~p] corba_boa:dispose(~p); external object.", 
+					    [?LINE, Object], ?DEBUG_LEVEL),
 		    %% Must be fixed !!!!!!!!
 		    corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO})
 	    end;
-	_ ->
-	    corba:raise(#'NO_PERMISSION'{completion_status=?COMPLETED_NO})
+	Other ->
+	    case iop_ior:get_key(Object) of
+		{_, {pseudo, Module}} ->
+		    Module:terminate(normal, Other),
+		    ok;
+		Why ->
+		    orber:debug_level_print("[~p] corba_boa:dispose(~p); probably subobject key set(~p)", 
+					    [?LINE, Object, Why], ?DEBUG_LEVEL),
+		    corba:raise(#'NO_PERMISSION'{completion_status=?COMPLETED_NO})
+	    end
     end.
 
 get_id(Object) ->

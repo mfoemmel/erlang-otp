@@ -15,14 +15,6 @@
 %% 
 %%     $Id$
 %%
-%% Purpose: Implement the distributed erlang authentication protocoll
-%% and provide an interface to the unix passwd facility
-%% This module is internal to the net_kernel and is not intended
-%% to be used by mere mortals.
-%% The reason for providing it in a separate module is to
-%% make it easier to replace it on systems not supporting
-%% unix passwords, or to replace or augment it with a local 
-%% authentication schema, since this module does not have to be preloaded.
 
 -module(auth).
 -behaviour(gen_server).

@@ -16,7 +16,7 @@
 %%     $Id$
 %%
 -module(tool_file_dialog).
-%% First version by cesarini@erlang
+
 -compile(export_all).
 
 -define(WIDTH,250).

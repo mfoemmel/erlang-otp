@@ -117,6 +117,29 @@ ReferencedObjects
 FieldName
 PrimitiveFieldName
 
+ObjectSetAssignment
+ObjectSet
+ObjectSetElements
+Object
+ObjectDefn
+DefaultSyntax
+DefinedSyntax
+FieldSettings
+FieldSetting
+DefinedSyntaxTokens
+DefinedSyntaxToken
+Setting
+DefinedObject
+ObjectFromObject
+ParameterizedObject
+ExternalObjectReference
+
+
+% X.682
+TableConstraint
+ComponentRelationConstraint
+ComponentIdList
+
 % X.683
 ActualParameter
 .
@@ -228,7 +251,7 @@ SymbolsFromModuleList -> SymbolsFromModule SymbolsFromModuleList :['$1'|'$2'].
 % expanded SymbolsFromModule -> SymbolList 'FROM' GlobalModuleReference : #'SymbolsFromModule'{symbols = '$1',module='$3'}.
 SymbolsFromModule -> SymbolList 'FROM' typereference : #'SymbolsFromModule'{symbols = '$1',module='$3'}.
 SymbolsFromModule -> SymbolList 'FROM' typereference '{' ValueList '}': #'SymbolsFromModule'{symbols = '$1',module='$3'}.
-SymbolsFromModule -> SymbolList 'FROM' typereference identifier: #'SymbolsFromModule'{symbols = '$1',module='$3'}.
+%SymbolsFromModule -> SymbolList 'FROM' typereference identifier: #'SymbolsFromModule'{symbols = '$1',module='$3'}.
 %SymbolsFromModule -> SymbolList 'FROM' typereference Externalvaluereference: #'SymbolsFromModule'{symbols = '$1',module='$3'}.
 %SymbolsFromModule -> SymbolList 'FROM' typereference DefinedValue: #'SymbolsFromModule'{symbols = '$1',module='$3'}.
 
@@ -264,7 +287,7 @@ Assignment -> ValueAssignment : '$1'.
 % later Assignment -> ValueSetTypeAssignment : '$1'.
 Assignment -> ObjectClassAssignment : '$1'.
 % later Assignment -> ObjectAssignment : '$1'.
-% later Assignment -> ObjectSetAssignment : '$1'.
+Assignment -> ObjectSetAssignment : '$1'.
 Assignment -> ParameterizedTypeAssignment : '$1'.
 %Assignment -> ParameterizedValueAssignment : '$1'.
 %Assignment -> ParameterizedValueSetTypeAssignment : '$1'.
@@ -281,6 +304,8 @@ FieldSpecs -> FieldSpec ',' FieldSpecs : ['$1'|'$3'].
 FieldSpec -> typefieldreference OptionalitySpec : {typefield,'$1','$2'}.
 FieldSpec -> valuefieldreference Type 'UNIQUE' OptionalitySpec : 
 	{valuefield,'$1','$2','UNIQUE','$4'}.
+FieldSpec -> valuefieldreference Type OptionalitySpec : 
+	{valuefield,'$1','$2',undefined,'$3'}.
 
 OptionalitySpec -> 'DEFAULT' Type : {'DEFAULT','$2'}.
 OptionalitySpec -> 'DEFAULT' ValueNotNull : 
@@ -321,6 +346,10 @@ Parameters -> Parameter: ['$1'].
 Parameters -> Parameter ',' Parameters: ['$1'|'$3'].
 
 Parameter -> typereference: '$1'.
+Parameter -> Value: '$1'.
+Parameter -> Type ':' typereference: {'$1','$3'}.
+Parameter -> Type ':' Value: {'$1','$3'}.
+Parameter -> '{' typereference '}': {objectset,'$2'}.
 
 
 % Externaltypereference -> modulereference '.' typereference : {'$1','$3'} .
@@ -410,6 +439,7 @@ BuiltinType -> SetOfType :'$1'.
 BuiltinType -> 'GeneralizedTime': 'GeneralizedTime'.
 BuiltinType -> 'UTCTime' :'UTCTime'.
 BuiltinType -> 'ObjectDescriptor' : 'ObjectDescriptor'.
+
 % moved BuiltinType -> TaggedType :'$1'.
 
 
@@ -745,6 +775,19 @@ Constraint -> '(' ConstraintSpec ExceptionSpec ')' :
 % inlined Constraint -> SubTypeConstraint :'$1'.
 ConstraintSpec -> ElementSetSpecs :'$1'.
 ConstraintSpec -> UserDefinedConstraint :'$1'.
+ConstraintSpec -> TableConstraint :'$1'.
+
+TableConstraint -> ComponentRelationConstraint : '$1'.
+% TableConstraint -> ObjectSet : '$1'.
+TableConstraint -> '{' typereference '}' :tableconstraint.
+
+ComponentRelationConstraint -> '{' typereference '}' '{' '@' ComponentIdList '}' : componentrelation.
+ComponentRelationConstraint -> '{' typereference '}' '{' '@' '.' ComponentIdList '}' : componentrelation.
+
+ComponentIdList -> identifier: ['$1'].
+ComponentIdList -> identifier '.' ComponentIdList: ['$1'| '$3'].
+
+
 % later ConstraintSpec -> GeneralConstraint :'$1'.
 
 % from X.682
@@ -821,7 +864,7 @@ UnionMark -> '|':'$1'.
 
 
 Elements -> SubTypeElements : '$1'.
-% later Elements -> ObjectSetElements : '$1'.
+%Elements -> ObjectSetElements : '$1'.
 Elements -> '(' ElementSetSpec ')' : '$2'.
 Elements -> ReferencedType : '$1'.
 
@@ -879,19 +922,71 @@ UpperEndValue -> 'MAX' :'MAX'.
 % X.681 chap 15
 
 %TypeFromObject -> ReferencedObjects '.' FieldName : {'$1','$3'}.
-TypeFromObject -> typereference '.' typefieldreference : {'$1','$3'}.
+TypeFromObject -> typereference '.' FieldName : {'$1','$3'}.
 
 ReferencedObjects -> typereference : '$1'.
 %ReferencedObjects -> ParameterizedObject
 %ReferencedObjects -> DefinedObjectSet
 %ReferencedObjects -> ParameterizedObjectSet
 
-FieldName -> PrimitiveFieldName : ['$1'].
-FieldName -> PrimitiveFieldName '.' FieldName : ['$1' | '$3'].
+FieldName -> typefieldreference : ['$1'].
+FieldName -> valuefieldreference : ['$1'].
+FieldName -> FieldName '.' FieldName : ['$1' | '$3'].
 
 PrimitiveFieldName -> typefieldreference : '$1'.
 PrimitiveFieldName -> valuefieldreference : '$1'.
 
+%ObjectSetAssignment -> typereference DefinedObjectClass '::=' ObjectSet: null.
+ObjectSetAssignment -> typereference typereference '::=' ObjectSet :
+	#typedef{pos=element(2,'$1'),name=element(3,'$1'),typespec={'ObjectSet',element(3,'$2'), '$4'}}.	
+
+ObjectSet -> '{' ElementSetSpecs '}' : '$2'.
+ObjectSet -> '{' '...' '}' : ['EXTENSIONMARK'].
+
+%ObjectSetElements -> Object.
+% ObjectSetElements -> identifier : '$1'.
+%ObjectSetElements -> DefinedObjectSet.
+%ObjectSetElements -> ObjectSetFromObjects.
+%ObjectSetElements -> ParameterizedObjectSet.
+
+Object -> DefinedObject: '$1'.
+Object -> ObjectDefn: '$1'.
+Object -> ObjectFromObject: '$1'.
+% later Object -> ParameterizedObject: '$1'. look in x.683
+
+DefinedObject -> ExternalObjectReference: '$1'.
+% objectreference == identifier
+DefinedObject -> identifier: '$1'.
+
+ObjectDefn -> DefaultSyntax: '$1'.
+ObjectDefn -> DefinedSyntax: '$1'.
+
+ObjectFromObject -> ReferencedObjects '.' FieldName : {'ObjectFromObject','$1','$3'}.
+
+% later look in x.683 ParameterizedObject ->
+ 
+DefaultSyntax -> '{' FieldSettings '}': '$2'.
+
+FieldSettings -> FieldSetting: '$1'.
+FieldSettings -> FieldSetting ',' FieldSettings: ['$1'|'$3'].
+
+FieldSetting -> PrimitiveFieldName Setting: {'$1','$2'}.
+
+DefinedSyntax -> '{' DefinedSyntaxTokens '}': '$2'.
+
+DefinedSyntaxTokens -> DefinedSyntaxToken: '$1'.
+DefinedSyntaxTokens -> DefinedSyntaxToken DefinedSyntaxTokens: ['$1'|'$2'].
+
+% expanded DefinedSyntaxToken -> Literal: '$1'.
+DefinedSyntaxToken -> typereference: '$1'.
+DefinedSyntaxToken -> ',': '$1'.
+DefinedSyntaxToken -> Setting: '$1'.
+
+Setting -> Type: '$1'.
+Setting -> Value: '$1'.
+Setting -> ValueSet: '$1'.
+Setting -> Object: '$1'.
+Setting -> ObjectSet: '$1'.
 
 
 Erlang code.
@@ -936,25 +1031,33 @@ fixup_constraint(C) ->
 		{'PermittedAlphabet',{'SingleValue',V}} ->
 			V2 = {'SingleValue',[V]},
 			{'PermittedAlphabet',V2};
-		{'SizeConstraint',{'SingleValue',V}} ->
-			NewV = case V of
-				[Sv] ->
-					Sv;
-				L when list(L) ->
-					ordsets:list_to_set(V);
-				Else ->
-					Else
-			       end,
-			{'SizeConstraint',NewV};
-		{'SizeConstraint',{'ValueRange',{Lb,Lb}}} ->
-			{'SizeConstraint',Lb};
-		{'SizeConstraint',{'ValueRange',{Lb,Ub}}} ->
-			{'SizeConstraint',{Lb,Ub}};
+		{'SizeConstraint',Sc} ->
+			{'SizeConstraint',fixup_size_constraint(Sc)};
+
 		List when list(List) ->
 			[fixup_constraint(Xc)||Xc <- List]; 	
 		Other ->
 			Other
 	end.
+
+fixup_size_constraint({'ValueRange',{Lb,Ub}}) ->
+	{Lb,Ub};
+fixup_size_constraint({{'ValueRange',R},[]}) ->
+	{R,[]};
+fixup_size_constraint({[],{'ValueRange',R}}) ->
+	{[],R};
+fixup_size_constraint({{'ValueRange',R1},{'ValueRange',R2}}) ->
+	{R1,R2};
+fixup_size_constraint({'SingleValue',[Sv]}) ->
+	fixup_size_constraint({'SingleValue',Sv});
+fixup_size_constraint({'SingleValue',L}) when list(L) ->
+	ordsets:list_to_set(L);
+fixup_size_constraint({'SingleValue',L}) ->
+	{L,L};
+fixup_size_constraint({C1,C2}) ->
+	{fixup_size_constraint(C1), fixup_size_constraint(C2)}.
+
+
 
 
 

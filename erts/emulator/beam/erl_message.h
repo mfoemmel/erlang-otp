@@ -97,8 +97,7 @@ EXTERN_FUNCTION(void, queue_message_tt, (struct process*, ErlHeapFragment*,
 #define queue_message(a, b, c) queue_message_tt(a, b, c, NIL)
 EXTERN_FUNCTION(void, deliver_exit_message_tt, (uint32, struct process*, uint32, uint32));
 #define deliver_exit_message(a, b, c) deliver_exit_message_tt(a, b, c, NIL)
-EXTERN_FUNCTION(void, send_message,(struct process*, struct process*, uint32));
-EXTERN_FUNCTION(void, send_msg, (uint32, uint32));
+void send_message(struct process*, struct process*, Eterm);
 
 EXTERN_FUNCTION(void, deliver_result, (uint32, uint32, uint32));
 

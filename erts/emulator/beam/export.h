@@ -62,4 +62,9 @@ extern IndexTable export_table;
 #define export_list(i)    ((Export*)export_table.table[i])
 #define export_list_size  export_table.sz
 
+#include "beam_load.h" /* For em_* extern declarations */ 
+#define ExportIsBuiltIn(EntryPtr) 			\
+(((EntryPtr)->address == (EntryPtr)->code + 3) && 	\
+ ((EntryPtr)->code[3] == (Uint) em_apply_bif))
+
 #endif

@@ -17,7 +17,7 @@
  */
 /*
 ** Arithmetic functions formerly found in beam_emu.c
-** now available as bif's as erl_db_util and db_match_compile needs
+** now available as bifs as erl_db_util and db_match_compile needs
 ** them.
 */
 
@@ -35,20 +35,9 @@
 #include "big.h"
 #include "atom.h"
 
-/*
-** In the beam emulator loop, these were defined 
-** as part of the process structure, (def_arg_reg) but the process
-** structure looks differrent in Jam, so while waiting to bin Jam,
-** a static buffer is used instead. The temporary big's only store
-** converted smalls
-*/
-static Eterm tmp_big_buff[4];
-#define TMP_BIG1(Process) tmp_big_buff
-#define TMP_BIG2(Process) (tmp_big_buff+2)
-
-#define IS_BOTH_SMALL(X, Y) (NUMBER_CODE((X),(Y)) == SMALL_SMALL)
-#define MY_IS_SSMALL(x) (((unsigned) (((x) >> (BODY-1)) + 1)) < 2)
+#ifndef MAX
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#endif
 
 static Eterm shift(Process* p, Eterm arg1, Eterm arg2, int right);
 
@@ -98,7 +87,7 @@ BIF_ADECL_2
     if (BIF_ARG_2 == SMALL_ZERO) {
 	BIF_ERROR(BIF_P, BADARITH);
     }
-    if (IS_BOTH_SMALL(BIF_ARG_1,BIF_ARG_2)){
+    if (is_both_small(BIF_ARG_1,BIF_ARG_2)){
 	BIF_RET(make_small(signed_val(BIF_ARG_1) / signed_val(BIF_ARG_2)));
     } 
     BIF_RET(erts_int_div(BIF_P, BIF_ARG_1, BIF_ARG_2));
@@ -110,7 +99,7 @@ BIF_ADECL_2
     if (BIF_ARG_2 == SMALL_ZERO) {
 	BIF_ERROR(BIF_P, BADARITH);
     }
-    if (IS_BOTH_SMALL(BIF_ARG_1,BIF_ARG_2)){
+    if (is_both_small(BIF_ARG_1,BIF_ARG_2)){
 	/* Is this really correct? Isn't there a difference between 
 	   remainder and modulo that is not defined in C? Well, I don't
 	   remember, this is the way it's done in beam_emu anyway... */
@@ -122,7 +111,7 @@ BIF_ADECL_2
 BIF_RETTYPE band_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    if (IS_BOTH_SMALL(BIF_ARG_1,BIF_ARG_2)){
+    if (is_both_small(BIF_ARG_1,BIF_ARG_2)){
 	BIF_RET(BIF_ARG_1 & BIF_ARG_2);
     } 
     BIF_RET(erts_band(BIF_P, BIF_ARG_1, BIF_ARG_2));
@@ -131,7 +120,7 @@ BIF_ADECL_2
 BIF_RETTYPE bor_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    if (IS_BOTH_SMALL(BIF_ARG_1,BIF_ARG_2)){
+    if (is_both_small(BIF_ARG_1,BIF_ARG_2)){
 	BIF_RET(BIF_ARG_1 | BIF_ARG_2);
     } 
     BIF_RET(erts_bor(BIF_P, BIF_ARG_1, BIF_ARG_2));
@@ -140,7 +129,7 @@ BIF_ADECL_2
 BIF_RETTYPE bxor_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    if (IS_BOTH_SMALL(BIF_ARG_1,BIF_ARG_2)){
+    if (is_both_small(BIF_ARG_1,BIF_ARG_2)){
 	BIF_RET(make_small(signed_val(BIF_ARG_1) ^ signed_val(BIF_ARG_2)));
     } 
     BIF_RET(erts_bxor(BIF_P, BIF_ARG_1, BIF_ARG_2));
@@ -161,6 +150,7 @@ shift(Process* p, Eterm arg1, Eterm arg2, int right)
 {
     int i;
     int ires;
+    Eterm tmp_big1[2];
     Eterm* bigp;
     
     if (right) {
@@ -187,20 +177,20 @@ shift(Process* p, Eterm arg1, Eterm arg2, int right)
 		    BIF_RET(arg1);
 		} else if (i < 0)  { /* Right shift */
 		    i = -i;
-		    if (i >= 27) {
+		    if (i >= SMALL_BITS-1) {
 			arg1 = (ires < 0) ? SMALL_MINUS_ONE : SMALL_ZERO;
 		    } else {
 			arg1 = make_small(ires >> i);
 		    }
 		    BIF_RET(arg1);
-		} else if (i < 27) { /* Left shift */
-		    if ((ires > 0 && ((-1 << (27-i)) & ires) == 0) ||
-			((-1 << (27-i)) & ~ires) == 0) {
+		} else if (i < SMALL_BITS-1) { /* Left shift */
+		    if ((ires > 0 && ((-1 << ((SMALL_BITS-1)-i)) & ires) == 0) ||
+			((-1 << ((SMALL_BITS-1)-i)) & ~ires) == 0) {
 			arg1 = make_small(ires << i);
 			BIF_RET(arg1);
 		    }
 		}
-		arg1 = small_to_big(ires, TMP_BIG1(c_p));
+		arg1 = small_to_big(ires, tmp_big1);
 
 	    big_shift:
 		if (i > 0) {	/* Left shift. */
@@ -235,7 +225,7 @@ shift(Process* p, Eterm arg1, Eterm arg2, int right)
 
 /*
 ** bnot is "inlined" in bif, no other part of
-** the runtime need's it, it's to simple....
+** the runtime need's it, it's too simple....
 */
  
 BIF_RETTYPE bnot_1(BIF_ALIST_1)
@@ -264,11 +254,13 @@ BIF_ADECL_1
 **
 ** NB:
 ** The global functions named erts_XXX are used by the beam
-** emulator loop, do NOT fiddle with these without concidering
+** emulator loop, do NOT fiddle with these without considering
 ** that fact, please...
 */
 Eterm erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
 {
+    Eterm tmp_big1[2];
+    Eterm tmp_big2[2];
     Eterm res;
     FloatDef f1, f2;
     dsize_t sz1, sz2, sz;
@@ -292,12 +284,12 @@ Eterm erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
     case SMALL_BIG:
 	if (arg1 == SMALL_ZERO)
 	    return arg2;
-	arg1 = small_to_big(signed_val(arg1), TMP_BIG1(p));
+	arg1 = small_to_big(signed_val(arg1), tmp_big1);
 	goto big_plus;
     case BIG_SMALL:
 	if (arg2 == SMALL_ZERO)
 	    return(arg1);
-	arg2 = small_to_big(signed_val(arg2), TMP_BIG2(p));
+	arg2 = small_to_big(signed_val(arg2), tmp_big2);
 	goto big_plus;
     case BIG_BIG:
     big_plus:
@@ -310,7 +302,7 @@ Eterm erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
 	ArithCheck(p);
 	if (is_nil(res)) {
 	    p->freason = SYSTEM_LIMIT;
-	    return 0;
+	    return THE_NON_VALUE;
 	}
 	return res;
     case SMALL_FLOAT:
@@ -365,11 +357,13 @@ Eterm erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
 	p->freason = BADARITH;
 	break;
     }
-    return 0;
+    return THE_NON_VALUE;
 }
 
 Eterm erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2)
 {
+    Eterm tmp_big1[2];
+    Eterm tmp_big2[2];
     Eterm res;
     FloatDef f1, f2;
     dsize_t sz1, sz2, sz;
@@ -391,12 +385,12 @@ Eterm erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2)
 	}
 	break;
     case SMALL_BIG:
-	arg1 = small_to_big(signed_val(arg1), TMP_BIG1(p));
+	arg1 = small_to_big(signed_val(arg1), tmp_big1);
 	goto big_minus;
     case BIG_SMALL:
 	if (arg2 == SMALL_ZERO)
 	    return(arg1);
-	arg2 = small_to_big(signed_val(arg2), TMP_BIG2(p));
+	arg2 = small_to_big(signed_val(arg2), tmp_big2);
 	goto big_minus;
     case BIG_BIG:
     big_minus:
@@ -409,7 +403,7 @@ Eterm erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2)
 	ArithCheck(p);
 	if (is_nil(res)) {
 	    p->freason = SYSTEM_LIMIT;
-	    return 0;
+	    return THE_NON_VALUE;
 	}
 	return res;
     case SMALL_FLOAT:
@@ -464,11 +458,13 @@ Eterm erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2)
 	p->freason = BADARITH;
 	break;
     }
-    return 0;
+    return THE_NON_VALUE;
 }
 
 Eterm erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 {
+    Eterm tmp_big1[2];
+    Eterm tmp_big2[2];
     Eterm res;
     FloatDef f1, f2;
     dsize_t sz1, sz2, sz;
@@ -483,22 +479,22 @@ Eterm erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 	    return(arg2);
 	if (arg2 == SMALL_ONE)
 	    return(arg1);
-	arg1 = small_to_big(signed_val(arg1), TMP_BIG1(p));
-	arg2 = small_to_big(signed_val(arg2), TMP_BIG2(p));
+	arg1 = small_to_big(signed_val(arg1), tmp_big1);
+	arg2 = small_to_big(signed_val(arg2), tmp_big2);
 	goto big_times;
     case SMALL_BIG:
 	if (arg1 == SMALL_ZERO)
 	    return(SMALL_ZERO);
 	if (arg1 == SMALL_ONE)
 	    return(arg2);
-	arg1 = small_to_big(signed_val(arg1), TMP_BIG1(p));
+	arg1 = small_to_big(signed_val(arg1), tmp_big1);
 	goto big_times;
     case BIG_SMALL:
 	if (arg2 == SMALL_ZERO)
 	    return(SMALL_ZERO);
 	if (arg2 == SMALL_ONE)
 	    return(arg1);
-	arg2 = small_to_big(signed_val(arg2), TMP_BIG2(p));
+	arg2 = small_to_big(signed_val(arg2), tmp_big2);
 	goto big_times;
     case BIG_BIG:
     big_times:
@@ -511,7 +507,7 @@ Eterm erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 	ArithCheck(p);
 	if (is_nil(res)) {
 	    p->freason = SYSTEM_LIMIT;
-	    return 0;
+	    return THE_NON_VALUE;
 	}
 	return res;
     case SMALL_FLOAT:
@@ -566,7 +562,7 @@ Eterm erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 	p->freason = BADARITH;
 	break;
     }
-    return 0;
+    return THE_NON_VALUE;
 }
 
 Eterm erts_mixed_div(Process* p, Eterm arg1, Eterm arg2)
@@ -630,7 +626,7 @@ Eterm erts_mixed_div(Process* p, Eterm arg1, Eterm arg2)
     default:
     badarith:
 	p->freason = BADARITH;
-	return 0;
+	return THE_NON_VALUE;
     }
 
     if (f2.fd == 0.0) {
@@ -648,11 +644,12 @@ Eterm erts_mixed_div(Process* p, Eterm arg1, Eterm arg2)
 
 Eterm erts_int_div(Process* p, Eterm arg1, Eterm arg2)
 {
+    Eterm tmp_big2[2];
     int ires;
 
     switch (NUMBER_CODE(arg1, arg2)) {
     case BIG_SMALL:
-	arg2 = small_to_big(signed_val(arg2), TMP_BIG2(p));
+	arg2 = small_to_big(signed_val(arg2), tmp_big2);
 	goto L_big_div;
     case SMALL_BIG:
 	return SMALL_ZERO;
@@ -674,23 +671,24 @@ Eterm erts_int_div(Process* p, Eterm arg1, Eterm arg2)
 	    ArithCheck(p);
 	    if (is_nil(arg1)) {
 		p->freason = SYSTEM_LIMIT;
-		return 0;
+		return THE_NON_VALUE;
 	    }
 	}
 	return arg1;
     default:
 	p->freason = BADARITH;
-	return 0;
+	return THE_NON_VALUE;
     }
 }
 
 Eterm erts_int_rem(Process* p, Eterm arg1, Eterm arg2)
 {
+    Eterm tmp_big2[2];
     int ires;
 
     switch (NUMBER_CODE(arg1, arg2)) {
     case BIG_SMALL:
-	arg2 = small_to_big(signed_val(arg2), TMP_BIG2(p));
+	arg2 = small_to_big(signed_val(arg2), tmp_big2);
 	goto L_big_rem;
     case SMALL_BIG:
 	return arg1;
@@ -705,33 +703,35 @@ Eterm erts_int_rem(Process* p, Eterm arg1, Eterm arg2)
 	    ArithCheck(p);
 	    if (is_nil(arg1)) {
 		p->freason = SYSTEM_LIMIT;
-		return 0;
+		return THE_NON_VALUE;
 	    }
 	}
 	return arg1;
     default:
 	p->freason = BADARITH;
-	return 0;
+	return THE_NON_VALUE;
     }
 }
 
 Eterm erts_band(Process* p, Eterm arg1, Eterm arg2)
 {
+    Eterm tmp_big1[2];
+    Eterm tmp_big2[2];
     Eterm* hp;
     int ires;
 
     switch (NUMBER_CODE(arg1, arg2)) {
     case SMALL_BIG:
-	arg1 = small_to_big(signed_val(arg1), TMP_BIG1(p));
+	arg1 = small_to_big(signed_val(arg1), tmp_big1);
 	break;
     case BIG_SMALL:
-	arg2 = small_to_big(signed_val(arg2), TMP_BIG2(p));
+	arg2 = small_to_big(signed_val(arg2), tmp_big2);
 	break;
     case BIG_BIG:
 	break;
     default:
 	p->freason = BADARITH;
-	return 0;
+	return THE_NON_VALUE;
     }
     ires = BIG_NEED_SIZE(MAX(big_size(arg1), big_size(arg2)) + 1);
     hp = ArithAlloc(p, ires);
@@ -743,21 +743,23 @@ Eterm erts_band(Process* p, Eterm arg1, Eterm arg2)
 
 Eterm erts_bor(Process* p, Eterm arg1, Eterm arg2)
 {
+    Eterm tmp_big1[2];
+    Eterm tmp_big2[2];
     Eterm* hp;
     int ires;
 
     switch (NUMBER_CODE(arg1, arg2)) {
     case SMALL_BIG:
-	arg1 = small_to_big(signed_val(arg1), TMP_BIG1(p));
+	arg1 = small_to_big(signed_val(arg1), tmp_big1);
 	break;
     case BIG_SMALL:
-	arg2 = small_to_big(signed_val(arg2), TMP_BIG2(p));
+	arg2 = small_to_big(signed_val(arg2), tmp_big2);
 	break;
     case BIG_BIG:
 	break;
     default:
 	p->freason = BADARITH;
-	return 0;
+	return THE_NON_VALUE;
     }
     ires = BIG_NEED_SIZE(MAX(big_size(arg1), big_size(arg2)) + 1);
     hp = ArithAlloc(p, ires);
@@ -769,21 +771,23 @@ Eterm erts_bor(Process* p, Eterm arg1, Eterm arg2)
 
 Eterm erts_bxor(Process* p, Eterm arg1, Eterm arg2)
 {
+    Eterm tmp_big1[2];
+    Eterm tmp_big2[2];
     Eterm* hp;
     int ires;
 
     switch (NUMBER_CODE(arg1, arg2)) {
     case SMALL_BIG:
-	arg1 = small_to_big(signed_val(arg1), TMP_BIG1(p));
+	arg1 = small_to_big(signed_val(arg1), tmp_big1);
 	break;
     case BIG_SMALL:
-	arg2 = small_to_big(signed_val(arg2), TMP_BIG2(p));
+	arg2 = small_to_big(signed_val(arg2), tmp_big2);
 	break;
     case BIG_BIG:
 	break;
     default:
 	p->freason = BADARITH;
-	return 0;
+	return THE_NON_VALUE;
     }
     ires = BIG_NEED_SIZE(MAX(big_size(arg1), big_size(arg2)) + 1);
     hp = ArithAlloc(p, ires);
@@ -792,5 +796,3 @@ Eterm erts_bxor(Process* p, Eterm arg1, Eterm arg2)
     ASSERT(is_not_nil(arg1));
     return arg1;
 }
-
-

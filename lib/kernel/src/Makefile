@@ -102,6 +102,7 @@ MODULES = \
 	net_kernel \
 	os \
 	otp_pre_init \
+	otp_ring0 \
 	pg2 \
 	ram_file \
 	rpc \
@@ -113,7 +114,8 @@ MODULES = \
 	user \
 	user_drv \
 	user_sup \
-	wrap_log_reader
+	wrap_log_reader \
+	prim_inet
 
 HRL_FILES= ../include/file.hrl ../include/inet.hrl
 

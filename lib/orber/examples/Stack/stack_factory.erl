@@ -1,3 +1,4 @@
+%% <!--
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -14,7 +15,8 @@
 %% AB. All Rights Reserved.''
 %% 
 %%     $Id$
-%%
+%%--> stack_factory example file.
+
 -module('stack_factory').
 -include_lib("orber/include/corba.hrl").
 -include_lib("orber/COSS/CosNaming/CosNaming.hrl").

@@ -31,6 +31,7 @@ typedef struct module {
     Eterm* old_code;
     int code_length;		/* Length of loaded code in bytes. */
     int old_code_length;	/* Length of old loaded code in bytes */
+    unsigned catches, old_catches;
 } Module; 
 
 Module* erts_get_module(Eterm mod);

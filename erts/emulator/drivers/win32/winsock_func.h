@@ -35,7 +35,17 @@ typedef struct _WinSockFuncs {
   int (WSAAPI *WSAEnumNetworkEvents)(SOCKET s,
 				     WSAEVENT hEventObject,
 				     LPWSANETWORKEVENTS lpNetworkEvents);
-  SOCKET (WSAAPI *accept)(SOCKET s, struct sockaddr FAR *addr,
+  int (WSAAPI *WSAIoctl)(SOCKET s,
+			 DWORD dwIoControlCode,
+			 LPVOID lpvInBuffer,
+			 DWORD cbInBuffer,
+			 LPVOID lpvOUTBuffer,
+			 DWORD cbOUTBuffer,
+			 LPDWORD lpcbBytesReturned,
+			 LPWSAOVERLAPPED lpOverlapped,
+			 LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionROUTINE
+			 );
+   SOCKET (WSAAPI *accept)(SOCKET s, struct sockaddr FAR *addr,
 			  int FAR *addrlen);
   int (WSAAPI *bind)(SOCKET s, const struct sockaddr FAR *addr,
 		     int namelen);
@@ -62,6 +72,8 @@ typedef struct _WinSockFuncs {
 					       int addrlen, int addrtype);
   int (WSAAPI *gethostname)(char FAR * name, int namelen);
   struct servent FAR * (WSAAPI *getservbyname)(const char FAR * name,
+					       const char FAR * proto);
+  struct servent FAR * (WSAAPI *getservbyport)(int port,
 					       const char FAR * proto);
   int (WSAAPI *getsockname)(SOCKET sock, struct sockaddr FAR *name,
 			    int FAR *namelen);

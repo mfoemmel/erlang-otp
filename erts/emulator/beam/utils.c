@@ -26,96 +26,130 @@
 #include "erl_process.h"
 #include "big.h"
 #include "bif.h"
+#include "erl_binary.h"
 
 /* Imported from drv/gzio.c. Why not in any header file? */
 EXTERN_FUNCTION(DriverBinary*, gzinflate_buffer, (char*, int));
 
-/* Imported from sys.c */
-EXTERN_FUNCTION(void*, sys_alloc2, (unsigned int));
-EXTERN_FUNCTION(void*, sys_realloc2, (void*,unsigned int));
-EXTERN_FUNCTION(void, sys_free2, (void*));
-
-
 /* Forward */
 static int is_printable_string(uint32);
 
-#define UNSAFE_MASK  0xc0000000	/* Mask for bits that must be constant
-				 * in pointers.
-				 */
-
-/*
- * The following macro checks that the start and end addresses of
- * a memory block allocated by sys_alloc() are inside the allowable
- * ranges (to allow four tag bits).
- */
-
-#if EXTRA_POINTER_BITS == 0
-/*
- * In this case, memory is allocated from 0 and upwards.
- * If the end pointer is okay, the start pointer must be okay too.
- */
-#define CHECK_MEMORY(ptr, size) \
-  if (((((unsigned long) ptr)+size) & UNSAFE_MASK) != 0) {\
-    erl_exit(1, "Got unusable memory block 0x%x, size %u\n", ptr, size); \
-  }
-#else
-/*
- * The following test assumes that the start pointer can never be
- * below the allowed range.  If that could be the case we would have
- * to test both start and end pointers.
- */
-#define CHECK_MEMORY(ptr, size) \
-  if (((((unsigned long) ptr)+size) & UNSAFE_MASK) != EXTRA_POINTER_BITS) {\
-    erl_exit(1, "Got unusable memory block 0x%x, size %u\n", ptr, size); \
-  }
-
-#endif
-
-/* allocate buffer memory and attach it to heap */
-Eterm* 
-halloc(Process* p, uint32 sz)
+Eterm*
+arith_alloc(Process* p, Uint need)
 {
-    ErlHeapFragment* bp = new_message_buffer(sz);
+    ErlHeapFragment* bp;
+    Uint n;
+
+    if (need <= p->arith_avail) {
+	Eterm* hp = p->arith_heap;
+
+	p->arith_heap += need;
+	p->arith_avail -= need;
+	return hp;
+    }
+
+    if (need > 64 && p->arith_avail > 7) {
+	/*
+	 * Allocate in a new block; don't update the arith heap.
+	 */
+	n = need;
+	bp = (ErlHeapFragment*) safe_alloc(sizeof(ErlHeapFragment) +
+					   ((n-1)*sizeof(Eterm)));
+    } else {
+#ifdef DEBUG
+	int i;
+#endif
+	/*
+	 * Allocate a new arith heap.
+	 */
+	n = p->min_heap_size/2 + need;
+#ifdef DEBUG
+	n++;
+#endif
+	bp = (ErlHeapFragment*) safe_alloc(sizeof(ErlHeapFragment) +
+					   ((n-1)*sizeof(Eterm)));
+#ifdef DEBUG
+	n--;
+#endif
+	p->arith_avail = n - need;
+	p->arith_heap = bp->mem + need;
+#ifdef DEBUG
+	for (i = 0; i <= n; i++) {
+	    bp->mem[i] = ARITH_MARKER;
+	}
+	p->arith_check_me = p->arith_heap;
+#endif
+    }
 
     bp->next = p->mbuf;
     p->mbuf = bp;
+    bp->size = n;
+    p->mbuf_sz += n;
+    bp->off_heap.mso = NULL;
+    bp->off_heap.funs = NULL;
+    bp->off_heap.overhead = 0;
 
     /*
-     * Update the size of message buffers associated with the process.
      * Test if time to do GC; if so bump the reduction count to force
      * a context switch.
      */
 
-    p->mbuf_sz += sz;
-    p->off_heap.overhead += (sizeof(ErlHeapFragment)/sizeof(uint32) - 1); 
+    p->off_heap.overhead += (sizeof(ErlHeapFragment)/sizeof(Eterm) - 1); 
     if (((p->mbuf_sz + p->off_heap.overhead)*MBUF_GC_FACTOR) >= p->heap_sz) {
 	BUMP_ALL_REDS(p);
     }
     return bp->mem;
 }
 
+#ifdef INSTRUMENT
+/* Does what arith_alloc does, but only ensures that the space is
+   allocated; doesn't actually start using it. */
+void arith_ensure_alloc(Process* p, uint32 need)
+{
+    ErlHeapFragment* bp;
+    uint32 n;
+    uint32* hp;
+#ifdef DEBUG
+    uint32 i;
+#endif
+
+    if (p->arith_avail >= need)
+	return;
+
+    n = (need < 128) ? 128 : need;
+    bp = new_message_buffer(n+1);
+    bp->next = p->mbuf;
+    p->mbuf = bp;
+    p->mbuf_sz += n+1;
+    p->arith_avail = n;
+    hp = bp->mem;
+#ifdef DEBUG
+    for (i = 0; i <= n; i++) {
+	hp[i] = ARITH_MARKER;
+    }
+#endif
+    p->arith_heap = hp;
+#ifdef DEBUG
+    p->arith_check_me = p->arith_heap;
+#endif
+}
+#endif
+
 /*
  * Helper function for the ESTACK macros defined in global.h.
  */
 
-void
-erl_grow_stack(ErlStack* s)
+Eterm*
+erl_grow_stack(Eterm* ptr, size_t new_size)
 {
-    int sz;
-
-    if (s->start == s->default_stack) {
-	sz = sizeof(s->default_stack) / sizeof(s->default_stack[0]);
-	s->start = (uint32*) sys_alloc_from(4, 2 * sz * sizeof(uint32));
-	sys_memcpy(s->start, s->default_stack, sizeof(uint32)*sz);
+    if (new_size > 2 * DEF_ESTACK_SIZE) {
+	return safe_realloc((void *) ptr, new_size);
     } else {
-	sz = s->end - s->start;
-	s->start = (uint32*) sys_realloc ((char*)s->start,
-					  2*sz*sizeof(uint32));
+	Eterm* new_ptr = safe_alloc_from(4, new_size);
+	sys_memcpy(new_ptr, ptr, new_size/2);
+	return new_ptr;
     }
-    s->end = s->start + 2*sz;
-    s->sp = s->start + sz;
 }
-
 
 /* CTYPE macros */
 
@@ -148,30 +182,30 @@ erl_grow_stack(ErlStack* s)
 #define IS_PRINT(c)  (!IS_CNTRL(c))
 
 /*
-** Generate the integer part from a double
-*/
-uint32 double_to_integer(p, x)
-Process* p; double x;
+ * Generate the integer part from a double.
+ */
+Eterm
+double_to_integer(Process* p, double x)
 {
-    int sgn;
+    int is_negative;
     int ds;
     digit_t* xp;
     int i;
-    uint32 res;
-    uint32 sz;
-    uint32* hp;
+    Eterm res;
+    size_t sz;
+    Eterm* hp;
 
     if ((x <= (float) MAX_SMALL) && (x >= (float) MIN_SMALL)) {
 	sint32 xi = x;
 	return make_small(xi);
     }
 
-    if (x < 0) {
-	sgn = 1;
+    if (x >= 0) {
+	is_negative = 0;
+    } else {
+	is_negative = 1;
 	x = -x;
     }
-    else
-	sgn = 0;
 
     /* Unscale & (calculate exponent) */
     ds = 0;
@@ -202,10 +236,11 @@ Process* p; double x;
     if (ds & 1)  /* odd ds need to zero high word */
 	xp[ds] = 0;
 
-    if (sgn)
-	*hp = make_thing(sz, NEGATIVE_BIG_SUBTAG);
-    else
-	*hp = make_thing(sz, POSITIVE_BIG_SUBTAG);
+    if (is_negative) {
+	*hp = make_neg_bignum_header(sz);
+    } else {
+	*hp = make_pos_bignum_header(sz);
+    }
     hp += (sz + 1);
     return res;
 }
@@ -308,7 +343,7 @@ uint32 list;
 
     while(is_list(list)) {
 	i++;
-	list = CDR(ptr_val(list));
+	list = CDR(list_val(list));
     }
     if (is_not_nil(list))
 	return -1;
@@ -317,6 +352,61 @@ uint32 list;
 
 
 /* make a hash index from an erlang term */
+
+/*
+** There are two hash functions.
+** make_broken_hash: the one used for backward compatibility
+** is called from the bif erlang:hash/2. Should never be used
+** as it a) hashes only a part of binaries, b) hashes bignums really poorly,
+** c) hashes bignums differently on different endian processors and d) hashes 
+** small integers with different weights on different bytes.
+**
+** make_hash: A hash function that will give the same values for the same
+** terms regardless of the internal representation. Small integers are 
+** hashed using the same algorithm as bignums and bignums are hashed 
+** independent of the CPU endianess. 
+** Make_hash also hashes pids, ports and references like 32 bit numbers 
+** (but with different constants). 
+** make_hash() is called from the bif erlang:phash/2
+**
+** The idea behind the hash algorithm is to produce values suitable for 
+** linear dynamic hashing. We cannot choose the range at all while hashing 
+** (it's not even supplied to the hashing functions). The good old algorithm
+** [H = H*C+X mod M, where H is the hash value, C is a "random" constant(or M),
+** M is the range, preferably a prime, and X is each byte value] is therefore 
+** modified to:
+** H = H*C+X mod 2^32, where C is a large prime. This gives acceptable 
+** "spreading" of the hashes, so that later modulo calculations also will give
+** acceptable "spreading" in the range. 
+** We really need to hash on bytes, otherwise the 
+** upper bytes of a word will be less significant than the lower ones. That's 
+** not acceptable at all. For internal use one could maybe optimize by using
+** another hash function, that is less strict but faster. That is, however, not
+** implemented.
+**
+** Short semi-formal description of make_hash:
+**
+** In make_hash, the number N is treated like this:
+**  Abs(N) is hashed bytewise with the least significant byte, B(0), first.
+**  The number of bytes (J) to calculate hash on in N is 
+**  (the number of _32_ bit words needed to store the unsigned 
+**   value of abs(N)) * 4.
+**  X = FUNNY_NUMBER2
+**  If N < 0, Y = FUNNY_NUMBER4 else Y = FUNNY_NUMBER3.
+**  The hash value is Y*h(J) mod 2^32 where h(J) is calculated like
+**  h(0) = <initial hash> 
+**  h(i) = h(i-i)*X + B(i-1)
+** The above should hold regardless of internal representation.
+** Pids are hashed like small numbers but with differrent constants, as are
+** ports.
+** References are hashed like ports but only on the least significant byte.
+** Binaries are hashed on all bytes (not on the 15 first as in 
+** make_broken_hash()).
+** Bytes in lists (possibly text strings) use a simpler multiplication inlined
+** in the handling of lists, that is an optimization.
+** Everything else is like in the old hash (make_broken_hash()).
+**
+*/ 
 
 /* some prime numbers just above 2 ^ 28 */
 
@@ -331,54 +421,93 @@ uint32 list;
 #define FUNNY_NUMBER9  268439627
 #define FUNNY_NUMBER10 268440479
 
-Uint
-make_hash(Eterm term, Uint hash)
+Uint32
+make_hash(Eterm term, Uint32 hash)
 {
-    switch tag_val_def(term) {
+    Uint32 x;
+    Sint32 y;
+
+    /* 
+    ** Convenience macro for calculating a bytewise hash on an unsigned 32 bit 
+    ** integer.
+    ** If the endianess is known, we could be smarter here, 
+    ** but that gives no significant speedup (on a sparc at least) 
+    */
+#define UINT32_HASH_RET(Expr, Prime1, Prime2)   			\
+	do {								\
+	    x = (Uint32) (Expr);	                                \
+	    return							\
+		(((((hash)*(Prime1) + (x & 0xFF)) * (Prime1) + 	        \
+		((x >> 8) & 0xFF)) * (Prime1) + 			\
+		((x >> 16) & 0xFF)) * (Prime1) + 			\
+		 (x >> 24)) * (Prime2);				        \
+	} while(0)
+
+#define SINT32_HASH_RET(Expr, Prime1, Prime2, Prime3)	\
+	do {						\
+	    y = (Sint32) Expr;				\
+	    if (y < 0) {				\
+		UINT32_HASH_RET(-y, Prime1, Prime3);	\
+	    } 						\
+	    UINT32_HASH_RET(y, Prime1, Prime2);		\
+	} while(0)
+		
+	    
+    /* 
+    ** Significant additions needed for 64 bit port.
+    */	    
+    ASSERT(sizeof(Eterm) == 4);
+
+    switch (tag_val_def(term)) {
+    case NIL_DEF:
+	return hash*FUNNY_NUMBER3 + 1;
+
     case ATOM_DEF:
-	if (is_nil(term)) {
-	    return hash*FUNNY_NUMBER3 + 1;
-	}
 	return hash*FUNNY_NUMBER1 + 
-	    (atom_tab(unsigned_val(term))->slot.bucket.hvalue);
+	    (atom_tab(atom_val(term))->slot.bucket.hvalue);
+
     case SMALL_DEF:
-	return hash*FUNNY_NUMBER2 + unsigned_val(term);
+	SINT32_HASH_RET(signed_val(term), FUNNY_NUMBER2,
+			FUNNY_NUMBER3, FUNNY_NUMBER4);
+
     case BINARY_DEF:
 	{
-	    if (thing_subtag(*ptr_val(term)) != FUN_SUBTAG) {
-		byte* ptr = ((ProcBin*) ptr_val(term))->bytes;
-		unsigned sz = ((ProcBin*) ptr_val(term))->size;
-		int i = (sz < 15) ? sz : 15;
+	    byte* ptr;
+	    unsigned sz = binary_size(term);
+	    int i = sz;
 
-		while (i--) {
-		    hash = hash*FUNNY_NUMBER1 + *ptr++;
-		}
-		return hash*FUNNY_NUMBER4 + sz;
-	    } else {
-		ErlFunThing* funp = (ErlFunThing *) ptr_val(term);
-		Uint num_free = funp->num_free;
-		Uint i;
-
-		hash = hash * FUNNY_NUMBER10 + num_free;
-		hash = hash*FUNNY_NUMBER1 + 
-		    (atom_tab(funp->modp->module)->slot.bucket.hvalue);
-		hash = hash*FUNNY_NUMBER2 + funp->index;
-		hash = hash*FUNNY_NUMBER2 + unsigned_val(funp->uniq);
-		for (i = 0; i < num_free; i++) {
-		    hash = make_hash(funp->env[i], hash);
-		}
-		return hash;
+	    GET_BINARY_BYTES(term, ptr);
+	    while (i--) {
+		hash = hash*FUNNY_NUMBER1 + *ptr++;
 	    }
+	    return hash*FUNNY_NUMBER4 + sz;
+	}
+
+    case FUN_DEF:
+	{
+	    ErlFunThing* funp = (ErlFunThing *) fun_val(term);
+	    Uint num_free = funp->num_free;
+	    Uint i;
+
+	    hash = hash * FUNNY_NUMBER10 + num_free;
+	    hash = hash*FUNNY_NUMBER1 + 
+		(atom_tab(funp->modp->module)->slot.bucket.hvalue);
+	    hash = hash*FUNNY_NUMBER2 + funp->index;
+	    hash = hash*FUNNY_NUMBER2 + unsigned_val(funp->uniq);
+	    for (i = 0; i < num_free; i++) {
+		hash = make_hash(funp->env[i], hash);
+	    }
+	    return hash;
 	}
 
     case PID_DEF:
-	return hash*FUNNY_NUMBER5 + get_number(term);
+	UINT32_HASH_RET(pid_number(term),FUNNY_NUMBER5,FUNNY_NUMBER6);
 
     case PORT_DEF:
-	return hash*FUNNY_NUMBER9 + get_number_port(term);
+	UINT32_HASH_RET(port_number(term),FUNNY_NUMBER9,FUNNY_NUMBER10);
 
-    case REFER_DEF:
-	return hash*FUNNY_NUMBER9 + get_number_reference(term);
+    case REF_DEF:
+	UINT32_HASH_RET(ref_number(term),FUNNY_NUMBER9,FUNNY_NUMBER10);
 
     case FLOAT_DEF: 
 	{
@@ -390,39 +519,54 @@ make_hash(Eterm term, Uint hash)
 
     case LIST_DEF:
 	{
-	    uint32* list = ptr_val(term);
-
+	    Eterm* list = list_val(term);
 	    while(1) {
-		hash = make_hash(*list, hash);
+		if (is_byte(*list)) {
+		    /* Optimization for strings. 
+		    ** Note that this hash is different from a 'small' hash,
+		    ** as multiplications on a Sparc is so slow.
+		    */
+
+		    hash = hash*FUNNY_NUMBER2 + unsigned_val(*list);
+		} else {
+		    hash = make_hash(*list, hash);
+		}
 		if (is_not_list(CDR(list)))
 		    return make_hash(CDR(list),hash)*FUNNY_NUMBER8;
-		list = ptr_val(CDR(list));
+		list = list_val(CDR(list));
 	    }
 	}
 	break;
 
     case BIG_DEF:
-      {
-	uint32* ptr  = ptr_val(term);
-	uint32 arity = thing_arityval(*ptr);
-	int subtype = thing_subtag(*ptr);
-	int i = arity;
-	
-	ptr++;
-	while (i--) {
-	    hash = hash*FUNNY_NUMBER2 + *ptr++;
+	/* Note that this is the exact same thing as the hashing of smalls.*/
+	{
+	    Eterm* ptr  = big_val(term);
+	    Uint i = thing_arityval(*ptr);
+	    int is_neg = BIG_SIGN(ptr);
+	    Uint j;
+
+	    ptr++;
+	    while (i--) {
+		for (j = 0; j < (sizeof(Eterm) / 2); ++j) {
+		    hash =  
+			((Uint32) (hash * FUNNY_NUMBER2 + 
+				   (((Uint16 *) ptr)[j] & 0xFF))) * 
+			FUNNY_NUMBER2 + (((Uint16 *) ptr)[j] >> 8);
+		}
+		++ptr;
+	    }
+	    if (is_neg) {
+		return hash*FUNNY_NUMBER4;
+	    } else {
+		return hash*FUNNY_NUMBER3;
+	    }
 	}
-	
-	if (subtype == NEGATIVE_BIG_SUBTAG)
-	    return hash*FUNNY_NUMBER3 + arity;
-	else
-	    return hash*FUNNY_NUMBER2 + arity;
-      }
-      break;
+	break;
 
     case TUPLE_DEF: 
 	{
-	    uint32* ptr = ptr_val(term);
+	    Eterm* ptr = tuple_val(term);
 	    uint32 arity = arityval(*ptr);
 	    int i = arity;
 
@@ -434,13 +578,121 @@ make_hash(Eterm term, Uint hash)
 	break;
 
     default:
-	erl_exit(1, "Invalid tag in make_hash\n");
+	erl_exit(1, "Invalid tag in make_hash(0x%X)\n", term);
+	return 0;
+    }
+#undef UINT32_HASH_RET
+}
+
+Uint
+make_broken_hash(Eterm term, Uint hash)
+{
+    switch (tag_val_def(term)) {
+    case NIL_DEF:
+	return hash*FUNNY_NUMBER3 + 1;
+    case ATOM_DEF:
+	return hash*FUNNY_NUMBER1 + 
+	    (atom_tab(atom_val(term))->slot.bucket.hvalue);
+    case SMALL_DEF:
+	return hash*FUNNY_NUMBER2 + unsigned_val(term);
+    case BINARY_DEF:
+	{
+	    byte* ptr;
+	    size_t sz = binary_size(term);
+	    size_t i = (sz < 15) ? sz : 15;
+
+	    GET_BINARY_BYTES(term, ptr);
+	    while (i-- != 0) {
+		hash = hash*FUNNY_NUMBER1 + *ptr++;
+	    }
+	    return hash*FUNNY_NUMBER4 + sz;
+	}
+    case FUN_DEF:
+	{
+	    ErlFunThing* funp = (ErlFunThing *) fun_val(term);
+	    Uint num_free = funp->num_free;
+	    Uint i;
+
+	    hash = hash * FUNNY_NUMBER10 + num_free;
+	    hash = hash*FUNNY_NUMBER1 + 
+		(atom_tab(funp->modp->module)->slot.bucket.hvalue);
+	    hash = hash*FUNNY_NUMBER2 + funp->index;
+	    hash = hash*FUNNY_NUMBER2 + unsigned_val(funp->uniq);
+	    for (i = 0; i < num_free; i++) {
+		hash = make_broken_hash(funp->env[i], hash);
+	    }
+	    return hash;
+	}
+
+    case PID_DEF:
+	return hash*FUNNY_NUMBER5 + pid_number(term);
+
+    case PORT_DEF:
+	return hash*FUNNY_NUMBER9 + port_number(term);
+
+    case REF_DEF:
+	return hash*FUNNY_NUMBER9 + ref_number(term);
+
+    case FLOAT_DEF: 
+	{
+	    FloatDef ff;
+	    GET_DOUBLE(term, ff);
+	    return hash*FUNNY_NUMBER6 + (ff.fw[0] ^ ff.fw[1]);
+	}
+	break;
+
+    case LIST_DEF:
+	{
+	    uint32* list = list_val(term);
+
+	    while(1) {
+		hash = make_broken_hash(*list, hash);
+		if (is_not_list(CDR(list)))
+		    return make_broken_hash(CDR(list),hash)*FUNNY_NUMBER8;
+		list = list_val(CDR(list));
+	    }
+	}
+	break;
+
+    case BIG_DEF:
+      {
+	uint32* ptr  = big_val(term);
+	uint32 arity = BIG_ARITY(ptr);
+	int is_neg = BIG_SIGN(ptr);
+	int i = arity;
+	
+	ptr++;
+	while (i--) {
+	    hash = hash*FUNNY_NUMBER2 + *ptr++;
+	}
+	
+	if (is_neg)
+	    return hash*FUNNY_NUMBER3 + arity;
+	else
+	    return hash*FUNNY_NUMBER2 + arity;
+      }
+      break;
+
+    case TUPLE_DEF: 
+	{
+	    uint32* ptr = tuple_val(term);
+	    uint32 arity = arityval(*ptr);
+	    int i = arity;
+
+	    ptr++;
+	    while(i--)
+		hash = make_broken_hash(*ptr++, hash);
+	    return hash*FUNNY_NUMBER9 + arity;
+	}
+	break;
+
+    default:
+	erl_exit(1, "Invalid tag in make_broken_hash\n");
 	return 0;
     }
 }
 
-int send_error_to_logger(gleader)
-uint32 gleader;
+int send_error_to_logger(Eterm gleader)
 {
     Process* p;
     ErlHeapFragment* bp;
@@ -451,14 +703,14 @@ uint32 gleader;
     uint32 list;
     int i;
     
-    if (gleader == 0)
+    if (is_nil(gleader))
 	gl = am_noproc;
     else
 	gl = gleader;
     if ((i = cerr_pos) == 0)
 	return 0;
     name = am_error_logger;
-    if ((p = whereis_process(unsigned_val(name))) == NULL)  {
+    if ((p = whereis_process(atom_val(name))) == NULL)  {
 	erl_printf(CERR,"%s",tmp_buf);
 	return(0);
     }
@@ -476,9 +728,6 @@ uint32 gleader;
 }
 
 
-/* Ok it's not very clever to rename this function, but i do it any way :-) */
-/* safe_malloc() -> safe_alloc() */
-
 void *safe_alloc(len)
 uint32 len;
 {
@@ -486,7 +735,6 @@ uint32 len;
 
     if ((buf = sys_alloc(len)) == NULL)
 	erl_exit(1, "Can't allocate %d bytes of memory\n", len);
-    CHECK_MEMORY(buf, len);
     return(buf);
 }
 
@@ -498,7 +746,6 @@ char* ptr; uint32 len;
 
     if ((buf = sys_realloc(ptr, len)) == NULL)
 	erl_exit(1, "Can't reallocate %d bytes of memory\n", len);
-    CHECK_MEMORY(buf, len);
     return(buf);
 }
 
@@ -513,108 +760,151 @@ char* ptr; uint32 len;
 int
 eq(Eterm a, Eterm b)
 {
-    int i;
-    Eterm* aa;
-    Eterm* bb;
-
+ tailrecur:
     if (a == b) 
 	return 1;
 
-    if (not_eq_tags(a, b))
-	return 0;
-
-    switch (tag_val_def(a)) {
-    case BINARY_DEF:
-	{
-	    ProcBin* b1 = (ProcBin*) ptr_val(a);
-	    ProcBin* b2 = (ProcBin*) ptr_val(b);
-	    Uint st1 = thing_subtag(b1->thing_word);
-	    Uint st2 = thing_subtag(b2->thing_word);
-	    
-	    if (st1 == REFC_BINARY_SUBTAG && st2 == REFC_BINARY_SUBTAG) {
-		return b1->size == b2->size &&
-		    sys_memcmp(b1->bytes, b2->bytes, b1->size) == 0;
-	    } else if (st1 == FUN_SUBTAG && st2 == FUN_SUBTAG) {
-		ErlFunThing* f1 = (ErlFunThing *) b1;
-		ErlFunThing* f2 = (ErlFunThing *) b2;
-		int num_free;
-
-		if (f1->modp != f2->modp || f1->index != f2->index ||
-		    f1->uniq != f2->uniq || f1->num_free != f2->num_free) {
-		    return 0;
+    switch (primary_tag(a)) {
+    case TAG_PRIMARY_BOXED:
+	{	
+	    Eterm hdr = *boxed_val(a);
+	    switch (hdr & _TAG_HEADER_MASK) {
+	    case ARITYVAL_SUBTAG:
+		{
+		    Eterm* aa;
+		    Eterm* bb;
+		    int i;
+  
+		    aa = tuple_val(a);
+		    if (!is_boxed(b) || *boxed_val(b) != *aa)
+			return 0;
+		    bb = tuple_val(b);
+		    i = arityval(*aa); /* get the arity*/
+		    while (i--) {
+			Eterm atmp = *++aa;
+			Eterm btmp = *++bb;
+			if (!EQ(atmp, btmp))
+			    return 0;
+		    }
+		    return 1;
 		}
-		num_free = f1->num_free;
-		for (i = 0; i < num_free; i++) {
-		    if (!eq(f1->env[i], f2->env[i])) {
+	    case REFC_BINARY_SUBTAG:
+	    case HEAP_BINARY_SUBTAG:
+	    case SUB_BINARY_SUBTAG:
+		{
+		    Uint size;
+		    byte* a_ptr;
+		    byte* b_ptr;
+
+		    if (is_not_binary(b)) {
 			return 0;
 		    }
+		    size = binary_size(a);
+		    if (size != binary_size(b)) {
+			return 0;
+		    }
+		    GET_BINARY_BYTES(a, a_ptr);
+		    GET_BINARY_BYTES(b, b_ptr);
+		    return sys_memcmp(a_ptr, b_ptr, size) == 0;
 		}
-		return 1;
-	    } else {
-		return 0;
+	    case FUN_SUBTAG:
+		{
+		    ErlFunThing* f1;
+		    ErlFunThing* f2;
+		    int num_free;
+		    int i;
+  
+		    if (is_not_fun(b))
+			return 0;
+		    f1 = (ErlFunThing *) fun_val(a);
+		    f2 = (ErlFunThing *) fun_val(b);
+		    if (f1->modp != f2->modp || f1->index != f2->index ||
+			f1->uniq != f2->uniq || f1->num_free != f2->num_free) {
+			return 0;
+		    }
+		    num_free = f1->num_free;
+		    for (i = 0; i < num_free; i++) {
+			if (!EQ(f1->env[i], f2->env[i])) {
+			    return 0;
+			}
+		    }
+		    return 1;
+		}
+	    case REF_SUBTAG:
+		{
+		    int alen;
+		    int blen;
+		    int len;
+		    int i;
+  
+		    if (is_not_ref(b))
+			return 0;
+		    alen = ref_arity(a);
+		    blen = ref_arity(b);
+		    if (ref_ptr(a)->h != ref_ptr(b)->h)
+			return 0;
+  
+		    len = alen;
+		    if (len > blen)
+			len = blen;
+ 
+		    for (i = len-2; i >= 0; i--) {
+			if (ref_ptr(a)->w[i] != ref_ptr(b)->w[i])
+			    return 0;
+		    }
+		    return 1;
+		}
+	    case POS_BIG_SUBTAG:
+	    case NEG_BIG_SUBTAG:
+		{
+		    Eterm* aa;
+		    Eterm* bb;
+		    int i;
+  
+		    if (is_not_big(b))
+			return 0;
+		    aa = big_val(a); /* get pointer to thing */
+		    bb = big_val(b);
+		    if (*aa != *bb)
+			return 0;
+		    i = BIG_ARITY(aa);
+		    while(i--) {
+			if (*++aa != *++bb)
+			    return 0;
+		    }
+		    return 1;
+		}
+	    case FLOAT_SUBTAG:
+		{
+		    FloatDef af;
+		    FloatDef bf;
+  
+		    if (is_not_float(b))
+			return 0;
+		    GET_DOUBLE(a, af);
+		    GET_DOUBLE(b, bf);
+		    return (af.fd == bf.fd) ? 1 : 0;
+		}
 	    }
+	    break;
 	}
-    case LIST_DEF:
-	aa = ptr_val(a);
-	bb = ptr_val(b);
-	while (1) {
-	    if (!eq(*aa++, *bb++)) return(0);
-	    if (*aa == *bb) return(1);
-	    if (is_not_list(*aa) || is_not_list(*bb)) return(eq(*aa, *bb));
-	    aa = ptr_val(*aa);
-	    bb = ptr_val(*bb);
-	}
-    case TUPLE_DEF:
-	aa = ptr_val(a);
-	bb = ptr_val(b);
-	if (*aa != *bb) return(0); /* different arities */
-	i = arityval(*aa);	   /* get the arity*/
-	while (i--) {
-	    if (eq(*++aa, *++bb) == 0) return(0);
-	}
-	return(1);
-    case REFER_DEF:
-        {
-	    int alen = refer_arity(a);
-	    int blen = refer_arity(b);
-	    int len;
-
-	    if (ref_ptr(a)->h != ref_ptr(b)->h)
-		return 0;
-
-	    len = alen;
-	    if (len > blen)
-		len = blen;
-
-	    for (i = len-2; i >= 0; i--) {
-		if (ref_ptr(a)->w[i] != ref_ptr(b)->w[i])
-		    return 0;
-	    }
-	    return 1;
-	}
-    case BIG_DEF:
-	aa = ptr_val(a);  /* get pointer to thing */
-	bb = ptr_val(b);
-	if (*aa != *bb) return(0);
-        i = BIG_ARITY(aa);
-	while(i--) {
-	    if (*++aa != *++bb) return(0);
-	}
-	return(1);
-    case FLOAT_DEF:
+    case TAG_PRIMARY_LIST:
 	{
-	    FloatDef af;
-	    FloatDef bf;
+	    Eterm atmp;
+	    Eterm btmp;
 
-	    GET_DOUBLE(a, af);
-	    GET_DOUBLE(b, bf);
-	    if (af.fd == bf.fd) return(1);
-	    return(0);
+	    if (is_not_list(b))
+		return 0;
+	    atmp = CAR(list_val(a));
+	    btmp = CAR(list_val(b));
+	    if (!EQ(atmp, btmp))
+		return 0;
+	    a = CDR(list_val(a));
+	    b = CDR(list_val(b));
+	    goto tailrecur;
 	}
-
-    default:
-	return(0);
     }
+    return 0;
 }
 
 /* 
@@ -656,7 +946,16 @@ int l1,l2;
 
 #define float_comp(x,y)    (((x)<(y)) ? -1 : (((x)==(y)) ? 0 : 1))
 
-static Eterm big_buf[2];
+static int cmp_atoms(Eterm a, Eterm b)
+{
+    Atom *aa = atom_tab(atom_val(a));
+    Atom *bb = atom_tab(atom_val(b));
+    int diff = aa->ord0 - bb->ord0;
+    if (diff)
+	return diff;
+    return cmpbytes(aa->name+3, aa->len-3,
+		    bb->name+3, bb->len-3);
+}
 
 int
 cmp(Eterm a, Eterm b)
@@ -665,41 +964,189 @@ cmp(Eterm a, Eterm b)
     Eterm* bb;
     int i;
     int j;
+    Eterm big_buf[2];
+    int a_tag;
+    int b_tag;
 
+ tailrecur:
     if (a == b) {		/* Equal values or pointers. */
 	return 0;
     }
 
+    /* deal with majority (?) cases by brute-force */
+    if (is_atom(a)) {
+	if (is_atom(b))
+	    return cmp_atoms(a, b);
+    } else if (is_both_small(a, b)) {
+	return signed_val(a) - signed_val(b);
+    }
+
     /*
-     * NIL is a special case because it is an atom. Only conses and
-     * binaries are greater than NIL.
+     * Take care of cases where the types are the same.
      */
 
-    if (is_nil(a)) {
-	if (tag_val_def(b) == LIST ||
-	    (tag_val_def(b) == BINARY &&
-	     thing_subtag(*ptr_val(b)) != FUN_SUBTAG)) {
-	    return -1;
+    a_tag = tag_val_def(a);
+    switch (a_tag) {
+    case TUPLE_DEF:
+	if (is_not_tuple(b))
+	    break;
+	aa = tuple_val(a);
+	bb = tuple_val(b);
+	/* compare the arities */
+	i = arityval(*aa);	/* get the arity*/
+	if (i < arityval(*bb)) return(-1);
+	if (i > arityval(*bb)) return(1);
+	while (i--) {
+	    if ((j = cmp(*++aa, *++bb)) != 0) 
+		return j;
 	}
-	return 1;
-    } else if (is_nil(b)) {
-	if (tag_val_def(a) == LIST ||
-	    (tag_val_def(a) == BINARY &&
-	     thing_subtag(*ptr_val(a)) != FUN_SUBTAG)) {
-	    return 1;
+	return 0;
+    case LIST_DEF:
+	if (is_not_list(b))
+	    break;
+	aa = list_val(a);
+	bb = list_val(b);
+	while (1) {
+	    if ((j = cmp(*aa++, *bb++)) != 0) 
+		return j;
+	    if (*aa==*bb)
+		return 0;
+	    if (is_not_list(*aa) || is_not_list(*bb)) {
+		a = *aa;
+		b = *bb;
+		goto tailrecur;
+	    }
+	    aa = list_val(*aa);
+	    bb = list_val(*bb);
 	}
-	return -1;
+    case FLOAT_DEF:
+	if (is_not_float(b))
+	    break;
+	{
+	    FloatDef af;
+	    FloatDef bf; 
+
+	    GET_DOUBLE(a, af);
+	    GET_DOUBLE(b, bf);
+	    return float_comp(af.fd, bf.fd);
+	}
+    case REF_DEF:
+	if (is_not_ref(b))
+	    break;
+        {
+	    int alen = ref_arity(a);
+	    int blen = ref_arity(b);
+	    int len;
+
+	    if (ref_ptr(a)->h < ref_ptr(b)->h)
+		return -1;
+	    else if (ref_ptr(a)->h > ref_ptr(b)->h)
+		return 1;
+
+	    len = alen;
+	    if (len > blen)
+		len = blen;
+
+	    for (i = len-2; i >= 0; i--) {
+		if (ref_ptr(a)->w[i] < ref_ptr(b)->w[i])
+		    return -1;
+		else if (ref_ptr(a)->w[i] > ref_ptr(b)->w[i])
+		    return 1;
+	    }
+	    return 0;
+	}
+    case BIG_DEF:
+	if (is_not_big(b))
+	    break;
+	return big_comp(a, b);
+    case BINARY_DEF:
+	if (is_not_binary(b))
+	    break;
+	{
+	    Uint a_size = binary_size(a);
+	    Uint b_size = binary_size(b);
+	    byte* a_ptr;
+	    byte* b_ptr;
+	    int diff = a_size - b_size;
+
+	    if (diff != 0) {
+		return diff;
+	    }
+	    GET_BINARY_BYTES(a, a_ptr);
+	    GET_BINARY_BYTES(b, b_ptr);
+	    return sys_memcmp(a_ptr, b_ptr, a_size);
+	}
+    case FUN_DEF:
+	if (is_not_fun(b))
+	    break;
+	{
+	    ErlFunThing* f1 = (ErlFunThing *) fun_val(a);
+	    ErlFunThing* f2 = (ErlFunThing *) fun_val(b);
+	    int num_free;
+	    int diff;
+
+	    diff = cmpbytes(atom_tab(f1->modp->module)->name,
+			    atom_tab(f1->modp->module)->len,
+			    atom_tab(f2->modp->module)->name,
+			    atom_tab(f2->modp->module)->len);
+	    if (diff != 0) {
+		return diff;
+	    }
+	    diff = f1->index - f2->index;
+	    if (diff != 0) {
+		return diff;
+	    }
+	    diff = f1->uniq - f2->uniq;
+	    if (diff != 0) {
+		return diff;
+	    }
+	    diff = f1->num_free - f2->num_free;
+	    if (diff != 0) {
+		return diff;
+	    }
+	    num_free = f1->num_free;
+	    for (i = 0; i < num_free; i++) {
+		if ((diff = cmp(f1->env[i], f2->env[i])) != 0) {
+		    return diff;
+		}
+	    }
+	    return 0;
+	}
+    case PID_DEF:
+	if (is_not_pid(b))
+	    break;
+	if ((! (pid_node(a) == pid_node(b))) && /*  different nodes */
+	    (pid_number(a) == pid_number(b)) &&
+	    (pid_serial(a) == pid_serial(b))) { /* equal numbers */
+	    
+	    uint32 atoma, atomb;
+	    i = pid_node(a); /* index in atom table */
+	    j = pid_node(b);
+	    atoma = dist_addrs[i].sysname;
+	    atomb = dist_addrs[j].sysname;
+	    return(cmpbytes(atom_tab(atom_val(atoma))->name,
+			    atom_tab(atom_val(atoma))->len,
+			    atom_tab(atom_val(atomb))->name,
+			    atom_tab(atom_val(atomb))->len));
+	}
+	return (a < b) ? -1 : 1;
+    case PORT_DEF:
+	if (is_not_port(b))
+	    break;
+	return (a < b) ? -1 : 1;
     }
+
+    b_tag = tag_val_def(b);
 
     /*
      * Take care of the case that the tags are different.
      */
 
-    if (not_eq_tags(a, b)) {
+    {
 	FloatDef f1, f2;
 	Eterm big;
 
-	switch(NUMBER_CODE(a, b)) {
+	switch(_NUMBER_CODE(a_tag, b_tag)) {
 	case SMALL_BIG:
 	    big = small_to_big(signed_val(a), big_buf);
 	    return big_comp(big, b);
@@ -729,183 +1176,8 @@ cmp(Eterm a, Eterm b)
 	    }
 	    return float_comp(f1.fd, f2.fd);
 	default:
-	    {
-		int atag = tag_val_def(a);
-		int btag = tag_val_def(b);
-
-		/*
-		 * The tags are different. Binaries must be handled specially.
-		 */
-		    
-		if (atag == BINARY) {
-		    if (thing_subtag(*ptr_val(a)) != FUN_SUBTAG) {
-			return 1;
-		    } else if (btag > PORT) {
-			return 1;
-		    } else {
-			return -1;
-		    }
-		} else if (btag == BINARY) {
-		    if (thing_subtag(*ptr_val(b)) != FUN_SUBTAG) {
-			return -1;
-		    } else if (atag >= REFER) {
-			return -1;
-		    } else {
-			return 1;
-		    }
-		} else {
-		    /*
-		     * The greater tag, the lesser term (when binaries and nils
-		     * have been handled). This is of course highly dependent
-		     * on the tag order.
-		     */
-		    return btag - atag;
-		}
-	    }
+	    return b_tag - a_tag;
 	}
-    }
-
-    /*
-     * The tags are the same.
-     */
-
-    switch (tag_val_def(a)) {
-    case ATOM_DEF:
-	return(cmpbytes(atom_tab(unsigned_val(a))->name, atom_tab(unsigned_val(a))->len,
-			atom_tab(unsigned_val(b))->name, atom_tab(unsigned_val(b))->len));
-    case TUPLE_DEF:
-	aa = ptr_val(a);
-	bb = ptr_val(b);
-	/* compare the arities */
-	if (arityval(*aa) < arityval(*bb)) return(-1);
-	if (arityval(*aa) > arityval(*bb)) return(1);
-	i = arityval(*aa);	/* get the arity*/
-	while (i--) {
-	    if ((j = cmp(*++aa, *++bb)) != 0) 
-		return j;
-	}
-	return 0;
-    case LIST_DEF:
-	aa = ptr_val(a);
-	bb = ptr_val(b);
-	while (1) {
-	    if ((j = cmp(*aa++, *bb++)) != 0) 
-		return j;
-	    if (*aa==*bb)
-		return 0;
-	    if (is_not_list(*aa) || is_not_list(*bb))
-		return cmp(*aa, *bb);
-	    aa = ptr_val(*aa);
-	    bb = ptr_val(*bb);
-	}
-    case SMALL_DEF:
-	return signed_val(a) - signed_val(b);
-    case FLOAT_DEF:
-	{
-	    FloatDef af;
-	    FloatDef bf; 
-
-	    GET_DOUBLE(a, af);
-	    GET_DOUBLE(b, bf);
-	    return float_comp(af.fd, bf.fd);
-	}
-
-    case REFER_DEF:
-        {
-	    int alen = refer_arity(a);
-	    int blen = refer_arity(b);
-	    int len;
-
-	    if (ref_ptr(a)->h < ref_ptr(b)->h)
-		return -1;
-	    else if (ref_ptr(a)->h > ref_ptr(b)->h)
-		return 1;
-
-	    len = alen;
-	    if (len > blen)
-		len = blen;
-
-	    for (i = len-2; i >= 0; i--) {
-		if (ref_ptr(a)->w[i] < ref_ptr(b)->w[i])
-		    return -1;
-		else if (ref_ptr(a)->w[i] > ref_ptr(b)->w[i])
-		    return 1;
-	    }
-	    return 0;
-	}
-    case BIG_DEF:
-	return big_comp(a, b);
-
-    case BINARY_DEF:
-	{
-	    ProcBin* b1 = (ProcBin*) ptr_val(a);
-	    ProcBin* b2 = (ProcBin*) ptr_val(b);
-	    Uint st1 = thing_subtag(b1->thing_word);
-	    Uint st2 = thing_subtag(b2->thing_word);
-
-	    if (st1 == REFC_BINARY_SUBTAG && st2 == REFC_BINARY_SUBTAG) {
-		int diff = b1->size - b2->size;
-		if (diff != 0) {
-		    return diff;
-		} else {
-		    return sys_memcmp(b1->bytes, b2->bytes, b1->size);
-		}
-	    } else if (st1 == FUN_SUBTAG && st2 == FUN_SUBTAG) {
-		ErlFunThing* f1 = (ErlFunThing *) b1;
-		ErlFunThing* f2 = (ErlFunThing *) b2;
-		int num_free;
-		int diff;
-
-		diff = cmpbytes(atom_tab(f1->modp->module)->name,
-				atom_tab(f1->modp->module)->len,
-				atom_tab(f2->modp->module)->name,
-				atom_tab(f2->modp->module)->len);
-		if (diff != 0) {
-		    return diff;
-		}
-		diff = f1->index - f2->index;
-		if (diff != 0) {
-		    return diff;
-		}
-		diff = f1->uniq - f2->uniq;
-		if (diff != 0) {
-		    return diff;
-		}
-		diff = f1->num_free - f2->num_free;
-		if (diff != 0) {
-		    return diff;
-		}
-		num_free = f1->num_free;
-		for (i = 0; i < num_free; i++) {
-		    if ((diff = cmp(f1->env[i], f2->env[i])) != 0) {
-			return diff;
-		    }
-		}
-		return 0;
-	    } else {
-		return st2 - st1;
-	    }
-	}
-	break;
-    case PID_DEF:
-	if ((! (get_node(a) == get_node(b))) && /*  different nodes */
-	    (get_number(a) == get_number(b)) &&
-	    (get_serial(a) == get_serial(b))) { /* equal numbers */
-	    
-	    uint32 atoma, atomb;
-	    i = get_node(a); /* index in atom table */
-	    j = get_node(b);
-	    atoma = dist_addrs[i].sysname;
-	    atomb = dist_addrs[j].sysname;
-	    return(cmpbytes(atom_tab(unsigned_val(atoma))->name,
-			    atom_tab(unsigned_val(atoma))->len,
-			    atom_tab(unsigned_val(atomb))->name,
-			    atom_tab(unsigned_val(atomb))->len));
-	    
-
-	}
-    default:
-	return (a < b) ? -1 : 1;
     }
 }
 
@@ -914,13 +1186,13 @@ uint32 pid;
 {
     Process *rp;
     int i;
-    int pix = get_number(pid);
+    int pix;
 
     if (is_not_pid(pid) || 
-	(get_node(pid) != THIS_NODE) || 
-	(pix >= max_process))
+	(pid_node(pid) != THIS_NODE) || 
+	((pix = pid_number(pid)) >= max_process))
 	return NULL;
-    i = get_creation(pid);
+    i = pid_creation(pid);
     if ((i != this_creation) && (i != 0))
 	return NULL;
 
@@ -945,19 +1217,23 @@ display1(Eterm obj, CIO fd)
 
     if (dcount-- <= 0) return(1);
 
+    if (is_CP(obj)) {
+	erl_printf(fd, "<cp/header:%08X", obj);
+	return 0;
+    }
+
     switch (tag_val_def(obj)) {
+    case NIL_DEF:
+	erl_printf(fd, "[]");
+	break;
     case ATOM_DEF:
-        if(is_nil(obj)) {
-            erl_printf(fd, "[]");
-            break;
-        }
-	print_atom((int)unsigned_val(obj),fd);
+	print_atom((int)atom_val(obj),fd);
 	break;
     case SMALL_DEF:
 	erl_printf(fd, "%d", signed_val(obj));
 	break;
     case BIG_DEF:
-	nobj = ptr_val(obj);
+	nobj = big_val(obj);
 	i = BIG_SIZE(nobj);
 	if (BIG_SIGN(nobj))
 	    erl_printf(fd, "-#integer(%d) = {", i);
@@ -968,27 +1244,25 @@ display1(Eterm obj, CIO fd)
 	    erl_printf(fd, ",%d", BIG_DIGIT(nobj, k));
 	erl_putc('}', fd);
 	break;
-    case REFER_DEF:
-	erl_printf(fd, "<<%d",
-		   get_node_reference(obj));
-	for (i = refer_arity(obj)-2; i >= 0; i--)
-	    erl_printf(fd, ",%lu",
-		       ref_ptr(obj)->w[i]);
-	erl_printf(fd, ">>");
+    case REF_DEF:
+	erl_printf(fd, "#Ref<%d", ref_node(obj));
+	for (i = ref_arity(obj)-2; i >= 0; i--)
+	    erl_printf(fd, ".%lu", ref_ptr(obj)->w[i]);
+	erl_printf(fd, ">");
 	break;
     case PID_DEF:
 	erl_printf(fd, "<%d.%d.%d>",
-		get_node(obj),get_number(obj),get_serial(obj));
+		   pid_node(obj), pid_number(obj), pid_serial(obj));
 	break;
     case PORT_DEF:
-	erl_printf(fd, "<%d,%d>", get_node_port(obj),
-		get_number_port(obj));
+	erl_printf(fd, "#Port<%d.%d>", port_node(obj),
+		   port_number(obj));
 	break;
     case LIST_DEF:
 	if (is_printable_string(obj)) {
 	   int c;
 	   erl_putc('"', fd);
-	   nobj = ptr_val(obj);
+	   nobj = list_val(obj);
 	   while (1) {
 	      if (dcount-- <= 0) return(1);
 	      c = signed_val(*nobj++);
@@ -1001,17 +1275,17 @@ display1(Eterm obj, CIO fd)
 		 erl_putc(c, fd);
 	      }
 	      if (is_not_list(*nobj)) break;
-	      nobj = ptr_val(*nobj);
+	      nobj = list_val(*nobj);
 	   }
 	   erl_putc('"', fd);
 	} else {
 	   erl_putc('[', fd);
-	   nobj = ptr_val(obj);
+	   nobj = list_val(obj);
 	   while (1) {
 	      if (display1(*nobj++, fd) != 0) return(1);
 	      if (is_not_list(*nobj)) break;
 	      erl_putc(',',fd);
-	      nobj = ptr_val(*nobj);
+	      nobj = list_val(*nobj);
 	   }
 	   if (is_not_nil(*nobj)) {
 	      erl_putc('|', fd);
@@ -1021,7 +1295,7 @@ display1(Eterm obj, CIO fd)
 	}
 	break;
     case TUPLE_DEF:
-	nobj = ptr_val(obj);	/* pointer to arity */
+	nobj = tuple_val(obj);	/* pointer to arity */
 	i = arityval(*nobj);	/* arity */
 	erl_putc('{', fd);
 	while (i--) {
@@ -1038,32 +1312,26 @@ display1(Eterm obj, CIO fd)
 	break;
     case BINARY_DEF:
 	{
-	    ProcBin* pb = (ProcBin *) ptr_val(obj);
-
-	    if (thing_subtag(pb->thing_word) != FUN_SUBTAG) {
-		erl_printf(fd, "#Bin<%d>", pb->size);
-	    } else {
-		ErlFunThing* funp = (ErlFunThing *) pb;
-		Atom* ap;
-
-		erl_printf(fd, "#Fun<");
-		ap = atom_tab(funp->modp->module);
-		for (i = 0; i < ap->len; i++) {
-		    erl_putc(ap->name[i], fd);
-		}
-		erl_printf(fd, ".%d.%d>", funp->index, unsigned_val(funp->uniq));
-	    }
+	    ProcBin* pb = (ProcBin *) binary_val(obj);
+	    erl_printf(fd, "<<%d bytes>>", pb->size);
 	}
 	break;
-    case CP0:
-    case CP4:
-    case CP8:
-    case CP12:
-        erl_printf(fd, "<cp:%x>", obj);
-        break;  
-    case BLANK:
-        erl_printf(fd, "blank");
-        break;  
+    case FUN_DEF:
+	{
+	    ErlFunThing* funp = (ErlFunThing *) fun_val(obj);
+	    Atom* ap;
+
+	    erl_printf(fd, "#Fun<");
+	    ap = atom_tab(funp->modp->module);
+	    for (i = 0; i < ap->len; i++) {
+		erl_putc(ap->name[i], fd);
+	    }
+	    erl_printf(fd, ".%d.%d>", funp->index, unsigned_val(funp->uniq));
+	}
+	break;
+    case VECTOR_DEF:
+	erl_printf(fd, "#Vector<%d>", signed_val(vector_val(obj)[1]));
+	break;
     default:
 	erl_printf(fd, "<unknown:%x>", obj);
     }
@@ -1154,11 +1422,12 @@ byte *s; int n; CIO fd;
 }
 
 /* print the text of an atom with number i on open file descriptor fd */
-void print_atom(i, fd)
-int i; CIO fd;
+void
+print_atom(int i, CIO fd)
 {
-    if ((i < 0) || (i >= atom_table_size) ||  (atom_tab(i) == NULL))
-	erl_printf(fd, "???");
+    if ((i < 0) || (i >= atom_table_size) ||  (atom_tab(i) == NULL)) {
+	erl_printf(fd, "<bad atom index: %d>", i);
+    }
     print_name(atom_tab(i)->name, atom_tab(i)->len, fd);
     dcount -= atom_tab(i)->len;
 }
@@ -1176,45 +1445,14 @@ uint32 x,y;
     uint32 *z;
     if (is_nil(y)) return(1); /* empty list */
     if (is_not_list(y)) return(2); /* bad argument */
-    z = ptr_val(y);
+    z = list_val(y);
     for (;;) {
 	if (eq(*z, x)) return(0);
 	if (is_nil(*(z + 1))) return(1); /* end of list */
 	if (is_not_list(*(z + 1))) return(2); /* badly formed list */
-	z = ptr_val(*(z + 1));
+	z = list_val(*(z + 1));
     }
 }
-
-
-/* routines for converting no aligned bytes arrays to floats (double)
-   and vice versa */
-double bytes_to_float(b)
-byte *b;
-{
-    union {
-	double fd;
-	byte fb[sizeof(double)];
-    } f;
-    int i;
-    for (i = 0; i < sizeof(double); i++) f.fb[i] = *b++;
-    return(f.fd);
-}
-
-
-void float_to_bytes(b,fl)
-byte *b; double fl;
-{
-    union {
-	double fd;
-	byte fb[sizeof(double)];
-    } f;
-    int i;
-
-    f.fd = fl;
-    for (i = 0; i < sizeof(double); i++)
-	*b++ = f.fb[i];
-}
-
 
 void bin_write(fp,buf,sz)
 CIO fp; byte* buf;
@@ -1250,7 +1488,7 @@ int len;
 	return 0;
     if (is_not_list(list))
 	return -1;
-    listptr = ptr_val(list);
+    listptr = list_val(list);
 
     while (sz < len) {
 	if (!is_byte(*listptr)) 
@@ -1260,7 +1498,7 @@ int len;
 	    return(sz);
 	if (is_not_list(*(listptr + 1))) 
 	    return -1;
-	listptr = ptr_val(*(listptr + 1));
+	listptr = list_val(*(listptr + 1));
     }
     return -1;			/* not enough space */
 }
@@ -1348,7 +1586,7 @@ iol_to_buf(Eterm list, char* ptr, char* maxptr)
     int i;
 
     while (is_list(list)) {
-	Eterm* cons = ptr_val(list);
+	Eterm* cons = list_val(list);
 	Eterm obj = CAR(cons);
 
 	list = CDR(cons);
@@ -1360,16 +1598,14 @@ iol_to_buf(Eterm list, char* ptr, char* maxptr)
 	    if ((ptr = iol_to_buf(obj, ptr, maxptr)) <= IOL_ERROR)
 		return ptr;
 	} else if (is_binary(obj)) {
-	    ProcBin *pb = (ProcBin*) ptr_val(obj);
-	    if (thing_subtag(pb->thing_word) == FUN_SUBTAG) {
-		return IOL_ERROR;
-	    } else {
-		i = pb->size;
-		if (ptr + i >= maxptr)
-		    return IOL_OVERFLOW;
-		sys_memcpy(ptr, pb->bytes, i);
-		ptr += i;
+	    byte* bytes;
+	    i = binary_size(obj);
+	    if (ptr + i >= maxptr) {
+		return IOL_OVERFLOW;
 	    }
+	    GET_BINARY_BYTES(obj, bytes);
+	    sys_memcpy(ptr, bytes, i);
+	    ptr += i;
 	} else if (!is_nil(obj))
 	    return IOL_ERROR;
     }
@@ -1377,16 +1613,14 @@ iol_to_buf(Eterm list, char* ptr, char* maxptr)
     if (is_nil(list)) {
 	return ptr;
     } else if (is_binary(list)) {
-	ProcBin *pb = (ProcBin*) ptr_val(list);
-	if (thing_subtag(pb->thing_word) == FUN_SUBTAG) {
-	    return IOL_ERROR;
-	} else {
-	    i = pb->size;
-	    if (ptr + i >= maxptr)
-		return IOL_OVERFLOW;
-	    sys_memcpy(ptr, pb->bytes, i);
-	    return ptr + i;
+	byte* bytes;
+	i = binary_size(list);
+	if (ptr + i >= maxptr) {
+	    return IOL_OVERFLOW;
 	}
+	GET_BINARY_BYTES(list, bytes);
+	sys_memcpy(ptr, bytes, i);
+	return ptr + i;
     }
     return IOL_ERROR;
 }
@@ -1423,7 +1657,7 @@ io_list_len(Eterm list)
     int i;
 
     while (is_list(list)) {
-	Eterm* cons = ptr_val(list);
+	Eterm* cons = list_val(list);
 	Eterm obj = CAR(cons);
 
 	list = CDR(cons);
@@ -1434,12 +1668,7 @@ io_list_len(Eterm list)
 		return i;
 	    len += i;
 	} else if (is_binary(obj)) {
-	    ProcBin* pb = (ProcBin *) ptr_val(obj);
-	    if (thing_subtag(pb->thing_word) == FUN_SUBTAG) {
-		return -1;
-	    } else {
-		len += pb->size;
-	    }
+	    len += binary_size(obj);
 	} else if (!is_nil(obj)) {
 	    return -1;
 	}
@@ -1447,14 +1676,10 @@ io_list_len(Eterm list)
     if (is_nil(list))
 	return len;
     else if (is_binary(list)) {
-	ProcBin* pb = (ProcBin *) ptr_val(list);
-	if (thing_subtag(pb->thing_word) == FUN_SUBTAG) {
-	    return -1;
-	} else {
-	    return len + pb->size;
-	}
-    } else
+	return len + binary_size(list);
+    } else {
 	return -1;
+    }
 }
 
 /* return 0 if item is not a non-empty flat list of bytes */
@@ -1465,7 +1690,7 @@ uint32 list;
     int len = 0;
 
     while(is_list(list)) {
-	uint32* consp = ptr_val(list);
+	uint32* consp = list_val(list);
 	uint32  hd = CAR(consp);
 
 	if (!is_byte(hd))
@@ -1486,7 +1711,7 @@ static int is_printable_string(uint32 list)
     int c;
 
     while(is_list(list)) {
-	uint32* consp = ptr_val(list);
+	uint32* consp = list_val(list);
 	uint32  hd = CAR(consp);
 
 	if (!is_byte(hd))
@@ -1505,7 +1730,7 @@ static int is_printable_string(uint32 list)
 
 int
 do_load(group_leader, mod, code, size)
-    uint32 group_leader;	/* Group leader or 0 if none. */
+    Eterm group_leader;		/* Group leader or NIL if none. */
     uint32 mod;			/* Module name as an atom. */
     byte* code;			/* Points to the code to load */
     int size;			/* Size of code to load. */
@@ -1521,72 +1746,6 @@ do_load(group_leader, mod, code, size)
     return result;
 }
 
-#ifdef DEBUG
-/* debug routine which checks for a valid object */
-int 
-check_struct(Eterm obj)
-{
-/*
- * XXX This routine seems to be buggy and unreliable.
- */
-    return 0;
-#if 0
-    uint32 i, arity, *nobj;
-    switch (tag_val_def(obj)) {
-    case ATOM_DEF:
-	if (unsigned_val(obj) >= atom_table_size)
-	    return 0;
-	return 1;
-    case SMALL_DEF:
-    case PID_DEF:
-    case REFER_DEF:
-    case PORT_DEF:
-	return 0;
-    case BINARY_DEF:
-	if (((ProcBin*) ptr_val(obj))->mark == 1)
-	    return 1;
-	if (((ProcBin*) ptr_val(obj))->size > 0xfffffff)
-	    return 1;
-	if (((ProcBin*) ptr_val(obj))->bytes == 0)
-	    return 1;
-	return 0;
-    case BIG_DEF:
-	nobj = ptr_val(obj);
-	if (is_not_thing(*nobj)) return(1);
-	/* A bignum on the heap may never fit into a small !!! */
-	if ((arity = BIG_ARITY(nobj)) == 1) {
-	    uint32 d =  BIG_DIGIT(nobj,0)+D_BASE*BIG_DIGIT(nobj,1);
-
-	    if (IS_USMALL(BIG_SIGN(nobj), d))
-		return(1);
-	}
-	return(0);
-
-    case FLOAT_DEF:
-	if (thing_subtag(*ptr_val(obj)) != FLOAT_THING_SUBTAG) {
-	    return(1);
-	}
-	return(0); /* no way to check binary data */
-    case LIST_DEF:
-	nobj = ptr_val(obj);
-	while (1) {
-	    if (check_struct(*nobj++) != 0) return(1);
-	    if (is_not_list(*nobj)) return(check_struct(*nobj));
-	    nobj = ptr_val(*nobj);
-	}
-    case TUPLE_DEF:
-	if (is_not_arity_value(*(ptr_val(obj)))) return(1);
-	arity = arityval(*(ptr_val(obj)));
-	for (i = 0; i < arity; i++)
-	    if (check_struct(*(ptr_val(obj) + i + 1)) != 0) return(1);
-	return(0);
-    default:
-	return(1);
-    }
-#endif
-}
-#endif /* DEBUG */
-
 #ifdef INSTRUMENT
 typedef union most_strict {
     double x;
@@ -1601,7 +1760,7 @@ typedef struct mem_link
    struct mem_link *prev, *next;
    unsigned long size;
    int type;
-   uint32 p;			/* which process allocated */
+   Eterm p;			/* which process allocated */
    Most_strict align;
 } mem_link;
 
@@ -1609,7 +1768,7 @@ int alloc_who = -1;
 
 static mem_link *mem_anchor = NULL;	/* better to set this in erl_init */
 
-extern uint32 current_process;
+extern Eterm current_process;
 
 static void link_in(l, size)
 mem_link *l;
@@ -1644,11 +1803,26 @@ mem_link *l;
       next->prev = prev;
 }
 
+static int need_instr_init = 1;
+static erl_mutex_t instr_lck;
+
+static void instr_init(void)
+{
+    instr_lck = erl_mutex_sys(1);
+
+    need_instr_init = 0;
+}
+
 void* sys_alloc(size)
 unsigned int size;
 {
    char *p;
    mem_link *l;
+
+   if (need_instr_init)
+       instr_init();
+
+   erl_mutex_lock(instr_lck);
 
    p = sys_alloc2(size + sizeof(mem_link));
    if (p == NULL)
@@ -1657,6 +1831,8 @@ unsigned int size;
    l = (mem_link *) p;
    l->type = -1;
    link_in(l, size);
+
+   erl_mutex_unlock(instr_lck);
 
    return (void *) (p + sizeof(mem_link));
 }
@@ -1667,6 +1843,11 @@ void* ptr; unsigned int size;
    char *p, *new_p;
    mem_link *l;
    unsigned old_size;
+
+   if (need_instr_init)
+       instr_init();
+
+   erl_mutex_lock(instr_lck);
 
    p = ((char *) ptr) - sizeof(mem_link);
 
@@ -1681,6 +1862,8 @@ void* ptr; unsigned int size;
    l = (mem_link *) new_p;
    link_in(l, size);
 
+   erl_mutex_unlock(instr_lck);
+
    return (void *) (new_p + sizeof(mem_link));
 }
 
@@ -1690,12 +1873,19 @@ void* ptr;
    mem_link *l;
    char *p;
 
+   if (need_instr_init)
+       instr_init();
+
+   erl_mutex_lock(instr_lck);
+
    p = ((char *) ptr) - sizeof(mem_link);
 
    l = (mem_link *) p;
    link_out(l);
 
    sys_free2(p);
+
+   erl_mutex_unlock(instr_lck);
 }
 
 static void dump_memory_to_stream(FILE *f)
@@ -1706,7 +1896,7 @@ static void dump_memory_to_stream(FILE *f)
 
    while (l != NULL)
    {
-      if (l->p == 0)
+      if (is_non_value(l->p))
 	 fprintf(f, "{%d, %lu, %lu, undefined}.\n",
 		 l->type,
 		 ((unsigned long) l) + sizeof(mem_link),
@@ -1716,7 +1906,7 @@ static void dump_memory_to_stream(FILE *f)
 		 l->type,
 		 ((unsigned long) l) + sizeof(mem_link),
 		 l->size,
-		 get_node(l->p),get_number(l->p),get_serial(l->p));
+		 pid_node(l->p),pid_number(l->p),pid_serial(l->p));
       l = l->next;
    }
 }
@@ -1758,15 +1948,21 @@ Process *process;
    uint32 list, tup;
    uint32 *hp, *end_hp;
    mem_link *l;
-   uint32 need;
+   uint32 need, need_big;
    uint32 pid;
+   uint32 p;
 
    list = NIL;
 
    need = 0;
+   need_big = 0;
    l = mem_anchor;
    while (l != NULL)
    {
+      if ((unsigned) l > MAX_SMALL)
+	  need_big += 1;
+      if (l->size > MAX_SMALL)
+	  need_big += 1;
       need += 4+2;
       l = l->next;
    }
@@ -1777,6 +1973,7 @@ Process *process;
 
    hp = HAlloc(process, need);
    end_hp = hp + need;
+   arith_ensure_alloc(process, 2*need_big); /* 2 = BIG_NEED_SIZE(2) */
 
    l = mem_anchor;
    while (l != NULL)
@@ -1786,21 +1983,22 @@ Process *process;
       if (hp >= end_hp - (4+5+2))
 	 break;
 
-      if (l->p == 0)
+      if (is_non_value(l->p))
 	 pid = am_undefined;
       else
       {
 	 pid = TUPLE3(hp,
-		      make_small(get_node(l->p)),
-		      make_small(get_number(l->p)),
-		      make_small(get_serial(l->p)));
+		      make_small(pid_node(l->p)),
+		      make_small(pid_number(l->p)),
+		      make_small(pid_serial(l->p)));
 	 hp += 4;
       }
 
+      p = ((unsigned) l) + sizeof(mem_link);
       tup = TUPLE4(hp,
 		   make_small(l->type),
-		   make_small(((int) l) + sizeof(mem_link)),
-		   make_small(l->size),
+		   make_small_or_big(p, process),
+		   make_small_or_big(l->size, process),
 		   pid);
       hp += 5;
       list = CONS(hp, tup, list);
@@ -1811,22 +2009,23 @@ Process *process;
 
    while (l != NULL)
    {
-      if (l->p == 0)
+      if (is_non_value(l->p))
 	 pid = am_undefined;
       else
       {
 	 hp = HAlloc(process, 4);
 	 pid = TUPLE3(hp,
-		      make_small(get_node(l->p)),
-		      make_small(get_number(l->p)),
-		      make_small(get_serial(l->p)));
+		      make_small(pid_node(l->p)),
+		      make_small(pid_number(l->p)),
+		      make_small(pid_serial(l->p)));
       }
 
       hp = HAlloc(process, 5);
+      p = ((unsigned) l) + sizeof(mem_link);
       tup = TUPLE4(hp,
 		   make_small(l->type),
-		   make_small(((int) l) + sizeof(mem_link)),
-		   make_small(l->size),
+		   make_small_or_big(p, process),
+		   make_small_or_big(l->size, process),
 		   pid);
       hp = HAlloc(process, 2);
       list = CONS(hp, tup, list);
@@ -1878,11 +2077,10 @@ int sz;
 }
 
 /* Print an atom as an uint32 or just as an index */     
-void pat(a)
-uint32 a;
+void pat(Eterm atom)
 {
-    upp(atom_tab(unsigned_val(a))->name,
-	atom_tab(unsigned_val(a))->len);
+    upp(atom_tab(atom_val(atom))->name,
+	atom_tab(atom_val(atom))->len);
 }
 
 
@@ -1898,10 +2096,9 @@ Process *p;
     print_process_info(p,CERR);
 }
     
-void ppi(p)
-uint32 p;
+void ppi(Eterm pid)
 {
-    pp(process_tab[get_number(p)]);
+    pp(process_tab[pid_number(pid)]);
 }
 
 void td(x) 

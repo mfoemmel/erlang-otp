@@ -15,11 +15,13 @@
  * 
  *     $Id$
  */
+#include "erl_error.h"
 #include "ei.h"
 #include "putget.h"
 
 /* remove version identifier from the start of the buffer */
-int ei_decode_version(const char *buf, int *index, int *version)
+int 
+ei_decode_version (const char *buf, int *index, int *version)
 {
   const char *s = buf + *index;
   const char *s0 = s;
@@ -27,7 +29,11 @@ int ei_decode_version(const char *buf, int *index, int *version)
   
   v = get8(s);
   if (version) *version = v;
-  if (v != ERL_VERSION_MAGIC) return -1;
+  if (v != ERL_VERSION_MAGIC)
+  {
+      erl_errno = EIO;
+      return -1;
+  }
   
   *index += s-s0;
   

@@ -12,6 +12,13 @@
 # ----------------------------------------------------
 DEFAULT_TARGETS =  opt debug instr release release_docs clean docs
 
+# Slash separated list of return values from $(origin VAR)
+# that are untrusted - set default in this file instead.
+# The list is not space separated since some return values
+# contain space, and we want to use $(findstring ...) to
+# search the list.
+DUBIOUS_ORIGINS = /undefined/environment/
+
 # ----------------------------------------------------
 #	Command macros
 # ----------------------------------------------------
@@ -39,17 +46,18 @@ ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 # VxWorks jam object files should be compressed
 ERL_COMPILE_FLAGS += +compressed
 endif
+ERL_COMPILE_FLAGS += $(ERL_BOOTSTRAP_FLAGS)
 ERLC_WFLAGS = -W
 ERLC = erlc $(ERLC_WFLAGS) $(ERLC_FLAGS)
 ERL.beam =  erl.beam -boot start_clean
 ERL.jam = erl -boot start_clean
 ERL = $(ERL.$(EMULATOR))
 
-ifndef EBIN
+ifneq (,$(findstring $(origin EBIN),$(DUBIOUS_ORIGINS)))
 EBIN = ../ebin
 endif
 
-ifndef ESRC
+ifneq (,$(findstring $(origin ESRC),$(DUBIOUS_ORIGINS)))
 ESRC = .
 endif
 
@@ -108,7 +116,7 @@ $(SNMP_HRL_TARGET_DIR)/%.hrl: $(SNMP_BIN_TARGET_DIR)/%.bin
 # ----------------------------------------------------
 JAVA= javac
 
-ifndef JAVA_DEST_ROOT
+ifneq (,$(findstring $(origin JAVA_DEST_ROOT),$(DUBIOUS_ORIGINS)))
 JAVA_DEST_ROOT = ../priv/
 endif
 

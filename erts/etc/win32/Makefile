@@ -28,14 +28,18 @@ INSTALL_PROGS = \
 	$(BINDIR)/erlc.exe \
 	$(BINDIR)/erl_stub16.exe \
 	$(BINDIR)/erlsrv.exe \
-	$(BINDIR)/start_erl.exe \
-	$(BINDIR)/$(EMULATOR)$(EMULATOR_NUMBER)$(TYPEMARKER).exe
+	$(BINDIR)/start_erl.exe
+ifdef NO_BEAM_DLL
+INSTALL_PROGS += $(BINDIR)/$(EMULATOR)$(EMULATOR_NUMBER)$(TYPEMARKER).exe
+else
+INSTALL_PROGS += $(BINDIR)/$(EMULATOR)$(EMULATOR_NUMBER)$(TYPEMARKER).dll
+endif
 
 INSTALL_SRC = ./start_erl.c ./Nmakefile.start_erl
 
 INSTALL_WS2 = 	ws2setup.exe
 
-INSTALL_INCLUDE = $(RUNTIME)/driver.h $(SYS)/driver_int.h
+INSTALL_INCLUDE = $(RUNTIME)/driver.h $(RUNTIME)/erl_driver.h $(SYS)/driver_int.h 
 INSTALL_LIBS =  $(BINDIR)/erl_dll.lib
 
 INSTALL_README  = \

@@ -1,0 +1,147 @@
+#	-*-Makefile-*-
+
+# Makefile for standalone compilation of `erl_interface'.  Needs GNU
+# make (tested with 3.79.1) and libtool (tested with 1.3.5).  And it
+# is written in a Automake-like style --- maybe I should take the
+# plunge.
+#
+
+SHELL = /bin/sh
+
+srcdir := @srcdir@
+VPATH := @srcdir@
+
+# Common install prefix.
+prefix := @prefix@
+exec_prefix := @exec_prefix@
+# Where to put libraries.
+libdir := @libdir@
+# Where to put #include-files
+includedir := @includedir@
+# Where to put man-pages
+mandir := @mandir@
+man3dir := $(mandir)/man3
+man3ext := .3.erl
+#man3ext := .3
+
+# Library code version number.
+include $(srcdir)/../vsn.mk
+ei_RELEASE := -release $(EI_VSN)
+
+# Interface (API) version numbers (CURRENT:REVISION:AGE). 
+liberl_interface_IFVER := -version-info 1:0:0
+libei_IFVER := -version-info 1:0:0
+
+# Tools (and flags) to use. On command line: Set `<foo>' to replace
+# stuff, set `EXTRA_<foo>' to add.
+CC := @CC@
+#CFLAGS := -Wall -g -O6
+CFLAGS := @CFLAGS@ $(EXTRA_CFLAGS)
+CPPFLAGS := @CPPFLAGS@ @DEFS@ $(EXTRA_CPPFLAGS)
+LDFLAGS := $(ei_RELEASE) @LDFLAGS@ $(EXTRA_LDFLAGS)
+
+INSTALL := @INSTALL@
+INSTALL_PROGRAM := @INSTALL_PROGRAM@
+INSTALL_SCRIPT := @INSTALL_SCRIPT@
+INSTALL_DATA := @INSTALL_DATA@
+#
+# Listed files
+#
+
+# Source for `erl_interface'.
+liberl_interface_SRC := epmd_port.c epmd_publish.c epmd_unpublish.c erl_connect.c erl_error.c erl_eterm.c erl_fix_alloc.c erl_format.c erl_locking.c erl_malloc.c erl_marshal.c erl_nothreads.c erl_pthreads.c erl_resolve.c erl_rport.c erl_start.c erl_sthreads.c global_register.c global_names.c global_unregister.c global_whereis.c
+
+# Idl-like source
+idl_SRC := decode_atom.c decode_binary.c decode_boolean.c decode_char.c decode_double.c decode_intlist.c decode_list_header.c decode_long.c decode_pid.c decode_port.c decode_ref.c decode_string.c decode_term.c decode_trace.c decode_tuple_header.c decode_ulong.c decode_version.c encode_atom.c encode_binary.c encode_boolean.c encode_char.c encode_double.c encode_list_header.c encode_long.c encode_pid.c encode_port.c encode_ref.c encode_string.c encode_term.c encode_trace.c encode_tuple_header.c encode_ulong.c encode_version.c get_type.c receive.c send.c send_exit.c send_link.c send_reg.c show_msg.c trace.c whereis.c eimd5.c
+
+# Hash table source
+hash_SRC := hash_dohash.c hash_foreach.c hash_freetab.c hash_insert.c hash_isprime.c hash_lookup.c hash_newtab.c hash_remove.c hash_resize.c hash_rlookup.c
+
+# Registry source
+reg_SRC := reg_close.c reg_delete.c reg_dirty.c reg_dump.c reg_free.c reg_get.c reg_getf.c reg_geti.c reg_getp.c reg_gets.c reg_make.c reg_open.c reg_purge.c reg_resize.c reg_restore.c reg_set.c reg_setf.c reg_seti.c reg_setp.c reg_sets.c reg_stat.c reg_tabstat.c
+
+# Source for `ei'.
+libei_SRC := $(idl_SRC) $(hash_SRC) $(reg_SRC)
+
+# Library object files.
+liberl_interface_LIBOBJS := $(liberl_interface_SRC:.c=.lo)
+libei_LIBOBJS := $(libei_SRC:.c=.lo)
+
+# Libraries to install.
+lib_LTLIBRARIES :=  liberl_interface.la libei.la
+# Libraries not to install.
+noinst_LTLIBRARIESALL :=
+
+# Include files to install.
+includes := ei.h eicode.h eiext.h eihash.h eimd5.h eireg.h eisend.h erl_connect.h erl_epmd.h erl_error.h erl_eterm.h erl_fix_alloc.h erl_format.h erl_global.h erl_interface.h erl_locking.h erl_malloc.h erl_marshal.h erl_resolve.h erl_rport.h erl_start.h portability.h
+
+#
+# Top-level targets.
+#
+
+all: $(lib_LTLIBRARIES) $(noinst_LTLIBRARIES)
+
+install: pre-install do-install post-install
+
+pre-install:
+	$(srcdir)/shtool mkdir -f -p -m 755 $(libdir)
+	$(srcdir)/shtool mkdir -f -p -m 755 $(includedir)
+
+do-install: all
+	libtool $(INSTALL) -c -s $(lib_LTLIBRARIES) $(libdir)
+	$(INSTALL_DATA) $(includes) $(includedir)
+
+post-install:
+	libtool --finish $(libdir)
+
+clean:
+	$(RM) *.i *.s *.o *.a *.lo
+
+realclean: clean
+	$(RM) *.la
+	$(RM) -r .libs
+
+distclean: realclean	
+	$(RM) tags TAGS
+	$(RM) config.cache config.log config.status GNUmakefile
+
+maintainer-clean: distclean
+	$(RM) config.h.in configure
+	$(RM) config.guess config.sub ltconfig ltmain.sh
+	$(RM) shtool
+
+.PHONY: tags TAGS
+
+tags:
+	ctags *.c
+	etags *.c
+
+#
+# Explicit dependencies.
+#
+
+liberl_interface.la: $(liberl_interface_LIBOBJS)
+
+libei.la: $(libei_LIBOBJS)
+
+#
+# Pattern rules.
+#
+
+# The $(if ...) supresses `-rpath ...' for non-install
+# (i.e. convenience) libraries.
+%.la:
+	libtool $(CC) $(CFLAGS) $(if $(findstring $@, $(lib_LTLIBRARIES)),-rpath $(libdir),) $(LDFLAGS) $($*_IFVER) $^ $(LDLIBS) $(TARGET_MACH) -o $@
+
+%.lo %.o : %.c
+	libtool $(CC) -c $(CPPFLAGS) $(CFLAGS) $(TARGET_MACH) $< -o $@
+
+# Generate preprocessed C code (`.i') and assembler (`.s'). Sometimes
+# useful for debugging.
+
+%.i : %.c
+	$(CC) -E $(CPPFLAGS) $(TARGET_MACH) $< -o $@
+
+%.s : %.c
+	$(CC) -S $(CPPFLAGS) $(CFLAGS) $(TARGET_MACH) $< -o $@
+

@@ -17,8 +17,7 @@
 %%     $Id$
 %%
 %%--------------------------------------------------------------------
-%% File: orber_iiop_inrequest.erl
-%% Author: Lars Thorsen
+%% File: orber_iiop_outrequest.erl
 %% 
 %% Description:
 %%    This file contains the handling of incommingoutgoing requests
@@ -36,7 +35,8 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/0, request/10, reply/5, locate/6, locate_reply/5]).
+-export([start/0, request/10, request/11, request/12, reply/5, reply/6, locate/6, 
+	 locate/7, locate_reply/5]).
 
 
 
@@ -46,6 +46,10 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 code_change/3, terminate/2, stop/2]).
 
+%%-----------------------------------------------------------------
+%% Macros
+%%-----------------------------------------------------------------
+-define(DEBUG_LEVEL, 8).
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -53,17 +57,33 @@
 start() ->
     gen_server:start_link(orber_iiop_outrequest, [], []).
 
+%% The next case added to be able to handle code upgrade; remove later.
 request(Pid, RequestId, ObjKey, Op, Parameters, TypeCodes, ResponseExpected, 
 	ReplyTo, Socket, SocketType) ->
+    request(Pid, RequestId, ObjKey, Op, Parameters, TypeCodes, ResponseExpected, 
+	    ReplyTo, Socket, SocketType, infinity, orber:giop_version()).
+%% The next case added to be able to handle code upgrade; remove later.
+request(Pid, RequestId, ObjKey, Op, Parameters, TypeCodes, ResponseExpected, 
+	ReplyTo, Socket, SocketType, Timeout) ->
+    request(Pid, RequestId, ObjKey, Op, Parameters, TypeCodes, ResponseExpected, 
+	    ReplyTo, Socket, SocketType, Timeout, orber:giop_version()).
+request(Pid, RequestId, ObjKey, Op, Parameters, TypeCodes, ResponseExpected, 
+	ReplyTo, Socket, SocketType, Timeout, Version) ->
     gen_server:cast(Pid, {request, RequestId, ObjKey, Op, Parameters, TypeCodes,
-			  ResponseExpected, ReplyTo, Socket, SocketType}).
+			  ResponseExpected, ReplyTo, Socket, SocketType, Timeout,
+			  Version}).
 
+%% The next case added to be able to handle code upgrade; remove later.
 reply(Pid, ReplyHeader, Rest, Len, ByteOrder) ->
-    gen_server:cast(Pid, {reply, ReplyHeader, Rest, Len, ByteOrder}).
+    reply(Pid, ReplyHeader, Rest, Len, ByteOrder, []).
+reply(Pid, ReplyHeader, Rest, Len, ByteOrder, Bytes) ->
+    gen_server:cast(Pid, {reply, ReplyHeader, Rest, Len, ByteOrder, Bytes}).
 
 locate(Pid, RequestId, ObjKey, ReplyTo, Socket, SocketType) ->
+    locate(Pid, RequestId, ObjKey, ReplyTo, Socket, SocketType, orber:giop_version()).
+locate(Pid, RequestId, ObjKey, ReplyTo, Socket, SocketType, Version) ->
     gen_server:cast(Pid, {locate_request, RequestId, ObjKey, ReplyTo, 
-			  Socket, SocketType}).    
+			  Socket, SocketType, Version}).    
 
 locate_reply(Pid, ReplyHeader, Rest, Len, ByteOrder) ->
     gen_server:cast(Pid, {locate_reply, ReplyHeader, Rest, Len, ByteOrder}).
@@ -105,41 +125,69 @@ handle_call(_, _, State) ->
 %% Func: handle_cast/2
 %%-----------------------------------------------------------------
 handle_cast({request, RequestId, ObjKey, Op, Parameters, TypeCodes,
-	     ResponseExpected, ReplyTo, Socket, SocketType},
+	     ResponseExpected, ReplyTo, Socket, SocketType, Timeout},
 	    State) ->
-    GIOP_version = orber:giop_version(),
+    handle_cast({request, RequestId, ObjKey, Op, Parameters, TypeCodes,
+		 ResponseExpected, ReplyTo, Socket, SocketType, Timeout,
+		 orber:giop_version()},
+		State);
+handle_cast({request, RequestId, ObjKey, Op, Parameters, TypeCodes,
+	     ResponseExpected, ReplyTo, Socket, SocketType, Timeout, GIOP_version},
+	    State) ->
     case catch cdr_encode:enc_request(GIOP_version, ObjKey,  RequestId, ResponseExpected,
 				      Op, Parameters,
 				      [], TypeCodes) of
 	{'EXCEPTION', E} ->
 	    gen_server:reply(ReplyTo, {'EXCEPTION', E}),
+	    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(request, ~p, ~p, ~p); exception(~p)", 
+				    [?LINE, Op, Parameters, TypeCodes, E], ?DEBUG_LEVEL),
 	    {stop, normal, []};
 	{'EXIT', R} ->
 	    gen_server:reply(ReplyTo, {'EXCEPTION', #'MARSHAL'{completion_status=?COMPLETED_NO}}),
+	    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(request, ~p, ~p, ~p); got exit(~p)", 
+				    [?LINE, Op, Parameters, TypeCodes, R], ?DEBUG_LEVEL),
 	    {stop, normal, []};
 	Request ->
 	    ?IIOP_SOCKET_MOD:write(SocketType, Socket, Request),
 	    case ResponseExpected of
-		'true' ->
+		'true' when integer(Timeout) ->
+		    ?PRINTDEBUG2("out request via socket ~p has set userdefined value: ~p", 
+				 [Socket, Timeout]),
 		    {noreply, {ReplyTo, GIOP_version, TypeCodes, Op, 
-			       Parameters, Socket, SocketType}};
+			       Parameters, Socket, SocketType}, Timeout};
+		'true' ->
+		    ?PRINTDEBUG2("out request via socket ~p has set the iiop_timeout value: ~p", 
+				 [Socket, orber:iiop_timeout()]),
+		    {noreply, {ReplyTo, GIOP_version, TypeCodes, Op, 
+			       Parameters, Socket, SocketType}, orber:iiop_timeout()};
 		'false' ->
 		    gen_server:reply(ReplyTo, ok),
 		    {stop, normal, []}
 	    end
     end;
-handle_cast({reply, ReplyHeader, Rest, Len, ByteOrder},
+%% The next case added to be able to handle code upgrade; remove later.
+handle_cast({reply, ReplyHeader, Rest, Len, ByteOrder}, State) ->
+    handle_cast({reply, ReplyHeader, Rest, Len, ByteOrder, []}, State);
+handle_cast({reply, ReplyHeader, Rest, Len, ByteOrder, Bytes},
 	    {ReplyTo, GIOP_version, TypeCodes, Op, Parameters, Socket, 
 	     SocketType}) ->
     case catch decode_reply_body(ReplyHeader, GIOP_version, TypeCodes,
-				 Rest, Len, ByteOrder) of
+				 Rest, Len, ByteOrder, Bytes) of
 	{'EXCEPTION', DecodeException} ->
+	    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(reply, ~p, ~p, ~p); exception(~p)", 
+				    [?LINE, Rest, GIOP_version, TypeCodes, DecodeException], ?DEBUG_LEVEL),
 	    gen_server:reply(ReplyTo, {'EXCEPTION', DecodeException});
 	{'EXIT', message_error} ->
+	    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(reply, ~p, ~p, ~p); exit(message_error)", 
+				    [?LINE, Rest, GIOP_version, TypeCodes], ?DEBUG_LEVEL),
 	    gen_server:reply(ReplyTo, {'EXCEPTION', #'COMM_FAILURE'{completion_status=?COMPLETED_NO}});
 	{'EXIT', R} ->
+	    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(reply, ~p, ~p, ~p); exit(~p)", 
+				    [?LINE, Rest, GIOP_version, TypeCodes, R], ?DEBUG_LEVEL),
 	    gen_server:reply(ReplyTo, {'EXCEPTION', #'UNKNOWN'{completion_status=?COMPLETED_MAYBE}});
 	'message_error' ->
+	    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(reply, ~p, ~p, ~p); message_error", 
+				    [?LINE, Rest, GIOP_version, TypeCodes], ?DEBUG_LEVEL),
 	    %% Perhaps a resend should be done when a message error occurs
 	    gen_server:reply(ReplyTo, {'EXCEPTION', #'COMM_FAILURE'{completion_status=?COMPLETED_NO}});
 	{Result, Par} ->
@@ -164,13 +212,21 @@ handle_cast({reply, ReplyHeader, Rest, Len, ByteOrder},
     {stop, normal, []};
 handle_cast({locate_request, RequestId, ObjKey, ReplyTo, Socket, SocketType}, 
 	    State) ->
-    GIOP_version = orber:giop_version(),
+    handle_cast({locate_request, RequestId, ObjKey, ReplyTo, Socket, SocketType,
+		 orber:giop_version()}, State);
+handle_cast({locate_request, RequestId, ObjKey, ReplyTo, Socket, SocketType, 
+	     GIOP_version}, 
+	    State) ->
     case catch cdr_encode:enc_locate_request(GIOP_version, ObjKey,  RequestId) of
 	{'EXCEPTION', E} ->
 	    gen_server:reply(ReplyTo, {'EXCEPTION', E}),
+	    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(locate_request, ~p); exception(~p)", 
+				    [?LINE, ObjKey, E], ?DEBUG_LEVEL),
 	    {stop, normal, []};
 	{'EXIT', R} ->
 	    gen_server:reply(ReplyTo, {'EXCEPTION', #'MARSHAL'{completion_status=?COMPLETED_NO}}),
+	    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(locate_request, ~p); exit(~p)", 
+				    [?LINE, ObjKey, R], ?DEBUG_LEVEL),
 	    {stop, normal, []};
 	Request ->
 	    ?IIOP_SOCKET_MOD:write(SocketType, Socket, Request),
@@ -180,10 +236,16 @@ handle_cast({locate_reply, ReplyHeader, Rest, Len, ByteOrder},
 	    {ReplyTo, GIOP_version, Socket, SocketType}) ->
     case catch cdr_decode:dec_locate_reply_body(GIOP_version, ReplyHeader, Rest, Len, ByteOrder) of
 	{'EXCEPTION', DecodeException} ->
+	    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(locate_reply, ~p, ~p); exception(~p)", 
+				    [?LINE, Rest, GIOP_version, DecodeException], ?DEBUG_LEVEL),
 	    gen_server:reply(ReplyTo, {'EXCEPTION', DecodeException});
 	{'EXIT', message_error} ->
+	    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(locate_reply, ~p, ~p); exit(message_error)", 
+				    [?LINE, Rest, GIOP_version], ?DEBUG_LEVEL),
 	    gen_server:reply(ReplyTo, {'EXCEPTION', #'COMM_FAILURE'{completion_status=?COMPLETED_NO}});
 	{'EXIT', R} ->
+	    orber:debug_level_print("[~p] orber_iiop_outrequest:handle_cast(locate_reply, ~p, ~p); exit(~p)", 
+				    [?LINE, Rest, GIOP_version, R], ?DEBUG_LEVEL),
 	    gen_server:reply(ReplyTo, {'EXCEPTION', #'UNKNOWN'{completion_status=?COMPLETED_MAYBE}});
 	[] ->
 	    gen_server:reply(ReplyTo, ReplyHeader#locate_reply_header.locate_status);
@@ -201,6 +263,12 @@ handle_cast(_, State) ->
 %%-----------------------------------------------------------------
 handle_info(stop, State) ->
     {stop, normal, State};
+handle_info(timeout, {ReplyTo, _, _, _, _, Socket, _}) ->
+    ?PRINTDEBUG2("out request via socket ~p timeout", [Socket]),
+    gen_server:reply(ReplyTo, 
+		     {'EXCEPTION', #'COMM_FAILURE'{minor=107, 
+						   completion_status=?COMPLETED_MAYBE}}),
+    {stop, normal, []};
 handle_info(X,State) ->
     {noreply, State}.
 
@@ -215,10 +283,10 @@ code_change(OldVsn, State, Extra) ->
 %% Internal functions
 %%-----------------------------------------------------------------
 
-decode_reply_body(ReplyHeader, Version, TypeCodes, Rest, Len, ByteOrder) ->			
+decode_reply_body(ReplyHeader, Version, TypeCodes, Rest, Len, ByteOrder, Bytes) ->			
 	case ReplyHeader#reply_header.reply_status of
 	    'no_exception' ->
-		{R, P, _} = cdr_decode:dec_reply_body(Version, TypeCodes, Rest, Len, ByteOrder),
+		{R, P, _} = cdr_decode:dec_reply_body(Version, TypeCodes, Rest, Len, ByteOrder, Bytes),
 		{R, P};
 	    'system_exception' ->
 		{R, _} = cdr_decode:dec_system_exception(Version, Rest, Len, ByteOrder),
@@ -227,7 +295,7 @@ decode_reply_body(ReplyHeader, Version, TypeCodes, Rest, Len, ByteOrder) ->
 		{R, _} = cdr_decode:dec_user_exception(Version, Rest, Len, ByteOrder),
 		{R, []};
 	    'location_forward' ->
-		{R, _, _} = cdr_decode:dec_type('tk_objref', Version, Rest, Len, ByteOrder),
+		{R, _, _} = cdr_decode:dec_type({'tk_objref', "", ""}, Version, Rest, Len, ByteOrder),
 		{R, []}
 	end.
 
@@ -235,23 +303,5 @@ decode_reply_body(ReplyHeader, Version, TypeCodes, Rest, Len, ByteOrder) ->
 %%-----------------------------------------------------------------
 %% Utility Functions
 %%-----------------------------------------------------------------
-%result_to_list({'EXCEPTION', E}, _) ->
-%    {'EXCEPTION', E};
-%result_to_list(Result, {TkRes, _, TkOut}) ->
-%   case length(TkOut) of
-%       0 ->
-%	   [Result];
-%       N ->
-%	   tuple_to_list(Result)
-%   end.
-
-%marshal_exception(Version, Id, Exception) ->
-%    {TypeOfException, ExceptionTypeCode} =
-%	orber_typedefs:get_exception_def(Exception),
-%    cdr_encode:enc_reply(Version,
-%			 Id,
-%			 TypeOfException,
-%			 {ExceptionTypeCode, [], []}, 
-%			 Exception, []).
 
 

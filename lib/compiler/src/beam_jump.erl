@@ -100,7 +100,8 @@ module({Mod,Exp,Attr,Fs,Lc}, Opt) ->
 
 functions([F], Global0) ->
     {{function,Name,Arity,Clabel,Asm},Global1} = function(F, Global0),
-    [{function,Name,Arity,Clabel,Asm++insert_global_code(Global1)}];
+    [{function,Name,Arity,Clabel,Asm ++
+      insert_global_code(dict:dict_to_list(Global1))}];
 functions([F0|Fs], Global0) ->
     {F1,Global1} = function(F0, Global0),
     [F1|functions(Fs, Global1)];
@@ -117,10 +118,16 @@ function({function,Name,Arity,CLabel,Asm0}, Global) ->
     {Asm1,St1} = opt(Asm0, [], St0),
     {{function,Name,Arity,CLabel,Asm1},St1#st.mglobal}.
 
-opt([{test,Test,Lbl,A1}|Is], Acc, St) ->
-    opt(Is, [{test,Test,Lbl,A1}|Acc], label_used(Lbl, St));
-opt([{test,Test,Lbl,A1,A2}|Is], Acc, St) ->
-    opt(Is, [{test,Test,Lbl,A1,A2}|Acc], label_used(Lbl, St));
+opt([{test,Test,Lbl}=I|Is], Acc, St) ->
+    opt(Is, [I|Acc], label_used(Lbl, St));
+opt([{test,Test,Lbl,A1}=I|Is], Acc, St) ->
+    opt(Is, [I|Acc], label_used(Lbl, St));
+opt([{test,Test,Lbl,A1,A2}=I|Is], Acc, St) ->
+    opt(Is, [I|Acc], label_used(Lbl, St));
+opt([{test,Test,Lbl,A1,A2,A3}=I|Is], Acc, St) ->
+    opt(Is, [I|Acc], label_used(Lbl, St));
+opt([{test,Test,Lbl,A1,A2,A3,A4}=I|Is], Acc, St) ->
+    opt(Is, [I|Acc], label_used(Lbl, St));
 opt([{select_val,R,Fail,{list,Vls}}|Is], Acc, St) ->
     skip_unreachable(Is, [{select_val,R,Fail,{list,Vls}}|Acc],
 		     label_used([Fail|Vls], St));

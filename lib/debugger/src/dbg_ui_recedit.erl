@@ -96,19 +96,12 @@ update (RecEditPid, Bindings) ->
 init (Bindings, Module, AttachP) ->
     process_flag (trap_exit, true),    
     
-    AbsFile = case catch dbg_idb:lookup (Module, mod_file) of
-		  {ok, F} ->
-		      F;
-		  
-		  Error ->
-		      my_exit (init, Error)
-	      end,
-    
+    {ok, AbsFile} = dbg_idb:lookup (Module, mod_file),
     File = filename:basename (AbsFile),
 
     case extract_records ([AbsFile], []) of
 	{error, Error1} ->
-	    my_exit (init, Error1);
+	    exit ('Incorrect module or include file');
 
 	Records ->   % Records = [{File, RecordName, Fields}]
 
@@ -940,13 +933,7 @@ insert_bindings_1 ([{Type, Record, Var, Data} | T]) ->
 %%%
 
 create_frame (FrameData, WinData) ->
-    case catch create_frame1 (FrameData, WinData) of
-	{error, Error} ->
-	    my_exit (create_frame, Error);
-	
-	ReturnValue ->
-	    ReturnValue
-    end.
+    create_frame1 (FrameData, WinData).
 
 
 create_frame1 ({term, _, Var, Val}, {_WW,_WH,_BTFH, BW, FW, FH, BTW}) ->
@@ -1149,15 +1136,6 @@ get_tuples ([H | T], Tuples, Rest) when tuple (element (2, H)) ->
 
 get_tuples ([{Var, Val} | T], Tuples, Rest) ->
     get_tuples (T, Tuples, [{term, Var, Val} | Rest]).
-
-
-
-%%% my_exit  /2
-%%%
-
-my_exit (Function, Error) ->
-    exit (lists:flatten (io_lib:format ("~p:~p  -  ~p", 
-					[?MODULE, Function, Error]))).
 
 
 

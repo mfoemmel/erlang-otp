@@ -18,8 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: orber_typedefs.erl
-%% Author: Lars Thorsen
-%% 
 %% Description:
 %%    This file contains some functions for internal typedef checking
 %%
@@ -49,7 +47,12 @@
 %%
 get_op_def(_Objkey, "_is_a") ->
     {orber_tc:boolean(),[orber_tc:string(0)],[]};
+%% First the OMG specified this operation to be '_not_existent' and then
+%% changed it to '_non_existent' without suggesting that both must be supported.
+%% See CORBA2.3.1 page 15-34, Minor revision 2.3.1: October 1999
 get_op_def(_Objkey, "_not_existent") ->
+    {orber_tc:boolean(),[],[]};
+get_op_def(_Objkey, "_non_existent") ->
     {orber_tc:boolean(),[],[]};
 get_op_def(_Objkey, "get_policy") ->
     {orber_policy_server:get_tc(),[orber_tc:unsigned_long()],[]};

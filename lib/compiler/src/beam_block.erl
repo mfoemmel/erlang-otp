@@ -208,9 +208,10 @@ gen_init(Fs, Regs, Y, Acc) ->
     gen_init(Fs, Regs bsr 1, Y+1, Acc).
 
 %% init_yreg(Instructions, RegSet) -> RegSetInitialized
+%%  Calculate the set of initialized y registers.
 
-init_yreg([{set,Ds,_,_}|Is], Reg) ->
-    init_yreg(Is, add_yregs(Ds, Reg));
+init_yreg([{set,Ds,_,{bif,_,_}}|Is], Reg) -> Reg;
+init_yreg([{set,Ds,_,_}|Is], Reg) -> init_yreg(Is, add_yregs(Ds, Reg));
 init_yreg(Is, Reg) -> Reg.
 
 add_yregs(Ys, Reg) -> foldl(fun(Y, R0) -> add_yreg(Y, R0) end, Reg, Ys).

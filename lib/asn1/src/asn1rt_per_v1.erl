@@ -25,14 +25,12 @@
 -export([setchoiceext/1, setext/1, fixoptionals/2, fixextensions/2, setoptionals/1, 
 	 getext/1, getextension/2, skipextensions/3, getbit/1, getchoice/3 ]).
 -export([getoptionals/3, set_choice/3, encode_integer/2, encode_integer/3  ]).
--export([decode_integer/2, decode_integer/3, encode_boolean/1, 
+-export([decode_integer/2, decode_integer/3, encode_small_number/1, encode_boolean/1, 
 	 decode_boolean/1, encode_length/2, decode_length/1, decode_length/2,
 	encode_small_length/1, decode_small_length/1]).
 -export([encode_enumerated/3, decode_enumerated/3, 
 	 encode_bit_string/3, decode_bit_string/3  ]).
 -export([encode_octet_string/2, decode_octet_string/2,
-	encode_restricted_string/4, encode_restricted_string/5,
-	decode_restricted_string/4, decode_restricted_string/5,
 	encode_null/1, decode_null/1,
 	encode_object_identifier/1, decode_object_identifier/1,
 	complete/1]).
@@ -391,7 +389,9 @@ encode_integer1(C, Val) ->
 	%% positive with range
 	{Lb,Ub} when Val >= Lb,
 		     Ub >= Val ->
-	    encode_constrained_number(VR,Val)
+	    encode_constrained_number(VR,Val);
+	_ ->
+	    exit({error,{asn1,{illegal_value,VR,Val}}})
     end.
 
 decode_integer(Buffer,Range,NamedNumberList) ->
@@ -668,6 +668,9 @@ encode_length({0,'MAX'},Len) ->
     encode_length(undefined,Len);
 encode_length({Lb,Ub},Len) when Ub =< 65535 ,Lb >= 0 -> % constrained
     encode_constrained_number({Lb,Ub},Len);
+encode_length({{Lb,Ub},[]},Len) when Ub =< 65535 ,Lb >= 0 -> 
+    %% constrained extensible
+    [{bit,0},encode_constrained_number({Lb,Ub},Len)];
 encode_length(SingleValue,Len) when integer(SingleValue) ->
     [].
 
@@ -704,6 +707,12 @@ decode_length(Buffer,undefined)  -> % un-constrained
 
 decode_length(Buffer,{Lb,Ub}) when Ub =< 65535 ,Lb >= 0 -> % constrained
     decode_constrained_number(Buffer,{Lb,Ub});
+
+decode_length(Buffer,{{Lb,Ub},[]}) -> 
+    case getbit(Buffer) of
+	{0,Buffer2} ->
+	    decode_length(Buffer2, {Lb,Ub})
+    end;
 						% X.691:10.9.3.5 
 decode_length(Buffer,{_,_Lb,Ub}) -> %when Len =< 127 -> % Unconstrained or large Ub
     case getbit(Buffer) of
@@ -857,7 +866,9 @@ encode_bit_string(C, BitListValue, NamedBitList) when list(BitListValue) ->
 	{Lb,Ub} when integer(Lb),integer(Ub) ->
 	    [encode_length({Lb,Ub},length(BitList)),align,BitList];
 	no ->
-	    [encode_length(undefined,length(BitList)),align,BitList]
+	    [encode_length(undefined,length(BitList)),align,BitList];
+	Sc -> % extension marker
+	    [encode_length(Sc,length(BitList)),align,BitList]
     end;
 
 %% when the value is an integer
@@ -887,6 +898,10 @@ decode_bit_string(Buffer, C, NamedNumberList) ->
 	    bit_list_to_named(Bytes3,Len,NamedNumberList);
 	no ->
 	    {Len,Bytes2} = decode_length(Buffer,undefined),
+	    Bytes3 = align(Bytes2),
+	    bit_list_to_named(Bytes3,Len,NamedNumberList);
+	Sc -> % extension marker
+	    {Len,Bytes2} = decode_length(Buffer,Sc),
 	    Bytes3 = align(Bytes2),
 	    bit_list_to_named(Bytes3,Len,NamedNumberList)
     end.
@@ -1050,13 +1065,18 @@ decode_octet_string(Bytes,C,false) ->
 %% X.691:26 and X.680:34-36
 %%encode_restricted_string(aligned,'BMPString',Constraints,Extension,Val)
 
-encode_restricted_string(aligned,StringType,C,Val) ->
-encode_restricted_string(aligned,StringType,C,false,Val).
 
+encode_restricted_string(aligned,{Name,Val}) when atom(Name) ->
+    encode_restricted_string(aligned,Val);
 
-encode_restricted_string(aligned,StringType,C,Ext,{Name,Val}) when atom(Name) ->
-    encode_restricted_string(aligned,StringType,C,false,Val);
-encode_restricted_string(aligned,StringType,C,Ext,Val) ->
+encode_restricted_string(aligned,Val) when list(Val)->
+    [encode_length(undefined,length(Val)),align,
+     {octets,Val}].
+
+encode_known_multiplier_string(aligned,StringType,C,Ext,{Name,Val}) when atom(Name) ->
+    encode_known_multiplier_string(aligned,StringType,C,false,Val);
+
+encode_known_multiplier_string(aligned,StringType,C,Ext,Val) ->
     Result = chars_encode(C,StringType,Val),
     NumBits = get_NumBits(C,StringType),
     case get_constraint(C,'SizeConstraint') of
@@ -1079,10 +1099,12 @@ encode_restricted_string(aligned,StringType,C,Ext,Val) ->
 	    [encode_length(undefined,length(Val)),align,Result]
     end.
 
-decode_restricted_string(Bytes,aligned,StringType,C) ->
-    decode_restricted_string(Bytes,aligned,StringType,C,false).
+decode_restricted_string(Bytes,aligned) ->
+    {Len,Bytes2} = decode_length(Bytes,undefined),
+    Bytes3 = align(Bytes2),
+    getoctets_as_list(Bytes3,Len).
 
-decode_restricted_string(Bytes,aligned,StringType,C,Ext) ->
+decode_known_multiplier_string(Bytes,aligned,StringType,C,Ext) ->
     NumBits = get_NumBits(C,StringType),
     case get_constraint(C,'SizeConstraint') of
 	Ub when integer(Ub), Ub*NumBits =< 16  ->
@@ -1107,56 +1129,59 @@ decode_restricted_string(Bytes,aligned,StringType,C,Ext) ->
     end.
 
 
-
-encode_BMPString(C,Val) ->
-    encode_restricted_string(aligned,'BMPString',C,false,Val).
-decode_BMPString(Bytes,C) ->
-    decode_restricted_string(Bytes,aligned,'BMPString',C,false).
-
-encode_GeneralString(C,Val) ->
-    encode_restricted_string(aligned,'GeneralString',C,false,Val).
-decode_GeneralString(Bytes,C) ->
-    decode_restricted_string(Bytes,aligned,'GeneralString',C,false).
-
-encode_GraphicString(C,Val) ->
-    encode_restricted_string(aligned,'GraphicString',C,false,Val).
-decode_GraphicString(Bytes,C) ->
-    decode_restricted_string(Bytes,aligned,'GraphicString',C,false).
-
-encode_IA5String(C,Val) ->
-    encode_restricted_string(aligned,'IA5String',C,false,Val).
-decode_IA5String(Bytes,C) ->
-    decode_restricted_string(Bytes,aligned,'IA5String',C,false).
-
 encode_NumericString(C,Val) ->
-    encode_restricted_string(aligned,'NumericString',C,false,Val).
+    encode_known_multiplier_string(aligned,'NumericString',C,false,Val).
 decode_NumericString(Bytes,C) ->
-    decode_restricted_string(Bytes,aligned,'NumericString',C,false).
+    decode_known_multiplier_string(Bytes,aligned,'NumericString',C,false).
 
 encode_PrintableString(C,Val) ->
-    encode_restricted_string(aligned,'PrintableString',C,false,Val).
+    encode_known_multiplier_string(aligned,'PrintableString',C,false,Val).
 decode_PrintableString(Bytes,C) ->
-    decode_restricted_string(Bytes,aligned,'PrintableString',C,false).
-
-encode_TeletexString(C,Val) -> % equivalent with T61String
-    encode_restricted_string(aligned,'TeletexString',C,false,Val).
-decode_TeletexString(Bytes,C) ->
-    decode_restricted_string(Bytes,aligned,'TeletexString',C,false).
-
-encode_UniversalString(C,Val) ->
-    encode_restricted_string(aligned,'UniversalString',C,false,Val).
-decode_UniversalString(Bytes,C) ->
-    decode_restricted_string(Bytes,aligned,'UniversalString',C,false).
-
-encode_VideotexString(C,Val) ->
-    encode_restricted_string(aligned,'VideotexString',C,false,Val).
-decode_VideotexString(Bytes,C) ->
-    decode_restricted_string(Bytes,aligned,'VideotexString',C,false).
+    decode_known_multiplier_string(Bytes,aligned,'PrintableString',C,false).
 
 encode_VisibleString(C,Val) -> % equivalent with ISO646String
-    encode_restricted_string(aligned,'VisibleString',C,false,Val).
+    encode_known_multiplier_string(aligned,'VisibleString',C,false,Val).
 decode_VisibleString(Bytes,C) ->
-    decode_restricted_string(Bytes,aligned,'VisibleString',C,false).
+    decode_known_multiplier_string(Bytes,aligned,'VisibleString',C,false).
+
+encode_IA5String(C,Val) ->
+    encode_known_multiplier_string(aligned,'IA5String',C,false,Val).
+decode_IA5String(Bytes,C) ->
+    decode_known_multiplier_string(Bytes,aligned,'IA5String',C,false).
+
+encode_BMPString(C,Val) ->
+    encode_known_multiplier_string(aligned,'BMPString',C,false,Val).
+decode_BMPString(Bytes,C) ->
+    decode_known_multiplier_string(Bytes,aligned,'BMPString',C,false).
+
+encode_UniversalString(C,Val) ->
+    encode_known_multiplier_string(aligned,'UniversalString',C,false,Val).
+decode_UniversalString(Bytes,C) ->
+    decode_known_multiplier_string(Bytes,aligned,'UniversalString',C,false).
+
+%% end of known-multiplier strings for which PER visible constraints are
+%% applied
+
+encode_GeneralString(C,Val) ->
+    encode_restricted_string(aligned,Val).
+decode_GeneralString(Bytes,C) ->
+    decode_restricted_string(Bytes,aligned).
+
+encode_GraphicString(C,Val) ->
+    encode_restricted_string(aligned,Val).
+decode_GraphicString(Bytes,C) ->
+    decode_restricted_string(Bytes,aligned).
+
+encode_TeletexString(C,Val) -> % equivalent with T61String
+    encode_restricted_string(aligned,Val).
+decode_TeletexString(Bytes,C) ->
+    decode_restricted_string(Bytes,aligned).
+
+encode_VideotexString(C,Val) ->
+    encode_restricted_string(aligned,Val).
+decode_VideotexString(Bytes,C) ->
+    decode_restricted_string(Bytes,aligned).
+
 
 
 
@@ -1227,14 +1252,6 @@ get_NumBits(C,StringType) ->
 	    charbits(length(Sv),aligned);
 	no ->
 	    case StringType of
-		'GeneralString' ->
-		    exit({error,{asn1,{not implemented,'GeneralString'}}});
-		'GraphicString' ->
-		    exit({error,{asn1,{not implemented,'GraphicString'}}});
-		'TeletexString' ->
-		    exit({error,{asn1,{not implemented,'TeletexString'}}});
-		'VideotexString' ->
-		    exit({error,{asn1,{not implemented,'VideotexString'}}});
 		'IA5String' ->
 		    charbits(128,aligned); % 16#00..16#7F
 		'VisibleString' ->
@@ -1585,6 +1602,9 @@ complete([align|T],[Hacc|Tacc],Acclen) ->
     complete(T,[Hacc bsl Rest|Tacc],0);
 complete([{octets,N,Val}|T],Acc,Acclen) when list(Val) -> % no security check here 
     complete([{octets,Val}|T],Acc,Acclen);
+
+complete([],[],0) ->
+    [0]; % a complete encoding must always be at least 1 byte
 complete([],Acc,0) ->
     lists:reverse(Acc);
 complete([],[Hacc|Tacc],Acclen) when Acclen > 0->

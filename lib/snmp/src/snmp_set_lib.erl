@@ -19,6 +19,10 @@
 
 -include("snmp_types.hrl").
 
+-define(VMODULE,"SETLIB").
+-include("snmp_verbosity.hrl").
+
+
 %% External exports
 -export([is_varbinds_ok/1, consistency_check/1,
 	 undo_varbinds/1, try_set/1]).
@@ -72,9 +76,13 @@ is_varbinds_ok([IVarbind | IVarbinds]) ->
 	true -> is_varbinds_ok(IVarbinds);
 	ErrorStatus -> 
 	    Varbind = IVarbind#ivarbind.varbind,
+	    ?vtrace("varbinds erroneous: ~p -> ~p",
+		    [Varbind#varbind.org_index,ErrorStatus]),
 	    {ErrorStatus, Varbind#varbind.org_index}
     end;
-is_varbinds_ok([]) -> {noError, 0}.
+is_varbinds_ok([]) -> 
+    ?vtrace("varbinds ok",[]),
+    {noError, 0}.
 
 %%-----------------------------------------------------------------
 %% Func: is_varbind_ok/1
@@ -133,6 +141,8 @@ checkValEncoding(MibEntry, Varbind) -> true.
 consistency_check(Varbinds) ->
     consistency_check(Varbinds, []).
 consistency_check([{TableOid, TableVbs} | Varbinds], Done) ->
+    ?vtrace("consistency check:"
+	    "~n   ~p -> ~p",[TableOid,TableVbs]),
     TableOpsWithShortOids = deletePrefixes(TableOid, TableVbs),
     [#ivarbind{mibentry = MibEntry}|_] = TableVbs,
     case is_set_ok_table(MibEntry, TableOpsWithShortOids) of
@@ -145,6 +155,7 @@ consistency_check([{TableOid, TableVbs} | Varbinds], Done) ->
 	    end
     end;
 consistency_check([IVarbind | Varbinds], Done) ->
+    ?vtrace("consistency check: ~p",[IVarbind]),
     #ivarbind{varbind = Varbind, mibentry = MibEntry} = IVarbind,
     #varbind{oid = Oid, value = Value, org_index = OrgIndex} = Varbind,
     case is_set_ok_variable(MibEntry, Value) of
@@ -155,7 +166,9 @@ consistency_check([IVarbind | Varbinds], Done) ->
 		Error -> Error
 	    end
     end;
-consistency_check([], _Done) -> {noError, 0}.
+consistency_check([], _Done) -> 
+    ?vtrace("consistency check: done",[]),
+    {noError, 0}.
 
 deletePrefixes(Prefix, [#ivarbind{varbind = Varbind} | Vbs]) ->
     #varbind{oid = Oid, value = Value} = Varbind,
@@ -164,6 +177,7 @@ deletePrefixes(Prefix, []) -> [].
 
 %% Val = <a-value>
 is_set_ok_variable(#me{mfa = {Module, Func, Args}}, Val) ->
+    ?vtrace("is variable set ok: ~p, ~p",[{Module,Func,Args},Val]),
     case dbg_apply(Module, Func, [is_set_ok, Val | Args]) of
 	{'EXIT', {hook_undef, _}} -> noError;
 	{'EXIT', {hook_function_clause, _}} -> noError;
@@ -172,10 +186,12 @@ is_set_ok_variable(#me{mfa = {Module, Func, Args}}, Val) ->
     
 %% ValueArg: <list-of-simple-tableops>
 is_set_ok_table(#me{mfa = {Module, Func, Args}}, ValueArg) ->
+    ?vtrace("is table set ok: ~p, ~p",[{Module,Func,Args},ValueArg]),
     is_set_ok_all_rows(Module, Func, Args, sort_varbinds_rows(ValueArg), []).
 
 %% Try one row at a time. Sort varbinds to table-format.
 is_set_ok_all_rows(Module, Func, Args, [Row | Rows], Done) ->
+    ?vtrace("is all-rows set ok: ~p, ~p, ~p",[{Module,Func,Args},Row,Done]),
     [{RowIndex, Cols}] = delete_org_index([Row]),
     case dbg_apply(Module, Func, [is_set_ok, RowIndex, Cols | Args]) of
 	{'EXIT', {hook_undef, _}} ->
@@ -198,7 +214,9 @@ is_set_ok_all_rows(Module, Func, Args, [Row | Rows], Done) ->
 		    end
 	    end
     end;
-is_set_ok_all_rows(_Module, _Func, _Args, [], _Done) -> {noError, 0}.
+is_set_ok_all_rows(_Module, _Func, _Args, [], _Done) -> 
+    ?vtrace("is all-rows set ok: done",[]),
+    {noError, 0}.
 
 undo_varbinds([{TableOid, TableVbs} | Varbinds]) ->
     TableOpsWithShortOids = deletePrefixes(TableOid, TableVbs),
@@ -338,13 +356,13 @@ make_value_a_correct_value(Value, ASN1Type, Mfa) ->
   
 dbg_apply(M,F,A) ->
     Result =
-	case get(debug) of
+	case get(verbosity) of
 	    false ->
 		(catch apply(M,F,A));
 	    _ ->
-		pdebug("apply: ~w,~w,~p~n", [M,F,A]),
+		?vlog("~n   apply: ~w,~w,~p~n", [M,F,A]),
 		Res = (catch apply(M,F,A)),
-		pdebug("returned: ~p", [Res]),
+		?vlog("~n   returned: ~p", [Res]),
 		Res
 	end,
     case Result of
@@ -363,11 +381,3 @@ dbg_apply(M,F,A) ->
 	    Result
     end.
 
-
-pdebug(Format, X) -> 
-    case get(debug) of
-	false -> ok;
-	_ ->
-	    Form = lists:concat(["** SNMP Agent debug: ~n   ", Format, "\n"]),
-	    io:format(Form, X)
-    end.

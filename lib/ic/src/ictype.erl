@@ -27,8 +27,8 @@
 -export([type_check/2, scoped_lookup/4, maybe_array/5, to_uppercase/1]).
 
 -export([name2type/2, member2type/3, isBasicTypeOrEterm/3, isEterm/3]).
--export([isBasicType/1, isBasicType/3, isString/3, isArray/3, isStruct/3, 
-	 isUnion/3, isEnum/3, isSequence/3, isBoolean/3 ]).
+-export([isBasicType/1, isBasicType/3, isString/3, isWString/3, isArray/3, 
+	 isStruct/3, isUnion/3, isEnum/3, isSequence/3, isBoolean/3 ]).
 -export([fetchTk/3, fetchType/1, tk/4]).
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -112,6 +112,19 @@ isString(G, N, T) when element(1, T) == scoped_id ->
 isString(G, N, T)  when record(T, string) ->
     true;
 isString(G, N, Other) ->
+    false. 
+
+
+isWString(G, N, T) when element(1, T) == scoped_id ->  %% WSTRING
+    case icgen:get_full_scoped_name(G, N, T) of
+	{FullScopedName, _, {'tk_wstring',_}, _} ->
+	    true;
+	_ ->
+	    false
+    end; 
+isWString(G, N, T)  when record(T, wstring) ->
+    true;
+isWString(G, N, Other) ->
     false. 
 
 
@@ -227,6 +240,8 @@ isBasicType(G, N, S) when element(1, S) == scoped_id ->
     isBasicType(fetchType(TK));
 isBasicType(G, N, {string, _} ) -> 
     false;
+isBasicType(G, N, {wstring, _} ) ->  %% WSTRING 
+    false;
 isBasicType(G, N, {unsigned, {long, _}} ) -> 
     true;
 isBasicType(G, N, {unsigned, {short, _}} ) -> 
@@ -245,12 +260,15 @@ isBasicType( Type ) ->
     lists:member(Type,
 		 [tk_short,short,
 		  tk_long,long,
+		  tk_longlong,longlong,  %% LLONG
 		  tk_ushort,ushort,
 		  tk_ulong,ulong,
+		  tk_ulonglong,ulonglong,  %% ULLONG
 		  tk_float,float,
 		  tk_double,double,
 		  tk_boolean,boolean,
 		  tk_char,char,
+		  tk_wchar,wchar,  %% WCHAR
 		  tk_octet,octet]).
 
 
@@ -356,7 +374,7 @@ check(G, S, N, X) when record(X, attr) ->
 		  icgen:get_idlist(X)),
     X#attr{tk=TK};
 
-check(G, S, N, X) when record(X, module) ->
+check(G, S, N, X) when record(X, module) -> 
     ?STDDBG,
     tktab_add(G, S, N, X),
     X#module{body=check_list(G, S, [ic_forms:get_id2(X) | N], ic_forms:get_body(X))};
@@ -401,17 +419,36 @@ tk(G, S, N, X) when record(X, enum) ->
 	      {tk_enum, ictk:get_IR_ID(G, N, X), ic_forms:get_id2(X), 
 	       enum_body(G, S, N2, ic_forms:get_body(X))});
 
+
 %% Note that the TK returned from this function is the base TK. It
 %% must be modified for each of the identifiers in the idlist (for
 %% array reasons).
 tk(G, S, N, X) when record(X, typedef) ->
-    TK = tk(G, S, N, ic_forms:get_body(X)),
-    lists:foreach(fun(Id) ->
-		    tktab_add(G, S, N, #id_of{id=Id, type=X}, 
-			      maybe_array(G, S, N, Id, TK))
-	    end,
-	    X#typedef.id),
-    TK;
+    case X of
+	%% Special case only for term and java backend !
+	{typedef,{any,_},[{'<identifier>',_,"term"}],undefined} ->
+	    case ic_options:get_opt(G, be) of
+		java ->
+		    tktab_add(G, S, N, X, tk_term), 
+		    tk_term;
+		_ ->
+		    TK = tk(G, S, N, ic_forms:get_body(X)),
+		    lists:foreach(fun(Id) ->
+					  tktab_add(G, S, N, #id_of{id=Id, type=X}, 
+						    maybe_array(G, S, N, Id, TK))
+				  end,
+				  X#typedef.id),
+		    TK
+	    end;
+	_ ->
+	    TK = tk(G, S, N, ic_forms:get_body(X)),
+	    lists:foreach(fun(Id) ->
+				  tktab_add(G, S, N, #id_of{id=Id, type=X}, 
+					    maybe_array(G, S, N, Id, TK))
+			  end,
+			  X#typedef.id),
+	    TK
+    end;
 
 tk(G, S, N, X) when record(X, struct) ->
     N2 = [ic_forms:get_id2(X) | N],
@@ -433,6 +470,25 @@ tk_base(G, S, N, X) when record(X, sequence) ->
 tk_base(G, S, N, X) when record(X, string) ->
     {tk_string, len_eval(G, S, N, X#string.length)};
 
+tk_base(G, S, N, X) when record(X, wstring) ->  %% WSTRING
+    {tk_wstring, len_eval(G, S, N, X#wstring.length)};
+
+
+%% Special case, here CORBA::TypeCode is built in 
+%% ONLY when erl_corba is the backend of choice 
+tk_base(G, S, N, {scoped_id,V1,V2,["TypeCode","CORBA"]}) ->
+    case ic_options:get_opt(G, be) of
+	false ->
+	    tk_TypeCode;
+	erl_corba ->
+	    tk_TypeCode;
+	_ ->
+	    case scoped_lookup(G, S, N, {scoped_id,V1,V2,["TypeCode","CORBA"]}) of
+		T when element(1, T) == error -> T;
+		T when tuple(T) -> element(3, T);
+		_ -> invalid_tk
+	    end 
+    end;
 
 tk_base(G, S, N, X) when element(1, X) == scoped_id ->
     case scoped_lookup(G, S, N, X) of
@@ -441,13 +497,16 @@ tk_base(G, S, N, X) when element(1, X) == scoped_id ->
 	_ -> invalid_tk
     end;
 tk_base(G, S, N, {long, _})			-> tk_long;
+tk_base(G, S, N, {'long long', _})		-> tk_longlong;  %% LLONG
 tk_base(G, S, N, {short, _})			-> tk_short;
 tk_base(G, S, N, {'unsigned', {short, _}})	-> tk_ushort;
 tk_base(G, S, N, {'unsigned', {long, _}})	-> tk_ulong;
+tk_base(G, S, N, {'unsigned', {'long long', _}})-> tk_ulonglong;  %% ULLONG
 tk_base(G, S, N, {float, _})			-> tk_float;
 tk_base(G, S, N, {double, _})			-> tk_double;
 tk_base(G, S, N, {boolean, _})			-> tk_boolean;
 tk_base(G, S, N, {char, _})			-> tk_char;
+tk_base(G, S, N, {wchar, _})			-> tk_wchar;  %% WCHAR
 tk_base(G, S, N, {octet, _})			-> tk_octet;
 tk_base(G, S, N, {null, _})			-> tk_null;
 tk_base(G, S, N, {void, _})			-> tk_void;
@@ -570,16 +629,66 @@ tktab_add_id(G, S, N, X, Id, TK, Aux) when record(X,enumerator) ->
     if  UName =/= Name -> ets:insert(S, {UName, spellcheck});
 	true -> true end,
     TK;
-%
-% Possible fix:
-%
-%tktab_add_id(G, S, N, X, Id, TK, Aux) when record(X,module) ->
-%    Name = [Id | N],
-%    UName = mk_uppercase(Name),
-%    ets:insert(S, {Name, element(1, get_beef(X)), TK, Aux}),
-%    if  UName =/= Name -> ets:insert(S, {UName, spellcheck});
-%	true -> true end,
-%    TK;
+%%
+%% Fixes the multiple file module definition check 
+%% but ONLY for Corba backend
+%%				
+tktab_add_id(G, S, N, X, Id, TK, Aux) when record(X,module) ->
+    case ic_options:get_opt(G, be) of
+	erl_corba ->
+	    Name = [Id | N],
+	    UName = mk_uppercase(Name),
+	    ets:insert(S, {Name, element(1, get_beef(X)), TK, Aux}),
+	    if  UName =/= Name -> ets:insert(S, {UName, spellcheck});
+		true -> true end,
+	    TK;
+	false -> %% default == erl_corba
+	    Name = [Id | N],
+	    UName = mk_uppercase(Name),
+	    ets:insert(S, {Name, element(1, get_beef(X)), TK, Aux}),
+	    if  UName =/= Name -> ets:insert(S, {UName, spellcheck});
+		true -> true end,
+	    TK;
+	java -> 
+	    Name = [Id | N],
+	    UName = mk_uppercase(Name),
+	    ets:insert(S, {Name, element(1, get_beef(X)), TK, Aux}),
+	    if  UName =/= Name -> ets:insert(S, {UName, spellcheck});
+		true -> true end,
+	    TK;
+	erl_genserv -> 
+	    Name = [Id | N],
+	    UName = mk_uppercase(Name),
+	    ets:insert(S, {Name, element(1, get_beef(X)), TK, Aux}),
+	    if  UName =/= Name -> ets:insert(S, {UName, spellcheck});
+		true -> true end,
+	    TK;
+	erl_plain -> 
+	    Name = [Id | N],
+	    UName = mk_uppercase(Name),
+	    ets:insert(S, {Name, element(1, get_beef(X)), TK, Aux}),
+	    if  UName =/= Name -> ets:insert(S, {UName, spellcheck});
+		true -> true end,
+	    TK;
+
+	Be -> 
+	    Name = [Id | N],
+	    UName = mk_uppercase(Name),
+	    case ets:lookup(S, Name) of
+		[{_, forward, _, _}] when record(X, interface) -> ok;
+		[XX] when record(X, forward), element(2, XX)==interface -> ok;
+		[_] -> icgen:error(G, {multiply_defined, X});
+		[] ->
+		    case ets:lookup(S, UName) of
+			[] -> ok;
+			[_] -> icgen:error(G, {illegal_spelling, X})
+		    end
+	    end,
+	    ets:insert(S, {Name, element(1, get_beef(X)), TK, Aux}),
+	    if  UName =/= Name -> ets:insert(S, {UName, spellcheck});
+		true -> true end,
+	    TK
+    end;
 tktab_add_id(G, S, N, X, Id, TK, Aux) ->
     Name = [Id | N],
     UName = mk_uppercase(Name),
@@ -660,7 +769,7 @@ element(1, X) == scoped_id ->
     end;
 
 case_eval(G, S, N, DiscrTK, X) -> 
-    iceval:eval_e(G, S, N, X).
+    iceval:eval_e(G, S, N, DiscrTK, X).
 
 
 %% The enum declarator is in the union scope.
@@ -712,23 +821,30 @@ default_count3([], Xs, N) -> default_count2(Xs, N).
 %% are caught by the BNF)
 %%
 check_const_tk(G, S, N, X, tk_long) -> true;
+check_const_tk(G, S, N, X, tk_longlong) -> true; %% LLONG
 check_const_tk(G, S, N, X, tk_short) -> true;
 check_const_tk(G, S, N, X, tk_ushort) -> true;
-check_const_tk(G, S, N, X, tk_ulong) -> true;
+check_const_tk(G, S, N, X, tk_ulong) -> true; 
+check_const_tk(G, S, N, X, tk_ulonglong) -> true;  %% ULLONG
 check_const_tk(G, S, N, X, tk_float) -> true;
 check_const_tk(G, S, N, X, tk_double) -> true;
 check_const_tk(G, S, N, X, tk_boolean) -> true;
 check_const_tk(G, S, N, X, tk_char) -> true;
+check_const_tk(G, S, N, X, tk_wchar) -> true; %% WCHAR
 check_const_tk(G, S, N, X, {tk_string, Len}) -> true;
+check_const_tk(G, S, N, X, {tk_wstring, Len}) -> true; %% WSTRING
 check_const_tk(G, S, N, X, TK) -> icgen:error(G, {illegal_const_t, X, TK}).
 
 
 check_switch_tk(G, S, N, X, tk_long) -> true;
+check_switch_tk(G, S, N, X, tk_longlong) -> true; %% LLONG
 check_switch_tk(G, S, N, X, tk_short) -> true;
 check_switch_tk(G, S, N, X, tk_ushort) -> true;
 check_switch_tk(G, S, N, X, tk_ulong) -> true;
+check_switch_tk(G, S, N, X, tk_ulonglong) -> true;  %% ULLONG
 check_switch_tk(G, S, N, X, tk_boolean) -> true;
 check_switch_tk(G, S, N, X, tk_char) -> true;
+check_switch_tk(G, S, N, X, tk_wchar) -> true;  %% WCHAR
 check_switch_tk(G, S, N, X, TK) when element(1, TK) == tk_enum -> true;
 check_switch_tk(G, S, N, X, TK) -> icgen:error(G, {illegal_switch_t, X, TK}),
 				   false.
@@ -1037,14 +1153,20 @@ fetchType( { tk_struct, _, _, _} ) ->
     struct;
 fetchType( { tk_string, _} ) ->
     string;
+fetchType( { tk_wstring, _} ) ->  %% WSTRING
+    wstring;
 fetchType( tk_short ) ->
     short;
 fetchType( tk_long ) ->
     long;
+fetchType( tk_longlong ) ->  %% LLONG
+    longlong;
 fetchType( tk_ushort ) ->
     ushort;
 fetchType( tk_ulong ) ->
     ulong;
+fetchType( tk_ulonglong ) ->  %% ULLONG
+    ulonglong;
 fetchType( tk_float ) ->
     float;
 fetchType( tk_double ) ->
@@ -1053,6 +1175,8 @@ fetchType( tk_boolean ) ->
     boolean;
 fetchType( tk_char ) ->
     char;
+fetchType( tk_wchar ) ->  %% WCHAR
+    wchar;
 fetchType( tk_octet ) ->
     octet;
 fetchType( { tk_enum, _, _, _ } ) ->

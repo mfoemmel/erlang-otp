@@ -17,12 +17,12 @@
 %%
 
 -module(pman_options).
+-include_lib("kernel/include/file.hrl").
 
--compile(export_all).
 -export([read_from_file/1,
 	 save_to_file/2,
 	 dialog/3]).
-
+-export([dialog/4]).
 
 %%
 %% Graphical resources
@@ -377,8 +377,8 @@ get_options_from_window() ->
 
 
 read_from_file(File)->
-    case file:file_info(File) of	
-	{ok, {_Size,regular,read_write,_AccessTime,_ModifyTime,_,_}} ->
+    case file:read_file_info(File) of
+	{ok, #file_info{type=regular, access=read_write}} ->
 	    read_from_ok_file(File);
 	_Else -> {default, file, #trace_options{}}
     end.

@@ -18,9 +18,8 @@
 %%
 %%----------------------------------------------------------------------
 %% File    : orber_ifr_constantdef.erl
-%% Author  : Per Danielsson <pd@gwaihir>
 %% Purpose : Code for Constantdef
-%% Created : 14 May 1997 by Per Danielsson <pd@gwaihir>
+%% Created : 14 May 1997
 %%----------------------------------------------------------------------
 
 -module(orber_ifr_constantdef).

@@ -144,9 +144,10 @@ typedef enum {
     matchCatch,
     matchEnableTrace,
     matchDisableTrace,
-    /**/
+    matchEnableTrace2,
+    matchDisableTrace2,
     matchTryMeElse,
-    /**/
+    matchCaller,
     matchHalt
 } MatchOps;
 
@@ -440,6 +441,18 @@ static DMCGuardBif guard_tab[] =
 	(DBIF_GUARD | DBIF_BODY)
     },
     {
+	am_bsl,
+	&bsl_2,
+	2,
+	(DBIF_GUARD | DBIF_BODY)
+    },
+    {
+	am_bsr,
+	&bsr_2,
+	2,
+	(DBIF_GUARD | DBIF_BODY)
+    },
+    {
 	am_Gt,
 	&sgt_2,
 	2,
@@ -665,7 +678,7 @@ Binary *db_match_set_compile(Process *p, Eterm matchexpr,
     if (!is_list(matchexpr))
 	return NULL;
     num_heads = 0;
-    for (l = matchexpr; is_list(l); l = CDR(ptr_val(l)))
+    for (l = matchexpr; is_list(l); l = CDR(list_val(l)))
 	++num_heads;
 
     if (l != NIL) /* proper list... */
@@ -682,9 +695,9 @@ Binary *db_match_set_compile(Process *p, Eterm matchexpr,
     bodies = buff + (num_heads * 2);
 
     i = 0;
-    for (l = matchexpr; is_list(l); l = CDR(ptr_val(l))) {
-	t = CAR(ptr_val(l));
-	if (!is_tuple(t) || arityval((tp = ptr_val(t))[0]) != 3) {
+    for (l = matchexpr; is_list(l); l = CDR(list_val(l))) {
+	t = CAR(list_val(l));
+	if (!is_tuple(t) || arityval((tp = tuple_val(t))[0]) != 3) {
 	    goto error;
 	}
 	if (!(flags && DCOMP_MATCH_ARRAY) || (!is_list(tp[1]) && 
@@ -696,7 +709,7 @@ Binary *db_match_set_compile(Process *p, Eterm matchexpr,
 	       against an array (strange, but gives the semantics
 	       of matching against a parameter list) */
 	    n = 0;
-	    for (l2 = tp[1]; is_list(l2); l2 = CDR(ptr_val(l2))) {
+	    for (l2 = tp[1]; is_list(l2); l2 = CDR(list_val(l2))) {
 		++n;
 	    }
 	    if (l2 != NIL) {
@@ -707,8 +720,8 @@ Binary *db_match_set_compile(Process *p, Eterm matchexpr,
 	    *hp++ = make_arityval((Uint) n);
 	    l2 = tp[1];
 	    while (n--) {
-		*hp++ = CAR(ptr_val(l2));
-		l2 = CDR(ptr_val(l2));
+		*hp++ = CAR(list_val(l2));
+		l2 = CDR(list_val(l2));
 	    }
 	}
 	matches[i] = t;
@@ -768,7 +781,7 @@ Eterm db_match_set_lint(Process *p, Eterm matchexpr, int flags)
 	goto done;
     }
     num_heads = 0;
-    for (l = matchexpr; is_list(l); l = CDR(ptr_val(l)))
+    for (l = matchexpr; is_list(l); l = CDR(list_val(l)))
 	++num_heads;
 
     if (l != NIL)  { /* proper list... */
@@ -787,9 +800,9 @@ Eterm db_match_set_lint(Process *p, Eterm matchexpr, int flags)
     bodies = buff + (num_heads * 2);
 
     i = 0;
-    for (l = matchexpr; is_list(l); l = CDR(ptr_val(l))) {
-	t = CAR(ptr_val(l));
-	if (!is_tuple(t) || arityval((tp = ptr_val(t))[0]) != 3) {
+    for (l = matchexpr; is_list(l); l = CDR(list_val(l))) {
+	t = CAR(list_val(l));
+	if (!is_tuple(t) || arityval((tp = tuple_val(t))[0]) != 3) {
 	    add_dmc_err(err_info, 
 			"Match program part is not a tuple of "
 			"arity 3.", 
@@ -801,7 +814,7 @@ Eterm db_match_set_lint(Process *p, Eterm matchexpr, int flags)
 	    t = tp[1];
 	} else {
 	    n = 0;
-	    for (l2 = tp[1]; is_list(l2); l2 = CDR(ptr_val(l2))) {
+	    for (l2 = tp[1]; is_list(l2); l2 = CDR(list_val(l2))) {
 		++n;
 	    }
 	    if (l2 != NIL) {
@@ -817,8 +830,8 @@ Eterm db_match_set_lint(Process *p, Eterm matchexpr, int flags)
 	    *hp++ = make_arityval((Uint) n);
 	    l2 = tp[1];
 	    while (n--) {
-		*hp++ = CAR(ptr_val(l2));
-		l2 = CDR(ptr_val(l2));
+		*hp++ = CAR(list_val(l2));
+		l2 = CDR(list_val(l2));
 	    }
 	}
 	matches[i] = t;
@@ -846,12 +859,12 @@ Eterm erts_match_set_run(Process *p, Binary *mpsp,
 {
     Eterm ret;
 
-    if ((ret = db_prog_match(p, mpsp,  
-			     (Eterm) args, 
-			     num_args, return_flags)) != 
-	(Eterm) 0) {
+    ret = db_prog_match(p, mpsp,
+			(Eterm) args, 
+			num_args, return_flags);
+    if (is_value(ret)) {
 #if defined(HARDDEBUG)
-	if (ret == 0) {
+	if (is_non_value(ret)) {
 	    erl_printf(CERR,"Failed\r\n");
 	} else {
 	    erl_printf(CERR, "Returning :");
@@ -859,7 +872,7 @@ Eterm erts_match_set_run(Process *p, Binary *mpsp,
 	    erl_printf(CERR, "\r\n");
 	}
 #endif
-	return (ret == am_false) ? (Eterm) 0 : ret ;
+	return (ret == am_false) ? THE_NON_VALUE : ret ;
     } 
     return ret;
 }
@@ -881,19 +894,18 @@ void db_initialize_util(void){
 Eterm db_getkey(int keypos, Eterm obj)
 {
     if (is_tuple(obj)) {
-	uint32 *tptr = ptr_val(obj);
+	uint32 *tptr = tuple_val(obj);
 	if (arityval(*tptr) >= keypos)
 	    return *(tptr + keypos);
     }
-    return 0;
+    return THE_NON_VALUE;
 }
 
 /* Return 1 if obj match pattern, as well as fill in bindings */
 /*        0 if no match                                       */
 /* Possibly reallocs the bindings                             */
 
-int db_do_match(Eterm obj, Eterm pattern, 
-		DbBindings *bs, DbBindings *sz_bs)
+int db_do_match(Eterm obj, Eterm pattern, DbBindings *bs)
 {
     Eterm *aa, *bb;
     int i;
@@ -902,10 +914,9 @@ int db_do_match(Eterm obj, Eterm pattern,
 	if (i >= bs->size) { /* We gotta allocate  new space      */
 			     /* for the variable bindings         */
 	    grow_bindings(bs, i);
-	    grow_bindings(sz_bs, i);
 	}
 
-	if (bs->ptr[i] == 0) {  /* Var match anything */
+	if (is_non_value(bs->ptr[i])) {  /* Var match anything */
 	    bs->ptr[i] = obj;
 	    return 1;  
 	}
@@ -916,31 +927,31 @@ int db_do_match(Eterm obj, Eterm pattern,
 
     if ((obj == pattern) || (pattern == am_Underscore)) 
 	return 1;
-    if (not_eq_tags(obj,pattern)) 
+    if (not_eq_tags(obj,pattern)) /*XXX*/
 	return 0; 
 
     switch(tag_val_def(obj)) {
     case LIST_DEF:
-	aa = ptr_val(obj);
-	bb = ptr_val(pattern);
+	aa = list_val(obj);
+	bb = list_val(pattern);
 	while (1) {
-	    if (!db_do_match(*aa++, *bb++,  bs, sz_bs)) 
+	    if (!db_do_match(*aa++, *bb++,  bs)) 
 		return 0;
 	    if (*aa == *bb)
 		return 1;
 	    if (is_not_list(*aa) || is_not_list(*bb)) 
-		return(db_do_match(*aa, *bb,  bs, sz_bs));
-	    aa = ptr_val(*aa);
-	    bb = ptr_val(*bb);
+		return(db_do_match(*aa, *bb,  bs));
+	    aa = list_val(*aa);
+	    bb = list_val(*bb);
 	}
     case TUPLE_DEF:
-	aa = ptr_val(obj);
-	bb = ptr_val(pattern);
+	aa = tuple_val(obj);
+	bb = tuple_val(pattern);
 	if (*aa != *bb) 
 	    return 0;         /* different arities */
 	i = arityval(*aa);    /* get the arity*/
 	while (i--) {
-	    if (db_do_match(*++aa, *++bb,  bs, sz_bs) == 0)
+	    if (db_do_match(*++aa, *++bb,  bs) == 0)
 		return 0;
 	}
 	return 1;
@@ -1024,9 +1035,9 @@ restart:
 	clause_start = DMC_STACK_NUM(text); /* the "special" test needs it */
 	DMC_PUSH(stack,NIL);
 	for (;;) {
-	    switch tag_val_def(t) {
+	    switch (tag_val_def(t)) {
 	    case TUPLE_DEF:
-		num_iters = arityval(*ptr_val(t));
+		num_iters = arityval(*tuple_val(t));
 		if (!structure_checked) { /* i.e. we did not 
 					     pop it */
 		    DMC_PUSH(text,matchTuple);
@@ -1038,7 +1049,7 @@ restart:
 					    &heap, 
 					    &stack, 
 					    &text, 
-					    ptr_val(t)[i]))
+					    tuple_val(t)[i]))
 			!= retOk) {
 			if (res == retRestart) {
 			    goto restart; /* restart the 
@@ -1055,13 +1066,13 @@ restart:
 		structure_checked = 0; /* Whatever it is, we did 
 					  not pop it */
 		if ((res = dmc_one_term(&context, &heap, &stack, 
-					&text, CAR(ptr_val(t))))
+					&text, CAR(list_val(t))))
 		    != retOk) {
 		    if (res == retRestart) {
 			goto restart;
 		    } else goto error;
 		}	    
-		t = CDR(ptr_val(t));
+		t = CDR(list_val(t));
 		continue;
 	    default: /* Nil and non proper tail end's or 
 			single terms as match 
@@ -1297,7 +1308,7 @@ static Eterm dpm_array_to_list(Process *psp, Eterm *arr, int arity)
 }
 /*
 ** Execution of the match program, this is Pam.
-** May return (Eterm) 0, which is a bailout.
+** May return THE_NON_VALUE, which is a bailout.
 ** the para meter 'arity' is only used if 'term' is actually an array,
 ** i.e. 'DCOMP_MATCH_ARRAY' was specified 
 */
@@ -1319,6 +1330,7 @@ Eterm db_prog_match(Process *p, Binary *bprog, Eterm term,
     int i;
     unsigned do_catch;
     Process *psp = &match_pseudo_process;
+    Process *tmpp;
     Eterm (*bif)();
     int fail_label;
 
@@ -1421,7 +1433,7 @@ restart:
 	case matchTuple: /* *ep is a tuple of arity n */
 	    if (!is_tuple(*ep))
 		FAIL();
-	    ep = ptr_val(*ep);
+	    ep = tuple_val(*ep);
 	    n = *pc++;
 	    if (arityval(*ep) != n)
 		FAIL();
@@ -1431,7 +1443,7 @@ restart:
 			    push ptr to first element */
 	    if (!is_tuple(*ep))
 		FAIL();
-	    tp = ptr_val(*ep);
+	    tp = tuple_val(*ep);
 	    n = *pc++;
 	    if (arityval(*tp) != n)
 		FAIL();
@@ -1441,12 +1453,12 @@ restart:
 	case matchList:
 	    if (!is_list(*ep))
 		FAIL();
-	    ep = ptr_val(*ep);
+	    ep = list_val(*ep);
 	    break;
 	case matchPushL:
 	    if (!is_list(*ep))
 		FAIL();
-	    *sp++ = ptr_val(*ep);
+	    *sp++ = list_val(*ep);
 	    ++ep;
 	    break;
 	case matchPop:
@@ -1469,21 +1481,21 @@ restart:
 	    ++ep;
 	    break;
 	case matchEqFloat:
-	    if (memcmp(ptr_val(*ep) + 1, pc, sizeof(double)))
+	    if (memcmp(float_val(*ep) + 1, pc, sizeof(double)))
 		FAIL();
 	    pc += 2;
 	    ++ep;
 	    break;
 	case matchEqRef:
-	    tp = ptr_val(*ep);
+	    tp = ref_val(*ep);
 	    if (!eqref(tp, pc))
 		FAIL();
-	    i = REFER_ARITY(pc);
+	    i = REF_ARITY(pc);
 	    pc += i+1;
 	    ++ep;
 	    break;
 	case matchEqBig:
-	    tp = ptr_val(*ep);
+	    tp = big_val(*ep);
 	    if (*tp != *pc)
 		FAIL();
 	    i = BIG_ARITY(pc);
@@ -1531,7 +1543,7 @@ restart:
 	case matchCall0:
 	    bif = (Eterm (*)()) *pc++;
 	    t = (*bif)(psp);
-	    if (t == (Eterm) 0) {
+	    if (is_non_value(t)) {
 		if (do_catch)
 		    t = FAIL_TERM;
 		else
@@ -1542,7 +1554,7 @@ restart:
 	case matchCall1:
 	    bif = (Eterm (*)()) *pc++;
 	    t = (*bif)(psp, esp[-1]);
-	    if (t == (Eterm) 0) {
+	    if (is_non_value(t)) {
 		if (do_catch)
 		    t = FAIL_TERM;
 		else
@@ -1553,7 +1565,7 @@ restart:
 	case matchCall2:
 	    bif = (Eterm (*)()) *pc++;
 	    t = (*bif)(psp, esp[-1], esp[-2]);
-	    if (t == (Eterm) 0) {
+	    if (is_non_value(t)) {
 		if (do_catch)
 		    t = FAIL_TERM;
 		else
@@ -1565,7 +1577,7 @@ restart:
 	case matchCall3:
 	    bif = (Eterm (*)()) *pc++;
 	    t = (*bif)(psp, esp[-1], esp[-2], esp[-3]);
-	    if (t == (Eterm) 0) {
+	    if (is_non_value(t)) {
 		if (do_catch)
 		    t = FAIL_TERM;
 		else
@@ -1657,8 +1669,8 @@ restart:
 	    break;
 	case matchSetSeqToken:
 #ifdef SEQ_TRACE
-	    if ((t = erts_seq_trace(p, esp[-1], esp[-2], 0)) 
-		== (Eterm) 0) {
+	    t = erts_seq_trace(p, esp[-1], esp[-2], 0);
+	    if (is_non_value(t)) {
 		esp[-2] = FAIL_TERM;
 	    } else {
 		esp[-2] = t;
@@ -1678,15 +1690,71 @@ restart:
 		esp[-1] = FAIL_TERM;
 	    }
 	    break;
+	case matchEnableTrace2:
+	    n = erts_trace_flag2bit(esp[-2]);
+	    if (n != 0 && ((is_pid(esp[-1]) && 
+			    pid_node(esp[-1]) == THIS_NODE &&
+			    pid_number(esp[-1]) < max_process && 
+			    (pid_creation(esp[-1]) == this_creation ||
+			     pid_creation(esp[-1]) == 0) &&
+			    (tmpp = process_tab[pid_number(esp[-1])])) ||
+			   (is_atom(esp[-1]) &&
+			    (tmpp = 
+			     whereis_process(atom_val(esp[-1])))))) {
+		/* Always take over the tracer of the current process */
+		tmpp->tracer_proc = p->tracer_proc;
+		tmpp->flags |= n;
+		esp[-2] = am_true;
+	    } else {
+		esp[-2] = FAIL_TERM;
+	    }
+	    --esp;
+	    break;
 	case matchDisableTrace:
 	    n = erts_trace_flag2bit(esp[-1]);
 	    if (n != 0) {
 		p->flags &= ~n;
+		if (!(p->flags & TRACE_FLAGS)) {
+		    p->tracer_proc = NIL;
+		}
 		esp[-1] = am_true;
 	    } else {
 		esp[-1] = FAIL_TERM;
 	    }
 	    break;
+	case matchDisableTrace2:
+	    n = erts_trace_flag2bit(esp[-2]);
+	    if (n != 0 && ((is_pid(esp[-1]) && 
+			    pid_node(esp[-1]) == THIS_NODE &&
+			    pid_number(esp[-1]) < max_process && 
+			    (pid_creation(esp[-1]) == this_creation ||
+			     pid_creation(esp[-1]) == 0) &&
+			    (tmpp = process_tab[pid_number(esp[-1])])) ||
+			   (is_atom(esp[-1]) &&
+			    (tmpp = 
+			     whereis_process(atom_val(esp[-1])))))) {
+		tmpp->flags &= ~n;
+		if (!(p->flags & TRACE_FLAGS)) {
+		    p->tracer_proc = NIL;
+		}
+		esp[-2] = am_true;
+	    } else {
+		esp[-2] = FAIL_TERM;
+	    }
+	    --esp;
+	    break;
+ 	case matchCaller:
+ 	    if (!(p->cp) || !(hp = find_function_from_pc(p->cp))) {
+ 		*esp++ = am_undefined;
+ 	    } else {
+ 		*esp++ = make_tuple(ehp);
+ 		ehp[0] = make_arityval(3);
+ 		ehp[1] = hp[0];
+ 		ehp[2] = hp[1];
+ 		ehp[3] = make_small(hp[2]);
+ 		ehp += 4;
+ 	    }
+ 	    break;
 	case matchCatch:
 	    do_catch = 1;
 	    break;
@@ -1704,7 +1772,7 @@ fail:
 	pc = (prog->text) + fail_label;
 	goto restart;
     }
-    ret = (Eterm) 0;
+    ret = THE_NON_VALUE;
 success:
 #ifdef DMC_DEBUG
 	if (*heap_fence != FENCE_PATTERN) {
@@ -1825,7 +1893,7 @@ Eterm add_counter(Eterm counter, Eterm incr)
 	    arg2 = counter;
 	    break;
 	default:
-	    return 0;
+	    return THE_NON_VALUE;
 	}
 	sz1 = big_size(arg1);
 	sz2 = big_size(arg2);
@@ -1882,7 +1950,7 @@ int db_do_update_counter(Process *p, void *bp /* XDbTerm **bp */,
 
     if ((res = add_counter(counter, incr)) == NIL) 
 	return DB_ERROR_SYSRES;
-    else if (res == 0)
+    else if (is_non_value(res))
 	return DB_ERROR_UNSPEC;
 
     if (is_small(res)) {
@@ -1895,7 +1963,7 @@ int db_do_update_counter(Process *p, void *bp /* XDbTerm **bp */,
 	*ret = res;
 	return DB_ERROR_NONE;
     } else {
-	Eterm *ptr = ptr_val(res);
+	Eterm *ptr = big_val(res);
 	uint32 sz = BIG_ARITY(ptr) + 1;
 	Eterm *hp;
 
@@ -1950,7 +2018,7 @@ void* db_get_term(DbTerm* old, uint32 offset, Eterm obj)
 
     top = p->v;
     copy = copy_struct(obj, size, &top, &p->off_heap);
-    p->tpl = ptr_val(copy);
+    p->tpl = tuple_val(copy);	/* XXX: this _is_ always a tuple, right? */
     return structp;
 }
 
@@ -1988,10 +2056,10 @@ int db_realloc_counter(void** bp, DbTerm *b, uint32 offset, uint32 sz,
     if (is_small(old_counter))
 	old_sz = 0;
     else {
-	top = ptr_val(old_counter);
+	top = big_val(old_counter);
 	old_sz = BIG_ARITY(top) + 1;
 	if (sz == old_sz) {  /* OK we fit in old space */
-	    sys_memcpy(top, ptr_val(new_counter), sz*sizeof(Eterm));
+	    sys_memcpy(top, big_val(new_counter), sz*sizeof(Eterm));
 	    return 0;
 	}
     }
@@ -2019,7 +2087,7 @@ int db_realloc_counter(void** bp, DbTerm *b, uint32 offset, uint32 sz,
     /* copy term (except old counter) */
     copy = copy_struct(make_tuple(b->tpl), basic_sz, 
 		       &top, &new->off_heap);
-    new->tpl = ptr_val(copy);
+    new->tpl = tuple_val(copy);
 
     db_free_term_data(b);
     sys_free(((char *) b) - offset);  /* free old term */
@@ -2029,7 +2097,7 @@ int db_realloc_counter(void** bp, DbTerm *b, uint32 offset, uint32 sz,
     if (sz == 0)
 	new->tpl[counterpos] = new_counter;  /* must be small !!! */
     else {
-	ptr = ptr_val(new_counter);
+	ptr = big_val(new_counter);
 	sys_memcpy(top, ptr, sz*sizeof(Eterm));
 	new->tpl[counterpos] = make_big(top);
     }
@@ -2050,8 +2118,8 @@ int db_is_variable(Eterm obj)
 
     if (is_not_atom(obj))
         return -1;
-    b = atom_tab(unsigned_val(obj))->name;
-    if ((n = atom_tab(unsigned_val(obj))->len) < 2)
+    b = atom_tab(atom_val(obj))->name;
+    if ((n = atom_tab(atom_val(obj))->len) < 2)
         return -1;
     if (*b++ != '$')
         return -1;
@@ -2085,14 +2153,14 @@ int db_has_variable(Eterm obj)
     switch(tag_val_def(obj)) {
     case LIST_DEF: {
 	while (is_list(obj)) {
-	    if (db_has_variable(*ptr_val(obj)))
+	    if (db_has_variable(CAR(list_val(obj))))
 		return 1;
-	    obj = *(ptr_val(obj) +1);
+	    obj = CDR(list_val(obj));
 	}
 	return(db_has_variable(obj));  /* Non wellformed list or [] */
     }
     case TUPLE_DEF: {
-	Eterm *tuple = ptr_val(obj);
+	Eterm *tuple = tuple_val(obj);
 	int arity = arityval(*tuple++);
 	while(arity--) {
 	    if (db_has_variable(*tuple))
@@ -2119,20 +2187,34 @@ static void grow_bindings(DbBindings *bs, int need)
 {
     int newsz;
     Eterm *uptr;
+    int i;
 
     if (bs == NULL) return;
     newsz = need * 2;
 
     if (bs->size != DB_MATCH_NBIND) { /* Not the first time */
 	uptr = (Eterm *) sys_realloc(bs->ptr, newsz * sizeof(Eterm));
-	sys_memzero(uptr + bs->size, (newsz - bs->size) * sizeof(Eterm));
+	for(i = bs->size; i < newsz; ++i)
+	    uptr[i] = THE_NON_VALUE;
 	bs->ptr = uptr;
+	if (bs->sz) {
+	    Uint *nsz = (Uint*) sys_realloc(bs->sz, newsz * sizeof(Uint));
+	    sys_memzero(nsz + bs->size, (newsz - bs->size) * sizeof(Uint));
+	    bs->sz = nsz;
+	}
     }
     else {   /* For the first time */
 	uptr = (Eterm *) sys_alloc_from(56,newsz * sizeof(Eterm));
-	sys_memzero(uptr + bs->size, (newsz - bs->size) * sizeof(Eterm));
+	for(i = bs->size; i < newsz; ++i)
+	    uptr[i] = THE_NON_VALUE;
 	sys_memcpy(uptr, bs->ptr,  DB_MATCH_NBIND * sizeof(Eterm));
 	bs->ptr = uptr;
+	if (bs->sz) {
+	    Uint *nsz = (Uint*) sys_alloc_from(56, newsz * sizeof(Uint));
+	    sys_memzero(nsz + bs->size, (newsz - bs->size) * sizeof(Uint));
+	    sys_memcpy(nsz, bs->sz, DB_MATCH_NBIND * sizeof(Uint));
+	    bs->sz = nsz;
+	}
     }
     bs->size = newsz;
 }
@@ -2198,8 +2280,6 @@ static DMCRet dmc_one_term(DMCContext *context,
 
     switch (tag_val_def(c)) {
     case ATOM_DEF:
-	if (is_nil(c)) /* Nil has atom tag.*/
-	    goto simple_value;
 	if ((n = db_is_variable(c)) >= 0) { /* variable */
 	    if (n >= heap->size) {
 		/*
@@ -2274,7 +2354,7 @@ static DMCRet dmc_one_term(DMCContext *context,
 	DMC_PUSH(*stack, c); 
 	break;
     case TUPLE_DEF:
-	n = arityval(*ptr_val(c));
+	n = arityval(*tuple_val(c));
 	DMC_PUSH(*text, matchPushT);
 	++(context->stack_used);
 	DMC_PUSH(*text, n);
@@ -2292,30 +2372,31 @@ static DMCRet dmc_one_term(DMCContext *context,
 	tmp_mb->next = context->save;
 	context->save = tmp_mb;
 	break;
-    case REFER_DEF:
-	n = thing_arityval(*ptr_val(c));
+    case REF_DEF:
+	n = thing_arityval(*ref_val(c));
 	DMC_PUSH(*text, matchEqRef);
-	DMC_PUSH(*text, *ptr_val(c));
+	DMC_PUSH(*text, *ref_val(c));
 	for (i = 1; i <= n; ++i) {
-	    DMC_PUSH(*text, (Uint) ptr_val(c)[i]);
+	    DMC_PUSH(*text, (Uint) ref_val(c)[i]);
 	}
 	break;
     case BIG_DEF:
-	n = thing_arityval(*ptr_val(c));
+	n = thing_arityval(*big_val(c));
 	DMC_PUSH(*text, matchEqBig);
-	DMC_PUSH(*text, *ptr_val(c));
+	DMC_PUSH(*text, *big_val(c));
 	for (i = 1; i <= n; ++i) {
-	    DMC_PUSH(*text, (Uint) ptr_val(c)[i]);
+	    DMC_PUSH(*text, (Uint) big_val(c)[i]);
 	}
 	break;
     case FLOAT_DEF:
 	DMC_PUSH(*text,matchEqFloat);
-	DMC_PUSH(*text, (Uint) ptr_val(c)[1]);
-	DMC_PUSH(*text, (Uint) ptr_val(c)[2]);
+	DMC_PUSH(*text, (Uint) float_val(c)[1]);
+	DMC_PUSH(*text, (Uint) float_val(c)[2]);
 	break;
     case SMALL_DEF:
     case PORT_DEF:
     case PID_DEF:
+    case NIL_DEF:
 simple_value: /* jump's here from ATOM_DEF when not a match variable */
         DMC_PUSH(*text, matchEq);
         DMC_PUSH(*text, (Uint) c);
@@ -2394,10 +2475,10 @@ static DMCRet dmc_list(DMCContext *context,
     int c2;
     int ret;
 
-    if ((ret = dmc_expr(context, heap, text, CAR(ptr_val(t)), &c1)) != retOk)
+    if ((ret = dmc_expr(context, heap, text, CAR(list_val(t)), &c1)) != retOk)
 	return ret;
 
-    if ((ret = dmc_expr(context, heap, text, CDR(ptr_val(t)), &c2)) != retOk)
+    if ((ret = dmc_expr(context, heap, text, CDR(list_val(t)), &c2)) != retOk)
 	return ret;
 
     if (c1 && c2) {
@@ -2409,10 +2490,10 @@ static DMCRet dmc_list(DMCContext *context,
 	/* The CAR is not a constant, so if the CDR is, we just push it,
 	   otherwise it is already pushed. */
 	if (c2)
-	    do_emit_constant(context, text, CDR(ptr_val(t)));
+	    do_emit_constant(context, text, CDR(list_val(t)));
 	DMC_PUSH(*text, matchConsA);
     } else { /* !c2 && c1 */
-	do_emit_constant(context, text, CAR(ptr_val(t)));
+	do_emit_constant(context, text, CAR(list_val(t)));
 	DMC_PUSH(*text, matchConsB);
     }
     --context->stack_used; /* Two objects on stack becomes one */
@@ -2429,7 +2510,7 @@ static DMCRet dmc_tuple(DMCContext *context,
     DMC_STACK_TYPE(Uint) instr_save;
     int all_constant = 1;
     int textpos = DMC_STACK_NUM(*text);
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint nelems = arityval(*p);
     Uint i;
     int c;
@@ -2508,8 +2589,8 @@ static DMCRet dmc_whole_expression(DMCContext *context,
 	    ASSERT(is_tuple(context->matchexpr
 			    [context->current_match]));
 	    context->eheap_need += 
-		arityval(*(ptr_val(context->matchexpr
-				   [context->current_match]))) * 2;
+		arityval(*(tuple_val(context->matchexpr
+				     [context->current_match]))) * 2;
 	    DMC_PUSH(*text, matchPushArrayAsList);
 	}
     } else {
@@ -2576,7 +2657,7 @@ static DMCRet dmc_const(DMCContext *context,
 		       Eterm t,
 		       int *constant)
 {
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
 
     if (a != 2) {
@@ -2592,7 +2673,7 @@ static DMCRet dmc_and(DMCContext *context,
 		      Eterm t,
 		      int *constant)
 {
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     DMCRet ret;
     int i;
@@ -2621,7 +2702,7 @@ static DMCRet dmc_or(DMCContext *context,
 		     Eterm t,
 		     int *constant)
 {
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     DMCRet ret;
     int i;
@@ -2651,7 +2732,7 @@ static DMCRet dmc_andthen(DMCContext *context,
 			  Eterm t,
 			  int *constant)
 {
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     DMCRet ret;
     int i;
@@ -2688,7 +2769,7 @@ static DMCRet dmc_orelse(DMCContext *context,
 			 Eterm t,
 			 int *constant)
 {
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     DMCRet ret;
     int i;
@@ -2725,7 +2806,7 @@ static DMCRet dmc_message(DMCContext *context,
 			  Eterm t,
 			  int *constant)
 {
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     DMCRet ret;
     int c;
@@ -2762,7 +2843,7 @@ static DMCRet dmc_self(DMCContext *context,
 		     Eterm t,
 		     int *constant)
 {
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     
     if (a != 1) {
@@ -2782,7 +2863,7 @@ static DMCRet dmc_return_trace(DMCContext *context,
 			       Eterm t,
 			       int *constant)
 {
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     
     if (context->is_guard) {
@@ -2808,7 +2889,7 @@ static DMCRet dmc_set_seq_token(DMCContext *context,
 				Eterm t,
 				int *constant)
 {
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     DMCRet ret;
     int c;
@@ -2848,7 +2929,7 @@ static DMCRet dmc_display(DMCContext *context,
 			  Eterm t,
 			  int *constant)
 {
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     DMCRet ret;
     int c;
@@ -2883,7 +2964,7 @@ static DMCRet dmc_process_dump(DMCContext *context,
 			       Eterm t,
 			       int *constant)
 {
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     
     if (context->is_guard) {
@@ -2908,7 +2989,7 @@ static DMCRet dmc_enable_trace(DMCContext *context,
 			       Eterm t,
 			       int *constant)
 {
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     DMCRet ret;
     int c;
@@ -2920,20 +3001,40 @@ static DMCRet dmc_enable_trace(DMCContext *context,
 		     *constant);
     }
 
-    if (a != 2) {
+    switch (a) {
+    case 2:
+	*constant = 0;
+	if ((ret = dmc_expr(context, heap, text, p[2], &c)) != retOk) {
+	    return ret;
+	}
+	if (c) { 
+	    do_emit_constant(context, text, p[2]);
+	}
+	DMC_PUSH(*text, matchEnableTrace);
+	/* Push as much as we remove, stack_need is untouched */
+	break;
+    case 3:
+	*constant = 0;
+	if ((ret = dmc_expr(context, heap, text, p[3], &c)) != retOk) {
+	    return ret;
+	}
+	if (c) { 
+	    do_emit_constant(context, text, p[3]);
+	}
+	if ((ret = dmc_expr(context, heap, text, p[2], &c)) != retOk) {
+	    return ret;
+	}
+	if (c) { 
+	    do_emit_constant(context, text, p[2]);
+	}
+	DMC_PUSH(*text, matchEnableTrace2);
+	--context->stack_used; /* Remove two and add one */
+	break;
+    default:
 	RETURN_TERM_ERROR("Special form 'enable_trace' called with wrong "
 			  "number of arguments in %s.", t, context, 
 			  *constant);
     }
-    *constant = 0;
-    if ((ret = dmc_expr(context, heap, text, p[2], &c)) != retOk) {
-	return ret;
-    }
-    if (c) { 
-	do_emit_constant(context, text, p[2]);
-    }
-    DMC_PUSH(*text, matchEnableTrace);
-    /* Push as much as we remove, stack_need is untouched */
     return retOk;
 }
 
@@ -2943,7 +3044,7 @@ static DMCRet dmc_disable_trace(DMCContext *context,
 				Eterm t,
 				int *constant)
 {
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     DMCRet ret;
     int c;
@@ -2955,32 +3056,78 @@ static DMCRet dmc_disable_trace(DMCContext *context,
 		     *constant);
     }
 
-    if (a != 2) {
+    switch (a) {
+    case 2:
+	*constant = 0;
+	if ((ret = dmc_expr(context, heap, text, p[2], &c)) != retOk) {
+	    return ret;
+	}
+	if (c) { 
+	    do_emit_constant(context, text, p[2]);
+	}
+	DMC_PUSH(*text, matchDisableTrace);
+	/* Push as much as we remove, stack_need is untouched */
+	break;
+    case 3:
+	*constant = 0;
+	if ((ret = dmc_expr(context, heap, text, p[3], &c)) != retOk) {
+	    return ret;
+	}
+	if (c) { 
+	    do_emit_constant(context, text, p[3]);
+	}
+	if ((ret = dmc_expr(context, heap, text, p[2], &c)) != retOk) {
+	    return ret;
+	}
+	if (c) { 
+	    do_emit_constant(context, text, p[2]);
+	}
+	DMC_PUSH(*text, matchDisableTrace2);
+	--context->stack_used; /* Remove two and add one */
+	break;
+    default:
 	RETURN_TERM_ERROR("Special form 'disable_trace' called with wrong "
 			  "number of arguments in %s.", t, context, 
 			  *constant);
     }
-    *constant = 0;
-    if ((ret = dmc_expr(context, heap, text, p[2], &c)) != retOk) {
-	return ret;
-    }
-    if (c) { 
-	do_emit_constant(context, text, p[2]);
-    }
-    DMC_PUSH(*text, matchDisableTrace);
-    /* Push as much as we remove, stack_need is untouched */
     return retOk;
 }
 
 
 
+static DMCRet dmc_caller(DMCContext *context,
+ 			 DMCHeap *heap,
+ 			 DMC_STACK_TYPE(Uint) *text,
+ 			 Eterm t,
+ 			 int *constant)
+{
+    Eterm *p = tuple_val(t);
+    Uint a = arityval(*p);
+     
+    if (context->is_guard) {
+ 	RETURN_ERROR("Special form 'caller' called in "
+ 		     "guard context.", context, *constant);
+    }
+  
+    if (a != 1) {
+ 	RETURN_TERM_ERROR("Special form 'caller' called with "
+ 			  "arguments in %s.", t, context, *constant);
+    }
+    *constant = 0;
+    DMC_PUSH(*text, matchCaller); /* Creates binary */
+    context->eheap_need += 4;     /* A 3-tuple is built */
+    if (++context->stack_used > context->stack_need)
+ 	context->stack_need = context->stack_used;
+    return retOk;
+}
+  
 static DMCRet dmc_fun(DMCContext *context,
 		       DMCHeap *heap,
 		       DMC_STACK_TYPE(Uint) *text,
 		       Eterm t,
 		       int *constant)
 {
-    Eterm *p = ptr_val(t);
+    Eterm *p = tuple_val(t);
     Uint a = arityval(*p);
     int c;
     int i;
@@ -3015,6 +3162,8 @@ static DMCRet dmc_fun(DMCContext *context,
 	return dmc_enable_trace(context, heap, text, t, constant);
     case am_disable_trace:
 	return dmc_disable_trace(context, heap, text, t, constant);
+    case am_caller:
+ 	return dmc_caller(context, heap, text, t, constant);
     }
 
     b = dmc_lookup_bif(p[1], ((int) a) - 1);
@@ -3092,7 +3241,7 @@ static DMCRet dmc_expr(DMCContext *context,
 	    return ret;
 	break;
     case TUPLE_DEF:
-	p = ptr_val(t);
+	p = tuple_val(t);
 #ifdef HARDDEBUG
 	erl_printf(CERR,"%d %d %d %d\r\n",arityval(*p),is_tuple(tmp = p[1]),
 		   is_atom(p[1]),db_is_variable(p[1]));
@@ -3152,14 +3301,14 @@ static DMCRet compile_guard_expr(DMCContext *context,
 	}
 	while (is_list(l)) {
 	    constant = 0;
-	    t = CAR(ptr_val(l));
+	    t = CAR(list_val(l));
 	    if ((ret = dmc_expr(context, heap, text, t, &constant)) !=
 		retOk)
 		return ret;
 	    if (constant) {
 		do_emit_constant(context, text, t);
 	    }
-	    l = CDR(ptr_val(l));
+	    l = CDR(list_val(l));
 	    if (context->is_guard) {
 		DMC_PUSH(*text,matchTrue);
 	    } else {
@@ -3227,8 +3376,8 @@ static int cmp_uint(void *a, void *b)
 static int cmp_guard_bif(void *a, void *b)
 {
     int ret;
-    if (( ret = ((int) unsigned_val(((DMCGuardBif *) a)->name)) -
-	 ((int) unsigned_val(((DMCGuardBif *) b)->name)) ) == 0) {
+    if (( ret = ((int) atom_val(((DMCGuardBif *) a)->name)) -
+	 ((int) atom_val(((DMCGuardBif *) b)->name)) ) == 0) {
 	ret = ((DMCGuardBif *) a)->arity - ((DMCGuardBif *) b)->arity;
     }
     return ret;
@@ -3313,21 +3462,21 @@ static Uint my_size_object(Eterm t)
     Eterm *p;
     switch (tag_val_def(t)) {
     case LIST_DEF:
-	sum += 2 + my_size_object(CAR(ptr_val(t))) + 
-	    my_size_object(CDR(ptr_val(t)));
+	sum += 2 + my_size_object(CAR(list_val(t))) + 
+	    my_size_object(CDR(list_val(t)));
 	break;
     case TUPLE_DEF:
-	if (arityval(*ptr_val(t)) == 1 && is_tuple(tmp = ptr_val(t)[1])) {
+	if (arityval(*tuple_val(t)) == 1 && is_tuple(tmp = tuple_val(t)[1])) {
 	    Uint i,n;
-	    p = ptr_val(tmp);
+	    p = tuple_val(tmp);
 	    n = arityval(p[0]);
 	    sum += 1 + n;
 	    for (i = 1; i <= n; ++i)
 		sum += my_size_object(p[i]);
-	} else if (arityval(*ptr_val(t)) == 2 &&
-		   is_atom(tmp = ptr_val(t)[1]) &&
+	} else if (arityval(*tuple_val(t)) == 2 &&
+		   is_atom(tmp = tuple_val(t)[1]) &&
 		   tmp == am_const) {
-	    sum += size_object(ptr_val(t)[2]);
+	    sum += size_object(tuple_val(t)[2]);
 	} else {
 	    erl_exit(1,"Internal error, sizing unrecognized object in "
 		     "(d)ets:match compilation.");
@@ -3347,27 +3496,27 @@ static Eterm my_copy_struct(Eterm t, Eterm **hp, ErlOffHeap* off_heap)
     Uint sz;
     switch (tag_val_def(t)) {
     case LIST_DEF:
-	a = my_copy_struct(CAR(ptr_val(t)), hp, off_heap);
-	b = my_copy_struct(CDR(ptr_val(t)), hp, off_heap);
+	a = my_copy_struct(CAR(list_val(t)), hp, off_heap);
+	b = my_copy_struct(CDR(list_val(t)), hp, off_heap);
 	ret = CONS(*hp, a, b);
 	*hp += 2;
 	break;
     case TUPLE_DEF:
-	if (arityval(*ptr_val(t)) == 1 && is_tuple(a = ptr_val(t)[1])) {
+	if (arityval(*tuple_val(t)) == 1 && is_tuple(a = tuple_val(t)[1])) {
 	    Uint i,n;
 	    Eterm *savep = *hp;
 	    ret = make_tuple(savep);
-	    p = ptr_val(a);
+	    p = tuple_val(a);
 	    n = arityval(p[0]);
 	    *hp += n + 1;
 	    *savep++ = make_arityval(n);
 	    for(i = 1; i <= n; ++i) 
 		*savep++ = my_copy_struct(p[i], hp, off_heap);
-	} else if (arityval(*ptr_val(t)) == 2 && 
-		   is_atom(a = ptr_val(t)[1]) &&
+	} else if (arityval(*tuple_val(t)) == 2 && 
+		   is_atom(a = tuple_val(t)[1]) &&
 		   a == am_const) {
 	    /* A {const, XXX} expression */
-	    b = ptr_val(t)[2];
+	    b = tuple_val(t)[2];
 	    sz = size_object(b);
 	    ret = copy_struct(b,sz,hp,off_heap);
 	} else {
@@ -3429,13 +3578,13 @@ BIF_ADECL_3
     } else
 #endif
     if (BIF_ARG_3 == am_trace) {
-	if ((res = match_spec_test(BIF_P, BIF_ARG_1, BIF_ARG_2, 1)) 
-	    != (Eterm) 0) {
+	res = match_spec_test(BIF_P, BIF_ARG_1, BIF_ARG_2, 1);
+	if (is_value(res)) {
 	    BIF_RET(res);
 	}
     } else if (BIF_ARG_3 == am_ets) {
-	if ((res = match_spec_test(BIF_P, BIF_ARG_1, BIF_ARG_2, 0)) 
-	    != (Eterm) 0) {
+	res = match_spec_test(BIF_P, BIF_ARG_1, BIF_ARG_2, 0);
+	if (is_value(res)) {
 	    BIF_RET(res);
 	}
     } 
@@ -3455,9 +3604,10 @@ static Eterm match_spec_test(Process *p, Eterm against, Eterm spec, int trace)
     Eterm l;
     Uint32 ret_flags;
     Uint sz;
+    Eterm *save_cp;
 
     if (trace && !(is_list(against) || against == NIL)) {
-	return (Eterm) 0;
+	return THE_NON_VALUE;
     }
     if (trace) {
 	/* I WANT to use the erts_... routines here, to test them properly */
@@ -3482,23 +3632,29 @@ static Eterm match_spec_test(Process *p, Eterm against, Eterm spec, int trace)
 	n = 0;
 	while (is_list(l)) {
 	    ++n;
-	    l = CDR(ptr_val(l));
+	    l = CDR(list_val(l));
 	}
 	if (trace) {
 	    arr = sys_alloc(sizeof(Eterm) * n);
 	    l = against;
 	    n = 0;
 	    while (is_list(l)) {
-		arr[n] = CAR(ptr_val(l));
+		arr[n] = CAR(list_val(l));
 		++n;
-		l = CDR(ptr_val(l));
+		l = CDR(list_val(l));
 	    }
 	} else {
 	    n = 0;
 	    arr = (Eterm *) against;
 	}
+	
+	/* We are in the context of a BIF, 
+	   {caller} should return 'undefined' */
+	save_cp = p->cp;
+	p->cp = NULL;
 	res = erts_match_set_run(p, mps, arr, n, &ret_flags);
-	if (res == (Eterm) 0) {
+	p->cp = save_cp;
+	if (is_non_value(res)) {
 	    res = am_false;
 	}
 	sz = size_object(res);
@@ -3792,6 +3948,18 @@ static void db_match_dis(Binary *bp)
 	    ++t;
 	    erl_printf(COUT,"DisableTrace\r\n");
 	    break;
+	case matchEnableTrace2:
+	    ++t;
+	    erl_printf(COUT,"EnableTrace2\r\n");
+	    break;
+	case matchDisableTrace2:
+	    ++t;
+	    erl_printf(COUT,"DisableTrace2\r\n");
+	    break;
+ 	case matchCaller:
+ 	    ++t;
+ 	    erl_printf(COUT,"Caller\r\n");
+ 	    break;
 	default:
 	    erl_printf(COUT,"??? (0x%08x)\r\n", *t);
 	    ++t;

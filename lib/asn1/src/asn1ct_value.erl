@@ -57,7 +57,12 @@ get_type(M,Typename,Type,Tellname) when record(Type,type) ->
 	{primitive,bif} ->
 	    get_type_prim(Type);
 	'ASN1_OPEN_TYPE' ->
-	    "open_type";
+	    case  Type#type.constraint of
+		[#typereference{val=TrefConstraint}] ->
+		    get_type(M,TrefConstraint,no);
+		_ ->
+		    "open_type"
+	    end;
 	{constructed,bif} ->
 	    get_type_constructed(M,Typename,InnerType,Type)
     end;
@@ -111,13 +116,14 @@ get_components(M,Typename,[]) ->
 
 get_choice(M,Typename,Type) ->
     {'CHOICE',TCompList} = Type#type.def,
+%%    io:format("asn1ct_value:get_choice/3: M = ~w, Typename = ~w~n"
+%%	      "  Type = ~w~n  TCompList = ~w~n",[M,Typename,Type,TCompList]),
     case TCompList of
 	[] -> 
 	    {asn1_EMPTY,asn1_EMPTY};
-	{[],_} ->
-	    {asn1_EMPTY,asn1_EMPTY};
-	{CompList,_} -> % Should be enhanced to handle extensions too
-	    C = lists:nth(random(length(CompList)),CompList),
+	{CompList,ExtList} -> % Should be enhanced to handle extensions too
+	    CList = CompList ++ ExtList,
+	    C = lists:nth(random(length(CList)),CList),
 	    {C#'ComponentType'.name,get_type(M,Typename,C,no)};
 	CompList when list(CompList) ->
 	    C = lists:nth(random(length(CompList)),CompList),
@@ -151,7 +157,13 @@ get_type_prim(D) ->
 		    lists:nth(random(length(NN)),NN)
 	    end;
 	{'ENUMERATED',NamedNumberList} ->
-	    NN = [X||{X,Y} <- NamedNumberList],
+	    case NamedNumberList of
+		{N1,N2} ->
+		    NNew = N1 ++ N2;
+		_->
+		    NNew = NamedNumberList
+	    end,
+	    NN = [X||{X,Y} <- NNew],
 	    case NN of
 		[] ->
 		    asn1_EMPTY;
@@ -159,12 +171,14 @@ get_type_prim(D) ->
 		    lists:nth(random(length(NN)),NN)
 	    end;
 	{'BIT STRING',NamedNumberList} ->
-	    NN = [X||{_,X,Y} <- NamedNumberList],
+%%	    io:format("get_type_prim 1: ~w~n",[NamedNumberList]),
+	    NN = [X||{X,Y} <- NamedNumberList],
 	    case NN of
 		[] ->
 		    Bl1 =lists:reverse(adjust_list(size_random(C),[1,0,1,1])),
 		    lists:reverse(lists:dropwhile(fun(0)->true;(1)->false end,Bl1));
 		_ ->
+%%		    io:format("get_type_prim 2: ~w~n",[NN]),
 		    [lists:nth(random(length(NN)),NN)]
 	    end;
 	'ANY' ->
@@ -257,12 +271,22 @@ c_random(VRange,Single) ->
 		{Lb,'MAX'} ->
 		    Lb + random(16#fffffff)-1;
 		{'MIN',Ub} ->
-		    Ub - random(16#fffffff)-1
+		    Ub - random(16#fffffff)-1;
+		{A,{'ASN1_OK',B}} ->
+		    Range = B - A +1,
+		    A + (random(Range)-1)
 	    end;
 	{_,S} when integer(S) ->
 	    S;
 	{_,S} when list(S) ->
 	    lists:nth(random(length(S)),S)
+%%	{S1,S2} ->
+%%	    io:format("asn1ct_value: hejsan hoppsan~n");
+%%	_ ->
+%%	    io:format("asn1ct_value: hejsan hoppsan 2~n")
+%%	    io:format("asn1ct_value: c_random/2: S1 = ~w~n"
+%%		      "S2 = ~w,~n",[S1,S2])
+%%	    exit(self(),goodbye)
     end.
 
 adjust_list(Len,Orig) ->

@@ -13,7 +13,7 @@
  * Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
  * AB. All Rights Reserved.''
  * 
- *     $Id$
+ *     $Id: ddll_drv.c,v 1.4 2000/06/08 21:56:49 tony Exp $
  */
 /* 
  * Dynamic driver loader and linker
@@ -123,12 +123,119 @@ static int dyn_stop()
     return 0;
 }
 
+
+static int unload(void* arg1, void* arg2)
+{
+    DE_List* de = (DE_List*) arg1;
+    int ix = (int) arg2;
+    DE_Handle* dh;
+    int j;
+
+    DEBUGF(("ddll_drv: unload: (%d) %s\r\n", ix, de->drv->driver_name));
+    /*
+     * Kill all ports that depend on this driver.
+     */
+    for (j = 0; j < erl_max_ports; j++) {
+	if (erts_port[j].status != FREE &&
+	    erts_port[j].drv_ptr == de->drv) {
+	    driver_failure(j, -1);
+	}
+    }
+
+    /* 
+     * Let the driver clean up its mess before unloading it.
+     * We ignore errors from the finish funtion and
+     * ddll_close().
+     */
+
+    dh = de->de_hndl;
+    
+    if (de->drv->finish) {
+	(*(de->drv->finish))();
+    }
+    DEBUGF(("ddll_drv: unload: lib=%08x\r\n", dh->handle));
+
+    ddll_close(dh->handle);
+    sys_free((void*)dh);
+    remove_driver_entry(de->drv);
+
+    return reply(ix, 'o', "");
+}
+
+static int load(char* full_name, char* driver_name)
+{
+    DriverEntry *dp;
+    DE_Handle* dh;
+    void *lib;
+    uint32 *initfn;
+
+    DEBUGF(("ddll_drv: load: %s, %s\r\n", full_name, driver_name));
+
+    if ((lib = ddll_open(full_name)) == NULL) {
+	return error_reply("open_error", ddll_error());
+    }
+    DEBUGF(("ddll_drv: load: lib=%08x\r\n", lib));
+    /* Some systems still require an underscore at the beginning of the
+     * symbol name. If we can't find the name without the underscore, try
+     * again with it.
+     */
+	
+    if ((initfn = ddll_sym(lib, "driver_init")) == NULL)
+	if ((initfn = ddll_sym(lib, "_driver_init")) == NULL) {
+	    ddll_close(lib);
+	    return reply(erlang_port, 'e', "no_driver_init");
+	}
+
+    /* 
+     * Here we go, lets hope the driver write knew what he was doing...
+     */
+    dh = sys_alloc(sizeof(DE_Handle));
+    dh->handle = lib;
+    dh->ref_count = 1;
+    dh->status = ERL_DE_OK;
+    dh->cb = NULL;
+    dh->ca[0] = NULL;
+
+    if ((dp = (((DriverEntry *(*)())initfn)(dh))) == NULL) {
+	ddll_close(lib);
+	sys_free(dh);
+	return reply(erlang_port, 'e', "driver_init_failed");
+    }
+    
+    if (strcmp(driver_name, dp->driver_name) != 0) {
+	ddll_close(lib);
+	sys_free(dh);
+	return reply(erlang_port, 'e', "bad_driver_name");
+    }
+
+    dp->handle = dh;
+
+    /* insert driver */
+    add_driver_entry(dp);
+
+    return reply(erlang_port, 'o', "");
+}
+
+
+/* static reload callback */
+static int reload(void* arg1, void* arg2, void* arg3, void* arg4)
+{
+    char* full_name = (char*) arg1;
+    char* driver_name = (char*) arg2;
+    int code;
+
+    DEBUGF(("ddll_drv: reload: %s, %s\r\n", full_name, driver_name));
+
+    unload(arg3, arg4);
+    code = load(full_name, driver_name);
+    driver_free(full_name);
+    driver_free(driver_name);
+    return code;
+}
+
+
 static int handle_command(long inport, char *buf, int count)
 {
-    int j;
-    uint32 *initfn;
-    DriverEntry *dp;
-    void *lib;
     char *driver_name;
     
     /*
@@ -145,6 +252,8 @@ static int handle_command(long inport, char *buf, int count)
 	{
 	    char* full_name;
 	    DE_List *de;
+	    DE_Handle* dh;
+	    int j;
 
 	    if (count < 5) {
 		return driver_failure(erlang_port, 110);
@@ -157,95 +266,81 @@ static int handle_command(long inport, char *buf, int count)
 	    }
 
 	    full_name = buf+j+1;
-	    
+
 	    for (de = driver_list; de != NULL; de = de->next) {
 		if (strcmp(de->drv->driver_name, driver_name) == 0) {
+		    dh = de->de_hndl;
+		    if (dh != NULL) {
+			if (dh->status == ERL_DE_UNLOAD) {
+			    dh->status = ERL_DE_RELOAD;
+			    dh->cb = reload;
+			    dh->ca[2] = dh->ca[0];
+			    dh->ca[3] = dh->ca[1];
+			    dh->ca[0] = driver_alloc(strlen(full_name)+1);
+			    dh->ca[1] = driver_alloc(strlen(driver_name)+1);
+			    strcpy((char*)dh->ca[0], full_name);
+			    strcpy((char*)dh->ca[1], driver_name);
+			    return 0;
+			}
+			else if (dh->status == ERL_DE_RELOAD) {
+			    driver_free(dh->ca[0]);
+			    driver_free(dh->ca[1]);
+			    dh->ca[0] = driver_alloc(strlen(full_name)+1);
+			    dh->ca[1] = driver_alloc(strlen(driver_name)+1);
+			    strcpy((char*)dh->ca[0], full_name);
+			    strcpy((char*)dh->ca[1], driver_name);
+			    return 0;
+			}
+		    }
 		    return reply(erlang_port, 'e', "already_loaded");
 		}
 	    }
-	    
-	    if ((lib = ddll_open(full_name)) == NULL) {
-		return error_reply("open_error", ddll_error());
-	    }
-	    
-	    /* Some systems still require an underscore at the beginning of the
-	     * symbol name. If we can't find the name without the underscore, try
-	     * again with it.
-	     */
-	
-	    if ((initfn = ddll_sym(lib, "driver_init")) == NULL)
-		if ((initfn = ddll_sym(lib, "_driver_init")) == NULL) {
-		    ddll_close(lib);
-		    return reply(erlang_port, 'e', "no_driver_init");
-		}
-
-	    /* 
-	     * Here we go, lets hope the driver write knew what he was doing...
-	     */
-	    
-	    if ((dp = (((DriverEntry *(*)())initfn)(lib))) == NULL) {
-		ddll_close(lib);
-		return reply(erlang_port, 'e', "driver_init_failed");
-	    }
-    
-	    if (strcmp(driver_name, dp->driver_name) != 0) {
-		ddll_close(lib);
-		return reply(erlang_port, 'e', "bad_driver_name");
-	    }
-
-	    /*
-	     * Link the driver into the list.
-	     */
-
-	    de = sys_alloc_from(161, sizeof(DE_List));
-	    de->drv = dp;
-	    de->handle = lib;
-	    de->next = driver_list;
-	    driver_list = de;
-	    if (dp->init != NULL) {
-		(*dp->init)();
-	    }
-
-	    return reply(erlang_port, 'o', "");
+	    return load(full_name, driver_name);
 	}
 
     case UNLOAD_DRIVER:
 	{
 	    DE_List *de;
+	    DE_Handle* dh;
 
 	    if (count < 3) {
 		return driver_failure(erlang_port, 200);
 	    }
-
 	    driver_name = buf;
+
+	    DEBUGF(("ddll_drv: UNLOAD: %s\r\n", driver_name));
+
 	    for (de = driver_list; de != NULL; de = de->next) {
 		if (strcmp(de->drv->driver_name, driver_name) == 0) {
-		    if (de->drv->handle == NULL) {
+		    dh = de->de_hndl;
+		    if (dh == NULL)
 			return reply(erlang_port, 'e', "linked_in_driver");
-		    }
-
-		    /*
-		     * Kill all ports that depend on this driver.
-		     */
-		    for (j = 0; j < erl_max_ports; j++) {
-			if (erts_port[j].status != FREE &&
-			    erts_port[j].drv_ptr == de->drv) {
-			    driver_failure(j, -1);
+		    dh->ref_count--;
+		    if (dh->ref_count > 0) {
+			DEBUGF(("ddll_drv: UNLOAD: ref_count =%d\r\n",
+				dh->ref_count));
+			if (dh->status == ERL_DE_OK) {
+			    dh->status = ERL_DE_UNLOAD;
+			    dh->cb = unload;
+			    dh->ca[0] = (void*) de;
+			    dh->ca[1] = (void*) erlang_port;
+			    return 0;  /* delayed op */
 			}
+			else if (dh->status == ERL_DE_RELOAD) {
+			    dh->status = ERL_DE_UNLOAD;
+			    dh->cb = unload;
+			    driver_free(dh->ca[0]);
+			    driver_free(dh->ca[1]);
+			    dh->ca[0] = (void*) de;
+			    dh->ca[1] = (void*) erlang_port;
+			    return 0;
+			}
+			else if (dh->status == ERL_DE_UNLOAD)
+			    return 0;
 		    }
-
-		    /* 
-		     * Let the driver clean up its mess before unloading it.
-		     * We ignore errors from the finish funtion and
-		     * ddll_close().
-		     */
-
-		    if (de->drv->finish) {
-			(*(de->drv->finish))();
+		    else {
+			return unload((void*) de, (void*) erlang_port);
 		    }
-		    ddll_close(de->handle);
-		    remove_driver_entry(de->drv);
-		    return reply(erlang_port, 'o', "");
 		}
 	    }
 	    return reply(erlang_port, 'e', "not_loaded");

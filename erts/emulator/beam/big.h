@@ -39,18 +39,18 @@
 #define D_DECIMAL_BASE  10000       /* Max decimal exponent in a digit */
 
 /* macros for bignum objects */
-#define big_v(x)       BIG_V(ptr_val(x))
-#define big_sign(x)    BIG_SIGN(ptr_val(x))
-#define big_arity(x)   BIG_ARITY(ptr_val(x))
-#define big_digit(x,i) BIG_DIGIT(ptr_val(x),i)
-#define big_size(x)    BIG_SIZE(ptr_val(x))
+#define big_v(x)       BIG_V(big_val(x))
+#define big_sign(x)    BIG_SIGN(big_val(x))
+#define big_arity(x)   BIG_ARITY(big_val(x))
+#define big_digit(x,i) BIG_DIGIT(big_val(x),i)
+#define big_size(x)    BIG_SIZE(big_val(x))
 
 
 /* macros for thing pointers */
 
 #define BIG_V(xp)        ((digit_t*)((xp)+1))
-#define BIG_SIGN(xp)     (thing_subtag(*xp) == NEGATIVE_BIG_SUBTAG)
-#define BIG_ARITY(xp)    ((uint32)thing_arityval(*(xp)))
+#define BIG_SIGN(xp)     (!!bignum_header_is_neg(*xp))
+#define BIG_ARITY(xp)    ((uint32)bignum_header_arity(*(xp)))
 #define BIG_DIGIT(xp,i)  *(BIG_V(xp)+(i))
 #define BIG_SIZE(xp)     ((dsize_t)(BIG_DIGIT(xp,2*BIG_ARITY(xp)-1) != 0 ? \
                             2*BIG_ARITY(xp) : 2*BIG_ARITY(xp)-1))
@@ -208,8 +208,10 @@ dsize_t big_bytes(uint32);
 int bytes_eq_big(byte*, dsize_t, int, uint32);
 uint32 bytes_to_big(byte*, dsize_t, int, uint32*);
 byte* big_to_bytes(uint32, byte*);
-int big_to_unsigned(uint32 x, unsigned* u);
 
-
+int big_fits_in_sint32(Eterm b);
+int big_fits_in_uint32(Eterm b);
+Uint32 big_to_uint32(Eterm b);
+Sint32 big_to_sint32(Eterm b);
 
 #endif

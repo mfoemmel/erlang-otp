@@ -22,33 +22,35 @@
 #include <stdio.h>
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include "portability.h"
 
+__ERL_BEGIN_DECL
 
-#define ERL_INTEGER 'i'
-#define ERL_U_INTEGER 'u' /* unsigned int */
-#define ERL_ATOM 'a'
-#define ERL_PID 'p'
-#define ERL_PORT 'P'
-#define ERL_REF 'r'
-#define ERL_LIST 'l'
-#define ERL_EMPTY_LIST 'n'
-#define ERL_TUPLE 't'
-#define ERL_BINARY 'b'
-#define ERL_FLOAT 'f'
-#define ERL_VARIABLE 'v'  /* used in patterns */
-#define ERL_SMALL_BIG 'c'
-#define ERL_U_SMALL_BIG 'd'
+#define ERL_COMPOUND (1 << 7)
 
-#define MAXNODE_LEN 256
+#define ERL_UNDEF        0
+#define ERL_INTEGER      1
+#define ERL_U_INTEGER    2 /* unsigned int */
+#define ERL_ATOM         3
+#define ERL_PID          4
+#define ERL_PORT         5
+#define ERL_REF          6
+#define ERL_CONS         (7 | ERL_COMPOUND)
+#define ERL_LIST         ERL_CONS
+#define ERL_NIL          8
+#define ERL_EMPTY_LIST   ERL_NIL
+#define ERL_TUPLE        (9 | ERL_COMPOUND)
+#define ERL_BINARY      10
+#define ERL_FLOAT       11
+#define ERL_VARIABLE    (12 | ERL_COMPOUND) /* used in patterns */
+#define ERL_SMALL_BIG   13
+#define ERL_U_SMALL_BIG 14
 
 /*  Erlang terms in C  */
 
 typedef struct _header {
-  unsigned count:24;     /* reference counter */
-  unsigned type:8;       /* type of Erlang term */
+  unsigned int count:24;	/* reference counter */
+  unsigned int type:8;		/* type of Erlang term */
 } Erl_Header;
 
 typedef struct _integer {
@@ -74,7 +76,7 @@ typedef struct _atom {
 
 typedef struct _pid {
   Erl_Header h;
-  char node[MAXNODE_LEN];
+  char * node;
   unsigned int number;
   unsigned int serial;
   unsigned char creation;
@@ -82,14 +84,14 @@ typedef struct _pid {
 
 typedef struct _port {    
   Erl_Header h;
-  char node[MAXNODE_LEN];
+  char * node;
   unsigned int number;
   unsigned char creation;
 } Erl_Port;
 
 typedef struct _ref {
   Erl_Header h;
-  char node[MAXNODE_LEN];
+  char * node;
   int len;
   unsigned int n[3];
   unsigned char creation;
@@ -188,7 +190,8 @@ typedef struct _eterm {
  * Note too that element/2 (in Erlang) and
  * erl_element() are both 1-based.
  */
-#define ERL_TUPLE_ELEMENT(x, i) ((x)->uval.tval.elems[(i)])
+#define ERL_TUPLE_ELEMS(x) ((x)->uval.tval.elems)
+#define ERL_TUPLE_ELEMENT(x, i) (ERL_TUPLE_ELEMS(x)[(i)])
 
 #define ERL_BIN_SIZE(x) ((x)->uval.bval.size)
 #define ERL_BIN_PTR(x) ((x)->uval.bval.b)
@@ -196,9 +199,17 @@ typedef struct _eterm {
 #define ERL_CONS_HEAD(x) ((x)->uval.lval.head)
 #define ERL_CONS_TAIL(x) ((x)->uval.lval.tail)
 
+#define ERL_VAR_LEN(x) ((x)->uval.vval.len)
+#define ERL_VAR_NAME(x) ((x)->uval.vval.name)
+#define ERL_VAR_VALUE(x) ((x)->uval.vval.v)
+
+
 /*
  * Typing checking macros.
  */
+
+#define ERL_IS_DEFINED(x)  (ERL_TYPE(x) != 0)
+#define ERL_IS_COMPOUND(x) (ERL_TYPE(x) & ERL_COMPOUND)
 
 #define ERL_IS_INTEGER(x)  (ERL_TYPE(x) == ERL_INTEGER)
 #define ERL_IS_UNSIGNED_INTEGER(x)  (ERL_TYPE(x) == ERL_U_INTEGER)
@@ -207,11 +218,14 @@ typedef struct _eterm {
 #define ERL_IS_PID(x)      (ERL_TYPE(x) == ERL_PID)
 #define ERL_IS_PORT(x)     (ERL_TYPE(x) == ERL_PORT)
 #define ERL_IS_REF(x)      (ERL_TYPE(x) == ERL_REF)
-#define ERL_IS_LIST(x)     (ERL_IS_CONS(x) || ERL_IS_EMPTY_LIST(x))
-#define ERL_IS_CONS(x)     (ERL_TYPE(x) == ERL_LIST)
-#define ERL_IS_EMPTY_LIST(x) (ERL_TYPE(x) == ERL_EMPTY_LIST)
+#define ERL_IS_CONS(x)     (ERL_TYPE(x) == ERL_CONS)
+#define ERL_IS_NIL(x)      (ERL_TYPE(x) == ERL_NIL)
+#define ERL_IS_EMPTY_LIST(x) ERL_IS_NIL(x)
 #define ERL_IS_TUPLE(x)    (ERL_TYPE(x) == ERL_TUPLE)
 #define ERL_IS_BINARY(x)   (ERL_TYPE(x) == ERL_BINARY)
+
+#define ERL_IS_LIST(x)     (ERL_IS_CONS(x) || ERL_IS_EMPTY_LIST(x))
+
 
 typedef unsigned char Erl_Heap;
 
@@ -223,48 +237,43 @@ typedef struct _heapmark {
   struct _heapmark *prev;  /* previous heapmark */
 } Erl_HeapMark;
 
-#if defined(__STDC__) || defined(__WIN32__)
-#define _ANSI_ARGS(x) x
-#else
-#define _ANSI_ARGS(x) ()
-#endif
 
-extern void erl_common_init _ANSI_ARGS((void *, long));
-extern ETERM *erl_mk_atom _ANSI_ARGS((char*));
-extern ETERM *erl_mk_var _ANSI_ARGS((char*));
-extern ETERM *erl_mk_int _ANSI_ARGS((int));
-extern ETERM *erl_mk_uint _ANSI_ARGS((unsigned int));
-extern ETERM *erl_mk_tuple _ANSI_ARGS((ETERM**,int));
-extern ETERM *erl_mk_list _ANSI_ARGS((ETERM**,int));
-extern ETERM *erl_mk_empty_list _ANSI_ARGS((void));
-extern ETERM *erl_mk_string _ANSI_ARGS((char*));
-extern ETERM *erl_mk_estring _ANSI_ARGS((char*, int));
-extern ETERM *erl_mk_float _ANSI_ARGS((double));
-extern ETERM *erl_element _ANSI_ARGS((int,ETERM*));
-extern ETERM *erl_mk_binary _ANSI_ARGS((char*,int));
-extern ETERM *erl_mk_pid _ANSI_ARGS((const char*,unsigned int,unsigned int,unsigned char));
-extern ETERM *erl_mk_ref _ANSI_ARGS((const char*,unsigned int,unsigned char));
-extern ETERM *erl_mk_long_ref _ANSI_ARGS((const char*,unsigned int,unsigned int,unsigned int,unsigned char));
-extern ETERM *erl_mk_port _ANSI_ARGS((const char*,unsigned int,unsigned char));
-extern ETERM *erl_cons _ANSI_ARGS((ETERM*,ETERM*));
-extern ETERM *erl_hd _ANSI_ARGS((ETERM*));
-extern ETERM *erl_tl _ANSI_ARGS((ETERM*));
-extern int erl_length _ANSI_ARGS((ETERM*));
+extern void erl_common_init __ERL_P((void *, long));
+extern ETERM *erl_mk_atom __ERL_P((char*));
+extern ETERM *erl_mk_var __ERL_P((char*));
+extern ETERM *erl_mk_int __ERL_P((int));
+extern ETERM *erl_mk_uint __ERL_P((unsigned int));
+extern ETERM *erl_mk_tuple __ERL_P((ETERM**,int));
+extern ETERM *erl_mk_list __ERL_P((ETERM**,int));
+extern ETERM *erl_mk_empty_list __ERL_P((void));
+extern ETERM *erl_mk_string __ERL_P((char*));
+extern ETERM *erl_mk_estring __ERL_P((char*, int));
+extern ETERM *erl_mk_float __ERL_P((double));
+extern ETERM *erl_element __ERL_P((int,ETERM*));
+extern ETERM *erl_mk_binary __ERL_P((char*,int));
+extern ETERM *erl_mk_pid __ERL_P((const char*,unsigned int,unsigned int,unsigned char));
+extern ETERM * __erl_mk_reference __ERL_P((const char *, size_t, unsigned int n[], unsigned char));
 
-extern int erl_iolist_length _ANSI_ARGS((ETERM*));
-extern ETERM* erl_iolist_to_binary _ANSI_ARGS((ETERM* term));
-extern char* erl_iolist_to_string _ANSI_ARGS((ETERM* term));
+extern ETERM *erl_mk_ref __ERL_P((const char*,unsigned int,unsigned char));
+extern ETERM *erl_mk_long_ref __ERL_P((const char*,unsigned int,unsigned int,unsigned int,unsigned char));
+extern ETERM *erl_mk_port __ERL_P((const char*,unsigned int,unsigned char));
+extern ETERM *erl_cons __ERL_P((ETERM*,ETERM*));
+extern ETERM *erl_hd __ERL_P((ETERM*));
+extern ETERM *erl_tl __ERL_P((ETERM*));
+extern int erl_length __ERL_P((ETERM*));
 
-extern ETERM *erl_copy_term _ANSI_ARGS((ETERM*));
-extern int erl_size _ANSI_ARGS((ETERM*));
-extern ETERM *erl_var_content _ANSI_ARGS((ETERM*, char*));
-extern int erl_current_fix_desc _ANSI_ARGS((void));
+extern int erl_iolist_length __ERL_P((ETERM*));
+extern ETERM* erl_iolist_to_binary __ERL_P((ETERM* term));
+extern char* erl_iolist_to_string __ERL_P((ETERM* term));
+
+extern ETERM *erl_copy_term __ERL_P((ETERM*));
+extern int erl_size __ERL_P((ETERM*));
+extern ETERM *erl_var_content __ERL_P((ETERM*, char*));
+extern int erl_current_fix_desc __ERL_P((void));
 #ifndef SILENT
-extern int erl_print_term _ANSI_ARGS((FILE*,ETERM*));
+extern int erl_print_term __ERL_P((FILE*,ETERM*));
 #endif
 
-#ifdef __cplusplus
-}
-#endif
+__ERL_END_DECL
 
 #endif

@@ -77,7 +77,6 @@ static HWND hTBWnd;
 static HWND hComboWnd;
 static HANDLE console_input;
 static HANDLE console_output;
-static HINSTANCE hInstance;
 static int cxChar,cyChar;
 static int cxClient,cyClient;
 static int cyToolBar;
@@ -234,6 +233,9 @@ int ConGetKey(void)
     return c;
 }
 
+static HINSTANCE hInstance;
+extern HMODULE beam_module;
+
 static DWORD WINAPI
 ConThreadInit(LPVOID param)
 {
@@ -243,6 +245,7 @@ ConThreadInit(LPVOID param)
     STARTUPINFO StartupInfo;
     HACCEL hAccel;
 
+    /*DebugBreak();*/
     hInstance = GetModuleHandle(NULL);
     StartupInfo.dwFlags = 0;
     GetStartupInfo(&StartupInfo);
@@ -293,7 +296,7 @@ ConThreadInit(LPVOID param)
     hFrameWnd = CreateWindowEx(0, szFrameClass, window_title(),
 			       WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,
 			       CW_USEDEFAULT,CW_USEDEFAULT,CW_USEDEFAULT,	
-			       NULL,LoadMenu(hInstance,MAKEINTRESOURCE(1)),
+			       NULL,LoadMenu(beam_module,MAKEINTRESOURCE(1)),
 			       hInstance,NULL);
 
     SetWindowPos(hFrameWnd, NULL, 0, 0,
@@ -303,7 +306,7 @@ ConThreadInit(LPVOID param)
     ShowWindow(hFrameWnd, iCmdShow);
     UpdateWindow(hFrameWnd);
 
-    hAccel = LoadAccelerators(hInstance,MAKEINTRESOURCE(1));
+    hAccel = LoadAccelerators(beam_module,MAKEINTRESOURCE(1));
 
     ReleaseSemaphore(console_input, 1, NULL);
     ReleaseSemaphore(console_output, 1, NULL);
@@ -458,7 +461,7 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
             PostMessage(hwnd,WM_SIZE,0,MAKELPARAM(r.right,r.bottom));
             return 0;
         case IDMENU_ABOUT:
-            DialogBox(hInstance,"AboutBox",hwnd,AboutDlgProc);
+            DialogBox(beam_module,"AboutBox",hwnd,AboutDlgProc);
             return 0;
         case ID_COMBOBOX:
             switch (HIWORD(wParam)) {
@@ -645,6 +648,7 @@ Client_OnVScroll(HWND hwnd, HWND hwndCtl, UINT code, int pos)
 	ScrollWindowEx(hwnd, 0, -cyChar*iVscroll, NULL, NULL,
 		       NULL, NULL, SW_ERASE | SW_INVALIDATE);
 	SetScrollPos(hwnd, SB_VERT, iVscrollPos, TRUE);
+	iVscroll = GetScrollPos(hwnd, SB_VERT);
 	UpdateWindow(hwnd);
     }
 }
@@ -652,7 +656,7 @@ Client_OnVScroll(HWND hwnd, HWND hwndCtl, UINT code, int pos)
 static void
 Client_OnHScroll(HWND hwnd, HWND hwndCtl, UINT code, int pos)
 {
-    int iHscroll;
+    int iHscroll, curCharWidth = cxClient/cxChar;
 
     switch(code) {
     case SB_LINEDOWN:
@@ -662,10 +666,10 @@ Client_OnHScroll(HWND hwnd, HWND hwndCtl, UINT code, int pos)
 	iHscroll = -1;
 	break;
     case SB_PAGEDOWN:
-	iHscroll = max(1,cxClient/cxChar);
+	iHscroll = max(1,curCharWidth-1);
 	break;
     case SB_PAGEUP:
-	iHscroll = min(-1,-cxClient/cxChar);
+	iHscroll = min(-1,-(curCharWidth-1));
 	break;
     case SB_THUMBTRACK:
 	iHscroll = pos - iHscrollPos;
@@ -673,7 +677,7 @@ Client_OnHScroll(HWND hwnd, HWND hwndCtl, UINT code, int pos)
     default:
 	iHscroll = 0;
     }
-    iHscroll = max(-iHscrollPos, min(iHscroll, iHscrollMax-iHscrollPos));
+    iHscroll = max(-iHscrollPos, min(iHscroll, iHscrollMax-iHscrollPos-(curCharWidth-1)));
     if (iHscroll != 0) {
 	iHscrollPos += iHscroll;
 	ScrollWindow(hwnd, -cxChar*iHscroll, 0, NULL, NULL);
@@ -753,18 +757,18 @@ static void
 set_scroll_info(HWND hwnd)
 {
     SCROLLINFO info;
-
+    int hScrollBy;
     /*
      * Set vertical scrolling range and scroll box position.
      */
 
-    iVscrollMax = nBufLines;
+    iVscrollMax = nBufLines-1;
     iVscrollPos = min(iVscrollPos, iVscrollMax);
     info.cbSize = sizeof(info); 
     info.fMask = SIF_PAGE|SIF_RANGE|SIF_POS;
     info.nMin = 0;
     info.nPos = iVscrollPos; 
-    info.nPage = cyClient/cyChar;
+    info.nPage = min(cyClient/cyChar, iVscrollMax);
     info.nMax = iVscrollMax;
     SetScrollInfo(hwnd, SB_VERT, &info, TRUE);
 
@@ -772,12 +776,14 @@ set_scroll_info(HWND hwnd)
      * Set horizontal scrolling range and scroll box position.
      */ 
 
-    iHscrollMax = LINE_LENGTH;
+    iHscrollMax = LINE_LENGTH-1;
+    hScrollBy = max(0, (iHscrollPos - (iHscrollMax-cxClient/cxChar))*cxChar);
     iHscrollPos = min(iHscrollPos, iHscrollMax);
     info.nPos = iHscrollPos; 
     info.nPage = cxClient/cxChar;
     info.nMax = iHscrollMax;
     SetScrollInfo(hwnd, SB_HORZ, &info, TRUE);
+    /*ScrollWindow(hwnd, hScrollBy, 0, NULL, NULL);*/
 }
 
 
@@ -1498,8 +1504,10 @@ InitToolBar(HWND hwndParent)
 			    (HMENU)2,hInstance,NULL); 
     SendMessage(hwndTB,TB_BUTTONSTRUCTSIZE,
 		(WPARAM) sizeof(TBBUTTON),0); 
-    tbbitmap.hInst = hInstance; 
-    tbbitmap.nID   = 1; 	
+    /*tbbitmap.hInst = beam_module; 
+    tbbitmap.nID   = 1;*/
+    tbbitmap.hInst = NULL; 
+    tbbitmap.nID   = LoadBitmap(beam_module, MAKEINTRESOURCE(1));
     SendMessage(hwndTB, TB_ADDBITMAP, (WPARAM) 4, 
 		(WPARAM) &tbbitmap); 
     SendMessage(hwndTB,TB_ADDBUTTONS, (WPARAM) 32,

@@ -6,8 +6,8 @@
 /* Define if you don't want the fix allocator in Erlang */
 #undef NO_FIX_ALLOC
 
-/* Define if you have a constant pattern in the top bits of pointers */
-#undef EXTRA_POINTER_BITS
+/* Define if you wish to redefine FD_SETSIZE to be able to select on more fd */
+#undef REDEFINE_FD_SETSIZE
 
 /* Define if you do not have a high-res. timer & want to use times() instead */
 #undef CORRECT_USING_TIMES
@@ -56,8 +56,16 @@
 /* Define if you have the <net/errno.h> header file. */
 #undef HAVE_NET_ERRNO_H
 
-/* Define if you have the gethostbyname_r() function. */
+/* Possible gethostbyname_r() function interfaces (sigh...) */
+/* Note: don't use the number 1, to protect against out-of-sync configure */
+#define GHBN_R_SOLARIS	2
+#define GHBN_R_AIX	3
+#define GHBN_R_GLIBC	4
+/* Define to one of the above if you have the gethostbyname_r() function. */
 #undef HAVE_GETHOSTBYNAME_R
+
+/* define if h_errno is declared (in some way) in a system header file */
+#undef H_ERRNO_DECLARED
 
 /* Define if you need to include rpc/types.h to get INADDR_LOOPBACK defined */
 #undef DEF_INADDR_LOOPBACK_IN_RPC_TYPES_H
@@ -142,3 +150,10 @@
 #define ELIB_ALLOC_IS_CLIB
 #endif
 
+#ifdef REDEFINE_FD_SETSIZE
+#define FD_SETSIZE 1024
+#endif
+
+#if !defined(HAVE_POLL) || !defined(HAVE_POLL_H)
+#define USE_SELECT
+#endif

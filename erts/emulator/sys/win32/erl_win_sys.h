@@ -149,4 +149,14 @@ extern void sys_gettimeofday(SysTimeval *tv);
 extern SysHrTime sys_gethrtime(void);
 extern clock_t sys_times(SysTimes *buffer);
 
+/*
+** These are to avoid irritating warnings
+*/
+#pragma warning(disable : 4244)
+#pragma warning(disable : 4018)
+
+#include <float.h>
+#if defined (__GNUC__)
+int _finite(double x);
+#endif
 #endif

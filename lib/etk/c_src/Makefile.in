@@ -509,8 +509,13 @@ ifeq ($(findstring win32,$(TARGET)), win32)
 all debug opt:
 	@echo  The rest built native on Windows
 else	
+  ifeq ($(findstring USE_THREADS,$(SHLIB_CFLAGS)), USE_THREADS)
 all debug opt:	$(ETK_BIN_DIR) $(OBJDIR) \
 	$(ETK_BIN_DIR)/etk $(ETK_BIN_DIR)/etk_drv$(SHLIB_SUFFIX)
+  else
+all debug opt:	$(ETK_BIN_DIR) $(OBJDIR) \
+	$(ETK_BIN_DIR)/etk
+  endif
 endif
 # The following target generates the file generic/tclDate.c 
 # from the yacc grammar found in generic/tclGetDate.y.  This is
@@ -1229,8 +1234,10 @@ ETK_DRV_OBJS = \
 	${TCL_SPECIAL_SOBJS} $(TCL_SOBJS) $(TK_SOBJS) \
 	tkstr..o etkMisc..o etk_drv..o
 
+# Symbol versioning needs -lm after -lieee. (See Debian bug #43438 for details)
 ETK_LIBS = \
-	$(X11_LIB_SWITCHES) $(LIBS) $(MATH_LIBS) -lc
+	$(X11_LIB_SWITCHES) $(LIBS) #$(MATH_LIBS) -lc
+# Let's find out what that will break ;-)
 
 $(ETK_BIN_DIR)/etk:	 $(ETK_OBJS:%=$(OBJDIR)/%)
 	LD_LIBRARY_PATH=$(OBJDIR):@X11_LIB_DIR@:${LD_LIBRARY_PATH}; \
@@ -1256,6 +1263,8 @@ $(OBJDIR)/tkstr..o:	$(OBJDIR)/tkstr.c
 $(OBJDIR)/tkstr.c:	$(OBJDIR)/mkstring $(ETK_SRC_DIR)/strings.tab
 	(cd $(OBJDIR) ; ./mkstring $(ETK_SRC_DIR)/strings.tab)
 	cp -p $(OBJDIR)/tkstr.erl $(ETK_ERL_DIR)
+
+../src/tkstr.erl: $(OBJDIR)/tkstr.c
 
 $(OBJDIR)/etk_drv..o:     $(ETK_SRC_DIR)/etk_drv.c $(ETK_SRC_DIR)/etk.h
 	$(CC) -o $@ -c -I$(ETK_SRC_DIR) -I$(OBJDIR) @ERL_INC_DIR@ \
@@ -2050,8 +2059,18 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 BDIR = ../priv/bitmap
 
 
+ifeq ($(findstring win32,$(TARGET)), win32)
 PROGRAMS = \
 	$(ETK_BIN_DIR)/etk$(EXE_SUFFIX) $(ETK_BIN_DIR)/etk_drv$(SHLIB_SUFFIX)
+else
+  ifeq ($(findstring USE_THREADS,$(SHLIB_CFLAGS)), USE_THREADS)
+PROGRAMS = \
+	$(ETK_BIN_DIR)/etk$(EXE_SUFFIX) $(ETK_BIN_DIR)/etk_drv$(SHLIB_SUFFIX)
+  else
+PROGRAMS = \
+	$(ETK_BIN_DIR)/etk$(EXE_SUFFIX)
+  endif
+endif
 
 BITMAP_FILES = \
 	$(BDIR)/bomb.xpm  	$(BDIR)/doc-mini.gif \

@@ -118,7 +118,7 @@ set_value({win32reg, Reg}, Name0, Value) when port(Reg) ->
     get_result(Reg).
 
 value({win32reg, Reg}, Name) when port(Reg) ->
-    Cmd = [?cmd_get_value|[Name, 0]],
+    Cmd = [?cmd_get_value, Name, 0],
     Reg ! {self(), {command, Cmd}},
     case get_result(Reg) of
 	{value, {Name, Value}} ->
@@ -132,7 +132,12 @@ values({win32reg, Reg}) when port(Reg) ->
     Reg ! {self(), {command, Cmd}},
     collect_values(Reg, []).
 
-delete_value({win32reg, Reg}, Name) when port(Reg) ->
+delete_value({win32reg, Reg}, Name0) when port(Reg) ->
+    Name =
+	case Name0 of
+	    default -> [];
+	    _ -> Name0
+	end,
     Cmd = [?cmd_delete_value, Name, 0],
     Reg ! {self(), {command, Cmd}},
     get_result(Reg).
@@ -140,6 +145,8 @@ delete_value({win32reg, Reg}, Name) when port(Reg) ->
 expand(Value) ->
     expand(Value, [], []).
 
+expand([$%, $%|Rest], [], Result) ->
+    expand(Rest, [], [$%|Result]);
 expand([$%, C|Rest], [], Result) ->
     expand(Rest, [C], Result);
 expand([C|Rest], [], Result) ->

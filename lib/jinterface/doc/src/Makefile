@@ -1,3 +1,5 @@
+# -*-Makefile-*-
+
 # ``The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
@@ -24,6 +26,12 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 include ../../vsn.mk
 VSN=$(JINTERFACE_VSN)
 
+# ----------------------------------------------------
+# Include dependency
+# ----------------------------------------------------
+
+include make.dep
+
 
 # ----------------------------------------------------
 # Release directory specification
@@ -35,12 +43,45 @@ RELSYSDIR = $(RELEASE_PATH)/lib/jinterface-$(VSN)
 # ----------------------------------------------------
 
 
-SGML_PART_FILES = part_notes.sgml
-SGML_CHAPTER_FILES = notes.sgml
+SGML_APPLICATION_FILES = application.sgml
+SGML_REF3_FILES = jinterface.sgml
+
+SGML_PART_FILES = \
+	part.sgml\
+	part_notes.sgml \
+	part_jinterface.sgml  
+
+SGML_CHAPTER_FILES = \
+	notes.sgml \
+	jinterface_users_guide.sgml
+
+BOOK_FILES = book.sgml
 
 GIF_FILES = \
 	notes.gif \
-	ref_man.gif
+	ref_man.gif \
+	user_guide.gif
+
+#------------------------------------------------------
+
+
+TEX_FILES_BOOK = \
+	$(BOOK_FILES:%.sgml=%.tex)
+TEX_FILES_REF_MAN = $(SGML_REF3_FILES:%.sgml=%.tex) \
+	$(SGML_APPLICATION_FILES:%.sgml=%.tex)
+TEX_FILES_USERS_GUIDE = \
+	$(SGML_CHAPTER_FILES:%.sgml=%.tex)
+
+
+TOP_PDF_FILE = jinterface-$(VSN).pdf
+TOP_PS_FILE  = jinterface-$(VSN).ps
+
+$(TOP_PDF_FILE): book.dvi ../../vsn.mk
+	$(DVI2PS) $(DVIPS_FLAGS) -f $< | $(DISTILL) $(DISTILL_FLAGS) > $@
+
+$(TOP_PS_FILE): book.dvi ../../vsn.mk
+	$(DVI2PS) $(DVIPS_FLAGS) -f $< > $@
+
 
 JAVADOC = javadoc
 JAVADOC_PKGS = com.ericsson.otp.erlang
@@ -48,46 +89,13 @@ JAVA_PKG_PATH = com/ericsson/otp/erlang
 JAVADOC_TITLE = 'Java-Erlang Interface Library'
 JAVA_TOP_INDEX = $(HTMLDIR)/index.html
 JAVADOC_DEST = ../doc/html
+JAVA_SRC_PATH = $(ERL_TOP)/lib/jinterface/java_src/$(JAVA_PKG_PATH)
 
+# don't add filenames to the Makefile!
+# all java sourcefiles listed in common include file
+include $(JAVA_SRC_PATH)/java_files
 
-JAVA_FILES = \
-	OtpConnection \
-	OtpEpmd \
-	OtpErlangAtom \
-	OtpErlangBinary \
-	OtpErlangBoolean \
-	OtpErlangByte \
-	OtpErlangChar \
-	OtpErlangDouble \
-	OtpErlangFloat \
-	OtpErlangInt \
-	OtpErlangList \
-	OtpErlangLong \
-	OtpErlangObject \
-	OtpErlangPid \
-	OtpErlangPort \
-	OtpErlangRef \
-	OtpErlangShort \
-	OtpErlangString \
-	OtpErlangTuple \
-	OtpErlangUInt \
-	OtpErlangUShort \
-	OtpExternal \
-	OtpInputStream \
-	OtpNode \
-	OtpOutputStream \
-	OtpPeer \
-	OtpSelf \
-	OtpServer \
-	OtpAuthException \
-	OtpErlangDataException \
-	OtpErlangDecodeException \
-	OtpErlangException \
-	OtpErlangExit \
-	OtpErlangRangeException \
-	OtpException 
-
-JAVA_SRC_FILES = $(JAVA_FILES:%=../../java_src/$(JAVA_PKG_PATH)/%.java)
+JAVA_SRC_FILES = $(JAVA_FILES:%=$(JAVA_SRC_PATH)/%.java)
 
 JAVA_DOC_FILES = \
 	overview-tree.html \
@@ -100,6 +108,7 @@ JAVA_DOC_FILES = \
 	stylesheet.css \
 	help-doc.html 
 
+INFO_FILE = ../../info
 JAVA_EXTRA_FILES = $(JAVA_DOC_FILES:%=$(HTMLDIR)/%)
 
 JAVA_GEN_FILES = \
@@ -107,16 +116,21 @@ JAVA_GEN_FILES = \
 	$(HTMLDIR)/$(JAVA_PKG_PATH)/package-summary.html \
 	$(HTMLDIR)/$(JAVA_PKG_PATH)/package-tree.html \
 	$(HTMLDIR)/$(JAVA_PKG_PATH)/package-frame.html
-	
+
 
 # ----------------------------------------------------
 
 
-HTML_FILES = $(SGML_PART_FILES:%.sgml=$(HTMLDIR)/%.html)
+HTML_FILES = \
+	$(SGML_APPLICATION_FILES:%.sgml=$(HTMLDIR)/%.html) \
+	$(SGML_PART_FILES:%.sgml=$(HTMLDIR)/%.html)
 
-EXTRA_FILES = summary.html.src \
+
+EXTRA_FILES = \
+	summary.html.src \
 	../html/min_head.gif \
 	$(DEFAULT_HTML_FILES) \
+	$(SGML_REF3_FILES:%.sgml=$(HTMLDIR)/%.html) \
 	$(SGML_CHAPTER_FILES:%.sgml=$(HTMLDIR)/%.html)
 
 
@@ -145,21 +159,19 @@ else
 ifeq ($(DOCTYPE),ps)
 docs: ps
 else
-docs: html gifs $(TOP_HTML_FILES) javadoc man
+docs: html gifs $(TOP_HTML_FILES) jdoc man
 endif
 endif
 
-pdf: 
+pdf: $(TOP_PDF_FILE)
 
-ps: 
+ps: $(TOP_PS_FILE)
 
-html: $(HTML_FILES)
+html:$(HTML_FILES)
 
-javadoc:	$(JAVA_TOP_INDEX)
-	
-$(JAVA_TOP_INDEX):	$(JAVA_SRC_FILES)
-	(cd ../../java_src; $(JAVADOC) -d $(JAVADOC_DEST) -windowtitle $(JAVADOC_TITLE) $(JAVADOC_PKGS))
-	
+jdoc:$(JAVA_SRC_FILES)
+	(cd ../../java_src;$(JAVADOC) -d $(JAVADOC_DEST) -windowtitle $(JAVADOC_TITLE) $(JAVADOC_PKGS))
+
 man: 
 
 gifs: $(GIF_FILES:%=$(HTMLDIR)/%)
@@ -169,12 +181,13 @@ $(INDEX_TARGET): $(INDEX_SRC) ../../vsn.mk
 
 debug opt: 
 
-clean_tex:
+clean clean_docs clean_tex:
+	rm -f $(TEX_FILES_USERS_GUIDE) $(TEX_FILES_REF_MAN) $(TEX_FILES_BOOK)
+	rm -f $(HTML_FILES) $(MAN3_FILES)
+	rm -f $(TOP_HTML_FILES) $(TOP_PDF_FILE) $(TOP_PS_FILE)
+	rm -f errs core *~ *sgmls_output *sgmls_errs *dump $(LATEX_CLEAN)
+	rm -f $(JAVA_GEN_FILES)
 
-clean:
-	rm -f ../html/*  $(JAVA_GEN_FILES)
-	rm -f $(TOP_HTML_FILES)
-	rm -f  core *~  
 
 # ----------------------------------------------------
 # Release Target
@@ -183,18 +196,22 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 ifeq ($(DOCTYPE),pdf)
 release_docs_spec: pdf
+	$(INSTALL_DIR) $(RELEASE_PATH)/pdf
+	$(INSTALL_DATA) $(TOP_PDF_FILE) $(RELEASE_PATH)/pdf
 else
 ifeq ($(DOCTYPE),ps)
 release_docs_spec: ps
+	$(INSTALL_DIR) $(RELEASE_PATH)/ps
+	$(INSTALL_DATA) $(TOP_PS_FILE) $(RELEASE_PATH)/ps
 else
 release_docs_spec: docs
 	$(INSTALL_DIR) $(RELSYSDIR)/doc/html
+	$(INSTALL_DATA) $(INFO_FILE) $(RELSYSDIR)
 	$(INSTALL_DATA) $(GIF_FILES) $(EXTRA_FILES) $(JAVA_EXTRA_FILES) $(JAVA_TOP_INDEX) \
 		$(HTML_FILES) $(RELSYSDIR)/doc/html
 	$(INSTALL_DIR) $(RELSYSDIR)/doc/html/$(JAVA_PKG_PATH)
-	$(INSTALL_DATA) $(JAVA_GEN_FILES) $(RELSYSDIR)/doc/html/$(JAVA_PKG_PATH)
-	$(INSTALL_DATA) $(TOP_HTML_FILES) \
-		$(RELSYSDIR)/doc
+	(/bin/cp -rf  ../../doc/html $(RELSYSDIR)/doc)
+	$(INSTALL_DATA) $(TOP_HTML_FILES) $(RELSYSDIR)/doc
 endif
 endif
 

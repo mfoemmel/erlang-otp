@@ -41,7 +41,7 @@
 -define(LOADTXT, "Load file").
 -define(SAVETXT, "Save file").
 -define(SAVEASTXT, "Save as").
--define(QUITTXT, "Quit").
+-define(CLOSETXT, "Close").
 -define(HELPTXT, "Help").
 
 %%------------------------------------------------------------
@@ -69,7 +69,7 @@ start() ->
     start([]).
 
 start(Opts) ->
-    gen_server:start({local, ?MODULE}, ?MODULE, Opts, []).
+    gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
 
 %% Start a text viewer if necessary
 print(Txt) ->
@@ -93,6 +93,7 @@ fprint(File) ->
 %% gen server admin
 
 init(Opts) ->
+    process_flag(trap_exit, true),
     %%io:format("Starting editor w args: ~p~n", [Opts]),
     setup_base_win(),
     default_status(),
@@ -122,8 +123,8 @@ handle_call(Request, From, State) ->
 handle_cast(Request, State) ->
     %%io:format("~p got cast: ~p~n", [self(), Request]),
     {noreply, State}.
-handle_info({gs, _, click, _, [?QUITTXT|_]}, State) ->
-    %%d:d("handle_info: exit: Quit button pressed~n", []),
+handle_info({gs, _, click, _, [?CLOSETXT|_]}, State) ->
+    %%d:d("handle_info: exit: Close button pressed~n", []),
     {stop, normal, State};
 handle_info({gs, _, click, _, [?LOADTXT|_]}, State) ->
     ui_load(),
@@ -242,7 +243,7 @@ setup_base_win() ->
     set_winroot(F),
 
     Win = gs:create(window, F, [{width, W}, {height, H}, 
-				{title, "Text browser"}]),
+				{title, "APPMON: Process Information"}]),
 
     E = gs:create(editor, Win, [{x, 0}, {y, MenuHeight}, 
 				{width, W}, 
@@ -266,7 +267,7 @@ setup_base_win() ->
     %%gs:create(menuitem, FM, [{label, {text, ?SAVETXT}}]),
     %%gs:create(menuitem, FM, [{label, {text, ?SAVEASTXT}}]),
     %%gs:create(menuitem, FM, [{itemtype, separator}]),
-    gs:create(menuitem, FM, [{label, {text, ?QUITTXT}}]),
+    gs:create(menuitem, FM, [{label, {text, ?CLOSETXT}}]),
 
 %%    EMB = gs:create(menubutton, MB, [{label, {text, "Edit"}}]),
 %%    EM = gs:create(menu, EMB, []),

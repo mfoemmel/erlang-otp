@@ -18,7 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: cdr_encode.erl
-%% Author: Lars Thorsen
 %% 
 %% Description:
 %%    This file contains all encoding functions for the CDR
@@ -45,6 +44,11 @@
 %% Internal exports
 %%-----------------------------------------------------------------
 -export([]).
+
+%%-----------------------------------------------------------------
+%% Macros
+%%-----------------------------------------------------------------
+-define(DEBUG_LEVEL, 9).
 
 %%-----------------------------------------------------------------
 %% External functions
@@ -89,7 +93,13 @@ enc_flags(Version, Flags, Message) ->
 %%-----------------------------------------------------------------
 enc_parameters(_, [], [], Message, Len) ->
     {Message, Len};
-enc_parameters(_, [], _, _, _) -> 
+enc_parameters(_, [], P, _, _) -> 
+    orber:debug_level_print("[~p] cdr_encode:encode_parameters(~p); to many parameters.", 
+			    [?LINE, P], ?DEBUG_LEVEL),
+    corba:raise(#'MARSHAL'{minor=103, completion_status=?COMPLETED_MAYBE});
+enc_parameters(_, _, [], TC, _) -> 
+    orber:debug_level_print("[~p] cdr_encode:encode_parameters(~p); to few parameters.", 
+			    [?LINE, TC], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=103, completion_status=?COMPLETED_MAYBE});
 enc_parameters(Version, [PT1 |TypeList], [ P1 | Parameters], Message, Len) ->
     {Message1, Len1} = enc_type(PT1, Version, P1, Message, Len),
@@ -305,12 +315,18 @@ enc_type('tk_short', Version, Value, Bytes, Len) ->
 enc_type('tk_long', Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 4),
     {cdrlib:enc_r_long(Value, Rest ), Len1 + 4};
+enc_type('tk_longlong', Version, Value, Bytes, Len) ->
+    {Rest, Len1} = enc_align(Bytes, Len, 8),
+    {cdrlib:enc_r_longlong(Value, Rest ), Len1 + 8};
 enc_type('tk_ushort', Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 2),
     {cdrlib:enc_r_unsigned_short(Value, Rest), Len1 + 2};
 enc_type('tk_ulong', Version, Value, Bytes, Len) -> 
     {Rest, Len1} = enc_align(Bytes, Len, 4),
     {cdrlib:enc_r_unsigned_long(Value, Rest), Len1 + 4};
+enc_type('tk_ulonglong', Version, Value, Bytes, Len) -> 
+    {Rest, Len1} = enc_align(Bytes, Len, 8),
+    {cdrlib:enc_r_unsigned_longlong(Value, Rest), Len1 + 8};
 enc_type('tk_float', Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 4),
     {cdrlib:enc_r_float(Value, Rest), Len1 + 4};
@@ -347,10 +363,11 @@ enc_type({'tk_sequence', ElemTC, MaxLength}, Version, Value, Bytes, Len) -> % Ma
 enc_type({'tk_array', ElemTC, Size}, Version, Value, Bytes, Len) -> 
     enc_array(Version, Value, Size, ElemTC, Bytes, Len);
 enc_type({'tk_alias', IFRId, Name, TC}, Version, Value, Bytes, Len) ->
-    enc_type(Version, TC, Value, Bytes, Len);
+    enc_type(TC, Version, Value, Bytes, Len);
 enc_type({'tk_except', IFRId, Name, ElementList}, Version, Value, Bytes, Len) ->
     enc_exception(Version, Name, IFRId, Value, ElementList, Bytes, Len);
-enc_type(_, _, _, _, _) ->
+enc_type(Type, _, _, _, _) ->
+    orber:debug_level_print("[~p] cdr_encode:type(~p).", [?LINE, Type], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=104, completion_status=?COMPLETED_MAYBE}).
 
 %%-----------------------------------------------------------------
@@ -380,7 +397,9 @@ enc_sequence1(Version, [Object| Rest], TypeCode, Bytes, Len) ->
 enc_array(Version, Array, Size, TypeCode, Bytes, Len) when size(Array) == Size ->
     Sequence = tuple_to_list(Array),
     enc_sequence1(Version, Sequence, TypeCode, Bytes, Len);
-enc_array(_,_, _, _, _, _) ->
+enc_array(_,Array, Size, _, _, _) ->
+    orber:debug_level_print("[~p] cdr_encode:enc_array(~p, ~p). Incorrect size.", 
+			    [?LINE, Array, Size], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=105, completion_status=?COMPLETED_MAYBE}).
 
 %%-----------------------------------------------------------------
@@ -400,7 +419,9 @@ enc_union(Version, {_, Label, Value}, DiscrTC, TypeCodeList, Bytes, Len) ->
     Label2 = stringify_enum(DiscrTC,Label),
     enc_union(Version, {Label2, Value},TypeCodeList, ByteSequence, Len1).
 
-enc_union(_,_, [], _, _) -> corba:raise(#'MARSHAL'{minor=106, completion_status=?COMPLETED_MAYBE});
+enc_union(_,What, [], _, _) -> 
+    orber:debug_level_print("[~p] cdr_encode:enc_union(~p). Not found.", [?LINE, What], ?DEBUG_LEVEL),
+    corba:raise(#'MARSHAL'{minor=106, completion_status=?COMPLETED_MAYBE});
 enc_union(Version, {Label,Value} ,[{Label, Name, Type} |List], Bytes, Len) ->
     enc_type(Type, Version, Value, Bytes, Len);
 enc_union(Version, Union,[_ | List], Bytes, Len) ->
@@ -457,10 +478,14 @@ enc_type_code('tk_short', Version, Message, Len) ->
     enc_type('tk_ulong', Version, 2, Message, Len);
 enc_type_code('tk_long', Version, Message, Len) ->
     enc_type('tk_ulong', Version, 3, Message, Len);
+enc_type_code('tk_longlong', Version, Message, Len) ->
+    enc_type('tk_ulong', Version, 23, Message, Len);
 enc_type_code('tk_ushort', Version, Message, Len) ->
     enc_type('tk_ulong', Version, 4, Message, Len);
 enc_type_code('tk_ulong', Version, Message, Len) ->
     enc_type('tk_ulong', Version, 5, Message, Len);
+enc_type_code('tk_ulonglong', Version, Message, Len) ->
+    enc_type('tk_ulong', Version, 24, Message, Len);
 enc_type_code('tk_float', Version, Message, Len) ->
     enc_type('tk_ulong', Version, 6, Message, Len);
 enc_type_code('tk_double', Version, Message, Len) ->
@@ -520,8 +545,8 @@ enc_type_code({'tk_union', RepId, Name, DiscrTC, Default, ElementList},
 				    {"element list",
 				     {'tk_sequence', {'tk_struct', "","",
 						      [{"label value", DiscrTC},
-						       {"memeber name", {'tk_string', 0}},
-						       {"memver type", 'tk_TypeCode'}]},
+						       {"member name", {'tk_string', 0}},
+						       {"member type", 'tk_TypeCode'}]},
 				      0}}]},
 				     Version,
 				     {"", RepId, Name, DiscrTC, Default, NewElementList},
@@ -580,20 +605,24 @@ enc_type_code({'tk_except', RepId, Name, ElementList}, Version, Message, Len) ->
 				    {"element list",
 				     {'tk_sequence',
 				      {'tk_struct', "", "",
-				       {"member name", {'tk_string', 0}},
-				       {"member type", 'tk_TypeCode'}}, 0}}]},
+				       [{"member name", {'tk_string', 0}},
+				       {"member type", 'tk_TypeCode'}]}, 0}}]},
 				     Version,
 				     {"", RepId, Name,
 				      lists:map(fun({N,T}) -> {"",N,T} end, ElementList)},
 				     Message2, 1),
     encode_complex_tc_paramters(lists:reverse(ComplexParams), Len2, Message1, Len1);
+
 enc_type_code({'none', Indirection}, Version, Message, Len) ->  %% placeholder
      enc_type({'tk_struct', "", "", [{"TCKind", 'tk_ulong'},
-				    {"indirection", 'tk_ulong'}]},
+				    {"indirection", 'tk_long'}]},
 	      Version,
 	      {"", 16#ffffffff, Indirection},
-	      Message, Len).
-
+	      Message, Len);
+enc_type_code(Type, _, _, _) ->
+    orber:debug_level_print("[~p] cdr_encode:enc_type_code(~p); No match.", 
+			    [?LINE, Type], ?DEBUG_LEVEL),
+    corba:raise(#'MARSHAL'{minor=108, completion_status=?COMPLETED_MAYBE}).
 
 check_enum({'tk_enum', _, _, _}) ->
     true;
@@ -607,7 +636,9 @@ encode_complex_tc_paramters(Value, Value_length, Message, Len) ->
 
 
 ifrid_to_name([]) ->
-        corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE});
+    orber:debug_level_print("[~p] cdr_encode:ifrid_to_name([]). No Id supplied.",
+			    [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'MARSHAL'{minor=107, completion_status=?COMPLETED_MAYBE});
 ifrid_to_name(Id) ->
     Rep = orber_ifr:find_repository(),
     Key = orber_ifr:'Repository_lookup_id'(Rep, Id),

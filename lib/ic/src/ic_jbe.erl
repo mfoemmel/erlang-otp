@@ -435,7 +435,7 @@ emit_stub(G, N, X, Fd) ->
 		    [InterfaceName,FullInterfaceName]),
 
     ic_codegen:emit(Fd, "    // Client data\n"),
-    ic_codegen:emit(Fd, "    private ~sEnvironment _env;\n\n",[?ICPACKAGE]),
+    ic_codegen:emit(Fd, "    public ~sEnvironment _env;\n\n",[?ICPACKAGE]),
 
     ic_codegen:emit(Fd, "    // Constructors\n"),
     ic_codegen:emit(Fd, "    public _~sStub(~sOtpSelf _self,\n",[InterfaceName,?ERLANGPACKAGE]),
@@ -456,9 +456,22 @@ emit_stub(G, N, X, Fd) ->
     ic_codegen:emit(Fd, "      _env.connect();\n"),
     ic_codegen:emit(Fd, "    }\n\n"),
 
+    ic_codegen:emit(Fd, "    public _~sStub(~sOtpConnection _connection,\n",[InterfaceName, ?ERLANGPACKAGE]),
+    ic_codegen:emit(Fd, "                       java.lang.Object _server) throws java.lang.Exception {\n\n"),
+    ic_codegen:emit(Fd, "      _env =\n"),
+    ic_codegen:emit(Fd, "         new ~sEnvironment(_connection, _server);\n",[?ICPACKAGE]),
+    ic_codegen:emit(Fd, "      _env.connect();\n"),
+    ic_codegen:emit(Fd, "    }\n\n"),
+
     emit_message_reference_extraction(Fd),
 
+    emit_servers_object_access(Fd),
+
     emit_client_connection_close(Fd),
+
+    emit_client_connection_reconnect(Fd),
+
+    emit_client_destroy(Fd),
 
     lists:foreach(fun({Name, Body1}) ->
 			  emit_op_implementation(G, [IFCName|N], Body1, Fd) end,
@@ -788,11 +801,30 @@ emit_message_reference_extraction(Fd) ->
     ic_codegen:emit(Fd, "        return _env.received_ref();\n"),
     ic_codegen:emit(Fd, "    }\n\n").
 
+emit_servers_object_access(Fd) ->
+    ic_codegen:emit(Fd, "    // Returns the server\n"),
+    ic_codegen:emit(Fd, "    public java.lang.Object __server() {\n"),
+    ic_codegen:emit(Fd, "      return _env.server();\n"),
+    ic_codegen:emit(Fd, "    }\n\n").
 
 emit_client_connection_close(Fd) ->
     ic_codegen:emit(Fd, "    // Closes connection\n"),
     ic_codegen:emit(Fd, "    public void __disconnect() {\n"),
     ic_codegen:emit(Fd, "      _env.disconnect();\n"),
+    ic_codegen:emit(Fd, "    }\n\n").
+
+emit_client_connection_reconnect(Fd) ->
+    ic_codegen:emit(Fd, "    // Reconnects client\n"),
+    ic_codegen:emit(Fd, "    public void __reconnect()\n"),
+    ic_codegen:emit(Fd, "      throws java.lang.Exception {\n"),
+    ic_codegen:emit(Fd, "      _env.reconnect();\n"),
+    ic_codegen:emit(Fd, "    }\n\n").
+
+emit_client_destroy(Fd) ->
+    ic_codegen:emit(Fd, "    // Destroy server\n"),
+    ic_codegen:emit(Fd, "    public void __stop()\n"),
+    ic_codegen:emit(Fd, "      throws java.lang.Exception {\n"),
+    ic_codegen:emit(Fd, "      _env.client_stop_server();\n"),
     ic_codegen:emit(Fd, "    }\n\n").
 
 
@@ -811,7 +843,7 @@ emit_skel(G, N, X, Fd) ->
 		    [InterfaceName,FullInterfaceName]),
 
     ic_codegen:emit(Fd, "    // Server data\n"),
-    ic_codegen:emit(Fd, "    private ~sEnvironment _env = null;\n\n",[?ICPACKAGE]),
+    ic_codegen:emit(Fd, "    protected ~sEnvironment _env = null;\n\n",[?ICPACKAGE]),
 
     ic_codegen:emit(Fd, "    // Constructors\n"),
     ic_codegen:emit(Fd, "    public _~sImplBase() {\n",[InterfaceName]),
@@ -864,7 +896,7 @@ emit_server_switch(G, N, X, Fd) ->
     ic_codegen:emit(Fd, "       int __label = __env.uLabel(__operations);\n\n"),
     
     ic_codegen:emit(Fd, "       // Switch over operation\n"),     
-    ic_codegen:emit(Fd, "       switch(__label) {\n"),
+    ic_codegen:emit(Fd, "       switch(__label) {\n\n"),
 
     OpNr = emit_server_op_switch_loop(G,                
 				      [IFCName|N], 
@@ -872,13 +904,12 @@ emit_server_switch(G, N, X, Fd) ->
 				      Counter, 
 				      Fd),
     
-    case OpNr > 0 of
-	true ->
-	    ic_codegen:emit(Fd, "       default: // It will never come down here \n"),
-	    ic_codegen:emit(Fd, "         throw new ~sOtpErlangDataException(\"BAD OPERATION\");\n\n", [?ERLANGPACKAGE]);
-	false ->
-	    ok
-    end,
+    ic_codegen:emit(Fd, "       case ~p: { // Standard stop operation\n\n",[OpNr]),
+    ic_codegen:emit(Fd, "         __env.server_stop_server();\n\n"),
+    ic_codegen:emit(Fd, "       } break;\n\n"),
+    
+    ic_codegen:emit(Fd, "       default: // It will never come down here \n"),
+    ic_codegen:emit(Fd, "         throw new java.lang.Exception(\"BAD OPERATION\");\n\n", []),
    
     ic_codegen:emit(Fd, "      }\n\n"),
 
@@ -931,7 +962,17 @@ emit_caller_pid(G, N, X, Fd) ->
     ic_codegen:emit(Fd, "    public ~sOtpErlangPid __getCallerPid(~sEnvironment __env) {\n", 
 		    [?ERLANGPACKAGE, ?ICPACKAGE]),    
     ic_codegen:emit(Fd, "      return __env.getScaller();\n"),
+    ic_codegen:emit(Fd, "    }\n\n"),
+    
+    ic_codegen:emit(Fd, "    public boolean __isStopped() {\n"),    
+    ic_codegen:emit(Fd, "      return _env.isStopped();\n"),
+    ic_codegen:emit(Fd, "    }\n\n"),
+
+    ic_codegen:emit(Fd, "    public boolean __isStopped(~sEnvironment __env) {\n",
+		    [?ICPACKAGE]),    
+    ic_codegen:emit(Fd, "      return __env.isStopped();\n"),
     ic_codegen:emit(Fd, "    }\n\n").
+    
 
 
 %% Creates an operation dictionary
@@ -960,8 +1001,9 @@ emit_dictionary(G, N, X, Fd) ->
 
 
 
-emit_dictionary_loop(_G, _N, [], _C, _Fd) ->
-    ok;
+emit_dictionary_loop(_G, _N, [], C, Fd) ->
+    ic_codegen:emit(Fd, "      __operations.put(~p, new java.lang.Integer(~p));\n",
+		    ["stop",C]);
 emit_dictionary_loop(G, N, [{_,X}|Xs], C, Fd) ->
     C1 = emit_dictionary(G, N, X, C, Fd),
     emit_dictionary_loop(G, N, Xs, C1, Fd).
@@ -1370,6 +1412,12 @@ emit_type_function({tk_union, ID, Name, DT, DI, LL}, C, Fd) -> %% union
     ic_codegen:emit(Fd, "     _tc~p.member_count(~p);\n", [C,length(LL)]),
 
     emit_union_labels(LL, C, DT, C2, 0, Fd);
+
+emit_type_function(tk_term, C, Fd) -> %% term, must change it to tk_any
+    ic_codegen:emit(Fd, "     ~sTypeCode _tc~p =\n",[?ICPACKAGE,C]),
+    ic_codegen:emit(Fd, "       new ~sTypeCode();\n", [?ICPACKAGE]),
+    ic_codegen:emit(Fd, "     _tc~p.kind(~sTCKind.tk_any);\n", [C,?ICPACKAGE]),
+    C+1;
 
 emit_type_function(TC, C, Fd) -> %% other 
     ic_codegen:emit(Fd, "     ~sTypeCode _tc~p =\n",[?ICPACKAGE,C]),

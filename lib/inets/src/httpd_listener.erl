@@ -16,217 +16,193 @@
 %%     $Id$
 %%
 -module(httpd_listener).
+
 -include("httpd.hrl").
--behaviour(gen_server).
+-include("httpd_verbosity.hrl").
+
 
 %% External API
--export([stop/1, restart/1]).
-
-%% Internal API
--export([destroy/1, create/2]).
-
-%% Module API
--export([config_lookup/2, config_multi_lookup/2, config_match/2]).
-
-%% gen_server exports
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([start_link/3, start_link/4]).
 
 %% Other exports (for spawn's etc.)
--export([heavy_load/4, connection/4]).
+-export([connection/5,connection/6]).
+
+
+%% ----
+%% This (and the report_error/4 function) is just temporary
+%% and should be removed eventually.
+
+%%-define(httpd_verbose,true).
+-ifdef(httpd_verbose).
+-define(REPORT_ERROR(Db,FS,A),report_error(Db,FS,A,?LINE)).
+-else.
+-define(REPORT_ERROR(Db,FS,A),ok).
+-endif.
+
+
+-define(USE_ASSERT,true).      %% false | true
+-define(ASSERT_ACTION,report). %% no_action | print | report | exit
+-define(ASSERT(When,Expected,Actual,Cdb),
+	assert(?USE_ASSERT,?LINE,When,Expected,Actual,Cdb)).
 
 
 %%
 %% External API
 %%
 
-%% stop
+%% start_link
 
-stop(ServerRef) ->
-    gen_server:call(ServerRef, stop).
+start_link(SocketType,ListenSocket,ConfigDB) ->
+    start_link(idle,SocketType,ListenSocket,ConfigDB).
 
-%% restart
-
-restart(ServerRef) ->
-    gen_server:cast(ServerRef, restart).
-
-
-
-%%
-%% Internal API
-%%
-
-%% destroy
-
-destroy(ServerRef) ->
-    gen_server:cast(ServerRef, destroy).
-
-%% create
-
-create(ServerRef,Pid) ->
-    gen_server:cast(ServerRef, {create,Pid}).
+start_link(UsageState,SocketType,ListenSocket,ConfigDB) ->
+    ?DEBUG("start_link(~p) -> ~n"
+	   "      SocketType:   ~p~n"
+	   "      ListenSocket: ~p~n",
+	   [UsageState,SocketType,ListenSocket]),
+    proc_lib:spawn_link(?MODULE,connection,
+			[UsageState,self(),SocketType,ListenSocket,ConfigDB,
+			 get_verbosity()]).
 
 
-%%
-%% Module API. Theese functions are intended for use from modules only.
-%%
-
-config_lookup(Port, Query) ->
-    Name = list_to_atom(lists:flatten(io_lib:format("httpd~w",[Port]))),
-    gen_server:call(whereis(Name), {config_lookup, Query}).
-
-config_multi_lookup(Port, Query) ->
-    Name = list_to_atom(lists:flatten(io_lib:format("httpd~w",[Port]))),
-    gen_server:call(whereis(Name), {config_multi_lookup, Query}).
-
-config_match(Port, Pattern) ->
-    Name = list_to_atom(lists:flatten(io_lib:format("httpd~w",[Port]))),
-    gen_server:call(whereis(Name), {config_match, Pattern}).
+connection(Us,Manager,SocketType,ListenSocket,ConfigDB,Verbosity) ->
+    put(sname,self()),
+    put(verbosity,Verbosity),
+    connection(Us,Manager,SocketType,ListenSocket,ConfigDB).
 
 
-%%
-%% Server call-back functions
-%%
+%% connection (busy)
 
-%% init
-
-init([ConfigFile, ConfigList, Port]) ->
-    process_flag(trap_exit, true),
-    case httpd_conf:store(ConfigList) of
-	{ok, ConfigDB} ->
-	    SocketType = httpd_socket:config(ConfigDB),
-	    httpd_socket:start(SocketType),
-	    ListenAddr = httpd_util:lookup(ConfigDB, bind_address),
-	    ListenSocket = httpd_socket:listen(SocketType, ListenAddr, Port),
-	    case ListenSocket of
-		{error, Reason} ->
-		    {stop, {error, {listen, Reason}}};
-		_Else ->
-		    proc_lib:spawn_link(httpd_listener, connection,
-					[self(), SocketType, 
-					 ListenSocket, ConfigDB]),
-		    {ok,[SocketType, ListenSocket, ConfigFile, ConfigDB, 0]}
-	    end;
-	{error, Reason} ->
-	    {stop, Reason}
-    end.
-
-%% handle_call
-
-handle_call(stop, _From, State) ->
-    {stop, normal, ok, State};
-
-handle_call({config_lookup, Query}, _From, 
-	    [SocketType,ListenSocket,ConfigFile,ConfigDB,Processes]) ->
-    Res = httpd_util:lookup(ConfigDB, Query),
-    {reply, Res, [SocketType,ListenSocket,ConfigFile,ConfigDB,Processes]};
-
-handle_call({config_multi_lookup, Query}, _From, 
-	    [SocketType,ListenSocket,ConfigFile,ConfigDB,Processes]) ->
-    Res = httpd_util:multi_lookup(ConfigDB, Query),
-    {reply, Res, [SocketType,ListenSocket,ConfigFile,ConfigDB,Processes]};
-
-handle_call({config_match, Query}, _From, 
-	    [SocketType,ListenSocket,ConfigFile,ConfigDB,Processes]) ->
-    Res = ets:match_object(ConfigDB, Query),
-    {reply, Res, [SocketType,ListenSocket,ConfigFile,ConfigDB,Processes]};
-
-handle_call(Request, _From, State) ->
-    {reply, ok, State}.
-
-%% handle_cast
-
-handle_cast(destroy, [SocketType,ListenSocket,ConfigFile,ConfigDB,Processes]) ->
-    {noreply, [SocketType,ListenSocket,ConfigFile,ConfigDB,Processes-1]};
-handle_cast({create, Pid}, [SocketType,ListenSocket,ConfigFile,ConfigDB,Processes]) ->
-    case httpd_util:lookup(ConfigDB, max_clients, 150) of
-	Processes ->
-	    proc_lib:spawn_link(httpd_listener, heavy_load,
-				[self(), SocketType, ListenSocket, ConfigDB]),
-	    {noreply, [SocketType,ListenSocket,ConfigFile,ConfigDB,Processes]};
-	_ ->
-	    proc_lib:spawn_link(httpd_listener, connection,
-				[self(), SocketType, ListenSocket, ConfigDB]),
-	    {noreply, [SocketType,ListenSocket,ConfigFile,ConfigDB,Processes+1]}
-    end.
-
-%% handle_info
-
-handle_info(Info, State) ->
-    case Info of
-	{'EXIT', Pid, normal} ->
-	    do_nothing;
-	{'EXIT', Pid, {accept_failed, Err}} ->
-	    %% Accept failed. Start a new connection process.
-	    create(self(), self());
-	{'EXIT', Pid, {error, normal}} ->
-	    %% Bug in gen_tcp
-	    create(self(), self());
-	_ ->
-	    String = lists:flatten(io_lib:format("Error: ~p", [Info])),
-	    error_logger:error_report(String)
-    end,
-    ?DEBUG("handle_info: Info: ~p State: ~p", [Info, State]),
-    {noreply, State}.
-
-%% terminate
-
-terminate(Reason, [SocketType,ListenSocket,ConfigFile,ConfigDB,Processes]) -> 
-    httpd_socket:close(SocketType, ListenSocket),
-    httpd_conf:remove_all(ConfigDB),
-    ok.
-
-%% heavy_load
-
-%% The 30000 ms timeout here and in connection/4 serves the purpose of
+%% The 30000 ms timeout in connection/5 serves the purpose of
 %% making old code not stick around indefinitely when upgrading.
+%%
+%% This process was created when max_client connections had been 
+%% accepted (was in busy usage state). The assumption is that the 
+%% next connection will follow shortly. But that is not necessarily 
+%% the case. Theoretically all the connections active at the time 
+%% of the creation could very well all be handled and done with. 
+%% When the next connection is received the only active process is 
+%% this "busy" connection process. I.e. there is no heavy load 
+%% situation at all. To handle this situation, the first thing done 
+%% after a successful accept is do check if the server is actually 
+%% still busy (still at max_client), which is done in the handle_busy 
+%% function.
 
-heavy_load(Listener,SocketType,ListenSocket,ConfigDB) ->
-    case httpd_socket:accept(SocketType,ListenSocket, 30000) of
+connection(busy,Manager,SocketType,ListenSocket,ConfigDB) ->
+    ?LOG("connection(busy) -> ListenSocket: ~p~n",[ListenSocket]),
+    ?vlog("starting when busy",[]),
+    case httpd_socket:accept(SocketType,ListenSocket,30000) of
 	{error, timeout} ->
-	    ?MODULE:heavy_load(Listener,SocketType,ListenSocket,ConfigDB);
+	    ?LOG("connection(busy) -> error:  timeout",[]),
+	    ?vlog("~n   Accept timeout",[]),
+	    ?REPORT_ERROR(ConfigDB," accept timeout",[]),
+	    ?MODULE:connection(busy,Manager,SocketType,ListenSocket,ConfigDB);
+	{error, closed} ->
+	    ?LOG("connection(busy) -> error: closed",[]),
+	    ?vlog("~n   Accept error: closed",[]),
+	    %% This propably only means that our manager is stopping
+	    ?REPORT_ERROR(ConfigDB,"connection accept error: closed",[]),
+	    exit(normal);
+	{error,Reason} ->
+	    ?LOG("connection(busy) -> error:  ~p",[Reason]),
+	    ?vinfo("~n   Accept error: ~p",[Reason]),
+	    ?REPORT_ERROR(ConfigDB,"heavy load accept error: ~p",[Reason]),
+	    %% Out of sockets, too many open files, ...
+	    receive after 200 -> ok end,
+	    ?MODULE:connection(busy,Manager,SocketType,ListenSocket,ConfigDB);
 	Socket ->
-	    create(Listener,self()),
-	    MaxClients = httpd_util:lookup(ConfigDB,max_clients,150),
-	    String = io_lib:format("heavy load (>~w processes)",[MaxClients]),
-	    httpd_response:send_status(SocketType,Socket,504,String,ConfigDB),
-	    destroy(Listener),
-	    httpd_socket:close(SocketType,Socket)
-    end.
+	    ?DEBUG("connection(busy) -> accepted: ~p",[Socket]),
+	    ?vlog("accepted",[]),
+	    handle_busy(Manager,SocketType,Socket,ConfigDB)
+    end;
 
-%% connection
 
-connection(Listener,SocketType,ListenSocket,ConfigDB) ->
+%% connection (non-busy, i.e. idle or active)
+
+connection(Us,Manager,SocketType,ListenSocket,ConfigDB) ->
+    ?LOG("connection(~p) -> ListenSocket: ~p",[Us,ListenSocket]),
+    ?vlog("starting when ~p",[Us]),
     case catch httpd_socket:accept(SocketType,ListenSocket, 30000) of
 	{error, timeout} ->
-	    ?MODULE:connection(Listener,SocketType,ListenSocket,ConfigDB);
+	    ?LOG("connection(~p) -> error: timeout",[Us]),
+	    ?vlog("~n   Accept timeout",[]),
+	    ?REPORT_ERROR(ConfigDB,"connection accept timeout",[]),
+	    ?MODULE:connection(Us,Manager,SocketType,ListenSocket,ConfigDB);
 	{error, {enfile, _}} ->
+	    ?LOG("connection(~p) -> error: enfile",[Us]),
+	    ?vinfo("~n   Accept error: enfile",[]),
+	    ?REPORT_ERROR(ConfigDB,"connection accept error: enfile",[]),
 	    %% Out of sockets...
 	    receive after 200 -> ok end,
-	    ?MODULE:connection(Listener, SocketType, ListenSocket, ConfigDB);
+	    ?MODULE:connection(Us,Manager,SocketType,ListenSocket,ConfigDB);
+	{error, emfile} ->
+	    ?LOG("connection(~p) -> error: emfile",[Us]),
+	    ?vinfo("~n   Accept error: emfile",[]),
+	    ?REPORT_ERROR(ConfigDB,"connection accept error: emfile",[]),
+	    %% Too many open files -> Out of sockets...
+	    receive after 200 -> ok end,
+	    ?MODULE:connection(Us,Manager,SocketType,ListenSocket,ConfigDB);
 	{error, closed} ->
+	    ?LOG("connection(~p) -> error: closed",[Us]),
+	    ?vlog("~n   Accept error: closed",[]),
+	    %% This propably only means that our manager is stopping
+	    ?REPORT_ERROR(ConfigDB,"connection accept error: closed",[]),
 	    exit(normal);
 	{error, Reason} ->
+	    ?LOG("connection(~p) -> error: ~p",[Us,Reason]),
+	    ?vinfo("~n   Accept error: ~p",[Reason]),
 	    accept_failed(SocketType, ConfigDB, Reason);
 	{'EXIT', Reason} ->
+	    ?LOG("connection(~p) -> exit: ~p",[Us,Reason]),
+	    ?vinfo("~n   Accept exit: ~p",[Reason]),
 	    accept_failed(SocketType, ConfigDB, Reason);
 	Socket ->
-	    handle_connection(Listener, SocketType, Socket, ConfigDB)
+	    ?DEBUG("connection(~p) -> accepted: ~p",[Us,Socket]),
+	    ?vlog("accepted(~p)",[Us]),
+	    handle_connection(Manager, SocketType, Socket, ConfigDB)
     end.
 
-handle_connection(Listener, SocketType, Socket, ConfigDB) ->
-    Resolve = httpd_socket:resolve(SocketType),
+
+handle_busy(Manager,SocketType,Socket,ConfigDB) ->
+    %% This process was created when we hade reached max connections
+    %% (busy), but are we still? Check if it really is heavy load (busy)
+    case httpd_manager:is_busy(Manager) of
+	true -> %% busy state
+	    ?LOG("handle_busy -> still busy, so reject",[]),
+	    ?vlog("~n   still busy usage state => reject",[]),
+	    reject_connection(Manager, SocketType, Socket, ConfigDB);
+
+	false -> %% not busy state
+	    ?LOG("handle_busy -> no longer busy, so handle",[]),
+	    ?vlog("~n   no longer busy usage state => handle",[]),
+	    handle_connection(Manager, SocketType, Socket, ConfigDB)
+    end.
+
+
+reject_connection(Manager,SocketType,Socket,ConfigDB) ->
+    httpd_manager:new_connection(Manager,reject),
+    MaxClients = httpd_util:lookup(ConfigDB,max_clients,150),
+    String = io_lib:format("heavy load (>~w processes)",[MaxClients]),
+    httpd_response:send_status(SocketType,Socket,503,String,ConfigDB),
+    httpd_manager:done_connection(Manager,reject),
+    close(SocketType,Socket,ConfigDB).
+
+
+handle_connection(Manager, SocketType, Socket, ConfigDB) ->
+    Resolve  = httpd_socket:resolve(SocketType),
     Peername = httpd_socket:peername(SocketType, Socket),
     InitData = #init_data{peername=Peername, resolve=Resolve},
-    create(Listener,self()),
+    httpd_manager:new_connection(Manager,accept),
     MaxRequests = httpd_util:lookup(ConfigDB, keep_alive, 1),
     do_next_connection(InitData, SocketType, Socket, ConfigDB, 
 		       MaxRequests, 60000), % XXX Was infinity
-    destroy(Listener),
-    httpd_socket:close(SocketType,Socket).
+    httpd_manager:done_connection(Manager,accept),
+    close(SocketType,Socket,ConfigDB).
+
 
 do_next_connection(_InitData, _SocketType, _Socket, _ConfigDB, 0, _Timeout) ->
     ok;
-do_next_connection(InitData, SocketType, Socket, ConfigDB, MaxRequests, Timeout) ->
+do_next_connection(InitData,SocketType,Socket,ConfigDB,MaxRequests,Timeout) ->
     Peername = InitData#init_data.peername,
     case catch httpd_request:read(SocketType,
 				  Socket,
@@ -234,6 +210,8 @@ do_next_connection(InitData, SocketType, Socket, ConfigDB, MaxRequests, Timeout)
 				  InitData, 
 				  Timeout) of
 	{'EXIT',Reason} ->
+	    ?LOG("do_next_connection -> exit: ~p",[Reason]),
+	    ?vlog("exit handling connection: ~p",[Reason]),
 	    error_logger:error_report({'EXIT',Reason}),
 	    mod_log:error_log(SocketType,Socket,ConfigDB,Peername,Reason),
 	    mod_disk_log:error_log(SocketType,Socket,ConfigDB,Peername,Reason);
@@ -262,3 +240,58 @@ accept_failed(SocketType, ConfigDB, Error) ->
     mod_log:error_log(SocketType, undefined, ConfigDB, {0, "unknown"}, String),
     mod_disk_log:error_log(SocketType, undefined, ConfigDB, {0, "unknown"}, String),
     exit({accept_failed, String}).
+
+
+-ifdef(httpd_verbose).
+report_error(ConfigDB,FStr,Args,Line) ->
+    String = lists:flatten(io_lib:format("Error at line ~w: " ++ FStr, 
+					 [Line|Args])),
+    error_logger:error_report(String),
+    mod_log:report_error(ConfigDB,String),
+    mod_disk_log:report_error(ConfigDB,String).
+-endif.
+
+
+%% Socket utility functions:
+
+close(SocketType,Socket,ConfigDB) ->
+    case httpd_socket:close(SocketType,Socket) of
+	ok ->
+	    ok;
+	{error,closed} ->
+	    ?REPORT_ERROR(ConfigDB,"Socket ~p already closed",[Socket]);
+	{error,Reason} ->
+	    ?REPORT_ERROR(ConfigDB,"Error while closing socket: ~p",[Reason])
+    end.
+
+-ifdef(httpd_verbose).
+assert(false,_Line,_Res,_Res,_Cdb) ->
+    ok;
+assert(true,_Line,Res,Res,_Cdb) ->
+    ok;
+assert(true,Line,Expected,Actual,Cdb) ->
+    assert_action(?ASSERT_ACTION,Line,Expected,Actual,Cdb).
+
+assert_action(no_action,_Line,_Expected,_Actual,_Cdb) ->
+    ok;
+assert_action(print,Line,Expected,Actual,_Cdb) ->
+    io:format("(~p:~p:~p) Assert failed: ~n\tExpected: ~p~n\tActual:   ~p",
+	      [self(),?MODULE,Line,Expected,Actual]);
+assert_action(report,Line,Expected,Actual,Cdb) ->
+    report_error(Cdb,"Assert failed: ~n\tExpected: ~p~n\tActual:   ~p",
+		 [self(),Expected,Actual],Line);
+assert_action(exit,Line,Expected,Actual,_Cdb) ->
+    exit({assert_failed,{?MODULE,Line,Expected,Actual}});
+assert_action(_Action,_Line,_Expected,_Actual,_Cdb) ->
+    ok.
+-endif.
+
+
+
+get_verbosity() ->
+    get_verbosity(get(listener_verbosity)).
+
+get_verbosity(undefined) ->
+    ?default_verbosity;
+get_verbosity(V) ->
+    ?vvalidate(V).

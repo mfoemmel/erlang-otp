@@ -25,9 +25,6 @@
 
 -export([getserv/1, getaddr/1]).
 
--export([open_mgr/3]).
--import(lists, [member/2]).
-
 -include("inet_int.hrl").
 -include("socks5.hrl").
 
@@ -42,7 +39,6 @@
 	 frag_timer = undefined,
 	 bound_ip,
 	 bound_port,
-	 binary = false,     %% binary udp ?
 	 socks_header = 0,   %% size of udp socks header
 	 user_header = 0,    %% current user header
 	 server              %% socks server
@@ -71,93 +67,52 @@ close(Socket) ->
     gen_udp:close(Socket).
 
 
-send(Socket, {A,B,C,D}, Port, Packet) when integer(A+B+C+D), integer(Port) ->
-    call(Socket, {sendto, {A,B,C,D}, Port, Packet}); 
+send(Socket, {A,B,C,D}, Port, Packet) when ?ip(A,B,C,D), integer(Port) ->
+    inet_udp:send(Socket, {A,B,C,D}, Port, Packet);
 send(Socket, Address, Port, Packet) when integer(Port) ->
-    call(Socket, {sendto, Address, Port, Packet});
+    inet_udp:send(Socket, Address, Port, Packet);
 send(_, _, _, _) ->
     exit(badarg).
 
 open(Port) -> 
     open(Port, []).
 
+
 open(Port, Opts) when integer(Port) ->
-    case inet:socket_options([{port,Port} | Opts]) of
-	{ok, St} ->
-	    Tag = make_ref(),
-	    proc_lib:spawn(?MODULE, open_mgr, [self(), Tag, St]),
-	    receive
-		{Tag, Reply} -> Reply
-	    end;
-	{error,Reason} -> 
-	    exit(Reason)
-    end.
-
-%%
-%% Call/Reply
-%%
-call(Socket, Request) ->
-    Tag = make_ref(),
-    Pid = Socket#socket.pid,
-    Pid ! {call, self(), Tag, Request},
-    receive
-	{Tag, Reply} -> Reply;
-	{'EXIT', Pid, Reason} ->
-	    {error, closed};
-	{udp_closed, Socket} ->
-	    {error, closed}
-    end.
-
-reply(Pid, Tag, Reply) ->
-    Pid ! {Tag, Reply}.
-
-%%
-%% Open a socks5 socket and an udp socket
-%%
-open_mgr(Owner, Tag, St) ->
-    Binary = member(binary, St#sock.open_opts),
-    Options = St#sock.open_opts ++
-	[{ip, St#sock.local_ip}] ++ [{header,?IPV4_HEADER}],
-    case inet_udp:open(St#sock.local_port, Options) of
-	{ok, S} ->
-	    {ok, {SrcIP, SrcPort}} = inet:sockname(S),
-	    case socks5:open([]) of
-		{ok, Socks} ->
-		    case socks5:associate(Socks, SrcIP, SrcPort) of
-			{ok, {BndIP, BndPort}} ->
-			    SocksServer = inet_db:socks_option(server),
-			    inet:pushf(S, fun handle_socks5/3, 
-				       #state { bound_ip = BndIP,
-					       bound_port = BndPort,
-					       binary = Binary,
-					       server = SocksServer,
-					       socks_header = ?IPV4_HEADER }),
-			    reply(Owner, Tag, {ok, S}),
-			    process_flag(trap_exit, true),
-			    inet:setopts(S, St#sock.sock_opts),
-			    controlling_process(S, Owner),
-			    link(S#socket.pid), %% relink
-			    monitor_mgr(S, Socks);
-			Error -> 
-			    reply(Owner, Tag, Error)
+    case inet:udp_options([{port,Port} | Opts], inet) of
+	{ok, R} ->
+	    Options = [{ifaddr,R#udp_opts.ifaddr},{header,?IPV4_HEADER}],
+	    case inet_udp:open(R#udp_opts.port, Options) of
+		{ok, S} ->
+		    {ok, {SrcIP, SrcPort}} = inet:sockname(S),
+		    case socks5:open([]) of
+			{ok, Socks} ->
+			    case socks5:associate(Socks, SrcIP, SrcPort) of
+				{ok, {BndIP, BndPort}} ->
+				    SocksServer = inet_db:socks_option(server),
+				    inet:pushf(S, fun handle_socks5/3, 
+					       #state { bound_ip = BndIP,
+							bound_port = BndPort,
+							server = SocksServer,
+							socks_header = ?IPV4_HEADER }),
+				    inet:setopts(S, R#udp_opts.opts),
+				    inet_db:register_socket(S, ?MODULE),
+				    {ok, S};
+				Error -> 
+				    inet_udp:close(S),
+				    socks5:close(Socks),
+				    Error
+			    end;
+			Error ->
+			    inet_udp:close(S),
+			    Error
 		    end;
 		Error -> 
-		    reply(Owner, Tag, Error)
+		    Error
 	    end;
-	Error -> 
-	    reply(Owner, Tag, Error)
+	Error -> Error
     end.
 
-
-monitor_mgr(S, Socks) ->
-    receive
-	{tcp_closed, Socks} ->
-	    inet:close(S);
-	{'EXIT', Pid, Reason} when Pid == S#socket.pid ->
-	    inet_tcp:close(Socks);
-	{'EXIT', Pid, Reason} when Pid == Socks#socket.pid ->
-	    inet:close(S)
-    end.
 
 %%
 %% Handle socks5 udp
@@ -203,8 +158,13 @@ handle_socks5(output, {IP,Port,Data}, Info) ->
 	true ->
 	    {false, Info}
     end;
-handle_socks5(event, socks5_timeout, Info) ->
-    {false, reset_queue(Info)};
+handle_socks5(event, {timeout,Ref,socks5_timeout}, Info) ->
+    if Ref == Info#state.frag_timer ->
+	    {false, Info#state { frag_cnt = 0, frag_queue = [],
+				 frag_timer = undefined }};
+       true ->
+	    {false, Info}
+    end;
 %% preserve user header
 handle_socks5(option, {header,N}, Info) -> 
     Info1 = Info#state { user_header = N },
@@ -224,7 +184,7 @@ input_data(_, _, Info) ->
 
 enqueue_data(true, ?SOCKS5_ATYP_V4,[A,B,C,D,P1,P0 | Data], Info) ->
     Queue = Info#state.frag_queue,
-    Data1 = merge_data([Data,Queue], Info#state.binary, Info#state.user_header),
+    Data1 = merge_data([Data,Queue], Info#state.user_header),
     {input, {{A,B,C,D}, ?u16(P1,P0), Data}, reset_queue(Info)};
 enqueue_data(false, ?SOCKS5_ATYP_V4,[A,B,C,D,P1,P0 | Data], Info) ->
     Cnt = Info#state.frag_cnt,
@@ -245,36 +205,35 @@ enqueue_data(_, _, _, Info) ->
     {true, reset_queue(Info)}.
 
 %% Merge data to user !!!
-merge_data(Queue, true, Header) ->
+merge_data(Queue, Header) ->
     Data = list_to_binary(Queue),
     if 
 	Header < 0 ->
 	    binary_to_list(Data);
 	Header >= size(Data) ->
 	    binary_to_list(Data);
+	Header == 0 ->
+	    Data;
 	true ->
 	    {B1, B2} = split_binary(Header, Data),
 	    binary_to_list(B1) ++  B2
-    end;
-merge_data(Queue, false, Header) ->
-    queue_append(Queue).
+    end.
 
-queue_append([L1, L2]) ->
-    L1 ++ queue_append(L2);
-queue_append([]) -> [].
-    
-reset_queue(Info) when Info#state.frag_timer == undefined ->
-    Info;
+
 reset_queue(Info) ->
-    cancel_timer(Info#state.frag_timer),
-    Info#state { frag_cnt = 0, frag_queue = [], frag_timer = undefined }.
+    case Info#state.frag_timer of
+	undefined -> Info;
+	TRef -> cancel_timer(TRef),
+		Info#state { frag_cnt = 0, frag_queue = [], 
+			     frag_timer = undefined }
+    end.
     
 set_timer(Time, Message) ->
-    {ok, Ref} = timer:send_after(Time, Message),
+    Ref = erlang:start_timer(Time, self(), Message),
     Ref.
 
 cancel_timer(undefined) -> ok;
-cancel_timer(Ref) -> timer:cancel(Ref).
+cancel_timer(Ref) -> erlang:cancel_timer(Ref).
 
 
 

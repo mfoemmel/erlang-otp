@@ -20,7 +20,7 @@
 %%%-----------------------------------------------------------------
 %%% Implements different error mechanisms.
 %%%-----------------------------------------------------------------
--export([user_err/2, config_err/2]).
+-export([user_err/2, config_err/2, db_err/2]).
 
 %%-----------------------------------------------------------------
 %% This function is called when there is an error in a user
@@ -37,4 +37,15 @@ user_err(Format, X) ->
 %%-----------------------------------------------------------------
 config_err(Format, X) ->
     Form = lists:concat(["** Configuration error: ", Format, "\n"]),
+    catch error_logger:error_msg(Form, X).
+
+
+%%-----------------------------------------------------------------
+%% This function is called when there is a database error,
+%% either at startup or at run-time. Example of this is if the 
+%% logfile of the snmp_local_db is corrupt, and is repaired at
+%% runtime and the auto_repair flag is set to true_verbose.
+%%-----------------------------------------------------------------
+db_err(Format, X) ->
+    Form = lists:concat(["** Batabase error: ", Format, "\n"]),
     catch error_logger:error_msg(Form, X).

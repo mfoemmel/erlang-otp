@@ -29,6 +29,8 @@
 #include "global.h"
 #include "erl_process.h"
 #include "dist.h"
+#include "big.h"
+#include "erl_binary.h"
 
 /* XXX Remove when driver interface has been cleaned-up. */
 void *ddll_open(char *);
@@ -86,8 +88,8 @@ typedef struct line_buf_context {
    which is incremented each time we look for a free port and start from
    the beginning of the table. erl_max_ports is the number of file descriptors,
    rounded up to a power of 2.
-   To get the index from a port, use the macro 'get_port_index';
-   'get_number_port' returns the whole number field.
+   To get the index from a port, use the macro 'port_index';
+   'port_number' returns the whole number field.
 */
 
 static int port_extra_shift;
@@ -178,6 +180,8 @@ setup_port(int port_num, Eterm pid, DriverEntry *driver, long ret, char *name)
     prt->name  = (char*) safe_alloc_from(162, sys_strlen(name) + 1);
     prt->suspended  = NULL;
     sys_strcpy(prt->name, name);
+    prt->links = NULL;
+    prt->linebuf = NULL;
     initq(prt);
 }
 
@@ -190,7 +194,7 @@ Process* process;
     ProcessList** p;
     ProcessList* new_p;
 
-    port_pos = get_port_index(this_port);
+    port_pos = port_index(this_port);
     if (erts_port[port_pos].status == FREE)
 	return;
 
@@ -303,18 +307,16 @@ open_driver(driver, pid, name, opts)
 static int
 io_list_to_buf2(Eterm obj, char* buf, int len)
 {
-    ErlStack s;
-    uint32* objp;
-    ProcBin *pb;
-
-    INIT_ESTACK(s);
+    Eterm* objp;
+    DECLARE_ESTACK(s);
     goto L_again;
 
-    while((obj = ESTACK_POP(s))) {
+    while (!ESTACK_ISEMPTY(s)) {
+	obj = ESTACK_POP(s);
     L_again:
 	if (is_list(obj)) {
 	L_iter_list:
-	    objp = ptr_val(obj);
+	    objp = list_val(obj);
 	    obj = CAR(objp);
 	    if (is_byte(obj)) {
 		if (len == 0)
@@ -322,15 +324,15 @@ io_list_to_buf2(Eterm obj, char* buf, int len)
 		*buf++ = unsigned_val(obj);
 		len--;
 	    } else if (is_binary(obj)) {
-		pb = (ProcBin*) ptr_val(obj);
-		if (thing_subtag(pb->thing_word) == FUN_SUBTAG) {
-		    goto L_type_error;
-		} else if (len < pb->size) {
+		byte* bytes;
+		size_t size = binary_size(obj);
+		if (len < size) {
 		    goto L_overflow;
 		}
-		sys_memcpy(buf, pb->bytes, pb->size);
-		buf += pb->size;
-		len -= pb->size;
+		GET_BINARY_BYTES(obj, bytes);
+		sys_memcpy(buf, bytes, size);
+		buf += size;
+		len -= size;
 	    }
 	    else if (is_nil(obj)) {
 		;
@@ -346,36 +348,33 @@ io_list_to_buf2(Eterm obj, char* buf, int len)
 	    if (is_list(obj))
 		goto L_iter_list; /* on tail */
 	    else if (is_binary(obj)) {
-		pb = (ProcBin*) ptr_val(obj);
-		if (thing_subtag(pb->thing_word) == FUN_SUBTAG) {
-		    goto L_type_error;
-		} else if (len < pb->size) {
+		byte* bytes;
+		size_t size = binary_size(obj);
+		if (len < size) {
 		    goto L_overflow;
 		}
-		sys_memcpy(buf, pb->bytes, pb->size);
-		buf += pb->size;
-		len -= pb->size;
+		GET_BINARY_BYTES(obj, bytes);
+		sys_memcpy(buf, bytes, size);
+		buf += size;
+		len -= size;
 	    }
 	    else if (is_nil(obj))
 		;
 	    else
 		goto L_type_error;
-	}
-	else if (is_binary(obj)) {
-	    pb = (ProcBin*) ptr_val(obj);
-	    if (thing_subtag(pb->thing_word) == FUN_SUBTAG) {
-		goto L_type_error;
-	    } else if (len < pb->size) {
+	} else if (is_binary(obj)) {
+	    byte* bytes;
+	    size_t size = binary_size(obj);
+	    if (len < size) {
 		goto L_overflow;
 	    }
-	    sys_memcpy(buf, pb->bytes, pb->size);
-	    buf += pb->size;
-	    len -= pb->size;
-	}
-	else if (is_nil(obj))
-	    ;
-	else
+	    GET_BINARY_BYTES(obj, bytes);
+	    sys_memcpy(buf, bytes, size);
+	    buf += size;
+	    len -= size;
+	} else if (is_not_nil(obj)) {
 	    goto L_type_error;
+	}
     }
 
     DESTROY_ESTACK(s);
@@ -398,7 +397,6 @@ io_list_to_buf2(Eterm obj, char* buf, int len)
 **        -2 on type error
 */
 
-/* helpful ? macro */
 #define SET_VEC(iov, bv, bin, ptr, len, vlen) do { \
    (iov)->iov_base = (ptr); \
    (iov)->iov_len = (len); \
@@ -406,30 +404,58 @@ io_list_to_buf2(Eterm obj, char* buf, int len)
    (iov)++; \
    (vlen)++; \
 } while(0)
-				  
+
+#define SET_BINARY_VEC(obj)					\
+do {								\
+    Eterm _real;						\
+    Uint _offset;						\
+    Eterm* _bptr;						\
+    int _size = binary_size(obj);				\
+    GET_REAL_BIN(obj, _real, _offset);				\
+    _bptr = binary_val(_real);					\
+    if (thing_subtag(*_bptr) == REFC_BINARY_SUBTAG) {		\
+	ProcBin* _pb;						\
+	if (csize != 0) {					\
+	    SET_VEC(iov, binv, cbin, cptr, csize, vlen);	\
+	    cptr = buf;						\
+	    csize = 0;						\
+	}							\
+	_pb = (ProcBin *) _bptr;				\
+	SET_VEC(iov, binv, Binary2DriverBinary(_pb->val),	\
+		_pb->bytes+_offset, _size, vlen);		\
+    } else {							\
+	ErlHeapBin* hb = (ErlHeapBin *) _bptr;			\
+	if (len < _size) {					\
+	    goto L_overflow;					\
+	}							\
+	sys_memcpy(buf, ((byte *) hb->data) + _offset, _size);	\
+        csize += _size;						\
+	buf += _size;						\
+	len -= _size;						\
+    }								\
+} while (0)				  
 
 static int io_list_to_vec(Eterm obj, /* io-list */
 			  SysIOVec* iov, /* io vector */
 			  DriverBinary** binv, /* binary reference vector */
 			  DriverBinary* cbin) /* binary to store characters */
 {
-    ErlStack s;
+    DECLARE_ESTACK(s);
     Eterm* objp;
-    ProcBin *pb;
     char *buf  = cbin->orig_bytes;
     int len    = cbin->orig_size;
     int csize  = 0;
     int vlen   = 0;
     char* cptr = buf;
 
-    INIT_ESTACK(s);
     goto L_jump_start;  /* avoid push */
 
-    while((obj = ESTACK_POP(s))) {
+    while (!ESTACK_ISEMPTY(s)) {
+	obj = ESTACK_POP(s);
     L_jump_start:
 	if (is_list(obj)) {
 	L_iter_list:
-	    objp = ptr_val(obj);
+	    objp = list_val(obj);
 	    obj = CAR(objp);
 	    if (is_byte(obj)) {
 		if (len == 0)
@@ -437,59 +463,27 @@ static int io_list_to_vec(Eterm obj, /* io-list */
 		*buf++ = unsigned_val(obj);
 		csize++;
 		len--;
-	    }
-	    else if (is_binary(obj)) {
-		if (csize != 0) {
-		    SET_VEC(iov, binv, cbin, cptr, csize, vlen);
-		    cptr = buf;
-		    csize = 0;
-		}
-		pb = (ProcBin*) ptr_val(obj);
-		SET_VEC(iov, binv, Binary2DriverBinary(pb->val), 
-			pb->bytes, pb->size, vlen);
-	    }
-	    else if (is_nil(obj)) {
-		;
-	    }
-	    else if (is_list(obj)) {
+	    } else if (is_binary(obj)) {
+		SET_BINARY_VEC(obj);
+	    } else if (is_list(obj)) {
 		ESTACK_PUSH(s, CDR(objp));
 		goto L_iter_list;    /* on head */
-	    }
-	    else 
+	    } else if (!is_nil(obj)) {
 		goto L_type_error;
-	    
+	    }	    
 	    obj = CDR(objp);
 	    if (is_list(obj))
 		goto L_iter_list; /* on tail */
 	    else if (is_binary(obj)) {
-		if (csize != 0) {
-		    SET_VEC(iov, binv, cbin, cptr, csize, vlen);
-		    cptr = buf;
-		    csize = 0;
-		}
-		pb = (ProcBin*) ptr_val(obj);
-		SET_VEC(iov, binv, Binary2DriverBinary(pb->val), 
-			pb->bytes, pb->size, vlen);
-	    }
-	    else if (is_nil(obj)) 
-		;
-	    else
+		SET_BINARY_VEC(obj);
+	    } else if (!is_nil(obj)) {
 		goto L_type_error;
-	}
-	else if (is_binary(obj)) {
-	    if (csize != 0) {
-		SET_VEC(iov, binv, cbin, cptr, csize, vlen);
-		cptr = buf;
-		csize = 0;
 	    }
-	    pb = (ProcBin*) ptr_val(obj);
-	    SET_VEC(iov, binv, Binary2DriverBinary(pb->val), 
-		    pb->bytes, pb->size, vlen);
-	}
-	else if (is_nil(obj))
-	    ;
-	else
+	} else if (is_binary(obj)) {
+	    SET_BINARY_VEC(obj);
+	} else if (!is_nil(obj)) {
 	    goto L_type_error;
+	}
     }
 
     if (csize != 0) {
@@ -508,6 +502,26 @@ static int io_list_to_vec(Eterm obj, /* io-list */
     return -1;
 }
 
+#define IO_LIST_VEC_COUNT(obj)						\
+do {									\
+    int _size = binary_size(obj);					\
+    Eterm _real;							\
+    Uint _offset;							\
+    GET_REAL_BIN(obj, _real, _offset);					\
+    if (thing_subtag(*binary_val(_real)) == REFC_BINARY_SUBTAG) {	\
+	b_size += _size;						\
+	in_clist = 0;							\
+	v_size++;							\
+    } else {								\
+	c_size += _size;						\
+	if (!in_clist) {						\
+	    in_clist = 1;						\
+	    v_size++;							\
+	}								\
+    }									\
+} while (0)
+
+
 /* 
 ** Size of a io list in bytes
 ** return -1 if error
@@ -518,21 +532,21 @@ static int io_list_to_vec(Eterm obj, /* io-list */
 static int 
 io_list_vec_len(Eterm obj, int* vsize, int* csize)
 {
-    ErlStack s;
+    DECLARE_ESTACK(s);
     Eterm* objp;
     int v_size = 0;
     int c_size = 0;
     int b_size = 0;
     int in_clist = 0;
 
-    INIT_ESTACK(s);
     goto L_jump_start;  /* avoid a push */
 
-    while((obj = ESTACK_POP(s))) {
+    while (!ESTACK_ISEMPTY(s)) {
+	obj = ESTACK_POP(s);
     L_jump_start:
 	if (is_list(obj)) {
 	L_iter_list:
-	    objp = ptr_val(obj);
+	    objp = list_val(obj);
 	    obj = CAR(objp);
 
 	    if (is_byte(obj)) {
@@ -543,12 +557,7 @@ io_list_vec_len(Eterm obj, int* vsize, int* csize)
 		}
 	    }
 	    else if (is_binary(obj)) {
-		if (thing_subtag(*ptr_val(obj)) == FUN_SUBTAG) {
-		    goto L_type_error;
-		}
-		b_size += ((ProcBin*) ptr_val(obj))->size;
-		in_clist = 0;
-		v_size++;
+		IO_LIST_VEC_COUNT(obj);
 	    }
 	    else if (is_list(obj)) {
 		ESTACK_PUSH(s, CDR(objp));
@@ -562,24 +571,14 @@ io_list_vec_len(Eterm obj, int* vsize, int* csize)
 	    if (is_list(obj))
 		goto L_iter_list;   /* on tail */
 	    else if (is_binary(obj)) {  /* binary tail is OK */
-		if (thing_subtag(*ptr_val(obj)) == FUN_SUBTAG) {
-		    goto L_type_error;
-		}
-		b_size += ((ProcBin*) ptr_val(obj))->size;
-		in_clist = 0;
-		v_size++;
+		IO_LIST_VEC_COUNT(obj);
 	    }
 	    else if (!is_nil(obj)) {
 		goto L_type_error;
 	    }
 	}
 	else if (is_binary(obj)) {
-	    if (thing_subtag(*ptr_val(obj)) == FUN_SUBTAG) {
-		goto L_type_error;
-	    }
-	    b_size += ((ProcBin*) ptr_val(obj))->size;
-	    in_clist = 0;
-	    v_size++;
+	    IO_LIST_VEC_COUNT(obj);
 	}
 	else if (!is_nil(obj)) {
 	    goto L_type_error;
@@ -602,15 +601,16 @@ io_list_vec_len(Eterm obj, int* vsize, int* csize)
 
 
 /* write data to a port */
-int write_port(ix, list)
+int write_port(caller_id, ix, list)
+uint32 caller_id;
 int ix; uint32 list;
 {
-    ProcBin *bp;
     char *buf;
     Port* p = &erts_port[ix];
     DriverEntry *drv = p->drv_ptr;
     int size;
     
+    p->caller = caller_id;
     if (drv->outputv != NULL) {
 	int vsize;
 	int csize;
@@ -621,45 +621,44 @@ int ix; uint32 list;
 	DriverBinary* cbin;
 	ErlIOVec ev;
 
-	if ((size = io_list_vec_len(list, &vsize, &csize)) < 0)
+	if ((size = io_list_vec_len(list, &vsize, &csize)) < 0) {
 	    goto bad_value;
-
+	}
 	vsize += 1;
 	if (vsize <= SMALL_WRITE_VEC) {
 	    ivp = iv;
 	    bvp = bv;
-	}
-	else {
+	} else {
 	    ivp = (SysIOVec*) safe_alloc(vsize * sizeof(SysIOVec));
 	    bvp = (DriverBinary**) safe_alloc(vsize * sizeof(DriverBinary*));
 	}
 	cbin = driver_alloc_binary(csize);
+
 	/* Element 0 is for driver usage to add header block */
 	ivp[0].iov_base = NULL;
 	ivp[0].iov_len = 0;
 	bvp[0] = NULL;
 	ev.vsize = io_list_to_vec(list, ivp+1, bvp+1, cbin);
 	ev.vsize++;
+#if 0
+	/* This assertion may say something useful, but it can
+	   be falsified during the emulator test suites. */
 	ASSERT((ev.vsize >= 0) && (ev.vsize == vsize));
+#endif
 	ev.size = size;  /* total size */
 	ev.iov = ivp;
 	ev.binv = bvp;
 	(*drv->outputv)(p->drv_data, &ev);
-	if (ivp != iv) sys_free(ivp);
-	if (bvp != bv) sys_free(bvp);
+	if (ivp != iv) {
+	    sys_free(ivp);
+	}
+	if (bvp != bv) {
+	    sys_free(bvp);
+	}
 	driver_free_binary(cbin);
-    } else if (is_binary(list)) {
-	bp = (ProcBin*) ptr_val(list);
-	if (thing_subtag(bp->thing_word) == FUN_SUBTAG) {
-	    goto bad_value;
-	}
-	size = bp->size;
-	if (drv->output) {
-	    (*drv->output)(p->drv_data,(char*) bp->bytes, size);
-	}
     } else {
 	int r;
-
+	
 	size = TMP_BUF_SIZE - 5;
 	r = io_list_to_buf2(list, (char*)tmp_buf, size);
 	if (r >= 0) {
@@ -695,7 +694,7 @@ int ix; uint32 list;
  bad_value:
     cerr_pos = 0;
     erl_printf(CBUF, "Bad value on output port '%s'\n", p->name);
-    send_error_to_logger(0);    
+    send_error_to_logger(NIL);
     return 1;
     
 }
@@ -718,11 +717,19 @@ void init_io(void)
     int i;
     DriverEntry** dp;
     DriverEntry* drv;
+    char *maxports;
 
-    erl_max_ports = sys_max_files();
+    maxports = getenv("ERL_MAX_PORTS");
+    if (maxports != NULL) 
+	erl_max_ports = atoi(maxports);
+    else
+	erl_max_ports = 0;
+
+    if (erl_max_ports < 1024)
+	erl_max_ports = 1024;
 
     port_extra_shift = fits_in_bits(erl_max_ports - 1);
-    port_extra_limit = 1 << (R_NUMBER - port_extra_shift);
+    port_extra_limit = 1 << (PORT_NUMBER_BITS - port_extra_shift);
     port_extra_n = 0;
 
     if (erl_max_ports < (1 << port_extra_shift))
@@ -734,14 +741,14 @@ void init_io(void)
     bytes_out = 0;
     bytes_in = 0;
 
-    sys_init_io(tmp_buf, (uint32)TMP_BUF_SIZE);
-
     for (i = 0; i < erl_max_ports; i++) {
 	erts_port[i].status = FREE;
 	erts_port[i].name = NULL;
 	erts_port[i].links = NULL;
 	erts_port[i].linebuf = NULL;
     }
+
+    sys_init_io(tmp_buf, (uint32)TMP_BUF_SIZE);
 
     (*fd_driver_entry.init)();
     (*vanilla_driver_entry.init)();
@@ -948,27 +955,27 @@ int eol;
     Eterm listp;
     Eterm tuple;
     Process* rp;
-    ErlHeapFragment* bp;
     Eterm* hp;
 
-    need = 6;
+    need = 3 + 3;
+    if (prt->status & LINEBUF_IO) {
+	need += 3;
+    }
     if (prt->status & BINARY_IO) {
 	need += hlen*2 + PROC_BIN_SIZE;
     } else {
 	need += (hlen + len)*2;
     }
-    if (prt->status & LINEBUF_IO) {
-	need += 3;
-    }
-
     if (is_not_pid(to))
 	return;
-    rp = process_tab[get_number(to)];
+    rp = process_tab[pid_number(to)];
     if (INVALID_PID(rp, to))
 	return;
 
-    bp = new_message_buffer(need);
-    hp = bp->mem;
+    /*
+     * XXX Multi-thread note: Allocating on another process's heap.
+     */
+    hp = HAlloc(rp, need);
 
     listp = NIL;
     if ((prt->status & BINARY_IO) == 0) {
@@ -984,7 +991,7 @@ int eol;
 	sys_memcpy(bptr->orig_bytes, buf, len);
 
 	pb = (ProcBin *) hp;
-	pb->thing_word = make_thing(PROC_BIN_SIZE-1, REFC_BINARY_SUBTAG);
+	pb->thing_word = HEADER_PROC_BIN;
 	pb->size = len;
 	pb->next = rp->off_heap.mso;
 	rp->off_heap.mso = pb;
@@ -1011,7 +1018,8 @@ int eol;
 
     tuple = TUPLE2(hp, prt->id, tuple);
     hp += 3;
-    queue_message(rp, bp, tuple);
+
+    queue_message_tt(rp, NULL, tuple, NIL);
 }
 
 /* 
@@ -1071,10 +1079,9 @@ deliver_vec_message(
 						   iov (not hlen) */
 {
     int need;
-    uint32 listp;
-    uint32 tuple;
+    Eterm listp;
+    Eterm tuple;
     Process* rp;
-    ErlHeapFragment* bp;
     Eterm* hp;
 
     need = 12;
@@ -1086,12 +1093,15 @@ deliver_vec_message(
 
     if (is_not_pid(to))
 	return;
-    rp = process_tab[get_number(to)];
+    rp = process_tab[pid_number(to)];
     if (INVALID_PID(rp, to))
 	return;
 
-    bp = new_message_buffer(need);
-    hp = bp->mem;
+
+    /*
+     * XXX Multi-thread note: Allocating on another process's heap.
+     */
+    hp = HAlloc(rp, need);
 
     listp = NIL;
     iov += (vsize-1);  /* start from end (for concat) */
@@ -1114,7 +1124,7 @@ deliver_vec_message(
 		b->refc++;
 		base = iov->iov_base;
 	    }
-	    pb->thing_word = make_thing(PROC_BIN_SIZE-1, REFC_BINARY_SUBTAG);
+	    pb->thing_word = HEADER_PROC_BIN;
 	    pb->size = iov->iov_len;
 	    pb->next = rp->off_heap.mso;
 	    rp->off_heap.mso = pb;
@@ -1145,7 +1155,7 @@ deliver_vec_message(
     tuple = TUPLE2(hp, prt->id, tuple);
     hp += 3;
 
-    queue_message(rp, bp, tuple);
+    queue_message_tt(rp, NULL, tuple, NIL);
 }
 
 
@@ -1225,7 +1235,7 @@ uint32 reason;
 {
    uint32 item;
    Process *rp;
-   int ix = get_port_index(this_port);
+   int ix = port_index(this_port);
    int slot;
    Port* p = &erts_port[ix];
    ErlLink* lnk;
@@ -1252,7 +1262,7 @@ uint32 reason;
       switch(lnk->type) {
        case LNK_LINK:
 	 if (is_pid(item)) {
-	    if ((slot = get_node(item)) != THIS_NODE)
+	    if ((slot = pid_node(item)) != THIS_NODE)
 	       dist_exit(slot, this_port, item, rreason);
 	    else {
 	       if ((rp = pid2proc(item)) != NULL) {
@@ -1317,7 +1327,8 @@ uint32 reason;
 **
 **
 */
-void port_command(port_id, command)
+void port_command(caller_id, port_id, command)
+uint32 caller_id;
 uint32 port_id;
 uint32 command;
 {
@@ -1326,14 +1337,14 @@ uint32 command;
     uint32 pid;
     Process* rp;
 
-    if (get_node_port(port_id) != THIS_NODE)
+    if (port_node(port_id) != THIS_NODE)
 	return;
-    ix = get_port_index(port_id);
+    ix = port_index(port_id);
     if ((erts_port[ix].status == FREE) || (erts_port[ix].status & CLOSING))
 	return;
 
     if (is_tuple(command)) {
-	tp = ptr_val(command);
+	tp = tuple_val(command);
 	if ((tp[0] == make_arityval(2)) &&
 	    ((pid = erts_port[ix].connected) == tp[1])) {
 	    /* PID must be connected */
@@ -1343,14 +1354,14 @@ uint32 command;
 		return;
 	    }
 	    else if (is_tuple(tp[2])) {
-		tp = ptr_val(tp[2]);
+		tp = tuple_val(tp[2]);
 		if (tp[0] == make_arityval(2)) {
 		    if (tp[1] == am_command) {
-			if (write_port(ix, tp[2]) == 0)
+			if (write_port(caller_id, ix, tp[2]) == 0)
 			    return;
 		    }
 		    if ((tp[1] == am_connect) && is_pid(tp[2]) &&
-			(get_node(tp[2]) == THIS_NODE)) {
+			(pid_node(tp[2]) == THIS_NODE)) {
 			erts_port[ix].connected = tp[2];
 			deliver_result(port_id, pid, am_connected);
 			return;
@@ -1368,13 +1379,14 @@ uint32 command;
     }
 }
 
-/* Control a port synchronously. 
- * Returns either a list or a binary
+/*
+ * Control a port synchronously. 
+ * Returns either a list or a binary.
  */
 int
-port_control(Process* p, Port* prt, Eterm command, Eterm iolist, Eterm* resp)
+port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
 {
-    char* to_port = NULL;	/* Buffer to write to port. */
+    byte* to_port = NULL;	/* Buffer to write to port. */
 				/* Initialization is for shutting up
 				   warning about use before set. */
     int to_len;			/* Length of buffer. */
@@ -1385,6 +1397,7 @@ port_control(Process* p, Port* prt, Eterm command, Eterm iolist, Eterm* resp)
     DriverEntry* drv;
     int n;
 
+    prt->caller = p->id;
     drv = prt->drv_ptr;
 
     if (drv->control == NULL) {
@@ -1397,12 +1410,8 @@ port_control(Process* p, Port* prt, Eterm command, Eterm iolist, Eterm* resp)
      * and with its length in to_len.
      */
     if (is_binary(iolist)) {
-	ProcBin* bp = (ProcBin *) ptr_val(iolist);
-	if (thing_subtag(bp->thing_word) == FUN_SUBTAG) {
-	    return 0;
-	}
-	to_port = bp->bytes;
-	to_len = bp->size;
+	GET_BINARY_BYTES(iolist, to_port);
+	to_len = binary_size(iolist);
     } else {
 	int r;
 	
@@ -1443,10 +1452,10 @@ port_control(Process* p, Port* prt, Eterm command, Eterm iolist, Eterm* resp)
 	hp = HAlloc(p, PROC_BIN_SIZE);
 	pb = (ProcBin *) hp;
 
-	pb->thing_word = make_thing(PROC_BIN_SIZE-1, REFC_BINARY_SUBTAG);
+	pb->thing_word = HEADER_PROC_BIN;
 	pb->size = b->orig_size;
 	pb->next = p->off_heap.mso;
-	p->off_heap.mso = pb->next;
+	p->off_heap.mso = pb;
 	pb->val = DriverBinary2Binary(b);
 	pb->bytes = b->orig_bytes;
 	p->off_heap.overhead += b->orig_size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
@@ -1540,8 +1549,8 @@ set_busy_port(int port_num, int on)
             while (p != NULL) {
                 Eterm pid = p->pid;
                 pl = p->next;
-                if (get_number(pid) < max_process) {
-                    Process* proc = process_tab[get_number(pid)];
+		if (pid_number(pid) < max_process) {
+                    Process* proc = process_tab[pid_number(pid)];
                     if (!INVALID_PID(proc, pid)) {
                         erl_resume(proc);
 		    }
@@ -1550,8 +1559,8 @@ set_busy_port(int port_num, int on)
                 p = pl;
             }
 
-            if (get_number(pid0) < max_process) {
-                Process* proc = process_tab[get_number(pid0)];
+	    if (pid_number(pid0) < max_process) {
+                Process* proc = process_tab[pid_number(pid0)];
                 if (!INVALID_PID(proc, pid0))
                     erl_resume(proc);
             }
@@ -1570,6 +1579,7 @@ void dist_port_command(p, buf, len)
 Port* p; byte* buf; int len;
 {
     F_PTR fp = p->drv_ptr->output;
+    p->caller = NIL;
     if (fp != NULL) {
 	(*fp)(p->drv_data, buf, len);
     }
@@ -1591,8 +1601,10 @@ int hndl;
     } else {
 	/* The driver has gone away without de-selecting! */
 	cerr_pos = 0;
-	erl_printf(CBUF, "#Port<0.%d>: %s: Input driver gone away without deselecting!\n", ix, p->name);
-	send_error_to_logger(0);
+	erl_printf(CBUF, "#Port<0.%d>: %s: "
+		   "Input driver gone away without deselecting!\n", 
+		   ix, p->name ? p->name : "(unknown)" );
+	send_error_to_logger(NIL);
 	driver_select(ix, hndl, DO_READ, 0);
     }
 }
@@ -1610,11 +1622,31 @@ int hndl;
 	}
     } else {
 	cerr_pos = 0;
-	erl_printf(CBUF, "#Port<0.%d>: %s: Output driver gone away without deselecting!\n", ix, p->name);
-	send_error_to_logger(0);
+	erl_printf(CBUF, "#Port<0.%d>: %s: "
+		   "Output driver gone away without deselecting!\n", 
+		   ix, p->name ? p->name : "(unknown)" );
+	send_error_to_logger(NIL);
 	driver_select(ix, hndl, DO_WRITE, 0);
     }
 }
+
+int async_ready(int ix, void* data)
+{
+    Port* p = &erts_port[ix];
+    int need_free = 1;
+
+    if (p->status != FREE) {
+	if (p->drv_ptr->ready_async != NULL) {
+	    (*p->drv_ptr->ready_async)(p->drv_data, data);
+	    need_free = 0;
+	}
+	if ((p->status & CLOSING) && (p->ioq.size == 0)) {
+	    terminate_port(ix);
+	}
+    }
+    return need_free;
+}
+
 
 /* timer wrapper MUST check for closing */
 static void port_timeout_proc(p)
@@ -1626,7 +1658,7 @@ Port* p;
 	return;
     (*drv->timeout)(p->drv_data);
     if ((p->status & CLOSING) && (p->ioq.size == 0)) {
-	terminate_port(get_port_index(p->id));
+	terminate_port(port_index(p->id));
     }
 }
 
@@ -1643,7 +1675,7 @@ int status;
    uint32 pid;
 
    pid = prt->connected;
-   rp = process_tab[get_number(pid)];
+   rp = process_tab[pid_number(pid)];
    if (INVALID_PID(rp, pid))
       return;
 
@@ -1654,12 +1686,263 @@ int status;
    tuple = TUPLE2(hp, prt->id, tuple);
    hp += 3;
 
-   queue_message(rp, bp, tuple);
+   queue_message_tt(rp, bp, tuple, NIL);
 }
 
-/* Output a binary with hlen bytes from hbuf as list header
-** and data is len length of bin starting from offset offs.
-*/
+
+
+/*
+ * Generate an Erlang term from data in an array (representing a simple stack
+ * machine to build terms).
+ * Returns:
+ * 	-1 on error in input data
+ *       0 if the message was not delivered (bad to pid or closed port)
+ *       1 if the message was delivered successfully
+ */
+
+static int
+driver_deliver_term(Port* prt, Eterm to, DriverTermData* data, int len)
+{
+    int need = 0;
+    int depth = 0;
+    int max_depth = 0;
+    ErlHeapFragment* bp;
+    Eterm* hp;
+    DriverTermData* ptr;
+    DriverTermData* ptr_end;
+    DECLARE_ESTACK(stack); 
+    Eterm mess = NIL;		/* keeps compiler happy */
+    Process* rp;
+
+    if (is_not_pid(to))		/* e.g. dist_port_command set caller = NIL */
+	return 0;
+    if (prt->status & CLOSING)
+	return 0;
+    rp = process_tab[pid_number(to)];
+    if (INVALID_PID(rp, to))
+	return 0;
+
+    /*
+     * Check DriverTermData for consistency and calculate needed heap size
+     * and stack depth.
+     */
+    ptr = data;
+    ptr_end = ptr + len;
+    while (ptr < ptr_end) {
+	DriverTermData tag = *ptr++;
+	switch(tag) {
+	case ERL_DRV_NIL: /* no arguments */
+	    depth++;
+	    break;
+	case ERL_DRV_ATOM: /* atom argument */
+	    if ((ptr >= ptr_end) || (!is_atom(ptr[0]))) return -1;
+	    ptr++;
+	    depth++;
+	    break;
+	case ERL_DRV_INT:  /* signed int argument */
+	    if (ptr >= ptr_end) return -1;
+	    /* check for bignum */
+	    if (!IS_SSMALL((int)ptr[0]))
+		need += 2;  /* use small_to_big */
+	    ptr++;
+	    depth++;
+	    break;
+	case ERL_DRV_PORT:  /* port argument */
+	    if ((ptr >= ptr_end) || (!is_port(ptr[0]))) return -1;
+	    ptr++;
+	    depth++;
+	    break;
+	case ERL_DRV_BINARY: /* DriverBinary*, size, offs */
+	    if ((ptr+1 >= ptr_end) || (ptr[0] == 0)) return -1;
+	    need += PROC_BIN_SIZE;
+	    ptr += 3;
+	    depth++;
+	    break;
+	case ERL_DRV_STRING: /* char*, length */
+	    if ((ptr+1 >= ptr_end) || (ptr[0] == 0)) return -1;
+	    need += ptr[1] * 2;
+	    ptr += 2;
+	    depth++;
+	    break;
+	case ERL_DRV_STRING_CONS: /* char*, length */
+	    if ((ptr+1 >= ptr_end) || (ptr[0] == 0)) return -1;
+	    need += ptr[1] * 2;
+	    if (depth > max_depth) max_depth = depth;
+	    depth -= 1;
+	    if (depth < 0) return -1;
+	    ptr += 2;
+	    depth++;
+	    break;
+	case ERL_DRV_LIST: /* int */
+	    if ((ptr >= ptr_end) || (ptr[0] == 0)) return -1;
+	    need += (ptr[0]-1)*2;  /* list cells */
+	    if (depth > max_depth) max_depth = depth;
+	    depth -= ptr[0];
+	    if (depth < 0) return -1;
+	    ptr++;
+	    depth++;
+	    break;
+	case ERL_DRV_TUPLE: /* int */
+	    if (ptr >= ptr_end) return -1;
+	    need += ptr[0]+1;   /* vector positions + arityval */
+	    if (depth > max_depth) max_depth = depth;
+	    depth -= ptr[0];
+	    if (depth < 0) return -1;
+	    ptr++;
+	    depth++;
+	    break;
+	default:
+	    return -1;
+	}
+    }
+
+    if ((depth != 1) || (ptr != ptr_end))
+	return -1;
+
+    /* Create message buffer */
+    bp = new_message_buffer(need);
+    hp = bp->mem;
+
+    /* +1 needed for case basic type, then max_depth=0 is not set */
+    /* FIXME: since we know the depth we could add a macro ESTACK2 where 
+     * depth is known (max_depth+1)
+     */
+
+    /*
+     * Interpret the instructions and build the term.
+     */
+    ptr = data;
+    ptr_end = ptr + len;
+    while (ptr < ptr_end) {
+	DriverTermData tag = *ptr++;
+
+	switch(tag) {
+	case ERL_DRV_NIL: /* no arguments */
+	    mess = NIL;
+	    break;
+
+	case ERL_DRV_ATOM: /* atom argument */
+	    mess = ptr[0];
+	    ptr++;
+	    break;
+
+	case ERL_DRV_INT:  /* signed int argument */
+	    if (IS_SSMALL((int)ptr[0]))
+		mess = make_small((int)ptr[0]);
+	    else {
+		mess = small_to_big((int)ptr[0], hp);
+		hp += 2;
+	    }
+	    ptr++;
+	    break;
+
+	case ERL_DRV_PORT:  /* port argument */
+	    mess = ptr[0];
+	    ptr++;
+	    break;
+
+	case ERL_DRV_BINARY: { /* DriverBinary*, size, offs */
+	    ProcBin* pb;
+	    DriverBinary* b = (DriverBinary*) ptr[0];
+
+	    b->refc++;  /* caller must free binary !!! */
+
+	    pb = (ProcBin *) hp;
+	    pb->thing_word = HEADER_PROC_BIN;
+	    pb->size =  ptr[1];
+	    pb->next = rp->off_heap.mso;
+	    rp->off_heap.mso = pb;
+	    pb->val = DriverBinary2Binary(b);
+	    pb->bytes = ((byte*) b->orig_bytes) + ptr[2];
+	    mess =  make_binary(pb);
+	    hp += PROC_BIN_SIZE;
+	    rp->off_heap.overhead += pb->size / 
+		BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
+	    ptr += 3;
+	    break;
+	}
+
+	case ERL_DRV_STRING: /* char*, length */
+	    mess = buf_to_intlist(&hp, (char*)ptr[0], ptr[1], NIL);
+	    ptr += 2;
+	    break;
+
+	case ERL_DRV_STRING_CONS:  /* char*, length */
+	    mess = ESTACK_POP(stack);
+	    mess = buf_to_intlist(&hp, (char*)ptr[0], ptr[1], mess);
+	    ptr += 2;
+	    break;
+
+	case ERL_DRV_LIST: { /* int */
+	    int i = (int) ptr[0];
+
+	    mess = ESTACK_POP(stack);
+	    i--;
+	    while(i > 0) {
+		uint32 hd = ESTACK_POP(stack);
+
+		mess = CONS(hp, hd, mess);
+		hp += 2;
+		i--;
+	    }
+	    ptr++;
+	    break;
+	}
+
+	case ERL_DRV_TUPLE: { /* int */
+	    int size = (int)ptr[0];
+	    uint32* tp = hp;
+
+	    *tp = make_arityval(size);
+	    mess = make_tuple(tp);
+
+	    tp += size;   /* point at last element */
+	    hp = tp+1;    /* advance "heap" pointer */
+
+	    while(size--) {
+		*tp-- = ESTACK_POP(stack);
+	    }
+	    ptr++;
+	    break;
+	}
+	}
+	ESTACK_PUSH(stack, mess);
+    }
+    mess = ESTACK_POP(stack);  /* get resulting value */
+
+    DESTROY_ESTACK(stack);
+
+    queue_message_tt(rp, bp, mess, NIL);  /* send message */
+    return 1;
+}
+
+
+int 
+driver_output_term(int ix, DriverTermData* data, int len)
+{
+    Port* prt = NUM2PORT(ix);
+    if (prt == NULL) return -1;
+    
+    return driver_deliver_term(prt, prt->connected, data, len);
+}
+
+
+int
+driver_send_term(int ix, DriverTermData to, DriverTermData* data, int len)
+{
+    Port* prt = NUM2PORT(ix);
+
+    if (prt == NULL) {
+	return -1;
+    }
+    return driver_deliver_term(prt, to, data, len);
+}
+
+
+/*
+ * Output a binary with hlen bytes from hbuf as list header
+ * and data is len length of bin starting from offset offs.
+ */
 
 int driver_output_binary(ix, hbuf, hlen, bin, offs, len)
 int ix; char* hbuf; int hlen; DriverBinary* bin; int offs; int len;
@@ -1674,16 +1957,8 @@ int ix; char* hbuf; int hlen; DriverBinary* bin; int offs; int len;
     prt->bytes_in += (hlen + len);
     bytes_in += (hlen + len);
     if (prt->status & DISTRIBUTION) {
-	if ((hlen > 0) && (hbuf[0] == DIST_DATA))
-	    net_mess2(prt->dslot,(byte*)(hbuf+1),hlen-1, 
-		      (byte*)(bin->orig_bytes+offs), len);
-	else if ((hlen == 0) && (len > 0) && 
-		 (bin->orig_bytes[offs] == DIST_DATA))
-	    net_mess2(prt->dslot, (byte*)hbuf, hlen,
-		      (byte*)(bin->orig_bytes+offs+1), len-1);
-	else
-	    deliver_bin_message(prt,prt->connected, 
-				hbuf, hlen, bin, offs, len);
+	return net_mess2(prt->dslot, (byte*)hbuf, hlen,
+			 (byte*)(bin->orig_bytes+offs), len);
     }
     else
 	deliver_bin_message(prt, prt->connected, 
@@ -1707,17 +1982,14 @@ int ix; char* hbuf; int hlen; char* buf; int len;
 	return -1;
     if (prt->status & CLOSING)
 	return 0;
-
+    
     prt->bytes_in += (hlen + len);
     bytes_in += (hlen + len);
     if (prt->status & DISTRIBUTION) {
-	if ((hlen > 0) && (hbuf[0] == DIST_DATA))
-	    net_mess2(prt->dslot, (byte*)(hbuf+1),hlen-1, (byte*)buf, len);
-	else if ((hlen == 0) && (len > 0) && (buf[0] == DIST_DATA))
-	    net_mess2(prt->dslot, (byte*)hbuf,hlen,(byte*)(buf+1), len-1);
+	if (len == 0)
+	    return net_mess2(prt->dslot, NULL, 0, (byte*)hbuf, hlen);
 	else
-	    deliver_read_message(prt, prt->connected, 
-				  hbuf, hlen, buf, len, 0);
+	    return net_mess2(prt->dslot, (byte*)hbuf,hlen,(byte*)buf,len);
     }
     else if(prt->status & LINEBUF_IO)
 	deliver_linebuf_message(prt, prt->connected, hbuf, hlen, buf, len);
@@ -1804,6 +2076,7 @@ int len;
 	    sys_memcpy(buf, iov->iov_base, ilen);
 	    len -= ilen;
 	    buf += ilen;
+	    iov++;
 	}
 	else {
 	    sys_memcpy(buf, iov->iov_base, len);
@@ -2259,7 +2532,7 @@ int ix; uint32 t;
 	return -1;
     if (prt->drv_ptr->timeout == NULL)
 	return -1;
-    erl_set_timer(&prt->tm, port_timeout_proc, NULL, prt, t);
+    erl_set_timer(&prt->tm, (ErlTimeoutProc) port_timeout_proc, NULL, prt, t);
     return 0;
 }
 
@@ -2268,9 +2541,23 @@ int ix;
 {
     Port* prt = NUM2PORT(ix);
 
-    if (prt == NULL)
+    if (prt == NULL) {
 	return -1;
+    }
     erl_cancel_timer(&prt->tm);
+    return 0;
+}
+
+
+int
+driver_read_timer(int ix, unsigned long* t)
+{
+    Port* prt = NUM2PORT(ix);
+
+    if (prt == NULL) {
+	return -1;
+    }
+    *t = time_left(&prt->tm);
     return 0;
 }
 
@@ -2297,6 +2584,38 @@ int eof;			/* EOF or not. */
 		     eof ? am_normal : term);
     }
     return 0;
+}
+
+
+
+/*
+** Do a (soft) exit. unlink the connected process before doing
+** driver posix error or (normal)
+*/
+int driver_exit(ix, err)
+int ix; int err;
+{
+    Port* prt = NUM2PORT(ix);
+    Process* rp;
+  
+    if (prt == NULL)
+        return -1;
+
+    /* unlink connected */
+    del_link(find_link(&prt->links, LNK_LINK, prt->connected, NIL));
+
+    /* unlink port from connected */
+    if ((rp = pid2proc(prt->connected)) != NULL)
+        del_link(find_link(&rp->links, LNK_LINK,
+                           make_port2(THIS_NODE,ix), NIL));
+
+    if (err == 0)
+        return driver_failure_term(ix, am_normal, 0);
+    else {
+        char* err_str = erl_errno_id(err);
+        uint32 am_err = make_atom(atom_put(err_str, sys_strlen(err_str)));
+        return driver_failure_term(ix, am_err, 0);
+    }
 }
 
 
@@ -2330,6 +2649,81 @@ int driver_failure_eof(ix)
 }
 
 
+
+DriverTermData driver_mk_atom(string)
+char* string;
+{
+    int am = atom_put(string, sys_strlen(string));
+    
+    return (DriverTermData) make_atom(am);
+}
+
+DriverTermData driver_mk_port(ix)
+int ix;
+{
+    Port* prt = NUM2PORT(ix);
+
+    return (DriverTermData) prt->id;
+}
+
+DriverTermData driver_connected(ix)
+int ix;
+{
+    Port* prt = NUM2PORT(ix);
+
+    if (prt == NULL)
+	return NIL;
+    return prt->connected;
+}
+
+DriverTermData driver_caller(ix)
+int ix;
+{
+    Port* prt = NUM2PORT(ix);
+
+    if (prt == NULL)
+	return NIL;
+    return prt->caller;
+}
+
+
+/*
+** Make a HARD link to the driver which makes
+** the erl_ddll to suspend unloading
+*/
+int driver_attach(int ix)
+{
+    Port* prt = NUM2PORT(ix);
+    DE_Handle* dh;
+    if (prt == NULL) return -1;
+
+    if ((dh = (DE_Handle*)prt->drv_ptr->handle ) == NULL)
+	return -1;
+    dh->ref_count++;
+    return 0;
+}
+
+/* Unlink from a driver */
+int driver_detach(int ix)
+{
+    Port* prt = NUM2PORT(ix);
+    DE_Handle* dh;
+    if (prt == NULL) return -1;
+
+    if ((dh = (DE_Handle*)prt->drv_ptr->handle ) == NULL)
+	return -1;
+    dh->ref_count--;
+    DEBUGF(("io: driver_detach: ref_count=%d\r\n", dh->ref_count));
+    if (dh->ref_count == 0) {
+	if (dh->cb != NULL) {
+	    return (*dh->cb)(dh->ca[0], dh->ca[1], dh->ca[2], dh->ca[3]);
+	}
+    }
+    return 0;
+}
+
+
+
 /* 
  * Functions for maintaining a list of driver_entry struct
  */
@@ -2341,6 +2735,7 @@ void add_driver_entry(drv)
 
     p->drv = drv;
     p->next = driver_list;
+    p->de_hndl = (DE_Handle*) drv->handle;
     driver_list = p;
     if (drv->init != NULL) {
 	(*drv->init)();

@@ -17,6 +17,8 @@
  */
 package com.ericsson.otp.erlang;
 
+import java.io.Serializable;
+
 /**
  * Provides a Java representation of Erlang tuples. Tuples are created
  * from one or more arbitrary Erlang terms. 
@@ -25,7 +27,10 @@ package com.ericsson.otp.erlang;
  * Elements are indexed from 0 to (arity-1) and can be retrieved
  * individually by using the appropriate index.
  **/
-public class OtpErlangTuple extends OtpErlangObject {
+public class OtpErlangTuple extends OtpErlangObject implements Serializable, Cloneable {
+  // don't change this!
+  static final long serialVersionUID = 9163498658004915935L;
+
   private OtpErlangObject[] elems = null;
 
   /**
@@ -33,12 +38,12 @@ public class OtpErlangTuple extends OtpErlangObject {
    *
    * @param elem the element to create the tuple from.
    *
-   * @exception OtpErlangDataException if the array is empty (null).
+   * @exception java.lang.IllegalArgumentException if the array is
+   * empty (null).
    **/
-  public OtpErlangTuple(OtpErlangObject elem) 
-    throws OtpErlangDataException {
+  public OtpErlangTuple(OtpErlangObject elem) {
     if (elem == null) {
-      throw new OtpErlangDataException("Tuple element cannot be null");
+      throw new java.lang.IllegalArgumentException("Tuple element cannot be null");
     }
     this.elems = new OtpErlangObject[1];
     elems[0] = elem;
@@ -49,21 +54,35 @@ public class OtpErlangTuple extends OtpErlangObject {
    *
    * @param elems the array of terms to create the tuple from.
    *
-   * @exception OtpErlangDataException if the array is empty (null).
+   * @exception java.lang.IllegalArgumentException if the array is
+   * empty (null) or contains null elements.
    **/
-  public OtpErlangTuple(OtpErlangObject[] elems)
-    throws OtpErlangDataException {
-    if (elems == null) {
-      throw new OtpErlangDataException("Cannot make an empty tuple");
+  public OtpErlangTuple(OtpErlangObject[] elems) {
+    this(elems,0,elems.length);
+  }
+
+  /**
+   * Create a tuple from an array of terms.
+   *
+   * @param elems the array of terms to create the tuple from.
+   * @param start the offset of the first term to insert.
+   * @param count the number of terms to insert.
+   *
+   * @exception java.lang.IllegalArgumentException if the array is
+   * empty (null) or contains null elements.
+   **/
+  public OtpErlangTuple(OtpErlangObject[] elems, int start, int count) {
+    if ((elems == null) || (count < 1)) {
+      throw new java.lang.IllegalArgumentException("Cannot make an empty tuple");
     }
     else {
-      this.elems = new OtpErlangObject[elems.length];
-      for (int i=0; i<elems.length; i++) {
-	if (elems[i] != null) {
-	  this.elems[i] = elems[i];
+      this.elems = new OtpErlangObject[count];
+      for (int i=0; i<count; i++) {
+	if (elems[start+i] != null) {
+	  this.elems[i] = elems[start+i];
 	}
 	else {
-	  throw new OtpErlangDataException("Tuple element cannot be null (element" + i + ")");
+	  throw new java.lang.IllegalArgumentException("Tuple element cannot be null (element" + (start+i) + ")");
 	}
       }
     }
@@ -169,25 +188,15 @@ public class OtpErlangTuple extends OtpErlangObject {
    * Determine if two tuples are equal. Tuples are equal if they have
    * the same arity and all of the elements are equal.
    *
-   * @param o the object to compare to.
-   *
-   * @return true if o is a tuple and the tuples contain the same
-   * elements, false otherwise.
-   **/
-  public boolean equals(Object o) {
-    return false;
-  }
-
-  /**
-   * Determine if two tuples are equal. Tuples are equal if they have
-   * the same arity and all of the elements are equal.
-   *
-   * @param t the tuple to compare to.
+   * @param o the tuple to compare to.
    *
    * @return true if the tuples have the same arity and all the
    * elements are equal.
    **/
-  public boolean equals(OtpErlangTuple t) {
+  public boolean equals(Object o) {
+    if (!(o instanceof OtpErlangTuple)) return false;
+
+    OtpErlangTuple t = (OtpErlangTuple)o;
     int a = this.arity();
 
     if (a != t.arity()) return false;
@@ -197,5 +206,11 @@ public class OtpErlangTuple extends OtpErlangObject {
     }
 
     return true;
+  }
+
+  public Object clone() {
+    OtpErlangTuple newTuple = (OtpErlangTuple)(super.clone());
+    newTuple.elems = (OtpErlangObject[])elems.clone();
+    return newTuple;
   }
 }

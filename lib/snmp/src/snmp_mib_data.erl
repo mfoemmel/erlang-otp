@@ -31,6 +31,17 @@
 %%% in the binary file.
 %%%-----------------------------------------------------------------
 -include("snmp_types.hrl").
+-include("snmp_debug.hrl").
+
+-define(VMODULE,"MDATA").
+-include("snmp_verbosity.hrl").
+
+
+-ifdef(snmp_debug).
+-define(store(N,T),store(N,T)).
+-else.
+-define(store(N,T),ok).
+-endif.
 
 %%%-----------------------------------------------------------------
 %%% Table of contents
@@ -54,12 +65,13 @@
 -record(snmp_mib_data, {mibsEts, tree, subagents = []}).
 
 %% API
--export([new/0, load_mib/2, unload_mib/2, unload_all/1, info/1, info/2,
-	 dump/1, lookup/2, next/3,
+-export([new/0, load_mib/4, unload_mib/4, unload_all/1, info/1, info/2,
+	 dump/1, dump/2, lookup/2, next/3,
 	 register_subagent/3, unregister_subagent/2]).
 
 %% Internal exports
--export([merge_nodes/2,drop_internal_and_imported/1,call_instrumentation/2]).
+-export([merge_nodes/2,drop_internal_and_imported/1,call_instrumentation/2,
+	 code_change/2]).
 
 %%-----------------------------------------------------------------
 %% A tree is represented as a N-tuple, where each element is a
@@ -94,7 +106,8 @@ new() ->
 %%----------------------------------------------------------------------
 %% Returns: new mib data | {error, Reason}
 %%----------------------------------------------------------------------
-load_mib(MibData,FileName) when record(MibData,snmp_mib_data),list(FileName) -> 
+load_mib(MibData,FileName,MeOverride,TeOverride) when record(MibData,snmp_mib_data),list(FileName) -> 
+    ?vlog("load mib file: ~p",[FileName]),
     #snmp_mib_data{mibsEts = MibsEts, tree = OldRoot} = MibData,
     ActualFileName = filename:rootname(FileName, ".bin") ++ ".bin",
     MibName = list_to_atom(filename:basename(FileName, ".bin")),
@@ -102,23 +115,38 @@ load_mib(MibData,FileName) when record(MibData,snmp_mib_data),list(FileName) ->
 	[{MibName, _, _}] -> {error, 'already loaded'};
 	[] ->
 	    case snmp_misc:read_mib(ActualFileName) of
-		{error, Reason} -> {error, Reason};
+		{error, Reason} -> 
+		    ?vlog("Failed reading mib file ~p with reason: ~p",
+			  [ActualFileName,Reason]),
+		    {error, Reason};
 		{ok, Mib} ->
+		    ?vtrace("loaded mib ~s",[Mib#mib.name]),
 		    NonInternalMes = 
 			lists:filter(fun drop_internal_and_imported/1,
 				     Mib#mib.mes),
+		    ?vdebug("~n   ~w mib-entries of which ~w "
+			    "are non internal or imported",
+			    [length(Mib#mib.mes),length(NonInternalMes)]),
 		    T = build_tree(NonInternalMes, MibName),
 		    case catch merge_nodes(T, OldRoot) of
 			{error_merge_nodes, Node1, Node2} ->
+			    ?vlog("error merging nodes ~p and ~p",
+				  [Node1,Node2]),
 			    {error, oid_conflict};
-			NewRoot when tuple(NewRoot), element(1, NewRoot)==tree->
+			NewRoot when tuple(NewRoot),element(1,NewRoot)==tree->
 			    Symbolic = not lists:member(no_symbolic_info,
 							Mib#mib.misc),
-			    case check_notifications(Symbolic, Mib#mib.traps) of
+			    case check_notif_and_mes(TeOverride,
+						     MeOverride,
+						     Symbolic, 
+						     Mib#mib.traps,
+						     NonInternalMes) of
 				true ->
 				    install_mib(Symbolic, Mib, MibName,
 						ActualFileName,
 						MibsEts, NonInternalMes),
+				    ?vtrace("installed mib ~s",
+					    [Mib#mib.name]),
 				    MibData#snmp_mib_data{tree = NewRoot};
 				Else -> Else
 			    end
@@ -128,20 +156,58 @@ load_mib(MibData,FileName) when record(MibData,snmp_mib_data),list(FileName) ->
 
 %%----------------------------------------------------------------------
 %% Returns: true | {error, Reason}
+%% (OTP-3601)
 %%----------------------------------------------------------------------
-check_notifications(true, [Trap | Traps]) ->
-    Key = Trap#trap.trapname,
-    case snmp_symbolic_store:get_notification(Key) of
-	{value, Trap} -> check_notifications(false, Traps);
-	{value, _} -> {error, {'trap already defined', Key}};
-	undefined -> check_notifications(false, Traps)
-    end;
+check_notif_and_mes(TeOverride,MeOverride,Symbolic,Traps,MEs) ->
+    ?vtrace("check notifications and mib entries",[]),
+    check_mes(MeOverride,check_notifications(TeOverride,Symbolic,Traps),MEs).
+
+check_notifications(true, _Symbolic, _Traps) ->
+    ?vtrace("trapentry override = true => skip check",[]),
+    true;
+check_notifications(_, Symbolic, Traps) -> 
+    check_notifications(Symbolic, Traps).
+
+check_notifications(true, Traps) ->
+    check_notifications(Traps);
 check_notifications(_, _) -> true.
+
+check_notifications([]) -> true;
+check_notifications([Trap | Traps]) ->
+    Key = Trap#trap.trapname,
+    ?vtrace("check notification with Key: ~p",[Key]),
+    case snmp_symbolic_store:get_notification(Key) of
+	{value, Trap} -> check_notifications(Traps);
+	{value, _} -> {error, {'trap already defined', Key}};
+	undefined -> check_notifications(Traps)
+    end.
+
+check_mes(true,_,_) ->
+    ?vtrace("mibentry override = true => skip check",[]),
+    true; 
+check_mes(_,true,MEs) ->
+    check_mes(MEs);
+check_mes(_,Else,_MEs) ->
+    Else.
+
+check_mes([ME | MEs]) ->
+    Name = ME#me.aliasname,
+    Oid1 = ME#me.oid,
+    ?vtrace("check mib entries with aliasname: ~p",[Name]),
+    case snmp_symbolic_store:aliasname_to_oid(Name) of
+	{value, Oid1} -> check_mes(MEs);
+	{value, Oid2} -> 
+	    ?vinfo("~n   expecting '~p'~n   but found '~p'",[Oid1,Oid2]),
+	    {error, {'mibentry already defined', Name}};
+	false -> check_mes(MEs)
+    end;
+check_mes([]) -> true.
+
 
 %%----------------------------------------------------------------------
 %% Returns: new mib data | {error, Reason}
 %%----------------------------------------------------------------------
-unload_mib(MibData, FileName)
+unload_mib(MibData, FileName, _, _)
   when record(MibData, snmp_mib_data), list(FileName) -> 
     #snmp_mib_data{mibsEts = MibsEts, tree = OldRoot} = MibData,
     ActualFileName = filename:rootname(FileName, ".bin") ++ ".bin",
@@ -218,8 +284,25 @@ info(MibData, subagents) ->
 %%----------------------------------------------------------------------
 dump(MibData) when record(MibData, snmp_mib_data) -> 
     #snmp_mib_data{mibsEts = MibsEts, tree = Tree} = MibData,
-    io:format("~p~n", [ets:tab2list(MibsEts)]),
-    io:format("~p~n", [Tree]). % good luck reading it!
+    io:format("MIB-table:~n~p~n~n", [ets:tab2list(MibsEts)]),
+    io:format("Tree:~n~p~n", [Tree]), % good luck reading it!
+    ok.
+
+dump(MibData,File) when record(MibData, snmp_mib_data) -> 
+    case file:open(File,[write]) of
+	{ok,Fd} ->
+	    #snmp_mib_data{mibsEts = MibsEts, tree = Tree} = MibData,
+	    io:format(Fd,"~s~n", 
+		      [snmp:date_and_time_to_string(snmp:date_and_time())]),
+	    io:format(Fd,"MIB-table:~n~p~n~n", [ets:tab2list(MibsEts)]),
+	    io:format(Fd,"Tree:~n~p~n", [Tree]), % good luck reading it!
+	    file:close(Fd),
+	    ok;
+	{error,Reason} ->
+	    ?vinfo("~n   Failed opening file '~s' for reason ~p",
+		   [File,Reason]),
+	    {error,Reason}
+    end.
 
 
 %%%======================================================================
@@ -253,14 +336,14 @@ lookup(#snmp_mib_data{tree = Tree}, Oid) ->
 
 find_node({tree, Tree, {table, _Id}}, RestOfOid, RevOid) ->
     find_node({tree, Tree, internal}, RestOfOid, RevOid);
-find_node({tree, Tree, {table_entry, {_MibName, EntryME}}},RestOfOid, RevOid) ->
+find_node({tree, Tree, {table_entry,{_MibName, EntryME}}},RestOfOid, RevOid) ->
     case find_node({tree, Tree, internal}, RestOfOid, RevOid) of
 	{false, ErrorCode} -> {false, ErrorCode};
 	Val -> {table, EntryME, Val}
     end;
 find_node({tree, Tree, _Internal}, [Int | RestOfOid], RevOid) ->
     find_node(element(Int+1, Tree), RestOfOid, [Int | RevOid]);
-find_node({node, {table_column, {_,ColumnME}}}, RestOfOid, [ColInt | RevOid]) ->
+find_node({node, {table_column,{_,ColumnME}}}, RestOfOid, [ColInt | RevOid]) ->
     {ColumnME, RevOid};
 find_node({node, {variable, {_MibName, VariableME}}}, [0], _RevOid) ->
     {variable, VariableME};
@@ -410,16 +493,25 @@ build_tree(Mes, MibName) ->
 %% Comment: The assocList in #me is cleared to save some small amount of memory.
 %%----------------------------------------------------------------------
 build_subtree(LevelPrefix, [Me | Mes], MibName) ->
+    ?debug("build subtree: ~n"
+	   "   oid:         ~p~n"
+	   "   LevelPrefix: ~p~n"
+	   "   MibName:     ~p",[Me#me.oid,LevelPrefix,MibName]),
     EType = Me#me.entrytype,
+    ?debug("build subtree: EType = ~p",[EType]),
     case in_subtree(LevelPrefix, Me) of
 	above ->
+	    ?debug("build subtree: above",[]),
 	    {[], [Me|Mes]};
 	{node, Index} ->
+	    ?debug("build subtree: node at ~p",[Index]),
 	    {Tree, RestMes} = build_subtree(LevelPrefix, Mes, MibName),
 	    {[{Index, {node, {EType, {MibName, Me#me{assocList = undefined}}}}}
 	      | Tree],
 	     RestMes};
 	{subtree, Index, NewLevelPrefix} ->
+	    ?debug("build subtree: subtree at ~p with ~p",
+		   [Index,NewLevelPrefix]),
 	    {BelowTree, RestMes} = build_subtree(NewLevelPrefix, Mes, MibName),
 	    {CurTree, RestMes2} = build_subtree(LevelPrefix, RestMes, MibName),
 	    {[{Index, {tree, BelowTree,
@@ -427,6 +519,8 @@ build_subtree(LevelPrefix, [Me | Mes], MibName) ->
 	      | CurTree],
 	     RestMes2};
 	{internal_subtree, Index, NewLevelPrefix} ->
+	    ?debug("build subtree: internal_subtree at ~p with ~p",
+		   [Index,NewLevelPrefix]),
 	    {BelowTree, RestMes} =
 		build_subtree(NewLevelPrefix, [Me | Mes], MibName),
 	    {CurTree, RestMes2} =
@@ -535,9 +629,12 @@ integrate_indexes(CurIndex, L) ->
 %% Arg: Two root nodes (that is to be merged).
 %% Returns: A new root node where the nodes have been merger to one.
 %%----------------------------------------------------------------------
-merge_nodes(Same, Same) -> Same;
-merge_nodes(Node, undefined_node) -> Node;
-merge_nodes(undefined_node, Node) -> Node;
+merge_nodes(Same, Same) -> 
+    Same;
+merge_nodes(Node, undefined_node) -> 
+    Node;
+merge_nodes(undefined_node, Node) -> 
+    Node;
 merge_nodes({tree, Tree1, internal}, {tree, Tree2, internal}) ->
     {tree, merge_levels(tuple_to_list(Tree1),tuple_to_list(Tree2)), internal};
 merge_nodes(Node1, Node2) ->
@@ -682,6 +779,11 @@ delete_subagent({tree, Tree, Info}, [Index | TI]) ->
 %% Does all side effect stuff during load_mib.
 %%----------------------------------------------------------------------
 install_mib(Symbolic, Mib, MibName, FileName, MibsEts, NonInternalMes) ->
+    ?vdebug("install mib with ~n"
+	    "\tSymbolic: ~p~n"
+	    "\tMibName:  ~p~n"
+	    "\tFileName: ~p",
+	    [Symbolic,MibName,FileName]),
     ets:insert(MibsEts, {MibName, Symbolic, FileName}),
     MEs = Mib#mib.mes,
     case Symbolic of
@@ -720,8 +822,18 @@ uninstall_mib(Symbolic, MibName, MibsEts, MEs) ->
 %% Calls MFA-instrumentation with 'new' or 'delete' operation.
 %%----------------------------------------------------------------------
 call_instrumentation(#me{entrytype = variable, mfa={M,F,A}}, Operation) ->
+    ?vtrace("call instrumentation with~n"
+	    "~n   entrytype: variable"
+	    "~n   MFA:       {~p,~p,~p}"
+	    "~n   Operation: ~p",
+	    [M,F,A,Operation]),
     catch apply(M, F, [Operation | A]);
 call_instrumentation(#me{entrytype = table_entry, mfa={M,F,A}}, Operation) ->
+    ?vtrace("call instrumentation with"
+	    "~n   entrytype: table_entry"
+	    "~n   MFA:       {~p,~p,~p}"
+	    "~n   Operation: ~p",
+	    [M,F,A,Operation]),
     catch apply(M, F, [Operation | A]);
 call_instrumentation(ShitME, Operation) ->
     done.
@@ -729,3 +841,124 @@ call_instrumentation(ShitME, Operation) ->
 drop_internal_and_imported(#me{entrytype = internal}) -> false;
 drop_internal_and_imported(#me{imported = true}) -> false;
 drop_internal_and_imported(X) -> true.
+
+
+%%----------------------------------------------------------------------
+%% Code change functions
+%%----------------------------------------------------------------------
+
+code_change({up,Vsn},State) ->
+    ?debug("upgrade from ~p",[Vsn]),
+    ?store("mibs_data-up_original.bin",State#snmp_mib_data.tree),
+    NTree = tree_upgrade(State#snmp_mib_data.tree),
+    ?debug("upgrade complete",[]),
+    ?store("mibs_data-up_new.bin",NTree),
+    State#snmp_mib_data{tree = NTree};
+
+code_change({down,Vsn},State) ->
+    ?debug("downgrade to ~p",[Vsn]),
+    ?store("mibs_data-down_original.bin",State#snmp_mib_data.tree),
+    NTree = tree_downgrade(State#snmp_mib_data.tree),
+    ?debug("downgrade complete",[]),
+    ?store("mibs_data-down_new.bin",NTree),
+    State#snmp_mib_data{tree = NTree}.
+
+
+-ifdef(snmp_debug).
+store(Name,Tree) ->
+    store(file:write_file(Name,term_to_binary(Tree))).
+
+store(ok) -> 
+    ok;
+store({error,Reason}) ->
+    ?debug("failed storing: ~p",[Reason]).
+-endif.
+
+
+%% Upgrade a tree, i.e. upgrade all me-records
+tree_upgrade(Tree) ->
+    ?debug("upgrade tree",[]),
+    tree_code_change(Tree,up).
+
+%% Downgrade a tree, i.e. downgrade all me-records
+tree_downgrade(Tree) ->
+    ?debug("downgrade tree",[]),
+    tree_code_change(Tree,down).
+
+tree_code_change({tree,Tree,Info},How) ->
+    ?debug("tree: ~pgrade tree",[How]),
+    {tree,tree_code_change(Tree,How),tree_info_code_change(Info,How)};
+tree_code_change({node,Info},How) ->
+    ?debug("tree: ~pgrade node",[How]),
+    {node_info_code_change(Info,How)};
+tree_code_change(undefined_node,_How) -> 
+    ?debug("tree: ignoring ~p",[undefined_node]),
+    undefined_node;
+tree_code_change(T,How) when tuple(T) -> 
+    ?debug("tree: ~pgrade ~p-tuple",[How,size(T)]),
+    tree_code_change1(1,T,How);
+tree_code_change(Any,_How) -> 
+    ?debug("tree: ignoring ~p",[Any]),
+    Any.
+
+tree_code_change1(N,T,How) when N =< size(T) -> 
+    ?debug("tree-~p: ~pgrade ~p-tuple",[N,How,size(T)]),
+    E = tree_code_change(element(N,T),How),
+    tree_code_change1(N+1,setelement(N,T,E),How);
+tree_code_change1(_N,T,How) ->
+    ?debug("tree-n: ~pgrade of ~p-tuple done",[How,size(T)]),
+    T.
+
+tree_info_code_change({table,Id},How) ->
+    ?debug("tree info: ~pgrade table",[How]),
+    {table,id_code_change(Id,How)};
+tree_info_code_change({table_entry,Id},How) ->
+    ?debug("tree info: ~pgrade table_entry",[How]),
+    {table_entry,id_code_change(Id,How)};
+tree_info_code_change(Any,_How) ->
+    ?debug("tree info: ignoring ~p",[Any]),
+    Any.
+
+node_info_code_change({variable,Id},How) ->
+    ?debug("node info: ~pgrade variable",[How]),
+    {variable,id_code_change(Id,How)};
+node_info_code_change({table_column,Id},How) ->
+    ?debug("node info: ~pgrade table_column",[How]),
+    {table_colum,id_code_change(Id,How)};
+node_info_code_change(Any,_How) ->
+    ?debug("node info: ignoring ~p",[Any]),
+    Any.
+
+id_code_change({MibName,MibEntry},up) ->
+    {MibName,me_upgrade(MibEntry)};
+id_code_change({MibName,MibEntry},down) ->
+    {MibName,me_downgrade(MibEntry)}.
+
+
+%% Convert old me record to new me record (description gets the default value).
+me_upgrade({me,Oid,EntryType,AliasName,Asn1Type,Access,MFA,Imported,Assoc}) -> 
+    ?debug("upgrade me-record with oid = ~p",[Oid]),
+    #me{oid       = Oid, 
+	entrytype = EntryType,
+	aliasname = AliasName,
+	asn1_type = Asn1Type,
+	access    = Access,
+	mfa       = MFA,
+	imported  = Imported,
+	assocList = Assoc};
+me_upgrade(Any) -> Any.
+
+%% Convert new me record to old me record (description gets dropped).
+me_downgrade(Me) when record(Me,me) ->
+    #me{oid       = Oid, 
+	entrytype = EntryType,
+	aliasname = AliasName,
+	asn1_type = Asn1Type,
+	access    = Access,
+	mfa       = MFA,
+	imported  = Imported,
+	assocList = Assoc} = Me,
+    ?debug("downgrade me-record with oid = ~p",[Oid]),
+    {me,Oid,EntryType,AliasName,Asn1Type,Access,MFA,Imported,Assoc};
+me_downgrade(Any) -> Any.
+

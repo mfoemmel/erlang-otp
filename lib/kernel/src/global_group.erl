@@ -188,7 +188,6 @@ init([]) ->
 		 true
 	 end,
 
-    global:sync(), %% Moved here from kernel_config.erl
     case application:get_env(kernel, global_groups) of
 	undefined ->
 	    {ok, #state{connect_all = Ca}};

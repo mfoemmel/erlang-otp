@@ -23,6 +23,21 @@
 #include <ctype.h>
 #include <sys/types.h>
 #include <string.h>
+
+/*
+ * MS thinks alloca() should live in <malloc.h>
+ */
+#if defined(__WIN32__) && !defined(__GNUC__)
+#  include <malloc.h>
+#endif
+
+/*
+ * VxWorks has no alloca, but GCC's got one built in.
+ */
+#if !defined(alloca) && defined(VXWORKS) && defined(__GNUC__)
+#  define alloca(n) __builtin_alloca(n)
+#endif
+
 /* #include "external.h" */
 #include "erl_eterm.h"
 #include "erl_malloc.h"
@@ -158,45 +173,45 @@ extern int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
     case ERL_PID:
 	*(*ext)++ = ERL_PID_EXT;    
 	/* First poke in node as an atom */    
-	i = strlen(ep->uval.pidval.node);
+	i = strlen(ERL_PID_NODE(ep));
 	*(*ext)++ = ERL_ATOM_EXT;
 	*(*ext)++ = (i >>8) &0xff;
 	*(*ext)++ = i &0xff;
-	memcpy(*ext, ep->uval.pidval.node, i);
+	memcpy(*ext, ERL_PID_NODE(ep), i);
 	*ext += i;
 	/* And then fill in the integer fields */
-	i = ep->uval.pidval.number;
+	i = ERL_PID_NUMBER(ep);
 	*(*ext)++ = (i >>24) &0xff;
 	*(*ext)++ = (i >>16) &0xff;
 	*(*ext)++ = (i >>8) &0xff;
 	*(*ext)++ = i &0xff;
-	i = ep->uval.pidval.serial;
+	i = ERL_PID_SERIAL(ep);
 	*(*ext)++ = (i >>24) &0xff;
 	*(*ext)++ = (i >>16) &0xff;
 	*(*ext)++ = (i >>8) &0xff;
 	*(*ext)++ = i &0xff;
-	*(*ext)++ = ep->uval.pidval.creation;
+	*(*ext)++ = ERL_PID_CREATION(ep);
 	return 0;
     case ERL_REF:
-	if (dist >= 4 && ep->uval.refval.len > 1) {
+	if (dist >= 4 && ERL_REF_LEN(ep) > 1) {
 	    int len, j;
 
 	    *(*ext)++ = ERL_NEW_REFERENCE_EXT;
 
-	    i = strlen(ep->uval.refval.node);
-	    len = ep->uval.refval.len;
+	    i = strlen(ERL_REF_NODE(ep));
+	    len = ERL_REF_LEN(ep);
 	    *(*ext)++ = (len >>8) &0xff;
 	    *(*ext)++ = len &0xff;
 
 	    *(*ext)++ = ERL_ATOM_EXT;
 	    *(*ext)++ = (i >>8) &0xff;
 	    *(*ext)++ = i &0xff;
-	    memcpy(*ext, ep->uval.refval.node, i);
+	    memcpy(*ext, ERL_REF_NODE(ep), i);
 	    *ext += i;
-	    *(*ext)++ = ep->uval.refval.creation;
+	    *(*ext)++ = ERL_REF_CREATION(ep);
 	    /* Then the integer fields */
-	    for (j = 0; j < ep->uval.refval.len; j++) {
-		i = ep->uval.refval.n[j];
+	    for (j = 0; j < ERL_REF_LEN(ep); j++) {
+		i = ERL_REF_NUMBERS(ep)[j];
 		*(*ext)++ = (i >>24) &0xff;
 		*(*ext)++ = (i >>16) &0xff;
 		*(*ext)++ = (i >>8) &0xff;
@@ -205,37 +220,37 @@ extern int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
 	} else {
 	    *(*ext)++ = ERL_REFERENCE_EXT;
 	    /* First poke in node as an atom */
-	    i = strlen(ep->uval.refval.node);
+	    i = strlen(ERL_REF_NODE(ep));
 	    *(*ext)++ = ERL_ATOM_EXT;
 	    *(*ext)++ = (i >>8) &0xff;
 	    *(*ext)++ = i &0xff;
-	    memcpy(*ext, ep->uval.refval.node, i);
+	    memcpy(*ext, ERL_REF_NODE(ep), i);
 	    *ext += i;
 	    /* Then the integer fields */
-	    i = ep->uval.refval.n[0];
+	    i = ERL_REF_NUMBERS(ep)[0];
 	    *(*ext)++ = (i >>24) &0xff;
 	    *(*ext)++ = (i >>16) &0xff;
 	    *(*ext)++ = (i >>8) &0xff;
 	    *(*ext)++ = i &0xff;
-	    *(*ext)++ = ep->uval.refval.creation;
+	    *(*ext)++ = ERL_REF_CREATION(ep);
 	}
 	return 0;
     case ERL_PORT:
 	*(*ext)++ = ERL_PORT_EXT;
 	/* First poke in node as an atom */
-	i = strlen(ep->uval.portval.node);
+	i = strlen(ERL_PORT_NODE(ep));
 	*(*ext)++ = ERL_ATOM_EXT;
 	*(*ext)++ = (i >>8) &0xff;
 	*(*ext)++ = i &0xff;
-	memcpy(*ext, ep->uval.portval.node, i);
+	memcpy(*ext, ERL_PORT_NODE(ep), i);
 	*ext += i;
 	/* Then the integer fields */
-	i = ep->uval.portval.number;
+	i = ERL_PORT_NUMBER(ep);
 	*(*ext)++ = (i >>24) &0xff;
 	*(*ext)++ = (i >>16) &0xff;
 	*(*ext)++ = (i >>8) &0xff;
 	*(*ext)++ = i &0xff;
-	*(*ext)++ = ep->uval.portval.creation;
+	*(*ext)++ = ERL_PORT_CREATION(ep);
 	return 0;
     case ERL_EMPTY_LIST:
 	*(*ext)++ = ERL_NIL_EXT;
@@ -372,14 +387,14 @@ static int erl_term_len_helper(ETERM *ep, int dist)
 
     case ERL_PID:
       /* 1 + N + 4 + 4 + 1 where N = 3 + strlen */
-      i = strlen(ep->uval.pidval.node);
+      i = strlen(ERL_PID_NODE(ep));
       len = 13 + i;
       break;
 
     case ERL_REF:
-      i = strlen(ep->uval.refval.node);
-      if (dist >= 4 && ep->uval.refval.len > 1) {
-	  len = 1 + 2 + (i+3) + 1 + ep->uval.refval.len * 4;
+      i = strlen(ERL_REF_NODE(ep));
+      if (dist >= 4 && ERL_REF_LEN(ep) > 1) {
+	  len = 1 + 2 + (i+3) + 1 + ERL_REF_LEN(ep) * 4;
       } else {
 	  /* 1 + N + 4 + 1 where N = 3 + strlen */
 	  len = 9 + i;
@@ -388,7 +403,7 @@ static int erl_term_len_helper(ETERM *ep, int dist)
 
     case ERL_PORT:
       /* 1 + N + 4 + 1 where N = 3 + strlen */
-      i = strlen(ep->uval.portval.node);
+      i = strlen(ERL_PORT_NODE(ep));
       len = 9 + i;
       break;
 
@@ -433,8 +448,9 @@ static int erl_term_len_helper(ETERM *ep, int dist)
 
     default:
 #ifdef DEBUG
-      fprintf(stderr,"Shouldn't happen: erl_term_len, unknown term type: '%c'\n",ERL_TYPE(ep));
+	fprintf(stderr, "Shouldn't happen: erl_term_len, unknown term type: '%c'\n",ERL_TYPE(ep));
 #endif
+      erl_errno = EINVAL;
       exit(1);
     }
   }
@@ -474,7 +490,7 @@ if (**ext != ERL_ATOM_EXT) \
 i = (**ext << 8) | (*ext)[1]; \
 cp = (char *) *(ext) + 2; \
 *ext += (i + 2); \
-len = i > MAXNODE_LEN ? MAXNODE_LEN - 1 : i
+len = i
 
 /*
  * The actual DECODE engine.
@@ -566,71 +582,119 @@ static ETERM *erl_decode_it(unsigned char **ext)
       return ep;
       
     case ERL_PID_EXT:
-      ERL_TYPE(ep) = ERL_PID;	
-      READ_THE_NODE(ext,cp,len,i);
-      memcpy(ep->uval.pidval.node, cp, len);
-      ep->uval.pidval.node[len] = '\0';
-      /* get the integers */
-      i = (**ext << 24) | ((*ext)[1]) << 16| ((*ext)[2]) << 8| ((*ext)[3]);
-      ep->uval.pidval.number = i;
-      *ext += 4;
-      i = (**ext << 24) | ((*ext)[1]) << 16| ((*ext)[2]) << 8| ((*ext)[3]);	
-      *ext += 4;
-      ep->uval.pidval.serial = i;
-      i =  *(*ext)++; 
-      ep->uval.pidval.creation = i;
-      return ep;
-      
-    case ERL_REFERENCE_EXT:
-      ERL_TYPE(ep) = ERL_REF;
-      READ_THE_NODE(ext,cp,len,i);
-      memcpy(ep->uval.refval.node, cp, len);
-      ep->uval.refval.node[len] = '\0';
-      /* get the integers */
-      i = (**ext << 24) | ((*ext)[1]) << 16| ((*ext)[2]) << 8| ((*ext)[3]) ;
-      ep->uval.refval.len = 1;
-      ep->uval.refval.n[0] = i;
-      *ext += 4;
-      i = *(*ext)++; 
-      ep->uval.refval.creation = i;
-      return ep;
+	erl_free_term(ep);
+	{			/* Why not use the constructors? */
+	    char * node;
+	    unsigned int number, serial;
+	    unsigned char creation;
 
-    case ERL_NEW_REFERENCE_EXT: {
-	int len2;
-	int n;
+	    READ_THE_NODE(ext,cp,len,i);
+	    node = alloca(len+1); /* FIXME: does VxWorks have alloca()? */
+	    memcpy(node, cp, len);
+	    node[len] = '\0';
 
-	ERL_TYPE(ep) = ERL_REF;
-	len2 = (**ext << 8) | (*ext)[1];
-	*ext += 2;
-	READ_THE_NODE(ext,cp,len,i);
-	memcpy(ep->uval.refval.node, cp, len);
-	ep->uval.refval.node[len] = '\0';
-	i = *(*ext)++; 
-	ep->uval.refval.creation = i;
-	/* get the integers */
-	n = len2;
-	for (j = 0; j < n; j++) {
-	    i = (**ext << 24) | ((*ext)[1]) << 16 |
-		((*ext)[2]) << 8 | ((*ext)[3]);
-	    ep->uval.refval.n[j] = i;
-	    (*ext) += 4;
+	    /* get the integers */
+#if 0
+	    /* Ints on the wire are big-endian (== network byte order)
+               so use ntoh[sl]. (But some are little-endian! Arrrgh!)
+               Also, the libc authors can be expected to optimize them
+               heavily. However, the marshalling makes no guarantees
+               about alignments -- so it won't work at all. */
+	    number = ntohl(*((unsigned int *)*ext)++);
+	    serial = ntohl(*((unsigned int *)*ext)++);
+#else
+	    number = ((*ext)[0] << 24) | ((*ext)[1]) << 16 | 
+		((*ext)[2]) << 8 | ((*ext)[3]);	
+	    *ext += 4;
+	    serial = ((*ext)[0] << 24) | ((*ext)[1]) << 16 | 
+		((*ext)[2]) << 8 | ((*ext)[3]);	
+	    *ext += 4;
+#endif
+	    creation =  *(*ext)++; 
+	    return erl_mk_pid(node, number, serial, creation);
 	}
-	ep->uval.refval.len = n;
-	return ep;
-    }
+    case ERL_REFERENCE_EXT:
+	erl_free_term(ep);
+	{
+	    char * node;
+	    unsigned int number;
+	    unsigned char creation;
+
+	    READ_THE_NODE(ext,cp,len,i);
+	    node = alloca(len+1);
+	    memcpy(node, cp, len);
+	    node[len] = '\0';
+
+	    /* get the integers */
+#if 0
+	    number = ntohl(*((unsigned int *)*ext)++);
+#else
+	    number = ((*ext)[0] << 24) | ((*ext)[1]) << 16 | 
+		((*ext)[2]) << 8 | ((*ext)[3]);	
+	    *ext += 4;
+#endif
+	    creation =  *(*ext)++; 
+	    return erl_mk_ref(node, number, creation);
+	}
+
+    case ERL_NEW_REFERENCE_EXT: 
+	erl_free_term(ep);
+	{
+	    char * node;
+	    size_t cnt, i;
+	    unsigned int n[3];
+	    unsigned char creation;
+
+#if 0
+	    cnt = ntohs(*((unsigned short *)*ext)++);
+#else
+	    cnt = ((*ext)[0] << 8) | (*ext)[1];
+	    *ext += 2;
+#endif
+
+	    READ_THE_NODE(ext,cp,len,i);
+	    node = alloca(len+1);
+	    memcpy(node, cp, len);
+	    node[len] = '\0';
+
+	    /* get the integers */
+	    creation =  *(*ext)++; 
+	    for(i = 0; i < cnt; i++)
+	    {
+#if 0
+		n[i] = ntohl(*((unsigned int *)*ext)++);
+#else
+		n[i] = ((*ext)[0] << 24) | ((*ext)[1]) << 16 | 
+		    ((*ext)[2]) << 8 | ((*ext)[3]);	
+		*ext += 4;
+#endif
+	    }
+	    return __erl_mk_reference(node, cnt, n, creation);
+	}
 
     case ERL_PORT_EXT:
-      ERL_TYPE(ep) = ERL_PORT;
-      READ_THE_NODE(ext,cp,len,i);
-      memcpy(ep->uval.portval.node, cp, len);
-      ep->uval.portval.node[len] = '\0';
-      /* get the integers */
-      i = (**ext << 24) | ((*ext)[1]) << 16| ((*ext)[2]) << 8| ((*ext)[3]) ;
-      ep->uval.portval.number = i;
-      *ext += 4;
-      i = *(*ext)++;
-      ep->uval.portval.creation = i;
-      return ep;
+	erl_free_term(ep);
+	{
+	    char * node;
+	    unsigned int number;
+	    unsigned char creation;
+
+	    READ_THE_NODE(ext,cp,len,i);
+	    node = alloca(len+1);
+	    memcpy(node, cp, len);
+	    node[len] = '\0';
+
+	    /* get the integers */
+#if 0
+	    number = ntohl(*((unsigned int *)*ext)++);
+#else
+	    number = ((*ext)[0] << 24) | ((*ext)[1]) << 16 | 
+		((*ext)[2]) << 8 | ((*ext)[3]);	
+	    *ext += 4;
+#endif
+	    creation =  *(*ext)++; 
+	    return erl_mk_port(node, number, creation);
+	}
 
     case ERL_NIL_EXT:
       ERL_TYPE(ep) = ERL_EMPTY_LIST;
@@ -1344,7 +1408,7 @@ is_string(term)
     while (ERL_TYPE(term) == ERL_LIST) {
 	ETERM* head = HEAD(term);
 
-	if (!ERL_IS_INTEGER(head) || head->uval.ival.i > 255) {
+	if (!ERL_IS_INTEGER(head) || ((unsigned)head->uval.ival.i) > 255) {
 	    return 0;
 	}
 	len++;

@@ -15,13 +15,14 @@
 %% 
 %%     $Id$
 %%
+
 -module(gen_tcp).
 
-%% Generic TCP module
 
 -export([connect/3, connect/4, listen/2, accept/1, accept/2, close/1]).
--export([send/2, recv/2, recv/3]).
+-export([send/2, recv/2, recv/3, unrecv/2]).
 -export([controlling_process/2]).
+-export([fdopen/2]).
 
 -include("inet_int.hrl").
 
@@ -32,17 +33,38 @@ connect(Address, Port, Opts) ->
     connect(Address,Port,Opts,infinity).
 
 connect(Address, Port, Opts, Time) ->
-    Mod = mod(Opts),
-    case Mod:getaddr(Address) of
-	{ok,IP} ->
-	    case  Mod:getserv(Port) of
-		{ok,TP} -> Mod:connect(IP, TP, Opts, Time);
-		{error,einval} -> exit(badarg);
-		Error -> Error
-	    end;
-	{error,einval} -> exit(badarg);
+    Timer = inet:start_timer(Time),
+    Res = (catch connect1(Address,Port,Opts,Timer)),
+    inet:stop_timer(Timer),
+    case Res of
+	{ok,S} -> {ok,S};
+	{error, einval} -> exit(badarg);
 	Error -> Error
     end.
+
+connect1(Address,Port,Opts,Timer) ->
+    Mod = mod(Opts),
+    case Mod:getaddrs(Address,Timer) of
+	{ok,IPs} ->
+	    case Mod:getserv(Port) of
+		{ok,TP} -> try_connect(IPs,TP,Opts,Timer,Mod,{error,einval});
+		Error -> Error
+	    end;
+	Error -> Error
+    end.
+
+try_connect([IP|IPs], Port, Opts, Timer, Mod, Err) ->
+    Time = inet:timeout(Timer),
+    case Mod:connect(IP, Port, Opts, Time) of
+	{ok,S} -> {ok,S};
+	{error,einval} -> {error, einval};
+	{error,timeout} -> {error,timeout};
+	Err1 -> try_connect(IPs, Port, Opts, Timer, Mod, Err1)
+    end;
+try_connect([], _Port, _Opts, _Timer, Mod, Err) ->
+    Err.
+
+    
 
 %%
 %% Listen on a tcp port
@@ -60,83 +82,79 @@ listen(Port, Opts) ->
 %%
 %% Generic tcp accept
 %%
-accept(S) when record(S, socket) ->
-    call(S, {accept, infinity}).
+accept(S) ->
+    case inet_db:lookup_socket(S) of
+	{ok, Mod} ->
+	    Mod:accept(S);
+	Error ->
+	    Error
+    end.
 
-accept(S, infinity) when record(S, socket) ->
-    call(S, {accept, infinity});
-accept(S, Time) when record(S, socket), integer(Time), Time >= 0 ->
-    call(S, {accept, Time}).
+accept(S, Time) when port(S) ->
+    case inet_db:lookup_socket(S) of
+	{ok, Mod} ->
+	    Mod:accept(S, Time);
+	Error ->
+	    Error
+    end.
 
 %%
 %% Close
 %%
-close(S) when record(S, socket) -> 
-    receive
-	{tcp_closed, S} -> ok
-    after 0 ->
-	    inet:close(S)
-    end.
+close(S) ->
+    inet:tcp_close(S).
 
 %%
 %% Send
 %%
-send(S, Packet) when record(S, socket) ->
-    call(S, {send, Packet}).
+send(S, Packet) when port(S) ->
+    case inet_db:lookup_socket(S) of
+	{ok, Mod} ->
+	    Mod:send(S, Packet);
+	Error ->
+	    Error
+    end.
 
 %%
 %% Receive data from a socket (passive mode)
 %%
-recv(S, Length) when  record(S,socket), integer(Length) ->
-    call(S, {recv, Length, infinity}).
+recv(S, Length) when port(S) ->
+    case inet_db:lookup_socket(S) of
+	{ok, Mod} ->
+	    Mod:recv(S, Length);
+	Error ->
+	    Error
+    end.
 
-recv(S, Length, infinity) when record(S,socket), integer(Length) ->
-    call(S, {recv, Length, infinity});
-recv(S, Length, Time) when record(S,socket), integer(Length),
-                                integer(Time),Time >= 0 ->
-    call(S, {recv, Length, Time}).
+recv(S, Length, Time) when port(S) ->
+    case inet_db:lookup_socket(S) of
+	{ok, Mod} ->
+	    Mod:recv(S, Length, Time);
+	Error ->
+	    Error
+    end.
+
+unrecv(S, Data) when port(S) ->
+    case inet_db:lookup_socket(S) of
+	{ok, Mod} ->
+	    Mod:unrecv(S, Data);
+	Error ->
+	    Error
+    end.    
 
 %%
 %% Set controlling process
 %%
-%%
-%% Set controlling process
-%%
-controlling_process(S, NewOwner) when record(S,socket),pid(NewOwner) ->
-    case call(S, {set_owner, NewOwner}) of
-	ok -> 
-	    sync_input(S, NewOwner),
-	    S#socket.pid ! {commit_owner, NewOwner},
-	    receive
-		{owner, NewOwner} -> ok
-	    end;
-	Error -> Error
-    end.
+controlling_process(S, NewOwner) ->
+    inet:tcp_controlling_process(S, NewOwner).
 
-sync_input(S, Owner) ->
-    receive
-	{tcp, S, Data} ->
-	    Owner ! {tcp, S, Data},
-	    sync_input(S, Owner);
-	{tcp_closed, S} ->
-	    Owner ! {tcp_closed, S},
-	    sync_input(S, Owner)
-    after 0 -> 
-	    ok
-    end.
 
-%% call socket server
-call(S, Request) ->
-    Tag = make_ref(),
-    Pid = S#socket.pid,
-    Pid ! {call, self(), Tag, Request},
-    receive
-	{Tag, Reply} -> Reply;
-	{'EXIT', Pid, Reason} ->
-	    {error, closed};
-	{tcp_closed, S} ->
-	    {error, closed}
-    end.
+%%
+%% Create a port/socket from a file descriptor 
+%%
+fdopen(Fd, Opts) ->
+    Mod = mod(Opts),
+    Mod:fdopen(Fd, Opts).
 
 %% Get the tcp_module
 mod() -> inet_db:tcp_module().
@@ -147,3 +165,4 @@ mod(Opts) ->
 	{value, {_, Mod}} -> Mod;
 	_ -> mod()
     end.
+

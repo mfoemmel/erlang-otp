@@ -35,17 +35,6 @@
    yield unique pointers of the correct type. */
 Export exp_send, exp_receive, exp_timeout;
 
-/* Exported from this file, but in what header file should this be? */
-Eterm erts_bif_trace(int, Process*, Eterm, Eterm, Eterm);
-
-/*
- * A local heap for building temporary terms for trace messages.
- * This array MUST be in an part of memory to which tagged pointers
- * can point.
- *
- */
-static Eterm local_heap[64+MAX_ARG];
-
 static void send_to_port(Process* p, Eterm message);
 
 static void
@@ -57,7 +46,7 @@ send_to_port(Process* p, Eterm message)
     Port* trace_port;
 
     ASSERT(is_port(p->tracer_proc));
-    trace_port = &erts_port[get_port_index(p->tracer_proc)];
+    trace_port = &erts_port[port_index(p->tracer_proc)];
 
     /*
      * XXX It is not clear how we should test for an invalid port.
@@ -103,7 +92,7 @@ seq_trace_send_to_port(Eterm message)
     Port* trace_port;
 
     ASSERT(is_port(system_seq_tracer));
-    trace_port = &erts_port[get_port_index(system_seq_tracer)];
+    trace_port = &erts_port[port_index(system_seq_tracer)];
 
     /*
      * XXX It is not clear how we should test for an invalid port.
@@ -199,17 +188,18 @@ Process* process;
 
 
 #define TS_SIZE(p) (((p)->flags & F_TIMESTAMP) ? 5 : 0)
+
 /*
  * Patch a timestamp into a tuple.  The tuple must be the last thing
  * built on the heap.
  *
  * Returns the new hp pointer.
 */
-static uint32*
+static Eterm*
 patch_ts(Eterm tuple, Eterm* hp)
 {
     uint32 ms, s, us;
-    uint32* ptr = ptr_val(tuple);
+    uint32* ptr = tuple_val(tuple);
     int arity = arityval(*ptr);
 
     ASSERT((ptr+arity+1) == hp);
@@ -220,9 +210,10 @@ patch_ts(Eterm tuple, Eterm* hp)
     return hp+5;
 }
 
-/* send a trace message on the form  */
-/* {trace, running, Pid, Currentfunction, Timestamp}  or */
-/* {trace, running, Pid, Currentfunction} */
+/* Send 
+ * {trace, Pid, running, Currentfunction, Timestamp}
+ * {trace, Pid, running, Currentfunction}
+ */
 
 void
 trace_sched(Process *p, Eterm what)
@@ -233,6 +224,7 @@ trace_sched(Process *p, Eterm what)
     Eterm* hp;
 
     if (is_port(p->tracer_proc)) {
+	Eterm local_heap[4+5+5];
 	hp = local_heap;
 
 	if (p->current == NULL) {
@@ -251,16 +243,18 @@ trace_sched(Process *p, Eterm what)
 	}
 	send_to_port(p, mess);
     } else {
-	ErlHeapFragment* bp;
-
-	tracer = process_tab[get_number(p->tracer_proc)];
+	tracer = process_tab[pid_number(p->tracer_proc)];
 	if (INVALID_PID(tracer, p->tracer_proc)) {
 	    p->flags &= ~TRACE_FLAGS;
 	    p->tracer_proc = NIL;
 	    return;
 	}
-	bp = new_message_buffer(9 + TS_SIZE(p));
-	hp = bp->mem;
+
+	/*
+	 * XXX Multi-thread note: Allocating on another process's heap.
+	 */
+
+	hp = HAlloc(tracer, 9 + TS_SIZE(p));
 	
 	if (p->current == NULL) {
 	    p->current = find_function_from_pc(p->i);
@@ -276,7 +270,7 @@ trace_sched(Process *p, Eterm what)
 	if (p->flags & F_TIMESTAMP) {
 	    hp = patch_ts(mess, hp);
 	}
-	queue_message(tracer, bp, mess);
+	queue_message_tt(tracer, NULL, mess, NIL);
     }
 }
 
@@ -288,7 +282,6 @@ trace_send(Process *p, Eterm to, Eterm msg)
     Eterm operation;
     unsigned sz_msg;
     unsigned sz_to;
-    ErlHeapFragment* bp;
     Eterm* hp;
     Eterm mess;
     
@@ -297,8 +290,8 @@ trace_send(Process *p, Eterm to, Eterm msg)
     }
 
     operation = am_send;
-    if (is_pid(to) && (get_node(to) == THIS_NODE)) {
-	rp = process_tab[get_number(to)];
+    if (is_pid(to) && (pid_node(to) == THIS_NODE)) {
+	rp = process_tab[pid_number(to)];
 	if (INVALID_PID(rp, to)) {
 	    char *s = "send_to_non_existing_process";
 	    operation = am_atom_put(s, sys_strlen(s));
@@ -306,6 +299,7 @@ trace_send(Process *p, Eterm to, Eterm msg)
     }
 
     if (is_port(p->tracer_proc)) {
+	Eterm local_heap[11];
 	hp = local_heap;
 	mess = TUPLE5(hp, am_trace, p->id, operation, msg, to);
 	hp += 6;
@@ -316,7 +310,7 @@ trace_send(Process *p, Eterm to, Eterm msg)
     } else {
 	Process *tracer;
 
-	tracer = process_tab[get_number(p->tracer_proc)];
+	tracer = process_tab[pid_number(p->tracer_proc)];
 	if (INVALID_PID(tracer, p->tracer_proc)) {
 	    p->flags &= ~TRACE_FLAGS;
 	    p->tracer_proc = NIL;
@@ -324,8 +318,13 @@ trace_send(Process *p, Eterm to, Eterm msg)
 	}
 	sz_msg = size_object(msg);
 	sz_to  = size_object(to);
-	bp = new_message_buffer(sz_msg + sz_to + 6 + TS_SIZE(p));
-	hp = bp->mem;
+
+
+	/*
+	 * XXX Multi-thread note: Allocating on another process's heap.
+	 */
+
+	hp = HAlloc(tracer, sz_msg + sz_to + 6 + TS_SIZE(p));
 	to = copy_struct(to, sz_to, &hp, &tracer->off_heap);
 	msg = copy_struct(msg, sz_msg, &hp, &tracer->off_heap);
 	mess = TUPLE5(hp, am_trace, p->id, operation, msg, to);
@@ -333,7 +332,7 @@ trace_send(Process *p, Eterm to, Eterm msg)
 	if (p->flags & F_TIMESTAMP) {
 	    patch_ts(mess, hp);
 	}
-	queue_message(tracer, bp, mess);
+	queue_message_tt(tracer, NULL, mess, NIL);
     }
 }
 
@@ -342,11 +341,11 @@ trace_receive(Process *rp, Eterm msg)
 {
     Process *tracer;
     Eterm mess;
-    uint32 sz_msg;
-    ErlHeapFragment* bp;
+    size_t sz_msg;
     Eterm* hp;
 
     if (is_port(rp->tracer_proc)) {
+	Eterm local_heap[10];
 	hp = local_heap;
 	mess = TUPLE4(hp, am_trace, rp->id, am_receive, msg);
 	hp += 5;
@@ -355,22 +354,26 @@ trace_receive(Process *rp, Eterm msg)
 	}
 	send_to_port(rp, mess);
     } else {
-	tracer = process_tab[get_number(rp->tracer_proc)];
+	tracer = process_tab[pid_number(rp->tracer_proc)];
 	if (INVALID_PID(tracer, rp->tracer_proc)) {
 	    rp->flags &= ~TRACE_FLAGS;
 	    rp->tracer_proc = NIL;
 	    return;
 	}
 	sz_msg = size_object(msg);
-	bp = new_message_buffer(sz_msg + 5 + TS_SIZE(rp));
-	hp = bp->mem;
+
+	/*
+	 * XXX Multi-thread note: Allocating on another process's heap.
+	 */
+
+	hp = HAlloc(tracer, sz_msg + 5 + TS_SIZE(rp));
 	msg = copy_struct(msg, sz_msg, &hp, &tracer->off_heap);
 	mess = TUPLE4(hp, am_trace, rp->id, am_receive, msg);
 	hp += 5;
 	if (rp->flags & F_TIMESTAMP) {
 	    patch_ts(mess, hp);
 	}
-	queue_message(tracer, bp, mess);
+	queue_message_tt(tracer, NULL, mess, NIL);
     }
 }
 
@@ -438,6 +441,7 @@ seq_trace_output_exit(Eterm token, Eterm msg, uint32 type,
     }
 
     if (is_port(system_seq_tracer)) {
+	Eterm local_heap[64];
 	hp = local_heap;
 	label = SEQ_TRACE_T_LABEL(token);
 	lastcnt_serial = TUPLE2(hp, SEQ_TRACE_T_LASTCNT(token),
@@ -465,7 +469,7 @@ seq_trace_output_exit(Eterm token, Eterm msg, uint32 type,
 	Eterm m2;
 	uint32 sz_label, sz_lastcnt_serial, sz_msg, sz_ts;
 
-	tracer = process_tab[get_number(system_seq_tracer)];
+	tracer = process_tab[pid_number(system_seq_tracer)];
 	if (INVALID_PID(tracer, tracer->id) || (receiver == system_seq_tracer)) {
 	    return;			/* no need to send anything */
 	}
@@ -506,56 +510,43 @@ seq_trace_output_exit(Eterm token, Eterm msg, uint32 type,
 
 #endif
 
-/*
- * This function implements the old call and return trace.
- */
-
-void
-erts_trace_call_or_ret(Process* p, Eterm mod, Eterm name, unsigned arity,
-		       Eterm* args, Eterm what)
+void 
+erts_trace_return_to(Process *p, Uint *pc)
 {
     Eterm* hp;
     Eterm mfa;
     Eterm mess;
-    int i;
+    Eterm local_heap[4+5+5];
+
+    Eterm *code_ptr = find_function_from_pc(pc);
+
+    hp = local_heap;
+
+    if (!code_ptr) {
+	mfa = am_undefined;
+    } else {
+	mfa = TUPLE3(hp, code_ptr[0], code_ptr[1], make_small(code_ptr[2]));
+	hp += 4;
+    }
+	
+    mess = TUPLE4(hp, am_trace, p->id, am_return_to, mfa);
+    hp += 5;
+
+    if (p->flags & F_TIMESTAMP) {
+	hp = patch_ts(mess, hp);
+    }
 
     if (is_port(p->tracer_proc)) {
-	hp = local_heap;
-
-	/*
-	 * Construct {M,F,A}, where A is the arity if timestamps or
-	 * the list of arguments otherwise.
-	 */
-	
-	if (p->flags & F_TIMESTAMP) {
-	    mfa = make_small(arity);
-	} else {
-	    mfa = NIL;
-	    for (i = arity-1; i >= 0; i--) {
-		mfa = CONS(hp, args[i], mfa);
-		hp += 2;
-	    }
-	}
-	mfa = TUPLE3(hp, mod, name, mfa);
-	hp += 4;
-	
-	/*
-	 * Build the trace tuple and put it into receive queue of the tracer process.
-	 */
-	
-	mess = TUPLE4(hp, am_trace, p->id, what, mfa);
-	hp += 5;
-	if (p->flags & F_TIMESTAMP) {
-	    hp = patch_ts(mess, hp);
-	}
 	send_to_port(p, mess);
     } else {
 	Process *tracer;
-	ErlHeapFragment* bp;
-	uint32 size;
-	uint32 sizes[256];
+	unsigned size;
 
-	tracer = process_tab[get_number(p->tracer_proc)];
+	/*
+	 * Find the tracer.
+	 */
+	tracer = process_tab[pid_number(p->tracer_proc)];
+
 	if (INVALID_PID(tracer, p->tracer_proc)) {
 	    p->flags &= ~TRACE_FLAGS;
 	    p->tracer_proc = NIL;
@@ -563,51 +554,20 @@ erts_trace_call_or_ret(Process* p, Eterm mod, Eterm name, unsigned arity,
 	}
 	
 	/*
-	 * Calculate the size of the message buffer and allocate it.
+	 * XXX Multi-thread note: Allocating on another process's heap.
 	 */
 	
-	if ((p->flags & F_TIMESTAMP) != 0) {
-	    size = 4 + 4 + 6;
-	} else {
-	    size = 2*arity + 4 + 5;
-	    for (i = arity-1; i >= 0; i--) {
-		sizes[i] = size_object(args[i]);
-		size += sizes[i];
-	    }
-	}
-	bp = new_message_buffer(size);
-	hp = bp->mem;
+	size = size_object(mess);
+	hp = HAlloc(tracer, size);
 	
 	/*
-	 * Copy the {M, F, A} tuple to the message buffer
-	 * (A is the arity if timestamps or the list of arguments if no timestamp).
+	 * Copy the trace message into the buffer and enqueue it.
 	 */
-	
-	if (p->flags & F_TIMESTAMP) {
-	    mfa = make_small(arity);
-	} else {
-	    mfa = NIL;
-	    for (i = arity-1; i >= 0; i--) {
-		Eterm term = copy_struct(args[i], sizes[i], &hp, &bp->off_heap);
-		mfa = CONS(hp, term, mfa);
-		hp += 2;
-	    }
-	}
-	mfa = TUPLE3(hp, mod, name, mfa);
-	hp += 4;
-	
-	/*
-	 * Build the trace tuple and put it into receive queue of the tracer process.
-	 */
-	
-	mess = TUPLE4(hp, am_trace, p->id, what, mfa);
-	hp += 5;
-	if (p->flags & F_TIMESTAMP) {
-	    hp = patch_ts(mess, hp);
-	}
-	queue_message(tracer, bp, mess);
+	mess = copy_struct(mess, size, &hp, &tracer->off_heap);
+	queue_message_tt(tracer, NULL, mess, NIL);
     }
 }
+
 
 void
 erts_trace_return(Process* p, Eterm* fi, Eterm retval)
@@ -623,6 +583,7 @@ erts_trace_return(Process* p, Eterm* fi, Eterm retval)
     arity = fi[2];
 
     if (is_port(p->tracer_proc)) {
+	Eterm local_heap[4+6+5];
 	hp = local_heap;
 	mfa = TUPLE3(hp, mod, name, make_small(arity));
 	hp += 4;
@@ -634,28 +595,27 @@ erts_trace_return(Process* p, Eterm* fi, Eterm retval)
 	send_to_port(p, mess);
     } else {
 	Process *tracer;
-	ErlHeapFragment* bp;
 	unsigned size;
 	unsigned retval_size;
 
-	tracer = process_tab[get_number(p->tracer_proc)];
+	tracer = process_tab[pid_number(p->tracer_proc)];
 	if (INVALID_PID(tracer, p->tracer_proc)) {
 	    p->flags &= ~TRACE_FLAGS;
 	    p->tracer_proc = NIL;
 	    return;
 	}
 	
-	/*
-	 * Calculate the size of the message buffer and allocate it.
-	 */
-	
 	retval_size = size_object(retval);
 	size = 6 + 4 + retval_size;
 	if (p->flags & F_TIMESTAMP) {
 	    size += 1+6;
 	}
-	bp = new_message_buffer(size);
-	hp = bp->mem;
+
+	/*
+	 * XXX Multi-thread note: Allocating on another process's heap.
+	 */
+
+	hp = HAlloc(tracer, size);
 	
 	/*
 	 * Build the trace tuple and put it into receive queue of the tracer process.
@@ -669,7 +629,7 @@ erts_trace_return(Process* p, Eterm* fi, Eterm retval)
 	if (p->flags & F_TIMESTAMP) {
 	    hp = patch_ts(mess, hp);
 	}
-	queue_message(tracer, bp, mess);
+	queue_message_tt(tracer, NULL, mess, NIL);
     }
 }
 
@@ -678,10 +638,11 @@ erts_trace_return(Process* p, Eterm* fi, Eterm retval)
  */
 
 Uint32
-erts_call_trace(Process* p, Export* ep, Eterm* args)
+erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec, 
+		Eterm* args, int local)
 {
     Eterm* hp;
-    Eterm mfa;
+    Eterm mfa_tuple;
     int arity;
     int i;
     Uint32 return_flags = 0;
@@ -689,42 +650,48 @@ erts_call_trace(Process* p, Export* ep, Eterm* args)
     Eterm mess;
 
     if (is_port(p->tracer_proc)) {
+	Eterm local_heap[64+MAX_ARG];
 	hp = local_heap;
 
 	/*
 	 * If there is a PAM program, run it.  Return if it fails.
 	 */
 	
-	arity = ep->code[2];
-	if (ep->match_prog_set) {
-	    pam_result = erts_match_set_run(p, ep->match_prog_set, args, arity,
+	arity = mfa[2];
+	if (match_spec) {
+	    pam_result = erts_match_set_run(p, match_spec, args, arity,
 					    &return_flags);
-	    if (pam_result == 0) {
+	    if (is_non_value(pam_result)) {
 		return return_flags;
 	    }
 	}
 	
+
+	if (local && IS_TRACED_FL(p, F_TRACE_RETURN_TO)) {
+	    return_flags |= MATCH_SET_RETURN_TO_TRACE;
+	}
+
 	/*
 	 * Build the the {M,F,A} tuple in the local heap. (A is arguments or arity.)
 	 */
 	
 	if (p->flags & F_TRACE_ARITY_ONLY) {
-	    mfa = make_small(arity);
+	    mfa_tuple = make_small(arity);
 	} else {
-	    mfa = NIL;
+	    mfa_tuple = NIL;
 	    for (i = arity-1; i >= 0; i--) {
-		mfa = CONS(hp, args[i], mfa);
+		mfa_tuple = CONS(hp, args[i], mfa_tuple);
 		hp += 2;
 	    }
 	}
-	mfa = TUPLE3(hp, ep->code[0], ep->code[1], mfa);
+	mfa_tuple = TUPLE3(hp, mfa[0], mfa[1], mfa_tuple);
 	hp += 4;
 
 	/*
 	 * Build the trace tuple and send it to the port.
 	 */
 	
-	mess = TUPLE4(hp, am_trace, p->id, am_call, mfa);
+	mess = TUPLE4(hp, am_trace, p->id, am_call, mfa_tuple);
 	hp += 5;
 	if (pam_result != am_true) {
 	    hp[-5] = make_arityval(5);
@@ -736,13 +703,12 @@ erts_call_trace(Process* p, Export* ep, Eterm* args)
 	send_to_port(p, mess);
 	return return_flags;
     } else {
-	ErlHeapFragment* bp;
 	Process *tracer;
 	unsigned size;
 	unsigned sizes[256];
-	unsigned pam_result_size;
+	unsigned pam_result_size = 0;
 
-	tracer = process_tab[get_number(p->tracer_proc)];
+	tracer = process_tab[pid_number(p->tracer_proc)];
 	if (INVALID_PID(tracer, p->tracer_proc)) {
 	    p->flags &= ~TRACE_FLAGS;
 	    p->tracer_proc = NIL;
@@ -753,17 +719,21 @@ erts_call_trace(Process* p, Export* ep, Eterm* args)
 	 * If there is a PAM program, run it.  Return if it fails.
 	 */
 	
-	arity = ep->code[2];
-	if (ep->match_prog_set) {
-	    pam_result = erts_match_set_run(p, ep->match_prog_set, args, arity,
+	arity = mfa[2];
+	if (match_spec) {
+	    pam_result = erts_match_set_run(p, match_spec, args, arity,
 					    &return_flags);
-	    if (pam_result == 0) {
+	    if (is_non_value(pam_result)) {
 		return return_flags;
 	    }
 	}
 	
+	if (local && IS_TRACED_FL(p, F_TRACE_RETURN_TO)) {
+	    return_flags |= MATCH_SET_RETURN_TO_TRACE;
+	}
+
 	/*
-	 * Calculate the size of the message buffer and allocate it.
+	 * Calculate number of words needed on heap.
 	 */
 	
 	size = 4 + 5;		/* Trace tuple + MFA tuple. */
@@ -781,39 +751,43 @@ erts_call_trace(Process* p, Export* ep, Eterm* args)
 	    pam_result_size = size_object(pam_result);
 	    size += pam_result_size + 1; /* One element in trace tuple + term size. */
 	}
-	bp = new_message_buffer(size);
-	hp = bp->mem;
+
+	/*
+	 * XXX Multi-thread note: Allocating on another process's heap.
+	 */
+	hp = HAlloc(tracer, size);
 	
 	/*
 	 * Build the the {M,F,A} tuple in the message buffer. (A is arguments or arity.)
 	 */
 	
 	if (p->flags & F_TRACE_ARITY_ONLY) {
-	    mfa = make_small(arity);
+	    mfa_tuple = make_small(arity);
 	} else {
-	    mfa = NIL;
+	    mfa_tuple = NIL;
 	    for (i = arity-1; i >= 0; i--) {
-		Eterm term = copy_struct(args[i], sizes[i], &hp, &bp->off_heap);
-		mfa = CONS(hp, term, mfa);
+		Eterm term = copy_struct(args[i], sizes[i], &hp, &tracer->off_heap);
+		mfa_tuple = CONS(hp, term, mfa_tuple);
 		hp += 2;
 	    }
 	}
-	mfa = TUPLE3(hp, ep->code[0], ep->code[1], mfa);
+	mfa_tuple = TUPLE3(hp, mfa[0], mfa[1], mfa_tuple);
 	hp += 4;
 	
 	/*
-	 * Copy the PAM result (if any) into the message buffer.
+	 * Copy the PAM result (if any) onto the heap.
 	 */
 	
 	if (pam_result != am_true) {
-	    pam_result = copy_struct(pam_result, pam_result_size, &hp, &bp->off_heap);
+	    pam_result = copy_struct(pam_result, pam_result_size, &hp,
+				     &tracer->off_heap);
 	}
 	
 	/*
 	 * Build the trace tuple and enqueue it.
 	 */
 	
-	mess = TUPLE4(hp, am_trace, p->id, am_call, mfa);
+	mess = TUPLE4(hp, am_trace, p->id, am_call, mfa_tuple);
 	hp += 5;
 	if (pam_result != am_true) {
 	    hp[-5] = make_arityval(5);
@@ -822,7 +796,7 @@ erts_call_trace(Process* p, Export* ep, Eterm* args)
 	if (p->flags & F_TIMESTAMP) {
 	    hp = patch_ts(mess, hp);
 	}
-	queue_message(tracer, bp, mess);
+	queue_message_tt(tracer, NULL, mess, NIL);
 	return return_flags;
     }
 }
@@ -834,6 +808,7 @@ trace_proc(Process *p, Eterm what, Eterm data)
     Eterm* hp;
 
     if (is_port(p->tracer_proc)) {
+	Eterm local_heap[5+5];
 	hp = local_heap;
 	mess = TUPLE4(hp, am_trace, p->id, what, data);
 	hp += 5;
@@ -842,27 +817,30 @@ trace_proc(Process *p, Eterm what, Eterm data)
 	}
 	send_to_port(p, mess);
     } else {
-	ErlHeapFragment* bp;
 	Eterm tmp;
 	Process *tracer;
-	uint32 sz_data;
+	size_t sz_data;
 
-	tracer = process_tab[get_number(p->tracer_proc)];
+	tracer = process_tab[pid_number(p->tracer_proc)];
 	if (INVALID_PID(tracer, p->tracer_proc)) {
 	    p->flags &= ~TRACE_FLAGS;
 	    p->tracer_proc = NIL;
 	    return;
 	}
 	sz_data = size_object(data);
-	bp = new_message_buffer(sz_data + 5 + TS_SIZE(p));    
-	hp = bp->mem;
+
+	/*
+	 * XXX Multi-thread note: Allocating on another process's heap.
+	 */
+
+	hp = HAlloc(tracer, sz_data + 5 + TS_SIZE(p));
 	tmp = copy_struct(data, sz_data, &hp, &tracer->off_heap);
 	mess = TUPLE4(hp, am_trace, p->id, what, tmp);
 	hp += 5;
 	if (p->flags & F_TIMESTAMP) {
 	    hp = patch_ts(mess, hp);
 	}
-	queue_message(tracer, bp, mess);
+	queue_message_tt(tracer, NULL, mess, NIL);
     }
 }
 
@@ -884,19 +862,47 @@ Process *p; Export *e;
 }
 
 Eterm
-erts_bif_trace(int bif_index, Process* p, Eterm arg1, Eterm arg2, Eterm arg3)
+erts_bif_trace(int bif_index, Process* p, 
+	       Eterm arg1, Eterm arg2, Eterm arg3, Uint *I)
 {
     if ((p->flags & F_TRACE_CALLS) == 0) {
-	return (bif_table[bif_index].f)(p, arg1, arg2, arg3);
+	return (bif_table[bif_index].f)(p, arg1, arg2, arg3, I);
     } else {
 	Eterm result;
 	Eterm args[3] = {arg1, arg2, arg3};
 	Export* ep = bif_export[bif_index];
-	Uint32 flags = erts_call_trace(p, ep, args);
+	Uint32 flags;
+	int local = !!(erts_bif_trace_flags[bif_index] & BIF_TRACE_AS_LOCAL);
+	int applying = (I == &(ep->code[3])); /* Yup, the apply code for a bif
+						 is actually in the export entry */
+	Eterm *cp = p->cp;
 
-	result = (bif_table[bif_index].f)(p, arg1, arg2, arg3);
-	if (flags & MATCH_SET_RETURN_TRACE) {
+	/* 
+	 * Make continuation pointer OK, it is not during direct BIF calls,
+	 * but it is correct during apply of bif.
+	 */
+	if (!applying) { 
+	    p->cp = I;
+	}
+
+	flags = erts_call_trace(p, ep->code, ep->match_prog_set, args, local);
+	/* Restore original continuation pointer (if changed). */
+	p->cp = cp;
+
+	result = (bif_table[bif_index].f)(p, arg1, arg2, arg3, I);
+
+	/* Try to get these in the order they usually appear in normal code... */
+	if ((flags & MATCH_SET_RETURN_TRACE) && is_value(result)) {
 	    erts_trace_return(p, ep->code, result);
+	}
+	if (flags & MATCH_SET_RETURN_TO_TRACE) { /* can only happen if(local)*/
+	    if (applying) {
+		/* Apply of BIF, cp is in calling function */
+		erts_trace_return_to(p, cp);
+	    } else {
+		/* Direct bif call, I points into calling function */
+		erts_trace_return_to(p, I);
+	    }
 	}
 	return result;
     }
@@ -906,7 +912,6 @@ void
 trace_gc(Process *p, Eterm what)
 {
     Process* tracer = NULL;	/* Initialized to eliminate compiler warning */
-    ErlHeapFragment* bp = NULL; /* Initialized to eliminate compiler warning */
     Eterm* hp;
     Eterm msg = NIL;
     Eterm tuple;
@@ -916,22 +921,26 @@ trace_gc(Process *p, Eterm what)
     msg = CONS(hp, tuple, msg); hp += 2
 
     if (is_port(p->tracer_proc)) {
+	Eterm local_heap[64];
 	hp = local_heap;
     } else {
-	tracer = process_tab[get_number(p->tracer_proc)];
+	tracer = process_tab[pid_number(p->tracer_proc)];
 	if (INVALID_PID(tracer, p->tracer_proc)) {
 	    p->flags &= ~TRACE_FLAGS;
 	    p->tracer_proc = NIL;
 	    return;
 	}
-	bp = new_message_buffer(128);
-	hp = bp->mem;
+
+	/*
+	 * XXX Multi-thread note: Allocating on another process's heap.
+	 */
+	hp = HAlloc(tracer, 64);
     }
 
     CONS_PAIR(am_heap_size, make_small(p->htop - p->heap));
     CONS_PAIR(am_old_heap_size, make_small(p->old_htop - p->old_heap));
     CONS_PAIR(am_stack_size, make_small(p->hend - p->stop));
-    CONS_PAIR(am_recent_size, make_small(p->high_water - p->low_water));
+    CONS_PAIR(am_recent_size, make_small(p->high_water - p->heap));
     CONS_PAIR(am_mbuf_size, make_small(p->mbuf_sz));
 
     msg = TUPLE4(hp, am_trace, p->id, what, msg);
@@ -942,7 +951,7 @@ trace_gc(Process *p, Eterm what)
     if (is_port(p->tracer_proc)) {
 	send_to_port(p, msg);
     } else {
-	queue_message(tracer, bp, msg);
+	queue_message_tt(tracer, NULL, msg, NIL);
     }
 #undef CONS_PAIR
 }

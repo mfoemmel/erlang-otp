@@ -20,8 +20,9 @@
 -behaviour(supervisor).
 
 %% External exports
--export([start_link/1, start_mib/4, stop_mib/2,
-	 start_net_if/4, stop_net_if/2]).
+-export([start_link/1, 
+	 start_mib/4, start_mib/5, stop_mib/2,
+	 start_net_if/4, start_net_if/5, stop_net_if/2]).
 
 %% Internal exports
 -export([init/1]).
@@ -40,12 +41,18 @@ start_link(SupName) ->
 %% a new one is started.
 %%-----------------------------------------------------------------
 start_mib(SupName, Ref, Mibs, Prio) ->
+    start_mibserver(SupName, Ref, Mibs, Prio, [Mibs,Prio]).
+
+start_mib(SupName, Ref, Mibs, Prio, Opts) ->
+    start_mibserver(SupName, Ref, Mibs, Prio, [Mibs,Prio,Opts]).
+
+start_mibserver(SupName, Ref, Mibs, Prio, Args) ->
     Children = supervisor:which_children(SupName),
     case lists:keysearch({mib, Ref}, 1, Children) of
 	{value, {_, Pid, _, _}} -> {ok, Pid};
 	_ ->
 	    Mib = {{mib, Ref}, 
-		   {snmp_mib, start_link, [Mibs, Prio]},
+		   {snmp_mib, start_link, Args},
 		   transient, 10000, worker, [snmp_mib]},
 	    supervisor:start_child(SupName, Mib)
     end.
@@ -60,6 +67,12 @@ stop_mib(SupName, Ref) ->
     end.
 
 start_net_if(SupName, Ref, Master, NetIfModule) ->
+    start_netif(SupName, Ref, Master, NetIfModule, [Master]).
+
+start_net_if(SupName, Ref, Master, NetIfModule, Opts) ->
+    start_netif(SupName, Ref, Master, NetIfModule, [Master,Opts]).
+
+start_netif(SupName, Ref, Master, NetIfModule, Args) ->
     Children = supervisor:which_children(SupName),
     case lists:keysearch({net_if, Ref}, 1, Children) of
 	{value, {_, Pid, _, _}} ->
@@ -68,7 +81,7 @@ start_net_if(SupName, Ref, Master, NetIfModule) ->
 	    ok
     end,
     NetIf = {{net_if, Ref}, 
-	     {NetIfModule, start_link, [Master]},
+	     {NetIfModule, start_link, Args},
 	     permanent, 2000, worker, [NetIfModule]},
     supervisor:start_child(SupName, NetIf).
 

@@ -27,6 +27,10 @@
 -include("SNMP-FRAMEWORK-MIB.hrl").
 -include("SNMPv2-TM.hrl").
 
+-define(VMODULE,"ACM").
+-include("snmp_verbosity.hrl").
+
+
 %%%-----------------------------------------------------------------
 %%% This module implements the Access Control Model part of the
 %%% multi-lingual SNMP agent.  It contains generic function not
@@ -109,14 +113,22 @@ error2status(_) -> genErr.
 init_ca(Pdu, {community, SecModel, Community, TAddr}) ->
     %% This is a v1 or v2c request.   Use SNMP-COMMUNITY-MIB to
     %% map the community to vacm parameters.
+    ?vtrace("check access for ~n"
+	    "   Pdu:            ~p~n"
+	    "   Security model: ~p~n"
+	    "   Community:      ~s",[Pdu,SecModel,Community]),
     ViewType = case Pdu#pdu.type of
 		   'set-request' -> write;
 		   _ -> read
 	       end,
+    ?vtrace("View type: ~p",[ViewType]),
     case snmp_community_mib:community2vacm(Community, {?snmpUDPDomain,TAddr}) of
 	{SecName, _ContextEngineId, ContextName} ->
 	    %% Maybe we should check that the contextEngineID matches the
 	    %% local engineID?  It better, since we don't impl. proxy.
+	    ?vtrace("get mib view"
+		    "~n   Security name: ~p"
+		    "~n   Context name:  ~p",[SecName,ContextName]),
 	    case snmp_vacm:get_mib_view(ViewType, SecModel, SecName,
 					?'SnmpSecurityLevel_noAuthNoPriv',
 					ContextName) of
@@ -134,10 +146,16 @@ init_ca(Pdu, {community, SecModel, Community, TAddr}) ->
     end;
 init_ca(Pdu, {v3, _MsgID, SecModel, SecName, SecLevel,
 	      _ContextEngineID, ContextName, _SecData}) ->
+    ?vtrace("check v3 access for ~n"
+	    "   Pdu:            ~p~n"
+	    "   Security model: ~p~n"
+	    "   Security name:  ~p~n"
+	    "   Security level: ~p",[Pdu,SecModel,SecName,SecLevel]),
     ViewType = case Pdu#pdu.type of
 		   'set-request' -> write;
 		   _ -> read
 	       end,
+    ?vtrace("View type: ~p",[ViewType]),
     %% Convert the msgflag value to a ?'SnmpSecurityLevel*'
     SL = case SecLevel of
 	     0 -> ?'SnmpSecurityLevel_noAuthNoPriv';

@@ -18,19 +18,18 @@
      $Id$
 -->
 <HEAD>
-<TITLE>EI %VSN%</TITLE>
+<TITLE>Jinterface %VSN%</TITLE>
 <LINK REV=MADE HREF="mailto:otp@erix.ericsson.se">
-<!-- Changed by: Joakim Grebenö,  3-Feb-1997 -->
 </HEAD>
 
 <BODY BGCOLOR="#FFFFFF">
 
 <CENTER>
-<A HREF="http://www.erlang.se"><IMG  ALT="Erlang Systems" BORDER=0 SRC="html/min_head.gif"></A><BR>
+<A HREF="http://www.erlang.se"><IMG  ALT="Erlang/OTP" BORDER=0 SRC="html/min_head.gif"></A><BR>
 
 <FONT SIZE="-1">
 [<A HREF="../../../doc/index.html">Up</A> |
-<A HREF="http://www.erlang.se">Erlang Systems</A>]
+<A HREF="http://www.erlang.se">Erlang/OTP</A>]
 </FONT><BR>
 
 <P><FONT SIZE="+3">Jinterface </FONT><BR>
@@ -43,7 +42,7 @@ Version %VSN%
 <!-- <IMG ALIGN=LEFT ALT="EI" SRC="html/ei.gif"> -->
 </TD>
 
-<P><CENTER>Jinterface contains functions, 
+<P><CENTER><STRONG>Jinterface</STRONG> contains functions, 
 which help you integrate programs written in Java and Erlang.
 
 
@@ -51,11 +50,19 @@ which help you integrate programs written in Java and Erlang.
 
 </TR>
 </TABLE>
-<P><CENTER>Note, the documentation is not avaiable in pdf format.</P>
+
 <P><CENTER>
 <TABLE CELLPADDING=15>
 <TR>
 
+
+<TD ALIGN=CENTER>
+<A HREF="html/part_jinterface_frame.html">
+<IMG ALT="User Guide" BORDER=0 SRC="html/user_guide.gif"></A><BR>
+<FONT SIZE="-1">
+<A HREF="html/part_jinterface_frame.html">User Guide</A>
+</FONT>
+</TD>
 
 
 <TD ALIGN=CENTER>
@@ -81,7 +88,7 @@ which help you integrate programs written in Java and Erlang.
 <P><CENTER>
 <HR>
 <FONT SIZE="-1">
-Copyright &copy; 1991-99
+Copyright &copy; 1991-2000
 <A HREF="http://www.ericsson.se">Ericsson Utvecklings AB</A>
 </FONT>
 </CENTER>

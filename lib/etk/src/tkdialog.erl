@@ -163,7 +163,7 @@ dialog_buttons(W, [But | Bs], Default, I, Pid) ->
 	    tk:pack(WDef,[{in, W++".bot"}, {side, left},
 			  {expand, 1}, {padx, "3m"}, {pady, "2m"}]),
 	    tk:pack(WBut,[{in,WDef},{padx,"2m"},{pady,"2m"}]),
-	    tk:bind(W, "<Return>",
+	    tk:bind(W, "<Return>",['%W'], % is this the right template??
 		    fun(E) ->
 			    tk:cmd(WBut, [flash]),
 			    Pid ! {button, I}

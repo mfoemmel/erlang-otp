@@ -26,7 +26,8 @@
 	 unsubscribe_table/1,
 	 subscribers/0,
 	 report_table_event/4,
-	 report_table_event/5
+	 report_table_event/5, 
+	 report_table_event/6
 	]).
 
 %% gen_server callbacks
@@ -85,11 +86,27 @@ set_debug_level(Level, OldEnv) ->
 	    Old
     end.
 
+subscribe(ClientPid, system) ->
+    change_subscr(activate, ClientPid, system);
+subscribe(ClientPid, {table, Tab}) ->
+    change_subscr(activate, ClientPid, {table, Tab, simple});
+subscribe(ClientPid, {table, Tab, simple}) ->
+    change_subscr(activate, ClientPid, {table, Tab, simple});
+subscribe(ClientPid, {table, Tab, detailed}) ->
+    change_subscr(activate, ClientPid, {table, Tab, detailed});
 subscribe(ClientPid, What) ->
-    change_subscr(activate, ClientPid, What).
+    {error, {badarg, What}}.
 
+unsubscribe(ClientPid, system) ->
+    change_subscr(deactivate, ClientPid, system);
+unsubscribe(ClientPid, {table, Tab}) ->
+    change_subscr(deactivate, ClientPid, {table, Tab, simple});
+unsubscribe(ClientPid, {table, Tab, simple}) ->
+    change_subscr(deactivate, ClientPid, {table, Tab, simple});
+unsubscribe(ClientPid, {table, Tab, detailed}) ->
+    change_subscr(deactivate, ClientPid, {table, Tab, detailed});
 unsubscribe(ClientPid, What) ->
-    change_subscr(deactivate, ClientPid, What).
+    {error, {badarg, What}}.
 
 unsubscribe_table(Tab) ->
     call({change, {deactivate_table, Tab}}).
@@ -107,28 +124,71 @@ report_table_event(Tab, Tid, Obj, Op) ->
 	    case lists:keysearch(subscribers, 1, Commit) of
 		false -> ok;
 		{value, Subs} -> 
-		    report_table_event(Subs, Tab, Tid, Obj, Op)
+		    report_table_event(Subs, Tab, Tid, Obj, Op, undefined)
 	    end
     end.
 
-report_table_event({subscribers, Subscr}, Tab, Tid, Obj, clear_table) ->
-    What = {delete, {schema, Tab}, Tid},
-    deliver(Subscr, {mnesia_table_event, What}),
-    TabDef = mnesia_schema:cs2list(?catch_val({Tab, cstruct})),
-    What2 = {write, {schema, Tab, TabDef}, Tid},
-    deliver(Subscr, {mnesia_table_event, What2});
+%% Backwards compatible for the moment when mnesia_tm get's updated!
+report_table_event(Subscr, Tab, Tid, Obj, Op) ->
+    report_table_event(Subscr, Tab, Tid, Obj, Op, undefined).
 
-report_table_event({subscribers, Subscr}, Tab, Tid, Obj, Op) ->
-    case  Tab == element(1, Obj) of
+report_table_event({subscribers, S1, S2}, Tab, Tid, Obj, clear_table, Old) ->
+    What   = {delete, {schema, Tab}, Tid},
+    deliver(S1, {mnesia_table_event, What}),
+    TabDef = mnesia_schema:cs2list(?catch_val({Tab, cstruct})),
+    What2  = {write, {schema, Tab, TabDef}, Tid},
+    deliver(S1, {mnesia_table_event, What2}),
+    What3  = {delete, schema, {schema, Tab}, [{schema, Tab, TabDef}], Tid},
+    deliver(S2, {mnesia_table_event, What3}),
+    What4  = {write, schema,  {schema, Tab, TabDef}, [], Tid},
+    deliver(S2, {mnesia_table_event, What4});
+
+report_table_event({subscribers, Subscr, []}, Tab, Tid, Obj, Op, Old) ->
+    What = {Op, patch_record(Tab, Obj), Tid},
+    deliver(Subscr, {mnesia_table_event, What});
+
+report_table_event({subscribers, S1, S2}, Tab, Tid, Obj, Op, Old) ->
+    Standard = {Op, patch_record(Tab, Obj), Tid},
+    deliver(S1, {mnesia_table_event, Standard}), 
+    Extended = what(Tab, Tid, Obj, Op, Old), 
+    deliver(S2, Extended);
+
+%% Backwards compatible for the moment when mnesia_tm get's updated!
+report_table_event({subscribers, Subscr}, Tab, Tid, Obj, Op, Old) ->    
+    report_table_event({subscribers, Subscr, []}, Tab, Tid, Obj, Op, Old).
+
+
+patch_record(Tab, Obj) ->
+    case Tab == element(1, Obj) of
 	true -> 
-	    What = {Op, Obj, Tid},
-	    deliver(Subscr, {mnesia_table_event, What});
+	    Obj;
 	false ->
-	    Obj2 = setelement(1, Obj, Tab),
-	    What = {Op, Obj2, Tid},
-	    deliver(Subscr, {mnesia_table_event, What})
+	    setelement(1, Obj, Tab)
     end.
 
+what(Tab, Tid, {RecName, Key}, delete, undefined) ->
+    case catch mnesia_lib:db_get(Tab, Key) of
+	Old when list(Old) -> %% Op only allowed for set table.
+	    {mnesia_table_event, {delete, Tab, {RecName, Key}, Old, Tid}};
+	_ ->
+	    %% Record just deleted by a dirty_op or 
+	    %% the whole table has been deleted
+	    ignore
+    end;
+what(Tab, Tid, Obj, delete, Old) ->
+    {mnesia_table_event, {delete, Tab, Obj, Old, Tid}};
+what(Tab, Tid, Obj, delete_object, Old) ->
+    {mnesia_table_event, {delete, Tab, Obj, [Obj], Tid}};
+what(Tab, Tid, Obj, write, undefined) ->
+    case catch mnesia_lib:db_get(Tab, element(2, Obj)) of
+	Old when list(Old) ->
+	    {mnesia_table_event, {write, Tab, Obj, Old, Tid}};
+	{'EXIT', _} ->
+	    ignore
+    end.
+
+deliver(_, ignore) -> 
+    ok;
 deliver([Pid | Pids], Msg) ->
     Pid ! Msg,
     deliver(Pids, Msg);
@@ -229,31 +289,31 @@ terminate(Reason, State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 code_change(OldVsn, State, Extra) ->
-    exit(not_supported).
+    {ok, State}.
 
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
 
-do_change({activate, ClientPid, {table, Tab}}, SubscrTab) when pid(ClientPid) ->
+do_change({activate, ClientPid, system}, SubscrTab) when pid(ClientPid) ->
+    Var = subscribers,
+    activate(ClientPid, system, Var, subscribers(), SubscrTab);
+do_change({activate, ClientPid, {table, Tab, How}}, SubscrTab) when pid(ClientPid) ->
     case ?catch_val({Tab, where_to_read}) of
 	Node when Node == node() ->
 	    Var = {Tab, commit_work},
-	    activate(ClientPid, {table, Tab}, Var, mnesia_lib:val(Var), SubscrTab);
+	    activate(ClientPid, {table, Tab, How}, Var, mnesia_lib:val(Var), SubscrTab);
 	{'EXIT', _} ->
 	    {error, {no_exists, Tab}};
 	_Node ->
 	    {error, {not_active_local, Tab}}
     end;
-do_change({activate, ClientPid, system}, SubscrTab) when pid(ClientPid) ->
-    Var = subscribers,
-    activate(ClientPid, system, Var, subscribers(), SubscrTab);
-do_change({deactivate, ClientPid, {table, Tab}}, SubscrTab) ->
-    Var = {Tab, commit_work},
-    deactivate(ClientPid, {table, Tab}, Var, SubscrTab);
 do_change({deactivate, ClientPid, system}, SubscrTab) ->
     Var = subscribers,
     deactivate(ClientPid, system, Var, SubscrTab);
+do_change({deactivate, ClientPid, {table, Tab, How}}, SubscrTab) ->
+    Var = {Tab, commit_work},
+    deactivate(ClientPid, {table, Tab, How}, Var, SubscrTab);
 do_change({deactivate_table, Tab}, SubscrTab) ->
     Var = {Tab, commit_work},
     case ?catch_val(Var) of
@@ -263,10 +323,18 @@ do_change({deactivate_table, Tab}, SubscrTab) ->
 	    case lists:keysearch(subscribers, 1, CommitWork) of
 		false ->
 		    ok;
-		{value, {subscribers, ClientPids}} -> 
-		    What = {table, Tab},
-		    F = fun(C) -> deactivate(C, What, Var, SubscrTab) end,
-		    lists:foreach(F, ClientPids)
+		{value, Subs} -> 
+		    Simple   = {table, Tab, simple}, 
+		    Detailed = {table, Tab, detailed}, 
+		    Fs = fun(C) -> deactivate(C, Simple, Var, SubscrTab) end,
+		    Fd = fun(C) -> deactivate(C, Detailed, Var, SubscrTab) end,
+		    case Subs of
+			{subscribers, L1, L2} -> 
+			    lists:foreach(Fs, L1),
+			    lists:foreach(Fd, L2);
+			{subscribers, L1} ->
+			    lists:foreach(Fs, L1)
+		    end
 	    end,
 	    {ok, node()}
     end;
@@ -280,7 +348,14 @@ activate(ClientPid, What, Var, OldSubscribers, SubscrTab) ->
 	   true -> 
 		case lists:keysearch(subscribers, 1, OldSubscribers) of
 		    false -> [];
-		    {value, {subscribers, Val}} -> Val
+		{value, Subs} -> 
+			ClientPids = 
+			case Subs of
+			    {subscribers, L1, L2} -> 
+				L1 ++ L2;
+			    {subscribers, L1} ->
+				L1
+			end
 		end
 	end,
     case lists:member(ClientPid, Old) of
@@ -289,7 +364,7 @@ activate(ClientPid, What, Var, OldSubscribers, SubscrTab) ->
 	    case catch link(ClientPid) of
 		true ->
 		    ?ets_insert(SubscrTab, {ClientPid, What}),
-		    add_subscr(Var, ClientPid),
+		    add_subscr(Var, What, ClientPid),
 		    {ok, node()};
 		{'EXIT', Reason} ->
 		    {error, {no_exists, ClientPid}}
@@ -298,22 +373,44 @@ activate(ClientPid, What, Var, OldSubscribers, SubscrTab) ->
 	    {error, {already_exists, What}}
     end.
 
--record(subscribers, {pids = []}).
-
-add_subscr(subscribers, Pid) ->
-    mnesia_lib:add(subscribers, Pid);
-add_subscr({Tab, commit_work}, Pid) ->
+%%-record(subscribers, {pids = []}).  Old subscriber record removed
+%% To solve backward compatibility, this code is a cludge.. 
+add_subscr(subscribers, _What, Pid) ->
+    mnesia_lib:add(subscribers, Pid),
+    {ok, node()};
+add_subscr({Tab, commit_work}, What, Pid) ->
     Commit = mnesia_lib:val({Tab, commit_work}),
     case lists:keysearch(subscribers, 1, Commit) of
 	false ->
-	    Subscr = #subscribers{pids = [Pid]},
+	    Subscr = 
+		case What of 
+		    {table, _, simple} -> 
+			{subscribers, [Pid], []};
+		    {table, _, detailed} ->
+			{subscribers, [], [Pid]}
+		end,
+	    mnesia_lib:add({Tab, subscribers}, Pid),
 	    mnesia_lib:set({Tab, commit_work}, 
 			   mnesia_lib:sort_commit([Subscr | Commit]));
 	{value, Old} ->
-	    Subscr = Old#subscribers{pids = [Pid | Old#subscribers.pids]},
+	    {L1, L2} = 
+		case Old of
+		    {subscribers, L} ->  %% Old Way
+			{L, []};
+		    {subscribers, SL1, SL2} -> 
+			{SL1, SL2}
+		end,
+	    Subscr = 
+		case What of 
+		    {table, _, simple} -> 
+			{subscribers, [Pid | L1], L2};
+		    {table, _, detailed} ->  
+			{subscribers, L1, [Pid | L2]}
+		end,
 	    NewC  = lists:keyreplace(subscribers, 1, Commit, Subscr),
 	    mnesia_lib:set({Tab, commit_work}, 
-			   mnesia_lib:sort_commit(NewC))
+			   mnesia_lib:sort_commit(NewC)),
+	    mnesia_lib:add({Tab, subscribers}, Pid)
     end.
 
 deactivate(ClientPid, What, Var, SubscrTab) ->
@@ -324,26 +421,44 @@ deactivate(ClientPid, What, Var, SubscrTab) ->
 	{'EXIT', _} ->
 	    unlink(ClientPid)
     end,
-    % mnesia_lib:del(Var, ClientPid),
-    del_subscr(Var, ClientPid),
+    del_subscr(Var, What, ClientPid),
     {ok, node()}.
 
-del_subscr(subscribers, Pid) ->
+del_subscr(subscribers, What, Pid) ->
     mnesia_lib:del(subscribers, Pid);
-del_subscr({Tab, commit_work}, Pid) ->
+del_subscr({Tab, commit_work}, What, Pid) ->
     Commit = mnesia_lib:val({Tab, commit_work}),
     case lists:keysearch(subscribers, 1, Commit) of
 	false ->
 	    false;
 	{value, Old} ->
-	    case lists:delete(Pid, Old#subscribers.pids) of
-		[] -> 
+	    {L1, L2} = 
+		case Old of
+		    {subscribers, L} ->  %% Old Way
+			{L, []};
+		    {subscribers, SL1, SL2} -> 
+			{SL1, SL2}
+		end,
+	    Subscr = 
+		case What of %% Ignore user error delete subscr from any list
+		    {table, _, simple} -> 
+			NewL1 = lists:delete(Pid, L1),
+			NewL2 = lists:delete(Pid, L2),
+			{subscribers, NewL1, NewL2};
+		    {table, _, detailed} ->
+			NewL1 = lists:delete(Pid, L1),
+			NewL2 = lists:delete(Pid, L2),
+			{subscribers, NewL1, NewL2}
+		end,
+	    case Subscr of
+		{subscribers, [], []} ->
 		    NewC = lists:keydelete(subscribers, 1, Commit),
+		    mnesia_lib:del({Tab, subscribers}, Pid),
 		    mnesia_lib:set({Tab, commit_work}, 
 				   mnesia_lib:sort_commit(NewC));
-		New ->
-		    Subscr = Old#subscribers{pids = New},
+		_ ->
 		    NewC = lists:keyreplace(subscribers, 1, Commit, Subscr),
+		    mnesia_lib:del({Tab, subscribers}, Pid),
 		    mnesia_lib:set({Tab, commit_work}, 
 				   mnesia_lib:sort_commit(NewC))
 	    end
@@ -355,10 +470,10 @@ handle_exit(ClientPid, SubscrTab) ->
 
 do_handle_exit([{ClientPid, What} | Tail]) ->
     case What of
-	{table, Tab} ->
-	    del_subscr({Tab, commit_work}, ClientPid);
 	system ->
-	    del_subscr(subscribers, ClientPid)
+	    del_subscr(subscribers, What, ClientPid);
+	{_, Tab, Level} ->
+	    del_subscr({Tab, commit_work}, What, ClientPid)    
     end,
     do_handle_exit(Tail);
 do_handle_exit([]) ->

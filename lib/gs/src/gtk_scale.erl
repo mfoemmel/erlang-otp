@@ -38,6 +38,7 @@
 %%	orient			vertical | horizontal
 %%	range			{From, To}
 %%	relief			Relief	[flat|raised|sunken|ridge|groove]
+%%      showvalue               Bool
 %%	text			String
 %%	width			Int
 %%	x			Int
@@ -154,6 +155,7 @@ option(Option, Gtkid, TkW, DB,_) ->
         {relief,     Relief} -> {s, [" -rel ", gtk:to_ascii(Relief)]};
         {bw,            Wth} -> {s, [" -bd ", gtk:to_ascii(Wth)]};
 	{text,       String} -> {s, [" -la ",gtk:to_ascii(String)]};
+	{showvalue,    Bool} -> {s, [" -showvalue ",gtk:to_ascii(Bool)]};
 	{pos,           Pos} -> {c, [TkW, " set ", gtk:to_ascii(Pos)]};
 	{click,          On} -> cbind(DB, Gtkid, click, On);
 	_                    -> invalid_option
@@ -178,6 +180,7 @@ read_option(Option,Gtkid,TkW,DB,_) ->
         bw            -> tcl2erl:ret_int([TkW," cg -bd"]);
         relief        -> tcl2erl:ret_atom([TkW, " cg -reli"]);
 	text          -> tcl2erl:ret_str([TkW," cg -lab"]);
+	showvalue     -> tcl2erl:ret_bool([TkW," cg -showvalue"]);
 	pos           -> tcl2erl:ret_int([TkW," get"]);
 	click         -> gtk_db:is_inserted(DB, Gtkid, click);
 	_ -> {bad_result, {Gtkid#gtkid.objtype, invalid_option, Option}}

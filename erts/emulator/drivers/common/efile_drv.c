@@ -47,7 +47,7 @@
 #define FILE_READLINK        	20
 #define FILE_LINK             	21
 #define FILE_SYMLINK          	22
-
+#define FILE_CLOSE		23
 
 /* Return codes */
 
@@ -66,6 +66,16 @@
 #include "zlib.h"
 #include "gzio.h"
 #include <ctype.h>
+
+extern int erts_async_max_threads;
+
+#if 0
+/* Experimental, for forcing all file operations to use the same thread. */
+int key = 1;
+#define KEY1 (&key)
+#else
+#define KEY NULL
+#endif
 
 #if     MAXPATHLEN >= BUFSIZ
 #define    RESBUFSIZE  MAXPATHLEN+1
@@ -105,6 +115,7 @@ typedef struct {
 
 static FUNCTION(int, error_reply, (file_descriptor*, Efile_error* errInfo));
 
+static void file_async_ready(file_descriptor *desc, void *data);
 
 struct driver_entry efile_driver_entry = {
     file_init,
@@ -113,7 +124,13 @@ struct driver_entry efile_driver_entry = {
     file_erlang_read,
     null_func,
     null_func,
-    "efile"
+    "efile",
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    file_async_ready
 };
 
 
@@ -137,6 +154,38 @@ uchar *buf;
     return (long) desc;
 }
 
+struct t_data
+{
+    Efile_error errInfo;
+    Efile_info info;
+    EFILE_DIR_HANDLE dir_handle; /* Handle to open directory. */
+    int result_ok;
+    DriverBinary *bin;
+    char *buf;
+    unsigned location;
+    int drive;
+    int flags;
+    int fd;
+    int n;
+    int offset;
+    int command;
+    unsigned bytesRead;		/* Bytes read from the file. */
+    char b[1];
+};
+
+static void free_data(void *data)
+{
+    sys_free(data);
+}
+
+static void invoke_close(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+    int fd = d->fd;
+
+    efile_closefile(fd);
+}
+
 static int file_stop(desc)
 file_descriptor* desc;
 {
@@ -145,7 +194,19 @@ file_descriptor* desc;
     if (desc->flags & EFILE_COMPRESSED) {
 	gzclose((gzFile)fd);
     } else if (fd >= 0) {
+#if 0
 	efile_closefile(fd);
+#else
+/* Threaded close */
+    {
+	struct t_data *d = sys_alloc(sizeof(struct t_data));
+	d->fd = fd;
+	d->command = FILE_CLOSE;
+	driver_async(desc->port, KEY, invoke_close, (void *) d,
+		     free_data);
+	return 0;
+    }
+#endif
     }
     sys_free(desc);
     return 0;
@@ -213,6 +274,428 @@ int result;
     return 0;
 }
  
+static void invoke_name(void *data, int (*f)(Efile_error *, char *))
+{
+    struct t_data *d = (struct t_data *) data;
+    char *name = (char *) &d->b;
+
+    d->result_ok = (*f)(&d->errInfo, name);
+}
+
+static void invoke_mkdir(void *data)
+{
+    invoke_name(data, efile_mkdir);
+}
+
+static void invoke_rmdir(void *data)
+{
+    invoke_name(data, efile_rmdir);
+}
+
+static void invoke_delete_file(void *data)
+{
+    invoke_name(data, efile_delete_file);
+}
+
+static void invoke_chdir(void *data)
+{
+    invoke_name(data, efile_chdir);
+}
+
+static void invoke_fsync(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+    int fd = d->fd;
+
+    d->result_ok = efile_fsync(&d->errInfo, fd);
+}
+
+static void invoke_truncate(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+    int fd = d->fd;
+
+    d->result_ok = efile_truncate_file(&d->errInfo, &fd, d->flags);
+}
+
+static void invoke_read(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+    int status;
+
+    if (d->flags & EFILE_COMPRESSED) {
+	d->bytesRead = gzread((gzFile)d->fd, d->bin->orig_bytes, d->n);
+	status = (d->bytesRead != -1);
+	if (!status) {
+	    d->errInfo.posix_errno = EIO;
+	}
+    } else {
+	status = efile_read(&d->errInfo, d->flags, d->fd,
+			    d->bin->orig_bytes, d->n, &d->bytesRead);
+    }
+
+    d->result_ok = status;
+}
+
+static void invoke_read_file(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+
+    unsigned size;		/* Size of file. */
+    int fd;
+
+    d->result_ok = 0;
+    d->bin = NULL;
+
+    if (!efile_openfile(&d->errInfo, d->b, EFILE_MODE_READ, &fd, &size))
+	return;
+
+    if ((d->bin = driver_alloc_binary(size)) == NULL) {
+	d->errInfo.posix_errno = ENOMEM;
+	d->errInfo.os_errno = 0;
+    } else if (!efile_read(&d->errInfo, EFILE_MODE_READ, fd, d->bin->orig_bytes,
+			   size, &d->bytesRead)) {
+	/* Nothing to do here. */
+    } else if (d->bytesRead != size) {
+	d->errInfo.posix_errno = EIO;
+	d->errInfo.os_errno = 0;
+    } else {
+	d->result_ok = 1;
+    }
+
+    efile_closefile(fd);
+}
+
+static void invoke_pread(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+
+    d->result_ok = efile_pread(&d->errInfo, d->fd, d->offset,
+			       d->bin->orig_bytes, 
+			       d->n, &d->bytesRead);
+}
+
+static void invoke_write(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+
+    int status;			/* Status of write operation. */
+
+    if (d->flags & EFILE_COMPRESSED) {
+	status = gzwrite((gzFile)d->fd, (char *) d->b, d->n) == d->n;
+    } else {
+	status = efile_write(&d->errInfo, d->flags, d->fd,
+			     (char *) d->b, d->n);
+    }
+
+    d->result_ok = status;
+}
+
+static void invoke_pwd(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+
+    d->result_ok = efile_getdcwd(&d->errInfo,d->drive,(char *)&d->b+1,
+				 RESBUFSIZE-1);
+}
+
+static void invoke_readlink(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+    uchar resbuf[RESBUFSIZE];	/* Result buffer. */
+
+    d->result_ok = efile_readlink(&d->errInfo, d->b, (char *) resbuf+1,
+				  RESBUFSIZE-1);
+    if (d->result_ok != 0)
+	strcpy((char *) d->b + 1, resbuf+1);
+}
+
+static void invoke_pwrite(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+
+    d->result_ok = efile_pwrite(&d->errInfo, d->fd, (char *) d->b,
+				d->n, d->offset);
+}
+
+static void invoke_flstat(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+
+    d->result_ok = efile_fileinfo(&d->errInfo, &d->info,
+				  (char *) &d->b, d->command == FILE_LSTAT);
+}
+
+static void invoke_link(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+    char *name = d->b;
+    char *new_name;
+
+    new_name = name+strlen(name)+1;
+    d->result_ok = efile_link(&d->errInfo, name, new_name);
+}
+
+static void invoke_symlink(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+    char *name = d->b;
+    char *new_name;
+
+    new_name = name+strlen(name)+1;
+    d->result_ok = efile_symlink(&d->errInfo, name, new_name);
+}
+
+static void invoke_rename(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+    char *name = d->b;
+    char *new_name;
+
+    new_name = name+strlen(name)+1;
+    d->result_ok = efile_rename(&d->errInfo, name, new_name);
+}
+
+static void invoke_write_info(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+
+    d->result_ok = efile_write_info(&d->errInfo, &d->info, d->b);
+}
+
+static void invoke_lseek(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+    int status;
+
+    if (d->flags & EFILE_COMPRESSED) {
+	status = 1;
+	d->location = gzseekk((gzFile)d->fd, d->offset, d->n);
+	if (d->location == -1) {
+	    d->errInfo.posix_errno = errno;
+	    status = 0;
+	}
+    } else {
+	status = efile_seek(&d->errInfo, d->fd, d->offset, d->n,
+			    &d->location);
+    }
+    d->result_ok = status;
+}
+
+static void invoke_readdir(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+    int s;
+    uchar resbuf[RESBUFSIZE];	/* Result buffer. */
+
+    resbuf[0] = FILE_RESP_OK;
+    d->errInfo.posix_errno = 0;
+
+    s = efile_readdir(&d->errInfo, d->b, &d->dir_handle,
+		      (char *) resbuf+1, RESBUFSIZE-1);
+    if (s) {
+	d->n = 1 + strlen((char*) resbuf+1);
+	d->result_ok = 1;
+    }
+    else {
+	d->n = 1;
+	d->result_ok = (d->errInfo.posix_errno == 0);
+    }
+    if (d->buf != NULL)
+	sys_free(d->buf);
+    d->buf = sys_alloc(d->n);
+    memcpy(d->buf, resbuf, d->n);
+}
+
+static void invoke_open(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+
+    unsigned size;		/* Size of file (not used). */
+    int status = 1;		/* Status of open call. */
+
+    if ((d->flags & EFILE_COMPRESSED) == 0) {
+	status = efile_openfile(&d->errInfo, &d->b, d->flags, &d->fd, &size);
+    } else {
+	char* mode = NULL;
+
+	if ((d->flags & (EFILE_MODE_READ|EFILE_MODE_WRITE)) ==
+	    (EFILE_MODE_READ|EFILE_MODE_WRITE)) {
+	    status = 0;
+	    d->errInfo.posix_errno = EINVAL;
+	} else {
+	    mode = (d->flags & EFILE_MODE_READ) ? "rb" : "wb";
+	    d->fd = (int) gzopen(&d->b, mode);
+	    if ((gzFile)d->fd == NULL) {
+		if (errno == 0) {
+		    errno = ENOMEM;
+		}
+		d->errInfo.posix_errno = errno;
+		status = 0;
+	    }
+	}
+    }
+
+    d->result_ok = status;
+}
+
+static void free_read(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+
+    driver_free_binary(d->bin);
+    sys_free(d);
+}
+
+static void free_readdir(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+
+    if (d->buf != NULL)
+	sys_free(d->buf);
+    sys_free(d);
+}
+
+static void file_async_ready(file_descriptor *desc, void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+    char header[5];		/* result code + count */
+    uchar resbuf[RESBUFSIZE];	/* Result buffer. */
+
+    switch (d->command)
+    {
+      case FILE_READ:
+      case FILE_PREAD:
+	if (!d->result_ok) {
+	    error_reply(desc, &d->errInfo);
+	} else {
+	    header[0] = FILE_RESP_DATA;
+	    put_int32(d->bytesRead, header+1);
+	    driver_output_binary(desc->port, header, sizeof(header),
+				 d->bin, 0, d->bytesRead);
+	}
+	free_read(data);
+	break;
+      case FILE_READ_FILE:
+	if (!d->result_ok)
+	    error_reply(desc, &d->errInfo);
+	else {
+	    header[0] = FILE_RESP_OK;
+	    driver_output_binary(desc->port, header, 1, 
+				 d->bin, 0, d->bytesRead);
+	}
+	if (d->bin != NULL) {
+	    driver_free_binary(d->bin);
+	}
+	free_data(data);
+	break;
+      case FILE_PWRITE:
+      case FILE_WRITE:
+	if (!d->result_ok) {
+	    error_reply(desc, &d->errInfo);
+	} else {
+	    numeric_reply(desc, d->n);
+	}
+	free_data(data);
+	break;
+      case FILE_LSEEK:
+	if (d->result_ok)
+	    numeric_reply(desc, d->location);
+	else
+	    error_reply(desc, &d->errInfo);
+	free_data(data);
+	break;
+      case FILE_MKDIR:
+      case FILE_RMDIR:
+      case FILE_CHDIR:
+      case FILE_DELETE:
+      case FILE_FSYNC:
+      case FILE_TRUNCATE:
+      case FILE_LINK:
+      case FILE_SYMLINK:
+      case FILE_RENAME:
+      case FILE_WRITE_INFO:
+	reply(desc, d->result_ok, &d->errInfo);
+	free_data(data);
+	break;
+      case FILE_PWD:
+      case FILE_READLINK:
+        {
+	    int length;
+	    char *resbuf = &d->b;
+
+	    if (!d->result_ok)
+		error_reply(desc, &d->errInfo);
+	    else {
+		resbuf[0] = FILE_RESP_OK;
+		length = 1+strlen((char*) resbuf+1);
+		driver_output2(desc->port, resbuf, length, NULL, 0);
+	    }
+	    free_data(data);
+	    break;
+	}
+      case FILE_OPEN:
+	if (!d->result_ok) {
+	    error_reply(desc, &d->errInfo);
+	} else {
+	    desc->fd = d->fd;
+	    desc->flags = d->flags;
+	    numeric_reply(desc, d->fd);
+	}
+	free_data(data);
+	break;
+      case FILE_FSTAT:
+      case FILE_LSTAT:
+        {
+	    if (d->result_ok) {
+		resbuf[0] = FILE_RESP_INFO;
+
+		put_int32(d->info.size_high,         &resbuf[1 + (0 * 4)]);
+		put_int32(d->info.size_low,          &resbuf[1 + (1 * 4)]);
+		put_int32(d->info.type,              &resbuf[1 + (2 * 4)]);
+
+		PUT_TIME(d->info.accessTime, resbuf + 1 + 3*4);
+		PUT_TIME(d->info.modifyTime, resbuf + 1 + 9*4);
+		PUT_TIME(d->info.cTime, resbuf + 1 + 15*4);
+
+		put_int32(d->info.mode,              &resbuf[1 + (21 * 4)]);
+		put_int32(d->info.links,             &resbuf[1 + (22 * 4)]);
+		put_int32(d->info.major_device,      &resbuf[1 + (23 * 4)]);
+		put_int32(d->info.minor_device,      &resbuf[1 + (24 * 4)]);
+		put_int32(d->info.inode,             &resbuf[1 + (25 * 4)]);
+		put_int32(d->info.uid,               &resbuf[1 + (26 * 4)]);
+		put_int32(d->info.gid,               &resbuf[1 + (27 * 4)]);
+		put_int32(d->info.access,            &resbuf[1 + (28 * 4)]);
+
+#define RESULT_SIZE (1 + (29 * 4))
+		driver_output2(desc->port, resbuf, RESULT_SIZE, NULL, 0);
+#undef RESULT_SIZE
+	    } else
+		error_reply(desc, &d->errInfo);
+	}
+	free_data(data);
+	break;
+      case FILE_READDIR:
+	if (!d->result_ok)
+	    error_reply(desc, &d->errInfo);
+	else {
+	    driver_output2(desc->port, d->buf, d->n, NULL, 0);
+	}
+	if (d->n == 1)
+	    free_readdir(data);
+	else
+	    driver_async(desc->port, KEY, invoke_readdir, (void *) d,
+			 free_readdir);
+	break;
+	/* See file_stop */
+      case FILE_CLOSE:
+	free_data(data);
+	break;
+      default:
+	abort();
+    }
+}
+
 static int file_erlang_read(desc, buf, count)
 file_descriptor* desc;
 uchar *buf;
@@ -222,45 +705,110 @@ int count;
     int fd;			/* The file descriptor for this port, if any,
 				 * -1 if none.
 				 */
-    uchar resbuf[RESBUFSIZE];	/* Result buffer. */
     char* name;			/* Points to the filename in buf. */
     int command;
 
     fd  = desc->fd;
     name = (char *) buf+1;
     command = *buf++;
+
     switch(command) {
+
     case FILE_MKDIR:
-	return reply(desc, efile_mkdir(&errInfo, name), &errInfo);
+    {
+	struct t_data *d = sys_alloc(sizeof(struct t_data) - 1
+				     + strlen(name) + 1);
+	
+	strcpy((char *) &d->b, name);
+	d->command = command;
+	driver_async(desc->port, KEY, invoke_mkdir, (void *) d,
+		     free_data);
+	return 0;
+    }
     case FILE_RMDIR:
-	return reply(desc, efile_rmdir(&errInfo, name), &errInfo);
+    {
+	struct t_data *d = sys_alloc(sizeof(struct t_data) - 1
+				     + strlen(name) + 1);
+	
+	strcpy((char *) &d->b, name);
+	d->command = command;
+	driver_async(desc->port, KEY, invoke_rmdir, (void *) d,
+		     free_data);
+	return 0;
+    }
     case FILE_DELETE:
-	return reply(desc, efile_delete_file(&errInfo, name), &errInfo);
+    {
+	struct t_data *d = sys_alloc(sizeof(struct t_data) - 1
+				     + strlen(name) + 1);
+	
+	strcpy((char *) &d->b, name);
+	d->command = command;
+	driver_async(desc->port, KEY, invoke_delete_file, (void *) d,
+		     free_data);
+	return 0;
+    }
     case FILE_RENAME:
 	{
-	    char* new_name;	/* New name of file or directory. */
+	    struct t_data *d;
+	    char* new_name;
 
 	    new_name = name+strlen(name)+1;
-	    return reply(desc, efile_rename(&errInfo,name,new_name), &errInfo);
+	    d = sys_alloc(sizeof(struct t_data) - 1
+			  + strlen(name) + 1
+			  + strlen(new_name) + 1);
+	
+	    strcpy((char *) &d->b, name);
+	    strcpy((char *) &d->b + strlen(name) + 1, new_name);
+	    d->flags = desc->flags;
+	    d->fd = fd;
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_rename, (void *) d,
+			 free_data);
+	    return 0;
 	}
     case FILE_CHDIR:
-	return reply(desc, efile_chdir(&errInfo, name), &errInfo);
-
+    {
+	struct t_data *d = sys_alloc(sizeof(struct t_data) - 1
+				     + strlen(name) + 1);
+	
+	strcpy((char *) &d->b, name);
+	d->command = command;
+	driver_async(desc->port, KEY, invoke_chdir, (void *) d,
+		     free_data);
+	return 0;
+    }
     case FILE_PWD:
-	{
-	    int length;
-	    int drive;
-
-	    drive = buf[0];
-	    if (!efile_getdcwd(&errInfo,drive,(char *)resbuf+1,RESBUFSIZE-1))
-		return error_reply(desc, &errInfo);
-	    resbuf[0] = FILE_RESP_OK;
-	    length = 1+strlen((char*) resbuf+1);
-	    return driver_output2(desc->port, resbuf, length, NULL, 0);
+        {
+	    struct t_data *d = sys_alloc(sizeof(struct t_data) - 1
+					 + RESBUFSIZE + 1);
+	
+	    d->drive = buf[0];
+	    strcpy((char *) &d->b, name);
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_pwd, (void *) d,
+			 free_data);
+	    return 0;
 	}
 
     case FILE_READDIR: 
+#ifdef USE_THREADS
+	if (erts_async_max_threads > 0)
 	{
+	    struct t_data *d = sys_alloc(sizeof(struct t_data) - 1
+					 + strlen(name) + 1);
+	
+	    strcpy((char *) &d->b, name);
+	    d->dir_handle = NULL;
+	    d->buf = NULL;
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_readdir, (void *) d,
+			 free_readdir);
+	    return 0;
+	}
+	else   
+#endif
+	{
+	    uchar resbuf[RESBUFSIZE];
 	    EFILE_DIR_HANDLE dir_handle; /* Handle to open directory. */
 
 	    errInfo.posix_errno = 0;
@@ -276,139 +824,101 @@ int count;
 		return error_reply(desc, &errInfo);
 	    return driver_output2(desc->port, resbuf, 1, NULL, 0);
 	}
-
     case FILE_OPEN:
 	{
-	    unsigned flags;	/* Flags for opening file. */
-	    unsigned size;	/* Size of file (not used). */
-	    int status = 1;	/* Status of open call. */
-
-	    flags = get_int32(buf);
+	    struct t_data *d = sys_alloc(sizeof(struct t_data) - 1
+					 + strlen(buf+4) + 1);
+	
+	    d->flags = get_int32(buf);
 	    name = (char *) buf+4;
-	    if ((flags & EFILE_COMPRESSED) == 0) {
-		status = efile_openfile(&errInfo, name, flags, &fd, &size);
-	    } else {
-		char* mode = NULL;
-
-		if ((flags & (EFILE_MODE_READ|EFILE_MODE_WRITE)) ==
-		    (EFILE_MODE_READ|EFILE_MODE_WRITE)) {
-		    errInfo.posix_errno = EINVAL;
-		    return error_reply(desc, &errInfo);
-		}
-
-		mode = (flags & EFILE_MODE_READ) ? "rb" : "wb";
-		fd = (int) gzopen(name, mode);
-		if ((gzFile)fd == NULL) {
-		    if (errno == 0) {
-			errno = ENOMEM;
-		    }
-		    errInfo.posix_errno = errno;
-		    status = 0;
-		}
-	    }
-
-	    if (!status) {
-		return error_reply(desc, &errInfo);
-	    } else {
-		desc->flags = flags;
-		desc->fd = fd;
-		return numeric_reply(desc, fd);
-	    }
+	    strcpy((char *) &d->b, name);
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_open, (void *) d,
+			 free_data);
+	    return 0;
 	}
 
     case FILE_FSYNC:
-	return reply(desc, efile_fsync(&errInfo, fd), &errInfo);
+    {
+	struct t_data *d = sys_alloc(sizeof(struct t_data));
+	
+	d->fd = fd;
+	d->command = command;
+	driver_async(desc->port, KEY, invoke_fsync, (void *) d,
+		     free_data);
+	return 0;
+    }
 
     case FILE_FSTAT: 
     case FILE_LSTAT:
     {
-	Efile_info info;
+	struct t_data *d = sys_alloc(sizeof(struct t_data) - 1
+				     + strlen(name) + 1);
 	
-	if (!efile_fileinfo(&errInfo, &info, (char *) buf, command == FILE_LSTAT)) {
-	    return error_reply(desc, &errInfo);
-	}
-
-	resbuf[0] = FILE_RESP_INFO;
-
-	put_int32(info.size_high,         &resbuf[1 + (0 * 4)]);
-	put_int32(info.size_low,          &resbuf[1 + (1 * 4)]);
-	put_int32(info.type,              &resbuf[1 + (2 * 4)]);
-
-	PUT_TIME(info.accessTime, resbuf + 1 + 3*4);
-	PUT_TIME(info.modifyTime, resbuf + 1 + 9*4);
-	PUT_TIME(info.cTime, resbuf + 1 + 15*4);
-
-	put_int32(info.mode,              &resbuf[1 + (21 * 4)]);
-	put_int32(info.links,             &resbuf[1 + (22 * 4)]);
-	put_int32(info.major_device,      &resbuf[1 + (23 * 4)]);
-	put_int32(info.minor_device,      &resbuf[1 + (24 * 4)]);
-	put_int32(info.inode,             &resbuf[1 + (25 * 4)]);
-	put_int32(info.uid,               &resbuf[1 + (26 * 4)]);
-	put_int32(info.gid,               &resbuf[1 + (27 * 4)]);
-	put_int32(info.access,            &resbuf[1 + (28 * 4)]);
-
-
-#define RESULT_SIZE (1 + (29 * 4))
-	return driver_output2(desc->port, resbuf, RESULT_SIZE, NULL, 0);
-#undef RESULT_SIZE
+	strcpy((char *) &d->b, name);
+	d->fd = fd;
+	d->command = command;
+	driver_async(desc->port, KEY, invoke_flstat, (void *) d,
+		     free_data);
+	return 0;
     }
     case FILE_PWRITE:
 	{
 	    int offset;		/* Offset for pwrite. */
 
+	    struct t_data *d = sys_alloc(sizeof(struct t_data) - 1
+					 + count-5);
+	
 	    offset = get_int32(buf);
-	    if (efile_pwrite(&errInfo, fd, (char *) buf+4, count-5, offset))
-		return numeric_reply(desc, count-5);
-	    else
-		return error_reply(desc, &errInfo);
+	    d->offset = offset;
+	    memcpy((char *) d->b, buf+4, count-5);
+	    d->n = count-5;
+	    d->fd = fd;
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_pwrite, (void *) d,
+			 free_data);
+	    return 0;
 	}
 
     case FILE_WRITE:
 	{
-	    int status;		/* Status of write operation. */
-
+	    struct t_data *d = sys_alloc(sizeof(struct t_data) - 1
+					 +count-1);
+	
 	    count--;
-	    if (desc->flags & EFILE_COMPRESSED) {
-		status = gzwrite((gzFile)fd, (char *) buf, count) == count;
-	    } else {
-		status = efile_write(&errInfo, desc->flags, fd, (char *) buf, count);
-	    }
-	    if (status) {
-		return numeric_reply(desc, count);
-	    } else {
-		return error_reply(desc, &errInfo);
-	    }
+	    memcpy(d->b, buf, count);
+	    d->flags = desc->flags;
+	    d->n = count;
+	    d->fd = fd;
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_write, (void *) d,
+			 free_data);
+	    return 0;
 	}
 	
     case FILE_LSEEK:
 	{
 	    int offset;		/* Offset for seek. */
 	    int origin;		/* Origin of seek. */
-	    unsigned location;	/* Resulting location. */
-	    int status;		/* Status of seek operation. */
 
+	    struct t_data *d = sys_alloc(sizeof(struct t_data) - 1);
+	
 	    offset = get_int32(buf);
 	    origin = get_int32(buf+4);
-	    if (desc->flags & EFILE_COMPRESSED) {
-		status = 1;
-		location = gzseekk((gzFile)fd, offset, origin);
-		if (location == -1) {
-		    errInfo.posix_errno = errno;
-		    status = 0;
-		}
-	    } else {
-		status = efile_seek(&errInfo, fd, offset, origin, &location);
-	    }
-	    if (status)
-		return numeric_reply(desc, location);
-	    else
-		return error_reply(desc, &errInfo);
+
+	    d->flags = desc->flags;
+	    d->offset = offset;
+	    d->n = origin;
+	    d->fd = fd;
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_lseek, (void *) d,
+			 free_read);
+	    return 0;
 	}
 
     case FILE_PREAD:
 	{
 	    int offset;		/* Offset for seek. */
-	    unsigned bytesRead;	/* Bytes read from the file. */
 	    DriverBinary* bin;	/* The binary data. */
 
 	    offset = get_int32(buf);
@@ -418,28 +928,25 @@ int count;
 		errInfo.os_errno = 0;
 		return error_reply(desc, &errInfo);
 	    }
-	    if (!efile_pread(&errInfo, fd, offset,  bin->orig_bytes, 
-			     count, &bytesRead)) {
-		error_reply(desc, &errInfo);
-	    } else {
-		char header[5];
-		header[0] = FILE_RESP_DATA;
-		put_int32(bytesRead, header+1);
-		/* XXX consider driver_realloc_binary()? */
-		driver_output_binary(desc->port, header, sizeof(header),
-				     bin, 0, bytesRead);
-	    }
-	    driver_free_binary(bin);
+	{
+	    struct t_data *d = sys_alloc(sizeof(struct t_data) - 1);
+	
+	    d->flags = desc->flags;
+	    d->bin = bin;
+	    d->n = count;
+	    d->offset = offset;
+	    d->fd = fd;
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_pread, (void *) d,
+			 free_read);
 	    return 0;
+	}
 	}	
 
     case FILE_READ:
 	{
 	    int n;		/* Number of bytes to read. */
-	    char header[5];     /* result code + count */
 	    DriverBinary* bin;  /* The binary data */
-	    unsigned bytesRead;	/* Bytes read from the file. */
-	    int status;
 
 	    n = get_int32(buf);
 	    if ((bin = driver_alloc_binary(n)) == NULL) {
@@ -448,107 +955,111 @@ int count;
 		return error_reply(desc, &errInfo);
 	    }
 	    
-	    if (desc->flags & EFILE_COMPRESSED) {
-		bytesRead = gzread((gzFile)fd, bin->orig_bytes, n);
-		status = (bytesRead != -1);
-		if (!status) {
-		    errInfo.posix_errno = EIO;
-		}
-	    } else {
-		status = efile_read(&errInfo, desc->flags, fd,
-				    bin->orig_bytes, n, &bytesRead);
-	    }
-	    if (!status) {
-		error_reply(desc, &errInfo);
-	    } else {
-		header[0] = FILE_RESP_DATA;
-		put_int32(bytesRead, header+1);
-		driver_output_binary(desc->port, header, sizeof(header),
-				     bin, 0, bytesRead);
-	    }
-	    driver_free_binary(bin);
+	{
+	    struct t_data *d = sys_alloc(sizeof(struct t_data) - 1);
+	
+	    d->flags = desc->flags;
+	    d->bin = bin;
+	    d->n = n;
+	    d->fd = fd;
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_read, (void *) d,
+			 free_read);
 	    return 0;
+	}
 	}
 
     case FILE_TRUNCATE:
-	return reply(desc, efile_truncate_file(&errInfo, &fd, desc->flags), 
-		     &errInfo);
-
+        {
+	    struct t_data *d = sys_alloc(sizeof(struct t_data));
+	
+	    d->flags = desc->flags;
+	    d->fd = fd;
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_truncate, (void *) d,
+			 free_data);
+	    return 0;
+	}
     case FILE_READ_FILE:
 	{
-	    DriverBinary* bin;  /* The binary data */
-	    char header;        /* The result header */
-	    unsigned size;	/* Size of file. */
-	    unsigned bytesRead;	/* Bytes read from the file. */
-
-	    if (!efile_openfile(&errInfo, name, EFILE_MODE_READ, &fd, &size)) {
-		return error_reply(desc, &errInfo);
-	    }
-
-	    if ((bin = driver_alloc_binary(size)) == NULL) {
-		errInfo.posix_errno = ENOMEM;
-		errInfo.os_errno = 0;
-		return error_reply(desc, &errInfo);
-	    }
-
-	    if (!efile_read(&errInfo, EFILE_MODE_READ, fd, bin->orig_bytes,
-			    size, &bytesRead)) {
-		error_reply(desc, &errInfo);
-	    } else if (bytesRead != size) {
-		errInfo.posix_errno = EIO;
-		errInfo.os_errno = 0;
-		error_reply(desc, &errInfo);
-	    } else {
-		header = FILE_RESP_OK;
-		driver_output_binary(desc->port, &header, 1, 
-				     bin, 0, bytesRead);
-	    }
-
-	    efile_closefile(fd);
-	    driver_free_binary(bin);
+	    struct t_data *d = sys_alloc(sizeof(struct t_data)
+					 + strlen(name) + 1);
+	
+	    strcpy((char *) &d->b, name);
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_read_file, (void *) d,
+			 free_read);
 	    return 0;
 	}
 
     case FILE_WRITE_INFO:
 	{
-	    Efile_info info;
+	    struct t_data *d = sys_alloc(sizeof(struct t_data) - 1
+					 + strlen(buf+21*4) + 1);
 	
-	    info.mode = get_int32(buf + 0 * 4);
-	    info.uid = get_int32(buf + 1 * 4);
-	    info.gid = get_int32(buf + 2 * 4);
-	    GET_TIME(info.accessTime, buf + 3 * 4);
-	    GET_TIME(info.modifyTime, buf + 9 * 4);
-	    GET_TIME(info.cTime, buf + 15 * 4);
-	    return reply(desc, efile_write_info(&errInfo, &info, buf+21*4),
-			 &errInfo);
+	    d->info.mode = get_int32(buf + 0 * 4);
+	    d->info.uid = get_int32(buf + 1 * 4);
+	    d->info.gid = get_int32(buf + 2 * 4);
+	    GET_TIME(d->info.accessTime, buf + 3 * 4);
+	    GET_TIME(d->info.modifyTime, buf + 9 * 4);
+	    GET_TIME(d->info.cTime, buf + 15 * 4);
+	    strcpy((char *) &d->b, buf+21*4);
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_write_info, (void *) d,
+			 free_data);
+	    return 0;
 	}
 
     case FILE_READLINK:
 	{
-	    int length;
-
-	    if (!efile_readlink(&errInfo, name, (char *) resbuf+1, RESBUFSIZE-1)) {
-		return error_reply(desc, &errInfo);
-	    }
-	    resbuf[0] = FILE_RESP_OK;
-	    length = 1+strlen((char*) resbuf+1);
-	    return driver_output2(desc->port, resbuf, length, NULL, 0);
+	    struct t_data *d = sys_alloc(sizeof(struct t_data) - 1
+					 + RESBUFSIZE + 1);
+	
+	    strcpy((char *) &d->b, name);
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_readlink, (void *) d,
+			 free_data);
+	    return 0;
 	}
 
     case FILE_LINK:
 	{
+	    struct t_data *d;
 	    char* new_name;
 
 	    new_name = name+strlen(name)+1;
-	    return reply(desc, efile_link(&errInfo, name, new_name), &errInfo);
+	    d = sys_alloc(sizeof(struct t_data) - 1
+			  + strlen(name) + 1
+			  + strlen(new_name) + 1);
+	
+	    strcpy((char *) &d->b, name);
+	    strcpy((char *) &d->b + strlen(name) + 1, new_name);
+	    d->flags = desc->flags;
+	    d->fd = fd;
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_link, (void *) d,
+			 free_data);
+	    return 0;
 	}
 
     case FILE_SYMLINK:
 	{
+	    struct t_data *d;
 	    char* new_name;
 
 	    new_name = name+strlen(name)+1;
-	    return reply(desc, efile_symlink(&errInfo, name, new_name), &errInfo);
+	    d = sys_alloc(sizeof(struct t_data) - 1
+			  + strlen(name) + 1
+			  + strlen(new_name) + 1);
+	
+	    strcpy((char *) &d->b, name);
+	    strcpy((char *) &d->b + strlen(name) + 1, new_name);
+	    d->flags = desc->flags;
+	    d->fd = fd;
+	    d->command = command;
+	    driver_async(desc->port, KEY, invoke_symlink, (void *) d,
+			 free_data);
+	    return 0;
 	}
 
     }

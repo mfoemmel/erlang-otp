@@ -842,7 +842,7 @@ show_report(State) ->
     BruttoAvg = (Now - State#reporter_state.prev_micros) div N,
 %%    io:format("n_iters=~p, n_trans=~p, n_drivers=~p, avg=~p, now=~p, prev=~p~n",
 %%	      [Iters, N, AliveN, BruttoAvg, Now, State#reporter_state.prev_micros]),
-    BruttoTps = (?SECOND * AliveN) div BruttoAvg,
+    BruttoTps = ?SECOND div BruttoAvg,
     case Iters > 0 of
 	true ->
 	    io:format("TPC-B: ~p iter ~s~p diff ~p (~p) tps ~p avg micros ~p max micros ~p unfairness~n",

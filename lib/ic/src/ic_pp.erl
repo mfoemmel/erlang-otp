@@ -16,6 +16,8 @@
 %%     $Id$
 %%
 -module(ic_pp).
+-copyright('Copyright (c) 1991-1998 Ericsson Telecom AB').
+-author('esko@erix.ericsson.se').
 
 -export([run/2]).
 
@@ -132,6 +134,7 @@ run(FileList, FileName, IncDir, Flags) ->
     %%----------------------------------------------------------
     {Out, Err, War, Defs, IfCou} = expand(File, FileName, IncDir, Flags),
 
+
     %%----------------------------------------------------------
     %% Check if all #if #ifdef #ifndef have a matching #endif
     %%----------------------------------------------------------
@@ -173,22 +176,31 @@ run(FileList, FileName, IncDir, Flags) ->
 %%
 %% Output   {Out, Defs, Err, War}
 %%======================================================================================
-run_include(FileName, FileList, Defs, Err, War, IncLine, IncFile, IncDir) ->
+run_include(FileName, FileList, Out, Defs, Err, War, IncLine, IncFile, IncDir) ->
 
     %%----------------------------------------------------------
     %% Run the first phase, i.e tokenise the file
     %%----------------------------------------------------------
     [PrevFile | T] = IncFile,
-    File = tokenise(FileList, FileName, IncLine, PrevFile),
+    {File,  FileInfoStart, FileInfoEnd} = 
+	tokenise(FileList, FileName, IncLine, PrevFile),
 
     %%----------------------------------------------------------
     %% Run the second phase, i.e expand macros
     %%----------------------------------------------------------
-    IncFileInfo = {0, file_info, lists:flatten(io_lib:format("# 1 ~p 1\n",[FileName]))},
-    ExpandData = File ++ [IncFileInfo],
-    {Out2, Err2, War2, Defs2, IfCou2} = 
+
+    %% Try first pass without file info start/end
+    {OutT, ErrT, WarT, DefsT, IfCouT} =
 	expand(File, Defs, Err, War, [FileName|IncFile], IncDir),
 
+    {Out2, Err2, War2, Defs2, IfCou2} = 
+	case only_nls(OutT) of
+	    true -> %% The file is defined before
+		{["\n"], ErrT, WarT, DefsT, IfCouT};
+	    false -> %% The file is not defined before, try second pass
+		expand([FileInfoStart|File]++FileInfoEnd, Defs, Err, War, [FileName|IncFile], IncDir)
+	end,
+    
     %%----------------------------------------------------------
     %% Check if all #if #ifdef #ifndef have a matching #endif
     %%----------------------------------------------------------
@@ -203,8 +215,16 @@ run_include(FileName, FileList, Defs, Err, War, IncLine, IncFile, IncDir) ->
 
 
 
-
-
+%% Return true if there is no data 
+%% other than new lines
+only_nls([]) ->
+    true;
+only_nls(["\n"|Rem]) ->
+    only_nls(Rem);
+only_nls(["\r","\n"|Rem]) ->
+    only_nls(Rem);
+only_nls([_|_Rem]) ->
+    false.
 
 
 
@@ -274,7 +294,8 @@ tokenise(File, FileName, IncLine, PrevFile) ->
     FileInfoStart = {file_info, FI_start},
     FI_end = lists:reverse(lists:flatten(io_lib:format("# ~p ~p 2~n~n",[IncLine-1,PrevFile]))),
     FileInfoEnd = [{file_info, FI_end}],
-    [FileInfoStart | Result] ++ FileInfoEnd.
+    {Result,  FileInfoStart, FileInfoEnd}.
+%    [FileInfoStart | Result] ++ FileInfoEnd.
 
 
 %%===================================================================================
@@ -681,25 +702,17 @@ expand([{file_info, Str} | Rem], Out, SelfRef, Defs, IncFile, IncDir, IfCou, Err
 %%---------------------------------------
 expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN) 
   when Command == "ifdef" ->
-    case pp_command(Command, Rem, Defs, IncDir, Err, War, L, FN) of
-        {{ifdef, true}, Rem2, Err2, War2, Nl} ->
-            IfCou2 = {endif, Endif+1, IfLine},
-            expand(Rem2, Out, SelfRef, Defs, IncFile, IncDir, IfCou2, Err2, War2, L+Nl, FN);
-        {{ifdef, false}, Rem2, Err2, War2, Nl} ->
-            IfCou2 = {endif, Endif, IfLine},
-            expand(Rem2, Out, SelfRef, Defs, IncFile, IncDir, IfCou2, Err2, War2, L+Nl, FN)
-    end;
+    {Removed, Rem2, Nl} = read_to_nl(Rem),
+    IfCou2 = {endif, Endif+1, IfLine},
+    expand(Rem2, Out, SelfRef, Defs, IncFile, IncDir, IfCou2, Err, War, L, FN);
+
 
 expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN)
   when Command == "ifndef" ->
-    case pp_command(Command, Rem, Defs, IncDir, Err, War, L, FN) of
-        {{ifndef, true}, Rem2, Err2, War2, Nl} ->
-            IfCou2 = {endif, Endif+1, IfLine},
-            expand(Rem2, Out, SelfRef, Defs, IncFile, IncDir, IfCou2, Err2, War2, L+Nl, FN);
-        {{ifndef, false}, Rem2, Err2, War2, Nl} ->
-            IfCou2 = {endif, Endif, IfLine},
-            expand(Rem2, Out, SelfRef, Defs, IncFile, IncDir, IfCou2, Err2, War2, L+Nl, FN)
-    end;
+    {Removed, Rem2, Nl} = read_to_nl(Rem),
+    IfCou2 = {endif, Endif+1, IfLine},
+    expand(Rem2, Out, SelfRef, Defs, IncFile, IncDir, IfCou2, Err, War, L, FN);
+
 
 expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN)
   when Command == "if" ->
@@ -715,15 +728,16 @@ expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, E
 
 expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN) 
   when Command == "endif" ->
-    case pp_command(Command, Rem, Defs, IncDir, Err, War, L, FN) of
-        {endif, Rem2, Err2, War2, Nl} when Endif == 1 ->
-            Out2 = [lists:duplicate(Nl,$\n)|Out],
-            expand(Rem2, Out2, SelfRef, Defs, IncFile, IncDir, check_all, Err2, War2, L+Nl, FN);
-
-        {endif, Rem2, Err2, War2, Nl} ->
+    {Removed, Rem2, Nl} = read_to_nl(Rem),
+    case Endif of
+	1 ->
+	    Out2 = [lists:duplicate(Nl,$\n)|Out],
+            expand(Rem2, Out2, SelfRef, Defs, IncFile, IncDir, check_all, Err, War, L+Nl, FN);
+	_ ->
             IfCou2 = {endif, Endif-1, IfLine},
-            expand(Rem2, Out, SelfRef, Defs, IncFile, IncDir, IfCou2, Err2, War2, L+Nl, FN)
+            expand(Rem2, Out, SelfRef, Defs, IncFile, IncDir, IfCou2, Err, War, L+Nl, FN)
     end;
+
 
 expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN) ->
     {Removed, Rem2, Nl} = read_to_nl(Rem),
@@ -771,11 +785,11 @@ expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, check_all
 
 	{{include, ok}, FileName, FileCont, Rem2, Nl, Err2, War2} ->
 	    {Out3, Defs3, Err3, War3} = 
-		run_include(FileName, FileCont, Defs, Err2, War2, L+Nl, IncFile, IncDir),
-%	    Nls = lists:duplicate(Nl+1,$\n),
+		run_include(FileName, FileCont, Out, Defs, Err2, War2, L+Nl, IncFile, IncDir),
 	    Nls = [],
 	    Out4 = Out3++Nls++Out,
 	    expand(Rem2, Out4, SelfRef, Defs3, IncFile, IncDir, check_all, Err3, War3, L+Nl, FN);
+	
 	{{include, error}, Rem2, Nl, Err2, War2} ->
 	    Out2 = [lists:duplicate(Nl,$\n)|Out],
 	    expand(Rem2, Out2, SelfRef, Defs, IncFile, IncDir, check_all, Err2, War2, L+Nl, FN);
@@ -1049,7 +1063,6 @@ pp_command(Command, [space|File], Defs, IncDir, Err, War, L, FN) ->
 
 pp_command(Command, File, Defs, IncDir, Err, War, L, FN) ->
 
-
     case Command of
 	%%----------------------------------------
 	%% #define
@@ -1140,9 +1153,9 @@ pp_command(Command, File, Defs, IncDir, Err, War, L, FN) ->
 	"ifndef" ->
 	    case define(File, Err, War, L, FN) of
 		{error, Rem, Err2, War2, Nl} ->
-		    {{ifdef, false}, Rem, Defs, Err2, War2, Nl};
+		    {{ifndef, false}, Rem, Defs, Err2, War2, Nl};
 		{warning, Rem, Err2, War2, Nl} ->
-		    {{ifdef, false}, Rem, Defs, Err2, War2, Nl};
+		    {{ifndef, false}, Rem, Defs, Err2, War2, Nl};
 		{warning, Rem, Name, No_of_para, Parameters, Macro, Err2, War2, Nl} ->
 		    case is_defined_before(Name, No_of_para, Defs) of
 			yes ->

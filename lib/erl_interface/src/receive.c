@@ -31,6 +31,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "erl_error.h"
 #include "ei.h"
 #include "putget.h"
 
@@ -51,7 +52,8 @@ extern int ei_trace_distribution;
 
 extern erlang_trace *ei_trace(int query, erlang_trace *token);
 
-static int read_fill(int fd, char *buf, int len)
+static int 
+read_fill (int fd, char *buf, int len)
 {
   int got = 0;
   int i;
@@ -68,9 +70,12 @@ static int read_fill(int fd, char *buf, int len)
 #define SMALLBUF 2048
 #endif 
 
-
 /* length (4), PASS_THOUGH (1), header, message */
-int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msglenp, int staticbufp)
+int 
+ei_recv_internal (int fd, 
+		  char **mbufp, int *bufsz, 
+		  erlang_msg *msg, int *msglenp, 
+		  int staticbufp)
 {
   char header[SMALLBUF]; /* largest possible header is approx 1300 bytes */
   char *s=header;
@@ -88,7 +93,11 @@ int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msg
 #endif
 
   /* get length field */
-  if (read_fill(fd, header, 4) != 4) return -1;
+  if (read_fill(fd, header, 4) != 4) 
+  {
+      erl_errno = EIO;
+      return -1;
+  }
   len = get32be(s);
 
   /* got tick - respond and return */
@@ -96,7 +105,7 @@ int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msg
     unsigned char tock[] = {0,0,0,0};
     writesocket(fd, tock, sizeof(tock));
     *msglenp = 0;
-    return 0;
+    return 0;			/* maybe flag ERL_EAGAIN [sverkerw] */
   }
   
   /* turn off tracing on each receive. it will be turned back on if
@@ -106,7 +115,11 @@ int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msg
   
   /* read enough to get at least entire header */
   bytesread = (len > SMALLBUF ? SMALLBUF : len); 
-  if ((i = read_fill(fd,header,bytesread)) != bytesread) return -1;
+  if ((i = read_fill(fd,header,bytesread)) != bytesread)
+  {
+      erl_errno = EIO;
+      return -1;
+  }
 
   /* now decode header */
   /* pass-through, version, control tuple header, control message type */
@@ -116,15 +129,24 @@ int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msg
       || ei_decode_version(header,&index,&version)
       || (version != ERL_VERSION_MAGIC) 
       || ei_decode_tuple_header(header,&index,&arity) 
-      || ei_decode_long(header,&index,&msg->msgtype)) return -1;
-
+      || ei_decode_long(header,&index,&msg->msgtype))
+  {
+      erl_errno = EIO;	/* Maybe another code for decoding errors */
+      return -1;
+  }
+  
   switch (msg->msgtype) {
   case ERL_SEND:          /* { SEND, Cookie, ToPid } */
 #ifdef DEBUG_DIST
     if (ei_trace_distribution > 0) show_this_msg = 1;
 #endif
     if (ei_decode_atom(header,&index,msg->cookie) 
-	|| ei_decode_pid(header,&index,&msg->to)) return -1;
+	|| ei_decode_pid(header,&index,&msg->to))
+    {
+	erl_errno = EIO;
+	return -1;
+    }
+
     break;
 
   case ERL_REG_SEND:     /* { REG_SEND, From, Cookie, ToName } */
@@ -133,7 +155,12 @@ int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msg
 #endif
     if (ei_decode_pid(header,&index,&msg->from) 
 	|| ei_decode_atom(header,&index,msg->cookie) 
-	|| ei_decode_atom(header,&index,msg->toname)) return -1;
+	|| ei_decode_atom(header,&index,msg->toname))
+    {
+	erl_errno = EIO;
+	return -1;
+    }
+
     /* actual message is remaining part of headerbuf, plus any unread bytes */
     break;
 
@@ -144,7 +171,12 @@ int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msg
     if (ei_trace_distribution > 1) show_this_msg = 1;
 #endif
     if (ei_decode_pid(header,&index,&msg->from) 
-	|| ei_decode_pid(header,&index,&msg->to)) return -1;
+	|| ei_decode_pid(header,&index,&msg->to))
+    {
+	erl_errno = EIO;
+	return -1;
+    }
+
     break;
     
   case ERL_EXIT:         /* { EXIT, From, To, Reason } */
@@ -153,7 +185,12 @@ int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msg
     if (ei_trace_distribution > 1) show_this_msg = 1;
 #endif
     if (ei_decode_pid(header,&index,&msg->from) 
-	|| ei_decode_pid(header,&index,&msg->to)) return -1;
+	|| ei_decode_pid(header,&index,&msg->to))
+    {
+	erl_errno = EIO;
+	return -1;
+    }
+
     break;
     
   case ERL_SEND_TT:      /* { SEND_TT, Cookie, ToPid, TraceToken } */
@@ -162,7 +199,12 @@ int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msg
 #endif
     if (ei_decode_atom(header,&index,msg->cookie) 
 	|| ei_decode_pid(header,&index,&msg->to)
-	|| ei_decode_trace(header,&index,&msg->token)) return -1;
+	|| ei_decode_trace(header,&index,&msg->token))
+    {
+	erl_errno = EIO;
+	return -1;
+    }
+
     ei_trace(1,&msg->token); /* turn on tracing */
     break;
 
@@ -173,7 +215,12 @@ int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msg
     if (ei_decode_pid(header,&index,&msg->from) 
 	|| ei_decode_atom(header,&index,msg->cookie) 
 	|| ei_decode_atom(header,&index,msg->toname)
-	|| ei_decode_trace(header,&index,&msg->token)) return -1;
+	|| ei_decode_trace(header,&index,&msg->token))
+    {
+	erl_errno = EIO;
+	return -1;
+    }
+
     ei_trace(1,&msg->token); /* turn on tracing */
     break;
 
@@ -184,7 +231,12 @@ int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msg
 #endif
     if (ei_decode_pid(header,&index,&msg->from) 
 	|| ei_decode_pid(header,&index,&msg->to)
-	|| ei_decode_trace(header,&index,&msg->token)) return -1;
+	|| ei_decode_trace(header,&index,&msg->token))
+    {
+	erl_errno = EIO;
+	return -1;
+    }
+
     ei_trace(1,&msg->token); /* turn on tracing */
     break;
 
@@ -216,18 +268,21 @@ int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msg
 	if ((i=read_fill(fd,header,sz)) <= 0) break;
 	remain -= i;
       }
+      erl_errno = EMSGSIZE;
       return -1;
     }
     else {
+	/* Dynamic buffer --- grow it. */
 #ifdef DEBUG
-      fprintf(stderr,"callers buffer too small (%d < %d) - allocating new\n",*bufsz,msglen);
+      fprintf(stderr, "Growing buffer from %d bytes to %d bytes\n",
+	      *bufsz, msglen);
 #endif
-      /* dynamic buffer */
-      if (!(mbuf = malloc(msglen))) {
-	return -1; /* couldn't allocate */
+      if ((mbuf = realloc(*mbufp, msglen)) == NULL)
+      {
+	  erl_errno = ENOMEM;
+	  return -1;
       }
 
-      free(*mbufp);
       *mbufp = mbuf;
       *bufsz = msglen;
     }  
@@ -243,6 +298,7 @@ int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msg
   if (remain > 0) {
     if ((i = read_fill(fd,mbuf+bytesread-index,remain)) != remain) {
       *msglenp = bytesread-index+1; /* actual bytes in users buffer */
+      erl_errno = EIO;
       return -1;
     }
   }
@@ -262,3 +318,4 @@ int ei_receive_encoded(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *m
 {
   return ei_recv_internal(fd, mbufp, bufsz, msg, msglen, 0);
 }
+

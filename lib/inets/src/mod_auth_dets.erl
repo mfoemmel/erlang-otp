@@ -36,14 +36,21 @@
 -include("mod_auth.hrl").
 
 store_directory_data(Directory, DirData) ->
+    ?CDEBUG("store_directory_data -> ~n"
+	    "     Directory: ~p~n"
+	    "     DirData:   ~p",
+	    [Directory, DirData]),
+
     PWFile = httpd_util:key1search(DirData, auth_user_file),
     GroupFile = httpd_util:key1search(DirData, auth_group_file),
+    Addr = httpd_util:key1search(DirData, bind_address),
     Port = httpd_util:key1search(DirData, port),
-    PWName = list_to_atom("httpd_dets_pwdb_"++integer_to_list(Port)),
-    GDBName = list_to_atom("httpd_dets_groupdb_"++integer_to_list(Port)),
-    case dets:open_file(PWName, [{type, set}, {file, PWFile}, {repair, true}]) of
+
+    PWName  = httpd_util:make_name("httpd_dets_pwdb",Addr,Port),
+    case dets:open_file(PWName,[{type,set},{file,PWFile},{repair,true}]) of
 	{ok, PWDB} ->
-	    case dets:open_file(GDBName, [{type, set}, {file, GroupFile}, {repair, true}]) of
+	    GDBName = httpd_util:make_name("httpd_dets_groupdb",Addr,Port),
+	    case dets:open_file(GDBName,[{type,set},{file,GroupFile},{repair,true}]) of
 		{ok, GDB} ->
 		    NDD1 = lists:keyreplace(auth_user_file, 1, DirData, 
 					    {auth_user_file, PWDB}),
@@ -59,13 +66,13 @@ store_directory_data(Directory, DirData) ->
 
 %%
 %% Storage format of users in the dets table:
-%% {{UserName, Port, Dir}, Password, UserData}
+%% {{UserName, Addr, Port, Dir}, Password, UserData}
 %%
 
 add_user(DirData, UStruct) ->
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     PWDB = httpd_util:key1search(DirData, auth_user_file),
-    Record = {{UStruct#httpd_user.username, Port, Dir},
+    Record = {{UStruct#httpd_user.username, Addr, Port, Dir},
 	      UStruct#httpd_user.password, UStruct#httpd_user.user_data}, 
     case dets:lookup(PWDB, UStruct#httpd_user.username) of
 	[Record] ->
@@ -76,9 +83,9 @@ add_user(DirData, UStruct) ->
     end.
 
 get_user(DirData, UserName) ->
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     PWDB = httpd_util:key1search(DirData, auth_user_file),
-    User = {UserName, Port, Dir},
+    User = {UserName, Addr, Port, Dir},
     case dets:lookup(PWDB, User) of
 	[{User, Password, UserData}] ->
 	    {ok, #httpd_user{username=UserName, password=Password, user_data=UserData}};
@@ -87,20 +94,26 @@ get_user(DirData, UserName) ->
     end.
 
 list_users(DirData) ->
-    {Port, Dir} = lookup_common(DirData),
+    ?DEBUG("list_users -> ~n"
+	   "     DirData: ~p", [DirData]),
+    {Addr, Port, Dir} = lookup_common(DirData),
     PWDB = httpd_util:key1search(DirData, auth_user_file),
-    case dets:traverse(PWDB, fun(X) -> {continue, X} end) of      %% SOOOO Ugly !
+    case dets:traverse(PWDB, fun(X) -> {continue, X} end) of    %% SOOOO Ugly !
 	Records when list(Records) ->
-	    {ok, [UserName || {{UserName, AnyPort, AnyDir}, Password, _Data} <- Records,
-			      AnyDir == Dir, AnyPort == Port]};
-	_ ->
+	    ?DEBUG("list_users -> ~n"
+		   "     Records: ~p", [Records]),
+	    {ok, [UserName || {{UserName, AnyAddr, AnyPort, AnyDir}, Password, _Data} <- Records,
+			      AnyAddr == Addr, AnyPort == Port, AnyDir == Dir]};
+	O ->
+	    ?DEBUG("list_users -> ~n"
+		   "     O: ~p", [O]),
 	    {ok, []}
     end.
 
 delete_user(DirData, UserName) ->
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     PWDB = httpd_util:key1search(DirData, auth_user_file),
-    User = {UserName, Port, Dir},
+    User = {UserName, Addr, Port, Dir},
     case dets:lookup(PWDB, User) of
 	[{User, SomePassword, UserData}] ->
 	    dets:delete(PWDB, User),
@@ -116,9 +129,9 @@ delete_user(DirData, UserName) ->
 %% {Group, UserList} where UserList is a list of strings.
 %%
 add_group_member(DirData, GroupName, UserName) ->
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     GDB = httpd_util:key1search(DirData, auth_group_file),
-    Group = {GroupName, Port, Dir},
+    Group = {GroupName, Addr, Port, Dir},
     case dets:lookup(GDB, Group) of
 	[{Group, Users}] ->
 	    case lists:member(UserName, Users) of
@@ -136,9 +149,9 @@ add_group_member(DirData, GroupName, UserName) ->
     end.
 
 list_group_members(DirData, GroupName) ->
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     GDB = httpd_util:key1search(DirData, auth_group_file),
-    Group = {GroupName, Port, Dir},
+    Group = {GroupName, Addr, Port, Dir},
     case dets:lookup(GDB, Group) of
 	[{Group, Users}] ->
 	    {ok, Users};
@@ -147,23 +160,23 @@ list_group_members(DirData, GroupName) ->
     end.
 
 list_groups(DirData) ->
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     GDB  = httpd_util:key1search(DirData, auth_group_file),
     case dets:match(GDB, {'$1', '_'}) of
 	[] ->
 	    {ok, []};
 	List when list(List) ->
 	    Groups = lists:flatten(List),
-	    {ok, [GroupName || {GroupName, AnyPort, AnyDir} <- Groups,
-			   AnyPort == Port, AnyDir == Dir]};
+	    {ok, [GroupName || {GroupName, AnyAddr, AnyPort, AnyDir} <- Groups,
+			   AnyAddr == Addr, AnyPort == Port, AnyDir == Dir]};
 	_ ->
 	    {ok, []}
     end.
 
 delete_group_member(DirData, GroupName, UserName) ->
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     GDB = httpd_util:key1search(DirData, auth_group_file),
-    Group = {GroupName, Port, Dir},
+    Group = {GroupName, Addr, Port, Dir},
     case dets:lookup(GDB, GroupName) of
 	[{Group, Users}] ->
 	    case lists:member(UserName, Users) of
@@ -180,9 +193,9 @@ delete_group_member(DirData, GroupName, UserName) ->
     end.
 
 delete_group(DirData, GroupName) ->
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     GDB = httpd_util:key1search(DirData, auth_group_file),
-    Group = {GroupName, Port, Dir},
+    Group = {GroupName, Addr, Port, Dir},
     case dets:lookup(GDB, Group) of
 	[{Group, Users}] ->
 	    dets:delete(GDB, Group),
@@ -192,9 +205,10 @@ delete_group(DirData, GroupName) ->
     end.
 
 lookup_common(DirData) ->
-    Dir = httpd_util:key1search(DirData, path),
+    Dir  = httpd_util:key1search(DirData, path),
     Port = httpd_util:key1search(DirData, port),
-    {Port, Dir}.
+    Addr = httpd_util:key1search(DirData, bind_address),
+    {Addr, Port, Dir}.
 
 %% remove/1
 %%

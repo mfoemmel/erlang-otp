@@ -105,7 +105,7 @@ describe({ObjType, ObjID}) ?tcheck(ir_EnumDef, ObjType) ->
 
 move({ObjType, ObjID}, New_container, New_name, New_version)
     ?tcheck(ir_EnumDef, ObjType) ->
-    orber_ifr_contained:move(ObjType,ObjID,New_container,New_name,New_version).
+    orber_ifr_contained:move({ObjType,ObjID},New_container,New_name,New_version).
 
 %%%----------------------------------------------------------------------
 %%%  Interfaces inherited from IDLType

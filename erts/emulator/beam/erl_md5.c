@@ -34,6 +34,7 @@
 #include "erl_process.h"
 #include "error.h"
 #include "bif.h"
+#include "erl_binary.h"
 
 typedef unsigned UINT4;		/* Should be 32 bits. */
 typedef void *POINTER;
@@ -130,8 +131,8 @@ BIF_RETTYPE
 md5_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 bin;
-    ProcBin *bp;
+    Eterm bin;
+    byte* bytes;
 
     MD5_CTX context;
     MD5Init(&context);
@@ -139,8 +140,8 @@ BIF_ADECL_1
 	BIF_ERROR(BIF_P, BADARG);
     }
     bin = new_binary(BIF_P, (byte *)NULL, 16);
-    bp = (ProcBin *) ptr_val(bin);
-    MD5Final(bp->bytes, &context);
+    GET_BINARY_BYTES(bin, bytes);
+    MD5Final(bytes, &context);
     BIF_RET(bin);
 }
 
@@ -149,11 +150,11 @@ md5_init_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
     Eterm bin;
-    ProcBin *bp;
+    byte* bytes;
 
     bin = new_binary(BIF_P, (byte *)NULL, sizeof(MD5_CTX));
-    bp = (ProcBin *) ptr_val(bin);
-    MD5Init((MD5_CTX *)bp->bytes);
+    GET_BINARY_BYTES(bin, bytes);
+    MD5Init((MD5_CTX *)bytes);
     BIF_RET(bin);
 }
 
@@ -161,21 +162,22 @@ BIF_RETTYPE
 md5_update_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    ProcBin* old_context;
-    ProcBin* new_context;
+    byte* old_context;
+    byte* new_context;
     Eterm bin;
 
-    if (!is_binary(BIF_ARG_1) || thing_subtag(*ptr_val(BIF_ARG_1)) == FUN_SUBTAG) {
+    if (!is_binary(BIF_ARG_1)) {
     error:
 	BIF_ERROR(BIF_P, BADARG);
     }
-    old_context = (ProcBin*) ptr_val(BIF_ARG_1);
-    if (old_context->size != sizeof(MD5_CTX)) {
+    GET_BINARY_BYTES(BIF_ARG_1, old_context);
+    
+    if (binary_size(BIF_ARG_1) != sizeof(MD5_CTX)) {
 	goto error;
     }
-    bin = new_binary(BIF_P, (byte *)old_context->bytes, sizeof(MD5_CTX));
-    new_context = (ProcBin *) ptr_val(bin);
-    if (!update((MD5_CTX *)new_context->bytes, BIF_ARG_2)) {
+    bin = new_binary(BIF_P, old_context, sizeof(MD5_CTX));
+    GET_BINARY_BYTES(bin, new_context);
+    if (!update((MD5_CTX *)new_context, BIF_ARG_2)) {
 	goto error;
     }
     BIF_RET(bin);
@@ -185,23 +187,23 @@ BIF_RETTYPE
 md5_final_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 bin;
-    ProcBin *context;
-    ProcBin *result;
+    Eterm bin;
+    byte* context;
+    byte* result;
     MD5_CTX ctx_copy;
 
-    if (!is_binary(BIF_ARG_1) || thing_subtag(*ptr_val(BIF_ARG_1)) == FUN_SUBTAG) {
+    if (!is_binary(BIF_ARG_1)) {
     error:
 	BIF_ERROR(BIF_P, BADARG);
     }
-    context = (ProcBin*) ptr_val(BIF_ARG_1);
-    if (context->size != sizeof(MD5_CTX)) {
+    GET_BINARY_BYTES(BIF_ARG_1, context);
+    if (binary_size(BIF_ARG_1) != sizeof(MD5_CTX)) {
 	goto error;
     }
     bin = new_binary(BIF_P, (byte *)NULL, 16);
-    result = (ProcBin *) ptr_val(bin);
-    memcpy(&ctx_copy, context->bytes, sizeof(MD5_CTX));
-    MD5Final(result->bytes, &ctx_copy);
+    GET_BINARY_BYTES(bin, result);
+    memcpy(&ctx_copy, context, sizeof(MD5_CTX));
+    MD5Final(result, &ctx_copy);
     BIF_RET(bin);
 }
 
@@ -210,20 +212,20 @@ update(MD5_CTX* context, Eterm obj)
 {
     unsigned char buf[1024];
 
-    ErlStack s;
+    DECLARE_ESTACK(s);
     Eterm* objp;
-    ProcBin *pb;
     int csize  = 0;
     char* cptr = buf;
+    byte* bytes;
 
-    INIT_ESTACK(s);
     goto L_jump_start;		/* Avoid push */
 
-    while((obj = ESTACK_POP(s))) {
+    while (!ESTACK_ISEMPTY(s)) {
+	obj = ESTACK_POP(s);
     L_jump_start:
 	if (is_list(obj)) {
 	L_iter_list:
-	    objp = ptr_val(obj);
+	    objp = list_val(obj);
 	    obj = CAR(objp);
 	    if (is_byte(obj)) {
 		if (csize >= sizeof(buf)) {
@@ -235,16 +237,13 @@ update(MD5_CTX* context, Eterm obj)
 		*cptr++ = unsigned_val(obj);
 		csize++;
 	    } else if (is_binary(obj)) {
-		if (thing_subtag(*ptr_val(obj)) == FUN_SUBTAG) {
-		    goto L_type_error;
-		}
 		if (csize != 0) {
 		    MD5Update(context, buf, csize);
 		    cptr = buf;
 		    csize = 0;
 		}
-		pb = (ProcBin*) ptr_val(obj);
-		MD5Update(context, pb->bytes, pb->size);
+		GET_BINARY_BYTES(obj, bytes);
+		MD5Update(context, bytes, binary_size(obj));
 	    } else if (is_list(obj)) {
 		ESTACK_PUSH(s, CDR(objp));
 		goto L_iter_list; /* on head */
@@ -256,30 +255,24 @@ update(MD5_CTX* context, Eterm obj)
 	    if (is_list(obj)) {
 		goto L_iter_list; /* on tail */
 	    } else if (is_binary(obj)) {
-		if (thing_subtag(*ptr_val(obj)) == FUN_SUBTAG) {
-		    goto L_type_error;
-		}
 		if (csize != 0) {
 		    MD5Update(context, buf, csize);
 		    cptr = buf;
 		    csize = 0;
 		}
-		pb = (ProcBin*) ptr_val(obj);
-		MD5Update(context, pb->bytes, pb->size);
+		GET_BINARY_BYTES(obj, bytes);
+		MD5Update(context, bytes, binary_size(obj));
 	    } else if (!is_nil(obj)) {
 		goto L_type_error;
 	    }
 	} else if (is_binary(obj)) {
-	    if (thing_subtag(*ptr_val(obj)) == FUN_SUBTAG) {
-		goto L_type_error;
-	    }
 	    if (csize != 0) {
 		MD5Update(context, buf, csize);
 		cptr = buf;
 		csize = 0;
 	    }
-	    pb = (ProcBin*) ptr_val(obj);
-	    MD5Update(context, pb->bytes, pb->size);
+	    GET_BINARY_BYTES(obj, bytes);
+	    MD5Update(context, bytes, binary_size(obj));
 	} else if (!is_nil(obj)) {
 	L_type_error:
 	    DESTROY_ESTACK(s);

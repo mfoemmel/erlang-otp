@@ -44,6 +44,8 @@
 #define NEW_CACHE         'N'
 #define CACHED_ATOM       'C'
 
+#define COMPRESSED        'P'
+
 #define VERSION_MAGIC 131   /* 130 in erlang 4.2 */
                 /* Increment this when changing the external format. */
                 /* ON the other hand, don't change the external format */

@@ -337,6 +337,10 @@ scan1([$"|Cs0], Toks, Pos) ->				%String
     {S,Cs1,Pos1} = scan_string(Cs0, $", Pos),
     scan1(Cs1, [{string,Pos,S}|Toks], Pos1);
 %% Punctuation characters and operators, first recognise multiples.
+scan1([$<,$<|Cs], Toks, Pos) ->
+    scan1(Cs, [{'<<',Pos}|Toks], Pos);
+scan1([$>,$>|Cs], Toks, Pos) ->
+    scan1(Cs, [{'>>',Pos}|Toks], Pos);
 scan1([$>,$=|Cs], Toks, Pos) ->
     scan1(Cs, [{'>=',Pos}|Toks], Pos);
 scan1([$<,$-|Cs], Toks, Pos) ->

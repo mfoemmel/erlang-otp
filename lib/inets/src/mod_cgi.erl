@@ -25,6 +25,7 @@
 %% do
 
 do(Info) ->
+    ?DEBUG("do -> entry",[]),
     case httpd_util:key1search(Info#mod.data,status) of
 	%% A status code has been generated!
 	{StatusCode,PhraseArgs,Reason} ->
@@ -67,12 +68,17 @@ do(Info) ->
 							     Info#mod.entity_body}}
 					    end,
 					    proxy(Info,Port);
-					_ ->
-					    {proceed,[{status,{404,Info#mod.request_uri,
-							       ?NICE("You don't have permission to execute "++Info#mod.request_uri++" on this server")}}|
-						      Info#mod.data]}
+					O ->
+					    ?LOG("Failed exec request ~p: ~p",
+						 [Info#mod.request_uri,O]),
+					    {proceed,
+					     [{status,
+					       {500,Info#mod.request_uri,
+						?NICE("Failure when attempting to execute "++Info#mod.request_uri++reason(O))}}|
+					      Info#mod.data]}
 				    end;
 				false ->
+				    ?LOG("script ~s not executable",[Script]),
 				    {proceed,[{status,{404,Info#mod.request_uri,
 						       ?NICE("You don't have permission to execute "++Info#mod.request_uri++" on this server")}}|
 					      Info#mod.data]}
@@ -87,15 +93,106 @@ do(Info) ->
     end.
 
 
+%% is_executable(File) ->
+%%    ?DEBUG("is_executable -> entry with~n"
+%%	   "   File: ~s",[File]),
+%%    Dir      = filename:dirname(File),
+%%    FileName = filename:basename(File),
+%%    is_executable(FileName,Dir).
+%%
+%% is_executable(FileName,Dir) ->
+%%    ?DEBUG("is_executable -> entry with~n"
+%%	   "   Dir:      ~s~n"
+%%	   "   FileName: ~s",[Dir,FileName]),
+%%    case os:find_executable(FileName, Dir) of
+%%	false ->
+%%	    false;
+%%	_ ->
+%%	    true
+%%    end.
+
+
+%% -------------------------
+%% Start temporary (hopefully) fix for win32
+%% OTP-3627
+%%
+
 is_executable(File) ->
-    Dir = filename:dirname(File),
+    Dir      = filename:dirname(File),
     FileName = filename:basename(File),
-    case os:find_executable(FileName, Dir) of
+    case os:type() of
+	{win32,_} ->
+	    is_win32_executable(Dir,FileName);
+	_ ->
+	    is_other_executable(Dir,FileName) 
+    end.
+
+
+is_win32_executable(D,F) ->
+    case ends_with(F,[".bat",".exe",".com"]) of
+	false ->
+	    %% This is why we cant use 'os:find_executable' directly.
+	    %% It assumes that executable files is given without extension
+	    case os:find_executable(F,D) of
+		false ->
+		    false;
+		_ ->
+		    true
+	    end;
+	true ->
+	    case file:read_file_info(D ++ "/" ++ F) of
+		{ok,_} ->
+		    true;
+		_ ->
+		    false
+	    end
+    end.
+	    
+
+is_other_executable(D,F) ->
+    case os:find_executable(F,D) of
 	false ->
 	    false;
 	_ ->
 	    true
     end.
+
+
+ends_with(File,[]) ->
+    false;
+ends_with(File,[Ext|Rest]) ->
+    case ends_with1(File,Ext) of
+	true ->
+	    true;
+	false ->
+	    ends_with(File,Rest)
+    end.
+    
+ends_with1(S,E) when length(S) >= length(E) ->
+    case to_lower(string:right(S,length(E))) of
+	E ->
+	    true;
+	_ ->
+	    false
+    end;
+ends_with1(_S,_E) ->
+    false.
+    
+
+to_lower(S)       -> to_lower(S,[]).
+
+to_lower([],L)    -> lists:reverse(L);
+to_lower([H|T],L) -> to_lower(T,[to_lower1(H)|L]).
+
+to_lower1(C) when C >= $A, C =< $Z ->
+    C + ($a - $A);
+to_lower1(C) ->
+    C.
+
+%%
+%% End fix
+%% ---------------------------------
+    
 
 env(VarName, Value) ->
     {VarName, Value}.
@@ -293,3 +390,13 @@ extract_status_code([[$S,$t,$a,$t,$u,$s,$:,$ |CodeAndReason]|_]) ->
   end;
 extract_status_code([_|Rest]) ->
   extract_status_code(Rest).
+
+
+%% Convert error to printable string
+%%
+reason({error,emfile})     -> ": To many open files";
+reason({error,{enfile,_}}) -> ": File/port table overflow";
+reason({error,enomem})     -> ": Not enough memory";
+reason({error,eagain})     -> ": No more available OS processes";
+reason(_)                  -> "".
+

@@ -138,7 +138,7 @@ perform_dump(InitBy, Regulator) ->
  		{'EXIT', {Desc, Reason}} ->
 		    case mnesia_monitor:get_env(auto_repair) of
 			true ->
-			    mnesia_lib:error(Desc, Reason),
+			    mnesia_lib:important(Desc, Reason),
 			    %% Ignore rest of the log
 			    mnesia_log:confirm_log_dump(Diff);
 			false -> 
@@ -157,7 +157,8 @@ scan_decisions(Fname, InitBy, Regulator) ->
 	true ->
 	    Header = mnesia_log:trans_log_header(),
 	    Name = previous_log,
-	    mnesia_log:open_log(Name, Header, Fname, Exists),
+	    mnesia_log:open_log(Name, Header, Fname, Exists,
+				mnesia_monitor:get_env(auto_repair), read_only),
 	    Cont = start,
 	    Res = (catch do_perform_dump(Cont, false, InitBy, Regulator, undefined)),
 	    mnesia_log:close_log(Name),
@@ -508,12 +509,7 @@ insert_op(Tid, _, {op, create_table, TabDef}, InPlace, InitBy) ->
 			true ->
 			    ignore;
 			false ->
-			    case Active of
-				[SomeNode | _] ->
-				    mnesia_lib:set({Tab, where_to_read}, SomeNode);
-				[] ->
-				    ignore
-			    end
+			    mnesia_lib:set_remote_where_to_read(Tab)
 		    end;
 		_ ->
 		    case Cs#cstruct.local_content of

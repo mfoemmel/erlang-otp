@@ -16,8 +16,11 @@
 %%     $Id$
 %%
 -module(httpd_conf).
--export([load/1, load/2, store/1, store/2, remove_all/1, remove/1, is_directory/1,
-	 is_file/1, make_integer/1, clean/1, custom_clean/3, check_enum/2]).
+-export([load/1, load/2, store/1, store/2,
+	 remove_all/1, remove/1,
+	 is_directory/1, is_file/1, 
+	 make_integer/1, clean/1, custom_clean/3, check_enum/2]).
+
 
 %% The configuration data is handled in three (3) phases:
 %% 1. Parse the config file and put all directives into a key-vale
@@ -36,6 +39,7 @@
 %% load
 
 load(ConfigFile) ->
+    ?CDEBUG("load -> ConfigFile: ~p",[ConfigFile]),
     case read_config_file(ConfigFile) of
 	{ok, Config} ->
 	    case bootstrap(Config) of
@@ -59,6 +63,7 @@ bootstrap([Line|Config]) ->
 		ok ->
 		    {ok, TheMods};
 		{error, Reason} ->
+		    ?ERROR("bootstrap -> : validation failed: ~p",[Reason]),
 		    {error, Reason}
 	    end;
 	_ ->
@@ -139,7 +144,7 @@ load_config(Config, Modules) ->
 
 
 load_config([], _Modules, _Contexts, ConfigList) ->
-    case a_must(ConfigList, [server_name, port, server_root, document_root]) of
+    case a_must(ConfigList, [server_name,port,server_root,document_root]) of
 	ok ->
 	    {ok, ConfigList};
 	{missing, Directive} ->
@@ -148,39 +153,71 @@ load_config([], _Modules, _Contexts, ConfigList) ->
     end;
 
 load_config([Line|Config], Modules, Contexts, ConfigList) ->
+    ?CDEBUG("load_config -> Line: ~p",[Line]),
     case load_traverse(Line, Contexts, Modules, [], ConfigList, no) of
 	{ok, NewContexts, NewConfigList} ->
 	    load_config(Config, Modules, NewContexts, NewConfigList);
 	{error, Reason} -> 
+	    ?ERROR("load_config -> traverse failed: ~p",[Reason]),
 	    {error, Reason}
     end.
 
 
 load_traverse(Line, [], [], NewContexts, ConfigList, no) ->
+    ?CDEBUG("load_traverse/no -> ~n"
+	    "     Line:        ~p~n"
+	    "     NewContexts: ~p~n"
+	    "     ConfigList:  ~p",
+	    [Line,NewContexts,ConfigList]),
     {error, ?NICE("Configuration directive not recognized: "++Line)};
 load_traverse(Line, [], [], NewContexts, ConfigList, yes) ->
+    ?CDEBUG("load_traverse/yes -> ~n"
+	    "     Line:        ~p~n"
+	    "     NewContexts: ~p~n"
+	    "     ConfigList:  ~p",
+	    [Line,NewContexts,ConfigList]),
     {ok, lists:reverse(NewContexts), ConfigList};
 load_traverse(Line, [Context|Contexts], [Module|Modules], NewContexts, ConfigList, State) ->
+    ?CDEBUG("load_traverse/~p -> ~n"
+	    "     Line:        ~p~n"
+	    "     Module:      ~p~n"
+	    "     Context:     ~p~n"
+	    "     Contexts:    ~p~n"
+	    "     NewContexts: ~p",
+	    [State,Line,Module,Context,Contexts,NewContexts]),
     case is_exported(Module, {load, 2}) of
 	true ->
+	    ?CDEBUG("load_traverse -> ~p:load/2 exported",[Module]),
 	    case catch apply(Module, load, [Line, Context]) of
 		{'EXIT', {function_clause, _}} ->
+		    ?CDEBUG("load_traverse -> exit: function_clause",[]),
 		    load_traverse(Line, Contexts, Modules, [Context|NewContexts], ConfigList, State);
 		{'EXIT', Reason} ->
+		    ?CDEBUG("load_traverse -> exit: ~p",[Reason]),
 		    error_logger:error_report({'EXIT', Reason}),
 		    load_traverse(Line, Contexts, Modules, [Context|NewContexts], ConfigList, State);
 		{ok, NewContext} ->
+		    ?CDEBUG("load_traverse -> ~n"
+			    "     NewContext: ~p",[NewContext]),
 		    load_traverse(Line, Contexts, Modules, [NewContext|NewContexts], ConfigList,yes);
 		{ok, NewContext, ConfigEntry} when tuple(ConfigEntry) ->
+		    ?CDEBUG("load_traverse (tuple) -> ~n"
+			    "     NewContext:  ~p~n"
+			    "     ConfigEntry: ~p",[NewContext,ConfigEntry]),
 		    load_traverse(Line, Contexts, Modules, [NewContext|NewContexts],
 				  [ConfigEntry|ConfigList], yes);
 		{ok, NewContext, ConfigEntry} when list(ConfigEntry) ->
+		    ?CDEBUG("load_traverse (list) -> ~n"
+			    "     NewContext:  ~p~n"
+			    "     ConfigEntry: ~p",[NewContext,ConfigEntry]),
 		    load_traverse(Line, Contexts, Modules, [NewContext|NewContexts],
 				  lists:append(ConfigEntry, ConfigList), yes);
 		{error, Reason} ->
+		    ?CDEBUG("load_traverse -> error: ~p",[Reason]),
 		    {error, Reason}
 	    end;
 	false ->
+	    ?CDEBUG("load_traverse -> ~p:load/2 not exported",[Module]),
 	    load_traverse(Line, Contexts, Modules, [Context|NewContexts],
 			  ConfigList,yes)
     end.
@@ -205,12 +242,15 @@ load([$P,$o,$r,$t,$ |Port], []) ->
 	    {error, ?NICE(clean(Port)++" is an invalid Port")}
     end;
 load([$B,$i,$n,$d,$A,$d,$d,$r,$e,$s,$s,$ |Address], []) ->
+    ?CDEBUG("load -> Address:  ~p",[Address]),
     case clean(Address) of
 	"*" ->
 	    {ok, [], {bind_address,any}};
 	CAddress ->
-	    case inet:getaddr(CAddress) of
+	    ?CDEBUG("load -> CAddress:  ~p",[CAddress]),
+	    case inet:getaddr(CAddress,inet) of
 		{ok, IPAddr} ->
+		    ?CDEBUG("load -> IPAddr:  ~p",[IPAddr]),
 		    {ok, [], {bind_address,IPAddr}};
 		{error, _} ->
 		    {error, ?NICE(CAddress++" is an invalid address")}
@@ -238,13 +278,13 @@ load([$S,$e,$r,$v,$e,$r,$A,$d,$m,$i,$n,$ |ServerAdmin], []) ->
 load([$S,$e,$r,$v,$e,$r,$R,$o,$o,$t,$ |ServerRoot], []) ->
     case is_directory(clean(ServerRoot)) of
 	{ok, Directory} ->
-      case load_mime_types(clean(ServerRoot)) of
-	  {ok, MimeTypesList} ->
-	      {ok, [], [{server_root,string:strip(Directory,right,$/)},
-			{mime_types,MimeTypesList}]};
-	  {error, Reason} ->
-	      {error, Reason}
-      end;
+	    case load_mime_types(clean(ServerRoot)) of
+		{ok, MimeTypesList} ->
+		    {ok, [], [{server_root,string:strip(Directory,right,$/)},
+			      {mime_types,MimeTypesList}]};
+		{error, Reason} ->
+		    {error, Reason}
+	    end;
 	{error, _} ->
 	    {error, ?NICE(clean(ServerRoot)++" is an invalid ServerRoot")}
     end;
@@ -342,23 +382,34 @@ suffixes(MimeType,[Suffix|Rest]) ->
 store(ConfigList) ->
     Modules = httpd_util:key1search(ConfigList, modules, []),
     Port = httpd_util:key1search(ConfigList, port),
-    Name = list_to_atom(lists:flatten(io_lib:format("httpd_conf~w",[Port]))),
+    Addr = httpd_util:key1search(ConfigList,bind_address),
+    Name = httpd_util:make_name("httpd_conf",Addr,Port),
+    ?CDEBUG("store -> Name = ~p",[Name]),
     ConfigDB = ets:new(Name, [named_table, bag, protected]),
+    ?CDEBUG("store -> ConfigDB = ~p",[ConfigDB]),
     store(ConfigDB, ConfigList, lists:append(Modules,[?MODULE]),ConfigList).
 
 store(ConfigDB, ConfigList, Modules,[]) ->
+    ?CDEBUG("store -> done",[]),
     {ok, ConfigDB};
 store(ConfigDB, ConfigList, Modules, [ConfigListEntry|Rest]) ->
+    ?CDEBUG("store -> ~n"
+	    "      ConfigListEntry: ~p",[ConfigListEntry]),
     case store_traverse(ConfigListEntry,ConfigList,Modules) of
 	{ok, ConfigDBEntry} when tuple(ConfigDBEntry) ->
+	    ?CDEBUG("store -> ~n"
+		    "      ConfigDBEntry(tuple): ~p",[ConfigDBEntry]),
 	    ets:insert(ConfigDB,ConfigDBEntry),
 	    store(ConfigDB,ConfigList,Modules,Rest);
 	{ok, ConfigDBEntry} when list(ConfigDBEntry) ->
+	    ?CDEBUG("store -> ~n"
+		    "      ConfigDBEntry(list): ~p",[ConfigDBEntry]),
 	    lists:foreach(fun(Entry) ->
 				  ets:insert(ConfigDB,Entry)
 			  end,ConfigDBEntry),
 	    store(ConfigDB,ConfigList,Modules,Rest);
 	{error, Reason} ->
+	    ?ERROR("store -> error: ~p",[Reason]),
 	    {error,Reason}
     end.
 
@@ -367,13 +418,18 @@ store_traverse(ConfigListEntry,ConfigList,[]) ->
 store_traverse(ConfigListEntry, ConfigList, [Module|Rest]) ->
     case is_exported(Module, {store, 2}) of
 	true ->
+	    ?CDEBUG("store_traverse -> call ~p:store/2",[Module]),
 	    case catch apply(Module,store,[ConfigListEntry, ConfigList]) of
 		{'EXIT',{function_clause,_}} ->
+		    ?CDEBUG("store_traverse -> exit: function_clause",[]),
 		    store_traverse(ConfigListEntry,ConfigList,Rest);
 		{'EXIT',Reason} ->
+		    ?ERROR("store_traverse -> exit: ~p",[Reason]),
 		    error_logger:error_report({'EXIT',Reason}),
 		    store_traverse(ConfigListEntry,ConfigList,Rest);
 		Result ->
+		    ?CDEBUG("store_traverse -> ~n"
+			    "      Result: ~p",[Result]),
 		    Result
 	    end;
 	false ->
@@ -381,22 +437,37 @@ store_traverse(ConfigListEntry, ConfigList, [Module|Rest]) ->
     end.
 
 store({mime_types,MimeTypesList},ConfigList) ->
-    {ok, MimeTypesDB}=store_mime_types(MimeTypesList),
+    Port = httpd_util:key1search(ConfigList, port),
+    Addr = httpd_util:key1search(ConfigList,bind_address),
+    Name = httpd_util:make_name("httpd_mime",Addr,Port),
+    ?CDEBUG("store(mime_types) -> Name: ~p",[Name]),
+    {ok, MimeTypesDB} = store_mime_types(Name,MimeTypesList),
+    ?CDEBUG("store(mime_types) -> ~n"
+	    "     MimeTypesDB:      ~p~n"
+	    "     MimeTypesDB info: ~p",
+	    [MimeTypesDB,ets:info(MimeTypesDB)]),
     {ok, {mime_types,MimeTypesDB}};
 store(ConfigListEntry,ConfigList) ->
+    ?CDEBUG("store/2 -> ~n"
+	    "        ConfigListEntry: ~p~n"
+	    "        ConfigList:      ~p",
+	    [ConfigListEntry,ConfigList]),
     {ok, ConfigListEntry}.
 
 
 %% store_mime_types
-store_mime_types(MimeTypesList) ->
-    MimeTypesDB = ets:new(httpd, [set, protected]),
-    store_mime_types(MimeTypesDB, MimeTypesList).
+store_mime_types(Name,MimeTypesList) ->
+    ?CDEBUG("store_mime_types -> Name: ~p",[Name]),
+    MimeTypesDB = ets:new(Name, [set, protected]),
+    ?CDEBUG("store_mime_types -> MimeTypesDB: ~p",[MimeTypesDB]),
+    store_mime_types1(MimeTypesDB, MimeTypesList).
 
-store_mime_types(MimeTypesDB,[]) ->
+store_mime_types1(MimeTypesDB,[]) ->
     {ok, MimeTypesDB};
-store_mime_types(MimeTypesDB,[Type|Rest]) ->
+store_mime_types1(MimeTypesDB,[Type|Rest]) ->
+    ?CDEBUG("store_mime_types1 -> Type: ~p",[Type]),
     ets:insert(MimeTypesDB, Type),
-    store_mime_types(MimeTypesDB, Rest).
+    store_mime_types1(MimeTypesDB, Rest).
 
 
 %%
@@ -429,6 +500,7 @@ remove(ConfigDB) ->
     ets:delete(ConfigDB),
     ok.
 
+
 %%
 %% Utility functions
 %%
@@ -436,30 +508,39 @@ remove(ConfigDB) ->
 %% is_directory
 
 is_directory(Directory) ->
-    case file:file_info(Directory) of
-	{ok,{Size,directory,read,AccessTime,ModifyTime,UnUsed1,UnUsed2}} ->
-	    {ok,Directory};
-	{ok,{Size,directory,read_write,AccessTime,ModifyTime,UnUsed1,UnUsed2}} ->
-	    {ok,Directory};
+    case file:read_file_info(Directory) of
 	{ok,FileInfo} ->
-	    {error,FileInfo};
+	    #file_info{type = Type, access = Access} = FileInfo,
+	    is_directory(Type,Access,FileInfo,Directory);
 	{error,Reason} ->
 	    {error,Reason}
     end.
+
+is_directory(directory,read,_FileInfo,Directory) ->
+    {ok,Directory};
+is_directory(directory,read_write,_FileInfo,Directory) ->
+    {ok,Directory};
+is_directory(_Type,_Access,FileInfo,_Directory) ->
+    {error,FileInfo}.
+    
 
 %% is_file
 
 is_file(File) ->
-    case file:file_info(File) of
-	{ok,{Size,regular,read,AccessTime,ModifyTime,UnUsed1,UnUsed2}} ->
-	    {ok,File};
-	{ok,{Size,regular,read_write,AccessTime,ModifyTime,UnUsed1,UnUsed2}} ->
-	    {ok,File};
+    case file:read_file_info(File) of
 	{ok,FileInfo} ->
-	    {error,FileInfo};
+	    #file_info{type = Type, access = Access} = FileInfo,
+	    is_file(Type,Access,FileInfo,File);
 	{error,Reason} ->
 	    {error,Reason}
     end.
+
+is_file(regular,read,_FileInfo,File) ->
+    {ok,File};
+is_file(regular,read_write,_FileInfo,File) ->
+    {ok,File};
+is_file(_Type,_Access,FileInfo,_File) ->
+    {error,FileInfo}.
 
 %% make_integer
 
@@ -470,6 +551,7 @@ make_integer(String) ->
 	nomatch ->
 	    {error, nomatch}
     end.
+
 
 %% clean
 

@@ -27,17 +27,13 @@
 -include("SNMP-MPD-MIB.hrl").
 -include("SNMPv2-TM.hrl").
 
+-define(VMODULE,"MPD").
+-include("snmp_verbosity.hrl").
+
 -define(empty_msg_size, 24).
 
 -record(state, {v1, v2c, v3}).
 
-%% Debug macro
--define(pdebug(Format, X), 
-	case get(debug) of 
-	    undefined -> ok;
-	    _ -> io:format(lists:concat(["** SNMP MPD debug: \n   ",
-					 Format, "\n"]), X)
-	end.
 					
 %%%-----------------------------------------------------------------
 %%% This module implemets the Message Processing and Dispatch part of
@@ -112,29 +108,33 @@ process_packet(Packet, TDomain, TAddress, State, LogF) ->
     case catch snmp_pdus:dec_message_only(binary_to_list(Packet)) of
 	#message{version = 'version-1', vsn_hdr = Community, data = Data} 
 	  when State#state.v1 == true ->
-	    ?pdebug("v1, community: ~s", [Community]),
+	    ?vlog("~n   v1, community: ~s", [Community]),
 	    HS = ?empty_msg_size + length(Community),
 	    v1_v2c_proc('version-1', Community, TDomain, TAddress, Data,
 			HS, LogF, Packet);
 	#message{version = 'version-2', vsn_hdr = Community, data = Data}
 	  when State#state.v2c == true ->
-	    ?pdebug("v2c, community: ~s", [Community]),
+	    ?vlog("~n   v2c, community: ~s", [Community]),
 	    HS = ?empty_msg_size + length(Community),
 	    v1_v2c_proc('version-2', Community, TDomain, TAddress, Data,
 			HS, LogF, Packet);
 	#message{version = 'version-3', vsn_hdr = V3Hdr, data = Data}
 	  when State#state.v3 == true ->
-	    ?pdebug("v3, msgFlags: ~p, msgSecModel: ~p",
-		    [V3Hdr#v3_hdr.msgFlags, V3Hdr#v3_hdr.msgSecurityModel]),
+	    ?vlog("~n   v3, msgID: ~p, msgFlags: ~p, msgSecModel: ~p",
+		  [V3Hdr#v3_hdr.msgID,V3Hdr#v3_hdr.msgFlags,
+		   V3Hdr#v3_hdr.msgSecurityModel]),
 	    validate_catch(catch v3_proc(Packet, TDomain, TAddress,
 					 V3Hdr, Data, LogF));
-	{'EXIT', {bad_version, _Vsn}} ->
+	{'EXIT', {bad_version, Vsn}} ->
+	    ?vtrace("exit: bad version: ~p",[Vsn]),
 	    inc(snmpInBadVersions),
 	    {discarded, snmpInBadVersions};
 	{'EXIT', Reason} ->
+	    ?vtrace("exit: ~p",[Reason]),
 	    inc(snmpInASNParseErrs),
 	    {discarded, Reason};
-	_Message ->
+	UnknownMessage ->
+	    ?vtrace("Unknown message: ~n   ~p",[UnknownMessage]),
 	    inc(snmpInBadVersions),
 	    {discarded, snmpInBadVersions}
     end.
@@ -142,7 +142,9 @@ process_packet(Packet, TDomain, TAddress, State, LogF) ->
 discarded_pdu(false) -> ok;
 discarded_pdu(Variable) -> inc(Variable).
 
-validate_catch({'EXIT', Error}) -> exit(Error);
+validate_catch({'EXIT', Error}) -> 
+    ?vlog("exit signal reason: ~p",[Error]),
+    exit(Error);
 validate_catch(Res) -> Res.
     
 
@@ -168,6 +170,7 @@ v1_v2c_proc(Vsn, Community, snmpUDPDomain, {Ip, Udp}, Data, HS, LogF, Packet) ->
 	    %% Make sure that we don't process duplicate SET request
 	    %% twice.  We don't know what could happen in that case.
 	    %% The mgr does, so he has to generate a new SET request.
+	    ?vdebug("PDU type: ~p",[Pdu#pdu.type]),
 	    case Pdu#pdu.type of
 		'set-request' ->
 		    case snmp_note_store:get_note({Ip, ReqId}) of
@@ -187,6 +190,7 @@ v1_v2c_proc(Vsn, Community, snmpUDPDomain, {Ip, Udp}, Data, HS, LogF, Packet) ->
 		    OkRes
 	    end;
 	{'EXIT', Reason} ->
+	    ?vtrace("PDU decode exit: ~p",[Reason]),
 	    inc(snmpInASNParseErrs),
 	    {discarded, Reason};
 	TrapPdu ->
@@ -209,16 +213,29 @@ v3_proc(Packet, TDomain, TAddress, V3Hdr, Data, LogF) ->
     #v3_hdr{msgID = MsgID, msgMaxSize = MMS, msgFlags = MsgFlags,
 	    msgSecurityModel = MsgSecurityModel,
 	    msgSecurityParameters = SecParams, hdr_size = HdrSize} = V3Hdr,
+    ?vdebug("version 3 message header:"
+	    "~n   msgID                 = ~p"
+	    "~n   msgMaxSize            = ~p"
+	    "~n   msgFlags              = ~p"
+	    "~n   msgSecurityModel      = ~p"
+	    "~n   msgSecurityParameters = ~p",
+	    [MsgID,MMS,MsgFlags,MsgSecurityModel,SecParams]),
     %% 7.2.4
     SecModule = get_security_module(MsgSecurityModel),
     %% 7.2.5
     SecLevel = check_sec_level(MsgFlags),
     IsReportable = snmp_misc:is_reportable(MsgFlags),
     %% 7.2.6
+    ?vtrace("~n   SecModule    = ~p"
+	    "~n   SecLevel     = ~p"
+	    "~n   IsReportable = ~p",
+	    [SecModule,SecLevel,IsReportable]),
     SecRes = (catch SecModule:process_incoming_msg(Packet, Data,
 						   SecParams, SecLevel)),
+    ?vtrace("message processing result: ~n\t~p",[SecRes]),
     {SecEngineID, SecName, ScopedPDUBytes, SecData} =
 	check_sec_module_result(SecRes, V3Hdr, Data, IsReportable, LogF),
+    ?vtrace("SecEngineID = ~p, SecName = ~p",[SecEngineID,SecName]),
     %% 7.2.7
     #scopedPdu{contextEngineID = ContextEngineID,
 	       contextName = ContextName,
@@ -239,8 +256,8 @@ v3_proc(Packet, TDomain, TAddress, V3Hdr, Data, LogF) ->
 	true ->
 	    ok
     end,
-    ?pdebug("contextEngineID: \"~s\", context: \"~s\"",
-	    [ContextEngineID, ContextName]),
+    ?vlog("~n   contextEngineID: \"~s\", context: \"~s\"",
+	  [ContextEngineID, ContextName]),
     if
 	SecLevel == 3 -> % encrypted message - log decrypted pdu
 	    log(LogF, PDU#pdu.type, {V3Hdr, ScopedPDUBytes});
@@ -266,6 +283,7 @@ v3_proc(Packet, TDomain, TAddress, V3Hdr, Data, LogF) ->
     TotalLenOctets = snmp_pdus:get_encoded_length(TotMMS - 1),
     PduMMS = TotMMS - TotalLenOctets - 10 - HdrSize - 
 	length(ContextName) - length(ContextEngineID),
+    ?vdebug("PDU type: ~p",[PDU#pdu.type]),
     case PDU#pdu.type of
 	report ->
 	    %% 7.2.11
@@ -286,10 +304,11 @@ v3_proc(Packet, TDomain, TAddress, V3Hdr, Data, LogF) ->
 	Type ->
 	    %% 7.2.13
 	    SnmpEngineID = snmp_framework_mib:get_engine_id(),
+	    ?vtrace("SnmpEngineID = ~p",[SnmpEngineID]),
 	    case SecEngineID of
 		SnmpEngineID ->
-		    %% 4.2.2.1.1 - we don't handle proxys yet => we only handle
-		    %% ContextEngineID to ourselves
+		    %% 4.2.2.1.1 - we don't handle proxys yet => we only 
+		    %% handle ContextEngineID to ourselves
 		    case ContextEngineID of
 			SnmpEngineID ->
 			    %% Uses ACMData that snmp_acm knows of.
@@ -335,7 +354,11 @@ check_sec_level([MsgFlag]) ->
 	    throw({discarded, snmpInvalidMsgs});
 	true ->
 	    SecLevel
-    end.
+    end;
+check_sec_level(Unknown) ->
+    ?vlog("invalid msgFlags: ~p",[Unknown]), 
+    inc(snmpInvalidMsgs),
+    throw({discarded, snmpInvalidMsgs}).
 
 check_sec_module_result(Res, V3Hdr, Data, IsReportable, LogF) ->
     case Res of
@@ -343,9 +366,11 @@ check_sec_module_result(Res, V3Hdr, Data, IsReportable, LogF) ->
 	    X;
 	{error, Reason, []} ->         % case 7.2.6 b
 	    throw({discarded, {securityError, Reason}});
-	{error, Reason, ErrorInfo} when IsReportable == true ->  % case 7.2.6 a
+	{error, Reason, ErrorInfo} when IsReportable == true -> % case 7.2.6 a
+	    ?vtrace("~n\tReason: ~p~n\tErrorInfo: ~p",[Reason,ErrorInfo]),
 	    #v3_hdr{msgID = MsgID, msgSecurityModel = MsgSecModel} = V3Hdr,
-	    case generate_v3_report_msg(MsgID, MsgSecModel, Data,
+	    Pdu = get_scoped_pdu(Data),
+	    case generate_v3_report_msg(MsgID, MsgSecModel, Pdu,
 					ErrorInfo, LogF) of
 		{ok, Report} ->
 		    throw({discarded, {securityError, Reason}, Report});
@@ -358,6 +383,12 @@ check_sec_module_result(Res, V3Hdr, Data, IsReportable, LogF) ->
 	    throw({discarded, {securityError, Else}})
     end.
 
+get_scoped_pdu(D) when list(D) ->
+    (catch snmp_pdus:dec_scoped_pdu(D));
+get_scoped_pdu(D) ->
+    D.
+
+
 %%-----------------------------------------------------------------
 %% Executed when a response or report message is generated.
 %%-----------------------------------------------------------------
@@ -369,25 +400,33 @@ generate_response_msg(Vsn, RePdu, Type, ACMData, LogF) ->
 generate_response_msg(Vsn, RePdu, Type, 
 		      {community, _SecModel, Community, IpUdp},
 		      LogF, _) ->
-    PduBytes = snmp_pdus:enc_pdu(RePdu),
-    Message = #message{version = Vsn, vsn_hdr = Community, data = PduBytes},
-    case catch list_to_binary(snmp_pdus:enc_message_only(Message)) of
-	{'EXIT', Reason} ->
-	    snmp_error:user_err("~p (pdu: ~p, community: ~p)",
-				[Reason, RePdu, Community]),
-	    {discarded, encoding_error};
-	Packet ->
-	    MMS = snmp_framework_mib:get_engine_max_message_size(),
-	    case size(Packet) of
-		Len when Len =< MMS ->
-		    log(LogF, Type, Packet),
-		    inc_snmp_cnt_vars(Type, RePdu),
-		    inc_snmp_out_vars(RePdu),
-		    {ok, Packet};
-		Len ->
-		    too_big(Vsn, RePdu, Community, LogF)
-	    end
-    end;
+	case catch snmp_pdus:enc_pdu(RePdu) of
+	    {'EXIT', Reason} ->
+		snmp_error:user_err("~p (pdu: ~p, community: ~p)",
+				    [Reason, RePdu, Community]),
+		{discarded, Reason};
+	    PduBytes ->
+		Message = #message{version = Vsn, vsn_hdr = Community, 
+				   data = PduBytes},
+		case catch list_to_binary(
+			     snmp_pdus:enc_message_only(Message)) of
+		    {'EXIT', Reason} ->
+			snmp_error:user_err("~p (pdu: ~p, community: ~p)",
+					    [Reason, RePdu, Community]),
+			{discarded, Reason};
+		    Packet ->
+			MMS = snmp_framework_mib:get_engine_max_message_size(),
+			case size(Packet) of
+			    Len when Len =< MMS ->
+				log(LogF, Type, Packet),
+				inc_snmp_cnt_vars(Type, RePdu),
+				inc_snmp_out_vars(RePdu),
+				{ok, Packet};
+			    Len ->
+				too_big(Vsn, RePdu, Community, LogF)
+			end
+		end
+	end;
 generate_response_msg(Vsn, RePdu, Type, 
 		      {v3, MsgID, MsgSecurityModel, SecName, SecLevel,
 		       ContextEngineID, ContextName, SecData},
@@ -396,65 +435,88 @@ generate_response_msg(Vsn, RePdu, Type,
     ScopedPDU = #scopedPdu{contextEngineID = ContextEngineID,
 			   contextName = ContextName,
 			   data = RePdu},
-    ScopedPDUBytes = snmp_pdus:enc_scoped_pdu(ScopedPDU),
-    AgentMS = snmp_framework_mib:get_engine_max_message_size(),
-    V3Hdr = #v3_hdr{msgID = MsgID,
-		    msgMaxSize = AgentMS,
-		    msgFlags = snmp_misc:mk_msg_flags(Type, SecLevel),
-		    msgSecurityModel = MsgSecurityModel},
-    Message = #message{version = Vsn, vsn_hdr = V3Hdr, data = ScopedPDUBytes},
-    %% We know that the security model is valid when we generate a response
-    SecModule = 
-	case MsgSecurityModel of
-	    ?SEC_USM ->
-		snmp_usm
-	end,
-    SecEngineID = snmp_framework_mib:get_engine_id(),
-    case catch SecModule:generate_outgoing_msg(Message, SecEngineID,
-					       SecName, SecData, SecLevel) of
+    case catch snmp_pdus:enc_scoped_pdu(ScopedPDU) of
 	{'EXIT', Reason} ->
-	    snmp_error:config_err("~p (message: ~p)", [Reason, Message]),
+	    snmp_error:user_err("~p (pdu: ~p, contextName: ~p)",
+				[Reason, RePdu, ContextName]),
 	    {discarded, Reason};
-	OutMsg ->
-	    %% Check the packet size.  Send the msg even if it's larger than
-	    %% the mgr can handle - it will be dropped.
-	    %% Just check against the internal size.
-	    %% For GET-BULk responses: we *know* that we're within the
-	    %% right limits, because of the calculation we do when we
-	    %% receive the bulk-request.
-	    Packet = list_to_binary(OutMsg),
-	    case size(Packet) of
-		Len when Len =< AgentMS ->
-		    if
-			SecLevel == 3 -> % encrypted - log decrypted pdu
-			    log(LogF, Type, {V3Hdr, ScopedPDUBytes});
-			true -> % otherwise log the entire msg
-			    log(LogF, Type, Packet)
-		    end,
-		    inc_snmp_cnt_vars(Type, RePdu),
-		    inc_snmp_out_vars(RePdu),
-		    {ok, Packet};
-		Len when N == 2 ->
-		    ?pdebug("Pdu ~p too big, not sent.", [RePdu]),
-		    inc(snmpSilentDrops),
-		    {discarded, tooBig};
-		Len ->
-		    TooBigPdu = RePdu#pdu{error_status = tooBig,
-					  error_index = 0, varbinds = []},
-		    generate_response_msg(Vsn, TooBigPdu, Type, 
-					  {v3, MsgID, MsgSecurityModel,
-					   SecName, SecLevel,
-					   ContextEngineID, ContextName,
-					   SecData}, LogF, N+1)
+	ScopedPDUBytes -> 
+	    AgentMS = snmp_framework_mib:get_engine_max_message_size(),
+	    V3Hdr = #v3_hdr{msgID = MsgID,
+			    msgMaxSize = AgentMS,
+			    msgFlags = snmp_misc:mk_msg_flags(Type, 
+							      SecLevel),
+			    msgSecurityModel = MsgSecurityModel},
+	    Message = #message{version = Vsn, vsn_hdr = V3Hdr, 
+			       data = ScopedPDUBytes},
+	    %% We know that the security model is valid when we
+	    %% generate a response.
+	    SecModule = 
+		case MsgSecurityModel of
+		    ?SEC_USM ->
+			snmp_usm
+		end,
+	    SecEngineID = snmp_framework_mib:get_engine_id(),
+	    case catch SecModule:generate_outgoing_msg(Message, 
+						       SecEngineID,
+						       SecName, SecData, 
+						       SecLevel) of
+		{'EXIT', Reason} ->
+		    snmp_error:config_err("~p (message: ~p)", 
+					  [Reason, Message]),
+		    {discarded, Reason};
+		OutMsg ->
+		    %% Check the packet size.  Send the msg even
+		    %% if it's larger than the mgr can handle - it
+		    %% will be dropped.  Just check against the
+		    %% internal size.  For GET-BULk responses: we
+		    %% *know* that we're within the right limits,
+		    %% because of the calculation we do when we
+		    %% receive the bulk-request.
+		    Packet = list_to_binary(OutMsg),
+		    case size(Packet) of
+			Len when Len =< AgentMS ->
+			    if
+				SecLevel == 3 -> 
+				    %% encrypted - log decrypted pdu
+				    log(LogF, Type, 
+					{V3Hdr, ScopedPDUBytes});
+				true -> 
+				    %% otherwise log the entire msg
+				    log(LogF, Type, Packet)
+			    end,
+			    inc_snmp_cnt_vars(Type, RePdu),
+			    inc_snmp_out_vars(RePdu),
+			    {ok, Packet};
+			Len when N == 2 ->
+			    ?vlog("~n   Pdu ~p too big, not sent.", 
+				  [RePdu]),
+			    inc(snmpSilentDrops),
+			    {discarded, tooBig};
+			Len ->
+			    TooBigPdu = RePdu#pdu{error_status = tooBig,
+						  error_index = 0, 
+						  varbinds = []},
+			    generate_response_msg(Vsn, TooBigPdu, Type, 
+						  {v3, MsgID, 
+						   MsgSecurityModel,
+						   SecName, SecLevel,
+						   ContextEngineID, 
+						   ContextName,
+						   SecData}, LogF, N+1)
+		    end
 	    end
     end.
 
 generate_v3_report_msg(MsgID, MsgSecurityModel, Data, ErrorInfo, LogF) ->
     {Varbind, SecName, Opts} = ErrorInfo,
     ReqId =
-	if record(Data, scopedPdu) -> (Data#scopedPdu.data)#pdu.request_id;
-	   true -> generate_req_id()
+	if record(Data, scopedPdu) -> 
+		(Data#scopedPdu.data)#pdu.request_id;
+	   true -> 
+		0 %% RFC2572, 7.1.3.c.4
 	end,
+    ?vtrace("Report ReqId: ~p",[ReqId]),
     Pdu = #pdu{type = report, request_id = ReqId,
 	       error_status = noError, error_index = 0,
 	       varbinds = [Varbind]},
@@ -471,7 +533,7 @@ generate_v3_report_msg(MsgID, MsgSecurityModel, Data, ErrorInfo, LogF) ->
 
 
 too_big(Vsn, Pdu, Community, LogF) when Pdu#pdu.type == 'get-response' ->
-    ?pdebug("Pdu ~p too big, not sent.", [Pdu]),
+    ?vlog("~n   Pdu ~p too big, not sent.", [Pdu]),
     ErrPdu =
 	if 
 	    Vsn == 'version-1' ->
@@ -484,17 +546,26 @@ too_big(Vsn, Pdu, Community, LogF) when Pdu#pdu.type == 'get-response' ->
 		%% In v2, varbinds should be empty (reasonable!)
 		Pdu#pdu{error_status = tooBig, error_index = 0, varbinds = []}
 	end,
-    PduBytes = snmp_pdus:enc_pdu(ErrPdu),
-    Message = #message{version = Vsn, vsn_hdr = Community, data = PduBytes},
-    case catch snmp_pdus:enc_message_only(Message) of
+
+    case catch snmp_pdus:enc_pdu(ErrPdu) of
 	{'EXIT', Reason} ->
-	    snmp_error:user_err(Reason, []),
+	    snmp_error:user_err("~p (pdu: ~p, community: ~p)", 
+				[Reason, ErrPdu, Community]),
 	    {discarded, Reason};
-	Packet -> 
-	    Bin = list_to_binary(Packet),
-	    log(LogF, Pdu#pdu.type, Bin),
-	    inc_snmp_out_vars(ErrPdu),
-	    {ok, Bin}
+	PduBytes -> 
+	    Message = #message{version = Vsn, vsn_hdr = Community, 
+			       data = PduBytes},
+	    case catch snmp_pdus:enc_message_only(Message) of
+		{'EXIT', Reason} ->
+		    snmp_error:user_err("~p (pdu: ~p, community: ~p)", 
+				[Reason, ErrPdu, Community]),
+		    {discarded, Reason};
+		Packet -> 
+		    Bin = list_to_binary(Packet),
+		    log(LogF, Pdu#pdu.type, Bin),
+		    inc_snmp_out_vars(ErrPdu),
+		    {ok, Bin}
+	    end
     end;
 too_big(Vsn, Pdu, _Community, _LogF) ->
     snmp_error:user_err("Pdu ~p too big, not sent.", [Pdu]),
@@ -514,7 +585,8 @@ generate_msg(Vsn, Pdu, {community, Community}, To) ->
     case catch list_to_binary(snmp_pdus:enc_message(Message)) of
 	{'EXIT', Reason} ->
 	    snmp_error:user_err("~p (pdu: ~p, community: ~p)",
-				[Reason, Pdu, Community]);
+				[Reason, Pdu, Community]),
+	    {discarded, Reason};
 	Packet ->
 	    AgentMax = snmp_framework_mib:get_engine_max_message_size(),
 	    case size(Packet) of
@@ -529,9 +601,15 @@ generate_msg('version-3', Pdu, {v3, ContextEngineID, ContextName}, To) ->
     ScopedPDU = #scopedPdu{contextEngineID = ContextEngineID,
 			   contextName = ContextName,
 			   data = Pdu},
-    ScopedPDUBytes = snmp_pdus:enc_scoped_pdu(ScopedPDU),
-    {ok, mk_v3_packet_list(To, ScopedPDUBytes, Pdu, 
-			   ContextEngineID, ContextName)}.
+    case snmp_pdus:enc_scoped_pdu(ScopedPDU) of
+	{'EXIT', Reason} ->
+	    snmp_error:user_err("~p (pdu: ~p, contextName: ~p)",
+				[Reason, Pdu, ContextName]),
+	    {discarded, Reason};
+	ScopedPDUBytes -> 
+	    {ok, mk_v3_packet_list(To, ScopedPDUBytes, Pdu, 
+			   ContextEngineID, ContextName)}
+    end.
 
 mk_v1_v2_packet_list([{?snmpUDPDomain, [A,B,C,D,U1,U2]} | T],
 		     Packet, Len, Pdu) ->
@@ -581,6 +659,7 @@ mk_v3_packet_list([{{?snmpUDPDomain, [A,B,C,D,U1,U2]},
 			"" % this will trigger error in secmodule
 		end
 	end,
+    ?vdebug("secEngineID: ~p", [SecEngineID]),
     %% 7.1.9b
     case catch SecModule:generate_outgoing_msg(Message, SecEngineID,
 					       SecName, [], SecLevel) of
@@ -589,7 +668,7 @@ mk_v3_packet_list([{{?snmpUDPDomain, [A,B,C,D,U1,U2]},
 	    mk_v3_packet_list(T, ScopedPDUBytes, Pdu, 
 			      ContextEngineID, ContextName);
 	{error, Reason} ->
-	    ?pdebug("~w error ~p\n", [SecModule, Reason]),
+	    ?vlog("~n   ~w error ~p\n", [SecModule, Reason]),
 	    mk_v3_packet_list(T, ScopedPDUBytes, Pdu, 
 			      ContextEngineID, ContextName);
 	Packet ->

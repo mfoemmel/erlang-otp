@@ -17,11 +17,18 @@ Fredrik Tillman and  Mattias Nilsson.
 Per Hedeland did the original port for VxWorks. This port was
 improved by Peter Högfeldt, Patrik Nyblom and Patrik Winroth.
 
+Mikael Pettersson, of the HiPE project, designed and implemented
+the new 2-bit tag scheme.
+
 There are also a lot of people who have contributed smaller (and
 bigger) things to the emulator and runtime system: Per Hedeland,
 Peter Högfeldt, Kenneth Lundin, Fredrik Tillman, Mattias Nilsson,
 Kent Boortz, Markus Torpvret, Jan-Erik Dahlin, Sebastian Strollo
 and perhaps more...
+
+Björn Gustavsson and Arndt Jonasson implemented the bit syntax
+instructions, borrowing some code from the original prototype
+implementation by Tony Rogvall and Claes Wikström.
 
 Open source contributors:
 
@@ -31,4 +38,7 @@ Open source contributors:
   Luke Gorrie <luke@vegetable.org>
   Shawn Pearce <pearcs@rpi.edu>
   Ruslan Shevchenko <Ruslan@Shevchenko.Kiev.UA>
+  Tony Rogvall (@Bluetail): New faster inet_drv
+  Sebastian Strollo (@Bluetail): poll() as alternative to select()
+  Mikael Pettersson (HiPE)
 

@@ -29,6 +29,7 @@
 -export([resolv/1, resolv/2]).
 -export([host_conf_linux/1, host_conf_linux/2]).
 -export([host_conf_freebsd/1, host_conf_freebsd/2]).
+-export([host_conf_bsdos/1, host_conf_bsdos/2]).
 -export([nsswitch_conf/1, nsswitch_conf/2]).
 
 -export([ipv4_address/1, ipv6_address/1]).
@@ -164,6 +165,43 @@ host_conf_freebsd(Fname, File) ->
 	{ok, Ls} -> {ok, [{lookup, Ls}]};
 	Error -> Error
     end.
+
+
+
+%% --------------------------------------------------------------------------
+%%
+%% Parse BSD/OS irs.conf file
+%% find "hosts" only and ignore options.
+%%
+%% Syntax: 
+%%      Map AccessMethod [,AccessMethod] [continue|merge [,merge|,continue]] \n
+%%      # comment
+
+%% --------------------------------------------------------------------------
+host_conf_bsdos(File) ->
+    host_conf_bsdos(noname,File).
+
+host_conf_bsdos(Fname, File) ->
+    Fn = fun(["hosts" | List]) ->
+		 delete_options(split_comma(List));
+	    (_) ->
+		 skip
+	 end,
+    case parse_file(Fname, File, Fn) of
+	{ok, Ls} ->
+	    {ok, [{lookup, lists:append(Ls)}]};
+	Error -> Error
+    end.
+
+delete_options(["continue"|T]) ->
+    delete_options(T);
+delete_options(["merge"|T]) ->
+    delete_options(T);
+delete_options([H|T]) ->
+    [H|delete_options(T)];
+delete_options([]) ->
+    [].
+
 
 %% --------------------------------------------------------------------------
 %%
@@ -368,6 +406,11 @@ domain(_) ->
 
 is_dom1([C | Cs]) when C >= $a, C =< $z -> is_dom_ldh(Cs);
 is_dom1([C | Cs]) when C >= $A, C =< $Z -> is_dom_ldh(Cs);
+is_dom1([C | Cs]) when C >= $0, C =< $9 -> 
+    case is_dom_ldh(Cs) of
+	true  -> is_dom2(string:tokens([C | Cs],"."));
+	false -> false
+    end;
 is_dom1(_) -> false.
 
 is_dom_ldh([C | Cs]) when C >= $a, C =< $z -> is_dom_ldh(Cs);
@@ -380,6 +423,24 @@ is_dom_ldh([$- | Cs]) -> is_dom_ldh(Cs);
 is_dom_ldh([$. | Cs]) -> is_dom1(Cs);
 is_dom_ldh([]) -> true;
 is_dom_ldh(_) -> false.
+
+%%% Check that we don't get a IP-address as a domain name.
+
+-define(L2I(L), (catch list_to_integer(L))).
+
+is_dom2([A,B,C,D]) ->
+    case ?L2I(D) of
+	Di when integer(Di) ->
+	    case {?L2I(A),?L2I(B),?L2I(C)} of
+		{Ai,Bi,Ci} when integer(Ai),integer(Bi),integer(Ci) -> false;
+		_ -> true
+	    end;
+	_ -> true
+    end;
+is_dom2(_) ->
+    true.
+
+
 
 %%
 %% Test ipv4 address or ipv6 address
@@ -544,7 +605,7 @@ ntoa({A,B,C,D,E,F,G,H}) ->
 %% convert to A.B decimal form
 dig_to_dec(0) -> [$0,$.,$0];
 dig_to_dec(X) -> 
-    integer_to_list((X bsl 8) band 16#ff) ++ "." ++
+    integer_to_list((X bsr 8) band 16#ff) ++ "." ++
 	integer_to_list(X band 16#ff).
 
 %% Convert a integer to hex string

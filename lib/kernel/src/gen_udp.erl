@@ -17,11 +17,10 @@
 %%
 -module(gen_udp).
 
-%% Generic UDP module
-
 -export([open/1, open/2, close/1]).
--export([send/4, recv/2, recv/3]).
+-export([send/2, send/4, recv/2, recv/3, connect/3]).
 -export([controlling_process/2]).
+-export([fdopen/2]).
 
 -include("inet_int.hrl").
 
@@ -33,82 +32,78 @@ open(Port, Opts) ->
     {ok,UP} = Mod:getserv(Port),
     Mod:open(Port, Opts).
 
-close(S) when record(S, socket) ->
-    receive 
-	{udp_closed, S} -> ok
-    after 0 ->
-	    inet:close(S)
-    end.
+close(S) ->
+    inet:udp_close(S).
 
-send(S, Address, Port, Packet) when record(S,socket) ->
-    Mod = S#socket.type,
-    case Mod:getaddr(Address) of
-	{ok,IP} ->
-	    case Mod:getserv(Port) of
-		{ok,UP} -> call(S, {sendto, IP, UP, Packet});
+send(S, Address, Port, Packet) when port(S) ->
+    case inet_db:lookup_socket(S) of
+	{ok, Mod} ->
+	    case Mod:getaddr(Address) of
+		{ok,IP} ->
+		    case Mod:getserv(Port) of
+			{ok,UP} -> Mod:send(S, IP, UP, Packet);
+			{error,einval} -> exit(badarg);
+			Error -> Error
+		    end;
 		{error,einval} -> exit(badarg);
 		Error -> Error
 	    end;
-	{error,einval} -> exit(badarg);
-	Error -> Error
+	Error ->
+	    Error
     end.
 
-recv(S,Len) when record(S, socket), integer(Len) ->
-    call(S, {recv, Len, infinity}).
+send(S, Packet) when port(S) ->
+    case inet_db:lookup_socket(S) of
+	{ok, Mod} ->
+	    Mod:send(S, Packet);
+	Error ->
+	    Error
+    end.
 
-recv(S,Len,Time) when record(S, socket),
-		      integer(Len),
-		      integer(Time),
-		      Time >= 0 ->
-    call(S, {recv, Len, Time});
-recv(S,Len,infinity) when record(S, socket), integer(Len) ->
-    call(S, {recv, Len, infinity}).
+recv(S,Len) when port(S), integer(Len) ->
+    case inet_db:lookup_socket(S) of
+	{ok, Mod} ->
+	    Mod:recv(S, Len);
+	Error ->
+	    Error
+    end.
 
-%%
-%% Set controlling process
-%%
-%%
-%% Set controlling process
-%%
-controlling_process(S, NewOwner) when record(S, socket), pid(NewOwner) ->
-    case call(S, {set_owner, NewOwner}) of
-	ok -> 
-	    sync_input(S, NewOwner),
-	    S#socket.pid ! {commit_owner, NewOwner},
-	    receive
-		{owner, NewOwner} -> ok
+recv(S,Len,Time) when port(S) ->
+    case inet_db:lookup_socket(S) of
+	{ok, Mod} ->
+	    Mod:recv(S, Len,Time);
+	Error ->
+	    Error
+    end.
+
+connect(S, Address, Port) when port(S) ->
+    case inet_db:lookup_socket(S) of
+	{ok, Mod} ->
+	    case Mod:getaddr(Address) of    
+		{ok, IP} ->
+		    Mod:connect(S, IP, Port);
+		Error ->
+		    Error
 	    end;
-	Error -> Error
+	Error ->
+	    Error
     end.
 
-sync_input(S, Owner) ->
-    receive
-	{udp, S, IP, UP, Data} ->
-	    Owner ! {udp, S, IP, UP, Data},
-	    sync_input(S, Owner);
-	{udp_closed, S} ->
-	    Owner ! {udp_closed, S},
-	    sync_input(S, Owner)
-    after 0 -> 
-	    ok
-    end.
+controlling_process(S, NewOwner) ->
+    inet:udp_controlling_process(S, NewOwner).
 
-call(S, Request) ->
-    Tag = make_ref(),
-    Pid = S#socket.pid,
-    Pid ! {call, self(), Tag, Request},
-    receive
-	{Tag, Reply} -> Reply;
-	{'EXIT', Pid, Reason} ->
-	    {error, closed};
-	{udp_closed, S} ->
-	    {error, closed}
-    end.
+%%
+%% Create a port/socket from a file descriptor 
+%%
+fdopen(Fd, Opts) ->
+    Mod = mod(),
+    Mod:fdopen(Fd, Opts).
+
 
 %% Get the udp_module
 mod() -> inet_db:udp_module().
 
-%% Get the udp_module, but option udp_module overrides
+%% Get the tcp_module, but option tcp_module overrides
 mod(Opts) when list(Opts) ->
     case lists:keysearch(udp_module, 1, Opts) of
 	{value, {_, Mod}} -> Mod;

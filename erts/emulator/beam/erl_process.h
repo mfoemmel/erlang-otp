@@ -59,18 +59,16 @@ typedef struct process {
     Eterm* stop;		/* Stack top */
     Eterm* heap;		/* Heap start */
     Eterm* hend;		/* Heap end */
-    uint32 heap_sz;		/* Size of heap in words */
-    uint32  gc_switch;      /* Switch to generational GC when live
-			       data is more than or equal to 
-			       this many words */
-    uint32 min_heap_size;   /* Minimum size of heap (in words). */
+    Uint heap_sz;		/* Size of heap in words */
+    Uint min_heap_size;		/* Minimum size of heap (in words). */
+    Uint16 gen_gcs;		/* Number of (minor) generational GCs. */
+    Uint16 max_gen_gcs;		/* Max minor gen GCs before fullsweep. */
 
     /*
      * Heap pointers for generational GC.
      */
 
     Eterm *high_water;
-    Eterm *low_water;
     Eterm *old_hend;
     Eterm *old_htop;
     Eterm *old_heap;
@@ -183,20 +181,20 @@ typedef struct process {
  *    {Flags, Label, Serial, Sender}
  */
 
-#define SEQ_TRACE_TOKEN_ARITY(p)    (unsigned_val(*(ptr_val(SEQ_TRACE_TOKEN(p)))))
-#define SEQ_TRACE_TOKEN_FLAGS(p)    (*(ptr_val(SEQ_TRACE_TOKEN(p)) + 1))
-#define SEQ_TRACE_TOKEN_LABEL(p)    (*(ptr_val(SEQ_TRACE_TOKEN(p)) + 2))
-#define SEQ_TRACE_TOKEN_SERIAL(p)   (*(ptr_val(SEQ_TRACE_TOKEN(p)) + 3))
-#define SEQ_TRACE_TOKEN_SENDER(p)   (*(ptr_val(SEQ_TRACE_TOKEN(p)) + 4))
-#define SEQ_TRACE_TOKEN_LASTCNT(p)  (*(ptr_val(SEQ_TRACE_TOKEN(p)) + 5))
+#define SEQ_TRACE_TOKEN_ARITY(p)    (arityval(*(tuple_val(SEQ_TRACE_TOKEN(p)))))
+#define SEQ_TRACE_TOKEN_FLAGS(p)    (*(tuple_val(SEQ_TRACE_TOKEN(p)) + 1))
+#define SEQ_TRACE_TOKEN_LABEL(p)    (*(tuple_val(SEQ_TRACE_TOKEN(p)) + 2))
+#define SEQ_TRACE_TOKEN_SERIAL(p)   (*(tuple_val(SEQ_TRACE_TOKEN(p)) + 3))
+#define SEQ_TRACE_TOKEN_SENDER(p)   (*(tuple_val(SEQ_TRACE_TOKEN(p)) + 4))
+#define SEQ_TRACE_TOKEN_LASTCNT(p)  (*(tuple_val(SEQ_TRACE_TOKEN(p)) + 5))
 
 /* used when we have unit32 token */
-#define SEQ_TRACE_T_ARITY(token)    (unsigned_val(*(ptr_val(token))))
-#define SEQ_TRACE_T_FLAGS(token)    (*(ptr_val(token) + 1))
-#define SEQ_TRACE_T_LABEL(token)    (*(ptr_val(token) + 2))
-#define SEQ_TRACE_T_SERIAL(token)   (*(ptr_val(token) + 3))
-#define SEQ_TRACE_T_SENDER(token)   (*(ptr_val(token) + 4))
-#define SEQ_TRACE_T_LASTCNT(token)  (*(ptr_val(token) + 5))
+#define SEQ_TRACE_T_ARITY(token)    (arityval(*(tuple_val(token))))
+#define SEQ_TRACE_T_FLAGS(token)    (*(tuple_val(token) + 1))
+#define SEQ_TRACE_T_LABEL(token)    (*(tuple_val(token) + 2))
+#define SEQ_TRACE_T_SERIAL(token)   (*(tuple_val(token) + 3))
+#define SEQ_TRACE_T_SENDER(token)   (*(tuple_val(token) + 4))
+#define SEQ_TRACE_T_LASTCNT(token)  (*(tuple_val(token) + 5))
 
 /*
  * Possible flags for the flags field in ErlSpawnOpts below.
@@ -209,20 +207,17 @@ typedef struct process {
  * The following struct contains options for a process to be spawned.
  */
 typedef struct {
-    uint32 flags;
+    Uint flags;
     int error_code;		/* Error code returned from create_process(). */
 
     /*
      * The following items are only initialized if the SPO_USE_ARGS flag is set.
      */
-    uint32 min_heap_size;	/* Minimum heap size (must be a valued returned
+    Uint min_heap_size;		/* Minimum heap size (must be a valued returned
 				 * from next_heap_size()).
 				 */
-    uint32  gc_switch;		/* Threshold for GC switch: 0 - always gen_gc,
-				 * MAX_SMALL - fullsweep
-				 */
     int priority;		/* Priority for process. */
-    uint32 process_flags;	/* Initial value for process flags. */
+    Uint16 max_gen_gcs;		/* Maximum number of gen GCs before fullsweep. */
 } ErlSpawnOpts;
 
 /*
@@ -231,7 +226,7 @@ typedef struct {
 
 #define KILL_CATCHES(p) (p)->catches = 0
 
-extern uint32* arith_alloc(Process* p, uint32 need);
+extern Eterm* arith_alloc(Process* p, uint32 need);
 
 extern Process** process_tab;
 extern uint32 max_process;
@@ -270,17 +265,16 @@ extern Eterm erts_default_tracer;
 #define F_TRACE_SCHED        (1 << 14)
 #define F_TRACE_GC           (1 << 15)
 #define F_DISTRIBUTION       (1 << 16)  /* Process used in distribution */
-#define F_GCFLIP             (1 << 17)  /* Flag for the generational gc */
-#define F_GEN_GC             (1 << 18)  /* If set, generational GC is used */
-#define F_HEAP_GROW          (1 << 19)
-#define F_NEED_FULLSWEEP     (1 << 20) /* If process has old binaries & funs. */
-#define F_TRACE_ARITY_ONLY   (1 << 21)
-#define F_TRACE_CALLS_OLD    (1 << 22) /* XXX Should be removed when possible. */
+#define F_HEAP_GROW          (1 << 17)
+#define F_NEED_FULLSWEEP     (1 << 18) /* If process has old binaries & funs. */
+#define F_TRACE_ARITY_ONLY   (1 << 19)
+#define F_TRACE_RETURN_TO    (1 << 20) /* Return_to trace when breakpoint tracing */
 
-#define TRACE_FLAGS (  F_TRACE_PROCS | F_TRACE_CALLS_OLD | F_TRACE_CALLS \
+#define TRACE_FLAGS (  F_TRACE_PROCS | F_TRACE_CALLS \
 		     | F_TRACE_SOS |  F_TRACE_SOS1| F_TRACE_RECEIVE  \
 		     | F_TRACE_SOL | F_TRACE_SOL1 | F_TRACE_SEND | \
-		     F_TRACE_SCHED | F_TIMESTAMP | F_TRACE_GC )
+		     F_TRACE_SCHED | F_TIMESTAMP | F_TRACE_GC  | \
+		     F_TRACE_ARITY_ONLY | F_TRACE_RETURN_TO)
 
 /* Sequential trace flags */
 #define SEQ_TRACE_SEND     (1 << 0)
@@ -297,16 +291,6 @@ extern Eterm erts_default_tracer;
 #define P_EXITING   4
 #define P_GARBING   5
 #define P_SUSPENDED 6
-
-/*
- * Every process starts out doing fullswep GC, and it might switch to doing
- * generation gc.  IS_GEN_GC(p) tests if generation GC is active for the given
- * process, and SET_GEN_GC(p) turns on generation GC.
- */
-
-#define IS_GEN_GC(p) ((p)->flags & F_GEN_GC)
-#define SET_GEN_GC(p) ((p)->flags |= F_GEN_GC)
-
 
 #define CANCEL_TIMER(p) \
     do { \
@@ -334,5 +318,6 @@ EXTERN_FUNCTION(void, trace_proc_call, (Process*, uint32));
 EXTERN_FUNCTION(void, trace_proc_ret, (Process*, uint32));
 
 void erts_init_empty_process(Process *p);
+void erts_cleanup_empty_process(Process* p);
 
 #endif

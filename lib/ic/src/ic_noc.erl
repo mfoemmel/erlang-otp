@@ -105,6 +105,7 @@ gen(G, N, [X|Xs]) when record(X, const) ->
 
 gen(G, N, [X|Xs]) when record(X, op) ->
     {Name, ArgNames, TypeList, OutArgs} = extract_info(G, N, X),
+    
     case getNocType(G,X,N) of
 	transparent ->
 	    emit_transparent_func(G, N, X, Name, ArgNames, TypeList, OutArgs);
@@ -225,43 +226,6 @@ extract_info(G, N, X) when record(X, op) ->
 		  },
     {Name, ArgNames, TypeList, OutArgs}.
 
-
-
-%%%% This function generates the standard functions of an object
-%%%% gen_server
-%%emit_serv_std(G, N, X) ->
-%%    Fd		= icgen:stubfiled(G),
-%%    case getNocType(G,X,[get_id2(X)|N]) of
-%%	transparent ->
-%%	    true;
-%%	XTupleORMultiple ->
-%%	    Ret		= mk_name(G, "Ret"),
-%%	    State	= mk_name(G, "State"),
-%%	    NewState	= mk_name(G, "NewState"),
-%%	    Var		= mk_name(G, ""),
-%%	    Reason	= mk_name(G, "Reason"),
-	    
-%%	    nl(Fd), nl(Fd), nl(Fd),
-%%	    icgen:mcomment(Fd, ["Object server implementation."]),
-%%	    nl(Fd), nl(Fd),
-%%	    emit(Fd, "typeID() ->\n"),
-%%	    emit(Fd, "    \"~s\".\n", [ictk:get_IR_ID(G, N, X)]),
-%%	    nl(Fd), nl(Fd),
-%%	    emit(Fd, "start(Env) ->\n"),
-%%	    emit(Fd, "    gen_server:start_link(?MODULE, Env, []).\n"),
-%%	    nl(Fd),
-%%	    emit(Fd, "init(Env) ->\n"),
-%%	    icgen:comment(Fd, "Call to implementation init"),
-%%	    emit(Fd, "    ~p:~p(Env).\n", [getImplMod(G,X,[get_id2(X)|N]), init]),
-%%	    nl(Fd),
-%%	    emit(Fd, "terminate(Reason, State) ->\n"),
-%%	    emit(Fd, "    catch (~p:~p(Reason, State)).\n", 
-%%		 [getImplMod(G,X,[get_id2(X)|N]), terminate]),
-%%	    nl(Fd), 
-%%	    nl(Fd), 
-%%	    nl(Fd)
-%%    end,
-%%    Fd.
 
 
 
@@ -828,7 +792,7 @@ unfold2(M) when record(M, member) ->
 unfold2(M) when record(M, case_dcl) ->
     map(fun(Id) -> M#case_dcl{label=Id} end, M#case_dcl.label);
 unfold2(T) when record(T, typedef) ->
-    map(fun(Id) -> T#typedef{id=Id} end, T#typedef.id).
+    map(fun(Id) -> T#typedef{id=Id} end, T#typedef.id   ).
 
 
 
@@ -853,14 +817,17 @@ genDependency(G) ->
 
 
 
-%%%%%%%%%%%%
+%%%%%%
 
 
+getImplMod(G,X,Scope) -> %% to_atom(icgen:impl(G)) | ChoicedModuleName
 
-getImplMod(G,X,Scope) -> %% to_atom(icgen:impl(G)) | ChoicedModuleName 
+    %% Get actual pragma appliance scope
+    SpecScope = getActualScope(G,X,Scope),
+
     %% The "broker" option is passed 
     %% only by pragmas, seek for module.
-    case ic_pragma:getBrokerData(G,X,Scope) of
+    case ic_pragma:getBrokerData(G,X,SpecScope) of
 	{Module,_Type} ->
 	    Module;
 	List ->
@@ -868,10 +835,28 @@ getImplMod(G,X,Scope) -> %% to_atom(icgen:impl(G)) | ChoicedModuleName
     end.
 
 
+getNocType(G,X,Scope) when record(X, interface) -> %% default | specified 
+    OpList = getAllOperationScopes(G,Scope),
+    getNocType2(G,X,OpList);
 getNocType(G,X,Scope) -> %% transparent | {extraarg1,....,extraargN}
+    getNocType3(G,X,Scope).
+
+getNocType2(G,X,List) ->
+    getNocType2(G,X,List,[]).
+
+getNocType2(_,_,[],Found) ->
+    selectTypeFromList(Found);
+getNocType2(G,X,[OpScope|OpScopes],Found) ->
+    getNocType2(G,X,OpScopes,[getNocType3(G,X,OpScope)|Found]).
+
+getNocType3(G,X,Scope) -> %% transparent | {extraarg1,....,extraargN}
+
+    %% Get actual pragma appliance scope
+    SpecScope = getActualScope(G,X,Scope),
+
     %% The "broker" option is passed 
     %% only by pragmas, seek for type.
-    case ic_pragma:getBrokerData(G,X,Scope) of
+    case ic_pragma:getBrokerData(G,X,SpecScope) of
 	{_Module,Type} ->
 	    Type;
 	List ->
@@ -879,11 +864,14 @@ getNocType(G,X,Scope) -> %% transparent | {extraarg1,....,extraargN}
     end.
 
 
-
 getModType(G,X,Scope) -> %% default | specified 
+
+    %% Get actual pragma appliance scope
+    SpecScope = getActualScope(G,X,Scope),
+
     %% The "broker" option is passed 
     %% only by pragmas, seek for brokerdata.
-    case ic_pragma:getBrokerData(G,X,Scope) of
+    case ic_pragma:getBrokerData(G,X,SpecScope) of
 	{Module,Type} ->
 	    case Module == icgen:impl(G) of
 		true ->
@@ -907,6 +895,108 @@ getModType(G,X,Scope) -> %% default | specified
 
 
 
+%%%%
+%%
+%% Returns a list of ALL operation full 
+%% scoped names local and inherited
+%% from other interfaces
+%%
+
+getAllOperationScopes(G,Scope) ->
+    getOperationScopes(G,Scope) ++ 
+	getInhOperationScopes(G,Scope).
+	
+
+getOperationScopes(G,Scope) ->
+    getOpScopes(G,
+		Scope,
+		ets:match(icgen:pragmatab(G),{op,'$0',Scope,'_','_'}),
+		[]).
+
+getOpScopes(_,_,[],OpScopes) ->
+    OpScopes;
+getOpScopes(G,Scope,[[Name]|Names],Found) ->
+    getOpScopes(G,Scope,Names,[[Name|Scope]|Found]).
+
+
+getInhOperationScopes(G,Scope) ->
+    getInhOpScopes1(G,
+		   Scope,
+		   ets:match(icgen:pragmatab(G),{inherits,Scope,'$1'}),
+		   []).
+
+getInhOpScopes1(G,Scope,[],OpScopes) ->
+    getInhOpScopes2(G,OpScopes);
+getInhOpScopes1(G,Scope,[[SC]|SCs],Found) ->
+    getInhOpScopes1(G,Scope,SCs,[SC|Found]).
+
+
+getInhOpScopes2(G,Scopes) ->
+    getInhOpScopes2(G,Scopes,[]).
+
+getInhOpScopes2(G,[],Found) ->
+    Found;
+getInhOpScopes2(G,[SC|SCs],Found) ->
+   getOperationScopes(G,SC) ++ getInhOpScopes2(G,SCs,Found).
+
+%%
+%%
+%%%%
+
+
+
+%%%%
+%%
+%%
+%% Seek the actual operation scope :
+%%
+%%   * if the operation is inherited, get the real scope for it
+%%
+%%   * if the operation has a specific pragma, apply the real
+%%     scope, otherwise return the including scope 
+%%
+getActualScope(G, X, Scope) when record(X, op) ->
+    OpScope = getRealOpScope(G,X,Scope),
+    OpSpecScope = 
+	case ets:match(icgen:pragmatab(G),{codeopt_specific,OpScope}) of
+	    [[]] ->
+		OpScope;
+	    _ ->
+		Scope
+	end;
+getActualScope(G, X, N) ->
+    N.
+
+%%
+%%  Just seek and return the scope for the operation
+%%  where it were originaly defined
+%%
+getRealOpScope(G,X,N) when record(X, op) ->
+    Ptab = icgen:pragmatab(G),
+    Id = get_id2(X),
+    
+    case ets:match(Ptab,{op,Id,N,'_','_'}) of
+	[[]] ->
+	    [Id|N];
+	_ ->
+	    getRealOpScope(G, Ptab, X, N, Id,  ets:match(Ptab,{inherits,N,'$1'}))
+    end;
+getRealOpScope(G,X,N) ->
+    N.
+
+getRealOpScope(G, S, X, N, Id, []) ->
+    [Id|N];
+getRealOpScope(G, S, X, N, Id, [[OS]|OSs]) -> 
+    case ets:match(S,{op,Id,OS,'_','_'}) of
+	[[]] ->
+	    [Id|OS];
+	_ ->
+	    getRealOpScope(G, S, X, N, Id, OSs)
+    end.
+    
+%%
+%%%%
+
 
 to_colon2([X]) -> X;
 to_colon2([X | Xs]) -> to_colon2(Xs) ++ "::" ++ X;
@@ -917,7 +1007,9 @@ selectTypeFromList([]) ->
     transparent;
 selectTypeFromList([{_,transparent}|Rest]) ->
     selectTypeFromList(Rest);
-selectTypeFromList([{_,_}|Rest]) ->
+selectTypeFromList([transparent|Rest]) ->
+    selectTypeFromList(Rest);
+selectTypeFromList([_|Rest]) ->
     multiple.
 
 

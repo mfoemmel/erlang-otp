@@ -127,6 +127,7 @@
 %% gen server stuff
 -behaviour(gen_server).
 -export([init/1, handle_cast/2, handle_info/2, terminate/2]).
+-export([handle_call/3, code_change/3]).
 
 
 -define(APPSPACE, 10).				% The space between apps
@@ -142,7 +143,7 @@
 
 -define(SUPVIEWTXT, "Sup. view").
 -define(PROCVIEWTXT, "Proc. view").
--define(QUITTXT, "Quit").
+-define(CLOSETXT, "Close").
 -define(REFRESHTXT, "Refresh").
 -define(SAVEOPTSTXT, "Save options").
 -define(HELPTXT, "Help").
@@ -192,7 +193,7 @@ stop() ->
 %% or kernel, AppId is the application pid or the application name,
 %% either goes.
 init({NodeName, AppName, AppId}) ->
-    %%process_flag(trap_exit, true),
+    process_flag(trap_exit, true),
     %%case rpc:call(NodeName, appmon_info, start_link, [self()]) of
     case appmon_info:start_link(NodeName, self(), []) of
 	{ok, Client} ->
@@ -212,6 +213,12 @@ init({NodeName, AppName, AppId}) ->
 terminate(Reason, State) ->
     ok.
 
+code_change(OldVsn, State, Extra) ->
+    {ok, State}.
+
+handle_call(norequest, From, State) ->
+    {reply, null, State}.
+
 %%------------------------------------------------------------
 %% handle casts
 
@@ -220,14 +227,12 @@ handle_cast({ping, Node, From}, State) ->
 handle_cast(Other, State) ->
     {noreply, State}.
 
-%%------------------------------------------------------------
-%% handle call
 
 
 %%------------------------------------------------------------
 %% handle info
 
-handle_info({gs, _, click, _, [?QUITTXT|_]}, State) ->
+handle_info({gs, _, click, _, [?CLOSETXT|_]}, State) ->
     {stop, normal, State};
 handle_info({gs, _, destroy, _, _}, State) ->
     {stop, normal, State};
@@ -235,9 +240,8 @@ handle_info({gs, _, click, _, [?REFRESHTXT|_]}, State) ->
     refresh(State),
     {noreply, State};
 handle_info({gs, _, click, _, [?HELPTXT|_]}, State) ->
-    catch 
-	appmon_txt:fprint([code:priv_dir(appmon) ++ 
-			   "/appmon_help.txt"]),
+    HelpFile = filename:join(code:priv_dir(appmon), "../doc/index.html"),
+    tool_utils:open_help(gs:start(), HelpFile),
     {noreply, State};
 handle_info({gs, Id, click, {mode, Mode}, _}, State) ->
     %%io:format("handle_info: Setting mode: ~p~n", [Mode]),
@@ -725,7 +729,8 @@ setup_base_win(NodeName, AppName) ->
 
     W = ?MINWIDTH, H = ?MINHEIGHT,
     
-    Name = atom_to_list(AppName) ++ "  " ++ atom_to_list(NodeName),
+    Name = "APPMON: " ++ atom_to_list(AppName) ++ " on " ++
+	atom_to_list(NodeName),
 
     set_win(gs:create(window, winroot(), [{title, Name}, %%{bg, red},
 					  {x, 250}, {y, 100},
@@ -763,7 +768,7 @@ mk_butt_area(Win, W, Butts) ->
 
     FMB = gs:create(menubutton, MB, [{label, {text, "File"}}]),
     FM = gs:create(menu, FMB, []),
-    gs:create(menuitem, FM, [{label, {text, ?QUITTXT}}]),
+    gs:create(menuitem, FM, [{label, {text, ?CLOSETXT}}]),
     
     OMB = gs:create(menubutton, MB, [{label, {text, "Options"}}]),
     OM = gs:create(menu, OMB, []),
@@ -783,7 +788,7 @@ mk_butt_area(Win, W, Butts) ->
     {F, C, L, ButtIds}.
 
 mk_std_butts(Win, W) ->
-    {F, C, L, ButtIds} = mk_butt_area(Win, W, ["Quit", "Refresh"]),
+    {F, C, L, ButtIds} = mk_butt_area(Win, W, ["Close", "Refresh"]),
     set_bframe(F), set_bcanvas(C), set_bline(L),
     Group = now(),
 
@@ -807,15 +812,6 @@ deselect() ->
 mk_mode_butt(Label, Data, X) ->
     gs:create(button, bframe(), [{label, Label}, {x, X}, {y, 35},
 				 {data, Data}, {width, 70}, {height, 25}]).
-
-butt_width(Txt) when atom(Txt) ->
-    butt_width( atom_to_list( Txt ));
-butt_width(Txt) when list(Txt) ->
-    case 8*length(Txt)+10 of
-	X when X < 70 -> 70;
-	X -> X
-    end.
-
 
 %%------------------------------------------------------------
 %% Graphical utilities

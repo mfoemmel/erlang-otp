@@ -101,9 +101,10 @@ endif
 # EI_ is new one...
 #---------------------------------
 
-ERL_HEADERS = erl_connect.h erl_global.h erl_interface.h erl_marshal.h \
-	erl_error.h erl_fix_alloc.h erl_rport.h erl_epmd.h erl_eterm.h \
-	erl_locking.h erl_format.h erl_malloc.h erl_start.h erl_resolve.h
+ERL_HEADERS = portability.h erl_connect.h erl_global.h erl_interface.h \
+	erl_marshal.h erl_error.h erl_fix_alloc.h erl_rport.h erl_epmd.h \
+	erl_eterm.h erl_locking.h erl_format.h erl_malloc.h erl_start.h \
+	erl_resolve.h 
 
 EI_HEADERS = ei.h eicode.h eiext.h eisend.h eihash.h eireg.h eimd5.h
 

@@ -7,6 +7,8 @@ EXPORTS
 	driver_output
 	driver_outputv
 	driver_output2
+	driver_attach
+	driver_detach
 	driver_set_timer
 	driver_cancel_timer
 	driver_enq
@@ -29,15 +31,15 @@ EXPORTS
 	sys_alloc
 	sys_realloc
 	sys_free
-	sys_memcpy=memcpy
-	sys_memmove=memmove
-	sys_memcmp=memcmp
-	sys_memset=memset
-	sys_strcmp=strcmp
-	sys_strncmp=strncmp
-	sys_strcpy=strcpy
-	sys_strncpy=strncpy
-	sys_strlen=strlen
+;	sys_memcpy=memcpy
+;	sys_memmove=memmove
+;	sys_memcmp=memcmp
+;	sys_memset=memset
+;	sys_strcmp=strcmp
+;	sys_strncmp=strncmp
+;	sys_strcpy=strcpy
+;	sys_strncpy=strncpy
+;	sys_strlen=strlen
 	driver_alloc
 	driver_realloc
 	driver_free

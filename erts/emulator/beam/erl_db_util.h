@@ -78,12 +78,16 @@ typedef struct db_term {
 typedef struct db_table_common {
     Eterm owner;              /* Pid of the creator */
     Eterm the_name;           /* an atom   */
-    Eterm id;                 /* atom | integer */
+    Eterm id;                 /* atom | integer | DB_USED | DB_NOTUSED */
     uint32 status;            /* bit masks defined  below */
     int slot;                 /* slot in db_tables */
     int keypos;               /* defaults to 1 */
     int nitems;               /* Total number of items */
 } DbTableCommon;
+
+/* XXX: as long as NIL is atom, don't use NIL as USED marker */
+#define DB_NOTUSED	(_make_header(0,_TAG_HEADER_FLOAT))	/*XXX*/
+#define DB_USED		(_make_header(3,_TAG_HEADER_FLOAT))	/*XXX*/
 
 /* These are status bit patterns */
 #define DB_NORMAL        (1 << 0)
@@ -112,9 +116,6 @@ extern Eterm db_big_buf[];
    if (IS_CONST(obj)) { *(objp) = (obj); } \
    else { copy_object(obj, p, 0, objp, (Process*) 0); }
 
-/* optimised version of eq, first check for equality of pointers !! */
-#define EQ(a,b) ( ((a) == (b)) ? 1 : eq(a,b) )
-
 #define DB_READ  (DB_PROTECTED|DB_PUBLIC)
 #define DB_WRITE DB_PUBLIC
 #define DB_INFO  (DB_PROTECTED|DB_PUBLIC|DB_PRIVATE)
@@ -124,12 +125,13 @@ extern Eterm db_big_buf[];
  */
 #define DB_MATCH_NBIND 8  
 /* Zero binding structure */
-#define ZEROB(bind)        sys_memzero(bind.ptr, sizeof(uint32)*bind.size)
+#define ZEROB(bind) do { int ii; for(ii = 0; ii < bind.size; ++ii) bind.ptr[ii] = THE_NON_VALUE; } while(0)
 
 /* The actual binding structure */
 typedef struct db_bindings {
     int size;
     Eterm *ptr;
+    Uint *sz;
 } DbBindings;
 
 /* tb is an DbTableCommon and obj is an Eterm (tagged) */
@@ -138,8 +140,7 @@ typedef struct db_bindings {
 /* Function prototypes */
 void db_initialize_util(void);
 Eterm db_getkey(int keypos, Eterm obj);
-int db_do_match(Eterm obj, Eterm pattern, 
-		DbBindings *bs, DbBindings *sz_bs);
+int db_do_match(Eterm obj, Eterm pattern, DbBindings *bs);
 Eterm add_counter(Eterm counter, Eterm incr);
 int db_realloc_counter(void** bp, DbTerm *b, uint32 offset, uint32 sz, 
 		       Eterm new_counter, int counterpos);

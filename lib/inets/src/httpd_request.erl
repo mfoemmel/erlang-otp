@@ -25,23 +25,27 @@ read(SocketType,Socket,ConfigDB,InitData, Timeout) ->
   read(SocketType,Socket,[],ConfigDB,InitData, Timeout).
 
 read(SocketType,Socket,Data,ConfigDB,InitData, Timeout) ->
-    ?DEBUG("read -> socket ~p", [Socket]),
+    ?DEBUG("read -> Socket: ~p", [Socket]),
     case read_header(Socket, Data, Timeout) of
+	{socket_closed,Reason} ->
+	    ?DEBUG("read -> Socket closed while reading header: ~p", 
+		   [Reason]),
+	    socket_close;
 	{Header,EntityBodyPart} ->
 	    ContentLength=content_length(Header)-length(EntityBodyPart),
 	    ?DEBUG("read -> ContentLength: ~p", [ContentLength]),
 	    case read_entity_body(Socket,EntityBodyPart,ContentLength) of
-		socket_closed ->
-		    ?DEBUG("read -> Socket closed while reading entity_body", []),
+		{socket_closed,Reason} ->
+		    ?DEBUG("read -> "
+			   "Socket closed while reading entity body: ~p", 
+			   [Reason]),
 		    socket_close;
 		EntityBody ->
-		    ?DEBUG("httpd_request:read -> Entity body received ok", []),
+		    ?DEBUG("read -> Entity body received ok", []),
 		    Request=lists:append(Header,EntityBody),
-		    httpd_response:send(SocketType,Socket,Request,ConfigDB,InitData)
-	    end;
-	socket_closed ->
-	    ?DEBUG("read -> Socket closed while reading header", []),
-	    socket_close
+		    httpd_response:send(SocketType,Socket,Request,
+					ConfigDB,InitData)
+	    end
     end.
 
 %% read_header
@@ -55,17 +59,17 @@ read_header(Socket, SoFar, Timeout) ->
 		{tcp,Socket,Data} ->
 		    read_header(Socket,[SoFar,Data], Timeout);
 		{tcp_closed,Socket} ->
-		    socket_closed;
+		    {socket_closed,normal};
 		{tcp_error,Socket,Reason} ->
-		    socket_closed;
+		    {socket_closed,Reason};
 		{ssl,Socket,Data} ->
 		    read_header(Socket,[SoFar,Data], Timeout);
 		{ssl_closed,Socket} ->
-		    socket_closed;
+		    {socket_closed,normal};
 		{ssl_error,Socket,Reason} ->
-		    socket_closed
+		    {socket_closed,Reason}
 	    after Timeout ->
-		    socket_closed
+		    {socket_closed,timeout}
 	    end
     end.
 
@@ -109,13 +113,13 @@ read_entity_body(Socket,SoFar,ContentLength) ->
 	{tcp,Socket,Data} ->
 	    read_entity_body(Socket,[SoFar,Data],ContentLength-length(Data));
 	{tcp_closed,Socket} ->
-	    socket_closed;
+	    {socket_closed,normal};
 	{tcp_error,Socket,Reason} ->
-	    socket_closed;
+	    {socket_closed,Reason};
 	{ssl,Socket,Data} ->
 	    read_entity_body(Socket,[SoFar,Data],ContentLength-length(Data));
 	{ssl_closed,Socket} ->
-	    socket_closed;
+	    {socket_closed,normal};
 	{ssl_error,Socket,Reason} ->
-	    socket_closed
+	    {socket_closed,Reason}
     end.

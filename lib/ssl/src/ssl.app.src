@@ -1,0 +1,18 @@
+{application, ssl,
+   [{description, "SSL socket version 2"},
+    {vsn, "%VSN%"},
+    {modules, [ssl,
+	       ssl_socket,
+	       ssl_app,
+	       ssl_sup,
+	       ssl_server,
+	       ssl_broker,
+	       ssl_broker_sup,
+	       ssl_prim,
+	       inet_ssl_dist]},
+    {registered, [ssl_sup, ssl_server, ssl_broker_sup]},
+    {applications, [kernel, stdlib]},
+    {env, []},
+    {mod, {ssl_app, []}}]}.
+
+

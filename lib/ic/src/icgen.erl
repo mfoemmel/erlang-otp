@@ -148,6 +148,8 @@ new(Opts) ->
     add_opt(G, default_opts, true),
     read_cfg(G, Opts),				% Read any config files
     add_opt(G, Opts, true),
+    symtab_add_faked_included_types(G),         % Add CORBA::<Types> that as if they
+                                                % were defined in an included file
     G.
 
 
@@ -1074,6 +1076,7 @@ display(File, F, A) ->
 %% pretty print various stuff
 
 pp({tk_string, _}) -> "string";
+pp({tk_wstring, _}) -> "wstring";
 pp(tk_long) -> "long";
 pp(tk_short) -> "short";
 pp(tk_ushort) -> "unsigned short";
@@ -1082,6 +1085,7 @@ pp(tk_float) -> "float";
 pp(tk_double) -> "double";
 pp(tk_boolean) -> "boolean";
 pp(tk_char) -> "char";
+pp(tk_wchar) -> "wchar";
 pp(tk_octet) -> "octet";
 pp(tk_null) -> "null";
 pp(tk_void) -> "void";
@@ -1313,7 +1317,7 @@ symtab_new() ->
 
 symtab_store(G, N, X) ->
     Name = [get_id2(X) | N],
-    %%io:format("Adding id: ~p~n", [N]),
+    %% io:format("Adding id: ~p (~p)~n", [N,X]),
     case symtab_soft_retrieve(G, Name) of
 	{error, _} ->
 	    ets:insert(G#genobj.symtab, {Name, X});
@@ -1460,6 +1464,37 @@ is_oneway(X) -> false.
 
 
 
+% Add CORBA::<Types> that as if they
+% were defined in an included file.
+% This is only supported in the case 
+% of Corba backend
+symtab_add_faked_included_types(G) ->
+    case ic_options:get_opt(G, be) of
+	false ->
+	    %% Add TypeCode as if it were defiend in included file
+	    ets:insert(G#genobj.symtab, {["CORBA"], 
+					 {interface,{'<identifier>',0,"TypeCode"},
+					  [],
+					  [],
+					  [],
+					  {tk_objref,
+					   "IDL:CORBA/TypeCode:1.0",
+					   "TypeCode"}}});
+	erl_corba ->
+	    %% Add TypeCode as if it were defiend in included file
+	    ets:insert(G#genobj.symtab, {["CORBA"], 
+					 {interface,{'<identifier>',0,"TypeCode"},
+					  [],
+					  [],
+					  [],
+					  {tk_objref,
+					   "IDL:CORBA/TypeCode:1.0",
+					   "TypeCode"}}}); 
+	_ ->
+	    ok
+    end.
+
+
 
 %%--------------------------------------------------------------------
 %%
@@ -1594,18 +1629,15 @@ set_module(G, X)	-> ?insert(G#genobj.options, module, get_id(X)).
 %%
 %% time - if true then time is measured during compilation
 %%
-%% use_leex - tries to use a leex scanner. Can have the values 1, 2,
-%% or boolean() for different styles of leex scanners
-%%
 %% 
 %%--------------------------------------------------------------------
+
 allowed_opt(default_opts, V)		-> true;
 allowed_opt(debug, V)			-> is_bool(V);
 allowed_opt(tokens, V)			-> is_bool(V);
 allowed_opt(form, V)			-> is_bool(V);
 allowed_opt(tform, V)			-> is_bool(V);
 allowed_opt(time, V)			-> is_bool(V);
-allowed_opt(use_leex, V)		-> is_intorbool(V);
 allowed_opt(maxerrs, V)			-> is_intorinfinity(V);
 allowed_opt(maxwarns, V)		-> is_intorinfinity(V);
 allowed_opt(nowarn, V)			-> is_bool(V);
@@ -1640,6 +1672,8 @@ allowed_opt(preproc_cmd, V)		-> true;
 allowed_opt(preproc_flags, V)		-> true;
 allowed_opt(this, V)			-> true;
 allowed_opt({this, _}, V)		-> is_bool(V);
+allowed_opt(from, V)			-> true;
+allowed_opt({from, _}, V)		-> is_bool(V);
 allowed_opt(handle_info, V)		-> true;
 allowed_opt({handle_info, _}, V)	-> is_bool(V);
 allowed_opt(timeout, V)		        -> true;
@@ -1767,6 +1801,10 @@ do_add_opt(G, this, V) ->
     ?insert(G#genobj.options, {option, {this, V}}, true);
 do_add_opt(G, {this, V}, false) ->
     ?insert(G#genobj.options, {option, {this, V}}, force_false);
+do_add_opt(G, from, V) ->
+    ?insert(G#genobj.options, {option, {from, V}}, true);
+do_add_opt(G, {from, V}, false) ->
+    ?insert(G#genobj.options, {option, {from, V}}, force_false);
 do_add_opt(G, scoped_op_calls, V) when V /= true, V /= false ->
     ?insert(G#genobj.options, {option, {scoped_op_calls, V}}, false);
 do_add_opt(G, K, V) ->
@@ -1959,6 +1997,7 @@ gen_includes_loop(Fd,[I|Is],Type) ->
 	    end,
 	    gen_includes_loop(Fd,Is,Type)
     end.
+
 
 
 

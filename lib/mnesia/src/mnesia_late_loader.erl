@@ -49,7 +49,10 @@ start() ->
 init(Parent) ->
     %% Trap exit omitted intentionally
     register(?SERVER_NAME, self()),
+    link(whereis(mnesia_controller)),  %% We may not hang
     mnesia_controller:merge_schema(),
+    unlink(whereis(mnesia_controller)),
+    mnesia_lib:set(mnesia_status, running),
     proc_lib:init_ack(Parent, {ok, self()}),
     loop(#state{supervisor = Parent}).
 
@@ -89,4 +92,4 @@ system_terminate(Reason, Parent, Debug, State) ->
     exit(Reason).
 
 system_code_change(State, Module, OldVsn, Extra) ->
-    exit(not_supported).
+    {ok, State}.

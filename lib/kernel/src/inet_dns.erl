@@ -419,8 +419,9 @@ get_data(0, Ptr) -> {[], Ptr};
 get_data(N, Ptr) when N > 0 -> get_data(N, Ptr, []);
 get_data(_, _) -> error.
 
-get_data(0, Ptr, Data) ->   {reverse(Data), Ptr};
-get_data(N, [H|T], Data) ->  get_data(N-1, T, [H|Data]).
+get_data(0, Ptr, Data) ->    {reverse(Data), Ptr};
+get_data(N, [H|T], Data) ->  get_data(N-1, T, [H|Data]);
+get_data(_, [], _) ->        error.
 
 %%
 %% Expand compressed domain names

@@ -1,7 +1,7 @@
 typedef string ObjectId;
 typedef sequence <ObjectId> ObjectIdList; 
 
-module CORBA {
+module Orber {
 interface InitialReferences {
   
   Object get(in ObjectId id);

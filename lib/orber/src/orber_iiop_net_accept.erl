@@ -66,10 +66,21 @@ net_accept(Type, ListenFd, Parent) ->
     S = ?IIOP_SOCKET_MOD:accept(Type, ListenFd),
     case orber_iiop_net:connect(Type, S) of
 	{ok, Pid} ->
-	    ?PRINTDEBUG2("changed controlling process to ~p",[Pid]),
-	    ?IIOP_SOCKET_MOD:controlling_process(Type, S, Pid);
+	    case ?IIOP_SOCKET_MOD:controlling_process(Type, S, Pid) of
+		ok ->
+		    ?PRINTDEBUG2("changed controlling process to ~p",[Pid]);
+		{error,closed} ->
+		    ?PRINTDEBUG2("Socket closed, unable to change controlling process: ~p", 
+				 [Pid]),
+		    gen_server:cast(Pid, stop);
+		Reason ->
+		    ?PRINTDEBUG2("Unable to change controlling process: ~p Reason: ~p",
+				 [Pid, Reason]),
+		    ?IIOP_SOCKET_MOD:close(Type, S),
+		    gen_server:cast(Pid, stop)
+	    end;
 	_ ->
-	    ?IIOP_SOCKET_MOD:close(Type, S)	
+	    ?IIOP_SOCKET_MOD:close(Type, S)
     end,
     net_accept(Type, ListenFd, Parent).
 

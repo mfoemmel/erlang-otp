@@ -26,6 +26,8 @@
 #include "erl_process.h"
 #include "error.h"
 #include "bif.h"
+#include "big.h"
+#include "erl_binary.h"
 
 /*
  * Create a brand new binary from scratch.
@@ -37,9 +39,15 @@ new_binary(Process *p, byte *buf, int len)
     ProcBin* pb;
     Binary* bptr;
 
-    /*
-     * XXX Later, we should put small binaries directly on the heap.
-     */
+    if (len <= ERL_ONHEAP_BIN_LIMIT) {
+	ErlHeapBin* hb = (ErlHeapBin *) HAlloc(p, heap_bin_size(len));
+	hb->thing_word = header_heap_bin(len);
+	hb->size = len;
+	if (buf != NULL) {
+	    sys_memcpy(hb->data, buf, len);
+	}
+	return make_binary(hb);
+    }
 
     /*
      * Allocate the binary struct itself.
@@ -56,7 +64,7 @@ new_binary(Process *p, byte *buf, int len)
      * Now allocate the ProcBin on the heap.
      */
     pb = (ProcBin *) HAlloc(p, PROC_BIN_SIZE);
-    pb->thing_word = make_thing(PROC_BIN_SIZE-1, REFC_BINARY_SUBTAG);
+    pb->thing_word = HEADER_PROC_BIN;
     pb->size = len;
     pb->next = p->off_heap.mso;
     p->off_heap.mso = pb;
@@ -71,95 +79,130 @@ new_binary(Process *p, byte *buf, int len)
     return make_binary(pb);
 }
 
+/* Like new_binary, but uses ArithAlloc. */
+/* Silly name. Come up with something better. */
+Eterm new_binary_arith(Process *p, byte *buf, int len)
+{
+    ProcBin* pb;
+    Binary* bptr;
+
+    if (len <= ERL_ONHEAP_BIN_LIMIT) {
+	ErlHeapBin* hb = (ErlHeapBin *) ArithAlloc(p, heap_bin_size(len));
+	hb->thing_word = header_heap_bin(len);
+	hb->size = len;
+	if (buf != NULL) {
+	    sys_memcpy(hb->data, buf, len);
+	}
+	return make_binary(hb);
+    }
+
+    /*
+     * Allocate the binary struct itself.
+     */
+    bptr = (Binary *) safe_alloc_from(61, len+sizeof(Binary));
+    bptr->flags = 0;
+    bptr->orig_size = len;
+    bptr->refc = 1;
+    if (buf != NULL) {
+	sys_memcpy(bptr->orig_bytes, buf, len);
+    }
+
+    /*
+     * Now allocate the ProcBin on the heap.
+     */
+    pb = (ProcBin *) ArithAlloc(p, PROC_BIN_SIZE);
+    pb->thing_word = HEADER_PROC_BIN;
+    pb->size = len;
+    pb->next = p->off_heap.mso;
+    p->off_heap.mso = pb;
+    pb->val = bptr;
+    pb->bytes = bptr->orig_bytes;
+
+    /*
+     * Miscellanous updates. Return the tagged binary.
+     */
+    tot_bin_allocated += len;
+    p->off_heap.overhead += pb->size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
+    return make_binary(pb);
+}
+
+
+Eterm
+erts_realloc_binary(Eterm bin, size_t size)
+{
+    Eterm* bval = binary_val(bin);
+
+    if (thing_subtag(*bval) == HEAP_BINARY_SUBTAG) {
+	binary_size(bin) = size;
+    } else {			/* REFC */
+	ProcBin* pb = (ProcBin *) bval;
+	Binary* newbin = sys_realloc(pb->val, sizeof(Binary) + size);
+	tot_bin_allocated += (size - newbin->orig_size);
+	newbin->orig_size = size;
+	pb->val = newbin;
+	pb->size = size;
+	pb->bytes = newbin->orig_bytes;
+	bin = make_binary(pb);
+    }
+    return bin;
+}
+
 BIF_RETTYPE binary_to_list_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    int i;
+    Uint size;
     Eterm previous;
-    ProcBin* pb;
     Eterm* hp;
+    byte* bufp;
 
     if (is_not_binary(BIF_ARG_1)) {
-	goto error;
+	BIF_ERROR(BIF_P, BADARG);
     }
 
-    pb = (ProcBin*) ptr_val(BIF_ARG_1);
-    switch (thing_subtag(pb->thing_word)) {
-    case REFC_BINARY_SUBTAG:
-	i = pb->size;
-	hp = HAlloc(BIF_P, i * 2);
-	previous = NIL;
-	while (i--) {
-	    previous = CONS(hp, make_small(pb->bytes[i]), previous);
-	    hp += 2;
-	}
-	BIF_RET(previous);
-    case HEAP_BINARY_SUBTAG:
-	erl_exit(1, "%s, line %d: Heap binaries not implemented yet",
-		 __FILE__, __LINE__);
-	break;
-    case SUB_BINARY_SUBTAG:
-	erl_exit(1, "%s, line %d: Sub binaries not implemented yet",
-		 __FILE__, __LINE__);
-	break;
-    case FUN_SUBTAG:
-	goto error;
-    default:
-	erl_exit(1, "%s, line %d: Bad subtag: %d",
-		 __FILE__, __LINE__, thing_subtag(pb->thing_word));
-    }
+    size = binary_size(BIF_ARG_1);
+    hp = HAlloc(BIF_P, 2 * size);
+    GET_BINARY_BYTES(BIF_ARG_1, bufp);
 
- error:
-    BIF_ERROR(BIF_P, BADARG);
+    previous = NIL;
+    while (size) {
+	previous = CONS(hp, make_small(bufp[--size]), previous);
+	hp += 2;
+    }
+    BIF_RET(previous);
 }
 
 BIF_RETTYPE binary_to_list_3(BIF_ALIST_3)
 BIF_ADECL_3
 {
-    int i;
     Eterm previous;
-    ProcBin *pb;
-    int start;
-    int stop;
+    byte* bytes;
+    int size;
+    Uint i;
+    Uint start;
+    Uint stop;
     Eterm* hp;
 
     if (is_not_binary(BIF_ARG_1)) {
 	goto error;
     }
-    if (is_not_small(BIF_ARG_3) || is_not_small(BIF_ARG_2)) {
+    if (!term_to_Uint(BIF_ARG_2, &start) || !term_to_Uint(BIF_ARG_3, &stop)) {
 	goto error;
     }
-    pb = (ProcBin*) ptr_val(BIF_ARG_1);
-    switch (thing_subtag(pb->thing_word)) {
-    case REFC_BINARY_SUBTAG:
-	i = pb->size;
-	start = signed_val(BIF_ARG_2);
-	stop = signed_val(BIF_ARG_3);
-	if (start < 1 || start > i || stop < 1 || stop > i || stop < start) {
-	    BIF_ERROR(BIF_P, BADARG);
-	}
+    size = binary_size(BIF_ARG_1);
+    GET_BINARY_BYTES(BIF_ARG_1, bytes);
+    if (start < 1 || start > size || stop < 1 || stop > size || stop < start) {
+	goto error;
+    }
 
-	hp = HAlloc(BIF_P, (stop-start+1) * 2);
-	previous = NIL;
-	for (i = stop - 1; i >= start -1 ; i--) {
-	    previous = CONS(hp, make_small(pb->bytes[i]), previous);
-	    hp += 2;
-	}
-	BIF_RET(previous);
-    case HEAP_BINARY_SUBTAG:
-	erl_exit(1, "%s, line %d: Heap binaries not implemented yet",
-		 __FILE__, __LINE__);
-	break;
-    case SUB_BINARY_SUBTAG:
-	erl_exit(1, "%s, line %d: Sub binaries not implemented yet",
-		 __FILE__, __LINE__);
-	break;
-    case FUN_SUBTAG:
-	goto error;
-    default:
-	erl_exit(1, "%s, line %d: Bad subtag: %d",
-		 __FILE__, __LINE__, thing_subtag(pb->thing_word));
+    i = stop-start+1;
+    hp = HAlloc(BIF_P, 2*i);
+    previous = NIL;
+    bytes += stop;
+    while (i-- > 0) {
+	previous = CONS(hp, make_small(*--bytes), previous);
+	hp += 2;
     }
+    BIF_RET(previous);
 
  error:
     BIF_ERROR(BIF_P, BADARG);
@@ -174,7 +217,7 @@ BIF_ADECL_1
 {
     Eterm bin;
     int j, i;
-    ProcBin *bp;
+    byte* bytes;
 
     if (is_nil(BIF_ARG_1)) {
 	BIF_RET(new_binary(BIF_P,(byte*)"",0));
@@ -188,8 +231,8 @@ BIF_ADECL_1
     }
     j = 0;
     bin = new_binary(BIF_P, (byte *)NULL, i);
-    bp = (ProcBin *) ptr_val(bin);
-    if (io_list_to_buf(BIF_ARG_1, (char*) bp->bytes, &j, i+1) != 0) {
+    GET_BINARY_BYTES(bin, bytes);
+    if (io_list_to_buf(BIF_ARG_1, (char*) bytes, &j, i+1) != 0) {
 	goto error;
     }
     BIF_RET(bin);
@@ -206,49 +249,41 @@ BIF_ADECL_1
 BIF_RETTYPE split_binary_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    int pos;
-    ProcBin* oldpb;
-    ProcBin* newpb1;
-    ProcBin* newpb2;
+    Uint pos;
+    ErlSubBin* sb1;
+    ErlSubBin* sb2;
+    size_t orig_size;
+    Eterm orig;
+    Uint offset;
     Eterm* hp;
 
-    if (is_not_binary(BIF_ARG_1) || is_not_small(BIF_ARG_2)) {
+    if (is_not_binary(BIF_ARG_1)) {
     error:
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if ((pos = signed_val(BIF_ARG_2)) < 0) {
+    if (!term_to_Uint(BIF_ARG_2, &pos)) {
 	goto error;
     }
-    oldpb = (ProcBin*) ptr_val(BIF_ARG_1);
-    if (thing_subtag(oldpb->thing_word) == FUN_SUBTAG) {
+    if ((orig_size = binary_size(BIF_ARG_1)) < pos) {
 	goto error;
     }
-    if (oldpb->size < pos) {
-	goto error;
-    }
-    ASSERT(thing_subtag(oldpb->thing_word) == REFC_BINARY_SUBTAG);
-    hp = HAlloc(BIF_P, 2*PROC_BIN_SIZE+3);
+    hp = HAlloc(BIF_P, 2*ERL_SUB_BIN_SIZE+3);
+    GET_REAL_BIN(BIF_ARG_1, orig, offset);
+    sb1 = (ErlSubBin *) hp;
+    sb1->thing_word = HEADER_SUB_BIN;
+    sb1->size = pos;
+    sb1->offs = offset;
+    sb1->orig = orig;
+    hp += ERL_SUB_BIN_SIZE;
 
-    newpb1 = (ProcBin *) hp;
-    newpb1->thing_word = make_thing(PROC_BIN_SIZE-1, REFC_BINARY_SUBTAG);
-    newpb1->size = pos;
-    newpb1->next = BIF_P->off_heap.mso;
-    newpb1->val = oldpb->val;
-    newpb1->bytes = oldpb->bytes;
-    hp += PROC_BIN_SIZE;
+    sb2 = (ErlSubBin *) hp;
+    sb2->thing_word = HEADER_SUB_BIN;
+    sb2->size = orig_size - pos;
+    sb2->offs = offset + pos;
+    sb2->orig = orig;
+    hp += ERL_SUB_BIN_SIZE;
 
-    newpb2 = (ProcBin *) hp;
-    newpb2->thing_word = make_thing(PROC_BIN_SIZE-1, REFC_BINARY_SUBTAG);
-    newpb2->size = oldpb->size - pos;
-    newpb2->next = newpb1;
-    newpb2->val = oldpb->val;
-    newpb2->bytes = oldpb->bytes + pos;
-    hp += PROC_BIN_SIZE;
-
-    BIF_P->off_heap.mso = newpb2;
-    oldpb->val->refc += 2;
-
-    return TUPLE2(hp, make_binary(newpb1), make_binary(newpb2));
+    return TUPLE2(hp, make_binary(sb1), make_binary(sb2));
 }
 
 void

@@ -18,8 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: orber_iiop.erl
-%% Author: Lars Thorsen
-%% 
 %% Description:
 %%    This file contains the interface to the iiop operations
 %%
@@ -36,7 +34,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start_sup/1, request/5, locate/1]).
+-export([start_sup/1, request/5, request/6, locate/1]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -67,7 +65,16 @@ start_sup(Opts) ->
 %%%-----------------------------------------------------------------
 %%% Func: request/5
 %%%-----------------------------------------------------------------
-request({SocketType, Host, IIOP_port, ObjKey}, Op, Parameters, TypeCodes, ResponseExpected) ->
+request(ObjData, Op, Parameters, TypeCodes, ResponseExpected) ->
+    request(ObjData, Op, Parameters, TypeCodes, ResponseExpected, infinity).
+
+request({SocketType, Host, IIOP_port, ObjKey}, Op, Parameters, TypeCodes, 
+	ResponseExpected, Timeout) ->
+    request({SocketType, Host, IIOP_port, ObjKey, orber:giop_version()}, Op, 
+	    Parameters, TypeCodes, ResponseExpected, Timeout);
+
+request({SocketType, Host, IIOP_port, ObjKey, Version}, Op, Parameters, TypeCodes, 
+	ResponseExpected, Timeout) ->
     SocketOptions = case SocketType of
 			normal ->
 			    [];
@@ -82,12 +89,15 @@ request({SocketType, Host, IIOP_port, ObjKey}, Op, Parameters, TypeCodes, Respon
 		X ->
 		    X
 	    end,
-    orber_iiop_outproxy:request(Proxy, ObjKey, Op, Parameters, TypeCodes, ResponseExpected).
+    orber_iiop_outproxy:request(Proxy, ObjKey, Op, Parameters, TypeCodes, 
+				ResponseExpected, Timeout, Version).
 
 %%-----------------------------------------------------------------
 %% Func: locate/1
 %%-----------------------------------------------------------------
 locate({SocketType, Host, IIOP_port, ObjKey}) ->
+    locate({SocketType, Host, IIOP_port, ObjKey, orber:giop_version()});
+locate({SocketType, Host, IIOP_port, ObjKey, Version}) ->
     SocketOptions = case SocketType of
 			normal ->
 			    [];
@@ -102,7 +112,7 @@ locate({SocketType, Host, IIOP_port, ObjKey}) ->
 		X ->
 		    X
 	    end,
-    orber_iiop_outproxy:locate(Proxy, ObjKey).
+    orber_iiop_outproxy:locate(Proxy, ObjKey, Version).
 
 
 ssl_client_cacertfile_option() ->
@@ -135,50 +145,64 @@ ssl_client_cacertfile_option() ->
 %%-----------------------------------------------------------------
 init({orber_iiop_sup, Opts}) ->
     ?PRINTDEBUG("init iiop supervisor"),
-    IIOP_port =  orber:iiop_port(),
+    IIOP_port      =  orber:iiop_port(),
     Bootstrap_port =  orber:bootstrap_port(),
-    SSL_port =  orber:iiop_ssl_port(),
-    SupFlags = {one_for_one, 5, 1000},	%Max 5 restarts in 1 second
+    SSL_port       =  orber:iiop_ssl_port(),
+    SupFlags       = {one_for_one, 5, 1000},	%Max 5 restarts in 1 second
     PortList = if
 		   SSL_port > 0 ->
 		       [{port, ssl, SSL_port}];
 		   true ->
 		       []
 		 end,
-    ChildSpec1 = if  
-		     Bootstrap_port == IIOP_port ->
-			 [{orber_iiop_net, {orber_iiop_net, start,
-					    [[{port, normal, IIOP_port} | PortList]]},
-			   permanent, 10000, worker, [orber_iiop_net]}];
-		     Bootstrap_port < 1024 ->
-%%%		     Bootstrap_port < 2024 -> % Used for testing without being root
-			 [{orber_iiop_net, {orber_iiop_net, start,
-					    [[{port, IIOP_port}| PortList]]},
-			   permanent, 10000, worker, [orber_iiop_net]},
-			  {orber_bootstrap, {orber_bootstrap,
-					     start, [{port, normal, Bootstrap_port}]}, permanent, 
-			   10000, worker, [orber_bootstrap]}];
-		     true ->
-			 [{orber_iiop_net, {orber_iiop_net, start,
-					   [[{port, normal, IIOP_port},
-					     {port, normal, Bootstrap_port}| PortList]]},
-			  permanent, 10000, worker, [orber_iiop_net]}]
-		 end,
-    ChildSpec = [
-		 {orber_iiop_insup, {orber_iiop_insup, start,
-				      [sup, Opts]},
-		  permanent, 10000, supervisor, [orber_iiop_insup]},
-		 {orber_iiop_socketsup, {orber_iiop_socketsup, start,
-					 [sup, Opts]},
-		  permanent, 10000, supervisor, [orber_iiop_socketsup]},
+    ChildSpec = 
+	case orber:is_lightweight() of
+	    true ->
+		[
 		 {orber_iiop_outsup, {orber_iiop_outsup, start,
 				      [sup, Opts]},
 		  permanent, 10000, supervisor, [orber_iiop_outsup]},
 		 {orber_iiop_pm, {orber_iiop_pm, start,
-				     [Opts]},
-		  permanent, 10000, worker, [orber_iiop_pm]}  |
+				  [Opts]},
+		  permanent, 10000, worker, [orber_iiop_pm]}
+		];
+	    false ->
+		ChildSpec1 = 
+		    if
+			Bootstrap_port == IIOP_port ->
+			    [{orber_iiop_net, {orber_iiop_net, start,
+					       [[{port, normal, IIOP_port} | PortList]]},
+			      permanent, 10000, worker, [orber_iiop_net]}];
+			Bootstrap_port < 1024 ->
+%%%		     Bootstrap_port < 2024 -> % Used for testing without being root
+			    [{orber_iiop_net, {orber_iiop_net, start,
+					       [[{port, IIOP_port}| PortList]]},
+			      permanent, 10000, worker, [orber_iiop_net]},
+			     {orber_bootstrap, {orber_bootstrap,
+						start, [{port, normal, Bootstrap_port}]}, permanent, 
+			      10000, worker, [orber_bootstrap]}];
+			true ->
+			    [{orber_iiop_net, {orber_iiop_net, start,
+					       [[{port, normal, IIOP_port},
+						 {port, normal, Bootstrap_port}| PortList]]},
+			      permanent, 10000, worker, [orber_iiop_net]}]
+		    end,
+		[
+		 {orber_iiop_outsup, {orber_iiop_outsup, start,
+				      [sup, Opts]},
+		  permanent, 10000, supervisor, [orber_iiop_outsup]},
+		 {orber_iiop_pm, {orber_iiop_pm, start,
+				  [Opts]},
+		  permanent, 10000, worker, [orber_iiop_pm]},
+		 {orber_iiop_insup, {orber_iiop_insup, start,
+				     [sup, Opts]},
+		  permanent, 10000, supervisor, [orber_iiop_insup]},
+		 {orber_iiop_socketsup, {orber_iiop_socketsup, start,
+					 [sup, Opts]},
+		  permanent, 10000, supervisor, [orber_iiop_socketsup]} | 
 		 ChildSpec1
-		],
+		]
+	end,
     {ok, {SupFlags, ChildSpec}}.
 
 

@@ -1,0 +1,16 @@
+<!doctype part PUBLIC "-//Stork//DTD part//EN">
+<part>
+  <header>
+    <title>Jinterface</title>
+    <prepared>Gordon Beaton, Babbis Xagorarakis</prepared>
+    <docno></docno>
+    <date>2000-08-25</date>
+    <rev></rev>
+  </header>
+   <description>
+    <p>
+      The Jinterface Application is a java communication tool package to erlang.
+    </p>
+  </description>
+  <include file="jinterface_users_guide">
+</part>

@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "erl_error.h"
 #include "ei.h"
 #include "putget.h"
 
@@ -63,7 +64,8 @@ static int show_trace(int (*pr)(), void *dest, const erlang_trace *t)
 
 /* this function doesn't do anything but skip over the number in the buffer */
 /* it doesn't really belong here either... */
-static int ei_decode_bignum(const char *buf, int *index, void *p)
+static int 
+ei_decode_bignum (const char *buf, int *index, void *p)
 {
   const char *s = buf + *index;
   const char *s0 = s;
@@ -76,6 +78,7 @@ static int ei_decode_bignum(const char *buf, int *index, void *p)
     break;
     
   default:
+      erl_errno = EIO;
     return -1;
   }
 
@@ -85,7 +88,7 @@ static int ei_decode_bignum(const char *buf, int *index, void *p)
 }
 
 /* we only need to initialize some of these (after 32 everything printable) */
-static non_printable[256] = {
+static int non_printable[256] = {
   /*                  1                   2                   3   */
   /*  2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 */
   1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
@@ -102,7 +105,8 @@ static int printable_list_p(const unsigned char *buf, int buflen)
   return 1;
 }
 
-static int show_term(const char *termbuf, int *index, int (*pr)(), void *dest)
+static int 
+show_term (const char *termbuf, int *index, int (*pr)(), void *dest)
 {
   int type;
   char smallbuf[SMALLBUF];
@@ -246,23 +250,9 @@ static int ei_efprint(FILE *stream, const char *termbuf)
   return show_term(termbuf,&index,(int (*)())fprintf,stream);
 }
 
-#if (0)
-/* print term to buffer with sprintf */
-static int ei_esprint(char *buf, const char *termbuf)
-{
-  int index = 0;
-  return show_term(termbuf,&index,(int (*)())sprintf,buf);
-}
 
-/* print term to buffer with sprintf */
-static int ei_esnprint(char *buf, int n, const char *termbuf)
-{
-  int index = 0;
-  return show_term(termbuf,&index,(int (*)())snprintf,buf,n);
-}
-#endif /* 0 */
-
-static int show_msg(FILE *dest, int direction, const erlang_msg *msg, const char *buf)
+static int 
+show_msg (FILE *dest, int direction, const erlang_msg *msg, const char *buf)
 {
   if (direction) fprintf(dest,"-> ");
   else fprintf(dest,"<- ");
@@ -383,13 +373,15 @@ static int show_msg(FILE *dest, int direction, const erlang_msg *msg, const char
   return 0;
 }
 
-extern int ei_show_recmsg(FILE *dest, erlang_msg *msg, char *buf)
+int 
+ei_show_recmsg (FILE *dest, erlang_msg *msg, char *buf)
 {
   return show_msg(dest, 0, msg, buf);
 }
 
 /* decode the buffer again before showing it */
-extern int ei_show_sendmsg(FILE *dest, const char *header, const char *msgbuf)
+int 
+ei_show_sendmsg (FILE *dest, const char *header, const char *msgbuf)
 {
   erlang_msg msg;
   const char *mbuf = NULL;

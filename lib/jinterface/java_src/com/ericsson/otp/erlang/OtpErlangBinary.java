@@ -17,12 +17,23 @@
  */
 package com.ericsson.otp.erlang;
 
+import java.io.Serializable;
+import java.io.IOException;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+
 /**
  * Provides a Java representation of Erlang binaries. Anything that
  *  can be represented as a sequence of bytes can be made into an
  *  Erlang binary.
  **/
-public class OtpErlangBinary extends OtpErlangObject {
+public class OtpErlangBinary extends OtpErlangObject implements Serializable, Cloneable {
+  // don't change this!
+  static final long serialVersionUID = -3781009633593609217L;
+
+  // binary contents
   private byte[] bin;
   
   /**
@@ -32,7 +43,6 @@ public class OtpErlangBinary extends OtpErlangObject {
    **/
   public OtpErlangBinary(byte[] bin) {
     this.bin = new byte[bin.length];
-
     System.arraycopy(bin,0,this.bin,0,bin.length);
   }
 
@@ -48,6 +58,50 @@ public class OtpErlangBinary extends OtpErlangObject {
   public OtpErlangBinary(OtpInputStream buf) 
     throws OtpErlangDecodeException {
     this.bin = buf.read_binary();
+  }
+
+  /**
+   * Create a binary from an arbitrary Java Object. The object must
+   * implement java.io.Serializable or java.io.Externalizable.
+   *
+   * @param o the object to serialize and create this binary from.
+   **/
+  public OtpErlangBinary(Object o) {
+    try {
+      this.bin = toByteArray(o);
+    }
+    catch (IOException e) {
+      throw new java.lang.IllegalArgumentException("Object must implement Serializable");
+    }
+  }
+
+  private static byte[] toByteArray(Object o)
+    throws java.io.IOException {
+
+    if (o == null) return null;
+
+    /* need to synchronize use of the shared baos */
+    java.io.ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    java.io.ObjectOutputStream oos = new java.io.ObjectOutputStream(baos);
+
+    oos.writeObject(o);
+    oos.flush();
+    
+    return baos.toByteArray();
+  }
+
+  private static Object fromByteArray(byte[] buf) {
+    if (buf == null) return null;
+
+    try {
+      java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(buf);
+      java.io.ObjectInputStream ois = new java.io.ObjectInputStream(bais);
+      return ois.readObject();
+    }
+    catch (java.lang.ClassNotFoundException e) {}
+    catch (java.io.IOException e) {}
+
+    return null;
   }
 
   /**
@@ -67,6 +121,20 @@ public class OtpErlangBinary extends OtpErlangObject {
   public int size() {
     return bin.length;
   }
+
+  /**
+   * Get the java Object from the binary. If the binary contains a
+   * serialized Java object, then this method will recreate the
+   * object.
+   *
+   * 
+   * @return the java Object represented by this binary, or null if
+   * the binary does not represent a Java Object.
+   **/
+  public Object getObject() {
+    return fromByteArray(this.bin);
+  }
+  
 
   /**
    * Get the string representation of this binary object. A binary is
@@ -93,25 +161,15 @@ public class OtpErlangBinary extends OtpErlangObject {
    * Determine if two binaries are equal. Binaries are equal if they have
    * the same length and the array of bytes is identical.
    *
-   * @param o the object to compare to.
-   *
-   * @return true if o is a binary and the byte arrays contain the
-   * same bytes, false otherwise.
-   **/
-  public boolean equals(Object o) {
-    return false;
-  }
-
-  /**
-   * Determine if two binaries are equal. Binaries are equal if they have
-   * the same length and the array of bytes is identical.
-   *
-   * @param t the binary to compare to.
+   * @param o the binary to compare to.
    *
    * @return true if the byte arrays contain the same bytes, false
    * otherwise.
    **/
-  public boolean equals(OtpErlangBinary bin) {
+  public boolean equals(Object o) {
+    if (!(o instanceof OtpErlangBinary)) return false;
+    
+    OtpErlangBinary bin = (OtpErlangBinary)o;
     int size = this.size();
 
     if (size != bin.size()) return false;
@@ -121,5 +179,11 @@ public class OtpErlangBinary extends OtpErlangObject {
     }
 
     return true;
+  }
+  
+  public Object clone() {
+    OtpErlangBinary newBin = (OtpErlangBinary)(super.clone());
+    newBin.bin = (byte[])bin.clone();
+    return newBin;
   }
 }

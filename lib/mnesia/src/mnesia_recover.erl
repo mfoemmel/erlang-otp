@@ -132,8 +132,13 @@ connect_nodes(Ns) ->
 	    %% and we may use them when we recover transactions
 	    mnesia_lib:add_list(recover_nodes, GoodNodes),
 	    cast({announce_all, GoodNodes}),
-	    Context = starting_partitioned_network,
-	    mnesia_monitor:detect_inconcistency(GoodNodes, Context)
+	    case get_master_nodes(schema) of 
+		[] ->
+		    Context = starting_partitioned_network,
+		    mnesia_monitor:detect_inconcistency(GoodNodes, Context);
+		_ -> %% If master_nodes is set ignore old inconsistencies
+		    ignore
+	    end
     end,
     {GoodNodes, AlreadyConnected}.
 
@@ -852,7 +857,7 @@ terminate(Reason, State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 code_change(OldVsn, State, Extra) ->
-    exit(not_supported).
+    {ok, State}.
 
 %%%----------------------------------------------------------------------
 %%% Internal functions

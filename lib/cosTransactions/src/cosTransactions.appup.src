@@ -1,6 +1,11 @@
 {"%VSN%",
  [{"1.1.1", 
    [
+	{update, 'ETraP_Server_impl', soft, soft_purge, soft_purge, []}
+   ]
+  },
+  {"1.1", 
+   [
 	{update, 'CosTransactions_Control', soft, soft_purge, soft_purge, []},
 	{update, 'CosTransactions_Coordinator', soft, soft_purge, soft_purge, []},
 	{update, 'CosTransactions_HeuristicCommit', soft, soft_purge, soft_purge, []},
@@ -36,6 +41,11 @@
   }
  ],
  [{"1.1.1", 
+   [
+	{update, 'ETraP_Server_impl', soft, soft_purge, soft_purge, []}
+   ]
+  },
+  {"1.1", 
    [
 	{update, 'CosTransactions_Control', soft, soft_purge, soft_purge, []},
 	{update, 'CosTransactions_Coordinator', soft, soft_purge, soft_purge, []},

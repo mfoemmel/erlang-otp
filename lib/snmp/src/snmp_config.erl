@@ -19,6 +19,8 @@
 -include("snmp_types.hrl").
 -export([config/0, write_files/7, write_files/8, write_files/11]).
 
+-export([write_sys_config/3]).
+
 %%----------------------------------------------------------------------
 %% Handy SNMP configuration
 %%----------------------------------------------------------------------
@@ -233,6 +235,10 @@ write_files(Dir,Ver,ManagerIP,TrapUdp,AgentIP,AgentUDP,SysName,NotifType,
     write_notify_conf(Dir, NotifType),
     write_usm_conf(Dir, Ver, EngineID, SecType, Passwd),
     write_vacm_conf(Dir, Ver, SecType),
+    %% Verbs = [{snmp_master_agent_verbosity,log},
+    %%	     {snmp_mibserver_verbosity,debug},
+    %%	     {snmp_net_if_verbosity,debug}],
+    %% write_sys_config(Dir,Ver,Verbs),
     write_sys_config(Dir,Ver),
     ok.
 
@@ -539,12 +545,32 @@ vacm_ver(2) -> v2c;
 vacm_ver(3) -> usm.
      
 
+write_sys_config(Dir,Version,Verbosity) ->
+    {ok, Fid} = file:open(filename:join(Dir,"sys.config"),write),
+    ok = io:format(Fid, 
+		   "~s[{snmp, [{snmp_config_dir, \"~s\"},\n"
+		   "         {snmp_db_dir, \"~s\"},\n~s"
+		   "         ~s]}].\n",
+		   [header(),Dir,Dir,verbosity(Verbosity),
+		    ver_to_sys_str(Version)]),
+    file:close(Fid).
+
+
 write_sys_config(Dir,Version) ->
     {ok, Fid} = file:open(filename:join(Dir,"sys.config"),write),
     ok = io:format(Fid, "~s[{snmp, [{snmp_config_dir, \"~s\"},\n"
 		   "         {snmp_db_dir, \"~s\"},\n         ~s]}].\n",
 		   [header(),Dir,Dir,ver_to_sys_str(Version)]),
     file:close(Fid).
+
+
+verbosity(V) ->
+    verbosity(V,"").
+
+verbosity([],S) ->
+    S;
+verbosity([H|T],S) ->
+    verbosity(T,io_lib:format("~s         ~w,\n",[S,H])).
 
 
 ver_to_sys_str(Vsns) ->

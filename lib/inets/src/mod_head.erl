@@ -23,51 +23,79 @@
 %% do
 
 do(Info) ->
-  case Info#mod.method of
-    "HEAD" ->
-      case httpd_util:key1search(Info#mod.data,status) of
-	%% A status code has been generated!
-	{StatusCode,PhraseArgs,Reason} ->
-	  {proceed,Info#mod.data};
-	%% No status code has been generated!
-	undefined ->
-	  case httpd_util:key1search(Info#mod.data,response) of
-	    %% No response has been generated!
-	    undefined ->
-	      Path=mod_alias:path(Info#mod.data,Info#mod.config_db,
-				  Info#mod.request_uri),
-	      Suffix=httpd_util:suffix(Path),
-	      %% Does the file exists?
-	      case file:read_file_info(Path) of
-		{ok,FileInfo} ->
-		  MimeType=httpd_util:lookup_mime_default(Info#mod.config_db,
-							  Suffix,"text/plain"),
-		  Response=["Content-Type: ",MimeType,"\r\n",
-			    "Content-Length: ",
-			    integer_to_list(FileInfo#file_info.size),
-			    "\r\n\r\n"],
-		  {proceed,[{response,{200,Response}}|Info#mod.data]};
-		{error,Reason} ->
-		  {proceed,[{status,{404,Info#mod.request_uri,
-				     ?NICE("Can't open "++Path)}}|
-			    Info#mod.data]}
-	      end;
-	    %% A response has been sent! Nothing to do about it!
-	    {already_sent,StatusCode,Size} ->
-	      {proceed,Info#mod.data};
-	    %% A response has been generated!
-	    {StatusCode,Response} ->
-	      MimeType=httpd_util:key1search(Info#mod.data,mime_type,
-					     "text/plain"),
-	      NewResponse=["Content-type: ",MimeType,"\r\n",
-			   "Content-length: ",
-			   integer_to_list(httpd_util:flatlength(Response)),
-			   "\r\n\r\n"],
-	      {proceed,lists:keyreplace(response,1,Info#mod.data,
-					{response,{StatusCode,NewResponse}})}
-	  end
-      end;
-    %% Not a HEAD method!
-    _ ->
-      {proceed,Info#mod.data}
-  end.
+    ?DEBUG("do -> entry",[]),
+    case Info#mod.method of
+	"HEAD" ->
+	    case httpd_util:key1search(Info#mod.data,status) of
+		%% A status code has been generated!
+		{StatusCode,PhraseArgs,Reason} ->
+		    {proceed,Info#mod.data};
+		%% No status code has been generated!
+		undefined ->
+		    case httpd_util:key1search(Info#mod.data,response) of
+			%% No response has been generated!
+			undefined ->
+			    do_head(Info);
+			%% A response has been sent! Nothing to do about it!
+			{already_sent,StatusCode,Size} ->
+			    {proceed,Info#mod.data};
+			%% A response has been generated!
+			{StatusCode,Response} ->
+			    make_head(Info,StatusCode,Response)
+		    end
+	    end;
+	%% Not a HEAD method!
+	_ ->
+	    {proceed,Info#mod.data}
+    end.
+
+do_head(Info) -> 
+    ?DEBUG("do_head -> Request URI: ~p",[Info#mod.request_uri]),
+    Path = mod_alias:path(Info#mod.data,Info#mod.config_db,
+			  Info#mod.request_uri),
+    Suffix = httpd_util:suffix(Path),
+    %% Does the file exists?
+    case file:read_file_info(Path) of
+	{ok,FileInfo} ->
+	    MimeType=httpd_util:lookup_mime_default(Info#mod.config_db,
+						    Suffix,"text/plain"),
+	    Response=["Content-Type: ",MimeType,"\r\n",
+		      "Content-Length: ",
+		      integer_to_list(FileInfo#file_info.size),
+		      "\r\n\r\n"],
+	    {proceed,[{response,{200,Response}}|Info#mod.data]};
+	{error,Reason} ->
+	    {proceed,
+	     [{status,read_file_info_error(Reason,Info,Path)}|Info#mod.data]}
+    end.
+
+make_head(Info,StatusCode,Response) ->
+    MimeType = httpd_util:key1search(Info#mod.data,mime_type,"text/plain"),
+    NewResponse = ["Content-type: ",MimeType,"\r\n",
+		   "Content-length: ",
+		   integer_to_list(httpd_util:flatlength(Response)),
+		   "\r\n\r\n"],
+    {proceed,lists:keyreplace(response,1,Info#mod.data,
+			      {response,{StatusCode,NewResponse}})}.
+
+%% read_file_info_error - Handle file info read failure
+%%
+read_file_info_error(eacces,Info,Path) ->
+    read_file_info_error(403,Info,Path,"");
+read_file_info_error(enoent,Info,Path) ->
+    read_file_info_error(404,Info,Path,"");
+read_file_info_error(enotdir,Info,Path) ->
+    read_file_info_error(404,Info,Path,
+			 ": A component of the file name is not a directory");
+read_file_info_error(emfile,_Info,Path) ->
+    read_file_info_error(500,none,Path,": To many open files");
+read_file_info_error({enfile,_},_Info,Path) ->
+    read_file_info_error(500,none,Path,": File table overflow");
+read_file_info_error(_Reason,_Info,Path) ->
+    read_file_info_error(500,none,Path,"").
+
+read_file_info_error(StatusCode,none,Path,Reason) ->
+    {StatusCode,none,?NICE("Can't access "++Path++Reason)};
+read_file_info_error(StatusCode,Info,Path,Reason) ->
+    {StatusCode,Info#mod.request_uri,
+     ?NICE("Can't access "++Path++Reason)}.

@@ -13,7 +13,7 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id: init.erl,v 1.2 2000/06/08 21:58:05 tony Exp $
 %%
 %%
 %%           New initial version of init.
@@ -37,6 +37,7 @@
 %%        -path          : Override path in bootfile.
 %%        -pa Path+      : Add my own paths first.
 %%        -pz Path+      : Add my own paths last.
+%%        -run           : Start own processes.
 %%        -s             : Start own processes.
 %% 
 %%
@@ -44,7 +45,7 @@
 
 -module(init).
 -export([restart/0,reboot/0,stop/0,get_args/0,
-	 get_status/0,boot/1,get_arguments/0,
+	 get_status/0,boot/1,get_arguments/0,get_plain_arguments/0,
 	 get_argument/1,script_id/0]).
 
 % internal exports
@@ -66,14 +67,27 @@
 get_arguments() ->
     request(get_arguments).
 
+get_plain_arguments() ->
+    bs2ss(request(get_plain_arguments)).
+
 get_argument(Arg) ->
     request({get_argument,Arg}).
 
 script_id() ->
     request(script_id).
 
+bs2as(L0) when list(L0) ->
+    map(fun b2a/1, L0);
+bs2as(L) ->
+    L.
+
+bs2ss(L0) when list(L0) ->
+    map(fun b2s/1, L0);
+bs2ss(L) ->
+    L.
+
 get_args() ->
-    request(get_args).
+    bs2as(request(get_args)).
 
 get_flag(F) ->  % Old interface
     request({get_flag,F}).
@@ -109,8 +123,52 @@ stop()    -> init ! {stop,stop},ok.
 boot(BootArgs) ->
     register(init, self()),
     process_flag(trap_exit, true),
-    {Start,Flags,Args} = parse_boot_args(BootArgs),
-    boot(Start,Flags,Args).
+    {Start0,Flags,Args} = parse_boot_args(BootArgs),
+    Start = map(fun prepare_run_args/1, Start0),
+    Flags0 = flags_to_atoms_again(Flags),
+    boot(Start,Flags0,Args).
+
+prepare_run_args({_, L=[]}) ->
+    bs2as(L);
+prepare_run_args({_, L=[_]}) ->
+    bs2as(L);
+prepare_run_args({s, L=[M,F|Args]}) ->
+    [b2a(M), b2a(F) | bs2as(Args)];
+prepare_run_args({run, L=[M,F|Args]}) ->
+    [b2a(M), b2a(F) | bs2ss(Args)].
+
+b2a(Bin) when binary(Bin) ->
+    list_to_atom(binary_to_list(Bin));
+b2a(A) when atom(A) ->
+    A.
+
+b2s(Bin) when binary(Bin) ->
+    binary_to_list(Bin);
+b2s(L) when list(L) ->
+    L.
+
+map(F, []) ->
+    [];
+map(F, [X|Rest]) ->
+    [F(X) | map(F, Rest)].
+
+values_to_atoms_again([]) ->
+    [];
+values_to_atoms_again([{F,L0}|Rest]) ->
+    L = map(fun b2a/1, L0),
+    [{F,L}|values_to_atoms_again(Rest)];
+values_to_atoms_again([{F}|Rest]) ->
+    [{F}|values_to_atoms_again(Rest)].
+
+flags_to_atoms_again([]) ->
+    [];
+flags_to_atoms_again([{F0,L0}|Rest]) ->
+    L = L0,
+    F = b2a(F0),
+    [{F,L}|flags_to_atoms_again(Rest)];
+flags_to_atoms_again([{F0}|Rest]) ->
+    F = b2a(F0),
+    [{F}|flags_to_atoms_again(Rest)].
 
 boot(Start,Flags,Args) ->
     BootPid = do_boot(Flags,Start),
@@ -251,6 +309,8 @@ do_handle_msg(Msg,State) ->
 	   script_id = Sid,
 	   args = Args} = State,
     case Msg of
+	{From,get_plain_arguments} ->
+	    From ! {init,Args};
 	{From,get_arguments} ->
 	    From ! {init,get_arguments(Flags)};
 	{From,{get_argument,Arg}} ->
@@ -268,14 +328,14 @@ do_handle_msg(Msg,State) ->
 	{From,{get_flag,F}} -> % Old interface
 	    case search(F,Flags) of
 		{value,{F,V}} ->
-		    From ! {init,list_to_tuple([F|V])};
+		    From ! {init,list_to_tuple([F|bs2as(V)])};
 		{value,{F}} ->
 		    From ! {init,{F}};
 		_ -> 
 		    From ! {init,notfound}
 	    end;
 	{From,get_flags} -> % Old interface 
-	    From ! {init,Flags};
+	    From ! {init,values_to_atoms_again(Flags)};
 	X ->
 	    case whereis(user) of
 		undefined ->
@@ -312,7 +372,7 @@ make_permanent(Boot,Config,Flags0,State) ->
 set_flag(Flag,false,Flags) ->
     {ok,Flags};
 set_flag(Flag,Value,Flags) when list(Value) ->
-    case catch list_to_atom(Value) of
+    case catch list_to_binary(Value) of
 	{'EXIT',_} ->
 	    {error,badarg};
 	AValue ->
@@ -455,6 +515,10 @@ kill_em([]) ->
 %%
 %% Kill all existing ports in the system (except the heart port),
 %% i.e. ports still existing after all processes have been killed.
+%%
+%% If we are running the threaded system with the async driver,
+%% then let the port (created by the system) stay around.
+%%
 kill_all_ports(Heart) ->
     kill_all_ports(Heart,erlang:ports()).
 
@@ -463,8 +527,13 @@ kill_all_ports(Heart,[P|Ps]) ->
 	{connected,Heart} ->
 	    kill_all_ports(Heart,Ps);
 	_ ->
-	    exit(P,kill),
-	    kill_all_ports(Heart,Ps)
+	    case erlang:port_info(P, name) of
+		{name, "async"} ->
+		    kill_all_ports(Heart,Ps);
+		_ ->
+		    exit(P,kill),
+		    kill_all_ports(Heart,Ps)
+	    end
     end;
 kill_all_ports(_,_) ->
     ok.
@@ -548,7 +617,7 @@ add_to_kernel(Init,Pid) ->
     end.
 
 prim_load_flags(Flags) ->
-    PortPgm = get_flag('-loader',Flags,efile),
+    PortPgm = get_flag('-loader',Flags,<<"efile">>),
     Hosts = get_flag_list('-hosts', Flags, []),
     Id = get_flag('-id',Flags,none),
     Path = get_flag_list('-path',Flags,false),
@@ -557,7 +626,7 @@ prim_load_flags(Flags) ->
 %%% -------------------------------------------------
 %%% The boot process fetches a boot script and loads
 %%% all modules specified and starts spec. processes.
-%%% Processes specified with -s are finally started.
+%%% Processes specified with -s or -run are finally started.
 %%% -------------------------------------------------
 
 do_boot(Flags,Start) ->
@@ -566,13 +635,14 @@ do_boot(Flags,Start) ->
 do_boot(Init,Flags,Start) ->
     process_flag(trap_exit,true),
     {Pgm,Nodes,Id,Path} = prim_load_flags(Flags),
-    Root = get_flag('-root',Flags),
+    Root = b2s(get_flag('-root',Flags)),
     PathFls = path_flags(Flags),
-    LoadPid = start_prim_loader(Init,Id,Pgm,Nodes,Root,Path,PathFls),
+    LoadPid = start_prim_loader(Init,b2a(Id),b2s(Pgm),bs2as(Nodes),
+				Root,bs2ss(Path),PathFls),
     BootFile = bootfile(Flags,Root),
     BootList = get_boot(BootFile,Root),
-    Embedded = get_flag('-mode',Flags,false),
-    Deb = get_flag('-init_debug',Flags,false),
+    Embedded = b2a(get_flag('-mode',Flags,false)),
+    Deb = b2a(get_flag('-init_debug',Flags,false)),
     BootVars = get_flag_args('-boot_var',Flags),
     eval_script(BootList,Init,PathFls,{Root,BootVars},Path,
 		{true,Embedded},Deb),
@@ -584,12 +654,12 @@ do_boot(Init,Flags,Start) ->
     start_em(Start).
 
 bootfile(Flags,Root) ->
-    get_flag('-boot',Flags,concat([Root,"/bin/start"])).
+    b2s(get_flag('-boot',Flags,concat([Root,"/bin/start"]))).
 
 path_flags(Flags) ->
     Pa = append(reverse(get_flag_args('-pa',Flags))),
     Pz = append(get_flag_args('-pz',Flags)),
-    {Pa,Pz}.
+    {bs2ss(Pa),bs2ss(Pz)}.
 
 get_boot(BootFile0,Root) ->
     BootFile = concat([BootFile0,".boot"]),
@@ -695,7 +765,7 @@ add_var("$ROOT/" ++ Path, {Root,_}) ->
     concat([Root, "/", Path]);
 add_var([$$|Path0], {_,VarList}) ->
     {Var,Path} = extract_var(Path0,[]),
-    Value = get_var_value(list_to_atom(Var),VarList),
+    Value = b2s(get_var_value(list_to_binary(Var),VarList)),
     concat([Value, "/", Path]);
 add_var(Path, _)   ->
     Path.
@@ -808,7 +878,7 @@ shutdown_timer(Flags) ->
 	infinity ->
 	    self();
 	Time ->
-	    case catch list_to_integer(atom_to_list(Time)) of
+	    case catch list_to_integer(binary_to_list(Time)) of
 		T when integer(T) ->
 		    Pid = spawn(init,timer,[T]),
 		    receive
@@ -845,7 +915,10 @@ parse_boot_args([B|Bs], Ss, Fs, As) ->
     case check(B) of
 	start_arg ->
 	    {S,Rest} = get_args(Bs, []),
-	    parse_boot_args(Rest, [S|Ss], Fs, As);
+	    parse_boot_args(Rest, [{s, S}|Ss], Fs, As);
+	start_arg2 ->
+	    {S,Rest} = get_args(Bs, []),
+	    parse_boot_args(Rest, [{run, S}|Ss], Fs, As);
 	flag ->
 	    {F,Rest} = get_args(Bs, []),
 	    Fl = case F of
@@ -862,10 +935,11 @@ parse_boot_args([B|Bs], Ss, Fs, As) ->
 parse_boot_args([], Start, Flags, Args) ->
     {reverse(Start),reverse(Flags),reverse(Args)}.
 
-check('-s') -> start_arg;
-check('--') -> end_args;
-check(X) when atom(X) ->
-    case atom_to_list(X) of
+check(<<"-s">>) -> start_arg;
+check(<<"-run">>) -> start_arg2;
+check(<<"--">>) -> end_args;
+check(X) when binary(X) ->
+    case binary_to_list(X) of
 	[$-|Rest] -> flag;
 	Chars     -> arg			%Even empty atoms
     end;
@@ -874,6 +948,7 @@ check(X) -> arg.				%This should never occur
 get_args([B|Bs], As) ->
     case check(B) of
 	start_arg -> {reverse(As), [B|Bs]};
+	start_arg2 -> {reverse(As), [B|Bs]};
 	end_args -> {reverse(As), Bs};
 	flag -> {reverse(As), [B|Bs]};
 	arg ->
@@ -952,7 +1027,8 @@ get_arguments([{F}|Flags]) ->
 get_arguments([]) ->
     [].
 
-to_strings([H|T]) -> [atom_to_list(H)|to_strings(T)];
+to_strings([H|T]) when atom(H) -> [atom_to_list(H)|to_strings(T)];
+to_strings([H|T]) when binary(H) -> [binary_to_list(H)|to_strings(T)];
 to_strings([])    -> [].
 
 get_argument(Arg,Flags) ->

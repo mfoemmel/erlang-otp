@@ -38,6 +38,7 @@ public class Any {
   protected char charV;
   protected short shortV;
   protected int intV;
+  protected long longV;
   protected float floatV;
   protected double doubleV;
 
@@ -81,10 +82,16 @@ public class Any {
 	
       case TCKind._tk_long:	
 	return (_any.extract_long() == intV);
+	
+      case TCKind._tk_longlong:	
+	return (_any.extract_longlong() == longV);
 
       case TCKind._tk_ulong:
 	return (_any.extract_ulong() == intV);
-	
+
+      case TCKind._tk_ulonglong:
+	return (_any.extract_ulonglong() == longV);
+
       case TCKind._tk_float:
 	return equal(_any.extract_float(),floatV);
 	
@@ -97,11 +104,17 @@ public class Any {
       case TCKind._tk_char:
 	return (_any.extract_char() == charV);
 	
+      case TCKind._tk_wchar:
+	return (_any.extract_wchar() == charV);
+	
       case TCKind._tk_octet:
 	return (_any.extract_octet() == byteV);
 	
       case TCKind._tk_string:
 	return (_any.extract_string().compareTo(stringV) == 0);
+
+      case TCKind._tk_wstring:
+	return (_any.extract_wstring().compareTo(stringV) == 0);
 	
       case TCKind._tk_sequence:
 
@@ -186,11 +199,7 @@ public class Any {
       case TCKind._tk_objref:
       case TCKind._tk_alias:
       case TCKind._tk_except:
-      case TCKind._tk_longlong:
-      case TCKind._tk_ulonglong:
       case TCKind._tk_longdouble:
-      case TCKind._tk_wchar:
-      case TCKind._tk_wstring:
       case TCKind._tk_fixed:
 	return true;
 	
@@ -270,6 +279,10 @@ public class Any {
       case TCKind._tk_ulong : 
 	intV = _is.read_int();
 	break;
+      case TCKind._tk_longlong : 
+      case TCKind._tk_ulonglong : 
+	longV = _is.read_long();
+	break;
       case TCKind._tk_float : 
 	floatV = _is.read_float();
 	break;
@@ -280,12 +293,14 @@ public class Any {
 	booleanV = _is.read_boolean();
 	break;
       case TCKind._tk_char : 
+      case TCKind._tk_wchar : 
 	charV = _is.read_char();
 	break;
       case TCKind._tk_octet : 
 	byteV = _is.read_byte();
 	break;
       case TCKind._tk_string : 
+      case TCKind._tk_wstring : 
 	stringV = _is.read_string();
 	break;
       case TCKind._tk_atom : 
@@ -304,14 +319,10 @@ public class Any {
       case TCKind._tk_Principal : 
       case TCKind._tk_objref : 
       case TCKind._tk_alias : 
-      case TCKind._tk_except : 
-      case TCKind._tk_longlong : 
-      case TCKind._tk_ulonglong : 
-      case TCKind._tk_longdouble : 
-      case TCKind._tk_wchar : 
-      case TCKind._tk_wstring : 
+      case TCKind._tk_except :  
+      case TCKind._tk_longdouble :  
       case TCKind._tk_fixed :
-	throw new com.ericsson.otp.erlang.OtpErlangDataException("Unsupported type");
+	throw new java.lang.Exception("Unsupported type");
 	
       default: // User defined type
 
@@ -324,7 +335,7 @@ public class Any {
 	  read_user_defined(_is, _tc);
 	  is = new com.ericsson.otp.erlang.OtpInputStream(os.toByteArray());
 	} catch (Exception e) {
-	  throw new com.ericsson.otp.erlang.OtpErlangDataException("BAD VALUE");
+	  throw new java.lang.Exception("BAD VALUE");
 	}
       }
 
@@ -346,9 +357,11 @@ public class Any {
 	os.write_ushort(_is.read_ushort());
 	break;
       case TCKind._tk_long :
+      case TCKind._tk_longlong :
 	os.write_long(_is.read_long());
 	break;
       case TCKind._tk_ulong :
+      case TCKind._tk_ulonglong :
 	os.write_ulong(_is.read_ulong());
 	break;
       case TCKind._tk_float :
@@ -361,12 +374,14 @@ public class Any {
 	os.write_boolean(_is.read_boolean());
 	break;
       case TCKind._tk_char : 
+      case TCKind._tk_wchar : 
 	os.write_char(_is.read_char());
 	break;
       case TCKind._tk_octet :
 	os.write_byte(_is.read_byte());
 	break;
       case TCKind._tk_string :
+      case TCKind._tk_wstring :
 	os.write_string(_is.read_string());
 	break;
       
@@ -409,12 +424,12 @@ public class Any {
 	  break;
 
 	default: // Integer type
-	  int __ilabel = _is.read_int();
-	  os.write_int(__ilabel);
+	  long __ilabel = _is.read_long();
+	  os.write_long(__ilabel);
 
 	  for (int i=0; i<__mlen; i++) {
 	    boolean __itype = true;
-	    int __mlabel = 0;
+	    long __mlabel = 0;
 
 	    switch (_tc.member_label(i).type().kind().value()) {
 
@@ -427,11 +442,20 @@ public class Any {
 	    case TCKind._tk_long :
 	      __mlabel = _tc.member_label(i).extract_long();
 	      break;
+	    case TCKind._tk_longlong :
+	      __mlabel = _tc.member_label(i).extract_longlong();
+	      break;
 	    case TCKind._tk_ulong :
 	      __mlabel = _tc.member_label(i).extract_ulong();
 	      break;
+	    case TCKind._tk_ulonglong :
+	      __mlabel = _tc.member_label(i).extract_ulonglong();
+	      break;
 	    case TCKind._tk_char :
 	      __mlabel = _tc.member_label(i).extract_char();
+	      break;
+	    case TCKind._tk_wchar :
+	      __mlabel = _tc.member_label(i).extract_wchar();
 	      break;
 	      
 	    default :  // Default label
@@ -497,7 +521,7 @@ public class Any {
 	 * Not supported types
 	 */
       default :
-	throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+	throw new java.lang.Exception("");
 	
       }
 			   	       
@@ -520,6 +544,10 @@ public class Any {
       case TCKind._tk_ulong :
 	_os.write_int(intV);
 	break;
+      case TCKind._tk_longlong :
+      case TCKind._tk_ulonglong :
+	_os.write_long(longV);
+	break;
       case TCKind._tk_float :
 	_os.write_float(floatV);
 	break;
@@ -530,12 +558,14 @@ public class Any {
 	_os.write_boolean(booleanV);
 	break;
       case TCKind._tk_char : 
+      case TCKind._tk_wchar : 
 	_os.write_char(charV);
 	break;
       case TCKind._tk_octet :
 	_os.write_byte(byteV);
 	break;
       case TCKind._tk_string :
+      case TCKind._tk_wstring :
 	_os.write_string(stringV);
 	break;
       case TCKind._tk_atom :
@@ -555,13 +585,9 @@ public class Any {
       case TCKind._tk_objref : 
       case TCKind._tk_alias : 
       case TCKind._tk_except : 
-      case TCKind._tk_longlong : 
-      case TCKind._tk_ulonglong : 
-      case TCKind._tk_longdouble : 
-      case TCKind._tk_wchar : 
-      case TCKind._tk_wstring : 
+      case TCKind._tk_longdouble :  
       case TCKind._tk_fixed :
-	throw new com.ericsson.otp.erlang.OtpErlangDataException("BAD KIND");
+	throw new java.lang.Exception("BAD KIND");
 	
       default:
 	_os.write(os.toByteArray());
@@ -584,7 +610,7 @@ public class Any {
       if (tcV.kind() == TCKind.tk_short)
 	return shortV;
 
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
   
   /**
@@ -606,7 +632,7 @@ public class Any {
       if (tcV.kind() == TCKind.tk_long)
 	return intV;
 
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
   
   /**
@@ -615,6 +641,29 @@ public class Any {
   public void insert_long(int i){
       intV = i;
       tcV = new TypeCode(TCKind.tk_long);
+  } 
+
+
+    
+  /* long long */
+  /**
+    Long Long value extractor method
+    @return long, the value of Any 
+  **/
+  public long extract_longlong() 
+    throws java.lang.Exception {
+      if (tcV.kind() == TCKind.tk_longlong)
+	return longV;
+
+      throw new java.lang.Exception("");
+  }
+  
+  /**
+    Long Long value insertion method
+  **/
+  public void insert_longlong(long l){
+      longV = l;
+      tcV = new TypeCode(TCKind.tk_longlong);
   } 
   
 
@@ -628,7 +677,7 @@ public class Any {
       if (tcV.kind() == TCKind.tk_ushort)
 	return shortV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
 
   /**
@@ -651,7 +700,7 @@ public class Any {
       if (tcV.kind() == TCKind.tk_ulong)
 	return intV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   } 
   
    /**
@@ -660,6 +709,30 @@ public class Any {
   public void insert_ulong(int i){
     intV = i;
     tcV = new TypeCode(TCKind.tk_ulong);
+  } 
+
+
+
+    
+  /* unsigned long long */
+  /**
+    Unsigned Long Long value extractor method
+    @return long, the value of Any 
+    **/
+  public long extract_ulonglong() 
+    throws java.lang.Exception {
+      if (tcV.kind() == TCKind.tk_ulonglong)
+	return longV;
+
+      throw new java.lang.Exception("");
+  }
+  
+  /**
+    Unsigned Long Long value insertion method
+  **/
+  public void insert_ulonglong(long l){
+      longV = l;
+      tcV = new TypeCode(TCKind.tk_ulonglong);
   } 
 
 
@@ -673,7 +746,7 @@ public class Any {
       if (tcV.kind() == TCKind.tk_float)
 	return floatV;
 
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   } 
    
   /**
@@ -695,7 +768,7 @@ public class Any {
       if (tcV.kind() == TCKind.tk_double)
 	return doubleV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   } 
   
   /**
@@ -717,7 +790,7 @@ public class Any {
       if (tcV.kind() == TCKind.tk_boolean)
 	return booleanV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
 
   /**
@@ -740,7 +813,7 @@ public class Any {
       if (tcV.kind() == TCKind.tk_char)
 	return charV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   } 
   
   /**
@@ -749,6 +822,28 @@ public class Any {
   public void insert_char(char c) {
     charV = c;
     tcV = new TypeCode(TCKind.tk_char);
+  } 
+
+
+  /* wchar */
+  /**
+    Wchar value extractor method
+    @return char, the value of Any 
+    **/
+  public char extract_wchar() 
+    throws java.lang.Exception{
+      if (tcV.kind() == TCKind.tk_wchar)
+	return charV;
+      
+      throw new java.lang.Exception("");
+  } 
+  
+  /**
+    Wchar value insertion method
+    **/
+  public void insert_wchar(char c) {
+    charV = c;
+    tcV = new TypeCode(TCKind.tk_wchar);
   } 
   
 
@@ -763,7 +858,7 @@ public class Any {
       if (tcV.kind() == TCKind.tk_octet)
 	return byteV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   } 
    
   /**
@@ -785,7 +880,7 @@ public class Any {
       if (tcV.kind() == TCKind.tk_string)
 	return stringV;
 
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
   
   /**
@@ -794,6 +889,29 @@ public class Any {
   public void insert_string(java.lang.String s) {
       stringV = s;
       tcV = new TypeCode(TCKind.tk_string);
+  }
+
+
+
+  /* wstring */
+  /**
+    Wstring value extractor method
+    @return String, the value of Any 
+  **/
+  public java.lang.String extract_wstring() 
+    throws java.lang.Exception{
+      if (tcV.kind() == TCKind.tk_wstring)
+	return stringV;
+
+      throw new java.lang.Exception("");
+  }
+  
+  /**
+    Wstring value insertion method
+    **/
+  public void insert_wstring(java.lang.String s) {
+      stringV = s;
+      tcV = new TypeCode(TCKind.tk_wstring);
   }
 
 
@@ -808,7 +926,7 @@ public class Any {
       if (tcV.kind() == TCKind.tk_atom)
 	return stringV;
 
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
   
   /**

@@ -9,11 +9,15 @@
 #
 s|@host@|vxworks_ppc603|
 s|@system_type@|vxworks_ppc603|
-s|@CC@|@TTPREFIX@ccppc|
+s|@CC@|@TTPREFIX@ccppc -mlongcall|
 s|@HCC@|gcc|
 s|@LD@|@TTPREFIX@ldppc|
-s|@LIBS@|-L@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/powerpc-wrs-vxworks/cygnus-2.7.2-960126 -lgcc|
+s|@STRIP@|@TTPREFIX@stripppc|
+s|@SYMPREFIX@||
+s|@LIBS@||
+s|@GCCLIBFLAGS@|-L@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/powerpc-wrs-vxworks/cygnus-2.7.2-960126 -lgcc|
 s|@DED_LD@|@TTPREFIX@ldppc|
+s|@DED_CFLAGS@|@CFLAGS@|
 # generate dwarf debug code on PPC ..
 s|@DEBUG_FLAGS@|-gdwarf|
 # remove -g option

@@ -72,6 +72,7 @@ int erl_unpublish(const char *alive)
 
   if (writesocket(fd, buf, len+2) != len+2) {
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
@@ -81,6 +82,7 @@ int erl_unpublish(const char *alive)
   
   if (readsocket(fd, buf, 7) != 7) {
     closesocket(fd);
+    erl_errno = EIO;
     return -1; 
   }
   closesocket(fd);
@@ -94,14 +96,16 @@ int erl_unpublish(const char *alive)
   }
   else if (!strcmp("NOEXIST",buf)) {
 #ifdef DEBUG_DIST
-  if (ei_trace_distribution > 2) fprintf(stderr,"<- NOEXIST (failure)\n");
+      if (ei_trace_distribution > 2) fprintf(stderr,"<- NOEXIST (failure)\n");
 #endif
+      erl_errno = EIO;
     return -1;
   }
   else {
 #ifdef DEBUG_DIST
     if (ei_trace_distribution > 2) fprintf(stderr,"<- unknown (failure)\n");
 #endif
+    erl_errno = EIO;
     return -1; /* this shouldn't happen */
   }
 }

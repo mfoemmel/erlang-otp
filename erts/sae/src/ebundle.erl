@@ -21,14 +21,26 @@
 
 -include_lib("kernel/include/file.hrl").
 
--export([make_bundle/1]).
+-export([unix/1,win32/1]).
 
 %%% This module is meant for bootstrapping Standalone Erlang.
 %%% It can be run in a R5 system, but not standalone, because
 %%% it uses the file module, not the file_prim module.
 
-make_bundle(Args) ->
-    case catch make_bundle1(Args) of
+unix(Args) ->
+    make_bundle(Args, fun make_script/2).
+
+make_script(File, Payload) ->
+    Script = ["#!/clearcase/otp/erts/bin/sparc-sun-solaris2.7/beam_evm\n",
+	      ":",integer_to_list(size(Payload)),"\n",Payload,"--end--\n"],
+    ok = file:write_file(File, Script),
+    file:write_file_info(File, #file_info{mode=8#770}).
+    
+win32(Args) ->
+    make_bundle(Args, fun(File, Payload) -> file:write_file(File, Payload) end).
+
+make_bundle(Args, Fun) ->
+    case catch make_bundle1(Args, Fun) of
 	{'EXIT',Reason} ->
 	    io:format("Error: ~P\n", [Reason,10]),
 	    halt(1);
@@ -39,13 +51,11 @@ make_bundle(Args) ->
 	    halt(1)
     end.
 
-make_bundle1([Output|Files]) ->
+make_bundle1([Output|Files], Fun) ->
     Modules = read_modules(Files),
     MF = start_function(Modules),
     Payload = term_to_binary({Modules,MF}),
-    Bundle = [":",integer_to_list(size(Payload)),"\n",Payload,"--end--\n"],
-    ok = file:write_file(Output, Bundle),
-    ok.
+    Fun(Output, Payload).
 
 read_modules([File|Fs]) ->
     Mod = list_to_atom(filename:rootname(filename:basename(File))),

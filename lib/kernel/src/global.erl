@@ -38,9 +38,24 @@
 
 %% Internal exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
-	 del_name/2, timer/2, sync_init/2, init_locker/3, resolve_it/4]).
+	 del_name/2, timer/2, sync_init/2, init_locker/4, resolve_it/4]).
 
 -export([info/0]).
+
+
+%-define(PRINT(X), erlang:display(X)).
+-define(PRINT(X), true).
+
+%-define(FORMAT(S, A), format(S, A)).
+-define(FORMAT(S, A), ok).
+
+%% Some notes on the internal structure:
+%% One invariant is that the list of locker processes is keyed; i.e.,
+%% there is only one process per neighboring node.
+%% When an item has been stored in the process dictionary, it is not
+%% necessarily cleared when not in use anymore. In other words, it's
+%% not an error if there is already an item there when one is to be
+%% stored.
 
 
 %% This is the protocol version
@@ -147,9 +162,7 @@ node_disconnected(Node) ->
 register_name(Name, Pid) when pid(Pid) ->
     register_name(Name, Pid, {global, random_exit_name}).
 register_name(Name, Pid, Method) when pid(Pid) ->
-    Nodes = [node() | gen_server:call(global_name_server, get_known)],
-    trans({global, self()},
-	  fun() ->
+    trans_all_known(fun(Nodes) ->
 		  case where(Name) of
 		      undefined ->
 			  gen_server:multi_call(Nodes, 
@@ -158,37 +171,30 @@ register_name(Name, Pid, Method) when pid(Pid) ->
 			  yes;
 		      _Pid -> no
 		  end
-	  end,
-	  Nodes).
+	  end).
 
 unregister_name(Name) ->
     case where(Name) of
 	undefined ->
 	    ok;
 	_ ->
-	    Nodes = [node() | gen_server:call(global_name_server, get_known)],
-	    trans({global, self()},
-		  fun() ->
+	    trans_all_known(fun(Nodes) ->
 			  gen_server:multi_call(Nodes, 
 						global_name_server,
 						{unregister, Name}),
 			  ok
-		  end,
-		  Nodes)
+		  end)
     end.
 
 re_register_name(Name, Pid) when pid(Pid) ->
     re_register_name(Name, Pid, {global, random_exit_name}).
 re_register_name(Name, Pid, Method) when pid(Pid) ->
-    Nodes = [node() | gen_server:call(global_name_server, get_known)],
-    trans({global, self()},
-	  fun() ->
+    trans_all_known(fun(Nodes) ->
 		  gen_server:multi_call(Nodes,
 					global_name_server,
 					{register, Name, Pid, Method}),
 		  yes
-	  end,
-	  Nodes).
+	  end).
 
 %% Returns all globally registered names 
 registered_names() -> lists:map(fun({Name, Pid, _Method}) -> Name end, 
@@ -205,10 +211,9 @@ registered_names() -> lists:map(fun({Name, Pid, _Method}) -> Name end,
 register_name_external(Name, Pid) when pid(Pid) ->
     register_name_external(Name, Pid, {global, random_exit_name}).
 register_name_external(Name, Pid, Method) when pid(Pid) ->
-    Nodes = [node() | gen_server:call(global_name_server, get_known)],
-    Nodes_v2 = [node() | gen_server:call(global_name_server, get_known_v2)],
-    trans({global, self()},
-	  fun() ->
+    trans_all_known(fun(Nodes) ->
+		  Nodes_v2 = [node() | gen_server:call(global_name_server,
+						       get_known_v2)],
 		  case where(Name) of
 		      undefined ->
 			  gen_server:multi_call(Nodes, 
@@ -220,8 +225,7 @@ register_name_external(Name, Pid, Method) when pid(Pid) ->
 			  yes;
 		      _Pid -> no
 		  end
-	  end,
-	  Nodes).
+	  end).
 
 
 
@@ -231,10 +235,10 @@ unregister_name_external(Name) ->
 	undefined ->
 	    ok;
 	_ ->
-	    Nodes = [node() | gen_server:call(global_name_server, get_known)],
-	    Nodes_v2 = [node() | gen_server:call(global_name_server, get_known_v2)],
-	    trans({global, self()},
-		  fun() ->
+	    trans_all_known(fun(Nodes) ->
+			  Nodes_v2 = [node() |
+				      gen_server:call(global_name_server,
+						      get_known_v2)],
 			  gen_server:multi_call(Nodes, 
 						global_name_server,
 						{unregister, Name}),
@@ -242,8 +246,7 @@ unregister_name_external(Name) ->
 						global_name_server,
 						{unregister_ext, Name}),
 			  ok
-		  end,
-		  Nodes)
+		  end)
     end.
 
 
@@ -325,6 +328,32 @@ trans(Id, Fun, Nodes, Retries) ->
 	    aborted
     end.
 
+%%% Similar to trans(Id, Fun), but always uses global's own lock,
+%%% on all nodes known to global, making sure that no new nodes have
+%%% become known while we got the list of known nodes.
+trans_all_known(F) ->
+    Id = {global, self()},
+    Nodes = [node() | gen_server:call(global_name_server, get_known)],
+    case set_lock(Id, Nodes) of
+	true ->
+	    Nodes2 = [node() | gen_server:call(global_name_server, get_known)],
+	    case Nodes2 -- Nodes of
+		[] ->
+		    case catch F(Nodes2) of
+			{'EXIT', R} ->
+			    del_lock(Id, Nodes2),
+			    exit(R);
+			Res ->
+			    del_lock(Id, Nodes2),
+			    Res
+		    end;
+		_ ->
+		    del_lock(Id, Nodes),
+		    trans_all_known(F)
+	    end;
+	false ->
+	    aborted
+    end.
 
 info() ->
     gen_server:call(global_name_server, info).
@@ -498,7 +527,7 @@ handle_call(stop, _From, S) ->
 %%             running vsn 1 or 2; if such nodes will coexist with vsn 3 nodes.
 %%=======================================================================================
 handle_cast({init_connect, Vsn, Node, InitMsg}, S) ->
-%    io:format("~p #### init_connect  Vsn ~p, Node ~p, InitMsg ~p~n",[node(), Vsn, Node, InitMsg]),
+    ?FORMAT("~p #### init_connect  Vsn ~p, Node ~p, InitMsg ~p~n",[node(), Vsn, Node, InitMsg]),
     case Vsn of
 	%% It is always the responsibility of newer versions to understand
 	%% older versions of the protocol.  
@@ -526,7 +555,7 @@ handle_cast({init_connect, Vsn, Node, InitMsg}, S) ->
 %% Ok, the lock is now set on both partitions. Send our names to other node.
 %%=======================================================================================
 handle_cast({lock_is_set, Node, MyTag}, S) ->
-%    io:format("~p #### lock_is_set  Node ~p~n",[node(), Node]),
+    ?FORMAT("~p #### lock_is_set  Node ~p~n",[node(), Node]),
     Sync_tag_my = get({sync_tag_my, Node}),
     PVsn =  get({prot_vsn, Node}),
     case {MyTag, PVsn} of
@@ -569,15 +598,15 @@ handle_cast({lock_is_set, Node, MyTag}, S) ->
 %%=======================================================================================
 %% Vsn 1 of the protocol
 handle_cast({exchange, Node, NameList}, S) ->
-%    io:format("~p #### handle_cast 1 exchange ~p~n",[node(),{Node, NameList}]),
+    ?FORMAT("~p #### handle_cast 1 exchange ~p~n",[node(),{Node, NameList}]),
     PVsn =  get({prot_vsn, Node}),
     exchange(PVsn, Node, NameList, S#state.known),
     {noreply, S};
 
 %% Vsn 2 of the protocol
 handle_cast({exchange, Node, NameList, NameExtList}, S) ->
-%    io:format("~p #### handle_cast 2 lock_is_set  exchange ~p~n",
-%	      [node(),{Node, NameList, NameExtList}]),
+    ?FORMAT("~p #### handle_cast 2 lock_is_set  exchange ~p~n",
+	    [node(),{Node, NameList, NameExtList}]),
     PVsn =  get({prot_vsn, Node}),
     case PVsn of
 	undefined -> 
@@ -595,8 +624,8 @@ handle_cast({exchange, Node, NameList, NameExtList}, S) ->
 
 %% Vsn 3 of the protocol
 handle_cast({exchange, Node, NameList, NameExtList, MyTag}, S) ->
-%    io:format("~p #### handle_cast 3 lock_is_set  exchange ~p~n",
-%	      [node(),{Node, NameList, NameExtList, MyTag}]),
+    ?FORMAT("~p #### handle_cast 3 lock_is_set  exchange ~p~n",
+	    [node(),{Node, NameList, NameExtList, MyTag}]),
     Sync_tag_my = get({sync_tag_my, Node}),
     PVsn =  get({prot_vsn, Node}),
     case {MyTag, PVsn} of
@@ -627,7 +656,7 @@ handle_cast({exchange, Node, NameList, NameExtList, MyTag}, S) ->
 %%=======================================================================================
 %% Vsn 1 of the protocol
 handle_cast({resolved, Node, Resolved, HisKnown}, S) ->
-%    io:format("~p #### 1 resolved ~p~n",[node(),{Node, Resolved, HisKnown}]),
+    ?FORMAT("~p #### 1 resolved ~p~n",[node(),{Node, Resolved, HisKnown}]),
     %% Check if any of his nodes has vs2 protocol, remove the nodes which are not
     %% contacteable (must went down after the resolved message was sent)
     {HisKnown_v2, Unknown} = check_prot_vsn(HisKnown),
@@ -638,7 +667,7 @@ handle_cast({resolved, Node, Resolved, HisKnown}, S) ->
 
 %% Vsn 2 of the protocol
 handle_cast({resolved, Node, Resolved, HisKnown, HisKnown_v2, Names_ext}, S) ->
-%    io:format("~p #### 2 resolved ~p~n",[node(),{Node, Resolved, HisKnown, HisKnown_v2, Names_ext}]),
+    ?FORMAT("~p #### 2 resolved ~p~n",[node(),{Node, Resolved, HisKnown, HisKnown_v2, Names_ext}]),
     PVsn =  get({prot_vsn, Node}),
     case PVsn of
 	undefined -> 
@@ -655,7 +684,7 @@ handle_cast({resolved, Node, Resolved, HisKnown, HisKnown_v2, Names_ext}, S) ->
 
 %% Vsn 3 of the protocol
 handle_cast({resolved, Node, Resolved, HisKnown, HisKnown_v2, Names_ext, MyTag}, S) ->
-%    io:format("~p #### 2 resolved ~p~n",[node(),{Node, Resolved, HisKnown, HisKnown_v2, Names_ext}]),
+    ?FORMAT("~p #### 2 resolved ~p~n",[node(),{Node, Resolved, HisKnown, HisKnown_v2, Names_ext}]),
     Sync_tag_my = get({sync_tag_my, Node}),
     PVsn =  get({prot_vsn, Node}),
     case {MyTag, PVsn} of
@@ -689,7 +718,7 @@ handle_cast({resolved, Node, Resolved, HisKnown, HisKnown_v2, Names_ext, MyTag},
 %%=======================================================================================
 %% Vsn 1 of the protocol
 handle_cast({new_nodes, Node, Ops, Nodes}, S) ->
-%    io:format("~p #### 1 new_nodes  ~p~n",[node(),{Ops, Nodes}]),
+    ?FORMAT("~p #### 1 new_nodes  ~p~n",[node(),{Ops, Nodes}]),
     %% Check if any of the nodes has vs2 protocol, remove the nodes which are not
     %% contacteable (must went down after the new_nodes message was sent)
     {Nodes_v2, Unknown} = check_prot_vsn(Nodes),
@@ -700,7 +729,7 @@ handle_cast({new_nodes, Node, Ops, Nodes}, S) ->
     
 %% Vsn 2 of the protocol
 handle_cast({new_nodes, _Node, Ops, Names_ext, Nodes, Nodes_v2}, S) ->
-%    io:format("~p #### 2 new_nodes  ~p~n",[node(),{Ops, Names_ext, Nodes, Nodes_v2}]),
+    ?FORMAT("~p #### 2 new_nodes  ~p~n",[node(),{Ops, Names_ext, Nodes, Nodes_v2}]),
     NewS = new_nodes(Ops, Names_ext, Nodes, Nodes_v2, S),
     {noreply, NewS};
     
@@ -713,7 +742,7 @@ handle_cast({new_nodes, _Node, Ops, Names_ext, Nodes, Nodes_v2}, S) ->
 %% We are in sync with this node (from the other node's known world).
 %%=======================================================================================
 handle_cast({in_sync, Node, IsKnown}, S) ->
-%    io:format("~p #### in_sync  ~p~n",[node(),{Node, IsKnown}]),
+    ?FORMAT("~p #### in_sync  ~p~n",[node(),{Node, IsKnown}]),
     lists:foreach(fun(Pid) -> Pid ! {synced, [Node]} end, S#state.syncers),
     erase({wait_lock, Node}),
     erase({pre_connect, Node}),
@@ -762,6 +791,7 @@ handle_info({'EXIT', Pid, Reason}, S) when pid(Pid) ->
     check_exit(Pid),
     Syncers = lists:delete(Pid, S#state.syncers),
     Lockers = lists:keydelete(Pid, 2, S#state.lockers),
+    ?PRINT({exit, Pid, lockers, node(), S#state.lockers}),
     {noreply, S#state{syncers = Syncers, lockers = Lockers}};
 
 handle_info({nodedown, Node}, S) when Node == S#state.node_name ->
@@ -770,8 +800,7 @@ handle_info({nodedown, Node}, S) when Node == S#state.node_name ->
     {noreply, change_our_node_name(node(), S)};
 
 handle_info({nodedown, Node}, S) ->
-%    X = lists:flatten(io_lib:format("~p #### nodedown 1 ####### Node ~p",[node(),Node])),
-%    erlang:display(list_to_atom(X)),
+    ?FORMAT("~p #### nodedown 1 ####### Node ~p",[node(),Node]),
     erase({wait_lock, Node}),
     erase({save_ops, Node}),
     erase({pre_connect, Node}),
@@ -788,14 +817,13 @@ handle_info({nodedown, Node}, S) ->
 
 
 handle_info({nodeup, Node}, S) when Node == node() ->
-%    io:format("~p ####  nodeup S ####### Node ~p~n",[node(), Node]),
+    ?FORMAT("~p ####  nodeup S ####### Node ~p~n",[node(), Node]),
     %% Somebody started the distribution dynamically - change
     %% references to old node name ('nonode@nohost') to Node.
     {noreply, change_our_node_name(Node, S)};
 
 handle_info({nodeup, Node}, S) when S#state.connect_all == true ->
-%    X = lists:flatten(io_lib:format("~p #### nodeup 1 ####### Node ~p",[node(),Node])),
-%    erlang:display(list_to_atom(X)),
+    ?FORMAT("~p #### nodeup 1 ####### Node ~p",[node(),Node]),
     IsKnown = lists:member(Node, S#state.known) or
               %% This one is only for double nodeups (shouldn't occur!)
               lists:keymember(Node, 1, S#state.lockers),
@@ -809,7 +837,7 @@ handle_info({nodeup, Node}, S) when S#state.connect_all == true ->
 	    %% synch sessions started by a nodeup.
 	    MyTag = now(),
 	    resend_pre_connect(Node),
-	    Pid = start_locker(Node, S#state.known, MyTag),
+	    Pid = start_locker(Node, S#state.known, MyTag, self()),
 	    Ls = S#state.lockers,
 	    InitC = {init_connect, {?vsn, MyTag}, node(), {locker, Pid, S#state.known}},
 	    put({sync_tag_my, Node}, MyTag),
@@ -818,16 +846,22 @@ handle_info({nodeup, Node}, S) when S#state.connect_all == true ->
     end;
 
 
-%% This message is only to test otp-2766 Global may be confused at bursty nodeup/nodedowns
+%% This message is only to test otp-2766 Global may be confused at bursty
+%% nodeup/nodedowns. It's a copy of the complex part of the handling of
+%% the 'nodeup' message.
+handle_info({test_vsn_tag_nodeup, Node}, S) when S#state.connect_all == true,
+						 Node == node() ->
+    {noreply, S};
 handle_info({test_vsn_tag_nodeup, Node}, S) when S#state.connect_all == true ->
-%    io:format("~p #### test_nodeup 1 ####### Node ~p~n",[node(), Node]),
+    ?FORMAT("~p #### test_nodeup 1 ####### Node ~p~n",[node(), Node]),
     MyTag = now(),
     resend_pre_connect(Node),
-    Pid = start_locker(Node, S#state.known, MyTag),
+    Pid = start_locker(Node, S#state.known, MyTag, self()),
     Ls = S#state.lockers,
     InitC = {init_connect, {?vsn, MyTag}, node(), {locker, Pid, S#state.known}},
     put({sync_tag_my, Node}, MyTag),
     gen_server:cast({global_name_server, Node}, InitC),
+    ?PRINT({lockers, node(), Ls}),
     {noreply, S#state{lockers = [{Node, Pid} | Ls]}};
 
 
@@ -863,7 +897,7 @@ handle_info(_, S) ->
 %% allowed to continue.
 %%=======================================================================================
 init_connect(Vsn, Node, InitMsg, HisTag, Lockers) ->
-%    io:format("~p #### init_connect  Vsn, Node, InitMsg ~p~n",[node(),{Vsn, Node, InitMsg}]),
+    ?FORMAT("~p #### init_connect  Vsn, Node, InitMsg ~p~n",[node(),{Vsn, Node, InitMsg}]),
     %% It is always the responsibility of newer versions to understand
     %% older versions of the protocol.  
     put({prot_vsn, Node}, Vsn),
@@ -873,11 +907,16 @@ init_connect(Vsn, Node, InitMsg, HisTag, Lockers) ->
 	    %% We both have lockers; let them set the lock
 	    case InitMsg of
 		{locker, HisLocker} -> %% old version
+		    ?PRINT({init_connect1old, node(), self(), Node,
+				    MyLocker, HisLocker}),
 		    MyLocker ! {his_locker, HisLocker};
 		{locker, HisLocker, HisKnown} -> %% current version
+		    ?PRINT({init_connect1, node(), self(), Node,
+				    MyLocker, HisLocker}),
 		    MyLocker ! {his_locker, HisLocker, HisKnown}
 	    end;
 	false ->
+	    ?PRINT({init_connect11, node(), self(), Node}),
 	    put({pre_connect, Node}, {Vsn, InitMsg, HisTag})
     end.
 
@@ -895,7 +934,7 @@ init_connect(Vsn, Node, InitMsg, HisTag, Lockers) ->
 %% exchange info is stored, in that case we take care of it.
 %%=======================================================================================
 lock_is_set(Node, Known, Known_v2) ->
-%    io:format("~p ####  lock_is_set ~p~n",[node(),{Node, Node, Known, Known_v2}]),
+    ?FORMAT("~p ####  lock_is_set ~p~n",[node(),{Node, Node, Known, Known_v2}]),
     PVsn = get({prot_vsn, Node}),
     case PVsn of 
 	1 ->
@@ -930,7 +969,7 @@ lock_is_set(Node, Known, Known_v2) ->
 %%=======================================================================================
 %% Vsn 1 of the protocol
 exchange(1, Node, NameList, Known) ->
-%    io:format("~p #### 1 exchange ~p~n",[node(),{Node, NameList}]),
+    ?FORMAT("~p #### 1 exchange ~p~n",[node(),{Node, NameList}]),
     case erase({wait_lock, Node}) of
 	lock_is_set ->
 	    {Ops, Resolved} = exchange_names(NameList, Node, [], []),
@@ -942,7 +981,7 @@ exchange(1, Node, NameList, Known) ->
     end;
 %% Vsn 2 of the protocol
 exchange(2, Node, {NameList, NameExtList}, {Known, Known_v2}) ->
-%    io:format("~p #### 2 lock_is_set  exchange ~p~n",[node(),{Node, NameList, NameExtList}]),
+    ?FORMAT("~p #### 2 lock_is_set  exchange ~p~n",[node(),{Node, NameList, NameExtList}]),
     case erase({wait_lock, Node}) of
 	lock_is_set ->
 	    {Ops, Resolved} = exchange_names(NameList, Node, [], []),
@@ -955,7 +994,7 @@ exchange(2, Node, {NameList, NameExtList}, {Known, Known_v2}) ->
     end;
 %% Vsn 3 of the protocol
 exchange(3, Node, {NameList, NameExtList}, {Known, Known_v2}) ->
-%    io:format("~p #### 3 lock_is_set  exchange ~p~n",[node(),{Node, NameList, NameExtList}]),
+    ?FORMAT("~p #### 3 lock_is_set  exchange ~p~n",[node(),{Node, NameList, NameExtList}]),
     case erase({wait_lock, Node}) of
 	lock_is_set ->
 	    {Ops, Resolved} = exchange_names(NameList, Node, [], []),
@@ -972,7 +1011,7 @@ exchange(3, Node, {NameList, NameExtList}, {Known, Known_v2}) ->
 
 
 resolved(Node, Resolved, {HisKnown, HisKnown_v2}, Names_ext, S) ->
-%    io:format("~p #### 2 resolved ~p~n",[node(),{Node, Resolved, HisKnown, HisKnown_v2, Names_ext}]),
+    ?FORMAT("~p #### 2 resolved ~p~n",[node(),{Node, Resolved, HisKnown, HisKnown_v2, Names_ext}]),
     Vsn = erase({prot_vsn, Node}),
     Ops = erase({save_ops, Node}) ++ Resolved,
     Known = S#state.known,
@@ -1008,7 +1047,7 @@ resolved(Node, Resolved, {HisKnown, HisKnown_v2}, Names_ext, S) ->
 
     
 new_nodes(Ops, Names_ext, Nodes, Nodes_v2, S) ->
-%    io:format("~p #### 2 new_nodes  ~p~n",[node(),{Ops, Names_ext, Nodes, Nodes_v2}]),
+    ?FORMAT("~p #### 2 new_nodes  ~p~n",[node(),{Ops, Names_ext, Nodes, Nodes_v2}]),
     do_ops(Ops),
     do_ops_ext(Ops,Names_ext),
     Known = S#state.known,
@@ -1046,11 +1085,14 @@ resend_pre_connect(Node) ->
     case erase({pre_connect, Node}) of
 	{Vsn, InitMsg, undef} ->
 	    %% Vsn 1 & 2
+	    ?PRINT({resend_pre_connect2, node(), self(), Node}),
 	    gen_server:cast(self(), {init_connect, Vsn, Node, InitMsg});
 	{Vsn, InitMsg, HisTag} ->
 	    %% Vsn 3
+	    ?PRINT({resend_pre_connect3, node(), self(), Node}),
 	    gen_server:cast(self(), {init_connect, {Vsn, HisTag}, Node, InitMsg});
 	_ ->
+	    ?PRINT({resend_pre_connect0, node(), self(), Node}),
 	    ok
     end.
 
@@ -1151,15 +1193,21 @@ do_ops_ext(Ops, Names_ext) ->
 %% the lock set.  global sends a cancel message to the locker when
 %% the partitions are connected.
 %%-----------------------------------------------------------------
-start_locker(Node, Known, MyTag) ->
+start_locker(Node, Known, MyTag, Global) ->
     %% No link here!  The del_lock call would delete the link anyway.
     %% global_name_server has control of these processes anyway...
-    spawn(?MODULE, init_locker, [Node, Known, MyTag]).
+    %% When the locker process exits due to being sent the 'cancel' message
+    %% by the server, the server then removes it from its tables.
+    %% When the locker terminates due to other reasons, the server must
+    %% be told, so we make a link to it just before exiting.
+    spawn(?MODULE, init_locker, [Node, Known, MyTag, Global]).
 
-init_locker(Node, Known, MyTag) ->
+init_locker(Node, Known, MyTag, Global) ->
     process_flag(trap_exit, true),
+    ?PRINT({init_locker, node(), self(), Node}),
     receive
 	{his_locker, Pid, HisKnown} ->
+	    ?PRINT({init_locker, node(), self(), his_locker, Node}),
 	    link(Pid),
 	    %% If two nodes in a group of nodes first disconnect
 	    %% and then reconnect, this causes global to deadlock. 
@@ -1167,24 +1215,30 @@ init_locker(Node, Known, MyTag) ->
 	    %% tries to set lock on the other nodes in the group.
 	    %% This is solved by letting only one of the reconneting nodes set the lock.
 	    BothsKnown = HisKnown -- (HisKnown -- Known),
-	    if
-		node() < Node ->
-		    loop_locker(Node, Pid, [node() | Known], 1, MyTag);
-		true ->
-		    loop_locker(Node, Pid, [node() | Known] -- BothsKnown, 1, MyTag)
-	    end;
+	    loop_locker(Node, Pid, Known, 1, MyTag, BothsKnown, Global);
 	cancel ->
+	    ?PRINT({init_locker, node(), self(), cancel, Node}),
 	    exit(normal)
     end.
 
-loop_locker(Node, Pid, Known, Try, MyTag) ->
+loop_locker(Node, Pid, Known0, Try, MyTag, BothsKnown, Global) ->
+    Known = if
+		node() < Node ->
+		    [node() | Known0];
+		true ->
+		    [node() | Known0] -- BothsKnown
+    end,
+
+    ?PRINT({locking, node(), self(), Known}),
     LockId = {global, {locker, self()}},
     IsLockSet = set_lock(LockId, Known, 1),
+    ?PRINT({locking1, node(), self(), Known, IsLockSet}),
     %% Tell other node that we managed to get the lock.
-    Pid ! {lock, IsLockSet},
+    Pid ! {lock, IsLockSet, Known},
     %% Wait for other node's result.
     receive
-	{lock, true} when IsLockSet == true ->
+	{lock, true, _} when IsLockSet == true ->
+	    ?PRINT({node(), self(), locked}),
 	    %% Now we got the lock in both partitions.  Tell
 	    %% global, and let him resolve name conflict.
 	    gen_server:cast(global_name_server, {lock_is_set, Node, MyTag}),
@@ -1192,32 +1246,48 @@ loop_locker(Node, Pid, Known, Try, MyTag) ->
 	    receive
 		cancel ->
 		    %% All conflicts are resolved, remove lock.
+		    ?PRINT({node(), self(), locked1}),
 		    del_lock(LockId, Known);
 		{'EXIT', Pid, _} ->
+		    ?PRINT({node(), self(), locked2}),
 		    %% Other node died; remove lock and ignore him.
-		    del_lock(LockId, Known)
+		    del_lock(LockId, Known),
+		    link(Global)
 	    end;
-	{lock, _} ->
+	{lock, _, HisKnown} ->
 	    %% Some of us failed to get the lock; try again
+	    ?PRINT({node(), self(), locked0}),
 	    d_lock(IsLockSet, LockId, Known),
-	    try_again_locker(Node, Pid, Known, Try, MyTag);
+	    try_again_locker(Node, Pid, Known, Try, MyTag, BothsKnown,
+			     HisKnown, Global);
 	{'EXIT', Pid, _} ->
 	    %% Other node died; remove lock and ignore him.
-	    d_lock(IsLockSet, LockId, Known);
+	    ?PRINT({node(), self(), locked7}),
+	    d_lock(IsLockSet, LockId, Known),
+	    link(Global);
 	cancel ->
+	    ?PRINT({node(), self(), locked8}),
 	    d_lock(IsLockSet, LockId, Known)
     end.
 
 d_lock(true, LockId, Known) -> del_lock(LockId, Known);
 d_lock(false, _, _) -> ok.
 
-try_again_locker(Node, Pid, Known, Try, MyTag) ->
+try_again_locker(Node, Pid, Known, Try, MyTag, BothsKnown, HisKnown,
+		 Global) ->
+    ?PRINT({try_again, node(), self(), Node, Pid, Known, Try, MyTag}),
     random_sleep(Try),
     NewKnown = gen_server:call(global_name_server, get_known),
     case lists:member(Node, NewKnown) of
 	false ->
-	    loop_locker(Node, Pid, [node() | NewKnown], Try+1, MyTag);
+	    BothsKnown1 = HisKnown -- (HisKnown -- NewKnown),
+	    ?PRINT({node(), self(), Node, again, notknown}),
+	    ?PRINT({bothknown, BothsKnown, BothsKnown1}),
+	    loop_locker(Node, Pid, NewKnown, Try+1, MyTag,
+			BothsKnown1, Global);
 	true ->
+	    ?PRINT({node(), self(), Node, again, known}),
+	    link(Global),
 	    %% Node is already handled, we are ready.
 	    ok
     end.
@@ -1227,6 +1297,7 @@ cancel_locker(Node, S) ->
     case lists:keysearch(Node, 1, Lockers) of
 	{value, {_, Pid}} ->
 	    Pid ! cancel,
+	    ?PRINT({cancel, Node, lockers, node(), Lockers}),
 	    S#state{lockers = lists:keydelete(Node, 1, Lockers)};
 	_ ->
 	    S
@@ -1614,3 +1685,10 @@ get_own_nodes() ->
 	    end
     end.
 
+
+%%% In certain places in the server, calling io:format hangs everything,
+%%% so we'd better use erlang:display/1.
+format(S, A) ->
+    erlang:display({format, S, A}),
+%    io:format(S, A),
+    ok.

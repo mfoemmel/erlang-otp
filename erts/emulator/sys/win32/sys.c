@@ -22,6 +22,7 @@
 
 #include "sys.h"
 #include "driver.h"
+#include "global.h"
 
 EXTERN_FUNCTION(void, init_sys_float, ());
 EXTERN_FUNCTION(void, init_sys_select, ());
@@ -30,7 +31,11 @@ EXTERN_FUNCTION(void, win_check_io, (int wait));
 EXTERN_FUNCTION(void, init_sys_float, ());
 EXTERN_FUNCTION(void, init_sys_select, ());
 
-EXTERN_FUNCTION(void, win_check_io, (int wait));
+#ifdef USE_THREADS
+EXTERN_FUNCTION(void, async_ready, (int, int));
+EXTERN_FUNCTION(int, init_async, (int));
+EXTERN_FUNCTION(int, exit_async, (_VOID_));
+#endif
 
 EXTERN_FUNCTION(void, erl_start, (int, char**));
 EXTERN_FUNCTION(void, erl_exit, (int n, char*, _DOTS_));
@@ -44,7 +49,12 @@ void erl_crash_dump(char*, char*);
  */
 extern void _dosmaperr(DWORD);
 
-static void init_console(void);
+#ifdef ERL_RUN_SHARED_LIB
+#define __argc e_argc
+#define __argv e_argv
+#endif
+
+static void init_console(/*int argc, char* argv[]*/);
 static int get_and_remove_option(int argc, char* argv[], char* option);
 static int init_async_io(struct async_io* aio, int use_threads);
 static void release_async_io(struct async_io* aio);
@@ -57,7 +67,9 @@ static FUNCTION(BOOL, CreateChildProcess, (char *, HANDLE, HANDLE,
 					   LPVOID, LPTSTR));
 static int create_pipe(LPHANDLE, LPHANDLE, BOOL);
 static int ApplicationType(const char* originalName, char fullPath[MAX_PATH]);
+/*
 DWORD WINAPI nohup_thread(LPVOID param);
+*/
 
 /* Results from ApplicationType is one of */
 #define APPL_NONE 0
@@ -91,12 +103,14 @@ BOOL WINAPI ctrl_handler(DWORD dwCtrlType);
  * (Named pipes are not supported on Windows 95.)
  */
 
-static int max_files = 256;
+static int max_files = 1024;
 
 static BOOL use_named_pipes;
 static BOOL win_console = FALSE;
 
+
 static OSVERSIONINFO int_os_version;	/* Version information for Win32. */
+
 
 /* This is the system's main function (which may or may not be called "main")
    - do general system-dependent initialization
@@ -104,28 +118,22 @@ static OSVERSIONINFO int_os_version;	/* Version information for Win32. */
    - arrange for schedule() to be called forever, and i/o to be done
 */
 
-extern int init_malloc();
+HMODULE beam_module = NULL;
+
+void erl_sys_init(void);
 
 #ifndef ERL_RUN_SHARED_LIB
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 		   PSTR szCmdLine, int iCmdShow)
 #else
-int starta_emulatorn(void)
+__declspec( dllexport )  int starta_emulatorn(int e_argc, const char** e_argv)
 #endif
 {
     HANDLE handle;
 
-    /*
-     * Firstly, initialise malloc to make it safe for us...
-     */
+    /*DebugBreak();*/
 
-#if !defined(PURIFY)
-    if (!init_malloc())
-	exit(1);
-#endif
-
-    int_os_version.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-    GetVersionEx(&int_os_version);
+    erl_sys_init();
 
 #ifdef DEBUG
     /*
@@ -138,7 +146,15 @@ int starta_emulatorn(void)
     }
 #endif
 
-    init_console();
+#ifdef ERL_RUN_SHARED_LIB
+	if (beam_module == NULL)
+#ifdef DEBUG
+	    beam_module = GetModuleHandle("beam.debug.dll");
+#else
+            beam_module = GetModuleHandle("beam.dll");
+#endif
+#endif
+    init_console(__argc, __argv);
 
     /*
      * The following makes sure that the current directory for the current drive
@@ -156,26 +172,6 @@ int starta_emulatorn(void)
 	SetStdHandle(STD_ERROR_HANDLE, GetStdHandle(STD_OUTPUT_HANDLE));
     }
 
-
-    /*
-     * Test if we have named pipes or not.
-     */
-
-    switch (int_os_version.dwPlatformId) {
-    case VER_PLATFORM_WIN32_WINDOWS:
-	DEBUGF(("Running on Windows 95"));
-	use_named_pipes = FALSE;
-	break;
-    case VER_PLATFORM_WIN32_NT:
-	DEBUGF(("Running on Windows NT"));
-	use_named_pipes = TRUE;
-	break;
-    default:			/* Unsupported platform. */
-	exit(1);
-    }
-    DEBUGF((" %d.%d, build %d, %s\n",
-	    int_os_version.dwMajorVersion, int_os_version.dwMinorVersion,
-	    int_os_version.dwBuildNumber, int_os_version.szCSDVersion));
 
 #ifdef DEBUG
     /*
@@ -209,16 +205,17 @@ int starta_emulatorn(void)
 
 
 static void
-init_console(void)
+init_console(/*int argc, char* argv[]*/)
 {
     char* mode = getenv("ERL_CONSOLE_MODE");
+/*
     int nohup = 0;
 
-    if (get_and_remove_option(__argc, __argv, "-nohup")) {
-	__argc--;
+    if (get_and_remove_option(argc, argv, "-nohup")) {
+	argc--;
 	nohup = 1;
     }
-
+*/
     if (mode == NULL) {
 	mode = "window";
     }
@@ -229,7 +226,7 @@ init_console(void)
     if (strcmp(mode, "window") == 0) {
 	win_console = TRUE;
 	ConInit();
-	nohup = 0;
+	/*nohup = 0;*/
     } else if (strncmp(mode, "tty:", 4) == 0) {
 	mode += 4;
 	if (mode[1] == 'c') {
@@ -240,13 +237,15 @@ init_console(void)
 	}
     }
 
+/*
     /*
      * Start a thread which will prevent us to be killed if a user logs out.
-     */
+     *
     if (nohup) {
 	DWORD tid;
 	_beginthreadex(NULL, 0, nohup_thread, 0, 0, &tid);
     }
+*/
 }
 
 DWORD WINAPI
@@ -453,6 +452,11 @@ typedef struct async_io {
 
 
 /*
+ * Input thread for fd_driver (if fd_driver is running).
+ */
+static AsyncIo* fd_driver_input = NULL;
+
+/*
  * This data is used by the spawn and vanilla drivers.
  * There will be one entry for each port, even if the input
  * and output HANDLES are different.  Since handles are not
@@ -501,6 +505,26 @@ const struct driver_entry vanilla_driver_entry = {
     null_func, vanilla_start, stop, output,
     ready_input, ready_output, "vanilla"
 };
+
+#ifdef USE_THREADS
+
+static int  async_drv_init();
+static long async_drv_start();
+static int  async_drv_stop();
+static int  async_drv_input();
+
+/* INTERNAL use only */
+
+struct driver_entry async_driver_entry = {
+    async_drv_init,    async_drv_start,
+    async_drv_stop,    null_func,
+    async_drv_input,    null_func,
+    "async",
+    NULL,    NULL,    NULL,    NULL,
+    NULL,    NULL
+};
+
+#endif
 
 /*
  * Initialises a DriverData structure.
@@ -1424,14 +1448,16 @@ threaded_reader(LPVOID param)
 	    for (s = buf; s < buf+n; s++) {
 		if (*s == '\r') {
 		    *s = '\n';
-		} else if (*s == 3) {/* Ctrl-C */
-		    ctrl_handler(CTRL_C_EVENT);
 		}
 	    }
 	}
 	SetEvent(aio->ov.hEvent);
-	if (aio->pendingError != NO_ERROR || aio->bytesTransferred == 0)
+	if ((aio->flags & DF_XLAT_CR) == 0 && aio->bytesTransferred == 0) {
 	    break;
+	}
+	if (aio->pendingError != NO_ERROR) {
+	    break;
+	}
 	if (aio->flags & DF_EXIT_THREAD)
 	    break;
     }
@@ -1514,7 +1540,6 @@ fd_start(port_num, name, opts)
     
     opts->ifd = (int) translate_fd(opts->ifd);
     opts->ofd = (int) translate_fd(opts->ofd);
-    
     if ((dp = new_driver_data(port_num, opts->packet_bytes, 2, TRUE)) == NULL)
 	return -1;
     
@@ -1528,9 +1553,9 @@ fd_start(port_num, name, opts)
 	return -1;
     }
     
+    fd_driver_input = &(dp->in);
     dp->in.flags = DF_XLAT_CR;
-    return set_driver_data(dp, opts->ifd, opts->ofd, opts->read_write,
-			   0);
+    return set_driver_data(dp, opts->ifd, opts->ofd, opts->read_write, 0);
 }
 
 static int
@@ -2019,7 +2044,7 @@ ready_output(drv_data, ready_event)
     driver_failure_posix(dp->port_num, errno);
     return 0;
 }
-/* Fills in the systems representation of the jam/beam process identifier.
+/* Fills in the systems representation of the beam process identifier.
 ** The Pid is put in STRING representation in the supplied buffer,
 ** no interpretation of this should be done by the rest of the
 ** emulator. The buffer should be at least 21 bytes long.
@@ -2041,8 +2066,35 @@ byte *buf;
 uint32 size;
 {
     tmp_buf = buf;
+    tmp_buf_size = size;
+    cerr_pos = 0;
+
+#ifdef USE_THREADS
+    {
+	/* This is speical stuff, starting a driver from the 
+	 * system routines, but is a nice way of handling stuff
+	 * the erlang way
+	 */
+	SysDriverOpts dopts;
+	int ret;
+
+	sys_memset((void*)&dopts, 0, sizeof(SysDriverOpts));
+	add_driver_entry(&async_driver_entry);
+	/* FIXME: 7 == NIL */
+	ret = open_driver(&async_driver_entry, 7, "async", &dopts);
+	DEBUGF(("open_driver = %d\n", ret));
+    }
+#endif
+}
+
+/*void sys_init_io(buf, size)
+byte *buf;
+uint32 size;
+{
+    tmp_buf = buf;
     tmp_buf_size = (int)size;
 }
+*/
 
 /* If we are not using elib then we may want to define the functions 
  * sys_alloc
@@ -2190,7 +2242,6 @@ Preload* sys_preloaded(void)
 {
     HRSRC hRes;
     unsigned char* data;
-    HMODULE hModule=NULL;
 
 #define GETWORD(p) (0[p] | 1[p] << 8)
 #define GETDWORD(p) (GETWORD(p) | GETWORD(p+2) << 16)
@@ -2200,20 +2251,21 @@ Preload* sys_preloaded(void)
 	int i;
 
 #ifdef ERL_RUN_SHARED_LIB
-	/* This function is currently not called in the case of ERL_RUN_SHARED_LIB
-	   being defined, but if it will later, we need to do a GetModuleHandle
-	   here.
-	   */
-	hModule = GetModuleHandle("ERL_RUN.DLL");
+	if (beam_module == NULL)
+#ifdef DEBUG
+	    beam_module = GetModuleHandle("beam.debug.dll");
+#else
+            beam_module = GetModuleHandle("beam.dll");
 #endif
-	hRes = FindResource(hModule, "0", "ERLANG_DICT");
+#endif
+	hRes = FindResource(beam_module, "0", "ERLANG_DICT");
 
 	if (hRes == NULL) {
 	    DWORD n = GetLastError();
 	    fprintf(stderr, "No ERLANG_DICT resource\n");
 	    exit(1);
 	}
-	data = (unsigned char *) LoadResource(NULL, hRes);
+	data = (unsigned char *) LoadResource(beam_module, hRes);
 
 	num_preloaded = GETWORD(data);
 	if (num_preloaded == 0) {
@@ -2253,12 +2305,21 @@ unsigned char* sys_preload_begin(Preload* pp)
 {
     HRSRC hRes;
     unsigned resource;
+    
+#ifdef ERL_RUN_SHARED_LIB
+    /* if beam is a DLL, the resources are there, not in the exe */
+    beam_module = GetModuleHandle("ERL_RUN.DLL");
+    if (beam_module == NULL)
+	beam_module = GetModuleHandle("beam.dll");
+    if (beam_module == NULL)
+	beam_module = GetModuleHandle("beam.debug.dll");
+#endif
 
     resource = res_name[pp-preloaded];
     DEBUGF(("Loading name: %s; size: %d; resource: %p\n",
 	    pp->name, pp->size, resource));
-    hRes = FindResource(NULL, (char *) resource, "ERLANG_CODE");
-    return pp->code = LoadResource(NULL, hRes);
+    hRes = FindResource(beam_module, (char *) resource, "ERLANG_CODE");
+    return pp->code = LoadResource(beam_module, hRes);
 }
 
 /* Clean up if allocated */
@@ -2266,22 +2327,46 @@ void sys_preload_end(Preload* pp)
 {
 }
 
-/* Read a key from console (?) */
+/* Read a key from console */
 
-int sys_get_key(fd)
-int fd;
+int
+sys_get_key(int fd)
 {
     int c;
     unsigned char rbuf[64];
     
-    if (win_console)
+    ASSERT(fd == 0);
+
+    if (win_console) {
         return ConGetKey();
+    }
 
-    fflush(stdout);		/* Flush query ??? */
+    /*
+     * Black magic follows. (Code stolen from get_overlapped_result())
+     */
 
-    if ((c = read(fd, rbuf, 64)) <= 0)
-        return c;
-    return rbuf[0];
+    if (fd_driver_input != NULL && fd_driver_input->thread != -1) {
+	DWORD error;
+	int key;
+
+	error = WaitForSingleObject(fd_driver_input->ov.hEvent, INFINITE);
+	if (error == WAIT_OBJECT_0) {
+	    if (fd_driver_input->bytesTransferred > 0) {
+		int n;
+		int i;
+		char* buf = OV_BUFFER_PTR(fd_driver_input);
+
+		fd_driver_input->bytesTransferred--;
+		n = fd_driver_input->bytesTransferred;
+		key = buf[0];
+		for (i = n; i > 0; i--) {
+		    buf[i-1] = buf[i];
+		}
+		return key;
+	    }
+	}
+    }
+    return '*';		/* Error! */
 }
 
 static void*
@@ -2457,6 +2542,169 @@ erl_assert_error(char* expr, char* file, int line)
 	       MB_OK | MB_ICONERROR);
     erl_crash_dump(NULL, NULL);
     DebugBreak();
+}
+
+#endif // DEBUG
+
+/*
+ * the last two only used for standalone erlang
+ * they should are used by sae_main in beam dll to
+ * enable standalone execution via erl_api-routines
+ */
+
+void
+erl_sys_init(void)
+{
+    HANDLE handle;
+    /*
+     * Firstly, initialise malloc to make it safe for us...
+     */
+
+    int_os_version.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+    GetVersionEx(&int_os_version);
+
+    /*
+     * Test if we have named pipes or not.
+     */
+
+    switch (int_os_version.dwPlatformId) {
+    case VER_PLATFORM_WIN32_WINDOWS:
+	DEBUGF(("Running on Windows 95"));
+	use_named_pipes = FALSE;
+	break;
+    case VER_PLATFORM_WIN32_NT:
+	DEBUGF(("Running on Windows NT"));
+	use_named_pipes = TRUE;
+	break;
+    default:			/* Unsupported platform. */
+	exit(1);
+    }
+    DEBUGF((" %d.%d, build %d, %s\n",
+	    int_os_version.dwMajorVersion, int_os_version.dwMinorVersion,
+	    int_os_version.dwBuildNumber, int_os_version.szCSDVersion));
+
+#ifdef ERL_RUN_SHARED_LIB
+	if (beam_module == NULL)
+#ifdef DEBUG
+	    beam_module = GetModuleHandle("beam.debug.dll");
+#else
+            beam_module = GetModuleHandle("beam.dll");
+#endif
+#endif
+    init_console(/*__argc, __argv*/);
+
+    /*
+     * The following makes sure that the current directory for the current drive
+     * is remembered (in the environment).
+     */  
+
+    chdir(".");
+
+    /*
+     * Make sure that the standard error handle is valid.
+     */
+    
+    handle = GetStdHandle(STD_ERROR_HANDLE);
+    if (handle == INVALID_HANDLE_VALUE || handle == 0) {
+	SetStdHandle(STD_ERROR_HANDLE, GetStdHandle(STD_OUTPUT_HANDLE));
+    }
+    init_sys_float();
+    init_sys_select();
+
+}
+
+void 
+erl_sys_schedule_loop(void)
+{
+    for (;;) {
+	while (schedule()) {
+	    win_check_io(0);	/* Poll for I/O. */
+	    check_async_ready(); /* Check async completions. */
+	}
+	if (check_async_ready()) {
+	    win_check_io(0);
+	} else {
+	    win_check_io(1);		/* Wait for I/O or a timeout. */
+	}
+    }
+}
+
+#ifdef USE_THREADS
+/*
+** Async operation support
+*/
+
+/* static int async_fd[2]; */
+HANDLE async_drv_event;
+
+/* called from threads !! */
+void sys_async_ready(int fd)
+{
+    int r;
+    /* r = write(fd, "0", 1);  /* signal main thread fd MUST be async_fd[1] */
+    SetEvent(async_drv_event);
+    DEBUGF(("sys_async_ready: r = %d\r\n", r));
+}
+
+static int async_drv_init()
+{
+    async_drv_event = NULL;
+    /* async_fd[0] = -1;
+    async_fd[1] = -1;*/
+    return 0;
+}
+
+static long async_drv_start(int port_num, char* name, SysDriverOpts* opts)
+{
+    if (async_drv_event != NULL)
+	return -1;
+    /*if (async_fd[0] != -1)
+	return -1;*/
+    /*if (pipe(async_fd) < 0)*/
+    if ((async_drv_event = CreateEvent(NULL, FALSE, FALSE, NULL))
+	 == NULL)
+	return -1;
+    
+    {DEBUGF(("async_drv_start: %d\r\n", port_num));}
+
+    /*driver_select(port_num, async_fd[0], DO_READ, 1);*/
+    driver_select(port_num, async_drv_event, DO_READ, 1);
+
+    /*if (init_async(async_fd[1]) < 0)*/
+    if (init_async(async_drv_event) < 0)
+	return -1;
+    return port_num;
+}
+
+
+static int async_drv_stop(int port_num)
+{
+    DEBUGF(("async_drv_stop: %d\r\n", port_num));
+
+    exit_async();
+
+    /*driver_select(port_num, async_fd[0], DO_READ, 0);*/
+    driver_select(port_num, async_drv_event, DO_READ, 0);
+
+    /*close(async_fd[0]);
+    close(async_fd[1]);*/
+    CloseHandle(async_drv_event);
+    /*async_fd[0] = async_fd[1] = -1;*/
+    async_drv_event = NULL;
+    return 0;
+}
+
+
+static int async_drv_input(int port_num, int fd)  
+{
+    /*char buf[1];*/
+
+    DEBUGF(("async_drv_input\r\n"));
+    /* we don't have to do anything, since we use
+       autoreset for async_drv_event */
+    /*read(fd, buf, 1);     /* fd MUST be async_fd[0] */
+    check_async_ready();  /* invoke all async_ready */
+    return 0;
 }
 
 #endif

@@ -37,11 +37,15 @@
 	 kernel_apply/3,
 	 monitor_nodes/1,
 	 longnames/0,
-	 allow/1]).
+	 allow/1,
+	 protocol_childspecs/0,
+	 epmd_module/0]).
 
--export([connect/1, disconnect/1]).
+-export([connect/1, disconnect/1, hidden_connect/1]).
+-export([connect_node/1, hidden_connect_node/1]). %% explicit connect
 
 -export([node_info/1, node_info/2, nodes_info/0,
+	 connecttime/0,
 	 i/0, i/1, verbose/1]).
 
 %% Internal Exports 
@@ -96,6 +100,11 @@
 		     type           %% normal | hidden
 		    }).
 
+-record(barred_connection, {
+	  node %% remote node name
+	 }).
+
+
 %% Default connection setup timeout in milliseconds.
 %% This timeout is set for every distributed action during
 %% the connection setup.
@@ -122,8 +131,30 @@ verbose(Level) when integer(Level) ->
 
 %% Called though BIF's
 
-connect(Node) ->               request({connect, Node}).
+connect(Node) ->               connect(Node, normal).
 disconnect(Node) ->            request({disconnect, Node}).
+
+%% connect but not seen
+hidden_connect(Node) ->        connect(Node, hidden).
+
+%% explicit connects
+connect_node(Node) when atom(Node) ->
+    request({connect, normal, Node}).
+hidden_connect_node(Node) when atom(Node) ->
+    request({connect, hidden, Node}).
+
+connect(Node, Type) -> %% Type = normal | hidden
+    case ets:lookup(sys_dist, Node) of
+	[#barred_connection{}] ->
+	    false;
+	_ ->
+	    case application:get_env(kernel, dist_auto_connect) of
+		{ok, never} ->
+		    false;
+		_ ->
+		    request({connect, Type, Node})
+	    end
+    end.
 
 %% If the net_kernel isn't running we ignore all requests to the 
 %% kernel, thus basically accepting them :-)
@@ -202,10 +233,10 @@ init({Name, LongOrShortNames, Ticktime}) ->
 %% The response is delayed until the connection is up and
 %% running.
 %%
-handle_call({connect, Node}, From, State) when Node == node() ->
+handle_call({connect, _, Node}, From, State) when Node == node() ->
     {reply, true, State};
-handle_call({connect, Node}, From, State) ->
-    verbose({connect, Node}, 1, State),
+handle_call({connect, Type, Node}, From, State) ->
+    verbose({connect, Type, Node}, 1, State),
     case ets:lookup(sys_dist, Node) of
 	[Conn] when Conn#connection.state == up ->
 	    {reply, true, State};
@@ -218,7 +249,7 @@ handle_call({connect, Node}, From, State) ->
 	    ets:insert(sys_dist, Conn#connection{waiting = [From|Waiting]}),
 	    {noreply, State};
 	_ ->
-	    case setup(Node,From, State) of
+	    case setup(Node,Type,From,State) of
 		{ok, SetupPid} ->
 		    Owners = [{SetupPid, Node} | State#state.conn_owners],
 		    Conn = [SetupPid | State#state.conn_pid],
@@ -618,7 +649,7 @@ nodedown(Owner, Node, State) ->
 
 get_conn(Node) ->
     case ets:lookup(sys_dist, Node) of
-	[Conn] -> {ok, Conn};
+	[Conn = #connection{}] -> {ok, Conn};
 	_      -> error
     end.
 
@@ -637,12 +668,17 @@ nodedown(Conn, Owner, Node, Type, OldState) ->
     end.
 
 pending_nodedown(Conn, Node, Type, State) ->
-    ets:delete(sys_dist, Node),
+    mark_sys_dist_nodedown(Node),
     reply_waiting(Conn#connection.waiting, false),
     case Type of
 	normal ->
 	    ?nodedown(Node, State),
-	    send_list(State#state.monitor, {nodedown, Node});
+	    %% Tony says: 
+	    %% Do not send any nodedown to monitors in this case !
+	    %% But that affected application_SUITE:start_phases 
+	    %% and others, so I reinserted the send_list below.
+	    %% (uabrani)
+ 	    send_list(State#state.monitor, {nodedown, Node});
 	_      ->
 	    ok
     end,
@@ -667,7 +703,7 @@ up_pending_nodedown(Conn, Node, Type, State) ->
 
 
 up_nodedown(Conn, Node, Type, State) ->
-    ets:delete(sys_dist, Node),
+    mark_sys_dist_nodedown(Node),
     case Type of
 	normal ->
 	    ?nodedown(Node, State),
@@ -685,6 +721,14 @@ up_nodedown(Conn, Node, Type, State) ->
 	    end;
 	_ ->
 	    State
+    end.
+
+mark_sys_dist_nodedown(Node) ->
+    case application:get_env(kernel, dist_auto_connect) of
+	{ok, once} ->
+	    ets:insert(sys_dist, #barred_connection{node = Node});
+	_ ->
+	    ets:delete(sys_dist, Node)
     end.
 
 %% -----------------------------------------------------------
@@ -743,10 +787,10 @@ get_nodes('$end_of_table', _) ->
     [];
 get_nodes(Key, Which) ->
     case ets:lookup(sys_dist, Key) of
-	[Conn] when Conn#connection.state == up ->
+	[Conn = #connection{state = up}] ->
 	    [Conn#connection.node | get_nodes(ets:next(sys_dist, Key),
 					      Which)];
-	[Conn] when Which == all ->
+	[Conn = #connection{}] when Which == all ->
 	    [Conn#connection.node | get_nodes(ets:next(sys_dist, Key),
 					      Which)];
 	_ ->
@@ -810,7 +854,7 @@ do_spawn_link({From,Tag},M,F,A,Gleader) ->
 %% Set up connection to a new node.
 %% -----------------------------------------------------------
 
-setup(Node,From,State) ->
+setup(Node,Type,From,State) ->
     Allowed = State#state.allowed,
     case lists:member(Node, Allowed) of
 	false when Allowed /= [] ->
@@ -824,6 +868,7 @@ setup(Node,From,State) ->
 		    LAddr = L#listen.address,
 		    MyNode = State#state.node,
 		    Pid = Mod:setup(Node,
+				    Type,
 				    MyNode,
 				    State#state.type,
 				    State#state.connecttime),
@@ -981,10 +1026,46 @@ create_hostpart(Name,LongOrShortNames) ->
 		    end
 	    end,
     {Head,Host1}.
+
+%%
+%% 
+%%
+protocol_childspecs() ->
+    case init:get_argument(proto_dist) of
+	{ok, [Protos]} ->
+	    protocol_childspecs(Protos);
+	_ ->
+	    protocol_childspecs(["inet_tcp"])
+    end.
+
+protocol_childspecs([]) ->    
+    [];
+protocol_childspecs([H|T]) ->
+    Mod = list_to_atom(H ++ "_dist"),
+    case (catch Mod:childspecs()) of
+	{ok, Childspecs} when list(Childspecs) ->
+	    Childspecs ++ protocol_childspecs(T);
+	_ ->
+	    protocol_childspecs(T)
+    end.
+    
 	
+%%
+%% epmd_module() -> module_name of erl_epmd or similar gen_server_module.
+%%
+
+epmd_module() ->
+    case init:get_argument(epmd_module) of
+	{ok,[[Module]]} -> 
+	    Module;
+	_ ->
+	    erl_epmd
+    end.
+
 %%
 %% Start all protocols
 %%
+
 start_protos(Name,Node) ->
     case init:get_argument(proto_dist) of
 	{ok, [Protos]} ->
@@ -1001,43 +1082,33 @@ start_protos(Name,Ps, Node) ->
 
 start_protos(Name, [Proto | Ps], Node, Ls) ->
     Mod = list_to_atom(Proto ++ "_dist"),
-    case Mod:listen() of
-	{ok, {Socket,Address}} ->
-	    case catch Mod:reg(Name, Address) of
-		{ok,Creation} ->
-		    AcceptPid = Mod:accept(Socket),
-		    erlang:setnode(Node, Creation),
-		    auth:sync_cookie(),
-		    L = #listen {
-				 listen = Socket,
-				 address = Address,
-				 accept = AcceptPid,
-				 module = Mod },
-		    start_protos(Name,Ps, Node, [L|Ls]);
-		{'EXIT', Reason} ->
-		    error_logger:info_msg("Protocol: ~p: register error: ~p~n", 
-					  [Proto, Reason]),
-		    start_protos(Name,Ps, Node, Ls);
-		{error, duplicate_name} ->
-		    error_logger:info_msg("Protocol: ~p: the name " ++
-					  atom_to_list(Node) ++
-					  " seems to be in use by another Erlang node",
-					  [Proto]),
-		    start_protos(Name,Ps, Node, Ls);
-		{error, Reason} ->
-		    error_logger:info_msg("Protocol: ~p: register error: ~p~n", 
-					  [Proto, Reason]),
-		    start_protos(Name,Ps, Node, Ls)
-	    end;
+    case Mod:listen(Name) of
+	{ok, {Socket, Address, Creation}} ->
+	    AcceptPid = Mod:accept(Socket),
+	    (catch erlang:setnode(Node, Creation)), %% May fail.
+	    auth:sync_cookie(),
+	    L = #listen {
+	      listen = Socket,
+	      address = Address,
+	      accept = AcceptPid,
+	      module = Mod },
+	    start_protos(Name,Ps, Node, [L|Ls]);
 	{'EXIT', {undef,_}} ->
 	    error_logger:info_msg("Protocol: ~p: not supported~n", [Proto]),
 	    start_protos(Name,Ps, Node, Ls);
-	{'EXIT', _} ->
-	    error_logger:info_msg("Protocol: ~p: internal error~n", [Proto]),
+	{'EXIT', Reason} ->
+	    error_logger:info_msg("Protocol: ~p: register error: ~p~n", 
+				  [Proto, Reason]),
+	    start_protos(Name,Ps, Node, Ls);
+	{error, duplicate_name} ->
+	    error_logger:info_msg("Protocol: ~p: the name " ++
+				  atom_to_list(Node) ++
+				  " seems to be in use by another Erlang node",
+				  [Proto]),
 	    start_protos(Name,Ps, Node, Ls);
 	{error, Reason} ->
-	    error_logger:info_msg("Protocol: ~p : listen error ~p~n", 
-				  [Proto,Reason]),
+	    error_logger:info_msg("Protocol: ~p: register/listen error: ~p~n", 
+				  [Proto, Reason]),
 	    start_protos(Name,Ps, Node, Ls)
     end;
 start_protos(_,[], Node, Ls) ->
@@ -1047,7 +1118,7 @@ start_protos(_,[], Node, Ls) ->
 std_monitors() -> [global_group].
 
 connecttime() ->
-    case application:get_env(net_setuptime) of
+    case application:get_env(kernel, net_setuptime) of
 	{ok, Time} when integer(Time), Time > 0, Time < 120 ->
 	    Time * 1000;
 	_ ->
@@ -1062,9 +1133,7 @@ connecttime() ->
 
 get_node_info(Node) ->
     case ets:lookup(sys_dist, Node) of
-	[Conn] ->
-	    Owner = Conn#connection.owner,
-	    State = Conn#connection.state,
+	[Conn = #connection{owner = Owner, state = State}] ->
 	    case get_status(Owner, Node, State) of
 		{ok, In, Out} ->
 		    {ok, [{owner, Owner},

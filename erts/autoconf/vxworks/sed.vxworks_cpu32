@@ -12,11 +12,15 @@ s|@system_type@|vxworks_cpu32|
 s|@CC@|@TTPREFIX@cc68k|
 s|@HCC@|gcc|
 s|@LD@|@TTPREFIX@ld68k|
-s|@LIBS@|-L@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/m68k-wrs-vxworks/cygnus-2.7.2-960126 -lgcc|
+s|@LIBS@||
 s|@DED_LD@|@TTPREFIX@ld68k|
+s|@DED_CFLAGS@|@CFLAGS@|
 s|@DEBUG_FLAGS@|-g|
-s|@GCCLIB_PATH@|@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/m68k-wrs-vxworks/cygnus-2.7.2-960126/libgcc.a|
+s|@GCCLIB_PATH@|@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/m68k-wrs-vxworks/cygnus-2.7.2-960126/m68000/msoft-float/libgcc.a|
 s|@RANLIB@|@TTPREFIX@ranlib68k|
 s|@AR@|@TTPREFIX@ar68k|
+s|@STRIP@|@TTPREFIX@strip68k|
+s|@SYMPREFIX@|_|
+s|@GCCLIBFLAGS@|-L@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/m68k-wrs-vxworks/cygnus-2.7.2-960126/m68000/msoft-float -lgcc|
 s|@CFLAGS@|@GENERAL_CFLAGS@ -DCPU=CPU32 -mnobitfield -DWANT_NONBLOCKING -DHAVE_MEMMOVE -DVXWORKS -I@WIND_BASE@/target/h -fno-builtin -nostdinc -fvolatile -msoft-float|
 s|@LIB_CFLAGS@|@GENERAL_CFLAGS@ -DCPU=CPU32 -mnobitfield -DWANT_NONBLOCKING -DHAVE_MEMMOVE -DVXWORKS -I@WIND_BASE@/target/h -fno-builtin -nostdinc -fvolatile -msoft-float|

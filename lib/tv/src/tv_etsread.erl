@@ -435,7 +435,7 @@ update_object2(mnesia, Node, LocalNode, Tab, DbsPid, KeyNo, Obj, OldObj) ->
 		  Node,
 		  LocalNode,
 		  fun() ->
-			  mnesia:delete({Tab,OldKey})
+			  mnesia:delete(Tab,OldKey,write)
 		  end),
 		[Obj];
 	    ordered_set ->
@@ -443,7 +443,7 @@ update_object2(mnesia, Node, LocalNode, Tab, DbsPid, KeyNo, Obj, OldObj) ->
 		  Node,
 		  LocalNode,
 		  fun() ->
-			  mnesia:delete({Tab,OldKey})
+			  mnesia:delete(Tab,OldKey,write)
 		  end),
 		[Obj];
 	    _Other ->  %% 'bag' or 'duplicate_bag'
@@ -452,7 +452,7 @@ update_object2(mnesia, Node, LocalNode, Tab, DbsPid, KeyNo, Obj, OldObj) ->
 		      Node, 
 		      LocalNode,
 		      fun() -> 
-			      mnesia:read({Tab,OldKey})
+			      mnesia:read(Tab,OldKey,read)
 		      end),
 		   %% We can't use mnesia:delete_object here, because
 		   %% time order wouldn't be preserved then!!!
@@ -460,7 +460,7 @@ update_object2(mnesia, Node, LocalNode, Tab, DbsPid, KeyNo, Obj, OldObj) ->
 		  Node,
 		  LocalNode,
 		  fun() ->
-			  mnesia:delete({Tab,OldKey})
+			  mnesia:delete(Tab,OldKey,write)
 		  end),
 		ChangeFun =
 		    fun(H) when H == OldObj ->
@@ -478,7 +478,7 @@ update_object2(mnesia, Node, LocalNode, Tab, DbsPid, KeyNo, Obj, OldObj) ->
 				       %% This mnesia call shall not be distributed,
 				       %% since the transaction sees to that it is
 				       %% executed on the right node!!!
-				    mnesia:write(H)
+				    mnesia:write(Tab,H,write)
 			    end)
 		  end,
 		  InsertList),
@@ -563,7 +563,7 @@ delete_object2(mnesia, Node, LocalNode, Tab, DbsPid, Obj) ->
 	         %% This mnesia call shall not be distributed,
 	         %% since the transaction sees to that it is
 	         %% executed on the right node!!!
-	      mnesia:delete_object(Obj)
+	      mnesia:delete_object(Tab,Obj,write)
       end),
     ok.
 
@@ -632,7 +632,7 @@ new_object2(mnesia, Node, LocalNode, Tab, DbsPid, Obj) ->
 	         %% This mnesia call shall not be distributed,
 	         %% since the transaction sees to that it is
 	         %% executed on the right node!!!
-	      mnesia:write(Obj)
+	      mnesia:write(Tab,Obj,write)
       end),
     ok.
     
@@ -725,7 +725,7 @@ read_table(Node, LocalNode, Tab, KindOfTable, DbsPid) ->
 			         %% This mnesia call shall not be distributed,
 			         %% since the transaction sees to that it is
 			         %% executed on the right node!!!
-			      mnesia:match_object(WildPattern)
+			      mnesia:match_object(Tab, WildPattern, read)
 		      end),
                 {Content, [2 | tv_mnesia_rpc:table_info(Node, LocalNode,Tab, index)]}
 	end,

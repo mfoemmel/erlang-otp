@@ -236,22 +236,27 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 		  {asis,Constraint},",",Value,",",
 		  {asis,NamedNumberList},")"});
 	{'ENUMERATED',{Nlist1,Nlist2}} ->
-	    NewList = {[X||{X,Y} <- Nlist1],[X||{X,Y} <- Nlist2]},
-	    NewC = [{'ValueRange',{0,length(element(1,NewList))-1}}],
-	    emit({{asis,Rtmod},":encode_enumerated(",
-		  {asis,NewC},",",Value,",",
-		  {asis,NewList},")"});
+	    NewList = lists:concat([[{0,X}||{X,Y} <- Nlist1],['EXT_MARK'],[{1,X}||{X,Y} <- Nlist2]]),
+	    NewC = [{'ValueRange',{0,length(Nlist1)-1}}],
+	    emit(["case ",Value," of",nl]),
+	    emit_enc_enumerated_cases(NewC, NewList++[{asn1_enum,length(Nlist1)-1}], 0);
+%%%	    emit([{asis,Rtmod},":encode_enumerated(",
+%%%		  {asis,NewC},",",Value,",",
+%%%		  {asis,NewList},")"]);
 	{'ENUMERATED',NamedNumberList} ->
 	    NewList = [X||{X,Y} <- NamedNumberList],
 	    NewC = [{'ValueRange',{0,length(NewList)-1}}],
-	    emit({{asis,Rtmod},":encode_enumerated(",
-		  {asis,NewC},",",Value,",",
-		  {asis,NewList},")"});
+	    emit(["case ",Value," of",nl]),
+	    emit_enc_enumerated_cases(NewC, NewList, 0);
+%%%	    emit({{asis,Rtmod},":encode_enumerated(",
+%%%		  {asis,NewC},",",Value,",",
+%%%		  {asis,NewList},")"});
 	{'BIT STRING',NamedNumberList} ->
-	    NewList = [{X,Y}||{_,X,Y} <- NamedNumberList],
+%%	    NewList = [{X,Y}||{_,X,Y} <- NamedNumberList],
 	    emit({{asis,Rtmod},":encode_bit_string(",
 		  {asis,Constraint},",",Value,",",
-		  {asis,NewList},")"});
+%%		  {asis,NewList},")"});
+		  {asis,NamedNumberList},")"});
 	'NULL' ->
 	    emit({{asis,Rtmod},":encode_null(",Value,")"});
 	'OBJECT IDENTIFIER' ->
@@ -290,11 +295,43 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 	    emit([{asis,Rtmod},":encode_open_type(", {asis,Constraint}, ",", 
 		  Value, ")"]);
 	'ASN1_OPEN_TYPE' ->
+	    NewValue = case Constraint of
+			 [#typereference{val=Tname}] ->
+			     io_lib:format(
+			       "?RT_PER:complete(enc_~s(~s))",[Tname,Value]);
+			 _ -> Value
+		     end,
 	    emit([{asis,Rtmod},":encode_open_type(", {asis,Constraint}, ",", 
-		  Value, ")"]);
+		  NewValue, ")"]);
 	XX ->
 	    exit({asn1_error,nyi,XX})
     end.
+
+emit_enc_enumerated_cases(C, [H], Count) ->
+    emit_enc_enumerated_case(C, H, Count),
+    emit([";",nl,"EnumVal -> exit({error,{asn1, {enumerated_not_in_range, EnumVal}}})"]),
+    emit([nl,"end"]);
+emit_enc_enumerated_cases(C, ['EXT_MARK'|T], Count) ->
+    emit_enc_enumerated_cases(C, T, 0);
+emit_enc_enumerated_cases(C, [H1,H2|T], Count) ->
+    emit_enc_enumerated_case(C, H1, Count),
+    emit([";",nl]),
+    emit_enc_enumerated_cases(C, [H2|T], Count+1).
+    
+
+
+emit_enc_enumerated_case(C, {asn1_enum,High}, _) ->
+    emit([
+	  "{asn1_enum,EnumV} when integer(EnumV), EnumV > ",High," -> ",
+	  "[{bit,1},?RT_PER:encode_small_number(EnumV)]"]);
+emit_enc_enumerated_case(C, 'EXT_MARK', Count) ->
+    true;
+emit_enc_enumerated_case(C, {1,EnumName}, Count) ->
+    emit(["'",EnumName,"' -> [{bit,1},?RT_PER:encode_small_number(",Count,")]"]);
+emit_enc_enumerated_case(C, {0,EnumName}, Count) ->
+    emit(["'",EnumName,"' -> [{bit,0},?RT_PER:encode_integer(",{asis,C},", ",Count,")]"]);
+emit_enc_enumerated_case(C, EnumName, Count) ->
+    emit(["'",EnumName,"' -> ?RT_PER:encode_integer(",{asis,C},", ",Count,")"]).
 
 
 
@@ -387,10 +424,11 @@ gen_dec_prim(Erules,Att,BytesVar) ->
 		  {asis,Constraint},",",
 		  {asis,NamedNumberList},")"});
 	{'BIT STRING',NamedNumberList} ->
-	    NewList = [{X,Y}||{_,X,Y} <- NamedNumberList],
+%%	    NewList = [{X,Y}||{_,X,Y} <- NamedNumberList],
 	    emit({{asis,Rtmod},":decode_bit_string(",BytesVar,",",
 		  {asis,Constraint},",",
-		  {asis,NewList},")"});
+%%		  {asis,NewList},")"});
+		  {asis,NamedNumberList},")"});
 	'NULL' ->
 	    emit({{asis,Rtmod},":decode_null(",
 		  BytesVar,")"});
@@ -454,10 +492,38 @@ gen_dec_prim(Erules,Att,BytesVar) ->
 	    emit([{asis,Rtmod},":decode_open_type(",BytesVar,",", 
 		  {asis,Constraint}, ")"]); 
 	'ASN1_OPEN_TYPE' ->
-	    emit([{asis,Rtmod},":decode_open_type(",BytesVar,",", 
-		  {asis,Constraint}, ")"]); 
+	    case Constraint of
+		[#typereference{val=Tname}] ->
+		    emit(["fun(FBytes) ->",nl,
+			  "   {XTerm,XBytes} = "]),
+		    emit([{asis,Rtmod},":decode_open_type(",BytesVar,",[]),",nl]),
+		    emit(["{YTerm,_} = dec_",Tname,"(XTerm,mandatory),",nl]),
+		    emit(["{YTerm,XBytes} end(",BytesVar,")"]);
+		_ ->
+		    emit([{asis,Rtmod},":decode_open_type(",BytesVar,",[])"])
+	    end;
 	Other ->
 	    exit({'cant decode' ,Other})
     end.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

@@ -652,7 +652,7 @@ tkMenuLeftRight(Menu, left) ->
     case tk:classof(M2) of
 	"Menu" ->
 	    tk:cmd(Menu, [activate, none]),
-	    tk:foucs([M2]),
+	    tk:focus([M2]),
 	    Tmp = tk:cmd(M2, [index, active]),
 	    tk:cmd(M2, [activate, none]),
 	    tk:cmd(M2, [activate, Tmp]);
@@ -956,7 +956,7 @@ menuFirst(I, Last, Menu) ->
 %% s -			String to look for.
 
 tkMenuFindName(Menu, S) ->
-    I = case string:re_match(S, "^active$|^last$|^none$|^[0-9]|^@") of
+    I = case regexp:match(S, "^active$|^last$|^none$|^[0-9]|^@") of
 	    nomatch ->
 		case catch tk:cmd(Menu, [index, S]) of
 		    {'EXIT', _} -> "";

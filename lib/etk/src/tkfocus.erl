@@ -151,7 +151,7 @@ tkFocusOK(W) ->
 			    Class = tk:winfo([class, W]),
 			    B0 = tk:bind(Class),
 			    B1 = tk:bind(W),
-			    case string:re_match(append(B0) ++ append(B1), 
+			    case regexp:match(append(B0) ++ append(B1), 
 						 "Key|Focus") of
 				nomatch -> false;
 				_ -> true
@@ -171,7 +171,7 @@ tkFocusOK(W) ->
 %% None.
 
 tk_focusFollowsMouse() ->
-    tk:bind_after("all", "<Enter>", ['%W','%d'],
+    tk:bind("all", "<Enter>", ['%W','%d'],
 		  fun(W, D) ->
 			  case D of
 			      "NotifyAncestor" -> 

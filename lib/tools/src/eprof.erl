@@ -23,7 +23,7 @@
 -behaviour(gen_server).
 
 -export([start/0, stop/0, dump/0, total_analyse/0,
-	 start_profiling/1, profile/4, profile/1,
+	 start_profiling/1, profile/2, profile/4, profile/1,
 	 stop_profiling/0, analyse/0, log/1]).
 
 %% Internal exports 
@@ -32,19 +32,18 @@
 	 handle_call/3,
 	 handle_cast/2,
 	 handle_info/2,
-	 terminate/2,
-	 echo/0]).
+	 terminate/2]).
 
--import(lists, [flatten/1,reverse/1,keysort/2, member/2,keysearch/3]).
+-import(lists, [flatten/1,reverse/1,keysort/2]).
 
 
--record(state, {table = notable, 
-		proc = noproc, 
+-record(state, {table = notable,
+		proc = noproc,
 		profiling = false, 
-		pfunc = nofunc,
-		ptime = 0,
-		acktime = 0,
+		pfunc = undefined,
 		pop = running,
+		ptime = 0,
+		overhead = 0,
 		rootset = []}).
 
 %%%%%%%%%%%%%%
@@ -53,9 +52,13 @@ start() -> gen_server:start({local, eprof}, eprof, [], []).
 stop()  -> gen_server:call(eprof, stop, infinity).
 
 
-profile(Pids,M,F,A) ->
+profile(Pids, Fun) ->
     start(),
-    gen_server:call(eprof, {profile,Pids, M,F,A},infinity).
+    gen_server:call(eprof, {profile,Pids,erlang,apply,[Fun,[]]},infinity).
+
+profile(Pids, M, F, A) ->
+    start(),
+    gen_server:call(eprof, {profile,Pids,M,F,A},infinity).
 
 dump() -> 
     gen_server:call(eprof, dump, infinity).
@@ -84,55 +87,57 @@ profile(Rs) ->
 init(_) ->
     process_flag(trap_exit, true),
     process_flag(priority, max), 
-    put(oct, onecalltime()),
-    put(sched_time, sched_time()),
     {ok, #state{}}.
 
 subtr({X1,Y1,Z1}, {X1,Y1,Z2}) ->
     Z1 - Z2;
-subtr({X1,Y1,Z1}, {X1,Y2,Z2}) ->
-    ((Y1 * 1000000) + Z1) - ((Y2 * 1000000) + Z2).
+subtr({X1,Y1,Z1}, {X2,Y2,Z2}) ->
+    (((X1 * 1000000) + Y1) * 1000000 + Z1) -
+	(((X2 * 1000000) + Y2) * 1000000 + Z2).
 
-collect_trace_messages() ->
+
+into_tab(Tab, Key, call, Time) ->
+    case catch ets:update_counter(Tab, Key, Time) of
+	{'EXIT',{badarg,_}} ->
+	    ets:insert(Tab, {Key,Time,1});
+	NewTime when integer(NewTime) ->
+	    ets:update_counter(Tab, Key, {3,1})
+    end;
+into_tab(Tab, Key, Op, Time) ->
+    case catch ets:update_counter(Tab, Key, Time) of
+	{'EXIT',{badarg,_}} ->
+	    ets:insert(Tab, {Key,Time,0});
+	NewTime when integer(NewTime) ->
+	    ok
+    end.
+
+do_messages({trace_ts,From,Op,Mfa,Time}, Tab, undefined, PrevOp0, PrevTime0) ->
+    PrevFunc = {From,Mfa},
     receive
-	X when tuple(X), element(1,X) == trace_ts ->
-	    [X | collect_trace_messages()];
-	X when tuple(X), element(1,X) == trace ->
-	    [X | collect_trace_messages()]
-    after 0 -> 
-	    []
-    end.
-
-into_tab(Tab, Pfunc, Pop, AckTime) ->
-    case ets:lookup(Tab, Pfunc) of
-	[] when Pop == call ->
-	    ets:insert(Tab, {Pfunc,AckTime,1});
-	[] -> %% Pop == return | running
-	    ets:insert(Tab, {Pfunc,AckTime,0});
-	[{_,Ack0, Calls}] when Pop == call ->
-	    ets:insert(Tab, {Pfunc,AckTime + Ack0, Calls+1});
-	[{_,Ack0, Calls}]  ->
-	    ets:insert(Tab, {Pfunc,AckTime + Ack0, Calls})
-    end.
-
-do_messages([{trace_ts, From, Op, Func, Time0}|Tail], Tab,Pf,Pt,Pop,Ct,Ept) ->
-    Time = convert_time(Time0),
-    VirtualTime = Time - Ept,
-    DiffTime = VirtualTime - Pt,
-    Ack = DiffTime  - Ct,
-    into_tab(Tab, Pf, Pop, Ack),
-    case Tail of
-	[] ->
-	    {{From,Func}, Op, VirtualTime};
-	_ ->
-	    do_messages(Tail,Tab,{From,Func},VirtualTime, Op, Ct,Ept)
+	{trace_ts,_,_,_,_}=Ts -> do_messages(Ts, Tab, PrevFunc, Op, Time)
+    after 0 ->
+	    {PrevFunc,Op,Time}
+    end;
+do_messages({trace_ts,From,Op,Mfa,Time}, Tab, PrevFunc0, PrevOp0, PrevTime0) ->
+    into_tab(Tab, PrevFunc0, PrevOp0, subtr(Time, PrevTime0)),
+    PrevFunc = case Op of
+		   exit -> undefined;
+		   out -> undefined;
+		   Other -> {From,Mfa}
+	       end,
+    receive
+	{trace_ts,_,_,_,_}=Ts -> do_messages(Ts, Tab, PrevFunc, Op, Time)
+    after 0 ->
+	    {PrevFunc,Op,Time}
     end.
 
 %%%%%%%%%%%%%%%%%%
 
 handle_cast(Req, S) -> {noreply, S}.
 
-terminate(Reason, S) -> normal.
+terminate(Reason, S) ->
+    call_trace_for_all(false),
+    normal.
 
 %%%%%%%%%%%%%%%%%%
 
@@ -153,7 +158,6 @@ handle_call({profile, Rootset}, {From, _Tag}, S) ->
     link(From),
     maybe_delete(S#state.table),
     io:format("eprof: Starting profiling ..... ~n",[]),
-    load_check(),
     ptrac(S#state.rootset, false, all()),
     flush_receive(),
     Tab = ets:new(eprof, [set, public]),
@@ -161,6 +165,7 @@ handle_call({profile, Rootset}, {From, _Tag}, S) ->
 	false ->
 	    {reply, error,  #state{}};
 	true ->
+	    call_trace_for_all(true),
 	    erase(replyto),
 	    {reply, profiling, #state{table = Tab,
 				      proc = From,
@@ -170,6 +175,7 @@ handle_call({profile, Rootset}, {From, _Tag}, S) ->
 
 handle_call(stop_profiling, _FromTag, S) when S#state.profiling == true ->
     ptrac(S#state.rootset, false, all()),
+    call_trace_for_all(false),
     io:format("eprof: Stop profiling~n",[]),
     ets:delete(S#state.table, nofunc),
     {reply, profiling_stopped, S#state{profiling = false}};
@@ -178,8 +184,7 @@ handle_call(stop_profiling, _FromTag, S) ->
     {reply, profiling_already_stopped, S};
 
 handle_call({profile, Rootset, M, F, A}, FromTag, S) ->
-    io:format("eprof: Starting profiling ..... ~n",[]),
-    load_check(),
+    io:format("eprof: Starting profiling..... ~n", []),
     maybe_delete(S#state.table),
     ptrac(S#state.rootset, false, all()),
     flush_receive(),
@@ -188,6 +193,7 @@ handle_call({profile, Rootset, M, F, A}, FromTag, S) ->
     P = spawn_link(eprof, call, [self(), M, F, A]),
     case ptrac([P|Rootset], true, all()) of
 	true ->
+	    call_trace_for_all(true),
 	    {noreply, #state{table     = Tab, 
 			     profiling = true,
 			     rootset   = [P|Rootset]}};
@@ -200,28 +206,24 @@ handle_call(dump, _FromTag, S) ->
     {reply, dump(S#state.table), S};
 
 handle_call(analyse, _FromTag, S) ->
-    {reply, analyse(S#state.table), S};
+    {reply, analyse(S), S};
 
 handle_call(total_analyse, _FromTag, S) ->
-    {reply, total_analyse(S#state.table), S};
+    {reply, total_analyse(S), S};
 
 handle_call(stop, _FromTag, S) ->
     {stop, normal, stopped, S}.
 
 %%%%%%%%%%%%%%%%%%%
 
-handle_info({trace_ts, From, Op, Func, Time}, S) when S#state.profiling == true ->
-    put(start, convert_time(erlang:now())),
-    Tmsgs = [{trace_ts, From, Op, Func, Time} | collect_trace_messages()],
-    Pfunc0 = S#state.pfunc,
-    Ptime0 = S#state.ptime,
-    Pop0 = S#state.pop,
-    Ect0 = S#state.acktime,
-    {Pfunc, Pop, Ptime} = 
-	do_messages(Tmsgs, S#state.table, Pfunc0, Ptime0, Pop0, get(oct), Ect0),
-    Ect = get(sched_time) + Ect0 + (convert_time(erlang:now()) - get(start)),
-    S2 = S#state{pfunc = Pfunc, ptime = Ptime, pop=Pop, acktime= Ect},
-    {noreply, S2};
+handle_info({trace_ts, From, Op, Func, Time}=M, S0) when S0#state.profiling == true ->
+    Start = erlang:now(),
+    #state{table=Tab,pop=PrevOp0,ptime=PrevTime0,pfunc=PrevFunc0,
+	   overhead=Overhead0} = S0,
+    {PrevFunc,PrevOp,PrevTime} = do_messages(M, Tab, PrevFunc0, PrevOp0, PrevTime0),
+    Overhead = Overhead0 + subtr(erlang:now(), Start),
+    S = S0#state{overhead=Overhead,pfunc=PrevFunc,pop=PrevOp,ptime=PrevTime},
+    {noreply,S};
 
 handle_info({trace_ts, From, _, _, _}, S) when S#state.profiling == false ->
     ptrac([From], false, all()),
@@ -232,7 +234,7 @@ handle_info({P, {answer, A}}, S) ->
     io:format("eprof: Stop profiling~n",[]),
     {From, Tag} = get(replyto),
     catch unlink(From),
-    ets:delete(S#state.table,nofunc),
+    ets:delete(S#state.table, nofunc),
     gen_server:reply(erase(replyto), {ok, A}),
     {noreply, S#state{profiling = false,
 		      rootset = []}};
@@ -257,6 +259,10 @@ handle_info({'EXIT', P, Reason}, S) ->
 
 call(Top, M, F, A) ->
     Top ! {self(), {answer, apply(M,F,A)}}.
+
+call_trace_for_all(Flag) ->
+    erlang:trace_pattern(on_load, Flag, [local]),
+    erlang:trace_pattern({'_','_','_'}, Flag, [local]).
 
 ptrac([P|T], How, Flags) when pid(P) ->
     case dotrace(P, How, Flags) of
@@ -284,34 +290,40 @@ ptrac([H|T], How, Flags) ->
 
 ptrac([],_,_) -> true.
 
-dotrace(P,How,What) ->
+dotrace(P, How, What) ->
     case (catch erlang:trace(P, How, What)) of
 	1 ->
 	    true;
 	Other when How == false ->
 	    true;
 	Other ->
-	    io:format("** eprof: bad process ~w~n",[P]),
+	    io:format("** eprof: bad process: ~p,~p,~p~n", [P,How,What]),
 	    false
     end.
 
-all() -> [old_call_trace, running, timestamp, set_on_spawn].
+all() -> [call,arity,return_to,running,timestamp,set_on_spawn].
 
-total_analyse(notable) -> 
+total_analyse(#state{table=notable}) ->
     nothing_to_analyse;
-total_analyse(T) ->
+total_analyse(S) ->
+    #state{table = T, overhead = Overhead} = S,
     Pcalls = reverse(keysort(2, replicas(ets:tab2list(T)))),
     Time = collect_times(Pcalls),
     format("FUNCTION~44s      TIME ~n", ["CALLS"]),   
-    printit(Pcalls, Time).
+    printit(Pcalls, Time),
+    format("\nTotal time: ~.2f\n", [Time / 1000000]),
+    format("Measurement overhead: ~.2f\n", [Overhead / 1000000]).
 
-analyse(notable) -> 
+analyse(#state{table=notable}) ->
     nothing_to_analyse;
-analyse(T) ->
+analyse(S) ->
+    #state{table = T, overhead = Overhead} = S,
     Pids = ordsets:list_to_set(flatten(ets:match(T, {{'$1','_'},'_', '_'}))),
     Times = sum(ets:match(T, {'_','$1', '_'})),
     format("FUNCTION~44s      TIME ~n", ["CALLS"]),     
-    do_pids(Pids, T, 0, Times).
+    do_pids(Pids, T, 0, Times),
+    format("\nTotal time: ~.2f\n", [Times / 1000000]),
+    format("Measurement overhead: ~.2f\n", [Overhead / 1000000]).
 
 do_pids([Pid|Tail], T, AckTime, Total) ->
     Pcalls = 
@@ -383,40 +395,6 @@ maybe_delete({T,Ref}) when reference(Ref) ->
     ets:delete({T, Ref});
 maybe_delete(_) -> ok.
 
-onecalltime() -> hd(lists:sort([oct(), oct(), oct()])).
-
-oct() ->
-    garbage_collect(),  %% ehhh
-    N = erlang:now(),
-    call_loop(100,time),
-    Time1 = subtr(erlang:now(), N) div 100,
-
-    garbage_collect(),  %% ehhh
-    N2 = erlang:now(),
-    call_loop(100,notime),
-    Time2 = subtr(erlang:now(), N2) div 100,
-    
-    (Time1 - Time2) div 2.
-
-sched_time() ->
-    P = spawn(eprof, echo, []),
-    X = erlang:now(),
-    P ! self(),
-    receive P -> ok end,
-    subtr(erlang:now(), X).
-
-echo() ->
-    receive P -> P ! self() end.
-
-call_loop(0,_) -> ok;
-call_loop(I,time) ->
-    erlang:now(), call_loop(I-1,time);
-call_loop(I, notime) ->
-    call_loop(I-1, notime).
-
-convert_time({Msecs,Secs,Mysecs}) ->
-    (1000000000000 * Msecs) + (1000000 * Secs) + Mysecs.
-
 sum([[H]|T]) -> H + sum(T);
 sum([]) -> 0.
 
@@ -460,22 +438,4 @@ flush_receive() ->
     after 0 ->
 	    ok
     end.
-
-load_check() ->
-    load_check(code:all_loaded()).
-load_check([{Mod, File} |Tail]) ->
-    load_check_mod(Mod, keysearch(options, 1,
-				  apply(Mod, module_info,[compile]))),
-    load_check(Tail);
-load_check([]) -> done.
-
-load_check_mod(Mod, {value, {_, Opts}}) ->
-    case member(trace, Opts) of
-	true -> true;
-	false -> 
-	    io:format("** eprof: Warning module ~w not trace compiled ~n", 
-		      [Mod])
-    end;
-load_check_mod(Mod, _) ->
-    io:format("** eprof: No compile_opts found in ~w:module_info()~n", [Mod]).
 

@@ -155,21 +155,45 @@ pattern({record_field,Line,Rec0,Field0}) ->
     Rec1 = expr(Rec0),
     Field1 = expr(Field0),
     {record_field,Line,Rec1,Field1};
+pattern({bin,Line,Fs}) ->
+    Fs2 = pattern_grp(Fs),
+    {bin,Line,Fs2};
 pattern({op,Line,'++',{nil,_},R}) ->
     pattern(R);
 pattern({op,Line,'++',{cons,Li,{integer,L2,I},T},R}) ->
     pattern({cons,Li,{integer,L2,I},{op,Li,'++',T,R}});
 pattern({op,Line,'++',{string,Li,L},R}) ->
     pattern(string_to_conses(L, Li, R));
-%% The following are necessary to be able to handle unary +,- in patterns.
-pattern({op,Line1,'-',{integer,Line,I}}) ->
-    {op,Line1,'-',{integer,Line,I}};
-pattern({op,Line1,'+',{integer,Line,I}}) ->
-    {op,Line1,'+',{integer,Line,I}};
-pattern({op,Line1,'-',{float,Line,I}}) ->
-    {op,Line1,'-',{float,Line,I}};
-pattern({op,Line1,'+',{float,Line,I}}) ->
-    {op,Line1,'+',{float,Line,I}}.
+pattern({op,Line,Op,A}) ->
+    {op,Line,Op,A};
+pattern({op,Line,Op,L,R}) ->
+    {op,Line,Op,L,R}.
+
+pattern_grp([{bin_element,L1,E1,S1,T1} | Fs]) ->
+    S2 = case S1 of
+	     default ->
+		 default;
+	     _ ->
+		 expr(S1)
+	 end,
+    T2 = case T1 of
+	     default ->
+		 default;
+	     _ ->
+		 bit_types(T1)
+	 end,
+    [{bin_element,L1,expr(E1),S2,T2} | pattern_grp(Fs)];
+pattern_grp([]) ->
+    [].
+
+bit_types([]) ->
+    [];
+bit_types([Atom | Rest]) when atom(Atom) ->
+    [Atom | bit_types(Rest)];
+bit_types([{Atom, Integer} | Rest]) when atom(Atom), integer(Integer) ->
+    [{Atom, Integer} | bit_types(Rest)].
+
+
 
 %% -type pattern_list([Pattern]) -> [Pattern].
 %%  These patterns are processed "in parallel" for purposes of variable
@@ -247,6 +271,9 @@ gexpr({call,Line,{atom,La,F},As0}) ->
 	true -> As1 = gexpr_list(As0),
 		{call,Line,{atom,La,F},As1}
     end;
+gexpr({bin,Line,Fs}) ->
+    Fs2 = pattern_grp(Fs),
+    {bin,Line,Fs2};
 gexpr({op,Line,Op,A0}) ->
     case erl_internal:arith_op(Op, 1) of
 	true -> A1 = gexpr(A0),
@@ -366,6 +393,9 @@ expr({match,Line,P0,E0}) ->
     E1 = expr(E0),
     P1 = pattern(P0),
     {match,Line,P1,E1};
+expr({bin,Line,Fs}) ->
+    Fs2 = pattern_grp(Fs),
+    {bin,Line,Fs2};
 expr({op,Line,Op,A0}) ->
     A1 = expr(A0),
     {op,Line,Op,A1};

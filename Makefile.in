@@ -49,7 +49,8 @@ exec_prefix = @exec_prefix@
 # useful e.g. when installing on a server that stores the files with a
 # different path from where the clients access them. Or when building
 # rpms.
-INSTALL_PREFIX =
+#INSTALL_PREFIX =
+# Naah...override `prefix' instead.
 
 # The directory in which user executables (erl, erlc and erl_call) are put
 BINDIR      = $(INSTALL_PREFIX)@bindir@
@@ -104,7 +105,7 @@ RANLIB          = @RANLIB@
 # locally built system. (This can be put in front or back of the path
 # depending on which system is preferred.)
 LOCAL_PATH     = $(ERL_TOP)/erts/bin/$(TARGET):$(ERL_TOP)/erts/bin
-BOOTSTRAP_PATH = $(ERL_TOP)/bootstrap/bin
+BOOT_PREFIX=$(ERL_TOP)/bootstrap/bin:
 
 # ----------------------------------------------------------------------
 
@@ -116,6 +117,16 @@ BOOTSTRAP_PATH = $(ERL_TOP)/bootstrap/bin
 #
 all: emulator bootstrap_setup libs local_setup
 
+#
+# Use these targets when you want to use the erl and erlc
+# binaries in your PATH instead of those created from the
+# pre-compiled Erlang modules under bootstrap/.
+#
+noboot:
+	$(MAKE) BOOT_PREFIX= emulator libs local_setup
+noboot_install:
+	$(MAKE) BOOT_PREFIX= install
+
 # ----------------------------------------------------------------------
 
 emulator:
@@ -123,7 +134,7 @@ emulator:
 
 libs:
 	cd lib && \
-	  ERL_TOP=$(ERL_TOP) PATH=$(BOOTSTRAP_PATH):$${PATH} \
+	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 		$(MAKE) opt BUILD_ALL=true
 
 # Creates "erl" and "erlc" in bootstrap/bin which uses the precompiled 
@@ -142,7 +153,7 @@ bootstrap_setup:
 local_setup:
 	@rm -f erts/bin/erl erts/bin/erlc
 	@cd erts && \
-		ERL_TOP=$(ERL_TOP) PATH=$(BOOTSTRAP_PATH):$${PATH} \
+		ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 		$(MAKE) local_setup
 
 
@@ -157,12 +168,12 @@ install: install.dirs install.emulator install.libs install.Install install.bin
 
 install.emulator:
 	cd erts && \
-	  ERL_TOP=$(ERL_TOP) PATH=$(BOOTSTRAP_PATH):$${PATH} \
+	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 	  $(MAKE) TESTROOT=$(ERLANG_LIBDIR) release
 
 install.libs:
 	cd lib && \
-	  ERL_TOP=$(ERL_TOP) PATH=$(BOOTSTRAP_PATH):$${PATH} \
+	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 	  $(MAKE) TESTROOT=$(ERLANG_LIBDIR) BUILD_ALL=true release 
 
 install.Install:
@@ -192,6 +203,7 @@ install.dirs:
 
 clean:
 	rm -f *~ *.bak config.log config.status
+	find . -type f -name SKIP -print | xargs $(RM)
 	cd erts && ERL_TOP=$(ERL_TOP) $(MAKE) clean
 	cd lib  && ERL_TOP=$(ERL_TOP) $(MAKE) clean BUILD_ALL=true
 

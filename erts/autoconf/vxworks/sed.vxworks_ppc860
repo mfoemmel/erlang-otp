@@ -12,13 +12,17 @@ s|@system_type@|vxworks_ppc860|
 s|@CC@|@TTPREFIX@ccppc|
 s|@HCC@|gcc|
 s|@LD@|@TTPREFIX@ldppc|
-s|@LIBS@|-L@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/powerpc-wrs-vxworks/cygnus-2.7.2-960126 -lgcc|
+s|@STRIP@|@TTPREFIX@stripppc|
+s|@SYMPREFIX@||
+s|@LIBS@||
+s|@GCCLIBFLAGS@|-L@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/powerpc-wrs-vxworks/cygnus-2.7.2-960126/soft-float -lgcc|
 s|@DED_LD@|@TTPREFIX@ldppc|
+s|@DED_CFLAGS@|@CFLAGS@|
 # generate dwarf debug code on PPC ..
 s|@DEBUG_FLAGS@|-gdwarf|
 # remove -g option (go for dwarf)
 s|TYPE_FLAGS = -g |TYPE_FLAGS = |
-s|@GCCLIB_PATH@|@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/powerpc-wrs-vxworks/cygnus-2.7.2-960126/libgcc.a|
+s|@GCCLIB_PATH@|@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/powerpc-wrs-vxworks/cygnus-2.7.2-960126/soft-float/libgcc.a|
 s|@RANLIB@|@TTPREFIX@ranlibppc|
 s|@AR@|@TTPREFIX@arppc|
 s|@CFLAGS@|@GENERAL_CFLAGS@ -DCPU=PPC860 -DWANT_NONBLOCKING -DHAVE_MEMMOVE -DVXWORKS -I@WIND_BASE@/target/h -mcpu=860 -fvolatile -fno-builtin -fno-for-scope -msoft-float -D_GNU_TOOL -nostdinc|

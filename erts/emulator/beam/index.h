@@ -51,6 +51,7 @@ EXTERN_FUNCTION(IndexTable*, index_init, (IndexTable*,char*,
 					  int,int,int,HashFunctions));
 EXTERN_FUNCTION(void, index_delete, (IndexTable*));
 EXTERN_FUNCTION(void, index_info, (CIO, IndexTable*));
+EXTERN_FUNCTION(int, index_table_sz, (IndexTable*));
 
 EXTERN_FUNCTION(int, index_get, (IndexTable*, void*));
 EXTERN_FUNCTION(int, index_put, (IndexTable*, void*));

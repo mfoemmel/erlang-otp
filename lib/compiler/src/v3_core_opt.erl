@@ -31,10 +31,9 @@
 
 module(Mod0, Options) ->
     %% List optimisations to done.
-    Opts = [%% fun(M, Opts) -> sys_core_inline:module(M, Opts) end,
-	    %% fun(M, Opts) -> sys_core_fold:module(M, Opts) end,
-	    %% fun(M, Opts) -> sys_core_case:module(M, Opts) end,
-	    fun(M, Opts) -> sys_core_fold:module(M, Opts) end],
+    Opts = [fun(M, Opts) -> sys_core_inline:module(M, Opts) end,
+	    fun(M, Opts) -> sys_core_fold:module(M, Opts) end
+	   ],
     Mod1 = fold_opt(Opts, Mod0, Options),
     {ok,Mod1}.
 

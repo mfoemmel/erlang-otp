@@ -24,7 +24,7 @@
 	 i/3,pid/3,m/0,m/1,
 	 zi/0, bt/1, q/0,
 	 erlangrc/0,erlangrc/1,bi/1, flush/0, regs/0,
-	 nregs/0,pwd/0,ls/0,ls/1,cd/1]).
+	 nregs/0,pwd/0,ls/0,ls/1,cd/1,memory/1,memory/0]).
 
 -import(lists, [reverse/1,flatten/1,sublist/3,sort/1,keysearch/3,keysort/2,
 		concat/1,max/1,min/1,foreach/2,foldl/3,flatmap/2,map/2]).
@@ -45,6 +45,8 @@ help() ->
 	   "ls(Dir)    -- list files in directory <Dir>\n"
 	   "m()        -- which modules are loaded\n"
 	   "m(Mod)     -- information about module <Mod>\n"
+	   "memory()   -- memory allocation information\n"
+	   "memory(T)  -- memory allocation information of type <T>\n"
 	   "nc(File)   -- compile and load code in <File> on all nodes\n"
 	   "nl(Module) -- load module on all nodes\n"
 	   "pid(X,Y,Z) -- convert X,Y,Z to a Pid\n"
@@ -669,3 +671,158 @@ lengths([], L)    -> L.
 
 w(X) ->
     io_lib:write(X).
+
+
+
+%%
+%% memory/[0,1] help functions
+%%
+
+get_proc_mem() ->
+    get_proc_mem(erlang:processes(), 0).
+
+get_proc_mem([P|Ps], Acc) ->
+    {memory, M} = erlang:process_info(P, memory),
+    get_proc_mem(Ps, Acc + M);
+get_proc_mem([],Acc) ->
+    Acc.
+
+get_non_proc_mem([{static, Alloc}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{atom_space, Alloc, _Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{binary, Alloc}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{atom_table, Alloc}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{module_table, Alloc}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{export_table, Alloc}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{register_table, Alloc}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{loaded_code, Alloc}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{process_desc, Alloc, Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc-Used);
+get_non_proc_mem([{proc_bin_desc, Alloc, Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc-Used);
+get_non_proc_mem([{link_desc, Alloc, _Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{atom_desc, Alloc, _Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{export_desc, Alloc, _Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{module_desc, Alloc, _Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{preg_desc, Alloc, _Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{plist_desc, Alloc, _Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{fixed_deletion_desc, Alloc, _Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc+Alloc);
+get_non_proc_mem([{_Mem, _Alloc, _Used}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc);
+get_non_proc_mem([{_Mem, _Alloc}|Rest], Acc) ->
+    get_non_proc_mem(Rest, Acc);
+get_non_proc_mem([], Acc) ->
+    Acc.
+
+get_mem(MemType, allocated, [{MemType, Alloc, _Used}|_MemList]) ->
+    Alloc;
+get_mem(MemType, used, [{MemType, _Alloc, Used}|_MemList]) ->
+    Used;
+get_mem(MemType, _, [{MemType, Alloc}|_MemList]) ->
+    Alloc;
+get_mem(MemType, Type, [_|MemList]) ->
+    get_mem(MemType, Type, MemList);
+get_mem(_, _, []) ->
+    throw(badarg).
+
+get_ets_mem() ->
+    get_ets_mem(ets:all(), 0).
+get_ets_mem([T|Ts], Acc) ->
+    case ets:info(T, memory) of
+        M when integer(M) ->
+            get_ets_mem(Ts, Acc+(M*4));
+        _ ->
+            get_ets_mem(Ts, Acc)
+    end;
+get_ets_mem([], Acc) ->
+    Acc.
+
+
+mem(total, Proc, MemList, Ets) ->
+    mem(processes, Proc, MemList, Ets) + mem(system, Proc, MemList, Ets);
+mem(processes, Proc, MemList, Ets) ->
+    Proc;
+mem(system, Proc, MemList, Ets) ->
+    get_non_proc_mem(MemList, 0) + mem(ets, Proc, MemList, Ets);
+mem(atom, Proc, MemList, Ets) ->
+    get_mem(atom_space, allocated, MemList)
+        + get_mem(atom_table, allocated, MemList)
+        + get_mem(atom_desc, allocated, MemList);
+mem(atom_used, Proc, MemList, Ets) ->
+    get_mem(atom_space, used, MemList)
+        + get_mem(atom_table, used, MemList)
+        + get_mem(atom_desc, used, MemList);
+mem(binary, Proc, MemList, Ets) ->
+    get_mem(binary, allocated, MemList);
+mem(code, Proc, MemList, Ets) ->
+    get_mem(module_table, allocated, MemList)
+        + get_mem(export_table, allocated, MemList)
+        + get_mem(loaded_code, allocated, MemList)
+        + get_mem(export_desc, allocated, MemList)
+        + get_mem(module_desc, allocated, MemList);
+mem(ets, Proc, MemList, Ets) ->
+    Ets;
+mem(_, _, _, _) ->
+    badarg.
+
+get_proc_mem_if_needed(total) ->            get_proc_mem();
+get_proc_mem_if_needed(processes) ->        get_proc_mem();
+get_proc_mem_if_needed(_) ->                0.
+
+get_allocated_areas_if_needed(total) ->     erlang:system_info(allocated_areas);
+get_allocated_areas_if_needed(processes) -> erlang:system_info(allocated_areas);
+get_allocated_areas_if_needed(system) ->    erlang:system_info(allocated_areas);
+get_allocated_areas_if_needed(atom) ->      erlang:system_info(allocated_areas);
+get_allocated_areas_if_needed(atom_used) -> erlang:system_info(allocated_areas);
+get_allocated_areas_if_needed(binary) ->    erlang:system_info(allocated_areas);
+get_allocated_areas_if_needed(code) ->      erlang:system_info(allocated_areas);
+get_allocated_areas_if_needed(_) ->         [].
+
+get_ets_mem_if_needed(total) ->             get_ets_mem();
+get_ets_mem_if_needed(system) ->            get_ets_mem();
+get_ets_mem_if_needed(ets) ->               get_ets_mem();
+get_ets_mem_if_needed(_) ->                 0.
+
+%%
+%% memory information.
+%%
+
+memory() ->
+    MemList = erlang:system_info(allocated_areas),
+    Ets = get_ets_mem(),
+    Proc = get_proc_mem(erlang:processes(), 0),
+    [{total,     mem(total,     Proc, MemList, Ets)},
+     {processes, mem(processes, Proc, MemList, Ets)},
+     {system,    mem(system,    Proc, MemList, Ets)},
+     {atom,      mem(atom,      Proc, MemList, Ets)},
+     {atom_used, mem(atom_used, Proc, MemList, Ets)},
+     {binary,    mem(binary,    Proc, MemList, Ets)},
+     {code,      mem(code,      Proc, MemList, Ets)},
+     {ets,       mem(ets,       Proc, MemList, Ets)}].
+
+memory(Type) ->
+    case mem(Type,
+	     get_proc_mem_if_needed(Type),
+	     get_allocated_areas_if_needed(Type),
+	     get_ets_mem_if_needed(Type)) of
+	Result when integer(Result) ->
+	    Result;
+	Error ->
+	    erlang:fault(Error, [Type])
+    end.
+
+

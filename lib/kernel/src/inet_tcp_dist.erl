@@ -19,12 +19,12 @@
 
 %% Handles the connection setup phase with other Erlang nodes.
 
--export([listen/0, accept/1, accept_connection/5,
-	 setup/4, close/1, reg/2, select/1, is_node_name/1]).
+-export([listen/1, accept/1, accept_connection/5,
+	 setup/5, close/1, select/1, is_node_name/1]).
 
 %% internal exports
 
--export([accept_loop/2,do_accept/6,do_setup/5, getstat/1,tick/1]).
+-export([accept_loop/2,do_accept/6,do_setup/6, getstat/1,tick/1]).
 
 -import(error_logger,[error_msg/2]).
 
@@ -66,23 +66,17 @@ select(Node) ->
     end.
 
 %% ------------------------------------------------------------
-%% Register the node with epmd
-%% ------------------------------------------------------------
-
-reg(Name, Address) ->
-    {_,Port} = Address#net_address.address,
-    erl_epmd:register_node(Name, Port).
-
-%% ------------------------------------------------------------
 %% Create the listen socket, i.e. the port that this erlang
 %% node is accessible through.
 %% ------------------------------------------------------------
 
-listen() ->
+listen(Name) ->
     case inet_tcp:listen(0, [{active, false}, {packet,2}]) of
 	{ok, Socket} ->
 	    TcpAddress = get_tcp_address(Socket),
-	    {ok, {Socket, TcpAddress}};
+	    {_,Port} = TcpAddress#net_address.address,
+	    {ok, Creation} = erl_epmd:register_node(Name, Port),
+	    {ok, {Socket, TcpAddress, Creation}};
 	Error ->
 	    Error
     end.
@@ -154,7 +148,8 @@ do_accept(Kernel, AcceptPid, Socket, MyNode, Allowed, SetupTime) ->
 		      ?DFLAG_ATOM_CACHE bor
 		      ?DFLAG_EXTENDED_REFERENCES bor
 		      ?DFLAG_DIST_MONITOR bor
-		      ?DFLAG_FUN_TAGS,
+		      ?DFLAG_FUN_TAGS bor
+		      ?DFLAG_DIST_MONITOR_NAME,
 		      allowed = Allowed,
 		      f_send = fun(S,D) -> inet_tcp:send(S,D) end,
 		      f_recv = fun(S,N,T) -> inet_tcp:recv(S,N,T) 
@@ -164,14 +159,15 @@ do_accept(Kernel, AcceptPid, Socket, MyNode, Allowed, SetupTime) ->
 			      inet:setopts(S, 
 					   [{active, false},
 					    {packet, 4},
-					    {nodelay, true}])
+					    nodelay()])
 		      end,
 		      f_setopts_post_nodeup = 
 		      fun(S) ->
 			      inet:setopts(S, 
 					   [{active, true},
+					    {deliver, port},
 					    {packet, 4},
-					    {nodelay, true}])
+					    nodelay()])
 		      end,
 		      f_getll = fun(S) ->
 					inet:getll(S)
@@ -187,6 +183,23 @@ do_accept(Kernel, AcceptPid, Socket, MyNode, Allowed, SetupTime) ->
 		    ?shutdown(no_node)
 	    end
     end.
+
+
+%% we may not always want the nodelay behaviour
+%% for performance reasons
+
+nodelay() ->
+    case application:get_env(kernel, dist_nodelay) of
+	undefined ->
+	    {nodelay, true};
+	{ok, true} ->
+	    {nodelay, true};
+	{ok, false} ->
+	    {nodelay, false};
+	_ ->
+	    {nodelay, true}
+    end.
+	    
 
 %% ------------------------------------------------------------
 %% Get remote information about a Socket.
@@ -206,14 +219,15 @@ get_remote_id(Socket, Node) ->
 %% Performs the handshake with the other side.
 %% ------------------------------------------------------------
 
-setup(Node, MyNode, LongOrShortNames,SetupTime) ->
+setup(Node, Type, MyNode, LongOrShortNames,SetupTime) ->
     spawn_link(?MODULE, do_setup, [self(),
 				   Node,
+				   Type,
 				   MyNode,
 				   LongOrShortNames,
 				   SetupTime]).
 
-do_setup(Kernel, Node, MyNode, LongOrShortNames,SetupTime) ->
+do_setup(Kernel, Node, Type, MyNode, LongOrShortNames,SetupTime) ->
     process_flag(priority, max),
     ?trace("~p~n",[{inet_tcp_dist,self(),setup,Node}]),
     [Name, Address] = splitnode(Node, LongOrShortNames),
@@ -229,17 +243,21 @@ do_setup(Kernel, Node, MyNode, LongOrShortNames,SetupTime) ->
 					  [{active, false}, 
 					   {packet,2}]) of
 			{ok, Socket} ->
+			    PubFlag = if Type == hidden -> 0;
+					 true -> ?DFLAG_PUBLISHED
+				      end,
 			    HSData = #hs_data{
 			      kernel_pid = Kernel,
 			      other_node = Node,
 			      this_node = MyNode,
 			      socket = Socket,
 			      timer = Timer,
-			      this_flags = ?DFLAG_PUBLISHED bor
+			      this_flags = PubFlag bor
 			      ?DFLAG_ATOM_CACHE bor
 			      ?DFLAG_EXTENDED_REFERENCES bor
 			      ?DFLAG_DIST_MONITOR bor
-			      ?DFLAG_FUN_TAGS,
+			      ?DFLAG_FUN_TAGS bor
+			      ?DFLAG_DIST_MONITOR_NAME,
 			      other_version = Version,
 			      f_send = fun(S,D) -> 
 					       inet_tcp:send(S,D) 
@@ -253,15 +271,16 @@ do_setup(Kernel, Node, MyNode, LongOrShortNames,SetupTime) ->
 					(S, 
 					 [{active, false},
 					  {packet, 4},
-					  {nodelay, true}])
+					  nodelay()])
 			      end,
 			      f_setopts_post_nodeup = 
 			      fun(S) ->
 				      inet:setopts
 					(S, 
 					 [{active, true},
+					  {deliver, port},
 					  {packet, 4},
-					  {nodelay, true}])
+					  nodelay()])
 			      end,
 			      f_getll = fun(S) ->
 						inet:getll(S)

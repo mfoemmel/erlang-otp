@@ -68,6 +68,7 @@ EXTERN_FUNCTION(Hash*, hash_new, (char*, int, HashFunctions));
 EXTERN_FUNCTION(Hash*, hash_init, (Hash*, char*, int, HashFunctions));
 EXTERN_FUNCTION(void,  hash_delete, (Hash*));
 EXTERN_FUNCTION(void,  hash_info, (CIO, Hash*));
+EXTERN_FUNCTION(int,   hash_table_sz, (Hash *));
 
 EXTERN_FUNCTION(void*, hash_get, (Hash*, void*));
 EXTERN_FUNCTION(void*, hash_put, (Hash*, void*));

@@ -233,26 +233,26 @@ mergeit([A,B|L], Acc) ->
 mergeit([L], []) ->
     L;
 mergeit([L], Acc) ->
-    rmergeit([lists:reverse(L) | Acc], []);
+    rmergeit([lists:reverse(L, []) | Acc], []);
 mergeit([], Acc) ->
     rmergeit(Acc, []).
 
 rmergeit([A,B|L], Acc) ->
     rmergeit(L, [rmerge2(A, B, []) | Acc]);
 rmergeit([L], Acc) ->
-    mergeit([lists:reverse(L) | Acc], []);
+    mergeit([lists:reverse(L, []) | Acc], []);
 rmergeit([], Acc) ->
     mergeit(Acc, []).
 
 combine(L1, []) ->
     L1;
 combine(L1, L2) ->
-    L1 ++ lists:reverse(L2).
+    L1 ++ lists:reverse(L2, []).
 
 %% merge(X, Y) -> L
 %%  merges two sorted lists X and Y
 
-merge(X, Y) -> lists:reverse(merge2(X, Y, [])).
+merge(X, Y) -> lists:reverse(merge2(X, Y, []), []).
 
 merge2([H1|T1], [H2|T2], L) ->
     if
@@ -280,7 +280,7 @@ merge2([], H2, T2, L) ->
 %% rmerge(X, Y) -> L
 %%  merges two reversed sorted lists X and Y
 
-rmerge(X, Y) -> lists:reverse(rmerge2(X, Y, [])).
+rmerge(X, Y) -> lists:reverse(rmerge2(X, Y, []), []).
 
 rmerge2([H1|T1], [H2|T2], L) ->
     if
@@ -415,7 +415,7 @@ keysort2(Rest, _, _, Run, _) ->
     {Run,Rest}.
 
 samkeyrun([], _EL, _LK, _EH, _HK, L, H, _I, J) ->
-    {L ++ lists:reverse(H),[]};
+    {L ++ lists:reverse(H, []),[]};
 samkeyrun(All=[E|Es], EL, LK, EH, HK, L, H, I, J) ->
     K = element(I, E),
     if 
@@ -424,7 +424,7 @@ samkeyrun(All=[E|Es], EL, LK, EH, HK, L, H, I, J) ->
 	K >= HK ->
 	    samkeyrun(Es, EL, LK, E, K, L, [E|H], I, J);
 	true ->
-	    keysort2(All, 1, J, L ++ lists:reverse(H), I)
+	    keysort2(All, 1, J, L ++ lists:reverse(H, []), I)
     end.
 
 keymerge(Index, Os, Ns) when integer(Index), Index > 0 -> 
@@ -472,7 +472,7 @@ sort(Rest, _, _, Run, _) ->
     {Run, Rest}.
 
 samrun([], _EL, _EH, L, H, J, F) ->
-    {L ++ lists:reverse(H), []};
+    {L ++ lists:reverse(H, []), []};
 samrun(R=[E|Es], EL, EH, L, H, J, F)  ->
     case F(EL, E) of
 	false -> % E < EL
@@ -482,11 +482,11 @@ samrun(R=[E|Es], EL, EH, L, H, J, F)  ->
 		true -> % E >= EH
 		    samrun(Es, EL, E, L, [E|H], J, F);
 		false ->
-		    sort(R, 1, J, L++lists:reverse(H), F)
+		    sort(R, 1, J, L++lists:reverse(H, []), F)
 	    end
     end.
 
-merge(Fun, X, Y) -> lists:reverse(merge(Fun, X, Y, [])).
+merge(Fun, X, Y) -> lists:reverse(merge(Fun, X, Y, []), []).
 
 merge(Fun, [H1|T1], [H2|T2], L) ->
     case Fun(H1, H2) of

@@ -17,8 +17,12 @@
  *     $Id$
  *
  */
-
 #include "inet.h"
+
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 
 /*
  * Fills in the struct sockaddr_in with the 

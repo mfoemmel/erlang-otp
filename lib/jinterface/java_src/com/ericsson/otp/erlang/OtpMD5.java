@@ -317,9 +317,6 @@ class OtpMD5 {
     }
     return output;
   }
-    
-       
-       
 
   public int[] final_bytes() {
     int bits[] = encode(count,8);
@@ -343,16 +340,6 @@ class OtpMD5 {
 
     return digest;
   }
-
-  public String final_string() {
-    int[] res = final_bytes();
-    char[] cres = new char[res.length];
-    int i;
-    for(i = 0; i < res.length; ++i)
-      cres[i] = (char) res[i];
-    return new String(cres);
-  }
-
 }
 
 

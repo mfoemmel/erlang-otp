@@ -10,7 +10,7 @@ Note 2: '\\' prefixed paths are Windows shared paths
 
 ClearCase for Windows NT
 ------------------------
-Internal Location:  Patrik Nyblom
+Internal Location:  \\Vilya\Public\CCase_Site_Install
 Version:            3.2
 Things to consider: Not absolutely necessary, you can build using a plain 
 		    NFS mounted drive, but that is not recommended.
@@ -18,7 +18,7 @@ Things to consider: Not absolutely necessary, you can build using a plain
 
 NFS client for Windows NT (Intergraph Diskaccess 03.02.00.11)
 -------------------------
-Internal Location: Patrik Nyblom
+Internal Location: \\Vilya\Public\ftproot\pub\Windows\WindowsNT\dan3intel.exe
 Things to consider: Configure Group access RWX, and filenames matching to 
 "Preserve case [no conversion]" as well as  both "Match filenames exactly" and 
 "Match filenames ignoring case"
@@ -88,7 +88,4 @@ autorun.pl.in - This is the source for autorun.pl run through sed during 'instal
 
 
 
-Other questions about building OTP for Windows, contact:
 
-Patrik Nyblom
-support@erlang.ericsson.s

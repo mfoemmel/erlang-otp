@@ -122,8 +122,7 @@ emit_union_class(G, N, X, UnionName) ->
     ic_codegen:emit(Fd, "   public ~s discriminator() "
 		    "throws java.lang.Exception {\n", [DiscrType]),
     ic_codegen:emit(Fd, "      if (!_initialized) {\n", []),
-    ic_codegen:emit(Fd, "         throw new ~sOtpErlangDataException(\"\");\n",
-		    [?ERLANGPACKAGE]),
+    ic_codegen:emit(Fd, "         throw new java.lang.Exception(\"\");\n",[]),
     ic_codegen:emit(Fd, "      }\n", []),
     ic_codegen:emit(Fd, "      return _discriminator;\n", []),
     ic_codegen:emit(Fd, "   }\n", []),
@@ -324,8 +323,7 @@ emit_union_members_functions(G, N, X, Fd, UnionName, DiscrType,
     ic_codegen:emit(Fd, "   public ~s ~s() throws java.lang.Exception {\n",
 		    [Type, Id]),
     ic_codegen:emit(Fd, "      if (!_initialized) {\n", []),
-    ic_codegen:emit(Fd, "         throw new ~sOtpErlangDataException(\"\");\n",
-		    [?ERLANGPACKAGE]),
+    ic_codegen:emit(Fd, "         throw new java.lang.Exception(\"\");\n",[]),
     ic_codegen:emit(Fd, "      }\n", []),
     ic_codegen:emit(Fd, "      switch (~sHelper.discriminatorAsInt"
 		    "(discriminator())) {\n",
@@ -336,16 +334,14 @@ emit_union_members_functions(G, N, X, Fd, UnionName, DiscrType,
 	    ic_codegen:emit(Fd, "            break;\n", []),
 	    emit_default_access_fun_switch_cases(G, N, X, Fd, DiscrType,
 						 MListTot),
-	    ic_codegen:emit(Fd, "            throw new ~sOtpErlangDataException(\"\");"
-			    "\n", [?ERLANGPACKAGE]);
+	    ic_codegen:emit(Fd, "            throw new java.lang.Exception(\"\");\n", []);
 	true ->
 	    ic_codegen:emit(Fd, "         case ~s:\n",
 			    [get_case_as_int(G, N, ic_forms:get_type(X),
 					     DiscrType, Label)]),
 	    ic_codegen:emit(Fd, "            break;\n", []),
 	    ic_codegen:emit(Fd, "         default:\n", []),
-	    ic_codegen:emit(Fd, "            throw new ~sOtpErlangDataException(\"\");"
-			    "\n", [?ERLANGPACKAGE])
+	    ic_codegen:emit(Fd, "            throw new java.lang.Exception(\"\");\n", [])
     end,
     ic_codegen:emit(Fd, "      }\n", []),
 	    
@@ -386,8 +382,7 @@ emit_union_unmarshal_function(G, N, X, Fd, UnionName, WiredUnionName, MList) ->
 
     ic_codegen:emit(Fd, "     if ((_in.read_atom()).compareTo(~p) != 0)\n",
 	 	    [ic_util:to_undersc([WiredUnionName|N])]),
-    ic_codegen:emit(Fd, "       throw new ~sOtpErlangDataException(\"\");\n\n",
-	 	    [?ERLANGPACKAGE]),
+    ic_codegen:emit(Fd, "       throw new java.lang.Exception(\"\");\n\n",[]),
 
     ic_codegen:emit(Fd, "     ~s _value = new ~s();\n", [UnionName, UnionName]),
     

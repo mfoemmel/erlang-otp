@@ -161,17 +161,7 @@ do_gen(_,_,_,_) ->
     ok.
 
 do_scan(G) ->
-    case ic_options:get_opt(G, use_leex) of
-	1 -> 
-	    {ok, Bin} =  file:read_file(icgen:idlfile(G)),
-	    icscanner:string(binary_to_list(Bin));
-	2 -> 
-	    {ok, Bin} =  file:read_file(icgen:idlfile(G)),
-	    R = icscanner:tokens([], binary_to_list(Bin)),
-	    element(5, element(2,R));
-	_->
-	    icscan:scan(G, icgen:idlfile(G))
-    end.
+    icscan:scan(G, icgen:idlfile(G)).
     
 
 do_parse(G, Tokens) ->

@@ -24,6 +24,7 @@
 -module(shell_default).
 
 -export([help/0,lc/1,c/1,c/2,nc/1,nl/1,l/1,i/0,pid/3,i/3,m/0,m/1,
+         memory/0,memory/1,
 	 erlangrc/1,bi/1, regs/0, flush/0,pwd/0,ls/0,ls/1,cd/1, 
 	 zi/0, bt/1, q/0,
 	 ni/0, nregs/0]).
@@ -68,6 +69,8 @@ ls()            -> c:ls().
 ls(S)           -> c:ls(S).
 m() 		-> c:m().
 m(Mod) 		-> c:m(Mod).
+memory()        -> c:memory().
+memory(Type)    -> c:memory(Type).
 nc(X)     	-> c:nc(X).
 ni()            -> c:ni().
 nl(Mod) 	-> c:nl(Mod).

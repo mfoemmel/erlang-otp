@@ -25,10 +25,12 @@ void CORBA_free(void *storage) {
 
 
 CORBA_char *CORBA_string_alloc(CORBA_unsigned_long len) {
-  if (len >= 0) 
-    return (CORBA_char *) malloc(len+1);
-  else
-    return (CORBA_char *) NULL;
+  return (CORBA_char *) malloc(len+1);
+}
+
+
+CORBA_wchar *CORBA_wstring_alloc(CORBA_unsigned_long len) {
+  return (CORBA_wchar *) malloc(len*(__OE_WCHAR_SIZE_OF__+1));
 }
 
 
@@ -195,4 +197,33 @@ int ic_compare_refs(erlang_ref *ref1, erlang_ref *ref2) {
 }
 
 
+/* Length counter for wide strings */
+int ic_wstrlen(CORBA_wchar * p) {
+  int len = 0;
+
+  while(1) {
+    if (p[len] == 0)
+      return len;
+
+    len+=1;
+  }
+}
+
+
+/* Wide string compare function */
+int ic_wstrcmp(CORBA_wchar * ws1, CORBA_wchar * ws2) {
+  int index = 0;
+
+  while(1) {
+    if (ws1[index] == ws2[index]) {
+
+      if (ws1[index] == 0)
+	return 0;
+      
+      index += 1;
+
+    } else 
+      return -1;
+  }
+}
 

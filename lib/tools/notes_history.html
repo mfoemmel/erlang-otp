@@ -1,0 +1,167 @@
+<HTML>
+<HEAD>
+  <TITLE>Tools Release Notes</TITLE>
+</HEAD>
+
+<BODY BGCOLOR="#FFFFFF">
+
+<CENTER><H1>Tools Release Notes</H1></CENTER>
+
+<H2>Tools 1.5.2</H2>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>Eprof was corrected because the <CODE>trace</CODE> BIF and format of trace messages were changed.<BR>
+      Own Id: OTP-3369
+    </LI>
+  </UL>
+
+<H2>Tools 1.5.1</H2>
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>The memory information obtained with the <CODE>instrument</CODE> module now contains an additional field, which represents the process which allocated a block.<BR>
+      Own Id: OTP-3142
+    </LI>
+  </UL>
+
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>Due to a bug in Coast, a module could be initialized repeatedly. However, it is only necessary to initiate a module once and this is now fixed.<BR>
+      Own Id: OTP-3225
+    </LI>
+  </UL>
+
+<H2>Tools 1.4.3</H2>
+  <H3>Incompatibilities With Tools 1.4</H3>
+  <P>The module dbg is moved to the <STRONG>Runtime tools application</STRONG></P>
+
+  <H3>Known Problems</H3>
+  <UL>
+    <LI>In <CODE>cover</CODE> two or more processes, running the same code, may in rare situations give rise to race conditions when updating the ETS table used.<BR>
+      Own Id: OTP-2625
+    </LI>
+    <LI><CODE>cover</CODE> counts the number of executed statements, instead of the number of function calls. (This problem is solved by using <CODE>coast</CODE> instead!)<BR>
+      Own Id: OTP-1247
+    </LI>
+    <LI><CODE>cover</CODE> doesn't store the accumulated data persistently.<BR>
+      Own Id: OTP-1318
+    </LI>
+  </UL>
+
+<H2>Tools 1.4.1</H2>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>In Coast, recursive function calls containing other function calls as arguments are now recognised as being recursive.<BR>
+      Own Id: OTP-1981
+    </LI>
+    <LI>In Coast there can no longer be a race condition if two (or more) processes, running the same code, tries to update the ETS tables used.<BR>
+      Own Id: OTP-2625
+    </LI>
+  </UL>
+
+  <H3>Incompatibilities With Tools 1.4</H3>
+  <UL>
+    <LI>The <CODE>run</CODE> function call will, if the call to the Coast-compiled module fails, return an exit signal instead of the tuple {'EXIT', Reason}.</LI>
+    <LI>The internal representation of data has been changed, meaning that all previously Coast-compiled modules have to be recompiled.</LI>
+  </UL>
+
+  <H3>Known Problems</H3>
+  <UL>
+    <LI>In <CODE>cover</CODE> two or more processes, running the same code, may in rare situations give rise to race conditions when updating the ETS table used. <BR>
+      Own Id: OTP-2625
+    </LI>
+    <LI><CODE>cover</CODE> counts the number of executed statements, instead of the number of function calls. (This problem is solved by using <CODE>coast</CODE> instead!)<BR>
+      Own Id: OTP-1247
+    </LI>
+    <LI><CODE>cover</CODE> doesn't store the accumulated data persistently. <BR>
+      Own Id: OTP-1318
+    </LI>
+  </UL>
+
+<H2>Tools 1.4</H2>
+  <P>There is a new document module creating Emacs TAGS files, <CODE>tags</CODE>.</P>
+
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI><CODE>exref:delete_module/1</CODE> now works properly.<BR>
+      Own Id: OTP-1115
+    </LI>
+    <LI><CODE>exref</CODE> no longer have problems with guards (such as <CODE>record</CODE> and <CODE>atom</CODE>) in list comprehension (LC) expressions.<BR>
+      Own Id: OTP-1291
+    </LI>
+    <LI><CODE>exref</CODE> no longer mixes up modules.<BR>
+      Own Id: OTP-1220
+    </LI>
+    <LI><CODE>exref</CODE> no longer changes the working directory.<BR>
+    </LI>
+    <LI><CODE>exref</CODE> now handles internal functions correctly under certain conditions.</LI>
+    <LI> When using the <CODE>auto</CODE> option, exref no longer enters an infinite loop.</LI>
+  </UL>
+
+  <H3>Incompatibilities With Tools 1.2.1</H3>
+  <UL>
+    <LI><CODE>exref:module</CODE> no longer accepts modules specified as strings, so the implementation now agrees with the documentation.</LI>
+    </LI>
+  </UL>
+
+  <H3>Known Problems</H3>
+  <UL>
+    <LI>In Coast a recursive function call containing another function call as argument is currently not recognised as being recursive, unless the function call used as argument is made to a module not having been coast-compiled.<BR>
+      Own Id: OTP-1981
+    </LI>
+    <LI><CODE>cover</CODE> counts the number of executed statements, instead of the number of function calls. (This problem is solved by using <CODE>coast</CODE> instead!)<BR>
+      Own Id: OTP-1247
+    </LI>
+    <LI><CODE>cover</CODE> doesn't store the accumulated data persistently. <BR>
+      Own Id: OTP-1318
+    </LI>
+    <LI>In Emacs occurances of <CODE>$</CODE> confuses indentation mechanism.<BR>
+      Own Id: OTP-1203, OTP-1674, OTP-1675
+    </LI>
+  </UL>
+
+<H2>Tools 1.2.1</H2>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>The function <CODE>make:all</CODE> now works withoout a <CODE>Emakefile</CODE>.<BR>
+      Own Id: OTP-1340
+    </LI>
+    <LI><CODE>exref</CODE> now know about the language construct <CODE>query</CODE>.<BR>
+       Own Id: OTP-1368
+    </LI>
+  </UL>
+
+  <H3>Known Problems</H3>
+  <UL>
+    <LI>The function <CODE>exref:delete_module/1</CODE> does not work properly, so subesquent calls to <CODE>exref:analyse</CODE> will give incorrect results.<BR>
+       Own Id: OTP-1115<BR>
+    </LI>
+  </UL>
+
+<H2>Tools 1.2</H2>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>Deadlock situation with COVER compile solved.<BR>
+      Own Id: OTP-1072<BR>
+      Aux Id: HA34612
+    </LI>
+    <LI>Cover does now work with include files.<BR>
+      OwnId: OTP-1074<BR>
+      Aux Id: HA34302
+    </LI>
+    <LI>Changed cover to used <CODE>filename:find_src/1</CODE> instead of the obsolete <CODE>file_util</CODE> module.</LI>
+  </UL>
+
+  <H3>Known Problems</H3>
+  <UL>
+    <LI>Not cleaning up when module removed.</LI>
+  </UL>
+
+<H2>Tools 1.1</H2>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>Cover did not use <CODE>Options</CODE> in <CODE>file/2</CODE> in a correct way (OTP-1074).</LI>
+    <LI>Cover tried to load the &#34;tools&#34; application dynamically which could cause deadlock in the startup if cover-compiled modules are involved at this stage. The attempt to load the application is now removed (must be specified in the start script).</LI>
+  </UL>
+
+</BODY>
+</HTML>

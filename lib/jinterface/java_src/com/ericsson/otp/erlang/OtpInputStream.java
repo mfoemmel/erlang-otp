@@ -818,6 +818,7 @@ public class OtpInputStream extends ByteArrayInputStream {
     int tag;
     int len;
     byte[] strbuf;
+    char[] charbuf;
     
     tag = this.read1();
     if (tag == OtpExternal.versionTag) {
@@ -833,11 +834,23 @@ public class OtpInputStream extends ByteArrayInputStream {
       return new String(strbuf); 
 
     case OtpExternal.nilTag:
-      return ""; 
+      return "";
+
+    case OtpExternal.listTag: // List when unicode +
+      len = this.read4BE();
+      charbuf = new char[len];
+      
+      for (int i=0; i<len; i++)
+	charbuf[i] = this.read_char();
+      
+      this.read_nil();
+      return new String(charbuf);
 
     default:
       throw new OtpErlangDecodeException("Wrong tag encountered, expected "+ 
-					 OtpExternal.stringTag + 
+					 OtpExternal.stringTag +
+					 " or " + 
+					 OtpExternal.listTag +
 					 ", got " + tag);
     }
   }

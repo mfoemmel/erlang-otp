@@ -18,7 +18,8 @@
 -module(snmp_log).
 
 -export([create_log/0, log/4]).
--export([log_to_txt/2, log_to_txt/3, log_to_txt/4, log_to_txt/5,
+-export([log_to_txt/2, log_to_txt/3, log_to_txt/4, log_to_txt/5, 
+	 log_to_txt/6, log_to_txt/7,
 	 change_log_size/1]).
 
 -define(SNMP_USE_V3, true).
@@ -50,10 +51,10 @@ create_log() ->
 		    case open_disk_log(LogDir, Size, 1) of
 			{error, Reason} ->
 			    FileName = filename:join([LogDir, ?log_file]),
-			    error_logger:err_msg("snmp: cannot create "
-						 "audit trail log: ~s, "
-						 "reason: ~w~n", 
-						 [FileName, Reason]),
+			    error_logger:error_msg("snmp: cannot create "
+						   "audit trail log: ~s, "
+						   "reason: ~w~n", 
+						   [FileName, Reason]),
 			    false;
 			_ ->
 			    {ok, LogType}
@@ -134,22 +135,29 @@ log_to_txt(LogDir, Mibs, TxtFile) ->
     log_to_txt(LogDir, Mibs, TxtFile, ?log_name).
 log_to_txt(LogDir, Mibs, TxtFile, LogName) ->
     log_to_txt(LogDir, Mibs, TxtFile, LogName, ?log_file).
-
 log_to_txt(LogDir, Mibs, TxtFile, LogName, LogFile) ->
+    log_to_txt(LogDir, Mibs, TxtFile, LogName, LogFile, null).
+log_to_txt(LogDir, Mibs, TxtFile, LogName, LogFile, Start) ->
+    log_to_txt(LogDir, Mibs, TxtFile, LogName, LogFile, Start, null).
+
+log_to_txt(LogDir, Mibs, TxtFile, LogName, LogFile, Start, Stop) ->
     %% First check if the caller process has already opened the
     %% log, because if we close an already open log we will cause
     %% a runtime error.
     LogPids = case disk_log:info(LogName) of
 		  {error, {no_such_log, _}} ->
 		      [];
+		  {error, no_such_log} ->
+		      [];
 		  Info ->
-		      {value, {_, Pids}} = lists:keysearch(owners, 1, Info),
+		      Owners = lists:keysearch(owners, 1, Info),
+		      {value, {_, Pids}} = Owners,
 		      [P || {P, _} <- Pids]
 	      end,
     case lists:member(self(), LogPids) of
 	true ->
 	    %% The caller already has the log open 
-	    do_log_to_txt(LogName, TxtFile, Mibs);
+	    do_log_to_txt(LogName, TxtFile, Mibs, Start, Stop);
 	false ->
 	    case disk_log:open([{name, LogName},
 				{file, filename:join(LogDir, LogFile)},
@@ -157,22 +165,22 @@ log_to_txt(LogDir, Mibs, TxtFile, LogName, LogFile) ->
 				{format, internal},
 				{mode, read_only}]) of
 		{ok, _} ->
-		    Res = do_log_to_txt(LogName, TxtFile, Mibs),
+		    Res = do_log_to_txt(LogName, TxtFile, Mibs, Start, Stop),
 		    disk_log:close(LogName),
 		    Res;
 		{error, {name_already_open, _}} ->
-		    do_log_to_txt(LogName, TxtFile, Mibs);
+		    do_log_to_txt(LogName, TxtFile, Mibs, Start, Stop);
 		{error, Reason} ->
 		    {error, {LogName, Reason}}
 	    end
     end.
 
-do_log_to_txt(LogName, TxtFile, Mibs) ->
+do_log_to_txt(LogName, TxtFile, Mibs, Start, Stop) ->
     case file:open(TxtFile, write) of
 	{ok, Fd} ->
 	    Mib = snmp_misc:make_mini_mib(Mibs),
 	    Res = (catch loop(disk_log:chunk(LogName, start), LogName, 
-			      Mib, Fd)),
+			      Mib, Start, Stop, Fd)),
 	    file:close(Fd),
 	    Res;
 	{error, Reason} ->
@@ -180,36 +188,46 @@ do_log_to_txt(LogName, TxtFile, Mibs) ->
     end.
 
 
-loop({Cont, Terms}, LogName, Mib, Fd) ->
-    lists:foreach(fun(X) -> write(X, Mib, Fd) end, Terms),
-    loop(disk_log:chunk(LogName, Cont), LogName, Mib, Fd);
-loop(eof, _LogName, _Mib, _Fd) ->
+loop({Cont, Terms}, LogName, Mib, Start, Stop, Fd) ->
+    lists:foreach(fun(X) -> write(X, Mib, Start, Stop, Fd) end, Terms),
+    loop(disk_log:chunk(LogName, Cont), LogName, Mib, Start, Stop, Fd);
+loop(eof, _LogName, _Mib, _Start, _Stop, _Fd) ->
     ok;
-loop(Error, _LogName, _Mib, _Fd) ->
+loop(Error, _LogName, _Mib, _Start, _Stop, _Fd) ->
     Error.
 			  
-write({{V3Hdr, ScopedPdu}, Address}, Mib, Fd) ->
-    write({null, {V3Hdr, ScopedPdu}, Address}, Mib, Fd);
-write({TimeStamp, {V3Hdr, ScopedPdu}, Address}, Mib, Fd) ->
-    case catch snmp_pdus:dec_scoped_pdu(ScopedPdu) of
-	ScopedPDU when record(ScopedPDU, scopedPdu) -> 
-	    Msg = #message{version = 'version-3',
-			   vsn_hdr = V3Hdr,
-			   data = ScopedPDU},
-	    w(TimeStamp, Msg, Address, Mib, Fd);
-	{'EXIT', R} ->
-	    format_tab(Fd, "** error in log file ~p\n\n", [R])
+write({{V3Hdr, ScopedPdu}, Address}, Mib, Start, Stop, Fd) ->
+    write({null, {V3Hdr, ScopedPdu}, Address}, Mib, Start, Stop, Fd);
+write({TimeStamp, {V3Hdr, ScopedPdu}, Address}, Mib, Start, Stop, Fd) ->
+    case timestamp_filter(TimeStamp,Start,Stop) of
+	true ->
+	    case catch snmp_pdus:dec_scoped_pdu(ScopedPdu) of
+		ScopedPDU when record(ScopedPDU, scopedPdu) -> 
+		    Msg = #message{version = 'version-3',
+				   vsn_hdr = V3Hdr,
+				   data = ScopedPDU},
+		    w(ts2str(TimeStamp), Msg, Address, Mib, Fd);
+		{'EXIT', R} ->
+		    format_tab(Fd, "** error in log file ~p\n\n", [R])
+	    end;
+	false ->
+	    ok
     end;
-write({Packet, Address}, Mib, Fd) ->
-    write({null, Packet, Address}, Mib, Fd);
-write({TimeStamp, Packet, Address}, Mib, Fd) ->
-    case catch snmp_pdus:dec_message(binary_to_list(Packet)) of
-	Msg when record(Msg, message) ->
-	    w(TimeStamp, Msg, Address, Mib, Fd);
-	{'EXIT', R} ->
-	    format_tab(Fd, "** error in log file ~p\n\n", [R])
+write({Packet, Address}, Mib, Start, Stop, Fd) ->
+    write({null, Packet, Address}, Mib, Start, Stop, Fd);
+write({TimeStamp, Packet, Address}, Mib, Start, Stop, Fd) ->
+    case timestamp_filter(TimeStamp,Start,Stop) of
+	true ->
+	    case catch snmp_pdus:dec_message(binary_to_list(Packet)) of
+		Msg when record(Msg, message) ->
+		    w(ts2str(TimeStamp), Msg, Address, Mib, Fd);
+		{'EXIT', R} ->
+		    format_tab(Fd, "** error in log file ~p\n\n", [R])
+	    end;
+	false ->
+	    ok
     end;
-write(_, Mib, Fd) ->
+write(_, _Mib, _Start, _Stop, Fd) ->
     format_tab(Fd, "** unknown entry in log file\n\n", []).
 
 w(TimeStamp, #message{version = Vsn, vsn_hdr = VsnHdr, data = Data}, 
@@ -232,15 +250,15 @@ w(TimeStamp, #message{version = Vsn, vsn_hdr = VsnHdr, data = Data},
     end.
 
 w_request(TimeStamp, Vsn, HdrStr, Str, {Ip, Port}, Fd) ->
-    format_tab(Fd, "request ~s:w - ~s [~s] ~w\n~s", 
+    format_tab(Fd, "request ~s:~w - ~s [~s] ~w\n~s", 
 	      [ip(Ip), Port, HdrStr, TimeStamp, Vsn, Str]).
 
 w_response(TimeStamp, Vsn, HdrStr, Str, {Ip, Port}, Fd) ->
-    format_tab(Fd, "response ~s:w - ~s [~s] ~w\n~s", 
+    format_tab(Fd, "response ~s:~w - ~s [~s] ~w\n~s", 
 	      [ip(Ip), Port, HdrStr, TimeStamp, Vsn, Str]).
     
 w_report(TimeStamp, Vsn, HdrStr, Str, {Ip, Port}, Fd) ->
-    format_tab(Fd, "report ~s:w - ~s [~s] ~w\n~s", 
+    format_tab(Fd, "report ~s:~w - ~s [~s] ~w\n~s", 
 	      [ip(Ip), Port, HdrStr, TimeStamp, Vsn, Str]).
     
 w_trap(TimeStamp, Vsn, HdrStr, Str, Addrs, Fd) ->
@@ -250,6 +268,54 @@ w_trap(TimeStamp, Vsn, HdrStr, Str, Addrs, Fd) ->
 w_inform(TimeStamp, Vsn, HdrStr, Str, Addrs, Fd) ->
     format_tab(Fd, "inform ~s - ~s [~s] ~w\n~s", 
 	      [addr(Addrs), HdrStr, TimeStamp, Vsn, Str]).
+
+
+%% Convert a timestamp 2-tupple to a printable string
+%%
+ts2str({Local,Universal}) ->
+    dat2str(Local) ++ " , " ++ dat2str(Universal);
+ts2str(_) ->
+    "".
+
+%% Convert a datetime 2-tupple to a printable string
+%%
+dat2str({{Y,M,D},{H,Min,S}}) -> 
+    io_lib:format("~w-~w-~w,~w:~w:~w",[Y,M,D,H,Min,S]).
+    
+
+timestamp_filter({Local,Universal},Start,Stop) ->
+    tsf_ge(Local,Universal,Start) and tsf_le(Local,Universal,Stop);
+timestamp_filter(_,_Start,_Stop) -> 
+    true.
+
+tsf_ge(_Local,_Universal,null) ->
+    true;
+tsf_ge(Local,_Universal,{local_time,DateTime}) ->
+    tsf_ge(Local,DateTime);
+tsf_ge(_Local,Universal,{universal_time,DateTime}) ->
+    tsf_ge(Universal,DateTime);
+tsf_ge(Local,_Universal,DateTime) ->
+    tsf_ge(Local,DateTime).
+
+tsf_ge(TimeStamp,DateTime) ->    
+    T1 = calendar:datetime_to_gregorian_seconds(TimeStamp),
+    T2 = calendar:datetime_to_gregorian_seconds(DateTime),
+    T1 >= T2.
+
+tsf_le(_Local,_Universal,null) ->
+    true;
+tsf_le(Local,_Universal,{local_time,DateTime}) ->
+    tsf_le(Local,DateTime);
+tsf_le(_Local,Universal,{universal_time,DateTime}) ->
+    tsf_le(Universal,DateTime);
+tsf_le(Local,_Universal,DateTime) ->
+    tsf_le(Local,DateTime).
+
+tsf_le(TimeStamp,DateTime) ->
+    T1 = calendar:datetime_to_gregorian_seconds(TimeStamp),
+    T2 = calendar:datetime_to_gregorian_seconds(DateTime),
+    T1 =< T2.
+	
 
 %% In the output replace TAB by ESC TAB, and add a single trailing TAB.
 %%

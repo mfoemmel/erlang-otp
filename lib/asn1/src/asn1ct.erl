@@ -57,90 +57,6 @@ compile(File,Options) when list(Options) ->
 		     (catch compile1(File,Options))
 	     end.
 
-%compile1(File,Options) when list(Options) ->
-%    io:format("Erlang ASN.1 version ~p compiling ~p ~n",[?vsn,File]),
-%    Ext = filename:extension(File),
-%    Base = filename:basename(File,Ext),
-%    OutFile = outfile(Base,"",Options),
-%    DbFile = outfile(Base,"asn1db",Options),
-%    Includes = [I || {i,I} <- Options],
-%    EncodingRule = get_rule(Options),
-%    case asn1ct_tok:file(File) of
-%	{error,Reason} ->
-%	    io:format("~p~n",[Reason]),
-%	    {error,Reason};
-%        Tokens ->
-%	    case asn1ct_pbegin:parse(Tokens) of
-%		{error,Reason} ->
-%		    {error,Reason};
-%		{ok,M} ->
-%		    start(["."|Includes]),
-%		    asn1ct_check:storeindb(M),
-%		    Module = asn1_db:dbget(M#module.name,'MODULE'),
-%		    State = #state{mname=Module#module.name,module=Module,erule=EncodingRule},
-%		    Check = asn1ct_check:check(State,Module#module.typeorval),
-%		    case {Check,lists:member(abs,Options)} of
-%			{_,true} ->
-%			    pretty2(M#module.name,lists:concat([OutFile,".abs"]));
-%			{ok,_} ->
-%			    asn1_db:dbsave(DbFile,M#module.name),
-%			    io:format("--~p--~n",[{generated,DbFile}]),
-%			    debug_on(Options),
-%			    Result = 
-%				case EncodingRule of
-%				    ber ->
-%					asn1ct_gen_ber:pgen(OutFile,EncodingRule,M#module.name,Module#module.typeorval),
-%					debug_off(Options),
-%					erl_compile(OutFile,Options);
-%				    _ ->
-%					asn1ct_gen_per:pgen(OutFile,EncodingRule,M#module.name,Module#module.typeorval),
-%					debug_off(Options),
-%					erl_compile(OutFile,Options)
-%				end;
-%			{Err,_} ->
-%			    Err
-
-%			    %% case atom_to_list(M#module.name) of
-%			    %%Base ->
-%			    %% ok;
-%			    %% _ ->
-%			    %% io:format("Warning Different ASN.1 modulename (~p) and filename (~p)~n~n",[M#module.name,Base])
-%			    %% end
-%		    end
-%	    end
-%    end.
-
-%parse([Htoks|Rtoks]) ->
-%    Result = asn1ct_pbegin:parse(Htoks),
-%    case parse1(Rtoks, [Result]) of
-%	[{ok,M}|OkAndErrors] ->
-%	    {Types,Errors} = findtypes_and_values(OkAndErrors,[],[]),
-%	    case length(Errors) of
-%		N when N > 0 ->
-%		    {error,Errors};
-%		0 ->
-%		    {ok,M#module{typeorval=Types}}
-%	    end;
-%	OkAndErrors ->
-%	    {_,Errors} = findtypes_and_values(OkAndErrors,[],[])
-%    end.
-
-%parse1([[{'END',Lno},{'$end',_}]], Errors) ->
-%    lists:reverse(Errors);
-%parse1([[{'END',Lno},{'$end',_}]|Rtoks], Errors) ->
-%    lists:reverse([{error,{'tokens after','END'}}|Errors]);
-%parse1([], Errors) ->
-%    lists:reverse([{error,{missing,'END'}}|Errors]);
-%parse1([Htoks|Rtoks], Errors) ->
-%    Result = asn1ct_ptype:parse(Htoks),
-%    parse1(Rtoks,[Result|Errors]).
-    
-%findtypes_and_values([{ok,H}|T],Tacc,Vacc) ->
-%    findtypes_and_values(T,[H|Tacc],Vacc);
-%findtypes_and_values([{error,H}|T],Tacc,Vacc) ->
-%    findtypes_and_values(T,Tacc,[H|Vacc]);
-%findtypes_and_values([],Tacc,Vacc) ->
-%    {lists:reverse(Tacc),lists:reverse(Vacc)}.
     
 compile1(File,Options) when list(Options) ->
     io:format("Erlang ASN.1 version ~p compiling ~p ~n",[?vsn,File]),
@@ -151,6 +67,14 @@ compile1(File,Options) when list(Options) ->
     DbFile = outfile(Base,"asn1db",Options),
     Includes = [I || {i,I} <- Options],
     EncodingRule = get_rule(Options),
+%%    EncRule = get_rule(Options),
+%%    EncodingRule = 
+%%	if 
+%%	    EncRule == ber ->
+%%		list_to_atom(lists:concat([EncRule,"_bin"]));
+%%	    true -> 
+%%		EncRule
+%%	end,
     case asn1ct_tok:file(File) of
 	{error,Reason} ->
 	    io:format("~p~n",[Reason]),
@@ -175,18 +99,10 @@ compile1(File,Options) when list(Options) ->
 				    asn1_db:dbsave(DbFile,M#module.name),
 				    io:format("--~p--~n",[{generated,DbFile}]),
 				    debug_on(Options),
-				    Result = 
-					case EncodingRule of
-					    ber ->
-						asn1ct_gen_ber:pgen(OutFile,EncodingRule,M#module.name,Module#module.typeorval),
-						debug_off(Options),
-						
-						erl_compile(OutFile,Options);
-					    _ ->
-						asn1ct_gen_per:pgen(OutFile,EncodingRule,M#module.name,Module#module.typeorval),
-						debug_off(Options),
-						erl_compile(OutFile,Options)
-					end;
+				    GenMod = list_to_atom(lists:concat(["asn1ct_gen_",EncodingRule])),
+				    GenMod:pgen(OutFile,EncodingRule,M#module.name,Module#module.typeorval),
+				    debug_off(Options),
+				    erl_compile(OutFile,Options);
 				{Err,false} ->
 				    Err
 
@@ -198,7 +114,7 @@ compile1(File,Options) when list(Options) ->
     end.
 
 get_rule(Options) ->
-    case [Rule ||Rule <-[per,ber],
+    case [Rule ||Rule <-[per,ber,ber_bin],% added ber_bin
 		 Opt <- Options,
 		 Rule==Opt] of
 	[Rule] ->
@@ -327,6 +243,7 @@ make_erl_options(Opts) ->
 	case OutputType of
 	    undefined -> [ber]; % temporary default (ber when it's ready)
 	    ber -> [ber];
+	    ber_bin -> [ber_bin];
 	    per -> [per]
 	end,
     
@@ -337,6 +254,13 @@ pretty2(Module,AbsFile) ->
     start(),
     {ok,F} = file:open(AbsFile,write),
     M = asn1_db:dbget(Module,'MODULE'),
+    io:format(F,"%%%%%%%%%%%%%%%%%%%   ~p  %%%%%%%%%%%%%%%%%%%~n",[Module]),
+    io:format(F,"~s\n",[asn1ct_pretty_format:term(M#module.defid)]),
+    io:format(F,"~s\n",[asn1ct_pretty_format:term(M#module.tagdefault)]),
+    io:format(F,"~s\n",[asn1ct_pretty_format:term(M#module.exports)]),
+    io:format(F,"~s\n",[asn1ct_pretty_format:term(M#module.imports)]),
+    io:format(F,"~s\n\n",[asn1ct_pretty_format:term(M#module.extensiondefault)]),
+	      
     {Types,Values,ParameterizedTypes} = M#module.typeorval,
     io:format(F,"%%%%%%%%%%%%%%%%%%% TYPES in ~p  %%%%%%%%%%%%%%%%%%%~n",[Module]),
     lists:foreach(fun(T)-> io:format(F,"~s\n",
@@ -374,9 +298,13 @@ save() ->
 encode(Module,Term) ->
     asn1rt:encode(Module,Term).
 
+encode(Module,Type,Term) when list(Module) ->
+    asn1rt:encode(list_to_atom(Module),Type,Term);
 encode(Module,Type,Term) ->
     asn1rt:encode(Module,Type,Term).
 
+decode(Module,Type,Bytes) when list(Module) ->
+    asn1rt:decode(list_to_atom(Module),Type,Bytes);
 decode(Module,Type,Bytes) ->
     asn1rt:decode(Module,Type,Bytes).
 
@@ -401,6 +329,7 @@ test(Module,Type) ->
     io:format("~p:~p~n",[Module,Type]),
     case (catch value(Module,Type)) of 
 	{ok,Val} -> 
+%%	    io:format("asn1ct:test/2: ~w~n",[Val]),
 	    test(Module,Type,Val);
 	{'EXIT',Reason} -> 
 	    {error,{asn1,{value,Reason}}}
@@ -409,14 +338,56 @@ test(Module,Type) ->
 test(Module,Type,Value) ->
     case catch encode(Module,Type,Value) of
 	{ok,Bytes} ->
-	    case decode(Module,Type,lists:flatten(Bytes)) of
-		{ok,Value} -> {ok,{Module,Type,Value}};
-		{ok,Res} -> {error,{asn1,{encode_decode_mismatch,{{Module,Type,Value},Res}}}};
-		Error -> {error,{asn1,{{decode,{Module,Type,Value},Error}}}}
+%%	    io:format("test 1: ~p~n",[{Bytes}]),
+	    M = if 
+		    list(Module) ->
+			list_to_atom(Module);
+		    true ->
+			Module
+		end,
+	    case M:encoding_rule() of
+		ber_bin ->
+%%		    io:format("test 2: ber_bin~n"),
+		    case decode(M,Type,Bytes) of
+			{ok,Value} -> 
+%%			    io:format("test 3: ~p~n",[Value]),
+			    {ok,{Module,Type,Value}};
+			{ok,Res} -> 
+%%			    io:format("test 4: ~p~n",[Res]),
+			    {error,{asn1,{encode_decode_mismatch_ber_bin,
+					  {{Module,Type,Value},
+					   Res}}}};
+			Error -> 
+			    {error,{asn1,{{decode,
+					   {Module,Type,Value},Error}}}}
+		    end;
+		_ ->
+%%		    io:format("test 2: _~n"),
+		    case decode(Module,Type,lists:flatten(Bytes)) of
+			{ok,Value} -> 
+			    {ok,{Module,Type,Value}};
+			{ok,Res} -> 
+			    {error,{asn1,{encode_decode_mismatch,
+					  {{Module,Type,Value},Res}}}};
+			Error -> 
+			    {error,{asn1,{{decode,
+					   {Module,Type,Value},Error}}}}
+		    end
 	    end;
 	Error ->
 	    {error,{asn1,{encode,{{Module,Type,Value},Error}}}}
     end.
+%%test(Module,Type,Value) ->
+%%    case catch encode(Module,Type,Value) of
+%%	{ok,Bytes} ->
+%%	    case decode(Module,Type,lists:flatten(Bytes)) of
+%%		{ok,Value} -> {ok,{Module,Type,Value}};
+%%		{ok,Res} -> {error,{asn1,{encode_decode_mismatch,{{Module,Type,Value},Res}}}};
+%%		Error -> {error,{asn1,{{decode,{Module,Type,Value},Error}}}}
+%%	    end;
+%%	Error ->
+%%	    {error,{asn1,{encode,{{Module,Type,Value},Error}}}}
+%%    end.
 
 value(Module) ->
     start(),
@@ -451,3 +422,27 @@ cmp(Module,InFile) ->
 
 vsn() ->
     ?vsn.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -31,8 +31,10 @@
 %%%-----------------------------------------------------------------
 
 %% External exports
--export([new/3, open/1, stop/1]).
+-export([new/3, open/1, open/2, stop/1]).
 -export([dump_db/1, insert/2, delete/2, match_delete/2]).
+
+-define(DEFAULT_AUTO_REPAIR,true).
 
 %%-----------------------------------------------------------------
 %% Func: new/3
@@ -52,10 +54,12 @@ new(FileName, Name, Type) ->
     dump_db({FileName, LogFd, Tab}),
     {ok, {FileName, LogFd, Tab}}.
 
+
 %%-----------------------------------------------------------------
-%% Func: open/1
-%% Args: FileName is a string containing the path and the filename
-%%         without extension.
+%% Func: open/1, open/2
+%% Args: FileName   -> is a string containing the path and the filename
+%%                     without extension.
+%%       AutoRepair -> false | true | true_verbose
 %% Purpose: Opens a persistent db from db file and logfile.
 %% PRE: The logfile and dbfile must exist.
 %% POST: The db file is updated, and the logfile is empty.
@@ -64,24 +68,32 @@ new(FileName, Name, Type) ->
 %% Fails: If logfile is corrupt/doen't exist etc.
 %%-----------------------------------------------------------------
 open(FileName) ->
+    open(FileName,?DEFAULT_AUTO_REPAIR).
+
+open(FileName,AutoRepair) ->
     LogFile = lists:append(FileName, ".log"),
     DbFile = lists:append(FileName, ".ets"),
-    {ok, Tab} = ets:file2tab(DbFile),
-    case catch read_log_file(LogFile, Tab) of
-	{ok, LogFd} ->
-	    case catch dump_db({FileName, LogFd, Tab}) of
-		ok ->
-		    {ok, {FileName, LogFd, Tab}};
-		terminated ->
-		    {error, terminated};
+    case file:read_file_info(DbFile) of
+	{error, Reason} ->
+	    exit(Reason);
+	{ok, _} ->
+	    {ok, Tab} = ets:file2tab(DbFile),
+	    case catch read_log_file(LogFile,Tab,AutoRepair) of
+		{ok, LogFd} ->
+		    case catch dump_db({FileName,LogFd,Tab}) of
+			ok ->
+			    {ok, {FileName, LogFd, Tab}};
+			terminated ->
+			    {error, terminated};
+			{'EXIT', Reason} ->
+			    catch ets:delete(Tab),
+			    catch file:close(LogFd),
+			    {error, Reason}
+		    end;
 		{'EXIT', Reason} ->
 		    catch ets:delete(Tab),
-		    catch file:close(LogFd),
 		    {error, Reason}
-	    end;
-	{'EXIT', Reason} ->
-	    catch ets:delete(Tab),
-	    {error, Reason}
+	    end
     end.
 
 %%-----------------------------------------------------------------
@@ -135,19 +147,38 @@ match_delete({_FileName, LogFd, Tab}, Pattern) ->
     ets:match_delete(Tab, Pattern).
 
 
-read_log_file(LogFile, Tab) ->
-    {ok, LogFd} = file:open(LogFile, read_write),
-    exec_log(LogFd, Tab).
+read_log_file(LogFile,Tab,AutoRepair) ->
+    {ok,LogFd} = file:open(LogFile,read_write),
+    exec_log(LogFile,LogFd,Tab,AutoRepair).
 
-exec_log(LogFd, Tab) ->
-    case read(LogFd) of
+exec_log(LogFile,LogFd,Tab,AutoRepair) ->
+    case (catch read(LogFd)) of
 	{ok, Command} ->
-	    exec_command(Command, Tab),
-	    exec_log(LogFd, Tab);
+	    exec_command(Command,Tab),
+	    exec_log(LogFile,LogFd,Tab,AutoRepair);
 	eof ->
-	    {ok, LogFd}
+	    {ok, LogFd};
+	Error ->
+	    auto_repair(AutoRepair,Error,LogFile),
+	    exec_log(LogFile,LogFd,Tab,AutoRepair)
     end.
 
+auto_repair(true_verbose,{error,Reason},FileName) ->
+    snmp_error:db_err("Error reading from logfile ~p for reason ~p, repairing", 
+		      [FileName,Reason]),
+    ok;
+auto_repair(true_verbose,{'EXIT',Reason},FileName) ->
+    snmp_error:db_err("Exception reading from logfile ~p for reason ~p", 
+		      [FileName,Reason]),
+    ok;
+auto_repair(true,_Error,_FileName) ->
+    ok;
+auto_repair(false,{'EXIT',Reason},_FileName) ->
+    exit(Reason);
+auto_repair(false,{error,Reason},_FileName) ->
+    exit(Reason).
+    
+    
 exec_command({insert, Object}, Tab) ->
     ets:insert(Tab, Object);
 exec_command({delete, Key}, Tab) ->
@@ -160,16 +191,18 @@ read(Fd) ->
     case get_size_of_next_binary(Fd) of
 	eof -> eof;
 	Size ->
-	    read(Fd, Size)
+	    read(Fd,Size)
     end.
 
-read(Fd, Size) ->
+read(Fd,Size) ->
     case io:get_chars(Fd,'',Size) of
 	eof ->
 	    {error, reading};
-	List ->
+	List when length(List) == Size ->
 	    Bin = list_to_binary(List),
-	    {ok, binary_to_term(Bin)}
+	    {ok, binary_to_term(Bin)};
+	L -> %% Got less then requested
+	    {error, {unexpected_eof,Size,length(L)}}
     end.
  
 get_size_of_next_binary(Fd) ->
@@ -194,5 +227,4 @@ write(Fd, Term) ->
 
 put_int16(I) ->
     [((I band 16#ff00) bsr 8),I band 16#ff].
-
 

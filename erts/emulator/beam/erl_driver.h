@@ -83,6 +83,7 @@ typedef struct erl_drv_binary {
 typedef struct _erl_drv_data* ErlDrvData; /* Data to be used by the driver itself. */
 typedef struct _erl_drv_event* ErlDrvEvent; /* An event to be selected on. */
 typedef struct _erl_drv_port* ErlDrvPort; /* A port descriptor. */
+typedef struct _erl_drv_port* ErlDrvThreadData; /* Thread data. */
 
 /*
  * Error codes that can be return from driver.
@@ -148,6 +149,7 @@ typedef struct erl_drv_entry {
     void (*outputv)(ErlDrvData drv_data, ErlIOVec *ev);
 				/* called when we have output from erlang
 				   to the port */
+    void (*ready_async)(ErlDrvData drv_data, ErlDrvThreadData thred_data);
 } ErlDrvEntry;
 
 /*
@@ -189,6 +191,7 @@ EXTERN int driver_outputv(ErlDrvPort port, char* hbuf, int hlen, ErlIOVec *ev,
 EXTERN int driver_vec_to_buf(ErlIOVec *ev, char *buf, int len);
 EXTERN int driver_set_timer(ErlDrvPort port, unsigned long time);
 EXTERN int driver_cancel_timer(ErlDrvPort port);
+EXTERN int driver_read_timer(ErlDrvPort port, unsigned long *time_left);
 
 /*
  * The following functions are used to initiate a close of a port

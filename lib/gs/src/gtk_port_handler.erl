@@ -170,32 +170,16 @@ init(Gtk) ->
 %% the $OSTYPE variable.
 %%----------------------------------------------------------------------
 choose_file(Dir,File,OsType) ->
-    case file:file_info(F1 = (Dir++File++"-"++OsType)) of
-	{ok,Info} ->
+    case file:read_file_info(F1 = (Dir++File++"-"++OsType)) of
+	{ok,_FileInfo} ->
 	    F1;
 	NotFound ->
-	    case file:file_info(F2 = (Dir++File)) of
-		{ok,Info} ->
+	    case file:read_file_info(F2 = (Dir++File)) of
+		{ok,_FileInfo} ->
 		    F2;
 		NotFound2 -> exit({choose_file,Dir,File,OsType,NotFound2})
 	    end
     end.
-
-
-% based on esock, currently not used for performance reasons
-init_esock_nt(Gtk) -> 
-    process_flag(trap_exit,true),
-    socket:start(),
-    io:format("gonna initiate sock~n",[]),
-    ListenSock = socket:listen('STREAM', 'AF_INET', 0, raw),
-    {_Fd, PortNo} = ListenSock,
-    io:format("got a listen sock:~p~n",[ListenSock]),
-    P = open_port({spawn,lists:append("wish42.exe test.tcl -- ",
-                                      integer_to_list(PortNo))},[]),
-    Sock = socket:accept(ListenSock),
-    Sock ! {self(), {deliver, "source ../priv/tcl/gtk.tcl\n"}},
-    io:format("source ok~n",[]),
-    idle(#state{port=Sock, gtk=Gtk},[]).
 
 init_nt(Gtk) ->
     process_flag(trap_exit,true),
@@ -374,14 +358,6 @@ in_split([X|T],  Ack)            -> in_split(T, [X|Ack]);
 in_split([], Ack)                -> {false, Ack}.
 
 
-
-
-%% ---------------------------------------------
-%% reply the result to the one who asked for it.
-%%
-
-reply(Pid, Result) ->
-    Pid ! {gtk_reply, Result}.
 
 
 %% ---------------------------------------------

@@ -1,0 +1,59 @@
+# -*-Makefile-*-
+
+# this file is included in the doc and src makefiles
+# so the list of files only needs to be updated in one place
+# i.e. here
+
+EXCEPTIONS = \
+	OtpAuthException \
+	OtpErlangDecodeException \
+	OtpErlangException \
+	OtpErlangExit \
+	OtpErlangRangeException \
+	OtpException
+
+COMM = \
+	AbstractConnection \
+	AbstractNode \
+	GenericQueue \
+	Link \
+	Links \
+	OtpConnection \
+	OtpCookedConnection \
+	OtpEpmd \
+	OtpExternal \
+	OtpInputStream \
+	OtpLocalNode \
+	OtpNodeStatus \
+	OtpMD5 \
+	OtpMbox \
+	OtpMsg \
+	OtpNode \
+	OtpOutputStream \
+	OtpPeer \
+	OtpSelf \
+	OtpServer
+
+ERL = \
+	OtpErlangAtom \
+	OtpErlangBinary \
+	OtpErlangBoolean \
+	OtpErlangByte \
+	OtpErlangChar \
+	OtpErlangDouble \
+	OtpErlangFloat \
+	OtpErlangInt \
+	OtpErlangList \
+	OtpErlangLong \
+	OtpErlangObject \
+	OtpErlangPid \
+	OtpErlangPort \
+	OtpErlangRef \
+	OtpErlangShort\
+	OtpErlangString\
+	OtpErlangTuple \
+	OtpErlangUInt \
+	OtpErlangUShort
+
+JAVA_FILES=$(EXCEPTIONS) $(ERL) $(COMM) 
+

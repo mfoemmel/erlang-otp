@@ -76,15 +76,23 @@ send(SocketType, Socket, Request, ConfigDB, InitData) ->
 		{proceed,Data} ->
 		    case httpd_util:key1search(Data, status) of
 			{StatusCode,PhraseArgs,Reason} ->
-			    send_status(SocketType,Socket,StatusCode,PhraseArgs,ConfigDB);
+			    ?DEBUG("send -> proceed/status: ~n"
+				   "    StatusCode: ~p~n"
+				   "    PhraseArgs: ~p~n"
+				   "    Reason:     ~p",
+				   [StatusCode,PhraseArgs,Reason]),
+			    send_status(SocketType,Socket,
+					StatusCode,PhraseArgs,ConfigDB);
 			undefined ->
 			    case httpd_util:key1search(Data,response) of
 				{already_sent,StatusCode,Size} ->
 				    Info;
 				{StatusCode,Response} ->
-				    send_response(SocketType,Socket,StatusCode,Response);
+				    send_response(SocketType,Socket,
+						  StatusCode,Response);
 				undefined ->
-				    send_status(SocketType,Socket,500,none,ConfigDB),
+				    send_status(SocketType,Socket,500,none,
+						ConfigDB),
 				    Info
 			    end
 		    end
@@ -99,10 +107,11 @@ traverse_modules(Info,[Module|Rest]) ->
     ?DEBUG("traverse_modules -> Module: ~w",[Module]),
     case catch apply(Module,do,[Info]) of
 	{'EXIT',Reason} ->
+	    ?LOG("traverse_modules -> exit reason: ~p",[Reason]),
 	    error_logger:error_report(Reason),
 	    done;
 	done ->
-	    ?DEBUG("traverse_modules done", []),
+	    ?DEBUG("traverse_modules -> done", []),
 	    done;
 	{break,NewData} ->
 	    {proceed,NewData};
@@ -113,6 +122,10 @@ traverse_modules(Info,[Module|Rest]) ->
 %% send_status %%
 
 send_status(SocketType,Socket,StatusCode,PhraseArgs,ConfigDB) ->
+    ?DEBUG("send_status -> ~n"
+	   "    StatusCode: ~p~n"
+	   "    PhraseArgs: ~p",
+	   [StatusCode,PhraseArgs]),
     Header = httpd_util:header(StatusCode, "text/html")++"\r\n\r\n",
     ReasonPhrase = httpd_util:reason_phrase(StatusCode),
     Message = httpd_util:message(StatusCode,PhraseArgs,ConfigDB),
@@ -128,5 +141,9 @@ send_status(SocketType,Socket,StatusCode,PhraseArgs,ConfigDB) ->
 %% send_response
 
 send_response(SocketType,Socket,StatusCode,Response) ->
+    ?DEBUG("send_status -> ~n"
+	   "    StatusCode: ~p~n"
+	   "    Response:   ~p",
+	   [StatusCode,Response]),
     Header = httpd_util:header(StatusCode),
     httpd_socket:deliver(SocketType,Socket,[Header,Response]).

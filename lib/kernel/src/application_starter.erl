@@ -39,8 +39,8 @@
 %%%=============================================================================
 start([], Type, Apps) ->
     ok;
-start([{P,A}|Phases], Type, Apps) ->
-    case start_apps(P, Type, Apps) of
+start([{Phase,PhaseArgs}|Phases], Type, Apps) ->
+    case start_apps(Phase, Type, Apps) of
 	{error, Error} ->
 	    {error, Error};
 	_ ->
@@ -49,32 +49,33 @@ start([{P,A}|Phases], Type, Apps) ->
 
 
 %%%=============================================================================
-%%% Start each application in the phase P. 
+%%% Start each application in the phase Phase. 
 %%%=============================================================================
-start_apps(P, Type, []) ->
+start_apps(Phase, Type, []) ->
     ok;
-start_apps(P, Type, [App | Apps]) ->
-    case catch run_start_phase(P, Type, App) of
+start_apps(Phase, Type, [App | Apps]) ->
+    case catch run_start_phase(Phase, Type, App) of
 	{error, Error} ->
 	    {error, Error};
 	_ ->
-	    start_apps(P, Type, Apps)
+	    start_apps(Phase, Type, Apps)
     end.
 
 
 %%%=============================================================================
 %%% If application_starter is used recursively, start also all the included
-%%% applications in the phase P. 
+%%% applications in the phase Phase. 
 %%%=============================================================================
-run_start_phase(P, Type, App) ->
+run_start_phase(Phase, Type, App) ->
     {ok,{Mod,Arg}} = application:get_key(App, mod),
     case Mod of
 	application_starter ->
-	    run_the_phase(P, Type, App),
+	    [StartMod, StartArgs] = Arg,
+	    run_the_phase(Phase, Type, App, StartMod),
 	    {ok, IncApps} = application:get_key(App, included_applications),
-	    start_apps(P, Type, IncApps);
+	    start_apps(Phase, Type, IncApps);
 	_ ->
-	    run_the_phase(P, Type, App)
+	    run_the_phase(Phase, Type, App, Mod)
     end.
     
 
@@ -83,25 +84,29 @@ run_start_phase(P, Type, App) ->
 %%% Start the application only if the start phase is defined in the 
 %%% start_phases-key. 
 %%%=============================================================================
-run_the_phase(P, Type, M) ->
-    Start_phases = case application_controller:get_key(M, start_phases) of
+run_the_phase(Phase, Type, App, Mod) ->
+    Start_phases = case application_controller:get_key(App, start_phases) of
 		       {ok, undefined} ->
-			   throw({error, {start_phases_undefined, M}});
+			   throw({error, {start_phases_undefined, App}});
 		       {ok, Sp} ->
 			   Sp
 		   end,
-    case lists:keysearch(P, 1, Start_phases) of
+    case lists:keysearch(Phase, 1, Start_phases) of
 	false ->
 	    ok;
-	{value, {P, A}} -> 
-	    case catch M:start_phase(P, Type, A) of
+	{value, {Phase, PhaseArgs}} -> 
+	    case catch Mod:start_phase(Phase, Type, PhaseArgs) of
 		ok ->
 		    ok;
 		{error, Reason} ->
-		    throw({error, {Reason, {M, start_phase, [P, Type, A]}}});
+		    throw({error, {Reason, 
+				   {Mod, start_phase, 
+				    [Phase, Type, PhaseArgs]}}});
 		Other ->
 		    throw({error, {bad_return_value, 
-				   {{M, start_phase, [P, Type, A]}, Other}}})
+				   {{Mod, start_phase, 
+				     [Phase, Type, PhaseArgs]}, 
+				    Other}}})
 	    end
     end.
 

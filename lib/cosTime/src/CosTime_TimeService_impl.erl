@@ -1,0 +1,179 @@
+%%--------------------------------------------------------------------
+%% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%% 
+%%     $Id$
+%%
+%%----------------------------------------------------------------------
+%% File    : CosTime_TimeService_impl.erl
+%% Purpose : 
+%% Created : 10 Feb 2000
+%%----------------------------------------------------------------------
+
+-module('CosTime_TimeService_impl').
+
+%%--------------- INCLUDES -----------------------------------
+-include("cosTimeApp.hrl").
+
+%%--------------- EXPORTS ------------------------------------
+%%--------------- External -----------------------------------
+%% Interface functions
+-export([universal_time/2, secure_universal_time/2, new_universal_time/5]).
+-export([uto_from_utc/3, new_interval/4]).
+
+%%--------------- gen_server specific exports ----------------
+-export([handle_info/2, code_change/3]).
+-export([init/1, terminate/2]).
+
+
+%% Data structures
+-record(state, 
+	{tdf,
+	 inaccuracy}).
+%% Data structures constructors
+-define(get_InitState(T,I), 
+	#state{tdf        = T,
+	       inaccuracy = I}).
+
+%% Data structures selectors
+-define(get_Inaccuracy(S),  S#state.inaccuracy). 
+-define(get_Tdf(S),         S#state.tdf). 
+
+%% Data structures modifiers
+
+%% MISC
+
+%%-----------------------------------------------------------%
+%% function : handle_info, code_change
+%% Arguments: 
+%% Returns  : 
+%% Effect   : Functions demanded by the gen_server module. 
+%%------------------------------------------------------------
+
+code_change(OldVsn, State, Extra) ->
+    {ok, State}.
+
+handle_info(Info, State) ->
+    ?debug_print("INFO: ~p~n", [Info]),
+    {noreply, State}.    
+
+%%----------------------------------------------------------%
+%% function : init, terminate
+%% Arguments: 
+%%-----------------------------------------------------------
+
+init([Tdf, Inaccuracy]) ->
+    process_flag(trap_exit, true),
+    {ok, ?get_InitState(Tdf, Inaccuracy)}.
+
+terminate(Reason, State) ->
+    ok.
+
+%%-----------------------------------------------------------
+%%------- Exported external functions -----------------------
+%%-----------------------------------------------------------
+%%----------------------------------------------------------%
+%% function : universal_time
+%% Arguments: -
+%% Returns  : CosTime::UTO |
+%%            {'EXCEPTION", #'CosTime_TimeUnavailable'{}}
+%% NOTE     : cosTime:create_universal_time will raise the correct 
+%%            exception.
+%%-----------------------------------------------------------
+universal_time(OE_THIS, State) ->
+    {ok, Time} = create_universal_time(),
+    Inaccuracy = ?get_Inaccuracy(State),
+    Utc = #'TimeBase_UtcT'{time=Time, inacclo = ?low_TimeT(Inaccuracy), 
+			   inacchi = ?high_TimeT(Inaccuracy), 
+			   tdf = ?get_Tdf(State)},
+    {reply, 'CosTime_UTO':oe_create([Utc, OE_THIS], [{pseudo,true}]), State}.
+
+%%----------------------------------------------------------%
+%% function : secure_universal_time
+%% Arguments: 
+%% Returns  : {'EXCEPTION", #'CosTime_TimeUnavailable'{}}
+%%-----------------------------------------------------------
+secure_universal_time(OE_THIS, State) ->
+    corba:raise(#'CosTime_TimeUnavailable'{}).
+
+%%----------------------------------------------------------%
+%% function : new_universal_time
+%% Arguments: Time - TimeBase::TimeT
+%%            Inaccuracy - TimeBase::InaccuracyT inaccuracy
+%%            Tdf - TimeBase::TdfT
+%% Returns  : CosTime::UTO
+%%-----------------------------------------------------------
+new_universal_time(OE_THIS, State, Time, Inaccuracy, Tdf) when 
+  integer(Time), integer(Inaccuracy), integer(Tdf), Tdf=<12, 
+  Inaccuracy=<?max_Inaccuracy, Time=<?max_TimeT ->
+    Utc = #'TimeBase_UtcT'{time=Time, inacclo = ?low_TimeT(Inaccuracy), 
+			   inacchi = ?high_TimeT(Inaccuracy), tdf = Tdf},
+    {reply, 'CosTime_UTO':oe_create([Utc, OE_THIS], [{pseudo,true}]), State};
+new_universal_time(_, _, _, _, _) ->
+    corba:raise(#'BAD_PARAM'{minor=800, completion_status=?COMPLETED_NO}).
+
+%%----------------------------------------------------------%
+%% function : uto_from_utc
+%% Arguments: Utc - TimeBase::UtcT
+%% Returns  : CosTime::UTO
+%%-----------------------------------------------------------
+uto_from_utc(OE_THIS, State, Utc) when record(Utc, 'TimeBase_UtcT') ->
+    {reply, 'CosTime_UTO':oe_create([Utc, OE_THIS],[{pseudo,true}]),State};
+uto_from_utc(_, _, _) ->
+    corba:raise(#'BAD_PARAM'{minor=800, completion_status=?COMPLETED_NO}).
+
+%%----------------------------------------------------------%
+%% function : new_interval
+%% Arguments: Lower - TimeBase::TimeT
+%%            Upper - TimeBase::TimeT
+%% Returns  : CosTime::TIO
+%%-----------------------------------------------------------
+new_interval(OE_THIS, State, Lower, Upper) when integer(Lower), integer(Upper),
+						Lower=<Upper ->
+    {reply, 'CosTime_TIO':oe_create([#'TimeBase_IntervalT'{lower_bound=Lower, 
+							   upper_bound=Upper},
+				     ?get_Tdf(State),
+				     OE_THIS], 
+				    [{pseudo,true}]), State};
+new_interval(_, _, _, _) ->
+    corba:raise(#'BAD_PARAM'{minor=800, completion_status=?COMPLETED_NO}).
+
+
+%%--------------- LOCAL FUNCTIONS ----------------------------
+%%-----------------------------------------------------------%
+%% function : create_universal_utc
+%% Arguments: -
+%% Returns  : TimeT or raises exception.
+%% Effect   : Creates a universal time; if time unavailable we
+%%            must raise CosTime_TimeUnavailable.
+%% NOTE     : 'datetime_to_gregorian_seconds' use year 0 as time
+%%            base. We want to use 15 october 1582, 00:00 as base.
+%%------------------------------------------------------------
+
+create_universal_time() ->
+    %% Time is supposed to be #100 nano-secs passed.
+    %% We add micro secs for a greater precision.
+    {MS,S,US} = now(),
+    case catch calendar:datetime_to_gregorian_seconds(
+		 calendar:now_to_universal_time({MS,S,US})) of
+	Secs when integer(Secs) ->
+	    {ok, (Secs-?ABSOLUTE_TIME_DIFF)*10000000 + US*10};
+	_ ->
+	    corba:raise(#'CosTime_TimeUnavailable'{})
+    end.
+
+%%--------------- MISC FUNCTIONS, E.G. DEBUGGING -------------
+%%--------------- END OF MODULE ------------------------------
+

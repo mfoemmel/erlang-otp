@@ -1,0 +1,122 @@
+# Runtime_Tools - Makefile for Windows NT
+#
+# It is assumed that the following environment variables have been set:
+#
+# INCLUDE       X:\MSDEV\INCLUDE
+# LIB           X:\MSDEV\LIB
+#
+# so that standard include files, and libraries can be found.
+#
+
+# Roots
+TARGET = win32
+
+LINK = link
+MLFLAGS= /nologo /subsystem:console /machine:I386 /nodefaultlib /debug
+
+!if defined(NODEBUG)
+ERL_CFLAGS_COMMON = -c -MD -W3 -D__WIN32__
+ERL_LIBCMT = MSVCRT.LIB
+!else
+ERL_CFLAGS_COMMON = -c -MDd -W3 -D__WIN32__
+ERL_LIBCMT = MSVCRTD.LIB
+!endif
+
+MLIBS = kernel32.lib ws2_32.lib $(ERL_LIBCMT) ole32.lib oleaut32.lib uuid.lib
+
+
+LIBDIR = ..\priv\lib
+OBJDIR = ..\priv\obj
+
+!if !exist($(LIBDIR)) 
+!	if [mkdir $(LIBDIR)]
+!	error "COMET: cannot create LIBDIR"
+!	endif
+!endif
+
+!if !exist($(OBJDIR))
+!	if [mkdir $(OBJDIR)]
+!	error "COMET: cannot create OBJDIR"
+!	endif
+!endif
+
+# Includes
+#
+EIINC= \erts\lib\erl_interface\src
+SYS_INCLUDE = /I\erts\erts\emulator\sys\win32
+RUNTIMEINC = \erts\erts\emulator\beam
+RUNTIME_INCLUDE = /I$(RUNTIMEINC)
+INCLUDES = /I. $(RUNTIME_INCLUDE) $(SYS_INCLUDE) /I$(EIINC)
+
+# Libraries (static)
+#
+
+!if defined(NODEBUG)
+ERL_DLL_LIB = \erts\bin\$(TARGET)\erl_dll.lib
+EI_LIB = \erts\lib\erl_interface\obj\win32\ei_md.lib
+!else
+ERL_DLL_LIB = \erts\bin\$(TARGET)\erl_debug_dll.lib
+EI_LIB = \erts\lib\erl_interface\obj\win32\ei_mdd.lib
+!endif
+
+# Compiler options
+# 
+#OPTS = /G5 /Ox /O2 /Ob2
+CFLAGS = $(INCLUDES) /nologo $(ERL_CFLAGS_COMMON) $(OPTS) -DWIN32 -Zi
+
+# Object files
+#
+ERL_COM_DRV_OBJ = \
+	$(OBJDIR)\erl_com_drv.obj
+
+ERL_COM_DRV_DLL = \
+	$(LIBDIR)\erl_com_drv.dll
+
+ERL_COM_PROG_OBJ = \
+	$(OBJDIR)\erl_com_prog.obj
+
+ERL_COM_PROG_EXE = \
+	$(LIBDIR)\erl_com_prog.exe
+
+#
+# Targets
+#
+
+all:	$(ERL_COM_DRV_DLL) $(ERL_COM_PROG_EXE)
+
+clean: 
+	del $(LIBDIR)\*.dll
+	del $(OBJDIR)\*.obj
+
+$(ERL_COM_DRV_DLL):	$(ERL_COM_DRV_OBJ) $(ERL_DLL_LIB) $(EI_LIB)
+	$(LINK) $(MLFLAGS) /dll /out:$(ERL_COM_DRV_DLL) \
+		$(ERL_COM_DRV_OBJ) \
+		$(ERL_DLL_LIB) \
+		$(EI_LIB) \
+		$(MLIBS)
+
+$(ERL_COM_PROG_EXE):	$(ERL_COM_PROG_OBJ) $(ERL_DLL_LIB) $(EI_LIB)
+	$(LINK) $(MLFLAGS) /out:$(ERL_COM_PROG_EXE) \
+		$(ERL_COM_PROG_OBJ) \
+		$(ERL_DLL_LIB) \
+		$(EI_LIB) \
+		$(MLIBS)
+
+# Inference rule .c.obj:
+#
+{.}.c{$(OBJDIR)}.obj:
+	$(CC) $(CFLAGS) /c /Fo$@ $(*B).c
+
+# Dependencies
+#
+$(ERL_COM_DRV_OBJ): erl_com_drv.c  erl_com_drv.h \
+		    $(EIINC)\ei.h $(EIINC)\eiext.h $(EIINC)\eicode.h \
+		    $(RUNTIMEINC)\erl_driver.h
+	$(CC) $(CFLAGS) /c /DPORT_DRIVER=1 /Fo$@ $(*B).c
+
+$(ERL_COM_PROG_OBJ): erl_com_drv.c  erl_com_drv.h \
+		    $(EIINC)\ei.h $(EIINC)\eiext.h $(EIINC)\eicode.h \
+		    $(RUNTIMEINC)\erl_driver.h
+	$(CC) $(CFLAGS) /c /DPORT_DRIVER=0 /Fo$@ erl_com_drv.c
+
+

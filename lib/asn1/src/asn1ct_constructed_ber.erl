@@ -140,7 +140,6 @@ gen_decode_sequence(Module,Typename,D) when record(D,type) ->
 	    emit({"}.",nl});
 	_ ->
 	    emit({com,nl,nl}),
-	    %% Cnames = mkcnamelist(CompList),
 	    demit({"Result = "}), %dbg
 	    %% return value as record
 	    asn1ct_name:new(rb),
@@ -696,9 +695,9 @@ gen_enc_choice2(TopType,[])  ->
 
 gen_dec_choice(Module, TopType, ChTag, CompList, Ext) ->
     asn1ct_name:delete(bytes),
-    TagList = get_all_choice_tags(CompList),
-    emit({indent(3),
-	  {curr,tagList}," = ",{asis,TagList},",",nl,nl}),
+%%    TagList = get_all_choice_tags(CompList),
+%%    emit({indent(3),
+%%	  {curr,tagList}," = ",{asis,TagList},",",nl,nl}),
 
     Tags = case ChTag of
 	       undefined -> [];
@@ -713,8 +712,7 @@ gen_dec_choice(Module, TopType, ChTag, CompList, Ext) ->
     asn1ct_name:new(bytes),
     asn1ct_name:new(len),
     emit({indent(3),
-	  "case ?RT_BER:check_if_valid_tag(",{curr,bytes},",",
-	  {curr,tagList},", OptOrMand) of",nl}),
+	  "case (catch ?RT_BER:peek_tag(",{curr,bytes},")) of",nl}),
     asn1ct_name:new(tagList),
     asn1ct_name:new(choTags),
     gen_dec_choice_cases(Module,TopType,CompList),
@@ -734,9 +732,19 @@ gen_dec_choice_cases(Module, TopType, [H|T]) ->
     asn1ct_name:push(rbCho),
     Name = H#'ComponentType'.name,
     Type = H#'ComponentType'.typespec,
-    TypeDef = Type#type.def,    
-    emit({indent(6),"'",Name,"' ->",nl}),
-    gen_dec_choice_cases_type(Module, TopType, H),
+    TypeDef = Type#type.def,
+    emit([nl,"%% '",Name,"'",nl]),
+    Fcases  = fun([T1,T2|Tail],Fun) ->		      
+		      emit([indent(6),{asis,encode_tag_val(T1)}," ->",nl]),
+		      gen_dec_choice_cases_type(Module, TopType, H),
+		      Fun([T2|Tail],Fun);
+		 ([T1],_) ->
+		      emit([indent(6),{asis,encode_tag_val(T1)}," ->",nl]),
+		      gen_dec_choice_cases_type(Module, TopType, H)
+	      end,
+    Fcases(H#'ComponentType'.tags,Fcases),
+%%    emit([indent(6),{asis,encode_tag_val(H#'ComponentType'.tags)}," ->",nl]),
+%%    gen_dec_choice_cases_type(Module, TopType, H),
     asn1ct_name:pop(rbCho),
     gen_dec_choice_cases(Module, TopType, T).
 
@@ -750,6 +758,13 @@ gen_dec_choice_cases_type(Module,TopType,H) ->
     emit([",",nl,indent(9),"{{",{asis,Cname},
 	  ", Dec}, Rest, RbExp + ",
 	  {curr,rbCho},"};",nl,nl]).
+
+encode_tag_val({Class,TagNo}) when integer(TagNo) ->
+    asn1rt_ber_v1:encode_tag_val({asn1ct_gen_ber:decode_class(Class),
+				  0,TagNo});
+encode_tag_val({Class,TypeName}) ->
+    asn1rt_ber_v1:encode_tag_val({asn1ct_gen_ber:decode_class(Class),
+				  0,asn1ct_gen_ber:decode_type(TypeName)}).
 
 
 get_all_choice_tags(ComponentTypeList) ->
@@ -890,15 +905,6 @@ gen_dec_line(TopType,Cname,Type,OptOrMand)  ->
 indent(N) ->
     lists:duplicate(N,32). % 32 = space
 
-list_len([H,T1|T]) ->
-    emit({"length(lists:flatten(",{var,H},")) + "}),
-    list_len([T1|T]);
-list_len([H|T]) ->
-    emit({"length(lists:flatten(",{var,H},"))"}),
-    list_len(T);
-list_len([]) ->
-    true.
-
 
 mkvlist([H,T1|T], Sep) -> % Sep is a string e.g ", " or "+ "
     emit([{var,H},Sep]),
@@ -914,16 +920,6 @@ mkvlist(L) ->
 
 mkvplus(L) ->
     mkvlist(L," + ").
-
-mkcnamelist(L) ->
-    mkcnamelist(L,[]).
-
-mkcnamelist([#'ComponentType'{name=Name}|Rest],Acc) ->
-    mkcnamelist(Rest,[Name|Acc]);
-mkcnamelist([H|T],Acc) ->
-    mkcnamelist(T,Acc);
-mkcnamelist([],Acc) ->
-    lists:reverse(Acc).
 
 extensible(CompList) when list(CompList) ->
     noext;

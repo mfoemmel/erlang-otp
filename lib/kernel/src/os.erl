@@ -21,13 +21,9 @@
 
 -export([type/0, version/0, cmd/1, find_executable/1, find_executable/2]).
 
+-export([unix_cmd1/2]).
+
 -include("file.hrl").
-
-%% Internal exports.
--export([start_link/0]).
-
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_info/2, terminate/2]).
 
 type() ->
     case erlang:info(os_type) of
@@ -105,14 +101,18 @@ split_path([C|Rest], Sep, Current, Path) ->
 split_path([], _, Current, Path) ->
     lists:reverse(Path, [reverse_element(Current)]).
 
-reverse_element([]) ->
-    ".";
+reverse_element([]) -> ".";
+reverse_element([$"|T]) ->
+    case lists:reverse(T) of
+	[$"|List] -> List;
+	List -> List ++ [$"]
+    end;
 reverse_element(List) ->
     lists:reverse(List).
 
 extensions() ->
     case type() of
-	{win32, _} -> [".exe", ".com", ".bat"];
+	{win32, _} -> [".exe",".com",".cmd",".bat"];
 	{unix, _} -> [""];
 	vxworks -> [""]
     end.
@@ -138,6 +138,91 @@ cmd(Cmd) ->
 	    Port = open_port({spawn, Command}, [stream, in, eof]),
 	    get_data(Port, [])
     end.
+
+unix_cmd(Cmd) ->
+    Pid = spawn_link(?MODULE, unix_cmd1, [Cmd, self()]),
+    receive
+	{Pid, Result} ->
+	    receive
+		{'EXIT', Pid, normal} ->
+		    ok
+	    after 0 ->
+		    ok
+	    end,
+	    Result;
+	{'EXIT', Pid, Reason} ->
+	    exit(Reason)
+    end.
+
+unix_cmd1(Cmd, Parent) ->
+    process_flag(trap_exit,true),
+    Port = start_port(),
+    {ok, C} = mk_cmd(Cmd),
+    Port ! {self(), {command, C}},
+    Parent ! {self(), unix_get_data(Port)}.
+
+%% The -s flag implies that only the positional parameters are set,
+%% and the commands are read from standard input. We set the 
+%% $1 parameter for easy identification of the resident shell.
+%%
+-define(SHELL, "sh -s unix:cmd 2>&1").
+
+%%
+%%  start_port() -> Port
+%%
+start_port() ->
+    open_port({spawn, ?SHELL},[stream]).
+
+%%
+%%  unix_get_data(Port) -> Result
+%%
+unix_get_data(Port) ->
+    unix_get_data(Port, []).
+
+unix_get_data(Port, Sofar) ->
+    receive
+	{Port,{data, Bytes}} ->
+	    case eot(Bytes) of
+		{done, Last} ->
+		    lists:flatten([Sofar| Last]);
+		more  ->
+		    unix_get_data(Port, [Sofar| Bytes])
+	    end;
+	{'EXIT', Port, _} ->
+	    lists:flatten(Sofar)
+    end.
+
+%%
+%% eot(String) -> more | {done, Result}
+%%
+eot(Bs) ->
+    eot(Bs, []).
+
+eot([4| Bs], As) ->
+    {done, lists:reverse(As)};
+eot([B| Bs], As) ->
+    eot(Bs, [B| As]);
+eot([], As) ->
+    more.
+
+%%
+%% mk_cmd(Cmd) -> {ok, ShellCommandString} | {error, ErrorString}
+%%
+%% We do not allow any input to Cmd (hence commands that want
+%% to read from standard input will return immediately).
+%% Standard error is redirected to standard output.
+%%
+%% We use ^D (= EOT = 4) to mark the end of the stream.
+%%
+mk_cmd(Cmd) when atom(Cmd) ->			% backward comp.
+    mk_cmd(atom_to_list(Cmd));
+mk_cmd(Cmd) ->
+    %% We insert a new line after the command, in case the command
+    %% contains a comment character.
+    {ok, io_lib:format("(~s\n) </dev/null; echo  \"\^D\"\n",
+			       [Cmd])}.
+
+
 
 validate(Atom) when atom(Atom) ->
     ok;
@@ -170,139 +255,3 @@ get_data(Port, Sofar) ->
 	    end, 
 	    lists:flatten(Sofar)
     end.
-
-%% start()
-%%
-%% The -s flag implies that only the positional parameters are set,
-%% and the commands are read from standard input. We set the 
-%% $1 parameter for easy identification of the resident shell.
-%%
--define(SHELL, "sh -s unix:cmd 2>&1").
-
-ensure_started() ->
-    case whereis(os_server) of
-	undefined ->
-	    C = {os_server, {os, start_link, []}, permanent,
-		 1000, worker, [os]},
-	    supervisor:start_child(kernel_safe_sup, C);
-	_ -> ok
-    end.
-
-start_link() ->
-    gen_server:start_link({local, os_server}, os, [], []).
-
-unix_cmd(Cmd) ->
-    ensure_started(),
-    gen_server:call(os_server, {command, Cmd}, infinity).
-
-%%
-%% INIT
-%%
-
-init([]) ->
-    process_flag(trap_exit, true),
-    process_flag(priority, low),
-    Port = start_port(),
-    {ok, Port}.
-
-%%
-%% HANDLERS
-%%
-
-handle_call({command, Cmd}, _From, Port) ->
-    case mk_cmd(Cmd) of
-	{ok, C} ->
-	    Port ! {self(), {command, C}},
-	    {Exited, Result} = unix_get_data(Port),
-	    Port0 = case Exited of 
-			true ->
-			    start_port();
-			_ ->
-			    Port
-		    end,
-	    {reply, Result, Port0};
-	{error, Error} ->
-	    {reply, Error, Port}
-    end.
-
-handle_info({'EXIT', Port, _}, Port) ->
-    Port0 = start_port(),
-    {noreply, Port0};
-%% Occasional output after a ^D is discarded here.
-handle_info(Info, Port) ->
-    {noreply, Port}.
-
-terminate(Reason, Port) ->
-    ok.
-
-%%
-%% mk_cmd(Cmd) -> {ok, ShellCommandString} | {error, ErrorString}
-%%
-%% We do not allow any input to Cmd (hence commands that want
-%% to read from standard input will return immediately).
-%% Standard error is redirected to standard output.
-%%
-%% We use ^D (= EOT = 4) to mark the end of the stream.
-%%
-mk_cmd(Cmd) when atom(Cmd) ->			% backward comp.
-    mk_cmd(atom_to_list(Cmd));
-mk_cmd(Cmd) ->
-    case file:get_cwd() of
-	{ok, Cwd0} ->
-	    Cwd = escape_string(Cwd0),
-
-	    %% We insert a new line after the command, in case the command
-	    %% contains a comment character.
-	    {ok, io_lib:format("(cd \"~s\";~s\n) </dev/null; echo  \"\^D\"\n",
-			       [Cwd, Cmd])};
-	{error, Error} ->
-	    {error, file:format_error(Error)}
-    end.
-
-%% Escapes dollars and double-quotes in a string.
-escape_string([$$|T]) ->
-    [$\\, $$| escape_string(T)];
-escape_string([$"|T]) ->
-    [$\\, $"| escape_string(T)];
-escape_string([C|T]) ->
-    [C| escape_string(T)];
-escape_string([]) ->
-    [].
-
-%%
-%%  start_port() -> Port
-%%
-start_port() ->
-    open_port({spawn, ?SHELL},[stream]).
-
-%%
-%%  unix_get_data(Port) -> {Exited, Result}
-%%
-unix_get_data(Port) ->
-    unix_get_data(Port, []).
-
-unix_get_data(Port, Sofar) ->
-    receive
-	{Port,{data, Bytes}} ->
-	    case eot(Bytes) of
-		{done, Last} ->
-		    {false, lists:flatten([Sofar| Last])};
-		more  ->
-		    unix_get_data(Port, [Sofar| Bytes])
-	    end;
-	{'EXIT', Port, _} ->
-	    {true, lists:flatten(Sofar)}
-    end.
-
-%%
-%% eot(String) -> more | {done, Result}
-%%
-eot(Bs) ->
-    eot(Bs, []).
-
-eot([4| Bs], As) ->
-    {done, lists:reverse(As)};
-eot([B| Bs], As) ->
-    eot(Bs, [B| As]);
-eot([], As) ->
-    more.

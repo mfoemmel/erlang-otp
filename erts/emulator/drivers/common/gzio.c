@@ -20,6 +20,11 @@
 /* pull in FOPEN from zutil.h instead */
 #undef F_OPEN
 #endif
+#ifdef __WIN32__
+#include "sys.h"
+#define HAVE_CONFLICTING_FREAD_DECLARATION
+#endif
+
 #include "zutil.h"
 #include "gzio.h"
 

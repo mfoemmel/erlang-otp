@@ -148,6 +148,7 @@ typedef struct bif_entry {
 
 extern BifEntry bif_table[];
 extern Export* bif_export[];
+extern unsigned char erts_bif_trace_flags[];
 
 #define BIF_SIZE $bif_size
 
@@ -164,7 +165,7 @@ for ($i = 0; $i < @bif; $i++) {
     my $arity = $bif[$i]->[2];
     my $args = join(', ', 'Process*', ('Eterm') x $arity);
     print "Eterm $bif[$i]->[3]($args);\n";
-    print "Eterm wrap_$bif[$i]->[3]($args);\n";
+    print "Eterm wrap_$bif[$i]->[3]($args, Uint *I);\n";
 }
 print "#endif\n";
 
@@ -172,12 +173,13 @@ print "#endif\n";
 # Generate the bif table file.
 #
 
-open_file("$include/erl_bif_table.c");
+open_file("$src/erl_bif_table.c");
 my $i;
 includes("export.h", "sys.h", "erl_vm.h", "erl_process.h", "bif.h",
 	 "erl_bif_table.h", "erl_atom_table.h");
 
-print "\nExport* bif_export[BIF_SIZE];\n\n";
+print "\nExport* bif_export[BIF_SIZE];\n";
+print "unsigned char erts_bif_trace_flags[BIF_SIZE];\n\n";
 
 print "BifEntry bif_table[] = {\n";
 for ($i = 0; $i < @bif; $i++) {
@@ -190,9 +192,9 @@ print "};\n\n";
 # Generate the bif wrappers file.
 #
 
-open_file("$include/erl_bif_wrap.c");
+open_file("$src/erl_bif_wrap.c");
 my $i;
-includes("export.h", "sys.h", "erl_vm.h", "erl_process.h", "bif.h",
+includes("export.h", "sys.h", "erl_vm.h", "global.h", "erl_process.h", "bif.h",
 	 "erl_bif_table.h", "erl_atom_table.h");
 for ($i = 0; $i < @bif; $i++) {
     my $arity = $bif[$i]->[2];
@@ -203,17 +205,22 @@ for ($i = 0; $i < @bif; $i++) {
     for ($arg = 1; $arg <= $arity; $arg++) {
 	print ", Eterm arg$arg";
     }
-    print ")\n";
+    print ", Uint *I)\n";
     print "{\n";
     print "    return erts_bif_trace($i, p";
     for ($arg = 1; $arg <= 3; $arg++) {
 	if ($arg <= $arity) {
 	    print ", arg$arg";
+	} elsif ($arg == ($arity + 1)) { 
+	    # Place I in correct position
+	    print ", (Eterm) I";
 	} else {
 	    print ", 0";
 	}
     }
-    print ");\n";
+    # I is always last, as well as in the correct position
+    # Note that "last" and "correct position" may be the same...
+    print ", I);\n";
     print "}\n\n";
 }
 

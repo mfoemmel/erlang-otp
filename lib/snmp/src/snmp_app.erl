@@ -25,6 +25,21 @@
 -export([start/2, stop/1, config_change/3]).
 
 start(Type, []) ->
+    LdbAutoRepair =
+	case application:get_env(snmp, snmp_local_db_auto_repair) of
+	    {ok, AutoRepair} -> AutoRepair;
+	    _ -> true
+	end,
+    LdbVerbosity =
+	case application:get_env(snmp, snmp_local_db_verbosity) of
+	    {ok, V1} -> V1;
+	    _ -> silence
+	end,
+    SymbolicStoreVerbosity =
+	case application:get_env(snmp, snmp_symbolic_store_verbosity) of
+	    {ok, V2} -> V2;
+	    _ -> silence
+	end,
     DbDir =
 	case application:get_env(snmp, snmp_db_dir) of
 	    {ok, Dir2} when list(Dir2) -> Dir2;
@@ -36,6 +51,16 @@ start(Type, []) ->
 	    {ok, Pr} when atom(Pr) -> Pr;
 	    _ -> normal
     end,
+    MeOverride =
+	case application:get_env(snmp, snmp_mibentry_override) of
+	    {ok, true} -> true;
+	    _ -> false
+    end,
+    TeOverride =
+	case application:get_env(snmp, snmp_trapentry_override) of
+	    {ok, true} -> true;
+	    _ -> false
+    end,
     MultiT =
 	case application:get_env(snmp, snmp_multi_threaded) of
 	    {ok, true} -> true;
@@ -46,9 +71,20 @@ start(Type, []) ->
     Vsns = snmp_misc:get_vsns(),
     case application:get_env(snmp, snmp_agent_type) of
 	{ok, sub} ->
+	    SubVerbosity =
+		case application:get_env(snmp, snmp_subagent_verbosity) of
+		    {ok, V3} -> V3;
+		    _ -> silence
+		end,
 	    Opts = [{priority, Prio},
 		    {snmp_vsn, Vsns},
-		    {multi_threaded, MultiT}],
+		    {multi_threaded, MultiT},
+		    {mibentry_override, MeOverride},
+		    {trapentry_override, TeOverride},
+		    {local_db_auto_repair,LdbAutoRepair},
+		    {local_db_verbosity,LdbVerbosity},
+		    {symbolic_store_verbosity,SymbolicStoreVerbosity},
+		    {subagent_verbosity,SubVerbosity}],
 	    case snmp_supervisor:start_sub(DbDir, Opts) of
 		{ok, Pid} ->
 		    {ok, Pid, []};
@@ -56,6 +92,26 @@ start(Type, []) ->
 		    Error
 	    end;
 	_ ->
+	    MasterVerbosity =
+		case application:get_env(snmp, snmp_master_agent_verbosity) of
+		    {ok, V4} -> V4;
+		    _ -> silence
+		end,
+	    NoteStoreVerbosity =
+		case application:get_env(snmp, snmp_note_store_verbosity) of
+		    {ok, V5} -> V5;
+		    _ -> silence
+		end,
+	    NetIfVerbosity =
+		case application:get_env(snmp, snmp_net_if_verbosity) of
+		    {ok, V6} -> V6;
+		    _ -> silence
+		end,
+	    MibsVerbosity =
+		case application:get_env(snmp, snmp_mibserver_verbosity) of
+		    {ok, V7} -> V7;
+		    _ -> silence
+		end,
 	    ConfDir =
 		case application:get_env(snmp, snmp_config_dir) of
 		    {ok, Dir1} when list(Dir1) -> Dir1;
@@ -81,21 +137,39 @@ start(Type, []) ->
 		    {snmp_vsn, Vsns},
 		    {multi_threaded, MultiT},
 		    {mibs, Mibs},
+		    {mibentry_override, MeOverride},
+		    {trapentry_override, TeOverride},
 		    {force_load, ForceLoad},
-		    {name, {local, snmp_master_agent}}],
+		    {name, {local, snmp_master_agent}},
+		    {local_db_auto_repair,LdbAutoRepair},
+		    {local_db_verbosity,LdbVerbosity},
+		    {master_agent_verbosity,MasterVerbosity},
+		    {symbolic_store_verbosity,SymbolicStoreVerbosity},
+		    {note_store_verbosity,NoteStoreVerbosity},
+		    {net_if_verbosity,NetIfVerbosity},
+		    {mibserver_verbosity,MibsVerbosity}],
 	    case snmp_supervisor:start_master(DbDir, ConfDir, Opts) of
 		{ok, Pid} when Type == normal ->
 		    {ok, Pid};
 		{ok, Pid} ->
 		    {takeover, Node} = Type,
+		    OwnInfoList = snmp:info(snmp_master_agent),
+		    {value, {_, OwnLoadedMibs}} =
+			lists:keysearch(loaded_mibs, 1, OwnInfoList),
+		    OwnMibNames = [ Name || {Name, _, _} <- OwnLoadedMibs ],
 		    case rpc:call(Node, snmp, info, [snmp_master_agent]) of
 			{badrpc, R} ->
 			    error_logger:info_msg("snmp: could not takeover "
 						  "loaded mibs: ~p~n", [R]);
-			List ->
-			    {value, {_, LMibs}} =
-				lists:keysearch(loaded_mibs, 1, List),
-			    lists:foreach(fun takeover_mib/1, LMibs)
+			InfoList ->
+			    {value, {_, LoadedMibs}} =
+				lists:keysearch(loaded_mibs, 1, InfoList),
+			    MibsToLoad = [{MibName, Symbolic, FileName} || 
+					     {MibName, Symbolic, FileName} <-
+						 LoadedMibs,
+					      not lists:member(MibName, 
+							       OwnMibNames)],
+			    lists:foreach(fun takeover_mib/1, MibsToLoad)
 		    end,
 		    {ok, Pid};
 		Else ->

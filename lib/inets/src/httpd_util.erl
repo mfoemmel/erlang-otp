@@ -21,7 +21,8 @@
 	 lookup_mime_default/3, reason_phrase/1, message/3, rfc1123_date/0,
 	 rfc1123_date/1, day/1, month/1, decode_hex/1, decode_base64/1, encode_base64/1,
 	 flatlength/1, split_path/1, split_script_path/1, suffix/1, to_upper/1,
-	 to_lower/1, split/3, header/1, header/2, header/3, uniq/1]).
+	 to_lower/1, split/3, header/1, header/2, header/3, uniq/1,
+	 make_name/2,make_name/3,make_name/4]).
 
 -include("httpd.hrl").
 
@@ -110,7 +111,7 @@ reason_phrase(404) -> "Not Found";
 reason_phrase(500) -> "Internal Server Error";
 reason_phrase(501) -> "Not Implemented";
 reason_phrase(502) -> "Bad Gateway";
-reason_phrase(504) -> "Service Unavailable";
+reason_phrase(503) -> "Service Unavailable";
 reason_phrase(_) -> "Internal Server Error".
 
 %% message
@@ -143,7 +144,7 @@ and anything you might have done that may have
 caused the error.";
 message(501,{Method,RequestURI,HTTPVersion},ConfigDB) ->
   Method++" to "++RequestURI++" ("++HTTPVersion++") not supported.";
-message(504,String,ConfigDB) ->
+message(503,String,ConfigDB) ->
   "This service in unavailable due to: "++String.
 
 %% rfc1123_date
@@ -462,4 +463,54 @@ header(StatusCode, MimeType, Date) ->
 		  "Content-Type: ~s\r\nConnection: close\r\n",
 		  [StatusCode, httpd_util:reason_phrase(StatusCode),
 		   Date, ?SERVER_SOFTWARE, MimeType]).
+
+
+%% make_name/2, make_name/3
+%% Prefix  -> string()
+%%            First part of the name, e.g. "httpd"
+%% Addr    -> {A,B,C,D} | string() | undefined
+%%            The address part of the name. 
+%%            e.g. "123.234.55.66" or {123,234,55,66} or "otp.ericsson.se" 
+%%            for a host address or undefined if local host.
+%% Port    -> integer()
+%%            Last part of the name, such as the HTTPD server port 
+%%            number (80).
+%% Postfix -> Any string that will be added last to the name
+%%
+%% Example:
+%% make_name("httpd","otp.ericsson.se",80) => httpd__otp_ericsson_se__80
+%% make_name("httpd",undefined,8088)       => httpd_8088
+
+make_name(Prefix,Port) ->
+    make_name(Prefix,undefined,Port,"").
+
+make_name(Prefix,Addr,Port) ->
+    make_name(Prefix,Addr,Port,"").
+    
+make_name(Prefix,"*",Port,Postfix) ->
+    make_name(Prefix,undefined,Port,Postfix);
+make_name(Prefix,undefined,Port,Postfix) ->
+    make_name1(io_lib:format("~s_~w~s",[Prefix,Port,Postfix]));
+make_name(Prefix,Addr,Port,Postfix) ->
+    NameString = 
+        Prefix ++ "__" ++ make_name2(Addr) ++ "__" ++ 
+	integer_to_list(Port) ++ Postfix,
+    make_name1(NameString).
+    
+make_name1(String) ->
+    list_to_atom(lists:flatten(String)).
+
+make_name2({A,B,C,D}) ->
+    io_lib:format("~w_~w_~w_~w",[A,B,C,D]);
+make_name2(Addr) ->
+    search_and_replace(Addr,$.,$_).
+
+search_and_replace(S,A,B) ->
+    Fun = fun(What) -> 
+                  case What of
+                      A -> B;
+                      O -> O
+                  end
+          end,
+    lists:map(Fun,S).
 

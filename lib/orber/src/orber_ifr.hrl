@@ -18,9 +18,8 @@
 %%
 %%%----------------------------------------------------------------------
 %%% File    : orber_ifr.hrl
-%%% Author  : Per Danielsson <pd@gwaihir>
 %%% Purpose : Macros for the Interface Repository
-%%% Created : 14 May 1997 by Per Danielsson <pd@gwaihir>
+%%% Created : 14 May 1997
 %%%----------------------------------------------------------------------
 
 % "Type" checking
@@ -44,7 +43,7 @@
 % Raise an IFR exception
 -define(ifr_exception(Message,Errval),
 	?debug_print(Message, Errval),
-	corba:raise(#'INTF_REPOS'{})).
+	corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO})).
 
 % Print an error message and exit
 -define(ifr_error(Str, Things),

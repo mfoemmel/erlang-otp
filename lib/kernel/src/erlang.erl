@@ -23,7 +23,6 @@
 -export([crasher/5]).
 -export([sand/2,sor/2,sxor/2,snot/1,sgt/2,sge/2,slt/2,sle/2,seq/2,sneq/2, 
 	 seqeq/2, sneqeq/2]).
--export([bump_reductions/1, yield/0]).
 -export([fun_info/1]).
 
 -export([dlink/1, dunlink/1, dsend/2, dgroup_leader/2,
@@ -84,16 +83,6 @@ crasher(Node,Mod,Fun,Args,Reason) ->
     exit(Reason).
 
 disconnect_node(Node) -> net_kernel:disconnect(Node).
-
-bump_reductions(N) ->
-    erlang:info({reductions, N}).
-
-yield() ->
-    erlang:info({reductions, 100000}),
-    do_yield().
-
-do_yield() ->
-    true.
 
 fun_info(Fun) when function(Fun) ->
     [erlang:fun_info(Fun, Key) || Key <- [pid,module,index,uniq,env]].
@@ -195,19 +184,28 @@ dsend({Name, Node}, Msg) ->
 	ignored -> Msg				% Not distributed.
     end.
 
-dmonitor_p(Type, Pid) ->
-    Type = process,
-    case net_kernel:connect(node(Pid)) of
+dmonitor_p(process, ProcSpec) ->
+    {Proc, Node} =
+	case ProcSpec of
+	    _ when pid(ProcSpec) ->
+		{ProcSpec, node(ProcSpec)};
+	    %% N when atom(N) -> will not happen since that
+	    %% is a local name and will not require a 
+	    %% net_kernel:connect().
+	    {S, N} when atom(S), atom(N), N /= node() ->
+		ProcSpec
+	end,
+    case net_kernel:connect(Node) of
 	true ->
-	    erlang:monitor(Type, Pid);
+	    erlang:monitor(process, ProcSpec);
 	false ->
 	    Ref = make_ref(),
-	    self() ! {'DOWN', Ref, process, Pid, noconnection},
+	    self() ! {'DOWN', Ref, process, Proc, noconnection},
 	    Ref
     end.
 
 %%
-%% The buissines with different in and out cookies represented
+%% The business with different in and out cookies represented
 %% everywhere is discarded.
 %% A node has a cookie, connections/messages to that node use that cookie.
 %% Messages to us use our cookie. IF we change our cookie, other nodes 

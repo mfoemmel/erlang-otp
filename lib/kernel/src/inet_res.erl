@@ -17,18 +17,31 @@
 %%
 -module(inet_res).
 
-%% DNS resolver 
+%% If the macro DEBUG is defined during compilation, 
+%% debug printouts are done through erlang:display/1.
+%% Activate this feature by starting the compiler 
+%% with> erlc -DDEBUG ... 
+%% or by> setenv ERL_COMPILER_FLAGS DEBUG 
+%% before running make (in the OTP make system)
+%% (the example is for tcsh)
 
--export([gethostbyname/1, gethostbyname/2]).
--export([gethostbyaddr/1]).
+
+-export([gethostbyname/1, gethostbyname/2, gethostbyname/3,
+	 gethostbyname_tm/3]).
+-export([gethostbyaddr/1, gethostbyaddr/2,
+	 gethostbyaddr_tm/2]).
+-export([getbyname/2, getbyname/3,
+	 getbyname_tm/3]).
+
 -export([nslookup/3, nslookup/4]).
+-export([nnslookup/4, nnslookup/5]).
 
 -import(inet_db, [res_option/1]).
--import(lists, [foreach/2]).
 
--include("inet.hrl").
+-include_lib("kernel/include/inet.hrl").
 -include("inet_res.hrl").
 -include("inet_dns.hrl").
+-include("inet_int.hrl").
 
 -ifdef(DEBUG).
 -define(dbg(Fmt, Args), io:format(Fmt, Args)).
@@ -41,48 +54,46 @@
 %%
 %% Do a general nameserver lookup
 %%
-nslookup(Name, Class, Type, Ns) ->
-    case nsdname(Name) of
-	{ok, Nm} ->
-	    case res_mkquery(Nm, Class, Type) of
-		{ok, Id, Buffer} ->
-		    res_send(Id, Buffer, Ns);
-		Error -> Error
-	    end;
-	Error -> Error
+%% Perform nslookup on standard config !!    
+
+nslookup(Name, Class, Type) ->
+    nslookup2(Name,Class,Type,false).
+
+nslookup(Name, Class, Type, Timeout) when integer(Timeout), Timeout >= 0 ->
+    Timer = inet:start_timer(Timeout),
+    Res = nslookup2(Name,Class,Type,Timer),
+    inet:stop_timer(Timer),
+    Res.
+
+nnslookup(Name, Class, Type, Ns) ->
+    nslookup1(Name,Class,Type,Ns,false).    
+
+nnslookup(Name, Class, Type, Ns, Timeout) ->
+    Timer = inet:start_timer(Timeout),
+    Res = nslookup1(Name,Class,Type,Ns,Timer),
+    inet:stop_timer(Timer),
+    Res.    
+
+nslookup2(Name, Class, Type, Timer) ->
+    case nslookup1(Name, Class, Type, res_option(nameserver), Timer) of
+	{error, nxdomain} ->
+	    nslookup1(Name, Class, Type, res_option(alt_nameserver), Timer);
+	Reply -> Reply
     end.
     
-%% Perform nslookup on standard config !!    
-nslookup(Name, Class, Type) ->
+
+nslookup1(Name, Class, Type, Ns, Timer) ->
     case nsdname(Name) of
 	{ok, Nm} ->
 	    case res_mkquery(Nm, Class, Type) of
 		{ok, Id, Buffer} ->
-		    ns_send(Id, Buffer, res_option(nameserver));
+		    res_send2(Id, Buffer, Ns, Timer);
 		Error -> Error
 	    end;
 	Error -> Error
     end.
 
-ns_send(Id, Buffer, Ns) ->
-    case res_send(Id, Buffer, Ns) of
-	{ok, Rec} ->
-	    if length(Rec#dns_rec.anlist) == 0 ->
-		    alt_ns_send(Id, Buffer, nxdomain,
-				res_option(alt_nameserver));
-	       true ->
-		    {ok,Rec}
-	    end;
-	{error, nxdomain} ->
-	    alt_ns_send(Id, Buffer, nxdomain, res_option(alt_nameserver));
-	Error -> Error
-    end.
-
-alt_ns_send(Id, Buffer, ErrReason, []) -> 
-    {error, ErrReason};
-alt_ns_send(Id, Buffer, _, Ns) ->
-    res_send(Id, Buffer, Ns).
-
+		
 %% --------------------------------------------------------------------------
 %%
 %% gethostbyaddr(ip_address()) => {ok, hostent()} | {error, Reason}
@@ -94,106 +105,175 @@ alt_ns_send(Id, Buffer, _, Ns) ->
 %%
 %% --------------------------------------------------------------------------
 
-gethostbyaddr({A,B,C,D}) when integer(A+B+C+D) ->
+gethostbyaddr(IP) -> gethostbyaddr_tm(IP,false).
+
+gethostbyaddr(IP,Timeout) ->
+    Timer = inet:start_timer(Timeout),
+    Res = gethostbyaddr_tm(IP,Timer),
+    inet:stop_timer(Timeout),
+    Res.    
+
+gethostbyaddr_tm({A,B,C,D}, Timer) when ?ip(A,B,C,D) ->
     IP = {A,B,C,D},
     case inet_db:gethostbyaddr(IP) of
 	{ok, HEnt} -> {ok, HEnt};
-	_ -> res_gethostbyaddr(dn_in_addr_arpa(A,B,C,D), IP)
+	_ -> res_gethostbyaddr(dn_in_addr_arpa(A,B,C,D), IP, Timer)
     end;
 %% ipv4  only ipv6 address
-gethostbyaddr({0,0,0,0,0,16#ffff,G,H}) when integer(G+H) ->
-    gethostbyaddr({G div 256, G rem 256, H div 256, H rem 256});
-gethostbyaddr({A,B,C,D,E,F,G,H}) when integer(A+B+C+D+E+F+G+H) ->
+gethostbyaddr_tm({0,0,0,0,0,16#ffff,G,H},Timer) when integer(G+H) ->
+    gethostbyaddr_tm({G div 256, G rem 256, H div 256, H rem 256},Timer);
+gethostbyaddr_tm({A,B,C,D,E,F,G,H},Timer) when ?ip6(A,B,C,D,E,F,G,H) ->
     IP = {A,B,C,D,E,F,G,H},
     case inet_db:gethostbyaddr(IP) of
 	{ok, HEnt} -> {ok, HEnt};
-	_ -> res_gethostbyaddr(dn_ip6_int(A,B,C,D,E,F,G,H), IP)
+	_ -> res_gethostbyaddr(dn_ip6_int(A,B,C,D,E,F,G,H), IP, Timer)
     end;
-gethostbyaddr(Addr) when list(Addr) ->
+gethostbyaddr_tm(Addr,Timer) when list(Addr) ->
     case inet_parse:address(Addr) of
-	{ok, IP} -> gethostbyaddr(IP);
+	{ok, IP} -> gethostbyaddr_tm(IP,Timer);
 	Error -> {error, formerr}
     end;
-gethostbyaddr(Addr) when atom(Addr) ->
-    gethostbyaddr(atom_to_list(Addr));
-gethostbyaddr(_) -> {error, formerr}.
+gethostbyaddr_tm(Addr,Timer) when atom(Addr) ->
+    gethostbyaddr_tm(atom_to_list(Addr),Timer);
+gethostbyaddr_tm(_,_) -> {error, formerr}.
 
 %%
 %%  Send the gethostbyaddr query to:
 %%  1. the list of normal names servers
 %%  2. the list of alternaive name servers
 %%
-res_gethostbyaddr(Addr, IP) ->
+res_gethostbyaddr(Addr, IP, Timer) ->
     case res_mkquery(Addr, in, ptr) of
 	{ok, Id, Buffer} ->
-	    case res_send(Id, Buffer, res_option(nameserver)) of
+	    case res_send2(Id, Buffer, res_option(nameserver),Timer) of
 		{ok, Rec} ->
 		    if length(Rec#dns_rec.anlist) == 0 ->
-			    alt_gethostbyaddr(Id, Buffer, IP);
+			    alt_gethostbyaddr(Id, Buffer, IP, Timer);
 		       true ->
-			    NewAnlist = lists:foldl(
-					  fun (RR,Ack) 
-					      when RR#dns_rr.type =:= ptr ->
-						  res_gethostbyname
-						    (RR#dns_rr.data,inet),
-						  Ack;
-					      (RR,Ack) -> [RR | Ack]
-					  end,
-					  [],
-					  Rec#dns_rec.anlist),
-			    res_cache_answer(Rec#dns_rec{anlist = NewAnlist}),
-			    inet_db:gethostbyaddr(IP)
+			    inet_db:res_gethostbyaddr(IP, Rec)
 		    end;
 		{error, nxdomain} ->
-		    alt_gethostbyaddr(Id, Buffer, IP);
+		    alt_gethostbyaddr(Id, Buffer, IP, Timer);
 		Error -> Error
 	    end;
 	Error -> Error
     end.
 
-alt_gethostbyaddr(Id, Buffer, IP) ->
-    case res_send(Id, Buffer, res_option(alt_nameserver)) of
+alt_gethostbyaddr(Id, Buffer, IP, Timer) ->
+    case res_send2(Id, Buffer, res_option(alt_nameserver), Timer) of
 	{ok, Rec} ->
-	    res_cache_answer(Rec),
-	    inet_db:gethostbyaddr(IP);
+	    inet_db:res_gethostbyaddr(IP, Rec);
 	Error -> Error
     end.
 
 %% --------------------------------------------------------------------------
 %%
-%% gethostbyname(domain_name()) => {ok, hostent()} | {error, Reason}
+%% gethostbyname(domain_name()[,family [,Timer]) 
+%%      => {ok, hostent()} | {error, Reason}
 %%
 %% where domain_name() is domain string or atom
 %%
+%% Caches the answer.
 %% --------------------------------------------------------------------------
 
 gethostbyname(Name) ->
-    gethostbyname(Name, inet).
-
-gethostbyname(Name,Type) when list(Name) ->
-    case inet_parse:visible_string(Name) of
-	false -> {error, formerr};
+    case res_option(inet6) of
 	true ->
-	    case inet_db:gethostbyname(Name,Type) of
-		{ok, HEnt} -> {ok, HEnt};
-		_ -> res_gethostbyname(Name,Type)
-	    end
-    end;
-gethostbyname(Name,Type) when atom(Name) ->
-    gethostbyname(atom_to_list(Name),Type);
-gethostbyname(_,_) -> {error, formerr}.
+	    gethostbyname_tm(Name, inet6, false);
+	false ->
+	    gethostbyname_tm(Name, inet, false)
+    end.
 
+gethostbyname(Name,Family) ->
+    gethostbyname_tm(Name,Family,false).
+
+gethostbyname(Name,Family,Timeout) ->
+    Timer = inet:start_timer(Timeout),    
+    Res = gethostbyname_tm(Name,Family,Timer),
+    inet:stop_timer(Timeout),
+    Res.
+    
+gethostbyname_tm(Name,inet,Timer) ->
+    getbyname_tm(Name,?S_A,Timer);
+gethostbyname_tm(Name,inet6,Timer) ->
+    case getbyname_tm(Name,?S_AAAA,Timer) of
+	{ok,HEnt} -> {ok,HEnt};
+	{error,nxdomain} ->
+	    case getbyname_tm(Name, ?S_A,Timer) of
+		{ok, HEnt} ->
+		    %% rewrite to a ipv4 only ipv6 address
+		    {ok,
+		     HEnt#hostent {
+		       h_addrtype = inet6,
+		       h_length = 16,
+		       h_addr_list = 
+		       lists:map(
+			 fun({A,B,C,D}) ->
+				 {0,0,0,0,0,16#ffff,A*256+B,C*256+D}
+			 end, HEnt#hostent.h_addr_list)
+		      }};
+		Error ->
+		    Error
+	    end;
+	Error ->
+	    Error
+    end;
+gethostbyname_tm(Name,Family,Timer) ->
+    {error, einval}.
 	    
-res_gethostbyname(Name,Type) ->
+%% --------------------------------------------------------------------------
+%%
+%% getbyname(domain_name(), Type) => {ok, hostent()} | {error, Reason}
+%%
+%% where domain_name() is domain string or atom and Type is ?S_A, ?S_MX ...
+%%
+%% Caches the answer.
+%% --------------------------------------------------------------------------
+
+getbyname(Name, Type) -> 
+    getbyname_tm(Name,Type,false).
+
+getbyname(Name, Type, Timeout) ->
+    Timer = inet:start_timer(Timeout),
+    Res = getbyname_tm(Name, Type, Timer),
+    inet:stop_timer(Timeout),
+    Res.
+
+getbyname_tm(Name, Type, Timer) when list(Name) ->
+    case type_p(Type) of
+	true ->
+	    case inet_parse:visible_string(Name) of
+		false -> {error, formerr};
+		true ->
+		    case inet_db:getbyname(Name,Type) of
+			{ok, HEnt} -> {ok, HEnt};
+			_ -> res_getbyname(Name,Type,Timer)
+		    end
+	    end;
+	false ->
+	    {error, formerr}
+    end;
+getbyname_tm(Name,Type,Timer) when atom(Name) ->
+    getbyname_tm(atom_to_list(Name), Type,Timer);
+getbyname_tm(_, _, _) -> {error, formerr}.
+
+type_p(Type) ->
+    lists:member(Type, [?S_A, ?S_AAAA, ?S_MX, ?S_NS,
+		        ?S_MD, ?S_MF, ?S_CNAME, ?S_SOA,
+		        ?S_MB, ?S_MG, ?S_MR, ?S_NULL,
+		        ?S_WKS, ?S_HINFO, ?S_TXT, ?S_SRV,
+		        ?S_UINFO, ?S_UID, ?S_GID]).
+	    
+res_getbyname(Name,Type,Timer) ->
     case dots(Name) of
 	{0, Dot} ->
-	    res_gethostby_search(Name, Dot,
-				 get_searchlist(),nxdomain,Type);
+	    res_getby_search(Name, Dot,
+			     get_searchlist(),nxdomain,Type,Timer);
 	{_,Dot} ->
-	    case res_gethostby_query_alt(Name,Type) of
+	    case res_getby_query_alt(Name,Type,Timer) of
 		{error,Reason} ->
-		    res_gethostby_search(Name, Dot,
-					 get_searchlist(),nxdomain,Type);
+		    res_getby_search(Name, Dot,
+				     get_searchlist(),nxdomain,Type,Timer);
 		Other -> Other
 	    end
     end.
@@ -214,50 +294,42 @@ get_searchlist() ->
 	L -> L
     end.
 
-res_gethostby_search(Name, Dot, [Dom | Ds], Reason,Type) ->
-    case res_gethostby_query(Name ++ Dot ++ Dom,res_option(nameserver),Type) of
+res_getby_search(Name, Dot, [Dom | Ds], Reason,Type,Timer) ->
+    case res_getby_query(Name ++ Dot ++ Dom,res_option(nameserver),
+			 Type,Timer) of
 	{ok, HEnt} -> {ok, HEnt};
 	{error, formerr} -> {error, formerr};
-	{error, NewReason} -> res_gethostby_search(Name,Dot,Ds,NewReason,Type)
+	{error, NewReason} -> res_getby_search(Name,Dot,Ds,NewReason,
+					       Type,Timer)
     end;
-res_gethostby_search(Name, _, [], Reason,_) ->
+res_getby_search(Name, _, [], Reason,_,_) ->
     {error, Reason}.
 
 
 %% Try both name server and alternative name server
-res_gethostby_query_alt(Name,Type) ->
-    case res_gethostby_query(Name, res_option(nameserver),Type) of
-	{error, noanswer} -> alt_query(Name, noanswer,Type);
-	{error, nxdomain} -> alt_query(Name, nxdomain,Type);
+res_getby_query_alt(Name,Type,Timer) ->
+    case res_getby_query(Name, res_option(nameserver),Type,Timer) of
+	{error, noanswer} -> alt_query(Name, noanswer,Type,Timer);
+	{error, nxdomain} -> alt_query(Name, nxdomain,Type,Timer);
 	Other -> Other
     end.
 
-alt_query(Name, ErrReason,Type) ->
+alt_query(Name, ErrReason,Type,Timer) ->
     case res_option(alt_nameserver) of
 	[] -> {error, ErrReason};
-	Ns -> res_gethostby_query(Name, Ns,Type)
+	Ns -> res_getby_query(Name, Ns,Type,Timer)
     end.
 
-res_gethostby_query(Name, Ns, Type) ->
-    case res_mkquery(Name, in, if Type == inet6 -> aaaa; true -> a end) of
+res_getby_query(Name, Ns, Type, Timer) ->
+    case res_mkquery(Name, in, Type) of
 	{ok, Id, Buffer} ->
-	    case res_send(Id, Buffer, Ns) of
+	    case res_send2(Id, Buffer, Ns,Timer) of
 		{ok, Rec} ->
-		    res_cache_answer(Rec),
-		    inet_db:gethostbyname(Name,Type);
+		    inet_db:res_hostent_by_domain(Name, Type, Rec);
 		Error -> Error
 	    end;
 	Error -> Error
     end.
-
-%%
-%% res_getanswer should caches all answer resource records
-%% in the inet_db. Then it tries to resolve the question from
-%% the cache
-%%
-res_cache_answer(Rec) ->
-    foreach( fun(RR) -> inet_db:add_rr(RR) end, Rec#dns_rec.anlist).
-
 
 res_mkquery(Dname, Class, Type) ->
     ID = res_option(next_id),
@@ -275,116 +347,143 @@ res_mkquery(Dname, Class, Type) ->
 	Error -> Error
     end.
 
-%% This function is currently not used
-%%res_mkiquery(?IQUERY, Address, Class, Type) ->
-%%    ID = res_option(next_id),
-%%    Recurse = res_option(recurse),
-%%    Rec = #dns_rec  { header =  #dns_header { id = ID, opcode = ?IQUERY, 
-%%					     rd = Recurse,
-%%					     rcode = ?NOERROR },
-%%		     anlist = [#dns_rr { domain = "",
-%%					type = Type,
-%%					class = Class,
-%%					data = Address }] },
-%%    ?dbg("IQuery: ~p~n", [Rec]),
-%%    case inet_dns:encode(Rec) of
-%%	{ok, Buffer} -> {ok, ID, Buffer};
-%%	Error -> Error
-%%    end.
+res_mkiquery(?IQUERY, Address, Class, Type) ->
+    ID = res_option(next_id),
+    Recurse = res_option(recurse),
+    Rec = #dns_rec  { header =  #dns_header { id = ID, opcode = ?IQUERY, 
+					     rd = Recurse,
+					     rcode = ?NOERROR },
+		     anlist = [#dns_rr { domain = "",
+					type = Type,
+					class = Class,
+					data = Address }] },
+    ?dbg("IQuery: ~p~n", [Rec]),
+    case inet_dns:encode(Rec) of
+	{ok, Buffer} -> {ok, ID, Buffer};
+	Error -> Error
+    end.
 
 %%
 %% Send a query to the nameserver and return a reply
 %% We first use socket server then we add the udp version
 %%
-res_send(Id, Buffer, Ns) ->
-    res_send(Id, Buffer, Ns, nxdomain).
+%% Algorithm: (from manual page for dig)
+%%  for i = 0 to retry - 1
+%%     for j = 1 to num_servers
+%%           send_query
+%%           wait((time * (2**i)) / num_servers)
+%%     end
+%%  end
+%%
 
-res_send(Id, Buffer, [], ErrReason) ->
-    {error, ErrReason};
-res_send(Id, Buffer, [NameServer | Ns], ErrReason) ->
+res_send2(Id, Buffer, Ns, Timer) ->
     UseVc = res_option(usevc),
-    Res = if
-	      length(Buffer) > ?PACKETSZ ->
-		  res_send_tcp(Id, Buffer, NameServer);
-	      UseVc == true ->
-		  res_send_tcp(Id, Buffer, NameServer);
-	      true ->
-		  res_send_udp(Id, Buffer, NameServer)
-	  end,
-    case Res of
-	{error, nxdomain} ->
+    Retry = res_option(retry),
+    Tm = res_option(timeout),
+    if
+	length(Buffer) > ?PACKETSZ ->
+
+	    res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns);
+	UseVc == true ->
+	    Timeout = inet:timeout(Tm*5, Timer),
+	    res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns);
+	true ->
+	    res_send_udp2(Id, Buffer, Retry, Tm, Timer, Ns)
+    end.
+    
+res_send_udp2(Id, Buffer, Retry, Tm, Timer, Ns) ->
+    case inet_udp:open(0, [{active,false}]) of
+	{ok,S} ->
+	    Res = res_send_udp(S, Id, Buffer, 0, Retry, Tm, Timer, Ns),
+	    inet_udp:close(S),
 	    Res;
-	{error, Reason} ->
-	    res_send(Id, Buffer, Ns, Reason);
-	{ok, Rec} ->
-	    H = Rec#dns_rec.header,
-	    if
-		H#dns_header.rcode == ?NOERROR -> 
-		    {ok, Rec};
-		true ->
-		    res_send(Id, Buffer, Ns, ErrReason)
+	Error -> Error
+    end.
+
+res_send_udp(S, Id, Buffer, N, N, Tm, Timer, Ns) -> 
+    {error, timeout};
+res_send_udp(S, Id, Buffer, I, N, Tm, Timer, Ns) ->
+    Num = length(Ns),
+    if Num == 0 ->
+	    {error, timeout};
+       true ->
+	    case res_send_query_udp(S,Id,Buffer,I,Num,Tm,Timer,Ns,[]) of
+		{noanswer, ErrNs} -> %% remove unreachable nameservers
+		    res_send_udp(S, Id, Buffer, I+1, N, Tm,Timer,Ns--ErrNs);
+		Result ->
+		    Result
 	    end
     end.
 
+res_send_query_udp(S, Id, Buffer, I, N, Tm, Timer, [{IP, Port}|Ns],ErrNs) ->
+    Timeout = inet:timeout( (Tm * (1 bsl I)) div N, Timer),
+    ?dbg("Try UDP server : ~p:~p (timeout=~w)\n", [IP, Port,Timeout]),
+    inet_udp:connect(S, IP, Port),
+    inet_udp:send(S, IP, Port, Buffer),
+    case res_recv_reply_udp(S, IP, Port, Id, Timeout) of
+	{ok, Rec} -> 
+	    {ok, Rec};
+	{error, nxdomain} ->
+	    {error, nxdomain};
+	{error, enetunreach} ->
+	    res_send_query_udp(S, Id, Buffer, I, N, Tm,Timer, 
+			       Ns, [{IP,Port}|ErrNs]);
+	{error, econnrefused} -> 
+	    res_send_query_udp(S, Id, Buffer, I, N, Tm, Timer, 
+			       Ns, [{IP,Port}|ErrNs]);
+	{error, timeout} when Timeout == 0 ->
+	    {error, timeout};
+	Error -> res_send_query_udp(S, Id, Buffer, I, N, Tm, Timer,
+				    Ns, ErrNs)
+    end;
+res_send_query_udp(S, Id, Buffer, I, N, Tm, Timer, [], ErrNs) ->
+    {noanswer, ErrNs}.
 
 
-res_send_udp(Id, Buffer, {IP,Port}) ->
-    Tm = res_option(timeout),
-    ReTry = res_option(retry),
-    case catch inet_udp:open(0, []) of
-	{ok, S} ->
-	    ?dbg("Try UDP server : ~p:~p~n",[IP, Port]),
-	    Res = try_udp(S, IP, Port, Id, Buffer, ReTry, Tm),
-	    inet_udp:close(S),
-	    Res;
-	Error ->
+res_recv_reply_udp(S, IP, Port, Id, Timeout) ->
+    case inet_udp:recv(S, 0, Timeout) of
+	{ok, {IP, Port, Answer}} ->
+	    case decode_answer(Answer, Id) of
+		{error, badid} ->
+		    res_recv_reply_udp(S, IP, Port, Id, Timeout);
+		Reply -> Reply
+	    end;
+	{ok, _} -> res_recv_reply_udp(S, IP, Port, Id, Timeout);
+	Error -> 
+	    ?dbg("Udp server error: ~p\n", [Error]),
 	    Error
     end.
 
-try_udp(S, IP, Port, Id, Buffer, 0, Tm) -> 
-    {error, timeout};
-try_udp(S, IP, Port, Id, Buffer, Count, Tm) ->
-    inet_udp:send(S, IP, Port, Buffer),
-    case receive_udp(S, IP, Port, Id, Tm) of
-	{ok, Res} -> {ok, Res};
-	{error, timeout} -> 
-	    ?dbg("Retry UDP~n", []),
-	    try_udp(S, IP, Port, Id, Buffer, Count-1, Tm*2);
-	Error -> Error
-    end.
 
-%% receive udp answer
-receive_udp(S, IP, Port, Id, Tm) ->
-    receive
-	{udp, S, IP, Port, Answer} ->
-	    case decode_answer(Answer, Id) of
-		{error, badid} -> receive_udp(S, IP, Port, Id, Tm);
-		Other -> Other
-	    end
-    after Tm ->
-	    ?dbg("Timeout~n", []),
-	    {error, timeout}
-    end.
-
-res_send_tcp(Id, Buffer, {IP,Port}) ->
-    ?dbg("Try TCP server : ~p:~p~n", [IP, Port]),
-    Tm = res_option(timeout)*5,
-    case catch inet_tcp:connect(IP, Port, [{packet,2}]) of
+res_send_tcp2(Id, Buffer, Retry, Tm, Timer, [{IP,Port}|Ns]) ->
+    Timeout = inet:timeout(Tm*5, Timer),
+    ?dbg("Try TCP server : ~p:~p (timeout=~w)\n", [IP, Port, Timeout]),
+    case catch inet_tcp:connect(IP, Port, 
+				[{active,false},{packet,2}], 
+				Timeout) of
 	{ok, S} ->
 	    inet_tcp:send(S, Buffer),
-	    receive
-		{tcp, S, Answer} ->
+	    case inet_tcp:recv(S, 0, Timeout) of
+		{ok, Answer} ->
 		    inet_tcp:close(S),
-		    decode_answer(Answer, Id);
-		{tcp_closed, S} ->
-		    {error, unknown}
-	    after Tm ->
-		    ?dbg("Timeout~n", []),
+		    case decode_answer(Answer, Id) of
+			{ok,Rec} -> {ok, Rec};
+			{error, nxdomain} -> {error, nxdomain};
+			{error, fmt} -> {error, einval};
+			Error ->
+			    res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns)
+		    end;
+		Error ->
 		    inet_tcp:close(S),
-		    {error, timeout}
+		    res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns)
 	    end;
-	Error -> Error
-    end.
+	Error -> 
+	    res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns)
+    end;
+res_send_tcp2(Id, Buffer, Retry, Tm, Timer, []) ->
+    {error, timeout}.
+
+
 
 decode_answer(Answer, Id) ->
     case inet_dns:decode(Answer) of

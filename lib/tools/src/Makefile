@@ -47,12 +47,21 @@ MODULES= coast               \
 	exref_io             \
 	exref_pp             \
 	exref_server         \
-	make
+	make		     \
+	xref		     \
+	xref_base	     \
+	xref_compiler	     \
+	xref_parser          \
+	xref_reader	     \
+	xref_scanner	     \
+	xref_utils	     \
+	xsets
 
 
 HRL_FILES= coast.hrl      \
 	coast_server.hrl  \
-	exref_state.hrl
+	exref_state.hrl   \
+	xref.hrl
 
 
 ERL_FILES= $(MODULES:%=%.erl)

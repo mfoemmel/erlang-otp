@@ -482,14 +482,14 @@ gen_dec_components_call1(_TopType,[],Pos,_,_) ->
 	Pos.
 
 
-gen_dec_component_no_val(TopType,Cname,Type,_,Pos,{ext,Ep,Enum}) when Pos >= Ep ->
-    emit({"{asn1_NOEXTVALUE,",{curr,bytes},"}",nl});
+%%gen_dec_component_no_val(TopType,Cname,Type,_,Pos,{ext,Ep,Enum}) when Pos >= Ep ->
+%%    emit({"{asn1_NOEXTVALUE,",{curr,bytes},"}",nl});
 gen_dec_component_no_val(TopType,Cname,Type,{'DEFAULT',DefVal},Pos,_) ->
     emit(["{",{asis,DefVal},",",{curr,bytes},"}",nl]);
 gen_dec_component_no_val(TopType,Cname,Type,'OPTIONAL',Pos,_) ->
     emit({"{asn1_NOVALUE,",{curr,bytes},"}",nl});
 gen_dec_component_no_val(TopType,Cname,Type,mandatory,Pos,{ext,Ep,Enum}) ->
-    emit({"{asn1_NOEXTVALUE,",{curr,bytes},"}",nl}).
+    emit({"{asn1_NOVALUE,",{curr,bytes},"}",nl}).
     
 
 gen_dec_line(TopType,Cname,Type,Pos,Ext)  ->

@@ -18,7 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: orber.erl
-%% Author: Lars Thorsen
 %% 
 %% Description:
 %%    This file contains the Orber application interface
@@ -40,14 +39,18 @@
 	 ssl_server_depth/0, ssl_client_depth/0, set_ssl_client_depth/1,
 	 ssl_server_cacertfile/0,ssl_client_cacertfile/0, set_ssl_client_cacertfile/1,
 	 uninstall/0, giop_version/0, info/0,
-	 is_running/0, add_node/2, remove_node/1, iiop_timeout/0,
-	 objectkeys_gc_time/0]).
+	 is_running/0, add_node/2, remove_node/1, iiop_timeout/0, 
+	 iiop_connection_timeout/0, objectkeys_gc_time/0,
+	 objectkeys_gc_time/0, is_lightweight/0, get_lightweight_nodes/0,
+	 start_lightweight/0, start_lightweight/1,
+	 get_ORBDefaultInitRef/0, get_ORBInitRef/0]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
--export([host/0, start/2, init/1, start_naming_service/1,
-	 messageInInterceptors/0, messageOutInterceptors/0]).
+-export([host/0, ip_address_variable_defined/0, start/2, init/1, start_naming_service/1,
+	 messageInInterceptors/0, messageOutInterceptors/0,
+	 get_debug_level/0, debug_level_print/3, configure/2]).
 %%-----------------------------------------------------------------
 %% Internal definitions
 %%-----------------------------------------------------------------
@@ -73,6 +76,25 @@ start() ->
 	    application:start(orber)
     end.
 
+start_lightweight() ->
+    application:start(orber).
+
+start_lightweight(Nodes) when list(Nodes) ->
+    %%------- WARNING!!! -------
+    %% Here we use an undocumented function, i.e., set_env/3. IF it stops
+    %% being exported we must solve this problem in another way!!!
+    case is_loaded() of
+	false ->
+	    application:load(orber),
+	    application_controller:set_env(orber, lightweight, Nodes),
+	    application:start(orber);
+	true ->
+	    application_controller:set_env(orber, lightweight, Nodes),
+	    application:start(orber)
+    end;
+	
+start_lightweight(Nodes) ->
+    exit({error,"Argument not correct; must be a list of nodes."}).
 
 stop() ->
     application:stop(orber).
@@ -95,7 +117,7 @@ bootstrap_port() ->
     end.
 
 orber_nodes() ->
-    case mnesia:table_info(orber_objkeys,ram_copies) of
+    case catch mnesia:table_info(orber_objkeys,ram_copies) of
 	Nodes when list(Nodes) ->
 	    Nodes;
 	_ ->
@@ -110,6 +132,14 @@ domain() ->
 	    atom_to_list(Domain);
 	_ ->
 	    "ORBER"
+    end.
+
+ip_address_variable_defined() ->
+    case application:get_env(orber, ip_address) of
+	undefined ->
+	    false;
+	_ ->
+	    true
     end.
 
 host() ->
@@ -154,6 +184,22 @@ Time to large (>1000000 sec), swithed to 'infinity'~n"),
 	    infinity
     end.
 
+iiop_connection_timeout() ->
+    case application:get_env(orber, iiop_connection_timeout) of
+	{ok, Int} when integer(Int) ->
+	    if
+		Int > 1000000 ->
+		    error_logger:error_msg("Orber 'iiop_timeout' badly configured.
+Time to large (>1000000 sec), swithed to 'infinity'~n"),
+		    infinity;
+		true ->
+		    %% Convert to msec.
+		    Int*1000
+	    end;
+	_ ->
+	    infinity
+    end.
+
 objectkeys_gc_time() ->
     case application:get_env(orber, objectkeys_gc_time) of
 	{ok, Int} when integer(Int) ->
@@ -169,6 +215,42 @@ Time to large (>1000000 sec), swithed to 'infinity'~n"),
 	    infinity
     end.
 
+get_ORBInitRef() ->
+    case application:get_env(orber, orbInitRef) of
+	{ok, Ref} when list(Ref) ->
+	    Ref;
+	_ ->
+	    undefined
+    end.
+
+get_ORBDefaultInitRef() ->
+    case application:get_env(orber, orbDefaultInitRef) of
+	{ok, Ref} when list(Ref) ->
+	    Ref;
+	_ ->
+	    undefined
+    end.
+
+
+%%-----------------------------------------------------------------
+%% Light weight Orber operations
+%%-----------------------------------------------------------------
+
+is_lightweight() ->
+    case application:get_env(orber, lightweight) of
+	{ok, L} when list(L) ->
+	    true;
+	_ ->
+	    false
+    end.
+get_lightweight_nodes() ->
+    case application:get_env(orber, lightweight) of
+	{ok, L} when list(L) ->
+	    L;
+	_ ->
+	    false
+    end.
+   
 
 %%-----------------------------------------------------------------
 %% Security access operations (SSL)
@@ -329,6 +411,8 @@ info() ->
 	    io:format("Nodes in domain: ~p\n",[orber_nodes()]),
 	    io:format("GIOP version: ~p\n",[giop_version()]),
 	    io:format("IIOP timeout: ~p\n",[iiop_timeout()]),
+	    io:format("IIOP connection timeout: ~p\n",[iiop_connection_timeout()]),
+	    io:format("Object Keys GC interval: ~p\n",[objectkeys_gc_time()]),
 	    Sec = secure(),
 	    io:format("ORB security: ~p\n",[Sec]),
 	    case Sec of
@@ -398,7 +482,9 @@ install_orber(Nodes, Options) ->
     'CosNaming_NamingContext_impl':install(Timeout, [{ram_copies, Nodes} |MnesiaOptions]),
     application:start(orber),
     oe_cos_naming:oe_register(),
+    oe_cos_naming_ext:oe_register(),
     oe_erlang:oe_register(),
+    oe_OrberIFR:oe_register(),
     oe_CORBA:oe_register(),
     create_default_contexts(),
     mnesia:dump_tables(['orber_CosNaming']),
@@ -547,6 +633,8 @@ remove_tables([T1|Trest], Node, Failed) ->
 %%-----------------------------------------------------------------
 
     
+is_loaded() ->
+    is_running(application:loaded_applications()).
 is_running() ->
     is_running(application:which_applications()).
 
@@ -567,6 +655,84 @@ check_giop_version() ->
 	    X
     end.
 
+
+get_debug_level() ->
+    case application:get_env(orber, orber_debug_level) of
+	{ok, Level} when integer(Level)  ->
+	    Level;
+	_ ->
+	    0
+    end.
+
+%% NOTE!!
+%% The following levels are used (0-10):
+%% 10: cdrlib.erl
+%%  9: cdr_encode.erl cdr_decode.erl orber_ifr.erl
+%%  8: orber_iiop_outrequest.erl orber_iiop_inrequest.erl
+%%  7: orber_iiop_outproxy.erl orber_iiop_inproxy.erl
+%%  6: iop_ior.erl, orber_objectkeys.erl, Orber_IFR_impl.erl
+%%  5: corba.erl, corba_boa.erl, corba_object.erl
+%%  4: Reserved for Cos-services!
+%%  3: Reserved for Cos-services!
+%%  2: Reserved for client applications!
+%%  1: Reserved for client applications!
+%%  0: No logging!
+%%
+%% A higher value will result in a finer granularity.
+
+debug_level_print(Format, Data, RequestedLevel) ->
+    case application:get_env(orber, orber_debug_level) of
+	{ok, Level} when integer(Level), Level >= RequestedLevel ->
+	    %% Use the catch if incorrect format used somewhere.
+	    catch error_logger:error_msg("=================== Orber =================~n"++
+					 Format++
+					 "~n===========================================~n",
+					 Data),
+	    ok;
+	_ ->
+	    ok
+    end.
+
+%% Initial Services References
+configure(orbDefaultInitRef, String) when list(String) ->
+    do_configure(orbDefaultInitRef, String);
+configure(orbInitRef, String) when list(String) ->
+    do_configure(orbInitRef, String);
+%% IIOP-version
+configure(giop_version, {1, 0}) ->
+    do_configure(giop_version, {1, 0});
+configure(giop_version, {1, 1}) ->
+    do_configure(giop_version, {1, 1});
+%% configure 'iiop_timout' will only have effect on new requests.
+configure(iiop_timeout, infinity) ->
+    do_configure(iiop_timeout, infinity);
+configure(iiop_timeout, Value) when integer(Value), Value =< 1000000 ->
+    do_configure(iiop_timeout, Value);
+%% configure 'iiop_connection_timout' will only have effect on new connections.
+configure(iiop_connection_timeout, infinity) ->
+    do_configure(iiop_connection_timeout, infinity);
+configure(iiop_connection_timeout, Value) when integer(Value), Value =< 1000000 ->
+    do_configure(iiop_connection_timeout, Value);
+%% 
+configure(objectkeys_gc_time, infinity) ->
+    do_configure(objectkeys_gc_time, infinity);
+configure(objectkeys_gc_time, Value) when integer(Value), Value =< 1000000 ->
+    do_configure(objectkeys_gc_time, Value);
+configure(orber_debug_level, Value) when integer(Value) ->
+    do_configure(orber_debug_level, Value);
+configure(_, _) ->
+    exit({error, "Bad configure parameter(s)"}).
+
+do_configure(Key, Value) ->
+    case is_loaded() of
+	false ->
+	    application:load(orber),
+	    application_controller:set_env(orber, Key, Value);
+	true ->
+	    application_controller:set_env(orber, Key, Value)
+    end.
+	
+
 %%-----------------------------------------------------------------
 %% Server functions
 %%-----------------------------------------------------------------
@@ -577,40 +743,56 @@ init(orb_init) ->
     case check_giop_version() of
 	ok ->
 	    ?PRINTDEBUG("init orber supervisor"),
-	        case mnesia:wait_for_tables(?ifr_object_list, infinity) of
-		  ok ->
+	    case is_lightweight() of
+		true ->
 		    SupFlags = {one_for_one, 5, 1000},  
 		    ChildSpec = [
 				 {orber_iiop_sup, {orber_iiop, start_sup, [[]]},
 				  permanent, 
 				  10000, supervisor, [orber_iiop]},
-				 {orber_init, {orber_initial_references, start,
-					       [[]]},
-				  permanent, 
-				  10000, worker, [orber_initial_references]},
 				 {orber_reqno, {orber_request_number, start,
 						[[]]},
 				  permanent, 
-				  10000, worker, [orber_request_number]},
-				 {orber_objkeyserver, {orber_objectkeys, start,
-						       [[orber_nodes(), 0]]},
-				  permanent, 
-				  10000, worker, [orber_objectkeys]},
-				 {orber_policyserver, {orber_policy_server, start,
-						       [[]]},
-				  permanent, 
-				  10000, worker, [orber_policy_server]},
-				 {orber_nameservice, {orber, start_naming_service, 
-						      [[]]},
-				  permanent, 
-				  10000, worker, ['CosNaming_NamingContext']}
+				  10000, worker, [orber_request_number]}
 				],
 		    {ok, {SupFlags, ChildSpec}};
-		  StopReason ->
-		    {stop, StopReason}
+		false ->
+		    case mnesia:wait_for_tables(?ifr_object_list, infinity) of
+			ok ->
+			    orber_objectkeys:remove_old_keys(),
+			    SupFlags = {one_for_one, 5, 1000},  
+			    ChildSpec = [
+					 {orber_iiop_sup, {orber_iiop, start_sup, [[]]},
+					  permanent, 
+					  10000, supervisor, [orber_iiop]},
+					 {orber_init, {orber_initial_references, start,
+						       [[]]},
+					  permanent, 
+					  10000, worker, [orber_initial_references]},
+					 {orber_reqno, {orber_request_number, start,
+							[[]]},
+					  permanent, 
+					  10000, worker, [orber_request_number]},
+					 {orber_objkeyserver, {orber_objectkeys, start,
+							       [[orber_nodes(), 0]]},
+					  permanent, 
+					  10000, worker, [orber_objectkeys]},
+					 {orber_policyserver, {orber_policy_server, start,
+							       [[]]},
+					  permanent, 
+					  10000, worker, [orber_policy_server]},
+					 {orber_nameservice, {orber, start_naming_service, 
+							      [[]]},
+					  permanent, 
+					  10000, worker, ['CosNaming_NamingContext']}
+					],
+			    {ok, {SupFlags, ChildSpec}};
+			StopReason ->
+			    {stop, StopReason}
+		    end
 	    end;
 	X ->
-	    {stop, iolib:format("GIOP ~p not an implemeted version", [X])}
+	    {stop, io_lib:format("GIOP ~p not an implemeted version", [X])}
     end.
 
 start_naming_service(_) ->

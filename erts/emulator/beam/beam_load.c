@@ -30,14 +30,14 @@
 #include "external.h"
 #include "beam_load.h"
 #include "big.h"
+#include "erl_bits.h"
+#include "beam_catches.h"
+#include "erl_binary.h"
 
 #define MAX_OPARGS 8
 #define CALLED    0
 #define DEFINED   1
 #define EXPORTED  2
-
-#define is_trace_on(Stp) ((Stp)->traced != 0)
-#define is_trace_off(Stp) ((Stp)->traced == 0)
 
 #ifdef NO_JUMP_TABLE
 #  define BeamOpCode(Op) ((uint32)(Op))
@@ -128,7 +128,6 @@ typedef struct {
 
 #define ATTR_CHUNK 5
 #define COMPILE_CHUNK 6
-#define TRACE_CHUNK 7
 
 #define NUM_CHUNK_TYPES (sizeof(chunk_types)/sizeof(chunk_types[0]))
 
@@ -151,7 +150,6 @@ static uint32 chunk_types[] = {
      */
     MakeIffId('A', 't', 't', 'r'), /* 5 */
     MakeIffId('C', 'I', 'n', 'f'), /* 6 */
-    MakeIffId('T', 'r', 'a', 'c'), /* 7 */
 };
 
 /*
@@ -202,7 +200,6 @@ typedef struct {
 
     byte* code_start;		/* Start of code file. */
     unsigned code_size;		/* Size of code file. */
-    int traced;			/* Non-zero if code should be trace-loaded. */
     int specific_op;		/* Specific opcode (-1 if not found). */
     int num_functions;		/* Number of functions in module. */
     int num_labels;		/* Number of labels. */
@@ -211,6 +208,8 @@ typedef struct {
     int ci;			/* Current index into loaded code. */
     Label* labels;
     uint32 put_strings;		/* Linked list of put_string instructions. */
+    Uint bs_put_strings;	/* Linked list of bs_put_string instructions. */
+    uint32 catches;		/* Linked list of catch_yf instructions. */
     unsigned loaded_size;	/* Final size of code when loaded. */
 
     /*
@@ -249,6 +248,12 @@ typedef struct {
     int lambdas_allocated;	/* Size of allocated lambda table. */
     Lambda* lambdas;		/* Pointer to lambdas. */
     Lambda def_lambdas[16];	/* Default storage for lambda table. */
+
+    /*
+     * Bit syntax.
+     */
+
+    int generate_heap_bin;	/* Safe to generate a heap bin. */
 } LoaderState;
 
 typedef struct {
@@ -428,6 +433,8 @@ void init_load(void)
 {
     FloatDef f;
 
+    beam_catches_init();
+
     f.fd = 1.0;
     must_swap_floats = (f.fw[0] == 0);
 
@@ -470,11 +477,12 @@ int unloaded_size;		/* Size of code. */
     state.num_lambdas = 0;
     state.lambdas_allocated = sizeof(state.def_lambdas)/sizeof(Lambda);
     state.lambdas = state.def_lambdas;
-    
+    state.generate_heap_bin = 0;
+
     if ((rval = beam_make_current_old(state.module)) < 0) {
 	cerr_pos = 0;
 	erl_printf(CBUF, "Module ");
-	print_atom(unsigned_val(state.module), CBUF);
+	print_atom(atom_val(state.module), CBUF);
 	erl_printf(CBUF, " must be purged before loading\n");
 	send_error_to_logger(state.group_leader);
 	return -3;
@@ -756,7 +764,7 @@ load_atom_table(LoaderState* stp)
 	char sbuf[256];
 	Atom* ap;
 
-	ap = atom_tab(unsigned_val(stp->atom[1]));
+	ap = atom_tab(atom_val(stp->atom[1]));
 	memcpy(sbuf, ap->name, ap->len);
 	sbuf[ap->len] = '\0';
 	LoadError1(stp, "module name in object code is %s", sbuf);
@@ -927,10 +935,11 @@ read_code_header(LoaderState* stp)
     stp->code[MI_COMPILE_SIZE_ON_HEAP] = 0;
     stp->code[MI_LAMBDA_PTR] = 0;
     stp->code[MI_NUM_LAMBDAS] = 0;
+    stp->code[MI_NUM_BREAKPOINTS] = 0;
 
     stp->put_strings = 0;
-
-    stp->traced = stp->chunks[TRACE_CHUNK].start != NULL;
+    stp->bs_put_strings = 0;
+    stp->catches = 0;
     return 1;
 
  load_error:
@@ -1061,7 +1070,7 @@ load_code(LoaderState* stp)
 		break;
 	    case TAG_y:
 		GetValue(stp, first, last_op->a[arg].val);
-		last_op->a[arg].val++;
+		last_op->a[arg].val += CP_SIZE;
 		break;
 	    case TAG_a:
 		GetValue(stp, first, last_op->a[arg].val);
@@ -1237,7 +1246,7 @@ load_code(LoaderState* stp)
 	    case 'x':	/* x(N) */
 	    case 'y':	/* y(N) */
 		VerifyTag(stp, tag_to_letter[tag], *sign);
-		code[ci++] = tmp_op->a[arg].val << 2;
+		code[ci++] = tmp_op->a[arg].val * sizeof(Eterm);
 		break;
 	    case 'a':		/* Tagged atom */
 		VerifyTag(stp, tag_to_letter[tag], *sign);
@@ -1505,7 +1514,7 @@ load_code(LoaderState* stp)
 	 * Handle a few special cases.
 	 */
 	switch (stp->specific_op) {
-	case op_i_func_info_aaI:
+	case op_i_func_info_IaaI:
 	    {
 		uint32 offset;
 
@@ -1560,6 +1569,43 @@ load_code(LoaderState* stp)
 		code[ci-4] = stp->put_strings;
 		stp->put_strings = ci - 4;
 	    }
+	    break;
+
+	case op_bs_put_string_II:
+	    {
+		/*
+		 * At entry:
+		 *
+		 * code[ci-3]	&&lb_bs_put_string_II
+		 * code[ci-2]	length of string
+		 * code[ci-1]   offset into string table
+		 *
+		 * Since we don't know the address of the string table yet,
+		 * just check the offset and length for validity, and use
+		 * the instruction field as a link field to link all put_string
+		 * instructions into a single linked list.  At exit:
+		 *
+		 * code[ci-3]	pointer to next bs_put_string instruction (or 0
+		 *		if this is the last)
+		 */
+		Uint offset = code[ci-1];
+		Uint len = code[ci-2];
+		unsigned strtab_size = stp->chunks[STR_CHUNK].size;
+		if (offset > strtab_size || offset + len > strtab_size) {
+		    LoadError2(stp, "invalid string reference %d, size %d", offset, len);
+		}
+		code[ci-3] = stp->bs_put_strings;
+		stp->bs_put_strings = ci - 3;
+	    }
+	    break;
+
+	case op_catch_yf:
+	    /* code[ci-3]	&&lb_catch_yf
+	     * code[ci-2]	y-register offset in E
+	     * code[ci-1]	label; index tagged as CATCH at runtime
+	     */
+	    code[ci-3] = stp->catches;
+	    stp->catches = ci-3;
 	    break;
 
 	    /*
@@ -1631,8 +1677,12 @@ use_jump_tab(LoaderState* stp, GenOpArg Size, GenOpArg* Rest)
 	return 0;
     }
 
+    /* we may be called with sequences of tagged fixnums or atoms;
+       return early in latter case, before we access the values */
+    if (Rest[0].type != TAG_i || Rest[1].type != TAG_f)
+	return 0;
     min = max = signed_val(Rest[0].val);
-    for (i = 0; i < Size.val; i += 2) {
+    for (i = 2; i < Size.val; i += 2) {
 	if (Rest[i].type != TAG_i || Rest[i+1].type != TAG_f) {
 	    return 0;
 	}
@@ -1718,6 +1768,18 @@ mixed_types(LoaderState* stp, GenOpArg Size, GenOpArg* Rest)
     return 0;
 }
 
+static int
+assign_heap_bin_flag(LoaderState* stp, GenOpArg Flags, GenOpArg Bits)
+{
+    stp->generate_heap_bin = (Flags.val & BSF_EXACT) != 0 &&
+	(Bits.val % 8) == 0 &&
+	    Bits.val / 8 <= ERL_ONHEAP_BIN_LIMIT;
+    return 1;
+}
+
+#define reset_heap_bin_flag(stp) (stp->generate_heap_bin = 0, 1)
+#define generate_heap_bin(stp) (stp->generate_heap_bin)
+
 /*
  * Generate an instruction for element/2.
  */
@@ -1748,6 +1810,211 @@ gen_element(LoaderState* stp, GenOpArg Fail, GenOpArg Index,
 	op->a[1].val = signed_val(Index.val);
     }
 
+    return op;
+}
+
+/*
+ * Generate the fastest instruction to fetch an integer from a binary.
+ */
+
+static GenOp*
+gen_get_integer(LoaderState* stp, GenOpArg Fail, GenOpArg Size, GenOpArg Unit,
+		GenOpArg Flags, GenOpArg Dst)
+{
+    GenOp* op;
+    NEW_GENOP(stp, op);
+
+    if (Size.type == TAG_i) {
+	op->op = genop_i_bs_get_integer_imm_4;
+	op->arity = 4;
+	op->a[0] = Fail;
+	op->a[1].type = TAG_u;
+	op->a[1].val = signed_val(Size.val) * Unit.val;
+	op->a[2] = Flags;
+	op->a[3] = Dst;
+    } else {
+	op->op = genop_i_bs_get_integer_4;
+	op->arity = 4;
+	op->a[0] = Fail;
+	op->a[1] = Size;
+	op->a[2].type = TAG_u;
+	op->a[2].val = (Unit.val << 3) | Flags.val;
+	op->a[3] = Dst;
+    }
+    op->next = NULL;
+    return op;
+}
+
+/*
+ * Generate the fastest instruction to fetch a binary from a binary.
+ */
+
+static GenOp*
+gen_get_binary(LoaderState* stp, GenOpArg Fail, GenOpArg Size, GenOpArg Unit,
+		GenOpArg Flags, GenOpArg Dst)
+{
+    GenOp* op;
+    NEW_GENOP(stp, op);
+
+    if (Size.type == TAG_a && Size.val == am_all) {
+	op->op = genop_i_bs_get_binary_all_2;
+	op->arity = 2;
+	op->a[0] = Fail;
+	op->a[1] = Dst;
+    } else if (Size.type == TAG_i) {
+	op->op = genop_i_bs_get_binary_imm_4;
+	op->arity = 4;
+	op->a[0] = Fail;
+	op->a[1].type = TAG_u;
+	op->a[1].val = signed_val(Size.val) * Unit.val;
+	op->a[2] = Flags;
+	op->a[3] = Dst;
+    } else {
+	op->op = genop_i_bs_get_binary_4;
+	op->arity = 4;
+	op->a[0] = Fail;
+	op->a[1] = Size;
+	op->a[2].type = TAG_u;
+	op->a[2].val = (Unit.val << 3) | Flags.val;
+	op->a[3] = Dst;
+    }
+    op->next = NULL;
+    return op;
+}
+
+static GenOp* gen_put_binary(LoaderState* stp, GenOpArg Fail,GenOpArg Size,
+			     GenOpArg Unit, GenOpArg Flags, GenOpArg Src)
+{
+    GenOp* op;
+    NEW_GENOP(stp, op);
+
+    if (Size.type == TAG_a && Size.val == am_all) {
+	op->op = genop_i_bs_put_binary_all_2;
+	op->arity = 2;
+	op->a[0] = Fail;
+	op->a[1] = Src;
+    } else if (Size.type == TAG_i) {
+	op->op = genop_i_bs_put_binary_imm_3;
+	op->arity = 3;
+	op->a[0] = Fail;
+	op->a[1].type = TAG_u;
+	op->a[1].val = signed_val(Size.val) * Unit.val;
+	op->a[2] = Src;
+    } else {
+	op->op = genop_i_bs_put_binary_4;
+	op->arity = 4;
+	op->a[0] = Fail;
+	op->a[1] = Size;
+	op->a[2].type = TAG_u;
+	op->a[2].val = (Unit.val << 3) | Flags.val;
+	op->a[3] = Src;
+    }
+
+    op->next = NULL;
+    return op;
+}
+
+static GenOp* gen_put_integer(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
+			      GenOpArg Unit, GenOpArg Flags, GenOpArg Src)
+{
+    GenOp* op;
+    NEW_GENOP(stp, op);
+
+    if (Size.type == TAG_i) {
+	op->op = genop_i_bs_put_integer_imm_4;
+	op->arity = 4;
+	op->a[0] = Fail;
+	op->a[1].type = TAG_u;
+	op->a[1].val = signed_val(Size.val) * Unit.val;
+	op->a[2] = Flags;
+	op->a[3] = Src;
+    } else {
+	op->op = genop_i_bs_put_integer_4;
+	op->arity = 4;
+	op->a[0] = Fail;
+	op->a[1] = Size;
+	op->a[2].type = TAG_u;
+	op->a[2].val = (Unit.val << 3) | Flags.val;
+	op->a[3] = Src;
+    }
+    op->next = NULL;
+    return op;
+}
+
+static GenOp* gen_put_float(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
+			     GenOpArg Unit, GenOpArg Flags, GenOpArg Dst)
+{
+    GenOp* op;
+    NEW_GENOP(stp, op);
+
+    op->op = genop_i_bs_put_float_4;
+    op->arity = 4;
+    op->a[0] = Fail;
+    op->a[1] = Size;
+    op->a[2].type = TAG_u;
+    op->a[2].val = (Unit.val << 3) | Flags.val;
+    op->a[3] = Dst;
+
+    op->next = NULL;
+    return op;
+}
+
+/*
+ * Generate an instruction to fetch a float from a binary.
+ */
+
+static GenOp*
+gen_get_float(LoaderState* stp, GenOpArg Fail, GenOpArg Size, GenOpArg Unit,
+	      GenOpArg Flags, GenOpArg Dst)
+{
+    GenOp* op;
+    NEW_GENOP(stp, op);
+
+    op->op = genop_i_bs_get_float_4;
+    op->arity = 4;
+    op->a[0] = Fail;
+    op->a[1] = Size;
+    op->a[2].type = TAG_u;
+    op->a[2].val = (Unit.val << 3) | Flags.val;
+    op->a[3] = Dst;
+    op->next = NULL;
+    return op;
+}
+
+/*
+ * Generate the fastest instruction for bs_skip_bits.
+ */
+
+static GenOp*
+gen_skip_bits(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
+	      GenOpArg Unit, GenOpArg Flags)
+{
+    GenOp* op;
+
+    NEW_GENOP(stp, op);
+    if (Size.type == TAG_a && Size.val == am_all) {
+	if (Flags.val & BSF_ALIGNED) {
+	    op->op = genop_i_bs_skip_bits_all_aligned_0;
+	    op->arity = 0;
+	} else {
+	    op->op = genop_i_bs_skip_bits_all_1;
+	    op->arity = 1;
+	    op->a[0] = Fail;
+	}
+    } else if (Size.type == TAG_i) {
+	op->op = genop_i_bs_skip_bits_imm_2;
+	op->arity = 2;
+	op->a[0] = Fail;
+	op->a[1].type = TAG_u;
+	op->a[1].val = signed_val(Size.val) * Unit.val;
+    } else {
+	op->op = genop_i_bs_skip_bits_3;
+	op->arity = 3;
+	op->a[0] = Fail;
+	op->a[1] = Size;
+	op->a[2] = Unit;
+    }
+    op->next = NULL;
     return op;
 }
 
@@ -1836,7 +2103,8 @@ gen_select_tuple_arity(LoaderState* stp, GenOpArg S, GenOpArg Fail,
      * Sort the values to make them useful for a binary search.
      */
 
-    qsort(op->a+3, size, 2*sizeof(GenOpArg), (int (*)()) genopargcompare);
+    qsort(op->a+3, size, 2*sizeof(GenOpArg), 
+	   (int (*)(const void *, const void *)) genopargcompare);
 #ifdef DEBUG
     for (i = 3; i < arity-2; i += 2) {
 	ASSERT(op->a[i].val < op->a[i+2].val);
@@ -2033,7 +2301,8 @@ gen_select_val(LoaderState* stp, GenOpArg S, GenOpArg Fail,
      * Sort the values to make them useful for a binary search.
      */
 
-    qsort(op->a+3, size, 2*sizeof(GenOpArg), (int (*)()) genopargcompare);
+    qsort(op->a+3, size, 2*sizeof(GenOpArg), 
+	  (int (*)(const void *, const void *)) genopargcompare);
 #ifdef DEBUG
     for (i = 3; i < arity-2; i += 2) {
 	ASSERT(op->a[i].val < op->a[i+2].val);
@@ -2087,7 +2356,8 @@ gen_select_big(LoaderState* stp, GenOpArg S, GenOpArg Fail,
      * Sort the values to make them useful for a binary search.
      */
 
-    qsort(op->a+2, size, 2*sizeof(GenOpArg), (int (*)()) genbigcompare);
+    qsort(op->a+2, size, 2*sizeof(GenOpArg), 
+	  (int (*)(const void *, const void *)) genbigcompare);
 
     return op;
 }
@@ -2164,11 +2434,13 @@ gen_func_info(LoaderState* stp, GenOpArg mod, GenOpArg func,
     GenOp* op;
 
     NEW_GENOP(stp, fi);
-    fi->op = genop_i_func_info_3;
-    fi->arity = 3;
-    fi->a[0] = mod;
-    fi->a[1] = func;
-    fi->a[2] = arity;
+    fi->op = genop_i_func_info_4;
+    fi->arity = 4;
+    fi->a[0].type = TAG_u;	/* untagged Zero */
+    fi->a[0].val = 0;
+    fi->a[1] = mod;
+    fi->a[2] = func;
+    fi->a[3] = arity;
 
     NEW_GENOP(stp, op);
     op->op = genop_label_1;
@@ -2177,14 +2449,6 @@ gen_func_info(LoaderState* stp, GenOpArg mod, GenOpArg func,
     
     fi->next = op;
     op->next = NULL;
-
-    if (stp->traced) {
-	NEW_GENOP(stp, op->next);
-	op = op->next;
-	op->op = genop_i_trace_info_0;
-	op->arity = 0;
-	op->next = NULL;
-    }
 
     if (func.val == am_module_info && arity.val < 2) {
 	NEW_GENOP(stp, op->next);
@@ -2251,6 +2515,7 @@ freeze_code(LoaderState* stp)
     unsigned attr_size = stp->chunks[ATTR_CHUNK].size;
     unsigned compile_size = stp->chunks[COMPILE_CHUNK].size;
     uint32 size;
+    unsigned catches;
 
     /*
      * Calculate the final size of the code.
@@ -2296,7 +2561,7 @@ freeze_code(LoaderState* stp)
     /*
      * Go through all put_strings instructions, restore the pointer to
      * the instruction and convert string offsets to pointers (to the
-     * last character).
+     * LAST character).
      */
 
     index = stp->put_strings;
@@ -2304,6 +2569,20 @@ freeze_code(LoaderState* stp)
 	uint32 next = code[index];
 	code[index] = BeamOpCode(op_put_string_IId);
 	code[index+2] = (uint32) (str_table + code[index+2] + code[index+1] - 1);
+	index = next;
+    }
+
+    /*
+     * Go through all bs_put_strings instructions, restore the pointer to
+     * the instruction and convert string offsets to pointers (to the
+     * FIRST character).
+     */
+
+    index = stp->bs_put_strings;
+    while (index != 0) {
+	Uint next = code[index];
+	code[index] = BeamOpCode(op_bs_put_string_II);
+	code[index+2] = (Uint) (str_table + code[index+2]);
 	index = next;
     }
 
@@ -2329,6 +2608,20 @@ freeze_code(LoaderState* stp)
 	    this_patch = next_patch;
 	}
     }
+
+    /*
+     * Fix all catch_yf instructions.
+     */
+    index = stp->catches;
+    catches = BEAM_CATCHES_NIL;
+    while (index != 0) {
+	uint32 next = code[index];
+	code[index] = BeamOpCode(op_catch_yf);
+	catches = beam_catches_cons((uint32*)code[index+2], catches);
+	code[index+2] = make_catch(catches);
+	index = next;
+    }
+    stp->catches = catches;
 
     /*
      * Save the updated code size.
@@ -2392,6 +2685,7 @@ final_touch(LoaderState* stp)
     modp = erts_put_module(stp->module);
     modp->code = stp->code;
     modp->code_length = stp->loaded_size;
+    modp->catches = stp->catches;
 
     /*
      * Update address table (used for finding a function from a PC value).
@@ -2714,14 +3008,14 @@ load_printf(int line, LoaderState* context, char *fmt,...)
     /*
      * Convert atom for module to a string.
      */
-    ap = atom_tab(unsigned_val(context->module));
+    ap = atom_tab(atom_val(context->module));
     memcpy(module_name, ap->name, ap->len);
     module_name[ap->len] = '\0';
 
-    if (context->function) {
+    if (is_atom(context->function)) {
 	char function[256];
 
-	ap = atom_tab(unsigned_val(context->function));
+	ap = atom_tab(atom_val(context->function));
 	memcpy(function, ap->name, ap->len);
 	function[ap->len] = '\0';
 	sprintf(ep, "function %s:%s/%d", module_name, function, context->arity);
@@ -2793,7 +3087,7 @@ get_erlang_integer(LoaderState* stp, uint32 len_code, uint32* result)
     byte* bigbuf = default_buf;
     byte* s;
     int i;
-    Uint subtag = POSITIVE_BIG_SUBTAG;
+    int neg = 0;
     uint32 arity;
     uint32* hp;
     uint32 hindex;
@@ -2858,7 +3152,7 @@ get_erlang_integer(LoaderState* stp, uint32 len_code, uint32* result)
     if ((bigbuf[count-1] & 0x80) != 0) {
 	unsigned carry = 1;
 
-	subtag = NEGATIVE_BIG_SUBTAG;
+	neg = 1;
 	for (i = 0; i < count; i++) {
 	    bigbuf[i] = ~bigbuf[i] + carry;
 	    carry = (bigbuf[i] == 0 && carry == 1);
@@ -2887,11 +3181,15 @@ get_erlang_integer(LoaderState* stp, uint32 len_code, uint32* result)
     arity = count/4;
     hindex = TempAlloc(stp, arity+1);
     hp = stp->temp_heap + hindex;
-    *hp++ = make_thing(arity, subtag);
+    *hp++ = neg ? make_neg_bignum_header(arity) : make_pos_bignum_header(arity);
     for (i = 0; i < arity; i++) {
 	((unsigned short *)hp)[0] = bigbuf[4*i+0] | (bigbuf[4*i+1] << 8);
 	((unsigned short *)hp)[1] = bigbuf[4*i+2] | (bigbuf[4*i+3] << 8);
 	hp++;
+    }
+
+    if (bigbuf != default_buf) {
+	sys_free(bigbuf);
     }
 
     *result = hindex;
@@ -2991,18 +3289,18 @@ functions_in_module(Process* p, /* Process whose heap to use. */
     Eterm result = NIL;
 
     if (is_not_atom(mod)) {
-	return 0;
+	return THE_NON_VALUE;
     }
 
     modp = erts_get_module(mod);
     if (modp == NULL) {
-	return 0;
+	return THE_NON_VALUE;
     }
     code = modp->code;
     for (i = code[MI_NUM_FUNCTIONS]-1; i >= 0 ; i--) {
 	Eterm* func_info = (uint32 *) code[MI_FUNCTIONS+i];
-	Eterm name = func_info[2];
-	int arity = func_info[3];
+	Eterm name = func_info[3];
+	int arity = func_info[4];
 	Eterm tuple;
 
 	ASSERT(is_atom(name));
@@ -3039,17 +3337,17 @@ exported_from_module(Process* p, /* Process whose heap to use. */
     Eterm result = NIL;
 
     if (is_not_atom(mod)) {
-	return 0;
+	return THE_NON_VALUE;
     }
     modp = erts_get_module(mod);
     if (modp == NULL) {
-	return 0;
+	return THE_NON_VALUE;
     }
     code = modp->code;
     for (i = code[MI_NUM_FUNCTIONS]-1; i >= 0 ; i--) {
 	Eterm* func_info = (uint32 *) code[MI_FUNCTIONS+i];
-	Eterm name = func_info[2];
-	int arity = func_info[3];
+	Eterm name = func_info[3];
+	int arity = func_info[4];
 	Eterm tuple;
 
 	if (erts_find_function(mod, name, arity) != NULL) {
@@ -3090,12 +3388,12 @@ attributes_for_module(Process* p, /* Process whose heap to use. */
 #endif
 
     if (is_not_atom(mod) || (is_not_list(result) && is_not_nil(result))) {
-	return 0;
+	return THE_NON_VALUE;
     }
 
     modp = erts_get_module(mod);
     if (modp == NULL) {
-	return 0;
+	return THE_NON_VALUE;
     }
     code = modp->code;
     ext = (byte *) code[MI_ATTR_PTR];
@@ -3104,7 +3402,8 @@ attributes_for_module(Process* p, /* Process whose heap to use. */
 #ifdef DEBUG
 	end = hp + code[MI_ATTR_SIZE_ON_HEAP];
 #endif
-	if ((result = from_external(-1, &hp, &ext, &p->off_heap)) != 0) {
+	result = from_external(-1, &hp, &ext, &p->off_heap);
+	if (is_value(result)) {
 	    ASSERT(hp <= end);
 	}
     }
@@ -3132,12 +3431,12 @@ compilation_info_for_module(Process* p, /* Process whose heap to use. */
 #endif
 
     if (is_not_atom(mod) || (is_not_list(result) && is_not_nil(result))) {
-	return 0;
+	return THE_NON_VALUE;
     }
 
     modp = erts_get_module(mod);
     if (modp == NULL) {
-	return 0;
+	return THE_NON_VALUE;
     }
     code = modp->code;
     ext = (byte *) code[MI_COMPILE_PTR];
@@ -3146,7 +3445,8 @@ compilation_info_for_module(Process* p, /* Process whose heap to use. */
 #ifdef DEBUG
 	end = hp + code[MI_COMPILE_SIZE_ON_HEAP];
 #endif
-	if ((result = from_external(-1, &hp, &ext, &p->off_heap)) != 0) {
+	result = from_external(-1, &hp, &ext, &p->off_heap);
+	if (is_value(result)) {
 	    ASSERT(hp <= end);
 	}
     }
@@ -3180,7 +3480,7 @@ find_function_from_pc(Eterm* pc)
 		if (pc < mid1[0]) {
 		    high1 = mid1;
 		} else if (pc < mid1[1]) {
-		    return mid1[0]+1;
+		    return mid1[0]+2;
 		} else {
 		    low1 = mid1 + 1;
 		}

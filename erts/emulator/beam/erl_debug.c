@@ -25,6 +25,7 @@
 #include "erl_process.h"
 #include "big.h"
 #include "bif.h"
+#include "beam_catches.h"
 
 #define WITHIN(ptr, x, y) ((x) <= (ptr) && (ptr) < (y))
 
@@ -72,20 +73,24 @@ pdisplay1(Process* p, uint32 obj, CIO fd)
     if (dcount-- <= 0)
 	return(1);
 
+    if (is_CP(obj)) {
+	erl_printf(fd, "<cp/header:%08X", obj);
+	return 0;
+    }
+
     switch (tag_val_def(obj)) {
+    case NIL_DEF:
+	erl_printf(fd, "[]");
+	break;
     case ATOM_DEF:
-        if(is_nil(obj)) {
-            erl_printf(fd, "[]");
-            break;
-        }
-	print_atom((int)unsigned_val(obj), fd);
+	print_atom((int)atom_val(obj), fd);
 	break;
     case SMALL_DEF:
 	erl_printf(fd, "%d", signed_val(obj));
 	break;
 
     case BIG_DEF:
-	nobj = ptr_val(obj);
+	nobj = big_val(obj);
 	if (!IN_HEAP(p, nobj)) {
 	    erl_printf(fd, "#<bad big %X>#", obj);
 	    return 1;
@@ -101,25 +106,25 @@ pdisplay1(Process* p, uint32 obj, CIO fd)
 	    erl_printf(fd, ",%d", BIG_DIGIT(nobj, k));
 	erl_putc('}', fd);
 	break;
-    case REFER_DEF:
+    case REF_DEF:
 	erl_printf(fd, "<<%d",
-		   get_node_reference(obj));
-	for (i = refer_arity(obj)-2; i >= 0; i--)
+		   ref_node(obj));
+	for (i = ref_arity(obj)-2; i >= 0; i--)
 	    erl_printf(fd, ",%lu",
 		       ref_ptr(obj)->w[i]);
 	erl_printf(fd, ">>");
 	break;
     case PID_DEF:
 	erl_printf(fd, "<%d.%d.%d>",
-		get_node(obj),get_number(obj),get_serial(obj));
+		   pid_node(obj), pid_number(obj), pid_serial(obj));
 	break;
     case PORT_DEF:
-	erl_printf(fd, "<%d,%d>", get_node_port(obj),
-		get_number_port(obj));
+	erl_printf(fd, "<%d,%d>", port_node(obj),
+		   port_number(obj));
 	break;
     case LIST_DEF:
 	erl_putc('[', fd);
-	nobj = ptr_val(obj);
+	nobj = list_val(obj);
 	while (1) {
 	    if (!IN_HEAP(p, nobj)) {
 		erl_printf(fd, "#<bad list %X>", obj);
@@ -130,7 +135,7 @@ pdisplay1(Process* p, uint32 obj, CIO fd)
 	    if (is_not_list(*nobj))
 		break;
 	    erl_putc(',', fd);
-	    nobj = ptr_val(*nobj);
+	    nobj = list_val(*nobj);
 	}
 	if (is_not_nil(*nobj)) {
 	    erl_putc('|', fd);
@@ -140,7 +145,7 @@ pdisplay1(Process* p, uint32 obj, CIO fd)
 	erl_putc(']', fd);
 	break;
     case TUPLE_DEF:
-	nobj = ptr_val(obj);	/* pointer to arity */
+	nobj = tuple_val(obj);	/* pointer to arity */
 	i = arityval(*nobj);	/* arity */
 	erl_putc('{', fd);
 	while (i--) {
@@ -158,17 +163,6 @@ pdisplay1(Process* p, uint32 obj, CIO fd)
     case BINARY_DEF:
 	erl_printf(fd, "#Bin");
 	break;
-    case CP0:
-#ifndef NOT_ALIGNED
-    case CP4:
-    case CP8:
-    case CP12:
-#endif
-        erl_printf(fd, "cp %d", obj);
-        break;  
-    case BLANK:
-        erl_printf(fd, "blank");
-        break;  
     default:
 	erl_printf(fd, "unknown object %x", obj);
     }
@@ -188,7 +182,7 @@ Process* p; uint32* stop;
     while(sp >= stop) {
 	erl_printf(COUT,"%08lx: ", (uint32) sp);
 	if (is_catch(*sp)) {
-	    erl_printf(COUT, "catch %d", ptr_val(*sp));
+	    erl_printf(COUT, "catch %d", (Uint)catch_pc(*sp));
 	} else {
 	    paranoid_display(p, *sp, COUT);
 	}

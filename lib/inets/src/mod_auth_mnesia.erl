@@ -26,8 +26,14 @@
 	 delete_group_member/3,
 	 delete_group/2]).
 
--export([store_user/5, store_group_member/5, list_group_members/3, list_groups/2,
-	 list_users/2, remove_user/4, remove_group_member/5, remove_group/4]).
+-export([store_user/5, store_user/6, 
+	 store_group_member/5, store_group_member/6, 
+	 list_group_members/3, list_group_members/4, 
+	 list_groups/2, list_groups/3,
+	 list_users/2, list_users/3, 
+	 remove_user/4, remove_user/5, 
+	 remove_group_member/5, remove_group_member/6, 
+	 remove_group/4, remove_group/5]).
 
 -export([store_directory_data/2]).
 
@@ -56,32 +62,67 @@ store_user(UserName, Password, Port, Dir, AccessPassword) ->
 			 password = Password},
    add_user(DirData, UStruct).
 
+store_user(UserName, Password, Addr, Port, Dir, AccessPassword) ->
+   %% AccessPassword is ignored - was not used in previous version
+   DirData = [{path,Dir},{bind_address,Addr},{port,Port}],
+   UStruct = #httpd_user{username = UserName,
+			 password = Password},
+   add_user(DirData, UStruct).
+
 store_group_member(GroupName, UserName, Port, Dir, AccessPassword) ->
    DirData = [{path,Dir},{port,Port}],
+   add_group_member(DirData, GroupName, UserName).
+
+store_group_member(GroupName, UserName, Addr, Port, Dir, AccessPassword) ->
+   DirData = [{path,Dir},{bind_address,Addr},{port,Port}],
    add_group_member(DirData, GroupName, UserName).
 
 list_group_members(GroupName, Port, Dir) ->
    DirData = [{path,Dir},{port,Port}],
    list_group_members(DirData, GroupName).
 
+list_group_members(GroupName, Addr, Port, Dir) ->
+   DirData = [{path,Dir},{bind_address,Addr},{port,Port}],
+   list_group_members(DirData, GroupName).
+
 list_groups(Port, Dir) ->
    DirData = [{path,Dir},{port,Port}],
+   list_groups(DirData).
+
+list_groups(Addr, Port, Dir) ->
+   DirData = [{path,Dir},{bind_address,Addr},{port,Port}],
    list_groups(DirData).
 
 list_users(Port, Dir) ->
    DirData = [{path,Dir},{port,Port}],
    list_users(DirData).
     
+list_users(Addr, Port, Dir) ->
+   DirData = [{path,Dir},{bind_address,Addr},{port,Port}],
+   list_users(DirData).
+    
 remove_user(UserName, Port, Dir, _AccessPassword) ->
    DirData = [{path,Dir},{port,Port}],
+   delete_user(DirData, UserName).
+
+remove_user(UserName, Addr, Port, Dir, _AccessPassword) ->
+   DirData = [{path,Dir},{bind_address,Addr},{port,Port}],
    delete_user(DirData, UserName).
 
 remove_group_member(GroupName,UserName,Port,Dir,_AccessPassword) ->
    DirData = [{path,Dir},{port,Port}],
    delete_group_member(DirData, GroupName, UserName).
 
+remove_group_member(GroupName,UserName,Addr,Port,Dir,_AccessPassword) ->
+   DirData = [{path,Dir},{bind_address,Addr},{port,Port}],
+   delete_group_member(DirData, GroupName, UserName).
+
 remove_group(GroupName,Port,Dir,_AccessPassword) ->
    DirData = [{path,Dir},{port,Port}],
+   delete_group(DirData, GroupName).
+
+remove_group(GroupName,Addr,Port,Dir,_AccessPassword) ->
+   DirData = [{path,Dir},{bind_address,Addr},{port,Port}],
    delete_group(DirData, GroupName).
 
 %%
@@ -90,11 +131,11 @@ remove_group(GroupName,Port,Dir,_AccessPassword) ->
 %%
 
 add_user(DirData, UStruct) ->
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     UserName = UStruct#httpd_user.username,
     Password = UStruct#httpd_user.password,
     Data     = UStruct#httpd_user.user_data,
-    User=#httpd_user{username={UserName,Port,Dir},
+    User=#httpd_user{username={UserName,Addr,Port,Dir},
 		     password=Password,
 		     user_data=Data},
     case mnesia:transaction(fun() -> mnesia:write(User) end) of
@@ -105,9 +146,10 @@ add_user(DirData, UStruct) ->
     end.
 
 get_user(DirData, UserName) ->
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     case mnesia:transaction(fun() ->
-				    mnesia:read({httpd_user, {UserName,Port,Dir}})
+				    mnesia:read({httpd_user, 
+						 {UserName,Addr,Port,Dir}})
 			    end) of
 	{aborted,Reason} ->
 	    {error, Reason};
@@ -120,24 +162,27 @@ get_user(DirData, UserName) ->
     end.
 
 list_users(DirData) ->
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     case mnesia:transaction(fun() ->
-				    mnesia:match_object({httpd_user,{'_',Port,Dir},'_','_'})
+				    mnesia:match_object({httpd_user,
+							 {'_',Addr,Port,Dir},'_','_'})
 			    end) of
 	{aborted,Reason} ->
 	    {error,Reason};
 	{atomic,Users} ->
 	    {ok, 
-	     lists:foldr(fun({httpd_user, {UserName, AnyPort, AnyDir}, Password, Data}, Acc) ->
+	     lists:foldr(fun({httpd_user, {UserName, AnyAddr, AnyPort, AnyDir}, 
+			      Password, Data}, Acc) ->
 				 [UserName|Acc]
 			 end,
 			 [], Users)}
     end.
 
 delete_user(DirData, UserName) ->
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     case mnesia:transaction(fun() ->
-				    mnesia:delete({httpd_user,{UserName,Port,Dir}})
+				    mnesia:delete({httpd_user,
+						   {UserName,Addr,Port,Dir}})
 			    end) of
 	{aborted,Reason} ->
 	    {error,Reason};
@@ -151,8 +196,8 @@ delete_user(DirData, UserName) ->
 %%
 
 add_group_member(DirData, GroupName, User) ->
-    {Port, Dir} = lookup_common(DirData),
-    Group=#httpd_group{name={GroupName, Port, Dir}, userlist=User},
+    {Addr, Port, Dir} = lookup_common(DirData),
+    Group=#httpd_group{name={GroupName, Addr, Port, Dir}, userlist=User},
     case mnesia:transaction(fun() -> mnesia:write(Group) end) of
 	{aborted,Reason} ->
 	    {error,Reason};
@@ -161,35 +206,37 @@ add_group_member(DirData, GroupName, User) ->
     end.
 
 list_group_members(DirData, GroupName) ->
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     case mnesia:transaction(fun() ->
-				    mnesia:read({httpd_group,{GroupName,Port,Dir}})
+				    mnesia:read({httpd_group,
+						 {GroupName,Addr,Port,Dir}})
 			    end) of
 	{aborted, Reason} ->
 	    {error,Reason};
 	{atomic, Members} ->
-	    {ok,[UserName || {httpd_group,{AnyGroupName,AnyPort,AnyDir},UserName} <- Members,
-			     AnyGroupName == GroupName,AnyPort == Port,
-			     AnyDir == Dir]}
+	    {ok,[UserName || {httpd_group,{AnyGroupName,AnyAddr,AnyPort,AnyDir},UserName} <- Members,
+			     AnyGroupName == GroupName, AnyAddr == Addr,
+			     AnyPort == Port, AnyDir == Dir]}
   end.
 
 list_groups(DirData) -> 
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     case mnesia:transaction(fun() ->
-				    mnesia:match_object({httpd_group,{'_',Port,Dir},'_'}) 
+				    mnesia:match_object({httpd_group,
+							 {'_',Addr,Port,Dir},'_'}) 
 			    end) of
 	{aborted, Reason} ->
 	    {error, Reason};
 	{atomic, Groups} ->
 	    GroupNames=
-		[GroupName || {httpd_group,{GroupName,AnyPort,AnyDir}, UserName} <- Groups,
-			      AnyPort == AnyPort, AnyDir == Dir],
+		[GroupName || {httpd_group,{GroupName,AnyAddr,AnyPort,AnyDir}, UserName} <- Groups,
+			      AnyAddr == Addr, AnyPort == AnyPort, AnyDir == Dir],
 	    {ok, httpd_util:uniq(lists:sort(GroupNames))}
     end.
 
 delete_group_member(DirData, GroupName, UserName) ->
-    {Port, Dir} = lookup_common(DirData),
-    Group = #httpd_group{name={GroupName, Port, Dir}, userlist=UserName},
+    {Addr, Port, Dir} = lookup_common(DirData),
+    Group = #httpd_group{name={GroupName, Addr, Port, Dir}, userlist=UserName},
     case mnesia:transaction(fun() -> mnesia:delete_object(Group) end) of
 	{aborted,Reason} ->
 	    {error,Reason};
@@ -202,9 +249,10 @@ delete_group_member(DirData, GroupName, UserName) ->
 %% do mnesia:delete on those. Or ?
 
 delete_group(DirData, GroupName) ->
-    {Port, Dir} = lookup_common(DirData),
+    {Addr, Port, Dir} = lookup_common(DirData),
     case mnesia:transaction(fun() ->
-				    mnesia:delete({httpd_group, {GroupName,Port,Dir}})
+				    mnesia:delete({httpd_group, 
+						   {GroupName,Addr,Port,Dir}})
 			    end) of
 	{aborted,Reason} ->
 	    {error,Reason};
@@ -217,7 +265,8 @@ delete_group(DirData, GroupName) ->
 lookup_common(DirData) ->
     Dir = httpd_util:key1search(DirData, path),
     Port = httpd_util:key1search(DirData, port),
-    {Port, Dir}.
+    Addr = httpd_util:key1search(DirData, bind_address),
+    {Addr, Port, Dir}.
 
 
 

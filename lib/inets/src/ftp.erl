@@ -58,7 +58,10 @@ open(Host) ->
 
 
 open(Host, Flags) ->
-  {ok, Pid} = gen_server:start_link(ftp, [Flags], []),
+  %% Dbg = {debug,[trace,log,statistics]},
+  %% Options = [Dbg],
+  Options = [],
+  {ok, Pid} = gen_server:start_link(ftp, [Flags], Options),
   gen_server:call(Pid, {open, ip_comm, Host}, infinity).
 
 
@@ -241,7 +244,15 @@ send_chunk_end(Pid) ->
 %% Args:     Pid = pid()
 %% Returns:  ok
 close(Pid) ->
-  gen_server:call(Pid, close, 30000).
+  case (catch gen_server:call(Pid, close, 30000)) of
+      ok -> 
+	  ok;
+      {'EXIT',{noproc,_}} ->
+	  %% Already gone...
+	  ok;
+      Res ->
+	  Res
+  end.
 
 %% formaterror(Tag) 
 %%
@@ -302,21 +313,41 @@ init([Flags]) ->
 %% HANDLERS
 %%
 
+%% First group of reply code digits
 -define(POS_PREL, 1).
 -define(POS_COMPL, 2).
 -define(POS_INTERM, 3).
 -define(TRANS_NEG_COMPL, 4).
 -define(PERM_NEG_COMPL, 5).
 
--define(STOP_RET,{stop, normal, {error, econn}, 
-		  State#state{csock = undefined}}).
+%% Second group of reply code digits
+-define(SYNTAX,0).
+-define(INFORMATION,1).
+-define(CONNECTION,2).
+-define(AUTH_ACC,3).
+-define(UNSPEC,4).
+-define(FILE_SYSTEM,5).
 
 
-rescode(?POS_PREL) -> pos_prel;
-rescode(?POS_COMPL) -> pos_compl;
-rescode(?POS_INTERM) -> pos_interm;
-rescode(?TRANS_NEG_COMPL) -> trans_neg_compl;
-rescode(?PERM_NEG_COMPL) -> perm_neg_compl.
+-define(STOP_RET(E),{stop, normal, {error, E}, 
+		     State#state{csock = undefined}}).
+
+
+rescode(?POS_PREL,_,_)                   -> pos_prel;
+rescode(?POS_COMPL,_,_)                  -> pos_compl;
+rescode(?POS_INTERM,_,_)                 -> pos_interm;
+rescode(?TRANS_NEG_COMPL,?FILE_SYSTEM,2) -> trans_no_space;
+rescode(?TRANS_NEG_COMPL,_,_)            -> trans_neg_compl;
+rescode(?PERM_NEG_COMPL,?FILE_SYSTEM,2)  -> perm_no_space;
+rescode(?PERM_NEG_COMPL,?FILE_SYSTEM,3)  -> perm_fname_not_allowed;
+rescode(?PERM_NEG_COMPL,_,_)             -> perm_neg_compl.
+
+retcode(trans_no_space,_)         -> etnospc;
+retcode(perm_no_space,_)          -> epnospc;
+retcode(perm_fname_not_allowed,_) -> efnamena;
+retcode(_,Otherwise)              -> Otherwise.
+
+
 
 handle_call({open,sockets,Host},From,State) ->
   OpenProcess=proc_lib:spawn_link(ftp,sock_connect,[Host,From,self()]),
@@ -343,7 +374,7 @@ handle_call({user, User, Pass}, _From, State) ->
 	  set_type(binary, CSock, Flags),
 	  {reply, ok, State#state{type = binary}};
 	{error,enotconn} ->
-	  ?STOP_RET;
+	  ?STOP_RET(econn);
 	_ ->
 	  {reply, {error, euser}, State}
       end;
@@ -351,7 +382,7 @@ handle_call({user, User, Pass}, _From, State) ->
       set_type(binary, CSock, Flags),
       {reply, ok, State#state{type = binary}};
     {error, enotconn} ->
-      ?STOP_RET;
+      ?STOP_RET(econn);
     _ ->
       {reply, {error, euser}, State}
   end;
@@ -368,7 +399,7 @@ handle_call(pwd, _From, State) when State#state.chunk == false ->
       Dir = lists:delete($", Dir0),
       {reply, {ok, Dir}, State};
     {error, enotconn} ->
-      ?STOP_RET
+      ?STOP_RET(econn)
   end;
 
 handle_call(lpwd, _From, State) ->
@@ -381,7 +412,7 @@ handle_call({cd, Dir}, _From, State) when State#state.chunk == false ->
     pos_compl ->
       {reply, ok, State};
     {error, enotconn} ->
-      ?STOP_RET;
+      ?STOP_RET(econn);
     _ ->
       {reply, {error, epath}, State}
   end;
@@ -389,7 +420,7 @@ handle_call({cd, Dir}, _From, State) when State#state.chunk == false ->
 handle_call({lcd, Dir}, _From, State) ->
   #state{csock = CSock, flags = Flags, ldir = LDir0} = State,
   LDir = absname(LDir0, Dir),
-  case file:file_info(LDir) of
+  case file:read_file_info(LDir) of
     {ok, _ } ->
       {reply, ok, State#state{ldir = LDir}};
     _  ->
@@ -424,7 +455,7 @@ handle_call({dir, Len, Dir}, _From, State) when State#state.chunk == false ->
       reset_type(ascii, Type, CSock, Flags),
       {reply, Reply0, State};
     {closed, _Why} ->
-      ?STOP_RET;
+      ?STOP_RET(econn);
     _ ->
       sock_close(LSock),
       {reply, {error, epath}, State}
@@ -442,7 +473,7 @@ handle_call({rename, CurrFile, NewFile}, _From, State) when State#state.chunk ==
 	  {reply, {error, epath}, State}
       end;
     {error, enotconn} ->
-      ?STOP_RET;
+      ?STOP_RET(econn);
     _ ->
       {reply, {error, epath}, State}
   end;
@@ -453,7 +484,7 @@ handle_call({delete, File}, _From, State) when State#state.chunk == false ->
     pos_compl ->
       {reply, ok, State};
     {error, enotconn} ->
-      ?STOP_RET;
+      ?STOP_RET(econn);
     _ ->
       {reply, {error, epath}, State}
   end;
@@ -464,7 +495,7 @@ handle_call({mkdir, Dir}, _From, State) when State#state.chunk == false ->
     pos_compl ->
       {reply, ok, State};
     {error, enotconn} ->
-      ?STOP_RET;
+      ?STOP_RET(econn);
     _ ->
       {reply, {error, epath}, State}
   end;
@@ -475,7 +506,7 @@ handle_call({rmdir, Dir}, _From, State) when State#state.chunk == false ->
     pos_compl ->
       {reply, ok, State};
     {error, enotconn} ->
-      ?STOP_RET;
+      ?STOP_RET(econn);
     _ ->
       {reply, {error, epath}, State}
   end;
@@ -517,7 +548,7 @@ handle_call({recv, RFile, LFile}, _From, State) when State#state.chunk == false 
 		sock_close(DSock),
 		{reply, Reply0, State};
 	      {error, enotconn} ->
-		?STOP_RET;
+		?STOP_RET(econn);
 	      _ ->
 		{reply, {error, epath}, State}
 	    end,
@@ -543,7 +574,7 @@ handle_call({recv_bin, RFile}, _From, State) when State#state.chunk == false ->
       sock_close(DSock),
       {reply, Reply0, State};
     {error, enotconn} ->
-      ?STOP_RET;
+      ?STOP_RET(econn);
     _ ->
       {reply, {error, epath}, State}
   end;
@@ -569,44 +600,57 @@ handle_call({send, LFile, RFile}, _From, State) when State#state.chunk == false 
 		  case {SFreply,result(CSock, Flags)} of
 		      {ok,pos_compl} ->
 			  {reply, ok, State};
-		      {ok,_} ->
+		      {ok,Other} ->
+			  debug(Flags,"     error: unknown reply: ~p~n",
+				[Other]),
 			  {reply, {error, epath}, State};
-		      {{error,Why},_} ->
-			  ?STOP_RET
+		      {{error,Why},Result} ->
+			  ?STOP_RET(retcode(Result,econn))
 		  end;
 	      {error, enotconn} ->
-		  ?STOP_RET;
-	      _ ->
+		  ?STOP_RET(econn);
+	      Other ->
+		  debug(Flags,"     error: ctrl failed: ~p~n",[Other]),
 		  {reply, {error, epath}, State}
 	  end;
-	{error, _} ->
+	{error, Reason} ->
+	    debug(Flags,"     error: file open: ~p~n",[Reason]),
 	    {reply, {error, epath}, State}
     end;
 
 handle_call({send_bin, Bin, RFile}, _From, State) when State#state.chunk == false ->
-  #state{csock = CSock, flags = Flags, ldir = LDir} = State,
-  LSock = listen_data(CSock, binary, Flags),
-  case ctrl_cmd(CSock, "STOR ~s", [RFile], Flags) of
-    pos_prel ->
-      DSock = accept_data(LSock),
-      Reply = case sock_write(DSock, Bin) of
-		ok ->
-		  sock_close(DSock),
-		  case result(CSock, Flags) of
-		    pos_compl ->
-		      ok;
-		    _ ->
-		      {error, epath}
-		  end;
-		{error, enotconn} ->
-		  {error, econn}
-	      end,
-      {reply, Reply, State};
-    {error, enotconn} ->
-      ?STOP_RET;
-    _ ->
-      {reply, {error, epath}, State}
-  end;
+    #state{csock = CSock, flags = Flags, ldir = LDir} = State,
+    LSock = listen_data(CSock, binary, Flags),
+    case ctrl_cmd(CSock, "STOR ~s", [RFile], Flags) of
+	pos_prel ->
+	    DSock  = accept_data(LSock),
+	    SReply = sock_write(DSock, Bin),
+	    sock_close(DSock),
+	    case {SReply,result(CSock,Flags)} of
+		{ok,pos_compl} ->
+		    {reply, ok, State};
+		{ok,trans_no_space} ->
+		    ?STOP_RET(etnospc);
+		{ok,perm_no_space} ->
+		    ?STOP_RET(epnospc);
+		{ok,perm_fname_not_allowed} ->
+		    ?STOP_RET(efnamena);
+		{ok,Other} ->
+		    debug(Flags,"     error: unknown reply: ~p~n",[Other]),
+		    {reply, {error, epath}, State};
+		{{error,Why},Result} ->
+		    ?STOP_RET(retcode(Result,econn))
+	    %% {{error,_Why},_Result} ->
+	    %%    ?STOP_RET(econn)
+	    end;
+
+	{error, enotconn} ->
+	    ?STOP_RET(econn);
+
+	Other ->
+	    debug(Flags,"     error: ctrl failed: ~p~n",[Other]),
+	    {reply, {error, epath}, State}
+    end;
 
 handle_call({send_chunk_start, RFile}, _From, State) when State#state.chunk == false ->
   #state{csock = CSock, flags = Flags, ldir = LDir} = State,
@@ -616,35 +660,71 @@ handle_call({send_chunk_start, RFile}, _From, State) when State#state.chunk == f
       DSock = accept_data(LSock),
       {reply, ok, State#state{dsock = DSock, chunk = true}};
     {error, enotconn} ->
-      ?STOP_RET;
-    _ ->
+      ?STOP_RET(econn);
+    Otherwise ->
+      debug(Flags,"     error: ctrl failed: ~p~n",[Otherwise]),
       {reply, {error, epath}, State}
   end;
 
 handle_call({send_chunk, Bin}, _From, State) when State#state.chunk == true ->
-  #state{dsock = DSock} = State,
-  case sock_write(DSock, Bin) of
-    ok ->
-      {reply, ok, State};
-    {error, enotconn} ->
-      {reply, {error, econn}, State#state{dsock = undefined}}
+  #state{dsock = DSock, csock = CSock, flags = Flags} = State,
+  case DSock of
+    undefined ->
+      {reply,{error,econn},State};
+    _ ->
+      case sock_write(DSock, Bin) of
+	ok ->
+	  {reply, ok, State};
+	Other ->
+	  debug(Flags,"     error: chunk write error: ~p~n",[Other]),
+	  {reply, {error, econn}, State#state{dsock = undefined}}
+      end
   end;
 
 handle_call(send_chunk_end, _From, State) when State#state.chunk == true ->
-  #state{csock = CSock, dsock = DSock, flags = Flags} = State,
-  case DSock of
-    undefined ->
-      {reply, {error, econn}, State#state{chunk = false}};
-    _ ->
-      sock_close(DSock),
-      Reply = case result(CSock, Flags) of
+    #state{csock = CSock, dsock = DSock, flags = Flags} = State,
+    case DSock of
+	undefined ->
+	    Result = result(CSock, Flags),
+	    case Result of
 		pos_compl ->
-		  ok;
-		_ ->
-		  {error, epath}
-	      end,
-      {reply, Reply, State#state{dsock = undefined, chunk = false}}
-  end;
+		    {reply,ok,State#state{dsock = undefined, 
+					  chunk = false}};
+		trans_no_space ->
+		    ?STOP_RET(etnospc);
+		perm_no_space ->
+		    ?STOP_RET(epnospc);
+		perm_fname_not_allowed ->
+		    ?STOP_RET(efnamena);
+		Result ->
+		    debug(Flags,"     error: send chunk end (1): ~p~n",
+			  [Result]),
+		    {reply,{error,epath},State#state{dsock = undefined, 
+						     chunk = false}}
+	    end;
+	_ ->
+	    sock_close(DSock),
+	    Result = result(CSock, Flags),
+	    case Result of
+		pos_compl ->
+		    {reply,ok,State#state{dsock = undefined, 
+					  chunk = false}};
+		trans_no_space ->
+		    sock_close(CSock),
+		    ?STOP_RET(etnospc);
+		perm_no_space ->
+		    sock_close(CSock),
+		    ?STOP_RET(epnospc);
+		perm_fname_not_allowed ->
+		    sock_close(CSock),
+		    ?STOP_RET(efnamena);
+		Result ->
+		    debug(Flags,"     error: send chunk end (2): ~p~n",
+			  [Result]),
+		    {reply,{error,epath},State#state{dsock = undefined, 
+						     chunk = false}}
+	    end
+    end;
 
 handle_call(close, _From, State) when State#state.chunk == false ->
   #state{csock = CSock, flags = Flags} = State,
@@ -667,7 +747,7 @@ handle_info({Sock, {socket_closed, _Reason}}, State) when Sock == State#state.ds
   {noreply, State#state{dsock = undefined}};
 %% Control connection closed.
 handle_info({Sock, {socket_closed, _Reason}}, State) when Sock == State#state.csock ->
-  show_getline(leftovers(), State#state.flags),
+  debug(State#state.flags,"   sc : ~s~n",[leftovers()]),
   {stop, ftp_server_close, State#state{csock = undefined}};
 
 %% Only used for sockets communication (not ip_comm)
@@ -717,12 +797,7 @@ ctrl_cmd(CSock, Fmt, Args, Flags) ->
   Cmd = mk_cmd(Fmt, Args),
   case sock_write(CSock, Cmd) of
     ok ->
-      case lists:member(debug, Flags) of
-	true ->
-	  io:format(lists:flatten(["   command: ", Cmd]));
-	_ ->
-	  ok
-      end,
+      debug(Flags,"   command: ~s",[Cmd]),
       result(CSock, Flags);
     {error, enotconn} ->
       {error, enotconn};
@@ -939,14 +1014,11 @@ result(Sock, Flags, RetForm) ->
 		_ ->
 		    ok
 	    end,
-	    Res = D1 - $0,
-	    case Flags of
-		[] ->
-		    ok;
-		_ ->
-		    io:format("    ~w : ~s", [Res, Line])
-	    end,
-	    ResCode = rescode(Res),
+	    Res1 = D1 - $0,
+	    Res2 = D2 - $0,
+	    Res3 = D3 - $0,
+	    verbose(Flags,"    ~w : ~s", [Res1, Line]),
+	    ResCode = rescode(Res1,Res2,Res3),
 	    case RetForm of
 		true ->
 		    {ResCode, Line};
@@ -956,9 +1028,9 @@ result(Sock, Flags, RetForm) ->
 	_ ->
 	    case RetForm of
 		true ->
-		    {rescode(?PERM_NEG_COMPL), []};
+		    {rescode(?PERM_NEG_COMPL,-1,-1), []};
 		_ ->
-		    rescode(?PERM_NEG_COMPL)
+		    rescode(?PERM_NEG_COMPL,-1,-1)
 	    end
     end.
 
@@ -983,7 +1055,8 @@ getline1(Sock, {[], Rest}, Flags, ?OPER_TIMEOUT) ->
 getline1(Sock, {[], Rest}, Flags, Retry) ->
     case sock_read(Sock) of
 	{ok, More} ->
-	    show_getline(More, Flags),
+	    debug(Flags,"   gl : ~s~n",[More]),
+	    %% debug(Flags,"gl:     ~s~n",[More]),
 	    getline(Sock, Rest ++ More, Flags);
 	{error, timeout} ->
 	    %% Retry..
@@ -995,11 +1068,6 @@ getline1(Sock, {[], Rest}, Flags, Retry) ->
 getline1(Sock, {Line, Rest}, Flags, Retry) ->
     put(leftovers, Rest),
     Line.
-
-show_getline(More, [debug]) ->
-  io:format("~s~n", [More]);
-show_getline(_, _) ->
-  ok.
 
 parse_to_end(Sock, Prefix, Flags) ->
   Line = getline(Sock, Flags),
@@ -1104,6 +1172,8 @@ sock_accept(LSock) ->
   {ok, Sock} = gen_tcp:accept(LSock),
   Sock.
 
+sock_close(undefined) ->
+  ok;
 sock_close(Sock) ->
   gen_tcp:close(Sock).
 
@@ -1156,5 +1226,45 @@ errstr(epath) ->  "No such file or directory, already exists, "
 "or permission denied.";
 errstr(etype) ->  "No such type.";
 errstr(euser) ->  "User name or password not valid.";
+errstr(etnospc) -> "Insufficient storage space in system.";
+errstr(epnospc) -> "Exceeded storage allocation "
+"(for current directory or dataset).";
+errstr(efnamena) -> "File name not allowed.";
 errstr(Reason) -> 
   lists:flatten(io_lib:format("Unknown error: ~w", [Reason])).
+
+
+%% verbose -> ok
+%%
+%% Prints the string if the Flags list is non-epmty
+%%
+%% Params: Flags  Flags, possibly including the debug flag
+%%         FStr   Format string
+%%         Args   Arguments to the format string
+%% 
+verbose([],FStr,Args) ->
+    ok;
+verbose(_Flags,FStr,Args) ->
+    dprint(FStr,Args).
+
+    
+%% debug -> ok
+%%
+%% Prints the string if the Flags list contains the debug atom.
+%%
+%% Params: Flags  Flags, possibly including the debug flag
+%%         FStr   Format string
+%%         Args   Arguments to the format string
+%% 
+debug([],_FStr,_Args) ->
+    ok;
+debug(Flags,FStr,Args) ->
+    case lists:member(debug,Flags) of
+	true ->
+	    dprint(FStr,Args);
+	_ ->
+	    ok
+    end.
+
+dprint(FStr,Args) ->
+    io:format(FStr,Args).

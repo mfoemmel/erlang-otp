@@ -70,6 +70,20 @@ print(Tuple, Col, Ll, D) when tuple(Tuple) ->
 	      print_tail(tl(tuple_to_list(Tuple)), Col + 1, Ll, D - 1)],
 	     $}]
     end;
+print(Binary, Col, Ll, D) when binary(Binary) ->
+    io_lib:write(Binary, D);
+print(Vec, Col, Ll, D) when size(Vec) >= 0 ->
+    Len = write_length(Vec, D, 0, Ll - Col),
+    if
+	D == 1 -> "#Vector<...>";
+	Len + Col < Ll ->
+	    write(Vec, D);
+	true ->
+	    ["#Vector<",
+	     [print(vector:get(1, Vec), Col + 1, Ll, D - 1)|
+	      print_tail(tl(vector:to_list(Vec)), Col + 1, Ll, D - 1)],
+	     $>]
+    end;
 print(Term, Col, Ll, D) -> io_lib:write(Term, D).
 
 %% print_tag_tuple(Tuple, Column, LineLength, Depth) -> [Char]
@@ -134,6 +148,15 @@ write(T, D) when tuple(T) ->
 	     [write(element(1, T), D-1)|write_tail(tl(tuple_to_list(T)), D-1)],
 	     $}]
     end;
+write(Bin, D) when binary(Bin) -> io_lib:write(Bin, D);
+write(T, D) when size(T) >= 0 ->
+    if
+	D == 1 -> "#Vector<...>";
+	true ->
+	    ["#Vector<",
+	     [write(vector:get(1, T), D-1)|write_tail(tl(vector:to_list(T)), D-1)],
+	     $>]
+    end;
 write(Term, D) -> io_lib:write(Term, D).
 
 write_tail([], D) -> "";
@@ -162,6 +185,10 @@ write_length(Fun, D, Acc, Max) when function(Fun) ->
     Acc + length(io_lib:write(Fun));
 write_length(Tuple, D, Acc, Max) when tuple(Tuple) ->
     write_length_list(tuple_to_list(Tuple), D, Acc, Max);
+write_length(Bin, D, Acc, Max) when binary(Bin) ->
+    Acc + length(io_lib:write(Bin));
+write_length(Vec, D, Acc, Max) when size(Vec) >= 0 ->
+    write_length_list(vector:to_list(Vec), D, Acc, Max);
 write_length(Term, D, Acc, Max) ->
     Acc + length(io_lib:write(Term)).
 

@@ -293,10 +293,10 @@ get_network_copy(Tab, Cs) ->
     %% 
     %% There are two cases here:
     %% startup ->
-    %%   no need for sync, since mnesia_init is not started yet
+    %%   no need for sync, since mnesia_controller not started yet
     %% schema_trans ->
-    %%   already synced with mnesia_init since the dumper
-    %%   is syncronously started from mnesia_init
+    %%   already synced with mnesia_controller since the dumper
+    %%   is syncronously started from mnesia_controller
 create_table(Tab) ->
     {loaded, ok} = mnesia_loader:disc_load_table(Tab, dumper_create_table).
     
@@ -482,6 +482,16 @@ call(Msg) ->
 	    Res
     end.
 
+%% Rewrite when we don't want to be backward compatible anymore,
+%% after OTP-R6B we don't need to wrap the calls in rpc's.
+remote_call(Node, Func, Args) ->
+    case mnesia_monitor:needs_protocol_conversion(Node) of
+	true ->
+	    rpc:call(Node, ?MODULE, Func, Args);
+	false ->
+	    rpc:call(Node, ?MODULE, call, [{Func, Args, self()}])
+    end.
+
 multicall(Nodes, Msg) ->
     rpc:multicall(Nodes, ?MODULE, call, [Msg]).
 
@@ -565,6 +575,41 @@ handle_call(disc_load_intents, From, State) ->
     reply(From, {ok, node(), mnesia_lib:union(Tabs, ActiveTabs)}),
     noreply(State);
 
+handle_call({add_active_replica, [Tab, ToNode, RemoteS, AccessMode], From},
+	    Dummy, State) ->
+    Res = 
+	case lists:member(node(From), val({current, db_nodes})) and 
+	    State#state.schema_is_merged of
+	    true ->
+		add_active_replica(Tab, ToNode, RemoteS, AccessMode);
+	    false ->
+		ignore
+	end,
+    {reply, Res, State};
+
+handle_call({unannounce_add_table_copy, [Tab, Node], From}, Dummy, State) ->
+    Res = 
+	case lists:member(node(From), val({current, db_nodes})) and 
+	    State#state.schema_is_merged of
+	    true ->
+		unannounce_add_table_copy(Tab, Node);
+	    false ->
+		ignore
+	end,
+    {reply, Res, State};
+
+handle_call({update_where_to_write, [add, Tab, AddNode], From}, Dummy, State) ->
+    Res = 
+	case lists:member(node(From), val({current, db_nodes})) and 
+	    State#state.schema_is_merged of
+	    true ->
+		mnesia_lib:add({Tab, where_to_write}, AddNode);
+	    false ->
+		ignore
+	end,
+    {reply, Res, State};
+
+
 handle_call(Msg, From, State) when State#state.schema_is_merged == false ->
     %% Buffer early messages
     Msgs = State#state.early_msgs,
@@ -582,6 +627,18 @@ handle_call({net_load, Tab, Cs}, From, State) ->
 handle_call({late_disc_load, Tabs, Reason, RemoteLoaders}, From, State) ->
     State2 = late_disc_load(Tabs, Reason, RemoteLoaders, From, State),
     noreply(State2);
+
+handle_call({block_table, [Tab], From}, Dummy, State) ->
+    case lists:member(node(From), val({current, db_nodes})) of
+	true ->
+	    block_table(Tab);
+	false ->
+	    ignore
+    end,
+    {reply, ok, State};
+
+handle_call({check_w2r, Node, Tab}, From, State) ->
+    {reply, val({Tab, where_to_read}), State};
 
 handle_call(Msg, From, State) ->
     error("~p got unexpected call: ~p~n", [?SERVER_NAME, Msg]),
@@ -1039,24 +1096,36 @@ terminate(Reason, State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 code_change(OldVsn, State, Extra) ->
-    exit(not_supported).
+    {ok, State}.
 
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
 
 maybe_log_mnesia_down(N) ->
-    HalfLoadedTabs =
-	[T || T <- val({schema, local_tables}) -- [schema],
-	      inactive_copy_holders(T, N)],
-    if
-	HalfLoadedTabs == [] ->
+    %% We use mnesia_down when deciding which tables to load locally,
+    %% so if we are not running (i.e haven't decided which tables
+    %% to load locally), don't log mnesia_down yet.
+    case mnesia_lib:is_running() of
+	yes -> 
 	    verbose("Logging mnesia_down ~w~n", [N]),
-	    mnesia_recover:log_mnesia_down(N);
-	true ->
-	    %% Unfortunately we have not loaded some common
-	    %% tables yet, so we cannot rely on the nodedown
-	    ignore
+	    mnesia_recover:log_mnesia_down(N),
+	    ok;
+	_ ->	    	    
+	    Filter = fun(Tab) ->
+			     inactive_copy_holders(Tab, N)
+		     end,
+	    HalfLoadedTabs = lists:any(Filter, val({schema, local_tables}) -- [schema]),
+	    if 
+		HalfLoadedTabs == true ->
+		    verbose("Logging mnesia_down ~w~n", [N]),
+		    mnesia_recover:log_mnesia_down(N),
+		    ok;		
+		true ->
+		    %% Unfortunately we have not loaded some common
+		    %% tables yet, so we cannot rely on the nodedown
+		    log_later   %% BUGBUG handle this case!!!
+	    end
     end.
 
 inactive_copy_holders(Tab, Node) ->
@@ -1153,8 +1222,18 @@ update_whereabouts(Tab, Node, State) ->
 		    State
 	    end;
 	Storage == unknown ->
-	    %% No own copy, continue to read remotely
-	    add_active_replica(Tab, Node),
+	    %% No own copy, continue to read remotely	    
+	    add_active_replica(Tab, Node),	    
+	    NodeST = mnesia_lib:storage_type_at_node(Node, Tab),
+	    ReadST = mnesia_lib:storage_type_at_node(Read, Tab),
+	    if   %% Avoid reading from disc_only_copies
+		NodeST == disc_only_copies ->
+		    ignore;
+		ReadST == disc_only_copies ->
+		    mnesia_lib:set_remote_where_to_read(Tab);
+		true ->
+		    ignore
+	    end,
 	    user_sync_tab(Tab),
 	    State;
 	BeingCreated == true ->
@@ -1384,17 +1463,16 @@ i_have_tab(Tab) ->
     end,
     add_active_replica(Tab, node()).
 
-
 sync_and_block_table_whereabouts(Tab, ToNode, RemoteS, AccessMode) when Tab /= schema ->
     Current = val({current, db_nodes}),
     Ns = 
 	case lists:member(ToNode, Current) of
 	    true -> Current -- [ToNode];
 	    false -> Current
-	end,
-    rpc:call(ToNode, ?MODULE,  block_table, [Tab]),
-    rpc:multicall([ToNode | Ns], ?MODULE, add_active_replica, 
-		  [Tab, ToNode, RemoteS, AccessMode]),
+	end,   
+    remote_call(ToNode, block_table, [Tab]),
+    [remote_call(Node, add_active_replica, [Tab, ToNode, RemoteS, AccessMode]) ||
+	Node <- [ToNode | Ns]],
     ok.
 
 sync_del_table_copy_whereabouts(Tab, ToNode) when Tab /= schema ->
@@ -1405,7 +1483,7 @@ sync_del_table_copy_whereabouts(Tab, ToNode) when Tab /= schema ->
 	    false -> [ToNode | Current]
 	end,
     Args = [Tab, ToNode],
-    rpc:multicall(Ns, ?MODULE, unannounce_add_table_copy, Args),
+    [remote_call(Node, unannounce_add_table_copy, Args) || Node <- Ns],
     ok.
 
 get_info(Timeout) ->

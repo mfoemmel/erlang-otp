@@ -90,6 +90,12 @@ EXTERN_FUNCTION(int, real_printf, (const char *fmt, ...));
 #define printf real_printf
 #endif
 
+#if __GNUC__
+#define __noreturn __attribute__((noreturn))
+#else
+#define __noreturn
+#endif
+
 /*
 ** The uint32, sint32 etc datatypes are deprecated and will be removed in 
 ** favour of the following datatypes:
@@ -292,6 +298,14 @@ extern int erl_fp_exception;	/* defined in sys.c */
 #endif /* !__WIN32__ */
 #endif /* !VXWORKS */
 
+EXTERN_FUNCTION(int, check_async_ready, (_VOID_));
+
+#ifdef USE_THREADS
+
+EXTERN_FUNCTION(void, sys_async_ready, (int hndl));
+
+#endif
+
 /* Io constants to sys_printf and sys_putc */
 
 typedef enum {
@@ -397,8 +411,8 @@ EXTERN_FUNCTION(void, sys_free, (void*));
 
 /* Declare if not macros */
 #ifndef sys_alloc2
-EXTERN_FUNCTION(void*, sys_alloc2, (size_t));
-EXTERN_FUNCTION(void*, sys_realloc2, (void*,size_t));
+EXTERN_FUNCTION(void*, sys_alloc2, (unsigned int));
+EXTERN_FUNCTION(void*, sys_realloc2, (void*, unsigned int));
 EXTERN_FUNCTION(void, sys_free2, (void*));
 #endif /* !sys_alloc2 */
 #ifdef VXWORKS

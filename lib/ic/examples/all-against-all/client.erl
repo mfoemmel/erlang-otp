@@ -30,10 +30,9 @@
 -define(SERVER,{rmod_random_impl,
 		list_to_atom("babbis@"++hd(tl(string:tokens(atom_to_list(node()),"@"))))}).
 -define(CLIENTMOD,'rmod_random').
--define(TIMEOUT,5000).
 
 produce() ->
-    ?CLIENTMOD:produce(?SERVER,?TIMEOUT).
+    ?CLIENTMOD:produce(?SERVER).
 
 
 init(Seed1, Seed2, Seed3) ->

@@ -18,7 +18,7 @@
 %%% Purpose : A generic file dialog toolkit.
 
 -module(tool_genfd).
-%% First version by cesarini@erlang
+
 -compile(export_all).
 
 %% Trick: Store Dir without trailing "/" => then up (cd ..) becomes

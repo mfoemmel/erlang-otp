@@ -23,6 +23,7 @@
 %% This code used to reside in net.erl, but has now been moved to
 %% a searate module.
 
+-define(NAME, rex).
 
 -behaviour(gen_server).
 
@@ -45,6 +46,7 @@
 	 safe_multi_server_call/3,
 	 async_call/4,
 	 yield/1,
+	 nb_yield/2,
 	 nb_yield/1,
 	 parallel_eval/1, 
 	 pmap/3, pinfo/1, pinfo/2]).
@@ -54,15 +56,18 @@
 	 caller/4,
 	 do_cs_call/5]).
 
+%%-export([call_in_new_process1/4, multicall4/4]).
+
+%% gen_server exports
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,
 	 terminate/2]).
 
 %% Remote execution and broadcasting facility
 
-start() -> gen_server:start({local,rex},rpc,[],[]).
-start_link() -> gen_server:start_link({local,rex},rpc,[],[]).
+start() -> gen_server:start({local,?NAME},?MODULE,[],[]).
+start_link() -> gen_server:start_link({local,?NAME},?MODULE,[],[]).
 
-stop() -> stop(rex).
+stop() -> stop(?NAME).
 stop(Rpc) ->
     gen_server:call(Rpc, stop, infinity).
 
@@ -74,7 +79,7 @@ handle_call(In,{From,Tag},S) ->
     case In of
 	{call,Mod,Fun,Args,Gleader} ->
             %% in case some sucker rex'es something that hangs
-            Id = spawn(rpc,reply,[{From,Tag},Mod,Fun,Args, Gleader]),
+            Id = spawn(?MODULE,reply,[{From,Tag},Mod,Fun,Args, Gleader]),
 	    {noreply,S};
 	{block_call, M,F,A,Gl} ->
 	    MyGL = group_leader(),
@@ -90,7 +95,7 @@ handle_call(In,{From,Tag},S) ->
 handle_cast(In,S) ->
     case In of
 	{cast,Mod,Fun,Args,Gleader} ->
-            spawn(rpc,caller,[Gleader,Mod,Fun,Args]),
+            spawn(?MODULE,caller,[Gleader,Mod,Fun,Args]),
 	    {noreply,S};
 	_ ->
 	    {noreply,S}  % Ignore !
@@ -99,22 +104,22 @@ handle_cast(In,S) ->
 handle_info({From, {sbcast, Name, Msg}}, S) ->
     case catch Name ! Msg of  %% use catch to get the printout
 	{'EXIT', _} ->
-	    From ! {rex, node(), {nonexisting_name, Name}};
+	    From ! {?NAME, node(), {nonexisting_name, Name}};
 	_ -> 
-	    From ! {rex, node(), node()}
+	    From ! {?NAME, node(), node()}
     end,
     {noreply,S};
 handle_info({From, {send, Name, Msg}}, S) ->
     case catch Name ! {From, Msg} of %% use catch to get the printout
 	{'EXIT', _} ->
-	    From ! {rex, node(), {nonexisting_name, Name}};
+	    From ! {?NAME, node(), {nonexisting_name, Name}};
 	_ ->
 	    ok    %% It's up to Name to respond !!!!!
     end,
     {noreply,S};
 handle_info({From, {call,Mod,Fun,Args,Gleader}}, S) ->
     %% Special for hidden C node's, uugh ...
-    handle_call({call,Mod,Fun,Args,Gleader}, {From,rex}, S);
+    handle_call({call,Mod,Fun,Args,Gleader}, {From,?NAME}, S);
 
 handle_info(_, S) ->
     {noreply,S}.
@@ -156,7 +161,7 @@ call(N,M,F,A) when node() == N ->  %% Optimize local call
 	Other -> Other
     end;
 call(N,M,F,A) ->
-    rpc_check(catch gen_server:call({rex,N},
+    rpc_check(catch gen_server:call({?NAME,N},
 				    {call,M,F,A,group_leader()},
 				    infinity)).
 
@@ -166,7 +171,7 @@ block_call(N,M,F,A) when node() == N -> %% Optimize local call
 	Other -> Other
     end;
 block_call(N,M,F,A) ->
-    rpc_check(catch gen_server:call({rex,N},
+    rpc_check(catch gen_server:call({?NAME,N},
 				    {block_call,M,F,A,group_leader()},
 				    infinity)).
 
@@ -183,21 +188,52 @@ rpc_check(X) -> X.
 %% The entire call is packed into an atomic transaction which 
 %% either succeeds or fails, i.e never hangs (unless the server itself hangs)
 
-server_call(Node, Name, ReplyWrapper, Msg) ->
-    erlang:monitor_node(Node, true),
-    {Name, Node} ! {self(), Msg},
-    R = receive
-	    {nodedown, Node} -> {error, nodedown};
-	    {ReplyWrapper, Node, Reply} -> Reply
-	end,
-    erlang:monitor_node(Node, false),
-    R.
+server_call(Node, Name, ReplyWrapper, Msg) 
+  when atom(Node), atom(Name) ->
+    if node() == nonode@nohost, Node /= nonode@nohost ->
+	    {error, nodedown};
+       true ->
+	    case catch erlang:monitor(process, {Name, Node}) of
+		{'EXIT', _} ->
+		    %% R6 node
+		    erlang:monitor_node(Node, true),
+		    {Name, Node} ! {self(), Msg},
+		    R = receive
+			    {nodedown, Node} -> 
+				{error, nodedown};
+			    {ReplyWrapper, Node, Reply} -> 
+				receive
+				    {nodedown, Node} ->
+					Reply
+				after 0 ->
+					Reply
+				end
+			end,
+		    erlang:monitor_node(Node, false),
+		    R;
+		Ref ->
+		    {Name, Node} ! {self(), Msg},
+		    receive
+			{'DOWN', Ref, _, _, _} ->
+			    {error, nodedown};
+			{ReplyWrapper, Node, Reply} ->
+			    erlang:demonitor(Ref),
+			    receive
+				{'DOWN', Ref, _, _, _} ->
+				    Reply
+			    after 0 ->
+				    Reply
+			    end
+		    end
+	    end
+    end.
+				    
 
 cast(Node, Mod, Fun, Args) when Node == node() ->
     catch spawn(Mod, Fun, Args),
     true;
 cast(Node,Mod,Fun,Args) ->
-    gen_server:cast({rex,Node},{cast,Mod,Fun,Args,group_leader()}),
+    gen_server:cast({?NAME,Node},{cast,Mod,Fun,Args,group_leader()}),
     true.
 
 
@@ -219,30 +255,67 @@ abcast([], _,_) -> abcast.
 sbcast(Name, Mess) ->
     sbcast([node() | nodes()], Name, Mess).
 sbcast(Nodes, Name, Mess) ->
-    send_nodes(Nodes, rex, {sbcast, Name, Mess}),
-    rec_nodes(rex, Nodes).
+    Monitors = send_nodes(Nodes, ?NAME, {sbcast, Name, Mess}, []),
+    rec_nodes(?NAME, Monitors).
 
 eval_everywhere(Mod, Fun, Args) ->
     eval_everywhere([node() | nodes()] , Mod, Fun, Args).
 eval_everywhere(Nodes, Mod, Fun, Args) ->
-    gen_server:abcast(Nodes, rex,
+    gen_server:abcast(Nodes, ?NAME,
 		      {cast,Mod,Fun,Args,group_leader()}).
 
 
-send_nodes([Node|Tail], Name, Msg) ->
-    monitor_node(Node, true),
-    {Name, Node} ! {self(), Msg},
-    send_nodes(Tail, Name, Msg);
-send_nodes([], _, _) -> done.
+send_nodes([Node|Tail], Name, Msg, Monitors)
+  when atom(Node) ->
+    Monitor = start_monitor(Node, Name),
+    %% Handle non-existing names in rec_nodes.
+    catch {Name, Node} ! {self(), Msg},
+    send_nodes(Tail, Name, Msg, [Monitor | Monitors]);
+send_nodes([Node|Tail], Name, Msg, Monitors) ->
+    %% Skip non-atom Node
+    send_nodes(Tail, Name, Msg, Monitors);
+send_nodes([], _Name,  _Req, Monitors) -> 
+    Monitors.
+
+%% Starts a monitor, either the new way, or the old.
+%% Assumes that the arguments are atoms.
+start_monitor(Node, Name) ->
+    if node() == nonode@nohost, Node /= nonode@nohost ->
+	    Ref = make_ref(),
+	    self() ! {'DOWN', Ref, process, Name, noconnection},
+	    {Node, Ref};
+       true ->
+	    case catch erlang:monitor(process, {Name, Node}) of
+		{'EXIT', _} ->
+		    %% Remote node is R6
+		    monitor_node(Node, true),
+		    Node;
+		Ref when reference(Ref) ->
+		    {Node, Ref}
+	    end
+    end.
+
+%% Cancels a monitor started with Ref=erlang:monitor(_, _),
+%% i.e return value {Node, Ref} from start_monitor/2 above.
+unmonitor(Ref) when reference(Ref) ->
+    erlang:demonitor(Ref),
+    receive
+	{'DOWN', Ref, _, _, _} ->
+	    true
+    after 0 ->
+	    true
+    end.
 
 
 %% Call apply(M,F,A) on all nodes in parallel
 multicall(M,F,A) -> 
     multicall([node() | nodes()], M,F,A).
+
 multicall(Nodes,M,F,A) ->
-    {Rep,Bad} = gen_server:multi_call(Nodes, rex,
+    {Rep,Bad} = gen_server:multi_call(Nodes, ?NAME,
 				      {call, M,F,A, group_leader()}),
     {lists:map(fun({_,R}) -> R end, Rep), Bad}.
+
 
 %% Send Msg to Name on all nodes, and collect the answers.
 %% Return {Replies, Badnodes} where Badnodes is a list of the nodes
@@ -260,9 +333,10 @@ multicall(Nodes,M,F,A) ->
 multi_server_call(Name, Msg) ->
     multi_server_call([node() | nodes()], Name, Msg).
 
-multi_server_call(Nodes, Name, Msg) ->
-    send_nodes(Nodes, Name, Msg),
-    rec_nodes(Name, Nodes).
+multi_server_call(Nodes, Name, Msg) 
+  when list(Nodes), atom(Name) ->
+    Monitors = send_nodes(Nodes, Name, Msg, []),
+    rec_nodes(Name, Monitors).
 
 %% Returns {Replies, Badnodes} where Badnodes is a list of the nodes
 %% that either terminated during the call or that didn't have a server
@@ -271,9 +345,10 @@ multi_server_call(Nodes, Name, Msg) ->
 safe_multi_server_call(Name, Msg) ->
     safe_multi_server_call([node() | nodes()], Name, Msg).
 
-safe_multi_server_call(Nodes, Name, Msg) ->
-    send_nodes(Nodes, rex, {send, Name, Msg}),
-    rec_nodes(Name, Nodes).
+safe_multi_server_call(Nodes, Name, Msg)
+  when list(Nodes), atom(Name) ->
+    Monitors = send_nodes(Nodes, ?NAME, {send, Name, Msg}, []),
+    rec_nodes(Name, Monitors).
 
 
 rec_nodes(Name, Nodes) -> 
@@ -283,16 +358,28 @@ rec_nodes(Name, Nodes) ->
 rec_nodes(Name, [],  Badnodes, Replies) ->
     {Replies, Badnodes};
 
+rec_nodes(Name, [{N,R} | Tail], Badnodes, Replies) ->
+    receive
+	{'DOWN', R, _, _, _} ->
+	    rec_nodes(Name, Tail, [N|Badnodes], Replies);
+	{?NAME, N, {nonexisting_name, Name2}} ->  
+	    %% used by safe_multi_server_call(),sbcast()
+	    unmonitor(R),
+	    rec_nodes(Name, Tail, [N|Badnodes], Replies);
+	{Name, N, Reply} ->  %% Name is bound !!!
+	    unmonitor(R),
+	    rec_nodes(Name, Tail, Badnodes, [Reply|Replies])
+    end;
 rec_nodes(Name, [N|Tail], Badnodes, Replies) ->
     receive
 	{nodedown, N} ->
 	    monitor_node(N, false),
 	    rec_nodes(Name, Tail, [N|Badnodes], Replies);
-	{rex, N, {nonexisting_name, Name2}} ->  
+	{?NAME, N, {nonexisting_name, Name2}} ->  
 	    %% used by safe_multi_server_call(),sbcast()
 	    monitor_node(N, false),
 	    rec_nodes(Name, Tail, [N|Badnodes], Replies);
-	{Name, N, Reply} ->  %% Tag is bound !!!
+	{Name, N, Reply} ->  %% Name is bound !!!
 	    monitor_node(N, false),
 	    rec_nodes(Name, Tail, Badnodes, [Reply|Replies])
     end.
@@ -300,23 +387,29 @@ rec_nodes(Name, [N|Tail], Badnodes, Replies) ->
 %% Now for an asynchronous rpc.
 %%% Barbara Liskov like Call  Streams 
 %% An asyncronous version of rpc that  is faster for series of
-%% rpc's towards the same node. I.e it returns immideataly and 
+%% rpc's towards the same node. I.e it returns immediately and 
 %% it returns a Key that can be used in a subsequent yield(Key)
 
 async_call(Node,Mod,Fun,Args) ->
-    spawn(rpc,do_cs_call,[self(),Node,Mod,Fun,Args]).
+    spawn(?MODULE,do_cs_call,[self(),Node,Mod,Fun,Args]).
 
-yield(Key) ->
-    receive
-        {Key,{promise_reply,R}} ->
-            R
-    end.
+yield(Key) when pid(Key) ->
+    {value, R} = do_yield(Key, infinite),
+    R.
 
-nb_yield(Key) ->    %% Non blocking version
+nb_yield(Key, infinite) when pid(Key) ->
+    do_yield(Key, infinite);
+nb_yield(Key, Timeout) when pid(Key), integer(Timeout), Timeout >= 0 ->
+    do_yield(Key, Timeout).
+
+nb_yield(Key) when pid(Key) ->
+    do_yield(Key, 0).
+
+do_yield(Key, Timeout) ->
     receive
         {Key,{promise_reply,R}} ->
             {value,R}
-        after 0 ->
+        after Timeout ->
             timeout
     end.
 
@@ -339,7 +432,7 @@ map_nodes([],_,_) -> [];
 map_nodes(ArgL,[],Original) ->  
     map_nodes(ArgL,Original,Original); 
 map_nodes([{M,F,A}|Tail],[Node|MoreNodes], Original) ->
-    [rpc:async_call(Node,M,F,A) | 
+    [?MODULE:async_call(Node,M,F,A) | 
      map_nodes(Tail,MoreNodes,Original)].
 
 %% Parallel version of lists:map/3 with exactly the same 

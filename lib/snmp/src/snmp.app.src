@@ -46,6 +46,7 @@
 	     snmp_user_based_sm_mib,
 	     snmp_usm,
 	     snmp_vacm,
+	     snmp_verbosity,
 	     snmp_view_based_acm_mib
              ]},
   {registered, [snmp_agent_sup, 

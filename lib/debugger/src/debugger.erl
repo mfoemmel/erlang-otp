@@ -22,7 +22,6 @@
 -export([
 	 start/0,
 	 start_timeout/1,
-	 init/0,
 	 q/3,
 	 quick/3,
 	 a_start/3,
@@ -48,10 +47,6 @@ start() ->
 start_timeout(Timeout) ->
     dbg_ui_mon:start_timeout(Timeout).
 
-
-
-init() ->
-    dbg_ui_mon:init().
 
 
 attach_menus(A) ->

@@ -18,10 +18,13 @@
 -module(dbg).
 -export([p/1,p/2,c/3,c/4,i/0,i/1,stop/0,tracer/0,tracer/1,tracer/2,
 	 get_tracer/0, tp/2, tp/3, tp/4, ctp/1, ctp/2, ctp/3,
-	 ltp/0, wtp/1, rtp/1, dtp/0, dtp/1, n/1, cn/1, ln/0]).
+	 tpl/2, tpl/3, tpl/4, ctpl/1, ctpl/2, ctpl/3,
+	 ctpg/1, ctpg/2, ctpg/3,
+	 ltp/0, wtp/1, rtp/1, dtp/0, dtp/1, n/1, cn/1, ln/0, h/0, h/1]).
 %-export([ptp/0]).
 
--export([trace_port/2, trace_client/2, trace_client/3, stop_trace_client/1]).
+-export([trace_port/2, flush_trace_port/0, 
+	 trace_client/2, trace_client/3, stop_trace_client/1]).
 
 %% Local exports
 -export([init/2,do_relay/1,tracer_init/2,tracer_loop/2, start_tc_loop/2]).
@@ -63,25 +66,35 @@ ln() ->
 
 
 %%
-%% tp(Module, Pattern) | tp(Module,Function,Pattern) |
-%% tp(Module,Function,Arity,Pattern) | tp({M,F,A},Pattern) 
+%% tp/tpl(Module, Pattern) | tp/tpl(Module,Function,Pattern) |
+%% tp/tpl(Module,Function,Arity,Pattern) | tp/tpl({M,F,A},Pattern) 
 %% -> {ok, [{matched, N}]} | {ok, [{matched,N}, {saved, M}]} | {error, Reason}
 %% Set trace pattern for function or group of functions.
 %%
 tp(Module, Function, Pattern) ->
-  tp({Module, Function, '_'}, Pattern).
+    do_tp({Module, Function, '_'}, Pattern, []).
 tp(Module, Function, Arity, Pattern) ->
-  tp({Module, Function, Arity}, Pattern).
+    do_tp({Module, Function, Arity}, Pattern, []).
 tp(Module, Pattern) when atom(Module) ->
-    tp({Module, '_', '_'}, Pattern);
-tp({Module, Function, Arity} = X, Pattern) when integer(Pattern) ->
+    do_tp({Module, '_', '_'}, Pattern, []);
+tp({Module, Function, Arity} = X, Pattern) ->
+    do_tp(X,Pattern,[]).
+tpl(Module, Function, Pattern) ->
+    do_tp({Module, Function, '_'}, Pattern, [local]).
+tpl(Module, Function, Arity, Pattern) ->
+    do_tp({Module, Function, Arity}, Pattern, [local]).
+tpl(Module, Pattern) when atom(Module) ->
+    do_tp({Module, '_', '_'}, Pattern, [local]);
+tpl({Module, Function, Arity} = X, Pattern) ->
+    do_tp(X,Pattern,[local]).
+do_tp({Module, Function, Arity} = X, Pattern, Flags) when integer(Pattern) ->
     case ets:lookup(get_pattern_table(), Pattern) of
 	[{_,NPattern}] ->
-	    tp(X, NPattern);
+	    do_tp(X, binary_to_term(NPattern), Flags);
 	_ ->
 	    {error, unknown_pattern}
     end;
-tp({Module, Function, Arity} = X, Pattern) when list(Pattern) ->
+do_tp({Module, Function, Arity} = X, Pattern, Flags) when list(Pattern) ->
     RemoteNodes = req(get_nodes),
     case Module of
 	'_' -> 
@@ -93,7 +106,7 @@ tp({Module, Function, Arity} = X, Pattern) when list(Pattern) ->
 			  end,
 			  RemoteNodes)
     end,
-    case (catch erlang:trace_pattern(X, Pattern)) of
+    case (catch erlang:trace_pattern(X, Pattern, Flags)) of
 	{'EXIT', Reason} ->
 	    case lint_tp(Pattern) of
 		{ok,_} ->
@@ -108,18 +121,18 @@ tp({Module, Function, Arity} = X, Pattern) when list(Pattern) ->
 			   _ ->
 			       []
 		       end,
-	    {ok, [{matched, Matched} | remote_tp(RemoteNodes, X, Pattern)] 
+	    {ok, [{matched, Matched} | remote_tp(RemoteNodes, X, Pattern, Flags)] 
 	     ++ SaveInfo}
     end.
 
-remote_tp(RN, MFA, P) ->
+remote_tp(RN, MFA, P, Flags) ->
     lists:map(fun(Node) ->
 			  case (catch rpc:call(
 					Node,
 					erlang,
 					trace_pattern,
 					[MFA,
-					P])) of
+					P, Flags])) of
 			      N when integer(N) ->
 				  {matched, Node, N};
 			      Else ->
@@ -129,25 +142,46 @@ remote_tp(RN, MFA, P) ->
 	      RN).
 
 %%
-%% ctp(Module) | ctp(Module,Function) | ctp(Module,Function,Arity) |
-%% ctp({M,F,A}) ->
+%% ctp/ctpl(Module) | ctp/ctpl(Module,Function) | ctp/ctpl(Module,Function,Arity) |
+%% ctp/ctpl({M,F,A}) ->
 %% {ok, [{matched, N}]} | {error, Reason}
 %% Clears trace pattern for function or group of functions.
 %%
 ctp(Module, Function) ->
-    ctp({Module, Function, '_'}).
+    do_ctp({Module, Function, '_'}, []).
 ctp(Module, Function, Arity) ->
-    ctp({Module, Function, Arity}).
+    do_ctp({Module, Function, Arity}, []).
 ctp(Module) when atom(Module) ->
-    ctp({Module, '_', '_'});
-ctp({Module, Function, Arity}) ->
-    case (catch erlang:trace_pattern({Module, Function, Arity}, false)) of
+    do_ctp({Module, '_', '_'}, []);
+ctp({Module, Function, Arity} = X) ->
+    do_ctp(X,[]).
+ctpl(Module, Function) ->
+    do_ctp({Module, Function, '_'}, [local]).
+ctpl(Module, Function, Arity) ->
+    do_ctp({Module, Function, Arity}, [local]).
+ctpl(Module) when atom(Module) ->
+    do_ctp({Module, '_', '_'}, [local]);
+ctpl({Module, Function, Arity} = X) ->
+    do_ctp(X,[local]).
+ctpg(Module, Function) ->
+    do_ctp({Module, Function, '_'}, [global]).
+ctpg(Module, Function, Arity) ->
+    do_ctp({Module, Function, Arity}, [global]).
+ctpg(Module) when atom(Module) ->
+    do_ctp({Module, '_', '_'}, [global]);
+ctpg({Module, Function, Arity} = X) ->
+    do_ctp(X,[global]).
+do_ctp({Module, Function, Arity},[]) ->
+    do_ctp({Module, Function, Arity},[global]),
+    do_ctp({Module, Function, Arity},[local]);
+do_ctp({Module, Function, Arity},Flags) ->
+    case (catch erlang:trace_pattern({Module, Function, Arity}, false, Flags)) of
 	{'EXIT',_} ->
 	    {error, badarg};
 	Else ->
 	    {ok, [{matched, Else} | remote_tp(req(get_nodes),
 					      {Module, Function, Arity},
-					      false)]}
+					      false, Flags)]}
     end.
 
 %%
@@ -155,7 +189,9 @@ ctp({Module, Function, Arity}) ->
 %% List saved trace patterns.
 %%
 ltp() ->
-    pt_doforall(fun({X, El},_Ignore) -> io:format("~p: ~p~n", [X,El]) end,[]).
+    pt_doforall(fun({X, El},_Ignore) -> 
+			io:format("~p: ~p~n", [X,El]) 
+		end,[]).
 
 %%
 %% dtp() | dtp(N) -> ok
@@ -226,6 +262,19 @@ tracer(port, Port) when port(Port) ->
 tracer(process, {Handler,HandlerData}) ->
     start(fun() -> start_tracer_process(Handler, HandlerData) end).
 
+flush_trace_port() ->
+    case get_tracer() of
+	{ok, Port} when port(Port) ->
+	    case (catch erlang:port_control(Port,$f,"")) of
+		[0] ->
+		    ok;
+		_ -> 
+		    {error,not_supported_by_trace_driver}
+	    end;
+	_ ->
+	    {error, no_trace_driver}
+    end.
+		
 trace_port(file, Filename) when list(Filename) ->
     fun() ->
 	    (catch erl_ddll:load_driver(
@@ -255,6 +304,8 @@ trace_port(ip, {Portno, Qsiz}) when integer(Portno), integer(Qsiz) ->
 
 trace_client(file, Filename) when list(Filename) ->
     trace_client1(file, Filename, {fun dhandler/2,false});
+trace_client(follow_file, Filename) when list(Filename) ->
+    trace_client1(follow_file, Filename, {fun dhandler/2,false});
 trace_client(ip, Portno) when integer(Portno) ->
     trace_client1(ip, {"localhost", Portno}, {fun dhandler/2,false});
 trace_client(ip, {Host, Portno}) when integer(Portno) ->
@@ -262,6 +313,9 @@ trace_client(ip, {Host, Portno}) when integer(Portno) ->
 
 trace_client(file, Filename, {Fun,Data} ) when list(Filename), function(Fun) ->
     trace_client1(file, Filename, {Fun,Data});
+trace_client(follow_file, Filename, {Fun,Data} ) when list(Filename), 
+						      function(Fun) ->
+    trace_client1(follow_file, Filename, {Fun,Data});
 trace_client(ip, Portno, {Fun,Data}) when integer(Portno), function(Fun) ->
     trace_client1(ip, {"localhost", Portno}, {Fun,Data});
 trace_client(ip, {Host, Portno}, {Fun,Data}) when integer(Portno), 
@@ -401,6 +455,9 @@ loop(Tracer,SurviveLinks, Table) ->
 		    reply(From, {ok, Pid}),
 		    loop(Tracer, [Pid | SurviveLinks], Table)
 	    end;
+	{From, {add_node, Node}} when Node =:= node() ->
+	    reply(From,{ok, Node}),
+	    loop(Tracer, SurviveLinks, Table);
 	{From, {add_node, Node}} ->
 	    case (catch relay(Node, Tracer)) of
 		{'EXIT', Something} ->
@@ -680,14 +737,21 @@ dhandler1(Trace, Size) ->
 		MFA ->
 		    io:format(user, "(~p) call ~s~n", [From,ffunc(MFA)])
 	    end;
-	return ->
+	return -> %% To be deleted...
 	    case element(4, Trace) of
 		MFA when Size == 5 ->
 		    Ret = element(5, Trace),
-		    io:format(user, "(~p) ret ~s -> ~p~n", [From,ffunc(MFA),Ret]);
+		    io:format(user, "(~p) old_ret ~s -> ~p~n", [From,ffunc(MFA),Ret]);
 		MFA ->
-		    io:format(user, "(~p) ret ~s~n", [From,ffunc(MFA)])
+		    io:format(user, "(~p) old_ret ~s~n", [From,ffunc(MFA)])
 	    end;
+	return_from ->
+	    MFA = element(4, Trace),
+	    Ret = element(5, Trace),
+	    io:format(user, "(~p) returned from ~s -> ~p~n", [From,ffunc(MFA),Ret]);
+	return_to ->
+	    MFA = element(4, Trace),
+	    io:format(user, "(~p) returning to ~s~n", [From,ffunc(MFA)]);
 	Op ->
 	    Data = element(4, Trace),
 	    io:format(user, "(~p) ~p ~p~n", [From,Op,Data])
@@ -735,7 +799,7 @@ transform_flags(Bad) -> {error,{bad_flags,Bad}}.
 
 all() ->
     [send,'receive',call,old_call_trace,procs,garbage_collection,running,
-     set_on_spawn,set_on_first_spawn,set_on_link,set_on_first_link,timestamp,arity].
+     set_on_spawn,set_on_first_spawn,set_on_link,set_on_first_link,timestamp,arity, return_to].
 
 display_info(List) ->
     io:format("~-12s ~-21s Trace ~n", ["Pid", "Initial call"]),
@@ -852,8 +916,24 @@ gen_reader(file, Filename) ->
 	     end;
 	Error ->
 	    exit(Error)
-    end.
+    end;
 
+gen_reader(follow_file, Filename) ->
+    case file:open(Filename, [read, raw, binary]) of
+	{ok, File} ->
+	    fun() ->
+		    [Op | BESiz] = binary_to_list(my_follow_read(File, 5)),
+		    Siz = get_be(BESiz),
+		    case Op of
+			0 ->
+			    binary_to_term(my_follow_read(File,Siz));
+			Else ->
+			    exit({'bad trace tag', Else})
+		    end
+	    end;
+	Error ->
+	    exit(Error)
+    end.    
 		     
 		     
 get_be([A,B,C,D]) ->
@@ -865,6 +945,23 @@ my_file_read(File,N) ->
 	    Bin;
 	_ ->
 	    exit(eof)
+    end.
+
+my_follow_read(File,N) ->
+    {ok,Pos} = file:position(File,cur),
+    case file:read(File, N) of
+	{ok, Bin} when size(Bin) =:= N -> 
+	    Bin;
+	_ ->
+	    case file:position(File,Pos) of
+		{ok, Pos} ->
+		    receive
+		    after 1000 ->
+			    my_follow_read(File,N)
+		    end;
+		_ ->
+		    exit(eof)
+	    end
     end.
 
 my_ip_read(Sock,N) ->
@@ -899,11 +996,12 @@ save_pattern(Pattern, PT) ->
 	       Else ->
 		   throw({error, badtable})
 	   end,
-    case ets:match_object(PT, {'_', Pattern}) of
+    BPattern = term_to_binary(Pattern),
+    case ets:match_object(PT, {'_', BPattern}) of
 	[] ->
-	    ets:insert(PT, {Last + 1, Pattern}),
+	    ets:insert(PT, {Last + 1, BPattern}),
 	    Last + 1;
-	[{N, Pattern}] ->
+	[{N, BPattern}] ->
 	    N
     end.
 	    
@@ -920,8 +1018,8 @@ pt_doforall(Fun, Ld) ->
 pt_doforall(_, _, '$end_of_table', Ld) -> 
     ok;
 pt_doforall(T, Fun, Key, Ld) ->
-    [Obj] = ets:lookup(T,Key),
-    NLd = Fun(Obj,Ld),
+    [{A,B}] = ets:lookup(T,Key),
+    NLd = Fun({A,binary_to_term(B)},Ld),
     pt_doforall(T,Fun,ets:next(T,Key),NLd).
 
 lint_tp(Pattern) ->
@@ -947,3 +1045,145 @@ check_list(T) ->
 	    {error, badfile}
     end.
 
+%%%%%%%%%%%%%%%%%%
+%% Help...
+%%%%%%%%%%%%%%%%%%
+
+help_display([]) ->
+    io:format("~n",[]),
+    ok;
+help_display([H|T]) ->
+    io:format("~s~n",[H]),
+    help_display(T).
+
+h() ->
+    help_display(
+      [
+       "The following help items are available:",
+       "   p, c",
+       "       - Set trace flags for processes",
+       "   tp, tpl, ctp, ctpl, ctpg, ltp, dtp, wtp, rtp",
+       "       - Manipulate trace patterns for functions",
+       "   n, cn, ln",
+       "       - Add/remove traced nodes.",
+       "   tracer, trace_port, trace_client, get_tracer, stop", 
+       "       - Manipulate tracer process/port",
+       "   i",
+       "       - Info", 
+       "",
+       "call dbg:h(Item) for brief help a brief description",
+       "of one of the items above."]).
+h(p) ->
+    help_display(["p(Item) -> {ok, MatchDesc} | {error, term()}",
+		  " - Traces messages to and from Item.",
+		  "p(Item, Flags) -> {ok, MatchDesc} | {error, term()}",
+		  " - Traces Item according to Flags.",
+		  "   Flags can be one of s,r,m,c,p,sos,sol,sofs,",
+		  "   sofl,all,clear or any flag accepted by erlang:trace/3"]);
+h(c) ->
+    help_display(["c(Mod, Fun, Args)",
+		  " - Evaluates apply(M,F,Args) with all trace flags set.",
+		  "c(Mod, Fun, Args, Flags)",
+		  " - Evaluates apply(M,F,Args) with Flags trace flags set."]);
+h(i) ->
+    help_display(["i() -> ok",
+		  " - Displays information about all traced processes."]);
+h(tp) ->
+    help_display(
+      ["tp(Module,MatchSpec)",
+       " - Same as tp({Module, '_', '_'}, MatchSpec)",
+       "tp(Module,Function,MatchSpec)",
+       " - Same as tp({Module, Function, '_'}, MatchSpec)",
+       "tp(Module, Function, Arity, MatchSpec)",
+       " - Same as tp({Module, Function, Arity}, MatchSpec)",
+       "tp({Module, Function, Arity}, MatchSpec) -> {ok, MatchDesc} "
+       "| {error, term()}",
+       " - Set pattern for traced global function calls."]);
+h(tpl) ->
+    help_display(
+      ["tpl(Module,MatchSpec)",
+       " - Same as tpl({Module, '_', '_'}, MatchSpec)",
+       "tpl(Module,Function,MatchSpec)",
+       " - Same as tpl({Module, Function, '_'}, MatchSpec)",
+       "tpl(Module, Function, Arity, MatchSpec)",
+       " - Same as tpl({Module, Function, Arity}, MatchSpec)",
+       "tpl({Module, Function, Arity}, MatchSpec) -> {ok, MatchDesc} "
+       "| {error, term()}",
+       " - Set pattern for traced local (as well as global) function calls."]);
+h(ctp) ->
+    help_display(
+      ["ctp(Module)",
+       " - Same as ctp({Module, '_', '_'})",
+       "ctp(Module, Function)",
+       " - Same as ctp({Module, Function, '_'})",
+       "ctp(Module, Function, Arity)",
+       " - Same as ctp({Module, Function, Arity})",
+       "ctp({Module, Function, Arity}) -> {ok, MatchDesc} | {error, term()}",
+       " - Clear call trace pattern for the specified functions"]);
+h(ctpl) ->
+    help_display(
+      ["ctpl(Module)",
+       " - Same as ctpl({Module, '_', '_'})",
+       "ctpl(Module, Function)",
+       " - Same as ctpl({Module, Function, '_'})",
+       "ctpl(Module, Function, Arity)",
+       " - Same as ctpl({Module, Function, Arity})",
+       "ctpl({Module, Function, Arity}) -> {ok, MatchDesc} | {error, term()}",
+       " - Clear call trace pattern for the specified functions"]);
+h(ctpg) ->
+    help_display(
+      ["ctpg(Module)",
+       " - Same as ctpg({Module, '_', '_'})",
+       "ctpg(Module, Function)",
+       " - Same as ctpg({Module, Function, '_'})",
+       "ctpg(Module, Function, Arity)",
+       " - Same as ctpg({Module, Function, Arity})",
+       "ctpg({Module, Function, Arity}) -> {ok, MatchDesc} | {error, term()}",
+       " - Clear call trace pattern for the specified functions"]);
+h(ltp) ->
+    help_display(["ltp() -> ok",
+		  " - Lists saved match_spec's on the console."]);
+h(dtp) ->
+    help_display(["dtp() -> ok",
+		  " - Deletes all saved match_spec's.",
+		  "dtp(N) -> ok",
+		  " - Deletes a specific saved match_spec."]);
+h(wtp) ->
+    help_display(["wtp(Name) -> ok | {error, IOError}",
+		  " - Writes all saved match_spec's to a file"]);
+h(rtp) ->
+    help_display(["rtp(Name) -> ok | {error, Error}",
+		  " - Read saved match specifications from file."]);
+h(n) ->
+    help_display(["n(Nodename) -> {ok, Nodename} | {error, Reason}",
+		  " - Adds a node to the list of traced nodes"]);
+h(cn) ->
+    help_display(["cn(Nodename) -> ok",
+		  " - Clears a node from the list of traced nodes."]);
+h(ln) ->
+    help_display(["ln() -> ok",
+		  " - Shows the list of traced nodes on the console."]);
+h(tracer) ->
+    help_display(["tracer() -> {ok, pid()} | {error, already_started}",
+		  " - Starts a tracer server that handles trace messages.",
+		  "tracer(Type, Data) -> {ok, pid()} | {error, Error}",
+		  " - Starts a tracer server with additional parameters"]);
+h(trace_port) ->
+    help_display(["trace_port(Type, Parameters) -> fun()",
+		  " - Creates and returns a trace port generating"]);
+h(trace_client) ->
+    help_display(["trace_client(Type, Parameters) -> pid()",
+		  " - Starts a trace client that reads messages created by "
+		  "a trace port driver",
+		  "trace_client(Type, Parameters, HandlerSpec) -> pid()",
+		  " - Starts a trace client that reads messages created by a",
+		  "   trace port driver, with a user defined handler"]);
+h(get_tracer) ->
+    help_display(
+      ["get_tracer() -> {ok, Tracer}",
+       " - Returns the process or port to which all trace messages are "
+       "sent."]);
+h(stop) ->
+    help_display(
+      ["stop() -> stopped",
+       " - Stops the dbg server and the tracing of all processes."]).

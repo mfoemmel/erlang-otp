@@ -29,40 +29,9 @@
 #include "erl_message.h"
 #include "erl_process.h"
 
-static int  d_4;
-static int  d_8;
-static int d_16;
-static int d_32;
-static int d_64;
-static int d_buf[64+1];
-
-/* initialize messages */
-void init_message()
+void
+init_message(void)
 {
-    int i;
-
-    /* Handle free lists etc */
-    d_4 = new_fix_size(sizeof(ErlHeapFragment) + sizeof(uint32)*(4-1));
-    d_8 = new_fix_size(sizeof(ErlHeapFragment) + sizeof(uint32)*(8-1));
-    d_16 = new_fix_size(sizeof(ErlHeapFragment) + sizeof(uint32)*(16-1));
-    d_32 = new_fix_size(sizeof(ErlHeapFragment) + sizeof(uint32)*(32-1));
-    d_64 = new_fix_size(sizeof(ErlHeapFragment) + sizeof(uint32)*(64-1));
-
-    for (i = 0; i <= 4; i++) {
-	d_buf[i] = d_4;
-    }
-    for (i = 5; i <= 8; i++) {
-	d_buf[i] = d_8;
-    }
-    for (i = 9; i <= 16; i++) {
-	d_buf[i] = d_16;
-    }
-    for (i = 17; i <= 32; i++) {
-	d_buf[i] = d_32;
-    }
-    for (i = 33; i <= 64; i++) {
-	d_buf[i] = d_64;
-    }
 }
 
 void free_message(mp)
@@ -81,12 +50,8 @@ uint32 size;
     alloc_from(33);
 #endif
 
-    if (size > 64) {
-	bp = (ErlHeapFragment*) safe_alloc(sizeof(ErlHeapFragment) +
-					    ((size-1)*sizeof(uint32)));
-    } else {
-	bp = (ErlHeapFragment*) fix_alloc(d_buf[size]);
-    }
+    bp = (ErlHeapFragment*) safe_alloc(sizeof(ErlHeapFragment) +
+					    ((size-1)*sizeof(Eterm)));
     bp->next = NULL;
     bp->size = size;
     bp->off_heap.mso = NULL;
@@ -101,14 +66,7 @@ free_message_buffer(ErlHeapFragment* bp)
     if (bp->off_heap.mso) {
 	erts_cleanup_mso(bp->off_heap.mso);
     }
-
-    /*
-     * XXX Change this when we introduce heap binaries.
-     */
-    if (bp->size > 64)
-	sys_free(bp);
-    else
-	fix_free(d_buf[bp->size], (uint32*) bp);
+    sys_free(bp);
 }
 
 /* Add a message last in message queue */
@@ -129,11 +87,7 @@ queue_message_tt(Process* receiver, ErlHeapFragment* bp,
 	bp->next = receiver->mbuf;
 	receiver->mbuf = bp;
 	receiver->mbuf_sz += bp->size;
-	receiver->off_heap.overhead +=  (sizeof(ErlHeapFragment)/sizeof(Eterm) - 1); 
-	/* mbuf_struct_sz is the administrative overhead caused by 
-	 * message buffers, used together with mbuf_sz to indicate 
-	 * that GC is needed
-	 */ 
+	receiver->off_heap.overhead += (sizeof(ErlHeapFragment)/sizeof(Eterm) - 1); 
 
 	/* Move any binaries into the process */
 	if (bp->off_heap.mso != NULL) {
@@ -189,29 +143,34 @@ send_message(Process* sender, Process* receiver, Eterm message)
 	hp = bp->mem;
 	token = copy_struct(SEQ_TRACE_TOKEN(sender), 6 /* TUPLE5 */, 
 			    &hp, &receiver->off_heap);
+    } else if (msize <= 64) {
+	ErlMessage* mp = (ErlMessage*) fix_alloc(mesg_desc);
+
+	/*
+	 * XXX Multi-thread note: Allocating on another process's heap.
+	 */
+	hp = HAlloc(receiver, msize);
+	message = copy_struct(message, msize, &hp, &receiver->off_heap);
+	mp->mesg = message;
+	mp->next = NULL;
+	mp->seq_trace_token = NIL;
+	LINK_MESSAGE(receiver, mp);
+
+	if (receiver->status == P_WAITING) {
+	    add_to_schedule_q(receiver);
+	} else if (receiver->status == P_SUSPENDED) {
+	    receiver->rstatus = P_RUNABLE;
+	}
+	if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
+	    trace_receive(receiver, message);
+	}
+	return;
     } else {
 	bp = new_message_buffer(msize);
 	hp = bp->mem;
     }
     message = copy_struct(message, msize, &hp, &receiver->off_heap);
     queue_message_tt(receiver, bp, message, token);
-}
-
-/* Called from dist */
-void
-send_msg(Eterm to, Eterm message)
-{
-    Process* rp = process_tab[get_number(to)];
-
-    if (!INVALID_PID(rp, to)) {
-	Eterm* hp;
-	unsigned size = size_object(message);
-	ErlHeapFragment* bp = new_message_buffer(size);
-
-	hp = bp->mem;
-	message = copy_struct(message, size, &hp, &rp->off_heap);
-	queue_message_tt(rp, bp, message, NIL);
-    }
 }
 
 /*
@@ -261,7 +220,7 @@ deliver_result(Eterm sender, Eterm pid, Eterm res)
     Eterm* hp;
     uint32 sz_res;
 
-    rp = process_tab[get_number(pid)];
+    rp = process_tab[pid_number(pid)];
     if (!INVALID_PID(rp, pid)) {
 	sz_res = size_object(res);
 	bp = new_message_buffer(sz_res + 3);

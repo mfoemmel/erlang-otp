@@ -33,6 +33,7 @@ MODULES = \
 	tkoptmenu \
 	tkscale \
 	tkscrlbar \
+	tkstr \
 	tktearoff \
 	tktext            
 
@@ -75,6 +76,9 @@ docs:
 
 $(APP_TARGET): $(APP_SRC)
 	sed -e 's;%VSN%;$(VSN);' $(APP_SRC) > $(APP_TARGET)
+
+tkstr.erl: ../c_src/strings.tab
+	cd ../c_src && $(MAKE) -f $(TARGET)/Makefile ../src/tkstr.erl
 
 # ----------------------------------------------------
 # Dependencies

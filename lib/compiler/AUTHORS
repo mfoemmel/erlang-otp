@@ -11,4 +11,10 @@ added the optimisation passes.
 General improvements and corrections were made by Robert Virding,
 Arndt Jonasson, Tony Rogvall, Björn Gustavsson and Jan-Erik Dahlin.
 
+The bit syntax support was implemented by Björn Gustavsson, Arndt Jonasson
+and Robert Virding.
+
+The Core Erlang is used as an intermediate format in the v3 compiler (R7).
+Core Erlang was suggested by Richard Carlsson (HiPE).
+
 Open source contributors:

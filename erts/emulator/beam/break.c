@@ -116,7 +116,7 @@ static void process_killer()
 static void display_ref(Ref *ref, CIO to)
 {
     /* Kludge */
-    display(make_refer(ref), to);
+    display(make_ref(ref), to);
 }
 
 /* Display info about an individual Erlang process */

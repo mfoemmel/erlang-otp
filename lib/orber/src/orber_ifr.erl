@@ -18,9 +18,8 @@
 %%
 %%----------------------------------------------------------------------
 %% File    : corba_ir_impl.erl
-%% Author  : Per Danielsson <pd@erix.ericsson.se>
 %% Purpose : Interface Repository for CORBA
-%% Created :  7 Mar 1997 by Per Danielsson <pd@erix.ericsson.se>
+%% Created :  7 Mar 1997
 %%----------------------------------------------------------------------
 
 %%% NOTES:
@@ -423,6 +422,12 @@
 
 -include_lib("orber/include/corba.hrl").
 -include("orber_ifr.hrl").
+
+
+%%-----------------------------------------------------------------
+%% Macros
+%%-----------------------------------------------------------------
+-define(DEBUG_LEVEL, 9).
 
 %%%======================================================================
 %%% Internal stuff
@@ -1628,6 +1633,8 @@ dispatch(Parameterlist, Dispatchlist, Operation) ->
 	{value, {_, Module}} ->
 	    exceptioncatcher(Module,Operation,Parameterlist);
 	_ ->
+	    orber:debug_level_print("[~p] orber_ifr:dispatch(~p, ~p, ~p); unknown.", 
+				    [?LINE, Parameterlist, Dispatchlist, Operation], ?DEBUG_LEVEL),
 	    ?ifr_exception("Unknown dispatch: ",
 			   {Parameterlist,Dispatchlist,Operation})
     end.

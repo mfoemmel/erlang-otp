@@ -25,7 +25,7 @@
 -export([get_dependencies/1, add_inh_data/3, preproc/3]).
 -export([getBrokerData/3,defaultBrokerData/1,list_to_term/1]).
 -export([get_local_c_headers/2,get_included_c_headers/1,is_inherited_by/3]).
-
+-export([no_doubles/1]).
 
 %% Debug
 -export([print_tab/1,slashify/1,is_short/1]).
@@ -52,6 +52,7 @@ pragma_reg(G,X) ->
     init_pragma_status(S),
     registerOptions(G,S),
     pragma_reg_all(G, S, [], X),
+    denote_specific_code_opts(G), %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     case get_pragma_compilation_status(S) of
 	true ->
 	    %% Remove uggly pragmas from form
@@ -456,7 +457,6 @@ is_allowed_opt(X) ->
     false.
     
 	 
-    
 
 %% Returns a tuple { PFX, VSN, ID }, that is the  
 %% pragma prefix, version and id coverages of
@@ -469,7 +469,7 @@ pragma_cover(G,Scope,Object) ->
 %% pragma prefix, version and id coverages of
 %% the scope SCOPE
 pragma_cover(PragmaTab,Name,Scope,LineNr) ->
-    PFX = pragma_prefix_cover(PragmaTab,Scope,LineNr), 
+    PFX = pragma_prefix_cover(PragmaTab,Name,Scope,LineNr), 
     VSN = pragma_version_cover(PragmaTab,Name,Scope,LineNr),
     ID = pragma_id_cover(PragmaTab,Name,Scope,LineNr),
     { PFX, VSN, ID }.
@@ -479,26 +479,34 @@ pragma_cover(PragmaTab,Name,Scope,LineNr) ->
 %% Finds out which pragma PREFIX that affects 
 %% the scope Scope
 pragma_prefix(G,Scope,Object) ->
-    pragma_prefix_cover(pragmatab(G),Scope,get_line(Object)).
+    pragma_prefix_cover(pragmatab(G),get_id2(Object),Scope,get_line(Object)).
+
 
 %% Finds out which pragma PREFIX that affects 
 %% the scope Scope
-pragma_prefix_cover(PragmaTab,Scope,LineNr) ->
+pragma_prefix_cover(PragmaTab,Name,Scope,LineNr) ->
     case lookup(PragmaTab,prefix) of
 	[] ->
 	    none;
 	PragmaPrefixList ->
-	    case most_local(PragmaPrefixList,Scope) of
+	    FilteredPragmaPrefixList = 
+		filter_pragma_prefix_list(PragmaTab,Name,Scope,PragmaPrefixList),
+	    case most_local(FilteredPragmaPrefixList,Scope) of
 		[] ->
 		    none;
 		MostLocalList ->	    
 		    case dominant_prefix(MostLocalList,LineNr) of
 			none ->
 			    none;
+
+			%% Just filter empty pragma prefix
+			{prefix,{pragma,{_,_,_},_,{'<string_literal>',_,[]}},_,_,_,_} ->
+			    none;
+
 			DP ->
 			    %% Return the scoped id (reversed list of
                             %% path elements, but remember to remove 
-                            %% '[]' that represents the top level.
+                            %% '[]' that represents the top level   
 			    slashify(lists:sublist(Scope, 1,
 						   length(Scope) - length(element(4,DP))) ++
 				     [ element(3,element(4,element(2,DP)))])
@@ -1350,9 +1358,32 @@ preproc(G, N, []) ->
 getBrokerData(G,X,Scope) ->
     S = icgen:pragmatab(G),
     cleanup_codeOptions(G,S,Scope),
-    BD = getBrokerData(G,S,X,Scope,[Scope],[]),
-   %io:format(" -> ~p~n",[BD]),
-    BD.
+
+    %% Check if it is an operation denoted
+    case isOperation(S,Scope) of
+	%% Yes, check options
+	true ->
+	    %% Look if there is a specific code option on top file
+	    case hasSpecificCodeoptionOnTopFile(S,ic_genobj:idlfile(G),Scope) of
+		true ->
+		    %% Yes, let it work
+		    getBrokerData(G,S,X,Scope,[Scope],[]);
+		false ->
+		    %% No, try to see if there is codeoption on top file
+		    case hasNonSpecificCodeoptionOnTopFile(S,ic_genobj:idlfile(G)) of
+			true ->
+			    %% Yes, override every other specific code option
+			    [H|T] = Scope,
+			    getBrokerData(G,S,X,Scope,[T],[]);
+			false ->
+			    %% No, let inherited specific code options work
+			    getBrokerData(G,S,X,Scope,[Scope],[])
+		    end
+	    end;
+	%% No, continue
+	false ->
+	    getBrokerData(G,S,X,Scope,[Scope],[])
+    end.
 
 %% Returns a tuple / list of tuples { Mod, Type }
 %% Inside loop, uses overridence. 
@@ -1738,6 +1769,120 @@ is_inherited_by(Interface1,Interface2,PragmaTab) ->
     InheritsList = 
 	[X || X <- FullList, element(1,X) == inherits],
     inherits(Interface2,Interface1,InheritsList).
+
+
+
+
+%% Filters all pragma prefix from list not in same file 
+%% the object
+
+filter_pragma_prefix_list(PragmaTab, Name, Scope, List) ->
+    IdlFile = scoped_names_idl_file(PragmaTab, Name, Scope),
+    filter_pragma_prefix_list2(PragmaTab,IdlFile,List,[]).
+
+
+filter_pragma_prefix_list2(_,_,[],Found) ->
+    Found;
+filter_pragma_prefix_list2(PT, IdlFile, [PP|PPs], Found) ->
+    case PP of 
+	{prefix,_,_,_,IdlFile,_} -> %% Same file as the Object, keep
+	    filter_pragma_prefix_list2(PT, IdlFile, PPs, [PP|Found]);
+	
+	Other -> %% NOT in same file as the Object, throw away
+	    filter_pragma_prefix_list2(PT, IdlFile, PPs, Found)
+    end.
+
+scoped_names_idl_file(PragmaTab, Name, Scope) ->
+    case ets:match(PragmaTab,{'_','$0','_','$2',Scope,Name,'_','_','_'}) of
+
+	[[IdlFile,Type]] -> %% Usual case 
+	    IdlFile;
+
+	[[File,module]|Files] -> %% Multiple modules, get LOCAL file
+	    case ets:match(PragmaTab,{file_data_local,'$0','_',module,Scope,Name,'_','_','_'}) of
+		[[LocalIdlFile]] -> 
+		    LocalIdlFile;
+		_ -> %% Should  NEVER occur
+		    error
+	    end;
+
+	_ ->
+	    error %% Should  NEVER occur
+    end.
+
+
+
+
+
+
+%%-------------------------------------------------
+%%
+%% Register specific pragma code options
+%%
+%% If there is an operation with that
+%% scope, denote this as {codeopt_specific,Scope}
+%%
+%%-------------------------------------------------
+denote_specific_code_opts(G) ->
+    case ic_options:get_opt(G, be) of
+	noc ->
+	    S = icgen:pragmatab(G),
+	    COList = ets:match(S,{codeopt,'$0','_','_','_','_'}),
+	    OPList = ets:match(S,{op,'$0','$1','_','_'}),
+	    denote_specific_code_opts(S,COList,OPList);
+	_ ->
+	    ok
+    end.
+
+denote_specific_code_opts(_,_,[]) ->
+    ok;
+denote_specific_code_opts(S,COList,[[OpN,OpS]|OPSs]) ->
+    case lists:member([[OpN|OpS]],COList) of
+	true ->
+	    insert(S, {codeopt_specific,[OpN|OpS]});
+	false ->
+	    ok
+    end,
+    denote_specific_code_opts(S,COList,OPSs).
+
+
+
+%%---------------------------------------------
+%%
+%% Returns true/false if it denotes an operation
+%%
+%%---------------------------------------------
+isOperation(_S,[]) ->
+    false;
+isOperation(_S,[_]) ->
+    false;
+isOperation(S,[H|T]) ->
+    case ets:match(S,{op,H,T,'$2','$3'}) of
+	[] ->
+	    false;
+	_ ->
+	    true
+    end.
+
+
+hasSpecificCodeoptionOnTopFile(S,File,Scope) ->
+    case ets:match(S,{codeopt,Scope,'_','$2',File,[File]}) of
+	[] ->
+	    false;
+	_ ->
+	    true
+    end.
+
+
+hasNonSpecificCodeoptionOnTopFile(S,File) ->
+    case ets:match(S,{codeopt,'_','_','$2',File,[File]}) of
+	[] ->
+	    false;
+	_ ->
+	    true
+    end.
+
+
 
 
 

@@ -17,9 +17,7 @@
 %%     $Id$
 %%
 %%-----------------------------------------------------------------
-%% File: orber_iiop_spm.erl
-%% Author: Lars Thorsen
-%% 
+%% File: orber_iiop_pm.erl
 %% Description:
 %%    This file contains the mapping of addresses on the format {Host, Port} 
 %%    to a proxy pid.
@@ -99,7 +97,7 @@ stop_all_proxies(PM, Key) ->
     case ets:lookup(PM, Key) of
 	[] ->
 	    ok;
-	[P] ->
+	[{_, P}] ->
 	    orber_iiop_outproxy:stop(P, infinity)
     end,
     stop_all_proxies(PM, ets:next(PM, Key)).
@@ -120,7 +118,7 @@ handle_call({connect, Host, Data, SocketType, SocketOptions}, From, PM) ->
 			{'error', Reason} ->
 			    {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}};
 			{ok, undefined} ->
-			    {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}};
+			    {'EXCEPTION', #'COMM_FAILURE'{minor=123, completion_status=?COMPLETED_NO}};
 			{ok, Child} ->
 			    link(Child),
 			    ets:insert(PM, {{Host, Port}, Child}),
@@ -134,7 +132,7 @@ handle_call({disconnect, Host, Port}, From, PM) ->
     case ets:lookup(PM, {Host, Port}) of
 	[] ->
 	    ok;
-	[P] ->
+	[{_, P}] ->
 	    unlink(P),
 	    orber_iiop_outproxy:stop(P, infinity),
 	    ets:delete({Host, Port})
@@ -158,12 +156,12 @@ handle_cast(_, State) ->
 %%-----------------------------------------------------------------
 %% Trapping exits 
 handle_info({'EXIT', Pid, normal}, PM) ->
-    {K, _} = ets:match(PM, {'$1', Pid}),
+    [{K, _}] = ets:match_object(PM, {'$1', Pid}),
     ets:delete(PM, K),
     {noreply, PM};
 handle_info({'EXIT', Pid, Reason}, PM) ->
     ?PRINTDEBUG2("proxy ~p finished with reason ~p", [Pid, Reason]),
-    {K, _} = ets:match(PM, {'$1', Pid}),
+    [{K, _}] = ets:match_object(PM, {'$1', Pid}),
     ets:delete(PM, K),
     {noreply, PM};
 handle_info(X, State) ->

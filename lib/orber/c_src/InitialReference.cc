@@ -22,7 +22,6 @@
  * which can be used by the InitialReferences interface.
  *
  * creation date: 1997-11-04
- * author      Lars Thorsen (lars@erix.ericsson.se)
  */
 #include "InitialReference.hh"
 

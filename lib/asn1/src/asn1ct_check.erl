@@ -62,7 +62,7 @@ checkt(S,[],Acc) ->
     lists:reverse(Acc).
 
 checkv(S,[Name|T],Acc) ->
-						%io:format("check_valuedef:~p~n",[Name]),
+    %%io:format("check_valuedef:~p~n",[Name]),
     Result = case asn1_db:dbget(S#state.mname,Name) of
 		 undefined -> error({value,{internal_error,'???'},S});
 		 Value when record(Value,valuedef) ->
@@ -329,6 +329,8 @@ validate_set(S,Value,Components,Constr) ->
 validate_setof(S,Value,Components,Constr) ->
     ok.
 
+check_type(S,Type,{'ObjectSet',Class,Set}) ->
+    {'ObjectSet',Class,Set};
 check_type(S,Type,{'CLASS',Fields,Syntax}) ->
     {'CLASS',Fields,Syntax};
 check_type(S,Type,Ts) when record(Ts,type) ->
@@ -368,7 +370,9 @@ check_type(S,Type,Ts) when record(Ts,type) ->
 	    {'INTEGER',NamedNumberList} ->
 		#newt{type={'INTEGER',check_integer(S,NamedNumberList,Constr)}};
 	    {'BIT STRING',NamedNumberList} ->
-		#newt{type={'BIT STRING',check_bitstring(S,NamedNumberList,Constr)}};
+		NewL = check_bitstring(S,NamedNumberList,Constr),
+%%		erlang:display({asn1ct_check,NamedNumberList,NewL}),
+		#newt{type={'BIT STRING',NewL}};
 	    'NULL' ->
 		#newt{};
 	    'OBJECT IDENTIFIER' ->
@@ -436,7 +440,9 @@ check_type(S,Type,Ts) when record(Ts,type) ->
 		#newt{type={'SET',check_set(S,Type,Components)}};
 	    {'SET OF',Components} ->
 		#newt{type={'SET OF',check_setof(S,Type,Components)}};
-	    {{typereference,_,'TYPE-IDENTIFIER'},{typefieldreference,_,'Type'}} ->
+	    %% This is a temporary hack until the full Information Obj Spec
+	    %% in X.681 is supported
+	    {{typereference,_,'TYPE-IDENTIFIER'},[{typefieldreference,_,'Type'}]} ->
 		#newt{type='ASN1_OPEN_TYPE'};
 	    {pt,Ptype,ParaList} ->
 		Instance = instantiate_ptype(S,Ptype,ParaList),
@@ -516,6 +522,26 @@ check_constraints(S,[C | Rest], Acc) ->
 check_constraints(S,[],Acc) ->
     Acc.
 
+check_constraint(S,Ext) when record(Ext,'Externaltypereference') ->
+    check_externaltypereference(S,Ext);
+
+
+check_constraint(S,{'SizeConstraint',{Lb,Ub}}) ->
+    case {resolv_value(S,Lb),resolv_value(S,Ub)} of
+	{FixV,FixV} ->
+	    {'SizeConstraint',FixV};
+	{Low,High} when Low < High ->
+	    {'SizeConstraint',{Low,High}};
+	Err ->
+	    throw({error,{asn1,{illegal_size_constraint,Err}}})
+    end;
+check_constraint(S,{'SizeConstraint',Lb}) ->
+    {'SizeConstraint',resolv_value(S,Lb)};
+
+check_constraint(S,{'SingleValue', L}) when list(L) ->
+    F = fun(A) -> resolv_value(S,A) end,
+    {'SingleValue',lists:map(F,L)};
+    
 check_constraint(S,{'SingleValue', V}) ->
     {'SingleValue',resolv_value(S,V)};
 
@@ -580,8 +606,9 @@ check_typereference(S,Tref) when record(Tref,typereference) ->
 		    check_imported(S,Imodule,Name),
 		    #'Externaltypereference'{module=Imodule,type=Name};
 		_ ->
-		    io:format("Type ~s is not defined~n",[Name]),
-		    Tref
+		    throw({error,{asn1,{undefined_type,Name}}})
+		    %io:format("Type ~s is not defined~n",[Name]),
+		    %Tref
 	    end;
 	_ ->
 	    Tref    
@@ -685,8 +712,8 @@ imported(S,Name) ->
     imported1(Name,Ilist).
 
 imported1(Name,
-	  [{'SymbolsFromModule',Symlist,
-	    {typereference,_,ModuleName}}|T]) ->
+	  [#'SymbolsFromModule'{symbols=Symlist,
+				module={typereference,_,ModuleName}}|T]) ->
     case lists:keysearch(Name,3,Symlist) of
 	{value,V} ->
 	    {ok,ModuleName};
@@ -718,8 +745,37 @@ check_int(S,[],Acc) ->
     lists:keysort(2,Acc).
 
 
+
+check_bitstring(S,[],Constr) ->
+    [];
 check_bitstring(S,NamedNumberList,Constr) ->
-    NamedNumberList.
+    case check_unique(NamedNumberList,2) of
+	[] ->
+	    check_bitstr(S,NamedNumberList,[]);
+	L when list(L) ->
+	    error({type,{duplicates,L},S}),
+	    unchanged
+    end.
+
+check_bitstr(S,[{'NamedNumber',Id,Num}|T],Acc)when integer(Num) ->
+    check_bitstr(S,T,[{Id,Num}|Acc]);
+check_bitstr(S,[{'NamedNumber',Id,Name}|T],Acc) when atom(Name) ->
+%%check_bitstr(S,[{'NamedNumber',Id,{identifier,_,Name}}|T],Acc) -> 
+%%    io:format("asn1ct_check:check_bitstr/3 hej hop ~w~n",[Name]),
+    Val = dbget_ex(S,S#state.mname,Name),
+%%    io:format("asn1ct_check:check_bitstr/3: ~w~n",[Val]),
+    check_bitstr(S,[{'NamedNumber',Id,Val#valuedef.value}|T],Acc);
+check_bitstr(S,[],Acc) ->
+    case check_unique(Acc,2) of
+	[] ->
+	    lists:keysort(2,Acc);
+	L when list(L) ->
+	    error({type,{duplicate_values,L},S}),
+	    unchanged
+    end.
+    
+%%check_bitstring(S,NamedNumberList,Constr) ->
+%%    NamedNumberList.
     
 
 
@@ -751,7 +807,7 @@ check_enum(S,[Id|T],Acc1,Acc2) when atom(Id) ->
     check_enum(S,T,Acc1,[Id|Acc2]);
 check_enum(S,[],Acc1,Acc2) ->
     NewAcc2 = lists:keysort(2,Acc1),
-    enum_number(Acc2,NewAcc2,0,[]).
+    enum_number(lists:reverse(Acc2),NewAcc2,0,[]).
 
 
 % assign numbers to identifiers , numbers from 0 ... but must not
@@ -786,7 +842,8 @@ check_sequence(S,Type,Comps)  ->
 		      ,#'ComponentType'.name) of
 	[] ->
 	    %%    sort_canonical(Components),
-	    case check_each_component(S,Type,Components) of
+	    Components2 = maybe_automatic_tags(S,Components),
+	    case check_each_component(S,Type,Components2) of
 		NewComponents when list(NewComponents) ->
 		    check_unique_sequence_tags(S,NewComponents),
 		    NewComponents;
@@ -857,8 +914,9 @@ check_choice(S,Type,Components) when list(Components) ->
 			  record(C,'ComponentType')],#'ComponentType'.name) of
 	[] -> 
     %%    sort_canonical(Components),
-	    case check_each_alternative(S,Type,Components) of
-		{NewComponents,NewEcomps} ->
+	    Components2 = maybe_automatic_tags(S,Components),
+	    case check_each_alternative(S,Type,Components2) of
+		{NewComponents,NewEcomps} ->		    
 		    check_unique_tags(S,NewComponents ++ NewEcomps),
 		    {NewComponents,NewEcomps};
 		NewComponents ->
@@ -871,12 +929,58 @@ check_choice(S,Type,Components) when list(Components) ->
 check_choice(S,Type,[]) -> 
     [].
 
+%% probably dead code that should be removed
+%%maybe_automatic_tags(S,{Rc,Ec}) ->
+%%    {maybe_automatic_tags1(S,Rc,0),maybe_automatic_tags1(S,Ec,length(Rc))};
+maybe_automatic_tags(#state{erule=per},C) ->
+    C;
+maybe_automatic_tags(S,C) ->
+    maybe_automatic_tags1(S,C,0).
+
+maybe_automatic_tags1(S,C,TagNo) ->
+    case (S#state.module)#module.tagdefault of
+	'AUTOMATIC' ->
+	    generate_automatic_tags(S,C,TagNo);
+	_ ->
+	    C
+    end.
+
+generate_automatic_tags(S,C,TagNo) ->
+    case any_manual_tag(C) of
+	true ->
+	    C;
+	false ->
+	    generate_automatic_tags1(C,TagNo)
+    end.
+
+generate_automatic_tags1([H|T],TagNo) when record(H,'ComponentType') ->
+    #'ComponentType'{typespec=Ts} = H,
+    NewTs = Ts#type{tag=#tag{class='CONTEXT',
+			     number=TagNo,
+			     type={default,'IMPLICIT'},
+			     form= 0 }}, % PRIMITIVE
+    [H#'ComponentType'{typespec=NewTs}|generate_automatic_tags1(T,TagNo+1)];
+generate_automatic_tags1([ExtMark|T],TagNo) -> % EXTENSIONMARK
+    [ExtMark | generate_automatic_tags1(T,TagNo)];
+generate_automatic_tags1([],_) ->
+    [].
+
+any_manual_tag([#'ComponentType'{typespec=#type{tag=undefined}}|Rest]) ->
+    any_manual_tag(Rest);
+any_manual_tag([{'EXTENSIONMARK',_,_}|Rest]) ->
+    any_manual_tag(Rest);
+any_manual_tag([H|Rest]) ->
+    true;
+any_manual_tag([]) ->
+    false.
+	    
+
 check_unique_tags(S,C) ->
     case (S#state.module)#module.tagdefault of
 	'AUTOMATIC' ->
 	    true;
 	_ ->
-	    collect_and_sort_tags(C,[])
+    	    collect_and_sort_tags(C,[])
     end.
 
 collect_and_sort_tags([C|Rest],Acc) when record(C,'ComponentType') ->
@@ -970,6 +1074,8 @@ get_taglist(S,Type) when record(Type,type) ->
 	Tag  ->
 	    [asn1ct_gen:def_to_tag(Tag)]
     end;
+get_taglist(S,{'CHOICE',{Rc,Ec}}) ->
+    get_taglist(S,{'CHOICE',Rc ++ Ec});
 get_taglist(S,{'CHOICE',Components}) ->
     get_taglist1(S,Components);
 get_taglist(S,Def) ->

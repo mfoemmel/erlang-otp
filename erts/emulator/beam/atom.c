@@ -144,6 +144,25 @@ Atom* tmpl;
 	obj->name = tmpl->name;
     obj->len = tmpl->len;
     obj->slot.index = -1;
+    /*
+     * Precompute ordinal value of first 3 bytes + 7 bits.
+     * This is used by utils.c:cmp_atoms().
+     * We cannot use the full 32 bits of the first 4 bytes,
+     * since we use the sign of the difference between two
+     * ordinal values to represent their relative order.
+     */
+    {
+	unsigned char c[4];
+	int i;
+	int j;
+
+	j = (tmpl->len < 4) ? tmpl->len : 4;
+	for(i = 0; i < j; ++i)
+	    c[i] = tmpl->name[i];
+	for(; i < 4; ++i)
+	    c[i] = '\0';
+	obj->ord0 = (c[0] << 23) + (c[1] << 15) + (c[2] << 7) + (c[3] >> 1);
+    }
     return obj;
 }
 

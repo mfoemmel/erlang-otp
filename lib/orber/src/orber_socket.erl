@@ -74,17 +74,29 @@ connect(ssl, Host, Port, Options) ->
 %% data connection.
 %%
 listen(normal, Port, Options) ->
-    {ok, IP} = inet:getaddr(orber:host(),inet),
-    case catch gen_tcp:listen(Port, [{packet,cdr}, {reuseaddr,true}, {ip,IP} |
-				     Options]) of
+    Options1 = case orber:ip_address_variable_defined() of
+		   true ->
+		       {ok, IP} = inet:getaddr(orber:host(),inet),
+		       [{ip, IP} | Options];
+		   false ->
+		       Options
+	       end,
+    case catch gen_tcp:listen(Port, [{packet,cdr}, {reuseaddr,true} |
+				     Options1]) of
 	{ok, ListenSocket} ->
 	    ListenSocket;
 	Error ->
 	    corba:raise(#'COMM_FAILURE'{minor=101, completion_status=?COMPLETED_NO})
     end;
 listen(ssl, Port, Options) ->
-    {ok, IP} = inet:getaddr(orber:host(),inet),
-    case catch ssl:listen(Port, [{packet,cdr}, {ip, IP}|Options]) of
+    Options1 = case orber:ip_address_variable_defined() of
+		   true ->
+		       {ok, IP} = inet:getaddr(orber:host(),inet),
+		       [{ip, IP} | Options];
+		   false ->
+		       Options
+	       end,
+    case catch ssl:listen(Port, [{packet,cdr} | Options1]) of
 	{ok, ListenSocket} ->
 	    ListenSocket;
 	Error ->

@@ -43,8 +43,9 @@ extern int writev();
 int erl_read_fill(int,char*,int);
 int erl_write_fill(int,char*,int);
 
-/* Fill buffer, return buffer length, 0 for EOF, < 0 for error. 
- */
+/* 
+ * Fill buffer, return buffer length, 0 for EOF, < 0 (and sets errno)
+ * for error.  */
 int erl_read_fill(int fd, char* buf, int len)
 {
   int i,got=0;
@@ -59,9 +60,10 @@ int erl_read_fill(int fd, char* buf, int len)
 
 } /* read_fill */
 
-/* write entire buffer on fd  or fail
+/* write entire buffer on fd  or fail (setting errno)
  */
-int erl_write_fill(int fd, char *buf, int len)
+int 
+erl_write_fill (int fd, char *buf, int len)
 {
   int i,done=0;
   

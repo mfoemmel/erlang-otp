@@ -24,12 +24,16 @@
 -export([construct_trap/2, try_initialise_vars/2, send_trap/6]).
 
 %% Internal exports
--export([alias_to_oid/1, make_varbind/1, init_v2_inform/7, init_v3_inform/7]).
+-export([alias_to_oid/1, make_varbind/1, init_v2_inform/9, init_v3_inform/9]).
 
 -include("snmp_types.hrl").
 -include("SNMPv2-MIB.hrl").
 -include("SNMP-FRAMEWORK-MIB.hrl").
 -define(enterpriseSpecific, 6).
+
+
+-define(VMODULE,"TRAP").
+-include("snmp_verbosity.hrl").
 
 
 %%-----------------------------------------------------------------
@@ -384,8 +388,7 @@ find_dests("") ->
 find_dests(NotifyName) ->
     case snmp_notification_mib:get_targets(NotifyName) of
 	[] ->
-	    pdebug("snmp_trap: No dests found for snmpNotifyName ~p",
-		   [NotifyName]),
+	    ?vlog("No dests found for snmpNotifyName: ~p",[NotifyName]),
 	    [];
 	Dests ->
 	    Dests
@@ -395,12 +398,18 @@ find_dests(NotifyName) ->
 %% NOTE: This function is executed in the master agent's context
 %% For each target, check if it has access to the objects in the
 %% notification, determine which message version (v1, v2c or v3)
-%% shoudl be used for the target, and determine the message
+%% should be used for the target, and determine the message
 %% specific parameters to be used.
 %%-----------------------------------------------------------------
 send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 		 Type} | T],
-	       ContextName, {TrapRec, Vbs}, V1Res, V2Res, V3Res, Recv, NetIf) ->
+	       ContextName,{TrapRec, Vbs}, V1Res, V2Res, V3Res, Recv, NetIf) ->
+    ?vdebug("send trap pdus: "
+	    "~n   Destination address: ~p~n"
+	    "~n   Target name:         ~p~n"
+	    "~n   MP model:            ~p~n"
+	    "~n   Type:                ~p",
+	    [DestAddr,TargetName,MpModel,Type]),
     case snmp_vacm:get_mib_view(notify, SecModel, SecName, SecLevel,
 				ContextName) of
 	{ok, MibView} ->
@@ -416,8 +425,8 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 					   [{DestAddr, Community} | V1Res],
 					   V2Res, V3Res, Recv, NetIf);
 			undefined ->
-			    pdebug("snmp_trap: No community found for v1 "
-				   "dest:~p\n", element(2, DestAddr)),
+			    ?vlog("No community found for v1 dest: ~p", 
+				  [element(2, DestAddr)]),
 			    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
 					   V1Res, V2Res, V3Res, Recv, NetIf)
 		    end;
@@ -433,8 +442,8 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 					   [{DestAddr, Community, Type}|V2Res],
 					   V3Res, Recv, NetIf);
 			undefined ->
-			    pdebug("snmp_trap: No community found for v2c "
-				   "dest: ~p\n", element(2, DestAddr)),
+			    ?vlog("No community found for v2c dest: ~p\n", 
+				  [element(2, DestAddr)]),
 			    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
 					   V1Res, V2Res, V3Res, Recv, NetIf)
 		    end;
@@ -446,25 +455,28 @@ send_trap_pdus([{DestAddr, TargetName, {MpModel, SecModel, SecName, SecLevel},
 				   [{DestAddr, MsgData, Type} | V3Res],
 				   Recv, NetIf);
 		true ->
-		    pdebug("snmp_trap: bad MpModel ~p for dest: ~p.~n",
-			   [MpModel, element(2, DestAddr)]),
+		    ?vlog("bad MpModel ~p for dest: ~p.~n",
+			  [MpModel, element(2, DestAddr)]),
 		    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
 				   V1Res, V2Res, V3Res, Recv, NetIf);
 		_ ->
-		    pdebug("snmp_trap: no access for dest: ~p in target ~p.~n",
-			   [element(2, DestAddr), TargetName]),
+		    ?vlog("no access for dest: ~p in target ~p.~n",
+			  [element(2, DestAddr), TargetName]),
 		    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
 				   V1Res, V2Res, V3Res, Recv, NetIf)
 	    end;
 	{discarded, Reason} ->
-	    pdebug("snmp_trap: mib view error ~p for\ndest: ~p "
-		   "secName: ~w ", [Reason, element(2, DestAddr), SecName]),
+	    ?vlog("mib view error ~p for"
+		  "~n   dest:    ~p"
+		  "~n   secName: ~w", 
+		  [Reason, element(2, DestAddr), SecName]),
 	    send_trap_pdus(T, ContextName, {TrapRec, Vbs},
 			   V1Res, V2Res, V3Res, Recv, NetIf)
     end;
 send_trap_pdus([], ContextName, {TrapRec, Vbs}, V1Res, V2Res, V3Res,
 	       Recv, NetIf) ->
     SysUpTime = snmp_standard_mib:sys_up_time(),
+    ?vdebug("send trap pdus with sysUpTime ~p",[SysUpTime]),
     send_v1_trap(TrapRec, V1Res, Vbs, NetIf, SysUpTime),
     send_v2_trap(TrapRec, V2Res, Vbs, Recv, NetIf, SysUpTime),
     send_v3_trap(TrapRec, V3Res, Vbs, Recv, NetIf, SysUpTime, ContextName).
@@ -473,15 +485,20 @@ send_v1_trap(_TrapRec, [], _Vbs, _NetIf, _SysUpTime) ->
     ok;
 send_v1_trap(#trap{enterpriseoid = Enter, specificcode = Spec},
 	     V1Res, Vbs, NetIf, SysUpTime) ->
+    ?vdebug("prepare to send v1 trap "
+	    "~n   '~p'"
+	    "~n   with ~p",[Enter,Spec]),
     TrapPdu = make_v1_trap_pdu(Enter, Spec, Vbs, SysUpTime),
     AddrCommunities = mk_addr_communities(V1Res),
     lists:foreach(fun({Community, Addrs}) ->
+			  ?vtrace("send v1 trap pdu to ~p",[Addrs]),
 			  NetIf ! {send_pdu, 'version-1', TrapPdu,
 				   {community, Community}, Addrs}
 		  end, AddrCommunities);
 send_v1_trap(#notification{oid = Oid}, V1Res, Vbs, NetIf, SysUpTime) ->
     %% Use alg. in rfc2089 to map a v2 trap to a v1 trap
     % delete Counter64 objects from vbs
+    ?vdebug("prepare to send v1 trap '~p'",[Oid]),
     NVbs = lists:filter(fun(Vb) when Vb#varbind.variabletype =/= 'Counter64' ->
 				true;
 			   (_) -> false
@@ -503,6 +520,7 @@ send_v1_trap(#notification{oid = Oid}, V1Res, Vbs, NetIf, SysUpTime) ->
     TrapPdu = make_v1_trap_pdu(Enter, Spec, NVbs, SysUpTime),
     AddrCommunities = mk_addr_communities(V1Res),
     lists:foreach(fun({Community, Addrs}) ->
+			  ?vtrace("send v1 trap to ~p",[Addrs]),
 			  NetIf ! {send_pdu, 'version-1', TrapPdu,
 				   {community, Community}, Addrs}
 		  end, AddrCommunities).
@@ -510,6 +528,7 @@ send_v1_trap(#notification{oid = Oid}, V1Res, Vbs, NetIf, SysUpTime) ->
 send_v2_trap(_TrapRec, [], _Vbs, _Recv, _NetIf, _SysUpTime) ->
     ok;
 send_v2_trap(TrapRec, V2Res, Vbs, Recv, NetIf, SysUpTime) ->
+    ?vdebug("prepare to send v2 trap",[]),
     {Oid, IVbs} = mk_v2_trap(TrapRec, Vbs, SysUpTime),
     TrapRecvs = get_trap_recvs(V2Res),
     InformRecvs = get_inform_recvs(V2Res),
@@ -519,6 +538,7 @@ send_v2_trap(TrapRec, V2Res, Vbs, Recv, NetIf, SysUpTime) ->
 send_v3_trap(_TrapRec, [], _Vbs, _Recv, _NetIf, _SysUpTime, _ContextName) ->
     ok;
 send_v3_trap(TrapRec, V3Res, Vbs, Recv, NetIf, SysUpTime, ContextName) ->
+    ?vdebug("prepare to send v3 trap",[]),
     {Oid, IVbs} = mk_v2_trap(TrapRec, Vbs, SysUpTime), % v2 refers to SMIv2;
     TrapRecvs = get_trap_recvs(V3Res),                 % same SMI for v3
     InformRecvs = get_inform_recvs(V3Res),
@@ -527,9 +547,11 @@ send_v3_trap(TrapRec, V3Res, Vbs, Recv, NetIf, SysUpTime, ContextName) ->
     
 
 mk_v2_trap(#notification{oid = Oid}, Vbs, SysUpTime) ->
+    ?vtrace("make v2 notification '~p'",[Oid]),
     mk_v2_notif(Oid, Vbs, SysUpTime);
 mk_v2_trap(#trap{enterpriseoid = Enter, specificcode = Spec}, Vbs, SysUpTime) ->
     %% Use alg. in rfc1908 to map a v1 trap to a v2 trap
+    ?vtrace("make v2 trap for '~p' with ~p",[Enter,Spec]),
     case Enter of
 	?snmp ->
 	    Oid = ?snmpTraps ++ [Spec + 1],
@@ -575,6 +597,7 @@ do_send_v2_trap(Recvs, Vbs, NetIf) ->
     TrapPdu = make_v2_notif_pdu(Vbs, 'snmpv2-trap'),
     AddrCommunities = mk_addr_communities(Recvs),
     lists:foreach(fun({Community, Addrs}) ->
+			  ?vtrace("~n   send v2 trap to ~p",[Addrs]),
 			  NetIf ! {send_pdu, 'version-2', TrapPdu,
 				   {community, Community}, Addrs}
 		  end, AddrCommunities),
@@ -589,9 +612,12 @@ do_send_v2_inform(Recvs, Vbs, Recv, NetIf) ->
     deliver_recv(Recv, snmp_targets, Targets),
     lists:foreach(
       fun({Addr, Community, Timeout, Retry}) ->
+	      ?vtrace("~n   start inform sender to send v2 inform to ~p",
+		      [Addr]),
 	      proc_lib:spawn_link(?MODULE, init_v2_inform,
 				  [Addr, Timeout, Retry, Vbs,
-				   Recv, NetIf, Community])
+				   Recv, NetIf, Community,
+				   get(verbosity),get(sname)])
       end, 
       Recvs).
 
@@ -601,6 +627,7 @@ do_send_v3_trap(Recvs, ContextName, Vbs, NetIf) ->
     TrapPdu = make_v2_notif_pdu(Vbs, 'snmpv2-trap'), % Yes, v2
     ContextEngineId = snmp_framework_mib:get_engine_id(),
     lists:foreach(fun(Recv) ->
+			  ?vtrace("~n   send v3 notif to ~p",[Recv]),
 			  NetIf ! {send_pdu, 'version-3', TrapPdu,
 				   {v3, ContextEngineId, ContextName}, [Recv]}
 		  end, Recvs),
@@ -613,16 +640,23 @@ do_send_v3_inform(Recvs, ContextName, Vbs, Recv, NetIf) ->
     deliver_recv(Recv, snmp_targets, Targets),
     lists:foreach(
       fun({Addr, MsgData, Timeout, Retry}) ->
+	      ?vtrace("~n   start inform sender to send v3 inform to ~p",
+		      [Addr]),
 	      proc_lib:spawn_link(?MODULE, init_v3_inform,
 				  [{Addr, MsgData}, Timeout, Retry, Vbs,
-				   Recv, NetIf, ContextName])
+				   Recv, NetIf, ContextName,
+				   get(verbosity),get(sname)])
       end, 
       Recvs).
 
 %% New process
-init_v2_inform(Addr, Timeout, Retry, Vbs, Recv, NetIf, Community) ->
+init_v2_inform(Addr, Timeout, Retry, Vbs, Recv, NetIf, Community,V,S) ->
     %% Make a new Inform for each recipient; they need unique
     %% request-ids!
+    put(verbosity,V),
+    put(sname,inform_sender_short_name(S)),
+    ?vdebug("~n   starting with timeout = ~p and retry = ~p",
+	    [Timeout,Retry]),
     InformPdu = make_v2_notif_pdu(Vbs, 'inform-request'),
     Msg = {send_pdu_req, 'version-2', InformPdu, {community, Community},
 	   [Addr], self()},
@@ -630,11 +664,15 @@ init_v2_inform(Addr, Timeout, Retry, Vbs, Recv, NetIf, Community) ->
     
 
 send_inform(Addr, Timeout, -1, Msg,  Recv, NetIf) ->
+    ?vinfo("~n   Delivery of send-pdu-request to net-if failed: reply timeout",
+	   []),
     deliver_recv(Recv, snmp_notification, {no_response, Addr});
 send_inform(Addr, Timeout, Retry, Msg, Recv, NetIf) ->
+    ?vtrace("~n   deliver send-pdu-request to net-if when Retry = ~p",[Retry]),
     NetIf ! Msg,
     receive
 	{snmp_response_received, _Vsn, _Pdu, _From} ->
+	    ?vtrace("~n   send request for ~p acknowledged (~p)",[Recv,Retry]),
 	    deliver_recv(Recv, snmp_notification, {got_response, Addr})
     after
 	Timeout ->
@@ -642,15 +680,24 @@ send_inform(Addr, Timeout, Retry, Msg, Recv, NetIf) ->
     end.
 
 %% New process
-init_v3_inform(Addr, Timeout, Retry, Vbs, Recv, NetIf, ContextName) ->
+init_v3_inform(Addr, Timeout, Retry, Vbs, Recv, NetIf, ContextName,V,S) ->
     %% Make a new Inform for each recipient; they need unique
     %% request-ids!
+    put(verbosity,V),
+    put(sname,inform_sender_short_name(S)),
+    ?vdebug("~n   starting with timeout = ~p and retry = ~p",
+	    [Timeout,Retry]),
     InformPdu = make_v2_notif_pdu(Vbs, 'inform-request'), % Yes, v2
     ContextEngineId = snmp_framework_mib:get_engine_id(),
     Msg = {send_pdu_req, 'version-3', InformPdu,
 	   {v3, ContextEngineId, ContextName}, [Addr], self()},
     send_inform(Addr, Timeout*10, Retry, Msg, Recv, NetIf).
-    
+
+% A nasty bit of verbosity setup...    
+inform_sender_short_name(ma)   -> mais;
+inform_sender_short_name(maw)  -> mais;
+inform_sender_short_name(mats) -> mais;
+inform_sender_short_name(_)    -> sais.
 
 deliver_recv(no_receiver, MsgId, _Result) ->
     ok;
@@ -664,9 +711,13 @@ deliver_recv({Tag, Receiver}, MsgId, Result) ->
 	{M, F, A} ->
 	    catch M:F([Msg | A]);
 	Else ->
+	    ?vinfo("~n   Cannot deliver acknowledgment: bad receiver = '~p'",
+		   [Else]),
 	    snmp_error:user_err("snmp: bad receiver, ~w\n", [Else])
     end;
 deliver_recv(Else, _MsgId, _Result) ->
+    ?vinfo("~n   Cannot deliver acknowledgment: bad receiver = '~p'",
+	   [Else]),
     snmp_error:user_err("snmp: bad receiver, ~w\n", [Else]).
 
 check_all_varbinds(#notification{oid = Oid}, Vbs, MibView) ->
@@ -728,11 +779,4 @@ mk_flag(?'SnmpSecurityLevel_authNoPriv') -> 1;
 mk_flag(?'SnmpSecurityLevel_authPriv') -> 3.
      
 
-pdebug(Format, X) -> 
-    case get(debug) of
-	false -> ok;
-	_ ->
-	    Form = lists:concat(["** SNMP Agent debug: ~n   ", Format, "\n"]),
-	    io:format(Form, X)
-    end.
 

@@ -299,6 +299,10 @@ gen_result_par(G, N, Type) ->
 			  "";
 		      Ctype == "CORBA_char *" ->
 			  "";
+		      record(Type, wstring) ->  %% WSTRING
+			  "";
+		      Ctype == "CORBA_wchar *" ->  %% WSTRING
+			  "";
 		      true ->
 			  "*"
 		  end;
@@ -326,6 +330,10 @@ gen_par_list(G, N, X, [Type |Types], [{Attr, Arg}|Args]) ->
 			      record(Type, string) ->
 				  "";
 			      Ctype == "CORBA_char *" ->
+				  "";
+			      record(Type, wstring) ->  %% WSTRING
+				  "";
+			      Ctype == "CORBA_wchar *" ->  %% WSTRING
 				  "";
 			      true ->
 				  case IsArray of
@@ -660,7 +668,12 @@ emit_constant(G, N, ConstRecord) ->
 	    emit(Fd, "#define __~s__\n\n", [UCName]),
 
 	    emit(Fd, "/* Constant: ~s */\n", [CName]),
-	    emit(Fd, "#define ~s ~p\n\n", [CName, ConstRecord#const.val]),
+	    
+	    if record(ConstRecord#const.type,wstring) -> %% If wstring, add 'L' 
+		    emit(Fd, "#define ~s L~p\n\n", [CName, ConstRecord#const.val]);
+	       true ->
+		    emit(Fd, "#define ~s ~p\n\n", [CName, ConstRecord#const.val])
+	    end,
 
 	    emit(Fd, "#endif\n\n")
     end.
@@ -864,6 +877,8 @@ gen_cc_type(G, N, S, _) when list(S) ->
     S;
 gen_cc_type(G, N, S, _) when record(S, string) ->
     "CORBA_char *";
+gen_cc_type(G, N, S, _) when record(S, wstring) ->  %% WSTRING
+    "CORBA_wchar *";
 gen_cc_type(G, N, {boolean, _}, _) ->
     "CORBA_boolean";
 gen_cc_type(G, N, {octet, _}, _) ->
@@ -875,8 +890,12 @@ gen_cc_type(G, N, {unsigned, U}, _) ->
 	{short,_} ->
 	    "CORBA_unsigned_short";
 	{long,_} ->
-	    "CORBA_unsigned_long"
+	    "CORBA_unsigned_long";
+	{'long long',_} ->
+	    "CORBA_unsigned_long_long"
     end;
+gen_cc_type(G, N, {'long long', _}, _) ->
+    "CORBA_long_long";
 gen_cc_type(G, N, S, _) when record(S, union)->
     icgen:get_id2(S);
 gen_cc_type(G, N, {T, _}, _) ->
@@ -957,6 +976,10 @@ gen_encoding_fun(G, N, Fd, T, LName, OutBuffer)  when list(T) -> %% Already a fu
 		    emit(Fd, "  if ((oe_error_code = oe_ei_encode_char(oe_env, ~s)) < 0)\n",
 			 [LName]),
 		    emit(Fd, "    return oe_error_code;\n\n");
+		wchar ->  %% WCHAR
+		    emit(Fd, "  if ((oe_error_code = oe_ei_encode_wchar(oe_env, ~s)) < 0)\n",
+			 [LName]),
+		    emit(Fd, "    return oe_error_code;\n\n");
 		
 		octet ->
 		    emit(Fd, "  if ((oe_error_code = oe_ei_encode_char(oe_env, ~s)) < 0)\n",
@@ -972,6 +995,10 @@ gen_encoding_fun(G, N, Fd, T, LName, OutBuffer)  when record(T, string) ->
     emit(Fd, "  if ((oe_error_code = oe_ei_encode_string(oe_env, ~s)) < 0)\n", 
 	 [LName]),
     emit(Fd, "    return oe_error_code;\n\n");
+gen_encoding_fun(G, N, Fd, T, LName, OutBuffer)  when record(T, wstring) ->  %% WSTRING
+    emit(Fd, "  if ((oe_error_code = oe_ei_encode_wstring(oe_env, ~s)) < 0)\n", 
+	 [LName]),
+    emit(Fd, "    return oe_error_code;\n\n");
 gen_encoding_fun(G, N, Fd, T, LName, OutBuffer) ->
     case T of
 	{unsigned, {short, _}} -> 
@@ -984,6 +1011,11 @@ gen_encoding_fun(G, N, Fd, T, LName, OutBuffer) ->
 		 [LName]),
 	    emit(Fd, "    return oe_error_code;\n\n");
 
+	{unsigned, {'long long', _}} -> 
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_ulonglong(oe_env, ~s)) < 0)\n", 
+		 [LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+
 	{short, _} ->
 	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, (long) ~s)) < 0)\n",
 		 [LName]),
@@ -991,6 +1023,11 @@ gen_encoding_fun(G, N, Fd, T, LName, OutBuffer) ->
 
 	{long, _} ->
 	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, ~s)) < 0)\n",
+		 [LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+
+	{'long long', _} ->
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_longlong(oe_env, ~s)) < 0)\n",
 		 [LName]),
 	    emit(Fd, "    return oe_error_code;\n\n");
 
@@ -1020,6 +1057,11 @@ gen_encoding_fun(G, N, Fd, T, LName, OutBuffer) ->
 	
 	{char, _} ->
 	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_char(oe_env, ~s)) < 0)\n",
+		 [LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+
+	{wchar, _} ->  %% WCHAR
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_wchar(oe_env, ~s)) < 0)\n",
 		 [LName]),
 	    emit(Fd, "    return oe_error_code;\n\n");
 
@@ -1107,12 +1149,20 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer)  when list(T) -> %% Already a
 				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_ulong(oe_env, ~s)) < 0)\n", 
 					 [LName]),
 				    emit(Fd, "    return oe_error_code;\n\n");
+				tk_ulonglong -> 
+				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_ulonglong(oe_env, ~s)) < 0)\n", 
+					 [LName]),
+				    emit(Fd, "    return oe_error_code;\n\n");
 				tk_short ->
 				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, (long) ~s)) < 0)\n",
 					 [LName]),
 				    emit(Fd, "    return oe_error_code;\n\n");
 				tk_long ->
 				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, ~s)) < 0)\n",
+					 [LName]),
+				    emit(Fd, "    return oe_error_code;\n\n");
+				tk_longlong ->
+				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_longlong(oe_env, ~s)) < 0)\n",
 					 [LName]),
 				    emit(Fd, "    return oe_error_code;\n\n");
 				tk_float ->
@@ -1138,6 +1188,10 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer)  when list(T) -> %% Already a
 				    emit(Fd, "  }\n\n");
 				tk_char ->
 				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_char(oe_env, ~s)) < 0)\n",
+					 [LName]),
+				    emit(Fd, "    return oe_error_code;\n\n");
+				tk_wchar ->  %% WCHAR
+				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_wchar(oe_env, ~s)) < 0)\n",
 					 [LName]),
 				    emit(Fd, "    return oe_error_code;\n\n");
 				tk_octet ->
@@ -1178,6 +1232,10 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer)  when record(T, string) ->
     emit(Fd, "  if ((oe_error_code = oe_ei_encode_string(oe_env, ~s)) < 0)\n", 
 	 [LName]),
     emit(Fd, "    return oe_error_code;\n\n");
+gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer)  when record(T, wstring) ->  %% WSTRING
+    emit(Fd, "  if ((oe_error_code = oe_ei_encode_wstring(oe_env, ~s)) < 0)\n", 
+	 [LName]),
+    emit(Fd, "    return oe_error_code;\n\n");
 gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer) ->
     case T of
 	{unsigned, {short, _}} -> 
@@ -1188,12 +1246,20 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer) ->
 	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_ulong(oe_env, ~s)) < 0)\n", 
 		 [LName]),
 	    emit(Fd, "    return oe_error_code;\n\n");
+	{unsigned, {'long long', _}} -> 
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_ulonglong(oe_env, ~s)) < 0)\n", 
+		 [LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
 	{short, _} ->
 	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, (long) ~s)) < 0)\n",
 		 [LName]),
 	    emit(Fd, "    return oe_error_code;\n\n");
 	{long, _} ->
 	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, ~s)) < 0)\n",
+		 [LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+	{'long long', _} ->
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_longlong(oe_env, ~s)) < 0)\n",
 		 [LName]),
 	    emit(Fd, "    return oe_error_code;\n\n");
 	{float,_} ->
@@ -1219,6 +1285,10 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer) ->
 	    emit(Fd, "  }\n\n");
 	{char, _} ->
 	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_char(oe_env, ~s)) < 0)\n",
+		 [LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+	{wchar, _} -> %% WCHAR
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_wchar(oe_env, ~s)) < 0)\n",
 		 [LName]),
 	    emit(Fd, "    return oe_error_code;\n\n");
 	{octet, _} ->
@@ -1318,6 +1388,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring,
 		    emit(Fd, "  if ((oe_error_code = ei_decode_ulong(~s, &oe_env->_iin, ~s~s)) < 0)\n", 
 			 [InBuffer, Refstring, LName]),
 		    emit(Fd, "    return oe_error_code;\n\n");
+
+		ulonglong -> 
+		    emit(Fd, "  if ((oe_error_code = oe_ei_decode_ulonglong(~s, &oe_env->_iin, ~s~s)) < 0)\n", 
+			 [InBuffer, Refstring, LName]),
+		    emit(Fd, "    return oe_error_code;\n\n");
 		
 		short ->
 		    emit(Fd, "  {\n"),
@@ -1329,9 +1404,13 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring,
 		    emit(Fd, "    if (*(~s) !=  oe_long)\n      return -1;\n",[LName]),
 		    emit(Fd, "  }\n\n");
 		
-		
 		long ->
 		    emit(Fd, "  if ((oe_error_code = ei_decode_long(~s, &oe_env->_iin, ~s~s)) < 0)\n",
+			 [InBuffer, Refstring, LName]),
+		    emit(Fd, "    return oe_error_code;\n\n");
+
+		longlong ->
+		    emit(Fd, "  if ((oe_error_code = oe_ei_decode_longlong(~s, &oe_env->_iin, ~s~s)) < 0)\n",
 			 [InBuffer, Refstring, LName]),
 		    emit(Fd, "    return oe_error_code;\n\n");
 
@@ -1367,6 +1446,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring,
 		
 		char ->
 		    emit(Fd, "  if ((oe_error_code = ei_decode_char(~s, &oe_env->_iin, ~s~s)) < 0)\n",
+			 [InBuffer, Refstring, LName]),
+		    emit(Fd, "    return oe_error_code;\n\n");
+
+		wchar ->  %% WCHAR
+		    emit(Fd, "  if ((oe_error_code = oe_ei_decode_wchar(~s, &oe_env->_iin, ~s~s)) < 0)\n",
 			 [InBuffer, Refstring, LName]),
 		    emit(Fd, "    return oe_error_code;\n\n");
 		
@@ -1456,6 +1540,34 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring,
 
 	    emit(Fd, "  }\n\n")	
     end;
+gen_decoding_fun(G, N, Fd, T, LName, Refstring,
+		 InBuffer, Align, NextPos, DecType)  when record(T, wstring) ->  %% WSTRING
+    case DecType of
+	caller_dyn ->
+	    emit(Fd, "  if ((oe_error_code = oe_ei_decode_wstring(~s, &oe_env->_iin, ~s~s)) < 0)\n", 
+		 [InBuffer, Refstring, LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+
+	_ ->
+	    emit(Fd, "  ~s~s = (void *)(oe_first + *oe_outindex);\n\n", 
+		 [Refstring, LName]),
+	    
+	    emit(Fd, "  {\n"),
+	    emit(Fd, "    int oe_type=0;\n"),
+	    emit(Fd, "    int oe_string_ctr=0;\n\n"),
+	    
+	    emit(Fd, "    (int) ei_get_type(~s, &oe_env->_iin, &oe_type, &oe_string_ctr);\n\n",
+		 [InBuffer]),
+	    
+	    emit(Fd, "    if ((oe_error_code = oe_ei_decode_wstring(~s, &oe_env->_iin, ~s~s)) < 0)\n", 
+		 [InBuffer, Refstring, LName]),
+	    emit(Fd, "      return oe_error_code;\n\n"),
+	    
+	    icgen:emit(Fd, "  *oe_outindex = ~s;\n",
+		       [icgen:mk_align("*oe_outindex+oe_string_ctr+1")]),
+
+	    emit(Fd, "  }\n\n")	
+    end;
 gen_decoding_fun(G, N, Fd, T, LName, Refstring, InBuffer, Align, NextPos, DecType) ->
     case T of
 	{void, _} ->
@@ -1478,6 +1590,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring, InBuffer, Align, NextPos, DecTyp
 		 [InBuffer, Refstring, LName]),
 	    emit(Fd, "    return oe_error_code;\n\n");
 
+	{unsigned, {'long long', _}} -> 
+	    emit(Fd, "  if ((oe_error_code = oe_ei_decode_ulonglong(~s, &oe_env->_iin, ~s~s)) < 0)\n", 
+		 [InBuffer, Refstring, LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+
 	{short,_} ->
 	    emit(Fd, "  {\n"),
 	    emit(Fd, "    long oe_long;\n"),
@@ -1491,6 +1608,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring, InBuffer, Align, NextPos, DecTyp
 
 	{long, _} ->
 	    emit(Fd, "  if ((oe_error_code = ei_decode_long(~s, &oe_env->_iin, ~s~s)) < 0)\n",
+		 [InBuffer, Refstring, LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+
+	{'long long', _} ->
+	    emit(Fd, "  if ((oe_error_code = oe_ei_decode_longlong(~s, &oe_env->_iin, ~s~s)) < 0)\n",
 		 [InBuffer, Refstring, LName]),
 	    emit(Fd, "    return oe_error_code;\n\n");
 
@@ -1526,6 +1648,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring, InBuffer, Align, NextPos, DecTyp
 
 	{char, _} ->
 	    emit(Fd, "  if ((oe_error_code = ei_decode_char(~s, &oe_env->_iin, ~s~s)) < 0)\n",
+		 [InBuffer, Refstring, LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+
+	{wchar, _} ->  %% WCHAR
+	    emit(Fd, "  if ((oe_error_code = oe_ei_decode_wchar(~s, &oe_env->_iin, ~s~s)) < 0)\n",
 		 [InBuffer, Refstring, LName]),
 	    emit(Fd, "    return oe_error_code;\n\n");
 
@@ -1611,11 +1738,17 @@ gen_malloc_size_calculation(G, N, Fd, T, InBuffer, Align, CalcType)  when list(T
 		ulong -> 
 		    emit(Fd, "    if ((oe_error_code = ei_decode_ulong(~s, oe_size_count_index, 0)) < 0)\n", 
 			 [InBuffer]);
+		ulonglong -> 
+		    emit(Fd, "    if ((oe_error_code = oe_ei_decode_ulonglong(~s, oe_size_count_index, 0)) < 0)\n", 
+			 [InBuffer]);
 		short ->
 		    emit(Fd, "    if ((oe_error_code = ei_decode_long(~s, oe_size_count_index, 0)) < 0)\n",
 			 [InBuffer]);
 		long ->
 		    emit(Fd, "    if ((oe_error_code = ei_decode_long(~s, oe_size_count_index, 0)) < 0)\n",
+			 [InBuffer]);
+		longlong ->
+		    emit(Fd, "    if ((oe_error_code = oe_ei_decode_longlong(~s, oe_size_count_index, 0)) < 0)\n",
 			 [InBuffer]);
 		float ->
 		    emit(Fd, "    if ((oe_error_code = ei_decode_double(~s, oe_size_count_index, 0)) < 0)\n",
@@ -1628,6 +1761,9 @@ gen_malloc_size_calculation(G, N, Fd, T, InBuffer, Align, CalcType)  when list(T
 			 [InBuffer]);
 		char ->
 		    emit(Fd, "    if ((oe_error_code = ei_decode_char(~s, oe_size_count_index, 0)) < 0)\n",
+			 [InBuffer]);
+		wchar ->  %% WCHAR
+		    emit(Fd, "    if ((oe_error_code = oe_ei_decode_wchar(~s, oe_size_count_index, 0)) < 0)\n",
 			 [InBuffer]);
 		octet ->
 		    emit(Fd, "    if ((oe_error_code = ei_decode_char(~s, oe_size_count_index, 0)) < 0)\n",
@@ -1695,6 +1831,56 @@ gen_malloc_size_calculation(G, N, Fd, T, InBuffer, Align, CalcType)  when record
 	    emit(Fd, "    oe_malloc_size = ~s;\n\n", 
 		 [icgen:mk_align("oe_malloc_size + oe_temp+1")])
     end;
+
+gen_malloc_size_calculation(G, N, Fd, T, InBuffer, Align, CalcType)  when record(T, wstring) ->  %% WSTRING
+    Tname = gen_variable_name(op_variable_count),
+    store_tmp_decl("    int ~s = 0;\n",[Tname]),
+    
+    case CalcType of
+	generator ->
+	    emit(Fd, "    if ((oe_error_code = ei_get_type(~s, oe_size_count_index, &oe_type, &~s)) < 0)\n",
+		 [InBuffer, Tname]);
+	_ ->
+	    emit(Fd, "    int oe_type = 0;\n"),
+	    emit(Fd, "    int oe_temp = 0;\n\n"),
+	    emit(Fd, "    if ((oe_error_code = ei_get_type(~s, &oe_size_count_index, &oe_type, &oe_temp)) < 0)\n",
+		 [InBuffer])
+    end,
+
+    emit(Fd, "      return oe_error_code;\n\n"),
+
+    if
+	T#wstring.length == 0 ->
+	    ok;
+	true ->
+	    Length = ic_util:eval_c(G, N, T#wstring.length), 
+	    case CalcType of
+		generator ->
+		    emit(Fd, "  if (~s > ~s)\n",[Tname, Length]),
+		    emit(Fd, "    return -1;\n\n");
+		 _ ->
+		    emit(Fd, "  if (oe_temp > ~s)\n",[Length]),
+		    emit(Fd, "    return -1;\n\n")
+	    end		    
+    end,
+    
+    case CalcType of
+	generator ->
+	    emit(Fd, "    if ((oe_error_code = oe_ei_decode_wstring(~s, oe_size_count_index, 0)) < 0)\n", [InBuffer]);
+	_ ->
+	    emit(Fd, "    if ((oe_error_code = oe_ei_decode_wstring(~s, &oe_size_count_index, 0)) < 0)\n", [InBuffer])
+    end,
+
+    emit(Fd, "      return oe_error_code;\n\n"),
+    
+    case CalcType of
+	generator ->
+	    emit(Fd, "    oe_malloc_size =\n      ~s;\n\n", 
+		 [icgen:mk_align("oe_malloc_size + ((" ++ Tname ++"+ 1) * __OE_WCHAR_SIZE_OF__)")]);
+	_ ->
+	    emit(Fd, "    oe_malloc_size =\n      ~s;\n\n", 
+		 [icgen:mk_align("oe_malloc_size + ((oe_temp + 1) * __OE_WCHAR_SIZE_OF__)")])
+    end;
  
 
 gen_malloc_size_calculation(G, N, Fd, T, InBuffer, Align, CalcType) ->
@@ -1706,11 +1892,17 @@ gen_malloc_size_calculation(G, N, Fd, T, InBuffer, Align, CalcType) ->
 	{unsigned, {long, _}} -> 
 	    emit(Fd, "    if ((oe_error_code = ei_decode_ulong(~s, oe_size_count_index, 0)) < 0)\n", 
 		 [InBuffer]);
+	{unsigned, {'long long', _}} -> 
+	    emit(Fd, "    if ((oe_error_code = oe_ei_decode_ulonglong(~s, oe_size_count_index, 0)) < 0)\n", 
+		 [InBuffer]);
 	{short, _} ->
 	    emit(Fd, "    if ((oe_error_code = ei_decode_long(~s, oe_size_count_index, 0)) < 0)\n",
 		 [InBuffer]);
 	{long, _} ->
 	    emit(Fd, "    if ((oe_error_code = ei_decode_long(~s, oe_size_count_index, 0)) < 0)\n",
+		 [InBuffer]);
+	{'long long', _} ->
+	    emit(Fd, "    if ((oe_error_code = oe_ei_decode_longlong(~s, oe_size_count_index, 0)) < 0)\n",
 		 [InBuffer]);
 	{float,_} ->
 	    emit(Fd, "    if ((oe_error_code = ei_decode_double(~s, oe_size_count_index, 0)) < 0)\n",
@@ -1723,6 +1915,9 @@ gen_malloc_size_calculation(G, N, Fd, T, InBuffer, Align, CalcType) ->
 		 [InBuffer]);
 	{char, _} ->
 	    emit(Fd, "    if ((oe_error_code = ei_decode_char(~s, oe_size_count_index, 0)) < 0)\n",
+		 [InBuffer]);
+	{wchar, _} ->  %% WCHAR
+	    emit(Fd, "    if ((oe_error_code = oe_ei_decode_wchar(~s, oe_size_count_index, 0)) < 0)\n",
 		 [InBuffer]);
 	{octet, _} ->
 	    emit(Fd, "    if ((oe_error_code = ei_decode_char(~s, oe_size_count_index, 0)) < 0)\n",
@@ -1797,6 +1992,8 @@ check_dynamic_size({'tk_array', ElemTC, Length}) ->
     check_dynamic_size(ElemTC);
 check_dynamic_size({'tk_string', _}) -> 
     true;
+check_dynamic_size({'tk_wstring', _}) ->  %% WSTRING 
+    true;
 check_dynamic_size({'tk_sequence', ElemTC, MaxLsextractength}) ->
     true;
 check_dynamic_size({'tk_union', IFRId, Name, _, _, ElementList}) ->
@@ -1806,6 +2003,8 @@ check_dynamic_size(Other) ->
 
 
 check_dynamic_size(G, N, T)  when record(T, string) ->
+    true;
+check_dynamic_size(G, N, T)  when record(T, wstring) ->  %% WSTRING
     true;
 check_dynamic_size(G, N, T)  when record(T, sequence) ->
     true;
@@ -2362,6 +2561,10 @@ gen_par_list_for_client_enc_func(G, N, X, [Type |Types], [{Attr, Arg}|Args]) ->
 				  "";
 			      Ctype == "CORBA_char *" ->
 				  "";
+			      record(Type, wstring) ->  %% WSTRING
+				  "";
+			      Ctype == "CORBA_wchar *" ->  %% WSTRING
+				  "";
 			      true ->
 				  case ictype:isArray(G, N, Type) of
 				      true ->
@@ -2417,6 +2620,10 @@ gen_par_list_for_client_dec_func(G, N, X, [Type |Types], [{Attr, Arg}|Args]) ->
 			      record(Type, string) ->
 				  "";
 			      Ctype == "CORBA_char *" ->
+				  "";
+			      record(Type, wstring) ->  %% WSTRING
+				  "";
+			      Ctype == "CORBA_wchar *" ->  %% WSTRING
 				  "";
 			      true ->
 				  case IsArray of
@@ -2503,6 +2710,10 @@ gen_par_list_for_client_prototypes(G, N, X, [Type |Types], [{Attr, Arg}|Args]) -
 				  "";
 			      Ctype == "CORBA_char *" ->
 				  "";
+			      record(Type, wstring) ->  %% WSTRING
+				  "";
+			      Ctype == "CORBA_wchar *" ->  %% WSTRING
+				  "";
 			      true ->
 				  case IsArray of
 				      true ->
@@ -2552,6 +2763,10 @@ gen_ret_type(G, N, Type) ->
 			  "";
 		      Ctype == "CORBA_char *" ->
 			  "";
+		      record(Type, wstring) ->  %% WSTRING
+			  "";
+		      Ctype == "CORBA_wchar *" ->  %% WSTRING
+			  "";
 		      true ->
 			  case ictype:isArray(G, N, Type) of
 			      true ->
@@ -2595,6 +2810,10 @@ gen_par_list_for_client_enc_prototypes(G, N, X, [Type |Types], [{Attr, Arg}|Args
 			      record(Type, string) ->
 				  "";
 			      Ctype == "CORBA_char *" ->
+				  "";
+			      record(Type, wstring) ->  %% WSTRING
+				  "";
+			      Ctype == "CORBA_wchar *" ->  %% WSTRING
 				  "";
 			      true ->
 				  case ictype:isArray(G, N, Type) of
@@ -2651,6 +2870,10 @@ gen_par_list_for_client_dec_prototypes(G, N, X, [Type |Types], [{Attr, Arg}|Args
 			      record(Type, string) ->
 				  "";
 			      Ctype == "CORBA_char *" ->
+				  "";
+			      record(Type, wstring) ->  %% WSTRING
+				  "";
+			      Ctype == "CORBA_wchar *" ->  %% WSTRING
 				  "";
 			      true ->
 				  case ictype:isArray(G, N, Type) of

@@ -30,6 +30,8 @@
 #include <sys/uio.h>
 #endif
 
+#include "erl_error.h"
+
 #ifdef DEBUG_DIST
 #include <stdio.h>
 extern int ei_show_sendmsg(FILE *dest, const char *header, const char *msg);
@@ -50,7 +52,8 @@ extern erlang_trace *ei_trace(int query, erlang_trace *token);
 extern const char *erl_getfdcookie(int fd);
 
 /* length (4), PASS_THROUGH (1), header, message */
-int ei_send_encoded(int fd, const erlang_pid *to, const char *msg, int msglen)
+int 
+ei_send_encoded (int fd, const erlang_pid *to, const char *msg, int msglen)
 {
   char *s, header[1200]; /* see size calculation below */
   erlang_trace *token = NULL;
@@ -96,15 +99,26 @@ int ei_send_encoded(int fd, const erlang_pid *to, const char *msg, int msglen)
   v[1].iov_base = (char *)msg;
   v[1].iov_len = msglen;
 
-  if (writev(fd,v,2) != index+msglen) return -1;
+  if (writev(fd,v,2) != index+msglen) 
+  {
+      erl_errno = EIO;
+      return -1;
+  }
   
-#else
+#else  /* !HAVE_WRITEV */
   
-  /* no writev() */
-  if (writesocket(fd,header,index) != index) return -1;
-  if (writesocket(fd,msg,msglen) != msglen) return -1;
+  if (writesocket(fd,header,index) != index)
+  { 
+      erl_errno = EIO;
+      return -1;
+  }
+  if (writesocket(fd,msg,msglen) != msglen)
+  { 
+      erl_errno = EIO;
+      return -1;
+  }
 
-#endif
+#endif  /* !HAVE_WRITEV */
 
   return 0;
 }

@@ -1,0 +1,93 @@
+<!doctype appref PUBLIC "-//Stork//DTD appref//EN">
+<!-- 
+ ``The contents of this file are subject to the Erlang Public License,
+ Version 1.1, (the "License"); you may not use this file except in
+ compliance with the License. You should have received a copy of the
+ Erlang Public License along with this software. If not, it can be
+ retrieved via the world wide web at http://www.erlang.org/.
+ 
+ Software distributed under the License is distributed on an "AS IS"
+ basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ the License for the specific language governing rights and limitations
+ under the License.
+ 
+ The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+ Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+ AB. All Rights Reserved.''
+ 
+     $Id$
+-->
+<appref>
+  <header>
+    <title>comet
+    <prepared>Jakob Cederlund
+    <docno>
+    <date>2000-05-05
+    <rev>A
+    <file>comet.sgml
+  </header>
+
+  <app>comet
+  <appsummary>The COM client for Erlang
+  <description>
+    <p>
+    Comet, the COM client for Erlang, is a way to call any COM-service
+    in Windows from an Erlang program. It is a combination of a gen_server
+    and a port program (or port driver) that enables Erlang programs to call
+    almost any COM-server.
+    <p>
+    Comet uses a gen_server in the module erl_com, together with a port program
+    (or port driver), to call COM-servers. Both the late-binding interface
+    IDispatch and early-binding virtual interfaces can be used. Erlang types
+    are converted to COM types and parameters are returned.
+    <p>
+    COM stands for Component Object Model, (or sometimes Common Object Model),
+    and is MicroSoft's technique for component-based programming. It allows
+    programs on Windows systems, to call other programs and libraries across
+    language boundaries. It is a competitor to Corba, but has other functionality
+    too.
+    <p>
+    COM is available on all 32-bit Windows systems, such as NT 4, Windows 95,
+    Windows 98 and Windows 2000. Comet can be used on any of these.
+    <p>
+    With Comet, an Erlang application can use (almost) any COM-service on
+    Windows from Erlang. Examples of what can be done include:
+    <list>
+      <item><p>Opening webpages with Internet Exporer (or Netscape)</item>
+      <item><p>Reading and writing data from Excel Worksheet</item>
+      <item><p>Reading and writing from Word</item>
+      <item><p>Call C-code-libraries an efficient way, without the hassle
+	  of creating a port-driver</item>
+      <item><p>Execute scripts in VBScript or JavaScript</item>
+    </list>
+    <p>
+    Each of these examples are described in <c>comet_examples</c>.
+    <p>
+    Using Comet for other purposes than those described in the examples,
+    requires knowledge of COM. COM is a complex topic, and there are a lot of
+    books written about it. Three decent references are given below. Some
+    sections of the Comet documentation assumes basic knowledge of COM.
+    <p>
+  </description>
+
+  <section><title>CONFIGURATION</title>
+<p>    Comet does not use any configuration parameters.
+  </section>
+
+  <section><title>SEE ALSO</title>
+
+    <p>erl_com(3),
+       comet_examples(3),
+       some decent books on COM, such as:
+        Inside COM, by Dale Rogerson (ISBN: 1572313498)
+        Essential COM, by Don Box (ISBN: 0201634465)
+	Mastering COM and COM+, by Rofail and Shohoud (ISBN: 0782123848)
+	
+  </section>
+  
+  <authors>
+    <aname>Jakob Cederlund</aname>
+    <email>jakob@erix.ericsson.se</email>
+  </authors>
+
+</appref>

@@ -82,14 +82,18 @@ public class TypeCode {
 	
       case TCKind._tk_short:
       case TCKind._tk_long:
+      case TCKind._tk_longlong:
       case TCKind._tk_ushort:
       case TCKind._tk_ulong:
+      case TCKind._tk_ulonglong:
       case TCKind._tk_float:
       case TCKind._tk_double:
       case TCKind._tk_boolean:
       case TCKind._tk_char:
+      case TCKind._tk_wchar:
       case TCKind._tk_octet:
       case TCKind._tk_string:
+      case TCKind._tk_wstring:
       case TCKind._tk_any:
       case TCKind._tk_void:
       case TCKind._tk_atom:
@@ -157,11 +161,7 @@ public class TypeCode {
       case TCKind._tk_objref:
       case TCKind._tk_alias:
       case TCKind._tk_except:
-      case TCKind._tk_longlong:
-      case TCKind._tk_ulonglong:
       case TCKind._tk_longdouble:
-      case TCKind._tk_wchar:
-      case TCKind._tk_wstring:
       case TCKind._tk_fixed:
 
 	return (tck.value() == _kind.value());
@@ -294,7 +294,7 @@ public class TypeCode {
       if (atom.equals("tk_atom"))
 	return TCKind.tk_atom;    
     else
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("BAD KIND");
+      throw new java.lang.Exception("BAD KIND");
   
   }
   
@@ -312,7 +312,7 @@ public class TypeCode {
     throws java.lang.Exception{
       
       if (_id == null) 
-	throw new com.ericsson.otp.erlang.OtpErlangDataException("BAD KIND");
+	throw new java.lang.Exception("BAD KIND");
 
       return _id;
   }
@@ -341,7 +341,7 @@ public class TypeCode {
     throws java.lang.Exception{
       
       if (_name == null) 
-	throw new com.ericsson.otp.erlang.OtpErlangDataException("BAD KIND");
+	throw new java.lang.Exception("BAD KIND");
       
       return _name;
   }
@@ -368,7 +368,7 @@ public class TypeCode {
     throws java.lang.Exception{
       
       if (_member_count == -1) 
-	throw new com.ericsson.otp.erlang.OtpErlangDataException("BAD KIND");
+	throw new java.lang.Exception("BAD KIND");
       
       return _member_count;
   }
@@ -485,7 +485,7 @@ public class TypeCode {
     throws java.lang.Exception{
       
       if (_discriminator_type == null)
-	throw new com.ericsson.otp.erlang.OtpErlangDataException("BAD KIND");
+	throw new java.lang.Exception("BAD KIND");
       
       return _discriminator_type;
   }
@@ -511,7 +511,7 @@ public class TypeCode {
     throws java.lang.Exception{
       
       if (_default_index == -1)
-	throw new com.ericsson.otp.erlang.OtpErlangDataException("BAD KIND");
+	throw new java.lang.Exception("BAD KIND");
       
       return _default_index;
   }
@@ -537,7 +537,7 @@ public class TypeCode {
     throws java.lang.Exception{
       
       if (_length == -1)
-	throw new com.ericsson.otp.erlang.OtpErlangDataException("BAD KIND");
+	throw new java.lang.Exception("BAD KIND");
       
       return _length;
   }
@@ -563,7 +563,7 @@ public class TypeCode {
     throws java.lang.Exception {
       
       if (_content_type == null)
-	throw new com.ericsson.otp.erlang.OtpErlangDataException("BAD KIND");
+	throw new java.lang.Exception("BAD KIND");
       
       return _content_type;
   }
@@ -597,8 +597,14 @@ public class TypeCode {
       case TCKind._tk_long :
 	_os.write_atom("tk_long");
 	break;
+      case TCKind._tk_longlong :
+	_os.write_atom("tk_longlong");
+	break;
       case TCKind._tk_ulong :
 	_os.write_atom("tk_ulong");
+	break;
+      case TCKind._tk_ulonglong :
+	_os.write_atom("tk_ulonglong");
 	break;
       case TCKind._tk_float :
 	_os.write_atom("tk_float");
@@ -612,12 +618,20 @@ public class TypeCode {
       case TCKind._tk_char : 
 	_os.write_atom("tk_char");
 	break;
+      case TCKind._tk_wchar : 
+	_os.write_atom("tk_wchar");
+	break;
       case TCKind._tk_octet :
 	_os.write_atom("tk_octet");
 	break;
       case TCKind._tk_string :
 	_os.write_tuple_head(2);
 	_os.write_atom("tk_string");
+	_os.write_ulong(_tc.length());
+	break;
+      case TCKind._tk_wstring :
+	_os.write_tuple_head(2);
+	_os.write_atom("tk_wstring");
 	_os.write_ulong(_tc.length());
 	break;
       case TCKind._tk_struct:	
@@ -686,7 +700,7 @@ public class TypeCode {
 	 * Not supported types
 	 */
       default :
-	throw new com.ericsson.otp.erlang.OtpErlangDataException("Unsupported type");
+	throw new java.lang.Exception("Unsupported type");
 	
       }
 			   	       
@@ -713,11 +727,14 @@ public class TypeCode {
 	case TCKind._tk_short :
 	case TCKind._tk_ushort : 
 	case TCKind._tk_long :
+	case TCKind._tk_longlong :
 	case TCKind._tk_ulong :
+	case TCKind._tk_ulonglong :
 	case TCKind._tk_float :
 	case TCKind._tk_double :
 	case TCKind._tk_boolean :
 	case TCKind._tk_char : 
+	case TCKind._tk_wchar : 
 	case TCKind._tk_octet :
 	case TCKind._tk_void : 
 	case TCKind._tk_any : 
@@ -726,7 +743,7 @@ public class TypeCode {
 	  
 	  return _tc;
 	default :
-	  throw new com.ericsson.otp.erlang.OtpErlangDataException("Unsupported type");
+	  throw new java.lang.Exception("Unsupported type");
 	}
 	
       case (com.ericsson.otp.erlang.OtpExternal.smallTupleTag):
@@ -746,6 +763,10 @@ public class TypeCode {
 	  switch(__kind.value()) {
 	  
 	  case TCKind._tk_string :
+	    _tc.length((int)_is.read_ulong());
+	    return _tc;
+
+	  case TCKind._tk_wstring :
 	    _tc.length((int)_is.read_ulong());
 	    return _tc;
 
@@ -834,12 +855,12 @@ public class TypeCode {
 	    return _tc;
 	    
 	  default:
-	    throw new com.ericsson.otp.erlang.OtpErlangDataException("Unsupported type");
+	    throw new java.lang.Exception("Unsupported type");
 	    
 	  }
 	  
 	default:
-	  throw new com.ericsson.otp.erlang.OtpErlangDataException("Unsupported type");
+	  throw new java.lang.Exception("Unsupported type");
 	}
 	
       }

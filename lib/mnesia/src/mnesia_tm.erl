@@ -78,8 +78,8 @@ init(Parent) ->
     
     %% Handshake and initialize transaction recovery
     mnesia_recover:init(),
-    mnesia_monitor:init(),
-    AllOthers = mnesia_lib:all_nodes() -- [node()],
+    Early = mnesia_monitor:init(),
+    AllOthers = mnesia_lib:uniq(Early ++ mnesia_lib:all_nodes()) -- [node()],
     set(original_nodes, AllOthers),
     mnesia_recover:connect_nodes(AllOthers),
 
@@ -106,7 +106,6 @@ init(Parent) ->
 	_ ->
 	    mnesia_subscr:subscribe(whereis(mnesia_event), {table, schema})
     end,
-    set(mnesia_status, running),
     proc_lib:init_ack(Parent, {ok, self()}),
     doit_loop(#state{supervisor = Parent}).
 
@@ -160,26 +159,7 @@ mnesia_down(Node) ->
     end.
 
 prepare_checkpoint(Nodes, Cp) ->
-    case [N || N <- Nodes, mnesia_monitor:needs_protocol_conversion(N)] of
-	[] ->
-	    rpc:multicall(Nodes, ?MODULE, prepare_checkpoint, [Cp]);
-	OldNodes ->
-	    %% Some nodes uses an older protocol than we
-	    %% Since cookies are unique, we may simple remove
-	    %% it with a list delete.
-	    case mnesia_checkpoint:convert_cp_record(Cp) of
-		{ok, OldCp} ->
-		    NewNodes = Nodes -- OldNodes,
-		    {G, B} = rpc:multicall(OldNodes, ?MODULE,
-					   prepare_checkpoint, [OldCp]),
-		    {G2, B2} = rpc:multicall(NewNodes, ?MODULE, 
-					     prepare_checkpoint, [Cp]),
-		    {G ++ G2, B ++ B2};
-		{error, Reason} ->
-		    {[], [{error, {Reason, Nodes}}]}
-	    end
-    end.
-	    
+    rpc:multicall(Nodes, ?MODULE, prepare_checkpoint, [Cp]).
 
 prepare_checkpoint(Cp) ->
     req({prepare_checkpoint,Cp}).
@@ -196,8 +176,7 @@ doit_loop(State) ->
 	   supervisor = Sup}
 	= State,
     receive
-	{From, {async_dirty, Tid, CommitR, Tab}} ->
-	    Commit = vsn_convert_commitrecs(in, node(From), CommitR),
+	{From, {async_dirty, Tid, Commit, Tab}} ->
 	    case lists:member(Tab, State#state.blocked_tabs) of
 		false ->
 		    do_async_dirty(Tid, Commit, Tab),
@@ -208,8 +187,7 @@ doit_loop(State) ->
 		    doit_loop(State2)
 	    end;
 	
-	{From, {sync_dirty, Tid, CommitR, Tab}} ->
-	    Commit = vsn_convert_commitrecs(in, node(From), CommitR),
+	{From, {sync_dirty, Tid, Commit, Tab}} ->
 	    case lists:member(Tab, State#state.blocked_tabs) of
 		false ->
 		    do_sync_dirty(From, Tid, Commit, Tab),
@@ -236,11 +214,10 @@ doit_loop(State) ->
 		    reply(From, {new_tid, Tid, Etab}, S2)
 	    end;
 	
-	{From, {ask_commit, Protocol, Tid, CommitR, DiscNs, RamNs}} ->
+	{From, {ask_commit, Protocol, Tid, Commit, DiscNs, RamNs}} ->
 	    ?eval_debug_fun({?MODULE, doit_ask_commit}, 
 			    [{tid, Tid}, {prot, Protocol}]),
 	    mnesia_checkpoint:tm_enter_pending(Tid, DiscNs, RamNs),
-	    Commit = vsn_convert_commitrecs(in, node(From), CommitR),
 	    Pid = 
 		case Protocol of
 		    sym_trans when node(Tid#tid.pid) /= node() ->
@@ -1048,9 +1025,22 @@ arrange(Tid, Store) ->
 		_ -> 
 		    mnesia:abort(Reason)
 	    end;
-	Other ->
-	    Other
+	{New, Prepared} ->
+	    {New, Prepared#prep{records = reverse(Prepared#prep.records)}}
     end.
+
+reverse([]) ->
+    [];
+reverse([H|R]) when record(H, commit) ->
+    [
+     H#commit{
+       ram_copies       =  lists:reverse(H#commit.ram_copies),
+       disc_copies      =  lists:reverse(H#commit.disc_copies),
+       disc_only_copies =  lists:reverse(H#commit.disc_only_copies),
+       snmp             = lists:reverse(H#commit.snmp)
+      }  
+     | reverse(R)].
+
 prep_recs([N | Nodes], Recs) ->
     prep_recs(Nodes, [#commit{decision = presume_commit, node = N} | Recs]);
 prep_recs([], Recs) ->
@@ -1061,7 +1051,7 @@ prep_recs([], Recs) ->
 do_arrange(Tid, Store, {Tab, Key}, Prep, N) ->
     Oid = {Tab, Key},
     Items = ?ets_lookup(Store, Oid), %% Store is a bag
-    P2 = prepare_items(Tid, Tab, Key, lists:reverse(Items), Prep),
+    P2 = prepare_items(Tid, Tab, Key, Items, Prep),
     do_arrange(Tid, Store, ?ets_next(Store, Oid), P2, N + 1);
 do_arrange(Tid, Store, SchemaKey, Prep, N) when SchemaKey == op ->
     Items = ?ets_lookup(Store, SchemaKey), %% Store is a bag
@@ -1588,10 +1578,9 @@ do_commit(Tid, C, DumperMode) ->
 
 %% Update the items in reverse order
 do_update(Tid, Storage, [Op | Ops], OldRes) ->
-    Res = do_update(Tid, Storage, Ops, OldRes),
     case catch do_update_op(Tid, Storage, Op) of
 	ok ->
-	    Res;
+	    do_update(Tid, Storage, Ops, OldRes);
 	{'EXIT', Reason} ->
 	    %% This may only happen when we recently have
 	    %% deleted our local replica, changed storage_type
@@ -1602,19 +1591,20 @@ do_update(Tid, Storage, [Op | Ops], OldRes) ->
 
 	    verbose("do_update in ~w failed: ~p -> {'EXIT', ~p}~n",
 		    [Tid, Op, Reason]),
-	    Res; 
+	    do_update(Tid, Storage, Ops, OldRes); 
 	NewRes ->
-	    NewRes
+	    do_update(Tid, Storage, Ops, NewRes)
     end;
 do_update(_Tid, _Storage, [], Res) ->
     Res.
 
 do_update_op(Tid, Storage, {{Tab, K}, Obj, write}) ->
-    commit_write(?catch_val({Tab, commit_work}), Tid, Tab, K, Obj, undefined),
+    commit_write(?catch_val({Tab, commit_work}), Tid, 
+		 Tab, K, Obj, undefined),
     mnesia_lib:db_put(Storage, Tab, Obj);
 
 do_update_op(Tid, Storage, {{Tab, K}, Val, delete}) ->
-    commit_delete(?catch_val({Tab, commit_work}), Tid, Tab, K, Val),
+    commit_delete(?catch_val({Tab, commit_work}), Tid, Tab, K, Val, undefined),
     mnesia_lib:db_erase(Storage, Tab, K);
 
 do_update_op(Tid, Storage, {{Tab, K}, {RecName, Incr}, update_counter}) ->
@@ -1627,11 +1617,13 @@ do_update_op(Tid, Storage, {{Tab, K}, {RecName, Incr}, update_counter}) ->
                 mnesia_lib:db_put(Storage, Tab, Zero),
                 {Zero, []}
         end,
-    commit_update(?catch_val({Tab, commit_work}), Tid, Tab, K, NewObj, OldObjs),
+    commit_update(?catch_val({Tab, commit_work}), Tid, Tab, 
+		  K, NewObj, OldObjs),
     element(3, NewObj);
 
 do_update_op(Tid, Storage, {{Tab, Key}, Obj, delete_object}) ->
-    commit_del_object(?catch_val({Tab, commit_work}), Tid, Tab, Key, Obj, undefined),
+    commit_del_object(?catch_val({Tab, commit_work}), 
+		      Tid, Tab, Key, Obj, undefined),
     mnesia_lib:db_match_erase(Storage, Tab, Obj);
 
 do_update_op(Tid, Storage, {{Tab, Key}, Obj, clear_table}) ->
@@ -1644,7 +1636,7 @@ commit_write([{checkpoints, CpList}|R], Tid, Tab, K, Obj, Old) ->
     commit_write(R, Tid, Tab, K, Obj, Old);
 commit_write([H|R], Tid, Tab, K, Obj, Old) 
   when element(1, H) == subscribers ->
-    mnesia_subscr:report_table_event(H, Tab, Tid, Obj, write),
+    mnesia_subscr:report_table_event(H, Tab, Tid, Obj, write, Old),
     commit_write(R, Tid, Tab, K, Obj, Old);
 commit_write([H|R], Tid, Tab, K, Obj, Old) 
   when element(1, H) == index ->
@@ -1657,25 +1649,25 @@ commit_update([{checkpoints, CpList}|R], Tid, Tab, K, Obj, _) ->
     commit_update(R, Tid, Tab, K, Obj, Old);
 commit_update([H|R], Tid, Tab, K, Obj, Old) 
   when element(1, H) == subscribers ->
-    mnesia_subscr:report_table_event(H, Tab, Tid, Obj, write),
+    mnesia_subscr:report_table_event(H, Tab, Tid, Obj, write, Old),
     commit_update(R, Tid, Tab, K, Obj, Old);
 commit_update([H|R], Tid, Tab, K, Obj, Old) 
   when element(1, H) == index ->
     mnesia_index:add_index(H, Tab, K, Obj, Old),
     commit_update(R, Tid, Tab, K, Obj, Old).
 
-commit_delete([], Tid, _, _, _) ->  ok;
-commit_delete([{checkpoints, CpList}|R], Tid, Tab, K, Obj) ->
-    mnesia_checkpoint:tm_retain(Tid, Tab, K, delete, CpList),
-    commit_delete(R, Tid, Tab, K, Obj);
-commit_delete([H|R], Tid, Tab, K, Obj) 
+commit_delete([], Tid, _, _, _, _) ->  ok;
+commit_delete([{checkpoints, CpList}|R], Tid, Tab, K, Obj, _) ->
+    Old = mnesia_checkpoint:tm_retain(Tid, Tab, K, delete, CpList),
+    commit_delete(R, Tid, Tab, K, Obj, Old);
+commit_delete([H|R], Tid, Tab, K, Obj, Old) 
   when element(1, H) == subscribers ->
-    mnesia_subscr:report_table_event(H, Tab, Tid, Obj, delete),
-    commit_delete(R, Tid, Tab, K, Obj);
-commit_delete([H|R], Tid, Tab, K, Obj) 
+    mnesia_subscr:report_table_event(H, Tab, Tid, Obj, delete, Old),
+    commit_delete(R, Tid, Tab, K, Obj, Old);
+commit_delete([H|R], Tid, Tab, K, Obj, Old) 
   when element(1, H) == index ->
     mnesia_index:delete_index(H, Tab, K),
-    commit_delete(R, Tid, Tab, K, Obj).
+    commit_delete(R, Tid, Tab, K, Obj, Old).
 
 commit_del_object([], Tid, _, _, _, _) -> ok;
 commit_del_object([{checkpoints, CpList}|R], Tid, Tab, K, Obj, _) ->
@@ -1683,7 +1675,7 @@ commit_del_object([{checkpoints, CpList}|R], Tid, Tab, K, Obj, _) ->
     commit_del_object(R, Tid, Tab, K, Obj, Old);
 commit_del_object([H|R], Tid, Tab, K, Obj, Old) 
   when element(1, H) == subscribers -> 
-    mnesia_subscr:report_table_event(H, Tab, Tid, Obj, delete_object),
+    mnesia_subscr:report_table_event(H, Tab, Tid, Obj, delete_object, Old),
     commit_del_object(R, Tid, Tab, K, Obj, Old);
 commit_del_object([H|R], Tid, Tab, K, Obj, Old) 
   when element(1, H) == index -> 
@@ -1696,7 +1688,7 @@ commit_clear([{checkpoints, CpList}|R], Tid, Tab, K, Obj) ->
     commit_clear(R, Tid, Tab, K, Obj);
 commit_clear([H|R], Tid, Tab, K, Obj) 
   when element(1, H) == subscribers ->
-    mnesia_subscr:report_table_event(H, Tab, Tid, Obj, clear_table),
+    mnesia_subscr:report_table_event(H, Tab, Tid, Obj, clear_table, undefined),
     commit_clear(R, Tid, Tab, K, Obj);
 commit_clear([H|R], Tid, Tab, K, Obj) 
   when element(1, H) == index ->
@@ -1770,8 +1762,7 @@ sync_send_dirty(Tid, [Head | Tail], Tab, WaitFor) ->
 	    Res =  do_dirty(Tid, Head),
 	    {WF, Res};
 	true ->
-	    CR = vsn_convert_commitrecs(out, Node, Head),
-    	    {?MODULE, Node} ! {self(), {sync_dirty, Tid, CR, Tab}},
+    	    {?MODULE, Node} ! {self(), {sync_dirty, Tid, Head, Tab}},
 	    sync_send_dirty(Tid, Tail, Tab, [Node | WaitFor])
     end;
 sync_send_dirty(Tid, [], _Tab, WaitFor) ->
@@ -1790,13 +1781,11 @@ async_send_dirty(Tid, [Head | Tail], Tab, ReadNode, WaitFor, Res) ->
 	    NewRes =  do_dirty(Tid, Head),
 	    async_send_dirty(Tid, Tail, Tab, ReadNode, WaitFor, NewRes);
 	ReadNode == Node ->
-	    CR = vsn_convert_commitrecs(out, Node, Head),
-	    {?MODULE, Node} ! {self(), {sync_dirty, Tid, CR, Tab}},
+	    {?MODULE, Node} ! {self(), {sync_dirty, Tid, Head, Tab}},
 	    NewRes = {'EXIT', {aborted, {node_not_running, Node}}},
 	    async_send_dirty(Tid, Tail, Tab, ReadNode, [Node | WaitFor], NewRes);
 	true ->
-	    CR = vsn_convert_commitrecs(out, Node, Head),
-	    {?MODULE, Node} ! {self(), {async_dirty, Tid, CR, Tab}},
+	    {?MODULE, Node} ! {self(), {async_dirty, Tid, Head, Tab}},
 	    async_send_dirty(Tid, Tail, Tab, ReadNode, WaitFor, Res)
     end;
 async_send_dirty(Tid, [], _Tab, _ReadNode, WaitFor, Res) ->
@@ -1847,8 +1836,7 @@ ask_commit(Protocol, Tid, [Head | Tail], DiscNs, RamNs, WaitFor, Local) ->
 	Node == node() ->
 	    ask_commit(Protocol, Tid, Tail, DiscNs, RamNs, WaitFor, Head);
 	true ->
-	    CR = vsn_convert_commitrecs(out, Node, Head),
-	    Bin = opt_term_to_binary(Protocol, CR),
+	    Bin = opt_term_to_binary(Protocol, Head),
 	    Msg = {ask_commit, Protocol, Tid, Bin, DiscNs, RamNs},
 	    {?MODULE, Node} ! {self(), Msg},
 	    ask_commit(Protocol, Tid, Tail, DiscNs, RamNs, [Node | WaitFor], Local)
@@ -2107,26 +2095,4 @@ system_terminate(Reason, Parent, Debug, State) ->
     do_stop(State).
 
 system_code_change(State, Module, OldVsn, Extra) ->
-    exit(not_supported).
-
-
-%%
-%%  Handles conversion in commit protocol between 7.4 and 7.3 
-%%
-vsn_convert_commitrecs(InOrOut, Node, CR) when record(CR, commit) -> 
-    case mnesia_monitor:needs_protocol_conversion(Node) of
-	true ->
-	    %% Convert here
-	    RC  = lists:reverse(CR#commit.ram_copies),
-	    DC  = lists:reverse(CR#commit.disc_copies),
-	    DOC = lists:reverse(CR#commit.disc_only_copies),
-	    SO  = lists:reverse(CR#commit.schema_ops),
-	    CR#commit{ram_copies = RC, disc_copies = DC, 
-		      disc_only_copies = DOC, schema_ops = SO};
-	false ->
-	    CR
-    end;
-vsn_convert_commitrecs(InOrOut, Node, Bin) when binary(Bin) ->
-    CR = binary_to_term(Bin),
-    vsn_convert_commitrecs(InOrOut, Node, CR).
-
+    {ok, State}.

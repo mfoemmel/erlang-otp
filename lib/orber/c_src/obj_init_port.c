@@ -22,6 +22,10 @@
 #include "obj_init_port.h"
 #include "inet.h"
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 static char version[] = "orber_init_agent 0.1";
 
 int main(argc, argv)

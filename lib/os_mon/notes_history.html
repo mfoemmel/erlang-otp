@@ -1,147 +1,156 @@
 <HTML>
 <HEAD>
-<TITLE>OS_MON Release Notes</TITLE>
+  <TITLE>OS_MON Release Notes</TITLE>
 </HEAD>
+
 <BODY BGCOLOR="#FFFFFF">
-<BLOCKQUOTE>
-<A NAME="1"><!-- Empty --></A><H2>1 OS_MON Release Notes</H2><P>This document describes the changes made to the OS_MON application.
+
+<CENTER><H1>Os_mon Release Notes</H1></CENTER>
+
+<H2>Os_mon 1.3.7</H2>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>
+      UNIX:<CODE>disksup:get_disk_data()</CODE> did occasionally fail to
+      return any data about disk usage. Alarms about almost full
+      disks would also not be generated. This has been corrected.<BR>
+      Own Id: OTP-3116
+    </LI>
+  </UL>
 
 <H2>Os_mon 1.3.4</H2>
-<H3>Fixed errors and malfunctions</H3>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>
+      Changed MAX-ACCESS for <CODE>diskDescr</CODE> in OTP-OS-MON-MIB from
+      <CODE>not-accessible</CODE> to <CODE>read-only</CODE>.<BR>
+      Own Id: OTP-2693
+    </LI>
+  </UL>
 
-<UL>
-
-<LI>
-Changed MAX-ACCESS for <CODE>diskDescr</CODE> in OTP-OS-MON-MIB from
-<CODE>not-accessible</CODE> to <CODE>read-only</CODE>.
-<br>Own Id: OTP-2693
-
-
-</UL>
 <H2>Os_mon 1.3.3</H2>
-<H3>Fixed errors and malfunctions</H3>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>
+      Failover of a loaded MIB did not work. When a MIB was loaded
+      on one node and that node crashed, the failover of the MIB
+      to a new node did not work.<BR>
+      Own Id: OTP-2200<BR>
+      Aux Id: seq 651, HA75679
+    </LI>
+  </UL>
 
-<UL>
-
-<LI>
-Failover of a loaded MIB did not work. When a MIB was loaded
-on one node and that node crashed, the failover of the MIB
-to a new node did not work.
-<br>Own Id: OTP-2200<br>
-Aux Id: seq 651, HA75679
-
-
-</UL>
-<H3>Improvements and new features</H3>
-
-<UL>
-
-<LI>
-Events in the Windows NT event log can be imported into erlang
-with the generic module nteventlog.
-<br>Own Id: OTP-1673
-
-
-</UL>
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>
+      Events in the Windows NT event log can be imported into erlang
+      with the generic module nteventlog.<BR.
+      Own Id: OTP-1673
+    </LI>
+  </UL>
 
 <H2>Os_mon 1.3.2</H2>
-<H3>Fixed errors and malfunctions</H3>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>
+      Failover of a loaded MIB did not work. When a MIB was loaded
+      on one node and that node crashed, the failover of the MIB
+      to a new node did not work.<BR>
+      Own Id: OTP-2200<BR>
+      Aux Id: seq 651, HA75679
+    </LI>
+  </UL>
 
-<UL>
+<H2>Os_mon 1.3.1</H2>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>
+      Failover/takeover of the SNMP agent administering the MIB
+      did not work, since the old implementation tried to delete a
+      Mnesia table on a node which was not up and running (which
+      always is the case at failover). Now the SNMP related Mnesia
+      table is defined to have the <CODE>local_content</CODE> property.<BR>
+      Own Id: OTP-2146<BR>
+      Aux Id: seq1
+    </LI>
+  </UL>
 
-<LI>
-Failover of a loaded MIB did not work. When a MIB was loaded
-on one node and that node crashed, the failover of the MIB
-to a new node did not work.
-<br>Own Id: OTP-2200<br>
-Aux Id: seq 651, HA75679
+<H2>Os_mon 1.3</H2>
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>
+      The <CODE>disksup</CODE> and <CODE>memsup</CODE> parts of os_mon is
+      now supported on the WIN32 platform.<BR>
+      Own Id: OTP-1670, OTP-1671
+    </LI>
+    <LI>The <CODE>memsup</CODE> part of os_mon is now supported on
+      the VxWorks platform.
+    </LI>
+  </UL>
 
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>
+      The problem that <CODE>disksup</CODE> sometimes could hang the entire
+      node during startup is solved.<BR>
+      Own Id: OTP-1658
+    </LI>
+  </UL>
 
-</UL>
+  <H3>Incompatibilities with Os_mon 1.2</H3>
+  <UL>
+    <LI>
+      The SNMP Mib OS-MON-MIB has changed its name to OTP-OS-MON-MIB.
+    </LI>
+  </UL>
 
-<A NAME="1.1"><!-- Empty --></A><H3>1.1 OS_MON 1.3.1</H3><A NAME="1.1.1"><!-- Empty --></A><H4>1.1.1 Fixed Bugs and malfunctions</H4><P><UL>
-<LI>     Failover/takeover of the SNMP agent administering the MIB
-         did not work, since the old implementation tried to delete a
-         Mnesia table on a node which was not up and running (which
-         always is the case at failover). Now the SNMP related Mnesia
-         table is defined to have the <CODE>local_content</CODE> property.
-         
-         <BR>
-Own Id: OTP-2146 <BR>
-Aux Id: seq1
+<H2>Os_mon 1.2</H2>
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>
+      Added the attribute <CODE>loadCpuLoad</CODE> in the SNMP MIB
+      <CODE>OS-MON-MIB</CODE>, in the <CODE>loadTable</CODE>. It uses
+      <CODE>cpu_sup</CODE> to fetch the load.<BR>
+      Own Id: OTP-1190<BR>
+      Aux Id: PH3-OTP-3:7
+    </LI>
+    <LI>
+      Added new module <CODE>cpu_sup</CODE>. It supervises the
+      CPU load in the operating system.<BR>
+      Own Id: OTP-1191
+    </LI>
+  </UL>
 
-<BR>
-</UL>
-<A NAME="1.2"><!-- Empty --></A><H3>1.2 OS_MON 1.3</H3><A NAME="1.2.1"><!-- Empty --></A><H4>1.2.1 Improvements and new features</H4><P><UL>
-<LI>The <CODE>disksup</CODE> and <CODE>memsup</CODE> parts of os_mon is now supported on
-        the WIN32 platform.
-         <BR>
-Own Id: OTP-1670, OTP-1671
-        <BR>
-<LI>The <CODE>memsup</CODE> part of os_mon is now supported on the VxWorks platform.
-<BR>
-</UL>
-<A NAME="1.2.2"><!-- Empty --></A><H4>1.2.2 Fixed Bugs and malfunctions</H4><P><UL>
-<LI>The problem that <CODE>disksup</CODE> sometimes could hang the entire node during
-startup is solved.
-<BR>
-Own Id: OTP-1658
-<BR>
-</UL>
-<A NAME="1.2.3"><!-- Empty --></A><H4>1.2.3 Incompatibilities with OS_MON 1.2</H4><P><UL>
-<LI>The SNMP Mib OS-MON-MIB has changed its name to
-         OTP-OS-MON-MIB.
-<BR>
-</UL>
-<A NAME="1.3"><!-- Empty --></A><H3>1.3 OS_MON 1.2</H3><A NAME="1.3.1"><!-- Empty --></A><H4>1.3.1 Improvements and new features</H4><P><UL>
-<LI>Added the attribute <CODE>loadCpuLoad</CODE> in the SNMP MIB
-         <CODE>OS-MON-MIB</CODE>, in the <CODE>loadTable</CODE>. It uses
-         <CODE>cpu_sup</CODE> to fetch the load.
+<H2>Os_mon 1.1.1</H2>
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>
+      Adapted new application resource file possibility, i.e.
+      module version is not specified any longer.
+    </LI>
+  </UL>
 
-         <BR>
-Own Id: OTP-1190
-         <BR>
-Aux Id: PH3-OTP-3:7
+<H2>Os_mon 1.1</H2>
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>
+      Added <CODE>os_sup</CODE>, a solaris syslog facility.
+    </LI>
+    <LI>
+      Added the OS-MON-MIB for SNMP monitoring of os_mon.
+    </LI>
+    <LI>
+      Added functions for inspection of configuration
+      parameters for <CODE>disksup</CODE> and <CODE>memsup</CODE>.
+    </LI>
+  </UL>
 
-        <BR>
-<LI>Added new module <CODE>cpu_sup</CODE>. It supervises the
-         CPU load in the operating system. 
+  <H3>Incompatibilities</H3>
+  <UL>
+    <LI>
+      Changed the output format from <CODE>disksup:get_disk_data/0</CODE>.
+    </LI>
+  </UL>
 
-         <BR>
-Own Id: OTP-1191
-<BR>
-</UL>
-<A NAME="1.4"><!-- Empty --></A><H3>1.4 OS_MON 1.1.1</H3><A NAME="1.4.1"><!-- Empty --></A><H4>1.4.1 Improvements and new features</H4><P><UL>
-<LI>Adapted new application resource file possibility, i.e.
-         module version is not specified any longer.
-<BR>
-</UL>
-<A NAME="1.5"><!-- Empty --></A><H3>1.5 OS_MON 1.1</H3><A NAME="1.5.1"><!-- Empty --></A><H4>1.5.1 Improvements and new features</H4><P><UL>
-<LI>Added <CODE>os_sup</CODE>, a solaris syslog facility.
-
-<BR>
-<LI>Added the OS-MON-MIB for SNMP monitoring of os_mon.
-
-<BR>
-<LI>Added functions for inspection of configuration
-         parameters for <CODE>disksup</CODE> and <CODE>memsup</CODE>.
-<BR>
-</UL>
-<A NAME="1.5.2"><!-- Empty --></A><H4>1.5.2 Fixed Bugs and malfunctions</H4><P>-
-<A NAME="1.5.3"><!-- Empty --></A><H4>1.5.3 Incompatibilities with OTP P1G</H4><P><UL>
-<LI>Changed the output format from
-         <CODE>disksup:get_disk_data/0</CODE>.
-<BR>
-</UL>
-<A NAME="1.5.4"><!-- Empty --></A><H4>1.5.4 Known bugs and problems</H4><P>-
-</BLOCKQUOTE>
-<CENTER>
-<HR>
-<FONT SIZE=-1>
-Copyright &copy; 1991-99
-<A HREF="http://www.ericsson.se">Ericsson Utvecklings AB</A><BR>
-<!--#include virtual="/ssi/otp_footer.html"-->
-</FONT>
-</CENTER>
 </BODY>
 </HTML>

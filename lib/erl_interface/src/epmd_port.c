@@ -59,7 +59,11 @@ extern int ei_trace_distribution;
 
 
 /* connect to epmd on given host (use NULL for localhost) */
-extern int erl_epmd_connect(struct in_addr *inaddr)
+/* 
+ * FIXME: Expects IPv4 addresses (excludes IPv6, Appletalk, IRDA and
+ * whatever) */
+int 
+erl_epmd_connect (struct in_addr *inaddr)
 {
   struct sockaddr_in saddr;
   int sd;
@@ -71,9 +75,15 @@ extern int erl_epmd_connect(struct in_addr *inaddr)
   if (!inaddr) saddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   else memmove(&saddr.sin_addr,inaddr,sizeof(saddr.sin_addr));
 
-  if (((sd = socket(PF_INET, SOCK_STREAM, 0)) < 0)) return -1;
+  if (((sd = socket(PF_INET, SOCK_STREAM, 0)) < 0)) 
+  {
+      erl_errno = errno;
+      return -1;
+  }
 
-  if (connect(sd,(struct sockaddr *)&saddr,sizeof(saddr)) < 0) {
+  if (connect(sd,(struct sockaddr *)&saddr,sizeof(saddr)) < 0) 
+  {
+    erl_errno = errno;
     closesocket(sd);
     return -1;
   }
@@ -82,7 +92,8 @@ extern int erl_epmd_connect(struct in_addr *inaddr)
 }
 
 /* get the given node's listen port using old epmd protocol */
-static int ei_epmd_r3_port(struct in_addr *addr, const char *alive)
+static int 
+ei_epmd_r3_port (struct in_addr *addr, const char *alive)
 {
   char buf[SMALLBUF];
   char *s = buf;
@@ -97,12 +108,16 @@ static int ei_epmd_r3_port(struct in_addr *addr, const char *alive)
   put8(s,ERL_EPMD_PORT_REQ);
   strcpy(s,alive);
 
-
   /* connect to epmd */
-  if ((fd = erl_epmd_connect(addr)) < 0) return fd;
+  if ((fd = erl_epmd_connect(addr)) < 0) 
+  {
+      return -1;
+  }
 
-  if (writesocket(fd, buf, len+2) != len+2) {
+  if (writesocket(fd, buf, len+2) != len+2) 
+  {
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
@@ -122,6 +137,7 @@ static int ei_epmd_r3_port(struct in_addr *addr, const char *alive)
     if (ei_trace_distribution > 2) fprintf(stderr,"<- CLOSE\n");
 #endif
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
   closesocket(fd);
@@ -135,7 +151,8 @@ static int ei_epmd_r3_port(struct in_addr *addr, const char *alive)
   return port;
 }
 
-static int ei_epmd_r4_port(struct in_addr *addr, const char *alive, int *dist)
+static int 
+ei_epmd_r4_port (struct in_addr *addr, const char *alive, int *dist)
 {
   char buf[SMALLBUF];
   char *s = buf;
@@ -154,10 +171,14 @@ static int ei_epmd_r4_port(struct in_addr *addr, const char *alive, int *dist)
   strcpy(s,alive);
   
   /* connect to epmd */
-  if ((fd = erl_epmd_connect(addr)) < 0) return fd;
+  if ((fd = erl_epmd_connect(addr)) < 0)
+  {
+      return -1;
+  }
 
   if (writesocket(fd, buf, len+2) != len+2) {
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
@@ -178,7 +199,7 @@ static int ei_epmd_r4_port(struct in_addr *addr, const char *alive, int *dist)
     if (ei_trace_distribution > 2) fprintf(stderr,"<- CLOSE\n");
 #endif
     closesocket(fd);
-    return -2;
+    return -2;			/* version mismatch */
   }
 
   s = buf;
@@ -192,6 +213,7 @@ static int ei_epmd_r4_port(struct in_addr *addr, const char *alive, int *dist)
   }
 #endif
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
@@ -206,6 +228,7 @@ static int ei_epmd_r4_port(struct in_addr *addr, const char *alive, int *dist)
   /* got negative response? */
   if (res) {
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
@@ -215,6 +238,7 @@ static int ei_epmd_r4_port(struct in_addr *addr, const char *alive, int *dist)
     if (ei_trace_distribution > 2) fprintf(stderr,"<- CLOSE\n");
 #endif
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
   
@@ -235,10 +259,18 @@ static int ei_epmd_r4_port(struct in_addr *addr, const char *alive, int *dist)
 #endif
 
   /* right network protocol? */
-  if (ERL_MYPROTO != proto) return -1;
+  if (ERL_MYPROTO != proto)
+  {
+      erl_errno = EIO;
+      return -1;
+  }
 
   /* is there overlap in our distribution versions? */
-  if ((ERL_DIST_HIGH < dist_low) || (ERL_DIST_LOW > dist_high)) return -1;
+  if ((ERL_DIST_HIGH < dist_low) || (ERL_DIST_LOW > dist_high)) 
+  {
+      erl_errno = EIO;
+      return -1;
+  }
 
   /* choose the highest common version */
   /* i.e. min(his-max, my-max) */
@@ -255,7 +287,8 @@ static int ei_epmd_r4_port(struct in_addr *addr, const char *alive, int *dist)
  * version 4 before trying version 3. R3 (and earlier) nodes have
  * dist=0.
  */
-extern int erl_epmd_port(struct in_addr *addr, const char *alive, int *dist)
+extern int 
+erl_epmd_port (struct in_addr *addr, const char *alive, int *dist)
 {
   int i;
 

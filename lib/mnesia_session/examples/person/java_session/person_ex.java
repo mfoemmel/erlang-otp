@@ -185,7 +185,8 @@ public class person_ex
       try
 	{
 	  
-	  mccRef = new mnesia._connectorStub(SNode+"0",PNode,Cookie,"mnesia_connector");
+	  mccRef = new mnesia._connectorStub(SNode+"0",PNode,Cookie,
+					     "mnesia_connector");
 	  
 	  com.ericsson.otp.ic.Pid mccPid = mccRef.connect();
 	  

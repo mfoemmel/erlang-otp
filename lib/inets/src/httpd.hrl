@@ -30,10 +30,36 @@
 	[{errmsg,"[an error occurred while processing this directive]"},
 	 {timefmt,"%A, %d-%b-%y %T %Z"},
 	 {sizefmt,"abbrev"}]).
-%% Use this macro with caution !
-%-define(DEBUG(Format, Args), io:format("(~p:~p) : "++Format++"~n",
-%				       [?MODULE, ?LINE]++Args)).
+
+
+-ifdef(inets_error).
+-define(ERROR(Format, Args), io:format("E(~p:~p:~p) : "++Format++"~n",
+				       [self(),?MODULE,?LINE]++Args)).
+-else.
+-define(ERROR(F,A),[]).
+-endif.
+
+-ifdef(inets_log).
+-define(LOG(Format, Args), io:format("L(~p:~p:~p) : "++Format++"~n",
+				     [self(),?MODULE,?LINE]++Args)).
+-else.
+-define(LOG(F,A),[]).
+-endif.
+
+-ifdef(inets_debug).
+-define(DEBUG(Format, Args), io:format("D(~p:~p:~p) : "++Format++"~n",
+				       [self(),?MODULE,?LINE]++Args)).
+-else.
 -define(DEBUG(F,A),[]).
+-endif.
+
+-ifdef(inets_cdebug).
+-define(CDEBUG(Format, Args), io:format("C(~p:~p:~p) : "++Format++"~n",
+				       [self(),?MODULE,?LINE]++Args)).
+-else.
+-define(CDEBUG(F,A),[]).
+-endif.
+
 
 -record(init_data,{peername,resolve}).
 -record(mod,{init_data,

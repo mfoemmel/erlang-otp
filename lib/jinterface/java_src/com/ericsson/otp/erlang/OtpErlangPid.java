@@ -17,12 +17,17 @@
  */
 package com.ericsson.otp.erlang;
 
+import java.io.Serializable;
+
 /**
  * Provides a Java representation of Erlang PIDs. PIDs represent
  * Erlang processes and consist of a nodename and a number of
  * integers.
  **/
-public class OtpErlangPid extends OtpErlangObject {
+public class OtpErlangPid extends OtpErlangObject implements Serializable, Cloneable {
+  // don't change this!
+  static final long serialVersionUID = 1664394142301803659L;
+  
   private String node;
   private int id;
   private int serial;
@@ -32,14 +37,18 @@ public class OtpErlangPid extends OtpErlangObject {
    * Create a unique Erlang PID belonging to the local node.
    *
    * @param self the local node.
+   *
+   @deprecated use OtpLocalNode:createPid() instead
    **/
-  public OtpErlangPid(OtpSelf self) {
-    this.id = self.count();
-    this.serial=0;
-    this.creation = self.creation();;
-    this.node = self.node();
+  public OtpErlangPid(OtpLocalNode self) {
+    OtpErlangPid p = self.createPid();
+    
+    this.id = p.id;
+    this.serial=p.serial;
+    this.creation = p.creation;
+    this.node = p.node;
   }
-
+  
   /**
    * Create an Erlang PID from a stream containing a PID encoded in
    * Erlang external format.
@@ -137,18 +146,14 @@ public class OtpErlangPid extends OtpErlangObject {
   }
   
   /**
-   * Determine if two PIDs are equal. PIDs are equal if their
-   * components are equal. 
+   * Return the hashCode for this Pid.
    *
-   * @param o the object to compare to.
-   *
-   * @return true if o is a PID and the PIDs are equal, false
-   * otherwise.
+   * @return the hashCode for this Pid.
    **/
-  public boolean equals(Object o) {
-    return false;
+  public int hashCode() {
+    return id;
   }
-
+  
   /**
    * Determine if two PIDs are equal. PIDs are equal if their
    * components are equal.
@@ -157,7 +162,11 @@ public class OtpErlangPid extends OtpErlangObject {
    *
    * @return true if the PIDs are equal, false otherwise.
    **/
-  public boolean equals(OtpErlangPid pid) {
+  public boolean equals(Object o) {
+    if (!(o instanceof OtpErlangPid)) return false;
+    
+    OtpErlangPid pid = (OtpErlangPid)o;
+      
     return ((this.creation == pid.creation) &&
 	    (this.serial == pid.serial) &&
 	    (this.id == pid.id) &&

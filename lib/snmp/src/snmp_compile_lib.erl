@@ -17,22 +17,22 @@
 %%
 -module(snmp_compile_lib).
 
-%%%-----------------------------------------------------------------
-%%% Changes:
-%%%    981217 - mbj added code to handle forward referneces in OIDs
-%%%-----------------------------------------------------------------
-
 %% API
 -export([test_father/4,make_ASN1type/1,import/1, makeInternalNode2/2,
-	is_consistent/1, resolve_defval/1, make_variable_info/1,
-	check_trap_name/3, make_table_info/4, get_final_mib/2, set_dir/2,
-	look_at/1, add_cdata/2,check_access_group/1,check_def/3,
-	check_notification_trap/1,register_oid/4,error/2,error/3,warning/2,
-	warning/3,print_error/2,print_error/3,make_cdata/1,
-	 trap_variable_info/3, check_notification/3]).
+	 is_consistent/1, resolve_defval/1, make_variable_info/1,
+	 check_trap_name/3, make_table_info/4, get_final_mib/2, set_dir/2,
+	 look_at/1, add_cdata/2,check_access_group/1,check_def/3,
+	 check_notification_trap/1,register_oid/4,error/2,error/3,warning/2,
+	 warning/3,print_error/2,print_error/3,make_cdata/1,
+	 trap_variable_info/3, check_notification/3,
+	 key1search/2,key1search/3]).
 
 %% internal exports
 -export([check_of/1, check_trap/2,check_trap/3,get_elem/2]).
+
+%% debug exports
+-export([vvalidate/1, i/2, l/2, d/2, t/2]).
+
 
 -include("snmp_types.hrl").
 -include("snmp_generic.hrl").
@@ -1128,6 +1128,56 @@ extract_table_infos([#me{entrytype = table, assocList = AL,
 extract_table_infos([ME | T]) ->
     extract_table_infos(T).
 
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Section for debug functions
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+t(F,A) ->
+    vprint(printable(get(verbosity),trace),F,A).
+
+d(F,A) ->
+    vprint(printable(get(verbosity),debug),F,A).
+
+l(F,A) ->
+    vprint(printable(get(verbosity),log),F,A).
+
+i(F,A) ->
+    vprint(printable(get(verbosity),info),F,A).
+
+
+vprint(false,_F,_A) ->
+    ok;
+vprint(S,F,A) ->
+    io:format(image_of_severity(S) ++ F ++ "~n",A).
+
+
+printable(silence,_)   -> false;
+printable(info,info)   -> info;
+printable(log,info)    -> info;
+printable(log,log)     -> log;
+printable(debug,info)  -> info;
+printable(debug,log)   -> log;
+printable(debug,debug) -> debug;
+printable(trace,S)     -> S;
+printable(_V,_S)       -> false.
+
+
+image_of_severity(info)  -> "I: ";
+image_of_severity(log)   -> "L: ";
+image_of_severity(debug) -> "D: ";
+image_of_severity(trace) -> "T: ";
+image_of_severity(_)     -> "".
+
+
+vvalidate(silence) -> ok;
+vvalidate(info)    -> ok;
+vvalidate(log)     -> ok;
+vvalidate(debug)   -> ok;
+vvalidate(trace)   -> ok;
+vvalidate(V)       -> exit({invalid_verbosity,V}).
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Section for misc useful functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1140,11 +1190,27 @@ set_dir(File, NewDir) ->
 	N -> set_dir(lists:nthtail(N,File), NewDir)
     end.
 
+%% Look up a key in a list, and if found returns the value
+%% or if not found returns the default value
+key1search(Key, List) ->
+    key1search(Key, List, undefined).
 
-%% for debugging
+key1search(Key, List, Default) ->
+    case lists:keysearch(Key, 1, List) of
+        {value, {Key, Val}} -> Val;
+        _ -> Default
+    end.
+
+
+%% print the compiled mib
 look_at(FileName) ->
-    {ok, Bin} = file:read_file(FileName),
-    binary_to_term(Bin).
+    case file:read_file(FileName) of
+        {ok,Bin} -> 
+	    binary_to_term(Bin);     
+        {error,Reason} ->
+            {error,Reason}
+    end.
+
 
 %% Data is appended to compiler information
 add_cdata(OffsetInRecord, ListOfData) ->

@@ -36,21 +36,21 @@ MODULES =  \
 	compile \
 	sys_pre_attributes \
 	sys_pre_expand \
-	v2_kernel \
-	v2_kernopt \
-	v2_match \
-	v2_life \
-	v2_codegen \
 	v3_core \
 	v3_core_opt \
 	sys_core_fold \
-	core_pp \
+	sys_core_inline \
+	core_lib \
+	corec \
+	core_scan \
 	core_parse \
 	core_lint \
+	core_pp \
 	v3_kernel \
-	sys_kernel_pp \
+	v3_kernel_pp \
 	v3_life \
 	v3_codegen \
+	beam_bs \
 	beam_block \
 	beam_jump \
 	beam_type \
@@ -58,12 +58,7 @@ MODULES =  \
 	beam_listing \
 	beam_asm \
 	beam_dict \
-	beam_opcodes \
-	v1_adapt \
-	v1_compile \
-	v1_optimize \
-	v1_cleanup \
-	v1_dead
+	beam_opcodes
 
 BEAM_H = $(wildcard ../priv/beam_h/*.h)
 
@@ -109,6 +104,9 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 
 beam_opcodes.erl beam_opcodes.hrl: genop.tab
 	$(PERL) $(ERL_TOP)/erts/emulator/utils/beam_makeops -compiler $<
+
+$(EBIN)/beam_asm.beam: $(ESRC)/beam_asm.erl
+	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -DCOMPILER_VSN='"$(VSN)"' -o$(EBIN) $<
 
 # ----------------------------------------------------
 # Release Target

@@ -28,7 +28,8 @@
 -export(['_get_def_kind'/1,
 	 destroy/1,
 	 cleanup_for_destroy/1,			%not in CORBA 2.0
-	 '_get_type'/1
+	 '_get_type'/1,
+	 '_get_type_def'/1
 	]).
 
 -import(orber_ifr_utils,[get_field/2]).
@@ -68,3 +69,6 @@ cleanup_for_destroy(IDLType_objref) ->
 
 '_get_type'({ObjType,ObjID}) ->
     get_field({ObjType,ObjID},type).
+
+'_get_type_def'({ObjType,ObjID}) ->
+    get_field({ObjType,ObjID},type_def).

@@ -26,7 +26,6 @@
 	 detect_inconcistency/2,
 	 get_env/1,
 	 init/0,
-	 init_proc/4,
 	 mktab/2,
 	 mnesia_down/2,
 	 needs_protocol_conversion/1,
@@ -69,9 +68,10 @@
 
 -include("mnesia.hrl").
 
--record(state, {supervisor, pending_negotiators = [], going_down = []}).
+-record(state, {supervisor, pending_negotiators = [], 
+		going_down = [], tm_started = false, early_connects = []}).
 
--define(current_protocol_version, {7,4}).
+-define(current_protocol_version, {7,5}).
 
 start() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE,
@@ -141,7 +141,7 @@ check_protocol([{Node, {accept, Mon, Version, Protocol}} | Tail], Protocols) ->
     end;
 check_protocol([{Node, {reject, Mon, Version, Protocol}} | Tail], Protocols) ->
     verbose("Failed to connect with ~p. ~p protocols rejected. "
-	    "expected version = ~p~, expected protocol = ~p~n",
+	    "expected version = ~p, expected protocol = ~p~n",
 	    [Node, Protocols, Version, Protocol]),
     check_protocol(Tail, Protocols);
 check_protocol([{error, Reason} | Tail], Protocols) ->
@@ -164,15 +164,17 @@ protocol_version() ->
 %% A sorted list of acceptable protocols the
 %% preferred protocols are first in the list
 acceptable_protocol_versions() ->
-    [protocol_version(), "7.3"].
+    [protocol_version(), {7,4}].
     
 needs_protocol_conversion(Node) ->
-    case ?catch_val({protocol, Node}) of
-	{'EXIT', _} ->
+    case {?catch_val({protocol, Node}), protocol_version()} of
+	{{'EXIT', _}, _} ->
 	    false;
-	{_, Bool} -> Bool
+	{{_, Bool}, ?current_protocol_version} -> 
+	    Bool;
+	{{_, Bool}, _} -> 
+	    not Bool
     end.
-
 
 cast(Msg) ->
     case whereis(?MODULE) of
@@ -210,17 +212,7 @@ multicall(Nodes, Msg) ->
 
 start_proc(Who, Mod, Fun, Args) ->
     Args2 = [Who, Mod, Fun, Args],
-    proc_lib:start_link(?MODULE, init_proc, Args2, infinity).
-
-init_proc(Who, Mod, Fun, Args) ->
-    mnesia_lib:verbose("~p starting: ~p~n", [Who, self()]),
-    case catch apply(Mod, Fun, Args) of
-	{'EXIT', Reason} ->
-	    terminate_proc(Who, Reason, Args),
-	    exit(Reason);
-	Other ->
-	    Other
-    end.
+    proc_lib:start_link(mnesia_sp, init_proc, Args2, infinity).
 
 terminate_proc(Who, R, State) when R /= shutdown, R /= killed ->
     fatal("~p crashed: ~p state: ~p~n", [Who, R, State]);
@@ -346,23 +338,8 @@ handle_call({unsafe_close_dets, Tab}, From, State) ->
     {reply, ok, State};
 
 handle_call({open_log, Args}, From, State) ->
-    case disk_log:open(Args) of
-	{ok, Name} ->
-	    {reply, {ok, Name}, State};
-
-	{repaired, Name, {recovered,  R}, {badbytes, B}} ->
-	    if
-		B /= 0 ->
-		    error("Log ~p repaired, found ~p records "
-			  "and wasted ~p bad bytes~n",
-			  [Name, R, B]);
-		true ->
-		    ignore
-	    end,
-	    {reply, {ok, Name}, State};
-	{error, Reason} ->
-	    {reply, {error, Reason}, State}
-    end;
+    Res = disk_log:open(Args),
+    {reply, Res, State};
 
 handle_call({reopen_log, Name, Fname, Head}, From, State) ->
     case disk_log:reopen(Name, Fname, Head) of
@@ -392,6 +369,11 @@ handle_call({unsafe_close_log, Name}, From, State) ->
     disk_log:close(Name),
     {reply, ok, State};
 
+handle_call({negotiate_protocol, Mon, Version, Protocols}, From, State) 
+  when State#state.tm_started == false ->
+    State2 =  State#state{early_connects = [node(Mon) | State#state.early_connects]},    
+    {reply, {node(), {reject, self(), uninitialized, uninitialized}}, State2};
+
 handle_call({negotiate_protocol, Mon, Version, Protocols}, From, State)
   when node(Mon) /= node() ->
     Protocol = protocol_version(),
@@ -402,13 +384,12 @@ handle_call({negotiate_protocol, Mon, Version, Protocols}, From, State)
 	false ->
 	    %% in this release we should be able to handle the previous 
 	    %% protocol
-	    case hd(Protocols) == "7.3" of
-		true ->
-		    Old = "7.3",
-		    accept_protocol(Mon, MyVersion, Old, From, State);
-		false ->
+	    case hd(Protocols) of
+		{7,4} ->
+		    accept_protocol(Mon, MyVersion, {7,4}, From, State);
+		_ ->
 		    verbose("Connection with ~p rejected. "
-			    "version = ~p~, protocols = ~p, "
+			    "version = ~p, protocols = ~p, "
 			    "expected version = ~p, expected protocol = ~p~n",
 			    [node(Mon), Version, Protocols, MyVersion, Protocol]),
 		    {reply, {node(), {reject, self(), MyVersion, Protocol}}, State}
@@ -417,7 +398,9 @@ handle_call({negotiate_protocol, Mon, Version, Protocols}, From, State)
 
 handle_call(init, From, State) ->
     net_kernel:monitor_nodes(true),
-    {reply, ok, State};
+    EarlyNodes = State#state.early_connects,
+    State2 = State#state{tm_started = true},
+    {reply, EarlyNodes, State2};
 
 handle_call(Msg, From, State) ->
     error("~p got unexpected call: ~p~n", [?MODULE, Msg]),
@@ -480,14 +463,18 @@ handle_cast({mnesia_down, mnesia_locker, Node}, State) ->
 	    {noreply, State2}
     end;
 
-
 handle_cast({disconnect, Node}, State) ->
-    case rpc:call(Node, whereis, [?MODULE]) of
+    case rpc:call(Node, erlang, whereis, [?MODULE]) of
 	{badrpc, _} ->
 	    ignore;
 	RemoteMon when pid(RemoteMon) -> 
 	    unlink(RemoteMon)
     end,
+    {noreply, State};
+
+handle_cast({inconsistent_database, Context, Node}, State) ->
+    Msg = {inconsistent_database, Context, Node},
+    mnesia_lib:report_system_event(Msg),
     {noreply, State};
 
 handle_cast(Msg, State) ->
@@ -532,12 +519,15 @@ handle_info({nodeup, Node}, State) ->
     %% Let's check if Mnesia is running there in order
     %% to detect if the network has been partitioned
     %% due to communication failure.
-
-    case mnesia_recover:has_mnesia_down(Node) of
+    
+    HasDown   = mnesia_recover:has_mnesia_down(Node),
+    ImRunning = mnesia_lib:is_running(),
+    
+    if
+	%% If I'm not running the test will be made later.
+	HasDown == true, ImRunning == yes ->
+	    spawn_link(?MODULE, detect_partitioned_network, [self(), Node]);
 	true ->
-	    spawn_link(?MODULE, detect_partitioned_network,
-		       [self(), Node]);
-	false ->
 	    ignore
     end,
     {noreply, State};
@@ -562,8 +552,9 @@ terminate(Reason, State) ->
 %% Purpose: Upgrade process when its code is to be changed
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
+
 code_change(OldVsn, State, Extra) ->
-    exit(not_supported).
+    {ok, State}.
 
 %%%----------------------------------------------------------------------
 %%% Internal functions
@@ -609,6 +600,7 @@ env() ->
      event_module,
      extra_db_nodes,
      ignore_fallback_at_startup,
+     fallback_error_function,
      max_wait_for_decision,
      schema_location
     ].
@@ -640,6 +632,8 @@ default_env(extra_db_nodes) ->
     [];
 default_env(ignore_fallback_at_startup) -> 
     false;
+default_env(fallback_error_function) ->
+    {mnesia, lkill};
 default_env(max_wait_for_decision) -> 
     infinity;
 default_env(schema_location) -> 
@@ -669,6 +663,8 @@ do_check_type(dump_log_update_in_place, B) -> bool(B);
 do_check_type(dump_log_write_threshold, I) when integer(I), I > 0 -> I;
 do_check_type(event_module, A) when atom(A) -> A;
 do_check_type(ignore_fallback_at_startup, B) -> bool(B);
+do_check_type(fallback_error_function, {Mod, Func}) 
+  when atom(Mod), atom(Func) -> {Mod, Func};
 do_check_type(embedded_mnemosyne, B) -> bool(B);
 do_check_type(extra_db_nodes, L) when list(L) ->
     Fun = fun(N) when N == node() -> false;
@@ -710,8 +706,14 @@ detect_inconcistency(Nodes, Context) ->
     report_inconsistency(Replies, Context, ok).
 
 has_remote_mnesia_down(Node) ->
-    IsDown = mnesia_recover:has_mnesia_down(Node),
-    {IsDown, node()}.
+    HasDown = mnesia_recover:has_mnesia_down(Node),
+    Master  = mnesia_recover:get_master_nodes(schema),
+    if 
+	HasDown == true, Master == [] -> 
+	    {true, node()};
+	true ->
+	    {false, node()}
+    end.
 
 report_inconsistency([{true, Node} | Replies], Context, Status) ->
     %% Oops, Mnesia is already running on the

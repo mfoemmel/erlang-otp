@@ -17,21 +17,22 @@
 %%
 -module(digraph).
 
--export([new/0, new/1, delete/1]).
+-export([new/0, new/1, delete/1, info/1]).
 
 -export([add_vertex/1, add_vertex/2, add_vertex/3]).
 -export([del_vertex/2, del_vertices/2]).
--export([vertex/2, vertices/1]).
+-export([vertex/2, no_vertices/1, vertices/1]).
 
 -export([add_edge/3, add_edge/4, add_edge/5]).
 -export([del_edge/2, del_edges/2, del_path/3]).
--export([edge/2, edges/1]).
+-export([edge/2, no_edges/1, edges/1]).
 
 -export([out_neighbours/2, in_neighbours/2]).
 -export([out_edges/2, in_edges/2, edges/2]).
 -export([out_degree/2, in_degree/2]).
 -export([get_path/3, get_cycle/2]).
 
+-export([get_short_path/3, get_short_cycle/2]).
 
 -record(graph, {
 		vtab = notable,
@@ -46,7 +47,7 @@
 %%
 %%  default is [cyclic,protected]
 %%
-new() -> new([cyclic]).
+new() -> new([]).
 
 new(Type) ->
     case check_type(Type, protected, []) of
@@ -55,6 +56,8 @@ new(Type) ->
 	    V = ets:new(vertices, [set,Access]),
 	    E = ets:new(edges, [set,Access]),
 	    N = ets:new(neighbours, [bag,Access]),
+	    ets:insert(N, {'$vid', 1}),
+	    ets:insert(N, {'$eid', 1}),
 	    set_type(Ts, #graph{vtab=V, 
 				etab=E,
 				ntab=N })
@@ -74,7 +77,7 @@ check_type([private | Ts], _, L) ->
 check_type([public | Ts], _, L) ->
     check_type(Ts, public, L);
 check_type([T | _], _, _) -> 
-    {error, {unknow_type, T}};
+    {error, {unknown_type, T}};
 check_type([], A, L) -> {A,L}.
 
 %%
@@ -91,6 +94,22 @@ delete(G) ->
     ets:delete(G#graph.vtab),
     ets:delete(G#graph.etab),
     ets:delete(G#graph.ntab).
+
+info(G) ->
+    VT = G#graph.vtab,
+    ET = G#graph.etab,
+    NT = G#graph.ntab,
+    Cyclicity = case G#graph.cyclic of
+		    true  -> cyclic;
+		    false -> acyclic
+		end,
+    Protection = ets:info(VT, protection),
+    Memory = ets:info(VT, memory) 
+	+ ets:info(ET, memory)
+	+ ets:info(NT, memory),
+    [{cyclicity, Cyclicity}, 
+     {memory, Memory},
+     {protection, Protection}].
 
 add_vertex(G) -> 
     do_add_vertex({new_vertex_id(G),[]}, G).
@@ -113,8 +132,11 @@ vertex(G, V) ->
 	[Vertex] -> Vertex
     end.
 
+no_vertices(G) ->
+    ets:info(G#graph.vtab, size).
+
 vertices(G) -> 
-    collect_keys(ets:first(G#graph.vtab), G#graph.vtab).
+    collect_keys(G#graph.vtab).
 
 in_degree(G, V) ->
     length(ets:lookup(G#graph.ntab,{in,V})).
@@ -153,8 +175,11 @@ del_edge(G, E) ->
 del_edges(G, Es) ->  
     do_del_edges(Es, G).
 
+no_edges(G) ->
+    ets:info(G#graph.etab, size).
+
 edges(G) ->
-    collect_keys(ets:first(G#graph.etab), G#graph.etab).
+    collect_keys(G#graph.etab).
 
 edges(G, V) ->
     NT = G#graph.ntab,
@@ -170,43 +195,33 @@ edge(G, E) ->
 
 %%
 %% Generate a "unique" edge identifier (relative this graph)
-%% ['$e'|N]
+%% ['$e' | N]
 %%
 new_edge_id(G) ->
-    ET = G#graph.etab,
-    N = 
-	case ets:lookup(ET,'$eid') of
-	    [{'$eid',K}] -> K;
-	    [] -> 1
-	end,
-    ets:insert(ET,{'$eid',N+1}),
-    ['$e'|N].
+    NT = G#graph.ntab,
+    [{'$eid', K}] = ets:lookup(NT, '$eid'),
+    true = ets:delete(NT, '$eid'),
+    true = ets:insert(NT, {'$eid', K+1}),
+    ['$e' | K].
 
 %%
 %% Generate a "unique" vertex identifier (relative this graph)
-%% ['$v'|N]
+%% ['$v' | N]
 %%
 new_vertex_id(G) ->
-    VT = G#graph.vtab,
-    N =
-	case ets:lookup(VT,'$vid') of
-	    [{'$vid',K}] -> K;
-	    [] -> 1
-	end,
-    ets:insert(VT,{'$vid',N+1}),
-    ['$v'|N].
+    NT = G#graph.ntab,
+    [{'$vid', K}] = ets:lookup(NT, '$vid'),
+    true = ets:delete(NT, '$vid'),
+    true = ets:insert(NT, {'$vid', K+1}),
+    ['$v' | K].
 
 %%
 %% Scan table for all keys
 %%
-collect_keys(Key, Table) ->
-    collect_keys(Key, Table, []).
-
+collect_keys(Table) ->
+    collect_keys(ets:first(Table), Table, []).
+	    
 collect_keys('$end_of_table', _, Keys) -> Keys;
-collect_keys('$vid', Table, L) ->
-    collect_keys(ets:next(Table,'$vid'), Table, L);
-collect_keys('$eid', Table, L) ->
-    collect_keys(ets:next(Table,'$eid'), Table, L);
 collect_keys(Key, Table, L) ->
     collect_keys(ets:next(Table,Key), Table, [Key|L]).
 
@@ -231,13 +246,13 @@ collect_elems([], _, _, Acc) -> Acc.
 collect_objs(Ls) ->
     collect_objs(Ls, []).
     
-collect_objs([{Key,Value}|T],Acc) ->
+collect_objs([{_Key,Value}|T],Acc) ->
     collect_objs(T, [Value|Acc]);
 collect_objs([], Acc) -> Acc.
 
 
-do_add_vertex({V,Data}, G) ->
-    ets:insert(G#graph.vtab, {V,Data}),
+do_add_vertex({V,Label}, G) ->
+    ets:insert(G#graph.vtab, {V,Label}),
     V.
 
 %%
@@ -306,7 +321,7 @@ rm_edge_0([],_,_,_) -> ok.
 %%
 %% Check that endpoints exists
 %%
-do_add_edge({E,V1,V2,Data}, G) ->
+do_add_edge({E,V1,V2,Label}, G) ->
     case ets:lookup(G#graph.vtab,V1) of
 	[] -> {error, {bad_vertex, V1}};
 	_  ->
@@ -315,24 +330,26 @@ do_add_edge({E,V1,V2,Data}, G) ->
 		_  ->
 		    if
 			G#graph.cyclic == false ->
-			    acyclic_add_edge(E,V1,V2,Data,G);
+			    acyclic_add_edge(E,V1,V2,Label,G);
 			true ->
-			    do_insert_edge(E,V1,V2,Data,G)
+			    do_insert_edge(E,V1,V2,Label,G)
 		    end
 	    end
     end.
 
 
-do_insert_edge(E,V1,V2,Data,G) ->
+do_insert_edge(E,V1,V2,Label,G) ->
     NT = G#graph.ntab,
     ets:insert(NT, {{out,V1},E}),
     ets:insert(NT, {{in,V2},E}),
-    ets:insert(G#graph.etab, {E,V1,V2,Data}),
+    ets:insert(G#graph.etab, {E,V1,V2,Label}),
     E.
 
-acyclic_add_edge(E,V1,V2,Data,G) ->
+acyclic_add_edge(_E, V1, V2, _L, _G) when V1 == V2 ->
+    {error, {bad_edge, [V1, V2]}};
+acyclic_add_edge(E,V1,V2,Label,G) ->
     case get_path(G,V2,V1) of
-	false -> do_insert_edge(E,V1,V2,Data,G);
+	false -> do_insert_edge(E,V1,V2,Label,G);
 	Path -> {error, {bad_edge, Path}}
     end.
 
@@ -358,7 +375,7 @@ del_path(G,V1,V2) ->
 %%
 
 get_cycle(G, V) ->
-    case one_path(out_neighbours(G,V), V, [], [], [V], {2,infinity}, G) of
+    case one_path(out_neighbours(G,V), V, [], [V], [V], {2,infinity}, G) of
 	false ->
 	    case lists:member(V, out_neighbours(G, V)) of
 		true -> [V];
@@ -374,7 +391,7 @@ get_cycle(G, V) ->
 %%
 
 get_path(G, V1, V2) ->
-    one_path(out_neighbours(G, V1), V2, [], [], [V1], {1,infinity}, G).
+    one_path(out_neighbours(G, V1), V2, [], [V1], [V1], {1,infinity}, G).
 
 %%
 %% prune_path (evaluate conditions on path)
@@ -382,11 +399,12 @@ get_path(G, V1, V2) ->
 %% short : if path is to short
 %% ok    : if path is ok
 %%
+prune_path(_Path, {_Min,Max}) when Max == infinite ->
+    ok;
 prune_path(Path, {Min,Max}) ->
     N = length(Path),
     if
 	N < Min -> short;
-	Max == infinite -> ok;
 	N > Max -> long;
 	true -> ok
     end.
@@ -410,3 +428,58 @@ one_path([V|Vs], W, Cont, Xs, Ps, Prune, G) ->
 one_path([], W, [{Vs,Ps}|Cont], Xs, _, Prune, G) ->
     one_path(Vs, W, Cont, Xs, Ps, Prune, G);
 one_path([], _, [], _, _, _, _) -> false.
+
+%%
+%% Like get_cycle/2, but a cycle of length one is preferred.
+%%
+
+get_short_cycle(G, V) ->
+    get_short_path(G, V, V).
+
+%%
+%% Like get_path/3, but using a breadth-first search makes it possible
+%% to find a short path.
+%%
+
+get_short_path(G, V1, V2) ->
+    T = new(),
+    add_vertex(T, V1),
+    Q = queue:new(),
+    Q1 = queue_out_neighbours(V1, G, Q),
+    L = spath(Q1, G, V2, T),
+    delete(T),
+    L.
+    
+spath(Q, G, Sink, T) ->
+    case queue:out(Q) of
+	{{value, E}, Q1} ->
+	    {_E, V1, V2, _Label} = edge(G, E),
+	    if 
+		Sink == V2 ->
+		    follow_path(V1, T, [V2]);
+		true ->
+		    case vertex(T, V2) of
+			false ->
+			    add_vertex(T, V2),
+			    add_edge(T, V2, V1),
+			    NQ = queue_out_neighbours(V2, G, Q1),
+			    spath(NQ, G, Sink, T);
+			_V ->
+			    spath(Q1, G, Sink, T)
+		    end
+	    end;
+	{empty, _Q1} ->
+	    false
+    end.
+
+follow_path(V, T, P) ->
+    P1 = [V | P],
+    case out_neighbours(T, V) of
+	[N] ->
+	    follow_path(N, T, P1);
+	[] ->
+	    P1
+    end.
+
+queue_out_neighbours(V, G, Q0) ->
+    lists:foldl(fun(E, Q) -> queue:in(E, Q) end, Q0, out_edges(G, V)).

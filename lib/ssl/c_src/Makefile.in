@@ -1,0 +1,172 @@
+# ``The contents of this file are subject to the Erlang Public License,
+# Version 1.1, (the "License"); you may not use this file except in
+# compliance with the License. You should have received a copy of the
+# Erlang Public License along with this software. If not, it can be
+# retrieved via the world wide web at http://www.erlang.org/.
+# 
+# Software distributed under the License is distributed on an "AS IS"
+# basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+# the License for the specific language governing rights and limitations
+# under the License.
+# 
+# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+# AB. All Rights Reserved.''
+# 
+#     $Id$
+#
+include $(ERL_TOP)/make/target.mk
+include $(ERL_TOP)/make/$(TARGET)/otp.mk
+
+# ----------------------------------------------------
+# SSL roots
+# ----------------------------------------------------
+SSLEAY_ROOT = ../usr/ssleay
+
+# ----------------------------------------------------
+# Application version
+# ----------------------------------------------------
+include ../vsn.mk
+VSN=$(SSL_VSN)
+
+# ----------------------------------------------------
+# Commands 
+# ----------------------------------------------------
+CC = @CC@
+LD = ld
+SHELL = /bin/sh
+LIBS = @LIBS@
+LDLIBS = $(LIBS)
+
+# ----------------------------------------------------
+# Includes and libs
+# ----------------------------------------------------
+SSLEAY_INCLUDE = -I $(SSLEAY_ROOT)/$(TARGET)/include
+SSLEAY_LIBDIR = $(SSLEAY_ROOT)/$(TARGET)/lib
+
+ALL_CFLAGS = @CFLAGS@ @DEFS@ $(TYPE_FLAGS)
+TARGET = @host@
+
+ifeq ($(TYPE),debug)
+TYPEMARKER = .debug
+TYPE_FLAGS = -g -DDEBUG @DEBUG_FLAGS@
+else
+TYPEMARKER =
+TYPE_FLAGS = -O2
+endif
+
+ROOTDIR = $(ERL_TOP)/lib
+PRIVDIR = ../priv
+BINDIR = $(PRIVDIR)/bin/$(TARGET)
+OBJDIR = $(PRIVDIR)/obj/$(TARGET)
+
+# ----------------------------------------------------
+# File suffixes
+# ----------------------------------------------------
+ifeq ($(findstring win32,$(TARGET)),win32)
+exe = .exe
+obj = .obj
+else
+exe =
+obj = .o
+endif
+
+# ----------------------------------------------------
+# Release directory specification
+# ----------------------------------------------------
+RELSYSDIR = $(RELEASE_PATH)/lib/ssl-$(VSN)
+
+# ----------------------------------------------------
+# Common Macros
+# ----------------------------------------------------
+SSL_BASE_OBJS = \
+	$(OBJDIR)/esock$(obj) \
+	$(OBJDIR)/debuglog$(obj) \
+	$(OBJDIR)/esock_osio$(obj) \
+	$(OBJDIR)/esock_utils$(obj) \
+	$(OBJDIR)/esock_posix_str$(obj)
+
+SSL_BASE = $(OBJDIR)/ssl_base$(obj)
+
+EXTRA_SSL_OBJS = \
+	$(OBJDIR)/esock_ssleay$(obj)
+
+SSL_MAKEFILE = \
+	$(OBJDIR)/Makefile
+
+SSL_BINS = \
+	$(BINDIR)/ssl_esock$(exe)
+
+# ----------------------------------------------------
+# Targets
+# ----------------------------------------------------
+
+ifeq ($(findstring win32,$(TARGET)),win32)
+debug opt:
+	echo "Nothing to build for Win32"
+else
+debug opt: $(OBJDIR) $(BINDIR) $(SSL_BASE) $(EXTRA_SSL_OBJS) $(SSL_MAKEFILE)
+
+$(OBJDIR):
+	-@mkdir -p $(OBJDIR)
+
+$(BINDIR):
+	-@mkdir -p $(BINDIR)
+
+
+$(SSL_BASE):	$(SSL_BASE_OBJS)
+	$(LD) -r -o $@ $^
+
+$(OBJDIR)/esock_ssleay.o:	esock_ssleay.c
+	$(CC) -c -o $@ $(ALL_CFLAGS) $(SSLEAY_INCLUDE) $<
+
+$(OBJDIR)/%.o: %.c
+	$(CC) -c -o $@ $(ALL_CFLAGS) $<
+
+$(BINDIR)/ssl_esock: $(SSL_BASE) $(OBJDIR)/esock_ssleay.o
+	$(CC) $(LDFLAGS) -L$(SSLEAY_LIBDIR) -o $@ $^ $(LDLIBS) -lssl -lcrypto
+
+$(SSL_MAKEFILE):
+	sed 	-e "s;%BINDIR%;../../bin/$(TARGET);" \
+		-e "s;%LDFLAGS%;$(LDFLAGS);" \
+		-e "s;%SSLEAY_LIBDIR%;$(SSLEAY_LIBDIR);" \
+		-e "s;%LDLIBS%;$(LDLIBS);" ./Makefile.dist \
+		> $(OBJDIR)/Makefile
+
+endif
+
+clean:
+	rm -f $(SSL_BINS) $(SSL_BASE) $(SSL_BASE_OBJS) $(EXTRA_SSL_OBJS)
+	rm -f core *~
+
+docs:
+
+# ----------------------------------------------------
+# Release Target
+# ---------------------------------------------------- 
+include $(ERL_TOP)/make/otp_release_targets.mk
+
+ifeq ($(findstring win32,$(TARGET)),win32)
+release_spec:
+	$(INSTALL_DIR) $(RELSYSDIR)/priv/bin
+	$(INSTALL_DIR) $(RELSYSDIR)/priv/obj
+	$(INSTALL_DATA) $(SSL_BASE_OBJS) $(EXTRA_SSL_OBJS) \
+		$(RELSYSDIR)/priv/obj
+	sed 	-e "s;%BINDIR%;../bin;" \
+		-e "s;%SSLEAY_LIBDIR%;$(SSLEAY_LIBDIR);" \
+		-e "s;%LDLIBS%;$(LDLIBS);" ./Makefile.win32.dist \
+		> $(RELSYSDIR)/priv/obj/Makefile
+else
+release_spec: opt
+	$(INSTALL_DIR) $(RELSYSDIR)/priv/bin
+	$(INSTALL_DIR) $(RELSYSDIR)/priv/obj
+	$(INSTALL_DATA) $(SSL_BASE) $(EXTRA_SSL_OBJS) $(RELSYSDIR)/priv/obj
+	sed 	-e "s;%BINDIR%;../bin;" \
+		-e "s;%LDFLAGS%;$(LDFLAGS);" \
+		-e "s;%SSLEAY_LIBDIR%;$(SSLEAY_LIBDIR);" \
+		-e "s;%LDLIBS%;$(LDLIBS);" ./Makefile.dist \
+		> $(RELSYSDIR)/priv/obj/Makefile
+endif
+
+release_docs_spec:
+

@@ -153,6 +153,7 @@
 	 trans_log_header/0,
 	 open_decision_tab/0,
 	 open_log/4,
+	 open_log/6,
 	 prepare_decision_log_dump/0,
 	 prepare_log_dump/1,
 	 save_decision_tab/1,
@@ -169,7 +170,7 @@
 	
 -include("mnesia.hrl").
 -import(mnesia_lib, [val/1, dir/1]).
--import(mnesia_lib, [exists/1, fatal/2, error/2, verbose/2, dbg_out/2]).
+-import(mnesia_lib, [exists/1, fatal/2, error/2, dbg_out/2]).
 
 trans_log_header() -> log_header(trans_log, version()).
 backup_log_header() -> log_header(backup_log, "1.2").
@@ -295,12 +296,15 @@ open_log(Name, Header, Fname, Exists, Repair, Mode) ->
 	    write_header(Log, Header),
 	    Log;
 	{repaired, Log, Recover, BadBytes} ->
-	    verbose("Log ~p repaired: ~p ~p~n", [Fname, Recover, BadBytes]),
+	    mnesia_lib:important("Data may be missing, log ~p repaired: Lost ~p bytes~n", 
+				 [Fname, BadBytes]),
 	    Log;
 	{error, Reason} when Repair == true ->
 	    Res = file:delete(Fname),
-	    verbose("Logfile ~p deleted: ~p, ~p~n", [Args, Res, Reason]),
-	    open_log(Name, Header, Fname, Exists, false);
+	    mnesia_lib:important("Data may be missing, Corrupt logfile deleted: ~p, ~p~n", 
+				 [Res, Reason]),
+	    %% Create a new 
+	    open_log(Name, Header, Fname, false, false, read_write);
 	{error, Reason} ->
 	    fatal("Cannot open log file ~p: ~p~n", [Fname, Reason])
     end.
@@ -394,7 +398,7 @@ chunk_log(Cont) ->
 		  [Reason]);
 	{C2, Chunk, _BadBytes} ->
 	    %% Read_only case, should we warn about the bad log file?
-	    error("PREVIOUS_LOG contained ~p bad bytes~n", _BadBytes),
+	    mnesia_lib:important("PREVIOUS_LOG repaired, lost ~p bad bytes~n", [_BadBytes]),
 	    {C2, Chunk}; 
 	Other ->
 	    Other
@@ -532,9 +536,6 @@ view_file(C, Log) ->
 %% Backup
 
 -record(backup_args, {name, module, opaque, scope, prev_name, tables, cookie}).
-
-%% Old record definition
--record(backup, {cp_name, bup_module, bup_data}).
 
 backup(Opaque) ->
     backup(Opaque, []).
@@ -697,48 +698,13 @@ backup_tab(Tab, B) ->
 	{ok, Node} when Node == node() ->
 	    tab_copier(self(), B, Tab);
 	{ok, Node} ->
-	    RemoteB = opt_convert_backup_args(Node, Tab, B),
+	    RemoteB = B,
 	    Pid = spawn_link(Node, ?MODULE, tab_copier, [self(), RemoteB, Tab]),
 	    RecName = val({Tab, record_name}),
 	    tab_receiver(Pid, B, Tab, RecName, 0);
 	{error, Reason} ->
 	    abort_write(B, {?MODULE, backup_tab}, [Tab, B], {error, Reason})
     end.
-    
-opt_convert_backup_args(Node, Tab, B) ->
-    case mnesia_monitor:needs_protocol_conversion(Node) of
-	true ->
-	    %% The node is using an old protocol
-	    case convert_backup_record(Node, B) of
-		{ok, OldB} ->
-		    OldB;
-		{error, Reason} ->
-		    abort_write(B, {?MODULE, backup_tab}, [Tab, B],
-				{error, Reason})
-	    end;
-	false ->
-	    B
-    end.
-
-convert_backup_record(Node, B) when record(B, backup_args) ->
-    if
-	B#backup_args.scope == global,
-	B#backup_args.name == B#backup_args.prev_name,
-	B#backup_args.tables == all ->
-	    {ok, #backup{cp_name = B#backup_args.name,
-			 bup_module = B#backup_args.module,
-			 bup_data = B#backup_args.opaque}};
-	true ->
-	    {error, {"Old node cannot handle new backup protocol", Node, B}}
-    end;
-convert_backup_record(Node, B) when record(B, backup) ->
-    {ok, #backup_args{name = B#backup.cp_name,
-		      module = B#backup.bup_module,
-		      opaque = B#backup.bup_data,
-		      prev_name = B#backup.cp_name,
-		      scope = global,
-		      tables = all,
-		      cookie = dummy_cookie}}.
     
 tab_copier(Pid, B, Tab) when record(B, backup_args) ->
     %% Intentional crash at exit
@@ -750,14 +716,7 @@ tab_copier(Pid, B, Tab) when record(B, backup_args) ->
     Res = handle_more(Pid, B, Tab, FirstName, FirstSource, Name),
     ?eval_debug_fun({?MODULE, tab_copier, post}, [{name, Name}, {tab, Tab}]),
 
-    handle_last(Pid, Res);
-tab_copier(Pid, B, Tab) when record(B, backup) ->
-    case convert_backup_record(node(Pid), B) of
-	{ok, NewB} ->
-	    tab_copier(Pid, NewB, Tab);
-	{error, Reason} ->
-	    exit({"tab_copier cannot convert backup record", Tab, B, Reason})
-    end.
+    handle_last(Pid, Res).
 
 select_source(Tab, Name, PrevName) ->
     if

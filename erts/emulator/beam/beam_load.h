@@ -1,3 +1,5 @@
+#ifndef _BEAM_LOAD_H
+#define _BEAM_LOAD_H
 /* ``The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
@@ -16,6 +18,7 @@
  *     $Id$
  */
 #include "beam_opcodes.h"
+#include "erl_process.h"
 
 Eterm exported_from_module(Process* p, Eterm mod);
 Eterm functions_in_module(Process* p, Eterm mod);
@@ -33,12 +36,19 @@ typedef struct gen_op_entry {
 } GenOpEntry;
 
 extern GenOpEntry gen_opc[];
+
+#ifdef NO_JUMP_TABLE 
+#define BeamOp(Op) (Op)
+#else
 extern void** beam_ops;
+#define BeamOp(Op) beam_ops[(Op)]
+#endif
+
 
 extern Eterm beam_debug_apply[];
 extern Eterm* em_call_error_handler;
 extern Eterm* em_apply_bif;
-
+extern Eterm* em_call_traced_function;
 typedef struct {
     Eterm* start;		/* Pointer to start of module. */
     Eterm* end;			/* Points one word beyond last function in module. */
@@ -81,6 +91,11 @@ extern int allocated_modules;
 #define MI_NUM_LAMBDAS		6
 
 /*
+ * Number of breakpoints in module is stored in this word
+ */
+#define MI_NUM_BREAKPOINTS      7
+
+/*
  * Start of function pointer table.  This table contains pointers to
  * all functions in the module plus an additional pointer just beyoynd
  * the end of the last functioin.
@@ -89,4 +104,5 @@ extern int allocated_modules;
  * this table.
  */
 
-#define MI_FUNCTIONS         7
+#define MI_FUNCTIONS         8
+#endif /* _BEAM_LOAD_H */

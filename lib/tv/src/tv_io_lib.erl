@@ -44,7 +44,7 @@ format(Format, Args) ->
 %% write(Term, Depth)
 %% write(Term, Depth, Pretty)
 %%  Return a (non-flattened) list of characters giving a printed
-%%  representation of the term. write/3 is for backward compatibility.
+%%  representation of the term.
 
 write(Term) -> write(Term, -1).
 
@@ -65,7 +65,7 @@ write([H|T], D) ->
 	    [$[,[write(H, D-1)|write_tail(T, D-1)],$]]
     end;
 write(F, D) when function(F) ->
-    {'fun',M,I,U,Free} = F,
+    {module,M} = erlang:fun_info(F, module),
     ["#Fun<",atom_to_list(M),">"];
 write(T, D) when tuple(T) ->
     if

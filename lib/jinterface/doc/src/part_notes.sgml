@@ -20,15 +20,14 @@
 <part>
   <header>
     <title>Jinterface Release Notes
-    <prepared>Bengt Nilsson
+    <prepared>Gordon Beaton
     <docno>
     <date>1999-10-25
     <rev>A
     <file>part_notes.sgml
   </header>
   <description>
-    <p>The Jinterface application contains low level interface to Java.
-      <p>This is a new application
+    <p>The Jinterface application allows Java and Erlang to communicate.
   </description>
   <include file="notes">
 </part>

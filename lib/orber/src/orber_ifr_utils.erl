@@ -18,9 +18,8 @@
 %%
 %%----------------------------------------------------------------------
 %% File    : orber_ifr_utils.erl
-%% Author  : Per Danielsson <pd@gwaihir>
 %% Purpose : Common function for the Interface Repository
-%% Created : 16 Oct 1997 by Per Danielsson <pd@gwaihir>
+%% Created : 16 Oct 1997
 %%----------------------------------------------------------------------
 
 -module(orber_ifr_utils).
@@ -317,23 +316,6 @@ init_DB(Timeout, Options) ->
     Wait = mnesia:wait_for_tables(?ifr_object_list, Timeout),
     db_error_check([Wait],"Database table waiting failed.").
 
-
-
-%init_DB(Timeout, Options) ->
-%    AllTabs = mnesia:system_info(tables),
-%    DB_tables_created = lists:map(fun({T,F}) ->
-%					  case lists:member(T,AllTabs) of
-%					      true ->
-%						  ok;
-%					      _ ->
-%						  F()
-%					  end
-%				  end,
-%				  ?ifr_record_tuple_list(Options)),
-%    db_error_check(DB_tables_created,"Database table creation failed."),
-%    Wait = mnesia:wait_for_tables(?ifr_object_list, Timeout),
-%    db_error_check([Wait],"Database table waiting failed.").
-
 db_error_check(Checkval,Message) ->
     case lists:any(fun(X) -> X/= ok end, Checkval) of
 	true ->
@@ -353,7 +335,6 @@ create_repository() ->
 		     X <- mnesia:match_object(Pat)]
 	 end,
     case ifr_transaction_read(_R) of
-%	{atomic,[]} ->
 	?read_check_2(_) ->
 	    PrimitiveDefs = create_primitivedefs(),
 	    New_repository = #ir_Repository{ir_Internal_ID = unique(),
@@ -363,9 +344,7 @@ create_repository() ->
 	    F = ?write_function(New_repository),
 	    ifr_transaction_write(F),
 	    {ir_Repository,New_repository#ir_Repository.ir_Internal_ID};
-%	{atomic,[Rep_ID]} ->
 	?read_check_1(Rep_ID) ->
-%%	    ?debug_print("An Interface Repository already exists:", [Rep_ID]),
 	    {ir_Repository,Rep_ID};
 	Err ->
 	    ?ifr_exception("Cannot create Interface Repository:",Err)

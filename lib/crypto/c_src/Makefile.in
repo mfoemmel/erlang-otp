@@ -34,7 +34,6 @@ LD = @DED_LD@
 SHELL = /bin/sh
 LIBS = @LIBS@
 LDFLAGS = @DED_LDFLAGS@
-soname = @ded_soname@
 OS = @OSTYPE@
 TARGET = @host@
 # We need libgcc.a on Solaris 2
@@ -127,11 +126,11 @@ $(OBJDIR)/elibcrypto.o:
 
 $(LIBDIR)/crypto_drv.so: $(CRYPTO_DRV_OBJS)
 	$(INSTALL_DIR) $(LIBDIR)
-	$(LD) $(LDFLAGS) $(soname) $(@F) -o $@ $^ -lc $(LIBS)
+	$(LD) $(LDFLAGS) -o $@ $^ -lc $(LIBS)
 
 $(LIBDIR)/elibcrypto.so: $(ELIBCRYPTO_OBJS)
 	$(INSTALL_DIR) $(LIBDIR)
-	$(LD) $(LDFLAGS) $(soname) $(@F) -o $@ $^ $(LIBGCC) -lc $(LIBS)
+	$(LD) $(LDFLAGS) -o $@ $^ $(LIBGCC) -lc $(LIBS)
 
 clean:
 	rm -f $(SOLIBS) $(OBJS)

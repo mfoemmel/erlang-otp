@@ -51,12 +51,12 @@
 
 #define BIF_RET(x) return (x)
 
-#define BIF_ERROR(p,r) { (p)->freason = r; return 0; }
+#define BIF_ERROR(p,r) { (p)->freason = r; return THE_NON_VALUE; }
 
 #define BIF_TRAP(p, Trap_) do { \
       (p)->fvalue = (Eterm) (Trap_); \
       (p)->freason = TRAP; \
-      return 0; \
+      return THE_NON_VALUE; \
  } while(0)
 
 #define BIF_TRAP0(Trap_,p)          BIF_TRAP(p, Trap_)

@@ -27,6 +27,7 @@ accessv1
 definition
 defvalpart
 description
+descriptionfield
 displaypart
 entry
 namedbits
@@ -247,7 +248,8 @@ import_stuff -> 'TEXTUAL-CONVENTION'
 
 traptype -> objectname 'TRAP-TYPE' 'ENTERPRISE' objectname varpart
 	    description referpart implies integer
-          : {{trap, '$1', '$4', lists:reverse('$5'), val('$9')}, line_of('$2')}.
+          : {{trap, '$1', '$4', lists:reverse('$5'), '$6', 
+	val('$9')}, line_of('$2')}.
 
 % defines a name to an internal node.
 objectidentifier -> objectname 'OBJECT' 'IDENTIFIER' nameassign
@@ -259,13 +261,13 @@ objecttypev1 ->	objectname 'OBJECT-TYPE'
 		'SYNTAX' syntax
                	'ACCESS' accessv1
 		'STATUS' statusv1
-                'DESCRIPTION' string
+                'DESCRIPTION' descriptionfield
 		referpart indexpartv1 defvalpart
 		nameassign : 
-		DefValPart = '$13', IndexPart = '$12', Status = '$4',
+		DefValPart = '$13', IndexPart = '$12', Status = '$8',
 		NameAssign = '$14',
            {{object_type,'$1', '$4', '$6', kind(DefValPart,IndexPart),
-	     Status, NameAssign}, line_of('$2')}.
+	     Status, '$10',  NameAssign}, line_of('$2')}.
 
 newtype -> newtypename implies syntax :
        {{new_type, dummy, '$1', '$3'}, line_of('$2')}.
@@ -330,8 +332,10 @@ variables -> objectname : ['$1'].
 variables -> variables ',' objectname : ['$3' | '$1'].
 
 implies -> ':' ':' '=' : '$1'.
-description -> 'DESCRIPTION' string.
-description -> '$empty'.
+descriptionfield -> string : {'DESCRIPTION', lists:reverse(val('$1'))}.
+descriptionfield -> '$empty' : {'DESCRIPTION', undefined}.
+description -> 'DESCRIPTION' string : {'DESCRIPTION', lists:reverse(val('$2'))}.
+description -> '$empty' : {'DESCRIPTION', undefined}.
 displaypart -> 'DISPLAY-HINT' string.
 displaypart -> '$empty'.
 
@@ -394,8 +398,9 @@ referpart -> '$empty'.
 %%v2
 %%----------------------------------------------------------------------
 moduleidentity -> mibid 'MODULE-IDENTITY' 'LAST-UPDATED' string
-	'ORGANIZATION' string 'CONTACT-INFO' string 'DESCRIPTION' string
-	revisionpart nameassign : 
+	'ORGANIZATION' string 'CONTACT-INFO' string 
+	'DESCRIPTION' descriptionfield revisionpart 
+	nameassign : 
 	{FatherName, SubIndex} = '$12',
 	{{internal,'MODULE-IDENTITY','$1',FatherName,SubIndex},line_of('$2')}.
 
@@ -484,13 +489,13 @@ objecttypev2 ->	objectname 'OBJECT-TYPE'
                 unitspart
                	'MAX-ACCESS' accessv2
 		'STATUS' statusv2
-                'DESCRIPTION' string
+                'DESCRIPTION' descriptionfield
                 referpart indexpartv2 defvalpart
 		nameassign : 
 		DefValPart = '$14', IndexPart = '$13', Status = '$9',
 		NameAssign = '$15',
            {{object_type,'$1', '$4', '$7', kind(DefValPart,IndexPart),
-	     Status, NameAssign}, line_of('$2')}.
+	     Status, '$11', NameAssign}, line_of('$2')}.
 
 indexpartv2 -> 'INDEX' '{' indextypesv2 '}' : {indexes, lists:reverse('$3')}.
 indexpartv2 -> 'AUGMENTS' '{' entry  '}' : {augments, '$3'}.
@@ -518,8 +523,8 @@ accessv2 -> 'read-write' : 'read-write'.
 accessv2 -> 'read-create' : 'read-create'.
 
 notification -> objectname 'NOTIFICATION-TYPE' objectspart
-                'STATUS' statusv2 'DESCRIPTION' string referpart nameassign :
-		{{notification,'$1','$3','$5', '$9'},line_of('$2')}.
+                'STATUS' statusv2 'DESCRIPTION' descriptionfield referpart nameassign :
+		{{notification,'$1','$3','$5', '$7', '$9'},line_of('$2')}.
 
 objectspart -> 'OBJECTS' '{' objects '}' : lists:reverse('$3').
 objectspart -> '$empty' : [].

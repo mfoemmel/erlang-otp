@@ -16,90 +16,146 @@
 %%     $Id$
 %%
 
-%% Low level interface
-
-%% open codes
+%% family codes to open
 -define(INET_AF_INET,          1).
 -define(INET_AF_INET6,         2).
 
+%% type codes (gettype)
+-define(INET_TYPE_STREAM,     1).
+-define(INET_TYPE_DGRAM,      2).
+
+%% socket modes
+-define(INET_MODE_LIST,   0).
+-define(INET_MODE_BINARY, 1).
+
+%% deliver mode
+-define(INET_DELIVER_PORT,    0).
+-define(INET_DELIVER_TERM,    1).
+
+%% 5 secs need more ???
+-define(INET_CLOSE_TIMEOUT, 5000).
+
+%% state codes (getstate)
+-define(INET_F_OPEN,         16#0001).
+-define(INET_F_BOUND,        16#0002).
+-define(INET_F_ACTIVE,       16#0004).
+-define(INET_F_LISTEN,       16#0008).
+-define(INET_F_CON,          16#0010).
+-define(INET_F_ACC,          16#0020).
+-define(INET_F_LST,          16#0040).
+-define(INET_F_BUSY,         16#0080).
+
+%% interface stuff
+-define(INET_IFNAMSIZ,          16).
+-define(INET_IFF_UP,            16#0001).
+-define(INET_IFF_BROADCAST,     16#0002).
+-define(INET_IFF_LOOPBACK,      16#0004).
+-define(INET_IFF_POINTTOPOINT,  16#0008).
+-define(INET_IFF_RUNNING,       16#0010).
+-define(INET_IFF_MULTICAST,     16#0020).
+
+-define(INET_IFF_DOWN,          16#0100).
+-define(INET_IFF_NBROADCAST,    16#0200).
+-define(INET_IFF_NPOINTTOPOINT, 16#0800).
+
+
 %% request codes
--define(INET_REQ_OPEN,         1).
--define(INET_REQ_CLOSE,        2).
--define(INET_REQ_CONNECT,      3).
--define(INET_REQ_PEER,         4).
--define(INET_REQ_NAME,         5).
--define(INET_REQ_BIND,         6).
--define(INET_REQ_SETOPTS,      7).
--define(INET_REQ_GETOPTS,      8).
--define(INET_REQ_IX,           9).
--define(INET_REQ_GETIF,        10).
--define(INET_REQ_GETSTAT,      11).
--define(INET_REQ_GETHOSTNAME,  12).
--define(INET_REQ_FDOPEN,       13).
+-define(INET_REQ_OPEN,          1).
+-define(INET_REQ_CLOSE,         2).
+-define(INET_REQ_CONNECT,       3).
+-define(INET_REQ_PEER,          4).
+-define(INET_REQ_NAME,          5).
+-define(INET_REQ_BIND,          6).
+-define(INET_REQ_SETOPTS,       7).
+-define(INET_REQ_GETOPTS,       8).
+-define(INET_REQ_GETIX,         9).
+%% -define(INET_REQ_GETIF,         10). OBSOLETE
+-define(INET_REQ_GETSTAT,       11).
+-define(INET_REQ_GETHOSTNAME,   12).
+-define(INET_REQ_FDOPEN,        13).
+-define(INET_REQ_GETFD,         14).
+-define(INET_REQ_GETTYPE,       15).
+-define(INET_REQ_GETSTATUS,     16).
+-define(INET_REQ_GETSERVBYNAME, 17).
+-define(INET_REQ_GETSERVBYPORT, 18).
+-define(INET_REQ_SETNAME,       19).
+-define(INET_REQ_SETPEER,       20).
+-define(INET_REQ_GETIFLIST,     21).
+-define(INET_REQ_IFGET,         22).
+-define(INET_REQ_IFSET,         23).
 
 %% reply codes
--define(INET_REP_OPEN,         1).
--define(INET_REP_CLOSE,        2).
--define(INET_REP_CONNECT,      3).
--define(INET_REP_PEER,         4).
--define(INET_REP_NAME,         5).
--define(INET_REP_BIND,         6).
--define(INET_REP_SETOPTS,      7).
--define(INET_REP_GETOPTS,      8).
--define(INET_REP_IX,           9).
--define(INET_REP_GETIF,        10).
--define(INET_REP_GETSTAT,      11).
--define(INET_REP_GETHOSTNAME,  12).
--define(INET_REP_FDOPEN,       13).
--define(INET_REP_ERROR,        0).
--define(INET_REP_DATA,         100).
+-define(INET_REP_ERROR,    0).
+-define(INET_REP_OK,       1).
+-define(INET_REP_DATA,     100).
 
 %% tcp requests
--define(TCP_REQ_ACCEPT,    20).
--define(TCP_REQ_LISTEN,    21).
--define(TCP_REQ_RECV,      23).
--define(TCP_REQ_SEND,      24).
+-define(TCP_REQ_ACCEPT,    30).
+-define(TCP_REQ_LISTEN,    31).
+-define(TCP_REQ_RECV,      32).
+-define(TCP_REQ_UNRECV,    33).
 
--define(TCP_REP_ACCEPT,    20).
--define(TCP_REP_LISTEN,    21).
--define(TCP_REP_SEND,      24).
 
 -define(LISTEN_BACKLOG, 5).     %% default backlog
 
 %% udp requests
--define(UDP_REQ_SEND,      20).
--define(UDP_REQ_SENDTO,    21).
--define(UDP_REQ_RECV,      22).
+-define(UDP_REQ_RECV,      30).
+
 
 %% options
--define(INET_OPT_REUSEADDR,  0).
--define(INET_OPT_KEEPALIVE,  1).
--define(INET_OPT_DONTROUTE,  2).
--define(INET_OPT_LINGER,     3).
--define(INET_OPT_BROADCAST,  4).
--define(INET_OPT_OOBINLINE,  5).
--define(INET_OPT_SNDBUF,     6).
--define(INET_OPT_RCVBUF,     7).
--define(TCP_OPT_NODELAY,     10).
--define(UDP_OPT_MULTICAST_IF, 11).
--define(UDP_OPT_MULTICAST_TTL, 12).
--define(UDP_OPT_MULTICAST_LOOP, 13).
--define(UDP_OPT_ADD_MEMBERSHIP, 14).
+-define(INET_OPT_REUSEADDR,      0).
+-define(INET_OPT_KEEPALIVE,      1).
+-define(INET_OPT_DONTROUTE,      2).
+-define(INET_OPT_LINGER,         3).
+-define(INET_OPT_BROADCAST,      4).
+-define(INET_OPT_OOBINLINE,      5).
+-define(INET_OPT_SNDBUF,         6).
+-define(INET_OPT_RCVBUF,         7).
+-define(TCP_OPT_NODELAY,         10).
+-define(UDP_OPT_MULTICAST_IF,    11).
+-define(UDP_OPT_MULTICAST_TTL,   12).
+-define(UDP_OPT_MULTICAST_LOOP,  13).
+-define(UDP_OPT_ADD_MEMBERSHIP,  14).
 -define(UDP_OPT_DROP_MEMBERSHIP, 15).
--define(INET_LOPT_BUFFER,    20).
--define(INET_LOPT_HEADER,    21).
--define(INET_LOPT_ACTIVE,    22).
--define(INET_LOPT_PACKET,    23).
+-define(INET_LOPT_BUFFER,        20).
+-define(INET_LOPT_HEADER,        21).
+-define(INET_LOPT_ACTIVE,        22).
+-define(INET_LOPT_PACKET,        23).
+-define(INET_LOPT_MODE,          24).
+-define(INET_LOPT_DELIVER,       25).
+-define(INET_LOPT_EXITONCLOSE,   26).
+-define(INET_LOPT_TCP_HIWTRMRK,  27).
+-define(INET_LOPT_TCP_LOWTRMRK,  28).
+-define(INET_LOPT_BIT8,          29).
+-define(INET_LOPT_TCP_SEND_TIMEOUT, 30).
+
+%% interface options
+-define(INET_IFOPT_ADDR,      1).
+-define(INET_IFOPT_BROADADDR, 2).
+-define(INET_IFOPT_DSTADDR,   3).
+-define(INET_IFOPT_MTU,       4).
+-define(INET_IFOPT_NETMASK,   5).
+-define(INET_IFOPT_FLAGS,     6).
+-define(INET_IFOPT_HWADDR,    7). %% where support (e.g linux)
 
 %% packet byte values
--define(TCP_PB_RAW,  0).
--define(TCP_PB_1,    1).
--define(TCP_PB_2,    2).
--define(TCP_PB_4,    3).
--define(TCP_PB_ASN1, 4).
--define(TCP_PB_RM,   5).
--define(TCP_PB_CDR,  6).
--define(TCP_PB_FCGI, 7).
+-define(TCP_PB_RAW,     0).
+-define(TCP_PB_1,       1).
+-define(TCP_PB_2,       2).
+-define(TCP_PB_4,       3).
+-define(TCP_PB_ASN1,    4).
+-define(TCP_PB_RM,      5).
+-define(TCP_PB_CDR,     6).
+-define(TCP_PB_FCGI,    7).
+-define(TCP_PB_LINE_LF, 8).
+-define(TCP_PB_TPKT,    9).
+
+%% bit options
+-define(INET_BIT8_CLEAR, 0).
+-define(INET_BIT8_SET,   1).
+-define(INET_BIT8_ON,    2).
+-define(INET_BIT8_OFF,   3).
+
 
 -define(INET_STAT_RECV_CNT,  1).
 -define(INET_STAT_RECV_MAX,  2).
@@ -109,6 +165,8 @@
 -define(INET_STAT_SEND_MAX,  6).
 -define(INET_STAT_SEND_AVG,  7).
 -define(INET_STAT_SEND_PEND, 8).
+-define(INET_STAT_RECV_OCT,  9).
+-define(INET_STAT_SEND_OCT,  10).
 
 %%
 %% Port/socket numbers: network standard functions
@@ -178,6 +236,11 @@
 	 ((X) bsr 8) band 16#ff, (X) band 16#ff]).
 
 %% Bytes to unsigned
+-define(u64(X7,X6,X5,X4,X3,X2,X1,X0), 
+	( ((X7) bsl 56) bor ((X6) bsl 48) bor ((X5) bsl 40) bor
+	  ((X4) bsl 32) bor ((X3) bsl 24) bor ((X2) bsl 16) bor 
+	  ((X1) bsl 8) bor (X0)  )).
+
 -define(u32(X3,X2,X1,X0), 
 	(((X3) bsl 24) bor ((X2) bsl 16) bor ((X1) bsl 8) bor (X0))).
 
@@ -207,28 +270,45 @@
 	 (if (X0) > 127 -> 16#100; true -> 0 end))).
 
 %% macro for use in guard for checking ip address {A,B,C,D}
--define(ip(A,B,C,D),integer(A),integer(B),integer(C),integer(D)).
+-define(ip(A,B,C,D),
+	(((A) bor (B) bor (C) bor (D)) band (bnot 16#ff)) == 0).
 
--record(socket,
+-define(ip6(A,B,C,D,E,F,G,H), 
+	(((A) bor (B) bor (C) bor (D) bor (E) bor (F) bor (G) bor (H)) 
+	 band (bnot 16#ffff)) == 0).
+
+%% default options (when inet_drv port is started)
+%%
+%% bufsz   = INET_MIN_BUFFER (8K)
+%% header  = 0
+%% packet  = 0 (raw)
+%% mode    = list
+%% deliver = term
+%% active  = false
+%%
+
+-record(connect_opts, 
+	{ 
+	  ifaddr = any,     %% bind to interface address
+	  port   = 0,       %% bind to port (default is dynamic port)
+	  fd      = -1,     %% fd >= 0 => already bound
+	  opts   = [{active,true}]
+	 }).
+
+-record(listen_opts, 
+	{ 
+	  ifaddr = any,              %% bind to interface address
+	  port   = 0,                %% bind to port (default is dynamic port)
+	  backlog = ?LISTEN_BACKLOG, %% backlog
+	  fd      = -1,              %% %% fd >= 0 => already bound
+	  opts   = [{active,true}]
+	 }).
+
+-record(udp_opts,
 	{
-	 pid = undefined,             %% socket server
-	 port = undefined,            %% socket port
-	 type = undefined             %% socket module
-	}).
-
--define(mksocket(Port),  #socket { pid = self(), port = Port,type = ?MODULE }).
-
--record(sock, 
-	{
-	  open_opts = [],
-	  local_ip  = undefined,
-	  local_port = 0,              %% dynamic
-	  active = true,               %% active mode
-	  %% socket options
-	  sock_opts = [{active,true}],
-	  other_opts = [],             %% {atom, value} pair not recognized
-	  fs = [],                     %% filter stack
-	  debug = [],
-	  fake_peer = undefined,       %% set to {IP,Port}
-	  fake_name = undefined        %% set to {IP,Port}
-	}).
+	  ifaddr = any,
+	  port   = 0,
+	  fd     = -1,
+	  opts   = [{active,true}]
+	 }).
+	  

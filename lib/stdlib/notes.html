@@ -7,25 +7,36 @@
 
 <CENTER><H1>Stdlib Release Notes</H1></CENTER>
 
-<H2>Stdlib 1.8.1</H2>
+<H2>Stdlib 1.9.1 (R7B)</H2>
 <H3>Improvements and new features</H3>
 
 <UL>
 
 <LI>
-<CODE>lists:sort/2</CODE> is stable again.
-<br>Own Id: OTP-3344
+A new better and more portable hash BIF, <c>erlang:phash/2</c>, has been
+introduced. The <c>dets</c> module will use the <c>erlang:phash/2</c>
+for newly created tables. To rebuild an old table and start to use the
+new hash BIF, give the <c>{repair,force}</c> option to <c>dets:open_file/2</c>.
+See the documentation.
+<br>Own Id: OTP-3397
+
+<LI>
+Function c:memory/[0,1] added. It can be used to
+retrieve current memory allocation status,
+see the documentation of the c module.
+<br>Own Id: OTP-3698
 
 
 <LI>
-The command-completion feature of the shell has been
-improved. Pressing the tab key now also lists possible completions
-(but only if no new character was added to the completion).
-<br>Own Id: OTP-3354
+A new predefined macro has been introduced:
+<CODE>?MODULE_STRING</CODE>, which expands to the name of the
+current module, as a string.
+<br>Own Id: OTP-3705<br>
+Aux Id: OTP-3706
 
 
 </UL>
-<H2>Stdlib 1.8</H2>
+<H2>Stdlib 1.9 (R7A)</H2>
 <H3>Known problems</H3>
 
 <UL>
@@ -52,35 +63,48 @@ always fail to match.
 <br>Own Id: OTP-3284
 
 
+<LI>
+When using the <CODE>warn_unused_vars</CODE> option to the compiler,
+warnings may be incorrectly
+given for variables used within list comprehensions.
+<br>Own Id: OTP-3412
+
+
 </UL>
 <H3>Fixed errors and malfunctions</H3>
 
 <UL>
 
 <LI>
-When <CODE>c:c(File, Options)</CODE> was used with options such
-that an intermediate file was produced instead of an
-object file (e.g., 'S'), it still tried to load an object
-file (which would be the old one, if one existed).
-<br>
-This has been changed. A warning message will be printed
-(<CODE>Warning: No object file created - nothing loaded</CODE>)
-and no object file will be loaded even if an (older) object
-file exists.
-<br>Own Id: OTP-3056<br>
-Aux Id: OTP-3054
+Exporting variables from a <CODE>catch</CODE>, which is not legal
+Erlang, was not caught by the linter in OTP R6, but caused the
+compiler to crash instead.
+<br>Own Id: OTP-3440
 
 
 <LI>
-Erlang shell line editing (e.g., M-B to back up over a word)
-didn't handle all Latin-1 characters correctly.
-<br>Own Id: OTP-3158
+Using functions in the <CODE>io</CODE> module to do I/O on a
+remote node could hang if the file process had terminated.
+<br>Own Id: OTP-3497<br>
+Aux Id: OTP-2400
 
 
 <LI>
-<CODE>ets:tab2list/1</CODE> returned the list in the wrong order
-for a table of type <CODE>ordered_set</CODE>.
-<br>Own Id: OTP-3319
+In OTP R6, if there were many <CODE>case</CODE>, <CODE>if</CODE>
+or <CODE>receive</CODE> constructions
+in one function and variables were exported from them,
+<CODE>erl_lint</CODE> (and thus compilation)
+could consume too much memory, even making compilation
+impossible.
+<br>Own Id: OTP-3504
+
+
+<LI>
+The (previously undocumented) function
+<CODE>gen_server:multi_call/4</CODE> reported good nodes as bad,
+if one of the nodes was on an unreachable host.
+<br>Own Id: OTP-3587<br>
+Aux Id: Seq 4568, OTP-3588
 
 
 </UL>
@@ -89,148 +113,106 @@ for a table of type <CODE>ordered_set</CODE>.
 <UL>
 
 <LI>
-The new lint option <CODE>{warn_format, Verbosity}</CODE> causes
-warnings to be given for malformed calls to <CODE>io:format</CODE>
-and some similar functions. <CODE>Verbosity</CODE> is an integer
-which determines the amount of warnings to give (0 = no
-warnings).
-<br>Own Id: OTP-1387
+The <CODE>win32reg</CODE> module has now been documented.
+At the same time, a few problems were fixed.
+<br>Own Id: OTP-1704
 
 
 <LI>
-Dets now has a write through caching mechanism as well as
-an auto save feature. Dets more seldom needs to repair files.
-<br>Own Id: OTP-1831<br>
-Aux Id: OTP-1526
+The construction <CODE>??Arg</CODE> for an argument to a macro
+expands to a string containing the tokens of the argument,
+similar to the <CODE>#arg</CODE> stringifying construction in C.
+<br>Own Id: OTP-3425
 
 
 <LI>
-Many functions in stdlib do not enforce the types which the
-functions are documented to accept, thus resulting in
-undefined behaviour when given arguments of invalid type.
-Stricter error checking has been added to some functions in
-stdlib, namely
-<CODE>io:get_chars</CODE>,
-<CODE>lists:keymember/3</CODE>,
-<CODE>lists:keysearch/3</CODE>,
-<CODE>lists:keydelete/3</CODE> and
-<CODE>lists:keyreplace/4</CODE>,
-resulting in an exit if an invalid argument is given.
-<br>(*** POTENTIAL INCOMPATIBILITY ***)
-<br>Own Id: OTP-2689<br>
-Aux Id: OTP-2441
+Calls using <CODE>gen_server</CODE>, <CODE>gen_fsm</CODE> and
+<CODE>gen_event</CODE> to a process on another node no longer
+hang indefinitely if the timeout is <CODE>infinity</CODE> and
+the process doesn't exist. The exit reason in that case
+is <CODE>noproc</CODE> (for local
+processes, this change was made already in OTP R5).
+<br>Own Id: OTP-3470<br>
+Aux Id: OTP-3074
 
 
 <LI>
-New functions <CODE>lists:sort(Fun, List)</CODE> and
-<CODE>lists:merge(Fun, List1, List2)</CODE> can be used for
-sorting/merging with respect to any criterion;
-<CODE>Fun(A,B)</CODE> should
-return whether <CODE>A</CODE> comes before <CODE>B</CODE> in the
-ordering.
-<br>Own Id: OTP-2948
+Warnings for variables exported from a <CODE>case</CODE>,
+<CODE>if</CODE> or <CODE>receive</CODE> are now
+only given if the variables are later used within a
+pattern.
+<br>Own Id: OTP-3475
 
 
 <LI>
-A new function <CODE>c:bt(Pid)</CODE>, available in the shell
-without module prefix, shows a stack backtrace for a
-process (i.e., calls <CODE>erlang:process_display(Pid,
-backtrace)</CODE>).
-<br>Own Id: OTP-3122
-
-
-<LI>
-The new function <CODE>c:q()</CODE> (also defined in the module
-<CODE>shell_default</CODE> so that the module prefix need not be
-given in the shell) calls <CODE>init:stop</CODE>, and thus provides
-a short command to stop Erlang in a controlled way.
-<br>Own Id: OTP-3123
-
-
-<LI>
-The functions <CODE>behaviour_info/[0,1]</CODE> have been
-removed from the module <CODE>systools</CODE>.
-<br>(*** POTENTIAL INCOMPATIBILITY ***)
-<br>Own Id: OTP-3159<br>
-Aux Id: OTP-1965
-
-
-<LI>
-The function <CODE>c:i()</CODE> now gives two lines of information
-for each process, including: heap size, stack size,
-registered name.
-<br>Own Id: OTP-3160
-
-
-<LI>
-The output functions in the <CODE>io</CODE> module
-no longer return an error term in case of
-errors; they exit instead.
-<br>(*** POTENTIAL INCOMPATIBILITY ***)
-<br>Own Id: OTP-3178
-
-
-<LI>
-The new lint option <CODE>warn_unused_vars</CODE> causes warnings to
-be given for variables which are not used (unless they begin
-with an underscore, in which case no warning is given).
-<br>Own Id: OTP-3181
-
-
-<LI>
-Parenthesis-matching in the shell has been improved.
-A new command key ^] performs
-visible parenthesis blink, like the closing characters
-(i.e., ')', '}' or ']'),
-but it also inserts the proper matching character.
-The closing characters now beep if the matching opening
-character isn't of the right kind.
-<br>Own Id: OTP-3250
-
-
-<LI>
-Enable the supervisor to handle other replies than {ok, Pid} when starting children.
-<br>Own Id: OTP-3251
-
-
-<LI>
-The erl_internal:builtins/0 function has been removed.
-<br>(*** POTENTIAL INCOMPATIBILITY ***)
-<br>Own Id: OTP-3300
-
-
-<LI>
-Due to an oversight, the following improvement was
-left out of the documentation in previous releases:
-The operator <CODE>--</CODE> performs list subtraction.
-It is also available as the function <CODE>lists:subtract/2</CODE>.
-<br>Own Id: OTP-3318
-
-
-<LI>
-The following functions in the <CODE>lists</CODE> module now have
-a faster implementation compared to previous releases:
-<CODE>map/2</CODE>, <CODE>last/1</CODE>, <CODE>keysearch/3</CODE>,
-<CODE>keymember/3</CODE> and all sorting functions.
-The functions <CODE>member/2</CODE>, <CODE>reverse/2</CODE>,
-<CODE>keysearch/3</CODE> and <CODE>keymember/3</CODE> are now
-entirely implemented as BIFs.
-<br>Own Id: OTP-3334
-
-
-<LI>
-Ets tables on remote nodes can no longer be accessed directly.
-Also, the format of the table identifiers returned by
-<CODE>ets:open/2</CODE> have changed. Incorrectly written applications
-that assume that the table identifier is a tuple will no
-longer work.
+The sets and dict modules have been updated. There are now
+the following modules: <CODE>dict</CODE> (unorded dictionary),
+<CODE>orddict</CODE> (ordered dictionary), <CODE>sets</CODE> (unordered set),
+and <CODE>ordsets</CODE> (ordered set). The API functions have
+been extended to allow more efficient updates of sets and
+dictionaries. Some API functions are now considered deprecated.
+See the documentation for each module.
 <br>
-Most functions in the <CODE>ets</CODE> module are now BIFs. The internal
-and undocumented BIFs that the <CODE>ets</CODE> module used to call
-have been removed. Applications that incorrectly used the those
-BIFs directly will no longer work.
+<p>Note that <CODE>dict</CODE> module uses a new internal representation.
+Applications that bypassed the documented API functions and
+assumed that dictionaries were lists will no longer work.
 <br>(*** POTENTIAL INCOMPATIBILITY ***)
-<br>Own Id: OTP-3337
+<br>Own Id: OTP-3519
+
+
+<LI>
+Bug-fix in <CODE>digraph</CODE>: one can no longer create loops 
+in acyclic graphs. New functions in <CODE>digraph</CODE>: 
+<CODE>info/1</CODE>, <CODE>no_vertices/1</CODE>, <CODE>no_edges/1</CODE>.
+<br>Own Id: OTP-3522
+
+
+<LI>
+The new module <CODE>digraph_utils</CODE> implements some
+algorithms based on depth-first traversal of directed graphs.
+<br>Own Id: OTP-3523
+
+
+<LI>
+The function <CODE>gen_server:multi_call/4</CODE>, which was
+previously undocumented, is now documented.
+<br>Own Id: OTP-3588<br>
+Aux Id: OTP-3587
+
+
+<LI>
+Bug-fix in <CODE>digraph</CODE>: <CODE>get_path/3</CODE> and 
+<CODE>get_cycle/2</CODE> no longer occasionally duplicate the 
+first vertex in the presence of a loop.
+New functions in <CODE>digraph</CODE>: <CODE>get_short_path/3</CODE> and 
+<CODE>get_short_cycle/2</CODE>.
+<br>Own Id: OTP-3630
+
+
+<LI>
+The new module <CODE>beam_lib</CODE> reads data from BEAM files.
+<br>Own Id: OTP-3637
+
+
+<LI>
+The system event {out, ...} that gen_server
+generates now includes State. See the documentation
+for gen_server, System Events.
+<br>Own Id: OTP-3651
+
+
+<LI>
+The gen_ family (mostly gen_server and gen_fsm)
+and rpc has been rewritten to use the new BIF
+erlang:monitor/2 as much as possible. This should
+improve performance and remove some possibilities 
+of hanging gen_server calls. In particular, 
+gen_server:multi_call/2..4 and 
+rpc:multi_server_call/2,3 should now never hang,
+at least not when all nodes are of this
+release. See also the documentation for 
+gen_server and rpc.
+<br>Own Id: OTP-3660
 
 
 </UL>

@@ -18,6 +18,8 @@
 -module(mod_disk_log).
 -export([do/1,error_log/5,load/2,store/2,remove/1]).
 
+-export([report_error/2]).
+
 -include("httpd.hrl").
 
 %% do
@@ -56,13 +58,16 @@ do(Info) ->
 custom_date() ->
   LocalTime=calendar:local_time(),
   UniversalTime=calendar:universal_time(),
-  {TDay,{THour,TMin,TSec}}=calendar:time_difference(UniversalTime,LocalTime),
-  Minutes=round(TDay*24*60+THour*60+TMin+TSec/60),
+  Minutes=round(diff_in_minutes(LocalTime,UniversalTime)),
   {{YYYY,MM,DD},{Hour,Min,Sec}}=LocalTime,
   Date=io_lib:format("~.2.0w/~.3s/~.4w:~.2.0w:~.2.0w:~.2.0w ~c~.2.0w~.2.0w",
 		     [DD,httpd_util:month(MM),YYYY,Hour,Min,Sec,sign(Minutes),
 		      abs(Minutes) div 60,abs(Minutes) rem 60]),  
   lists:flatten(Date).
+
+diff_in_minutes(L,U) ->
+  (calendar:datetime_to_gregorian_seconds(L) -
+   calendar:datetime_to_gregorian_seconds(U))/60.
 
 sign(Minutes) when Minutes > 0 ->
   $+;
@@ -114,7 +119,7 @@ error_log(Info,Date,Reason) ->
       disk_log:blog(ErrorDiskLog,Entry)
   end.
 
-error_log(Socket,SocketType,ConfigDB,{PortNumber,RemoteHost},Reason) ->
+error_log(SocketType,Socket,ConfigDB,{PortNumber,RemoteHost},Reason) ->
   case httpd_util:lookup(ConfigDB,error_disk_log) of
     undefined ->
       no_error_log;
@@ -125,6 +130,17 @@ error_log(Socket,SocketType,ConfigDB,{PortNumber,RemoteHost},Reason) ->
       disk_log:blog(ErrorDiskLog,Entry),
       ok
   end.
+
+report_error(ConfigDB,Error) ->
+    case httpd_util:lookup(ConfigDB,error_disk_log) of
+	undefined ->
+	    no_error_log;
+	ErrorDiskLog ->
+	    Date  = custom_date(),
+	    Entry = io_lib:format("[~s] reporting error: ~s",[Date,Error]),
+	    disk_log:blog(ErrorDiskLog,Entry),
+	    ok
+    end.
 
 %%
 %% Configuration

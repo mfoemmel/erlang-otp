@@ -28,7 +28,7 @@ Instructions.
    Otp's classes and the current directory.
    Your classpath should look like this :
 
-   .:<OTPROOT>/lib/ic-3.8.1/priv/ic.jar:<OTPROOT>/lib/jinterface_0.9.1/priv/OtpErlang.jar
+   .:<OTPROOT>/lib/ic-4.0/priv/ic.jar:<OTPROOT>/lib/jinterface_1.1/priv/OtpErlang.jar
 
    where :
 

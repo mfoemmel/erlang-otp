@@ -36,13 +36,13 @@
 %% This macro returns a read fun suitable for evaluation in a transaction
 -define(read_function(Objkey),
 	fun() ->
-		mnesia:dirty_read(Objkey)
+		mnesia:read(Objkey)
 	end).
 
 %% This macro returns a write fun suitable for evaluation in a transaction
 -define(write_function(R),
 	fun() ->
-		mnesia:dirty_write(R)
+		mnesia:write(R)
 	end).
 
 %% This macro returns a delete fun suitable for evaluation in a transaction

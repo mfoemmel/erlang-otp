@@ -18,8 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: orber_tc.erl
-%% Author: Lars Thorsen
-%% 
 %% Description:
 %%    This file contains utility functions to create TypeCodes
 %%
@@ -37,7 +35,8 @@
 %% External exports
 %%-----------------------------------------------------------------
 -export([null/0, void/0, short/0, unsigned_short/0, 
-	 long/0, unsigned_long/0, float/0, double/0,
+	 long/0, unsigned_long/0, long_long/0,
+	 unsigned_long_long/0, float/0, double/0,
 	 boolean/0, char/0, octet/0, any/0,
 	 typecode/0, principal/0,
 	 object_reference/2, struct/3, 
@@ -68,10 +67,16 @@ long() ->
     tk_long.
 unsigned_long() ->
     tk_ulong.
+long_long() ->
+    tk_longlong.
+unsigned_long_long() ->
+    tk_ulonglong.
 float() ->
     tk_float.
 double() ->
     tk_double.
+%%long_double() ->
+%%    tk_longdouble.
 boolean() ->
     tk_boolean.
 char() ->
@@ -141,11 +146,14 @@ get_tc(IFRId) when list(IFRId) ->
 check_tc('tk_null') -> true;
 check_tc('tk_void') -> true;
 check_tc('tk_short') -> true;
-check_tc('tk_long') -> true;
 check_tc('tk_ushort') -> true;
+check_tc('tk_long') -> true;
 check_tc('tk_ulong') -> true;
+check_tc('tk_longlong') -> true;
+check_tc('tk_ulonglong') -> true;
 check_tc('tk_float') -> true;
 check_tc('tk_double') -> true;
+%%check_tc('tk_longdouble') -> true;
 check_tc('tk_boolean') -> true;
 check_tc('tk_char') -> true;
 check_tc('tk_octet') -> true;
@@ -164,6 +172,3 @@ check_tc({'tk_except', RepId, Name, ElementList}) -> true;
 check_tc({'none', Indirection}) -> true;
 check_tc(_) -> false.
     
-%%-----------------------------------------------------------------
-%% Internal interface functions
-%%-----------------------------------------------------------------

@@ -16,11 +16,13 @@
 %%     $Id$
 %%
 -define('RT_BER',"asn1rt_ber_v1").
+-define('RT_BER_BIN',"asn1rt_ber_bin").
 -define('RT_PER',"asn1rt_per_v1").
 
 -record(module,{pos,name,defid,tagdefault='EXPLICIT',exports={exports,[]},imports={imports,[]}, extensiondefault=empty,typeorval}).
 -record('ComponentType',{pos,name,typespec,prop,tags}).
 -record(typedef,{pos,name,typespec}).
+-record(classdef,{pos,name,typespec}).
 -record(valuedef,{pos,name,type,value}).
 -record(ptypedef,{pos,name,args,typespec}).
 -record(typereference,{pos,val}).
@@ -39,7 +41,7 @@
 -record('EXTENSIONMARK',{pos,val}).
 
 % each IMPORT contains a list of 'SymbolsFromModule'
--record('SymbolsFromModule',{symbols,module}).
+-record('SymbolsFromModule',{symbols,module,objid}).
 
 % Externaltypereference -> modulename '.' typename
 -record('Externaltypereference',{pos,module,type}).

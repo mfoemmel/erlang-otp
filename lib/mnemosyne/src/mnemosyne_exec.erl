@@ -30,7 +30,7 @@
 	 start_complicated_loop/3]). %% spawned
 %%-export([simple_loop1/4, simple_loop2/3, complicated_loop/3]). %% spawned
 
-%%-define(debug,1).
+%%-define(debug,42).
 
 -include("mnemosyne_debug.hrl").
 -include("mnemosyne_internal_form.hrl").
@@ -258,7 +258,7 @@ complicated_loop_cont(FirstPid, Count,CursorOwner, OptQuery, Spec) ->
 			Nprefetch, EndCounters, [], {true, self()}},
 	    Reply = no_pending([], Count,  FirstPid,
 			       Tid, CursorOwner, Spec2, EndCounters, 
-			       {[],[],0}),
+			       {[],[],[]}),
 	    CursorOwner ! Reply,
 	    complicated_loop_cont(FirstPid, Count,CursorOwner, 
 				  OptQuery, Spec2);
@@ -305,20 +305,16 @@ simple_loop(Answers, Tid, CursorOwner, Spec) ->
     end.
 	
 
-
 ask_for_more(Pid, N, EndCounters) when pid(Pid) ->
     NewEndToken = mnemosyne_op:new_end_token(1),
-    Pid ! {bss, [], N, [NewEndToken], [], false},
-    [NewEndToken | EndCounters].
-    
+     Pid ! {bss, [], N, [NewEndToken], [], {true, self()}},  
+    [NewEndToken | EndCounters].    
 
 send_answers(Pid, Acc, N) ->
     {First, Last} = mnemosyne_op:split_list(N, Acc),
     Pid ! {answer, self(), First},
     Last.
     
-
-
 no_pending(Answers, Count, FirstPid, CTid, CursorOwner, Spec, 
 	   EndCounters, {Tid,PidL,EndC}) ->
     ?debugmsg(1, "no_pending Answers=~w, EndCounters=~w\n",
@@ -343,7 +339,7 @@ no_pending(Answers, Count, FirstPid, CTid, CursorOwner, Spec,
 	{bss, Bss, SliceSize, EndCntrl, Stack, LastMarker} ->
 	    NewEndC = mnemosyne_op:update_endc (PidL, EndC, LastMarker),
 	    case NewEndC of
-		Count ->  %% Last answers arrived. Just loop and wait fow get's
+		[] -> 
 		    simple_loop(filter_result(Spec,Bss,Answers), 
 				CTid, CursorOwner, Spec);
 		_ ->
@@ -391,7 +387,7 @@ pending(Answers, Count, FirstPid, CTid, CursorOwner, Spec, EndCounters,
     ?debugmsg(1, "pending Answers=~w, EndCounters=~w, Nmin=~w, Nmax=~w\n",
 	      [Answers, EndCounters, Nmin, Nmax]
 	     ),
-
+    
     receive
 	{bss, Bss, SliceSize, EndCntrl, Stack, LastMarker} ->
 	    NewAnswers = filter_result(Spec,Bss,Answers),
@@ -400,8 +396,7 @@ pending(Answers, Count, FirstPid, CTid, CursorOwner, Spec, EndCounters,
 	    NewEndC = mnemosyne_op:update_endc (PidL, EndC, LastMarker),
 
 	    case NewEndC of
-		Count ->  
-		    %% All answers arrived. Just loop and wait for more get's
+		[] -> %% All answers arrived. Just loop and wait for more get's
 		    simple_loop(send_answers(CursorOwner, NewAnswers,Nmax),
 				CTid, CursorOwner, Spec);
 		_ ->
@@ -460,12 +455,9 @@ pending(Answers, Count, FirstPid, CTid, CursorOwner, Spec, EndCounters,
 	Others -> 
 	    Others
     end.
-		
-    
-
+		    
 %%%================================================================
 %%% 		Private
-
 
 -define(start_op(Type,Args),
 	spawn_link(mnemosyne_op, start_op, [Type,Args])

@@ -7,21 +7,19 @@
 
 <CENTER><H1>Os_mon Release Notes</H1></CENTER>
 
-<H2>Os_mon 1.3.7</H2>
-<H3>Fixed errors and malfunctions</H3>
+<H2>Os_mon 1.3.9</H2>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>
+      A bug in the disksup service has been corrected, where
+      <CODE>disk_almost_full</CODE> alarms were not cleared correctly but
+      remained in <CODE>alarm_handler</CODE>.<BR>
+      Own Id: OTP-3696<BR>
+      Aux Id: seq4888
+    </LI>
+  </UL>
 
-<UL>
+<P>There are also release notes for <A HREF="notes_history.html">older versions</A>.</P>
 
-<LI>
-UNIX:<CODE>disksup:get_disk_data()</CODE> did occasionally fail to
-return any data about disk usage. Alarms about almost full
-disks would also not be generated. This has been corrected.
-<br>Own Id: OTP-3116
-
-
-</UL>
-You can find release notes for older versions
-<A HREF="notes_history.html">here</A>.
-
-</body>
-</html>
+</BODY>
+</HTML>

@@ -18,7 +18,7 @@
 -module(iceval).
 
 
--export([eval_const/5, eval_e/4]).
+-export([eval_const/5, eval_e/5]).
 
 -export([check_tk/3, get_val/1, mk_val/1]).
 
@@ -26,7 +26,7 @@
 %% Called fr: ictype 99, 522, 533
 
 eval_const(G, S, N, TK, Expr) ->
-    case catch eval_e(G, S, N, Expr) of
+    case catch eval_e(G, S, N, TK, Expr) of
 	T when element(1, T) == error -> 0;
 	V -> 
 	    case check_tk(G, TK, V) of
@@ -38,9 +38,9 @@ eval_const(G, S, N, TK, Expr) ->
     end.
 
 
-check_op(G, S, N, Types, Op, E1, E2) ->
-    V1 = eval_e(G, S, N, E1),
-    V2 = eval_e(G, S, N, E2),
+check_op(G, S, N, Tk, Types, Op, E1, E2) ->
+    V1 = eval_e(G, S, N, Tk, E1),
+    V2 = eval_e(G, S, N, Tk, E2),
     check_types(G, Op, E1, Types, V1),
     check_types(G, Op, E2, Types, V2),
     case check_comb(V1, V2) of
@@ -52,8 +52,8 @@ check_op(G, S, N, Types, Op, E1, E2) ->
 	    throw({error, Err})
     end.
 
-check_op(G, S, N, Types, Op, E1) ->
-    V1 = eval_e(G, S, N, E1),
+check_op(G, S, N, Tk, Types, Op, E1) ->
+    V1 = eval_e(G, S, N, Tk, E1),
     check_types(G, Op, E1, Types, V1),
     V1.
 
@@ -62,14 +62,18 @@ check_op(G, S, N, Types, Op, E1) ->
 check_tk(G, Any, default) -> true;		% Default case in union
 check_tk(G, positive_int, V) when integer(V), V >= 0 -> true;
 check_tk(G, tk_long, V) when integer(V) -> true;
+check_tk(G, tk_longlong, V) when integer(V), V >= 0 -> true;  %% LLONG
 check_tk(G, tk_short, V) when integer(V) -> true;
 check_tk(G, tk_ushort, V) when integer(V), V >= 0 -> true;
 check_tk(G, tk_ulong, V) when integer(V), V >= 0 -> true;
+check_tk(G, tk_ulonglong, V) when integer(V), V >= 0 -> true;  %% ULLONG
 check_tk(G, tk_float, V) when float(V) -> true;
 check_tk(G, tk_double, V) when float(V) -> true;
 check_tk(G, tk_boolean, V) -> is_bool(V);
 check_tk(G, tk_char, {char, V}) -> true;
+check_tk(G, tk_wchar, {wchar, V}) -> true; %% WCHAR
 check_tk(G, {tk_string, Len}, {string, V}) -> true;
+check_tk(G, {tk_wstring, Len}, {wstring, V}) -> true;  %% WSTRING
 %%check_tk(G, tk_octet, V) when integer(V) -> true;
 %%check_tk(G, tk_null, V) when integer(V) -> true;
 %%check_tk(G, tk_void, V) when integer(V) -> true;
@@ -83,7 +87,9 @@ check_tk(G, TK, V) -> %%io:format("Matching ~p and ~p~n", [TK, V]),
     false.
 
 get_val({string, X}) -> X;
+get_val({wstring, X}) -> X;  %% WCHAR
 get_val({char, X}) -> X;
+get_val({wchar, X}) -> X;  %% WSTRING
 get_val({enum_id, X}) -> X;
 get_val(X) -> X.
 
@@ -150,55 +156,55 @@ is_bool(_) -> false.
 
 
 %%%% (15)
-eval_e(G, S, N, {'or', T1, T2}) ->
-    {E1, E2} = check_op(G, S, N, [int, bool], 'or', T1, T2),
+eval_e(G, S, N, Tk, {'or', T1, T2}) ->
+    {E1, E2} = check_op(G, S, N, Tk, [int, bool], 'or', T1, T2),
     e_or(E1, E2);
 
 %%%% (16)
-eval_e(G, S, N, {'xor', T1, T2}) ->
-    {E1, E2} = check_op(G, S, N, [int, bool], 'xor', T1, T2),
+eval_e(G, S, N, Tk, {'xor', T1, T2}) ->
+    {E1, E2} = check_op(G, S, N, Tk, [int, bool], 'xor', T1, T2),
     e_xor(E1, E2);
 
 %%%% (17)
-eval_e(G, S, N, {'and', T1, T2}) ->
-    {E1, E2} = check_op(G, S, N, [int, bool], 'and', T1, T2),
+eval_e(G, S, N, Tk, {'and', T1, T2}) ->
+    {E1, E2} = check_op(G, S, N, Tk, [int, bool], 'and', T1, T2),
     e_and(E1, E2);
 
 %%%% (18)
-eval_e(G, S, N, {'rshift', T1, T2}) ->
-    {E1, E2} = check_op(G, S, N, [int], 'rshift', T1, T2),
+eval_e(G, S, N, Tk, {'rshift', T1, T2}) ->
+    {E1, E2} = check_op(G, S, N, Tk,  [int], 'rshift', T1, T2),
     E1 bsr E2;
-eval_e(G, S, N, {'lshift', T1, T2}) ->
-    {E1, E2} = check_op(G, S, N, [int], 'lshift', T1, T2),
+eval_e(G, S, N, Tk, {'lshift', T1, T2}) ->
+    {E1, E2} = check_op(G, S, N, Tk, [int], 'lshift', T1, T2),
     E1 bsl E2;
 
 %%%% (19)
-eval_e(G, S, N, {'+', T1, T2}) ->
-    {E1, E2} = check_op(G, S, N, [int, float], '+', T1, T2),
+eval_e(G, S, N, Tk, {'+', T1, T2}) ->
+    {E1, E2} = check_op(G, S, N, Tk, [int, float], '+', T1, T2),
     E1 + E2;
-eval_e(G, S, N, {'-', T1, T2}) ->
-    {E1, E2} = check_op(G, S, N, [int, float], '-', T1, T2),
+eval_e(G, S, N, Tk, {'-', T1, T2}) ->
+    {E1, E2} = check_op(G, S, N, Tk, [int, float], '-', T1, T2),
     E1 - E2;
 
 %%%% (20)
-eval_e(G, S, N, {'*', T1, T2}) ->
-    {E1, E2} = check_op(G, S, N, [int, float], '*', T1, T2),
+eval_e(G, S, N, Tk, {'*', T1, T2}) ->
+    {E1, E2} = check_op(G, S, N, Tk, [int, float], '*', T1, T2),
     E1 * E2;
-eval_e(G, S, N, {'/', T1, T2}) ->
-    {E1, E2} = check_op(G, S, N, [int, float], '/', T1, T2),
+eval_e(G, S, N, Tk, {'/', T1, T2}) ->
+    {E1, E2} = check_op(G, S, N, Tk, [int, float], '/', T1, T2),
     E1 / E2;
-eval_e(G, S, N, {'%', T1, T2}) ->
-    {E1, E2} = check_op(G, S, N, [int], '%', T1, T2),
+eval_e(G, S, N, Tk, {'%', T1, T2}) ->
+    {E1, E2} = check_op(G, S, N, Tk, [int], '%', T1, T2),
     E1 rem E2;
 
 %%%% (21)
-eval_e(G, S, N, {{'-', Line}, T}) ->
-    -check_op(G, S, N, [int, float], '-', T);
-eval_e(G, S, N, {{'+', Line}, T}) ->
-    check_op(G, S, N, [int, float], '+', T);
-eval_e(G, S, N, {{'~', Line}, T}) ->
+eval_e(G, S, N, Tk, {{'-', Line}, T}) ->
+    -check_op(G, S, N, Tk, [int, float], '-', T);
+eval_e(G, S, N, Tk, {{'+', Line}, T}) ->
+    check_op(G, S, N, Tk, [int, float], '+', T);
+eval_e(G, S, N, Tk, {{'~', Line}, T}) ->
     icgen:error(G, {unsupported_op, {'~', Line}}),
-    eval_e(G, S, N, T);
+    eval_e(G, S, N, Tk, T);
 
 
 %% Ints are repr. by an Erlang integer val, floats and doubles by
@@ -206,20 +212,27 @@ eval_e(G, S, N, {{'~', Line}, T}) ->
 %% checking. These tuples are removed just before returning from top
 %% function.
 %%
-eval_e(G, S, N, {'<integer_literal>', Line, X}) -> list_to_integer(X);
-eval_e(G, S, N, {'<string_literal>', Line, X}) -> {string, X};
-eval_e(G, S, N, {'<character_literal>', Line, X}) -> {char, hd(X)};
-eval_e(G, S, N, {'TRUE', Line}) -> true;
-eval_e(G, S, N, {'FALSE', Line}) -> false;
-eval_e(G, S, N, {'<floating_pt_literal>', Line, X}) -> to_float(X);
-eval_e(G, S, N, X) when element(1, X) == scoped_id ->
+eval_e(G, S, N, Tk, {'<integer_literal>', Line, X}) -> list_to_integer(X);
+eval_e(G, S, N, {tk_string,_}, {'<string_literal>', Line, X}) -> {string, X};
+eval_e(G, S, N, {tk_wstring,_}, {'<string_literal>', Line, X}) -> {wstring, X}; %% WSTRING
+eval_e(G, S, N, tk_char, {'<character_literal>', Line, X}) -> {char, hd(X)};
+eval_e(G, S, N, tk_wchar, {'<character_literal>', Line, X}) -> {wchar, hd(X)}; %% WCHAR
+eval_e(G, S, N, Tk, {'TRUE', Line}) -> true;
+eval_e(G, S, N, Tk, {'FALSE', Line}) -> false;
+eval_e(G, S, N, Tk, {'<floating_pt_literal>', Line, X}) -> to_float(X);
+%% Some possible error conditions
+eval_e(G, S, N, Tk, {'<character_literal>', Line, X}) -> {char, hd(X)}; %% ERROR?
+%%
+eval_e(G, S, N, Tk, X) when element(1, X) == scoped_id ->
     mk_val(ictype:scoped_lookup(G, S, N, X));
-eval_e(G, S, N, {default, _}) -> default.	% Default case in union
+eval_e(G, S, N, Tk, {default, _}) -> default.	% Default case in union
 
 
 %% Make the newly looked up value a value that can be type checked.
 mk_val({_, _, {tk_string, _}, V}) -> {string, V};
+mk_val({_, _, {tk_wstring, _}, V}) -> {wstring, V};  %% WSTRING
 mk_val({_, _, tk_char, V}) -> {char, V};
+mk_val({_, _, tk_wchar, V}) -> {wchar, V}; %% WCHAR
 mk_val({_, _, enum_val, V}) -> 
     {enum_id, icgen:get_id2(V)};
 mk_val(X) when element(1, X) == error -> X;

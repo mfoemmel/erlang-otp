@@ -143,14 +143,24 @@ final public class Term extends Any {
       case com.ericsson.otp.erlang.OtpExternal.nilTag:
 	return true;
       default:
-	return false;
+	try {
+	  stringV = extract_string();
+	  return true;
+	} catch (Exception e) {
+	  return false;
+	}
       }
     }
 
     if (ObjV instanceof com.ericsson.otp.erlang.OtpErlangString) 
       return true;
 
-    return false;
+    try {
+      stringV = extract_string();
+      return true;
+    } catch (Exception e) {
+      return false;
+    }
   }
 
   /**
@@ -342,10 +352,13 @@ final public class Term extends Any {
 	  
 	case TCKind._tk_octet :
 	case TCKind._tk_char : 
+	case TCKind._tk_wchar : 
 	case TCKind._tk_short :
 	case TCKind._tk_ushort : 
 	case TCKind._tk_long :
+	case TCKind._tk_longlong :
 	case TCKind._tk_ulong :
+	case TCKind._tk_ulonglong :
 	  _os.write_long(longV);
 	  break;
 
@@ -362,6 +375,7 @@ final public class Term extends Any {
 	  break;
 
 	case TCKind._tk_string :
+	case TCKind._tk_wstring :
 	  _os.write_string(stringV);
 	  break;
 
@@ -399,7 +413,7 @@ final public class Term extends Any {
 	   * Not supported types
 	   */
 	default:
-	  throw new com.ericsson.otp.erlang.OtpErlangDataException("BAD KIND");
+	  throw new java.lang.Exception("BAD KIND");
 	}
       }
   }
@@ -426,7 +440,7 @@ final public class Term extends Any {
       if (tcV.kind() == TCKind.tk_short)
 	return (short) longV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
   
   /**
@@ -463,7 +477,7 @@ final public class Term extends Any {
       if (tcV.kind() == TCKind.tk_long)
 	return (int) longV;
 
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
   
   /**
@@ -483,6 +497,35 @@ final public class Term extends Any {
       tag = com.ericsson.otp.erlang.OtpExternal.intTag;
       tcV = new TypeCode(TCKind.tk_long);
   } 
+
+
+  /* longlong */
+
+  /**
+    Long Long value extractor method
+    @return long, the value of Term 
+  **/
+  public long extract_longlong() 
+    throws java.lang.Exception {
+
+      if (tcV == null)
+	return longV;
+
+      if (tcV.kind() == TCKind.tk_longlong)
+	return longV;
+
+      throw new java.lang.Exception("");
+  }
+  
+
+  /**
+    Long Long value insertion method
+  **/
+  public void insert_longlong(long l){
+      longV = l;
+      tag = com.ericsson.otp.erlang.OtpExternal.intTag;
+      tcV = new TypeCode(TCKind.tk_longlong);
+  } 
   
 
   /* ushort */
@@ -500,7 +543,7 @@ final public class Term extends Any {
       if (tcV.kind() == TCKind.tk_ushort)
 	return (short) longV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
    
   /**
@@ -537,7 +580,7 @@ final public class Term extends Any {
       if (tcV.kind() == TCKind.tk_ulong)
 	return (int) longV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   } 
   
   /**
@@ -560,6 +603,37 @@ final public class Term extends Any {
   } 
 
 
+  
+  /* ulonglong */
+
+  /**
+    Unsigned Long Long value extractor method
+    @return long, the value of Term 
+  **/
+  public long extract_ulonglong() 
+    throws java.lang.Exception {
+
+      if (tcV == null)
+	return longV;
+
+      if (tcV.kind() == TCKind.tk_ulonglong)
+	return longV;
+
+      throw new java.lang.Exception("");
+  }
+  
+
+  /**
+    Unsigned Long Long value insertion method
+  **/
+  public void insert_ulonglong(long l){
+      longV = l;
+      tag = com.ericsson.otp.erlang.OtpExternal.intTag;
+      tcV = new TypeCode(TCKind.tk_ulonglong);
+  } 
+
+
+
   /* float */
   /**
     Float value extractor method
@@ -574,7 +648,7 @@ final public class Term extends Any {
       if (tcV.kind() == TCKind.tk_float)
 	return (float) doubleV;
 
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   } 
 
 
@@ -611,7 +685,7 @@ final public class Term extends Any {
       if (tcV.kind() == TCKind.tk_double)
 	return doubleV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   } 
   
   /**
@@ -638,7 +712,7 @@ final public class Term extends Any {
       if (tcV.kind() == TCKind.tk_boolean)
 	return booleanV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
    
   /**
@@ -665,7 +739,7 @@ final public class Term extends Any {
       if (tcV.kind() == TCKind.tk_char)
 	return (char) longV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   } 
   
   /**
@@ -687,6 +761,43 @@ final public class Term extends Any {
   } 
   
 
+
+    /* wchar */
+  /**
+    Wchar value extractor method
+    @return char, the value of Term 
+    **/
+  public char extract_wchar() 
+    throws java.lang.Exception{
+
+      if (tcV == null) 
+	return (char) longV;
+
+      if (tcV.kind() == TCKind.tk_wchar)
+	return (char) longV;
+      
+      throw new java.lang.Exception("");
+  } 
+  
+  /**
+    Wchar value insertion method
+    **/
+  public void insert_wchar(char c) {
+    longV = c;
+    tag = com.ericsson.otp.erlang.OtpExternal.smallIntTag;
+    tcV = new TypeCode(TCKind.tk_wchar);
+  } 
+
+  /**
+    Wchar value insertion method
+    **/
+  public void insert_wchar(long l) {
+    longV = l;
+    tag = com.ericsson.otp.erlang.OtpExternal.smallIntTag;
+    tcV = new TypeCode(TCKind.tk_wchar);
+  } 
+
+
   /* octet */
   /**
     Octet value extractor method
@@ -701,7 +812,7 @@ final public class Term extends Any {
       if (tcV.kind() == TCKind.tk_octet)
 	return (byte) longV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   } 
    
   /**
@@ -723,7 +834,9 @@ final public class Term extends Any {
   }
   
 
+
   /* string */
+
   /**
     String value extractor method
     @return String, the value of Term 
@@ -731,23 +844,67 @@ final public class Term extends Any {
   public java.lang.String extract_string() 
     throws java.lang.Exception{
 
-      if ((tcV == null) && (stringV != null))
-	return stringV;
+      if (tcV == null) {
+	if (stringV != null)
+	  return stringV;
+	else {
+	  is = this.extract_Streamable();
+	  stringV = is.read_string();
+	  return stringV;
+	}
+      }
+      else
+	if (tcV.kind() == TCKind.tk_string)
+	  return stringV;
       
-      if (tcV.kind() == TCKind.tk_string)
-	return stringV;
-      
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
   
-    /**
-      String value insertion method
-      **/
+  /**
+    String value insertion method
+    **/
   public void insert_string(java.lang.String s) {
       stringV = s;
       tag = com.ericsson.otp.erlang.OtpExternal.stringTag;
       tcV = new TypeCode(TCKind.tk_string);
   }
+
+
+  
+  /* wstring */
+  /**
+    Wstring value extractor method
+    @return String, the value of Term 
+  **/
+  public java.lang.String extract_wstring() 
+    throws java.lang.Exception{
+      
+      if (tcV == null) {
+	if (stringV != null)
+	  return stringV;
+	else {
+	  is = this.extract_Streamable();
+	  stringV = is.read_string();
+	  return stringV;
+	}
+      }
+      else
+	if (tcV.kind() == TCKind.tk_wstring)
+	  return stringV;
+      
+      throw new java.lang.Exception("");
+  }
+  
+  /**
+    Wstring value insertion method
+    **/
+  public void insert_wstring(java.lang.String s) {
+    stringV = s;
+    tag = com.ericsson.otp.erlang.OtpExternal.stringTag;
+    tcV = new TypeCode(TCKind.tk_wstring);
+  }
+
+
 
   /* atom */
   /**
@@ -763,7 +920,7 @@ final public class Term extends Any {
       if (tcV.kind() == TCKind.tk_atom)
 	return stringV;
 
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
   
 
@@ -791,7 +948,7 @@ final public class Term extends Any {
       if (tcV.equal(PidHelper.type()))
 	return PidV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
   
   
@@ -820,7 +977,7 @@ final public class Term extends Any {
       if (tcV.equal(RefHelper.type()))
 	return RefV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
   
   /**
@@ -853,7 +1010,7 @@ final public class Term extends Any {
       if (tcV.equal(PortHelper.type()))
 	return PortV;
       
-      throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+      throw new java.lang.Exception("");
   }
   
   /**
@@ -871,7 +1028,7 @@ final public class Term extends Any {
     @return OtpInputStream, the stream value of Term 
   **/
   public com.ericsson.otp.erlang.OtpInputStream extract_Streamable() {
-    
+
     if (is == null) {
       if (os == null) {
 	if (stringV == null)

@@ -33,7 +33,7 @@ VSN=$(ODBC_VSN)
 # ----------------------------------------------------
 # Release directory specification
 # ----------------------------------------------------
-RELSYSDIR = $(RELEASE_PATH)/src/odbc-$(VSN)
+RELSYSDIR = $(RELEASE_PATH)/lib/odbc-$(VSN)
 
 # ----------------------------------------------------
 # C Target Specs

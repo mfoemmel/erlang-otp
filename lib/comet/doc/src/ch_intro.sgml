@@ -1,0 +1,80 @@
+<!doctype chapter PUBLIC "-//Stork//DTD chapter//EN">
+<!-- 
+ ``The contents of this file are subject to the Erlang Public License,
+ Version 1.1, (the "License"); you may not use this file except in
+ compliance with the License. You should have received a copy of the
+ Erlang Public License along with this software. If not, it can be
+ retrieved via the world wide web at http://www.erlang.org/.
+ 
+ Software distributed under the License is distributed on an "AS IS"
+ basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ the License for the specific language governing rights and limitations
+ under the License.
+ 
+ The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+ Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+ AB. All Rights Reserved.''
+ 
+     $Id$
+-->
+<chapter>
+  <header>
+    <title>Introduction
+    <prepared>Jakob Cederlund
+    <docno>
+    <date>2000-05-17
+    <rev>A
+    <file>ch_intro.sgml
+  </header>
+  
+  <section><title>Introduction</title>
+    <p>In Windows, many applications and libraries call each
+      other using COM. COM, short for Component Object Model,
+      is Microsoft's technique for component software and
+      distributed computing. COM enables code to be called
+      across language boundaries. For instance, a Visual Basic
+      program can call modules and classes written in C++, and
+      vice versa.
+    <p>Comet is a module for Erlang, that enables Erlang programs
+      to call COM objects.
+    <p>This document describes Comet and its possible applications.
+      However, some knowledge of COM is assumed. Please check the list
+      of recommended reading in appendix A for tips on books on COM.
+  </section>
+  
+  <section><title>Architecture</title>
+
+    <p>Comet is a module that consists of two parts: a genserver,
+      called erl_com, that implements the Erlang part of Comet, and
+      a port driver erl_com_drv, that implements the C glue. The port
+      driver is also available as a port program with the same API from
+      Erlang.
+    <p>Comet is not an application, it is intended to be part of other
+      applications. It does not contain an application and supervisor.
+    <p>Since COM is a Windows-specific technology, Comet is only
+      available on Windows.
+    <p>Erlang can only call other COM-servers, Comet does not currently
+      provide for creating COM-objects written in Erlang. This might be
+      included in later versions. Comet is a COM-client only.
+  </section>
+
+  <section><title>Prerequisites</title>
+    <p>Basic knowledge of COM and Windows programming is assumed.
+  </section>
+  
+  <section><title>Where to Find More Information</title>
+
+    <p>More information on COM can be found in:
+    <list ordered>
+      <item>Microsoft documentation
+	<url href="http://www.microsoft.com/com/">http://www.microsoft.com/com/</url>
+      </item>
+      <item>Inside COM, by Dale Rogerson (ISBN: 1572313498)</item>
+      <item>Essential COM, by Don Box (ISBN: 0201634465)</item>
+      <item>Mastering COM and COM+, by Rofail and Shohoud (ISBN:
+	0782123848)</item>
+    </list>
+      
+  </section>
+
+</chapter>

@@ -18,8 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: iop_ior.erl
-%% Author: Lars Thorsen
-%% 
 %% Description:
 %%    This file contains the IOP::IOR handling
 %%
@@ -38,12 +36,24 @@
 	 get_key/1, get_typeID/1, get_objkey/1, check_nil/1,
 	 get_privfield/1, set_privfield/2, 
 	 get_orbfield/1, set_orbfield/2, 
-	 get_flagfield/1, set_flagfield/2]).
+	 get_flagfield/1, set_flagfield/2, get_version/1]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
 -export([]).
+
+%%-----------------------------------------------------------------
+%% Macros
+%%-----------------------------------------------------------------
+-define(DEBUG_LEVEL, 6).
+
+get_version({normal, Host, IIOP_port, OK, #'IIOP_Version'{major=Ma, minor=Mi}}) ->
+    {Ma, Mi};
+get_version({ssl, Host, SSLData, OK, #'IIOP_Version'{major=Ma, minor=Mi}}) ->
+    {Ma, Mi};
+get_version(_) ->
+    orber:giop_version().
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -81,56 +91,75 @@ create({1, 1}, TypeID, Host, IIOP_port, Objkey) ->
 			   object_key=Objkey,
 			   components=Components},
     #'IOP_IOR'{type_id=TypeID, profiles=[#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP,
-							      profile_data=PB}]}.
+							      profile_data=PB}]};
+create(Version, TypeID, Host, IIOP_port, Objkey) ->
+    orber:debug_level_print("[~p] iop_ior:create(~p, ~p, ~p, ~p, ~p); unsupported IIOP-version.", 
+			    [?LINE, Version, TypeID, Host, IIOP_port, Objkey], ?DEBUG_LEVEL),
+    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
+   
 
 %%-----------------------------------------------------------------
 %% Func: get_key/1
 %%-----------------------------------------------------------------
 get_key(#'IOP_IOR'{profiles=P})  ->
     get_key_1(P);
-get_key({_Id, _Type, Key, _UserDef, _OrberDef, _Flags}) ->
+get_key({_Id, Type, Key, _UserDef, _OrberDef, _Flags}) ->
     if
 	binary(Key) ->
 	    {'internal', Key};
+	Type == pseudo ->
+	    {'internal_registered', {pseudo, Key}};
 	atom(Key) ->
 	    {'internal_registered', Key}
     end;
 %% Remove next case when we no longer wish to handle ObjRef/4 (only ObjRef/6).
-get_key({_Id, _Type, Key, _UserDef}) ->
+get_key({_Id, Type, Key, _UserDef}) ->
     if
 	binary(Key) ->
 	    {'internal', Key};
+	Type == pseudo ->
+	    {'internal_registered', {pseudo, Key}};
 	atom(Key) ->
 	    {'internal_registered', Key}
     end.
 
 get_key_1([])  ->
-    corba:raise(#'INV_OBJREF'{});
+    orber:debug_level_print("[~p] iop_ior:get_key_1([]); bad object reference, profile not found.", 
+			    [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 get_key_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB} | P])  ->
     [_, Version, Host, IIOP_port, ObjectKey | Rest] = tuple_to_list(PB),
     case ObjectKey of
-	{_Id, _Type, Key, _UserDef, _OrberDef, _Flags} ->
+	{_Id, Type, Key, _UserDef, _OrberDef, _Flags} ->
 	    if
 		binary(Key) ->
 		    {'internal', Key};
+		Type == pseudo ->
+		    {'internal_registered', {pseudo, Key}};
 		atom(Key) ->
 		    {'internal_registered', Key}
 	    end;
 	%% Remove next case when we no longer wish to handle ObjRef/4 
 	%% (only ObjRef/6).
-	{_Id, _Type, Key, _UserDef} ->
+	{_Id, Type, Key, _UserDef} ->
 	    if
 		binary(Key) ->
 		    {'internal', Key};
+		Type == pseudo ->
+		    {'internal_registered', {pseudo, Key}};
 		atom(Key) ->
 		    {'internal_registered', Key}
 	    end;
 	OK ->
 	    case check_component_data(Rest, Version) of
 		[] ->
-		    {'external', {normal, Host, IIOP_port, OK}};
+		    {'external', {normal, Host, IIOP_port, OK, 
+				  {Version#'IIOP_Version'.major, 
+				   Version#'IIOP_Version'.minor}}};
 		{ssl, SSLData} ->
-		    {'external', {ssl, Host, SSLData, OK}}
+		    {'external', {ssl, Host, SSLData, OK,
+				  {Version#'IIOP_Version'.major, 
+				   Version#'IIOP_Version'.minor}}}
 	    end
     end;
 get_key_1([_ | P])  ->
@@ -174,7 +203,9 @@ get_objkey({Id, Type, Key, UserDef}) ->
     {Id, Type, Key, UserDef}.
 
 get_objkey_1([]) ->
-    corba:raise(#'INV_OBJREF'{});
+    orber:debug_level_print("[~p] iop_ior:get_objkey_1([]); bad object key, profile not found.", 
+			    [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 get_objkey_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB} | P]) ->
     [_, _, Host, IIOP_port, ObjectKey | _] = tuple_to_list(PB),
     ObjectKey;
@@ -193,7 +224,9 @@ get_privfield({Id, Type, Key, UserDef}) ->
     UserDef.
 
 get_privfield_1([]) ->
-    corba:raise(#'INV_OBJREF'{});
+    orber:debug_level_print("[~p] iop_ior:get_privfield_1([]); bad object key, profile not found.", 
+			    [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 get_privfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P]) ->
     [_, _, Host, IIOP_port, ObjectKey | _] = tuple_to_list(PB),
     case ObjectKey of
@@ -204,7 +237,9 @@ get_privfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P
 	{_Id, _Type, _Key, UserDef} ->
 	    UserDef;
 	_ ->
-	    corba:raise(#'INV_OBJREF'{})
+	    orber:debug_level_print("[~p] iop_ior:get_privfield_1(~p); bad object key.", 
+				    [?LINE, ObjectKey], ?DEBUG_LEVEL),
+	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
     end;
 get_privfield_1([_| P]) ->
     get_privfield_1(P).
@@ -221,7 +256,9 @@ set_privfield({Id, Type, Key, _}, UserData) ->
 	    {Id, Type, Key, UserData}.
 
 set_privfield_1([], UserData) ->
-    [];
+    orber:debug_level_print("[~p] iop_ior:set_privfield_1([]); bad object key, profile not found or external object.", 
+			    [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 set_privfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P], UserData) ->
     [RecName, Version, Host, IIOP_port, ObjectKey | Rest] = tuple_to_list(PB),
     case ObjectKey of
@@ -258,14 +295,18 @@ get_orbfield({_Id, _Type, _Key, _UserDef, OrberDef, _Flags}) ->
     OrberDef.
 
 get_orbfield_1([]) ->
-    corba:raise(#'INV_OBJREF'{});
+    orber:debug_level_print("[~p] iop_ior:get_orbfield_1([]); bad object key, profile not found.", 
+			    [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 get_orbfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P]) ->
     [_, _, Host, IIOP_port, ObjectKey | _] = tuple_to_list(PB),
     case ObjectKey of
 	{_Id, _Type, _Key, _UserDef, OrberDef, _Flags} ->
 	    OrberDef;
 	_ ->
-	    corba:raise(#'INV_OBJREF'{})
+	    orber:debug_level_print("[~p] iop_ior:get_orbfield_1(~p); bad object key.", 
+				    [?LINE, ObjectKey], ?DEBUG_LEVEL),
+	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
     end;
 get_orbfield_1([_| P]) ->
     get_orbfield_1(P).
@@ -283,7 +324,9 @@ set_orbfield({Id, Type, Key, Priv}, OrberDef) ->
 	    {Id, Type, Key, Priv, OrberDef, term_to_binary(undefined)}.
 
 set_orbfield_1([], OrberDef) ->
-    [];
+    orber:debug_level_print("[~p] iop_ior:set_orbfield_1([]); bad object key, profile not found or external object.", 
+			    [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 set_orbfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P], OrberDef) ->
     [RecName, Version, Host, IIOP_port, ObjectKey | Rest] = tuple_to_list(PB),
     case ObjectKey of
@@ -320,14 +363,18 @@ get_flagfield({_Id, _Type, _Key, _UserDef, _OrberDef, Flags}) ->
     Flags.
 
 get_flagfield_1([]) ->
-    corba:raise(#'INV_OBJREF'{});
+    orber:debug_level_print("[~p] iop_ior:get_flagfield_1([]); bad object key, profile not found.", 
+			    [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 get_flagfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P]) ->
     [_, _, Host, IIOP_port, ObjectKey | _] = tuple_to_list(PB),
     case ObjectKey of
 	{_Id, _Type, _Key, _UserDef, _OrberDef, Flags} ->
 	    Flags;
 	_ ->
-	    corba:raise(#'INV_OBJREF'{})
+	    orber:debug_level_print("[~p] iop_ior:get_flagfield_1(~p); bad object key.", 
+				    [?LINE, ObjectKey], ?DEBUG_LEVEL),
+	    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO})
     end;
 get_flagfield_1([_| P]) ->
     get_flagfield_1(P).
@@ -345,7 +392,9 @@ set_flagfield({Id, Type, Key, Priv}, Flags) ->
 	    {Id, Type, Key, Priv, term_to_binary(undefined), Flags}.
 
 set_flagfield_1([], Flags) ->
-    [];
+    orber:debug_level_print("[~p] iop_ior:set_flagfield_1([]); bad object key, profile not found or external object.", 
+			    [?LINE], ?DEBUG_LEVEL),
+    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO});
 set_flagfield_1([#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=PB}| P], Flags) ->
     [RecName, Version, Host, IIOP_port, ObjectKey | Rest] = tuple_to_list(PB),
     case ObjectKey of
@@ -430,11 +479,14 @@ code(Version, {Id, Type, Key, UserDef}, Bytes, Len) ->
 code_profile_datas(_, []) ->
     [];
 code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=0, profile_data=P} | Profiles]) ->
-%%    P1 = convert_objkey_to_byteseq(P),
     NewBytes = code_profile_data(Version, P),
     [#'IOP_TaggedProfile'{tag=0, profile_data=NewBytes} | code_profile_datas(Version, Profiles)];
-code_profile_datas(_, [#'IOP_TaggedProfile'{tag=1, profile_data=P} | Profiles]) ->
-        exit({'code_profile_datas', 'multiple components not supported'}).
+code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=N, profile_data=P} | Profiles]) ->
+        [#'IOP_TaggedProfile'{tag=N, profile_data=P} | code_profile_datas(Version, Profiles)];
+code_profile_datas(_, Data) ->
+    orber:debug_level_print("[~p] iop_ior:code_profile_datas(~p); unsupported TaggedProfile.", 
+			    [?LINE, Data], ?DEBUG_LEVEL),
+    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
 
 code_profile_data(Version, ProfileData) ->
     [RecTag, V, H, P, O |Rest] = tuple_to_list(ProfileData),
@@ -453,29 +505,10 @@ code_profile_data_1(Version, 'IIOP_ProfileBody_1_0', [], Bytes, Length) ->
     {Bytes, Length};
 code_profile_data_1(Version, 'IIOP_ProfileBody_1_1', [TaggedComponentSeq], Bytes, Length) ->
     cdr_encode:enc_type(?IOP_TAGGEDCOMPONENT, Version, TaggedComponentSeq, Bytes, Length);
-code_profile_data_1(_,_,_,_,_) ->
-    corba:raise(#'NO_IMPLEMENT'{}).
-
-%convert_objkey_to_byteseq(#'IIOP_ProfileBody_1_0'{iiop_version=#'IIOP_Version'{major=Major,
-%									       minor=Minor},
-%						  host=Host, port=Port,
-%						  object_key=ObjKey}) ->
-%    #'IIOP_ProfileBody_1_0'{iiop_version=#'IIOP_Version'{major=Major,
-%							 minor=Minor}, 
-%			    host=Host, port=Port,
-%			    object_key=corba:objkey_to_string(ObjKey)};
-%convert_objkey_to_byteseq(#'IIOP_ProfileBody_1_1'{iiop_version=#'IIOP_Version'{major=Major,
-%									       minor=Minor}, 
-%						  host=Host, port=Port,
-%						  object_key=ObjKey,
-%						  components=Components}) ->
-%    #'IIOP_ProfileBody_1_1'{iiop_version=#'IIOP_Version'{major=Major,
-%							 minor=Minor}, 
-%			    host=Host, port=Port,
-%			    object_key=corba:objkey_to_string(ObjKey),
-%			    components=Components};
-%convert_objkey_to_byteseq(_) ->
-%        corba:raise(#'NO_IMPLEMENT'{}).
+code_profile_data_1(_,V,S,_,_) ->
+    orber:debug_level_print("[~p] iop_ior:code_profile_datas(~p, ~p); probably unsupported IIOP-version", 
+			    [?LINE, V, S], ?DEBUG_LEVEL),
+    corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
 %% Func: string_decode/1
@@ -517,9 +550,14 @@ decode_profile(Version, #'IOP_TaggedProfile'{tag=0, profile_data=ProfileData}) -
     
     Struct = decode_profile_1(V, H, P, corba:string_to_objkey(ObjKey), Version, Rest4, Length4, ByteOrder),
     #'IOP_TaggedProfile'{tag=0, profile_data=Struct};
-decode_profile(_, #'IOP_TaggedProfile'{tag=1, profile_data=ProfileData}) ->
-    %exit({'decode_profile_data', 'multiple components not supported'}).
-    corba:raise(#'NO_IMPLEMENT'{}).
+decode_profile(_, #'IOP_TaggedProfile'{tag=?TAG_MULTIPPLE_COMPONENTS, profile_data=ProfileData}) ->
+    #'IOP_TaggedProfile'{tag=?TAG_MULTIPPLE_COMPONENTS, profile_data=ProfileData};
+decode_profile(_, #'IOP_TaggedProfile'{tag=N, profile_data=ProfileData}) ->
+    #'IOP_TaggedProfile'{tag=N, profile_data=ProfileData};
+decode_profile(_, Data) ->
+    orber:debug_level_print("[~p] iop_ior:decode_profile(~p); unsupported TaggedProfile.", 
+			    [?LINE, Data], ?DEBUG_LEVEL),
+    corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
 
 decode_profile_1(#'IIOP_Version'{major=1, minor=0}, H, P, ObjKey, Version, Rest, Length, ByteOrder) ->
     #'IIOP_ProfileBody_1_0'{iiop_version=#'IIOP_Version'{major=1,
@@ -533,28 +571,11 @@ decode_profile_1(#'IIOP_Version'{major=1, minor=1}, H, P, ObjKey, Version, Rest,
 			    host=H, port=P,
 			    object_key=ObjKey,
 			    components=Components};
-decode_profile_1(_, _, _, _, _, _, _,_) ->
-    corba:raise(#'NO_IMPLEMENT'{}).
+decode_profile_1(V, _, _, _, _, _, _,_) ->
+    orber:debug_level_print("[~p] iop_ior:decode_profile_1(~p); probably unsupported IIOP-version.", 
+			    [?LINE, V], ?DEBUG_LEVEL),
+    corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO}).
     
-
-%convert_byteseq_to_objkey(#'IIOP_ProfileBody'{iiop_version=#'IIOP_Version'{major=Major,
-%							      minor=Minor}, 
-%					      host=Host, port=Port,
-%					      object_key=ObjKey}) ->
-%    #'IIOP_ProfileBody'{iiop_version=#'IIOP_Version'{major=Major, minor=Minor}, 
-%			host=Host, port=Port, object_key=corba:string_to_objkey(ObjKey)}.
-
-%%-----------------------------------------------------------------
-%% Func: parseIORfromServiceLog/1
-%% Was only used when testing against JacORB !!!!!!!!!!
-%%-----------------------------------------------------------------
-%parseIORfromServiceLog([HexSeq|_]) ->
-%    StartPos = string:str(HexSeq,"IOR:"),
-%    NewHexSeq = string:substr(HexSeq, StartPos),
-%    EndPos = string:str(NewHexSeq,"\n"),
-%    IorString = string:substr(NewHexSeq, 1, EndPos - 1),
-%    string_decode(IorString).
-
 %%-----------------------------------------------------------------
 %% Func: hexstring_to_bytestring/1
 %%-----------------------------------------------------------------

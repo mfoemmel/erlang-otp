@@ -62,6 +62,7 @@ MODULES= \
 	mnesia_snmp_sup \
 	mnesia_subscr \
 	mnesia_sup \
+	mnesia_sp  \
 	mnesia_text \
 	mnesia_tm
 

@@ -1,256 +1,219 @@
 <HTML>
 <HEAD>
-<TITLE>Graphics System Release Notes</TITLE>
+  <TITLE>GS Release Notes</TITLE>
 </HEAD>
+
 <BODY BGCOLOR="#FFFFFF">
-<BLOCKQUOTE>
-<A NAME="8"><!-- Empty --></A><H2>8 Graphics System Release Notes</H2><A NAME="8.1"><!-- Empty --></A><H3>8.1 GS - Graphics System v1.3.3</H3><A NAME="8.1.1"><!-- Empty --></A><H4>8.1.1 Improvements and New Features</H4><P>-
-<A NAME="8.1.2"><!-- Empty --></A><H4>8.1.2 Fixed Bugs and Malfunctions</H4><P><UL>
-<LI>     Using Alt-shortcuts on Windows NT no longer causes Tk to report
-         an internal error.
-         <BR>
-Own Id: OTP-1352
-         
 
-        <BR>
-<LI>     <CODE>gs:start()</CODE> now returns <CODE>{error, Reason}</CODE>
-         if the backend dies, instead of always returning successful result.
-         <BR>
-Own Id: OTP-1383
-         
+<CENTER><H1>GS Release Notes</H1></CENTER>
 
-        <BR>
-<LI>     The description of how the listbox object events
-         <CODE>click</CODE> and <CODE>doubleclick</CODE> work
-         has been improved.
-         <BR>
-Own Id: OTP-1470
-         
+<H2>GS 1.3.6</H2>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>If the backend crashed, and then the process that had started GS, GS could not be restarted. This is now fixed.<BR>
+      Own Id: OTP-2773
+    </LI>
+  </UL>
 
-        <BR>
-<LI>     Alt-shortcuts now works even on Windows NT.
-         <BR>
-Own Id: OTP-1477
-         
+<H2>GS 1.3.5</H2>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>The algorithm used to place graphic elements when using the GS packer looped infinitely if it was given a negative size. This made the system crawl. It is now fixed.<BR>
+      Own Id: OTP-2558, OTP-2551<BR>
+      Aux Id: OTP-2551
+    </LI>
+    <LI>Required fonts for X-servers is now documented in the User's Guide.<BR>
+      Own Id: OTP-2559
+    </LI>
+    <LI>The gtk_grid module previously created an ETS table without deleting it when is should have been. This is now fixed.<BR>
+      Own Id: OTP-2580
+    </LI>
+    <LI>GS now accepts hexadecimal return values with capital letters.<BR>
+      Own Id: OTP-2622<BR>
+      Aux Id: seq 967
+    </LI>
+  </UL>
 
-        <BR>
-<LI>     The outline of the polygon object is now black by default,
-         instead of having the background colour.
-         <BR>
-Own Id: OTP-1563
-         
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>GS used to leave a process runing after gs:stop(). This has been fixed.<BR>
+      Own Id: OTP-2531, OTP-2570
+    </LI>
+  </UL>
 
-        <BR>
-<LI>     A grid handling bug, that caused the debugger to
-         crash on Windows NT, has been corrected.
-         <BR>
-Own Id: OTP-1820
-         
-         
-        <BR>
-<LI>     <CODE>gs:config</CODE> now returns <CODE>{error, Reason}</CODE> if the
-         option specified has bad format (i.e., isn't a two-element
-         tuple), instead of causing GS to crash.
-         <BR>
-Own Id: OTP-1976
+<H2>GS 1.3.4</H2>
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>The possibility to specify the icon bitmap of a GS Window has never been implemented. The documentation is now corrected to reflect this.<BR>
+      Own Id: OTP-1980
+    </LI>
+    <LI>Minor internal changes.<BR>
+      Own Id: OTP-2479
+    </LI>
+  </UL>
 
-        <BR>
-<LI>     Internal undocumented, unsupported function
-         <CODE>tool_utils:open_help/2</CODE> used by some tools, has been
-         fixed so that it also works for Netscape 4.x.<BR>
+<H2>GS 1.3.3</H2>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>Using Alt-shortcuts on Windows NT no longer causes Tk to report an internal error.<BR>
+      Own Id: OTP-1352
+    </LI>
+    <LI><CODE>gs:start()</CODE> now returns <CODE>{error, Reason}</CODE> if the backend dies, instead of always returning successful result.<BR>
+    Own Id: OTP-1383
+    </LI>
+    <LI>The description of how the listbox object events <CODE>click</CODE> and <CODE>doubleclick</CODE> work has been improved.<BR>
+      Own Id: OTP-1470
+    </LI>
+    <LI>Alt-shortcuts now works even on Windows NT.<BR>
+      Own Id: OTP-1477
+    </LI>
+    <LI>The outline of the polygon object is now black by default, instead of having the background colour.<BR>
+      Own Id: OTP-1563
+    </LI>
+    <LI>A grid handling bug, that caused the debugger to crash on Windows NT, has been corrected.<BR>
+      Own Id: OTP-1820
+    </LI>
+    <LI><CODE>gs:config</CODE> now returns <CODE>{error, Reason}</CODE> if the option specified has bad format (i.e., isn't a two-element tuple), instead of causing GS to crash.<BR>
+      Own Id: OTP-1976
+    </LI>
+    <LI>Internal undocumented, unsupported function <CODE>tool_utils:open_help/2</CODE> used by some tools, has been fixed so that it also works for Netscape 4.x.<BR>
+       Own Id: OTP-1975<BR>
+    </LI>
+  </UL>
 
-         Own Id: OTP-1975<BR>
-</UL>
-<A NAME="8.1.3"><!-- Empty --></A><H4>8.1.3 Incompatibilities With Graphics System v1.3.2</H4><P>-
-<A NAME="8.1.4"><!-- Empty --></A><H4>8.1.4 Known Bugs and Problems</H4><P><UL>
-<LI>     Mixed architectures (SunOS + Solaris) installations are currently
-         not allowed.
-         <BR>
-Own Id: OTP-1316
-         
+  <H3>Known Problems</H3>
+  <UL>
+    <LI>Mixed architectures (SunOS + Solaris) installations are currently not allowed.<BR>
+      Own Id: OTP-1316
+    </LI>
+    <LI>Some sub-headers in the User's Guide are not clickable (when using Netscape) as they ought to be.<BR>
+      Own Id: OTP-1381
+    </LI>
+    <LI>The inheritance of default values doesn't work on Windows when it comes to font objects. <BR>
+      Own Id: OTP-1597
+    </LI>
+    <LI>GS (i.e., Tcl/Tk) may hang if the Erlang shell is abruptly killed.<BR>
+      Own Id: OTP-1599
+    </LI>
+    <LI>The GS Packer may misplace components having a borderwidth greater than zero.<BR>
+      Own Id: OTP-1627
+    </LI>
+    <LI>Due to a Tcl/Tk problem, transparent GIF's aren't shown that way when loaded in the image object.<BR>
+      Own Id: OTP-1942
+    </LI>
+    <LI>The <CODE>anchor</CODE> option some GS object use is poorly documented.<BR>
+      The listing of the options available for the image object is confusing; all options available when loading bitmaps are not available when loading GIF's.<BR>
+      Own Id: OTP-1943
+    </LI>
+    <LI>On some windows managers it is very hard, if not impossible, to specify the icon bitmap when creating/configuring a window.<BR>
+      Own Id: OTP-1980
+    </LI>
+  </UL>
 
-        <BR>
-<LI>     Some sub-headers in the User's Guide are not clickable (when
-         using Netscape) as they ought to be.
-         <BR>
-Own Id: OTP-1381
-         
+<H2>GS 1.3.2</H2>
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>GS now works on Windows 95.<BR>
+      Own Id: OTP-1416
+    </LI>
+  </UL>
 
-        <BR>
-<LI>     The inheritance of default values doesn't work on Windows when
-         it comes to font objects.
-         <BR>
-Own Id: OTP-1597
-         
-
-        <BR>
-<LI>     GS (i.e., Tcl/Tk) may hang if the Erlang shell is abruptly killed.
-         <BR>
-Own Id: OTP-1599
-         
-
-        <BR>
-<LI>     The GS Packer may misplace components having a borderwidth
-         greater than zero.
-         <BR>
-Own Id: OTP-1627
-         
-
-        <BR>
-<LI>     Due to a Tcl/Tk problem, transparent GIF's aren't shown that
-         way when loaded in the image object.
-         <BR>
-Own Id: OTP-1942
-         
-
-        <BR>
-<LI>     The <CODE>anchor</CODE> option some GS object use is poorly documented.<BR>
-
-         The listing of the options available for the image object is
-         confusing; all options available when loading bitmaps are not
-         available when loading GIF's.
-         <BR>
-Own Id: OTP-1943
-         
-
-        <BR>
-<LI>     On some windows managers it is very hard, if not impossible,
-         to specify the icon bitmap when creating/configuring a window.
-         <BR>
-Own Id: OTP-1980
-         
-
-<BR>
-</UL>
-<A NAME="8.2"><!-- Empty --></A><H3>8.2 GS 1.3.2</H3><A NAME="8.2.1"><!-- Empty --></A><H4>8.2.1 Improvements and new features</H4><P><UL>
-<LI>     GS now works on Windows 95.
-         <BR>
-Own Id: OTP-1416
-
-<BR>
-</UL>
-<A NAME="8.2.2"><!-- Empty --></A><H4>8.2.2 Fixed Bugs and malfunctions</H4><P>- 
-<A NAME="8.2.3"><!-- Empty --></A><H4>8.2.3 Known bugs and problems</H4><P>Same as in version 1.2.1.
+  <H3>Known Problems</H4>
+  <P>Same as in version 1.2.1.</P>
         
-<A NAME="8.3"><!-- Empty --></A><H3>8.3 GS 1.3.1</H3><A NAME="8.3.1"><!-- Empty --></A><H4>8.3.1 Improvements and new features</H4><P><UL>
-<LI>     New linked-in driver for GS backend towards tcl/tk for better
-         performance (Windows NT only).
-<BR>
-</UL>
-<A NAME="8.3.2"><!-- Empty --></A><H4>8.3.2 Fixed Bugs and malfunctions</H4><P>- 
-<A NAME="8.3.3"><!-- Empty --></A><H4>8.3.3 Known bugs and problems</H4><P>Same as in version 1.2.1.
-        
-<A NAME="8.4"><!-- Empty --></A><H3>8.4 GS 1.3</H3><A NAME="8.4.1"><!-- Empty --></A><H4>8.4.1 Improvements and new features</H4><P><UL>
-<LI>     GS has got a packer. See the frame object.
-<BR>
-</UL>
-<A NAME="8.4.2"><!-- Empty --></A><H4>8.4.2 Fixed Bugs and malfunctions</H4><P><UL>
-<LI>     Reading text containing special characters from a
-         listbox item works.
-         
-         <BR>
-Own Id: OTP-1255
+<H2>GS 1.3.1</H3>
+  <H3>Improvements and New Features</H4>
+  <UL>
+    <LI>New linked-in driver for GS backend towards tcl/tk for better performance (Windows NT only).<BR>
+  </UL>
 
-<BR>
-</UL>
-<A NAME="8.4.3"><!-- Empty --></A><H4>8.4.3 Known bugs and problems</H4><P>Same as in version 1.2.1.
+  <H3>Known Problems</H3>
+  <P>Same as in version 1.2.1.</P>
         
-<A NAME="8.5"><!-- Empty --></A><H3>8.5 GS 1.2.1</H3><A NAME="8.5.1"><!-- Empty --></A><H4>8.5.1 Improvements and new features</H4><P><UL>
-<LI>     GS now also runs on Windows NT.
-<BR>
-</UL>
-<A NAME="8.5.2"><!-- Empty --></A><H4>8.5.2 Fixed Bugs and malfunctions</H4><P><UL>
-<LI>     Font problem during start-up on some platforms.
-         
-         <BR>
-Own Id: OTP-1105
-        <BR>
-<LI>     <CODE>gs:read(Obj, parent)</CODE> and <CODE>gs:read(Obj, children)</CODE>
-         now return correct <CODE>ObjId</CODE>s.
-         
-         <BR>
-Own Id: OTP-1119
-        <BR>
-<LI>     Reading the text from the label option works better.
-         
-         <BR>
-Own Id: OTP-1125
-        <BR>
-<LI>     GS detects name collitions when objects are created.
-         
-         <BR>
-Own Id: -
-        <BR>
-<LI>     Internal synchronisation error that caused non-deterministic
-         crashes is corrected.
-         
-         <BR>
-Own Id: -
-<BR>
-</UL>
-<A NAME="8.5.3"><!-- Empty --></A><H4>8.5.3 Known bugs and problems</H4><P><UL>
-<LI>The editor options char_height, char_width returns
-         dummy values
-        <BR>
-<LI>Travering menues using the keyboard (Alt+Key) doesn't
-         work (a bug in tcl/tk).
-        <BR>
-</UL>
-<A NAME="8.6"><!-- Empty --></A><H3>8.6 GS 1.2</H3><A NAME="8.6.1"><!-- Empty --></A><H4>8.6.1 Improvements and new features</H4><P><UL>
-<LI>Initialisation. Color and font settings from .Xdefaults don't mess
-         up each GS application.<BR>
-<LI>Font model. A platform independent font model including fall-back 
-         handling.<BR>
-<LI>Default value model. Container objects can propagate properties to
-         all its children.<BR>
-<LI>Erlang cache. Data for x,y,width,height,coords are stored in Erlang
-         for efficient read operations.<BR>
-<LI>The Editor object has got a lot of new features.<BR>
-<LI>The Grid object is replaces with a new faster (and easier to use) row
-         oriented object.<BR>
-<LI>Support for distribution.<BR>
-<LI>Different mouse cursors can be used.<BR>
-<LI>A beep command for audio feedback.<BR>
-<LI>Popup menues.<BR>
-<LI>GS is quiet when an error occurs. This solves synchronisation-like
-         problems when handling for example destroy events from the window manager.<BR>
-<LI>New and more convenient interface functions.<BR>
-</UL>
-<A NAME="8.6.2"><!-- Empty --></A><H4>8.6.2 Incompatibilities</H4><P><UL>
-<LI>The Grid object is changed. Rewrite should not be difficult.<BR>
-<LI>The canvas option <CODE>find </CODE>is replaced with <CODE>hit</CODE>.<BR>
-<LI>The editor option <CODE>file </CODE>is replaced with <CODE>load</CODE> (and
-         <CODE>save</CODE> is added).<BR>
-<LI>Return value when a gs function detects an error.<BR>
-<LI>gs:read(Obj,id) returns <CODE>{error,Reason}</CODE> instead of <CODE>undefined
-         </CODE>if the object doesn't exist.<BR>
-</UL>
-<A NAME="8.6.3"><!-- Empty --></A><H4>8.6.3 Reported fixed bugs</H4><P><UL>
-<LI>The coordinates for window events are now correct even if an object
-         is overlapping the window.<BR>
-<LI>Menuitems can be destroyed.<BR>
-<LI>Naming a grid works.<BR>
-<LI>Multi-select mode has been fixed for the listbox.<BR>
-<LI>Reading the data field for canvas objects now works fine.<BR>
-<LI>{fill,none} now works fine for canvas objects.<BR>
-<LI>x,y for windows are correct even if the window is located outside 
-         screen.<BR>
-</UL>
-<A NAME="8.6.4"><!-- Empty --></A><H4>8.6.4 Known bugs and problems</H4><P><UL>
-<LI><CODE>gs:stop()</CODE> stops the graphics server, deleting all windows within
-         it. This is <STRONG>not</STRONG> the opposite of <CODE>gs:start/0</CODE> since it will
-         affect <STRONG>all</STRONG> applications using gs. The correct way to finish an 
-         application is to use <CODE>gs:destroy/1</CODE> or let the process terminate.
-<BR>
-</UL>
-</BLOCKQUOTE>
-<CENTER>
-<HR>
-<FONT SIZE=-1>
-Copyright &copy; 1991-99
-<A HREF="http://www.ericsson.se">Ericsson Utvecklings AB</A><BR>
-<!--#include virtual="/ssi/otp_footer.html"-->
-</FONT>
-</CENTER>
+<H2>GS 1.3</H2>
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>GS has got a packer. See the frame object.</LI>
+  </UL>
+
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>Reading text containing special characters from a listbox item works.<BR>
+      Own Id: OTP-1255
+    </LI>
+  </UL>
+
+  <H3>Known Problems</H3>
+  <P>Same as in version 1.2.1.</P>
+        
+<H2>GS 1.2.1</H3>
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>GS now also runs on Windows NT.</LI>
+  </UL>
+
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>Font problem during start-up on some platforms.<BR>
+      Own Id: OTP-1105
+    </LI>
+    <LI><CODE>gs:read(Obj, parent)</CODE> and <CODE>gs:read(Obj, children)</CODE> now return correct <CODE>ObjId</CODE>s.<BR>
+      Own Id: OTP-1119
+    </LI>
+    <LI>Reading the text from the label option works better.<BR>
+      Own Id: OTP-1125
+    </LI>
+    <LI>GS detects name collitions when objects are created.</LI>
+    <LI>Internal synchronisation error that caused non-deterministic crashes is corrected.</LI>
+  </UL>
+
+  <H3>Known Problems</H3>
+  <UL>
+    <LI>The editor options char_height, char_width returns dummy values.</LI>
+    <LI>Travering menues using the keyboard (Alt+Key) doesn't work (a bug in tcl/tk).</LI>
+  </UL>
+
+<H2>GS 1.2</H2>
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>Initialisation. Color and font settings from .Xdefaults don't mess up each GS application.</LI>
+    <LI>Font model. A platform independent font model including fall-back handling.</LI>
+    <LI>Default value model. Container objects can propagate properties to all its children.</LI>
+    <LI>Erlang cache. Data for x,y,width,height,coords are stored in Erlang for efficient read operations.</LI>
+    <LI>The Editor object has got a lot of new features.</LI>
+    <LI>The Grid object is replaces with a new faster (and easier to use) row oriented object.</LI>
+    <LI>Support for distribution.</LI>
+    <LI>Different mouse cursors can be used.</LI>
+    <LI>A beep command for audio feedback.</LI>
+    <LI>Popup menues.</LI>
+    <LI>GS is quiet when an error occurs. This solves synchronisation-like problems when handling for example destroy events from the window manager.</LI>
+    <LI>New and more convenient interface functions.</LI>
+  </UL>
+
+  <H3>Incompatibilities</H3>
+  <UL>
+    <LI>The Grid object is changed. Rewrite should not be difficult.</LI>
+    <LI>The canvas option <CODE>find </CODE>is replaced with <CODE>hit</CODE>.</LI>
+    <LI>The editor option <CODE>file </CODE>is replaced with <CODE>load</CODE> (and <CODE>save</CODE> is added).</LI>
+    <LI>Return value when a gs function detects an error.</LI>
+    <LI>gs:read(Obj,id) returns <CODE>{error,Reason}</CODE> instead of <CODE>undefined </CODE>if the object doesn't exist.</LI>
+  </UL>
+
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>The coordinates for window events are now correct even if an object is overlapping the window.</LI>
+    <LI>Menuitems can be destroyed.</LI>
+    <LI>Naming a grid works.</LI>
+    <LI>Multi-select mode has been fixed for the listbox.</LI>
+    <LI>Reading the data field for canvas objects now works fine.</LI>
+    <LI>{fill,none} now works fine for canvas objects.</LI>
+    <LI>x,y for windows are correct even if the window is located outside screen.</LI>
+  </UL>
+
+  <H3>Known Problems</H3>
+  <UL>
+    <LI><CODE>gs:stop()</CODE> stops the graphics server, deleting all windows within it. This is <STRONG>not</STRONG> the opposite of <CODE>gs:start/0</CODE> since it will affect <STRONG>all</STRONG> applications using gs. The correct way to finish an application is to use <CODE>gs:destroy/1</CODE> or let the process terminate.</LI>
+  </UL>
+
 </BODY>
 </HTML>

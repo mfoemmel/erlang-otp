@@ -25,6 +25,8 @@
 #endif
 
 #include "sys.h"
+#include "driver.h"
+#include <stdlib.h>
 
 #ifdef __WIN32__
 #  include "erl_version.h"
@@ -68,19 +70,23 @@
 #define INSTR_SUFFIX	".instr"
 
 void usage(const char *switchname);
-void start_epmd(void);
+void start_epmd(char *epmd);
 void error(char* format, ...);
 
 /*
  * Local functions.
  */
 
+static void mergeargs(int *argc, char ***argv, char **addargs);
+static char **build_args_from_env(void);
 static void get_parameters(void);
 static void add_arg(char *new_arg);
 static void add_args(char *first_arg, ...);
 static void add_Eargs(char *new_arg);
 static int dirq(const char *dirpath);
-static char* emalloc(size_t size);
+static void *emalloc(size_t size);
+static void *erealloc(void *p, size_t size);
+static void efree(void *p);
 static char* strsave(char* string);
 static FUNCTION(void, get_home, ());
 #ifdef __WIN32__
@@ -189,8 +195,23 @@ main(int argc, char **argv)
     int haltAfterwards = 0;	/* If true, put 's erlang halt' at the end
 				 * of the arguments. */
     int isdistributed = 0;
+    int no_epmd = 0;
     int i;
     char* s;
+    char *epmd_prog = NULL;
+
+#ifdef __WIN32__
+
+    /* if we started this erl just to get a detached emulator, 
+     * the arguments are already prepared for beam, so we skip
+     * directly to start_emulator */
+    s = getenv("ERL_CONSOLE_MODE");
+    if (s != NULL && strcmp(s, "detached")==0) {
+	memcpy(Eargsp, argv, argc * sizeof(argv[1]));
+	goto skip_arg_massage;
+    }   
+#endif
+    mergeargs(&argc, &argv, build_args_from_env());
 
     i = 1;
 #ifdef __WIN32__
@@ -200,6 +221,7 @@ main(int argc, char **argv)
     }
 #endif		
 
+    
     get_parameters();
     
     /*
@@ -212,12 +234,16 @@ main(int argc, char **argv)
 	  instrumented = 1;
        i++;
     }
-    if (instrumented)
-       emu = add_instrument_suffix(emu);
-
+#ifdef __WIN32__
+    emu = argv[0];		/* we relaunch ourserlves when -detached given */
+#else
+    if (instrumented) {
+	emu = add_instrument_suffix(emu);
+    }
     sprintf(tmpStr, "%s" DIRSEP "%s" BINARY_EXT, bindir, emu);
     emu = strsave(tmpStr);
-    
+#endif
+
     add_Eargs(emu);		/* Will be argv[0] -- necessary! */
 
     /*
@@ -327,8 +353,14 @@ main(int argc, char **argv)
 		    sprintf(tmpStr, "%s=%s", argv[i+1], argv[i+2]);
 		    putenv(strsave(tmpStr));
 		    i += 2;
-		} else
+		} else if (strcmp(argv[i], "-epmd") == 0) { 
+		    if (i+1 >= argc)
+			usage("-epmd");
+		    epmd_prog = argv[i+1];
+		    ++i;
+		} else {
 		    add_arg(argv[i]);
+		}
 		break;
 	    case 'k':
 		if (strcmp(argv[i], "-keep_window") == 0) {
@@ -382,6 +414,9 @@ main(int argc, char **argv)
 		} else if (strcmp(argv[i], "-nohup") == 0) {
 		    add_arg("-nohup");
 		    nohup = 1;
+		} else if (strcmp(argv[i], "-no_epmd") == 0) {
+		    add_arg("-no_epmd");
+		    no_epmd = 1;
 		} else {
 		    add_arg(argv[i]);
 		}
@@ -489,8 +524,24 @@ main(int argc, char **argv)
 	add_args("-s", "erlang", "halt", NULL);
     }
     
-    if (isdistributed)
-	start_epmd();
+    if (isdistributed && !no_epmd)
+	start_epmd(epmd_prog);
+
+#if (! defined(__WIN32__)) && defined(DEBUG)
+    if (start_detached) {
+	/* Start the emulator within an xterm.
+	 * Move up all arguments and insert
+	 * "xterm -e " first.
+	 * The path must be searched for this 
+	 * to work, i.e execvp() must be used. 
+	 */
+	for (i = EargsCnt; i > 0; i--)
+	    Eargsp[i+1] = Eargsp[i-1]; /* Two args to insert */
+	EargsCnt += 2; /* Two args to insert */
+	Eargsp[0] = emu = "xterm";
+	Eargsp[1] = "-e";
+    }    
+#endif
     
     add_Eargs("--");
     add_Eargs("-root");
@@ -512,6 +563,7 @@ main(int argc, char **argv)
     
 #ifdef __WIN32__
 
+skip_arg_massage: ;
 #ifdef WIN32_WERL
     return start_win_emulator(emu, Eargsp, start_detached);
 #else
@@ -536,8 +588,14 @@ main(int argc, char **argv)
 	open("/dev/null", O_WRONLY);
 	close(2);
 	open("/dev/null", O_WRONLY);
-    }
-    execv(emu, Eargsp);
+#ifdef DEBUG
+	execvp(emu, Eargsp); /* "xterm ..." needs to search the path */
+#endif
+    } 
+#ifdef DEBUG
+    else
+#endif
+	execv(emu, Eargsp);
     error("Error %d executing \'%s\'.", errno, emu);
     return 1;
 #endif
@@ -571,40 +629,26 @@ dirq(const char *dirpath)
 }
 
 void
-start_epmd(void)
+start_epmd(char *epmd)
 {
     char  epmd_cmd[MAXPATHLEN+100];
-    char  epmd_prog[100];
-    char* s;
     int   result;
 
-    /* ---------------------
-     * Start temporary stuff - OTP-2799
-     * Default is R4, and only if EPMD_VERSION is set to RX will the 
-     * other version be used.
-     */
-    s = getenv("EPMD_VERSION");
-    if (s == NULL)
-      sprintf(epmd_prog, "epmd");
-    else if (strcmp(s,"R4") == 0)
-      sprintf(epmd_prog, "epmd");
-    else if (strcmp(s,"RX") == 0)
-      sprintf(epmd_prog, "epmd_rx");
-    else
-      sprintf(epmd_prog, "epmd");
-    /*
-     * 
-     * End temporary stuff 
-     * ------------------- */
-    
+    if (!epmd) {
 #ifdef __WIN32__
-    sprintf(epmd_cmd, "%s" DIRSEP "%s", bindir,epmd_prog);
-    result = spawnlp(_P_DETACH, epmd_cmd, epmd_cmd, "-daemon", NULL);
+	sprintf(epmd_cmd, "%s" DIRSEP "epmd", bindir);
+	result = spawnlp(_P_DETACH, epmd_cmd, epmd_cmd, "-daemon", NULL);
 #else
-    sprintf(epmd_cmd, "%s" DIRSEP "%s -daemon", bindir,epmd_prog);
-    result = system(epmd_cmd);
+	sprintf(epmd_cmd, "%s" DIRSEP "epmd -daemon", bindir);
+	result = system(epmd_cmd);
 #endif
-
+    } else {
+#ifdef __WIN32__
+	result = spawnlp(_P_DETACH, epmd, epmd, NULL);
+#else
+	result = system(epmd);
+#endif
+    }	
     if (result == -1) {
       fprintf(stderr, "Error spawning %s (error %d)\n", epmd_cmd,errno);
       exit(1);
@@ -658,14 +702,30 @@ void error(format, va_alist)
 }
 #endif
 
-static char*
+static void *
 emalloc(size_t size)
 {
-    char *p = malloc(size);
+    void *p = malloc(size);
     if (p == NULL)
 	error("Insufficient memory");
     return p;
 }
+
+static void *
+erealloc(void *p, size_t size)
+{
+    void *res = realloc(p, size);
+    if (res == NULL)
+	error("Insufficient memory");
+    return res;
+}
+
+static void
+efree(void *p) 
+{
+    free(p);
+}
+
 
 char*
 strsave(char* string)
@@ -863,6 +923,159 @@ get_home()
 
 #endif
 
+
+static char **build_args_from_env(void)
+{
+    int argc = 0;
+    char **argv = NULL;
+    int alloced = 0;
+    char **cur_s;
+    int s_alloced = 0;
+    int s_pos = 0;
+    char *p;
+    enum {Start, Build, Build0, BuildSQuoted, BuildDQuoted, AcceptNext} state;
+
+#define ENSURE()					\
+    if (s_pos >= s_alloced) {			        \
+	if (!*cur_s) {					\
+	    *cur_s = emalloc(s_alloced = 20);		\
+	} else {					\
+	    *cur_s = erealloc(*cur_s, s_alloced += 20);	\
+	}						\
+    }
+
+
+    if (!(p = getenv("ERL_FLAGS")))
+	return NULL;
+    argv = emalloc(sizeof(char *) * (alloced = 10));
+    state = Start;
+    for(;;) {
+	switch (state) {
+	case Start:
+	    if (!*p) 
+		goto done;
+	    if (argc >= alloced - 1) { /* Make room for extra NULL */
+		argv = erealloc(argv, (alloced += 10) * sizeof(char *));
+	    }
+	    cur_s = argc + argv;
+	    *cur_s = NULL;
+	    s_pos = 0;
+	    s_alloced = 0;
+	    state = Build0;
+	    break;
+	case Build0:
+	    switch (*p) {
+	    case ' ':
+		++p;
+		break;
+	    case '\0':
+		state = Start;
+		break;
+	    default:
+		state = Build;
+		break;
+	    }
+	    break;
+	case Build:
+	    switch (*p) {
+	    case ' ':
+	    case '\0':
+		ENSURE();
+		(*cur_s)[s_pos] = '\0';
+		++argc;
+		state = Start;
+		break;
+	    case '"':
+		++p;
+		state = BuildDQuoted;
+		break;
+	    case '\'':
+		++p;
+		state = BuildSQuoted;
+		break;
+	    case '\\':
+		++p;
+		state = AcceptNext;
+		break;
+	    default:
+		ENSURE();
+		(*cur_s)[s_pos++] = *p++;
+		break;
+	    }
+	    break;
+	case BuildDQuoted:
+	    switch (*p) {
+	    case '"':
+		++p;
+		/* fall through */
+	    case '\0':
+		state = Build;
+		break;
+	    default:
+		ENSURE();
+		(*cur_s)[s_pos++] = *p++;
+		break;
+	    }
+	    break;
+	case BuildSQuoted:
+	    switch (*p) {
+	    case '\'':
+		++p;
+		/* fall through */
+	    case '\0':
+		state = Build;
+		break;
+	    default:
+		ENSURE();
+		(*cur_s)[s_pos++] = *p++;
+		break;
+	    }
+	    break;
+	case AcceptNext:
+	    if (!*p) {
+		state = Build;
+	    } else {
+		ENSURE();
+		(*cur_s)[s_pos++] = *p++;
+	    }
+	    state = Build;
+	    break;
+	}
+    }
+done:
+    argv[argc] = NULL; /* Sure to be large enough */
+    if (!argc) {
+	efree(argv);
+	return NULL;
+    }
+    return argv;
+#undef ENSURE
+}
+		
+void		
+mergeargs(int *argc, char ***argv, char **addargs)
+{
+    int add = 0;
+    char **tmp = addargs;
+    char **res;
+    char **rtmp;
+
+    if (!addargs) {
+	return;
+    }
+
+    while(*tmp++) {
+	++add;
+    }
+    *argc +=add;
+    res = emalloc((*argc + 1) * sizeof(char *));
+    rtmp = res;
+    for (tmp = *argv; (*rtmp = *tmp) != NULL; ++tmp, ++rtmp)
+	;
+    for (tmp = addargs; (*rtmp = *tmp) != NULL; ++tmp, ++rtmp)
+	;
+    *argv = res;
+}
 
 #ifdef __WIN32__
 static char*

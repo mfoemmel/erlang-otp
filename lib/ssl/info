@@ -1,0 +1,2 @@
+group: comm
+short: An interface to UNIX BSD sockets with Secure Sockets Layer

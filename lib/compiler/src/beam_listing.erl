@@ -26,7 +26,7 @@ module(File, Core) when element(1, Core) == c_mdef ->
     io:put_chars(File, core_pp:format(Core));
 module(File, Kern) when element(1, Kern) == k_mdef ->
     %% This is a kernel module.
-    io:put_chars(File, sys_kernel_pp:format(Kern));
+    io:put_chars(File, v3_kernel_pp:format(Kern));
     %%io:put_chars(File, io_lib:format("~p~n", [Kern]));
 module(File, {Mod,Exp,Ker}) ->
     %% This is output from sys_life (v2).

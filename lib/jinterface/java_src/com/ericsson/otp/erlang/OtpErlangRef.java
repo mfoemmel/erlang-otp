@@ -17,12 +17,17 @@
  */
 package com.ericsson.otp.erlang;
 
+import java.io.Serializable;
+
 /**
  * Provides a Java representation of Erlang refs. There are two
  * styles of Erlang refs, old style (one id value) and new style
  * (array of id values). This class manages both types.
  **/
-public class OtpErlangRef extends OtpErlangObject {
+public class OtpErlangRef extends OtpErlangObject implements Serializable, Cloneable {
+  // don't change this!
+  static final long serialVersionUID = -7022666480768586521L;
+
   private String node;
   private int creation;
 
@@ -34,14 +39,17 @@ public class OtpErlangRef extends OtpErlangObject {
    * Create a unique Erlang ref belonging to the local node. 
    *
    * @param self the local node.
+   *
+   @deprecated use OtpLocalNode:createRef() instead
    **/
-  public OtpErlangRef(OtpSelf self) {
-    ids = new int[1];
-    this.ids[0] = self.count();
-    this.creation = self.creation();
-    this.node = self.node();
+  public OtpErlangRef(OtpLocalNode self) {
+    OtpErlangRef r = self.createRef();
+    
+    this.ids = r.ids;
+    this.creation = r.creation;
+    this.node = r.node;
   }
-
+  
   /**
    * Create an Erlang ref from a stream containing a ref encoded in
    * Erlang external format.
@@ -187,27 +195,18 @@ public class OtpErlangRef extends OtpErlangObject {
   /**
    * Determine if two refs are equal. Refs are equal if their
    * components are equal. New refs and old refs are considered equal
-   * if the node, creation and first id numnber are equal. 
-   *
-   * @param o the object to compare to.
-   *
-   * @return true if o is a ref and the refs are equal, false
-   * otherwise.
-   **/
-  public boolean equals(Object o) {
-    return false;
-  }
-
-  /**
-   * Determine if two refs are equal. Refs are equal if their
-   * components are equal. New refs and old refs are considered equal
    * if the node, creation and first id numnber are equal.
    *
-   * @param ref the other ref to compare to.
+   * @param o the other ref to compare to.
    *
    * @return true if the refs are equal, false otherwise.
    **/
-  public boolean equals(OtpErlangRef ref) {
+  public boolean equals(Object o) {
+    if (!(o instanceof OtpErlangRef)) return false;
+
+
+    OtpErlangRef ref = (OtpErlangRef)o;
+
     if (! (this.node.equals(ref.node()) &&
 	   this.creation == ref.creation())) return false;
     
@@ -217,5 +216,11 @@ public class OtpErlangRef extends OtpErlangObject {
 	      this.ids[2] == ref.ids[2]);
     }
     return (this.ids[0] == ref.ids[0]);
+  }
+
+  public Object clone() {
+    OtpErlangRef newRef = (OtpErlangRef)(super.clone());
+    newRef.ids = (int[])ids.clone();
+    return newRef;
   }
 }

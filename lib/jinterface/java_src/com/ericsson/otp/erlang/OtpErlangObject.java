@@ -17,11 +17,16 @@
  */
 package com.ericsson.otp.erlang;
 
+import java.io.Serializable;
+
 /**
  * Base class of the Erlang data type classes. This class is used to
  * represent an arbitrary Erlang term.
  **/
-public abstract class OtpErlangObject {
+public abstract class OtpErlangObject implements Serializable, Cloneable {
+  // don't change this!
+  static final long serialVersionUID = -8435938572339430044L;
+
   /**
    * @return the printable representation of the object. This is
    * usually similar to the representation used by Erlang for the same
@@ -68,5 +73,15 @@ public abstract class OtpErlangObject {
    * @return true if the objects are identical.
    **/
   public abstract boolean equals(Object o);
+
+  public Object clone() {
+    try {
+      return super.clone();
+    }
+    catch (CloneNotSupportedException e) {
+      /* cannot happen */
+      throw new InternalError(e.toString());
+    }
+  }
 }
 

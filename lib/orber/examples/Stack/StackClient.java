@@ -1,59 +1,55 @@
-package StackModule;
+/*
+ * Stack example.
+ */
 
-import CosNaming._NamingContextRef;
-import CosNaming.Name;
-import IE.Iona.Orbix2._CORBA;
-import IE.Iona.Orbix2.CORBA.SystemException;
-import IE.Iona.Orbix2.CORBA._ObjectRef;
+package StackModule;
+import org.omg.CosNaming.*;
+import org.omg.CORBA.*;
+import org.omg.CORBA.SystemException;
+import org.omg.CORBA.ORB.*;
 
 public class StackClient 
 {
   public static void main(String args[])
     {
-      CORBA._InitialReferencesRef init;
-      _NamingContextRef nsContext;
-      Name name;
-      _ObjectRef initRef, nsRef, objRef;
-      _StackFactoryRef sfRef = null;
-      _StackRef sRef = null;
+      NamingContext nsContext;
+      org.omg.CORBA.Object objRef;
+      StackFactory sfRef = null;
+      Stack sRef = null;
+      org.omg.CORBA.Object nsRef, initRef;
+      NameComponent[] name = new NameComponent[1];
       Orber.InitialReference ir = new Orber.InitialReference();
-
-      int i;
+      Orber.InitialReferences init;
       String srvHost = new String(args[0]);
       Integer srvPort = new Integer(args[1]);
 
       try
 	{
-	  // For an explanation about initial reference handling see 
-	  // the "Interoperable Naming Service" specification.
+	  ORB orb = ORB.init(args, null);
 
 	  // Create Initial reference (objectkey "INIT").
-	  String s = ir.stringified_ior(srvHost, srvPort.intValue());
+	   String s = ir.stringified_ior(srvHost, srvPort.intValue());
+	   initRef = orb.string_to_object(s);
+	   init = Orber.InitialReferencesHelper.narrow(initRef);
 
-	  initRef = _CORBA.Orbix.string_to_object(s);
+	   // Fetch name service reference.
+	   nsRef = init.get("NameService");
+	   nsContext = NamingContextHelper.narrow(nsRef);
+	   // Create a name
+	   name[0] = new NameComponent("StackFactory", "");
 
-	  init = CORBA.InitialReferences._narrow(initRef);
-	  // Fetch name service reference.
-	  nsRef = init.get("NameService");
-
-          nsContext = CosNaming.NamingContext._narrow(nsRef);
-
-	  // Create a name
-	  name = new Name(1);
-	  name.buffer[0] = new CosNaming.NameComponent("StackFactory", "");
-
-	  try
-	    {
-	      objRef = nsContext.resolve(name);
-	    }
-	  catch(IE.Iona.Orbix2.CORBA.UserException n)
-	    {
-	      System.out.println("Unexpected exception: " + n.toString());
-	      return;
-	    }	    
-	  sfRef = StackFactory._narrow(objRef);
-	  
-	  sRef = sfRef.create_stack();
+	   try
+	     {
+	       objRef = nsContext.resolve(name);
+	     }
+	   catch(Exception n)
+	     {
+	       System.out.println("Unexpected exception: " + n.toString());
+	       return;
+	     }	    
+	   
+	  sfRef = StackFactoryHelper.narrow(objRef);
+ 	  sRef = sfRef.create_stack();
 
 	  sRef.push(4);
 	  sRef.push(7);
@@ -74,7 +70,7 @@ public class StackClient
 	      System.out.println("Empty stack");
 	    };
 
-	sfRef.destroy_stack(sRef);
+	  sfRef.destroy_stack(sRef);
 
 	}
       catch(SystemException se)
@@ -82,6 +78,5 @@ public class StackClient
 	  System.out.println("Unexpected exception: " + se.toString());
 	  return;
 	}
-      
     }
 }

@@ -30,12 +30,13 @@
 #include "big.h"
 #include "dist.h"
 #include "erl_version.h"
+#include "erl_binary.h"
 
 extern DriverEntry fd_driver_entry;
 extern DriverEntry vanilla_driver_entry;
 extern DriverEntry spawn_driver_entry;
 
-static uint32 make_ref(Process *);	/* forward */
+static uint32 new_ref(Process *);	/* forward */
 
 /*
  * The BIF's now follow, see the Erlang Manual for a description of what
@@ -53,7 +54,7 @@ BIF_ADECL_3
 
     so.flags = 0;
     pid = erl_create_process(BIF_P, BIF_ARG_1, BIF_ARG_2, BIF_ARG_3, &so);
-    if (pid == 0) {
+    if (is_non_value(pid)) {
 	BIF_ERROR(BIF_P, so.error_code);
     } else {
 	BIF_RET(pid);
@@ -110,11 +111,11 @@ BIF_ADECL_1
 	if (find_link(&BIF_P->links,LNK_LINK,BIF_ARG_1,NIL) != NULL)
 	    BIF_RET(am_true); /* already linked */
 
-	if (get_node_port(BIF_ARG_1) != THIS_NODE) {
+	if (port_node(BIF_ARG_1) != THIS_NODE) {
 	    /* Don't allow link to a remote port */
 	    BIF_ERROR(BIF_P, BADARG);
 	} else {
-	    ix = get_port_index(BIF_ARG_1);
+	    ix = port_index(BIF_ARG_1);
 	    if (erts_port[ix].status == FREE) {
 		if (BIF_P->flags & F_TRAPEXIT) {
 		    deliver_exit_message(BIF_ARG_1, BIF_P, am_noproc);
@@ -138,7 +139,7 @@ BIF_ADECL_1
     if (find_link(&BIF_P->links,LNK_LINK,BIF_ARG_1, NIL) != NULL)
 	BIF_RET(am_true);	/*  already linked */	
     
-    if ((slot = get_node(BIF_ARG_1)) != THIS_NODE) {  /* link to net */
+    if ((slot = pid_node(BIF_ARG_1)) != THIS_NODE) {  /* link to net */
 	if (dist_addrs[slot].cid == NIL)
 	    BIF_TRAP1(dlink_trap, BIF_P, BIF_ARG_1);
 
@@ -157,12 +158,12 @@ BIF_ADECL_1
 	BIF_RET(am_true);
     }
 
-    if (get_number(BIF_ARG_1) >= max_process) {
+    if (pid_number(BIF_ARG_1) >= max_process) {
 	BIF_ERROR(BIF_P, BADARG);
     }
     
     /* get a pointer to the process struct of the linked process */
-    rp = process_tab[get_number(BIF_ARG_1)];
+    rp = process_tab[pid_number(BIF_ARG_1)];
     
     /* is the right process - ie not free and the pid corresponds?? */
     if (INVALID_PID(rp, BIF_ARG_1)) {
@@ -182,38 +183,55 @@ BIF_ADECL_1
 BIF_RETTYPE demonitor_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-   ErlLink **lnkp = NULL;
-   Process *rp;
-   uint32 to, ref_p;
-   int slot;
+   ErlLink **lnkp;  /* The monitor link list entry to delete */
+   Process  *rp;    /* Local target process */
+   Eterm     ref;   /* BIF_ARG_1 */
+   Eterm     to;    /* Monitor link traget */
+   Eterm     ref_p; /* Pid of this end */
+   Sint      slot;  /* Target's distribution slot */
 
-   if (is_not_refer(BIF_ARG_1))
+   ref = BIF_ARG_1;
+   if (is_not_ref(ref))
       goto error;
-
-   if ((slot = get_node_reference(BIF_ARG_1)) != THIS_NODE)
-      goto error;
-
+   if ((slot = ref_node(ref)) != THIS_NODE)
+      goto error; /* Cannot be this monitor's ref */
    ref_p = BIF_P->id;
-   lnkp = find_link_by_ref(&BIF_P->links, ref_ptr(BIF_ARG_1));
-
+   lnkp = find_link_by_ref(&BIF_P->links, ref_ptr(ref));
    if (lnkp == NULL)
       return am_true;
-
-   /* ref_p is the id of one of the processes of the link. We want it
-      to be 'item'. */
+   if (ref_p != (*lnkp)->item)
+      goto error; /* Trying to demonitor from wrong end */
    to = (*lnkp)->data;
-   if (to == ref_p)
-      goto error;
 
    if ((*lnkp)->type == LNK_LINK1) {
-      if ((slot = get_node(to)) != THIS_NODE)
-      {
-	 dist_demonitor(slot, ref_p, to, ref_ptr(BIF_ARG_1));
-	 /* We don't check the return code here. to be complete, we
-	    should, and perhaps reschedule. */
-      } else {
+      if (is_small(to))
+	 slot = unsigned_val(to); /* Monitor name */
+      else
+	 slot = pid_node(to);
+      if (slot != THIS_NODE) {
+	 ErlLink** dist_lnkp;
+	 Sint      code;
+	 dist_lnkp = find_link_by_ref(&dist_addrs[slot].links, ref_ptr(ref));
+	 /* Soft (no force) send, use ->data in dist slot 
+	  * monitor list since in case of monitor name 
+	  * the atom is stored there. Reschedule if necessary.
+	  */
+	 code = dist_demonitor(slot, ref_p, 
+			       (*dist_lnkp)->data, ref_ptr(ref), 0 );
+	 if (code == 1) {
+	    ASSERT(is_port(dist_addrs[slot].cid));
+	    erl_suspend(BIF_P, dist_addrs[slot].cid);
+	    BIF_ERROR(BIF_P, RESCHEDULE);
+	 } else if (code < 0) { /* XXX is this the correct behaviour ??? */
+	     /* Should rarely happen since this node must be 
+	      * distributed for us to start the monitor.
+	      */
+	    BIF_ERROR(BIF_P, NOTALIVE);
+	 }
+	 del_link(dist_lnkp);
+      } else { /* Local monitor */
 	 if ((rp = pid2proc(to)) != NULL)
-	    del_link(find_link_by_ref(&rp->links, ref_ptr(BIF_ARG_1)));
+	    del_link(find_link_by_ref(&rp->links, ref_ptr(ref)));
       }
    }
 #ifdef MONITOR_ENHANCE
@@ -222,7 +240,46 @@ BIF_ADECL_1
       if ((slot = find_or_insert_dist_slot(to)) > 0) {
 	  if (dist_addrs[slot].cid != NIL)
 	      del_link(find_link_by_ref(&dist_addrs[slot].links,
-					ref_ptr(BIF_ARG_1)));
+					ref_ptr(ref)));
+      }
+   }
+#endif
+   else
+      ASSERT(0);
+
+#if 0
+   /* After more thorough consideration I (raimo), arndt and dgud
+    * considered this behaviour to be too automagical, and not 
+    * similar to the way e.g timers behave. If the user needs this
+    * behaviour, it is a very small wrapper to write.
+    * Furthermore, the code does not work yet.
+    */
+
+   /* Search the message queue and remove any 'DOWN' message
+    * with this ref, so the erlang code can be sure that
+    * this BIF really kills the monitor.
+    */
+   {
+      ErlMessage *prev = NULL, *curr = BIF_P->msg.first;
+      while (curr != NULL) {
+	 if (is_tuple(curr->mesg)) {
+	    Eterm *t = tuple_val(curr->mesg);
+	    if ((arityval(*t) == 5)
+		&& (t[1] == am_DOWN)
+		&& is_ref(t[2])
+		&& eqref(t[2], ref) ) {
+		/* Unlink message */
+		if (prev == NULL)
+		   BIF_P->msg.first = curr->next; /* Unlinking first msg */
+		else
+		   prev->next = curr->next;
+		if (curr->next == NULL)
+		    BIF_P->msg.last = &prev->next; /* Unlinking last msg */
+		BIF_P->msg.save = &BIF_P->msg.first; /* Reset save */
+		BIF_P->msg.len--;
+	    }
+	 }
+	 prev = curr, curr = curr->next;
       }
    }
 #endif
@@ -250,7 +307,7 @@ void queue_monitor_message(Process *p,
    uint32 reason1;
 
    size = size_object(reason);
-   ref1 = make_refer(ref0);
+   ref1 = make_ref(ref0);
    rsize = size_object(ref1);
    bp = new_message_buffer(6+size+rsize);
    hp = bp->mem;
@@ -263,41 +320,146 @@ void queue_monitor_message(Process *p,
 BIF_RETTYPE monitor_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-   int linktype;
-   uint32 type, item;
-   uint32 ref;
-   Process *rp;
-   int slot;
-   int code;
+   Eterm     type; /* BIF_ARG_1 */
+   Eterm     item; /* Item to put in link list *lnkp */
+   Eterm     p_item; /* Item to put in this process's link list */
+   Eterm     ref;
+   Sint      slot; /* Distribution slot */
    ErlLink **lnkp;
-#ifdef MONITOR_ENHANCE
-   int ix;
-#endif
+   Sint      linktype;
 
    type = BIF_ARG_1;
    item = BIF_ARG_2;
    if (type == am_process) {
-      if (is_not_pid(item))
-	 goto error;
-      slot = get_node(item);
+      Process *rp;
+
+      if (is_tuple(item)) { /* (process, {Name, Node}) */
+	 Eterm *tp = tuple_val(item);
+	 Eterm n; /* Node */
+
+	 if (arityval(*tp) != 2) 
+	    goto error;
+	 item = tp[1];
+	 n    = tp[2];
+	 if (is_not_atom(item) || is_not_atom(n))
+	    goto error;
+	 if ((this_node == am_Noname) && (n != this_node))
+	    goto error; /* Remote monitor from (this) undistributed node */
+	 if ((slot = find_or_insert_dist_slot(n)) < 0)
+	    goto error; /* BIF_ERROR(BIF_P, SYSTEM_LIMIT) ? */
+	 if (slot == THIS_NODE) {
+	    if ((rp = whereis_process(atom_val(item))) != NULL) {
+	       if (rp == BIF_P) /* Monitor of own process */
+		  BIF_RET(new_ref(BIF_P));
+	       item  = rp->id;
+	    }
+	 }
+      } else if (is_atom(item)) { /* (process, Name) */
+	 slot = THIS_NODE;
+	 if ((rp = whereis_process(atom_val(item))) != NULL) {
+	    if (rp == BIF_P) /* Monitor of own process */
+	       BIF_RET(new_ref(BIF_P));
+	    item  = rp->id;
+	 }
+      } else if (is_pid(item)) { /* (process, Pid) */
+	 if (item == BIF_P->id) /* Monitor of own process */
+	    BIF_RET(new_ref(BIF_P));
+         slot = pid_node(item);
+	 if (slot == THIS_NODE)
+	    rp = process_tab[pid_number(item)];
+      } else
+	  goto error;
+
+      /* So far we know:
+       * type = 'process'
+       * slot = integer()
+       * if (slot == THIS_NODE) 
+       *    if (rp != NULL)
+       *       item = pid()
+       * else
+       *    item = pid() | atom()
+       */
+
+      ref = new_ref(BIF_P);
+
+      if (slot == THIS_NODE) { /* Local process monitor */
+	 if (INVALID_PID(rp, item)) {
+	    lnkp = NULL;
+	 } else {
+	    lnkp     = &rp->links;
+	    linktype = LNK_LINK1;
+	    p_item   = item;
+	 }
+      } else { /* Remote process monitor */
+	 Sint code;
+	 if (dist_addrs[slot].cid == NIL)
+	    BIF_TRAP2(dmonitor_p_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
+	 if (!(dist_addrs[slot].flags & DFLAG_DIST_MONITOR)) 
+	     /* 4 = distr. version for R6 */
+	    goto error;
+	 if (is_not_pid(item)
+	     && !(dist_addrs[slot].flags & DFLAG_DIST_MONITOR_NAME) )
+	     /* Other node only supports monitor by pid */
+	     goto error;
+	 if ((code = dist_monitor(slot, BIF_P->id, item,
+				  ref_ptr(ref))) == 1) {
+	    ASSERT(is_port(dist_addrs[slot].cid)); 
+	    erl_suspend(BIF_P, dist_addrs[slot].cid);
+	    BIF_ERROR(BIF_P, RESCHEDULE);
+	 } else if (code < 0) {	/* XXX is this the correct behaviour ??? */
+	    /* Should not happen since this is taken care of in the 
+	     * argument check above; node is not distributed yet,
+	     * and then is BADARG returned (goto error). 
+	     * NOTALIVE is really more informative, but
+	     * does not seem to be the common practice today.
+	     */
+	    BIF_ERROR(BIF_P, NOTALIVE);
+	 }
+	 lnkp = &dist_addrs[slot].links;
+	 linktype = LNK_LINK1;
+	 if (is_pid(item))
+	    p_item = item;
+	 else {
+	    /* A pid contains the slot, but an atom does not, 
+	     * especially not an atom with a name (probably) registered
+	     * on the remote node. For the process link list we need 
+	     * to know which remote node this monitor link goes to, 
+	     * therefore save the dist slot in a format 
+	     * distinguishable from a pid.
+	     */
+	    p_item = make_small(slot);
+	 }
+      }
    }
+
 #ifdef MONITOR_ENHANCE
+
    else if (type == am_port) {
+      Sint ix;
       if (is_not_port(item))
 	 goto error;
-      slot = get_node_port(item);
-   }
+      slot = port_node(item);
+      if (slot != THIS_NODE)
+	 goto error;
+      ref = new_ref(BIF_P);
+      ix = port_index(item);
+      if (port[ix].status == FREE)
+	 lnkp = NULL;
+      else {
+	 lnkp = &port[ix].links;
+	 linktype = LNK_LINK1;
+	 p_item = item;
+      }
+   } 
+
    else if (type == am_node) {
       if (is_not_atom(item) ||
-	  ((this_node == am_noname) && (item != this_node)))
+	  ((this_node == am_Noname) && (item != this_node)))
 	 goto error;
-
       if ((slot = find_or_insert_dist_slot(item)) < 0 )
 	 goto error;
-
-      if (slot == 0)
-	 BIF_RET(make_ref(BIF_P));
-
+      if (slot == 0) /* Monitor of own node */
+	 BIF_RET(new_ref(BIF_P));
       if (dist_addrs[slot].cid == NIL)
 	 BIF_TRAP2(dmonitor_node2_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
 /*
@@ -311,86 +473,33 @@ dmonitor_node2(Type, Node) ->
 	true ->
 	    erlang:monitor(node, Node);
 	false ->
-	    Ref = make_ref(),
+	    Ref = new_ref(),
 	    self() ! {'DOWN', Ref, node, Node},
 	    Ref
     end.
 */
-
-   }
-#endif
-   else
-      goto error;
-
-   ref = make_ref(BIF_P);
-
-   /* Currently, we have a port or a pid or an atom at this point. */
-
-   if (item == BIF_P->id)
-      BIF_RET(ref);		/* Some people try the silliest things... */
-
-   if (type == am_process) {
-      if (slot != THIS_NODE) {
-	 if (dist_addrs[slot].cid == NIL)
-	    BIF_TRAP2(dmonitor_p_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
-
-	 if (!(dist_addrs[slot].flags & DFLAG_DIST_MONITOR)) 
-	     /* 4 = distr. version for R6 */
-	    goto error;
-
-	 if ((code = dist_monitor(slot, BIF_P->id,
-				  BIF_ARG_2, ref_ptr(ref))) == 1) {
-	    ASSERT(is_port(dist_addrs[slot].cid)); 
-	    erl_suspend(BIF_P, dist_addrs[slot].cid);
-	    BIF_ERROR(BIF_P, RESCHEDULE);
-	 }
-	 else if (code < 0) {	/* XXX is this the correct behaviour ??? */
-	    /* When does this happen, and what do we do? */
-	    BIF_ERROR(BIF_P, NOTALIVE);
-	 }
-	 BIF_P->links = new_ref_link(BIF_P->links, LNK_LINK1,
-				     BIF_P->id, item, ref);
-	 dist_addrs[slot].links = new_ref_link(dist_addrs[slot].links,
-					       LNK_LINK1, BIF_P->id,
-					       item, ref);
-	 BIF_RET(ref);
-      }
-      rp = process_tab[get_number(item)];
-      if (INVALID_PID(rp, item))
-	 lnkp = NULL;
-      else
-	 lnkp = &rp->links;
-      linktype = LNK_LINK1;
-   }
-#ifdef MONITOR_ENHANCE
-   else if (type == am_port) {
-      if (slot != THIS_NODE)
-	 goto error;
-      ix = get_port_index(item);
-      if (port[ix].status == FREE)
-	 lnkp = NULL;
-      else
-	 lnkp = &port[ix].links;
-      linktype = LNK_LINK1;
-   } else {
-      /* node */
       lnkp = &dist_addrs[slot].links;
       linktype = LNK_NODE1;
+      p_item = item;
    }
+
 #endif
 
-   if (lnkp == NULL)
-   {
+   else /* BIF_ARG_1, i.e type, is invalid */
+      goto error;
+
+   /* Set up the links */
+   if (lnkp == NULL) {
       queue_monitor_message(BIF_P, ref_ptr(ref), type, item, am_noproc);
-   }
-   else
-   {
+   } else { 
+       /* Note! perhaps not same data put in both lists;
+	* p_item (may be)!= item
+	*/
       BIF_P->links = new_ref_link(BIF_P->links, linktype,
-				  BIF_P->id, item, ref);
+				  BIF_P->id, p_item, ref);
       *lnkp = new_ref_link(*lnkp, linktype,
 			   BIF_P->id, item, ref);
    }
-
    BIF_RET(ref);
 
  error:
@@ -408,7 +517,7 @@ BIF_ADECL_3
 
     so.flags = SPO_LINK;
     pid = erl_create_process(BIF_P, BIF_ARG_1, BIF_ARG_2, BIF_ARG_3, &so);
-    if (pid == 0) {
+    if (is_non_value(pid)) {
 	BIF_ERROR(BIF_P, so.error_code);
     } else {
 	BIF_RET(pid);
@@ -421,10 +530,10 @@ BIF_RETTYPE spawn_opt_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
     ErlSpawnOpts so;
-    uint32 pid;
-    uint32* tp;
-    uint32 ap;
-    uint32 arg;
+    Eterm pid;
+    Eterm* tp;
+    Eterm ap;
+    Eterm arg;
 
     /*
      * Check that the first argument is a tuple of three elements.
@@ -433,7 +542,7 @@ BIF_ADECL_2
     error:
 	BIF_ERROR(BIF_P, BADARG);
     }
-    tp = ptr_val(BIF_ARG_1);
+    tp = tuple_val(BIF_ARG_1);
     if (*tp != make_arityval(3))
 	goto error;
 
@@ -442,21 +551,20 @@ BIF_ADECL_2
      */
     so.flags = SPO_USE_ARGS;
     so.min_heap_size = H_MIN_SIZE;
-    so.gc_switch = switch_gc_threshold;
     so.priority = PRIORITY_NORMAL;
-    so.process_flags = 0;
+    so.max_gen_gcs = 0;
 
     /*
      * Walk through the option list.
      */
     ap = BIF_ARG_2;
     while (is_list(ap)) {
-	arg = CAR(ptr_val(ap));
+	arg = CAR(list_val(ap));
 	if (arg == am_link) {
 	    so.flags |= SPO_LINK;
 	} else if (is_tuple(arg)) {
-	    uint32* tp2 = ptr_val(arg);
-	    uint32 val;
+	    Eterm* tp2 = tuple_val(arg);
+	    Eterm val;
 	    if (*tp2 != make_arityval(2))
 		goto error;
 	    arg = tp2[1];
@@ -472,22 +580,21 @@ BIF_ADECL_2
 		    so.priority = PRIORITY_LOW;
 		else
 		    goto error;
-	    } else if (arg == am_gc_switch) {
-		if (val == am_infinity) {
-		    so.gc_switch = MAX_SMALL;
-		} else if (is_small(val) && signed_val(val) >= 0) {
-		    so.gc_switch = signed_val(val);
-		} else {
-		    goto error;
-		}
 	    } else if (arg == am_min_heap_size && is_small(val)) {
-		so.min_heap_size = signed_val(val);
-		if (so.min_heap_size < 0) {
+		int min_heap_size = signed_val(val);
+		if (min_heap_size < 0) {
 		    goto error;
-		} else if (so.min_heap_size < H_MIN_SIZE) {
+		} else if (min_heap_size < H_MIN_SIZE) {
 		    so.min_heap_size = H_MIN_SIZE;
 		} else {
-		    so.min_heap_size = next_heap_size(so.min_heap_size, 0);
+		    so.min_heap_size = next_heap_size(min_heap_size, 0);
+		}
+	    } else if (arg == am_fullsweep_after && is_small(val)) {
+		int max_gen_gcs = signed_val(val);
+		if (max_gen_gcs < 0) {
+		    goto error;
+		} else {
+		    so.max_gen_gcs = max_gen_gcs;
 		}
 	    } else {
 		goto error;
@@ -495,16 +602,17 @@ BIF_ADECL_2
 	} else {
 	    goto error;
 	}
-	ap = CDR(ptr_val(ap));
+	ap = CDR(list_val(ap));
     }
-    if (is_not_nil(ap))
+    if (is_not_nil(ap)) {
 	goto error;
+    }
 
     /*
      * Spawn the process.
      */
     pid = erl_create_process(BIF_P, tp[1], tp[2], tp[3], &so);
-    if (pid == 0) {
+    if (is_non_value(pid)) {
 	BIF_ERROR(BIF_P, so.error_code);
     } else {
 	BIF_RET(pid);
@@ -530,11 +638,11 @@ BIF_ADECL_1
 	if (is_not_port(BIF_ARG_1))
 	    BIF_ERROR(BIF_P, BADARG);
 
-	if (get_node_port(BIF_ARG_1) != THIS_NODE)
+	if (port_node(BIF_ARG_1) != THIS_NODE)
 	    BIF_ERROR(BIF_P, BADARG);
 
 	del_link(find_link(&BIF_P->links,LNK_LINK,BIF_ARG_1,NIL));
-	ix = get_port_index(BIF_ARG_1);
+	ix = port_index(BIF_ARG_1);
 	if (erts_port[ix].status != FREE)
 	    del_link(find_link(&erts_port[ix].links,LNK_LINK,BIF_P->id,NIL));
 	BIF_RET(am_true);
@@ -542,7 +650,7 @@ BIF_ADECL_1
 
     del_link(find_link(&BIF_P->links,LNK_LINK,BIF_ARG_1,NIL));
 
-    if ((slot = get_node(BIF_ARG_1)) != THIS_NODE) {
+    if ((slot = pid_node(BIF_ARG_1)) != THIS_NODE) {
 	if (dist_addrs[slot].cid == NIL)
 	    BIF_TRAP1(dunlink_trap, BIF_P, BIF_ARG_1);
 
@@ -557,11 +665,11 @@ BIF_ADECL_1
     }
 
      /* process ok ? */
-    if (get_number(BIF_ARG_1) >= max_process)
+    if (pid_number(BIF_ARG_1) >= max_process)
 	BIF_ERROR(BIF_P, BADARG);
      
     /* get process struct */
-    rp = process_tab[get_number(BIF_ARG_1)];
+    rp = process_tab[pid_number(BIF_ARG_1)];
 
     /* and we mean this process */
     if (INVALID_PID(rp, BIF_ARG_1))
@@ -623,7 +731,7 @@ BIF_ADECL_2
 	 if (is_not_port(BIF_ARG_1)) 
 	     BIF_ERROR(BIF_P, BADARG);
 
-	 if (get_node_port(BIF_ARG_1) != THIS_NODE) {
+	 if (port_node(BIF_ARG_1) != THIS_NODE) {
 	     /* remote port */
 	     BIF_ERROR(BIF_P, BADARG);
 	 }
@@ -641,7 +749,7 @@ BIF_ADECL_2
       * node.
       */
 
-     if ((slot = get_node(BIF_ARG_1)) != THIS_NODE) {
+     if ((slot = pid_node(BIF_ARG_1)) != THIS_NODE) {
 	 if (dist_addrs[slot].cid == NIL)
 	     BIF_TRAP2(dexit_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
 
@@ -660,9 +768,9 @@ BIF_ADECL_2
       * The pid is local.  Verify that it refers to an existing process.
       */
 
-     if (get_number(BIF_ARG_1) >= max_process)
+     if (pid_number(BIF_ARG_1) >= max_process)
 	 BIF_ERROR(BIF_P, BADARG);
-     rp = process_tab[get_number(BIF_ARG_1)];
+     rp = process_tab[pid_number(BIF_ARG_1)];
      if (INVALID_PID(rp, BIF_ARG_1))
 	 BIF_RET(am_true);
 
@@ -830,9 +938,9 @@ BIF_ADECL_2
 	 send_error_to_logger(BIF_P->group_leader);
 	 BIF_ERROR(BIF_P, BADARG);
      }
-     if (register_process(unsigned_val(BIF_ARG_1), rp) != rp) {
+     if (register_process(atom_val(BIF_ARG_1), rp) != rp) {
 	 cerr_pos = 0;
-	 print_atom(unsigned_val(BIF_ARG_1), CBUF);
+	 print_atom(atom_val(BIF_ARG_1), CBUF);
 	 erl_printf(CBUF," already registered\n");
 	 send_error_to_logger(BIF_P->group_leader);
 	 BIF_ERROR(BIF_P, BADARG);
@@ -851,7 +959,7 @@ BIF_ADECL_1
     if (is_not_atom(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if ((unregister_process(unsigned_val(BIF_ARG_1))) == NULL) {
+    if ((unregister_process(atom_val(BIF_ARG_1))) == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
     }
     BIF_RET(am_true);
@@ -870,7 +978,7 @@ BIF_ADECL_1
     if (is_not_atom(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if ((rp = whereis_process(unsigned_val(BIF_ARG_1))) == NULL) {
+    if ((rp = whereis_process(atom_val(BIF_ARG_1))) == NULL) {
 	BIF_RET(am_undefined);
     }
     BIF_RET(rp->id);
@@ -925,9 +1033,8 @@ BIF_ADECL_2
     int creation;
     Eterm* tp;
 
-    switch(tag_val_def(BIF_ARG_1)) {
-    case PID_DEF:   /* Send to pid */
-	if ((slot = get_node(BIF_ARG_1)) != THIS_NODE) { /* Remote Pid */
+    if (is_pid(BIF_ARG_1)) {
+	if ((slot = pid_node(BIF_ARG_1)) != THIS_NODE) { /* Remote Pid */
 	    if (dist_addrs[slot].cid == NIL)
 		BIF_TRAP2(dsend_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
 	    if (dist_send(BIF_P, slot, BIF_ARG_1, BIF_ARG_2) == 1) {
@@ -947,9 +1054,9 @@ BIF_ADECL_2
 	    trace_send(BIF_P, BIF_ARG_1, BIF_ARG_2);  /* (p, to, msg )*/
 	if (BIF_P->ct != NULL)
 	   save_calls(BIF_P, &exp_send);
-	if (get_number(BIF_ARG_1) >= MAX_PROCESS)
+	if (pid_number(BIF_ARG_1) >= MAX_PROCESS)
 	    BIF_ERROR(BIF_P, BADARG);
-	creation = get_creation(BIF_ARG_1);
+	creation = pid_creation(BIF_ARG_1);
 
 	if ((creation != 0)  && (creation != this_creation)) {
 	    cerr_pos = 0;
@@ -959,15 +1066,25 @@ BIF_ADECL_2
 	    send_error_to_logger(BIF_P->group_leader);
 	    BIF_RET(BIF_ARG_2);
 	}
-	rp = process_tab[get_number(BIF_ARG_1)];
+	rp = process_tab[pid_number(BIF_ARG_1)];
 	if (INVALID_PID(rp, BIF_ARG_1)) {
 	    BIF_RET(BIF_ARG_2);
 	}
-	break;
+    } else if (is_atom(BIF_ARG_1)) {
+	if (IS_TRACED(BIF_P))
+	    trace_send(BIF_P, BIF_ARG_1, BIF_ARG_2);  /* (p, to, msg )*/
+	if (BIF_P->ct != NULL)
+	   save_calls(BIF_P, &exp_send);
 
-    case PORT_DEF:  /* Send to port */
+	if ((rp = whereis_process(atom_val(BIF_ARG_1))) == NULL) {
+	    BIF_ERROR(BIF_P, BADARG);
+	}
+	if (rp->status == P_EXITING) {
+	    BIF_RET(BIF_ARG_2);
+	}
+    } else if (is_port(BIF_ARG_1)) {
 	/* XXX let port_command handle the busy stuff !!! */
-	if (erts_port[get_port_index(BIF_ARG_1)].status & PORT_BUSY) {
+	if (erts_port[port_index(BIF_ARG_1)].status & PORT_BUSY) {
 	    erl_suspend(BIF_P, BIF_ARG_1);
 	    BIF_ERROR(BIF_P, RESCHEDULE);
 	}
@@ -983,30 +1100,15 @@ BIF_ADECL_2
 	}	    
 
 	/* XXX NO GC in port command */
-	port_command(BIF_ARG_1, BIF_ARG_2);
+	port_command(BIF_P->id, BIF_ARG_1, BIF_ARG_2);
 
 	if (BIF_P->status == P_EXITING) {
 	    KILL_CATCHES(BIF_P); /* Must exit */
 	    BIF_ERROR(BIF_P, USER_ERROR);
 	}
 	BIF_RET(BIF_ARG_2);
-
-    case ATOM_DEF:  /* Send to registered process */
-	if (IS_TRACED(BIF_P))
-	    trace_send(BIF_P, BIF_ARG_1, BIF_ARG_2);  /* (p, to, msg )*/
-	if (BIF_P->ct != NULL)
-	   save_calls(BIF_P, &exp_send);
-
-	if ((rp = whereis_process(unsigned_val(BIF_ARG_1))) == NULL) {
-	    BIF_ERROR(BIF_P, BADARG);
-	}
-	if (rp->status == P_EXITING) {
-	    BIF_RET(BIF_ARG_2);
-	}
-	break;
-
-    case TUPLE_DEF: /* Send remote */
-	tp = ptr_val(BIF_ARG_1);
+    } else if (is_tuple(BIF_ARG_1)) { /* Remote send */
+	tp = tuple_val(BIF_ARG_1);
 	if (*tp != make_arityval(2))
 	    BIF_ERROR(BIF_P, BADARG);
 	if (is_not_atom(tp[1]) || is_not_atom(tp[2]))
@@ -1026,13 +1128,13 @@ BIF_ADECL_2
 		trace_send(BIF_P, BIF_ARG_1, BIF_ARG_2);
 	    if (BIF_P->ct != NULL)
 	       save_calls(BIF_P, &exp_send);
-	    if ((rp = whereis_process(unsigned_val(tp[1]))) == NULL) {
+	    if ((rp = whereis_process(atom_val(tp[1]))) == NULL) {
 		BIF_RET(BIF_ARG_2);
 	    }
 	    if (rp->status == P_EXITING) {
 		BIF_RET(BIF_ARG_2);
 	    }
-	    break; /* jump to send_message */
+	    goto send_message;
 	}
 
 	if (dist_addrs[slot].cid == NIL) {
@@ -1048,14 +1150,15 @@ BIF_ADECL_2
 	if (BIF_P->ct != NULL)
 	   save_calls(BIF_P, &exp_send);
 	BIF_RET(BIF_ARG_2);
-
-    default:
+    } else {
 	if (IS_TRACED(BIF_P)) /* XXX Is this really neccessary ??? */
 	    trace_send(BIF_P, BIF_ARG_1, BIF_ARG_2);
 	if (BIF_P->ct != NULL)
 	   save_calls(BIF_P, &exp_send);
 	BIF_ERROR(BIF_P, BADARG);
     }
+
+ send_message:
     send_message(BIF_P, rp, BIF_ARG_2);
     BIF_RET2(BIF_ARG_2, rp->msg.len*4);
 }
@@ -1111,8 +1214,8 @@ BIF_ADECL_1
 	    hp = ArithAlloc(BIF_P, sz);	/* See note at beginning of file */
 	    sz--;
 	    res = make_big(hp);
-	    x = ptr_val(BIF_ARG_1);
-	    *hp++ = make_thing(sz, POSITIVE_BIG_SUBTAG);
+	    x = big_val(BIF_ARG_1);
+	    *hp++ = make_pos_bignum_header(sz);
 	    x++;                          /* skip thing */
 	    while(sz--)
 		*hp++ = *x++;
@@ -1264,10 +1367,10 @@ uint32 pid, name, settings;
      */
 
     if (is_not_nil(settings)) {
-	nargs = ptr_val(settings);
+	nargs = list_val(settings);
 	while (1) {
 	    if (is_tuple(*nargs)) {
-		tp = ptr_val(*nargs);
+		tp = tuple_val(*nargs);
 		arity = *tp++;
 		if (arity != make_arityval(2))
 		    return -3;
@@ -1291,15 +1394,22 @@ uint32 pid, name, settings;
 		    if(linebuf <= 0)
 			return -3;
 		} else if (option == am_env) {
-		   if (is_not_binary(*tp))
-		      return -3;
-		   opts.envir = (char *) ((ProcBin *) ptr_val(*tp))->bytes;
+		    byte* bytes;
+		    if (is_not_binary(*tp)) {
+			return -3;
+		    }
+		    GET_BINARY_BYTES(*tp, bytes);
+		    opts.envir = (char *) bytes;
 		} else if (option == am_cd) {
-		   if (is_not_binary(*tp))
-		      return -3;
-		   opts.wd = (char *) ((ProcBin *) ptr_val(*tp))->bytes;
-		} else
+		    byte* bytes;
+		    if (is_not_binary(*tp)) {
+			return -3;
+		    }
+		    GET_BINARY_BYTES(*tp, bytes);
+		    opts.wd = (char *) bytes;
+		} else {
 		   return -3;
+	       }
 	    } else if (*nargs == am_stream) {
 		opts.packet_bytes = 0;
 	    } else if (*nargs == am_use_stdio) {
@@ -1329,7 +1439,7 @@ uint32 pid, name, settings;
 		break;
 	    if (is_not_list(*nargs)) 
 		return -3;
-	    nargs = ptr_val(*nargs);
+	    nargs = list_val(*nargs);
 	}
     }
     if (opts.read_write == 0)	/* implement default */
@@ -1347,11 +1457,11 @@ uint32 pid, name, settings;
     if (is_atom(name) || is_string(name)) {
 	/* a vanilla port */
 	if (is_atom(name)) {
-	    if (atom_tab(unsigned_val(name))->len >= TMP_BUF_SIZE)
+	    if (atom_tab(atom_val(name))->len >= TMP_BUF_SIZE)
 		return -3;
-	    sys_memcpy(tmp_buf, atom_tab(unsigned_val(name))->name, 
-		       atom_tab(unsigned_val(name))->len);
-	    tmp_buf[atom_tab(unsigned_val(name))->len] = '\0';
+	    sys_memcpy(tmp_buf, atom_tab(atom_val(name))->name, 
+		       atom_tab(atom_val(name))->len);
+	    tmp_buf[atom_tab(atom_val(name))->len] = '\0';
 	} else {
 	    i = intlist_to_buf(name, tmp_buf, TMP_BUF_SIZE);
 	    tmp_buf[i] = '\0';
@@ -1361,7 +1471,7 @@ uint32 pid, name, settings;
     } else {   
 	if (is_not_tuple(name))
 	    return -3;		/* Not a process or fd port */
-	tp = ptr_val(name);
+	tp = tuple_val(name);
 	arity = *tp++;
 
 	if (*tp == am_spawn) {	/* A process port */
@@ -1370,11 +1480,11 @@ uint32 pid, name, settings;
 	    }
 	    name = tp[1];
 	    if (is_atom(name)) {
-		if (atom_tab(unsigned_val(name))->len >= TMP_BUF_SIZE)
+		if (atom_tab(atom_val(name))->len >= TMP_BUF_SIZE)
 		    return -3;
-		sys_memcpy(tmp_buf, atom_tab(unsigned_val(name))->name,
-			   atom_tab(unsigned_val(name))->len);
-		tmp_buf[atom_tab(unsigned_val(name))->len] = '\0';
+		sys_memcpy(tmp_buf, atom_tab(atom_val(name))->name,
+			   atom_tab(atom_val(name))->len);
+		tmp_buf[atom_tab(atom_val(name))->len] = '\0';
 	    } else  if (is_string(name)) {
 		 i = intlist_to_buf(name,tmp_buf, TMP_BUF_SIZE);
 		 tmp_buf[i] = '\0';
@@ -1387,14 +1497,14 @@ uint32 pid, name, settings;
 	    char sbuf[16];
 	    char* p;
 
-	    opts.ifd = unsigned_val(tp[1]);
-	    opts.ofd = unsigned_val(tp[2]);
 	    if (arity != make_arityval(3)) {
 		return -3;
 	    }
 	    if (is_not_small(tp[1]) || is_not_small(tp[2])) {
 		return -3;
 	    }
+	    opts.ifd = unsigned_val(tp[1]);
+	    opts.ofd = unsigned_val(tp[2]);
 
 	    /* Syntesize name from input and output descriptor. */
 	    name_buf = tmp_buf;
@@ -1483,7 +1593,7 @@ BIF_ADECL_1
      i = 0;
      while (is_list(list)) {
 	 i++;
-	 list = CDR(ptr_val(list));
+	 list = CDR(list_val(list));
      }
      if (is_not_nil(list))  {
 	 BIF_ERROR(BIF_P, BADARG);
@@ -1501,7 +1611,7 @@ BIF_ADECL_1
      if (is_not_list(BIF_ARG_1)) {
 	 BIF_ERROR(BIF_P, BADARG);
      }
-     BIF_RET(CAR(ptr_val(BIF_ARG_1)));
+     BIF_RET(CAR(list_val(BIF_ARG_1)));
 }
 
 /**********************************************************************/
@@ -1514,7 +1624,7 @@ BIF_ADECL_1
     if (is_not_list(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    BIF_RET(CDR(ptr_val(BIF_ARG_1)));
+    BIF_RET(CDR(list_val(BIF_ARG_1)));
 }
 
 /**********************************************************************/
@@ -1525,14 +1635,13 @@ BIF_RETTYPE size_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
     if (is_tuple(BIF_ARG_1)) {
-	Eterm* tupleptr = ptr_val(BIF_ARG_1);
+	Eterm* tupleptr = tuple_val(BIF_ARG_1);
 
 	BIF_RET(make_small(arityval(*tupleptr)));
     } else if (is_binary(BIF_ARG_1)) {
-	ProcBin* bptr = (ProcBin*) ptr_val(BIF_ARG_1);
-	if (thing_subtag(bptr->thing_word) != FUN_SUBTAG) {
-	    BIF_RET(make_small_or_big(bptr->size, BIF_P));
-	}
+	BIF_RET(make_small_or_big(binary_size(BIF_ARG_1), BIF_P));
+    } else if (is_vector(BIF_ARG_1)) {
+	return vector_val(BIF_ARG_1)[1];
     }
     BIF_ERROR(BIF_P, BADARG);
 }
@@ -1548,7 +1657,7 @@ BIF_ADECL_2
 	BIF_ERROR(BIF_P, BADARG);
     }
     if (is_tuple(BIF_ARG_2)) {
-	uint32 *tuple_ptr = ptr_val(BIF_ARG_2);
+	uint32 *tuple_ptr = tuple_val(BIF_ARG_2);
 	sint32 ix = signed_val(BIF_ARG_1);
 
 	if ((ix >= 1) && (ix <= arityval(*tuple_ptr)))
@@ -1573,7 +1682,7 @@ BIF_ADECL_3
 
     if (is_not_small(BIF_ARG_1) || is_not_tuple(BIF_ARG_2))
 	BIF_ERROR(BIF_P, BADARG);
-    ptr = ptr_val(BIF_ARG_2);
+    ptr = tuple_val(BIF_ARG_2);
     ix = signed_val(BIF_ARG_1);
     size = arityval(*ptr) + 1;   /* include arity */
     if ((ix < 1) || (ix >= size))
@@ -1624,7 +1733,7 @@ BIF_ADECL_2
     if (is_not_tuple(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    ptr = ptr_val(BIF_ARG_1);
+    ptr = tuple_val(BIF_ARG_1);
     arity = arityval(*ptr);
     hp = HAlloc(BIF_P, arity + 2);
     res = make_tuple(hp);
@@ -1651,7 +1760,7 @@ BIF_ADECL_1
 	BIF_ERROR(BIF_P, BADARG);
      
     /* read data from atom table */
-    ap = atom_tab(unsigned_val(BIF_ARG_1));
+    ap = atom_tab(atom_val(BIF_ARG_1));
     if (ap->len == 0)
 	BIF_RET(NIL);	/* the empty atom */
     need = ap->len*2;
@@ -1728,7 +1837,7 @@ BIF_ADECL_1
 BIF_RETTYPE list_to_integer_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-     uint32 *pos;
+     Eterm lst;
      sint32 i = 0;
      int skip = 0;
      int neg = 0;
@@ -1743,44 +1852,44 @@ BIF_ADECL_1
      if (is_not_list(BIF_ARG_1)) {
 	 BIF_ERROR(BIF_P, BADARG);
      }
+     lst = BIF_ARG_1;
 
      /* if first char is a '-' then it is a negative integer */
-     pos = ptr_val(BIF_ARG_1);
-     if (*pos == make_small('-')) {
+     if (CAR(list_val(lst)) == make_small('-')) {
 	  neg = 1;
 	  skip = 1;
-	  if (is_not_list(*(pos + 1))) {
+	  lst = CDR(list_val(lst));
+	  if (is_not_list(lst)) {
 	      BIF_ERROR(BIF_P, BADARG);
 	  }
-	  pos = ptr_val(*(pos + 1));
      } else {
-	  if (*pos == make_small('+')) {
+	  if (CAR(list_val(lst)) == make_small('+')) {
 	       /* ignore plus */
 	      skip = 1;
-	      if (is_not_list(*(pos + 1))) {
+	      lst = CDR(list_val(lst));
+	      if (is_not_list(lst)) {
 		  BIF_ERROR(BIF_P, BADARG);
 	      }
-	      pos = ptr_val(*(pos + 1));
 	  }
       }
 
      /* Calculate size and do type check */
 
      while(1) {
-	 if (is_not_small(*pos)) {
+	 if (is_not_small(CAR(list_val(lst)))) {
 	     BIF_ERROR(BIF_P, BADARG);
 	 }
-	 if (unsigned_val(*pos) < '0' || unsigned_val(*pos) > '9') {
+	 if (unsigned_val(CAR(list_val(lst))) < '0' || unsigned_val(CAR(list_val(lst))) > '9') {
 	     BIF_ERROR(BIF_P, BADARG);
 	 }
 	 i = i * 10;
-	 i = i + unsigned_val(*pos) - '0';
+	 i = i + unsigned_val(CAR(list_val(lst))) - '0';
 	 n++;
-	 if (*(pos + 1) == NIL) break;
-	 if (is_not_list(*(pos + 1))) {
+	 lst = CDR(list_val(lst));
+	 if (is_nil(lst)) break;
+	 if (is_not_list(lst)) {
 	     BIF_ERROR(BIF_P, BADARG);
 	 }
-	 pos = ptr_val(*(pos + 1));
      }
 
       /* If n <= 8 then we know it's a small int 
@@ -1788,7 +1897,7 @@ BIF_ADECL_1
       ** construct a bignum and let that routine do the checking
       */
 
-     if (n <= 8)  /* It must be small */
+     if (n <= SMALL_DIGITS)  /* It must be small */
      {
 	 if (neg) i = -i;
 	 BIF_RET(make_small(i));
@@ -1801,9 +1910,9 @@ BIF_ADECL_1
      hp = HAlloc(BIF_P, m);
      hp_end = hp + m;
 
-     pos = ptr_val(BIF_ARG_1);
+     lst = BIF_ARG_1;
      if (skip)
-	 pos = ptr_val(*(pos+1));
+	 lst = CDR(list_val(lst));
 
      /* load first digits (at least one digit) */
      if ((i = (n % 4)) == 0)
@@ -1811,8 +1920,8 @@ BIF_ADECL_1
      n -= i;
      m = 0;
      while(i--) {
-	 m = 10*m + (unsigned_val(*pos) - '0');
-	 pos = ptr_val(*(pos + 1));
+	 m = 10*m + (unsigned_val(CAR(list_val(lst))) - '0');
+	 lst = CDR(list_val(lst));
      }
      res = small_to_big(m, hp);  /* load first digits */
 
@@ -1821,8 +1930,8 @@ BIF_ADECL_1
 	 n -= 4;
 	 m = 0;
 	 while(i--) {
-	     m = 10*m + (unsigned_val(*pos) - '0');
-	     pos = ptr_val(*(pos+1));
+	     m = 10*m + (unsigned_val(CAR(list_val(lst))) - '0');
+	     lst = CDR(list_val(lst));
 	 }
 	 if (is_small(res))
 	     res = small_to_big(signed_val(res), hp);
@@ -1839,8 +1948,8 @@ BIF_ADECL_1
 	 if (is_small(res))
 	     res = make_small(-signed_val(res));
 	 else {
-	     pos = ptr_val(res); /* point to thing */
-	     *pos = set_subtag(*pos, NEGATIVE_BIG_SUBTAG);
+	     uint32 *big = big_val(res); /* point to thing */
+	     *big = bignum_header_neg(*big);
 	 }
      }
 
@@ -1929,7 +2038,7 @@ BIF_ADECL_1
 	BIF_ERROR(BIF_P, BADARG);
     }
 
-    tupleptr = ptr_val(BIF_ARG_1);
+    tupleptr = tuple_val(BIF_ARG_1);
     n = arityval(*tupleptr);
     hp = HAlloc(BIF_P, 2 * n);
     tupleptr++;
@@ -1961,7 +2070,7 @@ BIF_ADECL_1
     res = make_tuple(hp);
     *hp++ = make_arityval(len);
     while(is_list(list)) {
-	cons = ptr_val(list);
+	cons = list_val(list);
 	*hp++ = CAR(cons);
 	list = CDR(cons);
     }
@@ -2003,18 +2112,8 @@ h contains node and creation info.
 w[0] is the least significant part (changes most rapidly when creating
 new refs).
 
-In the external format, a new tag NEW_REFERENCE_EXT is used, which has
-this layout:
-
-  1      2       N            1           N'
-+-----+-----+-----------+-----------+-----------+
-| 114 | Len |    Node   | Creation  |   ID  ... |
-+-----+-----+-----------+-----------+-----------+
-
-Node and Creation as in the old REFERENCE_EXT case.
-Len is the length in bytes of Node+Creation+ID.
-N' is a multiple of 4.
-The words of w are laid out in ID, 4 bytes at a time.
+In the external format, a new tag NEW_REFERENCE_EXT is used (which is
+described in the erl_ext_dist.txt file).
 
 In w[0], only the usual 18 bits are used. Ordinarily, in "long refs"
 all words are used (in other words, practically never wrap around), but
@@ -2022,6 +2121,7 @@ for compatibility with older nodes, "short refs" exist. Short refs
 come into being by being converted from the old external format for
 refs (tag REFERENCE_EXT). Short refs are converted back to the old
 external format.
+
 When converting a long ref to the external format in the case of preparing
 for sending to an older node, the ref is truncated by only using
 the first word (with 18 significant bits), and using the old tag
@@ -2043,7 +2143,7 @@ static uint32 reference1 = 0;
 static uint32 reference2 = 0;
 
 /* For internal use */
-static uint32 make_ref(Process *p)
+static uint32 new_ref(Process *p)
 {
     uint32 *hp;
     uint32 t;
@@ -2058,12 +2158,12 @@ static uint32 make_ref(Process *p)
     }
 
     hp = HAlloc(p, REF_WORDS + 2);
-    hp[0] = make_thing(REF_WORDS + 1, REF_THING_SUBTAG);
-    hp[1] = make_refer2(THIS_NODE,0);
+    hp[0] = make_ref_header(REF_WORDS + 1);
+    hp[1] = make_ref2(THIS_NODE,0);
     hp[2] = reference;
     hp[3] = reference1;
     hp[4] = reference2;
-    t = make_refer(hp);
+    t = make_ref(hp);
     return t;
 }
 
@@ -2072,7 +2172,7 @@ BIF_ADECL_0
 {
     uint32 r;
 
-    r = make_ref(BIF_P);
+    r = new_ref(BIF_P);
     BIF_RET(r);
 }
 
@@ -2168,12 +2268,12 @@ int* hour;int* minute; int* second;
 
     if (is_not_tuple(date))
 	return 0;
-    t1 = ptr_val(date);
+    t1 = tuple_val(date);
     if (arityval(t1[0]) !=2 || 
 	is_not_tuple(t1[1]) || is_not_tuple(t1[2]))
 	return 0;
-    t2 = ptr_val(t1[1]);
-    t1 = ptr_val(t1[2]);
+    t2 = tuple_val(t1[1]);
+    t1 = tuple_val(t1[2]);
     if (arityval(t2[0]) != 3 || 
 	is_not_small(t2[1]) || is_not_small(t2[2]) || is_not_small(t2[3]))
 	return 0;
@@ -2272,23 +2372,26 @@ BIF_ADECL_1
 
     if (is_not_pid(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
-    } else if (BIF_P->id == BIF_ARG_1) {
-	FORCE_GC(BIF_P);
-	BUMP_ALL_REDS(BIF_P);
     } else if ((rp = pid2proc(BIF_ARG_1)) == NULL) {
 	BIF_RET(am_false);
     } else {
-	erts_garbage_collect(rp, 0, rp->arg_reg, rp->arity);
+	/* The GC cost is taken for the process executing this BIF. */
+	int reds;
+
+	rp->flags |= F_NEED_FULLSWEEP;
+	reds = erts_garbage_collect(rp, 0, rp->arg_reg, rp->arity);
+	BIF_RET2(am_true, reds);
     }
-    BIF_RET(am_true);
 }
 
 BIF_RETTYPE garbage_collect_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
-    FORCE_GC(BIF_P);
-    BUMP_ALL_REDS(BIF_P);
-    BIF_RET(am_true);
+    int reds;
+
+    BIF_P->flags |= F_NEED_FULLSWEEP;
+    reds = erts_garbage_collect(BIF_P, 0, BIF_P->arg_reg, BIF_P->arity);
+    BIF_RET2(am_true, reds);
 }
 
 /**********************************************************************/
@@ -2331,16 +2434,16 @@ BIF_ADECL_1
    int i;
    uint32 pid = BIF_ARG_1;
 
-   if (is_not_pid(pid) || (get_node(pid) != THIS_NODE) ||
-       (get_number(pid) >= max_process)) {
+   if (is_not_pid(pid) || (pid_node(pid) != THIS_NODE) ||
+       (pid_number(pid) >= max_process)) {
       BIF_ERROR(BIF_P, BADARG);
    }
 
-   i = get_creation(pid);
+   i = pid_creation(pid);
    if ((i != this_creation) && (i != 0))
       BIF_RET(am_false);
 
-   rp = process_tab[get_number(BIF_ARG_1)];
+   rp = process_tab[pid_number(BIF_ARG_1)];
 
    if (INVALID_PID(rp, BIF_ARG_1))
    {
@@ -2355,15 +2458,15 @@ BIF_ADECL_2
    Process *rp;
    uint32 pid = BIF_ARG_1;
 
-   if (is_not_pid(pid) || (get_node(pid) != THIS_NODE) ||
-       (get_number(pid) >= max_process)) {
+   if (is_not_pid(pid) || (pid_node(pid) != THIS_NODE) ||
+       (pid_number(pid) >= max_process)) {
       BIF_ERROR(BIF_P, BADARG);
    }
 
    if (BIF_ARG_2 != am_backtrace)
       BIF_ERROR(BIF_P, BADARG);
 
-   rp = process_tab[get_number(BIF_ARG_1)];
+   rp = process_tab[pid_number(BIF_ARG_1)];
    if (rp == NULL) {
        BIF_ERROR(BIF_P, BADARG);
    }
@@ -2456,7 +2559,7 @@ BIF_ADECL_0
 {
     VERBOSE(erl_printf(COUT, "System halted by BIF halt/0\n"););
     erl_exit(0, "");
-    return 0;  /* Pedantic (lint does not know about erl_exit) */
+    return NIL;  /* Pedantic (lint does not know about erl_exit) */
 }
 
 /**********************************************************************/
@@ -2486,7 +2589,7 @@ BIF_ADECL_1
     else
        BIF_ERROR(BIF_P, BADARG);
 
-    return 0;  /* Pedantic (lint does not know about erl_exit) */
+    return NIL;  /* Pedantic (lint does not know about erl_exit) */
 }
 
 BIF_RETTYPE function_exported_3(BIF_ALIST_3)
@@ -2529,9 +2632,9 @@ BIF_ADECL_1
    if (is_port(obj)) {
       int i, ix, node;
 
-      node = get_node_port(obj);
-      ix = get_number_port(obj);
-      i = get_creation(obj);
+      node = port_node(obj);
+      ix = port_number(obj);
+      i = port_creation(obj);
       sprintf(tmpp, "#Port<%d.%d>", node, ix);
    } else
       BIF_ERROR(BIF_P, BADARG);
@@ -2552,11 +2655,11 @@ BIF_ADECL_1
 
    tmpp = (char*) tmp_buf;
 
-   if (is_refer(obj)) {
+   if (is_ref(obj)) {
       sprintf(tmpp, "#Ref<%ld",
-	      get_node_reference(obj));
+	      ref_node(obj));
       tmpp = strchr(tmpp, '\0');
-      for (i = refer_arity(obj)-2; i >= 0; i--) {
+      for (i = ref_arity(obj)-2; i >= 0; i--) {
 	  sprintf(tmpp, ".%lu",
 		  ref_ptr(obj)->w[i]);
 	  tmpp = strchr(tmpp, '\0');
@@ -2579,22 +2682,17 @@ fun_to_list_1(Process* p, Eterm fun)
     char* tmpp = (char *) tmp_buf;
     Atom* ap;
     Eterm* hp;
-    Eterm* tp;
     int len;
 
-    if (is_binary(fun) && thing_subtag(*ptr_val(fun)) == FUN_SUBTAG) {
-	ErlFunThing* funp = (ErlFunThing *) ptr_val(fun);
+    if (is_fun(fun)) {
+	ErlFunThing* funp = (ErlFunThing *) fun_val(fun);
 
 	mod = make_atom(funp->modp->module);
 	index = funp->index;
 	uniq = unsigned_val(funp->uniq);
-
-#if defined(ALLOW_FUN_TUPLES)
-    build_list:
-#endif
 	strcpy(tmpp, "#Fun<");
 	tmpp += strlen(tmpp);
-	ap = atom_tab(unsigned_val(mod));
+	ap = atom_tab(atom_val(mod));
 	sys_memcpy(tmpp, ap->name, ap->len);
 	tmpp += ap->len;
 	sprintf(tmpp, ".%d.%d>", index, uniq);
@@ -2602,15 +2700,6 @@ fun_to_list_1(Process* p, Eterm fun)
 	hp = HAlloc(p, 2*len);
 	return buf_to_intlist(&hp, tmp_buf, len, NIL);
     }
-#if defined(ALLOW_FUN_TUPLES)
-    else if (is_tuple(fun) && ((tp = ptr_val(fun)), *tp = make_arityval(5)) &&
-	     tp[1] == am_fun) {
-	mod = tp[2];
-	index = unsigned_val(tp[3]);
-	uniq = unsigned_val(tp[4]);
-	goto build_list;
-    }
-#endif
     BIF_ERROR(p, BADARG);
 }
 
@@ -2639,21 +2728,21 @@ BIF_ADECL_1
     *tmpp++ = '<';
     
     /* node part */
-    cp = int_to_buf(get_node(pid), ibuf);
+    cp = int_to_buf(pid_node(pid), ibuf);
     n = sys_strlen(cp);
     sys_strncpy(tmpp, cp, n);
     tmpp += n;
     *tmpp++ = '.';
 
     /* number part */
-    cp = int_to_buf(get_number(pid), ibuf);
+    cp = int_to_buf(pid_number(pid), ibuf);
     n = sys_strlen(cp);
     sys_strncpy(tmpp, cp, n);
     tmpp += n;
     *tmpp++ = '.';
 
     /* serial part */
-    cp = int_to_buf(get_serial(pid), ibuf);
+    cp = int_to_buf(pid_serial(pid), ibuf);
     n = sys_strlen(cp);
     sys_strncpy(tmpp, cp, n);
     tmpp += n;
@@ -2708,7 +2797,7 @@ BIF_ADECL_1
     /* bounds check */
     /* NOT max_process here !!! */
 
-    if ((b >= MAX_PROCESS) || (c >= MAX_SERIAL) || (a >= (1 << P_NODE)) ||
+    if ((b >= MAX_PROCESS) || (c >= MAX_SERIAL) || (a >= MAX_NODE) ||
 	( (a != THIS_NODE) && (dist_addrs[a].cid == NIL))) {
 	BIF_ERROR(BIF_P, BADARG);
     }
@@ -2716,68 +2805,6 @@ BIF_ADECL_1
 
  bad:
     BIF_ERROR(BIF_P, BADARG);
-}
-
-/**********************************************************************/
-
-/* convert an object to an array of bytes */
-
-BIF_RETTYPE term_to_binary_1(BIF_ALIST_1)
-BIF_ADECL_1
-{
-    int size;
-    uint32 bin;
-    ProcBin* pb;
-    byte *c;
-
-    size = encode_size_struct(BIF_ARG_1, TERM_TO_BINARY_DFLAGS);
-    bin = new_binary(BIF_P, (byte *)NULL, size);
-    pb = (ProcBin *) ptr_val(bin);
-    c = pb->bytes;
-    to_external(-1, BIF_ARG_1, &c);
-    if (c > (pb->bytes + size))
-	erl_exit(1, "Internal error in term_to_binary %d\n",(c-pb->bytes));
-    /* adjust since encode_size_struct will return more than needed */
-    pb->size = c - pb->bytes;
-    BIF_RET(bin);
-}
-
-/**********************************************************************/
-
-BIF_RETTYPE binary_to_term_1(BIF_ALIST_1)
-BIF_ADECL_1
-{
-    ProcBin* bp;
-    byte* c;
-    int i;
-    Eterm res;
-    Eterm* hp;
-    Eterm* endp;
-
-    if (is_not_binary(BIF_ARG_1)) {
-    error:
-	BIF_ERROR(BIF_P, BADARG);
-    }
-
-    bp = (ProcBin*) ptr_val(BIF_ARG_1);
-    if (thing_subtag(bp->thing_word) == FUN_SUBTAG) {
-	goto error;
-    }
-
-    if ((i = decode_size(bp->bytes, bp->size)) < 0) {
-	goto error;
-    }
-
-    hp = HAlloc(BIF_P, i);
-    endp = hp + i;
-    c = bp->bytes;
-    if ((res = from_external(-1, &hp, &c, &BIF_P->off_heap)) == 0) {
-	goto error;
-    }
-    if (hp > endp) {
-	erl_exit(1, "binary_to_term_1: buffer overrun by %d byte(s)\n", hp-endp);
-    }
-    return res;
 }
 
 /**********************************************************************/
@@ -2815,7 +2842,7 @@ BIF_ADECL_2
 	BIF_ERROR(BIF_P, BADARG);
     }
 
-    if ((slot = get_node(BIF_ARG_2)) != THIS_NODE) {
+    if ((slot = pid_node(BIF_ARG_2)) != THIS_NODE) {
 	if (dist_addrs[slot].cid == NIL)
 	    BIF_TRAP2(dgroup_leader_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
 	if ((code = dist_group_leader(slot, BIF_ARG_1, BIF_ARG_2)) == 1) {
@@ -2850,6 +2877,16 @@ BIF_ADECL_2
        }
    error:
        BIF_ERROR(BIF_P, BADARG);
+    } else if (BIF_ARG_1 == am_fullsweep_after) {
+	int oval = erts_max_gen_gcs;
+	if (!is_small(BIF_ARG_2) || (n = signed_val(BIF_ARG_2)) < 0) {
+	    goto error;
+	}
+	erts_max_gen_gcs = n;
+	if ((Uint) n > (Uint16) -1) {
+	    erts_max_gen_gcs = (Uint16) -1;
+	}
+	BIF_RET(make_small(oval));
     } else if (BIF_ARG_1 == am_min_heap_size) {
 	int oval = H_MIN_SIZE;
 	if (!is_small(BIF_ARG_2) || (n = signed_val(BIF_ARG_2)) < 0) {
@@ -2857,19 +2894,6 @@ BIF_ADECL_2
 	}
 	H_MIN_SIZE = next_heap_size(n, 0);
 	BIF_RET(make_small(oval));
-    } else if (BIF_ARG_1 == am_max_tables) {
-	BIF_RET(am_true);
-    } else if (BIF_ARG_1 == am_max_processes) {
-	BIF_RET(am_true);
-    } else if (BIF_ARG_1 == am_garbage_collection) {
-	if (BIF_ARG_2 == am_generational) {
-	    switch_gc_threshold = 0;
-	} else if (BIF_ARG_2 == am_fullsweep) {
-	    switch_gc_threshold = MAX_SMALL;
-	} else if (is_small(BIF_ARG_2) && (n = signed_val(BIF_ARG_2)) > 0) {
-	    switch_gc_threshold = n;
-	}
-	BIF_RET(am_true);
     } else if (BIF_ARG_1 == am_display_items) {
 	int oval = display_items;
 	if (!is_small(BIF_ARG_2) || (n = signed_val(BIF_ARG_2)) < 0) {
@@ -2899,9 +2923,9 @@ BIF_ADECL_2
 	if (BIF_ARG_2 == am_false) {
 	    system_seq_tracer = NIL;
 	    BIF_RET(old_value);
-	} else if (is_pid(BIF_ARG_2) && (get_node(BIF_ARG_2) == THIS_NODE)) {
+	} else if (is_pid(BIF_ARG_2) && (pid_node(BIF_ARG_2) == THIS_NODE)) {
 	    /* must be a local PID */
-	    Process* tracer = process_tab[get_number(BIF_ARG_2)];
+	    Process* tracer = process_tab[pid_number(BIF_ARG_2)];
 	    if (!INVALID_PID(tracer, BIF_ARG_2)) {
 		system_seq_tracer = BIF_ARG_2;
 		BIF_RET(old_value);
@@ -2932,26 +2956,6 @@ BIF_ADECL_2
     BIF_ERROR(BIF_P, BADARG);
 }
 
-BIF_RETTYPE system_info_1(BIF_ALIST_1)    
-BIF_ADECL_1
-{
-    Eterm res;
-    Eterm* hp;
-    Eterm val;
-
-    if (BIF_ARG_1 == am_sequential_tracer) {
-	if (is_pid(system_seq_tracer) || is_port(system_seq_tracer)) {
-	    val = system_seq_tracer;
-	} else {
-	    val = am_false;
-	}
-	hp = HAlloc(BIF_P, 3);
-	res = TUPLE2(hp, am_sequential_tracer, val);
-	BIF_RET(res);
-    }
-    BIF_ERROR(BIF_P, BADARG);
-}
-
 /**********************************************************************/
 
 BIF_RETTYPE hash_2(BIF_ALIST_2)
@@ -2966,43 +2970,70 @@ BIF_ADECL_2
     if ((range = signed_val(BIF_ARG_2)) <= 0) {  /* [1..MAX_SMALL] */
 	BIF_ERROR(BIF_P, BADARG);
     }
-    hash = make_hash(BIF_ARG_1, 0);
+    hash = make_broken_hash(BIF_ARG_1, 0);
     BIF_RET(make_small(1 + (hash % range)));   /* [1..range] */
 }
 
-/**********************************************************************/
+BIF_RETTYPE phash_2(BIF_ALIST_2)
+BIF_ADECL_2
+{
+    Uint32 hash;
+    Uint32 range;
+    Sint32 tmp;
 
-/* XXX   Rewrite this !!!! */
-BIF_RETTYPE float_to_words_1(BIF_ALIST_1)
+    /* Assumes that small's are max 2^32 */
+    ASSERT(sizeof(Uint) == 4);
+    if (is_big(BIF_ARG_2)) {
+	if (big_fits_in_uint32(BIF_ARG_2)) {
+	    range = big_to_uint32(BIF_ARG_2);
+	} else {
+	    /* Check for special case 2^32 */
+	    Eterm *bp = big_val(BIF_ARG_2);
+	    if (BIG_SIZE(bp) == 3 && !BIG_DIGIT(bp,0) && !BIG_DIGIT(bp,1) &&
+		BIG_DIGIT(bp,2) == 1) {
+		range = 0;
+	    } else {
+		BIF_ERROR(BIF_P, BADARG);  
+	    }
+	} 
+    } else if(is_small(BIF_ARG_2)) {
+	if ((tmp = signed_val(BIF_ARG_2)) <= 0) {
+	   BIF_ERROR(BIF_P, BADARG);
+	}
+	range = (Uint32) tmp;
+    } else {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    hash = make_hash(BIF_ARG_1, 0);
+    if (range) {
+	BIF_RET(make_small_or_big(1 + (hash % range), BIF_P)); /* [1..range] */
+    } else {
+	BIF_RET(erts_mixed_plus(BIF_P,
+				make_small_or_big(hash, BIF_P),make_small(1)));
+    }
+}
+
+BIF_RETTYPE bump_reductions_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 e1,e2;
-    uint32* hp;
-    FloatDef f;
-
-    if (is_not_float(BIF_ARG_1)) 
+    int reds;
+	
+    if (is_not_small(BIF_ARG_1) || ((reds = signed_val(BIF_ARG_1)) < 0)) {
 	BIF_ERROR(BIF_P, BADARG);
-    
-    GET_DOUBLE(BIF_ARG_1, f);
-    
-    hp = HAlloc(BIF_P, 3+5+5);
-    
-    if (abs(f.fw[0]) > MAX_SMALL) {
-	e1 = small_to_big(f.fw[0], hp);
-	hp += big_arity(e1)+1;
     }
-    else
-	e1 = make_small(f.fw[0]);
-
-    if (abs(f.fw[1]) > MAX_SMALL) {
-	e2 = small_to_big(f.fw[1], hp);
-	hp += big_arity(e2)+1;
+    if (reds > CONTEXT_REDS) {
+	reds = CONTEXT_REDS;
     }
-    else
-	e2 = make_small(f.fw[1]);
-
-    BIF_RET(TUPLE2(hp, e1, e2));
+    BIF_RET2(am_true, reds);
 }
+
+Eterm
+yield_0(Process* p)
+{
+    BUMP_ALL_REDS(p);
+    return am_true;
+}
+
 
 /****************************************************************************
 
@@ -3031,9 +3062,9 @@ uint32 id;
 {
     int ix;
 
-    if (is_not_port(id) || (get_node_port(id) != THIS_NODE))
+    if (is_not_port(id) || (port_node(id) != THIS_NODE))
 	return NULL;
-    ix = get_port_index(id);
+    ix = port_index(id);
     if ((erts_port[ix].status == FREE) || (erts_port[ix].status & CLOSING))
 	return NULL;
     return &erts_port[ix];
@@ -3053,9 +3084,8 @@ BIF_ADECL_2
 	BIF_ERROR(BIF_P, RESCHEDULE);
     }
 
-    if (write_port(get_port_index(BIF_ARG_1), BIF_ARG_2) != 0)
-    {
-       BIF_ERROR(BIF_P, BADARG);
+    if (write_port(BIF_P->id, port_index(BIF_ARG_1), BIF_ARG_2) != 0) {
+	BIF_ERROR(BIF_P, BADARG);
     }
 
     if (BIF_P->status == P_EXITING) {
@@ -3070,19 +3100,19 @@ BIF_RETTYPE port_control_3(BIF_ALIST_3)
 BIF_ADECL_3
 {
     Port* p;
-    int op;
-    uint32 res;
+    Uint op;
+    Eterm res;
 
     if ((p = id2port(BIF_ARG_1)) == NULL) {
     error:
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if (is_not_small(BIF_ARG_2))
+    if (!term_to_Uint(BIF_ARG_2, &op)) {
 	goto error;
-    op = signed_val(BIF_ARG_2);
-    
-    if (port_control(BIF_P, p, op, BIF_ARG_3, &res) == 0)
+    }
+    if (port_control(BIF_P, p, op, BIF_ARG_3, &res) == 0) {
 	goto error;
+    }
     BIF_RET(res);
 }
 
@@ -3094,19 +3124,40 @@ BIF_ADECL_1
 	BIF_ERROR(BIF_P, BADARG);
     do_exit_port(BIF_ARG_1, p->connected, am_normal);
     /* since we terminate port with reason normal 
-       we SHOULD never get an exit signal out selfs !!!
+       we SHOULD never get an exit signal ourselves
        */
     BIF_RET(am_true);
 }
 
-
 BIF_RETTYPE port_connect_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    Port* p;
-    if (is_not_pid(BIF_ARG_2) || (p = id2port(BIF_ARG_1)) == NULL)
+    Port* prt;
+    Process* rp;
+    Eterm portid = BIF_ARG_1;
+    Eterm pid = BIF_ARG_2;
+    int ix;
+
+    if (is_not_pid(pid) || (prt = id2port(portid)) == NULL) {
+    error:
 	BIF_ERROR(BIF_P, BADARG);
-    p->connected = BIF_ARG_2;
+    }
+    if (pid_node(pid) != THIS_NODE) {
+	goto error;
+    }
+    if ((ix = pid_number(pid)) >= max_process) {
+	goto error;
+    }
+    rp = process_tab[ix];
+    if (INVALID_PID(rp, pid)) {
+	goto error;
+    }
+    
+    if (find_link(&rp->links,LNK_LINK,portid,NIL) == NULL) {
+	rp->links = new_link(rp->links, LNK_LINK, portid, NIL);
+	prt->links = new_link(prt->links, LNK_LINK, pid, NIL);	
+    }
+    prt->connected = pid;
     BIF_RET(am_true);
 }
 
@@ -3154,12 +3205,12 @@ BifTimerRec* btm;
 
     if (is_atom(btm->pid))
     {
-       rp = whereis_process(unsigned_val(btm->pid));
+       rp = whereis_process(atom_val(btm->pid));
        invalid_pid = (rp == NULL);
     }
     else
     {
-       rp = process_tab[get_number(btm->pid)];
+       rp = process_tab[pid_number(btm->pid)];
        invalid_pid = (INVALID_PID(rp, btm->pid));
     }
 
@@ -3179,24 +3230,6 @@ BifTimerRec* btm;
     sys_free(btm);
 }
 
-static int term_to_unsigned(uint32 term, unsigned *u)
-{
-   int i;
-
-   if (is_small(term))
-   {
-      i = signed_val(term);
-      if (i < 0)
-	 return 0;
-      *u = i;
-      return 1;
-   }
-   else if (is_big(term))
-      return big_to_unsigned(term, u);
-   else
-      return 0;
-}
-
 static BifTimerRec *do_timer(pack, process, arg1, arg2, arg3)
 int pack;
 Process *process;
@@ -3204,21 +3237,21 @@ uint32 arg1, arg2, arg3;
 {
     BifTimerRec* btm;
     ErlHeapFragment* bp;
-    unsigned timeout;
+    Uint timeout;
     uint32 size;
     uint32 term, msg;
     uint32 ref;
     uint32* hp;
     int ix;
 
-    if (!term_to_unsigned(arg1, &timeout))
+    if (!term_to_Uint(arg1, &timeout))
        return NULL;
     if (is_not_pid(arg2) && is_not_atom(arg2))
        return NULL;
-    if (is_pid(arg2) && get_node(arg2) != THIS_NODE)
+    if (is_pid(arg2) && pid_node(arg2) != THIS_NODE)
        return NULL;
 
-    ref = make_ref(process);
+    ref = new_ref(process);
     msg = arg3;
 
     if (pack) {
@@ -3231,17 +3264,17 @@ uint32 arg1, arg2, arg3;
     size = size_object(term);
     btm = (BifTimerRec*) safe_alloc(sizeof(BifTimerRec));
     btm->bp = bp = new_message_buffer(size);
-    sys_memcpy(&btm->ref, ptr_val(ref), sizeof(btm->ref));
+    sys_memcpy(&btm->ref, ref_ptr(ref), sizeof(btm->ref));
     btm->pid = arg2;
-    ix = get_number_reference(ref) % TIMER_HASH_VEC;
+    ix = ref_number(ref) % TIMER_HASH_VEC;
     btm->next = bif_tm_vec[ix];
     bif_tm_vec[ix] = btm;
     hp = bp->mem;
     btm->message = copy_struct(term, size, &hp, &bp->off_heap);
     btm->tm.active = 0; /* MUST be initalized */
     erl_set_timer(&btm->tm,
-		  bif_timeout_proc,
-		  bif_cancel_proc,
+		  (ErlTimeoutProc) bif_timeout_proc,
+		  (ErlCancelProc) bif_cancel_proc,
 		  (void*)btm,
 		  timeout);
 
@@ -3255,7 +3288,7 @@ copy_ref(Process *p, Ref *ref0)
     Eterm ref, ref1;
     uint32 size;
 
-    ref1 = make_refer(ref0);
+    ref1 = make_ref(ref0);
     size = size_object(ref1);
 
     hp = HAlloc(p, size);
@@ -3301,7 +3334,7 @@ BIF_ADECL_1
     BifTimerRec** tp;
     uint32 left;
 
-    if (is_not_refer(BIF_ARG_1))
+    if (is_not_ref(BIF_ARG_1))
 	BIF_ERROR(BIF_P, BADARG);
     if ((tp = find_timer(ref_ptr(BIF_ARG_1))) != NULL) {
 	btm = *tp;
@@ -3314,14 +3347,30 @@ BIF_ADECL_1
 	BIF_RET(am_false);
 }
 
+/* read_timer(Ref) -> false | RemainingTime */
+BIF_RETTYPE read_timer_1(BIF_ALIST_1)
+BIF_ADECL_1
+{
+    BifTimerRec** tp;
+
+    if (is_not_ref(BIF_ARG_1)) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    if ((tp = find_timer(ref_ptr(BIF_ARG_1))) == NULL) {
+	BIF_RET(am_false);
+    } else {
+	Uint left = time_left(&(*tp)->tm);
+	BIF_RET(make_small_or_big(left, BIF_P));
+    }
+}
+
 void print_timer_info(CIO to)
 {
    int i;
    BifTimerRec *p;
 
    for (i = 0; i < TIMER_HASH_VEC; i++)
-      if ((p = bif_tm_vec[i]) != NULL)
-      {
+      if ((p = bif_tm_vec[i]) != NULL) {
 	 erl_printf(to, "message=");
 	 display(p->message,to);
 	 erl_printf(to, ", pid=");

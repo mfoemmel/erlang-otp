@@ -138,6 +138,7 @@ realkeys(Tab, Pos, IxKey) ->
     db_get(Index, IxKey).
     %% a list on the form [{IxKey, RealKey1} , ....
     
+%%%% REMOVE after next rel....not used anymore
 match_object(Tid, Store, Tab, Pat, Pos) ->
     %% Assume that we are on the node where the replica is
     mnesia_locker:rlock_table(Tid, Store, Tab), %% ignore return value
@@ -145,15 +146,21 @@ match_object(Tid, Store, Tab, Pat, Pos) ->
 
 dirty_match_object(Tab, Pat, Pos) ->
     %% Assume that we are on the node where the replica is
-    IxKey = element(Pos, Pat),
-    RealKeys = mnesia_index:realkeys(Tab, Pos, IxKey),
-    merge(RealKeys, Tab, Pat, []).
+    case element(2, Pat) of
+	'_' ->
+	    IxKey = element(Pos, Pat),
+	    RealKeys = mnesia_index:realkeys(Tab, Pos, IxKey),
+	    merge(RealKeys, Tab, Pat, []);
+	Else ->
+	    mnesia_lib:db_match_object(Tab, Pat)
+    end.
 
 merge([{IxKey, RealKey}|Tail], Tab, Pat0, Ack) ->
     %% Assume that we are on the node where the replica is
-    Pat = setelement(2, Pat0, RealKey),
-    L0 = mnesia_lib:db_match_object(Tab, Pat),
+    PatternL = setelement(2, Pat0, RealKey),
+    L0 = mnesia_lib:db_match_object(Tab, PatternL),
     merge(Tail, Tab, Pat0, L0 ++ Ack);
+
 merge([], _, _, Ack) -> Ack.
 
 dirty_read(Tab, IxKey, Pos) ->

@@ -7,34 +7,26 @@
 
 <CENTER><H1>Debugger Release Notes</H1></CENTER>
 
-<H2>Debugger 1.5.1</H2>
-<H3>Improvements and new features</H3>
+<H2>Debugger 1.5.2</H2>
+  <H3>Known Problems</H3>
+  <UL>
+    <LI>The "Interpret Dialog" window hangs if one tries to debug-compile a module residing in a sticky directory.<BR>
+      Own Id: OTP-2665
+    </LI>
+    <LI>Included source code is not shown in the "Attached Process" window.<BR>
+       Own Id: OTP-3579
+    </LI>
+  </UL>
 
-<UL>
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>The user is notified if the record editor cannot read a record definition, instead of it silently failing.<BR>
+      Own Id: OTP-3437<BR>
+      Aux Id: Seq 4285
+    </LI>
+  </UL>
 
-<LI>
-The debugger was updated to handle the new fun datatype.
-<br>Own Id: OTP-3370
+<P>There are also release notes for <A HREF="notes_history.html">older versions</A>.</P>
 
-
-</UL>
-
-<H2>Debugger 1.5</H2>
-<H3>Fixed errors and malfunctions</H3>
-
-<UL>
-
-<LI>
-The debugger has been updated to cope with the new fun
-implementation (introduced in R5), new EXIT codes, and
-BIFs in other modules than <CODE>erlang</CODE>.
-<br>Own Id: OTP-3339
-
-
-</UL>
-
-There are also release notes for 
-<A HREF="notes_history.html">older versions</A>.
-
-</body>
-</html>
+</BODY>
+</HTML>

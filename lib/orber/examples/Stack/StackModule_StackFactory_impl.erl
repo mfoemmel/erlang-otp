@@ -1,3 +1,4 @@
+%% <!--
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -14,7 +15,8 @@
 %% AB. All Rights Reserved.''
 %% 
 %%     $Id$
-%%
+%%--> StackModule_StackFactory_impl example file.
+
 -module('StackModule_StackFactory_impl').
 -include_lib("orber/include/corba.hrl").
 -export([create_stack/1, destroy_stack/2, init/1, terminate/2]).

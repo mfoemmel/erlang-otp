@@ -107,7 +107,7 @@ handle_chunk(B, FileName, Pos, N) ->
     {Cont, lists:reverse(Ack)}.
 
 handle_chunk2(B, _FileName, Pos, 0, Ack) ->
-    {{more, Pos, {B, true}}, Ack};
+    {#continuation{pos = Pos, b = {B, true}}, Ack};
 handle_chunk2(B, FileName, Pos, N, Ack) when size(B) > 7 ->
     {Head, Tail} =  split_binary(B, 8),
     {Sz, Mg} = split_binary(Head, 4),
@@ -125,10 +125,10 @@ handle_chunk2(B, FileName, Pos, N, Ack) when size(B) > 7 ->
 		    handle_chunk2(Tail2, FileName, Pos, N-1, [Term | Ack])
 	    end;
 	true ->
-	    {{more, Pos, B}, Ack}
+	    {#continuation{pos = Pos, b = B}, Ack}
     end;
 handle_chunk2(B, _FileName, Pos, _N, Ack) ->
-    {{more, Pos, B}, Ack}.
+    {#continuation{pos = Pos, b = B}, Ack}.
 
 
 chunk_read_only(Fd, FileName, Pos, {B, true}, N) ->
@@ -163,7 +163,7 @@ handle_chunk_ro(B, Pos, N) ->
     end.
 
 handle_chunk_ro2(B, Pos, 0, Ack, Bad) ->
-    {{more, Pos, {B, true}}, Ack, Bad};
+    {#continuation{pos = Pos, b = {B, true}}, Ack, Bad};
 handle_chunk_ro2(B, Pos, N, Ack, Bad) when size(B) > 7 ->
     {Head, Tail} =  split_binary(B, 8),
     {Sz, Mg} = split_binary(Head, 4),
@@ -183,10 +183,10 @@ handle_chunk_ro2(B, Pos, N, Ack, Bad) when size(B) > 7 ->
 		    handle_chunk_ro2(Tail2, Pos, N-1, [Term | Ack], Bad)
 	    end;
 	true ->
-	    {{more, Pos, B}, Ack, Bad}
+	    {#continuation{pos = Pos, b = B}, Ack, Bad}
     end;
 handle_chunk_ro2(B, Pos, _N, Ack, Bad) ->
-    {{more, Pos, B}, Ack, Bad}.
+    {#continuation{pos = Pos, b = B}, Ack, Bad}.
 
 
 %% -> ok | throw(Error)
@@ -278,7 +278,7 @@ new_int_file(FName, Head) ->
 	    file_error(FName, Error)
     end.
 
-%% -> {NoOfItemsWritten, NoOfBytesWritten} | throw(Error)
+%% -> {NoItemsWritten, NoBytesWritten} | throw(Error)
 int_log_head(Head, FileName, Fd) ->
     case lh(Head, internal) of
 	{ok, BinHead} -> 
@@ -331,7 +331,7 @@ new_ext_file(FName, Head) ->
 	    file_error(FName, Error)
     end.
 
-%% -> {NoOfItemsWritten, NoOfBytesWritten} | throw(Error)
+%% -> {NoItemsWritten, NoBytesWritten} | throw(Error)
 ext_log_head(Head, FileName, Fd) ->
     case lh(Head, external) of
 	{ok, BinHead} -> 
@@ -510,7 +510,7 @@ i32([X1,X2,X3,X4]) ->
 %%          Writes MaxB bytes on each file.  
 %%          Creates a file called Name.idx in the Dir.  This
 %%          file contains the last written FileName as one byte, and
-%%          follwing that, the sizes of each file (size 0 no of items).
+%%          follwing that, the sizes of each file (size 0 number of items).
 %%          On startup, this file is read, and the next available
 %%          filename is used as first log file.
 %%          Reports can be browsed with Report Browser Tool (rb), or
@@ -689,7 +689,7 @@ mf_int_chunk_step(Handle, {FileNo, _Pos}, Bin, Step) ->
     FileName = add_ext(Handle#handle.filename, NFileNo),
     case file:read_file_info(FileName) of
 	{ok, _FileInfo} ->	
-	    {ok,{more, {NFileNo, 0}, Bin}};
+	    {ok, #continuation{pos = {NFileNo, 0}, b = Bin}};
 	_Error ->
 	    {error, end_of_log}
     end.
@@ -871,7 +871,7 @@ read_index_file(truncate, FName, MaxF) ->
 read_index_file(_, FName, _MaxF) ->
     read_index_file(FName).
 
-%% -> {CurFileNo, CurFileSz, TotSz, NoOfFiles} | throw(FileError)
+%% -> {CurFileNo, CurFileSz, TotSz, NoFiles} | throw(FileError)
 %%  where TotSz does not include CurFileSz.
 read_index_file(FName) ->
     FileName = ?index_file_name(FName),
@@ -920,9 +920,14 @@ parse_index(CurF, _, _, CurSz, TotSz, NFiles) ->
     {CurF, CurSz, TotSz, NFiles}.
     
 %%-----------------------------------------------------------------
-%% Fileformat for index file
+%% The old file format for index file (CurFileNo > 0):
 %%
 %% CurFileNo SizeFile1 SizeFile2  ... SizeFileN
+%%   1 byte   4 bytes    4 bytes       4 bytes
+%%
+%% The new file format for index file (NewFormat = 0):
+%%
+%% NewFormat CurFileNo SizeFile1 SizeFile2  ... SizeFileN
 %%   1 byte   4 bytes    4 bytes       4 bytes
 %%-----------------------------------------------------------------
 
@@ -964,7 +969,7 @@ loop_index(N, Bin) when size(Bin) >= 4 ->
 loop_index(_, _) ->
     done.
 
-%% Returns: No of lost items (if an old file was truncated)
+%% Returns: Number of lost items (if an old file was truncated)
 %% -> integer() | throw(FileError)
 write_index_file(read_only, _FName, _NewFile, _OldFile, _OldCnt) ->
     0;
@@ -998,8 +1003,8 @@ write_index_file(read_write, FName, NewFile, OldFile, OldCnt) ->
 	    end,
 	    
 	    
-	    OffSet = 5, %% one byte not used (the old current file no) and 
-	                %% four bytes current file no
+	    OffSet = 5, %% one byte not used (the old current file number) and 
+	                %% four bytes current file number
 	    if
 		OldFile > 0 ->
 		    position_close(Fd, FileName, OffSet + (NewFile - 1)*4),
@@ -1030,10 +1035,21 @@ index_file_trunc(FName, N) ->
 	    case file:read_file(FileName) of
 		{ok, Bin} when size(Bin) >= 1 ->
 		    case split_binary(Bin, 1) of
-			{_BIdx, Tail} when (size(Tail) rem 4) == 0 ->
-			    Pos = size(Tail) - N*4 + 1,
-			    position_close(Fd, FileName, {bof, Pos}),
-			    truncate_close(Fd, FileName);
+			{BIdx, Tail} when (size(Tail) rem 4) == 0 ->
+			    Off = case hd(binary_to_list(BIdx)) of
+				      0 -> % new format
+					  5;
+				      _Old ->
+					  1
+				  end,
+			    Pos = Off + N*4,
+			    case Pos > size(Bin) of
+				true ->
+				    ok;
+				false ->
+				    position_close(Fd, FileName, {bof, Pos}),
+				    truncate_close(Fd, FileName)
+			    end;
 			_ ->
 			    ok
 		    end;
@@ -1075,17 +1091,17 @@ read_size_file(FName) ->
     end.
 
 
-conv({{more, Pos, Bin}, Terms}, FileNo) ->
-    {{more, {FileNo, Pos}, Bin}, Terms};
+conv({More, Terms}, FileNo) when record(More, continuation) ->
+    {More#continuation{pos = {FileNo, More#continuation.pos}}, Terms};
 conv(Other, _) ->
     Other.
 
-conv_ro({{more, Pos, Bin}, Terms}, FileNo) ->
-    {{more, {FileNo, Pos}, Bin}, Terms};
-conv_ro({{more, Pos, Bin}, Terms, 0}, FileNo) ->
-    {{more, {FileNo, Pos}, Bin}, Terms};
-conv_ro({{more, Pos, Bin}, Terms, Bad}, FileNo) ->
-    {{more, {FileNo, Pos}, Bin}, Terms, Bad};
+conv_ro({More, Terms}, FileNo) when record(More, continuation) ->
+    {More#continuation{pos = {FileNo, More#continuation.pos}}, Terms};
+conv_ro({More, Terms, 0}, FileNo) when record(More, continuation) ->
+    {More#continuation{pos = {FileNo, More#continuation.pos}}, Terms};
+conv_ro({More, Terms, Bad}, FileNo) when record(More, continuation) ->
+    {More#continuation{pos = {FileNo, More#continuation.pos}}, Terms, Bad};
 conv_ro(Other, _) ->
     Other.
 
@@ -1123,24 +1139,28 @@ split_bins(_, _, _, First, [], Bs, _) ->
 %% -> {NewCurrentFileNo, MaxFilesToBe} | throw(FileError)
 inc_wrap(FName, CurF, MaxF) ->
     case MaxF of
-	%% No of max files is changed
+	%% Number of max files has changed
 	{NewMaxF, OldMaxF} ->
 	    if 
-		CurF + 1 > NewMaxF ->
-		    %% We are above the new no of files
+		CurF >= NewMaxF ->
+		    %% We are at or above the new number of files
 		    remove_files(FName, CurF + 1, OldMaxF),
 		    if 
 			CurF > NewMaxF ->
 			    %% The change was done while the current file was 
-			    %% greater than the new no of files.
-			    %% Remove the files from the index file too
-			    index_file_trunc(FName, OldMaxF - CurF), 
+			    %% greater than the new number of files.
+			    %% The index file is not trunctated here, since
+			    %% writing the index file while opening the file
+			    %% with index 1 will write the value for the file
+			    %% with extension CurF as well. Next time the 
+			    %% limit is reached, the index file will be
+			    %% truncated.
 			    {1, {NewMaxF, CurF}};
 			true ->
 			    %% The change was done while the current file was 
-			    %% less than the new no of files.
+			    %% less than the new number of files.
 			    %% Remove the files from the index file too
-			    index_file_trunc(FName, OldMaxF - NewMaxF), 
+			    index_file_trunc(FName, NewMaxF), 
 			    {1, NewMaxF}
 		    end;
 		true ->

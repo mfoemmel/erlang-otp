@@ -22,8 +22,8 @@
 -include("inet_int.hrl").
 -include("socks5.hrl").
 
--export([open/0, open/1, open/2, associate/3, 
-	 connect/3, connect/4, bind/3, 
+-export([open/0, open/1, open/2, close/1,
+	 associate/3, connect/3, connect/4, bind/3, 
 	 accept/1, accept/2]).
 -export([is_direct/1]).
 
@@ -49,12 +49,15 @@ do_open(Opts, TimeOut) ->
 	    Port = inet_db:socks_option(port),
 	    case inet_tcp:connect(
 		   Server, Port,
-		   Opts ++ [{active,false},{header,-1}], TimeOut) of
+		   Opts ++ [{active,false},{mode, list}], TimeOut) of
 		{ok, S} -> auth(S);
 		Error -> Error
 	    end;
 	Error -> Error
     end.
+
+close(S) ->
+    inet_tcp:close(S).
 
 auth(S) ->
     Methods = inet_db:socks_option(methods),
@@ -109,9 +112,22 @@ accept(S) ->
     rep(S, infinity).    
 
 accept(S, infinity) ->
-    rep(S, infinity);
+    accept1(S, infinity);
 accept(S, Time) when integer(Time), Time >= 0 ->
-    rep(S, Time).
+    accept1(S, Time).
+
+accept1(S, Time) ->
+    case inet:getopts(S, [packet, mode]) of
+      {ok, SaveOpts} ->
+          inet:setopts(S, [{packet,0}, {mode,list}]),
+          Rep = rep(S, Time),
+          inet:setopts(S, SaveOpts),
+	  Rep;
+      Error ->
+          Error
+    end.
+  
+
 
 %%
 %% Encode socks5 address format
@@ -175,7 +191,7 @@ dec_address(S, _, _) ->
 
 
 dec_error(S) ->
-    inet_tcp:close(S),
+    close(S),
     {error, "Unknown error"}.
 
 	    
@@ -191,7 +207,7 @@ rep(S, TimeOut) ->
 	{ok, [?SOCKS5_VER, ?SOCKS5_REP_OK, _, AType, A1]} ->
 	    dec_address(S, AType, A1);
 	{ok, [?SOCKS5_VER, Rep | _]} ->
-	    inet_tcp:close(S),
+	    close(S),
 	    case Rep of
 		?SOCKS5_REP_FAIL ->
 		    {error, "General SOCKS server failure"};

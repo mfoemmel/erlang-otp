@@ -226,8 +226,8 @@ read(File, Sz) when record(File, fd) ->
 pread(File, At, Sz) when record(File, fd) , integer(At), At >= 0->
     ll_pread(File, At, Sz);
 pread(File, At, Sz) when pid(File) ->
-    request(File, {pread, At, Sz}),
-    wait_file_reply(File).
+    R = request(File, {pread, At, Sz}),
+    wait_file_reply(File, R).
 
 write(File, Bytes) when pid(File) ->
     io:put_chars(File, Bytes);
@@ -238,12 +238,12 @@ write(File, Bytes) when record(File, fd) ->
 pwrite(File, At, Bytes) when record(File, fd), integer(At), At >= 0 ->
     ll_pwrite(File, At, Bytes);
 pwrite(File, At, Bytes) when pid(File) ->
-    request(File, {pwrite, At, Bytes}),
-    wait_file_reply(File).
+    R = request(File, {pwrite, At, Bytes}),
+    wait_file_reply(File, R).
 
 sync(File) when pid(File) ->
-    request(File, sync),
-    wait_file_reply(File);
+    R = request(File, sync),
+    wait_file_reply(File, R);
 sync(File) when record(File, fd) ->
     ll_sync(File).
 
@@ -258,8 +258,8 @@ close(File) when record(File, fd) ->
     ok.
 
 position(File, At) when pid(File) ->
-    request(File, {position,At}),
-    wait_file_reply(File);
+    R = request(File, {position,At}),
+    wait_file_reply(File, R);
 position(File, At) when record(File, fd) ->
     case position_file(File, At, []) of
 	{ok, Res, _} -> Res;
@@ -267,8 +267,8 @@ position(File, At) when record(File, fd) ->
     end.
 
 truncate(File) when pid(File) ->
-    request(File, truncate),
-    wait_file_reply(File);
+    R = request(File, truncate),
+    wait_file_reply(File, R);
 truncate(File) when record(File, fd) ->
     ll_truncate(File).
 
@@ -1141,15 +1141,38 @@ io_reply(From, ReplyAs, Reply) ->
     From ! {io_reply,ReplyAs,Reply}.
 
 request(Io, Request) ->
-    Io ! {file_request,self(),Io,Request}.
+    R = erlang:monitor(process, Io),
+    Io ! {file_request,self(),Io,Request},
+    R.
 
 file_reply(From, ReplyAs, Reply) ->
     From ! {file_reply,ReplyAs,Reply}.
 
-wait_file_reply(From) ->
+wait_file_reply(From, Ref) ->
     receive
 	{file_reply,From,Reply} ->
+	    erlang:demonitor(Ref),
+	    receive
+		{'DOWN', Ref, _, _, _} ->
+		    ok
+	    after 0 ->
+		    ok
+	    end,
 	    Reply;
 	{'EXIT',From,Reason} ->			%In case we are trapping exits
+	    receive
+		{'DOWN', Ref, _, _, _} ->
+		    ok
+	    after 0 ->
+		    ok
+	    end,
+	    {error, terminated};
+	{'DOWN', Ref, _, _, _} ->
+	    receive
+		{'EXIT',From,Reason} ->
+		    ok
+	    after 0 ->
+		    ok
+	    end,
 	    {error, terminated}
     end.

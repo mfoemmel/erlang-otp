@@ -80,6 +80,8 @@ TIME_TEST_MODULES = \
 
 TEST_TARGET_FILES = $(TIME_TEST_MODULES:%=$(EBIN)/%.$(EMULATOR))
 
+CPP_FILES = StackClient.cc
+
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
@@ -89,7 +91,7 @@ ERL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin -pa $(ERL_TOP)/lib/ic/ebin
 ERL_COMPILE_FLAGS += -pa $(ERL_TOP)/lib/orber -I$(ERL_TOP)/lib/orber
 YRL_FLAGS = 
 
-JAVA_OPTIONS = -classpath ../../priv:/opt/local/pgm/OrbixWeb2.0.1
+JAVA_OPTIONS = -classpath ../../priv:/opt/local/pgm/OrbixWeb3.2/
 
 # ----------------------------------------------------
 # Targets
@@ -116,7 +118,7 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/examples/Stack
-	$(INSTALL_DATA) $(ERL_FILES) $(JAVA_FILES) $(IDL_FILES) $(RELSYSDIR)/examples/Stack
+	$(INSTALL_DATA) $(ERL_FILES) $(JAVA_FILES) $(CPP_FILES) $(IDL_FILES) $(RELSYSDIR)/examples/Stack
 
 
 release_docs_spec:

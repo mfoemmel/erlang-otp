@@ -19,10 +19,10 @@
 OTPROOT=/usr/local/otp/releases/otp_jam_sunos5_latest
 
 # Type actual IC Version
-ICVSN=3.7.1
+ICVSN=4.0
 
 # Type actual Erl Interface Vesrion
-EIVSN=3.1.1
+EIVSN=3.2
 
 # IDL file(s)
 IDLS=random.idl

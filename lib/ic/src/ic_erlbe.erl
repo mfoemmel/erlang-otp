@@ -77,7 +77,7 @@ do_gen(G, File, Form) ->
 						   {oe_dependency,0}]),
 		R0= gen(G2, [], Form),
 		ictk:reg_gen(G2, [], Form),
-		ictk:unreg_gen(G2), % "new" unreg_gen/1, uses pragmatab 
+		ictk:unreg_gen(G2, [], Form), % "new" unreg_gen/3
 		genDependency(G2), % creates code for dependency list
 		R0;
 	    true ->
@@ -422,7 +422,7 @@ emit_serv_std(erl_genserv, G, N, X) ->
     emit(Fd, "oe_create_link(Env, RegName) ->\n"),
     emit(Fd, "    start_link(RegName, Env, []).\n", []),
     nl(Fd),
-      icgen:mcomment(Fd, ["Start functions."]),
+    icgen:mcomment(Fd, ["Start functions."]),
     nl(Fd), 
     emit(Fd, "start(Env, Opt) ->\n"),
     emit(Fd, "    gen_server:start(?MODULE, Env, Opt).\n"),
@@ -436,8 +436,12 @@ emit_serv_std(erl_genserv, G, N, X) ->
     emit(Fd, "start_link(RegName, Env, Opt) ->\n"),
     emit(Fd, "    gen_server:start_link(RegName, ?MODULE, Env, Opt).\n"),
     nl(Fd),
-    emit(Fd, "init(Env) ->\n"),
+    icgen:comment(Fd, "Standard gen_server termination"),
+    emit(Fd, "stop(OE_THIS) ->\n"),
+    emit(Fd, "    gen_server:cast(OE_THIS,stop).\n"),
+    nl(Fd),
     icgen:comment(Fd, "Call to implementation init"),
+    emit(Fd, "init(Env) ->\n"),
     emit(Fd, "    ~p:~p(Env).\n", [to_atom(Impl), init]),
     nl(Fd),
     emit(Fd, "terminate(Reason, State) ->\n"),
@@ -707,8 +711,16 @@ gen_head_special(G, N, X) when record(X, interface) ->
     nl(Fd),
     icgen:comment(Fd, "gen server export stuff"),
     emit(Fd, "-behaviour(gen_server).\n"),
-    icgen:export(Fd, [{init, 1}, {terminate, 2}, {handle_call, 3}, 
-		      {handle_cast, 2}, {handle_info, 2}, {code_change, 3}]),
+
+    case get_opt(G, be) of
+	erl_genserv -> %% stop/1 is only for erl_genserv backend
+	    icgen:export(Fd, [{stop, 1}, {init, 1}, {terminate, 2}, {handle_call, 3}, 
+			      {handle_cast, 2}, {handle_info, 2}, {code_change, 3}]);
+	_ ->
+	     icgen:export(Fd, [{init, 1}, {terminate, 2}, {handle_call, 3}, 
+			      {handle_cast, 2}, {handle_info, 2}, {code_change, 3}])
+    end,
+
     case get_opt(G, be) of
 	erl_corba ->
 	    nl(Fd),
@@ -910,18 +922,35 @@ emit_skel_func(G, N, X, OpName, ArgNames, TypeList, OutArgs) ->
 	    TL		= mk_name(G, "Types"),
 	    From	= mk_name(G, "From"),
 	    State	= mk_name(G, "State"),
-	    CallArgs =
+
+	    %% Create argument list
+	    CallArgs1 = [State | ArgNames],
+	    CallArgs2 =
+		case is_oneway(X) of
+		    false ->
+			case use_from(G, N, OpName) of
+			    true ->
+				[From | CallArgs1];
+			    false ->
+				CallArgs1
+			end;
+		    true ->
+			CallArgs1
+		end,
+	    CallArgs3 =
 		case use_this(G, N, OpName) of
 		    true ->
 			case get_opt(G, be) of
 			    erl_corba ->
-				mk_list([This, State | ArgNames]);
+				[This | CallArgs2];
 			    erl_genserv ->
-				mk_list([From, State | ArgNames])
+				CallArgs2
 			end;
 		    false ->
-			mk_list([State | ArgNames])
+			CallArgs2
 		end,
+	    %% Create argument list string
+	    CallArgs = mk_list(CallArgs3),
 	    emit_op_comment(G, Fd, X, Name, ArgNames, OutArgs),
 	    case get_opt(G, be) of
 		erl_corba ->
@@ -1051,8 +1080,18 @@ emit_postcond(Fd, CallOrCast, Precond, Postcond, VarPostcond, F, A, State) ->
 use_this(G, N, OpName) ->
     FullOp = icgen:to_colon([OpName|N]),
     FullIntf = icgen:to_colon(N),
-%%%    io:format("Use this ~p and ~p~n", [FullOp, FullIntf]),
+%%%    io:format("Use this: ~p and ~p~n", [FullOp, FullIntf]),
     case {get_opt(G, {this, FullIntf}), get_opt(G, {this, FullOp})} of
+	{_, force_false} -> false;
+	{false, false} -> false;
+	_ -> true
+    end.
+
+use_from(G, N, OpName) ->
+    FullOp = icgen:to_colon([OpName|N]),
+    FullIntf = icgen:to_colon(N),
+%%%    io:format("Use from: ~p and ~p~n", [FullOp, FullIntf]),
+    case {get_opt(G, {from, FullIntf}), get_opt(G, {from, FullOp})} of
 	{_, force_false} -> false;
 	{false, false} -> false;
 	_ -> true

@@ -31,6 +31,8 @@ package com.ericsson.otp.erlang;
  **/
 
 public class OtpErlangExit extends OtpErlangException {
+  OtpErlangPid pid = null;
+  
   /**
    * Create an OtpErlangExit exception with the given reason.
    *
@@ -41,9 +43,28 @@ public class OtpErlangExit extends OtpErlangException {
   }
 
   /**
+   * Create an OtpErlangExit exception with the given reason and sender pid.
+   *
+   * @param reason the reason this exit signal has been sent.
+   *
+   * @param pid the pid that sent this exit.
+   **/
+  public OtpErlangExit(String reason, OtpErlangPid pid) {
+    super(reason);
+    this.pid = pid;
+  }
+
+  /**
    * Get the reason associated with this exit signal.
    **/
   public String reason() {
     return getMessage();
+  }
+
+  /**
+   * Get the pid that sent this exit.
+   **/
+  public OtpErlangPid pid() {
+    return this.pid;
   }
 }

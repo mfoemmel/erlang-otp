@@ -107,7 +107,8 @@
 	 dirty_rpc/4,                          % Not for public use
 
 	 %% Module internal callback functions
-	 remote_dirty_match_object/2           % Not for public use
+	 remote_dirty_match_object/2,           % Not for public use
+	 has_var/1
 	]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -124,13 +125,6 @@ val(Var) ->
 	Value -> Value
     end.
 
--define(is_var(Var),
-	case Var of
-	    '_' -> true;
-	    _ when atom(Var) -> is_dollar_digits(Var);
-	    _  -> false
-	end).
-		     
 is_dollar_digits(Var) ->
     case atom_to_list(Var) of
 	[$$ | Digs] -> 
@@ -150,7 +144,14 @@ is_digits([]) ->
     true.
 
 has_var(X) when atom(X) -> 
-    ?is_var(X);
+    if 
+	X == '_' -> 
+	    true;
+	atom(X) -> 
+	    is_dollar_digits(X);
+	true  -> 
+	    false
+    end;
 has_var(X) when tuple(X) ->
     e_has_var(X, size(X));
 has_var([H|T]) ->
@@ -705,7 +706,7 @@ add_written_to_set(Ws) ->
 add_written_to_bag([{_, Val, write} | Tail], Objs, Ack) ->
     add_written_to_bag(Tail, lists:delete(Val, Objs), [Val | Ack]);
 add_written_to_bag([], Objs, Ack) -> 
-    Ack ++ Objs;
+    Objs ++ lists:reverse(Ack); %% Oldest write first as in ets
 add_written_to_bag([{_, _ , delete} | Tail], Objs, Ack) ->
     %% This transaction just deleted all objects
     %% with this key
@@ -803,7 +804,7 @@ all_keys(Tid, Ts, Tab, LockKind)
 	    Keys = [K || [K] <- ?ets_match(Tab, Pat)],
 	    case val({Tab, setorbag}) of
 		bag -> mnesia_lib:uniq(Keys);
-		set -> Keys
+		_ -> Keys
 	    end;
 	tid ->
 	    Pat = val({Tab, wild_pattern}),
@@ -811,7 +812,7 @@ all_keys(Tid, Ts, Tab, LockKind)
 		       Obj <- match_object(Tid, Ts, Tab, Pat, LockKind)],
 	    case val({Tab, setorbag}) of
 		bag -> mnesia_lib:uniq(Keys);
-		set -> Keys
+		_ -> Keys
 	    end;
 	Protocol ->
 	    dirty_all_keys(Tab)
@@ -849,7 +850,8 @@ index_match_object(Tid, Ts, Tab, Pat, Attr, LockKind)
 			    case has_var(Elem) of
 				false ->
 				    Store = Ts#tidstore.store,
-				    Objs = mnesia_index:match_object(Tid, Store, Tab, Pat, Pos),
+				    mnesia_locker:rlock_table(Tid, Store, Tab),
+				    Objs = dirty_index_match_object(Tab, Pat, Attr),
 				    add_written_match(Store, Pat, Tab, Objs);
 				true ->
 				    abort({bad_type, Attr, Elem})
@@ -1045,7 +1047,7 @@ dirty_all_keys(Tab) when atom(Tab), Tab /= schema ->
 	    Keys = [element(2, Obj) || Obj <- dirty_match_object(Tab, Pat)],
 	    case val({Tab, setorbag}) of
 		bag -> mnesia_lib:uniq(Keys);
-		set -> Keys
+		_ -> Keys
 	    end
     end;
 dirty_all_keys(Tab) ->
@@ -1110,11 +1112,14 @@ do_dirty_rpc(Tab, nowhere, _, _, Args) ->
 do_dirty_rpc(Tab, Node, M, F, Args) ->
     case rpc:call(Node, M, F, Args) of
 	{badrpc, Reason} ->
-	    case val({Tab, where_to_read}) of
-		Node ->
+	    %% 'Node' probably went down now
+	    erlang:yield(), %% Let mnesia_controller get broken link message first
+	    NewNode = mnesia_controller:call({check_w2r, Node, Tab}), % Sync 
+	    if 
+		NewNode == Node -> 
 		    ErrorTag = mnesia_lib:dirty_rpc_error_tag(Reason),
 		    mnesia:abort({ErrorTag, Args});
-		NewNode ->
+		true ->
 		    do_dirty_rpc(Tab, NewNode, M, F, Args)
 	    end;
 	Other ->
@@ -1217,10 +1222,10 @@ info() ->
 			  Held),
 
 	    io:format( "---> Processes waiting for locks <--- ~n", []),
-	    lists:foreach(fun({Oid, Op, Pid, Tid}) ->
+	    lists:foreach(fun({Oid, Op, Pid, Tid, OwnerTid}) ->
 				  io:format("Tid ~p waits for ~p lock "
-					    "on oid ~p ~n", 
-					    [Tid, Op, Oid])
+					    "on oid ~p owned by ~p ~n", 
+					    [Tid, Op, Oid, OwnerTid])
 		  end, Queued),
 	    mnesia_tm:display_info(group_leader(), TmInfo),
 	    
@@ -1459,6 +1464,7 @@ system_info2(dump_log_update_in_place) ->
 system_info2(max_wait_for_decision) -> mnesia_monitor:get_env(max_wait_for_decision);
 system_info2(embedded_mnemosyne) -> mnesia_monitor:get_env(embedded_mnemosyne);
 system_info2(ignore_fallback_at_startup) -> mnesia_monitor:get_env(ignore_fallback_at_startup);
+system_info2(fallback_error_function) ->  mnesia_monitor:get_env(fallback_error_function);
 system_info2(log_version) -> mnesia_log:version();
 system_info2(protocol_version) -> mnesia_monitor:protocol_version();
 system_info2(schema_version) -> mnesia_schema:version(); %backward compatibility
@@ -1496,6 +1502,7 @@ system_info_items(yes) ->
      fallback_activated,
      held_locks,
      ignore_fallback_at_startup,
+     fallback_error_function,
      is_running,
      local_tables,
      lock_queue,
@@ -1530,6 +1537,7 @@ system_info_items(no) ->
      event_module,
      extra_db_nodes,
      ignore_fallback_at_startup,
+     fallback_error_function,
      is_running,
      log_version,
      max_wait_for_decision,

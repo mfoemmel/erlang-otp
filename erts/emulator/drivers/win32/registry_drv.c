@@ -320,7 +320,7 @@ fix_value_result(RegPort* rp, LONG result, DWORD type,
 	ASSERT(ok);
 	rp->name_buf_size = max_name1 > max_name2 ? max_name1 : max_name2;
 	rp->value_buf_size = max_value;
-	rp->name_buf = sys_realloc(rp->value_buf, rp->value_buf_size);
+	rp->name_buf = sys_realloc(rp->name_buf, rp->name_buf_size);
 	rp->value_buf = sys_realloc(rp->value_buf, rp->value_buf_size);
 	return FALSE;
     } else if (result != ERROR_SUCCESS) {

@@ -16,18 +16,33 @@
 %%     $Id$
 %%
 -module(httpd_socket).
--export([start/1,listen/2,listen/3,accept/2,accept/3,deliver/3,send/3,peername/2,
-	 resolve/1,close/2,config/1]).
+-export([start/1,listen/2,listen/3,accept/2,accept/3,
+	 deliver/3,send/3,close/2,
+	 peername/2,resolve/1,config/1]).
 
 -include("httpd.hrl").
 -include_lib("kernel/include/inet.hrl").
 
-%% start
+%% start -> ok | {error,Reason}
 
 start(ip_comm) ->
-  inet_db:start();
+    case inet_db:start() of
+	{ok,_Pid} ->
+	    ok;
+	{error,{already_started,_Pid}} ->
+	    ok;
+	Error ->
+	    Error
+    end;
 start({ssl,_SSLConfig}) ->
-  ssl:start().
+    case ssl:start() of
+	{ok,_Pid} ->
+	    ok;
+	{error,{already_started,_Ssl}} ->
+	    ok;
+	Error ->
+	    Error
+    end.
 
 %% listen
 
@@ -39,8 +54,7 @@ listen(ip_comm,Addr,Port) ->
 			sock_opt(Addr) ++
 			[{packet,0},
 			 {backlog,128},
-			 {reuseaddr,true},
-			 {tcp_nodelay,true}]) of
+			 {reuseaddr,true}]) of
 	{ok,ListenSocket} ->
 	    ListenSocket;
 	Error ->
@@ -65,20 +79,21 @@ accept(A, B) ->
 
 
 accept(ip_comm,ListenSocket, T) ->
-  case gen_tcp:accept(ListenSocket, T) of
-    {ok,Socket} ->
-      Socket;
-    Error ->
-      Error
-  end;
+    ?DEBUG("IP_COMM: Accept on socket ~p", [ListenSocket]),
+    case gen_tcp:accept(ListenSocket, T) of
+	{ok,Socket} ->
+	    Socket;
+	Error ->
+	    Error
+    end;
 accept({ssl,_SSLConfig},ListenSocket, T) ->
-  ?DEBUG("SSL: Accept on socket ~p", [ListenSocket]),
-  case ssl:accept(ListenSocket, T) of
-    {ok,Socket} ->
-      Socket;
-    Error ->
-      Error
-  end.
+    ?DEBUG("SSL: Accept on socket ~p", [ListenSocket]),
+    case ssl:accept(ListenSocket, T) of
+	{ok,Socket} ->
+	    Socket;
+	Error ->
+	    Error
+    end.
 
 %% deliver
 
@@ -92,22 +107,34 @@ deliver(SocketType, Socket, IOListOrBinary)  ->
     end.
 
 send(ip_comm,Socket,Data) ->
-    ?DEBUG("GEN_TCP: Send ~p bytes on socket ~p", [size(Data), Socket]),
+    ?DEBUG("send(ip_comm) -> ~p bytes on socket ~p", 
+	   [data_size(Data), Socket]),
     gen_tcp:send(Socket,Data);
-send({ssl,SSLConfig},Socket,Data) when binary(Data)->
-    ?DEBUG("SSL: Send ~p bytes on socket ~p", [size(Data), Socket]),
-    ssl:send(Socket, Data);
 send({ssl,SSLConfig},Socket,Data) ->
-    ?DEBUG("SSL: Send ~p bytes on socket ~p", [httpd_util:flatlength(Data), Socket]),
+    ?DEBUG("send(ssl) -> ~p bytes on socket ~p", 
+	   [data_size(Data), Socket]),
     ssl:send(Socket, Data).
+
+-ifdef(inets_debug).
+data_size(L) when list(L) -> 
+    httpd_util:flatlength(L);
+data_size(B) when binary(B) ->
+    size(B);
+data_size(O) ->
+    {unknown_size,O}.
+-endif.
+
 
 %% peername
 
 peername(ip_comm, Socket) ->
     case inet:peername(Socket) of
 	{ok,{{A,B,C,D},Port}} ->
-	    {Port,integer_to_list(A)++"."++integer_to_list(B)++"."++
-	     integer_to_list(C)++"."++integer_to_list(D)};
+	    PeerName = integer_to_list(A)++"."++integer_to_list(B)++"."++
+		integer_to_list(C)++"."++integer_to_list(D),
+	    ?DEBUG("IP_COMM: Peername on socket ~p: ~p",
+		   [Socket,{Port,PeerName}]),
+	    {Port,PeerName};
 	{error,Reason} ->
 	    {-1,"unknown"}
     end;
@@ -116,7 +143,8 @@ peername({ssl,_SSLConfig},Socket) ->
 	{ok,{{A,B,C,D},Port}} ->
 	    PeerName = integer_to_list(A)++"."++integer_to_list(B)++"."++
 		integer_to_list(C)++"."++integer_to_list(D),
-	    ?DEBUG("SSL: Peername on socket ~p:~p", [Socket, {Port,PeerName}]),
+	    ?DEBUG("SSL: Peername on socket ~p: ~p", 
+		   [Socket, {Port,PeerName}]),
 	    {Port,PeerName};
 	{error,_Reason} ->
 	    {-1,"unknown"}
@@ -131,27 +159,42 @@ resolve(_) ->
 %% close
 
 close(ip_comm,Socket) ->
-    gen_tcp:close(Socket);
+    ?DEBUG("IP_COMM: Close socket ~p", [Socket]),
+    case (catch gen_tcp:close(Socket)) of
+	ok ->                  ok;
+	{error,Reason} ->      {error,Reason};
+	{'EXIT',{noproc,_}} -> {error,closed};
+	{'EXIT',Reason} ->     {error,Reason};
+	Otherwise ->           {error,Otherwise}
+    end;
 close({ssl,_SSLConfig},Socket) ->
     ?DEBUG("SSL: Close socket ~p", [Socket]),
-    ssl:close(Socket).
+    case (catch ssl:close(Socket)) of
+	ok ->                  ok;
+	{error,Reason} ->      {error,Reason};
+	{'EXIT',{noproc,_}} -> {error,closed};
+	{'EXIT',Reason} ->     {error,Reason};
+	Otherwise ->           {error,Otherwise}
+    end.
 
 %% config (debug: {certfile, "/var/tmp/server_root/conf/ssl_server.pem"})
 
 config(ConfigDB) ->
-  case httpd_util:lookup(ConfigDB,com_type,ip_comm) of
-    ssl ->
-      case ssl_certificate_file(ConfigDB) of
-	undefined ->
-	  {error,
-	   ?NICE("Directive SSLCertificateFile not found in the config file")};
-	SSLCertificateFile ->
-	  {ssl,SSLCertificateFile++ssl_certificate_key_file(ConfigDB)++
-	   ssl_verify_client(ConfigDB)}
-      end;
-    ip_comm ->
-      ip_comm
-  end.
+    case httpd_util:lookup(ConfigDB,com_type,ip_comm) of
+	ssl ->
+	    case ssl_certificate_file(ConfigDB) of
+		undefined ->
+		    {error,
+		     ?NICE("Directive SSLCertificateFile "
+			   "not found in the config file")};
+		SSLCertificateFile ->
+		    {ssl,
+		     SSLCertificateFile++ssl_certificate_key_file(ConfigDB)++
+		     ssl_verify_client(ConfigDB)}
+	    end;
+	ip_comm ->
+	    ip_comm
+    end.
 
 ssl_certificate_file(ConfigDB) ->
     case httpd_util:lookup(ConfigDB,ssl_certificate_file) of
@@ -176,4 +219,5 @@ ssl_verify_client(ConfigDB) ->
 	SSLVerifyClient ->
 	    [{verify,SSLVerifyClient}]
     end.
+
 

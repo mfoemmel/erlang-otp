@@ -64,7 +64,7 @@ process(Stream,Lno,R) ->
 
 process(eof, Stream,Lno,R) ->
     file:close(Stream),
-    lists:flatten(lists:reverse([{'$end',1}|R]));
+    lists:flatten(lists:reverse([{'$end',Lno}|R]));
 
 
 process(L, Stream,Lno,R) when list(L) ->

@@ -9,7 +9,7 @@
 
 # ODBCROOT - root directory of the ODBC installation
 # NOTE: PROGRA~1 = Program Files
-ODBCROOT = c:\PROGRA~1\odbc
+#ODBCROOT = c:\PROGRA~1\odbc
 
 # You might also need to change these
 #
@@ -17,7 +17,7 @@ ODBCROOT = c:\PROGRA~1\odbc
 # ODBCINCLUDE = /I<location of ODBC include files>
 # OTPROOT - root directory of the Erlang/OTP installation
 #
-ODBCLIBS = odbc32.lib
+ODBCLIBS = "C:\Program Files\Microsoft Visual Studio\VC98\lib\Odbc32.lib"
 ODBCINCLUDE = /I$(ODBCROOT)\include
 OTPROOT = ..\..\..
 
@@ -40,7 +40,7 @@ BINDIR = $(PRIVDIR)\bin
 OBJDIR = $(PRIVDIR)\obj
 EBINDIR = ..\ebin
 
-INCLUDES = /I. /I$(ICROOT)\include /I$(EIROOT)\include $(ODBCINCLUDE)
+INCLUDES = /I. /I$(ICROOT)\include /I$(EIROOT)\include 
 OPTS = /Ox
 CFLAGS = $(INCLUDES) /nologo /MT $(OPTS) -D__WIN32__ -DWIN32
 
@@ -98,13 +98,27 @@ $(BINDIR)\odbcserver.exe: $(ODBC_OBJS)
 $(OBJDIR)\odbcserver.obj: $(GEN_H_FILES)
 
 $(GEN_H_FILES) $(GEN_CSRC): odbclli.idl
-	$(ERLC) $(EICFLAGS) "+{be, c_server}" odbclli.idl
+	$(ERLC) $(EICFLAGS) "+{be,c_server}" odbclli.idl
 
 $(GEN_ERLSRC) $(GEN_HRLS): odbclli.idl
-	$(ERLC) $(EICFLAGS) "+{be, erl_genserv}" odbclli.idl
+	$(ERLC) $(EICFLAGS) "+{be,erl_genserv}" odbclli.idl
 
 {.}.c{$(OBJDIR)}.obj:
 	$(CC) $(CFLAGS) /c /Fo$@ $(*B).c
 
 {.}.erl{$(EBINDIR)}.$(EMULATOR):
 	$(ERLC) $(EFLAGS) -o $(EBINDIR) $(*B).erl
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -16,16 +16,16 @@
 #     $Id$
 #
 # Point this at your version of OTP
-OTPROOT=/net/turkey/extra/nightbuilds/otp_beam_sunos5_r6b.1999-10-20_20/otp
+OTPROOT=/usr/local/otp/releases/otp_beam_sunos5_r7a
 
 # Type actual IC Version
-ICVSN=3.8.1
+ICVSN=4.0.4
 
 # Type actual Erl Interface Vesrion
-EIVSN=3.2
+EIVSN=3.2.2
 
 # Type actual Erl Interface Vesrion
-JIVSN=0.9.2
+JIVSN=1.2
 
 # IDL file(s)
 IDLS=random.idl
@@ -56,7 +56,7 @@ LDLIBS=-lic -lerl_interface -lei -lnsl -lsocket
 ERLC=$(OTPROOT)/bin/erlc 
 
 # Erlang compiler flags. 
-EFLAGS='+{preproc_flags,"-I $(OTPROOT)/usr/include"}' '+{scoped_op_calls,true}'
+EFLAGS='+{scoped_op_calls,true}'
 
 # C compiler
 CC=gcc
@@ -92,7 +92,7 @@ client:
 	$(CC) $(CCL:=.o) $(GCCLS:=.o) -o $@ $(LDFLAGS) $(LDLIBS)
 
 eall:
-	$(ERLC) $(EFLAGS) '+{be,erl_genserv}' '+{{impl, "rmod::random"}, "server"}' '+{timeout,"rmod::random"}' $(IDLS)
+	$(ERLC) $(EFLAGS) '+{be,erl_genserv}' $(IDLS)
 	$(ERLC) *.erl
 
 jall:
@@ -101,7 +101,7 @@ jall:
 
 
 clean: 
-	/bin/rm -rf $(GCCLS:=.o) $(GCCLS:=.c) $(GCSRVS:=.o) $(GCSRVS:=.c) $(CCL:=.o) $(CSRV:=.o) rmod* *.jam *.beam oe* *.h *.hrl *~ core server client *.class
+	/bin/rm -rf $(GCCLS:=.o) $(GCCLS:=.c) $(GCSRVS:=.o) $(GCSRVS:=.c) $(CCL:=.o) $(CSRV:=.o) rmod.erl rmod_random.erl *.jam *.beam oe* *.h *.hrl *~ core server client *.class
 
 
 

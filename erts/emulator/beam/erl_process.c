@@ -166,7 +166,7 @@ Process *p;
 */
 
 #ifdef INSTRUMENT
-uint32 current_process = 0;
+Eterm current_process = THE_NON_VALUE;
 #endif
 
 int
@@ -258,7 +258,7 @@ schedule(void)
 	reductions += calls;
 
 #ifdef INSTRUMENT
-	current_process = 0;
+	current_process = THE_NON_VALUE;
 #endif
 
 	p->reds += calls;
@@ -309,7 +309,7 @@ alloc_process(void)
     return p;
 }
 
-uint32
+Eterm
 erl_create_process(Process* parent, /* Parent of process (default group leader). */
 		   uint32 mod,	/* Tagged atom for module. */
 		   uint32 func,	/* Tagged atom for function. */
@@ -329,14 +329,14 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 
     if (is_not_atom(mod) || is_not_atom(func) || ((arity = list_length(args)) < 0)) {
 	so->error_code = BADARG;
-	return 0;
+	return THE_NON_VALUE;
     }
     if ((p = alloc_process()) == NULL) {
 	cerr_pos = 0;
 	erl_printf(CBUF, "Too many processes\n");
 	send_error_to_logger(parent->group_leader);
 	so->error_code = SYSTEM_LIMIT;
-	return 0;
+	return THE_NON_VALUE;
     }
 
     processes_busy++;
@@ -347,12 +347,12 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 
     if (so->flags & SPO_USE_ARGS) {
 	p->min_heap_size = so->min_heap_size;
-	p->gc_switch = so->gc_switch;
 	p->prio = so->priority;
+	p->max_gen_gcs = so->max_gen_gcs;
     } else {
 	p->min_heap_size = H_MIN_SIZE;
-	p->gc_switch = switch_gc_threshold;
 	p->prio = PRIORITY_NORMAL;
+	p->max_gen_gcs = erts_max_gen_gcs;
     }
     ASSERT(p->min_heap_size == next_heap_size(p->min_heap_size, 0));
     
@@ -373,9 +373,10 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 	sz = next_heap_size(heap_need, 0);
     }
 
-    p->heap = (uint32*) safe_alloc_from(8, sizeof(uint32)*sz);
+    p->heap = (Eterm *) safe_alloc_from(8, sizeof(Eterm)*sz);
     p->old_hend = p->old_htop = p->old_heap = NULL;
-    p->high_water = p->low_water = p->heap;
+    p->high_water = p->heap;
+    p->gen_gcs = 0;
     p->arith_avail = 0;		/* No arithmetic heap. */
 #ifdef DEBUG
     p->arith_check_me = NULL;
@@ -423,7 +424,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p ->seq_trace_clock = 0;
     SEQ_TRACE_TOKEN(p) = NIL;
 
-    process_tab[get_number(p->id)] = p;
+    process_tab[pid_number(p->id)] = p;
 
     if (IS_TRACED(parent)) {
 	if (parent->flags & F_TRACE_SOS) {
@@ -480,9 +481,9 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 }
 
 /*
-** This initiates a pseudo process that can be used
-** for arithmetic bif's.
-*/
+ * Initiates a pseudo process that can be used
+ * for arithmetic BIFs.
+ */
 
 void erts_init_empty_process(Process *p)
 {
@@ -490,8 +491,9 @@ void erts_init_empty_process(Process *p)
     p->stop = NULL;
     p->heap = NULL;
     p->hend = NULL;
-    p->gc_switch = 0;
     p->min_heap_size = 0;
+    p->gen_gcs = 0;
+    p->max_gen_gcs = 0;
     p->status = P_RUNABLE;
     p->rstatus = P_RUNABLE;
     p->rcount = 0;
@@ -515,7 +517,6 @@ void erts_init_empty_process(Process *p)
     p->reg_atom = -1;
     p->heap_sz = 0;
     p->high_water = NULL;
-    p->low_water = NULL;
     p->old_hend = NULL;
     p->old_htop = NULL;
     p->old_heap = NULL;
@@ -565,6 +566,18 @@ void erts_init_empty_process(Process *p)
     p->def_arg_reg[5] = 0;
 }    
 
+void
+erts_cleanup_empty_process(Process* p)
+{
+    ErlHeapFragment* ptr = p->mbuf;
+
+    erts_cleanup_mso(p->off_heap.mso);
+    while (ptr) {
+	ErlHeapFragment*next = ptr->next;
+	free_message_buffer(ptr);
+	ptr = next;
+    }
+}
 
 static void delete_process0(p, do_delete)
 Process* p;
@@ -644,7 +657,7 @@ int do_delete;
     if (p->flags & F_USING_DB)
 	db_proc_dead(p->id);
 
-    i = get_number(p->id);
+    i = pid_number(p->id);
     process_tab[i] = NULL;
     if (p_next == -1)
 	p_next = i;
@@ -822,10 +835,10 @@ Process* p; uint32 reason;
       switch(lnk->type) {
        case LNK_LINK:
 	 if (is_port(item)) {
-	    if ((slot = get_node_port(item)) != THIS_NODE)
+	    if ((slot = port_node(item)) != THIS_NODE)
 	       dist_exit(slot, p->id, item, reason);
 	    else {
-	       ix = get_port_index(item);
+	       ix = port_index(item);
 	       if (erts_port[ix].status != FREE) {
 		   del_link(find_link(&erts_port[ix].links,LNK_LINK,
 				      p->id,NIL));
@@ -834,7 +847,7 @@ Process* p; uint32 reason;
 	    }
 	 }
 	 else if (is_pid(item)) {
-	    if ((slot = get_node(item)) != THIS_NODE) {
+	    if ((slot = pid_node(item)) != THIS_NODE) {
 		if (SEQ_TRACE_TOKEN(p) != NIL) {
 		    seq_trace_update_send(p);
 		}
@@ -859,16 +872,28 @@ Process* p; uint32 reason;
 	 ref = &lnk->ref;
 	 if (item == p->id) {
 	    /* We are monitoring 'data' */
-	    if (get_node(lnk->data) != THIS_NODE) {
-	       /* do nothing */
+	    if (is_small(lnk->data))
+	       slot = unsigned_val(lnk->data); /* Monitor name */
+	    else
+	       slot = pid_node(lnk->data);
+	    if (slot != THIS_NODE) {
+	       ErlLink** lnkp;
+	       lnkp = find_link_by_ref(&dist_addrs[slot].links, ref);
+	       if (lnkp != NULL) {
+		  /* Force send, use the atom in dist slot 
+		   * link list as data for the message.
+		   */
+		  dist_demonitor(slot, item, (*lnkp)->data, ref, 1); 
+		  del_link(lnkp);
+	       }
 	    } else {
 	       if ((rp = pid2proc(lnk->data)) != NULL)
 		  del_link(find_link_by_ref(&rp->links, ref));
 	    }
 	 } else {
 	    /* 'Item' is monitoring us */
-	    if (get_node(lnk->item) != THIS_NODE) {
-	       dist_m_exit(get_node(item), item, lnk->data, ref, reason);
+	    if (pid_node(lnk->item) != THIS_NODE) {
+	       dist_m_exit(pid_node(item), item, lnk->data, ref, reason);
 	    } else {
 	       if ((rp = pid2proc(lnk->item)) != NULL) {
 		  queue_monitor_message(rp, ref, am_process, p->id, reason);

@@ -23,7 +23,8 @@ form
 attribute attr_val
 function function_clauses function_clause
 clause_args clause_guard clause_body
-expr expr100 expr200 expr300 expr400 expr500 expr600 expr_700 expr_800 expr_max
+expr expr_100 expr_200 expr_300 expr_400 expr_500 expr_600 expr_700 expr_800
+expr_max
 list tail
 list_comprehension lc_expr lc_exprs
 tuple
@@ -36,7 +37,9 @@ function_call argument_list
 exprs guard
 atomic strings
 prefix_op mult_op add_op list_op comp_op
-rule rule_clauses rule_clause rule_args rule_guard rule_body.
+rule rule_clauses rule_clause rule_args rule_guard rule_body
+binary bin_elements bin_element bit_expr
+opt_bit_size_expr bit_size_expr opt_bit_type_list bit_type_list bit_type.
 
 Terminals
 atom float integer string var
@@ -44,11 +47,12 @@ atom float integer string var
 '(' ')' ',' '->' ':-' '{' '}' '[' ']' '|' '||' '<-' ';' ':' '#' '.'
 'after' 'begin' 'case' 'catch' 'end' 'fun' 'if' 'of' 'receive' 'when' 'query'
 
-'+' '-' 'bnot' 'not'
+'bnot' 'not'
 '*' '/' 'div' 'rem' 'band' 'and'
 '+' '-' 'bor' 'bxor' 'bsl' 'bsr' 'or' 'xor'
 '++' '--'
 '==' '/=' '=<' '<' '>=' '>' '=:=' '=/='
+'<<' '>>'
 '!' '='
 dot.
 
@@ -69,7 +73,7 @@ function_clauses -> function_clause : ['$1'].
 function_clauses -> function_clause ';' function_clauses : ['$1'|'$3'].
 
 function_clause -> atom clause_args clause_guard clause_body :
-	{clause,element(2, '$1'),element(3, '$1'),'$2','$3','$4'}.
+	{clause,line('$1'),element(3, '$1'),'$2','$3','$4'}.
 
 
 clause_args -> argument_list : element(1, '$1').
@@ -80,57 +84,50 @@ clause_guard -> '$empty' : [].
 clause_body -> '->' exprs: '$2'.
 
 
-expr -> 'catch' expr : {'catch', element(2, '$1'),'$2'}.
-expr -> expr100 : '$1'.
+expr -> 'catch' expr : {'catch',line('$1'),'$2'}.
+expr -> expr_100 : '$1'.
 
-expr100 -> expr200 '=' expr100 : {match,element(2, '$2'),'$1','$3'}.
-expr100 -> expr200 '!' expr100 : {op,element(2, '$2'),'!','$1','$3'}.
-expr100 -> expr200 : '$1'.
+expr_100 -> expr_200 '=' expr_100 : {match,line('$2'),'$1','$3'}.
+expr_100 -> expr_200 '!' expr_100 : mkop('$1', '$2', '$3').
+expr_100 -> expr_200 : '$1'.
 
-expr200 -> expr300 comp_op expr300 :
-	{Op,Pos} = '$2',
-	{op,Pos,Op,'$1','$3'}.
-expr200 -> expr300 : '$1'.
+expr_200 -> expr_300 comp_op expr_300 :
+	mkop('$1', '$2', '$3').
+expr_200 -> expr_300 : '$1'.
 
-expr300 -> expr400 list_op expr300 :
-	{Op,Pos} = '$2',
-	{op,Pos,Op,'$1','$3'}.
-expr300 -> expr400 : '$1'.
+expr_300 -> expr_400 list_op expr_300 :
+	mkop('$1', '$2', '$3').
+expr_300 -> expr_400 : '$1'.
 
-expr400 -> expr400 add_op expr500 :
-	{Op,Pos} = '$2',
-	{op,Pos,Op,'$1','$3'}.
-expr400 -> expr500 : '$1'.
+expr_400 -> expr_400 add_op expr_500 :
+	mkop('$1', '$2', '$3').
+expr_400 -> expr_500 : '$1'.
 
-expr500 -> expr500 mult_op expr600 :
-	{Op,Pos} = '$2',
-	{op,Pos,Op,'$1','$3'}.
-expr500 -> expr600 : '$1'.
+expr_500 -> expr_500 mult_op expr_600 :
+	mkop('$1', '$2', '$3').
+expr_500 -> expr_600 : '$1'.
 
-expr600 -> prefix_op expr_700 :
-	{Op,Pos} = '$1',
-	{op,Pos,Op,'$2'}.
-expr600 -> expr_700 : '$1'.
+expr_600 -> prefix_op expr_700 :
+	mkop('$1', '$2').
+expr_600 -> expr_700 : '$1'.
 
-expr_700 -> expr_800 argument_list :
-	{call,element(2, '$1'),'$1',element(1, '$2')}.
+expr_700 -> function_call : '$1'.
 expr_700 -> record_expr : '$1'.
 expr_700 -> expr_800 : '$1'.
 
-
 expr_800 -> expr_max ':' expr_max :
-	{remote,element(2, '$2'),'$1','$3'}.
+	{remote,line('$2'),'$1','$3'}.
 expr_800 -> expr_max : '$1'.
-
 
 expr_max -> var : '$1'.
 expr_max -> atomic : '$1'.
 expr_max -> list : '$1'.
+expr_max -> binary : '$1'.
 expr_max -> list_comprehension : '$1'.
 expr_max -> tuple : '$1'.
 %%expr_max -> struct : '$1'.
 expr_max -> '(' expr ')' : '$2'.
-expr_max -> 'begin' exprs 'end' : {block,element(2, '$1'),'$2'}.
+expr_max -> 'begin' exprs 'end' : {block,line('$1'),'$2'}.
 expr_max -> if_expr : '$1'.
 expr_max -> case_expr : '$1'.
 expr_max -> receive_expr : '$1'.
@@ -138,30 +135,57 @@ expr_max -> fun_expr : '$1'.
 expr_max -> query_expr : '$1'.
 
 
-list -> '[' ']' : {nil,element(2, '$1')}.
-list -> '[' expr tail : {cons,element(2, '$1'),'$2','$3'}.
+list -> '[' ']' : {nil,line('$1')}.
+list -> '[' expr tail : {cons,line('$1'),'$2','$3'}.
 
-tail -> ']' : {nil,element(2, '$1')}.
+tail -> ']' : {nil,line('$1')}.
 tail -> '|' expr ']' : '$2'.
-tail -> ',' expr tail : {cons,element(2, '$1'),'$2','$3'}.
+tail -> ',' expr tail : {cons,line('$2'),'$2','$3'}.
+
+
+binary -> '<<' '>>' : {bin,line('$1'),[]}.
+binary -> '<<' bin_elements '>>' : {bin,line('$1'),'$2'}.
+
+bin_elements -> bin_element : ['$1'].
+bin_elements -> bin_element ',' bin_elements : ['$1'|'$3'].
+
+bin_element -> bit_expr opt_bit_size_expr opt_bit_type_list :
+	{bin_element,line('$1'),'$1','$2','$3'}.
+
+bit_expr -> prefix_op expr_max : mkop('$1', '$2').
+bit_expr -> expr_max : '$1'.
+
+opt_bit_size_expr -> ':' bit_size_expr : '$2'.
+opt_bit_size_expr -> '$empty' : default.
+
+opt_bit_type_list -> '/' bit_type_list : '$2'.
+opt_bit_type_list -> '$empty' : default.
+
+bit_type_list -> bit_type '-' bit_type_list : ['$1' | '$3'].
+bit_type_list -> bit_type : ['$1'].
+
+bit_type -> atom             : element(3,'$1').
+bit_type -> atom ':' integer : { element(3,'$1'), element(3,'$3') }.
+
+bit_size_expr -> expr_max : '$1'.
 
 
 list_comprehension -> '[' expr '||' lc_exprs ']' :
-	{lc,element(2, '$1'),'$2','$4'}.
+	{lc,line('$1'),'$2','$4'}.
 
 lc_exprs -> lc_expr : ['$1'].
 lc_exprs -> lc_expr ',' lc_exprs : ['$1'|'$3'].
 
 lc_expr -> expr : '$1'.
-lc_expr -> expr '<-' expr : {generate,element(2, '$2'),'$1','$3'}.
+lc_expr -> expr '<-' expr : {generate,line('$2'),'$1','$3'}.
 
 
-tuple -> '{' '}' : {tuple,element(2, '$1'),[]}.
-tuple -> '{' exprs '}' : {tuple,element(2, '$1'),'$2'}.
+tuple -> '{' '}' : {tuple,line('$1'),[]}.
+tuple -> '{' exprs '}' : {tuple,line('$1'),'$2'}.
 
 
 %%struct -> atom tuple :
-%%	{struct,element(2, '$1'),element(3, '$1'),element(3, '$2')}.
+%%	{struct,line('$1'),element(3, '$1'),element(3, '$2')}.
 
 
 %% N.B. This is called from expr_700.
@@ -169,15 +193,15 @@ tuple -> '{' exprs '}' : {tuple,element(2, '$1'),'$2'}.
 %% always atoms for the moment, this might change in the future.
 
 record_expr -> '#' atom '.' atom :
-	{record_index,element(2, '$1'),element(3, '$2'),'$4'}.
+	{record_index,line('$1'),element(3, '$2'),'$4'}.
 record_expr -> '#' atom record_tuple :
-	{record,element(2, '$1'),element(3, '$2'),'$3'}.
-record_expr -> expr_800 '#' atom '.' atom :
-	{record_field,element(2, '$2'),'$1',element(3, '$3'),'$5'}.
-record_expr -> expr_800 '#' atom record_tuple :
-	{record,element(2, '$2'),'$1',element(3, '$3'),'$4'}.
-record_expr -> expr_800 '.' atom :
-	{record_field,element(2, '$2'),'$1','$3'}.
+	{record,line('$1'),element(3, '$2'),'$3'}.
+record_expr -> expr_max '#' atom '.' atom :
+	{record_field,line('$2'),'$1',element(3, '$3'),'$5'}.
+record_expr -> expr_max '#' atom record_tuple :
+	{record,line('$2'),'$1',element(3, '$3'),'$4'}.
+record_expr -> expr_max '.' atom :
+	{record_field,line('$2'),'$1','$3'}.
 
 record_tuple -> '{' '}' : [].
 record_tuple -> '{' record_fields '}' : '$2'.
@@ -185,38 +209,45 @@ record_tuple -> '{' record_fields '}' : '$2'.
 record_fields -> record_field : ['$1'].
 record_fields -> record_field ',' record_fields : ['$1' | '$3'].
 
-record_field -> atom '=' expr : {record_field,element(2, '$1'),'$1','$3'}.
+record_field -> atom '=' expr : {record_field,line('$1'),'$1','$3'}.
 
 
-if_expr -> 'if' if_clauses 'end' : {'if',element(2, '$1'),'$2'}.
+%% N.B. This is called from expr_700.
+
+function_call -> expr_800 argument_list :
+	{call,line('$1'),'$1',element(1, '$2')}.
+
+
+if_expr -> 'if' if_clauses 'end' : {'if',line('$1'),'$2'}.
 
 if_clauses -> if_clause : ['$1'].
 if_clauses -> if_clause ';' if_clauses : ['$1' | '$3'].
 
-if_clause -> guard clause_body : {clause,element(2, hd(hd('$1'))),[],'$1','$2'}.
+if_clause -> guard clause_body :
+	{clause,line(hd(hd('$1'))),[],'$1','$2'}.
 
 
 case_expr -> 'case' expr 'of' cr_clauses 'end' :
-	{'case',element(2, '$1'),'$2','$4'}.
+	{'case',line('$1'),'$2','$4'}.
 
 cr_clauses -> cr_clause : ['$1'].
 cr_clauses -> cr_clause ';' cr_clauses : ['$1' | '$3'].
 
 cr_clause -> expr clause_guard clause_body :
-	{clause,element(2, '$1'),['$1'],'$2','$3'}.
+	{clause,line('$1'),['$1'],'$2','$3'}.
 
 receive_expr -> 'receive' cr_clauses 'end' :
-	{'receive',element(2, '$1'),'$2'}.
+	{'receive',line('$1'),'$2'}.
 receive_expr -> 'receive' 'after' expr clause_body 'end' :
-	{'receive',element(2, '$1'),[],'$3','$4'}.
+	{'receive',line('$1'),[],'$3','$4'}.
 receive_expr -> 'receive' cr_clauses 'after' expr clause_body 'end' :
-	{'receive',element(2, '$1'),'$2','$4','$5'}.
+	{'receive',line('$1'),'$2','$4','$5'}.
 
 
 fun_expr -> 'fun' atom '/' integer :
-	{'fun',element(2, '$1'),{function,element(3, '$2'),element(3, '$4')}}.
+	{'fun',line('$1'),{function,element(3, '$2'),element(3, '$4')}}.
 fun_expr -> 'fun' fun_clauses 'end' :
-	build_lambda(element(2, '$1'), '$2').
+	build_fun(line('$1'), '$2').
 
 fun_clauses -> fun_clause : ['$1'].
 fun_clauses -> fun_clause ';' fun_clauses : ['$1' | '$3'].
@@ -226,15 +257,12 @@ fun_clause -> argument_list clause_guard clause_body :
 	{clause,Pos,'fun',Args,'$2','$3'}.
 
 
-function_call -> expr_max argument_list :
-	{call,element(2, '$1'),'$1',element(1, '$2')}.
-
 query_expr -> 'query' list_comprehension 'end' :
-	{'query',element(2, '$1'),'$2'}.
+	{'query',line('$1'),'$2'}.
 
 
-argument_list -> '(' ')' : {[],element(2, '$1')}.
-argument_list -> '(' exprs ')' : {'$2',element(2, '$1')}.
+argument_list -> '(' ')' : {[],line('$1')}.
+argument_list -> '(' exprs ')' : {'$2',line('$1')}.
 
 
 exprs -> expr : ['$1'].
@@ -250,15 +278,15 @@ atomic -> strings : '$1'.
 
 strings -> string : '$1'.
 strings -> string strings :
-	{string,element(2, '$1'),element(3, '$1') ++ element(3, '$2')}.
+	{string,line('$1'),element(3, '$1') ++ element(3, '$2')}.
 
 prefix_op -> '+' : '$1'.
 prefix_op -> '-' : '$1'.
 prefix_op -> 'bnot' : '$1'.
 prefix_op -> 'not' : '$1'.
 
-mult_op -> '*' : '$1'.
 mult_op -> '/' : '$1'.
+mult_op -> '*' : '$1'.
 mult_op -> 'div' : '$1'.
 mult_op -> 'rem' : '$1'.
 mult_op -> 'band' : '$1'.
@@ -291,7 +319,7 @@ rule_clauses -> rule_clause : ['$1'].
 rule_clauses -> rule_clause ';' rule_clauses : ['$1'|'$3'].
 
 rule_clause -> atom clause_args clause_guard rule_body :
-	{clause,element(2, '$1'),element(3, '$1'),'$2','$3','$4'}.
+	{clause,line('$1'),element(3, '$1'),'$2','$3','$4'}.
 
 
 rule_args -> argument_list : element(1, '$1').
@@ -304,18 +332,40 @@ rule_body -> ':-' lc_exprs: '$2'.
 
 Erlang code.
 
--author('rv@cslab.ericsson.se').
--copyright('Copyright (c) 1996 Ericsson Telecommunications AB').
-
-%% This is a hack to help the JAM get better code.
--ifdef(JAM).
--compile([{parse_transform,jam_yecc_pj},pj]).
--endif.
+%% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%% 
+%%     $Id$
+%%
 
 -export([parse_form/1,parse_exprs/1,parse_term/1]).
 -export([normalise/1,abstract/1,tokens/1,tokens/2]).
 -export([abstract/2]).
 -export([inop_prec/1,preop_prec/1,func_prec/0,max_prec/0]).
+
+-compile({inline,[{mkop,3},{mkop,2},{line,1}]}).	%Thrilling!
+
+%% mkop(Op, Arg) -> {op,Line,Op,Arg}.
+%% mkop(Left, Op, Right) -> {op,Line,Op,Left,Right}.
+
+mkop(L, {Op,Pos}, R) -> {op,Pos,Op,L,R}.
+
+mkop({Op,Pos}, A) -> {op,Pos,Op,A}.
+
+%% keep track of line info in tokens
+line(Tup) -> element(2, Tup).
 
 %% Entry points compatible to old erl_parse.
 %% These really suck and are only here until Calle gets multiple
@@ -336,11 +386,11 @@ parse_term(Tokens) ->
 	{ok,{function,Lf,f,0,[{clause,Lc,[],[],[Expr]}]}} ->
 	    case catch normalise(Expr) of
 		{'EXIT',R} ->
-		    {error,{element(2, Expr),?MODULE,"bad term"}};
+		    {error,{line(Expr),?MODULE,"bad term"}};
 		Term -> {ok,Term}
 	    end;
 	{ok,{function,Lf,f,0,[{clause,Lc,[],[],[E1,E2|Es]}]}} ->
-	    {error,{element(2, E2),?MODULE,"bad term"}};
+	    {error,{line(E2),?MODULE,"bad term"}};
 	{error,E} -> {error,E}
     end.
 
@@ -392,24 +442,24 @@ farity_list({cons,Lc,{op,Lo,'/',{atom,La,A},{integer,Li,I}},Tail}) ->
     [{A,I}|farity_list(Tail)];
 farity_list({nil,Ln}) -> [];
 farity_list(Other) ->
-    return_error(element(2, Other), "bad function arity").
+    return_error(line(Other), "bad function arity").
 
 record_tuple({tuple,Lt,Fields}) ->
     record_fields(Fields);
 record_tuple(Other) ->
-    return_error(element(2, Other), "bad record declaration").
+    return_error(line(Other), "bad record declaration").
 
 record_fields([{atom,La,A}|Fields]) ->
     [{record_field,La,{atom,La,A}}|record_fields(Fields)];
 record_fields([{match,Lm,{atom,La,A},Expr}|Fields]) ->
     [{record_field,La,{atom,La,A},Expr}|record_fields(Fields)];
 record_fields([Other|Fields]) ->
-    return_error(element(2, Other), "bad record field");
+    return_error(line(Other), "bad record field");
 record_fields([]) -> [].
 
 term(Expr) ->
     case catch normalise(Expr) of
-	{'EXIT',R} -> return_error(element(2, Expr), "bad attribute");
+	{'EXIT',R} -> return_error(line(Expr), "bad attribute");
 	Term -> Term
     end.
 
@@ -418,18 +468,18 @@ term(Expr) ->
 build_function(Cs) ->
     Name = element(3, hd(Cs)),
     Arity = length(element(4, hd(Cs))),
-    {function,element(2, hd(Cs)),Name,Arity,check_clauses(Cs, Name, Arity)}.
+    {function,line(hd(Cs)),Name,Arity,check_clauses(Cs, Name, Arity)}.
 
 %% build_rule([Clause]) -> {rule,Line,Name,Arity,[Clause]'}
 
 build_rule(Cs) ->
     Name = element(3, hd(Cs)),
     Arity = length(element(4, hd(Cs))),
-    {rule,element(2, hd(Cs)),Name,Arity,check_clauses(Cs, Name, Arity)}.
+    {rule,line(hd(Cs)),Name,Arity,check_clauses(Cs, Name, Arity)}.
 
-%% build_lambda(Line, [Clause]) -> {'fun',Line,{clauses,[Clause]}}.
+%% build_fun(Line, [Clause]) -> {'fun',Line,{clauses,[Clause]}}.
 
-build_lambda(Line, Cs) ->
+build_fun(Line, Cs) ->
     Arity = length(element(4, hd(Cs))),
     {'fun',Line,{clauses,check_clauses(Cs, 'fun', Arity)}}.
 
@@ -461,6 +511,13 @@ normalise({float,_,F}) -> F;
 normalise({char,_,C}) -> C;
 normalise({string,_,S}) -> S;
 normalise({nil,_}) -> [];
+normalise({bin,_,Fs}) ->
+    {value, B, _} =
+	eval_bits:expr_grp(Fs, [],
+			   fun(E, _) ->
+				   {value, normalise(E), []}
+			   end, [], true),
+    B;
 normalise({cons,_,Head,Tail}) ->
     [normalise(Head)|normalise(Tail)];
 normalise({tuple,_,Args}) ->
@@ -484,6 +541,12 @@ abstract(T) when float(T) ->
     {float,0,T};
 abstract([]) ->
     {nil,0};
+abstract(B) when binary(B) ->
+    {bin, 0, lists:map(fun(Byte) ->
+			       {bin_element, 0,
+				{integer, 0, Byte}, default, default}
+		       end,
+		       binary_to_list(B))};
 abstract([C|T]) when integer(C), 0 =< C, C < 256 ->
     abstract_string(T, [C]);
 abstract([H|T]) ->
@@ -517,6 +580,12 @@ abstract(T, Line) when float(T) ->
     {float,Line,T};
 abstract([], Line) ->
     {nil,Line};
+abstract(B, Line) when binary(B) ->
+    {bin, Line, lists:map(fun(Byte) ->
+			       {bin_element, Line,
+				{integer, Line, Byte}, default, default}
+		       end,
+		       binary_to_list(B))};
 abstract([C|T], Line) when integer(C), 0 =< C, C < 256 ->
     abstract_string(T, [C], Line);
 abstract([H|T], Line) ->
@@ -560,18 +629,18 @@ tokens({cons,L,Head,Tail}, More) ->
 tokens({tuple,L,[]}, More) ->
     [{'{',L},{'}',L}|More];
 tokens({tuple,L,[E|Es]}, More) ->
-    [{'{',L}|tokens(E, tokens_tuple(Es, element(2, E), More))].
+    [{'{',L}|tokens(E, tokens_tuple(Es, line(E), More))].
 
 tokens_tail({cons,L,Head,Tail}, More) ->
     [{',',L}|tokens(Head, tokens_tail(Tail, More))];
 tokens_tail({nil,L}, More) ->
     [{']',L}|More];
 tokens_tail(Other, More) ->
-    L = element(2, Other),
+    L = line(Other),
     [{'|',L}|tokens(Other, [{']',L}|More])].
 
 tokens_tuple([E|Es], Line, More) ->
-    [{',',Line}|tokens(E, tokens_tuple(Es, element(2, E), More))];
+    [{',',Line}|tokens(E, tokens_tuple(Es, line(E), More))];
 tokens_tuple([], Line, More) ->
     [{'}',Line}|More].
 

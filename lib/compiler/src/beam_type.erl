@@ -21,7 +21,7 @@
 
 -export([module/2]).
 
--import(lists, [map/2,reverse/1]).
+-import(lists, [map/2,reverse/1,filter/2]).
 
 module({Mod,Exp,Attr,Fs,Lc}, Opt) ->
     {ok,{Mod,Exp,Attr,map(fun function/1, Fs),Lc}}.
@@ -144,7 +144,11 @@ tdb_find(Key, []) -> error.
 %%  {tuple,10}.
 
 tdb_update(Uis0, Ts0) ->
-    tdb_update1(lists:sort(Uis0), Ts0).
+    Uis1 = filter(fun ({{x,R},Op}) -> true;
+		      ({{y,R},Op}) -> true;
+		      (_) -> false
+		  end, Uis0),
+    tdb_update1(lists:sort(Uis1), Ts0).
 
 tdb_update1([{Key,kill}|Ops], [{K,Old}|_]=Db) when Key < K ->
     tdb_update1(remove_key(Key, Ops), Db);

@@ -57,24 +57,24 @@ emit_struct_class(G, N, X, StructName) ->
     {Fd, _}= ic_file:open_java_file(G, N, StructName), 
     
     MList = struct_member_list(G, N, X),
+    ArgList = gen_parameter_list(G, [ StructName ++ "Package" |N], X, MList), 
 
-    ic_codegen:emit(Fd, "final public class ~s {\n",[StructName]),
+    ic_codegen:emit(Fd, ["final public class ",StructName," {\n"
+			 "   // instance variables\n"]),
 
-    ic_codegen:emit(Fd, "   // instance variables\n", []),
     emit_struct_members_declarations(G, [StructName ++ "Package" |N],
 				     X, Fd, MList),
-    ic_codegen:nl(Fd),
 
-    ic_codegen:emit(Fd, "   // constructors\n", []),
-    ic_codegen:emit(Fd, "   public ~s() {}\n", [StructName]),
+    ic_codegen:emit(Fd, ["\n   // constructors\n"
+			 "   public ",StructName,"() {}\n\n"
 
-    ArgList = gen_parameter_list(G, [ StructName ++ "Package" |N], X, MList), 
-    ic_codegen:emit(Fd, "   public ~s(~s) {\n", [StructName, ArgList]),
+			 "   public ",StructName,"(",ArgList,") {\n"]),
+    
     emit_struct_members_initialisation(G, N, X, Fd, MList),
-    ic_codegen:emit(Fd, "   }\n", []),
-    ic_codegen:nl(Fd),
-
-    ic_codegen:emit(Fd, "}\n", []),
+    
+    ic_codegen:emit(Fd, ["   }\n\n"
+			 
+			 "}\n\n"]),
     file:close(Fd).
 
 
@@ -85,34 +85,31 @@ emit_holder_class(G, N, X, StructName) ->
     SName = string:concat(StructName, "Holder"),
     {Fd, _}= ic_file:open_java_file(G, N, SName), 
     
-    ic_codegen:emit(Fd, "final public class ~sHolder {\n",[StructName]),
+    ic_codegen:emit(Fd, ["final public class ",StructName,"Holder {\n"
 
-    ic_codegen:emit(Fd, "   // instance variables\n", []),
-    ic_codegen:emit(Fd, "   public ~s value;\n\n", [StructName]),
+			 "   // instance variables\n"
+			 "   public ",StructName," value;\n\n"
 
-    ic_codegen:emit(Fd, "   // constructors\n", []),
-    ic_codegen:emit(Fd, "   public ~sHolder() {}\n", [StructName]),
-    ic_codegen:emit(Fd, "   public ~sHolder(~s initial) {\n", [StructName, StructName]),
-    ic_codegen:emit(Fd, "      value = initial;\n", []),
-    ic_codegen:emit(Fd, "   }\n\n", []),
+			 "   // constructors\n"
+			 "   public ",StructName,"Holder() {}\n\n"
 
-    ic_codegen:emit(Fd, "   // methods\n", []),
+			 "   public ",StructName,"Holder(",StructName," initial) {\n"
+			 "      value = initial;\n"
+			 "   }\n\n"
+
+			 "   // methods\n"]),
 
     MList = struct_member_list(G, N, X),
 
-    ic_codegen:emit(Fd, "   public void _marshal(~sOtpOutputStream out) throws java.lang.Exception {\n",
-		    [?ERLANGPACKAGE]),
-    ic_codegen:emit(Fd, "      ~sHelper.marshal(out, value);\n", [StructName]),
-    ic_codegen:emit(Fd, "   }\n\n", []),
-
-
-    ic_codegen:emit(Fd, "   public void _unmarshal(~sOtpInputStream in) throws java.lang.Exception {\n", 
-		    [?ERLANGPACKAGE]), 
-    ic_codegen:emit(Fd, "      value = ~sHelper.unmarshal(in);\n",
-		    [StructName]),
-    ic_codegen:emit(Fd, "   }\n", []),
-    
-    ic_codegen:emit(Fd, "}\n", []),
+    ic_codegen:emit(Fd, ["   public void _marshal(",?ERLANGPACKAGE,"OtpOutputStream out) throws java.lang.Exception {\n"
+			 "      ",StructName,"Helper.marshal(out, value);\n"
+			 "   }\n\n"
+			 
+			 "   public void _unmarshal(",?ERLANGPACKAGE,"OtpInputStream in) throws java.lang.Exception {\n"
+			 "      value = ",StructName,"Helper.unmarshal(in);\n"
+			 "   }\n"
+			 
+			 "}\n\n"]),
     file:close(Fd).
 
 %%-----------------------------------------------------------------
@@ -122,62 +119,59 @@ emit_helper_class(G, N, X, StructName, WireStructName) ->
     SName = string:concat(StructName, "Helper"),
     {Fd, _}= ic_file:open_java_file(G, N, SName),
  
-    ic_codegen:emit(Fd, "public class ~sHelper {\n",[StructName]),
+    ic_codegen:emit(Fd, ["public class ",StructName,"Helper {\n"
     
-    ic_codegen:emit(Fd, "   // constructors\n", []),
-    ic_codegen:emit(Fd, "   private ~sHelper() {}\n", [StructName]),
-    ic_codegen:nl(Fd),
+			 "   // constructors\n"
+			 "   private ",StructName,"Helper() {}\n\n"
 
-    ic_codegen:emit(Fd, "   // methods\n", []),
+			 "   // methods\n"]),
 
     MList = struct_member_list(G, N, X),
 
-    ic_codegen:emit(Fd, "   public static void marshal(~sOtpOutputStream _out, ~s _value)\n",
-		    [?ERLANGPACKAGE, StructName]),
-    ic_codegen:emit(Fd, "     throws java.lang.Exception {\n\n"),
+    ic_codegen:emit(Fd, ["   public static void marshal(",?ERLANGPACKAGE,"OtpOutputStream _out, ",StructName," _value)\n"
+			 "     throws java.lang.Exception {\n\n"]),
 
     emit_struct_marshal_function(G, N, X, Fd, StructName, WireStructName, MList),
-    ic_codegen:emit(Fd, "   }\n\n", []),
+    
+    ic_codegen:emit(Fd, ["   }\n\n"
 
-    ic_codegen:emit(Fd, "   public static ~s unmarshal(~sOtpInputStream _in)\n",
-		    [StructName, ?ERLANGPACKAGE]),
-    ic_codegen:emit(Fd, "     throws java.lang.Exception {\n\n"),
+			 "   public static ",StructName," unmarshal(",?ERLANGPACKAGE,"OtpInputStream _in)\n"
+			 "     throws java.lang.Exception {\n\n"]),
 
     emit_struct_unmarshal_function(G, N, X, Fd, StructName, WireStructName, MList),
-    ic_codegen:emit(Fd, "   }\n\n", []),
 
-    ic_codegen:emit(Fd, "   public static String id() {\n", []), 
-    ic_codegen:emit(Fd, "      return ~p;\n",[ictk:get_IR_ID(G, N, X)]),
-    ic_codegen:emit(Fd, "   }\n\n", []),
+    ic_codegen:emit(Fd, ["   }\n\n"
 
-    ic_codegen:emit(Fd, "   public static String name() {\n", []), 
-    ic_codegen:emit(Fd, "      return ~p;\n",[StructName]),
-    ic_codegen:emit(Fd, "   }\n\n", []),
-
+			 "   public static String id() {\n" 
+			 "      return \"",ictk:get_IR_ID(G, N, X),"\";\n"
+			 "   }\n\n"
+			 
+			 "   public static String name() {\n"
+			 "      return \"",StructName,"\";\n"
+			 "   }\n\n"]),
+    
     ic_jbe:emit_type_function(G, N, X, Fd),
 
-    ic_codegen:emit(Fd, "   public static void insert(~sAny _any, ~s _this)\n",
-		    [?ICPACKAGE,StructName]),
-    ic_codegen:emit(Fd, "     throws java.lang.Exception {\n\n"),
+    ic_codegen:emit(Fd, ["   public static void insert(",?ICPACKAGE,"Any _any, ",StructName," _this)\n"
+			 "     throws java.lang.Exception {\n\n"
    
-    ic_codegen:emit(Fd, "     ~sOtpOutputStream _os = \n",[?ERLANGPACKAGE]),
-    ic_codegen:emit(Fd, "       new ~sOtpOutputStream();\n\n",[?ERLANGPACKAGE]), 
-    
-    ic_codegen:emit(Fd, "     _any.type(type());\n"),     
-    ic_codegen:emit(Fd, "     marshal(_os, _this);\n"),
-    ic_codegen:emit(Fd, "     _any.insert_Streamable(_os);\n"),
-    ic_codegen:emit(Fd, "   }\n\n"),
-
-    ic_codegen:emit(Fd, "   public static ~s extract(~sAny _any)\n",
-		    [StructName,?ICPACKAGE]),
-    ic_codegen:emit(Fd, "     throws java.lang.Exception {\n\n"),
-  
-    ic_codegen:emit(Fd, "     return unmarshal(_any.extract_Streamable());\n"),
-    ic_codegen:emit(Fd, "   }\n\n"),
-
-
-    %% In corba mapping there is also a _type function here.
-    ic_codegen:emit(Fd, "}\n", []),
+			 "     ",?ERLANGPACKAGE,"OtpOutputStream _os = \n"
+			 "       new ",?ERLANGPACKAGE,"OtpOutputStream();\n\n" 
+			 
+			 "     _any.type(type());\n"
+			 "     marshal(_os, _this);\n"
+			 "     _any.insert_Streamable(_os);\n"
+			 "   }\n\n"
+			 
+			 "   public static ",StructName," extract(",?ICPACKAGE,"Any _any)\n"
+			 "     throws java.lang.Exception {\n\n"
+			 
+			 "     return unmarshal(_any.extract_Streamable());\n"
+			 "   }\n\n"
+			 
+			 
+			 %% In corba mapping there is also a _type function here.
+			 "}\n"]),
     file:close(Fd).
 
     
@@ -187,9 +181,7 @@ emit_helper_class(G, N, X, StructName, WireStructName) ->
 emit_struct_members_declarations(_, _, _, _, []) ->
     ok;
 emit_struct_members_declarations(G, N, X, Fd, [{Member, Type, Id} | MList]) ->
-    ic_codegen:emit(Fd, "   public ~s ~s;\n",
-		    [ic_java_type:getType(G, N, Member),
-		     Id]),
+    ic_codegen:emit(Fd, ["   public ",ic_java_type:getType(G, N, Member)," ",Id,";\n"]),
     emit_struct_members_declarations(G, N, X, Fd, MList).
 
 
@@ -200,7 +192,7 @@ emit_struct_members_declarations(G, N, X, Fd, [{Member, Type, Id} | MList]) ->
 emit_struct_members_initialisation(_, _, _, _, []) ->
     ok;
 emit_struct_members_initialisation(G, N, X, Fd, [{Member, Type, Id} | MList]) ->
-    ic_codegen:emit(Fd, "     ~s = _~s;\n", [Id, Id]),
+    ic_codegen:emit(Fd, ["     ",Id," = _",Id,";\n"]),
     emit_struct_members_initialisation(G, N, X, Fd, MList).
 
 
@@ -211,8 +203,8 @@ emit_struct_members_initialisation(G, N, X, Fd, [{Member, Type, Id} | MList]) ->
 %%-----------------------------------------------------------------
 emit_struct_marshal_function(G, N, X, Fd, StructName, WireStructName, MList) ->
 
-    ic_codegen:emit(Fd, "     _out.write_tuple_head(~p);\n", [length(MList) + 1]),
-    ic_codegen:emit(Fd, "     _out.write_atom(~p);\n\n", [ic_util:to_undersc([WireStructName|N])]),
+    ic_codegen:emit(Fd, ["     _out.write_tuple_head(",integer_to_list(length(MList) + 1),");\n"
+			 "     _out.write_atom(\"",ic_util:to_undersc([WireStructName|N]),"\");\n\n"]),
 
     emit_struct_marshal_function_loop(G, [StructName ++ "Package" |N],
 				      X, Fd, MList, 1).
@@ -226,18 +218,17 @@ emit_struct_marshal_function_loop(G, N, X, Fd, [{Member, Type, Id} |MList], Num)
     
     case ic_java_type:isBasicType(G, N, Member) of
 	true ->
-	    ic_codegen:emit(Fd, "     _out~s(_value.~s);\n",
-			    [ic_java_type:marshalFun(G, N, Member, Type),
-			     Id]);
+	    ic_codegen:emit(Fd, ["     _out",ic_java_type:marshalFun(G, N, Member, Type),"(_value.",Id,");\n"]);
 	_ ->
 	    if (element(1,hd(element(3,Member))) == array) ->
-		    ic_codegen:emit(Fd, "     ~sHelper.marshal(_out, _value.~s);\n",
-				    [ic_util:to_dot(G,[ic_forms:get_id2(Member)|N]),
-				     Id]);
+		    ic_codegen:emit(Fd, 
+				    ["     ",
+				     ic_util:to_dot(G,[ic_forms:get_id2(Member)|N]),
+				     "Helper.marshal(_out, _value.",Id,");\n"]);
 	       true ->
-		    ic_codegen:emit(Fd, "     ~s(_out, _value.~s);\n",
-				    [ic_java_type:marshalFun(G, N, Member, Type),
-				     Id])
+		    ic_codegen:emit(Fd, ["     ",
+					 ic_java_type:marshalFun(G, N, Member, Type),
+					 "(_out, _value.",Id,");\n"])
 	    end
     end,
     
@@ -251,14 +242,14 @@ emit_struct_marshal_function_loop(G, N, X, Fd, [{Member, Type, Id} |MList], Num)
 %%-----------------------------------------------------------------
 emit_struct_unmarshal_function(G, N, X, Fd, StructName, WireStructName, MList) ->
 
-    ic_codegen:emit(Fd, "     _in.read_tuple_head();\n\n"),
+    ic_codegen:emit(Fd, ["     _in.read_tuple_head();\n\n"
     
-    ic_codegen:emit(Fd, "     if ((_in.read_atom()).compareTo(~p) != 0)\n",
-	 	    [ic_util:to_undersc([WireStructName|N])]),
-    ic_codegen:emit(Fd, "       throw new ~sOtpErlangDataException(\"\");\n\n",
-	 	    [?ERLANGPACKAGE]),
+			 "     if ((_in.read_atom()).compareTo(\"",
+			 ic_util:to_undersc([WireStructName|N]),
+			 "\") != 0)\n"
+			 "       throw new java.lang.Exception(\"\");\n\n"
 
-    ic_codegen:emit(Fd, "     ~s _value = new ~s();\n", [StructName, StructName]),
+			 "     ",StructName," _value = new ",StructName,"();\n"]),
     
     emit_struct_unmarshal_function_loop(G, [StructName ++ "Package"|N],
 					X, Fd, MList, 1),
@@ -274,18 +265,14 @@ emit_struct_unmarshal_function_loop(G, N, X, Fd, [{Member, Type, Id} |MList], Nu
 
     case ic_java_type:isBasicType(G, N, Member) of
 	true ->
-	    ic_codegen:emit(Fd, "     _value.~s = _in~s;\n",
-		    [Id,
-		     ic_java_type:unMarshalFun(G, N, Member, Type)]);
+	    ic_codegen:emit(Fd, ["     _value.",Id," = _in",ic_java_type:unMarshalFun(G, N, Member, Type),";\n"]);
 	_ ->
 	    if (element(1,hd(element(3,Member))) == array) ->
-		    ic_codegen:emit(Fd, "     _value.~s = ~sHelper.unmarshal(_in);\n",
-				    [Id,
-				     ic_util:to_dot(G,[ic_forms:get_id2(Member)|N])]);
+		    ic_codegen:emit(Fd, 
+				    ["     _value.",Id," = ",ic_util:to_dot(G,[ic_forms:get_id2(Member)|N]),"Helper.unmarshal(_in);\n"]);
 	       true ->
-		    ic_codegen:emit(Fd, "     _value.~s = ~s.unmarshal(_in);\n",
-				    [Id,
-				     ic_java_type:getUnmarshalType(G, N, Member, Type)])
+		    ic_codegen:emit(Fd, 
+				    ["     _value.",Id," = ",ic_java_type:getUnmarshalType(G, N, Member, Type),".unmarshal(_in);\n"])
 	    end
     end,
 
@@ -323,5 +310,6 @@ struct_member_list(G, N, X) ->
 	  end,
 	  ic_forms:get_body(X)),
     lists:flatten(M).
+
 
 

@@ -321,8 +321,10 @@ update_sorting_mode(Msg, ProcVars, SearchWinCreated, OldSearchData, RegExp) ->
 			    OldSortKeyNo == undefined->
 		[];
 	    _Other ->
+		ListAsStr = ProcVars#process_variables.lists_as_strings,
 		case catch tv_db_search:update_search(SearchWinCreated, 
-						      NewDbList, RegExp) of
+						      NewDbList, RegExp,
+						      ListAsStr) of
 		    {'EXIT', Reason} ->
 			tv_db_search:reset_window(true),
 			[];
@@ -950,15 +952,10 @@ insert_new_object(EtsType,Key,KeyNo,Obj,DbList,Sorting,RevSorting,SortKeyNo) ->
 		{R, lists:reverse(L)}
 	end,
 
-       %% Now check whether the object already has been inserted, or shall be now!
-    case Replaced of
-	true when Sorting == false ->
-	    TmpDbList;
-	true ->
-	    tv_db_sort:merge(SortKeyNo, TmpDbList, RevSorting);
-	false when Sorting == false ->
-	    TmpDbList ++ [{Obj,?RED1}];
+    case Sorting of
 	false ->
+	    TmpDbList ++ [{Obj,?RED1}];
+	true ->
 	       %% The original list is already sorted!
 	       %% Just merge the two lists together!
 	    tv_db_sort:merge(SortKeyNo, TmpDbList, [{Obj,?RED1}], RevSorting)

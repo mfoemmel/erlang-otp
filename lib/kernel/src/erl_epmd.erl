@@ -20,8 +20,9 @@
 -behaviour(gen_server).
 
 %% External exports
--export([start/0, start_link/0, stop/0, port_please/2, names/0, names/1,
-	 register_node/2, open/0, open/1]).
+-export([start/0, start_link/0, stop/0, port_please/2, 
+	 port_please/3, names/0, names/1,
+	 register_node/2, open/0, open/1, open/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
@@ -59,22 +60,34 @@ stop() ->
 %% Lookup a node "Name" at Host
 %% return {port, P, Version} | noport
 %%
-port_please(Node,HostName) when atom(HostName) ->
-  port_please1(Node,atom_to_list(HostName));
-port_please(Node,HostName) when list(HostName) ->
-  port_please1(Node,HostName);
-port_please(Node, EpmdAddr) ->
-  get_port(Node, EpmdAddr).
 
-port_please1(Node,HostName) ->
-  case inet:gethostbyname(HostName) of
+port_please(Node, Host) ->
+  port_please(Node, Host, infinity).
+
+port_please(Node,HostName, Timeout) when atom(HostName) ->
+  port_please1(Node,atom_to_list(HostName), Timeout);
+port_please(Node,HostName, Timeout) when list(HostName) ->
+  port_please1(Node,HostName, Timeout);
+port_please(Node, EpmdAddr, Timeout) ->
+  get_port(Node, EpmdAddr, Timeout).
+
+
+
+port_please1(Node,HostName, Timeout) ->
+  case inet:gethostbyname(HostName, inet, Timeout) of
     {ok,{hostent, _Name, _ , _Af, _Size, [EpmdAddr | _]}} ->
-      get_port(Node, EpmdAddr);
+      get_port(Node, EpmdAddr, Timeout);
     Else ->
       Else
   end.
 
-names() -> names(inet:gethostname()).
+names() -> 
+    case inet:gethostname() of
+	{ok, H} ->
+	    names(H);
+	Err ->
+	    Err
+    end.
 
 names(HostName) when atom(HostName) ->
   names1(atom_to_list(HostName));
@@ -158,7 +171,8 @@ open() -> open({127,0,0,1}).  % The localhost IP address.
 
 open(EpmdAddr) ->
     inet_tcp:connect(EpmdAddr, ?erlang_daemon_port, []).
-
+open(EpmdAddr, Timeout) ->
+    inet_tcp:connect(EpmdAddr, ?erlang_daemon_port, [], Timeout).
 close(Socket) ->
     inet_tcp:close(Socket).
 
@@ -288,8 +302,12 @@ get_port_v0(Node, EpmdAddress) ->
 	    noport
     end.
 
-get_port(Node, EpmdAddress) ->
-    case open(EpmdAddress) of
+%%% Not used anymore
+%%% get_port(Node, EpmdAddress) ->
+%%%     get_port(Node, EpmdAddress, infinity).
+
+get_port(Node, EpmdAddress, Timeout) ->
+    case open(EpmdAddress, Timeout) of
 	{ok, Socket} ->
 	    Name = to_string(Node),
 	    Len = 1+length(Name),
@@ -488,11 +506,11 @@ scan_line([$\n | Buf], Line) -> {reverse(Line), Buf};
 scan_line([C | Buf], Line) -> scan_line(Buf, [C|Line]);
 scan_line([], _) -> [].
 
-parse_line(["name " ++ Buf0]) ->
+parse_line("name " ++ Buf0) ->
     case parse_name(Buf0, []) of
 	{Name, Buf1}  ->
 	    case Buf1 of
-		["at port " ++ Buf2] ->
+		"at port " ++ Buf2 ->
 		    case catch list_to_integer(Buf2) of
 			{'EXIT', _} -> error;
 			Port -> {ok, {Name, Port}}

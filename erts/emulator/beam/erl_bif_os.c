@@ -51,6 +51,28 @@ os_getpid_0(Process* p)
 }
 
 Eterm
+os_getenv_0(Process* p)
+{
+    GETENV_STATE state;
+    char *cp;
+    Eterm* hp;
+    Eterm ret;
+    Eterm str;
+    int len;
+
+    init_getenv_state(&state);
+
+    ret = NIL;
+    while ((cp = getenv_string(&state)) != NULL) {
+	len = strlen(cp);
+	hp = HAlloc(p, len*2+2);
+	str = buf_to_intlist(&hp, cp, len, NIL);
+	ret = CONS(hp, str, ret);
+    }
+    return ret;
+}
+
+Eterm
 os_getenv_1(Process* p, Eterm key)
 {
     Eterm str;

@@ -25,6 +25,7 @@
 #define HARDDEBUG 1
 #endif
 */
+
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
@@ -70,7 +71,7 @@
 
 /* optimised version of make_hash (normal case? atomic key) */
 #define MAKE_HASH(term) \
-    ((is_atom(term) ? (atom_tab(unsigned_val(term))->slot.bucket.hvalue) : \
+    ((is_atom(term) ? (atom_tab(atom_val(term))->slot.bucket.hvalue) : \
       make_hash(term, 0)) % MAX_HASH)
 
 /* 
@@ -95,7 +96,7 @@ static eTerm put_term_list(Process* p, HashDbTerm* ptr1, HashDbTerm* ptr2);
 static HashDbTerm* get_term(HashDbTerm* old, 
 			    eTerm obj, HashValue hval);
 
-static int fixed_deletion_desc; /* Descriptor for fix_alloc */
+int fixed_deletion_desc; /* Descriptor for fix_alloc */
 static BIF_RETTYPE hash_select_continue(Process *, Eterm, 
 					Eterm, Eterm);
 
@@ -266,7 +267,7 @@ int db_put_hash(Process *proc, DbTableHash *tb,
     HashDbTerm* b;
     HashDbTerm* q;
 
-    key = GETKEY(tb, ptr_val(obj));
+    key = GETKEY(tb, tuple_val(obj));
     hval = MAKE_HASH(key);
     HASH(tb, hval, ix);
     bp = &BUCKET(tb, ix);
@@ -501,12 +502,14 @@ int db_match_erase_hash(Process *p, DbTableHash *tb,
     found = 0;
     bs.ptr = &bnd[0];
     bs.size = DB_MATCH_NBIND;
+    bs.sz = NULL;
     if (is_not_atom(pattern) && pattern != am_Underscore && 
 	db_is_variable(pattern) == -1) {
 	HashValue   hval;
 	eTerm       key;
 
-	if ((key = db_getkey(tb->keypos, pattern)) == 0)
+	key = db_getkey(tb->keypos, pattern);
+	if (is_non_value(key))
 	    RET_TO_BIF(am_true);  /* Can't possibly match anything */
 
 	if (!db_has_variable(key)) {  /* Bound key */
@@ -519,8 +522,8 @@ int db_match_erase_hash(Process *p, DbTableHash *tb,
 		ZEROB(bs);
 
 		if (b->hvalue != INVALID_HASH && 
-		    db_do_match(make_tuple(b->dbterm.tpl),pattern, 
-				&bs, NULL)) {
+		    db_do_match(make_tuple(b->dbterm.tpl),pattern,
+				&bs)) {
 		    if (tb->status & DB_FIXED) {
 			/* Pseudo remove */
 			FixedDeletion *fixd = (FixedDeletion *) 
@@ -567,7 +570,7 @@ int db_match_erase_hash(Process *p, DbTableHash *tb,
 	    ZEROB(bs);
 
 	    if (b->hvalue != INVALID_HASH && 
-		db_do_match(make_tuple(b->dbterm.tpl),pattern, &bs, NULL)) {
+		db_do_match(make_tuple(b->dbterm.tpl),pattern, &bs)) {
 		if (tb->status & DB_FIXED) {
 		    /* Pseudo remove */
 		    FixedDeletion *fixd = (FixedDeletion *)
@@ -609,9 +612,9 @@ int db_slot_hash(Process *p, DbTableHash *tb,
 {
     int slot;
 
-    slot = signed_val(slot_term);
-    
-    if (is_not_small(slot_term) || (slot < 0) || (slot > tb->nactive))
+    if (is_not_small(slot_term) ||
+	((slot = signed_val(slot_term)) < 0) ||
+	(slot > tb->nactive))
 	return DB_ERROR_BADPARAM;
     
     if (slot == tb->nactive) {
@@ -635,20 +638,21 @@ int db_match_hash(Process *p, DbTableHash *tb,
     HashDbTerm* list = NULL;	/* suppress use-before-set warning */
     HashValue hval = NIL;	/* suppress use-before-set warning */
     eTerm bnd[DB_MATCH_NBIND];
-    uint32 size_bnd[DB_MATCH_NBIND];
-    DbBindings bs, sz_bs;
+    Uint size_bnd[DB_MATCH_NBIND];
+    DbBindings bs;
     eTerm match_list;
 
 #define RET_TO_BIF(Term) { *ret = (Term); return DB_ERROR_NONE; }
 
-    bs.size = sz_bs.size = DB_MATCH_NBIND;  /* Initialize bind structure */
+    bs.size = DB_MATCH_NBIND;  /* Initialize bind structure */
     bs.ptr = &bnd[0];
-    sz_bs.ptr = &size_bnd[0];
+    bs.sz = &size_bnd[0];
 
     if (pattern == am_Underscore || db_is_variable(pattern) != -1)
 	key_given = 0;
     else {
-	if ((key = db_getkey(tb->keypos, pattern)) == 0)
+	key = db_getkey(tb->keypos, pattern);
+	if (is_non_value(key))
 	    RET_TO_BIF(NIL);  /* can't possibly match anything */
 	if (!db_has_variable(key)) {   /* Bound key */
 	    int ix;
@@ -681,15 +685,15 @@ int db_match_hash(Process *p, DbTableHash *tb,
 
 	if (list->hvalue != INVALID_HASH && 
 	    db_do_match(make_tuple(list->dbterm.tpl), 
-			pattern, &bs, &sz_bs) != 0) {
+			pattern, &bs) != 0) {
 	    uint32 sz = 2;
 	    eTerm binding_list;
 	    eTerm *hp;
 
 	    for (i = 0; i < bs.size; i++) {
-		if (bs.ptr[i] != 0) {
-		    sz_bs.ptr[i] = size_object(bs.ptr[i]);
-		    sz += sz_bs.ptr[i] + 2;
+		if (is_value(bs.ptr[i])) {
+		    bs.sz[i] = size_object(bs.ptr[i]);
+		    sz += bs.sz[i] + 2;
 		}
 	    }
 	    
@@ -697,9 +701,9 @@ int db_match_hash(Process *p, DbTableHash *tb,
 	    binding_list = NIL;
 
             for (i = bs.size - 1; i >= 0; i--) {
-                if (bs.ptr[i] != 0) {
+                if (is_value(bs.ptr[i])) {
                     eTerm bound = copy_struct(bs.ptr[i], 
-					      sz_bs.ptr[i],
+					      bs.sz[i],
 					      &hp, &(p->off_heap));
                     binding_list = CONS(hp, bound, binding_list);
                     hp += 2;
@@ -727,7 +731,7 @@ int db_match_hash(Process *p, DbTableHash *tb,
     /* Possibly free space malloced by match()  */
     if (bs.size != DB_MATCH_NBIND) {
 	sys_free(bs.ptr);
-	sys_free(sz_bs.ptr);
+	sys_free(bs.sz);
     }
 
     RET_TO_BIF(match_list);
@@ -746,11 +750,11 @@ static BIF_RETTYPE hash_select_continue(Process *p, Eterm accum,
 					Eterm tabinfo, 
 					Eterm progbin)
 {
-    Eterm tabname = ptr_val(tabinfo)[2];
-    uint32 chain_pos = unsigned_val(ptr_val(tabinfo)[1]);
+    Eterm tabname = tuple_val(tabinfo)[2];
+    uint32 chain_pos = unsigned_val(tuple_val(tabinfo)[1]);
     uint32 save_chain_pos;
-    int all_objects = (int) unsigned_val(ptr_val(tabinfo)[3]);
-    Binary *mp = ((ProcBin *) ptr_val(progbin))->val;
+    int all_objects = (int) unsigned_val(tuple_val(tabinfo)[3]);
+    Binary *mp = ((ProcBin *) binary_val(progbin))->val;
     DbTable *ttb;
     DbTableHash *tb;
     int num_left = 1000;
@@ -775,7 +779,8 @@ static BIF_RETTYPE hash_select_continue(Process *p, Eterm accum,
 	    (match_res = 
 	     db_prog_match(p,mp,
 			   make_tuple(current_list->dbterm.tpl),
-			   0,&dummy)) != 0) {
+			   0,&dummy),
+	     is_value(match_res))) {
 	    if (all_objects) {
 		hp = HAlloc(p, current_list->dbterm.size + 2);
 		match_res = copy_shallow(current_list->dbterm.v,
@@ -866,7 +871,7 @@ int db_select_hash(Process *p, DbTableHash *tb,
     } while(0)
 
 
-    for (lst = pattern; is_list(lst); lst = CDR(ptr_val(lst)))
+    for (lst = pattern; is_list(lst); lst = CDR(list_val(lst)))
 	++num_heads;
 
     if (lst != NIL) {/* proper list... */
@@ -888,21 +893,21 @@ int db_select_hash(Process *p, DbTableHash *tb,
     something_can_match = 0;
     all_objects = 1;
     i = 0;
-    for(lst = pattern; is_list(lst); lst = CDR(ptr_val(lst))) {
+    for(lst = pattern; is_list(lst); lst = CDR(list_val(lst))) {
 	Eterm body;
-	ttpl = CAR(ptr_val(lst));
+	ttpl = CAR(list_val(lst));
 	if (!is_tuple(ttpl)) {
 	    RET_TO_BIF(NIL, DB_ERROR_BADPARAM);
 	}
-	ptpl = ptr_val(ttpl);
+	ptpl = tuple_val(ttpl);
 	if (ptpl[0] != make_arityval(3U)) {
 	    RET_TO_BIF(NIL, DB_ERROR_BADPARAM);
 	}
 	matches[i] = tpl = ptpl[1];
 	guards[i] = ptpl[2];
 	bodies[i] = body = ptpl[3];
-	if (!is_list(body) || CDR(ptr_val(body)) != NIL ||
-	    CAR(ptr_val(body)) != am_DollarUnderscore) {
+	if (!is_list(body) || CDR(list_val(body)) != NIL ||
+	    CAR(list_val(body)) != am_DollarUnderscore) {
 	    all_objects = 0;
 	}
 	++i;
@@ -913,7 +918,8 @@ int db_select_hash(Process *p, DbTableHash *tb,
 	    key_given = 0;
 	    something_can_match = 1;
 	} else {
-	    if (!((key = db_getkey(tb->keypos, tpl)) == 0)) {
+	    key = db_getkey(tb->keypos, tpl);
+	    if (is_value(key)) {
 		if (!db_has_variable(key)) {   /* Bound key */
 		    int ix;
 		    HashDbTerm *tmp;
@@ -974,7 +980,8 @@ int db_select_hash(Process *p, DbTableHash *tb,
 	    (match_res = 
 	     db_prog_match(p,mp,
 			   make_tuple(current_list->dbterm.tpl),
-			   0,&dummy)) != 0) {
+			   0,&dummy),
+	     is_value(match_res))) {
 	    if (all_objects) {
 		hp = HAlloc(p, current_list->dbterm.size + 2);
 		match_res = copy_shallow(current_list->dbterm.v,
@@ -1024,9 +1031,9 @@ int db_select_hash(Process *p, DbTableHash *tb,
 done:
     RET_TO_BIF(match_list,DB_ERROR_NONE);
 trap:
+    mp->refc++;
     pb = (ProcBin *) HAlloc(p, PROC_BIN_SIZE);
-    pb->thing_word = make_thing(PROC_BIN_SIZE-1, 
-				REFC_BINARY_SUBTAG);
+    pb->thing_word = HEADER_PROC_BIN;
     pb->size = 0;
     pb->next = p->off_heap.mso;
     p->off_heap.mso = pb;
@@ -1082,7 +1089,7 @@ int db_match_object_hash(Process *p, DbTableHash *tb,
 	max_counter = signed_val(state);
 	chain_pos = 0;
     } else if (is_tuple(state)) {
-	eTerm *tupleptr = ptr_val(state);
+	eTerm *tupleptr = tuple_val(state);
 	if (arityval(*tupleptr) != 3)
 	    return DB_ERROR_BADPARAM;
 	match_list = tupleptr[1];
@@ -1116,7 +1123,7 @@ int db_match_object_hash(Process *p, DbTableHash *tb,
     
     if (pattern == am_Underscore || db_is_variable(pattern) != -1) {
 	key_given = 0;
-    } else if ((key = db_getkey(tb->keypos, pattern)) == 0) {
+    } else if (key = db_getkey(tb->keypos, pattern), is_non_value(key)) {
 	RET_TO_BIF(match_list);
     } else {
 	key_given = !db_has_variable(key);
@@ -1148,6 +1155,7 @@ int db_match_object_hash(Process *p, DbTableHash *tb,
      */
     bs.size = DB_MATCH_NBIND;
     bs.ptr = &bnd[0];
+    bs.sz = NULL;
     records = 0;
     for (;;) {
 	eTerm term = make_tuple(list->dbterm.tpl);
@@ -1159,7 +1167,7 @@ int db_match_object_hash(Process *p, DbTableHash *tb,
 	 */
 
 	if (list->hvalue != INVALID_HASH &&
-	    db_do_match(term, pattern, &bs, NULL) != 0) {
+	    db_do_match(term, pattern, &bs) != 0) {
 	    eTerm copy;
 	    eTerm *hp;
 
@@ -1577,14 +1585,15 @@ void db_check_table_hash(DbTableHash *tb)
     int j;
     
     for (j = 0; j < tb->nactive; j++) {
-	if ((list = BUCKET(tb,j)) == 0)
-	    continue;
-	while (list != 0) {
-	    check_struct(make_tuple(list->dbterm.tpl));
-	    list = list->next;
+	if ((list = BUCKET(tb,j)) != 0) {
+	    while (list != 0) {
+		if (!is_tuple(make_tuple(list->dbterm.tpl))) {
+		    erl_exit(1, "Bad term in slot %d of ets table", j);
+		}
+		list = list->next;
+	    }
 	}
     }
 }
-
 
 #endif

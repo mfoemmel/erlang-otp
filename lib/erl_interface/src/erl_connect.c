@@ -18,6 +18,16 @@
 /*
  * Purpose: Connect to any node at any host.
  */
+
+#ifdef HAVE_CONFIG_H
+# include "config.h"		/* FIXME: Autoconf Info prefers <config.h> */
+#else
+# define HAVE_STRDUP 1		/* we, uh, know that everyone's got strdup() */
+# ifdef VXWORKS
+#  undef HAVE_STRDUP		/* ...'cept for VxWorks */
+# endif
+#endif
+
 #include <stdlib.h>
 #include <sys/types.h>
 #include <stdarg.h>
@@ -46,7 +56,9 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h> 
 #include <timers.h> 
+
 /* #include "netdb.h" */ /* local file */
+#include "erl_error.h"
 
 #define getpid() taskIdSelf()
 extern int h_errno;
@@ -91,7 +103,7 @@ extern int erl_term_len2(ETERM*, int);
 
 #ifdef __WIN32__
 static void initWinSock(void);
-#endif
+#endif /* __WIN32__ */
 
 typedef unsigned short  uint16;
 
@@ -164,6 +176,19 @@ static int recv_name(int fd,
 		     unsigned *version,
 		     unsigned *flags, ErlConnect *namebuf);
 
+/* FIXME: Move to convenience lib */
+
+#if !defined(HAVE_STRDUP)
+char *
+strdup (const char *src)
+{
+    char * dest = malloc(strlen(src)+1);
+
+    if(dest != NULL)
+       strcpy(dest, src);
+    return dest;
+}
+#endif /* !HAVE_STRDUP */
 
 int erl_distversion(int fd)
 {
@@ -213,20 +238,24 @@ erlang_pid *erl_self(void)
 const char *erl_getfdcookie(int fd)
 {
   return (const char *) 
-      (ec.cookies[fd] ? ec.cookies[fd] : ec.erl_connect_cookie);
+    (ec.cookies[fd] ? ec.cookies[fd] : ec.erl_connect_cookie);
 }
 
 /* call with cookie to set value to use on descriptor fd,
  * or specify NULL to use default
  */
-int erl_setfdcookie(int fd, char *cookie)
+int 
+erl_setfdcookie (int fd, char *cookie)
 {
   if (cookie) {
-    char *tmp = malloc(strlen(cookie)+1);
+    char *tmp;
 
-    if (!tmp) return -1;
+    if ((tmp = strdup(cookie)) == NULL) 
+    {
+	erl_errno = ENOMEM;
+	return -1;
+    }
 
-    strcpy(tmp,cookie);
     if (ec.cookies[fd] != ec.erl_connect_cookie) free(ec.cookies[fd]);
     ec.cookies[fd] = tmp;
   }
@@ -237,12 +266,14 @@ int erl_setfdcookie(int fd, char *cookie)
   return 0;
 }
 
-static int get_int32(unsigned char *s)
+static int 
+get_int32 (unsigned char *s)
 {
   return ((s[0] << 24) | (s[1] << 16) | (s[2] << 8) | (s[3] ));
 }
 
-static int get_home(char *buf, int size)
+static int 
+get_home (char *buf, int size)
 {
   char* homedrive;
   char* homepath;
@@ -268,8 +299,8 @@ static int get_home(char *buf, int size)
   return 0;
 }
 
-
-static void get_cookie(void)
+static void 
+get_cookie (void)
 {
   char fname[1024+sizeof(COOKIE_FILE)+1];
   int fd;
@@ -294,7 +325,8 @@ static void get_cookie(void)
 }
 
 #ifdef __WIN32__
-static void win32_error(char *buf, int buflen)
+static void 
+win32_error (char *buf, int buflen)
 {
   FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM|FORMAT_MESSAGE_IGNORE_INSERTS,
 		0,	/* n/a */
@@ -306,7 +338,8 @@ static void win32_error(char *buf, int buflen)
   return;
 }
 
-static void initWinSock(void)
+static void 
+initWinSock (void)
 {
   WORD wVersionRequested;  
   WSADATA wsaData; 
@@ -334,8 +367,9 @@ static void initWinSock(void)
  * Initailize by setting:
  * thishostname, thisalivename, thisnodename and thisipaddr
  */
-int erl_connect_xinit(char *thishostname, char *thisalivename, char *thisnodename,
-		      Erl_IpAddr thisipaddr, char *cookie, short creation)
+int 
+erl_connect_xinit (char *thishostname, char *thisalivename, char *thisnodename,
+		   Erl_IpAddr thisipaddr, char *cookie, short creation)
 {
   int i=0;
   char *dbglevel;
@@ -376,13 +410,15 @@ int erl_connect_xinit(char *thishostname, char *thisalivename, char *thisnodenam
   memset(&ec.conns,0,sizeof(ec.conns));
   for (i=0; i<FD_SETSIZE; i++) ec.cookies[i] = ec.erl_connect_cookie;
 
-  if ((dbglevel=getenv("ERL_DEBUG_DIST"))) ei_trace_distribution = atoi(dbglevel);
+  if ((dbglevel=getenv("ERL_DEBUG_DIST"))) 
+      ei_trace_distribution = atoi(dbglevel);
 
   return 1;
 }
 
-int erl_connect_init_ex(int this_node_number, char *cookie,
-			short creation, int use_long_name)
+int 
+erl_connect_init_ex (int this_node_number, char *cookie,
+		     short creation, int use_long_name)
 {
   struct hostent *hp;
   char* ct;
@@ -436,8 +472,10 @@ int erl_connect_init_ex(int this_node_number, char *cookie,
  * thisnodename and thisipaddr. At success return 1,
  * otherwise return 0.
  */
-int erl_connect_init(int this_node_number, char *cookie, short creation) {
-  return erl_connect_init_ex(this_node_number, cookie, creation, 0);
+int 
+erl_connect_init (int this_node_number, char *cookie, short creation)
+{
+    return erl_connect_init_ex(this_node_number, cookie, creation, 0);
 }
 
 
@@ -445,13 +483,17 @@ int erl_connect_init(int this_node_number, char *cookie, short creation) {
  * and returns fd to socket 
  * port has to be in host byte order 
  */
-static int cnct(uint16 port, struct in_addr *ip_addr, int addr_len)
+static int 
+cnct (uint16 port, struct in_addr *ip_addr, int addr_len)
 {
   int s;
   struct sockaddr_in iserv_addr;
 
   if ((s = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-    return ERL_ERROR;
+  {
+      erl_errno = errno;
+      return ERL_ERROR;
+  }
   
   memset((char*)&iserv_addr, 0, sizeof(struct sockaddr_in));
   memcpy((char*)&iserv_addr.sin_addr, (char*)ip_addr, addr_len);
@@ -459,6 +501,7 @@ static int cnct(uint16 port, struct in_addr *ip_addr, int addr_len)
   iserv_addr.sin_port = htons(port);
 
   if (connect(s, (struct sockaddr*)&iserv_addr, sizeof(iserv_addr)) < 0) {
+      erl_errno = errno;
     closesocket(s);
     return ERL_ERROR;
   }
@@ -473,7 +516,8 @@ static int cnct(uint16 port, struct in_addr *ip_addr, int addr_len)
  * Returns a valid file descriptor at success,
  * otherwise a negative error code.
  */
-int erl_connect(char *nodename)
+int 
+erl_connect (char *nodename)
 {
   char *hostname, alivename[BUFSIZ];
   struct hostent *hp;
@@ -482,7 +526,7 @@ int erl_connect(char *nodename)
   struct hostent host;
   char buffer[1024];
   int h_errno;
-#endif /* win32 */
+#endif /* !win32 */
 
   /* extract the host and alive parts from nodename */
   if (!(hostname = strchr(nodename,'@'))) return ERL_ERROR;
@@ -495,14 +539,16 @@ int erl_connect(char *nodename)
 #ifndef __WIN32__
   if ((hp = erl_gethostbyname_r(hostname,&host,buffer,1024,&h_errno)) == NULL) {
     erl_err_msg("<ERROR> erl_connect: Can't find host for %s: %d\n", nodename, h_errno);
-  return ERL_ERROR;
+    erl_errno = EHOSTUNREACH;
+    return ERL_ERROR;
   }
 
-#else
+#else /* __WIN32__ */
   if ((hp = erl_gethostbyname(hostname)) == NULL) {
     char reason[1024];
     win32_error(reason,sizeof(reason));
     erl_err_msg("<ERROR> erl_connect: Can't find host for %s: %s\n", nodename, reason);
+    erl_errno = EHOSTUNREACH;
     return ERL_ERROR;
   }
 #endif /* win32 */
@@ -517,7 +563,8 @@ int erl_connect(char *nodename)
  *  the node through epmd at that host 
  *
  */
-int erl_xconnect(Erl_IpAddr adr, char *alivename)
+int 
+erl_xconnect (Erl_IpAddr adr, char *alivename)
 {
   struct in_addr *ip_addr=(struct in_addr *) adr;
   int rport = 0;
@@ -527,42 +574,87 @@ int erl_xconnect(Erl_IpAddr adr, char *alivename)
   ErlConnect her_name;
   unsigned her_flags, her_version;
 
-  if ((rport = erl_epmd_port(ip_addr,alivename,&dist)) < 0) return ERL_NO_PORT;
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"-> CONNECT attempt to connect to %s\n",alivename);
+    }
+#endif
+
+    if ((rport = erl_epmd_port(ip_addr,alivename,&dist)) < 0) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"-> CONNECT can't get remote port\n");
+    }
+#endif
+    return ERL_NO_PORT;
+  }
 
 
   /* we now have port number to enode, try to connect */
-  if((sockd = cnct(rport, ip_addr, sizeof(struct in_addr))) < 0)
+  if((sockd = cnct(rport, ip_addr, sizeof(struct in_addr))) < 0) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"-> CONNECT socket connect failed\n");
+    }
+#endif
     return ERL_CONNECT_FAIL;
+  }
 
-  if (dist <= 4) {
+#ifdef DEBUG_DIST
+  if (ei_trace_distribution > 2) {
+    fprintf(stderr,"-> CONNECT connected to remote\n");
+  }
+#endif
+
+    if (dist <= 4) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"-> CONNECT remote version not compatible\n");
+    }
+#endif
+    erl_errno = EIO;
+    goto error;
+  }
+  else {
+    unsigned our_challenge, her_challenge;
+    unsigned char our_digest[16];
+
+    if (send_name(sockd, ec.thisnodename, (unsigned) dist))
       goto error;
-  } else {
-      unsigned our_challenge, her_challenge;
-      unsigned char our_digest[16];
-
-      if (send_name(sockd, ec.thisnodename, (unsigned) dist))
-	  goto error;
-      if (recv_status(sockd))
-	  goto error;
-      if (recv_challenge(sockd, &her_challenge, &her_version,
-			 &her_flags, &her_name))
-	  goto error;
-      our_challenge = gen_challenge();
-      gen_digest(her_challenge, ec.erl_connect_cookie, our_digest);
-      if (send_challenge_reply(sockd, our_digest, our_challenge))
-	  goto error;
-      if (recv_challenge_ack(sockd, our_challenge, 
-			     ec.erl_connect_cookie))
-	  goto error;
-      ec.cookies[sockd] = null_cookie;
-      ec.conns[sockd] = dist;
+    if (recv_status(sockd))
+      goto error;
+    if (recv_challenge(sockd, &her_challenge, &her_version,
+		       &her_flags, &her_name))
+      goto error;
+    our_challenge = gen_challenge();
+    gen_digest(her_challenge, ec.erl_connect_cookie, our_digest);
+    if (send_challenge_reply(sockd, our_digest, our_challenge))
+      goto error;
+    if (recv_challenge_ack(sockd, our_challenge, 
+			   ec.erl_connect_cookie))
+      goto error;
+    ec.cookies[sockd] = null_cookie;
+    ec.conns[sockd] = dist;
+      erl_errno = EIO;
   }
 
   setsockopt(sockd, IPPROTO_TCP, TCP_NODELAY, (char *)&one, sizeof(one));
   setsockopt(sockd, SOL_SOCKET, SO_KEEPALIVE, (char *)&one, sizeof(one));
 
+#ifdef DEBUG_DIST
+  if (ei_trace_distribution > 2) {
+    fprintf(stderr,"-> CONNECT (ok) remote = %s\n",alivename);
+  }
+#endif
+
   return sockd;
-error:
+
+ error:
+#ifdef DEBUG_DIST
+  if (ei_trace_distribution > 2) {
+    fprintf(stderr,"-> CONNECT failed\n");
+  }
+#endif
   closesocket(sockd);
   return ERL_ERROR;
 } /* erl_xconnect */
@@ -570,7 +662,8 @@ error:
 /* 
  * For symmetry reasons
  */
-int erl_close_connection(int fd)
+int 
+erl_close_connection (int fd)
 {
   return closesocket(fd);
 } /* erl_close_connection */
@@ -581,7 +674,8 @@ int erl_close_connection(int fd)
  * Erlang node. Return a file descriptor at success,
  * otherwise -1;
  */
-int erl_accept(int lfd, ErlConnect *conp)
+int 
+erl_accept (int lfd, ErlConnect *conp)
 {
   int fd;
   struct sockaddr_in cli_addr;
@@ -589,42 +683,85 @@ int erl_accept(int lfd, ErlConnect *conp)
   unsigned her_version, her_flags;
   ErlConnect her_name;
 
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- ACCEPT waiting for connection\n");
+    }
+#endif
 
   if ((fd = accept(lfd, (struct sockaddr*) &cli_addr, 
-		    &cli_addr_len )) < 0)
-      goto error;
+		   &cli_addr_len )) < 0) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- ACCEPT socket accept failed\n");
+    }
+#endif
+    goto error;
+  }
 
-  if (recv_name(fd, &her_version, &her_flags, &her_name))
-      goto error;
+#ifdef DEBUG_DIST
+  if (ei_trace_distribution > 2) {
+    fprintf(stderr,"<- ACCEPT connected to remote\n");
+  }
+#endif
+
+  if (recv_name(fd, &her_version, &her_flags, &her_name)) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- ACCEPT initial ident failed\n");
+    }
+#endif
+    goto error;
+  }
 
   if (her_version <= 4) {
-      goto error;
-  } else {
-      unsigned our_challenge;
-      unsigned her_challenge;
-      unsigned char our_digest[16];
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- ACCEPT remote version not compatible\n");
+    }
+#endif
+    goto error;
+  }
+  else {
+    unsigned our_challenge;
+    unsigned her_challenge;
+    unsigned char our_digest[16];
 
-      if (send_status(fd,"ok"))
-	  goto error;
-      our_challenge = gen_challenge();
-      if (send_challenge(fd, ec.thisnodename, 
-			 our_challenge, her_version))
-	  goto error;
-      if (recv_challenge_reply(fd, our_challenge, 
-			       ec.erl_connect_cookie, 
-			       &her_challenge))
-	  goto error;
-      gen_digest(her_challenge, ec.erl_connect_cookie, our_digest);
-      if (send_challenge_ack(fd, our_digest))
-	  goto error;
-      ec.cookies[fd] = null_cookie;
+    if (send_status(fd,"ok"))
+      goto error;
+    our_challenge = gen_challenge();
+    if (send_challenge(fd, ec.thisnodename, 
+		       our_challenge, her_version))
+      goto error;
+    if (recv_challenge_reply(fd, our_challenge, 
+			     ec.erl_connect_cookie, 
+			     &her_challenge))
+      goto error;
+    gen_digest(her_challenge, ec.erl_connect_cookie, our_digest);
+    if (send_challenge_ack(fd, our_digest))
+      goto error;
+    ec.cookies[fd] = null_cookie;
   }
   if (conp) 
-      *conp = her_name;
+    *conp = her_name;
   ec.conns[fd] = her_version;
+
+#ifdef DEBUG_DIST
+  if (ei_trace_distribution > 2) {
+    fprintf(stderr,"<- ACCEPT (ok) remote = %s\n",her_name.nodename);
+  }
+#endif
   return fd;
-error:
+
+ error:
+
+#ifdef DEBUG_DIST
+  if (ei_trace_distribution > 2) {
+    fprintf(stderr,"<- ACCEPT failed\n");
+  }
+#endif
   closesocket(fd);
+  erl_errno = EIO;
   return ERL_ERROR;
 } /* erl_accept */
 
@@ -634,25 +771,35 @@ error:
  * answered. Returns: ERL_ERROR, ERL_TICK or
  * the number of bytes read.
  */
-int erl_receive(int s, unsigned char *bufp, int bufsize) 
+int 
+erl_receive (int s, unsigned char *bufp, int bufsize) 
 {
   int len;
   unsigned char fourbyte[4]={0,0,0,0};
   
   if (erl_read_fill(s, (char *) bufp, 4)  != 4) {
-    return ERL_ERROR;
+      erl_errno = EIO;
+      return ERL_ERROR;
   }
 
   /* Tick handling */
-  if ((len = get_int32(bufp)) == ERL_TICK) {
+  if ((len = get_int32(bufp)) == ERL_TICK) 
+  {
     erl_write_fill(s, (char *) fourbyte, 4);
+    erl_errno = EAGAIN;
     return ERL_TICK;
   }
-  else if (len > bufsize) {
-    erl_err_quit("<ERROR> Receive buffer in erl_receive overwritten, len = %d", len);
+  else if (len > bufsize) 
+  {
+      /* FIXME: We should drain the message. */
+      erl_errno = EMSGSIZE;
+      return ERL_ERROR;
   }
   else if (erl_read_fill(s, (char *) bufp, len) != len)
-    return ERL_ERROR;
+  {
+      erl_errno = EIO;
+      return ERL_ERROR;
+  }
 
   return len;
 
@@ -662,7 +809,8 @@ int erl_receive(int s, unsigned char *bufp, int bufsize)
  * Send an Erlang message to a registered process
  * at the Erlang node, connected with a socket.
  */
-int erl_reg_send(int fd, char *server_name, ETERM *msg)
+int 
+erl_reg_send (int fd, char *server_name, ETERM *msg)
 {
   char sbuf[SMALLBUF]; /* use this for short messages */
   char *dbuf = NULL;   /* use this for longer ones */
@@ -673,25 +821,34 @@ int erl_reg_send(int fd, char *server_name, ETERM *msg)
   /* get large enough buffer */
   if ((msglen = erl_term_len2(msg,erl_distversion(fd))) > SMALLBUF)
     if (!(dbuf = malloc(msglen)))
-      return -1;
+    {
+	erl_errno = ENOMEM;
+	return -1;
+    }
   msgbuf = (dbuf ? dbuf : sbuf);
 
-  if (!erl_encode3(msg,msgbuf,erl_distversion(fd))) return -1;
+  if (!erl_encode3(msg,msgbuf,erl_distversion(fd)))
+  {
+      erl_errno = EIO;
+      return -1;
+  }
 
   self->num = fd;
   if (ei_send_reg_encoded(fd,self,server_name,msgbuf,msglen)) {
     if (dbuf) free(dbuf);
+    erl_errno = EIO;
     return -1;
   }
 
   if (dbuf) free(dbuf);
-  return 1;
+  return 0;
 }
 
 /* 
  * Sends an Erlang message to a process at an Erlang node
  */
-int erl_send(int fd, ETERM *to ,ETERM *msg)
+int 
+erl_send (int fd, ETERM *to ,ETERM *msg)
 {
   char sbuf[SMALLBUF]; /* use this for short messages */
   char *dbuf = NULL;   /* use this for longer ones */
@@ -700,114 +857,74 @@ int erl_send(int fd, ETERM *to ,ETERM *msg)
   erlang_pid topid;
 
   /* make the to-pid */
-  if (!(ERL_IS_PID(to))) return -1;
+  if (!ERL_IS_PID(to))
+  {
+      erl_errno = EINVAL;
+      return -1;
+  }
   
-  strcpy(topid.node,ERL_PID_NODE(to));
+  strcpy(topid.node, ERL_PID_NODE(to));
   topid.num = ERL_PID_NUMBER(to);
   topid.serial = ERL_PID_SERIAL(to);
   topid.creation = ERL_PID_CREATION(to);
   
   if ((msglen = erl_term_len2(msg,erl_distversion(fd)))  >  SMALLBUF) 
-    if (!(dbuf = malloc(msglen))) 
-      return -1;
-  msgbuf = (dbuf ? dbuf : sbuf);
+    if ((dbuf = malloc(msglen)) == NULL) 
+    {
+	erl_errno = ENOMEM;
+	return -1;
+    }
+  msgbuf = (dbuf != NULL) ? dbuf : sbuf;
   
-  if (!erl_encode3(msg,msgbuf,erl_distversion(fd))) return -1;
+  if (!erl_encode3(msg, msgbuf, erl_distversion(fd)))
+  {
+      erl_errno = EIO;
+      return -1;
+  }
 
-  if (ei_send_encoded(fd,&topid,msgbuf,msglen)) {
-    if (dbuf) free(dbuf);
-    return -1;
+  if (ei_send_encoded(fd,&topid,msgbuf,msglen)) 
+  {
+      if (dbuf) free(dbuf);
+      erl_errno = EIO;
+      return -1;
   }
 
   if (dbuf) free(dbuf);
-  return 1;
+  return 0;
 }
 
 extern int ei_recv_internal(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msglen, int staticbufp);
 
 /* 
- * Try to receive an Erlang message on a given
- * socket. Returns ERL_TICK, ERL_MSG, or ERL_ERROR.
+ * Try to receive an Erlang message on a given socket. Returns
+ * ERL_TICK, ERL_MSG, or ERL_ERROR. Sets `erl_errno' on ERL_ERROR and
+ * ERL_TICK (to EAGAIN in the latter case).
  */
-int erl_receive_msg(int fd, unsigned char *buf, int bufsize, ErlMessage *emsg)
+static int 
+do_receive_msg (int fd, 
+		int staticbuffer_p, unsigned char **buf, int *bufsize,
+		ErlMessage *emsg)
 {
-  int size = bufsize;
-  char *bufp=buf;
   int msglen;
   erlang_msg msg;
   int i;
   
-  if (!(i=ei_recv_internal(fd,&bufp,&size,&msg,&msglen,1))) return ERL_TICK;
-  if (i<0) return ERL_ERROR;
-  if (msglen > bufsize) return ERL_ERROR;
-  
-  emsg->type = msg.msgtype;
-  emsg->to_name[0] = 0x0;
-  
-  switch (msg.msgtype) {
-  case ERL_SEND:
-    emsg->to = erl_mk_pid(msg.to.node,msg.to.num,msg.to.serial,msg.to.creation);
-    emsg->from = NULL;
-    emsg->msg = erl_decode(buf);
-    return ERL_MSG;
-    break;
-    
-  case ERL_REG_SEND:
-    emsg->from = erl_mk_pid(msg.from.node,msg.from.num,msg.from.serial,msg.from.creation);
-    emsg->to = NULL;
-    emsg->msg = erl_decode(buf);
-    strcpy(emsg->to_name,msg.toname);
-    return ERL_MSG;
-    break;
-
-  case ERL_LINK:
-  case ERL_UNLINK:
-  case ERL_GROUP_LEADER:
-    emsg->from = erl_mk_pid(msg.from.node,msg.from.num,msg.from.serial,msg.from.creation);
-    emsg->to = erl_mk_pid(msg.to.node,msg.to.num,msg.to.serial,msg.to.creation);
-    emsg->msg = NULL;
-    return ERL_MSG;
-    
-
-  case ERL_EXIT:
-  case ERL_EXIT2:
-    emsg->from = erl_mk_pid(msg.from.node,msg.from.num,msg.from.serial,msg.from.creation);
-    emsg->to = erl_mk_pid(msg.to.node,msg.to.num,msg.to.serial,msg.to.creation);
-    emsg->msg = erl_decode(buf); /* contains reason */
-    return ERL_MSG;
-
-  case ERL_NODE_LINK:
-    emsg->to = NULL;
-    emsg->from = NULL;
-    emsg->msg = NULL;
-    return ERL_MSG;
+  if (!(i=ei_recv_internal(fd, (char**)buf, bufsize, &msg, &msglen, 
+			   staticbuffer_p))) 
+  {
+      erl_errno = EAGAIN;
+      return ERL_TICK;
   }
-
-  /* else (error) */
-  if (emsg->to) erl_free_term(emsg->to);
-  if (emsg->from) erl_free_term(emsg->from);
-  if (emsg->msg) erl_free_term(emsg->msg);
-  emsg->to = NULL;
-  emsg->from = NULL;
-  emsg->msg = NULL;
-
-  return ERL_ERROR;
-} /* erl_receive_msg */
-
-/* Code duplication here, from above. Let these two use a common help
-   function some time. */
-int erl_xreceive_msg(int fd, unsigned char **buf, int *bufsize,
-		     ErlMessage *emsg)
-{
-  int msglen;
-  erlang_msg msg;
-  int i;
-  
-  if (!(i=ei_recv_internal(fd,(char**)buf,bufsize,&msg,&msglen,0))) return ERL_TICK;
-  if (i<0) return ERL_ERROR;
-#if 0
-  if (msglen > bufsize) return ERL_ERROR;
-#endif
+  if (i<0) 
+  {
+      /* erl_errno set by ei_recv_internal() */
+      return ERL_ERROR;
+  }
+  if (staticbuffer_p && msglen > *bufsize)
+  {
+      erl_errno = EMSGSIZE;
+      return ERL_ERROR;
+  }
   
   emsg->type = msg.msgtype;
   emsg->to_name[0] = 0x0;
@@ -849,25 +966,44 @@ int erl_xreceive_msg(int fd, unsigned char **buf, int *bufsize,
     emsg->from = NULL;
     emsg->msg = NULL;
     return ERL_MSG;
+
+  default:
+      if (emsg->to) erl_free_term(emsg->to);
+      if (emsg->from) erl_free_term(emsg->from);
+      if (emsg->msg) erl_free_term(emsg->msg);
+      emsg->to = NULL;
+      emsg->from = NULL;
+      emsg->msg = NULL;
+
+      erl_errno = EIO;
+      return ERL_ERROR;
   }
+} /* do_receive_msg */
 
-  /* else (error) */
-  if (emsg->to) erl_free_term(emsg->to);
-  if (emsg->from) erl_free_term(emsg->from);
-  if (emsg->msg) erl_free_term(emsg->msg);
-  emsg->to = NULL;
-  emsg->from = NULL;
-  emsg->msg = NULL;
 
-  return ERL_ERROR;
-} /* erl_receive_msg */
+int 
+erl_receive_msg (int fd, unsigned char *buf, int bufsize, ErlMessage *emsg)
+{
+    return do_receive_msg(fd, 1, &buf, &bufsize, emsg);
+}
+
+int 
+erl_xreceive_msg (int fd, unsigned char **buf, int *bufsize,
+		  ErlMessage *emsg)
+{
+    return do_receive_msg(fd, 0, buf, bufsize, emsg);
+}
 
 /* 
  * The RPC consists of two parts, send and receive.
  * Here is the send part ! 
  * { PidFrom, { call, Mod, Fun, Args, user }} 
  */
-void erl_rpc_to(int fd, char *mod, char *fun, ETERM *args)
+/*
+ * Now returns non-negative number for success, negative for failure.
+ */
+int
+erl_rpc_to (int fd, char *mod, char *fun, ETERM *args)
 {
   char sbuf[SMALLBUF];
   char *dbuf = NULL;
@@ -897,7 +1033,10 @@ void erl_rpc_to(int fd, char *mod, char *fun, ETERM *args)
   /* get a large enough buffer to encode this into */
   if (index > SMALLBUF)
     if (!(dbuf = malloc(index)))
-      return;
+    {
+	erl_errno = ENOMEM;
+	return -1;
+    }
   msgbuf = (dbuf ? dbuf : sbuf);
   
   /* now encode the message into the message buffer */
@@ -914,7 +1053,10 @@ void erl_rpc_to(int fd, char *mod, char *fun, ETERM *args)
   ei_encode_atom(msgbuf,&index,fun);
   /* erl_encode would write an unwanted version byte at msgbuf[index], so
    * we pass it msgbuf[index-1] instead, saving the byte at that position
-   * first and restoring it afterwards
+   * first and restoring it afterwards.
+   */
+  /*
+   * ugh!
    */
   tmp = msgbuf[index-1];
   erl_encode3(args,msgbuf+index-1,erl_distversion(fd));
@@ -925,6 +1067,8 @@ void erl_rpc_to(int fd, char *mod, char *fun, ETERM *args)
   ei_send_reg_encoded(fd, self, "rex", msgbuf, index);
 
   if (dbuf) free(dbuf);
+
+  return 0;
 } /* rpc_to */
 
 /*
@@ -932,7 +1076,8 @@ void erl_rpc_to(int fd, char *mod, char *fun, ETERM *args)
  * timeout means 'infinity'. Returns either of: ERL_MSG,
  * ERL_TICK, ERL_ERROR or ERL_TIMEOUT.
  */
-int erl_rpc_from(int fd, int timeout, ErlMessage *emsg) 
+int 
+erl_rpc_from (int fd, int timeout, ErlMessage *emsg) 
 {
   char rbuf[MAX_RECEIVE_BUF];
   fd_set readmask;
@@ -948,19 +1093,25 @@ int erl_rpc_from(int fd, int timeout, ErlMessage *emsg)
   FD_ZERO(&readmask);
   FD_SET(fd,&readmask);
 
-  switch (select(FD_SETSIZE,&readmask,NULL,NULL,t)) {
+  switch (select(FD_SETSIZE, &readmask, NULL, NULL, t)) 
+  {
   case -1: 
-    return ERL_ERROR;
+      erl_errno = EIO;
+      return ERL_ERROR;
 
   case 0:
+      erl_errno = ETIMEDOUT;
     return ERL_TIMEOUT;
 
   default:
-    if (FD_ISSET(fd, &readmask)) 
-      return erl_receive_msg(fd, (unsigned char *) rbuf, sizeof(rbuf), emsg);
+      if (FD_ISSET(fd, &readmask)) 
+	  return erl_receive_msg(fd, (unsigned char *) rbuf, sizeof(rbuf), emsg);
+      else
+      {
+	  erl_errno = EIO;
+	  return ERL_ERROR;
+      }
   }
-
-  return ERL_ERROR;
 } /* rpc_from */
 
 /*
@@ -968,13 +1119,17 @@ int erl_rpc_from(int fd, int timeout, ErlMessage *emsg)
  * in case of failure, otherwise a valid
  * (ETERM *) pointer containing the reply
  */
-ETERM *erl_rpc(int fd, char *mod, char *fun, ETERM *args)
+ETERM *
+erl_rpc (int fd, char *mod, char *fun, ETERM *args)
 {
   int i;
   ETERM *ep;
   ErlMessage emsg;
 
-  erl_rpc_to(fd, mod, fun, args);
+  if (erl_rpc_to(fd, mod, fun, args) < 0)
+  {
+      return NULL;
+  }
   while ((i=erl_rpc_from(fd, ERL_NO_TIMEOUT, &emsg)) == ERL_TICK);
 
   if (i == ERL_ERROR)  return NULL;
@@ -992,499 +1147,652 @@ ETERM *erl_rpc(int fd, char *mod, char *fun, ETERM *args)
 
 
 /* FROM RTP RFC 1889  (except that we use all bits, bug in RFC?) */
-static unsigned md_32(char* string, int length)
+static unsigned int
+md_32 (char* string, int length)
 {
-    MD5_CTX ctx;
-    union {
-	char c[16];
-	unsigned x[4];
-    } digest;
-    ei_MD5Init(&ctx);
-    ei_MD5Update(&ctx, (unsigned char *) string, 
-		 (unsigned) length);
-    ei_MD5Final((unsigned char *) digest.c, &ctx);
-    return (digest.x[0] ^ digest.x[1] ^ digest.x[2] ^ digest.x[3]);
+  MD5_CTX ctx;
+  union {
+    char c[16];
+    unsigned x[4];
+  } digest;
+  ei_MD5Init(&ctx);
+  ei_MD5Update(&ctx, (unsigned char *) string, 
+	       (unsigned) length);
+  ei_MD5Final((unsigned char *) digest.c, &ctx);
+  return (digest.x[0] ^ digest.x[1] ^ digest.x[2] ^ digest.x[3]);
 }
 
 #if defined(__WIN32__)
-static unsigned gen_challenge(void)
+static unsigned int 
+gen_challenge (void)
 {
-    struct {
-	SYSTEMTIME tv;
-	DWORD cpu;
-	int pid;
-    } s;
-    GetSystemTime(&s.tv);
-    s.cpu  = GetTickCount();
-    s.pid  = getpid();
-    return md_32((char*) &s, sizeof(s));
+  struct {
+    SYSTEMTIME tv;
+    DWORD cpu;
+    int pid;
+  } s;
+  GetSystemTime(&s.tv);
+  s.cpu  = GetTickCount();
+  s.pid  = getpid();
+  return md_32((char*) &s, sizeof(s));
 }
 #elif  defined(VXWORKS)
-static unsigned gen_challenge(void)
+static unsigned int 
+gen_challenge (void)
 {
-    struct {
-	struct timespec tv;
-	clock_t cpu;
-	int pid;
-    } s;
-    s.cpu  = clock();
-    clock_gettime(CLOCK_REALTIME, &s.tv);
-    s.pid = getpid();
-    return md_32((char*) &s, sizeof(s));
+  struct {
+    struct timespec tv;
+    clock_t cpu;
+    int pid;
+  } s;
+  s.cpu  = clock();
+  clock_gettime(CLOCK_REALTIME, &s.tv);
+  s.pid = getpid();
+  return md_32((char*) &s, sizeof(s));
 }
 
 #else  /* some unix */
-static unsigned gen_challenge(void)
+static unsigned int 
+gen_challenge (void)
 {
-    struct {
-	struct timeval tv;
-	clock_t cpu;
-	pid_t pid;
-	u_long hid;
-	uid_t uid;
-	gid_t gid;
-	struct utsname name;
-    } s;
-    long gethostid();
-    gettimeofday(&s.tv, 0);
-    uname(&s.name);
-    s.cpu  = clock();
-    s.pid  = getpid();
-    s.hid  = gethostid();
-    s.uid  = getuid();
-    s.gid  = getgid();
-    return md_32((char*) &s, sizeof(s));
+  struct {
+    struct timeval tv;
+    clock_t cpu;
+    pid_t pid;
+    u_long hid;
+    uid_t uid;
+    gid_t gid;
+    struct utsname name;
+  } s;
+  long gethostid();
+  gettimeofday(&s.tv, 0);
+  uname(&s.name);
+  s.cpu  = clock();
+  s.pid  = getpid();
+  s.hid  = gethostid();
+  s.uid  = getuid();
+  s.gid  = getgid();
+  return md_32((char*) &s, sizeof(s));
 }
 #endif
 
-static void gen_digest(unsigned challenge, char cookie[], 
-		       unsigned char digest[16])
+static void 
+gen_digest (unsigned challenge, char cookie[], 
+	    unsigned char digest[16])
 {
-    MD5_CTX c;
+  MD5_CTX c;
 
-    char chbuf[20];
+  char chbuf[20];
 
-    sprintf(chbuf,"%u", challenge);
-    ei_MD5Init(&c);
-    ei_MD5Update(&c, (unsigned char *) cookie, 
-		 (unsigned) strlen(cookie));
-    ei_MD5Update(&c, (unsigned char *) chbuf, 
-		 (unsigned) strlen(chbuf));
-    ei_MD5Final(digest, &c);
+  sprintf(chbuf,"%u", challenge);
+  ei_MD5Init(&c);
+  ei_MD5Update(&c, (unsigned char *) cookie, 
+	       (unsigned) strlen(cookie));
+  ei_MD5Update(&c, (unsigned char *) chbuf, 
+	       (unsigned) strlen(chbuf));
+  ei_MD5Final(digest, &c);
 }
 
 
 #ifdef DEBUG_DIST
-static char *hex(char digest[16])
+static char *
+hex (char digest[16])
 {
-    unsigned char *d = (unsigned char *) digest;
-    static char buff[33];
-    char *p = buff;
-    static char tab[] = {'0','1','2','3','4','5','6','7','8','9',
-			 'a','b','c','d','e','f'};
-    int i;
+  unsigned char *d = (unsigned char *) digest;
+  static char buff[sizeof(digest)*2 + 1];
+  char *p = buff;
+  static char tab[] = "0123456789abcdef";
+  int i;
 
-    for (i = 0; i < 16; ++i) {
-	*p++ = tab[(int)((*d) >> 4)];
-	*p++ = tab[(int)((*d++) & 0xF)];
-    }
-    *p = '\0';
-    return buff;
+  for (i = 0; i < sizeof(digest); ++i) {
+    *p++ = tab[(int)((*d) >> 4)];
+    *p++ = tab[(int)((*d++) & 0xF)];
+  }
+  *p = '\0';
+  return buff;
 }
 #endif
     
-static int read_2byte_package(int fd, char **buf, int *buflen, 
-			      int *is_static)
+static int 
+read_2byte_package (int fd, char **buf, int *buflen, 
+		    int *is_static)
 {
-    unsigned char nbuf[2];
-    unsigned char *x = nbuf;
-    unsigned len;
+  unsigned char nbuf[2];
+  unsigned char *x = nbuf;
+  unsigned len;
 
-    if(erl_read_fill(fd, nbuf, 2) != 2)
-	return -1;
-    len = get16be(x);
+  if(erl_read_fill(fd, nbuf, 2) != 2)
+  {
+      erl_errno = EIO;
+      return -1;
+  }
+  len = get16be(x);
 
-    if (len > *buflen) {
-	if (*is_static) {
-	    char *tmp = malloc(len);
-	    if (!tmp)
-		return -1;
-	    *buf = tmp;
-	    *is_static = 0;
-	    *buflen = len;
-	} else {
-	    char *tmp = realloc(*buf, len);
-	    if (!tmp)
-		return -1;
-	    *buf = tmp;
-	    *buflen = len;
-	}
+  if (len > *buflen) {
+    if (*is_static) {
+      char *tmp = malloc(len);
+      if (!tmp)
+      {
+	  erl_errno = ENOMEM;
+	  return -1;
+      }
+      *buf = tmp;
+      *is_static = 0;
+      *buflen = len;
+    } else {
+      char *tmp = realloc(*buf, len);
+      if (!tmp)
+      {
+	  erl_errno = ENOMEM;
+	  return -1;
+      }
+      *buf = tmp;
+      *buflen = len;
     }
-    if (erl_read_fill(fd, *buf, len) != len)
-	return -1;
-    return len;
+  }
+  if (erl_read_fill(fd, *buf, len) != len)
+  {
+      erl_errno = EIO;
+      return -1;
+  }
+  return len;
 }
     
 
-static int send_status(int fd, char *status)
+static int 
+send_status (int fd, char *status)
 {
-    char *buf, *s;
-    char dbuf[DEFBUF_SIZ];
-    int siz = strlen(status) + 1 + 2;
-    buf = (siz > DEFBUF_SIZ) ? malloc(siz) : dbuf;
-    s = buf;
-    put16be(s,siz - 2);
-    put8(s, 's');
-    memcpy(s, status, strlen(status));
-    if (erl_write_fill(fd, buf, siz) != siz) {
-	if (buf != dbuf)
-	    free(buf);
-	return -1;
+  char *buf, *s;
+  char dbuf[DEFBUF_SIZ];
+  int siz = strlen(status) + 1 + 2;
+  buf = (siz > DEFBUF_SIZ) ? malloc(siz) : dbuf;
+  s = buf;
+  put16be(s,siz - 2);
+  put8(s, 's');
+  memcpy(s, status, strlen(status));
+  if (erl_write_fill(fd, buf, siz) != siz) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"-> SEND_STATUS socket write failed\n");
     }
+#endif
+    if (buf != dbuf)
+      free(buf);
+    erl_errno = EIO;
+    return -1;
+  }
 
 #ifdef DEBUG_DIST
   if (ei_trace_distribution > 2) {
-      fprintf(stderr,"-> SEND_STATUS status = %s\n",status);
+    fprintf(stderr,"-> SEND_STATUS (%s)\n",status);
   }
 #endif
   if (buf != dbuf)
-      free(buf);
-    return 0;
+    free(buf);
+  return 0;
 }
 
-static int recv_status(int fd)
+static int 
+recv_status (int fd)
 {
-    char dbuf[DEFBUF_SIZ];
-    char *buf = dbuf;
-    int is_static = 1;
-    int buflen = DEFBUF_SIZ;
-    int rlen;
+  char dbuf[DEFBUF_SIZ];
+  char *buf = dbuf;
+  int is_static = 1;
+  int buflen = DEFBUF_SIZ;
+  int rlen;
 
-    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) 
-	<= 0)
-	goto error;
-    if (rlen == 3 && buf[0] == 's' && buf[1] == 'o' && 
-	buf[2] == 'k') {
-	if (!is_static)
-	    free(buf);
+  if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) <= 0) {
 #ifdef DEBUG_DIST
-	if (ei_trace_distribution > 2) {
-	    fprintf(stderr,"<- RECV_STATUS (ok)\n");
-	}
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- RECV_STATUS socket read failed (%d)\n", rlen);
+    }
 #endif
-	return 0;
-    }
-error:
-    if (!is_static)
-	free(buf);
-    return -1;
-}
-
-static int send_challenge(int fd, char *nodename, 
-			  unsigned challenge, unsigned version) 
-{
-    char *buf, *s;
-    char dbuf[DEFBUF_SIZ];
-    int siz = 2 + 1 + 2 + 4 + 4 + strlen(nodename);
-    buf = (siz > DEFBUF_SIZ) ? malloc(siz) : dbuf;
-    s = buf;
-    put16be(s,siz - 2);
-    put8(s, 'n');
-    put16be(s, version);
-    put32be(s, (DFLAG_EXTENDED_REFERENCES));
-    put32be(s, challenge);
-    memcpy(s, nodename, strlen(nodename));
-
-    if (erl_write_fill(fd, buf, siz) != siz) {
-	if (buf != dbuf)
-	    free(buf);
-	return -1;
-    }
-
-#ifdef DEBUG_DIST
-  if (ei_trace_distribution > 2) {
-      fprintf(stderr,"-> SEND_CHALLENGE challenge = %d, "
-	      "version = %d, "
-	      "nodename = %s\n",
-	      challenge, version, nodename);
+    goto error;
   }
-#endif
-
-  if (buf != dbuf)
+  if (rlen == 3 && buf[0] == 's' && buf[1] == 'o' && 
+      buf[2] == 'k') {
+    if (!is_static)
       free(buf);
-    return 0;
-}
-
-static int recv_challenge(int fd, unsigned *challenge, 
-			  unsigned *version,
-			  unsigned *flags, ErlConnect *namebuf)
-{
-    char dbuf[DEFBUF_SIZ];
-    char *buf = dbuf;
-    int is_static = 1;
-    int buflen = DEFBUF_SIZ;
-    int rlen;
-    char *s;
-    struct sockaddr_in sin;
-    int sin_len = sizeof(sin);
-    char tag;
-
-    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) 
-	<= 0)
-	goto error;
-    if ((rlen - 11) > MAXNODELEN)
-	goto error;
-    s = buf;
-    if ((tag = get8(s)) != 'n')
-	goto error;
-    *version = get16be(s);
-    *flags = get32be(s);
-    *challenge = get32be(s);
-    if (getpeername(fd, (struct sockaddr *) &sin, &sin_len) < 0)
-	goto error;
-    memcpy(namebuf->ipadr, &(sin.sin_addr.s_addr), 
-	   sizeof(sin.sin_addr.s_addr));
-    memcpy(namebuf->nodename, s, rlen - 11);
-    namebuf->nodename[rlen - 11] = '\0';
-    if (!is_static)
-	free(buf);
 #ifdef DEBUG_DIST
     if (ei_trace_distribution > 2) {
-	fprintf(stderr,"<- RECV_CHALLENGE node = %s, "
-		"version = %u, "
-		"flags = %u, "
-		"challenge = %d\n",
-		namebuf->nodename,
-		*version,
-		*flags,
-		*challenge
-		);
+      fprintf(stderr,"<- RECV_STATUS (ok)\n");
     }
 #endif
     return 0;
-error:
-    if (!is_static)
-	free(buf);
+  }
+ error:
+  if (!is_static)
+    free(buf);
+  return -1;
+}
+
+static int 
+send_challenge (int fd, char *nodename, 
+		unsigned challenge, unsigned version) 
+{
+  char *buf, *s;
+  char dbuf[DEFBUF_SIZ];
+  int siz = 2 + 1 + 2 + 4 + 4 + strlen(nodename);
+  buf = (siz > DEFBUF_SIZ) ? malloc(siz) : dbuf;
+  s = buf;
+  put16be(s,siz - 2);
+  put8(s, 'n');
+  put16be(s, version);
+  put32be(s, (DFLAG_EXTENDED_REFERENCES));
+  put32be(s, challenge);
+  memcpy(s, nodename, strlen(nodename));
+
+  if (erl_write_fill(fd, buf, siz) != siz) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"-> SEND_CHALLENGE socket write failed\n");
+    }
+#endif
+    if (buf != dbuf)
+      free(buf);
+    erl_errno = EIO;
     return -1;
-}
-
-static int send_challenge_reply(int fd, char digest[16], 
-				unsigned challenge) 
-{
-    char *s;
-    char buf[DEFBUF_SIZ];
-    int siz = 2 + 1 + 4 + 16;
-    s = buf;
-    put16be(s,siz - 2);
-    put8(s, 'r');
-    put32be(s, challenge);
-    memcpy(s, digest, 16);
-
-    if (erl_write_fill(fd, buf, siz) != siz) {
-	return -1;
-    }
-
-#ifdef DEBUG_DIST
-    if (ei_trace_distribution > 2) {
-	fprintf(stderr,"-> SEND_CHALLENGE_REPLY challenge = %d, "
-		"digest = %s\n",
-		challenge,hex(digest));
-    }
-#endif
-    return 0;
-}
-
-static int recv_challenge_reply(int fd, 
-				unsigned our_challenge,
-				char cookie[], 
-				unsigned *her_challenge)
-{
-    char dbuf[DEFBUF_SIZ];
-    char *buf = dbuf;
-    int is_static = 1;
-    int buflen = DEFBUF_SIZ;
-    int rlen;
-    char *s;
-    char tag;
-    char her_digest[16], expected_digest[16];
-
-    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) 
-	!= 21)
-	goto error;
-    
-    s = buf;
-    if ((tag = get8(s)) != 'r')
-	goto error;
-    *her_challenge = get32be(s);
-    memcpy(her_digest, s, 16);
-    gen_digest(our_challenge, cookie, expected_digest);
-    if (memcmp(her_digest, expected_digest, 16))
-	goto error;
-    if (!is_static)
-	free(buf);
-#ifdef DEBUG_DIST
-    if (ei_trace_distribution > 2) {
-	fprintf(stderr,"<- RECV_CHALLENGE_REPLY challenge = %u, "
-		"digest = %s\n",
-		*her_challenge,hex(her_digest));
-    }
-#endif
-    return 0;
-error:
-    if (!is_static)
-	free(buf);
-    return -1;
-}
-
-static int send_challenge_ack(int fd, char digest[16]) 
-{
-    char *s;
-    char buf[DEFBUF_SIZ];
-    int siz = 2 + 1 + 16;
-    s = buf;
-
-    put16be(s,siz - 2);
-    put8(s, 'a');
-    memcpy(s, digest, 16);
-
-    if (erl_write_fill(fd, buf, siz) != siz) {
-	return -1;
-    }
-
-#ifdef DEBUG_DIST
-    if (ei_trace_distribution > 2) {
-	fprintf(stderr,"-> SEND_CHALLENGE_ACK "
-		"digest = %s\n",
-		hex(digest));
-    }
-#endif
-
-    return 0;
-}
-
-static int recv_challenge_ack(int fd, 
-			      unsigned our_challenge,
-			      char cookie[])
-{
-    char dbuf[DEFBUF_SIZ];
-    char *buf = dbuf;
-    int is_static = 1;
-    int buflen = DEFBUF_SIZ;
-    int rlen;
-    char *s;
-    char tag;
-    char her_digest[16], expected_digest[16];
-
-    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) 
-	!= 17)
-	goto error;
-    
-    s = buf;
-    if ((tag = get8(s)) != 'a')
-	goto error;
-    memcpy(her_digest, s, 16);
-    gen_digest(our_challenge, cookie, expected_digest);
-    if (memcmp(her_digest, expected_digest, 16))
-	goto error;
-    if (!is_static)
-	free(buf);
-#ifdef DEBUG_DIST
-    if (ei_trace_distribution > 2) {
-	fprintf(stderr,"<- RECV_CHALLENGE_ACK "
-		"digest = %s\n",
-		hex(her_digest));
-    }
-#endif
-    return 0;
-error:
-    if (!is_static)
-	free(buf);
-    return -1;
-}
-
-static int send_name(int fd, char *nodename, 
-		     unsigned version) 
-{
-    char *buf, *s;
-    char dbuf[DEFBUF_SIZ];
-    int siz = 2 + 1 + 2 + 4 + strlen(nodename);
-    buf = (siz > DEFBUF_SIZ) ? malloc(siz) : dbuf;
-    s = buf;
-    put16be(s,siz - 2);
-    put8(s, 'n');
-    put16be(s, version);
-    put32be(s, (DFLAG_EXTENDED_REFERENCES));
-    memcpy(s, nodename, strlen(nodename));
-
-    if (erl_write_fill(fd, buf, siz) != siz) {
-	if (buf != dbuf)
-	    free(buf);
-	return -1;
-    }
+  }
 
 #ifdef DEBUG_DIST
   if (ei_trace_distribution > 2) {
-      fprintf(stderr,"-> SEND_NAME "
-	      "version = %d, "
-	      "nodename = %s\n",
-	      version, nodename);
+    fprintf(stderr,"-> SEND_CHALLENGE (ok) challenge = %d, "
+	    "version = %d, "
+	    "nodename = %s\n",
+	    challenge, version, nodename);
   }
 #endif
 
   if (buf != dbuf)
+    free(buf);
+  return 0;
+}
+
+static int 
+recv_challenge (int fd, unsigned *challenge, 
+		unsigned *version,
+		unsigned *flags, ErlConnect *namebuf)
+{
+  char dbuf[DEFBUF_SIZ];
+  char *buf = dbuf;
+  int is_static = 1;
+  int buflen = DEFBUF_SIZ;
+  int rlen;
+  char *s;
+  struct sockaddr_in sin;
+  int sin_len = sizeof(sin);
+  char tag;
+
+  if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) <= 0) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- RECV_CHALLENGE socket read failed (%d)\n",rlen);
+    }
+#endif
+    goto error;
+  }
+  if ((rlen - 11) > MAXNODELEN) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- RECV_CHALLENGE nodename too long (%d)\n",rlen - 11);
+    }
+#endif
+    erl_errno = EIO;
+    goto error;
+  }
+  s = buf;
+  if ((tag = get8(s)) != 'n') {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- RECV_CHALLENGE incorrect tag, expected 'n' got '%c' (%u)\n",tag,tag);
+    }
+#endif
+    goto error;
+  }
+  *version = get16be(s);
+  *flags = get32be(s);
+  *challenge = get32be(s);
+  if (getpeername(fd, (struct sockaddr *) &sin, &sin_len) < 0) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- RECV_CHALLENGE can't get peername\n");
+    }
+#endif
+    erl_errno = errno;
+    goto error;
+  }
+  memcpy(namebuf->ipadr, &(sin.sin_addr.s_addr), 
+	 sizeof(sin.sin_addr.s_addr));
+  memcpy(namebuf->nodename, s, rlen - 11);
+  namebuf->nodename[rlen - 11] = '\0';
+  if (!is_static)
+    free(buf);
+#ifdef DEBUG_DIST
+  if (ei_trace_distribution > 2) {
+    fprintf(stderr,"<- RECV_CHALLENGE (ok) node = %s, "
+	    "version = %u, "
+	    "flags = %u, "
+	    "challenge = %d\n",
+	    namebuf->nodename,
+	    *version,
+	    *flags,
+	    *challenge
+	    );
+  }
+#endif
+  return 0;
+ error:
+  if (!is_static)
+    free(buf);
+  return -1;
+}
+
+static int 
+send_challenge_reply (int fd, char digest[16], 
+		      unsigned challenge) 
+{
+  char *s;
+  char buf[DEFBUF_SIZ];
+  int siz = 2 + 1 + 4 + 16;
+  s = buf;
+  put16be(s,siz - 2);
+  put8(s, 'r');
+  put32be(s, challenge);
+  memcpy(s, digest, 16);
+
+  if (erl_write_fill(fd, buf, siz) != siz) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"-> SEND_CHALLENGE_REPLY socket write failed\n");
+    }
+#endif
+    erl_errno = EIO;
+    return -1;
+  }
+
+#ifdef DEBUG_DIST
+  if (ei_trace_distribution > 2) {
+    fprintf(stderr,"-> SEND_CHALLENGE_REPLY (ok) challenge = %d, "
+	    "digest = %s\n",
+	    challenge,hex(digest));
+  }
+#endif
+  return 0;
+}
+
+static int 
+recv_challenge_reply (int fd, 
+		      unsigned our_challenge,
+		      char cookie[], 
+		      unsigned *her_challenge)
+{
+  char dbuf[DEFBUF_SIZ];
+  char *buf = dbuf;
+  int is_static = 1;
+  int buflen = DEFBUF_SIZ;
+  int rlen;
+  char *s;
+  char tag;
+  char her_digest[16], expected_digest[16];
+
+  if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) != 21) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- RECV_CHALLENGE_REPLY socket read failed (%d)\n",rlen);
+    }
+#endif
+    goto error;
+  }
+    
+  s = buf;
+  if ((tag = get8(s)) != 'r') {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- RECV_CHALLENGE_REPLY incorrect tag, expected 'r' got '%c' (%u)\n",tag,tag);
+    }
+#endif
+    erl_errno = EIO;
+    goto error;
+  }
+  *her_challenge = get32be(s);
+  memcpy(her_digest, s, 16);
+  gen_digest(our_challenge, cookie, expected_digest);
+  if (memcmp(her_digest, expected_digest, 16)) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- RECV_CHALLENGE_REPLY authorization failure\n");
+    }
+#endif
+    erl_errno = EIO;
+    goto error;
+  }
+  if (!is_static)
+    free(buf);
+#ifdef DEBUG_DIST
+  if (ei_trace_distribution > 2) {
+    fprintf(stderr,"<- RECV_CHALLENGE_REPLY (ok) challenge = %u, "
+	    "digest = %s\n",
+	    *her_challenge,hex(her_digest));
+  }
+#endif
+  return 0;
+
+ error:
+  if (!is_static)
+    free(buf);
+  return -1;
+}
+
+static int 
+send_challenge_ack (int fd, char digest[16]) 
+{
+  char *s;
+  char buf[DEFBUF_SIZ];
+  int siz = 2 + 1 + 16;
+  s = buf;
+
+  put16be(s,siz - 2);
+  put8(s, 'a');
+  memcpy(s, digest, 16);
+
+  if (erl_write_fill(fd, buf, siz) != siz) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"-> SEND_CHALLENGE_ACK socket write failed\n");
+    }
+#endif
+    erl_errno = EIO;
+    return -1;
+  }
+
+#ifdef DEBUG_DIST
+  if (ei_trace_distribution > 2) {
+    fprintf(stderr,"-> SEND_CHALLENGE_ACK (ok) "
+	    "digest = %s\n",
+	    hex(digest));
+  }
+#endif
+
+  return 0;
+}
+
+static int 
+recv_challenge_ack (int fd, 
+		    unsigned our_challenge,
+		    char cookie[])
+{
+  char dbuf[DEFBUF_SIZ];
+  char *buf = dbuf;
+  int is_static = 1;
+  int buflen = DEFBUF_SIZ;
+  int rlen;
+  char *s;
+  char tag;
+  char her_digest[16], expected_digest[16];
+
+  if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) != 17) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- RECV_CHALLENGE_ACK socket read failed (%d)\n",rlen);
+    }
+#endif
+    goto error;
+  }
+    
+  s = buf;
+  if ((tag = get8(s)) != 'a') {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- RECV_CHALLENGE_ACK incorrect tag, expected 'a' got '%c' (%u)\n",tag,tag);
+    }
+#endif
+    erl_errno = EIO;
+    goto error;
+  }
+  memcpy(her_digest, s, 16);
+  gen_digest(our_challenge, cookie, expected_digest);
+  if (memcmp(her_digest, expected_digest, 16)) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- RECV_CHALLENGE_ACK authorization failure\n");
+    }
+#endif
+    erl_errno = EIO;
+    goto error;
+  }
+  if (!is_static)
+    free(buf);
+#ifdef DEBUG_DIST
+  if (ei_trace_distribution > 2) {
+    fprintf(stderr,"<- RECV_CHALLENGE_ACK (ok) "
+	    "digest = %s\n",
+	    hex(her_digest));
+  }
+#endif
+  return 0;
+ error:
+  if (!is_static)
+    free(buf);
+  return -1;
+}
+
+static int 
+send_name (int fd, char *nodename, 
+	   unsigned version) 
+{
+  char *buf, *s;
+  char dbuf[DEFBUF_SIZ];
+  int siz = 2 + 1 + 2 + 4 + strlen(nodename);
+  buf = (siz > DEFBUF_SIZ) ? malloc(siz) : dbuf;
+  s = buf;
+  put16be(s,siz - 2);
+  put8(s, 'n');
+  put16be(s, version);
+  put32be(s, (DFLAG_EXTENDED_REFERENCES));
+  memcpy(s, nodename, strlen(nodename));
+
+  if (erl_write_fill(fd, buf, siz) != siz) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"-> SEND_NAME socket write failed\n");
+    }
+#endif
+    if (buf != dbuf)
       free(buf);
-    return 0;
+    erl_errno = EIO;
+    return -1;
+  }
+
+#ifdef DEBUG_DIST
+  if (ei_trace_distribution > 2) {
+    fprintf(stderr,"-> SEND_NAME (ok) "
+	    "version = %d, "
+	    "nodename = %s\n",
+	    version, nodename);
+  }
+#endif
+
+  if (buf != dbuf)
+    free(buf);
+  return 0;
 }
 
 
-static int recv_name(int fd, 
-		     unsigned *version,
-		     unsigned *flags, ErlConnect *namebuf)
+static int 
+recv_name (int fd, 
+	   unsigned *version,
+	   unsigned *flags, ErlConnect *namebuf)
 {
-    char dbuf[DEFBUF_SIZ];
-    char *buf = dbuf;
-    int is_static = 1;
-    int buflen = DEFBUF_SIZ;
-    int rlen;
-    char *s;
-    struct sockaddr_in sin;
-    int sin_len = sizeof(sin);
-    char tag;
+  char dbuf[DEFBUF_SIZ];
+  char *buf = dbuf;
+  int is_static = 1;
+  int buflen = DEFBUF_SIZ;
+  int rlen;
+  char *s;
+  struct sockaddr_in sin;
+  int sin_len = sizeof(sin);
+  char tag;
 
-    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) 
-	<= 0)
-	goto error;
-    if ((rlen - 7) > MAXNODELEN)
-	goto error;
-    s = buf;
-    tag = get8(s);
-    if (tag != 'n') {
-	goto error;
-    }
-    *version = get16be(s);
-    *flags = get32be(s);
-    if (getpeername(fd, (struct sockaddr *) &sin, &sin_len) < 0)
-	goto error;
-    memcpy(namebuf->ipadr, &(sin.sin_addr.s_addr), 
-	   sizeof(sin.sin_addr.s_addr));
-    memcpy(namebuf->nodename, s, rlen - 7);
-    namebuf->nodename[rlen - 7] = '\0';
-    if (!is_static)
-	free(buf);
+  if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) <= 0) {
 #ifdef DEBUG_DIST
     if (ei_trace_distribution > 2) {
-	fprintf(stderr,"<- RECV_NAME node = %s, "
-		"version = %u, "
-		"flags = %u\n",
-		namebuf->nodename,
-		*version,
-		*flags
-		);
+      fprintf(stderr,"<- RECV_NAME socket read failed (%d)\n",rlen);
     }
 #endif
-    return 0;
-error:
-    if (!is_static)
-	free(buf);
-    return -1;
+    goto error;
+  }
+  if ((rlen - 7) > MAXNODELEN) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- RECV_NAME nodename too long (%d)\n",rlen - 7);
+    }
+#endif
+    erl_errno = EIO;
+    goto error;
+  }
+  s = buf;
+  tag = get8(s);
+  if (tag != 'n') {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- RECV_NAME incorrect tag, expected 'n' got '%c' (%u)\n",tag,tag);
+    }
+#endif
+    erl_errno = EIO;
+    goto error;
+  }
+  *version = get16be(s);
+  *flags = get32be(s);
+  if (getpeername(fd, (struct sockaddr *) &sin, &sin_len) < 0) {
+#ifdef DEBUG_DIST
+    if (ei_trace_distribution > 2) {
+      fprintf(stderr,"<- RECV_NAME can't get peername\n");
+    }
+#endif
+    erl_errno = errno;
+    goto error;
+  }
+  memcpy(namebuf->ipadr, &(sin.sin_addr.s_addr), 
+	 sizeof(sin.sin_addr.s_addr));
+  memcpy(namebuf->nodename, s, rlen - 7);
+  namebuf->nodename[rlen - 7] = '\0';
+  if (!is_static)
+    free(buf);
+#ifdef DEBUG_DIST
+  if (ei_trace_distribution > 2) {
+    fprintf(stderr,"<- RECV_NAME (ok) node = %s, "
+	    "version = %u, "
+	    "flags = %u\n",
+	    namebuf->nodename,
+	    *version,
+	    *flags
+	    );
+  }
+#endif
+  return 0;
+
+ error:
+  if (!is_static)
+    free(buf);
+  return -1;
 }

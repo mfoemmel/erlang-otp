@@ -296,14 +296,14 @@ static void pass_on(pid_t childpid, int mfd)
 
   /* Enter the work loop */
 
-  timeout.tv_sec  = LOG_ALIVE_MINUTES*60;
-  timeout.tv_usec = 0;
   while (1) {
     maxfd = MAX(rfd, mfd);
     FD_ZERO(&readfds);
     FD_SET(rfd, &readfds);
     FD_SET(mfd, &readfds);
     time(&last_activity);
+    timeout.tv_sec  = LOG_ALIVE_MINUTES*60; /* don't assume old BSD bug */
+    timeout.tv_usec = 0;
     ready = select(maxfd + 1, &readfds, NULL, NULL, &timeout);
     if (ready < 0) {
       /* Some error occured */

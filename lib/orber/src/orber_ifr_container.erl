@@ -18,9 +18,8 @@
 %%
 %%----------------------------------------------------------------------
 %% File    : orber_ifr_container.erl
-%% Author  : Per Danielsson <pd@gwaihir>
 %% Purpose : Code for Container
-%% Created : 14 May 1997 by Per Danielsson <pd@gwaihir>
+%% Created : 14 May 1997
 %%----------------------------------------------------------------------
 
 -module(orber_ifr_container).

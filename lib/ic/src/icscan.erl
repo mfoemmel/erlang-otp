@@ -80,8 +80,12 @@ scan(G, Kw, [$/, $* | Str], Line, Out) ->
     scan(G, Kw, Rest, Line, Out);
 scan(G, Kw, [$"|Str], Line, Out) ->
     scan_const(G, Kw, string, Str, [], Line, Out);
+scan(G, Kw, [$"|Str], Line, Out) ->              %% WSTRING
+    scan_const(G, Kw, wstring, Str, [], Line, Out);
 scan(G, Kw, [$'|Str], Line, Out) ->
     scan_const(G, Kw, char, Str, [], Line, Out);
+scan(G, Kw, [$'|Str], Line, Out) ->               %% WCHAR
+    scan_const(G, Kw, wchar, Str, [], Line, Out);
 scan(G, Kw, [$. | Str], Line, Out) ->
     scan_frac(G, Kw, Str, [$.], Line, Out);
 scan(G, Kw, [$# | Str], Line, Out) ->
@@ -175,10 +179,19 @@ scan_name(G, Kw, S, Accum, Line, Out) ->
 scan_const(G, Kw, string, [$" | Rest], Accum, Line, Out) ->
     scan(G, Kw, Rest, Line, 
 	 [{'<string_literal>', Line, lists:reverse(Accum)} | Out]);
+scan_const(G, Kw, wstring, [$" | Rest], Accum, Line, Out) -> %% WSTRING
+    scan(G, Kw, Rest, Line, 
+	 [{'<string_literal>', Line, lists:reverse(Accum)} | Out]);
 scan_const(G, Kw, string, [], Accum, Line, Out) -> %% Bad string
     icgen:error(G, {bad_string, Line}),
     Out;
+scan_const(G, Kw, wstring, [], Accum, Line, Out) -> %% Bad WSTRING
+    icgen:error(G, {bad_string, Line}),
+    Out;
 scan_const(G, Kw, char, [$' | Rest], Accum, Line, Out) ->
+    scan(G, Kw, Rest, Line, 
+	 [{'<character_literal>', Line, lists:reverse(Accum)} | Out]);
+scan_const(G, Kw, wchar, [$' | Rest], Accum, Line, Out) -> %% WCHAR
     scan(G, Kw, Rest, Line, 
 	 [{'<character_literal>', Line, lists:reverse(Accum)} | Out]);
 scan_const(G, Kw, Mode, [$\\, C | Rest], Accum, Line, Out) ->
@@ -300,6 +313,7 @@ add_keyw() ->
     ?add_k2(G,{"FALSE"}),
     ?add_k2(G,{"readonly"}),
     ?add_k2(G,{"char"}),
+    ?add_k2(G,{"wchar"}),      %% WCHAR 
     ?add_k2(G,{"void"}),
     ?add_k2(G,{"inout"}),
     ?add_k2(G,{"attribute"}),
@@ -311,6 +325,7 @@ add_keyw() ->
     ?add_k2(G,{"const"}),
     ?add_k2(G,{"raises"}),
     ?add_k2(G,{"string"}),
+    ?add_k2(G,{"wstring"}),    %% WSTRING
     ?add_k2(G,{"default"}),
     ?add_k2(G,{"short"}),
     ?add_k2(G,{"module"}),

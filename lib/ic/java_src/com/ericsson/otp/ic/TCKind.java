@@ -190,7 +190,7 @@ final public class TCKind {
 	 case _tk_term:
            return tk_term;
          default:
-            throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+            throw new java.lang.Exception("");
       }
    }
 

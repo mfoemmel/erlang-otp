@@ -25,7 +25,8 @@
 %% 
 
 -export([spawn/3,spawn_link/3,spawn/4,spawn_link/4,
-	 start/3, start/4, start_link/3, start_link/4,
+	 spawn_opt/4,
+	 start/3, start/4, start/5, start_link/3, start_link/4,start_link/5,
 	 init_ack/1, init_ack/2,
 	 init_p/5,format/1,initial_call/1,translate_initial_call/1]).
 
@@ -49,6 +50,22 @@ spawn_link(Node,M,F,A) ->
     Ancestors = get_ancestors(),
     erlang:spawn_link(Node,proc_lib,init_p,[Parent,Ancestors,M,F,A]).
 
+
+spawn_opt(M,F,A,Opts) ->
+    Parent = get_my_name(),
+    Ancestors = get_ancestors(),
+    erlang:spawn_opt(proc_lib,init_p,[Parent,Ancestors,M,F,A],Opts).
+
+ensure_link(SpawnOpts) ->
+    case lists:member(link, SpawnOpts) of
+	true -> 
+	    SpawnOpts;
+	false ->
+	    [link|SpawnOpts]
+    end.
+
+
+
 init_p(Parent,Ancestors,M,F,A) ->
     put('$ancestors',[Parent|Ancestors]),
     put('$initial_call',{M,F,A}),
@@ -66,11 +83,17 @@ start(M,F,A) ->
 start(M,F,A,Timeout) ->
     Pid = proc_lib:spawn(M,F,A),
     sync_wait(Pid, Timeout).
+start(M,F,A,Timeout,SpawnOpts) ->
+    Pid = proc_lib:spawn_opt(M, F, A, SpawnOpts),
+    sync_wait(Pid, Timeout).
 
 start_link(M,F,A) ->
     start_link(M,F,A,infinity).
 start_link(M,F,A,Timeout) ->
     Pid = proc_lib:spawn_link(M,F,A),
+    sync_wait(Pid, Timeout).
+start_link(M,F,A,Timeout,SpawnOpts) ->
+    Pid = proc_lib:spawn_opt(M, F, A, ensure_link(SpawnOpts)),
     sync_wait(Pid, Timeout).
 
 sync_wait(Pid, Timeout) ->
@@ -394,4 +417,3 @@ format_rep([Other|Rep]) ->
     io_lib:format("    ~p~n",[Other]) ++ format_rep(Rep);
 format_rep(_) ->
     [].
-

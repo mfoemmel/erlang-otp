@@ -18,7 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: orber_initial_references.erl
-%% Author: Lars Thorsen
 %% 
 %% Description:
 %%    This file contains the CORBA::InitialReferences interface
@@ -82,11 +81,10 @@ remove(EO_this, Id) ->
 %%-----------------------------------------------------------------
 init([]) ->
     TableName = ets:new('InitialReferences', []), 
-%    NSObjKey = {list_to_binary("IDL:omg.org/CosNaming/NamingContext:1.0"),
-%		'registered', 'orber_nameservice', term_to_binary(undefined)},
-    NSObjKey = corba:mk_light_objkey("IDL:omg.org/CosNaming/NamingContext:1.0",
-				     'orber_nameservice'),
+    NSObjKey = 'CosNaming_NamingContextExt':oe_create([], [{pseudo, true}]),
     ets:insert(TableName, {"NameService", NSObjKey}),
+    ErlIfr = 'OrberApp_IFR':oe_create([], [{pseudo, true}]),
+    ets:insert(TableName, {"OrberIFR", ErlIfr}),
     {ok, TableName}.
 
 terminate(Reason, TableName) ->
@@ -106,7 +104,8 @@ handle_call({EO_this, 'get', [Id]}, From, TableName) ->
     {'reply', ORef, TableName};
 handle_call({EO_this, 'list', []}, From, TableName) ->
     ObjIdList = get_all_objectids(ets:tab2list(TableName), []),
-    {'reply', ObjIdList, TableName};
+    %% We do not want OrberIFR to exported, remove it.
+    {'reply', lists:delete("OrberIFR", ObjIdList), TableName};
 
 handle_call({EO_this, 'add', [Id, ObjectRef]}, From, TableName) ->
     B = case ets:lookup(TableName, Id) of
@@ -159,6 +158,17 @@ handle_info(_, State) ->
 %%-----------------------------------------------------------------
 %% Func: code_change/3
 %%-----------------------------------------------------------------
+code_change({down, OldVsn}, TableName, extension) ->
+    NSObjKey = corba:mk_light_objkey("IDL:omg.org/CosNaming/NamingContext:1.0",
+                                     'orber_nameservice'),
+    ets:insert(TableName, {"NameService", NSObjKey}),
+    oe_cos_naming_ext:oe_unregister(),
+    {ok, TableName};
+code_change(OldVsn, TableName, extension) ->
+    NSObjKey = 'CosNaming_NamingContextExt':oe_create([], [{pseudo, true}]),
+    ets:insert(TableName, {"NameService", NSObjKey}),
+    catch oe_cos_naming_ext:oe_register(),
+    {ok, TableName};
 code_change(OldVsn, State, Extra) ->
     {ok, State}.
 

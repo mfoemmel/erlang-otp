@@ -20,11 +20,11 @@
 %% encoding / decoding of BER  
  
 -export([fixoptionals/2,split_list/2,cindex/3,restbytes/3,list_to_record/2,
-	 encode_tag_val/1,decode_tag/1,
+	 encode_tag_val/1,decode_tag/1,peek_tag/1,
 	 check_tags/3, encode_tags/3]).
 -export([encode_boolean/2,decode_boolean/3,
 	 encode_integer/3,encode_integer/4,
-	 decode_integer/4,decode_integer/5,
+	 decode_integer/4,decode_integer/5, encode_enumerated/2,
 	 encode_enumerated/4,decode_enumerated/5,
 	 encode_real/2,decode_real/4,
 	 encode_bit_string/4,decode_bit_string/6,
@@ -221,7 +221,25 @@ encode_tag_val2(Tag, OctAck) ->
     encode_tag_val2(Tag bsr 8, [255 band Tag | OctAck]). 
  
  
- 
+%%============================================================================\%% Peek on the initial tag
+%% peek_tag(Bytes) -> TagBytes
+%% interprets the first byte and possible  second, third and fourth byte as
+%% a tag and returns all the bytes comprising the tag, the constructed/primitive bit (6:th bit of first byte) is normalised to 0
+%%
+
+peek_tag([Tag|Buffer]) when (Tag band 31) == 31 -> 
+    [Tag band 2#11011111 | peek_tag(Buffer,[])];
+%% single tag (tagno < 31)
+peek_tag([Tag|Buffer]) ->
+    [Tag band 2#11011111].
+
+peek_tag([PartialTag|Buffer], TagAck) when (PartialTag < 128 ) ->
+    lists:reverse([PartialTag|TagAck]);
+peek_tag([PartialTag|Buffer], TagAck) ->
+    peek_tag(Buffer,[PartialTag|TagAck]);
+peek_tag(Buffer,TagAck) ->
+    exit({error,{asn1, {invalid_tag,lists:reverse(TagAck)}}}). 
+    
 %%=============================================================================== 
 %% Decode a tag 
 %% 
@@ -538,6 +556,13 @@ decode_integer(Buffer, Range, NamedNumberList, Tags, OptOrMand) ->
 
 %% encode enumerated value 
 %%============================================================================ 
+encode_enumerated(Val, DoTag) ->
+    dotag(DoTag, ?N_ENUMERATED, encode_integer(false,Val)).
+
+%% The encode_enumerated functions below this line can be removed when the
+%% new code generation is stable. (the functions might have to be kept here
+%% a while longer for compatibility reasons)
+
 encode_enumerated(C, Val, {NamedNumberList,ExtList}, DoTag) when atom(Val) ->
     case catch encode_enumerated(C, Val, NamedNumberList, DoTag) of
 	{'EXIT',_} -> encode_enumerated(C, Val, ExtList, DoTag);
@@ -881,8 +906,6 @@ encode_bitstring([B8, B7, B6, B5, B4, B3, B2, B1 | Rest]) ->
     Val = (B8 bsl 7) bor (B7 bsl 6) bor (B6 bsl 5) bor (B5 bsl 4) bor 
 	(B4 bsl 3) bor (B3 bsl 2) bor (B2 bsl 1) bor B1, 
     encode_bitstring(Rest, [Val], 1); 
-encode_bitstring(Val) when integer(Val) ->	      
-    {Len, Shift, Octets} = encode_bitstring_int(Val, [], 0); 
 encode_bitstring(Val) -> 
     {Unused, Octet} = unused_bitlist(Val, 7, 0), 
     {1, Unused, Octet}. 
@@ -910,70 +933,6 @@ unused_bitlist([Bit | Rest], Trail, Ack) ->
     unused_bitlist(Rest, Trail - 1, (Bit bsl Trail) bor Ack). 
  
  
-%%%%%%%%%%%%%%%%%% 
-%% encode_bitstring_int(Int, [], 0) -> {No of Octets, Unused Bits, OctetList}  
-%% 
-encode_bitstring_int(Int, Ack, Len) when Int =< 255 -> 
-%%    io:format("Finished Int: ~w, Ack: ~w~n", [Int,Ack]), 
-    case unused_bits(Int) of 
-	8 -> 
-	    exit({asn1error, {bitstring_length_error, '8_unused_bits'}}); 
-	0 -> 
-	    {Len + 1, 0,lists:reverse([Int | Ack])}; 
-	Shift -> 
-	    {Len + 1, Shift, shift_all_octets([Int| Ack], Shift)} 
-    end; 
-encode_bitstring_int(Int, Ack, Len) -> 
-%%    io:format("int_round Int: ~w, Ack: ~w~n", [Int,Ack]), 
-    encode_bitstring_int(Int bsr 8, [Int band 255 | Ack], Len + 1). 
- 
- 
- 
-%%%%%%%%%%%%%%%%% 
-%% shift_all_octets([List Of Octets], No_Of_Shift_Left) -> 
-%%  [List Of Octets shifted ] 
- 
-shift_all_octets([First, Second | Rest], X) -> 
-%    io:format("First: ~w Second: ~w Rest: ~w, X: ~w~n", [First, Second, Rest, X]), 
-    [((First bsl X) band 255)bor (Second bsr (8 - X)) 
-     | shift_all_octets([Second | Rest], X)]; 
-shift_all_octets([First | [] ], X) -> 
-    [(First bsl X) band 255 | []]. 
- 
- 
-%%%%%%%%%%%%%%%%% 
-%% Bit binsearch - could have done generic int recusive but thats slower.. 
-%% unused_bits(Int) where Int <= 255 -> bits used to represent value 
-unused_bits(Int)  -> 
-    X = if Int < 16 -> 
-		if Int < 4 -> 
-			if Int < 2 -> 
-				if Int < 1 -> 0; % no bits used i value 
-				   true    -> 1 
-				end; 
-			   true    -> 2 
-			end; 
-		   true   -> 
-			if Int < 8 -> 3; 
-			   true    -> 4 
-			end 
-		end; 
-	   Int < 64 -> 
-		if Int < 32 -> 5; 
-		   true     -> 6 
-		end; 
-	   Int < 128 -> 7; 
-	   true -> 8 %% all 8 bits used.. 
-	end, 
-    8 - X. %% return X, or 8-X? 
- 
- 
- 
- 
- 
- 
- 
-   
 %%============================================================================ 
 %% decode bitstring value 
 %%    (Buffer, Range, NamedNumberList, HasTag, TotalLen) -> {Integer, Remain, RemovedBytes}  
@@ -1488,18 +1447,12 @@ encode_generalized_time(C, OctetList, DoTag) ->
 %%============================================================================ 
 
 decode_generalized_time(Buffer, Range, Tags, TotalLen, OptOrMand) -> 
-    case Tags of
-	[] ->
-	    {lists:sublist(Buffer, TotalLen), 
-	     lists:nthtail(TotalLen, Buffer), TotalLen};
-	_ ->
-	    {{Form, Len}, Buffer2, RemovedBytes} =  
-		check_tags(Tags ++ 
-			   [#tag{class=?UNIVERSAL,
-				 number=?N_GeneralizedTime}],Buffer, OptOrMand), 
-	    {lists:sublist(Buffer2, Len), 
-	     lists:nthtail(Len, Buffer2), RemovedBytes+Len}
-    end. 
+    {{Form, Len}, Buffer2, RemovedBytes} =  
+	check_tags(Tags ++ 
+		   [#tag{class=?UNIVERSAL,
+			 number=?N_GeneralizedTime}],Buffer, OptOrMand), 
+    {lists:sublist(Buffer2, Len), 
+     lists:nthtail(Len, Buffer2), RemovedBytes+Len}.
 
 %%============================================================================ 
 %% Universal time, ITU_T X.680 Chapter 40 
@@ -1517,17 +1470,11 @@ encode_utc_time(C, OctetList, DoTag) ->
 %%============================================================================ 
 
 decode_utc_time(Buffer, Range, Tags, TotalLen, OptOrMand) -> 
-    case Tags of
-	[] ->
-	    {lists:sublist(Buffer, TotalLen), 
-	     lists:nthtail(TotalLen, Buffer), TotalLen};
-	_ ->
-	    {{Form, Len}, Buffer2, RemovedBytes} =  
-		check_tags(Tags ++ [#tag{class=?UNIVERSAL,
-					 number=?N_UTCTime}], Buffer, OptOrMand),
-	    {lists:sublist(Buffer2, Len), 
-	     lists:nthtail(Len, Buffer2), RemovedBytes+Len}
-    end. 
+    {{Form, Len}, Buffer2, RemovedBytes} =  
+	check_tags(Tags ++ [#tag{class=?UNIVERSAL,
+				 number=?N_UTCTime}], Buffer, OptOrMand),
+    {lists:sublist(Buffer2, Len), 
+     lists:nthtail(Len, Buffer2), RemovedBytes+Len}. 
  
 %%============================================================================ 
 %% Length handling  

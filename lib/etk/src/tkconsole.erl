@@ -337,8 +337,9 @@ con_tkinit(TopLevel, Name, Shell) ->
     case Platform of
 	"macintosh" ->
 	    %% Use the native scrollbar for the console
-	    tk:rename("scrollbar", ""),
-	    tk:rename("macscrollbar", "scrollbar");
+	    %%tk:rename("scrollbar", ""),
+	    %%tk:rename("macscrollbar", "scrollbar");
+	    false; % the tk:rename/2 does not exist
 	_ ->
 	    false
     end,

@@ -331,59 +331,32 @@ case $erl_cv_time_correction in
 esac
 ])dnl
 
-dnl ----------------------------------------------------------------------
-dnl
-dnl ERL_EXTRA_POINTER_BITS
-dnl
-dnl checks if a constant pattern is present in the top four bits of
-dnl pointers to allocated memory. If so, defines EXTRA_POINTER_BITS to
-dnl a mask that has to applied to all pointers.
-dnl
-
-AC_DEFUN(ERL_EXTRA_POINTER_BITS,
-[AC_PROVIDE([$0])
-AC_MSG_CHECKING(whether pointers contains extra bits)
-AC_CACHE_VAL(erl_cv_extra_pointer_bits,
-AC_TRY_RUN([#include <stdio.h>
-#if STDC_HEADERS
-#  include <stdlib.h>
-#endif
-#define UNSAFE_MASK  0xf0000000 /* Mask for bits that must be constant */
-main()
-{
-    int i;
-    int n;
-    void* ptr;
-    unsigned long ptr_val;
-    FILE *f = fopen("conftestdata", "w");
-
-    if (!f) exit(1);
-    ptr_val = ((unsigned long) malloc(1)) & UNSAFE_MASK;
-    for (n = 2, i = 1; i < 20; i++) { /* allocate some Meg */
-	ptr = (void*) malloc(n);
-	if ((((unsigned long) ptr) & UNSAFE_MASK) != ptr_val) {
-	    fprintf(f, "variable");
-	    exit(0);
-	}
-	n *= 2;
-    }
-    if (ptr_val == 0)
-	fprintf(f, "no");
-    else
-	fprintf(f, "0x%8x", ptr_val);
-    fclose(f);
-    exit(0);
-}],
-[erl_cv_extra_pointer_bits="`cat conftestdata`"], ,
-erl_cv_extra_pointer_bits=no))
-
-case ${erl_cv_extra_pointer_bits} in
-   no|variable) erl_extra_pointer_bits_msg=${erl_cv_extra_pointer_bits} ;;
-   *)  erl_extra_pointer_bits_msg="yes, (mask is ${erl_cv_extra_pointer_bits})"
-       AC_DEFINE_UNQUOTED(EXTRA_POINTER_BITS, ${erl_cv_extra_pointer_bits});;
-esac
-
-AC_MSG_RESULT([${erl_extra_pointer_bits_msg}])
-])
+dnl ERL_TRY_LINK_JAVA(CLASSES, FUNCTION-BODY
+dnl                   [ACTION_IF_FOUND [, ACTION-IF-NOT-FOUND]])
+dnl Freely inspired by AC_TRY_LINK. (Maybe better to create a 
+dnl AC_LANG_JAVA instead...)
+AC_DEFUN(ERL_TRY_LINK_JAVA,
+[java_link='$JAVAC conftest.java 1>&AC_FD_CC'
+changequote(«, »)dnl
+cat > conftest.java <<EOF
+«$1»
+class conftest { public static void main(String[] args) {
+   «$2»
+   ; return; }}
+EOF
+changequote([, ])dnl
+if AC_TRY_EVAL(java_link) && test -s conftest.class; then
+   ifelse([$3], , :, [rm -rf conftest*
+   $3])
+else
+   echo "configure: failed program was:" 1>&AC_FD_CC
+   cat conftest.java 1>&AC_FD_CC
+   echo "configure: PATH was $PATH" 1>&AC_FD_CC
+ifelse([$4], , , [  rm -rf conftest*
+  $4
+])dnl
+fi
+rm -f conftest*])
+#define UNSAFE_MASK  0xc0000000 /* Mask for bits that must be constant */
 
 

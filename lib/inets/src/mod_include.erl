@@ -23,6 +23,7 @@
 %% do
 
 do(Info) ->
+    ?DEBUG("do -> entry",[]),
     case Info#mod.method of
 	"GET" ->
 	    case httpd_util:key1search(Info#mod.data,status) of
@@ -46,6 +47,7 @@ do(Info) ->
     end.
 
 do_include(Info) ->
+    ?DEBUG("do_include -> Request URI: ~p",[Info#mod.request_uri]),
     Path = mod_alias:path(Info#mod.data,Info#mod.config_db,
 			  Info#mod.request_uri),
     Suffix = httpd_util:suffix(Path),
@@ -56,15 +58,20 @@ do_include(Info) ->
 	    httpd_socket:deliver(Info#mod.socket_type,
 				 Info#mod.socket,
 				 [Header,"\r\n\r\n"]),
-	    case send_in_chunks(Info,Path) of
+	    %% case send_in_chunks(Info,Path) of
+	    case send_in(Info,Path) of
 		{ok,ErrorLog} ->
 		    {proceed,[{response,{already_sent,200,0}},
 			      {mime_type,"text/html"}|
 			      lists:append(ErrorLog,Info#mod.data)]};
 		{error,Reason} ->
-		    {proceed,[{status,{404,Info#mod.request_uri,
-				       ?NICE("Can't access "++Path)}}|
-			      Info#mod.data]}
+		    ?LOG("do_include -> send_in failed:~n"
+			 "          Reason: ~p~n"
+			 "          Info:   ~p~n"
+			 "          Path:   ~p",
+			 [Reason,Info,Path]),
+		    {proceed,
+		     [{status,send_error(Reason,Info,Path)}|Info#mod.data]}
 	    end;
 	_ ->
 	    {proceed,Info#mod.data}
@@ -124,8 +131,10 @@ include(Info, Context, ErrorLog, TagList, ValueList, R) ->
       ErrorLog], httpd_util:key1search(Context, errmsg, ""), R}.
 
 include(Info, Context, ErrorLog, R, Path) ->
+    ?DEBUG("include -> read file: ~p",[Path]),
     case file:read_file(Path) of
 	{ok, Body} ->
+	    ?DEBUG("include -> size(Body): ~p",[size(Body)]),
 	    {ok, NewContext, NewErrorLog, Result} =
 		parse(Info, binary_to_list(Body), Context, ErrorLog, []),
 	    {ok, Context, NewErrorLog, Result, R};
@@ -416,6 +425,28 @@ proxy(Port, ErrorLog, Result) ->
 	    {ErrorLog, Result}
     end.
 
+
+%% ------
+%% Temorary until I figure out a way to fix send_in_chunks
+%% (comments and directives that start in one chunk but end
+%% in another is not handled).
+%%
+send_in(Info, Path) ->
+    case file:read_file(Path) of
+	{ok, Bin} ->
+	    send_in1(Info, binary_to_list(Bin));
+	{error, Reason} ->
+	    ?ERROR("Failed open file: ~p",[Reason]),
+	    {error, {open,Reason}}
+    end.
+
+send_in1(Info, Data) ->
+    {ok, _Context, Err, ParsedBody} = parse(Info,Data,?DEFAULT_CONTEXT,[],[]),
+    httpd_socket:deliver(Info#mod.socket_type,Info#mod.socket, ParsedBody),
+    {ok,Err}.
+
+
+
 %%
 %% Addition to "Fuzzy" HTML parser. This is actually a ugly hack to
 %% avoid putting to much data on the heap. To be rewritten...
@@ -424,16 +455,19 @@ proxy(Port, ErrorLog, Result) ->
 -define(CHUNK_SIZE, 4096).
 
 send_in_chunks(Info, Path) ->
+    ?DEBUG("send_in_chunks -> Path: ~p",[Path]),
     case file:open(Path, [read, raw]) of
 	{ok, Stream} ->
 	    send_in_chunks(Info, Stream, ?DEFAULT_CONTEXT,[]);
 	{error, Reason} ->
-	    {error, Reason}
+	    ?ERROR("Failed open file: ~p",[Reason]),
+	    {error, {open,Reason}}
     end.
 
 send_in_chunks(Info, Stream, Context, ErrorLog) ->
     case file:read(Stream, ?CHUNK_SIZE) of
 	{ok, Data} ->
+	    ?DEBUG("send_in_chunks -> read ~p bytes",[length(Data)]),
 	    {ok, NewContext, NewErrorLog, ParsedBody}=
 		parse(Info, Data, Context, ErrorLog, []),
 	    httpd_socket:deliver(Info#mod.socket_type,
@@ -442,8 +476,10 @@ send_in_chunks(Info, Stream, Context, ErrorLog) ->
 	eof ->
 	    {ok, ErrorLog};
 	{error, Reason} ->
-	    {error, Reason}
+	    ?ERROR("Failed read from file: ~p",[Reason]),
+	    {error, {read,Reason}}
     end.
+
 
 %%
 %% "Fuzzy" HTML parser
@@ -455,18 +491,28 @@ parse(Info,Body) ->
 parse(Info, [], Context, ErrorLog, Result) ->
     {ok, Context, lists:reverse(ErrorLog), lists:reverse(Result)};
 parse(Info,[$<,$!,$-,$-,$#|R1],Context,ErrorLog,Result) ->
+  ?DEBUG("parse -> start command directive when length(R1): ~p",[length(R1)]),
   case catch parse0(R1,Context) of
     {parse_error,Reason} ->
       parse(Info,R1,Context,[{internal_info,?NICE(Reason)}|ErrorLog],
 	    [$#,$-,$-,$!,$<|Result]);
     {ok,Context,Command,TagList,ValueList,R2} ->
+      ?DEBUG("parse -> Command: ~p",[Command]),
       {ok,NewContext,NewErrorLog,MoreResult,R3}=
 	handle(Info,Context,ErrorLog,Command,TagList,ValueList,R2),
       parse(Info,R3,NewContext,NewErrorLog,lists:reverse(MoreResult)++Result)
   end;
 parse(Info,[$<,$!,$-,$-|R1],Context,ErrorLog,Result) ->
-  {Comment,R2}=parse5(R1,[],0),
-  parse(Info,R2,Context,ErrorLog,Comment++Result);
+  ?DEBUG("parse -> start comment when length(R1) = ~p",[length(R1)]),
+  case catch parse5(R1,[],0) of
+    {parse_error,Reason} ->
+      ?ERROR("parse -> parse error: ~p",[Reason]),
+      parse(Info,R1,Context,[{internal_info,?NICE(Reason)}|ErrorLog],Result);
+    {Comment,R2} ->
+      ?DEBUG("parse -> length(Comment) = ~p, length(R2) = ~p",
+	     [length(Comment),length(R2)]),
+      parse(Info,R2,Context,ErrorLog,Comment++Result)
+  end;
 parse(Info,[C|R],Context,ErrorLog,Result) ->
   parse(Info,R,Context,ErrorLog,[C|Result]).
 
@@ -531,6 +577,8 @@ parse4([C|R],Context,Command,TagList,ValueList,Value) ->
   parse4(R,Context,Command,TagList,ValueList,[C|Value]).
 
 parse5([],Comment,Depth) ->
+  ?ERROR("parse5 -> unterminated comment of ~p bytes when Depth = ~p",
+	 [length(Comment),Depth]),
   throw({parse_error,"Premature EOF in parsed file"});
 parse5([$<,$!,$-,$-|R],Comment,Depth) ->
   parse5(R,[$-,$-,$!,$<|Comment],Depth+1);
@@ -540,3 +588,41 @@ parse5([$-,$-,$>|R],Comment,Depth) ->
   parse5(R,[$>,$-,$-|Comment],Depth-1);
 parse5([C|R],Comment,Depth) ->
   parse5(R,[C|Comment],Depth).
+
+
+%% send_error - Handle failure to send the file
+%%
+send_error({open,Reason},Info,Path) -> open_error(Reason,Info,Path);
+send_error({read,Reason},Info,Path) -> read_error(Reason,Info,Path).
+
+
+%% open_error - Handle file open failure
+%%
+open_error(eacces,Info,Path) ->
+    open_error(403,Info,Path,"");
+open_error(enoent,Info,Path) ->
+    open_error(404,Info,Path,"");
+open_error(enotdir,Info,Path) ->
+    open_error(404,Info,Path,
+	       ": A component of the file name is not a directory");
+open_error(emfile,_Info,Path) ->
+    open_error(500,none,Path,": To many open files");
+open_error({enfile,_},_Info,Path) ->
+    open_error(500,none,Path,": File table overflow");
+open_error(_Reason,_Info,Path) ->
+    open_error(500,none,Path,"").
+	    
+open_error(StatusCode,none,Path,Reason) ->
+    {StatusCode,none,?NICE("Can't open "++Path++Reason)};
+open_error(StatusCode,Info,Path,Reason) ->
+    {StatusCode,Info#mod.request_uri,?NICE("Can't open "++Path++Reason)}.
+
+read_error(_Reason,_Info,Path) -> 
+    read_error(500,none,Path,"").
+
+read_error(StatusCode,none,Path,Reason) ->
+    {StatusCode,none,?NICE("Can't read "++Path++Reason)};
+read_error(StatusCode,Info,Path,Reason) ->
+    {StatusCode,Info#mod.request_uri,?NICE("Can't read "++Path++Reason)}.
+
+

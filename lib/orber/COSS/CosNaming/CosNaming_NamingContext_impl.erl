@@ -18,8 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: CosNaming_NamingContext_impl.erl
-%% Author: Lars Thorsen
-%% 
 %% Creation date: 970902
 %% Modified:
 %%
@@ -35,7 +33,7 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([init/1, terminate/2, install/2]).
+-export([init/1, terminate/2, install/2, code_change/3]).
 -export([bind/4, rebind/4, bind_context/4, rebind_context/4,
 	 resolve/3, unbind/3, new_context/2, bind_new_context/3,
 	 list/3, destroy/2]).
@@ -104,6 +102,9 @@ init(Env) ->
 
 terminate(Reason, State) ->
     ok.
+
+code_change(OldVsn, State, Extra) ->
+    {ok, State}.
 
 install(Timeout, Options) ->
     %% Fetch a list of the defined tables to see if 'CosNaming' is defined.
@@ -351,14 +352,10 @@ unbind(OE_THIS, OE_State, [H|T]) ->
 
 
 new_context(OE_THIS, OE_State) ->
+    %% Use CosNaming_NamingContextExt instead; this way we will be able to softly
+    %% migrate all to use the new interface.
     SubobjKey = term_to_binary({now(), node()}),
-    NewKey = corba:create_subobject_key(OE_THIS, SubobjKey),
-    %% Create a record in the table and set the key to a newly
-    %% generated objectkey.
-    _F = ?write_function(#orber_CosNaming{name_context=SubobjKey,
-					  nameindex=[]}),
-    write_result(mnesia:transaction(_F)),
-    {NewKey, OE_State}.
+    {'CosNaming_NamingContextExt':oe_create(SubobjKey, [{pseudo, true}]), OE_State}.
 
 bind_new_context(OE_THIS, OE_State, N) ->
     %%?PRINTDEBUG("bind_new_context"),

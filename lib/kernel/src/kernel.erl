@@ -82,7 +82,7 @@ args(X) -> X.
 %%%    rpc, ...)    -------------   -------------
 %%%		          |               |
 %%%                  (net_kernel,  (disk_log, pg2,
-%%%          	      auth, ...)    os_server, ...)
+%%%          	      auth, ...)     ...)
 %%%
 %%% The rectangular boxes are supervisors.  All supervisors except
 %%% for kernel_safe_sup terminates the enitre erlang node if any of
@@ -136,8 +136,7 @@ init(safe) ->
     Boot = start_boot_server(),
     DiskLog = start_disk_log(),
     Pg2 = start_pg2(),
-    Os = start_os(),
-    {ok, {SupFlags, Boot ++ DiskLog ++ Pg2 ++ Os}}.
+    {ok, {SupFlags, Boot ++ DiskLog ++ Pg2}}.
 
 config_zombies() ->
     case application:get_env(kernel, keep_zombies) of
@@ -206,14 +205,6 @@ start_pg2() ->
     case application:get_env(kernel, start_pg2) of
 	{ok, true} ->
 	    [{pg2, {pg2, start_link, []}, permanent, 1000, worker, [pg2]}];
-	_ ->
-	    []
-    end.
-
-start_os() ->
-    case application:get_env(kernel, start_os) of
-	{ok, true} ->
-	    [{os_server, {os, start_link, []}, permanent, 1000, worker, [os]}];
 	_ ->
 	    []
     end.

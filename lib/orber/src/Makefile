@@ -67,6 +67,7 @@ MODULES= \
 	orber_iiop_outrequest \
 	orber_iiop_socketsup \
 	orber_socket \
+	orber_interceptors \
 	orber_ifr \
 	orber_ifr_aliasdef \
 	orber_ifr_arraydef \
@@ -90,7 +91,8 @@ MODULES= \
 	orber_ifr_typecode \
 	orber_ifr_typedef \
 	orber_ifr_uniondef \
-	orber_ifr_utils 
+	orber_ifr_utils \
+	OrberApp_IFR_impl
 #	orber_imr
 
 EXTERNAL_HRL_FILES= ../include/corba.hrl \
@@ -112,9 +114,14 @@ GEN_ERL_FILES1 =  \
 
 GEN_ERL_FILES2 =  \
 	oe_CORBA.erl \
-	CORBA_Policy.erl
+	CORBA_Policy.erl \
+	CORBA_PolicyList.erl
 
-GEN_ERL_FILES =  $(GEN_ERL_FILES1) $(GEN_ERL_FILES2)
+GEN_ERL_FILES3 =  \
+	oe_OrberIFR.erl \
+	OrberApp_IFR.erl
+
+GEN_ERL_FILES =  $(GEN_ERL_FILES1) $(GEN_ERL_FILES2) $(GEN_ERL_FILES3)
 
 GEN_HRL_FILES1 = \
 	oe_erlang.hrl \
@@ -125,7 +132,12 @@ GEN_HRL_FILES2 = \
 	oe_CORBA.hrl \
 	CORBA_Policy.hrl \
 
-GEN_HRL_FILES = $(GEN_HRL_FILES1) $(GEN_HRL_FILES2)
+GEN_HRL_FILES3 = \
+	OrberApp_IFR.hrl \
+	oe_OrberIFR.hrl \
+	OrberApp.hrl
+
+GEN_HRL_FILES = $(GEN_HRL_FILES1) $(GEN_HRL_FILES2) $(GEN_HRL_FILES3)
 
 
 GEN_FILES = \
@@ -184,6 +196,9 @@ $(GEN_ERL_FILES1) $(GEN_HRL_FILES1): $(ERL_TOP)/lib/ic/include/erlang.idl
 $(GEN_ERL_FILES2) $(GEN_HRL_FILES2): CORBA.idl
 	erlc $(ERL_FLAGS) CORBA.idl
 
+$(GEN_ERL_FILES3) $(GEN_HRL_FILES3): OrberIFR.idl
+	erlc $(ERL_FLAGS) +'{this, "Orber::IFR"}' \
+	OrberIFR.idl
 
 # ----------------------------------------------------
 # Release Target

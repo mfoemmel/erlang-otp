@@ -17,13 +17,18 @@
  */
 package com.ericsson.otp.erlang;
 
+import java.io.Serializable;
+
 /**
  * Provides a Java representation of Erlang floats and doubles. Erlang
  * defines only one floating point numeric type, however this class
  * and its subclass {@link OtpErlangFloat} are used to provide
  * representations corresponding to the Java types Double and Float.
 **/
-public class OtpErlangDouble extends OtpErlangObject {
+public class OtpErlangDouble extends OtpErlangObject implements Serializable, Cloneable {
+  // don't change this!
+  static final long serialVersionUID = 132947104811974021L;
+  
   private double d;
 
   /**
@@ -98,24 +103,14 @@ public class OtpErlangDouble extends OtpErlangObject {
    * Determine if two floats are equal. Floats are equal if they
    * contain the same value.
    *
-   * @param o the object to compare to.
-   *
-   * @return true if o is a float and the floats have the same
-   * values, false otherwise.
-   **/
-  public boolean equals(Object o) {
-    return false;
-  }
-
-  /**
-   * Determine if two floats are equal. Floats are equal if they
-   * contain the same value.
-   *
-   * @param t the float to compare to.
+   * @param o the float to compare to.
    *
    * @return true if the floats have the same value.
    **/
-  public boolean equals(OtpErlangDouble d) {
+  public boolean equals(Object o) {
+    if (!(o instanceof OtpErlangDouble)) return false;
+
+    OtpErlangDouble d = (OtpErlangDouble)o;
     return this.d == d.d;
   }
 }

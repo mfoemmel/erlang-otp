@@ -61,7 +61,7 @@ public class AnyHelper {
       _in.read_tuple_head();
       
       if ((_in.read_atom()).compareTo("any") != 0)
-        throw new com.ericsson.otp.erlang.OtpErlangDataException("");
+        throw new java.lang.Exception("");
       
       _tc = TypeCode.unmarshal(_in);
       _value = new Any(); 

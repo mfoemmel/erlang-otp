@@ -159,9 +159,6 @@ gen_value(Value) when record(Value,valuedef) ->
 %%===============================================================================
 
 gen_encode(Erules,Module,Type) when record(Type,typedef) ->
-    put(ctype,Type#typedef.name),
-    %%    io:format(" encode-~w ",[Type#typedef.name]),
-    %%    gen_encode_tag(...),
     gen_encode_user(Erules,Module,Type).
 
 %%===============================================================================
@@ -207,7 +204,12 @@ gen_encode(Erules,Module,Tname,Type) when record(Type,type) ->
 
 gen_encode(Erules,Module,Tname,{'ComponentType',_Pos,Cname,Type,Prop,Tags}) ->
     NewTname = list_to_atom(lists:concat([Tname,"_",Cname])),
-    gen_encode(Erules,Module,NewTname,Type).
+    %% The tag is set to undefined to avoid that it is
+    %% taken into account twice, both as a component/alternative (passed as
+    %% argument to the encode decode function and within the encode decode
+    %% function it self.
+    NewType = Type#type{tag=undefined},
+    gen_encode(Erules,Module,NewTname,NewType).
 
 gen_encode_user(Erules,Module,D) when record(D,typedef) ->
     Typename = D#typedef.name,
@@ -308,12 +310,17 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 	    emit_encode_func('integer',Constraint,Value,
 			     NamedNumberList,DoTag);
 	{'ENUMERATED',NamedNumberList} ->
-	    emit_encode_func('enumerated',Constraint,Value,
-			     NamedNumberList,DoTag);
+	    emit(["case ",Value," of",nl]),
+	    emit_enc_enumerated_cases(NamedNumberList,DoTag);
+
+%%%	    emit_encode_func('enumerated',Constraint,Value,
+%%%			     NamedNumberList,DoTag);
 	{'BIT STRING',NamedNumberList} ->
-	    NewList = [{X,Y}||{_,X,Y} <- NamedNumberList],
+%%	    NewList = [{X,Y}||{_,X,Y} <- NamedNumberList],
+%%	    emit_encode_func('bit_string',BitStringConstraint,Value,
+%%			     NewList,DoTag);
 	    emit_encode_func('bit_string',BitStringConstraint,Value,
-			     NewList,DoTag);
+			     NamedNumberList,DoTag);
 	'ANY' ->
 	    exit({'can not encode' ,'ANY'});
 	'NULL' ->
@@ -383,6 +390,24 @@ emit_encode_func(Name,Constraint,Value,Asis,Tags) ->
 	  ", ",{asis,Asis},
 	  ", ",Tags,")"]).
     
+emit_enc_enumerated_cases({L1,L2}, Tags) ->
+    emit_enc_enumerated_cases(L1++L2, Tags, ext);
+emit_enc_enumerated_cases(L, Tags) ->
+    emit_enc_enumerated_cases(L, Tags, noext).
+
+emit_enc_enumerated_cases([{EnumName,EnumVal},H2|T], Tags, Ext) ->
+    emit(["'",EnumName,"' -> ?RT_BER:encode_enumerated(",EnumVal,",",Tags,");",nl]),
+    emit_enc_enumerated_cases([H2|T], Tags, Ext);
+emit_enc_enumerated_cases([{EnumName,EnumVal}], Tags, Ext) ->
+    emit(["'",EnumName,"' -> ?RT_BER:encode_enumerated(",EnumVal,",",Tags,")"]),
+    case Ext of
+	noext -> emit([";",nl]);
+	ext -> emit([";",nl,"{asn1_enum,EnumVal} -> ",
+		     "?RT_BER:encode_enumerated(EnumVal,",Tags,");",nl])
+    end,
+    emit(["EnumVal -> exit({error,{asn1, {enumerated_not_in_range, EnumVal}}})"]),
+    emit([nl,"end"]).
+
 
 %%===============================================================================
 %%===============================================================================
@@ -398,8 +423,6 @@ emit_encode_func(Name,Constraint,Value,Asis,Tags) ->
 
 gen_decode(Erules,Module,Type) when record(Type,typedef) ->
     D = Type,
-    put(ctype,Type#typedef.name),
-    %%    io:format(" decode-~w ",[Type#typedef.name]),
     emit({nl,nl}),
     emit({"'dec_",Type#typedef.name,"'(Bytes, OptOrMand) ->",nl}),
     emit({"   'dec_",Type#typedef.name,"'(Bytes, OptOrMand, []).",nl,nl}),
@@ -433,7 +456,12 @@ gen_decode(Erules,Module,Tname,Type) when record(Type,type) ->
 
 gen_decode(Erules,Module,Tname,{'ComponentType',_Pos,Cname,Type,Prop,Tags}) ->
     NewTname = list_to_atom(lists:concat([Tname,"_",Cname])),
-    gen_decode(Erules,Module,NewTname,Type).
+    %% The tag is set to undefined to avoid that it is
+    %% taken into account twice, both as a component/alternative (passed as
+    %% argument to the encode decode function and within the encode decode
+    %% function it self.
+    NewType = Type#type{tag=undefined},
+    gen_decode(Erules,Module,NewTname,NewType).
 
 
 gen_decode_user(Erules,Module,D) when record(D,typedef) ->
@@ -544,10 +572,11 @@ gen_dec_prim1(Erules,Att,BytesVar,DoTag,TagIn,Length,Form,OptOrMand) ->
 		      {asis,NamedNumberList},","}),
 		false;
 	    {'BIT STRING',NamedNumberList} ->
-		NewList = [{X,Y}||{_,X,Y} <- NamedNumberList],
+%%		NewList = [{X,Y}||{_,X,Y} <- NamedNumberList],
 		emit({"?RT_BER:decode_bit_string(",BytesVar,",",
 		      {asis,Constraint},",",
-		      {asis,NewList},","}),
+		      {asis,NamedNumberList},","}),
+%%		      {asis,NewList},","}),
 		true;
 	    'NULL' ->
 		emit({"?RT_BER:decode_null(",BytesVar,","}),

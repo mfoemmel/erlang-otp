@@ -30,6 +30,7 @@ VSN=$(RUNTIME_TOOLS_VSN)
 # be set for that system only.
 # ----------------------------------------------------
 CC = @CC@
+CFLAGS = @DED_CFLAGS@
 LD = @DED_LD@
 SHELL = /bin/sh
 LIBS = @LIBS@
@@ -45,7 +46,7 @@ endif
 
 TRACE_DRV_INCLUDES = $(SYSINCLUDE)
 
-ALL_CFLAGS = @CFLAGS@ @DEFS@ $(TYPE_FLAGS) $(TRACE_DRV_INCLUDES)
+ALL_CFLAGS = $(CFLAGS) @DEFS@ $(TYPE_FLAGS) $(TRACE_DRV_INCLUDES)
 
 
 ifeq ($(TYPE),debug)
@@ -107,11 +108,19 @@ $(OBJDIR)/%.o: %.c
 
 $(LIBDIR)/trace_ip_drv.so: $(TRACE_IP_DRV_OBJS)
 	$(INSTALL_DIR) $(LIBDIR)
+ifdef soname
 	$(LD) $(LDFLAGS) $(soname) trace_ip_drv.so -o $@ $^ -lc $(LIBS)
+else
+	$(LD) $(LDFLAGS) -o $@ $^ -lc $(LIBS)
+endif
 
 $(LIBDIR)/trace_file_drv.so: $(TRACE_FILE_DRV_OBJS)
 	$(INSTALL_DIR) $(LIBDIR)
+ifdef soname
 	$(LD) $(LDFLAGS) $(soname) trace_file_drv.so -o $@ $^ -lc $(LIBS)
+else
+	$(LD) $(LDFLAGS) -o $@ $^ -lc $(LIBS)
+endif
 
 #
 # VxWorks is simply to different from Unix in this sense.

@@ -1,0 +1,2 @@
+group: comm
+short: Enables Erlang to call COM objects on Windows

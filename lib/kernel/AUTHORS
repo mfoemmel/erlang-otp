@@ -17,3 +17,8 @@ Micael Karlberg
 and probably others...
 
 Open source contributors:
+
+Tony Rogvall (now @Bluetail)
+	Rewrote inet_{tcp,udp}.erl and gen_{tcp,udp}.erl among others, 
+	added prim_{file,inet}.erl. When adding a new and faster
+	inet_drv.

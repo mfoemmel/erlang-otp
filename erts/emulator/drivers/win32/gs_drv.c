@@ -22,6 +22,7 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <process.h>
+#include "global.h" /* For NIL */
 #include "sys.h"
 #include "driver.h"
 #include "winsock_func.h"
@@ -330,7 +331,7 @@ error(int port_num, char* format, ...)
     va_end(ap);
 
     sys_printf(CBUF, "%s\n", sbuf);
-    send_error_to_logger(0);
+    send_error_to_logger(NIL);
     if (port_num != -1) {
 	driver_failure(port_num, -1);
     }

@@ -202,9 +202,13 @@ test() ->
 getit(Cmd, Data) ->
     ensure_started(),
     Timeout = inet_db:res_option(timeout)*5,
-    case gen_server:call(inet_gethost_native, {Cmd, Data}, Timeout) of
+    case catch gen_server:call(inet_gethost_native, {Cmd, Data}, Timeout) of
 	{ok, Reply} ->
 	     reply(Reply);
+	{'EXIT', {timeout, _}} ->
+	    {error, timeout};
+	{'EXIT', Reason} ->
+             exit(Reason);
 	Error -> Error
     end.
     

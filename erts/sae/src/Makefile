@@ -20,13 +20,9 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 
 KERNEL = $(ERL_TOP)/lib/kernel/ebin
 
-# ----------------------------------------------------
-# Bundle definitions.
-# ----------------------------------------------------
-
-ERL_BUNDLE_MODS = otp_pre_init init erl_prim_loader
-ERL_BUNDLE_FILES = $(ERL_BUNDLE_MODS:%=$(KERNEL)/%.$(EMULATOR))
-ERL_BUNDLE = $(ERL_TOP)/erts/sae/bundles/erl.$(EMULATOR).bundle
+PRIMES_MOD = $(ERL_TOP)/erts/sae/ebin/primes.beam
+PRIMES_BIN = $(ERL_TOP)/erts/sae/bin/primes
+PRIMES_BUNDLE = $(ERL_TOP)/erts/sae/bundles/primes.bundle
 
 # ----------------------------------------------------
 # Release directory specification
@@ -39,9 +35,8 @@ RELSYSDIR = $(RELEASE_PATH)/sae
 MODULES= \
 	ring0 \
 	elink \
+	primes \
 	ebundle
-
-BUNDLES= $(ERL_BUNDLE)
 
 ERL_FILES= $(MODULES:%=%.erl)
 
@@ -57,7 +52,7 @@ ERL_COMPILE_FLAGS += -I../include -I../../kernel/include
 # Targets
 # ----------------------------------------------------
 
-debug opt: $(TARGET_FILES) $(BUNDLES)
+debug opt: $(TARGET_FILES) $(PRIMES_BIN)
 
 
 clean:
@@ -66,8 +61,11 @@ clean:
 
 docs:
 
-$(ERL_BUNDLE): $(ERL_BUNDLE_FILES)
-	erl -noshell -pa ../ebin -s ebundle make_bundle $(ERL_BUNDLE) $(ERL_BUNDLE_FILES)
+$(PRIMES_BIN): $(PRIMES_MOD)
+	erl -noshell -pa ../ebin -s ebundle unix $(PRIMES_BIN) $(PRIMES_MOD)
+
+$(PRIMES_BUNDLE): $(PRIMES_MOD)
+	erl -noshell -pa ../ebin -s ebundle win32 $(PRIMES_BUNDLE) $(PRIMES_MOD)
 
 
 # ----------------------------------------------------

@@ -154,9 +154,13 @@ type_string(180) ->
     "file table";
 type_string(181) ->
     "driver table";
+type_string(182) ->
+    "poll struct";
 type_string(190) ->
     "inet driver";
 type_string(200) ->
     "efile driver";
 type_string(210) ->
-    "gc root set".
+    "gc root set";
+type_string(220) ->
+    "breakpoint data".

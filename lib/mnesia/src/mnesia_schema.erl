@@ -58,6 +58,7 @@
 	 is_remote_member/1,
          list2cs/1,
          lock_schema/0,
+	 lock_del_table/4, % Spawned
          merge_schema/0,
          move_table/3,
          opt_create_dir/2,
@@ -73,6 +74,7 @@
          restore/2,
          restore/3,
 	 schema_coordinator/3,
+	 set_where_to_read/3,
          transform_table/4,
          undo_prepare_commit/2,
          unlock_schema/0,
@@ -1101,7 +1103,7 @@ del_table_copy(Tab, Node) ->
 
 do_del_table_copy(Tab, Node) when atom(Node)  ->
     TidTs = get_tid_ts_and_lock(schema, write),
-%%    get_tid_ts_and_lock(Tab, read), %%dan
+%%    get_tid_ts_and_lock(Tab, write), 
     insert_schema_ops(TidTs, make_del_table_copy(Tab, Node));
 do_del_table_copy(Tab, Node) ->
     mnesia:abort({badarg, Tab, Node}).
@@ -1624,22 +1626,25 @@ prepare_op(Tid, {op, add_table_copy, Storage, Node, TabDef}, WaitFor) ->
 	    {true, optional}
     end;
 
-
-prepare_op(_Tid, {op, del_table_copy, Storage, Node, TabDef}, WaitFor) ->
+prepare_op(Tid, {op, del_table_copy, Storage, Node, TabDef}, WaitFor) ->
     Cs = list2cs(TabDef),
     Tab = Cs#cstruct.name,
-
-    case mnesia_lib:val({Tab, where_to_read}) of 
-	Node ->
-	    case Cs#cstruct.local_content of
-		true ->
+    
+    if
+	%% Schema table lock is always required to run a schema op.
+	%% No need to look it.
+	node(Tid#tid.pid) == node(), Tab /= schema -> 
+	    Pid = spawn_link(?MODULE, lock_del_table, [Tab, Node, Cs, self()]),
+	    receive 
+		{Pid, updated} -> 
 		    {true, optional};
-		false ->
-		    mnesia_lib:set_remote_where_to_read(Tab, [Node]),
-		    {true, optional}
-	    end;
-	_ ->
-	    {true, optional}   %% Skall det vara optional??
+		{Pid, FailReason} ->
+		    mnesia:abort(FailReason);
+		{'EXIT', Pid, Reason} ->
+		    mnesia:abort(Reason)
+	    end;	
+	true ->
+	    {true, optional}
     end;
 
 prepare_op(_Tid, {op, change_table_copy_type,  N, FromS, ToS, TabDef}, WaitFor)
@@ -1774,6 +1779,48 @@ receive_sync(Nodes, Pids) ->
 	Else ->
 	    {abort, Else}
     end.
+
+lock_del_table(Tab, Node, Cs, Father) ->
+    Ns = val({schema, active_replicas}),
+    Lock = fun() ->
+		   mnesia:write_lock_table(Tab),
+		   {Res, []} = rpc:multicall(Ns, ?MODULE, set_where_to_read, [Tab, Node, Cs]),
+		   Filter = fun(ok) ->
+				    false;
+			       ({badrpc, {'EXIT', {undef, _}}}) ->
+				    %% This will be the case we talks with elder nodes
+				    %% than 3.8.2, they will set where_to_read without 
+				    %% getting a lock. 
+				    false;
+			       (Else) ->
+				    true
+			    end,
+		   [] = lists:filter(Filter, Res),
+		   ok
+	   end,    
+    case mnesia:transaction(Lock) of
+	{atomic, ok} ->
+	    Father ! {self(), updated};
+	{aborted, R} ->
+	    Father ! {self(), R}
+    end,
+    unlink(Father),
+    exit(normal).
+
+set_where_to_read(Tab, Node, Cs) ->
+    case mnesia_lib:val({Tab, where_to_read}) of 
+	Node ->
+	    case Cs#cstruct.local_content of
+		true ->
+		    ok;
+		false ->
+		    mnesia_lib:set_remote_where_to_read(Tab, [Node]),
+		    ok
+	    end;
+	_ ->
+	    ok
+    end.
+
 
 %% Build up the list in reverse order.
 

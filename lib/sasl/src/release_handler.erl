@@ -619,17 +619,10 @@ do_unpack_release(Root, RelDir, ReleaseName, Releases) ->
 %% Note that this function is not executed by a client
 %% release_handler.
 clean_release(RelDir, ReleaseName) ->
-    Tar = filename:join(RelDir, ReleaseName ++ ".tar"),
+    Tar = filename:join(RelDir, ReleaseName ++ ".tar.gz"),
     Rel = filename:join(RelDir, ReleaseName ++ ".rel"),
     file:delete(Tar),
-    file:delete(Rel),
-    case os:type() of
-	{unix, _} ->
-	    Z = Tar ++ ".Z",
-	    file:delete(Z);
-	_ ->
-	    ok
-    end.
+    file:delete(Rel).
    
 check_rel(Root, RelFile, Masters) ->
     check_rel(Root, RelFile, [], Masters).
@@ -648,11 +641,8 @@ check_rel(Root, RelFile, LibDirs, Masters) ->
 check_rel_data({release, {Name, Vsn}, {erts, EVsn}, Libs}, Root, LibDirs) ->
     Libs2 =
 	lists:map(fun(LibSpec) ->
-			  case LibSpec of
-			      {Lib, LibVsn} -> ok;
-			      {Lib, LibVsn, _Subapps} -> ok;
-			      {Lib, LibVsn, _AppType, _Subapps} -> ok
-			  end,
+			  Lib = element(1, LibSpec),
+			  LibVsn = element(2, LibSpec),
 			  LibName = lists:concat([Lib, "-", LibVsn]),
 			  LibDir = 
 			      case lists:keysearch(Lib, 1, LibDirs) of
@@ -1053,9 +1043,11 @@ get_rh_script(#release{vsn = CurrentVsn},
 try_upgrade(ToVsn, CurrentVsn, Relup, Masters) ->
     case consult(Relup, Masters) of
 	{ok, [{Vsn, ListOfRhScripts, _}]} ->
-	    case find_matching_vsn(ListOfRhScripts, CurrentVsn) of
-		{ok, RhScript} -> {ok, RhScript};
-		false -> error
+	    case lists:keysearch(CurrentVsn, 1, ListOfRhScripts) of
+		{value, RhScript} -> 
+		    {ok, RhScript};
+		_ -> 
+		    error
 	    end;
 	{ok, _} ->
 	    throw({error, {bad_relup_file, Relup}});
@@ -1083,18 +1075,6 @@ try_downgrade(ToVsn, CurrentVsn, Relup, Masters) ->
 	{error, FileError} -> % FileError is posix atom | no_master
 	    throw({error, {FileError, Relup}})
     end.
-
-find_matching_vsn(ListOfRhScripts, CurrentVsn) ->
-    fmv(lists:reverse(lists:keysort(1, ListOfRhScripts)), CurrentVsn).
-
-fmv([{FromVsn, Descr, RhScript} | T], CurrentVsn) ->
-    case string:re_match(CurrentVsn, [$^|FromVsn]) of
-	{match, _, _} -> {ok, {FromVsn, Descr, RhScript}};
-	_ -> fmv(T, CurrentVsn)
-    end;
-fmv([H | _], CurrentVsn) ->
-    throw({error, {bad_relup_syntax, H}});
-fmv([], _) -> false.
 
 
 %% Status = current | tmp_current | permanent

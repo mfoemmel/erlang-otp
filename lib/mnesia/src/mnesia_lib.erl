@@ -80,6 +80,7 @@
 	 etype/1,
 	 exists/1,
 	 fatal/2,
+	 get_node_number/0,
 	 fix_error/1,
 	 important/2,
 	 incr_counter/1,
@@ -458,14 +459,19 @@ set_remote_where_to_read(Tab, Ignore) ->
 	case mnesia_recover:get_master_nodes(Tab) of
 	    [] ->  Active;
 	    Masters -> mnesia_lib:intersect(Masters, Active)
-	end,
-    case mnesia_lib:intersect(val({current, db_nodes}), Valid -- Ignore) of
-	[] ->
-	    set({Tab, where_to_read}, nowhere);
-	[Node | _] ->
-	    set({Tab, where_to_read}, Node)
+	end,    
+    Available = mnesia_lib:intersect(val({current, db_nodes}), Valid -- Ignore),    
+    DiscOnlyC = val({Tab, disc_only_copies}),
+    Prefered  = Available -- DiscOnlyC,
+    if
+	Prefered /= [] ->
+	    set({Tab, where_to_read}, hd(Prefered));
+	Available /= [] ->
+	    set({Tab, where_to_read}, hd(Available));
+	true ->
+	    set({Tab, where_to_read}, nowhere)
     end.
-	
+
 %%% Local only
 set_local_content_whereabouts(Tab) ->
     add({schema, local_tables}, Tab),
@@ -522,10 +528,12 @@ core_file() ->
 
 mkcore(CrashInfo) ->
 %   dbg_out("Making a Mnesia core dump...~p~n", [CrashInfo]),
+    Nodes = [node() |nodes()],
     Core = [
 	    CrashInfo,
 	    {time, {date(), time()}},
 	    {self, catch process_info(self())},
+	    {nodes, catch rpc:multicall(Nodes, ?MODULE, get_node_number, [])},
 	    {applications, catch lists:sort(application:loaded_applications())},
 	    {flags, catch init:get_arguments()},
 	    {code_path, catch code:get_path()},
@@ -550,7 +558,7 @@ mkcore(CrashInfo) ->
     term_to_binary(Core).
 
 procs() ->
-    Fun = fun(P) -> {P, lists:zf(fun proc_info/1, process_info(P))} end,
+    Fun = fun(P) -> {P, (catch lists:zf(fun proc_info/1, process_info(P)))} end,
     lists:map(Fun, processes()).
 
 proc_info({registered_name, Val}) -> {true, Val};
@@ -558,6 +566,9 @@ proc_info({message_queue_len, Val}) -> {true, Val};
 proc_info({status, Val}) -> {true, Val};
 proc_info({current_function, Val}) -> {true, Val};
 proc_info(_) -> false.
+
+get_node_number() ->
+    {node(), self()}.
 
 read_log_files() ->
     [{F, catch file:read_file(F)} || F <- mnesia_log:log_files()].

@@ -19,8 +19,9 @@
 %% c(snmp_mgr_misc).
 
 %% API
--export([start_link_packet/7, stop/1, send_pdu/2, send_msg/4, error/2,
-	 send_bytes/2,
+-export([start_link_packet/7, stop/1, 
+	 send_discovery_pdu/2, send_pdu/2, send_msg/4, send_bytes/2,
+	 error/2,
 	 get_pdu/1, set_pdu/2, format_hdr/1]).
 
 %% internal exports
@@ -28,6 +29,8 @@
 
 -define(SNMP_USE_V3, true).
 -include("snmp_types.hrl").
+-include("snmp_debug.hrl").
+
 -record(mini_mib_elem,{aliasname, oid, type}).
 
 %%----------------------------------------------------------------------
@@ -45,6 +48,19 @@ stop(Pid) ->
 	{Pid, stopped} -> ok
     end.
 	
+
+send_discovery_pdu(Pdu, PacketPid) when record(Pdu, pdu) ->
+    PacketPid ! {send_discovery_pdu, self(), Pdu},
+    await_discovery_response_pdu().
+
+await_discovery_response_pdu() ->
+    receive
+	{discovery_response,Reply} ->
+	    Reply;
+	O ->
+	    await_discovery_response_pdu()
+    end.
+    
 
 send_pdu(Pdu, PacketPid) when record(Pdu, pdu) ->
     PacketPid ! {send_pdu, Pdu}.
@@ -67,6 +83,17 @@ init_packet(Parent, SnmpMgr, AgentIp, UdpPort, TrapUdp, VsnHdr, Version, Dir) ->
 
 packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
     receive
+	{send_discovery_pdu, From, Pdu} ->
+	    case mk_discovery_msg(Version, Pdu, VsnHdr, "") of
+		error ->
+		    ok;
+		B when list(B) -> 
+		    M = snmp_pdus:dec_message(B),
+		    put(discovery,{M,From}),
+		    display_outgoing_message(M),
+		    gen_udp:send(UdpId, AgentIp, UdpPort, B)
+	    end,
+	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
 	{send_pdu, Pdu} ->
 	    case mk_msg(Version, Pdu, VsnHdr, MsgData) of
 		error ->
@@ -74,78 +101,24 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 		B when list(B) -> 
 		    gen_udp:send(UdpId, AgentIp, UdpPort, B)
 	    end,
-	    packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, []);
+	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
 	{send_msg, Msg, Ip, Udp} ->
 	    case catch snmp_pdus:enc_message(Msg) of
 		{'EXIT', Reason} ->
-		    error("Encoding error. Msg: ~w. Reason: ~w",[Msg, Reason]);
+		    error("Encoding error. Msg: ~w. Reason: ~w",[Msg,Reason]);
 		B when list(B) -> 
 		    gen_udp:send(UdpId, Ip, Udp, B)
 	    end,
-	    packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, []);
+	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
 	{udp, UdpId, Ip, UdpPort, Bytes} ->
-	    MsgData3 =
-		case catch snmp_pdus:dec_message_only(Bytes) of
-		    Message when Message#message.version == 'version-3' ->
-			case catch handle_v3_msg(Bytes, Message) of
-			    {ok, NewData, MsgData2} ->
-				Msg = Message#message{data = NewData},
-				case SnmpMgr of
-				    {pdu, Pid} ->
-					Pid ! {snmp_pdu, get_pdu(Msg)};
-				    {msg, Pid} ->
-					Pid ! {snmp_msg, Msg, Ip, UdpPort}
-				end,
-				MsgData2;
-			    {error, Reason, B} ->
-				gen_udp:send(UdpId, AgentIp, UdpPort, B),
-				error("Decoding error. Auto-sending Report.\n"
-				      "Reason: ~w "
-				      "(UDPport: ~w, Ip: ~w)",
-				      [Reason, UdpPort, Ip]),
-				[];
-			    {error, Reason} ->
-				error("Decoding error. Bytes: ~w ~n Reason: ~w "
-				      "(UDPport: ~w, Ip: ~w)",
-				      [Bytes, Reason, UdpPort, Ip]),
-				[]
-			end;
-		    Message when record(Message, message) ->
-			%% v1 or v2c
-			case catch snmp_pdus:dec_pdu(Message#message.data) of
-			    Pdu when record(Pdu, pdu) ->
-				case SnmpMgr of
-				    {pdu, Pid} ->
-					Pid ! {snmp_pdu, Pdu};
-				    {msg, Pid} ->
-					Msg = Message#message{data = Pdu},
-					Pid ! {snmp_msg, Msg, Ip, UdpPort}
-				end;
-			    Pdu when record(Pdu, trappdu) ->
-				case SnmpMgr of
-				    {pdu, Pid} ->
-					Pid ! {snmp_pdu, Pdu};
-				    {msg, Pid} ->
-					Msg = Message#message{data = Pdu},
-					Pid ! {snmp_msg, Msg, Ip, UdpPort}
-				end;
-			    Reason ->
-				error("Decoding error. Bytes: ~w ~n Reason: ~w "
-				      "(UDPport: ~w, Ip: ~w)",
-				      [Bytes, Reason, UdpPort, Ip])
-			end,
-			[];
-		    Reason ->
-			error("Decoding error. Bytes: ~w ~n Reason: ~w "
-			      "(UDPport: ~w, Ip: ~w)",
-			      [Bytes, Reason, UdpPort, Ip]),
-			[]
-		end,
-	    packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version,
+	    MsgData3 = handle_udp_packet(Version,erase(discovery),
+					 UdpId, Ip, UdpPort, Bytes,
+					 SnmpMgr, AgentIp),
+	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,
 			MsgData3);
 	{send_bytes, B} ->
 	    gen_udp:send(UdpId, AgentIp, UdpPort, B),
-	    packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, []);
+	    packet_loop(SnmpMgr,UdpId,AgentIp,UdpPort,VsnHdr,Version,[]);
 	{stop, Pid} ->
 	    gen_udp:close(UdpId),
 	    Pid ! {self(), stopped},
@@ -154,6 +127,133 @@ packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
 	    exit({snmp_packet_got_other, Other})
     end.
 
+handle_udp_packet(_V,undefined,UdpId,Ip,UdpPort,Bytes,SnmpMgr,AgentIp) ->
+    M = (catch snmp_pdus:dec_message_only(Bytes)),
+    MsgData3 =
+	case M of
+	    Message when Message#message.version == 'version-3' ->
+		case catch handle_v3_msg(Bytes, Message) of
+		    {ok, NewData, MsgData2} ->
+			Msg = Message#message{data = NewData},
+			case SnmpMgr of
+			    {pdu, Pid} ->
+					Pid ! {snmp_pdu, get_pdu(Msg)};
+			    {msg, Pid} ->
+				Pid ! {snmp_msg, Msg, Ip, UdpPort}
+			end,
+			MsgData2;
+		    {error, Reason, B} ->
+			gen_udp:send(UdpId, AgentIp, UdpPort, B),
+			error("Decoding error. Auto-sending Report.\n"
+			      "Reason: ~w "
+			      "(UDPport: ~w, Ip: ~w)",
+			      [Reason, UdpPort, Ip]),
+			[];
+		    {error, Reason} ->
+			error("Decoding error. "
+				      "Bytes: ~w ~n Reason: ~w "
+			      "(UDPport: ~w, Ip: ~w)",
+			      [Bytes, Reason, UdpPort, Ip]),
+			[]
+		end;
+	    Message when record(Message, message) ->
+		%% v1 or v2c
+		case catch snmp_pdus:dec_pdu(Message#message.data) of
+		    Pdu when record(Pdu, pdu) ->
+			case SnmpMgr of
+			    {pdu, Pid} ->
+				Pid ! {snmp_pdu, Pdu};
+			    {msg, Pid} ->
+				Msg = Message#message{data = Pdu},
+				Pid ! {snmp_msg, Msg, Ip, UdpPort}
+			end;
+		    Pdu when record(Pdu, trappdu) ->
+			case SnmpMgr of
+			    {pdu, Pid} ->
+				Pid ! {snmp_pdu, Pdu};
+			    {msg, Pid} ->
+				Msg = Message#message{data = Pdu},
+				Pid ! {snmp_msg, Msg, Ip, UdpPort}
+			end;
+		    Reason ->
+			error("Decoding error. "
+			      "Bytes: ~w ~n Reason: ~w "
+			      "(UDPport: ~w, Ip: ~w)",
+			      [Bytes, Reason, UdpPort, Ip])
+		end,
+		[];
+	    Reason ->
+		error("Decoding error. Bytes: ~w ~n Reason: ~w "
+		      "(UDPport: ~w, Ip: ~w)",
+		      [Bytes, Reason, UdpPort, Ip]),
+		[]
+	end,
+    MsgData3;
+handle_udp_packet(V,{DiscoReqMsg,From},UdpId,Ip,UdpPort,Bytes,_,AgentIp) ->
+    DiscoRspMsg = (catch snmp_pdus:dec_message(Bytes)),
+    display_incomming_message(DiscoRspMsg),
+    Reply = (catch check_discovery_result(V,DiscoReqMsg,DiscoRspMsg)),
+    From ! {discovery_response,Reply},
+    [].
+
+%% This function assumes that the agent and the manager (thats us) 
+%% has the same version.
+check_discovery_result('version-3',DiscoReqMsg,DiscoRspMsg) ->
+    ReqMsgID = getMsgID(DiscoReqMsg),
+    RspMsgID = getMsgID(DiscoRspMsg),
+    check_msgID(ReqMsgID,ReqMsgID),
+    ReqRequestId = getRequestId('version-3',DiscoReqMsg),
+    RspRequestId = getRequestId('version-3',DiscoRspMsg),
+    check_requestId(ReqRequestId,RspRequestId),
+    {ok,getMsgAuthEngineID(DiscoRspMsg)};
+check_discovery_result(Version,DiscoReqMsg,DiscoRspMsg) ->
+    ReqRequestId = getRequestId(Version,DiscoReqMsg),
+    RspRequestId = getRequestId(Version,DiscoRspMsg),
+    check_requestId(ReqRequestId,RspRequestId),
+    {ok,getSysDescr(DiscoRspMsg)}.
+
+check_msgID(ID,ID) ->
+    ok;
+check_msgID(ReqMsgID,RspMsgID) ->
+    throw({error,{invalid_msgID,ReqMsgID,RspMsgID}}).
+
+check_requestId(Id,Id) ->
+    ok;
+check_requestId(ReqRequestId,RspRequestId) ->
+    throw({error,{invalid_requestId,ReqRequestId,RspRequestId}}).
+
+getMsgID(M) when record(M,message) ->
+    (M#message.vsn_hdr)#v3_hdr.msgID.
+
+getRequestId('version-3',M) when record(M,message) ->
+    ((M#message.data)#scopedPdu.data)#pdu.request_id;
+getRequestId(Version,M) when record(M,message) ->
+    (M#message.data)#pdu.request_id.
+    
+getMsgAuthEngineID(M) when record(M,message) ->
+    SecParams1 = (M#message.vsn_hdr)#v3_hdr.msgSecurityParameters,
+    SecParams2 = snmp_pdus:dec_usm_security_parameters(SecParams1),
+    SecParams2#usmSecurityParameters.msgAuthoritativeEngineID.
+    
+getSysDescr(M) when record(M,message) ->
+    getSysDescr((M#message.data)#pdu.varbinds);
+getSysDescr([H|T]) ->
+    case getSysDescr(H) of
+	{ok,SysDescr} ->
+	    SysDescr;
+	_ ->
+	    getSysDescr(T)
+    end;
+getSysDescr(V) when record(V,varbind) ->
+    case V#varbind.oid of
+	[1,3,6,1,2,1,1,1] ->
+	    {ok,V#varbind.value};
+	[1,3,6,1,2,1,1,1,0] ->
+	    {ok,V#varbind.value};
+	_ ->
+	    not_found
+    end.
+    
 handle_v3_msg(Packet, #message{vsn_hdr = V3Hdr, data = Data}) ->
     %% Code copied from snmp_mpd.erl
     #v3_hdr{msgID = MsgId, msgFlags = MsgFlags,
@@ -162,8 +262,8 @@ handle_v3_msg(Packet, #message{vsn_hdr = V3Hdr, data = Data}) ->
     SecModule = get_security_module(MsgSecurityModel),
     SecLevel = hd(MsgFlags) band 3,
     IsReportable = snmp_misc:is_reportable(MsgFlags),
-    SecRes = (catch SecModule:process_incoming_msg(list_to_binary(Packet), Data,
-						   SecParams, SecLevel)),
+    SecRes = (catch SecModule:process_incoming_msg(list_to_binary(Packet), 
+						   Data,SecParams,SecLevel)),
     {SecEngineID, SecName, ScopedPDUBytes, SecData} =
 	check_sec_module_result(SecRes, V3Hdr, Data, IsReportable),
     case catch snmp_pdus:dec_scoped_pdu(ScopedPDUBytes) of
@@ -223,6 +323,40 @@ error(Format, Data) ->
     io:format("~n").
 
 
+mk_discovery_msg('version-3', Pdu, _VsnHdr, UserName) ->
+    ScopedPDU = #scopedPdu{contextEngineID = "",
+			   contextName = "",
+			   data = Pdu},
+    Bytes = snmp_pdus:enc_scoped_pdu(ScopedPDU),
+    MsgID = get(msg_id),
+    put(msg_id,MsgID+1),
+    UsmSecParams = 
+	#usmSecurityParameters{msgAuthoritativeEngineID = "",
+			       msgAuthoritativeEngineBoots = 0,
+			       msgAuthoritativeEngineTime = 0,
+			       msgUserName = UserName,
+			       msgPrivacyParameters = "",
+			       msgAuthenticationParameters = ""},
+    SecBytes = snmp_pdus:enc_usm_security_parameters(UsmSecParams),
+    PduType = Pdu#pdu.type,
+    Hdr = #v3_hdr{msgID = MsgID, 
+		  msgMaxSize = 1000,
+		  msgFlags = snmp_misc:mk_msg_flags(PduType, 0),
+		  msgSecurityModel = ?SEC_USM,
+		  msgSecurityParameters = SecBytes},
+    Msg = #message{version = 'version-3', vsn_hdr = Hdr, data = Bytes},
+    snmp_pdus:enc_message_only(Msg);
+mk_discovery_msg(Version, Pdu, {Com, _, _, _, _}, UserName) ->
+    Msg = #message{version = Version, vsn_hdr = Com, data = Pdu},
+    case catch snmp_pdus:enc_message(Msg) of
+	{'EXIT', Reason} ->
+	    error("Encoding error. Pdu: ~w. Reason: ~w",[Pdu, Reason]),
+	    error;
+	B when list(B) -> 
+	    B
+    end.
+
+
 mk_msg('version-3', Pdu, {Context, User, EngineID, CtxEngineId, SecLevel}, 
        MsgData) ->
     %% Code copied from snmp_mpd.erl
@@ -241,9 +375,9 @@ mk_msg('version-3', Pdu, {Context, User, EngineID, CtxEngineId, SecLevel},
     ScopedPDUBytes = snmp_pdus:enc_scoped_pdu(ScopedPDU),
 
     PduType = Pdu#pdu.type,
-    V3Hdr = #v3_hdr{msgID = MsgId,
+    V3Hdr = #v3_hdr{msgID      = MsgId,
 		    msgMaxSize = 1000,
-		    msgFlags = snmp_misc:mk_msg_flags(PduType, SecLevel),
+		    msgFlags   = snmp_misc:mk_msg_flags(PduType, SecLevel),
 		    msgSecurityModel = ?SEC_USM},
     Message = #message{version = 'version-3', vsn_hdr = V3Hdr,
 		       data = ScopedPDUBytes},
@@ -305,4 +439,185 @@ init_usm('version-3', Dir) ->
     snmp_user_based_sm_mib:reconfigure(Dir);
 init_usm(_Vsn, _Dir) ->
     ok.
+
+
+display_incomming_message(M) ->
+    display_message("Incomming",M).
+
+display_outgoing_message(M) ->
+    display_message("Outgoing",M).
+
+display_message(Direction,M) when record(M,message) ->
+    io:format("~s SNMP message:~n",[Direction]),
+    V = M#message.version,
+    display_version(V),
+    display_hdr(V,M#message.vsn_hdr),
+    display_msg_data(V,Direction,M#message.data);
+display_message(Direction,M) ->
+    io:format("~s message unknown: ~n~p",[Direction,M]).
+
+display_version('version-3') ->
+    display_prop("Version",'SNMPv3');
+display_version(V) ->
+    display_prop("Version",V).
+
+display_hdr('version-3',H) ->
+    display_msgID(H#v3_hdr.msgID),
+    display_msgMaxSize(H#v3_hdr.msgMaxSize),
+    display_msgFlags(H#v3_hdr.msgFlags),
+    SecModel = H#v3_hdr.msgSecurityModel,
+    display_msgSecurityModel(SecModel),
+    display_msgSecurityParameters(SecModel,H#v3_hdr.msgSecurityParameters);
+display_hdr(V,Community) -> 
+    display_community(Community).
+
+display_community(Community) ->
+    display_prop("Community",Community).
+
+display_msgID(Id) ->
+    display_prop("msgID",Id).
+
+display_msgMaxSize(Size) ->
+    display_prop("msgMaxSize",Size).
+
+display_msgFlags([Flags]) ->
+    display_prop("msgFlags",Flags);
+display_msgFlags([]) ->
+    display_prop("msgFlags",no_value_to_display);
+display_msgFlags(Flags) ->
+    display_prop("msgFlags",Flags).
+
+display_msgSecurityModel(?SEC_USM) ->
+    display_prop("msgSecurityModel",'USM');
+display_msgSecurityModel(Model) ->
+    display_prop("msgSecurityModel",Model).
+
+display_msgSecurityParameters(?SEC_USM,Params) ->
+    display_usmSecurityParameters(Params);
+display_msgSecurityParameters(_Model,Params) ->
+    display_prop("msgSecurityParameters",Params).
+
+display_usmSecurityParameters(P) when list(P) ->
+    display_usmSecurityParameters(snmp_pdus:dec_usm_security_parameters(P));
+display_usmSecurityParameters(P) when record(P,usmSecurityParameters) ->
+    ID = P#usmSecurityParameters.msgAuthoritativeEngineID,
+    display_msgAuthoritativeEngineID(ID),
+    Boots = P#usmSecurityParameters.msgAuthoritativeEngineBoots,
+    display_msgAuthoritativeEngineBoots(Boots),
+    Time = P#usmSecurityParameters.msgAuthoritativeEngineTime,
+    display_msgAuthoritativeEngineTime(Time),
+    Name = P#usmSecurityParameters.msgUserName,
+    display_msgUserName(Name),
+    SecParams = P#usmSecurityParameters.msgAuthenticationParameters,
+    display_msgAuthenticationParameters(SecParams),
+    PrivParams = P#usmSecurityParameters.msgPrivacyParameters,
+    display_msgPrivacyParameters(PrivParams);
+display_usmSecurityParameters(P) ->
+    display_prop("unknown USM sec paraams",P).
+
+display_msgAuthoritativeEngineID(ID) ->
+    display_prop("msgAuthoritativeEngineID",ID).
+
+display_msgAuthoritativeEngineBoots(V) ->
+    display_prop("msgAuthoritativeEngineBoots",V).
+
+display_msgAuthoritativeEngineTime(V) ->
+    display_prop("msgAuthoritativeEngineTime",V).
+
+display_msgUserName(V) ->
+    display_prop("msgUserName",V).
+
+display_msgAuthenticationParameters(V) ->
+    display_prop("msgAuthenticationParameters",V).
+
+display_msgPrivacyParameters(V) ->
+    display_prop("msgPrivacyParameters",V).
+
+display_msg_data('version-3',Direction,D) when record(D,scopedPdu) ->
+    display_scoped_pdu(Direction,D);
+display_msg_data(_Version,Direction,D) when record(D,pdu) ->
+    display_pdu(Direction,D);
+display_msg_data(_Version,Direction,D) ->
+    display_prop("Unknown message data",D).
+
+display_scoped_pdu(Direction,P) ->
+    display_contextEngineID(P#scopedPdu.contextEngineID),
+    display_contextName(P#scopedPdu.contextName),
+    display_scoped_pdu_data(Direction,P#scopedPdu.data).
+
+display_contextEngineID(Id) ->
+    display_prop("contextEngineID",Id).
+
+display_contextName(Name) ->
+    display_prop("contextName",Name).
+
+display_scoped_pdu_data(Direction,D) when record(D,pdu) ->
+    display_pdu(Direction,D);
+display_scoped_pdu_data(Direction,D) when record(D,trappdu) ->
+    display_trappdu(Direction,D);
+display_scoped_pdu_data(_Direction,D) ->
+    display_prop("Unknown scoped pdu data",D).
+
+display_pdu(Direction,P) ->
+    io:format("~s PDU:~n",[Direction]),
+    display_type(P#pdu.type),
+    display_request_id(P#pdu.request_id),
+    display_error_status(P#pdu.error_status),
+    display_error_index(P#pdu.error_index),
+    display_varbinds(P#pdu.varbinds).
+
+display_type(T) ->
+    display_prop("Type",T).
+
+display_request_id(Id) ->
+    display_prop("Request id",Id).
+
+display_error_status(S) ->
+    display_prop("Error status",S).
+
+display_error_index(I) ->
+    display_prop("Error index",I).
+
+%%display_varbinds(V) ->
+%%    display_prop("Varbinds",V).
+
+display_varbinds([H|T]) ->
+    display_prop_hdr("Varbinds"),
+    display_varbind(H),
+    display_varbinds(T);
+display_varbinds([]) ->
+    ok.
+
+display_varbind(V) when record(V,varbind) ->
+    display_oid(V#varbind.oid),
+    display_vtype(V#varbind.variabletype),
+    display_value(V#varbind.value),
+    display_org_index(V#varbind.org_index);
+display_varbind(V) ->
+    display_prop("\tVarbind",V).
+
+display_oid(V) ->
+    display_prop("\tOid",V).
+    
+display_vtype(V) ->
+    display_prop("\t\tVariable type",V).
+    
+display_value(V) ->
+    display_prop("\t\tValue",V).
+    
+display_org_index(V) ->
+    display_prop("\t\tOrg index",V).
+
+display_trappdu(Direction,P) ->
+    io:format("~s TRAP-PDU:~n",[Direction]),
+    display_prop("TRAP-PDU",P).
+
+display_prop(S,no_value_to_display) ->
+    io:format("\t~s: ~n",[S]);
+display_prop(S,V) ->
+    io:format("\t~s: ~p~n",[S,V]).
+
+
+display_prop_hdr(S) ->
+    io:format("\t~s:~n",[S]).
 

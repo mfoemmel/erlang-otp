@@ -17,6 +17,8 @@
  */
 package com.ericsson.otp.erlang;
 
+import java.io.Serializable;
+
 /**
  * Provides a Java representation of Erlang integral types. Erlang
  * does not distinguish between different integral types, however this
@@ -27,8 +29,11 @@ package com.ericsson.otp.erlang;
  * OtpErlangUShort} are provided for Corba compatibility. See the
  * documentation for IC for more information.
  **/
-public class OtpErlangLong extends OtpErlangObject {
-  private long val;
+public class OtpErlangLong extends OtpErlangObject implements Serializable, Cloneable {
+  // don't change this!
+ static final long serialVersionUID = 1610466859236755096L;
+  
+ private long val;
 
   /**
    * Create an Erlang integer from the given value.
@@ -207,24 +212,14 @@ public class OtpErlangLong extends OtpErlangObject {
    * Determine if two numbers are equal. Numbers are equal if they
    * contain the same value.
    *
-   * @param o the object to compare to.
-   *
-   * @return true if o is a number and the numbers have the same
-   * values, false otherwise.
-   **/
-  public boolean equals(Object o) {
-    return false;
-  }
-
-  /**
-   * Determine if two numbers are equal. Numbers are equal if they
-   * contain the same value.
-   *
-   * @param t the number to compare to.
+   * @param o the number to compare to.
    *
    * @return true if the numbers have the same value.
    **/
-  public boolean equals(OtpErlangLong l) {
+  public boolean equals(Object o) {
+    if (!(o instanceof OtpErlangLong)) return false;
+
+    OtpErlangLong l = (OtpErlangLong)o;
     return this.val == l.val;
   }
 }

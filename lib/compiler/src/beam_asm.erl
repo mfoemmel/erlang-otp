@@ -23,12 +23,13 @@
 -export([objfile_extension/0]).
 -export([encode/2]).
 
+-import(lists, [map/2,member/2,keymember/3,duplicate/2]).
 -include("beam_opcodes.hrl").
 
+-define(bs_aligned, 1).
+
 module(Code, Abst, Opts) ->
-    case catch assemble(Code, Abst, Opts) of
-	{'EXIT', What} ->
-	    {error, [{none, ?MODULE, {crashed, What}}]};
+    case assemble(Code, Abst, Opts) of
 	{error, Error} ->
 	    {error, [{none, ?MODULE, Error}]};
 	Bin when binary(Bin) ->
@@ -55,7 +56,7 @@ assemble(Exp, Attr, Asm, NumLabels, Dict0, Abst, Opts) ->
     build_file(Code, Attr, Dict1, NumLabels, NumFuncs, Abst, Opts).
 
 assemble([{function, Name, Arity, Entry, Asm}| T], Exp, Dict0, Acc) ->
-    Dict1 = case lists:member({Name, Arity}, Exp) of
+    Dict1 = case member({Name, Arity}, Exp) of
 		true ->
 		    beam_dict:export(Name, Arity, Entry, Dict0);
 		false ->
@@ -76,83 +77,82 @@ assemble_function([], Code, Dict) ->
 build_file(Code, Attr, Dict, NumLabels, NumFuncs, Abst, Opts) ->
     %% Create the code chunk.
 
-    CodeChunk = chunk("Code",
-		      [opcode_int32(16),
-		       opcode_int32(beam_opcodes:format_number()),
-		       opcode_int32(beam_dict:highest_opcode(Dict)),
-		       opcode_int32(NumLabels),
-		       opcode_int32(NumFuncs)],
+    CodeChunk = chunk(<<"Code">>,
+		      <<16:32,
+		       (beam_opcodes:format_number()):32,
+		       (beam_dict:highest_opcode(Dict)):32,
+		       NumLabels:32,
+		       NumFuncs:32>>,
 		      Code),
 
     %% Create the atom table chunk.
 
     {NumAtoms, AtomTab} = beam_dict:atom_table(Dict),
-    AtomChunk = chunk("Atom", opcode_int32(NumAtoms), AtomTab),
+    AtomChunk = chunk(<<"Atom">>, <<NumAtoms:32>>, AtomTab),
 
     %% Create the import table chunk.
 
     {NumImps, ImpTab0} = beam_dict:import_table(Dict),
     Imp = flatten_imports(ImpTab0),
-    ImportChunk = chunk("ImpT", opcode_int32(NumImps), Imp),
+    ImportChunk = chunk(<<"ImpT">>, <<NumImps:32>>, Imp),
 
     %% Create the export table chunk.
 
     {NumExps, ExpTab0} = beam_dict:export_table(Dict),
     Exp = flatten_exports(ExpTab0),
-    ExpChunk = chunk("ExpT", opcode_int32(NumExps), Exp),
+    ExpChunk = chunk(<<"ExpT">>, <<NumExps:32>>, Exp),
 
     %% Create the local function table chunk.
 
     {NumLocals, Locals} = beam_dict:local_table(Dict),
     Loc = flatten_exports(Locals),
-    LocChunk = chunk("LocT", opcode_int32(NumLocals), Loc),
+    LocChunk = chunk(<<"LocT">>, <<NumLocals:32>>, Loc),
 
     %% Create the string table chunk.
 
     {StringSize, StringTab} = beam_dict:string_table(Dict),
-    StringChunk = chunk("StrT", StringTab),
+    StringChunk = chunk(<<"StrT">>, StringTab),
 
     %% Create the attributes and compile info chunks.
 
     Essentials = [AtomChunk, CodeChunk, StringChunk, ImportChunk, ExpChunk],
     {Attributes, Compile} = build_attributes(Opts, Attr, Essentials),
-    AttrChunk = chunk("Attr", Attributes),
-    CompileChunk = chunk("CInf", Compile),
+    AttrChunk = chunk(<<"Attr">>, Attributes),
+    CompileChunk = chunk(<<"CInf">>, Compile),
 
     %% Create the abstract code chunk.
 
-    AbstChunk = chunk("Abst", Abst),
+    AbstChunk = chunk(<<"Abst">>, Abst),
 
     %% Create IFF chunk.
 
-    build_form("BEAM", [Essentials,
-			LocChunk,
-			AttrChunk,
-			CompileChunk,
-			build_flags(Opts, []),
-			AbstChunk]).
+    build_form(<<"BEAM">>, [Essentials,
+			    LocChunk,
+			    AttrChunk,
+			    CompileChunk,
+			    AbstChunk]).
 
 %% Build an IFF form.
 
-build_form(Id, Chunks0) when length(Id) == 4, list(Chunks0) ->
+build_form(Id, Chunks0) when size(Id) == 4, list(Chunks0) ->
     Chunks = list_to_binary(Chunks0),
     Size = size(Chunks),
     0 = Size rem 4,				% Assertion: correct padding?
-    list_to_binary(["FOR1", opcode_int32(Size+4), Id|Chunks]).
+    <<"FOR1",(Size+4):32,Id/binary,Chunks/binary>>.
 
 %% Build a correctly padded chunk (with no sub-header).
 
-chunk(Id, Contents) when length(Id) == 4, binary(Contents) ->
+chunk(Id, Contents) when size(Id) == 4, binary(Contents) ->
     Size = size(Contents),
-    [Id, opcode_int32(Size), Contents| pad(Size)];
+    [<<Id/binary,Size:32>>,Contents|pad(Size)];
 chunk(Id, Contents) when list(Contents) ->
     chunk(Id, list_to_binary(Contents)).
 
 %% Build a correctly padded chunk (with a sub-header).
 
-chunk(Id, Head, Contents) when length(Id) == 4, binary(Head), binary(Contents) ->
+chunk(Id, Head, Contents) when size(Id) == 4, binary(Head), binary(Contents) ->
     Size = size(Head)+size(Contents),
-    [Id, opcode_int32(Size), Head, Contents| pad(Size)];
+    [<<Id/binary,Size:32,Head/binary>>,Contents|pad(Size)];
 chunk(Id, Head, Contents) when list(Head) ->
     chunk(Id, list_to_binary(Head), Contents);
 chunk(Id, Head, Contents) when list(Contents) ->
@@ -161,27 +161,19 @@ chunk(Id, Head, Contents) when list(Contents) ->
 pad(Size) ->
     case Size rem 4 of
 	0 -> [];
-	Rem -> lists:duplicate(4 - Rem, 0)
+	Rem -> duplicate(4 - Rem, 0)
     end.
 
-build_flags([trace|T], Acc) ->
-    build_flags(T, [chunk("Trac", [])|Acc]);
-build_flags([_|T], Acc) ->
-    build_flags(T, Acc);
-build_flags([], Acc) ->
-    list_to_binary(Acc).
-
 flatten_exports(Exps) ->
-    F = fun({F, A, L}) -> [opcode_int32(F), opcode_int32(A), opcode_int32(L)] end,
-    list_to_binary(lists:map(F, Exps)).
+    list_to_binary(map(fun({F,A,L}) -> <<F:32,A:32,L:32>> end, Exps)).
 
 flatten_imports(Imps) ->
-    F = fun({M, F, A}) -> [opcode_int32(M), opcode_int32(F), opcode_int32(A)] end,
-    list_to_binary(lists:map(F, Imps)).
+    list_to_binary(map(fun({M,F,A}) -> <<M:32,F:32,A:32>> end, Imps)).
 
 build_attributes(Opts, Attr, Essentials) ->
     {{Y,Mo,D},{H,Mi,S}} = erlang:universaltime(),
-    Compile = [{time,{Y,Mo,D,H,Mi,S}},{options,Opts}],
+    Compile = [{time,{Y,Mo,D,H,Mi,S}},{options,Opts},
+	       {version,?COMPILER_VSN}],
     {term_to_binary(calc_vsn(Attr, Essentials)),term_to_binary(Compile)}.
 
 %%
@@ -191,31 +183,12 @@ build_attributes(Opts, Attr, Essentials) ->
 %%
 
 calc_vsn(Attr, Essentials) ->
-    case lists:keymember(vsn, 1, Attr) of
-	true ->
-	    Attr;
+    case keymember(vsn, 1, Attr) of
+	true -> Attr;
 	false ->
-	    case catch erlang:md5(Essentials) of
-		{'EXIT', _} ->
-		    Attr;
-		MD5 when binary(MD5) ->
-		    Number = list_to_number(binary_to_list(MD5), 0),
-		    [{vsn, [Number]}|Attr]
-	    end
+	    <<Number:128>> = erlang:md5(Essentials),
+	    [{vsn,[Number]}|Attr]
     end.
-
-list_to_number([H|T], Acc) ->
-    list_to_number(T, Acc bsl 8 bor H);
-list_to_number([], Acc) ->
-    Acc.
-
-opcode_int32(I) when I > 16#ffffffff ->
-    throw({error, {too_big, I, 32}});
-opcode_int32(I) ->
-    [(I bsr 24) band 16#ff,
-     (I bsr 16) band 16#ff,
-     (I bsr 8) band 16#ff,
-     I band 16#ff].
 
 bif_type('-', 1)    -> negate;
 bif_type('+', 2)    -> {op, m_plus};
@@ -255,6 +228,12 @@ make_op({test, Cond, Fail, Src}, Dict) ->
     make_op({Cond, Fail, Src}, Dict);
 make_op({test, Cond, Fail, S1, S2}, Dict) ->
     make_op({Cond, Fail, S1, S2}, Dict);
+make_op({test, Cond, Fail, A1, A2}, Dict) ->
+    make_op({Cond, Fail, A1, A2}, Dict);
+make_op({test, Cond, Fail, A1, A2, A3}, Dict) ->
+    make_op({Cond, Fail, A1, A2, A3}, Dict);
+make_op({test, Cond, Fail, A1, A2, A3, A4}, Dict) ->
+    make_op({Cond, Fail, A1, A2, A3, A4}, Dict);
 make_op(Op, Dict) when atom(Op) ->
     encode_op(Op, [], Dict);
 make_op({Name, Arg1}, Dict) ->
@@ -271,10 +250,10 @@ make_op({Name, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6}, Dict) ->
     encode_op(Name, [Arg1, Arg2, Arg3, Arg4, Arg5, Arg6], Dict).
 
 encode_op(Name, Args, Dict0) when atom(Name) ->
-    {EncArgs, Dict1} = encode_args(Args, Dict0),
+    {EncArgs,Dict1} = encode_args(Args, Dict0),
     Op = beam_opcodes:opcode(Name, length(Args)),
     Dict2 = beam_dict:opcode(Op, Dict1),
-    {[Op| EncArgs], Dict2}.
+    {list_to_binary([Op|EncArgs]),Dict2}.
 
 encode_args([Arg| T], Dict0) ->
     {EncArg, Dict1} = encode_arg(Arg, Dict0),
@@ -305,30 +284,30 @@ encode_arg({'char', C}, Dict) ->
 encode_arg({string, String}, Dict0) ->
     {Offset, Dict} = beam_dict:string(String, Dict0),
     {encode(?tag_u, Offset), Dict};
-encode_arg({bignum, Arity, Sign}, Dict) when 0 =< Sign, Sign =< 1  ->
-    {encode(?tag_u, Arity * 2 + Sign), Dict};
-encode_arg({bignum_part, Part}, Dict) ->
-    {encode(?tag_u, Part), Dict};
 encode_arg({extfunc, M, F, A}, Dict0) ->
     {Index, Dict} = beam_dict:import(M, F, A, Dict0),
     {encode(?tag_u, Index), Dict};
-encode_arg({old_list, List}, Dict) ->
-    encode_list(List, Dict, []);
 encode_arg({list, List}, Dict0) ->
     {L, Dict} = encode_list(List, Dict0, []),
     {[encode(?tag_z, 1), encode(?tag_u, length(List))|L], Dict};
 encode_arg({float, Float}, Dict) when float(Float) ->
-    {[encode(?tag_z, 0)|float_to_bytes(Float)], Dict};
-encode_arg(Float, Dict) when float(Float) ->
-    {[encode(?tag_z, 0)|float_to_bytes(Float)], Dict};
+    {[encode(?tag_z, 0)|<<Float:64/float>>], Dict};
+encode_arg({field_flags, Flags0}, Dict) ->
+    Flags = lists:foldl(fun (F, S) -> S bor flag_to_bit(F) end, 0, Flags0),
+    {encode(?tag_u, Flags), Dict};
 encode_arg(Int, Dict) when integer(Int) ->
     {encode(?tag_u, Int), Dict};
 encode_arg(Atom, Dict0) when atom(Atom) ->
     {Index, Dict} = beam_dict:atom(Atom, Dict0),
-    {encode(?tag_a, Index), Dict};
-encode_arg(Other, Dict) ->
-    exit({badarg, encode_arg, [Other]}).
+    {encode(?tag_a, Index), Dict}.
 
+flag_to_bit(aligned) -> 16#01;
+flag_to_bit(little)  -> 16#02;
+flag_to_bit(big)     -> 16#00;
+flag_to_bit(signed)  -> 16#04;
+flag_to_bit(unsigned)-> 16#00;
+flag_to_bit(exact)   -> 16#08.
+    
 encode_list([H|T], Dict, Acc) when list(H) ->
     exit({illegal_nested_listed, encode_arg, [H|T]});
 encode_list([H|T], Dict0, Acc) ->
@@ -363,21 +342,3 @@ negative_to_bytes(-1, [B1, B2|T]) when B1 > 127 ->
     [B1, B2|T];
 negative_to_bytes(N, Acc) ->
     negative_to_bytes(N bsr 8, [N band 16#ff|Acc]).
-
-float_to_bytes(F) when float(F) ->
-    {High, Low} =
-	case erlang:float_to_words(1.0) of
-	    {0, _} ->				% Little-endian.
-		{B1, B2} = erlang:float_to_words(F),
-		{B2, B1};
-	_ ->					% Big-endian.
-	    erlang:float_to_words(F)
-    end,
-    Mask = 16#FFFFffff,
-    float_to_bytes((High band Mask) bsl 32 bor (Low band Mask), 8, []).
-
-float_to_bytes(0, 0, Acc) ->
-    Acc;
-float_to_bytes(N, Count, Acc) ->
-    float_to_bytes(N bsr 8, Count-1, [N band 16#ff| Acc]).
-

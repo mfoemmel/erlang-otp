@@ -17,6 +17,10 @@
 %%
 -module(snmp_set).
 
+-define(VMODULE,"SET").
+-include("snmp_verbosity.hrl").
+
+
 %%%-----------------------------------------------------------------
 %%% This module implements a simple, basic atomic set mechanism.
 %%%-----------------------------------------------------------------
@@ -51,9 +55,12 @@
 %% we don't have to send the MibView to all SAs for validation.
 %%-----------------------------------------------------------------
 do_set(MibView, UnsortedVarbinds) ->
+    ?vtrace("do set with"
+	    "~n   MibView: ~p",[MibView]),
     case snmp_acm:validate_all_mib_view(UnsortedVarbinds, MibView) of
 	true ->
-	    {MyVarbinds, SubagentVarbinds} = sort_varbindlist(UnsortedVarbinds),
+	    {MyVarbinds , SubagentVarbinds} = 
+		sort_varbindlist(UnsortedVarbinds),
 	    case set_phase_one(MyVarbinds, SubagentVarbinds) of
 		{noError, 0} -> set_phase_two(MyVarbinds, SubagentVarbinds);
 		{Reason, Index} -> {Reason, Index}
@@ -71,9 +78,11 @@ do_set(MibView, UnsortedVarbinds) ->
 %%   [phase_two, undo, UnsortedVarbinds]
 %%-----------------------------------------------------------------
 do_subagent_set([phase_one, UnsortedVarbinds]) ->
+    ?vtrace("do subagent set, phase one",[]),
     {MyVarbinds, SubagentVarbinds} = sort_varbindlist(UnsortedVarbinds),
     set_phase_one(MyVarbinds, SubagentVarbinds);
 do_subagent_set([phase_two, State, UnsortedVarbinds]) ->
+    ?vtrace("do subagent set, phase two",[]),
     {MyVarbinds, SubagentVarbinds} = sort_varbindlist(UnsortedVarbinds),
     set_phase_two(State, MyVarbinds, SubagentVarbinds).
     
@@ -89,6 +98,10 @@ do_subagent_set([phase_two, State, UnsortedVarbinds]) ->
 %% Returns: {noError, 0} | {ErrorStatus, Index}
 %%-----------------------------------------------------------------
 set_phase_one(MyVarbinds, SubagentVarbinds) ->
+    ?vtrace("set phase one: "
+	    "~n   MyVarbinds:       ~p"
+	    "~n   SubagentVarbinds: ~p",
+	    [MyVarbinds, SubagentVarbinds]),
     case set_phase_one_my_variables(MyVarbinds) of
 	{noError, 0} ->
 	    case set_phase_one_subagents(SubagentVarbinds, []) of
@@ -107,6 +120,8 @@ set_phase_one(MyVarbinds, SubagentVarbinds) ->
     end.
 
 set_phase_one_my_variables(MyVarbinds) ->
+    ?vtrace("my variables set, phase one:"
+	    "~n   ~p",[MyVarbinds]),
     case snmp_set_lib:is_varbinds_ok(MyVarbinds) of
 	{noError, 0} ->
 	    snmp_set_lib:consistency_check(MyVarbinds);
@@ -139,6 +154,10 @@ set_phase_one_subagents([], Done) ->
 %%%-----------------------------------------------------------------
 %% returns:  {ErrStatus, ErrIndex}
 set_phase_two(MyVarbinds, SubagentVarbinds) ->
+    ?vtrace("set phase two: "
+	    "~n   MyVarbinds:       ~p"
+	    "~n   SubagentVarbinds: ~p",
+	    [MyVarbinds, SubagentVarbinds]),
     case snmp_set_lib:try_set(MyVarbinds) of
 	{noError, 0} ->
 	    set_phase_two_subagents(SubagentVarbinds);

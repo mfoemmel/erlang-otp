@@ -36,12 +36,20 @@ start_link(Args) ->
     supervisor:start_link({local,net_sup},erl_distribution,Args).
 
 init(NetArgs) ->
-    Epmd = {erl_epmd,{erl_epmd,start_link,[]},
-	    permanent,2000,worker,[erl_epmd]},
+    Epmd = 
+	case init:get_argument(no_epmd) of
+	    {ok, [[]]} ->
+		[];
+	    _ ->
+		EpmdMod = net_kernel:epmd_module(),
+		[{EpmdMod,{EpmdMod,start_link,[]},
+		  permanent,2000,worker,[EpmdMod]}]
+	end,
     Auth = {auth,{auth,start_link,[]},permanent,2000,worker,[auth]},
     Kernel = {net_kernel,{net_kernel,start_link,[NetArgs]},
 	      permanent,2000,worker,[net_kernel]},
-    {ok,{{one_for_all,0,1},[Epmd,Auth,Kernel]}}.
+    EarlySpecs = net_kernel:protocol_childspecs(),
+    {ok,{{one_for_all,0,1}, EarlySpecs ++ Epmd ++ [Auth,Kernel]}}.
 
 start_p() ->
     sname(),

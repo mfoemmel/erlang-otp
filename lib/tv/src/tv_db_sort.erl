@@ -140,19 +140,3 @@ get_correct_order(_Anything, E1, no_tuple, E2) ->     % Tuples first, then other
     {1, 2};                                           % terms in correct order!
 get_correct_order(no_tuple, E1, _Anything, E2) ->
     {2, 1}.
-
-
-
-
-
-
-
-reverse([H|T], Acc) ->
-    reverse(T, [H|Acc]);
-reverse([], Acc) -> 
-    Acc.
-
-
-
-
-

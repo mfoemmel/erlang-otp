@@ -27,7 +27,7 @@
 %%-----------------------------------------------------------------
 -export([new/0, store/3, retrieve/2, soft_retrieve/2, intf_resolv/3]).
 -export([get_full_scoped_name/3, scoped_id_new_global/1, scoped_id_new/1]).
--export([scoped_id_strip/1]).
+-export([scoped_id_strip/1,symtab_add_faked_included_types/1]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -177,6 +177,40 @@ scoped_id_is_top(_) -> false.
 scoped_id_up_one(S) -> S#scoped_id{id=tl(S#scoped_id.id)}. % cd .. in scope
 %%scoped_id_get_def(S) -> hd(S#scoped_id.id).	% Last added id
 scoped_id_strip(S) -> S#scoped_id.id.		% Strips all junk
+
+
+
+
+% Add CORBA::<Types> that as if they
+% were defined in an included file.
+% This is only supported in the case 
+% of Corba backend
+symtab_add_faked_included_types(G) ->
+    case ic_options:get_opt(G, be) of
+	false ->
+	    %% Add TypeCode as if it were defiend in included file
+	    ets:insert(G#genobj.symtab, {["CORBA"], 
+					 {interface,{'<identifier>',0,"TypeCode"},
+					  [],
+					  [],
+					  [],
+					  {tk_objref,
+					   "IDL:CORBA/TypeCode:1.0",
+					   "TypeCode"}}});
+	erl_corba ->
+	    %% Add TypeCode as if it were defiend in included file
+	    ets:insert(G#genobj.symtab, {["CORBA"], 
+					 {interface,{'<identifier>',0,"TypeCode"},
+					  [],
+					  [],
+					  [],
+					  {tk_objref,
+					   "IDL:CORBA/TypeCode:1.0",
+					   "TypeCode"}}}); 
+	_ ->
+	    ok
+    end.
+
 
 
 %%-----------------------------------------------------------------

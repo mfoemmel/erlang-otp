@@ -30,9 +30,10 @@
 -export([internal/3]).
 
 
--import(lists, [member/2,reverse/1,keysearch/3,flatmap/2,filter/2]).
+-import(lists, [member/2,reverse/1,keysearch/3,last/1,
+		map/2,foreach/2,foldr/3,any/2,filter/2]).
 
--define(DEF_VERSION, v2).			%Default compiler version.
+-define(DEF_VERSION, v3).			%Default compiler version.
 
 %% file(FileName)
 %% file(FileName, Options)
@@ -77,7 +78,7 @@ env_default_opts() ->
     end.
 	    
 do_compile(Input, Opts0) ->
-    Opts = lists:foldr(fun expand_opt/2, [], Opts0),
+    Opts = foldr(fun expand_opt/2, [], Opts0),
     Serv = spawn_link(?MODULE, internal, [self(),Input,Opts]),
     receive
 	{Serv,Rep} -> Rep
@@ -88,10 +89,9 @@ do_compile(Input, Opts0) ->
 %% listing file would have been generated).
 
 output_generated(Opts) ->
-    case [true || {save_binary,F} <- passes(file, ?DEF_VERSION, Opts)] of
-	[true|_] -> true;
-	[] -> false
-    end.
+    any(fun ({save_binary,F}) -> true;
+	    (Other) -> false
+	end, passes(file, ?DEF_VERSION, Opts)).
 
 expand_opt(report, Os) -> [report_errors,report_warnings|Os];
 expand_opt(return, Os) -> [return_errors,return_warnings|Os];
@@ -101,6 +101,10 @@ expand_opt(O, Os) -> [O|Os].
 
 format_error(jam_is_dead) ->
     "JAM is dead!";
+format_error(v1_is_dead) ->
+    "The v1 compiler is no longer supported.";
+format_error(v2_is_dead) ->
+    "The v2 compiler is no longer supported.";
 format_error({open,E}) ->
     io_lib:format("open error '~s'", [file:format_error(E)]);
 format_error(write_error) ->
@@ -110,9 +114,9 @@ format_error({rename,S}) ->
 format_error({parse_transform,M,R}) ->
     io_lib:format("error in transform '~s': ~p", [M, R]);
 format_error({crash,Pass,Reason}) ->
-    io_lib:format("internal error in ~p;\ncrash reason: ~P", [Pass,Reason,20]);
+    io_lib:format("internal error in ~p;\ncrash reason: ~p", [Pass,Reason]);
 format_error({bad_return,Pass,Reason}) ->
-    io_lib:format("internal error in ~p;\nbad return value: ~P", [Pass,Reason,20]).
+    io_lib:format("internal error in ~p;\nbad return value: ~p", [Pass,Reason]).
 
 %% The compile state record.
 -record(compile, {filename="",
@@ -241,7 +245,7 @@ passes(file, Ver, Opts) ->
     %% insert a first pass to remove the file.
 
     [?pass(error_if_jam)|
-     case lists:last(Fs) of
+     case last(Fs) of
 	 {save_binary,Fun} -> [?pass(remove_file)|Fs];
 	 Other -> Fs
      end].
@@ -305,7 +309,7 @@ select_passes([{Name,Fun}|Ps], Opts) when function(Fun) ->
 select_passes([], Opts) -> [];
 select_passes([List|Ps], Opts) when list(List) ->
     Nested = select_passes(List, Opts),
-    case lists:last(Nested) of
+    case last(Nested) of
 	{listing,Fun} -> Nested;
 	Other         -> Nested ++ select_passes(Ps, Opts)
     end.
@@ -319,64 +323,55 @@ select_cond(Flag, ShouldBe, Pass, Ps, Opts) ->
 
 %% The standard passes (almost) always run.
 
-standard_passes(Version) ->
+standard_passes(v1) -> [?pass(v1_is_dead)];
+standard_passes(v2) -> [?pass(v2_is_dead)];
+standard_passes(v3) ->
     [?pass(transform_module),
      {iff,'P',{src_listing,"P"}},
      ?pass(lint_module),
-     ?pass(remove_unused_functions),
+
+     %% Note: erl_lint only warns for obviously unused functions, not
+     %% for self-recursive functions never called. 
+     %% function
+%%     ?pass(remove_unused_functions),
+
      ?pass(expand_module),
      {iff,dexp,{listing,"expand"}},
      {iff,'E',{src_listing,"E"}},
-     {iff,debug_info,?pass(save_abstract_code)}] ++
+     {iff,'abstr',{listing,"abstr"}},
+     {unless,no_debug_info,?pass(save_abstract_code)},
 
-	case Version of
-	    v1 ->				% Bogdan's uncomparable original.
-		[{pass,v1_adapt},
-		 {iff,dad,{listing,"adapt"}},
-		 {pass,v1_compile},
-		 {pass,v1_optimize},
-		 {pass,v1_cleanup}];
-	    v2 ->				% Robert's older compiler.
-		[{pass,v2_kernel},
-		 {iff,dkern,{listing,"kernel"}},
-		 {unless,no_kernopt,{pass,v2_kernopt}},
-		 {iff,dkernopt,{listing,"kernopt"}},
-		 {pass,v2_match},
-		 {iff,dmat,{listing,"match"}},
-		 {pass,v2_life},
-		 {iff,dlife,{listing,"life"}},
-		 {pass,v2_codegen},
-		 {iff,dcg,{listing,"codegen"}}|postopt_passes()];
-	    v3 ->				% Robert's new core-based compiler
-		[{pass,v3_core},
-		 {iff,dcore,{listing,"core"}},
-		 {pass,v3_core_opt},
-		 {iff,dcopt,{listing,"coreopt"}},
-		 {iff,clint,?pass(core_lint_module)},
-		 {pass,v3_kernel},
-		 {iff,dkern,{listing,"kernel"}},
-		 {pass,v3_life},
-		 {iff,dlife,{listing,"life"}},
-		 {pass,v3_codegen},
-		 {iff,dcg,{listing,"codegen"}}|postopt_passes()]
-	end ++
+     %% Core Erlang passes.
+     {pass,v3_core},
+     {iff,dcore,{listing,"core"}},
+     {unless,no_copt,{pass,v3_core_opt}},
+     {iff,dcopt,{listing,"coreopt"}},
+     {iff,clint,?pass(core_lint_module)},
 
-	%% Common assembly pass.
+     %% Kernel Erlang and code generation.
+     {pass,v3_kernel},
+     {iff,dkern,{listing,"kernel"}},
+     {pass,v3_life},
+     {iff,dlife,{listing,"life"}},
+     {pass,v3_codegen},
+     {iff,dcg,{listing,"codegen"}},
 
-	[{iff,dopt,{listing,"optimize"}},
-	 {iff,'S',{listing,"S"}},
-	 ?pass(beam_asm),
-	 {unless,binary,?pass(save_binary)}].
-
-postopt_passes() ->
-    [{unless,no_postopt,
+     %% Assembly level optimisations.
+     {unless,no_postopt,
       [{pass,beam_block},
        {iff,dblk,{listing,"block"}},
+       {pass,beam_bs},
+       {iff,dbs,{listing,"bs"}},
        {unless,no_jopt,{pass,beam_jump}},
        {iff,djmp,{listing,"jump"}},
        {unless,no_topt,{pass,beam_type}},
        {iff,dtype,{listing,"type"}},
-       {pass,beam_flatten}]}].
+       {pass,beam_flatten}]},
+     {iff,dopt,{listing,"optimize"}},
+     {iff,'S',{listing,"S"}},
+
+     ?pass(beam_asm),
+     {unless,binary,?pass(save_binary)}].
 
 compiler_version(Opts) ->
     compiler_version(Opts, []).
@@ -457,7 +452,15 @@ error_if_jam(St) ->
 	false ->
 	    {ok,St}
     end.
-	    
+
+v1_is_dead(St) ->
+    Es = [{St#compile.ifile,[{none,compile,v1_is_dead}]}],
+    {error,St#compile{errors=St#compile.errors ++ Es}}.
+
+v2_is_dead(St) ->
+    Es = [{St#compile.ifile,[{none,compile,v2_is_dead}]}],
+    {error,St#compile{errors=St#compile.errors ++ Es}}.
+
 parse_module(St) ->
     Opts = St#compile.options,
     Cwd = case keysearch(cwd, 1, Opts) of
@@ -490,8 +493,7 @@ transform_module(St) ->
 
 foldl_transform(St, [T|Ts]) ->
     Name = "transform " ++ atom_to_list(T),
-    Fun = fun(S) -> T:parse_transform(S#compile.code, S#compile.options)
-	  end,
+    Fun = fun(S) -> T:parse_transform(S#compile.code, S#compile.options) end,
     Run = case member(time, St#compile.options) of
 	      true  -> fun run_tc/2;
 	      false -> fun({N,F}, S) -> catch F(S) end
@@ -507,8 +509,7 @@ foldl_transform(St, []) -> {ok,St}.
 
 %%% Fetches the module name from a list of forms. The module attribute must
 %%% be present.
-get_module([{attribute,_,module,M} | _]) ->
-    M;
+get_module([{attribute,_,module,M} | _]) -> M;
 get_module([_ | Rest]) ->
     get_module(Rest).
 
@@ -551,16 +552,17 @@ core_lint_module(St) ->
 %%  Remove any local functions not called in the module, based on the warnings
 %%  generated by erl_lint.
 
-remove_unused_functions(St0) ->
-    Eds = flatmap(fun({F,Ws}) -> Ws end,  St0#compile.warnings),
-    case [{Func,Arity} || {L,erl_lint,{not_called,{Func,Arity}}} <- Eds] of
-	[] -> {ok,St0};
-	NotCalled ->
-	    Code = filter(fun({function,L,N,A,Cs}) -> not member({N,A}, NotCalled);
-			     (Other) -> true end,
-			  St0#compile.code),
-	    {ok,St0#compile{code=Code}}
-    end.
+%% See comment in standard_passes/1.
+% remove_unused_functions(St0) ->
+%     Eds = flatmap(fun({F,Ws}) -> Ws end,  St0#compile.warnings),
+%     case [{Func,Arity} || {L,erl_lint,{not_called,{Func,Arity}}} <- Eds] of
+% 	[] -> {ok,St0};
+% 	NotCalled ->
+% 	    Code = filter(fun({function,L,N,A,Cs}) -> not member({N,A}, NotCalled);
+% 			     (Other) -> true end,
+% 			  St0#compile.code),
+% 	    {ok,St0#compile{code=Code}}
+%     end.
 
 %% expand_module(State) -> State'
 %%  Do the common preprocessing of the input forms.
@@ -574,11 +576,14 @@ save_abstract_code(St) ->
     {ok,St#compile{abstract_code=abstract_code(St)}}.
 
 abstract_code(#compile{code={Mod,Exp,Forms}}) ->
-    term_to_binary({abstract_v1,Forms}).
+    Abstr = {abstract_v1,Forms},
+    case catch erlang:term_to_binary(Abstr, [compressed]) of
+	{'EXIT',_} -> term_to_binary(Abstr);
+	Other -> Other
+    end.
 
-beam_asm(St) ->
-    #compile{code=Code0,abstract_code=Abst,options=Opts0} = St,
-    Opts = [O || O <- Opts0, is_informative_option(O)],
+beam_asm(#compile{code=Code0,abstract_code=Abst,options=Opts0}=St) ->
+    Opts = filter(fun is_informative_option/1, Opts0),
     case beam_asm:module(Code0, Abst, Opts) of
 	{ok,Code} -> {ok,St#compile{code=Code,abstract_code=[]}};
 	{error,Es} -> {error,St#compile{errors=St#compile.errors ++ Es}}
@@ -636,18 +641,18 @@ write_binary(Name, Bin, St) ->
 report_errors(St) ->
     case member(report_errors, St#compile.options) of
 	true ->
-	    lists:foreach(fun ({{F,L},Eds}) -> list_errors(F, Eds);
-			      ({F,Eds}) -> list_errors(F, Eds) end,
-			  St#compile.errors);
+	    foreach(fun ({{F,L},Eds}) -> list_errors(F, Eds);
+			({F,Eds}) -> list_errors(F, Eds) end,
+		    St#compile.errors);
 	false -> ok
     end.
 
 report_warnings(St) ->
     case member(report_warnings, St#compile.options) of
 	true ->
-	    lists:foreach(fun ({{F,L},Eds}) -> list_warnings(F, Eds);
-			      ({F,Eds}) -> list_warnings(F, Eds) end,
-			  St#compile.warnings);
+	    foreach(fun ({{F,L},Eds}) -> list_warnings(F, Eds);
+			({F,Eds}) -> list_warnings(F, Eds) end,
+		    St#compile.warnings);
 	false -> ok
     end.
 
@@ -723,9 +728,8 @@ src_listing(Ext, St) ->
 	    Ext, St).
 
 do_src_listing(Lf, Fs) ->
-    lists:foreach(fun (F) ->
-			  io:put_chars(Lf, [erl_pp:form(F),"\n"]) end,
-		  Fs).
+    foreach(fun (F) -> io:put_chars(Lf, [erl_pp:form(F),"\n"]) end,
+	    Fs).
 
 listing(Ext, St) ->
     listing(fun(Lf, Fs) -> beam_listing:module(Lf, Fs) end, Ext, St).
@@ -827,13 +831,13 @@ make_erl_options(Opts) ->
 	    1 -> [no_postopt];
 	    Other -> []
 	end ++
-	lists:map(
-	      fun ({Name, Value}) ->
-		      {d, Name, Value};
-		  (Name) ->
-		      {d, Name}
-	      end,
-	      Defines) ++
+	map(
+	  fun ({Name, Value}) ->
+		  {d, Name, Value};
+	      (Name) ->
+		  {d, Name}
+	  end,
+	  Defines) ++
 	case OutputType of
 	    undefined -> [];
 	    jam -> [jam];
@@ -841,4 +845,4 @@ make_erl_options(Opts) ->
 	end,
 
     Options++[report_errors, {cwd, Cwd}, {outdir, Outdir}|
-	 lists:map(fun(Dir) -> {i, Dir} end, Includes)]++Specific.
+	      map(fun(Dir) -> {i, Dir} end, Includes)]++Specific.

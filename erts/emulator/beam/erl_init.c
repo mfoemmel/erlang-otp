@@ -26,6 +26,7 @@
 #include "erl_process.h"
 #include "erl_version.h"
 #include "erl_db.h"
+#include "beam_bp.h"
 
 extern void erl_crash_dump();
 #ifdef __WIN32__
@@ -36,21 +37,20 @@ extern void ConWaitForExit(void);
  * Configurable parameters.
  */
 
-uint32     max_process;
-uint32     display_items;	/* no of items to display in traces etc */
-int        switch_gc_threshold;	/*
-				 * Threshold when to switch from
-				 * fullsweep to generational GC.
-				 */
-uint32     display_loads;	/* print info about loaded modules */
-int H_MIN_SIZE;			/* The minimum heap grain */
+Uint32 max_process = MAX_PROCESS;
+uint32 display_items = 100;	/* no of items to display in traces etc */
+uint32 display_loads = 0;	/* print info about loaded modules */
+int H_MIN_SIZE = H_DEFAULT_SIZE; /* The minimum heap grain */
 
 Uint32 erts_debug_flags;	/* Debug flags. */
-int heap_series = HS_FIBONACCI;	/* Series to use for heap size. */
-int	   count_instructions;
+int heap_series = HS_FIBONACCI_SLOW; /* Series to use for heap size. */
+int count_instructions;
 int erts_backtrace_depth = 8;	/* How many functions to show in a backtrace
 				 * in error codes.
 				 */
+
+int erts_async_max_threads = 0;  /* number of threads for async support */
+Uint16 erts_max_gen_gcs = (Uint16) -1;
 
 #ifdef DEBUG
 uint32 verbose;		/* noisy mode = 1 */
@@ -61,20 +61,16 @@ uint32 verbose;		/* noisy mode = 1 */
  */
 
 byte*      tmp_buf;
-int        tot_bin_allocated;
+int        tot_bin_allocated = 0;
 uint32     do_time;		/* set at clock interupt */
 uint32     garbage_cols;	/* no of garbage collections */
 uint32     reclaimed;		/* no of words reclaimed in GCs */
-
-const int driver_tab_size = DRIVER_TAB_SIZE;
 
 #ifdef INSTRUMENT
 uint32 instr_send_sizes[INSTR_SEND_SIZES_MAX];
 #endif
 
-#ifdef SEQ_TRACE
-uint32 system_seq_tracer;
-#endif
+Eterm system_seq_tracer;
 
 void init_emulator(void);
 
@@ -90,114 +86,9 @@ va_list args;
     vfprintf(stderr, fmt, args);
 }
 
-
-#if !defined(STANDALONE_ERLANG)
-
-static FUNCTION(void, usage, (_VOID_));
-
-
-/* static variables that must not change (use same values at restart) */
-static char* program;
-static char* init = "init";
-static char* boot = "boot";
-static int    boot_argc;
-static char** boot_argv;
-
-static char* get_arg(rest, next, ip)
-char* rest; char* next; int* ip;
-{
-    if (*rest == '\0') {
-	if (next == NULL) {
-	    erl_printf(CERR, "too few arguments\n");
-	    usage();
-	}
-	(*ip)++;
-	return next;
-    }
-    return rest;
-}
-
-/*
- * Dummy!
- */
-
-void
-erl_first_process(char* modname, void* code, unsigned size,
-		  int argc, char** argv)
-{
-}
-
-static void 
-load_preloaded(void)
-{
-    int i;
-    int res;
-    Preload* preload_p;
-    Eterm module_name;
-    byte* code;
-    char* name;
-    int length;
-
-    if ((preload_p = sys_preloaded()) == NULL) {
-	return;
-    }
-    i = 0;
-    while ((name = preload_p[i].name) != NULL) {
-	length = preload_p[i].size;
-	module_name = am_atom_put(name, sys_strlen(name));
-	if ((code = sys_preload_begin(&preload_p[i])) == 0)
-	    erl_exit(1, "Failed to find preloaded code for module %s\n", 
-		     name);
-	res = do_load(0, module_name, code, length);
-	sys_preload_end(&preload_p[i]);
-	if (res < 0)
-	    erl_exit(1,"Failed loading preloaded module %s\n", name);
-	i++;
-    }
-}
-
-Eterm
-erts_preloaded(Process* p)
-{
-    Eterm previous;
-    int j;
-    int need;
-    Eterm mod;
-    Eterm* hp;
-    char* name;
-    const Preload *preload = sys_preloaded();
-
-    j = 0;
-    while (preload[j].name != NULL) {
-	j++;
-    }
-    previous = NIL;
-    need = 2*j;
-    hp = HAlloc(p, need);
-    j = 0;
-    while ((name = preload[j].name) != NULL)  {
-	mod = am_atom_put(name, sys_strlen(name));
-	previous = CONS(hp, mod, previous);
-	hp += 2;
-	j++;
-    }
-    return previous;
-}
-
 void
 erl_init(void)
 {
-    Eterm mod;
-    Eterm fun;
-    Eterm args;
-    int i;
-    Process parent;
-    Process* p;
-    Eterm pid;
-    ErlSpawnOpts so;
-    ErlHeapFragment* mbuf;
-    uint32* hp;
-
     garbage_cols = 0;
     reclaimed = 0;
 
@@ -214,319 +105,8 @@ erl_init(void)
     init_register_table();
     init_message();
     init_emulator();
+    erts_bp_init();
     init_db(); /* Must be after init_emulator */
-    init_scheduler();
-    init_time();
-    init_dist();
-    init_io();
-    init_copy();
-    init_load();
-
-#ifdef INSTRUMENT
-    {int j;
-     for (j=0;j<INSTR_SEND_SIZES_MAX;j++) 
-	 instr_send_sizes[j]=0;
- }
-#endif
-
-    load_preloaded();
-
-    /*
-     * Verify that the boot function (normally init:boot/1) exists.
-     */
-    if ((i = atom_get((byte*)init, sys_strlen(init))) == -1)
-	erl_exit(3, "Module %s undefined\n", init);
-    mod = make_atom(i);
-    if ((i = atom_get((byte*)boot, sys_strlen(boot))) == -1)
-	erl_exit(4, "Function %s undefined\n", boot);
-    fun = make_atom(i);
-    if (erts_find_function(mod, fun, 1) == NULL) {
-	erl_exit(5, "No function %s:%s/1\n", init, boot);
-    }
-
-    /*
-     * Build arguments for mod:fun([A1,A2,...,An])
-     */ 
-    mbuf = new_message_buffer(boot_argc * 2 + 2);
-    hp = mbuf->mem;
-    args = NIL;
-    for (i = boot_argc-1; i >= 0; i--) {
-	int len = sys_strlen(boot_argv[i]);
-	args = CONS(hp, am_atom_put(boot_argv[i], len), args);
-	hp += 2;
-    }
-    args = CONS(hp, args, NIL);
-
-    /*
-     * We need a dummy parent process to be able to call erl_create_process().
-     */
-    parent.group_leader = NIL;
-    parent.tracer_proc = NIL;   /* Not traced, of course. */
-    parent.flags = 0;
-
-    so.flags = 0;
-    pid = erl_create_process(&parent, mod, fun, args, &so);
-    p = process_tab[get_number(pid)];
-    p->group_leader = pid;
-    free_message_buffer(mbuf);
-}
- 
-
-/* be helpful (or maybe downright rude:-) */
-static void usage()
-{
-    erl_printf(CERR, "usage: %s [flags] [ -- [init_args] ]\n", program);
-    erl_printf(CERR, "The flags are:\n\n");
-    erl_printf(CERR, "-v         turn on chatty mode, GCs will be reported etc\n");
-    erl_printf(CERR, "-l         turn on auto load tracing\n");
-    erl_printf(CERR, "-i module  set the boot module (default init)\n");
-    erl_printf(CERR, "-b fun     set the boot function (default boot)\n");
-    erl_printf(CERR, "-h number  set minimum heap size in words (default %d)\n",
-	       H_DEFAULT_SIZE);
-    erl_printf(CERR, "-# number  set the number of items to be used in traces etc\n");
-    erl_printf(CERR, "-B         turn break handler off\n");
-    erl_printf(CERR, "-P number  set maximum number of processes on this node\n");
-    erl_printf(CERR, "           valid range is [%d-%d]\n",
-	       MIN_PROCESS, MAX_PROCESS);
-    erl_printf(CERR, "\n\n");
-    erl_exit(-1, "");
-}
-
-
-void erl_start(argc,argv)
-int argc; char **argv;
-{
-    int i = 1;
-    char* arg=NULL;
-    int have_break_handler = 1;
-    char* tmpenvbuf;
-
-    program = argv[0];
-    display_items = 100;   /* approx chars */
-    H_MIN_SIZE = H_DEFAULT_SIZE;
-    max_process = MAX_PROCESS;
-    display_loads = 0;
-    tot_bin_allocated = 0;
-    tmpenvbuf = getenv("ERL_GC_TYPE");
-    switch_gc_threshold = 0;
-    if (tmpenvbuf != NULL) {
-	if (strcmp(tmpenvbuf,"generational") == 0)
-	    switch_gc_threshold = 0;
-	else if (strcmp(tmpenvbuf,"fullsweep") == 0)
-	    switch_gc_threshold = MAX_SMALL; /* Never migrate */
-	else if (strncmp(tmpenvbuf,"switch:",7) == 0)
-	    switch_gc_threshold = atoi(tmpenvbuf+7);
-	else
-	    erl_printf(CERR, "warning: ERL_GC_TYPE is set to unknown"
-		       " value, assuming generational.\n");
-    }
-    tmpenvbuf = getenv(ERL_MAX_ETS_TABLES_ENV);
-    if (tmpenvbuf != NULL) 
-	user_requested_db_max_tabs = atoi(tmpenvbuf);
-    else
-	user_requested_db_max_tabs = 0;
-
-#ifdef DEBUG
-    verbose = 0;
-#endif
-
-#ifdef SEQ_TRACE
-    system_seq_tracer = 0;
-#endif
-
-    while (i < argc) {
-	if (argv[i][0] != '-') {
-	    usage();
-	}
-	if (strcmp(argv[i], "--") == 0) { /* end of emulator options */
-	    i++;
-	    break;
-	}
-	switch (argv[i][1]) {
-	case '#' :
-	    arg = get_arg(argv[i]+2, argv[i+1], &i);
-	    if ((display_items = atoi(arg)) == 0) {
-		erl_printf(CERR, "bad display items%s\n", arg);
-		usage();
-	    }
-	    VERBOSE(erl_printf(COUT,"using display items %d\n",
-			       display_items););
-	    break;
-
-	case 'l':
-	    display_loads++;
-	    break;
-	    
-	case 'v':
-#ifdef DEBUG
-	    verbose++;
-#else
-	    erl_printf(CERR, "warning: -v (only in debug compiled code)\n");
-#endif
-	    break;
-	case 'V' :
-	    {
-		char tmp[100];
-
-		tmp[0] = tmp[1] = '\0';
-#ifdef DEBUG
-		strcat(tmp, ",DEBUG");
-#endif
-#ifdef INSTRUMENT
-		strcat(tmp, ",INSTRUMENT");
-#endif
-		erl_printf(CERR, "Erlang ");
-		if (tmp[1]) {
-		    erl_printf(CERR, "(%s) ", tmp+1);
-		}
-		erl_printf(CERR, "(" EMULATOR ") emulator version "
-			   ERLANG_VERSION "\n");
-		erl_exit(0, "");
-	    }
-	    break;
-
-	case 'H':
-	    if (argv[i][2] == 'f') {
-		heap_series = HS_FIBONACCI;
-	    } else if (argv[i][2] == 'T') {
-		heap_series = HS_POWER_TWO;
-	    } else if (argv[i][2] == 't') {
-		heap_series = HS_POWER_TWO_MINUS_ONE;
-	    } else {
-		erl_printf(CERR, "bad heap series %s (use 'f', 'T', or 't')\n", arg);
-		usage();
-	    }
-	    break;
-
-	case 'h':
-	    /* set default heap size */
-	    arg = get_arg(argv[i]+2, argv[i+1], &i);
-	    if ((H_MIN_SIZE = atoi(arg)) <= 0) {
-		erl_printf(CERR, "bad heap size %s\n", arg);
-		usage();
-	    }
-	    VERBOSE(erl_printf(COUT, "using minimum heap size %d\n",
-			       H_MIN_SIZE););
-	    break;
-
-	case 'e':
-	    /* set maximum number of ets tables */
-	    arg = get_arg(argv[i]+2, argv[i+1], &i);
-	    if (( user_requested_db_max_tabs = atoi(arg) ) < 0) {
-		erl_printf(CERR, "bad maximum number of ets tables %s\n", arg);
-		usage();
-	    }
-	    VERBOSE(erl_printf(COUT, "using maximum number of ets tables %d\n",
-			       user_requested_db_max_tabs););
-	    break;
-
-	case 'i':
-	    /* define name of module for initial function */
-	    init = get_arg(argv[i]+2, argv[i+1], &i);
-	    break;
-
-	case 'b':
-	    /* define name of initial function */
-	    boot = get_arg(argv[i]+2, argv[i+1], &i);
-	    break;
-
-	case 'B':
-	    have_break_handler = 0;
-	    break;
-
-	case 'P':
-	    /* set maximum number of processes */
-	    arg = get_arg(argv[i]+2, argv[i+1], &i);
-	    if (((max_process = atoi(arg)) < MIN_PROCESS) ||
-		(max_process > MAX_PROCESS)) {
-		erl_printf(CERR, "bad number of processes %s\n", arg);
-		usage();
-	    }
-	    break;
-
-	case 'n':   /* XXX obsolete */
-	    break;
-	case 'c':
-	    if (argv[i][2] == 'i') {
-		count_instructions = 1;
-	    }
-	    break;
-	default:
-	    erl_printf(CERR, "%s unknown flag %s\n", argv[0], argv[i]);
-	    usage();
-	}
-	i++;
-    }
-
-   /* Restart will not reinstall the break handler */
-    if (have_break_handler)
-	init_break_handler();
-
-    boot_argc = argc - i;  /* Number of arguments to init */
-    boot_argv = &argv[i];
-    erl_init();
-}
-#endif
-
-
-
-/*
- * The following code is used for Standalone Erlang.
- */
-
-#if defined(STANDALONE_ERLANG)
-Eterm
-erts_preloaded(Process* p)
-{
-    return NIL;			/* XXX Should return something better. */
-}
-
-void erl_init()
-{
-    int have_break_handler = 1;
-    char* tmpenvbuf;
-
-    display_items = 100;   /* approx chars */
-    H_MIN_SIZE = H_DEFAULT_SIZE;
-    max_process = MAX_PROCESS;
-    display_loads = 0;
-    tot_bin_allocated = 0;
-    tmpenvbuf = getenv(ERL_MAX_ETS_TABLES_ENV);
-    if (tmpenvbuf != NULL) 
-	user_requested_db_max_tabs = atoi(tmpenvbuf);
-    else
-	user_requested_db_max_tabs = 0;
-
-#ifdef DEBUG
-    verbose = 0;
-#endif
-
-#ifdef SEQ_TRACE
-    system_seq_tracer = 0;
-#endif
-
-   /* Restart will not reinstall the break handler */
-    if (have_break_handler) {
-	init_break_handler();
-    }
-
-    garbage_cols = 0;
-    reclaimed = 0;
-
-    ASSERT(TMP_BUF_SIZE >= 16384);
-    tmp_buf = (byte *)safe_alloc_from(130, TMP_BUF_SIZE);
-    init_alloc();
-    init_gc();
-
-    H_MIN_SIZE = next_heap_size(H_MIN_SIZE, 0);
-
-    init_atom_table();
-    init_db();
-    init_export_table();
-    init_module_table();
-    init_register_table();
-    init_message();
-    init_emulator();
     init_scheduler();
     init_time();
     init_dist();
@@ -584,13 +164,301 @@ erl_first_process(char* modname, void* code, unsigned size,
 
     so.flags = 0;
     pid = erl_create_process(&parent, start_mod, am_start, args, &so);
-    p = process_tab[get_number(pid)];
+    p = process_tab[pid_number(pid)];
     p->group_leader = pid;
-
-    erts_cleanup_mso(parent.off_heap.mso);
-    /* XXX Need to fix resource leak here (message buffers). */
+    erts_cleanup_empty_process(&parent);
 }
+
+Eterm
+erts_preloaded(Process* p)
+{
+    Eterm previous;
+    int j;
+    int need;
+    Eterm mod;
+    Eterm* hp;
+    char* name;
+    const Preload *preload = sys_preloaded();
+
+    j = 0;
+    while (preload[j].name != NULL) {
+	j++;
+    }
+    previous = NIL;
+    need = 2*j;
+    hp = HAlloc(p, need);
+    j = 0;
+    while ((name = preload[j].name) != NULL)  {
+	mod = am_atom_put(name, sys_strlen(name));
+	previous = CONS(hp, mod, previous);
+	hp += 2;
+	j++;
+    }
+    return previous;
+}
+
+
+static void usage(void);
+
+
+/* static variables that must not change (use same values at restart) */
+static char* program;
+static char* init = "init";
+static char* boot = "boot";
+static int    boot_argc;
+static char** boot_argv;
+
+static char* get_arg(rest, next, ip)
+char* rest; char* next; int* ip;
+{
+    if (*rest == '\0') {
+	if (next == NULL) {
+	    erl_printf(CERR, "too few arguments\n");
+	    usage();
+	}
+	(*ip)++;
+	return next;
+    }
+    return rest;
+}
+
+static void 
+load_preloaded(void)
+{
+    int i;
+    int res;
+    Preload* preload_p;
+    Eterm module_name;
+    byte* code;
+    char* name;
+    int length;
+
+    if ((preload_p = sys_preloaded()) == NULL) {
+	return;
+    }
+    i = 0;
+    while ((name = preload_p[i].name) != NULL) {
+	length = preload_p[i].size;
+	module_name = am_atom_put(name, sys_strlen(name));
+	if ((code = sys_preload_begin(&preload_p[i])) == 0)
+	    erl_exit(1, "Failed to find preloaded code for module %s\n", 
+		     name);
+	res = do_load(NIL, module_name, code, length);
+	sys_preload_end(&preload_p[i]);
+	if (res < 0)
+	    erl_exit(1,"Failed loading preloaded module %s\n", name);
+	i++;
+    }
+}
+
+/* be helpful (or maybe downright rude:-) */
+static void usage()
+{
+    erl_printf(CERR, "usage: %s [flags] [ -- [init_args] ]\n", program);
+    erl_printf(CERR, "The flags are:\n\n");
+    erl_printf(CERR, "-v         turn on chatty mode, GCs will be reported etc\n");
+    erl_printf(CERR, "-l         turn on auto load tracing\n");
+    erl_printf(CERR, "-i module  set the boot module (default init)\n");
+    erl_printf(CERR, "-b fun     set the boot function (default boot)\n");
+    erl_printf(CERR, "-h number  set minimum heap size in words (default %d)\n",
+	       H_DEFAULT_SIZE);
+    erl_printf(CERR, "-# number  set the number of items to be used in traces etc\n");
+    erl_printf(CERR, "-B         turn break handler off\n");
+    erl_printf(CERR, "-P number  set maximum number of processes on this node\n");
+    erl_printf(CERR, "           valid range is [%d-%d]\n",
+	       MIN_PROCESS, MAX_PROCESS);
+    erl_printf(CERR, "-A number  set number or threads in async thread pool\n");
+    erl_printf(CERR, "           valid range is [0-256]\n");
+    erl_printf(CERR, "\n\n");
+    erl_exit(-1, "");
+}
+
+
+void
+erl_start(int argc, char **argv)
+{
+    int i = 1;
+    char* arg=NULL;
+    int have_break_handler = 1;
+    char* tmpenvbuf;
+
+    erl_sys_init();
+    program = argv[0];
+
+    tmpenvbuf = getenv(ERL_MAX_ETS_TABLES_ENV);
+    if (tmpenvbuf != NULL) 
+	user_requested_db_max_tabs = atoi(tmpenvbuf);
+    else
+	user_requested_db_max_tabs = 0;
+
+    tmpenvbuf = getenv("ERL_FULLSWEEP_AFTER");
+    if (tmpenvbuf != NULL) {
+	erts_max_gen_gcs = atoi(tmpenvbuf);
+    }
+
+    tmpenvbuf = getenv("ERL_THREAD_POOL_SIZE");
+    if (tmpenvbuf != NULL) {
+	erts_async_max_threads = atoi(tmpenvbuf);
+    }
+    
+
+#ifdef DEBUG
+    verbose = 0;
 #endif
+
+    system_seq_tracer = NIL;
+
+    while (i < argc) {
+	if (argv[i][0] != '-') {
+	    usage();
+	}
+	if (strcmp(argv[i], "--") == 0) { /* end of emulator options */
+	    i++;
+	    break;
+	}
+	switch (argv[i][1]) {
+	case '#' :
+	    arg = get_arg(argv[i]+2, argv[i+1], &i);
+	    if ((display_items = atoi(arg)) == 0) {
+		erl_printf(CERR, "bad display items%s\n", arg);
+		usage();
+	    }
+	    VERBOSE(erl_printf(COUT,"using display items %d\n",
+			       display_items););
+	    break;
+
+	case 'l':
+	    display_loads++;
+	    break;
+	    
+	case 'v':
+#ifdef DEBUG
+	    verbose++;
+#else
+	    erl_printf(CERR, "warning: -v (only in debug compiled code)\n");
+#endif
+	    break;
+	case 'V' :
+	    {
+		char tmp[100];
+
+		tmp[0] = tmp[1] = '\0';
+#ifdef DEBUG
+		strcat(tmp, ",DEBUG");
+#endif
+#ifdef INSTRUMENT
+		strcat(tmp, ",INSTRUMENT");
+#endif
+#ifdef USE_THREADS
+		strcat(tmp, ",THREADS");
+#endif
+		erl_printf(CERR, "Erlang ");
+		if (tmp[1]) {
+		    erl_printf(CERR, "(%s) ", tmp+1);
+		}
+		erl_printf(CERR, "(" EMULATOR ") emulator version "
+			   ERLANG_VERSION "\n");
+		erl_exit(0, "");
+	    }
+	    break;
+
+	case 'H':
+	    if (argv[i][2] == 'f') {
+		heap_series = HS_FIBONACCI;
+	    } else if (argv[i][2] == 'F') {
+		heap_series = HS_FIBONACCI_SLOW;
+	    } else if (argv[i][2] == 'T') {
+		heap_series = HS_POWER_TWO;
+	    } else if (argv[i][2] == 't') {
+		heap_series = HS_POWER_TWO_MINUS_ONE;
+	    } else {
+		erl_printf(CERR, "bad heap series %s (use 'f', 'T', or 't')\n", arg);
+		usage();
+	    }
+	    break;
+
+	case 'h':
+	    /* set default heap size */
+	    arg = get_arg(argv[i]+2, argv[i+1], &i);
+	    if ((H_MIN_SIZE = atoi(arg)) <= 0) {
+		erl_printf(CERR, "bad heap size %s\n", arg);
+		usage();
+	    }
+	    VERBOSE(erl_printf(COUT, "using minimum heap size %d\n",
+			       H_MIN_SIZE););
+	    break;
+
+	case 'e':
+	    /* set maximum number of ets tables */
+	    arg = get_arg(argv[i]+2, argv[i+1], &i);
+	    if (( user_requested_db_max_tabs = atoi(arg) ) < 0) {
+		erl_printf(CERR, "bad maximum number of ets tables %s\n", arg);
+		usage();
+	    }
+	    VERBOSE(erl_printf(COUT, "using maximum number of ets tables %d\n",
+			       user_requested_db_max_tabs););
+	    break;
+
+	case 'i':
+	    /* define name of module for initial function */
+	    init = get_arg(argv[i]+2, argv[i+1], &i);
+	    break;
+
+	case 'b':
+	    /* define name of initial function */
+	    boot = get_arg(argv[i]+2, argv[i+1], &i);
+	    break;
+
+	case 'B':
+	    have_break_handler = 0;
+	    break;
+
+	case 'P':
+	    /* set maximum number of processes */
+	    arg = get_arg(argv[i]+2, argv[i+1], &i);
+	    if (((max_process = atoi(arg)) < MIN_PROCESS) ||
+		(max_process > MAX_PROCESS)) {
+		erl_printf(CERR, "bad number of processes %s\n", arg);
+		usage();
+	    }
+	    break;
+
+	case 'A':
+	    /* set number of threads in thread pool */
+	    arg = get_arg(argv[i]+2, argv[i+1], &i);
+	    if (((erts_async_max_threads = atoi(arg)) < -1) ||
+		(erts_async_max_threads > 256)) {
+		erl_printf(CERR, "bad number of threads %s\n", arg);
+		usage();
+	    }
+	    break;
+
+	case 'n':   /* XXX obsolete */
+	    break;
+	case 'c':
+	    if (argv[i][2] == 'i') {
+		count_instructions = 1;
+	    }
+	    break;
+	default:
+	    erl_printf(CERR, "%s unknown flag %s\n", argv[0], argv[i]);
+	    usage();
+	}
+	i++;
+    }
+
+   /* Restart will not reinstall the break handler */
+    if (have_break_handler) {
+	init_break_handler();
+    }
+
+    boot_argc = argc - i;  /* Number of arguments to init */
+    boot_argv = &argv[i];
+    erl_init();
+    load_preloaded();
+    erl_first_process("otp_ring0", NULL, 0, boot_argc, boot_argv);
+    erl_sys_schedule_loop();
+}
 
 
 /*
@@ -619,7 +487,6 @@ void erl_exit0(char *file, int line, int n, char *fmt,...)
     if(n > 0) ConWaitForExit();
 #endif
 #if !defined(__WIN32__) && !defined(VXWORKS)
-    sys_stop_cat();
     sys_tty_reset();
 #endif
     if (n == 127)
@@ -649,7 +516,6 @@ void erl_exit(int n, char *fmt,...)
     if(n > 0) ConWaitForExit();
 #endif
 #if !defined(__WIN32__) && !defined(VXWORKS)
-    sys_stop_cat();
     sys_tty_reset();
 #endif
     if (n == 127)
@@ -659,4 +525,3 @@ void erl_exit(int n, char *fmt,...)
     else
         exit(abs(n));
 }
-

@@ -641,7 +641,7 @@ sub compiler_output {
 	next unless defined $gen_opname[$i];
 	print "opcode(", &quote($gen_opname[$i]), ", $gen_arity[$i]) -> $i;\n";
     }
-    print "opcode(Name, Arity) -> exit({badarg, {opcode, [Name, Arity]}}).\n";
+    print "opcode(Name, Arity) -> erlang:fault(badarg, [Name,Arity]).\n";
 
     #
     # Generate .hrl file.

@@ -17,10 +17,14 @@
  */
 package com.ericsson.otp.erlang;
 
+import java.io.Serializable;
+
 /**
  * Provides a Java representation of Erlang integral types. 
  **/
-public class OtpErlangInt extends OtpErlangLong {
+public class OtpErlangInt extends OtpErlangLong implements Serializable, Cloneable {
+  // don't change this!
+  static final long serialVersionUID = 1229430977614805556L;
 
   /**
    * Create an Erlang integer from the given value.

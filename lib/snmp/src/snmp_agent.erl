@@ -18,12 +18,15 @@
 -module(snmp_agent).
 
 -include("snmp_types.hrl").
+-include("snmp_debug.hrl").
+-include("snmp_verbosity.hrl").
 
 %% External exports
 -export([start_link/3, start_link/4, stop/1]).
 -export([subagent_set/2, load_mibs/2, unload_mibs/2, info/1,
 	 register_subagent/3, unregister_subagent/2,
-	 send_trap/6, debug/2, get_net_if/1]).
+	 send_trap/6, get_net_if/1]).
+-export([debug/2, verbosity/2, dump_mibs/1, dump_mibs/2]).
 -export([validate_err/3, make_value_a_correct_value/3, do_get/3, get/2]).
 
 %% Internal exports
@@ -31,7 +34,12 @@
 	 terminate/2, code_change/3, tr_var/2, tr_varbind/1,
 	 handle_pdu/8, worker/2, worker_loop/1, do_send_trap/6]).
 
+-ifndef(default_verbosity).
+-define(default_verbosity,silence).
+-endif.
+
 -define(empty_pdu_size, 21).
+
 
 %%-----------------------------------------------------------------
 %% The agent is multi-threaded, i.e. each request is handled
@@ -73,9 +81,11 @@
 %%   {mibs, Mibs}
 %%   {net_if, NetIfModule}
 %%   {priority, Prio}
+%%   {verbosity, Verbosity}
 %%   {multi_threaded, Bool} true means that SETs are serialized,
 %%      while GETs are concurrent, even with a SET.
 %%   {set_mechanism, SetModule}           % undocumented feature
+%%   {verbosity, verbosity()}             % undocumented feature
 %%
 %% The following options are now removed - they are not needed
 %% anymore when VACM is standard for authentication, and works
@@ -85,14 +95,36 @@
 %% Note: authentication_service is reintroduced for AXD301 (OTP-3324).
 %%-----------------------------------------------------------------
 start_link(Parent, Ref, Options) ->
+    ?debug("start_link -> ~n"
+	   "Parent:  ~p~n"
+	   "Ref:     ~p~n"
+	   "Options: ~p",
+	   [Parent, Ref, Options]),
     gen_server:start_link(?MODULE, [Parent, Ref, Options], []).
 start_link(Name, Parent, Ref, Options) ->
+    ?debug("start_link -> ~n"
+	   "Name:    ~p~n"
+	   "Parent:  ~p~n"
+	   "Ref:     ~p~n"
+	   "Options: ~p",
+	   [Name, Parent, Ref, Options]),
     gen_server:start_link(Name, ?MODULE, [Parent, Ref, Options], []).
 
 stop(Agent) -> gen_server:call(Agent, stop, infinity).
 
 init([Parent, Ref, Options]) ->
+    ?debug("init -> ~n"
+	   "Parent:  ~p~n"
+	   "Ref:     ~p~n"
+	   "Options: ~p",
+	   [Parent, Ref, Options]),
+    put(sname,short_name(Parent)),
+    put(verbosity,get_verbosity(Parent,Options)),
+    ?vlog("starting",[]),
     Mibs = get_option(mibs, Options, []),
+    MeOverride = get_option(mibentry_override, Options, false),
+    TeOverride = get_option(trapentry_override, Options, false),
+    MibsVerbosity = get_option(mibserver_verbosity, Options, silence),
     SetModule = get_option(set_mechanism, Options, snmp_set),
     put(set_module, SetModule),
     %% XXX OTP-3324. For AXD301.
@@ -107,32 +139,48 @@ init([Parent, Ref, Options]) ->
 	case Parent of
 	    none -> 
 		NetIf = get_option(net_if, Options, snmp_net_if),
-		case snmp_misc_sup:start_net_if(MiscSup, Ref, self(), NetIf) of
+		NiVerbosity = get_option(net_if_verbosity, Options, silence),
+		NiOpts = [{net_if_verbosity,NiVerbosity}],
+		?debug("init -> start net if",[]),
+		?vdebug("start net if",[]),
+		case snmp_misc_sup:start_net_if(MiscSup,Ref,self(),
+						NetIf,NiOpts) of
 		    {ok, Pid} -> {master_agent, undefined, Pid};
 		    {error, Reason} -> exit(Reason)
 		end;
 	    Pid when pid(Pid) -> 
 		{subagent, Pid, undefined}
 	end,
-    case snmp_misc_sup:start_mib(MiscSup, Ref, Mibs, Prio) of
+    ?debug("init -> start mib server",[]),
+    ?vdebug("start mib server (~p,~p,~p)",
+	    [MeOverride,TeOverride,MibsVerbosity]),
+    MibsOpts = [{mibentry_override,MeOverride},
+		{trapentry_override,TeOverride},
+		{mibserver_verbosity,MibsVerbosity}],
+    case snmp_misc_sup:start_mib(MiscSup, Ref, Mibs, Prio, MibsOpts) of
 	{ok, MibPid} ->
 	    put(mibserver, MibPid),
-	    debug(false),
 	    process_flag(trap_exit, true),
 	    put(net_if, NetIfPid),
 	    {Worker, SetWorker} =
 		case MultiT of
 		    true ->
+			?debug("start worker and set-worker",[]),
+			?vdebug("start worker and set-worker",[]),
 			{proc_lib:spawn_link(?MODULE,worker,[self(),get()]),
 			 proc_lib:spawn_link(?MODULE,worker,[self(),get()])};
 		    _ -> 
 			{undefined, undefined}
 		end,
+	    ?debug("init -> started",[]),
+	    ?vdebug("started",[]),
 	    {ok, #state{type = Type, parent = Parent, worker = Worker,
 			set_worker = SetWorker,
 			multi_threaded = MultiT, ref = Ref,
 			misc_sup = MiscSup, vsns = Vsns}};
 	{error, Reason2} ->
+	    ?debug("init -> error: ~p",[Reason2]),
+	    ?vlog("~n   failed starting mib: ~p",[Reason2]),
 	    {stop, Reason2}
     end.
 
@@ -218,13 +266,36 @@ get(Agent, Vars) -> gen_server:call(Agent, {get, Vars}, infinity).
 %% Runtime debug support.  When Flag is true, the agent prints info
 %% when a packet is receive/sent, and when a user defined function
 %% is called.
+%%
+%% This is kept for backward compatibillity reasons, see verbosity
 %%-----------------------------------------------------------------
 debug(Agent, Flag) -> gen_server:call(Agent, {debug, Flag}, infinity).
+
+dump_mibs(Agent) -> 
+    gen_server:call(Agent, dump_mibs, infinity).
+dump_mibs(Agent,File) when list(File) -> 
+    gen_server:call(Agent,{dump_mibs,File}, infinity).
+
+
+%%-----------------------------------------------------------------
+%% Runtime debug (verbosity) support.
+%%-----------------------------------------------------------------
+verbosity(snmp_net_if,Verbosity) -> 
+    gen_server:cast(snmp_master_agent,{snmp_net_if_verbosity,Verbosity});
+verbosity(snmp_mib,Verbosity) -> 
+    gen_server:cast(snmp_master_agent,{snmp_mib_verbosity,Verbosity});
+verbosity(snmp_sub_agents,Verbosity) -> 
+    gen_server:cast(snmp_master_agent,{snmp_sub_agents_verbosity,Verbosity});
+verbosity(Agent,{snmp_sub_agents,Verbosity}) -> 
+    gen_server:cast(Agent,{snmp_sub_agents_verbosity,Verbosity});
+verbosity(Agent,Verbosity) -> 
+    gen_server:cast(Agent,{verbosity,Verbosity}).
 
 %%%--------------------------------------------------
 %%% 2. Main loop
 %%%--------------------------------------------------
 handle_info({snmp_pdu, Vsn, Pdu, PduMS, ACMData, Address, Extra}, S) ->
+    ?vdebug("~n   Received PDU ~p from ~p", [Pdu,Address]),
     %% XXX OTP-3324
     AuthMod = get(auth_module),
     case AuthMod:init_check_access(Pdu, ACMData) of
@@ -233,22 +304,26 @@ handle_info({snmp_pdu, Vsn, Pdu, PduMS, ACMData, Address, Extra}, S) ->
 	    case valid_pdu_type(Pdu#pdu.type) of
 		true when S#state.multi_threaded == false ->
 		    % Execute in same process
+		    ?vtrace("execute in the same process",[]),
 		    handle_pdu(MibView, Vsn, Pdu, PduMS, 
 			       ACMData, AgentData, Extra),
 		    {noreply, S};
 		true when Pdu#pdu.type == 'set-request' ->
 		    % Always send to main worker, in order to serialize
 		    % the SETs
+		    ?vtrace("send set-request to main worker",[]),
 		    S#state.set_worker !
 			{MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra},
 		    {noreply, S#state{worker_state = busy}};
 		true when S#state.worker_state == busy ->
 		    % Main worker busy => create new worker
+		    ?vtrace("main worker busy -> crete new worker",[]),
 		    spawn_thread(MibView, Vsn, Pdu, PduMS,
 				 ACMData, AgentData, Extra),
 		    {noreply, S};
 		true ->
 		    % Send to main worker
+		    ?vtrace("send to main worker",[]),
 		    S#state.worker !
 			{MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra},
 		    {noreply, S#state{worker_state = busy}};
@@ -256,25 +331,34 @@ handle_info({snmp_pdu, Vsn, Pdu, PduMS, ACMData, Address, Extra}, S) ->
 		    {noreply, S}
 	    end;
 	{error, Reason} ->
+	    ?vlog("~n   auth init check failed: ~p", [Reason]),
 	    handle_acm_error(Vsn, Reason, Pdu, ACMData, Address, Extra),
 	    {noreply, S};
 	{discarded, Variable, Reason} ->
+	    ?vlog("~n   PDU discarded for reason: ~p", [Reason]),
 	    get(net_if) ! {discarded_pdu, Vsn, Pdu#pdu.request_id,
 			   ACMData, Variable, Extra},
-	    pdebug("Pdu discarded for reason: ~p", [Reason]),
 	    {noreply, S}
     end;
 
 handle_info(worker_available, S) ->
+    ?vdebug("worker available",[]),
     {noreply, S#state{worker_state = ready}};
 
 handle_info({send_trap, Trap, NotifyName, ContextName, Recv, Varbinds}, S) ->
+    ?vlog("~n   send trap request: ~n"
+	  "\tTrap:        ~p~n"
+	  "\tNotifyName:  ~p~n"
+	  "\tContextName: ~p~n"
+	  "\tRecv:        ~p~n" 
+	  "\tVarbinds:    ~p", 
+	  [Trap,NotifyName,ContextName,Recv,Varbinds]),
     case catch handle_send_trap(S, Trap, NotifyName, ContextName,
 				Recv, Varbinds) of
 	{ok, NewS} ->
 	    {noreply, NewS};
 	{'EXIT', R} ->
-	    pdebug("Trap not sent: ~p\n", [R]),
+	    ?vinfo("~n   Trap not sent: ~p\n", [R]),
 	    {noreply, S};
 	_ ->
 	    {noreply, S}
@@ -282,12 +366,19 @@ handle_info({send_trap, Trap, NotifyName, ContextName, Recv, Varbinds}, S) ->
 
 handle_info({forward_trap, TrapRecord, NotifyName, ContextName,
 	     Recv, Varbinds},S) ->
+    ?vlog("~n   forward trap request: ~n"
+	  "\tTrapRecord:  ~p~n"
+	  "\tNotifyName:  ~p~n"
+	  "\tContextName: ~p~n"
+	  "\tRecv:        ~p~n"
+	  "\tVarbinds:    ~p", 
+	  [TrapRecord,NotifyName,ContextName,Recv,Varbinds]),
     case catch handle_forward_trap(S, TrapRecord, NotifyName, ContextName,
 				   Recv, Varbinds) of
 	{ok, NewS} ->
 	    {noreply, NewS};
 	{'EXIT', R} ->
-	    pdebug("Trap not sent: ~p\n", [R]),
+	    ?vinfo("~n   Trap not sent: ~p\n", [R]),
 	    {noreply, S};
 	_ ->
 	    {noreply, S}
@@ -299,6 +390,7 @@ handle_info({forward_trap, TrapRecord, NotifyName, ContextName,
 %% we unregister the sa, and unlink us from the sa.
 %%-----------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, S) ->
+    ?vlog("~p exited for reason ~p", [Pid,Reason]),
     Mib = get(mibserver),
     NetIf = get(net_if),
     case Pid of
@@ -307,19 +399,23 @@ handle_info({'EXIT', Pid, Reason}, S) ->
 	NetIf ->
 	    exit(Reason);
 	Worker when S#state.worker == Worker -> 
+	    ?vtrace("was a worker -> create new", []),
 	    NewWorker =
 		proc_lib:spawn_link(?MODULE, worker, [self(), get()]),
 	    {noreply, S#state{worker = NewWorker, worker_state = ready}};
 	Worker when S#state.set_worker == Worker -> 
+	    ?vtrace("was a set-worker -> create new", []),
 	    NewWorker =
 		proc_lib:spawn_link(?MODULE, worker, [self(), get()]),
 	    {noreply, S#state{set_worker = NewWorker}};
 	Parent when Parent == S#state.parent ->
+	    ?vlog("parent died", []),
 	    {stop, {parent_died, Reason}, S};
 	_ ->
 	    SAs = snmp_mib:info(Mib, subagents),
 	    case lists:keysearch(Pid, 1, SAs) of
 		{value, _} ->
+		    ?vlog("subagent", []),
 		    snmp_mib:unregister_subagent(Mib, Pid),
 		    unlink(Pid);
 		_ -> 
@@ -332,19 +428,35 @@ handle_info(_, S) ->
     {noreply, S}.
 
 handle_call({subagent_get, Varbinds, PduData, IsNotification}, _From, S) ->
+    ?vlog("subagent get~n"
+	  "\tVarbinds: ~p~n"
+	  "\tPduData:  ~p", 
+	  [Varbinds,PduData]),
     put_pdu_data(PduData),
     {reply, do_get(Varbinds, IsNotification), S};
 handle_call({subagent_get_next, MibView, Varbinds, PduData}, _From, S) ->
+    ?vlog("subagent get-next~n"
+	  "\tMibView:  ~p~n"
+	  "\tVarbinds: ~p~n"
+	  "\tPduData:  ~p", 
+	  [MibView,Varbinds,PduData]),
     put_pdu_data(PduData),
     {reply, do_get_next(MibView, Varbinds), S};
 handle_call({subagent_set, Arguments, PduData}, _From, S) ->
+    ?vlog("subagent set~n"
+	  "\tArguments: ~p~n"
+	  "\tPduData:   ~p", 
+	  [Arguments,PduData]),
     put_pdu_data(PduData),
     {reply, do_subagent_set(Arguments), S};
 
 handle_call({get, Vars}, _From, S) ->
+    ?vlog("get~n"
+	  "\tVars: ~p",[Vars]),
     case catch mapfoldl({?MODULE, tr_var}, [], 1, Vars) of
 	{error, Reason} -> {reply, {error, Reason}, S};
 	{_, Varbinds} ->
+	    ?vdebug("Varbinds: ~p",[Varbinds]),
 	    Reply =
 		case do_get(Varbinds, false) of
 		    {noError, 0, NewVarbinds} ->
@@ -369,11 +481,13 @@ handle_call({register_subagent, SubTreeOid, SubagentPid}, _From, S) ->
 
 handle_call({unregister_subagent, SubagentPid}, _From, S) 
   when pid(SubagentPid) ->
+    ?vlog("unregister subagent ~p", [SubagentPid]),
     Reply = snmp_mib:unregister_subagent(get(mibserver), SubagentPid),
     unlink(SubagentPid),
     {reply, Reply, S};
 
 handle_call({unregister_subagent, SubTreeOid}, _From, S) ->
+    ?vlog("unregister subagent ~p", [SubTreeOid]),
     Reply = 
 	case snmp_mib:unregister_subagent(get(mibserver), SubTreeOid) of
 	    {ok, DeletedSubagentPid} ->
@@ -389,9 +503,11 @@ handle_call({unregister_subagent, SubTreeOid}, _From, S) ->
     {reply, Reply, S};
 
 handle_call({load_mibs, Mibs}, _From, S) ->
+    ?vlog("load mibs ~p", [Mibs]),
     {reply, snmp_mib:load_mibs(get(mibserver), Mibs), S};
 
 handle_call({unload_mibs, Mibs}, _From, S) ->
+    ?vlog("unload mibs ~p", [Mibs]),
     {reply, snmp_mib:unload_mibs(get(mibserver), Mibs), S};
 
 handle_call(info, _From, S) ->
@@ -401,21 +517,57 @@ handle_call(get_net_if, _From, S) ->
     {reply, get(net_if), S};
 
 handle_call({debug, Flag}, _From, S) ->
-    debug(Flag),
-    get(net_if) ! {debug, Flag},
+    V = d2v(Flag),
+    put(verbosity,V),
+    net_if_verbosity(get(net_if),V),
     case S#state.worker of
-	Pid when pid(Pid) -> Pid ! {debug, Flag};
+	Pid when pid(Pid) -> Pid ! {verbosity,V};
 	_ -> ok
     end,
     case S#state.set_worker of
-	Pid2 when pid(Pid2) -> Pid2 ! {debug, Flag};
+	Pid2 when pid(Pid2) -> Pid2 ! {verbosity,V};
 	_ -> ok
     end,
     {reply, ok, S};
 
+handle_call(dump_mibs, _From, S) ->
+    Reply = snmp_mib:dump(get(mibserver)),
+    {reply, Reply, S};
+    
+handle_call({dump_mibs,File}, _From, S) ->
+    Reply = snmp_mib:dump(get(mibserver),File),
+    {reply, Reply, S};
+    
 handle_call(stop, _From, S) ->
     {stop, normal, ok, S}.
 
+handle_cast({verbosity,Verbosity}, S) ->
+    ?vlog("verbosity: ~p -> ~p",[get(verbosity),Verbosity]),
+    put(verbosity,snmp_verbosity:validate(Verbosity)),
+    case S#state.worker of
+	Pid when pid(Pid) -> Pid ! {verbosity,Verbosity};
+	_ -> ok
+    end,
+    case S#state.set_worker of
+	Pid2 when pid(Pid2) -> Pid2 ! {verbosity,Verbosity};
+	_ -> ok
+    end,
+    {noreply, S};
+    
+handle_cast({snmp_sub_agents_verbosity,Verbosity}, S) ->
+    ?vlog("subagent verbosity: ~p",[Verbosity]),
+    subagents_verbosity(Verbosity),
+    {noreply, S};
+    
+%% This should only happen if we are a master_agent
+handle_cast({snmp_net_if_verbosity,Verbosity}, S) ->
+    net_if_verbosity(get(net_if),Verbosity),
+    {noreply, S};
+    
+handle_cast({snmp_mib_verbosity,Verbosity}, S) ->
+    mib_verbosity(get(mibserver),Verbosity),
+    {noreply, S};
+    
 handle_cast(_, S) ->
     {noreply, S}.
     
@@ -434,19 +586,15 @@ terminate(_Reason, _S) ->
 
 %% Upgrade
 %%
-%% Upgrade from snmp-3.0.6:
-code_change('$Revision: /main/release/r5b_bugfix/1', S, _Extra) ->
-    NS = worker_restart(S),
-    {ok, NS};
-%% Upgrade from snmp-3.1.1:
-code_change(335409382173780238665632329208578042788, S, _Extra) ->
+%% Upgrade from snmp-3.1.2:
+code_change(_Vsn, S, _Extra) ->
     put(auth_module, snmp_acm),
     NS = worker_restart(S),
     {ok, NS};
 
 %% Downgrade
 %%
-%% Downgrade to snmp-3.0.6, snmp-3.1.1:
+%% Downgrade to snmp-3.1.2:
 code_change({down, _Vsn}, S, _Extra) ->
     worker_code_change(S),
     {ok, S}.
@@ -522,11 +670,15 @@ spawn_trap_thread(TrapRec, NotifyName, ContextName, Recv, V) ->
 
 do_send_trap(TrapRec, NotifyName, ContextName, Recv, V, Dict) ->
     lists:foreach(fun({Key, Val}) -> put(Key, Val) end, Dict),
+    put(sname,trap_sender_short_name(get(sname))),
+    ?vlog("starting",[]),
     snmp_trap:send_trap(TrapRec, NotifyName, ContextName, Recv, V, get(net_if)).
 
 
 worker(Master, Dict) ->
     lists:foreach(fun({Key, Val}) -> put(Key, Val) end, Dict),
+    put(sname,worker_short_name(get(sname))),
+    ?vlog("starting",[]),
     worker_loop(Master).
 
 worker_loop(Master) ->
@@ -535,11 +687,12 @@ worker_loop(Master) ->
 	    handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra),
 	    Master ! worker_available;
 	{TrapRec, NotifyName, ContextName, Recv, V} -> % We don't trap exits!
+	    ?vtrace("send trap: ~p",[TrapRec]),
 	    snmp_trap:send_trap(TrapRec, NotifyName, 
 				ContextName, Recv, V, get(net_if)),
 	    Master ! worker_available;
-	{debug, Flag} ->
-	    debug(Flag);
+	{verbosity, Verbosity} ->
+	    put(verbosity,snmp_verbosity:validate(Verbosity));
 	terminate ->
 	    exit(normal);
 	_X ->
@@ -555,6 +708,8 @@ worker_loop(Master) ->
 
 handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra, Dict) ->
     lists:foreach(fun({Key, Val}) -> put(Key, Val) end, Dict),
+    put(sname,pdu_handler_short_name(get(sname))),
+    ?vlog("starting",[]),
     handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra).
 
 handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData,
@@ -562,8 +717,9 @@ handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData,
     put(snmp_net_if_data, Extra),
     RePdu = process_msg(MibView, Vsn, Pdu, PduMS, Community, 
 			Address, ContextName),
+    ?vtrace("Reply PDU: ~p",[RePdu]),
     get(net_if) ! {snmp_response, Vsn, RePdu, 
-		   Pdu#pdu.type, ACMData, Address, Extra}.
+		   RePdu#pdu.type, ACMData, Address, Extra}.
 
 
 handle_acm_error(Vsn, Reason, Pdu, ACMData, Address, Extra) ->
@@ -571,9 +727,9 @@ handle_acm_error(Vsn, Reason, Pdu, ACMData, Address, Extra) ->
     RawErrStatus = snmp_acm:error2status(Reason),
     case valid_pdu_type(Type) of
 	true ->
-	    %% RawErrStatus can be authorizationError ot genErr.  If it is
-	    %% authorizationError, we'll have to do different things, depending
-	    %% on which SNMP version is used.
+	    %% RawErrStatus can be authorizationError or genErr.  If it is
+	    %% authorizationError, we'll have to do different things, 
+	    %% depending on which SNMP version is used.
 	    %% v1 - noSuchName error
 	    %% v2 - GET: all variables 'noSuchObject'
 	    %%      NEXT/BULK: all variables 'endOfMibView'
@@ -581,7 +737,7 @@ handle_acm_error(Vsn, Reason, Pdu, ACMData, Address, Extra) ->
 	    %% v3 - authorizationError error
 	    %%
 	    %% NOTE: this procedure is not yet defined in the coex document!
-	    pdebug("Access module: ~w (~w)\n", [RawErrStatus, Reason]),
+	    ?vdebug("~n   Raw error status: ~w",[RawErrStatus]),
 	    Idx = case Vbs of
 		      [] -> 0;
 		      _ -> 1
@@ -609,7 +765,8 @@ handle_acm_error(Vsn, Reason, Pdu, ACMData, Address, Extra) ->
 	    get(net_if) ! {snmp_response, Vsn, RePdu, 
 			   'get-response', ACMData, Address, Extra};
 	false ->
-	    pdebug("Access module: ~w.  Invalid pdu ~w\n", [RawErrStatus,Type]),
+	    ?vdebug("~n   Raw error status: ~w, invalid pdu type: ~w", 
+		    [RawErrStatus,Type]),
 	    ok
     end.
 
@@ -638,15 +795,18 @@ handle_forward_trap(S, TrapRec, NotifyName, ContextName, Recv, Varbinds) ->
 			 Recv, V),
 	    {ok, S};
 	master_agent when S#state.multi_threaded == false ->
+	    ?vtrace("send trap ~p",[TrapRec]),
 	    snmp_trap:send_trap(TrapRec, NotifyName, ContextName,
 				Recv, V, get(net_if)),
 	    {ok, S};
 	master_agent when S#state.worker_state == busy ->
 	    %% Main worker busy => create new worker
+	    ?vtrace("~n   main worker busy -> spawn a trap sender",[]),
 	    spawn_trap_thread(TrapRec, NotifyName, ContextName, Recv, V),
 	    {ok, S};
 	master_agent ->
 	    %% Send to main worker
+	    ?vtrace("~n   send to main worker",[]),
 	    S#state.worker ! {TrapRec, NotifyName, ContextName, Recv, V},
 	    {ok, S#state{worker_state = busy}}
     end.
@@ -661,45 +821,74 @@ process_msg(MibView, Vsn, Pdu, PduMS, Community, {Ip, Udp}, ContextName) ->
     put(snmp_request_id, ReqId),
     put(snmp_community, Community),
     put(snmp_context, ContextName),
+    ?vtrace("process ~p",[Pdu#pdu.type]),
     process_pdu(Pdu, PduMS, Vsn, MibView).
 
 process_pdu(#pdu{type='get-request', request_id = ReqId, varbinds=Vbs},
 	    _PduMS, Vsn, MibView) ->
+    ?vtrace("get ~p",[ReqId]),
     Res = get_err(do_get(MibView, Vbs, false)),
+    ?vtrace("get result: "
+	    "~n   ~p",[Res]),
     {ErrStatus, ErrIndex, ResVarbinds} =
 	if
 	    Vsn == 'version-1' -> validate_get_v1(Res);
 	    true -> Res
 	end,
+    ?vtrace("get final result: "
+	    "~n   Error status: ~p"
+	    "~n   Error index:  ~p"
+	    "~n   Varbinds:     ~p",
+	    [ErrStatus,ErrIndex,ResVarbinds]),
     ResponseVarbinds = lists:keysort(#varbind.org_index, ResVarbinds),
+    ?vtrace("response varbinds: "
+	    "~n   ~p",[ResponseVarbinds]),
     make_response_pdu(ReqId, ErrStatus, ErrIndex, Vbs, ResponseVarbinds);
 
-process_pdu(#pdu{type = 'get-next-request', request_id = ReqId, varbinds = Vbs},
-	    _PduMS, Vsn, MibView)->
+process_pdu(#pdu{type = 'get-next-request',request_id = ReqId,varbinds = Vbs},
+	    _PduMS, Vsn, MibView) ->
     Res = get_err(do_get_next(MibView, Vbs)),
+    ?vtrace("get-next result: "
+	    "~n   ~p",[Res]),
     {ErrStatus, ErrIndex, ResVarbinds} = 
 	if
 	    Vsn == 'version-1' -> validate_next_v1(Res, MibView);
 	    true -> Res
 	end,
+    ?vtrace("get-next final result: "
+	    "~n   Error status: ~p"
+	    "~n   Error index:  ~p"
+	    "~n   Varbinds:     ~p",[ErrStatus,ErrIndex,ResVarbinds]),
     ResponseVarbinds = lists:keysort(#varbind.org_index, ResVarbinds),
+    ?vtrace("response varbinds: "
+	    "~n   ~p",[ResponseVarbinds]),
     make_response_pdu(ReqId, ErrStatus, ErrIndex, Vbs, ResponseVarbinds);
 
-process_pdu(#pdu{type = 'get-bulk-request', request_id = ReqId, varbinds = Vbs,
+process_pdu(#pdu{type = 'get-bulk-request',request_id = ReqId,varbinds = Vbs,
 		 error_status = NonRepeaters, error_index = MaxRepetitions},
 	    PduMS, _Vsn, MibView)->
     {ErrStatus, ErrIndex, ResponseVarbinds} = 
-	get_err(do_get_bulk(MibView, NonRepeaters, MaxRepetitions, PduMS, Vbs)),
+	get_err(do_get_bulk(MibView,NonRepeaters,MaxRepetitions,PduMS,Vbs)),
+    ?vtrace("get-bulk final result: "
+	    "~n   Error status:     ~p"
+	    "~n   Error index:      ~p"
+	    "~n   Respons varbinds: ~p",
+	    [ErrStatus,ErrIndex,ResponseVarbinds]),
     make_response_pdu(ReqId, ErrStatus, ErrIndex, Vbs, ResponseVarbinds);
 
 process_pdu(#pdu{type = 'set-request', request_id = ReqId, varbinds = Vbs},
 	    _PduMS, Vsn, MibView)->
     Res = do_set(MibView, Vbs),
+    ?vtrace("set result: "
+	    "~n   ~p",[Res]),
     {ErrStatus, ErrIndex} =
 	if 
 	    Vsn == 'version-1' -> validate_err(v2_to_v1, Res);
 	    true -> Res
 	end,
+    ?vtrace("set final result: "
+	    "~n   Error status: ~p"
+	    "~n   Error index:  ~p",[ErrStatus,ErrIndex]),
     make_response_pdu(ReqId, ErrStatus, ErrIndex, Vbs, Vbs).
 
 %%-----------------------------------------------------------------
@@ -1074,6 +1263,7 @@ col_to_index(Col, [{Col, _, Index}|_]) ->
     Index;
 col_to_index(Col, [_|Cols]) ->
     col_to_index(Col, Cols).
+
 %%-----------------------------------------------------------------
 %% Three cases:
 %%   1) All values ok
@@ -1100,9 +1290,10 @@ validate_tab_res({genErr, Col}, OrgCols, Mfa) ->
 	    [{_Col, _ASN1Type, Index} | _] = OrgCols,
 	    {error, genErr, Index}
     end;
+validate_tab_res(genErr, [{_Col, _ASN1Type, Index} | _OrgCols], Mfa) ->
+    {error, genErr, Index};
 validate_tab_res(Error, [{_Col, _ASN1Type, Index} | _OrgCols], Mfa) ->
-    snmp_error:user_err("Invalid return value ~w from ~w (get)",
-			[Error, Mfa]),
+    snmp_error:user_err("Invalid return value ~w from ~w (get)",[Error, Mfa]),
     {error, genErr, Index}.
 
 validate_tab_res([Value | Values], [{Col, ASN1Type, Index} | OrgCols],
@@ -1187,13 +1378,16 @@ next_loop_varbinds([], [Vb | Vbs], MibView, Res, LAVb) ->
 	    case try_get_instance(Vb, ME) of
 		{value, noValue, _NoSuchSomething} ->
 		    %% Try next one
+		    ?vtrace("no value, try next",[]),
 		    NewVb = Vb#varbind{oid = VarOid, value = 'NULL'},
 		    next_loop_varbinds([], [NewVb | Vbs], MibView, Res, []);
 		{value, Type, Value} ->
+		    ?vtrace("Type: ~p, Value: ~p",[Type,Value]),
 		    NewVb = Vb#varbind{oid = VarOid, variabletype = Type,
 				       value = Value},
 		    next_loop_varbinds([], Vbs, MibView, [NewVb | Res], []);
 		{error, ErrorStatus} ->
+		    ?vdebug("error: ~p",[ErrorStatus]),
 		    {ErrorStatus, Vb#varbind.org_index, []}
 	    end;
 	{variable, ME, VarOid} -> 
@@ -1266,6 +1460,7 @@ next_loop_varbinds([], [], _MibView, Res, _LAVb) ->
     {noError, 0, Res}.
 
 try_get_instance(Vb, #me{mfa = {M, F, A}, asn1_type = ASN1Type}) ->
+    ?vtrace("try get instance from <~p,~p,~p>",[M,F,A]),
     Result = (catch dbg_apply(M, F, [get | A])),
     % mib shall return {value, <a-nice-value-within-range>} |
     % {noValue, noSuchName} (v1) | 
@@ -1558,6 +1753,7 @@ check_end_of_mibview(_) -> noError.
 %% doesn't see org_index)).
 do_set(MibView, UnsortedVarbinds) ->
     SetModule = get(set_module),
+    ?vtrace("set module: ~p",[SetModule]),
     apply(SetModule, do_set, [MibView, UnsortedVarbinds]).
 
 do_subagent_set(Arguments) ->
@@ -1682,7 +1878,9 @@ get_err({ErrC, ErrI, Vbs}) ->
     {get_err_i(ErrC), ErrI, Vbs}.
 
 get_err_i(noError) -> noError;
-get_err_i(_) -> genErr.
+get_err_i(S) -> 
+    ?vtrace("convert '~p' to 'getErr'",[S]),
+    genErr.
 
 v2err_to_v1err(noError) ->            noError;
 v2err_to_v1err(noAccess) ->           noSuchName;
@@ -1821,6 +2019,12 @@ check_octet_string(String, Hi, Lo, Mfa, Type) ->
 
 check_size(Val, #asn1_type{lo = Lo, hi = Hi, bertype = Type}, Mfa) 
   when integer(Val) ->
+    ?vtrace("check size of integer: "
+	    "~n   Value:       ~p"
+	    "~n   Upper limit: ~p"
+	    "~n   Lower limit: ~p"
+	    "~n   BER-type:    ~p",
+	    [Val,Hi,Lo,Type]),
     if
 	Lo == undefined, Hi == undefined -> {value, Type, Val};
 	Lo == undefined, integer(Hi), Val =< Hi ->
@@ -1899,23 +2103,61 @@ mapfoldl(F, Eas, Accu, []) -> {Accu,[]}.
 %%-----------------------------------------------------------------
 %% Runtime debugging of the agent.
 %%-----------------------------------------------------------------
-debug(true) -> put(debug, true);
-debug(_) -> put(debug, false).
 
 dbg_apply(M,F,A) ->
-    case get(debug) of
-	false -> apply(M,F,A);
+    case get(verbosity) of
+	silence -> apply(M,F,A);
 	_ ->
-	    pdebug("apply: ~w,~w,~p~n", [M,F,A]),
+	    ?vlog("~n   apply: ~w,~w,~p~n", [M,F,A]),
 	    Res = (catch apply(M,F,A)),
-	    pdebug("returned: ~p", [Res]),
+	    ?vlog("~n   returned: ~p", [Res]),
 	    Res
     end.
 
-pdebug(Format, X) -> 
-    case get(debug) of
-	false -> ok;
-	_ ->
-	    Form = lists:concat(["** SNMP Agent debug: ~n   ", Format, "\n"]),
-	    io:format(Form, X)
-    end.
+
+short_name(none) -> ma;
+short_name(Pid)  -> sa.
+
+worker_short_name(ma) -> maw;
+worker_short_name(_)  -> saw.
+
+trap_sender_short_name(ma) -> mats;
+trap_sender_short_name(_)  -> sats.
+
+pdu_handler_short_name(ma) -> maph;
+pdu_handler_short_name(_)  -> saph.
+
+get_verbosity(_,[]) ->
+    ?default_verbosity;
+get_verbosity(none,L) ->
+    snmp_misc:get_option(master_agent_verbosity,L,?default_verbosity);
+get_verbosity(_,L) ->
+    snmp_misc:get_option(subagent_verbosity,L,?default_verbosity).
+
+
+net_if_verbosity(Pid,Verbosity) when pid(Pid) ->
+    Pid ! {verbosity,Verbosity};
+net_if_verbosity(_Pid,_Verbosity) ->
+    ok.
+
+
+mib_verbosity(Pid,Verbosity) when pid(Pid) ->
+    snmp_mib:verbosity(Pid,Verbosity);
+mib_verbosity(_Pid,_Verbosity) ->
+    ok.
+
+d2v(true) -> log;
+d2v(_)    -> silence.
+
+
+subagents_verbosity(V) ->
+    subagents_verbosity(catch snmp_mib:info(get(mibserver),subagents),V).
+
+subagents_verbosity([],_V) ->
+    ok;
+subagents_verbosity([{Pid,_Oid}|T],V) ->
+    catch snmp_agent:verbosity(Pid,V),             %% On the agent
+    catch snmp_agent:verbosity(Pid,{subagents,V}), %% and it's subagents
+    subagents_verbosity(T,V);
+subagents_verbosity(_,_V) ->
+    ok.

@@ -21,8 +21,11 @@
 -include("snmp_generic.hrl").
 -include("STANDARD-MIB.hrl").
 
+-include("snmp_verbosity.hrl").
+
+
 %% External exports
--export([start_link/2, stop/0, dump/0]).
+-export([start_link/2, start_link/3, stop/0, dump/0, verbosity/1]).
 -export([table_func/2, table_func/4,
 	 variable_get/1, variable_set/2, variable_delete/1, variable_inc/2,
 	 table_create/1, table_exists/1, table_delete/1,
@@ -42,13 +45,29 @@
 %% Internal exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
+-define(DEFAULT_AUTO_REPAIR,true_verbose).
+-define(DEFAULT_VERBOSITY,silence).
+
+
+%% Debugging (develop)
+%% -define(snmp_debug,true).
+-include("snmp_debug.hrl").
+
+
 %%%-----------------------------------------------------------------
 %%% Implements a general database in which its possible
 %%% to store variables and tables. Provide functions for
 %%% tableaccess by row or by element, and for next.
+%%%
+%%% Opts = [Opt]
+%%% Opt = {auto_repair, false | true | true_verbose} |
+%%%       {verbosity,silence | log | debug}
 %%%-----------------------------------------------------------------
 start_link(Dir, Prio) ->
-    gen_server:start_link({local, snmp_local_db}, snmp_local_db, [Dir,Prio],[]).
+    start_link(Dir,Prio,[]).
+
+start_link(Dir, Prio, Opts) when list(Opts) ->
+    gen_server:start_link({local, snmp_local_db}, snmp_local_db, [Dir,Prio,Opts],[]).
 
 stop() ->
     gen_server:call(snmp_local_db, stop, infinity).
@@ -56,30 +75,42 @@ stop() ->
 dump() ->
     gen_server:call(snmp_local_db, dump, infinity).
 
-init([Dir, Prio]) ->
+verbosity(Verbosity) ->
+    gen_server:cast(snmp_local_db, {verbosity,Verbosity}).
+
+
+init([Dir, Prio, Opts]) ->
     process_flag(priority, Prio),
+    put(sname,ldb),
+    put(verbosity,get_verbosity(Opts)),
+    ?vlog("starting",[]),
     FileName = filename:join(Dir, "snmp_local_db"),
     PETS = 
-	case catch snmp_pets:open(FileName) of
-	    {'EXIT', _Reason} ->
+	case catch snmp_pets:open(FileName,get_auto_repair(Opts)) of
+	    {'EXIT', Reason} ->
+		?vdebug("pets open failed: ~p",[Reason]),
 		case catch snmp_pets:new(FileName, snmp_local_db1,
 					 [set, private]) of
 		    {ok, Pets} -> 
+			?vdebug("pets new done",[]),
 			Pets;
 		    {'EXIT', _} ->
-			snmp_error:user_err("Error opening database ~p", 
-					    [FileName]),
+			snmp_error:db_err("Error opening database ~p", 
+					  [FileName]),
 			exit(normal)
 		end;
 	    {ok, Pets} -> 
+		?vdebug("pets open done",[]),
 		Pets;
 	    {error, Reason} ->
-		snmp_error:user_err("Error opening database ~p ~p", 
-				    [FileName, Reason]),
+		snmp_error:db_err("Error opening database ~p ~p", 
+				  [FileName, Reason]),
 		exit(normal)
 	end,
     Ets = ets:new(snmp_local_db2, [set, private]),
+    ?vdebug("started",[]),
     {ok, {PETS, Ets}}.
+
 
 %%-----------------------------------------------------------------
 %% Interface functions.
@@ -177,12 +208,15 @@ match(Name, Pattern) ->
 %% Implements the variable functions.
 %%-----------------------------------------------------------------
 handle_call({variable_get, Name, Db}, _From, Dbs) -> 
+    ?vlog("variable get: ~p",[Name]),
     {reply, lookup(Db, Name, Dbs), Dbs};
 
 handle_call({variable_set, Name, Db, Val}, _From, Dbs) -> 
+    ?vlog("variable set: ~p -> ~p",[Name,Val]),
     {reply, insert(Db, Name, Val, Dbs), Dbs};
 
 handle_call({variable_delete, Name, Db}, _From, Dbs) -> 
+    ?vlog("variable delete: ~p",[Name]),
     {reply, delete(Db, Name, Dbs), Dbs};
 
 %%-----------------------------------------------------------------
@@ -203,79 +237,104 @@ handle_call({variable_delete, Name, Db}, _From, Dbs) ->
 %% next(<tableName>, <list of indexes>)   if Row exist O(1), else O(n)
 %%-----------------------------------------------------------------
 handle_call({table_create, Name, Db}, _From, Dbs) ->
+    ?vlog("table create: ~p",[Name]),
     catch handle_delete(Db, Name, Dbs),
     {reply, insert(Db, {Name, first}, {undef, first, first}, Dbs), Dbs};
 
 handle_call({table_exists, Name, Db}, _From, Dbs) ->
+    ?vlog("table exist: ~p",[Name]),
     Res =
 	case lookup(Db, {Name, first}, Dbs) of
 	    {value, _} -> true;
 	    undefined -> false
 	end,
+    ?vdebug("table exist result: ~p",[Res]),
     {reply, Res, Dbs};
 
 handle_call({table_delete, Name, Db}, _From, Dbs) ->
+    ?vlog("table delete: ~p",[Name]),
     catch handle_delete(Db, Name, Dbs),
     {reply, true, Dbs};
 
 handle_call({table_create_row, Name, Db, Indexes, Row}, _From, Dbs) ->
+    ?vlog("table create row: ~p -> ~p, ~p",
+	  [Name, Indexes, Row]),
     Res = 
 	case catch handle_create_row(Db, Name, Indexes, Row, Dbs) of
 	    {'EXIT', _} -> false;
 	    _ -> true
 	end,
+    ?vdebug("table create row result: ~p",[Res]),
     {reply, Res, Dbs};
 
 handle_call({table_delete_row, Name, Db, Indexes}, _From, Dbs) ->
+    ?vlog("table delete row: ~p -> ~p",
+	  [Name, Indexes]),
     Res = 
 	case catch handle_delete_row(Db, Name, Indexes, Dbs) of
 	    {'EXIT', _} -> false;
 	    _ -> true
 	end,
+    ?vdebug("table delete row result: ~p",[Res]),
     {reply, Res, Dbs};
 
-handle_call({table_get_row, Name, Db, Indexes}, _From, Dbs) ->
-    case lookup(Db, {Name, Indexes}, Dbs) of
-	undefined -> Res = undefined;
-	{value, {Row, Prev, Next}} -> Res = Row
-    end,
+handle_call({table_get_row, Name, Db, Indexes}, _From, Dbs) -> 
+    ?vlog("table get row: ~p -> ~p",
+	  [Name, Indexes]),
+    Res = case lookup(Db, {Name, Indexes}, Dbs) of
+	      undefined -> undefined;
+	      {value, {Row, Prev, Next}} -> Row
+	  end,
+    ?vdebug("table get row result: ~p",[Res]),
     {reply, Res, Dbs};
 
 handle_call({table_get_element, Name, Db, Indexes, Col}, _From, Dbs) ->
-    case lookup(Db, {Name, Indexes}, Dbs) of
-	undefined -> Res = undefined;
-	{value, {Row, Prev, Next}} -> Res = {value, element(Col, Row)}
-    end,
+    ?vlog("table get element: ~p -> ~p, ~p",
+	  [Name, Indexes, Col]),
+    Res = case lookup(Db, {Name, Indexes}, Dbs) of
+	      undefined -> undefined;
+	      {value, {Row, Prev, Next}} -> {value, element(Col, Row)}
+	  end,
+    ?vdebug("table get element result: ~p",[Res]),
     {reply, Res, Dbs};
 
 handle_call({table_set_elements, Name, Db, Indexes, Cols}, _From, Dbs) ->
+    ?vlog("table set element: ~p -> ~p, ~p",
+	  [Name, Indexes, Cols]),
     Res = 
 	case catch handle_set_elements(Db, Name, Indexes, Cols, Dbs) of
 	    {'EXIT', _} -> false;
 	    _ -> true
 	end,
+    ?vdebug("table set element result: ~p",[Res]),
     {reply, Res, Dbs};
 
 handle_call({table_next, Name, Db, []}, From, Dbs) ->
+    ?vlog("table next: ~p",[Name]),
     handle_call({table_next, Name, Db, first}, From, Dbs);
     
 handle_call({table_next, Name, Db, Indexes}, _From, Dbs) ->
-    case lookup(Db, {Name, Indexes}, Dbs) of
-	{value, {Row, Prev, Next}} -> 
-	    if 
-		Next == first -> Res = endOfTable;
-		true -> Res= Next
-	    end;
-	undefined -> 
-	    Res = table_search_next(Db, Name, Indexes, Dbs)
-    end,
+    ?vlog("table next: ~p -> ~p",[Name,Indexes]),
+    Res = case lookup(Db, {Name, Indexes}, Dbs) of
+	      {value, {Row, Prev, Next}} -> 
+		  if 
+		      Next == first -> endOfTable;
+		      true -> Next
+		  end;
+	      undefined -> 
+		  table_search_next(Db, Name, Indexes, Dbs)
+	  end,
+    ?vdebug("table next result: ~p",[Res]),
     {reply, Res, Dbs};
 
 handle_call({table_max_col, Name, Db, Col}, _From, Dbs) ->
+    ?vlog("table max col: ~p -> ~p",[Name,Col]),
     Res = table_max_col(Db, Name, Col, 0, first, Dbs),
+    ?vdebug("table max col result: ~p",[Res]),
     {reply, Res, Dbs};
 
 handle_call({match, Name, Db, Pattern}, _From, {Pets, Ets}) ->
+    ?vlog("match: ~p -> ~p",[Name,Pattern]),
     REts =
 	case Db of
 	    volatile -> Ets;
@@ -284,19 +343,22 @@ handle_call({match, Name, Db, Pattern}, _From, {Pets, Ets}) ->
 		Ets1
 	end,
     L1 = ets:match(REts, {{Name,'_'},{Pattern,'_','_'}}),
-    {reply, lists:delete([undef], L1), {Pets, Ets}};
+   {reply, lists:delete([undef], L1), {Pets, Ets}};
 
 handle_call(dump, _From, Dbs) ->
+    ?vlog("dump",[]),
     Reply = dump(Dbs),
     {reply, Reply, Dbs};
 
 handle_call(print, _From, {Pets, Ets}) ->
+    ?vlog("print",[]),
     {_,_,Ets1} = Pets,
     L1 = ets:tab2list(Ets1),
     L2 = ets:tab2list(Ets),
     {reply, {{pets, L1}, {ets, L2}}, {Pets, Ets}};
 
 handle_call({print, Table, Db}, _From, {Pets, Ets}) ->
+    ?vlog("print: ~p",[Table]),
     REts =
 	case Db of
 	    volatile -> Ets;
@@ -308,20 +370,32 @@ handle_call({print, Table, Db}, _From, {Pets, Ets}) ->
     {reply, lists:delete([undef], L1), {Pets, Ets}};
 
 handle_call(stop, _From, Dbs) ->
+    ?vlog("stop",[]),
     {stop, normal, stopped, Dbs}.
 
+
 handle_cast({variable_inc, Name, Db, N}, Dbs) ->
+    ?vlog("variable inc: ~p -> ~p",[Name,N]),
     M = case lookup(Db, Name, Dbs) of
 	    {value, Val} -> Val;
 	    _ -> 0 
 	end,
     insert(Db, Name, M+N rem 4294967296, Dbs),
+    {noreply, Dbs};
+    
+handle_cast({verbosity,Verbosity}, Dbs) ->
+    ?vlog("verbosity: ~p -> ~p",[get(verbosity),Verbosity]),
+    put(verbosity,validate(verbosity,Verbosity)),
     {noreply, Dbs}.
     
-handle_info(_, State) ->
+
+handle_info(Info, State) ->
+    ?vlog("Unknown message: ~p",[Info]),
     {noreply, State}.
 
-terminate(_Reason, Dbs) ->
+
+terminate(Reason, Dbs) ->
+    ?vlog("terminate: ~p",[Reason]),
     close(Dbs).
 
 
@@ -455,17 +529,29 @@ table_max_col(Db, Name, Col, Max, Indexes, Dbs) ->
 %% Interface to Pets.
 %%-----------------------------------------------------------------
 insert(volatile, Key, Val, {_Pets, Ets}) -> 
+    ?vtrace("insert(volatile) -> ~n"
+	    "      Key: ~p~n"
+	    "      Val: ~p",
+	    [Key,Val]),
     ets:insert(Ets, {Key, Val}),
     true;
 insert(persistent, Key, Val, {Pets, _Ets}) -> 
+    ?vtrace("insert(persistent) -> ~n"
+	    "      Key:  ~p~n"
+	    "      Val:  ~p",
+	    [Key,Val]),
     snmp_pets:insert(Pets, {Key, Val}),
     true;
 insert(permanent, Key, Val, {Pets, _Ets}) -> 
+    ?vtrace("insert(permanent) -> ~n"
+	    "      Key:  ~p~n"
+	    "      Val:  ~p",
+	    [Key,Val]),
     snmp_pets:insert(Pets, {Key, Val}),
     true;
 insert(UnknownDb, Key, Val, _) ->
-    snmp_error:user_err("Tried to insert ~w = ~w into unknown db ~w", 
-			[Key, Val, UnknownDb]),
+    snmp_error:db_err("Tried to insert ~w = ~w into unknown db ~w", 
+		      [Key, Val, UnknownDb]),
     false.
 
 delete(volatile, Key, {_Pets, Ets}) -> 
@@ -478,8 +564,8 @@ delete(permanent, Key, {Pets, _Ets}) ->
     snmp_pets:delete(Pets, Key),
     true;
 delete(UnknownDb, Key, _) ->
-    snmp_error:user_err("Tried to delete ~w from unknown db ~w", 
-			[Key, UnknownDb]),
+    snmp_error:db_err("Tried to delete ~w from unknown db ~w", 
+		      [Key, UnknownDb]),
     false.
 
 lookup(volatile, Key, {_Pets, Ets}) ->
@@ -489,8 +575,8 @@ lookup(persistent, Key, {{_,_,Pets}, _Ets}) ->
 lookup(permanent, Key, {{_,_,Pets}, _Ets}) ->
     lookup(Pets, Key);
 lookup(UnknownDb, Key, _) ->
-    snmp_error:user_err("Tried to lookup ~w in unknown db ~w", 
-			[Key, UnknownDb]),
+    snmp_error:db_err("Tried to lookup ~w in unknown db ~w", 
+		      [Key, UnknownDb]),
     false.
 
 lookup(Ets, Key) ->
@@ -644,3 +730,35 @@ table_func(set, RowIndex, Cols, NameDb) ->
 
 table_func(undo, RowIndex, Cols, NameDb) ->
     {noError, 0}.
+
+
+
+%%------------------------------------------------------------------
+%% These functions retrieves option values from the Options list.
+%%------------------------------------------------------------------
+get_verbosity([]) ->
+    ?DEFAULT_VERBOSITY;
+get_verbosity(L) ->
+    case lists:keysearch(verbosity,1,L) of
+	{value,{verbosity,Verbosity}} ->
+	    validate(verbosity,Verbosity);
+	_ ->
+	    ?DEFAULT_VERBOSITY
+    end.
+
+get_auto_repair([]) ->
+    ?DEFAULT_AUTO_REPAIR;
+get_auto_repair(L) ->
+    case lists:keysearch(auto_repair,1,L) of
+	{value,{auto_repair,AutoRepair}} ->
+	    validate(auto_repair,AutoRepair);
+	_ ->
+	    ?DEFAULT_AUTO_REPAIR
+    end.
+
+validate(auto_repair,true)         -> true;
+validate(auto_repair,true_verbose) -> true_verbose;
+validate(auto_repair,_)            -> false;
+
+validate(verbosity,Verbosity) -> snmp_verbosity:validate(Verbosity).
+

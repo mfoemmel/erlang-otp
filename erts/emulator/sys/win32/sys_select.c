@@ -147,7 +147,7 @@ static DWORD WINAPI threaded_waiter(LPVOID param);
 static void consistency_check(struct _Waiter* w);
 #endif
 
-FUNCTION(BOOL WINAPI, ctrl_handler, (DWORD));
+BOOL WINAPI ctrl_handler(DWORD);
 
 /*
  * External functions.
@@ -265,6 +265,7 @@ driver_select(port, event, mode, on)
 	if (func) {
 	    return set_driver_select(port, event, func);
 	}
+	return 0;
     } else {
 	int result;
 
@@ -578,6 +579,7 @@ ctrl_handler(DWORD dwCtrlType)
 void init_break_handler()
 {
     ConSetCtrlHandler(ctrl_handler);
+    SetConsoleCtrlHandler(ctrl_handler, TRUE);
 }
 
 static void*
@@ -738,4 +740,5 @@ threaded_waiter(LPVOID param)
 	}
     }
 }
+
 

@@ -87,16 +87,14 @@ start_op(Type, Args) ->
 	Others -> exit({throw,Others})
     end.
 
-
 new_end_token(N) ->
     {{make_ref(),erlang:now()}, N}.
-
 
 %%%----------------------------------------------------------------
 %%%---- Adds bindings to a set of bindings
 
 bindings(NextPid, BCount,Bs) ->
-    bindings(NextPid, BCount,Bs, Bs, {[],[],0}).
+    bindings(NextPid, BCount,Bs, Bs, {[],[],[]}).
 
 bindings(NextPid, BCount,Bs, BsOrig, {Tid, PidL, EndC}) ->
     receive
@@ -135,7 +133,7 @@ bindings(NextPid, BCount,Bs, BsOrig, {Tid, PidL, EndC}) ->
 %%%---- Call an Erlang functi n
 
 funcall (NextPid, LeftSide, FunCall, Count) ->
-    funcall_loop (NextPid, LeftSide, FunCall, Count, {[], [], 0}).
+    funcall_loop (NextPid, LeftSide, FunCall, Count, {[], [], []}).
 
 funcall_loop(NextPid, LeftSide, FunCall, Count, {Tid, PidL, EndC}) ->
     receive
@@ -146,6 +144,8 @@ funcall_loop(NextPid, LeftSide, FunCall, Count, {Tid, PidL, EndC}) ->
 		{fail, Cause} ->
 		    NextPid ! {fail, self(), Cause};
 		{ok, NewBss} ->
+		    ?debugmsg(3,"~w: ~w ! ~w\n", 
+			      [self(), NextPid, {bss, NewBss, Max, EndCntrl, Stack}]),
 		    case check_lastmarker (NewEndC, Count, LastMarker) of
 			true ->
 			    NextPid ! {bss, NewBss, Max, EndCntrl, Stack, 
@@ -194,7 +194,7 @@ eval_funcall([], LeftSide, FunCall, Acc) ->
 %%%---- 
 
 erl_expr(NextPid, Expr) ->
-    erl_expr(NextPid, Expr, [], {[],[],0}).
+    erl_expr(NextPid, Expr, [], {[],[],[]}).
 
 erl_expr(NextPid, Expr, Sols, {Tid, PidL, EndC}) ->
     receive
@@ -206,14 +206,12 @@ erl_expr(NextPid, Expr, Sols, {Tid, PidL, EndC}) ->
 	    
 	    case {Last, check_lastmarker(NewEndC, Expr#erl_expr.rec_count, LastMarker)} of
 		{[], true}  ->
-		    NextPid ! {bss, First, Max, EndCntrl, Stack, 
-			       {true, self ()}};
+		    NextPid ! {bss, First, Max, EndCntrl, Stack, {true, self ()}};
 		_ ->
-		    NextPid ! {bss, First, Max, EndCntrl, Stack, 
-			       false}
+		    NextPid ! {bss, First, Max, EndCntrl, Stack,  false}
 	    end,
 	    erl_expr(NextPid, Expr, Last, {Tid, PidL, NewEndC});
-	
+
 	{fail, SomePid, Cause} ->
 	    NextPid ! {fail, self(), Cause},
 	    erl_expr (NextPid, Expr);
@@ -245,7 +243,7 @@ get_values(Bss, Expr, Acc0) ->
 %%%---- Multiplexes a message to many receivers
 
 split (NextPids, Count) ->
-    split_loop (NextPids, Count, {[],[],0}).
+    split_loop (NextPids, Count, {[],[],[]}).
 
 split_loop(NextPids, Count, {Tid, PidL,EndC}) ->
     receive
@@ -281,21 +279,21 @@ split_loop(NextPids, Count, {Tid, PidL,EndC}) ->
 %%%---- Table lookup
 
 table(NextPid, P) when record(P,pred_sym) ->
-    table_loop(NextPid, P, #acc{}, {[], [], 0}).
+    table_loop(NextPid, P, #acc{}, {[], [], []}).
 
 
 %%%----------------------------------------------------------------
 %%%---- Negation
 
 negation(NextPid, Count,HelpPid) ->
-    negation(NextPid, Count,HelpPid, [], {[], [], 0}).
+    negation(NextPid, Count,HelpPid, [], {[], [], []}).
 
 
 negation_help() ->
     receive
 	{pids, Buddie, NextPid} ->
 	    ?trace_printout(negation_help, [NextPid,Buddie], 2),
-	    negation_help(NextPid,Buddie,[], {[],[], 0})
+	    negation_help(NextPid,Buddie,[], {[],[], []})
     end.
 
 %%%----------------------------------------------------------------
@@ -304,7 +302,7 @@ negation_help() ->
 %% THEN pass them on to the DestPid.
 
 call_recursive_op(NextPid, Goal) ->
-    call_recursive_op(NextPid, Goal, [], [], {[],[], 0}).
+    call_recursive_op(NextPid, Goal, [], [], {[],[], []}).
 
 call_recursive_op(NextPid, Goal, BssAcc, Acc, {Tid, PidL, EndC}) ->
     receive
@@ -322,8 +320,8 @@ call_recursive_op(NextPid, Goal, BssAcc, Acc, {Tid, PidL, EndC}) ->
 		    NextPid ! {bss, First, Max, EndCntrl, Stack, 
 			       false}
 	    end,
-	    call_recursive_op (NextPid, Goal, BssAcc1, Acc1, 
-			       {Tid, PidL, NewEndC});
+	    call_recursive_op(NextPid, Goal, BssAcc1, Acc1, 
+			      {Tid, PidL, NewEndC});
 
 	{fail, SomePid, Cause} ->
 	    NextPid ! {fail, self(), Cause},
@@ -373,10 +371,10 @@ table_loop(NextPid, F, Acc, {Tid, PidL, EndC}) ->
 		    table(NextPid, F);
 		Acc1 ->
 		    {First, Sols} = split_list(Max, Acc1#acc.sols),
-		    case {Sols, check_lastmarker (NewEndC, F#pred_sym.rec_count, LastMarker)} of
+		    case {Sols, check_lastmarker(NewEndC, F#pred_sym.rec_count, LastMarker)} of
 			{[], true} ->
 			    NextPid ! {bss, First, Max, EndCntrl, Stack, 
-				       {true, self ()}};
+				       {true, self()}};
 			_ ->
 			    NextPid ! {bss, First, Max, EndCntrl, Stack, 
 				       false}
@@ -390,7 +388,7 @@ table_loop(NextPid, F, Acc, {Tid, PidL, EndC}) ->
 	{fail, SomePid, Cause} ->
 	    NextPid ! {fail, self(), Cause},
 	    table (NextPid, F);
-
+	
 	{tid, NTid, Pid} ->
 	    mnesia:put_activity_id(NTid),
 	    NextPid ! {tid,NTid, self ()},
@@ -406,39 +404,46 @@ table_loop(NextPid, F, Acc, {Tid, PidL, EndC}) ->
 %% or we got it from a pid we already have it from
 %% --> restart of question (using same pid)
 
+%% Comments from dgud: The earlier version used a counter
+%% to count the number of answers, due to a bug where the 
+%% complicated loop failed(never returned)  when there was 
+%% more than 1000 (i.e. prefetched) answers,
+%% I rewrote it to use a decreasing PidList instead. So the 
+%% various Count(s) variables is not used anymore.
+%% This might be wrong I'm not 100% sure what I'm doing but 
+%% it works much better now.
+
 add_tid (Tid, PidL, EndC, Tid, Pid) ->
     case lists:member (Pid, PidL) of
 	true ->		      % restart of trans with same tid
-	    {Tid, [Pid], 0};
+	    {Tid, [Pid], [Pid]};
 	false ->	      % add one more pid to collect lastmarkers from
-	    {Tid, [Pid | PidL], EndC}
+	    {Tid, [Pid | PidL], [Pid | PidL]}
     end;
 add_tid (_, _, _, NTid, Pid) ->  % make new transaction
-    {NTid, [Pid], 0}.
+    {NTid, [Pid], [Pid]}.
     
 update_endc (TidL, EndC, false) ->
     EndC;
 update_endc (TidL, EndC, {true, Pid}) ->
-    case lists:member (Pid, TidL) of
+    case lists:member(Pid, TidL) of
 	true ->
-	    EndC + 1;
-	_ ->		     
+	    lists:delete(Pid, EndC);
+	_ ->   
 	    EndC
     end.
-check_lastmarker (Count, Count, {true, _}) -> true;
-check_lastmarker (_,_,_) -> false.
+check_lastmarker ([],BC,{true,_}) -> true;
+check_lastmarker (AC,BC,Last) -> false.
 
 %%%----------------
 fact_produce(Max, Acc, F) ->
     {Sols,Bss} = fact_produce(Max, Acc#acc.sols, Acc#acc.bss, F),
     Acc#acc{bss=Bss, sols=Sols}.
     
-
 fact_produce(Max, Sols, [Bs|Bss], F) when length(Sols)<Max ->
     fact_produce(Max, get_from_table(Bs,F,Sols), Bss, F);
 fact_produce(Max, Sols, Bss, F) ->
     {Sols,Bss}.
-
 
 get_from_table(Bs, F, Sols) ->
     InstPattern = mnemosyne_unify:instantiate(F#pred_sym.pattern, Bs),
@@ -543,7 +548,7 @@ negation_help(NextPid, Buddie, Acc0, {Tid,PidL, EndC}) ->
 	    end;
 	
 	{fail, SomePid, Cause} ->
-	    negation_help(NextPid, Buddie, [],{[],[],0});
+	    negation_help(NextPid, Buddie, [],{[],[],[]});
 	
 	{tid, NTid, Pid} ->
 	    negation_help(NextPid, Buddie, Acc0, 

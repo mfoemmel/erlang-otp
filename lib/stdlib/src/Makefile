@@ -33,6 +33,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/stdlib-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 MODULES= \
+	beam_lib \
 	bplus_tree \
 	c \
 	calendar \
@@ -42,6 +43,7 @@ MODULES= \
 	digraph_utils \
 	edlin \
 	epp \
+	erl_bits \
 	erl_compile \
 	erl_eval \
 	erl_id_trans \
@@ -55,6 +57,7 @@ MODULES= \
 	error_logger_file_h \
 	error_logger_tty_h \
 	ets \
+	eval_bits \
 	filelib \
 	filename \
 	gen \
@@ -71,6 +74,7 @@ MODULES= \
 	log_mf_h \
 	math \
 	otp_internal \
+	orddict \
 	ordsets \
 	pg \
 	pool \
@@ -78,6 +82,7 @@ MODULES= \
 	queue \
 	random \
 	regexp \
+	sets \
 	shell \
 	shell_default \
 	slave \
@@ -87,6 +92,7 @@ MODULES= \
 	sys \
 	timer \
 	unix \
+	vector \
 	win32reg
 
 HRL_FILES= ../include/erl_compile.hrl

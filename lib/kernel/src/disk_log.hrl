@@ -94,3 +94,9 @@
 	{fd,
 	 size}
 	).
+
+-record(continuation,         %% Chunk continuation.
+	{pid = self(),
+	 pos,
+	 b}
+	).

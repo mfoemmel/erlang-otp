@@ -7,17 +7,35 @@
 
 <CENTER><H1>Runtime_tools Release Notes</H1></CENTER>
 
-<H2>Runtime_tools 1.1.1</H2>
+<H2>Runtime_tools 1.1.2</H2>
 <H3>Improvements and new features</H3>
 
 <UL>
 
 <LI>
-The trace_file_drv driver was internally rewritten to
-use the new erl_driver.h file.
-<br>Own Id: OTP-3371
+New functions in the module <CODE>dbg</CODE>:
+<CODE>flush_trace_port</CODE>, <CODE>stop_trace_client</CODE>.
+There is a new option
+<CODE>follow_file</CODE> for <CODE>trace_client</CODE>.
+<br>Own Id: OTP-3471<br>
+Aux Id: OTP-3427
+
+
+<LI>
+Call tracing is greatly improved. It is now possible to
+trace local function calls (and calls to local functions)
+set up with the erlang:trace_pattern BIF. Trace compilation 
+for local call is no longer needed.
+New functions in the module <CODE>dbg</CODE>: <CODE>h</CODE>, <CODE>tpl</CODE>,
+<CODE>ctpl</CODE>, <CODE>ctpg</CODE>. <CODE>tp</CODE> now
+only traces global functions - use <CODE>tpl</CODE> to trace global
+and local.
+<br>Own Id: OTP-3518
 
 
 </UL>
+
+<p>There are also release notes for <A HREF="notes_history.html">older versions</A>.</P>
+
 </body>
 </html>

@@ -6,7 +6,7 @@
 #
 
 
-# vxworks_ppc860 vxworks_ppc603 vxworks_cpu32 vxworks_sparc
+# vxworks_ppc860 vxworks_ppc603 vxworks_ppc603_longcall vxworks_cpu32 vxworks_sparc
 
 case $# in
 1) host=$1 ;;
@@ -17,9 +17,10 @@ case $1 in
 vxworks_cpu32) ;;
 vxworks_ppc860) ;;
 vxworks_ppc603) ;;
+vxworks_ppc603_nolongcall) ;;
 vxworks_sparc) ;;
 *) echo "usage: configure.vxworks TARGET";
-   echo "TAEGET E [vxworks_cpu32, vxworks_ppc860, vxworks_ppc603, vxworks_sparc]"; exit 1;;
+   echo "where TARGET is one of vxworks_cpu32, vxworks_ppc860, vxworks_ppc603, vxworks_ppc603_nolongcall, vxworks_sparc"; exit 1;;
 esac
 
 if [ "x$ERL_TOP" = x ]; then
@@ -43,6 +44,9 @@ MKDIRS="${ERL_TOP}/lib/os_mon/priv/bin/$target
         ${ERL_TOP}/lib/ic/priv/obj/$target
         ${ERL_TOP}/lib/runtime_tools/priv/lib/$target
         ${ERL_TOP}/lib/runtime_tools/priv/obj/$target"
+for tag in '' '.debug' '.instr' '.purify' '.quantify' '.purecov'; do
+   MKDIRS="$MKDIRS ../obj$tag.beam/$target"  #on the form `../obj.<TAG>.beam'
+done
 
 for dir in $MKDIRS; do
   test ! -d "$dir" && mkdir -p "$dir"

@@ -16,6 +16,8 @@
 %%     $Id$
 %%
 %%
+
+
 %% A primary filer (Ahh, wrong name prim_loader:-).
 %% Provides three different methods to fetch a file,
 %%  i.e. binary_filer, efile and inet.
@@ -29,10 +31,19 @@
 %% functions used to handle the interface functions.
 %%
 
+
 -module(erl_prim_loader).
 
+%% If the macro DEBUG is defined during compilation, 
+%% debug printouts are done through erlang:display/1.
+%% Activate this feature by starting the compiler 
+%% with> erlc -DDEBUG ... 
+%% or by> setenv ERL_COMPILER_FLAGS DEBUG 
+%% before running make (in the OTP make system)
+%% (the example is for tcsh)
+
+
 -include("inet_boot.hrl").
--include("inet_int.hrl").
 
 -export([start/3,set_path/1,get_path/0,get_file/1]).
 
@@ -47,6 +58,8 @@
 
 %% Exports for inet prim_loader
 -export([get_from_port_inet/3, inet_in_handler/3, inet_exit_port/3]).
+
+
 
 -record(state, 
 	{
@@ -72,6 +85,7 @@
 -define(FILE_INET_OK, $f).
 -define(FILE_INET_ERROR,$e).
 -define(IDLE_TIMEOUT, 60000).  %% tear connection after 1 minutes
+-define(INET_PROTO, inet).
 
 -ifdef(DEBUG).
 -define(dbg(Tag,Data), erlang:display({Tag,Data})).
@@ -85,7 +99,13 @@
 
 start(Id,Pgm,Hosts) when atom(Hosts) ->
     start(Id,Pgm,[Hosts]);
-start(Id,Pgm,Hosts) ->
+start(Id,Pgm0,Hosts) ->
+    Pgm = if
+	      atom(Pgm0) ->
+		  atom_to_list(Pgm0);
+	      true ->
+		  Pgm0
+	  end,
     Pid = spawn_link(erl_prim_loader,start_it,[Pgm,Id,self(),Hosts]),
     register(erl_prim_loader,Pid),
     receive
@@ -96,7 +116,7 @@ start(Id,Pgm,Hosts) ->
     end.
 
 %% Hosts must be a list on form ['1.2.3.4' ...]
-start_it(inet,Id,Pid,Hosts) ->
+start_it("inet",Id,Pid,Hosts) ->
     process_flag(trap_exit,true),
     ?dbg(inet,{Id,Pid,Hosts}),
     AL = ipv4_list(Hosts),
@@ -113,7 +133,7 @@ start_it(inet,Id,Pid,Hosts) ->
 		    timeout = ?IDLE_TIMEOUT
 		   },
     loop(State,Pid,[]);
-start_it(efile,Id,Pid,Hosts) ->
+start_it("efile",Id,Pid,Hosts) ->
     process_flag(trap_exit,true),
     Port = erlang:open_port_prim({spawn,efile},[binary]),
     init_ack(Pid),
@@ -361,9 +381,8 @@ find_loop(U, Retry, AL, Delay, Acc) ->
 
 find_collect(U,Retry,AL,Delay,Acc) ->
     receive
-	{U, {data, [?INET_REP_DATA,P1,P0,A,B,C,D,$E,$B,$O,$O,$T,$R,
-		    Priority,T1,T0 | Version]}} ->
-	    Elem = {Priority,{A,B,C,D},T1*256+T0},
+	{udp, U, IP, _Port, [$E,$B,$O,$O,$T,$R,Priority,T1,T0 | Version]} ->
+	    Elem = {Priority,IP,T1*256+T0},
 	    ?dbg(got, Elem),
 	    case member(Elem, Acc) of
 		false  -> find_collect(U, Retry, AL, Delay, [Elem | Acc]);
@@ -424,11 +443,11 @@ get_from_port_inet(File, State) when State#state.data == noport ->
 					  timeout = ?IDLE_TIMEOUT });
 get_from_port_inet(File, State) ->
     Tcp = State#state.data,
-    ll_tcp_send(Tcp, [?inet_get_file | File]),
+    prim_inet:send(Tcp, [?inet_get_file | File]),
     receive
-	{Tcp, {data, [?INET_REP_DATA, ?FILE_INET_OK | BinFile]}} ->
+	{tcp, Tcp, [?FILE_INET_OK | BinFile]} ->
 	    {{ok, BinFile, File},State};
-	{Tcp, {data, [?INET_REP_DATA, ?FILE_INET_ERROR | Err]}} ->
+	{tcp, Tcp, [?FILE_INET_ERROR | Err]} ->
 	    {error,State};
 	{'EXIT', Tcp, _} -> 
 	    %% Ok we must reconnect
@@ -441,32 +460,24 @@ get_from_port_inet(File, State) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% options for tcp connection  [binary, {packet,4}, {header,1}, {active,true}]
-tcp_options() -> 
-    [?INET_LOPT_HEADER, 0, 0, 0, 1,
-     ?INET_LOPT_PACKET, 0, 0, 0, ?TCP_PB_4,
-     ?INET_LOPT_ACTIVE, 0, 0, 0, 1].
+tcp_options() ->
+    [{mode,binary}, {header,1}, {packet,4}, {active, true}, {deliver,term}].
 
-tcp_timeout() ->
-    [0,0,58,152].  %% 15s 
+tcp_timeout() -> 
+    15000.
 
 %% options for udp  [list, {broadcast, true}, {active,true}]
 udp_options() ->
-    [?INET_OPT_BROADCAST, 0, 0, 0, 1,
-     ?INET_LOPT_ACTIVE, 0, 0, 0, 1].
-
+    [{mode,list}, {active, true}, {deliver,term}, {broadcast,true}].
 %%
 %% INET version IPv4 addresses
 %%
-ll_tcp_connect(LocalPort, {A,B,C,D}, RemotePort) ->
-    case ll_open_set_bind(tcp_inet, [binary], tcp_options(),
+ll_tcp_connect(LocalPort, IP, RemotePort) ->
+    case ll_open_set_bind(stream, ?INET_PROTO, tcp_options(),
 			  {0,0,0,0}, LocalPort) of
 	{ok,S} ->
-	    case sync_cmd(S, 
-			  [?INET_REQ_CONNECT, tcp_timeout(),
-			   ?int16(RemotePort), [A,B,C,D]],
-			  ?INET_REP_CONNECT) of
-		{ok, _} -> {ok,S};
+	    case prim_inet:connect(S, IP, RemotePort, tcp_timeout()) of
+		ok -> {ok, S};
 		Error -> port_error(S, Error)
 	    end;
 	Error -> Error
@@ -476,17 +487,17 @@ ll_tcp_connect(LocalPort, {A,B,C,D}, RemotePort) ->
 %% Open and initialize an udp port for broadcast
 %%
 ll_udp_open(P) ->
-    ll_open_set_bind(udp_inet,[], udp_options(), {0,0,0,0}, P).
+    ll_open_set_bind(dgram, ?INET_PROTO, udp_options(), {0,0,0,0}, P).
 
 
-ll_open_set_bind(Drv, DOpts, SOpts, {A,B,C,D}, Port) ->
-    case ll_open(Drv, DOpts) of
-	{ok, S} -> 
-	    case sync_cmd(S, [?INET_REQ_SETOPTS, SOpts], ?INET_REP_SETOPTS) of
-		{ok,_} ->
-		    case sync_cmd(S, [?INET_REQ_BIND,?int16(Port),A,B,C,D],
-				  ?INET_REP_BIND) of
-			{ok, [P1,P0]} -> {ok, S};
+ll_open_set_bind(Type, Proto, SOpts, IP, Port) ->
+    case prim_inet:open(Type, Proto) of
+	{ok, S} ->
+	    case prim_inet:setopts(S, SOpts) of
+		ok ->
+		    case prim_inet:bind(S, IP, Port) of
+			{ok,_} ->
+			    {ok, S};
 			Error -> port_error(S, Error)
 		    end;
 		Error -> port_error(S, Error)
@@ -495,42 +506,15 @@ ll_open_set_bind(Drv, DOpts, SOpts, {A,B,C,D}, Port) ->
     end.
 		    
 
-ll_open(Drv, Opts) ->
-    case catch erlang:open_port_prim({spawn, Drv}, Opts) of
-        {'EXIT', Reason} -> {error, Reason};
-        Port ->
-            case sync_cmd(Port,[?INET_REQ_OPEN,?INET_AF_INET],
-			  ?INET_REP_OPEN) of
-                {ok, _} -> {ok, Port};
-		Error -> port_error(Port, Error)
-	    end
-    end.
-
 ll_close(S) ->
     unlink(S),
     exit(S, kill).
 
-ll_udp_send(S, {A,B,C,D}, Port, Data) ->
-    S ! {self(), {command, [?UDP_REQ_SENDTO, ?int16(Port), [A,B,C,D], Data]}}.
-
-ll_tcp_send(S, Data) ->
-    sync_cmd(S, [?TCP_REQ_SEND, Data], ?TCP_REP_SEND).
-
 port_error(S, Error) ->
-    ll_close(S),
+    unlink(S),
+    prim_inet:close(S),
     Error.
     
-sync_cmd(Port, Cmd, Rep) ->
-    Port ! {self(), {command, Cmd}},
-    receive
-	{Port, {data, [?INET_REP_ERROR | Err]}} -> 
-	    {error, list_to_atom(Err)};
-	{Port, {data, [Rep | T]}} -> 
-	    {ok, T};
-	{'EXIT', Port, Reason} -> 
-	    exit(Reason)
-    end.
-
 %%% --------------------------------------------------------
 %%% Misc. functions.
 %%% --------------------------------------------------------
@@ -551,7 +535,8 @@ absolute_filename(File) ->
     end.
 
 send_all(U, [IP | AL], Cmd) ->
-    ll_udp_send(U, IP, ?EBOOT_PORT, Cmd),
+    ?dbg(sendto, {U, IP, ?EBOOT_PORT, Cmd}),
+    prim_inet:sendto(U, IP, ?EBOOT_PORT, Cmd),
     send_all(U, AL, Cmd);
 send_all(U, [], _) -> ok.
 

@@ -46,14 +46,15 @@ public class Environment {
   private com.ericsson.otp.erlang.OtpErlangPid serverP;
   private com.ericsson.otp.erlang.OtpOutputStream os;       /* Output stream */
   private com.ericsson.otp.erlang.OtpInputStream is;        /* Input stream */
-  
+  private boolean stopped;
+ 
   // Private variables used by server only
   private int tag;
   private java.lang.String operation;
   private java.lang.String type;
   private com.ericsson.otp.erlang.OtpErlangRef ref;         /* Server side client reference */
   private com.ericsson.otp.erlang.OtpErlangPid caller;      /* Server side client pid */
-
+ 
   // Tags to distiguish client / server environments 
   private boolean clientT;
   private boolean serverT;
@@ -91,6 +92,22 @@ public class Environment {
 		       server = _Server;
 		       os = new com.ericsson.otp.erlang.OtpOutputStream();
   }
+
+
+  /**
+    Client stub side constructor.
+    **/  
+  public Environment(com.ericsson.otp.erlang.OtpConnection _connection,
+		     java.lang.Object _Server) throws java.lang.Exception {
+		       
+		       init();
+		       clientT = true;
+		       self = _connection.self();
+		       peer = _connection.peer();
+		       connection = _connection;
+		       server = _Server;
+		       os = new com.ericsson.otp.erlang.OtpOutputStream();
+  }
   
 
   /** 
@@ -100,6 +117,7 @@ public class Environment {
     
     init();
     serverT = true;
+    stopped = false;
     os = new com.ericsson.otp.erlang.OtpOutputStream();
 
   }
@@ -112,10 +130,25 @@ public class Environment {
     **/
   public void connect() throws java.lang.Exception {
     
-    connection = peer.connect(self);
+    if (connection == null)
+      connection = self.connect(peer);
+ 
     clientP = new com.ericsson.otp.erlang.OtpErlangPid(self); /* This is not perfect */
     send_ref = new com.ericsson.otp.erlang.OtpErlangRef(self);
     
+  }
+
+  /**
+    Reconnects a client by closing existing connection 
+    and connecting.
+    **/
+  public void reconnect() throws java.lang.Exception {
+
+    if (connection.isConnected())
+	connection.close();
+
+    connection = self.connect(peer);
+
   }
   
   /**
@@ -171,6 +204,18 @@ public class Environment {
   
   /* Accessors */
    
+    /**
+       Server RegName/OtpErlangPid accessor. 
+       Used to access the server Reg/Pid, which 
+       initiated the connection.
+       @return java.lang.Object, the server for the active OtpConnection.
+    **/
+  public java.lang.Object server() {
+    
+    return server;
+    
+  }
+
   /**
     Caller identity accessor. Used by a server stub to access the 
     caller identity of the received message.
@@ -338,7 +383,49 @@ public class Environment {
     return true; 
   }
 
+
+  /**
+    Server stop request controller.
+    @return boolean, true if there is a client request for the server
+    to be stopped, false otherwize.
+    **/
+    public boolean isStopped() {
+	return stopped;
+    };
+
+
   
+  /* Destroy functions */ 
+
+    /* 
+     Creates and sends a stop message.
+     Called by client stub to terminate the server.
+    */
+  public void client_stop_server() 
+      throws java.lang.Exception {
+
+     // Message header assembly
+     os.reset();
+     os.write_tuple_head(2);
+     os.write_atom("$gen_cast");
+
+     os.write_atom("stop");
+
+     send();
+	
+  }
+
+  /*
+  Sets the stop flag for the server.
+  Called by server skeleton when stop message is received.
+  */
+  public void server_stop_server() {
+
+      // Note at server is dead !
+      stopped = true;
+  }
+
+
   /* Private methods */
 
   /**
@@ -348,6 +435,7 @@ public class Environment {
 
     clientT = false;
     serverT = false;
+    stopped = false;
     self = null;
     peer = null;
     server = null;
@@ -363,8 +451,8 @@ public class Environment {
     tag = -1;
     operation = null;
     type = null;
-  };
 
+  };
 
 }
 

@@ -998,18 +998,7 @@ do_add_copy(Cp, Tab, Node) when Node /= node()->
     end.
 
 tm_remote_prepare(Node, Cp) ->
-    case mnesia_monitor:needs_protocol_conversion(Node) of
-	true ->
-	    %% The node is using an old protocol
-	    case convert_cp_record(Cp) of
-		{ok, OldCp} ->
-		    rpc:call(Node, ?MODULE, tm_prepare, [OldCp]);
-		{error, Reason} ->
-		    {error, Reason}
-	    end;
-	false ->
-	    rpc:call(Node, ?MODULE, tm_prepare, [Cp])
-    end.
+    rpc:call(Node, ?MODULE, tm_prepare, [Cp]).
   
 do_add_retainer(Cp, R, Node) ->
     R2 = prepare_tab(Cp, R),
@@ -1183,7 +1172,7 @@ system_terminate(Reason, Parent, Debug, Cp) ->
     do_stop(Cp).
 
 system_code_change(Cp, Module, OldVsn, Extra) ->
-    exit(not_supported).
+    {ok, Cp}.
 
 convert_cp_record(Cp) when record(Cp, checkpoint) ->
     ROD = 
