@@ -111,6 +111,8 @@ image_of_sname(ss)        -> "SYMBOLIC-STORE";
 image_of_sname(sup)       -> "SUPERVISOR";
 image_of_sname(ms)        -> "MIB-SERVER";
 image_of_sname(conf)      -> "CONFIGURATOR";
+image_of_sname(mgr)       -> "MGR";
+image_of_sname(mgr_misc)  -> "MGR_MISC";
 image_of_sname(undefined) -> "";
 image_of_sname(V)         -> io_lib:format("~p",[V]).
 

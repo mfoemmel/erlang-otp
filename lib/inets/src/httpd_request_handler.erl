@@ -92,7 +92,7 @@ handle_blocked(Manager, ConfigDB, SocketType, Socket) ->
 
 % reject_connection
 
-reject_connection(Manager, ConfigDB, SocketType, Socket, Info) ->
+reject_connection(_Manager, ConfigDB, SocketType, Socket, Info) ->
     String = lists:flatten(Info),
     ?vtrace("send status (503) message", []),
     httpd_response:send_status(SocketType, Socket, 503, String, ConfigDB),
@@ -176,7 +176,7 @@ read(ConfigDB, SocketType, Socket, InitData, Timeout) ->
     end.
 
 %% Got the head and maybe a part of the body: read in the rest
-read1(SocketType, Socket, ConfigDB, InitData, Timeout, Info, BodyPart)->
+read1(SocketType, Socket, ConfigDB, _InitData, Timeout, Info, BodyPart)->
     MaxBodySz     = httpd_util:lookup(ConfigDB, max_body_size, nolimit),
     ContentLength = content_length(Info),
     ?vtrace("ContentLength: ~p", [ContentLength]),
@@ -190,7 +190,7 @@ read1(SocketType, Socket, ConfigDB, InitData, Timeout, Info, BodyPart)->
 	    finish_request(EntityBody, [], Info); 
 	{ok, ExtraHeader, EntityBody} ->
 	    finish_request(EntityBody, ExtraHeader, Info);
-	Response ->
+	_Response ->
 	    httpd_socket:close(SocketType, Socket),
 	    socket_closed
 	    %% Catch up all bad return values
@@ -201,7 +201,7 @@ read1(SocketType, Socket, ConfigDB, InitData, Timeout, Info, BodyPart)->
 %% generates the response
 
 finish_request(EntityBody, ExtraHeader, 
-	       #mod{parsed_header = ParsedHeader} = Info)->
+	       #mod{parsed_header = ParsedHeader} = Info) ->
     ?DEBUG("finish_request -> ~n"
 	"    EntityBody:   ~p~n"
 	"    ExtraHeader:  ~p~n"
@@ -302,7 +302,7 @@ terminated_header(MaxHdrSz, Data) ->
 
 transform_header(SocketType, Socket, Request, ConfigDB, InitData, BodyPart) ->
     case httpd_parse:request_header(Request) of
-	{not_implemented, RequestLine, Method, RequestURI, ParsedHeader,
+	{not_implemented, _RequestLine, Method, RequestURI, _ParsedHeader,
 	 HTTPVersion} ->
 	    httpd_response:send_status(SocketType, Socket, 501,
 				       {Method, RequestURI, HTTPVersion},
@@ -311,7 +311,7 @@ transform_header(SocketType, Socket, Request, ConfigDB, InitData, BodyPart) ->
 	{bad_request, {forbidden, URI}} ->
 	    httpd_response:send_status(SocketType, Socket, 403, URI, ConfigDB),
 	    {error,"Forbidden Request"};
-	{bad_request, Reason} ->
+	{bad_request, _Reason} ->
 	    httpd_response:send_status(SocketType, Socket, 400, none, 
 				       ConfigDB),
 	    {error,"Malformed request"};
@@ -343,7 +343,7 @@ transform_header(SocketType, Socket, Request, ConfigDB, InitData, BodyPart) ->
     end.
 
 
-hsplit(_MaxHdrSz, Accu,[]) ->
+hsplit(_MaxHdrSz, _Accu,[]) ->
     not_terminated;
 hsplit(_MaxHdrSz, Accu, [ $\r, $\n, $\r, $\n | Tail]) ->
     [lists:reverse(Accu), Tail];
@@ -351,7 +351,7 @@ hsplit(nolimit, Accu, [H|T]) ->
     hsplit(nolimit,[H|Accu],T);
 hsplit(MaxHdrSz, Accu, [H|T]) when length(Accu) < MaxHdrSz ->
     hsplit(MaxHdrSz,[H|Accu],T);
-hsplit(MaxHdrSz, Accu, D) ->
+hsplit(_MaxHdrSz, Accu, D) ->
     throw({error,{header_too_long,length(Accu),length(D)}}).
 
 
@@ -416,7 +416,7 @@ read_entity_body(SocketType, Socket, Timeout, Max, Length, BodyPart,
 %% control if the body is transfer encoded
 %%----------------------------------------------------------------------
 read_entity_body2(SocketType, Socket, Timeout, Max, Length, BodyPart, 
-		  Info, ConfigDB) ->
+		  Info, _ConfigDB) ->
     ?DEBUG("read_entity_body2() -> "
 	"~n   Max:    ~p"
 	"~n   Length: ~p"
@@ -424,17 +424,16 @@ read_entity_body2(SocketType, Socket, Timeout, Max, Length, BodyPart,
       
     case transfer_coding(Info) of
 	{chunked, ChunkedData} ->
-	    ?DEBUG("read_entity_body2() -> "
-		"Transfer-encoding: Chunked Data: BodyPart ~s", [BodyPart]),
+	    ?vdebug("read_entity_body2 -> transfer-coding: chunked",[]),
 	    read_chunked_entity(Info, Timeout, Max, Length, ChunkedData, [],
 				BodyPart);
 	unknown_coding ->
-	    ?DEBUG("read_entity_body2() -> Transfer-encoding: Unknown",[]),
+	    ?vdebug("read_entity_body2 -> transfer-coding: unknown",[]),
 	    httpd_response:send_status(Info, 501, "Unknown Transfer-Encoding"),
 	    httpd_socket:close(SocketType, Socket),
 	    {socket_closed,"Expect conditions was not fullfilled"};
 	none ->
-	      ?DEBUG("read_entity_body2() -> Transfer-encoding: none",[]),
+	    ?vdebug("read_entity_body2 -> transfer-coding: none",[]),
 	    read_entity_body(SocketType, Socket, Timeout, Max, Length, 
 			     BodyPart)
     end.
@@ -466,7 +465,7 @@ read_entity_body(_, _, _, _, Len, BodyPart) when Len < length(BodyPart) ->
 	"~n   length(BodyPart): ~p", [Len, length(BodyPart)]),
     {ok, lists:sublist(BodyPart,Len)};
 
-read_entity_body(SocketType, Socket, Timeout, Max, Len, BodyPart) ->
+read_entity_body(SocketType, Socket, Timeout, _Max, Len, BodyPart) ->
     ?vtrace("read_entity_body -> entry when"
 	"~n   Len:              ~p"
 	"~n   length(BodyPart): ~p", [Len, length(BodyPart)]),
@@ -524,7 +523,7 @@ read_chunked_entity(Info, Timeout, Max, Length, ChunkedData, Body, BodyPart) ->
 		    read_chunked_entity(Info, Timeout, Max, Length, 
 					ChunkedData, Body ++ Chunk,
 					NewBodyPart1);
-		OK ->
+		_OK ->
 		    httpd_socket:close(Info#mod.socket_type, Info#mod.socket),
 		    {socket_closed, error}
 	    end;
@@ -565,13 +564,13 @@ parse_chunk_size(Info, Timeout, BodyPart) ->
 %%----------------------------------------------------------------------
 
 %% body to big
-parse_chunked_entity_body(Info, Timeout, Max, Length, Size, BodyPart) 
+parse_chunked_entity_body(_Info, _Timeout, Max, Length, Size, _BodyPart) 
   when Max =< (Length + Size) ->
     {error, body_to_big};
 
 %% Prefetched body part is bigger than the current chunk
 %% (i.e. BodyPart includes more than one chunk)
-parse_chunked_entity_body(Info, Timeout, Max, Length, Size, BodyPart) 
+parse_chunked_entity_body(_Info, _Timeout, _Max, _Length, Size, BodyPart) 
   when (Size+2) =< length(BodyPart) ->
     Chunk = string:substr(BodyPart, 1, Size),
     Rest  = string:substr(BodyPart, Size+3),
@@ -605,7 +604,7 @@ parse_chunked_entity_body(Info, Timeout, Max, Length, Size, BodyPart) ->
 %%----------------------------------------------------------------------
 %% Either trailer begins with  \r\n and then all data is there or 
 %% The trailer has data  then read upto \r\n\r\n
-parse_chunk_trailer(Info,Timeout,ConfigDB,"\r\n")->
+parse_chunk_trailer(_Info, _Timeout, _ConfigDB,"\r\n")->
     {ok,[]};
 parse_chunk_trailer(Info,Timeout,ConfigDB,Trailers) ->
     ?DEBUG("parse_chunk_trailer()->Trailers: ~s ~n", [Trailers]),
@@ -618,21 +617,23 @@ parse_chunk_trailer(Info,Timeout,ConfigDB,Trailers) ->
 	    parse_trailers(Trailers)
     end.
 
-parse_trailers(Trailer)->
+parse_trailers(Trailer) ->
     ?DEBUG("parse_trailer()->Trailer: ~s",[Trailer]),
-    {ok,[Fields0|Crap]}=httpd_util:split(Trailer,"\r\n\r\n",2),
-    Fields=string:tokens(Fields0,"\r\n"),
-	[getTrailerField(X)||X<-Fields,lists:member($:,X)].
+    {ok,[Fields0|_Crap]} = httpd_util:split(Trailer,"\r\n\r\n",2),
+    Fields = string:tokens(Fields0,"\r\n"),
+    [getTrailerField(X)||X<-Fields,lists:member($:,X)].
 
 
-read_trailer_end(Info,Timeout,MaxHdrSz,[])->
+read_trailer_end(#mod{socket_type   = Type, 
+		      socket        = Sock, 
+		      parsed_header = ParsedHdr}, 
+		 Timeout, MaxHdrSz, []) ->
     ?DEBUG("read_trailer_end()->[]",[]),
-    case read_trailer(Info#mod.socket_type,Info#mod.socket,
-		 Timeout,MaxHdrSz,[],[],
-		      httpd_util:key1search(Info#mod.parsed_header,"trailer",[])) of
-	{ok,Trailers}->
+    case read_trailer(Type, Sock, Timeout, MaxHdrSz, [],[],
+		      httpd_util:key1search(ParsedHdr,"trailer",[])) of
+	{ok, Trailers} ->
 	    Trailers;
-	_->
+	_ ->
 	    []
     end;
 read_trailer_end(Info,Timeout,MaxHdrSz,Trailers)->
@@ -674,12 +675,12 @@ read_chunked_entity(SocketType, Socket, Timeout, Max, Length, ChunkedData,
 		    Body, ConfigDB, Info) ->
     T = t(),
     case get_chunk_size(SocketType,Socket,Timeout,[]) of
-	Size when integer(Size), Size>0 ->
+	Size when integer(Size), Size > 0 ->
 	    case read_chunked_entity_body(SocketType, Socket, 
 					  Timeout-(t()-T),
 					  Max, length(Body), Size) of
-		{ok,Chunk} ->
-		    ?DEBUG("read_chunked_entity/9 Got a chunk: ~p " ,[Chunk]),
+		{ok, Chunk} ->
+		    ?vtrace("read_chunked_entity -> got a chunk",[]),
 		    %% Two bytes are left of the chunk, that is the CRLF 
 		    %% at the end that is not a part of the message
 		    %% So we read it and do nothing with it.
@@ -688,7 +689,7 @@ read_chunked_entity(SocketType, Socket, Timeout, Max, Length, ChunkedData,
 					Max, Length, ChunkedData, Body++Chunk,
 					ConfigDB, Info);
 		Error ->
-		    ?DEBUG("read_chunked_entity/9 Error: ~p " ,[Error]),
+		    ?vlog("failed reading entity body: ~p" ,[Error]),
 		    httpd_socket:close(SocketType,Socket),
 		    {socket_closed,error}
 	    end;
@@ -703,13 +704,13 @@ read_chunked_entity(SocketType, Socket, Timeout, Max, Length, ChunkedData,
 
 %% If a user wants to send header data after the chunked data we 
 %% must pick it out
-read_chunk_trailer(SocketType, Socket, Timeout, Max, Info, ChunkedData,
+read_chunk_trailer(SocketType, Socket, Timeout, _Max, Info, _ChunkedData,
 		   Body, ConfigDB) ->
     ?DEBUG("read_chunk_trailer/8: ~p " ,[Body]),
     MaxHdrSz = httpd_util:lookup(ConfigDB,max_header_size,10240),
     case httpd_util:key1search(Info#mod.parsed_header,"trailer")of
 	undefined ->
-	    {ok,Body};
+	    {ok, Body};
 	Fields ->
 	    case read_trailer(SocketType, Socket, Timeout,
 			      MaxHdrSz, [], [],
@@ -782,9 +783,9 @@ read_trailer(_, _, _, _, Headers, [$\n, $\r], _) ->
 read_trailer(SocketType, Socket, Timeout, MaxHdrSz, Headers,
 	     [$\n, $\r|Rest], Fields) ->
     case getTrailerField(lists:reverse(Rest))of
-	{error,Reason}->
+	{error, _Reason} ->
 	    {error,"Bad trailer"};
-	{HeaderField,Value}->
+	{HeaderField, Value} ->
 	    case lists:member(HeaderField,Fields) of
 		true ->
 		    read_trailer(SocketType,Socket,Timeout,MaxHdrSz,
@@ -868,14 +869,14 @@ expect(HTTPVersion,ParsedHeader,ConfigDB)->
 		    continue; 
 		undefined ->
 		    no_expect_header;
-		NewValue ->
+		_NewValue ->
 		    break
 	    end;
 	_OldVersion ->
 	    case httpd_util:key1search(ParsedHeader,"expect") of
 		undefined ->
 		    no_expect_header;
-		NewValue ->
+		_NewValue ->
 		    case httpd_util:lookup(ConfigDB,expect,continue) of
 			continue->
 			    no_expect_header;
@@ -901,17 +902,17 @@ transfer_coding(#mod{parsed_header = Ph}) ->
 
 
 
-handle_read_error({header_too_long,Max,Rem},
-                  SocketType,Socket,ConfigDB,Peername) ->
-    String = io_lib:format("header too long: ~p : ~p",[Max,Rem]),
-    handle_read_error(ConfigDB,String,SocketType,Socket,Peername,
-                      max_header_action,close);
-handle_read_error({body_too_long,Max,Actual},
-                  SocketType,Socket,ConfigDB,Peername) ->
-    String = io_lib:format("body too long: ~p : ~p",[Max,Actual]),
-    handle_read_error(ConfigDB,String,SocketType,Socket,Peername,
-                      max_body_action,close);
-handle_read_error(Error,SocketType,Socket,ConfigDB,Peername) ->
+handle_read_error({header_too_long, Max, Rem},
+                  SocketType, Socket, ConfigDB, Peername) ->
+    String = io_lib:format("header too long: ~p : ~p",[Max, Rem]),
+    handle_read_error(ConfigDB, String, SocketType, Socket, Peername,
+                      max_header_action, close);
+handle_read_error({body_too_long, Max, Actual},
+                  SocketType, Socket, ConfigDB, Peername) ->
+    String = io_lib:format("body too long: ~p : ~p", [Max, Actual]),
+    handle_read_error(ConfigDB, String, SocketType, Socket, Peername,
+                      max_body_action, close);
+handle_read_error(_Error, _SocketType, _Socket, _ConfigDB, _Peername) ->
     ok.
 
 
@@ -955,7 +956,7 @@ sz(O) ->
 
 %% Socket utility functions:
 
-close(SocketType, Socket, ConfigDB) ->
+close(SocketType, Socket, _ConfigDB) ->
     case httpd_socket:close(SocketType, Socket) of
         ok ->
             ok;

@@ -41,12 +41,20 @@
          incr_trans_id_counter/2,
          verify_val/2,
 
+	 %% Pending limit counter
+	 cre_pending_counter/1,
+	 get_pending_counter/1,
+	 incr_pending_counter/1,
+	 del_pending_counter/1,
+
          lookup_local_conn/1,
          connect/4,
          disconnect/1,
 	 connect_remote/3,
 	 disconnect_remote/2,
-	 init_conn_data/4
+	 init_conn_data/4,
+
+	 trans_sender_exit/2
 
         ]).
 
@@ -60,6 +68,16 @@
 
 -include_lib("megaco/include/megaco.hrl").
 -include("megaco_internal.hrl").
+
+
+-ifdef(MEGACO_TEST_CODE).
+-define(megaco_test_init(),
+	(catch ets:new(megaco_test_data, [set, public, named_table]))).
+-else.
+-define(megaco_test_init(),
+	ok).
+-endif.
+
 
 %% -define(d(F,A), io:format("~p~p:" ++ F ++ "~n", [self(),?MODULE|A])).
 -define(d(F,A), ok).
@@ -80,7 +98,7 @@ stop_user(UserMid) ->
 
 user_info(UserMid, all) ->
     All = ets:match_object(megaco_config, {{UserMid, '_'}, '_'}),
-    [{Item, Val} || {{_, Item}, Val} <- All, Item /= ack_sender];
+    [{Item, Val} || {{_, Item}, Val} <- All, Item /= trans_sender];
 user_info(UserMid, receive_handle) ->
     case call({receive_handle, UserMid}) of
 	{ok, RH} ->
@@ -89,21 +107,27 @@ user_info(UserMid, receive_handle) ->
 	    exit(Reason)
     end;
 user_info(UserMid, conn_data) ->
-    ?d("user_info(conn_data) -> entry with"
-	"~n   UserMid: ~p", [UserMid]),    
     HandlePat = #megaco_conn_handle{local_mid = UserMid, remote_mid = '_'},
     Pat = #conn_data{conn_handle      	= HandlePat,
                      serial           	= '_',
                      max_serial       	= '_',
                      request_timer    	= '_',
                      long_request_timer = '_',
+
                      auto_ack         	= '_',
 
-                     accu_ack_timer   	= '_',
-                     accu_ack_maxcount	= '_',
-                     ack_sender	        = '_',
+                     trans_ack   	= '_',
+                     trans_ack_maxcount	= '_',
+
+                     trans_req   	= '_',
+                     trans_req_maxcount	= '_',
+                     trans_req_maxsize	= '_',
+
+                     trans_timer   	= '_',
+                     trans_sender       = '_',
 
                      pending_timer     	= '_',
+                     orig_pending_limit = '_',
                      reply_timer      	= '_',
                      control_pid      	= '_',
                      monitor_ref      	= '_',
@@ -116,14 +140,11 @@ user_info(UserMid, conn_data) ->
                      user_mod         	= '_',
                      user_args         	= '_',
                      reply_action     	= '_',
-                     reply_data       	= '_'},
+                     reply_data       	= '_',
+		     threaded       	= '_'},
     %% ok = io:format("PATTERN: ~p~n", [Pat]),
-    ?d("user_info(conn_data) -> ~n"
-	"~p", [ets:tab2list(megaco_local_conn)]),
     ets:match_object(megaco_local_conn, Pat);
 user_info(UserMid, connections) ->
-    ?d("user_info(connections) -> entry with"
-	"~n   UserMid: ~p", [UserMid]),    
     [C#conn_data.conn_handle || C <- user_info(UserMid, conn_data)];
 user_info(UserMid, mid) ->
     ets:lookup_element(megaco_config, {UserMid, mid}, 2);
@@ -167,7 +188,7 @@ conn_info(CD, Item) when record(CD, conn_data) ->
 		replace(max_serial, max_trans_id, Tags1),
 	    [{Tag, conn_info(CD,Tag)} || Tag <- Tags, 
 					 Tag /= conn_data, 
-					 Tag /= ack_sender];
+					 Tag /= trans_sender];
         conn_data          -> CD;
         conn_handle        -> CD#conn_data.conn_handle;
         mid                -> (CD#conn_data.conn_handle)#megaco_conn_handle.local_mid;
@@ -177,12 +198,20 @@ conn_info(CD, Item) when record(CD, conn_data) ->
         max_trans_id       -> CD#conn_data.max_serial;
         request_timer      -> CD#conn_data.request_timer;
         long_request_timer -> CD#conn_data.long_request_timer;
+
         auto_ack           -> CD#conn_data.auto_ack;
 
-        accu_ack_timer     -> CD#conn_data.accu_ack_timer;
-        accu_ack_maxcount  -> CD#conn_data.accu_ack_maxcount;
+        trans_ack          -> CD#conn_data.trans_ack;
+        trans_ack_maxcount -> CD#conn_data.trans_ack_maxcount;
+
+        trans_req          -> CD#conn_data.trans_req;
+        trans_req_maxcount -> CD#conn_data.trans_req_maxcount;
+        trans_req_maxsize  -> CD#conn_data.trans_req_maxsize;
+
+        trans_timer        -> CD#conn_data.trans_timer;
 
         pending_timer      -> CD#conn_data.pending_timer;
+        orig_pending_limit -> CD#conn_data.orig_pending_limit;
         reply_timer        -> CD#conn_data.reply_timer;
         control_pid        -> CD#conn_data.control_pid;
         monitor_ref        -> CD#conn_data.monitor_ref;
@@ -196,6 +225,7 @@ conn_info(CD, Item) when record(CD, conn_data) ->
         user_args          -> CD#conn_data.user_args;
         reply_action       -> CD#conn_data.reply_action;
         reply_data         -> CD#conn_data.reply_data;
+        threaded           -> CD#conn_data.threaded;
         receive_handle     ->
             LocalMid = (CD#conn_data.conn_handle)#megaco_conn_handle.local_mid,
             #megaco_receive_handle{local_mid       = LocalMid,
@@ -285,28 +315,47 @@ disconnect(ConnHandle) ->
 disconnect_remote(ConnHandle, UserNode) ->
     call({disconnect_remote, ConnHandle, UserNode}).
 
+
 incr_counter(Item, Incr) ->
-    case catch ets:update_counter(megaco_config, Item, Incr) of
+    case (catch ets:update_counter(megaco_config, Item, Incr)) of
         {'EXIT', _} ->
-            case whereis(?SERVER) == self() of
-                false ->
-                    call({incr_counter, Item, Incr});
-                true ->
-                    %% Assume that counter was zero
-                    ets:insert(megaco_config, {Item, Incr}),
-                    Incr
-            end;
+	    cre_counter(Item, Incr);
         NewVal ->
             NewVal
     end.
+
+cre_counter(Item, Initial) ->
+    case whereis(?SERVER) == self() of
+	false ->
+	    call({cre_counter, Item, Initial});
+	true ->
+	    ets:insert(megaco_config, {Item, Initial}),
+	    Initial
+    end.
+    
+
+cre_pending_counter(TransId) ->
+    Counter = {pending_counter, TransId},
+    cre_counter(Counter, 0).
+
+incr_pending_counter(TransId) ->
+    Counter = {pending_counter, TransId},
+    incr_counter(Counter, 1).
+
+get_pending_counter(TransId) ->
+    Counter = {pending_counter, TransId},
+    [{Counter, Val}] = ets:lookup(megaco_config, Counter),
+    Val.
+
+del_pending_counter(TransId) ->
+    Counter = {pending_counter, TransId},
+    ets:delete(megaco_config, Counter).
+
 
 %% A wrapping transaction id counter
 incr_trans_id_counter(ConnHandle) ->
     incr_trans_id_counter(ConnHandle, 1).
 incr_trans_id_counter(ConnHandle, Incr) when integer(Incr), Incr > 0 ->
-    ?d("incr_trans_id_counter -> entry with"
-	"~n   ConnHandle: ~p"
-	"~n   Incr:       ~p",[ConnHandle, Incr]),
     case megaco_config:lookup_local_conn(ConnHandle) of
         [] ->
             {error, {no_such_connection, ConnHandle}};
@@ -360,13 +409,30 @@ reset_trans_id_counter(ConnData, ConnHandle, LocalMid, Item, Incr) ->
     end.
 
 
+trans_sender_exit(Reason, CH) ->
+    ?d("trans_sender_exit -> entry with"
+	"~n   Reason: ~p"
+	"~n   CH: ~p", [Reason, CH]),
+    cast({trans_sender_exit, Reason, CH}).
+
+
 call(Request) ->
-    case catch gen_server:call(?SERVER, Request, infinity) of
+    case (catch gen_server:call(?SERVER, Request, infinity)) of
 	{'EXIT', _} ->
 	    {error, megaco_not_started};
 	Res ->
 	    Res
     end.
+
+
+cast(Msg) ->
+    case (catch gen_server:cast(?SERVER, Msg)) of
+	{'EXIT', _} ->
+	    {error, megaco_not_started};
+	Res ->
+	    Res
+    end.
+
 
 %%%----------------------------------------------------------------------
 %%% Callback functions from gen_server
@@ -394,6 +460,7 @@ init([Parent]) ->
     end.
 
 do_init() ->
+    ?megaco_test_init(),
     ets:new(megaco_config,      [public, named_table, {keypos, 1}]),
     ets:new(megaco_local_conn,  [public, named_table, {keypos, 2}]),
     ets:new(megaco_remote_conn, [public, named_table, {keypos, 2}, bag]),
@@ -432,22 +499,31 @@ init_user_defaults() ->
     init_user_default(max_trans_id,       infinity), 
     init_user_default(request_timer,      #megaco_incr_timer{}),
     init_user_default(long_request_timer, infinity),
+
     init_user_default(auto_ack,           false),
 
-    init_user_default(accu_ack_timer,     0),
-    init_user_default(accu_ack_maxcount,  10),
-    init_user_default(ack_sender,         undefined),
+    init_user_default(trans_ack,          false),
+    init_user_default(trans_ack_maxcount, 10),
+
+    init_user_default(trans_req,          false),
+    init_user_default(trans_req_maxcount, 10),
+    init_user_default(trans_req_maxsize,  2048),
+
+    init_user_default(trans_timer,        0),
+    init_user_default(trans_sender,       undefined),
 
     init_user_default(pending_timer,      timer:seconds(30)),
+    init_user_default(orig_pending_limit, infinity),
     init_user_default(reply_timer,        timer:seconds(30)),
     init_user_default(send_mod,           megaco_tcp),
     init_user_default(encoding_mod,       megaco_pretty_text_encoder),
     init_user_default(protocol_version,   1),
     init_user_default(auth_data,          asn1_NOVALUE),
     init_user_default(encoding_config,    []),
-    init_user_default(user_mod,           megaco_user),
+    init_user_default(user_mod,           megaco_user_default),
     init_user_default(user_args,          []),
-    init_user_default(reply_data,         undefined).
+    init_user_default(reply_data,         undefined),
+    init_user_default(threaded,           false).
 
 init_user_default(Item, Default) when Item /= mid ->
     Val = get_env(Item, Default),
@@ -484,8 +560,12 @@ init_users(BadConfig) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 
-handle_call({incr_counter, Item, Incr}, _From, S) ->
-    Reply = incr_counter(Item, Incr),
+handle_call({cre_counter, Item, Incr}, _From, S) ->
+    Reply = cre_counter(Item, Incr),
+    {reply, Reply, S};
+
+handle_call({del_counter, Item, Incr}, _From, S) ->
+    Reply = cre_counter(Item, Incr),
     {reply, Reply, S};
 
 handle_call({incr_trans_id_counter, ConnHandle}, _From, S) ->
@@ -500,11 +580,6 @@ handle_call({receive_handle, UserMid}, _From, S) ->
 	    {reply, {ok, RH}, S}
     end;
 handle_call({connect, RH, RemoteMid, SendHandle, ControlPid}, _From, S) ->
-    ?d("handle_call(connect) -> entry with "
-	"~n   RH:         ~p"
-	"~n   RemoteMid:  ~p"
-	"~n   SendHandle: ~p"
-	"~n   ControlPid: ~p", [RH, RemoteMid, SendHandle, ControlPid]),
     Reply = handle_connect(RH, RemoteMid, SendHandle, ControlPid),
     {reply, Reply, S};
 handle_call({connect_remote, CH, UserNode, Ref}, _From, S) ->
@@ -542,8 +617,7 @@ handle_call({update_user_info, UserMid, Item, Val}, _From, S) ->
     end;
 
 handle_call(Request, From, S) ->
-    ok = error_logger:format("~p(~p): handle_call(~p, ~p, ~p)~n",
-                             [?MODULE, self(), Request, From, S]),
+    error_msg("unknown request from ~p~n~p",[From, Request]),
     {reply, {error, {bad_request, Request}}, S}.
 
 %%----------------------------------------------------------------------
@@ -553,9 +627,21 @@ handle_call(Request, From, S) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 
+handle_cast({trans_sender_exit, Reason, CH}, S) ->
+    error_msg("transaction sender (~p) restarting: ~n~p", [CH, Reason]),
+    case lookup_local_conn(CH) of
+	[] ->
+	    error_msg("connection data not found for ~p~n"
+		      "when restarting transaction sender", [CH]);
+	[CD] ->
+	    CD2 = trans_sender_start(CD#conn_data{trans_sender = undefined}),
+	    ets:insert(megaco_local_conn, CD2)
+    end,
+    {noreply, S};
+
+
 handle_cast(Msg, S) ->
-    ok = error_logger:format("~p(~p): handle_cast(~p, ~p)~n",
-                             [?MODULE, self(), Msg, S]),
+    error_msg("received unknown message~n~p~n~p", [Msg, S]),
     {noreply, S}.
 
 %%----------------------------------------------------------------------
@@ -569,8 +655,7 @@ handle_info({'EXIT', Pid, Reason}, S) when Pid == S#state.parent_pid ->
     {stop, Reason, S};
 
 handle_info(Info, S) ->
-    ok = error_logger:format("~p(~p): handle_info(~p, ~p)~n",
-                             [?MODULE, self(), Info, S]),
+    error_msg("received unknown info~n~p", [Info]),
     {noreply, S}.
 
 %%----------------------------------------------------------------------
@@ -634,20 +719,28 @@ do_update_user(UserMid, Item, Val) ->
 
 verify_val(Item, Val) ->
     case Item of
-        mid                             -> true;
-        local_mid                       -> true;
-        remote_mid                      -> true;
-        min_trans_id                    -> verify_strict_int(Val, 4294967295); % uint32
-        max_trans_id                    -> verify_int(Val, 4294967295);        % uint32
-        request_timer                   -> verify_timer(Val);
-        long_request_timer              -> verify_timer(Val);
-        auto_ack                        -> verify_bool(Val);
+        mid                    -> true;
+        local_mid              -> true;
+        remote_mid             -> true;
+        min_trans_id           -> verify_strict_int(Val, 4294967295); % uint32
+        max_trans_id           -> verify_int(Val, 4294967295);        % uint32
+        request_timer          -> verify_timer(Val);
+        long_request_timer     -> verify_timer(Val);
 
-        accu_ack_timer                  -> verify_timer(Val);
-        accu_ack_maxcount               -> verify_int(Val);
-	ack_sender when Val == undefined -> true;
+        auto_ack               -> verify_bool(Val);
+
+	trans_ack              -> verify_bool(Val);
+        trans_ack_maxcount     -> verify_int(Val);
+
+	trans_req              -> verify_bool(Val);
+        trans_req_maxcount     -> verify_int(Val);
+        trans_req_maxsize      -> verify_int(Val);
+
+        trans_timer            -> verify_timer(Val) and (Val >= 0);
+	trans_sender when Val == undefined -> true;
 
         pending_timer                   -> verify_timer(Val);
+        orig_pending_limit              -> verify_int(Val) and (Val > 0);
         reply_timer                     -> verify_timer(Val);
         control_pid      when pid(Val)  -> true;
         monitor_ref                     -> true; % Internal usage only
@@ -660,6 +753,7 @@ verify_val(Item, Val) ->
         user_mod         when atom(Val) -> true;
         user_args        when list(Val) -> true;
         reply_data                      -> true;
+        threaded                        -> verify_bool(Val);
         _                               -> false
     end.
 
@@ -704,7 +798,7 @@ handle_stop_user(UserMid) ->
 		    ok;
 		{'EXIT', _} ->
 		    {error, {no_such_user, UserMid}};
-		_ ->
+		_Else ->
 		    {error, {active_connections, UserMid}}
 	    end
     end.
@@ -712,7 +806,7 @@ handle_stop_user(UserMid) ->
 handle_update_conn_data(CD, Item = receive_handle, RH) ->
     UserMid = (CD#conn_data.conn_handle)#megaco_conn_handle.local_mid,
     if
-        record(RH,  megaco_receive_handle),
+        record(RH, megaco_receive_handle),
         atom(RH#megaco_receive_handle.encoding_mod),
         list(RH#megaco_receive_handle.encoding_config),
         atom(RH#megaco_receive_handle.send_mod),
@@ -738,74 +832,217 @@ handle_update_conn_data(CD, Item, Val) ->
 
 replace_conn_data(CD, Item, Val) ->
     case Item of
-        trans_id           -> CD#conn_data{serial = Val};
-        max_trans_id       -> CD#conn_data{max_serial = Val};
-        request_timer      -> CD#conn_data{request_timer = Val};
+        trans_id           -> CD#conn_data{serial             = Val};
+        max_trans_id       -> CD#conn_data{max_serial         = Val};
+        request_timer      -> CD#conn_data{request_timer      = Val};
         long_request_timer -> CD#conn_data{long_request_timer = Val};
 
 	auto_ack           -> update_auto_ack(CD, Val);
-	accu_ack_timer     -> update_accu_ack_timer(CD, Val);
-	accu_ack_maxcount  -> update_accu_ack_maxcount(CD, Val);
-	%% ack_sender      - Automagically updated by 
-	%%                   update_auto_ack & update_accu_ack_timer
 
-        pending_timer      -> CD#conn_data{pending_timer = Val};
-        reply_timer        -> CD#conn_data{reply_timer = Val};
-        control_pid        -> CD#conn_data{control_pid = Val};
-        monitor_ref        -> CD#conn_data{monitor_ref = Val};
-        send_mod           -> CD#conn_data{send_mod = Val};
-        send_handle        -> CD#conn_data{send_handle = Val};
-        encoding_mod       -> CD#conn_data{encoding_mod = Val};
-        encoding_config    -> CD#conn_data{encoding_config = Val};
-        protocol_version   -> CD#conn_data{protocol_version = Val};
-        auth_data          -> CD#conn_data{auth_data = Val};
-        user_mod           -> CD#conn_data{user_mod = Val};
-        user_args          -> CD#conn_data{user_args = Val};
-        reply_action       -> CD#conn_data{reply_action = Val};
-        reply_data         -> CD#conn_data{reply_data = Val}
+	%% Accumulate trans ack before sending
+	trans_ack          -> update_trans_ack(CD, Val); 
+	trans_ack_maxcount -> update_trans_ack_maxcount(CD, Val);
+
+	%% Accumulate trans req before sending
+	trans_req          -> update_trans_req(CD, Val); 
+	trans_req_maxcount -> update_trans_req_maxcount(CD, Val);
+	trans_req_maxsize  -> update_trans_req_maxsize(CD, Val);
+
+	trans_timer        -> update_trans_timer(CD, Val); 
+	%% trans_sender      - Automagically updated by 
+	%%                     update_auto_ack & update_trans_timer & 
+	%%                     update_trans_ack & update_trans_req
+
+        pending_timer      -> CD#conn_data{pending_timer      = Val};
+        orig_pending_limit -> CD#conn_data{orig_pending_limit = Val};
+        reply_timer        -> CD#conn_data{reply_timer        = Val};
+        control_pid        -> CD#conn_data{control_pid        = Val};
+        monitor_ref        -> CD#conn_data{monitor_ref        = Val};
+        send_mod           -> CD#conn_data{send_mod           = Val};
+        send_handle        -> CD#conn_data{send_handle        = Val};
+        encoding_mod       -> CD#conn_data{encoding_mod       = Val};
+        encoding_config    -> CD#conn_data{encoding_config    = Val};
+        protocol_version   -> CD#conn_data{protocol_version   = Val};
+        auth_data          -> CD#conn_data{auth_data          = Val};
+        user_mod           -> CD#conn_data{user_mod           = Val};
+        user_args          -> CD#conn_data{user_args          = Val};
+        reply_action       -> CD#conn_data{reply_action       = Val};
+        reply_data         -> CD#conn_data{reply_data         = Val};
+        threaded           -> CD#conn_data{threaded           = Val}
     end.
 
 %% update auto_ack
-update_auto_ack(#conn_data{ack_sender = Pid} = CD, 
+update_auto_ack(#conn_data{trans_sender = Pid,
+			   trans_req    = false} = CD, 
 		false) when pid(Pid) ->
-    megaco_ack_sender:stop(Pid),
-    CD#conn_data{auto_ack = false, ack_sender = Pid};
+    megaco_trans_sender:stop(Pid),
+    CD#conn_data{auto_ack = false, trans_sender = undefined};
 
-update_auto_ack(#conn_data{accu_ack_timer = To, 
-			   ack_sender     = undefined} = CD, 
+update_auto_ack(#conn_data{trans_timer  = To, 
+			   trans_ack    = true,
+			   trans_sender = undefined} = CD, 
 		true) when To > 0 ->
-    #conn_data{conn_handle = CH, accu_ack_maxcount = Max} = CD,
-    {ok, Pid} = megaco_acks_sup:start_ack_sender(CH, To, Max),
-    CD#conn_data{auto_ack = true, ack_sender = Pid};
+    #conn_data{conn_handle        = CH, 
+	       trans_ack_maxcount = AcksMax, 
+	       trans_req_maxcount = ReqsMax, 
+	       trans_req_maxsize  = ReqsMaxSz} = CD,
+    {ok, Pid} = megaco_trans_sup:start_trans_sender(CH, To, ReqsMaxSz, 
+						    ReqsMax, AcksMax),
+
+    %% Make sure we are notified when/if the transaction 
+    %% sender goes down. 
+    %% Do we need to store the ref? Will we ever need to 
+    %% cancel this (apply_at_exit)?
+    megaco_monitor:apply_at_exit(?MODULE, trans_sender_exit, [CH], Pid),
+
+    CD#conn_data{auto_ack = true, trans_sender = Pid};
 
 update_auto_ack(CD, Val) ->
+    ?d("update_auto_ack -> entry with ~p", [Val]),
     CD#conn_data{auto_ack = Val}.
 
-% update accu_ack_timer
-update_accu_ack_timer(#conn_data{auto_ack   = true, 
-				 ack_sender = undefined} = CD, 
-		      To) when To > 0 ->
-    #conn_data{conn_handle = CH, accu_ack_maxcount = Max} = CD,
-    {ok, Pid} = megaco_acks_sup:start_ack_sender(CH, To, Max),
-    CD#conn_data{accu_ack_timer = To, ack_sender = Pid};
+%% update trans_ack
+update_trans_ack(#conn_data{auto_ack     = true,
+			    trans_req    = false,
+			    trans_sender = Pid} = CD, 
+		      false) when pid(Pid) ->
+    megaco_trans_sender:stop(Pid),
+    CD#conn_data{trans_ack = false, trans_sender = undefined};
 
-update_accu_ack_timer(#conn_data{ack_sender = Pid} = CD, 0) when pid(Pid) ->
-    megaco_ack_sender:stop(Pid),
-    CD#conn_data{accu_ack_timer = 0, ack_sender = undefined};
+update_trans_ack(#conn_data{trans_timer  = To,
+			    auto_ack     = true, 
+			    trans_sender = undefined} = CD, 
+		      true) when To > 0 ->
+    #conn_data{conn_handle        = CH, 
+	       trans_ack_maxcount = AcksMax, 
+	       trans_req_maxcount = ReqsMax, 
+	       trans_req_maxsize  = ReqsMaxSz} = CD,
+    {ok, Pid} = megaco_trans_sup:start_trans_sender(CH, To, ReqsMaxSz, 
+						    ReqsMax, AcksMax),
 
-update_accu_ack_timer(#conn_data{ack_sender = Pid} = CD, To) 
-  when To > 0, pid(Pid) ->
-    megaco_ack_sender:timeout(Pid, To),
-    CD#conn_data{accu_ack_timer = To}.
+    %% Make sure we are notified when/if the transaction 
+    %% sender goes down. 
+    %% Do we need to store the ref? Will we ever need to 
+    %% cancel this (apply_at_exit)?
+    megaco_monitor:apply_at_exit(?MODULE, trans_sender_exit, [CH], Pid),
 
-% update accu_ack_maxcount
-update_accu_ack_maxcount(#conn_data{ack_sender = Pid} = CD, Max) 
-  when pid(Pid) ->
-    megaco_ack_sender:maxcount(Pid, Max),
-    CD#conn_data{accu_ack_maxcount = Max};
+    CD#conn_data{trans_ack = true, trans_sender = Pid};
 
-update_accu_ack_maxcount(CD, Max) ->
-    CD#conn_data{accu_ack_maxcount = Max}.
+update_trans_ack(CD, Val) ->
+    ?d("update_trans_ack -> entry with ~p", [Val]),
+    CD#conn_data{trans_ack = Val}.
+
+%% update trans_req
+update_trans_req(#conn_data{trans_ack    = false,
+			    trans_sender = Pid} = CD, 
+		      false) when pid(Pid) ->
+    megaco_trans_sender:stop(Pid),
+    CD#conn_data{trans_req = false, trans_sender = undefined};
+
+update_trans_req(#conn_data{trans_timer  = To, 
+			    trans_sender = undefined} = CD, 
+		      true) when To > 0 ->
+    #conn_data{conn_handle        = CH, 
+	       trans_ack_maxcount = AcksMax, 
+	       trans_req_maxcount = ReqsMax, 
+	       trans_req_maxsize  = ReqsMaxSz} = CD,
+    {ok, Pid} = megaco_trans_sup:start_trans_sender(CH, To, ReqsMaxSz, 
+						    ReqsMax, AcksMax),
+
+    %% Make sure we are notified when/if the transaction 
+    %% sender goes down. 
+    %% Do we need to store the ref? Will we ever need to 
+    %% cancel this (apply_at_exit)?
+    megaco_monitor:apply_at_exit(?MODULE, trans_sender_exit, [CH], Pid),
+
+    CD#conn_data{trans_req = true, trans_sender = Pid};
+
+update_trans_req(CD, Val) ->
+    ?d("update_trans_req -> entry with ~p", [Val]),
+    CD#conn_data{trans_req = Val}.
+
+%% update trans_timer
+update_trans_timer(#conn_data{auto_ack     = true, 
+			      trans_ack    = true,
+			      trans_sender = undefined} = CD, 
+		   To) when To > 0 ->
+    #conn_data{conn_handle        = CH, 
+	       trans_ack_maxcount = AcksMax, 
+	       trans_req_maxcount = ReqsMax, 
+	       trans_req_maxsize  = ReqsMaxSz} = CD,
+    {ok, Pid} = megaco_trans_sup:start_trans_sender(CH, To, ReqsMaxSz, 
+						    ReqsMax, AcksMax),
+
+    %% Make sure we are notified when/if the transaction 
+    %% sender goes down. 
+    %% Do we need to store the ref? Will we ever need to 
+    %% cancel this (apply_at_exit)?
+    megaco_monitor:apply_at_exit(?MODULE, trans_sender_exit, [CH], Pid),
+
+    CD#conn_data{trans_timer = To, trans_sender = Pid};
+
+update_trans_timer(#conn_data{trans_req    = true, 
+			      trans_sender = undefined} = CD, 
+		   To) when To > 0 ->
+    #conn_data{conn_handle        = CH, 
+	       trans_ack_maxcount = AcksMax, 
+	       trans_req_maxcount = ReqsMax, 
+	       trans_req_maxsize  = ReqsMaxSz} = CD,
+    {ok, Pid} = megaco_trans_sup:start_trans_sender(CH, To, ReqsMaxSz, 
+						    ReqsMax, AcksMax),
+
+    %% Make sure we are notified when/if the transaction 
+    %% sender goes down. 
+    %% Do we need to store the ref? Will we ever need to 
+    %% cancel this (apply_at_exit)?
+    megaco_monitor:apply_at_exit(?MODULE, trans_sender_exit, [CH], Pid),
+
+    CD#conn_data{trans_timer = To, trans_sender = Pid};
+
+update_trans_timer(#conn_data{trans_sender = Pid} = CD, 0) when pid(Pid) ->
+    megaco_trans_sender:stop(Pid),
+    CD#conn_data{trans_timer = 0, trans_sender = undefined};
+
+update_trans_timer(#conn_data{trans_sender = Pid} = CD, To) 
+  when pid(Pid), To > 0 ->
+    megaco_trans_sender:timeout(Pid, To),
+    CD#conn_data{trans_timer = To};
+
+update_trans_timer(CD, To) when To > 0 ->
+    CD#conn_data{trans_timer = To}.
+
+%% update trans_ack_maxcount
+update_trans_ack_maxcount(#conn_data{trans_sender = Pid} = CD, Max) 
+  when pid(Pid), Max > 0 ->
+    megaco_trans_sender:ack_maxcount(Pid, Max),
+    CD#conn_data{trans_ack_maxcount = Max};
+
+update_trans_ack_maxcount(CD, Max) 
+  when Max > 0 ->
+    ?d("update_trans_ack_maxcount -> entry with ~p", [Max]),
+    CD#conn_data{trans_ack_maxcount = Max}.
+
+%% update trans_req_maxcount
+update_trans_req_maxcount(#conn_data{trans_sender = Pid} = CD, Max) 
+  when pid(Pid), Max > 0 ->
+    megaco_trans_sender:req_maxcount(Pid, Max),
+    CD#conn_data{trans_req_maxcount = Max};
+
+update_trans_req_maxcount(CD, Max) 
+  when Max > 0 ->
+    ?d("update_trans_req_maxcount -> entry with ~p", [Max]),
+    CD#conn_data{trans_req_maxcount = Max}.
+
+%% update trans_req_maxsize
+update_trans_req_maxsize(#conn_data{trans_sender = Pid} = CD, Max) 
+  when pid(Pid), Max > 0 ->
+    megaco_trans_sender:req_maxsize(Pid, Max),
+    CD#conn_data{trans_req_maxsize = Max};
+
+update_trans_req_maxsize(CD, Max) 
+  when Max > 0 ->
+    ?d("update_trans_req_maxsize -> entry with ~p", [Max]),
+    CD#conn_data{trans_req_maxsize = Max}.
 
     
 
@@ -822,7 +1059,9 @@ handle_connect(RH, RemoteMid, SendHandle, ControlPid) ->
 	    case ets:lookup(megaco_local_conn, PrelHandle) of
 		[] ->
 		    case catch init_conn_data(RH, RemoteMid, SendHandle, ControlPid) of
-			{'EXIT', _} ->
+			{'EXIT', _Reason} ->
+			    ?d("handle_connect -> init conn data failed: "
+				"~n   ~p",[_Reason]),
 			    {error, {no_such_user, LocalMid}};
 			ConnData ->
 			    ?d("handle_connect -> new connection"
@@ -830,7 +1069,8 @@ handle_connect(RH, RemoteMid, SendHandle, ControlPid) ->
 			    %% Brand new connection, use 
 			    %% When is the preliminary_mid used?
 			    create_snmp_counters(ConnHandle),
-			    ConnData2 = ack_sender_start(ConnData),
+			    %% Maybe start transaction sender
+			    ConnData2 = trans_sender_start(ConnData),
 			    ets:insert(megaco_local_conn, ConnData2),
 			    {ok, ConnData2}
 		    end;
@@ -841,7 +1081,7 @@ handle_connect(RH, RemoteMid, SendHandle, ControlPid) ->
 		    %% with the temporary (preliminary_mid) conn_handle.
 		    create_snmp_counters(ConnHandle),
 		    ConnData = PrelData#conn_data{conn_handle = ConnHandle},
-		    ack_sender_upgrade(ConnData),
+		    trans_sender_upgrade(ConnData),
 		    ets:insert(megaco_local_conn, ConnData),
 		    ets:delete(megaco_local_conn, PrelHandle),
 		    update_snmp_counters(ConnHandle, PrelHandle),
@@ -851,39 +1091,88 @@ handle_connect(RH, RemoteMid, SendHandle, ControlPid) ->
  		    ?report_debug(TD, 
 				  "Upgrade preliminary_mid to "
 				  "actual remote_mid",
-				  [{local_mid, LocalMid},
-				   {preliminary_mid, preliminary_mid},
-				   {remote_mid, RemoteMid}]),
+				  [{preliminary_mid, preliminary_mid},
+				   {local_mid,       LocalMid},
+				   {remote_mid,      RemoteMid}]),
 		    {ok, ConnData}
 	    end;
         [_ConnData] ->
             {error, {already_connected, ConnHandle}}
     end.
 
-ack_sender_start(#conn_data{conn_handle       = CH,
-			    auto_ack          = true, 
-			    accu_ack_timer    = To,
-			    accu_ack_maxcount = Max,
-			    ack_sender        = undefined} = CD)
-  when To > 0 ->
-    {ok, Pid} = megaco_acks_sup:start_ack_sender(CH, To, Max),
-    ?d("ack_sende_start -> entry when"
-	"~n   CH:  ~p"
-	"~n   To:  ~p"
-	"~n   Max: ~p", [CH, To, Max]),
-    CD#conn_data{ack_sender = Pid};
-ack_sender_start(CD) ->
-    CD.
 
-ack_sender_upgrade(#conn_data{conn_handle = CH,
-			      auto_ack    = true,
-			      ack_sender  = Pid})
+%% also trans_req == true
+trans_sender_start(#conn_data{conn_handle        = CH,
+			      auto_ack           = true, 
+			      trans_ack          = true, 
+			      trans_ack_maxcount = AcksMax, 
+			      trans_req_maxcount = ReqsMax, 
+			      trans_req_maxsize  = ReqsMaxSz,
+			      trans_timer        = To,
+			      trans_sender       = undefined} = CD)
+  when To > 0 ->
+
+    ?d("trans_sender_start(ack) -> entry when"
+	"~n   CH:        ~p"
+	"~n   To:        ~p"
+	"~n   AcksMax:   ~p"
+	"~n   ReqsMax:   ~p"
+	"~n   ReqsMaxSz: ~p", [CH, To, ReqsMaxSz, ReqsMax, AcksMax]),
+
+    {ok, Pid} = megaco_trans_sup:start_trans_sender(CH, To, ReqsMaxSz, 
+						    ReqsMax, AcksMax),
+
+    ?d("trans_sender_start(ack) -> Pid: ~p", [Pid]),
+
+    %% Make sure we are notified when/if the transaction 
+    %% sender goes down. 
+    %% Do we need to store the ref? Will we ever need to 
+    %% cancel this (apply_at_exit)?
+    megaco_monitor:apply_at_exit(?MODULE, trans_sender_exit, [CH], Pid),
+
+    CD#conn_data{trans_sender = Pid};
+
+trans_sender_start(#conn_data{conn_handle        = CH,
+			      trans_req          = true, 
+			      trans_ack_maxcount = AcksMax, 
+			      trans_req_maxcount = ReqsMax, 
+			      trans_req_maxsize  = ReqsMaxSz,
+			      trans_timer        = To,
+			      trans_sender       = undefined} = CD)
+  when To > 0 ->
+
+    ?d("trans_sender_start(req) -> entry when"
+	"~n   CH:        ~p"
+	"~n   To:        ~p"
+	"~n   AcksMax:   ~p"
+	"~n   ReqsMax:   ~p"
+	"~n   ReqsMaxSz: ~p", [CH, To, ReqsMaxSz, ReqsMax, AcksMax]),
+
+    {ok, Pid} = megaco_trans_sup:start_trans_sender(CH, To, ReqsMaxSz, 
+						    ReqsMax, AcksMax),
+
+    ?d("trans_sender_start(req) -> Pid: ~p", [Pid]),
+
+    %% Make sure we are notified when/if the transaction 
+    %% sender goes down. 
+    %% Do we need to store the ref? Will we ever need to 
+    %% cancel this (apply_at_exit)?
+    megaco_monitor:apply_at_exit(?MODULE, trans_sender_exit, [CH], Pid),
+
+    CD#conn_data{trans_sender = Pid};
+
+trans_sender_start(CD) ->
+    ?d("trans_sender_start -> undefined", []),
+    CD#conn_data{trans_sender = undefined}.
+
+trans_sender_upgrade(#conn_data{conn_handle  = CH,
+				trans_sender = Pid})
   when pid(Pid) ->
-    ?d("ack_sende_upgrade -> entry when"
+    ?d("trans_sende_upgrade -> entry when"
 	"~n   CH:  ~p"
 	"~n   Pid: ~p", [CH, Pid]),
-    megaco_ack_sender:upgrade(Pid, CH);
-ack_sender_upgrade(_CD) ->
+    megaco_trans_sender:upgrade(Pid, CH);
+trans_sender_upgrade(_CD) ->
     ok.
 
 
@@ -914,12 +1203,18 @@ init_conn_data(RH, RemoteMid, SendHandle, ControlPid) ->
                max_serial         = user_info(Mid, max_trans_id),
                request_timer      = user_info(Mid, request_timer),
                long_request_timer = user_info(Mid, long_request_timer),
-               auto_ack           = user_info(Mid, auto_ack),
 
-	       accu_ack_timer     = user_info(Mid, accu_ack_timer),
-	       accu_ack_maxcount  = user_info(Mid, accu_ack_maxcount),
+               auto_ack           = user_info(Mid, auto_ack),
+               trans_ack          = user_info(Mid, trans_req),
+               trans_req          = user_info(Mid, trans_req),
+
+	       trans_timer        = user_info(Mid, trans_timer),
+	       trans_req_maxsize  = user_info(Mid, trans_req_maxsize),
+	       trans_req_maxcount = user_info(Mid, trans_req_maxcount),
+	       trans_ack_maxcount = user_info(Mid, trans_ack_maxcount),
 
                pending_timer      = user_info(Mid, pending_timer),
+               orig_pending_limit = user_info(Mid, orig_pending_limit),
                reply_timer        = user_info(Mid, reply_timer),
                control_pid        = ControlPid,
                monitor_ref        = undefined_monitor_ref,
@@ -932,7 +1227,8 @@ init_conn_data(RH, RemoteMid, SendHandle, ControlPid) ->
                user_mod           = user_info(Mid, user_mod),
                user_args          = user_info(Mid, user_args),
                reply_action       = undefined,
-               reply_data         = user_info(Mid, reply_data)}.
+               reply_data         = user_info(Mid, reply_data),
+	       threaded           = user_info(Mid, threaded)}.
 
 handle_disconnect(ConnHandle) when record(ConnHandle, megaco_conn_handle) ->
     case ets:lookup(megaco_local_conn, ConnHandle) of
@@ -1004,4 +1300,9 @@ snmp_counters() ->
      medGwyGatewayNumErrors].
 
 
+
+%%-----------------------------------------------------------------
+
+error_msg(F, A) ->
+    (catch error_logger:error_msg("[~p] " ++ F ++ "~n", [?MODULE|A])).
 

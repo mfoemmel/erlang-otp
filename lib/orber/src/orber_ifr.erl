@@ -436,25 +436,280 @@
 	 create_operation/9
  	]).
 
+%% Light IFR operations
+-export([initialize/3, 
+	 get_module/2,
+	 get_tc/2,
+	 add_module/3, add_module/4,
+	 add_constant/3, add_constant/4,
+	 add_struct/3, add_struct/4,
+	 add_union/3, add_union/4,
+	 add_enum/3, add_enum/4,
+	 add_alias/3, add_alias/4,
+	 add_interface/3, add_interface/4,
+	 add_exception/3, add_exception/4,
+	 remove/2,
+	 add_items/3]).
+
+
 -include_lib("orber/include/corba.hrl").
 -include("orber_ifr.hrl").
 -include("ifr_objects.hrl").
 
+%%======================================================================
+%% Public interfaces to the IFR
+%%======================================================================
+%%=================== Light IFR operations =============================
+%%----------------------------------------------------------------------
+%% Function   : get_module
+%% Arguments  : Id - string()
+%%              Type - ?IFR_ModuleDef | ?IFR_ConstantDef | ?IFR_StructDef |
+%%                     ?IFR_UnionDef | ?IFR_EnumDef | ?IFR_AliasDef |
+%%                     ?IFR_InterfaceDef | ?IFR_ExceptionDef
+%% Returns    : Module - atom() | {'EXCEPTION', E}
+%% Raises     : #'MARSHAL'{}
+%% Description: 
+%%----------------------------------------------------------------------
+get_module(Id, Type) ->
+    case mnesia:dirty_read(orber_light_ifr, Id) of
+	[#orber_light_ifr{module = Module, type = Type}] ->
+	    Module;
+	What ->
+	    orber:dbg("[~p] ~p:get_module(~p, ~p).~n"
+		      "Id doesn't exist, mismatch Id vs Type or DB error: ~p", 
+		      [?LINE, ?MODULE, Id, What], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE})
+    end.
 
-%%-----------------------------------------------------------------
-%% Macros
-%%-----------------------------------------------------------------
--define(DEBUG_LEVEL, 9).
 
-%%%======================================================================
-%%% Public interfaces to the IFR
+%%----------------------------------------------------------------------
+%% Function   : get_tc
+%% Arguments  : Id - string()
+%%              Type - ?IFR_ModuleDef | ?IFR_ConstantDef | ?IFR_StructDef |
+%%                     ?IFR_UnionDef | ?IFR_EnumDef | ?IFR_AliasDef |
+%%                     ?IFR_InterfaceDef | ?IFR_ExceptionDef
+%% Returns    : Module - atom() | {'EXCEPTION', E}
+%% Raises     : #'MARSHAL'{}
+%% Description: This function may *only* return correct TypeCode or raise
+%%              a system exception!!
+%%----------------------------------------------------------------------
+get_tc(Id, Type) ->
+    case catch mnesia:dirty_read(orber_light_ifr, Id) of
+	[#orber_light_ifr{module = Module, type = Type}] ->
+	    case catch Module:tc() of
+		{'EXIT', Reason} ->
+		    case Reason of
+			{undef,[{Module, tc,[]}|_]} ->
+			    orber:dbg("[~p] ~p:get_tc(~p);~nMissing ~p:tc()~n",
+				      [?LINE, ?MODULE, Id, Module], ?DEBUG_LEVEL),
+			    corba:raise(#'UNKNOWN'{minor=(?ORBER_VMCID bor 1),
+						   completion_status=?COMPLETED_MAYBE});
+			_ ->
+			    orber:dbg("[~p] ~p:get_tc(~p, ~p);~nEXIT reason: ~p~n",
+				      [?LINE, ?MODULE, Id, Module, Reason], 
+				      ?DEBUG_LEVEL),
+			    corba:raise(#'UNKNOWN'{minor=(?CORBA_OMGVMCID bor 1),
+						   completion_status=?COMPLETED_MAYBE})
+		    end;
+		TC ->
+		    TC
+	    end;
+	What when Type == ?IFR_ExceptionDef ->
+	    orber:dbg("[~p] ~p:get_tc(~p, ExceptionDef);~nUnknown: ~p~n",
+		      [?LINE, ?MODULE, Id, What], ?DEBUG_LEVEL),
+	    corba:raise(#'UNKNOWN'{completion_status=?COMPLETED_MAYBE});
+	What ->
+	    orber:dbg("[~p] ~p:get_tc(~p, ~p);~nUnknown: ~p~n",
+		      [?LINE, ?MODULE, Id, Type, What], ?DEBUG_LEVEL),
+	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE})
+    end.
+
+%%----------------------------------------------------------------------
+%% Function   : initialize
+%% Arguments  : Timeout - integer() | infinity
+%%              Options - [{Key, Value}]
+%%              LightIFR - true | false
+%% Returns    : ok  | {'EXCEPTION', E}
+%% Raises     : #'INTF_REPOS'{}
+%% Description: 
+%%----------------------------------------------------------------------
+initialize(Timeout, Options, LightIFR) ->
+    orber_ifr_utils:init_DB(Timeout, Options, LightIFR).
+
+%%----------------------------------------------------------------------
+%% Function   : add_X
+%% Arguments  : Id - string()
+%%              Module - atom()
+%%              BaseId - string()
+%% Returns    : 
+%% Raises     : 
+%% Description: 
+%%----------------------------------------------------------------------
+add_module(Id, Module, BaseId) ->
+    add_it(Id, Module, BaseId, ?IFR_ModuleDef, false).
+add_module(Id, Module, BaseId, Transaction) ->
+    add_it(Id, Module, BaseId, ?IFR_ModuleDef, Transaction).
+
+add_constant(Id, Module, BaseId) ->
+    add_it(Id, Module, BaseId, ?IFR_ConstantDef, false).
+add_constant(Id, Module, BaseId, Transaction) ->
+    add_it(Id, Module, BaseId, ?IFR_ConstantDef, Transaction).
+
+add_struct(Id, Module, BaseId) ->
+    add_it(Id, Module, BaseId, ?IFR_StructDef, false).
+add_struct(Id, Module, BaseId, Transaction) ->
+    add_it(Id, Module, BaseId, ?IFR_StructDef, Transaction).
+
+add_union(Id, Module, BaseId) ->
+    add_it(Id, Module, BaseId, ?IFR_UnionDef, false).
+add_union(Id, Module, BaseId, Transaction) ->
+    add_it(Id, Module, BaseId, ?IFR_UnionDef, Transaction).
+    
+add_enum(Id, Module, BaseId) ->
+    add_it(Id, Module, BaseId, ?IFR_EnumDef, false).
+add_enum(Id, Module, BaseId, Transaction) ->
+    add_it(Id, Module, BaseId, ?IFR_EnumDef, Transaction).
+    
+add_alias(Id, Module, BaseId) ->
+    add_it(Id, Module, BaseId, ?IFR_AliasDef, false).
+add_alias(Id, Module, BaseId, Transaction) ->
+    add_it(Id, Module, BaseId, ?IFR_AliasDef, Transaction).
+    
+add_interface(Id, Module, BaseId) ->
+    add_it(Id, Module, BaseId, ?IFR_InterfaceDef, false).
+add_interface(Id, Module, BaseId, Transaction) ->
+    add_it(Id, Module, BaseId, ?IFR_InterfaceDef, Transaction).
+
+add_exception(Id, Module, BaseId) ->
+    add_it(Id, Module, BaseId, ?IFR_ExceptionDef, false).
+add_exception(Id, Module, BaseId, Transaction) ->
+    add_it(Id, Module, BaseId, ?IFR_ExceptionDef, Transaction).
+    
+
+%%----------------------------------------------------------------------
+%% Function   : add_it
+%% Arguments  : Id - string()
+%%              Module - atom()
+%%              BaseId - string()
+%%              Type - ?IFR_ModuleDef | ?IFR_ConstantDef | ?IFR_StructDef |
+%%                     ?IFR_UnionDef | ?IFR_EnumDef | ?IFR_AliasDef |
+%%                     ?IFR_InterfaceDef | ?IFR_ExceptionDef
+%%              Transaction - true | false
+%% Returns    : 
+%% Raises     : 
+%% Description: 
+%%----------------------------------------------------------------------
+add_it(Id, Module, BaseId, Type, true) ->
+    F = fun() ->
+		case mnesia:wread({orber_light_ifr, Id}) of
+		    [] ->
+			D = #orber_light_ifr{id = Id, module = Module,
+					     type = Type, base_id = BaseId},
+			mnesia:write(D);
+		    _ ->
+			mnesia:abort("duplicate")
+		end
+	end,
+    case mnesia:transaction(F) of 
+        {aborted, "duplicate"} ->
+	    %% Must keep the misspelled word (must match IC generated code).
+            exit({allready_registered, Id});
+	{atomic, _} ->
+	    ok
+    end;
+add_it(Id, Module, BaseId, Type, false) ->
+    case mnesia:read({orber_light_ifr, Id}) of
+	[] ->
+	    D = #orber_light_ifr{id = Id, module = Module,
+				 type = Type, base_id = BaseId},
+	    mnesia:write(D);
+	_ ->
+	    mnesia:abort({allready_registered, Id})
+    end.
+
+%%----------------------------------------------------------------------
+%% Function   : remove
+%% Arguments  : BaseId - atom()
+%%              Options - [KeyValue]
+%%              KeyValue - {storage, mnesia | ets}
+%% Returns    : 
+%% Raises     : 
+%% Description: 
+%%----------------------------------------------------------------------
+remove(ContainerId, _Options) ->
+    F = fun() -> 
+%%		MatchHead = #orber_light_ifr{id='$1', base_id=Id, _='_'},
+		MatchHead = {orber_light_ifr, '$1', '_', '_', ContainerId},
+		Result = '$1',
+		IdList = mnesia:select(orber_light_ifr, 
+				       [{MatchHead, [], [Result]}], 
+				       write),
+		lists:foreach(fun(RefId) ->
+				      mnesia:delete({orber_light_ifr, RefId})
+			      end, IdList)
+	end,
+    case mnesia:transaction(F) of
+	{aborted, Reason} ->
+	    orber:dbg("[~p] orber_ifr:remove(~p). aborted:~n~p~n", 
+		      [?LINE, ContainerId, Reason], ?DEBUG_LEVEL),
+	    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO});
+	{atomic, _} ->
+	    ok
+    end.
+
+%%----------------------------------------------------------------------
+%% Function   : add_items
+%% Arguments  : ContainerId - atom()
+%%              Options - [KeyValue]
+%%              KeyValue - {storage, mnesia | ets}
+%%              Items - [{Id, Module, Type}]
+%%              Id - string()
+%%              Module - atom()
+%%              Type - struct | except | union | interface
+%% Returns    : 
+%% Raises     : 
+%% Description: 
+%%----------------------------------------------------------------------
+add_items(ContainerId, _Options, Items) ->
+    F = fun() -> 
+		mnesia:write_lock_table(orber_light_ifr),
+		add_items_helper(Items, ContainerId)
+	end,
+    case mnesia:transaction(F) of
+	{aborted, {allready_registered, Id}} ->
+            exit({allready_registered, Id});
+	{aborted, Reason} ->
+	    orber:dbg("[~p] orber_ifr:add_items(~p). aborted:~n~p~n", 
+		      [?LINE, ContainerId, Reason], ?DEBUG_LEVEL),
+	    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO});
+	{atomic, _} ->
+	    ok
+    end.
+
+add_items_helper([{Id, Module, struct}|T], ContainerId) ->
+    add_it(Id, Module, ContainerId, ?IFR_StructDef, false),
+    add_items_helper(T, ContainerId);
+add_items_helper([{Id, Module, interface}|T], ContainerId) ->
+    add_it(Id, Module, ContainerId, ?IFR_InterfaceDef, false),
+    add_items_helper(T, ContainerId);
+add_items_helper([{Id, Module, except}|T], ContainerId) ->
+    add_it(Id, Module, ContainerId, ?IFR_ExceptionDef, false),
+    add_items_helper(T, ContainerId);
+add_items_helper([{Id, Module, union}|T], ContainerId) ->
+    add_it(Id, Module, ContainerId, ?IFR_UnionDef, false),
+    add_items_helper(T, ContainerId);
+add_items_helper([ok], _) ->
+    ok.
+
+
+%%=================== End Light IFR operations =========================
 
 %% Initialize the database
-%%init(Nodes, Timeout) ->
-%%    orber_ifr_utils:init_DB(Timeout, [{disc_copies, Nodes}]).
+init(Nodes, Timeout) when atom(Timeout) ; integer(Timeout) ->
+    orber_ifr_utils:init_DB(Timeout, [{disc_copies, Nodes}]);
+init(Timeout, Nodes) ->
+    orber_ifr_utils:init_DB(Timeout, [{disc_copies, Nodes}]).
 
-init(Timeout, Options) ->
-    orber_ifr_utils:init_DB(Timeout, Options).
 
 %%% Find the repository
 find_repository() ->
@@ -1172,6 +1427,25 @@ get_def_kind(Objref) ->
     Mod = obj2mod(Objref),
     Mod:'_get_def_kind'(Objref).
 	     
+%% Light IFR Operations
+destroy(#orber_light_ifr_ref{data = #lightdata{id = Id}}) ->
+    F = fun() -> 
+%%		MatchHead = #orber_light_ifr{id='$1', base_id=Id, _='_'},
+		MatchHead = {orber_light_ifr, '$1', '_', '_', Id},
+		Result = '$1',
+		IdList = mnesia:select(orber_light_ifr, 
+				       [{MatchHead, [], [Result]}], 
+				       write),
+		lists:foreach(fun(RefId) ->
+				      mnesia:delete({orber_light_ifr, RefId})
+			      end, IdList)
+	end,
+    case mnesia:transaction(F) of
+	{aborted, _} ->
+            exit({"FAILED TO DELETE:", Id});
+	{atomic, _} ->
+	    ok
+    end;
 destroy(Objref) ->
     %% Destroying an ir_IRObject, ir_Contained or ir_Container directly
     %% is not allowed
@@ -1232,6 +1506,10 @@ lookup(Objref,Search_name) ->
     Mod = obj2mod(Objref),
     Mod:lookup(Objref,Search_name).
 
+%% Light IFR Operation
+contents(#orber_light_ifr_ref{data = #lightdata{id = _Id}}, 
+	 _Limit_type, _Exclude_inherited) ->
+    [];
 contents(Objref,Limit_type,Exclude_inherited) ->
     Mod = obj2mod(Objref),
     Mod:contents(Objref,Limit_type,Exclude_inherited).
@@ -1302,8 +1580,15 @@ get_type(Objref) ->
 			     {ir_OperationDef, #ir_OperationDef.id}]).
 
 
-
-lookup_id(Objref,Id) ->
+lookup_id(#orber_light_ifr_ref{}, Id) ->
+    case mnesia:dirty_read(orber_light_ifr, Id) of
+	[] ->
+	    [];
+	[#orber_light_ifr{module = Mod}] ->
+	    #orber_light_ifr_ref{data = #lightdata{scope = atom_to_list(Mod), 
+						   id = Id}}
+    end;
+lookup_id(_Objref,Id) ->
     %% We used the operation below before but it's very expensive.
     %% orber_ifr_repository:lookup_id(Objref,Id)
     lookup_id_helper(?INDEXED_TABLE_LIST, Id).
@@ -1537,8 +1822,8 @@ obj2mod({ir_InterfaceDef, _}) ->
 obj2mod({ir_FixedDef, _}) ->
     orber_ifr_fidxeddef;
 obj2mod(Obj) ->
-    orber:debug_level_print("[~p] orber_ifr:obj2mod(~p); unknown.", 
-			    [?LINE, Obj], ?DEBUG_LEVEL),
-    ?ifr_exception("Unknown Object Type: ", {Obj}).
+    orber:dbg("[~p] orber_ifr:obj2mod(~p); unknown.", 
+	      [?LINE, Obj], ?DEBUG_LEVEL),
+    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO}).
 
 

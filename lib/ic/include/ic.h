@@ -21,6 +21,13 @@
 #include <ei.h>
 #include <erl_interface.h>
 
+#ifdef __WIN32__
+/* Windows.h #defines interface to struct, get rid of it! */
+#ifdef interface
+#undef interface
+#endif
+#endif
+
 #ifndef __IC_H__
 #define __IC_H__
 
@@ -226,15 +233,15 @@ extern "C" {
     void CORBA_free(void *);
     CORBA_char *CORBA_string_alloc(CORBA_unsigned_long);
     CORBA_wchar *CORBA_wstring_alloc(CORBA_unsigned_long);
-    CORBA_char *CORBA_exception_id(CORBA_Environment *ev);
-    void *CORBA_exception_value(CORBA_Environment *ev);
-    void CORBA_exception_free(CORBA_Environment *ev);
-    void CORBA_exc_set(CORBA_Environment *ev,
+    CORBA_char *CORBA_exception_id(CORBA_Environment *env);
+    void *CORBA_exception_value(CORBA_Environment *env);
+    void CORBA_exception_free(CORBA_Environment *env);
+    void CORBA_exc_set(CORBA_Environment *env,
 		       CORBA_exception_type Major,
 		       CORBA_char *Id,
 		       CORBA_char *Value);
     CORBA_Environment *CORBA_Environment_alloc(int inbufsz, int outbufsz);
-    void ic_init_ref(CORBA_Environment *ev, erlang_ref *ref);
+    void ic_init_ref(CORBA_Environment *env, erlang_ref *ref);
     int ic_compare_refs(erlang_ref *ref1, erlang_ref *ref2);
 
 /* Used internally */
@@ -264,30 +271,54 @@ extern "C" {
     } \
 }
 
+/* Exec function -- probably not needed */
+    typedef int oe_exec_function_t(CORBA_Object, CORBA_Environment*);
+/* These are for backward compatibility */
+    typedef oe_exec_function_t ___exec_function___;
+    typedef oe_exec_function_t ___generic___;
+
+/* Operation declaration */
+    typedef struct {
+	char *interface;
+	char *name;
+	oe_exec_function_t  *function;
+    } oe_operation_t;
+
+/* For backward compatibility */
+    typedef oe_operation_t ___operation___;
+
+/* Map declaration */
+    typedef struct {
+	int length;
+	oe_operation_t *operations;
+    } oe_map_t;
+/* For backward compatibility */
+    typedef oe_map_t ___map___;
+
 /* Align macro */
 #define OE_ALIGN(x) (((x) + sizeof(double) - 1) & ~(sizeof(double) - 1))
 
-
 /* Encoders */ 
-    int oe_ei_encode_version(CORBA_Environment *ev);
-    int oe_ei_encode_long(CORBA_Environment *ev, long p);
-    int oe_ei_encode_longlong(CORBA_Environment *ev, CORBA_long_long p);
-    int oe_ei_encode_ulong(CORBA_Environment *ev, unsigned long p);
-    int oe_ei_encode_ulonglong(CORBA_Environment *ev, 
+    int oe_ei_encode_version(CORBA_Environment *env);
+    int oe_ei_encode_long(CORBA_Environment *env, long p);
+    int oe_ei_encode_longlong(CORBA_Environment *env, CORBA_long_long p);
+    int oe_ei_encode_ulong(CORBA_Environment *env, unsigned long p);
+    int oe_ei_encode_ulonglong(CORBA_Environment *env, 
 			       CORBA_unsigned_long_long p);
-    int oe_ei_encode_double(CORBA_Environment *ev, double p);
-    int oe_ei_encode_char(CORBA_Environment *ev, char p);
-    int oe_ei_encode_wchar(CORBA_Environment *ev, CORBA_wchar p);
-    int oe_ei_encode_string(CORBA_Environment *ev, const char *p);
-    int oe_ei_encode_wstring(CORBA_Environment *ev, CORBA_wchar *p);
-    int oe_ei_encode_atom(CORBA_Environment *ev, const char *p);
-    int oe_ei_encode_pid(CORBA_Environment *ev, const erlang_pid *p);
-    int oe_ei_encode_port(CORBA_Environment *ev, const erlang_port *p);
-    int oe_ei_encode_ref(CORBA_Environment *ev, const erlang_ref *p);
-    int oe_ei_encode_term(CORBA_Environment *ev, void *t); 
-    int oe_ei_encode_tuple_header(CORBA_Environment *ev, int arity);
-    int oe_ei_encode_list_header(CORBA_Environment *ev, int arity);
-    int oe_encode_erlang_binary(CORBA_Environment *ev, erlang_binary *binary);
+    int oe_ei_encode_double(CORBA_Environment *env, double p);
+    int oe_ei_encode_char(CORBA_Environment *env, char p);
+    int oe_ei_encode_wchar(CORBA_Environment *env, CORBA_wchar p);
+    int oe_ei_encode_string(CORBA_Environment *env, const char *p);
+    int oe_ei_encode_wstring(CORBA_Environment *env, CORBA_wchar *p);
+    int oe_ei_encode_atom(CORBA_Environment *env, const char *p);
+    int oe_ei_encode_pid(CORBA_Environment *env, const erlang_pid *p);
+    int oe_ei_encode_port(CORBA_Environment *env, const erlang_port *p);
+    int oe_ei_encode_ref(CORBA_Environment *env, const erlang_ref *p);
+    int oe_ei_encode_term(CORBA_Environment *env, void *t); 
+    int oe_ei_encode_tuple_header(CORBA_Environment *env, int arity);
+    int oe_ei_encode_list_header(CORBA_Environment *env, int arity);
+    int oe_encode_erlang_binary(CORBA_Environment *env, erlang_binary *binary);
+
 #define oe_ei_encode_empty_list(ev) oe_ei_encode_list_header(ev,0)
 
 /* Decoders */
@@ -296,13 +327,43 @@ extern "C" {
     int oe_ei_decode_longlong(const char *buf, int *index, CORBA_long_long *p);
     int oe_ei_decode_ulonglong(const char *buf, int *index, 
 			       CORBA_unsigned_long_long *p);
-    int oe_decode_erlang_binary(CORBA_Environment *ev, char *buf, int *index, 
+    int oe_decode_erlang_binary(CORBA_Environment *env, char *buf, int *index, 
 				erlang_binary *binary);
 
-/* Size calculators */
-    int oe_sizecalc_erlang_binary(CORBA_Environment *ev, int *index, 
-				  int *size);
+/* Generic client encoders (gen_server protocol) */
+    int oe_prepare_notification_encoding(CORBA_Environment *env);
+    int oe_prepare_request_encoding(CORBA_Environment *env);
 
+/* Generic client decoders (gen_server protocol) */
+    int oe_prepare_reply_decoding(CORBA_Environment *env);
+
+/* Generic client send and receive functions (Erlang distribution protocol) */
+    int oe_send_notification(CORBA_Environment *env);
+    int oe_send_notification_tmo(CORBA_Environment *env, unsigned int send_ms);
+    int oe_send_request_and_receive_reply(CORBA_Environment *env);
+    int oe_send_request_and_receive_reply_tmo(CORBA_Environment *env,
+					      unsigned int send_ms,
+					      unsigned int recv_ms);
+
+/* Generic server decoder */
+    int oe_prepare_request_decoding(CORBA_Environment *env);
+
+/* Generic server encoder */
+    int oe_prepare_reply_encoding(CORBA_Environment *env);
+
+/* -------- */
+
+/* Generic server receive (possibly send reply) */
+    int oe_server_receive(CORBA_Environment *env, oe_map_t *map);
+    int oe_server_receive_tmo(CORBA_Environment *env, oe_map_t *map,
+			      unsigned int send_ms,
+			      unsigned int recv_ms);
+
+/* -------- */
+
+/* Size calculators */
+    int oe_sizecalc_erlang_binary(CORBA_Environment *env, int *index, 
+				  int *size);
 /* Print functions */
     int print_erlang_binary(erlang_binary*);
 
@@ -340,39 +401,18 @@ extern "C" {
 
 
 
-/* Exec function  */
-    typedef int ___exec_function___(CORBA_Object, CORBA_Environment*);
-/* "Generic" function -- kept for backward compatibility */
-    typedef ___exec_function___  ___generic___;
+/* Exec function switch */
+    int oe_exec_switch(CORBA_Object, CORBA_Environment*, oe_map_t*);
+/* For backward compatibility */
+    int ___switch___(CORBA_Object, CORBA_Environment*, oe_map_t*);
 
-#ifdef __WIN32__
-/* Windows.h #defines interface to struct, get rid of it! */
-#ifdef interface
-#undef interface
-#endif
-#endif
-
-/* Operation declaration */
-    typedef struct {
-	char *interface;
-	char *name;
-	___exec_function___ *function;
-    } ___operation___;
-
-/* Map declaration */
-    typedef struct {
-	int length;
-	___operation___ *operations;
-    } ___map___;
-
-/* Exec Function switch */
-    int ___switch___(CORBA_Object, CORBA_Environment*, ___map___*);
-
-/* Generic call information function */
+/* For backward compatibility -- replaced by oe_prepare_request_decoding() */
     int ___call_info___(CORBA_Object, CORBA_Environment*); 
 
 /* Map merging */
-    ___map___* ___merge___(___map___*, int); 
+    oe_map_t* oe_merge_maps(oe_map_t*, int); 
+/* For backward compatibility */
+    oe_map_t* ___merge___(oe_map_t*, int); 
        
 #ifdef __cplusplus
 }

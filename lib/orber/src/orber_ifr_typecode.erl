@@ -79,13 +79,13 @@ name({ObjType, ObjID}) ->
 member_count({ObjType, ObjID}) ->
     {ok, {ObjType, ObjID}}.
 
-member_name({ObjType, ObjID}, Index) ->
+member_name({ObjType, ObjID}, _Index) ->
     {ok, {ObjType, ObjID}}.
 
-member_type({ObjType, ObjID}, Index) ->
+member_type({ObjType, ObjID}, _Index) ->
     {ok, {ObjType, ObjID}}.
 
-member_label({ObjType, ObjID}, Index) ->
+member_label({ObjType, ObjID}, _Index) ->
     {ok, {ObjType, ObjID}}.
 
 discriminator_type({ObjType, ObjID}) ->
@@ -103,5 +103,5 @@ content_type({ObjType, ObjID}) ->
 param_count({ObjType, ObjID}) ->
     {ok, {ObjType, ObjID}}.
 
-parameter({ObjType, ObjID}, Index) ->
+parameter({ObjType, ObjID}, _Index) ->
     {ok, {ObjType, ObjID}}.

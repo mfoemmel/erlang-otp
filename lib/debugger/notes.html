@@ -20,6 +20,47 @@
 
 <!--- ################################################################# --->
 
+<h2>Debugger 2.2.2</h2>
+
+<ul>
+
+  <li>
+Problem with unreadable font on platforms where 'screen' is
+not available, is now fixed. 'Courier' is chosen instead.<br>
+(Own Id: OTP-4868)<p>
+  </li>
+
+</ul>
+
+
+<!--- ################################################################# --->
+
+<h2>Debugger 2.2.1</h2>
+
+<ul>
+
+  <li>
+Problem with varying font size in trace window fixed.<br>
+(Own Id: OTP-4837)<p>
+  </li>
+
+  <li>
+File name for where to find documentation ('Help' button)
+is now correct.<br>
+(Own Id: OTP-4839)<p>
+  </li>
+
+  <li>
+If GS was unavailable, <code>debugger:start()</code> hanged.
+Now a tuple <code>{error,Reason}</code> is returned instead.<br>
+(Own Id: OTP-4842)<p>
+  </li>
+
+</ul>
+
+
+<!--- ################################################################# --->
+
 <h2>Debugger 2.2</h2>
 
 
@@ -51,7 +92,7 @@
   <li>
     The Debugger can now handle more than 50 processes without crashing.
     <br> Attach windows for dead processes will now disappear if
-    Edit->Clear is selcted. <br> All modules in a directory are now shown
+    Edit->Clear is selected. <br> All modules in a directory are now shown
     in the interpret dialog, but modules which are not compiled with the
     debug_info flag are shown in parenthesis. <br> A few other bugs related
     to error handling and popup windows are also fixed.<br>
@@ -66,7 +107,7 @@
 
 
 
-There are also release notes for
+<p>There are also release notes for
 <a href="notes_history.html">older versions</a>.
 
 </body>

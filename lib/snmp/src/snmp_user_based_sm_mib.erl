@@ -23,6 +23,7 @@
 	 table_next/2,
 	 is_engine_id_known/1, get_user/2, get_user_from_security_name/2,
 	 mk_key_change/3, mk_key_change/5, extract_new_key/3, mk_random/1]).
+-export([add_user/13, delete_user/1]).
 
 -include("SNMP-USER-BASED-SM-MIB.hrl").
 -include("SNMPv2-TC.hrl").
@@ -100,6 +101,12 @@ reconfigure(Dir) ->
 %% uses DES if 'crypto' doesn't support DES.
 %%-----------------------------------------------------------------
 check_users([User | Users]) ->
+    check_user(User),
+    check_users(Users);
+check_users([]) ->
+    ok.
+
+check_user(User) ->
     case element(?usmUserAuthProtocol, User) of
 	?usmNoAuthProtocol -> ok;
 	?usmHMACMD5AuthProtocol ->
@@ -120,11 +127,8 @@ check_users([User | Users]) ->
 		true -> ok;
 		false -> exit({unsupported_crypto, des_cbc_decrypt})
 	    end
-    end,
-    check_users(Users);
-check_users([]) ->
-    ok.
-
+    end.
+    
 
 % maybe_create_table(Name) ->
 %     case snmp_local_db:table_exists(db(Name)) of
@@ -141,10 +145,49 @@ init_tabs(Users) ->
 init_user_table([Row | T]) ->
     Key1 = element(1, Row),
     Key2 = element(2, Row),
-    Key = [length(Key1) | Key1] ++ [length(Key2) | Key2],
-    snmp_local_db:table_create_row(db(usmUserTable), Key, Row),
+    Key  = [length(Key1) | Key1] ++ [length(Key2) | Key2],
+    table_create_row(usmUserTable, Key, Row),
     init_user_table(T);
 init_user_table([]) -> true.
+
+table_create_row(Tab, Key, Row) ->
+    ?vtrace("create table ~w row with Key: ~w",[Tab, Key]),
+    snmp_local_db:table_create_row(db(Tab), Key, Row).
+
+
+add_user(EngineID, Name, SecName, Clone, AuthP, AuthKeyC, OwnAuthKeyC,
+	 PrivP, PrivKeyC, OwnPrivKeyC, Public, AuthKey, PrivKey) ->
+    User = {EngineID, Name, SecName, Clone, AuthP, AuthKeyC, OwnAuthKeyC,
+	    PrivP, PrivKeyC, OwnPrivKeyC, Public, AuthKey, PrivKey},
+    case (catch snmp_conf:check_usm(User)) of
+	{ok, Row} ->
+	    case (catch check_user(Row)) of
+		{'EXIT', Reason} ->
+		    {error, Reason};
+		_ ->
+		    Key1 = element(1, Row),
+		    Key2 = element(2, Row),
+		    Key  = [length(Key1) | Key1] ++ [length(Key2) | Key2],
+		    case table_create_row(usmUserTable, Key, Row) of
+			true ->
+			    {ok, Key};
+			false ->
+			    {error, create_failed}
+		    end
+		end;
+	Error ->
+	    {error, Error}
+    end.
+
+delete_user(Key) ->
+    Db = db(usmUserTable),
+    case snmp_local_db:table_delete_row(Db, Key) of
+	true ->
+	    ok;
+	false ->
+	    {error, delete_row_failed}
+    end.
+
 
 gc_tabs() ->
     gc_tab(usmUserTable),
@@ -257,24 +300,133 @@ usmUserTable(get, RowIndex, Cols) ->
     get_patch(Cols, get(usmUserTable, RowIndex, Cols));
 usmUserTable(get_next, RowIndex, Cols) ->
     next_patch(next(usmUserTable, RowIndex, Cols));
-usmUserTable(is_set_ok, RowIndex, Cols) ->
-    %% Add a dummy value for securityName; otherwise snmp_generic will
-    %% think that a value is missing, so the row can't be created.
-    %% Note: this value is only added for is_set_ok, not for set!
-    NCols = [{?usmUserSecurityName, ""} | Cols],
-    validate_is_set_ok(snmp_generic:table_func(is_set_ok, RowIndex,
-					       NCols, db(usmUserTable)),
-		       RowIndex, Cols);
-usmUserTable(set, RowIndex, Cols) ->
-    NCols = pre_set(RowIndex, Cols),
-    %% NOTE: The NCols parameter is sent to snmp_generic, but not to
-    %% validate_set!  The reason is that the columns from pre_set are
-    %% set in snmp_generic, but not used by validate_set.
-    validate_set(snmp_generic:table_func(set, RowIndex,
-					 NCols, db(usmUserTable)),
-		 RowIndex, Cols);
+usmUserTable(is_set_ok, RowIndex, Cols0) ->
+    case (catch verify_usmUserTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    %% Add a dummy value for securityName; otherwise snmp_generic will
+	    %% think that a value is missing, so the row can't be created.
+	    %% Note: this value is only added for is_set_ok, not for set!
+	    NCols = [{?usmUserSecurityName, ""} | Cols],
+	    IsSetOkRes = snmp_generic:table_func(is_set_ok, RowIndex,
+						 NCols, db(usmUserTable)),
+	    validate_is_set_ok(IsSetOkRes, RowIndex, Cols);
+	Error ->
+	    Error
+    end;
+usmUserTable(set, RowIndex, Cols0) ->
+    case (catch verify_usmUserTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    NCols = pre_set(RowIndex, Cols),
+	    %% NOTE: The NCols parameter is sent to snmp_generic, but not to
+	    %% validate_set!  The reason is that the columns from pre_set are
+	    %% set in snmp_generic, but not used by validate_set.
+	    validate_set(snmp_generic:table_func(set, RowIndex,
+						 NCols, db(usmUserTable)),
+			 RowIndex, Cols);
+	Error ->
+	    Error
+    end;
 usmUserTable(Op, Arg1, Arg2) ->
     snmp_generic:table_func(Op, Arg1, Arg2, db(usmUserTable)).
+
+
+verify_usmUserTable_cols([], Cols) ->
+    {ok, lists:reverse(Cols)};
+verify_usmUserTable_cols([{Col, Val0}|Cols], Acc) ->
+    Val = verify_usmUserTable_col(Col, Val0),
+    verify_usmUserTable_cols(Cols, [{Col, Val}|Acc]).
+
+verify_usmUserTable_col(?usmUserEngineID, EngineID) ->
+    case (catch snmp_conf:check_string(EngineID)) of
+	true ->
+	    EngineID;
+	_ ->
+	    wrongValue(?usmUserEngineID)
+    end;
+verify_usmUserTable_col(?usmUserName, Name) ->
+    case (catch snmp_conf:check_string(Name)) of
+	true ->
+	    Name;
+	_ ->
+	    wrongValue(?usmUserName)
+    end;
+verify_usmUserTable_col(?usmUserSecurityName, Name) ->
+    case (catch snmp_conf:check_string(Name)) of
+	true ->
+	    Name;
+	_ ->
+	    wrongValue(?usmUserSecurityName)
+    end;
+verify_usmUserTable_col(?usmUserCloneFrom, Clone) ->
+    case Clone of
+	zeroDotZero  -> ?zeroDotZero;
+	?zeroDotZero -> ?zeroDotZero;
+	_ ->
+	    case (catch snmp_conf:check_oid(Clone)) of
+		true ->
+		    Clone;
+		_ ->
+		    wrongValue(?usmUserCloneFrom)
+	    end
+    end;
+verify_usmUserTable_col(?usmUserAuthProtocol, AuthP) ->
+    case AuthP of
+	usmNoAuthProtocol       -> ?usmNoAuthProtocol;
+	usmHMACSHAAuthProtocol  -> ?usmHMACSHAAuthProtocol;
+	usmHMACMD5AuthProtocol  -> ?usmHMACMD5AuthProtocol;
+	?usmNoAuthProtocol      -> ?usmNoAuthProtocol;
+	?usmHMACSHAAuthProtocol -> ?usmHMACSHAAuthProtocol;
+	?usmHMACMD5AuthProtocol -> ?usmHMACMD5AuthProtocol;
+	_ ->
+	    wrongValue(?usmUserAuthProtocol)
+    end;
+verify_usmUserTable_col(?usmUserAuthKeyChange, AKC) ->
+    case (catch snmp_conf:check_string(AKC)) of
+	true ->
+	    AKC;
+	_ ->
+	    wrongValue(?usmUserAuthKeyChange)
+    end;
+verify_usmUserTable_col(?usmUserOwnAuthKeyChange, OAKC) ->
+    case (catch snmp_conf:check_string(OAKC)) of
+	true ->
+	    OAKC;
+	_ ->
+	    wrongValue(?usmUserOwnAuthKeyChange)
+    end;
+verify_usmUserTable_col(?usmUserPrivProtocol, PrivP) ->
+    case PrivP of
+	usmNoPrivProtocol   -> ?usmNoPrivProtocol;
+	usmDESPrivProtocol  -> ?usmDESPrivProtocol;
+	?usmNoPrivProtocol  -> ?usmNoPrivProtocol;
+	?usmDESPrivProtocol -> ?usmDESPrivProtocol;
+	_ ->
+	    wrongValue(?usmUserPrivProtocol)
+    end;
+verify_usmUserTable_col(?usmUserPrivKeyChange, PKC) ->
+    case (catch snmp_conf:check_string(PKC)) of
+	true ->
+	    PKC;
+	_ ->
+	    wrongValue(?usmUserPrivKeyChange)
+    end;
+verify_usmUserTable_col(?usmUserOwnPrivKeyChange, OPKC) ->
+    case (catch snmp_conf:check_string(OPKC)) of
+	true ->
+	    OPKC;
+	_ ->
+	    wrongValue(?usmUserOwnPrivKeyChange)
+    end;
+verify_usmUserTable_col(?usmUserPublic, Public) ->
+    case (catch snmp_conf:check_string(Public)) of
+	true ->
+	    Public;
+	_ ->
+	    wrongValue(?usmUserPublic)
+    end;
+verify_usmUserTable_col(_, Val) ->
+    Val.
+				      
 
 %% Patch the values stored in the DB with other values for some
 %% objects.
@@ -309,6 +461,16 @@ next_patch(Result) -> Result.
 
 
 validate_is_set_ok({noError, 0}, RowIndex, Cols) ->
+    case (catch do_validate_is_set_ok(RowIndex, Cols)) of
+	ok ->
+	    {noError, 0};
+	Error ->
+	    Error
+    end;
+validate_is_set_ok(Error, _RowIndex, _Cols) ->
+    Error.
+
+do_validate_is_set_ok(RowIndex, Cols) ->
     validate_clone_from(RowIndex, Cols),
     validate_auth_protocol(RowIndex, Cols),
     validate_auth_key_change(RowIndex, Cols),
@@ -316,10 +478,8 @@ validate_is_set_ok({noError, 0}, RowIndex, Cols) ->
     validate_priv_protocol(RowIndex, Cols),
     validate_priv_key_change(RowIndex, Cols),
     validate_own_priv_key_change(RowIndex, Cols),
-    {noError, 0};
-validate_is_set_ok(Error, _RowIndex, _Cols) ->
-    Error.
-
+    ok.
+    
 pre_set(RowIndex, Cols) ->
     %% Possibly initialize the usmUserSecurityName and privacy keys
     case snmp_generic:table_row_exists(db(usmUserTable), RowIndex) of
@@ -366,7 +526,7 @@ validate_clone_from(RowIndex, Cols) ->
 							RowIndex2,
 							?usmUserStatus) of
 			{value, ?'RowStatus_active'} -> ok;
-			_ -> throw({inconsistentName, ?usmUserCloneFrom})
+			_ -> inconsistentName(?usmUserCloneFrom)
 		    end
 	    end;
 	false ->
@@ -393,15 +553,14 @@ validate_auth_protocol(RowIndex, Cols) ->
 			    %% Check that the Priv protocl is noPriv
 			    case get_priv_proto(RowIndex, Cols) of
 				?usmNoPrivProtocol -> ok;
-				_ -> throw({inconsistentValue,
-					    ?usmUserAuthProtocol})
+				_ -> inconsistentValue(?usmUserAuthProtocol)
 			    end;
 			?usmHMACMD5AuthProtocol ->
-			    throw({inconsistentValue, ?usmUserAuthProtocol});
+			    inconsistentValue(?usmUserAuthProtocol);
 			?usmHMACSHAAuthProtocol ->
-			    throw({inconsistentValue, ?usmUserAuthProtocol});
+			    inconsistentValue(?usmUserAuthProtocol);
 			_ ->
-			    throw({wrongValue, ?usmUserAuthProtocol})
+			    wrongValue(?usmUserAuthProtocol)
 		    end;
 		_ ->
 		    %% Otherwise, check that the new protocol is known,
@@ -412,22 +571,21 @@ validate_auth_protocol(RowIndex, Cols) ->
 			    %% Check that the Priv protocl is noPriv
 			    case get_priv_proto(RowIndex, Cols) of
 				?usmNoPrivProtocol -> ok;
-				_ -> throw({inconsistentValue,
-					    ?usmUserAuthProtocol})
+				_ -> inconsistentValue(?usmUserAuthProtocol)
 			    end;
 			?usmHMACMD5AuthProtocol ->
 			    case is_crypto_supported(md5_mac_96) of
 				true -> ok;
 				false ->
-				    throw({wrongValue, ?usmUserAuthProtocol})
+				    wrongValue(?usmUserAuthProtocol)
 			    end;
 			?usmHMACSHAAuthProtocol ->
 			    case is_crypto_supported(sha_mac_96) of
 				true -> ok;
 				fasle ->
-				    throw({wrongValue, ?usmUserAuthProtocol})
+				    wrongValue(?usmUserAuthProtocol)
 			    end;
-			_ -> throw({wrongValue, ?usmUserAuthProtocol})
+			_ -> wrongValue(?usmUserAuthProtocol)
 		    end
 	    end;
 	false ->
@@ -454,7 +612,7 @@ validate_requester(RowIndex, Cols, KeyChangeCol) ->
 	{value, _} ->
 	    case get(sec_model) of % Check the securityModel in the request
 		?SEC_USM -> ok;
-		_ -> throw({noAccess, KeyChangeCol})
+		_ -> noAccess(KeyChangeCol)
 	    end,
 	    %% The SecurityName may not be set yet.  First, check if it is set.
 	    SecNameForUser = 
@@ -466,7 +624,7 @@ validate_requester(RowIndex, Cols, KeyChangeCol) ->
 		end,
 	    case get(sec_name) of % Check the securityName in the request
 		SecNameForUser -> ok;
-		_ -> throw({noAccess, KeyChangeCol})
+		_ -> noAccess(KeyChangeCol)
 	    end;
 	false ->
 	    ok
@@ -497,7 +655,7 @@ validate_key_change(RowIndex, Cols, KeyChangeCol, Type) ->
 		_ ->
 		    %% The user doen't exist, or hasn't been cloned,
 		    %% and is not cloned in this operation.
-		    throw({inconsistentName, KeyChangeCol})
+		    inconsistentName(KeyChangeCol)
 	    end,
 	    %% Check that the length makes sense
 	    Len = length(KeyC),
@@ -507,13 +665,13 @@ validate_key_change(RowIndex, Cols, KeyChangeCol, Type) ->
 			?usmNoAuthProtocol -> ok;
 			?usmHMACMD5AuthProtocol when Len == 32 -> ok;
 			?usmHMACSHAAuthProtocol when Len == 40 -> ok;
-			_ -> throw({wrongValue, KeyChangeCol})
+			_ -> wrongValue(KeyChangeCol)
 		    end;
 		priv ->
 		    case get_priv_proto(RowIndex, Cols) of
 			?usmNoPrivProtocol -> ok;
 			?usmDESPrivProtocol when Len == 32 -> ok;
-			_ -> throw({wrongValue, KeyChangeCol})
+			_ -> wrongValue(KeyChangeCol)
 		    end
 	    end;
 	false ->
@@ -538,9 +696,9 @@ validate_priv_protocol(RowIndex, Cols) ->
 			?usmNoPrivProtocol ->
 			    ok;
 			?usmDESPrivProtocol ->
-			    throw({inconsistentValue, ?usmUserPrivProtocol});
+			    inconsistentValue(?usmUserPrivProtocol);
 			_ ->
-			    throw({wrongValue, ?usmUserPrivProtocol})
+			    wrongValue(?usmUserPrivProtocol)
 		    end;
 		_ ->
 		    %% Otherwise, check that the new protocol is known,
@@ -556,15 +714,14 @@ validate_priv_protocol(RowIndex, Cols) ->
 				true ->
 				    case get_auth_proto(RowIndex, Cols) of
 					?usmNoAuthProtocol ->
-					    throw({inconsistentValue,
-						   ?usmUserPrivProtocol});
+					    inconsistentValue(?usmUserPrivProtocol);
 					_ ->
 					    ok
 				    end;
 				false -> 
-				    throw({wrongValue, ?usmUserPrivProtocol})
+				    wrongValue(?usmUserPrivProtocol)
 			    end;
-			_ -> throw({wrongValue, ?usmUserPrivProtocol})
+			_ -> wrongValue(?usmUserPrivProtocol)
 		    end
 	    end;
 	false ->
@@ -635,7 +792,7 @@ get_user_name(N, [_H | T])          -> get_user_name(N-1, T).
 extract_row(RowPtr)                     -> extract_row(?usmUserEntry, RowPtr).
 extract_row([H | T], [H | T2])          -> extract_row(T, T2);
 extract_row([], [?usmUserSecurityName | T]) -> T;
-extract_row(_, _) -> throw({wrongValue, ?usmUserCloneFrom}).
+extract_row(_, _) -> wrongValue(?usmUserCloneFrom).
 
 %% Pre: the user exixt
 get_auth_proto(RowIndex, Cols) ->
@@ -781,7 +938,12 @@ is_crypto_supported(Func) ->
 	true -> true;
 	_ -> false
     end.
-    
+
+inconsistentValue(V) -> throw({inconsistentValue, V}).
+inconsistentName(N)  -> throw({inconsistentName,  N}).
+wrongValue(V)        -> throw({wrongValue,        V}).
+noAccess(C)          -> throw({noAccess,          C}).
+     
 set_sname() ->
     set_sname(get(sname)).
 

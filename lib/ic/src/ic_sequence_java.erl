@@ -40,16 +40,9 @@
 %% Func: gen/4
 %%-----------------------------------------------------------------
 gen(G, N, X, SequenceName) when record(X, sequence) ->
-    %%?PRINTDEBUG2("******** SEQ ********: \n~p,\n~p", [SequenceName, X]),
     emit_holder_class(G, N, X, SequenceName),
     emit_helper_class(G, N, X, SequenceName);
-%gen(G, N, X, SequenceName) when record(X, typedef) -> %% A typedef of a sequence
-%                                                      %% Stoped due to compatibility problems
-%                                                      %% with erl_genserv backend
-%    %%?PRINTDEBUG2("*** TYPEDEF of SEQ **: \n~p,\n~p", [SequenceName, X]),
-%    emit_helper_class(G, N, X, SequenceName);
-gen(G, N, X, SequenceName) -> 
-    %%?PRINTDEBUG2("****** IGNORING ******: \n~p,\n~p", [SequenceName, X]),
+gen(_G, _N, _X, _SequenceName) -> 
     ok.
 
 
@@ -153,8 +146,7 @@ emit_helper_class(G, N, X, SequenceName) ->
 %%-----------------------------------------------------------------
 %% Func: emit_sequence_marshal_function/6
 %%-----------------------------------------------------------------
-emit_sequence_marshal_function(G, N, X, Fd, SequenceName,
-				 ElementType) ->
+emit_sequence_marshal_function(G, N, X, Fd, _SequenceName, ElementType) ->
     ic_codegen:emit(Fd, ["    int _length = _value.length;\n\n"
 
 			 "    _out.write_list_head(_length);\n\n"
@@ -178,7 +170,7 @@ emit_sequence_marshal_function(G, N, X, Fd, SequenceName,
 %%-----------------------------------------------------------------
 %% Func: emit_sequence_unmarshal_function/6
 %%-----------------------------------------------------------------
-emit_sequence_unmarshal_function(G, N, X, Fd, SequenceName, ElementType) ->
+emit_sequence_unmarshal_function(G, N, X, Fd, _SequenceName, ElementType) ->
 
     SequenceElementType = ic_java_type:getType(G, N, ElementType),
 

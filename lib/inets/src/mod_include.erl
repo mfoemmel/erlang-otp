@@ -31,7 +31,7 @@ do(Info) ->
 	"GET" ->
 	    case httpd_util:key1search(Info#mod.data,status) of
 		%% A status code has been generated!
-		{StatusCode,PhraseArgs,Reason} ->
+		{_StatusCode, _PhraseArgs, _Reason} ->
 		    {proceed,Info#mod.data};
 		%% No status code has been generated!
 		undefined ->
@@ -40,7 +40,7 @@ do(Info) ->
 			undefined ->
 			    do_include(Info);
 			%% A response has been generated or sent!
-			Response ->
+			_Response ->
 			    {proceed,Info#mod.data}
 		    end
 	    end;
@@ -84,7 +84,7 @@ do_include(Info) ->
 %% config directive
 %%
 
-config(Info, Context, ErrorLog, TagList, ValueList, R) ->
+config(_Info, Context, ErrorLog, TagList, ValueList, R) ->
     case verify_tags("config",[errmsg,timefmt,sizefmt],
 		     TagList,ValueList) of
 	ok ->
@@ -100,11 +100,11 @@ update_context([Tag|R1],[Value|R2],Context) ->
     update_context(R1,R2,[{Tag,Value}|Context]).
 
 verify_tags(Command,ValidTags,TagList,ValueList) when length(TagList)==length(ValueList) ->
-    verify_tags(Command,ValidTags,TagList);
-verify_tags(Command,ValidTags,TagList,ValueList) ->
-    {error,?NICE(Command++" directive has spurious tags")}.
+    verify_tags(Command, ValidTags, TagList);
+verify_tags(Command, _ValidTags, _TagList, _ValueList) ->
+    {error,?NICE(Command ++ " directive has spurious tags")}.
 
-verify_tags(Command, ValidTags, []) ->
+verify_tags(_Command, _ValidTags, []) ->
     ok;
 verify_tags(Command, ValidTags, [Tag|Rest]) ->
     case lists:member(Tag, ValidTags) of
@@ -127,7 +127,7 @@ include(Info,Context,ErrorLog,[virtual],[VirtualPath],R) ->
 include(Info, Context, ErrorLog, [file], [FileName], R) ->
     Path = file(Info#mod.config_db, Info#mod.request_uri, FileName),
     include(Info, Context, ErrorLog, R, Path);
-include(Info, Context, ErrorLog, TagList, ValueList, R) ->
+include(_Info, Context, ErrorLog, _TagList, _ValueList, R) ->
     {ok, Context,
      [{internal_info,?NICE("include directive has a spurious tag")}|
       ErrorLog], httpd_util:key1search(Context, errmsg, ""), R}.
@@ -139,8 +139,8 @@ include(Info, Context, ErrorLog, R, Path) ->
 	    ?DEBUG("include -> size(Body): ~p",[size(Body)]),
 	    {ok, NewContext, NewErrorLog, Result} =
 		parse(Info, binary_to_list(Body), Context, ErrorLog, []),
-	    {ok, Context, NewErrorLog, Result, R};
-	{error, Reason} ->
+	    {ok, NewContext, NewErrorLog, Result, R};
+	{error, _Reason} ->
 	    {ok, Context, 
 	     [{internal_info, ?NICE("Can't open "++Path)}|ErrorLog],
 	     httpd_util:key1search(Context, errmsg, ""), R}
@@ -165,14 +165,14 @@ echo(Info,Context,ErrorLog,[var],["DOCUMENT_URI"],R) ->
 				      Info#mod.request_uri),R};
 echo(Info,Context,ErrorLog,[var],["QUERY_STRING_UNESCAPED"],R) ->
     {ok,Context,ErrorLog,query_string_unescaped(Info#mod.request_uri),R};
-echo(Info,Context,ErrorLog,[var],["DATE_LOCAL"],R) ->
+echo(_Info,Context,ErrorLog,[var],["DATE_LOCAL"],R) ->
     {ok,Context,ErrorLog,date_local(),R};
-echo(Info,Context,ErrorLog,[var],["DATE_GMT"],R) ->
+echo(_Info,Context,ErrorLog,[var],["DATE_GMT"],R) ->
     {ok,Context,ErrorLog,date_gmt(),R};
 echo(Info,Context,ErrorLog,[var],["LAST_MODIFIED"],R) ->
     {ok,Context,ErrorLog,last_modified(Info#mod.data,Info#mod.config_db,
 				       Info#mod.request_uri),R};
-echo(Info,Context,ErrorLog,TagList,ValueList,R) ->
+echo(_Info, Context, ErrorLog, _TagList, _ValueList, R) ->
     {ok,Context,
      [{internal_info,?NICE("echo directive has a spurious tag")}|
       ErrorLog],"(none)",R}.
@@ -262,18 +262,18 @@ last_modified(Data,ConfigDB,RequestURI) ->
 %%
 
 fsize(Info,Context,ErrorLog,[virtual],[VirtualPath],R) ->
-  Aliases=httpd_util:multi_lookup(Info#mod.config_db,alias),
-  {_,Path,AfterPath}=
+  Aliases = httpd_util:multi_lookup(Info#mod.config_db,alias),
+  {_,Path, _AfterPath}=
     mod_alias:real_name(Info#mod.config_db,VirtualPath,Aliases),
   fsize(Info, Context, ErrorLog, R, Path);
 fsize(Info,Context,ErrorLog,[file],[FileName],R) ->
-  Path=file(Info#mod.config_db,Info#mod.request_uri,FileName),
+  Path = file(Info#mod.config_db,Info#mod.request_uri,FileName),
   fsize(Info,Context,ErrorLog,R,Path);
-fsize(Info,Context,ErrorLog,TagList,ValueList,R) ->
+fsize(_Info, Context, ErrorLog, _TagList, _ValueList, R) ->
   {ok,Context,[{internal_info,?NICE("fsize directive has a spurious tag")}|
 	       ErrorLog],httpd_util:key1search(Context,errmsg,""),R}.
 
-fsize(Info,Context,ErrorLog,R,Path) ->
+fsize(_Info, Context, ErrorLog, R, Path) ->
     case file:read_file_info(Path) of
 	{ok,FileInfo} ->
 	    case httpd_util:key1search(Context,sizefmt) of
@@ -291,7 +291,7 @@ fsize(Info,Context,ErrorLog,R,Path) ->
 		      ErrorLog],
 		     httpd_util:key1search(Context, errmsg, ""), R}
 	    end;
-	{error,Reason} ->
+	{error, _Reason} ->
 	    {ok,Context,[{internal_info,?NICE("Can't open "++Path)}|ErrorLog],
 	     httpd_util:key1search(Context,errmsg,""),R}
     end.
@@ -300,29 +300,31 @@ fsize(Info,Context,ErrorLog,R,Path) ->
 %% flastmod directive
 %%
 
-flastmod(Info, Context, ErrorLog, [virtual], [VirtualPath],R) ->
-    Aliases=httpd_util:multi_lookup(Info#mod.config_db,alias),
-    {_,Path,AfterPath}=
-	mod_alias:real_name(Info#mod.config_db,VirtualPath,Aliases),
+flastmod(#mod{config_db = Db} = Info, 
+	 Context, ErrorLog, [virtual], [VirtualPath],R) ->
+    Aliases = httpd_util:multi_lookup(Db,alias),
+    {_,Path, _AfterPath} = mod_alias:real_name(Db, VirtualPath, Aliases),
     flastmod(Info,Context,ErrorLog,R,Path);
-flastmod(Info, Context, ErrorLog, [file], [FileName], R) ->
-    Path = file(Info#mod.config_db, Info#mod.request_uri, FileName),
+flastmod(#mod{config_db = Db, request_uri = RequestUri} = Info, 
+	 Context, ErrorLog, [file], [FileName], R) ->
+    Path = file(Db, RequestUri, FileName),
     flastmod(Info, Context, ErrorLog, R, Path);
-flastmod(Info,Context,ErrorLog,TagList,ValueList,R) ->
-    {ok,Context,[{internal_info,?NICE("flastmod directive has a spurious tag")}|
-		 ErrorLog],httpd_util:key1search(Context,errmsg,""),R}.
+flastmod(_Info, Context, ErrorLog, _TagList, _ValueList, R) ->
+    {ok,Context,
+     [{internal_info,?NICE("flastmod directive has a spurious tag")}|
+      ErrorLog],httpd_util:key1search(Context,errmsg,""),R}.
 
-flastmod(Info,Context,ErrorLog,R,File) ->
+flastmod(_Info, Context, ErrorLog, R, File) ->
     case file:read_file_info(File) of
-	{ok,FileInfo} ->
+	{ok, FileInfo} ->
 	    {{Yr,Mon,Day},{Hour,Minute,Second}}=FileInfo#file_info.mtime,
-	    Result=
+	    Result =
 		io_lib:format("~s ~s ~2w ~w:~w:~w ~w",
 			      [httpd_util:day(
 				 calendar:day_of_the_week(Yr,Mon, Day)),
 			       httpd_util:month(Mon),Day,Hour,Minute,Second, Yr]),
-	    {ok,Context,ErrorLog,Result,R};
-	{error,Reason} ->
+	    {ok, Context, ErrorLog, Result, R};
+	{error, _Reason} ->
 	    {ok,Context,[{internal_info,?NICE("Can't open "++File)}|ErrorLog],
 	     httpd_util:key1search(Context,errmsg,""),R}
     end.
@@ -337,7 +339,7 @@ exec(Info,Context,ErrorLog,[cmd],[Command],R) ->
 exec(Info,Context,ErrorLog,[cgi],[RequestURI],R) ->
     ?vtrace("exec cgi:~n   RequestURI: ~p",[RequestURI]),
     cgi(Info,Context,ErrorLog,R,RequestURI);
-exec(Info,Context,ErrorLog,TagList,ValueList,R) ->
+exec(_Info, Context, ErrorLog, TagList, ValueList, R) ->
     ?vtrace("exec with spurious tag:"
 	    "~n   TagList:   ~p"
 	    "~n   ValueList: ~p",
@@ -404,19 +406,20 @@ remove_header([]) ->
     [];
 remove_header([$\n,$\n|Rest]) ->
     Rest;
-remove_header([C|Rest]) ->
+remove_header([_C|Rest]) ->
     remove_header(Rest).
 
 
-exec_script(Info,Script,AfterScript,ErrorLog,Context,R) ->
+exec_script(#mod{config_db = Db, request_uri = RequestUri} = Info, 
+	    Script, _AfterScript, ErrorLog, Context, R) ->
+    ?vtrace("exec_script -> entry",[]),
     process_flag(trap_exit,true),    
-    Aliases = httpd_util:multi_lookup(Info#mod.config_db, alias),
-    {_, Path, AfterPath} = mod_alias:real_name(Info#mod.config_db,
-					       Info#mod.request_uri,
-					       Aliases),
-    Env  = env(Info)++mod_cgi:env(Info, Path, AfterPath),
+    Aliases = httpd_util:multi_lookup(Db, alias),
+    {_, Path, AfterPath} = mod_alias:real_name(Db, RequestUri, Aliases),
+    Env  = env(Info) ++ mod_cgi:env(Info, Path, AfterPath),
     Dir  = filename:dirname(Path),
     Port = (catch open_port({spawn,Script},[stream,{env, Env},{cd, Dir}])),
+    ?vtrace("exec_script -> Port: ~w",[Port]),
     case Port of
 	P when port(P) ->
 	    %% Send entity body to port.
@@ -424,7 +427,7 @@ exec_script(Info,Script,AfterScript,ErrorLog,Context,R) ->
 		      [] ->
 			  true;
 		      EntityBody ->
-			  (catch port_command(Port,EntityBody))
+			  (catch port_command(Port, EntityBody))
 		  end,
 	    case Res of
 		{'EXIT', Reason} ->
@@ -432,10 +435,10 @@ exec_script(Info,Script,AfterScript,ErrorLog,Context,R) ->
 			  "~n   Port:   ~p"
 			  "~n   URI:    ~p"
 			  "~n   Reason: ~p",
-			  [Port,Info#mod.request_uri,Reason]),
+			  [Port, RequestUri, Reason]),
 		    exit({open_cmd_failed,Reason,
 			  [{mod,?MODULE},{port,Port},
-			   {uri,Info#mod.request_uri},
+			   {uri,RequestUri},
 			   {script,Script},{env,Env},{dir,Dir},
 			   {ebody_size,sz(Info#mod.entity_body)}]});
 		true ->
@@ -446,17 +449,17 @@ exec_script(Info,Script,AfterScript,ErrorLog,Context,R) ->
 	    ?vlog("open port failed: exit"
 		  "~n   URI:    ~p"
 		  "~n   Reason: ~p",
-		  [Info#mod.request_uri,Reason]),
+		  [RequestUri,Reason]),
 	    exit({open_port_failed,Reason,
-		  [{mod,?MODULE},{uri,Info#mod.request_uri},{script,Script},
+		  [{mod,?MODULE},{uri,RequestUri},{script,Script},
 		   {env,Env},{dir,Dir}]});
 	O ->
 	    ?vlog("open port failed: unknown result"
 		  "~n   URI: ~p"
 		  "~n   O:   ~p",
-		  [Info#mod.request_uri,O]),
+		[RequestUri,O]),
 	    exit({open_port_failed,O,
-		  [{mod,?MODULE},{uri,Info#mod.request_uri},{script,Script},
+		  [{mod,?MODULE},{uri,RequestUri},{script,Script},
 		   {env,Env},{dir,Dir}]})
     end.
     
@@ -465,18 +468,21 @@ exec_script(Info,Script,AfterScript,ErrorLog,Context,R) ->
 %% Port communication
 %%
 
-proxy(Port,ErrorLog) ->
+proxy(Port, ErrorLog) ->
     process_flag(trap_exit, true),
     proxy(Port, ErrorLog, []).
 
 proxy(Port, ErrorLog, Result) ->
+    ?vdebug("proxy -> entry with"
+	"~n   length(Result): ~p", [length(Result)]),
     receive
 	{Port, {data, Response}} ->
+	    ?vtrace("proxy -> got some data from the port",[]),
 	    proxy(Port, ErrorLog, lists:append(Result,Response));
 	{'EXIT', Port, normal} when port(Port) ->
 	    process_flag(trap_exit, false),
 	    {ErrorLog, Result};
-	{'EXIT', Port, Reason} when port(Port) ->
+	{'EXIT', Port, _Reason} when port(Port) ->
 	    process_flag(trap_exit, false),
 	    {[{internal_info,
 	       ?NICE("Scrambled output from CGI-script")}|ErrorLog],
@@ -485,7 +491,7 @@ proxy(Port, ErrorLog, Result) ->
 	    process_flag(trap_exit, false),
 	    {'EXIT', Pid, Reason};
 	%% This should not happen!
-	WhatEver ->
+	_WhatEver ->
 	    process_flag(trap_exit, false),
 	    {ErrorLog, Result}
     end.
@@ -505,11 +511,11 @@ send_in(Info, Path,Head, {ok,FileInfo}) ->
 	    ?vlog("failed reading file: ~p",[Reason]),
 	    {error, {open,Reason}}
     end;
-send_in(Info,Path,Head,{error,Reason}) ->
+send_in(_Info , _Path, _Head,{error,Reason}) ->
     ?vlog("failed open file: ~p",[Reason]),
     {error, {open,Reason}}.
 
-send_in1(Info, Data,Head,FileInfo) ->
+send_in1(Info, Data, Head, FileInfo) ->
     {ok, _Context, Err, ParsedBody} = parse(Info,Data,?DEFAULT_CONTEXT,[],[]),
     Size = length(ParsedBody),
     ?vdebug("send_in1 -> Size: ~p",[Size]),
@@ -579,7 +585,7 @@ send_in1(Info, Data,Head,FileInfo) ->
 parse(Info,Body) ->
   parse(Info, Body, ?DEFAULT_CONTEXT, [], []).
 
-parse(Info, [], Context, ErrorLog, Result) ->
+parse(_Info, [], Context, ErrorLog, Result) ->
     {ok, Context, lists:reverse(ErrorLog), lists:reverse(Result)};
 parse(Info,[$<,$!,$-,$-,$#|R1],Context,ErrorLog,Result) ->
   ?DEBUG("parse -> start command directive when length(R1): ~p",[length(R1)]),
@@ -617,27 +623,27 @@ handle(Info,Context,ErrorLog,Command,TagList,ValueList,R) ->
       Result
   end.
 
-parse0([],Context) ->
+parse0([], _Context) ->
   throw({parse_error,"Premature EOF in parsed file"});
-parse0([$-,$-,$>|R],Context) ->
+parse0([$-,$-,$>|_R], _Context) ->
   throw({parse_error,"Premature EOF in parsed file"});
-parse0([$ |R],Context) ->
+parse0([$ |R], Context) ->
   parse0(R,Context);
-parse0(String,Context) ->
-  parse1(String,Context,"").
+parse0(String, Context) ->
+  parse1(String, Context,"").
 
-parse1([],Context,Command) ->
+parse1([], _Context, _Command) ->
   throw({parse_error,"Premature EOF in parsed file"});
-parse1([$-,$-,$>|R],Context,Command) ->
+parse1([$-,$-,$>|_R], _Context, _Command) ->
   throw({parse_error,"Premature EOF in parsed file"});
-parse1([$ |R],Context,Command) ->
+parse1([$ |R], Context, Command) ->
   parse2(R,Context,list_to_atom(lists:reverse(Command)),[],[],"");
-parse1([C|R],Context,Command) ->
+parse1([C|R], Context, Command) ->
   parse1(R,Context,[C|Command]).
 
-parse2([],Context,Command,TagList,ValueList,Tag) ->
+parse2([], _Context, _Command, _TagList, _ValueList, _Tag) ->
   throw({parse_error,"Premature EOF in parsed file"});
-parse2([$-,$-,$>|R],Context,Command,TagList,ValueList,Tag) ->
+parse2([$-,$-,$>|R], Context, Command, TagList, ValueList, _Tag) ->
   {ok,Context,Command,TagList,ValueList,R};
 parse2([$ |R],Context,Command,TagList,ValueList,Tag) ->
   parse2(R,Context,Command,TagList,ValueList,Tag);
@@ -647,29 +653,27 @@ parse2([$=|R],Context,Command,TagList,ValueList,Tag) ->
 parse2([C|R],Context,Command,TagList,ValueList,Tag) ->
   parse2(R,Context,Command,TagList,ValueList,[C|Tag]).
 
-parse3([],Context,Command,TagList,ValueList) ->
+parse3([], _Context, _Command, _TagList, _ValueList) ->
   throw({parse_error,"Premature EOF in parsed file"});
-parse3([$-,$-,$>|R],Context,Command,TagList,ValueList) ->
+parse3([$-,$-,$>|_R], _Context, _Command, _TagList, _ValueList) ->
   throw({parse_error,"Premature EOF in parsed file"});
-parse3([$ |R],Context,Command,TagList,ValueList) ->
-  parse3(R,Context,Command,TagList,ValueList);
-parse3([$"|R],Context,Command,TagList,ValueList) ->
+parse3([$ |R], Context, Command, TagList, ValueList) ->
+  parse3(R, Context, Command, TagList, ValueList);
+parse3([$"|R], Context, Command, TagList, ValueList) ->
   parse4(R,Context,Command,TagList,ValueList,"");
-parse3(String,Context,Command,TagList,ValueList) ->
+parse3(_String, _Context, _Command, _TagList, _ValueList) ->
   throw({parse_error,"Premature EOF in parsed file"}).
 
-parse4([],Context,Command,TagList,ValueList,Value) ->
+parse4([], _Context, _Command, _TagList, _ValueList, _Value) ->
   throw({parse_error,"Premature EOF in parsed file"});
-parse4([$-,$-,$>|R],Context,Command,TagList,ValueList,Value) ->
+parse4([$-,$-,$>|_R], _Context, _Command, _TagList, _ValueList, _Value) ->
   throw({parse_error,"Premature EOF in parsed file"});
 parse4([$"|R],Context,Command,TagList,ValueList,Value) ->
   parse2(R,Context,Command,TagList,[lists:reverse(Value)|ValueList],"");
 parse4([C|R],Context,Command,TagList,ValueList,Value) ->
   parse4(R,Context,Command,TagList,ValueList,[C|Value]).
 
-parse5([],Comment,Depth) ->
-  ?ERROR("parse5 -> unterminated comment of ~p bytes when Depth = ~p",
-	 [length(Comment),Depth]),
+parse5([], _Comment, _Depth) ->
   throw({parse_error,"Premature EOF in parsed file"});
 parse5([$<,$!,$-,$-|R],Comment,Depth) ->
   parse5(R,[$-,$-,$!,$<|Comment],Depth+1);

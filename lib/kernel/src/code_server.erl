@@ -19,23 +19,22 @@
 
 %% This file holds the server part of the code_server.
 
--behaviour(gen_server).
-
-
-%% gen_server callback exports
-
--export([init/1,
-	 handle_call/3,
-	 handle_cast/2,
-	 handle_info/2,
-	 code_change/3,
-	 terminate/2]).
+-export([start/4,
+	 start_link/4,
+	 init/2,
+	 call/3,
+	 system_continue/3, 
+	 system_terminate/4,
+	 system_code_change/4,
+	 error_msg/2, info_msg/2
+	]).
 
 -include_lib("kernel/include/file.hrl").
 
 -import(lists, [foreach/2]).
 
--record(state,{root,
+-record(state,{supervisor,
+	       root,
 	       path,
 	       moddb,
 	       namedb,
@@ -43,16 +42,35 @@
 	       mode=interactive}).
 
 
+start(Name, Mod, Args, _) ->
+    Init = fun() -> init(self(),Args) end,
+    spawn_link(Init),
+    receive 
+	Msg -> Msg
+    end.
+
+start_link(Name, Mod, Args, _) ->
+    Parent = self(),
+    Init = fun() -> init(Parent,Args) end,
+    spawn_link(Init),
+    receive 
+	Res ->     
+	    Res
+    end.
+
+
 %% -----------------------------------------------------------
 %% Init the code_server process.
 %% -----------------------------------------------------------
 
-init([Root, Mode]) ->
+init(Parent, [Root, Mode]) ->
+    register(?MODULE, self()),
     process_flag(trap_exit, true),
+
     IPath = case Mode of
 		interactive ->
 		    LibDir = filename:append(Root, "lib"),
-		    {ok,Dirs} = file:list_dir(LibDir),
+		    {ok,Dirs} = erl_prim_loader:list_dir(LibDir),
 		    {Paths,_Libs} = make_path(LibDir, Dirs),
 		    ["."|Paths];
 		_ ->
@@ -62,8 +80,7 @@ init([Root, Mode]) ->
     Db = ets:new(code, [private]),
     foreach(fun (M) ->  ets:insert(Db, {M,preloaded}) end, erlang:pre_loaded()),
     foreach(fun (MF) -> ets:insert(Db, MF) end, init:fetch_loaded()),
-
-
+    
     Path = add_loader_path(IPath, Mode),
     State0 = #state{root = Root,
 		    path = Path,
@@ -77,13 +94,99 @@ init([Root, Mode]) ->
 		{ok, _} -> 
 		    create_cache(State0)
 	    end,
-    {ok,State}.
+    
+    Parent ! {ok, self()},
+    loop(State#state{supervisor=Parent}).
 
+call(Name, Req, Timeout) ->
+    Name ! {code_call, self(), Req},
+    receive 
+	{?MODULE, Reply} ->
+	    Reply
+    after Timeout ->
+	    exit({timeout, ?MODULE, Req})
+    end.
 
-code_change(_OldVsn, State, _Extra) ->
-    %% I doubt that changing the code for this module will work,
-    %% but at least we avoid a compilation warning.
-    {ok,State}.
+reply(Pid, Res) ->
+    Pid ! {?MODULE, Res}.
+
+loop(#state{supervisor=Supervisor}=State0) ->
+    receive 
+	{code_call, Pid, Req} ->
+	    case handle_call(Req, {Pid, call}, State0) of
+		{reply, Res, State} ->
+		    reply(Pid, Res),
+		    loop(State);
+		{no_reply, State} ->
+		    loop(State);
+		{stop, Why, stopped, State} ->
+		    system_terminate(Why, Supervisor, [], State)
+	    end;
+	{'EXIT', Supervisor, Reason} ->
+	    system_terminate(Reason, Supervisor, [], State0);
+	{system, From, Msg} ->
+	    handle_system_msg(running,Msg, From, Supervisor, State0);
+	Msg ->
+	    loop(State0)
+    end.
+	
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% System upgrade
+
+handle_system_msg(SysState,Msg,From,Parent,Misc) ->
+    case do_sys_cmd(SysState,Msg,Parent, Misc) of
+	{suspended, Reply, NMisc} ->
+	    gen_reply(From, Reply),
+	    suspend_loop(suspended, Parent, NMisc);
+	{running, Reply, NMisc} ->
+	    gen_reply(From, Reply),
+	    system_continue(Parent, [], NMisc)
+    end.
+
+gen_reply({To, Tag}, Reply) ->
+    catch To ! {Tag, Reply}.
+
+%%-----------------------------------------------------------------
+%% When a process is suspended, it can only respond to system
+%% messages.
+%%-----------------------------------------------------------------
+suspend_loop(SysState, Parent, Misc) ->
+    receive
+	{system, From, Msg} ->
+	    handle_system_msg(SysState, Msg, From, Parent, Misc);
+	{'EXIT', Parent, Reason} ->
+	    system_terminate(Reason, Parent, [], Misc)
+    end.
+
+do_sys_cmd(_, suspend, _Parent, Misc) ->
+    {suspended, ok, Misc};
+do_sys_cmd(_, resume, _Parent, Misc) ->
+    {running, ok, Misc};
+do_sys_cmd(SysState, get_status, Parent, Misc) ->
+    Status = {status, self(), {module, ?MODULE},
+	      [get(), SysState, Parent, [], Misc]},
+    {SysState, Status, Misc};
+do_sys_cmd(SysState, {debug, What}, _Parent, Misc) ->
+    {SysState,ok,Misc};
+do_sys_cmd(suspended, {change_code, Module, Vsn, Extra}, _Parent, Misc0) ->
+    {Res, Misc} = 
+	case catch ?MODULE:system_code_change(Misc0, Module, Vsn, Extra)  of
+	    {ok, Misc1} -> {ok, Misc1};
+	    Else -> {{error, Else}, Misc0}
+	end,
+    {suspended, Res, Misc};
+do_sys_cmd(SysState, Other, _Parent, Misc) ->
+    {SysState, {error, {unknown_system_msg, Other}}, Misc}.
+
+system_continue(_Parent, _Debug, State) ->
+    loop(State).
+
+system_terminate(Reason, _Parent, _Debug, State) ->
+%    error_msg("~p terminating: ~p~n ",[?MODULE,Reason]),
+    exit(shutdown).
+
+system_code_change(State, _Module, _OldVsn, _Extra) ->
+    {ok, State}.
 
 %%
 %% The gen_server call back functions.
@@ -213,16 +316,13 @@ handle_call(stop,{_From,_Tag}, S) ->
     {stop,normal,stopped,S};
 
 handle_call(Other,{_From,_Tag}, S) ->			
-    error_logger:error_msg(" ** Codeserver*** ignoring ~w~n ",[Other]),
+    error_msg(" ** Codeserver*** ignoring ~w~n ",[Other]),
     {noreply,S}.
 
-handle_cast(_,S) ->
-    {noreply,S}.
-handle_info(_,S) ->
-    {noreply,S}.
-
-terminate(_Reason,_) ->
-    ok.
+% handle_cast(_,S) ->
+%     {noreply,S}.
+% handle_info(_,S) ->
+%     {noreply,S}.
 
 do_mod_call(Action, Module, _Error, St0) when is_atom(Module) ->
     {St, Res} = Action(Module, St0),
@@ -259,8 +359,8 @@ rehash_cache(Cache, St = #state{path = Path}) ->
     St#state{cache = Cache, path=NewPath}.
 
 locate_mods([Dir0|Path], Ext, Cache, Acc) ->
-    Dir = filename:absname(Dir0), %% Cache always expands the path 
-    case file:list_dir(Dir) of
+    Dir = absname(Dir0), %% Cache always expands the path 
+    case erl_prim_loader:list_dir(Dir) of
 	{ok, Files} -> 
 	    Cache = filter_mods(Files, Ext, Dir, Cache),
 	    locate_mods(Path, Ext, Cache, [Dir|Acc]);
@@ -334,8 +434,24 @@ is_numstr(Cs) ->
 		  (_) -> false end, Cs).
 
 split(Cs, S) ->
-    string:tokens(Cs, S).
-    
+    split1(Cs, S, []).
+
+split1([C|S], Seps, Toks) ->
+    case lists:member(C, Seps) of
+	true -> split1(S, Seps, Toks);
+	false -> split2(S, Seps, Toks, [C])
+    end;
+split1([], _Seps, Toks) ->
+    lists:reverse(Toks).
+
+split2([C|S], Seps, Toks, Cs) ->
+    case lists:member(C, Seps) of
+	true -> split1(S, Seps, [lists:reverse(Cs)|Toks]);
+	false -> split2(S, Seps, Toks, [C|Cs])
+    end;
+split2([], _Seps, Toks, Cs) ->
+    lists:reverse([lists:reverse(Cs)|Toks]).
+   
 join([H1, H2| T], S) ->
     H1 ++ S ++ join([H2| T], S);
 join([H], _) ->
@@ -360,11 +476,11 @@ make_path(BundleDir,[Bundle|Tail],Res,Bs) ->
     Dir = filename:append(BundleDir,Bundle),
     Bin = filename:append(Dir,"ebin"),
     %% First try with /ebin otherwise just add the dir
-    case file:read_file_info(Bin) of
+    case erl_prim_loader:read_file_info(Bin) of
 	{ok, #file_info{type=directory}} -> 
 	    make_path(BundleDir,Tail,[Bin|Res],[Bundle|Bs]);
 	_ ->
-	    case file:read_file_info(Dir) of
+	    case erl_prim_loader:read_file_info(Dir) of
 		{ok,#file_info{type=directory}} ->
 		    make_path(BundleDir,Tail,
 			      [Dir|Res],[Bundle|Bs]);
@@ -466,16 +582,9 @@ get_arg(Arg) ->
 %%
 exclude(Dir,Path) ->
     Name = get_name(Dir),
-    lists:filter(fun(D) when D == Dir ->
-			 false;
-		    (D) ->
-			 case get_name(D) of
-			     Name ->
-				 false; % exclude this dir !
-			     _ ->
-				 true
-			 end
-		 end, Path).
+    [D || D <- Path, 
+	  D /= Dir, 
+	  get_name(D) /= Name].
 
 %%
 %% Get the "Name" of a directory. A directory in the code server path
@@ -501,7 +610,7 @@ get_name2(_,Ack)      -> lists:reverse(Ack).
 check_path([]) -> 
     true;
 check_path([Dir |Tail]) ->
-    case catch file:read_file_info(Dir) of
+    case catch erl_prim_loader:read_file_info(Dir) of
 	{ok, #file_info{type=directory}} -> 
 	    check_path(Tail);
 	_ -> 
@@ -784,7 +893,7 @@ do_dir(_, _, _) ->
     'bad request to code'.
 
 stick_dir(Dir, Stick, St) ->
-    case file:list_dir(Dir) of
+    case erl_prim_loader:list_dir(Dir) of
 	{ok,Listing} ->
 	    Mods = get_mods(Listing, code_aux:objfile_extension()),
 	    Db = St#state.moddb,
@@ -855,7 +964,7 @@ modp(_)                    -> false.
 load_abs(File, Mod0, Db) ->
     Ext = code_aux:objfile_extension(),
     FileName0 = lists:concat([File, Ext]),
-    FileName = filename:absname(FileName0),
+    FileName = absname(FileName0),
     Mod = if Mod0 == [] ->
 		  list_to_atom(filename:basename(FileName0, Ext));
 	     true ->
@@ -891,25 +1000,25 @@ try_load_module(File, Mod, Bin, Db) ->
 
     case is_sticky(M, Db) of
 	true ->                         %% Sticky file reject the load
-	    error_logger:error_msg("Can't load module that resides in sticky dir\n",[]),
+	    error_msg("Can't load module that resides in sticky dir\n",[]),
 	    {error, sticky_directory};
 	false ->
-	case catch load_native_code(Mod, Bin) of
-	  {module,M} ->
-	    ets:insert(Db, {M,File}),
-	    {module,Mod};
-	  no_native ->
-	    case erlang:load_module(M, Bin) of
-	      {module,M} ->
-		ets:insert(Db, {M,File}),
-		{module,Mod};
-	      {error,What} ->
-		error_logger:error_msg("Loading of ~s failed: ~p\n", [File, What]),
-		{error,What}
-	    end;
-	  Error ->
-	   error_logger:error_msg("Native loading of ~s failed: ~p\n", [File, Error])
-	end
+	    case catch load_native_code(Mod, Bin) of
+		{module,M} ->
+		    ets:insert(Db, {M,File}),
+		    {module,Mod};
+		no_native ->
+		    case erlang:load_module(M, Bin) of
+			{module,M} ->
+			    ets:insert(Db, {M,File}),
+			    {module,Mod};
+			{error,What} ->
+			    error_msg("Loading of ~s failed: ~p\n", [File, What]),
+			    {error,What}
+		    end;
+		Error ->
+		    error_msg("Native loading of ~s failed: ~p\n", [File, Error])
+	    end
     end.
 
 load_native_code(Mod, Bin) ->
@@ -993,10 +1102,40 @@ mod_to_bin([], Mod) ->
     end.
 
 absname(File) ->
-    case prim_file:get_cwd() of
-	{ok,Cwd} -> filename:absname(File, Cwd);
+    case erl_prim_loader:get_cwd() of
+	{ok,Cwd} -> absname(File, Cwd);
 	_Error -> File
     end.
+
+absname(Name, AbsBase) ->
+    case filename:pathtype(Name) of
+	relative ->
+	    filename:absname_join(AbsBase, Name);
+	absolute ->
+	    %% We must flatten the filename before passing it into join/1,
+	    %% or we will get slashes inserted into the wrong places.
+	    filename:join([filename:flatten(Name)]);
+	volumerelative ->
+	    absname_vr(filename:split(Name), filename:split(AbsBase), AbsBase)
+    end.
+
+%% Handles volumerelative names (on Windows only).
+
+absname_vr(["/"|Rest1], [Volume|_], _AbsBase) ->
+    %% Absolute path on current drive.
+    filename:join([Volume|Rest1]);
+absname_vr([[X, $:]|Rest1], [[X|_]|_], AbsBase) ->
+    %% Relative to current directory on current drive.
+    absname(filename:join(Rest1), AbsBase);
+absname_vr([[X, $:]|Name], _, _AbsBase) ->
+    %% Relative to current directory on another drive.
+    Dcwd =
+	case erl_prim_loader:get_cwd([X, $:]) of
+	    {ok, Dir}  -> Dir;
+	    {error, _} -> [X, $:, $/]
+    end,
+    absname(filename:join(Name), Dcwd).
+
 
 %% do_purge(Module)
 %%  Kill all processes running code from *old* Module, and then purge the
@@ -1057,3 +1196,13 @@ all_l(Db, ModInfo, N, Acc) ->
 strip_mod_info([{{sticky,_},_}|T], Acc) -> strip_mod_info(T, Acc);
 strip_mod_info([H|T], Acc)              -> strip_mod_info(T, [H|Acc]);
 strip_mod_info([], Acc)                 -> Acc.
+
+% error_msg(Format) ->
+%     error_msg(Format,[]).
+error_msg(Format, Args) ->
+    Msg = {notify,{error, group_leader(), {self(), Format, Args}}},
+    error_logger ! Msg.
+
+info_msg(Format, Args) ->
+    Msg = {notify,{info_msg, group_leader(), {self(), Format, Args}}},
+    error_logger ! Msg.

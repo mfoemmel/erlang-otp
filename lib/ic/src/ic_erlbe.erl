@@ -60,8 +60,9 @@ do_gen(G, File, Form) ->
     G2 = ic_file:filename_push(G, [], mk_oe_name(G, 
 					       ic_file:remove_ext(to_list(File))),
 			     erlang),
+    Light = ic_options:get_opt(G, light_ifr),
     R = if
-	    GT == erl_corba ->
+	    GT == erl_corba, Light == false ->
 		case ic_genobj:is_stubfile_open(G2) of
 		    true ->
 			emit(ic_genobj:stubfiled(G2), "-include_lib(\"~s/include/~s\").\n\n", 
@@ -78,6 +79,23 @@ do_gen(G, File, Form) ->
 		ictk:reg_gen(G2, [], Form),
 		ictk:unreg_gen(G2, [], Form), % "new" unreg_gen/3
 		genDependency(G2), % creates code for dependency list
+		R0;
+	    GT == erl_corba, Light == true ->
+		case ic_genobj:is_stubfile_open(G2) of
+		    true ->
+			emit(ic_genobj:stubfiled(G2), "-include_lib(\"~s/include/~s\").\n\n", 
+			     [?ORBNAME, ?IFRTYPESHRL]);
+		    false -> ok
+		end,
+		gen_head(G2, [], Form),
+		ic_codegen:export(ic_genobj:stubfiled(G2), 
+				  [{ictk:register_name(G2), 0},
+				   {ictk:register_name(G2), 1},
+				   {ictk:unregister_name(G2), 0},
+				   {ictk:unregister_name(G2), 1}]),
+		R0= gen(G2, [], Form),
+		ictk:reg_gen(G2, [], Form),
+		ictk:unreg_gen(G2, [], Form), % "new" unreg_gen/3
 		R0;
 	    true ->
 		gen_head(G2, [], Form),
@@ -105,7 +123,7 @@ gen(G, N, [X|Xs]) when record(X, interface) ->
     N2 = [get_id2(X) | N],
     gen_head(G2, N2, X),
     gen(G2, N2, get_body(X)),
-    foreach(fun({Name, Body}) -> gen(G2, N2, Body) end, 
+    foreach(fun({_Name, Body}) -> gen(G2, N2, Body) end, 
 	    X#interface.inherit_body),
     gen_serv(G2, N, X), 
     G3 = ic_file:filename_pop(G2, erlang),
@@ -114,7 +132,7 @@ gen(G, N, [X|Xs]) when record(X, interface) ->
 gen(G, N, [X|Xs]) when record(X, const) ->
     N2 = [get_id2(X) | N],
     emit_constant_func(G, X#const.id, X#const.val),
-    gen(G, N, Xs);
+    gen(G, N, Xs); %% N2 or N?
 
 gen(G, N, [X|Xs]) when record(X, op) ->
     {Name, ArgNames, TypeList, OutArgs} = extract_info(G, N, X),
@@ -137,13 +155,13 @@ gen(G, N, [X|Xs]) ->
     end,
     gen(G, N, Xs);
 
-gen(G, N, []) -> ok.
+gen(_G, _N, []) -> ok.
 
 
 may_contain_structs(X) when record(X, typedef) -> true;
 may_contain_structs(X) when record(X, struct) -> true;
 may_contain_structs(X) when record(X, union) -> true;
-may_contain_structs(X) -> false.
+may_contain_structs(_X) -> false.
 
 
 
@@ -156,29 +174,29 @@ gen_serv(G, N, X) ->
     case ic_genobj:is_stubfile_open(G) of
 	true ->
 	    GT = get_opt(G, be),
-	    gen_oe_is_a(G, N, X),
+	    gen_oe_is_a(G, N, X, GT),
 	    N2 = [get_id2(X) | N], 
 	    gen_oe_tc(G, N2, X, GT),
 
 	    emit_serv_std(GT, G, N, X),
 
 	    gen_calls(G, N2, get_body(X)),
-	    lists:foreach(fun({Name, Body}) ->
+	    lists:foreach(fun({_Name, Body}) ->
 				  gen_calls(G, N2, Body) end,
 			  X#interface.inherit_body),
-	    gen_end_of_call(GT, G, N, X), % Note N instead of N2
+	    gen_end_of_call(GT, G),
 	    
 	    gen_casts(G, N2, get_body(X)),
-	    lists:foreach(fun({Name, Body}) ->
+	    lists:foreach(fun({_Name, Body}) ->
 				  gen_casts(G, N2, Body) end,
 			  X#interface.inherit_body),
-	    gen_end_of_cast(GT, G, N, X), % Note N instead of N2
+	    gen_end_of_cast(GT, G),
 	    emit_skel_footer(GT, G, N, X); % Note N instead of N2
 	false ->
 	    ok
     end.
 
-gen_oe_is_a(G, N, X) when record(X, interface) ->
+gen_oe_is_a(G, N, X, erl_corba) when record(X, interface) ->
     Fd = ic_genobj:stubfiled(G),
     ic_codegen:mcomment(Fd, ["Inherited Interfaces"]),
     emit(Fd, "oe_is_a(~p) -> true;\n", [ictk:get_IR_ID(G, N, X)]),
@@ -189,7 +207,7 @@ gen_oe_is_a(G, N, X) when record(X, interface) ->
     emit(Fd, "oe_is_a(_) -> false.\n"),
     nl(Fd),
     ok;
-gen_oe_is_a(G, N, X) -> ok.
+gen_oe_is_a(_G, _N, _X, _BE) -> ok.
 
 
 %% Generates the oe_tc function 
@@ -260,7 +278,7 @@ gen_oe_tc2(G, N, [X|Rest], Fd, Acc) when record(X, attr) ->
 		    end, Acc, ic_forms:get_idlist(X)),
     gen_oe_tc2(G, N, Rest, Fd, NewAcc);
 
-gen_oe_tc2(G,N,[X|Rest], Fd, Acc) -> 
+gen_oe_tc2(G,N,[_X|Rest], Fd, Acc) -> 
     gen_oe_tc2(G,N,Rest, Fd, Acc).
 
                   
@@ -296,7 +314,7 @@ gen_oe_tc3(G, N, [X|Rest], Fd, Acc) when record(X, attr) ->
 			 end, Acc, ic_forms:get_idlist(X)),
     gen_oe_tc3(G, N, Rest, Fd, NewAcc);
 
-gen_oe_tc3(G,N,[X|Rest], Fd, Acc) -> 
+gen_oe_tc3(G,N,[_X|Rest], Fd, Acc) -> 
     gen_oe_tc3(G,N,Rest, Fd, Acc).
 
 gen_calls(G, N, [X|Xs]) when record(X, op) ->
@@ -314,8 +332,8 @@ gen_calls(G, N, [X|Xs]) when record(X, attr) ->
     emit_attr(G, N, X, fun emit_skel_func/9),
     gen_calls(G, N, Xs);
 
-gen_calls(G, N, [X|Xs]) -> gen_calls(G, N, Xs);
-gen_calls(G, N, []) -> ok.
+gen_calls(G, N, [_X|Xs]) -> gen_calls(G, N, Xs);
+gen_calls(_G, _N, []) -> ok.
 
 gen_casts(G, N, [X|Xs]) when record(X, op) ->
     case is_oneway(X) of
@@ -328,8 +346,8 @@ gen_casts(G, N, [X|Xs]) when record(X, op) ->
 	    gen_casts(G, N, Xs)
     end;
 
-gen_casts(G, N, [X|Xs]) -> gen_casts(G, N, Xs);
-gen_casts(G, N, []) -> ok.
+gen_casts(G, N, [_X|Xs]) -> gen_casts(G, N, Xs);
+gen_casts(_G, _N, []) -> ok.
 
 emit_attr(G, N, X, F) ->
     XX = #id_of{type=X},
@@ -349,12 +367,11 @@ emit_attr(G, N, X, F) ->
 			  end end, ic_forms:get_idlist(X)).
 
 
-extract_info(G, N, X) when record(X, op) ->
+extract_info(G, _N, X) when record(X, op) ->
     Name	= get_id2(X),
     InArgs	= ic:filter_params([in,inout], X#op.params),
     OutArgs	= ic:filter_params([out,inout], X#op.params),
     ArgNames	= mk_erl_vars(G, InArgs),
-    S = ic_genobj:tktab(G),
     TypeList	= {ic_forms:get_tk(X),
 		   map(fun(Y) -> ic_forms:get_tk(Y) end, InArgs),
 		   map(fun(Y) -> ic_forms:get_tk(Y) end, OutArgs)
@@ -367,17 +384,6 @@ extract_info(G, N, X) when record(X, op) ->
 %% gen_server
 emit_serv_std(erl_corba, G, N, X) ->
     Fd		= ic_genobj:stubfiled(G),
-    Reply	= mk_name(G, "Reply"),
-    State	= mk_name(G, "State"),
-    NewState	= mk_name(G, "NewState"),
-    Reason	= mk_name(G, "Reason"),
-    Timeout	= mk_name(G, "Timeout"),
-
-    Var1	= mk_name(G, "1"),
-    Var2	= mk_name(G, "2"),
-    Var3	= mk_name(G, "3"),
-    Var4	= mk_name(G, "4"),
-
     Impl	= ic_genobj:impl(G),
     TypeID = ictk:get_IR_ID(G, N, X),
 
@@ -422,11 +428,6 @@ emit_serv_std(erl_corba, G, N, X) ->
     Fd;
 emit_serv_std(erl_genserv, G, N, X) ->
     Fd		= ic_genobj:stubfiled(G),
-    Ret		= mk_name(G, "Ret"),
-    State	= mk_name(G, "State"),
-    NewState	= mk_name(G, "NewState"),
-    Var		= mk_name(G, ""),
-    Reason	= mk_name(G, "Reason"),
     Impl	= ic_genobj:impl(G),
     TypeID = ictk:get_IR_ID(G, N, X),
 
@@ -486,7 +487,7 @@ emit_serv_std(erl_genserv, G, N, X) ->
     nl(Fd), nl(Fd),
     Fd.
 
-gen_end_of_call(erl_corba, G, N, X) ->
+gen_end_of_call(erl_corba, G) ->
     Fd = ic_genobj:stubfiled(G),
     nl(Fd), nl(Fd),
     ic_codegen:mcomment_light(Fd, ["Standard gen_server call handle"]),
@@ -504,7 +505,7 @@ gen_end_of_call(erl_corba, G, N, X) ->
 	    nl(Fd)
     end,
     ok;
-gen_end_of_call(erl_genserv, G, N, X) ->
+gen_end_of_call(erl_genserv, G) ->
     Fd = ic_genobj:stubfiled(G),
     nl(Fd), nl(Fd),
     ic_codegen:mcomment_light(Fd, ["Standard gen_server call handle"]),
@@ -514,7 +515,7 @@ gen_end_of_call(erl_genserv, G, N, X) ->
     nl(Fd), nl(Fd),
     ok.
 
-gen_end_of_cast(erl_corba, G, N, X) ->
+gen_end_of_cast(erl_corba, G) ->
     Fd = ic_genobj:stubfiled(G),
     nl(Fd), nl(Fd),
     ic_codegen:mcomment_light(Fd, ["Standard gen_server cast handle"]),
@@ -531,7 +532,7 @@ gen_end_of_cast(erl_corba, G, N, X) ->
 	    nl(Fd), nl(Fd)
     end,
     ok;
-gen_end_of_cast(erl_genserv, G, N, X) ->
+gen_end_of_cast(erl_genserv, G) ->
     Fd = ic_genobj:stubfiled(G),
     nl(Fd), nl(Fd),
     ic_codegen:mcomment_light(Fd, ["Standard gen_server cast handle"]),
@@ -598,7 +599,7 @@ use_impl_handle_info(G, N, X) ->
 	_ -> true
     end.
 
-use_timeout(G, N, X) ->
+use_timeout(G, N, _X) ->
     FullName = ic_util:to_colon(N),
     case {get_opt(G, {timeout, true}), get_opt(G, {timeout, FullName})} of
 	{_, force_false} -> false;
@@ -658,8 +659,8 @@ gen_head_special(G, N, X) when record(X, interface) ->
 		    nl(Fd)
 	    end, X#interface.inherit_body),
 
-    ic_codegen:comment(Fd, "Type identification function and inheritance"),
-    ic_codegen:export(Fd, [{typeID, 0}, {oe_is_a, 1}]), 
+    ic_codegen:comment(Fd, "Type identification function"),
+    ic_codegen:export(Fd, [{typeID, 0}]), 
     nl(Fd),
     ic_codegen:comment(Fd, "Used to start server"),
     ic_codegen:export(Fd, [{oe_create, 0}, {oe_create_link, 0}, {oe_create, 1}, {oe_create_link, 1},
@@ -667,8 +668,8 @@ gen_head_special(G, N, X) when record(X, interface) ->
     nl(Fd),
     case get_opt(G, be) of
 	erl_corba ->
-	    ic_codegen:comment(Fd, "TypeCode Functions"),
-	    ic_codegen:export(Fd, [{oe_tc, 1}, {oe_get_interface, 0}]);
+	    ic_codegen:comment(Fd, "TypeCode Functions and inheritance"),
+	    ic_codegen:export(Fd, [{oe_tc, 1}, {oe_is_a, 1}, {oe_get_interface, 0}]);
 	_ ->
 	    ic_codegen:export(Fd, [{start, 2}, {start_link, 3}])
     end,
@@ -696,7 +697,7 @@ gen_head_special(G, N, X) when record(X, interface) ->
     ic_codegen:mcomment(Fd, ["Object interface functions."]),
     nl(Fd), nl(Fd), nl(Fd),
     Fd;
-gen_head_special(G, N, X) -> ok.
+gen_head_special(_G, _N, _X) -> ok.
 
     
 
@@ -712,7 +713,7 @@ gen_head(G, N, X) ->
 	false -> ok
     end.
 
-exp_top(G, N, X, Acc, _)  when element(1, X) == preproc -> 
+exp_top(_G, _N, X, Acc, _)  when element(1, X) == preproc -> 
     Acc;
 exp_top(G, N, L, Acc, BE)  when list(L) ->
     exp_list(G, N, L, Acc, BE);
@@ -723,13 +724,13 @@ exp_top(G, N, I, Acc, BE)  when record(I, interface) ->
 exp_top(G, N, X, Acc, BE) ->
     exp3(G, N, X, Acc, BE).
 
-exp3(G, N, C, Acc, BE)  when record(C, const) ->
+exp3(_G, _N, C, Acc, _BE)  when record(C, const) ->
     [{get_id(C#const.id), 0} | Acc];
-exp3(G, N, Op, Acc, erl_corba)  when record(Op, op) ->
+exp3(_G, _N, Op, Acc, erl_corba)  when record(Op, op) ->
     FuncName = get_id(Op#op.id),
     Arity = length(ic:filter_params([in, inout], Op#op.params)) + 1,
     [{FuncName, Arity}, {FuncName, Arity+1} | Acc];
-exp3(G, N, Op, Acc, BE)  when record(Op, op) ->
+exp3(G, N, Op, Acc, _BE)  when record(Op, op) ->
     FuncName = get_id(Op#op.id),
     Arity = 
 	case use_timeout(G,N,Op) of
@@ -746,7 +747,7 @@ exp3(G, N, Op, Acc, BE)  when record(Op, op) ->
 	end,
     [{FuncName, Arity} | Acc];
 
-exp3(G, N, A, Acc, erl_corba)  when record(A, attr) ->
+exp3(_G, _N, A, Acc, erl_corba)  when record(A, attr) ->
     lists:foldr(fun(Id, Acc2) ->
 			{Get, Set} = mk_attr_func_names([], get_id(Id)),
 			case A#attr.readonly of
@@ -754,7 +755,7 @@ exp3(G, N, A, Acc, erl_corba)  when record(A, attr) ->
 			    _ ->             [{Get, 1}, {Get, 2}, 
 					      {Set, 2}, {Set, 3} | Acc2]
 			end end, Acc, ic_forms:get_idlist(A));
-exp3(G, N, A, Acc, BE)  when record(A, attr) ->
+exp3(_G, _N, A, Acc, _BE)  when record(A, attr) ->
     lists:foldr(fun(Id, Acc2) ->
 			{Get, Set} = mk_attr_func_names([], get_id(Id)),
 			case A#attr.readonly of
@@ -762,7 +763,7 @@ exp3(G, N, A, Acc, BE)  when record(A, attr) ->
 			    _ ->             [{Get, 1}, {Set, 2} | Acc2]
 			end end, Acc, ic_forms:get_idlist(A));
 
-exp3(G, N, X, Acc, BE) -> Acc.
+exp3(_G, _N, _X, Acc, _BE) -> Acc.
 
 exp_list(G, N, L, OrigAcc, BE) -> 
     lists:foldr(fun(X, Acc) -> exp3(G, N, X, Acc, BE) end, OrigAcc, L).
@@ -777,7 +778,7 @@ exp_list(G, N, L, OrigAcc, BE) ->
 %%	Low level generation primitives
 %%
 
-emit_stub_func(G, N, X, Name, ArgNames, TypeList, OutArgs, Oneway, Backend) ->
+emit_stub_func(G, N, X, Name, ArgNames, _TypeList, OutArgs, Oneway, Backend) ->
     case ic_genobj:is_stubfile_open(G) of
 	false -> 
 	    ok;
@@ -868,22 +869,17 @@ emit_skel_func(G, N, X, OpName, ArgNames, TypeList, OutArgs, Oneway, Backend) ->
 				  Oneway, Backend)
     end.
 
-emit_skel_func_helper(G, N, X, OpName, ArgNames, TypeList, OutArgs, Oneway, 
+emit_skel_func_helper(G, N, X, OpName, ArgNames, _TypeList, OutArgs, Oneway, 
 		      erl_corba) ->
     Fd = ic_genobj:stubfiled(G),
     Name	= list_to_atom(OpName),
     ImplF	= Name,
     ImplM	= list_to_atom(ic_genobj:impl(G)),
     ThisStr	= mk_name(G, "THIS"),
-    TL		= mk_name(G, "Types"),
     FromStr	= mk_name(G, "From"),
     State	= mk_name(G, "State"),
     Context	= mk_name(G, "Context"),
-    VarPrecond	= mk_name(G, "Precond"),
-    VarPostcond	= mk_name(G, "Postcond"),
 
-    %% Create argument list
-    CallArgs1 = [State | ArgNames],
     {UseFrom, From} =
 	case Oneway of
 	    false ->
@@ -937,13 +933,12 @@ emit_skel_func_helper(G, N, X, OpName, ArgNames, TypeList, OutArgs, Oneway,
 			  Precond, Postcond])
 	    end
     end;
-emit_skel_func_helper(G, N, X, OpName, ArgNames, TypeList, OutArgs, Oneway,
-		      Backend) ->
+emit_skel_func_helper(G, N, X, OpName, ArgNames, _TypeList, OutArgs, Oneway,
+		      _Backend) ->
     Fd = ic_genobj:stubfiled(G),
     Name	= list_to_atom(OpName),
     ImplF	= Name,
     ImplM	= list_to_atom(ic_genobj:impl(G)),
-    TL		= mk_name(G, "Types"),
     FromStr	= mk_name(G, "From"),
     State	= mk_name(G, "State"),
 
@@ -1027,7 +1022,7 @@ emit_constant_func(G, Id, Val) ->
 
 
 
-emit_const_comment(G, F, X, Name) ->
+emit_const_comment(_G, F, _X, Name) ->
     ic_codegen:mcomment_light(F,
 			 [io_lib:format("Constant: ~p", [Name])]).
 
@@ -1040,7 +1035,7 @@ emit_op_comment(G, F, X, Name, InP, OutP) ->
 			  get_raises(X)]).
 
 get_title(X) when record(X, attr) -> "Attribute Operation";
-get_title(X) -> "Operation".
+get_title(_X) -> "Operation".
 
 get_raises(X) when record(X, op) ->
     if  X#op.raises == [] -> [];
@@ -1048,11 +1043,11 @@ get_raises(X) when record(X, op) ->
 	    ["  Raises:  " ++ 
 	     mk_list(lists:map({ic_util, to_colon}, X#op.raises))]
     end;
-get_raises(X) -> [].
+get_raises(_X) -> [].
 
-get_returns(G, X, InP, []) ->
+get_returns(_G, _X, _InP, []) ->
     "  Returns: RetVal";
-get_returns(G, X, InP, OutP) ->
+get_returns(G, _X, _InP, OutP) ->
     "  Returns: "++mk_list(["RetVal" | mk_erl_vars(G, OutP)]).
 
 
@@ -1068,12 +1063,12 @@ get_returns(G, X, InP, OutP) ->
 
 %% The automaticly generated get and set operation names for an
 %% attribute.
-mk_attr_func_names(Scope, Name) ->
+mk_attr_func_names(_Scope, Name) ->
     {"_get_" ++ Name, "_set_" ++ Name}.
 %%    {scoped_name(Scope, "_get_"++Name), scoped_name(Scope, "_set_"++Name)}.
 
 %% Returns TK of the Get and Set attribute functions.
-mk_attr_func_types(N, X) ->
+mk_attr_func_types(_N, X) ->
     TK = ic_forms:get_tk(X),
     {{TK, [], []}, {tk_void, [TK], []}}.
         
@@ -1090,7 +1085,7 @@ mk_attr_func_types(N, X) ->
 
 %% Input is a list of parameters (in parse form) and output is a list
 %% of capitalised variable names. mk_var is in icgen
-mk_erl_vars(G, Params) ->
+mk_erl_vars(_G, Params) ->
     map(fun(P) -> mk_var(get_id(P#param.id)) end, Params).
 
 

@@ -41,18 +41,20 @@ convert(MibName) ->
 
 convert(MibFile, HrlFile, MibName, Verbose) ->
     case snmp_misc:read_mib(MibFile) of
-	{ok, #mib{asn1_types = Types, mes = MEs}} ->
-	    resolve(Types, MEs, HrlFile, filename:basename(MibName), Verbose),
+	{ok, #mib{asn1_types = Types, mes = MEs, traps = Traps}} ->
+	    resolve(Types, MEs, Traps, HrlFile, 
+		    filename:basename(MibName), Verbose),
 	    ok;
 	{error, Reason} ->
 	    {error, Reason}
     end.
 
-resolve(Types, MEs, HrlFile, MibName, Verbose) ->
+resolve(Types, MEs, Traps, HrlFile, MibName, Verbose) ->
     case file:open(HrlFile, write) of
 	{ok, Fd} ->
 	    insert_header(Fd),
 	    insert_begin(Fd, MibName),
+	    insert_notifs(Traps, Fd),
 	    insert_oids(MEs, Fd),
 	    insert_range(MEs, Fd),
 	    insert_enums(Types, MEs, Fd),
@@ -78,7 +80,9 @@ insert_header(Fd) ->
 	      [D,month(Mo),Y,H,Mi,S]).
 
 insert_begin(Fd, MibName) ->
-    io:format(Fd, "-ifndef('~s').~n-define('~s', true).~n", [MibName, MibName]).
+    io:format(Fd, 
+	      "-ifndef('~s').~n"
+	      "-define('~s', true).~n", [MibName, MibName]).
 
 insert_end(Fd) ->
     io:format(Fd, "-endif.~n", []).
@@ -100,6 +104,25 @@ insert_oids([#me{oid = Oid, aliasname = Name} | T], Fd) ->
     insert_oids(T, Fd);
 insert_oids([], _Fd) -> ok.
 
+
+insert_notifs(Traps, Fd) ->
+    Notifs = [Notif || #notification{} = Notif <- Traps],
+    case Notifs of
+	[] ->
+	    ok;
+	_ -> 
+	    io:format(Fd, "~n%% Notifications~n", []),
+	    insert_notifs2(Notifs, Fd)
+    end.
+    
+insert_notifs2([], _Fd) ->
+    ok;
+insert_notifs2([#notification{trapname = Name, oid = Oid}|T], Fd) ->
+    io:format(Fd, "-define(~w, ~w).~n", [Name, Oid]),
+    insert_notifs2(T, Fd);
+insert_notifs2([_|T], Fd) -> % Crap
+    insert_notifs2(T, Fd).
+
 %%-----------------------------------------------------------------
 %% There's nothing strange with this function!  Enums can be
 %% defined in types and in mibentries; therefore, we first call
@@ -111,7 +134,9 @@ insert_enums(Types, MEs, Fd) ->
 
 %% Insert all types, but not the imported.  Ret the names of inserted
 %% types.
-ins_types([#asn1_type{aliasname=Name, assocList = Alist, imported = false} | T],
+ins_types([#asn1_type{aliasname = Name, 
+		      assocList = Alist, 
+		      imported  = false} | T],
 	  Fd, Res) 
   when list(Alist) ->
     case lists:keysearch(enums, 1, Alist) of
@@ -133,9 +158,10 @@ ins_mes([#me{entrytype = internal} | T], Types, Fd) ->
     ins_mes(T, Types, Fd);
 ins_mes([#me{entrytype = table} | T], Types, Fd) ->
     ins_mes(T, Types, Fd);
-ins_mes([#me{aliasname = Name, asn1_type = #asn1_type{assocList = Alist,
-						      aliasname = Aname},
-						      imported = false} | T],
+ins_mes([#me{aliasname = Name, 
+	     asn1_type = #asn1_type{assocList = Alist,
+				    aliasname = Aname},
+	     imported  = false} | T],
 	Types, Fd)
   when list(Alist) ->
     case lists:keysearch(enums, 1, Alist) of
@@ -282,3 +308,4 @@ compile(Input, Output, Opts) ->
 	    io:format("~p", [Reason]),
 	    error
     end.
+

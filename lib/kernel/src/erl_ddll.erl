@@ -25,6 +25,11 @@
 %%  - After restart, must find out which drivers are loaded and
 %%    which ports use them.  Alternative, if killed, should take
 %%    down the whole OTP.
+%%  = As a fix now, it sets its group leader to 'user' to not get
+%%    killed by the application_master that happens to start
+%%    ddll_server, and when started unloads all dynamically loaded
+%%    drivers, and thereby kills all ports belonging to them. This
+%%    should be done by the driver when its port owner disappears.
 
 -module(erl_ddll).
 
@@ -34,7 +39,8 @@
 -export([start/0, start_link/0, stop/0]).
 
 %% Internal exports, call-back functions.
--export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,code_change/3]).
+-export([init/1,handle_call/3,handle_cast/2,handle_info/2,
+	 terminate/2,code_change/3]).
 
 %% Defines for ddll_drv.
 
@@ -54,7 +60,22 @@ start_link() ->
 
 init([]) ->
     process_flag(trap_exit, true),
+    %% Must set group leader to something harmless. Otherwise this
+    %% server will be terminated (kill) when the application_master of the
+    %% invoking application is terminated.
+    case whereis(user) of
+	Pid when pid(Pid) ->
+	    group_leader(Pid, self());
+	_ -> ok
+    end,
     Port = open_port({spawn, ddll}, []),
+    {ok,Drivers} = loaded_drivers(Port),
+    DynDrivers = [D || D <- Drivers, unload_driver(Port, D) == ok],
+    case DynDrivers of
+	[] -> ok;
+	_ -> error_logger:error_msg(?MODULE_STRING" ~p forced unload of ~p~n", 
+				    [self(),DynDrivers])
+    end,
     {ok, {Port, []}}.
 
 load_driver(Path, Driver) when atom(Path) ->
@@ -90,15 +111,14 @@ format_error(not_loaded_by_this_process) -> "Driver not loaded by this process";
 format_error(_) -> "Unknown error".
 
 req(Req) ->
-    Ddll = 
-	case whereis(ddll_server) of
-	    undefined ->
-		{ok, Pid} = start(),
-		Pid;
-	    Pid ->
-		Pid
-	end,
-    gen_server:call(Ddll, Req, infinity).
+    case catch gen_server:call(ddll_server, Req, infinity) of
+	{'EXIT',{noproc,_}} ->
+	    erlang:yield(), % Give server time to die properly if dying
+	    start(),
+	    gen_server:call(ddll_server, Req, infinity);
+	{'EXIT',Reason} -> exit(Reason);
+	Reply -> Reply
+    end.
 
 
 %%% --------------------------------------------------------
@@ -122,17 +142,25 @@ handle_call(stop, _, Data) ->
 handle_cast(_, Data) ->
     {noreply, Data}.
 
+handle_info({'EXIT', Port, Reason}, {Port, Drivers}) ->
+    {stop, {port_died, Reason}, {Port, Drivers}};
 handle_info({'EXIT', Pid, _Reason}, {Port, Drivers}) ->
     NewDrivers = unload_drivers(Drivers, Pid, Port, []),
     {noreply, {Port, NewDrivers}};
-handle_info({'EXIT', Port, Reason}, {Port, Drivers}) ->
-    {stop, {port_died, Reason}, {Port, Drivers}};
-handle_info(_, Data) ->
+handle_info(Other, Data) ->
+    error_logger:info_msg(?MODULE_STRING" received:~n"
+			  "   ~p~n", [Other]),
     {noreply, Data}.
 
 terminate(_Reason, {Port, Drivers}) ->
     unload_all_drivers(Drivers, Port),
     Port ! {self, close}.
+
+code_change(_OldVsn, State, _Extra) -> 
+    %% I doubt that changing the code for this module will work,
+    %% but at least we avoid a compilation warning.
+    {ok,State}.
+
 
 
 %%% --------------------------------------------------------
@@ -233,7 +261,15 @@ unload_drivers([{Driver, Processes}|Rest], Pid, Port, Result) ->
     case unload_process(Processes, Pid, []) of
 	[] ->
 	    %% XXX There is a problem if this unload fails.
-	    unload_driver(Port, atom_to_list(Driver)),
+	    case unload_driver(Port, atom_to_list(Driver)) of
+		ok -> ok;
+		Error ->
+		    error_logger:error_msg(
+		      ?MODULE_STRING" unload_driver(~p, ~p)~n"
+		      "-> ~p~n"
+		      "From ~p~n",
+		      [Port,Driver,Error,Pid])
+	    end,
 	    unload_drivers(Rest, Pid, Port, Result);
 	NewProcesses ->
 	    unload_drivers(Rest, Pid, Port, [{Driver, NewProcesses}|Result])
@@ -251,7 +287,14 @@ unload_process([], _Pid, Result) ->
 %% Unloads all drivers (called when the server terminates).
 
 unload_all_drivers([{Driver, _}|Rest], Port) ->
-    unload_driver(Port, atom_to_list(Driver)),
+    case unload_driver(Port, atom_to_list(Driver)) of
+	ok -> ok;
+	Error ->
+	    error_logger:error_msg(
+	      ?MODULE_STRING" unload_driver(~p, ~p)~n"
+	      "-> ~p~n",
+	      [Port,Driver,Error])
+    end,
     unload_all_drivers(Rest, Port);
 unload_all_drivers([], _) ->
     ok.
@@ -304,8 +347,3 @@ get_error([0|Message], Atom) ->
     {error, {list_to_atom(lists:reverse(Atom)), Message}};
 get_error([C|Rest], Atom) ->
     get_error(Rest, [C|Atom]).
-    
-code_change(_OldVsn, State, _Extra) ->
-    %% I doubt that changing the code for this module will work,
-    %% but at least we avoid a compilation warning.
-    {ok,State}.

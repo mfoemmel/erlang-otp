@@ -33,7 +33,6 @@
 -include("orber_ifr.hrl").
 -include_lib("orber/include/corba.hrl").
 
-
 %%%======================================================================
 %%% IRObject
 
@@ -54,19 +53,19 @@ destroy(L) when list(L) ->
     destroy2(lists:reverse(L)).
 
 destroy2([Things_HD | Things_TL]) ->
-    ?debug_print("Destruction list:",[Things_HD | Things_TL]),
     destroy2(Things_HD),
     destroy2(Things_TL);
 
-destroy2([]) -> ok;
-
+destroy2([]) -> 
+    ok;
 destroy2(F) when function(F) ->
     F();
-
 destroy2(Thing) when tuple(Thing) ->
-    Foo = mnesia:delete(Thing),
-    ?debug_print("{Foo, Thing}: ",{Foo, Thing});
-
+    mnesia:delete(Thing),
+    ok;
 destroy2(Thing) ->
-    ?ifr_exception("Strange argument for destroy: ", Thing).
+    orber:dbg("[~p] ~p:destroy2(~p);~n"
+	      "Strange argument for destroy.~n", 
+	      [?LINE, ?MODULE, Thing], ?DEBUG_LEVEL),
+    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO}).
 

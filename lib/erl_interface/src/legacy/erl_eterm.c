@@ -19,6 +19,8 @@
  * Purpose: Representation of Erlang terms.
  */  
 
+#include "eidef.h"
+
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>

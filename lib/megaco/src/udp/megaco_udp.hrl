@@ -27,7 +27,8 @@
 	 options = [],
 	 socket,
 	 receive_handle,
-	 module = megaco
+	 module = megaco,
+	 serialize = false  % false: Spawn a new process for each message
 	}).
 
 
@@ -39,25 +40,16 @@
 %% Event Trace
 %%----------------------------------------------------------------------
 
+-define(udp_report(Level, UdpRec, From, To, Label, Contents),
+	megaco:report_event(Level, From, To, Label,
+			    [{line, ?MODULE, ?LINE}, UdpRec | Contents])).
+
 -define(udp_debug(UdpRec, Label, Contents),
 	?udp_report_debug(UdpRec,
 			  megaco_udp,
 			  megaco_udp,
 			  Label,
 			  Contents)).
-
--define(udp_report(Level, UdpRec, From, To, Label, Contents),
-        if
-            list(Contents) ->
-                megaco:report_event(Level, From, To, Label,
-				    [{line, ?MODULE, ?LINE}, UdpRec | Contents]);
-            true ->
-                ok = error_logger:format("~p(~p): Bad arguments to et:
-"
-                                         "report(~p, ~p, ~p, ~p, ~p, ~p)~n",
-                                         [?MODULE, ?LINE,
-                                          Level, UdpRec, From, To, Label, Contents])
-        end).
 
 -define(udp_report_important(C, From, To, Label, Contents), 
 	?udp_report(20, C, From, To, Label, Contents)).

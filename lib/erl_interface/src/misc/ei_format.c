@@ -268,8 +268,10 @@ static int ptuple(const char** fmt, union arg** args, ei_x_buff* x, int size)
     const char* p = *fmt;
     char after = *p++;
     
-    if (after == '}')
+    if (after == '}') {
+	*fmt = p;
 	return size;
+    }
     while (isspace((int)*p))
 	++p;
     switch (*p++) {

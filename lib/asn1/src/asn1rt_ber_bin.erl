@@ -36,6 +36,7 @@
 	 encode_object_identifier/2,decode_object_identifier/3,
 	 encode_restricted_string/4,decode_restricted_string/6,
 	 encode_universal_string/3,decode_universal_string/5,
+	 encode_UTF8_string/3, decode_UTF8_string/3,
 	 encode_BMP_string/3,decode_BMP_string/5,
 	 encode_generalized_time/3,decode_generalized_time/5,
 	 encode_utc_time/3,decode_utc_time/5,
@@ -71,6 +72,7 @@
 -define(N_REAL, 9). 
 -define(N_ENUMERATED, 10). 
 -define(N_EMBEDDED_PDV, 11). 
+-define(N_UTF8String, 12).
 -define(N_SEQUENCE, 16). 
 -define(N_SET, 17). 
 -define(N_NumericString, 18).
@@ -170,8 +172,9 @@ restbytes2(RemBytes,<<>>,_) ->
     {RemBytes,0};
 restbytes2(_RemBytes,Bytes,noext) ->
     exit({error,{asn1, {unexpected,Bytes}}});
-restbytes2(RemBytes,_Bytes,ext) ->
-    {RemBytes,0}.
+restbytes2(RemBytes,Bytes,ext) ->
+%%    {RemBytes,0}.
+    {RemBytes,size(Bytes)}.
 
 
 
@@ -531,23 +534,38 @@ encode_open_type(Val,Tag) ->
 %% Value = [byte] with decoded data (which must be decoded again as some type)
 %%
 decode_open_type(Bytes) ->
-    {_Tag, Len, _RemainingBuffer, RemovedBytes} = decode_tag_and_length(Bytes),
-    N = Len + RemovedBytes,
+%    {_Tag, Len, _RemainingBuffer, RemovedBytes} = decode_tag_and_length(Bytes),
+%    N = Len + RemovedBytes,
+    {_Tag, Len, RemainingBuffer, RemovedBytes} = decode_tag_and_length(Bytes),
+    {_RemainingBuffer2, RemovedBytes2} = skipvalue(Len, RemainingBuffer, RemovedBytes), 
+    N = RemovedBytes2,
     <<Val:N/binary, RemainingBytes/binary>> = Bytes,
-    {Val, RemainingBytes, Len + RemovedBytes}.
+%    {Val, RemainingBytes, Len + RemovedBytes}.
+    {Val,RemainingBytes,N}.
 
+decode_open_type(<<>>,[]=ExplTag) -> % R9C-0.patch-40
+    exit({error, {asn1,{no_optional_tag, ExplTag}}});
 decode_open_type(Bytes,ExplTag) ->
     {Tag, Len, RemainingBuffer, RemovedBytes} = decode_tag_and_length(Bytes),
     case {Tag,ExplTag} of
+% 	{{Class,Form,32},[#tag{class=Class,number=No,form=32}]} ->
+% 	    {_Tag2, Len2, RemainingBuffer2, RemovedBytes2} = decode_tag_and_length(RemainingBuffer),
+% 	    {_RemainingBuffer3, RemovedBytes3} = skipvalue(Len2, RemainingBuffer2, RemovedBytes2),
+% 	    N = RemovedBytes3,
+% 	    <<_:RemovedBytes/unit:8,Val:N/binary,RemainingBytes/binary>> = Bytes,
+% 	    {Val, RemainingBytes, N + RemovedBytes};
 	{{Class,Form,No},[#tag{class=Class,number=No,form=Form}]} ->
-	    {_Tag2, Len2, _RemainingBuffer2, RemovedBytes2} = decode_tag_and_length(RemainingBuffer),
-	    N = Len2 + RemovedBytes2,
+	    {_RemainingBuffer2, RemovedBytes2} = 
+		skipvalue(Len, RemainingBuffer),
+	    N = RemovedBytes2,
 	    <<_:RemovedBytes/unit:8,Val:N/binary,RemainingBytes/binary>> = Bytes,
 	    {Val, RemainingBytes, N + RemovedBytes};
 	_ ->
-	    N = Len + RemovedBytes,
+	    {_RemainingBuffer2, RemovedBytes2} = 
+		skipvalue(Len, RemainingBuffer, RemovedBytes),
+	    N = RemovedBytes2,
 	    <<Val:N/binary, RemainingBytes/binary>> = Bytes,
-	    {Val, RemainingBytes, Len + RemovedBytes}
+	    {Val, RemainingBytes, N}
     end.
  
 decode_open_type(ber_bin,Bytes,ExplTag) ->
@@ -1843,10 +1861,49 @@ mk_universal_string([0,0,0,D|T],Acc) ->
 mk_universal_string([A,B,C,D|T],Acc) -> 
     mk_universal_string(T,[{A,B,C,D}|Acc]). 
  
- 
+
 %%============================================================================ 
+%% encode UTF8 string 
+%%============================================================================ 
+encode_UTF8_string(_,UTF8String,[]) when binary(UTF8String) ->
+    dotag_universal(?N_UTF8String,UTF8String,size(UTF8String));
+encode_UTF8_string(_,UTF8String,DoTag) when binary(UTF8String) ->
+    dotag(DoTag,?N_UTF8String,{UTF8String,size(UTF8String)});
+encode_UTF8_string(_,UTF8String,[]) ->
+    dotag_universal(?N_UTF8String,UTF8String,length(UTF8String));
+encode_UTF8_string(_,UTF8String,DoTag) ->
+    dotag(DoTag,?N_UTF8String,{UTF8String,length(UTF8String)}).
+
+
+
+%%============================================================================
+%% decode UTF8 string 
+%%============================================================================
+
+decode_UTF8_string(Buffer, Tags, OptOrMand) ->
+    NewTags = new_tags(Tags, #tag{class=?UNIVERSAL,number=?N_UTF8String}),
+    decode_UTF8_string_notag(Buffer, NewTags, OptOrMand).
+
+decode_UTF8_string_notag(Buffer, Tags, OptOrMand) ->
+    {RestTags, {FormLen, Buffer0, Rb0}} = 
+	check_tags_i(Tags, Buffer, OptOrMand),
+    case FormLen of
+	{?CONSTRUCTED,Len} ->
+	    %% an UTF8String may be encoded as a constructed type
+	    {Buffer00,RestBytes} = split_list(Buffer0,Len),
+	    {Val01, Buffer01, Rb01} = 
+		decode_UTF8_string_notag(Buffer00,RestTags,OptOrMand),
+	    {Buffer02, Rb02} = restbytes2(RestBytes,Buffer01,noext),
+	    {Val01, Buffer02, Rb0+Rb01+Rb02};
+	{_,Len} ->
+	    <<Result:Len/binary,RestBuff/binary>> = Buffer0,
+	    {Result,RestBuff,Rb0 + Len}
+    end.
+	    
+    
+%%============================================================================
 %% encode BMP string 
-%%============================================================================ 
+%%============================================================================
 
 encode_BMP_string(C, {Name,BMPString}, DoTag) when atom(Name)-> 
     encode_BMP_string(C, BMPString, DoTag);
@@ -2123,7 +2180,7 @@ code_type(3) -> 'BIT STRING';
 code_type(4) -> 'OCTET STRING';  
 code_type(5) -> 'NULL'; 
 code_type(6) -> 'OBJECT IDENTIFIER'; 
-code_type(7) -> 'OBJECT DESCRIPTOR'; 
+code_type(7) -> 'ObjectDescriptor'; 
 code_type(8) -> 'EXTERNAL'; 
 code_type(9) -> 'REAL'; 
 code_type(10) -> 'ENUMERATED'; 

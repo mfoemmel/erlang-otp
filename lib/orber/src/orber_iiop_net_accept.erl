@@ -18,7 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: orber_iiop_net_accept.erl
-%% Author: Lars Thorsen
 %% 
 %% Description:
 %%    This file contains the process which are waiting in accept for new
@@ -29,8 +28,6 @@
 %%-----------------------------------------------------------------
 -module(orber_iiop_net_accept).
 
--include_lib("orber/src/orber_iiop.hrl").
--include_lib("orber/src/orber_debug.hrl").
 
 %%-----------------------------------------------------------------
 %% External exports
@@ -49,9 +46,7 @@
 %% Func: start/2
 %%-----------------------------------------------------------------
 start(Type, Listen) ->
-    ?PRINTDEBUG("orber_iiop_net_accept: pre spawn_link"),
     Pid = proc_lib:spawn_link(?MODULE, net_accept, [Type, Listen, self()]),
-    ?PRINTDEBUG("orber_iiop_net_accept: post spawn_link"),
     {ok, Pid}.
 
 %%-----------------------------------------------------------------
@@ -62,25 +57,28 @@ start(Type, Listen) ->
 %% Func: net_accept/3
 %%-----------------------------------------------------------------
 net_accept(Type, ListenFd, Parent) ->
-    ?PRINTDEBUG("orber_iiop_net_accept waiting in socket:accept"),
-    S = ?IIOP_SOCKET_MOD:accept(Type, ListenFd),
-    case orber_iiop_net:connect(Type, S) of
-	{ok, Pid} ->
-	    case ?IIOP_SOCKET_MOD:controlling_process(Type, S, Pid) of
+    S = orber_socket:accept(Type, ListenFd),
+    case orber_iiop_net:connect(Type, S, self()) of
+	{ok, Pid, ReadyToGo} ->
+	    case orber_socket:controlling_process(Type, S, Pid) of
 		ok ->
-		    ?PRINTDEBUG2("changed controlling process to ~p",[Pid]);
-		{error,closed} ->
-		    ?PRINTDEBUG2("Socket closed, unable to change controlling process: ~p", 
-				 [Pid]),
+		    ok;
+		{error, closed} ->
 		    gen_server:cast(Pid, stop);
-		Reason ->
-		    ?PRINTDEBUG2("Unable to change controlling process: ~p Reason: ~p",
-				 [Pid, Reason]),
-		    ?IIOP_SOCKET_MOD:close(Type, S),
+		_Reason ->
+		    orber_socket:close(Type, S),
 		    gen_server:cast(Pid, stop)
-	    end;
+	    end,
+	    ready_to_go(ReadyToGo);
 	_ ->
-	    ?IIOP_SOCKET_MOD:close(Type, S)
+	    orber_socket:close(Type, S)
     end,
     net_accept(Type, ListenFd, Parent).
 
+ready_to_go(true) ->
+    ok;
+ready_to_go(Ref) ->
+    receive
+	{Ref, ok} ->
+	    ok
+    end.

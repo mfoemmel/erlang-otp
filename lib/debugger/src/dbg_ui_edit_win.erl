@@ -48,7 +48,7 @@ create_win(GS, {X, Y}, Title, Prompt, {Type, Value}) ->
 
     Lbl = gs:label(Win, [{align, e}]),
 
-    Font = gs:read(GS, {choose_font, {screen,12}}),
+    Font = dbg_ui_win:font(normal),
     Prompt2 = io_lib:format("~p", [Prompt]),
     Value2 = io_lib:format("~p", [Value]),
     {W1, _} = gs:read(Lbl, {font_wh, {Font, Prompt2}}),
@@ -57,7 +57,7 @@ create_win(GS, {X, Y}, Title, Prompt, {Type, Value}) ->
     Went = min(50, W2),
     W = Pad + Wlbl + Went + Pad,
 
-    gs:config(Lbl, [{label, {text, Prompt}},
+    gs:config(Lbl, [{label, {text, Prompt}}, {font, Font},
 		    {x, Pad}, {y, Pad}, {width, Wlbl}]),
     Ent = gs:entry(Win, [{text, Value2},
 			 {x, Pad+Wlbl}, {y, Pad}, {width, Went},
@@ -75,7 +75,7 @@ create_win(GS, {X, Y}, Title, Prompt, {Type, Value}) ->
     #winInfo{window=Win, entry=Ent, button=Btn, type=Type}.
 
 min(X, Y) when X<Y -> Y;
-min(X, Y) -> X.
+min(X, _Y) -> X.
 
 %%--------------------------------------------------------------------
 %% get_window(WinInfo) -> Window
@@ -106,7 +106,7 @@ handle_event({gs, _Id, click, _Data, ["Ok"|_]}, WinInfo) ->
 	{ok, Tokens, _EndLine} when Type==term ->
 	    case erl_parse:parse_term(Tokens++[{dot, 1}]) of
 		{ok, Value} -> {edit, Value};
-		Error -> ignore
+		_Error -> ignore
 	    end;
 	{ok, [{Type, _Line, Value}], _EndLine} when Type/=term ->
 	    {edit, Value};
@@ -115,5 +115,5 @@ handle_event({gs, _Id, click, _Data, ["Ok"|_]}, WinInfo) ->
     end;
 handle_event({gs, _Id, click, _Data, ["Cancel"|_]}, _WinInfo) ->
     stopped;
-handle_event(GSEvent, _WinInfo) ->
+handle_event(_GSEvent, _WinInfo) ->
     ignore.

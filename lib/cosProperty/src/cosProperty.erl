@@ -81,7 +81,7 @@
 %%------------------------------------------------------------
 install() ->
     install([]).
-install(Options) ->
+install(_Options) ->
     case catch oe_CosProperty:'oe_register'() of
         ok ->
 	    ok;
@@ -174,11 +174,11 @@ query_result(Qres) ->
     case Qres of
         {atomic, [Hres]} ->
             Hres#oe_CosPropertyService.properties;
-        {atomic, [Hres | Tres]} ->
+        {atomic, [_Hres | _Tres]} ->
             error;
         {atomic, []} ->
             error;
-        Other ->
+        _Other ->
             error
     end.
  
@@ -190,7 +190,7 @@ query_result(Qres) ->
 %%------------------------------------------------------------
 uninstall() -> 
     uninstall([]). 
-uninstall(Options) -> 
+uninstall(_Options) -> 
     application:stop(cosProperty),
     oe_CosProperty:oe_unregister().
 
@@ -205,7 +205,7 @@ uninstall_db() ->
     case mnesia:delete_table('oe_CosPropertyService') of
 	{atomic, ok} ->
 	    ok;
-	{aborted, Reason} ->
+	{aborted, _Reason} ->
 	    exit({error, "Removing data from mnesia failed."})
     end.
 
@@ -340,8 +340,8 @@ start_PropertiesIterator(Args) ->
     case supervisor:start_child(?SUPERVISOR_NAME, ?SUP_PROP_SPEC(Name, Args)) of
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
-	Other->
-	    corba:raise(#'INTERNAL'{minor=700, completion_status=?COMPLETED_NO})
+	_Other->
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
    
 %%-----------------------------------------------------------%
@@ -356,8 +356,8 @@ start_PropertyNamesIterator(Args) ->
     case supervisor:start_child(?SUPERVISOR_NAME, ?SUP_NAMES_SPEC(Name, Args)) of
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
-	Other->
-	    corba:raise(#'INTERNAL'{minor=700, completion_status=?COMPLETED_NO})
+	_Other->
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
    
 
@@ -393,7 +393,7 @@ type_check(Obj, Mod) ->
         true ->
             ok;
         _ ->
-	    corba:raise(#'BAD_PARAM'{minor=700, completion_status=?COMPLETED_NO})
+	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end.
 
 

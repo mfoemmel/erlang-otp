@@ -25,7 +25,7 @@
  * is already holding. The primitives used on VxWorks are recursive however.
  */
 
-#include "config.h"
+#include "eidef.h"
 
 #ifdef __WIN32__
 #include <winsock2.h>

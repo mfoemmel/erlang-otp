@@ -18,15 +18,23 @@
 #ifndef _EISEND_H
 #define _EISEND_H
 
-/* FIXME ei_send_*() not used */
+/* FIXME strange, is this for debugging?! */
+#define EI_HAVE_TIMEOUT 1
+
+int ei_send_exit(int fd, const erlang_pid *from, const erlang_pid *to, 
+		 const char *msg);
+int ei_send_exit_tmo(int fd, const erlang_pid *from, 
+		     const erlang_pid *to, 
+		     const char *msg, unsigned ms);
+
+/* FIXME ei_send_*() functions not used */
 #if 0
 int ei_send_link(int fd, const erlang_pid *from, const erlang_pid *to);
 int ei_send_unlink(int fd, const erlang_pid *from, const erlang_pid *to);
-#endif
-
-int ei_send_exit(int fd, const erlang_pid *from,
-		 const erlang_pid *to, const char *msg);
-
-int ei_rw_timeout(int fd, int f_write, int* timeout, char* buf, int len);
+int ei_send_link_tmo(int fd, const erlang_pid *from, 
+		     const erlang_pid *to, unsigned ms);
+int ei_send_unlink_tmo(int fd, const erlang_pid *from, 
+		       const erlang_pid *to, unsigned ms);
+#endif /* Not used */
 
 #endif /* _EISEND_H */

@@ -37,7 +37,7 @@
 %%
 %%------------------------------------------------------------
 
-do_gen(G, File, Form) -> 
+do_gen(G, _File, Form) -> 
     gen(G, [], Form).
 
 
@@ -107,7 +107,7 @@ gen(G, N, [X|Xs]) when record(X, case_dcl) ->
 gen(G, N, [_|Xs]) ->
     gen(G, N, Xs);
 
-gen(G, N, []) -> 
+gen(_G, _N, []) -> 
     ok.
 
 
@@ -132,10 +132,10 @@ gen_module(G, N, X) ->
 	    reg(G, N1, ic_forms:get_body(X))
     end.
 
-reg(G, N, [X|Xs]) when record(X, module) ->
+reg(G, N, [X|_Xs]) when record(X, module) ->
     reg(G, [ic_forms:get_id2(X) | N], ic_forms:get_body(X));
 
-reg(G, N, [X|Xs]) when record(X, interface) ->
+reg(G, N, [X|_Xs]) when record(X, interface) ->
     reg(G, [ic_forms:get_id2(X) | N], ic_forms:get_body(X));
 
 reg(G, N, [X|Xs]) when record(X, typedef) ->
@@ -154,7 +154,7 @@ reg(G, N, [X|Xs]) when record(X, typedef) ->
 reg(G, N, [_|Xs]) ->
     reg(G, N, Xs);
 
-reg(G, N, []) -> 
+reg(_G, _N, []) -> 
     ok.
 
 
@@ -191,7 +191,7 @@ gen_interface(G, N, X) ->
 	    SkelFd = ic_genobj:skelfiled(G1),
 	    emit_skel(G1, N, X, SkelFd),
 
-	    G2 = ic_file:javaInterfaceFilePop(G1);
+	    ic_file:javaInterfaceFilePop(G1);
 	false ->
 	    ok
     end.
@@ -222,7 +222,7 @@ gen_typedef_1(G, N, X, Type) when record(Type, sequence) ->
     ic_sequence_java:gen(G, N, Type, ic_forms:get_java_id(X));
 gen_typedef_1(G, N, X, Type) when record(Type, array) ->
     ic_array_java:gen(G, N, X, Type);
-gen_typedef_1(G, N, X, Type) ->
+gen_typedef_1(G, N, X, _Type) ->
     gen_typedef_2(G, N, X, X#typedef.id), 
     ok.
 
@@ -253,7 +253,7 @@ gen_typedef_2(G, N, X, Type) when list(Type) ->
 %		    ok
 %	    end
 %    end;
-gen_typedef_2(G, N, X, Type) ->
+gen_typedef_2(_G, _N, _X, _Type) ->
     ok.
 
 
@@ -269,7 +269,7 @@ gen_member(G, N, X) ->
     gen_member_2(G, N, X, X#member.id).
 
 
-gen_member_1(G, N, X, []) ->
+gen_member_1(_G, _N, _X, []) ->
     ok;
 
 gen_member_1(G, N, X, [T|Ts]) when record(T, sequence) ->
@@ -281,19 +281,19 @@ gen_member_1(G, N, X, [T|Ts]) ->
     gen_member_1(G,N,X,Ts).
 
 
-gen_member_2(G, N, X, []) ->
+gen_member_2(_G, _N, _X, []) ->
     ok;
 
 gen_member_2(G, N, X, [T|Ts]) when record(T, array) -> %% BUG !
     ic_array_java:gen(G, N, X, T),
     gen_member_2(G, N, X, Ts);
 
-gen_member_2(G, N, X, [T|Ts]) ->
+gen_member_2(G, N, X, [_T|Ts]) ->
     gen_member_2(G, N, X, Ts).
 
 
 
-gen_exception(G, N, X) ->
+gen_exception(_G, N, X) ->
     io:format("Warning : Exceptions not supported for java mapping, ~p ignored\n",
 	     [ic_util:to_colon([ic_forms:get_java_id(X)|N])]),
     ok.
@@ -316,7 +316,7 @@ emit_interface(G, N, X, Fd) ->
     %% Generate type declarations inside interface
     gen(G, [IFCName |N], Body),
     
-    lists:foreach(fun({Name, Body1}) ->
+    lists:foreach(fun({_Name, Body1}) ->
 			  emit_interface_prototypes(G, [IFCName|N], Body1, Fd) end,
 		  [{x, Body} | X#interface.inherit_body]),
 	    
@@ -343,9 +343,9 @@ emit_interface_prototypes(G, N, [X |Xs], Fd) when record(X, op) ->
 emit_interface_prototypes(G, N, [X |Xs], Fd) when record(X, attr) ->
     ic_attribute_java:emit_attribute_prototype(G, N, X, Fd),
     emit_interface_prototypes(G, N, Xs, Fd);
-emit_interface_prototypes(G, N, [X|Xs], Fd) ->
+emit_interface_prototypes(G, N, [_X|Xs], Fd) ->
     emit_interface_prototypes(G, N, Xs, Fd);
-emit_interface_prototypes(G, N, [], Fd) -> ok.
+emit_interface_prototypes(_G, _N, [], _Fd) -> ok.
 
 
 
@@ -356,7 +356,7 @@ emit_interface_prototypes(G, N, [], Fd) -> ok.
 %%%
 %%%-----------------------------------------------------
 
-emit_holder(G, N, X, Fd) ->
+emit_holder(_G, N, X, Fd) ->
     InterfaceName = ic_forms:get_java_id(X),
     FullInterfaceName = ic_util:to_dot([InterfaceName|N]),
 
@@ -473,7 +473,7 @@ emit_stub(G, N, X, Fd) ->
 
     emit_client_destroy(Fd),
 
-    lists:foreach(fun({Name, Body1}) ->
+    lists:foreach(fun({_Name, Body1}) ->
 			  emit_op_implementation(G, [IFCName|N], Body1, Fd) end,
 		  [{x, Body} | X#interface.inherit_body]),
     
@@ -555,9 +555,9 @@ emit_op_implementation(G, N, [X |Xs], Fd) when record(X, op) ->
 emit_op_implementation(G, N, [X |Xs], Fd) when record(X, attr) ->
     ic_attribute_java:emit_attribute_stub_code(G, N, X, Fd),
     emit_op_implementation(G, N, Xs, Fd);
-emit_op_implementation(G, N, [X|Xs], Fd) ->
+emit_op_implementation(G, N, [_X|Xs], Fd) ->
     emit_op_implementation(G, N, Xs, Fd);
-emit_op_implementation(G, N, [], Fd) -> ok.
+emit_op_implementation(_G, _N, [], _Fd) -> ok.
 
 
 
@@ -573,9 +573,8 @@ emit_op_marshal(G, N, X, Fd) ->
     WireOpName = ic_forms:get_id2(X),
     OpName = ic_forms:get_java_id(WireOpName),
     {_, ArgNames, TypeList} = extract_info(G, N, X),
-    {R, ParamTypes, _} = TypeList,
+    {_R, ParamTypes, _} = TypeList,
     
-    RT = ic_java_type:getParamType(G,N,R,ret),
     PL = ic_util:mk_list(gen_marshal_par_list(G, N, X, ParamTypes, ArgNames)),
     
     ic_codegen:emit(Fd, "    // Marshal operation for ~p\n", [OpName]),
@@ -595,7 +594,7 @@ emit_op_marshal(G, N, X, Fd) ->
     ic_codegen:emit(Fd, "    }\n\n").
 
 
-emit_op_encode(G, N, X, OpN, WOpN, ParamTypes, ArgNames, Fd) ->
+emit_op_encode(G, N, X, _OpN, WOpN, ParamTypes, ArgNames, Fd) ->
 
     OpCallName = case ic_options:get_opt(G, scoped_op_calls) of 
 		     true -> 
@@ -643,7 +642,7 @@ emit_op_encode(G, N, X, OpN, WOpN, ParamTypes, ArgNames, Fd) ->
 
 
 
-emit_op_encode_loop(_,_,_,_,[],_,Fd) ->
+emit_op_encode_loop(_,_,_,_,[],_,_Fd) ->
     ok;
 emit_op_encode_loop(G, N, X, [_Type|Types],[{out, _Arg}|Args], Counter, Fd) ->
     emit_op_encode_loop(G, N, X, Types, Args, Counter, Fd);
@@ -774,7 +773,7 @@ emit_op_decode(G, N, X, R, RT, ParamTypes, ArgNames, Fd) ->
 	    end
     end.
 
-emit_op_decode_loop(_,_,_,_,[],_,Fd) ->
+emit_op_decode_loop(_,_,_,_,[],_,_Fd) ->
     ok;
 emit_op_decode_loop(G, N, X, [_Type|Types], [{in, _Arg}|Args], Counter, Fd) ->
     emit_op_decode_loop(G, N, X, Types, Args, Counter, Fd);
@@ -862,9 +861,7 @@ emit_skel(G, N, X, Fd) ->
 
 emit_server_switch(G, N, X, Fd) ->
     
-    InterfaceName = ic_forms:get_java_id(X), %% Java Interface Name
     IFCName = ic_forms:get_id2(X),           %% Internal Interface Name 
-    FullInterfaceName = ic_util:to_dot([InterfaceName|N]),
     Body = ic_forms:get_body(X),
     Counter = 0,
 
@@ -931,11 +928,6 @@ emit_server_op_switch_loop(G, N, [{_,X}|Xs], C, Fd) ->
 emit_server_op_switch(G, N, [X|Xs], C, Fd) when record(X, op) ->
 
     OpName = ic_forms:get_java_id(X),
-    {_, ArgNames, TypeList} = extract_info(G, N, X),
-    {R, ParamTypes, _} = TypeList,
-    
-    RT = ic_java_type:getParamType(G,N,R,ret),
-    PL = ic_util:mk_list(gen_par_list(G, N, X, ParamTypes, ArgNames)),    
 
     ic_codegen:emit(Fd, "       case ~p:  {  // Operation ~s\n\n",[C,ic_util:to_dot([OpName|N])]),
     
@@ -947,13 +939,13 @@ emit_server_op_switch(G, N, [X|Xs], C, Fd) when record(X, op) ->
 emit_server_op_switch(G, N, [X |Xs], C, Fd) when record(X, attr) -> 
     C1 = ic_attribute_java:emit_attribute_switch_case(G,N,X,Fd,C),
     emit_server_op_switch(G, N, Xs, C1, Fd);
-emit_server_op_switch(G, N, [X|Xs], C, Fd) ->
+emit_server_op_switch(G, N, [_X|Xs], C, Fd) ->
     emit_server_op_switch(G, N, Xs, C, Fd);
-emit_server_op_switch(G, N, [], C, Fd) -> 
+emit_server_op_switch(_G, _N, [], C, _Fd) -> 
     C.
 
 
-emit_caller_pid(G, N, X, Fd) ->
+emit_caller_pid(_G, _N, _X, Fd) ->
     ic_codegen:emit(Fd, "    // Extracts caller identity\n"),
     ic_codegen:emit(Fd, "    public ~sOtpErlangPid __getCallerPid() {\n", [?ERLANGPACKAGE]),    
     ic_codegen:emit(Fd, "      return _env.getScaller();\n"),
@@ -1026,10 +1018,10 @@ emit_dictionary(G, N, [X |Xs], C, Fd) when record(X, attr) ->
     C1 = ic_attribute_java:emit_atrribute_on_dictionary(G, N, X, Fd, C),
     emit_dictionary(G, N, Xs, C1, Fd);
 
-emit_dictionary(G, N, [X|Xs], C, Fd) ->
+emit_dictionary(G, N, [_X|Xs], C, Fd) ->
     emit_dictionary(G, N, Xs, C, Fd);
 
-emit_dictionary(G, N, [], C, Fd) -> 
+emit_dictionary(_G, _N, [], C, _Fd) -> 
     C.
 
 
@@ -1046,7 +1038,7 @@ emit_invoke(G, N, X, Fd) ->
     case count_server_receive(ArgNames) of
 	0 ->
 	    ok;
-	C ->
+	_C ->
 	    ic_codegen:emit(Fd, "          // Preparing input\n"),
 	    ic_codegen:emit(Fd, "          ~sOtpInputStream __is = __env.getIs();\n",
 			    [?ERLANGPACKAGE]),
@@ -1138,8 +1130,7 @@ emit_server_unmarshal_loop(G, N, X, [Type|Types],[{inout, Arg}|Args], Counter, F
     Holder = ic_java_type:getHolderType(G,N,Type),
     case ic_java_type:isBasicType(G,N,Type) of
 	true ->
-	    OtpEncVar = ic_java_type:getUnmarshalType(G,N,X,Type),
-
+%	    OtpEncVar = ic_java_type:getUnmarshalType(G,N,X,Type),
 	    ic_codegen:emit(Fd, "          ~s _~s = __is~s;\n",
 			    [ic_java_type:getType(G,N,Type),
 			     Arg,
@@ -1164,12 +1155,12 @@ emit_server_unmarshal_loop(G, N, X, [Type|Types],[{out, Arg}|Args], Counter, Fd)
     emit_server_unmarshal_loop(G, N, X, Types, Args, Counter, Fd).
 
 
-emit_server_marshal_loop(_,_,_,_,[],_,Fd) ->
+emit_server_marshal_loop(_,_,_,_,[],_,_Fd) ->
     ok;
-emit_server_marshal_loop(G, N, X, [Type|Types],[{in, Arg}|Args], Counter, Fd) ->
+emit_server_marshal_loop(G, N, X, [_Type|Types],[{in, _Arg}|Args], Counter, Fd) ->
     emit_server_marshal_loop(G, N, X, Types, Args, Counter, Fd);
 emit_server_marshal_loop(G, N, X, [Type|Types],[{_, Arg}|Args], Counter, Fd) -> 
-    Holder = ic_java_type:getHolderType(G,N,Type),
+%    Holder = ic_java_type:getHolderType(G,N,Type),
     case ic_java_type:isBasicType(G,N,Type) of
 	true ->
 	    ic_codegen:emit(Fd, "          __os~s(~s.value);  // Out/InOut value\n", 
@@ -1190,7 +1181,7 @@ emit_server_marshal_loop(G, N, X, [Type|Types],[{_, Arg}|Args], Counter, Fd) ->
 %%%
 %%%----------------------------------------------------
 
-extract_info(G, N, X) when record(X, op) ->
+extract_info(_G, N, X) when record(X, op) ->
     Name	=  ic_util:to_undersc([ic_forms:get_id2(X) | N]),
     Args	= X#op.params,
     ArgNames	= mk_c_vars(Args),
@@ -1199,7 +1190,7 @@ extract_info(G, N, X) when record(X, op) ->
 		   []
 		  },
     {Name, ArgNames, TypeList};
-extract_info(G, N, X) ->
+extract_info(_G, N, X) ->
     Name	=  ic_util:to_undersc([ic_forms:get_id2(X) | N]),
     {Name, [], []}.
 
@@ -1212,7 +1203,7 @@ mk_c_vars(Params) ->
 	      Params).
 
 %%
-handle_preproc(G, N, line_nr, X) ->
+handle_preproc(G, _N, line_nr, X) ->
     Id = ic_forms:get_java_id(X),
     Flags = X#preproc.aux,
     case Flags of
@@ -1223,7 +1214,7 @@ handle_preproc(G, N, line_nr, X) ->
 			   ({_, _, "3"}, Gprim) -> ic_genobj:sys_file(Gprim, Id) end,
 			G, Flags)
     end;
-handle_preproc(G, N, Other, X) ->
+handle_preproc(G, _N, _Other, _X) ->
     G.
 
 
@@ -1238,7 +1229,7 @@ gen_par_list(G, N, X, [Type |Types], [{Attr, Arg}|Args]) ->
 
 gen_marshal_par_list(_, _, _, [], []) ->
     [];
-gen_marshal_par_list(G, N, X, [Type |Types], [{out, Arg}|Args]) ->
+gen_marshal_par_list(G, N, X, [_Type |Types], [{out, _Arg}|Args]) ->
     gen_marshal_par_list(G, N, X, Types, Args);
 gen_marshal_par_list(G, N, X, [Type |Types], [{Attr, Arg}|Args]) ->
     JType = ic_java_type:getParamType(G, N, Type, Attr),
@@ -1248,7 +1239,7 @@ gen_marshal_par_list(G, N, X, [Type |Types], [{Attr, Arg}|Args]) ->
 
 gen_unmarshal_par_list(_, _, _, [], []) ->
     [];
-gen_unmarshal_par_list(G, N, X, [Type |Types], [{in, Arg}|Args]) ->
+gen_unmarshal_par_list(G, N, X, [_Type |Types], [{in, _Arg}|Args]) ->
     gen_unmarshal_par_list(G, N, X, Types, Args);
 gen_unmarshal_par_list(G, N, X, [Type |Types], [{Attr, Arg}|Args]) ->
     JType = ic_java_type:getParamType(G, N, Type, Attr),
@@ -1259,17 +1250,17 @@ gen_unmarshal_par_list(G, N, X, [Type |Types], [{Attr, Arg}|Args]) ->
 %%
 gen_client_marshal_call_par_list([]) ->
     [];
-gen_client_marshal_call_par_list([{out, Arg}|Args]) ->
+gen_client_marshal_call_par_list([{out, _Arg}|Args]) ->
     gen_client_marshal_call_par_list(Args);
-gen_client_marshal_call_par_list([{Attr, Arg}|Args]) ->
+gen_client_marshal_call_par_list([{_Attr, Arg}|Args]) ->
     [Arg | gen_client_marshal_call_par_list(Args)].
 
 
 gen_client_unmarshal_call_par_list([]) ->
     [];
-gen_client_unmarshal_call_par_list([{in, Arg}|Args]) ->
+gen_client_unmarshal_call_par_list([{in, _Arg}|Args]) ->
     gen_client_unmarshal_call_par_list(Args);
-gen_client_unmarshal_call_par_list([{Attr, Arg}|Args]) ->
+gen_client_unmarshal_call_par_list([{_Attr, Arg}|Args]) ->
     [Arg | gen_client_unmarshal_call_par_list(Args)].
 
 
@@ -1295,24 +1286,6 @@ count_client_send([{out, _Arg}|Args],C) ->
     count_client_send(Args,C);
 count_client_send([_|Args],C) ->
     count_client_send(Args,C+1).
-
-
-
-%%
-gen_server_marshal_call_par_list([]) ->
-    [];
-gen_server_marshal_call_par_list([{in, Arg}|Args]) ->
-    gen_server_marshal_call_par_list(Args);
-gen_server_marshal_call_par_list([{Attr, Arg}|Args]) ->
-    [Arg | gen_server_marshal_call_par_list(Args)].
-
-
-gen_server_unmarshal_call_par_list([]) ->
-    [];
-gen_server_unmarshal_call_par_list([{out, Arg}|Args]) ->
-    gen_server_unmarshal_call_par_list(Args);
-gen_server_unmarshal_call_par_list([{Attr, Arg}|Args]) ->
-    [Arg | gen_server_unmarshal_call_par_list(Args)].
 
 
 gen_cb_arg_list([]) ->
@@ -1447,7 +1420,7 @@ emit_type_function(TC, C, Fd) -> %% other
 
 
 
-emit_struct_members([], _, TCtr, _, Fd) -> 
+emit_struct_members([], _, TCtr, _, _Fd) -> 
     TCtr;
 emit_struct_members([{Name,MT}|Rest], BTCtr, TCtr, I, Fd) ->
     ic_codegen:emit(Fd, "     _tc~p.member_name(~p,~p);\n", [BTCtr,I,Name]),
@@ -1455,7 +1428,7 @@ emit_struct_members([{Name,MT}|Rest], BTCtr, TCtr, I, Fd) ->
     ic_codegen:emit(Fd, "     _tc~p.member_type(~p,_tc~p);\n", [BTCtr,I,TCtr]),
     emit_struct_members(Rest, BTCtr, TCtr2, I+1, Fd).
 
-emit_enum_members([], _, _, Fd) -> 
+emit_enum_members([], _, _, _Fd) -> 
     ok;
 emit_enum_members([Name|Names], BTCtr, I, Fd) ->
     ic_codegen:emit(Fd, "     _tc~p.member_name(~p,~p);\n", [BTCtr,I,Name]),

@@ -42,15 +42,31 @@ RELSYSDIR = $(RELEASE_PATH)/lib/megaco-$(VSN)
 
 include modules.mk
 
-SPECS = $(BER_ASN1_SPEC)     \
-        $(BER_BIN_ASN1_SPEC) \
-        $(PER_ASN1_SPEC)     \
-        $(PER_BIN_ASN1_SPEC) 
+ASN1_SPECS = $(ASN1_V1_SPEC) $(ASN1_V2_SPEC) 
+ASN1_FILES = $(ASN1_SPECS:%=%.asn)
 
-SPEC_BINS = $(SPECS:%=%.erl) $(SPECS:%=%.hrl) $(SPECS:%=%.asn1db)
+V1_SPECS = $(BER_ASN1_V1_SPEC)         \
+           $(BER_BIN_ASN1_V1_SPEC)     \
+           $(BER_BIN_DRV_ASN1_V1_SPEC) \
+           $(PER_ASN1_V1_SPEC)         \
+           $(PER_BIN_ASN1_V1_SPEC)     \
+           $(PER_BIN_DRV_ASN1_V1_SPEC) 
+
+V2_SPECS = $(BER_ASN1_V2_SPEC)         \
+           $(BER_BIN_ASN1_V2_SPEC)     \
+           $(BER_BIN_DRV_ASN1_V2_SPEC) \
+           $(PER_ASN1_V2_SPEC)         \
+           $(PER_BIN_ASN1_V2_SPEC)     \
+           $(PER_BIN_DRV_ASN1_V2_SPEC) 
+
+SPECS = $(V1_SPECS) $(V2_SPECS) 
+
+V1_SPEC_BINS = $(V1_SPECS:%=%.erl) $(V1_SPECS:%=%.hrl) $(V1_SPECS:%=%.asn1db)
+V2_SPEC_BINS = $(V2_SPECS:%=%.erl) $(V2_SPECS:%=%.hrl) $(V2_SPECS:%=%.asn1db)
+SPEC_BINS    = $(V1_SPEC_BINS) $(V2_SPEC_BINS) 
 
 ERL_FILES = $(MODULES:%=%.erl)	
-HRL_FILES = $(INTERNAL_HRL_FILES) $(SPECS:%=%.hrl)
+HRL_FILES = $(INTERNAL_HRL_FILES) $(V1_SPECS:%=%.hrl) $(V2_SPECS:%=%.hrl)
 
 TARGET_FILES =  \
 	$(MODULES:%=$(EBIN)/%.$(EMULATOR))
@@ -67,14 +83,10 @@ ifeq ($(WARN_UNUSED_WARS),true)
 ERL_COMPILE_FLAGS += +warn_unused_vars
 endif
 
-# ifeq ($(USE_HIPE),true)
-# ERL_COMPILE_FLAGS += +native
-# endif
-
-# This is valid together with the -bber_bin and -bper_bin options
-ifneq ($(DONT_USE_BIN_OPTIMIZE),true)
-OPTIMIZE = +optimize
+ifeq ($(USE_MEGACO_HIPE),true)
+ERL_COMPILE_FLAGS += +native
 endif
+
 
 ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
 ERL_COMPILE_FLAGS += -I../../include \
@@ -90,6 +102,12 @@ debug:
 
 opt: $(TARGET_FILES) 
 
+v1: $(V2_SPEC_BINS)
+
+v2: $(V2_SPEC_BINS)
+
+specs: v1 v2
+
 clean:
 	rm -f $(TARGET_FILES) 
 	rm -f $(SPEC_BINS)
@@ -102,6 +120,7 @@ info:
 	@echo "ERL_FILES:     $(ERL_FILES)"
 	@echo "HRL_FILES:     $(HRL_FILES)"
 	@echo "TARGET_FILES:  $(TARGET_FILES)"
+	@echo "ASN1_SPECS:    $(ASN1_SPECS)"
 	@echo "SPECS:         $(SPECS)"
 	@echo "SPEC_BINS:     $(SPEC_BINS)"
 
@@ -117,7 +136,7 @@ release_spec: opt
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR)  $(RELSYSDIR)/src
 	$(INSTALL_DIR)  $(RELSYSDIR)/src/binary
-	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(ASN1_SPEC).asn $(RELSYSDIR)/src/binary
+	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(ASN1_FILES) $(RELSYSDIR)/src/binary
 
 
 release_docs_spec:

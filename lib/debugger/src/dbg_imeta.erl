@@ -23,6 +23,14 @@
 %% External exports used by dbg_ieval
 -export([main_meta_loop/7]).
 
+%-define(DBGDBG, 1).
+-ifdef(DBGDBG).
+-define(DBG(F,A), io:format("~p~p[~p]:" ++ F,[self(),?MODULE,?LINE] ++ A)).
+-else.
+-define(DBG(F,A), ok).
+-endif.
+
+
 %%====================================================================
 %% External exports
 %%====================================================================
@@ -40,6 +48,7 @@
 eval(Mod, Func, Args) ->
     Debugged = self(),
     Int = dbg_iserver:find(),
+    ?DBG("Eval ~p:~p~n", [Mod, Func]),
     case dbg_iserver:call(Int, {get_meta, Debugged}) of
 	{ok, Meta} ->
 	    Meta ! {error_handler,Debugged,{eval,{Mod,Func,Args}}},
@@ -60,7 +69,7 @@ exit_info(Int, AttPid, OrigPid, Reason, Info) ->
     put(attached, [AttPid]),
     put(breakpoints, dbg_iserver:call(Int, all_breaks)),
     put(self, OrigPid),
-
+    
     case Info of
 	{{Mod,Line},Bs,Stack} ->
 	    S = binary_to_term(Stack),
@@ -110,11 +119,11 @@ int(Int, Debugged, M, F, As) ->
 
 eval_mfa(Debugged, M, F, As, Le) ->
     dbg_ieval:trace(call, {Le,none,M,F,As}),
-
+    ?DBG("eval_mfa[~p] ~p:~p ~n", [Le, M, F]),
     dbg_ieval:init_catch_lev(),
     Res = dbg_ieval:eval_function(M, F, As, Le),
     dbg_ieval:exit_catch_lev(),
-    
+    ?DBG("eval_res[~p] ~p:~p => ~p~n", [Le,M,F,Res]),
     case Res of
 	{value, Val, _Bs} ->
 	    Debugged ! {sys, self(), {ready, Val}};
@@ -128,14 +137,6 @@ eval_mfa(Debugged, M, F, As, Le) ->
 
 	{'EXIT', {confirmed, Reason}} ->
 	    Debugged ! {sys, self(), {exit, Reason}},
-	    if
-		Le>1 ->
-		    receive
-			{sys, Debugged, {exited_nocatch, Reason}} ->
-			    Debugged ! {sys, self(), {exit, Reason}}
-		    end;
-		true -> ignore
-	    end,
 	    dbg_ieval:pop(Le);
 
 	{'EXIT', {int, Reason}} -> % Interpreter has terminated
@@ -143,6 +144,17 @@ eval_mfa(Debugged, M, F, As, Le) ->
 
 	{'EXIT', Reason} ->
 	    Debugged ! {sys, self(), {exit, Reason}},
+	    if   %% qqqq
+		Le > 1 ->
+		    receive
+			{sys, Debugged, {exited_nocatch, Reason}} ->
+			    Debugged ! {sys, self(), {exit, Reason}}
+		    end;
+		true -> ignore
+	    end,	    
+	    dbg_ieval:pop(Le);
+	_Value ->  %% Thrown value
+%	    Debugged ! {sys, self(), {throw, Value}}, % qqqq
 	    dbg_ieval:pop(Le)
     end.
 
@@ -159,21 +171,26 @@ eval_mfa(Debugged, M, F, As, Le) ->
 %%   Value = term()
 %% Main receive loop for the meta process.
 main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F) when integer(Le) ->
-    receive
-	
+    ?DBG("Loop [~p] ~n", [Le]),
+    receive	
 	%% The following messages can only be received when Meta is
 	%% waiting for Debugged to evaluate non-interpreted code
 	%% or a BIF. Le>1.
 	{sys, Debugged, {apply_result, Val}} when Lc==false ->
+	    ?DBG("Loop [~p] apply_result~n", [Le]),
 	    dbg_ieval:trace(return, {Le,Val,Lc}),
 	    {value, Val, Bs};
 	{sys, Debugged, {apply_result, Val}} ->
+	    ?DBG("Loop [~p] apply_result~n", [Le]),
 	    {value, Val, Bs};
 	{sys, Debugged, {eval_result, Val, Bs2}} ->
+	    ?DBG("Loop [~p] eval_result~n", [Le]),
 	    {value, Val, Bs2};
 	{sys, Debugged, {thrown, Value}} ->
+	    ?DBG("Loop [~p] thrown~n", [Le]),
 	    throw(Value);
 	{sys, Debugged, {thrown_nocatch, Value}} ->
+	    ?DBG("Loop [~p] thrown_nocatch~n", [Le]),
 	    throw(Value, Cm, Line, Bs);
 
 	%% The following messages can be received any time.
@@ -181,15 +198,18 @@ main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F) when integer(Le) ->
 	%% If Le>1, Meta has been entered more than once from
 	%% the error_handler module.
 	{sys, Debugged, {exited_nocatch,Reason}} when Le==1->
+	    ?DBG("Loop [~p] exited_nocatch~n", [Le]),
 	    Debugged ! {sys, self(), {exit, Reason}},
 	    main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F);
 	{sys, Debugged, {exited_nocatch, Reason}} ->
 	    %% dbg_ieval:put_error(Reason, Cm, Line, Bs),
 	    %% exit({confirmed, Reason});
+	    ?DBG("Loop [~p] exited_nocatch~n", [Le]),
 	    dbg_ieval:exit({confirmed, Reason}, Cm, Line, Bs);
 
 	%% Re-entry to Meta at top level.
 	{error_handler, Debugged, {eval, {Mod,Func,Args}}} when Le==1 ->
+	    ?DBG("Loop [~p] reentry ~p~n", [Le,{Mod,Func}]),
 	    dbg_iserver:cast(get(int), {set_status, self(), running, {}}),
 	    dbg_icmd:tell_attached_if_break(running),
 	    %% Tell attached process(es) to update source code.
@@ -199,23 +219,28 @@ main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F) when integer(Le) ->
 	    dbg_icmd:tell_attached_if_break(idle),
 	    main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F);
 	{error_handler, Debugged, {eval, {Mod,Func,Args}}} ->
+	    ?DBG("Loop [~p] reentry ~p~n", [Le, {Mod,Func}]),
 	    eval_mfa(Debugged, Mod, Func, Args, Le),
 	    main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F);
 
 	%% Signal received from dying interpreted process
 	%% (due to exit in non-interpreted code).
 	{'EXIT', Debugged, Reason} when Le==1 ->
+	    ?DBG("Loop [~p] EXIT~n", [Le]),
 	    do_real_exit(Reason);
 	{'EXIT', Debugged, Reason} ->
+	    ?DBG("Loop [~p] EXIT~n", [Le]),
 	    dbg_ieval:exit(Debugged, Reason, Cm, Line, Bs);
 
 	%% Interpreter has terminated.
 	%% XXX Can we be sure that the interpreter has terminated?
 	%% It could be another process.
-	{'EXIT',Pid,Reason} ->
+	{'EXIT',_Pid,Reason} ->
+	    ?DBG("Loop [~p] EXIT~n", [Le]),
 	    exit(Reason);
 
 	Msg ->
+	    ?DBG("Loop [~p] Msg ~p~n", [Le, Msg]),
 	    dbg_icmd:handle_msg(Msg, {main, Bs, Le, Cm, Line}),
 	    main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F)
     end.

@@ -1,9 +1,12 @@
 #-*-makefile-*-   ; force emacs to enter makefile-mode
 
+BEHAVIOUR_MODULES = \
+	megaco_encoder \
+	megaco_transport
+
 MODULES = \
+	$(BEHAVIOUR_MODULES) \
 	megaco \
-	megaco_ack_sender \
-	megaco_acks_sup \
 	megaco_config \
 	megaco_digit_map \
 	megaco_erl_dist_encoder \
@@ -15,11 +18,14 @@ MODULES = \
 	megaco_sdp \
 	megaco_sup \
 	megaco_stats \
-	megaco_user
+	megaco_trans_sender \
+	megaco_trans_sup \
+	megaco_user_default 
 
 EXTERNAL_HRL_FILES = \
         ../../include/megaco.hrl \
         ../../include/megaco_message_v1.hrl \
+        ../../include/megaco_message_v2.hrl \
         ../../include/megaco_sdp.hrl
 
 INTERNAL_HRL_FILES = \

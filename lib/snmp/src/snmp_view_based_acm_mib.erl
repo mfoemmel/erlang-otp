@@ -24,10 +24,14 @@
 	 vacmSecurityToGroupTable/1, vacmSecurityToGroupTable/3,
 	 vacmViewSpinLock/1, vacmViewSpinLock/2,
 	 vacmViewTreeFamilyTable/1, vacmViewTreeFamilyTable/3]).
+-export([add_sec2group/3,     delete_sec2group/1,
+	 add_access/8,        delete_access/1,
+	 add_view_tree_fam/4, delete_view_tree_fam/1]).
 
 -include("SNMPv2-TC.hrl").
 -include("SNMP-VIEW-BASED-ACM-MIB.hrl").
 -include("snmp_vacm.hrl").
+-include("snmp_types.hrl").
 
 
 -define(VMODULE,"VACM-MIB").
@@ -102,7 +106,7 @@ init_sec2group_table([Row | T]) ->
     Key1 = element(1, Row),
     Key2 = element(2, Row),
     Key = [Key1, length(Key2) | Key2],
-    snmp_local_db:table_create_row(db(vacmSecurityToGroupTable), Key, Row),
+    table_create_row(vacmSecurityToGroupTable, Key, Row),
     init_sec2group_table(T);
 init_sec2group_table([]) -> true.
 
@@ -117,10 +121,95 @@ init_view_table([Row | T]) ->
     Key1 = element(1, Row),
     Key2 = element(2, Row),
     Key = [length(Key1) | Key1] ++ [length(Key2) | Key2],
-    snmp_local_db:table_create_row(db(vacmViewTreeFamilyTable), Key, Row),
+    table_create_row(vacmViewTreeFamilyTable, Key, Row),
     init_view_table(T);
 init_view_table([]) -> true.
 
+table_create_row(Tab, Key, Row) ->
+    ?vtrace("create table ~w row with Key: ~w",[Tab, Key]),
+    snmp_local_db:table_create_row(db(Tab), Key, Row).
+
+
+%% add_sec2group(SecModel, SecName, GroupName) -> Result
+%% Result -> {ok, Key} | {error, Reason}
+%% Key -> term()
+%% Reason -> term()
+add_sec2group(SecModel, SecName, GroupName) ->
+    Sec2Grp = {vacmSecurityToGroup, SecModel, SecName, GroupName},
+    case (catch snmp_conf:check_vacm(Sec2Grp)) of
+	{ok, {vacmSecurityToGroup, Row}} ->
+	    Key1 = element(1, Row),
+	    Key2 = element(2, Row),
+	    Key = [Key1, length(Key2) | Key2],
+	    case table_create_row(vacmSecurityToGroupTable, Key, Row) of
+		true ->
+		    {ok, Key};
+		false ->
+		    {error, create_failed}
+            end;
+        Error ->
+            {error, Error}
+    end.
+
+delete_sec2group(Key) ->
+    Db = db(vacmSecurityToGroupTable),
+    case snmp_local_db:table_delete_row(Db, Key) of
+	true ->
+	    ok;
+	false ->
+	    {error, not_found}
+    end.
+    
+%% NOTE: This function must be used in conjuction with
+%%       snmp_vacm:dump_table.
+%%       That is, when all access has been added, call
+%%       snmp_vacm:dump_table/0
+add_access(GroupName, Prefix, SecModel, SecLevel, Match, RV, WV, NV) ->
+    Access = {vacmAccess, GroupName, Prefix, SecModel, SecLevel, 
+	      Match, RV, WV, NV},
+    case (catch snmp_conf:check_vacm(Access)) of
+	{ok, {vacmAccess, {GN, Pref, SM, SL, Row}}} ->
+	    Key1 = [length(GN) | GN],
+	    Key2 = [length(Pref) | Pref],
+	    Key3 = [SM, SL],
+	    Key  = Key1 ++ Key2 ++ Key3, 
+	    snmp_vacm:insert([{Key, Row}], false),
+	    {ok, Key};
+        Error ->
+            {error, Error}
+    end.
+
+delete_access(Key) ->
+    snmp_vacm:delete(Key).
+
+
+add_view_tree_fam(ViewIndex, SubTree, Status, Mask) ->
+    VTF = {vacmViewTreeFamily, ViewIndex, SubTree, Status, Mask},
+    case (catch snmp_conf:check_vacm(VTF)) of
+	{ok, {vacmViewTreeFamily, Row}} ->
+	    Key1 = element(1, Row),
+	    Key2 = element(2, Row),
+	    Key  = [length(Key1) | Key1] ++ [length(Key2) | Key2],
+	    case table_create_row(vacmViewTreeFamilyTable, Key, Row) of
+		true ->
+		    {ok, Key};
+		false ->
+		    {error, create_failed}
+            end;
+        Error ->
+            {error, Error}
+    end.
+
+delete_view_tree_fam(Key) ->
+    Db = db(vacmViewTreeFamilyTable),
+    case snmp_local_db:table_delete_row(Db, Key) of
+	true ->
+	    ok;
+	false ->
+	    {error, not_found}
+    end.
+
+    
 gc_tabs() ->
     gc_tab(vacmSecurityToGroupTable),
     gc_tab(vacmViewTreeFamilyTable),
@@ -150,13 +239,68 @@ vacmContextTable(Op, Arg1, Arg2) ->
 
 vacmSecurityToGroupTable(Op) ->
     snmp_generic:table_func(Op, db(vacmSecurityToGroupTable)).
+
 vacmSecurityToGroupTable(get_next, RowIndex, Cols) ->
     next(vacmSecurityToGroupTable, RowIndex, Cols);
 vacmSecurityToGroupTable(get, RowIndex, Cols) ->
     get(vacmSecurityToGroupTable, RowIndex, Cols);
+vacmSecurityToGroupTable(set, RowIndex, Cols0) ->
+    case (catch verify_vacmSecurityToGroupTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    snmp_generic:table_func(set, RowIndex, Cols, 
+				    db(vacmSecurityToGroupTable));
+	Error ->
+	    Error
+    end;
+vacmSecurityToGroupTable(is_set_ok, RowIndex, Cols0) ->
+    case (catch verify_vacmSecurityToGroupTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    snmp_generic:table_func(is_set_ok, RowIndex, Cols, 
+				    db(vacmSecurityToGroupTable));
+	Error ->
+	    Error
+    end;
 vacmSecurityToGroupTable(Op, Arg1, Arg2) ->
     snmp_generic:table_func(Op, Arg1, Arg2, db(vacmSecurityToGroupTable)).
 
+
+verify_vacmSecurityToGroupTable_cols([], Cols) ->
+    {ok, lists:reverse(Cols)};
+verify_vacmSecurityToGroupTable_cols([{Col, Val0}|Cols], Acc) ->
+    Val = verify_vacmSecurityToGroupTable_col(Col, Val0),
+    verify_vacmSecurityToGroupTable_cols(Cols, [{Col, Val}|Acc]).
+
+verify_vacmSecurityToGroupTable_col(?vacmSecurityModel, Model) ->
+    case Model of
+	any      -> ?SEC_ANY;
+	v1       -> ?SEC_ANY;
+	v2c      -> ?SEC_ANY;
+	usm      -> ?SEC_ANY;
+	?SEC_ANY -> ?SEC_ANY;
+	?SEC_V1  -> ?SEC_ANY;
+	?SEC_V2C -> ?SEC_ANY;
+	?SEC_USM -> ?SEC_ANY;
+	_ ->
+	    wrongValue(?vacmSecurityModel)
+    end;
+verify_vacmSecurityToGroupTable_col(?vacmSecurityName, Name) ->
+    case (catch snmp_conf:check_string(Name)) of
+	true ->
+	    Name;
+	_ ->
+	    wrongValue(?vacmSecurityName)
+    end;
+verify_vacmSecurityToGroupTable_col(?vacmGroupName, Name) ->
+    case (catch snmp_conf:check_string(Name)) of
+	true ->
+	    Name;
+	_ ->
+	    wrongValue(?vacmGroupName)
+    end;
+verify_vacmSecurityToGroupTable_col(_, Val) ->
+    Val.
+
+    
 %%-----------------------------------------------------------------
 %% The vacmAccesTable is implemented as a bplus_tree in the
 %% snmp_vacm_access_server process.  That means that we'll have
@@ -189,47 +333,130 @@ vacmAccessTable(get_next, RowIndex, Cols) ->
     do_get_next([], PreCols) ++ do_get_next(RowIndex, ValidCols);
 %% vacmAccessContextMatch does not have a default value => we'll have
 %% to treat that col specially
-vacmAccessTable(is_set_ok, RowIndex, Cols) ->
-    IsValidKey = is_valid_key(RowIndex),
-    case lists:keysearch(?vacmAccessStatus, 1, Cols) of
-	{value, {Col, ?'RowStatus_active'}} -> % Ok, if contextMatch is init
-	    {ok, Row} = snmp_vacm:get_row(RowIndex),
-	    case element(?vacmAContextMatch, Row) of
-		noinit -> {inconsistentValue, Col};
-		_ -> {noError, 0}
-	    end;
-	{value, {Col, ?'RowStatus_notInService'}} -> % Ok, if not notReady
-	    {ok, Row} = snmp_vacm:get_row(RowIndex),
-	    case element(?vacmAStatus, Row) of
-		?'RowStatus_notReady' -> {inconsistentValue, Col};
-		_ -> {noError, 0}
-	    end;
-	{value, {Col, ?'RowStatus_notReady'}} -> % never ok!
-	    {inconsistentValue, Col};
-	{value, {Col, ?'RowStatus_createAndGo'}} -> % ok, if it doesn't exist
-	    Res = lists:keysearch(?vacmAccessContextMatch, 1, Cols),
-	    case snmp_vacm:get_row(RowIndex) of
-		false when IsValidKey == true, tuple(Res) -> {noError, 0};
-		false -> {noCreation, Col}; % Bad RowIndex
-		_ -> {inconsistentValue, Col}
-	    end;
-	{value, {Col, ?'RowStatus_createAndWait'}} -> % ok, if it doesn't exist
-	    case snmp_vacm:get_row(RowIndex) of
-		false when IsValidKey == true -> {noError, 0};
-		false -> {noCreation, Col}; % Bad RowIndex
-		_ -> {inconsistentValue, Col}
-	    end;
-	{value, {_Col, ?'RowStatus_destroy'}} -> % always ok!
-	    {noError, 0};
-	_ -> % otherwise, it's a change; it must exist
-	    case snmp_vacm:get_row(RowIndex) of
-		{ok, _} ->
+vacmAccessTable(is_set_ok, RowIndex, Cols0) ->
+    case (catch verify_vacmAccessTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    IsValidKey = is_valid_key(RowIndex),
+	    case lists:keysearch(?vacmAccessStatus, 1, Cols) of
+		%% Ok, if contextMatch is init
+		{value, {Col, ?'RowStatus_active'}} -> 
+	            {ok, Row} = snmp_vacm:get_row(RowIndex),
+	            case element(?vacmAContextMatch, Row) of
+			noinit -> {inconsistentValue, Col};
+			_ -> {noError, 0}
+		    end;
+		{value, {Col, ?'RowStatus_notInService'}} -> % Ok, if not notReady
+		    {ok, Row} = snmp_vacm:get_row(RowIndex),
+		    case element(?vacmAStatus, Row) of
+			?'RowStatus_notReady' -> {inconsistentValue, Col};
+			_ -> {noError, 0}
+		    end;
+		{value, {Col, ?'RowStatus_notReady'}} -> % never ok!
+		    {inconsistentValue, Col};
+		{value, {Col, ?'RowStatus_createAndGo'}} -> % ok, if it doesn't exist
+		    Res = lists:keysearch(?vacmAccessContextMatch, 1, Cols),
+		    case snmp_vacm:get_row(RowIndex) of
+			false when IsValidKey == true, tuple(Res) -> {noError, 0};
+			false -> {noCreation, Col}; % Bad RowIndex
+			_ -> {inconsistentValue, Col}
+		    end;
+		{value, {Col, ?'RowStatus_createAndWait'}} -> % ok, if it doesn't exist
+		    case snmp_vacm:get_row(RowIndex) of
+			false when IsValidKey == true -> {noError, 0};
+			false -> {noCreation, Col}; % Bad RowIndex
+			_ -> {inconsistentValue, Col}
+		    end;
+		{value, {_Col, ?'RowStatus_destroy'}} -> % always ok!
 		    {noError, 0};
-		false ->
-		    {inconsistentName, element(1, hd(Cols))}
-	    end
+		_ -> % otherwise, it's a change; it must exist
+		    case snmp_vacm:get_row(RowIndex) of
+			{ok, _} ->
+			    {noError, 0};
+			false ->
+			    {inconsistentName, element(1, hd(Cols))}
+		    end
+	    end;
+	Error ->
+	    Error
     end;
-vacmAccessTable(set, RowIndex, Cols) ->
+vacmAccessTable(set, RowIndex, Cols0) ->
+    case (catch verify_vacmAccessTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    do_vacmAccessTable_set(RowIndex, Cols);
+	Error ->
+	    Error
+    end.
+
+verify_vacmAccessTable_cols([], Cols) ->
+    {ok, lists:reverse(Cols)};
+verify_vacmAccessTable_cols([{Col, Val0}|Cols], Acc) ->
+    Val = verify_vacmAccessTable_col(Col, Val0),
+    verify_vacmAccessTable_cols(Cols, [{Col, Val}|Acc]).
+
+verify_vacmAccessTable_col(?vacmAccessContextPrefix, Pref) ->
+    case (catch snmp_conf:check_string(Pref)) of
+	true ->
+	    Pref;
+	_ ->
+	    wrongValue(?vacmAccessContextPrefix)
+    end;
+verify_vacmAccessTable_col(?vacmAccessSecurityModel, Model) ->
+    case Model of
+	any      -> ?SEC_ANY;
+	v1       -> ?SEC_ANY;
+	v2c      -> ?SEC_ANY;
+	usm      -> ?SEC_ANY;
+	?SEC_ANY -> ?SEC_ANY;
+	?SEC_V1  -> ?SEC_ANY;
+	?SEC_V2C -> ?SEC_ANY;
+	?SEC_USM -> ?SEC_ANY;
+	_ ->
+	    wrongValue(?vacmAccessSecurityModel)
+    end;
+verify_vacmAccessTable_col(?vacmAccessSecurityLevel, Level) ->
+    case Level of
+        noAuthNoPriv -> 1;
+        authNoPriv   -> 2;
+        authPriv     -> 3;
+        1            -> 1;
+        2            -> 2;
+        3            -> 3;
+        _            -> wrongValue(?vacmAccessSecurityLevel)
+    end;
+verify_vacmAccessTable_col(?vacmAccessContextMatch, Match) ->
+    case Match of
+	exact                          -> ?vacmAccessContextMatch_exact;
+	prefix                         -> ?vacmAccessContextMatch_prefix;
+	?vacmAccessContextMatch_exact  -> ?vacmAccessContextMatch_exact;
+	?vacmAccessContextMatch_prefix -> ?vacmAccessContextMatch_prefix;
+	_ ->
+	    wrongValue(?vacmAccessContextMatch)
+    end;
+verify_vacmAccessTable_col(?vacmAccessReadViewName, RVN) ->
+    case (catch snmp_conf:check_string(RVN)) of
+	true ->
+	    RVN;
+	_ ->
+	    wrongValue(?vacmAccessReadViewName)
+    end;
+verify_vacmAccessTable_col(?vacmAccessWriteViewName, WVN) ->
+    case (catch snmp_conf:check_string(WVN)) of
+	true ->
+	    WVN;
+	_ ->
+	    wrongValue(?vacmAccessWriteViewName)
+    end;
+verify_vacmAccessTable_col(?vacmAccessNotifyViewName, NVN) ->
+    case (catch snmp_conf:check_string(NVN)) of
+	true ->
+	    NVN;
+	_ ->
+	    wrongValue(?vacmAccessNotifyViewName)
+    end;
+verify_vacmAccessTable_col(_, Val) ->
+    Val.
+
+do_vacmAccessTable_set(RowIndex, Cols) ->
     case lists:keysearch(?vacmAccessStatus, 1, Cols) of
 	{value, {_Col, ?'RowStatus_createAndGo'}} ->
 	    Row = mk_row(Cols),
@@ -249,6 +476,18 @@ vacmAccessTable(set, RowIndex, Cols) ->
 	{value, {_Col, ?'RowStatus_destroy'}} ->
 	    snmp_vacm:delete(RowIndex),
 	    {noError, 0};
+	{value, {_Col, ?'RowStatus_active'}}  ->
+	    {ok, Row} = snmp_vacm:get_row(RowIndex),
+	    NRow = ch_row(Cols, Row),
+	    NRow2 =
+		case element(?vacmAContextMatch, NRow) of
+		    noinit -> setelement(?vacmAStatus, NRow,
+					 ?'RowStatus_notReady');
+		    _      -> setelement(?vacmAStatus, NRow,
+					 ?'RowStatus_active')
+		end,
+	    snmp_vacm:insert([{RowIndex, NRow2}]),
+	    {noError, 0};
 	_ ->
 	    {ok, Row} = snmp_vacm:get_row(RowIndex),
 	    NRow = ch_row(Cols, Row),
@@ -264,26 +503,31 @@ vacmAccessTable(set, RowIndex, Cols) ->
     end.
 	    
 	    
+
 %% Cols are sorted, and all columns are > 3.
 do_get_next(RowIndex, Cols) ->
     case snmp_vacm:get_next_row(RowIndex) of
 	{NextIndex, Row} ->
-	    lists:map(fun(Col) when Col < ?vacmAccessStatus -> 
-			      {[Col | NextIndex], element(Col-3, Row)};
-			 (_) -> endOfTable
-		      end, Cols);
+	    F1 = fun(Col) when Col < ?vacmAccessStatus -> 
+			 {[Col | NextIndex], element(Col-3, Row)};
+		    (_) -> 
+			 endOfTable
+		 end,
+	    lists:map(F1, Cols);
 	false ->
 	    case snmp_vacm:get_next_row([]) of
 		{_NextIndex, Row} ->
-		    lists:map(fun(Col) when Col < ?vacmAccessStatus -> 
-				      {[Col+1 | RowIndex], element(Col-2, Row)};
-				 (_) ->
-				      endOfTable
-			      end, Cols);
+		    F2 = fun(Col) when Col < ?vacmAccessStatus -> 
+				 {[Col+1 | RowIndex], element(Col-2, Row)};
+			    (_) ->
+				 endOfTable
+			 end,
+		    lists:map(F2, Cols);
 		false ->
 		    lists:map(fun(_Col) -> endOfTable end, Cols)
 	    end
     end.
+
 
 %%-----------------------------------------------------------------
 %% Functions to manipulate vacmAccessRows.
@@ -311,8 +555,8 @@ ch_row([{Col, Val} | T], Row) -> ch_row(T, setelement(Col-3, Row, Val)).
    
 
 %% Split a list of columns in 2 lists - the first is all columns
-%% that are < 3.  For these, use the first accessible column number: 4.
-split_cols([Col | Cols], PreCols) when Col < 3 ->
+%% that are =< 3.  For these, use the first accessible column number: 4.
+split_cols([Col | Cols], PreCols) when Col =< 3 ->
     split_cols(Cols, [4 | PreCols]);
 split_cols(Cols, PreCols) ->
     {PreCols, Cols}.
@@ -346,9 +590,70 @@ vacmViewTreeFamilyTable(get_next, RowIndex, Cols) ->
     next(vacmViewTreeFamilyTable, RowIndex, Cols);
 vacmViewTreeFamilyTable(get, RowIndex, Cols) ->
     get(vacmViewTreeFamilyTable, RowIndex, Cols);
+vacmViewTreeFamilyTable(set, RowIndex, Cols0) ->
+    case (catch verify_vacmViewTreeFamilyTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    snmp_generic:table_func(set, RowIndex, Cols, 
+				    db(vacmViewTreeFamilyTable));
+	Error ->
+	    Error
+    end;
+vacmViewTreeFamilyTable(is_set_ok, RowIndex, Cols0) ->
+    case (catch verify_vacmViewTreeFamilyTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    snmp_generic:table_func(is_set_ok, RowIndex, Cols, 
+				    db(vacmViewTreeFamilyTable));
+	Error ->
+	    Error
+    end;
 vacmViewTreeFamilyTable(Op, Arg1, Arg2) ->
     snmp_generic:table_func(Op, Arg1, Arg2, db(vacmViewTreeFamilyTable)).
 
+
+verify_vacmViewTreeFamilyTable_cols([], Cols) ->
+    {ok, lists:reverse(Cols)};
+verify_vacmViewTreeFamilyTable_cols([{Col, Val0}|Cols], Acc) ->
+    Val = verify_vacmViewTreeFamilyTable_col(Col, Val0),
+    verify_vacmViewTreeFamilyTable_cols(Cols, [{Col, Val}|Acc]).
+
+verify_vacmViewTreeFamilyTable_col(?vacmViewTreeFamilyViewName, Name) ->
+    case (catch snmp_conf:check_string(Name)) of
+	true ->
+	    Name;
+	_ ->
+	    wrongValue(?vacmViewTreeFamilyViewName)
+    end;
+verify_vacmViewTreeFamilyTable_col(?vacmViewTreeFamilySubtree, Tree) ->
+    case (catch snmp_conf:check_oid(Tree)) of
+	true ->
+	    Tree;
+	_ ->
+	    wrongValue(?vacmViewTreeFamilySubtree)
+    end;
+verify_vacmViewTreeFamilyTable_col(?vacmViewTreeFamilyMask, Mask) ->
+    case Mask of
+	null -> [];
+	[]   -> [];
+	_ ->
+	    case (catch snmp_conf:check_oid(Mask)) of
+		true ->
+		    Mask;
+	        _ ->
+		    wrongValue(?vacmViewTreeFamilyMask)
+	    end
+    end;
+verify_vacmViewTreeFamilyTable_col(?vacmViewTreeFamilyType, Type) ->
+    case Type of
+	included       -> ?view_included;
+	excluded       -> ?view_excluded;
+	?view_included -> ?view_included;
+	?view_excluded -> ?view_excluded;
+	 _ ->
+	    wrongValue(?vacmViewTreeFamilyType)
+    end;
+verify_vacmViewTreeFamilyTable_col(_, Val) ->
+    Val.
+	    
 
 table_next(Name, RestOid) ->
     snmp_generic:table_next(db(Name), RestOid).
@@ -374,6 +679,8 @@ next(Name, RowIndex, Cols) ->
  
 get(Name, RowIndex, Cols) ->
     snmp_generic:handle_table_get(db(Name), RowIndex, Cols, foi(Name)).
+
+wrongValue(V) -> throw({wrongValue,        V}).
 
 set_sname() ->
     set_sname(get(sname)).

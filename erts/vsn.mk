@@ -1,4 +1,4 @@
-VSN = 5.3
+VSN = 5.3.6.2
 SYSTEM_VSN = R9C
 
 # Port number 4365 in 4.2

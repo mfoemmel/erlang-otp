@@ -1316,11 +1316,11 @@ remote_dirty_select(Tab, Spec) ->
     end.
 
 remote_dirty_select(Tab, [{HeadPat,_, _}] = Spec, [Pos | Tail])
-  when tuple(HeadPat), size(HeadPat) > 2, Pos =< size(Spec) ->
+  when tuple(HeadPat), size(HeadPat) > 2, Pos =< size(HeadPat) ->
     Key = element(Pos, HeadPat),
     case has_var(Key) of
 	false ->
-	    Recs = mnesia_index:dirty_select(Tab, Spec, Pos),
+	    Recs = mnesia_index:dirty_select(Tab, HeadPat, Pos),
 	    %% Returns the records without applying the match spec
 	    %% The actual filtering is handled by the caller
 	    CMS = ets:match_spec_compile(Spec),
@@ -1801,8 +1801,6 @@ system_info2(debug) -> mnesia_monitor:get_env(debug);
 system_info2(dump_log_load_regulation) -> mnesia_monitor:get_env(dump_log_load_regulation);
 system_info2(dump_log_write_threshold) -> mnesia_monitor:get_env(dump_log_write_threshold);
 system_info2(dump_log_time_threshold) -> mnesia_monitor:get_env(dump_log_time_threshold);
-system_info2(dump_log_update_in_place) -> 
-    mnesia_monitor:get_env(dump_log_update_in_place);
 system_info2(dump_log_update_in_place) -> 
     mnesia_monitor:get_env(dump_log_update_in_place);
 system_info2(max_wait_for_decision) -> mnesia_monitor:get_env(max_wait_for_decision);

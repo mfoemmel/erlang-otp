@@ -20,7 +20,7 @@
  *    size objects. This allocater is at least an order of 
  *    magnitude faster than malloc().
  */
-#include "config.h"
+#include "eidef.h"
 
 #include <stdio.h>
 #include <stdlib.h>

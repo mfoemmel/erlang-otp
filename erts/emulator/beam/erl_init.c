@@ -39,6 +39,12 @@
 #include "hipe_signal.h"	/* for hipe_signal_init() */
 #endif
 
+/*
+ * Note about VxWorks: All variables must be initialized by executable,
+ * not by an initializer. Otherwise a new instance of the emulator will
+ * inherit prevous values.
+ */
+
 extern void erl_crash_dump(char *, int, char *, va_list);
 #ifdef __WIN32__
 extern void ConWaitForExit(void);
@@ -51,18 +57,18 @@ int erts_initialized = 0;
  * Configurable parameters.
  */
 
-Uint display_items = 200;	/* no of items to display in traces etc */
-Uint display_loads = 0;		/* print info about loaded modules */
-int H_MIN_SIZE = H_DEFAULT_SIZE; /* The minimum heap grain */
+Uint display_items;	    /* no of items to display in traces etc */
+Uint display_loads;		/* print info about loaded modules */
+int H_MIN_SIZE;			/* The minimum heap grain */
 
 Uint32 erts_debug_flags;	/* Debug flags. */
-int heap_series = HS_FIBONACCI_SLOW; /* Series to use for heap size. */
+int heap_series;		/* Series to use for heap size. */
 int count_instructions;
-int erts_backtrace_depth = 8;	/* How many functions to show in a backtrace
+int erts_backtrace_depth;	/* How many functions to show in a backtrace
 				 * in error codes.
 				 */
 
-int erts_async_max_threads = 0;  /* number of threads for async support */
+int erts_async_max_threads;  /* number of threads for async support */
 Uint16 erts_max_gen_gcs = (Uint16) -1;
 
 Eterm erts_error_logger_warnings; /* What to map warning logs to, am_error, 
@@ -72,6 +78,11 @@ Eterm erts_error_logger_warnings; /* What to map warning logs to, am_error,
 #ifdef DEBUG
 Uint verbose;			/* noisy mode = 1 */
 #endif
+
+int erts_disable_tolerant_timeofday; /* Time correction can be disabled it is
+				      * not and/or it is too slow.
+				      */
+
 
 /*
  * Other global variables.
@@ -112,6 +123,8 @@ Uint reclaimed;			/* no of words reclaimed in GCs */
 
 Eterm system_seq_tracer;
 
+int ignore_break;
+
 /*
  * Common error printout function, all error messages
  * that don't go to the error logger go through here.
@@ -136,14 +149,11 @@ erts_short_init(void)
     erl_sys_init();
     erl_init();
     erts_initialized = 1;
-
 }
 
 void
 erl_init(void)
 {
-    garbage_cols = 0;
-    reclaimed = 0;
     init_benchmarking();
 
     ASSERT(TMP_BUF_SIZE >= 16384);
@@ -449,6 +459,7 @@ void erts_usage(void)
     erl_printf(CERR, "           valid range is [0-256]\n");
     erl_printf(CERR, "-M<X> <Y>  Memory allocator switches\n");
     erl_printf(CERR, "           see the erts_alloc(3) man page for more information.\n");
+    erl_printf(CERR, "-K boolean Enable or disable kernel poll\n");
     erl_printf(CERR, "-W {i|w|e} Set error logger warnings mapping\n");
     erl_printf(CERR, "           see error_logger documentation for "
 	       "details\n");
@@ -462,11 +473,22 @@ erl_start(int argc, char **argv)
     int i = 1;
     char* arg=NULL;
     int have_break_handler = 1;
-    int ignore_break = 0;
     char* tmpenvbuf;
+
+    erts_disable_tolerant_timeofday = 0;
+    display_items = 200;
+    display_loads = 0;
+    heap_series = HS_FIBONACCI_SLOW;
+    erts_backtrace_depth = 8;
+    erts_async_max_threads = 0;
+    erts_max_gen_gcs = (Uint16) -1;
+    H_MIN_SIZE = H_DEFAULT_SIZE;
+    garbage_cols = 0;
+    reclaimed = 0;
 
     erts_writing_erl_crash_dump = 0;
     erts_initialized = 0;
+    ignore_break = 0;
     program = argv[0];
 
     erts_sys_threads_init();
@@ -479,6 +501,8 @@ erl_start(int argc, char **argv)
 #endif
     erl_sys_init();
     erl_sys_args(&argc, argv);
+
+    erts_ets_realloc_always_moves = 0;
 
     tmpenvbuf = getenv(ERL_MAX_ETS_TABLES_ENV);
     if (tmpenvbuf != NULL) 
@@ -631,6 +655,16 @@ erl_start(int argc, char **argv)
 	    have_break_handler = 0;
 	  break;
 
+	case 'K':
+	    /* If kernel poll support is present,
+	       erl_sys_args() will remove the K parameter
+	       and value */
+	    get_arg(argv[i]+2, argv[i+1], &i);
+	    erl_printf(CERR,
+		       "kernel-poll not supported; \"K\" parameter ignored\n",
+		       arg);
+	    break;
+
 	case 'P':
 	    /* set maximum number of processes */
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
@@ -651,10 +685,15 @@ erl_start(int argc, char **argv)
 	    }
 	    break;
 
+ 	case 'r':
+	    erts_ets_realloc_always_moves = 1;
+	    break;
 	case 'n':   /* XXX obsolete */
 	    break;
 	case 'c':
-	    if (argv[i][2] == 'i') {
+	    if (argv[i][2] == 0) {
+		erts_disable_tolerant_timeofday = 1;
+	    } else if (argv[i][2] == 'i') {
 		count_instructions = 1;
 	    }
 	    break;

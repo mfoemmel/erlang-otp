@@ -96,7 +96,7 @@ loop(State) ->
 	    exit(stop);
 
 	%% Help window termination -- ignore
-	{'EXIT', Pid, Reason} ->
+	{'EXIT', _Pid, _Reason} ->
 	    loop(State)
     end.
 
@@ -106,7 +106,7 @@ gui_cmd(ignore, State) ->
     State;
 gui_cmd({win, Win}, State) ->
     State#state{win=Win};
-gui_cmd(stopped, State) ->
+gui_cmd(stopped, _State) ->
     exit(stop);
 gui_cmd({coords, Coords}, State) ->
     State#state{coords=Coords};
@@ -165,7 +165,8 @@ gui_cmd({break, {Mod, Line}, What}, State) ->
 
 %% Help menu
 gui_cmd('Debugger', State) ->
-    HelpFile = filename:join([code:lib_dir(debugger),"doc","index.html"]),
+    HelpFile = filename:join([code:lib_dir(debugger),
+			      "doc", "html", "part_frame.html"]),
     tool_utils:open_help(State#state.gs, HelpFile),
     State.
 
@@ -178,19 +179,19 @@ add_break(GS, Coords, Type, Mod, Line) ->
 
 %%--Commands from the interpreter-------------------------------------
 
-int_cmd({new_break, {{Mod, Line}, Options}=Break}, #state{mod=Mod}=State) ->
+int_cmd({new_break, {{Mod,_Line},_Options}=Break}, #state{mod=Mod}=State) ->
     Win = dbg_ui_trace_win:add_break(State#state.win, 'Break', Break),
     State#state{win=Win};
-int_cmd({delete_break, {Mod, Line}=Point}, #state{mod=Mod}=State) ->
+int_cmd({delete_break, {Mod,_Line}=Point}, #state{mod=Mod}=State) ->
     Win = dbg_ui_trace_win:delete_break(State#state.win, Point),
     State#state{win=Win};
-int_cmd({break_options, {{Mod, Line}, Options}=Break}, #state{mod=Mod}=State) ->
+int_cmd({break_options, {{Mod,_Line},_Options}=Break}, #state{mod=Mod}=State) ->
     Win = dbg_ui_trace_win:update_break(State#state.win, Break),
     State#state{win=Win};
 int_cmd(no_break, State) ->
     Win = dbg_ui_trace_win:clear_breaks(State#state.win),
     State#state{win=Win};
-int_cmd({no_break, Mod}, State) ->
+int_cmd({no_break, _Mod}, State) ->
     Win = dbg_ui_trace_win:clear_breaks(State#state.win),
     State#state{win=Win};
 int_cmd(_, State) ->

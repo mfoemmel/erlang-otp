@@ -33,6 +33,8 @@
 -export([transform_to_EXTERNAL1990/1,
 	 transform_to_EXTERNAL1994/1]).
 
+-export([dynamicsort_SET_components/1,
+	 dynamicsort_SETOF/1]).
 
 check_bool(_Bool,asn1_DEFAULT) ->
     true;
@@ -80,10 +82,8 @@ check_bitstring(L1=[H1|_T1],L2=[H2|_T2],NBL=[_H|_T]) when integer(H1),integer(H2
     check_bitstring(L1,L2new,NBL);
 %% Default value as a list of 1 and 0 and user value as a list of atoms
 check_bitstring(L1=[H1|_T1],L2=[H2|_T2],NBL) when integer(H1),atom(H2) ->
-    case bit_list_to_nbl(L1,NBL,0,[]) of
-	L3 -> check_bitstring(L3,L2,NBL);
-	_ -> throw({error,L2})
-    end;
+    L3 = bit_list_to_nbl(L1,NBL,0,[]),
+    check_bitstring(L3,L2,NBL);
 %% Both default value and user value as a list of atoms
 check_bitstring(L1=[H1|T1],L2=[H2|_T2],_) when atom(H1),atom(H2) ->
     length(L1) == length(L2),
@@ -94,11 +94,8 @@ check_bitstring(L1=[H1|T1],L2=[H2|_T2],_) when atom(H1),atom(H2) ->
     end;
 %% Default value as a list of atoms and user value as a list of 1 and 0
 check_bitstring(L1=[H1|_T1],L2=[H2|_T2],NBL) when atom(H1),integer(H2) ->
-    case bit_list_to_nbl(L2,NBL,0,[]) of
-	L3 ->
-	    check_bitstring(L1,L3,NBL);
-	_ -> throw({error,L2})
-    end;
+    L3 = bit_list_to_nbl(L2,NBL,0,[]),
+    check_bitstring(L1,L3,NBL);
 %% User value in compact format
 check_bitstring(DefVal,CBS={_,_},NBL) ->
     NewVal = cbs_to_bit_list(CBS),
@@ -304,7 +301,7 @@ transform_to_EXTERNAL1990([{'presentation-context-id',PCid}|Rest],Acc) ->
     transform_to_EXTERNAL1990(Rest,[PCid,asn1_NOVALUE|Acc]);
 transform_to_EXTERNAL1990([{'context-negotiation',Context_negot}|Rest],Acc) ->
     {_,Presentation_Cid,Transfer_syntax} = Context_negot,
-    transform_to_EXTERNAL1990(Rest,[Transfer_syntax,Presentation_Cid|Acc]);
+    transform_to_EXTERNAL1990(Rest,[Presentation_Cid,Transfer_syntax|Acc]);
 transform_to_EXTERNAL1990([asn1_NOVALUE|Rest],Acc) ->
     transform_to_EXTERNAL1990(Rest,[asn1_NOVALUE|Acc]);
 transform_to_EXTERNAL1990([Data_val_desc,Data_value],Acc) when list(Data_value)->
@@ -331,3 +328,26 @@ transform_to_EXTERNAL1994(V={'EXTERNAL',DRef,IndRef,Data_v_desc,Encoding}) ->
 	_  ->
 	    V
     end.
+
+
+%% dynamicsort_SET_components(Arg) -> 
+%% Res Arg -> list() 
+%% Res -> list()
+%% Sorts the elements in Arg according to the encoded tag in
+%% increasing order.
+dynamicsort_SET_components(ListOfEncCs) ->
+    BinL = lists:map(fun(X) -> list_to_binary(X) end,ListOfEncCs),
+    TagBinL = lists:map(fun(X) ->
+				{{T,_,TN},_,_} = asn1rt_ber_bin:decode_tag(X),
+				{{T,TN},X}
+			end,BinL),
+    ClassTagNoSorted = lists:keysort(1,TagBinL),
+    lists:map(fun({_,El}) -> El end,ClassTagNoSorted).
+
+%% dynamicsort_SETOF(Arg) -> Res
+%% Arg -> list()
+%% Res -> list()
+%% Sorts the elements in Arg in increasing size
+dynamicsort_SETOF(ListOfEncVal) ->
+    BinL = lists:map(fun(X) -> list_to_binary(X) end,ListOfEncVal),
+    lists:sort(BinL).

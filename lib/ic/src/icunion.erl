@@ -34,7 +34,7 @@
 
 union_gen(G, N, X, c) when record(X, union) ->
     emit_c_union(G, N, X);
-union_gen(G, N, X, L) ->
+union_gen(_G, _N, _X, _L) ->
     ok.
 
 
@@ -99,7 +99,7 @@ emit_c_union_values_loop(G, N, X, Fd, [CU]) ->
     case CU of
 	{case_dcl,_,Id,Type} ->
 	    case Id of
-		{array,AID,SZ} -> % Check for arrays 	
+		{array, _AID, _SZ} -> % Check for arrays 	
 		    mk_array_file(G,N,X,Id,Type,Fd);
 		_ ->              % Elementary types or seq/struct
 		    ok
@@ -111,7 +111,7 @@ emit_c_union_values_loop(G, N, X, Fd, [CU |CUs]) ->
     case CU of
 	{case_dcl,_,Id,Type} ->
 	    case Id of
-		{array,AID,SZ} -> % Check for arrays	
+		{array, _AID, _SZ} -> % Check for arrays	
 		    mk_array_file(G,N,X,Id,Type,Fd);
 		_ ->              % Elementary types or seq/struct
 		    emit_c_union_values_loop(G, N, X, Fd, CUs)
@@ -129,7 +129,7 @@ emit_c_union_values_decl_loop(G, N, X, Fd, [CU]) ->
     case CU of
 	{case_dcl,_,Id,Type} ->
 	    case Id of
-		{array,AID,SZ} -> % Check for arrays 	
+		{array, _AID, _SZ} -> % Check for arrays 	
 		    mk_array_decl(G,N,X,Id,Type,Fd);
 		_ ->              % Elementary types or seq/struct
 		    mk_union_member_decl(G,N,X,Id,Type,Fd),
@@ -142,7 +142,7 @@ emit_c_union_values_decl_loop(G, N, X, Fd, [CU |CUs]) ->
     case CU of
 	{case_dcl,_,Id,Type} ->
 	    case Id of
-		{array,AID,SZ} -> % Check for arrays	
+		{array, _AID, _SZ} -> % Check for arrays	
 		    mk_array_decl(G,N,X,Id,Type,Fd),
 		    emit_c_union_values_decl_loop(G, N, X, Fd, CUs);
 		_ ->              % Elementary types or seq/struct
@@ -201,7 +201,7 @@ mk_union_member_decl(G,N,X,Id,Type,Fd) ->
 create_c_union_file(G, N, X, UnionName) ->
 
     {Fd , SName} = open_c_coding_file(G, UnionName),
-    HFd = ic_genobj:hrlfiled(G), %% Write on stubfile header
+    _HFd = ic_genobj:hrlfiled(G), %% Write on stubfile header
     HrlFName = filename:basename(ic_genobj:include_file(G)),
     ic_codegen:emit_stub_head(G, Fd, SName, c),
     ic_codegen:emit(Fd, "#include \"~s\"\n\n",[HrlFName]),
@@ -280,7 +280,7 @@ getDiscrStr(G, N, S) when element(1, S) == scoped_id ->
 	_ ->
 	    error
     end;
-getDiscrStr(G, N, X) ->
+getDiscrStr(_G, N, X) ->
     case X of
 	{short,_} ->
 	    "CORBA_short";
@@ -350,7 +350,7 @@ getCaseTypeStr(G, N, X, I, T) when element(1, T) == scoped_id ->
 		    end
 	    end
     end;
-getCaseTypeStr(G, N, X, I, T) ->
+getCaseTypeStr(_G, N, X, I, T) ->
     case T of
 	{short,_} ->
 	    "CORBA_short";
@@ -450,7 +450,7 @@ emit_union_discr_var_decl(G, N, X, Fd) ->
 	    ic_codegen:emit(Fd, "  char oe_bool[256];\n");
 	"CORBA_char" ->
 	    ic_codegen:emit(Fd, "  char oe_discr = 0;\n");
-	T ->
+	_T ->
 	    ic_codegen:emit(Fd, "  int oe_dummy = 0;\n"),
 	    ic_codegen:emit(Fd, "  ~s oe_discr = 0;\n",[UD])
     end.
@@ -525,7 +525,7 @@ emit_c_union_loop(G, N, X, Fd, [CU|CUs], GotDefaultCase, Case) ->
 	    error
     end.
 
-emit_c_union_valueless_discriminator(G, N, X, Fd, Case) ->  
+emit_c_union_valueless_discriminator(_G, _N, _X, Fd, Case) ->  
     ic_codegen:emit(Fd, "  default:\n"),
     case Case of
 	sizecalc ->
@@ -635,7 +635,7 @@ emit_c_union_case(G, N, X, Fd, I, T, [{scoped_id,_,_,[EID]}|Rest], Case) -> %% E
 %% Returns the enumerant discriminator scope
 %%
 get_c_union_discriminator_scope(G, N, X) ->
-    {FullScopedName, _, TK, _} = ic_symtab:get_full_scoped_name(G, N, X#union.type),
+    {FullScopedName, _, _TK, _} = ic_symtab:get_full_scoped_name(G, N, X#union.type),
     BT = case ic_code:get_basetype(G, ic_util:to_undersc(FullScopedName)) of
 	     {enum,ST} ->
 		 ST;

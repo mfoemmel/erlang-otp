@@ -42,7 +42,7 @@ init() ->
     case OsType of
 	{ose,_} ->
 	    case init:get_argument(loader) of
-		{ok,[["inet"]]} ->			
+		{ok,[["ose_inet"]]} ->			
 		    %% port already started by prim_loader
 		    ok;
 		Other ->
@@ -82,7 +82,14 @@ init() ->
 		'bsd/os' ->
 		    load_resolv(filename:join(Etc,"irs.conf"), host_conf_bsdos);
 		linux ->
-		    load_resolv(filename:join(Etc,"host.conf"),host_conf_linux),
+		    case load_resolv(filename:join(Etc,"host.conf"),
+				     host_conf_linux) of
+			ok ->
+			    ok;
+			_ ->
+			    load_resolv(filename:join(Etc,"nsswitch.conf"), 
+					nsswitch_conf)
+		    end,
 
 		    % It may be the case that the domain name was not set
 		    % because the hostname was short. But we can now look it
@@ -119,6 +126,7 @@ init() ->
 			    ok
 		    end;
 		_ ->
+		    inet_db:set_lookup([native]),
 		    ok
 	    end,
 	    add_dns_lookup(inet_db:res_option(lookup)),

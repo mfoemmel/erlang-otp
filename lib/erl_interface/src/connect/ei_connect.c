@@ -19,7 +19,7 @@
  * Purpose: Connect to any node at any host. (EI version)
  */
 
-#include "config.h"
+#include "eidef.h"
 
 #include <stdlib.h>
 #include <sys/types.h>
@@ -83,7 +83,6 @@
 #include <errno.h>
 #include <ctype.h>
 
-#include "eidef.h"
 #include "eiext.h"
 #include "ei_portio.h"
 #include "ei_internal.h"
@@ -111,30 +110,30 @@ static int get_home(char *buf, int size);
 static unsigned gen_challenge(void);
 static void gen_digest(unsigned challenge, char cookie[], 
 		       unsigned char digest[16]);
-static int send_status(int fd, char *status);
-static int recv_status(int fd);
+static int send_status(int fd, char *status, unsigned ms);
+static int recv_status(int fd, unsigned ms);
 static int send_challenge(int fd, char *nodename, 
-			  unsigned challenge, unsigned version);
+			  unsigned challenge, unsigned version, unsigned ms);
 static int recv_challenge(int fd, unsigned *challenge, 
 			  unsigned *version,
-			  unsigned *flags, ErlConnect *namebuf);
+			  unsigned *flags, ErlConnect *namebuf, unsigned ms);
 static int send_challenge_reply(int fd, unsigned char digest[16], 
-				unsigned challenge);
+				unsigned challenge, unsigned ms);
 static int recv_challenge_reply(int fd, 
 				unsigned our_challenge,
 				char cookie[], 
-				unsigned *her_challenge);
-static int send_challenge_ack(int fd, unsigned char digest[16]);
+				unsigned *her_challenge, unsigned ms);
+static int send_challenge_ack(int fd, unsigned char digest[16], unsigned ms);
 static int recv_challenge_ack(int fd, 
 			      unsigned our_challenge,
-			      char cookie[]);
+			      char cookie[], unsigned ms);
 static int send_name(int fd, char *nodename, 
-		     unsigned version); 
+		     unsigned version, unsigned ms); 
 
 /* Common for both handshake types */
 static int recv_name(int fd, 
 		     unsigned *version,
-		     unsigned *flags, ErlConnect *namebuf);
+		     unsigned *flags, ErlConnect *namebuf, unsigned ms);
 
 
 /***************************************************************************
@@ -387,7 +386,7 @@ int ei_connect_xinit(ei_cnode* ec, const char *thishostname,
 {
     char *dbglevel;
     
-/* FIXME this code was enabled for erl_connect_xinit(), why not here? */
+/* FIXME this code was enabled for 'erl'_connect_xinit(), why not here? */
 #if 0    
 #ifdef __WIN32__
     if (!initWinSock()) {
@@ -508,6 +507,11 @@ int ei_connect_init(ei_cnode* ec, const char* this_node_name,
 	return ERL_ERROR;
     }
 
+    /* We use a short node name */    
+    {
+	char* ct;
+	if ((ct = strchr(hp->h_name, '.')) != NULL) *ct = '\0';
+    }
     strcpy(thishostname, hp->h_name);
     sprintf(thisnodename, "%s@%s", this_node_name, hp->h_name);
     
@@ -520,9 +524,9 @@ int ei_connect_init(ei_cnode* ec, const char* this_node_name,
 * and returns fd to socket 
 * port has to be in host byte order 
 */
-static int cnct(uint16 port, struct in_addr *ip_addr, int addr_len)
+static int cnct(uint16 port, struct in_addr *ip_addr, int addr_len, unsigned ms)
 {
-    int s;
+    int s, res;
     struct sockaddr_in iserv_addr;
     
     if ((s = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -535,8 +539,9 @@ static int cnct(uint16 port, struct in_addr *ip_addr, int addr_len)
     iserv_addr.sin_family = AF_INET;
     iserv_addr.sin_port = htons(port);
     
-    if (connect(s, (struct sockaddr*)&iserv_addr, sizeof(iserv_addr)) < 0) {
-	erl_errno = errno;
+    if ((res = ei_connect_t(s, (struct sockaddr*)&iserv_addr, 
+		      sizeof(iserv_addr),ms)) < 0) {
+	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
 	closesocket(s);
 	return ERL_ERROR;
     }
@@ -550,7 +555,7 @@ static int cnct(uint16 port, struct in_addr *ip_addr, int addr_len)
   * Returns a valid file descriptor at success,
   * otherwise a negative error code.
 */
-int ei_connect(ei_cnode* ec, char *nodename)
+int ei_connect_tmo(ei_cnode* ec, char *nodename, unsigned ms)
 {
     char *hostname, alivename[BUFSIZ];
     struct hostent *hp;
@@ -574,7 +579,7 @@ int ei_connect(ei_cnode* ec, char *nodename)
 #ifndef __WIN32__
     hp = ei_gethostbyname_r(hostname,&host,buffer,1024,&ei_h_errno);
     if (hp == NULL) {
-	EI_TRACE_ERR2("erl_connect",
+	EI_TRACE_ERR2("ei_connect",
 		      "Can't find host for %s: %d\n",nodename,ei_h_errno);
 	erl_errno = EHOSTUNREACH;
 	return ERL_ERROR;
@@ -584,24 +589,29 @@ int ei_connect(ei_cnode* ec, char *nodename)
     if ((hp = ei_gethostbyname(hostname)) == NULL) {
 	char reason[1024];
 	win32_error(reason,sizeof(reason));
-	EI_TRACE_ERR2("erl_connect",
+	EI_TRACE_ERR2("ei_connect",
 		      "Can't find host for %s: %s",nodename,reason);
 	erl_errno = EHOSTUNREACH;
 	return ERL_ERROR;
     }
 #endif /* win32 */
     
-    return ei_xconnect(ec, (Erl_IpAddr) *hp->h_addr_list, alivename);
-} /* erl_connect */
+    return ei_xconnect_tmo(ec, (Erl_IpAddr) *hp->h_addr_list, alivename, ms);
+} /* ei_connect */
+
+int ei_connect(ei_cnode* ec, char *nodename)
+{
+    return ei_connect_tmo(ec, nodename, 0);
+}
 
 
-  /* ip_addr is now in network byte order 
+ /* ip_addr is now in network byte order 
   *
   * first we have to get hold of the portnumber to
   *  the node through epmd at that host 
   *
 */
-int ei_xconnect(ei_cnode* ec, Erl_IpAddr adr, char *alivename)
+int ei_xconnect_tmo(ei_cnode* ec, Erl_IpAddr adr, char *alivename, unsigned ms)
 {
     struct in_addr *ip_addr=(struct in_addr *) adr;
     int rport = 0; /*uint16 rport = 0;*/
@@ -611,44 +621,50 @@ int ei_xconnect(ei_cnode* ec, Erl_IpAddr adr, char *alivename)
     ErlConnect her_name;
     unsigned her_flags, her_version;
 
-    if ((rport = ei_epmd_port(ip_addr,alivename,&dist)) < 0) {
+    erl_errno = EIO;		/* Default error code */
+    
+    EI_TRACE_CONN1("ei_xconnect","-> CONNECT attempt to connect to %s",
+		   alivename);
+    
+    if ((rport = ei_epmd_port_tmo(ip_addr,alivename,&dist, ms)) < 0) {
 	EI_TRACE_ERR0("ei_xconnect","-> CONNECT can't get remote port");
+	/* ei_epmd_port_tmo() has set erl_errno */
 	return ERL_NO_PORT;
     }
     
     /* we now have port number to enode, try to connect */
-    if((sockd = cnct((uint16)rport, ip_addr, sizeof(struct in_addr))) < 0) {
+    if((sockd = cnct((uint16)rport, ip_addr, sizeof(struct in_addr),ms)) < 0) {
 	EI_TRACE_ERR0("ei_xconnect","-> CONNECT socket connect failed");
-	erl_errno = EIO;
+	/* cnct() has set erl_errno */
 	return ERL_CONNECT_FAIL;
     }
-
-    EI_TRACE_CONN0("ei_xconnect","-> CONNECT connected to remote");
     
+    EI_TRACE_CONN0("ei_xconnect","-> CONNECT connected to remote");
+
+    /* FIXME why connect before checking 'dist' output from ei_epmd_port() ?! */
     if (dist <= 4) {
 	EI_TRACE_ERR0("ei_xconnect","-> CONNECT remote version not compatible");
-	erl_errno = EIO;
 	goto error;
     }
     else {
 	unsigned our_challenge, her_challenge;
 	unsigned char our_digest[16];
 	
-	if (send_name(sockd, ec->thisnodename, (unsigned) dist))
+	if (send_name(sockd, ec->thisnodename, (unsigned) dist, ms))
 	    goto error;
-	if (recv_status(sockd))
+	if (recv_status(sockd, ms))
 	    goto error;
 	if (recv_challenge(sockd, &her_challenge, &her_version,
-	    &her_flags, &her_name))
+	    &her_flags, &her_name, ms))
 	    goto error;
 	our_challenge = gen_challenge();
 	gen_digest(her_challenge, ec->ei_connect_cookie, our_digest);
-	if (send_challenge_reply(sockd, our_digest, our_challenge))
+	if (send_challenge_reply(sockd, our_digest, our_challenge, ms))
 	    goto error;
-	if (recv_challenge_ack(sockd, our_challenge, ec->ei_connect_cookie))
+	if (recv_challenge_ack(sockd, our_challenge, 
+	    ec->ei_connect_cookie, ms))
 	    goto error;
-	put_ei_socket_info(sockd, dist, null_cookie, ec); /* FIXME check that 0 */
-	erl_errno = EIO;  /* FIXME why, why??? Where do we clear erl_errno? */
+	put_ei_socket_info(sockd, dist, null_cookie, ec); /* FIXME check == 0 */
     }
     
     setsockopt(sockd, IPPROTO_TCP, TCP_NODELAY, (char *)&one, sizeof(one));
@@ -656,13 +672,20 @@ int ei_xconnect(ei_cnode* ec, Erl_IpAddr adr, char *alivename)
 
     EI_TRACE_CONN1("ei_xconnect","-> CONNECT (ok) remote = %s",alivename);
     
+    erl_errno = 0;
     return sockd;
     
 error:
     EI_TRACE_ERR0("ei_xconnect","-> CONNECT failed");
     closesocket(sockd);
     return ERL_ERROR;
-} /* erl_xconnect */
+} /* ei_xconnect */
+
+int ei_xconnect(ei_cnode* ec, Erl_IpAddr adr, char *alivename)
+{
+    return ei_xconnect_tmo(ec, adr, alivename, 0);
+}
+
 
   /* 
   * For symmetry reasons
@@ -671,7 +694,7 @@ error:
 int ei_close_connection(int fd)
 {
     return closesocket(fd);
-} /* erl_close_connection */
+} /* ei_close_connection */
 #endif
 
   /*
@@ -681,23 +704,31 @@ int ei_close_connection(int fd)
 */
 int ei_accept(ei_cnode* ec, int lfd, ErlConnect *conp)
 {
+    return ei_accept_tmo(ec, lfd, conp, 0);
+}
+
+int ei_accept_tmo(ei_cnode* ec, int lfd, ErlConnect *conp, unsigned ms)
+{
     int fd;
     struct sockaddr_in cli_addr;
     int cli_addr_len=sizeof(struct sockaddr_in);
     unsigned her_version, her_flags;
     ErlConnect her_name;
 
+    erl_errno = EIO;		/* Default error code */
+
     EI_TRACE_CONN0("ei_accept","<- ACCEPT waiting for connection");
     
-    if ((fd = accept(lfd, (struct sockaddr*) &cli_addr, 
-	&cli_addr_len )) < 0) {
+    if ((fd = ei_accept_t(lfd, (struct sockaddr*) &cli_addr, 
+	&cli_addr_len, ms )) < 0) {
 	EI_TRACE_ERR0("ei_accept","<- ACCEPT socket accept failed");
+	erl_errno = (fd == -2) ? ETIMEDOUT : EIO;
 	goto error;
     }
     
     EI_TRACE_CONN0("ei_accept","<- ACCEPT connected to remote");
     
-    if (recv_name(fd, &her_version, &her_flags, &her_name)) {
+    if (recv_name(fd, &her_version, &her_flags, &her_name, ms)) {
 	EI_TRACE_ERR0("ei_accept","<- ACCEPT initial ident failed");
 	goto error;
     }
@@ -711,18 +742,18 @@ int ei_accept(ei_cnode* ec, int lfd, ErlConnect *conp)
 	unsigned her_challenge;
 	unsigned char our_digest[16];
 	
-	if (send_status(fd,"ok"))
+	if (send_status(fd,"ok", ms))
 	    goto error;
 	our_challenge = gen_challenge();
 	if (send_challenge(fd, ec->thisnodename, 
-	    our_challenge, her_version))
+	    our_challenge, her_version, ms))
 	    goto error;
 	if (recv_challenge_reply(fd, our_challenge, 
 	    ec->ei_connect_cookie, 
-	    &her_challenge))
+	    &her_challenge, ms))
 	    goto error;
 	gen_digest(her_challenge, ec->ei_connect_cookie, our_digest);
-	if (send_challenge_ack(fd, our_digest))
+	if (send_challenge_ack(fd, our_digest, ms))
 	    goto error;
 	put_ei_socket_info(fd, her_version, null_cookie, ec);
     }
@@ -730,14 +761,15 @@ int ei_accept(ei_cnode* ec, int lfd, ErlConnect *conp)
 	*conp = her_name;
     
     EI_TRACE_CONN1("ei_accept","<- ACCEPT (ok) remote = %s",her_name.nodename);
+
+    erl_errno = 0;		/* No error */
     return fd;
     
 error:
     EI_TRACE_ERR0("ei_accept","<- ACCEPT failed");
     closesocket(fd);
-    erl_errno = EIO;
     return ERL_ERROR;
-} /* erl_accept */
+} /* ei_accept */
 
 
 /* Receives a message from an Erlang socket.
@@ -745,20 +777,22 @@ error:
  * answered. Returns: ERL_ERROR, ERL_TICK or
  * the number of bytes read.
  */
-int ei_receive(int fd, unsigned char *bufp, int bufsize) 
+int ei_receive_tmo(int fd, unsigned char *bufp, int bufsize, unsigned ms) 
 {
     int len;
     unsigned char fourbyte[4]={0,0,0,0};
-    
-    if (ei_read_fill(fd, (char *) bufp, 4)  != 4) {
-	erl_errno = EIO;
+    int res;
+ 
+    if ((res = ei_read_fill_t(fd, (char *) bufp, 4, ms))  != 4) {
+	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
 	return ERL_ERROR;
     }
     
     /* Tick handling */
     if ((len = get_int32(bufp)) == ERL_TICK) 
     {
-	ei_write_fill(fd, (char *) fourbyte, 4);
+	ei_write_fill_t(fd, (char *) fourbyte, 4, ms);
+	/* FIXME ok to ignore error or timeout? */
 	erl_errno = EAGAIN;
 	return ERL_TICK;
     }
@@ -768,9 +802,9 @@ int ei_receive(int fd, unsigned char *bufp, int bufsize)
 	erl_errno = EMSGSIZE;
 	return ERL_ERROR;
     }
-    else if (ei_read_fill(fd, (char *) bufp, len) != len)
+    else if ((res = ei_read_fill_t(fd, (char *) bufp, len, ms)) != len)
     {
-	erl_errno = EIO;
+	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
 	return ERL_ERROR;
     }
     
@@ -778,27 +812,39 @@ int ei_receive(int fd, unsigned char *bufp, int bufsize)
     
 }
 
-int ei_reg_send(ei_cnode* ec, int fd, char *server_name, char* buf, int len)
+int ei_receive(int fd, unsigned char *bufp, int bufsize) 
+{
+    return ei_receive_tmo(fd, bufp, bufsize, 0);
+} 
+
+int ei_reg_send_tmo(ei_cnode* ec, int fd, char *server_name,
+		    char* buf, int len, unsigned ms)
 {
     erlang_pid *self = ei_self(ec);
     self->num = fd;
-    if (ei_send_reg_encoded(fd, self, server_name, buf, len)) {
-	erl_errno = EIO;
-	return -1;
-    }
-    return 0;
+
+    /* erl_errno and return code is set by ei_reg_send_encoded_tmo() */
+    return ei_send_reg_encoded_tmo(fd, self, server_name, buf, len, ms);
+}
+
+
+int ei_reg_send(ei_cnode* ec, int fd, char *server_name, char* buf, int len)
+{
+    return ei_reg_send_tmo(ec,fd,server_name,buf,len,0);
 }
 
 /* 
 * Sends an Erlang message to a process at an Erlang node
 */
+int ei_send_tmo(int fd, erlang_pid* to, char* buf, int len, unsigned ms)
+{
+    /* erl_errno and return code is set by ei_reg_send_encoded_tmo() */
+    return ei_send_encoded_tmo(fd, to, buf, len, ms);
+}
+
 int ei_send(int fd, erlang_pid* to, char* buf, int len)
 {
-    if (ei_send_encoded(fd, to, buf, len) != 0) {
-	erl_errno = EIO;
-	return -1;
-    }
-    return 0;
+    return ei_send_tmo(fd, to, buf, len, 0);
 }
 
 
@@ -809,13 +855,13 @@ int ei_send(int fd, erlang_pid* to, char* buf, int len)
 */
 
 int ei_do_receive_msg(int fd, int staticbuffer_p, 
-		      erlang_msg* msg, ei_x_buff* x)
+		      erlang_msg* msg, ei_x_buff* x, unsigned ms)
 {
     int msglen;
     int i;
     
     if (!(i=ei_recv_internal(fd, &x->buff, &x->buffsz, msg, &msglen, 
-	staticbuffer_p))) {
+	staticbuffer_p, ms))) {
 	erl_errno = EAGAIN;
 	return ERL_TICK;
     }
@@ -841,9 +887,9 @@ int ei_do_receive_msg(int fd, int staticbuffer_p,
 	return ERL_MSG;
 	
     default:
-	/*if (emsg->to) erl_free_term(emsg->to);
-	  if (emsg->from) erl_free_term(emsg->from);
-	  if (emsg->msg) erl_free_term(emsg->msg);
+	/*if (emsg->to) 'erl'_free_term(emsg->to);
+	  if (emsg->from) 'erl'_free_term(emsg->from);
+	  if (emsg->msg) 'erl'_free_term(emsg->msg);
 	  emsg->to = NULL;
 	  emsg->from = NULL;
 	  emsg->msg = NULL;*/
@@ -856,12 +902,22 @@ int ei_do_receive_msg(int fd, int staticbuffer_p,
 
 int ei_receive_msg(int fd, erlang_msg* msg, ei_x_buff* x)
 {
-    return ei_do_receive_msg(fd, 1, msg, x);
+    return ei_do_receive_msg(fd, 1, msg, x, 0);
 }
 
 int ei_xreceive_msg(int fd, erlang_msg *msg, ei_x_buff *x)
 {
-    return ei_do_receive_msg(fd, 0, msg, x);
+    return ei_do_receive_msg(fd, 0, msg, x, 0);
+}
+
+int ei_receive_msg_tmo(int fd, erlang_msg* msg, ei_x_buff* x, unsigned ms)
+{
+    return ei_do_receive_msg(fd, 1, msg, x, ms);
+}
+
+int ei_xreceive_msg_tmo(int fd, erlang_msg *msg, ei_x_buff *x, unsigned ms)
+{
+    return ei_do_receive_msg(fd, 0, msg, x, ms);
 }
 
 /* 
@@ -922,7 +978,7 @@ int ei_rpc_from(ei_cnode *ec, int fd, int timeout, erlang_msg *msg,
     FD_ZERO(&readmask);
     FD_SET(fd,&readmask);
     
-    switch (select(FD_SETSIZE, &readmask, NULL, NULL, t)) {
+    switch (select(fd+1, &readmask, NULL, NULL, t)) {
     case -1: 
 	erl_errno = EIO;
 	return ERL_ERROR;
@@ -962,7 +1018,7 @@ int ei_rpc(ei_cnode* ec, int fd, char *mod, char *fun,
 	;
 
     if (i == ERL_ERROR)  return -1;
-    /*ep = erl_element(2,emsg.msg);*/ /* {RPC_Tag, RPC_Reply} */
+    /*ep = 'erl'_element(2,emsg.msg);*/ /* {RPC_Tag, RPC_Reply} */
     index = 0;
     if (ei_decode_version(x->buff, &index, &i) < 0
 	|| ei_decode_ei_term(x->buff, &index, &t) < 0)
@@ -1089,14 +1145,15 @@ static char *hex(char digest[16])
 }
 
 static int read_2byte_package(int fd, char **buf, int *buflen, 
-			      int *is_static)
+			      int *is_static, unsigned ms)
 {
     unsigned char nbuf[2];
     unsigned char *x = nbuf;
     unsigned len;
+    int res;
     
-    if(ei_read_fill(fd, (char *) nbuf, 2) != 2) {
-	erl_errno = EIO;
+    if((res = ei_read_fill_t(fd, nbuf, 2, ms)) != 2) {
+	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
 	return -1;
     }
     len = get16be(x);
@@ -1121,19 +1178,21 @@ static int read_2byte_package(int fd, char **buf, int *buflen,
 	    *buflen = len;
 	}
     }
-    if (ei_read_fill(fd, *buf, len) != len) {
-	erl_errno = EIO;
+    if ((res = ei_read_fill_t(fd, *buf, len, ms)) != len) {
+	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
 	return -1;
     }
     return len;
 }
 
 
-static int send_status(int fd, char *status)
+static int send_status(int fd, char *status, unsigned ms)
 {
     char *buf, *s;
     char dbuf[DEFBUF_SIZ];
     int siz = strlen(status) + 1 + 2;
+    int res;
+
     buf = (siz > DEFBUF_SIZ) ? malloc(siz) : dbuf;
     if (!buf) {
 	erl_errno = ENOMEM;
@@ -1143,14 +1202,13 @@ static int send_status(int fd, char *status)
     put16be(s,siz - 2);
     put8(s, 's');
     memcpy(s, status, strlen(status));
-    if (ei_write_fill(fd, buf, siz) != siz) {
+    if ((res = ei_write_fill_t(fd, buf, siz, ms)) != siz) {
 	EI_TRACE_ERR0("send_status","-> SEND_STATUS socket write failed");
 	if (buf != dbuf)
 	    free(buf);
-	erl_errno = EIO;
+	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
 	return -1;
     }
-
     EI_TRACE_CONN1("send_status","-> SEND_STATUS (%s)",status);
 
     if (buf != dbuf)
@@ -1158,7 +1216,7 @@ static int send_status(int fd, char *status)
     return 0;
 }
 
-static int recv_status(int fd)
+static int recv_status(int fd, unsigned ms)
 {
     char dbuf[DEFBUF_SIZ];
     char *buf = dbuf;
@@ -1166,7 +1224,7 @@ static int recv_status(int fd)
     int buflen = DEFBUF_SIZ;
     int rlen;
     
-    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) <= 0) {
+    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static, ms)) <= 0) {
 	EI_TRACE_ERR1("recv_status",
 		      "<- RECV_STATUS socket read failed (%d)", rlen);
 	goto error;
@@ -1189,13 +1247,16 @@ error:
 static int send_name_or_challenge(int fd, char *nodename,
 				  int f_chall,
 				  unsigned challenge,
-				  unsigned version) 
+				  unsigned version,
+				  unsigned ms) 
 {
     char *buf;
     unsigned char *s;
     char dbuf[DEFBUF_SIZ];
     int siz = 2 + 1 + 2 + 4 + strlen(nodename);
     const char* function[] = {"SEND_NAME", "SEND_CHALLENGE"};
+    int res;
+
     if (f_chall)
 	siz += 4;
     buf = (siz > DEFBUF_SIZ) ? malloc(siz) : dbuf;
@@ -1212,18 +1273,14 @@ static int send_name_or_challenge(int fd, char *nodename,
 	put32be(s, challenge);
     memcpy(s, nodename, strlen(nodename));
     
-    if (ei_write_fill(fd, buf, siz) != siz) {
+    if ((res = ei_write_fill_t(fd, buf, siz, ms)) != siz) {
 	EI_TRACE_ERR1("send_name_or_challenge",
 		      "-> %s socket write failed", function[f_chall]);
 	if (buf != dbuf)
 	    free(buf);
-	erl_errno = EIO;
+	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
 	return -1;
     }
-    
-    EI_TRACE_CONN4("send_name_or_challenge",
-		   "-> %s (ok) challenge = %d, version = %d, nodename = %s",
-		   function[f_chall],challenge, version, nodename);
     
     if (buf != dbuf)
 	free(buf);
@@ -1232,7 +1289,7 @@ static int send_name_or_challenge(int fd, char *nodename,
 
 static int recv_challenge(int fd, unsigned *challenge, 
 			  unsigned *version,
-			  unsigned *flags, ErlConnect *namebuf)
+			  unsigned *flags, ErlConnect *namebuf, unsigned ms)
 {
     char dbuf[DEFBUF_SIZ];
     char *buf = dbuf;
@@ -1244,7 +1301,9 @@ static int recv_challenge(int fd, unsigned *challenge,
     int sin_len = sizeof(sin);
     char tag;
     
-    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) <= 0) {
+    erl_errno = EIO;		/* Default */
+
+    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static, ms)) <= 0) {
 	EI_TRACE_ERR1("recv_challenge",
 		      "<- RECV_CHALLENGE socket read failed (%d)",rlen);
 	goto error;
@@ -1252,7 +1311,6 @@ static int recv_challenge(int fd, unsigned *challenge,
     if ((rlen - 11) > MAXNODELEN) {
 	EI_TRACE_ERR1("recv_challenge",
 		      "<- RECV_CHALLENGE nodename too long (%d)",rlen - 11);
-	erl_errno = EIO;
 	goto error;
     }
     s = buf;
@@ -1269,7 +1327,6 @@ static int recv_challenge(int fd, unsigned *challenge,
     if (!(*flags & DFLAG_EXTENDED_REFERENCES)) {
 	EI_TRACE_ERR0("recv_challenge","<- RECV_CHALLENGE peer cannot "
 		      "handle extended references");
-	erl_errno = EIO;
 	goto error;
     }
 
@@ -1293,6 +1350,7 @@ static int recv_challenge(int fd, unsigned *challenge,
 	    *flags,
 	    *challenge
 	    );
+    erl_errno = 0;
     return 0;
 error:
     if (!is_static)
@@ -1301,21 +1359,23 @@ error:
 }
 
 static int send_challenge_reply(int fd, unsigned char digest[16], 
-				unsigned challenge) 
+				unsigned challenge, unsigned ms) 
 {
     char *s;
     char buf[DEFBUF_SIZ];
     int siz = 2 + 1 + 4 + 16;
+    int res;
+
     s = buf;
     put16be(s,siz - 2);
     put8(s, 'r');
     put32be(s, challenge);
     memcpy(s, digest, 16);
     
-    if (ei_write_fill(fd, buf, siz) != siz) {
+    if ((res = ei_write_fill_t(fd, buf, siz, ms)) != siz) {
 	EI_TRACE_ERR0("send_challenge_reply",
 		      "-> SEND_CHALLENGE_REPLY socket write failed");
-	erl_errno = EIO;
+	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
 	return -1;
     }
     
@@ -1328,7 +1388,8 @@ static int send_challenge_reply(int fd, unsigned char digest[16],
 static int recv_challenge_reply (int fd, 
 				 unsigned our_challenge,
 				 char cookie[], 
-				 unsigned *her_challenge)
+				 unsigned *her_challenge,
+				 unsigned ms)
 {
     char dbuf[DEFBUF_SIZ];
     char *buf = dbuf;
@@ -1339,7 +1400,9 @@ static int recv_challenge_reply (int fd,
     char tag;
     char her_digest[16], expected_digest[16];
     
-    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) != 21) {
+    erl_errno = EIO;		/* Default */
+
+    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static, ms)) != 21) {
 	EI_TRACE_ERR1("recv_challenge_reply",
 		      "<- RECV_CHALLENGE_REPLY socket read failed (%d)",rlen);
 	goto error;
@@ -1350,7 +1413,6 @@ static int recv_challenge_reply (int fd,
 	EI_TRACE_ERR2("recv_challenge_reply",
 		      "<- RECV_CHALLENGE_REPLY incorrect tag, "
 		      "expected 'r' got '%c' (%u)",tag,tag);
-	erl_errno = EIO;
 	goto error;
     }
     *her_challenge = get32be(s);
@@ -1359,7 +1421,6 @@ static int recv_challenge_reply (int fd,
     if (memcmp(her_digest, expected_digest, 16)) {
 	EI_TRACE_ERR0("recv_challenge_reply",
 		      "<- RECV_CHALLENGE_REPLY authorization failure");
-	erl_errno = EIO;
 	goto error;
     }
     if (!is_static)
@@ -1367,6 +1428,7 @@ static int recv_challenge_reply (int fd,
     EI_TRACE_CONN2("recv_challenge_reply",
 		   "<- RECV_CHALLENGE_REPLY (ok) challenge = %u, digest = %s",
 		   *her_challenge,hex(her_digest));
+    erl_errno = 0;
     return 0;
     
 error:
@@ -1375,21 +1437,23 @@ error:
     return -1;
 }
 
-static int send_challenge_ack(int fd, unsigned char digest[16]) 
+static int send_challenge_ack(int fd, unsigned char digest[16], unsigned ms) 
 {
     char *s;
     char buf[DEFBUF_SIZ];
     int siz = 2 + 1 + 16;
+    int res;
+
     s = buf;
     
     put16be(s,siz - 2);
     put8(s, 'a');
     memcpy(s, digest, 16);
-    
-    if (ei_write_fill(fd, buf, siz) != siz) {
+
+    if ((res = ei_write_fill_t(fd, buf, siz, ms)) != siz) {
 	EI_TRACE_ERR0("recv_challenge_reply",
 		      "-> SEND_CHALLENGE_ACK socket write failed");
-	erl_errno = EIO;
+	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
 	return -1;
     }
     
@@ -1401,7 +1465,7 @@ static int send_challenge_ack(int fd, unsigned char digest[16])
 
 static int recv_challenge_ack(int fd, 
 			      unsigned our_challenge,
-			      char cookie[])
+			      char cookie[], unsigned ms)
 {
     char dbuf[DEFBUF_SIZ];
     char *buf = dbuf;
@@ -1412,7 +1476,9 @@ static int recv_challenge_ack(int fd,
     char tag;
     char her_digest[16], expected_digest[16];
     
-    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) != 17) {
+    erl_errno = EIO;		/* Default */
+
+    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static, ms)) != 17) {
 	EI_TRACE_ERR1("recv_challenge_ack",
 		      "<- RECV_CHALLENGE_ACK socket read failed (%d)",rlen);
 	goto error;
@@ -1423,7 +1489,6 @@ static int recv_challenge_ack(int fd,
 	EI_TRACE_ERR2("recv_challenge_ack",
 		      "<- RECV_CHALLENGE_ACK incorrect tag, "
 		      "expected 'a' got '%c' (%u)",tag,tag);
-	erl_errno = EIO;
 	goto error;
     }
     memcpy(her_digest, s, 16);
@@ -1431,13 +1496,13 @@ static int recv_challenge_ack(int fd,
     if (memcmp(her_digest, expected_digest, 16)) {
 	EI_TRACE_ERR0("recv_challenge_ack",
 		      "<- RECV_CHALLENGE_ACK authorization failure");
-	erl_errno = EIO;
 	goto error;
     }
     if (!is_static)
 	free(buf);
     EI_TRACE_CONN1("recv_challenge_ack",
 		   "<- RECV_CHALLENGE_ACK (ok) digest = %s",hex(her_digest));
+    erl_errno = 0;
     return 0;
 
 error:
@@ -1446,20 +1511,20 @@ error:
     return -1;
 }
 
-static int send_name(int fd, char *nodename, unsigned version) 
+static int send_name(int fd, char *nodename, unsigned version, unsigned ms) 
 {
-    return send_name_or_challenge(fd, nodename, 0, 0, version);
+    return send_name_or_challenge(fd, nodename, 0, 0, version, ms);
 }
 
 static int send_challenge(int fd, char *nodename, 
-			  unsigned challenge, unsigned version)
+			  unsigned challenge, unsigned version, unsigned ms)
 {
-    return send_name_or_challenge(fd, nodename, 1, challenge, version);
+    return send_name_or_challenge(fd, nodename, 1, challenge, version, ms);
 }
 
 static int recv_name(int fd, 
 		     unsigned *version,
-		     unsigned *flags, ErlConnect *namebuf)
+		     unsigned *flags, ErlConnect *namebuf, unsigned ms)
 {
     char dbuf[DEFBUF_SIZ];
     char *buf = dbuf;
@@ -1471,13 +1536,14 @@ static int recv_name(int fd,
     int sin_len = sizeof(sin);
     char tag;
     
-    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static)) <= 0) {
+    erl_errno = EIO;		/* Default */
+
+    if ((rlen = read_2byte_package(fd, &buf, &buflen, &is_static, ms)) <= 0) {
 	EI_TRACE_ERR1("recv_name","<- RECV_NAME socket read failed (%d)",rlen);
 	goto error;
     }
     if ((rlen - 7) > MAXNODELEN) {
 	EI_TRACE_ERR1("recv_name","<- RECV_NAME nodename too long (%d)",rlen-7);
-	erl_errno = EIO;
 	goto error;
     }
     s = buf;
@@ -1485,7 +1551,6 @@ static int recv_name(int fd,
     if (tag != 'n') {
 	EI_TRACE_ERR2("recv_name","<- RECV_NAME incorrect tag, "
 		      "expected 'n' got '%c' (%u)",tag,tag);
-	erl_errno = EIO;
 	goto error;
     }
     *version = get16be(s);
@@ -1494,7 +1559,6 @@ static int recv_name(int fd,
     if (!(*flags & DFLAG_EXTENDED_REFERENCES)) {
 	EI_TRACE_ERR0("recv_name","<- RECV_CHALLENGE peer cannot handle"
 		      "extended references");
-	erl_errno = EIO;
 	goto error;
     }
 
@@ -1512,6 +1576,7 @@ static int recv_name(int fd,
     EI_TRACE_CONN3("recv_name",
 		   "<- RECV_NAME (ok) node = %s, version = %u, flags = %u",
 		   namebuf->nodename,*version,*flags);
+    erl_errno = 0;
     return 0;
     
 error:

@@ -138,7 +138,7 @@ rehash()          ->   call(rehash).
      
 
 call(Req) ->
-    gen_server:call(code_server,Req,infinity).
+    code_server:call(code_server,Req,infinity).
 
 start() ->
     start([stick]).
@@ -168,20 +168,22 @@ do_start(F,Flags) ->
     %% the code_server.
     %% Otherwise a dead-lock may occur when the code_server is starting.
 
-    ets:module_info(module),
     code_server:module_info(module),
     code_aux:module_info(module),
     packages:module_info(module),
-    string:module_info(module),
-    file:module_info(module),
-    lists_sort:module_info(module),
     catch load_hipe_modules(),
+
+    ets:module_info(module),
+    os:module_info(module),
+    filename:module_info(module),
+    lists:module_info(module),
+    lists_sort:module_info(module),
 
     Mode = get_mode(Flags),
     case init:get_argument(root) of 
 	{ok,[[Root0]]} ->
 	    Root = filename:join([Root0]), % Normalize.  Use filename
-	    case gen_server:F({local,code_server},code_server,[Root,Mode],[]) of
+	    case code_server:F(code_server,code_server,[Root,Mode],[]) of
 		{ok,Pid} ->
 		    case Mode of
 			interactive ->

@@ -147,7 +147,7 @@ member_address(_, []) ->
 
 init(Slaves) ->
     {ok, U} = gen_udp:open(?EBOOT_PORT, []),
-    {ok, L} = gen_tcp:listen(0, [{packet,4}]),
+    {ok, L} = gen_tcp:listen(0, [binary,{packet,4}]),
     {ok,Port} = inet:port(L),
     {ok,UPort} = inet:port(U),
     Ref = make_ref(),
@@ -185,16 +185,32 @@ handle_cast(_, Slaves) ->
 handle_info({udp, U, IP, Port, Data}, S0) ->
     Token = ?EBOOT_REQUEST ++ S0#state.version,
     Valid = member_address(IP, ordsets:to_list(S0#state.slaves)),
-    if Valid == true, Data == Token ->
+    %% check that the connecting node is valid and has the same
+    %% erlang version as the boot server node
+    case {Valid,Data,Token} of
+	{true,Token,Token} ->
 	    gen_udp:send(U,IP,Port,[?EBOOT_REPLY,S0#state.priority,
 				    int16(S0#state.listen_port),
 				    S0#state.version]),
-	    {noreply, S0};
-       true ->
-	    {noreply, S0}
+	    {noreply,S0};
+	{false,_,_} ->
+	    error_logger:error_msg("** Illegal boot server connection attempt: "
+				   "~w is not a valid address ** ~n", [IP]),
+	    {noreply,S0};
+	{true,_,_} ->
+	    case catch string:substr(Data, 1, length(?EBOOT_REQUEST)) of
+		?EBOOT_REQUEST ->
+		    Vsn = string:substr(Data, length(?EBOOT_REQUEST)+1, length(Data)),
+		    error_logger:error_msg("** Illegal boot server connection attempt: "
+					   "client version is ~s ** ~n", [Vsn]);
+		_ ->
+		    error_logger:error_msg("** Illegal boot server connection attempt: "
+					   "unrecognizable request ** ~n", [])
+	    end,
+	    {noreply,S0}
     end;
 handle_info(_Info, S0) ->
-    {noreply, S0}.
+    {noreply,S0}.
 
 terminate(_Reason, _S0) ->
     ok.
@@ -251,15 +267,27 @@ boot_loop(Socket) ->
 	    true
     end.
 
-handle_command(S, [$F | File]) ->
-    case file:read_file(File) of
-	{ok, Bin} ->
-	    gen_tcp:send(S, [$f | Bin]);
-	{error,Reason} ->
-	    Msg = erl_posix_msg:message(Reason),
-	    gen_tcp:send(S, [$e | Msg])
-    end;
-handle_command(S, _Other) ->
-    gen_tcp:send(S, [$e | "unknown command"]).
+handle_command(S, Msg) ->
+    case catch binary_to_term(Msg) of
+	{get,File} ->
+	    send_file_result(S, get, file:read_file(File));
+	{list_dir,Dir} ->
+	    send_file_result(S, list_dir, file:list_dir(Dir));
+	{read_file_info,Elem} ->
+	    send_file_result(S, read_file_info, file:read_file_info(Elem));
+	get_cwd ->
+	    send_file_result(S, get_cwd, file:get_cwd());
+	{get_cwd,Drive} ->
+	    send_file_result(S, get_cwd, file:get_cwd(Drive));
+	{'EXIT',Reason} ->
+	    send_result(S, {error,Reason});
+	_Other ->
+	    send_result(S, {error,unknown_command})
+    end.
 
+send_file_result(S, Cmd, Result) ->
+    gen_tcp:send(S, term_to_binary({Cmd,Result})).
+
+send_result(S, Result) ->
+    gen_tcp:send(S, term_to_binary(Result)).
 

@@ -42,17 +42,18 @@
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,terminate/2,
 	 code_change/3]).
 
-%%% address_db - ets() Contains mappings from a tuple {Host,Port} to a tuple
-%%%  {LastSID,OpenSessions,ets()} where
-%%%      LastSid is the last allocated session id,
-%%%      OpenSessions is the number of currently open sessions and
-%%%      ets() contains mappings from Session Id to #session{}.
+%%% tcp_ses_db - ets() Contains mappings from a tuple {Host,Port} to a tuple
+%%%  {LastTCPsid,OpenSessions,ets()} where
+%%%     LastTCPsid - is the last allocated TCP session id on {Host,Port},
+%%%     OpenSessions - is the number of currently open TCP sessions on
+%%%                    {Host,Port} and
+%%%     ets() - contains mappings from Session Id to #tcp_session{}.
 %%%
 %%% Note:
-%%% - Only persistent connections are stored in address_db
+%%% - Only persistent connections are stored in tcp_ses_db
 %%% - When automatically redirecting, multiple requests are performed.
 -record(state,{
-	  address_db,   % ets()
+	  tcp_ses_db,   % ets()
 	  reqid         % int() Next Request id to use (identifies request).
 	 }).
 
@@ -70,7 +71,7 @@ start_link() ->
     gen_server:start_link({local,?HMACALL}, ?HMANAME, [], []).
 
 
-%% Find available session process and store in address_db. If no
+%% Find available session process and store in tcp_ses_db. If no
 %% available, start new handler process.
 request(Req) ->
     ensure_started(),
@@ -82,23 +83,23 @@ cancel_request(ReqId) ->
 
 
 %%% Close Session
-close_session(Addr,Sid) ->
-    gen_server:call(?HMACALL,{close_session,Addr,Sid},infinity).
-close_session(Req,Addr,Sid) ->
-    gen_server:call(?HMACALL,{close_session,Req,Addr,Sid},infinity).
+close_session(Addr,TCPsid) ->
+    gen_server:call(?HMACALL,{close_session,Addr,TCPsid},infinity).
+close_session(Req,Addr,TCPsid) ->
+    gen_server:call(?HMACALL,{close_session,Req,Addr,TCPsid},infinity).
 
-abort_session(Addr,Sid,Msg) ->
-    gen_server:call(?HMACALL,{abort_session,Addr,Sid,Msg},infinity).
+abort_session(Addr,TCPsid,Msg) ->
+    gen_server:call(?HMACALL,{abort_session,Addr,TCPsid,Msg},infinity).
 
 
 %%%  Pick next in request que
-next_request(Addr,Sid) ->
-    gen_server:call(?HMACALL,{next_request,Addr,Sid},infinity).
+next_request(Addr,TCPsid) ->
+    gen_server:call(?HMACALL,{next_request,Addr,TCPsid},infinity).
 
 %%% Session handler has succeded to set up a new session, now register
 %%% the socket
-register_socket(Addr,Sid,Socket) ->
-    gen_server:cast(?HMACALL,{register_socket,Addr,Sid,Socket}).
+register_socket(Addr,TCPsid,Socket) ->
+    gen_server:cast(?HMACALL,{register_socket,Addr,TCPsid,Socket}).
     
 
 %%% Debugging
@@ -116,7 +117,7 @@ status() ->
 %%--------------------------------------------------------------------
 init([]) ->
     process_flag(trap_exit, true),
-    {ok,#state{address_db=ets:new(address_db,[private]),
+    {ok,#state{tcp_ses_db=ets:new(tcp_ses_db,[private]),
 	       reqid=0}}.
 
 
@@ -132,37 +133,36 @@ init([]) ->
 %%--------------------------------------------------------------------
 %%% Note:
 %%% - We may have multiple non-persistent connections, each will be handled in
-%%%   separate processes, thus don't add such connections to address_db
+%%%   separate processes, thus don't add such connections to tcp_ses_db
 handle_call({request,false,Req},_From,State) ->
-    case ets:lookup(State#state.address_db,Req#request.address) of
-	[] ->
+    case lookup_tcp_session(State#state.tcp_ses_db,Req#request.address) of
+	{ok,LastTCPsid,OpenS,Session,STab} ->
+	    {Reply,State2}=old_session_request(Session,Req,STab,State),
+	    {reply,Reply,State2};
+	no_connection ->
 	    STab=ets:new(session_db,[private,{keypos,2},set]),
 	    case persistent_new_session_request(0,Req,STab,State) of
-		{Reply,LastSid,State2} ->
-		    ets:insert(State2#state.address_db,
-			       {Req#request.address,{LastSid,1,STab}}),
+		{Reply,LastTCPsid,State2} ->
+		    insert_tcp_session(State2#state.tcp_ses_db,
+				       {Req#request.address,
+					{LastTCPsid,1,STab}}),
 		    {reply,Reply,State2};
 		{ErrorReply,State2} ->
 		    {reply,ErrorReply,State2}
 	    end;
-	[{_,{LastSid,OpenS,STab}}] ->
-	    case lookup_session_entry(STab) of
-		{ok,Session} ->
- 		    old_session_request(Session,Req,STab,State);
-		need_new_session when OpenS<(Req#request.settings)#client_settings.max_sessions ->
-		    case persistent_new_session_request(LastSid,Req,
-							STab,State) of 
-			{Reply,LastSid2,State2} ->
-			    ets:insert(State2#state.address_db,
+	{no_session,LastTCPsid,OpenS,STab} when
+	      OpenS<(Req#request.settings)#client_settings.max_sessions ->
+	    case persistent_new_session_request(LastTCPsid,Req,STab,State) of 
+		{Reply,LastTCPsid2,State2} ->
+		    insert_tcp_session(State2#state.tcp_ses_db,
 				       {Req#request.address,
-					{LastSid2,OpenS+1,STab}}),
-			    {reply,Reply,State2};
-			{ErrorReply,State2} ->
-			    {reply,ErrorReply,State2}
-		    end;
-		need_new_session ->
-		    {reply,{error,too_many_sessions},State}
-	    end
+					{LastTCPsid2,OpenS+1,STab}}),
+		    {reply,Reply,State2};
+		{ErrorReply,State2} ->
+		    {reply,ErrorReply,State2}
+	    end;
+	{no_session,_,_,_} ->
+	    {reply,{error,too_many_sessions},State}
     end;
 handle_call({request,true,Req},_From,State) ->
     {Reply,State2}=not_persistent_new_session_request(Req,State),
@@ -172,75 +172,62 @@ handle_call({cancel_request,true,_ReqId},_From,State) ->
 %% better to give some more hints (such as Addr etc)
     Reply=ok,
     {reply,Reply,State};
-handle_call({next_request,Addr,Sid},_From,State) ->
-    case ets:lookup(State#state.address_db,Addr) of
-	[] ->
+handle_call({next_request,Addr,TCPsid},_From,State) ->
+    case lookup_tcp_session(State#state.tcp_ses_db,Addr,TCPsid) of
+	{ok,_,_,S=#tcp_session{pipeline=[],quelength=QueLen},STab} ->
+	    if
+		QueLen==1 ->
+		    ets:insert(STab,S#tcp_session{quelength=0});
+		true ->
+		    ok
+	    end,			    
+	    {reply,no_more_requests,State};
+	{ok,_,_,S=#tcp_session{pipeline=Que},STab} ->
+	    [Req|RevQue]=lists:reverse(Que),
+	    ets:insert(STab,S#tcp_session{pipeline=lists:reverse(RevQue),
+				      quelength=S#tcp_session.quelength-1}),
+	    {reply,Req,State};
+	no_connection ->
 	    {reply,{error,no_connection},State};
-	[{_,{_,_,STab}}] ->
-	    case ets:lookup(STab,Sid) of
-		[] ->
-		    {reply,{error,session_not_registered},State};
-		[S=#session{pipeline=[],quelength=QueLen}] ->
-		    if
-			QueLen==1 ->
-			    ets:insert(STab,S#session{quelength=0});
-			true ->
-			    ok
-		    end,			    
-		    {reply,no_more_requests,State};
-		[S=#session{pipeline=Que}] ->
-		    [Req|RevQue]=lists:reverse(Que),
-		    ets:insert(STab,S#session{pipeline=lists:reverse(RevQue),
-					      quelength=S#session.quelength-1}),
-		    {reply,Req,State}
-	    end
+	{no_session,_,_,_} ->
+	    {reply,{error,session_not_registered},State}
     end;
-handle_call({close_session,Addr,Sid},_From,State) ->
-    case ets:lookup(State#state.address_db,Addr) of
-	[] ->
+handle_call({close_session,Addr,TCPsid},_From,State) ->
+    case lookup_tcp_session(State#state.tcp_ses_db,Addr,TCPsid) of
+	{ok,LastTCPsid,OpenS,#tcp_session{pipeline=Que},STab} ->
+	    R=handle_close_session(lists:reverse(Que),STab,TCPsid,State),
+	    insert_tcp_session(State#state.tcp_ses_db,
+			       {Addr,{LastTCPsid,OpenS-1,STab}}),
+	    {reply,R,State};
+	no_connection ->
 	    {reply,{error,no_connection},State};
-	[{_,{LastSid,OpenS,STab}}] ->
-	    case ets:lookup(STab,Sid) of
-		[#session{pipeline=Que}] ->
-		    R=handle_close_session(lists:reverse(Que),STab,Sid,State),
-		    ets:insert(State#state.address_db,
-			       {Addr,{LastSid,OpenS-1,STab}}),
-		    {reply,R,State};
-		[] ->
-		    {reply,{error,session_not_registered},State}
-	    end
+	{no_session,_,_,_} ->
+	    {reply,{error,session_not_registered},State}
     end;
-handle_call({close_session,Req,Addr,Sid},_From,State) ->
-    case ets:lookup(State#state.address_db,Addr) of
-	[] ->
+handle_call({close_session,Req,Addr,TCPsid},_From,State) ->
+    case lookup_tcp_session(State#state.tcp_ses_db,Addr,TCPsid) of
+	{LastTCPsid,OpenS,#tcp_session{pipeline=Que},STab} ->
+	    R=handle_close_session([Req|lists:reverse(Que)],STab,TCPsid,State),
+	    insert_tcp_session(State#state.tcp_ses_db,
+			       {Addr,{LastTCPsid,OpenS-1,STab}}),
+	    {reply,R,State};
+	no_connection ->
 	    {reply,{error,no_connection},State};
-	[{_,{LastSid,OpenS,STab}}] ->
-	    case ets:lookup(STab,Sid) of
-		[#session{pipeline=Que}] ->
-		    R=handle_close_session([Req|lists:reverse(Que)],
-					   STab,Sid,State),
-		    ets:insert(State#state.address_db,
-			       {Addr,{LastSid,OpenS-1,STab}}),
-		    {reply,R,State};
-		[] ->
-		    {reply,{error,session_not_registered},State}
-	    end
+	{no_session,_,_,_} ->
+	    {reply,{error,session_not_registered},State}
     end;
-handle_call({abort_session,Addr,Sid,Msg},_From,State) ->
-    case ets:lookup(State#state.address_db,Addr) of
-	[] ->
+handle_call({abort_session,Addr,TCPsid,Msg},_From,State) ->
+    case lookup_tcp_session(State#state.tcp_ses_db,Addr,TCPsid) of
+	{ok,LastTCPsid,OpenS,#tcp_session{pipeline=Que},STab} ->
+	    R=abort_request_que(Que,{error,Msg}),
+	    ets:delete(STab,TCPsid),
+	    insert_tcp_session(State#state.tcp_ses_db,
+			       {Addr,{LastTCPsid,OpenS-1,STab}}),
+	    {reply,R,State};
+	no_connection ->
 	    {reply,{error,no_connection},State};
-	[{_,{LastSid,OpenS,STab}}] ->
-	    case ets:lookup(STab,Sid) of
-		[#session{pipeline=Que}] ->
-		    R=abort_request_que(Que,{error,Msg}),
-		    ets:delete(STab,Sid),
-		    ets:insert(State#state.address_db,
-			       {Addr,{LastSid,OpenS-1,STab}}),
-		    {reply,R,State};
-		[] ->
-		    {reply,{error,session_not_registered},State}
-	    end
+	{no_session,_,_,_} ->
+	    {reply,{error,session_not_registered},State}
     end.
 
 
@@ -253,29 +240,26 @@ handle_call({abort_session,Addr,Sid,Msg},_From,State) ->
 %%--------------------------------------------------------------------
 handle_cast(status, State) ->
     io:format("Status:~n"),
-    print_all(lists:sort(ets:tab2list(State#state.address_db))),
+    print_all(lists:sort(ets:tab2list(State#state.tcp_ses_db))),
     {noreply, State};
-handle_cast({register_socket,Addr,Sid,Socket},State) ->
-    case ets:lookup(State#state.address_db,Addr) of
-	[] ->
+handle_cast({register_socket,Addr,TCPsid,Socket},State) ->
+    case lookup_tcp_session(State#state.tcp_ses_db,Addr,TCPsid) of
+	{ok,_,_,Session,STab} ->
+	    ets:insert(STab,Session#tcp_session{socket=Socket}),
 	    {noreply,State};
-	[{_,{_,_,STab}}] ->
-	    case ets:lookup(STab,Sid) of
-		[Session] ->
-		    ets:insert(STab,Session#session{socket=Socket}),
-		    {noreply,State};
-		[] ->
-		    {noreply,State}
-	    end
+	no_connection ->
+	    {noreply,State};
+	{no_session,_,_,_} ->
+	    {noreply,State}
     end.
 
 print_all([]) ->
     ok;
-print_all([{Addr,{LastSid,OpenSessions,STab}}|Rest]) ->
-    io:format(" Address:~p LastSid=~p OpenSessions=~p~n",[Addr,LastSid,OpenSessions]),
+print_all([{Addr,{LastTCPsid,OpenSessions,STab}}|Rest]) ->
+    io:format(" Address:~p LastTCPsid=~p OpenSessions=~p~n",[Addr,LastTCPsid,OpenSessions]),
     SortedList=lists:sort(fun(A,B) ->
 				  if
-				      A#session.id<B#session.id ->
+				      A#tcp_session.id<B#tcp_session.id ->
 					  true;
 				      true ->
 					  false
@@ -287,10 +271,10 @@ print_all([{Addr,{LastSid,OpenSessions,STab}}|Rest]) ->
 print_all2([]) ->
     ok;
 print_all2([Session|Rest]) ->
-    io:format("   Session:~p~n",[Session#session.id]),
-    io:format("     Client close:~p~n",[Session#session.clientclose]),
-    io:format("     Socket:~p~n",[Session#session.socket]),
-    io:format("     Pipe: length=~p Que=~p~n",[Session#session.quelength,Session#session.pipeline]),
+    io:format("   Session:~p~n",[Session#tcp_session.id]),
+    io:format("     Client close:~p~n",[Session#tcp_session.clientclose]),
+    io:format("     Socket:~p~n",[Session#tcp_session.socket]),
+    io:format("     Pipe: length=~p Que=~p~n",[Session#tcp_session.quelength,Session#tcp_session.pipeline]),
     print_all2(Rest).
 
 %%--------------------------------------------------------------------
@@ -312,7 +296,7 @@ handle_info(Info, State) ->
 %% Returns: any (ignored by gen_server)
 %%--------------------------------------------------------------------
 terminate(_Reason, State) ->
-    ets:delete(State#state.address_db).
+    ets:delete(State#state.tcp_ses_db).
 
 %%--------------------------------------------------------------------
 %% Func: code_change/3
@@ -345,10 +329,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%% - If this happen (server close because of idle) there can't be any requests
 %%%   in the que.
 %%% - This is the main function for closing of sessions
-handle_close_session([],STab,Sid,_State) ->
-    ets:delete(STab,Sid);
-handle_close_session(Que,STab,Sid,_State) ->
-    ets:delete(STab,Sid),
+handle_close_session([],STab,TCPsid,_State) ->
+    ets:delete(STab,TCPsid);
+handle_close_session(Que,STab,TCPsid,_State) ->
+    ets:delete(STab,TCPsid),
     abort_request_que(Que,{error,aborted_request}).
 
 
@@ -402,6 +386,105 @@ handle_close_session(Que,STab,Sid,_State) ->
 %     end.
 
 
+
+
+%%% Returns a tuple {Reply,State} where
+%%%  Reply is the response sent back to the application
+%%%
+%%% Note:
+%%% - An {error,einval} from a send should sometimes rather be {error,closed}
+%%% - Don't close the session from here, let httpc_handler take care of that.
+old_session_request(Session,Req,STab,State) ->
+    ReqId=State#state.reqid,
+    Req1=Req#request{id=ReqId},
+    case catch httpc_handler:http_request(Req1,Session#tcp_session.socket) of
+	ok ->
+	    Session1=Session#tcp_session{pipeline=[Req1|Session#tcp_session.pipeline],
+				     quelength=Session#tcp_session.quelength+1},
+	    ets:insert(STab,Session1),
+	    {{ok,ReqId},State#state{reqid=ReqId+1}};
+	{error,Reason} -> 
+	    ets:insert(STab,Session#tcp_session{socket=undefined}),
+	    {{error,Reason},State#state{reqid=ReqId+1}}
+    end.
+
+%%% Returns atuple {Reply,TCPsid,State} where
+%%%  Reply is the response sent back to the application, and
+%%%  TCPsid is the last used Session Id
+persistent_new_session_request(TCPsid,Req,STab,State) ->
+    ReqId=State#state.reqid,
+    case setup_new_session(Req#request{id=ReqId},false,TCPsid) of
+	{error,Reason} ->
+	    {{error,Reason},State#state{reqid=ReqId+1}};
+	{NewTCPsid,Session} ->
+	    ets:insert(STab,Session),
+	    {{ok,ReqId},NewTCPsid,State#state{reqid=ReqId+1}}
+    end.
+
+%%% Returns a tuple {Reply,State} where
+%%%  Reply is the response sent back to the application
+not_persistent_new_session_request(Req,State) ->
+    ReqId=State#state.reqid,
+    case setup_new_session(Req#request{id=ReqId},true,undefined) of
+	{error,Reason} ->
+	    {{error,Reason},State#state{reqid=ReqId+1}};
+	ok ->
+	    {{ok,ReqId},State#state{reqid=ReqId+1}}
+    end.
+
+%%% As there are no sessions available, setup a new session and send the request
+%%% on it.
+setup_new_session(Req,false,TCPsid) ->
+    S=#tcp_session{
+      id=TCPsid,clientclose=false,
+      scheme=Req#request.scheme,
+      max_quelength=(Req#request.settings)#client_settings.max_quelength},
+    spawn_link(httpc_handler,init_connection,[Req,S]),
+    {TCPsid+1,S};
+setup_new_session(Req,true,TCPsid) ->
+    S=#tcp_session{
+      id=TCPsid,clientclose=true,
+      scheme=Req#request.scheme,
+      max_quelength=(Req#request.settings)#client_settings.max_quelength},
+    spawn_link(httpc_handler,init_connection,[Req,S]),
+    ok.
+
+
+%%% ----------------------------------------------------------------------------
+%%% Some database primitives
+
+%%% tcp_ses_db handles TCP sessions
+insert_tcp_session(Db,{K={_Addr,_Port},V={_LastTCPsid,_OpenS,_STab}}) ->
+    ets:insert(Db,{K,V}).
+
+
+lookup_tcp_session(Db,{Addr,Port}) ->
+    case ets:lookup(Db,{Addr,Port}) of
+	[] ->
+	    no_connection;
+	[{_,{LastTCPsid,OpenS,STab}}] ->
+	    case lookup_session_entry(STab) of
+		no_session ->
+		    {no_session,LastTCPsid,OpenS,STab};
+		{ok,Session} ->
+		    {ok,LastTCPsid,OpenS,Session,STab}
+	    end
+    end.
+
+lookup_tcp_session(Db,{Addr,Port},TCPsid) ->
+    case ets:lookup(Db,{Addr,Port}) of
+	[] ->
+	    no_connection;
+	[{_,{LastTCPsid,OpenS,STab}}] ->
+	    case ets:lookup(STab,TCPsid) of
+		[] ->
+		    {no_session,LastTCPsid,OpenS,STab};
+		[Session] ->
+		    {ok,LastTCPsid,OpenS,Session,STab}
+	    end
+    end.
+
+
 %%% From RFC 2616,
 %%% Section 8.1.2.2:
 %%%   Clients SHOULD NOT pipeline requests using non-idempotent methods or
@@ -426,13 +509,14 @@ handle_close_session(Que,STab,Sid,_State) ->
 %%% Returns {ok,Session} or need_new_session where
 %%%  Session is the session that may be used
 lookup_session_entry(STab) ->
-    MS=[{#session{quelength='$1',max_quelength='$2',
-		  id='_',clientclose='_',socket='$3',scheme='_',pipeline='_'},
+    MS=[{#tcp_session{quelength='$1',max_quelength='$2',
+		      id='_',clientclose='_',socket='$3',scheme='_',
+		      pipeline='_'},
 	 [{'<','$1','$2'},{is_port,'$3'}],
 	 ['$_']}],
     case ets:select(STab,MS) of
 	[] ->
-	    need_new_session;
+	    no_session;
 	SessionList -> % Now check if any of these has an empty pipeline.
 	    case lists:keysearch(0,2,SessionList) of
 		{value,Session} ->
@@ -440,71 +524,6 @@ lookup_session_entry(STab) ->
 		false ->
 		    {ok,hd(SessionList)}
 	    end
-    end.
-
-
-%%% Returns a tuple {Reply,State} where
-%%%  Reply is the response sent back to the application
-%%%
-%%% Note:
-%%% - An {error,einval} from a send should sometimes rather be {error,closed}
-%%% - Don't close the session from here, let httpc_handler take care of that.
-%old_session_request(Session,Req,STab,State)
-%  when (Req#request.settings)#client_settings.max_quelength==0 ->
-%    Session1=Session#session{pipeline=[Req]},
-%    ets:insert(STab,Session1),
-%    {reply,{ok,ReqId},State#state{reqid=ReqId+1}};
-old_session_request(Session,Req,STab,State) ->
-    ReqId=State#state.reqid,
-    Req1=Req#request{id=ReqId},
-    case catch httpc_handler:http_request(Req1,Session#session.socket) of
-	ok ->
-	    Session1=Session#session{pipeline=[Req1|Session#session.pipeline],
-				     quelength=Session#session.quelength+1},
-	    ets:insert(STab,Session1),
-	    {reply,{ok,ReqId},State#state{reqid=ReqId+1}};
-	{error,Reason} -> 
-	    ets:insert(STab,Session#session{socket=undefined}),
-%	    http_lib:close(Session#session.sockettype,Session#session.socket),
-	    {reply,{error,Reason},State#state{reqid=ReqId+1}}
-    end.
-
-%%% Returns atuple {Reply,Sid,State} where
-%%%  Reply is the response sent back to the application, and
-%%%  Sid is the last used Session Id
-persistent_new_session_request(Sid,Req,STab,State) ->
-    ReqId=State#state.reqid,
-    case setup_new_session(Req#request{id=ReqId},false,Sid) of
-	{error,Reason} ->
-	    {{error,Reason},State#state{reqid=ReqId+1}};
-	{NewSid,Session} ->
-	    ets:insert(STab,Session),
-	    {{ok,ReqId},NewSid,State#state{reqid=ReqId+1}}
-    end.
-
-%%% Returns a tuple {Reply,State} where
-%%%  Reply is the response sent back to the application
-not_persistent_new_session_request(Req,State) ->
-    ReqId=State#state.reqid,
-    case setup_new_session(Req#request{id=ReqId},true,undefined) of
-	{error,Reason} ->
-	    {{error,Reason},State#state{reqid=ReqId+1}};
-	ok ->
-	    {{ok,ReqId},State#state{reqid=ReqId+1}}
-    end.
-
-%%% As there are no sessions available, setup a new session and send the request
-%%% on it.
-setup_new_session(Req,ClientClose,Sid) ->
-    S=#session{id=Sid,clientclose=ClientClose,
-	       scheme=Req#request.scheme,
-	       max_quelength=(Req#request.settings)#client_settings.max_quelength},
-    spawn_link(httpc_handler,init_connection,[Req,S]),
-    case ClientClose of
-	false ->
-	    {Sid+1,S};
-	true ->
-	    ok
     end.
 
 

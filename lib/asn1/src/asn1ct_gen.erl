@@ -36,7 +36,7 @@
 	 gen_check_call/7,
 	 get_constraint/2,
 	 insert_once/2,
-	 rt2ct_suffix/1,rt2ct_suffix/0]).
+	 rt2ct_suffix/1,rt2ct_suffix/0,index2suffix/1]).
 -export([pgen/4,pgen_module/5,mk_var/1, un_hyphen_var/1]).
 -export([gen_encode_constructed/4,gen_decode_constructed/4]).
 
@@ -140,9 +140,11 @@ pgen_check_defaultval(Erules,Module) ->
     end,
     gen_check_defaultval(Erules,Module,CheckObjects).
 
-pgen_partial_decode(Erules,Module) ->
-    pgen_partial_inc_dec(Erules,Module),
-    pgen_partial_dec(Erules,Module).
+pgen_partial_decode(Erule,Module) when Erule == ber_bin_v2 ->
+    pgen_partial_inc_dec(Erule,Module),
+    pgen_partial_dec(Erule,Module);
+pgen_partial_decode(_,_) ->
+    ok.
 
 pgen_partial_inc_dec(Erules,Module) ->
 %    io:format("Start partial incomplete decode gen?~n"),
@@ -169,8 +171,13 @@ pgen_partial_inc_dec1(Erules,Module,[P|Ps]) ->
     asn1ct:update_gen_state(namelist,P),
     asn1ct:update_gen_state(active,true),
     asn1ct:update_gen_state(prefix,"dec-inc-"),
+    case asn1ct:maybe_saved_sindex(TopTypeName,P) of
+	I when integer(I),I > 0 ->
+	    asn1ct:set_current_sindex(I);
+	_ ->
+	    ok
+    end,
     Rtmod:gen_decode(Erules,TypeDef),
-%%    asn1ct:update_gen_state(namelist,tl(P)), %% 
     gen_dec_part_inner_constr(Erules,TypeDef,[TopTypeName]),
     pgen_partial_inc_dec1(Erules,Module,Ps);
 pgen_partial_inc_dec1(_,_,[]) ->
@@ -182,23 +189,172 @@ gen_partial_inc_dec_refed_funcs(Erule) when Erule == ber_bin_v2 ->
     case asn1ct:next_refed_func() of
 	[] ->
 	    ok;
-	{#'Externaltypereference'{module=M,type=Name},Pattern} ->
+	{#'Externaltypereference'{module=M,type=Name},Sindex,Pattern} ->
 	    TypeDef = asn1_db:dbget(M,Name),
 	    asn1ct:update_gen_state(namelist,Pattern),
+	    asn1ct:set_current_sindex(Sindex),
 	    Rtmod:gen_inc_decode(Erule,TypeDef),
 	    gen_dec_part_inner_constr(Erule,TypeDef,[Name]),
 	    gen_partial_inc_dec_refed_funcs(Erule);
-	_ ->
+	{Name,Sindex,Pattern,Type} ->
+	    TypeDef=#typedef{name=asn1ct_gen:list2name(Name),typespec=Type},
+	    asn1ct:update_gen_state(namelist,Pattern),
+	    asn1ct:set_current_sindex(Sindex),
+	    Rtmod:gen_inc_decode(Erule,TypeDef),
+	    gen_dec_part_inner_constr(Erule,TypeDef,Name),
 	    gen_partial_inc_dec_refed_funcs(Erule)
     end;
 gen_partial_inc_dec_refed_funcs(_) ->
     ok.
 
-pgen_partial_dec(_Erules,_Module) ->
-    ok. %%%% implement later
+pgen_partial_dec(Erules,_Module) ->
+    Type_pattern = asn1ct:get_gen_state_field(type_pattern),
+%    io:format("Type_pattern: ~w~n",[Type_pattern]),
+    %% Get the typedef of the top type and follow into the choosen components until the last type/component.
+    pgen_partial_types(Erules,Type_pattern),
+    ok.
+
+pgen_partial_types(Erules,Type_pattern) when Erules == ber;
+					     Erules == ber_bin;
+					     Erules == ber_bin_v2 ->
+    % until this functionality works on all back-ends
+    Options = get(encoding_options),
+    case lists:member(asn1config,Options) of
+	true ->
+	    pgen_partial_types1(Erules,Type_pattern);
+	_ -> ok
+    end;
+pgen_partial_types(_,_) ->
+    ok.
+    
+pgen_partial_types1(Erules,[{FuncName,[TopType|RestTypes]}|Rest]) ->
+%    emit([FuncName,"(Bytes) ->",nl]),
+    CurrMod = get(currmod),
+    TypeDef = asn1_db:dbget(CurrMod,TopType),
+    traverse_type_structure(Erules,TypeDef,RestTypes,FuncName,
+			    TypeDef#typedef.name),
+    pgen_partial_types1(Erules,Rest);
+pgen_partial_types1(_,[]) ->
+    ok;
+pgen_partial_types1(_,undefined) ->
+    ok.
+
+%% traverse_type_structure searches the structure of TypeDef for next
+%% type/component in TypeList until the last one. For the last type in
+%% TypeList a decode function will be generated.
+traverse_type_structure(Erules,Type,[],FuncName,TopTypeName) ->
+    %% this is the selected type
+    Ctmod = list_to_atom(lists:concat(["asn1ct_gen_",erule(Erules),
+					       rt2ct_suffix(Erules)])),
+    TypeDef =
+	case Type of
+	    #type{} ->
+		#typedef{name=TopTypeName,typespec=Type};
+	    #typedef{} -> Type
+	end,
+    Ctmod:gen_decode_selected(Erules,TypeDef,FuncName); % kolla vad göra om Type är #type{}
+traverse_type_structure(Erules,#type{def=Def},[[N]],FuncName,TopTypeName) 
+  when integer(N) -> % this case a decode of one of the elements in
+                      % the SEQUENCE OF is required.
+    InnerType = asn1ct_gen:get_inner(Def),
+    case InnerType of
+	'SEQUENCE OF' ->
+	    {_,Type} = Def,
+	    traverse_type_structure(Erules,Type,[],FuncName,TopTypeName);
+	WrongType ->
+	    exit({error,{configuration_file_error,[N],"only for SEQUENCE OF components",WrongType}})
+    end;
+traverse_type_structure(Erules,Type,[[N]|Ts],FuncName,TopTypeName) 
+  when integer(N)  ->
+    traverse_type_structure(Erules,Type,Ts,FuncName,TopTypeName);
+traverse_type_structure(Erules,#type{def=Def},[T|Ts],FuncName,TopTypeName)  ->
+    InnerType = asn1ct_gen:get_inner(Def),
+    case InnerType of
+	'SET' ->
+	    #'SET'{components=Components} = Def,
+	    C = get_component(T,Components),
+	    traverse_type_structure(Erules,C#'ComponentType'.typespec,Ts,
+				    FuncName,[T|TopTypeName]);
+	'SEQUENCE' ->
+	    #'SEQUENCE'{components=Components} = Def,
+	    C = get_component(T,Components),
+	    traverse_type_structure(Erules,C#'ComponentType'.typespec,Ts,
+				    FuncName,[T|TopTypeName]);
+	'CHOICE' ->
+	    {_,Components} = Def,
+	    C = get_component(T,Components),
+	    traverse_type_structure(Erules,C#'ComponentType'.typespec,Ts,
+				    FuncName,[T|TopTypeName]);
+	'SEQUENCE OF' ->
+	    {_,Type} = Def,
+	    traverse_SO_type_structure(Erules,Type,[T|Ts],FuncName,
+				       TopTypeName);
+	'SET OF' ->
+	    {_,Type} = Def,
+	    traverse_SO_type_structure(Erules,Type,[T|Ts],FuncName,
+				       TopTypeName);
+	#'Externaltypereference'{module=M,type=TName} ->
+	    TypeDef = asn1_db:dbget(M,TName),
+	    traverse_type_structure(Erules,TypeDef,[T|Ts],FuncName,
+				    [TypeDef#typedef.name]);
+	_ ->
+	    traverse_type_structure(Erules,Def,Ts,FuncName,[T|TopTypeName])
+    end;
+traverse_type_structure(Erules,#typedef{typespec=Def},[T|Ts],FuncName,
+			TopTypeName)  ->
+    InnerType = asn1ct_gen:get_inner(Def#type.def),
+    case InnerType of
+	'SET' ->
+	    #'SET'{components=Components} = Def#type.def,
+	    C = get_component(T,Components),
+	    traverse_type_structure(Erules,C#'ComponentType'.typespec,Ts,
+				    FuncName,[T|TopTypeName]);
+	'SEQUENCE' ->
+	    #'SEQUENCE'{components=Components} = Def#type.def,
+	    C = get_component(T,Components),
+	    traverse_type_structure(Erules,C#'ComponentType'.typespec,Ts,
+				    FuncName,[T|TopTypeName]);
+	'CHOICE' ->
+	    {_,Components} = Def#type.def,
+	    C = get_component(T,Components),
+	    traverse_type_structure(Erules,C#'ComponentType'.typespec,Ts,
+				    FuncName,[T|TopTypeName]);
+	'SEQUENCE OF' ->
+	    {_,Type} = Def#type.def,
+	    traverse_SO_type_structure(Erules,Type,[T|Ts],FuncName,
+				       TopTypeName);
+	'SET OF' ->
+	    {_,Type} = Def#type.def,
+	    traverse_SO_type_structure(Erules,Type,[T|Ts],FuncName,
+				       TopTypeName);
+	#'Externaltypereference'{module=M,type=TName} ->
+	    TypeDef = asn1_db:dbget(M,TName),
+	    traverse_type_structure(Erules,TypeDef,[T|Ts],FuncName,
+				    [TypeDef#typedef.name]);
+	_ -> %this may be a referenced type that shall be traversed or
+             %the selected type
+	    traverse_type_structure(Erules,Def,Ts,FuncName,[T|TopTypeName])
+    end.
+	    
+traverse_SO_type_structure(Erules,Type,[N|Rest],FuncName,TopTypeName)
+  when integer(N) ->
+    traverse_type_structure(Erules,Type,Rest,FuncName,TopTypeName);
+traverse_SO_type_structure(Erules,Type,TypeList,FuncName,TopTypeName) ->
+    traverse_type_structure(Erules,Type,TypeList,FuncName,TopTypeName).
+
+get_component(Name,{C1,C2}) when list(C1),list(C2) ->
+    get_component(Name,C1++C2);
+get_component(Name,[C=#'ComponentType'{name=Name}|_Cs]) ->
+    C;
+get_component(Name,[_C|Cs]) ->
+    get_component(Name,Cs);
+get_component(Name,_) ->
+    throw({error,{asn1,{internal_error,Name}}}).
 
 %% generate code for all inner types that are called from the top type
-%% of the partial incomplete decode
+%% of the partial incomplete decode and are defined within the top
+%% type.Constructed subtypes deeper in the structure will be generated
+%% in turn after all top types have been generated.
 gen_dec_part_inner_constr(Erules,TypeDef,TypeName) ->
     Def = TypeDef#typedef.typespec,
     InnerType = asn1ct_gen:get_inner(Def#type.def),
@@ -267,9 +423,22 @@ pgen_partial_incomplete_decode1(ber_bin_v2) ->
     gen_part_decode_funcs(GeneratedFs,0);
 pgen_partial_incomplete_decode1(_) -> ok.
 
-emit_partial_incomplete_decode({FuncName,TopTypeName,Pattern}) ->
+emit_partial_incomplete_decode({FuncName,TopType,Pattern}) ->
+    TypePattern = asn1ct:get_gen_state_field(inc_type_pattern),
+    TPattern =
+	case lists:keysearch(FuncName,1,TypePattern) of
+	    {value,{_,TP}} -> TP;
+	    _ -> exit({error,{asn1_internal_error,exclusive_decode}})
+	end,
+    TopTypeName =
+	case asn1ct:maybe_saved_sindex(TopType,TPattern) of
+	    I when integer(I),I>0 ->
+		lists:concat([TopType,"_",I]);
+	    _ ->
+		atom_to_list(TopType)
+	end,
     emit([{asis,FuncName},"(Bytes) ->",nl,
-	  "  decode_partial_incomplete(",{asis,TopTypeName},",Bytes,",{asis,Pattern},").",nl]);
+	  "  decode_partial_incomplete('",TopTypeName,"',Bytes,",{asis,Pattern},").",nl]);
 emit_partial_incomplete_decode(D) ->
     throw({error,{asn1,{"bad data in asn1config file",D}}}).
 
@@ -295,7 +464,7 @@ gen_part_decode_funcs([_H|T],N) ->
 gen_part_decode_funcs([],N) ->
     if
 	N > 0 ->
-	    .emit([".",nl]);
+	    emit([".",nl]);
 	true ->
 	    ok
     end.
@@ -550,8 +719,7 @@ gen_encode_constructed(Erules,Typename,InnerType,D)
 
 gen_decode_constructed(Erules,Typename,InnerType,D) when record(D,type) ->
     Rtmod = list_to_atom(lists:concat(["asn1ct_constructed_",erule(Erules)])),
-    asn1ct:step_in_constructed(), %% updates namelist for incomplete
-                                  %% partial decode
+    asn1ct:step_in_constructed(), %% updates namelist for exclusive decode
     case InnerType of
 	'SET' ->
 	    Rtmod:gen_decode_set(Erules,Typename,D);
@@ -640,6 +808,7 @@ pgen_exports(Erules,_Module,{Types,Values,_,_,Objects,ObjectSets}) ->
     end,
     emit({"-export([info/0]).",nl}),
     gen_partial_inc_decode_exports(),
+    gen_selected_decode_exports(),
     emit({nl,nl}).
 
 gen_exports1([F1,F2|T],Prefix,Arity) ->
@@ -657,7 +826,7 @@ gen_partial_inc_decode_exports() ->
 	    ok;
 	{Data,_} ->
 	    gen_partial_inc_decode_exports(Data),
-	    emit("-export([decode_part/2]).")
+	    emit(["-export([decode_part/2]).",nl])
     end.
 gen_partial_inc_decode_exports([]) ->
     ok;
@@ -674,6 +843,25 @@ gen_partial_inc_decode_exports1([{Name,_,_}|Rest]) ->
     gen_partial_inc_decode_exports1(Rest);
 gen_partial_inc_decode_exports1([_|Rest]) ->
     gen_partial_inc_decode_exports1(Rest).
+
+gen_selected_decode_exports() ->
+    case asn1ct:get_gen_state_field(type_pattern) of
+	undefined ->
+	    ok;
+	L ->
+	   gen_selected_decode_exports(L)
+    end.
+
+gen_selected_decode_exports([]) ->
+    ok;
+gen_selected_decode_exports([{FuncName,_}|Rest]) ->
+    emit(["-export([",FuncName,"/1"]),
+    gen_selected_decode_exports1(Rest).
+gen_selected_decode_exports1([]) ->
+    emit(["]).",nl,nl]);
+gen_selected_decode_exports1([{FuncName,_}|Rest]) ->
+    emit([",",nl,"          ",FuncName,"/1"]),
+    gen_selected_decode_exports1(Rest).
 
 pgen_dispatcher(Erules,_Module,{[],_Values,_,_,_Objects,_ObjectSets}) ->
     emit(["encoding_rule() ->",nl]),
@@ -705,15 +893,27 @@ pgen_dispatcher(Erules,_Module,{Types,_Values,_,_,_Objects,_ObjectSets}) ->
 	  "    {ok,",EncWrap,"}",nl,
 	  "end.",nl,nl]),
 
-    case Erules of
-	ber_bin_v2 ->
-	    emit(["decode(Type,Data0) ->",nl]),
-	    emit(["{Data,_RestBin} = ?RT_BER:decode(Data0",driver_parameter(),"),",nl]);
-	_ ->
-	    emit(["decode(Type,Data) ->",nl])
-    end,
+%     case Erules of
+% 	ber_bin_v2 ->
+% 	    emit(["decode(Type,Data0) ->",nl]),
+% 	    emit(["{Data,_RestBin} = ?RT_BER:decode(Data0",driver_parameter(),"),",nl]);
+% 	_ ->
+% 	    emit(["decode(Type,Data) ->",nl])
+%     end,
+    emit(["decode(Type,Data) ->",nl]),
+    DecAnonymous =
+	case Erules of
+	    ber_bin_v2 ->
+		io_lib:format("~s~s~s~n",
+			      ["element(1,?RT_BER:decode(Data",
+			       driver_parameter(),"))"]);
+	    _ ->
+		"Data"
+	end,
     DecWrap = case Erules of
 		  ber -> "wrap_decode(Data)";
+		  ber_bin_v2 ->
+		      DecAnonymous;
 		  _ -> "Data"
 	      end,
 	
@@ -793,9 +993,16 @@ gen_decode_partial_incomplete(Erule) when Erule == ber;Erule==ber_bin;
 			  "  case catch decode_partial_inc_disp(Type,",
 			  "Data) of",nl]),
 		    EmitCaseClauses(),
-		    emit(["decode_part(Type,Data0) ->",nl,
-			  "  {Data,_RestBin} = ?RT_BER:decode(Data0),",nl,
-			  "  case catch decode_inc_disp(Type,Data) of",nl]),
+		    emit(["decode_part(Type,Data0) ->",nl]),
+		    Driver =
+			case lists:member(driver,get(encoding_options)) of
+			    true ->
+				",driver";
+			    _ -> ""
+			end,
+		    emit(["  case catch decode_inc_disp(Type,element(1,?RT_BER:decode(Data0",Driver,"))) of",nl]),
+% 			  "  {Data,_RestBin} = ?RT_BER:decode(Data0),",nl,
+% 			  "  case catch decode_inc_disp(Type,Data) of",nl]),
 		    EmitCaseClauses();
 		_ -> ok % add later
 	    end
@@ -810,15 +1017,29 @@ gen_partial_inc_dispatcher() ->
 	    ok;
 	{_,undefined} ->
 	    ok;
-	{Data,_} ->
-	    gen_partial_inc_dispatcher(Data)
+	{Data1,Data2} ->
+%	    io:format("partial_incomplete_decode: ~p~ninc_type_pattern: ~p~n",[Data,Data2]),
+	    gen_partial_inc_dispatcher(Data1,Data2)
     end.
-gen_partial_inc_dispatcher([{_FuncName,TopType,_Pattern}|Rest]) ->
-    emit(["decode_partial_inc_disp(",{asis,TopType},",Data) ->",nl,
-	  "  ",{asis,list_to_atom(lists:concat([dec,"-inc-",TopType]))},
+gen_partial_inc_dispatcher([{FuncName,TopType,_Pattern}|Rest],TypePattern) ->
+    TPattern =
+	case lists:keysearch(FuncName,1,TypePattern) of
+	    {value,{_,TP}} -> TP;
+	    _ -> exit({error,{asn1_internal_error,exclusive_decode}})
+	end,
+    FuncName2=asn1ct:maybe_rename_function(inc_disp,TopType,TPattern),
+    TopTypeName =
+	case asn1ct:maybe_saved_sindex(TopType,TPattern) of
+	    I when integer(I),I>0 ->
+		lists:concat([TopType,"_",I]);
+	    _ ->
+		atom_to_list(TopType)
+	end,
+    emit(["decode_partial_inc_disp('",TopTypeName,"',Data) ->",nl,
+	  "  ",{asis,list_to_atom(lists:concat(["dec-inc-",FuncName2]))},
 	  "(Data);",nl]),
-    gen_partial_inc_dispatcher(Rest);
-gen_partial_inc_dispatcher([]) ->
+    gen_partial_inc_dispatcher(Rest,TypePattern);
+gen_partial_inc_dispatcher([],_) ->
     emit(["decode_partial_inc_disp(Type,_Data) ->",nl,
 	  "  exit({error,{asn1,{undefined_type,Type}}}).",nl]).
 
@@ -1491,6 +1712,7 @@ prim_bif(X) ->
 		    'PrintableString',
 		    'IA5String',
 		    'UniversalString',
+		    'UTF8String',
 		    'BMPString',
 		    'ENUMERATED',
 		    'BOOLEAN']).
@@ -1652,6 +1874,11 @@ rt2ct_suffix(per_bin) ->
 	_ -> ""
     end;
 rt2ct_suffix(_) -> "".
+
+index2suffix(0) ->
+    "";
+index2suffix(N) ->
+    lists:concat(["_",N]).
 
 get_constraint(C,Key) ->
     case lists:keysearch(Key,1,C) of

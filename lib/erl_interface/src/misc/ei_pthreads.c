@@ -18,7 +18,7 @@
 
 /* FIXME why not use ei_malloc here? */
 
-#include "config.h"
+#include "eidef.h"
 
 #include <stdlib.h>
 #include "ei.h"

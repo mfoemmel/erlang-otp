@@ -63,7 +63,8 @@
 	 call/1,
 	 cast/1,
 	 detect_partitioned_network/2,
-	 has_remote_mnesia_down/1
+	 has_remote_mnesia_down/1,
+	 negotiate_protocol_impl/2
 	]).
 
 -import(mnesia_lib, [dbg_out/2, verbose/2, error/2, fatal/2, set/2]).
@@ -71,7 +72,8 @@
 -include("mnesia.hrl").
 
 -record(state, {supervisor, pending_negotiators = [], 
-		going_down = [], tm_started = false, early_connects = []}).
+		going_down = [], tm_started = false, early_connects = [],
+		connecting, mq = []}).
 
 -define(current_protocol_version, {7,6}).
 
@@ -125,15 +127,22 @@ disconnect(Node) ->
 %% Creates a link to each compatible monitor and
 %% protocol_version to agreed version upon success
 
+negotiate_protocol([]) -> [];
 negotiate_protocol(Nodes) ->
-    Version = mnesia:system_info(version),
-    Protocols = acceptable_protocol_versions(),
+    call({negotiate_protocol, Nodes}).
+
+negotiate_protocol_impl(Nodes, Requester) ->
+    Version    = mnesia:system_info(version),
+    Protocols  = acceptable_protocol_versions(),
     MonitorPid = whereis(?MODULE),
     Msg = {negotiate_protocol, MonitorPid, Version, Protocols},
     {Replies, _BadNodes} = multicall(Nodes, Msg),
-    check_protocol(Replies, Protocols).
+    Res = check_protocol(Replies, Protocols),
+    ?MODULE ! {protocol_negotiated,Requester,Res},
+    unlink(whereis(?MODULE)),
+    ok.
 
-check_protocol([{Node, {accept, Mon, _Version, Protocol}} | Tail], Protocols) ->
+check_protocol([{Node, {accept, Mon, Version, Protocol}} | Tail], Protocols) ->
     case lists:member(Protocol, Protocols) of
 	true ->
 	    case Protocol == protocol_version() of
@@ -144,6 +153,9 @@ check_protocol([{Node, {accept, Mon, _Version, Protocol}} | Tail], Protocols) ->
 	    end,
 	    [node(Mon) | check_protocol(Tail, Protocols)]; 
 	false  ->
+	    verbose("Failed to connect with ~p. ~p protocols rejected. "
+		    "expected version = ~p, expected protocol = ~p~n",
+		    [Node, Protocols, Version, Protocol]),
 	    unlink(Mon), % Get rid of unneccessary link
 	    check_protocol(Tail, Protocols)
     end;
@@ -153,8 +165,10 @@ check_protocol([{Node, {reject, _Mon, Version, Protocol}} | Tail], Protocols) ->
 	    [Node, Protocols, Version, Protocol]),
     check_protocol(Tail, Protocols);
 check_protocol([{error, _Reason} | Tail], Protocols) ->
+    dbg_out("~p connect failed error: ~p~n", [?MODULE, _Reason]),
     check_protocol(Tail, Protocols);
 check_protocol([{badrpc, _Reason} | Tail], Protocols) ->
+    dbg_out("~p connect failed badrpc: ~p~n", [?MODULE, _Reason]),
     check_protocol(Tail, Protocols);
 check_protocol([], [Protocol | _Protocols]) ->
     set(protocol_version, Protocol),
@@ -399,6 +413,7 @@ handle_call({negotiate_protocol, Mon, _Version, _Protocols}, _From, State)
     State2 =  State#state{early_connects = [node(Mon) | State#state.early_connects]},    
     {reply, {node(), {reject, self(), uninitialized, uninitialized}}, State2};
 
+%% From remote monitor..
 handle_call({negotiate_protocol, Mon, Version, Protocols}, From, State)
   when node(Mon) /= node() ->
     Protocol = protocol_version(),
@@ -419,6 +434,16 @@ handle_call({negotiate_protocol, Mon, Version, Protocols}, From, State)
 			    [node(Mon), Version, Protocols, MyVersion, Protocol]),
 		    {reply, {node(), {reject, self(), MyVersion, Protocol}}, State}
 	    end
+    end;
+
+%% Local request to negotiate with other monitors (nodes).
+handle_call({negotiate_protocol, Nodes}, From, State) ->    
+    case mnesia_lib:intersect(State#state.going_down, Nodes) of
+	[] ->
+	    spawn_link(?MODULE, negotiate_protocol_impl, [Nodes, From]),
+	    {noreply, State#state{connecting={From,Nodes}}};
+	_ ->  %% Cannot connect now, still processing mnesia down
+	    {reply, busy, State}
     end;
 
 handle_call(init, _From, State) ->
@@ -482,7 +507,7 @@ handle_cast({mnesia_down, mnesia_locker, Node}, State) ->
 	    gen_server:reply(ReplyTo, Reply),
 	    P2 = lists:keydelete(Node, 1,Pending),
 	    State3 = State2#state{pending_negotiators = P2},
-	    {noreply, State3};
+	    process_q(State3);
 	false ->
 	    %% No pending remote monitors
 	    {noreply, State2}
@@ -491,6 +516,8 @@ handle_cast({mnesia_down, mnesia_locker, Node}, State) ->
 handle_cast({disconnect, Node}, State) ->
     case rpc:call(Node, erlang, whereis, [?MODULE]) of
 	{badrpc, _} ->
+	    ignore;
+	undefined ->
 	    ignore;
 	RemoteMon when pid(RemoteMon) -> 
 	    unlink(RemoteMon)
@@ -522,22 +549,28 @@ handle_info({'EXIT', Pid, fatal}, State) when node(Pid) == node() ->
     exit(State#state.supervisor, shutdown),
     {noreply, State};
 
-handle_info({'EXIT', Pid, Reason}, State) ->
+handle_info(Msg = {'EXIT',Pid,_}, State) ->
     Node = node(Pid),
     if
-	Node /= node() ->
+	Node /= node(), State#state.connecting == undefined ->
 	    %% Remotly linked process died, assume that it was a mnesia_monitor
 	    mnesia_recover:mnesia_down(Node),
 	    mnesia_controller:mnesia_down(Node),
 	    {noreply, State#state{going_down = [Node | State#state.going_down]}};
+	Node /= node() ->
+	    {noreply, State#state{mq = State#state.mq ++ [{info, Msg}]}};
 	true ->
-	    %% We have probably got an exit signal from from
+	    %% We have probably got an exit signal from 
 	    %% disk_log or dets
 	    Hint = "Hint: check that the disk still is writable",
-	    Msg = {'EXIT', Pid, Reason},
 	    fatal("~p got unexpected info: ~p; ~p~n",
 		  [?MODULE, Msg, Hint])
     end;
+
+handle_info({protocol_negotiated, From,Res}, State) ->
+    From = element(1,State#state.connecting),
+    gen_server:reply(From, Res),
+    process_q(State#state{connecting = undefined});
 
 handle_info({nodeup, Node}, State) ->
     %% Ok, we are connected to yet another Erlang node
@@ -574,6 +607,14 @@ handle_info({disk_log, _Node, Log, Info}, State) ->
 handle_info(Msg, State) ->
     error("~p got unexpected info (~p): ~p~n", [?MODULE, State, Msg]).
 
+process_q(State = #state{mq=[]}) -> {noreply,State};
+process_q(State = #state{mq=[{info,Msg}|R]}) ->
+    handle_info(Msg, State#state{mq=R});
+process_q(State = #state{mq=[{cast,Msg}|R]}) ->
+    handle_cast(Msg, State#state{mq=R});
+process_q(State = #state{mq=[{call,From,Msg}|R]}) ->
+    handle_call(Msg, From, State#state{mq=R}).
+
 %%----------------------------------------------------------------------
 %% Func: terminate/2
 %% Purpose: Shutdown the server
@@ -587,6 +628,11 @@ terminate(Reason, State) ->
 %% Purpose: Upgrade process when its code is to be changed
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
+
+
+code_change(_, {state, SUP, PN, GD, TMS, EC}, _) ->
+    {ok, #state{supervisor=SUP, pending_negotiators=PN,
+		going_down = GD, tm_started =TMS, early_connects = EC}};
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -734,8 +780,7 @@ patch_env(Env, Val) ->
     end.
 
 detect_partitioned_network(Mon, Node) ->
-    GoodNodes = negotiate_protocol([Node]),
-    detect_inconcistency(GoodNodes, running_partitioned_network),
+    detect_inconcistency([Node], running_partitioned_network),
     unlink(Mon),
     exit(normal).
 

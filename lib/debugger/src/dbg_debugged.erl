@@ -23,6 +23,13 @@
 %% Internal exports
 -export([follow/4]).
 
+%-define(DBGDBG, 1).
+-ifdef(DBGDBG).
+-define(DBG(F,A), io:format("~p~p[~p]:" ++ F,[self(),?MODULE,?LINE] ++ A)).
+-else.
+-define(DBG(F,A), ok).
+-endif.
+
 %%====================================================================
 %% External exports
 %%====================================================================
@@ -35,7 +42,6 @@
 eval(Mod, Func, Args) ->
     Meta = dbg_imeta:eval(Mod, Func, Args),
     msg(Meta).
-
 
 %%====================================================================
 %% Internal exports
@@ -52,13 +58,18 @@ follow(_Fol, M, F, As) ->
 msg(Meta) ->
     case catch msg_loop(Meta) of
 	{ready,Meta,Value} ->
+	    ?DBG("Result~n",[]),
 	    Value;
-	{'EXIT',Reason} ->
+	{'EXIT',Reason0} ->
+	    ?DBG("EXIT ~p~n",[Reason0]),
+	    Reason = remove_debugger_calls(Reason0),
 	    Meta ! {sys,self(),{exited_nocatch,Reason}},
 	    wait_exit(Meta);
 	{'EXIT',Meta,Reason} ->
+	    ?DBG("EXIT ~p~n",[Reason]),
 	    exit(Reason);
 	Thrown ->
+	    ?DBG("Thrown ~p~n",[Thrown]),
 	    Meta ! {sys,self(),{thrown_nocatch,Thrown}},
 	    throw(Thrown)
     end.
@@ -66,6 +77,7 @@ msg(Meta) ->
 msg_loop(Meta) ->
     receive
 	{sys,Meta,Command} ->
+	    ?DBG("Command~p~n",[Command]),
 	    handle_command(Meta, Command);
 	{'EXIT',Meta,Reason} ->
 	    {'EXIT',Meta,Reason}
@@ -86,15 +98,14 @@ handle_command(Meta, {bif,Mod,Name,As,Where,Followed}) ->
     Meta ! {sys,self(),{apply_result,Res}},
     msg_loop(Meta);
 handle_command(Meta, {catch_bif,Mod,Name,As,Where,Followed}) ->
-    send_result(Meta,
-		catch catch_bif(Meta, Mod, Name, As, Followed, Where)),
+    send_result(Meta, catch_bif(Meta, Mod, Name, As, Followed, Where)),
     msg_loop(Meta);
 handle_command(Meta, {apply,Mod,Fnk,As}) ->
     Res = apply(Mod, Fnk, As),
     Meta ! {sys,self(),{apply_result,Res}},
     msg_loop(Meta);
 handle_command(Meta, {catch_apply,Mod,Fnk,As}) ->
-    send_result(Meta, catch catch_apply(Meta, Mod, Fnk, As)),
+    send_result(Meta, catch_apply(Meta, Mod, Fnk, As)),
     msg_loop(Meta);
 handle_command(Meta, {eval,Expr,Bs0}) ->
     Ref = make_ref(),
@@ -115,12 +126,36 @@ send_result(Meta, Thrown) ->
 %%-- surrounding catch notices the unnormal exit.
 
 catch_apply(Meta, Mod, Fnk, As) ->
-    Res = apply(Mod, Fnk, As),
-    {catch_normal,Meta,Res}.
+    Ref = make_ref(),
+    Res0 = (catch {Ref, apply(Mod, Fnk, As)}),
+    case Res0 of
+	{'EXIT', Reason} -> {'EXIT', remove_debugger_calls(Reason)};
+	{Ref, Res} -> 
+	    {catch_normal,Meta,Res};
+	_ ->
+	    Res0
+    end.
 
 catch_bif(Meta, Mod, Name, As, Followed, Where) ->
-    Res = bif(Mod, Name, As, Followed, Where),
-    {catch_normal,Meta,Res}.
+    Res = (catch bif(Mod, Name, As, Followed, Where)),
+    case Res of
+	{'EXIT', Reason} -> {'EXIT', remove_debugger_calls(Reason)};
+	_ ->
+	    {catch_normal,Meta,Res}
+    end.
+
+remove_debugger_calls({Reason,BT}) when is_list(BT) ->
+    {Reason, remove_debugger_calls(BT, [])};
+remove_debugger_calls(Reason) ->
+    Reason.
+remove_debugger_calls([{?MODULE, _F, _A}|R], Acc) ->
+    remove_debugger_calls(R,Acc);
+remove_debugger_calls([Other|R], Acc) ->
+    remove_debugger_calls(R, [Other|Acc]);
+remove_debugger_calls([],Acc) -> 
+    lists:reverse(Acc);
+remove_debugger_calls(What, Acc) ->
+    lists:reverse([What|Acc]).
 
 %% bif(Mod, Name, Arguments)
 %%  Evaluate a BIF.

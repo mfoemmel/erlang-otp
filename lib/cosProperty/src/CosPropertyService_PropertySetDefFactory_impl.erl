@@ -77,7 +77,7 @@ init([]) ->
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%----------------------------------------------------------------------
@@ -85,7 +85,7 @@ terminate(Reason, State) ->
 %% Returns    : {ok, NewState}
 %% Description: Convert process state when code is changed
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%---------------------------------------------------------------------%
@@ -94,7 +94,7 @@ code_change(OldVsn, State, Extra) ->
 %% Returns    : CosPropertyService::PropertySetDef reference.
 %% Description: 
 %%----------------------------------------------------------------------
-create_propertysetdef(OE_This, State) ->
+create_propertysetdef(_OE_This, State) ->
     {reply, 
      'CosPropertyService_PropertySetDef':
      oe_create({normal, [], [], [], ?PropertySetDef}, [{pseudo, true}]),
@@ -108,7 +108,7 @@ create_propertysetdef(OE_This, State) ->
 %%              {'EXCEPTION', CosPropertyService::ConstraintNotSupported}
 %% Description: 
 %%----------------------------------------------------------------------
-create_constrained_propertysetdef(OE_This, State, PropTypes, PropDefs) ->
+create_constrained_propertysetdef(_OE_This, State, PropTypes, PropDefs) ->
     case lists:all(?checkTCfun, PropTypes) of
 	true ->
 	    crosscheckTC(PropDefs, PropTypes),
@@ -125,7 +125,7 @@ crosscheckTC([], _) ->
 crosscheckTC([#'CosPropertyService_PropertyDef'
 			 {property_name = Name,
 			  property_value = Value,
-			  property_mode = Mode}|T], TCs) ->
+			  property_mode = _Mode}|T], TCs) ->
     case lists:member(any:get_typecode(Value), TCs) of
 	true when Name =/= "" ->
 	   crosscheckTC(T, TCs); 
@@ -140,7 +140,7 @@ crosscheckTC([#'CosPropertyService_PropertyDef'
 %%              {'EXCEPTION', CosPropertyService::MultipleExceptions}
 %% Description: 
 %%----------------------------------------------------------------------
-create_initial_propertysetdef(OE_This, State, PropDefs) ->
+create_initial_propertysetdef(_OE_This, State, PropDefs) ->
     InitProps = evaluate_propertysetdef(PropDefs),
     {reply, 
      'CosPropertyService_PropertySetDef':

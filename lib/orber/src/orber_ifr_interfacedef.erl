@@ -67,8 +67,7 @@
 		   unique/0
 		  ]).
 -import(orber_ifr_container,[make_absolute_name/2,
-			    make_containing_repository/1,
-			    add_to_container/2
+			    make_containing_repository/1
 			    ]).
 
 -include("orber_ifr.hrl").
@@ -290,9 +289,10 @@ describe_interface({ObjType, ObjID}) ?tcheck(ir_InterfaceDef, ObjType) ->
 			      type = Object#ir_InterfaceDef.type
 			     }.
 
+create_attribute(#orber_light_ifr_ref{} = LRef, _Id, _Name, _Version, _Type, _Mode) ->
+    LRef;
 create_attribute({ObjType, ObjID}, Id, Name, Version, Type, Mode)
 		?tcheck(ir_InterfaceDef, ObjType) ->
-    ?exists_check(Id, ir_AttributeDef, #ir_AttributeDef.id),
     New_attribute = #ir_AttributeDef{ir_Internal_ID = unique(),
 				     def_kind = dk_Attribute,
 				     id = Id,
@@ -306,12 +306,16 @@ create_attribute({ObjType, ObjID}, Id, Name, Version, Type, Mode)
 				     type = get_field(Type,type),
 				     type_def = Type,
 				     mode = Mode},
-    add_to_container({ObjType,ObjID},New_attribute),
+    orber_ifr_container:add_to_container({ObjType,ObjID}, New_attribute, 
+					 Id, ir_AttributeDef, 
+					 #ir_AttributeDef.id),
     makeref(New_attribute).
 
+create_operation(#orber_light_ifr_ref{} = LRef, _Id, _Name, _Version, _Result, 
+		 _Mode, _Params, _Exceptions, _Contexts) ->
+    LRef;
 create_operation({ObjType, ObjID}, Id, Name, Version, Result, Mode, Params,
 		 Exceptions, Contexts) ?tcheck(ir_InterfaceDef, ObjType) ->
-    ?exists_check(Id, ir_OperationDef, #ir_OperationDef.id),
     New_operation = #ir_OperationDef{ir_Internal_ID = unique(),
 				     def_kind = dk_Operation,
 				     id = Id,
@@ -328,5 +332,7 @@ create_operation({ObjType, ObjID}, Id, Name, Version, Result, Mode, Params,
 				     params = Params,
 				     exceptions = Exceptions,
 				     contexts = Contexts},
-    add_to_container({ObjType,ObjID},New_operation),
+    orber_ifr_container:add_to_container({ObjType,ObjID}, New_operation,
+					 Id, ir_OperationDef, 
+					 #ir_OperationDef.id),
     makeref(New_operation).

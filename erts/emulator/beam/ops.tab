@@ -235,6 +235,7 @@ i_put_big w d
 # Receive operations.
 
 wait_timeout Fail Src=iw => gen_literal_timeout(Fail, Src)
+wait_timeout Fail Src=o => i_put_float Src x | wait_timeout Fail x
 
 remove_message
 timeout

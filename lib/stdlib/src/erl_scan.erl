@@ -558,7 +558,9 @@ scan_comment([$\n|Cs], Stack, Toks, Pos, State, Errors) ->
 scan_comment([_|Cs], Stack, Toks, Pos, State, Errors) ->
     scan_comment(Cs, Stack, Toks, Pos, State, Errors);
 scan_comment([], Stack, Toks, Pos, State, Errors) ->
-    more([], Stack, Toks, Pos, State, Errors, fun scan_comment/6).
+    more([], Stack, Toks, Pos, State, Errors, fun scan_comment/6);
+scan_comment(Eof, _Stack, Toks, Pos, State, Errors) ->
+    done(Eof, Errors, Toks, Pos, State).
 
 
 

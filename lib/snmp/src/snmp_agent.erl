@@ -141,13 +141,24 @@ init([Parent, Ref, Options]) ->
 		NetIf = get_option(net_if, Options, snmp_net_if),
 		NiVerbosity = get_option(net_if_verbosity, Options, silence),
 		NiRecBuf = get_option(net_if_recbuf, Options, use_default),
-		NiOpts = [{net_if_verbosity,NiVerbosity},
-			  {net_if_recbuf,NiRecBuf}],
+		NiReqLimit = get_option(net_if_req_limit, Options, infinity),
+		NiOpts = [{verbosity, NiVerbosity},
+			  {recbuf,    NiRecBuf},
+			  {req_limit, NiReqLimit}],
 		?vdebug("start net if",[]),
-		case snmp_misc_sup:start_net_if(MiscSup,Ref,self(),
-						NetIf,NiOpts) of
-		    {ok, Pid} -> {master_agent, Pid};
-		    {error, Reason} -> exit(Reason)
+		case (catch snmp_misc_sup:start_net_if(MiscSup,Ref,self(),
+						       NetIf,NiOpts)) of
+		    {ok, Pid} -> 
+			{master_agent, Pid};
+		    {error, Reason} -> 
+			?vinfo("error starting net if: ~n~p",[Reason]),
+			exit(Reason);
+		    {'EXIT', Reason} ->
+			?vinfo("exit starting net if: ~n~p",[Reason]),
+			exit(Reason);
+		    Error ->
+			?vinfo("failed starting net if: ~n~p",[Error]),
+			exit({failed_starting_net_if, Error})
 		end;
 	    Pid when pid(Pid) -> 
 		{subagent, undefined}
@@ -172,7 +183,7 @@ init([Parent, Ref, Options]) ->
 		    _ -> 
 			{undefined, undefined}
 		end,
-	    ?vdebug("started",[]),
+	    ?vdebug("mib server started",[]),
 	    {ok, #state{type = Type, parent = Parent, worker = Worker,
 			set_worker = SetWorker,
 			multi_threaded = MultiT, ref = Ref,
@@ -1374,7 +1385,8 @@ next_loop_varbinds([], [Vb | Vbs], MibView, Res, LAVb) ->
 				[{tab_oid(TableRestOid), Vb}]},
 			       Vbs, MibView, Res, []);
 	{subagent, SubAgentPid, SAOid} ->
-	    next_loop_varbinds({subagent, SubAgentPid, SAOid, [Vb]},
+	    NewVb = Vb#varbind{variabletype = 'NULL', value = 'NULL'},
+	    next_loop_varbinds({subagent, SubAgentPid, SAOid, [NewVb]},
 			       Vbs, MibView, Res, [])
     end;
 next_loop_varbinds({table, TableOid, ME, TabOids},
@@ -1436,6 +1448,29 @@ next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
 		    NewVbs = lists:append(SAEndOfMibViewVbs, [Vb | Vbs]),
 		    NewRes = lists:append(SARes, Res),
 		    next_loop_varbinds([], NewVbs, MibView, NewRes, []);
+		{noSuchName, OrgIndex} ->
+		    %% v1 reply, treat this Vb as endOfMibView, and try again
+		    %% for the others.
+		    case lists:keysearch(OrgIndex, #varbind.org_index, SAVbs) of
+			{value, EVb} ->
+			    NextOid = next_oid(SAOid),
+			    EndOfVb = 
+				EVb#varbind{oid = NextOid,
+					    value = {endOfMibView, NextOid}},
+			    case lists:delete(EVb, SAVbs) of
+				[] ->
+				    next_loop_varbinds([], [EndOfVb, Vb | Vbs],
+						       MibView, Res, []);
+				TryAgainVbs ->
+				    next_loop_varbinds({subagent, SAPid, SAOid,
+							TryAgainVbs},
+						       [EndOfVb, Vb | Vbs],
+						       MibView, Res, [])
+			    end;
+			false ->
+			    %% bad index from subagent
+			    {genErr, (hd(SAVbs))#varbind.org_index, []}
+		    end;
 		{ErrorStatus, OrgIndex} ->
 		    ?vdebug("next loop varbinds: next subagent"
 			    "~n   Vb:          ~p"
@@ -1454,6 +1489,26 @@ next_loop_varbinds({subagent, SAPid, SAOid, SAVbs},
 	{ok, SARes, SAEndOfMibViewVbs} ->
 	    NewRes = lists:append(SARes, Res),
 	    next_loop_varbinds([], SAEndOfMibViewVbs, MibView, NewRes, []);
+	{noSuchName, OrgIndex} ->
+	    %% v1 reply, treat this Vb as endOfMibView, and try again for
+	    %% the others.
+	    case lists:keysearch(OrgIndex, #varbind.org_index, SAVbs) of
+		{value, EVb} ->
+		    NextOid = next_oid(SAOid),
+		    EndOfVb = EVb#varbind{oid = NextOid,
+					  value = {endOfMibView, NextOid}},
+		    case lists:delete(EVb, SAVbs) of
+			[] ->
+			    next_loop_varbinds([], [EndOfVb], MibView, Res, []);
+			TryAgainVbs ->
+			    next_loop_varbinds({subagent, SAPid, SAOid,
+						TryAgainVbs},
+					       [EndOfVb], MibView, Res, [])
+		    end;
+		false ->
+		    %% bad index from subagent
+		    {genErr, (hd(SAVbs))#varbind.org_index, []}
+	    end;
 	{ErrorStatus, OrgIndex} ->
 	    ?vdebug("next loop varbinds: next subagent"
 		    "~n   ErrorStatus: ~p"
@@ -1604,7 +1659,7 @@ validate_tab_next_res([{NextOid, Value} | Values],
     NextCompleteOid = lists:append(TabOid, NextOid),
     case snmp_mib:lookup(get(mibserver), NextCompleteOid) of
 	{table_column, #me{asn1_type = ASN1Type}, _TableEntryOid} ->
-%% 	    ?vtrace("validate_tab_next_res -> ASN1Type: ~p", [ASN1Type]),
+%%  	    ?vtrace("validate_tab_next_res -> ASN1Type: ~p", [ASN1Type]),
 	    case make_value_a_correct_value({value, Value}, ASN1Type, Mfa) of
 		{error, ErrorStatus} ->
 %% 		    ?vtrace("validate_tab_next_res -> "
@@ -1694,7 +1749,7 @@ transform_sa_next_result([Vb | Vbs], SAOid, SANextOid) ->
 	true ->
 	    [Vb | transform_sa_next_result(Vbs, SAOid, SANextOid)];
 	_ ->
-	    [Vb#varbind{value = {endOfMibView, SANextOid}} |
+	    [Vb#varbind{oid = SANextOid, value = {endOfMibView, SANextOid}} |
 	     transform_sa_next_result(Vbs, SAOid, SANextOid)]
     end;
 transform_sa_next_result([], _SAOid, _SANextOid) ->
@@ -1951,7 +2006,7 @@ get_err({ErrC, ErrI, Vbs}) ->
 
 get_err_i(noError) -> noError;
 get_err_i(S) -> 
-    ?vtrace("convert '~p' to 'getErr'",[S]),
+    ?vtrace("convert '~p' to 'genErr'",[S]),
     genErr.
 
 v2err_to_v1err(noError) ->            noError;

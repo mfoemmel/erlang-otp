@@ -1,5 +1,5 @@
-
-ASN1_VSN = 1.4.2
+#next version number to use is 1.4.4.3 | 1.4.5 | 1.5 | 2.0
+ASN1_VSN = 1.4.4.2
 
 TICKETS_1.2.5 = \
 	OTP-3341
@@ -102,7 +102,46 @@ TICKETS_1.4.1.1 = \
 	OTP-4665 \
 	OTP-4666
 
+# OTP R9C
 TICKETS_1.4.2 = \
 	OTP-4693 \
 	OTP-4744
 
+TICKETS_1.4.2.1 = \
+	OTP-4773 \
+	OTP-4791 \
+	OTP-4792 \
+	OTP-4797 \
+	OTP-4798 \
+	OTP-4799 \
+	OTP-4809
+
+TICKETS_1.4.3 = \
+	OTP-4832 \
+	OTP-4833 \
+	OTP-4835 \
+	OTP-4856
+
+TICKETS_1.4.3.1 = \
+	OTP-4866 \
+	OTP-4869 \
+	OTP-4872
+
+TICKETS_1.4.4 = \
+	OTP-4893 \
+	OTP-4894 \
+	OTP-4895 \
+	OTP-4917 \
+	OTP-4918 \
+	OTP-4919 \
+	OTP-4944 \
+	OTP-4953 \
+	OTP-4955 \
+	OTP-4957 \
+	OTP-4965
+
+TICKETS_1.4.4.1 = \
+	OTP-4970
+
+TICKETS_1.4.4.2 = \
+	OTP-5022

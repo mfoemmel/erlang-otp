@@ -27,14 +27,15 @@
 
 -include_lib("orber/include/corba.hrl").
 -include_lib("orber/src/orber_iiop.hrl").
--include_lib("orber/src/orber_debug.hrl").
 -include_lib("orber/src/ifr_objects.hrl").
+-include_lib("orber/include/ifr_types.hrl").
 
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
 -export([dissect/1,
-	 get_system_exception_typedef/1,
+	 get_def/1,
+	 get_name/2,
 	 type/1]).
 
 %%-----------------------------------------------------------------
@@ -81,7 +82,11 @@
 -define(DEBUG_LEVEL, 5).
 
 %%-----------------------------------------------------------------
-%% Check if CORBA system exception or user defined
+%% Function   : type
+%% Arguments  : ExceptionName - atom()
+%% Returns    : ?SYSTEM_EXCEPTION | ?USER_EXCEPTION
+%% Raises     : 
+%% Description: Check if CORBA system exception or user defined
 %%-----------------------------------------------------------------
 type('UNKNOWN') ->                 ?SYSTEM_EXCEPTION;
 type('BAD_PARAM') ->               ?SYSTEM_EXCEPTION;
@@ -122,17 +127,99 @@ type('BAD_QOS') ->                 ?SYSTEM_EXCEPTION;
 type(_) ->                         ?USER_EXCEPTION.
 
 %%-----------------------------------------------------------------
-%% Generate typedef of system exception
+%% Function   : get_def
+%% Arguments  : Exception - record()
+%% Returns    : {Type, TypeCode, Exc}
+%% Raises     : 
+%% Description: Returns the TC for the supplied exception
 %%-----------------------------------------------------------------
-get_system_exception_typedef(ExcName) ->
+get_def(Exception) ->
+    [Exc, TypeId | _] = tuple_to_list(Exception),
+    case type(Exc) of
+	?SYSTEM_EXCEPTION ->
+	    {?SYSTEM_EXCEPTION, get_system_exception_def(Exc), Exception};
+	?USER_EXCEPTION ->
+	    case orber:light_ifr() of
+		true ->
+		    case catch orber_ifr:get_tc(TypeId, ?IFR_ExceptionDef) of
+			{'EXCEPTION', NewExc} ->
+			    {?SYSTEM_EXCEPTION,
+			     get_system_exception_def(NewExc),
+			     NewExc};
+			TC ->
+			    {?USER_EXCEPTION, TC, Exception}
+		    end;
+		false ->
+		    case mnesia:dirty_index_read(ir_ExceptionDef, TypeId,
+						 #ir_ExceptionDef.id) of
+			[ExcDef] when record(ExcDef, ir_ExceptionDef) ->  
+			    {?USER_EXCEPTION, 
+			     ExcDef#ir_ExceptionDef.type,
+			     Exception};
+			Other ->
+			    orber:dbg("[~p] ~p:get_user_exception_type(~p).~n"
+				      "IFR Id not found: ~p", 
+				      [?LINE, ?MODULE, TypeId, Other], ?DEBUG_LEVEL),
+			    NewExc = #'UNKNOWN'{minor=(?CORBA_OMGVMCID bor 1), 
+						completion_status=?COMPLETED_MAYBE},
+			    {?SYSTEM_EXCEPTION,
+			     get_system_exception_def(NewExc),
+			     NewExc}
+		   end
+	    end
+    end.
+
+%%-----------------------------------------------------------------
+%% Function   : get_name
+%% Arguments  : TypeId - string()
+%%              Type - ?SYSTEM_EXCEPTION ( | ?USER_EXCEPTION)
+%% Returns    : ExceptionName - atom()
+%% Raises     : #'UNKNOWN'{}
+%% Description: Extract exception name
+%%-----------------------------------------------------------------
+get_name(TypeId, ?SYSTEM_EXCEPTION) ->
+    ExcName = 
+	case string:tokens(TypeId, ":/") of
+	    [_IDL, _OMGORG, _CORBA, Name, _Version] when list(Name) ->
+		list_to_atom(Name);
+	    [_IDL, _CORBA, Name, _Version] when list(Name) ->
+		%% We should remove this case but we keep it for now due to backward 
+		%% compatible reasons.
+		list_to_atom(Name);
+	    Other ->
+		%% The CORBA-spec states that this exception should be raised if
+		%% it's a system exception we do not support.
+		orber:dbg("[~p] ~p:get_system_exception_name(~p).~n"
+			  "Unknown System Exception: ~p", 
+			  [?LINE, ?MODULE, TypeId, Other], ?DEBUG_LEVEL),
+		corba:raise(#'UNKNOWN'{minor=(?CORBA_OMGVMCID bor 2), 
+				       completion_status=?COMPLETED_MAYBE})
+	end,
+    case type(ExcName) of
+	?SYSTEM_EXCEPTION ->
+	    ExcName;
+	What ->
+	    orber:dbg("[~p] ~p:get_system_exception_name(~p).~n"
+		      "Unknown System Exception: ~p", 
+		      [?LINE, ?MODULE, TypeId, What], ?DEBUG_LEVEL),
+	    corba:raise(#'UNKNOWN'{minor=(?CORBA_OMGVMCID bor 2), 
+				   completion_status=?COMPLETED_MAYBE})
+    end.
+    
+
+%%-----------------------------------------------------------------
+%% Generate system exception TypeCode
+%%-----------------------------------------------------------------
+get_system_exception_def(ExcName) when atom(ExcName) ->
     Name = atom_to_list(ExcName),
     {'tk_except', "IDL:omg.org/CORBA/" ++ Name ++ ":1.0", Name,
-     [
-      {"minor",'tk_ulong'},
-      {"completed",{'tk_enum', "", "completion_status",
-	   ["COMPLETED_YES", "COMPLETED_NO",
-	    "COMPLETED_MAYBE"]}}
-     ]}.
+     [{"minor",'tk_ulong'},
+      {"completed",
+       {'tk_enum', "", "completion_status",
+	["COMPLETED_YES", "COMPLETED_NO",
+	 "COMPLETED_MAYBE"]}}]};
+get_system_exception_def(Exc) ->
+    get_system_exception_def(element(1, Exc)).
 
 
 %%-----------------------------------------------------------------
@@ -156,7 +243,7 @@ IFR Id.................: ~s
 		    {error, Reason}
 	    end
     end;
-dissect(What) ->
+dissect(_What) ->
     {error, "Not a correct exception supplied to orber_exceptions:dissect/1"}.
 	    
 map_exc({Name, _, Minor, Status}) when integer(Minor) ->
@@ -242,7 +329,10 @@ code_character(N) ->
 by client";
 'UNKNOWN'(?CORBA_OMGVMCID bor 2) -> "Non-standard System Exception
 not supported";
+%% UNKNOWN - Orber
+'UNKNOWN'(?ORBER_VMCID bor 1) -> "Missing beam-file. Unable to extract TC.";
 'UNKNOWN'(_) -> "-".
+
 
 %% BAD_PARAM - OMG
 'BAD_PARAM'(?CORBA_OMGVMCID bor 1) -> "Failure to register, unregister, or 
@@ -538,6 +628,24 @@ AdapterActivator::unknown_adapter";
 ServantActivator::incarnate";
 'OBJ_ADAPTER'(?CORBA_OMGVMCID bor 6) -> "Exception in 
 PortableInterceptor::IORInterceptor.components_established";
+%% OBJ_ADAPTER - Orber
+'OBJ_ADAPTER'(?ORBER_VMCID bor 1) -> "Call-back module does not exist";
+'OBJ_ADAPTER'(?ORBER_VMCID bor 2) -> "Missing function or incorrect arity in
+call-back module";
+'OBJ_ADAPTER'(?ORBER_VMCID bor 3) -> "Function exported but arity incorrect";
+'OBJ_ADAPTER'(?ORBER_VMCID bor 4) -> "Unknown error. Call-back module generated
+EXIT";
+'OBJ_ADAPTER'(?ORBER_VMCID bor 5) -> "Call-back module invoked operation on a
+non-existing module";
+'OBJ_ADAPTER'(?ORBER_VMCID bor 6) -> "Missing function or incorrect arity in
+a module invoked via the call-back module";
+'OBJ_ADAPTER'(?ORBER_VMCID bor 7) -> "Function exported but arity incorrect in
+a module invoked via the call-back module";
+'OBJ_ADAPTER'(?ORBER_VMCID bor 8) -> "Call-back module contains a function_clause,
+case_clause or badarith error";
+'OBJ_ADAPTER'(?ORBER_VMCID bor 9) -> "Call-back module invoked operation exported
+by another module which contains a function_clause, case_clause or badarith error";
+'OBJ_ADAPTER'(?ORBER_VMCID bor 10) -> "Unknown EXIT returned by call-back module";
 'OBJ_ADAPTER'(_) -> "-".
 
 %% DATA_CONVERSION - OMG

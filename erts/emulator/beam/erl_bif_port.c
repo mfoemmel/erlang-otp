@@ -131,17 +131,14 @@ id2port(Eterm id)
 static Port*
 id_or_name2port(Eterm id)
 {
-    if (is_atom(id)) {
-	RegProc r;
-	RegProc *rp;
+    if (is_not_atom(id)) {
+	return id2port(id);
+    } else {
+	Port* pt;
 
-	r.name = id;
-	if ((rp = (RegProc*) hash_get(&process_reg, (void*) &r)) == NULL) {
-	    return NULL;
-	}
-	return rp->pt;
+	whereis_name(id, NULL, &pt);
+	return pt;
     }
-    return id2port(id);
 }
 
 BIF_RETTYPE port_command_2(BIF_ALIST_2)

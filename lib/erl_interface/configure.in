@@ -97,7 +97,7 @@ AC_CHECK_LIB([socket], [getpeername])
 # Checks for header files.
 AC_HEADER_STDC
 AC_HEADER_SYS_WAIT
-AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h malloc.h netdb.h netinet/in.h stddef.h stdlib.h string.h sys/param.h sys/socket.h sys/time.h unistd.h pthread.h])
+AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h malloc.h netdb.h netinet/in.h stddef.h stdlib.h string.h sys/param.h sys/socket.h sys/select.h sys/time.h unistd.h pthread.h])
 dnl Some Linuxes have <pthread/mit/pthread.h> instead of <pthread.h>
 AC_CHECK_HEADER(pthread/mit/pthread.h, AC_DEFINE(HAVE_MIT_PTHREAD_H))
 
@@ -140,6 +140,9 @@ AC_ARG_WITH(gmp,
 [  --with-gmp=PATH         specify location of GNU MP include and lib
   --with-gmp              use GNU MP (will search for it)])
 
+# We don't just want any GNU MP version, we want 4.1 or later
+# that contain the import/export functions we need.
+
 if test "x$with_gmp" = "xyes" ;then
     for dir in /usr /usr/pkg /usr/local /usr/local/gmp /usr/lib/gmp /usr/gmp; do
 	AC_CHECK_HEADER($dir/include/gmp.h, ac_cv_gmp=yes, ac_cv_gmp=no)
@@ -152,6 +155,8 @@ if test "x$with_gmp" = "xyes" ;then
     if test $ac_cv_gmp = no ; then
 	AC_MSG_ERROR([No GNU MP installation found])
     fi
+    AC_CHECK_LIB(gmp, __gmpz_export)
+    # FIXME return ERROR if no lib
 elif test "x$with_gmp" != "xno" -a -n "$with_gmp" ;then
     # Option given with PATH to package
     AC_MSG_CHECKING(for GNU MP)
@@ -161,12 +166,10 @@ elif test "x$with_gmp" != "xno" -a -n "$with_gmp" ;then
     AC_MSG_RESULT(yes)
     CFLAGS="$CFLAGS -I$with_gmp/include -L$with_gmp/lib"
     AC_DEFINE(HAVE_GMP_H)
+    AC_CHECK_LIB(gmp, __gmpz_export)
+    # FIXME return ERROR if no lib
 fi
 
-# We don't just want any GNU MP version, we want 4.1 or later
-# that contain the import/export functions we need.
-# FIXME
-dnl AC_CHECK_LIB(gmp, __gmpz_export)
 
 #
 # Figure out if we should use threads. The default is set above in the

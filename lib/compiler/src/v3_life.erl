@@ -235,7 +235,8 @@ expr(#k_catch{anno=A,body=Kb,ret=[R]}, I, Vdb) ->
 expr(#k_receive{anno=A,var=V,body=Kb,timeout=T,action=Ka,ret=Rs}, I, Vdb) ->
     %% Work out imported variables which need to be locked.
     Rdb = vdb_sub(I, I+1, Vdb),
-    M = match(Kb, A#k.us, I+1, new_var(V#k_var.name, I, Rdb)),
+    M = match(Kb, add_element(V#k_var.name, A#k.us), I+1,
+ 	      new_var(V#k_var.name, I, Rdb)),
     {Tes,_,Adb} = body(Ka, I+1, Rdb),
     #l{ke={receive_loop,atomic(T),variable(V),M,
 	   #l{ke=Tes,i=I+1,vdb=Adb,a=[]},var_list(Rs)},

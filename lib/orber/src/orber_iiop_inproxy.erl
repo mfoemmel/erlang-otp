@@ -31,7 +31,6 @@
 
 -include_lib("orber/src/orber_iiop.hrl").
 -include_lib("orber/include/corba.hrl").
--include_lib("orber/src/orber_debug.hrl").
 
 %%-----------------------------------------------------------------
 %% External exports
@@ -50,7 +49,8 @@
 -define(DEBUG_LEVEL, 7).
 
 -record(state, {stype, socket, db, interceptors, ssl_port, timeout,
-		partial_security}).
+		partial_security, flags, max_fragments, max_requests,
+		request_counter = 1}).
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -87,6 +87,9 @@ init({connect, Type, Socket}) ->
     SSLPort = orber:iiop_ssl_port(),
     Timeout = orber:iiop_in_connection_timeout(),
     PartialSec = orber:partial_security(),
+    Flags = orber:get_flags(),
+    MaxFrags = orber:iiop_max_fragments(),
+    MaxRequests = orber:iiop_max_in_requests(),
     case orber:get_interceptors() of
 	false ->
 	    {ok, #state{stype = Type, 
@@ -95,7 +98,10 @@ init({connect, Type, Socket}) ->
 			interceptors = false,
 			ssl_port = SSLPort,
 			timeout = Timeout,
-			partial_security = PartialSec}, Timeout};
+			partial_security = PartialSec,
+			flags = Flags,
+			max_fragments = MaxFrags,
+			max_requests = MaxRequests}, Timeout};
 	{native, PIs} ->
 	    {Address, Port} = orber_socket:peername(Type, Socket),
 	    {ok, #state{stype = Type, 
@@ -108,7 +114,10 @@ init({connect, Type, Socket}) ->
 					PIs},
 			ssl_port = SSLPort,
 			timeout = Timeout,
-			partial_security = PartialSec}, Timeout};
+			partial_security = PartialSec,
+			flags = Flags,
+			max_fragments = MaxFrags,
+			max_requests = MaxRequests}, Timeout};
 	{Type, PIs} ->
 	    {ok, #state{stype = Type, 
 			socket = Socket, 
@@ -116,7 +125,10 @@ init({connect, Type, Socket}) ->
 			interceptors = {Type, PIs},
 			ssl_port = SSLPort,
 			timeout = Timeout,
-			partial_security = PartialSec}, Timeout}
+			partial_security = PartialSec,
+			flags = Flags,
+			max_fragments = MaxFrags,
+			max_requests = MaxRequests}, Timeout}
     end.
 
 %%-----------------------------------------------------------------
@@ -125,7 +137,7 @@ init({connect, Type, Socket}) ->
 %% We may want to kill all proxies before terminating, but the best
 %% option should be to let the requests complete (especially for one-way
 %% functions it's a better alternative.
-terminate(Reason, #state{db = IncRequests,
+terminate(_Reason, #state{db = IncRequests,
 			 interceptors = Interceptors}) ->
     ets:delete(IncRequests),
     case Interceptors of 
@@ -133,14 +145,14 @@ terminate(Reason, #state{db = IncRequests,
 	    ok;
 	{native, Ref, PIs} ->
 	    orber_pi:closed_in_connection(PIs, Ref);
-	{Type, PIs} ->
+	{_Type, _PIs} ->
 	    ok
     end.
 
 %%-----------------------------------------------------------------
 %% Func: handle_call/3
 %%-----------------------------------------------------------------
-handle_call(stop, From, State) ->
+handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 handle_call(_, _, State) ->
     {noreply, State, State#state.timeout}.
@@ -162,34 +174,31 @@ handle_info({tcp, Socket, Bytes}, State) ->
 handle_info({ssl, Socket, Bytes}, State) ->
     handle_msg(ssl, Socket, Bytes, State);
 %% Errors, closed connection
-handle_info({tcp_closed, Socket}, State) ->
+handle_info({tcp_closed, _Socket}, State) ->
     {stop, normal, State};
-handle_info({tcp_error, Socket}, State) ->
+handle_info({tcp_error, _Socket}, State) ->
     {stop, normal, State};
-handle_info({ssl_closed, Socket}, State) ->
+handle_info({ssl_closed, _Socket}, State) ->
     {stop, normal, State};
-handle_info({ssl_error, Socket}, State) ->
+handle_info({ssl_error, _Socket}, State) ->
     {stop, normal, State};
 %% Servant termination.
 handle_info({'EXIT', Pid, normal}, State) ->
     ets:delete(State#state.db, Pid),
-    {noreply, State, State#state.timeout};
-handle_info({message_error, Pid, ReqId}, State) ->
+    {noreply, decrease_counter(State), State#state.timeout};
+handle_info({message_error, _Pid, ReqId}, State) ->
     ets:delete(State#state.db, ReqId),
     {noreply, State, State#state.timeout};
 handle_info(timeout, State) ->
     case ets:info(State#state.db, size) of
 	0 ->
 	    %% No pending requests, close the connection.
-	    ?PRINTDEBUG2("IIOP in connection timeout", []),
 	    {stop, normal, State};
-	Amount ->
+	_Amount ->
 	    %% Still pending request, cannot close the connection.
-	    ?PRINTDEBUG2("IIOP in connection not timed out; ~p pending request(s)", 
-			 [Amount]),
 	    {noreply, State, State#state.timeout}
     end;
-handle_info(X,State) ->
+handle_info(_X,State) ->
     {noreply, State, State#state.timeout}.
 
 handle_msg(Type, Socket, Bytes, #state{stype = Type, 
@@ -203,6 +212,8 @@ handle_msg(Type, Socket, Bytes, #state{stype = Type,
 	#giop_message{message_type = ?GIOP_MSG_CLOSE_CONNECTION, 
 		      giop_version = {1,2}} ->
 	    {stop, normal, State};
+	#giop_message{message_type = ?GIOP_MSG_CLOSE_CONNECTION} ->
+	    {noreply, State, State#state.timeout};
 	#giop_message{message_type = ?GIOP_MSG_CANCEL_REQUEST} = GIOPHdr ->
 	    ReqId = cdr_decode:peek_request_id(GIOPHdr#giop_message.byte_order,
 					       GIOPHdr#giop_message.message),
@@ -211,12 +222,10 @@ handle_msg(Type, Socket, Bytes, #state{stype = Type,
 		    ets:delete(State#state.db, RId),
 		    PPid ! {self(), cancel_request_header};
 		[] ->
-		    send_msg_error(Type, Socket, Bytes, "No such fragment id")
+		    send_msg_error(Type, Socket, Bytes, "No such request id")
 	    end,
 	    {noreply, State, State#state.timeout};
-	#giop_message{message_type = ?GIOP_MSG_CLOSE_CONNECTION} ->
-	    {noreply, State, State#state.timeout};
-	%% A fragment; we must hav received a Request or LocateRequest
+	%% A fragment; we must have received a Request or LocateRequest
 	%% with fragment-flag set to true.
 	%% We need to decode the header to get the request-id.
 	#giop_message{message_type = ?GIOP_MSG_FRAGMENT,
@@ -224,7 +233,7 @@ handle_msg(Type, Socket, Bytes, #state{stype = Type,
 	    ReqId = cdr_decode:peek_request_id(GIOPHdr#giop_message.byte_order,
 					       GIOPHdr#giop_message.message),
 	    case ets:lookup(State#state.db, ReqId) of
-		[{RId, PPid}] when GIOPHdr#giop_message.fragments == true ->
+		[{_RId, PPid}] when GIOPHdr#giop_message.fragments == true ->
 		    PPid ! {self(), GIOPHdr};
 		[{RId, PPid}] ->
 		    ets:delete(State#state.db, RId),
@@ -244,34 +253,56 @@ handle_msg(Type, Socket, Bytes, #state{stype = Type,
 								Interceptors, 
 								ReqId, self(),
 								SSLPort,
-								PartialSec),
+								PartialSec, 
+								State#state.max_fragments,
+								State#state.flags),
 	    ets:insert(State#state.db, {Pid, ReqId}),
 	    ets:insert(State#state.db, {ReqId, Pid}),
-	    {noreply, State, State#state.timeout};
+	    {noreply, increase_counter(State), State#state.timeout};
 	GIOPHdr when record(GIOPHdr, giop_message) ->
 	    Pid = orber_iiop_inrequest:start(GIOPHdr, Bytes, Type, Socket,
-					     Interceptors, SSLPort, PartialSec),
+					     Interceptors, SSLPort, PartialSec,
+					     State#state.flags),
 	    ets:insert(State#state.db, {Pid, undefined}),
-	    {noreply, State, State#state.timeout};
+	    {noreply, increase_counter(State), State#state.timeout};
 	message_error ->
 	    send_msg_error(Type, Socket, Bytes, "Unable to decode the GIOP-header"),
 	    {noreply, State, State#state.timeout}
     end;
 handle_msg(Type, _, Bytes, State) ->
-    orber:dbg("[~p] orber_iiop_inproxy:handle_msg(~p); 
-Received a message from a socket of a different type.
-Should be ~p but was ~p.", [?LINE, Bytes, State#state.stype, Type], ?DEBUG_LEVEL),
+    orber:dbg("[~p] orber_iiop_inproxy:handle_msg(~p);~n"
+	      "Received a message from a socket of a different type.~n"
+	      "Should be ~p but was ~p.", 
+	      [?LINE, Bytes, State#state.stype, Type], ?DEBUG_LEVEL),
     {noreply, State, State#state.timeout}.
 
 send_msg_error(Type, Socket, Data, Msg) ->
-    orber:dbg("[~p] orber_iiop_inproxy:handle_msg(~p); 
-~p.", [?LINE, Data, Msg], ?DEBUG_LEVEL),
+    orber:dbg("[~p] orber_iiop_inproxy:handle_msg(~p); ~p.", 
+	      [?LINE, Data, Msg], ?DEBUG_LEVEL),
     Reply = cdr_encode:enc_message_error(orber:giop_version()),
     orber_socket:write(Type, Socket, Reply).
+
+increase_counter(#state{max_requests = infinity} = State) ->
+    State;
+increase_counter(#state{max_requests = Max, 
+			request_counter = Counter} = State) when Max > Counter ->
+    orber_socket:setopts(State#state.stype, State#state.socket, [{active, once}]),
+    State#state{request_counter = Counter + 1};
+increase_counter(State) ->
+    State#state{request_counter = State#state.request_counter + 1}.
+
+decrease_counter(#state{max_requests = infinity} = State) ->
+    State;
+decrease_counter(#state{max_requests = Max, 
+			request_counter = Counter} = State) when Max =< Counter ->
+    orber_socket:setopts(State#state.stype, State#state.socket, [{active, once}]),
+    State#state{request_counter = Counter - 1};
+decrease_counter(State) ->
+    State#state{request_counter = State#state.request_counter - 1}.
 
 %%-----------------------------------------------------------------
 %% Func: code_change/3
 %%-----------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 

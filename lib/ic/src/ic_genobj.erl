@@ -210,11 +210,6 @@ is_stubfile_open(G) ->
 	-> true;
 	true -> false
     end.
-is_includefile_open(G) ->
-    if  hd(G#genobj.includefiled) /= empty, hd(G#genobj.includefiled) /= ignore
-	-> true;
-	true -> false
-    end.
 
 is_hrlfile_open(G) ->
     if  hd(G#genobj.includefiled) /= empty, hd(G#genobj.includefiled) /= ignore
@@ -236,7 +231,7 @@ pop_file(G, Id) ->
     New = G#genobj.filestack-1,
     set_idlfile(G, Id),
     G#genobj{filestack=New, do_gen=true_or_not(New)}.
-sys_file(G, Id) -> G#genobj{sysfile=true}.
+sys_file(G, _Id) -> G#genobj{sysfile=true}.
 
 
 do_gen(G) -> G#genobj.do_gen.

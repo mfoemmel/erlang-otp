@@ -77,13 +77,13 @@ getType(G, N, T) when record(T, scoped_id) ->
 	    end
     end;
 
-getType(G, N, S) when list(S) ->
+getType(_G, _N, S) when list(S) ->
     S;
 
-getType(G, N, T) when record(T, string) ->
+getType(_G, _N, T) when record(T, string) ->
     "java.lang.String";
 
-getType(G, N, T) when record(T, wstring) ->  %% WSTRING
+getType(_G, _N, T) when record(T, wstring) ->  %% WSTRING
     "java.lang.String";
 
 getType(G, N, T) when record(T, struct) ->
@@ -123,16 +123,16 @@ getType(G, N, T) when record(T, member) ->
 	    end
     end;
 
-getType(G, N, {boolean, _}) ->
+getType(_G, _N, {boolean, _}) ->
     "boolean";
 
-getType(G, N, {octet, _}) ->
+getType(_G, _N, {octet, _}) ->
     "byte";
 
-getType(G, N, {void, _}) ->
+getType(_G, _N, {void, _}) ->
     "void";
 
-getType(G, N, {unsigned, U}) ->
+getType(_G, _N, {unsigned, U}) ->
     case U of
 	{short,_} ->
 	    "short";
@@ -142,28 +142,28 @@ getType(G, N, {unsigned, U}) ->
 	    "long"
     end;
 
-getType(G, N, {char, _}) ->
+getType(_G, _N, {char, _}) ->
     "char";
 
-getType(G, N, {wchar, _}) ->  %% WCHAR 
+getType(_G, _N, {wchar, _}) ->  %% WCHAR 
     "char";
 
-getType(G, N, {short, _}) ->
+getType(_G, _N, {short, _}) ->
     "short";
 
-getType(G, N, {long, _}) ->
+getType(_G, _N, {long, _}) ->
     "int";
 
-getType(G, N, {'long long', _}) ->
+getType(_G, _N, {'long long', _}) ->
     "long";
 
-getType(G, N, {float, _}) ->
+getType(_G, _N, {float, _}) ->
     "float";
 
-getType(G, N, {double, _}) ->
+getType(_G, _N, {double, _}) ->
     "double";
     
-getType(G, N, {any, _}) ->
+getType(_G, _N, {any, _}) ->
     ?ICPACKAGE ++ "Any".
 
 
@@ -266,10 +266,10 @@ getHolderType(G, N, T) when element(1, T) == scoped_id ->
 getHolderType(G, N, S) when list(S) ->
     ic_util:to_dot(G,[S|N]) ++ "Holder";
 
-getHolderType(G, N, T) when record(T, string) ->
+getHolderType(_G, _N, T) when record(T, string) ->
     ?ICPACKAGE ++"StringHolder";
 
-getHolderType(G, N, T) when record(T, wstring) ->  %% WSTRING
+getHolderType(_G, _N, T) when record(T, wstring) ->  %% WSTRING
     ?ICPACKAGE ++"StringHolder";
 
 getHolderType(G, N, T) when record(T, struct) ->
@@ -287,16 +287,16 @@ getHolderType(G, N, T) when record(T, sequence) ->
 getHolderType(G, N, T) when record(T, enum) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++ "Holder";
 
-getHolderType(G, N, {boolean, _}) ->
+getHolderType(_G, _N, {boolean, _}) ->
     ?ICPACKAGE ++"BooleanHolder";
 
-getHolderType(G, N, {octet, _}) ->
+getHolderType(_G, _N, {octet, _}) ->
     ?ICPACKAGE ++"ByteHolder";
 
-getHolderType(G, N, {void, _}) ->
+getHolderType(_G, _N, {void, _}) ->
     "void";
 
-getHolderType(G, N, {unsigned, U}) ->
+getHolderType(_G, _N, {unsigned, U}) ->
     case U of
 	{short,_} ->
 	    ?ICPACKAGE ++"ShortHolder";
@@ -306,28 +306,28 @@ getHolderType(G, N, {unsigned, U}) ->
 	    ?ICPACKAGE ++"LongHolder"
     end;
 
-getHolderType(G, N, {char, _}) ->
+getHolderType(_G, _N, {char, _}) ->
     ?ICPACKAGE ++"CharHolder";
 
-getHolderType(G, N, {wchar, _}) ->  %% WCHAR
+getHolderType(_G, _N, {wchar, _}) ->  %% WCHAR
     ?ICPACKAGE ++"CharHolder";
 
-getHolderType(G, N, {short, _}) ->
+getHolderType(_G, _N, {short, _}) ->
     ?ICPACKAGE ++"ShortHolder";
 
-getHolderType(G, N, {long, _}) ->
+getHolderType(_G, _N, {long, _}) ->
     ?ICPACKAGE ++"IntHolder";
 
-getHolderType(G, N, {'long long', _}) ->
+getHolderType(_G, _N, {'long long', _}) ->
     ?ICPACKAGE ++"LongHolder";
 
-getHolderType(G, N, {float, _}) ->
+getHolderType(_G, _N, {float, _}) ->
     ?ICPACKAGE ++"FloatHolder";
 
-getHolderType(G, N, {double, _}) ->
+getHolderType(_G, _N, {double, _}) ->
     ?ICPACKAGE ++"DoubleHolder";
 
-getHolderType(G, N, {any,_}) ->
+getHolderType(_G, _N, {any,_}) ->
     ?ICPACKAGE ++ "AnyHolder".
 
 
@@ -437,19 +437,19 @@ getUnmarshalType(G, N, X, T) when element(1, T) == scoped_id ->
 	    end
     end;
 
-getUnmarshalType(G, N, X, S) when list(S) ->
+getUnmarshalType(_G, _N, _X, S) when list(S) ->
     S ++ "Helper";
 
-getUnmarshalType(G, N, X, T) when record(T, string) ->
+getUnmarshalType(_G, _N, _X, T) when record(T, string) ->
     ?ERLANGPACKAGE ++ "OtpErlangString";
 
-getUnmarshalType(G, N, X, T) when record(T, wstring) ->  %% WSTRING
+getUnmarshalType(_G, _N, _X, T) when record(T, wstring) ->  %% WSTRING
     ?ERLANGPACKAGE ++ "OtpErlangString";
 
-getUnmarshalType(G, N, X, T) when record(T, struct) ->
+getUnmarshalType(G, N, _X, T) when record(T, struct) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++ "Helper";
 
-getUnmarshalType(G, N, X, T) when record(T, union) ->
+getUnmarshalType(G, N, _X, T) when record(T, union) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++ "Helper";
 
 getUnmarshalType(G, N, X, T) when record(T, sequence), 
@@ -467,20 +467,20 @@ getUnmarshalType(G, N, X, T) when record(T, array),
 				  record(X, case_dcl) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++ "Helper";
 
-getUnmarshalType(G, N, X, T) when record(T, enum) ->
+getUnmarshalType(G, N, _X, T) when record(T, enum) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++
 	"Helper";
 
-getUnmarshalType(G, N, X, {boolean, _}) ->
+getUnmarshalType(_G, _N, _X, {boolean, _}) ->
     ?ERLANGPACKAGE ++ "OtpErlangAtom";
 
-getUnmarshalType(G, N, X, {octet, _}) ->
+getUnmarshalType(_G, _N, _X, {octet, _}) ->
     ?ERLANGPACKAGE ++ "OtpErlangLong";
 
-getUnmarshalType(G, N, X, {void, _}) ->
+getUnmarshalType(_G, _N, _X, {void, _}) ->
     ?ERLANGPACKAGE ++ "OtpErlangAtom";
 
-getUnmarshalType(G, N, X, {unsigned, U}) ->
+getUnmarshalType(_G, _N, _X, {unsigned, U}) ->
     case U of
 	{short,_} ->
 	    ?ERLANGPACKAGE ++ "OtpErlangLong";
@@ -490,28 +490,28 @@ getUnmarshalType(G, N, X, {unsigned, U}) ->
 	    ?ERLANGPACKAGE ++ "OtpErlangLong"
     end;
 
-getUnmarshalType(G, N, X, {char, _}) ->
+getUnmarshalType(_G, _N, _X, {char, _}) ->
     ?ERLANGPACKAGE ++ "OtpErlangLong";
 
-getUnmarshalType(G, N, X, {wchar, _}) ->  %% WCHAR
+getUnmarshalType(_G, _N, _X, {wchar, _}) ->  %% WCHAR
     ?ERLANGPACKAGE ++ "OtpErlangLong";
 
-getUnmarshalType(G, N, X, {short, _}) ->
+getUnmarshalType(_G, _N, _X, {short, _}) ->
     ?ERLANGPACKAGE ++ "OtpErlangLong";
 
-getUnmarshalType(G, N, X, {long, _}) ->
+getUnmarshalType(_G, _N, _X, {long, _}) ->
     ?ERLANGPACKAGE ++ "OtpErlangLong";
 
-getUnmarshalType(G, N, X, {'long long', _}) ->
+getUnmarshalType(_G, _N, _X, {'long long', _}) ->
     ?ERLANGPACKAGE ++ "OtpErlangLong";
 
-getUnmarshalType(G, N, X, {float, _}) ->
+getUnmarshalType(_G, _N, _X, {float, _}) ->
     ?ERLANGPACKAGE ++ "OtpErlangDouble";
 
-getUnmarshalType(G, N, X, {double, _}) ->
+getUnmarshalType(_G, _N, _X, {double, _}) ->
     ?ERLANGPACKAGE ++ "OtpErlangDouble";
 
-getUnmarshalType(G, N, X, {any, _}) ->
+getUnmarshalType(_G, _N, _X, {any, _}) ->
     ?ICPACKAGE ++ "AnyHelper".
 
 %%-----------------------------------------------------------------
@@ -564,13 +564,13 @@ getMarshalType(G, N, X, T) when element(1, T) == scoped_id ->
  		    "byte";
 		
 		'tk_ushort' ->
-		    "short";
+		    "ushort";
 		
 		'tk_ulong' ->
-		    "int";
+		    "uint";
 
 		'tk_ulonglong' ->  %% ULLONG
-		    "long";
+		    "ulong";
 		
 		'tk_short' ->
 		    "short";
@@ -607,20 +607,20 @@ getMarshalType(G, N, X, T) when element(1, T) == scoped_id ->
 	    end
     end;
 
-getMarshalType(G, N, X, S) when list(S) ->
+getMarshalType(_G, _N, _X, S) when list(S) ->
     S ++ "Helper";
 
-getMarshalType(G, N, X, T) when record(T, string) ->
+getMarshalType(_G, _N, _X, T) when record(T, string) ->
     "string";
 
-getMarshalType(G, N, X, T) when record(T, wstring) ->  %% WSTRING
+getMarshalType(_G, _N, _X, T) when record(T, wstring) ->  %% WSTRING
     "string";
 
-getMarshalType(G, N, X, T) when record(T, struct) ->
+getMarshalType(G, N, _X, T) when record(T, struct) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++
 	"Helper";
 
-getMarshalType(G, N, X, T) when record(T, union) ->
+getMarshalType(G, N, _X, T) when record(T, union) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++
 	"Helper";
 
@@ -634,49 +634,48 @@ getMarshalType(G, N, X, T) when record(T, sequence),
     ic_util:to_dot(G,[ic_forms:get_id2(X)|N]) ++ 
 	"Helper";
 
-getMarshalType(G, N, X, T) when record(T, sequence) ->
+getMarshalType(G, N, _X, T) when record(T, sequence) ->
     getType(G, N, ic_forms:get_type(T)) ++ 
 	"Helper";
 
-getMarshalType(G, N, X, T) when record(T, enum) ->
+getMarshalType(G, N, _X, T) when record(T, enum) ->
     ic_util:to_dot(G,[ic_forms:get_id2(T)|N]) ++
 	"Helper";
 
-getMarshalType(G, N, X, {boolean, _}) ->
+getMarshalType(_G, _N, _X, {boolean, _}) ->
     "boolean";
 
-getMarshalType(G, N, X, {octet, _}) ->
+getMarshalType(_G, _N, _X, {octet, _}) ->
     "byte";
 
-getMarshalType(G, N, X, {void, _}) ->
+getMarshalType(_G, _N, _X, {void, _}) ->
     ""; % <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
-getMarshalType(G, N, X, {unsigned, U}) ->
+getMarshalType(_G, _N, _X, {unsigned, U}) ->
     case U of
 	{short,_} ->
-	    "short";
+	    "ushort";
 	{long,_} ->
-	    "int";
+	    "uint";
 	{'long long',_} ->
-	    "long"
+	    "ulong"
     end;
 
-getMarshalType(G, N, X, {short, _}) ->
+getMarshalType(_G, _N, _X, {short, _}) ->
     "short";
-getMarshalType(G, N, X, {long, _}) ->
+getMarshalType(_G, _N, _X, {long, _}) ->
     "int";
-getMarshalType(G, N, X, {'long long', _}) ->
+getMarshalType(_G, _N, _X, {'long long', _}) ->
     "long";
-getMarshalType(G, N, X, {float, _}) ->
+getMarshalType(_G, _N, _X, {float, _}) ->
     "float";
-getMarshalType(G, N, X, {double, _}) ->
+getMarshalType(_G, _N, _X, {double, _}) ->
     "double";
-getMarshalType(G, N, X, {char, _}) ->
+getMarshalType(_G, _N, _X, {char, _}) ->
     "char";
-getMarshalType(G, N, X, {wchar, _}) ->  %% WCHAR
+getMarshalType(_G, _N, _X, {wchar, _}) ->  %% WCHAR
     "char";
-
-getMarshalType(G, N, X, {any, _}) ->
+getMarshalType(_G, _N, _X, {any, _}) ->
     ?ICPACKAGE ++ "AnyHelper".
 
 
@@ -699,7 +698,7 @@ unMarshalFun(G, N, X, T) when element(1, T) == scoped_id ->
 	    ".read_term()";
 	{enum, Type} ->
 	    unMarshalFun(G, N, X, Type);
-	Type ->
+	_Type ->
 	    case isBasicType(G,N,TK) of
 		true ->
 		    case TK of
@@ -716,13 +715,13 @@ unMarshalFun(G, N, X, T) when element(1, T) == scoped_id ->
 			    ".read_byte()";
 			
 			'tk_ushort' ->
-			    ".read_short()";
+			    ".read_ushort()";
 
 			'tk_ulong' ->
-			    ".read_int()";
+			    ".read_uint()";
 
 			'tk_ulonglong' ->  %% ULLONG
-			    ".read_long()";
+			    ".read_ulong()";
 			 
 			'tk_short' ->
 			    ".read_short()";
@@ -754,59 +753,59 @@ unMarshalFun(G, N, X, T) when element(1, T) == scoped_id ->
 	    end
     end;
 
-unMarshalFun(G, N, X, S) when list(S) ->
+unMarshalFun(_G, _N, _X, S) when list(S) ->
     ".unmarshal()";
 
-unMarshalFun(G, N, X, T) when record(T, string) ->
+unMarshalFun(_G, _N, _X, T) when record(T, string) ->
     ".read_string()";
 
-unMarshalFun(G, N, X, T) when record(T, wstring) ->  %% WSTRING
+unMarshalFun(_G, _N, _X, T) when record(T, wstring) ->  %% WSTRING
     ".read_string()";
 
-unMarshalFun(G, N, X, T) when record(T, struct) ->
+unMarshalFun(_G, _N, _X, T) when record(T, struct) ->
     ".unmarshal((" ++ ?ERLANGPACKAGE ++ "OtpErlangTuple)";
 
-unMarshalFun(G, N, X, T) when record(T, union) ->
+unMarshalFun(_G, _N, _X, T) when record(T, union) ->
     ".unmarshal((" ++ ?ERLANGPACKAGE ++ "OtpErlangTuple)";
 
-unMarshalFun(G, N, X, T) when record(T, sequence) ->
+unMarshalFun(_G, _N, _X, T) when record(T, sequence) ->
     ".unmarshal((" ++ ?ERLANGPACKAGE ++ "OtpErlanglist)";
 
-unMarshalFun(G, N, X, T) when record(T, enum) ->
+unMarshalFun(_G, _N, _X, T) when record(T, enum) ->
     ".unmarshal((" ++ ?ERLANGPACKAGE ++ "OtpErlangAtom)";
 
-unMarshalFun(G, N, X, {boolean, _}) ->
+unMarshalFun(_G, _N, _X, {boolean, _}) ->
     ".read_boolean()";
 
-unMarshalFun(G, N, X, {octet, _}) ->
+unMarshalFun(_G, _N, _X, {octet, _}) ->
     ".read_byte()";
 
-unMarshalFun(G, N, X, {void, _}) ->
+unMarshalFun(_G, _N, _X, {void, _}) ->
     "";
 
-unMarshalFun(G, N, X, {unsigned, U}) ->
+unMarshalFun(_G, _N, _X, {unsigned, U}) ->
     case U of
 	{short,_} ->
-	    ".read_short()";
+	    ".read_ushort()";
 	{long,_} ->
-	    ".read_int()";
+	    ".read_uint()";
 	{'long long',_} ->
-	    ".read_long()"
+	    ".read_ulong()"
     end;
 
-unMarshalFun(G, N, X, {short, _}) ->
+unMarshalFun(_G, _N, _X, {short, _}) ->
     ".read_short()";
-unMarshalFun(G, N, X, {long, _}) ->
+unMarshalFun(_G, _N, _X, {long, _}) ->
     ".read_int()";
-unMarshalFun(G, N, X, {'long long', _}) ->
+unMarshalFun(_G, _N, _X, {'long long', _}) ->
     ".read_long()";
-unMarshalFun(G, N, X, {float, _}) ->
+unMarshalFun(_G, _N, _X, {float, _}) ->
     ".read_float()";
-unMarshalFun(G, N, X, {double, _}) ->
+unMarshalFun(_G, _N, _X, {double, _}) ->
     ".read_double()";
-unMarshalFun(G, N, X, {char, _}) ->
+unMarshalFun(_G, _N, _X, {char, _}) ->
     ".read_char()";
-unMarshalFun(G, N, X, {wchar, _}) ->  %% WCHAR
+unMarshalFun(_G, _N, _X, {wchar, _}) ->  %% WCHAR
     ".read_char()".
 
 
@@ -841,7 +840,7 @@ getFullType(G, N, X, T) when record(X, case_dcl), record(T, array) ->
 	getFullDim(G,N,T#array.size),
     fixArrayDims(FullDim);
 
-getFullType(G, N, X, T)  ->
+getFullType(G, N, _X, T)  ->
     getFullType(G, N, T).
 
 
@@ -893,7 +892,7 @@ fixArrayDims([C|Rest],Fulls,Emptys) ->
 fixSeqDims(Cs,Length) ->
     fixSeqDims(Cs,Length,[]).
 
-fixSeqDims([],Length,Found) ->
+fixSeqDims([],_Length,Found) ->
     lists:reverse(Found);
 fixSeqDims([91,93|Rest],Length,Found) when list(Length) ->
     lists:reverse([93|lists:reverse(Length)] ++ 
@@ -944,19 +943,19 @@ isBasicType(G, N, X) when record(X, member) ->
 	    isBasicType(G, N, element(2,X))
     end;
 
-isBasicType(G, N, {unsigned, {long, _}} ) -> 
+isBasicType(_G, _N, {unsigned, {long, _}} ) -> 
     true;
 
-isBasicType(G, N, {unsigned, {short, _}} ) -> 
+isBasicType(_G, _N, {unsigned, {short, _}} ) -> 
     true;
 
-isBasicType(G, N, {unsigned, {'long long', _}} ) -> 
+isBasicType(_G, _N, {unsigned, {'long long', _}} ) -> 
     true;
 
-isBasicType(G, N, {'long long', _} ) -> 
+isBasicType(_G, _N, {'long long', _} ) -> 
     true;
 
-isBasicType(G, N, {Type, _} ) -> 
+isBasicType(_G, _N, {Type, _} ) -> 
     isBasicType(Type);
 
 isBasicType(_G, _N, Type) ->
@@ -987,7 +986,8 @@ isBasicType( Type ) ->
 %% returns true if the Type is a java elementary type
 isJavaElementaryType( Type ) ->
     lists:member(Type,
-		 [byte, char, wchar, boolean, int, short, long, float, double]).
+		 [byte, char, wchar, boolean, 
+		  int, short, long, 'long long', float, double]).
 
 %%-----------------------------------------------------------------
 %% Func: isIntegerType/3
@@ -995,15 +995,15 @@ isJavaElementaryType( Type ) ->
 isIntegerType(G, N, S) when element(1, S) == scoped_id -> 
     {_, _, TK, _} = ic_symtab:get_full_scoped_name(G, N, S),
     isIntegerType(ictype:fetchType(TK));
-isIntegerType(G, N, {unsigned, {long, _}} ) -> 
+isIntegerType(_G, _N, {unsigned, {long, _}} ) -> 
     true;
-isIntegerType(G, N, {unsigned, {short, _}} ) -> 
+isIntegerType(_G, _N, {unsigned, {short, _}} ) -> 
     true;
-isIntegerType(G, N, {unsigned, {'long long', _}} ) -> 
+isIntegerType(_G, _N, {unsigned, {'long long', _}} ) -> 
     true;
-isIntegerType(G, N, {'long long', _} ) -> 
+isIntegerType(_G, _N, {'long long', _} ) -> 
     true;
-isIntegerType(G, N, {Type, _} ) -> 
+isIntegerType(_G, _N, {Type, _} ) -> 
     isIntegerType(Type);
 isIntegerType(_G, _N, Type) ->
     isIntegerType(Type).
@@ -1047,23 +1047,23 @@ isTermType(G, N, T) ->
 
 %% Changes the typecode to the 
 %% corresponding "basic" type
-tk2type(G,N,X,{'tk_struct', IFRId, "port", ElementList}) ->
+tk2type(_G,_N,_X,{'tk_struct', _IFRId, "port", _ElementList}) ->
     ?ICPACKAGE ++ "Port";
-tk2type(G,N,X,{'tk_struct', IFRId, "pid", ElementList}) ->
+tk2type(_G,_N,_X,{'tk_struct', _IFRId, "pid", _ElementList}) ->
     ?ICPACKAGE ++ "Pid";
-tk2type(G,N,X,{'tk_struct', IFRId, "ref", ElementList}) ->
+tk2type(_G,_N,_X,{'tk_struct', _IFRId, "ref", _ElementList}) ->
     ?ICPACKAGE ++ "Ref";
-tk2type(G,N,X,{'tk_struct', IFRId, "term", ElementList}) ->
+tk2type(_G,_N,_X,{'tk_struct', _IFRId, "term", _ElementList}) ->
     ?ICPACKAGE ++ "Term";
-tk2type(G,N,X,{'tk_string', _}) -> 
+tk2type(_G,_N,_X,{'tk_string', _}) -> 
     "java.lang.String";
-tk2type(G,N,X,{'tk_wstring', _}) ->  %% WSTRING 
+tk2type(_G,_N,_X,{'tk_wstring', _}) ->  %% WSTRING 
     "java.lang.String";
 tk2type(G,N,X,{'tk_array', ElemTC, Dim}) -> 
     tkarr2decl(G,N,X,{'tk_array', ElemTC, Dim});
 tk2type(G,N,X,{'tk_sequence', ElemTC, MaxLsextractength}) -> 
     tkseq2decl(G,N,X,{'tk_sequence', ElemTC, MaxLsextractength});
-tk2type(G,N,X,{'tk_struct', IFRId, Name, ElementList}) ->
+tk2type(G,N,_X,{'tk_struct', IFRId, Name, _ElementList}) ->
     ScopedId=
 	lists:reverse(string:tokens(lists:nth(2,string:tokens(IFRId,":")),"/")),
 
@@ -1075,7 +1075,7 @@ tk2type(G,N,X,{'tk_struct', IFRId, Name, ElementList}) ->
 	    %% Uggly work arround 
 	    ic_util:to_dot(G,ScopedId)
     end;
-tk2type(G,N,X,{'tk_union', IFRId, Name, _, _, ElementList}) ->
+tk2type(G,N,_X,{'tk_union', IFRId, Name, _, _, _ElementList}) ->
     ScopedId=
 	lists:reverse(string:tokens(lists:nth(2,string:tokens(IFRId,":")),"/")),
 
@@ -1087,41 +1087,41 @@ tk2type(G,N,X,{'tk_union', IFRId, Name, _, _, ElementList}) ->
 	    %% Uggly work arround 
 	    ic_util:to_dot(G,ScopedId)
     end;
-tk2type(G,N,X,{'tk_enum', Id, Name, ElementList}) -> 
+tk2type(_G,_N,_X,{'tk_enum', _Id, Name, _ElementList}) -> 
     Name;
-tk2type(G,N,X,tk_void) ->
+tk2type(_G,_N,_X,tk_void) ->
     "void";
-tk2type(G,N,X,tk_long) ->
+tk2type(_G,_N,_X,tk_long) ->
     "int";
-tk2type(G,N,X,tk_longlong) ->  %% LLONG
+tk2type(_G,_N,_X,tk_longlong) ->  %% LLONG
     "long";
-tk2type(G,N,X,tk_short) ->
+tk2type(_G,_N,_X,tk_short) ->
     "short";
-tk2type(G,N,X,tk_ulong) ->
+tk2type(_G,_N,_X,tk_ulong) ->
     "int";
-tk2type(G,N,X,tk_ulonglong) ->  %% ULLONG
+tk2type(_G,_N,_X,tk_ulonglong) ->  %% ULLONG
     "long";
-tk2type(G,N,X,tk_ushort) ->
+tk2type(_G,_N,_X,tk_ushort) ->
     "short";
-tk2type(G,N,X,tk_float) ->
+tk2type(_G,_N,_X,tk_float) ->
     "float";
-tk2type(G,N,X,tk_double) ->
+tk2type(_G,_N,_X,tk_double) ->
     "double";
-tk2type(G,N,X,tk_boolean) ->
+tk2type(_G,_N,_X,tk_boolean) ->
     "boolean";
-tk2type(G,N,X,tk_char) ->
+tk2type(_G,_N,_X,tk_char) ->
     "char";
-tk2type(G,N,X,tk_wchar) ->   %% WCHAR
+tk2type(_G,_N,_X,tk_wchar) ->   %% WCHAR
     "char";
-tk2type(G,N,X,tk_octet) ->
+tk2type(_G,_N,_X,tk_octet) ->
     "byte";
-tk2type(G,N,X,tk_string) ->
+tk2type(_G,_N,_X,tk_string) ->
     "java.lang.String";
-tk2type(G,N,X,tk_wstring) ->  %% WSTRING
+tk2type(_G,_N,_X,tk_wstring) ->  %% WSTRING
     "java.lang.String";
-tk2type(G,N,X,tk_any) ->
+tk2type(_G,_N,_X,tk_any) ->
     ?ICPACKAGE ++ "Any";
-tk2type(G,N,X,tk_term) ->     %% Term
+tk2type(_G,_N,_X,tk_term) ->     %% Term
     ?ICPACKAGE ++ "Term".
 
 %% Changes the sequence typecode to the 
@@ -1148,61 +1148,8 @@ tkarr2decl2(G,N,X,TkEl,[],Ds) ->
 
 getdim([]) ->
     "";
-getdim([D|Ds]) ->
+getdim([_D|Ds]) ->
     getdim(Ds) ++ "[]".
-
-
-
-tk2ErlangObjectType({'tk_struct', IFRId, "port", ElementList}) ->
-    ?ICPACKAGE ++ "Port";
-tk2ErlangObjectType({'tk_struct', IFRId, "pid", ElementList}) ->
-    ?ICPACKAGE ++ "Pid";
-tk2ErlangObjectType({'tk_struct', IFRId, "ref", ElementList}) ->
-    ?ICPACKAGE ++ "Ref";
-tk2ErlangObjectType({'tk_struct', IFRId, "term", ElementList}) ->
-    ?ICPACKAGE ++ "Term";
-tk2ErlangObjectType({'tk_struct', IFRId, Name, ElementList}) ->
-    ?ERLANGPACKAGE ++ "OtpErlangTuple";
-tk2ErlangObjectType({'tk_string', _}) -> 
-    ?ERLANGPACKAGE ++ "OtpErlangString";
-tk2ErlangObjectType({'tk_wstring', _}) ->  %% WSTRING 
-    ?ERLANGPACKAGE ++ "OtpErlangString";
-tk2ErlangObjectType({'tk_array', ElemTC, Dim}) -> 
-    ?ERLANGPACKAGE ++ "OtpErlangTuple";
-tk2ErlangObjectType({'tk_sequence', ElemTC, MaxLsextractength}) -> 
-    ?ERLANGPACKAGE ++ "OtpErlangList";
-tk2ErlangObjectType({'tk_union', IFRId, Name, _, _, ElementList}) ->
-    ?ERLANGPACKAGE ++ "OtpErlangTuple";
-tk2ErlangObjectType({'tk_enum', Id, Name, ElementList}) ->
-    ?ERLANGPACKAGE ++ "OtpErlangAtom";
-tk2ErlangObjectType(tk_long) ->
-    ?ERLANGPACKAGE ++ "OtpErlangInt";
-tk2ErlangObjectType(tk_longlong) ->     %% LLONG
-    ?ERLANGPACKAGE ++ "OtpErlangLong";
-tk2ErlangObjectType(tk_short) ->
-    ?ERLANGPACKAGE ++ "OtpErlangShort";
-tk2ErlangObjectType(tk_ulong) ->
-    ?ERLANGPACKAGE ++ "OtpErlangUInt";
-tk2ErlangObjectType(tk_ulonglong) ->    %% ULLONG
-    ?ERLANGPACKAGE ++ "OtpErlangULong";
-tk2ErlangObjectType(tk_ushort) ->
-    ?ERLANGPACKAGE ++ "OtpErlangUShort";
-tk2ErlangObjectType(tk_float) ->
-    ?ERLANGPACKAGE ++ "OtpErlangFloat";
-tk2ErlangObjectType(tk_double) ->
-    ?ERLANGPACKAGE ++ "OtpErlangDouble";
-tk2ErlangObjectType(tk_boolean) ->
-    ?ERLANGPACKAGE ++ "OtpErlangBoolean";
-tk2ErlangObjectType(tk_char) ->
-    ?ERLANGPACKAGE ++ "OtpErlangChar";
-tk2ErlangObjectType(tk_wchar) ->       %% WCHAR
-    ?ERLANGPACKAGE ++ "OtpErlangChar";
-tk2ErlangObjectType(tk_void) ->
-    ?ERLANGPACKAGE ++ "OtpErlangAtom";
-tk2ErlangObjectType(tk_octet) ->
-    ?ERLANGPACKAGE ++ "OtpErlangChar".
-
-
 
 
 
@@ -1258,9 +1205,9 @@ getFullDim(G,N,[D|Ds]) when tuple(D) ->
 arrayEmptyDim(X) ->
     arrayEmptyDim2(X#array.size).
 
-arrayEmptyDim2([D]) ->
+arrayEmptyDim2([_D]) ->
     "[]";
-arrayEmptyDim2([D |Ds]) ->
+arrayEmptyDim2([_D |Ds]) ->
     "[]" ++ arrayEmptyDim2(Ds).
 
 

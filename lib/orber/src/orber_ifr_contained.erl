@@ -242,6 +242,5 @@ move(true, Contained_objref, New_container, New_name, New_version) ->
 	end,
     write_result(ifr_transaction_read_write(F));
 
-move(false, Contained_objref, New_container, New_name, New_version) ->
-    ?ifr_exception("Illegal move",
-		   {Contained_objref, New_container, New_name, New_version}).
+move(false, _Contained_objref, _New_container, _New_name, _New_version) ->
+    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO}).

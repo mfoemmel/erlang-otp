@@ -41,21 +41,23 @@ MODULES = \
 
 INCLUDE=../include
 
-HRL_FILES=
+HRL_FILES =
 
-INTERNAL_HRL_FILES=
+INTERNAL_HRL_FILES =
 
-ERL_FILES= $(MODULES:%=%.erl)
+ERL_FILES = $(MODULES:%=%.erl)
 
-APP_FILE= otp_mibs.app
-APP_SRC= $(APP_FILE).src
-APP_TARGET= $(EBIN)/$(APP_FILE)
+APP_FILE   = otp_mibs.app
+APP_SRC    = $(APP_FILE).src
+APP_TARGET = $(EBIN)/$(APP_FILE)
 
-APPUP_FILE= otp_mibs.appup
-APPUP_SRC= $(APPUP_FILE).src
-APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
+APPUP_FILE   = otp_mibs.appup
+APPUP_SRC    = $(APPUP_FILE).src
+APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
 
-TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+
+TARGETS = $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET)
 
 # ----------------------------------------------------
 # FLAGS
@@ -67,10 +69,10 @@ ERL_COMPILE_FLAGS += -I$(INCLUDE)
 # Targets
 # ----------------------------------------------------
 
-debug opt: $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET)
+debug opt: $(TARGETS)
 
 clean:
-	rm -f $(TARGET_FILES)
+	rm -f $(TARGETS_FILES)
 	rm -f $(APP_TARGET)
 	rm -f $(APPUP_TARGET)
 	rm -f core
@@ -96,7 +98,7 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(ERL_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
-	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
+	$(INSTALL_DATA) $(TARGETS) $(RELSYSDIR)/ebin
 
 release_docs_spec:
 

@@ -93,6 +93,7 @@ static struct tab_entry {
 } *db_tables;  /* Local variable db_tables */
 
 int user_requested_db_max_tabs;
+int erts_ets_realloc_always_moves;
 static int db_max_tabs;
 static int last_slot;
 static int no_tabs;		/* Number of active tables */

@@ -344,6 +344,8 @@ extern int heap_series;		/* Series to use for heap size. */
 extern int erts_backtrace_depth;
 extern Uint16 erts_max_gen_gcs;
 
+extern int erts_disable_tolerant_timeofday;
+
 /* To get rid of all ifdefs in the code I add some here instead... :) */
 #ifdef SHARED_HEAP
 #  define HEAP_START(p)     (p)->heap

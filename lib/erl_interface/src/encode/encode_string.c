@@ -32,27 +32,41 @@ int ei_encode_string_len(char *buf, int *index, const char *p, int len)
     char *s0 = s;
     int i;
 
-    if (len <= 0xffff) {
-	if (!buf) s += 3;
-	else {
-	    put8(s,ERL_STRING_EXT);
-	    put16be(s,len);
-	    memmove(s,p,len);	/* unterminated string */
-	}
-	s += len;
-    }
-    else {
-	if (!buf) s += 5 + (2*len);
-	else {
-	    /* strings longer than 65535 are encoded as lists */
-	    put8(s,ERL_LIST_EXT);
-	    put32be(s,len);
+    if (len == 0) {
 
-	    for (i=0; i<len; i++) {
-		put8(s,ERL_SMALL_INTEGER_EXT);
-		put8(s,p[i]);
-	    }
+      if (!buf) {
+	s += 1;
+      } else {
+	put8(s,ERL_NIL_EXT);
+      }
+
+    } else if (len <= 0xffff) {
+
+      if (!buf) {
+	s += 3;
+      } else {
+	put8(s,ERL_STRING_EXT);
+	put16be(s,len);
+	memmove(s,p,len);	/* unterminated string */
+      }
+      s += len;
+
+    } else {
+
+      if (!buf) {
+	s += 5 + (2*len) + 1;
+      } else {
+	/* strings longer than 65535 are encoded as lists */
+	put8(s,ERL_LIST_EXT);
+	put32be(s,len);
+
+	for (i=0; i<len; i++) {
+	  put8(s,ERL_SMALL_INTEGER_EXT);
+	  put8(s,p[i]);
 	}
+	put8(s,ERL_NIL_EXT);
+      }
+
     }
 
     *index += s-s0; 

@@ -306,7 +306,6 @@ shell_rep(Ev, Bs0, Ds0) ->
 	    shell_rep(Ev, Bs0, Ds0);
 	{shell_req,Ev,exit} ->
 	    Ev ! {shell_rep,self(),exit},
-	    io:fwrite("** Terminating shell **\n", []),
 	    exit(normal);
 	{shell_req,Ev,{update_dict,Ds}} ->	% Update dictionary
 	    Ev ! {shell_rep,self(),ok},
@@ -368,9 +367,10 @@ restricted_eval_loop(Shell, Bs0, RShMod) ->
             {R,Bs2} = 
                 case erl_eval:check_command(prep_check(Es), Bs0) of
                     ok ->
-			{LFH,NLFH} = restrict_handlers(RShMod, Shell) ,
-			put(restricted_expr_state, []),			
-                        {value,V,Bs} = erl_eval:exprs(Es, Bs0, {eval,LFH}, {value,NLFH}),
+			{LFH,NLFH} = restrict_handlers(RShMod, Shell),
+			put(restricted_expr_state, []),
+			{value,V,Bs} = 
+			    erl_eval:exprs(Es, Bs0, {eval,LFH}, {value,NLFH}),
                         {{value,V,Bs,get()},Bs};
                     {error,Error} ->
                         {{command_error,Error},Bs0}
@@ -391,6 +391,8 @@ local_func_handler(F, As, RShMod, Bs, Shell) ->
     case local_allowed(F, As, RShMod, Bs, Shell) of
 	disallowed ->
 	    {value,{disallowed,{F,As}},Bs};
+	{not_restricted,Res} ->
+	    Res;
 	{AsEv,Bs1} ->
 	    %% The arguments have already been evaluated but local_func/4 
 	    %% expects them on abstract form. We can't send the original 
@@ -401,18 +403,24 @@ local_func_handler(F, As, RShMod, Bs, Shell) ->
     end.
 
 local_allowed(F, As, RShMod, Bs, Shell) when atom(F) ->
-    {LFH,NLFH} = restrict_handlers(RShMod, Shell) ,
-    {AsEv,Bs1} = erl_eval:expr_list(As, Bs, {eval,LFH}, {value,NLFH}),
-    case RShMod:local_allowed(F, AsEv, {get(restricted_shell_state),
-					get(restricted_expr_state)}) of
-	{Result,{RShShSt,RShExprSt}} ->
-	    put(restricted_shell_state, RShShSt),
-	    put(restricted_expr_state, RShExprSt),
-	    if Result == false -> 
-		    shell_req(Shell, {update_dict,get()}),
-		    exit({disallowed,{F,AsEv}});
-	       true -> 
-		    {AsEv,Bs1}
+    case not_restricted(F, As) of
+	true ->
+	    Res = local_func(F, As, Bs, Shell),
+	    {not_restricted,Res};
+	false ->
+	    {LFH,NLFH} = restrict_handlers(RShMod, Shell) ,
+	    {AsEv,Bs1} = erl_eval:expr_list(As, Bs, {eval,LFH}, {value,NLFH}),
+	    case RShMod:local_allowed(F, AsEv, {get(restricted_shell_state),
+						get(restricted_expr_state)}) of
+		{Result,{RShShSt,RShExprSt}} ->
+		    put(restricted_shell_state, RShShSt),
+		    put(restricted_expr_state, RShExprSt),
+		    if Result == false -> 
+			    shell_req(Shell, {update_dict,get()}),
+			    exit({disallowed,{F,AsEv}});
+		       true -> 
+			    {AsEv,Bs1}
+		    end
 	    end
     end.
 
@@ -429,6 +437,33 @@ non_local_allowed(MForFun, As, RShMod, Shell) ->
 		    apply(MForFun, As)
 	    end
     end.
+
+%% The commands implemented in shell should not be checked if allowed
+%% (especially true for f/1, the argument must not be evaluated).
+not_restricted(f, _) ->
+    true;
+not_restricted(h, _) ->
+    true;
+not_restricted(b, _) ->
+    true;
+not_restricted(which, _) ->
+    true;
+not_restricted(import, _) ->
+    true;
+not_restricted(import_all, _) ->
+    true;
+not_restricted(use, _) ->
+    true;
+not_restricted(use_all, _) ->
+    true;
+not_restricted(history, _) ->
+    true;
+not_restricted(results, _) ->
+    true;
+not_restricted(exit, _) ->
+    true;
+not_restricted(_, _) ->
+    false.
 
 prep_check({call,Line,{atom,_,f},[{var,_,_Name}]}) ->
     %% Do not emit a warning for f(V) when V is unbound.

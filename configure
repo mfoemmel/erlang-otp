@@ -606,20 +606,29 @@ echo $ac_n "checking for GNU make""... $ac_c" 1>&6
 echo "configure:607: checking for GNU make" >&5
 # If there is a Makefile created we don't want make to start making, run
 # in a subdirectory and -f /dev/null
-mkdir conftestmake
-if test -d conftestmake; then
-  cd conftestmake
-  MAKE_PROG=x
-  for m in make gmake ggmake; do
-    eval $m --version -f /dev/null 2>&1 | grep GNU > /dev/null 2>&1
-    case $? in
-      0) MAKE_PROG=$m ; break ;;
-      *) ;;
-    esac
-  done
-  cd ..
-else
-  { echo "configure: error: could not create subdirectory" 1>&2; exit 1; }
+MAKE_PROG=x
+if test X"$CLEARCASE_MAKE_COMPAT" = X"gnu" -a X"$CLEARCASE_ROOT" != X"" ; then
+  eval clearmake -version 2>&1 | grep clearmake > /dev/null 2>&1
+  case $? in
+	0) MAKE_PROG="clearmake -V"; break;;
+	*);;
+  esac
+fi
+if test X"$MAKE_PROG" = X"x"; then
+  mkdir conftestmake
+  if test -d conftestmake; then
+    cd conftestmake
+    for m in make gmake ggmake; do
+      eval $m --version -f /dev/null 2>&1 | grep GNU > /dev/null 2>&1
+      case $? in
+        0) MAKE_PROG=$m ; break ;;
+        *) ;;
+      esac
+    done
+    cd ..
+  else
+    { echo "configure: error: could not create subdirectory" 1>&2; exit 1; }
+  fi
 fi
 rm -rf conftestmake
 case $MAKE_PROG in
@@ -643,7 +652,7 @@ esac
 # SVR4 /usr/ucb/install, which tries to use the nonexistent group "staff"
 # ./install, which can be erroneously created by make from ./install.sh.
 echo $ac_n "checking for a BSD compatible install""... $ac_c" 1>&6
-echo "configure:647: checking for a BSD compatible install" >&5
+echo "configure:656: checking for a BSD compatible install" >&5
 if test -z "$INSTALL"; then
 if eval "test \"`echo '$''{'ac_cv_path_install'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
@@ -700,7 +709,7 @@ if test X"${INSTALL}" = "X${ac_aux_dir}/install-sh -c" && test -f /usr/ucb/insta
 fi
 
 echo $ac_n "checking whether ln -s works""... $ac_c" 1>&6
-echo "configure:704: checking whether ln -s works" >&5
+echo "configure:713: checking whether ln -s works" >&5
 if eval "test \"`echo '$''{'ac_cv_prog_LN_S'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -723,7 +732,7 @@ fi
 # Extract the first word of "ranlib", so it can be a program name with args.
 set dummy ranlib; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:727: checking for $ac_word" >&5
+echo "configure:736: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_prog_RANLIB'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else

@@ -235,7 +235,7 @@
 %% Effect   : Functions demanded by the gen_server module. 
 %%-----------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 handle_info(Info, State) ->
@@ -244,8 +244,8 @@ handle_info(Info, State) ->
         {'EXIT', Pid, Reason} when ?get_MyAdminPid(State)==Pid ->
             ?DBG("PARENT ADMIN: ~p  TERMINATED.~n",[Reason]),
 	    {stop, Reason, State};
-        {'EXIT', Pid, Reason} ->
-            ?DBG("PROXYPUSHSUPPLIER: ~p  TERMINATED.~n",[Reason]),
+        {'EXIT', _Pid, _Reason} ->
+            ?DBG("PROXYPUSHSUPPLIER: ~p  TERMINATED.~n",[_Reason]),
             {noreply, State};
         pacing ->
 	    lookup_and_push(State, true);
@@ -270,21 +270,21 @@ init([MyType, MyAdmin, MyAdminPid, InitQoS, LQS, MyChannel, Options, Operator]) 
     {ok, ?get_InitState(MyType, MyAdmin, MyAdminPid, 
 			InitQoS, LQS, MyChannel, Operator, GCTime, GCLimit, TimeRef)}.
 
-terminate(Reason, State) when ?is_UnConnected(State) ->
+terminate(_Reason, State) when ?is_UnConnected(State) ->
     stop_timer(State),
     %% We are not connected to a Client. Hence, no need to invoke disconnect.
     ok;
-terminate(Reason, State) when ?is_ANY(State) ->
+terminate(_Reason, State) when ?is_ANY(State) ->
     stop_timer(State),
     'CosNotification_Common':disconnect('CosEventComm_PushConsumer', 
 					disconnect_push_consumer, 
 					?get_Client(State));
-terminate(Reason, State) when ?is_SEQUENCE(State) ->
+terminate(_Reason, State) when ?is_SEQUENCE(State) ->
     stop_timer(State),
     'CosNotification_Common':disconnect('CosNotifyComm_SequencePushConsumer',
 					disconnect_sequence_push_consumer,
 					?get_Client(State));
-terminate(Reason, State) when ?is_STRUCTURED(State) ->
+terminate(_Reason, State) when ?is_STRUCTURED(State) ->
     stop_timer(State),
     'CosNotification_Common':disconnect('CosNotifyComm_StructuredPushConsumer', 
 					disconnect_structured_push_consumer, 
@@ -298,7 +298,7 @@ terminate(Reason, State) when ?is_STRUCTURED(State) ->
 %% Type     : readonly
 %% Returns  : 
 %%-----------------------------------------------------------
-'_get_MyType'(OE_THIS, OE_FROM, State) ->
+'_get_MyType'(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_MyType(State), State}.
 
 %%----------------------------------------------------------%
@@ -306,7 +306,7 @@ terminate(Reason, State) when ?is_STRUCTURED(State) ->
 %% Type     : readonly
 %% Returns  : 
 %%-----------------------------------------------------------
-'_get_MyAdmin'(OE_THIS, OE_FROM, State) ->
+'_get_MyAdmin'(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_MyAdmin(State), State}.
 
 %%----------------------------------------------------------%
@@ -314,9 +314,9 @@ terminate(Reason, State) when ?is_STRUCTURED(State) ->
 %% Type     : read/write
 %% Returns  : 
 %%-----------------------------------------------------------
-'_get_priority_filter'(OE_THIS, OE_FROM, State) ->
+'_get_priority_filter'(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_PrioFil(State), State}.
-'_set_priority_filter'(OE_THIS, OE_FROM, State, PrioF) ->
+'_set_priority_filter'(_OE_THIS, _OE_FROM, State, PrioF) ->
     {reply, ok, ?set_PrioFil(State, PrioF)}.
 
 %%----------------------------------------------------------%
@@ -324,9 +324,9 @@ terminate(Reason, State) when ?is_STRUCTURED(State) ->
 %% Type     : read/write
 %% Returns  : 
 %%-----------------------------------------------------------
-'_get_lifetime_filter'(OE_THIS, OE_FROM, State) ->
+'_get_lifetime_filter'(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_LifeTFil(State), State}.
-'_set_lifetime_filter'(OE_THIS, OE_FROM, State, LifeTF) ->
+'_set_lifetime_filter'(_OE_THIS, _OE_FROM, State, LifeTF) ->
     {reply, ok, ?set_LifeTFil(State, LifeTF)}.
 
 %%-----------------------------------------------------------
@@ -351,7 +351,7 @@ connect_push_consumer(OE_THIS, OE_FROM, State, Client) ->
 %%            {'EXCEPTION', #'TypeError'{}}
 %%            Both exceptions from CosEventChannelAdmin!!!!
 %%-----------------------------------------------------------
-connect_any_push_consumer(OE_THIS, OE_FROM, State, Client) when ?is_ANY(State) ->
+connect_any_push_consumer(_OE_THIS, _OE_FROM, State, Client) when ?is_ANY(State) ->
     'CosNotification_Common':type_check(Client, 'CosEventComm_PushConsumer'),
     if
 	?is_Connected(State) ->
@@ -369,7 +369,7 @@ connect_any_push_consumer(_, _, _, _) ->
 %% Returns  :  ok | {'EXCEPTION', #'AlreadyConnected'{}} |
 %%            {'EXCEPTION', #'TypeError'{}}
 %%-----------------------------------------------------------
-connect_sequence_push_consumer(OE_THIS, OE_FROM, State, Client) when ?is_SEQUENCE(State) ->
+connect_sequence_push_consumer(_OE_THIS, _OE_FROM, State, Client) when ?is_SEQUENCE(State) ->
     'CosNotification_Common':type_check(Client, 
 					'CosNotifyComm_SequencePushConsumer'),
     if
@@ -389,7 +389,7 @@ connect_sequence_push_consumer(_, _, _, _) ->
 %% Returns  :  ok | {'EXCEPTION', #'AlreadyConnected'{}} |
 %%            {'EXCEPTION', #'TypeError'{}}
 %%-----------------------------------------------------------
-connect_structured_push_consumer(OE_THIS, OE_FROM, State, Client) when ?is_STRUCTURED(State) ->
+connect_structured_push_consumer(_OE_THIS, _OE_FROM, State, Client) when ?is_STRUCTURED(State) ->
     'CosNotification_Common':type_check(Client, 
 					'CosNotifyComm_StructuredPushConsumer'),
     if
@@ -408,7 +408,7 @@ connect_structured_push_consumer(_, _, _, _) ->
 %% Returns  : ok | {'EXCEPTION', #'ConnectionAlreadyInactive'{}} |
 %%            {'EXCEPTION', #'NotConneced'{}}
 %%-----------------------------------------------------------
-suspend_connection(OE_THIS, OE_FROM, State) when ?is_Connected(State) ->
+suspend_connection(_OE_THIS, _OE_FROM, State) when ?is_Connected(State) ->
     if
 	?is_Suspended(State) ->
 	    corba:raise(#'CosNotifyChannelAdmin_ConnectionAlreadyInactive'{});
@@ -425,7 +425,7 @@ suspend_connection(_,_,_)->
 %% Returns  :  ok | {'EXCEPTION', #'ConnectionAlreadyActive'{}} |
 %%            {'EXCEPTION', #'NotConneced'{}}
 %%-----------------------------------------------------------
-resume_connection(OE_THIS, OE_FROM, State) when ?is_Connected(State) ->
+resume_connection(_OE_THIS, OE_FROM, State) when ?is_Connected(State) ->
     if
 	?is_NotSuspended(State) ->
 	    corba:raise(#'CosNotifyChannelAdmin_ConnectionAlreadyActive'{});
@@ -448,17 +448,17 @@ resume_connection(_,_,_) ->
 %% Arguments: Mode - enum 'ObtainInfoMode' (CosNotifyChannelAdmin)
 %% Returns  : CosNotification::EventTypeSeq
 %%-----------------------------------------------------------
-obtain_offered_types(OE_THIS, OE_FROM, State, 'ALL_NOW_UPDATES_OFF') ->
+obtain_offered_types(_OE_THIS, _OE_FROM, State, 'ALL_NOW_UPDATES_OFF') ->
     {reply, ?get_AllSubscribe(State), ?set_SubscribeType(State, false)};
-obtain_offered_types(OE_THIS, OE_FROM, State, 'ALL_NOW_UPDATES_ON') ->
+obtain_offered_types(_OE_THIS, _OE_FROM, State, 'ALL_NOW_UPDATES_ON') ->
     {reply, ?get_AllSubscribe(State), ?set_SubscribeType(State, true)};
-obtain_offered_types(OE_THIS, OE_FROM, State, 'NONE_NOW_UPDATES_OFF') ->
+obtain_offered_types(_OE_THIS, _OE_FROM, State, 'NONE_NOW_UPDATES_OFF') ->
     {reply, [], ?set_SubscribeType(State, false)};
-obtain_offered_types(OE_THIS, OE_FROM, State, 'NONE_NOW_UPDATES_ON') ->
+obtain_offered_types(_OE_THIS, _OE_FROM, State, 'NONE_NOW_UPDATES_ON') ->
     {reply, [], ?set_SubscribeType(State, true)};
 obtain_offered_types(_,_,_,What) ->
-    orber:debug_level_print("[~p] PusherSupplier:obtain_offered_types(~p);
-Bad enumerant", [?LINE, What], ?DEBUG_LEVEL),
+    orber:dbg("[~p] PusherSupplier:obtain_offered_types(~p);~n"
+	      "Bad enumerant", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_OPERATION'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
@@ -467,7 +467,7 @@ Bad enumerant", [?LINE, What], ?DEBUG_LEVEL),
 %% Returns  : ok | {'EXCEPTION', #'UnsupportedQoS'{}}
 %%            AvilableQoS - CosNotification::NamedPropertyRangeSeq (out)
 %%-----------------------------------------------------------
-validate_event_qos(OE_THIS, OE_FROM, State, RequiredQoS) ->
+validate_event_qos(_OE_THIS, _OE_FROM, State, RequiredQoS) ->
     AvilableQoS = 'CosNotification_Common':validate_event_qos(RequiredQoS,
 							      ?get_LocalQoS(State)),
     {reply, {ok, AvilableQoS}, State}.
@@ -478,7 +478,7 @@ validate_event_qos(OE_THIS, OE_FROM, State, RequiredQoS) ->
 %% Arguments: 
 %% Returns  : 
 %%-----------------------------------------------------------
-get_qos(OE_THIS, OE_FROM, State) ->
+get_qos(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_GlobalQoS(State), State}.    
 
 %%----------------------------------------------------------%
@@ -488,7 +488,7 @@ get_qos(OE_THIS, OE_FROM, State) ->
 %%            and value eq. any().
 %% Returns  : ok | {'EXCEPTION', CosNotification::UnsupportedQoS}
 %%-----------------------------------------------------------
-set_qos(OE_THIS, OE_FROM, State, QoS) ->
+set_qos(_OE_THIS, _OE_FROM, State, QoS) ->
     {NewQoS, LQS} = 'CosNotification_Common':set_qos(QoS, ?get_BothQoS(State), 
 						     proxy, ?get_MyAdmin(State), 
 						     false),
@@ -503,7 +503,7 @@ set_qos(OE_THIS, OE_FROM, State, QoS) ->
 %% Returns  : {'EXCEPTION', CosNotification::UnsupportedQoS}
 %%            {ok, CosNotification::NamedPropertyRangeSeq}
 %%-----------------------------------------------------------
-validate_qos(OE_THIS, OE_FROM, State, Required_qos) ->
+validate_qos(_OE_THIS, _OE_FROM, State, Required_qos) ->
     QoS = 'CosNotification_Common':validate_qos(Required_qos, ?get_BothQoS(State), 
 						proxy, ?get_MyAdmin(State), 
 						false),
@@ -517,7 +517,7 @@ validate_qos(OE_THIS, OE_FROM, State, Required_qos) ->
 %% Returns  : ok | 
 %%            {'EXCEPTION', #'CosNotifyComm_InvalidEventType'{}}
 %%-----------------------------------------------------------
-subscription_change(OE_THIS, OE_FROM, State, Added, Removed) ->
+subscription_change(_OE_THIS, _OE_FROM, State, Added, Removed) ->
     cosNotification_Filter:validate_types(Added), 
     cosNotification_Filter:validate_types(Removed),
     %% On this "side", we care about which type of events the client 
@@ -563,7 +563,7 @@ update_subscribe(remove, State, [H|T]) ->
 %% Arguments: Filter - CosNotifyFilter::Filter
 %% Returns  : FilterID - long
 %%-----------------------------------------------------------
-add_filter(OE_THIS, OE_FROM, State, Filter) ->
+add_filter(_OE_THIS, _OE_FROM, State, Filter) ->
     'CosNotification_Common':type_check(Filter, 'CosNotifyFilter_Filter'),
     FilterID = ?new_Id(State),
     NewState = ?set_IdCounter(State, FilterID),
@@ -574,11 +574,11 @@ add_filter(OE_THIS, OE_FROM, State, Filter) ->
 %% Arguments: FilterID - long
 %% Returns  : ok
 %%-----------------------------------------------------------
-remove_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
+remove_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
     {reply, ok, ?del_Filter(State, FilterID)};
 remove_filter(_,_,_,What) ->
-    orber:debug_level_print("[~p] PusherSupplier:remove_filter(~p); Not an integer", 
-			    [?LINE, What], ?DEBUG_LEVEL),
+    orber:dbg("[~p] PusherSupplier:remove_filter(~p); Not an integer", 
+	      [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
@@ -587,11 +587,11 @@ remove_filter(_,_,_,What) ->
 %% Returns  : Filter - CosNotifyFilter::Filter |
 %%            {'EXCEPTION', #'CosNotifyFilter_FilterNotFound'{}}
 %%-----------------------------------------------------------
-get_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
+get_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
     {reply, ?get_Filter(State, FilterID), State};
 get_filter(_,_,_,What) ->
-    orber:debug_level_print("[~p] PusherSupplier:get_filter(~p); Not an integer", 
-			    [?LINE, What], ?DEBUG_LEVEL),
+    orber:dbg("[~p] PusherSupplier:get_filter(~p); Not an integer", 
+	      [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
@@ -599,7 +599,7 @@ get_filter(_,_,_,What) ->
 %% Arguments: -
 %% Returns  : Filter - CosNotifyFilter::FilterIDSeq
 %%-----------------------------------------------------------
-get_all_filters(OE_THIS, OE_FROM, State) ->
+get_all_filters(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_AllFilterID(State), State}.
 
 %%----------------------------------------------------------%
@@ -607,7 +607,7 @@ get_all_filters(OE_THIS, OE_FROM, State) ->
 %% Arguments: -
 %% Returns  : ok
 %%-----------------------------------------------------------
-remove_all_filters(OE_THIS, OE_FROM, State) ->
+remove_all_filters(_OE_THIS, _OE_FROM, State) ->
     {reply, ok, ?del_AllFilter(State)}.
 
 
@@ -617,7 +617,7 @@ remove_all_filters(OE_THIS, OE_FROM, State) ->
 %% Arguments: -
 %% Returns  : ok
 %%-----------------------------------------------------------
-disconnect_push_supplier(OE_THIS, OE_FROM, State) ->
+disconnect_push_supplier(_OE_THIS, _OE_FROM, State) ->
     {stop, normal, ok, ?set_Unconnected(State)}.
 
 %%----- Inherit from CosNotifyComm::StructuredPushSupplier --
@@ -626,7 +626,7 @@ disconnect_push_supplier(OE_THIS, OE_FROM, State) ->
 %% Arguments: -
 %% Returns  : ok
 %%-----------------------------------------------------------
-disconnect_structured_push_supplier(OE_THIS, OE_FROM, State) ->
+disconnect_structured_push_supplier(_OE_THIS, _OE_FROM, State) ->
     {stop, normal, ok, ?set_Unconnected(State)}.
 
 %%----- Inherit from CosNotifyComm::SequencePushSupplier ----
@@ -635,7 +635,7 @@ disconnect_structured_push_supplier(OE_THIS, OE_FROM, State) ->
 %% Arguments: -
 %% Returns  : ok
 %%-----------------------------------------------------------
-disconnect_sequence_push_supplier(OE_THIS, OE_FROM, State) ->
+disconnect_sequence_push_supplier(_OE_THIS, _OE_FROM, State) ->
     {stop, normal, ok, ?set_Unconnected(State)}.
 
 %%--------------- LOCAL FUNCTIONS ----------------------------
@@ -646,8 +646,8 @@ find_ids(List) ->           find_ids(List, []).
 find_ids([], Acc) ->        Acc;
 find_ids([{I,_}|T], Acc) -> find_ids(T, [I|Acc]);
 find_ids(What, _) -> 
-    orber:debug_level_print("[~p] PusherSupplier:find_ids(); 
-Id corrupt: ~p", [?LINE, What], ?DEBUG_LEVEL),
+    orber:dbg("[~p] PusherSupplier:find_ids();~n"
+	      "Id corrupt: ~p", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
 %% Delete a single object.
@@ -660,7 +660,7 @@ delete_obj(List,_) -> List.
 %% Arguments: 
 %% Returns  : 
 %%-----------------------------------------------------------
-callSeq(OE_THIS, OE_FROM, State, EventsIn, Status) ->
+callSeq(_OE_THIS, OE_FROM, State, EventsIn, Status) ->
     corba:reply(OE_FROM, ok),
     case cosNotification_eventDB:validate_event(?get_SubscribeData(State), EventsIn,
 						?get_AllFilter(State),
@@ -673,8 +673,9 @@ callSeq(OE_THIS, OE_FROM, State, EventsIn, Status) ->
 	    store_events(State, Events),
 	    {noreply, State};
 	{Events,_} when ?is_UnConnected(State) ->
-	    orber:debug_level_print("[~p] PusherSupplier:callAny(); 
-Not connected, dropping event(s): ~p", [?LINE, Events], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] PusherSupplier:callAny();~n"
+		      "Not connected, dropping event(s): ~p", 
+		      [?LINE, Events], ?DEBUG_LEVEL),
 	    {noreply, State};
 	{[Event],_} when ?is_STRUCTURED(State) ->
 	    ?DBG("PROXY RECEIVED SEQUENCE: ~p~n",[Event]),
@@ -694,7 +695,7 @@ Not connected, dropping event(s): ~p", [?LINE, Events], ?DEBUG_LEVEL),
 %% Arguments: 
 %% Returns  : 
 %%-----------------------------------------------------------
-callAny(OE_THIS, OE_FROM, State, EventIn, Status) ->
+callAny(_OE_THIS, OE_FROM, State, EventIn, Status) ->
     corba:reply(OE_FROM, ok),
     case cosNotification_eventDB:validate_event(?get_SubscribeData(State), EventIn,
 						?get_AllFilter(State),
@@ -712,8 +713,9 @@ callAny(OE_THIS, OE_FROM, State, EventIn, Status) ->
 	    ?add_Event(State, ?not_CreateSE("","%ANY","",[],[],Event)),
 	    {noreply, State};
 	{Event,_} when ?is_UnConnected(State) ->
-	    orber:debug_level_print("[~p] PusherSupplier:callAny(); 
-Not connected, dropping event: ~p", [?LINE, Event], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] PusherSupplier:callAny();~n"
+		      "Not connected, dropping event: ~p", 
+		      [?LINE, Event], ?DEBUG_LEVEL),
 	    {noreply, State};
 	{Event,_} when ?is_ANY(State) ->
 	    ?DBG("PROXY RECEIVED ANY: ~p~n",[Event]),
@@ -758,14 +760,16 @@ lookup_and_push(State, false) when ?is_SEQUENCE(State) ->
 			What when ?is_PersistentConnection(State) ->
 			    %% Here we should do something when we want to handle
 			    %% Persistent EventReliability.
-			    orber:debug_level_print("[~p] PusherSupplier:lookup_and_push(); 
-Client respond incorrect: ~p
-Dropping events: ~p", [?LINE, What, Events], ?DEBUG_LEVEL),
+			    orber:dbg("[~p] PusherSupplier:lookup_and_push();~n"
+				      "Client respond incorrect: ~p~n"
+				      "Dropping events: ~p", 
+				      [?LINE, What, Events], ?DEBUG_LEVEL),
 			    {noreply, State};
 			WhatII ->
-			    orber:debug_level_print("[~p] PusherSupplier:lookup_and_push(); 
-Client respond incorrect: ~p
-Terminating and dropping events: ~p", [?LINE, WhatII, Events], ?DEBUG_LEVEL),
+			    orber:dbg("[~p] PusherSupplier:lookup_and_push();~n"
+				      "Client respond incorrect: ~p~n"
+				      "Terminating and dropping events: ~p",
+				      [?LINE, WhatII, Events], ?DEBUG_LEVEL),
 			    {stop, normal, State}
 		    end
 	    end;
@@ -785,21 +789,23 @@ lookup_and_push(State, true) when ?is_SEQUENCE(State) ->
 		ok ->
 		    lookup_and_push(State, false);
 		{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
-		    orber:debug_level_print("[~p] PusherSupplier:lookup_and_push(); 
-Client no longer exists; terminating and dropping events: ~p", 
-					    [?LINE, Events], ?DEBUG_LEVEL),
+		    orber:dbg("[~p] PusherSupplier:lookup_and_push();~n"
+			      "Client no longer exists; terminating and dropping events: ~p", 
+			      [?LINE, Events], ?DEBUG_LEVEL),
 		    {stop, normal, State};
 		What when ?is_PersistentConnection(State) ->
 		    %% Here we should do something when we want to handle
 		    %% Persistent EventReliability.
-		    orber:debug_level_print("[~p] PusherSupplier:lookup_and_push(); 
-Client respond incorrect: ~p
-Dropping events: ~p", [?LINE, What, Events], ?DEBUG_LEVEL),
+		    orber:dbg("[~p] PusherSupplier:lookup_and_push();~n"
+			      "Client respond incorrect: ~p~n"
+			      "Dropping events: ~p", 
+			      [?LINE, What, Events], ?DEBUG_LEVEL),
 		    {noreply, State};
 		WhatII ->
-		    orber:debug_level_print("[~p] PusherSupplier:lookup_and_push(); 
-Client respond incorrect: ~p
-Terminating and dropping events: ~p", [?LINE, WhatII, Events], ?DEBUG_LEVEL),
+		    orber:dbg("[~p] PusherSupplier:lookup_and_push();~n"
+			      "Client respond incorrect: ~p~n"
+			      "Terminating and dropping events: ~p", 
+			      [?LINE, WhatII, Events], ?DEBUG_LEVEL),
 		    {stop, normal, State}
 	    end
     end;
@@ -816,21 +822,23 @@ empty_db(State, {Event, _}) when ?is_STRUCTURED(State) ->
 	ok ->
 	    empty_db(State, ?get_Event(State));
 	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
-	    orber:debug_level_print("[~p] PusherSupplier:empty_db(); 
-Client no longer exists; terminating and dropping: ~p", 
-				    [?LINE, Event], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] PusherSupplier:empty_db();~n"
+		      "Client no longer exists; terminating and dropping: ~p", 
+		      [?LINE, Event], ?DEBUG_LEVEL),
 	    {stop, normal, State};
 	What when ?is_PersistentConnection(State) ->
 	    %% Here we should do something when we want to handle
 	    %% Persistent EventReliability.
-	    orber:debug_level_print("[~p] PusherSupplier:empty_db(); 
-Client respond incorrect: ~p
-Dropping event: ~p", [?LINE, What, Event], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] PusherSupplier:empty_db();~n"
+		      "Client respond incorrect: ~p~n"
+		      "Dropping event: ~p", 
+		      [?LINE, What, Event], ?DEBUG_LEVEL),
 	    {noreply, State};
 	WhatII ->
-	    orber:debug_level_print("[~p] PusherSupplier:empty_db(); 
-Client respond incorrect: ~p
-Terminating and dropping: ~p", [?LINE, WhatII, Event], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] PusherSupplier:empty_db();~n"
+		      "Client respond incorrect: ~p~n"
+		      "Terminating and dropping: ~p", 
+		      [?LINE, WhatII, Event], ?DEBUG_LEVEL),
 	    {stop, normal, State}
     end;
 empty_db(State, {Event, _}) when ?is_ANY(State) ->
@@ -838,25 +846,27 @@ empty_db(State, {Event, _}) when ?is_ANY(State) ->
 	ok ->
 	    empty_db(State, ?get_Event(State));
 	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
-	    orber:debug_level_print("[~p] PusherSupplier:empty_db(); 
-Client no longer exists; terminating and dropping: ~p", 
-				    [?LINE, Event], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] PusherSupplier:empty_db();~n"
+		      "Client no longer exists; terminating and dropping: ~p", 
+		      [?LINE, Event], ?DEBUG_LEVEL),
 	    {stop, normal, State};
 	What when ?is_PersistentConnection(State) ->
 	    %% Here we should do something when we want to handle
 	    %% Persistent EventReliability.
-	    orber:debug_level_print("[~p] PusherSupplier:empty_db(); 
-Client respond incorrect: ~p
-Dropping Event: ~p", [?LINE, What, Event], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] PusherSupplier:empty_db();~n"
+		      "Client respond incorrect: ~p~n"
+		      "Dropping Event: ~p", 
+		      [?LINE, What, Event], ?DEBUG_LEVEL),
 	    {noreply, State};
 	WhatII ->
-	    orber:debug_level_print("[~p] PusherSupplier:empty_db(); 
-Client respond incorrect: ~p
-Terminating and dropping: ~p", [?LINE, WhatII, Event], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] PusherSupplier:empty_db();~n"
+		      "Client respond incorrect: ~p~n"
+		      "Terminating and dropping: ~p", 
+		      [?LINE, WhatII, Event], ?DEBUG_LEVEL),
 	    {stop, normal, State}
     end.
 
-store_events(State, []) ->
+store_events(_State, []) ->
     ok;
 store_events(State, [Event|Rest]) when ?is_ANY(State) ->
     AnyEvent = any:create('CosNotification_StructuredEvent':tc(),Event),
@@ -882,8 +892,9 @@ start_timer(State) ->
 			 [?get_BatchLimit(State)]),
 		    ?set_PacingTimer(State, PacTRef);
 		What ->
-		    orber:debug_level_print("[~p] PusherSupplier:start_timer(); 
-Unable to invoke timer:send_interval/2: ~p", [?LINE, What], ?DEBUG_LEVEL),
+		    orber:dbg("[~p] PusherSupplier:start_timer();~n"
+			      "Unable to invoke timer:send_interval/2: ~p", 
+			      [?LINE, What], ?DEBUG_LEVEL),
 		    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
 	    end
     end.

@@ -16,11 +16,13 @@
 %%     $Id$
 %%
 -module(mod_esi).
--export([do/1,load/2]).
 
-%%Functions provided to help erl scheme alias programmer to 
-%%Create dynamic webpages that are sent back to the user during 
-%%Generation
+
+-export([do/1, load/2]).
+
+%% Functions provided to help erl scheme alias programmer to 
+%% Create dynamic webpages that are sent back to the user during 
+%% Generation
 -export([deliver/2]).
 
 
@@ -31,13 +33,15 @@
 
 -define(GATEWAY_INTERFACE,"CGI/1.1").
 -define(DEFAULT_ERL_TIMEOUT,15000).
+
+
 %% do
 
 do(Info) ->
     ?vtrace("do",[]),
     case httpd_util:key1search(Info#mod.data,status) of
 	%% A status code has been generated!
-	{StatusCode,PhraseArgs,Reason} ->
+	{_StatusCode, _PhraseArgs, _Reason} ->
 	    {proceed,Info#mod.data};
 	%% No status code has been generated!
 	undefined ->
@@ -54,7 +58,7 @@ do(Info) ->
 			    {proceed,Info#mod.data}
 		    end;
 		%% A response has been generated or sent!
-		Response ->
+		_Response ->
 		    {proceed,Info#mod.data}
 	    end
     end.
@@ -122,8 +126,8 @@ evalp_find_alias(RequestURI,[{Alias,Modules}|Rest]) ->
 %% Erl mechanism
 %% 
 
-%%This is exactly the same as the GET method the difference is that
-%%The response must not contain any data expect the response header
+%% This is exactly the same as the GET method the difference is that
+%% The response must not contain any data expect the response header
 
 
 erl(Info,"HEAD",CGIBody,Modules) ->
@@ -166,11 +170,11 @@ erl(Info, "POST", CGIBody, Modules) ->
 
 input_type([]) ->
     no_input;
-input_type([$/|Rest]) ->
+input_type([$/|_Rest]) ->
     path_info;
-input_type([$?|Rest]) ->
+input_type([$?|_Rest]) ->
     query_string;
-input_type([First|Rest]) ->
+input_type([_First|Rest]) ->
     input_type(Rest).
 
 
@@ -189,20 +193,26 @@ exec(Info,Method,CGIBody,Modules,Mod,Func,{Type,Input}) ->
 	    [Method,Modules,Mod,Func,Type,Input]),
     case lists:member(Mod,Modules) of
 	true ->
-	    {_,RemoteAddr}=(Info#mod.init_data)#init_data.peername,
-	    ServerName=(Info#mod.init_data)#init_data.resolve,
-	    Env=get_environment(Info,ServerName,Method,RemoteAddr,Type,Input),
+	    {_,RemoteAddr} = (Info#mod.init_data)#init_data.peername,
+	    ServerName     = (Info#mod.init_data)#init_data.resolve,
+	    Env = get_environment(Info, ServerName, Method, RemoteAddr, Type, 
+				  Input),
 	    ?vtrace("and now call the module",[]),
-	    case try_new_erl_scheme_method(Info,Env,Input,list_to_atom(Mod),list_to_atom(Func)) of
-		{error,not_new_method}->
-		    case catch apply(list_to_atom(Mod),list_to_atom(Func),[Env,Input]) of
+	    case try_new_erl_scheme_method(Info, Env, Input, 
+					   list_to_atom(Mod),
+					   list_to_atom(Func)) of
+		{error, not_new_method} ->
+		    ?vtrace("new method failed, so try old method",[]),
+		    case catch apply(list_to_atom(Mod),
+				     list_to_atom(Func), [Env,Input]) of
 			{'EXIT',Reason} ->
-			    ?vlog("exit with Reason: ~p",[Reason]),
+			    ?vlog("old method failed, exit with Reason: ~p",
+				[Reason]),
 			    {proceed,[{status,{500,none,Reason}}|Info#mod.data]};
 			Response ->
 			    control_response_header(Info,Mod,Func,Response)
 		    end;
-		ResponseResult->
+		ResponseResult ->
 		    ResponseResult
 	    end;
 	false ->
@@ -218,16 +228,16 @@ control_response_header(Info,Mod,Func,Response)->
 		true ->
 		    case httpd_util:split(Response,"\r\n\r\n|\n\n",2) of
 			{ok,[Head,Body]}->
-			    Date=httpd_util:rfc1123_date(),
-			    Cache="Cache-Control:no-cache\r\nPragma:no-cache\r\nExpires:"++ Date ++ "\r\n",
+			    Date  = httpd_util:rfc1123_date(),
+			    Cache = "Cache-Control:no-cache\r\nPragma:no-cache\r\nExpires:"++ Date ++ "\r\n",
 			    {proceed,[{response,{StatusCode,[Head,"\r\n",Cache,"\r\n",Body]}}|Rest]};
 			_->    
 			   {proceed,[{response,{StatusCode,Response}}|Rest]}
 		    end;
-		WhatEver->
+		_WhatEver ->
 		    {proceed,[{response,{StatusCode,Response}}|Rest]}
 	    end;
-	WhatEver->
+	WhatEver ->
 	    WhatEver
     end.
 
@@ -247,11 +257,11 @@ control_response(Response,Info,Mod,Func)->
 parsed_header([]) ->
     [];
 parsed_header([{Name,[Value|R1]}|R2]) when list(Value) ->
-    NewName=lists:map(fun(X) -> if X == $- -> $_; true -> X end end,Name),
+    NewName = lists:map(fun(X) -> if X == $- -> $_; true -> X end end,Name),
     [{list_to_atom("http_"++httpd_util:to_lower(NewName)),
       multi_value([Value|R1])}|parsed_header(R2)];
 parsed_header([{Name,Value}|Rest]) when list(Value)->
-    {ok,NewName,_}=regexp:gsub(Name,"-","_"),
+    {ok,NewName,_} = regexp:gsub(Name,"-","_"),
     [{list_to_atom("http_"++httpd_util:to_lower(NewName)),Value}|
      parsed_header(Rest)].
 
@@ -267,15 +277,16 @@ multi_value([Value|Rest]) ->
 %% 
 
 
-eval(Info,"POST",CGIBody,Modules) ->
+eval(#mod{request_uri = ReqUri, http_version = Version, data = Data}, 
+     "POST", _CGIBody, _Modules) ->
     ?vtrace("eval(POST) -> method not supported",[]),	    
-    {proceed,[{status,{501,{"POST",Info#mod.request_uri,Info#mod.http_version},
+    {proceed,[{status,{501,{"POST", ReqUri, Version},
 		       ?NICE("Eval mechanism doesn't support method POST")}}|
-	      Info#mod.data]};
+	      Data]};
 
 eval(Info,"HEAD",CGIBody,Modules) ->
-    %%The function that sends the data in httpd_response handles HEAD reqest by not
-    %% Sending the body
+    %% The function that sends the data in httpd_response handles HEAD 
+    %% reqest by not sending the body
     eval(Info,"GET",CGIBody,Modules);
 
 
@@ -307,9 +318,9 @@ eval(Info,"GET",CGIBody,Modules) ->
 		      Info#mod.data]}
     end.
 
-auth(CGIBody,["all"]) ->
+auth(_CGIBody, ["all"]) ->
     true;
-auth(CGIBody,Modules) ->
+auth(CGIBody, Modules) ->
     case regexp:match(CGIBody,"^[^\:(%3A)]*") of
 	{match,Start,Length} ->
 	    lists:member(string:substr(CGIBody,Start,Length),Modules);
@@ -318,37 +329,42 @@ auth(CGIBody,Modules) ->
     end.
 
 %%----------------------------------------------------------------------
-%%Creates the environment list that will be the first arg to the 
-%%Functions that is called through the ErlScript Schema
+%% Creates the environment list that will be the first arg to the 
+%% Functions that is called through the ErlScript Schema
 %%----------------------------------------------------------------------
 
 get_environment(Info,ServerName,Method,RemoteAddr,Type,Input)->
-    Env=[{server_software,?SERVER_SOFTWARE},
-		 {server_name,ServerName},
-		 {gateway_interface,?GATEWAY_INTERFACE},
-		 {server_protocol,?SERVER_PROTOCOL},
-		 {server_port,httpd_util:lookup(Info#mod.config_db,port,80)},
-		 {request_method,Method},
-		 {remote_addr,RemoteAddr},
-		 {script_name,Info#mod.request_uri}|
-		 parsed_header(Info#mod.parsed_header)],
+    Env = [{server_software,  ?SERVER_SOFTWARE},
+	   {server_name,      ServerName},
+	   {gateway_interface,?GATEWAY_INTERFACE},
+	   {server_protocol,  ?SERVER_PROTOCOL},
+	   {server_port,      httpd_util:lookup(Info#mod.config_db,port,80)},
+	   {request_method,   Method},
+	   {remote_addr,      RemoteAddr},
+	   {script_name,      Info#mod.request_uri}|
+	   parsed_header(Info#mod.parsed_header)],
     get_environment(Type,Input,Env,Info).
 
 
 get_environment(Type,Input,Env,Info)->
-    Env1=case Type of
-	query_string ->
-	    [{query_string,Input}|Env];
-	path_info ->
-	    Aliases=httpd_util:multi_lookup(Info#mod.config_db,alias),
-	    {_,PathTranslated,_}=mod_alias:real_name(Info#mod.config_db,[$/|Input],Aliases),
-	    [{path_info,"/"++httpd_util:decode_hex(Input)},
-	     {path_translated,PathTranslated}|Env];
-	entity_body ->
-	    [{content_length,httpd_util:flatlength(Input)}|Env];
-	no_input ->
-	    Env
-    end,
+    Env1 = 
+	case Type of
+	    query_string ->
+		[{query_string,Input}|Env];
+
+	    path_info ->
+		Aliases = httpd_util:multi_lookup(Info#mod.config_db,alias),
+		{_,PathTranslated,_} = 
+		    mod_alias:real_name(Info#mod.config_db,[$/|Input],Aliases),
+		[{path_info,"/"++httpd_util:decode_hex(Input)},
+		 {path_translated,PathTranslated}|Env];
+
+	    entity_body ->
+		[{content_length,httpd_util:flatlength(Input)}|Env];
+
+	    no_input ->
+		Env
+	end,
     get_environment(Info,Env1).
 
 get_environment(Info,Env)->
@@ -358,6 +374,8 @@ get_environment(Info,Env)->
 	RemoteUser ->
 	    [{remote_user,RemoteUser}|Env]
     end.
+
+
 %%
 %% Configuration
 %%
@@ -410,14 +428,14 @@ load([$E,$r,$l,$S,$c,$r,$i,$p,$t,$N,$o,$C,$a,$c,$h,$e |CacheArg],[])->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%----------------------------------------------------------------------
-%%Deliver is the callback function users can call to deliver back data to the
-%%client
+%% Deliver is the callback function users can call to deliver back data 
+%% to the client
 %%----------------------------------------------------------------------
 
 deliver(SessionID,Data)when pid(SessionID) ->
     SessionID ! {ok,Data},
     ok;
-deliver(SessionID,Data) ->
+deliver(_SessionID, _Data) ->
     {error,bad_sessionID}.
 
 
@@ -425,58 +443,96 @@ deliver(SessionID,Data) ->
 %% The method that tries to execute the new format 
 %%----------------------------------------------------------------------
 
-%%It would be nicer to use erlang:function_exported/3 but if the 
-%%Module isn't loaded the function says that it is not loaded
+%% It would be nicer to use erlang:function_exported/3 but if the 
+%% Module isn't loaded the function says that it is not loaded
 
 
-try_new_erl_scheme_method(Info,Env,Input,Mod,Func)-> 
+try_new_erl_scheme_method(Info, Env, Input, Mod, Func) -> 
     process_flag(trap_exit,true),
-    Pid=spawn_link(Mod,Func,[self(),Env,Input]),
-    Timeout=httpd_util:lookup(Info#mod.config_db,erl_script_timeout,?DEFAULT_ERL_TIMEOUT),
-    RetVal=receive_response_data(Info,Pid,0,undefined,[],Timeout),
+    Pid    = spawn_link(Mod,Func,[self(),Env,Input]),
+    RetVal = proxy(Info, Pid),
     process_flag(trap_exit,false),
     RetVal.
 
 
 %%----------------------------------------------------------------------
-%%The function recieves the data from the process that generates the page
-%%and send the data to the client through the mod_cgi:send function
+%% The function recieves the data from the process that generates the page
+%% and send the data to the client through the mod_cgi:send function
 %%----------------------------------------------------------------------
+disable_chunked_send(Db) ->
+    httpd_util:lookup(Db, disable_chunked_transfer_encoding_send, false).
+erl_script_timeout(Db) ->
+    httpd_util:lookup(Db, erl_script_timeout, ?DEFAULT_ERL_TIMEOUT).
 
-receive_response_data(Info,Pid,Size,StatusCode,AccResponse,Timeout) ->
-    ?DEBUG("receive_response_data()-> Script Size: ~p,StatusCode ~p ,Timeout: ~p ~n",[Size,StatusCode,Timeout]),
+proxy(#mod{config_db = Db} = Info, Pid) ->
+    ?vtrace("proxy -> entry with~n   Pid: ~p", [Pid]),
+    Timeout            = erl_script_timeout(Db),
+    DisableChunkedSend = disable_chunked_send(Db),
+    ?vtrace("proxy -> "
+	"~n   Timeout:            ~p"
+	"~n   DisableChunkedSend: ~p", [Timeout, DisableChunkedSend]),
+    proxy(Info, Pid, 0, undefined, [], Timeout, DisableChunkedSend).
+
+proxy(Info, Pid, Size, StatusCode, AccResponse, Timeout, DisableChunkedSend) ->
+    ?vdebug("proxy -> entry with"
+	"~n   Size:       ~p"
+	"~n   StatusCode: ~p", [Size, StatusCode]),
     receive
 	{ok, Response} ->
-	    NewStatusCode=mod_cgi:update_status_code(StatusCode,Response),
+	    ?vtrace("proxy -> got some new data",[]),
+
+	    NewStatusCode = mod_cgi:update_status_code(StatusCode, Response),
 				  
-	    ?DEBUG("receive_response_data/2 NewStatusCode: ~p~n",[NewStatusCode]),
-	    case mod_cgi:send(Info, NewStatusCode,Response, Size,AccResponse) of
+	    ?vtrace("proxy -> NewStatusCode: ~p", [NewStatusCode]),
+	    case mod_cgi:send(Info, NewStatusCode, Response, Size,
+			      AccResponse, DisableChunkedSend) of
 		socket_closed ->
+		    ?vtrace("proxy -> socket closed: kill ~p",[Pid]),
 		    (catch exit(Pid,final)),
-		    {proceed,[{response,{already_sent,200,Size}}|Info#mod.data]};
-		head_sent->
+		    {proceed,
+		     [{response,{already_sent,200,Size}}|Info#mod.data]};
+
+		head_sent ->
+		    ?vtrace("proxy -> head sent: kill ~p",[Pid]),
 		    (catch exit(Pid,final)),
-		    {proceed,[{response,{already_sent,200,Size}}|Info#mod.data]};
+		    {proceed,
+		     [{response,{already_sent,200,Size}}|Info#mod.data]};
+
 		_ ->
-		    %%The data is sent and the socket is not closed contine
-		    NewSize = mod_cgi:get_new_size(Size,Response),
-		    receive_response_data(Info,Pid,NewSize,NewStatusCode,"notempty",Timeout)
+		    ?vtrace("proxy -> continue",[]),
+		    %% The data is sent and the socket is not closed contine
+		    NewSize = mod_cgi:get_new_size(Size, Response),
+		    proxy(Info, Pid, NewSize, NewStatusCode, 
+			  "notempty", Timeout, DisableChunkedSend)
 	    end;
-	{'EXIT', Pid, Reason} when AccResponse==[] ->
-	    {error,not_new_method};
+
+	{'EXIT', Pid, Reason} when pid(Pid), AccResponse == [] ->
+	    ?vtrace("proxy -> unexpected exit signal from ~p: ~p",
+		[Pid, Reason]),
+	    {error, not_new_method};
+
 	{'EXIT', Pid, Reason} when pid(Pid) ->
-	    NewStatusCode=mod_cgi:update_status_code(StatusCode,AccResponse),
-	    mod_cgi:final_send(Info,NewStatusCode,Size,AccResponse),
+	    ?vtrace("proxy -> exit signal from ~p: ~p",[Pid, Reason]),
+	    NewStatusCode = 
+		mod_cgi:update_status_code(StatusCode, AccResponse),
+	    mod_cgi:final_send(Info, NewStatusCode, Size, AccResponse, 
+			       DisableChunkedSend),
 	    {proceed, [{response,{already_sent,200,Size}}|Info#mod.data]};
+
 	%% This should not happen!
 	WhatEver ->
-	    NewStatusCode=mod_cgi:update_status_code(StatusCode,AccResponse),
-	    mod_cgi:final_send(Info,StatusCode,Size,AccResponse),
+	    ?vinfo("proxy -> received garbage: ~n~p", [WhatEver]),
+	    NewStatusCode = 
+		mod_cgi:update_status_code(StatusCode, AccResponse),
+	    mod_cgi:final_send(Info, NewStatusCode, Size, AccResponse,
+			       DisableChunkedSend),
 	    {proceed, [{response,{already_sent,200,Size}}|Info#mod.data]}
+
     after 
 	Timeout ->
-	    (catch exit(Pid,timeout)), % KILL the port !!!!
-	    httpd_socket:close(Info#mod.socket_type,Info#mod.socket),
+	    ?vlog("proxy -> timeout",[]),
+	    (catch exit(Pid,timeout)), % KILL the process !!!!
+	    httpd_socket:close(Info#mod.socket_type, Info#mod.socket),
 	    {proceed,[{response,{already_sent,200,Size}}|Info#mod.data]}
     end.
 

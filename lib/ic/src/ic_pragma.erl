@@ -86,7 +86,7 @@ registerOptions(G,S) ->
     registerOptions(G,S,OptList).
 
 
-registerOptions(G,S,[]) ->    
+registerOptions(_G,_S,[]) ->    
     true;
 registerOptions(G,S,[{{option,{broker,Scope}},{Mod,Type}}|Rest]) ->
     insert(S,
@@ -167,7 +167,7 @@ cleanup(X) -> [X].
 
 
 %% pragma_reg_all is top level registration for pragmas 
-pragma_reg_all(G, S, N, []) -> ok;
+pragma_reg_all(_G, _S, _N, []) -> ok;
 pragma_reg_all(G, S, N, [X|Xs]) ->
     pragma_reg(G, S, N, X), 
     pragma_reg_all(G, S, N, Xs).
@@ -175,13 +175,13 @@ pragma_reg_all(G, S, N, [X|Xs]) ->
 
 %% pragma_reg is top level registration for pragmas 
 pragma_reg(G, S, N, X)  when list(X) -> pragma_reg_list(G, S, N, X);
-pragma_reg(G, S, N, X)  when element(1, X) == preproc ->
+pragma_reg(_G, S, _N, X)  when element(1, X) == preproc ->
     case X#preproc.aux of
 	[{_, _, "1"}] ->
 	    IncludeEntryLNr = get_line(X#preproc.id),
 	    IncludeFileName = element(3,element(3,X)),
 	    insert(S,{includes,get_idlfile(S),IncludeFileName,IncludeEntryLNr});
-	Other ->
+	_Other ->
 	    ok
     end,
     set_idlfile(S,element(3,element(3,X)));
@@ -202,7 +202,7 @@ pragma_reg(G, S, N, X)  when element(1, X) == pragma ->
 	    
 	    %% Register pragmas into pragmatab.
 	    case X of
-		{pragma,{_,LineNr,"prefix"},To,Apply} ->
+		{pragma,{_,LineNr,"prefix"}, _To, _Apply} ->
 		    insert(S,{prefix,X,LineNr,N,File,Type});
 
 		{pragma,{_,_,"ID"},_,_} ->
@@ -214,7 +214,7 @@ pragma_reg(G, S, N, X)  when element(1, X) == pragma ->
 		{pragma,{_,_,"CODEOPT"},_,_} ->
 		    pragma_reg_codeOpt(G,S,N,X);
 		
-		{pragma,{_,LineNr,BadPragma},To,Apply} ->
+		{pragma,{_,LineNr,BadPragma}, _To, _Apply} ->
 		    io:format("Warning : on file ~p :~n",[get_idlfile(S)]),
 		    io:format("  Unknown pragma directive ~p on line ~p, ignored.~n",
 			      [BadPragma,LineNr])
@@ -252,11 +252,11 @@ pragma_reg(G, S, N, X) when record(X, except) ->
     mk_file_data(G,X,N,except),
     pragma_reg_all(G, S, N, X#except.body);
 
-pragma_reg(G, S, N, X) when record(X, const) ->  
+pragma_reg(G, _S, N, X) when record(X, const) ->  
     mk_ref(G,[get_id2(X) | N],const_ref),
     mk_file_data(G,X,N,const);
 
-pragma_reg(G, S, N, X) when record(X, typedef) ->  
+pragma_reg(G, _S, N, X) when record(X, typedef) ->  
     XX = #id_of{type=X},
     lists:foreach(fun(Id) ->
 			  mk_ref(G,[get_id2(Id) | N],typedef_ref),
@@ -279,7 +279,7 @@ pragma_reg(G, S, N, X) when record(X, struct) ->
     mk_file_data(G,X,N,struct),
     pragma_reg_all(G, S, N, X#struct.body);
 
-pragma_reg(G, S, N, X) when record(X, attr) -> 
+pragma_reg(G, _S, N, X) when record(X, attr) -> 
     XX = #id_of{type=X},
     lists:foreach(fun(Id) ->
 			  mk_ref(G,[get_id2(Id) | N],attr_ref),
@@ -287,17 +287,17 @@ pragma_reg(G, S, N, X) when record(X, attr) ->
 		  end,
 		  ic_forms:get_idlist(X));
     
-pragma_reg(G, S, N, X) ->  ok.
+pragma_reg(_G, _S, _N, _X) ->  ok.
 
 
 
 
-pragma_reg_list(G, S, N, []) -> ok;
+pragma_reg_list(_G, _S, _N, []) -> ok;
 pragma_reg_list(G, S, N, List ) ->
     CurrentFileName = get_idlfile(S), 
     pragma_reg_list(G, S, N, CurrentFileName, List).
 
-pragma_reg_list(G, S, N, CFN, []) -> ok;
+pragma_reg_list(_G, _S, _N, _CFN, []) -> ok;
 pragma_reg_list(G, S, N, CFN, [X | Xs]) ->
     case X of
 	{preproc,_,{_,_,FileName},_} ->
@@ -314,7 +314,7 @@ pragma_reg_list(G, S, N, CFN, [X | Xs]) ->
 
 
 pragma_reg_ID(G, S, N, X) ->
-    {pragma,{_,LineNr,"ID"},To,Apply} = X,
+    {pragma,{_,LineNr,"ID"}, _To, Apply} = X,
 
     
     File = get_idlfile(S), % The current file or an included one.
@@ -355,7 +355,7 @@ pragma_reg_ID(G, S, N, X) ->
 
 
 pragma_reg_version(G, S, N, X) ->
-    {pragma,{_,LineNr,"version"},To,Apply} = X,
+    {pragma,{_,LineNr,"version"}, _To, Apply} = X,
 
     File = get_idlfile(S), % The current file or an included one.
     Type = case idlfile(G) of % Local/Included flag
@@ -386,7 +386,7 @@ pragma_reg_version(G, S, N, X) ->
     end.
 
 
-pragma_reg_codeOpt(G, S, N, {pragma,{_,LineNr,"CODEOPT"},_,Apply} )->
+pragma_reg_codeOpt(G, S, _N, {pragma,{_,LineNr,"CODEOPT"},_,Apply} )->
     case applyCodeOpt(G) of
 	true ->
 	    {_,_,OptionList_str} = Apply,
@@ -394,7 +394,6 @@ pragma_reg_codeOpt(G, S, N, {pragma,{_,LineNr,"CODEOPT"},_,Apply} )->
 		error ->
 		    ic_error:error(G,{pragma_code_opt_bad_option_list,LineNr});
 		OptionList ->
-		    
 		    case lists:keysearch(be,1,OptionList) of
 			false ->
 			    %% Add the terms of the option list 
@@ -418,12 +417,8 @@ pragma_reg_codeOpt(G, S, N, {pragma,{_,LineNr,"CODEOPT"},_,Apply} )->
 						  LineNr,
 						  lists:delete({be,Type},OptionList))
 			    end
-		    end;  		  
-		
-		false ->
-		    true
+		    end
 	    end;
-
 	false ->
 	    true
     end.
@@ -471,7 +466,7 @@ applyCodeOpts(G,S,LNr,[X|Xs]) ->
 
 is_allowed_opt({X,Y}) ->
     ic_options:allowed_opt(X,Y);
-is_allowed_opt(X) ->
+is_allowed_opt(_X) ->
     false.
     
 	 
@@ -819,16 +814,16 @@ get_local_c_headers(G,X) ->
 get_local_c_headers(X,Local,Local) -> 
     get_local_c_headers(X,Local,Local,[]).
 
-get_local_c_headers(X,[],All,Found) ->
+get_local_c_headers(_X,[],_All,Found) ->
     Found;
-get_local_c_headers(X,[{file_data_local,PF_idl,_,module,_,_,SN,_,Line}|Hs],All,Found)->
+get_local_c_headers(X,[{file_data_local,_PF_idl,_,module,_,_,SN,_,Line}|Hs],All,Found)->
     case ic_forms:get_line(X) > Line of
 	true ->
 	    get_local_c_headers(X,Hs,All,[SN|Found]);
 	false ->
 	    get_local_c_headers(X,Hs,All,Found)
     end;
-get_local_c_headers(X,[{file_data_local,PF_idl,_,interface,_,_,SN,_,Line}|Hs],All,Found)->
+get_local_c_headers(X,[{file_data_local,_PF_idl,_,interface,_,_,SN,_,Line}|Hs],All,Found)->
     case ic_forms:get_line(X) > Line of
 	true ->
 	    get_local_c_headers(X,Hs,All,[SN|Found]);
@@ -852,9 +847,9 @@ get_included_c_headers(G) ->
 get_included_c_headers(Included,Included) -> 
     get_included_c_headers(Included,Included,[]).
 
-get_included_c_headers([],All,Found) ->
+get_included_c_headers([],_All,Found) ->
     Found;
-get_included_c_headers([{file_data_included,PF_idl,CF_idl,T,S,N,SN,0,_}|Hs],All,Found) ->
+get_included_c_headers([{file_data_included,PF_idl,_CF_idl,T,_S,_N,SN,0,_}|Hs],All,Found) ->
     Len = length(PF_idl),
     FN = string:sub_string(PF_idl,1,Len-4),
     case only_top_level(PF_idl,All) of
@@ -892,16 +887,16 @@ get_included_c_headers([{file_data_included,PF_idl,CF_idl,T,S,N,SN,0,_}|Hs],All,
 		    get_included_c_headers(Hs,All,["oe_"++FN|Found])
 	    end
     end;
-get_included_c_headers([{file_data_included,PF_idl,_,module,_,_,SN,_,_}|Hs],All,Found)->
+get_included_c_headers([{file_data_included,_PF_idl,_,module,_,_,SN,_,_}|Hs],All,Found)->
     get_included_c_headers(Hs,All,[SN|Found]);
-get_included_c_headers([{file_data_included,PF_idl,_,interface,_,_,SN,_,_}|Hs],All,Found)->
+get_included_c_headers([{file_data_included,_PF_idl,_,interface,_,_,SN,_,_}|Hs],All,Found)->
     get_included_c_headers(Hs,All,[SN|Found]);
 get_included_c_headers([_|Hs],All,Found) ->
     get_included_c_headers(Hs,All,Found).
 
 %% Help functions for the above
 
-only_top_level(PF_idl,[]) ->
+only_top_level(_PF_idl,[]) ->
     true;
 only_top_level(PF_idl,[H|Hs]) ->
     case element(2,H) of
@@ -916,7 +911,7 @@ only_top_level(PF_idl,[H|Hs]) ->
 	    only_top_level(PF_idl,Hs)
     end.
 	
-contains_interface(PF_idl,[]) ->
+contains_interface(_PF_idl,[]) ->
     false;
 contains_interface(PF_idl,[H|Hs]) ->
     case element(2,H) of
@@ -1340,22 +1335,6 @@ add_inh_data(G, S, InclScope, X, [InhBody|InhBodies]) ->
     add_inh_data(G, S, InclScope, X, InhBodies).
 
 
-%% Finds all elements from list1 
-%% which are members in list2
-findMembers(List1,List2) ->
-    findMembers(List1,List2,[]).
-
-findMembers([],_,Found) ->
-    Found;
-findMembers([X|Xs],List,Found) ->
-    case member(X,List) of
-	true ->
-	    findMembers(Xs,List,[X|Found]);
-	false ->
-	    findMembers(Xs,List,Found)
-    end.
-
-
 %% Returns a default broker data
 defaultBrokerData(G) ->
     {to_atom(ic_genobj:impl(G)),transparent}.
@@ -1367,7 +1346,7 @@ preproc(G, N, [X|Xs]) when record(X, interface) ->
     ic_pragma:add_inh_data(G,N,X),
     N2 = [get_id2(X) | N],
     preproc(G, N2, get_body(X)),
-    lists:foreach(fun({Name, Body}) -> preproc(G, N2, Body) end, 
+    lists:foreach(fun({_Name, Body}) -> preproc(G, N2, Body) end, 
 		  X#interface.inherit_body), 
     preproc(G, N, Xs);
 
@@ -1376,10 +1355,10 @@ preproc(G,N,[X|Xs]) when record(X, module) ->
     preproc(G, N2, get_body(X)),
     preproc(G,N,Xs);
 
-preproc(G,N,[X|Xs]) ->
+preproc(G,N,[_X|Xs]) ->
     preproc(G,N,Xs);
 
-preproc(G, N, []) ->
+preproc(_G, _N, []) ->
     ok.
 
 
@@ -1405,7 +1384,7 @@ getBrokerData(G,X,Scope) ->
 		    case hasNonSpecificCodeoptionOnTopFile(S,ic_genobj:idlfile(G)) of
 			true ->
 			    %% Yes, override every other specific code option
-			    [H|T] = Scope,
+			    [_H|T] = Scope,
 			    getBrokerData(G,S,X,Scope,[T],[]);
 			false ->
 			    %% No, let inherited specific code options work
@@ -1518,7 +1497,7 @@ getBrokerDataInh(G,S,X,RS,Scope,CSF,InhList) when record(X,op)->
 	    end
     end;
 %% Just add InhList after removing all inherited
-getBrokerDataInh(G,S,X,RS,Scope,CSF,InhList) ->
+getBrokerDataInh(G,S,X,RS,_Scope,CSF,InhList) ->
    %io:format(" 9"),
     CleanList = remove_inherited(S,InhList),
     getBrokerDataLoop(G,S,X,RS,CleanList,CSF).
@@ -1530,7 +1509,7 @@ getBrokerDataInh(G,S,X,RS,Scope,CSF,InhList) ->
 getBrokerDataLoop(G,S,X,RS,List,CSF) ->
     getBrokerDataLoop(G,S,X,RS,List,[],CSF).
 
-getBrokerDataLoop(G,_,X,RS,[],BrokerDataList,CSF) ->
+getBrokerDataLoop(G,_,_X,_RS,[],BrokerDataList,_CSF) ->
     case no_doubles(BrokerDataList) of
 	[BrokerData] -> %% No pragma codeopt / Multiple branches with pragma codeopt
 	    BrokerData;
@@ -1543,7 +1522,7 @@ getBrokerDataLoop(G,_,X,RS,[],BrokerDataList,CSF) ->
 		    case NewList of
 			[BData] -> %% A branch only, with pragma codeopt
 			    BData;
-			Other -> %% Multiple branches with pragma codeopt
+			_Other -> %% Multiple branches with pragma codeopt
 			    %%io:format("Multiple branches ~p~n",[Other]),
 			    NewList
 		    end;
@@ -1552,7 +1531,7 @@ getBrokerDataLoop(G,_,X,RS,[],BrokerDataList,CSF) ->
 	    end
     end;
 
-getBrokerDataLoop(G,S,X,RS,[[Scope]|Scopes],Found,CSF) when integer(Scope) ->
+getBrokerDataLoop(G,S,X,RS,[[Scope]|Scopes],_Found,CSF) when integer(Scope) ->
    getBrokerData(G,S,X,RS,[[Scope]|Scopes],CSF); 
 
 getBrokerDataLoop(G,S,X,RS,[[Scope]|Scopes],Found,CSF) ->
@@ -1620,14 +1599,14 @@ remove_inheriters(S,RS,InheriterList) ->
     case ReducedInhList of
         [] ->
 	    [];
-	[OneOnly] ->
+	[_OneOnly] ->
 	    ReducedInhList;
-	Other ->
+	_Other ->
 	    EtsList = ets:tab2list(S),
 	    CleanList = 
 		[X || X <- EtsList, element(1,X) == inherits],
-	    CodeOptList = 
-		[X || X <- EtsList, element(1,X) == codeopt],
+%	    CodeOptList = 
+%		[X || X <- EtsList, element(1,X) == codeopt],
 	    NoInheriters =remove_inheriters2(S,ReducedInhList,CleanList),
 
 	    [ [X] || [X] <- NoInheriters,
@@ -1638,7 +1617,7 @@ remove_inheriters2(_,[],_) ->
     [];
 remove_inheriters2(_,[A],_) ->
     [A];
-remove_inheriters2(S,[A,B],EtsList) ->
+remove_inheriters2(_S,[A,B],EtsList) ->
     case remove_inh(A,B,[A,B],EtsList) of
 	[[X]] ->
 	    X;
@@ -1679,7 +1658,7 @@ remove_inherited(S,InheriterList) ->
     remove_inherited(S,InheriterList,CleanList).
 
 
-remove_inherited(S,[A,B],EtsList) ->
+remove_inherited(_S,[A,B],EtsList) ->
     case remove_inhed(A,B,[A,B],EtsList) of
 	[[X]] ->
 	    [[X]];
@@ -1720,11 +1699,10 @@ remove_inhed([X],[Y],List,EtsList) ->
 %%%----------------------------------------------
 get_inherited(S,Scope,OpScopeList) ->
     EtsList = ets:tab2list(S),
-    CleanList = 
-	[[element(3,X)] || X <- EtsList, 
-	      element(1,X) == inherits,
-	      element(2,X) == Scope,
-	      member([element(3,X)],OpScopeList)].
+    [[element(3,X)] || X <- EtsList, 
+		       element(1,X) == inherits,
+		       element(2,X) == Scope,
+		       member([element(3,X)],OpScopeList)].
 
 
 
@@ -1739,7 +1717,7 @@ get_inherited(S,Scope,OpScopeList) ->
 dominantList(S,IL) ->
     dominantList(S,IL,[]).
 
-dominantList(S,[],Found) ->
+dominantList(_S,[],Found) ->
     Found;
 dominantList(S,[[X]|Xs],Found) ->
     case ets:match(S,{codeopt,X,'$1','_','_','_'}) of
@@ -1766,7 +1744,7 @@ inherits(X,Y,EtsList) ->
 	    inherits(X,Y,AllInh,EtsList)
     end.
 
-inherits(X,Y,[],EtsList) ->
+inherits(_X,_Y,[],_EtsList) ->
     false;
 inherits(X,Y,[Z|Zs],EtsList) ->
     case inherits2(X,Y,Z,EtsList) of
@@ -1776,7 +1754,7 @@ inherits(X,Y,[Z|Zs],EtsList) ->
 	    inherits(X,Y,Zs,EtsList)
     end.
 
-inherits2(X,Y,Z,EtsList) ->
+inherits2(_X,Y,Z,EtsList) ->
     case  member({inherits,Z,Y},EtsList) of
 	true ->
 	    true;
@@ -1820,17 +1798,15 @@ filter_pragma_prefix_list2(PT, IdlFile, [PP|PPs], Found) ->
 	{prefix,_,_,_,IdlFile,_} -> %% Same file as the Object, keep
 	    filter_pragma_prefix_list2(PT, IdlFile, PPs, [PP|Found]);
 	
-	Other -> %% NOT in same file as the Object, throw away
+	_Other -> %% NOT in same file as the Object, throw away
 	    filter_pragma_prefix_list2(PT, IdlFile, PPs, Found)
     end.
 
 scoped_names_idl_file(PragmaTab, Name, Scope) ->
     case ets:match(PragmaTab,{'_','$0','_','$2',Scope,Name,'_','_','_'}) of
-
-	[[IdlFile,Type]] -> %% Usual case 
+	[[IdlFile, _Type]] -> %% Usual case 
 	    IdlFile;
-
-	[[File,module]|Files] -> %% Multiple modules, get LOCAL file
+	[[_File,module]|_Files] -> %% Multiple modules, get LOCAL file
 	    case ets:match(PragmaTab,{file_data_local,'$0','_',module,Scope,Name,'_','_','_'}) of
 		[[LocalIdlFile]] -> 
 		    LocalIdlFile;

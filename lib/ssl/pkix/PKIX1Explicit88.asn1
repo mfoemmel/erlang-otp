@@ -19,7 +19,7 @@ BEGIN
       -- BMPString is the subtype of UniversalString and models
       -- the Basic Multilingual Plane of ISO/IEC/ITU 10646-1
 
-UTF8String ::= [UNIVERSAL 12] IMPLICIT OCTET STRING
+-- UTF8String ::= [UNIVERSAL 12] IMPLICIT OCTET STRING
       -- The content of this type conforms to RFC 2279.
 
 -- PKIX specific OIDs

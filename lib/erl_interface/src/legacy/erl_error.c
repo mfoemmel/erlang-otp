@@ -41,7 +41,7 @@
 #include <taskVarLib.h>
 #endif
 
-#include "config.h"
+#include "eidef.h"
 #include "erl_interface.h"
 #include "erl_error.h"
 

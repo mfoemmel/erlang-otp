@@ -64,7 +64,7 @@ static int mn_start_dump(int fd, const erlang_pid *self,
     /* get message */
     while (1) {
       index = EISMALLBUF;
-      if (!(i = ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1))) continue;
+      if (!(i = ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1,0))) continue;
       else break;
     }
 
@@ -127,7 +127,7 @@ static int mn_send_commit(int fd, erlang_pid *mnesia, erlang_pid *self)
   /* get reply */
   while (1) {
     index = EISMALLBUF;
-    if (!(i=ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1))) continue;
+    if (!(i=ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1,0))) continue;
     else if (i < 0) return -1;
     else break;
   }
@@ -236,7 +236,7 @@ static int mn_get_unlink(int fd)
   /* wait for unlink or exit */
   while (1) {
     index = EISMALLBUF;
-    switch (ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1)) {
+    switch (ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1,0)) {
     case 0: continue;
     case ERL_UNLINK: return 0;
     default: return -1;

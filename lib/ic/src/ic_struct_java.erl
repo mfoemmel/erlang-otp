@@ -42,8 +42,7 @@ gen(G, N, X) when record(X, struct) ->
     emit_helper_class(G, N, X, StructName, WireStructName),
     N2 = [StructName ++ "Package" |N],  
     ic_jbe:gen(G, N2, ic_forms:get_body(X));
-gen(G, N, X) -> 
-    %%?PRINTDEBUG2("****** IGNORING ******: ~p", [X]),
+gen(_G, _N, _X) -> 
     ok.
 
 %%-----------------------------------------------------------------
@@ -81,7 +80,7 @@ emit_struct_class(G, N, X, StructName) ->
 %%-----------------------------------------------------------------
 %% Func:  emit_holder_class/4
 %%-----------------------------------------------------------------
-emit_holder_class(G, N, X, StructName) ->
+emit_holder_class(G, N, _X, StructName) ->
     SName = string:concat(StructName, "Holder"),
     {Fd, _}= ic_file:open_java_file(G, N, SName), 
     
@@ -98,8 +97,6 @@ emit_holder_class(G, N, X, StructName) ->
 			 "   }\n\n"
 
 			 "   // methods\n"]),
-
-    MList = struct_member_list(G, N, X),
 
     ic_codegen:emit(Fd, ["   public void _marshal(",?ERLANGPACKAGE,"OtpOutputStream out) throws java.lang.Exception {\n"
 			 "      ",StructName,"Helper.marshal(out, value);\n"
@@ -180,7 +177,7 @@ emit_helper_class(G, N, X, StructName, WireStructName) ->
 %%-----------------------------------------------------------------
 emit_struct_members_declarations(_, _, _, _, []) ->
     ok;
-emit_struct_members_declarations(G, N, X, Fd, [{Member, Type, Id} | MList]) ->
+emit_struct_members_declarations(G, N, X, Fd, [{Member, _Type, Id} | MList]) ->
     ic_codegen:emit(Fd, ["   public ",ic_java_type:getType(G, N, Member)," ",Id,";\n"]),
     emit_struct_members_declarations(G, N, X, Fd, MList).
 
@@ -191,7 +188,7 @@ emit_struct_members_declarations(G, N, X, Fd, [{Member, Type, Id} | MList]) ->
 %%-----------------------------------------------------------------
 emit_struct_members_initialisation(_, _, _, _, []) ->
     ok;
-emit_struct_members_initialisation(G, N, X, Fd, [{Member, Type, Id} | MList]) ->
+emit_struct_members_initialisation(G, N, X, Fd, [{_Member, _Type, Id} | MList]) ->
     ic_codegen:emit(Fd, ["     ",Id," = _",Id,";\n"]),
     emit_struct_members_initialisation(G, N, X, Fd, MList).
 
@@ -283,11 +280,11 @@ emit_struct_unmarshal_function_loop(G, N, X, Fd, [{Member, Type, Id} |MList], Nu
 %%-----------------------------------------------------------------
 %% Func: gen_parameter_list/4
 %%-----------------------------------------------------------------
-gen_parameter_list(G, N, X, [{Member, Type, Id}]) ->
+gen_parameter_list(G, N, _X, [{Member, _Type, Id}]) ->
     ic_java_type:getType(G,N,Member) ++
 	" _" ++ 
 	ic_util:to_list(Id);
-gen_parameter_list(G, N, X, [{Member, Type, Id} | MList]) ->
+gen_parameter_list(G, N, X, [{Member, _Type, Id} | MList]) ->
     ic_java_type:getType(G,N,Member) ++ 
 	" _" ++
 	ic_util:to_list(Id) ++ 
@@ -298,7 +295,7 @@ gen_parameter_list(G, N, X, [{Member, Type, Id} | MList]) ->
 %%-----------------------------------------------------------------
 %% Func: struct_member_list/3
 %%-----------------------------------------------------------------
-struct_member_list(G, N, X) ->
+struct_member_list(_G, _N, X) ->
     M = lists:map(
 	  fun(Member) -> 
 		  lists:map(

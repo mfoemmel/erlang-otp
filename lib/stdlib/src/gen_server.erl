@@ -670,11 +670,28 @@ terminate(Reason, Name, Msg, Mod, State, Debug) ->
 
 %% Maybe we shouldn't do this?  We have the crash report...
 error_info(Reason, Name, Msg, State, Debug) ->
+    Reason1 = 
+	case Reason of
+	    {undef,[{M,F,A}|MFAs]} ->
+		case code:is_loaded(M) of
+		    false ->
+			{'module could not be loaded',[{M,F,A}|MFAs]};
+		    _ ->
+			case erlang:function_exported(M, F, length(A)) of
+			    true ->
+				Reason;
+			    false ->
+				{'function not exported',[{M,F,A}|MFAs]}
+			end
+		end;
+	    _ ->
+		Reason
+	end,    
     format("** Generic server ~p terminating \n"
            "** Last message in was ~p~n"
            "** When Server state == ~p~n"
            "** Reason for termination == ~n** ~p~n",
-	   [Name, Msg, State, Reason]),
+	   [Name, Msg, State, Reason1]),
     sys:print_log(Debug),
     ok.
 
@@ -738,12 +755,29 @@ get_proc_name({global, Name}) ->
 
 get_parent() ->
     case get('$ancestors') of
-	[Parent | _] ->
-	    Parent;
+	[Parent | _] when pid(Parent)->
+            Parent;
+        [Parent | _] when atom(Parent)->
+            name_to_pid(Parent);
 	_ ->
 	    exit(process_was_not_started_by_proc_lib)
     end.
 
+name_to_pid(Name) ->
+    case whereis(Name) of
+	undefined ->
+	    global_name_to_pid(Name);
+	Pid ->
+	    Pid
+    end.
+
+global_name_to_pid(Atom) -> % Should only be called by name_to_pid/1
+    case global:whereis_name(Atom) of
+	undefined ->
+	    exit(could_not_find_registerd_name);
+	Pid ->
+	    Pid
+    end.
 %%-----------------------------------------------------------------
 %% Status information
 %%-----------------------------------------------------------------

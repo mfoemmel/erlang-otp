@@ -50,7 +50,8 @@
 	 %encode_BMPString/2, decode_BMPString/2,
 	 %encode_IA5String/2, decode_IA5String/2,
 	 %encode_NumericString/2, decode_NumericString/2,
-	 encode_ObjectDescriptor/2, decode_ObjectDescriptor/1
+	 encode_ObjectDescriptor/2, decode_ObjectDescriptor/1,
+	 encode_UTF8String/1,decode_UTF8String/1
 	]).
 
 -export([decode_constrained_number/2,
@@ -1089,13 +1090,13 @@ encode_bit_string(C, BL=[{bit,_} | _RestVal], NamedBitList) ->
 
 %% when the value is a list of ones and zeroes
 encode_bit_string(Int, BitListValue, _) 
-  when list(BitListValue),integer(Int) ->
+  when list(BitListValue),integer(Int),Int =< 16 ->
     %% The type is constrained by a single value size constraint
     [40,Int,length(BitListValue),BitListValue];
-% encode_bit_string(C, BitListValue,NamedBitList) 
-%   when list(BitListValue) ->
-%     [encode_bit_str_length(C,BitListValue),
-%      2,45,BitListValue];
+encode_bit_string(Int, BitListValue, _) 
+  when list(BitListValue),integer(Int) ->
+    %% The type is constrained by a single value size constraint
+    [2,40,Int,length(BitListValue),BitListValue];
 encode_bit_string(no, BitListValue,[]) 
   when list(BitListValue) ->
     [encode_length(undefined,length(BitListValue)),
@@ -1121,34 +1122,6 @@ encode_bit_string(C,BitListValue,_NamedBitList)
     [encode_length(C,length(NewBitLVal)),
      2,NewBitLVal]; 
 
-% encode_bit_string(C, BitListValue, NamedBitList) when list(BitListValue) ->
-%     BitListToBinary = 
-% 	%% fun that transforms a list of 1 and 0 to a tuple:
-% 	%% {UnusedBitsInLastByte, Binary}
-% 	fun([H|T],Acc,N,Fun) ->
-% 		Fun(T,(Acc bsl 1)+H,N+1,Fun);
-% 	   ([],Acc,N,_) -> % length fits in one byte
-% 		Unused = (8 - (N rem 8)) rem 8,
-% % 		case N/8 of
-% % 		    _Len =< 255 -> 
-% % 			[30,Unused,(Unused+N)/8,<<Acc:N,0:Unused>>];
-% % 		    _Len -> 
-% % 			Len = (Unused+N)/8,
-% % 			[31,Unused,<<Len:16>>,<<Acc:N,0:Unused>>]
-% % 		end
-% 		{Unused,<<Acc:N,0:Unused>>}
-% 	end,
-%     UnusedAndBin =
-% 	case NamedBitList of
-% 	    [] ->  % dont remove trailing zeroes
-% 		BitListToBinary(BitListValue,0,0,BitListToBinary);
-% 	    _ ->
-% 		BitListToBinary(lists:reverse(
-% 				  lists:dropwhile(fun(0)->true;(1)->false end,
-% 						  lists:reverse(BitListValue))),
-% 				0,0,BitListToBinary)
-% 	end,
-%     encode_bin_bit_string(C,UnusedAndBin,NamedBitList);
 
 %% when the value is an integer
 encode_bit_string(C, IntegerVal, NamedBitList) when integer(IntegerVal)->
@@ -1195,21 +1168,6 @@ encode_bin_bit_string(C,UnusedAndBin={_,_},NamedBitList) ->
 	%% removes all trailing bits if NamedBitList is not empty
 	remove_trailing_bin(NamedBitList,UnusedAndBin),
     case C of
-%    case get_constraint(C,'SizeConstraint') of
-
-% 	0 ->
-% 	    []; % borde avgöras i compile-time
-% 	V when integer(V),V=<16 ->
-% 	    {Unused2,Bin2} = pad_list(V,UnusedAndBin1),
-% 	    <<BitVal:V,_:Unused2>> = Bin2,
-% %	    {bits,V,BitVal};
-% 	    [10,V,BitVal];
-% 	V when integer(V) ->
-% 	    %[align, pad_list(V, UnusedAndBin1)];
-% 	    {Unused2,Bin2} = pad_list(V, UnusedAndBin1),
-% 	    <<BitVal:V,_:Unused2>> = Bin2,
-% 	    [2,octets_unused_to_complete(Unused2,size(Bin2),Bin2)];
-
 	{Lb,Ub} when integer(Lb),integer(Ub) ->
 %	    [encode_length({Lb,Ub},size(Bin1)*8 - Unused1),
 %	     align,UnusedAndBin1];
@@ -1871,12 +1829,38 @@ chars_decode2(Bytes,{Min,Max,CharInTab},NumBits,Len,Acc) ->
 
 
 						% X.691:17 
-encode_null(_Val) -> []; % encodes to nothing
-encode_null({Name,Val}) when atom(Name) ->
-    encode_null(Val).
+encode_null(_Val) -> []. % encodes to nothing
+%encode_null({Name,Val}) when atom(Name) ->
+%    encode_null(Val).
 
 decode_null(Bytes) ->
     {'NULL',Bytes}.
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% encode_UTF8String(Val) -> CompleteList
+%% Val -> <<utf8encoded binary>>
+%% CompleteList -> [apropriate codes and values for driver complete]
+%%
+encode_UTF8String(Val) when binary(Val) ->
+    [encode_length(undefined,size(Val)),
+     octets_to_complete(size(Val),Val)];
+encode_UTF8String(Val) ->
+    encode_UTF8String(list_to_binary(Val)).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% decode_UTF8String(Bytes) -> {Utf8Binary,RemainingBytes}
+%% Utf8Binary -> <<utf8 encoded binary>>
+%% RemainingBytes -> <<buffer>>
+decode_UTF8String(Bytes) -> 
+    {Len,Bytes2} = decode_length(Bytes,undefined),
+    {Octs,Bytes3} = getoctets_as_list(Bytes2,Len),
+    {list_to_binary(Octs),Bytes3}.
+
+
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% encode_object_identifier(Val) -> CompleteList
@@ -2056,9 +2040,39 @@ complete(L) ->
 
 -else.
 
+-ifdef(asn1_r7b_enable_driver).
+complete(L) ->
+    Port = get_asn1_port(),
+    case catch port_control(Port,1,L) of
+	Bin when binary(Bin) ->
+	    Bin;
+	List when list(List) -> handle_error(List,L);
+	{'EXIT',{badarg,Reason}} ->
+	    exit({"failed to call driver probably due to bad asn1 value",Reason});
+	Reason -> exit(Reason)
+    end.
 
- complete(L) ->
-    case catch port_control(drv_complete,1,L) of
+get_asn1_port() ->
+    case catch ets:lookup(asn1_driver_table,asn1_port) of
+	{'EXIT',Reason} -> %table does not exist
+	    asn1rt_driver_handler:load_driver(),
+	    receive
+		{reply,Port} when port(Port) ->
+		    Port
+	    end;
+	[] -> 
+	    asn1_port_owner ! {request_port,self()},
+	    receive
+		{reply,Port} when port(Port) ->
+		    Port
+	    end;
+	[{_,Port}] -> Port
+    end.
+
+-else.
+
+complete(L) ->
+    case catch port_control(asn1_driver_port,1,L) of
 	Bin when binary(Bin) ->
 	    Bin;
 	List when list(List) -> handle_error(List,L);
@@ -2066,10 +2080,12 @@ complete(L) ->
 	    asn1rt_driver_handler:load_driver(),
 	    receive
 		driver_ready ->
-		    case catch port_control(drv_complete,1,L) of
+		    case catch port_control(asn1_driver_port,1,L) of
 			Bin2 when binary(Bin2) -> Bin2;
 			List when list(List) -> handle_error(List,L);
-			Error -> exit(Error)
+			{'EXIT',Reason2={badarg,_R}} -> 
+			    exit({"failed to call driver probably due to bad asn1 value",Reason2});
+			Reason2 -> exit(Reason2)
 		    end;
 		{error,Error} -> % error when loading driver
 		    %% the driver could not be loaded
@@ -2081,12 +2097,14 @@ complete(L) ->
 	    exit(Reason)
     end.
 
+-endif.
+
 handle_error([],_)->
-    exit({error,{"memory allocation problem"}});
+    exit({error,{asn1,{"memory allocation problem in driver"}}});
 handle_error("1",L) -> % error in complete in driver
-    exit({error,{asn1_error,L}});
+    exit({error,{asn1,L}});
 handle_error(ErrL,L) ->
-    exit({error,{unknown_error,ErrL,L}}).
+    exit({error,{asn1,ErrL,L}}).
 
 -endif.
 

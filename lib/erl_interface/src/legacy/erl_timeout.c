@@ -24,7 +24,7 @@
 
 /* FIXME: well, at least I can compile now... */
 
-#include "config.h"
+#include "eidef.h"
 
 #include <stdio.h>
 #include <stdlib.h>

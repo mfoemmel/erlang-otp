@@ -254,7 +254,7 @@ configure(WinInfo, TraceWin) ->
 
 flush_configure() ->
     receive
-	{gs, _Id, configure, _Data, Arg} ->
+	{gs, _Id, configure, _Data, _Arg} ->
 	    flush_configure()
     after 100 ->
 	    true
@@ -526,12 +526,13 @@ mark_line2(Editor, Line, How) ->
 		 where -> ">>>";
 		 false -> "   "
 	     end,
-    Style = if
-		How==false -> {screen, [], 12};
-		true -> {screen, [bold], 12}
-	    end,
+    Font = if
+	       How==false -> dbg_ui_win:font(normal);
+	       true -> dbg_ui_win:font(bold)
+	   end,
     config_editor(Editor, [{overwrite, {{Line,5}, Prefix}},
-			   {font_style, {{{Line,0},{Line,lineend}},Style}}]).
+			   {font_style,
+			    {{{Line,0},{Line,lineend}}, Font}}]).
 
 %%--------------------------------------------------------------------
 %% select_line(WinInfo, Line) -> WinInfo
@@ -560,7 +561,7 @@ select_line(WinInfo, Line) ->
 
 select_line(Editor, Line, true) ->
     config_editor(Editor, {selection, {{Line,0}, {Line,lineend}}});
-select_line(Editor, Line, false) ->
+select_line(Editor, _Line, false) ->
     config_editor(Editor, {selection, {{1,0}, {1,0}}}).
 
 selected_line(WinInfo) ->
@@ -578,9 +579,10 @@ eval_output(Text, Face) ->
     Y1 = gs:read('EvalEditor', size),
     config_editor('EvalEditor', {insert,{'end',Text}}),
     Y2 = gs:read('EvalEditor', size),
-    Type = if Face==normal -> []; Face==bold -> [bold] end,
+
+    Font = dbg_ui_win:font(Face),
     config_editor('EvalEditor',
-		  [{font_style,{{{Y1,0},{Y2,lineend}},{screen,Type,12}}},
+		  [{font_style, {{{Y1,0},{Y2,lineend}}, Font}},
 		   {vscrollpos,Y2}]).
 
 %%--------------------------------------------------------------------
@@ -622,10 +624,11 @@ delete_gridlines(Row) ->
 %%   Str = string()
 %%--------------------------------------------------------------------
 trace_output(Str) ->
+    Font = dbg_ui_win:font(normal),
     config_editor('TraceEditor',
 		  [{insert, {'end',Str}},
 		   {fg, {{{1,0},'end'},black}},
-		   {font_style, {{{1,0},'end'},{screen,[],12}}}]),
+		   {font_style, {{{1,0},'end'},Font}}]),
     Max = gs:read('TraceEditor', size),
     config_editor('TraceEditor', {vscrollpos, Max}).
     
@@ -657,7 +660,7 @@ handle_event({gs, _Id, configure, _Data, [W, H|_]}, WinInfo) ->
 	    configure(WinInfo, W, H),
 	    {win, WinInfo#winInfo{size={W, H}}}
     end;
-handle_event({gs, _Id, destroy, _Data, _Arg}, WinInfo) ->
+handle_event({gs, _Id, destroy, _Data, _Arg}, _WinInfo) ->
     stopped;
 handle_event({gs, _Id, motion, _Data, [X,Y]}, WinInfo) ->
     {LastX, LastY} = dbg_ui_win:motion(X, Y),
@@ -668,24 +671,24 @@ handle_event({gs, RB, buttonpress, resizebar, _Arg}, WinInfo) ->
     ignore;
 
 %% Menus, buttons and keyboard shortcuts
-handle_event({gs, _Id, keypress, _Data, [Key,_,_,1]}, WinInfo) ->
+handle_event({gs, _Id, keypress, _Data, [Key,_,_,1]}, _WinInfo) ->
     {shortcut, Key};
-handle_event({gs, _Id, click, {dbg_ui_winman, Win}, _Arg}, WinInfo) ->
+handle_event({gs, _Id, click, {dbg_ui_winman, Win}, _Arg}, _WinInfo) ->
     dbg_ui_winman:raise(Win),
     ignore;
-handle_event({gs, _Id, click, {menuitem, Name}, _Arg}, WinInfo) ->
+handle_event({gs, _Id, click, {menuitem, Name}, _Arg}, _WinInfo) ->
     Name;
-handle_event({gs, _Id, click, {menu, Menu}, _Arg}, WinInfo) ->
+handle_event({gs, _Id, click, {menu, Menu}, _Arg}, _WinInfo) ->
     Names = dbg_ui_win:selected(Menu),
     {Menu, Names};
-handle_event({gs, _Id, click, {break, Point, What}, _Arg}, WinInfo) ->
+handle_event({gs, _Id, click, {break, Point, What}, _Arg}, _WinInfo) ->
     {break, Point, What};
-handle_event({gs, _Id, click, {module, Mod, view}, _Arg}, WinInfo) ->
+handle_event({gs, _Id, click, {module, Mod, view}, _Arg}, _WinInfo) ->
     {module, Mod, view};
 
 %% Code area
 handle_event({gs, Editor, buttonpress, code_editor, _Arg}, WinInfo) ->
-    {Row, Col} = gs:read(Editor, insertpos),
+    {Row, _Col} = gs:read(Editor, insertpos),
     Again = receive
 		{gs, Editor, buttonpress, code_editor, _} ->
 		    gs:read(Editor, insertpos)
@@ -710,11 +713,11 @@ handle_event({gs, Editor, buttonpress, code_editor, _Arg}, WinInfo) ->
     end;
 
 %% Button area
-handle_event({gs, _Id, click, {button, Name}, _Arg}, WinInfo) ->
+handle_event({gs, _Id, click, {button, Name}, _Arg}, _WinInfo) ->
     Name;
 
 %% Evaluator area
-handle_event({gs, 'EvalEntry', keypress, _Data, ['Return'|_]}, WinInfo) ->
+handle_event({gs, 'EvalEntry', keypress, _Data, ['Return'|_]}, _WinInfo) ->
     Command = case gs:read('EvalEntry', text) of
 		  [10] ->
 		      eval_output("\n", normal),
@@ -727,14 +730,14 @@ handle_event({gs, 'EvalEntry', keypress, _Data, ['Return'|_]}, WinInfo) ->
     Command;
 
 %% Bindings area
-handle_event({gs, _Id, click, {binding, {Var, Val}}, _Arg}, WinInfo) ->
+handle_event({gs, _Id, click, {binding, {Var, Val}}, _Arg}, _WinInfo) ->
     Str = io_lib:format("< ~p = ~p~n", [Var, Val]),
     eval_output(Str, bold),
     ignore;
-handle_event({gs, _Id, doubleclick, {binding, B}, _Arg}, WinInfo) ->
+handle_event({gs, _Id, doubleclick, {binding, B}, _Arg}, _WinInfo) ->
     {edit, B};
 
-handle_event(GSEvent, WinInfo) ->
+handle_event(_GSEvent, _WinInfo) ->
     ignore.
 
 
@@ -766,8 +769,10 @@ code_editor(Name, W, H) ->
 		       {keypress,false}, {buttonpress,true}, 
 		       {data,code_editor}]),
     config_editor(Editor, [{vscroll,right}, {hscroll,bottom}]),
+    Font = dbg_ui_win:font(normal),
     config_editor(Editor, [{wrap,none}, {fg,{{{1,0},'end'},black}},
-			   {font_style,{{{1,0},'end'},{screen,[],12}}}]),
+			   {font, Font},
+			   {font_style, {{{1,0},'end'},Font}}]),
     Editor.
 
 resize_code_area(WinInfo, Key, Diff) ->
@@ -818,12 +823,12 @@ button_area(Bu, X, Y, FrameOpts, Win) ->
 		1,
 		buttons()).
 
-resize_button_area(close, width, Diff) ->
+resize_button_area(close, width, _Diff) ->
     ignore;
 resize_button_area(open, width, Diff) ->
     gs:config('ButtonArea', {width, gs:read('ButtonArea', width)+Diff}).
 
-%%--Evaluator Area----------------------------------------------------    
+%%--Evaluator Area----------------------------------------------------
 
 eval_area({Ev,Bi}, X, Y, FrameOpts, Win) ->
     {W,H} = if
@@ -839,19 +844,21 @@ eval_area({Ev,Bi}, X, Y, FrameOpts, Win) ->
     gs:entry('EvalEntry', 'EvalArea',
 	     [{x,80}, {y,35}, {width,185}, {height,25},
 	      {anchor,sw}, {keypress,true}]),
+    Font = dbg_ui_win:font(normal),
     gs:editor('EvalEditor', 'EvalArea',
 	      [{x,5}, {y,35}, {width, 280}, {height, 160},
 	       {keypress,false},
 	       {vscroll,right}, {hscroll,bottom},
 	       {wrap,none}, {fg,{{{1,0},'end'},black}},
-	       {font_style,{{{1,0},'end'},{screen,[],12}}}]),
+	       {font, Font},
+	       {font_style,{{{1,0},'end'},Font}}]),
     gs:config('EvalEditor', {enable, false}),
     if
 	Ev==open, Bi==close -> resize_eval_area(Ev, width, 257);
 	true -> ignore
     end.
 
-resize_eval_area(close, Key, Diff) ->
+resize_eval_area(close, _Key, _Diff) ->
     ignore;
 resize_eval_area(open, Key, Diff) ->
     New = gs:read('EvalArea', Key)+Diff,
@@ -874,10 +881,11 @@ bind_area({Ev,Bi}, X, Y, FrameOpts, Win) ->
     gs:frame('BindArea', Win,
 	     [{x,X}, {y,Y}, {width,W}, {height,H} | FrameOpts]),
 
+    Font = dbg_ui_win:font(bold),
     gs:grid('BindGrid', 'BindArea',
 	    [{x,2}, {y,2}, {height,193}, {width,241},
 	     {fg,black}, {vscroll,right}, {hscroll,bottom},
-	     {font,{screen,[bold],12}}, 
+	     {font,Font},
 	     calc_columnwidths(241), {rows, {1,50}}]), 
     gs:gridline('BindGrid',
 		[{row,1}, {height,14}, {fg,blue},
@@ -888,7 +896,7 @@ bind_area({Ev,Bi}, X, Y, FrameOpts, Win) ->
 	true -> ignore
     end.
 
-resize_bind_area(close, Key, Diff) ->
+resize_bind_area(close, _Key, _Diff) ->
     ignore;
 resize_bind_area(open, Key, Diff) ->
     New = gs:read('BindArea', Key)+Diff,
@@ -922,12 +930,14 @@ trace_area(Tr, X, Y, FrameOpts, Win) ->
     Editor = gs:editor('TraceEditor', 'TraceArea',
 		       [{x,5}, {y,5}, {width,536}, {height,190},
 			{keypress,false}]),
+    Font = dbg_ui_win:font(normal),
     config_editor(Editor,
 		  [{vscroll,right}, {hscroll,bottom},
 		   {wrap,none},{fg,{{{1,0},'end'},black}},
-		   {font_style,{{{1,0},'end'},{screen,[],12}}}]).
+		   {font, Font},
+		   {font_style,{{{1,0},'end'},Font}}]).
 
-resize_trace_area(close, Key, Diff) ->
+resize_trace_area(close, _Key, _Diff) ->
     ignore;
 resize_trace_area(open, Key, Diff) ->
     New = gs:read('TraceArea', Key)+Diff,
@@ -965,13 +975,13 @@ resizebar(Flag, Name, X, Y, W, H, Obj) ->
 				 {buttonpress,true}, {buttonrelease,true},
 				 {data,resizebar}]).
 
-rb1({Bu,Ev,Bi,Tr}) ->
+rb1({_Bu,Ev,Bi,Tr}) ->
     if
 	Ev==close, Bi==close, Tr==close -> close;
 	true -> open
     end.
     
-rb2({Bu,Ev,Bi,Tr}) ->
+rb2({_Bu,Ev,Bi,Tr}) ->
     if
 	Tr==open ->
 	    if
@@ -981,7 +991,7 @@ rb2({Bu,Ev,Bi,Tr}) ->
 	true -> close
     end.
     
-rb3({Bu,Ev,Bi,Tr}) ->
+rb3({_Bu,Ev,Bi,_Tr}) ->
     if
 	Ev==open, Bi==open -> open;
 	true -> close
@@ -1082,7 +1092,7 @@ configure(WinInfo, NewW, NewH) ->
 %% Compute how much the width of each frame must be increased or
 %% decreased in order to adjust to the new window width.
 configure_widths(OldW, NewW, Flags) ->
-    {Bu,Ev,Bi,Tr} = Flags,
+    {_Bu,Ev,Bi,_Tr} = Flags,
 
     %% Difference between old and new width, considering min window width
     Diff = abs(max(OldW,330)-max(NewW,330)),
@@ -1135,7 +1145,7 @@ configure_widths(OldW, NewW, Flags) ->
 %% Compute how much the height of each frame must be increased or
 %% decreased in order to adjust to the new window height.
 configure_heights(OldH, NewH, Flags) ->
-    {Bu,Ev,Bi,Tr} = Flags,
+    {_Bu,Ev,Bi,Tr} = Flags,
 
     %% Difference between old and new height, considering min window height
     MinH = min_height(Flags),
@@ -1198,7 +1208,8 @@ min_height(Flags) ->
     H4 = case rb2(Flags) of
 	     open -> H3+10;
 	     close -> H3
-	 end.
+	 end,
+    H4.
 
 bu(close) -> 0;
 bu(open)  -> 30.
@@ -1243,7 +1254,7 @@ remaining([]) -> 0;
 remaining([{Max,Max}|T]) -> remaining(T);
 remaining([_H|T]) -> 1 + remaining(T).
 
-divide2(Diff, Max, Max) -> {Max,0};
+divide2(_Diff, Max, Max) -> {Max,0};
 divide2(Diff, Curr, Max) ->
     New = Curr+Diff,
     if
@@ -1294,7 +1305,7 @@ resizeloop(WI, RB, Prev, {Min1,Max1},{Min2,Max2},{Min3,Max3}) ->
 
 resize_win(_WinInfo, _RB, null) -> ignore;
 resize_win(WinInfo, 'RB1', Y) ->
-    {Bu,S,Bi,F} = Flags = WinInfo#winInfo.flags,
+    {_Bu,S,Bi,F} = Flags = WinInfo#winInfo.flags,
     H = gs:read('CodeArea', height),
     Diff = H-(Y-25),
 
@@ -1317,7 +1328,7 @@ resize_win(WinInfo, 'RB1', Y) ->
     %% Adjust the frames y coordinates
     config_v();
 resize_win(WinInfo, 'RB2', Y) ->
-    {Bu,S,Bi,F} = Flags = WinInfo#winInfo.flags,
+    {_Bu,S,Bi,F} = Flags = WinInfo#winInfo.flags,
     Prev = gs:read('TraceArea',y),
     Diff = Prev-(Y+10),
     
@@ -1336,7 +1347,7 @@ resize_win(WinInfo, 'RB2', Y) ->
     config_v();
 
 resize_win(WinInfo, 'RB3', X) ->
-    {Bu,S,Bi,F} = WinInfo#winInfo.flags,
+    {_Bu,S,Bi,_F} = WinInfo#winInfo.flags,
     Prev = gs:read('BindArea', x),
     Diff = Prev-(X+10),
     
@@ -1348,7 +1359,7 @@ resize_win(WinInfo, 'RB3', X) ->
     config_h().
 
 %% Given the window dimensions, return the limits for a  resize bar.
-rblimits('RB1',W,H) ->
+rblimits('RB1',_W,H) ->
     
     %% Code frame should not have height <100
     Min = 126,
@@ -1368,7 +1379,7 @@ rblimits('RB1',W,H) ->
 	  end,
     
     {Min,Max};
-rblimits('RB2',W,H) ->
+rblimits('RB2',_W,H) ->
 
     %% TraceFrame should not have height <100
     Max = H-112,
@@ -1379,7 +1390,7 @@ rblimits('RB2',W,H) ->
     
     {Min,Max};
 
-rblimits('RB3',W,H) ->
+rblimits('RB3',W,_H) ->
     
     %% Neither CodeArea nor BindArea should occupy 
     %% less than 1/3 of the total window width and EvalFrame should
@@ -1387,10 +1398,10 @@ rblimits('RB3',W,H) ->
     {max(round(W/3),289),round(2*W/3)}.
 
 max(A, B) when A>B -> A;
-max(A, B) -> B.
+max(_A, B) -> B.
 
 min(A, B) when A<B -> A;
-min(A, B) -> B.
+min(_A, B) -> B.
 
 
 %%====================================================================
@@ -1483,7 +1494,7 @@ helpwin_action(search, default, _AttPid, Editor, {Pos, CS}, Win) ->
 	    end
     end.
 
-search(Str, Editor, Max, {Row, Col}, CS) when Row>Max ->
+search(_Str, _Editor, Max, {Row, _Col}, _CS) when Row>Max ->
     not_found;
 search(Str, Editor, Max, {Row, Col}, CS) ->
     SearchIn = lowercase(CS, gs:read(Editor,
@@ -1505,14 +1516,16 @@ lowercase(false, Str) ->
 
 mark_string(Editor, {Row, Col}, Str) ->
     Between = {{Row,Col}, {Row,Col+length(Str)}},
+    Font = dbg_ui_win:font(bold),
     gs:config(Editor, [{vscrollpos, Row-5},
-		       {font_style, {Between, {screen,[bold],12}}},
+		       {font_style, {Between, Font}},
 		       {fg, {Between, red}}]).
 
 unmark_string(Editor, {Row, Col}) ->
     Between = {{Row,Col}, {Row,lineend}},
+    Font = dbg_ui_win:font(normal),
     gs:config(Editor, [{vscrollpos, Row-5},
-		       {font_style, {Between, {screen,[],12}}},
+		       {font_style, {Between, Font}},
 		       {fg, {Between, black}}]).
 
 helpwin(Type, GS, {X, Y}) ->

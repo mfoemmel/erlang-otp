@@ -200,16 +200,16 @@ trace(What, Args) ->
 %% Internal functions
 %%====================================================================
 
-eval_function(_Mod, Fun, As0, Bs, Cm, Lc, Le, F, LineNo, _Called)
-  when is_function(Fun) ->
-    push(Bs, F, Cm, Lc, Le, LineNo),
+eval_function(_Mod, Fun, As0, Bs0, Cm, Lc, Le, F, LineNo, _Called)
+  when is_function(Fun); Fun == eval_int_fun ->
+    push(Bs0, F, Cm, Lc, Le, LineNo),
     case lambda(Fun, As0) of
 	undef ->
-	    exit({undef,[{Fun,As0}|in_fnk(F)]}, Cm, LineNo, Bs);
+	    exit({undef,[{Fun,As0}|in_fnk(F)]}, Cm, LineNo, Bs0);
 	badfun ->
-	    exit({{badfun,Fun},F}, Cm, LineNo, Bs);
+	    exit({{badfun,Fun},F}, Cm, LineNo, Bs0);
 	badarity ->
-	    exit({badarity,[{Fun,As0}|in_fnk(F)]}, Cm, LineNo, Bs);
+	    exit({badarity,[{Fun,As0}|in_fnk(F)]}, Cm, LineNo, Bs0);
 	not_interpreted ->
 	    Debugged = get(self),
 	    Debugged ! {sys, self(), {catch_apply(get_catch_lev()),
@@ -217,17 +217,19 @@ eval_function(_Mod, Fun, As0, Bs, Cm, Lc, Le, F, LineNo, _Called)
 	    %% Enter meta-wait state
 	    {value, Val, _Bs} =
 		dbg_imeta:main_meta_loop(Debugged,
-					 Bs, Le+1, false, Cm, LineNo, F),
+					 Bs0, Le+1, false, Cm, LineNo, F),
 	    pop(Le),
-	    {value, Val, Bs};
-	{Cs, Mod, Name, As} when Lc==false ->
+	    {value, Val, Bs0};
+	{Cs, Mod, Name, As, Bs} when Lc==false ->
 	    {value, Val, _Bs} =
-		fnk_clauses(Name,Cs,As,Mod,true,Le+1,Cm,LineNo,Bs),
+		fnk_clauses(Name,Cs,As,Mod,true,Le+1,Mod,LineNo,Bs),
 	    trace(return, {Le,Val,Lc}),
 	    pop(Le),
-	    {value, Val, Bs};
-	{Cs, Mod, Name, As} ->
-	    fnk_clauses(Name, Cs, As, Mod, Lc, Le+1, Cm, LineNo,Bs)
+	    {value, Val, Bs0};
+	{Cs, Mod, Name, As, Bs} ->
+	    {value, Val, _Bs} =
+		fnk_clauses(Name, Cs, As, Mod, Lc, Le+1, Mod, LineNo,Bs),
+	    {value, Val, Bs0}
     end;
 eval_function(Mod, Name, As, Bs, Cm, Lc, Le, F, LineNo, Called) ->
     push(Bs, F, Cm, Lc, Le, LineNo),
@@ -236,12 +238,12 @@ eval_function(Mod, Name, As, Bs, Cm, Lc, Le, F, LineNo, Called) ->
 	%% Continue evaluation in meta process
 	Cs when list(Cs), Lc==false ->
 	    {value, Val, _} =
-		fnk_clauses(Name, Cs, As, Mod, true, Le+1, Cm, LineNo, Bs),
+		fnk_clauses(Name, Cs, As, Mod, true, Le+1, Cm, LineNo, []),
 	    trace(return, {Le,Val,Lc}),
 	    pop(Le),
 	    {value, Val, Bs};
 	Cs when list(Cs) ->
-	    fnk_clauses(Name, Cs, As, Mod, Lc, Le+1, Cm, LineNo, Bs);
+	    fnk_clauses(Name, Cs, As, Mod, Lc, Le+1, Cm, LineNo, []);
 
 	%% Continue evaluation in non-interpreted code
 	not_interpreted ->
@@ -257,49 +259,36 @@ eval_function(Mod, Name, As, Bs, Cm, Lc, Le, F, LineNo, Called) ->
 	    exit({undef,[{Mod,Name,As}|in_fnk(F)]}, Cm, LineNo, Bs)
     end.
 
-lambda(Fun, As0) when is_function(Fun) ->
-    {module, Mod} = erlang:fun_info(Fun, module),
-    case fun_call_clauses(Mod, Fun) of
-	{Name, Arity, Cs} ->
-	    {env, Env} = erlang:fun_info(Fun, env),
-	    case As0 ++ Env of
-		As when length(As) =:= Arity ->
-		    {Cs, Mod, Name, As};
+lambda(eval_int_fun, [Cs,As,Bs,{Mod, Name}]) ->
+    %% Interpreted fun called from outside
+    if 
+	length(element(3,hd(Cs))) == length(As) ->
+	    db_ref(Mod),  %% Adds ref between module and process
+	    {Cs, Mod, Name, As, Bs};
+	true -> 
+	    badarity
+    end;
+lambda(Fun, As) when is_function(Fun) ->
+    case erlang:fun_info(Fun, module) of
+	{module, ?MODULE} ->
+	    case erlang:fun_info(Fun, env) of
+		[{Mod,Name},Bs,Cs] ->
+		    Arity = erlang:fun_info(Fun, arity),
+		    if 
+			length(As) == Arity ->
+			    %% Adds ref between module and process
+			    db_ref(Mod),  
+			    {Cs, Mod, Name, As, Bs};
+			true ->
+			    badarity
+		    end;
 		_ ->
-		    badarity
+		    not_interpreted
 	    end;
-	Error -> Error
+	_ ->
+	    not_interpreted
     end;
 lambda(_, _) -> badfun.
-	    
-fun_call_clauses(Mod, Fun) ->
-    {new_index, Index} = erlang:fun_info(Fun, new_index),
-    {new_uniq, Uniq} = erlang:fun_info(Fun, new_uniq),
-    case fun_call_clauses_1(Mod, {'fun',Mod,Index,Uniq}) of
-	Data when is_tuple(Data) -> Data;
-	Error -> Error
-    end.
-
-fun_call_clauses_1(Mod, Key) ->
-    case cached(Key) of
-	false ->
-	    case db_ref(Mod) of
-		not_found -> not_interpreted;
-		DbRef ->
-		    case dbg_idb:lookup(DbRef, Key) of
-			{ok, Data} ->
-			    cache(Key, Data),
-			    Data;
-			Error ->
-			    case dbg_idb:lookup(DbRef, module) of
-				{ok, _} -> undef;
-				Error -> not_interpreted
-			    end
-		    end
-	    end;
-	FunData when tuple(FunData) ->
-	    FunData
-    end.
 
 function(Mod, Name, Args, local) ->
     Arity = length(Args),
@@ -369,11 +358,12 @@ cached(Key) ->
     end.
 
 fnk_clauses(F,[{clause,_,Pars,G,B}|Cs],Args,Cm,Lc,Le,CallM,LineNo,Bs0) ->
-    case head_match(Pars,Args,[]) of
+    case head_match(Pars,Args,[],Bs0) of
 	{match,Bs} ->
 	    case guard(G,Bs) of
 		true ->
-		    seq(B,Bs,Cm,Lc,Le,{Cm,F,Args,make_ref()});
+		    AllBs = add_bindings(Bs,Bs0),
+		    seq(B,AllBs,Cm,Lc,Le,{Cm,F,Args,make_ref()});
 		false ->
 		    fnk_clauses(F,Cs,Args,Cm,Lc,Le,CallM,LineNo,Bs0)
 	    end;
@@ -493,9 +483,50 @@ expr({match,LineNo,Lhs,Rhs0}, Bs0, Cm, _Lc, Le, F) ->
     end;
 
 %% Construct a fun
-expr({make_fun,_,Index,Uniq,Free0}, Bs, Cm, _Lc, _Le, _F) ->
-    Free = get_free_vars(Free0, Bs),
-    Fun = erts_debug:make_fun({get(self),Cm,Index,Uniq,Free}),
+%expr({make_fun,_Line,Index,Uniq,Free0}, Bs, Cm, _Lc, _Le, _F) ->
+expr({make_fun,Line,Name,Cs}, Bs, Cm, _Lc, _Le, _F) ->
+    Arity = length(element(3,hd(Cs))),
+    Info = {Cm,Name},
+    Fun = 
+	case Arity of
+	    0 -> fun() -> eval_fun(Cs, [], Bs, Info) end;
+	    1 -> fun(A) -> eval_fun(Cs, [A], Bs,Info) end;
+	    2 -> fun(A,B) -> eval_fun(Cs, [A,B], Bs,Info) end;
+	    3 -> fun(A,B,C) -> eval_fun(Cs, [A,B,C], Bs,Info) end;
+	    4 -> fun(A,B,C,D) -> eval_fun(Cs, [A,B,C,D], Bs,Info) end;
+	    5 -> fun(A,B,C,D,E) -> eval_fun(Cs, [A,B,C,D,E], Bs,Info) end;
+	    6 -> fun(A,B,C,D,E,F) -> eval_fun(Cs, [A,B,C,D,E,F], Bs,Info) end;
+	    7 -> fun(A,B,C,D,E,F,G) -> 
+			 eval_fun(Cs, [A,B,C,D,E,F,G], Bs,Info) end;
+	    8 -> fun(A,B,C,D,E,F,G,H) -> 
+			 eval_fun(Cs, [A,B,C,D,E,F,G,H], Bs,Info) end;
+	    9 -> fun(A,B,C,D,E,F,G,H,I) -> 
+			 eval_fun(Cs, [A,B,C,D,E,F,G,H,I], Bs,Info) end;
+	    10 -> fun(A,B,C,D,E,F,G,H,I,J) -> 
+		     	  eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J], Bs,Info) end;
+	    11 -> fun(A,B,C,D,E,F,G,H,I,J,K) -> 
+		     	  eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K], Bs,Info) end;
+	    12 -> fun(A,B,C,D,E,F,G,H,I,J,K,L) -> 
+		     	  eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L], Bs,Info) end;
+	    13 -> fun(A,B,C,D,E,F,G,H,I,J,K,L,M) -> 
+		     	  eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M], Bs,Info) end;
+	    14 -> fun(A,B,C,D,E,F,G,H,I,J,K,L,M,N) -> 
+		     	  eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N], Bs,Info) end;
+	    15 -> fun(A,B,C,D,E,F,G,H,I,J,K,L,M,N,O) -> 
+		     	  eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O], Bs,Info) end;
+	    16 -> fun(A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P) -> 
+		     	  eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P], Bs,Info) end;
+	    17 -> fun(A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q) -> 
+		     	  eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q], Bs,Info) end;
+	    18 -> fun(A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R) -> 
+		     	  eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R], Bs,Info) end;
+	    19 -> fun(A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S) -> 
+		     	  eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S],Bs,Info) end;
+	    20 -> fun(A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T) -> 
+			  eval_fun(Cs, [A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T],Bs,Info) end;
+	    _Other ->
+		exit({{'argument_limit',{'fun',Line,Cs}},[{erl_eval,expr,3}]})
+	end,
     {value,Fun,Bs};
 
 %% Local function call
@@ -511,7 +542,7 @@ expr({call_remote,LineNo,Mod,Func,As0},Bs0,Cm,Lc,Le,F) ->
     eval_function(Mod,Func,As,Bs,Cm,Lc,Le,F,LineNo,extern);
 
 %% Call to self/0 (optimization)
-expr(self, Bs, _, _, _, _) ->
+expr({dbg,_,self,[]}, Bs, _, _, _, _) ->
     {value,get(self),Bs};
 
 %% Call to "safe" BIF,ie a BIF that can safely be executed in Meta
@@ -625,6 +656,10 @@ expr({lc,_,E,Qs}, Bs, Cm, Lc, Le, F) ->
 expr(E,_,_,_,_,_) ->
     exit({'NYI',E}).
 
+%% Interpreted fun() called from uninterpreted module, recurse
+eval_fun(Cs, As, Bs, Info) ->
+    dbg_debugged:eval(?MODULE, eval_int_fun, [Cs,As,Bs,Info]).
+
 %% eval_lc(Expr,[Qualifier],Bindings,Mod,LastCall,Level,Func) ->
 %%	{value,Value,Bindings}.
 %% This is evaluating list comprehensions "straight out of the book".
@@ -634,12 +669,12 @@ eval_lc(E,Qs,Bs,Cm,Lc,Le,F) ->
 eval_lc1(E,[{generate,_,P,L0}|Qs],Bs0,Cm,Lc,Le,F) ->
     {value,L1,Bs1} = expr(L0,Bs0,Cm,false,Le,F),
     lists:flatmap(fun (V) ->
-		    case match(P,V,[]) of
-			{match,Bsn} ->
-			    Bs2 = add_bindings(Bsn,Bs1),
-			    eval_lc1(E,Qs,Bs2,Cm,Lc,Le,F);
-			nomatch -> []
-		    end end,L1);
+			  case catch match1(P,V,[],Bs0) of
+			      {match,Bsn} ->
+				  Bs2 = add_bindings(Bsn,Bs1),
+				  eval_lc1(E,Qs,Bs2,Cm,Lc,Le,F);
+			      nomatch -> []
+			  end end,L1);
 eval_lc1(E,[{guard,Q}|Qs],Bs0,Cm,Lc,Le,F) ->
     case guard(Q,Bs0) of
 	true -> eval_lc1(E,Qs,Bs0,Cm,Lc,Le,F);
@@ -664,11 +699,6 @@ module_info(Mod, exports) ->
     {ok, Exp} = dbg_iserver:call(get(int), {lookup, Mod, exports}),
     Exp;
 module_info(_Mod, functions) -> [].
-
-get_free_vars([V|Vs],Bs) ->
-    {value,Val} = binding(V,Bs),
-    [Val|get_free_vars(Vs,Bs)];
-get_free_vars([], _) -> [].
 
 catch_apply(0) -> apply;
 catch_apply(Lev) when integer(Lev) -> catch_apply.
@@ -972,8 +1002,18 @@ guard_exprs([A0|As0],Bs) ->
 guard_exprs([], _) ->
     {values,[]}.
 
-guard_expr(self, _) ->
+guard_expr({dbg,_,self,[]}, _) ->
     {value,get(self)};
+guard_expr({safe_bif,_,erlang,'not',As0}, Bs) ->
+    %% BUG compatible with R9C remove in R10
+    {values,As} = guard_exprs(As0,Bs),
+%%    io:format("not ~p~n",[As]),
+    if [As] == [true] ->
+	    {value, false};
+       true ->
+	    {value, true}
+    end;
+%%   {value,apply(erlang,'not',As)};
 guard_expr({safe_bif,_,Mod,Func,As0}, Bs) ->
     {values,As} = guard_exprs(As0,Bs),
     {value,apply(Mod,Func,As)};
@@ -998,12 +1038,12 @@ guard_expr({bin,_,Flds},Bs) ->
 
 %% match(Pattern,Term,Bs) -> {match,Bs} | nomatch
 match(Pat,Term,Bs) ->
-    catch match1(Pat,Term,Bs).
-match1({value,_,V}, V, Bs) ->
+    catch match1(Pat,Term,Bs, Bs).
+match1({value,_,V}, V, Bs,_BBs) ->
     {match,Bs};
-match1({var,_,'_'},Term,Bs) -> % Anonymous variable matches
+match1({var,_,'_'},Term,Bs,_BBs) -> % Anonymous variable matches
     {match,add_anon(Term,Bs)};   % everything,save it anyway
-match1({var,_,Name},Term,Bs) ->
+match1({var,_,Name},Term,Bs,_BBs) ->
     case binding(Name,Bs) of
 	{value,Term} ->
 	    {match,Bs};
@@ -1012,37 +1052,40 @@ match1({var,_,Name},Term,Bs) ->
 	unbound ->
 	    {match,[{Name,Term}|Bs]} % Add the new binding
     end;
-match1({match,_,Pat1,Pat2}, Term, Bs0) ->
-    {match,Bs1} = match1(Pat1,Term,Bs0),
-    match1(Pat2,Term,Bs1);
-match1({cons,_,H,T},[H1|T1],Bs0) ->
-    {match,Bs} = match1(H,H1,Bs0),
-    match1(T,T1,Bs);
-match1({tuple,_,Elts},Tuple,Bs) when tuple(Tuple),length(Elts)=:=size(Tuple) ->
-    match_tuple(Elts,Tuple,1,Bs);
-match1({bin,_,Fs}, B, Bs0) when is_binary(B) ->
-    %% XXX Sending the same bindings for both binding variables is not
-    %% correct, but at least some bit syntax matching will work.
-    Bs1 = lists:sort(Bs0),			%Kludge.
-    eval_bits:match_bits(Fs, B, Bs1, Bs1,
-			 fun(L, R, Bs) -> match1(L, R, Bs) end,
-			 fun(E,Bs) -> expr(E, Bs, foo, foo, foo, foo) end,
-			 false);
-match1(_,_,_) ->
+match1({match,_,Pat1,Pat2}, Term, Bs0,BBs) ->
+    {match,Bs1} = match1(Pat1,Term,Bs0,BBs),
+    match1(Pat2,Term,Bs1,BBs);
+match1({cons,_,H,T},[H1|T1],Bs0,BBs) ->
+    {match,Bs} = match1(H,H1,Bs0,BBs),
+    match1(T,T1,Bs,BBs);
+match1({tuple,_,Elts},Tuple,Bs,BBs) when tuple(Tuple),length(Elts)=:=size(Tuple) ->
+    match_tuple(Elts,Tuple,1,Bs,BBs);
+match1({bin,_,Fs}, B, Bs0,BBs0) when is_binary(B) ->
+    Bs1 = lists:sort(Bs0),  %Kludge.
+    BBs = lists:sort(BBs0),
+    Match = (catch eval_bits:match_bits(Fs, B, Bs1, BBs,
+					fun(L, R, Bs) -> match1(L, R, Bs, BBs) end,
+					fun(E,Bs) -> expr(E, Bs, foo, foo, foo, foo) end,
+					false)),
+    case Match of
+	{match, _} -> Match;
+	_ ->   throw(nomatch)  %% nomatch or invalid
+    end;
+match1(_,_,_,_) ->
     throw(nomatch).
 
-match_tuple([E|Es],Tuple,I,Bs0) ->
-    {match,Bs} = match1(E,element(I,Tuple),Bs0),
-    match_tuple(Es,Tuple,I+1,Bs);
-match_tuple([],_,_,Bs) ->
+match_tuple([E|Es],Tuple,I,Bs0,BBs) ->
+    {match,Bs} = match1(E,element(I,Tuple),Bs0,BBs),
+    match_tuple(Es,Tuple,I+1,Bs,BBs);
+match_tuple([],_,_,Bs,_BBs) ->
     {match,Bs}.
 
-head_match([Par|Pars],[Arg|Args],Bs0) ->
-    case match(Par,Arg,Bs0) of
-	{match,Bs} -> head_match(Pars,Args,Bs);
+head_match([Par|Pars],[Arg|Args],Bs0,BBs) ->
+    case catch match1(Par,Arg,Bs0,BBs) of
+	{match,Bs} -> head_match(Pars,Args,Bs,BBs);
 	nomatch -> nomatch
     end;
-head_match([],[],Bs) -> {match,Bs}.
+head_match([],[],Bs,_) -> {match,Bs}.
 
 rec_match([Par],Msg,Bs0) ->
     match(Par,Msg,Bs0).
@@ -1126,6 +1169,8 @@ merge_bindings([],B2s,_,_,_) ->
 %% Add Bindings1 to Bindings2. Bindings in
 %% Bindings1 hides bindings in Bindings2.
 %% Used in list comprehensions (and funs).
+add_bindings(Bs1,[]) ->
+    Bs1;
 add_bindings([{Name,V}|Bs],ToBs0) ->
     ToBs = add_binding(Name,V,ToBs0),
     add_bindings(Bs,ToBs);

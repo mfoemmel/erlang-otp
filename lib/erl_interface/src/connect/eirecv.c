@@ -42,10 +42,11 @@
 #define EIRECVBUF 2048 /* largest possible header is approx 1300 bytes */
 
 /* length (4), PASS_THOUGH (1), header, message */
-int ei_recv_internal(int fd, 
-		     char **mbufp, int *bufsz, 
-		     erlang_msg *msg, int *msglenp, 
-		     int staticbufp)
+int 
+ei_recv_internal (int fd, 
+		  char **mbufp, int *bufsz, 
+		  erlang_msg *msg, int *msglenp, 
+		  int staticbufp, unsigned ms)
 {
   char header[EIRECVBUF];
   char *s=header;
@@ -58,12 +59,13 @@ int ei_recv_internal(int fd,
   int version;
   int index = 0;
   int i = 0;
+  int res;
   int show_this_msg = 0;
 
   /* get length field */
-  if (ei_read_fill(fd, header, 4) != 4) 
+  if ((res = ei_read_fill_t(fd, header, 4, ms)) != 4) 
   {
-      erl_errno = EIO;
+      erl_errno = (res == -2) ? ETIMEDOUT : EIO;
       return -1;
   }
   len = get32be(s);
@@ -71,7 +73,7 @@ int ei_recv_internal(int fd,
   /* got tick - respond and return */
   if (!len) {
     unsigned char tock[] = {0,0,0,0};
-    writesocket(fd, tock, sizeof(tock));
+    ei_write_fill_t(fd, tock, sizeof(tock), ms); /* Failure no problem */
     *msglenp = 0;
     return 0;			/* maybe flag ERL_EAGAIN [sverkerw] */
   }
@@ -83,9 +85,8 @@ int ei_recv_internal(int fd,
   
   /* read enough to get at least entire header */
   bytesread = (len > EIRECVBUF ? EIRECVBUF : len); 
-  if ((i = ei_read_fill(fd,header,bytesread)) != bytesread)
-  {
-      erl_errno = EIO;
+  if ((i = ei_read_fill_t(fd,header,bytesread,ms)) != bytesread) {
+      erl_errno = (i == -2) ? ETIMEDOUT : EIO;
       return -1;
   }
 
@@ -217,7 +218,7 @@ int ei_recv_internal(int fd,
       /* flush in rest of packet */
       while (remain > 0) {
 	if (remain < sz) sz = remain;
-	if ((i=ei_read_fill(fd,header,sz)) <= 0) break;
+	if ((i=ei_read_fill_t(fd,header,sz,ms)) <= 0) break;
 	remain -= i;
       }
       erl_errno = EMSGSIZE;
@@ -248,9 +249,9 @@ int ei_recv_internal(int fd,
 
   /* read the rest of the message into callers buffer */
   if (remain > 0) {
-    if ((i = ei_read_fill(fd,mbuf+bytesread-index,remain)) != remain) {
+    if ((i = ei_read_fill_t(fd,mbuf+bytesread-index,remain,ms)) != remain) {
       *msglenp = bytesread-index+1; /* actual bytes in users buffer */
-      erl_errno = EIO;
+      erl_errno = (i == -2) ? ETIMEDOUT : EIO;
       return -1;
     }
   }
@@ -268,6 +269,11 @@ int ei_recv_internal(int fd,
 int ei_receive_encoded(int fd, char **mbufp, int *bufsz,
 		       erlang_msg *msg, int *msglen)
 {
-  return ei_recv_internal(fd, mbufp, bufsz, msg, msglen, 0);
+  return ei_recv_internal(fd, mbufp, bufsz, msg, msglen, 0, 0);
+}
+
+int ei_receive_encoded_tmo(int fd, char **mbufp, int *bufsz, erlang_msg *msg, int *msglen, unsigned ms)
+{
+  return ei_recv_internal(fd, mbufp, bufsz, msg, msglen, 0, ms);
 }
 

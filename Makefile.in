@@ -116,9 +116,26 @@ else
 BOOT_PREFIX=$(BOOTSTRAP_ROOT)/bootstrap/bin:
 endif
 # ----------------------------------------------------------------------
+# Fix up RELEASE_ROOT/TESTROOT havoc
+ifeq ($(RELEASE_ROOT),)
+ifneq ($(TESTROOT),)
+RELEASE_ROOT = $(TESTROOT)
+endif
+endif
+
+
+# ----------------------------------------------------------------------
 
 # A default for the release_tests, not same target dir as release.
+# More TESTROOT havoc...
+ifeq ($(TESTSUITE_ROOT),)
+ifneq ($(TESTROOT),)
+TESTSUITE_ROOT = $(TESTROOT)
+else
 TESTSUITE_ROOT = $(ERL_TOP)/release/tests
+endif
+endif
+
 #
 # The steps to build a working system are:
 #   * build an emulator
@@ -153,7 +170,7 @@ endif
 noboot_install:
 	$(MAKE) BOOT_PREFIX= install
 
-.PHONY: release
+.PHONY: release release_docs
 
 release:
 ifeq ($(OTP_SMALL_BUILD),true)
@@ -162,6 +179,18 @@ else
 	cd $(ERL_TOP)/lib  && $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release
 endif
 	cd $(ERL_TOP)/erts && $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release
+
+# ---------------------------------------------------------------
+# Target only used when building commercial ERTS patches
+# ---------------------------------------------------------------
+release_docs:
+ifeq ($(OTP_SMALL_BUILD),true)
+	cd $(ERL_TOP)/lib  && $(MAKE) TESTROOT=$(RELEASE_ROOT) release_docs
+else
+	cd $(ERL_TOP)/lib  && $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release_docs
+endif
+	cd $(ERL_TOP)/erts && $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release_docs
+
 
 # ----------------------------------------------------------------------
 ERLANG_EARS=$(BOOTSTRAP_ROOT)/bootstrap/erts

@@ -33,20 +33,35 @@
 	  long_request_timer,
 
 	  %% Auto send of ack: false | true 
-	  %% (if accu_ack_timer is zero (0), then acks will
-	  %%  be sent immediatly)
-	  auto_ack,           
-	  
-	  %% Accumulate ack's, and send them later. Either 
-	  %% when the timer expires or when maxcount number 
-	  %% of ack's has been accumulated (whichever happens
-	  %% first).
-	  %% (only valid if auto_ack is true)
-	  accu_ack_timer,      % 0 (don't accumulate ack)
-	  accu_ack_maxcount,   % 10
-	  ack_sender,          % The ack sender process ref, or undefined
+	  %% (if true, and if trans_ack is false or trans_timer 
+	  %% is zero (0), then acks will be sent immediatly)
+	  auto_ack,
+
+	  %% ------
+	  %% Accumulate trans acks/requests and send them "all" later
+	  %% in one bigger message.
+	  %% For this to take effekt, trans_timer has to be > 0
+	  %% trans_ack and/or trans_req has to be true.
+	  %% Accumulate transactions, and send them later, either 
+	  %% when the timer expires, when maxcount number of
+	  %% transactions has been accumulated or in the case
+	  %% requests, when the maxsize number of bytes has been
+	  %% accumulated (whichever happens first). 
+	  %% (Note that, for acks, this is only valid if auto_ack 
+	  %% is true)
+
+	  trans_ack,            % false
+	  trans_ack_maxcount,   % 10
+
+	  trans_req,            % false   
+	  trans_req_maxcount,   % 10
+	  trans_req_maxsize,    % 2048
+
+	  trans_timer,          % 0 (don't accumulate transactions)
+	  trans_sender,         % The trans sender process ref, or undefined
 
 	  pending_timer, 
+	  orig_pending_limit,  % infinity | integer() > 0
 	  reply_timer, 
 	  control_pid,
 	  monitor_ref,
@@ -59,7 +74,8 @@
 	  user_mod,
 	  user_args,
 	  reply_action,       % call | cast
-	  reply_data
+	  reply_data,
+	  threaded
 	 }).
 
 %% N.B. Update megaco_config when a new field is added

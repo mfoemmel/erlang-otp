@@ -316,27 +316,20 @@ terminate(_Reason, #state{data = Data}) ->
 %%----------------------------------------------------------
 
 %% downgrade
-code_change({down, _Vsn}, State, downgrade_to_pre_3_4) ->
+code_change({down, _Vsn}, #state{data = Data} = State, _Extra) ->
     ?debug("code_change(down) -> entry with~n"
-	   "  Vsn:   ~p~n"
-	   "  Extra: ~p",
-	   [Vsn,downgrade_to_pre_3_4]),
-    NData = snmp_mib_data:code_change({down,pre_3_4},State#state.data),
-    put(te_override, State#state.teo),
-    put(me_override, State#state.meo),
-    {ok, {state, NData}};
+	   "  Vsn: ~p", [_Vsn]),
+    NData = snmp_mib_data:code_change(down, Data),
+    {ok, State#state{data = NData}};
 
 %% upgrade
-code_change(_Vsn, State, upgrade_from_pre_3_4) ->
+code_change(_Vsn, #state{data = Data} = State, _Extra) ->
     ?debug("code_change(up) -> entry with~n"
-	   "  Vsn:   ~p~n"
-	   "  Extra: ~p",
-	   [Vsn,upgrade_from_pre_3_4]),
-    NData = snmp_mib_data:code_change({up,pre_3_4},State#state.data),
+	   "  Vsn: ~p",
+	   [_Vsn]),
+    NData = snmp_mib_data:code_change(up, Data),
     ?debug("code_change(up) -> New Mib data created~n",[]),
-    {ok, State#state{data = NData, 
-		     teo  = erase(te_override), 
-		     meo  = erase(me_override)}}.
+    {ok, State#state{data = NData}}.
 
 
 

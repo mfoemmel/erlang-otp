@@ -39,7 +39,8 @@
       ic_symtab,
       ic_union_java,
       ic_util,
-      icunion
+      icunion,
+      ic_erl_template
     ]
   },
   {registered, []},

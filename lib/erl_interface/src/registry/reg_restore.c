@@ -61,7 +61,7 @@ static int mn_start_restore(int fd, const erlang_pid *self, erlang_pid *mnesia, 
   while (needlink || needmsg) {
     /* get message */
     index = EISMALLBUF;
-    while (!(i = ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1))) index = EISMALLBUF;
+    while (!(i = ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1,0))) index = EISMALLBUF;
 
     switch (i) {
     case ERL_LINK:
@@ -114,7 +114,7 @@ static int mn_unlink(int fd)
   /* wait for unlink or exit */
   while (1) {
     index = EISMALLBUF;
-    switch (ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1)) {
+    switch (ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1,0)) {
     case 0: continue;
     case ERL_UNLINK: return 0;
     default: return -1;
@@ -283,7 +283,7 @@ int ei_reg_restore(int fd, ei_reg *reg, const char *mntab)
   /* read as much as possible, until count or EXIT */
   for (i=0; i<count; i++) {
     index = len;
-    while ((j = ei_recv_internal(fd,&msgbuf,&index,&msg,&msglen,1)) == 0) index = len;
+    while ((j = ei_recv_internal(fd,&msgbuf,&index,&msg,&msglen,1,0)) == 0) index = len;
     if (j<0) goto restore_failure;
     
     /* decode the first part of the message */

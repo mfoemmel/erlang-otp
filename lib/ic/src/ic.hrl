@@ -29,6 +29,45 @@
 
 -define(GENSERVMOD, gen_server).
 
+%%------------------------------------------------------------
+%% Flags. NOTE! Once assigned  value may NOT be changed. Deprecate ok.
+%% Default flags. Can be changed if we change the default behavior.
+-define(IC_FLAG_TEMPLATE_1, 16#01).
+-define(IC_FLAG_TEMPLATE_2, 16#02).
+
+-define(IC_INIT_FLAGS, 16#00).
+
+%% Flag operations
+%% USAGE: Boolean = ?IC_FLAG_TEST(Flags, ?IC_ATTRIBUTE)
+-define(IC_FLAG_TEST(_F1, _I1),   ((_F1 band _I1) == _I1)).
+
+%% USAGE: NewFlags = ?IC_SET_TRUE(Flags, ?IC_ATTRIBUTE)
+-define(IC_SET_TRUE(_F2, _I2),    (_I2 bor _F2)).
+
+%% USAGE: NewFlags = ?IC_SET_FALSE(Flags, ?IC_ATTRIBUTE)
+-define(IC_SET_FALSE(_F3, _I3),   ((_I3 bxor 16#ff) band _F3)).
+
+%% USAGE: NewFlags = ?IC_SET_FALSE_LIST(Flags, [?IC_SEC_ATTRIBUTE, ?IC_SOME])
+-define(IC_SET_FALSE_LIST(_F4, _IList1),
+        lists:foldl(fun(_I4, _F5) ->
+                            ((_I4 bxor 16#ff) band _F5)
+                    end, 
+                    _F4, _IList1)).
+
+%% USAGE: NewFlags = ?IC_SET_TRUE_LIST(Flags, [?IC_ATTRIBUTE, ?IC_SOME])
+-define(IC_SET_TRUE_LIST(_F6, _IList2),
+        lists:foldl(fun(_I6, _F7) ->
+                            (_I6 bor _F7)
+                    end, 
+                    _F6, _IList2)).
+
+%% USAGE: Boolean = ?IC_FLAG_TEST_LIST(Flags, [?IC_CONTEXT, ?IC_THING])
+-define(IC_FLAG_TEST_LIST(_F8, _IList3),
+        lists:all(fun(_I7) ->
+                          ((_F8 band _I7) == _I7)
+                  end,
+                  _IList3)).
+
 
 %%------------------------------------------------------------
 %% Usefull macros

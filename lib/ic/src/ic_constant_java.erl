@@ -46,8 +46,7 @@ gen(G, N, X) when record(X, const) ->
 	false ->
 	    emit_constant_interface(G, N, X, ConstantName)
     end;
-gen(G, N, X) -> 
-    %%?PRINTDEBUG2("****** IGNORING ******: ~p", [X]),
+gen(_G, _N, _X) -> 
     ok.
 
 
@@ -83,11 +82,11 @@ emit_constant_interface(G, N, X, ConstantName) ->
 %%-----------------------------------------------------------------
 %% Func: emit_constant_interface/4
 %%-----------------------------------------------------------------
-inInterface(G, []) -> % Global constant
+inInterface(_G, []) -> % Global constant
     false;
 inInterface(G, N) -> 
     [N1 |Ns] = N,
-    {FullScopedName, T, TK, _} =
+    {_FullScopedName, T, _TK, _} =
 	ic_symtab:get_full_scoped_name(G, Ns, ic_symtab:scoped_id_new(N1)),
     case T of
 	interface -> % Constant declare in an interface

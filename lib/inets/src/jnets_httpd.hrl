@@ -36,6 +36,7 @@
 
 -define(MAXBODYSIZE,16#ffffffff).
 
+-define(HTTP_VERSION_09,-1).
 -define(HTTP_VERSION_10,0).
 -define(HTTP_VERSION_11,1).
 
@@ -53,10 +54,8 @@
 	  socket,              % socket() Actual socket
 	  config_db,           % ets() {key,val} db with config entries
 	  method,              % atom() HTTP method, e.g. 'GET'
-%	  request_uri,         % string() Request URI
 	  path,                % string() Absolute path. May include query etc
-	  http_version,        % int() HTTP minor version number, e.g. 0 or 1
-%	  request_line,        % string() Request Line
+	  version,             % int() HTTP minor version number, e.g. 0 or 1
 	  headers,             % #req_headers{} Parsed request headers
 	  entity_body= <<>>,   % binary() Body of request
 	  connection,          % bool() true if persistant connection

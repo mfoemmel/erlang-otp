@@ -94,7 +94,7 @@ loop(State) ->
 	    loop(State2);
 
 	%% From the dbg_ui_winman process (Debugger window manager)
-	{dbg_ui_winman, update_windows_menu, Data} ->
+	{dbg_ui_winman, update_windows_menu, _Data} ->
 	    loop(State);
 	{dbg_ui_winman, destroy} ->
 	    exit(normal)
@@ -115,8 +115,7 @@ gui_cmd({select, File}, State) ->
 
     case Res of
 	%% Interpretation succeeded, tag the file name
-	{module, Mod} ->
-	    FileName = filename:basename(File),
+	{module, _Mod} ->
 	    dbg_ui_filedialog_win:tag(State#state.win, File);
 
 	%% Interpretation failed
@@ -137,7 +136,7 @@ interpret_all(State, Dir, [File0|Files]) ->
 	      global -> int:ni(File)
 	  end,
     case Res of
-	{module, Mod} ->
+	{module, _Mod} ->
 	    dbg_ui_filedialog_win:tag(State#state.win, File),
 	    interpret_all(State, Dir, Files);
 	error ->

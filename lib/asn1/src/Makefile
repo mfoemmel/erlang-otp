@@ -4,18 +4,18 @@
 #
 include $(ERL_TOP)/make/target.mk
 include $(ERL_TOP)/make/$(TARGET)/otp.mk
- 
+
 # ----------------------------------------------------
 # Application version
 # ----------------------------------------------------
 include ../vsn.mk
 VSN=$(ASN1_VSN)
- 
+
 # ----------------------------------------------------
 # Release directory specification
 # ----------------------------------------------------
 RELSYSDIR = $(RELEASE_PATH)/lib/asn1-$(VSN)
- 
+
 
 
 
@@ -66,17 +66,17 @@ RT_MODULES= \
 MODULES= $(CT_MODULES) $(RT_MODULES) 
 
 ERL_FILES = $(MODULES:%=%.erl)
- 
+
 TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR))
- 
+
 GENERATED_PARSER = $(PARSER_MODULE:%=%.erl)
- 
+
 # internal hrl file
 HRL_FILES = asn1_records.hrl
- 
+
 APP_FILE = asn1.app
 APPUP_FILE = asn1.appup
- 
+
 APP_SRC = $(APP_FILE).src
 APP_TARGET = $(EBIN)/$(APP_FILE)
 
@@ -90,24 +90,31 @@ EXAMPLES = \
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS +=
+
+ifeq ($(USE_ASN1_HIPE),true)
+ERL_COMPILE_FLAGS += +native
+endif
+
 ERL_COMPILE_FLAGS += \
 	-I$(ERL_TOP)/lib/stdlib \
 	+warn_unused_vars
+
 YRL_FLAGS = 
+
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
- 
+
 debug opt: $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET)
- 
- 
+
+
 clean:
 	rm -f $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) $(GENERATED_PARSER)
 	rm -f core *~
- 
+
 docs:
- 
- 
+
+
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
@@ -121,12 +128,12 @@ $(APP_TARGET): $(APP_SRC) ../vsn.mk
 $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
- 
+
 # ----------------------------------------------------
 # Release Target
 # ----------------------------------------------------
 include $(ERL_TOP)/make/otp_release_targets.mk
- 
+
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) $(RELSYSDIR)/ebin

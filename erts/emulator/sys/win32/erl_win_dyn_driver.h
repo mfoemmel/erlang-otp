@@ -28,7 +28,7 @@
 #define WDD_FTYPE(FunctionName) TWinDynDriver##FunctionName
 
 #define WDD_TYPEDEF(RetType, FunctionName, Params) \
-  typedef RetType WDD_FTYPE(FunctionName)##Params 
+  typedef RetType WDD_FTYPE(FunctionName) Params 
 
 WDD_TYPEDEF(int, null_func,(void));
 WDD_TYPEDEF(int, driver_failure_atom,(ErlDrvPort, char *));

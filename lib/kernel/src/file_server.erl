@@ -155,6 +155,9 @@ handle_call({get_cwd, Name}, _From, Handle) ->
 handle_call({read_file_info, Name}, _From, Handle) ->
     {reply, ?PRIM_FILE:read_file_info(Handle, Name), Handle};
 
+handle_call({altname, Name}, _From, Handle) ->
+    {reply, ?PRIM_FILE:altname(Handle, Name), Handle};
+
 handle_call({write_file_info, Name, Info}, _From, Handle) ->
     {reply, ?PRIM_FILE:write_file_info(Handle, Name, Info), Handle};
 

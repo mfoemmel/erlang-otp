@@ -452,14 +452,7 @@ terminate(Reason, State) ->
 %% Code change
 %%----------------------------------------------------------
 
-%% downgrade from 3.4
-code_change({down, _Vsn}, State, downgrade_to_pre_3_4) ->
-%     ?debug("code_change(down) -> entry with~n"
-%            "  State: ~p~n"
-%            "  Extra: ~p",
-%            [State,downgrade_to_pre_3_4]),
-    Pets = dets_to_pets(State#state.dets),
-    {ok, {state, Pets, State#state.ets, State#state.notify_clients}};
+%% downgrade to 3.4
 code_change({down, _Vsn}, State, _Extra) ->
 %     ?debug("code_change(down) -> entry with~n"
 %            "  Vsn:   ~p~n"
@@ -468,16 +461,7 @@ code_change({down, _Vsn}, State, _Extra) ->
 %            [Vsn,State,Extra]),
     {ok, State};
 
-%% upgrade to 3.4
-code_change(_Vsn, {state, Pets, Ets, NC}, upgrade_from_pre_3_4) ->
-%     ?debug("code_change(up) -> entry with~n"
-%            "  Vsn:   ~p~n"
-%            "  Pets:  ~p~n"
-%            "  Ets:   ~p~n"
-%            "  Extra: ~p",
-%            [Vsn,Pets,Ets,upgrade_from_pre_3_4]),
-    Dets = pets_to_dets(Pets),
-    {ok, #state{dets = Dets, ets = Ets, notify_clients = NC}};
+%% upgrade from 3.4
 code_change(_Vsn, State, _Extra) ->
 %     ?debug("code_change(up) -> entry with~n"
 %            "  Vsn:   ~p~n"
@@ -485,39 +469,6 @@ code_change(_Vsn, State, _Extra) ->
 %            "  Extra: ~p",
 %            [Vsn,State,Extra]),
     {ok, State}.
-
-
-dets_to_pets(Dets) -> 
-    DetsFilename = dets:info(Dets,filename),
-    Dir          = filename:dirname(DetsFilename),
-    PetsFilename = filename:join(Dir, "snmp_local_db"),
-    Objs         = dets:match_object(Dets, '_'),
-    dets:close(Dets),
-    Pets         = pets_open(PetsFilename),
-    Fun          = fun(Obj) ->
-			   snmp_pets:insert(Pets,Obj)
-		   end,
-    lists:foreach(Fun,Objs),
-    Pets.
-
-pets_open(FileName) ->
-    %% Should really be snmp_local_db1 instead of snmp_local_db3
-    %% but since we used dets we cannot be sure that it is not in
-    %% use...
-    {ok, Pets} = snmp_pets:new(FileName, snmp_local_db3, [set, private]),
-    Pets.
-
-
-pets_to_dets({PetsFilename, _Fd, Ets} = Pets) -> % Dirty deeds done cheep
-    Dir  = filename:dirname(PetsFilename),
-    Objs = ets:tab2list(Ets),
-    snmp_pets:stop(Pets),
-    Dets = do_dets_open(snmp_local_db1, Dir, false),
-    Fun  = fun(Obj) ->
-		   dets:insert(Dets,Obj)
-	   end,
-    lists:foreach(Fun,Objs),
-    Dets.
 
 
 %%-----------------------------------------------------------------
@@ -707,18 +658,24 @@ match(UnknownDb, Name, Pattern, _) ->
 
 lookup(volatile, Key, #state{ets = Ets}) ->
     case ets:lookup(Ets, Key) of
-	[{_, Val}] -> {value, Val};
-	[] -> undefined
+	[{_, Val}] -> 
+	    {value, Val};
+	[] -> 
+	    undefined
     end;
 lookup(persistent, Key, #state{dets = Dets}) ->
     case dets:lookup(Dets, Key) of
-	[{_, Val}] -> {value, Val};
-	[] -> undefined
+	[{_, Val}] ->  
+	    {value, Val};
+	[] -> 
+	    undefined
     end;
 lookup(permanent, Key, #state{dets = Dets}) ->
     case dets:lookup(Dets, Key) of
-	[{_, Val}] -> {value, Val};
-	[] -> undefined
+	[{_, Val}] -> 
+	    {value, Val};
+	[] -> 
+	    undefined
     end;
 lookup(UnknownDb, Key, _) ->
     error_msg("Tried to lookup ~w in unknown db ~w", [Key, UnknownDb]),

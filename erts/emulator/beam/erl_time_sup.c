@@ -96,7 +96,6 @@ static SysHrTime hr_init_time, hr_last_correction_check,
 
 static void init_tolerant_timeofday(void)
 {
-    erts_disable_tolerant_timeofday = 0;
     /* Should be in sys.c */
 #if defined(HAVE_SYSCONF) && defined(_SC_NPROCESSORS_CONF)
     if (sysconf(_SC_NPROCESSORS_CONF) > 1) {
@@ -227,9 +226,13 @@ static void get_tolerant_timeofday(SysTimeval *tvp)
     Milli ct_diff;
     Milli tv_diff;
     Milli current_correction;
-    Milli act_correction; /* long showed to be too small */
+    Milli act_correction;	/* long shown to be too small */
     Milli max_adjust;
 
+    if (erts_disable_tolerant_timeofday) {
+	sys_gettimeofday(tvp);
+	return;
+    }
 
 #ifdef ERTS_WRAP_SYS_TIMES 
 #define TICK_MS (1000 / SYS_CLK_TCK_WRAP)
@@ -365,7 +368,6 @@ erts_init_time_sup(void)
 #endif
     init_tolerant_timeofday();
 
-
     /* We set the initial values for deliver_time here */
     last_delivered = inittv;
     last_delivered.tv_usec = 1000 * (last_delivered.tv_usec / 1000); 
@@ -373,7 +375,7 @@ erts_init_time_sup(void)
     gtv = inittv;
     then.tv_sec = then.tv_usec = 0;
 
-     return CLOCK_RESOLUTION;
+    return CLOCK_RESOLUTION;
 }    
 /* info functions */
 
@@ -658,6 +660,7 @@ get_now(Uint* megasec, Uint* sec, Uint* microsec)
     
     get_tolerant_timeofday(&now);
     erts_deliver_time(&now);
+
     /* Make sure time is later than last */
     if (then.tv_sec > now.tv_sec ||
 	(then.tv_sec == now.tv_sec && then.tv_usec >= now.tv_usec)) {

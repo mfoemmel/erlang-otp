@@ -987,7 +987,7 @@ match_con([U|Us], Cs, Def, St0) ->
     %% Extract clauses for different constructors (types).
     %%ok = io:format("match_con ~p~n", [Cs]),
     Ttcs = [ {T,Tcs} || T <- [k_cons,k_tuple,k_atom,k_float,k_int,k_nil,
-			      k_binary],
+			      k_binary,k_bin_end],
 		       begin Tcs = select(T, Cs),
 			     Tcs /= []
 		       end ] ++ select_bin_con(Cs),
@@ -1002,14 +1002,13 @@ match_con([U|Us], Cs, Def, St0) ->
     {build_alt(build_select(U, Scs), Def),St1}.
 
 %% select_bin_con([Clause]) -> [{Type,[Clause]}].
-%%  Extract clauses for k_bin-seg and k_bin_end constructors.  As
-%%  k_bin_seg and k_bin_end matching can overlap then these cannot be
-%%  reordered only grouped.
+%%  Extract clauses for the k_bin_seg constructor.  As k_bin_seg
+%%  matching can overlap, the k_bin_seg constructors cannot be
+%%  reordered, only grouped.
 
 select_bin_con(Cs0) ->
     Cs1 = lists:filter(fun (C) ->
-			       Con = clause_con(C),
-			       (Con == k_bin_seg) or (Con == k_bin_end)
+			       clause_con(C) == k_bin_seg
 		       end, Cs0),
     select_bin_con_1(Cs1).
 

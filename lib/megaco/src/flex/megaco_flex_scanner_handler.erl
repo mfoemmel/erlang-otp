@@ -24,7 +24,7 @@
 -behaviour(gen_server).
 
 %% External exports
--export([start_link/0]).
+-export([start_link/0, get_config/1]).
 
 %% gen_server callbacks
 -export([init/1, 
@@ -81,10 +81,10 @@ init([]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
-handle_call(get_config, From, #state{conf = Conf} = S) ->
+handle_call(get_config, _From, #state{conf = Conf} = S) ->
     {reply, Conf, S};
 
-handle_call(Request, From, S) ->
+handle_call(Request, _From, S) ->
     error_msg("received unknown request: "
 	      "~n   ~p", [Request]),
     {reply, ok, S}.
@@ -112,7 +112,7 @@ handle_info({'EXIT', Port, Error}, #state{conf = {flex, Port}} = S) ->
 	      "~n   ~p", [Port, Error]),
     {stop, {port_exit, Port, Error}, S};
 
-handle_info({'EXIT', Port, Error}, S) when port(Port) ->
+handle_info({'EXIT', Port, _Error}, S) when port(Port) ->
     %% This is propably the old flex scanner, 
     %% terminating after a code change...
     {noreply, S};
@@ -132,7 +132,7 @@ handle_info(Info, S) ->
 %% Purpose: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %%----------------------------------------------------------------------
-terminate(Reason, S) ->
+terminate(_Reason, _S) ->
     ok.
 
 
@@ -141,15 +141,15 @@ terminate(Reason, S) ->
 %% Purpose: Called to change the internal state
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
-code_change({down, Vsn}, #state{conf = Conf} = State, flex_scanner) ->
+code_change({down, Vsn}, #state{conf = Conf} = State, flex_scanner_211) ->
     Port = update_flex_scanner(Conf),
     {ok, State#state{conf = {flex, Port}}};
 
-code_change(Vsn, #state{conf = Conf} = State, flex_scanner) ->
+code_change(Vsn, #state{conf = Conf} = State, flex_scanner_211) ->
     Port = update_flex_scanner(Conf),
     {ok, State#state{conf = {flex, Port}}};
 
-code_change(Vsn, State, Extra) ->
+code_change(_Vsn, State, _Extra) ->
     {ok, State}.
 
 update_flex_scanner({flex, Port}) ->
@@ -171,3 +171,8 @@ update_flex_scanner(Error) ->
 error_msg(F, A) ->
     error_logger:error_msg("~p(~p): " ++ F ++ "~n", [?MODULE, self() | A]).
 
+
+
+% d(F, A) ->
+%     io:format("~w:" ++ F ++ "~n", [?MODULE|A]).
+	      

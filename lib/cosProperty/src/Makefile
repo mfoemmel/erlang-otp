@@ -83,6 +83,7 @@ GEN_ERL_FILES =  \
 	CosPropertyService_UnsupportedTypeCode.erl
 
 LOCAL_HRL_FILES =  \
+	oe_CosProperty.hrl \
 	CosPropertyService.hrl \
 	CosPropertyService_PropertiesIterator.hrl \
 	CosPropertyService_PropertyNamesIterator.hrl \

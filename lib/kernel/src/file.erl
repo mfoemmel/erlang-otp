@@ -28,6 +28,7 @@
 -export([get_cwd/0, get_cwd/1, set_cwd/1, delete/1, rename/2,
 	 make_dir/1, del_dir/1, list_dir/1,
 	 read_file_info/1, write_file_info/2,
+	 altname/1,
 	 read_link_info/1, read_link/1,
 	 make_link/2, make_symlink/2,
 	 read_file/1, write_file/2, write_file/3]).
@@ -299,6 +300,8 @@ del_dir(Name) ->
     check_and_call(del_dir, [file_name(Name)]).
 read_file_info(Name) ->
     check_and_call(read_file_info, [file_name(Name)]).
+altname(Name) ->
+    check_and_call(altname, [file_name(Name)]).
 read_link_info(Name) ->
     check_and_call(read_link_info, [file_name(Name)]).
 read_link(Name) ->

@@ -159,10 +159,6 @@ static void *ef_safe_realloc(void *op, Uint s)
     (s[0] == '.' && (s[1] == '\0' || (s[1] == '.' && s[2] == '\0')))
 
 #ifdef VXWORKS
-   /* Use the reentrant version of localtime() */
-   static struct tm local_tm;
-#  define localtime(a) (localtime_r((a), &local_tm), &local_tm)
-
 static FUNCTION(int, vxworks_to_posix, (int vx_errno));
 #endif
 
@@ -676,6 +672,32 @@ efile_openfile(Efile_error* errInfo,	/* Where to return error codes. */
     }	
 #endif	
 
+    if (stat(name, &statbuf) >= 0 && !ISREG(statbuf)) {
+#if !defined(VXWORKS) && !defined(OSE)
+	/*
+	 * For UNIX only, here is some ugly code to allow
+	 * /dev/null to be opened as a file.
+	 *
+	 * Assumption: The i-node number for /dev/null cannot be zero.
+	 */
+	static ino_t dev_null_ino = 0;
+
+	if (dev_null_ino == 0) {
+	    struct stat nullstatbuf;
+	    
+	    if (stat("/dev/null", &nullstatbuf) >= 0) {
+		dev_null_ino = nullstatbuf.st_ino;
+	    }
+	}
+	if (!(dev_null_ino && statbuf.st_ino == dev_null_ino)) {
+#endif
+	    errno = EISDIR;
+	    return check_error(-1, errInfo);
+#if !defined(VXWORKS) && !defined(OSE)
+	}
+#endif
+    }
+
     switch (flags & (EFILE_MODE_READ|EFILE_MODE_WRITE)) {
     case EFILE_MODE_READ:
 	mode = O_RDONLY;
@@ -740,15 +762,6 @@ efile_openfile(Efile_error* errInfo,	/* Where to return error codes. */
 
     if (!check_error(fd, errInfo))
 	return 0;
-    if (fstat(fd, &statbuf) < 0) {
-	close(fd);
-	return check_error(-1, errInfo);
-    }
-    if (!ISREG(statbuf)) {
-	close(fd);
-	errno = EISDIR;
-	return check_error(-1, errInfo);
-    }
 
 #if !defined(VXWORKS) && defined(HAVE_FCNTL_H) && defined(HAVE_F_DUPFD)
     if (try_dup < 0) {
@@ -878,6 +891,14 @@ efile_fileinfo(Efile_error* errInfo, Efile_info* pInfo,
     else
 	pInfo->type = FT_OTHER;
 
+#if defined(HAVE_LOCALTIME_R) || defined(VXWORKS)
+    {
+	/* Use the reentrant version of localtime() */
+	static struct tm local_tm;
+#define localtime(a) (localtime_r((a), &local_tm), &local_tm)
+#endif
+
+
 #define GET_TIME(dst, src) \
     timep = localtime(&statbuf.src); \
     (dst).year = timep->tm_year+1900; \
@@ -892,6 +913,10 @@ efile_fileinfo(Efile_error* errInfo, Efile_info* pInfo,
     GET_TIME(pInfo->cTime, st_ctime);
 
 #undef GET_TIME
+
+#if defined(HAVE_LOCALTIME_R) || defined(VXWORKS)
+    }
+#endif
 
     pInfo->mode = statbuf.st_mode;
     pInfo->links = statbuf.st_nlink;
@@ -1411,6 +1436,13 @@ efile_readlink(Efile_error* errInfo, char* name, char* buffer, size_t size)
     return 1;
 #endif
 #endif
+}
+
+int
+efile_altname(Efile_error* errInfo, char* name, char* buffer, size_t size)
+{
+    errno = ENOTSUP;
+    return check_error(-1, errInfo);
 }
 
 int

@@ -44,6 +44,7 @@
 	 make_dir/1, make_dir/2,
 	 del_dir/1, del_dir/2,
 	 read_file_info/1, read_file_info/2,
+	 altname/1, altname/2,
 	 write_file_info/2, write_file_info/3,
 	 make_link/2, make_link/3,
 	 make_symlink/2, make_symlink/3,
@@ -92,6 +93,7 @@
 -define(FILE_PREADV,           25).
 -define(FILE_SETOPT,           26).
 -define(FILE_IPREAD,           27).
+-define(FILE_ALTNAME,          28).
 
 %% Driver responses
 -define(FILE_RESP_OK,          0).
@@ -658,6 +660,21 @@ read_file_info_int(Port, File) ->
 	    drv_command(Port, Cmd)
     end.
 
+%% altname/{1,2}
+
+altname(File) ->
+    altname_int({?DRV, []}, File).
+
+altname(Port, File) when port(Port) ->
+    altname_int(Port, File).
+
+altname_int(Port, File) ->
+    case (catch list_to_binary([?FILE_ALTNAME, File, 0])) of
+	{'EXIT', _} ->
+	    {error, einval};
+	Cmd ->
+	    drv_command(Port, Cmd)
+    end.
 
 
 %% write_file_info/{2,3}
@@ -784,7 +801,7 @@ list_dir_int(Port, Dir) ->
 	{'EXIT', _} ->
 	    {error, einval};
 	Cmd ->
-	    drv_command(Port, Cmd, fun drv_get_responses/1, [[]])
+	    drv_command(Port, Cmd, [[]])
     end.
 
 
@@ -826,19 +843,19 @@ drv_close(Port) ->
 %% Returns {ok, Result} or {error, Reason}.
 
 drv_command(Port, Command) ->
-    drv_command(Port, Command, fun drv_get_response/1, []).
+    drv_command(Port, Command, []).
 
-drv_command(Port, Command, Fun, ExtraArgs) when port(Port) ->
+drv_command(Port, Command, ExtraArgs) when port(Port) ->
     case catch erlang:port_command(Port, Command) of
 	{'EXIT', _} ->
 	    {error, einval};
 	_ ->
-	    Fun([Port | ExtraArgs])
+	    drv_get_response([Port | ExtraArgs])
     end;
-drv_command({Driver, Portopts}, Command, Fun, ExtraArgs) ->
+drv_command({Driver, Portopts}, Command, ExtraArgs) ->
     case drv_open(Driver, Portopts) of
 	{ok, Port} ->
-	    Result = drv_command(Port, Command, Fun, ExtraArgs),
+	    Result = drv_command(Port, Command, ExtraArgs),
 	    drv_close(Port),
 	    Result;
 	{error, _} = Error ->
@@ -862,14 +879,13 @@ drv_get_response([Port]) ->
 	    end;
 	{'EXIT', Port, Reason} ->
 	    {error, {port_died, Reason}}
-    end.
-
-drv_get_responses([Port, Result]) ->
+    end;
+drv_get_response([Port, Result]) ->
     case drv_get_response([Port]) of
 	ok ->
 	    {ok, Result};
 	{ok, Name} ->
-	    drv_get_responses([Port, [Name|Result]]);
+	    drv_get_response([Port, [Name|Result]]);
 	{error, _} = Error ->
 	    Error
     end.

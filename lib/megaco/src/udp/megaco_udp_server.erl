@@ -35,7 +35,9 @@
 %%-----------------------------------------------------------------
 -export([
 	 start_link/1,
-	 stop/1
+	 stop/1,
+
+	 upgrade_receive_handle/2
 	]).
 
 %%-----------------------------------------------------------------
@@ -69,7 +71,11 @@ start_link(Arg) ->
 %%              socket.
 %%-----------------------------------------------------------------
 stop(Pid) ->
-    gen_server:call(Pid, stop, infinity).
+    call(Pid, stop).
+
+
+upgrade_receive_handle(Pid, NewHandle) ->
+    call(Pid, {upgrade_receive_handle, NewHandle}).
 
 %%-----------------------------------------------------------------
 %% Internal interface functions
@@ -83,13 +89,15 @@ stop(Pid) ->
 %% Description: Init funcion for the generic server
 %%-----------------------------------------------------------------
 init(Arg) ->
+    ?udp_debug(Arg, "udp server starting", [self()]),
     {ok, Arg}.
 
 %%-----------------------------------------------------------------
 %% Func: terminate/2
 %% Description: Termination function for the generic server
 %%-----------------------------------------------------------------
-terminate(_Reason, _State) ->
+terminate(Reason, State) ->
+    ?udp_debug(State, "udp server terminating", [self(), Reason]),
     ok.
 
 %%-----------------------------------------------------------------
@@ -99,9 +107,11 @@ terminate(_Reason, _State) ->
 handle_call(stop, _From, UdpRec) ->
     Reply = do_stop(UdpRec),
     {stop, shutdown, Reply, UdpRec};
-handle_call(Request, From, UdpRec) ->
-    error_logger:error_report([{?MODULE, {garbage_call, Request, From}}]),
-    {noreply, UdpRec}.
+handle_call({upgrade_receive_handle, NewHandle}, _From, UdpRec) ->
+    {reply, ok, UdpRec#megaco_udp{receive_handle = NewHandle}};
+handle_call(Req, From, UdpRec) ->
+    error_msg("received unexpected request: ~n~p~n~p", [Req,From]),
+    {reply, {error, {invalid_request, Req}}, UdpRec}.
 
 %%-----------------------------------------------------------------
 %% Func: handle_cast/2
@@ -110,8 +120,8 @@ handle_call(Request, From, UdpRec) ->
 handle_cast(stop, UdpRec) ->
     do_stop(UdpRec),
     {stop, shutdown, UdpRec};
-handle_cast(Request, UdpRec) ->
-    error_logger:error_report([{?MODULE, {garbage_cast, Request}}]),
+handle_cast(Msg, UdpRec) ->
+    error_msg("received unexpected message: ~n~p", [Msg]),
     {noreply, UdpRec}.
 
 %%-----------------------------------------------------------------
@@ -119,10 +129,9 @@ handle_cast(Request, UdpRec) ->
 %% Description: Handling non call/cast messages. Incomming messages
 %%              from the socket and exit codes.
 %%-----------------------------------------------------------------
-handle_info({udp, _UdpId, Ip, Port, Msg}, UdpRec) ->
-    Socket = UdpRec#megaco_udp.socket,
-    Mod    = UdpRec#megaco_udp.module,
-    RH = UdpRec#megaco_udp.receive_handle,
+handle_info({udp, _UdpId, Ip, Port, Msg}, 
+	    #megaco_udp{serialize = false} = UdpRec) ->
+    #megaco_udp{socket = Socket, module = Mod, receive_handle = RH} = UdpRec,
     SH = megaco_udp:create_send_handle(Socket, Ip, Port), 
     MsgSize = size(Msg),
     incNumInMessages(SH),
@@ -135,22 +144,42 @@ handle_info({udp, _UdpId, Ip, Port, Msg}, UdpRec) ->
     end,
     inet:setopts(Socket, [{active, once}]),
     {noreply, UdpRec};
+handle_info({udp, _UdpId, Ip, Port, Msg}, 
+	    #megaco_udp{serialize = true} = UdpRec) ->
+    #megaco_udp{socket = Socket, module = Mod, receive_handle = RH} = UdpRec,
+    SH = megaco_udp:create_send_handle(Socket, Ip, Port), 
+    MsgSize = size(Msg),
+    incNumInMessages(SH),
+    incNumInOctets(SH, MsgSize),
+    process_received_message(Mod, RH, SH, Msg),
+    inet:setopts(Socket, [{active, once}]),
+    {noreply, UdpRec};
 handle_info(Info, UdpRec) ->
-    error_logger:error_report([{?MODULE, {garbage_info, Info}}]),
+    error_msg("received unexpected info: ~n~p", [Info]),
     {noreply, UdpRec}.
+
+
+process_received_message(Mod, RH, SH, Msg) ->
+    case (catch Mod:process_received_message(RH, self(), SH, Msg)) of
+	ok ->
+	    ok;
+	Error ->
+	    error_msg("failed processing received message: ~n~p", [Error]),
+	    ok
+    end.
 
 
 receive_message(Mod, RH, SendHandle, Length, Msg) ->
     Opts = [link , {min_heap_size, ?HEAP_SIZE(Length)}],
     spawn_opt(?MODULE, handle_received_message,
-               [Mod, RH, self(), SendHandle, Msg], Opts),
-    ok.
+               [Mod, RH, self(), SendHandle, Msg], Opts).
 
 
 handle_received_message(Mod, RH, Parent, SH, Msg) ->
-    apply(Mod, process_received_message,[RH, Parent, SH, Msg]),
+    Mod:process_received_message(RH, Parent, SH, Msg),
     unlink(Parent),
     exit(normal).
+   
 
     
 %%-----------------------------------------------------------------
@@ -187,3 +216,13 @@ incCounter(Key, Inc) ->
 % incNumErrors(SH) ->
 %     incCounter({SH, medGwyGatewayNumErrors}, 1).
 
+
+% info_msg(F, A) ->
+%     (catch error_logger:info_msg("[~p] " ++ F ++ "~n", [?MODULE|A])).
+  
+error_msg(F, A) ->
+    (catch error_logger:error_msg("[~p] " ++ F ++ "~n", [?MODULE|A])).
+  
+
+call(Pid, Req) ->
+    gen_server:call(Pid, Req, infinity).

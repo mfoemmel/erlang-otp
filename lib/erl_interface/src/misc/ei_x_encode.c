@@ -129,22 +129,22 @@ int ei_x_encode_ulong(ei_x_buff* x, unsigned long n)
     return ei_encode_ulong(x->buff, &x->index, n);
 }
 
-int ei_x_encode_longlong(ei_x_buff* x, EI_LONGLONG n)
+int ei_x_encode_char(ei_x_buff* x, char p)
 {
     int i = x->index;
-    ei_encode_longlong(NULL, &i, n);
+    ei_encode_char(NULL, &i, p);
     if (!x_fix_buff(x, i))
 	return -1;
-    return ei_encode_longlong(x->buff, &x->index, n);
+    return ei_encode_char(x->buff, &x->index, p);
 }
 
-int ei_x_encode_ulonglong(ei_x_buff* x, EI_ULONGLONG n)
+int ei_x_encode_boolean(ei_x_buff* x, int p)
 {
     int i = x->index;
-    ei_encode_ulonglong(NULL, &i, n);
+    ei_encode_boolean(NULL, &i, p);
     if (!x_fix_buff(x, i))
 	return -1;
-    return ei_encode_ulonglong(x->buff, &x->index, n);
+    return ei_encode_boolean(x->buff, &x->index, p);
 }
 
 int ei_x_encode_double(ei_x_buff* x, double dbl)
@@ -222,4 +222,31 @@ int ei_x_encode_fun(ei_x_buff* x, const erlang_fun* fun)
     if (!x_fix_buff(x, i))
 	return -1;
     return ei_encode_fun(x->buff, &x->index, fun);
+}
+
+int ei_x_encode_ref(ei_x_buff* x, const erlang_ref* ref)
+{
+    int i = x->index;
+    ei_encode_ref(NULL, &i, ref);
+    if (!x_fix_buff(x, i))
+	return -1;
+    return ei_encode_ref(x->buff, &x->index, ref);
+}
+
+int ei_x_encode_port(ei_x_buff* x, const erlang_port* port)
+{
+    int i = x->index;
+    ei_encode_port(NULL, &i, port);
+    if (!x_fix_buff(x, i))
+	return -1;
+    return ei_encode_port(x->buff, &x->index, port);
+}
+
+int ei_x_encode_trace(ei_x_buff* x, const erlang_trace* trace)
+{
+    int i = x->index;
+    ei_encode_trace(NULL, &i, trace);
+    if (!x_fix_buff(x, i))
+	return -1;
+    return ei_encode_trace(x->buff, &x->index, trace);
 }

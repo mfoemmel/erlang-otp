@@ -52,6 +52,13 @@
 -export([check_usm/1, check_vacm/1, check_community/1]).
 -export([check_agent/1, check_standard/1, check_old_params/1]).
 
+%% Application internal exports
+-export([check_string/1,  check_string/2,
+	 check_integer/1, 
+	 check_oid/1, 
+	 check_ip_udp/1,
+	 check_packet_size/1]).
+
 %%-----------------------------------------------------------------
 %% Func: read_internal_config_files/1
 %% Args: Dir is the directory with trailing dir_separator where

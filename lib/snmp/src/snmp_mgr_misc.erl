@@ -89,13 +89,33 @@ send_bytes(Bytes, PacketPid) ->
 %%--------------------------------------------------
 init_packet(Parent, SnmpMgr,
 	    AgentIp, UdpPort, TrapUdp,
-	    VsnHdr, Version, Dir, BufSz, Dbg) ->
-    put(debug,Dbg),
+	    VsnHdr, Version, Dir, BufSz, DbgOptions) ->
+    put(sname,mgr_misc),
+    init_debug(DbgOptions),
     {ok, UdpId} = gen_udp:open(TrapUdp, [{recbuf,BufSz},{reuseaddr, true}]),
     put(msg_id, 1),
     proc_lib:init_ack(Parent, self()),
     init_usm(Version, Dir),
     packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, []).
+
+init_debug(Dbg) when atom(Dbg) ->
+    put(debug,Dbg),
+    put(verbosity,silence);
+init_debug(DbgOptions) when list(DbgOptions) ->
+    case lists:keysearch(debug, 1, DbgOptions) of
+	{value, {_, Dbg}} when atom(Dbg) ->
+	    put(debug,Dbg);
+	_ ->
+	    put(debug, false)
+    end,
+    case lists:keysearch(verbosity, 1, DbgOptions) of
+	{value, {_, Ver}} when atom(ver) ->
+	    put(verbosity,Ver);
+	_ ->
+	    put(verbosity, silence)
+    end,
+    ok.
+
 
 packet_loop(SnmpMgr, UdpId, AgentIp, UdpPort, VsnHdr, Version, MsgData) ->
     receive
@@ -485,7 +505,7 @@ set_pdu(Msg, RePdu) ->
 
 init_usm('version-3', Dir) ->
     ets:new(snmp_agent_table, [set, public, named_table]),
-    snmp_local_db:start_link(Dir, normal),
+    snmp_local_db:start_link(Dir, normal, [{verbosity,silence}]),
     snmp_generic:variable_set(snmpEngineID, "mgrEngine"),
     snmp_framework_mib:set_engine_boots(1),
     snmp_framework_mib:set_engine_time(1),

@@ -20,7 +20,6 @@
 
 #include "eidef.h"
 #include "eiext.h"
-#include "eicode.h"		/* FIXME protos for ei_alloc/free_big() */
 #include "putget.h"
 
 
@@ -41,11 +40,19 @@ int ei_decode_big(const char *buf, int *index, erlang_big *b)
       return -1;
   }
   if ( b ) {
+      unsigned short *dt = b->digits;
+      int i;
+      unsigned char *u;
+
       if ( ((digit_bytes+1)/2) != b->arity ) {
           return -1;
       }
       b->is_neg = get8(s);
-      memmove(b->digits,s,digit_bytes);
+      u = (unsigned char *) s;
+      for (i = 0; i < b->arity; ++i) {
+	  dt[i] = u[i*2];
+	  dt[i] |= ((unsigned short) u[(i*2)+1]) << 8;
+      }
   } else {
       s++; /* skip sign byte */
   }
@@ -135,9 +142,12 @@ int ei_big_comp(erlang_big *x, erlang_big *y)
  * Handling of floating point exceptions.
  */
 
-
-/* extern volatile int erl_fp_exception; */
-static volatile int erl_fp_exception;
+#if defined(VXWORKS) && CPU == PPC860
+#undef NO_FPE_SIGNALS
+#define NO_FPE_SIGNALS 1
+#undef INLINED_FP_CONVERSION
+#define INLINED_FP_CONVERSION 1
+#endif
 
 #ifdef USE_ISINF_ISNAN		/* simulate finite() */
 #  define finite(f) (!isinf(f) && !isnan(f))
@@ -150,6 +160,8 @@ static volatile int erl_fp_exception;
 #  define ERTS_SAVE_FP_EXCEPTION()
 #  define ERTS_RESTORE_FP_EXCEPTION()
 #else
+/* extern volatile int erl_fp_exception; */
+static volatile int erl_fp_exception;
 #  define ERTS_FP_CHECK_INIT() do {erl_fp_exception = 0;} while (0)
 #  if defined(__i386__) && defined(__GNUC__)
 /* extern void erts_restore_x87(void); */
@@ -186,15 +198,97 @@ static int erts_check_x87(double f)
 #endif
 
 
+#ifdef INLINED_FP_CONVERSION
+static void join(unsigned d_split[4], unsigned *d)
+{
+    d[0] = (d_split[0] << 31) |         /* Sign bit */
+	((d_split[1] & 0x7FFU) << 20) | /* Exponent */
+	(d_split[2] & 0xFFFFFU);        /* Mantissa MS bits */
+    d[1] = d_split[3];                  /* Mantissa LS bits */
+}
+
+static int blength(unsigned long l)
+{
+    int i;
+    for(i = 0; l; ++i)
+	l >>= 1;
+    return i;
+}
+
+static int bblength(erlang_big *b)
+{
+    unsigned wholebytes = b->arity;
+    digit_t *dp = b->digits;
+
+    while(wholebytes > 0 && dp[--wholebytes] == 0U)
+	;
+
+    return (wholebytes * sizeof(digit_t) * 8) +  blength(dp[wholebytes]);
+}
+
+static unsigned long bindex(erlang_big *b, int ndx) {
+    digit_t *dp = b->digits;
+    int skipdigits;
+    int dnum;
+
+    if (ndx < 0)
+	return 0;
+
+    skipdigits = ndx / (sizeof(digit_t) * 8);
+    dnum = ndx % (sizeof(digit_t) * 8);
+    return !!(dp[skipdigits] & (1UL << dnum));
+}
+
+
+#endif
+
+
 int ei_big_to_double(erlang_big *b, double *resp)
 {
+#ifdef INLINED_FP_CONVERSION
+    unsigned d_split[4];
+    unsigned *uresp = (unsigned *) resp;
+    unsigned len = bblength(b);
+    int i;
+    unsigned long msm = 0, lsm = 0;
+    
+    /* OK, this is not the most efficient conversion in the world, especially
+       not the bit-by-bit copying to the mantissa.... Simple, working and 
+       only for vxworks ppc860 where no sane person would use floating
+       point anyway, eh? /Patrik */
+
+    if (!len) {
+	memset(d_split,0,sizeof(d_split)); /* 0 */
+    } else {
+	--len;
+	if (len > 1023) { /* Infinite */
+	    d_split[1] = 2047;
+	    d_split[2] = d_split[3] = 0;
+	} else {
+	    d_split[1] = 1023 + len; 
+	    --len; /* skip the implicit binary 1. */
+	    for (i = 0; i < 20; ++i, --len) {
+		msm <<= 1;
+		msm |= bindex(b,len);
+	    }
+	    for (i = 0; i < 32; ++i, --len) {
+		lsm <<= 1;
+		lsm |= bindex(b,len);
+	    }
+	    d_split[2] = msm;
+	    d_split[3] = lsm;
+	}	
+    }
+    d_split[0] = (unsigned) !!(b->is_neg);
+    join(d_split,uresp);
+    return 0;
+#else
     double d = 0.0;
     double d_base = 1.0;
 
     digit_t* s = (digit_t *)b->digits;
     dsize_t xl = b->arity;
     short xsgn = b->is_neg;
-
     ERTS_SAVE_FP_EXCEPTION();
 
     ERTS_FP_CHECK_INIT();
@@ -217,6 +311,7 @@ int ei_big_to_double(erlang_big *b, double *resp)
     ERTS_FP_ERROR(*resp,;);
     ERTS_RESTORE_FP_EXCEPTION();
     return 0;
+#endif
 }
 
 int ei_small_to_big(int s, erlang_big *b)

@@ -43,7 +43,10 @@
 %% External exports
 %%-----------------------------------------------------------------
 -export([
-	 start_link/1
+	 start_link/1,
+	 stop/1,
+
+	 upgrade_receive_handle/2
 	]).
 
 %%-----------------------------------------------------------------
@@ -76,6 +79,14 @@ start_link(Arg) ->
     gen_server:start_link(?MODULE, Arg, []).
 
 
+stop(Pid) ->
+    call(Pid, stop).
+
+
+upgrade_receive_handle(Pid, NewHandle) ->
+    call(Pid, {upgrade_receive_handle, NewHandle}).
+
+
 %%-----------------------------------------------------------------
 %% Internal interface functions
 %%-----------------------------------------------------------------
@@ -88,14 +99,16 @@ start_link(Arg) ->
 %% Description: Init funcion for the generic server
 %%-----------------------------------------------------------------
 init(Arg) ->
-%%    process_flag(trap_exit, true),
+    %% process_flag(trap_exit, true),
+    ?tcp_debug(Arg, "tcp connection handler starting", [self()]),
     {ok, Arg}.
 
 %%-----------------------------------------------------------------
 %% Func: terminate/2
 %% Description: Termination function for the generic server
 %%-----------------------------------------------------------------
-terminate(_Reason, _TcpRec) ->
+terminate(Reason, TcpRec) ->
+    ?tcp_debug(TcpRec, "tcp connection handler terminating", [self(),Reason]),
     ok.
 
 %%-----------------------------------------------------------------
@@ -104,8 +117,11 @@ terminate(_Reason, _TcpRec) ->
 %%-----------------------------------------------------------------
 handle_call(stop, _From, TcpRec) ->
     {stop, shutdown, ok, TcpRec};
-handle_call(_Call, _From, TcpRec) ->
-    {noreply, TcpRec}.
+handle_call({upgrade_receive_handle, NewHandle}, _From, TcpRec) ->
+    {reply, ok, TcpRec#megaco_tcp{receive_handle = NewHandle}};
+handle_call(Req, From, TcpRec) ->
+    error_msg("received unexpected request: ~n~p~n~p", [Req,From]),
+    {reply, {error, {invalid_request, Req}}, TcpRec}.
 
 %%-----------------------------------------------------------------
 %% Func: handle_cast/2
@@ -113,7 +129,8 @@ handle_call(_Call, _From, TcpRec) ->
 %%-----------------------------------------------------------------
 handle_cast(stop, TcpRec) ->
     {stop, shutdown, TcpRec};
-handle_cast(_, TcpRec) ->
+handle_cast(Msg, TcpRec) ->
+    error_msg("received unexpected message: ~n~p", [Msg]),
     {noreply, TcpRec}.
 
 %%-----------------------------------------------------------------
@@ -126,7 +143,7 @@ handle_info({tcp_closed, _Socket}, TcpRec) ->
 handle_info({tcp_error, _Socket}, TcpRec) ->
     {stop, shutdown, TcpRec};
 handle_info({tcp, Socket, <<3:8, _X:8, Length:16, Msg/binary>>}, 
-	    #megaco_tcp{socket = Socket} = TcpRec) 
+	    #megaco_tcp{socket = Socket, serialize = false} = TcpRec) 
   when Length < ?GC_MSG_LIMIT ->
     #megaco_tcp{module = Mod, receive_handle = RH} = TcpRec,
     incNumInMessages(Socket),
@@ -135,20 +152,38 @@ handle_info({tcp, Socket, <<3:8, _X:8, Length:16, Msg/binary>>},
     inet:setopts(Socket, [{active, once}]),
     {noreply, TcpRec};
 handle_info({tcp, Socket, <<3:8, _X:8, Length:16, Msg/binary>>}, 
-	    #megaco_tcp{socket = Socket} = TcpRec) ->
+	    #megaco_tcp{socket = Socket, serialize = false} = TcpRec) ->
     #megaco_tcp{module = Mod, receive_handle = RH} = TcpRec,
     incNumInMessages(Socket),
     incNumInOctets(Socket, 4+size(Msg)),
     receive_message(Mod, RH, Socket, Length, Msg),
     inet:setopts(Socket, [{active, once}]),
     {noreply, TcpRec};
+handle_info({tcp, Socket, <<3:8, _X:8, _Length:16, Msg/binary>>},
+            #megaco_tcp{socket = Socket, serialize = true} = TcpRec) ->
+    #megaco_tcp{module = Mod, receive_handle = RH} = TcpRec,
+    incNumInMessages(Socket),
+    incNumInOctets(Socket, 4+size(Msg)),
+    process_received_message(Mod, RH, Socket, Msg),
+    inet:setopts(Socket, [{active, once}]),
+    {noreply, TcpRec};
 handle_info({tcp, Socket, Msg}, TcpRec) ->
     incNumErrors(Socket),
     error_logger:error_report([{megaco_tcp, {bad_tpkt_packet, Msg}}]),
     {noreply, TcpRec};
-handle_info(X, TcpRec) ->
-    error_logger:format("<WARNING> Ignoring unexpected event: ~p~n", [X]),
+handle_info(Info, TcpRec) ->
+    error_msg("received unexpected info: ~n~p", [Info]),
     {noreply, TcpRec}.
+
+
+process_received_message(Mod, RH, SH, Msg) ->
+    case (catch Mod:process_received_message(RH, self(), SH, Msg)) of
+	ok ->
+	    ok;
+	Error ->
+	    error_msg("failed processing received message: ~n~p", [Error]),
+	    ok
+    end.
 
 
 receive_message(Mod, RH, SendHandle, Length, Msg) ->
@@ -159,7 +194,7 @@ receive_message(Mod, RH, SendHandle, Length, Msg) ->
 
 
 handle_received_message(Mod, RH, Parent, SH, Msg) ->
-    apply(Mod, process_received_message,[RH, Parent, SH, Msg]),
+    Mod:process_received_message(RH, Parent, SH, Msg),
     unlink(Parent),
     exit(normal).
 
@@ -169,6 +204,10 @@ handle_received_message(Mod, RH, Parent, SH, Msg) ->
 %% Descrition: Handles code change messages during upgrade.
 %%-----------------------------------------------------------------
 code_change(_OldVsn, S, _Extra) ->
+    ?d("code_change -> entry with"
+	"~n   OldVsn: ~p"
+	"~n   S:      ~p"
+	"~n   Extra:  ~p", [_OldVsn, S, _Extra]),
     {ok, S}.
 
 
@@ -189,3 +228,15 @@ incNumErrors(Socket) ->
 
 incCounter(Key, Inc) ->
     ets:update_counter(megaco_tcp_stats, Key, Inc).
+
+
+% info_msg(F, A) ->
+%     (catch error_logger:info_msg("[~p] " ++ F ++ "~n", [?MODULE|A])).
+  
+error_msg(F, A) ->
+    (catch error_logger:error_msg("[~p] " ++ F ++ "~n", [?MODULE|A])).
+  
+
+call(Pid, Req) ->
+    gen_server:call(Pid, Req, infinity).
+

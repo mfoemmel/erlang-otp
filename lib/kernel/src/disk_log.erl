@@ -658,7 +658,7 @@ handle({From, {reopen, NewFile, Head, F, A}}, S) ->
 	L when L#log.status == ok, S#state.cache_error =/= ok ->
 	    loop(cache_error(S, [From]));
 	L when L#log.status == ok, L#log.filename /= NewFile  ->
-	    case catch close_disk_log2(L) of % erases log
+	    case catch close_disk_log2(L) of
 		closed ->
 		    File = L#log.filename,
 		    case catch rename_file(File, NewFile, L#log.type) of
@@ -915,10 +915,10 @@ do_fast_exit(S, From, Message, Reason) ->
 
 %% -> closed | Error
 do_stop(S) ->
-    proc_q(S#state.queue),
+    proc_q(S#state.queue ++ S#state.messages),
     close_disk_log(get(log)).
 
-proc_q([{From, _R}|Tail]) ->
+proc_q([{From, _R}|Tail]) when pid(From) ->
     From ! {disk_log, self(), {error, disk_log_stopped}},
     proc_q(Tail);
 proc_q([_|T]) -> %% async stuff 
@@ -1201,7 +1201,9 @@ close_disk_log(L) ->
 		unlink(Pid) 
 	end,
     lists:foreach(F, L#log.owners),
-    catch close_disk_log2(L).
+    R = (catch close_disk_log2(L)),
+    erase(log),
+    R.
 
 %% -> closed | throw(Error)
 close_disk_log2(L) ->
@@ -1215,7 +1217,6 @@ close_disk_log2(L) ->
 	#log{format_type = wrap_ext, mode = Mode, extra = Handle} ->
 	    disk_log_1:mf_ext_close(Handle, Mode)
     end,
-    erase(log),
     closed.
 
 do_format_error({error, Module, Error}) ->
@@ -1283,9 +1284,9 @@ do_format_error(nodedown) ->
     io_lib:format("There seems to be no node up that can handle "
 		  "the request~n", []);
 do_format_error({corrupt_log_file, FileName}) ->
-    io_lib:format("The wrap log file ~s contains corrupt data~n", [FileName]);
+    io_lib:format("The disk log file ~s contains corrupt data~n", [FileName]);
 do_format_error({need_repair, FileName}) ->
-    io_lib:format("The wrap log file ~s has not been closed properly and "
+    io_lib:format("The disk log file ~s has not been closed properly and "
 		  "needs repair~n", [FileName]);
 do_format_error({not_a_log_file, FileName}) ->
     io_lib:format("The file ~s is not a wrap log file~n", [FileName]);

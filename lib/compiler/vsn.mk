@@ -1,3 +1,3 @@
-COMPILER_VSN = 4.2
+COMPILER_VSN = 4.2.3
 
 

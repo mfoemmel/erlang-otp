@@ -15,8 +15,12 @@
  * 
  *     $Id$
  */
+
+#include "eidef.h"
+
 #include <stddef.h>
 #include <stdlib.h>
+
 #include "erl_interface.h"
 #include "erl_fix_alloc.h"
 #include "erl_malloc.h"

@@ -78,12 +78,12 @@ mk_var( [N | Str] )  when N >= $A, N =< $Z -> [N | Str].
 %% NOTE: Change name of IFR ID in system exceptions in corba.hrl when
 %% prefix is changed here.
 %%
-mk_name(Gen, Name) -> lists:flatten(["OE_" | Name]).
-mk_OE_name(Gen, Name) -> lists:flatten(["OE_" | Name]).
-mk_oe_name(Gen, Name) -> lists:flatten(["oe_" | Name]).
+mk_name(_Gen, Name) -> lists:flatten(["OE_" | Name]).
+mk_OE_name(_Gen, Name) -> lists:flatten(["OE_" | Name]).
+mk_oe_name(_Gen, Name) -> lists:flatten(["oe_" | Name]).
 
 mk_align(String) ->
-    lists:flatten(io_lib:format("((~s)+sizeof(double)-1)&~~(sizeof(double)-1)",[String])).
+    io_lib:format("OE_ALIGN(~s)",[String]).
 
 to_atom(A) when atom(A) -> A;
 to_atom(L) when list(L) -> list_to_atom(L).
@@ -151,7 +151,7 @@ to_dot(G,ScopedId) ->
 	    to_dotLoop(S,ScopedId)
     end.
 
-addDotValue(S, [C | Ss]) ->
+addDotValue(S, [_C | Ss]) ->
     case isInterfaceScopedId(S, Ss) of
 	true ->
 	    "";
@@ -173,7 +173,7 @@ to_dotLoop(S,[X | Xs]) ->
 	false ->
 	    to_dotLoop(S,Xs) ++ "." ++ ic_forms:get_java_id(X)
     end;
-to_dotLoop(S,[]) -> "".
+to_dotLoop(_S,[]) -> "".
 
 isInterfaceScopedId(_S,[]) ->
     false;
@@ -228,7 +228,7 @@ adjustScopeToJava(G,ScopedId) ->
 
 
 
-adjustScopeToJavaLoop(S,[]) -> 
+adjustScopeToJavaLoop(_S,[]) -> 
     [];
 adjustScopeToJavaLoop(S,[X | Xs]) ->
     case isInterfaceScopedId(S, [X | Xs]) of
@@ -249,19 +249,19 @@ eval_java(G,N,Arg) when record(Arg, scoped_id) ->
     {FSN, _, _, _} = 
 	ic_symtab:get_full_scoped_name(G, N, Arg),
     ic_util:to_dot(G,FSN);
-eval_java(G,N,Arg) when tuple(Arg), element(1,Arg) == '<integer_literal>' ->
+eval_java(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<integer_literal>' ->
     element(3,Arg);
-eval_java(G,N,Arg) when tuple(Arg), element(1,Arg) == '<character_literal>' ->
+eval_java(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<character_literal>' ->
     element(3,Arg);
-eval_java(G,N,Arg) when tuple(Arg), element(1,Arg) == '<wcharacter_literal>' ->
+eval_java(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<wcharacter_literal>' ->
     element(3,Arg);
-eval_java(G,N,Arg) when tuple(Arg), element(1,Arg) == '<boolean_literal>' ->
+eval_java(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<boolean_literal>' ->
     element(3,Arg);
-eval_java(G,N,Arg) when tuple(Arg), element(1,Arg) == '<floating_pt_literal>' ->
+eval_java(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<floating_pt_literal>' ->
     element(3,Arg);
-eval_java(G,N,Arg) when tuple(Arg), element(1,Arg) == '<string_literal>' ->
+eval_java(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<string_literal>' ->
     element(3,Arg);
-eval_java(G,N,Arg) when tuple(Arg), element(1,Arg) == '<wstring_literal>' ->
+eval_java(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<wstring_literal>' ->
     element(3,Arg);
 eval_java(G,N,{Op,Arg1,Arg2}) ->
     "(" ++ eval_java(G,N,Arg1) ++ 
@@ -280,19 +280,19 @@ eval_c(G,N,Arg) when record(Arg, scoped_id) ->
     {FSN, _, _, _} = 
 	ic_symtab:get_full_scoped_name(G, N, Arg),
     ic_util:to_undersc(FSN);
-eval_c(G,N,Arg) when tuple(Arg), element(1,Arg) == '<integer_literal>' ->
+eval_c(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<integer_literal>' ->
     element(3,Arg);
-eval_c(G,N,Arg) when tuple(Arg), element(1,Arg) == '<character_literal>' ->
+eval_c(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<character_literal>' ->
     element(3,Arg);
-eval_c(G,N,Arg) when tuple(Arg), element(1,Arg) == '<wcharacter_literal>' ->
+eval_c(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<wcharacter_literal>' ->
     element(3,Arg);
-eval_c(G,N,Arg) when tuple(Arg), element(1,Arg) == '<boolean_literal>' ->
+eval_c(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<boolean_literal>' ->
     element(3,Arg);
-eval_c(G,N,Arg) when tuple(Arg), element(1,Arg) == '<floating_pt_literal>' ->
+eval_c(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<floating_pt_literal>' ->
     element(3,Arg);
-eval_c(G,N,Arg) when tuple(Arg), element(1,Arg) == '<string_literal>' ->
+eval_c(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<string_literal>' ->
     element(3,Arg);
-eval_c(G,N,Arg) when tuple(Arg), element(1,Arg) == '<wstring_literal>' ->
+eval_c(_G,_N,Arg) when tuple(Arg), element(1,Arg) == '<wstring_literal>' ->
     element(3,Arg);
 eval_c(G,N,{Op,Arg1,Arg2}) ->
     "(" ++ eval_c(G,N,Arg1) ++ 

@@ -29,6 +29,34 @@ VSN = $(SNMPEA_VSN)
 
 SPECIAL_TARGETS = 
 
+DIR_NAME = snmp-$(VSN)
+
+ifndef APP_RELEASE_DIR
+  APP_RELEASE_DIR = /tmp
+endif
+
+ifndef APP_TAR_FILE
+  APP_TAR_FILE = $(APP_RELEASE_DIR)/$(DIR_NAME).tgz
+endif
+
+APP_DIR = $(APP_RELEASE_DIR)/$(DIR_NAME)
+
+ifdef OTP_INSTALL_DIR
+  APP_INSTALL_DIR = $(OTP_INSTALL_DIR)/lib/erlang
+else
+  # If installing into an OTP structure created
+  # by installing an source OTP build, the '/tmp'
+  # shall be replaced with the value of ERL_TOP
+  APP_INSTALL_DIR = /tmp/lib/erlang
+endif
+
+OS = $(shell uname -s)
+ifeq ($(OS),SunOS)
+  DOCB=true
+else
+  DOCB=false
+endif
+
 # ----------------------------------------------------
 # Default Subdir Targets
 # ----------------------------------------------------
@@ -42,3 +70,51 @@ do_configure: configure
 configure: configure.in
 	autoconf
 
+.PHONY: info
+
+info: 
+	@echo "OS:   $(OS)"
+	@echo "DOCB: $(DOCB)"
+
+# ----------------------------------------------------
+# Application (source) release targets
+# ----------------------------------------------------
+app_release: app_doc tar
+
+app_clean:
+	rm -rf $(APP_TAR_FILE) $(APP_DIR)
+
+ifeq ($(DOCB),true)
+app_doc:
+	cd doc/src; $(MAKE) html man
+else
+app_doc:
+	@echo "ignoring documention (cannot build on $(OS))"
+endif
+
+app_dir: $(APP_DIR)
+
+$(APP_DIR):
+	cat TAR.exclude | grep -v "snmp/doc" > TAR.exclude2; \
+        echo "snmp/TAR.exclude2" >> TAR.exclude2
+	(cd ..; find snmp -name 'findmerge.*' >> snmp/TAR.exclude2)
+	(cd ..; find snmp -name '*.contrib*' >> snmp/TAR.exclude2)
+	(cd ..; find snmp -name '*.keep*' >> snmp/TAR.exclude2)
+	(cd ..; find snmp -name '*~' >> snmp/TAR.exclude2)
+	(cd ..; find snmp -name '*.log' >> snmp/TAR.exclude2)
+	(cd ..; find snmp -name 'erl_crash.dump' >> snmp/TAR.exclude2)
+	mkdir $(APP_DIR); \
+        (cd ..; tar cfX - snmp/TAR.exclude2 snmp) | \
+        (cd $(APP_DIR); tar xf -); \
+        mv $(APP_DIR)/snmp/* $(APP_DIR)/; \
+        find $(APP_DIR)/snmp -name '.cmake.state' | xargs rm -f; \
+	mkdir $(APP_DIR)/autoconf; \
+        cp autoconf/config.guess $(APP_DIR)/autoconf/; \
+        cp autoconf/config.sub $(APP_DIR)/autoconf/; \
+        cp autoconf/install-sh $(APP_DIR)/autoconf/; \
+        rmdir $(APP_DIR)/snmp
+
+tar: $(APP_TAR_FILE)
+
+$(APP_TAR_FILE): $(APP_DIR)
+	(cd $(APP_RELEASE_DIR); gtar zcf $(APP_TAR_FILE) $(DIR_NAME))

@@ -73,6 +73,7 @@ create_win(GS, Title, Menus) ->
 			 calc_columnwidths(770),
 			 {rows, {1,?default_rows}}]),
     gs:gridline(Grid, [{row, 1}, {bw, 5}, {fg, blue},
+		       {font, dbg_ui_win:font(normal)},
 		       {text, {1,"Pid"}}, {text, {2,"Initial Call"}},
 		       {text, {3,"Name"}}, {text, {4,"Status"}},
 		       {text, {5,"Information"}}]),
@@ -164,7 +165,7 @@ add_process(WinInfo, Pid, Name, {Mod,Func,Args}, Status, Info) ->
 			  true -> ok
 		       end,
 		       gs:gridline(Grid, [{row, Row}, {bw, 5}, {fg, black},
-					  {font,{screen,12}},
+					  {font, dbg_ui_win:font(normal)},
 					  {click, true},
 					  {doubleclick, true}]);
 		   GSObj ->

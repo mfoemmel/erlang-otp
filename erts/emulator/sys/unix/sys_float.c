@@ -154,7 +154,9 @@ sys_chars_to_double(char* buf, double* fp)
     if (*s)			/* That should be it */
       return -1;
 
+#ifdef NO_FPE_SIGNALS
     errno = 0;
+#endif
 
     ERTS_FP_CHECK_INIT();
     *fp = strtod(buf, NULL);
@@ -164,8 +166,10 @@ sys_chars_to_double(char* buf, double* fp)
     if (errno == ERANGE)
 	fprintf(stderr, "errno = ERANGE in list_to_float\n\r");
 #endif
+#ifdef NO_FPE_SIGNALS
     if (errno == ERANGE)
 	return -1;
+#endif
 /*
 **  Replaces following code:
 **   if (errno == ERANGE) {

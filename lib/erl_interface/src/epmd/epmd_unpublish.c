@@ -46,55 +46,60 @@
 #include "eidef.h"
 #include "ei_internal.h"
 #include "putget.h"
-#include "erl_interface.h"
 #include "ei_epmd.h"
-
-
-int ei_unpublish(ei_cnode* ec)
-{
-    return ei_unpublish_alive(ei_thisalivename(ec)); /* FIXME check error */
-}
+#include "ei_portio.h"
 
 
 /* stop the specified node */
-int ei_unpublish_alive(const char *alive)
+int ei_unpublish_tmo(const char *alive, unsigned ms)
 {
     unsigned char buf[EPMDBUF];
-    char *s = (char *)buf;
+    char *s = buf;
     int len = 1 + strlen(alive);
-    int fd;
+    int fd, res;
 
     put16be(s,len);
     put8(s,EI_EPMD_STOP_REQ);
     strcpy(s, alive);
 
-    if ((fd = ei_epmd_connect(NULL)) < 0) return fd;
+    /* FIXME can't connect, return success?! At least commen whats up */
+    if ((fd = ei_epmd_connect_tmo(NULL,ms)) < 0) return fd;
 
-    if (writesocket(fd, buf, len+2) != len+2) {
+    if ((res = ei_write_fill_t(fd, buf, len+2,ms)) != len+2) {
 	closesocket(fd);
+	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
 	return -1;
     }
 
-    EI_TRACE_CONN1("ei_unpublish_alive","-> STOP %s",alive);
+    EI_TRACE_CONN1("ei_unpublish_tmo","-> STOP %s",alive);
   
-    if (readsocket(fd, buf, 7) != 7) {
+    if ((res = ei_read_fill_t(fd, buf, 7, ms)) != 7) {
 	closesocket(fd);
+	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
 	return -1; 
     }
     closesocket(fd);
     buf[7]=(char)0;		/* terminate the string */
   
     if (!strcmp("STOPPED",(char *)buf)) {
-	EI_TRACE_CONN0("ei_unpublish_alive","<- STOPPED (success)");
+	EI_TRACE_CONN0("ei_unpublish_tmo","<- STOPPED (success)");
 	return 0;
     }
     else if (!strcmp("NOEXIST",(char *)buf)) {
-	EI_TRACE_ERR0("ei_unpublish_alive","<- NOEXIST (failure)");
+	EI_TRACE_ERR0("ei_unpublish_tmo","<- NOEXIST (failure)");
+	erl_errno = EIO;
 	return -1;
     }
     else {
-	EI_TRACE_ERR0("ei_unpublish_alive","<- unknown (failure)");
+	EI_TRACE_ERR0("ei_unpublish_tmo","<- unknown (failure)");
+	erl_errno = EIO;
 	return -1;		/* this shouldn't happen */
     }
     return 0;
+}
+
+
+int ei_unpublish(ei_cnode* ec)
+{
+    return ei_unpublish_tmo(ei_thisalivename(ec),0);
 }

@@ -52,7 +52,7 @@ return(G) ->
 	true ->
 	    case get_error_count(G) of
 		0 -> {ok, get_list(G, warn_list)};
-		X -> {error, get_list(G, warn_list), get_list(G, error_list)}
+		_X -> {error, get_list(G, warn_list), get_list(G, error_list)}
 	    end;
 	false ->
 	    case get_error_count(G) of
@@ -64,7 +64,7 @@ return(G) ->
 
 
 get_list(G, ListName) ->
-    ErrList = ?lookup(G#genobj.options, ListName).
+    ?lookup(G#genobj.options, ListName).
 
 
 %% Public function for reporting an error
@@ -207,7 +207,7 @@ format_error({error, _, File, {illegal_float, Line}}) ->
     display(File, Line, "illegal floating point number", []);
 format_error({error, _, File, {bad_type_combination, E, V1, V2}}) ->
     display(File, ic_forms:get_line(E), "incompatible types, ~p and ~p", [V1, V2]);
-format_error({error, _, File, {bad_oneway_type, X, TK}}) ->
+format_error({error, _, File, {bad_oneway_type, X, _TK}}) ->
     display(File, ic_forms:get_line(X), "oneway operations must be declared void", []);
 format_error({error, _, File, {inout_spec_for_c, X, Arg}}) ->
     display(File, ic_forms:get_line(X), "inout parameter ~s specified in native c mode",
@@ -234,7 +234,7 @@ format_error({error, _, File, {bad_scope_enum_case, ScopedId}}) ->
     display(File, ic_forms:get_line(ScopedId),
 	    "scoped enum identifiers not allowed as case (~s)", 
 	    [pp(ScopedId)]);
-format_error({error, _, File, {bad_type, Expr, Op, TypeList, V}}) ->
+format_error({error, _, File, {bad_type, Expr, Op, _TypeList, V}}) ->
     display(File, ic_forms:get_line(Expr),
 	    "parameter value ~p to ~s is of illegal type", [V, pp(Op)]);
 format_error({error, _, File, {bad_case_type, TK, X, Val}}) ->
@@ -278,7 +278,7 @@ print_warn(G, Warn) ->
 
 format_warn({warn, _, File, {ic_pp_warning, Lines}}) ->
     display(File, "preprocessor warning: ~s", [Lines]);
-format_warn({warn, _, _File, {cfg_open, Reason, File}}) ->
+format_warn({warn, _, _File, {cfg_open, _Reason, File}}) ->
     display(File, "warning: could not open file: ~p", [File]);
 format_warn({warn, _, _File, {cfg_read, File}}) ->
     display(File, "warning: syntax error in configuration file", []);
@@ -359,8 +359,8 @@ pp({Beef, Num}) when integer(Num) -> ic_util:to_list(Beef);
 pp(X) -> ic_util:to_list(X).
 
 %% special treatment of case label names
-case_pp(X, Val) when record(X, scoped_id) -> pp(X);
-case_pp(X, Val) -> pp(Val).
+case_pp(X, _Val) when record(X, scoped_id) -> pp(X);
+case_pp(_X, Val) -> pp(Val).
 
 
 

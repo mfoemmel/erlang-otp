@@ -131,6 +131,8 @@ parse_Reference([Tref1 = {typereference,_,_},{'.',_},Tref2 = {typereference,_,_}
     {{tref2Exttref(Tref1),tref2Exttref(Tref2)},Rest};
 parse_Reference([Tref = {typereference,_L1,_TrefName}|Rest]) ->
     {tref2Exttref(Tref),Rest};
+parse_Reference([Vref = {identifier,_L1,_VName},{'{',_L2},{'}',_L3}|Rest]) ->
+    {identifier2Extvalueref(Vref),Rest};
 parse_Reference([Vref = {identifier,_L1,_VName}|Rest]) ->
     {identifier2Extvalueref(Vref),Rest};
 parse_Reference(Tokens) ->
@@ -760,9 +762,9 @@ parse_UnionsRec([{'|',_}|Rest]) ->
 	{{'SingleValue',V1},{'SingleValue',V2}} ->
 	    {{'SingleValue',ordsets:union(to_set(V1),to_set(V2))},Rest3};
 	{V1,V2} when list(V2) ->
-	    {[V1] ++ V2,Rest3};
+	    {[V1] ++ [union|V2],Rest3};
 	{V1,V2} ->
-	    {[V1,V2],Rest3}
+	    {[V1,union,V2],Rest3}
 	end;
 parse_UnionsRec([{'UNION',_}|Rest]) ->
     {InterSec,Rest2} = parse_Intersections(Rest),
@@ -773,9 +775,9 @@ parse_UnionsRec([{'UNION',_}|Rest]) ->
 	{{'SingleValue',V1},{'SingleValue',V2}} ->
 	    {{'SingleValue',ordsets:union(to_set(V1),to_set(V2))},Rest3};
 	{V1,V2} when list(V2) ->
-	    {[V1] ++ V2,Rest3};
+	    {[V1] ++ [union|V2],Rest3};
 	{V1,V2} ->
-	    {[V1,V2],Rest3}
+	    {[V1,union,V2],Rest3}
 	end;
 parse_UnionsRec(Tokens) ->
     {[],Tokens}.
@@ -792,10 +794,7 @@ parse_Intersections(Tokens) ->
 	{V1,V2} when list(V2) ->
 	    {[V1] ++ [intersection|V2],Rest2};
 	{V1,V2} ->
-	    {[V1,intersection,V2],Rest2};
-	_ ->
-	    throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
-			       [got,get_token(hd(Tokens)),expected,'a Union']}})
+	    {[V1,intersection,V2],Rest2}
     end.
 
 parse_IElemsRec([{'^',_}|Rest]) ->
@@ -808,12 +807,9 @@ parse_IElemsRec([{'^',_}|Rest]) ->
 	{V1,[]} ->
 	    {V1,Rest3};
 	{V1,V2} when list(V2) ->
-	    {[V1] ++ V2,Rest3};
+	    {[V1] ++ [intersection|V2],Rest3};
 	{V1,V2} ->
-	    {[V1,V2],Rest3};
-	_ ->
-	    throw({asn1_error,{get_line(hd(Rest)),get(asn1_module),
-			       [got,get_token(hd(Rest)),expected,'an Intersection']}})
+	    {[V1,intersection,V2],Rest3}
     end;
 parse_IElemsRec([{'INTERSECTION',_}|Rest]) ->
     {InterSec,Rest2} = parse_IntersectionElements(Rest),
@@ -825,12 +821,9 @@ parse_IElemsRec([{'INTERSECTION',_}|Rest]) ->
 	{V1,[]} ->
 	    {V1,Rest3};
 	{V1,V2} when list(V2) ->
-	    {[V1] ++ V2,Rest3};
+	    {[V1] ++ [intersection|V2],Rest3};
 	{V1,V2} ->
-	    {[V1,V2],Rest3};
-	_ ->
-	    throw({asn1_error,{get_line(hd(Rest)),get(asn1_module),
-			       [got,get_token(hd(Rest)),expected,'an Intersection']}})
+	    {[V1,intersection,V2],Rest3}
     end;
 parse_IElemsRec(Tokens) ->
     {[],Tokens}.
@@ -855,13 +848,20 @@ parse_Elements([{'(',_}|Rest]) ->
 			       [got,get_token(H),expected,')']}})
     end;
 parse_Elements(Tokens) ->
-    Flist = [fun parse_SubtypeElements/1,
-	     fun parse_ObjectSetElements/1],
+    Flist = [fun parse_ObjectSetElements/1,
+	     fun parse_SubtypeElements/1,
+%	     fun parse_Value/1,
+%	     fun parse_Type/1,
+	     fun parse_Object/1,
+	     fun parse_DefinedObjectSet/1],
     case (catch parse_or(Tokens,Flist)) of
 	{'EXIT',Reason} ->
 	    exit(Reason);
 	Err = {asn1_error,_} ->
 	    throw(Err);
+	Result = {Val,_} when record(Val,type) ->
+	    Result;
+
 	Result ->
 	    Result
     end.
@@ -1246,12 +1246,37 @@ parse_DefinedSyntax(Tokens,Acc) ->
 	    parse_DefinedSyntax(Rest3,[DefSynTok|Acc])
     end.
 
+
+%% DefinedSyntaxToken ::= Literal | Setting
+%% Literal ::= word | ','
+%% Setting ::= Type | Value | ValueSet | Object | ObjectSet
+%% word equals typereference, but no lower cases
 parse_DefinedSyntaxToken([{',',L1}|Rest]) ->
     {{',',L1},Rest};
-parse_DefinedSyntaxToken([{typereference,L1,Name}|Rest]) ->
+%% ObjectClassFieldType or a defined type with a constraint.
+%% Should also be able to parse a parameterized type. It may be
+%% impossible to distinguish between a parameterized type and a Literal
+%% followed by an object set.
+parse_DefinedSyntaxToken(Tokens=[{typereference,L1,_Name},{T,_}|_Rest]) 
+  when T == '.'; T == '(' ->
+    case catch parse_Setting(Tokens) of
+	{asn1_error,_} ->
+	    throw({asn1_error,{L1,get(asn1_module),
+			       [got,hd(Tokens), expected,['Word',setting]]}});
+	{'EXIT',Reason} ->
+	    exit(Reason);
+	Result ->
+	    Result
+    end;
+parse_DefinedSyntaxToken(Tokens=[TRef={typereference,L1,Name}|Rest]) ->
     case is_word(Name) of
 	false ->
-	    {{setting,L1,Name},Rest};
+	    case lookahead_definedsyntax(Rest) of
+		word_or_setting ->
+		    {{setting,L1,tref2Exttref(TRef)},Rest};
+		_ ->
+		    parse_Setting(Tokens)
+	    end;
 	true ->
 	    {{word_or_setting,L1,Name},Rest}
     end;
@@ -1265,6 +1290,16 @@ parse_DefinedSyntaxToken(Tokens) ->
 	    Result
     end.
 
+lookahead_definedsyntax([{typereference,_,Name}|_Rest]) ->
+    case is_word(Name)  of
+	true -> word_or_setting;
+	_ -> setting
+    end;
+lookahead_definedsyntax([{'}',_}|_Rest]) ->
+    word_or_setting;
+lookahead_definedsyntax(_) ->
+    setting.
+	    
 parse_Word([{Name,Pos}|Rest]) ->
     case is_word(Name) of
 	false ->
@@ -1337,9 +1372,10 @@ parse_ObjectSetSpec([{'...',_}|Rest]) ->
 parse_ObjectSetSpec(Tokens) ->
     parse_ElementSetSpecs(Tokens).
 
+% moved fun parse_Object/1 and fun parse_DefinedObjectSet/1 to parse_Elements
 parse_ObjectSetElements(Tokens) ->
-    Flist = [fun parse_Object/1,
-	     fun parse_DefinedObjectSet/1,
+    Flist = [%fun parse_Object/1,
+	     %fun parse_DefinedObjectSet/1,
 	     fun parse_ObjectSetFromObjects/1,
 	     fun parse_ParameterizedObjectSet/1],
     case (catch parse_or(Tokens,Flist)) of
@@ -1502,7 +1538,14 @@ parse_ObjectSetFromObjects(Tokens) ->
     case Rest of
 	[{'.',_}|Rest2] ->
 	    {Name,Rest3} = parse_FieldName(Rest2),
-	    {{'ObjectSetFromObjects',Objects,Name},Rest3};
+	    case lists:last(Name) of
+		{typefieldreference,_FieldName} ->
+		    {{'ObjectSetFromObjects',Objects,Name},Rest3};
+		_ ->
+		    throw({asn1_error,{get_line(hd(Rest2)),get(asn1_module),
+				       [got,get_token(hd(Rest2)),expected,
+					typefieldreference]}})
+	    end;
 	[H|_T] ->
 	    throw({asn1_error,{get_line(H),get(asn1_module),
 			       [got,get_token(H),expected,'.']}})
@@ -2389,7 +2432,9 @@ parse_BuiltinValue(Tokens = [{'{',_}|_Rest]) ->
 parse_BuiltinValue([{identifier,_,IdName},{':',_}|Rest]) ->
     {Value,Rest2} = parse_Value(Rest),
     {{'CHOICE',{IdName,Value}},Rest2};
-parse_BuiltinValue([{'NULL',_}|Rest]) ->
+parse_BuiltinValue(Tokens=[{'NULL',_},{':',_}|_Rest])  ->
+    parse_ObjectClassFieldValue(Tokens);
+parse_BuiltinValue([{'NULL',_}|Rest])  ->
     {'NULL',Rest};
 parse_BuiltinValue([{'TRUE',_}|Rest]) ->
     {true,Rest};
@@ -2408,6 +2453,8 @@ parse_BuiltinValue([{'-',_},{number,_,Num}|Rest]) ->
 parse_BuiltinValue(Tokens) ->
     parse_ObjectClassFieldValue(Tokens).
 
+parse_DefinedValue(Tokens=[{identifier,_,_},{'{',_}|_Rest]) ->
+    parse_ParameterizedValue(Tokens);
 %% Externalvaluereference
 parse_DefinedValue([{typereference,L1,Tname},{'.',_},{identifier,_,Idname}|Rest]) ->
     {#'Externalvaluereference'{pos=L1,module=Tname,value=Idname},Rest};
@@ -2540,6 +2587,7 @@ parse_SubtypeElements([{'WITH',_},{'COMPONENTS',_},{'{',_}|Tokens]) ->
 %% ContainedSubtype
 %% ValueRange
 %% TypeConstraint
+%% Moved fun parse_Value/1 and fun parse_Type/1 to parse_Elements
 parse_SubtypeElements(Tokens) ->
     Flist = [fun parse_ContainedSubtype/1,
 	     fun parse_Value/1, 

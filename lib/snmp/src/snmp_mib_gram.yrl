@@ -54,6 +54,7 @@ newtypename
 objectidentifier
 objectname
 objecttypev1
+range_num
 referpart
 size
 sizedescr
@@ -183,17 +184,34 @@ integer variable atom string quote '{' '}' '::=' ':' '=' ',' '.' '(' ')' ';' '|'
 'WRITE-SYNTAX'
 'MIN-ACCESS'
 'BITS'
+'DisplayString' 
+'PhysAddress' 
+'MacAddress' 
+'TruthValue' 
+'TestAndIncr' 
+'AutonomousType' 
+'InstancePointer' 
+'VariablePointer' 
+'RowPointer' 
+'RowStatus' 
+'TimeStamp' 
+'TimeInterval' 
+'DateAndTime' 
+'StorageType' 
+'TDomain' 
+'TAddress'
 .
 
 
 Rootsymbol mib.
 Endsymbol '$end'.
+
 % **********************************************************************
 
 mib -> mibname 'DEFINITIONS' implies 'BEGIN'
        import v1orv2 'END' 
-    : {Version,Defs} = '$6',
-	{Version, '$1', '$5', Defs}.
+    : {Version, Defs} = '$6',
+      {Version, '$1', '$5', Defs}.
 
 v1orv2 -> moduleidentity listofdefinitionsv2 :
 			  {v2_mib,['$1'|lists:reverse('$2')]}.
@@ -245,6 +263,38 @@ import_stuff -> 'OBJECT-IDENTITY'
        : ensure_ver(2,'$1'), {builtin, 'OBJECT-IDENTITY'}.
 import_stuff -> 'TEXTUAL-CONVENTION' 
        : ensure_ver(2,'$1'), {builtin, 'TEXTUAL-CONVENTION'}.
+import_stuff -> 'DisplayString' 
+       : ensure_ver(2,'$1'), {builtin, 'DisplayString'}.
+import_stuff -> 'PhysAddress' 
+       : ensure_ver(2,'$1'), {builtin, 'PhysAddress'}.
+import_stuff -> 'MacAddress' 
+       : ensure_ver(2,'$1'), {builtin, 'MacAddress'}.
+import_stuff -> 'TruthValue' 
+       : ensure_ver(2,'$1'), {builtin, 'TruthValue'}.
+import_stuff -> 'TestAndIncr' 
+       : ensure_ver(2,'$1'), {builtin, 'TestAndIncr'}.
+import_stuff -> 'AutonomousType' 
+       : ensure_ver(2,'$1'), {builtin, 'AutonomousType'}.
+import_stuff -> 'InstancePointer' 
+       : ensure_ver(2,'$1'), {builtin, 'InstancePointer'}.
+import_stuff -> 'VariablePointer' 
+       : ensure_ver(2,'$1'), {builtin, 'VariablePointer'}.
+import_stuff -> 'RowPointer' 
+       : ensure_ver(2,'$1'), {builtin, 'RowPointer'}.
+import_stuff -> 'RowStatus' 
+       : ensure_ver(2,'$1'), {builtin, 'RowStatus'}.
+import_stuff -> 'TimeStamp' 
+       : ensure_ver(2,'$1'), {builtin, 'TimeStamp'}.
+import_stuff -> 'TimeInterval' 
+       : ensure_ver(2,'$1'), {builtin, 'TimeInterval'}.
+import_stuff -> 'DateAndTime' 
+       : ensure_ver(2,'$1'), {builtin, 'DateAndTime'}.
+import_stuff -> 'StorageType' 
+       : ensure_ver(2,'$1'), {builtin, 'StorageType'}.
+import_stuff -> 'TDomain' 
+       : ensure_ver(2,'$1'), {builtin, 'TDomain'}.
+import_stuff -> 'TAddress' 
+       : ensure_ver(2,'$1'), {builtin, 'TAddress'}.
 
 traptype -> objectname 'TRAP-TYPE' 'ENTERPRISE' objectname varpart
 	    description referpart implies integer
@@ -265,7 +315,7 @@ objecttypev1 ->	objectname 'OBJECT-TYPE'
 		referpart indexpartv1 defvalpart
 		nameassign : 
 		DefValPart = '$13', IndexPart = '$12', Status = '$8',
-		NameAssign = '$14',
+		NameAssign = '$14', 
            {{object_type,'$1', '$4', '$6', kind(DefValPart,IndexPart),
 	     Status, '$10',  NameAssign}, line_of('$2')}.
 
@@ -291,19 +341,25 @@ syntax -> type : {{type, cat('$1')},line_of('$1')}.
 syntax -> type size : {{type_with_size, cat('$1'), '$2'},line_of('$1')}.
 syntax -> usertype size : {{type_with_size,val('$1'), '$2'},line_of('$1')}.
 syntax -> 'INTEGER' '{' namedbits '}' : 
-         {{integer_with_enum, 'INTEGER', '$3'},line_of('$1')}.
-syntax -> 'BITS' '{' namedbits '}' : ensure_ver(2,'$1'),
-	     {{bits, '$3'},line_of('$1')}.
-syntax -> 'SEQUENCE' 'OF' usertype : {{sequence_of,val('$3')},line_of('$1')}.
+          {{integer_with_enum, 'INTEGER', '$3'}, line_of('$1')}.
+syntax -> 'BITS' '{' namedbits '}' : 
+          ensure_ver(2,'$1'), 
+          {{bits, '$3'}, line_of('$1')}.
+syntax -> 'SEQUENCE' 'OF' usertype : 
+          {{sequence_of,val('$3')},line_of('$1')}.
 
 size -> '(' sizedescr ')' : make_range('$2').
 size -> '(' 'SIZE' '(' sizedescr  ')' ')' : make_range('$4').
 
 %% Returns a list of integers describing a range.
-sizedescr -> integer '.' '.' integer : [val('$1'), val('$4')].
-sizedescr -> integer '.' '.' integer sizedescr :[val('$1'), val('$4') |'$5'].
-sizedescr -> integer : [val('$1')].
+sizedescr -> range_num '.' '.' range_num : ['$1', '$4'].
+sizedescr -> range_num '.' '.' range_num sizedescr :['$1', '$4' |'$5'].
+sizedescr -> range_num : ['$1'].
 sizedescr -> sizedescr '|' sizedescr : ['$1', '$3'].
+
+range_num -> integer : val('$1') .
+range_num -> quote atom  : make_range_integer(val('$1'), val('$2')) . 
+range_num -> quote variable  : make_range_integer(val('$1'), val('$2')) .
 
 namedbits -> atom '(' integer ')' : [{val('$1'), val('$3')}].
 namedbits -> namedbits ',' atom '(' integer ')' :
@@ -321,6 +377,22 @@ type -> 'Counter' : ensure_ver(1,'$1'),'$1'.
 type -> 'Gauge' : ensure_ver(1,'$1'),'$1'.
 type -> 'TimeTicks' : '$1'.
 type -> 'Opaque' : '$1'.
+type -> 'DisplayString' : ensure_ver(2,'$1'), '$1'.
+type -> 'PhysAddress' : ensure_ver(2,'$1'), '$1'.
+type -> 'MacAddress' : ensure_ver(2,'$1'), '$1'.
+type -> 'TruthValue' : ensure_ver(2,'$1'), '$1'.
+type -> 'TestAndIncr' : ensure_ver(2,'$1'), '$1'.
+type -> 'AutonomousType' : ensure_ver(2,'$1'), '$1'.
+type -> 'InstancePointer' : ensure_ver(2,'$1'), '$1'.
+type -> 'VariablePointer' : ensure_ver(2,'$1'), '$1'.
+type -> 'RowPointer' : ensure_ver(2,'$1'), '$1'.
+type -> 'RowStatus' : ensure_ver(2,'$1'), '$1'.
+type -> 'TimeStamp' : ensure_ver(2,'$1'), '$1'.
+type -> 'TimeInterval' : ensure_ver(2,'$1'), '$1'.
+type -> 'DateAndTime' : ensure_ver(2,'$1'), '$1'.
+type -> 'StorageType' : ensure_ver(2,'$1'), '$1'.
+type -> 'TDomain' : ensure_ver(2,'$1'), '$1'.
+type -> 'TAddress' : ensure_ver(2,'$1'), '$1'.
 
 % Returns: {FatherName, SubIndex}   (the parent)
 nameassign -> implies '{' fatherobjectname parentintegers '}'
@@ -337,8 +409,9 @@ descriptionfield -> string : {'DESCRIPTION', lists:reverse(val('$1'))}.
 descriptionfield -> '$empty' : {'DESCRIPTION', undefined}.
 description -> 'DESCRIPTION' string : {'DESCRIPTION', lists:reverse(val('$2'))}.
 description -> '$empty' : {'DESCRIPTION', undefined}.
-displaypart -> 'DISPLAY-HINT' string.
-displaypart -> '$empty'.
+
+displaypart -> 'DISPLAY-HINT' string : display_hint('$2') .
+displaypart -> '$empty' : undefined .
 
 % returns: {indexes, undefined} 
 %        | {indexes, IndexList} where IndexList is a list of aliasnames.
@@ -494,7 +567,7 @@ objecttypev2 ->	objectname 'OBJECT-TYPE'
                 referpart indexpartv2 defvalpart
 		nameassign : 
 		DefValPart = '$14', IndexPart = '$13', Status = '$9',
-		NameAssign = '$15',
+		NameAssign = '$15', 
            {{object_type,'$1', '$4', '$7', kind(DefValPart,IndexPart),
 	     Status, '$11', NameAssign}, line_of('$2')}.
 
@@ -510,18 +583,18 @@ indextypev2 ->  index : '$1'.
 
 entry -> objectname : '$1'.
 
-unitspart -> '$empty'.
-unitspart -> 'UNITS' string.
+unitspart -> '$empty' : undefined.
+unitspart -> 'UNITS' string : units('$2') .
 
-statusv2 -> 'current' : 'mandatory'.
+statusv2 -> 'current'    : 'current'.
 statusv2 -> 'deprecated' : 'deprecated'.
-statusv2 -> 'obsolete' : 'obsolete'.
+statusv2 -> 'obsolete'   : 'obsolete'.
 
-accessv2 -> 'not-accessible' : 'not-accessible'.
+accessv2 -> 'not-accessible'        : 'not-accessible'.
 accessv2 -> 'accessible-for-notify' : 'accessible-for-notify'.
-accessv2 -> 'read-only' : 'read-only'.
-accessv2 -> 'read-write' : 'read-write'.
-accessv2 -> 'read-create' : 'read-create'.
+accessv2 -> 'read-only'             : 'read-only'.
+accessv2 -> 'read-write'            : 'read-write'.
+accessv2 -> 'read-create'           : 'read-create'.
 
 notification -> objectname 'NOTIFICATION-TYPE' objectspart
                 'STATUS' statusv2 'DESCRIPTION' descriptionfield referpart nameassign :
@@ -558,6 +631,18 @@ cat(Token) -> element(1, Token).
 %%
 %% Arg: A list of integers.
 %%----------------------------------------------------------------------
+
+make_range_integer(RevHexStr, h) ->
+    erlang:list_to_integer(lists:reverse(RevHexStr), 16);
+make_range_integer(RevHexStr, 'H') ->
+    erlang:list_to_integer(lists:reverse(RevHexStr), 16);
+make_range_integer(RevBitStr, b) ->
+    erlang:list_to_integer(lists:reverse(RevBitStr), 2);
+make_range_integer(RevBitStr, 'B') ->
+    erlang:list_to_integer(lists:reverse(RevBitStr), 2);
+make_range_integer(RevStr, Base) ->
+    throw({error, {invalid_base, Base, lists:reverse(RevStr)}}).
+
 make_range(XIntList) ->
     IntList = lists:flatten(XIntList),
     {range, lists:min(IntList), lists:max(IntList)}.
@@ -681,6 +766,22 @@ kind(DefValPart,IndexPart) ->
 	{defval, DefVal} -> {variable, [{defval, DefVal}]}
     end.    
 
+display_hint(Val) ->
+    case val(Val) of
+        Str when list(Str) ->
+            {display_hint, lists:reverse(Str)};
+        _ ->
+            throw({error, {invalid_display_hint, Val}})
+    end.
+
+units(Val) ->
+    case val(Val) of
+        Str when list(Str) ->
+            {units, lists:reverse(Str)};
+        _ ->
+            throw({error, {invalid_units, Val}})
+    end.
+
 ensure_ver(Ver, Line, What) ->
     case get(snmp_version) of
 	Ver -> ok;
@@ -693,12 +794,16 @@ ensure_ver(Ver, Line, What) ->
 ensure_ver(Ver,Token) ->
     ensure_ver(Ver,line_of(Token), atom_to_list(cat(Token))).
 
-filter_v2imports(2,'Integer32') -> {builtin, 'Integer32'};
-filter_v2imports(2,'Counter32') -> {builtin, 'Counter32'};
-filter_v2imports(2,'Gauge32') -> {builtin, 'Gauge32'};
+filter_v2imports(2,'Integer32')  -> {builtin, 'Integer32'};
+filter_v2imports(2,'Counter32')  -> {builtin, 'Counter32'};
+filter_v2imports(2,'Gauge32')    -> {builtin, 'Gauge32'};
 filter_v2imports(2,'Unsigned32') -> {builtin, 'Unsigned32'};
-filter_v2imports(2,'Counter64') -> {builtin, 'Counter64'};
-filter_v2imports(_,Type) -> {type,Type}.
+filter_v2imports(2,'Counter64')  -> {builtin, 'Counter64'};
+filter_v2imports(_,Type)         -> {type, Type}.
     
 w(F, A) ->
     snmp_compile_lib:w(F, A).
+
+%i(F, A) ->
+%    io:format("~w:" ++ F ++ "~n", [?MODULE|A]).
+

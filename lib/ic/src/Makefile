@@ -75,7 +75,8 @@ MODULES= \
 	ic_sequence_java \
 	ic_array_java \
 	ic_attribute_java \
-	ic_java_type
+	ic_java_type \
+	ic_erl_template
 
 
 CCL_EX_FILES = \

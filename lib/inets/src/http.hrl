@@ -16,8 +16,8 @@
 %%
 
 -define(HTTP_REQUEST_TIMEOUT,   5000).
--define(PIPELINE_LENGTH,3).
--define(OPEN_SESSIONS,400).
+-define(TCP_PIPELINE_LENGTH,3).
+-define(MAX_TCP_SESSIONS,400).
 
 
 %%% FIXME! These definitions should probably be possible to defined via
@@ -28,10 +28,10 @@
 %%% Note that if not persitent the connection can be closed immediately on a
 %%% response, because new requests are not sent to this connection process.
 %%%	  address,     % ({Host,Port}) Destination Host and Port
--record(session,{
+-record(tcp_session,{
 	  id,          % (int) Session Id identifies session in http_manager
 	  clientclose, % (bool) true if client requested "close" connection
-	  scheme,      % (atom) http (HTTP/TCP) or https (TCP/SSL/TCP)
+	  scheme,      % (atom) http (HTTP/TCP) or https (HTTP/SSL/TCP)
 	  socket,      % (socket) Open socket, used by connection
 	  pipeline=[], % (list) Sent requests, not yet taken care of by the
 	               %        associated http_responder.
@@ -51,7 +51,7 @@
 	  ref,         % Caller specific
 	  from,        % (pid) Caller
 	  redircount=0,% (int) Number of redirects made for this request
-	  scheme,      % (http|https) (HTTP/TCP) or (TCP/SSL/TCP) connection
+	  scheme,      % (http|https) (HTTP/TCP) or (HTTP/SSL/TCP) connection
 	  address,     % ({Host,Port}) Destination Host and Port
 	  pathquery,   % (string) Rest of parsed URL
 	  method,      % (atom) HTTP request Method
@@ -64,7 +64,7 @@
 	  scheme,      % (atom) http (HTTP/TCP) or https (TCP/SSL/TCP)
 	  socket,      % (socket) Open socket, used by connection
 	  status,
-	  http_version,
+	  version,     % int() HTTP minor version number, e.g. 0 or 1
 	  headers=#res_headers{},
 	  body = <<>>
 	 }).
@@ -116,11 +116,12 @@
 	  noproxylist=[],    % (list) List with hosts not requiring proxy
 	  autoredirect=true, % (bool) True if automatic redirection on 30X
 			     %        responses.
-	  max_sessions=?OPEN_SESSIONS,% (int) Max open sessions for any Adr,Port
-	  max_quelength=?PIPELINE_LENGTH, % (int) Max pipeline length
+	  max_sessions=?MAX_TCP_SESSIONS,% (int) Max open sessions for any Adr,Port
+	  max_quelength=?TCP_PIPELINE_LENGTH, % (int) Max pipeline length
 %	  ssl=[{certfile,"/jb/server_root/ssl/ssl_client.pem"},
 %	       {keyfile,"/jb/server_root/ssl/ssl_client.pem"},
 %	       {verify,0}]
-	  ssl=false    % (list) SSL settings. A non-empty list enables SSL/TLS
-                       %  support in the HTTP client
+	  ssl=false,    % (list) SSL settings. A non-empty list enables SSL/TLS
+                        %  support in the HTTP client
+	  relaxed=false % (bool) true if not stricly standard compliant
 	 }).

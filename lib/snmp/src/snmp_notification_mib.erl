@@ -21,6 +21,7 @@
 	 snmpNotifyTable/1, snmpNotifyTable/3,
 	 snmpNotifyFilterTable/3, snmpNotifyFilterProfileTable/3,
 	 get_targets/0, get_targets/1]).
+-export([add_notify/3, delete_notify/1]).
 
 -include("SNMP-NOTIFICATION-MIB.hrl").
 -include("SNMPv2-TC.hrl").
@@ -95,12 +96,35 @@ init_notify_table([Row | T]) ->
     init_notify_table(T);
 init_notify_table([]) -> true.
 
-table_create_row(Tab,Name,Row) ->
-    ?vtrace("create table ~w row with Name ~s:"
-	"~n   ~p", [Tab,Name,Row]),
-    snmp_local_db:table_create_row(db(Tab), Name, Row).
+table_create_row(Tab, Key, Row) ->
+    ?vtrace("create table ~w row with Key ~w", [Tab, Key]),
+    snmp_local_db:table_create_row(db(Tab), Key, Row).
 
 
+add_notify(Name, Tag, Type) ->
+    Notif = {Name, Tag, Type},
+    case (catch snmp_conf:check_notify(Notif)) of
+	{ok, Row} ->
+	    Key = element(1, Row),
+	    case table_create_row(snmpNotifyTable, Key, Row) of
+		true ->
+		    {ok, Key};
+		false ->
+		    {create_failed}
+	    end;
+	Error ->
+	    {error, Error}
+    end.
+
+delete_notify(Key) ->
+    Db = db(snmpNotifyTable),
+    case snmp_local_db:table_delete_row(Db, Key) of
+	true ->
+	    ok;
+	false ->
+	    {error, not_found}
+    end.
+    
 gc_tabs() ->
     gc_tab(snmpNotifyTable),
     ok.
@@ -238,11 +262,55 @@ snmpNotifyTable(get, RowIndex, Cols) ->
     get(snmpNotifyTable, RowIndex, Cols);
 snmpNotifyTable(get_next, RowIndex, Cols) ->
     next(snmpNotifyTable, RowIndex, Cols);
-snmpNotifyTable(set, RowIndex, Cols) ->
-    invalidate_cache(),
-    snmp_generic:table_func(set, RowIndex, Cols, db(snmpNotifyTable));
+snmpNotifyTable(set, RowIndex, Cols0) ->
+    case (catch verify_snmpNotifyTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    invalidate_cache(),
+	    snmp_generic:table_func(set, RowIndex, Cols, db(snmpNotifyTable));
+	Error ->
+	    Error
+    end;
+snmpNotifyTable(is_set_ok, RowIndex, Cols0) ->
+    case (catch verify_snmpNotifyTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    snmp_generic:table_func(is_set_ok, RowIndex, Cols, db(snmpNotifyTable));
+	Error ->
+	    Error
+    end;
 snmpNotifyTable(Op, Arg1, Arg2) ->
     snmp_generic:table_func(Op, Arg1, Arg2, db(snmpNotifyTable)).
+
+
+verify_snmpNotifyTable_cols([], Cols) ->
+    {ok, lists:reverse(Cols)};
+verify_snmpNotifyTable_cols([{Col, Val0}|Cols], Acc) ->
+    Val = verify_snmpNotifyTable_col(Col, Val0),
+    verify_snmpNotifyTable_cols(Cols, [{Col, Val}|Acc]).
+
+verify_snmpNotifyTable_col(?snmpNotifyName, Name) ->
+    case (catch snmp_conf:check_string(Name, {gt, 0})) of
+	true ->
+	    Name;
+	_ ->
+	    wrongValue(?snmpNotifyName)
+    end;
+verify_snmpNotifyTable_col(?snmpNotifyTag, Tag) ->
+    case (catch snmp_conf:check_string(Tag)) of
+	true ->
+	    Tag;
+	_ ->
+	    wrongValue(?snmpNotifyTag)
+    end;
+verify_snmpNotifyTable_col(?snmpNotifyType, Type) ->
+    case Type of
+	trap   -> 1;
+	inform -> 2;
+	1      -> 1;
+	2      -> 2;
+	_      -> wrongValue(?snmpNotifyType)
+    end;
+verify_snmpNotifyTable_col(_, Val) ->
+    Val.
 
 
 %%-----------------------------------------------------------------
@@ -285,6 +353,8 @@ table_next(Name, RestOid) ->
 get(Name, RowIndex, Cols) ->
     snmp_generic:handle_table_get(db(Name), RowIndex, Cols, foi(Name)).
 
+
+wrongValue(V) -> throw({wrongValue, V}).
 
 set_sname() ->
     set_sname(get(sname)).

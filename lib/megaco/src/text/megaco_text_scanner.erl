@@ -36,17 +36,42 @@
 
 scan(Bin) when binary(Bin) ->
     Chars = erlang:binary_to_list(Bin),
-    tokens(Chars, 1, []);
+    tokens(Chars, 1, 1, []);
 scan(Chars) when list(Chars) ->
-    tokens(Chars, 1, []).
+    tokens(Chars, 1, 1, []).
 
-tokens(Chars, Line, Acc) ->
+%% Version 1 is the default so we don't need to handle it 
+tokens(Chars, Line, Version, Acc) ->
+%     d("tokens -> entry with"
+%       "~n   length(Chars): ~p"
+%       "~n   Line:          ~p"
+%       "~n   length(Acc):   ~p", [length(Chars), Line, length(Acc)]),
     case any_chars(Chars, Line) of
 	{token, Token, [], LatestLine} ->
 	    Tokens = [{endOfMessage, LatestLine, endOfMessage}, Token | Acc],
-	    {ok, lists:reverse(Tokens), Line};
+	    {ok, lists:reverse(Tokens), Version, Line};
+
+        %% Version token for version 2
+	%% (Version 1 is the default so we don't 
+	%%  need to handle it)
+        {token, {'SafeChars',1,"!/2"} = Token, Rest, LatestLine} ->
+%             d("tokens -> v2 megaco"
+%               "~n   length(Rest): ~p"
+%               "~n   LatestLine:   ~p", [length(Rest), LatestLine]),
+            tokens(Rest, LatestLine, 2, [Token | Acc]);
+        {token, {'SafeChars',1,"megaco/2"} = Token, Rest, LatestLine} ->
+%             d("tokens -> v2 megaco"
+%               "~n   length(Rest): ~p"
+%               "~n   LatestLine:   ~p", [length(Rest), LatestLine]),
+            tokens(Rest, LatestLine, 2, [Token | Acc]);
+
 	{token, Token, Rest, LatestLine} ->
-	    tokens(Rest, LatestLine, [Token | Acc]);
+% 	    d("tokens -> token: "
+% 	      "~n   Token:        ~p"
+% 	      "~n   length(Rest): ~p"
+% 	      "~n   LastLine:     ~p", [Token, length(Rest), LatestLine]),
+	    tokens(Rest, LatestLine, Version, [Token | Acc]);
+
 	{bad_token, Token, _Rest, _LatestLine} ->
 	    {error, {bad_token, [Token, Acc]}, Line}
     end.
@@ -54,6 +79,9 @@ tokens(Chars, Line, Acc) ->
 %% Returns {token,     Token, Rest, LatestLine}
 %% Returns {bad_token, Token, Rest, LatestLine}
 any_chars([Char | Rest], Line) ->
+%     Class = ?classify_char(Char),
+%     d("any_chars -> ~w of class ~w", [Char, Class]),
+%     case Class of
     case ?classify_char(Char) of
 	safe_char ->
 	    safe_chars(Rest, [Char], [?LOWER(Char)], Line);
@@ -99,7 +127,12 @@ sep_chars([Char | Rest] = All, Line) ->
 	safe_char ->
 	    {token, {'SEP', Line}, All, Line};
 	rest_char ->
-	    rest_chars(Rest, [Char], Line);
+	    case Char of
+		?SemiColonToken ->
+		    comment_chars(Rest, Line);
+		_ ->
+		    rest_chars(Rest, [Char], Line)
+	    end;
 	white_space -> 
 	    sep_chars(Rest, Line);
 	end_of_line ->
@@ -337,19 +370,27 @@ octet_string([] = All, Acc, Line) ->
 
 %% digitMapValue      = ["T" COLON Timer COMMA]
 %%			["S" COLON Timer COMMA] 
-%%			["L" COLON Timer COMMA] digitMap  
+%%			["L" COLON Timer COMMA] 
+%%			["Z" COLON Timer COMMA] digitMap  
 digit_map_value(Chars) ->
     digit_map_value(Chars, #'DigitMapValue'{}).
 
+%% NOTE: The swap of the digitMapBody and the durationTimer is
+%% intentional. The reason is a problem with the flex scanner.
+%% Hopefully this is temporary...
+%% The values are swapped back later by the parser...
 digit_map_value([Char, ?ColonToken | Rest] = All, DMV) ->
     case ?LOWER(Char) of
 	$t -> digit_map_timer(All, Rest, #'DigitMapValue'.startTimer, DMV);
 	$s -> digit_map_timer(All, Rest, #'DigitMapValue'.shortTimer, DMV);
 	$l -> digit_map_timer(All, Rest, #'DigitMapValue'.longTimer, DMV);
-	_  -> DMV#'DigitMapValue'{digitMapBody = All}
+% 	$z -> digit_map_timer(All, Rest, #'DigitMapValue'.durationTimer, DMV);
+% 	_  -> DMV#'DigitMapValue'{digitMapBody = All}
+	$z -> digit_map_timer(All, Rest, #'DigitMapValue'.digitMapBody, DMV);
+	_  -> DMV#'DigitMapValue'{durationTimer = All}
     end;
 digit_map_value(Chars, DMV) ->
-    DMV#'DigitMapValue'{digitMapBody = Chars}.
+    DMV#'DigitMapValue'{durationTimer = Chars}.
 
 digit_map_timer(All, Chars, TimerPos, DMV) ->
     {Rest, Digits} = collect_safe_chars(Chars, []),
@@ -462,13 +503,14 @@ select_token(LowerText) ->
         "md"                    -> 'ModemToken';
         "move"                  -> 'MoveToken';
         "mv"                    -> 'MoveToken';
-        "mtp"                   -> 'MTPToken';
         "mux"                   -> 'MuxToken';
         "mx"                    -> 'MuxToken';
         "notify"                -> 'NotifyToken';
         "n"                     -> 'NotifyToken';
         "notifycompletion"      -> 'NotifyCompletionToken';
         "nc"                    -> 'NotifyCompletionToken';
+        "nx64kservice"          -> 'Nx64kToken';              % v2
+        "n64"                   -> 'Nx64kToken';              % v2
         "observedevents"        -> 'ObservedEventsToken';
         "oe"                    -> 'ObservedEventsToken';
         "oneway"                -> 'OnewayToken';
@@ -505,8 +547,6 @@ select_token(LowerText) ->
         "rg"                    -> 'ReservedGroupToken';
         "reservedvalue"         -> 'ReservedValueToken';
         "rv"                    -> 'ReservedValueToken';
-        "reserved"              -> 'ReservedToken';
-        "rv"                    -> 'ReservedToken';
         "sendonly"              -> 'SendonlyToken';
         "so"                    -> 'SendonlyToken';
         "sendreceive"           -> 'SendrecvToken';
@@ -554,5 +594,35 @@ select_token(LowerText) ->
         "v91"                   -> 'V91Token';
         "version"               -> 'VersionToken';
         "v"                     -> 'VersionToken';
+	%% TimeStamp when length(TimeStamp) == 17 -> 'TimeStampToken';
+	[D1,D2,D3,D4,D5,D6,D7,D8,$t,T1,T2,T3,T4,T5,T6,T7,T8] 
+	when $0 =< D1; D1 =< $9;
+	     $0 =< D2; D2 =< $9;
+	     $0 =< D3; D3 =< $9;
+	     $0 =< D4; D4 =< $9;
+	     $0 =< D5; D5 =< $9;
+	     $0 =< D6; D6 =< $9;
+	     $0 =< D7; D7 =< $9;
+	     $0 =< D8; D8 =< $9;
+	     $0 =< T1; T1 =< $9;
+	     $0 =< T2; T2 =< $9;
+	     $0 =< T3; T3 =< $9;
+	     $0 =< T4; T4 =< $9;
+	     $0 =< T5; T5 =< $9;
+	     $0 =< T6; T6 =< $9;
+	     $0 =< T7; T7 =< $9;
+	     $0 =< T8; T8 =< $9 -> 'TimeStampToken';
 	_                       -> 'SafeChars'
     end.
+
+
+% d(F) ->
+%     d(F, []).
+
+% d(F, A) ->
+%     d(get(dbg), F, A).
+
+% d(true, F, A) ->
+%     io:format("~p:" ++ F ++ "~n", [?MODULE|A]);
+% d(_, _, _) ->
+%     ok.

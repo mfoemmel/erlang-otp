@@ -24,6 +24,8 @@
 -define(EBOOT_REQUEST, "EBOOTQ").
 -define(EBOOT_REPLY,   "EBOOTR").
 
--define(EBOOT_RETRY,   3).             %% number of retry before sleep
--define(EBOOT_REQUEST_DELAY,   500).   %% delay between retry
--define(EBOOT_RETRY_SLEEP,   10000).   %% sleep time between boot attempt's
+-define(EBOOT_RETRY,                 3). % number of retry before sleep
+-define(EBOOT_REQUEST_DELAY,       500). % delay between retry
+-define(EBOOT_SHORT_RETRY_SLEEP, 10000). % initial sleep time between boot attempt's
+-define(EBOOT_UNSUCCESSFUL_TRIES,   10). % retries before longer sleep
+-define(EBOOT_LONG_RETRY_SLEEP,  60000). % sleep time after a number of unsuccessful tries 

@@ -1660,13 +1660,15 @@ prepare_op(_Tid, {op, rec, unknown, Rec}, _WaitFor) ->
             {true, [{op, rec, Storage, Rec}], optional}
     end;
 
-prepare_op(_Tid, {op, announce_im_running, _Node, SchemaDef, Running, RemoteRunning}, _WaitFor) ->
+prepare_op(_Tid, {op, announce_im_running, Node, SchemaDef, Running, RemoteRunning}, _WaitFor) ->
     SchemaCs = list2cs(SchemaDef),
-    case lists:member(node(), Running) of
-        true ->
-            announce_im_running(RemoteRunning -- Running, SchemaCs);
-        false ->
-            announce_im_running(Running -- RemoteRunning, SchemaCs)
+    if 	
+	Node == node() -> %% Announce has already run on local node 
+	    ignore;       %% from do_merge_schema
+	true ->
+	    NewNodes = mnesia_lib:uniq(Running++RemoteRunning) -- val({current,db_nodes}),
+	    mnesia_lib:set(prepare_op, {announce_im_running,NewNodes}),
+	    announce_im_running(NewNodes, SchemaCs)
     end,
     {false, optional};
 
@@ -1725,7 +1727,8 @@ prepare_op(Tid, {op, add_table_copy, Storage, Node, TabDef}, _WaitFor) ->
 
     if
 	Tab == schema ->
-	    {true, optional}; % Nothing to prepare
+	    {true, optional};
+	
 	Node == node() ->
 	    case mnesia_lib:val({schema, storage_type}) of 
 		ram_copies when Storage /= ram_copies -> 
@@ -1935,9 +1938,17 @@ prepare_op(_Tid, {op, transform, Fun, TabDef}, _WaitFor) ->
             end
     end;
 
+prepare_op(_Tid, {op, merge_schema, TabDef}, _WaitFor) ->
+    Cs = list2cs(TabDef),
+    case verify_merge(Cs) of
+	ok  ->	
+	    {true, optional};
+	Error ->
+	    verbose("Merge_Schema ~p failed on ~p: ~p~n", [_Tid,node(),Error]),
+	    mnesia:abort({bad_commit, Error})
+    end;
 prepare_op(_Tid, _Op, _WaitFor) ->
     {true, optional}.
-
 
 create_ram_table(Tab, Type) ->
     Args = [{keypos, 2}, public, named_table, Type],
@@ -2107,12 +2118,12 @@ undo_prepare_ops(Tid, [Op | Ops]) ->
 undo_prepare_ops(_Tid, []) ->
     [].
 
-undo_prepare_op(_Tid, {op, announce_im_running, _, _, Running, RemoteRunning}) ->
-    case lists:member(node(), Running) of
-        true ->
-            unannounce_im_running(RemoteRunning -- Running);
-        false ->
-            unannounce_im_running(Running -- RemoteRunning)
+undo_prepare_op(_Tid, {op, announce_im_running, _Node, _, _Running, _RemoteRunning}) ->
+    case ?catch_val(prepare_op) of
+	{announce_im_running, New} ->
+            unannounce_im_running(New);
+	_Else ->
+	    ok
     end;
 
 undo_prepare_op(_Tid, {op, sync_trans}) ->
@@ -2556,11 +2567,17 @@ do_merge_schema() ->
     Connected = val(recover_nodes),
     Running = val({current, db_nodes}),
     Store = Ts#tidstore.store,
+    %% Verify that all nodes are locked that might not be the
+    %% case, if this trans where queued when new nodes where added.
+    case Running -- ets:lookup_element(Store, nodes, 2) of
+	[] -> ok; %% All known nodes are locked
+	Miss -> %% Abort! We don't want the sideeffects below to be executed
+	    mnesia:abort({bad_commit, {missing_lock, Miss}})
+    end,
     case Connected -- Running of
 	[Node | _] ->
 	    %% Time for a schema merging party!
 	    mnesia_locker:wlock_no_exist(Tid, Store, schema, [Node]),
-	    
 	    case rpc:call(Node, mnesia_controller, get_cstructs, []) of
 		{cstructs, Cstructs, RemoteRunning1} ->
 		    LockedAlready = Running ++ [Node],
@@ -2574,7 +2591,6 @@ do_merge_schema() ->
 		    end,
 		    NeedsLock = RemoteRunning -- LockedAlready,
 		    mnesia_locker:wlock_no_exist(Tid, Store, schema, NeedsLock),
-
 		    {value, SchemaCs} =
 			lists:keysearch(schema, #cstruct.name, Cstructs),
 
@@ -2594,7 +2610,9 @@ do_merge_schema() ->
 		    do_insert_schema_ops(Store, Ops),
 		    
 		    %% Ensure that the txn will be committed on all nodes
-		    announce_im_running(RemoteRunning, SchemaCs), 
+		    NewNodes = RemoteRunning -- Running,
+		    mnesia_lib:set(prepare_op, {announce_im_running,NewNodes}),
+		    announce_im_running(NewNodes, SchemaCs),
 		    {merged, Running, RemoteRunning};
 		{error, Reason} ->
 		    {"Cannot get cstructs", Node, Reason};
@@ -2614,7 +2632,7 @@ make_merge_schema(_Node, []) ->
 
 %% Merge definitions of schema table
 do_make_merge_schema(Node, RemoteCs)
-        when RemoteCs#cstruct.name == schema ->
+  when RemoteCs#cstruct.name == schema ->
     Cs = val({schema, cstruct}),
     Masters = mnesia_recover:get_master_nodes(schema),
     HasRemoteMaster = lists:member(Node, Masters),
@@ -2660,14 +2678,14 @@ do_make_merge_schema(Node, RemoteCs)
 	    end;
 	
 	StCsLocal /= StRcsLocal, StRcsLocal /= unknown ->
-	    Str = io_lib:format("Incompatible schema storage types. "
+	    Str = io_lib:format("Incompatible schema storage types (local). "
 				"on ~w storage ~w, on ~w storage ~w~n",
 				[node(), StCsLocal, Node, StRcsLocal]),
 	    throw(Str);    
 	StCsRemote /= StRcsRemote, StCsRemote /= unknown ->
-	    Str = io_lib:format("Incompatible schema storage types. "
-				"on ~w storage ~w, on ~w storage ~w~n",
-				[node(), StCsRemote, Node, StRcsRemote]),
+	    Str = io_lib:format("Incompatible schema storage types (remote). "
+				"on ~w cs ~w, on ~w rcs ~w~n",
+				[node(), cs2list(Cs), Node, cs2list(RemoteCs)]),
 	    throw(Str);
 
      	Cs#cstruct.disc_copies /= [] ->
@@ -2861,10 +2879,11 @@ do_merge_versions(AnythingNew, MergedCs, RemoteCs) ->
     {{Major1, Minor1}, _Detail1} = MergedCs#cstruct.version,
     {{Major2, Minor2}, _Detail2} = RemoteCs#cstruct.version,
     if
-	MergedCs#cstruct.version == RemoteCs#cstruct.version ->
-	    MergedCs;
 	AnythingNew == false ->
 	    MergedCs;
+	MergedCs#cstruct.version == RemoteCs#cstruct.version ->
+	    V = {{Major1, Minor1}, dummy},
+	    incr_version(MergedCs#cstruct{version = V});
 	Major1 == Major2 ->
 	    Minor = lists:max([Minor1, Minor2]),
 	    V = {{Major1, Minor}, dummy},
@@ -2875,11 +2894,31 @@ do_merge_versions(AnythingNew, MergedCs, RemoteCs) ->
 	    incr_version(MergedCs#cstruct{version = V})
     end.
 
+%% Verify the basics
+verify_merge(RemoteCs) ->
+    Tab = RemoteCs#cstruct.name,
+    Masters = mnesia_recover:get_master_nodes(schema),
+    HasRemoteMaster = Masters /= [],
+    case ?catch_val({Tab, cstruct}) of
+	{'EXIT', _} ->
+	    ok;
+	Cs ->
+	    StCsLocal   = mnesia_lib:cs_to_storage_type(node(), Cs),
+	    StRcsLocal  = mnesia_lib:cs_to_storage_type(node(), RemoteCs),
+	    if
+		StCsLocal  == StRcsLocal ->   ok;
+		StCsLocal  == unknown ->      ok;
+		(StRcsLocal == unknown), (HasRemoteMaster == false) ->      
+		    {merge_error, Cs, RemoteCs};
+		%%  Trust the merger
+		true  -> ok
+	    end
+    end.
+
 announce_im_running([N | Ns], SchemaCs) ->    
     {L1, L2} = mnesia_recover:connect_nodes([N]),
     case lists:member(N, L1) or lists:member(N, L2) of
 	true ->
-%%	    dbg_out("Adding ~p to {current db_nodes} ~n", [N]),  %% qqqq
 	    mnesia_lib:add({current, db_nodes}, N),
 	    mnesia_controller:add_active_replica(schema, N, SchemaCs);
 	false ->
@@ -2892,8 +2931,7 @@ announce_im_running([], _) ->
 unannounce_im_running([N | Ns]) ->
     mnesia_lib:del({current, db_nodes}, N),
     mnesia_controller:del_active_replica(schema, N),    
-    mnesia_recover:disconnect(N),
     unannounce_im_running(Ns);
 unannounce_im_running([]) ->
-    [].
+    ok.
 

@@ -49,16 +49,16 @@ get_dimension(X) when record(X, array)       ->
     [element(3, L) || L <- X#array.size].
 
 %% Should find the name hidden in constructs
-get_id( [{'<identifier>', LineNo, Id}] ) -> Id;
-get_id( {'<identifier>', LineNo, Id} ) -> Id;
+get_id( [{'<identifier>', _LineNo, Id}] ) -> Id;
+get_id( {'<identifier>', _LineNo, Id} ) -> Id;
 get_id(Id) when list(Id), integer(hd(Id)) -> Id;
 get_id(X) when record(X, scoped_id) -> X#scoped_id.id;
 get_id(X) when record(X, array) -> get_id(X#array.id);
-get_id( {'<string_literal>', LineNo, Id} ) -> Id;
-get_id( {'<wstring_literal>', LineNo, Id} ) -> Id.
+get_id( {'<string_literal>', _LineNo, Id} ) -> Id;
+get_id( {'<wstring_literal>', _LineNo, Id} ) -> Id.
 
-get_line([{'<identifier>', LineNo, Id}]) -> LineNo;
-get_line({'<identifier>', LineNo, Id}) -> LineNo;
+get_line([{'<identifier>', LineNo, _Id}]) -> LineNo;
+get_line({'<identifier>', LineNo, _Id}) -> LineNo;
 get_line(X) when record(X, scoped_id) -> X#scoped_id.line;
 get_line(X) when record(X, module)      -> get_line(X#module.id);
 get_line(X) when record(X, interface)   -> get_line(X#interface.id);
@@ -78,21 +78,21 @@ get_line(X) when record(X, op)		-> get_line(X#op.id);
 get_line(X) when record(X, param)       -> get_line(X#param.id);
 get_line(X) when record(X, id_of)       -> get_line(X#id_of.id);
 
-get_line({'or', T1, T2}) ->	get_line(T1);
-get_line({'xor', T1, T2}) ->	get_line(T1);
-get_line({'and', T1, T2}) ->	get_line(T1);
-get_line({'rshift', T1, T2}) ->	get_line(T1);
-get_line({'lshift', T1, T2}) ->	get_line(T1);
-get_line({'+', T1, T2}) ->	get_line(T1);
-get_line({'-', T1, T2}) ->	get_line(T1);
-get_line({'*', T1, T2}) ->	get_line(T1);
-get_line({'/', T1, T2}) ->	get_line(T1);
-get_line({'%', T1, T2}) ->	get_line(T1);
-get_line({{'-', Line}, T}) ->	get_line(T);
-get_line({{'+', Line}, T}) ->	get_line(T);
-get_line({{'~', Line}, T}) ->	get_line(T);
+get_line({'or', T1, _T2}) ->	get_line(T1);
+get_line({'xor', T1, _T2}) ->	get_line(T1);
+get_line({'and', T1, _T2}) ->	get_line(T1);
+get_line({'rshift', T1, _T2}) ->get_line(T1);
+get_line({'lshift', T1, _T2}) ->get_line(T1);
+get_line({'+', T1, _T2}) ->	get_line(T1);
+get_line({'-', T1, _T2}) ->	get_line(T1);
+get_line({'*', T1, _T2}) ->	get_line(T1);
+get_line({'/', T1, _T2}) ->	get_line(T1);
+get_line({'%', T1, _T2}) ->	get_line(T1);
+get_line({{'-', _Line}, T}) ->	get_line(T);
+get_line({{'+', _Line}, T}) ->	get_line(T);
+get_line({{'~', _Line}, T}) ->	get_line(T);
 get_line({_, X, _}) when integer(X) -> X;
-get_line({A, N}) when integer(N)	-> N;
+get_line({_A, N}) when integer(N)	-> N;
 get_line(_)				-> -1.
 
 
@@ -180,7 +180,7 @@ is_oneway(X) when record(X, op)  ->
 	{oneway, _} -> true;
 	_ -> false
     end;
-is_oneway(X) -> false.
+is_oneway(_X) -> false.
 
 
 
@@ -290,11 +290,13 @@ get_type_code2(G, N, X) when record(X, sequence) ->
 	     X#sequence.length}
     end;
   
-get_type_code2(G, N, {unsigned,{short,_}}) -> tk_ushort;
+get_type_code2(_G, _N, {unsigned,{short,_}}) -> tk_ushort;
 
-get_type_code2(G, N, {unsigned,{long,_}}) -> tk_ulong;
+get_type_code2(_G, _N, {unsigned,{long,_}}) -> tk_ulong;
 
-get_type_code2(G, N, X) when record(X, fixed) -> 
+get_type_code2(_G, _N, {unsigned,{'long long',_}}) -> tk_ulonglong;
+
+get_type_code2(_G, _N, X) when record(X, fixed) -> 
     {tk_fixed, X#fixed.digits, X#fixed.scale};
 
 get_type_code2(G, N, {X,_}) ->
@@ -302,6 +304,7 @@ get_type_code2(G, N, {X,_}) ->
 
 get_type_code2(_, _, short) -> tk_short;
 get_type_code2(_, _, long) -> tk_long;
+get_type_code2(_, _, 'long long') -> tk_longlong;
 get_type_code2(_, _, float) -> tk_float;
 get_type_code2(_, _, double) -> tk_double;                              
 get_type_code2(_, _, boolean) -> tk_boolean;
@@ -374,7 +377,7 @@ search_included_tk({tk_array,TK,_}, IR_ID) ->
     search_included_tk(TK,IR_ID);
 search_included_tk({tk_sequence,TK,_}, IR_ID) ->
     search_included_tk(TK,IR_ID);
-search_included_tk(TK, IR_ID) when atom(TK) ->
+search_included_tk(TK, _IR_ID) when atom(TK) ->
     false;
 search_included_tk(TK, IR_ID) ->
     case element(2,TK) == IR_ID of

@@ -1783,13 +1783,11 @@ check_unused_vars(Vt, Vt0, St0) ->
     U = unused_vars(Vt, Vt0, St0),
     warn_unused_vars(U, Vt, St0).
 
-check_old_unused_vars(Vt, _Vt0, St0) when St0#lint.warn_unused == false ->
-    {Vt,St0};
 check_old_unused_vars(Vt, Vt0, St0) ->
     U = unused_vars(vtold(Vt, Vt0), [], St0),
     warn_unused_vars(U, Vt, St0).
 
-unused_vars(Vt, Vt0, St0) when St0#lint.warn_unused == true ->
+unused_vars(Vt, Vt0, _St0) ->
     U0 = orddict:filter(fun (V, {_State,{unused,_Ls}}) -> 
                                 case atom_to_list(V) of
                                     [$_|_] -> false;
@@ -1797,18 +1795,21 @@ unused_vars(Vt, Vt0, St0) when St0#lint.warn_unused == true ->
                                 end;
                             (_V, _How) -> false
                         end, Vt),
-    vtnew(U0, Vt0); % Only new variables.
-unused_vars(_Vt, _Vt0, St0) when St0#lint.warn_unused == false ->
-    [].
+    vtnew(U0, Vt0). % Only new variables.
 
 warn_unused_vars([], Vt, St0) ->
     {Vt,St0};
 warn_unused_vars(U, Vt, St0) ->
-    St1 = foldl(fun ({V,{_,{unused,Ls}}}, St) ->
-                        foldl(fun (L, St2) -> 
-                                      add_warning(L, {unused_var,V}, St2)
-                              end, St, Ls)
-                end, St0, U),
+    St1 = 
+        if
+            St0#lint.warn_unused == false -> St0;
+            true -> foldl(fun ({V,{_,{unused,Ls}}}, St) ->
+                                  foldl(fun (L, St2) -> 
+                                               add_warning(L, {unused_var,V},
+                                                           St2)
+                                        end, St, Ls)
+                          end, St0, U)
+          end,
     %% Return all variables as bound so warnings are only reported once.
     UVt = map(fun ({V,{State,_}}) -> {V,{State,used}} end, U),
     {vtmerge(Vt, UVt), St1}.

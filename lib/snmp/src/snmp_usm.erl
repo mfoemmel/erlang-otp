@@ -321,28 +321,29 @@ decrypt(Data, UsmUser, UsmSecParams, SecLevel) ->
 	    PrivProtocol = element(?usmUserPrivProtocol, UsmUser),
 	    MsgPrivParams =
 		UsmSecParams#usmSecurityParameters.msgPrivacyParameters,
-	    TryDecrypt=
+	    TryDecrypt =
 		case PrivProtocol of
 		    ?usmNoPrivProtocol -> % 3.2.5
 			error(usmStatsUnsupportedSecLevels,
 			      ?usmStatsUnsupportedSecLevels, SecName);
 		    ?usmDESPrivProtocol ->
-			des_decrypt(element(?usmUserPrivKey, UsmUser),
-				    MsgPrivParams,
-				    EncryptedPDU)
+			catch des_decrypt(element(?usmUserPrivKey, UsmUser),
+					  MsgPrivParams,
+					  EncryptedPDU)
 		end,
 	    case TryDecrypt of
-		error ->
+		{ok, DecryptedData} ->
+		    DecryptedData;
+		_ ->
 		    error(usmStatsDecryptionErrors, 
-			  ?usmStatsDecryptionErrors, SecName);
-		DecryptedData ->
-		    DecryptedData
+			  ?usmStatsDecryptionErrors, SecName)
 	    end
     end.
 
 
 generate_outgoing_msg(Message, SecEngineID, SecName, SecData, SecLevel) ->
     %% 3.1.1
+    ?vtrace("generate_outgoing_msg -> entry (3.1.1)",[]),
     {UserName, AuthProtocol, PrivProtocol, AuthKey, PrivKey} =
 	case SecData of
 	    [] -> % 3.1.1b
@@ -370,11 +371,12 @@ generate_outgoing_msg(Message, SecEngineID, SecName, SecData, SecLevel) ->
 		SecData
 	end,
     %% 3.1.4
+    ?vtrace("generate_outgoing_msg -> (3.1.4)",[]),
     ScopedPduBytes = Message#message.data,
     {ScopedPduData, MsgPrivParams} =
 	encrypt(ScopedPduBytes, PrivProtocol, PrivKey, SecLevel),
     SnmpEngineID = snmp_framework_mib:get_engine_id(),
-    ?vtrace("SnmpEngineID: ~p",[SnmpEngineID]),
+    ?vtrace("SnmpEngineID: ~p (3.1.6)",[SnmpEngineID]),
     %% 3.1.6
     {MsgAuthEngineBoots, MsgAuthEngineTime} =
 	case snmp_misc:is_auth(SecLevel) of
@@ -388,6 +390,7 @@ generate_outgoing_msg(Message, SecEngineID, SecName, SecData, SecLevel) ->
 		 snmp_framework_mib:get_engine_time()}
 	end,
     %% 3.1.5 - 3.1.7
+    ?vtrace("generate_outgoing_msg -> (3.1.5 - 3.1.7)",[]),
     UsmSecParams =
 	#usmSecurityParameters{msgAuthoritativeEngineID = SecEngineID,
 			       msgAuthoritativeEngineBoots = MsgAuthEngineBoots,
@@ -396,6 +399,7 @@ generate_outgoing_msg(Message, SecEngineID, SecName, SecData, SecLevel) ->
 			       msgPrivacyParameters = MsgPrivParams},
     Message2 = Message#message{data = ScopedPduData},
     %% 3.1.8
+    ?vtrace("generate_outgoing_msg -> (3.1.8)",[]),
     authenticate_outgoing(Message2, UsmSecParams,
 			  AuthKey, AuthProtocol, SecLevel).
 
@@ -506,7 +510,7 @@ des_decrypt(PrivKey, MsgPrivParams, EncData) when length(MsgPrivParams) == 8 ->
     %% Whatabout errors here???  E.g. not a mulitple of 8!
     Data = binary_to_list(crypto:des_cbc_decrypt(DesKey, IV, EncData)),
     Data2 = snmp_pdus:strip_encrypted_scoped_pdu_data(Data),
-    Data2.
+    {ok, Data2}.
 
 get_salt() ->
     SaltInt = 

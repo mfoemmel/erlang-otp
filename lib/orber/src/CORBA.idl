@@ -17,15 +17,6 @@ module CORBA {
   typedef string ScopedName;
   typedef string RepositoryId;
  
-  // Basic IDL definition
-  interface Policy
-    {
-      readonly attribute PolicyType policy_type;
-      Policy copy();
-      void destroy();
-    };
-  typedef sequence <Policy> PolicyList;
-  
 };
 
 #endif

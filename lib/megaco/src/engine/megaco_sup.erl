@@ -76,7 +76,7 @@ init() ->
     ?d("init -> entry", []),
     Flags = {one_for_one, 0, 1},
     Sups = [sup_spec(megaco_misc_sup), 
-	    sup_spec(megaco_acks_sup), 
+	    sup_spec(megaco_trans_sup), 
 	    worker_spec(megaco_config,  [gen_server]),
 	    worker_spec(megaco_monitor, [gen_server])],
     ?d("init -> done when"

@@ -813,6 +813,7 @@ enc_opt(high_watermark)  -> ?INET_LOPT_TCP_HIWTRMRK;
 enc_opt(low_watermark)   -> ?INET_LOPT_TCP_LOWTRMRK;
 enc_opt(bit8)            -> ?INET_LOPT_BIT8;
 enc_opt(send_timeout)    -> ?INET_LOPT_TCP_SEND_TIMEOUT;
+enc_opt(delay_send)      -> ?INET_LOPT_TCP_DELAY_SEND;
 enc_opt(_) ->          -1.
 
 dec_opt(?INET_OPT_REUSEADDR)      -> reuseaddr;
@@ -839,6 +840,7 @@ dec_opt(?INET_LOPT_TCP_HIWTRMRK)  -> high_watermark;
 dec_opt(?INET_LOPT_TCP_LOWTRMRK)  -> low_watermark;
 dec_opt(?INET_LOPT_BIT8)          -> bit8;
 dec_opt(?INET_LOPT_TCP_SEND_TIMEOUT) -> send_timeout;
+dec_opt(?INET_LOPT_TCP_DELAY_SEND) -> delay_send;
 dec_opt(_)                        -> undefined.
 
 type_opt(reuseaddr)       -> bool;
@@ -890,6 +892,7 @@ type_opt(bit8) ->
 	    {on,    ?INET_BIT8_ON},
 	    {off,   ?INET_BIT8_OFF}]};
 type_opt(send_timeout) -> time;
+type_opt(delay_send) -> bool;
 type_opt(_)         -> undefined.
 
 

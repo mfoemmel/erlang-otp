@@ -83,7 +83,8 @@ config3() ->
 	case lists:member(3, NewVer) and (NewSecType /= none) of
 	    true ->
 		P=ask("8b. Give a password of at least length 8. It is used to "
-		      "generate\nprivate keys for the  configuration.",
+		      "generate\n"
+		      "    private keys for the configuration: ",
 		      mandatory),
 		verify_passwd(P),
 		P;
@@ -290,9 +291,9 @@ write_community_conf(Dir) ->
 "%% Each row is a 5-tuple:\n"
 "%% {CommunityIndex, CommunityName, SecurityName, ContextName, TransportTag}.\n"
 "%% For example\n"
-"%% {1, \"public\", \"initial\", \"\", \"\"}.\n"
-"%% {2, \"secret\", \"secret_name\", \"\", \"tag\"}.\n"
-"%% {3, \"bridge1\", \"initial\", \"bridge1\", \"\"}.\n"
+"%% {\"1\", \"public\", \"initial\", \"\", \"\"}.\n"
+"%% {\"2\", \"secret\", \"secret_name\", \"\", \"tag\"}.\n"
+"%% {\"3\", \"bridge1\", \"initial\", \"bridge1\", \"\"}.\n"
 "%%\n",
     {ok, Fid} = file:open(filename:join(Dir,"community.conf"),write),
     ok = io:format(

@@ -54,21 +54,24 @@ APPUP_FILE   = megaco.appup
 APPUP_SRC    = $(APPUP_FILE).src
 APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
 
-
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
+ifeq ($(USE_MEGACO_TEST_CODE),true)
+ERL_COMPILE_FLAGS += -DMEGACO_TEST_CODE
+endif
+
 ifeq ($(TYPE),debug)
 ERL_COMPILE_FLAGS += -Ddebug
+endif
+
+ifeq ($(USE_MEGACO_HIPE),true)
+ERL_COMPILE_FLAGS += +native
 endif
 
 ifeq ($(WARN_UNUSED_WARS),true)
 ERL_COMPILE_FLAGS += +warn_unused_vars
 endif
-
-# ifeq ($(USE_HIPE),true)
-# ERL_COMPILE_FLAGS += +native
-# endif
 
 ERL_FLAGS += -pa $(ERL_TOP)/lib/et/ebin \
              -pa $(ERL_TOP)/lib/megaco/ebin
@@ -91,6 +94,11 @@ clean:
 	rm -f errs core *~
 
 docs:
+
+info:
+	@echo "MODULES = $(MODULES)"
+	@echo ""
+
 
 # ----------------------------------------------------
 # Special Build Targets
@@ -128,32 +136,4 @@ release_docs_spec:
 # Include dependencies
 # ----------------------------------------------------
 
-$(EBIN)/megaco.$(EMULATOR): megaco.erl \
-	../../include/megaco.hrl megaco_internal.hrl megaco_message_internal.hrl 
-
-$(EBIN)/megaco_config.$(EMULATOR): megaco_config.erl \
-	../../include/megaco.hrl megaco_internal.hrl
-
-$(EBIN)/megaco_digit_map.$(EMULATOR): megaco_digit_map.erl \
-	megaco_message_internal.hrl ../text/megaco_text_tokens.hrl
-
-$(EBIN)/megaco_erl_dist_encoder.$(EMULATOR): megaco_erl_dist_encoder.erl \
-	megaco_message_internal.hrl 
-
-$(EBIN)/megaco_filter.$(EMULATOR): megaco_filter.erl \
-	../../include/megaco.hrl ../../include/megaco_message_v1.hrl \
-	megaco_internal.hrl 
-#$(ET_TOP)/include/et.hrl
-
-$(EBIN)/megaco_monitor.$(EMULATOR): megaco_monitor.erl 
-
-$(EBIN)/megaco_misc_sup.$(EMULATOR): megaco_misc_sup.erl 
-
-$(EBIN)/megaco_sup.$(EMULATOR): megaco_sup.erl
-
-$(EBIN)/megaco_messenger.$(EMULATOR): megaco_messenger.erl \
-	megaco_internal.hrl megaco_message_internal.hrl 
-
-$(EBIN)/megaco_user.$(EMULATOR): megaco_user.erl \
-	../../include/megaco.hrl ../../include/megaco_message_v1.hrl
-
+include depend.mk

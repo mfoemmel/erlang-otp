@@ -100,8 +100,17 @@
 	  startTimer = asn1_NOVALUE, 
 	  shortTimer = asn1_NOVALUE, 
 	  longTimer = asn1_NOVALUE, 
-	  digitMapBody
-	 }). % with extension mark
+	  %% BUGBUG BUGBUG 
+	  %% Note that there should not really be a default value 
+	  %% for this item, but a problem with the flex scanner
+	  %% makes it neccessary to swap the values of digitMapBody
+	  %% and durationTimer. The same is done in the (erl) scanner
+	  %% just so they behave the same. The values are later 
+	  %% swapped back by the parser...
+	  digitMapBody = asn1_NOVALUE, 
+	  %% with extensions
+	  durationTimer = asn1_NOVALUE
+	 }). 
 
 
 -record('TerminationID',

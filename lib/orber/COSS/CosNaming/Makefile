@@ -39,7 +39,6 @@ RELSYSDIR = $(RELEASE_PATH)/lib/orber-$(VSN)
 # ----------------------------------------------------
 
 MODULES = \
-	CosNaming_NamingContext_impl \
 	CosNaming_NamingContextExt_impl \
         CosNaming_BindingIterator_impl \
 	lname \

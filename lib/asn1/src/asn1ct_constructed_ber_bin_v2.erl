@@ -151,7 +151,7 @@ gen_encode_sequence(Erules,Typename,D) when record(D,type) ->
     emit([nl,"   BytesSoFar = "]),
     case SeqOrSet of
 	'SET' when (D#type.def)#'SET'.sorted == dynamic ->
-	    emit("?RT_BER:dynamicsort_SET_components(["),
+	    emit("asn1rt_check:dynamicsort_SET_components(["),
 	    mkvlist(asn1ct_name:all(encBytes)),
 	    emit(["]),",nl]);
 	_ ->
@@ -203,8 +203,8 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 				   valueindex=ValIndex} ->
 %	    {ObjectSet,AttrN,_N,UniqueFieldName} ->%% N is index of attribute that determines constraint
 		F = fun(#'ComponentType'{typespec=CT})->
-			    case {CT#type.constraint,CT#type.tablecinf} of
-				{[],[{objfun,_}|_]} -> true;
+			    case {asn1ct_gen:get_constraint(CT#type.constraint,componentrelation),CT#type.tablecinf} of
+				{no,[{objfun,_}|_]} -> true;
 				_ -> false
 			    end
 		    end,
@@ -503,7 +503,7 @@ gen_encode_sof_components(Erules,Typename,SeqOrSetOf,Cont)
     case catch lists:member(der,get(encoding_options)) of
 	true ->
 	    emit([indent(3),
-		  "{?RT_BER:dynamicsort_SETOF(AccBytes),AccLen};",nl,nl]);
+		  "{asn1rt_check:dynamicsort_SETOF(AccBytes),AccLen};",nl,nl]);
 	_ ->
 	    emit([indent(3),"{lists:reverse(AccBytes),AccLen};",nl,nl])
     end,
@@ -511,7 +511,8 @@ gen_encode_sof_components(Erules,Typename,SeqOrSetOf,Cont)
 	  "_components'([H|T]",Objfun,",AccBytes, AccLen) ->",nl]),
     TypeNameSuffix = asn1ct_gen:constructed_suffix(SeqOrSetOf,Cont#type.def),
     gen_enc_line(Erules,Typename,TypeNameSuffix,Cont,"H",3,
-		 mandatory,"{EncBytes,EncLen} = ",EncObj),
+%		 mandatory,"{EncBytes,EncLen} = ",EncObj),
+		 mandatory,EncObj),
     emit([",",nl]),
     emit([indent(3),"'enc_",asn1ct_gen:list2name(Typename),
 	  "_components'(T",Objfun,","]), 
@@ -641,7 +642,8 @@ emit_term_tlv(Prop,{typefield,_},DecObjInf) ->
     emit_term_tlv(Prop,type_or_object_field,DecObjInf);
 emit_term_tlv(Prop,{objectfield,_,_},DecObjInf) ->
     emit_term_tlv(Prop,type_or_object_field,DecObjInf);
-emit_term_tlv(opt_or_def,type_or_object_field,_) ->
+emit_term_tlv(opt_or_def,type_or_object_field,NotFalse) 
+  when NotFalse /= false ->
     asn1ct_name:new(tmpterm),
     emit(["{",{curr,tmpterm},",",{curr,tlv},"} = "]);
 emit_term_tlv(opt_or_def,_,_) ->
@@ -726,26 +728,18 @@ gen_enc_choice2(Erules,TopType,[H1|T]) when record(H1,'ComponentType') ->
 		Emit = ["{",{curr,tmpBytes},", _} = "],
 		{{no_attr,"ObjFun"},Emit};
 	    _ ->
-		{false,[]}
+		case Type#type.tablecinf of
+		    [{objfun,_}] -> {{no_attr,"ObjFun"},[]};
+		    _ -> {false,[]}
+		end
 	end,
-% 	case asn1ct_gen:get_constraint(Type#type.constraint,
-% 				       tableconstraint_info) of
-% 	    no ->
-% 		{false,[]};
-% 	    _ ->
-% 		asn1ct_name:new(tmpBytes),
-% 		asn1ct_name:new(encBytes),
-% 		asn1ct_name:new(encLen),
-% 		Emit = ["{",{curr,tmpBytes},", _} = "],
-% 		{{no_attr,"ObjFun"},Emit}
-% 	end,
     gen_enc_line(Erules,TopType,Cname,Type,"element(2,Val)",9,
 		 mandatory,Assign,Encobj),
-    case Encobj of
-	false -> ok;
-	_ ->
+    case {Type#type.def,Encobj} of
+	{#'ObjectClassFieldType'{},{no_attr,"ObjFun"}} ->
 	    emit([",",nl,indent(9),"{",{curr,encBytes},", ",
-		  {curr,encLen},"}"])
+		  {curr,encLen},"}"]);
+	_ -> ok
     end,
     emit([";",nl]),
     case T of 
@@ -845,13 +839,28 @@ gen_dec_choice_cases(Erules,TopType, [H|T]) ->
 %%---------------------------------------
 
 gen_enc_line(Erules,TopType,Cname,
-	     Type=#type{constraint=[{componentrelation,_,_}],
+	     Type=#type{constraint=C,
 			def=#'ObjectClassFieldType'{type={typefield,_}}},
 	     Element,Indent,OptOrMand=mandatory,EncObj) 
   when list(Element) ->
-    asn1ct_name:new(tmpBytes),
-    gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,
-		 ["{",{curr,tmpBytes},",_} = "],EncObj);
+    case asn1ct_gen:get_constraint(C,componentrelation) of
+	{componentrelation,_,_} ->
+	    asn1ct_name:new(tmpBytes),
+	    gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,
+			 ["{",{curr,tmpBytes},",_} = "],EncObj);
+	_ ->
+	    gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,
+			 ["{",{curr,encBytes},",",{curr,encLen},"} = "],
+			 EncObj)
+    end;
+% gen_enc_line(Erules,TopType,Cname,
+% 	     Type=#type{constraint=[{componentrelation,_,_}],
+% 			def=#'ObjectClassFieldType'{type={typefield,_}}},
+% 	     Element,Indent,OptOrMand=mandatory,EncObj) 
+%   when list(Element) ->
+%     asn1ct_name:new(tmpBytes),
+%     gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,
+% 		 ["{",{curr,tmpBytes},",_} = "],EncObj);
 gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,EncObj) 
   when list(Element) ->
     gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,
@@ -944,7 +953,7 @@ gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,Assign,EncObj)
 		    end;
 		_ ->
 		    {EncFunName, _EncMod, _EncFun} = 
-			mkfuncname(TopType,Cname,WhatKind,"enc_"),
+			mkfuncname(TopType,Cname,WhatKind,"enc_",""),
 		    case {WhatKind,Type#type.tablecinf,EncObj} of
 			{{constructed,bif},[{objfun,_}|_R],{_,Fun}} ->
 			    emit([EncFunName,"(",Element,", ",{asis,Tag},
@@ -1098,7 +1107,12 @@ gen_dec_line(Erules,TopType,Cname,CTags,Type,OptOrMand,DecObjInf)  ->
 	{Cname,ObjSet} -> % this must be the component were an object is 
 	    %% choosen from the object set according to the table 
 	    %% constraint.
-	    {[{ObjSet,Cname,asn1ct_gen:mk_var(asn1ct_name:curr(term))}],
+	    ObjSetName = case ObjSet of
+			     {deep,OSName,_,_} ->
+				 OSName;
+			     _ -> ObjSet
+			 end,
+	    {[{ObjSetName,Cname,asn1ct_gen:mk_var(asn1ct_name:curr(term))}],
 	     PostpDec};
 	_  -> {[],PostpDec}
     end.
@@ -1218,19 +1232,35 @@ gen_dec_call1(WhatKind,_,_Erules,TopType,Cname,Type,BytesVar,
 		end,
 	    case asn1ct:get_gen_state_field(namelist) of
 		[{Cname,List}|Rest] when list(List) ->
-		    case WhatKind of
-			#'Externaltypereference'{} ->
-			    %%io:format("gen_dec_call1 1:~n~p~n~n",[WhatKind]),
-			    asn1ct:add_tobe_refed_func({WhatKind,List});
-			_ ->
-			    %%io:format("gen_dec_call1 2:~n~p~n~n",[[Cname|TopType]]),
-			    asn1ct:add_tobe_refed_func({[Cname|TopType],
-							List})
-		    end,
+		    Sindex =
+			case WhatKind of
+			    #'Externaltypereference'{} ->
+%				asn1ct:maybe_rename_function(WhatKind,List),
+				SI = asn1ct:maybe_saved_sindex(WhatKind,List),
+				Saves = {WhatKind,SI,List},
+				asn1ct:add_tobe_refed_func(Saves),
+				SI;
+			    _ ->
+%				asn1ct:maybe_rename_function([Cname|TopType],
+%							     List),
+				SI = asn1ct:maybe_saved_sindex([Cname|TopType],List),
+				Saves = {[Cname|TopType],SI,List,Type},
+				asn1ct:add_tobe_refed_func(Saves),
+				SI
+			end,
 		    asn1ct:update_gen_state(namelist,Rest),
 		    Prefix=asn1ct:get_gen_state_field(prefix),
+%		    Suffix =
+%			lists:concat(["_",asn1ct:latest_sindex()]),
+		    Suffix =
+			case Sindex of
+			    I when integer(I),I>0 -> lists:concat(["_",I]);
+			    _ -> ""
+			end,
 		    {DecFunName,_,_}=
-			mkfuncname(TopType,Cname,WhatKind,Prefix),
+			mkfuncname(TopType,Cname,WhatKind,Prefix,Suffix),
+%		    SuffixedName = 
+%			lists:concat([DecFunName,asn1ct:latest_sindex()]),
 		    EmitDecFunCall(DecFunName);
 		[{Cname,parts}|Rest] ->
 		    asn1ct:update_gen_state(namelist,Rest),
@@ -1246,7 +1276,7 @@ gen_dec_call1(WhatKind,_,_Erules,TopType,Cname,Type,BytesVar,
 		    emit("}");
 		_ ->
 		    {DecFunName,_,_}=
-			mkfuncname(TopType,Cname,WhatKind,"dec_"),
+			mkfuncname(TopType,Cname,WhatKind,"dec_",""),
 		    EmitDecFunCall(DecFunName)
 	    end
 % 	    case {WhatKind,Type#type.tablecinf} of
@@ -1324,17 +1354,19 @@ print_attribute_comment(InnerType,Pos,Cname,Prop) ->
 
 
     
-mkfuncname(TopType,Cname,WhatKind,Prefix) ->
+mkfuncname(TopType,Cname,WhatKind,Prefix,Suffix) ->
     CurrMod = get(currmod),
     case WhatKind of
 	#'Externaltypereference'{module=CurrMod,type=EType} ->
-	    F = lists:concat(["'",Prefix,EType,"'"]),
+	    F = lists:concat(["'",Prefix,EType,Suffix,"'"]),
 	    {F, "?MODULE", F};
 	#'Externaltypereference'{module=Mod,type=EType} ->
-	    {lists:concat(["'",Mod,"':'",Prefix,EType,"'"]),Mod,
+	    {lists:concat(["'",Mod,"':'",Prefix,EType,Suffix,"'"]),Mod,
 	     lists:concat(["'",Prefix,EType,"'"])};
 	{constructed,bif} ->
-	    F = lists:concat(["'",Prefix,asn1ct_gen:list2name([Cname|TopType]),"'"]),
+	    F = lists:concat(["'",Prefix,
+			      asn1ct_gen:list2name([Cname|TopType]),
+			      Suffix,"'"]),
 	    {F, "?MODULE", F}
     end.
 

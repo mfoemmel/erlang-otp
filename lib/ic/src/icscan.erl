@@ -111,13 +111,13 @@ scan(G, BE, [$>, $> | Str], Line, Out) ->
 scan(G, BE, [C|Str], Line, Out) ->
     scan(G, BE, Str, Line, [{list_to_atom([C]), Line} | Out]);
 	    
-scan(G, BE, [], Line, Out) ->
+scan(_G, _BE, [], _Line, Out) ->
     Out.
 
 
 scan_number(G, BE, [X|Str], [$0], Line, Out) when X == $X ; X ==$x ->
     case Str of
-	[D|TmpStr] when ?is_number(D); ?is_hex_uc(D); ?is_hex_lc(D) ->
+	[D|_TmpStr] when ?is_number(D); ?is_hex_uc(D); ?is_hex_lc(D) ->
 	    {Num,Rest} = scan_hex_number(Str,0),
 	    scan(G, BE, Rest, Line, [{'<integer_literal>', Line, 
 				  integer_to_list(Num)} | Out]);
@@ -178,12 +178,12 @@ pre_scan_number([$D|Rest], Acc, _) ->
 pre_scan_number([$.|Rest], Acc, _) ->
     %% Actually, we don't know if it's a float since it can be a fixed.
     pre_scan_number(Rest, [$.|Acc], float);
-pre_scan_number([X|_], Acc, _) when X == $E ; X ==$e  ->
+pre_scan_number([X|_], _Acc, _) when X == $E ; X ==$e  ->
     %% Now we now it's a float.
     float;
 pre_scan_number([X|Rest], Acc, Type) when ?is_number(X) ->
     pre_scan_number(Rest, [X|Acc], Type);
-pre_scan_number(Rest, Acc, Type) ->
+pre_scan_number(_Rest, _Acc, Type) ->
     %% At this point we know it's a octal or float.
     Type.
 
@@ -208,9 +208,9 @@ scan_octal_number(Rest,Acc) ->
 %%	will not be caught in the scanner (but rather in expression
 %%	evaluation)
 
-scan_frac(G, BE, [$e | Str], [$.], Line, Out) ->
+scan_frac(G, _BE, [$e | _Str], [$.], Line, _Out) ->
     ic_error:fatal_error(G, {illegal_float, Line});
-scan_frac(G, BE, [$E | Str], [$.], Line, Out) ->
+scan_frac(G, _BE, [$E | _Str], [$.], Line, _Out) ->
     ic_error:fatal_error(G, {illegal_float, Line});
 scan_frac(G, BE, Str, Accum, Line, Out) ->
     scan_frac2(G, BE, Str, Accum, Line, Out).
@@ -280,10 +280,10 @@ scan_const(G, BE, wstring, [$" | Rest], Accum, Line, [{'<wstring_literal>', _,Ws
 scan_const(G, BE, wstring, [$" | Rest], Accum, Line, Out) -> %% WSTRING
     scan(G, BE, Rest, Line, 
 	 [{'<wstring_literal>', Line, lists:reverse(Accum)} | Out]);
-scan_const(G, BE, string, [], Accum, Line, Out) -> %% Bad string
+scan_const(G, _BE, string, [], _Accum, Line, Out) -> %% Bad string
     ic_error:error(G, {bad_string, Line}),
     Out;
-scan_const(G, BE, wstring, [], Accum, Line, Out) -> %% Bad WSTRING
+scan_const(G, _BE, wstring, [], _Accum, Line, Out) -> %% Bad WSTRING
     ic_error:error(G, {bad_string, Line}),
     Out;
 scan_const(G, BE, char, [$' | Rest], Accum, Line, Out) ->
@@ -335,12 +335,12 @@ scan_const(G, BE, Mode, [C | Rest], Accum, Line, Out) ->
 %% NOTE: This will have to be enhanced in order to eat #pragma
 %%
 scan_preproc(G, BE, Str, Line, Out) ->
-    {List, Rest} = scan_to_nl2(strip(Str), []),
+    {List, Rest} = scan_to_nl(strip(Str), []),
     NewLine = get_new_line_nr(strip(List), Line+1, []),
     case scan_number(G, BE, List, [], Line, [{'#', Line} | Out]) of
 	L when list(L) ->
 	    scan(G, BE, Rest, NewLine, [{'#', Line} | L]);
-	X ->
+	_X ->
 	    scan(G, BE, Rest, NewLine, [{'#', Line}, {'#', Line} | Out])
     end.
 
@@ -349,21 +349,13 @@ get_new_line_nr([C|R], Line, Acc) when C>=$0, C=<$9 ->
 get_new_line_nr(_, Line, []) -> Line;		% No line nr found
 get_new_line_nr(_, _, Acc) -> list_to_integer(reverse(Acc)).
 
-scan_to_nl2([], Acc) -> {reverse(Acc), []};
-scan_to_nl2([$\n|Str], Acc) -> {reverse(Acc), Str};
-scan_to_nl2([$\r|R], Acc) -> scan_to_nl2(R, Acc);
-scan_to_nl2([C|R], Acc) -> scan_to_nl2(R, [C|Acc]).
+scan_to_nl([], Acc) -> {reverse(Acc), []};
+scan_to_nl([$\n|Str], Acc) -> {reverse(Acc), Str};
+scan_to_nl([$\r|R], Acc) -> scan_to_nl(R, Acc);
+scan_to_nl([C|R], Acc) -> scan_to_nl(R, [C|Acc]).
 
 strip([$ |R]) -> strip(R);
 strip(L) -> L.
-
-scan_to_nl([32 | Str], [], Acc2) -> scan_to_nl(Str, [], Acc2);
-scan_to_nl([32 | Str], Acc1, Acc2) -> 
-    scan_to_nl(Str, [], [reverse(Acc1) | Acc2]);
-scan_to_nl([10 | Str], Acc1, Acc2) -> 
-    {reverse([reverse(Acc1) | Acc2]), Str};
-scan_to_nl([X|Str], Acc1, Acc2) -> scan_to_nl(Str, [X|Acc1], Acc2).
-
 
 %% Escaped character. Escaped chars are repr as two characters in the
 %% input list of letters and this is translated into one char.
@@ -382,7 +374,7 @@ escaped_char($x) -> hexadecimal;
 escaped_char($u) -> unicode;
 escaped_char(X) when ?is_octal(X) -> octal;
 %% Error
-escaped_char(Other) -> error.
+escaped_char(_Other) -> error.
 
 skip_to_nl([]) -> [];
 skip_to_nl([$\n | Str]) ->[$\n | Str];

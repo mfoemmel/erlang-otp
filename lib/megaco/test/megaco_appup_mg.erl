@@ -107,8 +107,8 @@ init(Encoding, Transport, MaxCount) ->
 
     Mid      = {deviceName, "mg"},
     Config   = [{auto_ack,          true} %, 
-		%{accu_ack_timer,    2000}, 
-		%{accu_ack_maxcount, MaxCount}
+		%{trans_timer,       2000}, 
+		%{trans_ack_maxcount, MaxCount}
 	       ],
     
     d("start MG"),

@@ -59,7 +59,10 @@ all(suite) ->
      codec,
      sdp,
      mib,
-     ack
+     trans,
+     actions,
+     load,
+     pending_limit
     ].
 
 tickets(suite) ->
@@ -110,6 +113,15 @@ sdp(suite) ->
 mib(suite) ->
     [{megaco_mib_test, all}].
 
-ack(suite) ->
-    [{megaco_ack_test, all}].
+trans(suite) ->
+    [{megaco_trans_test, all}].
+
+actions(suite) ->
+    [{megaco_actions_test, all}].
+
+load(suite) ->
+    [{megaco_load_test, all}].
+
+pending_limit(suite) ->
+    [{megaco_pending_limit_test, all}].
 

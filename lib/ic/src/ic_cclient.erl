@@ -113,14 +113,14 @@ gen(G, N, [X| Xs]) when record(X, interface) ->
     gen(G2, N2, ic_forms:get_body(X)), 
 
     lists:foreach(
-      fun({Name, Body}) -> 
+      fun({_Name, Body}) -> 
 	      gen(G2, N2, Body) end, 
       X#interface.inherit_body), 
 
     %% Generate Prototypes
     gen_prototypes(G2, N2, X), 
 
-    %% Generate generic receive
+    %% Generate generic preparation for decoding
     gen_receive_info(G2, N2, X), 
 
     G3 = ic_file:filename_pop(G2, c), 
@@ -161,18 +161,18 @@ gen(G, N, [X| Xs]) when record(X, union) ->
     icstruct:struct_gen(G, N, X, c),
     gen(G, N, Xs);
 
-gen(G, N, [X| Xs]) ->
+gen(G, N, [_X| Xs]) ->
     %% XXX Should have debug message here.
     gen(G, N, Xs);
 
-gen(G, N, []) -> 
+gen(_G, _N, []) -> 
     ok.
 
 %%------------------------------------------------------------
 %% Change file stack
 %%------------------------------------------------------------
 
-change_file_stack(G, N, X) when X#preproc.cat == line_nr ->
+change_file_stack(G, _N, X) when X#preproc.cat == line_nr ->
     Id = ic_forms:get_id2(X), 
     Flags = X#preproc.aux, 
     case Flags of
@@ -188,7 +188,7 @@ change_file_stack(G, N, X) when X#preproc.cat == line_nr ->
 		      ic_genobj:sys_file(G1, Id) 
 	      end, G, Flags)
     end;
-change_file_stack(G, N, X) ->
+change_file_stack(G, _N, _X) ->
     G.
 
 %%------------------------------------------------------------
@@ -215,11 +215,25 @@ gen_headers(G, N, X) when record(X, interface) ->
 	    ic_code:gen_includes(HFd, G, X, c_client), 
 
 	    IName = ic_util:to_undersc(N), 
-	    emit(HFd, "\n#ifndef __~s__\n", [ic_util:to_uppercase(IName)]), 
-	    emit(HFd, "#define __~s__\n", 
-		 [ic_util:to_uppercase(IName)]), 
+	    INameUC = ic_util:to_uppercase(IName), 
+	    emit(HFd, "\n#ifndef __~s__\n", [INameUC]), 
+	    emit(HFd, "#define __~s__\n", [INameUC]), 
 	    LCmt = io_lib:format("Interface object definition: ~s", [IName]), 
 	    ic_codegen:mcomment_light(HFd, [LCmt], c), 
+	    case get_c_timeout(G, "") of
+		"" ->
+		    ok;
+		{SendTmo, RecvTmo} ->
+		    emit(HFd, "#define OE_~s_SEND_TIMEOUT  ~s\n", 
+			 [INameUC, SendTmo]), 
+		    emit(HFd, "#define OE_~s_RECV_TIMEOUT  ~s\n", 
+			 [INameUC, RecvTmo]), 
+		    emit(HFd, "#ifndef EI_HAVE_TIMEOUT\n"),
+		    emit(HFd, "#error Functions for send and receive with "
+			 "timeout not defined in erl_interface\n"),
+		    emit(HFd, "#endif\n\n")
+	    end,
+
 	    emit(HFd, "typedef CORBA_Object ~s;\n", [IName]), 
 	    emit(HFd, "#endif\n\n");
 
@@ -237,7 +251,7 @@ gen_headers(G, N, X) when record(X, interface) ->
 	    emit(Fd, "#include \"~s\"\n", 
 		 [filename:basename(ic_genobj:include_file(G))]), 
 	    ic_codegen:nl(Fd), ic_codegen:nl(Fd), 
-	    Fd;
+	    Fd;					% XXX ??
 	false ->
 	    ok
     end;
@@ -253,7 +267,7 @@ gen_headers(G, N, X) when record(X, module) ->
 	    ic_code:gen_includes(HFd, G, X, c_client);
 	false -> ok
     end;
-gen_headers(G, [], X) -> 
+gen_headers(G, [], _X) -> 
     case ic_genobj:is_hrlfile_open(G) of
 	true ->
 	    HFd = ic_genobj:hrlfiled(G), 
@@ -263,7 +277,7 @@ gen_headers(G, [], X) ->
 	    ic_code:gen_includes(HFd, G, c_client);
 	false -> ok
     end;
-gen_headers(G, N, X) -> 
+gen_headers(_G, _N, _X) -> 
     ok.
 
 
@@ -272,89 +286,113 @@ gen_headers(G, N, X) ->
 %%------------------------------------------------------------
 gen_prototypes(G, N, X) ->
     case ic_genobj:is_hrlfile_open(G) of
+	false -> 
+	    ok;
 	true ->
 	    HFd = ic_genobj:hrlfiled(G), 
 	    IName = ic_util:to_undersc(N), 
 
 	    %% Emit generated function prototypes
 	    emit(HFd, "\n/* Operation functions  */\n"), 
-	    lists:foreach(fun({Name, Body}) ->
+	    lists:foreach(fun({_Name, Body}) ->
 				  emit_operation_prototypes(G, HFd, N, Body)
 			  end, [{x, ic_forms:get_body(X)}| 
 				X#interface.inherit_body]), 
 
+	    UserProto = get_user_proto(G, false),
+	    %% Emit generic function prototypes
+	    case UserProto of
+		false ->
+		    ok;
+		UserProto ->
+		    emit(HFd, 
+			 "\n/* Generic user defined encoders */\n"), 
+		    emit(HFd, 
+			 "int ~s_prepare_notification_encoding("
+			 "CORBA_Environment*);"
+			 "\n", [UserProto]), 
+		    emit(HFd, 
+			 "int ~s_prepare_request_encoding(CORBA_Environment*);"
+			 "\n", [UserProto])
+	    end,
 	    %% Emit encoding function prototypes
 	    emit(HFd, "\n/* Input encoders */\n"), 
-	    lists:foreach(fun({Name, Body}) ->
+	    lists:foreach(fun({_Name, Body}) ->
 				  emit_encoder_prototypes(G, HFd, N, Body) 
 			  end, 
 			  [{x, ic_forms:get_body(X)}| 
 			   X#interface.inherit_body]), 
 
-	    %% Emit generic function prototype
-	    emit(HFd, "\n/* Generic decoder */\n"), 
+	    %% Emit generic function prototypes
+	    emit(HFd, "\n/* Generic decoders */\n"), 
 	    emit(HFd, "int ~s__receive_info(~s, CORBA_Environment*);\n", 
 		 [IName, IName]), 
+
+	    case UserProto of
+		false ->
+		    ok;
+		UserProto ->
+		    emit(HFd, "\n/* Generic user defined decoders */\n"), 
+		    emit(HFd, 
+			 "int ~s_prepare_reply_decoding(CORBA_Environment*);"
+			 "\n", [UserProto]) 
+	    end,
 	    %% Emit decode function prototypes
 	    emit(HFd, "\n/* Result decoders */\n"), 
-	    lists:foreach(fun({Name, Body}) ->
+	    lists:foreach(fun({_Name, Body}) ->
 				  emit_decoder_prototypes(G, HFd, N, Body) 
 			  end, [{x, ic_forms:get_body(X)}| 
 				X#interface.inherit_body]), 
-	    ok;
-
-	false -> 
-	    ok
+	    case UserProto of
+		false ->
+		    ok;
+		UserProto ->
+		    %% Emit generic send and receive_prototypes
+		    {Sfx, TmoType} = case get_c_timeout(G, "") of
+				     "" ->
+					 {"", ""};
+				     _ ->
+					 {"_tmo", ", unsigned int"} 
+			     end,
+		    emit(HFd, 
+			 "\n/* Generic user defined send and receive "
+			 "functions */\n"), 
+		    emit(HFd, 
+			 "int ~s_send_notification~s(CORBA_Environment*~s);\n",
+			 [UserProto, Sfx, TmoType]), 
+		    emit(HFd, 
+			 "int ~s_send_request_and_receive_reply~s("
+			 "CORBA_Environment*~s~s);\n", 
+			 [UserProto, Sfx, TmoType, TmoType])
+	    end
     end.
 
-
 %%------------------------------------------------------------
-%% Generate receive_info (generic part for message reception) 
-%% (for interface).
+%% Generate receive_info() (generic part for message reception) 
+%% (for interface). For backward compatibility only.
 %%------------------------------------------------------------
 
-gen_receive_info(G, N, X) ->
+gen_receive_info(G, N, _X) ->
     case ic_genobj:is_stubfile_open(G) of
+	false ->
+	    ok;
 	true ->
 	    Fd = ic_genobj:stubfiled(G), 
-
+	    IName = ic_util:to_undersc(N), 
+	    UserProto = get_user_proto(G, oe),
 	    Code = 
 		"
 /*
  *  Generic function, used to return received message information.
- *  Not used by oneways. Always generated. 
+ *  Not used by oneways. Always generated. For backward compatibility only.
  */
 
 int ~s__receive_info(~s oe_obj, CORBA_Environment *oe_env)
 {
-    int oe_error_code = 0;
-    int oe_rec_version = 0;
-    erlang_ref oe_unq;
-    oe_env->_iin = 0;
-    oe_env->_received = 0;
-
-    if ((oe_error_code = ei_decode_version(oe_env->_inbuf, "
-"&oe_env->_iin, &oe_rec_version)) < 0)
-        return oe_error_code;
-
-    if ((oe_error_code = ei_decode_tuple_header("
-"oe_env->_inbuf, &oe_env->_iin, &oe_env->_received)) < 0)
-        return oe_error_code;
-
-    if ((oe_error_code = ei_decode_ref(oe_env->_inbuf, "
-"&oe_env->_iin, &oe_unq)) < 0)
-        return oe_error_code;
-    /* Checking message reference*/
-    return ic_compare_refs(&oe_env->_unique, &oe_unq);
-}   
-", 
-        IName = ic_util:to_undersc(N), 
-        emit(Fd, Code, [IName, IName]);
-
-     false ->
-         ok
+  return  ~s_prepare_reply_decoding(oe_env);
+}\n", 
+        emit(Fd, Code, [IName, IName, UserProto])
 end.
-
 
 %%------------------------------------------------------------
 %% Emit constant
@@ -392,244 +430,137 @@ emit_constant(G, N, ConstRecord) ->
 gen_operation(G, N, X, Name, ArgNames, RetParTypes) ->
     case ic_genobj:is_stubfile_open(G) of
 	true ->
-	    Fd = ic_genobj:stubfiled(G), 
-	    IName = ic_util:to_undersc(N), 
-	    {R, ParTypes, _} = RetParTypes, 
-
-	    emit(Fd, "\n/*\n *  Operation function \"~s\"\n */\n\n", 
-		 [Name]), 
-	    RV = element(1, R), 
-	    Ret = case ic_forms:is_oneway(X) of 
-		      false ->
-			  if RV /= 'void' -> 
-				  mk_ret_type(G, N, R);
-			     true -> 
-				  "void"
-			  end;
-		      true ->
-			  "void"
-		  end, 
-	    ParList = ic_util:chain(
-			mk_par_type_list(G, N, X, [in, out], [types, args], 
-					 ParTypes, ArgNames), ", "),
-	    emit(Fd, 
-		 "~s ~s(~s, ~sCORBA_Environment *oe_env)\n{\n",
-		 [Ret, Name, [IName, " ", "oe_obj"], ParList]), 
-
-	    case ic_forms:is_oneway(X) of
-		true ->
-		    ok;
-		false ->
-		    case ictype:isArray(G, N, R) of
-			true ->
-			    emit(Fd, "  ~s oe_return = NULL;\n", 
-				 [mk_ret_type(G, N, R)]);
-			false ->
-			    if RV /= 'void' ->
-				    emit(Fd, "  ~s oe_return;\n", 
-					 [Ret]);
-			       true ->
-				    ok
-			    end
-		    end, 
-		    emit(Fd, 
-			 "  int oe_msgType = 0;\n"
-			 "  erlang_msg oe_msg;\n"
-			 "\n"
-			 "  /* Initiating the message reference */\n" 
-			 "  ic_init_ref(oe_env, &oe_env->_unique);\n\n")
-	    end,
-
-	    emit(Fd, 
-		 "  /* Initiating exception indicator */ \n"
-		 "  oe_env->_major = CORBA_NO_EXCEPTION;\n"
-		 "\n"),
-
-	    %% XXX Add pointer checks: checks of in-parameter
-	    %% pointers, and non-variable out-parameter pointers.
-
-	    emit(Fd,
-		 "  /* Creating call message */ \n"), 
-	    GenParList = 
-		ic_util:chain(
-		  mk_arg_list_for_encoder(G, N, X, ParTypes, ArgNames), 
-		  ", "),
-	    emit(Fd, 
-		 "  if (~s__client_enc(oe_obj, ~s""oe_env) < 0) {\n", 
-		 [Name, GenParList]),
-	    emit(Fd, 
-		 "    if (oe_env->_major == CORBA_NO_EXCEPTION)\n" 
-		 "      CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
-		 "MARSHAL, \"Cannot encode message\");\n"), 
-
-	    if RV /= void ->
-		    emit(Fd, "    return oe_return;\n"
-			 "  }\n");
-	       true ->
-		    emit(Fd, "  }\n")
-	    end, 
-
-	    emit(Fd, "  /* Sending call request */ \n"), 
-
-	    if RV /= void ->
-		    emit(Fd, 
-			 "  if (strlen(oe_env->_regname) == 0) {\n" 
-			 "    if (ei_send_encoded(oe_env->_fd, "
-			 "oe_env->_to_pid, oe_env->_outbuf, "
-			 "oe_env->_iout) < 0) {\n" 
-			 "      CORBA_exc_set(oe_env, "
-			 "CORBA_SYSTEM_EXCEPTION, NO_RESPONSE, "
-			 "\"Cannot connect to server\");\n" 
-			 "      return oe_return;\n" 
-			 "    }\n"
-			 "  }\n" 
-			 "  else if (ei_send_reg_encoded(oe_env->_fd, "
-			 "oe_env->_from_pid, oe_env->_regname, "
-			 "oe_env->_outbuf, oe_env->_iout) < 0) {\n"
-			 "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
-			 " NO_RESPONSE, \"Cannot connect to server\");\n" 
-			 "    return oe_return;\n" 
-			 "  }\n");
-	       true ->
-		    emit(Fd, 
-			 "  if (oe_env->_major == CORBA_NO_EXCEPTION) {\n" 
-			 "    if (strlen(oe_env->_regname) == 0) {\n" 
-			 "      if (ei_send_encoded(oe_env->_fd, "
-			 "oe_env->_to_pid, oe_env->_outbuf, "
-			 "oe_env->_iout) < 0) {\n" 
-			 "        CORBA_exc_set(oe_env, "
-			 "CORBA_SYSTEM_EXCEPTION, NO_RESPONSE, "
-			 "\"Cannot connect to server\");\n" 
-			 "      }\n"
-			 "    }\n" 
-			 "    else if (ei_send_reg_encoded(oe_env->_fd, "
-			 "oe_env->_from_pid, oe_env->_regname, "
-			 "oe_env->_outbuf, oe_env->_iout) < 0) {\n" 
-			 "      CORBA_exc_set(oe_env, "
-			 "CORBA_SYSTEM_EXCEPTION, NO_RESPONSE, "
-			 "\"Cannot connect to server\");\n" 
-			 "    }\n" 
-			 "  }\n")
-	    end, 
-	    case ic_forms:is_oneway(X) of
-		true ->
-		    emit(Fd, "}\n");
-		false ->
-		    emit(Fd, "  /* Receiving reply message */\n"), 
-		    if RV /= void ->
-			    emit(Fd, 
-				 "  do {\n"
-				 "    if ((oe_msgType = ei_receive_encoded("
-				 "oe_env->_fd, "
-				 "&oe_env->_inbuf, &oe_env->_inbufsz, "
-				 "&oe_msg, &oe_env->_iin)) < 0) {\n" 
-			         "CORBA_exc_set(oe_env, "
-				 "CORBA_SYSTEM_EXCEPTION, MARSHAL, "
-				 "\"Cannot decode message\");\n" 
-				 "      return oe_return;\n" 
-				 "    }\n" 
-				 "  } while (oe_msgType != ERL_SEND "
-				 "&& oe_msgType != ERL_REG_SEND);\n" 
-
-				 "  /* Extracting message header */ \n"), 
-			    emit(Fd, 
-				 "  if (~s__receive_info(oe_obj, "
-				 "oe_env) < 0) {\n", [IName]), 
-			    emit(Fd, 
-				 "    CORBA_exc_set(oe_env, "
-				 "CORBA_SYSTEM_EXCEPTION, MARSHAL, "
-				 "\"Bad message\");\n" 
-				 "    return oe_return;\n" 
-				 "  }\n\n");
-		       true ->
-			    emit(Fd, 
-				 "  if (oe_env->_major == "
-				 "CORBA_NO_EXCEPTION)\n" 
-				 "    do {\n" 
-				 "      if ((oe_msgType = "
-				 "ei_receive_encoded(oe_env->_fd, "
-				 "&oe_env->_inbuf, &oe_env->_inbufsz, "
-				 "&oe_msg, &oe_env->_iin)) < 0) {\n" 
-				 "        CORBA_exc_set(oe_env, "
-				 "CORBA_SYSTEM_EXCEPTION, MARSHAL, "
-				 "\"Cannot decode message\");\n" 
-				 "        break;\n" 
-				 "      }\n" 
-				 "    } while (oe_msgType != ERL_SEND "
-				 "&& oe_msgType != ERL_REG_SEND);\n" 
-
-				 "  /* Extracting message header */ \n" 
-				 "  if (oe_env->_major == "
-				 "CORBA_NO_EXCEPTION)\n"), 
-			    emit(Fd, 
-				 "    if (~s__receive_info(oe_obj, "
-				 "oe_env) < 0) {\n", [IName]), 
-			    emit(Fd, 
-				 "      CORBA_exc_set(oe_env, "
-				 "CORBA_SYSTEM_EXCEPTION, MARSHAL, "
-				 "\"Bad message\");\n" 
-				 "  }\n")
-		    end, 
-
-		    DecParList = mk_arg_list_for_decoder(G, N, X, 
-						      ParTypes, 
-						      ArgNames), 
-		    DECPARLIST = 
-			case mk_ret_type(G, N, R) of
-			    "void" ->
-				DecParList;
-			    Else ->
-				["&oe_return"| DecParList]
-			end, 
-
-		    if RV /= void ->
-			    emit(Fd, 
-				 "  /* Extracting return value(s) */ \n" 
-				 "  if (~s__client_dec(oe_obj, ~s, "
-				 "oe_env) < 0) {\n", 
-				 [Name, ic_util:join(DECPARLIST, ", ")]), 
-			    emit(Fd, 
-				 "    if (oe_env->_major == "
-				 "CORBA_NO_EXCEPTION)\n" 
-				 "      CORBA_exc_set(oe_env, "
-				 "CORBA_SYSTEM_EXCEPTION, DATA_CONVERSION, "
-				 "\"Bad return/out value(s)\");\n" 
-				 "  }\n" 
-				 "\n  return oe_return;\n}\n");
-		       true ->
-			    case ic_util:join(DECPARLIST, ", ") of
-				"" ->
-				    emit(Fd, 
-					 "  /* Extracting message tail */ \n" 
-					 "  if (oe_env->_major == "
-					 "CORBA_NO_EXCEPTION)\n" 
-					 "    if (~s__client_dec(oe_obj, "
-					 "oe_env) < 0) {\n", 
-					 [Name]);
-				PLFCDC ->
-				    emit(Fd, 
-					 "  /* Extracting return value(s) "
-					 "*/ \n" 
-					 "  if (oe_env->_major == "
-					 "CORBA_NO_EXCEPTION)\n" 
-					 "    if (~s__client_dec(oe_obj, "
-					 "~s, oe_env) < 0) {\n", 
-					 [Name, PLFCDC])
-			    end, 
-			    emit(Fd, 
-				 "      if (oe_env->_major == "
-				 "CORBA_NO_EXCEPTION)\n" 
-				 "        CORBA_exc_set(oe_env, "
-				 "CORBA_SYSTEM_EXCEPTION, MARSHAL, "
-				 "\"Bad message tail\");\n" 
-				 "    }\n}\n\n")
-		    end
-	    end, 
-	    ok;
-
-	false -> 
+	    do_gen_operation(G, N, X, Name, ArgNames, RetParTypes);
+	false ->
 	    ok
     end.
+
+do_gen_operation(G, N, X, Name, ArgNames, RetParTypes) ->
+    Fd = ic_genobj:stubfiled(G), 
+    IName = ic_util:to_undersc(N), 
+    INameUC = ic_util:to_uppercase(IName), 
+
+    {R, ParTypes, _} = RetParTypes, 
+
+    IsOneway = ic_forms:is_oneway(X),
+
+    emit(Fd, "\n"
+	 "/***\n"
+	 " ***  Operation function \"~s\" ~s\n"
+	 " ***/\n\n", 
+	 [Name, ifelse(IsOneway, "(oneway)", "")]),
+
+    RV = element(1, R), 
+    Ret = case IsOneway of
+	      false ->
+		  if RV /= void -> 
+			  mk_ret_type(G, N, R);
+		     true -> 
+			  "void"
+		  end;
+	      true ->
+		  "void"
+	  end, 
+    ParListStr = ic_util:chain(mk_par_type_list(G, N, X, [in, out], 
+						[types, args], 
+						ParTypes, ArgNames), ", "),
+    emit(Fd, 
+	 "~s ~s(~s, ~sCORBA_Environment *oe_env)\n{\n",
+	 [Ret, Name, [IName, " ", "oe_obj"], ParListStr]), 
+
+    case IsOneway of
+	true ->
+	    ok;
+	false ->
+	    case ictype:isArray(G, N, R) of
+		true ->
+		    emit(Fd, "  ~s oe_return = NULL;\n\n", 
+			 [mk_ret_type(G, N, R)]);
+		false ->
+		    if RV /= void ->
+			    emit(Fd, "  ~s oe_return;\n\n", 
+				 [Ret]);
+		       true ->
+			    ok
+		    end
+	    end, 
+	    emit(Fd, 
+		 "  /* Initiating the message reference */\n" 
+		 "  ic_init_ref(oe_env, &oe_env->_unique);\n")
+    end,
+
+    emit(Fd, 
+	 "  /* Initiating exception indicator */ \n"
+	 "  oe_env->_major = CORBA_NO_EXCEPTION;\n"),
+
+    %% XXX Add pointer checks: checks of in-parameter
+    %% pointers, and non-variable out-parameter pointers.
+
+    emit(Fd,"  /* Creating ~s message */ \n", 
+	 [ifelse(IsOneway, "cast", "call")]),
+
+    EncParListStr = ic_util:chain(mk_arg_list_for_encoder(G, N, X, 
+							  ParTypes, ArgNames),
+				  ", "),
+    emit(Fd, 
+	 "  if (~s__client_enc(oe_obj, ~s""oe_env) < 0) {\n", 
+	 [Name, EncParListStr]),
+    emit(Fd, 
+	 "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
+	 "MARSHAL, \"Cannot encode message\");\n"), 
+
+    RetVar = ifelse(RV /= void, " oe_return", ""),
+
+    emit(Fd, "    return~s;\n  }\n", [RetVar]),
+
+    emit(Fd,"  /* Sending ~s message */ \n", 
+	 [ifelse(IsOneway, "cast", "call")]),
+
+    UserProto = get_user_proto(G, oe),
+    {Sfx, SendTmo, RecvTmo} = case get_c_timeout(G, "") of
+				  "" ->
+				      {"", "", ""};
+				  _ ->
+				      {"_tmo", 
+				       [", OE_", INameUC, "_SEND_TIMEOUT"], 
+				       [", OE_", INameUC, "_RECV_TIMEOUT"]} 
+			      end,
+
+    case IsOneway of
+	true ->
+	    emit(Fd, 
+		 "  if (~s_send_notification~s(oe_env~s) < 0)\n"
+		 "    return~s;\n", [UserProto, Sfx, SendTmo, RetVar]);
+	false ->
+	    emit(Fd, 
+		 "  if (~s_send_request_and_receive_reply~s(oe_env~s~s) < 0)\n"
+		 "    return~s;\n", 
+		 [UserProto, Sfx, SendTmo, RecvTmo, RetVar]),
+
+	    DecParList0 = mk_arg_list_for_decoder(G, N, X, 
+						  ParTypes, ArgNames), 
+	    DecParList1 = case mk_ret_type(G, N, R) of
+			      "void" ->
+				  DecParList0;
+			      _ ->
+				  ["&oe_return"| DecParList0]
+		end, 
+
+	    DecParListStr = ic_util:chain(DecParList1, ", "),
+	    %% YYY Extracting results
+	    emit(Fd, 
+		 "  /* Extracting result value(s) */ \n" 
+		 "  if (~s__client_dec(oe_obj, ~s""oe_env) < 0) {\n", 
+		 [Name, DecParListStr]), 
+	    emit(Fd, 
+		 "    CORBA_exc_set(oe_env, "
+		 "CORBA_SYSTEM_EXCEPTION, DATA_CONVERSION, "
+		 "\"Bad result value(s)\");\n" 
+		 "    return~s;\n"
+		 "  }\n", [RetVar])
+    end,
+    emit(Fd, "  return~s;\n", [RetVar]),
+    emit(Fd, "}\n\n\n").
 
 %%------------------------------------------------------------
 %% Generate encoder 
@@ -639,7 +570,7 @@ gen_encoder(G, N, X, Name, ArgNames, RetParTypes)->
 	true ->
 	    Fd = ic_genobj:stubfiled(G), 
 	    IName = ic_util:to_undersc(N), 
-	    {R, ParTypes, _} = RetParTypes, 
+	    {_R, ParTypes, _} = RetParTypes, 
 	    TypeAttrArgs = mk_type_attr_arg_list(ParTypes, ArgNames), 
 	    emit(Fd, "/*\n *  Encode operation input for \"~s\"\n */\n\n", 
 		 [Name]), 
@@ -656,19 +587,10 @@ gen_encoder(G, N, X, Name, ArgNames, RetParTypes)->
 					  end, TypeAttrArgs), 
 	    case InTypeAttrArgs of 
 		[] ->
-		    case ic_forms:is_oneway(X) of
-			true ->
-			    emit(Fd, 
-				 "  oe_env->_iout = 0;\n");
-			false ->
-			    emit(Fd, 
-				 "  int oe_error_code = 0;\n"
-				 "  oe_env->_iout = 0;\n")
-		    end;
+		    ok;
 		_ ->
 		    emit(Fd, 
-			 "  int oe_error_code = 0;\n"
-			 "  oe_env->_iout = 0;\n")
+			 "  int oe_error_code = 0;\n\n")
 	    end, 
 
 	    emit_encodings(G, N, Fd, X, InTypeAttrArgs, 
@@ -732,25 +654,18 @@ gen_decoder(G, N, X, Name, ArgNames, RetParTypes)->
 %% emit_encodings(G, N, Fd, X, TypeAttrArgs, IsOneWay) 
 %%
 emit_encodings(G, N, Fd, X, TypeAttrArgs, true) ->
-    emit(Fd, "  oe_ei_encode_version(oe_env);\n"), 
-    emit(Fd, "  oe_ei_encode_tuple_header(oe_env, 2);\n"), 
-    %% Call or Cast
-    emit(Fd, "  oe_ei_encode_atom(oe_env, ~p);\n", ["$gen_cast"]), 
+    %% Cast
+    UserProto = get_user_proto(G, oe),
+    emit(Fd, 
+	 "  if (~s_prepare_notification_encoding(oe_env) < 0)\n"
+	 "    return -1;\n", [UserProto]),
     emit_encodings_1(G, N, Fd, X, TypeAttrArgs);
 emit_encodings(G, N, Fd, X, TypeAttrArgs, false) ->
-    emit(Fd, "  oe_ei_encode_version(oe_env);\n"), 
-    emit(Fd, "  oe_ei_encode_tuple_header(oe_env, 3);\n"), 
-    %% Call or Cast
-    emit(Fd, "  oe_ei_encode_atom(oe_env, ~p);\n", ["$gen_call"]), 
-    emit(Fd, "  oe_ei_encode_tuple_header(oe_env, 2);\n"), 
-    %% Unique ref. field
-    %% From pid
-    emit(Fd, "  if ((oe_error_code = oe_ei_encode_pid(oe_env, "
-	 "oe_env->_from_pid)) < 0)\n"), 
-    emit(Fd, "    return oe_error_code;\n"), 
-    emit(Fd, "  if ((oe_error_code = oe_ei_encode_ref(oe_env, "
-	 "&oe_env->_unique)) < 0)\n"), 
-    emit(Fd, "    return oe_error_code;\n"), 
+    %% Call
+    UserProto = get_user_proto(G, oe),
+    emit(Fd, 
+	 "  if (~s_prepare_request_encoding(oe_env) < 0)\n"
+	 "    return -1;\n", [UserProto]),
     emit_encodings_1(G, N, Fd, X, TypeAttrArgs).
 
 emit_encodings_1(G, N, Fd, X, TypeAttrArgs) ->
@@ -989,7 +904,7 @@ emit_encoder_prototypes(G, Fd, N, Xs) ->
       fun(X) when record(X, op) ->
 	      {ScopedName, ArgNames, RetParTypes} = 
 		  ic_cbe:extract_info(G, N, X), 
-	      {R, ParTypes, _} = RetParTypes, 
+	      {_R, ParTypes, _} = RetParTypes, 
 	      IName = ic_util:to_undersc(N), 
 	      ParList = ic_util:chain(
 			  mk_par_type_list(G, N, X, [in], [types], 
@@ -1124,14 +1039,14 @@ mk_par_type_list(G, N, X, InOrOut, TypesOrArgs, Types, Args) ->
 %%------------------------------------------------------------
 %% Make encoder argument list XXX
 %%------------------------------------------------------------
-mk_arg_list_for_encoder(G, N, X, Types, Args) ->
+mk_arg_list_for_encoder(G, _N, X, Types, Args) ->
     filterzip(
       fun(_, {out, _}) ->
 	      false;
 	 (_, {inout, Arg}) ->
 	      ic_error:error(G, {inout_spec_for_c, X, Arg}), 
 	      false;
-	 (Type, {in, Arg}) ->
+	 (_Type, {in, Arg}) ->
 	      {true, Arg}
       end, Types, Args).
 
@@ -1141,7 +1056,7 @@ mk_arg_list_for_encoder(G, N, X, Types, Args) ->
 %%------------------------------------------------------------
 %% Make decoder argument list XXX
 %%------------------------------------------------------------
-mk_arg_list_for_decoder(G, N, X, Types, Args) ->
+mk_arg_list_for_decoder(G, _N, X, Types, Args) ->
     filterzip(fun(_, {in, _}) ->
 		      false;
 		 (_, {inout, Arg}) -> 
@@ -1215,6 +1130,31 @@ emit_coding_comment(G, N, F, String, RefOrVal, Type, Name) ->
 	 [String, ic_cbe:mk_c_type(G, N, Type), RefOrVal, Name]).
 
 %%------------------------------------------------------------
+%% User protocol prefix for generic functions
+%%------------------------------------------------------------
+get_user_proto(G, Default) ->
+    case ic_options:get_opt(G, user_protocol) of
+	false ->
+	    Default;
+	Pfx ->
+	    Pfx
+     end.
+
+%%------------------------------------------------------------
+%% Timeout. Returns a string (or Default).
+%%------------------------------------------------------------
+get_c_timeout(G, Default) ->
+    case ic_options:get_opt(G, c_timeout) of
+	Tmo when integer(Tmo) ->
+	    TmoStr = integer_to_list(Tmo),
+	    {TmoStr, TmoStr};
+	{SendTmo, RecvTmo}  when integer(SendTmo), integer(RecvTmo) ->
+	    {integer_to_list(SendTmo), integer_to_list(RecvTmo)};
+	false ->
+	    Default
+    end.
+
+%%------------------------------------------------------------
 %% ZIPPERS (merging of successive elements of two lists).
 %%------------------------------------------------------------
 
@@ -1234,3 +1174,7 @@ filterzip(_, [], []) ->
     [].
     
 
+ifelse(true, A, _) ->
+    A;
+ifelse(false, _, B) ->
+    B.

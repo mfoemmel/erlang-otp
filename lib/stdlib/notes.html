@@ -130,6 +130,24 @@
 <ul>
 
   <li>
+    <P>A new function erlang:send/3 has been added to give more control to
+    when to send if the sender risks being suspended or delayed due to
+    automatic node connection. This function supersedes
+    erlang:send_nosuspend/2,3, which is retained for backward
+    compatibility, and has been upgraded to handle local processes and
+    ports. See the documentation. <br> <P>The function gen_server:cast/2
+    (and hence gen_server:abcast/2) has been corrected to not get stuck
+    waiting for automatic node connection; if a node has to be connected
+    for the cast to be sent, a helper process is spawned to do the send so
+    that execution flow can return to the sender immediately.
+    <P>The function gen_server:cast/2 has also been corrected to crash
+    for invalid arguments.<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-3968)<br>
+    (Aux Id: Seq 4387)<p>
+  </li>
+
+  <li>
     The previously undocumented modules <code>erl_tar</code> and
     <code>filelib</code> are now documented.<br>
     (Own Id: OTP-3135)<br>

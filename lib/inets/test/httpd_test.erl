@@ -666,6 +666,9 @@ ip_mod_cgi(Config) when list(Config) ->
 ip_mod_esi(suite) -> [];
 ip_mod_esi(doc) -> ["Module test: mod_esi"];
 ip_mod_esi(Config) when list(Config) ->
+%     VConf = [{manager_verbosity,         trace}, 
+%              {request_handler_verbosity, trace}],
+%     ?line {M,H,P,N} = start_all([{verbosity, VConf}|Config], false),
     ?line {M,H,P,N} = start_all(Config, false),
     mod_esi(M, H, P, N),
     ok = stop_all(Config).
@@ -1884,15 +1887,20 @@ init_mnesia_on_node(Config, Port, NodeName) ->
 %% Common test functions used by all test cases.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-get_nof_clients(Load) ->
-    get_nof_clients(os:type(),Load).
+get_nof_clients(Mode,Load) ->
+    get_nof_clients(os:type(),Mode,Load).
 
-get_nof_clients(vxworks,light)  -> 1;
-get_nof_clients(vxworks,medium) -> 3;
-get_nof_clients(vxworks,heavy)  -> 5;
-get_nof_clients(_,light)        -> 5;
-get_nof_clients(_,medium)       -> 10;
-get_nof_clients(_,heavy)        -> 20.
+get_nof_clients(vxworks,_,      light)  -> 1;
+get_nof_clients(vxworks,ip_comm,medium) -> 3;
+get_nof_clients(vxworks,ssl,    medium) -> 2;
+get_nof_clients(vxworks,ip_comm,heavy)  -> 5;
+get_nof_clients(vxworks,ssl,    heavy)  -> 5;
+get_nof_clients(_,ip_comm,light)        -> 5;
+get_nof_clients(_,ssl,    light)        -> 2;
+get_nof_clients(_,ip_comm,medium)       -> 10;
+get_nof_clients(_,ssl,    medium)       -> 4;
+get_nof_clients(_,ip_comm,heavy)        -> 20;
+get_nof_clients(_,ssl,    heavy)        -> 6.
     
     
 %%
@@ -1900,7 +1908,7 @@ get_nof_clients(_,heavy)        -> 20.
 %%
 
 light_load(M,H,P,N) ->
-    load_test(M,H,P,N,get_nof_clients(light)).
+    load_test(M,H,P,N,get_nof_clients(M,light)).
 
 
 %%
@@ -1908,7 +1916,7 @@ light_load(M,H,P,N) ->
 %%
 
 medium_load(M,H,P,N) ->
-    load_test(M,H,P,N,get_nof_clients(medium)).
+    load_test(M,H,P,N,get_nof_clients(M,medium)).
 
 
 %%
@@ -1916,7 +1924,7 @@ medium_load(M,H,P,N) ->
 %%
 
 heavy_load(M,H,P,N) ->
-    load_test(M,H,P,N,get_nof_clients(heavy)).
+    load_test(M,H,P,N,get_nof_clients(M,heavy)).
 
 
 %%

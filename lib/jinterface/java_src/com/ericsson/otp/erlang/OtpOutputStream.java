@@ -231,6 +231,19 @@ public class OtpOutputStream {
     write((byte)(n & 0xff));
   }
 
+    /**
+     * Write any number of bytes in little endian format.
+     *
+     * @param n the value to use.
+     * @param b the number of bytes to write from the little end.
+     **/
+    public void writeLE(long n, int b) {
+	for (int i = 0; i < b; i++) {
+	    write((byte)(n & 0xff));
+	    n >>= 8;
+	}
+    }
+
   /**
    * Write the low two bytes of a value to the stream in little endian
    * order.
@@ -253,6 +266,23 @@ public class OtpOutputStream {
     write((byte)((n & 0xff00) >> 8));
     write((byte)((n & 0xff0000) >> 16));
     write((byte)((n & 0xff000000) >> 24));
+  }
+
+  /**
+   * Write the low eight bytes of a value to the stream in little
+   * endian order.
+   *
+   * @param n the value to use.
+   **/
+  public void write8LE(long n) {
+    write((byte)((n) & 0xff));
+    write((byte)((n >>  8) & 0xff));
+    write((byte)((n >> 16) & 0xff));
+    write((byte)((n >> 24) & 0xff));
+    write((byte)((n >> 32) & 0xff));
+    write((byte)((n >> 40) & 0xff));
+    write((byte)((n >> 48) & 0xff));
+    write((byte)((n >> 56) & 0xff));
   }
 
   /**
@@ -323,20 +353,24 @@ public class OtpOutputStream {
 
   /**
    * Write a single byte to the stream as an Erlang integer.
+   * The byte is really an IDL 'octet', that is, unsigned.
    *
    * @param b the byte to use.
    **/
   public void write_byte(byte b) {
-    this.write_long(b);
+    this.write_long((long)b & 0xffL, true);
   }
 
   /**
    * Write a character to the stream as an Erlang integer.
+   * The character may be a 16 bit character, kind of 
+   * IDL 'wchar'. It is up to the Erlang side to take care
+   * of souch, if they should be used.
    *
    * @param c the character to use.
    **/
   public void write_char(char c) {
-    this.write_long(c);
+    this.write_long((long)c & 0xffffL, true);
   }
 
   /**
@@ -396,44 +430,55 @@ public class OtpOutputStream {
     this.write_double(f);
   }
 
+  void write_long(long v, boolean unsigned) {
+      /* If v<0 and unsigned==true the value 
+       * java.lang.Long.MAX_VALUE-java.lang.Long.MIN_VALUE+1+v
+       * is written, i.e v is regarded as unsigned two's complement.
+       */
+      if ((v & 0xffL) == v) {
+	  // will fit in one byte
+	  this.write1(OtpExternal.smallIntTag);
+	  this.write1(v);
+      } else {
+	  // note that v != 0L
+	  if ((v < 0 && unsigned) ||
+	      v < OtpExternal.erlMin || v > OtpExternal.erlMax) {
+	      // some kind of bignum
+	      long abs = (unsigned ? v : (v < 0 ? -v : v));
+	      int  sign = (unsigned ? 0 : (v < 0 ? 1 : 0));
+	      int  n;
+	      long mask;
+	      for (mask = 0xFFFFffffL, n = 4;
+		   (abs & mask) != abs; 
+		   n++, mask = (mask<<8)|0xffL) ; // count nonzero bytes
+	      this.write1(OtpExternal.smallBigTag);
+	      this.write1(n);     // length
+	      this.write1(sign);     // sign
+	      this.writeLE(abs, n); // value. obs! little endian
+	  } else {
+	      this.write1(OtpExternal.intTag);
+	      this.write4BE(v);
+	  }
+      }
+  }
+
   /**
    * Write a long to the stream.
    *
    * @param l the long to use.
    **/
   public void write_long(long l) {
-    if ((l & 0xff) == l) {
-      // will fit in one byte
-      this.write1(OtpExternal.smallIntTag);
-      this.write1(l);
-    }
-    else if ((l <= OtpExternal.erlMax) && (l >= OtpExternal.erlMin)) {
-      this.write1(OtpExternal.intTag);
-      this.write4BE(l);
-    }
-    else {
-      this.write1(OtpExternal.smallBigTag);
-      this.write1(4); // length
-
-      // obs! little endian here
-      if (l < 0) {
-	this.write1(1); // sign
-	this.write4LE(-l); // value
-      }
-      else {
-	this.write1(0); // sign
-	this.write4LE(l); //value
-      }
-    }
+    this.write_long(l, false);
   }
 
   /**
-   * Write a positive long to the stream.
+   * Write a positive long to the stream. The long is interpreted
+   * as a two's complement unsigned long even if it is negative.
    *
    * @param ul the long to use.
    **/
   public void write_ulong(long ul) {
-    this.write_long(ul);
+    this.write_long(ul, true);
   }
 
   /**
@@ -442,16 +487,17 @@ public class OtpOutputStream {
    * @param i the integer to use.
    **/
   public void write_int(int i) {
-    this.write_long(i);
+    this.write_long(i, false);
   }
 
   /**
-   * Write a positive integer to the stream.
+   * Write a positive integer to the stream. The integer is interpreted
+   * as a two's complement unsigned integer even if it is negative.
    *
    * @param ui the integer to use.
    **/
   public void write_uint(int ui) {
-    this.write_long(ui);
+    this.write_long((long)ui & 0xFFFFffffL, true);
   }
 
   /**
@@ -460,16 +506,17 @@ public class OtpOutputStream {
    * @param s the short to use.
    **/
   public void write_short(short s) {
-    this.write_long(s);
+    this.write_long(s, false);
   }
   
   /**
-   * Write a positive short to the stream.
+   * Write a positive short to the stream. The short is interpreted
+   * as a two's complement unsigned short even if it is negative.
    *
    * @param s the short to use.
    **/
   public void write_ushort(short us) {
-    this.write_long(us);
+    this.write_long((long)us & 0xffffL, true);
   }
 
   /**

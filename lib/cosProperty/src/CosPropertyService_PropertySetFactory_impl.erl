@@ -78,7 +78,7 @@ init([]) ->
 %% Returns    : any (ignored by gen_server)
 %% Description: Shutdown the server
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%----------------------------------------------------------------------
@@ -86,7 +86,7 @@ terminate(Reason, State) ->
 %% Returns    : {ok, NewState}
 %% Description: Convert process state when code is changed
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%----------------------------------------------------------------------
@@ -95,7 +95,7 @@ code_change(OldVsn, State, Extra) ->
 %% Returns    : CosPropertyService::PropertySet reference.
 %% Description: 
 %%----------------------------------------------------------------------
-create_propertyset(OE_This, State) ->
+create_propertyset(_OE_This, State) ->
     {reply, 
      'CosPropertyService_PropertySetDef':
      oe_create({normal, [], [], [], ?PropertySet}, [{pseudo, true}]),
@@ -109,7 +109,7 @@ create_propertyset(OE_This, State) ->
 %%              {'EXCEPTION', CosPropertyService::ConstraintNotSupported}
 %% Description: 
 %%----------------------------------------------------------------------
-create_constrained_propertyset(OE_This, State, PropTypes, Properties) ->
+create_constrained_propertyset(_OE_This, State, PropTypes, Properties) ->
     case lists:all(?checkTCfun, PropTypes) of
 	true ->
 	    crosscheckTC(Properties, PropTypes),
@@ -141,7 +141,7 @@ crosscheckTC([#'CosPropertyService_Property'
 %%              {'EXCEPTION', CosPropertyService::MultipleExceptions}
 %% Description: 
 %%----------------------------------------------------------------------
-create_initial_propertyset(OE_This, State, Properties) ->
+create_initial_propertyset(_OE_This, State, Properties) ->
     InitProps = evaluate_propertyset(Properties),
     {reply, 
      'CosPropertyService_PropertySetDef':

@@ -29,11 +29,10 @@
 	 %% warning/2, warning/3,
 	 print_error/2, print_error/3,
 	 make_cdata/1,
-	 trap_variable_info/3, 
 	 key1search/2, key1search/3]).
 
 %% internal exports
--export([check_of/1, check_trap/2,check_trap/3,get_elem/2]).
+-export([check_of/1, check_trap/2, check_trap/3, get_elem/2]).
 
 %% debug exports
 -export([vvalidate/1, w/2, w/3, i/2, i/3, l/2, d/2, t/2]).
@@ -65,7 +64,8 @@ test_father(FatherName, NewVarName, SubIndex, Line) ->
 
 make_ASN1type({{type,Type},Line}) ->
     case lookup_vartype(Type) of
-        {value,ASN1type} ->  ASN1type;
+        {value, ASN1type} ->  
+	    ASN1type;
 	false ->
 	    print_error("Undefined type '~w'",[Type],Line),
 	    guess_integer_type()
@@ -191,21 +191,29 @@ import_mib({{'SNMPv2-SMI', ImportsFromMib},Line}) ->
 	     makeInternalNode(snmpDomains, [1,3,6,1,6,1]),
 	     makeInternalNode(snmpProxys,[1,3,6,1,6,2]),
 	     makeInternalNode(snmpModules, [1,3,6,1,6,3])],
-    Types = [#asn1_type{bertype = 'Integer32',
-			aliasname = 'Integer32',lo = -2147483648,
-			hi = 2147483647},
-	     #asn1_type{bertype='IpAddress',aliasname='IpAddress',lo=4,hi=4},
-	     #asn1_type{bertype = 'Counter32', aliasname = 'Counter32',
+    Types = [#asn1_type{bertype   = 'Integer32',
+			aliasname = 'Integer32',
+			lo = -2147483648, hi = 2147483647},
+	     #asn1_type{bertype   = 'IpAddress',
+			aliasname = 'IpAddress',
+			lo = 4, hi = 4},
+	     #asn1_type{bertype   = 'Counter32', 
+			aliasname = 'Counter32',
 			lo = 0, hi = 4294967295},
-	     #asn1_type{bertype = 'Gauge32', aliasname = 'Gauge32',
+	     #asn1_type{bertype   = 'Gauge32', 
+			aliasname = 'Gauge32',
 			lo = 0, hi = 4294967295},
-	     #asn1_type{bertype = 'Unsigned32', aliasname = 'Unsigned32',
+	     #asn1_type{bertype   = 'Unsigned32', 
+			aliasname = 'Unsigned32',
 			lo = 0, hi = 4294967295},
-	     #asn1_type{bertype = 'TimeTicks', aliasname = 'TimeTicks',
+	     #asn1_type{bertype   = 'TimeTicks', 
+			aliasname = 'TimeTicks',
 			lo = 0, hi=4294967295},
-	     #asn1_type{bertype = 'Opaque', aliasname = 'Opaque'},
-	     #asn1_type{bertype = 'Counter64', aliasname = 'Counter64',lo = 0,
-			hi = 18446744073709551615}],
+	     #asn1_type{bertype   = 'Opaque', 
+			aliasname = 'Opaque'},
+	     #asn1_type{bertype   = 'Counter64', 
+			aliasname = 'Counter64',
+			lo = 0, hi = 18446744073709551615}],
     Macros = ['MODULE-IDENTITY','OBJECT-IDENTITY','OBJECT-TYPE',
 	      'NOTIFICATION-TYPE'],
     import_built_in_loop(ImportsFromMib,Nodes,Types,Macros,'SNMPv2-SMI',Line);
@@ -216,16 +224,60 @@ import_mib({{'RFC-1212', ImportsFromMib},Line}) ->
     Macros = ['OBJECT-TYPE'],
     import_built_in_loop(ImportsFromMib, [],[],Macros,'RFC-1212', Line);
 import_mib({{'SNMPv2-TC', ImportsFromMib},Line}) ->
-    TC = {builtin,'TEXTUAL-CONVENTION'},
-    case lists:member(TC, ImportsFromMib) of
-	true ->
-	    import_built_in(TC,[],[],['TEXTUAL-CONVENTION'],
-			    'SNMPv2-TC',Line);
-	false ->
-	    ok
-    end,
-    import_from_file({{'SNMPv2-TC', ImportsFromMib--[TC]},
-		      Line});
+    Nodes  = [],
+    Types  = [#asn1_type{aliasname = 'DisplayString',
+			 bertype   = 'OCTET STRING',
+			 lo = 0, hi = 255},
+	      #asn1_type{aliasname = 'PhysAddress',
+			 bertype   = 'OCTET STRING'},
+	      #asn1_type{aliasname = 'MacAddress',
+			 bertype   = 'OCTET STRING',
+			 lo = 6, hi = 6},
+	      #asn1_type{aliasname = 'TruthValue',
+			 bertype   = 'INTEGER',
+			 assocList = [{enums,[{false,2},{true,1}]}]},
+	      #asn1_type{aliasname = 'TestAndIncr',
+			 bertype   = 'INTEGER',
+			 lo = 0, hi = 2147483647},
+	      #asn1_type{aliasname = 'AutonomousType',
+			 bertype   = 'OBJECT IDENTIFIER'},
+	      #asn1_type{aliasname = 'InstancePointer',
+			 bertype   = 'OBJECT IDENTIFIER'},
+	      #asn1_type{aliasname = 'VariablePointer',
+			 bertype   = 'OBJECT IDENTIFIER'},
+	      #asn1_type{aliasname = 'RowPointer',
+			 bertype   = 'OBJECT IDENTIFIER'},
+	      #asn1_type{aliasname = 'RowStatus',
+			 bertype   = 'INTEGER',
+			 assocList = [{enums,[{destroy,       6},
+					      {createAndWait, 5},
+					      {createAndGo,   4},
+					      {notReady,      3},
+					      {notInService,  2},
+					      {active,        1}]}]},
+	      #asn1_type{aliasname = 'TimeStamp',
+			 bertype   = 'TimeTicks'},
+	      #asn1_type{aliasname = 'TimeInterval',
+			 bertype   = 'INTEGER',
+			 lo = 0, hi = 2147483647},
+	      #asn1_type{aliasname = 'DateAndTime',
+			 bertype   = 'OCTET STRING',
+			 lo = 8, hi = 11}, %% Actually 8 | 11
+	      #asn1_type{aliasname = 'StorageType',
+			 bertype   = 'INTEGER',
+			 assocList = [{enums,[{readOnly,    5},
+					      {permanent,   4},
+					      {nonVolatile, 3},
+					      {volatile,    2},
+					      {other,       1}]}]},
+	      #asn1_type{aliasname = 'TDomain',
+			 bertype   = 'OBJECT IDENTIFIER'},
+	      #asn1_type{aliasname = 'TAddress',
+			 bertype   = 'OCTET STRING',
+			 lo = 1, hi = 255}
+	     ],
+    Macros = ['TEXTUAL-CONVENTION'],
+    import_built_in_loop(ImportsFromMib,Nodes,Types,Macros,'SNMPv2-TC',Line);
 import_mib({{'SNMPv2-CONF', ImportsFromMib},Line}) ->
     Macros = ['OBJECT-GROUP','NOTIFICATION-GROUP','MODULE-COMPLIANCE'],
     import_built_in_loop(ImportsFromMib,[],[],Macros,'SNMPv2-CONF',Line);
@@ -424,11 +476,11 @@ check_trap(Trap, Traps) ->
 %%----------------------------------------------------------------------
 %% Returns: {Oid, ASN1Type}
 %%----------------------------------------------------------------------
-trap_variable_info(VariableName, Line, MEs) ->
-    case lookup(VariableName, MEs) of
+trap_variable_info(Variable, Type, MEs) ->
+    case lookup(Variable, MEs) of
 	false ->
-	    error("Error in trap definition. Cannot find object '~w'.",
-		  [VariableName], Line);
+	    error("Error in ~s definition. Cannot find object '~w'.",
+		  [Type, Variable]);
 	{value, ME} when ME#me.entrytype == variable ->
 	    {{variable, ME#me.aliasname}, ME#me.asn1_type};
 	{value, ME} ->
@@ -480,31 +532,27 @@ resolve_defval(ME) ->
 	false -> ME
     end.
 
-has_complex_defval(#me{aliasname=N,assocList=AssocList, asn1_type=ASN1Type}) 
+has_complex_defval(#me{aliasname = N,
+		       assocList = AssocList, 
+		       asn1_type = #asn1_type{bertype = BT}}) 
            when list(AssocList) ->
     case snmp_misc:assq(defval, AssocList) of
 	{value, Int} when integer(Int) ->
 	    false;
-	{value, Val}
-           when atom(Val), ASN1Type#asn1_type.bertype == 'OBJECT IDENTIFIER' ->
+	{value, Val} when atom(Val), BT == 'OBJECT IDENTIFIER' ->
 	    false; % resolved in update_me_oids
-	{value, Val}
-           when atom(Val), ASN1Type#asn1_type.bertype == 'INTEGER' ->
+	{value, Val} when atom(Val), BT == 'INTEGER' ->
 	    true;
-	{value,Bits}
-           when list(Bits), ASN1Type#asn1_type.bertype == 'BITS' ->
+	{value, Bits} when list(Bits), BT == 'BITS' ->
 	    true;
-	{value,Str} 
-	when list(Str), ASN1Type#asn1_type.bertype == 'OCTET STRING' ->
+	{value, Str} when list(Str), BT == 'OCTET STRING' ->
 	    false; % but ok
-	{value,Str} 
-	when list(Str), ASN1Type#asn1_type.bertype == 'Opaque' ->
+	{value, Str} when list(Str), BT == 'Opaque' ->
 	    false; % but ok
-	{value,Str} when list(Str), length(Str) == 4,
-	ASN1Type#asn1_type.bertype == 'IpAddress' ->
+	{value, Str} when list(Str), length(Str) == 4, BT == 'IpAddress' ->
 	    false; % but ok
-	{value,Shit} ->
-	    print_error("Bad default value for ~p: ~p.",[N,Shit]),
+	{value, Shit} ->
+	    print_error("Bad default value for ~p: ~p [~p]",[N,Shit,BT]),
 	    false;
 	false -> %% no defval (or strings nyi)
 	    false
@@ -793,24 +841,28 @@ get_final_mib(Name, Options) ->
     #cdata{mes        = MEs,
 	   mibfuncs   = MibFuncs,
 	   asn1_types = Types,
-	   traps      = Traps,
+	   traps      = Traps0,
 	   oid_ets    = OidEts} = CDATA,
+
     d("get_final_mib -> resolve oids",[]),
     resolve_oids(OidEts),
     %% Reverse so that we get report on objects earlier in the file
     %% before later objects.
-    UMEs = update_me_oids(lists:reverse(MEs), OidEts),
+    UMEs = update_me_oids(lists:reverse(MEs), OidEts, []),
     t("get_final_mib -> "
       "~n   UMEs: ~p",[UMEs]),
-    UTraps = update_trap_oids(Traps, OidEts),
+
+    Traps1 = update_trap_objects(Traps0, MEs, []), 
+    Traps2 = update_trap_oids(Traps1, OidEts, []),
     t("get_final_mib -> "
-      "~n   UTraps: ~p",[UTraps]),
+      "~n   Traps2: ~p",[Traps2]),
+
     SortedMEs = lists:keysort(#me.oid,UMEs),
     d("get_final_mib -> search for dublettes",[]),
     search_for_dublettes(#me{aliasname=dummy_init}, SortedMEs),
 
     d("get_final_mib -> search for oid conflicts",[]),
-    search_for_oid_conflicts(UTraps,SortedMEs),
+    search_for_oid_conflicts(Traps2, SortedMEs),
 
     d("get_final_mib -> resolve oid",[]),
     MibFs = lists:keysort(1,
@@ -835,7 +887,7 @@ get_final_mib(Name, Options) ->
 				CDATA#cdata.objectgroups),
 		    d("get_final_mib -> check notifications groups:~n   ~p",
 		      [CDATA#cdata.notificationgroups]),
-		    check_notification(UTraps,
+		    check_notification(Traps2,
 				       CDATA#cdata.notificationgroups);
 		false ->
 		    ok
@@ -848,11 +900,35 @@ get_final_mib(Name, Options) ->
 	       misc           = Misc,
 	       variable_infos = extract_variable_infos(MEsWithMFA),
 	       table_infos    = extract_table_infos(MEsWithMFA),
-	       traps          = lists:map(fun translate_trap_type/1, UTraps), 
+	       traps          = lists:map(fun translate_trap_type/1, Traps2), 
 	       asn1_types     = lists:map(fun translate_type/1, Types)},
     {ok, Mib}.
 	      
 	      
+
+update_trap_objects([], _MEs, Acc) ->
+    t("update_trap_objects -> done", []),
+    lists:reverse(Acc);
+update_trap_objects([#trap{trapname   = Name, 
+			   oidobjects = Variables} = Trap|Traps], MEs, Acc) ->
+    t("update_trap_objects -> update objects for trap ~p:"
+      "~n   ~p", [Name, Variables]),
+    OidObjects = 
+	[trap_variable_info(Var, "trap", MEs) || Var <- Variables],
+    UpdTrap = Trap#trap{oidobjects = OidObjects},
+    update_trap_objects(Traps, MEs, [UpdTrap|Acc]);
+update_trap_objects([#notification{trapname   = Name, 
+				   oidobjects = Variables} = Notif|Traps], 
+		    MEs, Acc) ->
+    t("update_trap_objects -> update objects for notification ~p:"
+      "~n   ~p", [Name, Variables]),
+    OidObjects = 
+	[trap_variable_info(Var, "notification", MEs) || Var <- Variables],
+    UpdNotif = Notif#notification{oidobjects = OidObjects},
+    update_trap_objects(Traps, MEs, [UpdNotif|Acc]);
+update_trap_objects([_|Traps], MEs, Acc) ->
+    update_trap_objects(Traps, MEs, Acc).
+
 
 %% We don't want a zillion aliases for INTEGER (etc),
 %% and since they are encoded with the same tag we can treat them as
@@ -905,7 +981,7 @@ get_notification_names(Traps) when list(Traps) ->
 check_object_group(Name, GroupObjects, Line, Status) ->
     #cdata{mes = MEs, status_ets = Ets} = get(cdata),
     Objects = get_object_names(MEs),
-    check_def(object, Line, Name, Status, GroupObjects, Objects, Ets).
+    check_def(object, Name, Line, Status, GroupObjects, Objects, Ets).
 
 get_object_names([])->[];
 get_object_names([#me{access=A, entrytype=T, aliasname=N}|MEs]) 
@@ -917,11 +993,16 @@ get_object_names([ME|Rest]) ->
 %% Strictly we should not need to check more then the status 
 %% table, but since error do happen...
 check_def(Type, Name, Line, Status, [GroupObject|GroupObjects], Objects, Ets) ->
+    d("check definition of ~p [~p,~p]: presumed member of ~p [~p]",
+      [GroupObject, Type, Line, Name, Status]),
     case lists:member(GroupObject, Objects) of
 	true ->
+	    t("~p is a member of ~p", [GroupObject, Name]),
 	    %% Lucky so far, now lets check that the status is valid
 	    case ets:lookup(Ets, GroupObject) of
 		[{GroupObject, ObjectStatus}] ->
+		    t("check that the object status (~p) is valid", 
+		      [ObjectStatus]),
 		    check_group_member_status(Name, Status,
 					      GroupObject, ObjectStatus);
 		_ ->
@@ -932,8 +1013,12 @@ check_def(Type, Name, Line, Status, [GroupObject|GroupObjects], Objects, Ets) ->
 	false ->
 	    %% Ok, this could be because the status is obsolete or
 	    %% deprecated (with the deprecated flag = false)
+	    t("~p is not a member of ~p [object status could be obsolete]", 
+	      [GroupObject, Name]),
 	    case ets:lookup(Ets, GroupObject) of
 		[{GroupObject, ObjectStatus}] ->
+		    t("check that the object status (~p) is valid", 
+		      [ObjectStatus]),
 		    check_group_member_status(Name, Status,
 					      GroupObject, ObjectStatus);
 		_ ->
@@ -957,7 +1042,7 @@ check_group_member_status(GroupName, GroupStatus, Member, undefined) ->
 check_group_member_status(GroupName, current, Member, current) ->
     ok;
 check_group_member_status(GroupName, current, Member, MemberStatus) ->
-    group_member_status_error(GroupName, Member, current, MemberStatus,
+    group_member_status_error(GroupName, current, Member, MemberStatus,
 			      "current");
 check_group_member_status(GroupName, deprecated, Member, MemberStatus) 
   when MemberStatus == deprecated; MemberStatus == current ->
@@ -976,7 +1061,7 @@ check_group_member_status(GroupName, obsolete, Member, MemberStatus) ->
 check_group_member_status(GroupName, GroupStatus, Member, MemberStatus) ->
     ok.
 
-group_member_status_error(Name, Member, Status, MemberStatus, Expected) ->
+group_member_status_error(Name, Status, Member, MemberStatus, Expected) ->
     snmp_compile_lib:print_error("Invalid status of group member ~p "
 				 "in group ~p. "
 				 "Group status is ~p "
@@ -1051,8 +1136,8 @@ check_notification([_|Traps],NotificationObjects) ->
 check_member_notification(Aliasname,[])->
     print_error("'~w' missing in NOTIFICATION-GROUP",[Aliasname]);
 check_member_notification(Aliasname,[{Name,NotificationObject,Line}|Tl])->
-    case lists:member(Aliasname,NotificationObject) of
-	true->
+    case lists:member(Aliasname, NotificationObject) of
+	true ->
 	    ok;
 	false ->
 	    check_member_notification(Aliasname,Tl)
@@ -1103,7 +1188,7 @@ insert_mfa([X | Fs], [ME | MEs], DBName)
     end;
 
 insert_mfa([X | Fs], [TableME | MEs], DBName) 
- when TableME#me.entrytype == table ->
+  when TableME#me.entrytype == table ->
     {Oid, {M,F,A}} = X,
     {TableMEs, RestMEs} = collect_mes_for_table(TableME, [TableME | MEs]),
     [TableEntryME | ColMEs] = tl(TableMEs),
@@ -1468,8 +1553,12 @@ register_oid(Line, Name, FatherName, SubIndex) ->
 
 
 resolve_oids(OidEts) ->
-    [{_, _, _, _, RootChildren}] = ets:lookup(OidEts, root),
-    resolve_oids(RootChildren, [], OidEts).
+    case ets:lookup(OidEts, root) of
+	[{_, _, _, _, RootChildren}] ->
+	    resolve_oids(RootChildren, [], OidEts);
+	[] ->
+	    ok
+    end.
 
 resolve_oids([Name | T], FatherOid, OidEts) ->
     {MyOid, MyChildren, MyLine} =
@@ -1489,29 +1578,34 @@ resolve_oids([], _, _) ->
     
 		 
 
-update_me_oids([#me{aliasname = '$no_name$'} | Mes], OidEts) ->
-    update_me_oids(Mes, OidEts);
-update_me_oids([Me | Mes], OidEts) ->
-    Oid = tr_oid(OidEts, Me#me.aliasname),
+update_me_oids([], OidEts, Acc) ->
+    lists:reverse(Acc);
+update_me_oids([#me{aliasname = '$no_name$'} | Mes], OidEts, Acc) ->
+    update_me_oids(Mes, OidEts, Acc);
+update_me_oids([Me | Mes], OidEts, Acc) ->
+    Oid = tr_oid(Me#me.aliasname, OidEts),
     NMe = resolve_oid_defval(Me, OidEts),
-    [NMe#me{oid = Oid} | update_me_oids(Mes, OidEts)];
-update_me_oids([], OidEts) ->
-    [].
+    update_me_oids(Mes, OidEts, [NMe#me{oid = Oid} | Acc]).
 
-update_trap_oids([Trap | Traps], OidEts) when record(Trap, notification)->
-    Oid = tr_oid(OidEts, Trap#notification.trapname),
-    OidObjs = tr_oid_objs(Trap#notification.oidobjects, OidEts),
-    [Trap#notification{oid = Oid, oidobjects = OidObjs} |
-     update_trap_oids(Traps, OidEts)];
-update_trap_oids([Trap | Traps], OidEts) ->
-    NEnter = tr_oid(OidEts, Trap#trap.enterpriseoid),
-    OidObjs = tr_oid_objs(Trap#trap.oidobjects, OidEts),
-    [Trap#trap{enterpriseoid = NEnter,
-	       oidobjects = OidObjs} | update_trap_oids(Traps, OidEts)];
-update_trap_oids([], OidEts) ->
-    [].
+update_trap_oids([], _OidEts, Acc) ->
+    lists:reverse(Acc);
+update_trap_oids([#trap{enterpriseoid = EOid, 
+			oidobjects    = OidObjs} = Trap | Traps], 
+		 OidEts, Acc) ->
+    NEnter   = tr_oid(EOid, OidEts),
+    NOidObjs = tr_oid_objs(OidObjs, OidEts),
+    NTrap = Trap#trap{enterpriseoid = NEnter,
+		      oidobjects    = NOidObjs},
+    update_trap_oids(Traps, OidEts, [NTrap|Acc]);
+update_trap_oids([#notification{trapname   = Name,
+				oidobjects = OidObjs} = Notif | Traps], 
+		 OidEts, Acc) ->
+    Oid      = tr_oid(Name, OidEts),
+    NOidObjs = tr_oid_objs(OidObjs, OidEts),
+    NNotif   = Notif#notification{oid = Oid, oidobjects = NOidObjs},
+    update_trap_oids(Traps, OidEts, [NNotif|Acc]).
 
-tr_oid(OidEts, Name) ->
+tr_oid(Name, OidEts) ->
     case ets:lookup(OidEts, Name) of
 	[{Name, MyOid, MyLine}] ->
 	    MyOid;
@@ -1524,10 +1618,10 @@ tr_oid(OidEts, Name) ->
     end.
 
 tr_oid_objs([{{variable, Name}, Type} | T], OidEts) ->
-    Oid = tr_oid(OidEts, Name) ++ [0],
+    Oid = tr_oid(Name, OidEts) ++ [0],
     [{Oid, Type} | tr_oid_objs(T, OidEts)];
 tr_oid_objs([{{column, Name}, Type} | T], OidEts) ->
-    Oid = tr_oid(OidEts, Name),
+    Oid = tr_oid(Name, OidEts),
     [{Oid, Type} | tr_oid_objs(T, OidEts)];
 tr_oid_objs([], _OidEts) ->
     [].

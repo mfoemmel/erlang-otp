@@ -18,7 +18,6 @@
 %%
 %%----------------------------------------------------------------------
 %% File: orber_iiop.hrl
-%% Author: Lars Thorsen
 %% 
 %% Creation date: 970115
 %%
@@ -337,10 +336,8 @@
 -define(ORB_CONTEXT,        16#02).
 -define(ORB_TYPECHECK,      16#04).
 -define(ORB_NO_SECURITY,    16#08).
--define(ORB_ELSE1,          16#10).
--define(ORB_ELSE2,          16#20).
--define(ORB_ELSE3,          16#40).
--define(ORB_ELSE,           16#80).
+-define(ORB_SURVIVE_EXIT,   16#10).
+-define(ORB_USE_PI,         16#20).
 
 -define(ORB_INIT_FLAGS, 16#00).
 
@@ -348,14 +345,19 @@
 %% Flags used as configuration parameters (application env).
 %% 
 %%----------------------------------------------------------------------
--define(ORB_ENV_EXCLUDE_CODESET_COMPONENT, 16#01).
--define(ORB_ENV_LOCAL_TYPECHECKING,        16#02).
--define(ORB_ENV_HOSTNAME_IN_IOR,           16#04).
--define(ORB_ENV_EXCLUDE_CODESET_CTX,       16#08).
--define(ORB_ENV_PARTIAL_SECURITY,          16#10).
--define(ORB_ENV_USE_CSIV2,                 16#20).
--define(ORB_ENV_USE_FT,                    16#40).
--define(ORB_ENV_USE_BI_DIR_IIOP,           16#80).
+-define(ORB_ENV_EXCLUDE_CODESET_COMPONENT, 16#01). %% FIXED!!
+-define(ORB_ENV_LOCAL_TYPECHECKING,        16#02). %% FIXED!!
+-define(ORB_ENV_HOSTNAME_IN_IOR,           16#04). %% FIXED!!
+-define(ORB_ENV_ENABLE_NAT,                16#08). %% FIXED!!
+-define(ORB_ENV_PARTIAL_SECURITY,          16#10). %% FIXED FOR NOW!! INTERNAL
+-define(ORB_ENV_USE_PI,                    16#20). %% FIXED!!
+-define(ORB_ENV_USE_FT,                    16#40). %% WILL PROBABLY BE FIXED!!
+-define(ORB_ENV_LIGHT_IFR,                 16#80). %% FIXED!!
+-define(ORB_ENV_USE_IPV6,                  16#100). %% FIXED!!
+-define(ORB_ENV_SURVIVE_EXIT,              16#200). %% FIXED!!
+-define(ORB_ENV_USE_BI_DIR_IIOP,           16#400). %% CAN BE CHANGED
+-define(ORB_ENV_USE_CSIV2,                 16#800). %% CAN BE CHANGED
+-define(ORB_ENV_EXCLUDE_CODESET_CTX,       16#1000). %% CAN BE CHANGED
 
 
 -define(ORB_ENV_INIT_FLAGS,      16#00).
@@ -365,8 +367,13 @@
 	 {?ORB_ENV_LOCAL_TYPECHECKING, "Local Typechecking"},
 	 {?ORB_ENV_HOSTNAME_IN_IOR, "Use Hostname in IOR"},
 	 {?ORB_ENV_EXCLUDE_CODESET_COMPONENT, "Exclude CodeSet Component"},
+	 {?ORB_ENV_ENABLE_NAT, "NAT Enabled"},
 	 {?ORB_ENV_USE_CSIV2, "CSIv2 Activated"},
 	 {?ORB_ENV_USE_FT, "Fault Tolerance Activated"},
+	 {?ORB_ENV_USE_IPV6, "IPv6 Activated"},
+	 {?ORB_ENV_SURVIVE_EXIT, "EXIT Tolerance Activated"},
+	 {?ORB_ENV_USE_PI, "Local Interceptors"},
+	 {?ORB_ENV_LIGHT_IFR, "Light IFR"},
 	 {?ORB_ENV_USE_BI_DIR_IIOP, "Use BiDirIIOP"}]).
 
 
@@ -687,7 +694,10 @@
 %% The AuthorizationElement contains one element of an authorization token.
 %% Each element of an authorization token is logically a PAC.
 %% The AuthorizationToken is made up of a sequence of AuthorizationElements
--record('CSI_AuthorizationElement', {the_type, the_element}).
+%% --- NOTE --- 
+%% OMG only defines 'CSI_X509AttributeCertChain' so we use it as default value.
+-record('CSI_AuthorizationElement', {the_type = ?CSI_X509AttributeCertChain, 
+				     the_element = []}).
 -define(CSIIOP_AuthorizationElement, {'tk_struct', ?SYSTEM_TYPE, 'CSI_AuthorizationElement',
 				      [{"the_type", ?CSI_AuthorizationElementType},
 				       {"the_element", ?CSI_AuthorizationElementContents}]}).
@@ -996,7 +1006,8 @@
 -record(host_data, {protocol = normal, ssl_data, version, csiv2_mech,
 		    csiv2_statefull = false, csiv2_addresses = [],
 		    charset = ?ISO8859_1_ID, wcharset = ?UTF_16_ID,
-		    ft_heartbeat = false, ft_primary = false, ft_group}).
+		    ft_heartbeat = false, ft_primary = false, ft_domain,
+		    ft_group, ft_ref_version}).
 
 
 -endif.

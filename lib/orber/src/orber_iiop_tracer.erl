@@ -48,7 +48,7 @@
 %% Arguments: 
 %% Returns  : 
 %%------------------------------------------------------------
-new_in_connection(Arg, CHost, Port) ->
+new_in_connection(_Arg, CHost, Port) ->
     error_logger:info_msg("=============== new_in_connection ========
 Node      : ~p
 From Host : ~p
@@ -62,7 +62,7 @@ From Port : ~p
 %% Arguments: 
 %% Returns  : 
 %%------------------------------------------------------------
-new_out_connection(Arg, SHost, Port) ->
+new_out_connection(_Arg, SHost, Port) ->
     error_logger:info_msg("=============== new_out_connection =======
 Node      : ~p
 To Host   : ~p
@@ -102,7 +102,7 @@ Connection: ~p
 %% Arguments: 
 %% Returns  : 
 %%------------------------------------------------------------
-in_request_encoded(Ref, ObjKey, Ctx, Op, Bin, Args) ->
+in_request_encoded(Ref, _ObjKey, Ctx, Op, Bin, Args) ->
     error_logger:info_msg("=============== in_request_encoded =======
 Connection: ~p
 Operation : ~p
@@ -117,7 +117,7 @@ Context   : ~p
 %% Arguments: 
 %% Returns  : 
 %%------------------------------------------------------------
-in_reply_encoded(Ref, ObjKey, Ctx, Op, Bin, Args) ->
+in_reply_encoded(Ref, _ObjKey, Ctx, Op, Bin, Args) ->
     error_logger:info_msg("============== in_reply_encoded ==========
 Connection: ~p
 Operation : ~p
@@ -148,7 +148,7 @@ Object    : ~p
 %% Arguments: 
 %% Returns  : 
 %%------------------------------------------------------------
-out_request_encoded(Ref, ObjKey, Ctx, Op, Bin, Args) ->
+out_request_encoded(Ref, _ObjKey, Ctx, Op, Bin, Args) ->
     error_logger:info_msg("============== out_request_encoded =======
 Connection: ~p
 Operation : ~p
@@ -179,7 +179,7 @@ Object    : ~p
 %% Arguments: 
 %% Returns  : 
 %%------------------------------------------------------------
-in_reply(Ref, ObjKey, Ctx, Op, Reply, Args) ->
+in_reply(Ref, _ObjKey, Ctx, Op, Reply, Args) ->
     error_logger:info_msg("=============== in_reply =================
 Connection: ~p
 Operation : ~p
@@ -210,7 +210,7 @@ Object    : ~p
 %% Arguments: 
 %% Returns  : 
 %%------------------------------------------------------------
-out_request(Ref, ObjKey, Ctx, Op, Params, Args) ->
+out_request(Ref, _ObjKey, Ctx, Op, Params, Args) ->
     error_logger:info_msg("=============== out_request ==============
 Connection: ~p
 Operation : ~p

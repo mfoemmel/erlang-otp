@@ -61,11 +61,11 @@ init({port, normal, PortNo}) ->
     Port = open_port({spawn, cmd_string(PortNo)}, [{packet, 4}]),
     {ok, #state{port=Port, portNo=PortNo}}.
 
-terminate(Reason, State) ->
+terminate(_Reason, State) ->
     State#state.port ! {self(), close},
     Port = State#state.port,
     receive
-	{ Port, closed} ->
+	{Port, closed} ->
 	    ok
     after 1000 ->
 	    error_logger:error_msg("orber_bootstrap: port not stopped"),
@@ -104,13 +104,13 @@ handle_info({Port, {data, Data}}, State) when State#state.port == Port ->
 					     Hdr#request_header.service_context),
 	    case result_to_list(Result, TypeCodes) of
 		[{'EXCEPTION', Exception} | _] ->
-		    {TypeOfException, ExceptionTypeCode} =
-			orber_typedefs:get_exception_def(Exception),
+		    {TypeOfException, ExceptionTypeCode, NewExc} =
+			orber_exceptions:get_def(Exception),
 		    Reply = cdr_encode:enc_reply(Version,
 						 Hdr#request_header.request_id,
 						 TypeOfException,
 						 {ExceptionTypeCode, [], []}, 
-						 Exception, [], []);
+						 NewExc, [], []);
 		[Res |OutPar] ->
 		    Reply = cdr_encode:enc_reply(Version,
 			      Hdr#request_header.request_id,
@@ -119,13 +119,13 @@ handle_info({Port, {data, Data}}, State) when State#state.port == Port ->
 			      Res, OutPar, []);
 		_ ->
 		    E = #'INTERNAL'{completion_status=?COMPLETED_MAYBE},
-		    {TypeOfException, ExceptionTypeCode} =
-			orber_typedefs:get_exception_def(E),
+		    {TypeOfException, ExceptionTypeCode, NewExc} =
+			orber_exceptions:get_def(E),
 		    Reply = cdr_encode:enc_reply(Version,
 						 Hdr#request_header.request_id,
 						 TypeOfException,
 						 {ExceptionTypeCode, [], []}, 
-						 E, [], [])
+						 NewExc, [], [])
 	    end
     end,
     Port ! {self(), {command, Reply}},
@@ -134,7 +134,7 @@ handle_info({Port, {data, Data}}, State) when State#state.port == Port ->
 %%-----------------------------------------------------------------
 %% Func: code_change/3
 %%-----------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
@@ -146,10 +146,10 @@ cmd_string(PortNo) ->
     PrivDir ++ "/bin/obj_init_port -p " ++ integer_to_list(PortNo).
 
 
-result_to_list(Result, {TkRes, _, TkOut}) ->
+result_to_list(Result, {_TkRes, _, TkOut}) ->
    case length(TkOut) of
        0 ->
 	   [Result];
-       N ->
+       _N ->
 	   tuple_to_list(Result)
    end.

@@ -23,100 +23,38 @@
 
 -behaviour(megaco_encoder).
 
--export([encode_message/2, decode_message/2,
-	 encode_transaction/1, encode_transaction/2,
-	 encode_command_request/1,
-	 encode_action_reply/1]).
+-export([encode_message/3, decode_message/3,
 
--include_lib("megaco/include/megaco.hrl").
--include_lib("megaco/include/megaco_message_v1.hrl").
--include("megaco_text_tokens.hrl").
+	 version_of/2, 
+
+	 encode_transaction/3,
+	 encode_action_requests/3,
+	 encode_action_request/3,
+	 encode_command_request/3,
+	 encode_action_reply/3]).
+
+%% Backward compatible funcs:
+-export([encode_message/2, decode_message/2]).
+
+-include_lib("megaco/src/engine/megaco_message_internal.hrl").
+
+-define(V1_PARSE_MOD, megaco_text_parser_v1).
+-define(V2_PARSE_MOD, megaco_text_parser_v2).
+
 
 %%----------------------------------------------------------------------
 %% Convert a 'MegacoMessage' record into a binary
-%% Return {ok, Binary} | {error, Reason}
-%%----------------------------------------------------------------------
-
-encode_message([], MegaMsg) when record(MegaMsg, 'MegacoMessage') ->
-    case catch enc_MegacoMessage(MegaMsg) of
-	{'EXIT', Reason} ->
-	    {error, Reason};
-	Bin when binary(Bin) ->
-	    {ok, Bin};
-	DeepIoList ->
-	    Bin = erlang:list_to_binary(DeepIoList),
-	    {ok, Bin}
-    end;
-encode_message([{flex,_}], MegaMsg) when record(MegaMsg, 'MegacoMessage') ->
-    case catch enc_MegacoMessage(MegaMsg) of
-	{'EXIT', Reason} ->
-	    {error, Reason};
-	Bin when binary(Bin) ->
-	    {ok, Bin};
-	DeepIoList ->
-	    Bin = erlang:list_to_binary(DeepIoList),
-	    {ok, Bin}
-    end;
-encode_message(EncodingConfig, MegaMsg) when record(MegaMsg, 'MegacoMessage')  ->
-    {error, {bad_encoding_config, EncodingConfig}};
-encode_message(_EncodingConfig, _MegaMsg) ->
-    {error, bad_megaco_message}.
-
-
-%%----------------------------------------------------------------------
-%% Convert a transaction record into a binary
-%% Return {ok, Binary} | {error, Reason}
-%%----------------------------------------------------------------------
-encode_transaction(Trans) ->
-    encode_transaction([], Trans).
-
-encode_transaction([], Trans) ->
-    case catch enc_Transaction(Trans) of
-	{'EXIT', Reason} ->
-	    {error, Reason};
-	Bin when binary(Bin) ->
-	    {ok, Bin};
-	DeepIoList ->
-	    Bin = erlang:list_to_binary(DeepIoList),
-	    {ok, Bin}
-    end;
-encode_transaction([{flex,_}], Trans) ->
-    case catch enc_Transaction(Trans) of
-	{'EXIT', Reason} ->
-	    {error, Reason};
-	Bin when binary(Bin) ->
-	    {ok, Bin};
-	DeepIoList ->
-	    Bin = erlang:list_to_binary(DeepIoList),
-	    {ok, Bin}
-    end;
-encode_transaction(EncodingConfig, _Trans) ->
-    {error, {bad_encoding_config, EncodingConfig}}.
-    
-
-%%----------------------------------------------------------------------
-%% Convert a CommandRequest record into a deep io list
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
-encode_command_request(CmdReq) ->
-    case catch enc_CommandRequest(CmdReq) of
-	{'EXIT', Reason} ->
-	    {error, Reason};
-	DeepIoList ->
-	    {ok, DeepIoList}
-    end.
 
-%%----------------------------------------------------------------------
-%% Convert a action reply into a deep io list
-%% Return {ok, DeepIoList} | {error, Reason}
-%%----------------------------------------------------------------------
-encode_action_reply(ActRep) ->
-    case catch enc_ActionReply(ActRep) of
-	{'EXIT', Reason} ->
-	    {error, Reason};
-	DeepIoList ->
-	    {ok, DeepIoList}
-    end.
+encode_message(EncodingConfig, 
+	       #'MegacoMessage'{mess = #'Message'{version = V}} = MegaMsg) ->
+    encode_message(EncodingConfig, V, MegaMsg).
+
+encode_message(EncodingConfig, 1, MegaMsg) ->
+    megaco_compact_text_encoder_v1:encode_message(EncodingConfig, MegaMsg);
+encode_message(EncodingConfig, 2, MegaMsg) ->
+    megaco_compact_text_encoder_v2:encode_message(EncodingConfig, MegaMsg).
 
 
 %%----------------------------------------------------------------------
@@ -124,190 +62,122 @@ encode_action_reply(ActRep) ->
 %% Return {ok, MegacoMessageRecord} | {error, Reason}
 %%----------------------------------------------------------------------
 
-decode_message([], Bin) when binary(Bin) ->
+version_of(_EC, Bin) ->
     case megaco_text_scanner:scan(Bin) of
-	{ok, Tokens, _LastLine} ->
-	    case (catch megaco_text_parser:parse(Tokens)) of %% OTP-4007
-		{ok, MegacoMessage} ->
-		    {ok, MegacoMessage};
-		{error, Reason} ->
-		    {error, [{reason, Reason},
-			     {token, Tokens},
-			     {chars, Bin}]};
-		%% OTP-4007
-		{'EXIT', Reason} ->
-		    {error,[{reason, Reason},
-			    {token, Tokens},
-			    {chars, Bin}]}
-	    end;
-	{error, Reason, Line} ->             %% OTP-4007
-	   {error, [{reason, Reason, Line},  %% OTP-4007
-		    {token, []},
-		    {chars, Bin}]}
+	{ok, _Tokens, V, _LastLine} ->
+	    {ok, V};
+	{error, Reason, Line} ->
+	    {error, {decode_failed, Reason, Line}}
+    end.
+
+
+decode_message(EC, Bin) ->
+    decode_message(EC, dynamic, Bin).
+
+decode_message([], _, Bin) when binary(Bin) ->
+    case megaco_text_scanner:scan(Bin) of
+	{ok, Tokens, 1, _LastLine} ->
+	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
+
+	{ok, Tokens, 2, _LastLine} ->
+	    do_decode_message(?V2_PARSE_MOD, Tokens, Bin);
+
+	{error, Reason, Line} ->               %% OTP-4007
+	    parse_error(Reason, Line, [], Bin) %% OTP-4007
     end;
-decode_message([{flex, Port}], Bin) when binary(Bin) ->
+decode_message([{flex, Port}], _, Bin) when binary(Bin) ->
     case megaco_flex_scanner:scan(Bin, Port) of
-	{ok, Tokens, _LastLine} ->
-	    case (catch megaco_text_parser:parse(Tokens)) of %% OTP-4007
-		{ok, MegacoMessage} ->
-		    {ok, MegacoMessage};
-		{error, Reason} ->
-		    {error, [{reason, Reason},
-			     {token, Tokens},
-			     {chars, Bin}]};
-		%% OTP-4007
-		{'EXIT', Reason} ->
-		    {error,[{reason, Reason},
-			    {token, Tokens},
-			    {chars, Bin}]}
-	    end;
-	{error, Reason, Line} ->             %% OTP-4007
-	   {error, [{reason, Reason, Line},  %% OTP-4007
-		    {token, []},
-		    {chars, Bin}]}
+	{ok, Tokens, 1, _LastLine} ->
+	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
+
+	{ok, Tokens, 2, _LastLine} ->
+	    do_decode_message(?V2_PARSE_MOD, Tokens, Bin);
+
+	{error, Reason, Line} ->               %% OTP-4007
+	    parse_error(Reason, Line, [], Bin) %% OTP-4007
     end;
-decode_message(EncodingConfig, Bin) when binary(Bin) ->
-    {error, {bad_encoding_config, EncodingConfig}};
-decode_message(_EncodingConfig, _BadBin) ->
+decode_message(EC, _, Bin) when binary(Bin) ->
+    {error, {bad_encoding_config, EC}};
+decode_message(_EC, _, _BadBin) ->
     {error, bad_binary}.
 
-%%----------------------------------------------------------------------
-%% Define various macros used by the actual generator code
-%%----------------------------------------------------------------------
 
--define(EQUAL,  [?EqualToken]).
--define(COLON,  [?ColonToken]).
--define(LBRKT,  [?LbrktToken]).
--define(RBRKT,  [?RbrktToken]).
--define(LSBRKT, [?LsbrktToken]).
--define(RSBRKT, [?RsbrktToken]).
--define(COMMA,  [?CommaToken]).
--define(DOT,    [?DotToken]).
--define(SLASH,  [?SlashToken]).
--define(DQUOTE, [?DoubleQuoteToken]).
--define(SP,     [?SpToken]).
--define(HTAB,   [?HtabToken]).
--define(CR,     [?CrToken]).
--define(LF,     [?LfToken]).
--define(LWSP,   []).
--define(EOL,    ?LF).
--define(WSP,    ?SP).
--define(SEP,    ?WSP).
+do_decode_message(ParseMod, Tokens, Bin) ->
+    case (catch ParseMod:parse(Tokens)) of
+	{ok, MegacoMessage} ->
+	    {ok, MegacoMessage};
+	{error, Reason} ->
+	    parse_error(Reason, Tokens, Bin);
 
--define(INIT_INDENT,           []).
--define(INC_INDENT(State),     State).
--define(INDENT(State),         State).
--define(LBRKT_INDENT(_State),  [?LbrktToken]).
--define(RBRKT_INDENT(_State),  [?RbrktToken]).
--define(COMMA_INDENT(_State),  [?CommaToken]).
--define(SEP_INDENT(_State),    [?LfToken]).
+	%% OTP-4007
+	{'EXIT', Reason} ->
+	    parse_error(Reason, Tokens, Bin)
+    end.
+
+parse_error(Reason, Tokens, Chars) ->
+    {error, [{reason, Reason}, {token, Tokens}, {chars, Chars}]}.
+
+parse_error(Reason, Line, Tokens, Chars) ->
+    {error, [{reason, Reason, Line}, {token, Tokens}, {chars, Chars}]}.
+
 
 %%----------------------------------------------------------------------
-%% Define token macros
+%% Convert a transaction record into a deep io list
+%% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
+encode_transaction(EC, 1, Trans) ->
+    megaco_compact_text_encoder_v1:encode_transaction(EC, Trans);
+encode_transaction(EC, 2, Trans) ->
+    megaco_compact_text_encoder_v2:encode_transaction(EC, Trans).
 
--define(AddToken                   , ?CompactAddToken).
--define(AuditToken                 , ?CompactAuditToken).
--define(AuditCapToken              , ?CompactAuditCapToken).
--define(AuditValueToken            , ?CompactAuditValueToken).
--define(AuthToken                  , ?CompactAuthToken).
--define(BothwayToken               , ?CompactBothwayToken).
--define(BriefToken                 , ?CompactBriefToken).
--define(BufferToken                , ?CompactBufferToken).
--define(CtxToken                   , ?CompactCtxToken).
--define(ContextAuditToken          , ?CompactContextAuditToken).
--define(DigitMapToken              , ?CompactDigitMapToken).
--define(DiscardToken               , ?CompactDiscardToken).
--define(DisconnectedToken          , ?CompactDisconnectedToken).
--define(DelayToken                 , ?CompactDelayToken).
--define(DeleteToken                , ?CompactDeleteToken).
--define(DurationToken              , ?CompactDurationToken).
--define(EmbedToken                 , ?CompactEmbedToken).
--define(EmergencyToken             , ?CompactEmergencyToken).
--define(ErrorToken                 , ?CompactErrorToken).
--define(EventBufferToken           , ?CompactEventBufferToken).
--define(EventsToken                , ?CompactEventsToken).
--define(FailoverToken              , ?CompactFailoverToken).
--define(ForcedToken                , ?CompactForcedToken).
--define(GracefulToken              , ?CompactGracefulToken).
--define(H221Token                  , ?CompactH221Token).
--define(H223Token                  , ?CompactH223Token).
--define(H226Token                  , ?CompactH226Token).
--define(HandOffToken               , ?CompactHandOffToken).
--define(ImmAckRequiredToken        , ?CompactImmAckRequiredToken).
--define(InactiveToken              , ?CompactInactiveToken).
--define(InterruptByEventToken      , ?CompactInterruptByEventToken).
--define(InterruptByNewSignalsDescrToken, ?CompactInterruptByNewSignalsDescrToken).
--define(IsolateToken               , ?CompactIsolateToken).
--define(InSvcToken                 , ?CompactInSvcToken).
--define(KeepActiveToken            , ?CompactKeepActiveToken).
--define(LocalToken                 , ?CompactLocalToken).
--define(LocalControlToken          , ?CompactLocalControlToken).
--define(LockStepToken              , ?CompactLockStepToken).
--define(LoopbackToken              , ?CompactLoopbackToken).
--define(MediaToken                 , ?CompactMediaToken).
--define(MegacopToken               , ?CompactMegacopToken).
--define(MethodToken                , ?CompactMethodToken).
--define(MgcIdToken                 , ?CompactMgcIdToken).
--define(ModeToken                  , ?CompactModeToken).
--define(ModifyToken                , ?CompactModifyToken).
--define(ModemToken                 , ?CompactModemToken).
--define(MoveToken                  , ?CompactMoveToken).
--define(MtpToken                   , ?CompactMtpToken).
--define(MuxToken                   , ?CompactMuxToken).
--define(NotifyToken                , ?CompactNotifyToken).
--define(NotifyCompletionToken      , ?CompactNotifyCompletionToken).
--define(ObservedEventsToken        , ?CompactObservedEventsToken).
--define(OffToken                   , ?CompactOffToken).
--define(OnewayToken                , ?CompactOnewayToken).
--define(OnOffToken                 , ?CompactOnOffToken).
--define(OnToken                    , ?CompactOnToken).
--define(OtherReasonToken           , ?CompactOtherReasonToken).
--define(OutOfSvcToken              , ?CompactOutOfSvcToken).
--define(PackagesToken              , ?CompactPackagesToken).
--define(PendingToken               , ?CompactPendingToken).
--define(PriorityToken              , ?CompactPriorityToken).
--define(ProfileToken               , ?CompactProfileToken).
--define(ReasonToken                , ?CompactReasonToken).
--define(RecvonlyToken              , ?CompactRecvonlyToken).
--define(ReplyToken                 , ?CompactReplyToken).
--define(ResponseAckToken           , ?CompactResponseAckToken).
--define(RestartToken               , ?CompactRestartToken).
--define(RemoteToken                , ?CompactRemoteToken).
--define(ReservedGroupToken         , ?CompactReservedGroupToken).
--define(ReservedValueToken         , ?CompactReservedValueToken).
--define(SendonlyToken              , ?CompactSendonlyToken).
--define(SendrecvToken              , ?CompactSendrecvToken).
--define(ServicesToken              , ?CompactServicesToken).
--define(ServiceStatesToken         , ?CompactServiceStatesToken).
--define(ServiceChangeToken         , ?CompactServiceChangeToken).
--define(ServiceChangeAddressToken  , ?CompactServiceChangeAddressToken).
--define(SignalListToken            , ?CompactSignalListToken).
--define(SignalsToken               , ?CompactSignalsToken).
--define(SignalTypeToken            , ?CompactSignalTypeToken).
--define(StatsToken                 , ?CompactStatsToken).
--define(StreamToken                , ?CompactStreamToken).
--define(SubtractToken              , ?CompactSubtractToken).
--define(SynchISDNToken             , ?CompactSynchISDNToken).
--define(TerminationStateToken      , ?CompactTerminationStateToken).
--define(TestToken                  , ?CompactTestToken).
--define(TimeOutToken               , ?CompactTimeOutToken).
--define(TopologyToken              , ?CompactTopologyToken).
--define(TransToken                 , ?CompactTransToken).
--define(V18Token                   , ?CompactV18Token).
--define(V22Token                   , ?CompactV22Token).
--define(V22bisToken                , ?CompactV22bisToken).
--define(V32Token                   , ?CompactV32Token).
--define(V32bisToken                , ?CompactV32bisToken).
--define(V34Token                   , ?CompactV34Token).
--define(V76Token                   , ?CompactV76Token).
--define(V90Token                   , ?CompactV90Token).
--define(V91Token                   , ?CompactV91Token).
--define(VersionToken               , ?CompactVersionToken).
 
 %%----------------------------------------------------------------------
-%% Include the generator code
+%% Convert a list of ActionRequest record's into a binary
+%% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
+encode_action_requests(EC, 1, ActReqs) when list(ActReqs) ->
+    megaco_compact_text_encoder_v1:encode_action_requests(EC, ActReqs);
+encode_action_requests(EC, 2, ActReqs) when list(ActReqs) ->
+    megaco_compact_text_encoder_v2:encode_action_requests(EC, ActReqs).
 
--include("megaco_text_gen.hrl").
 
+%%----------------------------------------------------------------------
+%% Convert a ActionRequest record into a binary
+%% Return {ok, DeepIoList} | {error, Reason}
+%%----------------------------------------------------------------------
+encode_action_request(EC, 1, ActReq) ->
+    megaco_compact_text_encoder_v1:encode_action_request(EC, ActReq);
+encode_action_request(EC, 2, ActReq) ->
+    megaco_compact_text_encoder_v2:encode_action_request(EC, ActReq).
+
+
+%%----------------------------------------------------------------------
+%% Convert a CommandRequest record into a deep io list
+%% Return {ok, DeepIoList} | {error, Reason}
+%%----------------------------------------------------------------------
+encode_command_request(EC, 1, CmdReq) ->
+    megaco_compact_text_encoder_v1:encode_command_request(EC, CmdReq);
+encode_command_request(EC, 2, CmdReq) ->
+    megaco_compact_text_encoder_v2:encode_command_request(EC, CmdReq).
+
+
+%%----------------------------------------------------------------------
+%% Convert a action reply into a deep io list
+%% Return {ok, DeepIoList} | {error, Reason}
+%%----------------------------------------------------------------------
+encode_action_reply(EC, 1, ActRep) ->
+    megaco_compact_text_encoder_v1:encode_action_reply(EC, ActRep);
+encode_action_reply(EC, 2, ActRep) ->
+    megaco_compact_text_encoder_v2:encode_action_reply(EC, ActRep).
+
+
+% d(F) ->
+%     d(F, []).
+
+% d(F, A) ->
+%     d(true, F, A).
+
+% d(true, F, A) ->
+%     io:format("~p:" ++ F ++ "~n", [?MODULE|A]);
+% d(_, _, _) ->
+%     ok.

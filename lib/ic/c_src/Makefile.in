@@ -65,15 +65,24 @@ IDL_FILES = \
 
 ifeq ($(findstring win32,$(TARGET)),win32)
 LIBRARY = $(LIBDIR)/ic.lib
-AR_OUT="-out:"
-CC += " -MT"
+AR_OUT = -out:
+CC_FLAGS = -MT
+ifeq ($(HOST_OS),)
+HOST_OS := $(shell $(ERL_TOP)/erts/autoconf/config.guess)
+endif
+ifeq ($(findstring solaris,$(HOST_OS)),solaris)
+SKIP_BUILDING_BINARIES := true
+endif
 else
-AR_OUT=rcv
+AR_OUT = rcv
+CC_FLAGS =
 LIBRARY = $(LIBDIR)/libic.a
+SKIP_BUILDING_BINARIES := false
 endif
 
 C_FILES = \
 	ic.c \
+	ic_tmo.c \
 	oe_ei_encode_version.c      \
 	oe_ei_encode_long.c         \
 	oe_ei_encode_ulong.c        \
@@ -107,7 +116,11 @@ ALL_CFLAGS = @CFLAGS@ @DEFS@ -I$(INCDIR) $(ERL_INTERFACE_FLAGS) $(CFLAGS)
 # Targets
 # ----------------------------------------------------
 
+ifeq ($(SKIP_BUILDING_BINARIES), true)
+debug opt:
+else
 debug opt: $(LIBRARY)
+endif
 
 clean:
 	rm -f $(LIBRARY) $(OBJ_FILES) 
@@ -130,7 +143,7 @@ $(LIBRARY): $(OBJDIR) $(LIBDIR) $(OBJ_FILES)
 	-$(RANLIB) $@
 
 $(OBJDIR)/%.o: %.c
-	$(CC) -c -o $@ $(ALL_CFLAGS) $<
+	$(CC) $(CC_FLAGS) -c -o $@ $(ALL_CFLAGS) $<
 
 # ----------------------------------------------------
 # Release Target
@@ -141,6 +154,7 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/c_src
 	$(INSTALL_DIR) $(RELSYSDIR)/include
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/lib
+	$(INSTALL_DATA) ic.c ic_tmo.c $(RELSYSDIR)/c_src
 	$(INSTALL_DATA) $(IDL_FILES) $(H_FILES) $(RELSYSDIR)/include
 	$(INSTALL_DATA) $(LIBRARY) $(RELSYSDIR)/priv/lib
 

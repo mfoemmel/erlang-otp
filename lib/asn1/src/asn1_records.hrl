@@ -21,6 +21,9 @@
 %% change to this when we have this module -define('RT_PER_BIN',"asn1rt_per_bin").
 -define('RT_PER_BIN',"asn1rt_per_bin").
 
+ %% comment this def in later releases than r7b
+%-define(asn1_r7b_enable_driver,true).
+
 -record(module,{pos,name,defid,tagdefault='EXPLICIT',exports={exports,[]},imports={imports,[]}, extensiondefault=empty,typeorval}).
 
 -record('SEQUENCE',{pname=false,tablecinf=false,components=[]}).
@@ -68,9 +71,10 @@
 -record('Externalvaluereference',{pos,module,value}).
 
 -record(state,{module,mname,type,tname,value,vname,erule,parameters=[],
-	       inputmodules,abscomppath=[],recordtopname=[],options}).
+	       inputmodules,abscomppath=[],recordtopname=[],options,
+	       sourcedir}).
 
-%% state record used by backend at partial decode
+%% state record used by back-end at partial decode
 %% active is set to 'yes' when a partial decode function is generated.
 %% prefix is set to 'dec-inc-' or 'dec-partial-' is for
 %% incomplete partial decode or partial decode respectively
@@ -87,10 +91,18 @@
 %% that are referenced within other generated partial incomplete
 %% decode functions. They shall be generated as partial incomplete
 %% decode functions.
-
-%% gen_refed_funcs is as list of function names. Unlike
-%% tobe_refed_funcs these have been generated.
+%% gen_refed_funcs is as list of tuples with function names,type etc
+%% that have been generated. It is to prevent duplicates of referenced
+%% functions, and to generate the correct decode_inc_disp functions.
+%% suffix_index is a number that is used as a suffix to make function
+%% names unique. It is increased for each additional step into a
+%% constructed type in an exclusive decode.
+%% current_suffix_index is the index of the top type that is generated
+%% at the moment. It may be the same as the current suffix_index or an
+%% earlier value of it.
 -record(gen_state,{active=false,prefix,inc_tag_pattern,
 		  tag_pattern,inc_type_pattern,
 		  type_pattern,func_name,namelist,
-		  tobe_refed_funcs=[],gen_refed_funcs=[]}).
+		  tobe_refed_funcs=[],gen_refed_funcs=[],
+		  generated_functions=[],suffix_index=1,
+		  current_suffix_index}).

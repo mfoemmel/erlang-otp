@@ -43,7 +43,8 @@ IDL_FILES = \
 GEN_ERL_MODULES =  \
 	oe_stack \
 	StackModule_Stack \
-	StackModule_StackFactory 
+	StackModule_StackFactory \
+	StackModule_EmptyStack
 
 MODULES= \
 	StackModule_Stack_impl \
@@ -71,14 +72,7 @@ TARGET_FILES = \
 	$(GEN_ERL_MODULES:%=$(EBIN)/%.$(EMULATOR)) \
 	$(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
-TIME_TEST_JAVA_FILES = \
-	StackTimeClient.java
-
-TIME_TEST_MODULES = \
-	stack_time_client \
-	stack_time_genclient
-
-TEST_TARGET_FILES = $(TIME_TEST_MODULES:%=$(EBIN)/%.$(EMULATOR))
+TEST_TARGET_FILES = 
 
 CPP_FILES = StackClient.cc
 
@@ -89,7 +83,6 @@ ERL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin -pa $(ERL_TOP)/lib/ic/ebin
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += -pa $(ERL_TOP)/lib/orber -I$(ERL_TOP)/lib/orber
-YRL_FLAGS = 
 
 JAVA_OPTIONS = -classpath ../../priv:/opt/local/pgm/OrbixWeb3.2/
 

@@ -584,12 +584,31 @@ report_error(_Handler, normal, _, _, _)               -> ok;
 report_error(_Handler, shutdown, _, _, _)             -> ok;
 report_error(_Handler, {swapped,_,_}, _, _, _)        -> ok;
 report_error(Handler, Reason, State, LastIn, SName)   ->
+    Reason1 = 
+	case Reason of
+	    {'EXIT',{undef,[{M,F,A}|MFAs]}} ->
+		case code:is_loaded(M) of
+		    false ->
+			{'module could not be loaded',[{M,F,A}|MFAs]};
+		    _ ->
+			case erlang:function_exported(M, F, length(A)) of
+			    true ->
+				{undef,[{M,F,A}|MFAs]};
+			    false ->
+				{'function not exported',[{M,F,A}|MFAs]}
+			end
+		end;
+	    {'EXIT',Why} -> 
+		Why;
+	    _ ->            
+		Reason
+	end,
     error_msg("** gen_event handler ~p crashed.~n"
 	      "** Was installed in ~p~n"
 	      "** Last event was: ~p~n"
 	      "** When handler state == ~p~n"
 	      "** Reason == ~p~n",
-	      [handler(Handler),SName,LastIn,State,Reason]).
+	      [handler(Handler),SName,LastIn,State,Reason1]).
 
 handler(Handler) when Handler#handler.id == false ->
     Handler#handler.module;

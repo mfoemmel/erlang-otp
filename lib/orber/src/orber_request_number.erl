@@ -18,7 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: orber_request_number.erl
-%% Author: Lars Thorsen
 %% 
 %% Description:
 %%    This file contains the request number server in Orber
@@ -58,17 +57,17 @@ reset() ->
 %%-----------------------------------------------------------------
 %% Server functions
 %%-----------------------------------------------------------------
-init(Opts) ->
+init(_Opts) ->
     {ok, 0}.
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
 	    ok.
 %% Max is ulong 0 .. 2^32-1
-handle_call(get, From, State) when State < ?ULONGMAX ->
+handle_call(get, _From, State) when State < ?ULONGMAX ->
     {reply, State, State+1};
-handle_call(get, From, State) ->
+handle_call(get, _From, _State) ->
     {reply, ?ULONGMAX, 0};
-handle_call(reset, From, State) ->
+handle_call(reset, _From, _State) ->
     {reply, ok, 0}.
 
 handle_cast(_, State) ->
@@ -77,7 +76,7 @@ handle_cast(_, State) ->
 handle_info(_, State) ->
     {noreply,  State}.
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 

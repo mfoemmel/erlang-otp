@@ -62,7 +62,7 @@ set_config_flags ()
 		CONFIG_FLAGS="--build=$BUILDSYS --host=win32 --target=win32" 
 	fi
 	if target_contains solaris; then 
-		CONFIG_FLAGS="--enable-threads"
+		CONFIG_FLAGS="--enable-threads --enable-kernel-poll"
 	elif target_contains linux; then 
 		CONFIG_FLAGS="--enable-threads"
 	fi
@@ -79,6 +79,8 @@ set_config_flags ()
 	
 do_autoconf ()		
 {
+	save_ot="$OVERRIDE_TARGET"
+	save_t="$TARGET"
 	if [ ! -z "$OVERRIDE_CONFIGURE" ]; then
 	    echo "Autoconf disabled on target $TARGET, but is performed on host" >&2
 	    OVERRIDE_TARGET=
@@ -117,6 +119,9 @@ do_autoconf ()
 			    || exit 1
 		fi
 	done
+	OVERRIDE_TARGET="$save_ot"
+	export OVERRIDE_TARGET
+	TARGET="$save_t"
 }
 
 mk_targetdir ()
@@ -135,6 +140,8 @@ do_configure ()
 {
     setup_make
     mk_targetdir
+    save_ot="$OVERRIDE_TARGET"
+    save_t="$TARGET"
     if [ ! -z "$OVERRIDE_CONFIGURE" ]; then
 	case $TARGET in
 	    vxworks_*)
@@ -169,6 +176,9 @@ do_configure ()
 	echo "erts/configure --cache-file=$ERL_TOP/$TARGET/config.cache $CONFIG_FLAGS"
 	(cd $ERL_TOP/erts; ./configure --cache-file=$ERL_TOP/$TARGET/config.cache $CONFIG_FLAGS) || exit 1
     fi
+    OVERRIDE_TARGET="$save_ot"
+    export OVERRIDE_TARGET
+    TARGET="$save_t"
 }
 
 echo_setenv ()
@@ -199,6 +209,13 @@ echo_env_erltop ()
 
 echo_envinfo ()
 {
+    case "$SHELL" in
+	*csh)
+	    return 0
+	    ;;
+	*)
+	    ;;
+    esac
     if [ X"$DAILY_BUILD_SCRIPT" = X"true" ]; then
 	echo '# Output generated for daily build script only '\
 	     '($DAILY_BUILD_SCRIPT=true)'
@@ -309,7 +326,9 @@ setup_make ()
 	    win32)
 		MAKE=make;;
 	    *)
-		if [ "X$CLEARCASE_MAKE_COMPAT" = "Xgnu" ]; then
+		if [ "X$CLEARCASE_MAKE_COMPAT" = "Xgnu" -a \
+		     X"$CLEARCASE_ROOT" != X"" -a \
+		    -n "`lookup_prog_in_path clearmake`"  ]; then
 		    MAKE="clearmake -V"
 		else 
 		    if [ -n "`lookup_prog_in_path gmake`" ]; then
@@ -332,11 +351,16 @@ do_noboot_lib_and_erts ()
 
 do_primary_cross ()
 {
+    save_t="$TARGET"
+    save_ot="$OVERRIDE_TARGET"
     OVERRIDE_TARGET=
     export OVERRIDE_TARGET
     TARGET=`$ERL_TOP/erts/autoconf/config.guess`
     $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET primary_bootstrap || exit 1;
     $MAKE MAKE="$MAKE" BOOTSTRAP_ROOT=$BOOTSTRAP_ROOT TARGET=$TARGET all_bootstraps || exit 1
+    OVERRIDE_TARGET="$save_ot"
+    export OVERRIDE_TARGET
+    TARGET="$save_t"
 }
 
 do_primary ()

@@ -37,14 +37,13 @@
 
 #include "eidef.h"
 #include "eiext.h"
-#include "eicode.h"		/* FIXME protos for ei_alloc/free_big() */
 #include "ei_printterm.h"
 #include "ei_malloc.h"
 
 #define BINPRINTSIZE 30
 
 /*
- * PRINT out a binary term (hacked from erl_print_term)
+ * PRINT out a binary term (hacked from 'erl'_print_term)
  */
 
 static int print_string(FILE* fp, ei_x_buff* x, char* s);
@@ -84,7 +83,7 @@ static int xprintf(FILE* fp, ei_x_buff* x, const char* fmt, ...)
     return r;
 }
 
-static char *erl_big_to_str(erlang_big *b)
+static char *ei_big_to_str(erlang_big *b)
 {
     int buf_len;
     char *s,*buf;
@@ -244,7 +243,7 @@ static int print_term(FILE* fp, ei_x_buff* x,
                 goto err;
             }
             
-            if ( (ds = erl_big_to_str(b)) == NULL ) {
+            if ( (ds = ei_big_to_str(b)) == NULL ) {
                 ei_free_big(b);
                 goto err;
             }

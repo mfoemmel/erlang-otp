@@ -96,9 +96,9 @@
 %% Callbacks
 -define(get_Callback(S,I),      find_obj(lists:keysearch(I, 1, S#state.callbacks),
 					 callback)).
--define(get_AllCallback(S),     lists:map(fun({V, C}) -> C end, 
+-define(get_AllCallback(S),     lists:map(fun({_V, C}) -> C end, 
 					  S#state.callbacks)).
--define(get_AllCallbackID(S),   lists:map(fun({V, C}) -> V end, 
+-define(get_AllCallbackID(S),   lists:map(fun({V, _C}) -> V end, 
 					  S#state.callbacks)).
 %% ID:s
 -define(get_IdCounter(S),       S#state.idCounter).
@@ -106,7 +106,7 @@
 %% Constraints
 -define(get_Constraint(S,I),    find_obj(lists:keysearch(I, 1, S#state.constraints),
 					 constraint)).
--define(get_AllConstraints(S),  lists:map(fun({I, C, W, WC, K, T}) -> 
+-define(get_AllConstraints(S),  lists:map(fun({I, C, _W, _WC, _K, T}) -> 
 						  ?create_ConstraintInfo(T, C, I) 
 					  end, 
 					  S#state.constraints)).
@@ -163,13 +163,13 @@
 %% Effect   : Functions demanded by the gen_server module. 
 %%------------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 handle_info(Info, State) ->
     ?debug_print("INFO: ~p  DATA: ~p~n", [State, Info]),
     case Info of
-        {'EXIT', Pid, Reason} ->
+        {'EXIT', _Pid, _Reason} ->
             {noreply, State};
         _ ->
             {noreply, State}
@@ -184,7 +184,7 @@ init([FiFac, FacPid, ConstraintGr]) ->
     process_flag(trap_exit, true),
     {ok, ?get_InitState(FiFac, FacPid, ConstraintGr)}.
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------
@@ -195,7 +195,7 @@ terminate(Reason, State) ->
 %% Type     : readonly
 %% Returns  : Grammar - string() 
 %%-----------------------------------------------------------
-'_get_constraint_grammar'(OE_THIS, State) ->
+'_get_constraint_grammar'(_OE_THIS, State) ->
     {reply, ?get_Grammar(State), State}.
 
 %%-----------------------------------------------------------
@@ -207,7 +207,7 @@ terminate(Reason, State) ->
 %% Returns  : CosNotifyFilter::ConstraintInfoSeq |
 %%            {'EXCEPTION', CosNotifyFilter::InvalidConstraint}
 %%-----------------------------------------------------------
-add_constraints(OE_THIS, State, CL) ->
+add_constraints(_OE_THIS, State, CL) ->
     {NewState, Filters, Info, EventTSeq} = try_create_filters(State, CL),
     NewState2=store_filters(NewState, Filters),
     inform_callbacks(?get_AllCallback(NewState2), EventTSeq, []),
@@ -231,11 +231,11 @@ add_constraints(OE_THIS, State, CL) ->
 %% filter object."
 %% 
 %% Hence, first we must check if all ID's exists before deleting.
-modify_constraints(OE_THIS, State, IDs, AddConstraintInfoSeq) ->
+modify_constraints(_OE_THIS, State, IDs, AddConstraintInfoSeq) ->
     %% The following functions are 'safe', i.e., they do not alter any data.
     RemoveConstraintInfoSeq = lookup_constraints(IDs, State),
     lookup_constraints(AddConstraintInfoSeq, State),
-    {NewState, Filters, Info, AddedEventTSeq} = 
+    {NewState, Filters, _Info, AddedEventTSeq} = 
 	try_create_filters(State, AddConstraintInfoSeq),
     RemovedEventTSeq = ?InfoSeq2EventTypeSeq(RemoveConstraintInfoSeq),
 
@@ -267,7 +267,7 @@ modify_constraints(OE_THIS, State, IDs, AddConstraintInfoSeq) ->
 %% Returns  : CosNotifyFilter::ConstraintInfoSeq |
 %%            {'EXCEPTION', CosNotifyFilter::ConstraintNotFound}
 %%-----------------------------------------------------------
-get_constraints(OE_THIS, State, IDs) ->
+get_constraints(_OE_THIS, State, IDs) ->
     {reply, lookup_constraints(IDs, State), State}.
 
 %%----------------------------------------------------------%
@@ -275,7 +275,7 @@ get_constraints(OE_THIS, State, IDs) ->
 %% Arguments: -
 %% Returns  : CosNotifyFilter::ConstraintInfoSeq
 %%-----------------------------------------------------------
-get_all_constraints(OE_THIS, State) ->
+get_all_constraints(_OE_THIS, State) ->
     {reply, ?get_AllConstraints(State), State}.
 
 %%----------------------------------------------------------%
@@ -283,7 +283,7 @@ get_all_constraints(OE_THIS, State) ->
 %% Arguments: -
 %% Returns  : ok
 %%-----------------------------------------------------------
-remove_all_constraints(OE_THIS, State) ->
+remove_all_constraints(_OE_THIS, State) ->
     {reply, ok, ?del_AllConstraints(State)}.
 
 %%----------------------------------------------------------%
@@ -291,7 +291,7 @@ remove_all_constraints(OE_THIS, State) ->
 %% Arguments: -
 %% Returns  : ok
 %%-----------------------------------------------------------
-destroy(OE_THIS, State) ->
+destroy(_OE_THIS, State) ->
     {stop, normal, ok, State}.
 
 %%----------------------------------------------------------%
@@ -301,13 +301,13 @@ destroy(OE_THIS, State) ->
 %%            {'EXCEPTION', CosNotifyFilter::UnsupportedFilterableData}
 %%-----------------------------------------------------------
 
-match(OE_THIS, State, Event) when record(Event,'any'), ?is_EmptyFilter(State) ->
+match(_OE_THIS, State, Event) when record(Event,'any'), ?is_EmptyFilter(State) ->
     {reply, true, State};
-match(OE_THIS, State, Event) when record(Event,'any') ->
+match(_OE_THIS, State, Event) when record(Event,'any') ->
     match_any_event(State, Event, ?get_ConstraintAllData(State));
 match(_,_,What) ->
-    orber:debug_level_print("[~p] CosNotifyFilter_Filter:match(~p);
-Not an CORBA::Any", [?LINE, What], ?DEBUG_LEVEL),
+    orber:dbg("[~p] CosNotifyFilter_Filter:match(~p);~n"
+	      "Not an CORBA::Any", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
@@ -316,15 +316,15 @@ Not an CORBA::Any", [?LINE, What], ?DEBUG_LEVEL),
 %% Returns  : boolean() | 
 %%            {'EXCEPTION', CosNotifyFilter::UnsupportedFilterableData}
 %%-----------------------------------------------------------
-match_structured(OE_THIS, State, Event) when 
+match_structured(_OE_THIS, State, Event) when 
   record(Event,'CosNotification_StructuredEvent'), ?is_EmptyFilter(State) ->
     {reply, true, State};
-match_structured(OE_THIS, State, Event) when 
+match_structured(_OE_THIS, State, Event) when 
   record(Event,'CosNotification_StructuredEvent') ->
     match_str_event(State, Event, ?get_ConstraintAllData(State));
 match_structured(_,_,What) ->
-    orber:debug_level_print("[~p] CosNotifyFilter_Filter:match_structured(~p);
-Not a StructuredEvent", [?LINE, What], ?DEBUG_LEVEL),
+    orber:dbg("[~p] CosNotifyFilter_Filter:match_structured(~p);~n"
+	      "Not a StructuredEvent", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------*
@@ -333,7 +333,7 @@ Not a StructuredEvent", [?LINE, What], ?DEBUG_LEVEL),
 %% Returns  : boolean() | 
 %%            {'EXCEPTION', CosNotifyFilter::UnsupportedFilterableData}
 %%-----------------------------------------------------------
-match_typed(OE_THIS, State, Data) ->
+match_typed(_OE_THIS, _State, _Data) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
@@ -341,7 +341,7 @@ match_typed(OE_THIS, State, Data) ->
 %% Arguments: CB - CosNotifyComm::NotifySubscribe
 %% Returns  : ID - CosNotifyFilter::CallbackID
 %%-----------------------------------------------------------
-attach_callback(OE_THIS, State, CB) ->
+attach_callback(_OE_THIS, State, CB) ->
     'CosNotification_Common':type_check(CB, 'CosNotifyComm_NotifySubscribe'),
     CBID = ?new_Id(State),
     {reply, CBID, ?add_Callback(State, CBID, CB)}.
@@ -351,11 +351,11 @@ attach_callback(OE_THIS, State, CB) ->
 %% Arguments: ID - CosNotifyFilter::CallbackID
 %% Returns  : ok | {'EXCEPTION', CosNotifyFilter::CallbackNotFound}
 %%-----------------------------------------------------------
-detach_callback(OE_THIS, State, ID) when integer(ID) ->
+detach_callback(_OE_THIS, State, ID) when integer(ID) ->
     {reply, ok, ?del_Callback(State, ID)};
 detach_callback(_,_,What) ->
-    orber:debug_level_print("[~p] CosNotifyFilter_Filter:detach_callback(~p);
-Not an integer", [?LINE, What], ?DEBUG_LEVEL),
+    orber:dbg("[~p] CosNotifyFilter_Filter:detach_callback(~p);~n"
+	      "Not an integer", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------%
@@ -363,7 +363,7 @@ Not an integer", [?LINE, What], ?DEBUG_LEVEL),
 %% Arguments: -
 %% Returns  : CosNotifyFilter::CallbackIDSeq
 %%-----------------------------------------------------------
-get_callbacks(OE_THIS, State) ->
+get_callbacks(_OE_THIS, State) ->
     {reply, ?get_AllCallbackID(State), State}.
 
 %%--------------- LOCAL FUNCTIONS ----------------------------
@@ -386,7 +386,7 @@ match_delete(State, Constraints, ID) ->
     match_delete(State, Constraints, ID, []).
 match_delete(_, [], _, _) ->
     error;
-match_delete(State, [{ID, Con, Which, WC, Key, Types}|T], ID, Acc) ->
+match_delete(State, [{ID, _Con, _Which, _WC, Key, _Types}|T], ID, Acc) ->
     ?del_Type(State, ID),
     ?del_ParseTree(State, Key),
     {ok, ?set_Constraints(State, Acc++T)};
@@ -403,7 +403,7 @@ clear_DB(State) ->
 %% !!!!!! This function may not alter any data in DB in any way !!!!!!!!!!
 lookup_constraints(IDs, State) ->
     lookup_constraints(IDs, State, []).
-lookup_constraints([], State, Accum) ->
+lookup_constraints([], _State, Accum) ->
     Accum;
 lookup_constraints([H|T], State, Accum) 
   when record(H, 'CosNotifyFilter_ConstraintInfo') ->
@@ -411,7 +411,7 @@ lookup_constraints([H|T], State, Accum)
 	error ->
 	    corba:raise(#'CosNotifyFilter_ConstraintNotFound'
 			{id = H#'CosNotifyFilter_ConstraintInfo'.constraint_id});
-	Con ->
+	_Con ->
 	    %% We don't need to collect the result since the input already is of
 	    %% the correct type, i.e., ConstraintInfoSeq
 	    lookup_constraints(T, State, Accum)
@@ -438,9 +438,10 @@ delete_constraints([H|T], State)
 	{ok, NewState} ->
 	    delete_constraints(T, NewState);
 	Reason ->
-	    orber:debug_level_print("[~p] 'CosNotifyFilter_Filter':modify_constraints().
-Unable to remove: ~p
-Reason: ~p~n", [?LINE, H, Reason], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] 'CosNotifyFilter_Filter':modify_constraints().~n"
+		      "Unable to remove: ~p~n"
+		      "Reason: ~p~n", 
+		      [?LINE, H, Reason], ?DEBUG_LEVEL),
 	    delete_constraints(T, State)
     end;
 delete_constraints([H|T], State) ->
@@ -448,9 +449,10 @@ delete_constraints([H|T], State) ->
 	{ok, NewState} ->
 	    delete_constraints(T, NewState);
 	Reason ->
-	    orber:debug_level_print("[~p] 'CosNotifyFilter_Filter':modify_constraints().
-Unable to remove: ~p
-Reason: ~p~n", [?LINE, H, Reason], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] 'CosNotifyFilter_Filter':modify_constraints().~n"
+		      "Unable to remove: ~p~n"
+		      "Reason: ~p~n", 
+		      [?LINE, H, Reason], ?DEBUG_LEVEL),
 	    delete_constraints(T, State)
     end.
     
@@ -465,9 +467,10 @@ inform_callbacks([H|T], Added, Removed) ->
 			 [H, Added, Removed]),
 	    inform_callbacks(T, Added, Removed);
 	Other ->
-	    orber:debug_level_print("[~p] 'CosNotifyComm_NotifySubscribe':subscription_change().
-Unable to inform callback: ~p
-Reason: ~p~n", [?LINE, H, Other], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] 'CosNotifyComm_NotifySubscribe':subscription_change().~n"
+		      "Unable to inform callback: ~p~n"
+		      "Reason: ~p~n", 
+		      [?LINE, H, Other], ?DEBUG_LEVEL),
 	    inform_callbacks(T, Added, Removed)
     end.
 
@@ -561,7 +564,7 @@ store_filters(State, [{ID, Which, WC, Key, Types, Con, Tree}|T]) ->
     store_filters(?add_Constraint(State, ID, Con, Which, WC, Key, Types), T).
     
 
-write_types(State, [],_, _) ->
+write_types(_State, [],_, _) ->
     ok;
 write_types(State, [EventType|T], ID, Key) ->
     ?add_Type(State, ID, EventType, Key),
@@ -573,8 +576,8 @@ write_types(State, [EventType|T], ID, Key) ->
 %% Arguments: 
 %% Returns  : 
 %%-----------------------------------------------------------
-match_any_event(State, Event, []) ->
-    ?debug_print("FILTER REJECTED:  ~p~n", [Event]),
+match_any_event(State, _Event, []) ->
+    ?debug_print("FILTER REJECTED:  ~p~n", [_Event]),
     {reply, false, State};
 match_any_event(State, Event, [{_, _, _, _, Key, _}|T]) ->
     case catch cosNotification_Filter:eval(?get_ParseTree(State,Key), Event) of
@@ -592,10 +595,10 @@ match_any_event(State, Event, [{_, _, _, _, Key, _}|T]) ->
 %% Returns  : 
 %%-----------------------------------------------------------
 
-match_str_event(State, Event, []) ->
-    ?debug_print("FILTER REJECTED:  ~p~n", [Event]),
+match_str_event(State, _Event, []) ->
+    ?debug_print("FILTER REJECTED:  ~p~n", [_Event]),
     {reply, false, State};
-match_str_event(State, Event, [{ID, Con, Which, WC, Key, Types}|T]) ->
+match_str_event(State, Event, [{ID, _Con, Which, WC, Key, _Types}|T]) ->
     ET = ((Event#'CosNotification_StructuredEvent'.header)
 	  #'CosNotification_EventHeader'.fixed_header)
 	#'CosNotification_FixedEventHeader'.event_type,

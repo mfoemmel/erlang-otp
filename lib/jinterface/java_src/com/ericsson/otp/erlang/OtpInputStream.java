@@ -227,6 +227,33 @@ public class OtpInputStream extends ByteArrayInputStream {
   }
 
   /**
+   * Read a little endian integer from the stream.
+   *
+   * @param n the number of bytes to read
+   *
+   * @return the bytes read, converted from little endian to an
+   * integer.
+   * 
+   * @exception OtpErlangDecodeException if the next byte cannot be
+   * read.
+   **/
+  public long readLE(int n) 
+    throws OtpErlangDecodeException {
+    byte[] b = new byte[n];
+    try {
+      super.read(b);
+    }
+    catch (IOException e) {
+      throw new OtpErlangDecodeException("Cannot read from input stream");
+    }; 
+    long v = 0;
+    for (int i = n-1; i >= 0; i--) {
+	v = (v << 8) | ((long)b[i] & 0xff);
+    }
+    return v;
+  }
+
+  /**
    * Read an Erlang atom from the stream and interpret the value as a
    * boolean.
    *
@@ -407,13 +434,13 @@ public class OtpInputStream extends ByteArrayInputStream {
    **/
   public byte read_byte() 
     throws OtpErlangDecodeException {
-    long l = this.read_long();
+    long l = this.read_long(false);
     byte i = (byte) l;
-
+    
     if (l != i) {
-      throw new OtpErlangDecodeException("Value too large for byte: " + l);
+      throw new OtpErlangDecodeException("Value does not fit in byte: " + l);
     }
-
+    
     return i;
   }
 
@@ -426,15 +453,15 @@ public class OtpInputStream extends ByteArrayInputStream {
    * stream is not an integer that can be represented as a char.
    **/
   public char read_char() 
-    throws OtpErlangDecodeException {
-    long l = this.read_long();
-    char i = (char) l;
-
-    if (l != i) {
-      throw new OtpErlangDecodeException("Value too large for byte: " + l);
-    }
-
-    return i;
+      throws OtpErlangDecodeException {
+      long l = this.read_long(true);
+      char i = (char) l;
+      
+      if (l != ((long)i & 0xffffL)) {
+	  throw new OtpErlangDecodeException("Value does not fit in char: "+l);
+      }
+      
+      return i;
   }
 
   /**
@@ -446,18 +473,15 @@ public class OtpInputStream extends ByteArrayInputStream {
    * stream can not be represented as a positive integer.
    **/
   public int read_uint() 
-    throws OtpErlangDecodeException {
-    long l = this.read_long();
-    int i = (int) l;
-
-    if (l != i) {
-      throw new OtpErlangDecodeException("Value too large for integer: " + l);
-    }
-    else if (l < 0) {
-      throw new OtpErlangDecodeException("Value not unsigned: " + l);
-    }
-
-    return i;
+      throws OtpErlangDecodeException {
+      long l = this.read_long(true);
+      int i = (int) l;
+      
+      if (l != ((long)i & 0xFFFFffffL)) {
+	  throw new OtpErlangDecodeException("Value does not fit in uint: "+l);
+      }
+      
+      return i;
   }
 
   /**
@@ -469,15 +493,15 @@ public class OtpInputStream extends ByteArrayInputStream {
    * stream can not be represented as an integer.
    **/
   public int read_int() 
-    throws OtpErlangDecodeException {
-    long l = this.read_long();
-    int i = (int) l;
-
-    if (l != i) {
-      throw new OtpErlangDecodeException("Value too large for byte: " + l);
-    }
-
-    return i;
+      throws OtpErlangDecodeException {
+      long l = this.read_long(false);
+      int i = (int) l;
+      
+      if (l != i) {
+	  throw new OtpErlangDecodeException("Value does not fit in int: "+l);
+      }
+      
+      return i;
   }
 
   /**
@@ -490,16 +514,13 @@ public class OtpInputStream extends ByteArrayInputStream {
    **/
   public short read_ushort() 
     throws OtpErlangDecodeException {
-    long l = this.read_long();
+    long l = this.read_long(true);
     short i = (short) l;
-
-    if (l != i) {
-      throw new OtpErlangDecodeException("Value too large for byte: " + l);
+    
+    if (l != ((long)i & 0xffffL)) {
+      throw new OtpErlangDecodeException("Value does not fit in ushort: "+l);
     }
-    else if (l < 0) {
-      throw new OtpErlangDecodeException("Value not unsigned: " + l);
-    }
-
+    
     return i;
   }
 
@@ -512,15 +533,15 @@ public class OtpInputStream extends ByteArrayInputStream {
    * stream can not be represented as a short.
    **/
   public short read_short() 
-    throws OtpErlangDecodeException {
-    long l = this.read_long();
-    short i = (short) l;
-
-    if (l != i) {
-      throw new OtpErlangDecodeException("Value too large for byte: " + l);
-    }
-
-    return i;
+      throws OtpErlangDecodeException {
+      long l = this.read_long(false);
+      short i = (short) l;
+      
+      if (l != i) {
+	  throw new OtpErlangDecodeException("Value does not fit in short: "+l);
+      }
+      
+      return i;
   }
   
   /**
@@ -532,16 +553,10 @@ public class OtpInputStream extends ByteArrayInputStream {
    * stream can not be represented as a positive long.
    **/
   public long read_ulong() 
-    throws OtpErlangDecodeException {
-    long l = this.read_long();
-
-    if (l < 0) {
-      throw new OtpErlangDecodeException("Value not unsigned: " + l);
-    }
-    
-    return l;
+      throws OtpErlangDecodeException {
+      return this.read_long(true);
   }
-
+  
   /**
    * Read a long from the stream.
    *
@@ -551,48 +566,67 @@ public class OtpInputStream extends ByteArrayInputStream {
    * stream can not be represented as a long.
    **/
   public long read_long() 
-    throws OtpErlangDecodeException {
-    int tag;
-    int len;
-    int sign;
-    int arity;
-    long val;
-
-    tag = this.read1();
-    if (tag == OtpExternal.versionTag) {
-      tag = this.read1();
-    }
-
-    switch (tag) {
-    case OtpExternal.smallIntTag:
-      val = this.read1();
-      break;
+      throws OtpErlangDecodeException {
+      return this.read_long(false);
+  }
+    
+  public long read_long(boolean unsigned) 
+      throws OtpErlangDecodeException {
+      int tag;
+      int len;
+      int sign;
+      int arity;
+      long val;
       
-    case OtpExternal.intTag:
-      val = this.read4BE();
-      break;
-
-    case OtpExternal.smallBigTag:
-      arity = this.read1(); 
-
-      if (arity != 4) {
-	throw new OtpErlangDecodeException("Arity for smallBig must be 4, was " + arity);
+      tag = this.read1();
+      if (tag == OtpExternal.versionTag) {
+	  tag = this.read1();
       }
       
-      sign = this.read1();
-
-      // obs! little endian here
-      val = this.read4LE();
-      val = (sign == 0 ? val : -val); // should deal with overflow
-
-      break;
+      switch (tag) {
+      case OtpExternal.smallIntTag:
+	  val = this.read1() & 0xffL;
+	  break;
+	  
+      case OtpExternal.intTag:
+	  val = this.read4BE();
+	  if (unsigned && val < 0) {
+	      throw new OtpErlangDecodeException("Value not unsigned: " + val);
+	  }
+	  break;
+	  
+      case OtpExternal.smallBigTag:
+	  arity = this.read1(); 
+	  
+	  if (arity > 8) {
+	      throw new OtpErlangDecodeException
+		  ("Arity for smallBig may not be more than 8, was " + arity);
+	  }
+	  
+	  sign = this.read1();
+	  
+	  // obs! little endian here
+	  val = this.readLE(arity);
+	  if (unsigned) {
+	      if (sign != 0) {
+		  throw new OtpErlangDecodeException
+		      ("Value not unsigned, val "+val+" sign "+sign);
+	      }
+	  } else if (val == -val ? sign == 0 : val < 0) {
+	      throw new OtpErlangDecodeException
+		  ("Value of smallBig does not fit in long, val " + 
+		   val + " sign " + sign);
+	  } else if (sign != 0) {
+	      val = -val;
+	  }
+	  break;
+	  
+      case OtpExternal.largeBigTag:
+      default:
+	  throw new OtpErlangDecodeException("Not valid integer tag: " + tag);
+      }
       
-    case OtpExternal.largeBigTag:
-    default:
-      throw new OtpErlangDecodeException("Not valid integer tag: " + tag);
-    }
-
-    return val;
+      return val;
   }
 
   /**

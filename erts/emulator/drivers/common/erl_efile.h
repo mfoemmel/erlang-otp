@@ -146,6 +146,8 @@ int efile_pread(Efile_error* errInfo, int fd,
 		off_t offset, char* buf, size_t count, size_t* pBytesRead);
 int efile_readlink(Efile_error* errInfo, char *name, 
 		   char* buffer, size_t size);
+int efile_altname(Efile_error* errInfo, char *name, 
+		  char* buffer, size_t size);
 int efile_link(Efile_error* errInfo, char* old, char* new);
 int efile_symlink(Efile_error* errInfo, char* old, char* new);
 int efile_may_openfile(Efile_error* errInfo, char *name);

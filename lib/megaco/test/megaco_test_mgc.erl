@@ -24,10 +24,12 @@
 	 get_stats/2, reset_stats/1,
 	 user_info/1, user_info/2, conn_info/1, conn_info/2, 
 	 update_user_info/3, update_conn_info/3, 
+	 request_ignore/1, 
 	 request_discard/1, request_discard/2, 
-	 request_pending/1, request_pending/2, 
-	 request_handle/1, request_handle_sloppy/1, 
-	 ack_info/2, 
+	 request_pending/1, request_pending/2, request_pending_ignore/1, 
+	 request_handle/1, request_handle/2, 
+	 request_handle_sloppy/1, 
+	 ack_info/2, req_info/2, 
 	 verbosity/2]).
 -export([mgc/3]).
 
@@ -52,6 +54,9 @@
 -define(A5555, ["11111111", "11111111", "00000000"]).
 -define(A5556, ["11111111", "11111111", "11111111"]).
 
+-define(valid_actions, 
+	[ignore, pending, pending_ignore, discard_ack, handle_ack, handle_sloppy_ack]).
+
 -record(mgc, {parent      = undefined,
 	      tcp_sup     = undefined,
 	      udp_sup     = undefined,
@@ -59,13 +64,15 @@
 	      req_timeout = 0,
 	      mid         = undefined,
 	      ack_info    = undefined,
+	      req_info    = undefined,
 	      mg          = []}).
 
 
 %%% ------------------------------------------------------------------
 
 start(Node, Mid, ET, Verbosity) ->
-    start(Node, Mid, ET, [], Verbosity).
+    Conf = [{megaco_trace, false}],
+    start(Node, Mid, ET, Conf, Verbosity).
 
 start(Node, Mid, ET, Conf, Verbosity) ->
     d("start mgc[~p]: ~p", [Node, Mid]),
@@ -79,32 +86,44 @@ mk_recv_info(ET) ->
 
 mk_recv_info([], Acc) ->
     Acc;
-mk_recv_info([{text,tcp}|ET], Acc) ->
-    RI = [{encoding_module, megaco_pretty_text_encoder},
-	  {encoding_config, []},
-	  {transport_module, megaco_tcp},
-	  {port, 2944}],
+mk_recv_info([{Encoding, Transport}|ET], Acc) ->
+    {EMod, Port} = select_encoding(Encoding),
+    TMod         = select_transport(Transport),
+    RI = [{encoding_module,  EMod},
+	  {encoding_config,  []},
+	  {transport_module, TMod},
+	  {port,             Port}],
     mk_recv_info(ET, [RI|Acc]);
-mk_recv_info([{text,udp}|ET], Acc) ->
-    RI = [{encoding_module, megaco_pretty_text_encoder},
-	  {encoding_config, []},
-	  {transport_module, megaco_udp},
-	  {port, 2944}],
-    mk_recv_info(ET, [RI|Acc]);
-mk_recv_info([{binary,tcp}|ET], Acc) ->
-    RI = [{encoding_module, megaco_ber_bin_encoder},
-	  {encoding_config, []},
-	  {transport_module, megaco_tcp},
-	  {port, 2945}],
-    mk_recv_info(ET, [RI|Acc]);
-mk_recv_info([{binary,udp}|ET], Acc) ->
-    RI = [{encoding_module, megaco_ber_bin_encoder},
-	  {encoding_config, []},
-	  {transport_module, megaco_udp},
-	  {port, 2945}],
+mk_recv_info([{Encoding, EC, Transport}|ET], Acc) ->
+    {EMod, Port} = select_encoding(Encoding),
+    TMod         = select_transport(Transport),
+    RI = [{encoding_module,  EMod},
+	  {encoding_config,  EC},
+	  {transport_module, TMod},
+	  {port,             Port}],
     mk_recv_info(ET, [RI|Acc]);
 mk_recv_info([ET|_], _) ->
-    throw({error, {invaalid_encoding_transport, ET}}).
+    throw({error, {invalid_encoding_transport, ET}}).
+
+select_encoding(text) ->
+    {megaco_pretty_text_encoder, 2944};
+select_encoding(pretty_text) ->
+    {megaco_pretty_text_encoder, 2944};
+select_encoding(compact_text) ->
+    {megaco_compact_text_encoder, 2944};
+select_encoding(binary) ->
+    {megaco_ber_bin_encoder, 2945};
+select_encoding(erl_dist) ->
+    {megaco_erl_dist_encoder, 2946};
+select_encoding(Encoding) ->
+    throw({error, {invalid_encoding, Encoding}}).
+
+select_transport(tcp) ->
+    megaco_tcp;
+select_transport(udp) ->
+    megaco_udp;
+select_transport(Transport) ->
+    throw({error, {invalid_transport, Transport}}).
 
 
 await_started(Pid) ->
@@ -151,8 +170,17 @@ update_conn_info(Pid, Tag, Val) ->
 ack_info(Pid, InfoPid) ->
     Pid ! {ack_info, InfoPid, self()}.
 
+req_info(Pid, InfoPid) ->
+    Pid ! {req_info, InfoPid, self()}.
+
 verbosity(Pid, V) ->
     Pid ! {verbosity, V, self()}.
+
+request_ignore(Pid) ->
+    request_action(Pid, {ignore, infinity}).
+
+request_pending_ignore(Pid) ->
+    request_action(Pid, {pending_ignore, infinity}).
 
 request_discard(Pid) ->
     request_discard(Pid,0).
@@ -167,7 +195,10 @@ request_pending(Pid, To) ->
     request_action(Pid, {pending, To}).
 
 request_handle(Pid) ->
-    request_action(Pid, {handle_ack, 0}).
+    request_handle(Pid, 0).
+
+request_handle(Pid, To) ->
+    request_action(Pid, {handle_ack, To}).
 
 request_handle_sloppy(Pid) ->
     request_action(Pid, {handle_sloppy_ack, 0}).
@@ -226,10 +257,19 @@ init(Config) ->
     d("init -> start megaco"),
     application:start(megaco),
 
+    d("init -> possibly enable megaco trace"),
+    case lists:keysearch(megaco_trace, 1, Config) of
+	{value, {megaco_trace, true}} ->
+	    megaco:enable_trace(max, io);
+	_ ->
+	    ok
+    end,
+    Conf0 = lists:keydelete(megaco_trace,    1, Config),
+
     d("init -> start megaco user"),
-    Conf0 = lists:keydelete(local_mid,    1, Config),
-    Conf1 = lists:keydelete(receive_info, 1, Conf0),
-    ok = megaco:start_user(Mid, Conf1),
+    Conf1 = lists:keydelete(local_mid,    1, Conf0),
+    Conf2 = lists:keydelete(receive_info, 1, Conf1),
+    ok = megaco:start_user(Mid, Conf2),
 
     d("init -> update user info (user_mod)"),
     ok = megaco:update_user_info(Mid, user_mod,  ?MODULE),
@@ -301,16 +341,15 @@ loop(S) ->
 	%% 
 	{request_action, {Action, To}, Parent} when S#mgc.parent == Parent ->
 	    i("loop -> got new request_action: ~p:~w", [Action,To]),
-	    ValidActions = [pending,discard_ack,handle_ack,handle_sloppy_ack],
-	    {S1, Reply} = 
-		case lists:member(Action, ValidActions) of
-		    true when To >= 0; To == infinity ->
-			{S#mgc{req_action = Action, req_timeout = To}, 
-			 {ok, S#mgc.req_action}};
+	    {Reply, S1} = 
+		case lists:member(Action, ?valid_actions) of
+		    true when To >= 0 ->
+			{{ok, S#mgc.req_action}, 
+			 S#mgc{req_action = Action, req_timeout = To}};
 		    true ->
-			{S, {error, {invalid_action_timeout, To}}};
+			{{error, {invalid_action_timeout, To}}, S};
 		    false ->
-			{S, {error, {invalid_action, Action}}}
+			{{error, {invalid_action, Action}}, S}
 		end,
 	    server_reply(Parent, request_action_ack, Reply),
 	    loop(S1);
@@ -365,16 +404,20 @@ loop(S) ->
 	{request, Request, From} ->
 	    d("loop -> received megaco request from ~p:~n~p", 
 	      [From, Request]),
-	    %% Reply = handle_megaco_request(Request, Action, Timeout),
 	    {Reply, S1} = handle_megaco_request(Request, S),
 	    d("loop -> send request reply: ~n~p", [Reply]),
-	    From ! {reply, Reply, self()},
+	    reply(From, Reply),
 	    loop(S1);
 
 
 	{ack_info, To, Parent} when S#mgc.parent == Parent ->
 	    i("loop -> received request to inform about received ack's ", []),
 	    loop(S#mgc{ack_info = To});
+
+
+	{req_info, To, Parent} when S#mgc.parent == Parent ->
+	    i("loop -> received request to inform about received ack's ", []),
+	    loop(S#mgc{req_info = To});
 
 
 	{verbosity, V, Parent} when S#mgc.parent == Parent ->
@@ -450,7 +493,6 @@ parse_receive_info([], RH, ListenTo) ->
     ListenTo;
 parse_receive_info([RI|RIs], RH, ListenTo) ->
     d("parse_receive_info -> parse receive info"),
-    RH1 = parse_receive_info1(RI, RH),
     case (catch parse_receive_info1(RI, RH)) of
 	{error, Reason} ->
 	    i("failed parsing receive info: ~p~n~p", [RI, Reason]),
@@ -543,44 +585,89 @@ handle_megaco_request({handle_connect, CH, _PV}, #mgc{mg = MGs} = S) ->
 	false ->
 	    {ok, S#mgc{mg = [CH|MGs]}}
     end;
+
 handle_megaco_request({handle_disconnect, CH, _PV, R}, S) ->
-    megaco:cancel(CH, R), % Cancel the outstanding messages
+    d("handle_megaco_request(handle_disconnect) -> entry with"
+      "~n   CH: ~p"
+      "~n   R:  ~p", [CH, R]),
+    CancelRes = (catch megaco:cancel(CH, R)), % Cancel the outstanding messages
+    d("handle_megaco_request(handle_disconnect) -> megaco cancel result: ~p", [CancelRes]),
     MGs = lists:delete(CH, S#mgc.mg),
+    d("handle_megaco_request(handle_disconnect) -> MGs: ~p", [MGs]),
     {ok, S#mgc{mg = MGs}};
+
 handle_megaco_request({handle_syntax_error, _RH, _PV, _ED}, S) ->
     {reply, S};
+
 handle_megaco_request({handle_message_error, _CH, _PV, _ED}, S) ->
     {no_reply, S};
+
+handle_megaco_request({handle_trans_request, CH, PV, ARs}, 
+		      #mgc{req_info = P} = S) when pid(P) ->
+    d("handle_megaco_request(handle_trans_request,~p) -> entry", [P]),
+    P ! {req_received, self(), ARs},
+    do_handle_trans_request(CH, PV, ARs, S);
 handle_megaco_request({handle_trans_request, CH, PV, ARs}, S) ->
-    #mgc{req_action = Action, req_timeout = To} = S,
-    Reply = handle_act_requests(CH, PV, ARs, Action),
-    {{delay_reply, To, Reply}, S};
+    d("handle_megaco_request(handle_trans_request) -> entry"),
+    do_handle_trans_request(CH, PV, ARs, S);
+
 handle_megaco_request({handle_trans_long_request, CH, PV, RD}, S) ->
-    %% #mgc{req_timeout = To} = S,
-    Reply = handle_act_requests(CH, PV, RD, discard_ack),
-    %% {delay_reply, To, Reply};
+    d("handle_megaco_request(handle_long_trans_request) -> entry"),
+    Reply0 = handle_act_requests(CH, PV, RD, discard_ack),
+    Reply  = 
+	case S of
+	    #mgc{req_action = ignore, req_timeout = To} ->
+		d("handle_megaco_request(handle_long_trans_request) -> "
+		  "~n   To: ~p", [To]),
+		{delay_reply, To, Reply0};
+	    _ ->
+		d("handle_megaco_request(handle_long_trans_request) -> "
+		  "~n   S: ~p", [S]),
+		Reply0
+	end,
     {Reply, S};
+
 handle_megaco_request({handle_trans_reply, _CH, _PV, _AR, _RD}, S) ->
     {ok, S};
+
 handle_megaco_request({handle_trans_ack, CH, PV, AS, AD}, 
 		      #mgc{ack_info = P} = S) when pid(P) ->
     d("handle_megaco_request(handle_trans_ack,~p) -> entry when"
-      "~n    CH: ~p"
-      "~n    PV: ~p"
-      "~n    AS: ~p"
-      "~n    AD: ~p", [P, CH, PV, AS, AD]),
+      "~n   CH: ~p"
+      "~n   PV: ~p"
+      "~n   AS: ~p"
+      "~n   AD: ~p", [P, CH, PV, AS, AD]),
     P ! {ack_received, self(), AS},
     {ok, S};
+
 handle_megaco_request({handle_trans_ack, CH, PV, AS, AD}, S) ->
     d("handle_megaco_request(handle_trans_ack) -> entry with"
-      "~n    CH: ~p"
-      "~n    PV: ~p"
-      "~n    AS: ~p"
-      "~n    AD: ~p", [CH, PV, AS, AD]),
+      "~n   CH: ~p"
+      "~n   PV: ~p"
+      "~n   AS: ~p"
+      "~n   AD: ~p", [CH, PV, AS, AD]),
     {ok, S}.
 
+
+do_handle_trans_request(CH, PV, ARs, 
+			#mgc{req_action = Action, req_timeout = To} = S) ->
+    d("do_handle_megaco_request(handle_trans_request) -> entry with"
+      "~n   Action: ~p"
+      "~n   To:     ~p", [Action, To]),
+    case handle_act_requests(CH, PV, ARs, Action) of
+	{pending_ignore, ActReqs} ->
+	    {{pending, ActReqs}, S#mgc{req_action = ignore}};
+	Reply ->
+	    {{delay_reply, To, Reply}, S}
+    end.
+
+
+handle_act_requests(_CH, _PV, _ActReqs, ignore) ->
+    ignore;
 handle_act_requests(CH, PV, ActReqs, pending) ->
     {pending, ActReqs};
+handle_act_requests(CH, PV, ActReqs, pending_ignore) ->
+    {pending_ignore, ActReqs};
 handle_act_requests(CH, PV, ActReqs, handle_ack) ->
     Reply = (catch do_handle_act_requests(CH, PV, ActReqs, [])),
     {{handle_ack, ActReqs}, Reply};
@@ -757,18 +844,26 @@ request(Pid, Request) ->
 	{reply, {delay_reply, To, Reply}, Pid} ->
 	    sleep(To),
 	    Reply;
+	{reply, {exit, To, Reason}, Pid} ->
+	    sleep(To),
+	    exit(Reason);
 	{reply, Reply, Pid} ->
 	    Reply
     end.
 
 
+reply(To, Reply) ->
+    To ! {reply, Reply, self()}.
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 sleep(X) ->
+    d("sleep -> ~w", [X]),
     receive after X -> ok end.
 
 
-error_msg(F,A) -> error_logger:error_msg(F ++ "~n",A).
+error_msg(F,A) -> error_logger:error_msg("MGC: " ++ F ++ "~n",A).
 
 
 get_encoding_module(RI) ->

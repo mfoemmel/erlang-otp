@@ -75,7 +75,7 @@ loop(State) ->
 	    loop(State2);
 
 	%% From the dbg_ui_winman process (Debugger window manager)
-	{dbg_ui_winman, update_windows_menu, Data} ->
+	{dbg_ui_winman, update_windows_menu, _Data} ->
 	    loop(State);
 	{dbg_ui_winman, destroy} ->
 	    exit(normal)
@@ -83,7 +83,7 @@ loop(State) ->
 
 gui_cmd(ignore, State) ->
     State;
-gui_cmd(stopped, State) ->
+gui_cmd(stopped, _State) ->
     exit(normal);
 gui_cmd({edit, Value}, State) ->
     State#state.pid ! {dbg_ui_edit, State#state.prompt, Value},

@@ -98,6 +98,11 @@ else
 CFLAGS = @CFLAGS@ $(INCFLAGS)
 endif
 PROG_CFLAGS = @CFLAGS@ $(WARNFLAGS) $(INCFLAGS) $(TYPE_FLAGS) -Ilegacy
+
+ifeq ($(findstring vxworks,$(TARGET)),vxworks)
+PROG_CFLAGS += -nostartfiles -Wl,-r,-d
+endif
+
 THR_DEFS = @THR_DEFS@
 THR_LIBS = @THR_LIBS@
 
@@ -282,12 +287,22 @@ HEADERS = \
 	../include/erl_interface.h
 
 EISOURCES = \
+	$(CONNECTSRC) \
+	$(DECODESRC) \
+	$(ENCODESRC) \
+	$(EPMDSRC) \
+	$(MISCSRC) \
+	$(REGISTRYSRC)
+
+CONNECTSRC = \
 	connect/ei_connect.c \
 	connect/ei_resolve.c \
 	connect/eirecv.c \
 	connect/send.c \
 	connect/send_exit.c \
-	connect/send_reg.c \
+	connect/send_reg.c
+
+DECODESRC = \
 	decode/decode_atom.c \
 	decode/decode_big.c \
 	decode/decode_bignum.c \
@@ -299,7 +314,6 @@ EISOURCES = \
 	decode/decode_intlist.c \
 	decode/decode_list_header.c \
 	decode/decode_long.c \
-	decode/decode_longlong.c \
 	decode/decode_pid.c \
 	decode/decode_port.c \
 	decode/decode_ref.c \
@@ -308,8 +322,19 @@ EISOURCES = \
 	decode/decode_trace.c \
 	decode/decode_tuple_header.c \
 	decode/decode_ulong.c \
-	decode/decode_ulonglong.c \
 	decode/decode_version.c \
+	$(DECODESRC_LONGLONG)
+
+ifneq ($(findstring vxworks,$(TARGET)),vxworks)
+DECODESRC_LONGLONG = \
+	decode/decode_longlong.c \
+	decode/decode_ulonglong.c
+else
+DECODESRC_LONGLONG =
+endif
+
+
+ENCODESRC = \
 	encode/encode_atom.c \
 	encode/encode_bignum.c \
 	encode/encode_binary.c \
@@ -319,7 +344,6 @@ EISOURCES = \
 	encode/encode_fun.c \
 	encode/encode_list_header.c \
 	encode/encode_long.c \
-	encode/encode_longlong.c \
 	encode/encode_pid.c \
 	encode/encode_port.c \
 	encode/encode_ref.c \
@@ -327,11 +351,24 @@ EISOURCES = \
 	encode/encode_trace.c \
 	encode/encode_tuple_header.c \
 	encode/encode_ulong.c \
-	encode/encode_ulonglong.c \
 	encode/encode_version.c \
+	$(ENCODESRC_LONGLONG)
+
+ifneq ($(findstring vxworks,$(TARGET)),vxworks)
+ENCODESRC_LONGLONG = \
+	encode/encode_longlong.c \
+	encode/encode_ulonglong.c
+else
+ENCODESRC_LONGLONG =
+endif
+
+
+EPMDSRC = \
 	epmd/epmd_port.c \
 	epmd/epmd_publish.c \
-	epmd/epmd_unpublish.c \
+	epmd/epmd_unpublish.c
+
+MISCSRC = \
 	misc/ei_decode_term.c \
 	misc/ei_format.c \
 	misc/ei_locking.c \
@@ -343,7 +380,9 @@ EISOURCES = \
 	misc/ei_x_encode.c \
 	misc/eimd5.c \
 	misc/get_type.c \
-	misc/show_msg.c \
+	misc/show_msg.c
+
+REGISTRYSRC = \
 	registry/hash_dohash.c \
 	registry/hash_foreach.c \
 	registry/hash_freetab.c \
@@ -387,6 +426,7 @@ ERLSOURCES = \
 	legacy/erl_format.c \
 	legacy/erl_malloc.c \
 	legacy/erl_marshal.c \
+	legacy/erl_resolve.c \
 	legacy/erl_timeout.c \
 	legacy/global_names.c \
 	legacy/global_register.c \
@@ -396,47 +436,8 @@ ERLSOURCES = \
 SOURCES = $(EISOURCES) $(ERLSOURCES)
 
 OSE_EISOURCES =  \
-	decode/decode_atom.c \
-	decode/decode_big.c \
-	decode/decode_bignum.c \
-	decode/decode_binary.c \
-	decode/decode_boolean.c \
-	decode/decode_char.c \
-	decode/decode_double.c \
-	decode/decode_fun.c \
-	decode/decode_intlist.c \
-	decode/decode_list_header.c \
-	decode/decode_long.c \
-	decode/decode_longlong.c \
-	decode/decode_pid.c \
-	decode/decode_port.c \
-	decode/decode_ref.c \
-	decode/decode_skip.c \
-	decode/decode_string.c \
-	decode/decode_trace.c \
-	decode/decode_tuple_header.c \
-	decode/decode_ulong.c \
-	decode/decode_ulonglong.c \
-	decode/decode_version.c \
-	encode/encode_atom.c \
-	encode/encode_bignum.c \
-	encode/encode_binary.c \
-	encode/encode_boolean.c \
-	encode/encode_char.c \
-	encode/encode_double.c \
-	encode/encode_fun.c \
-	encode/encode_list_header.c \
-	encode/encode_long.c \
-	encode/encode_longlong.c \
-	encode/encode_pid.c \
-	encode/encode_port.c \
-	encode/encode_ref.c \
-	encode/encode_string.c \
-	encode/encode_trace.c \
-	encode/encode_tuple_header.c \
-	encode/encode_ulong.c \
-	encode/encode_ulonglong.c \
-	encode/encode_version.c \
+	$(DECODESRC) \
+	$(ENCODESRC) \
 	misc/ei_decode_term.c \
 	misc/ei_format.c \
 	misc/ei_locking.c \
@@ -628,24 +629,28 @@ else
 # Unix archive creation
 
 $(ST_EILIB) : $(ST_EIOBJECTS)
+	rm -f $@
 	$(AR) rcv $@ $(ST_EIOBJECTS)
 ifdef RANLIB
 	$(RANLIB) $@
 endif
 
 $(ST_ERLLIB) : $(ST_ERLOBJECTS)
+	rm -f $@
 	$(AR) rcv $@ $(ST_ERLOBJECTS)
 ifdef RANLIB
 	$(RANLIB) $@
 endif
 
 $(MT_EILIB) : $(MT_EIOBJECTS)
+	rm -f $@
 	$(AR) rcv $@ $(MT_EIOBJECTS)
 ifdef RANLIB
 	$(RANLIB) $@
 endif
 
 $(MT_ERLLIB) : $(MT_ERLOBJECTS)
+	rm -f $@
 	$(AR) rcv $@ $(MT_ERLOBJECTS)
 ifdef RANLIB
 	$(RANLIB) $@
@@ -824,18 +829,40 @@ include depend.mk
 # Release Target
 # ---------------------------------------------------- 
 
+EXTRA = \
+	INSTALL \
+	Makefile \
+	Makefile.in \
+	README \
+	README.internal
+
 release: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/include
 	$(INSTALL_DIR) $(RELSYSDIR)/lib
 	$(INSTALL_DIR) $(RELSYSDIR)/bin
-	$(INSTALL_DATA) $(HEADERS) $(RELSYSDIR)/include
+	$(INSTALL_DIR) $(RELSYSDIR)/src/auxdir
+	$(INSTALL_DIR) $(RELSYSDIR)/src/connect
+	$(INSTALL_DIR) $(RELSYSDIR)/src/decode
+	$(INSTALL_DIR) $(RELSYSDIR)/src/encode
+	$(INSTALL_DIR) $(RELSYSDIR)/src/epmd
+	$(INSTALL_DIR) $(RELSYSDIR)/src/legacy
+	$(INSTALL_DIR) $(RELSYSDIR)/src/misc
+	$(INSTALL_DIR) $(RELSYSDIR)/src/prog
+	$(INSTALL_DIR) $(RELSYSDIR)/src/registry
+	$(INSTALL_DATA) $(HEADERS)     $(RELSYSDIR)/include
 	$(INSTALL_DATA) $(OBJ_TARGETS) $(RELSYSDIR)/lib
 ifneq ($(EXE_TARGETS),)
 	$(INSTALL_PROGRAM) $(EXE_TARGETS) $(RELSYSDIR)/bin
 endif
-#	$(INSTALL_DIR) $(RELSYSDIR)/src
-
-# FIXME move sources???
+	$(INSTALL_DATA) $(EXTRA)        $(RELSYSDIR)/src
+	$(INSTALL_DATA) connect/*.[ch]  $(RELSYSDIR)/src/connect
+	$(INSTALL_DATA) decode/*.[ch]   $(RELSYSDIR)/src/decode
+	$(INSTALL_DATA) encode/*.[ch]   $(RELSYSDIR)/src/encode
+	$(INSTALL_DATA) epmd/*.[ch]     $(RELSYSDIR)/src/epmd
+	$(INSTALL_DATA) misc/*.[ch]     $(RELSYSDIR)/src/misc
+	$(INSTALL_DATA) registry/*.[ch] $(RELSYSDIR)/src/registry
+	$(INSTALL_DATA) legacy/*.[ch]   $(RELSYSDIR)/src/legacy
+	$(INSTALL_DATA) prog/*.[ch]     $(RELSYSDIR)/src/prog
 
 release_docs:
 

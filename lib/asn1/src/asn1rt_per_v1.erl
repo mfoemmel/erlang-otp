@@ -52,7 +52,8 @@
 	 encode_BMPString/2, decode_BMPString/2,
 	 encode_IA5String/2, decode_IA5String/2,
 	 encode_NumericString/2, decode_NumericString/2,
-	 encode_ObjectDescriptor/2, decode_ObjectDescriptor/1
+	 encode_ObjectDescriptor/2, decode_ObjectDescriptor/1,
+	 encode_UTF8String/1, decode_UTF8String/1
 	 ]).
 
 
@@ -1656,6 +1657,21 @@ encode_null(_) -> []. % encodes to nothing
 
 decode_null(Bytes) ->
     {'NULL',Bytes}.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% encode_UTF8String
+encode_UTF8String(Val) when binary(Val) ->
+    encode_UTF8String(binary_to_list(Val));
+encode_UTF8String(Val) ->
+    [encode_length(undefined,length(Val)),{octets,Val}].
+
+
+decode_UTF8String(Bytes) ->
+    {Len,Bytes2} = decode_length(Bytes,undefined),
+    {Octs,Bytes3} = getoctets_as_list(Bytes2,Len),
+    {list_to_binary(Octs),Bytes3}.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% encode_object_identifier(Val) -> CompleteList

@@ -47,6 +47,7 @@
 	 encode_TeletexString/2, decode_TeletexString/2,
 	 encode_VideotexString/2, decode_VideotexString/2,
 	 encode_VisibleString/2, decode_VisibleString/2,
+	 encode_UTF8String/1, decode_UTF8String/1,
 	 encode_BMPString/2, decode_BMPString/2,
 	 encode_IA5String/2, decode_IA5String/2,
 	 encode_NumericString/2, decode_NumericString/2,
@@ -1058,8 +1059,12 @@ encode_bit_string(C, BitListValue, NamedBitList) when list(BitListValue) ->
     BitListToBinary = 
 	%% fun that transforms a list of 1 and 0 to a tuple:
 	%% {UnusedBitsInLastByte, Binary}
-	fun([H|T],Acc,N,Fun) ->
-		Fun(T,(Acc bsl 1)+H,N+1,Fun);
+	fun([1|T],Acc,N,Fun) ->
+		Fun(T,(Acc bsl 1)+1,N+1,Fun);
+	   ([0|T],Acc,N,Fun) ->
+		Fun(T,(Acc bsl 1),N+1,Fun);
+	   ([_H|_T],_,_,_) ->
+		exit({error,{asn1,{bitstring_bitlist,BitListValue}}});
 	   ([],Acc,N,_) -> 
 		Unused = (8 - (N rem 8)) rem 8,
 		{Unused,<<Acc:N,0:Unused>>}
@@ -1070,7 +1075,7 @@ encode_bit_string(C, BitListValue, NamedBitList) when list(BitListValue) ->
 		BitListToBinary(BitListValue,0,0,BitListToBinary);
 	    _ ->
 		BitListToBinary(lists:reverse(
-			       lists:dropwhile(fun(0)->true;(1)->false end,
+			       lists:dropwhile(fun(0)->true;(_)->false end,
 					       lists:reverse(BitListValue))),
 			     0,0,BitListToBinary)
 	end,
@@ -1509,6 +1514,7 @@ encode_UniversalString(C,Val) ->
 decode_UniversalString(Bytes,C) ->
     decode_known_multiplier_string(Bytes,aligned,'UniversalString',C,false).
 
+    
 %% end of known-multiplier strings for which PER visible constraints are
 %% applied
 
@@ -1807,10 +1813,23 @@ chars_decode2(Bytes,{Min,Max,CharInTab},NumBits,Len,Acc) ->
     chars_decode2(Bytes2,{Min,Max,CharInTab},NumBits,Len -1,[element(Char+1,CharInTab)|Acc]).
 
 
+%% UTF8String
+encode_UTF8String(Val) when binary(Val) ->
+    [encode_length(undefined,size(Val)),{octets,Val}];
+encode_UTF8String(Val) ->
+    Bin = list_to_binary(Val),
+    encode_UTF8String(Bin).
+
+decode_UTF8String(Bytes) ->
+    {Len,Bytes2} = decode_length(Bytes,undefined),
+    {Octs,Bytes3} = getoctets_as_list(Bytes2,Len),
+    {list_to_binary(Octs),Bytes3}.
+    
+
 						% X.691:17 
-encode_null(_) -> []; % encodes to nothing
-encode_null({Name,Val}) when atom(Name) ->
-    encode_null(Val).
+encode_null(_) -> []. % encodes to nothing
+%encode_null({Name,Val}) when atom(Name) ->
+%    encode_null(Val).
 
 decode_null(Bytes) ->
     {'NULL',Bytes}.

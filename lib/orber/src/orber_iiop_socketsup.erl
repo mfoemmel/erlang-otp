@@ -30,7 +30,6 @@
 
 -behaviour(supervisor).
 
--include_lib("orber/src/orber_debug.hrl").
 
 %%-----------------------------------------------------------------
 %% External exports
@@ -51,8 +50,7 @@
 start(sup, Opts) ->
     supervisor:start_link({local, orber_iiop_socketsup}, orber_iiop_socketsup,
 			  {sup, Opts});
-start(A1, A2) -> 
-    ?PRINTDEBUG2("start/2 called with parameters ~p ~p", [A1, A2]),
+start(_A1, _A2) -> 
     ok.
 
 
@@ -62,23 +60,21 @@ start(A1, A2) ->
 %%-----------------------------------------------------------------
 %% Func: init/1
 %%-----------------------------------------------------------------
-init({sup, Opts}) ->
+init({sup, _Opts}) ->
     SupFlags = {simple_one_for_one, 500, 100},
     ChildSpec = [
 		 {name3, {orber_iiop_net_accept, start, []}, temporary, 
 		  10000, worker, [orber_iiop_net_accept]}
 		],
     {ok, {SupFlags, ChildSpec}};
-init(Opts) ->
-    ?PRINTDEBUG2("plain init ~p", [self()]),
+init(_Opts) ->
     {ok, []}.
 
 
 %%-----------------------------------------------------------------
 %% Func: terminate/2
 %%-----------------------------------------------------------------
-terminate(Reason, State) ->
-    ?PRINTDEBUG2("socket supervisor terminated with reason: ~p", [Reason]),
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------------

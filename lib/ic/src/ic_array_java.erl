@@ -45,7 +45,7 @@ gen(G, N, X, Array)  ->
 %%-----------------------------------------------------------------
 %% Func:  emit_holder_class/4
 %%-----------------------------------------------------------------
-emit_holder_class(G, N, X, Array, ArrayName, ArrayElement) ->
+emit_holder_class(G, N, _X, Array, ArrayName, ArrayElement) ->
     SName = string:concat(ArrayName, "Holder"),
     {Fd, _}= ic_file:open_java_file(G, N, SName), 
 
@@ -92,7 +92,7 @@ emit_helper_class(G, N, X, Array, ArrayName, ArrayElement) ->
  
     ArrayElementName = ic_java_type:getType(G, N, ArrayElement),
     EmptyDim = arrayEmptyDim(Array),
-    Dim = arrayDim(G,N,Array),
+%    Dim = arrayDim(G,N,Array),
 
     ic_codegen:emit(Fd, "public class ~sHelper {\n",[ArrayName]),
     
@@ -178,7 +178,7 @@ emit_array_marshal_loop_1(G,N,X,Array,AEl,[D],C,Fd) ->
     ic_codegen:emit(Fd, ");\n\n");
 
 emit_array_marshal_loop_1(G,N,X,Array,AEl,[D|Ds],C,Fd) ->
-    DimList = mk_array_dim_list(G,N,Array),
+%    DimList = mk_array_dim_list(G,N,Array),
 
     ic_codegen:emit(Fd, "     _out.write_tuple_head(~s);\n\n",[D]),
 
@@ -205,7 +205,7 @@ emit_array_unmarshal_loop(G,N,X,Array,AEl,Fd) ->
 	    emit_array_unmarshal_loop_1(G,N,X,Array,AEl,DimList,0,Fd)
     end.
 
-emit_array_unmarshal_loop_1(G,N,X,Array,AEl,[],1,Fd) -> %% One dimensional array
+emit_array_unmarshal_loop_1(G,N,X,_Array,AEl,[],1,Fd) -> %% One dimensional array
     case ic_java_type:isBasicType(G, N, AEl) of 
 	true ->
 	    ic_codegen:emit(Fd, "       _value[_tmp0] = _in~s;\n",
@@ -214,7 +214,7 @@ emit_array_unmarshal_loop_1(G,N,X,Array,AEl,[],1,Fd) -> %% One dimensional array
 	    ic_codegen:emit(Fd, "       _value[_tmp0] = ~s.unmarshal(_in);\n\n",
 			    [ic_java_type:getUnmarshalType(G, N, X, AEl)])
     end;
-emit_array_unmarshal_loop_1(G,N,X,Array,AEl,[],C,Fd) ->
+emit_array_unmarshal_loop_1(G,N,X,Array,AEl,[],_C,Fd) ->
     DimList = mk_array_dim_list(G,N,Array),
     ic_codegen:emit(Fd, "       _value"),
     emit_array_dimensions(DimList,0,Fd),
@@ -258,31 +258,31 @@ mk_array_dim_list2(G,N,[D |Ds]) ->
 
 
 %% Array dimension string
-arrayDim(G,N,X) ->
-    arrayDim2(G,N,X#array.size).
+%arrayDim(G,N,X) ->
+%    arrayDim2(G,N,X#array.size).
 
-arrayDim2(G,N,[]) ->
-    "";
-arrayDim2(G,N,[D|Ds]) when record(D,scoped_id) ->
-    {FSN, _, _, _} = ic_symtab:get_full_scoped_name(G, N, D),
-    "[" ++ ic_util:to_dot(G,FSN) ++ "]" ++ arrayDim2(G,N,Ds);
-arrayDim2(G,N,[D|Ds]) ->
-    "[" ++ ic_util:eval_java(G,N,D) ++ "]" ++ arrayDim2(G,N,Ds).
+%arrayDim2(_G,_N,[]) ->
+%    "";
+%arrayDim2(G,N,[D|Ds]) when record(D,scoped_id) ->
+%    {FSN, _, _, _} = ic_symtab:get_full_scoped_name(G, N, D),
+%    "[" ++ ic_util:to_dot(G,FSN) ++ "]" ++ arrayDim2(G,N,Ds);
+%arrayDim2(G,N,[D|Ds]) ->
+%    "[" ++ ic_util:eval_java(G,N,D) ++ "]" ++ arrayDim2(G,N,Ds).
 
 
 %% Array Empty dimension string
 arrayEmptyDim(X) ->
     arrayEmptyDim2(X#array.size).
 
-arrayEmptyDim2([D]) ->
+arrayEmptyDim2([_D]) ->
     "[]";
-arrayEmptyDim2([D |Ds]) ->
+arrayEmptyDim2([_D |Ds]) ->
     "[]" ++ arrayEmptyDim2(Ds).
 
 
-emit_array_dimensions([D],C,Fd) ->
+emit_array_dimensions([_D],C,Fd) ->
     ic_codegen:emit(Fd, "[_tmp~p]",[C]);
-emit_array_dimensions([D|Ds],C,Fd) ->
+emit_array_dimensions([_D|Ds],C,Fd) ->
     ic_codegen:emit(Fd, "[_tmp~p]",[C]),
     emit_array_dimensions(Ds,C+1,Fd).
 

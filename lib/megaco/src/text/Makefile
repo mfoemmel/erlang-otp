@@ -42,7 +42,9 @@ RELSYSDIR = $(RELEASE_PATH)/lib/megaco-$(VSN)
 
 include modules.mk
 
-ERL_FILES = $(MODULES:%=%.erl)	
+ERL_FILES = \
+	$(MODULES:%=%.erl) \
+	$(INTERNAL_YRL_FILES:%.yrl=%.erl)
 
 ERL_TARGET_FILES = \
 	$(INTERNAL_YRL_FILES:%.yrl=%.erl)
@@ -61,9 +63,9 @@ ifeq ($(TYPE),debug)
 ERL_COMPILE_FLAGS += -Ddebug
 endif
 
-# ifeq ($(USE_HIPE),true)
-# ERL_COMPILE_FLAGS += +native
-# endif
+ifeq ($(USE_MEGACO_HIPE),true)
+ERL_COMPILE_FLAGS += +native
+endif
 
 ifeq ($(WARN_UNUSED_WARS),true)
 ERL_COMPILE_FLAGS += +warn_unused_vars
@@ -73,6 +75,11 @@ ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
 ERL_COMPILE_FLAGS += -I../../include \
                      +'{parse_transform,sys_pre_attributes}' \
                      +'{attribute,insert,app_vsn,$(APP_VSN)}'
+
+
+ifeq ($(YRL_VERBOSE),true)
+YRL_FLAGS += -v
+endif
 
 
 # ----------------------------------------------------
@@ -91,18 +98,19 @@ docs:
 
 info:
 	@echo "MODULES            = $(MODULES)"
-	@echo "INTERNAL_YRL_FILES = $(INTERNAL_YRL_FILES)"
-	@echo "INTERNAL_HRL_FILES = $(INTERNAL_HRL_FILES)"
 	@echo ""
 	@echo "ERL_FILES          = $(ERL_FILES)"
+	@echo ""
 	@echo "ERL_TARGET_FILES   = $(ERL_TARGET_FILES)"
+	@echo ""
 	@echo "BEAM_TARGET_FILES  = $(BEAM_TARGET_FILES)"
+	@echo ""
 	@echo "TARGET_FILES       = $(TARGET_FILES)"
 	@echo ""
-	@echo "ERL_FLAGS          = $(ERL_FLAGS)"
-	@echo "ERL_COMPILE_FLAGS  = $(ERL_COMPILE_FLAGS)"
+	@echo "INTERNAL_YRL_FILES = $(INTERNAL_YRL_FILES)"
 	@echo ""
-	@echo "VSN                = $(VSN)"
+	@echo "INTERNAL_HRL_FILES = $(INTERNAL_HRL_FILES)"
+	@echo ""
 
 
 # ----------------------------------------------------

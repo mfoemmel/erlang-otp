@@ -55,11 +55,11 @@
 #define EI_EPMD_PORT2_RESP  119
 #endif
 
-/* the exported functions */
-
 /* internal functions */
-int ei_epmd_connect(struct in_addr *inaddr);
+int ei_epmd_connect_tmo(struct in_addr *inaddr, unsigned ms);
+int ei_epmd_publish(int port, const char *alive);
+int ei_epmd_publish_tmo(int port, const char *alive, unsigned ms);
 int ei_epmd_port(struct in_addr *inaddr, const char *alive, int *dist);
-int ei_unpublish_alive(const char *alive);
+int ei_epmd_port_tmo(struct in_addr *inaddr, const char *alive, int *dist, unsigned ms);
 
 #endif /* _EI_EPMD_H */

@@ -3,8 +3,6 @@
   {vsn, "%VSN%"},
   {modules,
      [	
-        'CORBA_Policy',
-	'CORBA_PolicyList',
         'CosNaming_Binding',
         'CosNaming_BindingIterator',
   	'CosNaming_BindingList',
@@ -17,7 +15,6 @@
         'CosNaming_NamingContext_InvalidName',
         'CosNaming_NamingContext_NotEmpty',
         'CosNaming_NamingContext_NotFound',
-        'CosNaming_NamingContext_impl',
         'CosNaming_NamingContextExt',
         'CosNaming_NamingContextExt_impl',
         'CosNaming_NamingContextExt_InvalidAddress',
@@ -34,6 +31,7 @@
         'erlang_pid',
         'erlang_port',
         'erlang_ref',
+        'erlang_binary',
         'iop_ior',
         'lname',
         'lname_component',
@@ -83,7 +81,6 @@
         'orber_initial_references',
         'orber_pi',
         'orber_objectkeys',
-        'orber_policy_server',
         'orber_request_number',
         'orber_socket',
         'orber_tc',
@@ -93,13 +90,14 @@
 	'orber_iiop_tracer',
 	'orber_iiop_tracer_silent',
 	'fixed',
-	'orber_exceptions'
+	'orber_exceptions',
+	'orber_diagnostics'
      ]	
   },
   {registered, [orber_sup, orber_iiop_sup, orber_iiop_net, orber_iiop_outsup, 
 	        orber_iiop_insup, orber_bootstrap, orber_init, orber_reqno,
 	        orber_objkeyserver, orber_iiop_socketsup, 
-                orber_iiop_pm, orber_policyserver]},
+                orber_iiop_pm]},
   {applications, [stdlib, kernel]},
   {env, []},
   {mod, {orber, []}}

@@ -207,18 +207,15 @@ strip_file(File) ->
 		     Chunk0
 	     end,
     {ok, Stripped0} = build_module(Chunks),
+    Stripped = compress(Stripped0),
     case File of
 	_ when is_binary(File) ->
-	    {ok, Fd} = ram_file:open(Stripped0, [write, binary]),
-	    {ok, _} = ram_file:compress(Fd),
-	    {ok, Stripped} = ram_file:get_file(Fd),
-	    ok = ram_file:close(Fd),
 	    {ok, {Mod, Stripped}};
 	_ ->
 	    FileName = beam_filename(File),
-	    case file:open(FileName, [raw, binary, write, compressed]) of
+	    case file:open(FileName, [raw, binary, write]) of
 		{ok, Fd} ->
-		    case file:write(Fd, Stripped0) of
+		    case file:write(Fd, Stripped) of
 			ok ->
 			    file:close(Fd),
 			    {ok, {Mod, FileName}};
@@ -476,13 +473,10 @@ extract_atom(<<Len, B/binary>>) ->
 open_file(<<"FOR1",_/binary>>=Binary) ->
     #bb{bin = Binary, source = Binary};
 open_file(Binary0) when is_binary(Binary0) ->
-    {ok, Fd} = ram_file:open(Binary0, [write, binary]),
-    {ok, _} = ram_file:uncompress(Fd),
-    {ok, Binary} = ram_file:get_file(Fd),
-    ok = ram_file:close(Fd),
+    Binary = uncompress(Binary0),
     #bb{bin = Binary, source = Binary};
 open_file(FileName) ->
-    case file:open(FileName, [read, raw, binary, compressed]) of
+    case file:open(FileName, [read, raw, binary]) of
 	{ok, Fd} ->
 	    read_all(Fd, FileName, []);
 	Error ->
@@ -495,7 +489,7 @@ read_all(Fd, FileName, Bins) ->
 	    read_all(Fd, FileName, [Bin | Bins]);
 	eof ->
 	    file:close(Fd),
-	    #bb{bin = list_to_binary(reverse(Bins)), source = FileName};
+	    #bb{bin = uncompress(reverse(Bins)), source = FileName};
 	Error ->
 	    file:close(Fd),
 	    file_error(FileName, Error)
@@ -524,6 +518,20 @@ beam_filename(Bin) when binary(Bin) ->
     Bin;
 beam_filename(File) ->
     filename:rootname(File, ".beam") ++ ".beam".
+
+uncompress(Binary0) ->
+    {ok, Fd} = ram_file:open(Binary0, [write, binary]),
+    {ok, _} = ram_file:uncompress(Fd),
+    {ok, Binary} = ram_file:get_file(Fd),
+    ok = ram_file:close(Fd),
+    Binary.
+
+compress(Binary0) ->
+    {ok, Fd} = ram_file:open(Binary0, [write, binary]),
+    {ok, _} = ram_file:compress(Fd),
+    {ok, Binary} = ram_file:get_file(Fd),
+    ok = ram_file:close(Fd),
+    Binary.
 
 %% -> ok | throw(Error)
 assert_directory(FileName) ->

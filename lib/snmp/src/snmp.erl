@@ -33,9 +33,14 @@
 	 get_symbolic_store_db/0,
 	 name_to_oid/2, oid_to_name/2,
 	 int_to_enum/3, enum_to_int/3,
-	 date_and_time/0, universal_time_to_date_and_time/1,
-	 local_time_to_date_and_time/1, date_and_time_to_universal_time/1,
-	 validate_date_and_time/1, date_and_time_to_string/1,
+
+	 date_and_time/0, 
+	 universal_time_to_date_and_time/1,
+	 local_time_to_date_and_time_dst/1, 
+	 date_and_time_to_universal_time_dst/1,
+	 validate_date_and_time/1, 
+	 date_and_time_to_string/1,
+
 	 get/2,
 	 info/1, load_mibs/2, register_subagent/3,
 	 unload_mibs/2, unregister_subagent/2, 
@@ -48,6 +53,15 @@
 -export([log_to_txt/2, log_to_txt/3, log_to_txt/4, log_to_txt/5,
 	 log_to_txt/6, log_to_txt/7,
 	 change_log_size/1]).
+
+%% Deprecated
+-export([
+	 local_time_to_date_and_time/1, 
+	 date_and_time_to_universal_time/1
+	]).
+%% This is for XREF
+-deprecated([{local_time_to_date_and_time, 1, eventually},
+	     {date_and_time_to_universal_time, 1, eventually}]).
 
 c(File) -> snmp_compile:compile(File).
 c(File, Options) -> snmp_compile:compile(File, Options).
@@ -172,10 +186,10 @@ date_and_time() ->
     UTC   = calendar:universal_time(),
     Local = calendar:universal_time_to_local_time(UTC),
     date_and_time(Local, UTC).
- 
+
 date_and_time(Local, UTC) ->
     DiffSecs = calendar:datetime_to_gregorian_seconds(Local) -
-	       calendar:datetime_to_gregorian_seconds(UTC),
+	calendar:datetime_to_gregorian_seconds(UTC),
     short_time(Local) ++ diff(DiffSecs).
 
 short_time({{Y,M,D},{H,Mi,S}}) ->
@@ -221,23 +235,45 @@ local_time_to_date_and_time(Local) ->
     UTC = calendar:local_time_to_universal_time(Local),
     date_and_time(Local, UTC).
 
-date_and_time_to_universal_time([Y1,Y2, Mo, D, H, M, S, _Ds]) ->
+local_time_to_date_and_time_dst(Local) ->
+    case calendar:local_time_to_universal_time_dst(Local) of
+	[] ->
+	    [];
+	[UTC] ->
+	    [date_and_time(Local, UTC)];
+	[UTC1, UTC2] ->
+	    [date_and_time(Local, UTC1), date_and_time(Local, UTC2)]
+    end.
+
+date_and_time_to_universal_time([Y1, Y2, Mo, D, H, M, S, _Ds]) ->
     %% Local time specified, convert to UTC
     Local = {{y(Y1,Y2), Mo, D}, {H, M, S}},
     calendar:local_time_to_universal_time(Local);
-date_and_time_to_universal_time([Y1,Y2, Mo, D, H, M, S, _Ds, Sign, Hd, Md]) ->
+date_and_time_to_universal_time([Y1, Y2, Mo, D, H, M, S, _Ds, Sign, Hd, Md]) ->
     %% Time specified as local time + diff from UTC. Conv to UTC.
     Local = {{y(Y1,Y2), Mo, D}, {H, M, S}},
     LocalSecs = calendar:datetime_to_gregorian_seconds(Local),
     Diff = (Hd*60 + Md)*60,
     UTCSecs = if Sign == $+ -> LocalSecs - Diff;
-		   Sign == $- -> LocalSecs + Diff
-	            end,
+		 Sign == $- -> LocalSecs + Diff
+	      end,
     calendar:gregorian_seconds_to_datetime(UTCSecs).
 
+date_and_time_to_universal_time_dst([Y1, Y2, Mo, D, H, M, S, _Ds]) ->
+    %% Local time specified, convert to UTC
+    Local = {{y(Y1,Y2), Mo, D}, {H, M, S}},
+    calendar:local_time_to_universal_time_dst(Local);
+date_and_time_to_universal_time_dst(DateAndTime) ->
+    [date_and_time_to_universal_time(DateAndTime)].
+
 validate_date_and_time([Y1,Y2, Mo, D, H, M, S, Ds | Diff]) 
-  when 0 =< Y1, 0 =< Y2, 0 < Mo, Mo < 13, 0 < D, D < 32, 0 =< H,
-       H < 24, 0 =< M, M < 60, 0 =< S, S < 61, 0 =< Ds, Ds < 10 ->
+  when 0 =< Y1, 0 =< Y2, 
+       0 < Mo, Mo < 13, 
+       0 < D, D < 32, 0 =< H,
+       H < 24, 
+       0 =< M, M < 60, 
+       0 =< S, S < 61, 
+       0 =< Ds, Ds < 10 ->
     case check_diff(Diff) of
 	true ->
 	        calendar:valid_date(y(Y1,Y2), Mo, D);
@@ -364,11 +400,11 @@ compile(Input, _Output, Options) ->
 make_snmp_options(Opts) ->
 
     Includes = Opts#options.includes,
-    Outdir = Opts#options.outdir,
+    Outdir   = Opts#options.outdir,
     Warning0 = Opts#options.warning,
     Specific = Opts#options.specific,
 
-    Warning = 
+    Warning  = 
 	case Warning0 of
 	    0 -> {warnings, false};
 	    _ -> {warnings, true}
@@ -383,4 +419,3 @@ make_snmp_options(Opts) ->
 	    end},
 	    
     [Warning, {outdir, Outdir}, IncludeOption|Specific].
-

@@ -29,7 +29,7 @@
  *
  ***************************************************************************/
 
-#include "config.h"
+#include "eidef.h"
 
 #include <stdlib.h>
 #include <sys/types.h>
@@ -93,7 +93,6 @@
 
 /* FIXME include less */
 #include "erl_interface.h"
-#include "erl_config.h"
 #include "erl_connect.h"
 #include "erl_eterm.h"
 #include "erl_malloc.h"
@@ -265,7 +264,7 @@ static int erl_do_receive_msg(int fd, ei_x_buff* x, ErlMessage* emsg)
 
     int r;
     msg.from.node[0] = msg.to.node[0] = '\0';
-    r = ei_do_receive_msg(fd, 0, &msg, x);
+    r = ei_do_receive_msg(fd, 0, &msg, x, 0);
 
     if (r == ERL_MSG) {
 	int index = 0;
@@ -369,7 +368,7 @@ int erl_rpc_from(int fd, int timeout, ErlMessage *emsg)
     FD_ZERO(&readmask);
     FD_SET(fd,&readmask);
     
-    switch (select(FD_SETSIZE, &readmask, NULL, NULL, t)) {
+    switch (select(fd+1, &readmask, NULL, NULL, t)) {
     case -1: 
 	erl_errno = EIO;
 	return ERL_ERROR;
@@ -421,7 +420,7 @@ int erl_publish(int port)
 
 int erl_unpublish(const char *alive)
 {
-    return ei_unpublish_alive(alive);
+    return ei_unpublish_tmo(alive,0);
 }
 
 erlang_pid *erl_self(void)

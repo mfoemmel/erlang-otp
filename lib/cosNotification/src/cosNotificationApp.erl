@@ -76,7 +76,7 @@ install() ->
 
 install(Time) when integer(Time) ->
     install_loop(?IDL_MODULES, timer:seconds(Time));
-install(Time) ->
+install(_Time) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%------------------------------------------------------------
@@ -91,7 +91,7 @@ install_event() ->
 
 install_event(Time) when integer(Time) ->
     install_loop(?EVENT_IDL_MODULES, timer:seconds(Time));
-install_event(Time) ->
+install_event(_Time) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%------------------------------------------------------------
@@ -106,7 +106,7 @@ install_typed() ->
 
 install_typed(Time) when integer(Time) ->
     install_loop(?TYPED_IDL_MODULES, timer:seconds(Time));
-install_typed(Time) ->
+install_typed(_Time) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 install_loop([], _) ->
@@ -128,7 +128,7 @@ uninstall() ->
 
 uninstall(Time) when integer(Time) ->
     uninstall_loop(lists:reverse(?IDL_MODULES), timer:seconds(Time));
-uninstall(Time) ->
+uninstall(_Time) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%------------------------------------------------------------
@@ -143,7 +143,7 @@ uninstall_event() ->
 
 uninstall_event(Time) when integer(Time) ->
     uninstall_loop(lists:reverse(?EVENT_IDL_MODULES), timer:seconds(Time));
-uninstall_event(Time) ->
+uninstall_event(_Time) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%------------------------------------------------------------
@@ -158,7 +158,7 @@ uninstall_typed() ->
 
 uninstall_typed(Time) when integer(Time) ->
     uninstall_loop(lists:reverse(?TYPED_IDL_MODULES), timer:seconds(Time));
-uninstall_typed(Time) ->
+uninstall_typed(_Time) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 uninstall_loop([], _) ->
@@ -199,13 +199,13 @@ start_factory(Args) when list(Args) ->
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
 	Other->
-	    orber:debug_level_print("[~p] cosNotificationApp:start_factory( ~p ).
-Reason: ~p~n", [?LINE, Args, Other], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] cosNotificationApp:start_factory( ~p ).~n"
+		      "Reason: ~p~n", [?LINE, Args, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end;
 start_factory(Args) ->
-    orber:debug_level_print("[~p] cosNotificationApp:start_factory( ~p ).
-Bad parameters~n", [?LINE, Args], ?DEBUG_LEVEL),
+    orber:dbg("[~p] cosNotificationApp:start_factory( ~p ).~n"
+	      "Bad parameters~n", [?LINE, Args], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
  
 %%------------------------------------------------------------
@@ -227,13 +227,13 @@ start_global_factory(Args) when list(Args) ->
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
 	Other->
-	    orber:debug_level_print("[~p] cosNotificationApp:start_global_factory( ~p ).
-Reason: ~p~n", [?LINE, Args, Other], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] cosNotificationApp:start_global_factory( ~p ).~n"
+		      "Reason: ~p~n", [?LINE, Args, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end;
 start_global_factory(Args) ->
-    orber:debug_level_print("[~p] cosNotificationApp:start_global_factory( ~p ).
-Bad parameters~n", [?LINE, Args], ?DEBUG_LEVEL),
+    orber:dbg("[~p] cosNotificationApp:start_global_factory( ~p ).~n"
+	      "Bad parameters~n", [?LINE, Args], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
  
  
@@ -267,13 +267,13 @@ start_filter_factory(Args) when list(Args) ->
 	{ok, Pid, Obj} when pid(Pid) ->
 	    Obj;
 	Other->
-	    orber:debug_level_print("[~p] cosNotificationApp:start_filter_factory( ~p ).
-Reason: ~p~n", [?LINE, Args, Other], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] cosNotificationApp:start_filter_factory( ~p ).~n"
+		      "Reason: ~p~n", [?LINE, Args, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end;
 start_filter_factory(Args) ->
-	    orber:debug_level_print("[~p] cosNotificationApp:start_filter_factory( ~p ).
-Bad parameters~n", [?LINE, Args], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] cosNotificationApp:start_filter_factory( ~p ).~n"
+		      "Bad parameters~n", [?LINE, Args], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
  
  
@@ -306,7 +306,7 @@ create_structured_event(StrD,StrT,StrE,PSeqV,PSeqF,AnyR)
 		  variable_header = PSeqV},
    filterable_data = PSeqF,
    remainder_of_body = AnyR};
-create_structured_event(StrD,StrT,StrE,PSeqV,PSeqF,AnyR) ->
+create_structured_event(_StrD,_StrT,_StrE,_PSeqV,_PSeqF,_AnyR) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
     
 

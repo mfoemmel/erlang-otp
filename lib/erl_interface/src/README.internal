@@ -16,6 +16,21 @@ VxWorks call the operating processes "tasks". These are to be handled the
 same way as Unix threads, i.e. there can only be one C node for all tasks
 using the old interface.
 
+Try to keep the documented functions, variables and symbols in sync
+between
+
+ * Documentation
+
+ * ei.h and erl_interface.h
+
+ * prog/ei_fake_prog.c and prog/erl_fake_prog.c
+
+From time to time do a
+
+  % (cd src; gmake check)
+
+(FIXME this check should be rewritten to a test case)
+
 
 ******************************************************************************
                                Directories
@@ -125,8 +140,14 @@ The base for the config.h.in file was created with 'autoheader'.
                           Writing source
 ******************************************************************************
 
-All header files should include "eidef.h". It contains some common
-constants and macros and includes config.h.
+C files in "registry" are considered users of 'ei' and should not
+include "eidef.h" or "config.h", only "ei.h".
+
+C files in "prog" could include "config.h" directly.
+
+Other C files should include "eidef.h" as the first line of
+source. "eidef.h" contains some common constants and macros and
+also includes config.h.
 
 In general avoid including other header files from header files.
 The exception is to make the protoypes complete to the user of
@@ -141,6 +162,21 @@ not the ei library.
 Use uint8, uint16, uint32, int8, int16, and int32 for types
 where size matters ;-) Use uint8 for buffers where we construct
 messages.
+
+NOTE!!!! Sending a "char" to macros like isupper(), isalpha() where
+the character is > 127 will cause serios problems on some
+machines/OS. The reason is that
+
+   'char' may be unsigned, i.e. the Swedish char 'ä' will 
+   as a number be negativ.
+
+   The implementation of isupper() and others will on some
+   machines use an array that is indexed with the incoming
+   character code. The Swedish 'ä' will then create an access
+   on memory outside the array!
+
+This may give a random value as a result or a segmentation
+violation error.
 
 
 ******************************************************************************
@@ -173,6 +209,77 @@ You can check for globals using something like
 Global variables but with local scope
 
   erl_if_ec              Global state, is ok
+
+
+******************************************************************************
+                           The "long long" story
+******************************************************************************
+
+There are some functions in the 'ei' library that uses the GCC and
+VC++ "long long" type. Unfortunately this can lead to some trouble.
+
+When user code is linked with the "libei.a" the linker will extract
+all objects files needed for resolving all symbol referenses
+found. This means that you want to follow the rule that
+
+ * To reduce executable code size we use resonably small C source
+   files. One C file is one object file.
+
+ * We try to avoid unessesary dependency. For example currently almost all
+   ei_x_encode*() functions are in the same object file. Because they all
+   use the corresponding ei_encode*() function this means using one ei_x
+   function we will link in "ei_x_encode.o" object file but also all the
+   "ei_encode*.o" object files even if they are not used.
+
+But the above is not the real trouble, memory and disk is cheap these
+days.  The real trouble is if we compile the 'ei' library using one
+compiler, usually GNU cc, and link with another linker than GNU ld or
+miss some runtime libraries that the GNU cc generated object files
+assume is on the target. For example currently on Solaris some "long
+long" operations will create a dependency to a "hidden" library
+"libgcc.a". For example in a library not released got references to
+"libgcc.a" '__ashldi3'
+
+   % nm -A libei.a | grep '__ashldi3'
+   libei.a[decode_longlong.o]: [6]  | 0| 0|NOTY |GLOB |0 |UNDEF |__ashldi3
+   libei.a[decode_ulonglong.o]: [5] | 0| 0|NOTY |GLOB |0 |UNDEF |__ashldi3
+
+We can accept that a dependecy is created for code linked with
+"libei.a" that actually use 'ei' long long functions. But if we
+arrange the 'ei' source badly using a non "long long" functions from
+'ei' will still link in an object file that need "libgcc.a". One
+example is that in plain R9C the ei_x_encode_longlong() function is
+located in the file "ei_x_encode.c". So if any "long long" ei_x
+function is used we have an unessesary dependency on
+"ei_encode_longlong.o" and then need to link with GNU ld on with the
+user code or explicitely link with "libgcc.a". The situation can be
+visible in in plain R9C using
+
+     % nm -A erl_interface-3.4/lib/libei.a | \
+	  grep 'longlong' | fgrep -v 'longlong.o'
+
+As an possibly alternative to the current solution we may include the
+object files inside the "libgcc.a" archive in the "libei.a" archive.
+The "libgcc.a" that is assumed to be used when linking can be found
+using
+
+  % gcc -print-libgcc-file-name
+
+Some links about problems and solutions using "libgcc.a"
+
+  http://www.gnu.org/software/gcc/gcc-3.0/libgcc.html
+  http://www.gnu.org/software/libc/FAQ.html
+
+The license for "libgcc.a" is a bit special and not located on the
+official sites. You have to look in the source file for the "libgcc.a"
+you use. The file is named "libgcc.c". If you don't know what gcc that
+was used for the build of for example 'r9c' you can use
+
+  % otp_build_env -o r9c | perl -ne '/(gcc-[\d\.]+)/ and print "$1\n"'
+
+Then to view the lincense do
+
+  % less `find /usr/local/share/src/gcc-REL/ -name "libgcc*.c"`
 
 
 ********************************* EOF ****************************************

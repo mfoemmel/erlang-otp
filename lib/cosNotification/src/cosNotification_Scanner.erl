@@ -50,17 +50,17 @@ scan([X|Str], Line, Out, Type) when ?is_number(X) ->
     scan_number(Str, [X], Line, Out, Type);
 
 %% RELOP:s == != <= >= > <
-scan([$=,$= | Str], Line, Out, Type) ->
+scan([$=,$= | Str], Line, Out, _Type) ->
     scan(Str, Line, [{'RELOP', '=='} | Out], any);
-scan([$!,$= | Str], Line, Out, Type) ->
+scan([$!,$= | Str], Line, Out, _Type) ->
     scan(Str, Line, [{'RELOP', '!='} | Out], any);
-scan([$<,$= | Str], Line, Out, Type) ->
+scan([$<,$= | Str], Line, Out, _Type) ->
     scan(Str, Line, [{'RELOP', '<='} | Out], any);
-scan([$>,$= | Str], Line, Out, Type) ->
+scan([$>,$= | Str], Line, Out, _Type) ->
     scan(Str, Line, [{'RELOP', '>='} | Out], any);
-scan([$> | Str], Line, Out, Type) ->
+scan([$> | Str], Line, Out, _Type) ->
     scan(Str, Line, [{'RELOP', '>'} | Out], any);
-scan([$< | Str], Line, Out, Type) ->
+scan([$< | Str], Line, Out, _Type) ->
     scan(Str, Line, [{'RELOP', '<'} | Out], any);
 
 %% ADDOP:s + -
@@ -70,9 +70,9 @@ scan([$- | Str], Line, Out, Type) ->
     scan(Str, Line, [{'ADDOP', '-'} | Out], Type);
 
 %% MULOP:s * /
-scan([$* | Str], Line, Out, Type) ->
+scan([$* | Str], Line, Out, _Type) ->
     scan(Str, Line, [{'MULOP', '*'} | Out], any);
-scan([$/ | Str], Line, Out, Type) ->
+scan([$/ | Str], Line, Out, _Type) ->
     scan(Str, Line, [{'MULOP', '/'} | Out], any);
 
 %% TAB
@@ -98,9 +98,9 @@ scan([92 | Str], Line, Out, Type) ->
 scan([$_ | Str], Line, Out, dollar) -> 
     scan_name(Str, [$_], Line, Out, dollar);
 %% '$'
-scan([$$, 92 | Str], Line, Out, Type) -> 
+scan([$$, 92 | Str], Line, Out, _Type) -> 
     scan(Str, Line, [{'bslsh', Line}, {'dollar', Line} | Out], dollar);
-scan([$$ | Str], Line, Out, Type) -> 
+scan([$$ | Str], Line, Out, _Type) -> 
     scan(Str, Line, [{'dollar', Line} | Out], dollar);
 scan([$"|Str], Line, Out, Type) ->
     scan_const(char, Str, [], Line, Out, Type);
@@ -120,7 +120,7 @@ scan([$. | Str], Line, Out, Type) ->
 scan([C|Str], Line, Out, Type) ->
     scan(Str, Line, [{list_to_atom([C]), Line} | Out], Type);
 	    
-scan([], Line, Out, Type) ->
+scan([], _Line, Out, _Type) ->
     Out.
 
 %%----------------------------------------------------------------------
@@ -158,9 +158,9 @@ scan_number(Str, Accum, Line, Out, Type) ->
 %%	will not be caught in the scanner (but rather in expression
 %%	evaluation)
 
-scan_frac([$e | Str], [$.], Line, Out, Type) ->
+scan_frac([$e | _Str], [$.], _Line, _Out, _Type) ->
     {error, "illegal_float"};
-scan_frac([$E | Str], [$.], Line, Out, Type) ->
+scan_frac([$E | _Str], [$.], _Line, _Out, _Type) ->
     {error, "illegal_float"};
 scan_frac(Str, Accum, Line, Out, Type) ->
     scan_frac2(Str, Accum, Line, Out, Type).
@@ -215,7 +215,7 @@ scan_name(S, Accum, Line, Out, Type) ->
 scan_const(char, [$" | Rest], Accum, Line, Out, Type) ->
     scan(Rest, Line, 
 	 [{'ident', list_to_atom(lists:reverse(Accum))} | Out], Type);
-scan_const(char, [], Accum, Line, Out, Type) -> %% Bad string
+scan_const(char, [], _Accum, _Line, Out, _Type) -> %% Bad string
 %    {error, "bad_string"};
     Out;
 scan_const(string, [$' | Rest], Accum, Line, Out, Type) ->
@@ -247,7 +247,7 @@ escaped_char($?) -> $?;
 escaped_char($') -> $';
 escaped_char($") -> $";
 %% Error
-escaped_char(Other) -> error.
+escaped_char(_Other) -> error.
 
 
 check_name("exist") ->     true;

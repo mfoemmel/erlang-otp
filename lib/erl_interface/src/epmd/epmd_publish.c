@@ -15,6 +15,9 @@
  * 
  *     $Id$
  */
+
+#include "eidef.h"
+
 #ifdef __WIN32__
 #include <winsock2.h>
 #include <windows.h>
@@ -43,16 +46,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "eidef.h"
 #include "ei_internal.h"
 #include "putget.h"
-#include "erl_interface.h"
 #include "ei_epmd.h"
+#include "ei_portio.h"
 
 
 /* publish our listen port and alive name */
 /* return the (useless) creation number */
-static int ei_epmd_r3_publish (int port, const char *alive)
+static int ei_epmd_r3_publish (int port, const char *alive, unsigned ms)
 {
   char buf[EPMDBUF];
   char *s = buf;
@@ -66,18 +68,20 @@ static int ei_epmd_r3_publish (int port, const char *alive)
   put16be(s,port); 
   strcpy(s, alive);
 
-  if ((fd = ei_epmd_connect(NULL)) < 0) return fd;
+  if ((fd = ei_epmd_connect_tmo(NULL,ms)) < 0) return fd;
 
-  if (writesocket(fd, buf, len+2) != len+2) {
+  if ((res = ei_write_fill_t(fd, buf, len+2, ms)) != len+2) {
     closesocket(fd);
+    erl_errno = (res == -2) ? ETIMEDOUT : EIO;
     return -1;
   }
 
   EI_TRACE_CONN2("ei_epmd_r3_publish",
 		 "-> ALIVE_REQ alive=%s port=%d",alive,port);
 
-  if (readsocket(fd, buf, 3) != 3) {
+  if ((res = ei_read_fill_t(fd, buf, 3, ms)) != 3) {
     closesocket(fd);
+    erl_errno = (res == -2) ? ETIMEDOUT : EIO;
     return -1;
   }
 
@@ -86,6 +90,7 @@ static int ei_epmd_r3_publish (int port, const char *alive)
       EI_TRACE_ERR1("ei_epmd_r3_publish",
 		    "<- ALIVE_NOK result=%d (failure)",res);
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
@@ -108,7 +113,7 @@ static int ei_epmd_r3_publish (int port, const char *alive)
 /* publish our listen port and alive name */
 /* return the (useless) creation number */
 /* this protocol is a lot more complex than the old one */
-static int ei_epmd_r4_publish (int port, const char *alive)
+static int ei_epmd_r4_publish (int port, const char *alive, unsigned ms)
 {
   char buf[EPMDBUF];
   char *s = buf;
@@ -134,10 +139,11 @@ static int ei_epmd_r4_publish (int port, const char *alive)
   put16be(s,elen);        /* length of extra string = 0 */
                           /* no extra string */
 
-  if ((fd = ei_epmd_connect(NULL)) < 0) return fd;
+  if ((fd = ei_epmd_connect_tmo(NULL,ms)) < 0) return fd;
 
-  if (writesocket(fd, buf, len+2) != len+2) {
+  if ((res = ei_write_fill_t(fd, buf, len+2, ms)) != len+2) {
     closesocket(fd);
+    erl_errno = (res == -2) ? ETIMEDOUT : EIO;
     return -1;
   }
 
@@ -146,9 +152,10 @@ static int ei_epmd_r4_publish (int port, const char *alive)
 		 "proto=%d dist-high=%d dist-low=%d",
 		 alive,port,'H',EI_MYPROTO,EI_DIST_HIGH,EI_DIST_LOW);
   
-  if ((n = readsocket(fd, buf, 4)) != 4) {
+  if ((n = ei_read_fill_t(fd, buf, 4, ms)) != 4) {
     EI_TRACE_ERR0("ei_epmd_r4_publish","<- CLOSE");
     closesocket(fd);
+    erl_errno = (n == -2) ? ETIMEDOUT : EIO;
     return -2;			/* version mismatch */
   }
   /* Don't close fd here! It keeps us registered with epmd */
@@ -157,6 +164,7 @@ static int ei_epmd_r4_publish (int port, const char *alive)
     EI_TRACE_ERR1("ei_epmd_r4_publish","<- unknown (%d)",res);
     EI_TRACE_ERR0("ei_epmd_r4_publish","-> CLOSE");
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
@@ -165,6 +173,7 @@ static int ei_epmd_r4_publish (int port, const char *alive)
   if (((res=get8(s)) != 0)) {           /* 0 == success */
       EI_TRACE_ERR1("ei_epmd_r4_publish"," result=%d (fail)",res);
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
@@ -183,6 +192,23 @@ static int ei_epmd_r4_publish (int port, const char *alive)
   return fd;
 }
 
+int ei_epmd_publish(int port, const char *alive)
+{
+    return ei_epmd_publish_tmo(port, alive, 0);
+}
+
+int ei_epmd_publish_tmo(int port, const char *alive, unsigned ms)
+{
+  int i;
+
+  /* try the new one first, then the old one */
+  i = ei_epmd_r4_publish(port,alive, ms);
+
+  /* -2: new protocol not understood */
+  if (i == -2) i = ei_epmd_r3_publish(port,alive, ms);
+
+  return i;
+}
 
 
 /* 
@@ -192,14 +218,10 @@ static int ei_epmd_r4_publish (int port, const char *alive)
  */
 int ei_publish(ei_cnode* ec, int port)
 {
-  const char *alive = ei_thisalivename(ec);
+  return ei_epmd_publish(port, ei_thisalivename(ec));
+}
 
-  /* try the new one first, then the old one */
-  int res = ei_epmd_r4_publish(port,alive);
-
-  /* -2: new protocol not understood */
-  if (res == -2)
-    res = ei_epmd_r3_publish(port,alive);
-
-  return res;
+int ei_publish_tmo(ei_cnode* ec, int port, unsigned ms)
+{
+  return ei_epmd_publish_tmo(port, ei_thisalivename(ec), ms);
 }

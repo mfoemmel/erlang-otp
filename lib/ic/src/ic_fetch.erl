@@ -23,8 +23,8 @@
 -compile(export_all).
 
 
-name2type( G, Name ) ->
-    S = ic_genobj:tktab( G ),
+name2type(G, Name) ->
+    S = ic_genobj:tktab(G),
     ScopedName = lists:reverse(string:tokens(Name,"_")),
     InfoList = ets:lookup( S, ScopedName ),
     filter( InfoList ).
@@ -33,7 +33,7 @@ name2type( G, Name ) ->
 
 %% This is en overloaded function,
 %% differs in input on unions
-member2type(G, X, I) when record(X, union)->
+member2type(_G, X, I) when record(X, union)->
     Name = ic_forms:get_id2(I),
     case lists:keysearch(Name,2,element(6,X#union.tk)) of
 	false ->
@@ -83,7 +83,7 @@ lookup_member_type_in_tktab(S, ScopedName, MName) ->
     case ets:match_object(S, {'_',member,{MName,'_'},nil}) of
 	[] ->
 	    error;
-	[{FullScopedName,member,{MName,TKInfo},nil}]->
+	[{_FullScopedName,member,{MName,TKInfo},nil}]->
 	    fetchType( TKInfo );
 	List ->
 	    lookup_member_type_in_tktab(List,ScopedName)
@@ -202,32 +202,32 @@ isBasicTypeOrEterm(G, N, S) ->
 
 
 isEterm(G, N, S) when element(1, S) == scoped_id -> 
-    {FullScopedName, _, TK, _} = ic_symtab:get_full_scoped_name(G, N, S),
+    {FullScopedName, _, _TK, _} = ic_symtab:get_full_scoped_name(G, N, S),
     case ic_code:get_basetype(G, ic_util:to_undersc(FullScopedName)) of
 	"erlang_term" ->
 	    true;
 	"ETERM*" ->
 	    true;
-	X ->
+	_X ->
 	    false
     end;
-isEterm(G, Ni, X) -> 
+isEterm(_G, _Ni, _X) -> 
     false.
 
 isBasicType(G, N, S) when element(1, S) == scoped_id -> 
     {_, _, TK, _} = ic_symtab:get_full_scoped_name(G, N, S),
     isBasicType(fetchType(TK));
-isBasicType(G, N, {string, _} ) -> 
+isBasicType(_G, _N, {string, _} ) -> 
     false;
-isBasicType(G, N, {Type, _} ) -> 
+isBasicType(_G, _N, {Type, _} ) -> 
     isBasicType(Type).
 
 
-isBasicType( G, Name ) ->
-    isBasicType( name2type( G, Name ) ).
+isBasicType(G, Name) ->
+    isBasicType(name2type(G, Name )).
 
 
-isBasicType( Type ) ->
+isBasicType(Type) ->
     lists:member(Type,
 		 [tk_short,short,
 		  tk_long,long,
@@ -243,55 +243,55 @@ isBasicType( Type ) ->
 
 isString(G, N, T) when element(1, T) == scoped_id ->
     case ic_symtab:get_full_scoped_name(G, N, T) of
-	{FullScopedName, _, {'tk_string',_}, _} ->
+	{_FullScopedName, _, {'tk_string',_}, _} ->
 	    true;
 	_ ->
 	    false
     end; 
-isString(G, N, T)  when record(T, string) ->
+isString(_G, _N, T)  when record(T, string) ->
     true;
-isString(G, N, Other) ->
+isString(_G, _N, _Other) ->
     false. 
 
 
 isArray(G, N, T) when element(1, T) == scoped_id ->
     case ic_symtab:get_full_scoped_name(G, N, T) of
-	{FullScopedName, _, {'tk_array', _, _}, _} ->
+	{_FullScopedName, _, {'tk_array', _, _}, _} ->
 	    true;
 	_ ->
 	    false
     end; 
-isArray(G, N, T)  when record(T, array) ->
+isArray(_G, _N, T)  when record(T, array) ->
     true;
-isArray(G, N, Other) ->
+isArray(_G, _N, _Other) ->
     false. 
 
 
 
 isStruct(G, N, T) when element(1, T) == scoped_id ->
     case ic_symtab:get_full_scoped_name(G, N, T) of
-	{FullScopedName, _, {'tk_struct', _, _, _}, _} ->
+	{_FullScopedName, _, {'tk_struct', _, _, _}, _} ->
 	    true;
 	_ ->
 	    false
     end; 
-isStruct(G, N, T)  when record(T, struct) ->
+isStruct(_G, _N, T)  when record(T, struct) ->
     true;
-isStruct(G, N, Other) ->
+isStruct(_G, _N, _Other) ->
     false.
 
 
 
 isUnion(G, N, T) when element(1, T) == scoped_id ->
     case ic_symtab:get_full_scoped_name(G, N, T) of
-	{FullScopedName, _, {'tk_union', _, _, _,_,_}, _} ->
+	{_FullScopedName, _, {'tk_union', _, _, _,_,_}, _} ->
 	    true;
 	_Other ->
 	    false
     end; 
-isUnion(G, N, T)  when record(T, union) ->
+isUnion(_G, _N, T)  when record(T, union) ->
     true;
-isUnion(G, N, _Other) ->
+isUnion(_G, _N, _Other) ->
     false.
 
 
@@ -360,7 +360,7 @@ searchIncludedTk({tk_array,TK,_},IR_ID) ->
     searchIncludedTk(TK,IR_ID);
 searchIncludedTk({tk_sequence,TK,_},IR_ID) ->
     searchIncludedTk(TK,IR_ID);
-searchIncludedTk(TK,IR_ID) when atom(TK) ->
+searchIncludedTk(TK,_IR_ID) when atom(TK) ->
     false;
 searchIncludedTk(TK,IR_ID) ->
     case element(2,TK) == IR_ID of

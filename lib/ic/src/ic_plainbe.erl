@@ -81,7 +81,7 @@ gen(G, N, [X|Xs]) when record(X, interface) ->
     N2 = [get_id2(X) | N],
     gen_head(G2, N2, X),
     gen(G2, N2, get_body(X)),
-    foreach(fun({Name, Body}) -> gen(G2, N2, Body) end, 
+    foreach(fun({_Name, Body}) -> gen(G2, N2, Body) end, 
 	    X#interface.inherit_body), 
     G3 = ic_file:filename_pop(G2, erlang),
     gen(G3, N, Xs);
@@ -89,7 +89,7 @@ gen(G, N, [X|Xs]) when record(X, interface) ->
 gen(G, N, [X|Xs]) when record(X, const) ->
     N2 = [get_id2(X) | N],
     emit_constant_func(G, X#const.id, X#const.val),
-    gen(G, N, Xs);
+    gen(G, N, Xs); %% N or N2?
 
 gen(G, N, [X|Xs]) when record(X, op) ->
     {Name, ArgNames, TypeList, OutArgs} = extract_info(G, N, X),
@@ -112,41 +112,13 @@ gen(G, N, [X|Xs]) ->
     end,
     gen(G, N, Xs);
 
-gen(G, N, []) -> ok.
+gen(_G, _N, []) -> ok.
 
 
 may_contain_structs(X) when record(X, typedef) -> true;
 may_contain_structs(X) when record(X, struct) -> true;
 may_contain_structs(X) when record(X, union) -> true;
-may_contain_structs(X) -> false.
-
-
-
-
-get_if([X|Rest]) when record(X, op) ->
-    R = ic_forms:get_tk(X),
-    IN = lists:map(fun(P) -> ic_forms:get_tk(P) end,
-		   ic:filter_params([in, inout], X#op.params)),
-    OUT = lists:map(fun(P) -> ic_forms:get_tk(P) end,
-		    ic:filter_params([out, inout], X#op.params)),
-    [{get_id2(X), {R, IN, OUT}} | get_if(Rest)];
-
-get_if([X|Rest]) when record(X, attr) ->
-    {GetT, SetT} = mk_attr_func_types([], X),
-    AList = lists:map(fun(Id) -> 
-			      {Get, Set} = mk_attr_func_names([], get_id(Id)),
-			      case X#attr.readonly of
-				  {readonly, _} -> 
-				      {Get, GetT};
-				  _ -> 
-				      [{Set, SetT}, {Get, GetT}]
-			      end end, ic_forms:get_idlist(X)),
-    lists:flatten(AList) ++ get_if(Rest);
-
-get_if([X|Rest]) -> get_if(Rest);
-get_if([]) -> [].
-
-
+may_contain_structs(_X) -> false.
 
 
 %%------------------------------------------------------------
@@ -168,9 +140,7 @@ gen_head_special(G, N, X) when record(X, interface) ->
 		    nl(Fd)
 	    end, X#interface.inherit_body),
     Fd;
-	
-
-gen_head_special(G, N, X) -> ok.
+gen_head_special(_G, _N, _X) -> ok.
 
     
 
@@ -197,15 +167,15 @@ exp_top(G, N, I, Acc)  when record(I, interface) ->
 exp_top(G, N, X, Acc) ->
     exp3(G, N, X, Acc).
 
-exp3(G, N, C, Acc)  when record(C, const) -> 
+exp3(_G, _N, C, Acc)  when record(C, const) -> 
     [{get_id(C#const.id), 0} | Acc];
 
-exp3(G, N, Op, Acc)  when record(Op, op) ->
+exp3(_G, _N, Op, Acc)  when record(Op, op) ->
     FuncName = get_id(Op#op.id),
     Arity = length(ic:filter_params([in, inout], Op#op.params)),
     [{FuncName, Arity} | Acc];
 
-exp3(G, N, A, Acc)  when record(A, attr) ->
+exp3(_G, _N, A, Acc)  when record(A, attr) ->
     lists:foldr(fun(Id, Acc2) ->
 			{Get, Set} = mk_attr_func_names([], get_id(Id)),
 			case A#attr.readonly of
@@ -229,7 +199,7 @@ exp_list(G, N, L, OrigAcc) ->
 %%
 
 
-emit_func(G, N, X, Name, ArgNames, TypeList, OutArgs) ->
+emit_func(G, _N, X, Name, ArgNames, _TypeList, OutArgs) ->
     case ic_genobj:is_stubfile_open(G) of
 	false -> ok;
 	true ->
@@ -266,7 +236,7 @@ emit_constant_func(G, Id, Val) ->
     end.
 
 
-emit_const_comment(G, F, X, Name) ->
+emit_const_comment(_G, F, _X, Name) ->
     ic_codegen:mcomment_light(F,
 			 [io_lib:format("Constant: ~p", [Name])]).
 
@@ -279,7 +249,7 @@ emit_op_comment(G, F, X, Name, InP, OutP) ->
 			  get_raises(X)]).
 
 get_title(X) when record(X, attr) -> "Attribute Operation";
-get_title(X) -> "Operation".
+get_title(_X) -> "Operation".
 
 get_raises(X) when record(X, op) ->
     if  X#op.raises == [] -> [];
@@ -287,11 +257,11 @@ get_raises(X) when record(X, op) ->
 	    ["  Raises:  " ++ 
 	     mk_list(lists:map({ic_util, to_colon}, X#op.raises))]
     end;
-get_raises(X) -> [].
+get_raises(_X) -> [].
 
-get_returns(G, X, InP, []) ->
+get_returns(_G, _X, _InP, []) ->
     "  Returns: RetVal";
-get_returns(G, X, InP, OutP) ->
+get_returns(G, _X, _InP, OutP) ->
     "  Returns: "++mk_list(["RetVal" | mk_erl_vars(G, OutP)]).
 
 
@@ -307,11 +277,11 @@ get_returns(G, X, InP, OutP) ->
 
 %% The automaticly generated get and set operation names for an
 %% attribute.
-mk_attr_func_names(Scope, Name) ->
+mk_attr_func_names(_Scope, Name) ->
     {"_get_" ++ Name, "_set_" ++ Name}.
 
 %% Returns TK of the Get and Set attribute functions.
-mk_attr_func_types(N, X) ->
+mk_attr_func_types(_N, X) ->
     TK = ic_forms:get_tk(X),
     {{TK, [], []}, {tk_void, [TK], []}}.
         
@@ -328,7 +298,7 @@ mk_attr_func_types(N, X) ->
 
 %% Input is a list of parameters (in parse form) and output is a list
 %% of capitalised variable names. mk_var is in icgen
-mk_erl_vars(G, Params) ->
+mk_erl_vars(_G, Params) ->
     map(fun(P) -> mk_var(get_id(P#param.id)) end, Params).
 
 
@@ -371,12 +341,11 @@ genDependency(G) ->
 
 
 
-extract_info(G, N, X) when record(X, op) ->
+extract_info(G, _N, X) when record(X, op) ->
     Name	= get_id2(X),
     InArgs	= ic:filter_params([in,inout], X#op.params),
     OutArgs	= ic:filter_params([out,inout], X#op.params),
     ArgNames	= mk_erl_vars(G, InArgs),
-    S = ic_genobj:tktab(G),
     TypeList	= {ic_forms:get_tk(X),
 		   map(fun(Y) -> ic_forms:get_tk(Y) end, InArgs),
 		   map(fun(Y) -> ic_forms:get_tk(Y) end, OutArgs)

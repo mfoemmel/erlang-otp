@@ -101,7 +101,7 @@
 %% Constraints
 -define(get_Constraint(S,I),    find_obj(lists:keysearch(I, 1, S#state.constraints),
 					 constraint)).
--define(get_AllConstraints(S),  lists:map(fun({I, C, W, WC, K, T, A}) -> 
+-define(get_AllConstraints(S),  lists:map(fun({I, C, _W, _WC, _K, T, A}) -> 
 						  ?create_MappingInfo(T, C, I, A) 
 					  end, 
 					  S#state.constraints)).
@@ -142,13 +142,13 @@
 %% Effect   : Functions demanded by the gen_server module. 
 %%------------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 handle_info(Info, State) ->
     ?debug_print("INFO: ~p  DATA: ~p~n", [State, Info]),
     case Info of
-        {'EXIT', Pid, Reason} ->
+        {'EXIT', _Pid, _Reason} ->
             {noreply, State};
         _ ->
             {noreply, State}
@@ -163,7 +163,7 @@ init([FiFac, FacPid, InitGr, DefVal]) ->
     process_flag(trap_exit, true),
     {ok, ?get_InitState(InitGr, DefVal, FiFac, FacPid)}.
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------
@@ -174,21 +174,21 @@ terminate(Reason, State) ->
 %% Type     : readonly
 %% Returns  : string()
 %%-----------------------------------------------------------
-'_get_constraint_grammar'(OE_THIS, State) ->
+'_get_constraint_grammar'(_OE_THIS, State) ->
     {reply, ?get_Grammar(State), State}.
 %%----------------------------------------------------------%
 %% Function : '_get_value_type'/2
 %% Type     : readonly
 %% Returns  : CORBA::TypeCode
 %%-----------------------------------------------------------
-'_get_value_type'(OE_THIS, State) ->
+'_get_value_type'(_OE_THIS, State) ->
     {reply, ?get_DefTC(State), State}.
 %%----------------------------------------------------------%
 %% Function : '_get_default_value'/2
 %% Type     : readonly
 %% Returns  : #any{}
 %%-----------------------------------------------------------
-'_get_default_value'(OE_THIS, State) ->
+'_get_default_value'(_OE_THIS, State) ->
     {reply, ?get_DefVal(State), State}.
 
 %%-----------------------------------------------------------
@@ -201,7 +201,7 @@ terminate(Reason, State) ->
 %%            {'EXCEPTION', CosNotifyFilter::InvalidConstraint} |
 %%            {'EXCEPTION', CosNotifyFilter::InvalidValue}
 %%-----------------------------------------------------------
-add_mapping_constraints(OE_THIS, State, Pairs) ->
+add_mapping_constraints(_OE_THIS, State, Pairs) ->
     {NewState, Filters, Info} = try_create_filters(State, Pairs),
     NewState2=store_filters(NewState, Filters),
     {reply, Info, NewState2}.
@@ -215,10 +215,10 @@ add_mapping_constraints(OE_THIS, State, Pairs) ->
 %%            {'EXCEPTION', CosNotifyFilter::InvalidValue} |
 %%            {'EXCEPTION', CosNotifyFilter::ConstraintNotFound}
 %%-----------------------------------------------------------
-modify_mapping_constraints(OE_THIS, State, IDs, InfoSeq) ->
+modify_mapping_constraints(_OE_THIS, State, IDs, InfoSeq) ->
     lookup_constraints(IDs, State),
     lookup_constraints(InfoSeq, State),
-    {NewState, Filters, Info} = try_create_filters(State, InfoSeq),
+    {NewState, Filters, _Info} = try_create_filters(State, InfoSeq),
 
     %% We cannot change anything before our checks (see above). Hence,
     %% do NOT move the following lines above this point.
@@ -234,7 +234,7 @@ modify_mapping_constraints(OE_THIS, State, IDs, InfoSeq) ->
 %% Returns  : CosNotifyFilter::MappingConstraintInfoSeq |
 %%            {'EXCEPTION', CosNotifyFilter::ConstraintNotFound}
 %%-----------------------------------------------------------
-get_mapping_constraints(OE_THIS, State, IDs) ->
+get_mapping_constraints(_OE_THIS, State, IDs) ->
     {reply, lookup_constraints(IDs, State), State}.
 
 %%----------------------------------------------------------%
@@ -242,7 +242,7 @@ get_mapping_constraints(OE_THIS, State, IDs) ->
 %% Arguments: -
 %% Returns  : CosNotifyFilter::MappingConstraintInfoSeq 
 %%-----------------------------------------------------------
-get_all_mapping_constraints(OE_THIS, State) ->
+get_all_mapping_constraints(_OE_THIS, State) ->
     {reply, ?get_AllConstraints(State), State}.
 
 %%----------------------------------------------------------%
@@ -250,7 +250,7 @@ get_all_mapping_constraints(OE_THIS, State) ->
 %% Arguments: -
 %% Returns  : ok
 %%-----------------------------------------------------------
-remove_all_mapping_constraints(OE_THIS, State) ->
+remove_all_mapping_constraints(_OE_THIS, State) ->
     {reply, ok, ?del_AllConstraints(State)}.
 
 %%----------------------------------------------------------%
@@ -258,7 +258,7 @@ remove_all_mapping_constraints(OE_THIS, State) ->
 %% Arguments: -
 %% Returns  : ok
 %%-----------------------------------------------------------
-destroy(OE_THIS, State) ->
+destroy(_OE_THIS, State) ->
     {stop, normal, ok, State}.
 
 %%----------------------------------------------------------%
@@ -267,9 +267,9 @@ destroy(OE_THIS, State) ->
 %% Returns  : boolean(), #any{} (out-type) |
 %%            {'EXCEPTION', CosNotifyFilter::UnsupportedFilterableData}
 %%-----------------------------------------------------------
-match(OE_THIS, State, Event) when record(Event,'any'), ?is_EmptyFilter(State) ->
+match(_OE_THIS, State, Event) when record(Event,'any'), ?is_EmptyFilter(State) ->
     {reply, {false, ?get_DefAny(State)}, State};
-match(OE_THIS, State, Event) when record(Event,'any') ->
+match(_OE_THIS, State, Event) when record(Event,'any') ->
     match_any_event(State, Event, ?get_ConstraintAllData(State));
 match(_,_,_) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -281,10 +281,10 @@ match(_,_,_) ->
 %% Returns  : boolean(), #any{} (out-type) |
 %%            {'EXCEPTION', CosNotifyFilter::UnsupportedFilterableData}
 %%-----------------------------------------------------------
-match_structured(OE_THIS, State, Event) when 
+match_structured(_OE_THIS, State, Event) when 
   record(Event,'CosNotification_StructuredEvent'), ?is_EmptyFilter(State) ->
     {reply, {false, ?get_DefAny(State)}, State};
-match_structured(OE_THIS, State, Event) when 
+match_structured(_OE_THIS, State, Event) when 
   record(Event,'CosNotification_StructuredEvent') ->
     match_str_event(State, Event, ?get_ConstraintAllData(State));
 match_structured(_,_,_) ->
@@ -296,7 +296,7 @@ match_structured(_,_,_) ->
 %% Returns  : boolean() , #any{} (out-type) |
 %%            {'EXCEPTION', CosNotifyFilter::UnsupportedFilterableData}
 %%-----------------------------------------------------------
-match_typed(OE_THIS, State, Data) ->
+match_typed(_OE_THIS, _State, _Data) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO}).
 	 
 %%--------------- LOCAL FUNCTIONS ----------------------------
@@ -312,7 +312,7 @@ match_delete(State, Constraints, ID) ->
     match_delete(State, Constraints, ID, []).
 match_delete(_, [], _, _) ->
     error;
-match_delete(State, [{ID, Con, Which, WC, Key, Types, Any}|T], ID, Acc) ->
+match_delete(State, [{ID, _Con, _Which, _WC, Key, _Types, _Any}|T], ID, Acc) ->
     ?del_Type(State, ID),
     ?del_ParseTree(State, Key),
     {ok, ?set_Constraints(State, Acc++T)};
@@ -329,7 +329,7 @@ clear_DB(State) ->
 %% !!!!!! This function may not alter any data in DB in any way !!!!!!!!!!
 lookup_constraints(IDs, State) ->
     lookup_constraints(IDs, State, []).
-lookup_constraints([], State, Accum) ->
+lookup_constraints([], _State, Accum) ->
     Accum;
 lookup_constraints([H|T], State, Accum) 
   when record(H, 'CosNotifyFilter_MappingConstraintInfo') ->
@@ -337,7 +337,7 @@ lookup_constraints([H|T], State, Accum)
 	error ->
 	    corba:raise(#'CosNotifyFilter_ConstraintNotFound'
 			{id = H#'CosNotifyFilter_MappingConstraintInfo'.constraint_id});
-	Con ->
+	_Con ->
 	    %% We don't need to collect the result since the input already is of
 	    %% the correct type, i.e., ConstraintInfoSeq
 	    lookup_constraints(T, State, Accum)
@@ -364,9 +364,10 @@ delete_constraints([H|T], State)
 	{ok, NewState} ->
 	    delete_constraints(T, NewState);
 	Reason ->
-	    orber:debug_level_print("[~p] 'CosNotifyFilter_MappingFilter':modify_mapping_constraints().
-Unable to remove: ~p
-Reason: ~p~n", [?LINE, H, Reason], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] 'CosNotifyFilter_MappingFilter':modify_mapping_constraints().~n"
+		      "Unable to remove: ~p~n"
+		      "Reason: ~p~n", 
+		      [?LINE, H, Reason], ?DEBUG_LEVEL),
 	    delete_constraints(T, State)
     end;
 delete_constraints([H|T], State) ->
@@ -374,9 +375,10 @@ delete_constraints([H|T], State) ->
 	{ok, NewState} ->
 	    delete_constraints(T, NewState);
 	Reason ->
-	    orber:debug_level_print("[~p] 'CosNotifyFilter_MappingFilter':modify_mapping_constraints().
-Unable to remove: ~p
-Reason: ~p~n", [?LINE, H, Reason], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] 'CosNotifyFilter_MappingFilter':modify_mapping_constraints().~n"
+		      "Unable to remove: ~p~n"
+		      "Reason: ~p~n", 
+		      [?LINE, H, Reason], ?DEBUG_LEVEL),
 	    delete_constraints(T, State)
     end.
     
@@ -474,7 +476,7 @@ store_filters(State, [{ID, Which, WC, Key, Types, Con, Tree, Any}|T]) ->
     store_filters(?add_Constraint(State, ID, Con, Which, WC, Key, Types, Any), T).
     
 
-write_types(State, [],_, _) ->
+write_types(_State, [],_, _) ->
     ok;
 write_types(State, [EventType|T], ID, Key) ->
     ?add_Type(State, ID, EventType, Key),
@@ -486,8 +488,8 @@ write_types(State, [EventType|T], ID, Key) ->
 %% Arguments: Event - #any{}
 %% Returns  : 
 %%-----------------------------------------------------------
-match_any_event(State, Event, []) ->
-    ?debug_print("FILTER REJECTED:  ~p~n", [Event]),
+match_any_event(State, _Event, []) ->
+    ?debug_print("FILTER REJECTED:  ~p~n", [_Event]),
     {reply, {false, ?get_DefAny(State)}, State};
 match_any_event(State, Event, [{_, _, _, _, Key, Any}|T]) ->
     case catch cosNotification_Filter:eval(?get_ParseTree(State,Key), Event) of
@@ -505,10 +507,10 @@ match_any_event(State, Event, [{_, _, _, _, Key, Any}|T]) ->
 %% Returns  : 
 %%-----------------------------------------------------------
 
-match_str_event(State, Event, []) ->
-    ?debug_print("FILTER REJECTED:  ~p~n", [Event]),
+match_str_event(State, _Event, []) ->
+    ?debug_print("FILTER REJECTED:  ~p~n", [_Event]),
     {reply, {false, ?get_DefAny(State)}, State};
-match_str_event(State, Event, [{ID, Con, Which, WC, Key, Types, Any}|T]) ->
+match_str_event(State, Event, [{ID, _Con, Which, WC, Key, _Types, Any}|T]) ->
     ET = ((Event#'CosNotification_StructuredEvent'.header)
 	  #'CosNotification_EventHeader'.fixed_header)
 	#'CosNotification_FixedEventHeader'.event_type,

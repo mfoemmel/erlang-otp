@@ -76,10 +76,25 @@ scan(Binary, Port) ->
 	[] ->
 	    receive
 		{tokens, Tokens, LatestLine} ->
-		    {ok, Tokens, LatestLine} 
+		    Vsn = version(Tokens),
+		    {ok, Tokens, Vsn, LatestLine} 
 	    after 0 ->
 		    {error, "Driver term send failure", 1}
 	    end;
 	Reason ->
 	    {error, Reason, 1}
     end.
+
+
+version([]) ->
+    1;
+version([{'SafeChars',1,"!/1"}|_]) ->
+    1;
+version([{'SafeChars',1,"megaco/1"}|_]) ->
+    1;
+version([{'SafeChars',1,"!/2"}|_]) ->
+    2;
+version([{'SafeChars',1,"megaco/2"}|_]) ->
+    2;
+version([_|T]) ->
+    version(T).

@@ -30,7 +30,10 @@ int ei_encode_atom_len(char *buf, int *index, const char *p, int len)
   char *s = buf + *index;
   char *s0 = s;
 
-  len &= 0xff; /* max 256 characters */
+  /* This function is documented to truncate at MAXATOMLEN (256) */ 
+  if (len > MAXATOMLEN)
+    len = MAXATOMLEN;
+
   if (!buf) s += 3;
   else {
     put8(s,ERL_ATOM_EXT);

@@ -43,7 +43,7 @@
                     selected-attribute-types(5) clearance (55) }
 
              -- Uncomment this if using a 1988 level ASN.1 compiler
-             UTF8String ::= [UNIVERSAL 12] IMPLICIT OCTET STRING
+             -- UTF8String ::= [UNIVERSAL 12] IMPLICIT OCTET STRING
 
              AttributeCertificate ::= SEQUENCE {
                    acinfo               AttributeCertificateInfo,

@@ -33,10 +33,14 @@
 	 get_tobe_refed_func/1,reset_gen_state/0,is_function_generated/1,
 	 generated_refed_func/1,next_refed_func/0,pop_namelist/0,
 	 next_namelist_el/0,update_namelist/1,step_in_constructed/0,
-	 add_tobe_refed_func/1,add_generated_refed_func/1]).
+	 add_tobe_refed_func/1,add_generated_refed_func/1,
+	 maybe_rename_function/3,latest_sindex/0,current_sindex/0,
+	 set_current_sindex/1,next_sindex/0,maybe_saved_sindex/2,
+	 parse_and_save/2]).
 
 -include("asn1_records.hrl").
 -include_lib("stdlib/include/erl_compile.hrl").
+-include_lib("kernel/include/file.hrl").
 
 -import(asn1ct_gen_ber_bin_v2,[encode_tag_val/3,decode_class/1]).
 
@@ -56,6 +60,7 @@
 -define(MANDATORY,mandatory).
 -define(DEFAULT,default).
 -define(OPTIONAL,opt).
+-define(OPTIONAL_UNDECODED,opt_undec).
 -define(PARTS,parts).
 -define(UNDECODED,undec).
 -define(ALTERNATIVE,alt).
@@ -140,7 +145,7 @@ compile_set(SetBase,DirName,Files,Options) when list(hd(Files)),list(Options) ->
 		      end,
 		      Files),
 		check_set(ParseRes,SetBase,OutFile,Includes,
-			  EncodingRule,DbFile,Options,InputModules);
+			  EncodingRule,DbFile,Options,InputModules,DirName);
 	    Other ->
 		{error,{'unexpected error in scan/parse phase',
 			lists:map(fun(X)->element(3,X) end,Other)}}
@@ -149,9 +154,9 @@ compile_set(SetBase,DirName,Files,Options) when list(hd(Files)),list(Options) ->
     Result.
 
 check_set(ParseRes,SetBase,OutFile,Includes,EncRule,DbFile,
-	  Options,InputModules) ->
+	  Options,InputModules,Dir) ->
     lists:foreach(fun({_T,M,File})->
-			  cmp(M#module.name,File)
+			  cmp(M#module.name,filename:join([Dir,File]))
 		  end,
 		  ParseRes),
     MergedModule = merge_modules(ParseRes,SetBase),
@@ -407,7 +412,7 @@ save_imports(ModuleList)->
 	    ok;
 	ImportsList2 ->
 	    create_ets_table(original_imports,[named_table]),
-	    ets:insert(original_imports,ImportsList2)
+	    lists:foreach(fun(X) -> ets:insert(original_imports,X) end,ImportsList2)
     end.
 				    
 	    
@@ -711,7 +716,11 @@ parse({false,Tokens},_,_) ->
     {false,Tokens}.
 
 check({true,M},File,OutFile,Includes,EncodingRule,DbFile,Options,InputMods) ->
-    cmp(M#module.name,File),
+    case InputMods of
+	[] ->
+	    cmp(M#module.name,File);
+	_ -> ok
+    end,
     start(["."|Includes]),
     case asn1ct_check:storeindb(M) of 
 	ok   ->
@@ -720,7 +729,8 @@ check({true,M},File,OutFile,Includes,EncodingRule,DbFile,Options,InputMods) ->
 			   module=Module#module{typeorval=[]},
 			   erule=EncodingRule,
 			   inputmodules=InputMods,
-			   options=Options},
+			   options=Options,
+			   sourcedir=filename:dirname(File)},
 	    Check = asn1ct_check:check(State,Module#module.typeorval),
 	    case {Check,lists:member(abs,Options)} of
 		{{error,Reason},_} ->
@@ -779,6 +789,107 @@ generate({true,{M,_Module,GenTOrV}},OutFile,EncodingRule,Options) ->
 generate({false,M},_,_,_) ->
     {false,M}.
 
+%% parse_and_save parses an asn1 spec and saves the unchecked parse
+%% tree in a data base file.
+%% Does not support multifile compilation files
+parse_and_save(Module,S) ->
+    Options = S#state.options,
+    SourceDir = S#state.sourcedir,
+    Includes = [I || {i,I} <-Options],
+%    Base = filename:basename(File),
+    Options1 =
+	case {lists:member(optimize,Options),lists:member(ber_bin,Options)} of
+	    {true,true} -> 
+		[ber_bin_v2|Options--[ber_bin]];
+	    _ -> Options
+	end,
+    
+    case get_input_file(Module,[SourceDir|Includes]) of
+	{file,PrefixedFile} ->
+	    case dbfile_uptodate(PrefixedFile,Options1) of
+		false ->
+		    parse_and_save1(PrefixedFile,Options1);
+		_ -> ok
+	    end;
+	Err ->
+	    {error,{asn1,input_file_error,Err}}
+    end.
+parse_and_save1(File,Options) ->
+    Ext = filename:extension(File),
+    Base = filename:basename(File,Ext),
+    DbFile = outfile(Base,"asn1db",Options),
+    Includes = [I || {i,I} <- Options],
+    Continue1 = scan({true,true},File,Options),
+    M =
+	case parse(Continue1,File,Options) of
+	    {true,Mod} -> Mod;
+	    _ ->
+		exit({error,{asn1,File,"no such file or directory"}})
+	end,
+    start(["."|Includes]),
+    case asn1ct_check:storeindb(M) of 
+	ok   ->
+	    asn1_db:dbsave(DbFile,M#module.name)
+    end.
+
+get_input_file(Module,[]) ->
+    Module;
+get_input_file(Module,[I|Includes]) ->
+    case (catch input_file_type(filename:join([I,Module]))) of
+	{single_file,FileName} ->
+	    case file:read_file_info(FileName) of
+		{ok,_} ->
+		    {file,FileName};
+		_ -> get_input_file(Module,Includes)
+	    end;
+	_ -> 
+	    get_input_file(Module,Includes)
+    end.
+
+dbfile_uptodate(File,Options) ->
+    EncodingRule = get_rule(Options),
+    Ext = filename:extension(File),
+    Base = filename:basename(File,Ext),
+    DbFile = outfile(Base,"asn1db",Options),
+    case file:read_file_info(DbFile) of
+	{error,enoent} ->
+	    false;
+% 	{error,Reason} ->
+% 	    io:format("Reason:~n~p~n",[Reason]);
+	{ok,FileInfoDb} ->
+	    %% file exists, check date and finally encodingrule
+	    {ok,FileInfoAsn} = file:read_file_info(File),
+	    case FileInfoDb#file_info.mtime < FileInfoAsn#file_info.mtime of
+		true ->
+		    %% date of asn1 spec newer than db file
+		    false;
+		_ -> 
+		    %% date ok,check that same erule was used
+		    Obase = case lists:keysearch(outdir, 1, Options) of
+				{value, {outdir, Odir}} -> 
+				    Odir;
+				_NotFound -> ""
+			    end,
+		    BeamFileName = outfile(Base,"beam",Options),
+		    case file:read_file_info(BeamFileName) of
+			{ok,_} ->
+			    code:add_path(Obase),
+			    BeamFile = list_to_atom(Base),
+			    BeamInfo = (catch BeamFile:info()),
+			    case catch lists:keysearch(options,1,BeamInfo) of
+				{value,{options,OldOptions}} ->
+				    case get_rule(OldOptions) of
+					EncodingRule -> true;
+					_ -> false
+				    end;
+				_ -> false
+			    end;
+			_ -> false
+		    end
+	    end
+    end.
+
+
 compile_erl({true,_},OutFile,Options) ->
     erl_compile(OutFile,Options);
 compile_erl({false,true},_,_) ->
@@ -817,7 +928,7 @@ input_file_type(File) ->
 		    {single_file,File};
 		SetPFix when (SetPFix == ".set") ->
 		    {multiple_files_file,
-		     filename:basename(Base,SetPFix),
+		     list_to_atom(filename:basename(Base,SetPFix)),
 		     File};
 		_Error ->
 		    throw({input_file_error,{'Bad input file',File}})
@@ -917,7 +1028,7 @@ outfile(Base, Ext, Opts) ->
 	[] ->
 	    Obase;
 	_ ->
-	    Obase++"."++Ext
+	    lists:concat([Obase,".",Ext])
     end.
 
 %% compile(AbsFileName, Options)
@@ -1165,13 +1276,16 @@ value(Module,Type) ->
     end.
 
 cmp(Module,InFile) ->
+    %% This test must care for both case sensitive and non case
+    %% sensitive OS.
     Base = filename:basename(InFile),
     Dir = filename:dirname(InFile),
     Ext = filename:extension(Base),
     Finfo = file:read_file_info(InFile),
     Minfo = file:read_file_info(filename:join(Dir,lists:concat([Module,Ext]))),
-    case Finfo of
-	Minfo ->
+    case {cmp_case_sensitive(Base,lists:concat([Module,Ext])),
+	  cmp_f_inode(Finfo,Minfo)} of
+	{true,true} ->
 	    ok;
 	_ ->
 	    io:format("asn1error: Modulename and filename must be equal~n",[]),
@@ -1180,6 +1294,55 @@ cmp(Module,InFile) ->
 
 vsn() ->
     ?vsn.
+
+cmp_f_inode({ok,#file_info{inode=I}},{ok,#file_info{inode=I}}) ->
+    true;
+cmp_f_inode(_,_) ->
+    false.
+
+cmp_case_sensitive(Name1,Name2) when list(Name1),list(Name2) ->
+    cmp_cs(Name1,Name2);
+cmp_case_sensitive(Name1,Name2) ->
+    NewName1 =
+	case Name1 of
+	    N1 when atom(N1) ->
+		atom_to_list(N1);
+	    _ -> Name1
+	end,
+    NewName2 =
+	case Name2 of
+	    N2 when atom(N2) ->
+		atom_to_list(N2);
+	    _ -> Name2
+	end,
+    cmp_case_sensitive(NewName1,NewName2).
+cmp_cs([],[]) ->
+    true;
+cmp_cs([H1|T1],[H2|T2]) ->
+    case cmp_char_cs(H1,H2) of
+	true ->
+	    cmp_cs(T1,T2);
+	_ -> false
+    end;
+cmp_cs(_,_) ->
+    false.
+
+cmp_char_cs(H,H) ->
+    true;
+cmp_char_cs(H1,H2) when H1=<$Z,H1>=$A ->
+    if
+	H1+32 == H2 ->
+	    true;
+	true -> false
+    end;
+cmp_char_cs(H1,H2) when H2=<$Z,H2>=$A ->
+    if
+	H2+32 == H1 ->
+	    true;
+	true -> false
+    end;
+cmp_char_cs(_,_) ->
+    false.
 
 print_error_message([got,H|T]) when list(H) ->
     io:format(" got:"),
@@ -1260,20 +1423,25 @@ partial_decode_prepare(ber_bin_v2,M,TsAndVs,Options) when tuple(TsAndVs) ->
     %% read configure file
 %    Types = element(1,TsAndVs),
     CfgList = read_config_file(M#module.name),
-    SelectedDecode = get_config_info(CfgList,partial_decode),
+    SelectedDecode = get_config_info(CfgList,selective_decode),
     ExclusiveDecode = get_config_info(CfgList,exclusive_decode),
     CommandList = 
 	create_partial_decode_gen_info(M#module.name,SelectedDecode),
-%    io:format("partial_decode = ~p~n",[CommandList]),
-    
+    %% To convert CommandList to a proper list for the driver change
+    %% the list:[[choosen,Tag1],skip,[skip_optional,Tag2]] to L =
+    %% [5,2,Tag1,0,1,Tag2] where 5 is the length, and call
+    %% port_control(asn1_driver_port,3,[L| Bin])
     save_config(partial_decode,CommandList),
+    save_gen_state(selective_decode,SelectedDecode),
+%    io:format("selective_decode: CommandList:~n~p~nSelectedDecode:~n~p~n",
+%	      [CommandList,SelectedDecode]),
     CommandList2 = 
 	create_partial_inc_decode_gen_info(M#module.name,ExclusiveDecode),
-%    io:format("partial_incomplete_decode = ~p~n",[CommandList2]),
+%%    io:format("partial_incomplete_decode = ~p~n",[CommandList2]),
     Part_inc_tlv_tags = tag_format(ber_bin_v2,Options,CommandList2),
 %    io:format("partial_incomplete_decode: tlv_tags = ~p~n",[Part_inc_tlv_tags]),
     save_config(partial_incomplete_decode,Part_inc_tlv_tags),
-    save_gen_state(ExclusiveDecode,Part_inc_tlv_tags);
+    save_gen_state(exclusive_decode,ExclusiveDecode,Part_inc_tlv_tags);
 partial_decode_prepare(_,_,_,_) ->
     ok.
 
@@ -1332,8 +1500,12 @@ create_pdec_inc_command(_ModName,_,[],Acc) ->
 create_pdec_inc_command(ModName,{Comps1,Comps2},TNL,Acc) 
   when list(Comps1),list(Comps2) ->
     create_pdec_inc_command(ModName,Comps1 ++ Comps2,TNL,Acc);
+%% The following two functionclauses matches on the type after the top type. This one if the top type had no tag, i.e. a CHOICE
+create_pdec_inc_command(ModN,Clist,[CL|_Rest],[[]]) when list(CL) ->
+    create_pdec_inc_command(ModN,Clist,CL,[]);
 create_pdec_inc_command(ModN,Clist,[CL|_Rest],Acc) when list(CL) ->
-    create_pdec_inc_command(ModN,Clist,CL,Acc);
+    InnerDirectives=create_pdec_inc_command(ModN,Clist,CL,[]),
+    lists:reverse([InnerDirectives|Acc]);
 create_pdec_inc_command(ModName,
 			CList=[#'ComponentType'{name=Name,typespec=TS,
 						prop=Prop}|Comps],
@@ -1345,11 +1517,11 @@ create_pdec_inc_command(ModName,
 % 	    create_pdec_inc_command(ModName,get_components(TS#type.def),Cs,[TagCommand|Acc]);
 	{Name,undecoded} ->
 	    TagCommand = get_tag_command(TS,?UNDECODED,Prop),
-	    create_pdec_inc_command(ModName,Comps,Cs,[TagCommand|Acc]);
+	    create_pdec_inc_command(ModName,Comps,Cs,concat_sequential(TagCommand,Acc));
 	{Name,parts} ->
 	    TagCommand = get_tag_command(TS,?PARTS,Prop),
-	    create_pdec_inc_command(ModName,Comps,Cs,[TagCommand|Acc]);
-	L when list(L) ->
+	    create_pdec_inc_command(ModName,Comps,Cs,concat_sequential(TagCommand,Acc));
+	L when list(L) -> % I guess this never happens due to previous function clause
 	    %% This case is only possible as the first element after
 	    %% the top type element, when top type is SEGUENCE or SET.
 	    %% Follow each element in L. Must note every tag on the
@@ -1384,7 +1556,7 @@ create_pdec_inc_command(ModName,
 %%	    create_pdec_inc_command(ModName,TS#type.def,RestPartsList,Acc);
 	_ -> %% this component may not be in the config list
 	    TagCommand = get_tag_command(TS,?MANDATORY,Prop),
-	    create_pdec_inc_command(ModName,Comps,TNL,[TagCommand|Acc])
+	    create_pdec_inc_command(ModName,Comps,TNL,concat_sequential(TagCommand,Acc))
     end;
 create_pdec_inc_command(ModName,
 			{'CHOICE',[#'ComponentType'{name=C1,
@@ -1393,25 +1565,49 @@ create_pdec_inc_command(ModName,
 			[{C1,Directive}|Rest],Acc) ->
     case Directive of
 	List when list(List) ->
-	    [Command,Tag] = get_tag_command(TS,?ALTERNATIVE,Prop),
-	    CompAcc = create_pdec_inc_command(ModName,TS#type.def,List,[]),
+%	    [Command,Tag] = get_tag_command(TS,?ALTERNATIVE,Prop),
+	    TagCommand = get_tag_command(TS,?ALTERNATIVE,Prop),
+	    CompAcc = 
+		create_pdec_inc_command(ModName,
+					get_components(TS#type.def),List,[]),
+	    NewAcc = case TagCommand of
+			 [Command,Tag] when atom(Command) ->
+			     [[Command,Tag,CompAcc]|Acc];
+			 [L1,_L2|Rest] when list(L1) ->
+% 			     [LastComm|Comms] = lists:reverse(TagCommand),
+% 			     [concat_sequential(lists:reverse(Comms),
+% 					       [LastComm,CompAcc])|Acc]
+			     case lists:reverse(TagCommand) of
+				 [Atom|Comms] when atom(Atom) ->
+				     [concat_sequential(lists:reverse(Comms),
+							[Atom,CompAcc])|Acc];
+				 [[Command2,Tag2]|Comms] ->
+				     [concat_sequential(lists:reverse(Comms),
+							[[Command2,Tag2,CompAcc]])|Acc]
+			     end
+% 			     [concat_sequential(lists:reverse(Comms),
+% 						InnerCommand)|Acc]
+		     
+		     end,
 	    create_pdec_inc_command(ModName,{'CHOICE',Comps},Rest,
-				    [[Command,Tag,CompAcc]|Acc]);
+%				    [[Command,Tag,CompAcc]|Acc]);
+				    NewAcc);
 	undecoded ->
 	    TagCommand = get_tag_command(TS,?ALTERNATIVE_UNDECODED,Prop),
 	    create_pdec_inc_command(ModName,{'CHOICE',Comps},Rest,
-				    [TagCommand|Acc]);
+				    concat_sequential(TagCommand,Acc));
 	parts ->
 	    TagCommand = get_tag_command(TS,?ALTERNATIVE_PARTS,Prop),
 	    create_pdec_inc_command(ModName,{'CHOICE',Comps},Rest,
-				    [TagCommand|Acc])
+				    concat_sequential(TagCommand,Acc))
     end;
 create_pdec_inc_command(ModName,
 			{'CHOICE',[#'ComponentType'{typespec=TS,
 						    prop=Prop}|Comps]},
 			TNL,Acc) ->
     TagCommand = get_tag_command(TS,?ALTERNATIVE,Prop),
-    create_pdec_inc_command(ModName,{'CHOICE',Comps},TNL,[TagCommand|Acc]);
+    create_pdec_inc_command(ModName,{'CHOICE',Comps},TNL,
+			    concat_sequential(TagCommand,Acc));
 create_pdec_inc_command(M,{'CHOICE',{Cs1,Cs2}},TNL,Acc) 
   when list(Cs1),list(Cs2) ->
     create_pdec_inc_command(M,{'CHOICE',Cs1 ++ Cs2},TNL,Acc);
@@ -1442,14 +1638,25 @@ partial_inc_dec_toptype(_) ->
 %% CommandList = [Elements]
 %% Elements = {choosen,Tag}|{skip_optional,Tag}|skip
 %% Tag is a binary with the tag BER encoded.
-create_partial_decode_gen_info(ModName,{{_,ModName},TypeList}) ->
+create_partial_decode_gen_info(ModName,{ModName,TypeLists}) ->
+    [create_partial_decode_gen_info1(ModName,TL) || TL <- TypeLists];
+create_partial_decode_gen_info(_,[]) ->
+    [];
+create_partial_decode_gen_info(_M1,{M2,_}) ->
+    throw({error,{"wrong module name in asn1 config file",
+		  M2}}).
+
+%create_partial_decode_gen_info1(ModName,{ModName,TypeList}) ->
+create_partial_decode_gen_info1(ModName,{FuncName,TypeList}) ->
     case TypeList of
 	[TopType|Rest] ->
 	    case asn1_db:dbget(ModName,TopType) of
 		#typedef{typespec=TS} ->
 		    TagCommand = get_tag_command(TS,?CHOOSEN),
-		    create_pdec_command(ModName,get_components(TS#type.def),
-					Rest,[TagCommand]);
+		    Ret=create_pdec_command(ModName,
+					    get_components(TS#type.def),
+					    Rest,concat_tags(TagCommand,[])),
+		    {FuncName,Ret};
 		_ ->
 		    throw({error,{"wrong type list in asn1 config file",
 				  TypeList}})
@@ -1457,25 +1664,36 @@ create_partial_decode_gen_info(ModName,{{_,ModName},TypeList}) ->
 	_ ->
 	    []
     end;
-create_partial_decode_gen_info(_,[]) ->
-    [];
-create_partial_decode_gen_info(_M1,{{_,M2},_}) ->
-    throw({error,{"wrong module name in asn1 config file",
-				  M2}}).
+create_partial_decode_gen_info1(_,_) ->
+    ok.
+% create_partial_decode_gen_info1(_,[]) ->
+%     [];
+% create_partial_decode_gen_info1(_M1,{M2,_}) ->
+%     throw({error,{"wrong module name in asn1 config file",
+% 				  M2}}).
 
 %% create_pdec_command/4 for each name (type or component) in the
 %% third argument, TypeNameList, a command is created. The command has
 %% information whether the component/type shall be skipped, looked
 %% into or returned. The list of commands is returned.
 create_pdec_command(_ModName,_,[],Acc) ->
-    lists:reverse(Acc);
+    Remove_empty_lists =
+	fun([[]|L],Res,Fun) ->
+		Fun(L,Res,Fun);
+	   ([],Res,_) ->
+		Res;
+	   ([H|L],Res,Fun) ->
+		Fun(L,[H|Res],Fun)
+	end,
+    Remove_empty_lists(Acc,[],Remove_empty_lists);
+%    lists:reverse(Acc);
 create_pdec_command(ModName,[#'ComponentType'{name=C1,typespec=TS}|_Comps],
 		    [C1|Cs],Acc) ->
     %% this component is a constructed type or the last in the
     %% TypeNameList otherwise the config spec is wrong
     TagCommand = get_tag_command(TS,?CHOOSEN),
     create_pdec_command(ModName,get_components(TS#type.def),
-			Cs,[TagCommand|Acc]);
+			Cs,concat_tags(TagCommand,Acc));
 create_pdec_command(ModName,[#'ComponentType'{typespec=TS,
 					      prop=Prop}|Comps],
 		    [C2|Cs],Acc) ->
@@ -1486,7 +1704,7 @@ create_pdec_command(ModName,[#'ComponentType'{typespec=TS,
 	    _ ->
 		get_tag_command(TS,?SKIP_OPTIONAL)
 	end,
-    create_pdec_command(ModName,Comps,[C2|Cs],[TagCommand|Acc]);
+    create_pdec_command(ModName,Comps,[C2|Cs],concat_tags(TagCommand,Acc));
 create_pdec_command(ModName,{'CHOICE',[Comp=#'ComponentType'{name=C1}|_]},TNL=[C1|_Cs],Acc) ->
     create_pdec_command(ModName,[Comp],TNL,Acc);
 create_pdec_command(ModName,{'CHOICE',[#'ComponentType'{}|Comps]},TNL,Acc) ->
@@ -1510,10 +1728,11 @@ create_pdec_command(ModName,TS=#type{def=Def},[C1|Cs],Acc) ->
 	    %% TypeNameList saying that the entire 'S OF' will be
 	    %% decoded.
 	    TagCommand = get_tag_command(TS,?CHOOSEN),
-	    create_pdec_command(ModName,Def,Cs,[TagCommand|Acc]);
+	    create_pdec_command(ModName,Def,Cs,concat_tags(TagCommand,Acc));
 	[N] when integer(N) ->
 	    TagCommand = get_tag_command(TS,?SKIP),
-	    create_pdec_command(ModName,Def,[[N-1]|Cs],[TagCommand|Acc]);
+	    create_pdec_command(ModName,Def,[[N-1]|Cs],
+				concat_tags(TagCommand,Acc));
 	Err ->
 	    throw({error,{"unexpected error when creating partial "
 			  "decode command",Err}})
@@ -1524,8 +1743,12 @@ create_pdec_command(_,_,TNL,_) ->
 	    
 % get_components({'CHOICE',Components}) ->
 %     Components;
+get_components(#'SEQUENCE'{components={C1,C2}}) when list(C1),list(C2) ->
+    C1++C2;
 get_components(#'SEQUENCE'{components=Components}) ->
     Components;
+get_components(#'SET'{components={C1,C2}}) when list(C1),list(C2) ->
+    C1++C2;
 get_components(#'SET'{components=Components}) ->
     Components;
 get_components({'SEQUENCE OF',Components}) ->
@@ -1534,7 +1757,43 @@ get_components({'SET OF',Components}) ->
     Components;
 get_components(Def) ->
     Def.
-			   
+
+concat_sequential(L=[A,B],Acc) when atom(A),binary(B) ->
+    [L|Acc];
+concat_sequential(L,Acc) when list(L) ->
+    concat_sequential1(lists:reverse(L),Acc);
+concat_sequential(A,Acc)  ->
+    [A|Acc].
+concat_sequential1([],Acc) ->
+    Acc;
+concat_sequential1([[]],Acc) ->
+    Acc;
+concat_sequential1([El|RestEl],Acc) when list(El) ->
+    concat_sequential1(RestEl,[El|Acc]);
+concat_sequential1([mandatory|RestEl],Acc) ->
+    concat_sequential1(RestEl,[mandatory|Acc]);
+concat_sequential1(L,Acc) ->
+    [L|Acc].
+			
+
+many_tags([?SKIP])->   
+    false;
+many_tags([?SKIP_OPTIONAL,_]) ->
+    false;
+many_tags([?CHOOSEN,_]) ->
+    false;
+many_tags(_) ->
+    true.
+
+concat_tags(Ts,Acc) ->
+    case many_tags(Ts) of
+	true when list(Ts) ->
+	    lists:reverse(Ts)++Acc;
+	true ->
+	    [Ts|Acc];
+	false ->
+	    [Ts|Acc]
+    end.
 %% get_tag_command(Type,Command)
 
 %% Type is the type that has information about the tag Command tells
@@ -1542,15 +1801,27 @@ get_components(Def) ->
 %% decoding. 
 get_tag_command(#type{tag=[]},_) ->
     [];
-get_tag_command(#type{tag=[_Tag]},?SKIP) ->
+%% SKIP and SKIP_OPTIONAL shall return only one tag command regardless 
+get_tag_command(#type{},?SKIP) ->
     ?SKIP;
+get_tag_command(#type{tag=Tags},?SKIP_OPTIONAL) ->
+    Tag=hd(Tags),
+    [?SKIP_OPTIONAL,encode_tag_val(decode_class(Tag#tag.class),
+				   Tag#tag.form,Tag#tag.number)];
 get_tag_command(#type{tag=[Tag]},Command) ->
     %% encode the tag according to BER
     [Command,encode_tag_val(decode_class(Tag#tag.class),Tag#tag.form, 
 			    Tag#tag.number)];
 get_tag_command(T=#type{tag=[Tag|Tags]},Command) ->
-    [get_tag_command(T#type{tag=Tag},Command)|
-     get_tag_command(T#type{tag=Tags},Command)].
+%     [get_tag_command(T#type{tag=[Tag]},Command)|
+%      [get_tag_command(T#type{tag=Tags},Command)]].
+    TC = get_tag_command(T#type{tag=[Tag]},Command),
+    TCs = get_tag_command(T#type{tag=Tags},Command),
+    case many_tags(TCs) of
+	true when list(TCs) ->
+	    [TC|TCs];
+	_ -> [TC|[TCs]]
+    end.
 
 %% get_tag_command/3 used by create_pdec_inc_command
 get_tag_command(#type{tag=[]},_,_) ->
@@ -1565,10 +1836,19 @@ get_tag_command(#type{tag=[Tag]},?MANDATORY,Prop) ->
 	_ -> [?OPTIONAL,encode_tag_val(decode_class(Tag#tag.class),
 				       Tag#tag.form,Tag#tag.number)]
     end;
-get_tag_command(#type{tag=[Tag]},Command,_) ->
-    [Command,encode_tag_val(decode_class(Tag#tag.class),Tag#tag.form, 
-			    Tag#tag.number)].
+get_tag_command(#type{tag=[Tag]},Command,Prop) ->
+    [anonymous_dec_command(Command,Prop),encode_tag_val(decode_class(Tag#tag.class),Tag#tag.form, Tag#tag.number)];
+get_tag_command(#type{tag=Tag},Command,Prop) when record(Tag,tag) ->
+    get_tag_command(#type{tag=[Tag]},Command,Prop);
+get_tag_command(T=#type{tag=[Tag|Tags]},Command,Prop) ->
+    [get_tag_command(T#type{tag=[Tag]},Command,Prop)|[
+%     get_tag_command(T#type{tag=Tags},?MANDATORY,Prop)]].
+     get_tag_command(T#type{tag=Tags},Command,Prop)]].
 
+anonymous_dec_command(?UNDECODED,'OPTIONAL') ->
+    ?OPTIONAL_UNDECODED;
+anonymous_dec_command(Command,_) ->
+    Command.
 
 get_referenced_type(M,Name) ->
     case asn1_db:dbget(M,Name) of
@@ -1612,6 +1892,8 @@ tlv_tags([{Name,TopType,L1}|Rest]) when list(L1),atom(TopType) ->
     [{Name,TopType,tlv_tags(L1)}|tlv_tags(Rest)];
 tlv_tags([[Command,Tag,L1]|Rest]) when list(L1),binary(Tag) ->
     [[Command,tlv_tag(Tag),tlv_tags(L1)]|tlv_tags(Rest)];
+tlv_tags([[mandatory|Rest]]) ->
+    [[mandatory|tlv_tags(Rest)]];
 tlv_tags([L=[L1|_]|Rest]) when list(L1) ->
     [tlv_tags(L)|tlv_tags(Rest)].
 
@@ -1683,6 +1965,7 @@ get_config_info(CfgList,InfoType) ->
 
 %% save_config/2 saves the Info with the key Key
 %% Before saving anything check if a table exists
+%% The record gen_state is saved with the key {asn1_config,gen_state}
 save_config(Key,Info) ->
     create_if_no_table(asn1_general,[named_table]),
     ets:insert(asn1_general,{{asn1_config,Key},Info}).
@@ -1693,8 +1976,8 @@ read_config_data(Key) ->
 	_ ->
 	    case ets:lookup(asn1_general,{asn1_config,Key}) of
 		[{_,Data}] -> Data;
-		Err -> 
-		    io:format("strange data from config file ~w~n",[Err]),
+		Err -> % Err is [] when nothing was saved in the ets table
+%%		    io:format("strange data from config file ~w~n",[Err]),
 		    Err
 	    end
     end.
@@ -1706,14 +1989,34 @@ read_config_data(Key) ->
 %%
 
 %% saves input data in a new gen_state record
-save_gen_state({_,ConfList},PartIncTlvTagList) ->
+save_gen_state(exclusive_decode,{_,ConfList},PartIncTlvTagList) ->
     %ConfList=[{FunctionName,PatternList}|Rest]
-    StateRec = #gen_state{inc_tag_pattern=PartIncTlvTagList,
-			  inc_type_pattern=ConfList},
+    State =
+	case get_gen_state() of
+	    S when record(S,gen_state) -> S;
+	    _ -> #gen_state{}
+	end,
+    StateRec = State#gen_state{inc_tag_pattern=PartIncTlvTagList,
+			       inc_type_pattern=ConfList},
     save_config(gen_state,StateRec);
-save_gen_state(_,_) ->
+save_gen_state(_,_,_) ->
 %%    ok.
-    save_config(gen_state,#gen_state{}).
+    case get_gen_state() of
+	S when record(S,gen_state) -> ok;
+	_ -> save_config(gen_state,#gen_state{})
+    end.
+
+save_gen_state(selective_decode,{_,Type_component_name_list}) ->
+%%    io:format("Selective_decode: ~p~n",[Type_component_name_list]),
+    State =
+	case get_gen_state() of
+	    S when record(S,gen_state) -> S;
+	    _ -> #gen_state{}
+	end,
+    StateRec = State#gen_state{type_pattern=Type_component_name_list},
+    save_config(gen_state,StateRec);
+save_gen_state(selective_decode,_) ->
+    ok.
 
 save_gen_state(GenState) when record(GenState,gen_state) ->
     save_config(gen_state,GenState).
@@ -1725,8 +2028,10 @@ get_gen_state_field(Field) ->
     case read_config_data(gen_state) of
 	undefined ->
 	    undefined;
-	GenState -> 
-	    get_gen_state_field(GenState,Field)
+	GenState when record(GenState,gen_state) -> 
+	    get_gen_state_field(GenState,Field);
+	Err ->
+	    exit({error,{asn1,{"false configuration file info",Err}}})
     end.
 get_gen_state_field(#gen_state{active=Active},active) ->
     Active;
@@ -1749,8 +2054,13 @@ get_gen_state_field(GS,namelist) ->
 get_gen_state_field(GS,tobe_refed_funcs) ->
     GS#gen_state.tobe_refed_funcs;
 get_gen_state_field(GS,gen_refed_funcs) ->
-    GS#gen_state.gen_refed_funcs.
-    
+    GS#gen_state.gen_refed_funcs;
+get_gen_state_field(GS,generated_functions) ->
+    GS#gen_state.generated_functions;
+get_gen_state_field(GS,suffix_index) ->
+    GS#gen_state.suffix_index;
+get_gen_state_field(GS,current_suffix_index) ->
+    GS#gen_state.current_suffix_index.
 
 get_gen_state() ->
     read_config_data(gen_state).
@@ -1788,7 +2098,13 @@ update_gen_state(namelist,State,Data) ->
 update_gen_state(tobe_refed_funcs,State,Data) ->
     save_gen_state(State#gen_state{tobe_refed_funcs=Data});
 update_gen_state(gen_refed_funcs,State,Data) ->
-    save_gen_state(State#gen_state{gen_refed_funcs=Data}).
+    save_gen_state(State#gen_state{gen_refed_funcs=Data});
+update_gen_state(generated_functions,State,Data) ->
+    save_gen_state(State#gen_state{generated_functions=Data});
+update_gen_state(suffix_index,State,Data) ->
+    save_gen_state(State#gen_state{suffix_index=Data});
+update_gen_state(current_suffix_index,State,Data) ->
+    save_gen_state(State#gen_state{current_suffix_index=Data}).
 
 update_namelist(Name) ->
     case get_gen_state_field(namelist) of
@@ -1874,10 +2190,56 @@ get_tobe_refed_func(Name) ->
 	    undefined
     end.
 
+%% add_tobe_refed_func saves Data that is a three or four element
+%% tuple.  Do not save if it exists in generated_functions, because
+%% then it will be or already is generated.
 add_tobe_refed_func(Data) ->
-    L = get_gen_state_field(tobe_refed_funcs),
-    update_gen_state(tobe_refed_funcs,[Data|L]).
+    %% 
+    {Name,SI,Pattern} = 
+	fun({N,Si,P,_}) -> {N,Si,P};
+	    (D) -> D end (Data),
+    NewData =
+	case SI of
+	    I when integer(I) ->
+		fun(D) -> D end(Data);
+% 		fun({N,Ix,P}) -> {N,Ix+1,P};
+% 		   ({N,Ix,P,T}) -> {N,Ix+1,P,T} end (Data);
+	    _ ->
+		fun({N,_,P}) -> {N,0,P};
+		   ({N,_,P,T}) -> {N,0,P,T} end (Data)
+	end,
+    
+    L = get_gen_state_field(generated_functions),
+    case generated_functions_member(get(currmod),Name,L,Pattern) of
+	true -> % it exists in generated_functions, it has already
+                % been generated or saved in tobe_refed_func
+	    ok;
+	_ ->
+	    add_once_tobe_refed_func(NewData),
+	    %%only to get it saved in generated_functions
+	    maybe_rename_function(tobe_refed,Name,Pattern)
+    end.
 
+
+
+%% Adds only one element with same Name and Index where Data =
+%% {Name,Index,Pattern}.
+add_once_tobe_refed_func(Data) ->
+    TRFL = get_gen_state_field(tobe_refed_funcs),
+    {Name,Index} = {element(1,Data),element(2,Data)},
+    case lists:filter(fun({N,I,_}) when N==Name,I==Index ->true;
+			 ({N,I,_,_}) when N==Name,I==Index -> true;
+			 (_) -> false end,TRFL) of
+	[] ->
+%%    case lists:keysearch(element(1,Data),1,TRFL) of
+%%	false ->
+	    update_gen_state(tobe_refed_funcs,[Data|TRFL]);
+	_ ->
+	    ok
+    end.
+
+
+    
 %% moves Name from the to be list to the generated list.
 generated_refed_func(Name) ->
     L = get_gen_state_field(tobe_refed_funcs),
@@ -1886,10 +2248,10 @@ generated_refed_func(Name) ->
     L2 = get_gen_state_field(gen_refed_funcs),
     update_gen_state(gen_refed_funcs,[Name|L2]).
 
+%% adds Data to gen_refed_funcs field in gen_state.
 add_generated_refed_func(Data) ->
     L = get_gen_state_field(gen_refed_funcs),
     update_gen_state(gen_refed_funcs,[Data|L]).
-
 
 next_refed_func() ->
     case get_gen_state_field(tobe_refed_funcs) of
@@ -1902,3 +2264,206 @@ next_refed_func() ->
 
 reset_gen_state() ->
     save_gen_state(#gen_state{}).
+
+%% adds Data to generated_functions field in gen_state.
+add_generated_function(Data) ->
+    L = get_gen_state_field(generated_functions),
+    update_gen_state(generated_functions,[Data|L]).
+
+
+%% Each type has its own index starting from 0. If index is 0 there is
+%% no renaming.
+maybe_rename_function(Mode,Name,Pattern) ->
+    case get_gen_state_field(generated_functions) of
+	[] when Mode==inc_disp -> add_generated_function({Name,0,Pattern}),
+	      Name;
+	[] ->
+	    exit({error,{asn1,internal_error_exclusive_decode}});
+	L ->
+	    case {Mode,generated_functions_member(get(currmod),Name,L)} of
+		{_,true} ->
+		    L2 = generated_functions_filter(get(currmod),Name,L),
+		    case lists:keysearch(Pattern,3,L2) of
+			false -> %name existed, but not pattern
+			    NextIndex = length(L2),
+			    %%rename function
+			    Suffix = lists:concat(["_",NextIndex]),
+			    NewName = 
+				maybe_rename_function2(type_check(Name),Name,
+						       Suffix),
+% 			    case Mode of
+% 				component ->
+% 				    add_t_r_f(Name,0,Pattern);
+% 				    add_tobe_refed_func({Name,0,Pattern});
+% 				{component,
+			    add_generated_function({Name,NextIndex,Pattern}),
+			    NewName;
+			Value -> % name and pattern existed
+			    %% do not save any new index
+			    Suffix = make_suffix(Value),
+			    Name2 =
+				case Name of
+				    #'Externaltypereference'{type=T} -> T;
+				    _ -> Name
+				end,
+			    lists:concat([Name2,Suffix])
+		    end;
+		{inc_disp,_} -> %% this is when
+                                %% decode_partial_inc_disp/2 is
+                                %% generated
+		    add_generated_function({Name,0,Pattern}),
+		    Name;
+		_ -> % this if call from add_tobe_refed_func
+		    add_generated_function({Name,0,Pattern}),
+%  		    case Name of
+%  			#'Externaltypereference'{} ->
+%  			    add_tobe_refed_func({Name,0,Pattern});
+%  			A when atom(A) ->
+%  			    TDef = asn1_db:dbget(get(currmod),Name),
+%  			    add_tobe_refed_func({[Name],0,Pattern,
+%  						 TDef#typedef.typespec})
+%  		    end,
+		    Name
+	    end
+    end.
+
+% add_t_r_f(Name,I,Pattern) when record(Name,'Externaltypereference') ->
+%     add_tobe_refed_func({Name,I,Pattern});
+% add_t_r_f(Name,I,Pattern) when atom(Name) ->
+%     TDef = asn1_db:dbget(get(currmod),Name),
+%     add_tobe_refed_func({[Name],I,Pattern,TDef#typedef.typespec});
+% add_t_r_f(Name,I,Pattern) when list(Name) ->
+%     TDef = asn1_db:dbget(get(currmod),lists:last(Name)),
+%     add_tobe_refed_func({Name,I,Pattern,TDef#typedef.typespec}).
+    
+maybe_rename_function2(record,#'Externaltypereference'{type=Name},Suffix) ->
+    lists:concat([Name,Suffix]);
+maybe_rename_function2(list,List,Suffix) ->
+    lists:concat([asn1ct_gen:list2name(List),Suffix]);
+maybe_rename_function2(Thing,Name,Suffix)
+  when Thing==atom;Thing==integer;Thing==string ->
+    lists:concat([Name,Suffix]).
+	       
+%% generated_functions_member/4 checks on both Name and Pattern if
+%%  the element exists in L
+generated_functions_member(M,Name,L,Pattern) ->
+    case generated_functions_member(M,Name,L) of
+	true ->
+	    L2 = generated_functions_filter(M,Name,L),
+	    case lists:keysearch(Pattern,3,L2) of
+		{value,_} ->
+		    true;
+		_ -> false
+	    end;
+	_ -> false
+    end.
+
+generated_functions_member(_M,Name,[{Name,_,_}|_]) ->
+    true;
+generated_functions_member(M,#'Externaltypereference'{module=M,type=T},
+			   [{#'Externaltypereference'{module=M,type=T}
+			     ,_,_}|_]) ->
+    true;
+generated_functions_member(M,#'Externaltypereference'{module=M,type=Name},
+			  [{Name,_,_}|_]) ->
+    true;
+generated_functions_member(M,Name,[_|T]) ->
+    generated_functions_member(M,Name,T);
+generated_functions_member(_,_,[]) ->
+    false.
+
+% generated_functions_member(M,Name,L) ->
+%     case lists:keymember(Name,1,L) of
+% 	true ->
+% 	    true;
+% 	_ ->
+% 	    generated_functions_member1(M,Name,L)
+%     end.
+% generated_functions_member1(M,#'Externaltypereference'{module=M,type=Name},L) ->
+%     lists:keymember(Name,1,L);
+% generated_functions_member1(_,_,_) -> false.
+
+generated_functions_filter(_,Name,L) when atom(Name);list(Name) ->
+    lists:filter(fun({N,_,_}) when N==Name -> true;
+		    (_) -> false
+		 end, L);
+generated_functions_filter(M,#'Externaltypereference'{module=M,type=Name},L)->
+    % remove toptypename from patterns
+    RemoveTType = 
+	fun({N,I,[N,P]}) when N == Name ->
+		{N,I,P};
+	   ({#'Externaltypereference'{module=M1,type=N},I,P}) when M1==M ->
+		{N,I,P};
+	   (P) -> P
+	end,
+    L2 = lists:map(RemoveTType,L),
+    generated_functions_filter(M,Name,L2).
+
+
+maybe_saved_sindex(Name,Pattern) ->
+    case get_gen_state_field(generated_functions) of
+	[] -> false;
+	L ->
+	    case generated_functions_member(get(currmod),Name,L) of
+		true ->
+		    L2 = generated_functions_filter(get(currmod),Name,L),
+		    case lists:keysearch(Pattern,3,L2) of
+			{value,{_,I,_}} ->
+			    I;
+			_ -> length(L2) % this should be length(L2)!
+		    end;
+		_ -> false
+	    end
+    end.
+% 	    Pred =
+% 		fun({N,_,_}) when N==Name ->
+% 			true;
+% 		   (_) -> false
+% 		end,
+% 	    L2 = lists:filter(Pred,L),
+% 	    case lists:keysearch(Pattern,3,L2) of
+% 		false ->
+% 		    false;
+% 		{value,{_,SI,_}} -> SI
+% 	    end
+%     end.
+    
+next_sindex() ->
+    SI = get_gen_state_field(suffix_index),
+    update_gen_state(suffix_index,SI+1),
+    SI+1.
+
+latest_sindex() ->
+    get_gen_state_field(suffix_index).
+
+current_sindex() ->
+    get_gen_state_field(current_suffix_index).
+
+set_current_sindex(Index) ->
+    update_gen_state(current_suffix_index,Index).
+
+
+type_check(A) when atom(A) ->
+    atom;
+type_check(I) when integer(I) ->
+    integer;
+type_check(L) when list(L) ->
+    Pred = fun(X) when X=<255 ->
+		   false;
+	      (_) -> true
+	   end,
+    case lists:filter(Pred,L) of
+	[] ->
+	    string;
+	_ ->
+	    list
+    end;
+type_check(#'Externaltypereference'{}) ->
+    record.
+
+ make_suffix({_,{_,0,_}}) ->
+     "";
+ make_suffix({_,{_,I,_}}) ->
+     lists:concat(["_",I]);
+ make_suffix(_) ->
+     "".

@@ -90,7 +90,8 @@ do_it(N, SocketType, Host, Port, Time) ->
 %%% Controller (main) process
 %%%
 
-main(N, SocketType, Host, Port, Time) ->
+main(N, SocketType, Host, Port, Time) 
+  when integer(N), atom(SocketType), integer(Port), integer(Time) ->
     process_flag(trap_exit,true),
     put(sname,ctrl),
     %% put(dbg,true),
@@ -102,22 +103,35 @@ main(N, SocketType, Host, Port, Time) ->
 loop(Pollers, Timeout) ->
     d("loop -> entry"),
     receive 
-	{'EXIT', Pid, Reason} ->
+	{'EXIT', Pid, {poller_stat_failure, Time, Reason}} ->
 	    case is_poller(Pid, Pollers) of
 		true ->
-		    error_msg("received unexpected ~p from poller ~p"
-			      "befor completion of test", [Reason, Pid]),
+		    error_msg("received unexpected exit from poller ~p~n"
+			      "befor completion of test "
+			      "(after ~p micro sec):~n"
+			      "~p~n", [Pid,Time,Reason]),
 		    exit({fail, {poller_exit, Pid, Reason}});
 		false ->
 		    error_msg("received unexpected ~p from ~p"
 			      "befor completion of test", [Reason, Pid]),
 		    loop(Pollers, Timeout)
 	    end;
-		    
+
+	{poller_stat_failure, Pid, {Time, Reason}} ->
+	    error_msg("received stat failure ~p from poller ~p after ~p "
+		      "befor completion of test", [Reason, Pid, Time]),
+	    exit({fail, {poller_failure, Pid, Reason}});
+
+	{poller_stat_failure, Pid, Reason} ->
+	    error_msg("received stat failure ~p from poller ~p "
+		      "befor completion of test", [Reason, Pid]),
+	    exit({fail, {poller_failure, Pid, Reason}});
+
 	Any ->
 	    error_msg("received unexpected message befor completion of test: "
 		      "~n   ~p", [Any]),
 	    exit({fail, Any})
+
     after Timeout ->
 	    d("loop -> timeout: stop pollers"),
 	    stop_pollers(Pollers),
@@ -199,11 +213,24 @@ start_pollers(N, Args) ->
 start_pollers(0, _Args, Pollers) ->
     Pollers;
 start_pollers(N, Args, Pollers) ->
-    Pid = proc_lib:spawn(?MODULE, poller_main, Args),
+    Pid = proc_lib:spawn_link(?MODULE, poller_main, Args),
     start_pollers(N-1, Args, [#stat{pid = Pid} | Pollers]).
 
 stop_pollers(Pollers) ->
-    [Pid ! stop || #stat{pid = Pid} <- Pollers].
+    [Pid ! stop || #stat{pid = Pid} <- Pollers],
+    await_stop_pollers(Pollers).
+
+await_stop_pollers([]) ->
+    ok;
+await_stop_pollers(Pollers0) ->
+    receive
+	{'EXIT', Pid, _Reason} ->
+	    Pollers = lists:keydelete(Pid, 2, Pollers0),
+	    await_stop_pollers(Pollers)
+    after 5000 ->
+	    [Pid ! shutdown || #stat{pid = Pid} <- Pollers0]
+    end.
+
 
 is_poller(Pid, []) ->
     false;
@@ -221,6 +248,10 @@ poller_main(Parent, SocketType, Host, Port) ->
     case timer:tc(?MODULE, poller_loop, [SocketType, Host, Port, uris()]) of
 	{Time, Count} when integer(Time), integer(Count) ->
 	    Parent ! {poller_statistics, self(), {Time, Count}};
+	{Time, {'EXIT', Reason}} when integer(Time) ->
+	    exit({poller_stat_failure, Time, Reason});
+	{Time, Other} when integer(Time) ->
+	    Parent ! {poller_stat_failure, self(), {Time, Other}};
 	Else ->
 	    Parent ! {poller_stat_failure, self(), Else}
     end.

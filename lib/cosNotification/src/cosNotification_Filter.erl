@@ -91,9 +91,9 @@ eval(Tree)     -> eval(Tree, []).
 
 %% Leaf expressions (literals and idents).
 eval('$empty', _)               -> true;
-eval(Lit, Env) when number(Lit) -> Lit;
-eval(Lit, Env) when list(Lit)   -> Lit; %list == string
-eval(Lit, Env) when atom(Lit)   -> Lit;   %atom == bool
+eval(Lit, _Env) when number(Lit) -> Lit;
+eval(Lit, _Env) when list(Lit)   -> Lit; %list == string
+eval(Lit, _Env) when atom(Lit)   -> Lit;   %atom == bool
 eval({component, V}, []) ->
     %% Cannot evaluate variables at this stage.
     throw({error, {unbound_variable, V}});
@@ -101,7 +101,7 @@ eval({component, V}, Env) ->
     case catch lookup(V, Env, undefined) of
 	{ok, Val} -> 
 	    Val;
-	X -> 
+	_X -> 
 	    {error, {unbound_variable, V}}
     end;
 
@@ -122,7 +122,7 @@ eval({default_component, V}, Env) ->
 	    false;
 	{ok, true} -> 
 	    true;
-	X -> 
+	_X -> 
 	    {error, {unbound_variable, V}}
     end;
 eval({exist_component, V}, Env) ->
@@ -133,7 +133,7 @@ eval({exist_component, V}, Env) ->
 	    true;
 	{error, _} -> 
 	    false;
-	X -> 
+	_X -> 
 	    {error, {unbound_variable, V}}
     end;
 %% Arithmetic expressions.
@@ -179,23 +179,23 @@ eval({'in', Needle, Haystack}, Env) ->		%set membership
 	    throw({error, {bad_type, Needle, Haystack}})
     end;
 %% Boolean expressions.
-eval({'and', false, Y}, Env) ->
+eval({'and', false, _Y}, _Env) ->
     false;
-eval({'and', X, false}, Env) ->
+eval({'and', _X, false}, _Env) ->
     false;
 eval({'and', X, Y}, Env) ->
     eval_and_bool({fun(_X, _Y) -> _X and _Y end, X, Y}, Env);
 
-eval({'or', true, Y}, Env) ->
+eval({'or', true, _Y}, _Env) ->
     true;
-eval({'or', X, true}, Env) ->
+eval({'or', _X, true}, _Env) ->
     true;
 eval({'or', X, Y}, Env) ->
     eval_or_bool({fun(_X, _Y) -> _X or _Y end, X, Y}, Env);
 eval({'not', X}, Env) ->
     eval_bool({fun(_X) -> not _X end, X}, Env);
 %% Catch-all
-eval(T, Env) ->
+eval(_T, _Env) ->
     throw({error, internal}).
 
 eval_bool({Fun, X}, Env) ->
@@ -311,7 +311,7 @@ get_variable([], ID, Any) when record(Any, any) ->
 	{Value, {tk_alias,_,ID,_}} ->
 	    %% {tk_alias, IFRId, ID, TypeCode}
 	    Value;
-	{Value, TC} ->
+	{Value, _TC} ->
 	    get_variable([],ID, Value)
     end;
 get_variable([], ID, #'CosNotification_Property'{name=ID, value=Any}) ->
@@ -522,7 +522,7 @@ lookup([{uint, ID} |T], S, Op) when tuple(S) ->
 	ID ->
 	    %% The supplied union do contain the requested discriminator.
 	    lookup(T, element(3, S), Op);
-	Other when Op == exist_component ->
+	_Other when Op == exist_component ->
 	    throw({error, {bad_id, "Bad Union ID"}});
 	Other ->
 	    %% Check if default is allowed.
@@ -572,10 +572,10 @@ lookup([default|T], S, Op) when record(S, any) ->
 lookup([default|T], S, Op) when tuple(S) ->
     M = element(1, S),
     case catch M:tc() of
-	{tk_union,_,_,_,DefNo, UList} when DefNo < 0 ->
+	{tk_union,_,_,_,DefNo, _UList} when DefNo < 0 ->
 	    %% {tk_union, Id, Name, DiscrTC, Default, ElementList}
 	    throw({error, {bad_id, "No default discriminator"}});
-	{tk_union,_,_,_,DefNo, UList} ->
+	{tk_union,_,_,_,_DefNo, UList} ->
 	    %% {tk_union, Id, Name, DiscrTC, Default, ElementList}
 	    %% Check if the label really is default.
 	    case lists:keymember(element(2, S), 1, UList) of
@@ -595,13 +595,13 @@ lookup([{arrindex, Index}|T], S, Op) when tuple(S) ->
 %%%%%%%%%%%%%%%%%%%%%%% LEAF EXPRESSIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% got '$._length', which maps to the 'remainder_of_body'
 lookup(['_length'],
-	     #'CosNotification_StructuredEvent'{remainder_of_body = Any}, Op) ->
+	     #'CosNotification_StructuredEvent'{remainder_of_body = Any}, _Op) ->
     {ok, length(any:get_value(Any))};
-lookup(['_length'], S, Op)  when record(S, any) ->
+lookup(['_length'], S, _Op)  when record(S, any) ->
     {ok, length(any:get_value(S))};
-lookup(['_length'], S, Op)  when list(S) ->
+lookup(['_length'], S, _Op)  when list(S) ->
     {ok, length(S)};
-lookup(['_length'], S, Op)  when tuple(S) ->
+lookup(['_length'], S, _Op)  when tuple(S) ->
     {ok, length(tuple_to_list(S))};
 
 %% got '$._d', which maps to the 'remainder_of_body'
@@ -630,25 +630,25 @@ lookup(['_d'], S, default_component) ->
 	    {ok, false}
     end;
 lookup(['_d'], 
-       #'CosNotification_StructuredEvent'{remainder_of_body = Any}, Op) ->
+       #'CosNotification_StructuredEvent'{remainder_of_body = Any}, _Op) ->
     {ok, element(2, any:get_value(Any))};
-lookup(['_d'], S, Op) when record(S, any) ->
+lookup(['_d'], S, _Op) when record(S, any) ->
     {ok, element(2, any:get_value(S))};
-lookup(['_d'], S, Op) ->
+lookup(['_d'], S, _Op) ->
     {ok, element(2, S)};
 
 
-lookup(['_type_id'], S, Op) when record(S,'CosNotification_StructuredEvent') ->
+lookup(['_type_id'], S, _Op) when record(S,'CosNotification_StructuredEvent') ->
     {ok, "StructuredEvent"};
-lookup(['_type_id'], S, Op) when record(S,'CosNotification_EventHeader') ->
+lookup(['_type_id'], S, _Op) when record(S,'CosNotification_EventHeader') ->
     {ok, "EventHeader"};
-lookup(['_type_id'], S, Op) when record(S,'CosNotification_FixedEventHeader') ->
+lookup(['_type_id'], S, _Op) when record(S,'CosNotification_FixedEventHeader') ->
     {ok, "FixedEventHeader"};
-lookup(['_type_id'], S, Op) when record(S,'CosNotification_EventType') ->
+lookup(['_type_id'], S, _Op) when record(S,'CosNotification_EventType') ->
     {ok, "EventType"};
-lookup(['_type_id'], S, Op) when record(S,'CosNotification_Property') ->
+lookup(['_type_id'], S, _Op) when record(S,'CosNotification_Property') ->
     {ok, "Property"};
-lookup(['_type_id'], S, Op) when tuple(S) ->
+lookup(['_type_id'], S, _Op) when tuple(S) ->
     M=element(1, S),
     Name = case catch M:tc() of
 	       {tk_union,_,ID,_,_,_} ->
@@ -664,17 +664,17 @@ lookup(['_type_id'], S, Op) when tuple(S) ->
 	   end,
     {ok, Name};
 
-lookup(['_repos_id'], S, Op) when record(S,'CosNotification_StructuredEvent') ->
+lookup(['_repos_id'], S, _Op) when record(S,'CosNotification_StructuredEvent') ->
     {ok, 'CosNotification_StructuredEvent':id()};
-lookup(['_repos_id'], S, Op) when record(S,'CosNotification_EventHeader') ->
+lookup(['_repos_id'], S, _Op) when record(S,'CosNotification_EventHeader') ->
     {ok, 'CosNotification_EventHeader':id()};
-lookup(['_repos_id'], S, Op) when record(S,'CosNotification_FixedEventHeader') ->
+lookup(['_repos_id'], S, _Op) when record(S,'CosNotification_FixedEventHeader') ->
     {ok, 'CosNotification_FixedEventHeader':id()};
-lookup(['_repos_id'], S, Op) when record(S,'CosNotification_EventType') ->
+lookup(['_repos_id'], S, _Op) when record(S,'CosNotification_EventType') ->
     {ok, 'CosNotification_EventType':id()};
-lookup(['_repos_id'], S, Op) when record(S,'CosNotification_Property') ->
+lookup(['_repos_id'], S, _Op) when record(S,'CosNotification_Property') ->
     {ok, 'CosNotification_Property':id()};
-lookup(['_repos_id'], S, Op) when tuple(S) ->
+lookup(['_repos_id'], S, _Op) when tuple(S) ->
     M = element(1, S),
     {ok, M:id()};
 
@@ -692,7 +692,7 @@ lookup(_, _, _) ->
 %% Returns  : {error, _} |
 %%            {ok, Val}
 %%------------------------------------------------------------
-locate_var([], S, _) ->
+locate_var([], _S, _) ->
     {error, "not found"};
 locate_var([H|T], S, Op) ->
     case catch lookup(H, S, Op) of
@@ -715,7 +715,7 @@ id2switch([], _, Acc, _) ->
     Acc;
 id2switch([{Sw, ID, _}|T], ID, Acc, _) ->
     id2switch(T, ID, [Sw|Acc], true);
-id2switch([_|T], ID, Acc, true) ->
+id2switch([_|_T], _ID, Acc, true) ->
     Acc;
 id2switch([_|T], ID, Acc, Found) ->
     id2switch(T, ID, Acc, Found).
@@ -734,25 +734,25 @@ id2switch([_|T], ID, Acc, Found) ->
 %%            In this case supplying Switch == 1 (or) the result
 %%            should be {ok, [1,2], "ID"}
 %%------------------------------------------------------------
-switch2alias([], Switch) ->
+switch2alias([], _Switch) ->
     %% Is it really possible to define an empty union??
     {ok, [], undefined};
 switch2alias([{Sw, ID, TC}|UList], Switch) ->
     switch2alias([{Sw, ID, TC}|UList], Switch, [], ID, false).
 switch2alias([{default, ID, _}], _, _, _, false) ->
     {ok, default, ID};
-switch2alias([], _, Acc, _, false) ->
+switch2alias([], _, _Acc, _, false) ->
     {ok, [], undefined};
 switch2alias([], _, Acc, PreviousID, _) ->
     {ok, Acc, PreviousID};
 
 %% Seen the ID before but just found the correct switch, e.g.,
 %% [... {0,"K",{tk_string,0}}, {2,"K",{tk_string,0}}...] and switch eq '2'
-switch2alias([{Switch, PreviousID, _}|T], Switch, Acc, PreviousID, Found) ->
+switch2alias([{Switch, PreviousID, _}|T], Switch, Acc, PreviousID, _Found) ->
     switch2alias(T, Switch, [Switch|Acc], PreviousID, true);
 
 %% First time for this ID and found the correct switch
-switch2alias([{Switch, ID, _}|T], Switch, Acc, PreviousID, false) ->
+switch2alias([{Switch, ID, _}|T], Switch, _Acc, _PreviousID, false) ->
     switch2alias(T, Switch, [Switch], ID, true);
 
 %% Seen this ID and found the correct switch before.
@@ -764,10 +764,10 @@ switch2alias([{Sw, PreviousID, _}|T], Switch, Acc, PreviousID, false) ->
     switch2alias(T, Switch, [Sw|Acc], PreviousID, false);
 
 %% No more of the correct ID/Switch. Done.
-switch2alias([{_, ID, _}|_], _, Acc, PreviousID, true) ->
+switch2alias([{_, _ID, _}|_], _, Acc, PreviousID, true) ->
     {ok, Acc, PreviousID};
 %% Not found correct switch and ID is updated.
-switch2alias([{Sw, ID, _}|T], Switch, Acc, PreviousID, Found) ->
+switch2alias([{Sw, ID, _}|T], Switch, _Acc, _PreviousID, Found) ->
     switch2alias(T, Switch, [Sw], ID, Found).
 
 
@@ -781,7 +781,7 @@ switch2alias([{Sw, ID, _}|T], Switch, Acc, PreviousID, Found) ->
 %%------------------------------------------------------------
 get_field(ID, List) ->
     get_field(ID, List, 2).
-get_field(ID, [], _) ->
+get_field(_ID, [], _) ->
     false;
 get_field(ID, [ID|_], I) ->
     %% Memberlists in enum.
@@ -817,13 +817,13 @@ check_types([]) -> true;
 check_types(Types) -> check_types(Types, both, []).
 check_types([], Which, WildCard) -> {ok, Which, WildCard};
 %% The following cases means that all events matches.
-check_types([#'CosNotification_EventType'{domain_name="",type_name = ""}|T],_,_) ->
+check_types([#'CosNotification_EventType'{domain_name="",type_name = ""}|_T],_,_) ->
     true;
-check_types([#'CosNotification_EventType'{domain_name="",type_name = "*"}|T],_,_) ->
+check_types([#'CosNotification_EventType'{domain_name="",type_name = "*"}|_T],_,_) ->
     true;
-check_types([#'CosNotification_EventType'{domain_name="*",type_name = ""}|T],_,_) ->
+check_types([#'CosNotification_EventType'{domain_name="*",type_name = ""}|_T],_,_) ->
     true;
-check_types([#'CosNotification_EventType'{domain_name="*",type_name = "*"}|T],_,_) ->
+check_types([#'CosNotification_EventType'{domain_name="*",type_name = "*"}|_T],_,_) ->
     true;
 %% The following cases means that all events must be tested using this constraint.
 check_types([#'CosNotification_EventType'{domain_name="",type_name = Ty}|T], domain,WC) when list(Ty) ->
@@ -846,15 +846,15 @@ check_types([#'CosNotification_EventType'{domain_name=Do,type_name = "*"}|T], al
     check_wildcard(T, all, WC, Do, "");
 %% The following cases means that all events with matching Type must be 
 %% tested using this constraint.
-check_types([#'CosNotification_EventType'{domain_name="",type_name = Ty}|T], W,WC) when list(Ty) ->
+check_types([#'CosNotification_EventType'{domain_name="",type_name = Ty}|T], _W,WC) when list(Ty) ->
     check_wildcard(T, type, WC, "", Ty);
-check_types([#'CosNotification_EventType'{domain_name="*",type_name = Ty}|T], W,WC) when list(Ty) ->
+check_types([#'CosNotification_EventType'{domain_name="*",type_name = Ty}|T], _W,WC) when list(Ty) ->
     check_wildcard(T, type, WC, "", Ty);
 %% The following cases means that all events with matching Domain must be 
 %% tested using this constraint.
-check_types([#'CosNotification_EventType'{domain_name=Do,type_name = ""}|T], W,WC) when list(Do) ->
+check_types([#'CosNotification_EventType'{domain_name=Do,type_name = ""}|T], _W,WC) when list(Do) ->
     check_wildcard(T, domain, WC, Do, "");
-check_types([#'CosNotification_EventType'{domain_name=Do,type_name = "*"}|T], W,WC) when list(Do) ->
+check_types([#'CosNotification_EventType'{domain_name=Do,type_name = "*"}|T], _W,WC) when list(Do) ->
     check_wildcard(T, domain, WC, Do, "");
 %% Sorry, no shortcuts.
 check_types([#'CosNotification_EventType'{domain_name=Do,type_name=Ty}|T], W,WC) when list(Do), list(Ty) ->

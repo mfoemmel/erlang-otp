@@ -67,7 +67,7 @@ store(G, N, X) ->
 	    ets:insert(G#genobj.symtab, {Name, X});
 	{ok, Y} when record(Y, forward) ->
 	    ets:insert(G#genobj.symtab, {Name, X});
-	{ok, Y} ->
+	{ok, _Y} ->
 	    ic_error:error(G, {multiply_defined, X})
     end.
 
@@ -125,7 +125,8 @@ intf_resolv2(G, Scope, Id) ->
     case soft_retrieve(G, scoped_id_strip(N)) of
 	{ok, F} when record(F, forward) ->
 	    ic_error:error(G, {illegal_forward, Id}), [];
-	{ok, Val} -> scoped_id_mk_global(N);
+	{ok, _Val} -> 
+	    scoped_id_mk_global(N);
 	_ ->
 	    case scoped_id_is_top(Scope) of
 		false ->
@@ -199,6 +200,16 @@ symtab_add_faked_included_types(G) ->
 					   "IDL:omg.org/CORBA/TypeCode:1.0",
 					   "TypeCode"}}});
 	erl_corba ->
+	    %% Add TypeCode as if it were defiend in included file
+	    ets:insert(G#genobj.symtab, {["CORBA"], 
+					 {interface,{'<identifier>',0,"TypeCode"},
+					  [],
+					  [],
+					  [],
+					  {tk_objref,
+					   "IDL:omg.org/CORBA/TypeCode:1.0",
+					   "TypeCode"}}}); 
+	erl_template ->
 	    %% Add TypeCode as if it were defiend in included file
 	    ets:insert(G#genobj.symtab, {["CORBA"], 
 					 {interface,{'<identifier>',0,"TypeCode"},

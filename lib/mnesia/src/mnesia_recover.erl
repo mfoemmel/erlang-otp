@@ -123,36 +123,11 @@ do_garb_decisions() ->
 	    ignore
     end.
 
-connect_nodes([]) ->
-    [];
 connect_nodes(Ns) ->
-    %% Determine which nodes we should try to connect
-    AlreadyConnected = val(recover_nodes),
-    {_, Nodes} = mnesia_lib:search_delete(node(), Ns),
-    Check = Nodes -- AlreadyConnected,
-    GoodNodes = mnesia_monitor:negotiate_protocol(Check),
-    if
-	GoodNodes == [] ->
-	    %% No good noodes to connect to
-	    ignore;
-	true ->
-	    %% Now we have agreed upon a protocol with some new nodes
-	    %% and we may use them when we recover transactions
-	    mnesia_lib:add_list(recover_nodes, GoodNodes),
-	    cast({announce_all, GoodNodes}),
-	    case get_master_nodes(schema) of 
-		[] ->
-		    Context = starting_partitioned_network,
-		    mnesia_monitor:detect_inconcistency(GoodNodes, Context);
-		_ -> %% If master_nodes is set ignore old inconsistencies
-		    ignore
-	    end
-    end,
-    {GoodNodes, AlreadyConnected}.
+    call({connect_nodes, Ns}).
 
 disconnect(Node) ->
-    mnesia_monitor:disconnect(Node),
-    mnesia_lib:del(recover_nodes, Node).
+    call({disconnect, Node}).
 
 val(Var) ->
     case ?catch_val(Var) of
@@ -633,6 +608,44 @@ handle_call(Msg, From, State) when State#state.initiated == false ->
     Msgs = State#state.early_msgs,
     {noreply, State#state{early_msgs = [{call, Msg, From} | Msgs]}};
 
+handle_call({disconnect, Node}, _From, State) ->
+    mnesia_monitor:disconnect(Node),
+    mnesia_lib:del(recover_nodes, Node),
+    {reply, ok, State};
+
+handle_call({connect_nodes, Ns}, From, State) ->
+    %% Determine which nodes we should try to connect
+    AlreadyConnected = val(recover_nodes),
+    {_, Nodes} = mnesia_lib:search_delete(node(), Ns),
+    Check = Nodes -- AlreadyConnected,
+    case mnesia_monitor:negotiate_protocol(Check) of
+	busy -> 
+	    %% monitor is disconnecting some nodes retry 
+	    %% the req (to avoid deadlock).
+	    erlang:send_after(2, self(), {connect_nodes,Ns,From}),
+	    {noreply, State};
+	[] ->
+	    %% No good noodes to connect to!
+	    %% We can't use reply here because this function can be
+	    %% called from handle_info
+	    gen_server:reply(From, {[], AlreadyConnected}),
+	    {noreply, State};
+	GoodNodes ->
+	    %% Now we have agreed upon a protocol with some new nodes
+	    %% and we may use them when we recover transactions
+	    mnesia_lib:add_list(recover_nodes, GoodNodes),
+	    cast({announce_all, GoodNodes}),
+	    case get_master_nodes(schema) of 
+		[] ->
+		    Context = starting_partitioned_network,
+		    mnesia_monitor:detect_inconcistency(GoodNodes, Context);
+		_ -> %% If master_nodes is set ignore old inconsistencies
+		    ignore
+	    end,
+	    gen_server:reply(From, {GoodNodes, AlreadyConnected}),
+	    {noreply,State}
+    end;
+
 handle_call({what_happened, Default, Tid}, _From, State) ->
     sync_trans_tid_serial(Tid),
     Outcome = outcome(Tid, Default),
@@ -777,7 +790,7 @@ handle_cast({mnesia_down, Node}, State) ->
     end;
 
 handle_cast({announce_all, Nodes}, State) ->
-    announce_all(Nodes, tabs()),
+    announce_all(Nodes),
     {noreply, State};
 
 handle_cast(Msg, State) ->
@@ -796,6 +809,9 @@ handle_cast(Msg, State) ->
 %%     %% Buffer early messages
 %%     Msgs = State#state.early_msgs,
 %%     {noreply, State#state{early_msgs = [{info, Msg} | Msgs]}};
+
+handle_info({connect_nodes, Ns, From}, State) ->
+    handle_call({connect_nodes,Ns},From,State);
 
 handle_info(check_overload, S) ->
     %% Time to check if mnesia_tm is overloaded
@@ -1106,20 +1122,12 @@ add_remote_decision(Node, NewD, State) ->
 	    State
     end.
 
-announce_all([], _Tabs) ->
+announce_all([]) ->
     ok;
-announce_all(ToNodes, [Tab | Tabs]) ->
-    case catch mnesia_lib:db_match_object(ram_copies, Tab, '_') of
-	{'EXIT', _} ->
-	    %% Oops, we are in the middle of a 'garb_decisions'
-	    announce_all(ToNodes, Tabs);
-	List ->
-	    announce(ToNodes, List, [], false),
-	    announce_all(ToNodes, Tabs)
-    end;
-announce_all(_ToNodes, []) ->
-    ok.
-
+announce_all(ToNodes) ->
+    Tid = trans_tid_serial(),
+    announce(ToNodes, [{trans_tid,serial,Tid}], [], false).
+    
 announce(ToNodes, [Head | Tail], Acc, ForceSend) ->
     Acc2 = arrange(ToNodes, Head, Acc, ForceSend),
     announce(ToNodes, Tail, Acc2, ForceSend);

@@ -30,7 +30,6 @@
 -behaviour(gen_server).
 
 -include_lib("orber/include/corba.hrl").
--include_lib("orber/src/orber_debug.hrl").
 
 %%-----------------------------------------------------------------
 %% External exports
@@ -233,7 +232,7 @@ is_persistent(Pid) when pid(Pid) ->
     end;
 is_persistent(Objkey) ->
     case catch ets:lookup_element(orber_objkeys, Objkey, 4) of
-	{'EXIT', R} ->
+	{'EXIT', _R} ->
 	    corba:raise(#'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO});
 	Boolean ->
 	    Boolean
@@ -281,8 +280,7 @@ check(Objkey) ->
 %%-----------------------------------------------------------------
 %% Server functions
 %%-----------------------------------------------------------------
-init(Env) ->
-    ?PRINTDEBUG("orber objectkeyserver"),
+init(_Env) ->
     case mnesia:wait_for_tables(['orber_objkeys'], infinity) of
 	ok ->
 	    process_flag(trap_exit, true),
@@ -291,13 +289,13 @@ init(Env) ->
 	    {stop, StopReason}
     end.
 
-terminate(shutdown, State) ->
+terminate(shutdown, _State) ->
     stop_and_remove_local(shutdown),
     ok;
-terminate(normal, State) ->
+terminate(normal, _State) ->
     stop_and_remove_local(normal),
     ok;
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 start_gc_timer(infinity) ->
@@ -316,7 +314,7 @@ install(Timeout, Options) ->
     %% check if there already exists a database. If not, create one.
     %% DB_initialized = perhaps_create_schema(Nodelist),
     %% check if mnesia is running. If not, start mnesia.
-    DB_started = perhaps_start_mnesia(),
+    perhaps_start_mnesia(),
 
     %% Do we have a complete set of IFR tables? If not, create them.
     AllTabs = mnesia:system_info(tables),
@@ -363,13 +361,13 @@ install(Timeout, Options) ->
 %%   function before returning. On the client side there is a case which 
 %%   maps every tupple on the format {'exception', E} to corba:raise(E).
 %%-----------------------------------------------------------------
-handle_call(stop, From, State) ->
+handle_call(stop, _From, State) ->
     {stop, normal, [], State};
-handle_call({get, Objkey}, From, State) ->
+handle_call({get, Objkey}, _From, State) ->
     R = query_result(mnesia:dirty_read({orber_objkeys, Objkey})),
     {reply, R, State};
 
-handle_call({register, Objkey, Pid, Type}, From, State) ->
+handle_call({register, Objkey, Pid, Type}, _From, State) ->
     _WF = fun() ->
 		  case mnesia:wread({orber_objkeys, Objkey}) of
 		      [] ->
@@ -403,7 +401,7 @@ handle_call({register, Objkey, Pid, Type}, From, State) ->
     end,
     {reply, R, State};
 
-handle_call({delete, Objkey}, From, State) ->
+handle_call({delete, Objkey}, _From, State) ->
     ?query_check(Qres) = mnesia:dirty_read({orber_objkeys, Objkey}),
     case Qres of
 	[] ->
@@ -417,7 +415,7 @@ handle_call({delete, Objkey}, From, State) ->
     R = write_result(mnesia:transaction(_F)),
     {reply, R, State};
 
-handle_call({get_pid, Objkey}, From, State) ->
+handle_call({get_pid, Objkey}, _From, State) ->
     _F = fun() ->
 		 mnesia:read({orber_objkeys, Objkey})
 	 end,
@@ -428,20 +426,20 @@ handle_call({get_pid, Objkey}, From, State) ->
 	    {reply,
 	     {'EXCEPTION', #'TRANSIENT'{completion_status=?COMPLETED_NO}},
 	     State};
-	Res ->
+	_Res ->
 	    {reply, 
 	     {'EXCEPTION', #'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO}},
 	     State}
     end;
-handle_call({check, {_, 'key', Objkey, _, _, _}}, From, State) ->
+handle_call({check, {_, 'key', Objkey, _, _, _}}, _From, State) ->
     ?query_check(Qres) = mnesia:dirty_read({orber_objkeys, Objkey}),
     case Qres of
-	[X] ->
+	[_X] ->
 	    {reply, 'object_here', State};
 	_ ->
 	    {reply, 'unknown_object', State}
     end;
-handle_call({check, {_, 'registered', Objkey, _, _, _}}, From, State) ->
+handle_call({check, {_, 'registered', Objkey, _, _, _}}, _From, State) ->
     case whereis(Objkey) of
 	undefined ->
 	    case catch ets:lookup_element(orber_objkeys, Objkey, 4) of
@@ -453,7 +451,7 @@ handle_call({check, {_, 'registered', Objkey, _, _, _}}, From, State) ->
 	_ ->
 	    {reply, 'object_here', State}
     end;
-handle_call({check, {_, 'pseudo', Module, _, _, _}}, From, State) ->
+handle_call({check, {_, 'pseudo', Module, _, _, _}}, _From, State) ->
     case code:is_loaded(Module) of
 	false ->
 	    {reply, 'unknown_object', State};
@@ -461,9 +459,9 @@ handle_call({check, {_, 'pseudo', Module, _, _, _}}, From, State) ->
 	    {reply, 'object_here', State}
     end;
 
-handle_call({check, "INIT"}, From, State) ->
+handle_call({check, "INIT"}, _From, State) ->
     {reply, 'object_here', State};
-handle_call({check, _}, From, State) ->
+handle_call({check, _}, _From, State) ->
     {reply, 'unknown_object', State}.
 
 	    
@@ -498,7 +496,7 @@ handle_info({oe_gc, Secs}, State) ->
     catch gc(Secs),
     {noreply, State}.
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%-----------------------------------------------------------------

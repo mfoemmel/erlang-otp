@@ -2168,10 +2168,19 @@ void* db_get_term(DbTerm* old, Uint offset, Eterm obj)
 	if (size == old->size) {
 	    p = old;
 	} else {
-	    structp = erts_realloc(ERTS_ALC_T_DB_TERM,
-				   structp,
-				   offset + sizeof(DbTerm) + 
-				   sizeof(Eterm)*(size-1));
+	    if (erts_ets_realloc_always_moves) {
+		void *nstructp = erts_alloc(ERTS_ALC_T_DB_TERM, 
+					    offset + sizeof(DbTerm) + 
+					    sizeof(Eterm)*(size-1));
+		memcpy(nstructp,structp,offset);
+		erts_free(ERTS_ALC_T_DB_TERM, structp);
+		structp = nstructp;
+	    } else {
+		structp = erts_realloc(ERTS_ALC_T_DB_TERM,
+				       structp,
+				       offset + sizeof(DbTerm) + 
+				       sizeof(Eterm)*(size-1));
+	    }
 	    p = (DbTerm*) ((void *)(((char *) structp) + offset));
 	}
     }
@@ -2190,7 +2199,7 @@ void* db_get_term(DbTerm* old, Uint offset, Eterm obj)
 
     top = p->v;
     copy = copy_struct(obj, size, &top, &p->off_heap);
-    p->tpl = tuple_val(copy);	/* XXX: this _is_ always a tuple, right? */
+    p->tpl = tuple_val(copy);
     return structp;
 }
 

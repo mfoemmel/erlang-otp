@@ -570,6 +570,7 @@ int main(int argc, char **argv)
 		  case 'P':
 		  case 'A':
 		  case 'W':
+		  case 'K':
 		      if (argv[i][2] != '\0')
 			  goto the_default;
 		      if (i+1 >= argc)
@@ -762,7 +763,7 @@ usage(const char *switchname)
 	  "[-make] [-man [manopts] MANPAGE] [-x] [-emu_args] "
 	  "[+i BOOT_MODULE] [+b BOOT_FUN] [+s STACK_SIZE] "
 	  "[+h HEAP_SIZE] [+# ITEMS] [+P MAX_PROCS] [+A THREADS] "
-	  "[+M<SUBSWITCH> <ARGUMENT>] [args ...]\n");
+	  "[+M<SUBSWITCH> <ARGUMENT>] [+K BOOLEAN] [args ...]\n");
   exit(1);
 }
 

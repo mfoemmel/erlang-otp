@@ -18,7 +18,8 @@
 #ifndef EI_H
 #define EI_H
 
-#define USE_EI_UNDOCUMENTED     /* Want undocumented declarations */
+#define EI_HAVE_TIMEOUT 1	/* Flag to user code that we have them */
+#define USE_EI_UNDOCUMENTED     /* Want declarations for undocumented */
 
 /************************************************************************/
 /*          This file defines the complete interface to ei              */
@@ -27,6 +28,16 @@
 /* -------------------------------------------------------------------- */
 /*                   Include types needed below                         */
 /* -------------------------------------------------------------------- */
+
+#if defined(__WIN32__)
+#include <winsock2.h>
+#include <windows.h>
+#include <winbase.h>
+#endif
+
+#if !defined(__WIN32__) && !defined(VXWORKS) || (defined(VXWORKS) && defined(HAVE_SENS))
+# include <netdb.h>
+#endif
 
 #include <stdio.h>		/* Need type FILE */
 #include <errno.h>		/* Need EHOSTUNREACH, ENOMEM, ... */
@@ -264,8 +275,6 @@ typedef struct {
   char nodename[MAXNODELEN+1];
 } ErlConnect;
 
-struct in_addr; /* forward */    
-
 typedef struct ei_cnode_s {
     char thishostname[EI_MAXHOSTNAMELEN+1];
     char thisnodename[MAXNODELEN+1];
@@ -303,14 +312,21 @@ int ei_connect_xinit (ei_cnode* ec, const char *thishostname,
 		      const short creation);
 
 int ei_connect(ei_cnode* ec, char *nodename);
-int ei_xconnect (ei_cnode* ec, Erl_IpAddr adr, char *alivename);
+int ei_connect_tmo(ei_cnode* ec, char *nodename, unsigned ms);
+int ei_xconnect(ei_cnode* ec, Erl_IpAddr adr, char *alivename);
+int ei_xconnect_tmo(ei_cnode* ec, Erl_IpAddr adr, char *alivename, unsigned ms);
 
 int ei_receive(int fd, unsigned char *bufp, int bufsize);
+int ei_receive_tmo(int fd, unsigned char *bufp, int bufsize, unsigned ms);
 int ei_receive_msg(int fd, erlang_msg* msg, ei_x_buff* x);
+int ei_receive_msg_tmo(int fd, erlang_msg* msg, ei_x_buff* x, unsigned ms);
 int ei_xreceive_msg(int fd, erlang_msg* msg, ei_x_buff* x);
+int ei_xreceive_msg_tmo(int fd, erlang_msg* msg, ei_x_buff* x, unsigned ms);
 
 int ei_send(int fd, erlang_pid* to, char* buf, int len);
+int ei_send_tmo(int fd, erlang_pid* to, char* buf, int len, unsigned ms);
 int ei_reg_send(ei_cnode* ec, int fd, char *server_name, char* buf, int len);
+int ei_reg_send_tmo(ei_cnode* ec, int fd, char *server_name, char* buf, int len, unsigned ms);
 
 int ei_rpc(ei_cnode* ec, int fd, char *mod, char *fun,
 	   const char* inbuf, int inbuflen, ei_x_buff* x);
@@ -320,8 +336,11 @@ int ei_rpc_from(ei_cnode* ec, int fd, int timeout, erlang_msg* msg,
 		ei_x_buff* x);
 
 int ei_publish(ei_cnode* ec, int port);
+int ei_publish_tmo(ei_cnode* ec, int port, unsigned ms);
 int ei_accept(ei_cnode* ec, int lfd, ErlConnect *conp);
+int ei_accept_tmo(ei_cnode* ec, int lfd, ErlConnect *conp, unsigned ms);
 int ei_unpublish(ei_cnode* ec);
+int ei_unpublish_tmo(const char *alive, unsigned ms);
 
 const char *ei_thisnodename(const ei_cnode* ec);
 const char *ei_thishostname(const ei_cnode* ec);
@@ -329,7 +348,62 @@ const char *ei_thisalivename(const ei_cnode* ec);
 
 erlang_pid *ei_self(ei_cnode* ec);
 
-/* XXXX */
+/* 
+ * We have erl_gethost*() so we include ei versions as well.
+ */
+
+#if defined(VXWORKS)
+
+extern int h_errno;
+
+/*
+ * We need these definitions - if the user has SENS then he gets them
+ * from netdb.h, otherwise we define them ourselves.
+ *
+ * If you are getting "multiple definition" errors here,
+ * make sure you have included <netdb.h> BEFORE "erl_interface.h"
+ * or define HAVE_SENS in your CFLAGS.
+ */
+
+#if !defined(HAVE_SENS) && !defined(HOST_NOT_FOUND) /* just in case */
+
+struct	hostent {
+  char	*h_name;	/* official name of host */
+  char	**h_aliases;	/* alias list */
+  int	h_addrtype;	/* host address type */
+  int	h_length;	/* length of address */
+  char	**h_addr_list;	/* list of addresses from name server */
+#define	h_addr	h_addr_list[0]	/* address, for backward compatiblity */
+  unsigned int unused;  /* SENS defines this as ttl */
+};
+
+#define	HOST_NOT_FOUND	1 /* Authoritative Answer Host not found */
+#define	TRY_AGAIN	2 /* Non-Authoritive Host not found, or SERVERFAIL */
+#define	NO_RECOVERY	3 /* Non recoverable errors, FORMERR, REFUSED, NOTIMP */
+#define	NO_DATA		4 /* Valid name, no data record of requested type */
+#define	NO_ADDRESS	NO_DATA		/* no address, look for MX record */
+
+#endif /* !HAVE_SENS && !HOST_NOT_FOUND */
+#endif /* VXWORKS */
+
+
+struct hostent *ei_gethostbyname(const char *name);
+struct hostent *ei_gethostbyaddr(const char *addr, int len, int type);
+struct hostent *ei_gethostbyname_r(const char *name, 
+				   struct hostent *hostp, 
+				   char *buffer, 
+				   int buflen, 
+				   int *h_errnop);
+struct hostent *ei_gethostbyaddr_r(const char *addr,
+				   int length, 
+				   int type, 
+				   struct hostent *hostp,
+				   char *buffer,  
+				   int buflen, 
+				   int *h_errnop);
+
+
+/* Encode/decode functions */
 
 int ei_encode_version(char *buf, int *index);
 int ei_x_encode_version(ei_x_buff* x);
@@ -340,9 +414,9 @@ int ei_x_encode_ulong(ei_x_buff* x, unsigned long n);
 int ei_encode_double(char *buf, int *index, double p);
 int ei_x_encode_double(ei_x_buff* x, double dbl);
 int ei_encode_boolean(char *buf, int *index, int p);
-/* FIXME no ei_x_encode_boolean */
+int ei_x_encode_boolean(ei_x_buff* x, int p);
 int ei_encode_char(char *buf, int *index, char p);
-/* FIXME no ei_x_encode_char */
+int ei_x_encode_char(ei_x_buff* x, char p);
 int ei_encode_string(char *buf, int *index, const char *p);
 int ei_encode_string_len(char *buf, int *index, const char *p, int len);
 int ei_x_encode_string(ei_x_buff* x, const char* s);
@@ -358,13 +432,13 @@ int ei_x_encode_pid(ei_x_buff* x, const erlang_pid* pid);
 int ei_encode_fun(char* buf, int* index, const erlang_fun* p);
 int ei_x_encode_fun(ei_x_buff* x, const erlang_fun* fun);
 int ei_encode_port(char *buf, int *index, const erlang_port *p);
-/* FIXME no ei_x_encode_port */
+int ei_x_encode_port(ei_x_buff* x, const erlang_port *p);
 int ei_encode_ref(char *buf, int *index, const erlang_ref *p);
-/* FIXME no ei_x_encode_ref */
+int ei_x_encode_ref(ei_x_buff* x, const erlang_ref *p);
 int ei_encode_term(char *buf, int *index, void *t); /* ETERM* actually */
 int ei_x_encode_term(ei_x_buff* x, void* t);
 int ei_encode_trace(char *buf, int *index, const erlang_trace *p);
-/* FIXME no ei_x_encode_trace */
+int ei_x_encode_trace(ei_x_buff* x, const erlang_trace *p);
 int ei_encode_tuple_header(char *buf, int *index, int arity);
 int ei_x_encode_tuple_header(ei_x_buff* x, long n);
 int ei_encode_list_header(char *buf, int *index, int arity);
@@ -645,16 +719,20 @@ int ei_x_encode_bignum(ei_x_buff *x, mpz_t obj);
 #define EI_LONGLONG __int64
 #define EI_ULONGLONG unsigned __int64
 #else
+#ifndef VXWORKS
 #define EI_LONGLONG long long
 #define EI_ULONGLONG unsigned long long
 #endif
+#endif
 
+#ifndef VXWORKS
 int ei_decode_longlong(const char *buf, int *index, EI_LONGLONG *p);
 int ei_decode_ulonglong(const char *buf, int *index, EI_ULONGLONG *p);
 int ei_encode_longlong(char *buf, int *index, EI_LONGLONG p);
 int ei_encode_ulonglong(char *buf, int *index, EI_ULONGLONG p);
 int ei_x_encode_longlong(ei_x_buff* x, EI_LONGLONG n);
 int ei_x_encode_ulonglong(ei_x_buff* x, EI_ULONGLONG n);
+#endif
 
 #ifdef USE_EI_UNDOCUMENTED
 
@@ -675,9 +753,25 @@ int ei_decode_intlist(const char *buf, int *index, long *a, int *count);
  */
 int ei_receive_encoded(int fd, char **bufp, int *bufsz, erlang_msg *to, 
 		       int *msglen);
+int ei_receive_encoded_tmo(int fd, char **bufp, int *bufsz, erlang_msg *to, 
+		       int *msglen, unsigned ms);
 int ei_send_encoded(int fd, const erlang_pid *to, const char *msg, int msglen);
+int ei_send_encoded_tmo(int fd, const erlang_pid *to, const char *msg, int msglen,
+		    unsigned ms);
 int ei_send_reg_encoded(int fd, const erlang_pid *from, const char *to,
 			const char *msg, int msglen);
+int ei_send_reg_encoded_tmo(int fd, const erlang_pid *from, const char *to,
+			const char *msg, int msglen, unsigned ms);
+
+/*
+ * Bacward compatibility with old undocumented but used interface...
+ * FIXME use wrapper function instead?!
+ */
+#define ei_send_encoded_timeout(Fd,To,Msg,MsgLen,Ms) \
+    ei_send_encoded_tmo((Fd),(To),(Msg),(MsgLen),(Ms))
+#define ei_send_reg_encoded_timeout(Fd,From,To,Msg,MsgLen,Ms) \
+    ei_send_reg_encoded_tmo((Fd),(From),(To),(Msg),(MsgLen),(Ms))
+
 
 /* FIXME: is this really the best way to handle bignums? */
 int ei_decode_big(const char *buf, int *index, erlang_big* p);

@@ -22,46 +22,59 @@
 #ifndef EI_64BIT
 int ei_decode_long(const char *buf, int *index, long *p)
 {
-  const char *s = buf + *index;
-  const char *s0 = s;
-  long n;
-  int arity;
-  int sign;
+    const char *s = buf + *index;
+    const char *s0 = s;
+    long n;
+    int arity;
 
-  switch (get8(s)) {
-  case ERL_SMALL_INTEGER_EXT:
-    n = get8(s);
-    break;
+    switch (get8(s)) {
+    case ERL_SMALL_INTEGER_EXT:
+	n = get8(s);
+	break;
     
-  case ERL_INTEGER_EXT:
-    n = get32be(s);
-    break;
+    case ERL_INTEGER_EXT:
+	n = get32be(s);
+	break;
     
-  case ERL_SMALL_BIG_EXT:
-    /* abs(the largest 32 bit negtive number) is still 4 bytes in bignum */
-    if ((arity = get8(s)) != 4) return -1;
-    sign = get8(s);
-    /* Little Endian, and n always positive, except for LONG_MIN */
-    n = get32le(s);
+    case ERL_SMALL_BIG_EXT:
+	arity = get8(s);
+	goto decode_big;
 
-    if (sign) {
-      /* check for overflow */
-      if ((n - 1) < 0) return -1;
-      n = -n;
-    } else {
-      /* check for overflow */
-      if (n < 0) return -1;
+    case ERL_LARGE_BIG_EXT:
+	arity = get32be(s);
+
+    decode_big:
+	{
+	    int sign = get8(s);
+	    int i;
+	    n = 0;
+
+	    /* Little Endian, and n always positive, except for LONG_MIN */
+	    for (i = 0; i < arity; i++) {
+		if (i < 4) {
+		    n |= get8(s) << (i * 8);
+		} else if (get8(s) != 0) {
+		    return -1; /* All but first byte have to be 0 */
+		}
+	    }
+
+	    /* check for overflow */
+	    if (sign) {
+		if ((n - 1) < 0) return -1;
+		n = -n;
+	    } else {
+		if (n < 0) return -1;
+	    }
+	}
+	break;
+
+    default:
+	return -1;
     }
-    
-    break;
-    
-  default:
-    return -1;
-  }
 
-  if (p) *p = n;
-  *index += s-s0;
+    if (p) *p = n;
+    *index += s-s0;
   
-  return 0; 
+    return 0; 
 }
 #endif /* !EI_64BIT */

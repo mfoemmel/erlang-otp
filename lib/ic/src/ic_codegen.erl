@@ -158,13 +158,13 @@ record(G, X, Name, _IFRID, Recs) when record(X, struct) ->
 record(G, X, Name, _IFRID, _Recs) when record(X, union) ->
     F = ic_genobj:hrlfiled(G),
     emit(F, "-record(~p, {label, value}).\n",[ic_util:to_atom(Name)]);
-record(G, X, Name, IFRID, Recs) when length(Recs) > 3 ->
+record(G, _X, Name, IFRID, Recs) when length(Recs) > 3 ->
     F = ic_genobj:hrlfiled(G),
     emit(F, "-record(~p,~n        {~p=~p", 
 	 [ic_util:to_atom(Name), ic_util:to_atom(?IFRIDFIELD(G)), IFRID]),
     rec2(F, "", ", ", Recs),
     emit(F, "}).\n");
-record(G, X, Name, IFRID, Recs) ->
+record(G, _X, Name, IFRID, Recs) ->
     F = ic_genobj:hrlfiled(G),
     emit(F, "-record(~p, {~p=~p", [ic_util:to_atom(Name),
 				   ic_util:to_atom(?IFRIDFIELD(G)),
@@ -180,7 +180,7 @@ rec2(F, Align, Delim, [M1 , M2]) ->
     emit(F, "~s~s~p, ~p", [Delim, Align, M1, M2]);
 rec2(F, Align, Delim, [M]) ->
     emit(F, "~s~s~p", [Delim, Align, M]);
-rec2(F, Align, Delim, []) ->
+rec2(_F, _Align, _Delim, []) ->
     ok.
 
 
@@ -190,7 +190,7 @@ rec2(F, Align, Delim, []) ->
 export(F, [E1, E2, E3 | Exports]) ->
     emit(F, "-export([~s]).\n", [exp_list([E1, E2, E3])]),
     export(F, Exports);
-export(F, []) -> ok;
+export(_F, []) -> ok;
 export(F, Exports) ->
     emit(F, "-export([~s]).\n", [exp_list(Exports)]).
 
@@ -205,13 +205,18 @@ exp_to_string({F,N}) -> io_lib:format("~p/~p", [ic_util:to_atom(F), N]).
 %%--------------------------------------------------------------------
 %% Emit Stub file header
 %%--------------------------------------------------------------------
-emit_stub_head(G, ignore, Name, _) -> ignore;
+emit_stub_head(_G, ignore, _Name, _) -> ignore;
 emit_stub_head(G, F1, Name, erlang) ->
     mcomment(F1, stub_header(G, Name)),
     nl(F1),
     emit(F1, "-module(~p).\n", [list_to_atom(Name)]),
     emit(F1, "-ic_compiled(~p).\n", [compiler_vsn(?COMPILERVSN)]),
     emit(F1, "\n\n"), F1;
+emit_stub_head(G, F1, Name, erlang_template) ->
+    ic_erl_template:emit_header(G, F1, Name),
+    F1;
+emit_stub_head(_G, F1, _Name, erlang_template_no_gen) ->
+    F1;
 emit_stub_head(G, F1, Name, c) ->
     mcomment(F1, stub_header(G, Name), c),
     emit(F1, "int ic_compiled_~s_~s;\n", [compiler_vsn(?COMPILERVSN), Name]),
@@ -243,7 +248,7 @@ compiler_vsn(Vsn) ->
 %% Emit include file header
 %%--------------------------------------------------------------------
 %% Name is Fully scoped (undescore) name of interface or module    
-emit_hrl_head(G, ignore, Name, _) -> ignore;
+emit_hrl_head(_G, ignore, _Name, _) -> ignore;
 emit_hrl_head(G, Fd, Name, erlang) ->
     mcomment(Fd, ["Erlang header file" |
 		  hrl_header(G, Name)]),
@@ -292,6 +297,10 @@ hrl_header(G, Name) ->
 %%--------------------------------------------------------------------
 %% Emit include file footer
 %%--------------------------------------------------------------------
+emit_hrl_foot(G, erlang_template) ->
+    ok;
+emit_hrl_foot(G, erlang_template_no_gen) ->
+    ok;
 emit_hrl_foot(G, erlang) ->
     case ic_genobj:is_hrlfile_open(G) of
 	true ->

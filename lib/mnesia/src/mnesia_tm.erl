@@ -301,11 +301,11 @@ doit_loop(#state{coordinators = Coordinators, participants = Participants, super
 	
 	{Tid, {do_abort, Reason}} ->
 	    ?eval_debug_fun({?MODULE, do_abort, pre}, [{tid, Tid}]),
-	    mnesia_locker:release_tid(Tid),
 	    case mnesia_lib:key_search_delete(Tid, #participant.tid, Participants) of
 		{none, _} ->
 		    verbose("Tried to abort a non participant transaction ~p: ~p~n",
 			    [Tid, Reason]),
+		    mnesia_locker:release_tid(Tid),
 		    doit_loop(State);
 		{P, Participants2} ->
 		    case P#participant.pid of
@@ -320,6 +320,7 @@ doit_loop(#state{coordinators = Coordinators, participants = Participants, super
 				    ignore
 			    end,
 			    transaction_terminated(Tid),
+			    mnesia_locker:release_tid(Tid),
 			    ?eval_debug_fun({?MODULE, do_abort, post}, [{tid, Tid}, {pid, nopid}]),
 			    doit_loop(State#state{participants = Participants2});
 			Pid when pid(Pid) ->
@@ -699,8 +700,8 @@ transaction(OldTidTs, Fun, Args, Retries, Mod, Type) ->
     case OldTidTs of
 	undefined -> % Outer
 	    execute_outer(Mod, Fun, Args, Factor, Retries, Type);
-	{_OldMod, Tid, Ts} ->  % Nested
-	    execute_inner(Mod, Tid, Ts, Fun, Args, Factor, Retries, Type);
+	{OldMod, Tid, Ts} ->  % Nested
+	    execute_inner(Mod, Tid, OldMod, Ts, Fun, Args, Factor, Retries, Type);
 	_ -> % Bad nesting
 	    {aborted, nested_transaction}
     end.
@@ -716,13 +717,13 @@ execute_outer(Mod, Fun, Args, Factor, Retries, Type) ->
 	    execute_transaction(Fun, Args, Factor, Retries, Type)
     end.
 
-execute_inner(Mod, Tid, Ts, Fun, Args, Factor, Retries, Type) ->
+execute_inner(Mod, Tid, OldMod, Ts, Fun, Args, Factor, Retries, Type) ->
     case req({add_store, Tid}) of
 	{error, Reason} ->
 	    {aborted, Reason};
 	{new_store, Ets} ->
 	    copy_ets(Ts#tidstore.store, Ets),
-	    Up = [Ts#tidstore.store | Ts#tidstore.up_stores],
+	    Up = [{OldMod,Ts#tidstore.store} | Ts#tidstore.up_stores],
 	    NewTs = Ts#tidstore{level = 1 + Ts#tidstore.level,
 				store = Ets,
 				up_stores = Up},
@@ -849,7 +850,7 @@ restart(Mod, Tid, Ts, Fun, Args, Factor0, Retries0, Type, Why) ->
 	    mnesia_locker:send_release_tid(Nodes, Tid),
 	    timer:sleep(SleepTime),
 	    mnesia_locker:receive_release_tid_acc(Nodes, Tid),
-	    case rec() of
+	    case get_restarted(Tid) of
 		{restarted, Tid} ->
 		    execute_transaction(Fun, Args, Factor0 + 1, 
 					Retries, Type);
@@ -858,12 +859,22 @@ restart(Mod, Tid, Ts, Fun, Args, Factor0, Retries0, Type, Why) ->
 	    end
     end.
 
+get_restarted(Tid) ->
+    case Res = rec() of
+	{restarted, Tid} ->
+	    Res;
+	{error,_} ->
+	    Res;
+	_ -> %% We could get a couple of aborts to many.
+	    get_restarted(Tid)
+    end.
+
 decr(infinity) -> infinity;
 decr(X) when integer(X), X > 1 -> X - 1;
 decr(_X) -> 0.
 
 return_abort(Fun, Args, Reason)  ->
-    {Mod, Tid, Ts} = get(mnesia_activity_state),
+    {_Mod, Tid, Ts} = get(mnesia_activity_state),
     OldStore = Ts#tidstore.store,
     Nodes = get_nodes(OldStore),
     intercept_friends(Tid, Ts),
@@ -880,12 +891,12 @@ return_abort(Fun, Args, Reason)  ->
 	    {aborted, mnesia_lib:fix_error(Reason)};
 	true ->
 	    %% Nested transaction
-	    [NewStore | Tail] = Ts#tidstore.up_stores,
+	    [{OldMod,NewStore} | Tail] = Ts#tidstore.up_stores,
 	    req({del_store, Tid, NewStore, OldStore, true}),
 	    Ts2 = Ts#tidstore{store = NewStore,
 			      up_stores = Tail,
 			      level = Level - 1},
-	    NewTidTs = {Mod, Tid, Ts2},
+	    NewTidTs = {OldMod, Tid, Ts2},
 	    put(mnesia_activity_state, NewTidTs),
 	    case Reason of 
 		#cyclic{} ->
@@ -1012,7 +1023,7 @@ dirty(Protocol, Item) ->
 %% into the local shadow Store
 %% This function exacutes in the context of the user process
 t_commit(Type) ->
-    {Mod, Tid, Ts} = get(mnesia_activity_state),
+    {_Mod, Tid, Ts} = get(mnesia_activity_state),
     Store = Ts#tidstore.store,
     if
 	Ts#tidstore.level == 1 ->
@@ -1028,12 +1039,12 @@ t_commit(Type) ->
 	true ->
 	    %% nested commit
 	    Level = Ts#tidstore.level,
-	    [Obsolete | Tail] = Ts#tidstore.up_stores,
+	    [{OldMod,Obsolete} | Tail] = Ts#tidstore.up_stores,
 	    req({del_store, Tid, Store, Obsolete, false}),
 	    NewTs = Ts#tidstore{store = Store,
 				up_stores = Tail,
 				level = Level - 1},
-	    NewTidTs = {Mod, Tid, NewTs},
+	    NewTidTs = {OldMod, Tid, NewTs},
 	    put(mnesia_activity_state, NewTidTs),
 	    do_commit_nested
     end.
@@ -1202,8 +1213,10 @@ pick_node(Tid, Node, [Rec | Rest], Done) ->
 	true ->
 	    pick_node(Tid, Node, Rest, [Rec | Done])
     end;
+pick_node({dirty,_}, Node, [], Done) ->
+    {#commit{decision = presume_commit, node = Node}, Done};
 pick_node(_Tid, Node, [], Done) ->
-    {#commit{decision = presume_commit, node = Node}, Done}.
+    mnesia:abort({bad_commit, {missing_lock, Node}}).
 
 prepare_node(Node, Storage, [Item | Items], Rec, Kind) when Kind == snmp ->
     Rec2 = Rec#commit{snmp = [Item | Rec#commit.snmp]},
@@ -1410,7 +1423,7 @@ multi_commit(asym_trans, Tid, CR, Store) ->
 		    %% Now we are uncertain and we do not know
 		    %% if all participants have logged that
 		    %% they are uncertain or not
-		    rec_acc_pre_commit(Pids, Tid, Store, C, 
+		    rec_acc_pre_commit(Pids, Tid, Store, {C,Local}, 
 				       do_commit, DumperMode, [], []);
 		{'EXIT', Reason} ->
 		    %% The others have logged the commit 
@@ -1449,13 +1462,17 @@ rec_acc_pre_commit([Pid | Tail], Tid, Store, Commit, Res, DumperMode,
 	    %% Kept for backwards compatibility. Remove after Mnesia 4.x
 	    rec_acc_pre_commit(Tail, Tid, Store, Commit, Res, DumperMode,
 			       [Pid | GoodPids], [Pid | SchemaAckPids]);
-
+	{?MODULE, _, {do_abort, Tid, Pid, _Reason}} ->
+	    AbortRes = {do_abort, {bad_commit, node(Pid)}},
+	    rec_acc_pre_commit(Tail, Tid, Store, Commit, AbortRes, DumperMode,
+			       GoodPids, SchemaAckPids);
 	{mnesia_down, Node} when Node == node(Pid) ->
 	    AbortRes = {do_abort, {bad_commit, Node}},
+	    catch Pid ! {Tid, AbortRes},  %% Tell him that he has died
 	    rec_acc_pre_commit(Tail, Tid, Store, Commit, AbortRes, DumperMode,
 			       GoodPids, SchemaAckPids)
     end;
-rec_acc_pre_commit([], Tid, Store, Commit, Res, DumperMode, GoodPids, SchemaAckPids) ->
+rec_acc_pre_commit([], Tid, Store, {Commit,OrigC}, Res, DumperMode, GoodPids, SchemaAckPids) ->
     D = Commit#commit.decision,
     case Res of
 	do_commit ->
@@ -1484,7 +1501,7 @@ rec_acc_pre_commit([], Tid, Store, Commit, Res, DumperMode, GoodPids, SchemaAckP
 	    mnesia_recover:log_decision(D2),
             ?eval_debug_fun({?MODULE, rec_acc_pre_commit_log_abort},
 			    [{tid, Tid}]),
-	    do_abort(Tid, Commit),
+	    do_abort(Tid, OrigC),
 	    ?eval_debug_fun({?MODULE, rec_acc_pre_commit_done_abort},
 			    [{tid, Tid}])
     end,
@@ -1572,7 +1589,7 @@ commit_participant(Coord, Tid, Bin, C0, DiscNs, _RamNs) ->
 			    mnesia_recover:log_decision(D#decision{outcome = aborted}),
 			    ?eval_debug_fun({?MODULE, commit_participant, log_abort},
 					    [{tid, Tid}]),
-			    mnesia_schema:undo_prepare_commit(Tid, C),
+			    mnesia_schema:undo_prepare_commit(Tid, C0),
 			    ?eval_debug_fun({?MODULE, commit_participant, undo_prepare},
 					    [{tid, Tid}]);
 			
@@ -1580,26 +1597,29 @@ commit_participant(Coord, Tid, Bin, C0, DiscNs, _RamNs) ->
 			    mnesia_recover:log_decision(D#decision{outcome = aborted}),
 			    ?eval_debug_fun({?MODULE, commit_participant, exit_log_abort},
 					    [{tid, Tid}]),
-			    mnesia_schema:undo_prepare_commit(Tid, C),
+			    mnesia_schema:undo_prepare_commit(Tid, C0),
 			    ?eval_debug_fun({?MODULE, commit_participant, exit_undo_prepare},
 					    [{tid, Tid}]);
 			
 			Msg ->
 			    verbose("** ERROR ** commit_participant ~p, got unexpected msg: ~p~n",
-				  [Tid, Msg])
+				    [Tid, Msg])
 		    end;
-		{Tid, {do_abort, _Reason}} ->
-		    mnesia_schema:undo_prepare_commit(Tid, C),
+		{Tid, {do_abort, Reason}} ->
+		    reply(Coord, {do_abort, Tid, self(), Reason}),
+		    mnesia_schema:undo_prepare_commit(Tid, C0),
 		    ?eval_debug_fun({?MODULE, commit_participant, pre_commit_undo_prepare},
 				    [{tid, Tid}]);
 
-		{'EXIT', _, _} ->
-		    mnesia_schema:undo_prepare_commit(Tid, C),
+		{'EXIT', _, Reason} ->
+		    reply(Coord, {do_abort, Tid, self(), {bad_commit,Reason}}),
+		    mnesia_schema:undo_prepare_commit(Tid, C0),
 		    ?eval_debug_fun({?MODULE, commit_participant, pre_commit_undo_prepare}, [{tid, Tid}]);
 
 		Msg ->
+		    reply(Coord, {do_abort, Tid, self(), {bad_commit,internal}}),
 		    verbose("** ERROR ** commit_participant ~p, got unexpected msg: ~p~n",
-			  [Tid, Msg])
+			    [Tid, Msg])
 	    end;
 
 	{'EXIT', Reason} ->
@@ -1912,19 +1932,15 @@ ask_commit(Protocol, Tid, [Head | Tail], DiscNs, RamNs, WaitFor, Local) ->
 ask_commit(_Protocol, _Tid, [], _DiscNs, _RamNs, WaitFor, Local) ->
     {WaitFor, Local}.
 
-opt_term_to_binary(asym_trans, Head, Nodes) ->
-    opt_term_to_binary(Nodes, Head);
+%% This used to test protocol conversion between mnesia-nodes
+%% but it is really dependent on the emulator version on the
+%% two nodes (if funs are sent which they are in transform table op).
+%% to be safe we let erts do the translation (many times maybe and thus
+%% slower but it works.
+% opt_term_to_binary(asym_trans, Head, Nodes) ->
+%     opt_term_to_binary(Nodes, Head);    
 opt_term_to_binary(_Protocol, Head, _Nodes) ->
     Head.
-    
-opt_term_to_binary([], Head) ->
-    term_to_binary(Head);
-opt_term_to_binary([H|R], Head) ->
-    case mnesia_monitor:needs_protocol_conversion(H) of
-	true -> Head;
-	false -> 
-	    opt_term_to_binary(R, Head)
-    end.
 	    
 rec_all([Node | Tail], Tid, Res, Pids) ->
     receive
@@ -1940,7 +1956,11 @@ rec_all([Node | Tail], Tid, Res, Pids) ->
 	    rec_all(Tail, Tid, Res, Pids);
 
 	{mnesia_down, Node} ->  
-	    rec_all(Tail, Tid, {do_abort, {bad_commit, Node}}, Pids)
+	    %% Make sure that mnesia_tm knows it has died
+	    %% it may have been restarted
+	    Abort = {do_abort, {bad_commit, Node}},
+	    catch {?MODULE, Node} ! {Tid, Abort},
+	    rec_all(Tail, Tid, Abort, Pids)
     end;
 rec_all([], _Tid, Res, Pids) ->
     {Res, Pids}.

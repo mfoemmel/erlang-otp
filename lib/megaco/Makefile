@@ -133,11 +133,16 @@ $(APP_DIR):
 	(cd ..; find megaco -name '*.contrib*' >> megaco/TAR.exclude2)
 	(cd ..; find megaco -name '*.keep*' >> megaco/TAR.exclude2)
 	(cd ..; find megaco -name '*~' >> megaco/TAR.exclude2)
+	(cd ..; find megaco -name 'erl_crash.dump' >> megaco/TAR.exclude2)
+	(cd ..; find megaco/test -name '*.beam' >> megaco/TAR.exclude2)
+	(cd ..; find megaco -name '*.log' >> megaco/TAR.exclude2)
+	(cd ..; find megaco/examples/meas -name '*.xls' >> megaco/TAR.exclude2)
+	(cd ..; find megaco -name 'core' >> megaco/TAR.exclude2)
+	(cd ..; find megaco -name '.cmake.state' >> megaco/TAR.exclude2)
 	mkdir $(APP_DIR); \
         (cd ..; tar cfX - megaco/TAR.exclude2 megaco) | \
         (cd $(APP_DIR); tar xf -); \
         mv $(APP_DIR)/megaco/* $(APP_DIR)/; \
-        find $(APP_DIR)/megaco -name '.cmake.state' | xargs rm -f; \
 	mkdir $(APP_DIR)/autoconf; \
         cp autoconf/config.guess $(APP_DIR)/autoconf/; \
         cp autoconf/config.sub $(APP_DIR)/autoconf/; \

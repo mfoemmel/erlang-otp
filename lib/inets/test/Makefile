@@ -263,6 +263,7 @@ info:
 	@echo "MAKE_EMAKE        = $(MAKE_EMAKE)"
 	@echo "EMAKEFILE         = $(EMAKEFILE)"
 	@echo "BUILDTARGET       = $(BUILDTARGET)"
+	@echo "TARGET_FILES      = $(TARGET_FILES)"
 	@echo "INETS_DATA_DIR    = $(INETS_DATA_DIR)"
 	@echo "INETS_PRIV_DIR    = $(INETS_PRIV_DIR)"
 	@echo "INETS_SSL_LIB_DIR = $(INETS_SSL_LIB_DIR)"

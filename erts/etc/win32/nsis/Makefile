@@ -23,14 +23,31 @@ WTESTROOT=$(shell (cygpath -d $(RELEASE_PATH) 2>/dev/null || cygpath -w $(RELEAS
 WTARGET_DIR=$(shell (cygpath -d $(TARGET_DIR) 2>/dev/null || cygpath -d $(TARGET_DIR)))
 
 release_spec:
-	@echo '!define MUI_VERSION "$(SYSTEM_VSN)"' > $(VERSION_HEADER)
-	@echo '!define ERTS_VERSION "$(VSN)"' >> $(VERSION_HEADER)
-	@echo '!define TESTROOT "$(WTESTROOT)"' >> $(VERSION_HEADER)
-	@echo '!define OUTFILEDIR "$(WTARGET_DIR)"' >> $(VERSION_HEADER)
-	@if [ -f $(TESTROOT)/docs/index.html ]; then \
-		@echo '!define HAVE_DOCS 1' >> $(VERSION_HEADER); \
-	fi
-	$(MAKENSIS) erlang.nsi	
+	@NSIS_VER=`makensis /hdrinfo | head -1 | awk '{print $$2}'`; \
+	case $$NSIS_VER in \
+	v2.0b*) \
+	  echo '!define MUI_VERSION "$(SYSTEM_VSN)"' > $(VERSION_HEADER);\
+	  echo '!define ERTS_VERSION "$(VSN)"' >> $(VERSION_HEADER);\
+	  echo '!define TESTROOT "$(WTESTROOT)"' >> $(VERSION_HEADER);\
+	  echo '!define OUTFILEDIR "$(WTARGET_DIR)"' >> $(VERSION_HEADER);\
+	  if [ -f $(RELEASE_PATH)/docs/doc/index.html ];\
+	  then\
+		echo '!define HAVE_DOCS 1' >> $(VERSION_HEADER); \
+	  fi;\
+	  $(MAKENSIS) erlang.nsi;;\
+	v2.*) \
+	  echo '!define OTP_VERSION "$(SYSTEM_VSN)"' > $(VERSION_HEADER);\
+	  echo '!define ERTS_VERSION "$(VSN)"' >> $(VERSION_HEADER);\
+	  echo '!define TESTROOT "$(WTESTROOT)"' >> $(VERSION_HEADER);\
+	  echo '!define OUTFILEDIR "$(WTARGET_DIR)"' >> $(VERSION_HEADER);\
+	  if [ -f $(RELEASE_PATH)/docs/doc/index.html ];\
+	  then \
+		echo '!define HAVE_DOCS 1' >> $(VERSION_HEADER); \
+	  fi;\
+	  $(MAKENSIS) erlang20.nsi;;\
+	*) \
+	  echo 'Unsupported NSIS version';;\
+	esac	
 
 release_docs release_docs_spec docs:
 

@@ -116,6 +116,9 @@ check_depends(UpDown, [Dep|Deps], Modules) ->
 
 
 check_depend(UpDown, {V, Instructions}, Modules) ->
+    d("check_instructions(~w) -> entry with"
+      "~n   V:       ~p"
+      "~n   Modules: ~p", [UpDown, V, Modules]),
     check_version(V),
     case check_instructions(UpDown, 
 			    Instructions, Instructions, [], [], Modules) of
@@ -129,11 +132,15 @@ check_depend(UpDown, {V, Instructions}, Modules) ->
 check_instructions(_, [], _, Good, Bad, _) ->
     {lists:reverse(Good), lists:reverse(Bad)};
 check_instructions(UpDown, [Instr|Instrs], AllInstr, Good, Bad, Modules) ->
+    d("check_instructions(~w) -> entry with"
+      "~n   Instr: ~p", [UpDown,Instr]),
     case (catch check_instruction(UpDown, Instr, AllInstr, Modules)) of
         ok ->
             check_instructions(UpDown, Instrs, AllInstr, 
 			       [Instr|Good], Bad, Modules);
         {error, Reason} ->
+	    d("check_instructions(~w) -> bad instruction: "
+	      "~n   Reason: ~p", [UpDown,Reason]),
             check_instructions(UpDown, Instrs, AllInstr, Good, 
                                [{Instr, Reason}|Bad], Modules)
     end.
@@ -141,11 +148,15 @@ check_instructions(UpDown, [Instr|Instrs], AllInstr, Good, Bad, Modules) ->
 %% A new module is added
 check_instruction(up, {add_module, Module}, _, Modules) 
   when atom(Module) ->
+    d("check_instruction -> entry when up-add_module instruction with"
+      "~n   Module: ~p", [Module]),
     check_module(Module, Modules);
 
 %% An old module is re-added
 check_instruction(down, {add_module, Module}, _, Modules) 
   when atom(Module) ->
+    d("check_instruction -> entry when down-add_module instruction with"
+      "~n   Module: ~p", [Module]),
     case (catch check_module(Module, Modules)) of
 	{error, {unknown_module, Module, Modules}} ->
 	    ok;
@@ -158,6 +169,10 @@ check_instruction(down, {add_module, Module}, _, Modules)
 %% - check that no module depends on this (removed) module
 check_instruction(up, {remove, {Module, Pre, Post}}, _, Modules) 
   when atom(Module), atom(Pre), atom(Post) ->
+    d("check_instruction -> entry when up-remove instruction with"
+      "~n   Module: ~p"
+      "~n   Pre:    ~p"
+      "~n   Post:   ~p", [Module, Pre, Post]),
     case (catch check_module(Module, Modules)) of
 	{error, {unknown_module, Module, Modules}} ->
 	    check_purge(Pre),
@@ -170,6 +185,10 @@ check_instruction(up, {remove, {Module, Pre, Post}}, _, Modules)
 %% in the app-file.
 check_instruction(down, {remove, {Module, Pre, Post}}, AllInstr, Modules) 
   when atom(Module), atom(Pre), atom(Post) ->
+    d("check_instruction -> entry when down-remove instruction with"
+      "~n   Module: ~p"
+      "~n   Pre:    ~p"
+      "~n   Post:   ~p", [Module, Pre, Post]),
     case (catch check_module(Module, Modules)) of
 	ok ->
 	    check_purge(Pre),
@@ -182,6 +201,11 @@ check_instruction(down, {remove, {Module, Pre, Post}}, AllInstr, Modules)
 check_instruction(_, {load_module, Module, Pre, Post, Depend}, 
 		  AllInstr, Modules) 
   when atom(Module), atom(Pre), atom(Post), list(Depend) ->
+    d("check_instruction -> entry when load_module instruction with"
+      "~n   Module: ~p"
+      "~n   Pre:    ~p"
+      "~n   Post:   ~p"
+      "~n   Depend: ~p", [Module, Pre, Post, Depend]),
     check_module(Module, Modules),
     check_module_depend(Module, Depend, Modules),
     check_module_depend(Module, Depend, updated_modules(AllInstr, [])),
@@ -191,6 +215,12 @@ check_instruction(_, {load_module, Module, Pre, Post, Depend},
 check_instruction(_, {update, Module, Change, Pre, Post, Depend}, 
 		  AllInstr, Modules) 
   when atom(Module), atom(Pre), atom(Post), list(Depend) ->
+    d("check_instruction -> entry when update instruction with"
+      "~n   Module: ~p"
+      "~n   Change: ~p"
+      "~n   Pre:    ~p"
+      "~n   Post:   ~p"
+      "~n   Depend: ~p", [Module, Change, Pre, Post, Depend]),
     check_module(Module, Modules),
     check_module_depend(Module, Depend, Modules),
     check_module_depend(Module, Depend, updated_modules(AllInstr, [])),
@@ -199,15 +229,23 @@ check_instruction(_, {update, Module, Change, Pre, Post, Depend},
     check_purge(Post);
 
 check_instruction(_, Instr, _AllInstr, _Modules) ->
+    d("check_instruction -> entry when unknown instruction with"
+      "~n   Instr: ~p", [Instr]),
     error({error, {unknown_instruction, Instr}}).
 
 
 %% If Module X depends on Module Y, then module Y must have an update
 %% instruction of some sort (otherwise the depend is faulty).
 updated_modules([], Modules) ->
+    d("update_modules -> entry when done with"
+      "~n   Modules: ~p", [Modules]),
     Modules;
 updated_modules([Instr|Instrs], Modules) ->
+    d("update_modules -> entry with"
+      "~n   Instr:   ~p"
+      "~n   Modules: ~p", [Instr,Modules]),
     Module = instruction_module(Instr),
+    d("update_modules -> Module: ~p", [Module]),
     updated_modules(Instrs, [Module|Modules]).
     
 instruction_module({add_module, Module}) ->
@@ -219,6 +257,8 @@ instruction_module({load_module, Module, _, _, _}) ->
 instruction_module({update, Module, _, _, _, _}) ->
     Module;
 instruction_module(Instr) ->
+    d("instruction_module -> entry when unknown instruction with"
+      "~n   Instr: ~p", [Instr]),
     error({error, {unknown_instruction, Instr}}).
     
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -241,15 +281,23 @@ check_module(M, _) ->
 
 
 check_module_depend(M, [], _) when atom(M) ->
+    d("check_module_depend -> entry with"
+      "~n   M: ~p", [M]),    
     ok;
 check_module_depend(M, Deps, Modules) when atom(M), list(Deps) ->
+    d("check_module_depend -> entry with"
+      "~n   M: ~p"
+      "~n   Deps: ~p"
+      "~n   Modules: ~p", [M, Deps, Modules]),    
     case [Dep || Dep <- Deps, lists:member(Dep, Modules) == false] of
         [] ->
             ok;
         Unknown ->
             error({unknown_depend_modules, Unknown})
     end;
-check_module_depend(M, D, Modules) ->
+check_module_depend(_M, D, _Modules) ->
+    d("check_module_depend -> entry when bad depend with"
+      "~n   D: ~p", [D]),    
     error({bad_depend, D}).
 
 
@@ -309,3 +357,16 @@ key1search(Key, L) ->
 	{value, {Key, Value}} ->
 	    Value
     end.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+d(F, A) ->
+    d(false, F, A).
+
+d(true, F, A) ->
+    io:format(F ++ "~n", A);
+d(_, _, _) ->
+    ok.
+
+    

@@ -688,6 +688,7 @@ do_sticky_lock(Tid, Store, {Tab, Key} = Oid, Lock) ->
     receive
 	{?MODULE, _N, granted} ->
 	    ?ets_insert(Store, {{locks, Tab, Key}, write}),
+	    [?ets_insert(Store, {nodes, Node}) || Node <- w_nodes(Tab)],
 	    granted;
 	{?MODULE, _N, {granted, Val}} -> %% for rwlocks
 	    case opt_lookup_in_client(Val, Oid, write) of
@@ -695,6 +696,7 @@ do_sticky_lock(Tid, Store, {Tab, Key} = Oid, Lock) ->
 		    exit({aborted, C});
 		Val2 ->
 		    ?ets_insert(Store, {{locks, Tab, Key}, write}),
+		    [?ets_insert(Store, {nodes, Node}) || Node <- w_nodes(Tab)],
 		    Val2
 	    end;
 	{?MODULE, _N, {not_granted, Reason}} ->

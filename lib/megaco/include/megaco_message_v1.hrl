@@ -275,9 +275,7 @@
 
 -record('EventsDescriptor',
 	{
-	  requestID,
-	  %% BUGBUG: IG 6.82 was withdrawn
-	  %% requestID = asn1_NOVALUE, 
+	  requestID = asn1_NOVALUE,
 	  eventList = []
 	 }). % with extension mark
 
@@ -299,9 +297,7 @@
 
 -record('SecondEventsDescriptor',
 	{
-	  requestID, 
-	  %% BUGBUG: IG 6.82 was withdrawn
-	  %% requestID = asn1_NOVALUE, 
+	  requestID = asn1_NOVALUE, 
 	  eventList = []
 	 }). % with extension mark
 
@@ -393,6 +389,16 @@
 	  serviceChangeProfile = asn1_NOVALUE,
 	  timeStamp = asn1_NOVALUE
 	 }). % with extension mark
+
+%% This is the actual ASN.1 type and it is as this it will
+%% be represented if the encoding config [native] is choosen.
+% %% String of at least 1 character and at most 67 characters (ASN.1). 
+% %% 64 characters for name, 1 for "/", 2 for version to match ABNF
+% -record('ServiceChangeProfile',
+% 	{
+% 	  profileName
+% 	 }
+%        ).
 
 -record('ServiceChangeProfile',
 	{

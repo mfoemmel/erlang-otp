@@ -15,6 +15,9 @@
  * 
  *     $Id$
  */
+
+#include "eidef.h"
+
 #include <stddef.h>
 #include <stdlib.h>
 #include "ei_malloc.h"

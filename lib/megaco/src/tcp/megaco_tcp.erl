@@ -47,7 +47,9 @@
 	 block/1,           %% Used to block the socket for incomming
 	                    %% messages
 	 unblock/1,         %% Used to unblock the node
-	 close/1            %% Used on both sides to close connection
+	 close/1,           %% Used on both sides to close connection
+
+	 upgrade_receive_handle/2
 	]).
 
 %% Statistics exports
@@ -68,6 +70,8 @@
 	 code_change/3,
 	 start_connection/2
 	]).
+
+
 %%-----------------------------------------------------------------
 %% Server state record
 %%-----------------------------------------------------------------
@@ -221,6 +225,11 @@ close(Socket) ->
 socket(Socket) ->
     Socket.
 
+upgrade_receive_handle(Pid, NewHandle) 
+  when pid(Pid), record(NewHandle, megaco_receive_handle) ->
+    megaco_tcp_connection:upgrade_receive_handle(Pid, NewHandle).
+
+
 %%-----------------------------------------------------------------
 %% Internal Interface functions
 %%-----------------------------------------------------------------
@@ -243,6 +252,7 @@ start_connection(SupPid, #megaco_tcp{socket = Socket} = TcpRec) ->
 	    ?tcp_debug(TcpRec, "tcp connect", []),
 	    case supervisor:start_child(ConnSupPid, [TcpRec]) of
 		{ok, Pid} ->
+		    ?tcp_debug(TcpRec, "connect handler started", [Pid]),
 		    create_snmp_counters(Socket),
 		    {ok, Pid};
 		{error, Reason} ->
@@ -264,19 +274,12 @@ create_snmp_counters(Socket) ->
                 medGwyGatewayNumErrors],
     create_snmp_counters(Socket, Counters).
 
-% create_snmp_counters(Socket, []) ->
-%     ok;
-% create_snmp_counters(Socket, [Counter|Counters]) ->
-%     Key = {Socket, Counter},
-%     ets:insert(megaco_tcp_stats, {Key, 0}),
-%     create_snmp_counters(Socket, Counters).
-
-create_snmp_counters(Socket, Counters) ->
-    F = fun(Counter) ->
-		Key = {Socket, Counter},
-		ets:insert(megaco_tcp_stats, {Key, 0})
-	end,
-    lists:foreach(F, Counters).
+create_snmp_counters(_Socket, []) ->
+    ok;
+create_snmp_counters(Socket, [Counter|Counters]) ->
+    Key = {Socket, Counter},
+    ets:insert(megaco_tcp_stats, {Key, 0}),
+    create_snmp_counters(Socket, Counters).
 
 
 %%-----------------------------------------------------------------
@@ -479,8 +482,10 @@ parse_options([{Tag, Val} | T], TcpRec, Mand) ->
 	    parse_options(T, TcpRec#megaco_tcp{receive_handle = Val}, Mand2);
 	module when atom(Val) ->
 	    parse_options(T, TcpRec#megaco_tcp{module = Val}, Mand2);
-        _ ->
-	    {error, {bad_option, {Tag, Val}}}
+	serialize when Val == true; Val == false ->
+	    parse_options(T, TcpRec#megaco_tcp{serialize = Val}, Mand2);
+        Bad ->
+	    {error, {bad_option, Bad}}
     end;
 parse_options([], TcpRec, []) ->
     {ok, TcpRec};

@@ -21,8 +21,22 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 #
 # Macros
 #
+ifeq ($(findstring win32,$(TARGET)),win32)
+ifeq ($(HOST_OS),)
+HOST_OS := $(shell $(ERL_TOP)/erts/autoconf/config.guess)
+endif
+ifeq ($(findstring solaris,$(HOST_OS)),solaris)
+SKIP_BUILDING_BINARIES := true
+endif
+else
+SKIP_BUILDING_BINARIES := false
+endif
 
+ifeq ($(SKIP_BUILDING_BINARIES), true)
+SUB_DIRECTORIES = pkix src c_src doc/src 
+else
 SUB_DIRECTORIES = pkix src c_src doc/src examples/certs examples/src
+endif
 
 include vsn.mk
 VSN = $(SSL_VSN)

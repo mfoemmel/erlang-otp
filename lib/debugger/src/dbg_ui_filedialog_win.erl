@@ -169,7 +169,7 @@ handle_event({gs, 'Dirs', click, _Data, [0,"..",true|_]}, WinInfo) ->
 			   WinInfo#winInfo.pattern),
     gs:config('Filter', {text, Filter}),
     ignore;
-handle_event({gs, 'Dirs', click, _Data, [Index,Str,true|_]}, WinInfo) ->
+handle_event({gs, 'Dirs', click, _Data, [_Index,Str,true|_]}, WinInfo) ->
     Filter = filename:join([WinInfo#winInfo.cwd, Str,
 			    WinInfo#winInfo.pattern]),
     gs:config('Filter', {text, Filter}),
@@ -177,14 +177,14 @@ handle_event({gs, 'Dirs', click, _Data, [Index,Str,true|_]}, WinInfo) ->
 handle_event({gs, 'Dirs', doubleclick, _Data, _Arg}, WinInfo) ->
     handle_event({gs, null, click, filter, null}, WinInfo);
 
-handle_event({gs, 'Files', click, _Data, [Index,Str,true|_]}, WinInfo) ->
+handle_event({gs, 'Files', click, _Data, [_Index,Str,true|_]}, WinInfo) ->
     Selection = filename:join(WinInfo#winInfo.cwd, untag(Str)),
     gs:config('Selection', {text, Selection}),
     ignore;
 handle_event({gs, 'Files', doubleclick, _Data, _Arg}, WinInfo) ->
     handle_event({gs, null, click, select, null}, WinInfo);
   
-handle_event({gs, _Id, click, select, _Arg}, WinInfo) ->
+handle_event({gs, _Id, click, select, _Arg}, _WinInfo) ->
     {select, gs:read('Selection', text)};
 handle_event({gs, _Id, click, multiselect, _Arg}, WinInfo) ->
     Files = lists:map(fun(File) -> untag(File) end,
@@ -198,7 +198,7 @@ handle_event({gs, _Id, click, filter, _Arg}, WinInfo) ->
 handle_event({gs, _Id, click, done, _Arg}, WinInfo) ->
     {stopped, WinInfo#winInfo.cwd};
     
-handle_event(GSEvent, _WinInfo) ->
+handle_event(_GSEvent, _WinInfo) ->
     ignore.
 
 %%====================================================================
@@ -255,7 +255,7 @@ check_filter(Filter0, Prev) ->
 	Comps ->
 	    %% Filter = garbage
 	    {error, {Prev, Prev, "*"}};
-	[Name|Names] ->
+	[Name|_Names] ->
 	    %% Filter = existing dir ++ pattern or non-existing file/dir
 	    case is_pattern(Name) of
 		true -> {ok, {Filter, Cwd, FilePattern}};
@@ -313,7 +313,7 @@ relfile(Dir, File) ->
 	RelFile -> RelFile
     end.
 
-compare([X|Dir], [Y|File]) ->
+compare([_|Dir], [_|File]) ->
     compare(Dir, File);
 compare([], [$/|File]) ->
     File;

@@ -613,6 +613,9 @@ erl_crash_dump(char *file, int line, char* fmt, va_list args)
     time_t now;
     char* dumpname;
     char buf[512];
+#if !defined(VXWORKS) && !defined(__WIN32__)
+    int i;
+#endif
 
     if (erts_writing_erl_crash_dump)
 	return;
@@ -626,6 +629,11 @@ erl_crash_dump(char *file, int line, char* fmt, va_list args)
     }
 #ifndef VXWORKS
     close(3);			/* Make sure we have a free descriptor */
+#ifndef __WIN32__
+    for (i = 4; i < 1024; i++) {
+	close(i);
+    }
+#endif
 #endif
     fd = open(dumpname,O_WRONLY | O_CREAT | O_TRUNC,0640);
     if (fd < 0) 

@@ -61,7 +61,7 @@
 %% Effect   : Functions demanded by the gen_server module. 
 %%------------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 handle_info(Info, State) ->
@@ -70,8 +70,8 @@ handle_info(Info, State) ->
         {'EXIT', Pid, normal} ->
 	    ets:match_delete(State#state.etsR, {'_','_',Pid}),
             {noreply, State};
-        Other ->
-            ?debug_print("TERMINATED: ~p~n",[Other]),
+        _Other ->
+            ?debug_print("TERMINATED: ~p~n",[_Other]),
             {noreply, State}
     end.
 
@@ -87,7 +87,7 @@ init(Options) ->
 		etsR    = ets:new(oe_ets, [set, protected]),
 		server_options = SO}}.
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------
@@ -100,7 +100,7 @@ terminate(Reason, State) ->
 %% Returns  : Ch - Channel obj ref
 %%            Id - Channel Id (out-type)
 %%-----------------------------------------------------------
-create_channel(OE_THIS, OE_FROM, State, InitQoS, InitAdmin) ->
+create_channel(OE_THIS, _OE_FROM, State, InitQoS, InitAdmin) ->
     {QoS, LQoS} = 'CosNotification_Common':init_qos(InitQoS),
     {IAdm, LAdm} = 'CosNotification_Common':init_adm(InitAdmin),
     Id = 'CosNotification_Common':create_id(State#state.idCounter),
@@ -121,7 +121,7 @@ create_channel(OE_THIS, OE_FROM, State, InitQoS, InitAdmin) ->
 %% Returns  : ChannelIDSeq - List of alive channels created 
 %%            by this factory.
 %%-----------------------------------------------------------
-get_all_channels(OE_THIS, OE_FROM, State) ->
+get_all_channels(_OE_THIS, _OE_FROM, State) ->
     {reply, lists:flatten(ets:match(State#state.etsR, {'$1','_','_'})), State}.
 
 %%----------------------------------------------------------%
@@ -129,7 +129,7 @@ get_all_channels(OE_THIS, OE_FROM, State) ->
 %% Arguments: ChannelId
 %% Returns  : ChannelRef | 'CosNotifyChannelAdmin_ChannelNotFound'
 %%-----------------------------------------------------------
-get_event_channel(OE_THIS, OE_FROM, State, Id) ->
+get_event_channel(_OE_THIS, _OE_FROM, State, Id) ->
     {reply, find_obj(ets:lookup(State#state.etsR, Id)), State}.
 
 %%--------------- LOCAL FUNCTIONS ----------------------------

@@ -26,7 +26,6 @@
 -export([get_type/3]).
 
 
-
 %% Generate examples of values ******************************
 %%****************************************x
 
@@ -61,8 +60,13 @@ get_type(M,Typename,Type,Tellname) when record(Type,type) ->
 		[#'Externaltypereference'{type=TrefConstraint}] ->
 		    get_type(M,TrefConstraint,no);
 		_ ->
-		    "open_type"
+		    ERule = get_encoding_rule(M),
+		    open_type_value(ERule)
+%%		    "open_type"
 	    end;
+	{constructed,bif} when Typename == ['EXTERNAL'] ->
+	    Val=get_type_constructed(M,Typename,InnerType,Type),
+	    asn1rt_check:transform_to_EXTERNAL1994(Val);
 	{constructed,bif} ->
 	    get_type_constructed(M,Typename,InnerType,Type)
     end;
@@ -169,7 +173,12 @@ get_type_prim(D) ->
 		[] ->
 		    i_random(C);
 		_ ->
-		    lists:nth(random(length(NN)),NN)
+		    case C of
+			[] ->
+			    lists:nth(random(length(NN)),NN);
+			_ ->
+			    lists:nth((fun(0)->1;(X)->X end(i_random(C))),NN)
+		    end
 	    end;
 	Enum when tuple(Enum),element(1,Enum)=='ENUMERATED' ->
 	    NamedNumberList =
@@ -189,7 +198,13 @@ get_type_prim(D) ->
 		[] ->
 		    asn1_EMPTY;
 		_ ->
-		    lists:nth(random(length(NN)),NN)
+%		    lists:nth(random(length(NN)),NN)
+		    case C of
+			[] ->
+			    lists:nth(random(length(NN)),NN);
+			_ ->
+			    lists:nth((fun(0)->1;(X)->X end(i_random(C))),NN)
+		    end
 	    end;
 	{'BIT STRING',NamedNumberList} ->
 %%	    io:format("get_type_prim 1: ~w~n",[NamedNumberList]),
@@ -211,7 +226,7 @@ get_type_prim(D) ->
 	    Olist = [(random(1000)-1)||_X <-lists:seq(1,Len)],
 	    list_to_tuple([random(3)-1,random(40)-1|Olist]);
 	'ObjectDescriptor' ->
-	    object_descriptor_nyi;
+	    "Dummy ObjectDescriptor";
 	'BOOLEAN' ->
 	    true;
 	'OCTET STRING' ->
@@ -238,6 +253,9 @@ get_type_prim(D) ->
 	    adjust_list(size_random(C),c_string(C,"IA5String"));
 	'BMPString' ->
 	    adjust_list(size_random(C),c_string(C,"BMPString"));
+	'UTF8String' ->
+	    {ok,Res}=asn1rt:utf8_list_to_binary(adjust_list(random(50),[$U,$T,$F,$8,$S,$t,$r,$i,$n,$g,16#ffff,16#fffffff,16#ffffff,16#fffff,16#fff])),
+	    Res;
 	'UniversalString' ->
 	    adjust_list(size_random(C),c_string(C,"UniversalString"));
 	XX ->
@@ -265,6 +283,13 @@ size_random(C) ->
     case get_constraint(C,'SizeConstraint') of
 	no ->
 	    c_random({0,5},no);
+	{{Lb,Ub},_} when integer(Lb),integer(Ub) ->
+	    if
+		Ub-Lb =< 4 ->
+		    c_random({Lb,Ub},no);
+		true ->
+		    c_random({Lb,Lb+4},no)
+	    end;
 	{Lb,Ub} when Ub-Lb =< 4 ->
 	    c_random({Lb,Ub},no);
 	{Lb,_}  ->
@@ -328,3 +353,28 @@ get_constraint(C,Key) ->
 	{value,{_,V}} -> 
 	    V
     end.
+
+get_encoding_rule(M) ->
+    Mod =
+	if list(M) ->
+		list_to_atom(M);
+	   true ->M
+	end,
+    case (catch Mod:encoding_rule()) of
+	A when atom(A) ->
+	    A;
+	_ -> unknown
+    end.
+
+open_type_value(ber) ->
+    [4,9,111,112,101,110,95,116,121,112,101];
+open_type_value(ber_bin) ->
+    <<4,9,111,112,101,110,95,116,121,112,101>>;
+open_type_value(ber_bin_v2) ->
+    <<4,9,111,112,101,110,95,116,121,112,101>>;
+open_type_value(per) ->
+    "\n\topen_type"; %octet string value "open_type"
+open_type_value(per_bin) ->
+    <<10,9,111,112,101,110,95,116,121,112,101>>;
+open_type_value(_) ->
+    [4,9,111,112,101,110,95,116,121,112,101].

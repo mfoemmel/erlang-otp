@@ -20,6 +20,9 @@
 #include "eiext.h"
 #include "putget.h"
 
+/* FIXME fix or document that special requirements on 
+   the in data.... */
+
 int ei_decode_string(const char *buf, int *index, char *p)
 {
   const char *s = buf + *index;

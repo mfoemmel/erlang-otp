@@ -40,12 +40,8 @@
 %% Description: Start polling HTTPD with default values
 %%
 start() -> 
-    Verbosity = {verbosity,?default_verbosity},
-    Uris      = {uris,uris()},
-    PollTime  = {poll_time,?default_poll_time},
-    Logging   = {log_file,"httpd_poll.log"},
-    Options   = [Verbosity,Uris,PollTime,Logging],
-    start("gandalf",8000,Options).
+    Options = default_options(), 
+    start("gandalf", 8000, Options).
 
 
 %% start/3
@@ -72,6 +68,23 @@ stop() ->
     gen_server:call(httpd_tester,stop).
 
 
+default_options() ->
+    Verbosity = {verbosity,?default_verbosity},
+    Uris      = {uris,uris()},
+    PollTime  = {poll_time,?default_poll_time},
+    Logging   = {log_file,"httpd_poll.log"},
+    [Verbosity, Uris, PollTime, Logging].
+
+
+options(Options) ->
+    options(Options, default_options(), []).
+
+options([], Defaults, Options) ->
+    Options ++ Defaults;
+options([{Key,Val} = Opt|Opts], Defaults, Options) ->
+    options(Opts, lists:keydelete(Key, 1, Defaults), [Opt|Options]).
+
+
 verbosity(silence) ->
     set_verbosity(silence);
 verbosity(error) ->
@@ -93,8 +106,9 @@ poll_time(NewTime) ->
 %% ----------------------------------------------------------------------
 
 
-init([Host,Port,Options]) ->
+init([Host, Port, Options0]) ->
     process_flag(trap_exit,true),
+    Options = options(Options0),
     put(verbosity,get_verbosity(Options)),
     log_open(get_log_file(Options)),
     tstart(),

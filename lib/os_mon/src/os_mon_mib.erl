@@ -34,7 +34,7 @@
 	 loadCpuLoad, loadCpuLoad5, loadCpuLoad15}).
 
 -define(loadShadowArgs, 
-	{loadTable, integer, record_info(fields, loadTable), 5000,
+	{loadTable, string, record_info(fields, loadTable), 5000,
 	 {os_mon_mib, update_load_table}}). 
 
 -record(diskTable,
@@ -120,8 +120,12 @@ update_load_table() ->
     delete_all(loadTable),
     lists:foreach(
       fun(Node) ->
-	      Load = rpc:call(Node, os_mon_mib, get_load, [Node]),
-	      ok = mnesia:dirty_write(Load)
+	      case rpc:call(Node, os_mon_mib, get_load, [Node]) of
+		  Load when is_record(Load,loadTable) ->
+		      ok = mnesia:dirty_write(Load);
+		  _Else ->
+		      ok
+	      end
       end, [node() | nodes()]).
 
 delete_all(Name) -> delete_all(mnesia:dirty_first(Name), Name).

@@ -87,7 +87,7 @@ verify_modules([Mod|Rest]) ->
     case code:which(Mod) of
 	non_existing ->
 	    {error, ?NICE(atom_to_list(Mod)++" does not exist")};
-	Path ->
+	_Path ->
 	    verify_modules(Rest)
     end.
 
@@ -103,7 +103,7 @@ read_config_file(FileName) ->
     case file:open(FileName, read) of
 	{ok, Stream} ->
 	    read_config_file(Stream, []);
-	{error, Reason} ->
+	{error, _Reason} ->
 	    {error, ?NICE("Cannot open "++FileName)}
     end.
 
@@ -113,7 +113,7 @@ read_config_file(Stream, SoFar) ->
 	    {ok, lists:reverse(SoFar)};
 	{error, Reason} ->
 	    {error, Reason};
-	[$#|Rest] ->
+	[$#|_Rest] ->
 	    %% Ignore commented lines for efficiency later ..
 	    read_config_file(Stream, SoFar);
 	Line ->
@@ -122,7 +122,7 @@ read_config_file(Stream, SoFar) ->
 		[] ->
 		    %% Also ignore empty lines ..
 		    read_config_file(Stream, SoFar);
-		Other ->
+		_Other ->
 		    read_config_file(Stream, [NewLine|SoFar])
 	    end
     end.
@@ -170,63 +170,32 @@ load_config([Line|Config], Modules, Contexts, ConfigList) ->
     end.
 
 
-load_traverse(Line, [], [], NewContexts, ConfigList, no) ->
-    ?CDEBUG("load_traverse/no -> ~n"
-	    "     Line:        ~p~n"
-	    "     NewContexts: ~p~n"
-	    "     ConfigList:  ~p",
-	    [Line,NewContexts,ConfigList]),
+load_traverse(Line, [], [], _NewContexts, _ConfigList, no) ->
     {error, ?NICE("Configuration directive not recognized: "++Line)};
-load_traverse(Line, [], [], NewContexts, ConfigList, yes) ->
-    ?CDEBUG("load_traverse/yes -> ~n"
-	    "     Line:        ~p~n"
-	    "     NewContexts: ~p~n"
-	    "     ConfigList:  ~p",
-	    [Line,NewContexts,ConfigList]),
+load_traverse(_Line, [], [], NewContexts, ConfigList, yes) ->
     {ok, lists:reverse(NewContexts), ConfigList};
 load_traverse(Line, [Context|Contexts], [Module|Modules], NewContexts, ConfigList, State) ->
-    ?CDEBUG("load_traverse/~p -> ~n"
-	    "     Line:        ~p~n"
-	    "     Module:      ~p~n"
-	    "     Context:     ~p~n"
-	    "     Contexts:    ~p~n"
-	    "     NewContexts: ~p",
-	    [State,Line,Module,Context,Contexts,NewContexts]),
     case is_exported(Module, {load, 2}) of
 	true ->
-	    ?CDEBUG("load_traverse -> ~p:load/2 exported",[Module]),
 	    case catch apply(Module, load, [Line, Context]) of
 		{'EXIT', {function_clause, _}} ->
-		    ?CDEBUG("load_traverse -> exit: function_clause"
-			    "~n   Module: ~p"
-			    "~n   Line:   ~s",[Module,Line]),
 		    load_traverse(Line, Contexts, Modules, [Context|NewContexts], ConfigList, State);
 		{'EXIT', Reason} ->
-		    ?CDEBUG("load_traverse -> exit: ~p",[Reason]),
 		    error_logger:error_report({'EXIT', Reason}),
 		    load_traverse(Line, Contexts, Modules, [Context|NewContexts], ConfigList, State);
 		{ok, NewContext} ->
-		    ?CDEBUG("load_traverse -> ~n"
-			    "     NewContext: ~p",[NewContext]),
+% 			    "     NewContext: ~p",[NewContext]),
 		    load_traverse(Line, Contexts, Modules, [NewContext|NewContexts], ConfigList,yes);
 		{ok, NewContext, ConfigEntry} when tuple(ConfigEntry) ->
-		    ?CDEBUG("load_traverse (tuple) -> ~n"
-			    "     NewContext:  ~p~n"
-			    "     ConfigEntry: ~p",[NewContext,ConfigEntry]),
 		    load_traverse(Line, Contexts, Modules, [NewContext|NewContexts],
 				  [ConfigEntry|ConfigList], yes);
 		{ok, NewContext, ConfigEntry} when list(ConfigEntry) ->
-		    ?CDEBUG("load_traverse (list) -> ~n"
-			    "     NewContext:  ~p~n"
-			    "     ConfigEntry: ~p",[NewContext,ConfigEntry]),
 		    load_traverse(Line, Contexts, Modules, [NewContext|NewContexts],
 				  lists:append(ConfigEntry, ConfigList), yes);
 		{error, Reason} ->
-		    ?CDEBUG("load_traverse -> error: ~p",[Reason]),
 		    {error, Reason}
 	    end;
 	false ->
-	    ?CDEBUG("load_traverse -> ~p:load/2 not exported",[Module]),
 	    load_traverse(Line, Contexts, Modules, [Context|NewContexts],
 			  ConfigList,yes)
     end.
@@ -375,7 +344,7 @@ load([$S,$S,$L,$V,$e,$r,$i,$f,$y,$C,$l,$i,$e,$n,$t,$ |SSLVerifyClient], []) ->
     case make_integer(clean(SSLVerifyClient)) of
 	{ok, Integer} when Integer >=0,Integer =< 2 ->
 	    {ok, [], {ssl_verify_client,Integer}};
-	{ok, Integer} ->
+	{ok, _Integer} ->
 	    {error,?NICE(clean(SSLVerifyClient)++" is an invalid SSLVerifyClient")};
 	{error, nomatch} ->
 	    {error,?NICE(clean(SSLVerifyClient)++" is an invalid SSLVerifyClient")}
@@ -386,7 +355,7 @@ load([$S,$S,$L,$V,$e,$r,$i,$f,$y,$D,$e,$p,$t,$h,$ |
     case make_integer(clean(SSLVerifyDepth)) of
 	{ok, Integer} when Integer > 0 ->
 	    {ok, [], {ssl_verify_client_depth,Integer}};
-	{ok, Integer} ->
+	{ok, _Integer} ->
 	    {error,?NICE(clean(SSLVerifyDepth) ++
 			 " is an invalid SSLVerifyDepth")};
 	{error, nomatch} ->
@@ -414,7 +383,14 @@ load([$S,$S,$L,$P,$a,$s,$s,$w,$o,$r,$d,$C,$a,$l,$l,$b,$a,$c,$k,$F,$u,$n,$c,$t,$i
     ?DEBUG("load -> SSLPasswordCallbackFunction: ~p",
 	   [SSLPasswordCallbackFunction]),
     {ok, [], {ssl_password_callback_function,
-	      list_to_atom(clean(SSLPasswordCallbackFunction))}}.
+	      list_to_atom(clean(SSLPasswordCallbackFunction))}};
+load([$D,$i,$s,$a,$b,$l,$e,$C,$h,$u,$n,$k,$e,$d,$T,$r,$a,$n,$s,$f,$e,$r,$E,$n,$c,$o,$d,$i,$n,$g,$S,$e,$n,$d,$ |TrueOrFalse], []) ->
+    case list_to_atom(clean(TrueOrFalse)) of
+	true ->
+	    {ok, [], {disable_chunked_transfer_encoding_send, true}};
+	_ ->
+	    {ok, [], {disable_chunked_transfer_encoding_send, false}}
+    end.
 
 
 %%
@@ -454,7 +430,7 @@ parse_mime_types(Stream, MimeTypesList, Line) ->
 	    {error, ?NICE(Line)}
     end.
 
-suffixes(MimeType,[]) ->
+suffixes(_MimeType,[]) ->
     [];
 suffixes(MimeType,[Suffix|Rest]) ->
     [{Suffix,MimeType}|suffixes(MimeType,Rest)].
@@ -475,15 +451,12 @@ store(ConfigList) ->
     ?CDEBUG("store -> ConfigDB = ~p",[ConfigDB]),
     store(ConfigDB, ConfigList, lists:append(Modules,[?MODULE]),ConfigList).
 
-store(ConfigDB, ConfigList, Modules,[]) ->
+store(ConfigDB, _ConfigList, _Modules,[]) ->
     ?vtrace("store -> done",[]),
-    ?CDEBUG("store -> done",[]),
     {ok, ConfigDB};
 store(ConfigDB, ConfigList, Modules, [ConfigListEntry|Rest]) ->
     ?vtrace("store -> entry with"
 	    "~n   ConfigListEntry: ~p",[ConfigListEntry]),
-    ?CDEBUG("store -> "
-	"~n   ConfigListEntry: ~p",[ConfigListEntry]),
     case store_traverse(ConfigListEntry,ConfigList,Modules) of
 	{ok, ConfigDBEntry} when tuple(ConfigDBEntry) ->
 	    ?vtrace("store -> ConfigDBEntry(tuple): "
@@ -507,23 +480,19 @@ store(ConfigDB, ConfigList, Modules, [ConfigListEntry|Rest]) ->
 	    {error,Reason}
     end.
 
-store_traverse(ConfigListEntry,ConfigList,[]) ->
+store_traverse(_ConfigListEntry, _ConfigList,[]) ->
     {error,?NICE("Unable to store configuration...")};
 store_traverse(ConfigListEntry, ConfigList, [Module|Rest]) ->
     case is_exported(Module, {store, 2}) of
 	true ->
-	    ?CDEBUG("store_traverse -> call ~p:store/2",[Module]),
 	    case catch apply(Module,store,[ConfigListEntry, ConfigList]) of
 		{'EXIT',{function_clause,_}} ->
-		    ?CDEBUG("store_traverse -> exit: function_clause",[]),
 		    store_traverse(ConfigListEntry,ConfigList,Rest);
-		{'EXIT',Reason} ->
-		    ?ERROR("store_traverse -> exit: ~p",[Reason]),
+		{'EXIT', Reason} ->
+		    ?vinfo("store_traverse -> exit: ~p",[Reason]),
 		    error_logger:error_report({'EXIT',Reason}),
 		    store_traverse(ConfigListEntry,ConfigList,Rest);
 		Result ->
-		    ?CDEBUG("store_traverse -> ~n"
-			    "      Result: ~p",[Result]),
 		    Result
 	    end;
 	false ->
@@ -534,32 +503,20 @@ store({mime_types,MimeTypesList},ConfigList) ->
     Port = httpd_util:key1search(ConfigList, port),
     Addr = httpd_util:key1search(ConfigList, bind_address),
     Name = httpd_util:make_name("httpd_mime",Addr,Port),
-    ?CDEBUG("store(mime_types) -> Name: ~p",[Name]),
     {ok, MimeTypesDB} = store_mime_types(Name,MimeTypesList),
-    ?CDEBUG("store(mime_types) -> ~n"
-	    "     MimeTypesDB:      ~p~n"
-	    "     MimeTypesDB info: ~p",
-	    [MimeTypesDB,ets:info(MimeTypesDB)]),
     {ok, {mime_types,MimeTypesDB}};
-store(ConfigListEntry,ConfigList) ->
-    ?CDEBUG("store/2 -> ~n"
-	    "        ConfigListEntry: ~p~n"
-	    "        ConfigList:      ~p",
-	    [ConfigListEntry,ConfigList]),
+store(ConfigListEntry, _ConfigList) ->
     {ok, ConfigListEntry}.
 
 
 %% store_mime_types
 store_mime_types(Name,MimeTypesList) ->
-    ?CDEBUG("store_mime_types -> Name: ~p",[Name]),
     MimeTypesDB = ets:new(Name, [set, protected]),
-    ?CDEBUG("store_mime_types -> MimeTypesDB: ~p",[MimeTypesDB]),
     store_mime_types1(MimeTypesDB, MimeTypesList).
 
 store_mime_types1(MimeTypesDB,[]) ->
     {ok, MimeTypesDB};
 store_mime_types1(MimeTypesDB,[Type|Rest]) ->
-    ?CDEBUG("store_mime_types1 -> Type: ~p",[Type]),
     ets:insert(MimeTypesDB, Type),
     store_mime_types1(MimeTypesDB, Rest).
 
@@ -572,7 +529,7 @@ remove_all(ConfigDB) ->
     Modules = httpd_util:lookup(ConfigDB,modules,[]),
     remove_traverse(ConfigDB, lists:append(Modules,[?MODULE])).
 
-remove_traverse(ConfigDB,[]) ->
+remove_traverse(_ConfigDB,[]) ->
     ?vtrace("remove_traverse -> done", []),
     ok;
 remove_traverse(ConfigDB,[Module|Rest]) ->
@@ -668,16 +625,16 @@ custom_clean(String,MoreBefore,MoreAfter) ->
 
 %% check_enum
 
-check_enum(Enum,[]) ->
+check_enum(_Enum,[]) ->
     {error, not_valid};
-check_enum(Enum,[Enum|Rest]) ->
+check_enum(Enum,[Enum|_Rest]) ->
     {ok, list_to_atom(Enum)};
-check_enum(Enum, [NotValid|Rest]) ->
+check_enum(Enum, [_NotValid|Rest]) ->
     check_enum(Enum, Rest).
 
 %% a_must
 
-a_must(ConfigList,[]) ->
+a_must(_ConfigList,[]) ->
     ok;
 a_must(ConfigList,[Directive|Rest]) ->
     case httpd_util:key1search(ConfigList,Directive) of

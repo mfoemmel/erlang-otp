@@ -31,7 +31,6 @@
 
 -include_lib("orber/src/orber_iiop.hrl").
 -include_lib("orber/include/corba.hrl").
--include_lib("orber/src/orber_debug.hrl").
 
 %%-----------------------------------------------------------------
 %% External exports
@@ -49,7 +48,7 @@
 %%-----------------------------------------------------------------
 -define(DEBUG_LEVEL, 7).
 
--record(state, {stype, socket, db, timeout, client_timeout, host, port,
+-record(state, {stype, socket, db, timeout, client_timeout, host, port, parent,
 		error_reason = {'EXCEPTION', #'COMM_FAILURE'
 				{completion_status=?COMPLETED_MAYBE}}}).
 
@@ -71,15 +70,15 @@ request(Pid, true, Timeout, Msg, RequestId) ->
 	{MRef, Reply} ->
 	    erlang:demonitor(MRef),
             receive 
-                {'DOWN', Mref, _, _, _} -> 
+                {'DOWN', MRef, _, _, _} -> 
                     Reply
             after 0 -> 
                     Reply
             end;
-	{'DOWN', Mref, _, Pid, Reason} when pid(Pid) ->
+	{'DOWN', MRef, _, Pid, _Reason} when pid(Pid) ->
             receive
 		%% Clear EXIT message from queue
-                {'EXIT', Pid, What} -> 
+                {'EXIT', _Pid, _What} -> 
                     corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_MAYBE})
             after 0 ->
                     corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_MAYBE})
@@ -87,7 +86,7 @@ request(Pid, true, Timeout, Msg, RequestId) ->
 	{fragmented, GIOPHdr, Bytes, RequestId, MRef} ->
 	    collect_fragments(GIOPHdr, [], Bytes, Pid, RequestId, MRef)
     end;
-request(Pid, _, _, Msg, RequestId) ->
+request(Pid, _, _, Msg, _RequestId) ->
     %% No response expected
     gen_server:cast(Pid, {oneway_request, Msg}).
 
@@ -115,10 +114,10 @@ stop(Pid) ->
 %%-----------------------------------------------------------------
 %% Func: init/1
 %%-----------------------------------------------------------------
-init({connect, Host, Port, SocketType, SocketOptions}) ->
+init({connect, Host, Port, SocketType, SocketOptions, Parent}) ->
     process_flag(trap_exit, true), 
     case catch orber_socket:connect(SocketType, Host, Port, SocketOptions) of
-	{'EXCEPTION', E} ->
+	{'EXCEPTION', _E} ->
 	    ignore;
 	%% We used to reply the below but since this would generate a CRASH REPORT
 	%% if '-boot start_sasl' used. Due to a request to change this behaviour
@@ -129,19 +128,19 @@ init({connect, Host, Port, SocketType, SocketOptions}) ->
 	    {ok, #state{stype = SocketType, socket = Socket,
 			db = ets:new(orber_outgoing_requests, [set]),
 			timeout = Timeout, client_timeout = orber:iiop_timeout(),
-			host = Host, port = Port}, Timeout}
+			host = Host, port = Port, parent = Parent}, Timeout}
     end.
 
 %%-----------------------------------------------------------------
 %% Func: terminate/2
 %%-----------------------------------------------------------------
-terminate(Reason, #state{db = OutRequests, error_reason = ER}) ->
+terminate(_Reason, #state{db = OutRequests, error_reason = ER}) ->
     %% Kill all proxies and delete table before terminating
     notify_clients(OutRequests, ets:first(OutRequests), ER),
     ets:delete(OutRequests),
     ok.
 
-notify_clients(_, '$end_of_table', ER) ->
+notify_clients(_, '$end_of_table', _ER) ->
     ok;
 notify_clients(OutRequests, Key, ER) ->
     case ets:lookup(OutRequests, Key) of
@@ -154,11 +153,11 @@ notify_clients(OutRequests, Key, ER) ->
 %%-----------------------------------------------------------------
 %% Func: handle_call/3
 %%-----------------------------------------------------------------
-handle_call(stop, From, State) ->
+handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 handle_call(X, From, State) ->
-    orber:dbg("[~p] orber_iiop_outproxy:handle_call(~p); 
-Un-recognized call from ~p", [?LINE, X, From], ?DEBUG_LEVEL),
+    orber:dbg("[~p] orber_iiop_outproxy:handle_call(~p);~n"
+	      "Un-recognized call from ~p", [?LINE, X, From], ?DEBUG_LEVEL),
     {noreply, State, State#state.timeout}.
 
 %%-----------------------------------------------------------------
@@ -176,11 +175,11 @@ handle_cast({oneway_request, Msg}, State) ->
     {noreply, State, State#state.timeout};
 handle_cast({cancel, ReqId}, State) ->
     case ets:lookup(State#state.db, ReqId) of
-	[{ReqId, From, TRef, MRef}] ->
+	[{ReqId, _From, TRef, _MRef}] ->
 	    cancel_timer(TRef),
 	    ets:delete(State#state.db, ReqId),
-	    orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p); 
-Request cancelled", [?LINE, State], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p);~n"
+		      "Request cancelled", [?LINE, State], ?DEBUG_LEVEL),
 	    {noreply, State, State#state.timeout};
 	_ ->
 	    {noreply, State, State#state.timeout}
@@ -208,35 +207,36 @@ Un-recognized cast.", [?LINE, X], ?DEBUG_LEVEL),
 %%-----------------------------------------------------------------
 %% Func: handle_info/2
 %%-----------------------------------------------------------------
-handle_info({tcp, Socket, Bytes}, State) ->
+handle_info({tcp, _Socket, Bytes}, State) ->
     handle_reply(Bytes, State);
-handle_info({ssl, Socket, Bytes}, State) ->
+handle_info({ssl, _Socket, Bytes}, State) ->
     handle_reply(Bytes, State);
-handle_info({tcp_closed, Socket}, State) ->
+handle_info({tcp_closed, _Socket}, State) ->
     {stop, normal, State}; 
-handle_info({ssl_closed, Socket}, State) ->
+handle_info({ssl_closed, _Socket}, State) ->
     {stop, normal, State};
 handle_info({tcp_error, Socket, Reason}, #state{socket = Socket, host = Host,
 						port = Port} = State) ->
-    orber:error("[~p] IIOP proxy received the TCP error message: ~p 
-The server-side ORB is located at '~p:~p'
-See the gen_tcp/inet documentation for more information.", 
+    orber:error("[~p] IIOP proxy received the TCP error message: ~p~n"
+		"The server-side ORB is located at '~p:~p'~n"
+		"See the gen_tcp/inet documentation for more information.", 
 		[?LINE, Reason, Host, Port], ?DEBUG_LEVEL),
     {stop, normal, State};
 handle_info({ssl_error, Socket, Reason}, #state{socket = Socket, host = Host,
 						port = Port} = State) ->
-    orber:error("[~p] IIOP proxy received the SSL error message: ~p 
-The server-side ORB is located at '~p:~p'
-See the SSL-application documentation for more information.", 
+    orber:error("[~p] IIOP proxy received the SSL error message: ~p~n"
+		"The server-side ORB is located at '~p:~p'~n"
+		"See the SSL-application documentation for more information.", 
 		[?LINE, Reason, Host, Port], ?DEBUG_LEVEL),
     {stop, normal, State};
-handle_info({timeout, TRef, ReqId}, State) ->
+handle_info({timeout, _TRef, ReqId}, State) ->
     case ets:lookup(State#state.db, ReqId) of
 	[{ReqId, Pid, _, MRef}] ->
 	    ets:delete(State#state.db, ReqId),
 	    Pid ! {MRef, {'EXCEPTION', #'TIMEOUT'{completion_status=?COMPLETED_MAYBE}}},
-	    orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p, ~p); 
-Request timed out", [?LINE, State#state.host, State#state.port], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p, ~p);~n"
+		      "Request timed out", 
+		      [?LINE, State#state.host, State#state.port], ?DEBUG_LEVEL),
 	    {noreply, State, State#state.timeout};
 	_ ->
 	    {noreply, State, State#state.timeout}
@@ -246,18 +246,22 @@ handle_info(stop, State) ->
 handle_info(timeout, State) ->
     case ets:info(State#state.db, size) of
 	0 ->
-	    orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p, ~p); 
-Outgoing connection timed out after ~p msec", 
+	    orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p, ~p);~n"
+		      "Outgoing connection timed out after ~p msec", 
 		      [?LINE, State#state.host, State#state.port,
 		       State#state.timeout], ?DEBUG_LEVEL),
 	    {stop, normal, State};
-	Amount ->
+	_Amount ->
 	    %% Still pending request, cannot close the connection.
 	    {noreply, State, State#state.timeout}
     end;
+handle_info({'EXIT', Parent, Reason}, #state{parent = Parent} = State) ->
+    orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p);~nParent terminated.", 
+	      [?LINE, Reason], ?DEBUG_LEVEL),
+    {stop, normal, State};
 handle_info(X, State) ->
-    orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p); 
-Un-recognized info.", [?LINE, X], ?DEBUG_LEVEL),
+    orber:dbg("[~p] orber_iiop_outproxy:handle_info(~p);~nUn-recognized info.", 
+	      [?LINE, X], ?DEBUG_LEVEL),
     {noreply, State, State#state.timeout}.
 
 
@@ -314,7 +318,7 @@ handle_reply(Bytes, State) ->
 	{fragmented, GIOPHdr, ReqId} ->
 	    %% This the initial message (i.e. a LocateReply or Reply).
 	    case ets:lookup(State#state.db, ReqId) of
-		[{_, Pid, TRef, MRef}] ->
+		[{_, Pid, _TRef, MRef}] ->
 		    Pid ! {fragmented, GIOPHdr, Bytes, ReqId, MRef},
 		    {noreply, State, State#state.timeout};
 		_ ->
@@ -350,7 +354,7 @@ The Server-side ORB closed the connection.", [?LINE], ?DEBUG_LEVEL),
 %%-----------------------------------------------------------------
 %% Func: code_change/3
 %%-----------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%-----------------------------------------------------------------
@@ -414,7 +418,7 @@ collect_fragments(GIOPHdr1, InBuffer, Bytes, Proxy, RequestId, MRef) ->
     receive
 	%% There are more framents to come; just collect this message and wait for
 	%% the rest.
-	{fragment, #giop_message{byte_order = ByteOrder,
+	{fragment, #giop_message{byte_order = _ByteOrder,
 				 message    = Message,
 				 fragments  = true} = GIOPHdr2, RequestId, MRef} ->
 	    case catch cdr_decode:dec_message_header(null, GIOPHdr2, Message) of
@@ -435,7 +439,7 @@ collect_fragments(GIOPHdr1, InBuffer, Bytes, Proxy, RequestId, MRef) ->
 				 message    = Message} = GIOPHdr2, RequestId, MRef} ->
 	    erlang:demonitor(MRef),
             receive 
-                {'DOWN', Mref, _, _, _} -> 
+                {'DOWN', MRef, _, _, _} -> 
 		    ok
             after 0 -> 
 		    ok
@@ -475,17 +479,18 @@ Unable to decode Reply or LocateReply header",[?LINE, NewGIOP, Error], ?DEBUG_LE
 		      [?LINE, E], ?DEBUG_LEVEL),
 	    erlang:demonitor(MRef),
             receive 
-                {'DOWN', Mref, _, _, _} -> 
+                {'DOWN', MRef, _, _, _} -> 
 		    corba:raise(E)
             after 0 -> 
 		    corba:raise(E)
             end;
-	{'DOWN', Mref, _, Proxy, Reason} when pid(Proxy) ->
-	    orber:dbg("[~p] orber_iiop:collect_fragments(~p);
-Monitor generated a DOWN message.", [?LINE, Reason], ?DEBUG_LEVEL),
+	{'DOWN', MRef, _, Proxy, Reason} when pid(Proxy) ->
+	    orber:dbg("[~p] orber_iiop:collect_fragments(~p);~n"
+		      "Monitor generated a DOWN message.", 
+		      [?LINE, Reason], ?DEBUG_LEVEL),
             receive
 		%% Clear EXIT message from queue
-                {'EXIT', Proxy, What} -> 
+                {'EXIT', _Proxy, _What} -> 
                     corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_MAYBE})
             after 0 ->
                     corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_MAYBE})
@@ -501,15 +506,15 @@ clear_queue(Proxy, RequestId, MRef) ->
 	    %% after we've cancelled the request.
 	    erlang:demonitor(MRef),
 	    receive 
-		{'DOWN', Mref, _, _, _} -> 
+		{'DOWN', MRef, _, _, _} -> 
 		    ok
 	    after 0 -> 
 		    ok
 	    end;
-	{'DOWN', Mref, _, Proxy, Reason} ->
+	{'DOWN', MRef, _, Proxy, _Reason} ->
 	    %% The proxy terminated. Clear EXIT message from queue
             receive
-                {'EXIT', Proxy, What} -> 
+                {'EXIT', Proxy, _What} -> 
                     ok
             after 0 ->
                     ok

@@ -230,23 +230,23 @@ mod({M,_F,_A}) -> M.
 %% ____________________________________________________________________
 %% 
 calculate_addresses(PatchOffsets,Base,Addresses) ->
-  TransFun =
-    case erlang:system_info(hipe_architecture) of
-      ultrasparc -> 
-	fun(Os) ->
-	    hipe_sparc_loader:offsets_to_addresses(Os, Base)
-	end;
-      x86 ->
-      	fun(Os) ->
-	    hipe_x86_loader:offsets_to_addresses(Os, Base)
-	end;
-      _ -> fun (_) -> [] end
-    end,
-  [{Data,
-    TransFun(Offsets),
-    get_native_address(DestMFA,Addresses)} || 
-    {{DestMFA,_,_}=Data,Offsets} <- PatchOffsets].
-
+  case erlang:system_info(hipe_architecture) of
+    ultrasparc -> 
+      [{Data,
+	hipe_sparc_loader:offsets_to_addresses(Offsets, Base),
+	get_native_address(DestMFA,Addresses)} || 
+	{{DestMFA,_,_}=Data,Offsets} <- PatchOffsets];
+    x86 ->
+      [{Data,
+	hipe_x86_loader:offsets_to_addresses(Offsets, Base),
+	get_native_address(DestMFA,Addresses)} || 
+	{{DestMFA,_,_}=Data,Offsets} <- PatchOffsets];
+    _ ->
+      [{Data,
+	[],
+	get_native_address(DestMFA,Addresses)} || 
+	{{DestMFA,_,_}=Data,Offsets} <- PatchOffsets]
+  end.
 
 
 %% ____________________________________________________________________
@@ -307,30 +307,27 @@ patch([],_,_, _) -> true.
 %% 
 patch_all_call_local([{DestMFA, Offsets}| SortedRefs], 
 		     BaseAddress, Addresses)->
-  PatchFun = 
-    case bif_address(DestMFA) of
-      false -> 
-	%% Find the address of the caller.
-	DestAddress = mfa_to_address(DestMFA, Addresses),
-	fun(Offset) ->
-	    Address = BaseAddress + Offset,
-	    CallerMFA = address_to_mfa(Address, Addresses),
-	    add_ref(CallerMFA, DestMFA, Address,call),
-	    ?ASSERT(assert_local_patch(Address)),
-	    patch_instr(Address,DestAddress,call)
-	end;
-      BifAddress when integer(BifAddress) ->
-	%% If it is a bif we will not need to backpatch the call.
-	fun(Offset) ->
-	    ?ASSERT(assert_local_patch(BaseAddress+Offset)),
-	    patch_instr(BaseAddress+Offset, BifAddress, call)
-	end
-  end,
-  [PatchFun(O) || O <- Offsets],
+  [patch_all_call_local_2(O, DestMFA, BaseAddress, Addresses) || O <- Offsets],
   patch_all_call_local( SortedRefs,BaseAddress, Addresses);
 patch_all_call_local([],_,_) -> 
   true.
 
+patch_all_call_local_2(Offset, DestMFA, BaseAddress, Addresses) ->
+  case bif_address(DestMFA) of
+    false -> 
+      %% Find the address of the caller.
+      DestAddress = mfa_to_address(DestMFA, Addresses),
+      Address = BaseAddress + Offset,
+      CallerMFA = address_to_mfa(Address, Addresses),
+      add_ref(CallerMFA, DestMFA, Address,call),
+      ?ASSERT(assert_local_patch(Address)),
+      patch_instr(Address,DestAddress,call);
+    BifAddress when integer(BifAddress) ->
+      %% If it is a bif we will not need to backpatch the call.
+      ?ASSERT(assert_local_patch(BaseAddress+Offset)),
+      patch_instr(BaseAddress+Offset, BifAddress, call)
+  end.
+  
 
 
 %% ____________________________________________________________________
@@ -510,17 +507,15 @@ patch_constant(Address, Name, Info) ->
   patch_instr(Address, ConstAddress, constant). 
 
 patch_consts(Labels, DataAddress, CodeAddress) ->
-  PatchLabelOrLabels =
-    fun 
-      ({Pos,Offset}) ->
-	?ASSERT(assert_local_patch(CodeAddress+Offset)),
-	hipe_bifs:write_u32(DataAddress+Pos,
-			    CodeAddress+Offset);
-      ({sorted,Base,UnOrderdList}) ->
-	sort_and_write(UnOrderdList, Base, 
-		       DataAddress, CodeAddress)
-    end,
-  lists:map(PatchLabelOrLabels, Labels).
+  [patch_label_or_labels(L, DataAddress, CodeAddress) || L <- Labels].
+
+patch_label_or_labels({Pos,Offset}, DataAddress, CodeAddress) ->
+  ?ASSERT(assert_local_patch(CodeAddress+Offset)),
+  hipe_bifs:write_u32(DataAddress+Pos,
+		      CodeAddress+Offset);
+patch_label_or_labels({sorted,Base,UnOrderdList}, DataAddress, CodeAddress) ->
+  sort_and_write(UnOrderdList, Base, 
+		 DataAddress, CodeAddress).
 
 patch_sdesc(?STACK_DESC(SymExnRA, FSize, Arity, Live), 
 	    Address, {_ConstMap,HotAddress,ColdAddress}) ->
@@ -624,9 +619,7 @@ alloc_constant([ConstNo,Offset,ByteNeed,Type,Exported, Data|Rest],
       term ->
 	    hipe_bifs:copy_term(Data,Address,ByteNeed div 4);
       sorted_block ->
-	L = lists:sort(lists:map(fun(Term) ->
-				       hipe_bifs:term_to_word(Term)
-				   end, Data)),
+	L = lists:sort([hipe_bifs:term_to_word(Term) || Term <- Data]),
 	write_words(L,Address),
 	Address;
       block ->
@@ -635,8 +628,7 @@ alloc_constant([ConstNo,Offset,ByteNeed,Type,Exported, Data|Rest],
 	    write_bytes(Lbls,Address),
 	    Address;
 	  {Lbls, SortOrder} ->
-	    SortedLbls =  lists:map(fun({_,Lbl}) -> Lbl end,
-			      lists:sort(group(Lbls, SortOrder))),
+	    SortedLbls = [Lbl || {_,Lbl} <- lists:sort(group(Lbls, SortOrder))],
 	    write_words(SortedLbls,Address),
 	    Address;
 	%% write_block(Data, Address, Labels),
@@ -677,12 +669,8 @@ sort_and_write(UnOrderdList, Base, DataAddress, CodeAddress) ->
   lists:foldl(WriteAndInc, Base, sort_on_representation(UnOrderdList)).
 
 sort_on_representation(List) ->
-  TupleToTermRep = 
-    fun({Term, Offset}) ->
-	{hipe_bifs:term_to_word(Term),
-	 Offset}
-    end, 
-  lists:sort(lists:map(TupleToTermRep, List)).
+  lists:sort([{hipe_bifs:term_to_word(Term), Offset} || 
+	       {Term, Offset} <- List]).
   
 add_ref(CallerMFA, CalleeMFA, Address, RefType) ->
   %% io:format("Adding ref ~w\n",[{CallerMFA, CalleeMFA, Address, RefType}]),

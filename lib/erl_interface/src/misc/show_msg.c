@@ -527,13 +527,14 @@ static void show_trace(FILE *stream, const erlang_trace *t)
 /* we only need to initialize some of these (after 32 everything printable) */
 /* FIXME they are not!!!! We use isprint() for now but we could create a */
 /* custom print function that escape some non printable like \t and \n */
-
+#if 0
 static int non_printable[256] = {
     /*                  1                   2                   3   */
     /*  2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 */
     1,1,1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1
     /*             \b\t\n\v\f\r                                     */
 };
+#endif
 
 static int printable_list_p(const uint8 *buf, int buflen)
 {

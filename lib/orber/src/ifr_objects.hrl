@@ -288,6 +288,21 @@
 					    % object so perhaps the table is
 					    % unnecessary?
 
+-record(orber_light_ifr, {id, %% IFR-id
+			  module,
+			  type,
+			  base_id}).
+
+-define(IFR_ModuleDef,    0).
+-define(IFR_ConstantDef,  1).
+-define(IFR_StructDef,    2).
+-define(IFR_UnionDef,     3).
+-define(IFR_EnumDef,      4).
+-define(IFR_AliasDef,     5).
+-define(IFR_InterfaceDef, 6).
+-define(IFR_ExceptionDef, 7).
+
+
 %%%----------------------------------------------------------------------
 %%% 'ifr_object_list' is used by other modules. Do NOT remove or rename
 %%% this list!
@@ -317,10 +332,11 @@
 			  ir_SequenceDef,
 			  ir_FixedDef]).
 
+-define(ifr_light_object_list, [orber_light_ifr]).
+
 -define(cr_fun_tuple(Table, Options),
 	{Table,
 	 fun() ->
-		 ?debug_print("creating ", Table),
 		 case mnesia:create_table(Table,[{attributes,
 						  record_info(fields,
 							      Table)}]++Options)of
@@ -335,7 +351,6 @@
 -define(cr_fun_tuple_local(Table, IFR_storage_type),
 	{Table,
 	 fun() ->
-		 ?debug_print("adding ", Table),
 		 case mnesia:add_table_copy(Table,node(), IFR_storage_type)of
 		     {atomic,ok} ->
 			 ok;
@@ -347,29 +362,32 @@
 
 -define(ifr_record_tuple_list(Options),
         [?cr_fun_tuple(ir_IRObject, Options),
-         ?cr_fun_tuple(ir_Contained, Options),
+         ?cr_fun_tuple(ir_Contained, [{index, [#ir_Contained.id]}|Options]),
          ?cr_fun_tuple(ir_Container, Options),
          ?cr_fun_tuple(ir_IDLType, Options),
          ?cr_fun_tuple(ir_Repository, Options),
-         ?cr_fun_tuple(ir_ModuleDef, Options),
-         ?cr_fun_tuple(ir_ConstantDef, Options),
-         ?cr_fun_tuple(ir_TypedefDef, Options),
-         ?cr_fun_tuple(ir_StructDef, Options),
-         ?cr_fun_tuple(ir_UnionDef, Options),
-         ?cr_fun_tuple(ir_EnumDef, Options),
-         ?cr_fun_tuple(ir_AliasDef, Options),
+         ?cr_fun_tuple(ir_ModuleDef, [{index, [#ir_ModuleDef.id]}|Options]),
+         ?cr_fun_tuple(ir_ConstantDef, [{index, [#ir_ConstantDef.id]}|Options]),
+         ?cr_fun_tuple(ir_TypedefDef, [{index, [#ir_TypedefDef.id]}|Options]),
+         ?cr_fun_tuple(ir_StructDef, [{index, [#ir_StructDef.id]}|Options]),
+         ?cr_fun_tuple(ir_UnionDef, [{index, [#ir_UnionDef.id]}|Options]),
+         ?cr_fun_tuple(ir_EnumDef, [{index, [#ir_EnumDef.id]}|Options]),
+         ?cr_fun_tuple(ir_AliasDef, [{index, [#ir_AliasDef.id]}|Options]),
          ?cr_fun_tuple(ir_PrimitiveDef, Options),
          ?cr_fun_tuple(ir_StringDef, Options),
          ?cr_fun_tuple(ir_WstringDef, Options),
          ?cr_fun_tuple(ir_SequenceDef, Options),
          ?cr_fun_tuple(ir_ArrayDef, Options),
-         ?cr_fun_tuple(ir_ExceptionDef, Options),
-         ?cr_fun_tuple(ir_AttributeDef, Options),
-         ?cr_fun_tuple(ir_OperationDef, Options),
-         ?cr_fun_tuple(ir_InterfaceDef, Options),
+         ?cr_fun_tuple(ir_ExceptionDef, [{index, [#ir_ExceptionDef.id]}|Options]),
+         ?cr_fun_tuple(ir_AttributeDef, [{index, [#ir_AttributeDef.id]}|Options]),
+         ?cr_fun_tuple(ir_OperationDef, [{index, [#ir_OperationDef.id]}|Options]),
+         ?cr_fun_tuple(ir_InterfaceDef, [{index, [#ir_InterfaceDef.id]}| Options]),
 %        ?cr_fun_tuple(ir_TypeCode, Options),
          ?cr_fun_tuple(ir_ORB, Options),
 	 ?cr_fun_tuple(ir_FixedDef, Options)]).
+
+-define(ifr_light_record_tuple_list(Options),
+        [?cr_fun_tuple(orber_light_ifr, Options)]).
 
 
 -define(ifr_record_tuple_list_local(IFR_storage_type),
@@ -397,3 +415,6 @@
 %        ?cr_fun_tuple_local(ir_TypeCode, IFR_storage_type),
          ?cr_fun_tuple_local(ir_ORB, IFR_storage_type),
 	 ?cr_fun_tuple_local(ir_FixedDef, IFR_storage_type)]).
+
+-define(ifr_light_record_tuple_list_local(IFR_storage_type),
+        [?cr_fun_tuple_local(orber_light_ifr, IFR_storage_type)]).

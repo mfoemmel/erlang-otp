@@ -80,8 +80,14 @@ catch_loop(Port, Shell, Q) ->
 	new_shell ->
 	    exit(Shell, kill),
 	    catch_loop(Port, start_new_shell());
-	{unknown_exit,Shell,_} ->			% shell has exited
-	    put_chars("*** ERROR: Shell process terminated! ***\n", Port, []),
+	{unknown_exit,{Shell,Reason},_} ->			% shell has exited
+	    case Reason of
+		normal ->
+		    put_chars("*** ", Port, []);
+		_ ->
+		    put_chars("*** ERROR: ", Port, [])
+	    end,
+	    put_chars("Shell process terminated! ***\n", Port, []),
 	    catch_loop(Port, start_new_shell());
 	{unknown_exit,_,Q1} ->
 	    catch_loop(Port, Shell, Q1);	     
@@ -121,10 +127,10 @@ server_loop(Port, Q) ->
 	    exit(What);
 
 	%% Check if shell has exited
-	{'EXIT',SomePid,_What} ->
+	{'EXIT',SomePid,What} ->
 	    case get(noshell) of
 		undefined ->
-		    throw({unknown_exit,SomePid,Q});
+		    throw({unknown_exit,{SomePid,What},Q});
 		_ ->
 		    server_loop(Port, Q)	% Ignore
 	    end;

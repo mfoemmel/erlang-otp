@@ -454,12 +454,29 @@ terminate(Reason, Name, Msg, Mod, StateName, StateData, Debug) ->
 
 %% Maybe we shouldn't do this?  We have the crash report...
 error_info(Reason, Name, Msg, StateName, StateData, Debug) ->
+    Reason1 = 
+	case Reason of
+	    {undef,[{M,F,A}|MFAs]} ->
+		case code:is_loaded(M) of
+		    false ->
+			{'module could not be loaded',[{M,F,A}|MFAs]};
+		    _ ->
+			case erlang:function_exported(M, F, length(A)) of
+			    true ->
+				Reason;
+			    false ->
+				{'function not exported',[{M,F,A}|MFAs]}
+			end
+		end;
+	    _ ->
+		Reason
+	end,
     Str = "** State machine ~p terminating \n" ++
 	get_msg_str(Msg) ++
 	"** When State == ~p~n"
         "**      Data  == ~p~n"
         "** Reason for termination = ~n** ~p~n",
-    format(Str, [Name, get_msg(Msg), StateName, StateData, Reason]),
+    format(Str, [Name, get_msg(Msg), StateName, StateData, Reason1]),
     sys:print_log(Debug),
     ok.
 

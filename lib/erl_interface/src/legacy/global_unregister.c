@@ -61,7 +61,7 @@ int erl_global_unregister(int fd, const char *name)
     /* get message */
     while (1) {
       index = EISMALLBUF;
-      if (!(i = ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1))) continue;
+      if (!(i = ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1,0))) continue;
       else break;
     }
 

@@ -30,9 +30,9 @@ int ei_decode_ulonglong(const char *buf, int *index, EI_ULONGLONG *p)
 {
   const char *s = buf + *index;
   const char *s0 = s;
-  EI_LONGLONG n;
+  EI_ULONGLONG n;
   int arity;
-  int sign;
+  int sn;
 
   switch (get8(s)) {
   case ERL_SMALL_INTEGER_EXT:
@@ -40,23 +40,37 @@ int ei_decode_ulonglong(const char *buf, int *index, EI_ULONGLONG *p)
     break;
     
   case ERL_INTEGER_EXT:
-    n = get32be(s);
+    sn = get32be(s);
+    if (sn < 0) return -1;
+    n = (EI_ULONGLONG)sn;
     break;
     
   case ERL_SMALL_BIG_EXT:
-    if ((arity = get8(s)) > 8) return -1;
-    if ((sign = get8(s))) return -1;
-    /* Little Endian */
+    arity = get8(s);
+    goto decode_big;
+
+  case ERL_LARGE_BIG_EXT:
+    arity = get32be(s);
+
+  decode_big:
     {
-	int pos, shift = 0;
-	n = 0;
-	for (pos = 0; pos < arity; pos++) {
-	    n |= get8(s) << shift;
-	    shift += 8;
+      int sign = get8(s);
+      int i;
+      n = 0;
+
+      if (sign) return -1;
+
+      /* Little Endian, up to four bytes always fit into unsigned long */
+      for (i = 0; i < arity; i++) {
+	if (i < 8) {
+	  n |= ((EI_ULONGLONG)get8(s)) << (i * 8);
+	} else if (get8(s) != 0) {
+	  return -1; /* All but first byte have to be 0 */
 	}
+      }
     }
     break;
-    
+
   default:
     return -1;
   }

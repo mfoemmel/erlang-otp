@@ -406,6 +406,8 @@ int erl_call(int argc, char **argv)
 
 	/* FIXME if fails we want to exit != 0 ? */
 	ei_rpc(&ec, fd, "erlang", "halt", p, i, &reply);
+	free(p);
+	ei_x_free(&reply);
 	exit(0);
     }
 
@@ -512,14 +514,14 @@ int erl_call(int argc, char **argv)
 	  ei_x_buff reply;
 
 	  ei_encode_list_header(NULL, &i, 1);
-	  ei_encode_binary(NULL, &i, module, modsize);
+	  ei_encode_binary(NULL, &i, evalbuf, len);
 	  ei_encode_empty_list(NULL, &i);
 
 	  p = (char *)malloc(i);
 	  i = 0;		/* Reset */
 	  
 	  ei_encode_list_header(p, &i, 1);
-	  ei_encode_binary(p, &i, module, modsize);
+	  ei_encode_binary(p, &i, evalbuf, len);
 	  ei_encode_empty_list(p, &i);
 
 	  ei_x_new_with_version(&reply);
@@ -530,12 +532,14 @@ int erl_call(int argc, char **argv)
 	      fprintf(stderr,"erl_call: evaluating input failed: %s\n",
 		      evalbuf);
 	      free(p);
+	      free(evalbuf);	/* Allocated in read_stdin() */
 	      ei_x_free(&reply);
 	      exit(1);
 	  }
 	  i = 0;
 	  ei_print_term(stdout,reply.buff,&i);
 	  free(p);
+	  free(evalbuf);	/* Allocated in read_stdin() */
 	  ei_x_free(&reply);
       }
     }
@@ -563,10 +567,14 @@ int erl_call(int argc, char **argv)
 
       if (ei_rpc(&ec, fd, mod, fun, e.buff, e.index, &reply) < 0) {
 	  /* FIXME no error message and why -1 ? */
+	  ei_x_free(&e);
+	  ei_x_free(&reply);
 	  exit(-1);
       } else {
 	  int i = 0;
 	  ei_print_term(stdout,reply.buff,&i);
+	  ei_x_free(&e);
+	  ei_x_free(&reply);
       }
     }
 
@@ -766,7 +774,6 @@ static int read_stdin(char **buf)
 	    }
 	}
     } /* while */
-
     *buf = tmp;
     return len;
 
@@ -801,6 +808,7 @@ static int get_module(char **mbuf, char **mname)
     *mname = (char *) calloc(i+1, sizeof(char));
     memcpy(*mname, start, i);
   }
+  free(mbuf);			/* Allocated in read_stdin() */
 
   return len;
 

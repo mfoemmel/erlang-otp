@@ -37,46 +37,18 @@ RELSYSDIR = $(RELEASE_PATH)/lib/snmp-$(VSN)
 # ----------------------------------------------------
 # Common macros
 # ----------------------------------------------------
-MIB_FILES = \
-	RFC1213-MIB.mib \
-	STANDARD-MIB.mib \
-	SNMP-COMMUNITY-MIB.mib \
-	SNMPv2-TC.mib \
-	SNMPv2-TM.mib \
-	SNMPv2-MIB.mib \
-	SNMP-FRAMEWORK-MIB.mib \
-	SNMP-MPD-MIB.mib \
-	SNMP-NOTIFICATION-MIB.mib \
-	SNMP-TARGET-MIB.mib \
-	SNMP-USER-BASED-SM-MIB.mib \
-	SNMP-VIEW-BASED-ACM-MIB.mib \
-	OTP-SNMPEA-MIB.mib
 
-STD_v1_MIB_FILES = \
-	RFC1155-SMI.mib \
-	RFC-1212.mib \
-	RFC-1215.mib
-
-STD_v2_MIB_FILES = \
-	SNMPv2-SMI.mib \
-	SNMPv2-CONF.mib 
-
-FUNCS_FILES = \
-	STANDARD-MIB.funcs \
-	SNMPv2-MIB.funcs \
-	SNMP-NOTIFICATION-MIB.funcs \
-	SNMP-TARGET-MIB.funcs
-
-V1_MIB_FILES= v1/OTP-SNMPEA-MIB.mib.v1
-
-BIN_TARGETS= $(MIB_FILES:%.mib=$(SNMP_BIN_TARGET_DIR)/%.bin)
-HRL_TARGETS= $(MIB_FILES:%.mib=$(SNMP_HRL_TARGET_DIR)/%.hrl)
-
-# NOTE: Order is important; some MIBs include others
-BUILD_MIBS = \
+# NOTE: 
+# 1) Order is important; some MIBs include others
+# 2) The OTP-REG mib actually belongs to another
+#    application (otp_mibs), and is exported by this
+#    app. But since that app is built later, we have 
+#    to built it here in order to be able to build 
+#    OTP-SNMPEA-MIB (that needs otpModules and
+#    otpApplications).
+MIBS_A = \
 	RFC1213-MIB \
 	STANDARD-MIB \
-	SNMPv2-TC \
 	SNMPv2-TM \
 	SNMPv2-MIB \
 	SNMP-FRAMEWORK-MIB \
@@ -85,9 +57,41 @@ BUILD_MIBS = \
 	SNMP-NOTIFICATION-MIB \
 	SNMP-COMMUNITY-MIB \
 	SNMP-USER-BASED-SM-MIB \
-	SNMP-VIEW-BASED-ACM-MIB \
+	SNMP-VIEW-BASED-ACM-MIB
+
+MIBS_B = OTP-SNMPEA-MIB
+
+BUILD_MIBS = \
+	$(MIBS_A) \
 	OTP-REG \
-	OTP-SNMPEA-MIB
+	$(MIBS_B)
+
+MIBS = $(MIBS_A) $(MIBS_B)
+
+STD_v1_MIB_FILES = \
+	RFC1155-SMI.mib \
+	RFC-1212.mib \
+	RFC-1215.mib
+
+STD_v2_MIB_FILES = \
+	SNMPv2-SMI.mib \
+	SNMPv2-TC.mib \
+	SNMPv2-CONF.mib 
+
+FUNCS_FILES = \
+	STANDARD-MIB.funcs \
+	SNMPv2-MIB.funcs \
+	SNMP-NOTIFICATION-MIB.funcs \
+	SNMP-TARGET-MIB.funcs
+
+V1_MIB_FILES = v1/OTP-SNMPEA-MIB.mib.v1
+
+MIB_FILES   = $(MIBS:%=%.mib)
+BIN_TARGETS = $(MIBS:%=$(SNMP_BIN_TARGET_DIR)/%.bin)
+HRL_TARGETS = $(MIBS:%=$(SNMP_HRL_TARGET_DIR)/%.hrl)
+
+HRL_FILES = $(SNMP_HRL_TARGET_DIR)/SNMPv2-TC.hrl \
+            $(HRL_TARGETS)
 
 TARGET_FILES = \
 	$(ERL_TOP)/lib/snmp/bin/snmp-v2tov1 \
@@ -126,6 +130,21 @@ clean:
 
 docs:
 
+info:
+	@echo "MIBS            = $(MIBS)"
+	@echo ""
+	@echo "BUILD_MIBS      = $(BUILD_MIBS)"
+	@echo ""
+	@echo "MIB_FILES       = $(MIB_FILES)"
+	@echo ""
+	@echo "BIN_TARGETS     = $(BIN_TARGETS)"
+	@echo ""
+	@echo "HRL_TARGETS     = $(HRL_TARGETS)"
+	@echo ""
+	@echo "TARGET_FILES = $(TARGET_FILES)"
+	@echo ""
+	@echo "OTP_MIBDIR   = $(OTP_MIBDIR)"
+
 v1/%.mib.v1: %.mib
 	$(ERL_TOP)/lib/snmp/bin/snmp-v2tov1 -o $@ $<
 
@@ -138,10 +157,13 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/mibs
 	$(INSTALL_DIR) $(RELSYSDIR)/mibs/v1
-	$(INSTALL_DATA) $(STD_v2_MIB_FILES) $(MIB_FILES) $(FUNCS_FILES) $(RELSYSDIR)/mibs
-	$(INSTALL_DATA) $(STD_v1_MIB_FILES) $(V1_MIB_FILES) $(RELSYSDIR)/mibs/v1
+	$(INSTALL_DATA) $(MIB_FILES) $(RELSYSDIR)/mibs
+	$(INSTALL_DATA) $(STD_v2_MIB_FILES) $(RELSYSDIR)/mibs
+	$(INSTALL_DATA) $(FUNCS_FILES) $(RELSYSDIR)/mibs
+	$(INSTALL_DATA) $(STD_v1_MIB_FILES) $(RELSYSDIR)/mibs/v1
+	$(INSTALL_DATA) $(V1_MIB_FILES) $(RELSYSDIR)/mibs/v1
 	$(INSTALL_DIR) $(RELSYSDIR)/include
-	$(INSTALL_DATA) $(HRL_TARGETS) $(RELSYSDIR)/include
+	$(INSTALL_DATA) $(HRL_FILES) $(RELSYSDIR)/include
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/mibs
 	$(INSTALL_DATA) $(BIN_TARGETS) $(RELSYSDIR)/priv/mibs
 

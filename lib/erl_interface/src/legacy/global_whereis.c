@@ -62,7 +62,7 @@ ETERM *erl_global_whereis(int fd, const char *name, char *node)
 
   while (1) {
     index = EISMALLBUF;
-    if (!(i = ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1))) continue;
+    if (!(i = ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1,0))) continue;
     else break;
   }
 

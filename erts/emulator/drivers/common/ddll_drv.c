@@ -64,6 +64,7 @@
 static ErlDrvData dyn_start(ErlDrvPort, char*, SysDriverOpts* opts);
 static void dyn_stop(ErlDrvData);
 static void handle_command(ErlDrvData, char*, int);
+static void unload_all(void);
 
 struct erl_drv_entry ddll_driver_entry = {
     NULL,			/* init */
@@ -127,6 +128,7 @@ static ErlDrvData dyn_start(ErlDrvPort port, char *buf, SysDriverOpts* opts)
 static void dyn_stop(ErlDrvData d)
 {
     erlang_port = -1;
+    unload_all();
     return;
 }
 
@@ -166,7 +168,22 @@ static int unload(void* arg1, void* arg2, void* dummy1, void* dummy2)
     driver_free((void*)dh);
     remove_driver_entry(de->drv);
 
-    return reply(ix, 'o', "");
+    return ix != -1  ?  reply(ix, 'o', "")  :  0;
+}
+
+static void unload_all()
+{
+    DE_List *de;
+    DE_Handle* dh;
+ 
+    do {
+	for (de = driver_list; de != NULL; de = de->next) {
+	    if ( (dh = de->de_hndl)) {
+		unload((void *)de, (void *)erlang_port, NULL, NULL);
+		break;
+	    }
+	}
+    } while (de != NULL);
 }
 
 static int load(char* full_name, char* driver_name)

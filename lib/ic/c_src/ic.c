@@ -17,10 +17,12 @@
  */
 #include <ic.h>
 
-void CORBA_free(void *storage)
+static int oe_send(CORBA_Environment *env);
+
+void CORBA_free(void *p)
 {
-    if (storage != NULL) 
-	free(storage); 
+    if (p != NULL) 
+	free(p); 
 }
 
 
@@ -38,102 +40,102 @@ CORBA_wchar *CORBA_wstring_alloc(CORBA_unsigned_long len)
 
 CORBA_Environment *CORBA_Environment_alloc(int inbufsz, int outbufsz)
 {
-    CORBA_Environment *ev;
+    CORBA_Environment *env;
 
-    ev = malloc(sizeof(CORBA_Environment));
+    env = malloc(sizeof(CORBA_Environment));
 
-    if (ev != NULL) {
+    if (env != NULL) {
 
 	/* CORBA */
-	ev->_major = CORBA_NO_EXCEPTION;
+	env->_major = CORBA_NO_EXCEPTION;
 
 	/* Set by user */
-	ev->_fd= -1;
-	ev->_inbufsz = inbufsz;
-	ev->_inbuf = malloc(inbufsz);
-	ev->_outbufsz = outbufsz;
-	ev->_outbuf = malloc(outbufsz);
-	ev->_memchunk = __OE_MEMCHUNK__;
-	ev->_regname[0] = '\0';
-	ev->_to_pid = NULL;
-	ev->_from_pid = NULL;
+	env->_fd= -1;
+	env->_inbufsz = inbufsz;
+	env->_inbuf = malloc(inbufsz);
+	env->_outbufsz = outbufsz;
+	env->_outbuf = malloc(outbufsz);
+	env->_memchunk = __OE_MEMCHUNK__;
+	env->_regname[0] = '\0';
+	env->_to_pid = NULL;
+	env->_from_pid = NULL;
 
 	/* Set by client or server */
-	ev->_iin = 0;
-	ev->_iout = 0;
-	ev->_operation[0] = '\0';
-	ev->_received = 0;
-	/* ev->_caller  */
-	/* ev->_unique */
-	ev->_exc_id = NULL;
-	ev->_exc_value = NULL;
-	ev->_ref_counter_1 = 0;
-	ev->_ref_counter_2 = 0;
-	ev->_ref_counter_3 = 0;
+	env->_iin = 0;
+	env->_iout = 0;
+	env->_operation[0] = '\0';
+	env->_received = 0;
+	/* env->_caller  */
+	/* env->_unique */
+	env->_exc_id = NULL;
+	env->_exc_value = NULL;
+	env->_ref_counter_1 = 0;
+	env->_ref_counter_2 = 0;
+	env->_ref_counter_3 = 0;
     }
 
-    return ev;
+    return env;
 }
 
 #if 0
 /* NOT EXPORTED SO FAR */
-void CORBA_Environment_free(CORBA_Environment *ev)
+void CORBA_Environment_free(CORBA_Environment *env)
 {
 
-    CORBA_free(ev->_inbuf);
-    CORBA_free(ev->_outbuf);
-    CORBA_exception_free(ev);
-    CORBA_free(ev);
+    CORBA_free(env->_inbuf);
+    CORBA_free(env->_outbuf);
+    CORBA_exception_free(env);
+    CORBA_free(env);
 } 
 #endif
 
 
-CORBA_char *CORBA_exception_id(CORBA_Environment *ev)
+CORBA_char *CORBA_exception_id(CORBA_Environment *env)
 {
 
-    return ev->_exc_id;
+    return env->_exc_id;
 }
 
-void *CORBA_exception_value(CORBA_Environment *ev)
+void *CORBA_exception_value(CORBA_Environment *env)
 {
 
-    return ev->_exc_value;
+    return env->_exc_value;
 }
 
-void CORBA_exception_free(CORBA_Environment *ev)
+void CORBA_exception_free(CORBA_Environment *env)
 {
  
     /* Setting major value */
-    ev->_major=CORBA_NO_EXCEPTION;
+    env->_major=CORBA_NO_EXCEPTION;
 
     /* Freeing storage */
-    CORBA_free(ev->_exc_id);
-    CORBA_free(ev->_exc_value);
+    CORBA_free(env->_exc_id);
+    CORBA_free(env->_exc_value);
+    env->_exc_id = env->_exc_value = NULL;
 }
 
-void CORBA_exc_set(CORBA_Environment *ev, 
+void CORBA_exc_set(CORBA_Environment *env, 
 		   CORBA_exception_type Major, 
 		   CORBA_char *Id, 
 		   CORBA_char *Value)
 {
     int ilen,vlen;
 
-  /* Create exception ONLY if there where
-     not allready one on the run */ 
-    if (ev->_major == CORBA_NO_EXCEPTION) {
-    
+    /* Create exception only if exception not already set */
+    if (env->_major == CORBA_NO_EXCEPTION) {
+
 	/* Counting lengths */
-	ilen=strlen(Id)+1;
-	vlen=strlen(Value)+1;
+	ilen = strlen(Id)+1;
+	vlen = strlen(Value)+1;
     
 	/* Allocating storage */
-	ev->_exc_id=(CORBA_char *) malloc(ilen);
-	ev->_exc_value=(CORBA_char *) malloc(vlen);
+	env->_exc_id = (CORBA_char *) malloc(ilen);
+	env->_exc_value = (CORBA_char *) malloc(vlen);
     
 	/* Initiating */
-	ev->_major=Major;
-	strcpy(ev->_exc_id,Id);
-	strcpy(ev->_exc_value,Value);
+	env->_major = Major;
+	strcpy(env->_exc_id,Id);
+	strcpy(env->_exc_value,Value);
     }
 }
 
@@ -141,21 +143,21 @@ void CORBA_exc_set(CORBA_Environment *ev,
 #define ERLANG_REF_MASK      (~(~((unsigned int)0) << ERLANG_REF_NUM_SIZE))
 
 /* Initiating message reference */
-void ic_init_ref(CORBA_Environment *ev, erlang_ref *ref)
+void ic_init_ref(CORBA_Environment *env, erlang_ref *ref)
 {
 
     strcpy(ref->node, erl_thisnodename());
 
     ref->len = 3;
 
-    ++ev->_ref_counter_1;
-    ev->_ref_counter_1 &= ERLANG_REF_MASK;
-    if (ev->_ref_counter_1 == 0)
-	if (++ev->_ref_counter_2 == 0) 
-	    ++ev->_ref_counter_3;
-    ref->n[0] = ev->_ref_counter_1;
-    ref->n[1] = ev->_ref_counter_2;
-    ref->n[2] = ev->_ref_counter_3;
+    ++env->_ref_counter_1;
+    env->_ref_counter_1 &= ERLANG_REF_MASK;
+    if (env->_ref_counter_1 == 0)
+	if (++env->_ref_counter_2 == 0) 
+	    ++env->_ref_counter_3;
+    ref->n[0] = env->_ref_counter_1;
+    ref->n[1] = env->_ref_counter_2;
+    ref->n[2] = env->_ref_counter_3;
     
     ref->creation = erl_thiscreation();
 }
@@ -210,90 +212,10 @@ int ic_wstrcmp(CORBA_wchar * ws1, CORBA_wchar * ws2)
     }
 }
 
-/* Generic call information extractor */
+/* For backward compatibility -- replaced by prepare_request_decoding() */
 int ___call_info___(CORBA_Object obj, CORBA_Environment *env)
 {
-    char gencall_atom[10];
-    int error = 0;
-    int rec_version = 0;
-    env->_iin = 0;
-    env->_received = 0;
-    
-    memset(gencall_atom, 0, 10);
-    ei_decode_version(env->_inbuf, &env->_iin, &rec_version);
-    ei_decode_tuple_header(env->_inbuf, &env->_iin, &env->_received);
-    ei_decode_atom(env->_inbuf, &env->_iin, gencall_atom);
-    
-    if (strcmp(gencall_atom, "$gen_cast") == 0) {
-	
-	if ((error = ei_decode_atom(env->_inbuf, &env->_iin, 
-				    env->_operation)) < 0) {
-	    ei_decode_tuple_header(env->_inbuf, &env->_iin, &env->_received);
-	    if ((error = ei_decode_atom(env->_inbuf, &env->_iin, 
-					env->_operation)) < 0) { 
-		CORBA_exc_set(env, 
-			      CORBA_SYSTEM_EXCEPTION, 
-			      BAD_OPERATION, 
-			      "Bad Message, cannot extract operation");
-		return error;
-	    }
-	    env->_received -= 1;
-	} else
-	    env->_received -= 2;
-	
-	return 0;
-    }
-    
-    if (strcmp(gencall_atom, "$gen_call") == 0) {
-	
-	ei_decode_tuple_header(env->_inbuf, &env->_iin, &env->_received);
-	
-	if ((error = ei_decode_pid(env->_inbuf, &env->_iin, 
-				   &env->_caller)) < 0) {
-	    CORBA_exc_set(env, 
-			  CORBA_SYSTEM_EXCEPTION, 
-			  MARSHAL, 
-			  "Bad Message, bad caller identity");
-	    return error;
-	}
-	
-	if ((error = ei_decode_ref(env->_inbuf, &env->_iin, 
-				   &env->_unique)) < 0) {
-	    CORBA_exc_set(env, 
-			  CORBA_SYSTEM_EXCEPTION, 
-			  MARSHAL, 
-			  "Bad Message, bad message reference");
-	    return error;
-	}
-	
-	if ((error = ei_decode_atom(env->_inbuf, &env->_iin, 
-				    env->_operation)) < 0) {
-	    
-	    ei_decode_tuple_header(env->_inbuf, &env->_iin, &env->_received);
-	    
-	    if ((error = ei_decode_atom(env->_inbuf, &env->_iin, 
-					env->_operation)) < 0) { 
-		CORBA_exc_set(env, 
-			      CORBA_SYSTEM_EXCEPTION, 
-			      BAD_OPERATION, 
-			      "Bad Message, cannot extract operation");
-		return error;
-	    }
-	    
-	    env->_received -= 1;
-	    return 0;	  
-	}
-	else {
-	    env->_received -= 2;
-	    return 0;
-	}
-    }
-    
-    CORBA_exc_set(env, 
-		  CORBA_SYSTEM_EXCEPTION, 
-		  MARSHAL, 
-		  "Bad message, neither cast nor call");
-    return -1;
+    return oe_prepare_request_decoding(env);
 }
 
 /* #define DEBUG_MAP */
@@ -303,7 +225,7 @@ int ___call_info___(CORBA_Object obj, CORBA_Environment *env)
 #define PRINT_MAPS(P, M, S) print_maps(P, M, S)
 #define PRINT_MAP(T, M)     print_map(T, "", M)
 
-static void print_map(char *title, char *prefix, ___map___ *map)
+static void print_map(char *title, char *prefix, oe_map_t *map)
 {
     if (map == NULL) {
 	fprintf(stdout, "%s => NULL\n", title);
@@ -336,7 +258,7 @@ static void print_map(char *title, char *prefix, ___map___ *map)
     fflush(stdout);
 }
 
-static void print_maps(char* title, ___map___ * maps, int size)
+static void print_maps(char* title, oe_map_t * maps, int size)
 {
     int  i;
     char p[64];
@@ -359,11 +281,11 @@ static void print_maps(char* title, ___map___ * maps, int size)
 #endif /* if defined(DEBUG_MAP) */
 
 
-/* Generic switch */
-int ___switch___(CORBA_Object obj, CORBA_Environment *env, ___map___ *map)
+/* Generic server switch */
+int oe_exec_switch(CORBA_Object obj, CORBA_Environment *env, oe_map_t *map)
 {
     /* Setting local variables */
-    int status = 0;
+    int res = 0;
     int index = 0;
 
     /* XXX map may be NULL !! */
@@ -375,9 +297,8 @@ int ___switch___(CORBA_Object obj, CORBA_Environment *env, ___map___ *map)
     /* Initiating exception indicator */
     env->_major = CORBA_NO_EXCEPTION;
     
-    /* Call switch */
-    if ((status = ___call_info___(obj, env)) < 0)
-	return status;
+    if ((res = oe_prepare_request_decoding(env) < 0))
+	return res;
 #if defined(DEBUG_MAP)
     fprintf(stdout, "looking for operation: %s\n", op); fflush(stdout);
 #endif
@@ -402,11 +323,18 @@ int ___switch___(CORBA_Object obj, CORBA_Environment *env, ___map___ *map)
     return -1;
 }
 
-___map___* ___merge___(___map___ *maps, int size)
+/* For backward compatibility */
+int ___switch___(CORBA_Object obj, CORBA_Environment *env, oe_map_t *map)
+{
+    return oe_exec_switch(obj, env, map);
+}
+
+
+oe_map_t* oe_merge_maps(oe_map_t *maps, int size)
 { 
     int i, j, length, len, maplen, malloc_size;
     void *memp;
-    ___map___ *merged;
+    oe_map_t *merged;
 
     if ((maps == NULL) || (size <= 0))
 	return NULL;
@@ -417,14 +345,14 @@ ___map___* ___merge___(___map___ *maps, int size)
     for (i = 0; i < size; i++)
 	length += (maps[i].length);
 
-    maplen = OE_ALIGN(sizeof(___map___));
-    malloc_size = maplen + OE_ALIGN(length*sizeof(___operation___));
+    maplen = OE_ALIGN(sizeof(oe_map_t));
+    malloc_size = maplen + OE_ALIGN(length*sizeof(oe_operation_t));
     if ((memp = malloc(malloc_size)) == NULL)
 	return NULL;
 
     merged = memp;
     merged->length = length;
-    merged->operations = (___operation___ *)((char*)memp + maplen);
+    merged->operations = (oe_operation_t *)((char*)memp + maplen);
     	
     for (i = 0, len = 0; i < size; i++) {
 	for(j = 0 ; j < maps[i].length; j++)
@@ -435,4 +363,248 @@ ___map___* ___merge___(___map___ *maps, int size)
     return merged;
 }
 
+/* For backward compatibility */
+oe_map_t* ___merge___(oe_map_t *maps, int size)
+{
+    return oe_merge_maps(maps, size);
+}
+
+/* Client send message (Erlang distribution protocol) */
+static int oe_send(CORBA_Environment *env)
+{
+    if (strlen(env->_regname) == 0) { 
+	if (ei_send_encoded(env->_fd, env->_to_pid, env->_outbuf,
+			    env->_iout) < 0) { 
+	    /* XXX Cannot send to peer? */
+	    CORBA_exc_set(env, CORBA_SYSTEM_EXCEPTION, NO_RESPONSE, 
+			  "Cannot connect to server"); 
+	    return -1; 
+	}
+    } else {
+	if (ei_send_reg_encoded(env->_fd, env->_from_pid, 
+				env->_regname, env->_outbuf, 
+				env->_iout) < 0) {
+	    /* XXX Cannot send to peer? */
+	    CORBA_exc_set(env, CORBA_SYSTEM_EXCEPTION, NO_RESPONSE, 
+			  "Cannot connect to server"); 
+	    return -1; 
+	}
+    }
+    return 0;
+}
+
+/* Send notification (gen_server client) */
+int oe_send_notification(CORBA_Environment *env)
+{
+    return oe_send(env);
+}
+
+/* Send request and receive reply (gen_server client) */
+int oe_send_request_and_receive_reply(CORBA_Environment *env)
+{
+    int msgType = 0;
+    erlang_msg msg;
+
+    if (oe_send(env) < 0)
+	return -1;
+
+    do { 
+	if ((msgType = ei_receive_encoded(env->_fd,
+					  &env->_inbuf, 
+					  &env->_inbufsz, 
+					  &msg, &env->_iin)) < 0) { 
+	    CORBA_exc_set(env, CORBA_SYSTEM_EXCEPTION, MARSHAL,
+			  "Cannot decode message"); 
+	    return -1; 
+	}
+    } while (msgType != ERL_SEND && msgType != ERL_REG_SEND); 
+
+    /* Extracting return message header */ 
+    if (oe_prepare_reply_decoding(env) < 0) {
+	CORBA_exc_set(env, CORBA_SYSTEM_EXCEPTION, MARSHAL, "Bad message"); 
+	return -1;
+    }
+    return 0;
+}
+
+/* Prepare notification encoding (gen_server client) */
+int oe_prepare_notification_encoding(CORBA_Environment *env)
+{
+    env->_iout = 0;  
+    oe_ei_encode_version(env);
+    oe_ei_encode_tuple_header(env, 2);
+    oe_ei_encode_atom(env, "$gen_cast");
+    return 0;
+}
+
+/* Prepare request encoding (gen_server client) */
+int oe_prepare_request_encoding(CORBA_Environment *env)
+{
+    int error = 0;
+
+    env->_iout = 0;  
+    oe_ei_encode_version(env);
+    oe_ei_encode_tuple_header(env, 3);
+    oe_ei_encode_atom(env, "$gen_call");
+    oe_ei_encode_tuple_header(env, 2);
+    if ((error = oe_ei_encode_pid(env, env->_from_pid)) < 0)
+	return error; 
+    if ((error = oe_ei_encode_ref(env, &env->_unique)) < 0)
+	return error;
+    return 0;
+}
+
+/* Prepare reply decoding (gen_server client) */
+int oe_prepare_reply_decoding(CORBA_Environment *env)
+{
+    int error = 0;
+    int version = 0;
+    erlang_ref unique;
+
+    env->_iin = 0;
+    env->_received = 0;
+
+    if ((error = ei_decode_version(env->_inbuf, 
+				   &env->_iin, 
+				   &version)) < 0)
+        return error;
+    if ((error = ei_decode_tuple_header(env->_inbuf, 
+					&env->_iin, 
+					&env->_received)) < 0)
+        return error;
+    if ((error = ei_decode_ref(env->_inbuf,
+			       &env->_iin, 
+			       &unique)) < 0)
+        return error;
+    return ic_compare_refs(&env->_unique, &unique);
+}   
+
+
+/* Prepare request decoding (gen_server server) */
+int oe_prepare_request_decoding(CORBA_Environment *env)
+{
+    char gencall_atom[10];
+    int error = 0;
+    int version = 0;
+
+    env->_iin = 0;
+    env->_received = 0;
+    memset(gencall_atom, 0, 10);
+    ei_decode_version(env->_inbuf, &env->_iin, &version);
+    ei_decode_tuple_header(env->_inbuf, &env->_iin, &env->_received);
+    ei_decode_atom(env->_inbuf, &env->_iin, gencall_atom);
+
+    if (strcmp(gencall_atom, "$gen_cast") == 0) {
+	if ((error = ei_decode_atom(env->_inbuf, &env->_iin, 
+				    env->_operation)) < 0) {
+	    ei_decode_tuple_header(env->_inbuf, &env->_iin, &env->_received);
+	    if ((error = ei_decode_atom(env->_inbuf, &env->_iin, 
+					env->_operation)) < 0) { 
+		CORBA_exc_set(env, CORBA_SYSTEM_EXCEPTION, BAD_OPERATION, 
+			      "Bad Message, cannot extract operation");
+		return error;
+	    }
+	    env->_received -= 1;
+	} else
+	    env->_received -= 2;
+	return 0;
+    }
+    if (strcmp(gencall_atom, "$gen_call") == 0) {
+	ei_decode_tuple_header(env->_inbuf, &env->_iin, &env->_received);
+	if ((error = ei_decode_pid(env->_inbuf, &env->_iin, 
+				   &env->_caller)) < 0) {
+	    CORBA_exc_set(env, CORBA_SYSTEM_EXCEPTION, MARSHAL, 
+			  "Bad Message, bad caller identity");
+	    return error;
+	}
+	if ((error = ei_decode_ref(env->_inbuf, &env->_iin, 
+				   &env->_unique)) < 0) {
+	    CORBA_exc_set(env, CORBA_SYSTEM_EXCEPTION, MARSHAL, 
+			  "Bad Message, bad message reference");
+	    return error;
+	}
+	if ((error = ei_decode_atom(env->_inbuf, &env->_iin, 
+				    env->_operation)) < 0) {
+	    
+	    ei_decode_tuple_header(env->_inbuf, &env->_iin, &env->_received);
+	    
+	    if ((error = ei_decode_atom(env->_inbuf, &env->_iin, 
+					env->_operation)) < 0) { 
+		CORBA_exc_set(env, CORBA_SYSTEM_EXCEPTION, BAD_OPERATION, 
+			      "Bad Message, cannot extract operation");
+		return error;
+	    }
+	    env->_received -= 1;
+	    return 0;	  
+	}
+	else {
+	    env->_received -= 2;
+	    return 0;
+	}
+    }
+    
+    CORBA_exc_set(env, CORBA_SYSTEM_EXCEPTION, MARSHAL, 
+		  "Bad message, neither cast nor call");
+    return -1;
+}
+
+/* Prepare reply encoding (gen_server server) */
+int oe_prepare_reply_encoding(CORBA_Environment *env)
+{
+    env->_iout = 0;
+    oe_ei_encode_version(env);
+    oe_ei_encode_tuple_header(env, 2);
+    oe_ei_encode_ref(env, &env->_unique);
+    return 0;
+}
+
+/* ---- Function for making it more easy to implement a server */
+/* Server receive (possibly) send reply (gen_server server) */
+
+int oe_server_receive(CORBA_Environment *env, oe_map_t *map)
+{
+    int res = 0, loop = 1;
+    erlang_msg msg;
+
+    while (res >= 0 && loop > 0) {
+        res = ei_receive_encoded(env->_fd, &env->_inbuf, &env->_inbufsz, 
+				 &msg, &env->_iin); 
+	switch(res) {
+	case ERL_SEND:
+	case ERL_REG_SEND:
+	    oe_exec_switch(NULL, env, map);
+	    switch(env->_major) {
+	    case CORBA_NO_EXCEPTION:
+		break;
+	    case CORBA_SYSTEM_EXCEPTION:
+		/* XXX stderr */
+		fprintf(stderr, "Request failure, reason : %s\n", 
+			(char *) CORBA_exception_value(env));
+		CORBA_exception_free(env);
+		break;
+	    default: /* Should not happen */
+		CORBA_exception_free(env);
+		break;
+	    }
+	    /* send reply */
+	    /* XXX We are required to set env->_iout = 0 if oneway?? */
+	    if (env->_iout > 0) 
+		ei_send_encoded(env->_fd, &env->_caller, env->_outbuf, 
+				env->_iout);
+	    loop = 0;
+	    break;
+	case ERL_TICK:
+	    break;
+	default: 
+	    /* XXX */
+	    if (res < 0) {
+		fprintf(stderr, "Result negative: %d\n", res);
+		loop = 0;
+	    }
+	    break;
+	}
+    }	
+
+    return 0;
+}
 

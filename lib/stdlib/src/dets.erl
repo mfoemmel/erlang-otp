@@ -1184,7 +1184,7 @@ stream_end(Head, Pids0, C, N, Next) ->
 	    lookup_replies(Found),
 	    stream_end1(Pids0, Next, N, C, Head1, PwriteList);
 	Head1 when record(Head1, head) ->
-	    stream_end2(Pids0, Next, N, C, Head1, ok);	    
+	    stream_end2(Pids0, Pids0, Next, N, C, Head1, ok);	    
 	{Head1, Error} ->
 	    %% Dig out the processes that did lookup or member.
 	    Fun = fun({{lookup,[Pid]},_Keys}, L) -> [Pid | L];
@@ -1193,29 +1193,31 @@ stream_end(Head, Pids0, C, N, Next) ->
 		  end,
 	    LPs0 = lists:foldl(Fun, [], C),
 	    LPs = lists:usort(lists:flatten(LPs0)),
-	    stream_end2(Pids0 ++ LPs, Next, N, C, Head1, Error)
+	    stream_end2(Pids0 ++ LPs, Pids0, Next, N, C, Head1, Error)
     end.
 
 stream_end1(Pids, Next, N, C, Head, []) ->
-    stream_end2(Pids, Next, N, C, Head, ok);
+    stream_end2(Pids, Pids, Next, N, C, Head, ok);
 stream_end1(Pids, Next, N, C, Head, PwriteList) ->
     {Head1, PR} = (catch dets_utils:pwrite(Head, PwriteList)),
-    stream_end2(Pids, Next, N, C, Head1, PR).
+    stream_end2(Pids, Pids, Next, N, C, Head1, PR).
 
-stream_end2([Pid | Pids], Next, N, C, Head, Reply) ->
+stream_end2([Pid | Pids], Ps, Next, N, C, Head, Reply) ->
     Pid ! {self(), Reply},
-    stream_end2(Pids, Next, N+1, C, Head, Reply);
-stream_end2([], no_more, N, C, Head, _Reply) ->
-    penalty(Head, C),
+    stream_end2(Pids, Ps, Next, N+1, C, Head, Reply);
+stream_end2([], Ps, no_more, N, C, Head, _Reply) ->
+    penalty(Head, Ps, C),
     {N, Head};
-stream_end2([], {From, Op}, N, _C, Head, _Reply) ->
+stream_end2([], _Ps, {From, Op}, N, _C, Head, _Reply) ->
     apply_op(Op, From, Head, N).
 
-penalty(H, _C) when H#head.fixed == false ->
+penalty(H, _Ps, _C) when H#head.fixed == false ->
     ok;
-penalty(_, [{{lookup,_Pids},_Keys}]) ->
+penalty(_H, _Ps, [{{lookup,_Pids},_Keys}]) ->
     ok;
-penalty(_, _C) ->
+penalty(#head{fixed = {_,[{Pid,_}]}}, [Pid], _C) ->
+    ok;
+penalty(_H, _Ps, _C) ->
     timer:sleep(1).
 
 lookup_replies([{P,O}]) ->
@@ -1484,6 +1486,8 @@ do_fixtable(Head, Pid, true) ->
 do_fixtable(Head, _Pid, _Value) ->
     Head.
 
+check_growth(#head{access = read}) ->
+    ok;
 check_growth(Head) ->
     NoThings = no_things(Head),
     if

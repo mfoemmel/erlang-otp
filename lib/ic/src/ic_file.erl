@@ -45,7 +45,7 @@
 %% the file descriptor entries means that the file just isn't open
 %% yet.
 %%-----------------------------------------------------------------
-filename_push(G, N, ignore, _) ->
+filename_push(G, _N, ignore, _) ->
     G#genobj{stubfile=[ignore | G#genobj.stubfile],
 	     stubfiled=[ignore | G#genobj.stubfiled],
 	     skelfile=[ignore | G#genobj.skelfile],
@@ -55,34 +55,35 @@ filename_push(G, N, ignore, _) ->
 
 filename_push(G, N, X, Lang) ->
     Fullname = [ic_forms:get_id2(X) | N],
-    EName = ic_util:to_undersc(Fullname),
+    EName0 = ic_util:to_undersc(Fullname),
     
     DoGen = ic_genobj:do_gen(G),
 
     ImplName = find_impl_name(G, Fullname),
 
-    SkelName=undefined, SkelFName=undefined, Skel=undefined,
-    
-    StubName = case Lang of
-		   erlang ->
-		       %%?ifopt2(G, gen_stub, 
-		       join(ic_options:get_opt(G, stubdir), add_dot_erl(EName));
-		   %%	       ignore);
-		   c ->
-		       %%?ifopt2(G, gen_stub, 
-		       join(ic_options:get_opt(G, stubdir), add_dot_c(EName));
-			 %%      ignore);
-		   c_server ->
-		       %%?ifopt2(G, gen_stub, 
-		       join(ic_options:get_opt(G, stubdir), add_dot_c(EName++"__s"));
-		   %%      ignore);
-		   erlang_no_stub ->
-		       undefined;
-		   c_no_stub ->
-		       undefined; 
-		   c_server_no_stub ->
-		       undefined  
-	       end,
+    {StubName, EName} =
+	case Lang of
+	    erlang ->
+		{join(ic_options:get_opt(G, stubdir), add_dot_erl(EName0)), 
+		 EName0};
+	    erlang_template ->
+		{join(ic_options:get_opt(G, stubdir), add_dot_erl(ImplName)), 
+		 ImplName};
+	    c ->
+		{join(ic_options:get_opt(G, stubdir), add_dot_c(EName0)), 
+		 EName0};
+	    c_server ->
+		{join(ic_options:get_opt(G, stubdir), add_dot_c(EName0++"__s")), 
+		 EName0};
+	    erlang_template_no_gen ->
+		{undefined, EName0};
+	    erlang_no_stub ->
+		{undefined, EName0};
+	    c_no_stub ->
+		{undefined, EName0}; 
+	    c_server_no_stub ->
+		{undefined, EName0}
+	end,
     Stub = if DoGen==true -> 
 		   case StubName of
 		       undefined ->
@@ -93,6 +94,10 @@ filename_push(G, N, X, Lang) ->
 	      true -> ignore end,
     
     HrlName = case Lang of
+		  erlang_template ->
+		      ignore;
+		  erlang_template_no_gen ->
+		      ignore;
 		  erlang ->
 		      ?ifopt2(G, gen_hrl, 
 			      join(ic_options:get_opt(G, stubdir), add_dot_hrl(EName)),
@@ -122,6 +127,10 @@ filename_push(G, N, X, Lang) ->
 	      end,
     Hrl = if  DoGen==true -> 
 		  case Lang of
+		      erlang_template ->
+			  ignore;
+		      erlang_template_no_gen ->
+			  ignore;
 		      erlang_no_stub ->
 			  ic_codegen:emit_hrl_head(G, open(empty, HrlName),
 						   EName, erlang);
@@ -138,8 +147,6 @@ filename_push(G, N, X, Lang) ->
 	      true -> ignore end,
     
     G#genobj{impl=ImplName,
-	     %%	     skelfile=[SkelFName | G#genobj.skelfile],
-	     %%	     skelfiled=[Skel | G#genobj.skelfiled],
 	     stubfile=[StubName | G#genobj.stubfile],
 	     stubfiled=[Stub | G#genobj.stubfiled],
 	     includefile=[HrlName | G#genobj.includefile],
@@ -236,7 +243,7 @@ javaInterfaceFilePop(G) ->
 %%-----------------------------------------------------------------
 %% Func: createDirectory/2 
 %%-----------------------------------------------------------------
-createDirectory(G, []) ->
+createDirectory(_G, []) ->
     ok;
 createDirectory(G, Scope) ->
     Path = ic_file:join(ic_options:get_opt(G, stubdir), ic_pragma:slashify(Scope)),
@@ -253,7 +260,7 @@ createDirectory(G, Scope) ->
 %%-----------------------------------------------------------------
 %% Func: createJavaDirectory/2 
 %%-----------------------------------------------------------------
-createJavaDirectory(G, []) ->
+createJavaDirectory(_G, []) ->
     ok;
 createJavaDirectory(G, Scope) ->
     JavaScope = ic_util:adjustScopeToJava(G,Scope),
@@ -323,7 +330,7 @@ open_java_file(G, N, Name) ->
 %%-----------------------------------------------------------------
 %% Func: emit_package/3
 %%-----------------------------------------------------------------
-emit_package(G, [], Fd) ->
+emit_package(_G, [], _Fd) ->
     ok;
 emit_package(G, N, Fd) ->
     ic_codegen:emit(Fd, "package ~s;\n", [ic_util:to_dot(G,N)]),
@@ -336,8 +343,10 @@ add_dot_erl(F) ->
     File = ic_util:to_list(F),
     F2 = lists:reverse(File),
     case F2 of 
-	[$l, $r, $e, $. | Rest] -> File;
-	_ -> File ++ ".erl"
+	[$l, $r, $e, $. | _Rest] -> 
+	    File;
+	_ ->
+	    File ++ ".erl"
     end.
 
 %%-----------------------------------------------------------------
@@ -347,8 +356,10 @@ add_dot_hrl(F) ->
     File = ic_util:to_list(F),
     F2 = lists:reverse(File),
     case F2 of 
-	[$l, $r, $h, $. | Rest] -> File;
-	_ -> File ++ ".hrl"
+	[$l, $r, $h, $. | _Rest] -> 
+	    File;
+	_ -> 
+	    File ++ ".hrl"
     end.
 
 %%-----------------------------------------------------------------
@@ -358,8 +369,10 @@ add_dot_c(F) ->
     File = ic_util:to_list(F),
     F2 = lists:reverse(File),
     case F2 of 
-	[$c, $. | Rest] -> File;
-	_ -> File ++ ".c"
+	[$c, $. | _Rest] -> 
+	    File;
+	_ -> 
+	    File ++ ".c"
     end.
 
 %%-----------------------------------------------------------------
@@ -369,8 +382,10 @@ add_dot_h(F) ->
     File = ic_util:to_list(F),
     F2 = lists:reverse(File),
     case F2 of 
-	[$h, $. | Rest] -> File;
-	_ -> File ++ ".h"
+	[$h, $. | _Rest] -> 
+	    File;
+	_ -> 
+	    File ++ ".h"
     end.
 
 %%-----------------------------------------------------------------
@@ -380,8 +395,10 @@ add_dot_java(F) ->
     File = ic_util:to_list(F),
     F2 = lists:reverse(File),
     case F2 of 
-	[$a, $v, $a, $j, $. | Rest] -> File;
-	_ -> File ++ ".java"
+	[$a, $v, $a, $j, $. | _Rest] -> 
+	    File;
+	_ ->
+	    File ++ ".java"
     end.
 
 %%-----------------------------------------------------------------
@@ -391,8 +408,10 @@ add_dot_idl(F) ->
     File = ic_util:to_list(F),
     F2 = lists:reverse(File),
     case F2 of 
-	[$l, $d, $i, $. | Rest] -> File;
-	_ -> File ++ ".idl"
+	[$l, $d, $i, $. | _Rest] -> 
+	    File;
+	_ ->
+	    File ++ ".idl"
     end.
 
 
@@ -409,18 +428,6 @@ add_dot_idl(F) ->
 %%	usefull bits of information
 %%
 %%--------------------------------------------------------------------
-
-find_skel_name(G, Name) ->
-    N1 = ic_util:to_colon(Name),
-    N2 = ic_util:to_undersc(Name),
-    case {ic_options:get_opt(G, {serv, N1}),
-	  ic_options:get_opt(G, {serv, N2})} of
-	{false, false} -> N2 ++ "_serv";
-	{X, Y} when X /= false -> ic_util:to_list(X);
-	{X, Y} when Y /= false -> ic_util:to_list(Y)
-    end.
-
-
 find_impl_name(G, Name) ->
     N1 = ic_util:to_colon(Name),
     N2 = ic_util:to_undersc(Name),
@@ -430,9 +437,9 @@ find_impl_name(G, Name) ->
 	    case {ic_options:get_opt(G, {impl, "::"++N1}),
 		  ic_options:get_opt(G, {impl, N2})} of
 		{false, false} -> N2 ++ "_impl";
-		{X, Y} when X /= false -> ic_util:to_list(X);
-		{X, Y} when Y /= false -> ic_util:to_list(Y)
+		{X, _Y} when X /= false -> ic_util:to_list(X);
+		{_X, Y} when Y /= false -> ic_util:to_list(Y)
 	    end;
-	{X, Y} when X /= false -> ic_util:to_list(X);
-	{X, Y} when Y /= false -> ic_util:to_list(Y)
+	{X, _Y} when X /= false -> ic_util:to_list(X);
+	{_X, Y} when Y /= false -> ic_util:to_list(Y)
     end.

@@ -66,7 +66,7 @@ char **erl_global_names(int fd, int *count)
 
   while (1) {
     index = GLOBALNAMEBUF;
-    if (!(i = ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1))) continue;
+    if (!(i = ei_recv_internal(fd,&bufp,&index,&msg,&msglen,1,0))) continue;
     else break;
   }
 

@@ -69,9 +69,10 @@ char* buf; double* fp;
       return -1;
     
     errno = 0;
-    *fp = strtod(buf, NULL);
-    if (errno == ERANGE)
+    *fp = atof(buf);
+    if (errno == ERANGE && *fp > 1.0e-307) {
 	return -1;
+    }
     
     return 0;
 }

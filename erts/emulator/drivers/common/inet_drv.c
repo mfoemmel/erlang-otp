@@ -459,6 +459,7 @@ static int my_strncasecmp(const char *s1, const char *s2, size_t n)
 #define INET_LOPT_TCP_LOWTRMRK     28  /* set local low watermark */
 #define INET_LOPT_BIT8             29  /* set 8 bit detection */
 #define INET_LOPT_TCP_SEND_TIMEOUT 30      /* set send timeout */
+#define INET_LOPT_TCP_DELAY_SEND   31      /* Delay sends until next poll */
 
 #define INET_IFOPT_ADDR       1
 #define INET_IFOPT_BROADADDR  2
@@ -740,6 +741,7 @@ typedef struct {
     char*         i_ptr;        /* current pos in buf */
     char*         i_ptr_start;  /* packet start pos in buf */
     int           i_remain;     /* remaining chars to read */
+    int   fdelay_send;           /* Delay all sends until next poll (exp) */
 #ifdef USE_HTTP
     int           http_state;   /* 0 = response|request  1=headers fields */
 #endif
@@ -3680,6 +3682,14 @@ static int inet_set_opts(inet_descriptor* desc, char* ptr, int len)
 	    }
 	    continue;
 
+	case INET_LOPT_TCP_DELAY_SEND:
+	    if (desc->stype == SOCK_STREAM) {
+		tcp_descriptor* tdesc = (tcp_descriptor*) desc;
+		tdesc->fdelay_send = ival;
+	    }
+	    continue;
+	    
+
 	case INET_OPT_REUSEADDR: 
 #ifdef __WIN32__
 	    continue;  /* Bjorn says */
@@ -3926,6 +3936,15 @@ static int inet_fill_opts(inet_descriptor* desc,
 	    if (desc->stype == SOCK_STREAM) {
 		*ptr++ = opt;
 		ival = ((tcp_descriptor*)desc)->send_timeout;
+		put_int32(ival, ptr);
+		ptr += 4;
+	    }
+	    continue;
+
+	case INET_LOPT_TCP_DELAY_SEND:
+	    if (desc->stype == SOCK_STREAM) {
+		*ptr++ = opt;
+		ival = ((tcp_descriptor*)desc)->fdelay_send;
 		put_int32(ival, ptr);
 		ptr += 4;
 	    }
@@ -4709,6 +4728,7 @@ static ErlDrvData tcp_inet_start(ErlDrvPort port, char* args)
     desc->i_ptr_start = NULL;
     desc->i_remain = 0;
     desc->i_bufsz = 0;
+    desc->fdelay_send = 0;
 #ifdef USE_HTTP
     desc->http_state = 0;
 #endif
@@ -5886,8 +5906,10 @@ static int tcp_sendv(tcp_descriptor* desc, ErlIOVec* ev)
 	
 	DEBUGF(("tcp_sendv(%ld): s=%d, about to send %d,%d bytes\r\n",
 		(long)desc->inet.port, desc->inet.s, h_len, len));
-	
-	if (sock_sendv(desc->inet.s, ev->iov, vsize, &n, 0) == SOCKET_ERROR) {
+	if (desc->fdelay_send) {
+	    n = 0;
+	} else if (sock_sendv(desc->inet.s, ev->iov, vsize, &n, 0) 
+		   == SOCKET_ERROR) {
 	    if ((sock_errno() != ERRNO_BLOCK) && (sock_errno() != EINTR)) {
 		int err = sock_errno();
 		DEBUGF(("tcp_send(%ld): s=%d,sock_sendv(size=2) errno = %d\r\n",
@@ -5966,7 +5988,9 @@ static int tcp_send(tcp_descriptor* desc, char* ptr, int len)
 
 	DEBUGF(("tcp_send(%ld): s=%d, about to send %d,%d bytes\r\n",
 		(long)desc->inet.port, desc->inet.s, h_len, len));
-	if (sock_sendv(desc->inet.s,iov,2,&n,0) == SOCKET_ERROR) {
+	if (desc->fdelay_send) {
+	    n = 0;
+	} else 	if (sock_sendv(desc->inet.s,iov,2,&n,0) == SOCKET_ERROR) {
 	    if ((sock_errno() != ERRNO_BLOCK) && (sock_errno() != EINTR)) {
 		int err = sock_errno();
 		DEBUGF(("tcp_send(%ld): s=%d,sock_sendv(size=2) errno = %d\r\n",

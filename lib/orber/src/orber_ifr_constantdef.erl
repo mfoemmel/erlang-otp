@@ -139,6 +139,8 @@ move({ObjType, ObjID}, New_container, New_name, New_version)
 	true ->
 	    set_field({ObjType, ObjID}, value, EO_Value);
 	false ->
-	    ?ifr_exception("Wrong typecode in set_value ",
-			   {{ObjType, ObjID}, EO_Value})
+	    orber:dbg("[~p] ~p:destroy(~p, ~p, ~p);~n"
+		      "Wrong typecode in set_value.~n", 
+		      [?LINE, ?MODULE, ObjType, ObjID, EO_Value], ?DEBUG_LEVEL),
+	    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO})
     end.

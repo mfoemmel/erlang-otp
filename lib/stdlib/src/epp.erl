@@ -52,20 +52,17 @@ open(File, Path) ->
 
 open(File, Path, Pdm) ->
     Self = self(),
-    Epp = spawn_link(fun() -> server(Self, File, Path, Pdm) end),
-    wait_epp_reply(Epp).
+    Epp = spawn(fun() -> server(Self, File, Path, Pdm) end),
+    epp_request(Epp).
 
 close(Epp) ->
-    epp_request(Epp, close),
-    wait_epp_reply(Epp).
+    epp_request(Epp, close).
 
 scan_erl_form(Epp) ->
-    epp_request(Epp, scan_erl_form),
-    wait_epp_reply(Epp).
+    epp_request(Epp, scan_erl_form).
 
 parse_erl_form(Epp) ->
-    epp_request(Epp, scan_erl_form),
-    case wait_epp_reply(Epp) of
+    case epp_request(Epp, scan_erl_form) of
 	{ok,Toks} ->
 	    erl_parse:parse_form(Toks);
 	Other ->
@@ -73,8 +70,7 @@ parse_erl_form(Epp) ->
     end.
 
 macro_defs(Epp) ->
-    epp_request(Epp, macro_defs),
-    wait_epp_reply(Epp).
+    epp_request(Epp, macro_defs).
 
 %% format_error(ErrorDescriptor) -> String
 %%  Return a string describing the error.
@@ -297,8 +293,7 @@ scan_toks(From, St) ->
 	{eof,Cl} ->
 	    leave_file(From, St#epp{line=Cl});
 	{error,E} ->
-	    epp_reply(From, {error,E}),
-	    true				%This serious, just exit!
+	    exit(E)				%This serious, just exit!
     end.
 
 scan_toks([{'-',_Lh},{atom,Ld,define}|Toks], From, St) ->
@@ -823,20 +818,31 @@ stringify(L) ->
     [$\s | S] = lists:flatten(stringify1(L)),
     [{string, 1, S}].
 
+%% epp_request(Epp)
 %% epp_request(Epp, Request)
 %% epp_reply(From, Reply)
-%% wait_epp_reply(Epp)
 %%  Handle communication with the epp.
 
+epp_request(Epp) ->
+    wait_epp_reply(Epp, erlang:monitor(process, Epp)).
+
 epp_request(Epp, Req) ->
-    Epp ! {epp_request,self(),Req}.
+    Epp ! {epp_request,self(),Req},
+    wait_epp_reply(Epp, erlang:monitor(process, Epp)).
 
 epp_reply(From, Rep) ->
     From ! {epp_reply,self(),Rep}.
 
-wait_epp_reply(Epp) ->
+wait_epp_reply(Epp, Mref) ->
     receive
-	{epp_reply,Epp,Rep} -> Rep
+	{epp_reply,Epp,Rep} -> 
+	    erlang:demonitor(Mref),
+	    receive {'DOWN',Mref,_,_,_} -> ok after 0 -> ok end,
+	    Rep;
+	{'DOWN',Mref,_,_,E} -> 
+	    receive {epp_reply,Epp,Rep} -> Rep
+	    after 0 -> exit(E)
+	    end
     end.
 
 expand_var([$$ | _] = NewName) ->

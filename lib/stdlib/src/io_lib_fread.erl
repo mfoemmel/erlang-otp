@@ -53,7 +53,7 @@ fread(Format, Line, N0, Inputs0, More) ->
 	{more,RestFormat,N,Inputs} ->
 	    case More of
 		eof ->
-		    {done,fread_error(format),eof};
+		    fread(RestFormat,eof,N,Inputs,eof);
 		_ ->
 		    %% Don't forget to count the newline.
 		    {more,{More,RestFormat,N+1,Inputs}}

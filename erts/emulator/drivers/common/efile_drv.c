@@ -50,6 +50,7 @@
 #define FILE_PREADV		25
 #define FILE_SETOPT		26
 #define FILE_IPREAD             27
+#define FILE_ALTNAME            28
 
 /* Return codes */
 
@@ -1099,6 +1100,18 @@ static void invoke_readlink(void *data)
 	strcpy((char *) d->b + 1, resbuf+1);
 }
 
+static void invoke_altname(void *data)
+{
+    struct t_data *d = (struct t_data *) data;
+    uchar resbuf[RESBUFSIZE];	/* Result buffer. */
+
+    d->again = 0;
+    d->result_ok = efile_altname(&d->errInfo, d->b, (char *) resbuf+1,
+				  RESBUFSIZE-1);
+    if (d->result_ok != 0)
+	strcpy((char *) d->b + 1, resbuf+1);
+}
+
 static void invoke_pwritev(void *data) {
     struct t_data    *d = (struct t_data *) data;
     SysIOVec         *iov;
@@ -1581,6 +1594,7 @@ file_async_ready(ErlDrvData e, ErlDrvThreadData data)
 	reply(desc, d->result_ok, &d->errInfo);
 	free_data(data);
 	break;
+      case FILE_ALTNAME:
       case FILE_PWD:
       case FILE_READLINK:
         {
@@ -1858,6 +1872,7 @@ file_output(ErlDrvData e, char* buf, int count)
 	goto done;
     }
 
+
     case FILE_FSTAT: 
     case FILE_LSTAT:
     {
@@ -1915,6 +1930,18 @@ file_output(ErlDrvData e, char* buf, int count)
 	    d->level = 2;
 	    goto done;
 	}
+
+    case FILE_ALTNAME:
+    {
+	d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1 + RESBUFSIZE + 1);
+	strcpy(d->b, name);
+	d->command = command;
+	d->invoke = invoke_altname;
+	d->free = free_data;
+	d->level = 2;
+	goto done;
+    }
+
 
     case FILE_LINK:
 	{

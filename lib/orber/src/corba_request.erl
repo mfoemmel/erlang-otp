@@ -31,7 +31,6 @@
 -behaviour(gen_server).
 
 -include_lib("orber/include/corba.hrl").
--include_lib("orber/src/orber_debug.hrl").
 
 %%-----------------------------------------------------------------
 %% External exports
@@ -205,7 +204,6 @@ get_response(ReqId, ResponseFlags) ->
 %% Server functions
 %%-----------------------------------------------------------------
 init(Env) ->
-    ?PRINTDEBUG("orber objectkeyserver"),
     case mnesia:wait_for_tables(['orber_request'], infinity) of
 	ok ->
 	    process_flag(trap_exit, true),

@@ -16,8 +16,6 @@
 %%     $Id$
 %%
 -module(ic_pp).
--copyright('Copyright (c) 1991-1998 Ericsson Telecom AB').
--author('esko@erix.ericsson.se').
 
 -export([run/2]).
 
@@ -126,14 +124,12 @@ run(FileList, FileName, IncDir, Flags) ->
     %%----------------------------------------------------------
     %% Run the first phase, i.e tokenise the file
     %%----------------------------------------------------------
-    FileInfo = {0, file_info, lists:flatten(io_lib:format("# 1 ~p\n",[FileName]))},
     File = tokenise(FileList, FileName),
 
     %%----------------------------------------------------------
     %% Run the second phase, i.e expand macros
     %%----------------------------------------------------------
-    {Out, Err, War, Defs, IfCou} = expand(File, FileName, IncDir, Flags),
-
+    {Out, Err, War, _Defs, IfCou} = expand(File, FileName, IncDir, Flags),
 
     %%----------------------------------------------------------
     %% Check if all #if #ifdef #ifndef have a matching #endif
@@ -154,34 +150,18 @@ run(FileList, FileName, IncDir, Flags) ->
 	    {error, lists:reverse(Err2)}
     end.
 
-%    case {Err2, War} of 
-%	{[], []} ->
-%	    io:format("FILE     ~n----------~n~s----------~n~n~n",[lists:reverse(Out)]);
-%	{Err2, []} ->
-%	    io:format("ERRORS   ~n------~n~p~n",[lists:reverse(Err2)]),
-%	    io:format("FILE     ~n----------~n~s----------~n~n~n",[lists:reverse(Out)]);
-%	{[], War} ->
-%	    io:format("WARNINGS ~n--------~n~p~n",[lists:reverse(War)]),
-%	    io:format("FILE     ~n----------~n~s----------~n~n~n",[lists:reverse(Out)]);
-%	{Err2, War} ->
-%	    io:format("ERRORS   ~n------~n~p~n",[lists:reverse(Err2)]),
-%	    io:format("WARNINGS ~n--------~n~p~n",[lists:reverse(War)]),
-%	    io:format("FILE     ~n----------~n~s----------~n~n~n",[lists:reverse(Out)])
-%    end.
-
-
 %%======================================================================================
 %% The entry for all included files
 %%
 %%
 %% Output   {Out, Defs, Err, War}
 %%======================================================================================
-run_include(FileName, FileList, Out, Defs, Err, War, IncLine, IncFile, IncDir) ->
+run_include(FileName, FileList, _Out, Defs, Err, War, IncLine, IncFile, IncDir) ->
 
     %%----------------------------------------------------------
     %% Run the first phase, i.e tokenise the file
     %%----------------------------------------------------------
-    [PrevFile | T] = IncFile,
+    [PrevFile | _T] = IncFile,
     {File,  FileInfoStart, FileInfoEnd} = 
 	tokenise(FileList, FileName, IncLine, PrevFile),
 
@@ -283,13 +263,13 @@ only_nls([_|_Rem]) ->
 %%===================================================================================
 
 tokenise(File, FileName) ->
-    {Result, L} = token(File, 2, [], not_set, 0),
+    {Result, _L} = token(File, 2, [], not_set, 0),
     FI_start = lists:reverse(lists:flatten(io_lib:format("# 1 ~p~n",[FileName]))),
     FileInfoStart = {file_info, FI_start},
     [FileInfoStart | Result].
 
 tokenise(File, FileName, IncLine, PrevFile) ->
-    {Result, L} = token(File, 2, [], not_set, 0),
+    {Result, _L} = token(File, 2, [], not_set, 0),
     FI_start = lists:reverse(lists:flatten(io_lib:format("# 1 ~p 1~n",[FileName]))),
     FileInfoStart = {file_info, FI_start},
     FI_end = lists:reverse(lists:flatten(io_lib:format("# ~p ~p 2~n~n",[IncLine-1,PrevFile]))),
@@ -311,9 +291,9 @@ tokenise(File, FileName, IncLine, PrevFile) ->
 %%---------------------------------------
 %% All file tokenised
 %%---------------------------------------
-token([], L, [{nl,NL}|Result], Gen, BsNl) when L == NL+1->
+token([], L, [{nl,NL}|Result], _Gen, _BsNl) when L == NL+1->
     {lists:reverse([{nl,NL}|Result]), L};
-token([], L, Result, Gen, BsNl) ->
+token([], L, Result, _Gen, _BsNl) ->
     {lists:reverse([{nl,L-1}|Result]), L};
 
 %%---------------------------------------
@@ -376,19 +356,14 @@ token([$<|File], L, [{command,"include"}|Result], Gen, BsNl) ->
 %%---------------------------------------
 token([$\r|File], L, Result, Gen, BsNl) ->
     Bs = lists:duplicate(BsNl+1,{nl,L}),
-    token(File, L, Result, Gen, BsNl);
+    token(File, L, Result, Gen, BsNl); %% Bs or BsNl?
 
 %%---------------------------------------
 %% Newline
 %%---------------------------------------
-token([$\n|File], L, Result, Gen, BsNl) ->
+token([$\n|File], L, Result, _Gen, BsNl) ->
     Bs = lists:duplicate(BsNl+1,{nl,L}),
     token(File, L+1, Bs++Result, not_set, 0);
-
-token([$\r,$\n|File], L, Result, Gen, BsNl) ->
-    Bs = lists:duplicate(BsNl+1,{nl,L}),
-    token(File, L+1, Bs++Result, not_set, 0);
-%    token(File, L+1, [{nl, L} | Result], not_set, 0);
 
 token([$\\,$\n|File], L, Result, Gen, BsNl) ->
     token(File, L, Result, Gen, BsNl+1);
@@ -399,7 +374,7 @@ token([$\\,$\n|File], L, Result, Gen, BsNl) ->
 token([$/,$/|File], L, Result, not_set, BsNl) ->
     Rem = skip_to_nl(File),
     token(Rem, L+1,[{nl, L} | Result], not_set, BsNl);
-token([$/,$/|File], L, Result, Gen, BsNl) ->
+token([$/,$/|File], L, Result, _Gen, BsNl) ->
     Rem = skip_to_nl(File),
     token(Rem, L+1,[{nl, L} | Result], not_set, BsNl);
 
@@ -479,7 +454,7 @@ token([$#|File], L, Result, not_set, BsNl) ->
     case catch list_to_integer(Command) of
 	{'EXIT', _} ->
 	    token(Rem, L, [{command,Command}|Result], not_set, BsNl);
-	Int ->
+	_Int ->
 	    Result1 = [{number,Command}, {command,"line"}| Result],
 	    token(Rem, L, Result1, not_set, BsNl)
     end;
@@ -684,7 +659,7 @@ expand(List, Defs, Err, War, [FileName|IncFile], IncDir) ->
 %%=======================================================
 %% Main loop for the expansion
 %%=======================================================
-expand([], Out, SelfRef, Defs, IncFile, IncDir, IfCou, Err, War, L, FN) ->
+expand([], Out, _SelfRef, Defs, _IncFile, _IncDir, IfCou, Err, War, _L, _FN) ->
 %    io:format("~n   ===============~n"),
 %    io:format("   definitions    ~p~n",[lists:reverse(Defs)]),
 %    io:format("   found warnings ~p~n",[lists:reverse(War)]),
@@ -702,14 +677,14 @@ expand([{file_info, Str} | Rem], Out, SelfRef, Defs, IncFile, IncDir, IfCou, Err
 %%---------------------------------------
 expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN) 
   when Command == "ifdef" ->
-    {Removed, Rem2, Nl} = read_to_nl(Rem),
+    {_Removed, Rem2, _Nl} = read_to_nl(Rem),
     IfCou2 = {endif, Endif+1, IfLine},
     expand(Rem2, Out, SelfRef, Defs, IncFile, IncDir, IfCou2, Err, War, L, FN);
 
 
 expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN)
   when Command == "ifndef" ->
-    {Removed, Rem2, Nl} = read_to_nl(Rem),
+    {_Removed, Rem2, _Nl} = read_to_nl(Rem),
     IfCou2 = {endif, Endif+1, IfLine},
     expand(Rem2, Out, SelfRef, Defs, IncFile, IncDir, IfCou2, Err, War, L, FN);
 
@@ -728,7 +703,7 @@ expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, E
 
 expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN) 
   when Command == "endif" ->
-    {Removed, Rem2, Nl} = read_to_nl(Rem),
+    {_Removed, Rem2, Nl} = read_to_nl(Rem),
     case Endif of
 	1 ->
 	    Out2 = [lists:duplicate(Nl,$\n)|Out],
@@ -739,8 +714,8 @@ expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, E
     end;
 
 
-expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN) ->
-    {Removed, Rem2, Nl} = read_to_nl(Rem),
+expand([{command,_Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN) ->
+    {_Removed, Rem2, _Nl} = read_to_nl(Rem),
     IfCou2 = {endif, Endif, IfLine},
     expand(Rem2, Out, SelfRef, Defs, IncFile, IncDir, IfCou2, Err, War, L, FN);
 
@@ -748,12 +723,12 @@ expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, E
 expand([space | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN) ->
     expand(Rem, Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN);
 
-expand([{nl,Nl} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN) ->
+expand([{nl,_Nl} | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN) ->
     expand(Rem, Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN);
 
 
-expand([X | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN) ->
-    {Removed, Rem2, Nl} = read_to_nl(Rem),
+expand([_X | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN) ->
+    {_Removed, Rem2, Nl} = read_to_nl(Rem),
     Out2 = [lists:duplicate(Nl,$\n)|Out],
     expand(Rem2, Out2, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, Err, War, L, FN);
 
@@ -764,7 +739,7 @@ expand([X | Rem], Out, SelfRef, Defs, IncFile, IncDir, {endif, Endif, IfLine}, E
 %%---------------------------------------
 %% Check all tokens
 %%---------------------------------------
-expand([{nl, N} | Rem], Out, SelfRef, Defs, IncFile, IncDir, IfCou, Err, War, L, FN) ->
+expand([{nl, _N} | Rem], Out, SelfRef, Defs, IncFile, IncDir, IfCou, Err, War, L, FN) ->
     expand(Rem, [$\n | Out], SelfRef, Defs, IncFile, IncDir, IfCou, Err, War, L+1, FN);
 
 expand([space | Rem], Out, SelfRef, Defs, IncFile, IncDir, IfCou, Err, War, L, FN) ->
@@ -823,34 +798,34 @@ expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, check_all
 	    Out2 = [lists:duplicate(Nl,$\n)|Out],
 	    expand(Rem2, Out2, SelfRef, Defs, IncFile, IncDir, check_all, Err2, War2, L+Nl, FN);
 
-	{'else', {Removed, Rem2, Nl}} ->
+	{'else', {_Removed, Rem2, Nl}} ->
 	    Out2 = [lists:duplicate(Nl,$\n)|Out],
 	    Err2 = {FN, L, "`else' command is not implemented at present"},
 	    expand(Rem2, Out2, SelfRef, Defs, IncFile, IncDir, check_all, [Err2|Err], War, L+Nl, FN);
 
-	{'elif', {Removed, Rem2, Nl}} ->
+	{'elif', {_Removed, Rem2, Nl}} ->
 	    Out2 = [lists:duplicate(Nl,$\n)|Out],
 	    Err2 = {FN, L, "`elif' command is not implemented at present"},
 	    expand(Rem2, Out2, SelfRef, Defs, IncFile, IncDir, check_all, [Err2|Err], War, L+Nl, FN);
 
 	{warning, {WarningText, Rem2, Nl}} ->
-	    [FileName|More] = IncFile,
+	    [FileName|_More] = IncFile,
 	    War2 = {FileName, L, "warning: #warning "++detokenise(WarningText)},
 	    Out2 = [lists:duplicate(Nl,$\n)|Out],
 	    expand(Rem2, Out2, SelfRef, Defs, IncFile, IncDir, check_all, Err, [War2|War], L+Nl, FN);
 	    
 	{error, {ErrorText, Rem2, Nl}} ->
-	    [FileName|More] = IncFile,
+	    [FileName|_More] = IncFile,
 	    Err2 = {FileName, L, detokenise(ErrorText)},
 	    Out2 = [lists:duplicate(Nl,$\n)|Out],
 	    expand(Rem2, Out2, SelfRef, Defs, IncFile, IncDir, check_all, [Err2|Err], War, L+Nl, FN);
 	    
-	{{line, ok}, {Removed, Rem2, Nl}, L2, FN2, LineText} ->
+	{{line, ok}, {_Removed, Rem2, Nl}, L2, FN2, LineText} ->
 	    Out2 = lists:duplicate(Nl,$\n)++LineText++Out,
-	    [X|IF] = IncFile,
+	    [_X|IF] = IncFile,
 	    IncFile2 = [FN2|IF],
 	    expand(Rem2, Out2, SelfRef, Defs, IncFile2, IncDir, check_all, Err, War, L2, FN2);
-	{{line, error}, {Removed, Rem2, Nl}, Err2} ->
+	{{line, error}, {_Removed, Rem2, Nl}, Err2} ->
 	    Out2 = [lists:duplicate(Nl,$\n)|Out],
 	    expand(Rem2, Out2, SelfRef, Defs, IncFile, IncDir, check_all, [Err2|Err], War, L+Nl, FN);
 
@@ -870,11 +845,11 @@ expand([{command,Command} | Rem], Out, SelfRef, Defs, IncFile, IncDir, check_all
 	    RemovedS = lists:reverse([?space|detokenise(Removed)]),
 	    Out2 = [$\n|RemovedS]++Text++Out,
 	    case Command of
-		[X|T] when ?is_upper(X) ->
+		[X|_T] when ?is_upper(X) ->
 		    expand(Rem2, Out2, SelfRef, Defs, IncFile, IncDir, check_all, Err, War, L+Nl, FN);
-		[X|T] when ?is_lower(X) ->
+		[X|_T] when ?is_lower(X) ->
 		    expand(Rem2, Out2, SelfRef, Defs, IncFile, IncDir, check_all, Err, War, L+Nl, FN);
-		[X|T] when ?is_underline(X) ->
+		[X|_T] when ?is_underline(X) ->
 		    expand(Rem2, Out2, SelfRef, Defs, IncFile, IncDir, check_all, Err, War, L+Nl, FN);
 		_ ->
 		    Err2 = {FN, L, "invalid preprocessing directive name"},
@@ -895,12 +870,12 @@ expand([{var, "__FILE__"}|Rem], Out, SelfRef, Defs, IncFile, IncDir, IfCou, Err,
     expand(Rem, [$",FN,$" | Out], SelfRef, Defs, IncFile, IncDir, IfCou, Err, War, L, FN);
 
 expand([{var, "__DATE__"}|Rem], Out, SelfRef, Defs, IncFile, IncDir, IfCou, Err, War, L, FN) ->
-    {{Y,M,D},{H,Mi,S}} = calendar:universal_time(),
+    {{Y,M,D},{_H,_Mi,_S}} = calendar:universal_time(),
     Date = io_lib:format("\"~s ~p ~p\"",[month(M),D,Y]),
     expand(Rem, [Date | Out], SelfRef, Defs, IncFile, IncDir, IfCou, Err, War, L, FN);
 
 expand([{var, "__TIME__"}|Rem], Out, SelfRef, Defs, IncFile, IncDir, IfCou, Err, War, L, FN) ->
-    {{Y,M,D},{H,Mi,S}} = calendar:universal_time(),
+    {{_Y,_M,_D},{H,Mi,S}} = calendar:universal_time(),
     HS = if H < 10 -> "0"++integer_to_list(H);
 	    true -> integer_to_list(H)
 	 end,
@@ -918,7 +893,7 @@ expand([{var, "__INCLUDE_LEVEL__"}|Rem], Out, SelfRef, Defs, IncFile, IncDir, If
     expand(Rem, [IL | Out], SelfRef, Defs, IncFile, IncDir, IfCou, Err, War, L, FN);
 
 expand([{var, "__BASE_FILE__"}|Rem], Out, SelfRef, Defs, IncFile, IncDir, IfCou, Err, War, L, FN) ->
-    [BF|T] = lists:reverse(IncFile),
+    [BF|_T] = lists:reverse(IncFile),
     expand(Rem, [$",BF,$" | Out], SelfRef, Defs, IncFile, IncDir, IfCou, Err, War, L, FN);
 
 expand([{var, Var} | Rem], Out, SelfRef, Defs, IncFile, IncDir, IfCou, Err, War, L, FN) ->
@@ -1129,14 +1104,14 @@ pp_command(Command, File, Defs, IncDir, Err, War, L, FN) ->
 		    {{ifdef, false}, Rem, Defs, Err2, War2, Nl};
 		{warning, Rem, Err2, War2, Nl} ->
 		    {{ifdef, false}, Rem, Defs, Err2, War2, Nl};
-		{warning, Rem, Name, No_of_para, Parameters, Macro, Err2, War2, Nl} ->
+		{warning, Rem, Name, No_of_para, _Parameters, _Macro, Err2, War2, Nl} ->
 		    case is_defined_before(Name, No_of_para, Defs) of
 			yes ->
 			    {{ifdef, false}, Rem, Err2, War2, Nl};
 			no ->
 			    {{ifdef, true}, Rem, Err2, War2, Nl}
 		    end;
-		{ok, Rem, Name, No_of_para, Parameters, Macro, Err2, War2, Nl} ->
+		{ok, Rem, Name, No_of_para, _Parameters, _Macro, Err2, War2, Nl} ->
 		    case is_defined_before(Name, No_of_para, Defs) of
 			yes ->
 			    {{ifdef, false}, Rem, Err2, War2, Nl};
@@ -1156,14 +1131,14 @@ pp_command(Command, File, Defs, IncDir, Err, War, L, FN) ->
 		    {{ifndef, false}, Rem, Defs, Err2, War2, Nl};
 		{warning, Rem, Err2, War2, Nl} ->
 		    {{ifndef, false}, Rem, Defs, Err2, War2, Nl};
-		{warning, Rem, Name, No_of_para, Parameters, Macro, Err2, War2, Nl} ->
+		{warning, Rem, Name, No_of_para, _Parameters, _Macro, Err2, War2, Nl} ->
 		    case is_defined_before(Name, No_of_para, Defs) of
 			yes ->
 			    {{ifndef, true}, Rem, Err2, War2, Nl};
 			no ->
 			    {{ifndef, false}, Rem, Err2, War2, Nl}
 		    end;
-		{ok, Rem, Name, No_of_para, Parameters, Macro, Err2, War2, Nl} ->
+		{ok, Rem, Name, No_of_para, _Parameters, _Macro, Err2, War2, Nl} ->
 		    case is_defined_before(Name, No_of_para, Defs) of
 			yes ->
 			    {{ifndef, true}, Rem, Err2, War2, Nl};
@@ -1192,12 +1167,12 @@ pp_command(Command, File, Defs, IncDir, Err, War, L, FN) ->
 	%%----------------------------------------
 	"if" ->
 	    case if_zero(File, Err, War, L, FN) of
-		{error, Rem2, Removed, Nl} ->
+		{error, Rem2, _Removed, Nl} ->
 		    Err2 = {FN, L, "only '#if 0' is implemented at present"},
 		    {{'if', error}, Rem2, [Err2 | Err], War, Nl};
-		{ok, Rem2, 0, Removed, Nl} -> 
+		{ok, Rem2, 0, _Removed, Nl} -> 
 		    {{'if', true}, Rem2, Err, War, Nl};
-		{ok, Rem2, Num, Removed, Nl} -> 
+		{ok, Rem2, _Num, _Removed, Nl} -> 
 		    Err2 = {FN, L, "only '#if 0' is implemented at present"},
 		    {{'if', error}, Rem2, [Err2 | Err], War, Nl}
 	    end;
@@ -1255,7 +1230,7 @@ pp_command(Command, File, Defs, IncDir, Err, War, L, FN) ->
 	%%----------------------------------------
 	%% not recognised preprocessor commands
 	%%----------------------------------------
-	Else ->
+	_Else ->
 	    {not_recognised, read_to_nl(File)}
     end.
 
@@ -1273,7 +1248,7 @@ pp_command(Command, File, Defs, IncDir, Err, War, L, FN) ->
 %%===============================================================
 %%===============================================================
 
-if_zero(File, Err, War, L, FN) ->
+if_zero(File, _Err, _War, _L, _FN) ->
     case if_zero(File) of
 	{ok, Remain, Num, Removed, Nl} ->
 	    case catch list_to_integer(Num) of
@@ -1294,7 +1269,7 @@ if_zero([{number,Num}, space]) ->
 if_zero([{number,Num} | Rem]) ->
     {Removed, Rem2, Nl} = read_to_nl(Rem),
     {ok, Rem2, Num, Removed, Nl};
-if_zero([{number,Num}, {nl,X} | Rem]) ->
+if_zero([{number,Num}, {nl,_X} | Rem]) ->
     {ok, Rem, Num, [], 1};
 if_zero(Rem) ->
     {Removed, Rem2, Nl} = read_to_nl(Rem),
@@ -1324,11 +1299,11 @@ define(File, Err, War, L, FN) ->
 	    {warning, Rem, Name, No_of_para, Parameters, Macro, Err, [{FN, L, Text}|War], Nl};
 	{error, invalid_name, Nl} ->
 	    Text = "invalid macro name",
-	    {Removed, Rem, Nl2} = read_to_nl(File),
+	    {_Removed, Rem, Nl2} = read_to_nl(File),
 	    {error, Rem, [{FN, L, Text}|Err], War, Nl+Nl2};
 	{error, invalid_name, Name, Nl} ->
 	    Text = lists:flatten(io_lib:format("invalid macro name `~s'",[Name])),
-	    {Removed, Rem, Nl2} = read_to_nl(File),
+	    {_Removed, Rem, Nl2} = read_to_nl(File),
 	    {error, Rem, [{FN, L, Text}|Err], War, Nl+Nl2};
 	{error, illegal_arg} ->
 	    {Removed, Rem, Nl} = read_to_nl(File),
@@ -1356,7 +1331,7 @@ define_name([space]) ->
 define_name([{var,Name},{char,$(}|Rem]) ->
     case read_para([{char,$(}|Rem]) of
 	{ok, Rem2, Para, NoOfPara} ->
-	    {Removed, Rem3, Nl} = read_to_nl(Rem2),
+	    {Removed, Rem3, _Nl} = read_to_nl(Rem2),
 	    {ok, Rem3, Name, NoOfPara, Para, Removed, 1};
 	Error ->
 	    Error
@@ -1367,15 +1342,15 @@ define_name([{var,Name}]) ->
 define_name([{var,Name}, space | Rem]) ->
     {Removed, Rem2, Nl} = read_to_nl(Rem),
     {ok, Rem2, Name, 0, [], Removed, Nl};
-define_name([{var,Name}, {nl,X} | Rem]) ->
+define_name([{var,Name}, {nl,_X} | Rem]) ->
     {ok, Rem, Name, 0, [], [], 1};
 define_name([{var,Name} | Rem]) ->
     {Removed, Rem2, Nl} = read_to_nl(Rem),
     {{warning,no_space}, Rem2, Name, 0, [], Removed, Nl};
 %% Invalid macro name
-define_name([{number, Name} | Rem]) ->
+define_name([{number, Name} | _Rem]) ->
     {error, invalid_name, Name, 0};
-define_name(Rem) ->
+define_name(_Rem) ->
     {error, invalid_name, 0}.
 
 
@@ -1404,11 +1379,11 @@ undef(File, Err, War, L, FN) ->
 	    {ok, Rem, Name, Err, [{FN, L, Text}|War], Nl};
 	{error, invalid_name} ->
 	    Text = "invalid macro name",
-	    {Removed, Rem, Nl} = read_to_nl(File),
+	    {_Removed, Rem, Nl} = read_to_nl(File),
 	    {error, Rem, [{FN, L, Text}|Err], War, Nl};
 	{error, invalid_name, Name} ->
 	    Text = lists:flatten(io_lib:format("invalid macro name `~s'",[Name])),
-	    {Removed, Rem, Nl} = read_to_nl(File),
+	    {_Removed, Rem, Nl} = read_to_nl(File),
 	    {error, Rem, [{FN, L, Text}|Err], War, Nl}
     end.
 
@@ -1420,17 +1395,17 @@ undef([]) ->
 %% Valid name
 undef([{var,Name}]) ->
     {ok, [], Name, 0};
-undef([{var,Name}, {nl,X} | Rem]) ->
+undef([{var,Name}, {nl,_X} | Rem]) ->
     {ok, Rem, Name, 1};
-undef([{var,Name}, space, {nl,X} | Rem]) ->
+undef([{var,Name}, space, {nl,_X} | Rem]) ->
     {ok, Rem, Name, 1};
 undef([{var,Name} | Rem]) ->
-    {Removed, Rem2, Nl} = read_to_nl(Rem),
+    {_Removed, Rem2, Nl} = read_to_nl(Rem),
     {warning, Rem2, Name, Nl};
 %% Invalid macro name
-undef([{number, Name} | Rem]) ->
+undef([{number, Name} | _Rem]) ->
     {error, invalid_name, Name};
-undef(Rem) ->
+undef(_Rem) ->
     {error, invalid_name}.
     
 
@@ -1463,13 +1438,11 @@ include(File, IncDir) ->
 		    NameNl = count_nl(FileName,0),
 		    Error = lists:flatten(io_lib:format("~s: ~s",[FileName,Text])),
 		    {error, Rem, Nl, Error,  NameNl};
-		{{error, Text}, _, sys_file} ->
-		    NameNl = count_nl(FileName,0),
-		    Error = lists:flatten(io_lib:format("~s: ~s",[FileName,Text])),
+		{{error, _Text}, _, sys_file} ->
 		    {error, Rem, Nl, "`#include' expects \"FILENAME\" or <FILENAME>"}
 	    end;
 
-	{error, {Removed, Rem, Nl}} ->
+	{error, {_Removed, Rem, Nl}} ->
 	    {error, Rem, Nl, "`#include' expects \"FILENAME\" or <FILENAME>"}
     end.
 
@@ -1477,7 +1450,7 @@ count_nl([],Nl) ->
     Nl;
 count_nl([$\n|T],Nl) ->
     count_nl(T,Nl+1);
-count_nl([H|T],Nl) ->
+count_nl([_H|T],Nl) ->
     count_nl(T,Nl).
 
 %%=================================================
@@ -1490,13 +1463,13 @@ include2([{string, FileName}]) ->
     {ok, FileName, [], 1, own_file};
 include2([{string, FileName}, space]) ->
     {ok, FileName, [], 1, own_file};
-include2([{string, FileName}, {nl, X} | Rem]) ->
+include2([{string, FileName}, {nl, _X} | Rem]) ->
     {ok, FileName, Rem, 1, own_file};
-include2([{string, FileName}, space, {nl, X} | Rem]) ->
+include2([{string, FileName}, space, {nl, _X} | Rem]) ->
     {ok, FileName, Rem, 1, own_file};
-include2([{string ,FileName}, No_nl | Rem]) ->
+include2([{string, _FileName}, _No_nl | Rem]) ->
     {error, read_to_nl(Rem)};
-include2([{string_part, File_part}, {nl, X} | Rem]) ->
+include2([{string_part, File_part}, {nl, _X} | Rem]) ->
      case include_read_string_file_name(File_part++[$\n], Rem, 1) of
 	 {ok, FileName, Rem2, Nl} ->
 	     {ok, FileName, Rem2, Nl, own_file};
@@ -1507,13 +1480,13 @@ include2([{sys_head, FileName}]) ->
     {ok, FileName, [], 1, sys_file};
 include2([{sys_head, FileName}, space]) ->
     {ok, FileName, [], 1, sys_file};
-include2([{sys_head, FileName}, {nl, X}  | Rem]) ->
+include2([{sys_head, FileName}, {nl, _X}  | Rem]) ->
     {ok, FileName, Rem, 1, sys_file};
-include2([{sys_head, FileName}, space, {nl, X}  | Rem]) ->
+include2([{sys_head, FileName}, space, {nl, _X}  | Rem]) ->
     {ok, FileName, Rem, 1, sys_file};
-include2([{sys_head, FileName}, No_nl | Rem]) ->
+include2([{sys_head, _FileName}, _No_nl | Rem]) ->
     {error, read_to_nl(Rem)};
-include2([{sys_head_part ,File_part}, {nl, X} | Rem]) ->
+include2([{sys_head_part ,File_part}, {nl, _X} | Rem]) ->
      case include_read_sys_file_name(File_part++[$\n], Rem, 1) of
 	 {ok, FileName, Rem2, Nl} ->
 	     {ok, FileName, Rem2, Nl, sys_file};
@@ -1528,21 +1501,21 @@ include2(Rem) ->
 %%-------------------------------------------------  
 %% File name framed by " "
 %%-------------------------------------------------  
-include_read_string_file_name(File, [{string, File_part}, {nl,X} | Rem], Nl) ->
+include_read_string_file_name(File, [{string, File_part}, {nl,_X} | Rem], Nl) ->
     {ok, File++File_part, Rem, Nl+1};
-include_read_string_file_name(File, [{string_part, File_part}, {nl,X} | Rem], Nl) ->
+include_read_string_file_name(File, [{string_part, File_part}, {nl,_X} | Rem], Nl) ->
     include_read_string_file_name(File++File_part++[$\n], Rem, Nl+1);
-include_read_string_file_name(File, X, Nl) ->
+include_read_string_file_name(_File, _X, _Nl) ->
     error.
 
 %%-------------------------------------------------  
 %% File name framed by < >
 %%-------------------------------------------------  
-include_read_sys_file_name(File, [{sys_head, File_part}, {nl,X} | Rem], Nl) ->
+include_read_sys_file_name(File, [{sys_head, File_part}, {nl,_X} | Rem], Nl) ->
     {ok, File++File_part, Rem, Nl+1};
-include_read_sys_file_name(File, [{sys_head_part, File_part}, {nl,X} | Rem], Nl) ->
+include_read_sys_file_name(File, [{sys_head_part, File_part}, {nl,_X} | Rem], Nl) ->
     include_read_sys_file_name(File++File_part++[$\n], Rem, Nl+1);
-include_read_sys_file_name(File, X, Nl) ->
+include_read_sys_file_name(_File, _X, _Nl) ->
     error.
 
 
@@ -1567,7 +1540,7 @@ line(File, L, FN) ->
 
 
 
-line([], L, FN, Line, File) ->
+line([], L, FN, _Line, _File) ->
     {{line, error}, {[],[],0}, {FN,L,"invalid format `#line' directive"}};
 
 line([space|Rem], L, FN, Line, File) ->
@@ -1583,17 +1556,17 @@ line([{number,Number}|Rem], L, FN, not_defined, File) ->
 	Int ->
 	    line(Rem, L, FN, Int, File)
     end;
-line(Rem, L, FN, not_defined, File) ->
+line(Rem, L, FN, not_defined, _File) ->
     {{line, error}, read_to_nl(Rem), {FN,L,"invalid format `#line' directive"}};
 
 %%------------------------------
 %% File name or newline expected
 %%------------------------------
-line([{nl, NL}|Rem], L, FN, Line, not_defined) ->
+line([{nl, _NL}|Rem], _L, FN, Line, not_defined) ->
     {{line, ok}, {[],Rem,1}, Line, FN, io_lib:format("~n~p ~p #",[FN, Line-1])};
-line([{string,NewFN}|Rem], L, FN, Line, not_defined) ->
+line([{string,NewFN}|Rem], _L, _FN, Line, not_defined) ->
     {{line, ok}, read_to_nl(Rem), Line, NewFN, io_lib:format("~n~p ~p #",[NewFN, Line-1])};
-line(Rem, L, FN, Line, File) ->
+line(Rem, L, FN, _Line, _File) ->
     {{line, error}, read_to_nl(Rem), {FN,L,"invalid format `#line' directive"}}.
     
 
@@ -1632,7 +1605,7 @@ source_line(Str, Rem, SelfRef, Defs, Err, War, L, FN) ->
     %%-------------------------------------------------  
     case lists:keysearch(Str, 1, Defs) of
 	%% a macro without parameters
-	{value, {Str, 0, MacroPara, Macro}} ->
+	{value, {Str, 0, _MacroPara, Macro}} ->
 	    case lists:member(Str, SelfRef) of
 		true ->
 		    {[Str], Err, War, Rem, SelfRef};
@@ -1642,7 +1615,7 @@ source_line(Str, Rem, SelfRef, Defs, Err, War, L, FN) ->
 	    end;
 
 	%% a macro with parameters
-	{value, {Str, N, MacroPara, Macro}} when N == No_of_para ->
+	{value, {Str, N, _MacroPara, Macro}} when N == No_of_para ->
 	    case lists:member(Str, SelfRef) of
 		true ->
 		    {[Str], Err, War, Rem, SelfRef};
@@ -1653,15 +1626,15 @@ source_line(Str, Rem, SelfRef, Defs, Err, War, L, FN) ->
 	    end;
 
 	%% a variable, because it doesn't have any parameters
-	{value, {Str, N, MacroPara, Macro}} when No_of_para == 0 ->
+	{value, {Str, _N, _MacroPara, _Macro}} when No_of_para == 0 ->
 	    {Str, Err, War, Rem, SelfRef};
 
 	%% illegal no of parameters
-	{value, {Str, N, MacroPara, Macro}} when No_of_para < N ->
+	{value, {Str, N, _MacroPara, _Macro}} when No_of_para < N ->
 	    Text = io_lib:format(" macro `~s' used with just ~p arg",[Str,No_of_para]),
 	    Err2 = {FN, L, lists:flatten(Text)},
 	    {Str, [Err2|Err], War, Rem, SelfRef};
-	{value, {Str, N, MacroPara, Macro}} ->
+	{value, {Str, _N, _MacroPara, _Macro}} ->
 	    Text = io_lib:format(" macro `~s' used with too many (~p) args",[Str,No_of_para]),
 	    Err2 = {FN, L, lists:flatten(Text)},
 	    {Str, [Err2|Err], War, Rem, SelfRef};
@@ -1685,7 +1658,7 @@ sl_macro_expand(Macro, Para, Defs) ->
 %%...................
 %% End
 %%...................
-sl_macro_expand([], Para, Defs, Res) ->
+sl_macro_expand([], _Para, _Defs, Res) ->
     lists:reverse(Res);
 
 %%...................
@@ -1867,7 +1840,7 @@ sl_para_2nd(L) ->
 %% Check if the expansion is a valid macro,
 %% do not reexpand if concatination
 %%-------------------------------------------------  
-sl_macro_reexpand([], Defs, Result) ->
+sl_macro_reexpand([], _Defs, Result) ->
     Result;
 sl_macro_reexpand([{var,Var}|Rem], Defs, Result) ->
     case lists:keysearch(Var, 1, Defs) of
@@ -1893,7 +1866,7 @@ sl_macro_reexpand([H|Rem], Defs, Result) ->
 sl_mark_expanded(QQ, Str) ->
     sl_mark_expanded(QQ, Str, []).
 
-sl_mark_expanded([], Str, Res) ->
+sl_mark_expanded([], _Str, Res) ->
     lists:reverse(Res);
 sl_mark_expanded([H|T], Str, Res) ->
     case H of
@@ -1925,7 +1898,7 @@ sl_mark_expanded([H|T], Str, Res) ->
 %%===============================================================
 include_dir(Flags) when list(Flags)->
     include_dir(Flags,[]);
-include_dir(Flags) ->
+include_dir(_Flags) ->
     [].
     
 include_dir(Flags,IncDir) ->
@@ -1960,7 +1933,7 @@ read_inc_file(FileName, IncDir) ->
 	    read_inc_file2(FileName, IncDir) 
     end.
 
-read_inc_file2(FileName, []) ->
+read_inc_file2(_FileName, []) ->
     {error, "No such file or directory"};
 read_inc_file2(FileName, [D|Rem]) ->
     Dir = case lists:last(D) of
@@ -1988,12 +1961,12 @@ read_para([{char,$(} | Rem]) ->
     read_para(Rem, 1, [], [], 1);
 read_para([space,{char,$(} | Rem]) ->
     read_para(Rem, 1, [], [], 1);
-read_para(Rem) ->
+read_para(_Rem) ->
     {ok, [], [], 0}.
 
 
 %% Abrupt end of the list
-read_para([], NoOfParen, Current, Para, NoOfPara) ->
+read_para([], _NoOfParen, _Current, _Para, _NoOfPara) ->
     {error, illegal_arg};
 %% All parameters checked
 read_para([{char,$)}|Rem], 1, [], Para, NoOfPara) ->
@@ -2024,7 +1997,7 @@ read_para([X|Rem], NoOfParen, Current, Para, NoOfPara) ->
 is_define_ok(Name, No_of_para, Parameters, Macro, Defs) ->
     
     case lists:keysearch(Name, 1, Defs) of
-	{value, {Name, No_of_para, MacroPara, Macro}} ->
+	{value, {Name, No_of_para, _MacroPara, Macro}} ->
 	    {yes, Defs};
 	{value, _} ->
 	    Defs2 = lists:keydelete(Name, 1, Defs),
@@ -2047,7 +2020,7 @@ is_define_ok(Name, No_of_para, Parameters, Macro, Defs) ->
 	    end
     end.
 
-is_define_ok_check_para(Para, [], Result) ->
+is_define_ok_check_para(_Para, [], Result) ->
     lists:reverse(Result);
 
 is_define_ok_check_para(Para, [H|T], Result) ->
@@ -2058,11 +2031,11 @@ is_define_ok_check_para(Para, [H|T], Result) ->
 	    is_define_ok_check_para(Para, T, [{para,N}|Result])
     end.
 
-define_arg_para_number(N, [], Current) ->
+define_arg_para_number(_N, [], _Current) ->
     no_para;
-define_arg_para_number(N, [H|Para], Current) when H == [Current] ->
+define_arg_para_number(N, [H|_Para], Current) when H == [Current] ->
     N;
-define_arg_para_number(N, [H|Para], Current) ->
+define_arg_para_number(N, [_H|Para], Current) ->
     define_arg_para_number(N+1, Para, Current).
     
 
@@ -2070,21 +2043,21 @@ is_stringify_ok([]) ->
     yes;
 is_stringify_ok([{char,$#},{char,$#}|T]) ->
     is_stringify_ok(T);
-is_stringify_ok([{char,$#},space,{para,X}|T]) ->
+is_stringify_ok([{char,$#},space,{para,_X}|T]) ->
     is_stringify_ok(T);
-is_stringify_ok([{char,$#},{para,X}|T]) ->
+is_stringify_ok([{char,$#},{para,_X}|T]) ->
     is_stringify_ok(T);
-is_stringify_ok([{char,$#},space,{var,X}|T]) ->
+is_stringify_ok([{char,$#},space,{var,_X}|T]) ->
     is_stringify_ok(T);
-is_stringify_ok([{char,$#},{var,X}|T]) ->
+is_stringify_ok([{char,$#},{var,_X}|T]) ->
     is_stringify_ok(T);
-is_stringify_ok([{char,$#},space,{nl,X}|T]) ->
+is_stringify_ok([{char,$#},space,{nl,_X}|_T]) ->
     no;
-is_stringify_ok([{char,$#},{nl,X}|T]) ->
+is_stringify_ok([{char,$#},{nl,_X}|_T]) ->
     no;
-is_stringify_ok([{char,$#}|T]) ->
+is_stringify_ok([{char,$#}|_T]) ->
     no;
-is_stringify_ok([H|T]) ->
+is_stringify_ok([_H|T]) ->
     is_stringify_ok(T).
 
 %%===================================================================================
@@ -2113,11 +2086,11 @@ read_to_nl(Rem) ->
 
 read_to_nl([], Result, Nl) ->
     {lists:reverse(Result), [], Nl};
-read_to_nl([{nl, N}|Rem], [{string_part,String} | Result], Nl) ->
+read_to_nl([{nl, _N}|Rem], [{string_part,String} | Result], Nl) ->
     read_to_nl(Rem, [nl, {string_part,String}|Result], Nl+1);
-read_to_nl([{nl, N}|Rem], [{sys_head_part,String} | Result], Nl) ->
+read_to_nl([{nl, _N}|Rem], [{sys_head_part,String} | Result], Nl) ->
     read_to_nl(Rem, [nl, {sys_head_part,String}|Result], Nl+1);
-read_to_nl([{nl, N}|Rem], Result, Nl) ->
+read_to_nl([{nl, _N}|Rem], Result, Nl) ->
     {lists:reverse(Result), Rem, Nl};
 read_to_nl([space|Rem], Result, Nl) ->
     read_to_nl(Rem, [space|Result], Nl);

@@ -19,21 +19,25 @@
 -export([send/1, send_status/3, send_status/5]).
 
 %%code is the key for the statuscode ex: 200 404 ...
--define(HTTP11HEADERFIELDS,[content_length, accept_ranges, cache_control, date,
-			    pragma, trailer, transfer_encoding, etag, location,
-			    retry_after, server, allow, 
-			    content_encoding, content_language, 
-			    content_location, content_MD5, content_range,
-			    content_type, expires, last_modified]).
+-define(HTTP_11_HEADER_FIELDS,
+	[content_length, accept_ranges, cache_control, date,
+	 pragma, trailer, transfer_encoding, etag, location,
+	 retry_after, server, allow, 
+	 content_encoding, content_language, 
+	 content_location, content_MD5, content_range,
+	 content_type, expires, last_modified]).
 
--define(HTTP10HEADERFIELDS,[content_length, date, pragma, transfer_encoding,
-			    location, server, allow, content_encoding, 
-			    content_type, last_modified]).
+-define(HTTP_10_HEADER_FIELDS,
+	[content_length, date, 
+	 pragma, location, 
+	 server, allow, 
+	 content_encoding, 
+	 content_type, last_modified]).
 
 -define(PROCEED_RESPONSE(StatusCode, Info), 
 	{proceed, 
 	 [{response,{already_sent, StatusCode, 
-		     httpd_util:key1search(Info#mod.data,content_lenght)}}]}).
+		     httpd_util:key1search(Info#mod.data,content_length)}}]}).
 
 
 -include("httpd.hrl").
@@ -111,22 +115,17 @@ traverse_modules(Info,[Module|Rest]) ->
 
 send_status(#mod{socket_type = SocketType, 
 		 socket      = Socket, 
-		 connection  = Conn} = Info, 100, _PhraseArgs) ->
-    ?DEBUG("send_status -> StatusCode: ~p~n",[100]),
+		 connection  = Conn} = _Info, 100, _PhraseArgs) ->
     Header = httpd_util:header(100, Conn),
     httpd_socket:deliver(SocketType, Socket,
 			 [Header, "Content-Length:0\r\n\r\n"]);
 
 send_status(#mod{socket_type = SocketType, 
 		 socket      = Socket, 
-		 config_db   = ConfigDB} = Info, StatusCode, PhraseArgs) ->
+		 config_db   = ConfigDB} = _Info, StatusCode, PhraseArgs) ->
     send_status(SocketType, Socket, StatusCode, PhraseArgs, ConfigDB).
 
 send_status(SocketType, Socket, StatusCode, PhraseArgs, ConfigDB) ->
-    ?DEBUG("send_status -> ~n"
-	"    StatusCode: ~p~n"
-	"    PhraseArgs: ~p",
-	[StatusCode, PhraseArgs]),
     Header       = httpd_util:header(StatusCode, "text/html", false),
     ReasonPhrase = httpd_util:reason_phrase(StatusCode),
     Message      = httpd_util:message(StatusCode, PhraseArgs, ConfigDB),
@@ -217,13 +216,14 @@ send_response(Info, Header, Body) ->
     end.
 
 
-send_header(#mod{socket_type  = Type, socket     = Sock, 
-		 http_version = Ver,  connection = Conn} = Info, 
+send_header(#mod{config_db = Db,
+		 socket_type  = Type, socket     = Sock, 
+		 http_version = Ver,  connection = Conn} = _Info, 
 	    StatusCode, Head0) ->
-    ?vtrace("send_haeder -> entry with"
+    ?vtrace("send_header -> entry with"
 	    "~n   Ver:  ~p"
 	    "~n   Conn: ~p", [Ver, Conn]),
-    Head1 = create_header(Ver, Head0),
+    Head1 = create_header(Db, Ver, Head0),
     StatusLine = [Ver, " ",
 		  io_lib:write(StatusCode), " ",
 		  httpd_util:reason_phrase(StatusCode), "\r\n"],
@@ -238,7 +238,7 @@ send_body(_, _, nobody) ->
     ok;
 
 send_body(#mod{socket_type = Type, socket = Sock}, 
-	  StatusCode, Body) when list(Body) ->
+	  _StatusCode, Body) when list(Body) ->
     ?vtrace("deliver body of size ~p", [length(Body)]),
     httpd_socket:deliver(Type, Sock, Body);
 
@@ -284,91 +284,104 @@ get_connection(_,_) ->
     "".
 
 
-create_header("HTTP/1.1", Data) ->
-    create_header1(?HTTP11HEADERFIELDS, Data);
-create_header(_, Data) ->
-    create_header1(?HTTP10HEADERFIELDS, Data).
+disable_chunked_send(Db) ->
+    httpd_util:lookup(Db, disable_chunked_transfer_encoding_send, false).
 
-create_header1(Fields, Data) ->
-    ?DEBUG("create_header() -> "
-	   "~n   Fields :~p~n   Data: ~p ~n", [Fields, Data]),
-    mapfilter(fun(Field)->
-		      transform({Field, httpd_util:key1search(Data, Field)})
-	      end, Fields, undefined).
+create_header(Db, "HTTP/1.1", Data) ->
+    DisableChunkedSend = disable_chunked_send(Db),
+    Disable = [{transfer_encoding, DisableChunkedSend}],
+    create_header1(?HTTP_11_HEADER_FIELDS, Data, Disable);
+create_header(_, _, Data) ->
+    create_header1(?HTTP_10_HEADER_FIELDS, Data, []).
+
+create_header1(Fields, Data, Disable) ->
+    Fun = 
+	fun(Field) ->
+		transform(Field, 
+			  httpd_util:key1search(Data, Field),
+			  Disable)
+	end,
+    mapfilter(Fun, Fields, undefined).
 
 
 %% Do a map and removes the values that evaluates to RemoveVal
-mapfilter(Fun,List,RemoveVal)->	
+mapfilter(Fun, List, RemoveVal) ->	
     mapfilter(Fun,List,[],RemoveVal).
 
-mapfilter(Fun,[],[RemoveVal|Acc],RemoveVal)->
+mapfilter(_Fun,[],[RemoveVal|Acc],RemoveVal) ->
     Acc;
-mapfilter(Fun,[],Acc,_RemoveVal)->
+mapfilter(_Fun,[],Acc,_RemoveVal) ->
     Acc;
 			     
-mapfilter(Fun,[Elem|Rest],[RemoveVal|Acc],RemoveVal)->
+mapfilter(Fun, [Elem|Rest], [RemoveVal| Acc], RemoveVal) ->
     mapfilter(Fun,Rest,[Fun(Elem)|Acc],RemoveVal);
 mapfilter(Fun,[Elem|Rest],Acc,RemoveVal)->
     mapfilter(Fun,Rest,[Fun(Elem)|Acc],RemoveVal).
  
 
-transform({content_type,undefined})->
+transform(content_type, undefined, _Disable) ->
     ["Content-Type:text/plain\r\n"];
 
-transform({date,undefined})->
+transform(date, undefined, _Disable) ->
     ["Date:",httpd_util:rfc1123_date(),"\r\n"];
 
-transform({date,RFCDate})->
+transform(date,RFCDate, _Disable) ->
     ["Date:",RFCDate,"\r\n"];
 
 
-transform({_Key,undefined})->
-		 undefined;
-transform({accept_ranges,Value})->
+transform(_Key, undefined, _Disable) ->
+    undefined;
+transform(accept_ranges, Value, _Disable) ->
     ["Accept-Ranges:",Value,"\r\n"];
-transform({cache_control,Value})->
+transform(cache_control, Value, _Disable) ->
     ["Cache-Control:",Value,"\r\n"];
-transform({pragma,Value})->
+transform(pragma, Value, _Disable) ->
     ["Pragma:",Value,"\r\n"];
-transform({trailer,Value})->
+transform(trailer, Value, _Disable) ->
     ["Trailer:",Value,"\r\n"];
-transform({transfer_encoding,Value})->
-    ["Pragma:",Value,"\r\n"];
-transform({etag,Value})->
+transform(transfer_encoding, Value, Disable) ->
+    case httpd_util:key1search(Disable,
+			       disable_chunked_transfer_encoding_send) of
+	true ->
+	    "";
+	_ ->
+	    ["Transfer-encoding:",Value,"\r\n"]
+    end;
+transform(etag, Value, _Disable) ->
     ["ETag:",Value,"\r\n"];
-transform({location,Value})->
+transform(location, Value, _Disable) ->
     ["Retry-After:",Value,"\r\n"];
-transform({server,Value})->
+transform(server, Value, _Disable) ->
     ["Server:",Value,"\r\n"];
-transform({allow,Value})->
+transform(allow, Value, _Disable) ->
     ["Allow:",Value,"\r\n"];
-transform({content_encoding,Value})->
+transform(content_encoding, Value, _Disable) ->
     ["Content-Encoding:",Value,"\r\n"];
-transform({content_language,Value})->
+transform(content_language, Value, _Disable) ->
     ["Content-Language:",Value,"\r\n"];
-transform({retry_after,Value})->
+transform(retry_after, Value, _Disable) ->
     ["Retry-After:",Value,"\r\n"];
-transform({server,Value})->
+transform(server, Value, _Disable) ->
     ["Server:",Value,"\r\n"];
-transform({allow,Value})->
+transform(allow, Value, _Disable) ->
     ["Allow:",Value,"\r\n"];
-transform({content_encoding,Value})->
+transform(content_encoding, Value, _Disable) ->
     ["Content-Encoding:",Value,"\r\n"];
-transform({content_language,Value})->
+transform(content_language, Value, _Disable) ->
     ["Content-Language:",Value,"\r\n"];
-transform({content_location,Value})->
+transform(content_location, Value, _Disable) ->
     ["Content-Location:",Value,"\r\n"];
-transform({content_length,Value})->
+transform(content_length, Value, _Disable) ->
     ["Content-Length:",Value,"\r\n"];
-transform({content_MD5,Value})->
+transform(content_MD5, Value, _Disable) ->
     ["Content-MD5:",Value,"\r\n"];
-transform({content_range,Value})->
+transform(content_range, Value, _Disable) ->
     ["Content-Range:",Value,"\r\n"];
-transform({content_type,Value})->
+transform(content_type, Value, _Disable) ->
     ["Content-Type:",Value,"\r\n"];
-transform({expires,Value})->
+transform(expires, Value, _Disable) ->
     ["Expires:",Value,"\r\n"];
-transform({last_modified,Value})->
+transform(last_modified, Value, _Disable) ->
     ["Last-Modified:",Value,"\r\n"].
 
 
@@ -394,7 +407,7 @@ send_response_old(#mod{socket_type = Type,
 		"Content-Length:" ++ content_length(Body), 
 	    httpd_socket:deliver(Type, Sock, [Header,Head,"\r\n"]);
 
-	Error ->
+	_Error ->
 	    send_status(Info, 500, "Internal Server Error")
     end;
 
@@ -418,7 +431,7 @@ send_response_old(#mod{socket_type = Type,
 		"Content-Length:" ++ content_length(Body) ++ "\r\n", 
 	    httpd_socket:deliver(Type, Sock, [Header, Response]);
 
-	{error, Reason} ->
+	{error, _Reason} ->
 	    send_status(Info, 500, "Internal Server Error")
     end.
 

@@ -18,11 +18,31 @@
 #include "eidef.h"
 #include "eiext.h"
 #include "putget.h"
+#include "ei_x_encode.h"
 
 #define abs(p) (((p)<0) ? -(p) : p)
 
 /* long -> erl_integer */
 /* note that this is the only place where data is stored Little Endian */
+
+/*
+ * For some 64 bit operations on some operating systems code
+ * compiled with GNU cc depends on "libgcc" for some 64 bit
+ * operations missing in hardware (or because of gcc bugs).
+ * If user code was linked together with the ei lib
+ * using other linkers than GNU ld this may cause problems.
+ * We moved ei_x_encode_longlong() here from "ei_x_encode.c" 
+ * to limit this problem to users that actually use the ei
+ * longlong operations, not all ei_x users.
+ */
+int ei_x_encode_longlong(ei_x_buff* x, EI_LONGLONG n)
+{
+    int i = x->index;
+    ei_encode_longlong(NULL, &i, n);
+    if (!x_fix_buff(x, i))
+	return -1;
+    return ei_encode_longlong(x->buff, &x->index, n);
+}
 
 #ifdef EI_64BIT
 int ei_encode_long(char *buf, int *index, long p)
@@ -51,8 +71,8 @@ int ei_encode_longlong(char *buf, int *index, EI_LONGLONG p)
 	    put32be(s,p);
 	}
     } else {
-	/* Bignum, we don't know size, i.e. limb count needed */
-	unsigned up = abs(p); /* FIXME name uabs(x) not to confuse with abs */
+	/* We know 28-64 bits needed, i.e four to eight bytes  */
+	EI_ULONGLONG up = abs(p); /* FIXME name uabs(x) not to confuse with abs */
 	if (buf) {
 	    char *arityp;
 	    int arity = 0;
@@ -60,7 +80,6 @@ int ei_encode_longlong(char *buf, int *index, EI_LONGLONG p)
 	    put8(s,ERL_SMALL_BIG_EXT);
 	    arityp = s++;	/* fill in later */
 	    put8(s, p < 0);            /* save sign separately */
-	    put32le(s, abs(p));        /* OBS: Little Endian, and p now positive */
 	    while (up) {
 		*s++ = up & 0xff; /* take lowest byte */
 		up >>= 8;	  /* shift unsigned */

@@ -42,9 +42,10 @@ function({function,Name,Arity,CLabel,Asm0}=Func, Rs) ->
 %% opt([Instruction], Accumulator, TypeDb) -> {[Instruction'],TypeDb'}
 %%  Keep track of type information; try to simplify.
 
-opt([{block,Body1}|Is], Rs, [{block,Body0}|Acc], Ts) ->
-    Body = beam_block:merge_blocks(Body0, Body1),
-    opt([{block,Body}|Is], Rs, Acc, Ts);
+opt([{block,Body1}|Is], Rs, [{block,Body0}|Acc], Ts0) ->
+    {Body2,Ts} = simplify(Body1, Ts0, Rs, []),
+    Body = beam_block:merge_blocks(Body0, Body2),
+    opt(Is, Rs, [{block,Body}|Acc], Ts);
 opt([{block,Body0}|Is], Rs, Acc, Ts0) ->
     {Body,Ts} = simplify(Body0, Ts0, Rs, []),
     opt(Is, Rs, [{block,Body}|Acc], Ts);

@@ -1158,8 +1158,6 @@ dnl 		Should one use EXEEXT or ac_exeext?
 			AC_MSG_RESULT([$dir])
 			ssl_found=yes
 			],[
-			SSL_APP=
-			CRYPTO_APP=
 			ssl_found=no
          		])
          		CPPFLAGS=$old_CPPFLAGS

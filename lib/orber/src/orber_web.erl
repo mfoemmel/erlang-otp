@@ -40,8 +40,10 @@
 %%----------------------------------------------------------------------
 
 -include("ifr_objects.hrl").
--include("../COSS/CosNaming/CosNaming.hrl").
--include("../COSS/CosNaming/CosNaming_NamingContext.hrl").
+-include_lib("orber/COSS/CosNaming/CosNaming.hrl").
+-include_lib("orber/COSS/CosNaming/CosNaming_NamingContext.hrl").
+-include_lib("orber/include/corba.hrl").
+-include_lib("orber/src/orber_iiop.hrl").
 
 -define(DEBUG_LEVEL, 5).
 
@@ -81,7 +83,7 @@
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-create(Env, [{"node",NodeStr}]) ->
+create(_Env, [{"node",NodeStr}]) ->
     Node  = list_to_atom(NodeStr),
     is_running(Node, NodeStr),
     ["<BODY BGCOLOR=\"#FFFFFF\">
@@ -97,8 +99,8 @@ create(Env, [{"node",NodeStr}]) ->
       <TD><B>&nbsp;&nbsp;&nbsp;<INPUT type=\"radio\" name=\"bind\" value=\"bind\" CHECKED=\"true\">Bind</B>
       <B>&nbsp;&nbsp;&nbsp;<INPUT type=\"radio\" name=\"bind\" value=\"rebind\">Rebind</B></TD></TR>
       <TR><TD ALIGN=\"center\" COLSPAN=2><INPUT TYPE=\"SUBMIT\" VALUE=\"Create it\"></FORM></TD></TR></TABLE>"];
-create(Env, [{"node",NodeStr}, {"module", ModStr}, {"arguments",ArgsStr},
-	     {"options",OptionsStr}, {"namestr", Name}, {"bind", How}]) ->
+create(_Env, [{"node",NodeStr}, {"module", ModStr}, {"arguments",ArgsStr},
+	      {"options",OptionsStr}, {"namestr", Name}, {"bind", How}]) ->
     Node  = list_to_atom(NodeStr),
     Mod   = list_to_atom(ModStr),
     Args = parse_data(ArgsStr),
@@ -158,7 +160,7 @@ bind(Node, Obj, NameStr, How) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-delete_ctx(Env, [{"node",NodeStr}, {"context", Ref}]) ->
+delete_ctx(_Env, [{"node",NodeStr}, {"context", Ref}]) ->
     Node = list_to_atom(NodeStr),
     {Ctx, NS} = remote_resolve(Node, Ref),
     Name = check(rpc:call(Node, 'CosNaming_NamingContextExt', to_name, [NS, Ref])),
@@ -175,14 +177,14 @@ delete_ctx(Env, [{"node",NodeStr}, {"context", Ref}]) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-add_ctx(Env, [{"node",NodeStr}, {"context", "root"}, {"id", ""}]) ->
+add_ctx(_Env, [{"node",_NodeStr}, {"context", "root"}, {"id", ""}]) ->
     ["<BODY BGCOLOR=\"#FFFFFF\"> 
       <TABLE BORDER=0><TR BGCOLOR=\"#FFFFFF\"><TD ALIGN=\"center\" COLSPAN=1> 
       <FONT SIZE=4>You must supply a NameString such as:<BR>
                    See also 'Interoperable Naming Service' in the User's Guide.</FONT>\n
       </TD></TR></TABLE>
       <FORM Name=goback><INPUT TYPE=\"button\" onClick=javascript:history.go(-1) VALUE=\"Go Back\">\n</FORM>"];
-add_ctx(Env, [{"node",NodeStr}, {"context", "root"}, {"id", Id}]) ->
+add_ctx(_Env, [{"node",NodeStr}, {"context", "root"}, {"id", Id}]) ->
     Node = list_to_atom(NodeStr),
     NS = check(rpc:call(Node, corba, resolve_initial_references, ["NameService"])),
     Name = check(rpc:call(Node, 'CosNaming_NamingContextExt', to_name, [NS, Id])),
@@ -192,7 +194,7 @@ add_ctx(Env, [{"node",NodeStr}, {"context", "root"}, {"id", Id}]) ->
       <FONT SIZE=6>Successfully bound the new Context: ", Id, "</FONT>\n
       </TD></TR></TABLE>
       <FORM Name=goback><INPUT TYPE=\"button\" onClick=javascript:history.go(-1) VALUE=\"Go Back\">\n</FORM>"];
-add_ctx(Env, [{"node",NodeStr}, {"context", Ref}, {"id", Id}]) ->
+add_ctx(_Env, [{"node",NodeStr}, {"context", Ref}, {"id", Id}]) ->
     NameStr = Ref ++ "/" ++ Id,
     Node = list_to_atom(NodeStr),
     NS = check(rpc:call(Node, corba, resolve_initial_references, ["NameService"])),
@@ -209,7 +211,7 @@ add_ctx(Env, [{"node",NodeStr}, {"context", Ref}, {"id", Id}]) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-delete_obj(Env, [{"node",NodeStr}, {"context", Ref}, {"action", "unbind"}]) ->
+delete_obj(_Env, [{"node",NodeStr}, {"context", Ref}, {"action", "unbind"}]) ->
     Node = list_to_atom(NodeStr),
     NS = check(rpc:call(Node, corba, resolve_initial_references, ["NameService"])),
     Name = check(rpc:call(Node, 'CosNaming_NamingContextExt', to_name, [NS, Ref])),
@@ -219,7 +221,7 @@ delete_obj(Env, [{"node",NodeStr}, {"context", Ref}, {"action", "unbind"}]) ->
       <FONT SIZE=6>Successfully unbound the Object: ", Ref, "</FONT>\n
       </TD></TR></TABLE>
       <FORM Name=goback><INPUT TYPE=\"button\" onClick=javascript:history.go(-2) VALUE=\"Go Back\">\n</FORM>"];
-delete_obj(Env, [{"node",NodeStr}, {"context", Ref}, {"action", "both"}]) ->
+delete_obj(_Env, [{"node",NodeStr}, {"context", Ref}, {"action", "both"}]) ->
     Node = list_to_atom(NodeStr),
     {Obj, NS} = remote_resolve(Node, Ref),
     check(rpc:call(Node, corba, dispose, [Obj])),
@@ -238,7 +240,7 @@ delete_obj(Env, [{"node",NodeStr}, {"context", Ref}, {"action", "both"}]) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-nameservice(Env, [{"node",NodeStr}, {"context", "root"}]) ->
+nameservice(_Env, [{"node",NodeStr}, {"context", "root"}]) ->
     Node = list_to_atom(NodeStr),
     is_running(Node, NodeStr),
     Object = check(rpc:call(Node, corba, resolve_initial_references, ["NameService"])),
@@ -261,9 +263,9 @@ nameservice(Env, [{"node",NodeStr}, {"context", "root"}]) ->
 Unable to create context list: ~p", [?LINE, NodeStr, Why], ?DEBUG_LEVEL),
 	    throw({error, "<BODY BGCOLOR=\"#FFFFFF\">Unable to create a look up the Root Context data"})  
     end;
-nameservice(Env, [{"node",NodeStr}, {"context", Ref}]) ->
+nameservice(_Env, [{"node",NodeStr}, {"context", Ref}]) ->
     Node = list_to_atom(NodeStr),
-    {Object, NS} = remote_resolve(Node, Ref),
+    {Object, _NS} = remote_resolve(Node, Ref),
     Prefix = "<TR><TD><A HREF=\"./nameservice?node=" ++ NodeStr ++ "&context="++Ref++"/",
     case catch create_context_list(Node, NodeStr, Prefix, Object, Ref) of
 	{ok, Data} ->
@@ -285,7 +287,7 @@ Unable to create context list: ~p", [?LINE, NodeStr, Ref, Why], ?DEBUG_LEVEL),
 	    throw({error, ["<BODY BGCOLOR=\"#FFFFFF\">Unable to look up the Context: ", Ref, 
 			   "<BR><BR>If You just deleted it, use the 'Go Back' button next time."]})
     end;
-nameservice(Env, [{"node",NodeStr}, {"context", Ref}, {"object", Obj}]) ->
+nameservice(_Env, [{"node",NodeStr}, {"context", Ref}, {"object", Obj}]) ->
     case catch create_object_data(NodeStr, Ref, Obj) of
 	{ok, Data} ->
 	    Data;
@@ -326,32 +328,32 @@ create_context_list_helper(Node, BI, Acc, Ctx, Prefix) ->
 	    convert_contexts(BL, Acc, Prefix, Ctx, Node)
     end.
 
-convert_contexts([], Acc, Prefix, Ctx, Node) ->
+convert_contexts([], Acc, _Prefix, _Ctx, _Node) ->
     Acc;
 convert_contexts([#'CosNaming_Binding'{binding_name = Name, 
-				       binding_type = ncontext} = H|T], 
+				       binding_type = ncontext}|T], 
 		 Acc, Prefix, Ctx, Node) ->
     NameStr = check(rpc:call(Node, 'CosNaming_NamingContextExt', to_string, [Ctx, Name])),
     convert_contexts(T, [Prefix, NameStr, "\" TARGET=main><B>", NameStr, "</B></A></TD><TD><B>ncontext</B></TD></TR>"|Acc],
 		     Prefix, Ctx, Node);
 convert_contexts([#'CosNaming_Binding'{binding_name = Name, 
-				       binding_type = nobject} = H|T], 
+				       binding_type = nobject}|T], 
 		 Acc, Prefix, Ctx, Node) ->
     NameStr = check(rpc:call(Node, 'CosNaming_NamingContextExt', to_string, [Ctx, Name])),
     convert_contexts(T, [Prefix, NameStr, "&object=o \" TARGET=main><B>", NameStr, "</B></A></TD><TD><B>nobject</B></A></TD></TR>"|Acc],
 		     Prefix, Ctx, Node).
 
 
-create_object_data(NodeStr, Ref, Obj) ->
+create_object_data(NodeStr, Ref, _Obj) ->
     Node = list_to_atom(NodeStr),
-    {Object, NS} = remote_resolve(Node, Ref),
+    {Object, _NS} = remote_resolve(Node, Ref),
     LongIORStr = check(rpc:call(Node, corba, object_to_string, [Object])),
     IFRId  = check(rpc:call(Node, iop_ior, get_typeID, [Object])),
     Exists = check(rpc:call(Node, corba_object, non_existent, [Object])),
     IORStr = split_IOR(1, LongIORStr, []),
     {Data, External}
 	= case rpc:call(Node, iop_ior, get_key, [Object]) of
-	      {external, {normal, Host, Port, OK, {Ma, Mi}}} ->
+	      {external, {Host, Port, _OK, _, _, #host_data{version = {Ma, Mi}}}} ->
 		  {[{"IFR Id", IFRId},
 		    {"Stored As", Ref},
 		    {"External Object", "true"},
@@ -360,7 +362,7 @@ create_object_data(NodeStr, Ref, Obj) ->
 		    {"Port", integer_to_list(Port)},
 		    {"IIOP Version", integer_to_list(Ma) ++"."++ integer_to_list(Mi)},
 		    {"IOR String", IORStr}], true};
-	       {'internal', Key} ->
+	       {'internal', _Key, _, _, _} ->
 		  Pid = check(rpc:call(Node, corba, get_pid, [Object])),
 		  Interface = check(rpc:call(Node, corba, request_from_iiop, 
 					     [Object, oe_get_interface, false, false, false, []])),
@@ -371,7 +373,7 @@ create_object_data(NodeStr, Ref, Obj) ->
 		    {"Non Existent", atom_to_list(Exists)},
 		    {"Pid", pid_to_list(Pid)},
 		    {"IOR String", IORStr}|InterfaceData], false};
-	      {'internal_registered', {pseudo, Key}} ->
+	      {'internal_registered', {pseudo, Key}, _, _, _} ->
 		  Interface = check(rpc:call(Node, corba, request_from_iiop, 
 					     [Object, oe_get_interface, false, false, false, []])),
 		  InterfaceData = parse_interface(Interface, []),
@@ -381,7 +383,7 @@ create_object_data(NodeStr, Ref, Obj) ->
 		    {"Non Existent", atom_to_list(Exists)},
 		    {"Pseudo Object", atom_to_list(Key)},
 		    {"IOR", IORStr}|InterfaceData], false};
-	      {'internal_registered', Key} ->
+	      {'internal_registered', Key, _, _, _} ->
 		  Pid = check(rpc:call(Node, corba, get_pid, [Object])),
 		  Interface = check(rpc:call(Node, corba, request_from_iiop, 
 					     [Object, oe_get_interface, false, false, false, []])),
@@ -444,7 +446,7 @@ split_IOR(N, [H|T], Acc) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-configure(Env, [{"node",NodeStr}, {"data", DataStr}]) ->
+configure(_Env, [{"node",NodeStr}, {"data", DataStr}]) ->
     Node = list_to_atom(NodeStr),
     Data =  parse_data(DataStr),
     case catch rpc:call(Node, orber, multi_configure, [Data]) of
@@ -463,7 +465,7 @@ Unable to change configuration due to: ~p", [?LINE, NodeStr, DataStr, Why], ?DEB
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-ifr_select(Env, [{"node",NodeStr}]) ->
+ifr_select(_Env, [{"node",NodeStr}]) ->
     Node = list_to_atom(NodeStr),
     is_running(Node, NodeStr),
     ["<BODY BGCOLOR=\"#FFFFFF\"> 
@@ -476,7 +478,7 @@ ifr_select(Env, [{"node",NodeStr}]) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-ifr_data(Env, [{"node",NodeStr}, {"table", TableStr}]) ->
+ifr_data(_Env, [{"node",NodeStr}, {"table", TableStr}]) ->
     Node = list_to_atom(NodeStr),
     Table =  list_to_atom(TableStr),
     WildPattern = get_wild_pattern(Table, Node),
@@ -550,7 +552,7 @@ get_wild_pattern(ir_TypedefDef, Node) ->
     P = check(rpc:call(Node, mnesia, table_info, [ir_TypedefDef, wild_pattern])),
     P#ir_TypedefDef{id='$1'}.
 
-create_ifr_table([], Node, Result) ->
+create_ifr_table([], _Node, Result) ->
     lists:append(lists:reverse(Result));
 create_ifr_table([{Table,Desc}|Rest], Node, Result) ->
     create_ifr_table(Rest, Node, 
@@ -563,7 +565,7 @@ create_ifr_table([{Table,Desc}|Rest], Node, Result) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-info(Env, [{"node",NodeStr}]) ->
+info(_Env, [{"node",NodeStr}]) ->
     Node = list_to_atom(NodeStr),
     is_running(Node, NodeStr),
     Data = create_info_data(?INFO_DATA, Node, []),
@@ -575,7 +577,7 @@ info(Env, [{"node",NodeStr}]) ->
                     </TD><TD><INPUT TYPE=\"SUBMIT\" VALUE=\"Change it\"></TD></FORM></TR>"])].
 
 
-create_info_data([], Node, Result) ->
+create_info_data([], _Node, Result) ->
     lists:reverse(Result);
 create_info_data([{Func,Desc}|Rest], Node, Result) ->
     Data = convert_type(check(rpc:call(Node, orber, Func, []))),
@@ -602,7 +604,7 @@ convert_type(Data) when list(Data) ->
 	_->
 	    io_lib:write(Data)
     end;
-convert_type(Data) ->
+convert_type(_Data) ->
     [].
 
 
@@ -611,7 +613,7 @@ convert_type(Data) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-menu(Env, Args)->    
+menu(_Env, Args)->    
     ["<BODY BGCOLOR=\"#FFFFFF\">", node_selections_javascripts(), node_body(Args, [node()|nodes()])].
 
 menu_title()->
@@ -754,18 +756,18 @@ check({badrpc,{'EXIT',{undef,_}}}, Comment) ->
     throw({error, ["<BODY BGCOLOR=\"#FFFFFF\">Tried to invoke undefined module or operation.<BR><BR>", Comment]});    
 check({badrpc,nodedown}, Comment) ->
     throw({error, ["<BODY BGCOLOR=\"#FFFFFF\">Node down - unable to complete the requested operation.<BR><BR>", Comment]});    
-check({badrpc, {'EXIT', R}}, Comment) ->
+check({badrpc, {'EXIT', _R}}, Comment) ->
     throw({error, ["<BODY BGCOLOR=\"#FFFFFF\">Invoking the requested operation resulted in an EXIT.<BR><BR>", Comment]});
-check({badrpc, {'EXIT', R1, R2}}, Comment) ->
+check({badrpc, {'EXIT', _R1, _R2}}, Comment) ->
     throw({error, ["<BODY BGCOLOR=\"#FFFFFF\">Invoking the requested operation resulted in an EXIT.<BR><BR>", Comment]});
 check({'EXCEPTION', E}, Comment) ->
     EList = atom_to_list(element(1, E)),
     throw({error, ["<BODY BGCOLOR=\"#FFFFFF\">Got the exception: ", EList, "<BR><BR>", Comment]});
 check({'EXIT',{undef,_}}, Comment) ->
     throw({error, ["<BODY BGCOLOR=\"#FFFFFF\">Tried to invoke operation using undefined module or operation.<BR><BR>", Comment]});    
-check({'EXIT', R}, Comment) ->
+check({'EXIT', _R}, Comment) ->
     throw({error, ["<BODY BGCOLOR=\"#FFFFFF\">Invoking the requested operation resulted in an EXIT.<BR><BR>", Comment]});
-check({'EXIT', R1, R2}, Comment) ->
+check({'EXIT', _R1, _R2}, Comment) ->
     throw({error, ["<BODY BGCOLOR=\"#FFFFFF\">Invoking the requested operation resulted in an EXIT.<BR><BR>", Comment]});
 check(Reply, _) ->
     Reply.
@@ -792,7 +794,7 @@ is_running2([], NodeStr) ->
             <TABLE BORDER=0><TR BGCOLOR=\"#FFFFFF\"><TD ALIGN=\"center\" COLSPAN=1> 
             <FONT SIZE=6>Orber not started on node: ", NodeStr, "</FONT>
             </TD></TR></TABLE>"]);
-is_running2([{orber, _, _} |As], _) ->
+is_running2([{orber, _, _} |_], _) ->
      true;
 is_running2([_ |As], NodeStr) ->
     is_running2(As, NodeStr).
@@ -807,7 +809,7 @@ parse_data([])->
     [];
 parse_data(Options)->
     case erl_scan:string(Options ++ ".") of
-	{ok,Tokens,Line} ->
+	{ok,Tokens,_Line} ->
 	    case erl_parse:parse_term(Tokens) of
 		{ok,X}->
 		    X;

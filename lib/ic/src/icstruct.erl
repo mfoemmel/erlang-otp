@@ -96,8 +96,7 @@ struct_gen(G, N, X, L) when record(X, sequence) ->
     X;
 struct_gen(G, N, X, L) when record(X, enum) -> 
     icenum:enum_gen(G, N, X, L);
-struct_gen(G, N, X, L) -> 
-    %%io:format("*** IGNORING *** ~p~n", [X]),
+struct_gen(_G, _N, _X, _L) -> 
     ok.
 
 %% List clause for struct_gen
@@ -152,7 +151,7 @@ emit_struct(G, N, X, c) ->
     end.
 
 
-emit_c_struct(G, N, X, included) -> 
+emit_c_struct(_G, _N, _X, included) -> 
     %% Do not generate included types att all.
     ok;
 emit_c_struct(G, N, X, local) ->
@@ -273,13 +272,13 @@ emit_struct_member(Fd, G, N, X, Name,{Type,Array}) when record(Array, array)->
     Dim = extract_dim(ArrayTK),
     emit(Fd, "   ~s ~s;\n",
 	 [ic_cbe:mk_c_type(G, N, Type),mk_array_name(Name,Dim)]);
-emit_struct_member(Fd, G, N, X, Name, Union) when record(Union, union)->
+emit_struct_member(Fd, _G, N, _X, Name, Union) when record(Union, union)->
     emit(Fd, "   ~s ~s;\n",
 	 [ic_util:to_undersc([ic_forms:get_id2(Union) | N]),Name]);
-emit_struct_member(Fd, G, N, X, Name, {string, _}) ->
+emit_struct_member(Fd, _G, _N, _X, Name, {string, _}) ->
     emit(Fd, "   CORBA_char *~s;\n",
 	 [Name]);
-emit_struct_member(Fd, G, N, X, Name, {sequence, Type, Length}) ->
+emit_struct_member(Fd, _G, N, _X, Name, {sequence, _Type, _Length}) ->
     %% Sequence used as struct
     emit(Fd, "   ~s ~s;\n",
 	 [ic_util:to_undersc([Name | N]), Name]);
@@ -287,17 +286,17 @@ emit_struct_member(Fd, G, N, X, Name, Type)
   when element(1, Type) == scoped_id ->
     CType = ic_cbe:mk_c_type(G, N, Type, evaluate_not),
     emit_struct_member(Fd, G, N, X, Name, CType);
-emit_struct_member(Fd, G, N, X, Name, {enum, Type}) ->
+emit_struct_member(Fd, G, N, _X, Name, {enum, Type}) ->
     emit(Fd, "   ~s ~s;\n",
 	 [ic_cbe:mk_c_type(G, N, Type),
 	  Name]);
-emit_struct_member(Fd, G, N, X, Name, "ETERM*") ->
+emit_struct_member(Fd, _G, _N, _X, Name, "ETERM*") ->
     emit(Fd, "   ETERM* ~s;\n",
 	 [Name]);
-emit_struct_member(Fd, G, N, X, Name, Type) when list(Type) ->  
+emit_struct_member(Fd, _G, _N, _X, Name, Type) when list(Type) ->  
     emit(Fd, "   ~s ~s;\n",
 	 [Type, Name]);
-emit_struct_member(Fd, G, N, X, Name, Type) ->
+emit_struct_member(Fd, G, N, _X, Name, Type) ->
     emit(Fd, "   ~s ~s;\n",
 	 [ic_cbe:mk_c_type(G, N, Type),
 	  Name]).
@@ -393,7 +392,7 @@ emit_typedef(G, N, D, Type, c)  ->
 
 
 mk_base_type(G, N, S) when element(1, S) == scoped_id ->
-    {FullScopedName, T, TK, _} = ic_symtab:get_full_scoped_name(G, N, S),
+    {FullScopedName, _T, _TK, _} = ic_symtab:get_full_scoped_name(G, N, S),
     BT = ic_code:get_basetype(G, ic_util:to_undersc(FullScopedName)),
     case BT of
 	"erlang_binary" ->
@@ -409,7 +408,7 @@ mk_base_type(G, N, S) when element(1, S) == scoped_id ->
 	Type ->
 	    Type
     end;
-mk_base_type(G, N, S) ->
+mk_base_type(_G, _N, S) ->
     S.
 
 emit_array(G, N, D, Type) -> 
@@ -423,7 +422,6 @@ emit_array(G, N, D, Type) ->
 						 ic_forms:get_id(D))),
 	    Dim = extract_dim(ArrayTK),
 	    CType = ic_cbe:mk_c_type(G, N, Type),
-	    SName = string:concat(ic_util:mk_oe_name(G, "code_"), Name),
 	    emit(Fd, "\n#ifndef __~s__\n",[ic_util:to_uppercase(Name)]),
 	    emit(Fd, "#define __~s__\n",[ic_util:to_uppercase(Name)]),
 	    ic_codegen:mcomment_light(Fd,
@@ -613,8 +611,6 @@ emit_sequence_head_def(G, N, X, T, c) ->
 	true ->
 	    Fd = ic_genobj:hrlfiled(G),
 	    SeqName = ic_util:to_undersc([ic_forms:get_id2(X) | N]),
-	    CType = ic_cbe:mk_c_type(G, N, T#sequence.type),
-
 	    emit(Fd, "\n#ifndef __~s__\n",[ic_util:to_uppercase(SeqName)]),
 	    emit(Fd, "#define __~s__\n",[ic_util:to_uppercase(SeqName)]),
 	    ic_codegen:mcomment_light(Fd,
@@ -644,14 +640,14 @@ emit_seq_buffer(Fd, G, N, Type) ->
 %% structs.
 %%
 %%------------------------------------------------------------
-emit_decode(array, G, N, T, Fd, {Name, Dim}, Type) ->
+emit_decode(array, G, N, _T, Fd, {_Name, Dim}, Type) ->
     emit(Fd, "  if((char*) oe_out == oe_first)\n",[]),
     AlignName = 
 	lists:concat(["*oe_outindex + ", dim_multiplication(Dim),
 		      " * sizeof(", ic_cbe:mk_c_type(G, N, Type),")"]),
     emit(Fd, "    *oe_outindex = ~s;\n\n",[align(AlignName)]),
     array_decode_dimension_loop(G, N, Fd, Dim, "", Type, array);
-emit_decode(array_no_typedef, G, N, T, Fd, {Name, Dim}, Type) ->
+emit_decode(array_no_typedef, G, N, _T, Fd, {_Name, Dim}, Type) ->
     emit(Fd, "  if((char*) oe_out == oe_first)\n",[]),
     AlignName = 
 	lists:concat(["*oe_outindex + ", dim_multiplication(Dim),
@@ -791,7 +787,7 @@ emit_decode(sequence_head, G, N, T, Fd, SeqName, ElType) ->
     emit(Fd, "        oe_out->_buffer = NULL;\n"),
     emit(Fd, "  }\n");
 
-emit_decode(struct, G, N, T, Fd, StructName, ElTypes) ->
+emit_decode(struct, G, N, _T, Fd, StructName, ElTypes) ->
     Length = length(ElTypes) + 1,
     Tname = ic_cbe:mk_variable_name(op_variable_count),
     Tname1 = ic_cbe:mk_variable_name(op_variable_count),
@@ -996,7 +992,7 @@ emit_decode(struct, G, N, T, Fd, StructName, ElTypes) ->
 							generator);
 			  {scoped_id,_,_,_} ->
 			      case ic_symtab:get_full_scoped_name(G, N, ET) of
-				  {FullScopedName, _, {tk_array,_,_}, _} ->
+				  {_FullScopedName, _, {tk_array,_,_}, _} ->
 				      ic_cbe:emit_decoding_stmt(G, N, Fd, 
 								ET, 
 								"oe_out->" ++
@@ -1007,7 +1003,7 @@ emit_decode(struct, G, N, T, Fd, StructName, ElTypes) ->
 								0, 
 								"oe_outindex",
 								generator);
-				  {FullScopedName, _, {tk_string,_}, _} ->
+				  {_FullScopedName, _, {tk_string,_}, _} ->
 				      ic_cbe:emit_decoding_stmt(G, N, Fd, 
 								ET, 
 								"oe_out->" ++ 
@@ -1018,7 +1014,7 @@ emit_decode(struct, G, N, T, Fd, StructName, ElTypes) ->
 								0, 
 								"oe_outindex",
 								generator);
-				  {FullScopedName, _, {tk_struct,_,_,_}, _} ->
+				  {_FullScopedName, _, {tk_struct,_,_,_}, _} ->
 				      ic_cbe:emit_decoding_stmt(G, N, Fd, 
 								ET, 
 								"&oe_out->" ++
@@ -1030,7 +1026,7 @@ emit_decode(struct, G, N, T, Fd, StructName, ElTypes) ->
 								"oe_outindex",
 								generator);
 
-				  {FullScopedName, _, 
+				  {_FullScopedName, _, 
 				   {tk_union,_,_,_,_,_}, _} ->
 				      ic_cbe:emit_decoding_stmt(G, N, Fd, 
 								ET, 
@@ -1129,7 +1125,7 @@ array_decode_dimension_loop(G, N, Fd, [Dim], Dimstr, Type, TDFlag) ->
     %%  emit(Fd, "\n *oe_outindex +=
     %%  sizeof(~s);\n",[ic_cbe:mk_c_type(G, N, Type)]),
     emit(Fd, "  }\n");
-array_decode_dimension_loop(G, N, Fd, [Dim | Ds], Dimstr, Type, TDFlag) ->
+array_decode_dimension_loop(G, N, Fd, [Dim | Ds], _Dimstr, Type, TDFlag) ->
     Tname = ic_cbe:mk_variable_name(op_variable_count),
     ic_cbe:store_tmp_decl("  int ~s = 0;\n",[Tname]),
 
@@ -1156,9 +1152,9 @@ dim_multiplication([D]) ->
 dim_multiplication([D |Ds]) ->
     D ++ "*" ++ dim_multiplication(Ds).
 
-emit_encode(array, G, N, T, Fd, {Name, Dim}, Type) ->
+emit_encode(array, G, N, _T, Fd, {_Name, Dim}, Type) ->
     array_encode_dimension_loop(G, N, Fd, Dim, {"",""}, Type, array);
-emit_encode(array_no_typedef, G, N, T, Fd, {Name, Dim}, Type) ->
+emit_encode(array_no_typedef, G, N, _T, Fd, {_Name, Dim}, Type) ->
     array_encode_dimension_loop(G, N, Fd, Dim, {"",""}, Type, 
 				array_no_typedef);
 emit_encode(sequence_head, G, N, T, Fd, SeqName, ElType) ->
@@ -1242,7 +1238,7 @@ emit_encode(sequence_head, G, N, T, Fd, SeqName, ElType) ->
     emit(Fd, "  if ((oe_error_code = oe_ei_encode_empty_list(oe_env)) < 0)\n",
 	 []),
     emit(Fd, "    return oe_error_code;\n\n");
-emit_encode(struct, G, N, T, Fd, StructName, ElTypes) ->
+emit_encode(struct, G, N, _T, Fd, StructName, ElTypes) ->
     Length = length(ElTypes) + 1,
     emit(Fd, "  if ((oe_error_code = "
 	 "oe_ei_encode_tuple_header(oe_env, ~p)) < 0)\n", [Length]),
@@ -1259,7 +1255,7 @@ emit_encode(struct, G, N, T, Fd, StructName, ElTypes) ->
 						StructName ++ "_" ++ EN, 
 						"&oe_rec->" ++ EN,
 						"oe_env->_outbuf");
-		  {_,{array, _, Dims}} ->
+		  {_,{array, _, _Dims}} ->
 		      ic_cbe:emit_encoding_stmt(G, N, Fd, 
 						StructName ++ "_" ++ EN, 
 						"oe_rec->" ++ EN,
@@ -1347,7 +1343,7 @@ ref_array_dynamic_enc(G, N, T, array_no_typedef) ->
 
 
 
-array_encode_dimension_loop(G, N, Fd, [Dim], {Str1,Str2}, Type, TDFlag) ->
+array_encode_dimension_loop(G, N, Fd, [Dim], {Str1,_Str2}, Type, TDFlag) ->
     Tname = ic_cbe:mk_variable_name(op_variable_count),
     ic_cbe:store_tmp_decl("  int ~s = 0;\n",[Tname]),
 
@@ -1386,7 +1382,7 @@ array_encode_dimension_loop(G, N, Fd, [Dim | Ds],{Str1,Str2}, Type, TDFlag) ->
     emit(Fd, "  }\n").
 
 
-emit_sizecount(array, G, N, T, Fd, {Name, Dim}, Type) ->
+emit_sizecount(array, G, N, _T, Fd, {_Name, Dim}, Type) ->
     emit(Fd, "  if(*oe_size == 0)\n",[]),
     AlignName = lists:concat(["*oe_size + ", dim_multiplication(Dim),
 			      " * sizeof(", ic_cbe:mk_c_type(G, N, Type),")"]),
@@ -1456,7 +1452,7 @@ emit_sizecount(sequence_head, G, N, T, Fd, SeqName, ElType) ->
     emit(Fd, "  }\n"),
     emit(Fd, "  *oe_size = ~s;\n\n", [align("*oe_size + oe_malloc_size")]);
 
-emit_sizecount(struct, G, N, T, Fd, StructName, ElTypes) ->
+emit_sizecount(struct, G, N, _T, Fd, StructName, ElTypes) ->
     Length = length(ElTypes) + 1,
     Tname = ic_cbe:mk_variable_name(op_variable_count),
     ic_cbe:store_tmp_decl("  int ~s = 0;\n\n",[Tname]),
@@ -1611,7 +1607,7 @@ array_size_dimension_loop(G, N, Fd, [Dim | Ds], Type) ->
     emit(Fd, "  }\n").
 
 
-create_c_struct_coding_file(G, N, X, T, StructName, ElTypes, StructType) ->
+create_c_struct_coding_file(G, N, _X, T, StructName, ElTypes, StructType) ->
     
     {Fd , SName} = open_c_coding_file(G,  StructName), % stub file
     HFd = ic_genobj:hrlfiled(G),		% stub header file
@@ -1725,7 +1721,7 @@ emit_union(G, N, X, erlang) ->
 	    mkFileRecObj(G,N,X,erlang);
 	false -> ok
     end;
-emit_union(G, N, X, c) -> %% Not supported in c backend
+emit_union(_G, _N, _X, c) -> %% Not supported in c backend
     true.
 
 

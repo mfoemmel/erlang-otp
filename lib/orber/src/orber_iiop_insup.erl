@@ -18,7 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: orber_iiop_insup.erl
-%% Author: Lars Thorsen, Peter Lundell
 %% 
 %% Description:
 %%    This file contains the IIOP communication supervisor which
@@ -30,8 +29,6 @@
 -module(orber_iiop_insup).
 
 -behaviour(supervisor).
-
--include_lib("orber/src/orber_debug.hrl").
 
 %%-----------------------------------------------------------------
 %% External exports
@@ -50,11 +47,9 @@
 %% Func: start/2
 %%-----------------------------------------------------------------
 start(sup, Opts) ->
-    ?PRINTDEBUG2("start sup in ~p", [self()]),
     supervisor:start_link({local, orber_iiop_insup}, orber_iiop_insup,
 			  {sup, Opts});
-start(A1, A2) -> 
-    ?PRINTDEBUG2("start/2 called with parameters ~p ~p", [A1, A2]),
+start(_A1, _A2) -> 
     ok.
 
 
@@ -64,31 +59,26 @@ start(A1, A2) ->
 %%-----------------------------------------------------------------
 %% Func: init/1
 %%-----------------------------------------------------------------
-init({sup, Opts}) ->
-    ?PRINTDEBUG2("orber_iiop_insup init supervisor ~p", [self()]),
+init({sup, _Opts}) ->
     SupFlags = {simple_one_for_one, 500, 100},
     ChildSpec = [
 		 {name1, {orber_iiop_inproxy, start, []}, temporary, 
 		  10000, worker, [orber_iiop_inproxy]}
 		],
     {ok, {SupFlags, ChildSpec}};
-init(Opts) ->
-    ?PRINTDEBUG2("plain init ~p", [self()]),
+init(_Opts) ->
     {ok, []}.
 
 
 %%-----------------------------------------------------------------
 %% Func: terminate/1
 %%-----------------------------------------------------------------
-terminate(Reason, State) ->
-    ?PRINTDEBUG2("inproxy supervisor terminated with reason: ~p", [Reason]),
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------------
 %% Func: start_connection/2
 %%-----------------------------------------------------------------
 start_connection(Type, Socket) ->
-    ?PRINTDEBUG2("supervisor ~p starting bridge for ~p socket ~p",
-		 [self(), Type, Socket]),
     supervisor:start_child(orber_iiop_insup, [{connect, Type, Socket}]).
 

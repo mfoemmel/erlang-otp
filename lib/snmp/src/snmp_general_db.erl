@@ -183,7 +183,7 @@ close({dets,Name}) ->
     ?vtrace("[dets] close database ~p",[Name]),
     dets:close(Name);
 close({ets,Name}) ->
-    ?vtrace("[dets] close (delete) table ~p",[Name]),
+    ?vtrace("[ets] close (delete) table ~p",[Name]),
     ets:delete(Name).
 
 

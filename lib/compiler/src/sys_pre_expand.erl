@@ -451,12 +451,13 @@ expr({op,Line,'++',{lc,Ll,E0,Qs0},M0}, Vs, St0) ->
     {{op,Line,'++',{lc,Ll,E1,Qs1},M1},Lvs,Lus,St1};
 expr({op,_,'++',{string,L1,S1},{string,_,S2}}, _Vs, St) ->
     {{string,L1,S1 ++ S2},[],[],St};
-expr({op,_,'++',{string,L1,S1},R0}, Vs, St0) ->
+expr({op,Ll,'++',{string,L1,S1}=Str,R0}, Vs, St0) ->
     {R1,Rvs,Rus,St1} = expr(R0, Vs, St0),
     E = case R1 of
 	    {string,_,S2} -> {string,L1,S1 ++ S2};
-	    _Other -> string_to_conses(L1, S1, R1)
-    end,
+	    _Other when length(S1) < 8 -> string_to_conses(L1, S1, R1);
+	    _Other -> {op,Ll,'++',Str,R1}
+	end,
     {E,Rvs,Rus,St1};
 expr({op,Ll,'++',{cons,Lc,H,T},L2}, Vs, St) ->
     expr({cons,Ll,H,{op,Lc,'++',T,L2}}, Vs, St);
@@ -651,23 +652,26 @@ record_wildcard_init([]) -> none.
 %%  passed through expr again.
 
 record_update(R, Name, Fs, Us0, St0) ->
+    Line = element(2, R),
     {Pre,Us,St1} = record_exprs(Us0, St0),
     Nf = length(Fs),				%# of record fields
     Nu = length(Us),				%# of update fields
     Nc = Nf - Nu,				%# of copy fields
+
+    %% We need a new variable for the record expression
+    %% to guarantee that it is only evaluated once.
+    {Var,St2} = new_var(Line, St1),
+
     %% Try to be intelligent about which method of updating record to use.
     {Update,St} =
 	if
-	    Nu == 0 -> {R,St1};			%No fields updated
+	    Nu == 0 -> {R,St2};			%No fields updated
 	    Nu =< Nc ->				%Few fields updated
-		{record_setel(R, Name, Fs, Us), St1};
+		{record_setel(Var, Name, Fs, Us), St2};
 	    true ->			      %The wide area inbetween
-		record_match(R, Name, Fs, Us, St1)
+		record_match(Var, Name, Fs, Us, St2)
 	end,
-    {case Pre of
-	 [] -> Update;
-	 _ -> {block,element(2, R),Pre ++ [Update]}
-     end,St}.
+    {{block,element(2, R),Pre ++ [{match,Line,Var,R},Update]},St}.
 
 %% record_match(Record, RecordName, [RecDefField], [Update], State)
 %%  Build a 'case' expression to modify record fields.

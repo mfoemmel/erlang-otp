@@ -188,7 +188,7 @@ gui_cmd(ignore, State) ->
     State;
 gui_cmd({win, Win}, State) ->
     State#state{win=Win};
-gui_cmd(stopped, State) ->
+gui_cmd(stopped, _State) ->
     exit(stop);
 gui_cmd({coords, Coords}, State) ->
     State#state{coords=Coords};
@@ -245,7 +245,7 @@ gui_cmd('Stop', State) ->
     int:meta(State#state.meta, stop),
     State;
 gui_cmd('Where', State) ->
-    {Cur, Max} = State#state.stack,
+    {_Cur, Max} = State#state.stack,
     gui_cmd('Down', State#state{stack={Max, Max}});
 gui_cmd('Kill', State) ->
     exit(State#state.pid, kill),
@@ -270,7 +270,7 @@ gui_cmd('Messages', State) ->
     end,
     State;
 gui_cmd('Back Trace', State) ->
-    lists:foreach(fun({Lev, {Mod, {Func,Arity}, Line, Bs}}) ->
+    lists:foreach(fun({Lev, {Mod, {Func,Arity}, _Line, _Bs}}) ->
 			  Str = io_lib:format("~p > ~p:~p/~p~n",
 					      [Lev, Mod, Func, Arity]),
 			  dbg_ui_trace_win:trace_output(Str);
@@ -352,7 +352,8 @@ gui_cmd('Back Trace Size...', State) ->
 
 %% Help menu
 gui_cmd('Debugger', State) ->
-    HelpFile = filename:join([code:lib_dir(debugger),"doc","index.html"]),
+    HelpFile = filename:join([code:lib_dir(debugger),
+			      "doc", "html", "part_frame.html"]),
     tool_utils:open_help(State#state.gs, HelpFile),
     State;
 
@@ -437,7 +438,7 @@ meta_cmd({attached, Mod, Line, _Trace}, State) ->
     State#state{win=Win, cm=Mod};
 
 %% Message received when returning to interpreted code
-meta_cmd({re_entry, Mod, Func}, State) ->
+meta_cmd({re_entry, Mod, _Func}, State) ->
     Obs = State#state.cm_obsolete,
     case State#state.cm of
 	Mod when Obs==true ->
@@ -506,9 +507,9 @@ meta_cmd(idle, State) ->
 
 %% Message about changed trace option can be ignored, the change must have
 %% been ordered by this process. (In theory, the change could have been
-%% ordered by another attached process. Debugger though, allows max one
+%% ordered by another attached process. The Debugger, though, allows max one
 %% attached process per debugged process).
-meta_cmd({trace, Bool}, State) ->
+meta_cmd({trace, _Bool}, State) ->
     State;
 
 meta_cmd({stack_trace, Flag}, State) ->
@@ -617,7 +618,7 @@ gui_show_module(Win, Mod, Line, Cm, Pid) ->
 
 gui_show_module(Win, Mod, Line, Mod, _Pid, How) ->
     dbg_ui_trace_win:mark_line(Win, Line, How);
-gui_show_module(Win, Mod, Line, Cm, Pid, How) ->
+gui_show_module(Win, Mod, Line, _Cm, Pid, How) ->
     Win2 = case dbg_ui_trace_win:is_shown(Win, Mod) of
 	       {true, Win3} -> Win3;
 	       false -> gui_load_module(Win, Mod, Pid)
@@ -636,7 +637,7 @@ gui_update_bindings(Meta) ->
 gui_update_bindings(Meta, Stack) ->
     Sp = if
 	     Stack==nostack -> nostack;
-	     true -> {Cur,Max} = Stack, Cur
+	     true -> {Cur,_Max} = Stack, Cur
 	 end,
     Bs = int:meta(Meta, bindings, Sp),
     dbg_ui_trace_win:update_bindings(Bs).

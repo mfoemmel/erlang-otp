@@ -49,7 +49,6 @@ MODULES= \
 	orber_typedefs \
 	orber_request_number \
 	orber_objectkeys \
-	orber_policy_server \
 	orber_initial_references \
 	orber_bootstrap \
 	cdrlib \
@@ -99,7 +98,8 @@ MODULES= \
 	orber_iiop_tracer \
 	orber_iiop_tracer_silent \
 	fixed \
-	orber_exceptions
+	orber_exceptions \
+	orber_diagnostics
 
 
 EXTERNAL_HRL_FILES= ../include/corba.hrl \
@@ -107,7 +107,6 @@ EXTERNAL_HRL_FILES= ../include/corba.hrl \
 	../include/orber_pi.hrl
 
 INTERNAL_HRL_FILES = \
-	orber_debug.hrl \
 	orber_iiop.hrl \
 	ifr_objects.hrl \
 	orber_ifr.hrl
@@ -118,12 +117,11 @@ GEN_ERL_FILES1 =  \
 	oe_erlang.erl \
 	erlang_pid.erl \
 	erlang_port.erl \
-	erlang_ref.erl
+	erlang_ref.erl \
+	erlang_binary.erl 
 
 GEN_ERL_FILES2 =  \
-	oe_CORBA.erl \
-	CORBA_Policy.erl \
-	CORBA_PolicyList.erl
+	oe_CORBA.erl
 
 GEN_ERL_FILES3 =  \
 	oe_OrberIFR.erl \
@@ -137,8 +135,7 @@ GEN_HRL_FILES1 = \
 
 GEN_HRL_FILES2 = \
 	CORBA.hrl \
-	oe_CORBA.hrl \
-	CORBA_Policy.hrl \
+	oe_CORBA.hrl
 
 GEN_HRL_FILES3 = \
 	OrberApp_IFR.hrl \

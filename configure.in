@@ -62,20 +62,29 @@ dnl Checks for programs.
 AC_MSG_CHECKING(for GNU make)
 # If there is a Makefile created we don't want make to start making, run
 # in a subdirectory and -f /dev/null
-mkdir conftestmake
-if test -d conftestmake; then
-  cd conftestmake
-  MAKE_PROG=x
-  for m in make gmake ggmake; do
-    eval $m --version -f /dev/null 2>&1 | grep GNU > /dev/null 2>&1
-    case $? in
-      0) MAKE_PROG=$m ; break ;;
-      *) ;;
-    esac
-  done
-  cd ..
-else
-  AC_MSG_ERROR(could not create subdirectory)
+MAKE_PROG=x
+if test X"$CLEARCASE_MAKE_COMPAT" = X"gnu" -a X"$CLEARCASE_ROOT" != X"" ; then
+  eval clearmake -version 2>&1 | grep clearmake > /dev/null 2>&1
+  case $? in
+	0) MAKE_PROG="clearmake -V"; break;;
+	*);;
+  esac
+fi
+if test X"$MAKE_PROG" = X"x"; then
+  mkdir conftestmake
+  if test -d conftestmake; then
+    cd conftestmake
+    for m in make gmake ggmake; do
+      eval $m --version -f /dev/null 2>&1 | grep GNU > /dev/null 2>&1
+      case $? in
+        0) MAKE_PROG=$m ; break ;;
+        *) ;;
+      esac
+    done
+    cd ..
+  else
+    AC_MSG_ERROR(could not create subdirectory)
+  fi
 fi
 rm -rf conftestmake
 case $MAKE_PROG in

@@ -15,6 +15,8 @@
  * 
  *     $Id$
  */
+
+/* An exception from using eidef.h, use config.h directly */
 #include "config.h"
 
 #include <stdlib.h>

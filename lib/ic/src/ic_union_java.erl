@@ -52,7 +52,7 @@ gen(G, N, X) when record(X, union) ->
 			   type = X#union.type,
 			   body = X#union.body,
 			   tk = Tk };
-	       Tk ->
+	       _Tk ->
 		   X
 	   end,
     
@@ -69,8 +69,7 @@ gen(G, N, X) when record(X, union) ->
     emit_union_class(G, N, NewX, UnionName),
     emit_holder_class(G, N, NewX, UnionName),
     emit_helper_class(G, N, NewX, UnionName, WiredUnionName);
-gen(G, N, X) -> 
-    %%?PRINTDEBUG2("****** IGNORING ******: ~p", [X]),
+gen(_G, _N, _X) -> 
     ok.
 
 
@@ -138,7 +137,7 @@ emit_union_class(G, N, X, UnionName) ->
 %%-----------------------------------------------------------------
 %% Func:  emit_holder_class/4
 %%-----------------------------------------------------------------
-emit_holder_class(G, N, X, UnionName) ->
+emit_holder_class(G, N, _X, UnionName) ->
     UName = string:concat(UnionName, "Holder"),
     {Fd, _} = ic_file:open_java_file(G, N, UName), 
     
@@ -356,13 +355,13 @@ emit_union_members_functions(G, N, X, Fd, UnionName, DiscrType,
 %%-----------------------------------------------------------------
 %% Func:  emit_default_access_fun_switch_cases/6
 %%-----------------------------------------------------------------
-emit_default_access_fun_switch_cases(G, N, X, Fd, DiscrType, []) ->
+emit_default_access_fun_switch_cases(_G, _N, _X, _Fd, _DiscrType, []) ->
     ok;
 emit_default_access_fun_switch_cases(G, N, X, Fd, DiscrType,
 				     [{"default", _, _, _, _} |MList]) ->
     emit_default_access_fun_switch_cases(G, N, X, Fd, DiscrType, MList);
 emit_default_access_fun_switch_cases(G, N, X, Fd, DiscrType,
-				     [{Label, Case, TypeDef, Id, _} | MList]) ->
+				     [{Label, _Case, _TypeDef, _Id, _} | MList]) ->
     ic_codegen:emit(Fd, "         case ~s:\n",
 		    [get_case_as_int(G, N, ic_forms:get_type(X),
 				     DiscrType, Label)]),
@@ -549,7 +548,7 @@ emit_union_marshal_function_loop(G, N, X, Fd, DiscrType,
 			       
   
 
-gen_multiple_cases(G, N, X, Fd, DiscrType, []) ->
+gen_multiple_cases(_G, _N, _X, _Fd, _DiscrType, []) ->
     ok;
 gen_multiple_cases(G, N, X, Fd, DiscrType, [Label |Ls]) ->
     ic_codegen:emit(Fd, "        case ~s:\n",
@@ -620,7 +619,7 @@ getLabel(_, {'FALSE',_}) ->
     "true";
 getLabel(_, {default, _}) ->
     "default";
-getLabel(DiscrType, X) -> %%DiscrType ++ "." ++ 
+getLabel(_DiscrType, X) -> %%DiscrType ++ "." ++ 
     ic_util:to_dot(ic_forms:get_id(X)).
 
 get_default_val(G, N, _, tk_short, MList) ->
@@ -703,9 +702,9 @@ enum_default_val(G, N, DiscrType, Values, Mlist) ->
 	    enum_default_val_loop(G, N, DiscrType, Values, Mlist)
     end.
 
-enum_default_val_loop(G, N, _, [], []) ->
+enum_default_val_loop(_G, _N, _, [], []) ->
     none;
-enum_default_val_loop(G, N, DiscrType, [Value| _], []) ->
+enum_default_val_loop(_G, _N, DiscrType, [Value| _], []) ->
     DiscrType ++ "." ++ Value;
 enum_default_val_loop(G, N, DiscrType, Values, [Case | MList]) when tuple(Case) ->
     NewValues = lists:delete(element(1,Case), Values),

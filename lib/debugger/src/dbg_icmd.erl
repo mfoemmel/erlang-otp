@@ -45,7 +45,17 @@
 %% specifies if the process should break.
 %%--------------------------------------------------------------------
 cmd(Expr, Bs, Cm, Le, F) ->
-    cmd(Expr, Bs, Cm, Le, F, get(next_break)).
+    cmd(Expr, Bs, Cm, Le, F, get(next_break)).  %% debug below
+%     Br = get(next_break),
+%     case catch cmd(Expr, Bs, Cm, Le, F, get(next_break)) of
+% 	{'EXIT', Reason} ->
+% 	    io:format("~p[~p]: ~p~nEXIT:~p~n", [?MODULE,?LINE,
+% 						[Expr,Bs,Cm,Le,F, Br], 
+% 						Reason]),
+% 	    exit(Reason);
+% 	Else ->
+% 	    Else
+%     end.
 
 cmd(_Expr, Bs, {none}, _Le, _F, _NextBreak) ->
     Bs;
@@ -79,7 +89,6 @@ cmd(Expr, Bs, Cm, Le, F, {Next,F}) when integer(Next), Next>=Le ->
     LineNo = element(2, Expr),
     handle_cmd(Bs, Cm, Le, {Next,F}, LineNo, F);
 cmd(Expr, Bs, Cm, Le, F, {Next,_}) when integer(Next), Next>=Le ->
-    LineNo = element(2, Expr),
     put(next_break, break),
     break(Expr, Bs, Cm, Le, F).
 
@@ -127,11 +136,12 @@ handle_cmd(Bs, Cm, Le, State, LineNo, F) -> % State=running|Next|{Next,Fp}
 		_ ->     % Interpreter has terminated
 		    exit(Reason)
 	    end;
-	
+	{user, {cmd,_}} -> %% ignore stuff that we don't wont here.
+	    Bs;
 	Msg ->
-	    handle_msg(Msg, {State, Bs, Le, Cm, LineNo}),
-	    handle_cmd(Bs, Cm, Le, break, LineNo, F)
-
+	    NewState = handle_msg(Msg, {State, Bs, Le, Cm, LineNo}),
+	    handle_cmd(Bs, Cm, Le, NewState, LineNo, F)
+    
 	after 0 -> Bs
 	end.
 
@@ -216,10 +226,11 @@ handle_msg({int, Msg}, Info) ->
     handle_int_msg(Msg, Info);
 handle_msg({user, Msg}, Info) ->
     handle_user_msg(Msg, Info);
-handle_msg(Msg, Info) ->
-    io:format("***WARNING*** Unexp msg ~p, info ~p~n", [Msg, Info]).
+handle_msg(Msg, Info = {State,_,_,_,_}) ->
+    io:format("***WARNING*** Unexp msg ~p, info ~p~n", [Msg, Info]),
+    State.
 
-handle_int_msg({attached, AttPid}, {Status, Bs, Le, Cm, Line}) ->
+handle_int_msg({attached, AttPid}, {Status,_Bs,Le,Cm,Line}) ->
     if
 	Status==main, Le==1 ->
 	    attach(AttPid);
@@ -236,9 +247,11 @@ handle_int_msg({attached, AttPid}, {Status, Bs, Le, Cm, Line}) ->
 		      wait_after -> {wait_after_at, Cm, Line, Le}
 		  end,
 	    tell_attached(AttPid, Msg)
-    end;
-handle_int_msg({detached, AttPid}, _Status) ->
-    detach(AttPid);
+    end,
+    break;
+handle_int_msg({detached, AttPid}, {State,_,_,_,_}) ->
+    detach(AttPid),
+    State;
 handle_int_msg({old_code, Mod}, {Status, Bs, Le, Cm, Line}) ->
     if
 	Status==main, Le==1 ->
@@ -255,46 +268,60 @@ handle_int_msg({old_code, Mod}, {Status, Bs, Le, Cm, Line}) ->
 		    erase([Mod|db]),
 		    put(cache, [])
 	    end
-    end;
-handle_int_msg({new_break, Break}, Info) ->
-    put(breakpoints, [Break | get(breakpoints)]);
-handle_int_msg({delete_break, Point}, Info) ->
-    put(breakpoints, lists:keydelete(Point, 1, get(breakpoints)));
-handle_int_msg({break_options, Break}, Info) ->
+    end,
+    break;
+handle_int_msg({new_break, Break}, {State,_,_,_,_}) ->
+    put(breakpoints, [Break | get(breakpoints)]),
+    State;
+handle_int_msg({delete_break, Point}, {State,_,_,_,_}) ->
+    put(breakpoints, lists:keydelete(Point, 1, get(breakpoints))),
+    State;
+handle_int_msg({break_options, Break}, {State,_,_,_,_}) ->
     {Point, _Options} = Break,
-    put(breakpoints, lists:keyreplace(Point, 1, get(breakpoints), Break));
-handle_int_msg(no_break, Info) ->
-    put(breakpoints, []);
-handle_int_msg({no_break, Mod}, Info) ->
+    put(breakpoints, lists:keyreplace(Point, 1, get(breakpoints), Break)),
+    State;
+handle_int_msg(no_break, {State,_,_,_,_}) ->
+    put(breakpoints, []),
+    State;
+handle_int_msg({no_break, Mod}, {State,_,_,_,_}) ->
     put(breakpoints, lists:filter(fun({{M,_L},_Os}) ->
 					  if
 					      M==Mod -> false;
 					      true -> true
 					  end
 				  end,
-				  get(breakpoints)));
+				  get(breakpoints))),
+    State;
 
-handle_int_msg(stop, {exit, Bs, Le, Cm, Line}) ->
+handle_int_msg(stop, {exit,_Bs,_Le,_Cm,_Line}) ->
     exit(normal).
 
-handle_user_msg({eval, Cmd}, {wait, Bs, Le, Cm, Line}) ->
-    eval_restricted(Cmd, Bs);
-handle_user_msg({eval, Cmd}, {wait_after, Bs, Le, Cm, Line}) ->
-    eval_restricted(Cmd, Bs);
+handle_user_msg({eval, Cmd}, {wait,Bs,_Le,_Cm,_Line}) ->
+    eval_restricted(Cmd, Bs),
+    break;
+handle_user_msg({eval, Cmd}, {wait_after,Bs,_Le,_Cm,_Line}) ->
+    eval_restricted(Cmd, Bs),
+    break;
 
-handle_user_msg({set, trace, Bool}, Info) ->
-    set_trace(Bool);
-handle_user_msg({set, stack_trace, Flag}, Info) ->
-    set_stack_trace(Flag);
+handle_user_msg({set, trace, Bool}, _Info) ->
+    set_trace(Bool),
+    break;
+handle_user_msg({set, stack_trace, Flag}, _Info) ->
+    set_stack_trace(Flag),
+    break;
 
-handle_user_msg({get, bindings, From, SP}, {Status, Bs, Le, Cm, Line}) ->
-    reply(From, bindings, bindings(Bs, SP));
-handle_user_msg({get, stack_frame, From, {Dir, SP}}, Info) ->
-    reply(From, stack_frame, stack_frame(Dir, SP));
-handle_user_msg({get, messages, From, _}, Info) ->
-    reply(From, messages, messages());
-handle_user_msg({get, backtrace, From, N}, Info) ->
-    reply(From, backtrace, backtrace(N)).
+handle_user_msg({get, bindings, From, SP}, {_Status,Bs,_Le,_Cm,_Line}) ->
+    reply(From, bindings, bindings(Bs, SP)),
+    break;
+handle_user_msg({get, stack_frame, From, {Dir, SP}}, _Info) ->
+    reply(From, stack_frame, stack_frame(Dir, SP)),
+    break;
+handle_user_msg({get, messages, From, _}, _Info) ->
+    reply(From, messages, messages()),
+    break;
+handle_user_msg({get, backtrace, From, N}, _Info) ->
+    reply(From, backtrace, backtrace(N)),
+    break.
 
 reply(From, Tag, Reply) ->
     From ! {self(), Tag, Reply}.
@@ -311,7 +338,7 @@ set_stack_trace(Flag) ->
 	true ->
 	    case get(stack) of
 		undefined -> put(stack, []);
-		Stack -> ignore
+		_Stack -> ignore
 	    end
     end,
     put(stack_trace, Flag),
@@ -341,20 +368,20 @@ stack_frame(up, SP) ->
 stack_frame(down, SP) ->
     stack_frame_down(SP+1, get(stack), bottom).
 
-stack_frame_up(SP, []) ->
+stack_frame_up(_, []) ->
     top;
-stack_frame_up(SP, [{Level, Frame} | Stack]) when SP<Level ->
+stack_frame_up(SP, [{Level,_Frame} | Stack]) when SP < Level ->
     stack_frame_up(SP, Stack);
-stack_frame_up(SP, [{Level, {Mod, _, Line, _}} | _Stack]) ->
+stack_frame_up(_SP, [{Level, {Mod, _, Line, _}} | _Stack]) ->
     {Level, Mod, Line}.
 
 stack_frame_down(SP, [{Level, Frame} | Stack], _Above) when SP<Level ->
     stack_frame_down(SP, Stack, {Level,Frame});
 stack_frame_down(SP, [{SP, {Mod, _, Line, _}} | _Stack], _Above) ->
     {SP, Mod, Line};
-stack_frame_down(SP, _Stack, bottom) ->
+stack_frame_down(_SP, _Stack, bottom) ->
     bottom;
-stack_frame_down(SP, _Stack, {Level, {Mod, _, Line, _}}) ->
+stack_frame_down(_SP, _Stack, {Level, {Mod, _, Line, _}}) ->
     {Level, Mod, Line}.
 
 messages() ->
@@ -371,7 +398,7 @@ backtrace(N) ->
 %% Evaluating expressions withing process context
 %%====================================================================
 
-eval_restricted({From, Mod, Cmd, SP}, Bs) ->
+eval_restricted({From,_Mod,Cmd,SP}, Bs) ->
     case catch parse_cmd(Cmd, 1) of
 	{'EXIT', _Reason} ->
 	    From ! {self(), {eval_rsp, 'Parse error'}};
@@ -386,11 +413,11 @@ eval_restricted({From, Mod, Cmd, SP}, Bs) ->
 	    From ! {self(), {eval_rsp,'Only possible to inspect variables'}}
     end.
 
-eval_nonrestricted({From, Mod, Cmd, SP}, Bs, Cm, Le, LineNo, F) when SP<Le->
+eval_nonrestricted({From, Mod, Cmd, SP}, Bs, _Cm, Le, _LineNo, _F) when SP < Le->
     %% Evaluate in stack.
     eval_restricted({From, Mod, Cmd, SP}, Bs),
     Bs;
-eval_nonrestricted({From, Mod, Cmd, SP}, Bs, Cm, Le, LineNo, F) ->
+eval_nonrestricted({From, _Mod, Cmd, _SP}, Bs, Cm, Le, LineNo, F) ->
     case catch parse_cmd(Cmd, LineNo) of
 	{'EXIT', _Reason} ->
 	    From ! {self(), {eval_rsp, 'Parse error'}},
@@ -416,7 +443,7 @@ eval_nonrestricted({match,_,{var,_,Var},Expr}, Bs, Cm, Le, F) ->
 	      false -> [{Var, Res} | Bs2]
 	  end,
     {Res, Bs3};
-eval_nonrestricted({var,_,Var}, Bs, Cm, Le, F) ->
+eval_nonrestricted({var,_,Var}, Bs, _Cm, _Le, _F) ->
     Res = case lists:keysearch(Var, 1, Bs) of
 	      {value, {Var, Value}} -> Value;
 	      false -> unbound
@@ -439,8 +466,8 @@ mark_break(Cm, LineNo, Le) ->
     dbg_iserver:cast(get(int), {set_status, self(), break, {Cm, LineNo}}).
 
 parse_cmd(Cmd, LineNo) ->
-    {ok, Tokens, Pos} = erl_scan:string(Cmd, LineNo),
-    {ok, Forms} = erl_parse:parse_exprs(Tokens),
+    {ok,Tokens,_} = erl_scan:string(Cmd, LineNo),
+    {ok,Forms} = erl_parse:parse_exprs(Tokens),
     Forms.
 
 

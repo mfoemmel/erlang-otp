@@ -31,6 +31,7 @@
 #include "erl_db_util.h"
 #include "erl_message.h"
 #include "erl_binary.h"
+#include "erl_db.h"
 #include "erl_instrument.h"
 #ifdef ELIB_ALLOC_IS_CLIB
 #include "elib_stat.h"
@@ -819,6 +820,8 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
     Eterm val;
     unsigned count;
     int i;
+    DECL_AM(ets_realloc_moves);
+    DECL_AM(dist_ctrl);
 
     cerr_pos = 0;
 
@@ -847,6 +850,8 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 #endif
     } else if (BIF_ARG_1 == am_trace_control_word) {
 	BIF_RET(db_get_trace_control_word_0(BIF_P));
+    } else if (BIF_ARG_1 == AM_ets_realloc_moves) {
+ 	BIF_RET((erts_ets_realloc_always_moves) ? am_true : am_false);
     } else if (BIF_ARG_1 == am_sequential_tracer) {
 	if (is_pid(system_seq_tracer) || is_port(system_seq_tracer)) {
 	    val = STORE_NC_IN_PROC(BIF_P, system_seq_tracer);
@@ -884,7 +889,33 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	loaded(CBUF);
     else if (BIF_ARG_1 == am_dist)
 	distribution_info(CBUF);
-    else if (BIF_ARG_1 == am_system_version) {
+    else if (BIF_ARG_1 == AM_dist_ctrl) {
+	DistEntry *dep;
+	i = 0;
+	for (dep = erts_visible_dist_entries; dep; dep = dep->next) 
+	    ++i;
+	for (dep = erts_hidden_dist_entries; dep; dep = dep->next)
+	    ++i;
+	hp = HAlloc(BIF_P,i*(3+2));
+	res = NIL;
+	for (dep = erts_hidden_dist_entries; dep; dep = dep->next) {
+	    Eterm tpl;
+	    ASSERT(is_immed(dep->cid));
+	    tpl = TUPLE2(hp, dep->sysname, dep->cid);
+	    hp +=3;
+	    res = CONS(hp, tpl, res);
+	    hp += 2;
+	}
+	for (dep = erts_visible_dist_entries; dep; dep = dep->next) {
+	    Eterm tpl;
+	    ASSERT(is_immed(dep->cid));
+	    tpl = TUPLE2(hp, dep->sysname, dep->cid);
+	    hp +=3;
+	    res = CONS(hp, tpl, res);
+	    hp += 2;
+	}
+	BIF_RET(res);
+    } else if (BIF_ARG_1 == am_system_version) {
 	char *sys_ver;
 	int sys_ver_len;
 
@@ -1146,6 +1177,12 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 #endif
     } else if (BIF_ARG_1 == am_creation) {
 	return make_small(erts_this_node->creation);
+    } else if (BIF_ARG_1 == am_break_ignored) {
+      extern int ignore_break;
+      if (ignore_break) 
+	return am_true; 
+      else
+	return am_false;
     } else {
 	/* Arguments that are unusual... */
 	DECL_AM(node_and_dist_references);

@@ -24,10 +24,14 @@
 	 table_next/2, get_target_addrs/0, 
 	 get_target_engine_id/1, set_target_engine_id/2,
 	 is_valid_tag/3, get/3, table_next/2]).
+-export([add_addr/10,  delete_addr/1,
+	 add_params/5, delete_params/1]).
+
 
 -include("SNMP-TARGET-MIB.hrl").
 -include("SNMPv2-TC.hrl").
 -include("SNMPv2-TM.hrl").
+-include("snmp_types.hrl").
 
 -define(VMODULE,"TARGET-MIB").
 -include("snmp_verbosity.hrl").
@@ -119,11 +123,63 @@ init_params_table([Row | T]) ->
     init_params_table(T);
 init_params_table([]) -> true.
 
-table_create_row(Tab,Name,Row) ->
-    ?vtrace("create table ~w row with Name: ~s",[Tab,Name]),
-    snmp_local_db:table_create_row(db(Tab), Name, Row).
+table_create_row(Tab, Key, Row) ->
+    ?vtrace("create table ~w row with Key: ~w",[Tab, Key]),
+    snmp_local_db:table_create_row(db(Tab), Key, Row).
 
 
+add_addr(Name, Ip, Port, Timeout, Retry, TagList, 
+	 Params, EngineId, TMask, MMS) ->
+    Addr = {Name, Ip, Port, Timeout, Retry, TagList, 
+	    Params, EngineId, TMask, MMS},
+    case (catch snmp_conf:check_target_addr(Addr)) of
+	{ok, Row} ->
+	    Key = element(1, Row),
+	    case table_create_row(snmpTargetAddrTable, Key, Row) of
+		true ->
+		    {ok, Key};
+		false ->
+		    {error, create_failed}
+	    end;
+	Error ->
+	    {error, Error}
+    end.
+
+delete_addr(Key) ->
+    Db = db(snmpTargetAddrTable),
+    case snmp_local_db:table_delete_row(Db, Key) of
+	true ->
+	    ok;
+	false ->
+	    {error, not_found}
+    end.
+
+
+add_params(Name, MPModel, SecModel, SecName, SecLevel) ->
+    Params = {Name, MPModel, SecModel, SecName, SecLevel},
+    case (catch snmp_conf:check_target_params(Params)) of
+	{ok, Row} ->
+	    Key = element(1, Row),
+	    case table_create_row(snmpTargetParamsTable, Key, Row) of
+		true ->
+		    {ok, Key};
+		false ->
+		    {create_failed}
+	    end;
+	Error ->
+	    {error, Error}
+    end.
+
+delete_params(Key) ->
+    Db = db(snmpTargetParamsTable),
+    case snmp_local_db:table_delete_row(Db, Key) of
+	true ->
+	    ok;
+	false ->
+	    {error, not_found}
+    end.
+
+    
 gc_tabs() ->
     gc_tab(snmpTargetAddrTable),
     gc_tab(snmpTargetParamsTable),
@@ -253,7 +309,8 @@ get_target_addrs(Key, Res) ->
 	endOfTable -> 
 	    Res;
 	NextKey -> 
-	    case snmp_local_db:table_get_row(db(snmpTargetAddrTable),NextKey) of
+	    case snmp_local_db:table_get_row(db(snmpTargetAddrTable),
+					     NextKey) of
 		{_Key, TDomain, TAddress, Timeout, RetryCount, TagList, Params,
 		 _Storage, ?'RowStatus_active', _TargetEngineId,_TMask,_MMS} ->
 		    TargetParams = get_target_params(Params),
@@ -328,19 +385,91 @@ snmpTargetAddrTable(get, RowIndex, Cols) ->
     get(snmpTargetAddrTable, RowIndex, Cols);
 snmpTargetAddrTable(get_next, RowIndex, Cols) ->
     next(snmpTargetAddrTable, RowIndex, Cols);
-snmpTargetAddrTable(set, RowIndex, Cols) ->
-    snmp_notification_mib:invalidate_cache(),
-    %% Add columns for augmenting table snmpTargetAddrExtTable and for
-    %% target engine ID.  Target engine ID is set to "".  The function
-    %% get_target_engine_id will return "" unless a value is set using
-    %% set_target_engine_id.  If it is "" Informs can't be sent to the
-    %% target.
-    NCols = Cols ++ [{?snmpTargetAddrEngineId, ""},
-		     {?snmpTargetAddrTMask, []},
-		     {?snmpTargetAddrMMS, 2048}],
-    snmp_generic:table_func(set, RowIndex, NCols, db(snmpTargetAddrTable));
+snmpTargetAddrTable(set, RowIndex, Cols0) ->
+    case (catch verify_targetAddrTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    snmp_notification_mib:invalidate_cache(),
+	    %% Add columns for augmenting table snmpTargetAddrExtTable and for
+	    %% target engine ID.  Target engine ID is set to "".  The function
+	    %% get_target_engine_id will return "" unless a value is set using
+	    %% set_target_engine_id.  If it is "" Informs can't be sent to the
+	    %% target.
+	    NCols = Cols ++ [{?snmpTargetAddrEngineId, ""},
+			     {?snmpTargetAddrTMask, []},
+			     {?snmpTargetAddrMMS, 2048}],
+	    snmp_generic:table_func(set, RowIndex, NCols, db(snmpTargetAddrTable));
+	Error ->
+	    Error
+    end;
+snmpTargetAddrTable(is_set_ok, RowIndex, Cols0) ->
+    case (catch verify_targetAddrTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    %% Add columns for augmenting table snmpTargetAddrExtTable and for
+	    %% target engine ID.  Target engine ID is set to "".  The function
+	    %% get_target_engine_id will return "" unless a value is set using
+	    %% set_target_engine_id.  If it is "" Informs can't be sent to the
+	    %% target.
+	    NCols = Cols ++ [{?snmpTargetAddrEngineId, ""},
+			     {?snmpTargetAddrTMask, []},
+			     {?snmpTargetAddrMMS, 2048}],
+	    snmp_generic:table_func(is_set_ok, RowIndex, NCols, db(snmpTargetAddrTable));
+	Error ->
+	    Error
+    end;
 snmpTargetAddrTable(Op, Arg1, Arg2) ->
     snmp_generic:table_func(Op, Arg1, Arg2, db(snmpTargetAddrTable)).
+
+verify_targetAddrTable_cols([], Cols) ->
+    {ok, lists:reverse(Cols)};
+verify_targetAddrTable_cols([{Col, Val0}|Cols], Acc) ->
+    Val = verify_targetAddrTable_col(Col, Val0),
+    verify_targetAddrTable_cols(Cols, [{Col, Val}|Acc]).
+
+verify_targetAddrTable_col(?snmpTargetAddrName, Name) ->
+    case (catch snmp_conf:check_string(Name)) of
+	true ->
+	    Name;
+	_ ->
+	    wrongValue(?snmpTargetAddrName)
+    end;
+verify_targetAddrTable_col(?snmpTargetAddrTAddress, TAddr) ->
+    case (catch snmp_conf:check_ip_udp(TAddr)) of
+	true ->
+	    TAddr;
+	_ ->
+	    wrongValue(?snmpTargetAddrTAddress)
+    end;
+verify_targetAddrTable_col(?snmpTargetAddrTimeout, Timeout) ->
+    case (catch snmp_conf:check_integer(Timeout)) of
+	true when Timeout >= 0 ->
+	    Timeout;
+	_ ->
+	    wrongValue(?snmpTargetAddrTimeout)
+    end;
+verify_targetAddrTable_col(?snmpTargetAddrRetryCount, Retry) ->
+    case (catch snmp_conf:check_integer(Retry)) of
+	true when Retry >= 0 ->
+	    Retry;
+	_ ->
+	    wrongValue(?snmpTargetAddrRetryCount)
+    end;
+verify_targetAddrTable_col(?snmpTargetAddrTagList, TagList) ->
+    case (catch snmp_conf:check_string(TagList)) of
+	true ->
+	    TagList;
+	_ ->
+	    wrongValue(?snmpTargetAddrTagList)
+    end;
+verify_targetAddrTable_col(?snmpTargetAddrParams, Params) ->
+    case (catch snmp_conf:check_string(Params)) of
+	true ->
+	    Params;	
+	_ ->
+	    wrongValue(?snmpTargetAddrParams)
+    end;
+verify_targetAddrTable_col(_, Val) ->
+    Val.
+    
 
 %% Op == new | delete
 snmpTargetParamsTable(Op) ->
@@ -351,12 +480,70 @@ snmpTargetParamsTable(get, RowIndex, Cols) ->
     get(snmpTargetParamsTable, RowIndex, Cols);
 snmpTargetParamsTable(get_next, RowIndex, Cols) ->
     next(snmpTargetParamsTable, RowIndex, Cols);
-snmpTargetParamsTable(set, RowIndex, Cols) ->
-    snmp_notification_mib:invalidate_cache(),
-    snmp_generic:table_func(set, RowIndex, Cols, db(snmpTargetParamsTable));
+snmpTargetParamsTable(set, RowIndex, Cols0) ->
+    case (catch verify_snmpTargetParamsTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    snmp_notification_mib:invalidate_cache(),
+	    snmp_generic:table_func(set, RowIndex, Cols, 
+				    db(snmpTargetParamsTable));
+	Error ->
+	    Error
+    end;
 snmpTargetParamsTable(Op, Arg1, Arg2) ->
     snmp_generic:table_func(Op, Arg1, Arg2, db(snmpTargetParamsTable)).
 
+verify_snmpTargetParamsTable_cols([], Cols) ->
+    {ok, lists:reverse(Cols)};
+verify_snmpTargetParamsTable_cols([{Col, Val0}|Cols], Acc) ->
+    Val = verify_snmpTargetParamsTable_col(Col, Val0),
+    verify_snmpTargetParamsTable_cols(Cols, [{Col, Val}|Acc]).
+
+verify_snmpTargetParamsTable_col(?snmpTargetParamsName, Name) ->
+    case (catch snmp_conf:check_string(Name)) of
+	true ->
+	    Name;
+	_ ->
+	    wrongValue(?snmpTargetParamsName)
+    end;
+verify_snmpTargetParamsTable_col(?snmpTargetParamsMPModel, Model) ->
+    case Model of
+	v1      -> ?MP_V1;
+	v2c     -> ?MP_V2C;
+	v3      -> ?MP_V3;
+	?MP_V1  -> ?MP_V1;
+	?MP_V2C -> ?MP_V2C;
+	?MP_V3  -> ?MP_V3;
+	_       -> wrongValue(?snmpTargetParamsMPModel)
+    end;
+verify_snmpTargetParamsTable_col(?snmpTargetParamsSecurityModel, Model) ->
+    case Model of
+	v1       -> ?SEC_V1;
+	v2c      -> ?SEC_V2C;
+	usm      -> ?SEC_USM;
+	?SEC_V1  -> ?SEC_V1;
+	?SEC_V2C -> ?SEC_V2C;
+	?SEC_USM -> ?SEC_USM;
+	_        -> wrongValue(?snmpTargetParamsSecurityModel)
+    end;
+verify_snmpTargetParamsTable_col(?snmpTargetParamsSecurityName, Name) ->
+    case (catch snmp_conf:check_string(Name)) of
+	true ->
+	    Name;
+	_ ->
+	    wrongValue(?snmpTargetParamsSecurityName)
+    end;
+verify_snmpTargetParamsTable_col(?snmpTargetParamsSecurityLevel, Level) ->
+    case Level of
+	noAuthNoPriv -> 1;
+	authNoPriv   -> 2;
+	authPriv     -> 3;
+	1            -> 1;
+	2            -> 2;
+	3            -> 3;
+	_            -> wrongValue(?snmpTargetParamsSecurityLevel)
+    end;
+verify_snmpTargetParamsTable_col(_, Val) ->
+    Val.
 
 db(X) -> {X, persistent}.
 
@@ -383,6 +570,8 @@ table_next(Name, RestOid) ->
 get(Name, RowIndex, Cols) ->
     snmp_generic:handle_table_get(db(Name), RowIndex, Cols, foi(Name)).
 
+
+wrongValue(V) -> throw({wrongValue, V}).
 
 set_sname() ->
     set_sname(get(sname)).

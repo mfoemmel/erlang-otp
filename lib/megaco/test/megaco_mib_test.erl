@@ -26,9 +26,9 @@
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_v1.hrl").
 
--define(TEST_VERBOSITY, info).
--define(MGC_VERBOSITY,  silence).
--define(MG_VERBOSITY,   silence).
+-define(TEST_VERBOSITY, info). % silence | info | debug
+-define(MGC_VERBOSITY,  info).
+-define(MG_VERBOSITY,   info).
 
 -define(LOAD_COUNTER_START, 100).
 -define(A4444, ["11111111", "00000000", "00000000"]).

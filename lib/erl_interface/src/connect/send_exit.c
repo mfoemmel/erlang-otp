@@ -32,10 +32,19 @@
 #include "ei_trace.h"
 #include "ei_internal.h"
 #include "putget.h"
+#include "ei_portio.h"
 #include "show_msg.h"
 
 /* use this to break a link */
-int ei_send_exit(int fd, const erlang_pid *from, const erlang_pid *to, const char *reason)
+int ei_send_exit(int fd, const erlang_pid *from, 
+		 const erlang_pid *to, const char *reason)
+{
+    return ei_send_exit_tmo(fd,from,to,reason,0);
+}
+
+
+int ei_send_exit_tmo(int fd, const erlang_pid *from, const erlang_pid *to,
+		     const char *reason, unsigned ms)
 {
   char sbuf[EISMALLBUF];
   erlang_trace *token = NULL;
@@ -82,7 +91,8 @@ int ei_send_exit(int fd, const erlang_pid *from, const erlang_pid *to, const cha
   if (ei_tracelevel > 1)
       ei_show_sendmsg(stderr,msgbuf,NULL);
 
-  writesocket(fd,msgbuf,index); 
+  ei_write_fill_t(fd,msgbuf,index,ms); 
+  /* FIXME ignore timeout etc? erl_errno?! */
 
   if (dbuf) free(dbuf);
   return 0;

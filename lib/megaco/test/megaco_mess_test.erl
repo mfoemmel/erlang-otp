@@ -62,6 +62,7 @@
 -define(MG_AWAIT_NOTIF_REP(Pid), megaco_test_mg:await_notify_reply(Pid)).
 %% -define(MG_CONN_INFO(Pid,Tag), megaco_test_mg:conn_info(Pid,Tag)).
 -define(MG_USER_INFO(Pid,Tag), megaco_test_mg:user_info(Pid,Tag)).
+-define(MG_NOTIF_RAR(Pid), megaco_test_mg:notify_request_and_reply(Pid)).
 
 -define(SEND(Expr), 
 	?VERIFY(ok, megaco_mess_user_test:apply_proxy(fun() -> Expr end))).
@@ -99,7 +100,7 @@ fin_per_testcase(Case, Config) ->
 
 all(suite) ->
     [
-     connect ,
+     connect,
      request_and_reply,
      request_and_no_reply,
      pending_ack,
@@ -111,7 +112,8 @@ all(suite) ->
 
 tickets(suite) ->
     [
-     otp_4359
+     otp_4359,
+     otp_4836
     ].
 
 
@@ -662,6 +664,219 @@ otp_4359_analyze_encoded_message(RH, ExpErrorCode, M)
 	    exit({unexpected_decode_result, Else})
     end.
 	    
+    
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+otp_4836(suite) ->
+    [];
+otp_4836(Config) when list(Config) ->
+    put(verbosity, ?TEST_VERBOSITY),
+    put(sname,     "TEST"),
+    put(tc,        otp_4836),
+    i("starting"),
+
+    MgcNode = make_node_name(mgc),
+    MgNode  = make_node_name(mg),
+    d("start nodes: "
+      "~n   MgcNode: ~p"
+      "~n   MgNode:  ~p", 
+      [MgcNode, MgNode]),
+    ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
+
+    d("start the MGC simulator (generator)"),
+    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+
+    d("create the MGC event sequence"),
+    MgcEvSeq = otp_4836_mgc_event_sequence(text, tcp),
+
+    d("start the MGC simulation"),
+    megaco_test_generator:tcp(Mgc, MgcEvSeq),
+
+    i("[MG] start"),    
+    MgMid = {deviceName, "mg"},
+    ReqTmr = #megaco_incr_timer{wait_for    = 3000,
+                                factor      = 1, 
+                                incr        = 0,
+                                max_retries = 3},
+    %% 5000,  %% Does not matter since we will not use this anyway...
+    LongReqTmr = #megaco_incr_timer{wait_for    = 3000,
+                                    factor      = 1, 
+                                    incr        = 0,
+                                    max_retries = 3},
+    PendingTmr = 10000,
+    ReplyTmr = 16000,
+    MgConfig = [{request_timer,      ReqTmr}, 
+                {long_request_timer, LongReqTmr}, 
+                {pending_timer,      PendingTmr},
+                {reply_timer,        ReplyTmr}],
+    {ok, Mg} = ?MG_START(MgNode, MgMid, text, tcp, MgConfig, ?MG_VERBOSITY),
+
+    i("[MG] connect to the MGC (service change)"),    
+    ServChRes = ?MG_SERV_CHANGE(Mg),
+    d("service change result: ~p", [ServChRes]),
+
+    d("[MG] send the notify"),
+    {ok, Reply} = (catch ?MG_NOTIF_RAR(Mg)),
+    {1, {ok, [AR]}} = Reply,
+    d("[MG] ActionReply: ~p", [AR]),
+
+    d("[MGC] await the tcp reply"),
+    {ok, TcpReply} = megaco_test_generator:tcp_await_reply(Mgc),
+    d("[MGC] TcpReply: ~p", [TcpReply]),
+
+    %% Tell MG to stop
+    i("[MG] stop"),
+    ?MG_STOP(Mg),
+
+    %% Tell Mgc to stop
+    i("[MGC] stop generator"),
+    megaco_test_generator:stop(Mgc),
+
+    i("done", []),
+    ok.
+
+
+otp_4836_mgc_event_sequence(text, tcp) ->
+    DecodeFun = otp_4836_decode_msg_fun(megaco_pretty_text_encoder, []),
+    EncodeFun = otp_4836_encode_msg_fun(megaco_pretty_text_encoder, []),
+    ServiceChangeVerifyFun = otp_4836_verify_service_change_req_msg_fun(),
+    Mid = {deviceName,"ctrl"},
+    ServiceChangeReply = otp_4836_service_change_reply_msg(Mid, 1, 0),
+    NotifyReqVerifyFun = otp_4836_verify_notify_request_fun(),
+    TermId = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NotifyReply = otp_4836_notify_reply_msg(Mid, 2, 0, TermId),
+    Pending = otp_4836_pending_msg(Mid,2),
+    MgcEvSeq = [{debug,  true},
+		{decode, DecodeFun},
+		{encode, EncodeFun},
+		{listen, 2944},
+		{expect_accept, any},
+		{expect_receive, "service-change-request", {ServiceChangeVerifyFun, 10000}}, 
+		{send, "service-change-reply", ServiceChangeReply}, 
+		{expect_receive, "notify-request", {NotifyReqVerifyFun, 10000}},
+		{send, "pending 1", Pending}, 
+		{sleep, 100},
+		{send, "pending 2", Pending}, 
+		{sleep, 500},
+% 		{send, "pending 3", Pending}, 
+% 		{sleep, 100},
+% 		{send, "pending 4", Pending}, 
+% 		{sleep, 100},
+% 		{send, "pending 5", Pending}, 
+% 		{sleep, 5000},
+
+% 		{expect_receive, "notify-request", {NotifyReqVerifyFun, 10000}},
+
+  		{send, "notify-reply", NotifyReply}
+	       ],
+    MgcEvSeq.
+
+otp_4836_service_change_reply_msg(Mid, TransId, Cid) ->
+    SCRP  = #'ServiceChangeResParm'{serviceChangeMgcId = Mid},
+    SCRPs = {serviceChangeResParms,SCRP},
+    Root  = #megaco_term_id{id = ["root"]},
+    SCR   = #'ServiceChangeReply'{terminationID       = [Root],
+				  serviceChangeResult = SCRPs},
+    CR    = {serviceChangeReply, SCR},
+    otp_4836_msg(Mid, TransId, CR, Cid).
+    
+otp_4836_notify_reply_msg(Mid, TransId, Cid, TermId) ->
+    NR  = #'NotifyReply'{terminationID = [TermId]},
+    CR  = {notifyReply, NR},
+    otp_4836_msg(Mid, TransId, CR, Cid).
+
+otp_4836_msg(Mid, TransId, CR, Cid) ->
+    AR  = #'ActionReply'{contextId    = Cid,
+			 commandReply = [CR]},
+    ARs  = {actionReplies, [AR]},
+    TR   = #'TransactionReply'{transactionId     = TransId,
+			       transactionResult = ARs},
+    Body = {transactions, [{transactionReply, TR}]},
+    Mess = #'Message'{version     = 1,
+		      mId         = Mid,
+		      messageBody = Body},
+    #'MegacoMessage'{mess = Mess}.
+    
+    
+otp_4836_pending_msg(Mid, TransId) ->
+    TP   = #'TransactionPending'{transactionId = TransId},
+    Body = {transactions, [{transactionPending, TP}]},
+    Mess = #'Message'{version     = 1,
+		      mId         = Mid,
+		      messageBody = Body},
+    #'MegacoMessage'{mess = Mess}.
+    
+
+otp_4836_encode_msg_fun(Mod, Conf) ->
+    fun(M) -> 
+	    Mod:encode_message(Conf, M) 
+    end.
+otp_4836_encode_msg_fun(Mod, Conf, Ver) ->
+    fun(M) -> 
+	    Mod:encode_message(Conf, Ver, M) 
+    end.
+
+otp_4836_decode_msg_fun(Mod, Conf) ->
+    fun(M) -> 
+	    Mod:decode_message(Conf, M) 
+    end.
+otp_4836_decode_msg_fun(Mod, Conf, Ver) ->
+    fun(M) -> 
+	    Mod:decode_message(Conf, Ver, M) 
+    end.
+
+otp_4836_verify_msg_fun() ->
+    fun(M) -> {ok, M} end.
+
+otp_4836_verify_service_change_req_msg_fun() ->
+    fun(#'MegacoMessage'{mess = Mess} = M) -> 
+	    #'Message'{version     = _V,
+		       mId         = _Mid,
+		       messageBody = Body} = Mess,
+	    {transactions, [Trans]} = Body,
+	    {transactionRequest, TR} = Trans,
+	    #'TransactionRequest'{transactionId = _Tid,
+				  actions = [AR]} = TR,
+	    #'ActionRequest'{contextId = _Cid,
+			     contextRequest = _CtxReq,
+			     contextAttrAuditReq = _CtxAar,
+			     commandRequests = [CR]} = AR,
+	    #'CommandRequest'{command = Cmd,
+			      optional = _Opt,
+			      wildcardReturn = _WR} = CR,
+	    {serviceChangeReq, SCR} = Cmd,
+	    #'ServiceChangeRequest'{terminationID = _TermID,
+				    serviceChangeParms = SCP} = SCR,
+	    #'ServiceChangeParm'{serviceChangeMethod = restart,
+				 serviceChangeReason = [[$9,$0,$1|_]]} = SCP,
+	    {ok, M};
+       (M) ->
+	    {error, {invalid_message, M}}
+    end.
+
+otp_4836_verify_notify_request_fun() ->
+    fun(#'MegacoMessage'{mess = Mess} = M) -> 
+	    #'Message'{messageBody = Body} = Mess,
+	    {transactions, [Trans]} = Body,
+	    {transactionRequest, TR} = Trans,
+	    #'TransactionRequest'{actions = [AR]} = TR,
+	    #'ActionRequest'{commandRequests = [CR1,CR2]} = AR,
+	    #'CommandRequest'{command = Cmd1} = CR1,
+	    {notifyReq, NR1} = Cmd1,
+	    #'NotifyRequest'{observedEventsDescriptor = OED1} = NR1,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE1]} = OED1,
+	    #'ObservedEvent'{eventName = "al/of"} = OE1,
+	    #'CommandRequest'{command = Cmd2} = CR2,
+	    {notifyReq, NR2} = Cmd2,
+	    #'NotifyRequest'{observedEventsDescriptor = OED2} = NR2,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE2]} = OED2,
+	    #'ObservedEvent'{eventName = "al/of"} = OE2,
+	    {ok, M};
+       (M) ->
+	    {error, {invalid_message, M}}
+    end.
+
     
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

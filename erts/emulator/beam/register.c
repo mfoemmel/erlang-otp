@@ -16,8 +16,8 @@
  *     $Id$
  */
 /*
-** Manage Registered processes
-*/
+ * Manage registered processes.
+ */
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
@@ -33,30 +33,36 @@ Hash process_reg;
 
 #define PREG_HASH_SIZE 10
 
-void register_info(CIO to) {
+#define REG_HASH(term) ((HashValue) atom_val(term))
+
+void register_info(CIO to)
+{
     hash_info(to, &process_reg);
 }
 
-
-static HashValue reg_hash(RegProc *obj) {
-    return (HashValue) atom_val(obj->name);
+static HashValue reg_hash(RegProc* obj)
+{
+    return REG_HASH(obj->name);
 }
 
 static int reg_cmp(RegProc *tmpl, RegProc *obj) {
-    return (tmpl->name == obj->name) ? 0 : 1;
+    return tmpl->name != obj->name;
 }
 
-static RegProc* reg_alloc(RegProc *tmpl) {
+static RegProc* reg_alloc(RegProc *tmpl)
+{
     RegProc* obj = (RegProc*) erts_alloc(ERTS_ALC_T_REG_PROC, sizeof(RegProc));
-    if (!obj)
+    if (!obj) {
 	erl_exit(1, "Can't allocate %d bytes of memory\n", sizeof(RegProc));
+    }
     obj->name = tmpl->name;
     obj->p = tmpl->p;
     obj->pt = tmpl->pt;
     return obj;
 }
 
-static void reg_free(RegProc *obj) {
+static void reg_free(RegProc *obj)
+{
     erts_free(ERTS_ALC_T_REG_PROC, (void*) obj);
 }
 
@@ -74,11 +80,12 @@ void init_register_table(void)
 }
 
 /*
-** Register a port (cant be registerd twice)
-** Returns 0 if port already registered
-** Returns rp the portes registered (does not have to be p)
-*/
-Port* register_port(Eterm name, Port *pt) {
+ * Register a port (can't be registered twice).
+ * Returns 0 if port already registered.
+ * Returns rp the port's registered (does not have to be p).
+ */
+Port* register_port(Eterm name, Port *pt)
+{
     RegProc r, *rp;
 
     if (pt->reg != (RegProc*) 0)
@@ -95,15 +102,17 @@ Port* register_port(Eterm name, Port *pt) {
 }
 
 /*
-** Register a process (cant be registered twice)
-** Returns 0 if process already registered
-** Returns rp the processes registered (does not have to be p)
-*/
-Process* register_process(Process *c_p, Eterm name, Process *p) {
+ * Register a process (can't be registered twice).
+ * Returns 0 if process already registered.
+ * Returns rp the processes registered (does not have to be p).
+ */
+Process* register_process(Process *c_p, Eterm name, Process *p)
+{
     RegProc r, *rp;
 
-    if (p->reg != NULL)
+    if (p->reg != NULL) {
 	return NULL;
+    }
 
     r.name = name;
     r.p = p;
@@ -119,37 +128,56 @@ Process* register_process(Process *c_p, Eterm name, Process *p) {
     return rp->p;
 }
 
-/*
-** Find registered process (whereis)
-*/
-Process* whereis_process(Eterm name) {
-    RegProc r, *rp;
-
-    r.name = name;
-    if ((rp = (RegProc*) hash_get(&process_reg, (void*) &r)) != NULL)
-	return rp->p;
-    return (Process*) 0;
-}
-
-void whereis_name(Eterm name, Process **p, Port **pt)
+void whereis_name(Eterm name, Process** p, Port** pt)
 {
-    RegProc r, *rp;
+    HashValue hval = REG_HASH(name);
+    int ix = hval % process_reg.size;
+    HashBucket* b = process_reg.bucket[ix];
 
-    r.name = name;
-    *p = NULL;
-    *pt = NULL;
-    if ((rp = (RegProc*) hash_get(&process_reg, (void*) &r)) != NULL) {
-	*p = rp->p;
-	*pt = rp->pt;
+    /*
+     * Note: We have inlined the code from hash.c for speed.
+     */
+	
+    while (b != (HashBucket*) 0) {
+	RegProc* rp = (RegProc *) b;
+	if (rp->name == name) {
+	    if (p != NULL) {
+		*p = rp->p;
+	    }
+	    if (pt != NULL) {
+		*pt = rp->pt;
+	    }
+	    return;
+	}
+	b = b->next;
+    }
+    if (p != NULL) {
+	*p = NULL;
+    }
+    if (pt != NULL) {
+	*pt = NULL;
     }
 }
 
 /*
-** Unregister a name
-** Return 0 if not registered
-** Otherwise returns 1
-*/
-int unregister_name(Process *c_p, Eterm name) {
+ * Find registered process (whereis).
+ */
+Process* whereis_process(Eterm name)
+{
+    Process* p;
+
+    whereis_name(name, &p, NULL);
+    return p;
+}
+
+
+/*
+ * Unregister a name
+ * Return 0 if not registered
+ * Otherwise returns 1
+ */
+int unregister_name(Process *c_p, Eterm name)
+{
     RegProc r, *rp;
     
     r.name = name;

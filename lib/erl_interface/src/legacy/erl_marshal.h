@@ -25,8 +25,4 @@ int erl_verify_magic(unsigned char*);
 void erl_init_marshal(void);
 int erl_encode_it(ETERM *ep, unsigned char **ext, int dist);
 
-#if defined(VXWORKS) && CPU == PPC860
-int erl_fp_compare(unsigned *a, unsigned *b);
-#endif
-
 #endif /* _ERL_MARSHALL_H */

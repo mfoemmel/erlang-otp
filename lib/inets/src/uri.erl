@@ -18,14 +18,20 @@
 %% Description :
 %%   Implements various scheme dependent subsets (e.g. HTTP, FTP etc) based on
 %%   RFC 2396, Uniform Resource Identifiers (URI): Generic Syntax
-%% Created : 27 Jul 2001 by Johan Blom <johblo@localhost.localdomain>
+%% Supported schemes:
+%% HTTP - Source RFC 2396, RFC 2616
+%% FTP  - (Not yet!) Source RFC 2396, RFC 1738, RFC 959
+%% SIP  - (Not yet!) Source RFC 2396, RFC 2543
+%% SMS  - (Not yet!) Source draft-wilde-sms-uri-03, April 16 2002 and
+%%               draft-allocchio-gstn-04, August 2002
+%% H323 - (Not yet!) Source RFC 3508
 %%
 
 -module(uri).
 
 -author('johan.blom@mobilearts.se').
 
--export([parse/1,resolve/2]).
+-export([parse/1,resolve/2,scan_abspath/1]).
 
 
 %%% Parse URI and return {Scheme,Path}
@@ -106,6 +112,13 @@ scan_pathquery(C0) ->
 		Query ->
 		    Path++"?"++Query
 	    end;
+	{"#"++C1,Path} -> % 'query' and 'fragment' are both defined as '*uric'
+	    case scan_query(C1,[]) of
+		{error,Error} ->
+		    {error,Error};
+		Fragment ->
+		    Path++"#"++Fragment
+	    end;	    
 	{[],Path} ->
 	    Path
     end.
@@ -315,7 +328,7 @@ scan_segment(C0,Acc) ->
 scan_query([],Acc) ->
     lists:reverse(Acc);
 scan_query([$%,H1,H2|C0],Acc) -> % escaped
-    scan_query(C0,[hex2dec(H1)*16+hex2dec(H2)|Acc]);
+    scan_query([hex2dec(H1)*16+hex2dec(H2)|C0],Acc);
 scan_query([H|C0],Acc) when $a=<H,H=<$z;$A=<H,H=<$Z;$0=<H,H=<$9 -> % alphanum
     scan_query(C0,[H|Acc]);
 scan_query([H|C0],Acc) when H==$;; H==$/; H==$?; H==$:; H==$@;
@@ -324,6 +337,9 @@ scan_query([H|C0],Acc) when H==$;; H==$/; H==$?; H==$:; H==$@;
 scan_query([H|C0],Acc) when H==$-; H==$_; H==$.; H==$!; H==$~;
 			    H==$*; H==$'; H==$(; H==$) -> % mark
     scan_query(C0,[H|Acc]);
+scan_query([H|C0],Acc) when 0=<H,H=<127 -> % US ASCII
+    {H1,H2}=dec2hex(H),
+    scan_query(C0,[H2,H1,$%|Acc]);    
 scan_query([H|C0],Acc) ->
     {error,no_query}.
 
@@ -333,7 +349,7 @@ scan_query([H|C0],Acc) ->
 scan_pchars([],Acc) ->
     {[],Acc};
 scan_pchars([$%,H1,H2|C0],Acc) -> % escaped
-    scan_pchars(C0,[hex2dec(H1)*16+hex2dec(H2)|Acc]);
+    scan_pchars([hex2dec(H1)*16+hex2dec(H2)|C0],Acc);
 scan_pchars([H|C0],Acc) when $a=<H,H=<$z;$A=<H,H=<$Z;$0=<H,H=<$9  -> % alphanum
     scan_pchars(C0,[H|Acc]);
 scan_pchars([H|C0],Acc) when H==$-; H==$_; H==$.; H==$!; H==$~;
@@ -341,9 +357,25 @@ scan_pchars([H|C0],Acc) when H==$-; H==$_; H==$.; H==$!; H==$~;
     scan_pchars(C0,[H|Acc]);
 scan_pchars([H|C0],Acc) when H==$:; H==$@; H==$&; H==$=; H==$+; H==$$; H==$, ->
     scan_pchars(C0,[H|Acc]);
+scan_pchars([H|C0],Acc) when 0=<H,H=<127, % US ASCII
+			     H=/=$?,H=/=$;,H=/=$/,H=/=$# -> 
+    {H1,H2}=dec2hex(H),
+    scan_pchars(C0,[H2,H1,$%|Acc]);    
 scan_pchars(C0,Acc) ->
     {C0,Acc}.
 
 hex2dec(X) when X>=$0,X=<$9 -> X-$0;
 hex2dec(X) when X>=$A,X=<$F -> X-$A+10;
 hex2dec(X) when X>=$a,X=<$f -> X-$a+10.
+
+dec2hex(H) when H<256 ->
+    <<H1:4,H2:4>> = <<H>>,
+    {nibble2hex(H1),nibble2hex(H2)}.
+
+nibble2hex(X) when 0=<X,X=<9 -> X+$0;
+nibble2hex(10) -> $a;
+nibble2hex(11) -> $b;
+nibble2hex(12) -> $c;
+nibble2hex(13) -> $d;
+nibble2hex(14) -> $e;
+nibble2hex(15) -> $f.

@@ -55,10 +55,11 @@
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% start(Mode, SFile) -> {ok, Pid} | {error, {already_started,Pid}}
+%% start(Mode, SFile) -> {ok, Pid} | {error, Reason}
 %%   Mode = local | global
 %%   SFile = string() | default  Settings file
 %%   Pid = pid()
+%%   Reason = {already_started,Pid} | term()
 %%--------------------------------------------------------------------
 start(Mode, SFile) ->
     case whereis(?MODULE) of
@@ -66,7 +67,9 @@ start(Mode, SFile) ->
 	    Pid = spawn(?MODULE, init, [self(), Mode, SFile]),
 	    receive
 		{initialization_complete, Pid} ->
-		    {ok, Pid}
+		    {ok, Pid};
+		Error ->
+		    Error
 	    end;
 
 	Pid ->
@@ -99,6 +102,16 @@ stop() ->
 init(CallingPid, Mode, SFile) ->
     register(?MODULE, self()),
 
+    %% Graphics system
+    case catch dbg_ui_mon_win:init() of
+	{'EXIT', Reason} ->
+	    CallingPid ! {error, Reason};
+	GS ->
+	    init2(CallingPid, Mode, SFile, GS)
+    end.
+
+init2(CallingPid, Mode, SFile, GS) ->
+
     %% Start Int if necessary and subscribe to information from it
     Bool = case int:start() of
 	       {ok, _Int} -> true;
@@ -108,8 +121,6 @@ init(CallingPid, Mode, SFile) ->
 
     %% Start other necessary stuff
     dbg_ui_winman:start(),                      % Debugger window manager
-    GS = dbg_ui_mon_win:init(),                 % Graphics system
-
     %% Create monitor window
     Title = "Monitor",
     Win = dbg_ui_mon_win:create_win(GS, Title, menus()),
@@ -379,7 +390,8 @@ gui_cmd('Back Trace Size...', State) ->
 
 %% Help Menu
 gui_cmd('Debugger', State) ->
-    HelpFile = filename:join([code:lib_dir(debugger),"doc","index.html"]),
+    HelpFile = filename:join([code:lib_dir(debugger),
+			      "doc", "html", "part_frame.html"]),
     tool_utils:open_help(State#state.gs, HelpFile),
     State;
 
@@ -523,9 +535,9 @@ menus(enabled,  #pinfo{status=break}) ->
     ['Step','Next','Continue','Finish ','Attach','Kill'];
 menus(disabled, #pinfo{status=break}) ->
     [];
-menus(enabled,  PInfo) ->
+menus(enabled,  _PInfo) ->
     ['Attach','Kill'];
-menus(disabled, PInfo) ->
+menus(disabled, _PInfo) ->
     ['Step','Next','Continue','Finish '].
 
 shortcut(l) -> {always, 'Load Settings...'};
@@ -581,9 +593,9 @@ load_settings(SFile, State) ->
 		{debugger_settings, Settings} ->
 		    load_settings2(Settings, State#state{sfile=SFile,
 							 changed=false});
-		Error -> State
+		_Error -> State
 	    end;
-	{error, Reason} -> State
+	{error, _Reason} -> State
     end.
 
 load_settings2(Settings, State) ->
@@ -642,7 +654,7 @@ save_settings(SFile, State) ->
     case file:write_file(SFile, Binary) of
 	ok ->
 	    State#state{sfile=SFile, changed=false};
-	{error, Reason} ->
+	{error, _Reason} ->
 	    State
     end.
 

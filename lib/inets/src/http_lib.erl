@@ -20,7 +20,7 @@
 %%% Created :  4 Mar 2002 by Johan Blom
 
 %%% TODO
-%%% - Check if I need to anything special when parsing
+%%% - Check if I need to do anything special when parsing
 %%%   "Content-Type:multipart/form-data"
 
 -module(http_lib).
@@ -71,30 +71,6 @@ connection_close(Headers) when record(Headers,res_headers) ->
 	    false
     end.
 
-
-%% =============================================================================
-%%% Debugging:
-
-% format_time(TS) ->
-%     {_,_,MicroSecs}=TS,
-%     {{Y,Mon,D},{H,M,S}}=calendar:now_to_universal_time(TS),
-%     lists:flatten(io_lib:format("~4.4.0w-~2.2.0w-~2.2.0w,~2.2.0w:~2.2.0w:~6.3.0f",
-% 				[Y,Mon,D,H,M,S+(MicroSecs/1000000)])).
-
-%% Time in milli seconds
-% t() ->
-%     {A,B,C} = erlang:now(),
-%     A*1000000000+B*1000+(C div 1000).
-
-% sz(L) when list(L) ->
-%     length(L);
-% sz(B) when binary(B) ->
-%     size(B);
-% sz(O) ->
-%     {unknown_size,O}.
-
-
-%% =============================================================================
 
 getHeaderValue(_Attr,[]) ->
     [];
@@ -670,20 +646,19 @@ get_auth_data(BadCredentials) when list(BadCredentials) ->
 get_auth_data(_) ->
     {error,nouser}.
 
-
 create_header_list(H) ->
-    lookup(connection,H#req_headers.connection)++
-	lookup(host,H#req_headers.host)++
-	lookup(content_length,H#req_headers.content_length)++
-	lookup(transfer_encoding,H#req_headers.transfer_encoding)++
-	lookup(authorization,H#req_headers.authorization)++
-	lookup(user_agent,H#req_headers.user_agent)++
-	lookup(user_agent,H#req_headers.range)++
-	lookup(user_agent,H#req_headers.if_range)++
-	lookup(user_agent,H#req_headers.if_match)++
-	lookup(user_agent,H#req_headers.if_none_match)++
-	lookup(user_agent,H#req_headers.if_modified_since)++
-	lookup(user_agent,H#req_headers.if_unmodified_since)++
+    lookup("Connection",H#req_headers.connection)++
+	lookup("Host",H#req_headers.host)++
+	lookup("Content-Length",H#req_headers.content_length)++
+	lookup("Transfer-Encoding",H#req_headers.transfer_encoding)++
+	lookup("Authorization",H#req_headers.authorization)++
+	lookup("User-Agent",H#req_headers.user_agent)++
+	lookup("Range",H#req_headers.range)++
+	lookup("If-Range",H#req_headers.if_range)++
+	lookup("If-Match",H#req_headers.if_match)++
+	lookup("If-None-Match",H#req_headers.if_none_match)++
+	lookup("If-Modified-Since",H#req_headers.if_modified_since)++
+	lookup("If-Unmodified-Since",H#req_headers.if_unmodified_since)++
 	H#req_headers.other.
 
 lookup(_Key,undefined) ->
@@ -743,3 +718,26 @@ tag([$:|Rest], Tag) ->
     {httpd_util:to_lower(lists:reverse(Tag)), httpd_util:strip(Rest)};
 tag([Chr|Rest], Tag) ->
     tag(Rest, [Chr|Tag]).
+
+%% =============================================================================
+%%% Debugging:
+
+% format_time(TS) ->
+%     {_,_,MicroSecs}=TS,
+%     {{Y,Mon,D},{H,M,S}}=calendar:now_to_universal_time(TS),
+%     lists:flatten(io_lib:format("~4.4.0w-~2.2.0w-~2.2.0w,~2.2.0w:~2.2.0w:~6.3.0f",
+% 				[Y,Mon,D,H,M,S+(MicroSecs/1000000)])).
+
+%% Time in milli seconds
+% t() ->
+%     {A,B,C} = erlang:now(),
+%     A*1000000000+B*1000+(C div 1000).
+
+% sz(L) when list(L) ->
+%     length(L);
+% sz(B) when binary(B) ->
+%     size(B);
+% sz(O) ->
+%     {unknown_size,O}.
+
+

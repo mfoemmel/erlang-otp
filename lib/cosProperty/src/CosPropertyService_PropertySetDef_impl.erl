@@ -97,11 +97,11 @@
 -define(is_NotStatic(S),        binary(S#state.dbKey)).
 
 %% Fun:s
--define(Local2Property,      fun({N,V,M}) -> 
+-define(Local2Property,      fun({N,V,_M}) -> 
 				     #'CosPropertyService_Property'{property_name = N,
 								    property_value = V}
 			     end).
--define(Local2Names,      fun({N,V,M}) -> 
+-define(Local2Names,      fun({N,_V,_M}) -> 
 				  N
 			  end).
 -define(MemberName(N),    fun(R) -> 
@@ -141,11 +141,11 @@ init({static, DefMode, AllowedTypes, AllowedProperties, InitProperties, MyType})
 %% Description: Shutdown the server
 %% Returns    : any (ignored by gen_server)
 %%----------------------------------------------------------------------
-terminate(Reason, State) when ?is_NotStatic(State) ->
+terminate(_Reason, State) when ?is_NotStatic(State) ->
     _DF = ?delete_function({oe_CosPropertyService, ?get_DBKey(State)}),
     catch write_result(mnesia:transaction(_DF)),
     ok;
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%---------------------------------------------------------------------%
@@ -153,7 +153,7 @@ terminate(Reason, State) ->
 %% Description: Convert process state when code is changed
 %% Returns    : {ok, State}
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
@@ -168,7 +168,7 @@ code_change(OldVsn, State, Extra) ->
 %%----------------------------------------------------------------------
 define_property(_, _, "", _) ->
     corba:raise(#'CosPropertyService_InvalidPropertyName'{});
-define_property(OE_This, State, Name, Value) when ?is_NotStatic(State) ->
+define_property(_OE_This, State, Name, Value) when ?is_NotStatic(State) ->
     evaluate_property_data(State, Value, Name),
     _DF = 
 	fun() ->
@@ -189,16 +189,16 @@ define_property(OE_This, State, Name, Value) when ?is_NotStatic(State) ->
 		end
 	end,
     {reply, mnesia_transaction(_DF), State};
-define_property(OE_This, State, Name, Value) ->
+define_property(_OE_This, State, Name, Value) ->
     evaluate_property_data(State, Value, Name),
     X = ?get_DBKey(State),
     case catch update_property(X, Name, value, Value, ?get_DefaultMode(State)) of
  	{'EXCEPTION', E} when record(E, 'CosPropertyService_PropertyNotFound') ->
-	    corba:raise(#'INTERNAL'{minor=300, completion_status=?COMPLETED_NO});
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO});
  	{'EXCEPTION', E} ->
 	    corba:raise(E);
- 	NewProperties ->
-	    corba:raise(#'INTERNAL'{minor=300, completion_status=?COMPLETED_NO})
+ 	_NewProperties ->
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
 
@@ -210,7 +210,7 @@ define_property(OE_This, State, Name, Value) ->
 %%----------------------------------------------------------------------
 get_property_value(_, _, "") ->
     corba:raise(#'CosPropertyService_InvalidPropertyName'{});
-get_property_value(OE_THIS, State, Name) ->
+get_property_value(_OE_THIS, State, Name) ->
     X = lookup_table(?get_DBKey(State)),
     {reply, find_property(X, Name, value), State}.
 
@@ -222,7 +222,7 @@ get_property_value(OE_THIS, State, Name) ->
 %%----------------------------------------------------------------------
 delete_property(_, _, "") ->
     corba:raise(#'CosPropertyService_InvalidPropertyName'{});
-delete_property(OE_THIS, State, Name) when ?is_NotStatic(State) ->
+delete_property(_OE_THIS, State, Name) when ?is_NotStatic(State) ->
     _DF = 
 	fun() ->
 		case mnesia_read(State) of
@@ -238,12 +238,12 @@ delete_property(OE_THIS, State, Name) when ?is_NotStatic(State) ->
 		end
 	end,
     {reply, mnesia_transaction(_DF), State};
-delete_property(OE_THIS, State, Name) ->
+delete_property(_OE_THIS, State, Name) ->
     X = lookup_table(?get_DBKey(State)),
     %% Check the properties; must raise an exception.
     remove_property(X, Name),
     %% Something is not correct.
-    corba:raise(#'INTERNAL'{minor=300, completion_status=?COMPLETED_NO}).
+    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
 
 %%---------------------------------------------------------------------%
@@ -252,7 +252,7 @@ delete_property(OE_THIS, State, Name) ->
 %% Description: 
 %% Returns    : {ok, State}
 %%----------------------------------------------------------------------
-define_properties(OE_THIS, State, PropertySeq) when ?is_NotStatic(State) ->
+define_properties(_OE_THIS, State, PropertySeq) when ?is_NotStatic(State) ->
     {OKProperties, Exc} = evaluate_properties_data(State, PropertySeq),
     _DF = 
 	fun() ->
@@ -270,20 +270,20 @@ define_properties(OE_THIS, State, PropertySeq) when ?is_NotStatic(State) ->
 		end
 	end,
     {reply, mnesia_transaction(_DF), State};
-define_properties(OE_THIS, State, PropertySeq) ->
+define_properties(_OE_THIS, State, PropertySeq) ->
     {OKProperties, Exc} = evaluate_properties_data(State, PropertySeq),
     X = lookup_table(?get_DBKey(State)),
     case define_properties_helper(State, OKProperties, X, Exc) of
 	{'EXCEPTION', E} ->
 	    corba:raise(E);
 	_ ->
-	    corba:raise(#'INTERNAL'{minor=300, completion_status=?COMPLETED_NO})
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
-define_properties_helper(State, [], NewProperties, []) ->
+define_properties_helper(_State, [], NewProperties, []) ->
     %% No exceptions, insert the properties.
     NewProperties;
-define_properties_helper(State, [], _, MultipleExceptions) ->
+define_properties_helper(_State, [], _, MultipleExceptions) ->
     {'EXCEPTION', #'CosPropertyService_MultipleExceptions'{exceptions = MultipleExceptions}};
 define_properties_helper(State, [#'CosPropertyService_Property'
 			    {property_name = Name,
@@ -307,7 +307,7 @@ define_properties_helper(State, [#'CosPropertyService_Property'
 %%              with this object.
 %% Returns    : {ok, ulong(), State}
 %%----------------------------------------------------------------------
-get_number_of_properties(OE_THIS, State) ->
+get_number_of_properties(_OE_THIS, State) ->
     X = lookup_table(?get_DBKey(State)),
     {reply, length(X), State}.
 
@@ -317,7 +317,7 @@ get_number_of_properties(OE_THIS, State) ->
 %% Description: 
 %% Returns    : {ok, State}
 %%----------------------------------------------------------------------
-get_all_property_names(OE_THIS, State, Max) ->
+get_all_property_names(_OE_THIS, State, Max) ->
     X = lookup_table(?get_DBKey(State)),
     {reply, get_all_property_names_helper(X, [], Max), State}.
 
@@ -338,13 +338,13 @@ get_all_property_names_helper([{Name, _, _}|T], Acc, No) ->
 %% Description: 
 %% Returns    : {ok, State}
 %%----------------------------------------------------------------------
-get_properties(OE_THIS, State, PropertyNames) ->
+get_properties(_OE_THIS, State, PropertyNames) ->
     X = lookup_table(?get_DBKey(State)),
     {reply, locate_names(PropertyNames, X, true, []), State}.
 
 locate_names([], _, AllOK, Acc) ->
     {AllOK, Acc};
-locate_names([""|T], X, AllOK, Acc) ->
+locate_names([""|T], X, _AllOK, Acc) ->
     locate_names(T, X, false, [#'CosPropertyService_Property'
 			       {property_name = "",
 				property_value = 
@@ -368,7 +368,7 @@ locate_names([H|T], X, AllOK, Acc) ->
 %% Description: 
 %% Returns    : {ok, State}
 %%----------------------------------------------------------------------
-get_all_properties(OE_THIS, State, Max) ->
+get_all_properties(_OE_THIS, State, Max) ->
     X = lookup_table(?get_DBKey(State)),
     {reply, get_all_properties_helper(X, [], Max), State}.
 
@@ -390,9 +390,9 @@ get_all_properties_helper([{Name, Val, _}|T], Acc, No) ->
 %% Description: 
 %% Returns    : {ok, State}
 %%----------------------------------------------------------------------
-delete_properties(OE_THIS, State, []) ->
+delete_properties(_OE_THIS, State, []) ->
     {reply, ok, State};
-delete_properties(OE_THIS, State, PropertyNames) when ?is_NotStatic(State) ->
+delete_properties(_OE_THIS, State, PropertyNames) when ?is_NotStatic(State) ->
     _DF = 
 	fun() ->
 		case mnesia_read(State) of
@@ -413,21 +413,21 @@ delete_properties(OE_THIS, State, PropertyNames) when ?is_NotStatic(State) ->
 		end
 	end,
     {reply, mnesia_transaction(_DF), State};
-delete_properties(OE_THIS, State, PropertyNames) ->
+delete_properties(_OE_THIS, State, PropertyNames) ->
     X = lookup_table(?get_DBKey(State)),
     case delete_properties_helper(X, [], [], PropertyNames, State, length(X)) of
 	{'EXCEPTION', E} ->
 	    corba:raise(E);
 	_->
 	    %% Not acceptable if it was possible to delete one or more Properties.
-	    corba:raise(#'INTERNAL'{minor=300, completion_status=?COMPLETED_NO})
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
-delete_properties_helper([], [], NotDeleted, [], State, Len) ->
+delete_properties_helper([], [], NotDeleted, [], _State, _Len) ->
     %% Since there are no exceptions we have been able to delete all
     %% properties.
     {ok, NotDeleted};
-delete_properties_helper([], MultipleExc, NotDeleted, Names, State, Len) ->
+delete_properties_helper([], MultipleExc, NotDeleted, Names, _State, Len) ->
     %% Write remaining events to DB.
     case length(NotDeleted) of
 	Len ->
@@ -470,7 +470,7 @@ add_not_found([Name|T], MultipleExc) ->
 %% Description: 
 %% Returns    : {ok, State}
 %%----------------------------------------------------------------------
-delete_all_properties(OE_THIS, State) when ?is_NotStatic(State) ->
+delete_all_properties(_OE_THIS, State) when ?is_NotStatic(State) ->
     _DF = 
 	fun() ->
 		case mnesia_read(State) of
@@ -493,19 +493,19 @@ delete_all_properties(OE_THIS, State) when ?is_NotStatic(State) ->
 		end
 	end,
     {reply, mnesia_transaction(_DF), State};
-delete_all_properties(OE_THIS, State) ->
+delete_all_properties(_OE_THIS, State) ->
     X = lookup_table(?get_DBKey(State)),
     case delete_all_properties_helper(X, [], State, length(X)) of
 	false ->
 	    {reply, false, State};
 	_->
-	    corba:raise(#'INTERNAL'{minor=300, completion_status=?COMPLETED_NO})
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
-delete_all_properties_helper([], [], State, _) ->
+delete_all_properties_helper([], [], _State, _) ->
     %% Was able to delete all properties.
     true;
-delete_all_properties_helper([], NotDeleted, State, Len) ->
+delete_all_properties_helper([], NotDeleted, _State, Len) ->
     %% Write remaining events to DB.
     case length(NotDeleted) of
 	Len ->
@@ -528,7 +528,7 @@ delete_all_properties_helper([_|T], NotDeleted, State, Len) ->
 %%----------------------------------------------------------------------
 is_property_defined(_, _, "") ->
     corba:raise(#'CosPropertyService_InvalidPropertyName'{});
-is_property_defined(OE_THIS, State, Name) ->
+is_property_defined(_OE_THIS, State, Name) ->
     X = lookup_table(?get_DBKey(State)),
     {reply, lists:keymember(Name, 1, X), State}.
 
@@ -542,9 +542,9 @@ is_property_defined(OE_THIS, State, Name) ->
 %%              list means no restrictions.
 %% Returns    : {ok, TypeCodeList,State}
 %%----------------------------------------------------------------------
-get_allowed_property_types(OE_THIS, State) when ?is_NotSetDef(State) ->
+get_allowed_property_types(_OE_THIS, State) when ?is_NotSetDef(State) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO});
-get_allowed_property_types(OE_THIS, State) ->
+get_allowed_property_types(_OE_THIS, State) ->
     {reply, {ok, ?get_okTypes(State)}, State}.
 
 %%---------------------------------------------------------------------%
@@ -554,9 +554,9 @@ get_allowed_property_types(OE_THIS, State) ->
 %%              list means no restrictions.
 %% Returns    : {ok, PropertyDefList, State}
 %%----------------------------------------------------------------------
-get_allowed_properties(OE_THIS, State) when ?is_NotSetDef(State) ->
+get_allowed_properties(_OE_THIS, State) when ?is_NotSetDef(State) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO});
-get_allowed_properties(OE_THIS, State) ->
+get_allowed_properties(_OE_THIS, State) ->
     {reply, {ok, ?get_okProperties(State)}, State}.
 
 %%---------------------------------------------------------------------%
@@ -565,11 +565,11 @@ get_allowed_properties(OE_THIS, State) ->
 %% Description: 
 %% Returns    : {ok, State}
 %%----------------------------------------------------------------------
-define_property_with_mode(OE_THIS, State, _, _, _) when ?is_NotSetDef(State) ->
+define_property_with_mode(_OE_THIS, State, _, _, _) when ?is_NotSetDef(State) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO});
 define_property_with_mode(_, _, "", _, _) ->
     corba:raise(#'CosPropertyService_InvalidPropertyName'{});
-define_property_with_mode(OE_THIS, State, Name, Value, Mode) 
+define_property_with_mode(_OE_THIS, State, Name, Value, Mode) 
   when ?is_NotStatic(State) ->
     evaluate_property_data(State, Value, Name),
     _DF = 
@@ -590,18 +590,18 @@ define_property_with_mode(OE_THIS, State, Name, Value, Mode)
 		end
 	end,
     {reply, mnesia_transaction(_DF), State};
-define_property_with_mode(OE_THIS, State, Name, Value, Mode) ->
+define_property_with_mode(_OE_THIS, State, Name, Value, Mode) ->
     evaluate_property_data(State, Value, Name),
     X = lookup_table(?get_DBKey(State)),
     case catch update_property(X, Name, both, Value, Mode) of
 	{'EXCEPTION', E} when record(E, 'CosPropertyService_PropertyNotFound') ->
 	    %% Should get not allowed exception.
-	    corba:raise(#'INTERNAL'{minor=300, completion_status=?COMPLETED_NO});
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO});
 	{'EXCEPTION', E} ->
 	    corba:raise(E);
 	_ ->
 	    %% Should be impossible.
-	    corba:raise(#'INTERNAL'{minor=300, completion_status=?COMPLETED_NO})
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
 %%---------------------------------------------------------------------%
@@ -610,9 +610,9 @@ define_property_with_mode(OE_THIS, State, Name, Value, Mode) ->
 %% Description: 
 %% Returns    : {ok, State}
 %%----------------------------------------------------------------------
-define_properties_with_modes(OE_THIS, State, _) when ?is_NotSetDef(State) ->
+define_properties_with_modes(_OE_THIS, State, _) when ?is_NotSetDef(State) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO});
-define_properties_with_modes(OE_THIS, State, PropertyDefSeq) 
+define_properties_with_modes(_OE_THIS, State, PropertyDefSeq) 
   when ?is_NotStatic(State)->
     {OKProperteDefs, Exc} = evaluate_properties_data(State, PropertyDefSeq),
     _DF = 
@@ -631,18 +631,18 @@ define_properties_with_modes(OE_THIS, State, PropertyDefSeq)
 		end
 	end,
     {reply, mnesia_transaction(_DF), State};
-define_properties_with_modes(OE_THIS, State, PropertyDefSeq) ->
+define_properties_with_modes(_OE_THIS, State, PropertyDefSeq) ->
     {OKProperteDefs, Exc} = evaluate_properties_data(State, PropertyDefSeq),
     X = lookup_table(?get_DBKey(State)),
      case define_properties_with_modes_helper(OKProperteDefs, X, Exc, State) of
 	 {'EXCEPTION', E} -> 
 	     corba:raise(E);
 	 _ ->
-	     corba:raise(#'INTERNAL'{minor=300, completion_status=?COMPLETED_NO})
+	     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
      end.
 	     
 
-define_properties_with_modes_helper([], NewPropertyDefs, [], State) ->
+define_properties_with_modes_helper([], NewPropertyDefs, [], _State) ->
     %% No exceptions found.
     NewPropertyDefs;
 define_properties_with_modes_helper([], _, Exc, _) ->
@@ -670,11 +670,11 @@ define_properties_with_modes_helper([#'CosPropertyService_PropertyDef'
 %% Description: 
 %% Returns    : {ok, State}
 %%----------------------------------------------------------------------
-get_property_mode(OE_THIS, State, _) when ?is_NotSetDef(State) ->
+get_property_mode(_OE_THIS, State, _) when ?is_NotSetDef(State) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO});
 get_property_mode(_, _, "") ->
     corba:raise(#'CosPropertyService_InvalidPropertyName'{});
-get_property_mode(OE_THIS, State, Name) ->
+get_property_mode(_OE_THIS, State, Name) ->
     X = lookup_table(?get_DBKey(State)),
     {reply, find_property(X, Name, mode), State}.
 
@@ -684,9 +684,9 @@ get_property_mode(OE_THIS, State, Name) ->
 %% Description: 
 %% Returns    : {ok, State}
 %%----------------------------------------------------------------------
-get_property_modes(OE_THIS, State, _) when ?is_NotSetDef(State) ->
+get_property_modes(_OE_THIS, State, _) when ?is_NotSetDef(State) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO}); 
-get_property_modes(OE_THIS, State, PropertyNames) ->
+get_property_modes(_OE_THIS, State, PropertyNames) ->
     X = lookup_table(?get_DBKey(State)),
     {reply, get_property_modes_helper(PropertyNames, X, [], true), State}.
 
@@ -717,11 +717,11 @@ get_property_modes_helper([Name|T], Properties, Acc, Bool) ->
 %% Description: 
 %% Returns    : {ok, State}
 %%----------------------------------------------------------------------
-set_property_mode(OE_THIS, State, _, _) when ?is_NotSetDef(State) ->
+set_property_mode(_OE_THIS, State, _, _) when ?is_NotSetDef(State) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO});
 set_property_mode(_, _, "", _) ->
     corba:raise(#'CosPropertyService_InvalidPropertyName'{});
-set_property_mode(OE_THIS, State, Name, Mode) when ?is_NotStatic(State) ->
+set_property_mode(_OE_THIS, State, Name, Mode) when ?is_NotStatic(State) ->
     _DF = 
 	fun() ->
 		case mnesia_read(State) of
@@ -737,12 +737,12 @@ set_property_mode(OE_THIS, State, Name, Mode) when ?is_NotStatic(State) ->
 		end
 	end,
     {reply, mnesia_transaction(_DF), State};
-set_property_mode(OE_THIS, State, Name, Mode) ->
+set_property_mode(_OE_THIS, State, Name, Mode) ->
     X = lookup_table(?get_DBKey(State)),
     update_property(X, Name, mode, undefined, Mode),
     %% Something is not correct, shouldn't be allowed to update a property when
     %% static.
-    corba:raise(#'INTERNAL'{minor=300, completion_status=?COMPLETED_NO}).
+    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
 %%---------------------------------------------------------------------%
 %% Function   : set_property_modes
@@ -750,9 +750,9 @@ set_property_mode(OE_THIS, State, Name, Mode) ->
 %% Description: 
 %% Returns    : {ok, State}
 %%----------------------------------------------------------------------
-set_property_modes(OE_THIS, State, _) when ?is_NotSetDef(State) ->
+set_property_modes(_OE_THIS, State, _) when ?is_NotSetDef(State) ->
     corba:raise(#'NO_IMPLEMENT'{completion_status=?COMPLETED_NO});
-set_property_modes(OE_THIS, State, PropertyModes) when ?is_NotStatic(State) ->
+set_property_modes(_OE_THIS, State, PropertyModes) when ?is_NotStatic(State) ->
     _DF = 
 	fun() ->
 		case mnesia_read(State) of
@@ -769,16 +769,16 @@ set_property_modes(OE_THIS, State, PropertyModes) when ?is_NotStatic(State) ->
 		end
 	end,
     {reply, mnesia_transaction(_DF), State};
-set_property_modes(OE_THIS, State, PropertyModes) ->
+set_property_modes(_OE_THIS, State, PropertyModes) ->
     X = lookup_table(?get_DBKey(State)),
     case set_property_modes_helper(PropertyModes, X, [], State) of
 	{'EXCEPTION', E} ->
 	    corba:raise(E);
 	_ ->
-	    corba:raise(#'INTERNAL'{minor=300, completion_status=?COMPLETED_NO})
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
-set_property_modes_helper([], NewProperties, [], State) ->
+set_property_modes_helper([], NewProperties, [], _State) ->
     %% No exceptions, write to DB.
     NewProperties;
 set_property_modes_helper([], _, Exc, _) ->
@@ -826,9 +826,9 @@ remove_property(PropertList, Name) ->
     remove_property(PropertList, Name, []).
 remove_property([], _, _) ->
     corba:raise(#'CosPropertyService_PropertyNotFound'{});
-remove_property([{Name, _, fixed_normal}|T], Name, _) ->
+remove_property([{Name, _, fixed_normal}|_T], Name, _) ->
     corba:raise(#'CosPropertyService_FixedProperty'{});
-remove_property([{Name, _, fixed_readonly}|T], Name, _) ->
+remove_property([{Name, _, fixed_readonly}|_T], Name, _) ->
     corba:raise(#'CosPropertyService_FixedProperty'{});
 remove_property([{Name, _, _}|T], Name, Acc) ->
     T++Acc; 
@@ -850,9 +850,9 @@ update_property([{Name, _, fixed_normal}|_], Name, both, _, _, _) ->
 update_property([{Name, _, fixed_readonly}|_], Name, both, _, _, _) ->
     corba:raise(#'CosPropertyService_FixedProperty'{});
 update_property([{Name, #any{typecode = TC}, Mode}|T], Name, 
-		value, #any{typecode = TC, value = Value}, Mod, Acc) ->
+		value, #any{typecode = TC, value = Value}, _Mod, Acc) ->
     [{Name, #any{typecode = TC, value = Value}, Mode}|T]++Acc;
-update_property([{Name, #any{typecode = TC}, Mode}|T], Name, 
+update_property([{Name, #any{typecode = TC}, _Mode}|T], Name, 
 		both, #any{typecode = TC, value = Value}, Mod, Acc) ->
     [{Name, #any{typecode = TC, value = Value}, Mod}|T]++Acc;
 update_property([{Name, _, _}|_], Name, value, _, _, _) ->
@@ -863,13 +863,13 @@ update_property([{Name, _, _}|_], Name, both, _, _, _) ->
 %% to be able to manage static Properties we must raise an exception. Well,
 %% on the other hand, why should a user try to change a mode to the same value?!
 %% But we have no other option.
-update_property([{Name, Value, fixed_normal}|T], Name, mode, _, fixed_normal, Acc) ->
+update_property([{Name, _Value, fixed_normal}|_T], Name, mode, _, fixed_normal, _Acc) ->
     corba:raise(#'CosPropertyService_FixedProperty'{});
-update_property([{Name, Value, fixed_readonly}|T], Name, mode, _, fixed_readonly, Acc) ->
+update_property([{Name, _Value, fixed_readonly}|_T], Name, mode, _, fixed_readonly, _Acc) ->
     corba:raise(#'CosPropertyService_FixedProperty'{});
-update_property([{Name, Value, fixed_normal}|T], Name, mode, _, Mode, Acc) ->
+update_property([{Name, _Value, fixed_normal}|_T], Name, mode, _, _Mode, _Acc) ->
     corba:raise(#'CosPropertyService_UnsupportedMode'{});
-update_property([{Name, Value, fixed_readonly}|T], Name, mode, _, Mode, Acc) ->
+update_property([{Name, _Value, fixed_readonly}|_T], Name, mode, _, _Mode, _Acc) ->
     corba:raise(#'CosPropertyService_UnsupportedMode'{});
 update_property([{Name, Value, _}|T], Name, mode, _, Mode, Acc) ->
     [{Name, Value, Mode}|T]++Acc;
@@ -883,15 +883,14 @@ lookup_table(Key) when binary(Key) ->
         {atomic, [#oe_CosPropertyService{properties=Properties}]} ->
             Properties;
         {atomic, []} ->
-            corba:raise(#'OBJECT_NOT_EXIST'{minor=100, 
-					    completion_status=?COMPLETED_NO});
-        Other ->
-	    corba:raise(#'INTERNAL'{minor=100, completion_status=?COMPLETED_NO})
+            corba:raise(#'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO});
+        _Other ->
+	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 lookup_table(Key) when list(Key) ->
     Key;
 lookup_table(_) ->
-    corba:raise(#'INTERNAL'{minor=200, completion_status=?COMPLETED_NO}).
+    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
 mnesia_transaction(Fun) ->
     case mnesia:transaction(Fun) of 
@@ -901,7 +900,7 @@ mnesia_transaction(Fun) ->
 	    ok;
 	{atomic, Reply} ->
 	    Reply;
-	Other ->
+	_Other ->
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -910,10 +909,9 @@ mnesia_read(State) ->
 	[#oe_CosPropertyService{properties = X}] ->
 	    X;
         {atomic, []} ->
-            {'EXCEPTION', #'OBJECT_NOT_EXIST'{minor=100, 
-					      completion_status=?COMPLETED_NO}};
-        Other ->
-	    {'EXCEPTION', #'INTERNAL'{minor=100, completion_status=?COMPLETED_NO}}
+            {'EXCEPTION', #'OBJECT_NOT_EXIST'{completion_status=?COMPLETED_NO}};
+        _Other ->
+	    {'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}
     end.
 
 mnesia_write(State, X) ->
@@ -921,13 +919,13 @@ mnesia_write(State, X) ->
 
 %% Check a write transaction
 write_result({atomic,ok}) -> ok;
-write_result(Foo) ->
-    corba:raise(#'INTERNAL'{minor=400, completion_status=?COMPLETED_NO}).
+write_result(_Foo) ->
+    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
 evaluate_properties_data(State, PropertySeq) ->
     evaluate_properties_data(State, PropertySeq, [], []).
 
-evaluate_properties_data(State, [], OKProperties, Exc) ->
+evaluate_properties_data(_State, [], OKProperties, Exc) ->
     {OKProperties, Exc};
 
 evaluate_properties_data(State, [#'CosPropertyService_Property'
@@ -976,14 +974,14 @@ evaluate_properties_data(_, _, _, _) ->
 evaluate_property_data(State, _, _) when ?no_PropertyLimits(State),
 					 ?no_TypeLimits(State) ->
     ok;
-evaluate_property_data(State, Value, Name) when ?no_PropertyLimits(State) ->
+evaluate_property_data(State, Value, _Name) when ?no_PropertyLimits(State) ->
     case lists:member(any:get_typecode(Value), ?get_okTypes(State)) of
 	true ->
 	    ok;
 	_ ->
 	    corba:raise(#'CosPropertyService_UnsupportedTypeCode'{})
     end;
-evaluate_property_data(State, Value, Name) when ?no_TypeLimits(State) ->
+evaluate_property_data(State, _Value, Name) when ?no_TypeLimits(State) ->
     case lists:any(?MemberName(Name), ?get_okProperties(State)) of
 	true ->
 	    ok;

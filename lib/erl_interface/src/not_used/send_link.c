@@ -35,12 +35,12 @@
 #include "eisend.h"
 #include "ei_internal.h"
 #include "putget.h"
-#include "show_msg.h"
+#include "erl_rport.h"
 
-/* FIXME this is not used ! */
 
 /* this sends either link or unlink ('which' decides) */
-static int link_unlink(int fd, const erlang_pid *from, const erlang_pid *to, int which)
+static int link_unlink(int fd, const erlang_pid *from, const erlang_pid *to,
+		       int which, unsigned ms)
 {
   char msgbuf[EISMALLBUF];
   char *s;
@@ -65,7 +65,7 @@ static int link_unlink(int fd, const erlang_pid *from, const erlang_pid *to, int
   if (ei_trace_distribution > 1) ei_show_sendmsg(stderr,msgbuf,NULL);
 #endif
 
-  n = writesocket(fd,msgbuf,index); 
+  n = ei_write_fill_t(fd,msgbuf,index,ms); 
 
   return (n==index ? 0 : -1);
 }
@@ -75,12 +75,25 @@ static int link_unlink(int fd, const erlang_pid *from, const erlang_pid *to, int
 /* use this to send a link */
 int ei_send_unlink(int fd, const erlang_pid *from, const erlang_pid *to)
 {
-  return link_unlink(fd, from, to, ERL_UNLINK);
+  return link_unlink(fd, from, to, ERL_UNLINK,0);
 }
 
 /* use this to send an unlink */
 int ei_send_link(int fd, const erlang_pid *from, const erlang_pid *to)
 {
-  return link_unlink(fd, from, to, ERL_LINK);
+  return link_unlink(fd, from, to, ERL_LINK,0);
+}
+/* use this to send a link */
+int ei_send_unlink_tmo(int fd, const erlang_pid *from, const erlang_pid *to,
+		       unsigned ms)
+{
+  return link_unlink(fd, from, to, ERL_UNLINK,ms);
+}
+
+/* use this to send an unlink */
+int ei_send_link_tmo(int fd, const erlang_pid *from, const erlang_pid *to,
+		     unsigned ms)
+{
+  return link_unlink(fd, from, to, ERL_LINK,ms);
 }
 #endif

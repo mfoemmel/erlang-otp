@@ -21,29 +21,37 @@
 -module(megaco_test_mg).
 
 -export([start/5, start/6, stop/1, 
-	 get_stats/2, reset_stats/1,
+	 get_stats/1, reset_stats/1, 
+	 user_info/1, user_info/2, 
+	 update_user_info/3, 
+	 conn_info/1, conn_info/2, 
+	 update_conn_info/3, 
 	 service_change/1, 
-	 user_info/1, user_info/2, conn_info/1, conn_info/2, 
-	 update_user_info/3, update_conn_info/3, 
-	 notify_request/1, await_notify_reply/1, notify_request_and_reply/1,
-	 cancel_request/2, 
+	 ack_info/2, rep_info/2, 
 	 group_requests/2, 
-	 ack_info/2, 
+	 notify_request/1, 
+	 await_notify_reply/1, 
+	 notify_request_and_reply/1, 
+	 cancel_request/2, 
 	 apply_load/2, 
+	 apply_multi_load/3, 
+	 enable_test_code/4, 
+	 encode_ar_first/2, 
 	 verbosity/2]).
 
--export([mg/3, notify_request_handler_main/4]).
+-export([mg/3, notify_request_handler_main/5]).
+-export([loader_main/4]).
 
 %% Megaco callback api
 -export([
-	 handle_connect/3,
-	 handle_disconnect/4,
-	 handle_syntax_error/4,
-	 handle_message_error/4,
-	 handle_trans_request/4,
-	 handle_trans_long_request/4,
-	 handle_trans_reply/5,
-	 handle_trans_ack/5
+	 handle_connect/4,
+	 handle_disconnect/5,
+	 handle_syntax_error/5,
+	 handle_message_error/5,
+	 handle_trans_request/5,
+	 handle_trans_long_request/5,
+	 handle_trans_reply/6,
+	 handle_trans_ack/6
 	]).
 
 -include("megaco_test_lib.hrl").
@@ -55,22 +63,25 @@
 -define(A5555, tid(255*256*256 + 255*256)       ).
 -define(A5556, tid(255*256*256 + 255*256 + 255) ).
 
--record(mg, {parent       = undefined,
-	     mid          = undefined,
-	     conn_handle  = undefined,
-	     state        = initiated,
-	     req_handler  = undefined,
-	     call_mode    = async,
-	     group_size   = 1,
-	     ack_info     = undefined,
-	     load_counter  = 0,
-	     reply_counter = 0}).
+-record(mg, {mid             = undefined,
+	     state           = initiated,
+	     req_handler     = undefined,
+	     call_mode       = async,
+	     group_size      = 1,
+	     encode_ar_first = false,
+	     ack_info        = undefined,
+	     rep_info        = undefined,
+	     load_counter    = 0,
+	     reply_counter   = 0,
+	     mload_info      = undefined,
+	     parent          = undefined}).
 
 
 %%% --------------------------------------------------------------------
 
 start(Node, Mid, Encoding, Transport, Verbosity) ->
-    start(Node, Mid, Encoding, Transport, [], Verbosity).
+    Conf = [{megaco_trace, false}],
+    start(Node, Mid, Encoding, Transport, Conf, Verbosity).
 
 start(Node, Mid, Encoding, Transport, Conf, Verbosity) ->
     d("start mg[~p]: ~p", [Node, Mid]),
@@ -81,14 +92,31 @@ start(Node, Mid, Encoding, Transport, Conf, Verbosity) ->
     Pid = spawn_link(Node, ?MODULE, mg, [self(), Verbosity, Config]),
     await_started(Pid).
 
-encoding_config(text) ->
-    [{encoding_module, megaco_pretty_text_encoder},
+encoding_config({Encoding, EC}) when atom(Encoding), list(EC) ->
+    {Mod, Port} = select_encoding(Encoding),
+    [{encoding_module, Mod},
+     {encoding_config, EC},
+     {port,            Port}];
+encoding_config(Encoding) when atom(Encoding) ->
+    {Mod, Port} = select_encoding(Encoding),
+    [{encoding_module, Mod},
      {encoding_config, []},
-     {port,2944}];
-encoding_config(binary) ->
-    [{encoding_module, megaco_ber_bin_encoder},
-     {encoding_config, []},
-     {port,2945}].
+     {port,            Port}];
+encoding_config(Encoding) ->
+    throw({error, {invalid_encoding, Encoding}}).
+
+select_encoding(text) ->
+    {megaco_pretty_text_encoder, 2944};
+select_encoding(pretty_text) ->
+    {megaco_pretty_text_encoder, 2944};
+select_encoding(compact_text) ->
+    {megaco_compact_text_encoder, 2944};
+select_encoding(binary) ->
+    {megaco_ber_bin_encoder, 2945};
+select_encoding(erl_dist) ->
+    {megaco_erl_dist_encoder, 2946};
+select_encoding(Encoding) ->
+    throw({error, {invalid_encoding, Encoding}}).
 
 transport_config(tcp) ->
     [{transport_module, megaco_tcp}];
@@ -109,13 +137,16 @@ await_started(Pid) ->
     end.
 
 
+verbosity(Pid, V) ->
+    Pid ! {verbosity, V, self()}.
+
+
 stop(Pid) ->
     server_request(Pid, stop, stopped).
 
 
-get_stats(Pid, No) ->
-    server_request(Pid, {statistics, No}, {statistics_reply, No}).
-
+get_stats(Pid) ->
+    server_request(Pid, statistics, statistics_reply).
 
 reset_stats(Pid) ->
     server_request(Pid, reset_stats, reset_stats_ack).
@@ -124,45 +155,55 @@ reset_stats(Pid) ->
 user_info(Pid) ->
     server_request(Pid, {user_info, all}, user_info_ack).
 
-user_info(Pid, Tag) ->
+user_info(Pid, Tag) when atom(Tag) ->
     server_request(Pid, {user_info, Tag}, user_info_ack).
-
-
-conn_info(Pid) ->
-    server_request(Pid, {conn_info, all}, conn_info_ack).
-
-conn_info(Pid, Tag) ->
-    server_request(Pid, {conn_info, Tag}, conn_info_ack).
 
 
 update_user_info(Pid, Tag, Val) ->
     server_request(Pid, {update_user_info, Tag, Val}, update_user_info_ack).
 
 
+conn_info(Pid) ->
+    server_request(Pid, {conn_info, all}, conn_info_ack).
+
+conn_info(Pid, Tag) when atom(Tag) ->
+    server_request(Pid, {conn_info, Tag}, conn_info_ack).
+
+
 update_conn_info(Pid, Tag, Val) ->
     server_request(Pid, {update_conn_info, Tag, Val}, update_conn_info_ack).
 
 
+enable_test_code(Pid, Module, Where, Fun) 
+  when atom(Module), atom(Where), function(Fun) ->
+    Tag = {Module, Where},
+    server_request(Pid, {enable_test_code, Tag, Fun}, enable_test_code_reply).
+
+encode_ar_first(Pid, New) when atom(New) ->
+    server_request(Pid, {encode_ar_first, New}, encode_ar_first_reply).
+
 service_change(Pid) ->
     server_request(Pid, service_change, service_change_reply).
-
-
-ack_info(Pid, InfoPid) ->
-    Pid ! {ack_info, InfoPid, self()}.
-
-verbosity(Pid, V) ->
-    Pid ! {verbosity, V, self()}.
 
 
 group_requests(Pid, N) ->
     server_request(Pid, {group_requests, N}, group_requests_reply).
 
 
+ack_info(Pid, InfoPid) ->
+    Pid ! {{ack_info, InfoPid}, self()}.
+
+rep_info(Pid, InfoPid) ->
+    Pid ! {{rep_info, InfoPid}, self()}.
+
+
 notify_request(Pid) ->
     Pid ! {notify_request, self()}.
 
+
 await_notify_reply(Pid) ->
     await_reply(Pid, notify_request_reply).
+
 
 notify_request_and_reply(Pid) ->
     notify_request(Pid),
@@ -175,7 +216,11 @@ cancel_request(Pid, Reason) ->
 
 apply_load(Pid, CounterStart) ->
     server_request(Pid, apply_load, CounterStart, apply_load_ack).
-    
+
+
+apply_multi_load(Pid, NumLoaders, NumReq) ->
+    server_request(Pid, apply_multi_load, {NumLoaders, NumReq}, apply_multi_load_ack).
+
 
 server_request(Pid, Req, ReplyTag) ->
     Pid ! {Req, self()},
@@ -211,11 +256,20 @@ mg(Parent, Verbosity, Config) ->
     put(verbosity, Verbosity),
     put(sname,   "MG"),
     i("mg -> starting"),
-    {Mid, ConnHandle} = init(Config),
+    Mid = init(Config),
     notify_started(Parent),
-    S = #mg{parent = Parent, mid = Mid, conn_handle = ConnHandle},
+    MG = #mg{parent = Parent, mid = Mid},
     i("mg -> started"),
-    loop(S).
+    case (catch loop(MG)) of
+	{'EXIT', normal} ->
+	    exit(normal);
+	{'EXIT', Reason} ->
+	    i("mg failed with reason:~n   ~p", [Reason]),
+	    exit(Reason);
+	Else ->
+	    i("mg terminated: ~n   ~p", [Else]),
+	    exit({unexpected, Else})
+    end.
 
 init(Config) ->
     d("init -> entry with"
@@ -226,14 +280,24 @@ init(Config) ->
     d("init -> start megaco"),
     application:start(megaco),
 
+
+    d("init -> possibly enable megaco trace"),
+    case lists:keysearch(megaco_trace, 1, Config) of
+	{value, {megaco_trace, true}} ->
+	    megaco:enable_trace(max, io);
+	_ ->
+	    ok
+    end,
+    Conf0 = lists:keydelete(megaco_trace, 1, Config),
+    
     d("init -> start megaco user"),
-    Conf0 = lists:keydelete(local_mid,    1, Config),
-    Conf1 = lists:keydelete(receive_info, 1, Conf0),
-    ok = megaco:start_user(Mid, Conf1),
+    Conf1 = lists:keydelete(local_mid,    1, Conf0),
+    Conf2 = lists:keydelete(receive_info, 1, Conf1),
+    ok = megaco:start_user(Mid, Conf2),
     d("init -> update user info (user_mod)"),
     ok = megaco:update_user_info(Mid, user_mod,  ?MODULE),
     d("init -> update user info (user_args)"),
-    ok = megaco:update_user_info(Mid, user_args, [self()]),
+    ok = megaco:update_user_info(Mid, user_args, [self(), Mid]),
 
 %     d("init -> start megaco user"),
 %     megaco:start_user(Mid, []),
@@ -246,197 +310,257 @@ init(Config) ->
     RH = megaco:user_info(Mid,receive_handle),
     d("init -> parse receive info"),
     {MgcPort,RH1} = parse_receive_info(RI, RH),
-    d("init -> start transport with"),
-    ConnHandle = start_transport(MgcPort, RH1),
-    {Mid, ConnHandle}.
+    d("init -> start transport"),
+    {ok, _CH} = start_transport(MgcPort, RH1),
+    Mid.
 
 
-loop(#mg{state = State} = S) ->
-    d("loop(~p) -> await request", [State]),
+loop(#mg{parent = Parent, mid = Mid} = S) ->
+    d("loop -> await request", []),
     receive
-	{stop, Parent} when S#mg.parent == Parent ->
-	    i("loop(~p) -> stopping", [State]),
-	    close_conn(S#mg.conn_handle),
-	    megaco:stop_user(S#mg.mid),
-	    application:stop(megaco),
-	    i("loop(~p) -> stopped", [State]),
-	    server_reply(Parent, stopped, ok),
-	    exit(normal);
-
-
-	{reset_stats, Parent} when S#mg.parent == Parent ->
-	    i("loop(~p) -> got request to reset stats counters", [State]),
-	    %% reset_stats(S#mgc.conn_handle),
-	    do_reset_stats(S#mg.conn_handle),
-	    server_reply(Parent, reset_stats_ack, ok),
-	    loop(S);
-
-	{{update_user_info, Tag, Val}, Parent} when S#mg.parent == Parent ->
-	    i("loop(~p) -> got update_user_info: ~w -> ~p", [State, Tag, Val]),
-	    Res = (catch megaco:update_user_info(S#mg.mid, Tag, Val)),
-	    d("loop(~p) -> Res: ~p", [Parent, Res]),
-	    server_reply(Parent, update_user_info_ack, Res),
-	    loop(S);
-
-	{{user_info, Tag}, Parent} when S#mg.parent == Parent ->
-	    i("loop(~p) -> got user_info request for ~w", [State, Tag]),
-	    Res = (catch megaco:user_info(S#mg.mid, Tag)),
-	    d("loop(~p) -> Res: ~p", [Parent, Res]),
-	    server_reply(Parent, user_info_ack, Res),
-	    loop(S);
-
-	{{update_conn_info, Tag, Val}, Parent} when S#mg.parent == Parent ->
-	    i("loop(~p) -> got update_conn_info: ~w -> ~p", [State, Tag, Val]),
-	    %% [CH] = megaco:user_info(S#mg.mid, connections), % We only got one
-	    case megaco:user_info(S#mg.mid, connections) of
-		[CH] ->
-		    Res = (catch megaco:update_conn_info(CH, Tag, Val)),
-		    d("loop(~p) -> Res: ~p", [Parent, Res]),
-		    server_reply(Parent, update_conn_info_ack, Res),
-		    loop(S);
-		Else ->
-		    exit({error, Else, (catch megaco:user_info(S#mg.mid, all))})
-	    end;
-
-	{{conn_info, Tag}, Parent} when S#mg.parent == Parent ->
-	    i("loop(~p) -> got conn_info request for ~w", [State, Tag]),
-	    [CH] = megaco:user_info(S#mg.mid, connections), % We only got one
-	    Res = (catch megaco:conn_info(CH, Tag)),
-	    d("loop(~p) -> Res: ~p", [Parent, Res]),
-	    server_reply(Parent, conn_info_ack, Res),
-	    loop(S);
-
-	%% Give me statistics
-	{{statistics, 1}, Parent} when S#mg.parent == Parent ->
-	    i("loop(~p) -> got request for statistics 1", [State]),
-	    {ok, Gen} = megaco:get_stats(),
-	    CH = S#mg.conn_handle,
-	    Reason = {statistics, CH}, 
-	    Pid = megaco:conn_info(CH, control_pid),
-	    SendMod    = megaco:conn_info(CH, send_mod),
-	    SendHandle = megaco:conn_info(CH, send_handle),
-	    {ok, Trans} = 
-		case SendMod of
-		    megaco_tcp -> megaco_tcp:get_stats(SendHandle);
-		    megaco_udp -> megaco_udp:get_stats(SendHandle);
-		    SendMod    -> exit(Pid, Reason)
-		end,
-	    Reply = {ok, [{gen, Gen}, {trans, Trans}]},
-	    server_reply(Parent, {statistics_reply, 1}, Reply),
-	    loop(S); 
-
-
-	%% Do a service change
-	%% No server-reply here. Since the service change is 
-	%% async, the reply (from the MGC) will come later.
-	{service_change, Parent} when S#mg.parent == Parent, 
-				      State == initiated ->
-	    i("loop(~p) -> received request to perform service change", 
-	      [State]),
-	    Res = do_service_change(S#mg.conn_handle),
-	    d("loop(~p) -> service change result: ~p", [State, Res]),
-	    loop(S#mg{state = connecting}); 
-
-
-	{{group_requests, N}, Parent} when S#mg.parent == Parent, N > 0 ->
-	    i("loop(~p) -> received group_requests ~p", [State, N]),
-	    OldN = S#mg.group_size,
-	    server_reply(Parent, group_requests_reply, {ok, OldN}),
-	    loop(S#mg{group_size = N}); 
-
-
-	{ack_info, To, Parent} when S#mg.parent == Parent ->
-	    i("loop(~p) -> received request to inform about received ack's ", 
-	      [State]),
-	    loop(S#mg{ack_info = To});
-
-
-	{verbosity, V, Parent} when S#mg.parent == Parent ->
+	{verbosity, V, Parent} ->
 	    i("loop -> received new verbosity: ~p", [V]),
 	    put(verbosity,V),
 	    loop(S);
 
 
-	%% Make a sync-call
-	{notify_request, Parent} when S#mg.parent == Parent, 
-				      State == connected ->
-	    i("loop(~p) -> received request to send notify request ", 
-	      [State]),
-	    Pid = start_notify_request_handler(S),
-	    d("loop(~p) -> created notify request handler: ~p", [State, Pid]),
-	    loop(S#mg{req_handler = Pid});
+	{stop, Parent} ->
+	    i("loop -> stopping", []),
+	    Res = do_stop(Mid),
+	    d("loop -> stop result: ~p", [Res]),
+	    server_reply(Parent, stopped, {ok, Res}),
+	    exit(normal);
+
+	{{enable_test_code, Tag, Fun}, Parent} ->
+	    i("loop -> enable_test_code: ~p, ~p", [Tag, Fun]),
+	    Reply = (catch ets:insert(megaco_test_data, {Tag, Fun})),
+	    d("loop -> enable_test_code -> "
+	      "~n   Reply:                          ~p"
+	      "~n   ets:tab2list(megaco_test_data): ~p", 
+	      [Reply,ets:tab2list(megaco_test_data)]),
+	    server_reply(Parent, enable_test_code_reply, Reply),
+	    loop(S);
+
+	{{encode_ar_first, EAF}, Parent} ->
+	    i("loop -> encode_ar_first: ~p", [EAF]),
+	    {Reply, S1} = handle_encode_ar_first(S, EAF),
+	    server_reply(Parent, encode_ar_first_reply, Reply),
+	    loop(S#mg{encode_ar_first = EAF});
+
+	%% Give me statistics
+	{statistics, Parent} ->
+	    i("loop -> got request for statistics", []),
+	    Stats = do_get_statistics(Mid),
+	    server_reply(Parent, statistics_reply, {ok, Stats}),
+	    loop(S); 
+
+	{reset_stats, Parent} ->
+	    i("loop -> got request to reset stats counters", []),
+	    do_reset_stats(Mid),
+	    server_reply(Parent, reset_stats_ack, ok),
+	    loop(S);
+
+	{{user_info, Tag}, Parent} ->
+	    i("loop -> got user_info request for ~w", [Tag]),
+	    Res = do_get_user_info(Mid, Tag),
+	    d("loop -> Res: ~p", [Res]),
+	    server_reply(Parent, user_info_ack, Res),
+	    loop(S);
+
+	{{update_user_info, Tag, Val}, Parent} ->
+	    i("loop -> got update_user_info: ~w -> ~p", [Tag, Val]),
+	    Res = do_update_user_info(Mid, Tag, Val),
+	    d("loop -> Res: ~p", [Res]),
+	    server_reply(Parent, update_user_info_ack, Res),
+	    loop(S);
+
+	{{conn_info, Tag}, Parent} ->
+	    i("loop -> got conn_info request for ~w", [Tag]),
+	    Res = do_get_conn_info(Mid, Tag),
+	    server_reply(Parent, conn_info_ack, Res),
+	    loop(S);
+
+	{{update_conn_info, Tag, Val}, Parent} ->
+	    i("loop -> got update_conn_info: ~w -> ~p", [Tag, Val]),
+	    Res = do_update_conn_info(Mid, Tag, Val),
+	    server_reply(Parent, update_conn_info_ack, Res),
+	    loop(S);
 
 
+	%% Do a service change
+	%% No server-reply here. Since the service change is 
+	%% async, the reply (from the MGC) will come later.
+	{service_change, Parent} ->
+	    i("loop -> received request to perform service change", []),
+	    S1 = 
+		case (catch do_service_change(S)) of
+		    {ok, MG} ->
+			d("loop -> service change initiated", []),
+			MG;
+		    Error ->
+			d("loop -> service change failed: ~p", [Error]),
+			server_reply(Parent, service_change_reply, Error),
+			S
+		end,
+	    loop(S1); 
+
+	{{group_requests, N}, Parent} when N > 0 ->
+	    i("loop -> received group_requests ~p", [N]),
+	    Reply = {ok, S#mg.group_size}, 
+	    server_reply(Parent, group_requests_reply, Reply),
+	    loop(S#mg{group_size = N}); 
+
+	{{ack_info, To}, Parent} ->
+	    i("loop -> received request to inform about received ack's ", []),
+	    loop(S#mg{ack_info = To});
+
+	{{rep_info, To}, Parent} ->
+	    i("loop -> received request to inform about received rep's ", []),
+	    loop(S#mg{rep_info = To});
+
 	%% Make a sync-call
-	{notify_request_complete, Reply, Pid} when S#mg.req_handler == Pid ->
-	    i("loop(~p) -> received notify request complete from "
+	{notify_request, Parent} ->
+	    i("loop -> received request to send notify request ", []),
+	    {Res, S1} = do_handle_notify_request(S),
+	    d("loop -> notify request result: ~p", [Res]),
+	    loop(S1);
+
+	%% sync-call complete
+	{notify_request_complete, NotifyReply, Pid} ->
+	    i("loop -> received notify request complete from "
 	      "~n   ~p with"
-	      "~n   Reply: ~p", 
-	      [State, Pid, Reply]),
-	    server_reply(S#mg.parent, notify_request_reply, {ok, Reply}),
+	      "~n   NotifyReply: ~p", 
+	      [Pid, NotifyReply]),
+	    server_reply(Parent, notify_request_reply, NotifyReply),
 	    loop(S#mg{req_handler = undefined});
 
 
-	%% Make a sync-call
-	{cancel_request, Reason, Parent} when S#mg.parent == Parent, 
-					      State == connected ->
-	    i("loop(~p) -> received request to cancel (all) megaco requests ", 
-	      [State]),
-	    Res = megaco:cancel(S#mg.conn_handle, Reason),
+	%% cancel requests
+	{cancel_request, Reason, Parent} ->
+	    i("loop -> received request to cancel (all) megaco requests ", []),
+	    Res = do_cancel_requests(Mid, Reason),
 	    server_reply(Parent, cancel_request_reply, Res),
 	    loop(S);
 
 
-	%% Apply some load
-	{apply_load, Times, Parent} when S#mg.parent == Parent ->
-	    i("loop(~p) -> received apply_load request", [State]),
-	    apply_load_timer(),
-	    server_reply(Parent, apply_load_ack, ok),
-	    loop(S#mg{load_counter = Times});
+	%% Apply multi-load
+	{apply_multi_load, {NL, NR}, Parent} -> 
+	    i("loop -> received apply_multi_load request: ~w, ~w", [NL, NR]),
+	    S1 = start_loaders(S, NL, NR),
+	    loop(S1);
 
+
+	%% Apply some load
+	{apply_load, Times, Parent} ->
+	    i("loop -> received apply_load request: ~w", [Times]),
+	    S1 = 
+		case update_load_times(S, Times) of
+		    {ok, MG} ->
+			apply_load_timer(),
+			server_reply(Parent, apply_load_ack, ok),
+			MG;
+		    Error ->
+			server_reply(Parent, apply_load_ack, Error),
+			S
+		end,
+	    loop(S1);
 
 	apply_load_timeout ->
-	    d("loop(~p) -> received apply_load timeout [~p]", 
-	      [State, S#mg.load_counter]),
+	    d("loop -> received apply_load timeout", []),
 	    S1 = do_apply_load(S),
 	    loop(S1);
 
 
 	%% Megaco callback messages
-	{request, Request, From} ->
-	    d("loop(~p) -> received megaco request: ~n~p~n   From: ~p", 
-	      [State, Request, From]),
-	    {Reply, NewS} = handle_megaco_request(Request, S),
-	    d("loop(~p) -> send (megaco callback) request reply: ~n~p", 
-	      [NewS#mg.state, Reply]),
+	{request, Request, Mid, From} ->
+	    d("loop -> received megaco request: ~n   ~p"
+	      "~n   Mid:  ~p"
+	      "~n   From: ~p", 
+	      [Request, Mid, From]),
+	    {Reply, S1} = handle_megaco_request(S, Request),
+	    d("loop -> send (megaco callback) request reply: ~n~p", [Reply]),
 	    From ! {reply, Reply, self()},
-	    loop(NewS);
+	    loop(S1);
 
 
-	{'EXIT', Pid, Reason} when S#mg.req_handler == Pid ->
-	    error_msg("MG ~p "
-		      "received unexpected exit from the request handler:"
-		      "~n   ~p", 
-		      [S#mg.mid, Reason]),
-	    server_reply(S#mg.parent, notify_request_reply, 
-			 {error, {request_handler_exit, Reason}}),
-	    loop(S#mg{req_handler = undefined});
-
-
-	{'EXIT', Pid, Reason} ->
-	    error_msg("MG ~p received unexpected exit signal from ~p:~n~p", 
-		      [S#mg.mid, Pid, Reason]),
-	    loop(S);
+	{'EXIT', Pid, Reason} -> 
+	    i("loop -> received exit signal from ~p: ~n~p", [Pid, Reason]),
+	    S1 = handle_exit(S, Pid, Reason),
+	    loop(S1);
 
 
 	Invalid ->
-	    i("loop(~p) -> received invalid request: ~p", [State, Invalid]),
+	    error_msg("received invalid request: ~n~p", [Invalid]),
 	    loop(S)
 
     end.
 
 
-do_reset_stats(CH) ->
+handle_encode_ar_first(#mg{encode_ar_first = Old} = MG, New) 
+  when New == true; New == false ->
+    {{ok, Old}, MG#mg{encode_ar_first = New}};
+handle_encode_ar_first(MG, New) ->
+    {{error, {invalid_value, New}}, MG}.
+    
+
+%%
+%% Stop user
+%%
+do_stop(Mid) ->
+    d("do_stop -> stopping user ~p", [Mid]),
+    Disco = fun close_conn/1, 
+    lists:map(Disco, megaco:user_info(Mid, connections)),
+    megaco:stop_user(Mid).
+
+close_conn(CH) ->
+    d("do_stop -> closing connection ~p", [CH]),
+    Reason     = {stopped_by_user,self()},
+    Pid        = megaco:conn_info(CH, control_pid),
+    SendMod    = megaco:conn_info(CH, send_mod),
+    SendHandle = megaco:conn_info(CH, send_handle),
+    megaco:disconnect(CH, Reason),
+    megaco:cancel(CH, Reason),
+    case SendMod of
+	megaco_tcp -> megaco_tcp:close(SendHandle);
+	megaco_udp -> megaco_udp:close(SendHandle);
+	SendMod    -> exit(Pid, Reason)
+    end.
+
+
+
+%% 
+%% Get statistics 
+%% 
+do_get_statistics(Mid) ->
+    case megaco:user_info(Mid, connections) of
+	[CH] ->
+	    do_get_conn_statistics(CH);
+	[] ->
+	    []
+    end.
+
+do_get_conn_statistics(CH) ->
+    {ok, Gen}  = megaco:get_stats(),
+    Pid        = megaco:conn_info(CH, control_pid),
+    SendMod    = megaco:conn_info(CH, send_mod),
+    SendHandle = megaco:conn_info(CH, send_handle),
+    {ok, Trans} = 
+	case SendMod of
+	    megaco_tcp -> megaco_tcp:get_stats(SendHandle);
+	    megaco_udp -> megaco_udp:get_stats(SendHandle)
+	end,
+    [{gen, Gen}, {trans, Trans}].
+
+
+%%
+%% reset user stats
+%%
+do_reset_stats(Mid) ->
+    %% We only have one connection
+    [CH] = megaco:user_info(Mid, connections),
+    do_reset_stats1(CH).
+
+do_reset_stats1(CH) ->
     megaco:reset_stats(),
     case (catch megaco:conn_info(CH, send_mod)) of
 	{error, Reason} ->
@@ -454,20 +578,184 @@ do_reset_stats(CH) ->
     end.
 
 
-
-close_conn(CH) ->
-    Reason = {self(), ignore},
-    Pid        = megaco:conn_info(CH, control_pid),
-    SendMod    = megaco:conn_info(CH, send_mod),
-    SendHandle = megaco:conn_info(CH, send_handle),
-    megaco:disconnect(CH, Reason),
-    case SendMod of
-	megaco_tcp -> megaco_tcp:close(SendHandle);
-	megaco_udp -> megaco_udp:close(SendHandle);
-	SendMod    -> exit(Pid, Reason)
-    end.
+%%
+%% Get user info for user
+%%
+do_get_user_info(Mid, Tag) ->
+    (catch megaco:user_info(Mid, Tag)).
 
 
+%%
+%% Update user info for user
+%%
+do_update_user_info(Mid, Tag, Val) ->
+    (catch megaco:update_user_info(Mid, Tag, Val)).
+
+
+%%
+%% Get conn info 
+%%
+do_get_conn_info(Mid, Tag) ->
+    [CH] = megaco:user_info(Mid, connections),
+    (catch megaco:conn_info(CH, Tag)).
+
+%%
+%% Update conn info for user
+%%
+do_update_conn_info(Mid, Tag, Val) ->
+    %% We only have one connection
+    [CH] = megaco:user_info(Mid, connections),
+    (catch megaco:update_conn_info(CH, Tag, Val)).
+
+
+
+
+%%
+%% Perform service change 
+%%
+do_service_change(#mg{mid             = Mid, 
+		      state           = initiated, 
+		      encode_ar_first = EAF} = MG) ->
+    %% We only have one connection
+    d("do service change for ~p", [Mid]),
+    [CH]   = megaco:user_info(Mid, connections),
+    Method = restart,
+    Reason = ?megaco_cold_boot,
+    case do_service_change(CH, Method, EAF, Reason) of
+	ok ->
+	    {ok, MG#mg{state = connecting}};
+	Error ->
+	    d("service change for ~p failed: ~n~p", [Mid, Error]),
+	    Error
+    end;
+do_service_change(#mg{state = State} = MG) ->
+    {{error, {invalid_state, State}}, MG}.
+
+do_service_change(ConnHandle, Method, EAF, Reason) ->
+    d("sending service change using:"
+      "~n   ConnHandle: ~p"
+      "~n   Method:     ~p"
+      "~n   EAF:        ~p"
+      "~n   Reason:     ~p", [ConnHandle, Method, EAF, Reason]),
+    SCP    = cre_serviceChangeParm(Method, [Reason]),
+    TermId = [?megaco_root_termination_id],
+    SCR    = cre_serviceChangeReq(TermId, SCP),
+    CR     = cre_commandReq({serviceChangeReq, SCR}),
+    AR     = cre_actionReq(?megaco_null_context_id,[CR]),
+    send_async(EAF, ConnHandle, [AR], []).
+
+
+%% Make a sync call 
+do_handle_notify_request(#mg{mid             = Mid, 
+			     group_size      = N, 
+			     encode_ar_first = EAF, 
+			     state           = connected} = MG) ->
+    d("do_handle_notify_request -> entry"),
+    [CH] = megaco:user_info(Mid, connections),
+    Pid = start_notify_request_handler(EAF, CH, N),
+    {ok, MG#mg{req_handler = Pid}};
+do_handle_notify_request(#mg{state = State} = MG) ->
+    d("do_handle_notify_request -> entry with"
+      "~n   State: ~p", [State]),
+    {{error, {invalid_state, State}}, MG}.
+
+
+
+%%
+%% Cancel requests 
+%%
+do_cancel_requests(Mid, Reason) ->
+    [CH] = megaco:user_info(Mid, connections),
+    megaco:cancel(CH, Reason).    
+
+
+%% 
+%% Apply multi load 
+%% 
+start_loaders(#mg{mid = Mid, encode_ar_first = EAF} = MG, NumLoaders, Times) ->
+    [CH] = megaco:user_info(Mid, connections),
+    Env  = get(),
+    Loaders = start_loaders1(NumLoaders, [], [Env, EAF, Times, CH]),
+    d("start_loaders -> Loaders: ~n~w", [Loaders]),
+    MG#mg{mload_info = {Loaders, 0, 0}}.
+
+start_loaders1(0, Acc, _) ->
+    Acc;
+start_loaders1(N, Acc, Args) ->
+    Pid = spawn_link(?MODULE, loader_main, Args),
+    start_loaders1(N-1, [Pid|Acc], Args).
+
+loader_main(Env, EAF, N, CH) ->
+    lists:foreach(fun({Tag,Val}) -> put(Tag,Val) end, Env),
+    loader_main(EAF, N, CH).
+			  
+loader_main(_EAF, 0, _) ->
+    d("loader_main -> done"),
+    exit(loader_done);
+loader_main(EAF, N, CH) ->
+    d("loader_main -> entry with: ~w", [N]),
+    {Act, _} = make_notify_request(),
+    Res      = send_sync(EAF, CH, Act, []),
+    loader_main(EAF, N-1, CH).
+
+
+
+handle_exit(#mg{parent = Pid}, Pid, Reason) ->
+    exit({parent_terminated, Reason});
+
+handle_exit(#mg{parent = Parent, req_handler = Pid} = MG, Pid, Reason) ->
+    error_msg("received unexpected exit from the request handler:"
+	      "~n   ~p", [Reason]),
+    server_reply(Parent, notify_request_reply, 
+		 {error, {request_handler_exit, Reason}}),
+    MG#mg{req_handler = undefined};
+
+handle_exit(#mg{parent = Parent, mload_info = {Loaders0, Ok, Err}} = MG, 
+	    Pid, loader_done) ->
+    d("handle_exit(loader_done) -> entry when"
+      "~n   Loaders0: ~p"
+      "~n   Ok:       ~p"
+      "~n   Err:      ~p", [Loaders0, Ok, Err]),
+    Loaders = lists:delete(Pid, Loaders0),
+    LoadInfo =
+	case Loaders of
+	    [] ->
+		d("handle_exit -> multi load done", []),
+		server_reply(Parent, apply_multi_load_ack, {ok, Ok+1, Err}),
+		undefined;
+	    _ ->
+		{Loaders, Ok+1, Err}
+	end,
+    MG#mg{mload_info = LoadInfo};
+
+
+handle_exit(#mg{parent = Parent, mload_info = {Loaders, Ok, Err}} = MG, 
+	    Pid, Reason) 
+  when length(Loaders) > 0 ->
+    d("handle_exit -> entry when"
+      "~n   Reason:  ~p"
+      "~n   Loaders: ~p"
+      "~n   Ok:      ~p"
+      "~n   Err:     ~p", [Reason, Loaders, Ok, Err]),
+    case lists:delete(Pid, Loaders) of
+	[] -> 
+	    %% since we cannot be empty prior the delete, 
+	    %% the last one exited...
+	    server_reply(Parent, apply_multi_load, {ok, Ok, Err+1}),
+	    MG#mg{mload_info = undefined};
+	Loaders ->
+	    %% Could not be this MG, so go on to the next
+	    error_msg("received unexpected exit signal from ~p:~n~p", 
+		      [Pid, Reason]);
+	Loaders1 ->
+	    %% Not empty, but we removed one
+	    MG#mg{mload_info = {Loaders1,Ok,Err+1}}
+    end;
+handle_exit(_MG, Pid, Reason) ->
+    error_msg("received unexpected exit signal from ~p:~n~p", 
+	      [Pid, Reason]).
+
+		      
 parse_receive_info(RI, RH) ->
     d("parse_receive_info -> get encoding module"),
     EM = get_encoding_module(RI),
@@ -494,79 +782,85 @@ start_transport(_, #megaco_receive_handle{send_mod = Mod}) ->
 
 
 start_tcp(MgcPort, RH) ->
-    d("start tcp transport"),
+    d("start tcp transport (~p)", [MgcPort]),
     case megaco_tcp:start_transport() of
 	{ok, Sup} ->
+	    d("tcp transport started: ~p", [Sup]),
 	    {ok, LocalHost} = inet:gethostname(),
 	    Opts = [{host, LocalHost},{port, MgcPort}, {receive_handle, RH}],
+	    d("tcp connect", []),
 	    case megaco_tcp:connect(Sup, Opts) of
 		{ok, SendHandle, ControlPid} ->
-% 		    {ok, LocalHost} = inet:gethostname(),
-%                     PrelMgcMid = preliminary_mid,
-% 		    {ok, ConnHandle} = 
-% 			megaco:connect(RH, PrelMgcMid, 
-% 				       SendHandle, ControlPid),
-% 		    ConnHandle;
+		    d("tcp connected: ~p, ~p", [SendHandle, ControlPid]),
 		    megaco_tcp_connect(RH, LocalHost, SendHandle, ControlPid);
 		{error, Reason} ->
-		    {error, {megaco_tcp_connect, Reason}}
+		    throw({error, {megaco_tcp_connect, Reason}})
 	    end;
         {error, Reason} ->
-            {error, {megaco_tcp_start_transport, Reason}}
+            throw({error, {megaco_tcp_start_transport, Reason}})
     end.
 
 megaco_tcp_connect(RH, LocalHost, SendHandle, ControlPid) ->
     PrelMgcMid = preliminary_mid,
+    d("megaco connect", []),    
     {ok, CH} = megaco:connect(RH, PrelMgcMid, SendHandle, ControlPid),
-    CH.
+    d("megaco connected: ~p", [CH]),    
+    {ok, CH}.
 
 start_udp(MgcPort, RH) ->
-    d("start udp transport"),
+    d("start udp transport (~p)", [MgcPort]),
     case megaco_udp:start_transport() of
 	{ok, Sup} ->
+	    d("udp transport started: ~p", [Sup]),
 	    Opts = [{port, 0}, {receive_handle, RH}],
+	    d("udp open", []),
 	    case megaco_udp:open(Sup, Opts) of
 		{ok, Handle, ControlPid} ->
-% 		    {ok, LocalHost} = inet:gethostname(),
-%                     MgcMid = preliminary_mid,
-%                     SendHandle = megaco_udp:create_send_handle(Handle, 
-% 							       LocalHost, 
-% 							       MgcPort),
-% 		    {ok, ConnHandle} = 
-% 			megaco:connect(RH, MgcMid, 
-% 				       SendHandle, ControlPid),
-% 		    ConnHandle;
+		    d("udp opened: ~p, ~p", [Handle, ControlPid]),
 		    megaco_udp_connect(MgcPort, RH, Handle, ControlPid);
 		{error, Reason} ->
-                    {error, {megaco_udp_open, Reason}}
+                    throw({error, {megaco_udp_open, Reason}})
 	    end;
         {error, Reason} ->
-            {error, {megaco_udp_start_transport, Reason}}
+            throw({error, {megaco_udp_start_transport, Reason}})
     end.
 
 megaco_udp_connect(MgcPort, RH, Handle, ControlPid) ->
     {ok, LocalHost} = inet:gethostname(),
     MgcMid     = preliminary_mid,
     SendHandle = megaco_udp:create_send_handle(Handle, LocalHost, MgcPort),
+    d("megaco connect", []),    
     {ok, CH}   = megaco:connect(RH, MgcMid, SendHandle, ControlPid),
-    CH.
-
-do_service_change(ConnHandle) ->
-    do_service_change(ConnHandle, restart, ?megaco_cold_boot).
-
-do_service_change(ConnHandle, Method, Reason) ->
-    SCP    = cre_serviceChangeParm(Method, [Reason]),
-    TermId = [?megaco_root_termination_id],
-    SCR    = cre_serviceChangeReq(TermId, SCP),
-    CR     = cre_commandReq({serviceChangeReq, SCR}),
-    AR     = cre_actionReq(?megaco_null_context_id,[CR]),
-    megaco:cast(ConnHandle, [AR], []).
+    d("megaco connected: ~p", [CH]),    
+    {ok, CH}.
 
 
-do_apply_load(#mg{conn_handle  = CH, 
-		  call_mode    = Mode, 
-		  group_size   = Sz,
-		  load_counter = N0} = S) ->
+
+update_load_times(#mg{load_counter = 0} = MG, Times) ->
+    d("update_load_times(0) -> entry with"
+      "~n   Times: ~p", [Times]),
+    {ok, MG#mg{load_counter = Times}};
+update_load_times(#mg{load_counter = N} = MG, Times) ->
+    d("update_load_times(~p) -> entry with"
+      "~n   Times: ~p", [N, Times]),
+    {error, {already_counting, N}}.
+
+
+do_apply_load(#mg{mid = Mid} = MG) ->
+    d("do_apply_load -> entry"),
+    case megaco:user_info(Mid, connections) of
+	[CH] ->
+	    do_apply_load(MG, CH);
+	[] ->
+	    i("failed to apply load: no connections for ~p", [Mid]),
+	    MG
+    end.
+
+do_apply_load(#mg{parent          = Parent,
+		  encode_ar_first = EAF,
+		  call_mode       = Mode, 
+		  group_size      = Sz, 
+		  load_counter    = N0} = MG, CH) ->
     d("do_apply_load -> entry with"
       "~n   Mode: ~p"
       "~n   Sz:   ~p"
@@ -579,54 +873,61 @@ do_apply_load(#mg{conn_handle  = CH,
     N = N0 - NofSent,
     case Mode of
 	sync ->
-	    Result = megaco:call(CH, Actions, []),
-	    d("do_apply_load -> call result:~n   ~p", [Result]),
+	    Result = send_sync(EAF, CH, Actions, []),
+	    d("do_apply_load -> call result when N = ~p: ~n~p", [N,Result]),
 	    case N of
 		0 ->
-		    Pid = S#mg.parent,
-		    Pid ! {load_complete, self()},
-		    S#mg{call_mode = async, load_counter = 0};
+		    d("do_apply_load -> load complete"),
+		    Parent ! {load_complete, self()},
+		    MG#mg{call_mode = async, load_counter = 0};
 		_ ->
+		    d("do_apply_load -> make another round"),
 		    apply_load_timer(),
-		    S#mg{call_mode = async, load_counter = N}
+		    MG#mg{call_mode = async, load_counter = N}
 	    end;
 	async ->
-	    Result = megaco:cast(CH, Actions, [{reply_data, ReplyData}]),
+	    Result = send_async(EAF, CH, Actions, [{reply_data, ReplyData}]),
 	    d("do_apply_load -> cast result:~n   ~p", [Result]),
-	    S#mg{call_mode     = sync, 
-		 load_counter  = N, 
-		 reply_counter = NofSent} % Outstanding replies
+	    MG#mg{call_mode     = sync, 
+		  load_counter  = N, 
+		  reply_counter = NofSent} % Outstanding replies
     end.
 
 
-start_notify_request_handler(#mg{conn_handle = CH, group_size = N}) ->
+start_notify_request_handler(EAF, CH, N) ->
+    d("start_notify_request_handler -> entry with"
+      "~n   EAF: ~p"
+      "~n   CH:  ~p"
+      "~n   N:   ~p", [EAF, CH, N]),
     Env = get(),
-    spawn_link(?MODULE, notify_request_handler_main, [self(), Env, CH, N]).
+    spawn_link(?MODULE, notify_request_handler_main, [self(), Env, EAF, CH, N]).
 
-notify_request_handler_main(Parent, Env, CH, N) ->
-    [put(Tag, Val) || {Tag, Val} <- Env],
+notify_request_handler_main(Parent, Env, EAF, CH, N) ->
+    F = fun({Tag, Val}) -> put(Tag, Val) end,
+    lists:foreach(F, Env),
     d("notify_request_handler_main -> entry with"
       "~n   Parent: ~p"
+      "~n   EAF:    ~p"
       "~n   CH:     ~p"
-      "~n   N:      ~p", [Parent, CH, N]),
-    Res = do_notify_request(CH, N),
+      "~n   N:      ~p", [Parent, EAF, CH, N]),
+    Res = do_notify_request(EAF, CH, N),
     d("notify_request_handler_main -> notify complete:"
       "~n   Res: ~p", [Res]),
-    Parent ! {notify_request_complete, Res, self()},
+    Parent ! {notify_request_complete, {ok, Res}, self()},
     unlink(Parent),
     exit(normal).
 
-do_notify_request(CH,N) when N =< 0 ->
+do_notify_request(_EAF, _CH, N) when N =< 0 ->
     d("do_notify_request(~p) -> ignoring", [N]),
     ignore;
-do_notify_request(CH,1) ->
+do_notify_request(EAF, CH, 1) ->
     d("do_notify_request(1) -> entry with"),
     {Action, _} = make_notify_request(),
-    megaco:call(CH, Action, []);
-do_notify_request(CH,N) ->
+    send_sync(EAF, CH, Action, []);
+do_notify_request(EAF, CH, N) ->
     d("do_notify_request(~p) -> entry with", [N]),
     {N, Actions, _} = make_notify_request(N,N),
-    megaco:call(CH, Actions, []).
+    send_sync(EAF, CH, Actions, []).
 
 make_notify_request(N, Sz) when N >= Sz, Sz > 0 ->
     {Req, ReplyData} = make_notify_request(N, Sz, [], []),
@@ -714,64 +1015,117 @@ cre_error_descr(Code,Text) ->
 %% Handle megaco callbacks
 %%
 
-handle_megaco_request({handle_connect, CH, _PV}, 
-		  #mg{state = connecting} = S) ->
-    {ok, S#mg{conn_handle = CH}};
+handle_megaco_request(#mg{mid = Mid, state = connecting} = MG,
+		      {handle_connect, _CH, _PV}) ->
+    d("handle_megaco_request(handle_connect,connecting) -> entry"),
+    {ok, MG};
+handle_megaco_request(#mg{mid = Mid, state = S} = MG,
+		      {handle_connect, _CH, _PV}) ->
+    d("handle_megaco_request(handle_connect) -> entry"),
+    Desc = 
+	lists:flatten(io_lib:format("not ready for connect in state ~p", [S])),
+    ED   =  cre_error_descr(?megaco_internal_gateway_error, Desc),
+    {{discard_ack, ED}, MG};
 
-handle_megaco_request({handle_disconnect, CH, _PV, _R}, S) ->
-    {ok, S#mg{conn_handle = CH}};
+handle_megaco_request(#mg{mid = Mid, req_handler = Pid} = MG,
+		      {handle_disconnect, _CH, _PV, R}) 
+  when pid(Pid) ->
+    d("handle_megaco_request(handle_disconnect) -> entry with"
+      "~n   Pid: ~p", [Pid]),
+    Error = {error, {disconnected, R}},
+    self() ! {notify_request_complete, Error, Pid},
+    unlink(Pid),
+    exit(Pid, kill),
+    {ok, MG#mg{req_handler = undefined, state = initiated}};
+handle_megaco_request(#mg{mid = Mid} = MG,
+		      {handle_disconnect, _CH, _PV, R}) ->
+    d("handle_megaco_request(handle_disconnect) -> entry"),
+    {ok, MG#mg{state = initiated}};
 
-handle_megaco_request({handle_syntax_error, _RH, _PV, _ED}, S) ->
-    {reply, S};
+handle_megaco_request(MG, 
+		      {handle_syntax_error, _RH, _PV, _ED}) ->
+    {reply, MG};
 
-handle_megaco_request({handle_message_error, CH, _PV, _ED}, S) ->
-    {no_reply, S#mg{conn_handle = CH}};
+handle_megaco_request(#mg{mid = Mid, req_handler = Pid} = MG,
+		      {handle_message_error, CH, PV, ED}) 
+  when pid(Pid) ->
+    d("handle_megaco_request(handle_message_error) -> entry with"
+      "~n   Pid:    ~p"
+      "~n   CH:     ~p"
+      "~n   PV:     ~p"
+      "~n   ED:     ~p", [Pid, CH, PV, ED]),    
+    self() ! {notify_request_complete, ED, Pid},
+    unlink(Pid),
+    exit(Pid, kill),
+    {no_reply, MG#mg{req_handler = undefined}};
+handle_megaco_request(MG, {handle_message_error, CH, PV, ED}) ->
+    d("handle_megaco_request(handle_message_error) -> entry with"
+      "~n   CH:     ~p"
+      "~n   PV:     ~p"
+      "~n   ED:     ~p", [CH, PV, ED]),    
+    {no_reply, MG};
 
-handle_megaco_request({handle_trans_request, CH, _PV, _AR}, S) ->
+handle_megaco_request(MG, {handle_trans_request, _CH, _PV, _AR}) ->
     ED =  cre_error_descr(?megaco_not_implemented,
 			  "Transaction requests not handled"),
-    {{discard_ack, ED}, S#mg{conn_handle = CH}};
+    {{discard_ack, ED}, MG};
 
-handle_megaco_request({handle_trans_long_request, CH, _PV, _RD}, S) ->
+handle_megaco_request(MG,
+		      {handle_trans_long_request, _CH, _PV, _RD}) ->
     ED = cre_error_descr(?megaco_not_implemented,
 			 "Long transaction requests not handled"),
-    {{discard_ack,  ED}, S#mg{conn_handle = CH}};
+    {{discard_ack, ED}, MG};
 
-handle_megaco_request({handle_trans_reply, CH, PV, AR, RD}, S) ->
-    S1 = do_handle_trans_reply(CH, PV, AR, RD, S),
-    {ok, S1};
+handle_megaco_request(#mg{rep_info = P} = MG, 
+		      {handle_trans_reply, CH, PV, AR, RD}) when pid(P) ->
+    P ! {rep_received, self(), AR},
+    do_handle_trans_reply(MG, CH, PV, AR, RD);
+handle_megaco_request(MG, {handle_trans_reply, CH, PV, AR, RD}) ->
+    do_handle_trans_reply(MG, CH, PV, AR, RD);
 
-handle_megaco_request({handle_trans_ack, _CH, _PV, _AS, _AD}, S) ->
-    {ok, S}.
+handle_megaco_request(#mg{ack_info = P} = MG, 
+		      {handle_trans_ack, _CH, _PV, AS, _AD}) when pid(P) ->
+    d("handle_megaco_request(handle_trans_ack,~p) -> entry",[P]),
+    P ! {ack_received, self(), AS},
+    {ok, MG};
+handle_megaco_request(MG, {handle_trans_ack, _CH, _PV, _AS, _AD}) ->
+    d("handle_megaco_request(handle_trans_ack) -> entry"),
+    {ok, MG}.
 
-do_handle_trans_reply(CH, _PV, {ok, Rep}, _RD, 
-		      #mg{parent = Pid, state = connecting} = S) ->
-    %% Should really check this...
-    d("do_handle_trans_reply(connecting) -> received "
-      "~n   Rep: ~p", [Rep]),
-    server_reply(Pid, service_change_reply, ok),
-    S#mg{conn_handle = CH, state = connected};
-do_handle_trans_reply(_CH, _PV, {ok, Reps}, _RD, 
-		      #mg{parent = Pid, load_counter = 0} = S) ->
-    d("do_handle_trans_reply(load_counter = 0) -> reply received ", []),
-    handle_trans_reply_verify_act(Reps),
-    server_reply(Pid, load_complete, ok),
-    S#mg{reply_counter = 0}; % Just in case
-do_handle_trans_reply(_CH, _PV, {ok, Reps}, _, 
-		      #mg{reply_counter = 0} = S) ->
-    d("do_handle_trans_reply(reply_counter = 0) -> reply received", []),
-    handle_trans_reply_verify_act(Reps),
+do_handle_trans_reply(#mg{parent = Parent, mid = Mid, state = connecting} = MG,
+		      CH, _PV, {ok, Rep}, _RD) ->
+    d("do_handle_trans_reply(connecting) -> entry with"
+      "~n   CH:     ~p"
+      "~n   Rep:    ~p", [CH, Rep]),
+    server_reply(Parent, service_change_reply, ok),
+    {ok, MG#mg{state = connected}};
+do_handle_trans_reply(#mg{parent = Parent, mid = Mid, load_counter = 0} = MG,
+		      CH, _PV, {ok, Rep}, _RD) ->
+    d("do_handle_trans_reply(load_counter = 0) -> entry with"
+      "~n   CH:     ~p"
+      "~n   Rep:    ~p", [CH, Rep, Parent]),
+    handle_trans_reply_verify_act(Rep),
+    server_reply(Parent, load_complete, ok),
+    {ok, MG#mg{reply_counter = 0}};
+do_handle_trans_reply(#mg{reply_counter = 0} = MG,
+		      CH, _PV, {ok, Rep}, _RD) ->
+    d("do_handle_trans_reply(reply_counter = 0) -> entry with"
+      "~n   CH:     ~p"
+      "~n   Rep:    ~p", [CH, Rep]),
+    handle_trans_reply_verify_act(Rep),
     apply_load_timer(),
-    S;
-do_handle_trans_reply(_CH, _PV, {ok, Reps}, _, 
-		      #mg{reply_counter = N} = S) ->
-    d("do_handle_trans_reply(reply_counter = ~p) -> reply received ", [N]),
-    handle_trans_reply_verify_act(Reps),
+    {ok, MG};
+do_handle_trans_reply(#mg{reply_counter = N} = MG,
+		      CH, _PV, {ok, Rep}, _RD) ->
+    d("do_handle_trans_reply(reply_counter = ~p) -> entry with"
+      "~n   CH:     ~p"
+      "~n   Rep:    ~p", [N, CH, Rep]),
+    handle_trans_reply_verify_act(Rep),
     apply_load_timer(),
-    S#mg{reply_counter = N-1};
-do_handle_trans_reply(_CH, _PV, {error, ED}, _RD, S) ->
+    {ok, MG#mg{reply_counter = N-1}};
+do_handle_trans_reply(MG, _CH, _PV, {error, ED}, _RD) ->
     i("unexpected error transaction: ~p", [ED]),
-    S.
+    {ok, MG}.
 
 
 handle_trans_reply_verify_act([]) ->
@@ -805,52 +1159,52 @@ notify_started(Parent) ->
 
 %% The megaco user callback interface 
 
-handle_connect(CH, PV, Pid) ->
+handle_connect(CH, PV, Pid, Mid) ->
     case CH#megaco_conn_handle.remote_mid of
         preliminary_mid ->
 	    %% Avoids deadlock
 	    ok;
 	_ ->
-	    Reply = request(Pid, {handle_connect, CH, PV}),
+	    Reply = request(Pid, {handle_connect, CH, PV}, Mid),
 	    Reply
     end.
 
 handle_disconnect(CH, PV, 
-		  {user_disconnect, {Pid, ignore}}, 
-		  Pid) ->
+		  {user_disconnect, {stopped_by_user, Pid}}, 
+		  Pid, Mid) ->
     ok;
-handle_disconnect(CH, PV, R, Pid) ->
-    request(Pid, {handle_disconnect, CH, PV, R}).
+handle_disconnect(CH, PV, R, Pid, Mid) ->
+    request(Pid, {handle_disconnect, CH, PV, R}, Mid).
 
-handle_syntax_error(ReceiveHandle, ProtocolVersion, ErrorDescriptor, Pid) ->
+handle_syntax_error(ReceiveHandle, ProtocolVersion, ErrorDescriptor, Pid, Mid) ->
     Req = {handle_syntax_error, ReceiveHandle, ProtocolVersion, 
 	   ErrorDescriptor},
-    request(Pid, Req).
+    request(Pid, Req, Mid).
     
-handle_message_error(ConnHandle, ProtocolVersion, ErrorDescriptor, Pid) ->
+handle_message_error(ConnHandle, ProtocolVersion, ErrorDescriptor, Pid, Mid) ->
     Req = {handle_message_error, ConnHandle, ProtocolVersion, ErrorDescriptor},
-    request(Pid, Req).
+    request(Pid, Req, Mid).
 
-handle_trans_request(CH, PV, AR, Pid) ->
-    Reply = request(Pid, {handle_trans_request, CH, PV, AR}),
+handle_trans_request(CH, PV, AR, Pid, Mid) ->
+    Reply = request(Pid, {handle_trans_request, CH, PV, AR}, Mid),
     Reply.
 
-handle_trans_long_request(ConnHandle, ProtocolVersion, ReqData, Pid) ->
+handle_trans_long_request(ConnHandle, ProtocolVersion, ReqData, Pid, Mid) ->
     Req = {handle_trans_long_request, ConnHandle, ProtocolVersion, ReqData},
-    request(Pid, Req).
+    request(Pid, Req, Mid).
 
-handle_trans_reply(ConnHandle, ProtocolVersion, ActualReply, ReplyData, Pid) ->
+handle_trans_reply(ConnHandle, ProtocolVersion, ActualReply, ReplyData, Pid, Mid) ->
     Req = {handle_trans_reply, ConnHandle, ProtocolVersion, 
 	   ActualReply, ReplyData},
-    request(Pid, Req).
+    request(Pid, Req, Mid).
 
-handle_trans_ack(ConnHandle, ProtocolVersion, AckStatus, AckData, Pid) ->
+handle_trans_ack(ConnHandle, ProtocolVersion, AckStatus, AckData, Pid, Mid) ->
     Req = {handle_trans_ack, ConnHandle, ProtocolVersion, AckStatus, AckData},
-    request(Pid, Req).
+    request(Pid, Req, Mid).
 
 
-request(Pid, Request) ->
-    Pid ! {request, Request, self()},
+request(Pid, Request, Mid) ->
+    Pid ! {request, Request, Mid, self()},
     receive
 	{reply, {delay, To, ED}, Pid} ->
 	    sleep(To),
@@ -862,11 +1216,42 @@ request(Pid, Request) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+send_async(true, CH, Actions, Opts) ->
+    d("send_async(true) -> encode actions first"),
+    case megaco:encode_actions(CH, Actions, Opts) of
+	{ok, BinOrBins} ->
+	    d("send_async(true) -> send message"),
+	    megaco:cast(CH, BinOrBins, Opts);
+	Error ->
+	    d("send_async(true) -> encode failed: ~n~p", [Error]),
+	    Error
+    end;
+send_async(_, CH, Actions, Opts) ->
+    d("send_async(true) -> send message"),
+    megaco:cast(CH, Actions, Opts).
+
+send_sync(true, CH, Actions, Opts) ->
+    d("send_sync(true) -> encode actions first"),
+    case megaco:encode_actions(CH, Actions, Opts) of
+	{ok, BinOrBins} ->
+	    d("send_sync(true) -> send message"),
+	    megaco:call(CH, BinOrBins, Opts);
+	Error ->
+	    d("send_sync(true) -> encode failed: ~n~p", [Error]),
+	    Error
+    end;
+send_sync(_, CH, Actions, Opts) ->
+    d("send_sync(false) -> send message"),
+    megaco:call(CH, Actions, Opts).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 sleep(X) ->
     receive after X -> ok end.
 
 
-error_msg(F,A) -> error_logger:error_msg(F ++ "~n",A).
+error_msg(F,A) -> error_logger:error_msg("MG: " ++ F ++ "~n",A).
 
 
 get_encoding_module(RI) ->
@@ -962,9 +1347,21 @@ print(Severity, Verbosity, P, F, A) ->
     print(printable(Severity,Verbosity), P, F, A).
 
 print(true, P, F, A) ->
-    io:format("~s~p:~s: " ++ F ++ "~n", [P, self(), get(sname) | A]);
+    io:format("*** [~s] ~s ~p ~s ***"
+              "~n   " ++ F ++ "~n~n", 
+              [format_timestamp(now()), P, self(), get(sname) | A]);
 print(_, _, _, _) ->
     ok.
+
+format_timestamp(Now) ->
+    {N1, N2, N3} = Now,
+    {Date, Time}   = calendar:now_to_datetime(Now),
+    {YYYY,MM,DD}   = Date,
+    {Hour,Min,Sec} = Time,
+    FormatDate = 
+        io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+                      [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),  
+    lists:flatten(FormatDate).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -975,6 +1372,7 @@ random_init() ->
 
 random() ->
     10 * random:uniform(50).
+
 
 apply_load_timer() ->
     erlang:send_after(random(), self(), apply_load_timeout).

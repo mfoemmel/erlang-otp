@@ -47,8 +47,7 @@ gen(G, N, X) when record(X, enum) ->
     emit_enum_class(G, N, X, EnumName),
     emit_holder_class(G, N, X, EnumName),
     emit_helper_class(G, N, X, EnumName);
-gen(G, N, X) -> 
-    %%?PRINTDEBUG2("****** IGNORING ******: ~p", [X]),
+gen(_G, _N, _X) -> 
     ok.
 
 
@@ -91,7 +90,7 @@ emit_enum_class(G, N, X, EnumName) ->
 %%-----------------------------------------------------------------
 %% Func:  emit_holder_class/4
 %%-----------------------------------------------------------------
-emit_holder_class(G, N, X, EnumName) ->
+emit_holder_class(G, N, _X, EnumName) ->
     EName = string:concat(EnumName, "Holder"),
     {Fd, _} = ic_file:open_java_file(G, N, EName), 
     
@@ -192,7 +191,7 @@ emit_helper_class(G, N, X, EnumName) ->
 %%-----------------------------------------------------------------
 %% Func:  emit_enum_public_instance_variables/6
 %%-----------------------------------------------------------------
-emit_enum_public_instance_variables(G, N, X, Fd, EnumName, []) ->
+emit_enum_public_instance_variables(_G, _N, _X, _Fd, _EnumName, []) ->
     ok;
 emit_enum_public_instance_variables(G, N, X, Fd, EnumName, [Enumerator |EList]) ->
     ic_codegen:emit(Fd, ["   public static final ",EnumName," ",Enumerator," = new ",EnumName,"(_",Enumerator,");\n"]),
@@ -209,7 +208,7 @@ emit_enum_member_int_values_initialization(G, N, X, Fd, EList) ->
 %%-----------------------------------------------------------------
 %% Func:  emit_enum_member_int_values_initialization_1/6
 %%-----------------------------------------------------------------
-emit_enum_member_int_values_initialization_1(G, N, X, Fd, [Enumerator], Num) ->
+emit_enum_member_int_values_initialization_1(_G, _N, _X, _Fd, [Enumerator], Num) ->
     "                           _" ++ Enumerator ++ " = " ++ ic_util:to_list(Num);
 emit_enum_member_int_values_initialization_1(G, N, X, Fd, [Enumerator |EList], Num) ->
     Spaces = if
@@ -224,7 +223,7 @@ emit_enum_member_int_values_initialization_1(G, N, X, Fd, [Enumerator |EList], N
 %%-----------------------------------------------------------------
 %% Func:  emit_enum_from_int_function/6
 %%-----------------------------------------------------------------
-emit_enum_from_int_function(G, N, X, Fd, EnumName, EList) ->
+emit_enum_from_int_function(_G, _N, _X, Fd, EnumName, EList) ->
     ic_codegen:emit(Fd, 
 		    ["   public static final ",EnumName," from_int(int __value)  throws java.lang.Exception {\n"
 		     "      switch (__value) {\n"]),
@@ -264,13 +263,13 @@ emit_enum_private_member_variables_1(Fd, [Enumerator |EList]) ->
 %%-----------------------------------------------------------------
 %% Func:  emit_enum_read_function/5
 %%-----------------------------------------------------------------
-emit_enum_read_function(G, N, X, Fd, EnumName) ->
+emit_enum_read_function(_G, _N, _X, Fd, EnumName) ->
     ic_codegen:emit(Fd, ["     return ",EnumName,".from_int(_getIntFromName(_in.read_atom()));"]).
 
 %%-----------------------------------------------------------------
 %% Func:  emit_enum_write_function/5
 %%-----------------------------------------------------------------
-emit_enum_write_function(G, N, X, Fd, EnumName) ->
+emit_enum_write_function(_G, _N, _X, Fd, _EnumName) ->
     ic_codegen:emit(Fd, "     _out.write_atom(_members[_value.value()]);\n").
 
 
@@ -281,12 +280,12 @@ emit_enum_write_function(G, N, X, Fd, EnumName) ->
 %%       with java keywords. If so the name is always prefixed
 %%       by "_"
 %%-----------------------------------------------------------------
-enum_member_name_list(G, N, X) ->
-    M = lists:map(
-	  fun(Enumerator) -> 
-		  ic_forms:get_java_id(Enumerator)
-	  end,
-	  ic_forms:get_body(X)).
+enum_member_name_list(_G, _N, X) ->
+    lists:map(
+      fun(Enumerator) -> 
+	      ic_forms:get_java_id(Enumerator)
+      end,
+      ic_forms:get_body(X)).
 
 %%-----------------------------------------------------------------
 %% Func:  enum_member_atom_list/3
@@ -295,12 +294,12 @@ enum_member_name_list(G, N, X) ->
 %%        solves name coalitions with java keywords.
 %%        Used for wire encoding only 
 %%-----------------------------------------------------------------
-enum_member_atom_list(G, N, X) ->
-    M = lists:map(
-	  fun(Enumerator) -> 
-		  ic_forms:get_id2(Enumerator)
-	  end,
-	  ic_forms:get_body(X)).
+enum_member_atom_list(_G, _N, X) ->
+    lists:map(
+      fun(Enumerator) -> 
+	      ic_forms:get_id2(Enumerator)
+      end,
+      ic_forms:get_body(X)).
 
 
 

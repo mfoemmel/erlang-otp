@@ -24,6 +24,8 @@
  * documentation and/or software.
  */
 
+#include "eidef.h"
+
 #include <string.h>
 #include "eimd5.h"
 

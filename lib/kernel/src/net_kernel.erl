@@ -1336,8 +1336,10 @@ std_monitors() -> [global_group].
 
 connecttime() ->
     case application:get_env(kernel, net_setuptime) of
-	{ok, Time} when integer(Time), Time > 0, Time < 120 ->
+	{ok, Time} when is_integer(Time), Time > 0, Time < 120 ->
 	    Time * 1000;
+	{ok, Time} when is_float(Time), Time > 0, Time < 120 ->
+	    round(Time * 1000);
 	_ ->
 	    ?SETUPTIME
     end.

@@ -19,7 +19,7 @@
  * Interface functions to different versions of gethostbyname
  */
 
-#include "config.h"
+#include "eidef.h"
 
 #ifdef VXWORKS
 #include <vxWorks.h>
@@ -66,7 +66,7 @@ void ei_init_resolve(void)
 /* we have our own in that case */
 
 /* Make sure this semaphore has been initialized somewhere first. This
- * should probably be done from erl_init() but we do it in the first
+ * should probably be done from 'erl'_init() but we do it in the first
  * call to gethostbyname_r() or gethostbyaddr_r().
  */
 /* FIXME we don't want globals here, but maybe ok? */
@@ -89,7 +89,7 @@ int h_errno;
 static struct hostent *(*sens_gethostbyname)(const char *name,
 					     char *, int) = NULL;
 static struct hostent *(*sens_gethostbyaddr)(const char *addr,
-					     int, int) = NULL;
+					     char *, int) = NULL;
 #endif
 
 #ifdef VXWORKS
@@ -157,7 +157,7 @@ static int verify_dns_configuration(void)
 	return -1;
     (*rpg)(resolv_params);
     if (*resolv_params == '\0') {
-	/* It exists, but is not configured, erl_connect would fail
+	/* It exists, but is not configured, ei_connect would fail
 	   if we left it this way... The best we can do is to configure
 	   it to use the local host database on the card, as a fallback */
 	*resolv_params = (char) 1;
@@ -291,7 +291,7 @@ static struct hostent *my_gethostbyname_r(const char *name,
   struct hostent *src;
   struct hostent *rval = NULL;
 
-  /* FIXME this should have been done in erl_init()? */
+  /* FIXME this should have been done in 'erl'_init()? */
   if (!ei_resolve_initialized) ei_init_resolve(); 
 
 #ifdef _REENTRANT
@@ -351,7 +351,7 @@ static struct hostent *my_gethostbyaddr_r(const char *addr,
   struct hostent *src;
   struct hostent *rval = NULL;
 
-  /* FIXME this should have been done in erl_init()? */
+  /* FIXME this should have been done in 'erl'_init()? */
   if (!ei_resolve_initialized) ei_init_resolve();
 
 #ifdef _REENTRANT
@@ -565,61 +565,14 @@ struct hostent *ei_gethostbyname_r(const char *name,
 
 #else /* unix of some kind */
 
-/*
- * On Solaris there are undocumented functions res_gethostbyname()
- * and res_gethostbyaddr() that go directly on DNS. Setting
- * the environ variable ERL_RESOLV to "nodns" or "dns" (or actually
- * anything). FIXME variable not documented
- */
-
-#ifdef HAVE_RES_GETHOSTBYNAME
-
-/* FIXME we can't have global data... */
-
-static int initialized = 0;
-static int use_dns_resolver = 0;
-
-static void initialize(void)
- {
-     /* The first time we read environment and use the selected resolver */
-     char *s = getenv("ERL_RESOLV");
-     /* if set and not empty and set to anyting but "nodns" */
-     if (s && *s && strcmp(s, "nodns") != 0) {
-	 use_dns_resolver = 1;
-     }
-     initialized = 1;
-}
-#endif /* HAVE_RES_GETHOSTBYNAME */
-
-
-#ifdef HAVE_RES_GETHOSTBYNAME
-/* There is no header file for these */
-struct hostent *res_gethostbyname(const char *name);
-struct hostent *res_gethostbyaddr(const char *addr, int len, int type);
-#endif /* HAVE_RES_GETHOSTBYNAME */
-
 struct hostent *ei_gethostbyname(const char *name)
 {
-#ifdef HAVE_RES_GETHOSTBYNAME
-    if (!initialized) initialize();
-
-    if (use_dns_resolver)
-	return res_gethostbyname(name);
-    else 
-#endif /* HAVE_RES_GETHOSTBYNAME */
-	return gethostbyname(name);
+    return gethostbyname(name);
 }
 
 struct hostent *ei_gethostbyaddr(const char *addr, int len, int type)
 {
-#ifdef HAVE_RES_GETHOSTBYNAME
-    if (!initialized) initialize();
-
-    if (use_dns_resolver)
-	return res_gethostbyaddr(addr, len, type);
-    else 
-#endif /* HAVE_RES_GETHOSTBYNAME */
-	return gethostbyaddr(addr, len, type);
+    return gethostbyaddr(addr, len, type);
 }
 
 struct hostent *ei_gethostbyaddr_r(const char *addr,

@@ -1101,9 +1101,10 @@ sub tr_parse_op {
 	    $cond_val = "BIF_$1_$2_$3";
 	}
 	$_ = $4;
-    } elsif (m@^\$func:(\w+):(\w+)/(\d)(.*)@) {
+    } elsif (m@^\$func:(\w+):(\w+)/([_\d])(.*)@) {
+	my $arity = $3 eq '_' ? 1024 : $3;
 	$cond = 'is_func';
-	$cond_val = "$1:$2:$3";
+	$cond_val = "$1:$2:$arity";
 	$_ = $4;
     }
 

@@ -29,10 +29,11 @@
 %% we flatten the arguments immediately on function entry as that makes
 %% it easier to ensure that the code works.
 
--export([absname/1, absname/2, basename/1, basename/2, dirname/1,
+-export([absname/1, absname/2, absname_join/2, 
+	 basename/1, basename/2, dirname/1,
 	 extension/1, join/1, join/2, pathtype/1,
 	 rootname/1, rootname/2, split/1, nativename/1]).
--export([find_src/1, find_src/2]).
+-export([find_src/1, find_src/2, flatten/1]).
 
 %% Undocumented and unsupported exports.
 -export([append/2]).
@@ -59,20 +60,14 @@ absname(Name) ->
     {ok, Cwd} = file:get_cwd(),
     absname(Name, Cwd).
 
-absname(Name0, AbsBase) ->
-    %% We must flatten the filename before passing it into join/1,
-    %% or we will get slashes inserted into the wrong places.
-    Name = flatten(Name0),
+absname(Name, AbsBase) ->
     case pathtype(Name) of
 	relative ->
-	    case major_os_type() of
-		vxworks -> 
-		    absname_pretty(AbsBase, split(Name), lists:reverse(split(AbsBase)));
-		_Else ->
-		    join(AbsBase, Name)
-	    end;
+	    absname_join(AbsBase, Name);
 	absolute ->
-	    join([Name]);
+	    %% We must flatten the filename before passing it into join/1,
+	    %% or we will get slashes inserted into the wrong places.
+	    join([flatten(Name)]);
 	volumerelative ->
 	    absname_vr(split(Name), split(AbsBase), AbsBase)
     end.
@@ -93,6 +88,20 @@ absname_vr([[X, $:]|Name], _, _AbsBase) ->
 	    {error, _} -> [X, $:, $/]
     end,
     absname(join(Name), Dcwd).
+
+%% Joins a relative filename to an absolute base. For VxWorks the 
+%% resulting name is  fixed to minimize the length by collapsing 
+%% ".." directories.
+%% For other systems this is just a join/2, but assumes that 
+%% AbsBase must be absolute and Name must be relative.
+
+absname_join(AbsBase, Name) ->
+    case major_os_type() of
+	vxworks -> 
+	    absname_pretty(AbsBase, split(Name), lists:reverse(split(AbsBase)));
+	_Else ->
+	    join(AbsBase, flatten(Name))
+    end.
 
 %% Handles absolute filenames for VxWorks - these are 'pretty-printed',
 %% since a C function call chdir("/erlang/lib/../bin") really sets

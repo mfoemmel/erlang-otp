@@ -41,6 +41,9 @@
 %%-----------------------------------------------------------------
 -export([]).
 
+%% DEBUG INFO
+-define(DEBUG_LEVEL, 5).
+
 %%-----------------------------------------------------------------
 %% External interface functions
 %%-----------------------------------------------------------------
@@ -58,22 +61,24 @@ insert_component([H|T], I, Component) when record(Component,
 						  'CosNaming_NameComponent') ->
     [H |insert_component(T, I-1, Component)];
 insert_component(_, _, Component) -> 
+    orber:dbg("[~p] ~p:insert_component(~p); Not a NameComponent.~n", 
+	      [?LINE, ?MODULE, Component], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 get_component(_, I) when I < 1->
     corba:raise(#'LName_NoComponent'{});
 get_component([], _) ->
     corba:raise(#'LName_NoComponent'{});
-get_component([H|T], 1) ->
+get_component([H|_T], 1) ->
     H;
-get_component([H|T], I) ->
+get_component([_|T], I) ->
     get_component(T, I-1).
 
 delete_component(_, I) when I < 1->
     corba:raise(#'LName_NoComponent'{});
 delete_component([], _) ->
     corba:raise(#'LName_NoComponent'{});
-delete_component([H|T], 1) ->
+delete_component([_|T], 1) ->
     T;
 delete_component([H|T], I) ->
     [H | delete_component(T, I-1)].
@@ -116,14 +121,14 @@ new([Id |List]) when list(Id) ->
 %%-----------------------------------------------------------------
 num_component([], N) ->
     N;
-num_component([H|T], N) ->
+num_component([_|T], N) ->
     num_component(T, N+1).
 
 check_name([]) ->
     true;
 check_name([H|T]) ->
     case catch lname_component:get_id(H) of
-	{'EXCEPTION', E} ->
+	{'EXCEPTION', _E} ->
 	    false;
 	_ ->
 	    check_name(T)

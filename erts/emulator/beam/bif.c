@@ -153,6 +153,11 @@ BIF_RETTYPE link_1(BIF_ALIST_1)
 	else if (code < 0) { /* XXX is this the correct behaviour ??? */
 	    BIF_ERROR(BIF_P, EXC_NOTALIVE);
 	}
+	if (dep->cid == NIL) {/* Might have been disconnected 
+					     during dist_link */
+	    BIF_TRAP1(dlink_trap, BIF_P, BIF_ARG_1);
+	}
+	
 	/* insert the link in our own process */
 	BIF_P->links = new_link(BIF_P->links,LNK_LINK,BIF_ARG_1,NIL);
 	dep->links = new_link(dep->links, LNK_LINK, BIF_P->id, BIF_ARG_1);
@@ -269,6 +274,9 @@ BIF_RETTYPE demonitor_1(BIF_ALIST_1)
 	    gone down, the dist_demonitor call detected that, and therefore
 	    what dist_lnkp pointed at is no longer there. */
 	 dist_lnkp = find_link_by_ref(&dep->links, ref);
+	 /* And then, if the dist entry was deleted, the process does no 
+	    longer have the link either... Look that up again... */ 
+	 lnkp = find_link_by_ref(&BIF_P->links, ref);
 	 del_link(dist_lnkp);
       } else { /* Local monitor */
 	 if ((rp = pid2proc(to)) != NULL)
@@ -321,9 +329,11 @@ BIF_RETTYPE monitor_2(BIF_ALIST_2)
    Eterm       ref;
    DistEntry  *dep; /* Distribution entry */
    ErlLink   **lnkp = NULL;
+   int broken_connection = 0;
 
    type = BIF_ARG_1;
    p_item = item = BIF_ARG_2;
+
    if (type == am_process) {
       Process *rp = NULL; /* Suppress use before set warning */
 
@@ -343,6 +353,7 @@ BIF_RETTYPE monitor_2(BIF_ALIST_2)
 	 if ((dep = erts_sysname_to_connected_dist_entry(nodename)) == NULL) {
 	    BIF_TRAP2(dmonitor_p_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
 	 }
+
 	 if (dep == erts_this_dist_entry) {
 	 locally_registered:
 	    if ((rp = whereis_process(item)) != NULL) {
@@ -412,8 +423,15 @@ BIF_RETTYPE monitor_2(BIF_ALIST_2)
 	     * does not seem to be the common practice today.
 	     */
 	    BIF_ERROR(BIF_P, EXC_NOTALIVE);
+	 } 
+	 if (dep->cid == NIL) {
+	     lnkp = NULL;
+	     broken_connection = 1; /* Node went down when we sent the 
+				       distribution message, handle like 
+				       it went down after... */
+	 } else {
+	     lnkp = &dep->links;
 	 }
-	 lnkp = &dep->links;
 	 if (! is_external_pid(item)) {
 	     /* "item" is the registered name. Registered name will
 		be stored in dist_entry and nodename will be stored
@@ -427,11 +445,16 @@ BIF_RETTYPE monitor_2(BIF_ALIST_2)
 
    /* Set up the links */
    if (lnkp == NULL) {
-       Eterm lhp[3];
-       item = (is_atom(BIF_ARG_2)
-	       ? TUPLE2(&lhp[0], BIF_ARG_2, erts_this_dist_entry->sysname)
-	       : BIF_ARG_2);
-       queue_monitor_message(BIF_P, ref, type, item, am_noproc);
+       if (broken_connection) { /* Connection breakdown when sending 
+				   monitor message over distribution */
+	   queue_monitor_message(BIF_P, ref, type, BIF_ARG_2, am_noconnection);
+       } else {
+	   Eterm lhp[3];
+	   item = (is_atom(BIF_ARG_2)
+		   ? TUPLE2(&lhp[0], BIF_ARG_2, erts_this_dist_entry->sysname)
+		   : BIF_ARG_2);
+	   queue_monitor_message(BIF_P, ref, type, item, am_noproc);
+       }
    } else { 
        /* Note! perhaps not same data put in both lists;
 	* p_item (may be)!= item
@@ -774,7 +797,7 @@ static BIF_RETTYPE process_flag_aux(Process *BIF_P,
 
    if (flag == am_error_handler) {
       if (is_not_atom(val)) {
-	 BIF_ERROR(BIF_P, BADARG);
+	 goto error;
       }
       old_value = rp->error_handler;
       rp->error_handler = val;
@@ -800,7 +823,7 @@ static BIF_RETTYPE process_flag_aux(Process *BIF_P,
       else if (val == am_low)
 	 rp->prio = PRIORITY_LOW;
       else {
-	 BIF_ERROR(BIF_P, BADARG);
+	  goto error;
       }
       BIF_RET(old_value);
    }
@@ -820,12 +843,13 @@ static BIF_RETTYPE process_flag_aux(Process *BIF_P,
       } 
    }
    else if (flag == am_save_calls) {
-      if (!is_small(val))
-	 BIF_ERROR(BIF_P, BADARG);
-
+      if (!is_small(val)) {
+	  goto error;
+      }
       i = signed_val(val);
-      if (i < 0 || i > 10000)
-	 BIF_ERROR(BIF_P, BADARG);
+      if (i < 0 || i > 10000) {
+	  goto error;
+      }
 
       if (rp->ct == NULL)
 	 old_value = make_small(0);
@@ -855,8 +879,24 @@ static BIF_RETTYPE process_flag_aux(Process *BIF_P,
 	 BIF_RET2(old_value, CONTEXT_REDS);
       else
 	 BIF_RET(old_value);
+   } else if (flag == am_min_heap_size) {
+       if (!is_small(val)) {
+	   goto error;
+       }
+       i = signed_val(val);
+       if (i < 0) {
+	   goto error;
+       }
+       old_value = make_small(BIF_P->min_heap_size);
+       if (i < H_MIN_SIZE) {
+	   BIF_P->min_heap_size = H_MIN_SIZE;
+       } else {
+	   BIF_P->min_heap_size = erts_next_heap_size(i, 0);
+       }
+       BIF_RET(old_value);
    }
 
+ error:
    BIF_ERROR(BIF_P, BADARG);
 }
 
@@ -895,36 +935,16 @@ BIF_RETTYPE register_2(BIF_ALIST_2)   /* (Atom,Pid)   */
 
      if ((rp = pid2proc(BIF_ARG_2)) != NULL) {
 	 if (rp->reg != NULL) {
-	     cerr_pos = 0;
-	     display(rp->id, CBUF);
-	     erl_printf(CBUF," already registered as ");
-	     print_atom(atom_val(rp->reg->name), CBUF);
-	     erl_printf(CBUF,"\n");
-	     send_error_to_logger(BIF_P->group_leader);
 	     BIF_ERROR(BIF_P, BADARG);
 	 }
 	 if (register_process(BIF_P, BIF_ARG_1, rp) != rp) {
-	     cerr_pos = 0;
-	     print_atom(atom_val(BIF_ARG_1), CBUF);
-	     erl_printf(CBUF," already registered\n");
-	     send_error_to_logger(BIF_P->group_leader);
 	     BIF_ERROR(BIF_P, BADARG);
 	 }
      } else if ((rport = id2port(BIF_ARG_2)) != NULL) {
 	 if (rport->reg != NULL) {
-	     cerr_pos = 0;
-	     display(rport->id, CBUF);
-	     erl_printf(CBUF," already registered as ");
-	     print_atom(atom_val(rport->reg->name), CBUF);
-	     erl_printf(CBUF,"\n");
-	     send_error_to_logger(BIF_P->group_leader);
 	     BIF_ERROR(BIF_P, BADARG);
 	 }
 	 if (register_port(BIF_ARG_1, rport) != rport) {
-	     cerr_pos = 0;
-	     print_atom(atom_val(BIF_ARG_1), CBUF);
-	     erl_printf(CBUF," already registered\n");
-	     send_error_to_logger(BIF_P->group_leader);
 	     BIF_ERROR(BIF_P, BADARG);
 	 }
      }

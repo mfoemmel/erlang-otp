@@ -28,9 +28,6 @@
 -export([get_basetype/2, insert_typedef/3, codeDirective/2]).
 -export([gen_includes/3, gen_includes/4, mk_list/1]).
 
-%%
-%% NOC special
-%%
 -export([type_expand_op/4, type_expand_handle_op/4]).
 -export([ type_expand_op_exec/4, type_expand_all/6, type_expand/7]).
 
@@ -43,13 +40,8 @@
 -export([type_expand_enum/4, type_expand_sequence/7, type_expand_array/7, type_expand_error/3]).
 
 -export([type_expand_struct_rule/3, type_expand_union_rule/2, type_expand_enum_rule/4]).
--export([type_expand_enum_elements/3]).
-
-
-%%-----------------------------------------------------------------
-%% Internal exports
-%%-----------------------------------------------------------------
--export([]).
+-export([type_expand_enum_elements/3, type_expand_longdouble/3, type_expand_typecode/3]).
+-export([type_expand_principal/3, type_expand_exception/7]).
 
 %%-----------------------------------------------------------------
 %% External functions
@@ -69,7 +61,7 @@ get_basetype(G, MyId) ->
 	    get_basetype(G, X)
     end.
 
-insert_typedef(G, "erlang_term", _) ->
+insert_typedef(_G, "erlang_term", _) ->
     ok;
 insert_typedef(G, MyId, DefinedAsId) ->
     ?insert(ic_genobj:typedeftab(G), MyId, DefinedAsId).
@@ -108,71 +100,16 @@ produceCode(X) when record(X, module) ->
         List ->
             produceModuleCode(List)
     end;
-produceCode(X) ->    
+produceCode(_X) ->    
     false.
     
 produceModuleCode([]) ->
     false;
-produceModuleCode([X|Xs]) when record(X, const) ->
+produceModuleCode([X|_Xs]) when record(X, const) ->
     true;
-produceModuleCode([X|Xs]) ->
+produceModuleCode([_X|Xs]) ->
     produceModuleCode(Xs).
  
-
-
-
-%% Returns the valid code directive
-%% for special cases ( = module )
-%% Used ONLY to decide file creation.
-%codeDirective(G,X) ->
-%    case produceCode(G,X) of
-%	true ->
-%	    case ic_options:get_opt(G, be) of
-%		c_genserv ->
-%		    c;
-%		c_server ->
-%		    c_server;
-%		_ ->
-%		    erlang
-%	    end;
-%	false ->
-%	    case ic_options:get_opt(G, be) of		
-%		c_genserv ->
-%		    c_no_stub;
-%		c_server ->
-%		    c_server_no_stub;	
-%		_ ->
-%		    erlang_no_stub
-%	    end
-%    end.
-
-%%% Checks if X should produce code
-%produceCode(G,X) when record(X, module) ->
-%    case ic_forms:get_body(X) of
-%	[] ->
-%	    true;
-%	List ->
-%	    produceModuleCode(G,List)
-%    end;
-%produceCode(G,X) ->    
-%    false.
-    
-%produceModuleCode(_,[]) ->
-%    false;
-%produceModuleCode(G,[X|Xs]) when record(X, const) ->
-%    true;
-%produceModuleCode(G,[X|Xs]) when record(X, enum) ->
-%    case ic_options:get_opt(G, be) of
-%	c_genserv ->
-%	    true;
-%	c_server ->
-%	    true;
-%	_ ->
-%	    false
-%    end;
-%produceModuleCode(G,[X|Xs]) ->
-%    produceModuleCode(G,Xs).
-
 %% Includes needed c file headers for included idl files
 gen_includes(Fd,G,Type) ->
     case Type of
@@ -338,7 +275,7 @@ type_expand_handle_op(G,N,X,Fd) ->
     end.
 
 
-type_expand_handle_op_exec(G,N,X,Fd) ->
+type_expand_handle_op_exec(_G,_N,X,Fd) ->
     InArgs = ic:filter_params([in,inout], X#op.params),
     ParamNr = length(InArgs)+1,
     
@@ -356,18 +293,18 @@ type_expand_handle_op_exec(G,N,X,Fd) ->
 
 
 
-type_expand_all(G,N,X,Fd,Tabs,[]) -> 
+type_expand_all(_G,_N,_X,_Fd,_Tabs,[]) -> 
     ok;
 type_expand_all(G,N,X,Fd,Tabs,[{ArgName,Type}|Rest]) ->
     type_expand(G,N,X,Fd,Tabs,ArgName,Type),
     type_expand_all(G,N,X,Fd,Tabs,Rest);
-type_expand_all(G,N,X,Fd,Tabs,[{default,ArgName,Type}|Rest]) ->
+type_expand_all(G,N,X,Fd,Tabs,[{default,_ArgName,Type}|Rest]) ->
     type_expand(G,N,X,Fd,Tabs,"Def",Type),
     type_expand_all(G,N,X,Fd,Tabs,Rest);
-type_expand_all(G,N,X,Fd,Tabs,[{LabelNr,ArgName,Type}|Rest]) when integer(LabelNr) ->
+type_expand_all(G,N,X,Fd,Tabs,[{LabelNr,_ArgName,Type}|Rest]) when integer(LabelNr) ->
     type_expand(G,N,X,Fd,Tabs,"V" ++ integer_to_list(LabelNr),Type),
     type_expand_all(G,N,X,Fd,Tabs,Rest);
-type_expand_all(G,N,X,Fd,Tabs,[{Label,ArgName,Type}|Rest]) ->
+type_expand_all(G,N,X,Fd,Tabs,[{Label,_ArgName,Type}|Rest]) ->
     type_expand(G,N,X,Fd,Tabs,Label,Type),
     type_expand_all(G,N,X,Fd,Tabs,Rest).
 
@@ -381,21 +318,23 @@ type_expand(_G,_N,_X,Fd,Tabs,Name,tk_float) ->
     type_expand_float(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,tk_double) ->
     type_expand_double(Fd,Tabs,Name);
+type_expand(_G,_N,_X,Fd,Tabs,Name,tk_longdouble) ->
+    type_expand_longdouble(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,tk_short) ->
     type_expand_short(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,tk_ushort) ->
     type_expand_ushort(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,tk_long) ->
     type_expand_long(Fd,Tabs,Name);
-type_expand(_G,_N,_X,Fd,Tabs,Name,tk_longlong) ->  %% LLONG
+type_expand(_G,_N,_X,Fd,Tabs,Name,tk_longlong) ->
     type_expand_longlong(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,tk_ulong) ->
     type_expand_ulong(Fd,Tabs,Name);
-type_expand(_G,_N,_X,Fd,Tabs,Name,tk_ulonglong) ->  %% ULLONG
+type_expand(_G,_N,_X,Fd,Tabs,Name,tk_ulonglong) ->
     type_expand_ulonglong(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,tk_char) ->
     type_expand_char(Fd,Tabs,Name);
-type_expand(_G,_N,_X,Fd,Tabs,Name,tk_wchar) ->  %% WCHAR
+type_expand(_G,_N,_X,Fd,Tabs,Name,tk_wchar) ->
     type_expand_wchar(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,tk_boolean) ->
     type_expand_boolean(Fd,Tabs,Name);
@@ -403,13 +342,22 @@ type_expand(_G,_N,_X,Fd,Tabs,Name,tk_octet) ->
     type_expand_octet(Fd,Tabs,Name);
 type_expand(_G,_N,_X,Fd,Tabs,Name,tk_any) ->
     type_expand_any(Fd,Tabs,Name);
-type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_fixed, Digits, Scale}) ->
+type_expand(_G,_N,_X,Fd,Tabs,Name,tk_TypeCode) ->
+    type_expand_typecode(Fd,Tabs,Name);
+type_expand(_G,_N,_X,Fd,Tabs,Name,tk_Principal) ->
+    type_expand_principal(Fd,Tabs,Name);
+type_expand(G, N, X,Fd,Tabs,Name, {tk_except, Id, ExcName, ElementList}) ->
+    type_expand_exception(G, N, X, Fd,Tabs,Name, 
+			  {tk_except, Id, ExcName, ElementList});
+type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_fixed, _Digits, _Scale}) ->
     type_expand_fixed(Fd,Tabs,Name);
-type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_objref, IFRId, ObjTabs, ObjName}) ->
+type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_objref, _IFRId, _ObjTabs, _ObjName}) ->
     type_expand_object(Fd,Tabs,Name);
-type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_string, Length}) ->
+type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_objref, _IFRId, _ObjName}) ->
+    type_expand_object(Fd,Tabs,Name);
+type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_string, _Length}) ->
     type_expand_string(Fd,Tabs,Name);
-type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_wstring, Length}) -> %% WSTRING
+type_expand(_G,_N,_X,Fd,Tabs,Name,{tk_wstring, _Length}) ->
     type_expand_wstring(Fd,Tabs,Name);
 type_expand(G,N,X,Fd,Tabs,Name,{tk_union, IFRId, UnionName, DTC, DNr, LblList}) ->
     type_expand_union(G,N,X,Fd,Tabs,Name,{tk_union, IFRId, UnionName, DTC, DNr, LblList});
@@ -439,6 +387,9 @@ type_expand_float(Fd,Tabs,Name) ->
 type_expand_double(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = double()~n",[Tabs,Name]).
 
+type_expand_longdouble(Fd,Tabs,Name) ->
+    ic_codegen:emit(Fd,"%%~s ~s = long_double()~n",[Tabs,Name]).
+
 type_expand_short(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = short()~n",[Tabs,Name]).
 
@@ -448,19 +399,19 @@ type_expand_ushort(Fd,Tabs,Name) ->
 type_expand_long(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = long()~n",[Tabs,Name]).
 
-type_expand_longlong(Fd,Tabs,Name) ->                      %% LLONG
+type_expand_longlong(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = long_Long()~n",[Tabs,Name]).
 
 type_expand_ulong(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = unsigned_Long()~n",[Tabs,Name]).
 
-type_expand_ulonglong(Fd,Tabs,Name) ->                     %% ULLONG
+type_expand_ulonglong(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = unsigned_Long_Long()~n",[Tabs,Name]).
 
 type_expand_char(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = char()~n",[Tabs,Name]).
 
-type_expand_wchar(Fd,Tabs,Name) ->                         %% WCHAR
+type_expand_wchar(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = wchar()~n",[Tabs,Name]).
 
 type_expand_boolean(Fd,Tabs,Name) ->
@@ -471,6 +422,13 @@ type_expand_octet(Fd,Tabs,Name) ->
 
 type_expand_any(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = any()~n",[Tabs,Name]).
+
+type_expand_typecode(Fd,Tabs,Name) ->
+    ic_codegen:emit(Fd,"%%~s ~s = TypeCode()~n",[Tabs,Name]).
+
+type_expand_principal(Fd,Tabs,Name) ->
+    ic_codegen:emit(Fd,"%%~s ~s = principal()~n",[Tabs,Name]).
+
 
 type_expand_fixed(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = fixed()~n",[Tabs,Name]).
@@ -484,8 +442,14 @@ type_expand_object(Fd,Tabs,Name) ->
 type_expand_string(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = String()~n",[Tabs,Name]).
 
-type_expand_wstring(Fd,Tabs,Name) ->                       %% WSTRING
+type_expand_wstring(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = WString()~n",[Tabs,Name]).
+
+type_expand_exception(G, N, X, Fd, Tabs, Name, {tk_except, Id, ExcName, ElementList}) ->
+    ScopedStructName = getScopedName(G, N, ExcName, Id),
+    ic_codegen:emit(Fd,"%%~s ~s = ",[Tabs, Name]),
+    type_expand_exception_rule(Fd, ScopedStructName, ElementList),
+    type_expand_all(G, N, X, Fd, Tabs, ElementList).
 
 type_expand_struct(G,N,X,Fd,Tabs,Name,{tk_struct, IFRId, StructName, TcList}) ->
     ScopedStructName = getScopedName(G,N,StructName,IFRId),
@@ -493,7 +457,7 @@ type_expand_struct(G,N,X,Fd,Tabs,Name,{tk_struct, IFRId, StructName, TcList}) ->
     type_expand_struct_rule(Fd,ScopedStructName,TcList),
     type_expand_all(G,N,X,Fd,Tabs,TcList).
 
-type_expand_union(G,N,X,Fd,Tabs,Name,{tk_union, IFRId, UnionName, DTC, DNr, LblList}) ->
+type_expand_union(G,N,X,Fd,Tabs,Name,{tk_union, IFRId, UnionName, DTC, _DNr, LblList}) ->
     ScopedUnionName = getScopedName(G,N,UnionName,IFRId),
     ic_codegen:emit(Fd,"%%~s ~s = #'~s'{label, value}\n",[Tabs,Name,ScopedUnionName]),
     type_expand(G,N,X,Fd,Tabs,"label",DTC),
@@ -501,15 +465,15 @@ type_expand_union(G,N,X,Fd,Tabs,Name,{tk_union, IFRId, UnionName, DTC, DNr, LblL
     type_expand_union_rule(Fd,LblList),
     type_expand_all(G,N,X,Fd,Tabs,LblList).
 
-type_expand_enum(Fd,Tabs,Name,{tk_enum, IFRId, EnumName, ElemNameList}) ->
+type_expand_enum(Fd,Tabs,Name,{tk_enum, _IFRId, EnumName, ElemNameList}) ->
     ic_codegen:emit(Fd,"%%~s ~s = ~s~n",[Tabs,Name,EnumName]),
     type_expand_enum_rule(Fd,Tabs,EnumName,ElemNameList).
 
-type_expand_sequence(G,N,X,Fd,Tabs,Name,{tk_sequence, ElemTC, Length}) ->
+type_expand_sequence(G,N,X,Fd,Tabs,Name,{tk_sequence, ElemTC, _Length}) ->
     ic_codegen:emit(Fd,"%%~s ~s = [ ~sElem ]~n",[Tabs,Name,Name]),
     type_expand(G,N,X,Fd,Tabs,Name++"Elem",ElemTC).
 
-type_expand_array(G,N,X,Fd,Tabs,Name,{tk_array, ElemTC, Length}) ->
+type_expand_array(G,N,X,Fd,Tabs,Name,{tk_array, ElemTC, _Length}) ->
     ic_codegen:emit(Fd,"%%~s ~s = { ~sElem[,..~sElem] }~n",[Tabs,Name,Name,Name]),
     type_expand(G,N,X,Fd,Tabs,Name++"Elem",ElemTC).
 
@@ -517,34 +481,46 @@ type_expand_error(Fd,Tabs,Name) ->
     ic_codegen:emit(Fd,"%%~s ~s = ????~n",[Tabs,Name]).
 
 
+type_expand_exception_rule(Fd,_Name,[]) ->
+    ic_codegen:emit(Fd," ???? ");
+type_expand_exception_rule(Fd,Name,TcList) ->
+    ic_codegen:emit(Fd,"#'~s'{",[Name]), 
+    type_expand_exception_rule(Fd,TcList).
+
+type_expand_exception_rule(Fd,[{Name,_TC}]) ->
+    ic_codegen:emit(Fd,"~s}~n",[Name]);
+type_expand_exception_rule(Fd,[{Name,_TC}|Rest]) ->
+    ic_codegen:emit(Fd,"~s,",[Name]),
+    type_expand_exception_rule(Fd,Rest).
+
 type_expand_struct_rule(Fd,_Name,[]) ->
     ic_codegen:emit(Fd," ???? ");
 type_expand_struct_rule(Fd,Name,TcList) ->
     ic_codegen:emit(Fd,"#'~s'{",[Name]), 
     type_expand_struct_rule(Fd,TcList).
 
-type_expand_struct_rule(Fd,[{Name,TC}]) ->
+type_expand_struct_rule(Fd,[{Name,_TC}]) ->
     ic_codegen:emit(Fd,"~s}~n",[Name]);
-type_expand_struct_rule(Fd,[{Name,TC}|Rest]) ->
+type_expand_struct_rule(Fd,[{Name,_TC}|Rest]) ->
     ic_codegen:emit(Fd,"~s,",[Name]),
     type_expand_struct_rule(Fd,Rest).
 
 
 type_expand_union_rule(Fd,[]) ->
     ic_codegen:emit(Fd," ????");
-type_expand_union_rule(Fd,[{default,Name,TC}]) ->
+type_expand_union_rule(Fd,[{default,_Name,_TC}]) ->
     ic_codegen:emit(Fd,"Def~n",[]);
-type_expand_union_rule(Fd,[{LNr,Name,TC}]) when integer(LNr)->
+type_expand_union_rule(Fd,[{LNr,_Name,_TC}]) when integer(LNr)->
     ic_codegen:emit(Fd,"V~p~n",[LNr]);
-type_expand_union_rule(Fd,[{Label,Name,TC}]) ->
+type_expand_union_rule(Fd,[{Label,_Name,_TC}]) ->
     ic_codegen:emit(Fd,"~s~n",[Label]);
-type_expand_union_rule(Fd,[{default,Name,TC}|Rest]) ->
+type_expand_union_rule(Fd,[{default,_Name,_TC}|Rest]) ->
     ic_codegen:emit(Fd,"Default | "),
     type_expand_union_rule(Fd,Rest);
-type_expand_union_rule(Fd,[{LNr,Name,TC}|Rest]) when integer(LNr) ->
+type_expand_union_rule(Fd,[{LNr,_Name,_TC}|Rest]) when integer(LNr) ->
     ic_codegen:emit(Fd,"V~p | ",[LNr]),
     type_expand_union_rule(Fd,Rest);
-type_expand_union_rule(Fd,[{Label,Name,TC}|Rest]) ->
+type_expand_union_rule(Fd,[{Label,_Name,_TC}|Rest]) ->
     ic_codegen:emit(Fd,"~s | ",[Label]),
     type_expand_union_rule(Fd,Rest).
 
@@ -561,7 +537,7 @@ type_expand_enum_rule(Fd,[First|Rest]) ->
     ic_codegen:emit(Fd,"'~s' | ",[First]),
     type_expand_enum_rule(Fd,Rest).
 
-type_expand_enum_elements(Fd,Tabs,[]) ->
+type_expand_enum_elements(_Fd,_Tabs,[]) ->
     ok;
 type_expand_enum_elements(Fd,Tabs,[Elem|Elems]) ->
     ic_codegen:emit(Fd,"%%~s ~s = Atom()~n",[Tabs,Elem]),
@@ -572,22 +548,16 @@ type_expand_enum_elements(Fd,Tabs,[Elem|Elems]) ->
 %% Returns the right scoped name to be used
 %% along with the expansion comments 
 getScopedName(G,N,Name,IfrId) ->
-    
     PTab = ic_genobj:pragmatab(G),
-    
     case ets:match(PTab,{alias,'$0',IfrId}) of
 	[] -> %% No Alias - should never happen
 	    ic_util:to_undersc(ic_pragma:mk_scope(IfrId));
-
-	[[[S|N]]] -> %% An alias
+	[[[_S|N]]] -> %% An alias
 	    ic_util:to_undersc([Name|N]);
-
 	[[[S|FoundScope]]] -> %% Maybe inherited
 	    case ic_pragma:is_inherited_by(FoundScope,N,PTab) of
- 
 		false -> %% Not inherited
 		    ic_util:to_undersc([S|FoundScope]);
-
 		true -> %% inherited
 		    ic_util:to_undersc([Name|N])
 	    end

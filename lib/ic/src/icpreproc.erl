@@ -75,7 +75,7 @@ filter_x_switch(L) ->
 	      (_) -> true end, L).
 
 
-print_error(G,[]) ->
+print_error(_G,[]) ->
     ok;
 print_error(G,[{File,Line,Text}]) ->
     ErrorText = File++":"++integer_to_list(Line)++": "++Text,
@@ -95,7 +95,7 @@ print_error(G,[H|T]) ->
     print_error(G,T).
 
 
-print_warning(G,[]) ->
+print_warning(_G,[]) ->
     ok;
 print_warning(G,[{File,Line,Text}|T]) ->
     WarText = File++":"++integer_to_list(Line)++": "++Text,

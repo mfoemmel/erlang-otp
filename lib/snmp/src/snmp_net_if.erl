@@ -32,11 +32,14 @@
 		mpd_state, 
 		log,
 		reqs = [], 
-		debug = false}).
+		debug = false,
+		limit = infinity,
+		rcnt = []}).
 
 -ifndef(default_verbosity).
 -define(default_verbosity,silence).
 -endif.
+
 
 %%%-----------------------------------------------------------------
 %%% This module implements the default Network Interface part
@@ -52,7 +55,7 @@ start_link(MasterAgent) ->
 start_link(MasterAgent,Opts) ->
     proc_lib:start_link(?MODULE, init, [MasterAgent, self(), Opts]).
 
-verbosity(Pid,Verbosity) -> Pid ! {verbosity,Verbosity}.
+verbosity(Pid, Verbosity) -> Pid ! {verbosity, Verbosity}.
 
 get_log_type(Pid) ->
     Pid ! {self(), get_log_type},
@@ -86,6 +89,7 @@ init(MasterAgent, Parent, Opts) ->
     ?vdebug("addr: ~w",[IPAddress]),
     Vsns = snmp_misc:get_vsns(),
     ?vdebug("vsns: ~w",[Vsns]),
+    Limit = get_req_limit(Opts),
     Log = case snmp_log:create_log() of
 	      {ok, L} -> L;
 	      false -> false;
@@ -114,13 +118,15 @@ init(MasterAgent, Parent, Opts) ->
     ?vdebug("open socket with options: ~w",[IPOpts]),
     case gen_udp_open(UDPPort, [binary| IPOpts]) of
 	{ok, Id} ->
+	    active_once(Id),
 	    MpdState = snmp_mpd:init_mpd(Vsns),
 	    S = #state{parent       = Parent,
 		       master_agent = MasterAgent, 
 		       mpd_state    = MpdState,
 		       usock        = Id, 
 		       usock_opts   = [binary| IPOpts],
-		       log          = Log},
+		       log          = Log,
+		       limit        = Limit},
 	    proc_lib:init_ack({ok, self()}),
 	    ?vdebug("started",[]),
 	    loop(S);
@@ -142,91 +148,55 @@ gen_udp_open(Port, Opts) ->
 loop(S) ->
     receive
 	{udp, _UdpId, Ip, Port, Packet} ->
-	    ?vlog("~n   got paket from ~w:~w",[Ip,Port]),
-	    put(n1,erlang:now()),
-	    LogF = case S#state.log of
-		       false -> nofunc;
-		       Log ->
-			   fun(Type, Data) ->
-				   snmp_log:log(Log, Type, Data, {Ip, Port})
-			   end
-		   end,
-	    case snmp_mpd:process_packet(Packet, snmpUDPDomain, {Ip, Port}, 
-					 S#state.mpd_state, LogF) of
-		{ok, Vsn, Pdu, PduMS, ACMData} ->
-		    ?vlog("~n   got pdu ~s", 
-			  [?vapply(snmp_misc, format, [256, "~w", [Pdu]])]),
-		    Type = Pdu#pdu.type,
-		    case Type of
-			'get-response' ->
-			    handle_response(Vsn, Pdu, {Ip, Port}, S);
-			_ ->
-			    S#state.master_agent !
-				{snmp_pdu, Vsn, Pdu, PduMS,
-				 ACMData, {Ip, Port}, []}
-		    end;
-		{discarded, Reason} ->
-		    ?vlog("~n   packet discarded for reason: "
-			  "~n   ~s",
-			  [?vapply(snmp_misc, format, [256, "~w", [Reason]])]);
-		{discarded, Reason, ReportPacket} ->
-		    ?vlog("~n   sending report for reason: "
-			  "~n   ~s", 
-			  [?vapply(snmp_misc, format, [256, "~w", [Reason]])]),
-		    udp_send(S#state.usock, Ip, Port, ReportPacket)
-		end,
-	    loop(S);
-	{snmp_response, Vsn, RePdu, Type, ACMData, {Ip, Port}, []} ->
-	    ?vlog("~n   reply pdu: ~s", 
+	    ?vlog("got paket from ~w:~w (~w)",[Ip,Port,size(Packet)]),
+	    S1 = handle_recv(S, Ip, Port, Packet),
+	    loop(S1);
+
+	{snmp_response, Vsn, RePdu, Type, ACMData, Dest, []} ->
+	    ?vlog("reply pdu: "
+		  "~n   ~s", 
 		  [?vapply(snmp_misc, format, [256, "~w", [RePdu]])]),
-	    LogF = case S#state.log of
-		       false -> nofunc;
-		       Log ->
-			   fun(Type2, Data) ->
-				   log(Log, Type2, Data, {Ip, Port})
-			   end
-		   end,
-	    case snmp_mpd:generate_response_msg(Vsn,RePdu,Type,
-						ACMData,LogF) of
-		{ok, Packet} ->
-		    ?vinfo("time in agent: ~w mysec", 
-			   [subtr(erlang:now(),get(n1))]),
-		    udp_send(S#state.usock, Ip, Port, Packet);
-		{discarded, Reason} ->
-		    ?vlog("~n   reply discarded for reason: ~s", 
-			  [?vapply(snmp_misc, format, [256, "~w", [Reason]])]),
-		    ok
-	    end,
-	    loop(S);
+	    S1 = handle_reply_pdu(S, Vsn, RePdu, Type, ACMData, Dest),
+	    loop(S1);
+
 	{send_pdu, Vsn, Pdu, MsgData, To} ->
-	    ?vdebug("~n   send pdu: ~p"
-		    "~n   to ~p", [Pdu,To]),
+	    ?vdebug("send pdu: "
+		"~n   Pdu: ~p"
+		"~n   To:  ~p", [Pdu,To]),
 	    NewS = handle_send_pdu(S, Vsn, Pdu, MsgData, To, undefined),
 	    loop(NewS);
+
 	{send_pdu_req, Vsn, Pdu, MsgData, To, From} ->
 	    ?vdebug("send pdu request: "
 		    "~n   Pdu:  ~p"
-		    "~n   to:   ~p"
-		    "~n   from: ~p", 
+		    "~n   To:   ~p"
+		    "~n   From: ~p", 
 		    [Pdu,To,toname(From)]),
 	    NewS = handle_send_pdu(S, Vsn, Pdu, MsgData, To, From),
 	    loop(NewS);
-	{discarded_pdu, _Vsn, _ReqId, _ACMData, Variable, _Extra} ->
-	    ?vdebug("~n   discard PDU: ~p", [Variable]),
+
+	{discarded_pdu, _Vsn, ReqId, _ACMData, Variable, _Extra} ->
+	    ?vdebug("discard PDU: ~p", [Variable]),
 	    snmp_mpd:discarded_pdu(Variable),
-	    loop(S);
+	    S1 = update_req_counter_outgoing(S, ReqId),
+	    loop(S1);
+
 	{From, get_log_type} ->
 	    From ! {self(), S#state.log},
 	    loop(S);
+
 	{set_log_type, Type} ->
 	    loop(S#state{log = Type});
+
 	{verbosity,Verbosity} ->
 	    ?vlog("verbosity: ~p -> ~p",[get(verbosity),Verbosity]),
 	    put(verbosity,snmp_verbosity:validate(Verbosity)),
 	    loop(S);
+
 	{'EXIT', Parent, Reason} when Parent == S#state.parent ->
 	    ?vlog("~n   parent (~p) exited: ~p", [Parent,Reason]),
 	    exit(Reason);
+
 	{'EXIT', Port, Reason} when Port == S#state.usock ->
 	    UDPPort = get_port(),
 	    S1 = 
@@ -242,27 +212,172 @@ loop(S) ->
 			ok
 		end,
 	    loop(S1);
+
 	{'EXIT', Port, Reason} when port(Port) ->
 	    error_msg("Exit message from port ~p for reason ~p~n", 
 		      [Port, Reason]),
 	    loop(S);
+
 	{'EXIT', Pid, Reason} ->
-	    ?vlog("~n   ~p exited: ~p", [Pid,Reason]),
+	    ?vlog("~p exited: ~p", [Pid,Reason]),
 	    NewS = clear_reqs(Pid, S),
 	    loop(NewS);
+
 	{system, From, Msg} ->
 	    ?vdebug("system signal ~p from ~p", [Msg,From]),
 	    sys:handle_system_msg(Msg, From, S#state.parent, ?MODULE, [], S);
 	_ ->
 	    loop(S)
+
     end.
 
+
+update_req_counter_incomming(#state{limit = infinity, usock = Sock} = S, _) ->
+    active_once(Sock), %% No limit so activate directly
+    S; 
+update_req_counter_incomming(#state{limit = Limit, 
+				    rcnt  = RCnt, 
+				    usock = Sock} = S, Rid) 
+  when length(RCnt) + 1 == Limit ->
+    %% Ok, one more and we are at the limit.
+    %% Just make sure we are not already processing this one...
+    case lists:member(Rid, RCnt) of
+	false ->
+	    %% We are at the limit, do _not_ activate socket
+	    S#state{rcnt = [Rid|RCnt]};
+	true ->
+	    active_once(Sock),
+	    S
+    end;
+update_req_counter_incomming(#state{rcnt  = RCnt, 
+				    usock = Sock} = S, Rid) ->
+    active_once(Sock),
+    case lists:member(Rid, RCnt) of
+	false ->
+	    S#state{rcnt = [Rid|RCnt]};
+	true ->
+	    S
+    end.
+
+
+update_req_counter_outgoing(#state{limit = infinity} = S, _Rid) ->
+    %% Already activated (in the incoming function)
+    S;
+update_req_counter_outgoing(#state{limit = Limit, 
+				   rcnt  = RCnt, 
+				   usock = Sock} = S, Rid) 
+  when length(RCnt) == Limit ->
+    ?vtrace("handle_req_counter_outgoing(~w) -> entry with"
+	"~n   Rid:          ~w"
+	"~n   length(RCnt): ~w", [Limit, Rid, length(RCnt)]),
+    case lists:delete(Rid, RCnt) of
+	NewRCnt when length(NewRCnt) < Limit ->
+	    ?vtrace("update_req_counter_outgoing -> "
+		"passed below limit: activate", []),
+	    active_once(Sock),
+	    S#state{rcnt = NewRCnt};
+	_ ->
+	    S
+    end;
+update_req_counter_outgoing(#state{limit = Limit, rcnt = RCnt} = S, 
+			    Rid) ->
+    ?vtrace("handle_req_counter_outgoing(~w) -> entry with"
+	"~n   Rid:          ~w"
+	"~n   length(RCnt): ~w", [Limit, Rid, length(RCnt)]),
+    NewRCnt = lists:delete(Rid, RCnt),
+    S#state{rcnt = NewRCnt}.
+    
+
+handle_recv(#state{usock = Sock} = S, Ip, Port, Packet) ->
+    put(n1,erlang:now()),
+    LogF = case S#state.log of
+	       false -> nofunc;
+	       Log ->
+		   fun(Type, Data) ->
+			   snmp_log:log(Log, Type, Data, {Ip, Port})
+		   end
+	   end,
+    case snmp_mpd:process_packet(Packet, snmpUDPDomain, {Ip, Port}, 
+				 S#state.mpd_state, LogF) of
+	{ok, Vsn, Pdu, PduMS, ACMData} ->
+	    ?vlog("got pdu"
+		"~n   ~s", 
+		[?vapply(snmp_misc, format, [256, "~w", [Pdu]])]),
+	    handle_recv_pdu(Ip, Port, Vsn, Pdu, PduMS, ACMData, S);
+	{discarded, Reason} ->
+	    ?vlog("packet discarded for reason: "
+		"~n   ~s",
+		[?vapply(snmp_misc, format, [256, "~w", [Reason]])]),
+	    active_once(Sock),
+	    S;
+	{discarded, Reason, ReportPacket} ->
+	    ?vlog("sending report for reason: "
+		"~n   ~s", 
+		[?vapply(snmp_misc, format, [256, "~w", [Reason]])]),
+	    (catch udp_send(S#state.usock, Ip, Port, ReportPacket)),
+	    active_once(Sock),
+	    S
+    end.
+    
+handle_recv_pdu(Ip, Port, Vsn, #pdu{type = 'get-response'} = Pdu, 
+		_PduMS, _ACMData, #state{usock = Sock} = S) ->
+    active_once(Sock),
+    handle_response(Vsn, Pdu, {Ip, Port}, S),
+    S;
+handle_recv_pdu(Ip, Port, Vsn, #pdu{request_id = Rid, type = Type} = Pdu, 
+		PduMS, ACMData, #state{master_agent = Pid} = S) 
+  when Type == 'get-request'; 
+       Type == 'get-next-request'; 
+       Type == 'get-bulk-request' ->
+    ?vtrace("handle_recv_pdu -> received get (~w)", [Type]),
+    Pid ! {snmp_pdu, Vsn, Pdu, PduMS, ACMData, {Ip, Port}, []},
+    update_req_counter_incomming(S, Rid);
+handle_recv_pdu(Ip, Port, Vsn, Pdu, PduMS, ACMData, 
+		#state{usock = Sock, master_agent = Pid} = S) ->
+    ?vtrace("handle_recv_pdu -> received other request", []),
+    active_once(Sock),
+    Pid ! {snmp_pdu, Vsn, Pdu, PduMS, ACMData, {Ip, Port}, []},
+    S.
+
+
+handle_reply_pdu(S, Vsn, #pdu{request_id = Rid} = Pdu, 
+		 Type, ACMData, {Ip, Port}) ->
+    S1 = update_req_counter_outgoing(S, Rid),
+    LogF = case S#state.log of
+	       false -> nofunc;
+	       Log ->
+		   fun(Type2, Data) ->
+			   log(Log, Type2, Data, {Ip, Port})
+		   end
+	   end,
+    case (catch snmp_mpd:generate_response_msg(Vsn, Pdu, Type,
+					       ACMData, LogF)) of
+	{ok, Packet} ->
+	    ?vinfo("time in agent: ~w mysec", 
+		[subtr(erlang:now(),get(n1))]),
+	    (catch udp_send(S#state.usock, Ip, Port, Packet)),
+	    S1;
+	{discarded, Reason} ->
+	    ?vlog("~n   reply discarded for reason: ~s", 
+		[?vapply(snmp_misc, format, [256, "~w", [Reason]])]),
+	    S1;
+	{'EXIT', Reason} ->
+	    user_err("failed generating response message: "
+		     "~nPDU: ~w~n~w", [Pdu, Reason]),
+	    S1
+    end.
+    
+
 handle_send_pdu(S, Vsn, Pdu, MsgData, To, From) ->
-    case snmp_mpd:generate_msg(Vsn, Pdu, MsgData, To) of
+    case (catch snmp_mpd:generate_msg(Vsn, Pdu, MsgData, To)) of
 	{ok, Addresses} ->
 	    handle_send_pdu(S,Pdu,Addresses);
 	{discarded, Reason} ->
 	    ?vlog("~n   PDU ~p not sent due to ~p", [Pdu,Reason]),
+	    ok;
+	{'EXIT', Reason} ->
+	    user_err("failed generating message: "
+		     "~nPDU: ~w~n~w", [Pdu, Reason]),
 	    ok
     end,
     case From of
@@ -286,25 +401,27 @@ handle_send_pdu(S,Pdu,Addresses) ->
 	_ ->
 	    ok
     end.
-	    
-handle_send_pdu1(S,PduType,Addresses) ->
-    lists:foreach(fun({snmpUDPDomain, {Ip, Port}, Packet}) ->
-			  ?vdebug("sending packet:"
-				  "~n   of size: ~p"
-				  "~n   to mgr:  ~p:~p",
-				  [sz(Packet),Ip,Port]),
-			  log(S#state.log, PduType, Packet, {Ip, Port}),
-			  udp_send(S#state.usock, Ip, Port, Packet);
-		     (_X) ->
-			  ?vlog("** bad res: ~p", [_X]),
-			  ok
-		  end, Addresses).
+
+handle_send_pdu1(S, PduType, Addresses) ->
+    Fun = fun({snmpUDPDomain, {Ip, Port}, Packet}) ->
+		  ?vdebug("sending packet:"
+		      "~n   of size: ~p"
+		      "~n   to mgr:  ~p:~p",
+		  [sz(Packet),Ip,Port]),
+		  log(S#state.log, PduType, Packet, {Ip, Port}),
+		  udp_send(S#state.usock, Ip, Port, Packet);
+	     (_X) ->
+		  ?vlog("** bad res: ~p", [_X]),
+		  ok
+	  end,
+    lists:foreach(Fun, Addresses).
 
 
-handle_response(Vsn, Pdu, From, S) ->
-    case lists:keysearch(Pdu#pdu.request_id, 1, S#state.reqs) of
+handle_response(Vsn, #pdu{request_id = Rid} = Pdu, 
+		From, #state{reqs = Reqs}) ->
+    case lists:keysearch(Rid, 1, Reqs) of
 	{value, {_, Pid}} ->
-	    ?vdebug("~n   send response to receiver ~p", [Pid]),
+	    ?vdebug("send response to receiver ~p", [Pid]),
 	    Pid ! {snmp_response_received, Vsn, Pdu, From};
 	_ ->
 	    ?vdebug("~n   No receiver available for response pdu", [])
@@ -337,6 +454,9 @@ log(false, _Type, _Packet, _Address) ->
 log(Log, Type, Packet, Address) ->
     snmp_log:log(Log, Type, Packet, Address).
 
+user_err(F, A) ->
+    snmp_error_report:user_err(F, A).
+
 error_msg(F,A) -> 
     catch error_logger:error_msg(F,A).
 
@@ -356,6 +476,11 @@ toname(Else) ->
     Else.
 
 
+active_once(Sock) ->
+    ?vtrace("activate once", []),
+    inet:setopts(Sock, [{active, once}]).
+
+
 %%%-----------------------------------------------------------------
 %%% System messages
 %%%-----------------------------------------------------------------
@@ -365,54 +490,51 @@ system_continue(_Parent, _Dbg, S) ->
 system_terminate(Reason, _Parent, _Dbg, _S) ->
     exit(Reason).
 
-system_code_change(S, _Module, _OldVsn, downgrade_to_pre_3_3_8) ->
-    ?vdebug("system_code_change(down,pre_3_3_8) -> entry", []),
-    #state{parent       = Parent, 
-	   master_agent = MasterAgent, 
-	   usock        = Port,
-	   mpd_state    = MpdState, 
-	   log          = Log, 
-	   reqs         = Reqs, 
-	   debug        = Debug} = S,
-    S1 = {state, Parent, MasterAgent, Port, MpdState, Log, Reqs, Debug},
-    {ok, S1};
+system_code_change(S, _Module, _OldVsn, upgrade_from_pre_3_4_3) ->
+    ?vtrace("system_code_change(up_from_pre_3_4_3) -> entry with"
+	"~n   S:       ~p"
+	"~n   _Module: ~p"
+	"~n   _OldVsn: ~p", [S, _Module, _OldVsn]),
+    {state, Parent, Master, Sock, SockOpts, MpdState, Log, Reqs, Dbg} = S,
+    NewS = #state{parent       = Parent, 
+		  master_agent = Master, 
+		  usock        = Sock, 
+		  usock_opts   = SockOpts, 
+		  mpd_state    = MpdState, 
+		  log          = Log,
+		  reqs         = Reqs, 
+		  debug        = Dbg,
+		  limit        = infinity,
+		  rcnt         = []},
+    active_once(Sock),
+    {ok, NewS};
 
-system_code_change(S, _Module, _OldVsn, upgrade_from_pre_3_3_8) ->
-    ?vdebug("system_code_change(up,pre_3_3_8) -> entry", []),
-    {state, Parent, MasterAgent, Port, MpdState, Log, Reqs, Debug} = S,
-    %% Note that we cannot restore all of the socket options fully, 
-    %% since some of them comes from the arguments to the start 
-    %% function and is never stored...
-    ?vdebug("get (framework) agent ip address",[]),
-    {value, IPAddress} = snmp_framework_mib:intAgentIpAddress(get),
-    ?vdebug("get bind_to_ip_address option",[]),
-    IPOpts1 = case application:get_env(snmp, bind_to_ip_address) of
-		  {ok, true} ->
-		      [{ip, list_to_tuple(IPAddress)}];
-		  _ ->
-		      []
-	      end,
-    ?vdebug("get no_reuse_address option",[]),
-    IPOpts2 = case application:get_env(snmp, no_reuse_address) of
-		  {ok, true} ->
-		      [{reuseaddr, true}];
-		  _ ->
-		      []
-	      end,
-    IPOpts = IPOpts1 ++ IPOpts2, 
-    ?vdebug("IP options: ~p",[IPOpts]),
-    S1 = #state{parent       = Parent,
-		master_agent = MasterAgent,
-		usock        = Port,
-		usock_opts   = [binary| IPOpts],
-		mpd_state    = MpdState,
-		log          = Log,
-		reqs         = Reqs,
-		debug        = Debug},
-    {ok, S1};
+system_code_change(S, _Module, _OldVsn, downgrade_to_pre_3_4_3) ->
+    ?vtrace("system_code_change(down_to_pre_3_4_3) -> entry with"
+	"~n   S:       ~p"
+	"~n   _Module: ~p"
+	"~n   _OldVsn: ~p", [S, _Module, _OldVsn]),
+    #state{parent       = Parent, 
+	   master_agent = Master, 
+	   usock        = Sock, 
+	   usock_opts   = SockOpts, 
+	   mpd_state    = MpdState, 
+	   log          = Log,
+	   reqs         = Reqs, 
+	   debug        = Dbg} = S,
+    NewS = {state, Parent, Master, 
+	    Sock, SockOpts, MpdState, Log, Reqs, Dbg},
+    inet:setopts(Sock, [{active, true}]), 
+    {ok, NewS};
 
 system_code_change(S, _Module, _OldVsn, _Extra) ->
+    ?vtrace("system_code_change -> entry with"
+	"~n   S:       ~p"
+	"~n   _Module: ~p"
+	"~n   _OldVsn: ~p"
+	"~n   _Extra:  ~p", [S, _Module, _OldVsn, _Extra]),
     {ok, S}.
+
 
 %%%-----------------------------------------------------------------
 %%% DEBUG FUNCTIONS
@@ -425,10 +547,11 @@ subtr({X1,Y1,Z1}, {X2,Y2,Z2}) ->
     ((X1 - X2) * 1000000000000) + ((Y1 - Y2) * 1000000) + (Z1 - Z2).
 
 
-get_verbosity([]) ->
-    ?default_verbosity;
-get_verbosity(L) ->
-    snmp_misc:get_option(net_if_verbosity,L,?default_verbosity).
+get_verbosity(O) ->
+    snmp_misc:get_option(verbosity, O, ?default_verbosity).
 
+get_recbuf(O) -> 
+    snmp_misc:get_option(recbuf, O, use_default).
 
-get_recbuf(O) -> snmp_misc:get_option(net_if_recbuf,O,use_default).
+get_req_limit(O) ->
+    snmp_misc:get_option(req_limit, O, infinity).

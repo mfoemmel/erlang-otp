@@ -71,6 +71,7 @@ atom binary
 atom bnot
 atom bor
 atom bxor
+atom break_ignored
 atom breakpoint
 atom bsl
 atom bsr

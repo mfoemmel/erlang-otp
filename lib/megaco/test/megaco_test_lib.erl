@@ -97,8 +97,12 @@ tickets(Mod, Func, Config) ->
     end.
 	
 
+end_t() ->
+    receive after 1000 -> ok end,
+    erlang:halt().
 
 t(Case) ->
+    process_flag(trap_exit, true),
     Res = lists:flatten(t(Case, default_config())),
     io:format("Res: ~p~n", [Res]),
     display_result(Res),
@@ -174,30 +178,49 @@ eval(Mod, Fun, Config) ->
 -record('REASON', {mod, line, desc}).
 
 wait_for_evaluator(Pid, Mod, Fun, Config, Errors) ->
+%     io:format("wait_for_evaluator -> entry with"
+% 	      "~n   Pid:    ~p"
+% 	      "~n   Mod:    ~p"
+% 	      "~n   Fun:    ~p"
+% 	      "~n   Config: ~p"
+% 	      "~n   Errors: ~p"
+% 	      "~n", [Pid, Mod, Fun, Config, Errors]),
     TestCase = {?MODULE, Mod, Fun},
     Label = lists:concat(["TEST CASE: ", Fun]),
     receive
 	{done, Pid, ok} when Errors == [] ->
+% 	    io:format("wait_for_evaluator -> "
+% 		      "done: ~p ok with no errors~n",[Pid]),
 	    megaco:report_event(40, Mod, ?MODULE, Label ++ " ok",
 				[TestCase, Config]),
 	    {ok, {Mod, Fun}, Errors};
 	{done, Pid, {ok, _}} when Errors == [] ->
+% 	    io:format("wait_for_evaluator -> "
+% 		      "done: ~p when ok with no errors~n",[Pid]),
 	    megaco:report_event(40, Mod, ?MODULE, Label ++ " ok",
 				[TestCase, Config]),
 	    {ok, {Mod, Fun}, Errors};
 	{done, Pid, Fail} ->
+% 	    io:format("wait_for_evaluator -> "
+% 		      "done: ~p when ~p~n",[Pid, Fail]),
 	    megaco:report_event(20, Mod, ?MODULE, Label ++ " failed",
 				[TestCase, Config, {return, Fail}, Errors]),
 	    {failed, {Mod,Fun}, Fail};
 	{'EXIT', Pid, {skipped, Reason}} -> 
+% 	    io:format("wait_for_evaluator -> "
+% 		      "exit: ~p when skipped~n",[Pid]),
 	    megaco:report_event(20, Mod, ?MODULE, Label ++ " skipped",
 				[TestCase, Config, {skipped, Reason}]),
 	    {skipped, {Mod, Fun}, Errors};
 	{'EXIT', Pid, Reason} -> 
+% 	    io:format("wait_for_evaluator -> "
+% 		      "exit: ~p when ~p~n",[Pid, Reason]),
 	    megaco:report_event(20, Mod, ?MODULE, Label ++ " crashed",
 				[TestCase, Config, {'EXIT', Reason}]),
 	    {crashed, {Mod, Fun}, [{'EXIT', Reason} | Errors]};
 	{fail, Pid, Reason} ->
+% 	    io:format("wait_for_evaluator -> "
+% 		      "fail: ~p when ~p~n",[Pid, Reason]),
 	    wait_for_evaluator(Pid, Mod, Fun, Config, Errors ++ [Reason])
     end.
 
@@ -241,21 +264,25 @@ display_skipped([]) ->
     ok;
 display_skipped(Skipped) ->
     io:format("Skipped test cases:~n", []),
-    [io:format("  ~p => ~p~n", [MF, Reason]) || {MF, Reason} <- Skipped],
+    F = fun({MF, Reason}) -> io:format("  ~p => ~p~n", [MF, Reason]) end,
+    lists:foreach(F, Skipped),
     io:format("~n", []).
     
+
 display_failed([]) ->
     ok;
 display_failed(Failed) ->
     io:format("Failed test cases:~n", []),
-    [io:format("  ~p => ~p~n", [MF, Reason]) || {MF, Reason} <- Failed],
+    F = fun({MF, Reason}) -> io:format("  ~p => ~p~n", [MF, Reason]) end,
+    lists:foreach(F, Failed),
     io:format("~n", []).
-        
+
 display_crashed([]) ->
     ok;
 display_crashed(Crashed) ->
     io:format("Crashed test cases:~n", []),
-    [io:format("  ~p => ~p~n", [MF, Reason]) || {MF, Reason} <- Crashed],
+    F = fun({MF, Reason}) -> io:format("  ~p => ~p~n", [MF, Reason]) end,
+    lists:foreach(F, Crashed),
     io:format("~n", []).
         
     
@@ -358,11 +385,45 @@ proxy_loop(OwnId, Controller) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Test server callbacks
 init_per_testcase(Case, Config) ->
-    global:register_name(megaco_global_logger, group_leader()),
+%     io:format("init_per_testcase -> entry with"
+% 	      "~n   Case:   ~p"
+% 	      "~n   Config: ~p"
+% 	      "~n", [Case, Config]),
+    Pid = group_leader(),
+    Name = megaco_global_logger,
+    case global:whereis_name(Name) of
+	undefined ->
+% 	    io:format("init_per_testcase -> not already registered"
+% 		      "global: register megaco_global_logger ~p~n", [Pid]),
+	    global:register_name(megaco_global_logger, Pid);
+	Pid ->
+	    io:format("init_per_testcase -> "
+		      "already registered to ~p~n", [Pid]),
+	    ok;
+	OtherPid when pid(OtherPid) ->
+	    io:format("init_per_testcase -> "
+		      "already registered to other ~p (~p)~n", [OtherPid,Pid]),
+	    exit({already_registered, {megaco_global_logger, OtherPid, Pid}})
+    end,
     set_kill_timer(Config).
 
 fin_per_testcase(Case, Config) ->
-    global:unregister_name(megaco_global_logger),
+%     io:format("fin_per_testcase -> entry with"
+% 	      "~n   Case:             ~p"
+% 	      "~n   Config:           ~p"
+% 	      "~n", [Case, Config]),
+    Name = megaco_global_logger,
+    case global:whereis_name(Name) of
+	undefined ->
+	    io:format("fin_per_testcase -> already un-registered~n", []),
+	    ok;
+	Pid when pid(Pid) ->
+% 	    io:format("fin_per_testcase -> "
+% 		      "registered to ~p => unregister~n", [Pid]),
+	    global:unregister_name(megaco_global_logger),
+	    ok
+    end,
+%     io:format("fin_per_testcase -> reset kill timer~n", []),
     reset_kill_timer(Config),
     ok.
 

@@ -195,6 +195,10 @@ static struct pollfd*  poll_fds;      /* Allocated at startup */
 static struct readyfd* ready_fds;     /* Collect after poll */
 static int             nof_ready_fds; /* Number of fds after poll */
 
+#ifdef USE_KERNEL_POLL
+static int use_kernel_poll = 0;
+#endif
+
 #ifdef USE_DEVPOLL
 
 static int             dev_poll_fd;   /* fd for /dev/poll */
@@ -209,7 +213,7 @@ static struct dvpoll   dev_poll;      /* control block for /dev/poll */
 #endif /* !HAVE_LINUX_KPOLL_H */
 static struct pollfd*  dev_poll_rfds = NULL; /* Allocated at startup */
 
-static void devpoll_init();
+static void devpoll_init(void);
 static void devpoll_update_pix(int pix);
 #ifdef HAVE_SYS_DEVPOLL_H
 static void devpoll_clear_pix(int pix);
@@ -1809,10 +1813,17 @@ static void ready_output(ErlDrvData e, ErlDrvEvent ready_fd)
 #define POLL_INPUT	POLLIN
 #endif
 
-#if  !defined(USE_KERNEL_POLL)
+#ifdef USE_KERNEL_POLL
+#define DRIVER_SELECT_P static int driver_select_p
+#else
+#define DRIVER_SELECT_P int driver_select
+#endif
 
-int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
+/* poll version of driver_select() */
+
+DRIVER_SELECT_P(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
 {
+
     int fd = (int)e;
     if ((fd < 0) || (fd >= max_files))
 	return -1;
@@ -1892,9 +1903,12 @@ int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
     return 0;
 }
 
-#else /* !USE_KERNEL_POLL */
 
-int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
+#ifdef USE_KERNEL_POLL
+
+/* kernel poll version of driver_select() */
+
+static int driver_select_kp(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
 {
     int fd = (int)e;
     if ((fd < 0) || (fd >= max_files))
@@ -2057,7 +2071,17 @@ int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
     return 0;
 }
 
-#endif /* USE_KERNEL_POLL */
+static int (*driver_select_func)(ErlDrvPort,
+				 ErlDrvEvent,
+				 int,
+				 int) = driver_select_p;
+
+int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
+{
+    return (*driver_select_func)(ix, e, mode, on);
+}
+
+#endif /* #ifdef USE_KERNEL_POLL */
 
 int driver_event(ErlDrvPort ix, ErlDrvEvent e, ErlDrvEventData event_data) {
     int fd = (int)e;
@@ -2371,10 +2395,14 @@ int do_wait;
 
 #else /* poll() implementation of check_io() */
 
-#if !defined(USE_KERNEL_POLL)
 
-static void check_io(do_wait)
-int do_wait;
+#ifdef USE_KERNEL_POLL
+#define CHECK_IO_P static void check_io_p
+#else
+#define CHECK_IO_P static void check_io
+#endif
+
+CHECK_IO_P(int do_wait)
 {
     SysTimeval wait_time;
     int r, i;
@@ -2498,10 +2526,11 @@ int do_wait;
     }
 }
 
-#else /* kernel poll implementation of check_io() */
 
-static void check_io(do_wait)
-int do_wait;
+#ifdef USE_KERNEL_POLL
+/* kernel poll implementation of check_io() */
+
+static void check_io_kp(int do_wait)
 {
     SysTimeval wait_time;
     int r, i;
@@ -2797,7 +2826,14 @@ int do_wait;
     }
 }
 
-#endif /* USE_KERNEL_POLL */
+static void (*check_io_func)(int) = check_io_p;
+
+static void check_io(int do_wait)
+{
+    (*check_io_func)(do_wait);
+}
+
+#endif /* #ifdef USE_KERNEL_POLL */
 
 #endif
 
@@ -2831,6 +2867,8 @@ sys_init_io(byte *buf, Uint size)
 	erts_alloc(ERTS_ALC_T_FD_TAB, max_files * sizeof(struct fd_data));
     erts_sys_misc_mem_sz += max_files * sizeof(struct fd_data);
 
+    max_fd = -1;
+
 #ifdef USE_SELECT
     FD_ZERO(&input_fds);
     FD_ZERO(&output_fds);
@@ -2862,31 +2900,34 @@ sys_init_io(byte *buf, Uint size)
 
 
 #ifdef USE_KERNEL_POLL
+
+    if (use_kernel_poll) {
+	driver_select_func = driver_select_kp;
+	check_io_func = check_io_kp;
+
 #ifdef USE_DEVPOLL
-    devpoll_init();
+	devpoll_init();
+#if HAVE_LINUX_KPOLL_H
+	max_poll_idx = -1;
+	kpoll_enable();
+#endif
 #else
 #ifdef USE_KQUEUE
-    kqueue_init();
+	kqueue_init();
+	max_poll_idx = -1;
+	kqueue_enable();
 #endif
 #endif /* ! USE_DEVPOLL */
-#endif
+
+    }
+    else {
+	driver_select_func = driver_select_p;
+	check_io_func = check_io_p;
+    }
+
+#endif /* #ifdef USE_KERNEL_POLL */
 
 #endif /* !USE_SELECT */
-
-    max_fd = -1;
-
-#ifdef USE_KERNEL_POLL
-#ifdef USE_DEVPOLL
-#if HAVE_LINUX_KPOLL_H
-    max_poll_idx = -1;
-    kpoll_enable();
-#endif
-#endif
-#ifdef USE_KQUEUE
-    max_poll_idx = -1;
-    kqueue_enable();
-#endif
-#endif
 
 #ifdef USE_THREADS
     {
@@ -3237,12 +3278,80 @@ erl_sys_schedule(int runnable)
     check_children();
 }
 
-void
-erl_sys_args(argc, argv)
-int* argc;
-char** argv;
+
+#ifdef USE_KERNEL_POLL /* get_value() is currently only used when
+			  kernel-poll is used */
+
+/* Get arg marks argument as handled by
+   putting NULL in argv */
+static char *
+get_value(char* rest, char** argv, int* ip)
 {
-    ;
+    char *param = argv[*ip]+1;
+    argv[*ip] = NULL;
+    if (*rest == '\0') {
+	char *next = argv[*ip + 1];
+	if (next[0] == '-'
+	    && next[1] == '-'
+	    &&  next[2] == '\0') {
+	    erl_printf(CERR, "bad \"%s\" value: \n", param);
+	    erts_usage();
+	}
+	(*ip)++;
+	argv[*ip] = NULL;
+	return next;
+    }
+    return rest;
+}
+
+#endif /* #ifdef USE_KERNEL_POLL */
+
+void
+erl_sys_args(int* argc, char** argv)
+{
+    int i, j;
+
+    i = 1;
+
+    ASSERT(argc && argv);
+
+    while (i < *argc) {
+	if(argv[i][0] == '-') {
+	    switch (argv[i][1]) {
+#ifdef USE_KERNEL_POLL
+	    case 'K': {
+		char *arg = get_value(argv[i] + 2, argv, &i);
+		if (strcmp("true", arg) == 0) {
+		    use_kernel_poll = 1;
+		}
+		else if (strcmp("false", arg) == 0) {
+		    use_kernel_poll = 0;
+		}
+		else {
+		    erl_printf(CERR, "bad \"K\" value: %s\n", arg);
+		    erts_usage();
+		}
+		break;
+	    }
+#endif
+	    case '-':
+		goto done_parsing;
+	    default:
+		break;
+	    }
+	}
+	i++;
+    }
+
+ done_parsing:
+
+    /* Handled arguments have been marked with NULL. Slide arguments
+       not handled towards the beginning of argv. */
+    for (i = 0, j = 0; i < *argc; i++) {
+	if (argv[i])
+	    argv[j++] = argv[i];
+    }
+    *argc = j;
 }
 
 #ifdef HAVE_GETHRVTIME_PROCFS_IOCTL
@@ -3448,7 +3557,7 @@ static void kpoll_init()
 
 #ifdef HAVE_SYS_DEVPOLL_H
 
-static void solaris_devpoll_init()
+static void solaris_devpoll_init(void)
 {
     if ( (dev_poll_fd=open("/dev/poll",O_RDWR)) < 0 ) {
         DEBUGF(("Will use poll()\n"));
@@ -3464,7 +3573,7 @@ static void solaris_devpoll_init()
 
 #endif
 
-static void devpoll_init() 
+static void devpoll_init(void) 
 {
     if ( getenv("ERL_NO_KERNEL_POLL") != NULL ) {
         DEBUGF(("Use of kernel poll disabled.\n"));

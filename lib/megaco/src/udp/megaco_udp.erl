@@ -36,7 +36,9 @@
 	 send_message/2,
 	 close/1,
 	 block/1,
-	 unblock/1
+	 unblock/1,
+
+         upgrade_receive_handle/2
 	]).
 
 %% Statistics exports
@@ -142,6 +144,12 @@ socket(SH) when record(SH, send_handle) ->
 socket(Socket) ->
     Socket.
 
+
+upgrade_receive_handle(Pid, NewHandle) 
+  when pid(Pid), record(NewHandle, megaco_receive_handle) ->
+    megaco_udp_server:upgrade_receive_handle(Pid, NewHandle).
+
+
 %%-----------------------------------------------------------------
 %% Func: create_send_handle
 %% Description: Function is used for creating the handle used when 
@@ -178,20 +186,12 @@ maybe_create_snmp_counters(SH) ->
 	    ok
     end.
 
-% create_snmp_counters(SH, []) ->
-%     ok;
-% create_snmp_counters(SH, [Counter|Counters]) ->
-%     Key = {SH, Counter},
-%     ets:insert(megaco_udp_stats, {Key, 0}),
-%     create_snmp_counters(SH, Counters).
-
-create_snmp_counters(SH, Counters) ->
-    F = fun(Counter) ->
-		Key = {SH, Counter},
-		ets:insert(megaco_udp_stats, {Key, 0})
-	end,
-    lists:foreach(F, Counters).
-
+create_snmp_counters(_SH, []) ->
+    ok;
+create_snmp_counters(SH, [Counter|Counters]) ->
+    Key = {SH, Counter},
+    ets:insert(megaco_udp_stats, {Key, 0}),
+    create_snmp_counters(SH, Counters).
 
 %%-----------------------------------------------------------------
 %% Func: send_message
@@ -237,8 +237,8 @@ unblock(Socket) ->
 %% Func: close
 %% Description: Function is used for closing the UDP socket
 %%-----------------------------------------------------------------
-close(SH) when record(SH, send_handle) ->
-    close(SH#send_handle.socket);
+close(#send_handle{socket = Socket}) ->
+    close(Socket);
 close(Socket) ->
     ?udp_debug({socket, Socket}, "udp close", []),
     case erlang:port_info(Socket, connected) of
@@ -275,6 +275,8 @@ parse_options([{Tag, Val} | T], UdpRec, Mand) ->
 	    parse_options(T, UdpRec#megaco_udp{receive_handle = Val}, Mand2);
 	module when atom(Val) ->
 	    parse_options(T, UdpRec#megaco_udp{module = Val}, Mand2);
+	serialize when Val == true; Val == false ->
+	    parse_options(T, UdpRec#megaco_udp{serialize = Val}, Mand2);
         Bad ->
 	    {error, {bad_option, Bad}}
     end;

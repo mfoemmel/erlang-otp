@@ -3126,7 +3126,7 @@ transform_engine(LoaderState* st)
 		ASSERT(i < st->num_imports);
 		if (i >= st->num_imports || st->import[i].module != mod ||
 		    st->import[i].function != func ||
-		    st->import[i].arity != arity) {
+		    (arity < MAX_ARG && st->import[i].arity != arity)) {
 		    goto restart;
 		}
 	    }

@@ -16,7 +16,7 @@
  *     $Id$
  */
 
-#include "config.h"
+#include "eidef.h"
 
 #if defined(HAVE_GMP_H) && defined(HAVE_LIBGMP)
 

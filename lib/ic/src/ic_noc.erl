@@ -90,7 +90,7 @@ gen(G, N, [X|Xs]) when record(X, interface) ->
     N2 = [get_id2(X) | N],
     gen_head(G2, N2, X),
     gen(G2, N2, get_body(X)),
-    foreach(fun({Name, Body}) -> gen(G2, N2, Body) end, 
+    foreach(fun({_Name, Body}) -> gen(G2, N2, Body) end, 
 	    X#interface.inherit_body),
     gen_serv(G2, N, X), 
     G3 = ic_file:filename_pop(G2, erlang),
@@ -99,7 +99,7 @@ gen(G, N, [X|Xs]) when record(X, interface) ->
 gen(G, N, [X|Xs]) when record(X, const) ->
     N2 = [get_id2(X) | N],
     emit_constant_func(G, X#const.id, X#const.val),
-    gen(G, N, Xs);
+    gen(G, N, Xs); %% N2 or N?
 
 gen(G, N, [X|Xs]) when record(X, op) ->
     {Name, ArgNames, TypeList, OutArgs} = extract_info(G, N, X),
@@ -110,7 +110,7 @@ gen(G, N, [X|Xs]) when record(X, op) ->
 	multiple ->
 	    mark_not_transparent(G,N),
 	    emit_transparent_func(G, N, X, Name, ArgNames, TypeList, OutArgs);
-	XTuple ->
+	_XTuple ->
 	    mark_not_transparent(G,N),
 	    emit_stub_func(G, N, X, Name, ArgNames, TypeList, OutArgs)
     end,
@@ -133,13 +133,13 @@ gen(G, N, [X|Xs]) ->
     end,
     gen(G, N, Xs);
 
-gen(G, N, []) -> ok.
+gen(_G, _N, []) -> ok.
 
 
 may_contain_structs(X) when record(X, typedef) -> true;
 may_contain_structs(X) when record(X, struct) -> true;
 may_contain_structs(X) when record(X, union) -> true;
-may_contain_structs(X) -> false.
+may_contain_structs(_X) -> false.
 
 
 
@@ -154,14 +154,14 @@ gen_serv(G, N, X) ->
 	    emit_serv_std(G, N, X),
 	    N2 = [get_id2(X) | N], 
 	    gen_calls(G, N2, get_body(X)),
-	    lists:foreach(fun({Name, Body}) ->
+	    lists:foreach(fun({_Name, Body}) ->
 				  gen_calls(G, N2, Body) end,
 			  X#interface.inherit_body),
 	    get_if_gen(G, N2, X),
 	    gen_end_of_call(G, N, X),		% Note N instead of N2
 
 	    gen_casts(G, N2, get_body(X)),
-	    lists:foreach(fun({Name, Body}) ->
+	    lists:foreach(fun({_Name, Body}) ->
 				  gen_casts(G, N2, Body) end,
 			  X#interface.inherit_body),
 	    gen_end_of_cast(G, N, X),		% Note N instead of N2
@@ -184,8 +184,8 @@ gen_calls(G, N, [X|Xs]) when record(X, attr) ->
     emit_attr(G, N, X, fun emit_skel_func/7),
     gen_calls(G, N, Xs);
 
-gen_calls(G, N, [X|Xs]) -> gen_calls(G, N, Xs);
-gen_calls(G, N, []) -> ok.
+gen_calls(G, N, [_X|Xs]) -> gen_calls(G, N, Xs);
+gen_calls(_G, _N, []) -> ok.
 
 gen_casts(G, N, [X|Xs]) when record(X, op) ->
     case is_oneway(X) of
@@ -197,8 +197,8 @@ gen_casts(G, N, [X|Xs]) when record(X, op) ->
 	    gen_casts(G, N, Xs)
     end;
 
-gen_casts(G, N, [X|Xs]) -> gen_casts(G, N, Xs);
-gen_casts(G, N, []) -> ok.
+gen_casts(G, N, [_X|Xs]) -> gen_casts(G, N, Xs);
+gen_casts(_G, _N, []) -> ok.
 
 emit_attr(G, N, X, F) ->
     XX = #id_of{type=X},
@@ -215,12 +215,11 @@ emit_attr(G, N, X, F) ->
 			  end end, ic_forms:get_idlist(X)).
 
 
-extract_info(G, N, X) when record(X, op) ->
+extract_info(G, _N, X) when record(X, op) ->
     Name	= get_id2(X),
     InArgs	= ic:filter_params([in,inout], X#op.params),
     OutArgs	= ic:filter_params([out,inout], X#op.params),
     ArgNames	= mk_erl_vars(G, InArgs),
-    S = ic_genobj:tktab(G),
     TypeList	= {ic_forms:get_tk(X),
 		   map(fun(Y) -> ic_forms:get_tk(Y) end, InArgs),
 		   map(fun(Y) -> ic_forms:get_tk(Y) end, OutArgs)
@@ -235,13 +234,7 @@ emit_serv_std(G, N, X) ->
     case transparent(G) of
 	true ->
 	    true;
-	
-	XTupleORMultiple ->
-	    Ret		= mk_name(G, "Ret"),
-	    State	= mk_name(G, "State"),
-	    NewState	= mk_name(G, "NewState"),
-	    Var		= mk_name(G, ""),
-	    Reason	= mk_name(G, "Reason"),
+	_XTupleORMultiple ->
 	    Impl	= getImplMod(G,X,[get_id2(X)|N]),
 	    TypeID = ictk:get_IR_ID(G, N, X),
 	    
@@ -301,11 +294,11 @@ emit_serv_std(G, N, X) ->
 
 
 
-gen_end_of_call(G, N, X) ->
+gen_end_of_call(G, _N, _X) ->
     case transparent(G) of
 	true ->
 	    true;
-	XTuple ->
+	_XTuple ->
 	    Fd = ic_genobj:stubfiled(G),
 	    nl(Fd), nl(Fd),
 	    ic_codegen:mcomment_light(Fd, ["Standard gen_server call handle"]),
@@ -326,11 +319,11 @@ gen_end_of_call(G, N, X) ->
     ok.
 
 
-gen_end_of_cast(G, N, X) ->
+gen_end_of_cast(G, _N, _X) ->
     case transparent(G) of
 	true ->
 	    true;
-	XTuple ->
+	_XTuple ->
 	    Fd = ic_genobj:stubfiled(G),
 	    nl(Fd), nl(Fd),
 	    ic_codegen:mcomment_light(Fd, ["Standard gen_server cast handle"]),
@@ -354,7 +347,7 @@ emit_skel_footer(G, N, X) ->
     case transparent(G) of
 	true ->
 	    true;
-	XTuple ->
+	_XTuple ->
 	    Fd = ic_genobj:stubfiled(G),
 	    nl(Fd), nl(Fd),
 	    ic_codegen:mcomment_light(Fd, ["Standard gen_server handles"]),
@@ -379,7 +372,7 @@ use_impl_handle_info(G, N, X) ->
     end.
 
 
-use_timeout(G, N, X) ->
+use_timeout(G, N, _X) ->
     FullName = ic_util:to_colon(N),
     case {get_opt(G, {timeout, true}), get_opt(G, {timeout, FullName})} of
 	{_, force_false} -> false;
@@ -396,7 +389,7 @@ get_if_gen(G, N, X) ->
     case transparent(G) of
 	true ->
 	    ok;
-	XTuple ->
+	_XTuple ->
 	    case ic_genobj:is_stubfile_open(G) of
 		true ->
 		    IFC_TKS = tk_interface_data(G,N,X),
@@ -444,7 +437,7 @@ get_if(G,N,[X|Rest]) when record(X, attr) -> %% Attributes not handled so far <<
 			      end end, ic_forms:get_idlist(X)),
     lists:flatten(AList) ++ get_if(G,N,Rest);
 
-get_if(G,N,[X|Rest]) -> get_if(G,N,Rest);
+get_if(G,N,[_X|Rest]) -> get_if(G,N,Rest);
 get_if(_,_,[]) -> [].
 
 
@@ -473,7 +466,7 @@ gen_head_special(G, N, X) when record(X, interface) ->
     case transparent(G) of
 	true ->
 	    nl(Fd), nl(Fd);
-	XTuple ->
+	_XTuple ->
 	    ic_codegen:comment(Fd, "Type identification function"),
 	    ic_codegen:export(Fd, [{typeID, 0}]), 
 	    nl(Fd),
@@ -493,7 +486,7 @@ gen_head_special(G, N, X) when record(X, interface) ->
     Fd;
 	
 
-gen_head_special(G, N, X) -> ok.
+gen_head_special(_G, _N, _X) -> ok.
 
     
 
@@ -520,7 +513,7 @@ exp_top(G, N, I, NT, Acc)  when record(I, interface) ->
 exp_top(G, N, X, NT, Acc) ->
     exp3(G, N, X, NT, Acc).
 
-exp3(G, N, C, _NT, Acc)  when record(C, const) -> 
+exp3(_G, _N, C, _NT, Acc)  when record(C, const) -> 
     [{get_id(C#const.id), 0} | Acc];
 
 exp3(G, N, Op, NocType, Acc)  when record(Op, op) ->
@@ -559,7 +552,7 @@ exp3(G, N, Op, NocType, Acc)  when record(Op, op) ->
 	    Arity = length(ic:filter_params([in, inout], Op#op.params)) + TA + 1,
 	    [{FuncName, Arity} | Acc]
     end;
-exp3(G, N, A, _NT, Acc)  when record(A, attr) ->
+exp3(_G, _N, A, _NT, Acc)  when record(A, attr) ->
     lists:foldr(fun(Id, Acc2) ->
 			{Get, Set} = mk_attr_func_names([], get_id(Id)),
 			case A#attr.readonly of
@@ -582,7 +575,7 @@ exp_list(G, N, L, NT, OrigAcc) ->
 %%	Low level generation primitives
 %%
 
-emit_stub_func(G, N, X, Name, ArgNames, TypeList, OutArgs) ->
+emit_stub_func(G, N, X, Name, ArgNames, TypeList, _OutArgs) ->
     case ic_genobj:is_stubfile_open(G) of
 	false -> ok;
 	true ->
@@ -629,7 +622,7 @@ emit_stub_func(G, N, X, Name, ArgNames, TypeList, OutArgs) ->
     end.
 
 
-emit_transparent_func(G, N, X, Name, ArgNames, TypeList, OutArgs) ->
+emit_transparent_func(G, N, X, Name, ArgNames, _TypeList, _OutArgs) ->
     case ic_genobj:is_stubfile_open(G) of
 	false -> ok;
 	true ->
@@ -655,7 +648,7 @@ emit_transparent_func(G, N, X, Name, ArgNames, TypeList, OutArgs) ->
 
 
 
-emit_skel_func(G, N, X, OpName, ArgNames, TypeList, OutArgs) ->
+emit_skel_func(G, N, X, OpName, ArgNames, _TypeList, _OutArgs) ->
     case getNocType(G,X,N) of
 	transparent ->
 	    true;
@@ -702,29 +695,9 @@ emit_constant_func(G, Id, Val) ->
     end.
 
 
-emit_const_comment(G, F, X, Name) ->
+emit_const_comment(_G, F, _X, Name) ->
     ic_codegen:mcomment_light(F,
 			 [io_lib:format("Constant: ~p", [Name])]).
-
-
-get_title(X) when record(X, attr) -> "Attribute Operation";
-get_title(X) -> "Operation".
-
-get_raises(X) when record(X, op) ->
-    if  X#op.raises == [] -> [];
-	true ->
-	    ["  Raises:  " ++ 
-	     mk_list(lists:map({ic_util, to_colon}, X#op.raises))]
-    end;
-get_raises(X) -> [].
-
-get_returns(G, X, InP, []) ->
-    "  Returns: RetVal";
-get_returns(G, X, InP, OutP) ->
-    "  Returns: "++mk_list(["RetVal" | mk_erl_vars(G, OutP)]).
-
-
-
 
 %%------------------------------------------------------------
 %%
@@ -736,11 +709,11 @@ get_returns(G, X, InP, OutP) ->
 
 %% The automaticly generated get and set operation names for an
 %% attribute.
-mk_attr_func_names(Scope, Name) ->
+mk_attr_func_names(_Scope, Name) ->
     {"_get_" ++ Name, "_set_" ++ Name}.
 
 %% Returns TK of the Get and Set attribute functions.
-mk_attr_func_types(N, X) ->
+mk_attr_func_types(_N, X) ->
     TK = ic_forms:get_tk(X),
     {{TK, [], []}, {tk_void, [TK], []}}.
         
@@ -757,7 +730,7 @@ mk_attr_func_types(N, X) ->
 
 %% Input is a list of parameters (in parse form) and output is a list
 %% of capitalised variable names. mk_var is in icgen
-mk_erl_vars(G, Params) ->
+mk_erl_vars(_G, Params) ->
     map(fun(P) -> mk_var(get_id(P#param.id)) end, Params).
 
 
@@ -833,7 +806,7 @@ getImplMod(G,X,Scope) -> %% to_atom(ic_genobj:impl(G)) | ChoicedModuleName
     case ic_pragma:getBrokerData(G,X,SpecScope) of
 	{Module,_Type} ->
 	    Module;
-	List ->
+	_List ->
 	    element(1,ic_pragma:defaultBrokerData(G))
     end.
 
@@ -892,7 +865,7 @@ getModType(G,X,Scope) -> %% default | specified
 			    spo  %% specified + opaque
 		    end
 	    end;
-	List ->
+	_List ->
 	    dt
     end.
 
@@ -928,7 +901,7 @@ getInhOperationScopes(G,Scope) ->
 		   ets:match(ic_genobj:pragmatab(G),{inherits,Scope,'$1'}),
 		   []).
 
-getInhOpScopes1(G,Scope,[],OpScopes) ->
+getInhOpScopes1(G,_Scope,[],OpScopes) ->
     getInhOpScopes2(G,OpScopes);
 getInhOpScopes1(G,Scope,[[SC]|SCs],Found) ->
     getInhOpScopes1(G,Scope,SCs,[SC|Found]).
@@ -937,7 +910,7 @@ getInhOpScopes1(G,Scope,[[SC]|SCs],Found) ->
 getInhOpScopes2(G,Scopes) ->
     getInhOpScopes2(G,Scopes,[]).
 
-getInhOpScopes2(G,[],Found) ->
+getInhOpScopes2(_G,[],Found) ->
     Found;
 getInhOpScopes2(G,[SC|SCs],Found) ->
    getOperationScopes(G,SC) ++ getInhOpScopes2(G,SCs,Found).
@@ -960,14 +933,13 @@ getInhOpScopes2(G,[SC|SCs],Found) ->
 %%
 getActualScope(G, X, Scope) when record(X, op) ->
     OpScope = getRealOpScope(G,X,Scope),
-    OpSpecScope = 
-	case ets:match(ic_genobj:pragmatab(G),{codeopt_specific,OpScope}) of
-	    [[]] ->
-		OpScope;
-	    _ ->
-		Scope
-	end;
-getActualScope(G, X, N) ->
+    case ets:match(ic_genobj:pragmatab(G),{codeopt_specific,OpScope}) of
+	[[]] ->
+	    OpScope;
+	_ ->
+	    Scope
+    end;
+getActualScope(_G, _X, N) ->
     N.
 
 %%
@@ -984,10 +956,10 @@ getRealOpScope(G,X,N) when record(X, op) ->
 	_ ->
 	    getRealOpScope(G, Ptab, X, N, Id,  ets:match(Ptab,{inherits,N,'$1'}))
     end;
-getRealOpScope(G,X,N) ->
+getRealOpScope(_G,_X,N) ->
     N.
 
-getRealOpScope(G, S, X, N, Id, []) ->
+getRealOpScope(_G, _S, _X, N, Id, []) ->
     [Id|N];
 getRealOpScope(G, S, X, N, Id, [[OS]|OSs]) -> 
     case ets:match(S,{op,Id,OS,'_','_'}) of
@@ -997,22 +969,13 @@ getRealOpScope(G, S, X, N, Id, [[OS]|OSs]) ->
 	    getRealOpScope(G, S, X, N, Id, OSs)
     end.
     
-%%
-%%%%
-
-
-to_colon2([X]) -> X;
-to_colon2([X | Xs]) -> to_colon2(Xs) ++ "::" ++ X;
-to_colon2([]) -> "".
-
-
 selectTypeFromList([]) ->
     transparent;
 selectTypeFromList([{_,transparent}|Rest]) ->
     selectTypeFromList(Rest);
 selectTypeFromList([transparent|Rest]) ->
     selectTypeFromList(Rest);
-selectTypeFromList([_|Rest]) ->
+selectTypeFromList([_|_Rest]) ->
     multiple.
 
 
@@ -1045,7 +1008,7 @@ tk_operation_data(G, N, X, TL) ->
 
 tk_interface_data(G, N, X) ->
     InfoList = 
-	foldr(fun({Name, Body}, Acc) ->
+	foldr(fun({_Name, Body}, Acc) ->
 		      get_if(G,N,Body)++Acc end,
 	      get_if(G,N,get_body(X)),
 	      X#interface.inherit_body),
@@ -1063,10 +1026,10 @@ print_tk(G, N, X) when record(X, op)-> %% operation
 	    false;
 	multiple ->
 	    false;
-	XTuple -> %%check if there are any USETK pragmas
+	_XTuple -> %%check if there are any USETK pragmas
 	    operation_usetk(G,N,X)
     end; 
-print_tk(G, N, X) -> %% error
+print_tk(_G, _N, _X) -> %% error
     false.
 
 
@@ -1074,7 +1037,7 @@ operation_usetk(G,N,X) ->
     PTab = ic_genobj:pragmatab(G),
     OTab = ic_genobj:optiontab(G),
     OpName = get_id2(X),
-    SID = ic_util:to_colon(N),
+%    SID = ic_util:to_colon(N),
     Res = case use_tk(OTab,[N]) of
 	      {ok,N} ->
 		  true;

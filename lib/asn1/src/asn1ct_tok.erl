@@ -345,6 +345,7 @@ reserved_word('UNIQUE') -> true;
 reserved_word('UNIVERSAL') -> true;
 reserved_word('UniversalString') -> rstrtype;
 reserved_word('UTCTime') -> true;
+reserved_word('UTF8String') -> rstrtype;
 reserved_word('VideotexString') -> rstrtype;
 reserved_word('VisibleString') -> rstrtype;
 reserved_word('WITH') -> true;

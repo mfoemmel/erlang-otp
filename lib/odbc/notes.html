@@ -17,6 +17,49 @@
 
 <center><h1>Odbc Release Notes</h1></center>
 
+<h2>Odbc 2.0</h2>
+
+<h3>Improvements and new features</h3>
+
+<ul>
+  
+   <li>Erlang ODBC now handles batches of queries and can
+       return multiple result sets.<br>
+       (Own Id: OTP-4642)<br>
+       (Aux Id: seq7766)<p>
+  </li>
+       
+  <li>The old interface that became deprecated in odbc 1.0 has now
+      been removed.<br>
+      (*** POTENTIAL INCOMPATIBILITY ***)<br>
+      (Own Id: OTP-4794)<p>
+  </li>
+       
+  <li>
+      Erlang ODBC now supports parameterized queries for
+      the most common ODBC data types.<br>
+      (Own Id: OTP-4821)<p>
+  </li>
+
+  <li>
+      SQL_NUMERIC and SQL_DECIMAL columns are converted to integer
+      and float values if possible.<br>
+      (Own Id: OTP-4826)<p>
+  </li>
+
+  <li>Result sets are now by default returned as a list of tuples
+      which is the most intuitive and useful mapping. To keep some degree of
+      backwards compatibility you may turn this off to get the old behavior
+      that result sets are returned as lists of lists. However do not use
+      this in new code as it is considered a deprecated feature that
+      eventually will disappear.<br>
+      (*** POTENTIAL INCOMPATIBILITY ***)<br>
+      (Own Id: OTP-4850)<p>
+  </li>
+           
+</ul>
+
+
 
 <!--- ################################################################# --->
 

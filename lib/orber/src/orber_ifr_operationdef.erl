@@ -68,8 +68,7 @@
 %%%----------------------------------------------------------------------
 %%%  Interfaces inherited from IRObject
 
-'_get_def_kind'({ObjType, ObjID})
-			    ?tcheck(ir_OperationDef, ObjType) ->
+'_get_def_kind'({ObjType, ObjID}) ?tcheck(ir_OperationDef, ObjType) ->
     orber_ifr_irobject:'_get_def_kind'({ObjType,ObjID}).
 
 destroy({ObjType, ObjID}) ?tcheck(ir_OperationDef, ObjType) ->
@@ -93,35 +92,28 @@ cleanup_for_destroy({ObjType,ObjID}) ?tcheck(ir_OperationDef, ObjType) ->
 '_get_id'({ObjType, ObjID}) ?tcheck(ir_OperationDef, ObjType) ->
     orber_ifr_contained:'_get_id'({ObjType,ObjID}).
 
-'_set_id'({ObjType, ObjID}, EO_Value)
-		      ?tcheck(ir_OperationDef, ObjType) ->
+'_set_id'({ObjType, ObjID}, EO_Value) ?tcheck(ir_OperationDef, ObjType) ->
     orber_ifr_contained:'_set_id'({ObjType,ObjID},EO_Value).
 
 '_get_name'({ObjType, ObjID}) ?tcheck(ir_OperationDef, ObjType) ->
     orber_ifr_contained:'_get_name'({ObjType,ObjID}).
 
-'_set_name'({ObjType, ObjID}, EO_Value)
-			?tcheck(ir_OperationDef, ObjType) ->
+'_set_name'({ObjType, ObjID}, EO_Value) ?tcheck(ir_OperationDef, ObjType) ->
     orber_ifr_contained:'_set_name'({ObjType,ObjID}, EO_Value).
 
-'_get_version'({ObjType, ObjID})
-			   ?tcheck(ir_OperationDef, ObjType) ->
+'_get_version'({ObjType, ObjID}) ?tcheck(ir_OperationDef, ObjType) ->
     orber_ifr_contained:'_get_version'({ObjType,ObjID}).
 
-'_set_version'({ObjType, ObjID}, EO_Value)
-			   ?tcheck(ir_OperationDef, ObjType) ->
+'_set_version'({ObjType, ObjID}, EO_Value) ?tcheck(ir_OperationDef, ObjType) ->
     orber_ifr_contained:'_set_version'({ObjType,ObjID},EO_Value).
 
-'_get_defined_in'({ObjType, ObjID})
-			      ?tcheck(ir_OperationDef, ObjType) ->
+'_get_defined_in'({ObjType, ObjID}) ?tcheck(ir_OperationDef, ObjType) ->
     orber_ifr_contained:'_get_defined_in'({ObjType,ObjID}).
 
-'_get_absolute_name'({ObjType, ObjID})
-				 ?tcheck(ir_OperationDef, ObjType) ->
+'_get_absolute_name'({ObjType, ObjID}) ?tcheck(ir_OperationDef, ObjType) ->
     orber_ifr_contained:'_get_absolute_name'({ObjType,ObjID}).
 
-'_get_containing_repository'({ObjType, ObjID})
-					 ?tcheck(ir_OperationDef, ObjType) ->
+'_get_containing_repository'({ObjType, ObjID}) ?tcheck(ir_OperationDef, ObjType) ->
     orber_ifr_contained:'_get_containing_repository'({ObjType,ObjID}).
 
 describe({ObjType, ObjID}) ?tcheck(ir_OperationDef, ObjType) ->
@@ -177,8 +169,11 @@ move({ObjType, ObjID}, New_container, New_name, New_version)
 
 set_mode(true,Objref,EO_Value) ->
     set_field(Objref,mode,EO_Value);
-set_mode(false,Objref,EO_Value) ->
-    ?ifr_exception("illegal '_set_mode'", {Objref,EO_Value}).
+set_mode(false, Objref, EO_Value) ->
+    orber:dbg("[~p] ~p:destroy(~p, ~p);~n"
+	      "Illegal '_set_mode'.~n", 
+	      [?LINE, ?MODULE, Objref, EO_Value], ?DEBUG_LEVEL),
+    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO}).
 
 '_get_contexts'({ObjType, ObjID}) ?tcheck(ir_OperationDef, ObjType) ->
     get_field({ObjType,ObjID},contexts).

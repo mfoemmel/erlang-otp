@@ -21,9 +21,12 @@
 %% to identify themsevles. They are a bit nasty
 %% since the only thing that the specification really 
 %% is strict about is that they shall be short
-%% tree axamples:
+%% some axamples:
 %%
 %% Netscape Mozilla/4.75 [en] (X11; U; SunOS 5.8 sun4u)
+%%          Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.0.1) Gecko/20020823 Netscape/7.0
+%% Mozilla  Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.1) Gecko/20020827
+%% Safari   Mozilla/5.0 (Macintosh; U; PPC Mac OS X; en-us) AppleWebKit/85 (KHTML, like Gecko) Safari/85
 %% IE5      Mozilla/4.0 (compatible; MSIE 5.0; SP1B; SunOS 5.8 sun4u; X11)
 %% Lynx     Lynx/2.8.3rel.1 libwww-FM/2.142
 %%
@@ -31,53 +34,65 @@
 
 -module(mod_browser).
 
+-export([do/1, test/0, getBrowser/1]).
+
 %% Remember that the order of the mozilla browsers are 
 %% important since some browsers include others to behave 
 %% as they were something else  
--define(MOZILLA_BROWSERS,[{opera,"opera"},{msie,"msie"}]).
+-define(MOZILLA_BROWSERS,[{netscape, "netscape"},
+			  {opera,    "opera"}, 
+			  {msie,     "msie"}, 
+			  {safari,   "safari"},
+			  {mozilla,  "rv:"}]). % fallback, must be last
 
 
 %% If your operatingsystem is not recognized add it to this list.
--define(OPERATIVE_SYSTEMS,[{win3x,["win16","windows 3","windows 16-bit"]},
-			   {win95,["win95","windows 95"]},
-			   {win98,["win98", "windows 98"]},
-			   {winnt,["winnt", "windows nt"]},
-			   {win2k,["nt 5"]},
-			   {sunos4,["sunos 4"]},
-			   {sunos5,["sunos 5"]},
-			   {sun,["sunos"]},
-			   {aix,["aix"]},
-			   {linux,["linux"]},
-			   {sco,["sco","unix_sv"]},
+-define(OPERATIVE_SYSTEMS,[{win3x,  ["win16", "windows 3", "windows 16-bit"]},
+			   {win95,  ["win95", "windows 95"]},
+			   {win98,  ["win98", "windows 98"]},
+			   {winnt,  ["winnt", "windows nt"]},
+			   {win2k,  ["nt 5"]},
+			   {sunos4, ["sunos 4"]},
+			   {sunos5, ["sunos 5"]},
+			   {sun,    ["sunos"]},
+			   {aix,    ["aix"]},
+			   {linux,  ["linux"]},
+			   {sco,    ["sco", "unix_sv"]},
 			   {freebsd,["freebsd"]},
-			   {bsd,["bsd"]}]).
+			   {bsd,    ["bsd"]},
+			   {macosx, ["mac os x"]}]).
 
--define(LYNX,lynx).
--define(MOZILLA,mozilla).
--define(EMACS,emacs).
--define(STAROFFICE,soffice).
--define(MOSAIC,mosaic).
--define(NETSCAPE,netscape).
--define(UNKOWN,unknown).
+-define(LYNX,       lynx).
+-define(MOZILLA,    mozilla).
+-define(EMACS,      emacs).
+-define(STAROFFICE, soffice).
+-define(MOSAIC,     mosaic).
+-define(NETSCAPE,   netscape).
+-define(SAFARU,     safari).
+-define(UNKOWN,     unknown).
 
 -include("httpd.hrl").
 
--export([do/1, test/0, getBrowser/1]).
+-define(VMODULE,"BROWSER").
+-include("httpd_verbosity.hrl").
+
 
 
 do(Info) ->
     case httpd_util:key1search(Info#mod.data,status) of
-	{Status_code,PhraseArgs,Reason} ->
+	{_StatusCode, _PhraseArgs, _Reason} ->
 	    {proceed,Info#mod.data};
 	undefined ->
-	    {proceed,[{'user-agent',getBrowser1(Info)}|Info#mod.data]}
+	    Browser = getBrowser1(Info),
+	    ?vdebug("do -> Browser: ~p", [Browser]),
+	    {proceed,[{'user-agent', Browser}|Info#mod.data]}
     end.
 
 getBrowser1(Info) ->
-    PHead=Info#mod.parsed_header,
-    case httpd_util:key1search(PHead,"User-Agent") of
-	undefined->
-	   undefined;
+    PHead = Info#mod.parsed_header,
+    case httpd_util:key1search(PHead,"user-agent") of
+	undefined ->
+	    undefined;
 	AgentString ->
 	    getBrowser(AgentString)
     end.
@@ -86,7 +101,7 @@ getBrowser(AgentString) ->
     LAgentString = httpd_util:to_lower(AgentString),
     case regexp:first_match(LAgentString,"^[^ ]*") of
 	{match,Start,Length} ->
-	    Browser=lists:sublist(LAgentString,Start,Length),
+	    Browser = lists:sublist(LAgentString,Start,Length),
 	    case browserType(Browser) of
 		{mozilla,Vsn} ->
 		    {getMozilla(LAgentString,
@@ -105,11 +120,11 @@ browserType([$m,$o,$z,$i,$l,$l,$a|Version]) ->
     {?MOZILLA,browserVersion(Version)};
 browserType([$e,$m,$a,$c,$s|Version]) ->
     {?EMACS,browserVersion(Version)};
-browserType([$e,$t,$a,$r,$o,$f,$f,$i,$c,$e|Version]) ->
+browserType([$s,$t,$a,$r,$o,$f,$f,$i,$c,$e|Version]) ->
     {?STAROFFICE,browserVersion(Version)};
 browserType([$m,$o,$s,$a,$i,$c|Version]) ->
     {?MOSAIC,browserVersion(Version)};
-browserType(Unknown)->
+browserType(_Unknown) ->
     unknown.
  
 
@@ -117,7 +132,7 @@ browserVersion([$/|VsnString]) ->
     case catch list_to_float(VsnString) of
 	Number when float(Number) ->
 	    Number;
-	Whatever ->
+	_Whatever ->
 	    case string:span(VsnString,"1234567890.") of
 		0 ->
 		    unknown;
@@ -137,23 +152,23 @@ browserVersion(VsnString) ->
 operativeSystem(OpString) ->
   operativeSystem(OpString, ?OPERATIVE_SYSTEMS).
 
-operativeSystem(OpString,[]) ->
+operativeSystem(_OpString,[]) ->
     unknown;
 operativeSystem(OpString,[{RetVal,RegExps}|Rest]) ->
     case controlOperativeSystem(OpString,RegExps) of
-	true->
+	true ->
 	    RetVal;
 	_ ->
 	    operativeSystem(OpString,Rest)
     end.
 
-controlOperativeSystem(OpString,[]) ->
+controlOperativeSystem(_OpString,[]) ->
     false;
 controlOperativeSystem(OpString,[Regexp|Regexps]) ->
     case regexp:match(OpString,Regexp) of
-	{match,_,_}->
+	{match,_,_} ->
 	    true;
-	nomatch->
+	nomatch ->
 	    controlOperativeSystem(OpString,Regexps)
     end.
 
@@ -161,54 +176,76 @@ controlOperativeSystem(OpString,[Regexp|Regexps]) ->
 %% OK this is ugly but thats the only way since 
 %% all browsers dont conform to the name/vsn standard
 %% First we check if it is one of the browsers that 
-%% not are the default mozillaborwser against the regexp 
-%% for the different browsers. if no match it a mozilla 
-%% browser i.e opera netscape or internet explorer
+%% are not the default mozillaborwser against the regexp 
+%% for the different browsers. if no match, it is a mozilla 
+%% browser i.e opera, netscape, ie or safari
 
-getMozilla(AgentString,[],Default) ->
+getMozilla(_AgentString,[],Default) ->
     Default;
 getMozilla(AgentString,[{Agent,AgentRegExp}|Rest],Default) ->
     case regexp:match(AgentString,AgentRegExp) of
 	{match,_,_} ->
-	    {Agent,getVersion(AgentString,AgentRegExp)};
+	    {Agent,getMozVersion(AgentString,AgentRegExp)};
 	nomatch ->
 	    getMozilla(AgentString,Rest,Default)
     end.
 
-getVersion(AgentString,AgentRegExp) ->
-    case regexp:match(AgentString,AgentRegExp++"[0-9\.\ ]*") of
+getMozVersion(AgentString, AgentRegExp) ->
+    case regexp:match(AgentString,AgentRegExp++"[0-9\.\ \/]*") of
 	{match,Start,Length} when length(AgentRegExp) < Length ->
 	    %% Ok we got the number split it out
-	    RealStart=Start+length(AgentRegExp),
-	    RealLength=Length-length(AgentRegExp),
-	    VsnString=string:substr(AgentString,RealStart,RealLength),
-	    case string:strip(VsnString,both,$\ ) of
+	    RealStart  = Start+length(AgentRegExp),
+	    RealLength = Length-length(AgentRegExp),
+	    VsnString  = string:substr(AgentString,RealStart,RealLength),
+	    %% case string:strip(VsnString,both,$\ ) of
+	    case strip(VsnString) of
 		[] ->
 		    unknown;
+		[Y1,Y2,Y3,Y4,M1,M2,D1,D2] = DateVsn when
+		      Y1 =< $9, Y1 >= $0,
+		      Y2 =< $9, Y2 >= $0,
+		      Y3 =< $9, Y3 >= $0,
+		      Y4 =< $9, Y4 >= $0,
+		      M1 =< $9, M1 >= $0,
+		      M2 =< $9, M2 >= $0,
+		      D1 =< $9, D1 >= $0,
+		      D2 =< $9, D2 >= $0 ->
+		    list_to_integer(DateVsn);
 		Vsn ->
 		    case string:tokens(Vsn,".") of
 			[Number]->
 			    list_to_float(Number++".0");
-			[Major,Minor|_MinorMinor]->
-			    list_to_float(Major++"."++Minor)
+			[Major,Minor|Rev] ->
+			    V = lists:flatten([Major,".",Minor,Rev]),
+			    list_to_float(V)
 		    end
 	    end;
 	nomatch ->
 	    unknown
     end.
 
+strip(VsnString) ->
+    strip2(strip1(VsnString)).
+
+strip1(VsnString) ->    
+    string:strip(VsnString,both,$\ ).
+
+strip2(VsnString) ->    
+    string:strip(VsnString,both,$/ ).
 
 test()->
+    test("Mozilla/4.75 [en] (X11; U; SunOS 5.8 sun4u)"),
+    test("Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.0.1) Gecko/20020823 Netscape/7.0"),
+    test("Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.1) Gecko/20020827"),
+    test("Mozilla/5.0 (Macintosh; U; PPC Mac OS X Mach-O; en-US; rv:1.4) Gecko/20020827"),
+    test("Mozilla/5.0 (Macintosh; U; PPC Mac OS X; en-us) AppleWebKit/85 (KHTML, like Gecko) Safari/85"),
+    test("Mozilla/4.0 (compatible; MSIE 5.0; SP1B; SunOS 5.8 sun4u; X11)"),
+    test("Lynx/2.8.3rel.1 libwww-FM/2.142"),
+    ok.
+
+test(Str) ->
+    Browser = getBrowser(Str),
     io:format("~n--------------------------------------------------------~n"),
-    Res1=getBrowser("Mozilla/4.75 [en] (X11; U; SunOS 5.8 sun4u)"),
-    io:format("~p",[Res1]),
-    io:format("~n--------------------------------------------------------~n"),
-    io:format("~n--------------------------------------------------------~n"),
-    Res2=getBrowser("Mozilla/4.0 (compatible; MSIE 5.0; SP1B; SunOS 5.8 sun4u; X11)"),
-    io:format("~p",[Res2]),
-    io:format("~n--------------------------------------------------------~n"),
-    io:format("~n--------------------------------------------------------~n"),
-    Res3=getBrowser("Lynx/2.8.3rel.1 libwww-FM/2.142"),
-    io:format("~p",[Res3]),
+    io:format("~p",[Browser]),
     io:format("~n--------------------------------------------------------~n").
 

@@ -122,6 +122,8 @@ gen2(G, File, Opts) ->
 
 do_gen(erl_corba, G, File, T) ->
     ic_erlbe:do_gen(G, File, T);
+do_gen(erl_template, G, File, T) ->
+    ic_erl_template:do_gen(G, File, T);
 do_gen(erl_genserv, G, File, T) ->
     ic_erlbe:do_gen(G, File, T);
 do_gen(c_genserv, G, File, T) ->
@@ -182,13 +184,13 @@ filter_params(Filter, Params) ->
 
 %% Access primitive to get the attribute name (and discard the line
 %% number).
-get_param_attr({A, N}) -> A.
+get_param_attr({A, _N}) -> A.
 
 
 %%
 %% Fixing the preproc directives
 %%
-handle_preproc(G, N, line_nr, X) ->
+handle_preproc(G, _N, line_nr, X) ->
     Id = ic_forms:get_id2(X),
     Flags = X#preproc.aux,
     case Flags of
@@ -199,7 +201,7 @@ handle_preproc(G, N, line_nr, X) ->
 		     ({_, _, "3"}, Gprim) -> ic_genobj:sys_file(Gprim, Id) end,
 		  G, Flags)
     end;
-handle_preproc(G, N, Other, X) ->
+handle_preproc(G, _N, _Other, _X) ->
     G.
 
 
@@ -244,9 +246,6 @@ make_erl_options(Opts) ->
     Verbose = Opts#options.verbose,
     Specific = Opts#options.specific,
     Optimize = Opts#options.optimize,
-    OutputType = Opts#options.output_type,
-    Cwd = Opts#options.cwd,
-
     PreProc = 
 	lists:flatten(
 	  lists:map(fun(D) -> io_lib:format("-I~s ", [ic_util:to_list(D)]) end, 
@@ -278,7 +277,7 @@ make_erl_options(Opts) ->
 %%%
 %%% NEW main, avoids memory fragmentation
 %%%
-main(G, File, Opts) ->
+main(G, File, _Opts) ->
     print_version_str(G),
     ?ifopt(G, time, io:format("File ~p compilation started  :   ~p/~p/~p ~p:~2.2.0p~n", 
 			      [ic_genobj:idlfile(G),
@@ -371,9 +370,9 @@ generation(G, File, T2) ->
 	    multiple_generation(G, File, T2, OutDir, List)
     end.
 
-multiple_generation(G,File,T2,RootDir,[]) ->
+multiple_generation(_G, _File, _T2, _RootDir, []) ->
     ok;
-multiple_generation(G,File,T2,RootDir,[Be|Bes]) ->
+multiple_generation(G, File, T2, RootDir, [Be|Bes]) ->
     ic_options:add_opt(G,[{outdir,RootDir++atom_to_list(Be)}],true),
     ic_options:add_opt(G,[{be,Be}],true),
     single_generation(G, File, T2),

@@ -28,51 +28,59 @@ int ei_decode_long(const char *buf, int *index, long *p)
 
 int ei_decode_longlong(const char *buf, int *index, EI_LONGLONG *p)
 {
-  const char *s = buf + *index;
-  const char *s0 = s;
-  EI_LONGLONG n;
-  int arity;
-  int sign;
+    const char *s = buf + *index;
+    const char *s0 = s;
+    EI_LONGLONG n;
+    int arity;
 
-  switch (get8(s)) {
-  case ERL_SMALL_INTEGER_EXT:
-    n = get8(s);
-    break;
+    switch (get8(s)) {
+    case ERL_SMALL_INTEGER_EXT:
+	n = get8(s);
+	break;
     
-  case ERL_INTEGER_EXT:
-    n = get32be(s);
-    break;
+    case ERL_INTEGER_EXT:
+	n = get32be(s);
+	break;
     
-  case ERL_SMALL_BIG_EXT:
-    if ((arity = get8(s)) > 8) return -1;
-    sign = get8(s);
-    /* Little Endian, and n always positive, except for LONG_MIN */
-    {
-	int pos, shift = 0;
-	n = 0;
-	for (pos = 0; pos < arity; pos++) {
-	    n |= get8(s) << shift;
-	    shift += 8;
+    case ERL_SMALL_BIG_EXT:
+	arity = get8(s);
+	goto decode_big;
+
+    case ERL_LARGE_BIG_EXT:
+	arity = get32be(s);
+
+    decode_big:
+	{
+	    int sign = get8(s);
+	    int i;
+	    n = 0;
+
+	    /* Little Endian, and n always positive, except for LONG_MIN */
+	    for (i = 0; i < arity; i++) {
+		if (i < 8) {
+		    /* Use ULONGLONG not to get a negative integer if > 127 */
+		    n |= ((EI_ULONGLONG)get8(s)) << (i * 8);
+		} else if (get8(s) != 0) {
+		    return -1; /* All but first byte have to be 0 */
+		}
+	    }
+
+	    /* check for overflow */
+	    if (sign) {
+		if ((n - 1) < 0) return -1;
+		n = -n;
+	    } else {
+		if (n < 0) return -1;
+	    }
 	}
+	break;
+    
+    default:
+	return -1;
     }
 
-    if (sign) {
-      /* check for overflow */
-      if ((n - 1) < 0) return -1;
-      n = -n;
-    } else {
-      /* check for overflow */
-      if (n < 0) return -1;
-    }
-    
-    break;
-    
-  default:
-    return -1;
-  }
-
-  if (p) *p = n;
-  *index += s-s0;
+    if (p) *p = n;
+    *index += s-s0;
   
-  return 0; 
+    return 0; 
 }

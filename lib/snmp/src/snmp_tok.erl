@@ -105,8 +105,10 @@ insert_keywords_into_ets(DB, [Word | T]) ->
 
 reserved_word(X) ->
     case ets:lookup(get(db), X) of
-	[{X, reserved_word}] -> true;
-	_ -> false
+	[{X, reserved_word}] -> 
+	    true;
+	_ -> 
+	    false
     end.
 
 %% If you only need to tokenize strings
@@ -124,10 +126,26 @@ test() ->
 		'SIZE','STATUS','SYNTAX','TEXTUAL-CONVENTION','UNITS',
 		'current','deprecated','not-accessible','obsolete', 
 		'read-create','read-only','read-write', 'IMPORTS', 'FROM',
-		'MODULE-COMPLIANCE'],
+		'MODULE-COMPLIANCE',
+		'DisplayString', 
+		'PhysAddress', 
+		'MacAddress', 
+		'TruthValue', 
+		'TestAndIncr', 
+		'AutonomousType', 
+		'InstancePointer', 
+		'VariablePointer', 
+		'RowPointer', 
+		'RowStatus', 
+		'TimeStamp', 
+		'TimeInterval', 
+		'DateAndTime', 
+		'StorageType', 
+		'TDomain', 
+		'TAddress'],
 	       [{file, "modemmib.mib"}]).
 
-init({Reserved_words, Options,GetLineMFA}) ->
+init({Reserved_words, Options, GetLineMFA}) ->
     put(get_line_function,GetLineMFA),
     put(print_lineno,
 	case lists:keysearch(print_lineno, 1, Options) of
@@ -285,7 +303,7 @@ get_name(Category, Name, []) ->
 makeNameRespons(Category, Name, RestChars) ->
     Atm = list_to_atom(lists:reverse(Name)),
     case reserved_word(Atm) of
-	true -> {{Atm, get(line)}, RestChars};
+	true  -> {{Atm, get(line)}, RestChars};
 	false -> {{Category, get(line), Atm}, RestChars}
     end.
 

@@ -88,8 +88,10 @@ create_sequence_tc(Bound, Element_type) ->
     {tk_sequence,Element_type,Bound}.
 
 create_recursive_sequence_tc(Bound, Offset) ->
-    ?ifr_exception("create_recursive_sequence is not implemented",
-		   {Bound,Offset}).
+    orber:dbg("[~p] ~p:create_recursive_sequence_tc(~p, ~p);~n"
+	      "Create_recursive_sequence is not implemented.~n", 
+	      [?LINE, ?MODULE, Bound, Offset], ?DEBUG_LEVEL),
+    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO}).
 
 create_array_tc(Length, Element_type) ->
     {tk_array, Element_type, Length}.

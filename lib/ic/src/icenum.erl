@@ -17,7 +17,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: icenum.erl
-%% Author: Lars Thorsen
 %% 
 %% Creation date: 980429
 %% Modified:
@@ -44,7 +43,7 @@
 
 enum_gen(G, N, X, c) when record(X, enum) ->
     emit_c_enum(G, N, X);
-enum_gen(G, N, X, L) ->
+enum_gen(_G, _N, _X, _L) ->
     ok.
 
 
@@ -81,7 +80,7 @@ emit_c_enum(G, N, X) ->
     end.
 
 
-emit_c_enum_values(G, N, Fd, [E]) ->
+emit_c_enum_values(_G, N, Fd, [E]) ->
     ic_codegen:emit(Fd, "~s", [ic_util:to_undersc([E| N])]);
 emit_c_enum_values(G, N, Fd, [E |Es]) ->
     ic_codegen:emit(Fd, "~s, ", [ic_util:to_undersc([E| N])]),
@@ -131,7 +130,7 @@ emit_c_enum_array_values(Fd, [E |Es]) ->
     emit_c_enum_array_values(Fd, Es).
 
 
-emit_sizecount(G, N, Fd, HFd, Name, Elist) ->
+emit_sizecount(G, _N, Fd, HFd, Name, _Elist) ->
     
     ic_codegen:emit(HFd, "int ~s~s(CORBA_Environment *oe_env, int*, int*);\n",
 	       [ic_util:mk_oe_name(G, "sizecalc_"), Name]),
@@ -151,7 +150,7 @@ emit_sizecount(G, N, Fd, HFd, Name, Elist) ->
     ic_codegen:emit(Fd, "}\n\n",[]).
 
 
-emit_encode(G, N, Fd, HFd, Name, Elist) ->
+emit_encode(G, _N, Fd, HFd, Name, _Elist) ->
 
     ic_codegen:emit(HFd, "int ~s~s(CORBA_Environment *oe_env, ~s);\n",
 	       [ic_util:mk_oe_name(G, "encode_"), Name, Name]),
@@ -167,7 +166,7 @@ emit_encode(G, N, Fd, HFd, Name, Elist) ->
     ic_codegen:emit(Fd, "  return 0;\n\n",[]),
     ic_codegen:emit(Fd, "}\n\n",[]).
 
-emit_decode(G, N, Fd, HFd, Name, Elist) ->
+emit_decode(G, _N, Fd, HFd, Name, Elist) ->
 
     ic_codegen:emit(HFd, "int ~s~s(CORBA_Environment *oe_env, char *, int*, ~s *);\n",
 	       [ic_util:mk_oe_name(G, "decode_"), Name, Name]),

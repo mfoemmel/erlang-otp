@@ -18,11 +18,9 @@
 %%
 
 
-%% A primary filer (Ahh, wrong name prim_loader:-).
-%% Provides three different methods to fetch a file,
-%%  i.e. binary_filer, efile and inet.
-%% The binary_filer and efile methods are simple communication
-%% with a port program.
+%% A primary filer, provides two different methods to fetch a file:
+%% efile and inet. The efile method is simple communication with a
+%% port program.
 %%
 %% The distribution loading was removed and replaced with
 %% inet loading
@@ -46,28 +44,19 @@
 -include("inet_boot.hrl").
 
 -export([start/3, set_path/1, get_path/0, get_file/1, get_files/2]).
+-export([list_dir/1, read_file_info/1, get_cwd/0, get_cwd/1]).
 
 -record(state, 
 	{
+	 loader,		  % efile | inet
 	 hosts = [],              % hosts list (to boot from)
 	 id,                      % not used any more?
-	 get,                     % load fun
-	 multi_get,               % load fun (many files)
-	 stop,                    % stop fun
-	 exit,                    % cleanup fun
 	 data,                    % data port etc
 	 timeout,                 % idle timeout
-	 timeout_handler
+	 multi_get = false       % true | false
 	}).
 
-%% Defines for the binary_filer (local) prim_loader.
--define(get_file, $f).
--define(FILE_OK, $y).
-
 %% Defines for inet as prim_loader
--define(inet_get_file, $F).
--define(FILE_INET_OK, $f).
--define(FILE_INET_ERROR, $e).
 -define(IDLE_TIMEOUT, 60000).  %% tear connection after 1 minutes
 -define(INET_PROTO, inet).
 
@@ -100,66 +89,50 @@ start(Id, Pgm0, Hosts) ->
 	    {error,Reason}
     end.
 
+start_it("ose_inet", Id, Pid, Hosts) ->
+    %% Setup reserved port for ose_inet driver (only OSE)
+    case catch erlang:open_port({spawn,ose_inet},[binary]) of
+	{'EXIT',Why} ->
+	    ?dbg(ose_inet_port_open_fail, Why),
+	    Why;
+	OseInetPort ->
+	    ?dbg(ose_inet_port, OseInetPort),
+	    OseInetPort
+    end,
+    start_it("inet", Id, Pid, Hosts);
+
 %% Hosts must be a list on form ['1.2.3.4' ...]
 start_it("inet", Id, Pid, Hosts) ->
     process_flag(trap_exit, true),
-    %% Setup reserved port for ose_inet driver (only OSE, fails on others)
-    case catch erlang:open_port({spawn,ose_inet},[binary]) of
-	{'EXIT',_Why} ->
-	    ?dbg(ose_inet_port_open_fail, Why);
-	_OseInetPort ->
-	    ?dbg(ose_inet_port, OseInetPort)
-    end,
     ?dbg(inet, {Id,Pid,Hosts}),
     AL = ipv4_list(Hosts),
     ?dbg(addresses, AL),
     {ok,Tcp} = find_master(AL),
     init_ack(Pid),
     State = #state {
+                    loader = inet,
 		    hosts = AL,
 		    id = Id,
-		    get = fun get_from_port_inet/3,
-                    multi_get = undefined,
-		    stop = fun stop_port/1,
-		    exit = fun inet_exit_port/3,
 		    data = Tcp,
-		    timeout = ?IDLE_TIMEOUT,
-                    timeout_handler = fun inet_timeout_handler/2
+		    timeout = ?IDLE_TIMEOUT
 		   },
     loop(State, Pid, []);
+
 start_it("efile", Id, Pid, _Hosts) ->
     process_flag(trap_exit, true),
     {ok, Port} = prim_file:open([binary]),
     init_ack(Pid),
-    MultiGetFun = case erlang:system_info(thread_pool_size) of
-		      0 -> undefined;
-		      _ -> fun multi_get_from_port_efile/4
-		  end,
+    MultiGet = case erlang:system_info(thread_pool_size) of
+		   0 -> false;
+		   _ -> true
+	       end,
     State = #state {
+                    loader = efile,
 		    id = Id,
-		    get = fun get_from_port_efile/3,
-                    multi_get = MultiGetFun,
-		    stop = fun efile_stop_port/1,
-		    exit = fun exit_port/3,
 		    data = Port,
                     timeout = infinity,
-                    timeout_handler = fun timeout_handler/2
+                    multi_get = MultiGet
 		    },
-    loop(State, Pid, []);
-start_it(Pgm, Id, Pid, _Hosts) ->
-    process_flag(trap_exit, true),
-    Port = erlang:open_port({spawn,Pgm}, [binary]),
-    init_ack(Pid),
-    State = #state {
-		    id = Id,
-		    get = fun get_from_port/3,
-                    multi_get = undefined,
-		    stop = fun stop_port/1,
-		    exit = fun exit_port/3,
-		    data = Port,
-                    timeout = infinity,
-                    timeout_handler = fun timeout_handler/2
-		   },
     loop(State, Pid, []).
 
 init_ack(Pid) ->
@@ -169,15 +142,35 @@ set_path(Paths) when list(Paths) ->
     request({set_path,Paths}).
 
 get_path() ->
-    request({get_path}).
+    request({get_path,[]}).
 
 get_file(File) when atom(File) ->
     get_file(atom_to_list(File));
 get_file(File) ->
-    request({get_file,File}).
+    check_file_result(get_file, request({get_file,File})).
 
 get_files(ModFiles, Fun) ->
-    request({get_files,ModFiles,Fun}).
+    case request({get_files,{ModFiles,Fun}}) of
+	E = {error,_M} ->
+	    E;
+        {error,Reason,M} ->
+	    check_file_result(get_files, {error,Reason}),
+	    {error,M};
+	ok ->
+	    ok
+    end.
+
+list_dir(Dir) ->
+    check_file_result(list_dir, request({list_dir,Dir})).
+
+read_file_info(Elem) ->
+    check_file_result(read_file_info, request({read_file_info,Elem})).
+
+get_cwd() ->
+    check_file_result(get_cwd, request({get_cwd,[]})).
+
+get_cwd(Drive) ->
+    check_file_result(get_cwd, request({get_cwd,[Drive]})).
 
 request(Req) ->
     Loader = whereis(erl_prim_loader),
@@ -189,26 +182,70 @@ request(Req) ->
 	    error
     end.
 
+check_file_result(_, {error,enoent}) ->
+    error;
+check_file_result(_, {error,enotdir}) ->
+    error;
+check_file_result(Func, {error,Reason}) ->    
+    case (catch atom_to_list(Reason)) of
+	{'EXIT',_} ->				% exit trapped
+	    error;
+	Errno ->				% errno
+	    Process = case process_info(self(), registered_name) of
+			  {registered_name,R} -> 
+			      "Process: " ++ atom_to_list(R) ++ ".";
+			  _ -> 
+			      ""
+		      end,
+	    Report = "File operation error: " ++ Errno ++ ". " ++
+	       	     "Function: " ++ atom_to_list(Func) ++ ". " ++ Process,
+	    %% this is equal to calling error_logger:error_report/1 which
+	    %% we don't want to do from code_server during system boot
+	    error_logger ! {notify,{error_report,group_leader(),
+				    {self(),std_error,Report}}},
+	    error
+    end;
+check_file_result(_, Other) ->
+    Other.
+
 %%% --------------------------------------------------------
 %%% The main loop.
 %%% --------------------------------------------------------
 
 loop(State, Parent, Paths) ->
     receive
-	{Pid,{set_path,NewPaths}} ->
-	    Pid ! {self(),ok},
-	    loop(State, Parent, to_strs(NewPaths));
-	{Pid,{get_path}} ->
-	    Pid ! {self(),{ok,Paths}},
-	    loop(State, Parent, Paths);
-	{Pid,{get_file,File}} ->
-	    {Res,State1} = get_file(State, Paths, File),
-	    Pid ! {self(),Res},
-	    loop(State1, Parent, Paths);
-	{Pid,{get_files,ModFiles,Fun}} ->
-	    {Res,State1} = get_files(State, ModFiles, Paths, Fun),
-	    Pid ! {self(),Res},
-	    loop(State1, Parent, Paths);
+	{Pid,Req} when pid(Pid) ->
+	    {Resp,State2,Paths2} =
+		case Req of
+		    {set_path,NewPaths} ->
+			{ok,State,to_strs(NewPaths)};
+		    {get_path,_} ->
+			{{ok,Paths},State,Paths};
+		    {get_file,File} ->
+			{Res,State1} = get_file(State, Paths, File),
+			{Res,State1,Paths};
+		    {get_files,{ModFiles,Fun}} ->
+			{Res,State1} = get_files(State, ModFiles, Paths, Fun),
+			{Res,State1,Paths};
+		    {list_dir,Dir} ->
+			{Res,State1} = loader_list_dir(State, Dir),
+			{Res,State1,Paths};
+		    {read_file_info,Elem} ->
+			{Res,State1} = loader_read_file_info(State, Elem),
+			{Res,State1,Paths};
+		    {get_cwd,[]} ->
+			{Res,State1} = loader_get_cwd(State, []),
+			{Res,State1,Paths};
+		    {get_cwd,[_]=Args} ->
+			{Res,State1} = loader_get_cwd(State, Args),
+			{Res,State1,Paths};
+		    _Other ->
+			{ignore,State,Paths}
+		end,
+	    if Resp == ignore -> ok;
+	       true -> Pid ! {self(),Resp}
+	    end,
+	    loop(State2, Parent, Paths2);
 	{'EXIT',Parent,W} ->
 	    stop(State),
 	    exit(W);
@@ -222,78 +259,72 @@ loop(State, Parent, Paths) ->
 	    loop(State1, Parent, Paths)
     end.
 
-get_files(State, ModFiles, Paths, Fun) ->
-    case catch (State#state.multi_get)(State, ModFiles, Paths, Fun) of
-	{'EXIT',_} -> {error,State};
+get_files(State = #state{multi_get = true}, ModFiles, Paths, Fun) ->
+    case catch multi_get_from_port_efile(State, ModFiles, Paths, Fun) of
+	{'EXIT',Reason} -> {{error,Reason},State};
+	Res -> Res
+    end;
+get_files(State, _ModFiles, _Paths, _Fun) ->	% no multi get
+    {{error,no_multi_get},State}.
+    
+get_file(State = #state{loader = efile}, Paths, File) ->
+    case catch get_from_port_efile(State, File, Paths) of
+	{'EXIT',Reason} -> {{error,Reason},State};
+	Res -> Res
+    end;
+get_file(State = #state{loader = inet}, Paths, File) ->
+    case catch get_from_port_inet(State, File, Paths) of
+	{'EXIT',Reason} -> {{error,Reason},State};
+	Res -> Res
+    end.
+
+loader_list_dir(State = #state{loader = efile}, Dir) ->
+    case catch efile_list_dir(State, Dir) of
+	{'EXIT',Reason} -> {error,Reason};
+	Res -> Res
+    end;
+loader_list_dir(State = #state{loader = inet}, Dir) ->
+    case catch inet_list_dir(State, Dir) of
+	{'EXIT',Reason} -> {error,Reason};
+	Res -> Res
+    end.
+
+loader_read_file_info(State = #state{loader = efile}, Elem) ->
+    case catch efile_read_file_info(State, Elem) of
+	{'EXIT',Reason} -> {error,Reason};
+	Res -> Res
+    end;
+loader_read_file_info(State = #state{loader = inet}, Elem) ->
+    case catch inet_read_file_info(State, Elem) of
+	{'EXIT',Reason} -> {error,Reason};
+	Res -> Res
+    end.
+
+loader_get_cwd(State = #state{loader = efile}, Args) ->
+    case catch efile_get_cwd(State, Args) of
+	{'EXIT',Reason} -> {error,Reason};
+	Res -> Res
+    end;
+loader_get_cwd(State = #state{loader = inet}, Args) ->
+    case catch inet_get_cwd(State, Args) of
+	{'EXIT',Reason} -> {error,Reason};
 	Res -> Res
     end.
     
-get_file(State, Paths, File) ->
-    case catch (State#state.get)(State, File, Paths) of
-	{'EXIT',_} -> {error,State};
-	Res -> Res
-    end.
+stop(State = #state{loader = efile}) ->
+    efile_stop_port(State);
+stop(State = #state{loader = inet}) ->
+    inet_stop_port(State).
 
-stop(State) ->
-    (State#state.stop)(State).
+exit(State = #state{loader = efile}, Who, Reason) ->
+    efile_exit_port(State, Who, Reason);
+exit(State = #state{loader = inet}, Who, Reason) ->
+    inet_exit_port(State, Who, Reason).
 
-exit(State, Who, Reason) ->
-    (State#state.exit)(State, Who, Reason).
-
-handle_timeout(State, Pid) ->
-    (State#state.timeout_handler)(State, Pid).
-
-%%% --------------------------------------------------------
-%%% Functions which handles the binary_filer prim_loader.
-%%% --------------------------------------------------------
-
-get_from_port(State, File, Paths) ->
-    case absolute_filename(File) of
-	true ->               %% Get absolute file name.
-	    get_from_port(File, State);
-	false when Paths == [] -> %% Get plain file name.
-	    get_from_port(File, State);
-	false ->                  %% Use Paths.
-	    get_from_port1(File, Paths, State)
-    end.
-
-get_from_port1(File, [P | Paths], State) ->
-    case get_from_port(concat([P,"/",File]), State) of
-	{error,State1} ->
-	    get_from_port1(File, Paths, State1);
-	Result -> Result
-    end;
-get_from_port1(_File, [], State) ->
-    {error,State}.
-
-get_from_port(File, State) ->
-    Port = State#state.data,
-    Port ! {self(),{command,[?get_file|File]}},
-    receive
-	{Port,{data,Bin}} ->
-	    case binary_to_list(Bin, 1, 1) of
-		[?FILE_OK] ->
-		    {_,BinFile} = split_binary(Bin, 1),
-		    {{ok,BinFile,File},State};
-		_Other ->
-		    {error,State}
-	    end;
-	{'EXIT',Port,_} ->
-	    exit('prim_load port died')
-    end.
-
-stop_port(State) ->
-    Port = State#state.data,
-    unlink(Port),
-    exit(Port, die),
-    ok.
-
-exit_port(State, Port, Reason) when State#state.data == Port ->
-    exit({port_died,Reason});
-exit_port(State, _Port, _Reason) ->
-    State.
-
-timeout_handler(State, _Pid) ->  State.
+handle_timeout(State = #state{loader = efile}, Pid) ->
+    efile_timeout_handler(State, Pid);
+handle_timeout(State = #state{loader = inet}, Pid) ->
+    inet_timeout_handler(State, Pid).
 
 %%% --------------------------------------------------------
 %%% Functions which handles efile as prim_loader (default).
@@ -322,8 +353,8 @@ get_files(MFs, Out, Max, _State, Paths, Fun, Ref, Ret) when Out > 0 ->
 	{Ref, MF, {error,emfile,State1}} ->
             %% Max can take negative values. Out cannot.
 	    get_files([MF | MFs], Out-1, Max-1, State1, Paths, Fun, Ref, Ret);
-	{Ref, {M,_F}, {error,_Error,State1}} -> 
-	    get_files(MFs, Out-1, 0, State1, Paths, Fun, Ref, {error,M})
+	{Ref, {M,_F}, {error,Error,State1}} -> 
+	    get_files(MFs, Out-1, 0, State1, Paths, Fun, Ref, {error,Error,M})
     end;
 get_files(_MFs, 0, _Max, State, _Paths, _Fun, _Ref, Ret) ->
     {Ret,State}.
@@ -349,8 +380,8 @@ par_get_file(Ref, State, {Mod,File} = MF, Paths, Pid, Fun) ->
 
 get_from_port_efile(State, File, Paths) ->
     case get_from_port_efile1(State, File, Paths) of
-	{error,_Reason,State1} ->
-	    {error,State1};
+	{error,Reason,State1} ->
+	    {{error,Reason},State1};
 	Res ->
 	    Res
     end.
@@ -368,7 +399,12 @@ get_from_port_efile1(State, File, Paths) ->
 get_from_port_efile2(File, [P | Paths], State) ->
     case get_from_port_efile(concat([P,"/",File]), State) of
 	{error,Reason,State1} when Reason =/= emfile ->
-	    get_from_port_efile2(File, Paths, State1);
+	    case Paths of
+		[] ->				% return last error
+		    {error,Reason,State1};
+		_ ->				% try more paths
+		    get_from_port_efile2(File, Paths, State1)
+	    end;
 	Result -> Result
     end;
 get_from_port_efile2(_File, [], State) ->
@@ -384,9 +420,27 @@ get_from_port_efile(File, #state{data = Port} = State) ->
 	    {{ok,BinFile,File},State}
     end.
 
-efile_stop_port(#state{data = Port}) ->
+efile_list_dir(State, Dir) ->
+    {prim_file:list_dir(Dir),State}.
+
+efile_read_file_info(State, Elem) ->
+    {prim_file:read_file_info(Elem),State}.
+
+efile_get_cwd(State, []) ->
+    {prim_file:get_cwd(),State};
+efile_get_cwd(State, [Drive]) ->
+    {prim_file:get_cwd(Drive),State}.
+
+efile_stop_port(#state{data=Port}=State) ->
     prim_file:close(Port),
-    ok.
+    State#state{data=noport}.
+
+efile_exit_port(State, Port, Reason) when State#state.data == Port ->
+    exit({port_died,Reason});
+efile_exit_port(State, _Port, _Reason) ->
+    State.
+
+efile_timeout_handler(State, _Pid) ->  State.
 
 %%% --------------------------------------------------------
 %%% Functions which handles inet prim_loader
@@ -398,19 +452,22 @@ efile_stop_port(#state{data = Port}) ->
 %% AL is a list of boot servers (including broadcast addresses)
 %%
 find_master(AL) ->
-    find_master(AL, ?EBOOT_RETRY, ?EBOOT_REQUEST_DELAY, ?EBOOT_RETRY_SLEEP).
+    find_master(AL, ?EBOOT_RETRY, ?EBOOT_REQUEST_DELAY, ?EBOOT_SHORT_RETRY_SLEEP, 
+	       ?EBOOT_UNSUCCESSFUL_TRIES, ?EBOOT_LONG_RETRY_SLEEP).
 
-find_master(AL, Retry, RequestDelay, RetrySleep) ->
+find_master(AL, Retry, ReqDelay, SReSleep, Tries, LReSleep) ->
     {ok,U} = ll_udp_open(0),
-    find_master(U, Retry, AL, RequestDelay, RetrySleep, []).
+    find_master(U, Retry, AL, ReqDelay, SReSleep, [], Tries, LReSleep).
 
 %%
 %% Master connect loop
 %%
-find_master(U, Retry, AddressL, RequestDelay, RetrySleep, Ignore) ->
-    case find_loop(U, Retry, AddressL, RequestDelay, RetrySleep, Ignore) of
-	[] -> 
-	    find_master(U, Retry, AddressL, RequestDelay, RetrySleep, Ignore);
+find_master(U, Retry, AddrL, ReqDelay, SReSleep, Ignore, Tries, LReSleep) ->
+    case find_loop(U, Retry, AddrL, ReqDelay, SReSleep, Ignore, 
+		   Tries, LReSleep) of
+	[] ->	
+	    find_master(U, Retry, AddrL, ReqDelay, SReSleep, Ignore, 
+			Tries, LReSleep);
 	Servers ->
 	    ?dbg(servers, Servers),
 	    case connect_master(Servers) of
@@ -418,8 +475,8 @@ find_master(U, Retry, AddressL, RequestDelay, RetrySleep, Ignore) ->
 		    ll_close(U),
 		    {ok, Socket};
 		_Error ->
-		    find_master(U, Retry, AddressL, RequestDelay, RetrySleep, 
-				Servers ++ Ignore)
+		    find_master(U, Retry, AddrL, ReqDelay, SReSleep, 
+				Servers ++ Ignore, Tries, LReSleep)
 	    end
     end.
 
@@ -434,11 +491,18 @@ connect_master([]) ->
 %%
 %% Always return a list of boot servers or hang.
 %%
-find_loop(U, Retry, AL, RequestDelay, RetrySleep, Ignore) ->
-    case find_loop(U, Retry, AL, RequestDelay, []) of
-	[] ->
-	    sleep(RetrySleep),
-	    find_loop(U, Retry, AL, RequestDelay, RetrySleep, Ignore);
+find_loop(U, Retry, AL, ReqDelay, SReSleep, Ignore, Tries, LReSleep) ->
+    case find_loop(U, Retry, AL, ReqDelay, []) of
+	[] ->					% no response from any server
+	    erlang:display({erl_prim_loader,'no server found'}), % lifesign
+	    Tries1 = if Tries > 0 ->
+			     sleep(SReSleep),
+			     Tries - 1;
+			true ->
+			     sleep(LReSleep),
+			     0
+		     end,
+	    find_loop(U, Retry, AL, ReqDelay, SReSleep, Ignore, Tries1, LReSleep);
 	Servers ->
 	    keysort(1, Servers -- Ignore)
     end.
@@ -492,38 +556,76 @@ inet_timeout_handler(State, _Pid) ->
 get_from_port_inet(State, File, Paths) ->
     case absolute_filename(File) of
 	true ->               %% Get absolute file name.
-	    get_from_port_inet(File, State);
+	    inet_send_and_rcv({get,File}, File, State);
 	false when Paths == [] -> %% Get plain file name.
-	    get_from_port_inet(File, State);
+	    inet_send_and_rcv({get,File}, File, State);
 	false ->                  %% Use Paths.
 	    get_from_port_inet1(File, Paths, State)
     end.
 
 get_from_port_inet1(File, [P | Paths], State) ->
-    case get_from_port_inet(concat([P,"/",File]), State) of
-	{error,State1} ->
-	    get_from_port_inet1(File, Paths, State1);
+    File1 = concat([P,"/",File]),
+    case inet_send_and_rcv({get,File1}, File1, State) of
+	{{error,Reason},State1} ->
+	    case Paths of
+		[] ->				% return last error
+		    {{error,Reason},State1};
+		_ ->				% try more paths	    
+		    get_from_port_inet1(File, Paths, State1)
+	    end;
 	Result -> Result
     end;
 get_from_port_inet1(_File, [], State) ->
-    {error,State}.
+    {{error,file_not_found},State}.
 
-get_from_port_inet(File, State) when State#state.data == noport ->
+inet_send_and_rcv(Msg, Tag, State) when State#state.data == noport ->
     {ok,Tcp} = find_master(State#state.hosts),     %% reconnect
-    get_from_port_inet(File, State#state { data = Tcp,
-					   timeout = ?IDLE_TIMEOUT });
-get_from_port_inet(File, State) ->
-    Tcp = State#state.data,
-    prim_inet:send(Tcp, [?inet_get_file | File]),
+    inet_send_and_rcv(Msg, Tag, State#state { data = Tcp,
+					      timeout = ?IDLE_TIMEOUT });
+inet_send_and_rcv(Msg, Tag, #state{data=Tcp,timeout=Timeout}=State) ->
+    prim_inet:send(Tcp, term_to_binary(Msg)),
     receive
-	{tcp, Tcp, [?FILE_INET_OK | BinFile]} ->
-	    {{ok, BinFile, File},State};
-	{tcp, Tcp, [?FILE_INET_ERROR | _Err]} ->
-	    {error,State};
+	{tcp,Tcp,BinMsg} ->
+	    case catch binary_to_term(BinMsg) of
+		{get,{ok,BinFile}} ->
+		    {{ok,BinFile,Tag},State};
+		{_Cmd,Res={ok,_}} ->
+		    {Res,State};
+		{_Cmd,{error,Error}} ->
+		    {{error,Error},State};
+		{error,Error} ->
+		    {{error,Error},State};
+		{'EXIT',Error} ->
+		    {{error,Error},State}
+	    end;
+	{tcp_closed,Tcp} ->
+	    %% Ok we must reconnect
+	    inet_send_and_rcv(Msg, Tag, State#state { data = noport });
+	{tcp_error,Tcp,_Reason} ->
+	    %% Ok we must reconnect
+	    inet_send_and_rcv(Msg, Tag, inet_stop_port(State));
 	{'EXIT', Tcp, _} -> 
 	    %% Ok we must reconnect
-	    get_from_port_inet(File,State#state { data = noport })
+	    inet_send_and_rcv(Msg, Tag, State#state { data = noport })
+    after Timeout ->
+	    %% Ok we must reconnect
+	    inet_send_and_rcv(Msg, Tag, inet_stop_port(State))
     end.
+
+inet_list_dir(State, Dir) ->
+    inet_send_and_rcv({list_dir,Dir}, list_dir, State).
+
+inet_read_file_info(State, Elem) ->
+    inet_send_and_rcv({read_file_info,Elem}, read_file_info, State).
+
+inet_get_cwd(State, []) ->
+    inet_send_and_rcv(get_cwd, get_cwd, State);
+inet_get_cwd(State, [Drive]) ->
+    inet_send_and_rcv({get_cwd,Drive}, get_cwd, State).
+
+inet_stop_port(#state{data=Tcp}=State) ->
+    prim_inet:close(Tcp),
+    State#state{data=noport}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -532,7 +634,7 @@ get_from_port_inet(File, State) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 tcp_options() ->
-    [{mode,binary}, {header,1}, {packet,4}, {active, true}, {deliver,term}].
+    [{mode,binary}, {packet,4}, {active, true}, {deliver,term}].
 
 tcp_timeout() -> 
     15000.
@@ -594,14 +696,15 @@ port_error(S, Error) ->
 %%% separators anywhere in the string, not just at the front.
 absolute_filename(File) ->
     case member($/,File) of
-	true ->
-	    true;
+	true -> true;
 	false ->
 	    case erlang:system_info(os_type) of
 		{win32, _} ->
-		    member($\\, File);
-		_ ->
-		    false
+		    case File of
+			[_,$:|_] -> true;
+			_ -> member($\\, File)
+		    end;
+		_ -> false
 	    end
     end.
 

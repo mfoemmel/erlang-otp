@@ -36,12 +36,15 @@
 
 -module(megaco_codec_meas).
 
+%% -compile(export_all).
+
 
 %% API
 -export([t/0, t1/0, t/1]).
+-export([e/0]).
 
 %% Internal exports
--export([do_measure_codec/6, do_measure_codec_loop/6]).
+-export([do_measure_codec/7, do_measure_codec_loop/7]).
 -export([flex_scanner_handler/1]).
 
 
@@ -62,7 +65,6 @@
 -define(MEASURE_CODECS, [pretty, compact, per, ber, erlang]).
 -endif.
 
-
 -record(stat, {file, ecount, etime, dcount, dtime, size}).
 
 
@@ -75,6 +77,8 @@ t1() ->
 t() ->
     t(?MEASURE_CODECS).
 
+e() ->
+    t([erlang]).
 
 %% Dirs is a list of directories containing files,
 %% each with a single megaco message. 
@@ -120,11 +124,28 @@ display_system_info() ->
     
     
 display_app_info() ->
+    display_megaco_info(),
+    display_asn1_info().
+
+display_megaco_info() ->
     MI = megaco:module_info(),
     {value, {attributes, Attr}} = lists:keysearch(attributes, 1, MI),
-    {value, {app_vsn,    Ver}}   = lists:keysearch(app_vsn, 1, Attr),
+    {value, {app_vsn,    Ver}}  = lists:keysearch(app_vsn, 1, Attr),
     io:format("Megaco version:      ~s~n", [Ver]).
-    
+
+display_asn1_info() ->
+    AI = megaco_ber_bin_drv_media_gateway_control_v1:info(),
+    Vsn = 
+	case lists:keysearch(vsn, 1, AI) of
+	    {value, {vsn, V}} when atom(V) ->
+		atom_to_list(V);
+	    {value, {vsn, V}} when list(V) ->
+		V;
+	    _ ->
+		"unknown"
+	end,
+    io:format("ASN.1 version:       ~s~n", [Vsn]).
+
 
     
 t1([], Results) ->
@@ -143,7 +164,7 @@ t1([{Dir, Codec, Conf, _} = EDir|Dirs], Results) ->
 
 
 measure({Dir, Codec, Conf, Count}) when list(Dir) ->
-    io:format("measure using codec ~p ~p~n  ", [Codec, Conf]),
+    io:format("measure using codec ~p ~p~n ", [Codec, Conf]),
     {Init, Conf1} = measure_init(Conf),
     Res = measure(Dir, Codec, Conf1, read_files(Dir), [], Count),
     measure_fin(Init),
@@ -162,19 +183,28 @@ expand_dirs([Dir|Dirs], EDirs) when list(Dir) ->
 expand_dir(Dir) ->
     case Dir of
 	"pretty" ->
-	    [{Dir, megaco_pretty_text_encoder, [flex_scanner], 5000},
-	     {Dir, megaco_pretty_text_encoder, [], 1000}];
+	    [{Dir, megaco_pretty_text_encoder, [flex_scanner], 3000},
+	     {Dir, megaco_pretty_text_encoder, [],             1000}];
 	"compact" ->
-	    [{Dir, megaco_compact_text_encoder, [flex_scanner], 5000},
-	     {Dir, megaco_compact_text_encoder, [], 1500}];
+	    [{Dir, megaco_compact_text_encoder, [flex_scanner], 3000},
+	     {Dir, megaco_compact_text_encoder, [],             1500}];
 	"ber" ->
-	    [{Dir, megaco_ber_bin_encoder, [], 800},
-	     {Dir, megaco_ber_bin_encoder, [native], 500}];
+	    [{Dir, megaco_ber_bin_encoder, [driver,native], 4000},
+	     {Dir, megaco_ber_bin_encoder, [native],        3000},
+	     {Dir, megaco_ber_bin_encoder, [driver],        3000},
+	     {Dir, megaco_ber_bin_encoder, [],              1000}];
 	"per" ->
-	    [{Dir, megaco_per_bin_encoder, [], 800},
-	     {Dir, megaco_per_bin_encoder, [native], 500}];
+	    [{Dir, megaco_per_bin_encoder, [driver,native], 4000},
+	     {Dir, megaco_per_bin_encoder, [native],        3000},
+	     {Dir, megaco_per_bin_encoder, [driver],        3000},
+	     {Dir, megaco_per_bin_encoder, [],              1000}];
 	"erlang" ->
-	    [{Dir, megaco_erl_dist_encoder, [], 10000}];
+	    [
+	     {Dir, megaco_erl_dist_encoder, [megaco_compressed,compressed], 500},
+	     {Dir, megaco_erl_dist_encoder, [compressed], 500},
+	     {Dir, megaco_erl_dist_encoder, [megaco_compressed], 10000},
+ 	     {Dir, megaco_erl_dist_encoder, [], 10000}
+	    ];
 	Else ->
 	    exit({error, {invalid_codec, Else}})
     end.
@@ -216,7 +246,7 @@ measure(_Dir, _Codec, _Conf, [], Res, _MCount) ->
     {ok, lists:reverse(Res)};
 
 measure(Dir, Codec, Conf, [File|Files], Results, MCount) ->
-    io:format("~s ", [File]),
+    io:format(" ~s", [File]),
     case (catch do_measure(Dir, Codec, Conf, File, MCount)) of
 	{ok, Stat} ->
 	    measure(Dir, Codec, Conf, Files, [Stat | Results], MCount);
@@ -246,14 +276,16 @@ measure(Dir, Codec, Conf, [File|Files], Results, MCount) ->
 
 do_measure(Dir, Codec, Conf, File, MCount) ->
     BinMsg             = read_message(Dir, File),
-    {Msg, Dcnt, Dtime} = measure_decode(Codec, Conf, BinMsg, MCount),
-    {_,   Ecnt, Etime} = measure_encode(Codec, Conf, Msg, MCount),
+    {Version, NewBin}  = detect_version(Codec, Conf, BinMsg),
+    {Msg, Dcnt, Dtime} = measure_decode(Codec, Conf, Version, NewBin, MCount),
+    {_,   Ecnt, Etime} = measure_encode(Codec, Conf, Version, Msg, MCount),
 
     {ok, #stat{file = File, 
+% 	       ecount = 1, etime = 1, 
+% 	       dcount = 1, dtime = 1, 
 	       ecount = Ecnt, etime = Etime, 
 	       dcount = Dcnt, dtime = Dtime, 
-	       size = size(BinMsg)}}.
-
+	       size = size(NewBin)}}.
 
 read_message(Dir, FileName) ->
     File = filename:join([Dir, FileName]),
@@ -287,8 +319,22 @@ read_message(Dir, FileName) ->
     end.
 
 
-measure_decode(Codec, Conf, Bin, MCount) ->
-    case measure_codec(Codec, decode_message, Conf, Bin, MCount) of
+detect_version(Codec, Conf, Bin) ->
+    case (catch Codec:version_of(Conf, Bin)) of
+	{ok, V} ->
+	    io:format("[~w]", [V]),
+	    {ok, M} = Codec:decode_message(Conf, V, Bin),
+	    {ok, NewBin} = Codec:encode_message(Conf, V, M),
+	    io:format("[~w]", [size(NewBin)]),
+	    {V, NewBin};
+	Error ->
+	    io:format("~nversion detection failed:~n~p", [Error]),
+	    Error
+    end.
+	    
+
+measure_decode(Codec, Conf, Version, Bin, MCount) ->
+    case measure_codec(Codec, decode_message, Conf, Version, Bin, MCount) of
 	{ok, Res} ->
 	    Res;
 	{error, Reason} ->
@@ -296,9 +342,8 @@ measure_decode(Codec, Conf, Bin, MCount) ->
 	    throw({error, S})
     end.
 
-
-measure_encode(Codec, Conf, Bin, MCount) ->
-    case measure_codec(Codec, encode_message, Conf, Bin, MCount) of
+measure_encode(Codec, Conf, Version, Bin, MCount) ->
+    case measure_codec(Codec, encode_message, Conf, Version, Bin, MCount) of
 	{ok, Res} ->
 	    Res;
 	{error, Reason} ->
@@ -307,9 +352,9 @@ measure_encode(Codec, Conf, Bin, MCount) ->
     end.
 
 
-measure_codec(Codec, Func, Conf, Bin, MCount) ->
+measure_codec(Codec, Func, Conf, Version, Bin, MCount) ->
     Pid = spawn_link(?MODULE, do_measure_codec, 
-                     [self(), Codec, Func, Conf, Bin, MCount]),
+                     [self(), Codec, Func, Conf, Version, Bin, MCount]),
     receive
 	{measure_result, Pid, Func, Res} ->
 	    {ok, Res};
@@ -322,15 +367,15 @@ measure_codec(Codec, Func, Conf, Bin, MCount) ->
     end.
 
 
-do_measure_codec(Parent, Codec, Func, Conf, Bin, MCount) ->
-    {ok, Count} = measure_warmup(Codec, Func, Conf, Bin, MCount),
+do_measure_codec(Parent, Codec, Func, Conf, Version, Bin, MCount) ->
+    {ok, Count} = measure_warmup(Codec, Func, Conf, Version, Bin, MCount),
     Res = timer:tc(?MODULE, do_measure_codec_loop, 
-		   [Codec, Func, Conf, Bin, Count, dummy]),
+		   [Codec, Func, Conf, Version, Bin, Count, dummy]),
     case Res of
 	{Time, {ok, M}} ->
 	    %% io:format("~w ", [Time]),
 	    Parent ! {measure_result, self(), Func, {M, Count, Time}};
-	{Time, Error} ->
+	{_Time, Error} ->
 	    Parent ! {error, self(), Error}
     end,
     unlink(Parent). % Make sure Parent don't get our exit signal
@@ -341,9 +386,9 @@ do_measure_codec(Parent, Codec, Func, Conf, Bin, MCount) ->
 %% 1) Warmup to ensure that all used code are loaded
 %% 2) To aproximate the encoding time, to ensure that 
 %%    the real encode is done with enough iterations.
-measure_warmup(Codec, Func, Conf, M, MCount) ->
+measure_warmup(Codec, Func, Conf, Version, M, MCount) ->
     Res = timer:tc(?MODULE, do_measure_codec_loop, 
-		   [Codec, Func, Conf, M, MCount, dummy]),
+		   [Codec, Func, Conf, Version, M, MCount, dummy]),
     case Res of
 	{Time, {ok, _}} ->
 	    %% OK so far, now calculate the count:
@@ -355,11 +400,11 @@ measure_warmup(Codec, Func, Conf, M, MCount) ->
     end.
 
 
-do_measure_codec_loop(_Codec, _Func, _Conf, _Bin, 0, M) ->
+do_measure_codec_loop(_Codec, _Func, _Conf, _Version, _Bin, 0, M) ->
     {ok, M};
-do_measure_codec_loop(Codec, Func, Conf, Bin, Count, _) ->
-    {ok, M} = apply(Codec, Func, [Conf, Bin]),
-    do_measure_codec_loop(Codec, Func, Conf, Bin, Count - 1, M).
+do_measure_codec_loop(Codec, Func, Conf, Version, Bin, Count, _) ->
+    {ok, M} = apply(Codec, Func, [Conf, Version, Bin]),
+    do_measure_codec_loop(Codec, Func, Conf, Version, Bin, Count - 1, M).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -443,7 +488,7 @@ avg(Vals) ->
     round(lists:sum(Vals)/length(Vals)).
 
 
-store_excel_tab(Fd, []) ->
+store_excel_tab(_Fd, []) ->
     ok; % Just in case there was something wrong with the test
 store_excel_tab(Fd, Res) ->
     %% For all elements of this list, the Values is of the same length...
@@ -453,14 +498,18 @@ store_excel_tab(Fd, Res) ->
 
 store_excel_tab1(Fd, []) ->
     io:format(Fd, "~n", []);
-store_excel_tab1(Fd, [{Dir, [], Avg, Values}|T]) ->
-    io:format(Fd, "~s (~w)", [filename:basename(Dir), Avg]),
-    store_excel_tab_row(Fd, Values),
-    store_excel_tab1(Fd, T);
-store_excel_tab1(Fd, [{Dir, [Conf], Avg, Values}|T]) when atom(Conf) ->
-    io:format(Fd, "~s_~w (~w)", [filename:basename(Dir), Conf, Avg]),
+store_excel_tab1(Fd, [{Dir, Conf, Avg, Values}|T]) when list(Conf) ->
+    io:format(Fd, "~s~s (~w)", 
+	      [filename:basename(Dir), config_to_string(Conf), Avg]),
     store_excel_tab_row(Fd, Values),
     store_excel_tab1(Fd, T).
+
+config_to_string([]) ->
+    "";
+config_to_string([C]) when atom(C) ->
+    io_lib:format("_~w", [C]);
+config_to_string([C|Cs]) when atom(C) ->
+    lists:flatten(io_lib:format("_~w", [C]) ++ config_to_string(Cs)).
 
 store_excel_tab_header(Fd, 0, _) ->
     io:format(Fd, "~n", []);

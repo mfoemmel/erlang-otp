@@ -129,9 +129,13 @@ server_loop(Iport, Oport, Curr, User, Gr) ->
 	{'EXIT',Pid,R} ->			% shell and group leader exit
 	    case gr_cur_pid(Gr) of
 		Pid when R /= die ,
-			 R /= terminated ->	% current shell, abnormal exit
-		    io_requests([{put_chars,"*** ERROR: Shell process terminated! "}],
-				Iport, Oport),	    
+			 R /= terminated  ->	% current shell exited
+		    if R /= normal ->
+			    io_requests([{put_chars,"*** ERROR: "}], Iport, Oport);
+		       true -> % exit not caused by error
+			    io_requests([{put_chars,"*** "}], Iport, Oport)
+		    end,
+		    io_requests([{put_chars,"Shell process terminated! "}], Iport, Oport),
 		    Gr1 = gr_del_pid(Gr, Pid),		    
 		    case gr_get_info(Gr, Pid) of
 			{Ix,{shell,start,[]}} -> % local shell
@@ -155,23 +159,49 @@ server_loop(Iport, Oport, Curr, User, Gr) ->
     end.
 
 %% port_bytes(Bytes, InPort, OutPort, CurrentProcess, UserProcess, Group)
-%%  Check the Bytes from the port to see if it contains a ^G which
-%%  break to switch_loop else send the bytes to Curr.
+%%  Check the Bytes from the port to see if it contains a ^G. If so,
+%%  either escape to switch_loop or restart the shell. Otherwise send 
+%%  the bytes to Curr.
 
 port_bytes([$\^G|_Bs], Iport, Oport, _Curr, User, Gr) ->
-    io_request({put_chars,"\nUser switch command\n"}, Iport, Oport),
-    server_loop(Iport, Oport, User, switch_loop(Iport, Oport, Gr));
+    handle_escape(Iport, Oport, User, Gr);
+
 port_bytes([B], Iport, Oport, Curr, User, Gr) ->
     Curr ! {self(),{data,[B]}},
     server_loop(Iport, Oport, Curr, User, Gr);
 port_bytes(Bs, Iport, Oport, Curr, User, Gr) ->
     case member($\^G, Bs) of
 	true ->
-	    io_request({put_chars,"\nUser switch command\n"}, Iport, Oport),
-	    server_loop(Iport, Oport, User, switch_loop(Iport, Oport, Gr));
+	    handle_escape(Iport, Oport, User, Gr);
 	false ->
 	    Curr ! {self(),{data,Bs}},
 	    server_loop(Iport, Oport, Curr, User, Gr)
+    end.
+
+handle_escape(Iport, Oport, User, Gr) ->
+    case application:get_env(stdlib, shell_esc) of
+	{ok,abort} ->
+	    Pid = gr_cur_pid(Gr),
+	    exit(Pid, die),
+	    Gr1 =
+		case gr_get_info(Gr, Pid) of
+		    {_Ix,{}} ->			% no shell
+			Gr;
+		    _ ->
+			receive {'EXIT',Pid,_} ->
+				gr_del_pid(Gr, Pid)
+			after 1000 ->
+				Gr
+			end
+		end,
+	    Pid1 = group:start(self(), {shell,start,[]}),
+	    io_request({put_chars,"\n"}, Iport, Oport),
+	    server_loop(Iport, Oport, User, 
+			gr_add_cur(Gr1, Pid1, {shell,start,[]}));
+
+	_ ->					% {ok,jcl} | undefined
+	    io_request({put_chars,"\nUser switch command\n"}, Iport, Oport),
+	    server_loop(Iport, Oport, User, switch_loop(Iport, Oport, Gr))
     end.
 
 switch_loop(Iport, Oport, Gr) ->
@@ -252,8 +282,14 @@ switch_cmd({ok,[{atom,_,r},{atom,_,Node}],_}, Iport, Oport, Gr0) ->
     Pid = group:start(self(), {Node,shell,start,[]}),
     Gr = gr_add_cur(Gr0, Pid, {Node,shell,start,[]}),
     switch_loop(Iport, Oport, Gr);
-switch_cmd({ok,[{atom,_,q}],_}, _Iport, _Oport, _Gr) ->
-    halt();
+switch_cmd({ok,[{atom,_,q}],_}, Iport, Oport, Gr) ->
+    case erlang:system_info(break_ignored) of
+	true ->					% noop
+	    io_request({put_chars,"Unknown command\n"}, Iport, Oport),
+	    switch_loop(Iport, Oport, Gr);
+	false ->
+	    halt()
+    end;
 switch_cmd({ok,[{atom,_,h}],_}, Iport, Oport, Gr) ->
     list_commands(Iport, Oport),
     switch_loop(Iport, Oport, Gr);
@@ -274,14 +310,20 @@ unknown_group(Iport, Oport, Gr) ->
     switch_loop(Iport, Oport, Gr).
 
 list_commands(Iport, Oport) ->
+    QuitReq = case erlang:system_info(break_ignored) of
+		  true -> 
+		      [];
+		  false ->
+		      [{put_chars,"  q        - quit erlang\n"}]
+	      end,
     io_requests([{put_chars,"  c [nn]   - connect to job\n"},
 		 {put_chars,"  i [nn]   - interrupt job\n"},
 		 {put_chars,"  k [nn]   - kill job\n"},
 		 {put_chars,"  j        - list all jobs\n"},
 		 {put_chars,"  s        - start local shell\n"},
-		 {put_chars,"  r [node] - start remote shell\n"},
-		 {put_chars,"  q        - quit erlang\n"},
-		 {put_chars,"  ? | h    - this message\n"}], Iport, Oport).
+		 {put_chars,"  r [node] - start remote shell\n"}] ++
+		 QuitReq ++
+		 [{put_chars,"  ? | h    - this message\n"}], Iport, Oport).
 
 get_line({done,Line,_Rest,Rs}, Iport, Oport) ->
     io_requests(Rs, Iport, Oport),

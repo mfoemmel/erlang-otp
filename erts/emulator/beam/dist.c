@@ -485,6 +485,7 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
     int type;
     Eterm token;
     Eterm token_size;
+    int orig_len = len;
 
     /* Thanks to Luke Gorrie */
     off_heap.mso = NULL;
@@ -874,6 +875,27 @@ int net_mess2(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
     return 0;
 
  data_error:
+    {
+	char *initial = "Got invalid data on distribution channel, "
+	    "offending packet is: <<";
+	char *trailer =">>";
+	int inilen = strlen(initial)+strlen(trailer);
+	int toprint = orig_len;
+
+	cerr_pos = 0;
+	if (toprint*4 >= (TMP_BUF_SIZE - inilen))
+	    toprint = (TMP_BUF_SIZE - 1 - inilen) / 4;
+	erl_printf(CBUF,"%s",initial);
+	for(i = 0; i < toprint; ++i) {
+	    if(i < toprint - 1) {
+		erl_printf(CBUF,"%d,",(int)buf[i]);
+	    } else {
+		erl_printf(CBUF,"%d",(int)buf[i]);
+	    }
+	}
+	erl_printf(CBUF,trailer);
+	erts_send_warning_to_logger(NIL,tmp_buf,cerr_pos);
+    }
     if (off_heap.mso) {
 	erts_cleanup_mso(off_heap.mso);
     }

@@ -42,23 +42,22 @@
 	 existence_check/2,
 	 existence_check/3,
 	 create_repository/0,
-	 init_DB/2
+	 init_DB/2, init_DB/3
 	]).
 
 -include_lib("orber/include/corba.hrl").
 -include("orber_ifr.hrl").
 -include("ifr_objects.hrl").
 
--define(DEBUG_LEVEL, 5).
 
-%%%======================================================================
-%%% Internal stuff
+%%======================================================================
+%% Internal stuff
 
-%%%----------------------------------------------------------------------
-%%% Make a record selection.
-%%%
-%%% This code *must* be amended whenever a new record is added in the
-%%% files ifr_objects.hrl or ../include/ifr_types.hrl
+%%----------------------------------------------------------------------
+%% Make a record selection.
+%%
+%% This code *must* be amended whenever a new record is added in the
+%% files ifr_objects.hrl or ../include/ifr_types.hrl
 
 select(Record,Field) when record(Record,ir_IRObject) ->
     select(Record,record_info(fields,ir_IRObject),Field);
@@ -106,7 +105,9 @@ select(Record,Field) when record(Record,ir_FixedDef) ->
     select(Record,record_info(fields,ir_FixedDef),Field);
 select([],_) -> [];
 select(Record,Field) ->
-    ?ifr_exception("Unknow record type:", Record).
+    orber:dbg("[~p] orber_ifr_utils:select(~p, ~p);~n"
+	      "Unknown Record Type~n", [?LINE, Record,Field], ?DEBUG_LEVEL),
+    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO}).
 
 -define(ELEMENT_OFFSET, 2).
 
@@ -117,12 +118,14 @@ select(Record,Fields,Field) ->
 index(List,Element) ->
     index(List,Element,0).
 
-index([H|T],Element,Index) when H == Element ->
+index([H|_T],Element,Index) when H == Element ->
     Index;
-index([H|T],Element,Index) ->
+index([_H|T],Element,Index) ->
     index(T,Element,Index+1);
 index([],Element,Index) ->
-    ?ifr_exception("index error",{Element,Index}).
+    orber:dbg("[~p] orber_ifr_utils:index(~p, ~p);~n"
+	      "Index error.~n", [?LINE, Element, Index], ?DEBUG_LEVEL),
+    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO}).
 
 %%%----------------------------------------------------------------------
 %%% Construct a record.
@@ -175,7 +178,10 @@ construct(Record,Field,Value) when record(Record,ir_InterfaceDef) ->
 construct(Record,Field,Value) when record(Record,ir_FixedDef) ->
     construct(Record,record_info(fields,ir_FixedDef),Field,Value);
 construct(Record,Field,Value) ->
-    ?ifr_exception("Unknow record type:", Record).
+    orber:dbg("[~p] orber_ifr_utils:construct(~p, ~p, ~p);~n"
+	      "Unknown Record Type~n", 
+	      [?LINE, Record,Field,Value], ?DEBUG_LEVEL),
+    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO}).
 
 construct(Record,Fields,Field,Value) ->
     Index = index(Fields,Field),
@@ -192,7 +198,9 @@ get_object(Objref) ->
 	[] ->
 	    [];
 	Other ->
-	    ?ifr_exception("reading from DB failed:", Other)
+	    orber:dbg("[~p] orber_ifr_utils:get_object(~p);~n", 
+		      [?LINE, Other], ?DEBUG_LEVEL),
+	    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO})
     end.
 %%% This is the old code, with a transaction. We might have to revert back
 %%% to this at some future time...
@@ -203,7 +211,7 @@ get_object(Objref) ->
 %%% Write an object to the database
 
 set_object(Object) ->
-    _F = ?write_function(Object),
+    _F = fun() -> mnesia:write(Object) end,
     write_result(ifr_transaction_write(_F)).
 
 %%%----------------------------------------------------------------------
@@ -223,28 +231,25 @@ set_field(Objref,FieldName,Value) ->
 	 end,
     write_result(ifr_transaction_write(_F)).
 
-%%%----------------------------------------------------------------------
-%%% Write a list of records to the database
-
-%mnesia_write_list([]) -> true;
-%mnesia_write_list([Obj | Obj_tail]) ->
-%    mnesia:write(Obj),
-%    mnesia_write_list(Obj_tail).    
 
 %%%----------------------------------------------------------------------
 %%% Check a write transaction
 
-write_result(?write_check(Wres)) -> ok;
+write_result({atomic,ok}) -> ok;
 write_result(Wres) ->
-    ?ifr_exception("writing to DB failed:", Wres).
+    orber:dbg("[~p] orber_ifr_utils:write_result(~p);~n", 
+	      [?LINE, Wres], ?DEBUG_LEVEL),
+    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO}).
 
 %%%----------------------------------------------------------------------
 %%% Extract the data from a read
 
-read_result(?read_check_1(Qres)) when length([Qres]) == 1 -> Qres;
-read_result(?read_check_2(Qres)) -> [];
+read_result({atomic,[Qres]}) -> Qres;
+read_result({atomic,[]}) -> [];
 read_result(Qres) ->
-    ?ifr_exception("reading from DB failed:", Qres).
+    orber:dbg("[~p] orber_ifr_utils:read_result(~p);~n", 
+	      [?LINE, Qres], ?DEBUG_LEVEL),
+    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO}).
 
 %%%----------------------------------------------------------------------
 %%% Execute a transaction or a dirty read/write.
@@ -258,17 +263,14 @@ read_result(Qres) ->
 
 ifr_transaction_read(Fun) ->			% read synchronously
     Tr = mnesia:transaction(Fun),
-    ?debug_print("Transaction_read: ", Tr),
     {atomic, _} = Tr,
     Tr.
 ifr_transaction_write(Fun) ->			% write synchronously
     Tr = mnesia:transaction(Fun),
-    ?debug_print("Transaction_write: ", Tr),
     {atomic, _} = Tr,
     Tr.
 ifr_transaction_read_write(Fun) ->		% write synchronously
     Tr = mnesia:transaction(Fun),
-    ?debug_print("Transaction_read_write: ", Tr),
     {atomic, _} = Tr,
     Tr.
 
@@ -289,8 +291,7 @@ makeref(Obj) ->
 %%% The code has been moved to a macro defined in orber_ifr.hrl, so we
 %%% can use a simpler uniqification code when debugging.
 
-%%unique() -> term_to_binary({node(), now()}).
-unique() -> ?unique_code.
+unique() -> term_to_binary({node(), now()}).
 
 %%%----------------------------------------------------------------------
 %%% Check for an existing object with the Id of the object which is
@@ -307,36 +308,54 @@ existence_check({ObjType, ObjID}, Id) ->
     case orber_ifr_repository:lookup_id(Rep, Id) of
 	[] ->
 	    ok;
-	_ ->
-	    ?ifr_exception("Name clash: ", Id)
+	What ->
+	    orber:dbg("[~p] orber_ifr_utils:existence_check(~p, ~p, ~p);~n"
+		      "Name clash(?): ~p", 
+		      [?LINE, ObjType, ObjID, Id, What], ?DEBUG_LEVEL),
+	    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO})
     end.
 
 existence_check(Id, Tab, FieldNum) ->
     case mnesia:dirty_index_read(Tab, Id, FieldNum) of
 	[] ->
 	    ok;
-	_ ->
-	    ?ifr_exception("Name clash: ", Id)
+	What ->
+	    orber:dbg("[~p] orber_ifr_utils:existence_check(~p, ~p, ~p);~n"
+		      "Name clash(?): ~p", 
+		      [?LINE, Id, Tab, FieldNum, What], ?DEBUG_LEVEL),
+	    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO})
     end.
 
 %%======================================================================
 %% Database initialization
 
 init_DB(Timeout, Options) ->
+    init_DB(Timeout, Options, false).
+
+init_DB(Timeout, Options, LightIFR) ->
     Func = case Options of
+	       {localCopy, IFR_storage_type} when LightIFR == true ->
+		   ?ifr_light_record_tuple_list_local(IFR_storage_type);
 	       {localCopy, IFR_storage_type} ->
 		   ?ifr_record_tuple_list_local(IFR_storage_type);
+	       _ when LightIFR == true ->
+		   ?ifr_light_record_tuple_list(Options);
 	       _ ->
 		   ?ifr_record_tuple_list(Options)
     end,
     create_tables(Func), 
-    Wait = mnesia:wait_for_tables(?ifr_object_list, Timeout),
+    Wait = wait_for_tables(LightIFR, Timeout),
     db_error_check([Wait],"Database table waiting failed.").
 
-db_error_check(Checkval,Message) ->
+wait_for_tables(true, Timeout) ->
+    mnesia:wait_for_tables(?ifr_light_object_list, Timeout);
+wait_for_tables(_, Timeout) ->
+    mnesia:wait_for_tables(?ifr_object_list, Timeout).
+
+db_error_check(Checkval,_Message) ->
     case lists:any(fun(X) -> X/= ok end, Checkval) of
 	true ->
-	    ?ifr_exception(Message, Checkval);
+	    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO});
 	false ->
 	    ok
     end.   
@@ -348,9 +367,9 @@ create_tables([{T,F}|Rest]) ->
 	{aborted,{already_exists,_}} ->
 	    exit({error, "Orber Mnesia Table(s) already exist. Cannot install Orber."});
 	Reason ->
-	    orber:dbg("[~p] orber_ifr_utils:create_tables(~p); 
-Failed to create the Mnesia table.
-Reason: ~p", [?LINE, T, Reason], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_ifr_utils:create_tables(~p);~n"
+		      "Failed to create the Mnesia table.~n"
+		      "Reason: ~p", [?LINE, T, Reason], ?DEBUG_LEVEL),
 	    exit({error, "Unable to create Mnesia Table"})
     end.
 
@@ -361,9 +380,9 @@ create_tables2([{T,F}|Rest]) ->
 	ok ->
 	    create_tables2(Rest);
 	Reason ->
-	    orber:dbg("[~p] orber_ifr_utils:create_tables2(~p); 
-Failed to create the Mnesia table.
-Reason: ~p", [?LINE, T, Reason], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_ifr_utils:create_tables2(~p);~n"
+		      "Failed to create the Mnesia table.~n"
+		      "Reason: ~p", [?LINE, T, Reason], ?DEBUG_LEVEL),
 	    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO})
     end.
 
@@ -373,25 +392,31 @@ Reason: ~p", [?LINE, T, Reason], ?DEBUG_LEVEL),
 %%% once, after the database has been set up and initialized.
 
 create_repository() ->
-    _R = fun() ->
-		 Pat = mnesia:table_info(ir_Repository, wild_pattern),
-		 [X#ir_Repository.ir_Internal_ID ||
-		     X <- mnesia:match_object(Pat)]
-	 end,
-    case ifr_transaction_read(_R) of
-	?read_check_2(_) ->
-	    PrimitiveDefs = create_primitivedefs(),
-	    New_repository = #ir_Repository{ir_Internal_ID = unique(),
-					    def_kind = dk_Repository,
-					    contents = [],
-					    primitivedefs = PrimitiveDefs},
-	    F = ?write_function(New_repository),
-	    ifr_transaction_write(F),
-	    {ir_Repository,New_repository#ir_Repository.ir_Internal_ID};
-	?read_check_1(Rep_ID) ->
-	    {ir_Repository,Rep_ID};
-	Err ->
-	    ?ifr_exception("Cannot create Interface Repository:",Err)
+    case orber:light_ifr() of
+	true ->
+	    #orber_light_ifr_ref{data = #lightdata{scope = "",
+						   id = ""}}; 
+	false ->
+	    _R = fun() ->
+			 Pat = mnesia:table_info(ir_Repository, wild_pattern),
+			 [X#ir_Repository.ir_Internal_ID ||
+			     X <- mnesia:match_object(Pat)]
+		 end,
+	    case ifr_transaction_read(_R) of
+		{atomic,[]} ->
+		    PrimitiveDefs = create_primitivedefs(),
+		    New_repository = #ir_Repository{ir_Internal_ID = unique(),
+						    def_kind = dk_Repository,
+						    contents = [],
+						    primitivedefs = PrimitiveDefs},
+		    F = fun() -> mnesia:write(New_repository) end, 
+		    ifr_transaction_write(F),
+		    {ir_Repository,New_repository#ir_Repository.ir_Internal_ID};
+		{atomic,[Rep_ID]} ->
+		    {ir_Repository,Rep_ID};
+		_Err ->
+		    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO})
+	    end
     end.
 
 create_primitivedefs() ->

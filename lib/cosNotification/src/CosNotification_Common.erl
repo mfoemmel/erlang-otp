@@ -151,7 +151,7 @@ create_id(OldID) ->
     OldID+1.
 
 create_id() ->
-    {A,B,C}=now(),
+    {_A,_B,C}=now(),
     C.
  
 %%-----------------------------------------------------------%
@@ -166,8 +166,9 @@ type_check(Obj, Mod) ->
         true ->
             ok;
         _ ->
-	    orber:debug_level_print("[~p] CosNotification_Common:type_check(~p); 
-The supplied Object is not or does not inherrit from: ~p", [?LINE, Obj, Mod], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosNotification_Common:type_check(~p);~n"
+		      "The supplied Object is not or does not inherrit from: ~p", 
+		      [?LINE, Obj, Mod], ?DEBUG_LEVEL),
             corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end.
 
@@ -188,9 +189,9 @@ send_stubborn(M, F, A, MaxR, Wait) when list(A) ->
     send_stubborn(M, F, A, MaxR, Wait, 0);
 send_stubborn(M, F, A, MaxR, Wait) ->
     send_stubborn(M, F, [A], MaxR, Wait, 0).
-send_stubborn(M, F, A, MaxR, Wait, MaxR) ->
-    orber:debug_level_print("[~p] CosNotification_Common:send_stubborn( ~p ~p ~p ~p).
-Failed to deliver the event.~n", [?LINE, M,F,A,MaxR], ?DEBUG_LEVEL),
+send_stubborn(M, F, A, MaxR, _Wait, MaxR) ->
+    orber:dbg("[~p] CosNotification_Common:send_stubborn( ~p ~p ~p ~p).~n"
+	      "Failed to deliver the event.~n", [?LINE, M,F,A,MaxR], ?DEBUG_LEVEL),
     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO});
 send_stubborn(M, F, A, MaxR, Wait, Times) ->
     ?debug_print("~p:~p(~p)  # of retries: ~p~n", [M,F,A, Times]),    
@@ -336,7 +337,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 %%            {unsupported,#'CosNotification_PropertyError'{}} otherwise.
 %% Effect   : 
 %%------------------------------------------------------------
-'EventReliability'(Req,channel,Curr, Parent, Childs, LQS) ->
+'EventReliability'(Req,channel, _Curr, _Parent, _Childs, LQS) ->
     case {any:get_value(Req#'CosNotification_Property'.value),
 	  ?not_GetConnectionReliability(LQS), ?not_BestEffort, ?not_Persistent} of
 	{Val, Val, _, _} ->
@@ -407,7 +408,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 %% childrens. The cases (2) and (5) is always ok, i.e., no need to confirm
 %% with parent or children.
 %%------------------------------------------------------------
-'ConnectionReliability'(Req, channel, Curr, Parent, Childs, LQS) ->
+'ConnectionReliability'(Req, channel, _Curr, _Parent, Childs, LQS) ->
     case {any:get_value(Req#'CosNotification_Property'.value),
 	  ?not_GetConnectionReliability(LQS), ?not_BestEffort, ?not_Persistent} of
 	{Val, Val, _, _} ->
@@ -431,7 +432,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	      }
 	    }
     end;
-'ConnectionReliability'(Req, admin, Curr, Parent, Childs, LQS) ->
+'ConnectionReliability'(Req, admin, _Curr, Parent, Childs, LQS) ->
     case {any:get_value(Req#'CosNotification_Property'.value),
 	  ?not_GetConnectionReliability(LQS), ?not_BestEffort, ?not_Persistent} of
 	{Val, Val, _, _} ->
@@ -455,7 +456,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 	      }
 	    }
     end;
-'ConnectionReliability'(Req, proxy, Curr, Parent, Childs, LQS) ->
+'ConnectionReliability'(Req, proxy, _Curr, Parent, _Childs, LQS) ->
     case {any:get_value(Req#'CosNotification_Property'.value),
 	  ?not_GetConnectionReliability(LQS), ?not_BestEffort, ?not_Persistent} of
 	{Val, Val, _, _} ->
@@ -491,7 +492,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 %% Returns  : 
 %% Effect   : 
 %%------------------------------------------------------------
-'Priority'(Req, Type, Curr, Parent, Childs, LQS) ->
+'Priority'(Req, _Type, _Curr, _Parent, _Childs, LQS) ->
     case {any:get_value(Req#'CosNotification_Property'.value),
 	  ?not_GetPriority(LQS), ?not_HighestPriority, ?not_LowestPriority} of
 	{Val, Val, _, _} ->
@@ -523,7 +524,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 %% Returns  : 
 %% Effect   : 
 %%------------------------------------------------------------
-'StartTimeSupported'(Req, Type, Curr, _, _, LQS) ->
+'StartTimeSupported'(Req, _Type, _Curr, _, _, LQS) ->
     case {any:get_value(Req#'CosNotification_Property'.value),
 	  ?not_GetStartTimeSupported(LQS)} of
 	{Val, Val} ->
@@ -555,7 +556,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 %% Returns  : 
 %% Effect   : 
 %%------------------------------------------------------------
-'StopTimeSupported'(Req, Type, Curr, _, _, LQS) ->
+'StopTimeSupported'(Req, _Type, _Curr, _, _, LQS) ->
     case {any:get_value(Req#'CosNotification_Property'.value),
 	  ?not_GetStopTimeSupported(LQS)} of
 	{Val, Val} ->
@@ -587,7 +588,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 %% Returns  : 
 %% Effect   : 
 %%------------------------------------------------------------
-'Timeout'(Req, Type, Curr, Parent, Childs, LQS) ->
+'Timeout'(Req, _Type, _Curr, _Parent, _Childs, LQS) ->
     case {any:get_value(Req#'CosNotification_Property'.value),
 	  ?not_GetTimeout(LQS)} of
 	{Val, Val} ->
@@ -630,7 +631,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 %% Returns  : 
 %% Effect   : 
 %%------------------------------------------------------------
-'OrderPolicy'(Req, Type, Curr, Parent, Childs, LQS) ->
+'OrderPolicy'(Req, _Type, _Curr, _Parent, _Childs, LQS) ->
     case {any:get_value(Req#'CosNotification_Property'.value),
 	  ?not_GetOrderPolicy(LQS), 'CosNotification':'AnyOrder'(),
 	  'CosNotification':'PriorityOrder'()} of
@@ -675,7 +676,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 %% Returns  : 
 %% Effect   : 
 %%------------------------------------------------------------
-'DiscardPolicy'(Req, Type, Curr, Parent, Childs, LQS) ->
+'DiscardPolicy'(Req, _Type, _Curr, _Parent, _Childs, LQS) ->
     case {any:get_value(Req#'CosNotification_Property'.value),
 	  ?not_GetDiscardPolicy(LQS), ?not_AnyOrder, ?not_PriorityOrder} of
 	{Val, Val,_,_} ->
@@ -718,7 +719,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 %% Returns  : 
 %% Effect   : 
 %%------------------------------------------------------------
-'MaximumBatchSize'(Req, Type, Curr, Parent, Childs, LQS) ->
+'MaximumBatchSize'(Req, _Type, _Curr, _Parent, _Childs, LQS) ->
     case {any:get_value(Req#'CosNotification_Property'.value),
 	  ?not_GetMaximumBatchSize(LQS)} of
 	{Val, Val} ->
@@ -768,7 +769,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 %%            When writing this, the OMG homepage contained no information
 %%            regarding this.
 %%------------------------------------------------------------
-'PacingInterval'(Req, Type, Curr, Parent, Childs, LQS) ->
+'PacingInterval'(Req, _Type, _Curr, _Parent, _Childs, LQS) ->
     case {any:get_value(Req#'CosNotification_Property'.value),
 	  ?not_GetPacingInterval(LQS)} of
 	{Val, Val} ->
@@ -811,7 +812,7 @@ set_qos(Wanted, {Current, LQS}, channel, _, Childs) ->
 %% Returns  : 
 %% Effect   : 
 %%------------------------------------------------------------
-'MaxEventsPerConsumer'(Req, Type, Curr, Parent, Childs, LQS) ->
+'MaxEventsPerConsumer'(Req, _Type, _Curr, _Parent, _Childs, LQS) ->
     case {any:get_value(Req#'CosNotification_Property'.value),
 	  ?not_GetMaxEventsPerConsumer(LQS)} of
 	{Val, Val} ->
@@ -877,7 +878,7 @@ remove_qos([H|T], LQS, NPR) ->
 check_limits(LQS, NPR) ->
     case {?not_GetEventReliability(LQS), ?not_GetConnectionReliability(LQS), 
 	  ?not_Persistent, ?not_BestEffort} of
-	{P,P,P,B} ->
+	{P,P,P,_B} ->
 	    New = #'CosNotification_NamedPropertyRange'
 	      {name=?not_EventReliability,
 	       range=
@@ -887,7 +888,7 @@ check_limits(LQS, NPR) ->
 		}},
 	    NewNPR=change(NPR, ?not_EventReliability, New),
 	    remove(NewNPR, ?not_ConnectionReliability);
-	{_,B,P,B} ->
+	{_,B,_P,B} ->
 	    remove(NPR, ?not_EventReliability);
 	{B,P,P,B} ->
 	    New = #'CosNotification_NamedPropertyRange'
@@ -911,10 +912,10 @@ check_limits(LQS, NPR) ->
 validate_event_qos(Wanted, Curr) ->
     v_e_q_helper(Wanted, Curr, []),
     [].
-v_e_q_helper([], Curr, []) ->
+v_e_q_helper([], _Curr, []) ->
     %% Parsed all and foynd no conflicts.
     ok;
-v_e_q_helper([], Curr, Unsupp) ->
+v_e_q_helper([], _Curr, Unsupp) ->
     %% Not possible to use these requested QoS.
     corba:raise(#'CosNotification_UnsupportedQoS'{qos_err = Unsupp});
 
@@ -1016,8 +1017,9 @@ v_e_q_helper([#'CosNotification_Property'{name=Name}|T], Curr, Unsupp) ->
 			     }}|Unsupp]);
 v_e_q_helper(What, _, _) ->
     %% Not a Property struct.
-    orber:debug_level_print("[~p] CosNotification_Common:v_e_q_helper(~p);
-Not a CosNotification_Property struct.", [?LINE, What], ?DEBUG_LEVEL),
+    orber:dbg("[~p] CosNotification_Common:v_e_q_helper(~p);~n"
+	      "Not a CosNotification_Property struct.", 
+	      [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%-------------- QOS HELP FUNCTIONS --------------------------
@@ -1093,14 +1095,14 @@ is_supported([_|T], S) ->
 
 %% Find matching S-Property from a list of OMG style QoS
 extract([], _) -> unsupported;
-extract([H|T], S) when H#'CosNotification_Property'.name==
+extract([H|_T], S) when H#'CosNotification_Property'.name==
 		       S#'CosNotification_Property'.name -> 
     {ok, H};
 extract([_|T], S) -> extract(T,S).
 
 %% Find matching Property name from a list of OMG style QoS
 extract_value([], _) -> unsupported;
-extract_value([H|T], Key) when H#'CosNotification_Property'.name== Key ->
+extract_value([H|_T], Key) when H#'CosNotification_Property'.name== Key ->
     {ok, any:get_value(H#'CosNotification_Property'.value)};
 extract_value([_|T], Key) -> extract(T,Key).
 

@@ -136,6 +136,16 @@ start(Type, []) ->
 		    {ok, V9} -> V9;
 		    _ -> use_default
 		end,
+	    NetIfReqLimit =
+		case application:get_env(snmp, snmp_req_limit) of
+		    {ok, RL} -> RL;
+		    _ -> infinity
+		end,
+	    NetIfModule =
+		case application:get_env(snmp, snmp_net_if_module) of
+		    {ok, NiMod} -> NiMod;
+		    _ -> snmp_net_if
+		end,
 	    ConfDir =
 		case application:get_env(snmp, snmp_config_dir) of
 		    {ok, Dir1} when list(Dir1) -> Dir1;
@@ -173,8 +183,10 @@ start(Type, []) ->
 		    {master_agent_verbosity,MasterVerbosity},
 		    {symbolic_store_verbosity,SymbolicStoreVerbosity},
 		    {note_store_verbosity,NoteStoreVerbosity},
-		    {net_if_recbuf,NetIfRecBuf},
-		    {net_if_verbosity,NetIfVerbosity},
+		    {net_if,           NetIfModule},
+		    {net_if_recbuf,    NetIfRecBuf},
+		    {net_if_req_limit, NetIfReqLimit},
+		    {net_if_verbosity, NetIfVerbosity},
 		    {error_report_mod, ErrorReportMod}],
 	    case snmp_supervisor:start_master(DbDir, ConfDir, Opts) of
 		{ok, Pid} when Type == normal ->
@@ -187,8 +199,8 @@ start(Type, []) ->
 		    OwnMibNames = [ Name || {Name, _, _} <- OwnLoadedMibs ],
 		    case rpc:call(Node, snmp, info, [snmp_master_agent]) of
 			{badrpc, R} ->
-			    error_logger:info_msg("snmp: could not takeover "
-						  "loaded mibs: ~p~n", [R]);
+			    error_msg("could not takeover "
+				      "loaded mibs: ~p", [R]);
 			InfoList ->
 			    {value, {_, LoadedMibs}} =
 				lists:keysearch(loaded_mibs, 1, InfoList),
@@ -227,8 +239,9 @@ takeover_mib({MibName, _Symbolic, FileName}) ->
 	    case snmp:load_mibs(snmp_master_agent, [FileName]) of
 		ok -> ok;
 		{error, R} ->
-		    error_logger:info_msg("snmp: could not reload mib ~p: ~p~n",
-					  [FileName, R])
+		    error_msg("could not reload mib ~p: ~p", [FileName, R])
 	    end
     end.
 
+error_msg(F, A) ->
+    error_logger:info_msg("snmp: " ++ F ++ "~n", A).

@@ -1484,7 +1484,7 @@ EOF
 
 fi
 
-for ac_hdr in arpa/inet.h fcntl.h limits.h malloc.h netdb.h netinet/in.h stddef.h stdlib.h string.h sys/param.h sys/socket.h sys/time.h unistd.h pthread.h
+for ac_hdr in arpa/inet.h fcntl.h limits.h malloc.h netdb.h netinet/in.h stddef.h stdlib.h string.h sys/param.h sys/socket.h sys/select.h sys/time.h unistd.h pthread.h
 do
 ac_safe=`echo "$ac_hdr" | sed 'y%./+-%__p_%'`
 echo $ac_n "checking for $ac_hdr""... $ac_c" 1>&6
@@ -2186,21 +2186,24 @@ if test "${with_gmp+set}" = set; then
 fi
 
 
+# We don't just want any GNU MP version, we want 4.1 or later
+# that contain the import/export functions we need.
+
 if test "x$with_gmp" = "xyes" ;then
     for dir in /usr /usr/pkg /usr/local /usr/local/gmp /usr/lib/gmp /usr/gmp; do
 	ac_safe=`echo "$dir/include/gmp.h" | sed 'y%./+-%__p_%'`
 echo $ac_n "checking for $dir/include/gmp.h""... $ac_c" 1>&6
-echo "configure:2194: checking for $dir/include/gmp.h" >&5
+echo "configure:2197: checking for $dir/include/gmp.h" >&5
 if eval "test \"`echo '$''{'ac_cv_header_$ac_safe'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
   cat > conftest.$ac_ext <<EOF
-#line 2199 "configure"
+#line 2202 "configure"
 #include "confdefs.h"
 #include <$dir/include/gmp.h>
 EOF
 ac_try="$ac_cpp conftest.$ac_ext >/dev/null 2>conftest.out"
-{ (eval echo configure:2204: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }
+{ (eval echo configure:2207: \"$ac_try\") 1>&5; (eval $ac_try) 2>&5; }
 ac_err=`grep -v '^ *+' conftest.out | grep -v "^conftest.${ac_ext}\$"`
 if test -z "$ac_err"; then
   rm -rf conftest*
@@ -2234,10 +2237,58 @@ EOF
     if test $ac_cv_gmp = no ; then
 	{ echo "configure: error: No GNU MP installation found" 1>&2; exit 1; }
     fi
+    echo $ac_n "checking for __gmpz_export in -lgmp""... $ac_c" 1>&6
+echo "configure:2242: checking for __gmpz_export in -lgmp" >&5
+ac_lib_var=`echo gmp'_'__gmpz_export | sed 'y%./+-%__p_%'`
+if eval "test \"`echo '$''{'ac_cv_lib_$ac_lib_var'+set}'`\" = set"; then
+  echo $ac_n "(cached) $ac_c" 1>&6
+else
+  ac_save_LIBS="$LIBS"
+LIBS="-lgmp  $LIBS"
+cat > conftest.$ac_ext <<EOF
+#line 2250 "configure"
+#include "confdefs.h"
+/* Override any gcc2 internal prototype to avoid an error.  */
+/* We use char because int might match the return type of a gcc2
+    builtin and then its argument prototype would still apply.  */
+char __gmpz_export();
+
+int main() {
+__gmpz_export()
+; return 0; }
+EOF
+if { (eval echo configure:2261: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+  rm -rf conftest*
+  eval "ac_cv_lib_$ac_lib_var=yes"
+else
+  echo "configure: failed program was:" >&5
+  cat conftest.$ac_ext >&5
+  rm -rf conftest*
+  eval "ac_cv_lib_$ac_lib_var=no"
+fi
+rm -f conftest*
+LIBS="$ac_save_LIBS"
+
+fi
+if eval "test \"`echo '$ac_cv_lib_'$ac_lib_var`\" = yes"; then
+  echo "$ac_t""yes" 1>&6
+    ac_tr_lib=HAVE_LIB`echo gmp | sed -e 's/[^a-zA-Z0-9_]/_/g' \
+    -e 'y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/'`
+  cat >> confdefs.h <<EOF
+#define $ac_tr_lib 1
+EOF
+
+  LIBS="-lgmp $LIBS"
+
+else
+  echo "$ac_t""no" 1>&6
+fi
+
+    # FIXME return ERROR if no lib
 elif test "x$with_gmp" != "xno" -a -n "$with_gmp" ;then
     # Option given with PATH to package
     echo $ac_n "checking for GNU MP""... $ac_c" 1>&6
-echo "configure:2241: checking for GNU MP" >&5
+echo "configure:2292: checking for GNU MP" >&5
     if test ! -d "$with_gmp" ; then
 	{ echo "configure: error: Invalid path to option --with-gmp=PATH" 1>&2; exit 1; }
     fi
@@ -2247,11 +2298,56 @@ echo "configure:2241: checking for GNU MP" >&5
 #define HAVE_GMP_H 1
 EOF
 
+    echo $ac_n "checking for __gmpz_export in -lgmp""... $ac_c" 1>&6
+echo "configure:2303: checking for __gmpz_export in -lgmp" >&5
+ac_lib_var=`echo gmp'_'__gmpz_export | sed 'y%./+-%__p_%'`
+if eval "test \"`echo '$''{'ac_cv_lib_$ac_lib_var'+set}'`\" = set"; then
+  echo $ac_n "(cached) $ac_c" 1>&6
+else
+  ac_save_LIBS="$LIBS"
+LIBS="-lgmp  $LIBS"
+cat > conftest.$ac_ext <<EOF
+#line 2311 "configure"
+#include "confdefs.h"
+/* Override any gcc2 internal prototype to avoid an error.  */
+/* We use char because int might match the return type of a gcc2
+    builtin and then its argument prototype would still apply.  */
+char __gmpz_export();
+
+int main() {
+__gmpz_export()
+; return 0; }
+EOF
+if { (eval echo configure:2322: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+  rm -rf conftest*
+  eval "ac_cv_lib_$ac_lib_var=yes"
+else
+  echo "configure: failed program was:" >&5
+  cat conftest.$ac_ext >&5
+  rm -rf conftest*
+  eval "ac_cv_lib_$ac_lib_var=no"
+fi
+rm -f conftest*
+LIBS="$ac_save_LIBS"
+
+fi
+if eval "test \"`echo '$ac_cv_lib_'$ac_lib_var`\" = yes"; then
+  echo "$ac_t""yes" 1>&6
+    ac_tr_lib=HAVE_LIB`echo gmp | sed -e 's/[^a-zA-Z0-9_]/_/g' \
+    -e 'y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/'`
+  cat >> confdefs.h <<EOF
+#define $ac_tr_lib 1
+EOF
+
+  LIBS="-lgmp $LIBS"
+
+else
+  echo "$ac_t""no" 1>&6
 fi
 
-# We don't just want any GNU MP version, we want 4.1 or later
-# that contain the import/export functions we need.
-# FIXME
+    # FIXME return ERROR if no lib
+fi
+
 
 #
 # Figure out if we should use threads. The default is set above in the
@@ -2269,7 +2365,7 @@ THR_DEFS=
 # threads. It has to be enable or the emulator will crash. Until that is fixed
 # we force threads on win32.
 echo $ac_n "checking if native win32 threads should be used""... $ac_c" 1>&6
-echo "configure:2273: checking if native win32 threads should be used" >&5
+echo "configure:2369: checking if native win32 threads should be used" >&5
 if test "X$host_os" = "Xwin32"; then
     THR_LIBS=
     THR_DEFS="-DUSE_THREADS"
@@ -2291,7 +2387,7 @@ else
 	    pthread_lib=""
 	    if test "$found_threads" = "0"; then
 		echo $ac_n "checking for pthread_create in -lpthread""... $ac_c" 1>&6
-echo "configure:2295: checking for pthread_create in -lpthread" >&5
+echo "configure:2391: checking for pthread_create in -lpthread" >&5
 ac_lib_var=`echo pthread'_'pthread_create | sed 'y%./+-%__p_%'`
 if eval "test \"`echo '$''{'ac_cv_lib_$ac_lib_var'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
@@ -2299,7 +2395,7 @@ else
   ac_save_LIBS="$LIBS"
 LIBS="-lpthread  $LIBS"
 cat > conftest.$ac_ext <<EOF
-#line 2303 "configure"
+#line 2399 "configure"
 #include "confdefs.h"
 /* Override any gcc2 internal prototype to avoid an error.  */
 /* We use char because int might match the return type of a gcc2
@@ -2310,7 +2406,7 @@ int main() {
 pthread_create()
 ; return 0; }
 EOF
-if { (eval echo configure:2314: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+if { (eval echo configure:2410: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   rm -rf conftest*
   eval "ac_cv_lib_$ac_lib_var=yes"
 else
@@ -2339,7 +2435,7 @@ fi
 	    # FreeBSD has pthreads in special c library, c_r
 	    if test "$found_threads" = "0"; then
 		echo $ac_n "checking for pthread_create in -lc_r""... $ac_c" 1>&6
-echo "configure:2343: checking for pthread_create in -lc_r" >&5
+echo "configure:2439: checking for pthread_create in -lc_r" >&5
 ac_lib_var=`echo c_r'_'pthread_create | sed 'y%./+-%__p_%'`
 if eval "test \"`echo '$''{'ac_cv_lib_$ac_lib_var'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
@@ -2347,7 +2443,7 @@ else
   ac_save_LIBS="$LIBS"
 LIBS="-lc_r  $LIBS"
 cat > conftest.$ac_ext <<EOF
-#line 2351 "configure"
+#line 2447 "configure"
 #include "confdefs.h"
 /* Override any gcc2 internal prototype to avoid an error.  */
 /* We use char because int might match the return type of a gcc2
@@ -2358,7 +2454,7 @@ int main() {
 pthread_create()
 ; return 0; }
 EOF
-if { (eval echo configure:2362: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+if { (eval echo configure:2458: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   rm -rf conftest*
   eval "ac_cv_lib_$ac_lib_var=yes"
 else
@@ -2398,7 +2494,7 @@ fi
 		    # Threads found
 		    if test "x$pthread_lib" != "x"; then
 			echo $ac_n "checking for pthread_atfork in -l$pthread_lib""... $ac_c" 1>&6
-echo "configure:2402: checking for pthread_atfork in -l$pthread_lib" >&5
+echo "configure:2498: checking for pthread_atfork in -l$pthread_lib" >&5
 ac_lib_var=`echo $pthread_lib'_'pthread_atfork | sed 'y%./+-%__p_%'`
 if eval "test \"`echo '$''{'ac_cv_lib_$ac_lib_var'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
@@ -2406,7 +2502,7 @@ else
   ac_save_LIBS="$LIBS"
 LIBS="-l$pthread_lib  $LIBS"
 cat > conftest.$ac_ext <<EOF
-#line 2410 "configure"
+#line 2506 "configure"
 #include "confdefs.h"
 /* Override any gcc2 internal prototype to avoid an error.  */
 /* We use char because int might match the return type of a gcc2
@@ -2417,7 +2513,7 @@ int main() {
 pthread_atfork()
 ; return 0; }
 EOF
-if { (eval echo configure:2421: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
+if { (eval echo configure:2517: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
   rm -rf conftest*
   eval "ac_cv_lib_$ac_lib_var=yes"
 else

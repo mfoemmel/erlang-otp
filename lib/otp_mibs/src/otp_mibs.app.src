@@ -2,6 +2,7 @@
  [{description, "SNMP managment information base for Erlang/OTP nodes."},
   {vsn, "%VSN%"},
   {modules, [otp_mib]},
+  {registered, []},
   {applications, [kernel, stdlib, snmp]},
   {env,[]}]}.
 

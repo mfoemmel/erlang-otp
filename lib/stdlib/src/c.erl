@@ -515,7 +515,7 @@ flush() ->
 	    ok
     end.
 
-%% Print formated info about all registered processes in the system
+%% Print formatted info about all registered names in the system
 nregs() ->
     foreach(fun (N) -> print_node_regs(N) end, all_regs()).
 
@@ -530,16 +530,29 @@ all_regs() ->
     end.
 
 print_node_regs({N, List}) when list(List) ->
+    {Pids,Ports,_Dead} = pids_and_ports(N, sort(List), [], [], []),
+    %% print process info
     format("~n** Registered procs on node ~w **~n",[N]),
-    rformat("Name", "Pid", "Initial Call", "Reds", "Msgs"),
-    foreach(fun (Name) -> display_name_info(N, Name) end, sort(List)).
+    procformat("Name", "Pid", "Initial Call", "Reds", "Msgs"),
+    foreach(fun({Name,PI,Pid}) -> procline(Name, PI, Pid) end, Pids),
+    %% print port info
+    format("~n** Registered ports on node ~w **~n",[N]),
+    portformat("Name", "Id", "Command"),
+    foreach(fun({Name,PI,Id}) -> portline(Name, PI, Id) end, Ports).
 
-display_name_info(Node, Name) ->
+pids_and_ports(_, [], Pids, Ports, Dead) ->
+    {reverse(Pids),reverse(Ports),reverse(Dead)};
+
+pids_and_ports(Node, [Name|Names], Pids, Ports, Dead) ->
     case pwhereis(Node, Name) of
+	Pid when pid(Pid) ->
+	    pids_and_ports(Node, Names, [{Name,pinfo(Pid),Pid}|Pids],
+			   Ports, Dead);
+	Id when port(Id) ->
+	    pids_and_ports(Node, Names, Pids, 
+			   [{Name,portinfo(Id),Id}|Ports], Dead);
 	undefined ->
-	    pline(Name, undefined, undefined);
-	Pid ->
-	    pline(Name, pinfo(Pid), Pid)
+	    pids_and_ports(Node, Names, Pids, Ports, [Name|Dead])
     end.
 
 pwhereis(Node, Name) ->
@@ -548,19 +561,32 @@ pwhereis(Node, Name) ->
 	false -> whereis(Name)
     end.
 
-pline(Name, undefined, Pid) ->		%Process has died
-    rformat(Name, Pid, "dead", 0, 0);
-pline(Name, Info, Pid) ->
+portinfo(Id) ->
+    case is_alive() of
+	true ->  [ rpc:call(node(Id), erlang, port_info, [Id,name]) ];
+	false -> [ erlang:port_info(Id, name) ]
+    end.
+
+procline(Name, Info, Pid) ->
     Call = initial_call(Info),
     Reds  = fetch(reductions, Info),
     LM = length(fetch(messages, Info)),
-    rformat(io_lib:format("~w",[Name]),
-	    io_lib:format("~w",[Pid]),
-	    io_lib:format("~s",[mfa_string(Call)]),
-	    integer_to_list(Reds), integer_to_list(LM)).
+    procformat(io_lib:format("~w",[Name]),
+	       io_lib:format("~w",[Pid]),
+	       io_lib:format("~s",[mfa_string(Call)]),
+	       integer_to_list(Reds), integer_to_list(LM)).
 
-rformat(Name, Pid, Call, Reds, LM) ->
+procformat(Name, Pid, Call, Reds, LM) ->
     format("~-21s ~-12s ~-25s ~12s ~4s~n", [Name,Pid,Call,Reds,LM]).
+
+portline(Name, Info, Id) ->
+    Cmd = fetch(name, Info),
+    portformat(io_lib:format("~w",[Name]), 
+	       erlang:port_to_list(Id),
+	       Cmd).
+
+portformat(Name, Id, Cmd) ->
+    format("~-21s ~-15s ~-40s~n", [Name,Id,Cmd]).
 
 %% pwd()
 %% cd(Directory)

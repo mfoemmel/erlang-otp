@@ -162,7 +162,7 @@ dirty_select(Tab, Spec, Pos) ->
     IxKey = element(Pos, Spec),
     RealKeys = realkeys(Tab, Pos, IxKey),
     StorageType = val({Tab, storage_type}),
-    lists:append([mnesia_lib:db_get(StorageType, Tab, Key) || Key <- RealKeys]).
+    lists:append([mnesia_lib:db_get(StorageType, Tab, Key) || {_,Key} <- RealKeys]).
 
 dirty_read(Tab, IxKey, Pos) ->
     ResList = mnesia:dirty_rpc(Tab, ?MODULE, dirty_read2,

@@ -69,7 +69,8 @@
 
 
 parse_LRDesc(Descr) when record(Descr, 'LocalRemoteDescriptor') ->
-    DecodedPropGroups = parse_propertygroup_list(Descr#'LocalRemoteDescriptor'.propGrps),
+    DecodedPropGroups = 
+	parse_propertygroup_list(Descr#'LocalRemoteDescriptor'.propGrps),
     Descr#'LocalRemoteDescriptor'{propGrps = DecodedPropGroups}.
 
 parse_propertygroup_list([]) ->
@@ -90,9 +91,11 @@ parse_propertygroup([PP |PPs]) ->
     [parse_propertyparm(PP) |parse_propertygroup(PPs)].
 
 
-parse_propertyparm(#'PropertyParm'{name="v", value=[V], extraInfo=EI}) when EI == asn1_NOVALUE  ->
+parse_propertyparm(#'PropertyParm'{name="v", value=[V], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
 		     #sdp_v{version=V};
-parse_propertyparm(#'PropertyParm'{name="c", value=[Val], extraInfo=EI}) when EI == asn1_NOVALUE  ->
+parse_propertyparm(#'PropertyParm'{name="c", value=[Val], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
     case string:tokens(Val, " \t") of
 	[Network, AddressType, ConnectionAddr]	->
 	    #sdp_c{network_type = Network,
@@ -102,7 +105,8 @@ parse_propertyparm(#'PropertyParm'{name="c", value=[Val], extraInfo=EI}) when EI
 	_ ->
 	    exit("Wrong Format on Propertyparm")
     end;
-parse_propertyparm(#'PropertyParm'{name="m", value=[Val], extraInfo=EI}) when EI == asn1_NOVALUE  ->
+parse_propertyparm(#'PropertyParm'{name="m", value=[Val], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
     case string:tokens(Val, " \t") of
 	[Media, PortInfo, Transport | FMT]	->
 	    {Port, NoOfPorts} = 
@@ -120,7 +124,8 @@ parse_propertyparm(#'PropertyParm'{name="m", value=[Val], extraInfo=EI}) when EI
 	_ ->
 	    exit("Wrong Format on PropertyParm")
     end;
-parse_propertyparm(#'PropertyParm'{name="o", value=[Val], extraInfo=EI}) when EI == asn1_NOVALUE  ->
+parse_propertyparm(#'PropertyParm'{name="o", value=[Val], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
     case string:tokens(Val, " \t") of
 	[User, SessionId, Version, Network, AddressType, Address] ->
 	    #sdp_o{user_name = User,
@@ -132,7 +137,8 @@ parse_propertyparm(#'PropertyParm'{name="o", value=[Val], extraInfo=EI}) when EI
 	_ ->
 	    exit("Wrong Format on PropertyParm")
     end;
-parse_propertyparm(#'PropertyParm'{name="a", value=[Val], extraInfo=EI}) when EI == asn1_NOVALUE  ->
+parse_propertyparm(#'PropertyParm'{name="a", value=[Val], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
     case string:tokens(Val, ":/ \t") of
 	["rtpmap", Payload, EncName, ClockRate | EncPar] ->
 	    #sdp_a_rtpmap{payload_type = 
@@ -151,7 +157,8 @@ parse_propertyparm(#'PropertyParm'{name="a", value=[Val], extraInfo=EI}) when EI
 	_ ->
 	    exit("Wrong Format on PropertyParm")
     end;
-parse_propertyparm(#'PropertyParm'{name="b", value=[Val], extraInfo=EI}) when EI == asn1_NOVALUE  ->
+parse_propertyparm(#'PropertyParm'{name="b", value=[Val], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
     case string:tokens(Val, ":") of
 	[Modifier, Bandwidth] ->
 	    #sdp_b{modifier=Modifier,
@@ -159,7 +166,8 @@ parse_propertyparm(#'PropertyParm'{name="b", value=[Val], extraInfo=EI}) when EI
 	_ ->
 	    exit("Wrong Format on PropertyParm")
     end;
-parse_propertyparm(#'PropertyParm'{name="t", value=[Val], extraInfo=EI}) when EI == asn1_NOVALUE  ->
+parse_propertyparm(#'PropertyParm'{name="t", value=[Val], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
     case string:tokens(Val, " \t") of
 	[Start, Stop] ->    
 	    #sdp_t{start=list_to_integer(Start), 
@@ -167,7 +175,8 @@ parse_propertyparm(#'PropertyParm'{name="t", value=[Val], extraInfo=EI}) when EI
 	_ ->
 	    exit("Wrong Format on PropertyParm")
     end;	
-parse_propertyparm(#'PropertyParm'{name="r", value=[Val], extraInfo=EI}) when EI == asn1_NOVALUE  ->
+parse_propertyparm(#'PropertyParm'{name="r", value=[Val], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
     case string:tokens(Val, " \t") of
 	[Repeat, Duration | ListOfOffsets] ->    
 	   #sdp_r{repeat_interval=Repeat,
@@ -176,14 +185,12 @@ parse_propertyparm(#'PropertyParm'{name="r", value=[Val], extraInfo=EI}) when EI
 	_ ->
 	    exit("Wrong Format on PropertyParm")
     end;	
-parse_propertyparm(#'PropertyParm'{name="z", value=[Val], extraInfo=EI}) when EI == asn1_NOVALUE  ->
-    case string:tokens(Val, " \t") of
-	List ->    
-	    #sdp_z{list_of_adjustments=List};
-	_ ->
-	    exit("Wrong Format on PropertyParm")
-    end;	
-parse_propertyparm(#'PropertyParm'{name="k", value=[Val], extraInfo=EI}) when EI == asn1_NOVALUE  ->
+parse_propertyparm(#'PropertyParm'{name="z", value=[Val], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
+    List = string:tokens(Val, " \t"),
+    #sdp_z{list_of_adjustments=List};
+parse_propertyparm(#'PropertyParm'{name="k", value=[Val], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
     case string:tokens(Val, ":") of
 	[Method, EncryptionKey] ->    
 	    #sdp_k{method=Method, 
@@ -192,25 +199,32 @@ parse_propertyparm(#'PropertyParm'{name="k", value=[Val], extraInfo=EI}) when EI
 	    exit("Wrong Format on PropertyParm")
     end;	
 
-parse_propertyparm(#'PropertyParm'{name="s", value=[Val], extraInfo=EI}) when EI == asn1_NOVALUE  ->
+parse_propertyparm(#'PropertyParm'{name="s", value=[Val], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
     #sdp_s{name=Val};
-parse_propertyparm(#'PropertyParm'{name="i", value=[Val], extraInfo=EI}) when EI == asn1_NOVALUE  ->
+parse_propertyparm(#'PropertyParm'{name="i", value=[Val], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
     #sdp_i{session_descriptor=Val};
-parse_propertyparm(#'PropertyParm'{name="u", value=[Val], extraInfo=EI}) when EI == asn1_NOVALUE  ->
+parse_propertyparm(#'PropertyParm'{name="u", value=[Val], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
     #sdp_u{uri=Val};
-parse_propertyparm(#'PropertyParm'{name="e", value=[Val], extraInfo=EI}) when EI == asn1_NOVALUE  ->
+parse_propertyparm(#'PropertyParm'{name="e", value=[Val], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
     #sdp_e{email=Val};
-parse_propertyparm(#'PropertyParm'{name="p", value=[Val], extraInfo=EI}) when EI == asn1_NOVALUE  ->
+parse_propertyparm(#'PropertyParm'{name="p", value=[Val], extraInfo=EI}) 
+  when EI == asn1_NOVALUE  ->
     #sdp_p{phone_number=Val};
 parse_propertyparm(PropertyParm) ->
     PropertyParm.
+
 
 %%-----------------------------------------------------------------
 %% Generate PropertyParm records from sdp records
 %%-----------------------------------------------------------------
 
 gen_LRDesc(Descr) when record(Descr,'LocalRemoteDescriptor') ->
-    DecodedPropGroups = gen_propertygroup_list(Descr#'LocalRemoteDescriptor'.propGrps),
+    DecodedPropGroups = 
+	gen_propertygroup_list(Descr#'LocalRemoteDescriptor'.propGrps),
     Descr#'LocalRemoteDescriptor'{propGrps = DecodedPropGroups}.
 
 gen_propertygroup_list([]) ->

@@ -101,6 +101,7 @@
 	 add_and_get_event/2,
 	 add_and_get_event/4,
 	 gc_events/2,
+	 gc_events_local/4,
 	 gc_start/2,
 	 filter_events/2,
 	 filter_events/3,
@@ -163,9 +164,9 @@ status(DBRef, {batchLimit, Limit}) ->
 	Current when integer(Current), Current >= Limit ->
 	    ?debug_print("BATCH LIMIT (~p) REACHED, CONTAINS: ~p~n", [Limit, Current]),
 	    true;
-	Other ->
+	_Other ->
 	    ?debug_print("BATCH LIMIT (~p) NOT REACHED, CONTAINS: ~p~n", 
-			 [Limit, Other]),
+			 [Limit, _Other]),
 	    false
     end;
 status(DBRef, {batchLimit, Limit, TemporaryMax}) ->
@@ -177,9 +178,9 @@ status(DBRef, {batchLimit, Limit, TemporaryMax}) ->
 	Current when integer(Current), Current >= Limit ->
 	    ?debug_print("BATCH LIMIT (~p) REACHED, CONTAINS: ~p~n", [Limit, Current]),
 	    true;
-	Other ->
+	_Other ->
 	    ?debug_print("BATCH LIMIT (~p) NOT REACHED, CONTAINS: ~p~n", 
-			 [Limit, Other]),
+			 [Limit, _Other]),
 	    false
     end;
 status(_, _) ->
@@ -209,9 +210,9 @@ gc_events_local(ORef, DRef, _, _) ->
 %% Returns  : 
 %% Comment  : This function is intended for background GC.
 %%------------------------------------------------------------
-gc_events(DBRef, Priority) when ?is_TimeoutNotUsed(DBRef) ->
+gc_events(DBRef, _Priority) when ?is_TimeoutNotUsed(DBRef) ->
     ok;
-gc_events(DBRef, Priority) when ?is_StopTNotSupported(DBRef) ->
+gc_events(DBRef, _Priority) when ?is_StopTNotSupported(DBRef) ->
     ok;
 gc_events(DBRef, Priority) ->
     {M,S,U} = now(),
@@ -398,14 +399,14 @@ get_time_diff(UTC, TRef) ->
 check_deadline(DL) when tuple(DL) ->
     {M,S,U}  = now(),
     DL >= {-M,-S,-U};
-check_deadline(DL) ->
+check_deadline(_DL) ->
     %% This case will cover if no timeout is set.
     false.
 
 check_start_time(ST) when tuple(ST) ->
     {M,S,U}  = now(),
     ST >= {-M,-S,-U};
-check_start_time(ST) ->
+check_start_time(_ST) ->
     %% This case will cover if no earliest delivery time is set.
     true.
 
@@ -420,7 +421,7 @@ extract_value([], _, Other) ->
     Other;
 extract_value([#'CosNotification_Property'{name=ID, value=V}|_], ID, _) ->
     any:get_value(V);
-extract_value([H|T], ID, Other) ->
+extract_value([_H|T], ID, Other) ->
     extract_value(T, ID, Other).
 
 %%------------------------------------------------------------
@@ -448,16 +449,16 @@ get_events(#dbRef{orderRef = ORef, discardRef = DRef}, Max) ->
 
 event_loop('$end_of_table', _, _, _, []) ->
     {[], false};
-event_loop('$end_of_table', ORef, _, _, Accum) ->
+event_loop('$end_of_table', _ORef, _, _, Accum) ->
     {lists:reverse(Accum), true};
-event_loop(_, ORef, _, 0, []) ->
+event_loop(_, _ORef, _, 0, []) ->
     %% Only possible if some tries to pull a sequence of 0 events.
     %% Should we really test for this case?
     {[], false};
-event_loop(_, ORef, _, 0, Accum) ->
+event_loop(_, _ORef, _, 0, Accum) ->
     {lists:reverse(Accum), true};
 event_loop(Key, ORef, undefined, Left, Accum) ->
-    [{_,DL,ST,PO,Event}]=ets:lookup(ORef, Key),
+    [{_,DL,ST,_PO,Event}]=ets:lookup(ORef, Key),
     case check_deadline(DL) of
 	true ->
 	    ets:delete(ORef, Key),
@@ -473,7 +474,7 @@ event_loop(Key, ORef, undefined, Left, Accum) ->
 	    end
     end;
 event_loop({Key1, Key2}, ORef, DRef, Left, Accum) ->
-    [{_,DL,ST,PO,Event}]=ets:lookup(ORef, {Key1, Key2}),
+    [{_,DL,ST,_PO,Event}]=ets:lookup(ORef, {Key1, Key2}),
     case check_deadline(DL) of
 	true ->
 	    ets:delete(ORef, {Key1, Key2}),
@@ -491,7 +492,7 @@ event_loop({Key1, Key2}, ORef, DRef, Left, Accum) ->
 	    end
     end;    
 event_loop({Key1, Key2, Key3}, ORef, DRef, Left, Accum) ->
-    [{_,DL,ST,PO,Event}]=ets:lookup(ORef, {Key1, Key2, Key3}),
+    [{_,DL,ST,_PO,Event}]=ets:lookup(ORef, {Key1, Key2, Key3}),
     case check_deadline(DL) of
 	true ->
 	    ets:delete(ORef, {Key1, Key2, Key3}),
@@ -517,7 +518,7 @@ event_loop({Key1, Key2, Key3}, ORef, DRef, Left, Accum) ->
 %%            Hence, if AnyOrder set we will still deliver in
 %%            Priority order.
 %%------------------------------------------------------------
-update(undefined, QoS) ->
+update(undefined, _QoS) ->
     ok;
 update(DBRef, QoS) ->
     update(DBRef, QoS, undefined, undefined).
@@ -595,39 +596,39 @@ move_events(DBRef, NewDBRef, Key, LifeFilter, PrioFilter) ->
 		LifeFilter, PrioFilter).
 
 %% We cannot use do_add_event directly since we MUST lookup the timestamp (TS).
-write_event(?not_DeadlineOrder, {{_, TS, Prio}, DL, ST, PO, Event}, DBRef, NewDBRef, 
-	    Key, LifeFilter, PrioFilter) ->
+write_event(?not_DeadlineOrder, {{_, TS, _Prio}, DL, ST, PO, Event}, _DBRef, NewDBRef, 
+	    _Key, _LifeFilter, _PrioFilter) ->
     StartT = update_starttime(NewDBRef, Event, ST),
     %% Deadline and Priority previously extracted.
     do_add_event(NewDBRef, Event, TS, DL, StartT, PO);
-write_event(?not_DeadlineOrder, {{_, TS}, DL, ST, PO, Event}, DBRef, NewDBRef, 
-	    Key, LifeFilter, PrioFilter) ->
+write_event(?not_DeadlineOrder, {{_, TS}, DL, _ST, PO, Event}, _DBRef, NewDBRef, 
+	    _Key, _LifeFilter, PrioFilter) ->
     %% Priority not previously extracted.
     POverride = update_priority(NewDBRef, PrioFilter, Event, PO),
     StartT    = extract_start_time(Event, ?get_StartTsupport(NewDBRef), 
 				   ?get_TimeRef(NewDBRef)),
     do_add_event(NewDBRef, Event, TS, DL, StartT, POverride);
-write_event(?not_FifoOrder, {{TS, PorD}, DL, ST, PO, Event}, DBRef, NewDBRef, 
-	    Key, LifeFilter, PrioFilter) ->
+write_event(?not_FifoOrder, {{TS, _PorD}, DL, ST, PO, Event}, _DBRef, NewDBRef, 
+	    _Key, LifeFilter, PrioFilter) ->
     %% Priority or Deadline have been extracted before but we cannot tell which.
     POverride = update_priority(NewDBRef, PrioFilter, Event, PO),
     DeadL     = update_deadline(NewDBRef, LifeFilter, Event, TS, DL),
     StartT    = update_starttime(NewDBRef, Event, ST),
     do_add_event(NewDBRef, Event, TS, DeadL, StartT, POverride);
-write_event(?not_FifoOrder, {TS, DL, ST, PO, Event}, DBRef, NewDBRef, 
-	    Key, LifeFilter, PrioFilter) ->
+write_event(?not_FifoOrder, {TS, DL, ST, PO, Event}, _DBRef, NewDBRef, 
+	    _Key, LifeFilter, PrioFilter) ->
     %% Priority and Deadline not extracetd before. Do it now.
     POverride = update_priority(NewDBRef, PrioFilter, Event, PO),
     DeadL     = update_deadline(NewDBRef, LifeFilter, Event, TS, DL),
     StartT    = update_starttime(NewDBRef, Event, ST),
     do_add_event(NewDBRef, Event, TS, DeadL, StartT, POverride);
 %% Order Policy must be AnyOrder or PriorityOrder.
-write_event(_, {{Prio, TS}, DL, ST, PO, Event}, DBRef, NewDBRef, 
-	    Key, LifeFilter, PrioFilter) ->
+write_event(_, {{_Prio, TS}, DL, ST, PO, Event}, _DBRef, NewDBRef, 
+	    _Key, LifeFilter, _PrioFilter) ->
     DeadL  = update_deadline(NewDBRef, LifeFilter, Event, TS, DL),
     StartT = update_starttime(NewDBRef, Event, ST),
     do_add_event(NewDBRef, Event, TS, DeadL, StartT, PO);
-write_event(_, {{Prio, TS, DL}, DL, ST, PO, Event}, DBRef, NewDBRef, Key, _, _) ->
+write_event(_, {{_Prio, TS, DL}, DL, ST, PO, Event}, _DBRef, NewDBRef, _Key, _, _) ->
     %% Both Deadline and Priority have been extracetd before.
     StartT = update_starttime(NewDBRef, Event, ST),
     do_add_event(NewDBRef, Event, TS, DL, StartT, PO).
@@ -645,7 +646,7 @@ write_event(_, {{Prio, TS, DL}, DL, ST, PO, Event}, DBRef, NewDBRef, Key, _, _) 
 %%------------------------------------------------------------
 update_priority(DBRef, PrioFilter, Event, OldPrio) when atom(OldPrio) ->
     get_prio_mapping_value(DBRef, PrioFilter, Event);
-update_priority(DBRef, PrioFilter, Event, OldPrio) ->
+update_priority(_DBRef, _PrioFilter, _Event, OldPrio) ->
     OldPrio.
 
 %%------------------------------------------------------------
@@ -658,7 +659,7 @@ update_priority(DBRef, PrioFilter, Event, OldPrio) ->
 %%            the MappingFilter since it may require intra-ORB
 %%            communication. Use only when doing an update.
 %%------------------------------------------------------------
-update_deadline(DBRef, LifeFilter, Event, TS, OldDeadL) when 
+update_deadline(DBRef, _LifeFilter, _Event, _TS, _OldDeadL) when 
   ?get_DiscardP(DBRef) =/= ?not_DeadlineOrder,
   ?get_OrderP(DBRef) =/= ?not_DeadlineOrder,
   ?is_StopTNotSupported(DBRef) ->
@@ -673,7 +674,7 @@ update_deadline(DBRef, LifeFilter, Event, TS, OldDeadL) when atom(OldDeadL) ->
     OldNow = convert_FIFO_Key(TS),
     extract_deadline(Event, ?get_DefStopT(DBRef), ?get_StopTsupport(DBRef), 
 		     ?get_TimeRef(DBRef), DOverride, OldNow);
-update_deadline(DBRef, LifeFilter, Event, TS, OldDeadL) ->
+update_deadline(_DBRef, _LifeFilter, _Event, _TS, OldDeadL) ->
     %% We need the Deadline and it have been extracetd before.
     OldDeadL.
 
@@ -688,7 +689,7 @@ update_deadline(DBRef, LifeFilter, Event, TS, OldDeadL) ->
 update_starttime(DBRef, Event, OldStartT) when atom(OldStartT) ->
     %% Probably not previously extracted; try to get it.
     extract_start_time(Event, ?get_StartTsupport(DBRef), ?get_TimeRef(DBRef));
-update_starttime(DBRef, Event, OldStartT) ->
+update_starttime(_DBRef, _Event, OldStartT) ->
     %% Previously extracted.
     OldStartT.
 
@@ -733,7 +734,7 @@ discard_events(#dbRef{orderRef = ORef, discardRef = DRef}, N) ->
     index_loop_forward(ets:first(DRef), DRef, ORef, N).
 
 
-index_loop_forward('$end_of_table', _, _, Left) ->
+index_loop_forward('$end_of_table', _, _, _Left) ->
     ok;
 index_loop_forward(_, _, _, 0) ->
     ok;
@@ -898,16 +899,16 @@ add_event_helper(DBRef, Event, DOverride, POverride) ->
 					    ?get_TimeRef(DBRef)),
 		    do_add_event(DBRef, Event, create_FIFO_Key(), DL, ST, POverride)
 	    end;
-	N when ?get_DiscardP(DBRef) == ?not_RejectNewEvents ->
+	_N when ?get_DiscardP(DBRef) == ?not_RejectNewEvents ->
 	    gc_events(DBRef, low),
 	    corba:raise(#'IMP_LIMIT'{completion_status=?COMPLETED_NO});
-	N when ?get_DiscardP(DBRef) == ?not_AnyOrder ->
+	_N when ?get_DiscardP(DBRef) == ?not_AnyOrder ->
 	    gc_events(DBRef, low),
 	    corba:raise(#'IMP_LIMIT'{completion_status=?COMPLETED_NO});
-	N when ?get_DiscardP(DBRef) == ?not_LifoOrder ->
+	_N when ?get_DiscardP(DBRef) == ?not_LifoOrder ->
 	    gc_events(DBRef, low),
 	    corba:raise(#'IMP_LIMIT'{completion_status=?COMPLETED_NO});
-	N ->
+	_N ->
 	    gc_events(DBRef, low),
 	    %% Other discard policy; we must first store the event
 	    %% and the look up in the Discard DB which event we
@@ -929,31 +930,31 @@ add_event_helper(DBRef, Event, DOverride, POverride) ->
 
 do_add_event(#dbRef{orderRef = ORef, orderPolicy = ?not_DeadlineOrder,
 		 discardRef = DRef, discardPolicy = ?not_PriorityOrder,
-		 defPriority = DefPrio, defStopT = DefStopT}, Event, Key, DL, ST, PO) ->
+		 defPriority = DefPrio, defStopT = _DefStopT}, Event, Key, DL, ST, PO) ->
     Prio = extract_priority(Event, DefPrio, PO),
     ets:insert(ORef, {{DL, Key, Prio}, DL, ST, PO, Event}),
     ets:insert(DRef, {{Prio, Key, DL}});
 do_add_event(#dbRef{orderRef = ORef, orderPolicy = ?not_DeadlineOrder,
 		 discardRef = DRef, discardPolicy = ?not_FifoOrder,
-		 defStopT = DefStopT}, Event, Key, DL, ST, PO) ->
+		 defStopT = _DefStopT}, Event, Key, DL, ST, PO) ->
     ets:insert(ORef, {{DL, Key}, DL, ST, PO, Event}),
     ets:insert(DRef, {{Key, DL}});
 do_add_event(#dbRef{orderRef = ORef, orderPolicy = ?not_DeadlineOrder,
 		 discardRef = DRef, discardPolicy = ?not_LifoOrder,
-		 defStopT = DefStopT}, Event, Key, DL, ST, PO) ->
+		 defStopT = _DefStopT}, Event, Key, DL, ST, PO) ->
     ets:insert(ORef, {{DL, Key}, DL, ST, PO, Event}),
     ets:insert(DRef, {{Key, DL}});
 %% Either the same (DeadlineOrder), RejectNewEvents or AnyOrder. No need
 %% to store anything in the discard policy, i.e., if the same we'll just
 %% read "from the other end" and AnyOrder and RejectNewEvents is equal.
 do_add_event(#dbRef{orderRef = ORef, orderPolicy = ?not_DeadlineOrder,
-		 defStopT = DefStopT}, Event, Key, DL, ST, PO) ->
+		 defStopT = _DefStopT}, Event, Key, DL, ST, PO) ->
     ets:insert(ORef, {{DL, Key}, DL, ST, PO, Event});
     
 
 do_add_event(#dbRef{orderRef = ORef, orderPolicy = ?not_FifoOrder,
 		 discardRef = DRef, discardPolicy = ?not_DeadlineOrder,
-		 defStopT = DefStopT}, Event, Key, DL, ST, PO) ->
+		 defStopT = _DefStopT}, Event, Key, DL, ST, PO) ->
     ets:insert(ORef, {{Key, DL}, DL, ST, PO, Event}),
     ets:insert(DRef, {{DL, Key}});
 do_add_event(#dbRef{orderRef = ORef, orderPolicy = ?not_FifoOrder,
@@ -964,13 +965,13 @@ do_add_event(#dbRef{orderRef = ORef, orderPolicy = ?not_FifoOrder,
     ets:insert(DRef, {{Prio, Key}});
 %% The discard policy must RejectNewEvents, AnyOrder, Fifo or Lifo order.
 do_add_event(#dbRef{orderRef = ORef, orderPolicy = ?not_FifoOrder,
-		 discardRef = DRef}, Event, Key, DL, ST, PO) ->
+		 discardRef = _DRef}, Event, Key, DL, ST, PO) ->
     ets:insert(ORef, {Key, DL, ST, PO, Event});
 
 %% Order Policy must be AnyOrder or PriorityOrder.
 do_add_event(#dbRef{orderRef = ORef,
 		 discardRef = DRef, discardPolicy = ?not_DeadlineOrder,
-		 defPriority = DefPrio, defStopT = DefStopT}, Event, Key, DL, ST, PO) ->
+		 defPriority = DefPrio, defStopT = _DefStopT}, Event, Key, DL, ST, PO) ->
     Prio = extract_priority(Event, DefPrio, PO),
     ets:insert(ORef, {{Prio, Key, DL}, DL, ST, PO, Event}),
     ets:insert(DRef, {{DL, Key, Prio}});
@@ -1133,16 +1134,16 @@ get_life_mapping_value(_, MFilter, Event) ->
 %%------------------------------------------------------------
 validate_event(true, Events, Filters, _, 'MATCH') ->
     filter_events(Events, Filters, false);
-validate_event(true, Events, Filters, _, _) ->
+validate_event(true, Events, _Filters, _, _) ->
     {Events, []};
-validate_event({Which, WC}, Event, Filters, _, 'MATCH') when record(Event, any) ->
+validate_event({_Which, _WC}, Event, Filters, _, 'MATCH') when record(Event, any) ->
     filter_events(Event, Filters, false);
-validate_event({Which, WC}, Event, Filters, _, _) when record(Event, any) ->
+validate_event({_Which, _WC}, Event, _Filters, _, _) when record(Event, any) ->
     {Event, []};
 validate_event({Which, WC}, Events, Filters, DBRef, 'MATCH')  ->
     Passed=validate_event2(DBRef, Events, Which, WC, []),
     filter_events(Passed, Filters, true);
-validate_event({Which, WC}, Events, Filters, DBRef, _)  ->
+validate_event({Which, WC}, Events, _Filters, DBRef, _)  ->
     Passed=validate_event2(DBRef, Events, Which, WC, []),
     {lists:reverse(Passed), []}.
 
@@ -1229,7 +1230,7 @@ filter_events([H|T], Filters, AccPassed, AccFailed, Reversed) ->
 	_ ->
 	    filter_events(T, Filters, AccPassed, [H|AccFailed], Reversed)
     end;
-filter_events(Any, Filters, AccPassed, AccFailed, Reversed) ->
+filter_events(Any, Filters, _AccPassed, _AccFailed, _Reversed) ->
     case call_filters(Filters, Any) of
 	true ->
 	    {Any, []};

@@ -37,6 +37,7 @@
 	 encode_object_identifier/2,decode_object_identifier/2,
 	 encode_restricted_string/4,decode_restricted_string/4,
 	 encode_universal_string/3,decode_universal_string/3,
+	 encode_UTF8_string/3,decode_UTF8_string/2,
 	 encode_BMP_string/3,decode_BMP_string/3,
 	 encode_generalized_time/3,decode_generalized_time/3,
 	 encode_utc_time/3,decode_utc_time/3,
@@ -46,7 +47,7 @@
 -export([encode_open_type/1,encode_open_type/2, 
 	 decode_open_type/2,decode_open_type_as_binary/2]).
 
--export([decode_primitive_incomplete/2]).
+-export([decode_primitive_incomplete/2,decode_selective/2]).
  
 -include("asn1_records.hrl"). 
  
@@ -169,9 +170,40 @@ encode_tlv_list([],Acc) ->
 % 	    {1,T}
 %     end,
     
+-ifdef(asn1_r7b_enable_driver).
 
 decode(B,driver) ->
-    case catch port_control(drv_complete,2,B) of
+    Port = get_asn1_port(),
+    case catch port_control(Port,2,B) of	
+	Bin when binary(Bin) ->
+	    binary_to_term(Bin);
+	List when list(List) -> handle_error(List,B);
+	{'EXIT',{badarg,Reason}} ->
+	    exit({"failed to call driver probably due to bad asn1 value",Reason});
+	Reason -> exit(Reason)
+    end.
+
+get_asn1_port() ->
+    case catch ets:lookup(asn1_driver_table,asn1_port) of
+	{'EXIT',Reason} -> %table does not exist
+	    asn1rt_driver_handler:load_driver(),
+	    receive
+		{reply,Port} when port(Port) ->
+		    Port
+	    end;
+	[] -> 
+	    asn1_port_owner ! {request_port,self()},
+	    receive
+		{reply,Port} when port(Port) ->
+		    Port
+	    end;
+	[{_,Port}] -> Port
+    end.
+
+-else.
+
+decode(B,driver) ->
+    case catch port_control(asn1_driver_port,2,B) of
 	Bin when binary(Bin) ->
 	    binary_to_term(Bin);
 	List when list(List) -> handle_error(List,B);
@@ -179,7 +211,7 @@ decode(B,driver) ->
 	    asn1rt_driver_handler:load_driver(),
 	    receive
 		driver_ready ->
-		    case catch port_control(drv_complete,2,B) of
+		    case catch port_control(asn1_driver_port,2,B) of
 			Bin2 when binary(Bin2) -> binary_to_term(Bin2);
 			List when list(List) -> handle_error(List,B);
 			Error -> exit(Error)
@@ -194,18 +226,35 @@ decode(B,driver) ->
 	    exit(Reason)
     end.
 
+
+-endif.
+
 handle_error([],_)->
-    exit({error,{"memory allocation problem"}});
+    exit({error,{asn1,{"memory allocation problem"}}});
 handle_error([$1|_],L) -> % error in driver
-    exit({error,{asn1_error,L}});
-handle_error([$2|_],L) -> % error in driver due to wrong tag
-    exit({error,{asn1_error,{"bad tag",L}}});
-handle_error([$3|_],L) -> % error in driver due to length error
-    exit({error,{asn1_error,{"bad length field",L}}});
-handle_error([$4|_],L) -> % error in driver due to indefinite length error
-    exit({error,{asn1_error,{"indefinite length without end bytes",L}}});
+    exit({error,{asn1,L}});
+handle_error([$2|T],L) -> % error in driver due to wrong tag
+    exit({error,{asn1,{"bad tag after byte:",error_pos(T),L}}});
+handle_error([$3|T],L) -> % error in driver due to length error
+    exit({error,{asn1,{"bad length field after byte:",
+			     error_pos(T),L}}});
+handle_error([$4|T],L) -> % error in driver due to indefinite length error
+    exit({error,{asn1,
+		 {"indefinite length without end bytes after byte:",
+		  error_pos(T),L}}});
+handle_error([$5|T],L) -> % error in driver due to indefinite length error
+    exit({error,{asn1,{"bad encoded value after byte:",
+			     error_pos(T),L}}});
 handle_error(ErrL,L) ->
-    exit({error,{unknown_error,ErrL,L}}).
+    exit({error,{asn1,ErrL,L}}).
+
+error_pos([]) ->
+    "unknown position";
+error_pos([B])->
+    B;
+error_pos([B|Bs]) ->
+    BS = 8 * length(Bs),
+    B bsl BS + error_pos(Bs).
 
 
 decode(Bin) when binary(Bin) ->
@@ -282,11 +331,21 @@ decode_primitive_incomplete([[opt,TagNo,Directives]],Bin) -> %optional
 	    %{{TagNo,asn1_NOVALUE},Bin}
 	    asn1_NOVALUE
     end;
+%% An optional that shall be undecoded
+decode_primitive_incomplete([[opt_undec,Tag]],Bin) ->
+    case decode_tag_and_length(Bin) of
+	{_,Tag,_,_} ->
+	    decode_incomplete_bin(Bin);
+	_ ->
+	    asn1_NOVALUE
+    end;
 %% A choice alternative that shall be undecoded
 decode_primitive_incomplete([[alt_undec,TagNo]|RestAlts],Bin) ->
 %    decode_incomplete_bin(Bin);
-    case decode_tlv(Bin) of
-	{{_Form,TagNo,_Len,_V},_R} ->
+%    case decode_tlv(Bin) of
+    case decode_tag_and_length(Bin) of
+%	{{_Form,TagNo,_Len,_V},_R} ->
+	{_,TagNo,_,_} ->
 	    decode_incomplete_bin(Bin);
 	_ ->
 	    decode_primitive_incomplete(RestAlts,Bin)
@@ -305,6 +364,13 @@ decode_primitive_incomplete([[alt,TagNo,Directives]|RestAlts],Bin) ->
 	_ ->
 	    decode_primitive_incomplete(RestAlts,Bin)
     end;
+decode_primitive_incomplete([[alt_parts,TagNo]],Bin) ->
+    case decode_tlv(Bin) of
+	{{_Form,TagNo,_Len,V},Rest} ->
+	    {{TagNo,V},Rest};
+	_ ->
+	    asn1_NOVALUE
+    end;
 decode_primitive_incomplete([[alt_parts,TagNo]|RestAlts],Bin) ->
     case decode_tlv(Bin) of
 	{{_Form,TagNo,_Len,V},Rest} ->
@@ -313,7 +379,7 @@ decode_primitive_incomplete([[alt_parts,TagNo]|RestAlts],Bin) ->
 	    decode_primitive_incomplete(RestAlts,Bin)
     end;
 decode_primitive_incomplete([[undec,_TagNo]|_RestTag],Bin) -> %incomlete decode
-    decode_incomplete_bin(Bin); %% use this if changing handling of
+    decode_incomplete_bin(Bin); 
 decode_primitive_incomplete([[parts,TagNo]|_RestTag],Bin) ->
     case decode_tlv(Bin) of
 	{{_Form,TagNo,_Len,V},Rest} ->
@@ -330,13 +396,15 @@ decode_primitive_incomplete([mandatory|RestTag],Bin) ->
     end;
 %% A choice that is a toptype or a mandatory component of a
 %% SEQUENCE or SET.
-decode_primitive_incomplete([[mandatory,Directives]],Bin) ->
+decode_primitive_incomplete([[mandatory|Directives]],Bin) ->
     case decode_tlv(Bin) of
 	{{Form,TagNo,Len,V},Rest} ->
 	    decode_incomplete2(Form,TagNo,Len,V,Directives,Rest);
 	 _ ->
 	    {error,{asn1,"partial incomplete decode failure"}}
     end;
+%decode_primitive_incomplete([L],Bin) when list(L) ->
+%    decode_primitive_incomplete(L,Bin);
 decode_primitive_incomplete([],Bin) ->
     decode_primitive(Bin).
 
@@ -358,36 +426,47 @@ decode_incomplete2(1,TagNo,indefinite,V,TagMatch,_) ->
     %% constructed indefinite length
     {Vlist,Rest2} = decode_constr_indef_incomplete(TagMatch,V,[]),
     {{TagNo,Vlist},Rest2};
+decode_incomplete2(1,TagNo,_Len,V,[TagMatch],Rest) when list(TagMatch) ->
+    {{TagNo,decode_constructed_incomplete(TagMatch,V)},Rest};
 decode_incomplete2(1,TagNo,_Len,V,TagMatch,Rest) ->
     {{TagNo,decode_constructed_incomplete(TagMatch,V)},Rest};
 decode_incomplete2(0,TagNo,_Len,V,_TagMatch,Rest) ->
     {{TagNo,V},Rest}.
 
+decode_constructed_incomplete([Tags=[Ts]],Bin) when list(Ts) ->
+    decode_constructed_incomplete(Tags,Bin);
 decode_constructed_incomplete(_TagMatch,<<>>) ->
     [];
 decode_constructed_incomplete([mandatory|RestTag],Bin) ->
     {Tlv,Rest} = decode_primitive(Bin),
     [Tlv|decode_constructed_incomplete(RestTag,Rest)];
 decode_constructed_incomplete(Directives=[[Alt,_]|_],Bin) 
-  when Alt == alt_undec; Alt == alt ->
+  when Alt == alt_undec; Alt == alt; Alt == alt_parts ->
+%    io:format("Directives: ~p~n",[Directives]),
     case decode_tlv(Bin) of
 	{{_Form,TagNo,_Len,V},Rest} ->
 	    case incomplete_choice_alt(TagNo,Directives) of
-		alt_undec ->
+		{alt_undec,_} ->
 		    LenA = size(Bin)-size(Rest),
 		    <<A:LenA/binary,Rest/binary>> = Bin,
 		    A;
 %		    {UndecBin,_}=decode_incomplete_bin(Bin),
 %		    UndecBin;
 %		    [{TagNo,V}];
-		alt ->
-		    {Tlv,_} = decode_primitive(V),
-		    [{TagNo,Tlv}];
-		alt_parts ->
+		{alt,InnerDirectives} ->
+		    {Tlv,Rest} = decode_primitive_incomplete(InnerDirectives,V),
+		    {TagNo,Tlv};
+%		    {Tlv,_} = decode_primitive(V),
+%		    [{TagNo,Tlv}];
+		{alt_parts,_} ->
 		    %{{TagNo,decode_parts_incomplete(V)},Rest}; % maybe wrong
 		    [{TagNo,decode_parts_incomplete(V)}];
-		Err ->
-		    {error,{asn1,"partial incomplete decode failure",Err}}
+		no_match -> % if a choice alternative was encoded that
+                            % was not specified in the config file,
+                            % thus decode component anonomous.
+%		    {error,{asn1,"partial incomplete decode failure",Err}}
+		    {Tlv,_}=decode_primitive(Bin),
+		    Tlv
 	    end;
 	_ ->
 	    {error,{asn1,"partial incomplete decode failure"}}
@@ -423,16 +502,65 @@ decode_incomplete_bin(Bin) ->
     <<IncBin:IncLen/binary,Ret/binary>> = Bin,
     {IncBin,Ret}.
 	    
-incomplete_choice_alt(TagNo,[[Alt,TagNo]|_Directives]) ->
-    Alt;
+incomplete_choice_alt(TagNo,[[Alt,TagNo]|Directives]) ->
+    {Alt,Directives};
+incomplete_choice_alt(TagNo,[D]) when list(D) ->
+    incomplete_choice_alt(TagNo,D);
 incomplete_choice_alt(TagNo,[_H|Directives]) ->
     incomplete_choice_alt(TagNo,Directives);
 incomplete_choice_alt(_,[]) ->
-    error.
+    no_match.
+
+
+
+
+%% decode_selective(Pattern, Binary) the first argument is a pattern that tells
+%% what to do with the next element the second is the BER encoded
+%% message as a binary
+%% Returns {ok,Value} or {error,Reason}
+%% Value is a binary that in turn must be decoded to get the decoded
+%% value.
+decode_selective([],Binary) ->
+    {ok,Binary};
+decode_selective([skip|RestPattern],Binary)->
+    {ok,RestBinary}=skip_tag(Binary),
+    {ok,RestBinary2}=skip_length_and_value(RestBinary),
+    decode_selective(RestPattern,RestBinary2);
+decode_selective([[skip_optional,Tag]|RestPattern],Binary) ->
+    case skip_optional_tag(Tag,Binary) of
+	{ok,RestBinary} ->
+	    {ok,RestBinary2}=skip_length_and_value(RestBinary),
+	    decode_selective(RestPattern,RestBinary2);
+	missing ->
+	    decode_selective(RestPattern,Binary)
+    end;
+decode_selective([[choosen,Tag]],Binary) ->
+    return_value(Tag,Binary);
+%     case skip_optional_tag(Tag,Binary) of %may be optional/default
+% 	{ok,RestBinary} ->
+% 	    {ok,Value} = get_value(RestBinary);
+% 	missing ->
+% 	    {ok,<<>>}
+%     end;
+decode_selective([[choosen,Tag]|RestPattern],Binary) ->
+    case skip_optional_tag(Tag,Binary) of
+	{ok,RestBinary} ->
+	    {ok,Value} = get_value(RestBinary),
+	    decode_selective(RestPattern,Value);
+	missing ->
+	    {ok,<<>>}
+    end;
+decode_selective(P,_) ->
+    {error,{asn1,{partial_decode,"bad pattern",P}}}.
+
+return_value(Tag,Binary) ->
+    {ok,{Tag,RestBinary}}=get_tag(Binary),
+    {ok,{LenVal,_RestBinary2}} = get_length_and_value(RestBinary),
+    {ok,<<Tag/binary,LenVal/binary>>}.
 
 
 %% skip_tag and skip_length_and_value are rutines used both by
-%% decode_partial_incomplete and decode_partial (decode/2).
+%% decode_partial_incomplete and decode_selective (decode/2).
 
 skip_tag(<<_:3,31:5,Rest/binary>>)->
     skip_long_tag(Rest);
@@ -443,6 +571,16 @@ skip_long_tag(<<1:1,_:7,Rest/binary>>) ->
     skip_long_tag(Rest);
 skip_long_tag(<<0:1,_:7,Rest/binary>>) ->
     {ok,Rest}.
+
+skip_optional_tag(<<>>,Binary) ->
+    {ok,Binary};
+skip_optional_tag(<<Tag,RestTag/binary>>,<<Tag,Rest/binary>>) ->
+    skip_optional_tag(RestTag,Rest);
+skip_optional_tag(_,_) ->
+    missing.
+
+
+
 
 skip_length_and_value(Binary) ->
     case decode_length(Binary) of
@@ -459,6 +597,58 @@ skip_indefinite_value(Binary) ->
     {ok,RestBinary}=skip_tag(Binary),
     {ok,RestBinary2} = skip_length_and_value(RestBinary),
     skip_indefinite_value(RestBinary2).
+
+get_value(Binary) ->
+    case decode_length(Binary) of
+	{indefinite,RestBinary} ->
+	    get_indefinite_value(RestBinary,[]);
+	{Length,RestBinary} ->
+	    <<Value:Length/binary,_Rest/binary>> = RestBinary,
+	    {ok,Value}
+    end.
+
+get_indefinite_value(<<0,0,_Rest/binary>>,Acc) ->
+    {ok,list_to_binary(lists:reverse(Acc))};
+get_indefinite_value(Binary,Acc) ->
+    {ok,{Tag,RestBinary}}=get_tag(Binary),
+    {ok,{LenVal,RestBinary2}} = get_length_and_value(RestBinary),
+    get_indefinite_value(RestBinary2,[LenVal,Tag|Acc]).
+
+get_tag(<<H:1/binary,Rest/binary>>) ->
+    case H of
+	<<_:3,31:5>> ->
+	    get_long_tag(Rest,[H]);
+	_ -> {ok,{H,Rest}}
+    end.
+get_long_tag(<<H:1/binary,Rest/binary>>,Acc) ->
+    case H of
+	<<0:1,_:7>> ->
+	    {ok,{list_to_binary(lists:reverse([H|Acc])),Rest}};
+	_ ->
+	    get_long_tag(Rest,[H|Acc])
+    end.
+
+get_length_and_value(Bin = <<0:1,Length:7,_T/binary>>) ->
+    <<Len,Val:Length/binary,Rest/binary>> = Bin,
+    {ok,{<<Len,Val/binary>>, Rest}};
+get_length_and_value(Bin = <<1:1,0:7,_T/binary>>) ->
+    get_indefinite_length_and_value(Bin);
+get_length_and_value(<<1:1,LL:7,T/binary>>) ->
+    <<Length:LL/unit:8,Rest/binary>> = T,
+    <<Value:Length/binary,Rest2/binary>> = Rest,
+    {ok,{<<1:1,LL:7,Length:LL/unit:8,Value/binary>>,Rest2}}.
+
+get_indefinite_length_and_value(<<H,T>>) ->
+    get_indefinite_length_and_value(T,[H]).
+
+get_indefinite_length_and_value(<<0,0,Rest/binary>>,Acc) ->
+    {ok,{list_to_binary(lists:reverse(Acc)),Rest}};
+get_indefinite_length_and_value(Binary,Acc) ->
+    {ok,{Tag,RestBinary}}=get_tag(Binary),
+    {ok,{LenVal,RestBinary2}}=get_length_and_value(RestBinary),
+    get_indefinite_length_and_value(RestBinary2,[LenVal,Tag|Acc]).
+    
+
 
     
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1663,8 +1853,32 @@ mk_universal_string([0,0,0,D|T],Acc) ->
 mk_universal_string([A,B,C,D|T],Acc) -> 
     mk_universal_string(T,[{A,B,C,D}|Acc]). 
  
+
+%%============================================================================
+%% encode UTF8 string 
+%%============================================================================
+
+encode_UTF8_string(_C,UTF8String,TagIn) when binary(UTF8String) ->
+    encode_tags(TagIn, UTF8String, size(UTF8String));
+encode_UTF8_string(_C,UTF8String,TagIn) ->
+    encode_tags(TagIn, UTF8String, length(UTF8String)).
+
+
+%%============================================================================
+%% decode UTF8 string 
+%%============================================================================
+
+decode_UTF8_string(Tlv,TagsIn) ->
+    Val = match_tags(Tlv, TagsIn),
+    case Val of
+	PartList = [_H|_T] -> % constructed val
+	    collect_parts(PartList);
+	Bin ->
+	    Bin
+    end.
+	    
  
-%%============================================================================ 
+%%============================================================================
 %% encode BMP string 
 %%============================================================================ 
 

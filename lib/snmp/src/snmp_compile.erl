@@ -538,13 +538,14 @@ definitions_loop([{{trap,TrapName,EnterPrise, Variables,
     CDATA = get(cdata),
     snmp_compile_lib:check_trap_name(EnterPrise, Line, CDATA#cdata.mes),
     Descriptions = make_description(Message1),
-    OidObjects   = snmp_misc:map({snmp_compile_lib,trap_variable_info},
-				 [Line, CDATA#cdata.mes],
-				 Variables), 
     Trap = #trap{trapname      = TrapName, 
 		 enterpriseoid = EnterPrise,
 		 specificcode  = SpecificCode,
-		 oidobjects    = OidObjects,
+		 %% oidobjects: Store Variables temprary here.
+		 %%             This will be replaced later in the 
+		 %%             get_final_mib function by a call to
+		 %%             the update_trap_objects function.
+		 oidobjects    = Variables,  
 		 description   = Descriptions},
     snmp_misc:map({snmp_compile_lib,check_trap}, [Trap, Line], 
 		  CDATA#cdata.traps),
@@ -573,7 +574,8 @@ definitions_loop([{{notification,TrapName,Variables,deprecated,
 		    {'DESCRIPTION', Message1},
 		    {FatherName,SubIndex}},Line}|T],
 		 false) ->
-    i("notification ~w is deprecated => ignored",[TrapName],Line),    
+    i("defloop -> notification ~w is deprecated => ignored",
+      [TrapName],Line),    
     update_status(TrapName, deprecated),
     ensure_macro_imported('NOTIFICATION-TYPE', Line),
     definitions_loop(T, false);    
@@ -582,7 +584,8 @@ definitions_loop([{{notification,TrapName,Variables,obsolete,
 		    {'DESCRIPTION', Message1},
 		    {FatherName,SubIndex}},Line}|T],
 		 Deprecated) ->
-    l("notification ~w (~w) is obsolete => ignored", [TrapName,Line]),
+    l("defloop -> notification ~w (~w) is obsolete => ignored", 
+      [TrapName,Line]),
     update_status(TrapName, obsolete),
     ensure_macro_imported('NOTIFICATION-TYPE', Line),
     definitions_loop(T, Deprecated);    
@@ -604,12 +607,13 @@ definitions_loop([{{notification,TrapName,Variables,Status,
     CDATA = get(cdata),
     snmp_compile_lib:register_oid(Line,TrapName,FatherName,SubIndex),
     Descriptions = make_description(Message1),
-    OidObjects   = snmp_misc:map({snmp_compile_lib,trap_variable_info},
-				 [Line, CDATA#cdata.mes],
-				 Variables),
     Notif = #notification{trapname    = TrapName,
 			  description = Descriptions,
-			  oidobjects  = OidObjects},
+			  %% oidobjects: Store Variables temprary here.
+			  %%             This will be replaced later in the 
+			  %%             get_final_mib function by a call to
+			  %%             the update_trap_objects function.
+			  oidobjects  = Variables}, 
     snmp_compile_lib:check_notification(Notif, Line, CDATA#cdata.traps),
     snmp_compile_lib:add_cdata(#cdata.traps, [Notif]),
     definitions_loop(T, Deprecated);    
@@ -750,10 +754,11 @@ define_cols([{{object_type,NameOfCol,Type1,Access,{variable,Defval},Status,
       "   NameOfCol:  ~p~n"
       "   Type1:      ~p~n"
       "   Access:     ~p~n"
+      "   Defval:     ~p~n"
       "   Status      ~p~n"
       "   NameOfEntry ~p~n"
       "   Oline:      ~p",
-      [NameOfCol,Type1,Access,Status,NameOfEntry,Oline]),
+      [NameOfCol,Type1,Access,Defval,Status,NameOfEntry,Oline]),
     update_status(NameOfCol, Status),
     Deprecated = get_deprecated(get(options)),
     ASN1type = snmp_compile_lib:make_ASN1type(Type1),
@@ -906,7 +911,7 @@ test_table(NameOfTable,Taccess,Kind,Tindex,Tline) ->
 	    ok
     end.
 
-save(Filename, MibName,Options) ->
+save(Filename, MibName, Options) ->
     R = filename:rootname(Filename),
     File1 = filename:basename(R),
     File3 = snmp_misc:to_upper(File1),
@@ -925,7 +930,7 @@ save(Filename, MibName,Options) ->
 			    snmp_compile_lib:error(
 			      "Couldn't write file \"~s\".",[File2])
 		    end;
-		QQ ->
+		_ ->
 		    {'EXIT',error}
 	    end;
 	MibNameL ->
@@ -938,7 +943,6 @@ save(Filename, MibName,Options) ->
 %% Output: {ok, Mib} where MIB is a tuple of Tokens.
 %%         {error, {LineNbr, Mod, Msg} an error on line number LineNb.
 
-
 snmp_parse(FileName) ->
     case snmp_tok:start_link(reserved_words(),
 			     [{file, FileName ++ ".mib"},
@@ -948,7 +952,8 @@ snmp_parse(FileName) ->
 	{ok, TokPid} ->
 	    Toks = snmp_tok:get_all_tokens(TokPid),
 	    set_version(Toks),
-%	    debug("Lexical analysis:", Toks),
+	    %% io:format("snmp_parse -> lexical analysis: ~n~p~n", [Toks]),
+	    %% t("snmp_parse -> lexical analysis: ~n~p", [Toks]),
 	    put(cdata,snmp_compile_lib:make_cdata(FileName ++ ".funcs")),
 	    snmp_tok:stop(TokPid),
 	    Res = if list(Toks) ->
@@ -956,6 +961,7 @@ snmp_parse(FileName) ->
 		     true ->
 			  Toks
 		  end,
+	    %% t("snmp_parse -> parsed: ~n~p", [Res]),
 	    case Res of
 		{ok, Mib} ->
 		    {ok, Mib};
@@ -987,45 +993,81 @@ format_yecc_error(Line, [ErrMsg, [${,Category, $,, LineStr,$,, Value, $}]]) ->
     {Line, "~s \"~s\" (~s).", [ErrMsg, Value, Category]}.
 
 %% The same as the (quoted) Terminals in the snmp_mib_gram.yrl
-reserved_words() -> [ 'ACCESS', 'BEGIN', 'BIT', 'CONTACT-INFO',
-'Counter', 'DEFINITIONS', 'DEFVAL', 'DESCRIPTION', 'DISPLAY-HINT',
-'END', 'ENTERPRISE', 'FROM', 'Gauge', 'IDENTIFIER', 'IDENTIFIER',
-'IMPORTS', 'INDEX', 'INTEGER', 'IpAddress', 'LAST-UPDATED',
-'NetworkAddress', 'OBJECT', 'OBJECT', 'OBJECT-TYPE', 'OCTET', 'OF',
-'Opaque', 'REFERENCE', 'SEQUENCE', 'SIZE', 'STATUS', 'STRING',
-'SYNTAX', 'TRAP-TYPE', 'TimeTicks', 'VARIABLES', 'deprecated',
-'mandatory', 'not-accessible', 'obsolete', 'optional', 'read-only',
-'read-write', 'write-only',
+reserved_words() -> 
+    [ 
+      'ACCESS', 
+      'BEGIN', 
+      'BIT', 
+      'CONTACT-INFO',
+      'Counter', 
+      'DEFINITIONS', 
+      'DEFVAL', 
+      'DESCRIPTION', 
+      'DISPLAY-HINT',
+      'END', 
+      'ENTERPRISE', 
+      'FROM', 
+      'Gauge', 
+      'IDENTIFIER', 
+      'IDENTIFIER',
+      'IMPORTS', 
+      'INDEX', 
+      'INTEGER', 
+      'IpAddress', 
+      'LAST-UPDATED',
+      'NetworkAddress', 
+      'OBJECT', 
+      'OBJECT', 
+      'OBJECT-TYPE', 
+      'OCTET', 
+      'OF',
+      'Opaque', 
+      'REFERENCE', 
+      'SEQUENCE', 
+      'SIZE', 
+      'STATUS', 
+      'STRING',
+      'SYNTAX', 
+      'TRAP-TYPE', 
+      'TimeTicks', 
+      'VARIABLES', 
+      'deprecated',
+      'mandatory', 
+      'not-accessible', 
+      'obsolete', 
+      'optional', 
+      'read-only',
+      'read-write', 
+      'write-only',
 
-%% v2
-'LAST-UPDATED',
-'ORGANIZATION',
-'CONTACT-INFO',
-'MODULE-IDENTITY',
-'NOTIFICATION-TYPE',
-'MODULE-COMPLIANCE',
-'OBJECT-GROUP',
-'NOTIFICATION-GROUP',
-'REVISION',
-'OBJECT-IDENTITY',
-'current',
-'MAX-ACCESS',
-'accessible-for-notify',
-'read-create',
-'UNITS',
-'AUGMENTS',
-'IMPLIED',
-'OBJECTS',
-'TEXTUAL-CONVENTION',
-'OBJECT-GROUP',
-'NOTIFICATION-GROUP',
-'NOTIFICATIONS',
-'MODULE-COMPLIANCE',
-'MODULE',
-'MANDATORY-GROUPS',
-'GROUP',
-'WRITE-SYNTAX',
-'MIN-ACCESS',
-'BITS'
-].
-
+      %% v2
+      'LAST-UPDATED',
+      'ORGANIZATION',
+      'CONTACT-INFO',
+      'MODULE-IDENTITY',
+      'NOTIFICATION-TYPE',
+      'MODULE-COMPLIANCE',
+      'OBJECT-GROUP',
+      'NOTIFICATION-GROUP',
+      'REVISION',
+      'OBJECT-IDENTITY',
+      'current',
+      'MAX-ACCESS',
+      'accessible-for-notify',
+      'read-create',
+      'UNITS',
+      'AUGMENTS',
+      'IMPLIED',
+      'OBJECTS',
+      'TEXTUAL-CONVENTION',
+      'OBJECT-GROUP',
+      'NOTIFICATION-GROUP',
+      'NOTIFICATIONS',
+      'MODULE-COMPLIANCE',
+      'MODULE',
+      'MANDATORY-GROUPS',
+      'GROUP',
+      'WRITE-SYNTAX',
+      'MIN-ACCESS',
+      'BITS'
+     ].

@@ -184,28 +184,33 @@ try_net_load_table(Tab, Reason, Ns, Cs) ->
 do_get_network_copy(Tab, _Reason, _Ns, unknown, _Cs) ->
     verbose("Local table copy of ~p has recently been deleted, ignored.~n", [Tab]),
     {not_loaded, storage_unknown};
-do_get_network_copy(Tab, Reason, Ns, Storage, Cs) ->
+do_get_network_copy(Tab, Reason, Ns, Storage, Cs) ->    
     [Node | Tail] = Ns,
-    dbg_out("Getting table ~p (~p) from node ~p: ~p~n",
-	    [Tab, Storage, Node, Reason]),
-    ?eval_debug_fun({?MODULE, do_get_network_copy},
-		    [{tab, Tab}, {reason, Reason}, 
-		     {nodes, Ns}, {storage, Storage}]),
-    mnesia_controller:start_remote_sender(Node, Tab, self(), Storage),
-    put(mnesia_table_sender_node, {Tab, Node}),
-    case init_receiver(Node, Tab, Storage, Cs, Reason) of
-	ok ->
-	    set({Tab, load_node}, Node),
-	    set({Tab, load_reason}, Reason),
-	    mnesia_controller:i_have_tab(Tab),
-	    dbg_out("Table ~p copied from ~p to ~p~n", [Tab, Node, node()]),
-	    {loaded, ok};
-	Err = {error, _} when element(1, Reason) == dumper ->
-	    {not_loaded,Err};
-	restart ->
-	    try_net_load_table(Tab, Reason, Tail, Cs);
-	down ->
-	    try_net_load_table(Tab, Reason, Tail, Cs) 
+    case lists:member(Node,val({current, db_nodes})) of
+	true ->
+	    dbg_out("Getting table ~p (~p) from node ~p: ~p~n",
+		    [Tab, Storage, Node, Reason]),
+	    ?eval_debug_fun({?MODULE, do_get_network_copy},
+			    [{tab, Tab}, {reason, Reason}, 
+			     {nodes, Ns}, {storage, Storage}]),
+	    mnesia_controller:start_remote_sender(Node, Tab, self(), Storage),
+	    put(mnesia_table_sender_node, {Tab, Node}),
+	    case init_receiver(Node, Tab, Storage, Cs, Reason) of
+		ok ->
+		    set({Tab, load_node}, Node),
+		    set({Tab, load_reason}, Reason),
+		    mnesia_controller:i_have_tab(Tab),
+		    dbg_out("Table ~p copied from ~p to ~p~n", [Tab, Node, node()]),
+		    {loaded, ok};
+		Err = {error, _} when element(1, Reason) == dumper ->
+		    {not_loaded,Err};
+		restart ->
+		    try_net_load_table(Tab, Reason, Tail ++ [Node], Cs);
+		down ->
+		    try_net_load_table(Tab, Reason, Tail, Cs) 
+	    end;
+	false ->
+	    try_net_load_table(Tab, Reason, Tail, Cs)
     end.
 
 snmpify(Tab, Storage) ->

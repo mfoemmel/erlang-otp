@@ -48,6 +48,7 @@
 	 get_engine_boots/0, get_engine_time/0,
 	 set_engine_boots/1, set_engine_time/1,
 	 table_next/2, check_status/3]).
+-export([add_context/1, delete_context/1]).
 
 %% Internal exports
 -export([init_var/1]).
@@ -122,6 +123,32 @@ init_context_table([Row | T]) ->
 init_context_table([]) -> true.
 
 
+add_context(Ctx) ->
+    case (catch snmp_conf:check_context(Ctx)) of
+	{ok, Row} ->
+	    Context = element(1, Row),
+	    Key = [length(Context) | Context],
+	    Db = db(intContextTable),
+	    case snmp_local_db:table_create_row(Db, Key, Row) of
+		true ->
+		    {ok, Key};
+		false ->
+		    {error, create_failed}
+	    end;
+	Error ->
+	    {error, Error}
+    end.
+
+delete_context(Key) ->
+    Db = db(intContextTable),
+    case snmp_local_db:table_delete_row(Db, Key) of
+        true ->
+            ok;
+        false ->
+            {error, not_found}
+    end.
+
+   
 %%-----------------------------------------------------------------
 %% Instrumentation functions
 %% Retreive functions are also used internally by the agent, so

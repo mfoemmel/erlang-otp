@@ -39,16 +39,18 @@
 #include "ei_connect_int.h"
 #include "ei_internal.h"
 #include "ei_trace.h"
+#include "ei_portio.h"
 #include "show_msg.h"
 
-/* length (4), PASS_THROUGH (1), header, message */
-static int ei_send_reg_encoded_timeout(int fd, const erlang_pid *from,
-				       const char *to, const char *msg,
-				       int msglen, int timeout)
+int ei_send_reg_encoded_tmo(int fd, const erlang_pid *from,
+			    const char *to, const char *msg, int msglen,
+			    unsigned ms)
 {
     char *s, header[1400]; /* see size calculation below */
     erlang_trace *token = NULL;
     int index = 5; /* reserve 5 bytes for control message */
+    int res;
+
 #ifdef HAVE_WRITEV
     struct iovec v[2];
 #endif
@@ -83,13 +85,6 @@ static int ei_send_reg_encoded_timeout(int fd, const erlang_pid *from,
     if (ei_tracelevel > 0) 
 	ei_show_sendmsg(stderr,header,msg);
 
-    if (timeout > 0) {
-	int r = ei_rw_timeout(fd, 1, &timeout, header, index);
-	if (r == 0)
-	    r = ei_rw_timeout(fd, 1, &timeout, (char*)msg, msglen);
-	return r;
-    }
-
 #ifdef HAVE_WRITEV
 
     v[0].iov_base = (char *)header;
@@ -97,14 +92,21 @@ static int ei_send_reg_encoded_timeout(int fd, const erlang_pid *from,
     v[1].iov_base = (char *)msg;
     v[1].iov_len = msglen;
     
-    if (writev(fd,v,2) != index+msglen) return -1;
-    
+    if ((res = ei_writev_fill_t(fd,v,2,ms)) != index+msglen) {
+	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
+	return -1;
+    }
 #else
     
     /* no writev() */
-    if (writesocket(fd,header,index) != index) return -1;
-    if (writesocket(fd,msg,msglen) != msglen) return -1;
-    
+    if ((res = ei_write_fill_t(fd,header,index,ms)) != index) {
+	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
+	return -1;
+    }
+    if ((res = ei_write_fill_t(fd,msg,msglen,ms)) != msglen) {
+	erl_errno = (res == -2) ? ETIMEDOUT : EIO;
+	return -1;
+    }
 #endif
     
     return 0;
@@ -114,6 +116,6 @@ static int ei_send_reg_encoded_timeout(int fd, const erlang_pid *from,
 int ei_send_reg_encoded(int fd, const erlang_pid *from, const char *to,
 			const char *msg, int msglen)
 {
-    return ei_send_reg_encoded_timeout(fd, from, to, msg, msglen, 0);
+    return ei_send_reg_encoded_tmo(fd, from, to, msg, msglen, 0);
 }
 

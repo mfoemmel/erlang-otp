@@ -56,55 +56,36 @@ init(State) ->
 %% Args:
 %% Returns: 
 %%-----------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-next_one({SubObjectKey, Counter}) ->
-    _RF = ?read_function({orber_CosNaming, SubObjectKey}),
-    case orber_cosnaming_utils:query_result(mnesia:transaction(_RF)) of
-	error ->
-	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO});
-	TotalList ->
-	    if
-		length(TotalList) - Counter =< 0 ->
-		    NoBinding = #'CosNaming_Binding'{binding_name=[],
-						     binding_type=nobject},
-		    {reply, {false, NoBinding}, {SubObjectKey, Counter}};
-		true ->
-		    NewCounter = Counter + 1,
-		    {N, T, O} = lists:nth(NewCounter, TotalList),
-		    Binding = #'CosNaming_Binding'{binding_name=[N],
-						   binding_type=T},
-		    {reply, {true, Binding}, {SubObjectKey, NewCounter}}
-	    end
-    end.
+next_one([]) ->
+    NoBinding = #'CosNaming_Binding'{binding_name=[],
+				     binding_type=nobject},
+    {reply, {false, NoBinding}, []};
+next_one([Binding]) ->
+    {reply, {true, Binding}, []};
+next_one([Binding|Rest]) ->
+    {reply, {true, Binding}, Rest}.
 
-next_n({SubObjectKey, Counter}, How_many) ->
-    _RF = ?read_function({orber_CosNaming, SubObjectKey}),
-    case orber_cosnaming_utils:query_result(mnesia:transaction(_RF)) of
-	error ->
-	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO});
-	TotalList ->
-	    if
-		length(TotalList) - Counter =< 0 ->
-		    {reply, {false, []}, {SubObjectKey, Counter}};
-		true ->
-		    List = lists:sublist(TotalList, Counter + 1, How_many),
-		    BList = lists:map(
-			      fun({N, T, O}) ->
-				      #'CosNaming_Binding'{binding_name=[N],
-							   binding_type=T}
-			      end, List),
-		    NewCounter = length(TotalList) - Counter,
-		    {reply, {true, BList}, {SubObjectKey, NewCounter}}
-	    end
-    end.
+next_n([], _) ->
+    {reply, {false, []}, []};
+next_n(List, HowMany) ->
+    {More, Acc, NewList} = split(List, HowMany, []),
+    {reply, {More, Acc}, NewList}.
+
+split([], _, Acc) ->
+    {false, Acc, []};
+split(Rest, 0, Acc) ->
+    {true, Acc, Rest};
+split([H|T], N, Acc) ->
+    split(T, N-1, [H|Acc]).
+
 		    
 destroy(OE_State) ->
-    %% Objkey server removes objectkey when receiving EXIT signal.
     {stop, normal, ok, OE_State}.
 
 %%-----------------------------------------------------------------

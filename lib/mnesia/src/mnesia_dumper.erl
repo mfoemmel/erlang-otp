@@ -681,7 +681,9 @@ insert_op(Tid, _, {op, clear_table, TabDef}, InPlace, InitBy) ->
 	       true ->
 		    ignore
 	    end,
-	    insert(Tid, Storage, Tab, '_', Oid, clear_table, InPlace, InitBy)
+	    %% Need to catch this, it crashes on ram_copies if 
+	    %% the op comes before table is loaded at startup.
+	    catch insert(Tid, Storage, Tab, '_', Oid, clear_table, InPlace, InitBy)
     end;
 
 insert_op(Tid, _, {op, merge_schema, TabDef}, InPlace, InitBy) ->

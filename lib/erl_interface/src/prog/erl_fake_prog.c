@@ -21,11 +21,14 @@
  *         -Werror"
  */
 
+/* #include <netdb.h> now included by ei.h */
 #include "erl_interface.h"
 
-int main(void);
-
-int main()
+#ifdef VXWORKS
+int erl_fake_prog_main(void)
+#else
+int main(void)
+#endif
 {
   ei_x_buff eix;
   int index = 0;
@@ -34,22 +37,29 @@ int main()
   unsigned char uchar, **ucharpp = NULL, *ucharp = NULL;
   void *voidp = NULL;
   Erl_Heap *erl_heapp = NULL;
-  int intx = erl_errno;
+  int intx = 0;
   int *intp = NULL;
   unsigned int uintx, *uintp;
   unsigned long *ulongp = NULL;
-  long longx;
-  double doublex;
+  long longx = 0;
+  double doublex = 0.0;
   short shortx = 42;
   FILE *filep = NULL;
   Erl_IpAddr erl_ipaddr = NULL;
   ErlMessage *erlmessagep = NULL;
   ErlConnect *erlconnectp = NULL;
+  struct hostent *hostp = NULL;
+  struct in_addr *inaddrp = NULL;
+
+  /* Converion to erl_interface format is in liberl_interface */
+
+  intx = erl_errno;
 
   ei_encode_term(charp, &index, voidp);
   ei_x_encode_term(&eix, voidp);
   ei_decode_term(charp, &index, voidp);
 
+  erl_init(voidp, longx);
   erl_connect_init(intx, charp,shortx);
   erl_connect_xinit(charp,charp,charp,erl_ipaddr,charp,shortx);
   erl_connect(charp); 
@@ -63,11 +73,11 @@ int main()
   erl_rpc(intx,charp,charp,etermp);
   erl_rpc_to(intx,charp,charp,etermp);
   erl_rpc_from(intx,intx,erlmessagep);
+
   erl_publish(intx);
   erl_accept(intx,erlconnectp);
-  /* FIXME
+
   erl_thiscookie();
-  */
   erl_thisnodename();
   erl_thishostname();
   erl_thisalivename();
@@ -77,9 +87,11 @@ int main()
   erl_err_quit(charp);
   erl_err_ret(charp);
   erl_err_sys(charp);
+
   erl_cons(etermp,etermp);
   erl_copy_term(etermp);
   erl_element(intx,etermp);
+
   erl_hd(etermp);
   erl_iolist_to_binary(etermp);
   erl_iolist_to_string(etermp);
@@ -101,16 +113,19 @@ int main()
   erl_mk_uint(uintx);
   erl_mk_var(charp);
   erl_print_term(filep,etermp);
-  erl_sprint_term(charp,etermp);
+  /*  erl_sprint_term(charp,etermp); */
   erl_size(etermp);
   erl_tl(etermp);
   erl_var_content(etermp, charp);
+
   erl_format(charp);
   erl_match(etermp, etermp);
+
   erl_global_names(intx, intp);
   erl_global_register(intx, charp, etermp);
   erl_global_unregister(intx, charp);
   erl_global_whereis(intx, charp, charp);
+
   erl_init_malloc(erl_heapp,longx);
   erl_alloc_eterm(uchar);
   erl_eterm_release();
@@ -120,6 +135,7 @@ int main()
   erl_free_compound(etermp);
   erl_malloc(longx);
   erl_free(voidp);
+
   erl_compare_ext(ucharp, ucharp);
   erl_decode(ucharp);
   erl_decode_buf(ucharpp);
@@ -129,6 +145,17 @@ int main()
   erl_ext_type(ucharp);
   erl_peek_ext(ucharp,intx);
   erl_term_len(etermp);
+
+  erl_gethostbyname(charp);
+  erl_gethostbyaddr(charp, intx, intx);
+  erl_gethostbyname_r(charp, hostp, charp, intx, intp);
+  erl_gethostbyaddr_r(charp, intx, intx, hostp, charp, intx, intp);
+
+  erl_init_resolve();
+  erl_distversion(intx);
+
+  erl_epmd_connect(inaddrp);
+  erl_epmd_port(inaddrp, charp, intp);
 
   charp  = ERL_ATOM_PTR(etermp);
   intx   = ERL_ATOM_SIZE(etermp);

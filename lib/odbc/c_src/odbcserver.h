@@ -18,10 +18,11 @@
 
 /* ----------------------------- CONSTANTS ------------------------------*/
 
-#define MAXCOLSIZE 4096 
+#define MAXCOLSIZE 8001
 #define MAX_ERR_MSG 1024
 #define ERRMSG_HEADR_SIZE 20
 #define MAX_CONN_STR_OUT 1024
+#define MAX_NAME 255
 #define TRUNCATED "01004"
 #define SQL_STATE_SIZE 6
 #define TRUE 1
@@ -29,6 +30,7 @@
 #define WAIT_FOR_NEW_MSG 0
 #define NEW_MSG_ARRIVED  1
 #define TIME_OUT 10
+#define DEC_NUM_LENGTH 50
 
 /* Constats defining the command protocol between the Erlang control process
    and the port program. These constants must also be defined in the same
@@ -48,28 +50,59 @@
 #define SELECT_RELATIVE		13
 #define SELECT_ABSOLUTE		14
 #define SELECT_N_NEXT		15
-#define DEBUG			16
+#define PARAM_QUERY		16
+#define DESCRIBE                17
+#define SHUTDOWN		18
 #define LENGTH_INDICATOR_SIZE	4
 #define INT_VALUE		1
 #define STR_VALUE		2
 #define ON		        1
 #define OFF		        2
 #define DUMMY_OFFSET            0
-/*%%%%%%%%%%%%%%% DEPRECATED CONSTANTS START %%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
-#define OPEN_DB			17
-#define CLOSE_DB		18
-#define BIND_COLUMN		19
-#define DESCRIBE_COLUMN		20
-#define END_TRANSACTION		21
-#define EXEDIR			22
-#define FETCH_DATA		23
-#define NUMBER_RESULT_COLUMNS	24
-#define ROW_COUNT		25
-#define SET_ATTRIBUTE		26
-#define READ_BUFFER		27
-#define CLOSE_HANDLE		28
-#define EXECDB			29
-/*%%%%%%%%%%%%%%% DEPRECATED CONSTANTS END %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*/
+
+/* EXIT CODES */
+#define EXIT_ALLOC		 2
+#define EXIT_ENV		 3
+#define EXIT_CONNECTION		 4
+#define EXIT_FREE		 5
+#define EXIT_STDIN_HEADER        6 
+#define EXIT_STDIN_BODY		 7
+#define EXIT_BIN		 8
+#define EXIT_THREAD		 9
+#define EXIT_PARAM_ARRAY         10
+#define EXIT_OLD_WINSOCK	 11
+#define EXIT_SOCKET_CONNECT      12  
+#define EXIT_SOCKET_SEND_HEADER	 13
+#define EXIT_SOCKET_SEND_BODY	 14
+#define EXIT_SOCKET_RECV_MSGSIZE 15
+#define EXIT_SOCKET_RECV_HEADER	 16
+#define EXIT_SOCKET_RECV_BODY    17
+#define EXIT_COLS		 18
+#define EXIT_ROWS		 19
+#define EXIT_DESC		 20
+#define EXIT_BIND		 21
+#define EXIT_MORE_RESULTS	 22
+#define EXIT_DRIVER_INFO         23
+
+/* COL_SIZE */
+#define COL_SQL_SMALLINT 5
+#define COL_SQL_INTEGER 10
+#define COL_SQL_REAL 7
+#define COL_SQL_DOUBLE 15
+#define COL_SQL_TINYINT 4
+
+/* Types of parameters given to param_query*/
+#define USER_SMALL_INT 1
+#define USER_INT 2
+#define USER_DECIMAL 3
+#define USER_NMERIC 4
+#define USER_CHAR 5
+#define USER_VARCHAR 6
+#define USER_FLOAT 7
+#define USER_REAL 8
+#define USER_DOUBLE 9
+#define USER_BOOLEAN 10
+#define USER_TINY_INT 11
 
 /*------------------------   TYPDEFS  ----------------------------------*/
 
@@ -77,47 +110,67 @@ typedef unsigned char byte;
 typedef int Boolean;
 
 typedef struct {
-  char columnName[100];
-  char *buf;
-  SQLSMALLINT type;
-  char *typename;                 /* columntype as readible name */
-  SQLINTEGER len;
-  SQLINTEGER resultLen;
-} ColumnDef;
+    SQLSMALLINT c;
+    SQLSMALLINT sql;
+    SQLUINTEGER col_size;
+    SQLSMALLINT decimal_digits;
+    SQLUINTEGER len;
+    SQLINTEGER  strlen_or_indptr;
+    SQLINTEGER *strlen_or_indptr_array; 
+} col_type;
 
 typedef struct {
-  int length;
-  byte *buffer;
-  Boolean dyn_alloc; 
-} DbResultMsg;
+    char *buffer;
+    col_type type;
+} db_column;
 
 typedef struct {
-  SQLCHAR sqlState[SQL_STATE_SIZE];
-  char *error_msg;
-} Diagnos;
+    int length;
+    byte *buffer;
+    Boolean dyn_alloc; 
+} db_result_msg;
 
 typedef struct {
-  SQLHDBC connection_handle;     
-  SQLHENV environment_handle;    
-  SQLHSTMT statement_handle;
-  ColumnDef *columns;
-  int number_of_columns;
-  ei_x_buff dynamic_buffer;
-  Boolean associated_result_set;
-  Boolean use_srollable_cursors;
-  int tuple_row;
-} DBState;
+    SQLCHAR sqlState[SQL_STATE_SIZE];
+    byte error_msg[MAX_ERR_MSG];
+} diagnos;
 
-#define connection_handle(DBState) (DBState -> connection_handle)
-#define environment_handle(DBState) (DBState -> environment_handle)
-#define statement_handle(DBState) (DBState -> statement_handle)
-#define columns(DBState) (DBState -> columns)
-#define nr_of_columns(DBState) (DBState -> number_of_columns)
-#define dynamic_buffer(DBState) (DBState -> dynamic_buffer)
-#define associated_result_set(DBState) (DBState -> associated_result_set)
-#define use_srollable_cursors(DBState) (DBState -> use_srollable_cursors)
-#define tuple_row(DBState) (DBState -> tuple_row)
+typedef struct {
+    col_type type;
+    int offset;
+    union {
+	byte *string;
+	long *integer;
+	double *floating;
+	Boolean *bool;
+    }values;
+} param_array;
 
-#define DBG( proto ) if (dbgflag) Log proto
+typedef struct {
+    SQLUSMALLINT params_processed;
+    SQLUSMALLINT *param_status_array;  
+} param_status; 
+
+typedef struct {
+    SQLHDBC connection_handle;     
+    SQLHENV environment_handle;    
+    SQLHSTMT statement_handle;
+    db_column *columns;
+    int number_of_columns;
+    ei_x_buff dynamic_buffer;
+    Boolean associated_result_set;
+    Boolean use_srollable_cursors;
+    Boolean tuple_row;
+} db_state;
+
+#define connection_handle(db_state) (db_state -> connection_handle)
+#define environment_handle(db_state) (db_state -> environment_handle)
+#define statement_handle(db_state) (db_state -> statement_handle)
+#define columns(db_state) (db_state -> columns)
+#define nr_of_columns(db_state) (db_state -> number_of_columns)
+#define dynamic_buffer(db_state) (db_state -> dynamic_buffer)
+#define associated_result_set(db_state) (db_state -> associated_result_set)
+#define use_srollable_cursors(db_state) (db_state -> use_srollable_cursors)
+#define tuple_row(db_state) (db_state -> tuple_row)
 
 

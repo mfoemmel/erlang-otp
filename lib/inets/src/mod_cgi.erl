@@ -18,9 +18,12 @@
 -module(mod_cgi).
 -export([do/1,env/3,status_code/1,load/2]).
 
-%%Exports to the interface for sending chunked data 
+%% Exports to the interface for sending chunked data 
 %% to http/1.1 users and full responses to http/1.0
--export([send/5,final_send/4, update_status_code/2,get_new_size/2]).
+-export([send/5, send/6, 
+	 final_send/4, final_send/5, 
+	 update_status_code/2, get_new_size/2]).
+
 -include("httpd.hrl").
 
 -define(VMODULE,"CGI").
@@ -35,7 +38,7 @@ do(Info) ->
     ?vtrace("do",[]),
     case httpd_util:key1search(Info#mod.data,status) of
 	%% A status code has been generated!
-	{StatusCode, PhraseArgs, Reason} ->
+	{_StatusCode, _PhraseArgs, _Reason} ->
 	    {proceed, Info#mod.data};
 	%% No status code has been generated!
 	undefined ->
@@ -66,7 +69,7 @@ do(Info) ->
 			    {proceed,Info#mod.data}
 		    end;
 		%% A response has been generated or sent!
-		Response ->
+		_Response ->
 		    {proceed,Info#mod.data}
 	    end
     end.
@@ -137,7 +140,7 @@ is_other_executable(D,F) ->
     end.
 
 
-ends_with(File,[]) ->
+ends_with(_File,[]) ->
     false;
 ends_with(File,[Ext|Rest]) ->
     case ends_with1(File,Ext) of
@@ -337,16 +340,25 @@ exec_script(false,Info,Script,_AfterScript,_RequestURI) ->
 %% Socket <-> Port communication
 %%
 
-proxy(#mod{config_db = ConfigDb} = Info, Port) ->
-    Timeout = httpd_util:lookup(ConfigDb, cgi_timeout, ?DEFAULT_CGI_TIMEOUT),
-    proxy(Info, Port, 0, undefined,[], Timeout).
+disable_chunked_send(Db) ->
+    httpd_util:lookup(Db, disable_chunked_transfer_encoding_send, false).
+cgi_timeout(Db) ->
+    httpd_util:lookup(Db, cgi_timeout, ?DEFAULT_CGI_TIMEOUT).
 
-proxy(Info, Port, Size, StatusCode, AccResponse, Timeout) ->
+proxy(#mod{config_db = Db} = Info, Port) ->
+    ?vtrace("proxy -> entry with~n   Port: ~p", [Port]),
+    Timeout            = cgi_timeout(Db),
+    DisableChunkedSend = disable_chunked_send(Db),
+    ?vtrace("proxy -> "
+	"~n   Timeout:            ~p"
+	"~n   DisableChunkedSend: ~p", [Timeout, DisableChunkedSend]),
+    proxy(Info, Port, 0, undefined, [], Timeout, DisableChunkedSend).
+
+proxy(Info, Port, Size, StatusCode, AccResponse, 
+      Timeout, DisableChunkedSend) ->
     ?vdebug("proxy -> entry with"
 	    "~n   Size:      ~p"
-	    "~n   StatusCode ~p"
-	    "~n   Timeout:   ~p",
-	    [Size, StatusCode, Timeout]),
+	    "~n   StatusCode ~p", [Size, StatusCode]),
     receive
 	{Port, {data, Response}} when port(Port) ->
 	    ?vtrace("proxy -> got some data from the port",[]),
@@ -354,7 +366,8 @@ proxy(Info, Port, Size, StatusCode, AccResponse, Timeout) ->
 	    NewStatusCode = update_status_code(StatusCode, Response),
 				  
 	    ?vtrace("proxy -> NewStatusCode: ~p",[NewStatusCode]),
-	    case send(Info, NewStatusCode, Response, Size, AccResponse) of
+	    case send(Info, NewStatusCode, Response, Size, 
+		      AccResponse, DisableChunkedSend) of
 		socket_closed ->
 		    ?vtrace("proxy -> socket closed: kill port",[]),
 		    (catch port_close(Port)), % KILL the port !!!!
@@ -369,18 +382,12 @@ proxy(Info, Port, Size, StatusCode, AccResponse, Timeout) ->
 		    {proceed,
 		     [{response,{already_sent,200,Size}}|Info#mod.data]};
 
-		{http_response, NewAccResponse} ->
-		    ?vtrace("proxy -> head response: continue",[]),
-		    NewSize = get_new_size(Size, Response),
-		    proxy(Info, Port, NewSize, NewStatusCode,
-			  NewAccResponse, Timeout);
-
 		_ ->
 		    ?vtrace("proxy -> continue",[]),
 		    %% The data is sent and the socket is not closed, continue
 		    NewSize = get_new_size(Size, Response),
 		    proxy(Info, Port, NewSize, NewStatusCode,
-			  "nonempty", Timeout)
+			  "nonempty", Timeout, DisableChunkedSend)
 	    end;
 
 	{'EXIT', Port, normal} when port(Port) ->
@@ -398,15 +405,16 @@ proxy(Info, Port, Size, StatusCode, AccResponse, Timeout) ->
 	{'EXIT', Pid, Reason} when pid(Pid) ->
 	    %% This is the case that a linked process has died, 
 	    %% It would be nice to response with a server error 
-	    %% but since the heade alredy is sent
+	    %% but since the head alredy is sent...
 	    ?vtrace("proxy -> exit signal from ~p: ~p",[Pid, Reason]),
-	    proxy(Info, Port, Size, StatusCode, AccResponse, Timeout);
+	    proxy(Info, Port, Size, StatusCode, AccResponse, 
+		  Timeout, DisableChunkedSend);
 
 	%% This should not happen
 	WhatEver ->
 	    ?vinfo("proxy -> received garbage: ~n~p", [WhatEver]),
 	    NewStatusCode = update_status_code(StatusCode, AccResponse),
-	    final_send(Info, StatusCode, Size, AccResponse),
+	    final_send(Info, NewStatusCode, Size, AccResponse),
 	    process_flag(trap_exit, false),
 	    {proceed, [{response,{already_sent,200,Size}}|Info#mod.data]}
 
@@ -430,26 +438,35 @@ proxy(Info, Port, Size, StatusCode, AccResponse, Timeout) ->
 %%----------------------------------------------------------------------
 %% Send the header the first time the size of the body is Zero
 %%----------------------------------------------------------------------
+send(#mod{config_db = Db} = Info, StatusCode, Response, Size, AccResponse) ->
+    DisableChunkedSend = disable_chunked_send(Db),
+    send(Info, StatusCode, Response, Size, AccResponse, DisableChunkedSend).
 
-send(#mod{method = "HEAD"} = Info, StatusCode, Response, 0, []) ->
-    first_handle_head_request(Info, StatusCode, Response);
-send(Info, StatusCode, Response, 0, []) ->
-    first_handle_other_request(Info, StatusCode, Response);
+send(#mod{method = "HEAD"} = Info, StatusCode, Response, 0, [], 
+     DisableChunkedSend) ->
+    send_head_first(Info, StatusCode, Response, DisableChunkedSend),
+    head_sent;
+send(Info, StatusCode, Response, 0, [], DisableChunkedSend) ->
+    send_chunk_first(Info, StatusCode, Response, DisableChunkedSend);
 
 %%----------------------------------------------------------------------
 %% The size of the body is bigger than zero => 
 %% we have a part of the body to send
 %%----------------------------------------------------------------------
-send(Info, StatusCode, Response, Size, AccResponse) ->
-    handle_other_request(Info, StatusCode, Response).
+send(Info, StatusCode, Response, _Size, _AccResponse, DisableChunkedSend) ->
+    send_chunk(Info, StatusCode, Response, DisableChunkedSend).
 
 
 %%----------------------------------------------------------------------
 %% The function is called the last time when the port has closed 
 %%----------------------------------------------------------------------
 
-final_send(Info, StatusCode, Size, AccResponse)->
-    final_handle_other_request(Info, StatusCode).
+final_send(#mod{config_db = Db} = Info, StatusCode, Size, AccResponse) ->
+    DisableChunkedSend = disable_chunked_send(Db),
+    final_send(Info, StatusCode, Size, AccResponse, DisableChunkedSend).
+
+final_send(Info, StatusCode, _Size, _AccResponse, DisableChunkedSend) ->
+    send_final_chunk(Info, StatusCode, DisableChunkedSend).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -463,35 +480,38 @@ final_send(Info, StatusCode, Size, AccResponse)->
 %% Return Values:
 %% head_sent
 %%----------------------------------------------------------------------
-first_handle_head_request(Info, StatusCode, Response)->
-    case Info#mod.http_version of
-	"HTTP/1.1" ->
-	    %% Since we have all we need to create the header create it 
-	    %% send it and return head_sent.
-	    case httpd_util:split(Response,"\r\n\r\n|\n\n",2) of
-		{ok, [HeadEnd, Rest]} ->
-		    HeadEnd1 = removeStatus(HeadEnd),
-		    httpd_socket:deliver(Info#mod.socket_type,Info#mod.socket,
-					 [create_header(Info,StatusCode),
-					  HeadEnd1,"\r\n\r\n"]);
-		_ ->
-		    httpd_socket:deliver(Info#mod.socket_type,Info#mod.socket,
-					 [create_header(Info, StatusCode),
-					  "Content-Type:text/html\r\n\r\n"])
-	    end;
+send_head_first(#mod{http_version = "HTTP/1.1", 
+		     socket_type  = Type, 
+		     socket       = Sock} = Info,
+		StatusCode, Response, DisableChunkedSend) ->
+    ?vtrace("send_head_first(HTTP/1.1) -> entry with"
+	"~n   DisableChunkedSend: ~p",[DisableChunkedSend]),
+    %% Since we have all we need to create the header: 
+    %% create and send it
+    case httpd_util:split(Response,"\r\n\r\n|\n\n",2) of
+	{ok, [HeadEnd, _Rest]} ->
+	    Resp = [create_header(Info, StatusCode, DisableChunkedSend),
+		    removeStatus(HeadEnd),
+		    "\r\n\r\n"],
+	    httpd_socket:deliver(Type, Sock, Resp);
 	_ ->
-	  Response1= case regexp:split(Response,"\r\n\r\n|\n\n") of
-			  {ok,[HeadEnd|Rest]} ->
-			     removeStatus(HeadEnd);
-			  _ ->
-			     ["Content-Type:text/html"]
-		     end,
-	    H1 = httpd_util:header(StatusCode,Info#mod.connection),
-	    httpd_socket:deliver(Info#mod.socket_type,Info#mod.socket, 
-				 [H1,Response1,"\r\n\r\n"])
-    end,    
-    head_sent.
-  
+	    Resp = [create_header(Info, StatusCode, DisableChunkedSend),
+		    "Content-Type:text/html\r\n\r\n"],
+	    httpd_socket:deliver(Type, Sock, Resp)
+
+    end;
+send_head_first(#mod{socket_type = Type, socket = Sock} = Info,
+		StatusCode, Response, _) ->
+    ?vtrace("send_head_first -> entry", []),
+    Response1 = case regexp:split(Response,"\r\n\r\n|\n\n") of
+		    {ok,[HeadEnd|_Rest]} ->
+			removeStatus(HeadEnd);
+		    _ ->
+			["Content-Type:text/html"]
+		end,
+    H1 = httpd_util:header(StatusCode,Info#mod.connection),
+    httpd_socket:deliver(Type, Sock, [H1,Response1,"\r\n\r\n"]).
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                    %%
@@ -502,48 +522,122 @@ first_handle_head_request(Info, StatusCode, Response)->
 %% Create the http-response header and send it to the user if it is
 %% a http/1.1 request otherwise we must accumulate it 
 %%----------------------------------------------------------------------
-first_handle_other_request(Info,StatusCode,Response)->
-    Header = create_header(Info,StatusCode),
+
+send_chunk_first(#mod{http_version = "HTTP/1.1", 
+		      socket_type  = Type, 
+		      socket       = Sock} = Info,
+		 StatusCode, Response, DisableChunkedSend) ->
+    ?vtrace("send_chunk_first(HTTP/1.1) -> entry with"
+	"~n   DisableChunkedSend: ~p",[DisableChunkedSend]),
+    Header = create_header(Info, StatusCode, DisableChunkedSend),
     Response1 = 
 	case httpd_util:split(Response,"\r\n\r\n|\n\n",2) of
 	    {ok,[HeadPart,[]]} ->
+		?vtrace("send_chunk_first -> only head", []),
 		[Header, removeStatus(HeadPart),"\r\n\r\n"];
-	    
+
 	    {ok,[HeadPart,BodyPart]} ->
-		      [Header, removeStatus(HeadPart), "\r\n\r\n",
-		       httpd_util:integer_to_hexlist(length(BodyPart)),
-		       "\r\n", BodyPart];
+		?vtrace("send_chunk_first -> head and body", []),
+		[Header, removeStatus(HeadPart), "\r\n\r\n",
+		 create_first_chunk(BodyPart, DisableChunkedSend)];
+
 	    _WhatEver ->
 		%% No response header field from the cgi-script, 
 		%% Just a body
+		?vtrace("send_chunk_first -> only body", []),
 		[Header, "Content-Type:text/html","\r\n\r\n",
-		 httpd_util:integer_to_hexlist(length(Response)),
-		 "\r\n", Response]
+		 create_first_chunk(Response, DisableChunkedSend)]
 	end,
-    httpd_socket:deliver(Info#mod.socket_type,Info#mod.socket, Response1).
+    httpd_socket:deliver(Type, Sock, Response1);
+% send_chunk_first(#mod{http_version = "HTTP/1.1", 
+% 		      socket_type  = Type, 
+% 		      socket       = Sock} = Info,
+% 		 StatusCode, Response, false) ->
+%     ?vtrace("send_chunk_first(HTTP/1.1,false) -> entry",[]),
+%     Header = create_header(Info, StatusCode, false),
+%     Response1 = 
+% 	case httpd_util:split(Response,"\r\n\r\n|\n\n",2) of
+% 	    {ok,[HeadPart,[]]} ->
+% 		[Header, removeStatus(HeadPart),"\r\n\r\n"];
+
+% 	    {ok,[HeadPart,BodyPart]} ->
+% 		[Header, removeStatus(HeadPart), "\r\n\r\n",
+% 		 httpd_util:integer_to_hexlist(length(BodyPart)),
+% 		 "\r\n", BodyPart];
+
+% 	    _WhatEver ->
+% 		%% No response header field from the cgi-script, 
+% 		%% Just a body
+% 		[Header, "Content-Type:text/html","\r\n\r\n",
+% 		 httpd_util:integer_to_hexlist(length(Response)),
+% 		 "\r\n", Response]
+% 	end,
+%     httpd_socket:deliver(Type, Sock, Response1);
+% send_chunk_first(#mod{http_version = "HTTP/1.1", 
+% 		      socket_type  = Type, 
+% 		      socket       = Sock} = Info,
+% 		 StatusCode, Response, true) ->
+%     ?vtrace("send_chunk_first(HTTP/1.1,true) -> entry",[]),
+%     Header = create_header(Info, StatusCode, true),
+%     Response1 = 
+% 	case httpd_util:split(Response,"\r\n\r\n|\n\n",2) of
+% 	    {ok,[HeadPart,[]]} ->
+% 		[Header, removeStatus(HeadPart),"\r\n\r\n"];
+
+% 	    {ok,[HeadPart,BodyPart]} ->
+% 		[Header, removeStatus(HeadPart), "\r\n\r\n", BodyPart];
+
+% 	    _WhatEver ->
+% 		%% No response header field from the cgi-script, 
+% 		%% Just a body
+% 		[Header, "Content-Type:text/html","\r\n\r\n", Response]
+% 	end,
+%     httpd_socket:deliver(Type, Sock, Response1);
+send_chunk_first(#mod{socket_type = Type, socket = Sock} = Info,
+		 StatusCode, Response, DisableChunkedSend) ->
+    ?vtrace("send_chunk_first -> entry",[]),
+    Header = create_header(Info, StatusCode, DisableChunkedSend),
+    httpd_socket:deliver(Type, Sock, [Header, Response]).
 
 
-handle_other_request(#mod{http_version = "HTTP/1.1", 
-			  socket_type = Type, socket = Sock} = Info, 
-		     StatusCode, Response0) ->
+send_chunk(#mod{http_version = "HTTP/1.1", 
+		socket_type = Type, socket = Sock} = Info, 
+	   _StatusCode, Response0, false) ->
+    ?vtrace("send_chunk(HTTP/1.1,false) -> entry with"
+	"~n   length(Response0): ~p", [length(Response0)]),
     Response = create_chunk(Info, Response0),
     httpd_socket:deliver(Type, Sock, Response);
-handle_other_request(#mod{socket_type = Type, socket = Sock} = Info, 
-		     StatusCode, Response) ->
+send_chunk(#mod{socket_type = Type, socket = Sock} = _Info, 
+	   _StatusCode, Response, _) ->
+    ?vtrace("send_chunk -> entry with"
+	"~n   length(Response): ~p", [length(Response)]),
     httpd_socket:deliver(Type, Sock, Response).
 
 
-final_handle_other_request(#mod{http_version = "HTTP/1.1", 
-				socket_type = Type, socket = Sock}, 
-			   StatusCode) ->
+send_final_chunk(#mod{http_version = "HTTP/1.1", 
+		      socket_type = Type, socket = Sock}, 
+		 _StatusCode, false) ->
+    ?vtrace("send_final_chunk(HTTP/1.1,false) -> entry", []),
     httpd_socket:deliver(Type, Sock, "0\r\n");
-final_handle_other_request(#mod{socket_type = Type, socket = Sock}, 
-			   StatusCode) ->
+send_final_chunk(#mod{socket_type = Type, socket = Sock}, 
+		 _StatusCode, _) ->
+    ?vtrace("send_final_chunk -> entry", []),
     httpd_socket:close(Type, Sock),
     socket_closed.
 
 
+create_first_chunk(Response, false) ->
+    ?vtrace("create_first_chunk -> chunked", []),
+    HEXSize = httpd_util:integer_to_hexlist(length(lists:flatten(Response))),
+    HEXSize++"\r\n"++Response;
+create_first_chunk(Response, true) ->
+    ?vtrace("create_first_chunk -> not chunked", []),
+    Response.
+
+
 create_chunk(_Info, Response) ->
+    ?vtrace("create_chunk -> entry with"
+	"~n   length(Response): ~p", [length(Response)]),
     HEXSize = httpd_util:integer_to_hexlist(length(lists:flatten(Response))),
     HEXSize++"\r\n"++Response++"\r\n".
 
@@ -568,7 +662,7 @@ update_status_code(StatusCode,_Response)->
 
 get_new_size(0,Response)->
     case httpd_util:split(Response,"\r\n\r\n|\n\n",2) of
-	{ok,[Head,Body]}->
+	{ok,[_Head,Body]}->
 	    length(lists:flatten(Body));
 	_ ->
 	    %%No header in the respone 
@@ -581,29 +675,33 @@ get_new_size(Size,Response)->
 %%----------------------------------------------------------------------
 %% Creates the http-header for a response
 %%----------------------------------------------------------------------
-create_header(Info,StatusCode)->
-    Cache=case httpd_util:lookup(Info#mod.config_db,script_nocache,false) of
-	      true->
-		  Date=httpd_util:rfc1123_date(),
-		  "Cache-Control:no-cache\r\nPragma:no-cache\r\nExpires:"++ Date ++ "\r\n";
-	      false ->
-		  []
-	  end,
-    case Info#mod.http_version of 
-	"HTTP/1.1"  ->
-	    Header=httpd_util:header(StatusCode, Info#mod.connection),
-	    Header++"Transfer-encoding:chunked\r\n"++Cache;
-	_ ->
-	    httpd_util:header(StatusCode,Info#mod.connection)++Cache
-    end.
+create_header(#mod{http_version = Version,
+		   config_db    = DB,
+		   connection   = Connection},
+	      StatusCode, DisableChunkedSend) ->
+    Cache = case httpd_util:lookup(DB,script_nocache,false) of
+		true ->
+		    Date = httpd_util:rfc1123_date(),
+		    "Cache-Control:no-cache\r\n"
+			"Pragma:no-cache\r\n"
+			"Expires:" ++ Date ++ "\r\n";
+		false ->
+		    []
+	    end,
+    create_header(Version, Connection, Cache, StatusCode, DisableChunkedSend).
 
+create_header("HTTP/1.1", Connection, Cache, StatusCode, false) ->
+    Header = httpd_util:header(StatusCode, Connection),
+    Header ++ "Transfer-encoding:chunked\r\n" ++ Cache;
+create_header(_, Connection, Cache, StatusCode, _) ->
+    httpd_util:header(StatusCode, Connection) ++ Cache.
 
 
 %% status_code
 
 status_code(Response) ->
   case httpd_util:split(Response,"\n\n|\r\n\r\n",2) of
-    {ok,[Header,Body]} ->
+    {ok,[Header,_Body]} ->
       case regexp:split(Header,"\n|\r\n") of
 	{ok,HeaderFields} ->
 	  {ok,extract_status_code(HeaderFields)};

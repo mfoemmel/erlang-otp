@@ -272,16 +272,22 @@ public class Any {
       switch(tcV.kind().value()) {
 	
       case TCKind._tk_short :
-      case TCKind._tk_ushort : 
 	shortV = _is.read_short();
 	break;
+      case TCKind._tk_ushort : 
+	shortV = _is.read_ushort();
+	break;
       case TCKind._tk_long : 
-      case TCKind._tk_ulong : 
 	intV = _is.read_int();
 	break;
+      case TCKind._tk_ulong : 
+	intV = _is.read_uint();
+	break;
       case TCKind._tk_longlong : 
-      case TCKind._tk_ulonglong : 
 	longV = _is.read_long();
+	break;
+      case TCKind._tk_ulonglong : 
+	longV = _is.read_ulong();
 	break;
       case TCKind._tk_float : 
 	floatV = _is.read_float();
@@ -357,10 +363,14 @@ public class Any {
 	os.write_ushort(_is.read_ushort());
 	break;
       case TCKind._tk_long :
+	os.write_int(_is.read_int());
+	break;
       case TCKind._tk_longlong :
 	os.write_long(_is.read_long());
 	break;
       case TCKind._tk_ulong :
+	os.write_uint(_is.read_uint());
+	break;
       case TCKind._tk_ulonglong :
 	os.write_ulong(_is.read_ulong());
 	break;
@@ -537,16 +547,22 @@ public class Any {
       switch(tcV.kind().value()) {
   
       case TCKind._tk_short :
-      case TCKind._tk_ushort : 
 	_os.write_short(shortV);
 	break;
+      case TCKind._tk_ushort : 
+	_os.write_ushort(shortV);
+	break;
       case TCKind._tk_long :
-      case TCKind._tk_ulong :
 	_os.write_int(intV);
 	break;
+      case TCKind._tk_ulong :
+	_os.write_uint(intV);
+	break;
       case TCKind._tk_longlong :
-      case TCKind._tk_ulonglong :
 	_os.write_long(longV);
+	break;
+      case TCKind._tk_ulonglong :
+	_os.write_ulong(longV);
 	break;
       case TCKind._tk_float :
 	_os.write_float(floatV);

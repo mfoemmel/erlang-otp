@@ -51,9 +51,8 @@
   
 ;--------------------------------
 ;Modern UI Configuration
-
-  	!define MUI_ICON "..\erlang.ico"
-  	!define MUI_UNICON "..\erlang.ico"
+  	!define MUI_ICON "erlang_inst.ico"
+  	!define MUI_UNICON "erlang_uninst.ico"
 	!define MUI_WELCOMEPAGE
   	!define MUI_COMPONENTSPAGE
   	!define MUI_DIRECTORYPAGE
@@ -105,7 +104,7 @@ skip_silent_mode:
   	WriteRegStr HKLM "SOFTWARE\Ericsson\Erlang\${ERTS_VERSION}" "" $INSTDIR
 
 ; Run the setup program  
-  	Exec '"$INSTDIR\Install.exe" -s'
+  	ExecWait '"$INSTDIR\Install.exe" -s'
 
 ; The startmenu stuff
   	!insertmacro MUI_STARTMENU_WRITE_BEGIN
@@ -120,17 +119,18 @@ skip_silent_mode:
     	SetShellVarContext current
     	CreateDirectory "$SMPROGRAMS\${MUI_STARTMENUPAGE_VARIABLE}"
 continue_create:
+  	WriteUninstaller "$INSTDIR\Uninstall.exe"
   	CreateShortCut "$SMPROGRAMS\${MUI_STARTMENUPAGE_VARIABLE}\Erlang.lnk" \
 		"$INSTDIR\bin\werl.exe"
   	CreateShortCut \
 		"$SMPROGRAMS\${MUI_STARTMENUPAGE_VARIABLE}\Uninstall.lnk" \
-		"$INSTDIR\Uninstall.exe"
+		"$INSTDIR\Uninstall.exe" "" "$INSTDIR\Uninstall.exe" 0 
   
   	!insertmacro MUI_STARTMENU_WRITE_END
 ; And once again, the verbosity...
   	!verbose 1
 ;Create uninstaller
-  	WriteUninstaller "$INSTDIR\Uninstall.exe"
+;  	WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   	WriteRegStr HKLM \
 		"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Erlang OTP ${MUI_VERSION} (${ERTS_VERSION})" \

@@ -16,6 +16,7 @@
 %%     $Id$
 %%
 -module(snmp_mgr_tests).
+
 %% c(snmp_mgr_tests).
 %%----------------------------------------------------------------------
 %% This module examplifies how to write test suites for your SNMP agent.
@@ -27,7 +28,6 @@
 -import(snmp_mgr, [gn/1, g/1, s/1, expect/2, expect/4, expect/6]).
 
 start() ->
-    udp:start(),
     snmp_mgr:start([{agent,"dront.nada.kth.se"},{community,"all-rights"},
 		    {mibs,["STANDARD-MIB.bin"]},quiet]),
     simple_standard_test().

@@ -175,7 +175,7 @@
 %% Effect   : Functions demanded by the gen_server module. 
 %%-----------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 handle_info(Info, State) ->
@@ -185,7 +185,7 @@ handle_info(Info, State) ->
 	    {stop, Reason, State};
         {'EXIT', Pid, normal} ->
             {noreply, ?del_SupplierPid(State, Pid)};
-        Other ->
+        _Other ->
             {noreply, State}
     end.
 
@@ -201,7 +201,7 @@ init([MyId, MyChannel, MyChannelPid, MyOperator, InitQoS, LQS, Options]) ->
     {ok, ?get_InitState(MyId, MyChannel, MyChannelPid, MyOperator, 
 			PriorityFilter, LifeTimeFilter, InitQoS, LQS, Options)}.
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------
@@ -212,7 +212,7 @@ terminate(Reason, State) ->
 %% Type     : readonly
 %% Returns  : 
 %%-----------------------------------------------------------
-'_get_MyID'(OE_THIS, OE_FROM, State) ->
+'_get_MyID'(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_MyID(State), State}.
 
 %%----------------------------------------------------------%
@@ -220,7 +220,7 @@ terminate(Reason, State) ->
 %% Type     : readonly
 %% Returns  : 
 %%-----------------------------------------------------------
-'_get_MyChannel'(OE_THIS, OE_FROM, State) ->
+'_get_MyChannel'(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_MyChannel(State), State}.
 
 %%----------------------------------------------------------%
@@ -228,7 +228,7 @@ terminate(Reason, State) ->
 %% Type     : readonly
 %% Returns  : 
 %%-----------------------------------------------------------
-'_get_MyOperator'(OE_THIS, OE_FROM, State) ->
+'_get_MyOperator'(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_MyOperator(State), State}.
 
 %%----------------------------------------------------------%
@@ -236,10 +236,10 @@ terminate(Reason, State) ->
 %% Type     : read and write
 %% Returns  : 
 %%-----------------------------------------------------------
-'_get_priority_filter'(OE_THIS, OE_FROM, State) ->
+'_get_priority_filter'(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_PrioFilter(State), State}.
 
-'_set_priority_filter'(OE_THIS, OE_FROM, State, PrioFilter) ->
+'_set_priority_filter'(_OE_THIS, _OE_FROM, State, PrioFilter) ->
     {reply, ok, ?set_PrioFilter(State, PrioFilter)}.
 
 %%----------------------------------------------------------%
@@ -247,9 +247,9 @@ terminate(Reason, State) ->
 %% Type     : read and write
 %% Returns  : 
 %%-----------------------------------------------------------
-'_get_lifetime_filter'(OE_THIS, OE_FROM, State) ->
+'_get_lifetime_filter'(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_LifeFilter(State), State}.
-'_set_lifetime_filter'(OE_THIS, OE_FROM, State, LifeFilter) ->
+'_set_lifetime_filter'(_OE_THIS, _OE_FROM, State, LifeFilter) ->
     {reply, ok, ?set_LifeFilter(State, LifeFilter)}.
 
 %%----------------------------------------------------------%
@@ -257,7 +257,7 @@ terminate(Reason, State) ->
 %% Type     : readonly
 %% Returns  : ProxyIDSeq
 %%-----------------------------------------------------------
-'_get_pull_suppliers'(OE_THIS, OE_FROM, State) ->
+'_get_pull_suppliers'(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_PullSupplierIDs(State), State}.
 
 %%----------------------------------------------------------%
@@ -265,7 +265,7 @@ terminate(Reason, State) ->
 %% Type     : readonly
 %% Returns  : ProxyIDSeq
 %%-----------------------------------------------------------
-'_get_push_suppliers'(OE_THIS, OE_FROM, State) ->
+'_get_push_suppliers'(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_PushSupplierIDs(State), State}.
 
 %%-----------------------------------------------------------
@@ -276,7 +276,7 @@ terminate(Reason, State) ->
 %% Arguments: ProxyID - unique identifier (long)
 %% Returns  : ObjRef | {'EXCEPTION', #'ProxyNotFound'{}}
 %%-----------------------------------------------------------
-get_proxy_supplier(OE_THIS, OE_FROM, State, Proxy_id) ->
+get_proxy_supplier(_OE_THIS, _OE_FROM, State, Proxy_id) ->
     {reply, ?get_Supplier(State, Proxy_id), State}.    
 
 %%----------------------------------------------------------%
@@ -284,7 +284,7 @@ get_proxy_supplier(OE_THIS, OE_FROM, State, Proxy_id) ->
 %% Arguments: Ctype - 'ANY_EVENT' | 'STRUCTURED_EVENT' | 'SEQUENCE_EVENT'
 %% Returns  : A Proxy of the requested type.
 %%-----------------------------------------------------------
-obtain_notification_pull_supplier(OE_THIS, OE_FROM, State, Ctype) ->
+obtain_notification_pull_supplier(OE_THIS, _OE_FROM, State, Ctype) ->
     %% Choose which module to use.
     {Mod, Type} = 
 	case Ctype of
@@ -295,8 +295,10 @@ obtain_notification_pull_supplier(OE_THIS, OE_FROM, State, Ctype) ->
 	    'SEQUENCE_EVENT' ->
 		{'CosNotifyChannelAdmin_SequenceProxyPullSupplier', 'PULL_SEQUENCE'};
 	    _ ->
-		orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_notification_pull_supplier(~p);
-Incorrect enumerant", [?LINE, Ctype], ?DEBUG_LEVEL),
+		orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:"
+			  "obtain_notification_pull_supplier(~p);~n"
+			  "Incorrect enumerant", 
+			  [?LINE, Ctype], ?DEBUG_LEVEL),
 		corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
 	end,
     SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
@@ -310,9 +312,10 @@ Incorrect enumerant", [?LINE, Ctype], ?DEBUG_LEVEL),
 	    NewState = ?add_PullSupplier(State, ProxyID, PrRef, Pid),
 	    {reply, {PrRef, ProxyID},  ?set_IdCounter(NewState, ProxyID)};
 	What ->
-	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_notification_pull_supplier();
-Unable to create: ~p/~p
-Reason: ~p", [?LINE, Mod, Type, What], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:"
+		      "obtain_notification_pull_supplier();~n"
+		      "Unable to create: ~p/~p~n"
+		      "Reason: ~p", [?LINE, Mod, Type, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -321,7 +324,7 @@ Reason: ~p", [?LINE, Mod, Type, What], ?DEBUG_LEVEL),
 %% Arguments: Ctype - 'ANY_EVENT' | 'STRUCTURED_EVENT' | 'SEQUENCE_EVENT'
 %% Returns  : A Proxy of the requested type.
 %%-----------------------------------------------------------
-obtain_notification_push_supplier(OE_THIS, OE_FROM, State, Ctype) ->
+obtain_notification_push_supplier(OE_THIS, _OE_FROM, State, Ctype) ->
     %% Choose which module to use.
     {Mod, Type} = 
 	case Ctype of
@@ -332,8 +335,9 @@ obtain_notification_push_supplier(OE_THIS, OE_FROM, State, Ctype) ->
 	    'SEQUENCE_EVENT' ->
 		{'CosNotifyChannelAdmin_SequenceProxyPushSupplier', 'PUSH_SEQUENCE'};
 	    _ ->
-		orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_notification_push_supplier(~p);
-Incorrect enumerant", [?LINE, Ctype], ?DEBUG_LEVEL),
+		orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:"
+			  "obtain_notification_push_supplier(~p);~n"
+			  "Incorrect enumerant", [?LINE, Ctype], ?DEBUG_LEVEL),
 		corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
 	end,
     SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
@@ -347,9 +351,10 @@ Incorrect enumerant", [?LINE, Ctype], ?DEBUG_LEVEL),
 	    NewState = ?add_PushSupplier(State, ProxyID, PrRef, Pid),
 	    {reply, {PrRef, ProxyID}, ?set_IdCounter(NewState, ProxyID)};
 	What ->
-	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_notification_push_supplier();
-Unable to create: ~p/~p
-Reason: ~p", [?LINE, Mod, Type, What], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_notification_push_supplier();~n"
+		      "Unable to create: ~p/~p~n"
+		      "Reason: ~p", 
+		      [?LINE, Mod, Type, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
     
@@ -359,7 +364,7 @@ Reason: ~p", [?LINE, Mod, Type, What], ?DEBUG_LEVEL),
 %% Arguments: -
 %% Returns  : ok
 %%------------------------------------------------------------
-destroy(OE_THIS, OE_FROM, State) ->
+destroy(_OE_THIS, _OE_FROM, State) ->
     {stop, normal, ok, State}.    
 
 %%----- Inherit from CosNotification::QoSAdmin --------------
@@ -368,7 +373,7 @@ destroy(OE_THIS, OE_FROM, State) ->
 %% Arguments: 
 %% Returns  : 
 %%-----------------------------------------------------------
-get_qos(OE_THIS, OE_FROM, State) ->
+get_qos(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_GlobalQoS(State), State}.    
 
 %%----------------------------------------------------------%
@@ -378,7 +383,7 @@ get_qos(OE_THIS, OE_FROM, State) ->
 %%            and value eq. any().
 %% Returns  : ok | {'EXCEPTION', CosNotification::UnsupportedQoS}
 %%-----------------------------------------------------------
-set_qos(OE_THIS, OE_FROM, State, QoS) ->
+set_qos(_OE_THIS, _OE_FROM, State, QoS) ->
     {NewQoS, LQS} = 'CosNotification_Common':set_qos(QoS, ?get_BothQoS(State), 
 						     admin, ?get_MyChannel(State), 
 						     ?get_AllSupplierRefs(State)),
@@ -391,7 +396,7 @@ set_qos(OE_THIS, OE_FROM, State, QoS) ->
 %%            and value eq. any().
 %% Returns  : {'EXCEPTION', CosNotification::UnsupportedQoS}
 %%-----------------------------------------------------------
-validate_qos(OE_THIS, OE_FROM, State, Required_qos) ->
+validate_qos(_OE_THIS, _OE_FROM, State, Required_qos) ->
     QoS = 'CosNotification_Common':validate_qos(Required_qos, ?get_BothQoS(State), 
 						admin, ?get_MyChannel(State), 
 						?get_AllSupplierRefs(State)),
@@ -404,8 +409,8 @@ validate_qos(OE_THIS, OE_FROM, State, Required_qos) ->
 %% Returns  : ok | 
 %%            {'EXCEPTION', #'CosNotifyComm_InvalidEventType'{type}}
 %%-----------------------------------------------------------
-subscription_change(OE_THIS, OE_FROM, State, Added, Removed) ->
-    ?DBG("CALLBACK INFORMED:  ~p   ~p~n",[Added, Removed]),
+subscription_change(_OE_THIS, _OE_FROM, State, _Added, _Removed) ->
+    ?DBG("CALLBACK INFORMED:  ~p   ~p~n",[_Added, _Removed]),
     {reply, ok, State}.
 
 %%----- Inherit from CosNotifyFilter::FilterAdmin -----------
@@ -414,7 +419,7 @@ subscription_change(OE_THIS, OE_FROM, State, Added, Removed) ->
 %% Arguments: Filter - CosNotifyFilter::Filter
 %% Returns  : FilterID - long
 %%-----------------------------------------------------------
-add_filter(OE_THIS, OE_FROM, State, Filter) ->
+add_filter(_OE_THIS, _OE_FROM, State, Filter) ->
     'CosNotification_Common':type_check(Filter, 'CosNotifyFilter_Filter'),
     FilterID = ?new_Id(State),
     NewState = ?set_IdCounter(State, FilterID),
@@ -425,7 +430,7 @@ add_filter(OE_THIS, OE_FROM, State, Filter) ->
 %% Arguments: FilterID - long
 %% Returns  : ok
 %%-----------------------------------------------------------
-remove_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
+remove_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
     {reply, ok, ?del_Filter(State, FilterID)};
 remove_filter(_,_,_,_) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -436,7 +441,7 @@ remove_filter(_,_,_,_) ->
 %% Returns  : Filter - CosNotifyFilter::Filter |
 %%            {'EXCEPTION', #'CosNotifyFilter_FilterNotFound'{}}
 %%-----------------------------------------------------------
-get_filter(OE_THIS, OE_FROM, State, FilterID) when integer(FilterID) ->
+get_filter(_OE_THIS, _OE_FROM, State, FilterID) when integer(FilterID) ->
     {reply, ?get_Filter(State, FilterID), State};
 get_filter(_,_,_,_) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
@@ -446,7 +451,7 @@ get_filter(_,_,_,_) ->
 %% Arguments: -
 %% Returns  : Filter - CosNotifyFilter::FilterIDSeq
 %%-----------------------------------------------------------
-get_all_filters(OE_THIS, OE_FROM, State) ->
+get_all_filters(_OE_THIS, _OE_FROM, State) ->
     {reply, ?get_AllFilterID(State), State}.
 
 %%----------------------------------------------------------%
@@ -454,7 +459,7 @@ get_all_filters(OE_THIS, OE_FROM, State) ->
 %% Arguments: -
 %% Returns  : ok
 %%-----------------------------------------------------------
-remove_all_filters(OE_THIS, OE_FROM, State) ->
+remove_all_filters(_OE_THIS, _OE_FROM, State) ->
     {reply, ok, ?del_AllFilter(State)}.
 
 %%----- Inherit from CosEventChannelAdmin::ConsumerAdmin ----
@@ -463,7 +468,7 @@ remove_all_filters(OE_THIS, OE_FROM, State) ->
 %% Arguments: -
 %% Returns  : ProxyPushSupplier
 %%-----------------------------------------------------------
-obtain_push_supplier(OE_THIS, OE_FROM, State) ->
+obtain_push_supplier(OE_THIS, _OE_FROM, State) ->
     SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
 					     ?not_DEFAULT_SETTINGS),
     case 'CosNotifyChannelAdmin_ProxyPushSupplier':oe_create_link(['PUSH_ANY', OE_THIS, 
@@ -479,9 +484,9 @@ obtain_push_supplier(OE_THIS, OE_FROM, State) ->
 	    NewState = ?add_PushSupplier(State, ProxyID, PrRef, Pid),
 	    {reply, PrRef, ?set_IdCounter(NewState, ProxyID)};
 	What ->
-	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_push_supplier();
-Unable to create: CosNotifyChannelAdmin_ProxyPushSupplier
-Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_push_supplier();~n"
+		      "Unable to create: CosNotifyChannelAdmin_ProxyPushSupplier~n"
+		      "Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -490,7 +495,7 @@ Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 %% Arguments: -
 %% Returns  : ProxyPullSupplier
 %%-----------------------------------------------------------
-obtain_pull_supplier(OE_THIS, OE_FROM, State) ->
+obtain_pull_supplier(OE_THIS, _OE_FROM, State) ->
     SO = 'CosNotification_Common':get_option(server_options, ?get_Options(State), 
 					     ?not_DEFAULT_SETTINGS),
     case 'CosNotifyChannelAdmin_ProxyPullSupplier':oe_create_link(['PULL_ANY', OE_THIS, 
@@ -506,9 +511,9 @@ obtain_pull_supplier(OE_THIS, OE_FROM, State) ->
 	    NewState = ?add_PullSupplier(State, ProxyID, PrRef, Pid),
 	    {reply, PrRef, ?set_IdCounter(NewState, ProxyID)};
 	What ->
-	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_pull_supplier();
-Unable to create: CosNotifyChannelAdmin_ProxyPullSupplier
-Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:obtain_pull_supplier();~n"
+		      "Unable to create: CosNotifyChannelAdmin_ProxyPullSupplier~n"
+		      "Reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end.
 
@@ -531,11 +536,11 @@ find_ids([{I,_}|T], Acc, Type) ->
     find_ids(T, [I|Acc], Type);
 find_ids([{I,_,_,Type}|T], Acc, Type) -> 
     find_ids(T, [I|Acc], Type);
-find_ids([{I,_,_,_}|T], Acc, Type) -> 
+find_ids([{_I,_,_,_}|T], Acc, Type) -> 
     find_ids(T, Acc, Type);
 find_ids(What, _, _) -> 
-    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:find_ids(); 
-Id corrupt: ~p", [?LINE, What], ?DEBUG_LEVEL),
+    orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:find_ids();~n"
+	      "Id corrupt: ~p", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
 find_refs(List) ->              
@@ -546,8 +551,8 @@ find_refs([], Acc) ->
 find_refs([{_,R,_,_}|T], Acc) -> 
     find_refs(T, [R|Acc]);
 find_refs(What, _) -> 
-    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:find_refs(); 
-Reference corrupt: ~p", [?LINE, What], ?DEBUG_LEVEL),
+    orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:find_refs();~n"
+	      "Reference corrupt: ~p", [?LINE, What], ?DEBUG_LEVEL),
     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
 %% Delete a single filter.
@@ -561,7 +566,7 @@ delete_filter(List, _) -> List.
 %% Arguments: 
 %% Returns  : 
 %%-----------------------------------------------------------
-callSeq(OE_THIS, OE_FROM, State, Events, Status) ->
+callSeq(_OE_THIS, OE_FROM, State, Events, _Status) ->
     corba:reply(OE_FROM, ok),
     case cosNotification_eventDB:filter_events(Events, ?get_AllFilter(State)) of
 	{[], _}  when ?is_ANDOP(State) ->
@@ -589,7 +594,7 @@ callSeq(OE_THIS, OE_FROM, State, Events, Status) ->
 %% Arguments: 
 %% Returns  : 
 %%-----------------------------------------------------------
-callAny(OE_THIS, OE_FROM, State, Event, Status) ->
+callAny(_OE_THIS, OE_FROM, State, Event, _Status) ->
     corba:reply(OE_FROM, ok),
     case cosNotification_eventDB:filter_events([Event], ?get_AllFilter(State)) of
 	{[], _}  when ?is_ANDOP(State) ->
@@ -619,18 +624,20 @@ forward(any, [{_,H,_,_}|T], State, Event, Status) ->
 	    ?DBG("CONSUMERADM FORWARD ANY: ~p~n",[Event]),
 	    forward(any, T, State, Event, Status);
 	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
-	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward(); 
-Proxy no longer exists; dropping it: ~p", [?LINE, H], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward();~n"
+		      "Proxy no longer exists; dropping it: ~p", 
+		      [?LINE, H], ?DEBUG_LEVEL),
 	    NewState = ?del_SupplierRef(State,H),
 	    forward(any, T, NewState, Event, Status);
 	R when ?is_PersistentConnection(State) ->
-	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward(); 
-Proxy behaves badly: ~p/~p", [?LINE, R, H], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward();~n"
+		      "Proxy behaves badly: ~p/~p", 
+		      [?LINE, R, H], ?DEBUG_LEVEL),
 	    forward(any, T, State, Event, Status);
 	R ->
-	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward(); 
-Proxy behaves badly: ~p 
-Dropping it: ~p", [?LINE, R, H], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward();~n"
+		      "Proxy behaves badly: ~p~n"
+		      "Dropping it: ~p", [?LINE, R, H], ?DEBUG_LEVEL),
 	    NewState = ?del_SupplierRef(State, H),
 	    forward(any, T, NewState, Event, Status)
     end;
@@ -640,18 +647,19 @@ forward(seq, [{_,H,_,_}|T], State, Event, Status) ->
 	    ?DBG("CONSUMERADM FORWARD SEQUENCE: ~p~n",[Event]),
 	    forward(seq, T, State, Event, Status);
 	{'EXCEPTION', E} when record(E, 'OBJECT_NOT_EXIST') ->
-	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward(); 
-Proxy no longer exists; dropping it: ~p", [?LINE, H], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward();~n"
+		      "Proxy no longer exists; dropping it: ~p", 
+		      [?LINE, H], ?DEBUG_LEVEL),
 	    NewState = ?del_SupplierRef(State,H),
 	    forward(seq, T, NewState, Event, Status);
 	R when ?is_PersistentConnection(State) ->
-	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward(); 
-Proxy behaves badly: ~p/~p", [?LINE, R, H], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward();~n"
+		      "Proxy behaves badly: ~p/~p", [?LINE, R, H], ?DEBUG_LEVEL),
 	    forward(seq, T, State, Event, Status);
 	R ->
-	    orber:debug_level_print("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward(); 
-Proxy behaves badly: ~p
-Dropping it: ~p", [?LINE, R, H], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] CosNotifyChannelAdmin_ConsumerAdmin:forward();~n"
+		      "Proxy behaves badly: ~p~n"
+		      "Dropping it: ~p", [?LINE, R, H], ?DEBUG_LEVEL),
 	    NewState = ?del_SupplierRef(State, H),
 	    forward(seq, T, NewState, Event, Status)
     end.

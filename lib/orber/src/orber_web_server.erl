@@ -131,12 +131,12 @@ delete_obj(Env, Input) ->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-init(Arg)->
+init(_Arg)->
     {M, S, U} = now(),
     TS = M*1000000000000 + S*1000000 + U,
     {ok, #state{ts = TS}}.
 
-terminate(_,State)->
+terminate(_,_State)->
     ok.
 
 handle_cast(_,State)->
@@ -145,7 +145,7 @@ handle_cast(_,State)->
 handle_info(_,State)->
     {noreply,State}.
 
-code_change(Old_vsn,State,Extra)->
+code_change(_Old_vsn,State,_Extra)->
     {ok,State}.
 
 %%----------------------------------------------------------------------
@@ -153,42 +153,37 @@ code_change(Old_vsn,State,Extra)->
 %% Returns    : 
 %% Description: 
 %%----------------------------------------------------------------------
-handle_call({Function, Env, Args}, From, State)->
+handle_call({Function, Env, Args}, _From, State)->
     case catch orber_web:Function(Env, Args) of
 	{'EXIT', R} ->
-	    orber:dbg("[~p] orber_web:~p(~p); 
-EXIT: ~p", [?LINE, Function, Args, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_web:~p(~p);~nEXIT: ~p", 
+		      [?LINE, Function, Args, R], ?DEBUG_LEVEL),
 	    {reply, "<BODY BGCOLOR=\"#FFFFFF\">Internal Error", State};
 	{'EXIT', R1, R2} ->
-	    orber:dbg("[~p] orber_web:~p(~p); 
-EXIT: ~p~n~p", [?LINE, Function, Args, R1, R2], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_web:~p(~p);~nEXIT: ~p~n~p", 
+		      [?LINE, Function, Args, R1, R2], ?DEBUG_LEVEL),
 	    {reply, "<BODY BGCOLOR=\"#FFFFFF\">Internal Error", State};
 	{badrpc, Why} ->
-	    orber:dbg("[~p] orber_web:~p(~p); 
-badrpc: ~p", [?LINE, Function, Args, Why], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_web:~p(~p);~nbadrpc: ~p", 
+		      [?LINE, Function, Args, Why], ?DEBUG_LEVEL),
 	    {reply, "<BODY BGCOLOR=\"#FFFFFF\">Internal Error", State};
 	{'EXCEPTION', E} ->
-	    orber:dbg("[~p] orber_web:~p(~p); 
-EXCEPTION: ~p", [?LINE, Function, Args, E], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_web:~p(~p);~nEXCEPTION: ~p", 
+		      [?LINE, Function, Args, E], ?DEBUG_LEVEL),
 	    {reply, "<BODY BGCOLOR=\"#FFFFFF\">Internal Error", State};
 	{error, Data} ->
-	    orber:dbg("[~p] orber_web:~p(~p); 
-Reason: ~p", [?LINE, Function, Args, Data], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_web:~p(~p); ~nReason: ~p", 
+		      [?LINE, Function, Args, Data], ?DEBUG_LEVEL),
 	    {reply, Data, State};
 	Reply ->
 	    {reply, Reply, State}
     end;
-handle_call(What, From, State)->
-    orber:dbg("[~p] orber_web_server:handle_call(~p); 
-EXCEPTION: ~p", [?LINE, What], ?DEBUG_LEVEL),
-    {reply, "<BODY BGCOLOR=\"#FFFFFF\"><FONT SIZE=6>Internal Error</FONT>", State}.
-
-%%----------------------------------------------------------------------
-%% Function   : 
-%% Returns    : 
-%% Description: 
-%%----------------------------------------------------------------------
-
+handle_call(stop, _From, State)->
+    {stop, normal, ok, State};
+handle_call(What, _From, State)->
+    orber:dbg("[~p] orber_web_server:handle_call(~p);", 
+	      [?LINE, What], ?DEBUG_LEVEL),
+    {reply, "<BODY BGCOLOR=\"#FFFFFF\"><FONT SIZE=6>Unknown Request</FONT>", State}.
 
 %%----------------------------------------------------------------------
 %%                           END OF MODULE

@@ -32,7 +32,8 @@
           local_mid,
           encoding_mod,
           encoding_config,
-          send_mod
+          send_mod,
+	  protocol_version = dynamic % dynamic | integer()
          }).
 
 %%----------------------------------------------------------------------
@@ -209,8 +210,13 @@
 -define(megaco_no_termination_id_matched_a_wildcard,        431).
 -define(megaco_out_of_termination_ids_or_no_termination_id_available, 432).
 -define(megaco_termination_id_already_in_context,           433).
+-define(megaco_max_number_of_terminations_in_context_exceeded, 434). % v2
+-define(megaco_terminations_id_not_in_specified_context,       435). % v2
+
 -define(megaco_unsupported_or_unknown_package,              440).
--define(megaco_missing_remote_descriptor,                   441).
+-define(megaco_missing_remote_or_local_descriptor,          441).    % v2
+-define(megaco_missing_remote_descriptor,
+	?megaco_missing_remote_or_local_descriptor).                 
 -define(megaco_syntax_error_in_command,                     442).
 -define(megaco_unsupported_or_unknown_command,              443).
 -define(megaco_unsupported_or_unknown_descriptor,           444).
@@ -223,15 +229,23 @@
 -define(megaco_no_such_signal_in_this_package,              452).
 -define(megaco_no_such_statistic_in_this_package,           453).
 -define(megaco_no_such_parameter_in_this_package,           454).
--define(megaco_parameter_illegal_in_this_descriptor,        455).
--define(megaco_parameter_or_property_appears_twice_in_this_descriptor, 456).
+-define(megaco_property_illegal_in_this_descriptor,         455).    % v2
+-define(megaco_parameter_illegal_in_this_descriptor, 
+	?megaco_property_illegal_in_this_descriptor).               
+-define(megaco_property_appears_twice_in_this_descriptor,   456).    % v2
+-define(megaco_parameter_or_property_appears_twice_in_this_descriptor, 
+	?megaco_property_appears_twice_in_this_descriptor). 
+-define(megaco_missing_parameter_in_signal_or_event,        457).    % v2
 -define(megaco_implied_add_for_multiplex_failure,           471).
 -define(megaco_internal_gateway_error,                      500).
 -define(megaco_not_implemented,                             501).
 -define(megaco_not_ready,                                   502).         
 -define(megaco_service_unavailable,                         503).
 -define(megaco_command_received_from_unauthorized_entity,   504).
--define(megaco_command_received_before_restart_response,    505).
+-define(megaco_transaction_req_received_before_servicechange_reply, 505). % v2
+-define(megaco_command_received_before_restart_response, 
+	?megaco_transaction_req_received_before_servicechange_reply).
+-define(megaco_number_of_transactionpending_exceeded,       506).    % v2
 -define(megaco_insufficient_resources,                      510).
 -define(megaco_mg_unequipped_to_detect_requested_event,     512).
 -define(megaco_mg_unequipped_to_generate_requested_signals, 513).
@@ -246,6 +260,10 @@
 -define(megaco_internal_hardware_failure,                   529).
 -define(megaco_temporary_network_failure,                   530).
 -define(megaco_permanent_network_failure,                   531).
+-define(megaco_audit_prop_stat_event_or_sig_does_not_exist, 532). % v2
+-define(megaco_response_exceeds_maximum_transport_pdu_size, 533). % v2
+-define(megaco_illegal_write_of_read_only_property,         534). % v2
+-define(megaco_unexpected_initial_hook_state,               540). % v2
 -define(megaco_does_not_exist,                              581).
 
 %%----------------------------------------------------------------------
@@ -268,6 +286,8 @@
 -define(megaco_signal_capability_failure,        "913").
 -define(megaco_event_capability_failure,         "914").
 -define(megaco_state_loss,                       "915").
+-define(megaco_packages_change,                  "916"). % v2
+-define(megaco_capabilities_change,              "917"). % v2
 
 %%----------------------------------------------------------------------
 %% MGC listen ports for both TCP/IP and UDP/IP

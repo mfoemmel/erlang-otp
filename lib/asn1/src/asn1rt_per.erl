@@ -1228,13 +1228,13 @@ get_NumBits(C,StringType) ->
 	no ->
 	    case StringType of
 		'GeneralString' ->
-		    exit({error,{asn1,{not implemented,'GeneralString'}}});
+		    exit({error,{asn1,{not_implemented,'GeneralString'}}});
 		'GraphicString' ->
-		    exit({error,{asn1,{not implemented,'GraphicString'}}});
+		    exit({error,{asn1,{not_implemented,'GraphicString'}}});
 		'TeletexString' ->
-		    exit({error,{asn1,{not implemented,'TeletexString'}}});
+		    exit({error,{asn1,{not_implemented,'TeletexString'}}});
 		'VideotexString' ->
-		    exit({error,{asn1,{not implemented,'VideotexString'}}});
+		    exit({error,{asn1,{not_implemented,'VideotexString'}}});
 		'IA5String' ->
 		    charbits(128,aligned); % 16#00..16#7F
 		'VisibleString' ->

@@ -30,7 +30,6 @@
 
 -include_lib("orber/include/corba.hrl").
 -include_lib("orber/src/orber_iiop.hrl").
--include_lib("orber/src/orber_debug.hrl").
 
 %%-----------------------------------------------------------------
 %% External exports
@@ -64,8 +63,7 @@
 %% The header size is known so we know that the size will be aligned.
 %% MessSize already includes the header length.
 %%-----------------------------------------------------------------
-enc_giop_message_header({Major,Minor}, MessType, Flags, MessSize, Message) ->
-    ?PRINTDEBUG("Encode GIOP header"),
+enc_giop_message_header({Major,Minor}, MessType, _Flags, MessSize, Message) ->
     Type = enc_giop_msg_type(MessType),
     %% The Flag handling must be fixed, i.e., it's not correct to only use '0'.
     %% If IIOP-1.0 a boolean (FALSE == 0), otherwise, IIOP-1.1 or 1.2,
@@ -88,12 +86,12 @@ enc_byte_order(Version, Message) ->
 enc_parameters(_, [], [], Message, Len) ->
     {Message, Len};
 enc_parameters(_, [], P, _, _) -> 
-    orber:debug_level_print("[~p] cdr_encode:encode_parameters(~p); to many parameters.", 
-			    [?LINE, P], ?DEBUG_LEVEL),
+    orber:dbg("[~p] cdr_encode:encode_parameters(~p); to many parameters.", 
+	      [?LINE, P], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 17), completion_status=?COMPLETED_MAYBE});
 enc_parameters(_, _, [], TC, _) -> 
-    orber:debug_level_print("[~p] cdr_encode:encode_parameters(~p); to few parameters.", 
-			    [?LINE, TC], ?DEBUG_LEVEL),
+    orber:dbg("[~p] cdr_encode:encode_parameters(~p); to few parameters.", 
+	      [?LINE, TC], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 17), completion_status=?COMPLETED_MAYBE});
 enc_parameters(Version, [PT1 |TypeList], [ P1 | Parameters], Message, Len) ->
     {Message1, Len1} = enc_type(PT1, Version, P1, Message, Len),
@@ -193,7 +191,7 @@ enc_service_context(Version, Context, Message, Len) ->
     Ctxs = enc_used_contexts(Version, Context, []),
     enc_type(?IOP_SERVICECONTEXT, Version, Ctxs, Message, Len).
 
-enc_used_contexts(Version, [], Message) ->
+enc_used_contexts(_Version, [], Message) ->
     Message;
 enc_used_contexts({1,0}, [#'IOP_ServiceContext'{context_id=?IOP_CodeSets}|T], Ctxs) ->
     %% Not supported by 1.0, drop it.
@@ -203,8 +201,8 @@ enc_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_CodeSets,
 		  Ctxs) ->
     %% Encode ByteOrder
     {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
-    {Bytes1, Len1} = enc_type(?CONV_FRAME_CODESETCONTEXT, Version, CodeSetCtx, 
-			      Bytes0, Len0),
+    {Bytes1, _Len1} = enc_type(?CONV_FRAME_CODESETCONTEXT, Version, CodeSetCtx, 
+			       Bytes0, Len0),
     Bytes = list_to_binary(lists:reverse(Bytes1)),
     enc_used_contexts(Version, T, 
 		      [#'IOP_ServiceContext'{context_id=?IOP_CodeSets,
@@ -214,8 +212,8 @@ enc_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_BI_DIR_IIOP,
 		  Ctxs) ->
     %% Encode ByteOrder
     {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
-    {Bytes1, Len1} = enc_type(?IIOP_BIDIRIIOPSERVICECONTEXT, Version, BiDirCtx, 
-			      Bytes0, Len0),
+    {Bytes1, _Len1} = enc_type(?IIOP_BIDIRIIOPSERVICECONTEXT, Version, BiDirCtx, 
+			       Bytes0, Len0),
     Bytes = list_to_binary(lists:reverse(Bytes1)),
     enc_used_contexts(Version, T, 
 		      [#'IOP_ServiceContext'{context_id=?IOP_BI_DIR_IIOP,
@@ -225,8 +223,8 @@ enc_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_FT_REQUEST,
 		  Ctxs) ->
     %% Encode ByteOrder
     {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
-    {Bytes1, Len1} = enc_type(?FT_FTRequestServiceContext, Version, Ctx, 
-			      Bytes0, Len0),
+    {Bytes1, _Len1} = enc_type(?FT_FTRequestServiceContext, Version, Ctx, 
+			       Bytes0, Len0),
     Bytes = list_to_binary(lists:reverse(Bytes1)),
     enc_used_contexts(Version, T, 
 		      [#'IOP_ServiceContext'{context_id=?IOP_FT_REQUEST,
@@ -236,8 +234,8 @@ enc_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_FT_GROUP_VERSI
 		  Ctxs) ->
     %% Encode ByteOrder
     {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
-    {Bytes1, Len1} = enc_type(?FT_FTGroupVersionServiceContext, Version, Ctx, 
-			      Bytes0, Len0),
+    {Bytes1, _Len1} = enc_type(?FT_FTGroupVersionServiceContext, Version, Ctx, 
+			       Bytes0, Len0),
     Bytes = list_to_binary(lists:reverse(Bytes1)),
     enc_used_contexts(Version, T, 
 		      [#'IOP_ServiceContext'{context_id=?IOP_FT_GROUP_VERSION,
@@ -247,8 +245,8 @@ enc_used_contexts(Version, [#'IOP_ServiceContext'{context_id=?IOP_SecurityAttrib
 		  Ctxs) ->
     %% Encode ByteOrder
     {Bytes0, Len0} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
-    {Bytes1, Len1} = enc_type(?CSI_SASContextBody, Version, Ctx, 
-			      Bytes0, Len0),
+    {Bytes1, _Len1} = enc_type(?CSI_SASContextBody, Version, Ctx, 
+			       Bytes0, Len0),
     Bytes = list_to_binary(lists:reverse(Bytes1)),
     enc_used_contexts(Version, T, 
 		      [#'IOP_ServiceContext'{context_id=?IOP_SecurityAttributeService,
@@ -285,18 +283,18 @@ enc_response_flags(Version, false, Mess, Len) ->
 enc_request_body(_, {_, [], _}, _, Message, Len) ->
     %% This case is used to avoid adding alignment even though no body will be added.
     {Message, Len};
-enc_request_body(Version, {RetType, InParameters, OutParameters}, Parameters,
+enc_request_body(Version, {_RetType, InParameters, _OutParameters}, Parameters,
 		 Message, Len) when Version == {1,2} ->
     {Message1, Len1} = enc_align(Message, Len, 8),
     enc_parameters(Version, InParameters, Parameters, Message1, Len1);
-enc_request_body(Version, {RetType, InParameters, OutParameters}, Parameters,
+enc_request_body(Version, {_RetType, InParameters, _OutParameters}, Parameters,
 		 Message, Len) ->
     enc_parameters(Version, InParameters, Parameters, Message, Len).
 
 %%-----------------------------------------------------------------
 %% Func: validate_request_body/3
 %%-----------------------------------------------------------------
-validate_request_body(Version, {RetType, InParameters, OutParameters}, Parameters) ->
+validate_request_body(Version, {_RetType, InParameters, _OutParameters}, Parameters) ->
     enc_parameters(Version, InParameters, Parameters, [], 0).
 
 %%-----------------------------------------------------------------
@@ -305,7 +303,6 @@ validate_request_body(Version, {RetType, InParameters, OutParameters}, Parameter
 %% ## NEW IIOP 1.2 ##
 enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters, Ctx) 
   when Version == {1,2} ->
-    ?PRINTDEBUG2("REPLY: ~w ~w ~w ~w", [Version, TypeCodes, Result, OutParameters]),
     Flags            = 1, %% LTH Not correct, just placeholder
     {Message, Len}   = enc_request_id(Version, ReqId, [], ?GIOP_HEADER_SIZE), 
     {Message1, Len1} = enc_reply_status(Version, RepStatus, Message, Len),
@@ -315,7 +312,6 @@ enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters, Ctx)
     enc_giop_message_header(Version, 'reply', Flags, Len3 - ?GIOP_HEADER_SIZE,
 			    lists:reverse(Message3));
 enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters, Ctx) ->
-    ?PRINTDEBUG2("REPLY: ~w ~w ~w ~w", [Version, TypeCodes, Result, OutParameters]),
     Flags            = 1, %% LTH Not correct, just placeholder
     {Message, Len}   = enc_service_context(Version, Ctx, [], ?GIOP_HEADER_SIZE),
     {Message1, Len1} = enc_request_id(Version, ReqId, Message, Len), 
@@ -328,7 +324,6 @@ enc_reply(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters, Ctx) ->
 %% ## NEW IIOP 1.2 ##
 enc_reply_split(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters, Ctx) 
   when Version == {1,2} ->
-    ?PRINTDEBUG2("REPLY: ~w ~w ~w ~w", [Version, TypeCodes, Result, OutParameters]),
     Flags            = 1, %% LTH Not correct, just placeholder
     {Message, Len0}   = enc_request_id(Version, ReqId, [], ?GIOP_HEADER_SIZE), 
     {Message1, Len1} = enc_reply_status(Version, RepStatus, Message, Len0),
@@ -337,7 +332,6 @@ enc_reply_split(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters, Ctx
     {lists:reverse(Message2), list_to_binary(lists:reverse(Body)),
      Len2 - ?GIOP_HEADER_SIZE, Len-Len2, Flags};
 enc_reply_split(Version, ReqId, RepStatus, TypeCodes, Result, OutParameters, Ctx) ->
-    ?PRINTDEBUG2("REPLY: ~w ~w ~w ~w", [Version, TypeCodes, Result, OutParameters]),
     Flags            = 1, %% LTH Not correct, just placeholder
     {Message, Len0}   = enc_service_context(Version, Ctx, [], ?GIOP_HEADER_SIZE),
     {Message1, Len1} = enc_request_id(Version, ReqId, Message, Len0), 
@@ -353,17 +347,17 @@ enc_reply_status(Version, Status, Mess, Len) ->
 %%-----------------------------------------------------------------
 %% Func: enc_reply_body/6
 %%-----------------------------------------------------------------
-enc_reply_body(Version, {'tk_void', _, []}, ok, [], Message, Len) ->
+enc_reply_body(_Version, {'tk_void', _, []}, ok, [], Message, Len) ->
     %% This case is mainly to be able to avoid adding alignment for
     %% IIOP-1.2 messages if the body should be empty, i.e., void return value and
     %% no out parameters.
     {Message, Len};
-enc_reply_body(Version, {RetType, InParameters, OutParameters}, Result, Parameters,
+enc_reply_body(Version, {RetType, _InParameters, OutParameters}, Result, Parameters,
 	       Message, Len) when Version == {1,2} ->
     {Message1, Len1} = enc_align(Message, Len, 8),
     {Message2, Len2}  = enc_type(RetType, Version, Result, Message1, Len1),
     enc_parameters(Version, OutParameters, Parameters, Message2, Len2);
-enc_reply_body(Version, {RetType, InParameters, OutParameters}, Result, Parameters,
+enc_reply_body(Version, {RetType, _InParameters, OutParameters}, Result, Parameters,
 	       Message, Len) ->
     {Message1, Len1}  = enc_type(RetType, Version, Result, Message, Len),
     enc_parameters(Version, OutParameters, Parameters, Message1, Len1).
@@ -373,10 +367,10 @@ enc_reply_body(Version, {RetType, InParameters, OutParameters}, Result, Paramete
 %% Func: validate_reply_body/3
 %%-----------------------------------------------------------------
 validate_reply_body(Version, _, {'EXCEPTION', Exception}) ->
-    {TypeOfException, ExceptionTypeCode} =
-	orber_typedefs:get_exception_def(Exception),
+    {TypeOfException, ExceptionTypeCode, NewExc} =
+	orber_exceptions:get_def(Exception),
     {'tk_except', TypeOfException, ExceptionTypeCode, 
-     (catch enc_reply_body(Version, {ExceptionTypeCode, [], []}, Exception, [], [], 0))};
+     (catch enc_reply_body(Version, {ExceptionTypeCode, [], []}, NewExc, [], [], 0))};
 validate_reply_body(Version, {RetType, InParameters, []}, Reply) ->
     enc_reply_body(Version, {RetType, InParameters, []}, Reply,
 		   [], [], 0);
@@ -530,52 +524,52 @@ enc_giop_locate_status_type('loc_needs_addressing_mode') ->
 %% Func: enc_type/3
 %%-----------------------------------------------------------------
 enc_type(Version, TypeCode, Value) ->
-    {Bytes, Len} = enc_type(TypeCode, Version, Value, [], 0),
+    {Bytes, _Len} = enc_type(TypeCode, Version, Value, [], 0),
     list_to_binary(lists:reverse(Bytes)).
 
 %%-----------------------------------------------------------------
 %% Func: enc_type/5
 %%-----------------------------------------------------------------
-enc_type('tk_null', Version, null, Bytes, Len) ->
+enc_type('tk_null', _Version, null, Bytes, Len) ->
     {Bytes, Len}; 
-enc_type('tk_void', Version, ok, Bytes, Len) ->
+enc_type('tk_void', _Version, ok, Bytes, Len) ->
     {Bytes, Len}; 
-enc_type('tk_short', Version, Value, Bytes, Len) ->
+enc_type('tk_short', _Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 2),
     {cdrlib:enc_short(Value, Rest), Len1 + 2};
-enc_type('tk_long', Version, Value, Bytes, Len) ->
+enc_type('tk_long', _Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 4),
     {cdrlib:enc_long(Value, Rest ), Len1 + 4};
-enc_type('tk_longlong', Version, Value, Bytes, Len) ->
+enc_type('tk_longlong', _Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 8),
     {cdrlib:enc_longlong(Value, Rest ), Len1 + 8};
-enc_type('tk_ushort', Version, Value, Bytes, Len) ->
+enc_type('tk_ushort', _Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 2),
     {cdrlib:enc_unsigned_short(Value, Rest), Len1 + 2};
-enc_type('tk_ulong', Version, Value, Bytes, Len) -> 
+enc_type('tk_ulong', _Version, Value, Bytes, Len) -> 
     {Rest, Len1} = enc_align(Bytes, Len, 4),
     {cdrlib:enc_unsigned_long(Value, Rest), Len1 + 4};
-enc_type('tk_ulonglong', Version, Value, Bytes, Len) -> 
+enc_type('tk_ulonglong', _Version, Value, Bytes, Len) -> 
     {Rest, Len1} = enc_align(Bytes, Len, 8),
     {cdrlib:enc_unsigned_longlong(Value, Rest), Len1 + 8};
-enc_type('tk_float', Version, Value, Bytes, Len) ->
+enc_type('tk_float', _Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 4),
     {cdrlib:enc_float(Value, Rest), Len1 + 4};
-enc_type('tk_double', Version, Value, Bytes, Len) ->
+enc_type('tk_double', _Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 8),
     {cdrlib:enc_double(Value, Rest), Len1 + 8};
-enc_type('tk_boolean', Version, Value, Bytes, Len) ->
+enc_type('tk_boolean', _Version, Value, Bytes, Len) ->
     {cdrlib:enc_bool(Value, Bytes), Len + 1};
-enc_type('tk_char', Version, Value, Bytes, Len) ->
+enc_type('tk_char', _Version, Value, Bytes, Len) ->
     {cdrlib:enc_char(Value, Bytes), Len + 1};
 %% The wchar decoding can be 1, 2 or 4 bytes but for now we only accept 2.
 enc_type('tk_wchar', {1,2}, Value, Bytes, Len) ->
     Bytes1 = cdrlib:enc_octet(2, Bytes),
     {cdrlib:enc_unsigned_short(Value, Bytes1), Len + 3};
-enc_type('tk_wchar', Version, Value, Bytes, Len) ->
+enc_type('tk_wchar', _Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 2),
     {cdrlib:enc_unsigned_short(Value, Rest), Len1 + 2};
-enc_type('tk_octet', Version, Value, Bytes, Len) ->
+enc_type('tk_octet', _Version, Value, Bytes, Len) ->
     {cdrlib:enc_octet(Value, Bytes), Len + 1};
 enc_type('tk_any', Version, Any, Bytes, Len) when record(Any, any) ->
     {Rest, Len1} = enc_type('tk_TypeCode', Version, Any#any.typecode, Bytes, Len),
@@ -585,14 +579,14 @@ enc_type('tk_TypeCode', Version, Value, Bytes, Len) ->
 enc_type('tk_Principal', Version, Value, Bytes, Len) ->
     %% Set MaxLength no 0 (i.e. unlimited).
     enc_sequence(Version, Value, 0, 'tk_octet', Bytes, Len);
-enc_type({'tk_objref', IFRId, Name}, Version, Value, Bytes, Len) ->
+enc_type({'tk_objref', _IFRId, Name}, Version, Value, Bytes, Len) ->
     enc_objref(Version, Name,Value, Bytes, Len);
-enc_type({'tk_struct', IFRId, Name, ElementList}, Version, Value, Bytes, Len) -> 
+enc_type({'tk_struct', _IFRId, _Name, ElementList}, Version, Value, Bytes, Len) -> 
     enc_struct(Version, Value, ElementList, Bytes, Len);
-enc_type({'tk_union', IFRId, Name, DiscrTC, Default, ElementList},
+enc_type({'tk_union', _IFRId, _Name, DiscrTC, Default, ElementList},
 	Version, Value, Bytes, Len) ->
     enc_union(Version, Value, DiscrTC, Default, ElementList, Bytes, Len);
-enc_type({'tk_enum', IFRId, Name, ElementList}, Version, Value, Bytes, Len) ->
+enc_type({'tk_enum', _IFRId, _Name, ElementList}, _Version, Value, Bytes, Len) ->
     {Rest, Len1} = enc_align(Bytes, Len, 4),
     {cdrlib:enc_enum(atom_to_list(Value), ElementList, Rest), Len1 + 4};
 enc_type({'tk_string', MaxLength}, Version, Value, Bytes, Len) ->
@@ -603,15 +597,16 @@ enc_type({'tk_sequence', ElemTC, MaxLength}, Version, Value, Bytes, Len) ->
     enc_sequence(Version, Value, MaxLength, ElemTC, Bytes, Len);
 enc_type({'tk_array', ElemTC, Size}, Version, Value, Bytes, Len) -> 
     enc_array(Version, Value, Size, ElemTC, Bytes, Len);
-enc_type({'tk_alias', IFRId, Name, TC}, Version, Value, Bytes, Len) ->
+enc_type({'tk_alias', _IFRId, _Name, TC}, Version, Value, Bytes, Len) ->
     enc_type(TC, Version, Value, Bytes, Len);
 enc_type({'tk_except', IFRId, Name, ElementList}, Version, Value, Bytes, Len) ->
     enc_exception(Version, Name, IFRId, Value, ElementList, Bytes, Len);
 enc_type({'tk_fixed', Digits, Scale}, Version, Value, Bytes, Len) ->
     enc_fixed(Version, Digits, Scale, Value, Bytes, Len);
 enc_type(Type, _, Value, _, _) ->
-    orber:debug_level_print("[~p] cdr_encode:type(~p, ~p)
-Incorrect TypeCode or unsupported type.", [?LINE, Type, Value], ?DEBUG_LEVEL),
+    orber:dbg("[~p] cdr_encode:type(~p, ~p)~n"
+	      "Incorrect TypeCode or unsupported type.", 
+	      [?LINE, Type, Value], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 13), completion_status=?COMPLETED_MAYBE}).
 
 
@@ -656,24 +651,25 @@ enc_fixed(Version, Digits, Scale,
 	    enc_fixed_2(Version, Digits, Scale, [0|Padded], 
 			Bytes, Len, ?FIXED_POSITIVE)
     end;
-enc_fixed(Version, Digits, Scale, Fixed, Bytes, Len) ->
-    orber:debug_level_print("[~p] cdr_encode:enc_fixed(~p, ~p, ~p)
-The supplied fixed type incorrect. Check that the 'digits' and 'scale' field
-match the definition in the IDL-specification. The value field must be
-a list of Digits lenght.", [?LINE, Digits, Scale, Fixed], ?DEBUG_LEVEL),
+enc_fixed(_Version, Digits, Scale, Fixed, _Bytes, _Len) ->
+    orber:dbg("[~p] cdr_encode:enc_fixed(~p, ~p, ~p)~n"
+	      "The supplied fixed type incorrect. Check that the 'digits' and 'scale' field~n"
+	      "match the definition in the IDL-specification. The value field must be~n"
+	      "a list of Digits lenght.", 
+	      [?LINE, Digits, Scale, Fixed], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE}).
 
-enc_fixed_2(Version, Digits, Scale, [D1], Bytes, Len, Sign) ->
+enc_fixed_2(_Version, _Digits, _Scale, [D1], Bytes, Len, Sign) ->
     {[<<D1:4,Sign:4>>|Bytes], Len+1};
 enc_fixed_2(Version, Digits, Scale, [D1, D2|Ds], Bytes, Len, Sign) ->
     %% We could convert the ASCII-value to digit values but the bit-syntax will
     %% truncate it correctly.
     enc_fixed_2(Version, Digits, Scale, Ds, [<<D1:4,D2:4>> | Bytes], Len+1, Sign);
-enc_fixed_2(Version, Digits, Scale, Value, Bytes, Len, Sign) ->
-       orber:debug_level_print("[~p] cdr_encode:enc_fixed_2(~p, ~p, ~p, ~p)
-The supplied fixed type incorrect. Most likely the 'digits' field don't match the 
-supplied value. Hence, check that the value is correct.", 
-    [?LINE, Digits, Scale, Value, Sign], ?DEBUG_LEVEL),
+enc_fixed_2(_Version, Digits, Scale, Value, _Bytes, _Len, Sign) ->
+    orber:dbg("[~p] cdr_encode:enc_fixed_2(~p, ~p, ~p, ~p)~n"
+	      "The supplied fixed type incorrect. Most likely the 'digits' field don't match the~n"
+	      "supplied value. Hence, check that the value is correct.", 
+	      [?LINE, Digits, Scale, Value, Sign], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE}). 
 
 
@@ -683,14 +679,14 @@ supplied value. Hence, check that the value is correct.",
 %%-----------------------------------------------------------------
 %% This is a special case used when encoding encapsualted data, i.e., contained
 %% in an octet-sequence.
-enc_sequence(Version, Sequence, MaxLength, 'tk_octet', Bytes, Len)
+enc_sequence(_Version, Sequence, MaxLength, 'tk_octet', Bytes, Len)
   when binary(Sequence) ->
     {ByteSequence, Len1} = enc_align(Bytes, Len, 4),
     Size = size(Sequence),
     if
 	Size > MaxLength, MaxLength > 0 ->
-	    orber:debug_level_print("[~p] cdr_encode:enc_sequnce(~p, ~p). Sequence exceeds max.", 
-				    [?LINE, Sequence, MaxLength], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] cdr_encode:enc_sequnce(~p, ~p). Sequence exceeds max.", 
+		      [?LINE, Sequence, MaxLength], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 19), 
 				   completion_status=?COMPLETED_MAYBE});
 	true ->
@@ -701,8 +697,8 @@ enc_sequence(Version, Sequence, MaxLength, TypeCode, Bytes, Len) ->
     Length = length(Sequence),
     if
 	Length > MaxLength, MaxLength > 0 ->
-	    orber:debug_level_print("[~p] cdr_encode:enc_sequnce(~p, ~p). Sequence exceeds max.", 
-				    [?LINE, Sequence, MaxLength], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] cdr_encode:enc_sequnce(~p, ~p). Sequence exceeds max.", 
+		      [?LINE, Sequence, MaxLength], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 19), 
 				   completion_status=?COMPLETED_MAYBE});
 	true ->
@@ -714,11 +710,11 @@ enc_sequence(Version, Sequence, MaxLength, TypeCode, Bytes, Len) ->
 %%-----------------------------------------------------------------
 %% Func: enc_sequence1/4
 %%-----------------------------------------------------------------
-enc_sequence1(Version, [], TypeCode, Bytes, Len) ->
+enc_sequence1(_Version, [], _TypeCode, Bytes, Len) ->
     {Bytes, Len};
-enc_sequence1(Version, CharSeq, 'tk_char', Bytes, Len) -> 
+enc_sequence1(_Version, CharSeq, 'tk_char', Bytes, Len) -> 
     {[list_to_binary(CharSeq) |Bytes], Len + length(CharSeq)};
-enc_sequence1(Version, OctetSeq, 'tk_octet', Bytes, Len) -> 
+enc_sequence1(_Version, OctetSeq, 'tk_octet', Bytes, Len) -> 
     {[list_to_binary(OctetSeq) |Bytes], Len + length(OctetSeq)};
 enc_sequence1(Version, [Object| Rest], TypeCode, Bytes, Len) -> 
     {ByteSequence, Len1} = enc_type(TypeCode, Version, Object, Bytes, Len),
@@ -731,19 +727,19 @@ enc_array(Version, Array, Size, TypeCode, Bytes, Len) when size(Array) == Size -
     Sequence = tuple_to_list(Array),
     enc_sequence1(Version, Sequence, TypeCode, Bytes, Len);
 enc_array(_,Array, Size, _, _, _) ->
-    orber:debug_level_print("[~p] cdr_encode:enc_array(~p, ~p). Incorrect size.", 
-			    [?LINE, Array, Size], ?DEBUG_LEVEL),
+    orber:dbg("[~p] cdr_encode:enc_array(~p, ~p). Incorrect size.", 
+	      [?LINE, Array, Size], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 15), completion_status=?COMPLETED_MAYBE}).
 
 %%-----------------------------------------------------------------
 %% Func: enc_string/4
 %%-----------------------------------------------------------------
-enc_string(Version, String, MaxLength, Bytes, Len) ->
+enc_string(_Version, String, MaxLength, Bytes, Len) ->
     StrLen = length(String),
     if
 	StrLen > MaxLength, MaxLength > 0 ->
-	    orber:debug_level_print("[~p] cdr_encode:enc_string(~p, ~p). String exceeds max.", 
-				    [?LINE, String, MaxLength], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] cdr_encode:enc_string(~p, ~p). String exceeds max.", 
+		      [?LINE, String, MaxLength], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 16), 
 				   completion_status=?COMPLETED_MAYBE});
 	true ->
@@ -798,13 +794,14 @@ enc_union(Version, {_, Label, Value}, DiscrTC, Default, TypeCodeList, Bytes, Len
     enc_union2(Version, {Label2, Value},TypeCodeList, Default, 
 	      ByteSequence, Len1, undefined).
 
-enc_union2(_,What, [], Default, Bytes, Len, _) when Default < 0 ->
+enc_union2(_Version, _What, [], Default, Bytes, Len, _) when Default < 0 ->
     {Bytes, Len};
-enc_union2(Version, {_, Value}, [], Default, Bytes, Len, Type) -> 
+enc_union2(Version, {_, Value}, [], _Default, Bytes, Len, Type) -> 
     enc_type(Type, Version, Value, Bytes, Len);
-enc_union2(Version, {Label,Value} ,[{Label, Name, Type} |List], Default, Bytes, Len, _) ->
+enc_union2(Version, {Label,Value} ,[{Label, _Name, Type} |_List], 
+	   _Default, Bytes, Len, _) ->
     enc_type(Type, Version, Value, Bytes, Len);
-enc_union2(Version, Union ,[{default, Name, Type} |List], Default, Bytes, Len, _) ->
+enc_union2(Version, Union ,[{default, _Name, Type} |List], Default, Bytes, Len, _) ->
     enc_union2(Version, Union, List, Default, Bytes, Len, Type);
 enc_union2(Version, Union,[_ | List], Default, Bytes, Len, DefaultType) ->
     enc_union2(Version, Union, List, Default, Bytes, Len, DefaultType).
@@ -817,12 +814,12 @@ stringify_enum(_, Label) ->
 %% Func: enc_struct/4
 %%-----------------------------------------------------------------
 enc_struct(Version, Struct, TypeCodeList, Bytes, Len) ->
-    [Name | StructList] = tuple_to_list(Struct),
+    [_Name | StructList] = tuple_to_list(Struct),
     enc_struct1(Version, StructList, TypeCodeList, Bytes, Len).
 
-enc_struct1(Version, [], [], Bytes, Len) ->
+enc_struct1(_Version, [], [], Bytes, Len) ->
     {Bytes, Len};
-enc_struct1(Version, [Object | Rest], [{ElemName, ElemType} | TypeCodeList], Bytes,
+enc_struct1(Version, [Object | Rest], [{_ElemName, ElemType} | TypeCodeList], Bytes,
 	    Len) ->
     {ByteSequence, Len1} = enc_type(ElemType, Version, Object, Bytes, Len),
     enc_struct1(Version, Rest, TypeCodeList, ByteSequence, Len1).
@@ -830,20 +827,20 @@ enc_struct1(Version, [Object | Rest], [{ElemName, ElemType} | TypeCodeList], Byt
 %%-----------------------------------------------------------------
 %% Func: enc_objref/4
 %%-----------------------------------------------------------------
-enc_objref(Version, Name, Value, Bytes, Len) ->
+enc_objref(Version, _Name, Value, Bytes, Len) ->
      iop_ior:code(Version, Value, Bytes, Len).
       
 %%-----------------------------------------------------------------
 %% Func: enc_exception/5
 %%-----------------------------------------------------------------
-enc_exception(Version, Name, IFRId, Value, ElementList, Bytes, Len) ->
-    [Name1, TypeId | Args] = tuple_to_list(Value),
+enc_exception(Version, _Name, IFRId, Value, ElementList, Bytes, Len) ->
+    [_Name1, _TypeId | Args] = tuple_to_list(Value),
     {Bytes1, Len1} = enc_type({'tk_string', 0}, Version, IFRId , Bytes, Len),
     enc_exception_1(Version, Args, ElementList, Bytes1, Len1).
 
-enc_exception_1(Version, [], [], Bytes, Len) ->
+enc_exception_1(_Version, [], [], Bytes, Len) ->
     {Bytes, Len};
-enc_exception_1(Version, [Arg |Args], [{ElemName, ElemType} |ElementList],
+enc_exception_1(Version, [Arg |Args], [{_ElemName, ElemType} |ElementList],
 		Bytes, Len) ->
     {Bytes1, Len1} = enc_type(ElemType, Version, Arg, Bytes, Len),
     enc_exception_1(Version, Args, ElementList, Bytes1, Len1).
@@ -1080,8 +1077,8 @@ enc_type_code({'none', Indirection}, Version, Message, Len) ->  %% placeholder
 	      {"", 16#ffffffff, Indirection},
 	      Message, Len);
 enc_type_code(Type, _, _, _) ->
-    orber:debug_level_print("[~p] cdr_encode:enc_type_code(~p); No match.", 
-			    [?LINE, Type], ?DEBUG_LEVEL),
+    orber:dbg("[~p] cdr_encode:enc_type_code(~p); No match.", 
+	      [?LINE, Type], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 7), completion_status=?COMPLETED_MAYBE}).
 
 check_enum({'tk_enum', _, _, _}) ->
@@ -1089,10 +1086,10 @@ check_enum({'tk_enum', _, _, _}) ->
 check_enum(_) ->
     false.
 
-encode_complex_tc_paramters(Value, Value_length, Message, Len) ->
-    {Message1, Len1} = enc_align(Message, Len, 4),
-    Message2 = cdrlib:enc_unsigned_long(Value_length, Message1),
-    {[Value |Message2], Len+Value_length+4}.
+encode_complex_tc_paramters(Value, ValueLength, Message, Len) ->
+    {Message1, _Len1} = enc_align(Message, Len, 4),
+    Message2 = cdrlib:enc_unsigned_long(ValueLength, Message1),
+    {[Value |Message2], Len+ValueLength+4}.
 
 %%-----------------------------------------------------------------
 %% Func: enc_align/1

@@ -28,7 +28,6 @@
 -include_lib("orber/src/orber_iiop.hrl").
 -include_lib("orber/include/ifr_types.hrl").
 -include_lib("orber/include/corba.hrl").
--include_lib("orber/src/orber_debug.hrl").
 
 %%--------------- IMPORTS ------------------------------------
 
@@ -45,9 +44,9 @@
 
 init(State) ->
     {ok, State}.
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%-----------------------------------------------------------
@@ -59,12 +58,12 @@ code_change(OldVsn, State, Extra) ->
 %% Returns  : Fully scooped name - string()
 %%-----------------------------------------------------------
 
-get_absolute_name(OE_THIS, State, []) ->
-    orber:debug_level_print("[~p] OrberApp_IFR_impl:get_absolute_name(); no TypeID supplied.", 
-			    [?LINE], ?DEBUG_LEVEL),
+get_absolute_name(_OE_THIS, _State, []) ->
+    orber:dbg("[~p] OrberApp_IFR_impl:get_absolute_name(); no TypeID supplied.", 
+	      [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 11), completion_status=?COMPLETED_MAYBE});
 
-get_absolute_name(OE_THIS, State, TypeID) ->
+get_absolute_name(_OE_THIS, State, TypeID) ->
     Rep = orber_ifr:find_repository(),
     Key = orber_ifr:'Repository_lookup_id'(Rep, TypeID),
     [$:, $: |N] = orber_ifr:'Contained__get_absolute_name'(Key),
@@ -83,12 +82,12 @@ change_colons_to_underscore([], Acc) ->
 %% Returns  : Fully scooped name - string()
 %%-----------------------------------------------------------
 
-get_user_exception_type(OE_THIS, State, []) -> 
-    orber:debug_level_print("[~p] OrberApp_IFR_impl:get_user_exception_type(); no TypeID supplied.", 
-			    [?LINE], ?DEBUG_LEVEL),
+get_user_exception_type(_OE_THIS, _State, []) -> 
+    orber:dbg("[~p] OrberApp_IFR_impl:get_user_exception_type(); no TypeID supplied.", 
+	      [?LINE], ?DEBUG_LEVEL),
     corba:raise(#'MARSHAL'{minor=(?ORBER_VMCID bor 11), completion_status=?COMPLETED_MAYBE});
 
-get_user_exception_type(OE_THIS, State, TypeId) -> 
+get_user_exception_type(_OE_THIS, State, TypeId) -> 
     Rep = orber_ifr:find_repository(),
     ExceptionDef = orber_ifr:'Repository_lookup_id'(Rep, TypeId),
     ContainedDescr = orber_ifr_exceptiondef:describe(ExceptionDef),

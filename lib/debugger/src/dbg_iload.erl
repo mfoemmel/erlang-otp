@@ -82,7 +82,7 @@ store_module(Mod, File, Binary, Db) ->
     Attr = store_forms(Forms, Mod, Db, Exp, []),
     erase(mod_md5),
     erase(current_function),
-    store_funs(Db, Mod),
+%    store_funs(Db, Mod),
     erase(vcount),
     erase(funs),
     erase(fun_count),
@@ -95,14 +95,14 @@ store_module(Mod, File, Binary, Db) ->
 abstr(Bin) when binary(Bin) -> binary_to_term(Bin);
 abstr(Term) -> Term.
 
-store_funs(Db, Mod) ->
-    store_funs_1(get(funs), Db, Mod).
+% store_funs(Db, Mod) ->
+%     store_funs_1(get(funs), Db, Mod).
 
-store_funs_1([{Name,Index,Uniq,_,_,Arity,Cs}|Fs], Db, Mod) ->
-    dbg_idb:insert(Db, {Mod,Name,Arity,false}, Cs),
-    dbg_idb:insert(Db, {'fun',Mod,Index,Uniq}, {Name,Arity,Cs}),
-    store_funs_1(Fs, Db, Mod);
-store_funs_1([], _, _) -> ok.
+% store_funs_1([{Name,Index,Uniq,_,_,Arity,Cs}|Fs], Db, Mod) ->
+%     dbg_idb:insert(Db, {Mod,Name,Arity,false}, Cs),
+%     dbg_idb:insert(Db, {'fun',Mod,Index,Uniq}, {Name,Arity,Cs}),
+%     store_funs_1(Fs, Db, Mod);
+% store_funs_1([], _, _) -> ok.
 
 store_forms([{function,_,module_info,0,_}|Fs], Mod, Db, Exp, Attr) ->
     Cs = [{clause,0,[],[], [{module_info_0,0,Mod}]}],
@@ -244,7 +244,8 @@ guard_test({call,Line,{remote,_,{atom,_,erlang},{atom,_,F}},As0}) ->
 	    {safe_bif,Line,erlang,F,As}
     end;
 guard_test({op,Line,Op,L0}) ->
-    true = erl_internal:arith_op(Op, 1),	%Assertion.
+    true = erl_internal:arith_op(Op, 1) orelse %Assertion.
+	erl_internal:bool_op(Op, 1),
     L1 = gexpr(L0),
     {safe_bif,Line,erlang,Op,[L1]};
 guard_test({op,Line,Op,L0,R0}) ->
@@ -258,7 +259,8 @@ guard_test({integer,_,_}=I) -> I;
 guard_test({char,_,_}=C) -> C;
 guard_test({float,_,_}=F) -> F;
 guard_test({atom,_,_}=A) -> A;
-guard_test({nil,_}=N) -> N.
+guard_test({nil,_}=N) -> N;
+guard_test({var,_,_}=V) ->V.    % Boolean var
 
 map_guard_bif(integer, 1) -> {ok,is_integer};
 map_guard_bif(float, 1) -> {ok,is_float};
@@ -298,8 +300,8 @@ gexpr({bin_element,Line,Expr0,Size0,Type}) ->
     {bin_element,Line,Expr,Size,Type};
 %%% The previous passes have added the module name 'erlang' to
 %%% all BIF calls, even in guards.
-gexpr({call,_,{remote,_,{atom,_,erlang},{atom,_,self}},[]}) ->
-    self;
+gexpr({call,Line,{remote,_,{atom,_,erlang},{atom,_,self}},[]}) ->
+    {dbg, Line, self, []};
 gexpr({call,Line,{remote,_,{atom,_,erlang},{atom,_,F}},As0}) ->
     As = gexpr_list(As0),
     {safe_bif,Line,erlang,F,As};
@@ -367,30 +369,17 @@ expr({'receive',Line,Cs0,To0,ToEs0}) ->
 expr({'fun',_,{clauses,_},{_OldUniq,_Hvss,_Free}}) ->
     %% Old format (abstract_v1).
     exit({?MODULE,old_funs});
-expr({'fun',Line,{clauses,Cs0},{Index,OldUniq,Hvss,Free,Name}}) ->
+expr({'fun',Line,{clauses,Cs0},{_Index,_OldUniq,_Hvss,_Free,Name}}) ->
     %% New R8 format (abstract_v2).
-
-    OldIndex = get(fun_count),
-    Cs = fun_clauses(Cs0, Hvss, Free),
-    [{clause,_,H,_,_}|_] = Cs,
-    Arity = length(H),
-    put(fun_count, OldIndex+1),
-    Uniq = get(mod_md5),
-    
-    put(funs, [{Name,Index,Uniq,OldIndex,OldUniq,Arity,Cs}|get(funs)]),
-    {make_fun,Line,Index,Uniq,Free};
-expr({'fun',Line,{function,F,A},{Index,OldUniq,Name}}) ->
+    Cs = fun_clauses(Cs0),
+    {make_fun,Line,Name,Cs};
+expr({'fun',Line,{function,F,A},{_Index,_OldUniq,Name}}) ->
     %% New R8 format (abstract_v2).
     As = new_vars(A, Line),
     Cs = [{clause,Line,As,[],[{local_call,Line,F,As}]}],
-    OldIndex = get(fun_count),
-    put(fun_count, OldIndex+1),
-    Uniq = get(mod_md5),
-
-    put(funs, [{Name,Index,Uniq,OldIndex,OldUniq,A,Cs}|get(funs)]),
-    {make_fun,Line,Index,Uniq,[]};
-expr({call,_,{remote,_,{atom,_,erlang},{atom,_,self}},[]}) ->
-    self;
+    {make_fun,Line,Name,Cs};
+expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,self}},[]}) ->
+    {dbg, Line, self, []};
 expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,throw}},As0}) when length(As0) == 1 ->
     [As] = expr_list(As0),
     {throw,Line,As};
@@ -548,16 +537,9 @@ icr_clauses([C0|Cs]) ->
     [C1|icr_clauses(Cs)];
 icr_clauses([]) -> [].
 
-fun_clauses([{clause,L,H,G,B}|Cs], [Hvs|Hvss], Free) ->
-    [{clause,L,head(H++free_vars(Free, Hvs, L)),guard(G),exprs(B)}|
-     fun_clauses(Cs, Hvss, Free)];
-fun_clauses([], [], _) -> [].
-
-free_vars(Vs, Hvs, Line) ->
-    [ case lists:member(V, Hvs) of
-	  true -> {var,Line,'_'};
-	  false -> {var,Line,V}
-      end || V <- Vs ].
+fun_clauses([{clause,L,H,G,B}|Cs]) ->
+    [{clause,L,head(H),guard(G),exprs(B)}|fun_clauses(Cs)];
+fun_clauses([]) -> [].
 
 %% new_var_name() -> VarName.
 

@@ -15,6 +15,9 @@
  * 
  *     $Id$
  */
+
+#include "eidef.h"
+
 #ifdef __WIN32__
 #include <winsock2.h>
 #include <windows.h>
@@ -43,8 +46,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ei.h"
 #include "ei_internal.h"
 #include "ei_epmd.h"
+#include "ei_portio.h"
 #include "putget.h"
 
 
@@ -52,11 +57,11 @@
 /* 
  * FIXME: Expects IPv4 addresses (excludes IPv6, Appletalk, IRDA and
  * whatever) */
-int 
-ei_epmd_connect (struct in_addr *inaddr)
+int ei_epmd_connect_tmo(struct in_addr *inaddr, unsigned ms)
 {
   struct sockaddr_in saddr;
   int sd;
+  int res;
 
   memset(&saddr, 0, sizeof(saddr)); 
   saddr.sin_port = htons(EPMD_PORT);   
@@ -65,26 +70,32 @@ ei_epmd_connect (struct in_addr *inaddr)
   if (!inaddr) saddr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   else memmove(&saddr.sin_addr,inaddr,sizeof(saddr.sin_addr));
 
-  if (((sd = socket(PF_INET, SOCK_STREAM, 0)) < 0)) 
-    return -1;
-
-  if (connect(sd,(struct sockaddr *)&saddr,sizeof(saddr)) < 0) 
+  if (((sd = socket(PF_INET, SOCK_STREAM, 0)) < 0))
   {
-    closesocket(sd);
-    return -1;
+      erl_errno = errno;
+      return -1;
+  }
+
+  if ((res = ei_connect_t(sd,(struct sockaddr *)&saddr,sizeof(saddr),ms)) < 0) 
+  {
+      erl_errno = (res == -2) ? ETIMEDOUT : errno;
+      closesocket(sd);
+      return -1;
   }
 
   return sd;
 }
 
 /* get the given node's listen port using old epmd protocol */
-static int ei_epmd_r3_port (struct in_addr *addr, const char *alive)
+static int ei_epmd_r3_port (struct in_addr *addr, const char *alive,
+			    unsigned ms)
 {
   char buf[EPMDBUF];
   char *s = buf;
   int len = strlen(alive) + 1;
   int fd;
   int port;
+  int res;
 #if defined(VXWORKS)
   char ntoabuf[32];
 #endif
@@ -94,14 +105,15 @@ static int ei_epmd_r3_port (struct in_addr *addr, const char *alive)
   strcpy(s,alive);
 
   /* connect to epmd */
-  if ((fd = ei_epmd_connect(addr)) < 0) 
+  if ((fd = ei_epmd_connect_tmo(addr,ms)) < 0) 
   {
+      /* ei_epmd_connect_tmo() sets erl_errno */
       return -1;
   }
 
-  if (writesocket(fd, buf, len+2) != len+2) 
-  {
+  if ((res = ei_write_fill_t(fd, buf, len+2, ms)) != len+2) {
     closesocket(fd);
+    erl_errno = (res == -2) ? ETIMEDOUT : EIO;
     return -1;
   }
 
@@ -117,9 +129,10 @@ static int ei_epmd_r3_port (struct in_addr *addr, const char *alive)
 		 "-> PORT_REQ alive=%s ip=%s",alive,inet_ntoa(*addr));
 #endif
   
-  if (readsocket(fd, buf, 2) != 2) {
+  if ((res = ei_read_fill_t(fd, buf, 2, ms)) != 2) {
     EI_TRACE_ERR0("ei_epmd_r3_port","<- CLOSE");
     closesocket(fd);
+    erl_errno = (res == -2) ? ETIMEDOUT : EIO;
     return -1;
   }
   closesocket(fd);
@@ -131,7 +144,8 @@ static int ei_epmd_r3_port (struct in_addr *addr, const char *alive)
   return port;
 }
 
-static int ei_epmd_r4_port (struct in_addr *addr, const char *alive, int *dist)
+static int ei_epmd_r4_port (struct in_addr *addr, const char *alive,
+			    int *dist, unsigned ms)
 {
   char buf[EPMDBUF];
   char *s = buf;
@@ -150,13 +164,14 @@ static int ei_epmd_r4_port (struct in_addr *addr, const char *alive, int *dist)
   strcpy(s,alive);
   
   /* connect to epmd */
-  if ((fd = ei_epmd_connect(addr)) < 0)
+  if ((fd = ei_epmd_connect_tmo(addr,ms)) < 0)
   {
       return -1;
   }
 
-  if (writesocket(fd, buf, len+2) != len+2) {
+  if ((res = ei_write_fill_t(fd, buf, len+2, ms)) != len+2) {
     closesocket(fd);
+    erl_errno = (res == -2) ? ETIMEDOUT : EIO;
     return -1;
   }
 
@@ -173,8 +188,9 @@ static int ei_epmd_r4_port (struct in_addr *addr, const char *alive, int *dist)
 #endif
 
   /* read first two bytes (response type, response) */
-  if (readsocket(fd, buf, 2) != 2) {
+  if ((res = ei_read_fill_t(fd, buf, 2, ms)) != 2) {
     EI_TRACE_ERR0("ei_epmd_r4_port","<- CLOSE");
+    erl_errno = (res == -2) ? ETIMEDOUT : EIO;
     closesocket(fd);
     return -2;			/* version mismatch */
   }
@@ -186,21 +202,27 @@ static int ei_epmd_r4_port (struct in_addr *addr, const char *alive, int *dist)
     EI_TRACE_ERR1("ei_epmd_r4_port","<- unknown (%d)",res);
     EI_TRACE_ERR0("ei_epmd_r4_port","-> CLOSE");
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
+  
+
+  /* got negative response */
   if ((res = get8(s))) {
     /* got negative response */
-    EI_TRACE_ERR1("ei_epmd_r4_port","<- PORT2_RESP result=%d (error)",res);
+    EI_TRACE_ERR1("ei_epmd_r4_port","<- PORT2_RESP result=%d (failure)",res);
     closesocket(fd);
+    erl_errno = EIO;
     return -1;
   }
 
   EI_TRACE_CONN1("ei_epmd_r4_port","<- PORT2_RESP result=%d (ok)",res);
 
   /* expecting remaining 8 bytes */
-  if (readsocket(fd,buf,8) != 8) {
+  if ((res = ei_read_fill_t(fd,buf,8,ms)) != 8) {
     EI_TRACE_ERR0("ei_epmd_r4_port","<- CLOSE");
+    erl_errno = (res == -2) ? ETIMEDOUT : EIO;
     closesocket(fd);
     return -1;
   }
@@ -220,11 +242,17 @@ static int ei_epmd_r4_port (struct in_addr *addr, const char *alive, int *dist)
 
   /* right network protocol? */
   if (EI_MYPROTO != proto)
-    return -1;
+  {
+      erl_errno = EIO;
+      return -1;
+  }
 
   /* is there overlap in our distribution versions? */
   if ((EI_DIST_HIGH < dist_low) || (EI_DIST_LOW > dist_high)) 
-    return -1;
+  {
+      erl_errno = EIO;
+      return -1;
+  }
 
   /* choose the highest common version */
   /* i.e. min(his-max, my-max) */
@@ -243,15 +271,21 @@ static int ei_epmd_r4_port (struct in_addr *addr, const char *alive, int *dist)
  */
 int ei_epmd_port (struct in_addr *addr, const char *alive, int *dist)
 {
+    return ei_epmd_port_tmo (addr, alive, dist, 0);
+}
+
+int ei_epmd_port_tmo (struct in_addr *addr, const char *alive, int *dist, 
+		       unsigned ms)
+{
   int i;
 
   /* try the new one first, then the old one */
-  i = ei_epmd_r4_port(addr,alive,dist);
+  i = ei_epmd_r4_port(addr,alive,dist,ms);
 
   /* -2: new protocol not understood */
   if (i == -2) {
     *dist = 0; 
-    i = ei_epmd_r3_port(addr,alive);
+    i = ei_epmd_r3_port(addr,alive,ms);
   }
 
   return i;

@@ -35,6 +35,7 @@
 -define(N_REAL, 9). 
 -define(N_ENUMERATED, 10).   
 -define(N_EMBEDDED_PDV, 11). % constructed
+-define(N_UTF8String, 12).
 -define(N_SEQUENCE, 16). 
 -define(N_SET, 17). 
 -define(N_NumericString, 18).
@@ -78,8 +79,13 @@ check(S,{Types,Values,ParameterizedTypes,Classes,Objects,ObjectSets}) ->
     IsObject = fun(X) -> TupleIs(X,objectdef) end,
     IsValueSet = fun(X) -> TupleIs(X,valueset) end,
     Element2 = fun(X) -> element(2,X) end,
+    Element1 = fun(X) -> element(1,X) end,
 
     _Perror = checkp(S,ParameterizedTypes,[]), % must do this before the templates are used
+    
+    %% table to save instances of parameterized objects,object sets
+    asn1ct:create_ets_table(parameterized_objects,[named_table]),
+
     Terror = checkt(S,Types,[]),
 
     %% get parameterized object sets sent to checkt/3
@@ -122,12 +128,22 @@ check(S,{Types,Values,ParameterizedTypes,Classes,Objects,ObjectSets}) ->
     {ValueSetNames,Verror5} = filter_errors(IsValueSet,Verror4),
 
     asn1ct:create_ets_table(inlined_objects,[named_table]),
+
     {Oerror,ExclO,ExclOS} = checko(S,NewObjects ++
 				   NewObjectSets,
 				   [],[],[]),
+
     InlinedObjTuples = ets:tab2list(inlined_objects),
     InlinedObjects = lists:map(Element2,InlinedObjTuples),
     ets:delete(inlined_objects),
+    ParameterizedElems = ets:tab2list(parameterized_objects),
+    ParObjectSets = lists:filter(fun({_OSName,objectset,_}) -> true;
+				    (_)-> false end,ParameterizedElems),
+    ParObjectSetNames = lists:map(Element1,ParObjectSets),
+    ParTypes = lists:filter(fun({_TypeName,type,_}) -> true;
+			       (_) -> false end, ParameterizedElems),
+    ParTypesNames = lists:map(Element1,ParTypes),
+    ets:delete(parameterized_objects),
 
     Exporterror = check_exports(S,S#state.module),
     case {Terror3,Verror5,Cerror,Oerror,Exporterror} of
@@ -135,7 +151,7 @@ check(S,{Types,Values,ParameterizedTypes,Classes,Objects,ObjectSets}) ->
 	    ContextSwitchTs = context_switch_in_spec(),
 	    InstanceOf = instance_of_in_spec(),
 	    NewTypes = lists:subtract(Types,AddClasses) ++ ContextSwitchTs
-		++ InstanceOf,
+		++ InstanceOf ++ ParTypesNames,
 	    NewValues = lists:subtract(Values,PObjSetNames++ObjectNames++
 				       ValueSetNames),
 	    {ok,
@@ -143,7 +159,7 @@ check(S,{Types,Values,ParameterizedTypes,Classes,Objects,ObjectSets}) ->
 	      NewClasses,NewObjects,NewObjectSets},
 	     {NewTypes,NewValues,ParameterizedTypes,NewClasses,
 	      lists:subtract(NewObjects,ExclO)++InlinedObjects,
-	      lists:subtract(NewObjectSets,ExclOS)}};
+	      lists:subtract(NewObjectSets,ExclOS)++ParObjectSetNames}};
 	_ ->{error,{asn1,lists:flatten([Terror3,Verror5,Cerror,
 					Oerror,Exporterror])}}
     end.
@@ -346,6 +362,7 @@ checkp(S,[Name|T],Acc) ->
 		    error({type,{internal_error,Reason},NewS});
 		{asn1_class,_ClassDef} ->
 		    {asn1_class,Name};
+		{asn1_param_class,_} -> ok;
 		Ts ->
 		    NewType = Type#ptypedef{checked=true,typespec = Ts},
 		    asn1_db:dbput(NewS#state.mname,Name,NewType), % update the type
@@ -372,7 +389,8 @@ checkc(S,[Name|Cs],Acc) ->
 	    Class  ->
 		ClassSpec = if
 			       record(Class,classdef) ->
-				   Class#classdef.typespec;
+%				   Class#classdef.typespec;
+				   Class;
 			       record(Class,typedef) ->
 				   Class#typedef.typespec
 			   end,
@@ -484,12 +502,9 @@ check_class(S,CDef=#classdef{checked=Ch,name=Name,typespec=TS}) ->
 	true -> TS;
 	idle -> TS;
 	_ ->
-	    NewCDef = CDef#classdef{checked=idle},
-	    asn1_db:dbput(S#state.mname,Name,NewCDef),
+	    store_class(S,idle,CDef,Name),
 	    CheckedTS = check_class(S,TS),
-	    asn1_db:dbput(S#state.mname,Name,
-			  NewCDef#classdef{checked=true,
-					   typespec=CheckedTS}),
+	    store_class(S,true,CDef#classdef{typespec=CheckedTS},Name),
 	    CheckedTS
     end;
 check_class(S = #state{mname=M,tname=T},ClassSpec) 
@@ -500,25 +515,27 @@ check_class(S = #state{mname=M,tname=T},ClassSpec)
 	    #objectclass{fields=Def}; % in case of recursive definitions
 	Tref when record(Tref,'Externaltypereference') ->
 	    {_,RefType} = get_referenced_type(S,Tref),
-% 	    case RefType of
-% 		RefClass when record(RefClass,classdef) ->
-% 		    check_class(S,RefClass#classdef.typespec)
-% 	    end
 	    case is_class(S,RefType) of
 		true ->
 		    check_class(S,get_class_def(S,RefType));
 		_ ->
 		    error({class,{internal_error,RefType},S})
-	    end
+	    end;
+	{pt,ClassRef,Params} ->
+	    %% parameterized class
+	    {_,PClassDef} = get_referenced_type(S,ClassRef),
+	    NewParaList = 
+		[match_parameters(S,TmpParam,S#state.parameters)|| 
+		    TmpParam <- Params],
+	    instantiate_pclass(S,PClassDef,NewParaList)
     end;
-% check_class(S,{objectclassname,ModuleName,ClassName}) when atom(ModuleName),atom(ClassName) ->
-%     'fix this';
 check_class(S,C) when record(C,objectclass) ->
     NewFieldSpec = check_class_fields(S,C#objectclass.fields),
     C#objectclass{fields=NewFieldSpec};
-%check_class(S,{objectclassname,ClassName}) ->
+check_class(_S,{poc,_ObjSet,_Params}) ->
+    'fix this later';
 check_class(S,ClassName) ->
-    {_,Def} = get_referenced_type(S,ClassName),
+    {RefMod,Def} = get_referenced_type(S,ClassName),
     case Def of
 	ClassDef when record(ClassDef,classdef) ->
 	    case ClassDef#classdef.checked of
@@ -527,7 +544,12 @@ check_class(S,ClassName) ->
 		idle ->
 		    ClassDef#classdef.typespec;
 		false ->
-		    check_class(S,ClassDef#classdef.typespec)
+		    Name=ClassName#'Externaltypereference'.type,
+		    store_class(S,idle,ClassDef,Name),
+		    NewS = S#state{mname=RefMod,type=Def,tname=Name},
+		    CheckedTS = check_class(NewS,ClassDef#classdef.typespec),
+		    store_class(S,true,ClassDef#classdef{typespec=CheckedTS},Name),
+		    CheckedTS
 	    end;
 	TypeDef when record(TypeDef,typedef) ->
 	    %% this case may occur when a definition is a reference 
@@ -536,9 +558,17 @@ check_class(S,ClassName) ->
 		#type{def=Ext} when record(Ext,'Externaltypereference') ->
 		    check_class(S,Ext)
 	    end
-    end;
-check_class(_S,{poc,_ObjSet,_Params}) ->
-    'fix this later'.
+    end.
+
+instantiate_pclass(S,PClassDef,Params) ->
+    #ptypedef{args=Args,typespec=Type} = PClassDef,
+    MatchedArgs = match_args(Args, Params, []),
+    NewS = S#state{type=Type,parameters=MatchedArgs,abscomppath=[]},
+    check_class(NewS,#classdef{name=S#state.tname,typespec=Type}).
+
+store_class(S,Mode,ClassDef,ClassName) ->
+    NewCDef = ClassDef#classdef{checked=Mode},
+    asn1_db:dbput(S#state.mname,ClassName,NewCDef).
 
 check_class_fields(S,Fields) ->
     check_class_fields(S,Fields,[]).
@@ -552,15 +582,16 @@ check_class_fields(S,[F|Fields],Acc) ->
 		{fixedtypevaluefield,Name,RefType,Unique,OSpec};
 	    object_or_fixedtypevalue_field ->
 		{_,Name,Type,Unique,OSpec} = F,
+		Type2 = maybe_unchecked_OCFT(S,Type),
 		Cat = 
-		    case asn1ct_gen:type(asn1ct_gen:get_inner(Type#type.def)) of
+		    case asn1ct_gen:type(asn1ct_gen:get_inner(Type2#type.def)) of
 			Def when record(Def,typereference);
 				 record(Def,'Externaltypereference') ->
 			    {_,D} = get_referenced_type(S,Def),
 			    D;
 			{undefined,user} -> 
 			    %% neither of {primitive,bif} or {constructed,bif}
-%%			    {_,D} = get_referenced_type(S,#typereference{val=Type#type.def}),
+				    
 			    {_,D} = get_referenced_type(S,#'Externaltypereference'{module=S#state.mname,type=Type#type.def}),
 			    D;
 			_ ->
@@ -575,7 +606,6 @@ check_class_fields(S,[F|Fields],Acc) ->
 		end;
 	    objectset_or_fixedtypevalueset_field ->
 		{_,Name,Type,OSpec} = F,
-%%		RefType = check_type(S,#typedef{typespec=Type},Type),
 		RefType =
 		    case (catch check_type(S,#typedef{typespec=Type},Type)) of
 			{asn1_class,_ClassDef} ->
@@ -612,12 +642,21 @@ check_class_fields(S,[F|Fields],Acc) ->
 check_class_fields(_S,[],Acc) ->
     lists:reverse(Acc).
 
+maybe_unchecked_OCFT(S,Type) ->
+    case Type#type.def of
+	#'ObjectClassFieldType'{type=undefined} ->
+	    check_type(S,#typedef{typespec=Type},Type);
+	_ ->
+	    Type
+    end.
+
 if_current_checked_type(S,#type{def=Def}) ->
+    CurrentModule = S#state.mname,
     CurrentCheckedName = S#state.tname,
     MergedModules = S#state.inputmodules,
  %   CurrentCheckedModule = S#state.mname,
     case Def of
-	#'Externaltypereference'{module=CurrentCheckedName,
+	#'Externaltypereference'{module=CurrentModule,
 				 type=CurrentCheckedName} ->
 	    true;
 	#'Externaltypereference'{module=ModuleName,
@@ -695,7 +734,7 @@ check_object(S,_ObjDef,#'Object'{classname=ClassRef,def=ObjectDef}) ->
 
 %%check_object(S,ObjSetDef,ObjSet=#type{def={pt,ObjSetRef,Args}}) ->
     %% A parameterized 
-	     
+
 check_object(S,
 	     _ObjSetDef,
 	     ObjSet=#'ObjectSet'{class=ClassRef}) ->
@@ -744,13 +783,13 @@ check_object(S,
 		CheckedSet = check_object_list(S,NewClassRef,Set++Ext),
 		NewSet = get_unique_valuelist(S,CheckedSet,UniqueFieldName),
 		ObjSet#'ObjectSet'{uniquefname=UniqueFieldName,
-				   set=NewSet++['EXTENSIONMARK']};
+				   set=extensionmark(NewSet)};
 	    {{'SingleValue',Set},Ext} ->
 		CheckedSet = check_object_list(S,NewClassRef,
 					       merge_sets(Set,Ext)),
 		NewSet = get_unique_valuelist(S,CheckedSet,UniqueFieldName),
 		ObjSet#'ObjectSet'{uniquefname=UniqueFieldName,
-				   set=NewSet++['EXTENSIONMARK']};
+				   set=extensionmark(NewSet)};
 	    {Type,{'EXCEPT',Exclusion}} when record(Type,type) ->
 		{_,TDef} = get_referenced_type(S,Type#type.def),
 		OS = TDef#typedef.typespec,
@@ -760,17 +799,136 @@ check_object(S,
 			     NewOS);
 	    #type{def={pt,DefinedObjSet,ParamList}} ->
 		{_,PObjSetDef} = get_referenced_type(S,DefinedObjSet),
-		instantiate_pos(S,ClassDef,PObjSetDef,ParamList);
+		NewParamList = 
+		    [match_parameters(S,TmpParam,S#state.parameters)|| 
+			TmpParam <- ParamList],
+		instantiate_pos(S,ClassDef,PObjSetDef,NewParamList);
+
+	    %% actually this is an ObjectSetFromObjects construct, it
+	    %% is when the object set is retrieved from an object
+	    %% field.
+%	    #type{def=#'ObjectClassFieldType'{classname=ObjName,class=_Obj,
+	    #type{def=#'ObjectClassFieldType'{classname=ObjName,
+					      fieldname=FieldName}} ->
+		{_,TDef} = get_referenced_type(S,ObjName),
+		OS=TDef#typedef.typespec,
+		%% should get the right object set here. Get the field
+		%% FieldName out of the object set OS of class
+		%% OS#'ObjectSet'.class
+		OS2=check_object(S,TDef,OS),
+		NewSet=object_set_from_objects(S,FieldName,OS2),
+		ObjSet#'ObjectSet'{uniquefname=UniqueFieldName,
+				   set=NewSet};
+	    {'ObjectSetFromObjects',{_,_,ObjName},FieldName} ->
+		{_,TDef} = get_referenced_type(S,ObjName),
+		OS=TDef#typedef.typespec,
+		%% should get the right object set here. Get the field
+		%% FieldName out of the object set OS of class
+		%% OS#'ObjectSet'.class
+		OS2=check_object(S,TDef,OS),
+		NewSet=object_set_from_objects(S,FieldName,OS2),
+		ObjSet#'ObjectSet'{uniquefname=UniqueFieldName,
+				   set=NewSet};
 	    {ObjDef={object,definedsyntax,_ObjFields},_Ext} ->
 		CheckedSet = check_object_list(S,NewClassRef,[ObjDef]),
 		NewSet = get_unique_valuelist(S,CheckedSet,UniqueFieldName),
 		ObjSet#'ObjectSet'{uniquefname=UniqueFieldName,
-				   set=NewSet++['EXTENSIONMARK']}
+				   set=extensionmark(NewSet)};
+	    {ObjDef=#type{},Ext} when list(Ext) ->
+		CheckedSet = check_object_list(S,NewClassRef,[ObjDef|Ext]),
+		NewSet = get_unique_valuelist(S,CheckedSet,UniqueFieldName),
+		ObjSet#'ObjectSet'{uniquefname=UniqueFieldName,
+				   set=extensionmark(NewSet)}
 	end,
     Gen = gen_incl_set(S,NewObjSet#'ObjectSet'.set,
 		       ClassDef),
     NewObjSet#'ObjectSet'{class=NewClassRef,gen=Gen}.
 
+%%
+extensionmark(L) ->
+    case lists:member('EXTENSIONMARK',L) of
+	true -> L;
+	_ -> L ++ ['EXTENSIONMARK']
+    end.
+
+
+%% ObjectSetFromObjects functionality
+
+%% The fieldname is a list of field names.They may be objects or
+%% object sets. If ObjectSet is an object set the resulting object set
+%% is the union of object sets if the last field name is an object
+%% set.  If the last field is an object the resulting object set is
+%% the set of objects in ObjectSet.
+object_set_from_objects(S,FieldName,ObjectSet) ->
+    #'ObjectSet'{class=Cl,set=Set} = ObjectSet,
+    {_,ClassDef} = get_referenced_type(S,Cl),
+    object_set_from_objects(S,ClassDef,FieldName,Set,[]).
+object_set_from_objects(S,ClassDef,FieldName,[O|Os],Acc) ->
+    case object_set_from_objects2(S,ClassDef,FieldName,element(3,O)) of
+	ObjS when list(ObjS) ->
+	    object_set_from_objects(S,ClassDef,FieldName,Os,ObjS++Acc);
+	Obj ->
+	    object_set_from_objects(S,ClassDef,FieldName,Os,[Obj|Acc])
+    end;
+object_set_from_objects(_S,_ClassDef,_FieldName,[],Acc) ->
+    Acc.
+object_set_from_objects2(S,ClassDef,[{valuefieldreference,OName}],
+			 Fields) ->
+    %% this is an object
+    case lists:keysearch(OName,1,Fields) of
+	{value,{_,TDef}} ->
+	    #'Object'{classname=_NextClName,def=ODef}=TDef#typedef.typespec,
+	    {_,_,NextFields}=ODef,
+%%	    {_,NextClass} = get_referenced_type(S,NextClName),
+	    UniqueFieldName = 
+		case (catch get_unique_fieldname(ClassDef)) of
+		    {error,'__undefined_'} -> {unique,undefined};
+		    {asn1,Msg,_} -> error({class,Msg,S});
+		    Other -> Other
+		end,
+	    VDef = get_unique_value(S,NextFields,UniqueFieldName),
+	    {TDef#typedef.name,VDef,NextFields};
+	_ ->
+	    [] % it may be an absent optional field
+    end;
+object_set_from_objects2(_S,_ClassDef,[{typefieldreference,OSName}],
+			Fields) ->
+    %% this is an object set
+    case lists:keysearch(OSName,1,Fields) of
+	{value,{_,TDef}} ->
+	    #'ObjectSet'{class=_NextClName,set=NextSet} = TDef#typedef.typespec,
+	    NextSet;
+	_ ->
+	    [] % it may be an absent optional field
+    end;
+object_set_from_objects2(S,_ClassDef,[{valuefieldreference,OName}|Rest],
+			 Fields) ->
+    %% this is an object
+    case lists:keysearch(OName,1,Fields) of
+	{value,{_,TDef}} ->
+	    #'Object'{classname=NextClName,def=ODef}=TDef#typedef.typespec,
+	    {_,_,NextFields}=ODef,
+	    {_,NextClass} = get_referenced_type(S,NextClName),
+	    object_set_from_objects2(S,NextClass,Rest,NextFields);
+	_ ->
+	    []
+    end;
+object_set_from_objects2(S,_ClassDef,[{typefieldreference,OSName}|Rest],
+			Fields) ->
+    %% this is an object set
+    case lists:keysearch(OSName,1,Fields) of
+	{value,{_,TDef}} ->    
+	    #'ObjectSet'{class=NextClName,set=NextSet} = TDef,
+	    {_,NextClass} = get_referenced_type(S,NextClName),
+	    object_set_from_objects(S,NextClass,Rest,NextSet,[]);
+	_ ->
+	    []
+    end.
+
+    
+		
+	    
+    
 
 merge_sets(Set,Ext) when list(Set),list(Ext) ->
     Set ++ Ext;
@@ -902,6 +1060,9 @@ get_unique_valuelist(_S,ObjSet,{unique,undefined}) -> % no unique field in objec
 get_unique_valuelist(S,ObjSet,UFN) ->
     get_unique_vlist(S,ObjSet,UFN,[]).
 
+
+get_unique_vlist(_S,[],_,[]) ->
+    ['EXTENSIONMARK'];
 get_unique_vlist(S,[],_,Acc) ->
     case catch check_uniqueness(Acc) of
 	{asn1_error,_} ->
@@ -912,9 +1073,17 @@ get_unique_vlist(S,[],_,Acc) ->
     end;
 get_unique_vlist(S,[{ObjName,Obj}|Rest],UniqueFieldName,Acc) ->
     {_,_,Fields} = Obj,
-    VDef = get_unique_value(S,Fields,UniqueFieldName),
-    get_unique_vlist(S,Rest,UniqueFieldName,
-		     [{ObjName,VDef#valuedef.value,Fields}|Acc]);
+%    VDef = get_unique_value(S,Fields,UniqueFieldName),
+    NewObjInf = 
+	case get_unique_value(S,Fields,UniqueFieldName) of
+	    #valuedef{value=V} -> [{ObjName,V,Fields}];
+	    [] -> []; % maybe the object only was a reference to an
+                     % empty object set.
+	    no_unique_value -> [{ObjName,no_unique_value,Fields}]
+	end,
+    get_unique_vlist(S,Rest,UniqueFieldName,NewObjInf++Acc);
+%		     [{ObjName,VDef#valuedef.value,Fields}|Acc]);
+
 get_unique_vlist(S,[V={_,_,_}|Rest],UniqueFieldName,Acc) ->
     get_unique_vlist(S,Rest,UniqueFieldName,[V|Acc]).
 
@@ -955,9 +1124,13 @@ get_unique_value(S,Fields,UniqueFieldName) ->
 		    #valuedef{value=Value}
 	    end;
 	false ->
-	    exit({error,{'no unique value',Fields,UniqueFieldName},S})
-%%	    io:format("WARNING: no unique value in object"),
-%%	    exit(uniqueFieldName)
+	    case Fields of
+		[{_,#typedef{typespec=#'ObjectSet'{set=['EXTENSIONMARK']}}}] -> 
+		    [];
+		_ ->
+		    no_unique_value
+%%		    exit({error,{'no unique value',Fields,UniqueFieldName},S})
+	    end
     end.
 
 check_uniqueness(NameValueList) ->
@@ -992,15 +1165,17 @@ instantiate_po(S,_ClassDef,Object,ArgsList) when record(Object,pobjectdef) ->
 instantiate_pos(S,ClassDef,ObjectSetDef,ArgsList) ->
     ClassName = ClassDef#classdef.name,
     FormalParams = get_pt_args(ObjectSetDef),
-    Set = case get_pt_spec(ObjectSetDef) of
-	      {valueset,_Set} -> _Set;
-	      _Set -> _Set
-	  end,
+    OSet = case get_pt_spec(ObjectSetDef) of
+	      {valueset,Set} -> 
+		   #'ObjectSet'{class=name2Extref(S#state.mname,
+						  ClassName),set=Set};
+	      Set when record(Set,'ObjectSet') -> Set;
+	       _ ->
+		   error({type,"parameterized object set failure",S})
+	   end,
     MatchedArgs = match_args(FormalParams,ArgsList,[]),
     NewS = S#state{type=ObjectSetDef,parameters=MatchedArgs},
-    check_object(NewS,ObjectSetDef,
-		 #'ObjectSet'{class=name2Extref(S#state.mname,ClassName),
-			      set=Set}).
+    check_object(NewS,ObjectSetDef,OSet).
 
     
 %% gen_incl -> boolean()
@@ -1032,7 +1207,13 @@ gen_incl1(S,Fields,[C|CFields]) ->
 %		    {_,ClassFields,_} = ClassDef#classdef.typespec,
 		    #objectclass{fields=ClassFields} = 
 			ClassDef#classdef.typespec,
-		    ObjTDef = element(2,Field),
+		    ObjTDef = 
+			case element(2,Field) of
+			    TDef when record(TDef,typedef) -> TDef;
+			    ERef ->
+				{_,T} = get_referenced_type(S,ERef),
+				T
+			end,
 		    case gen_incl(S,(ObjTDef#typedef.typespec)#'Object'.def,
 				  ClassFields) of
 			true ->
@@ -1249,27 +1430,51 @@ convert_to_defaultfield(S,ObjFieldName,ObjFieldSetting,CField)->
 	    Type = 
 		if
 		    record(TypeDef,typedef) -> TypeDef;
+		    record(TypeDef,'ObjectClassFieldType') ->
+			T=check_type(S,#typedef{typespec=ObjFieldSetting},ObjFieldSetting),
+			oCFT_def(S,T);
+%			#typedef{checked=true,name=Name,typespec=IT};
+		    tuple(TypeDef), element(1,TypeDef) == pt  ->
+			%% this is an inlined type. If constructed
+			%% type save in data base
+			T=check_type(S,#typedef{typespec=ObjFieldSetting},ObjFieldSetting),
+			#'Externaltypereference'{type=PtName} = 
+			    element(2,TypeDef),
+			NameList = [PtName,S#state.tname],
+			NewName = list_to_atom(asn1ct_gen:list2name(NameList)),
+			NewTDef=#typedef{checked=true,name=NewName,
+					 typespec=T},
+			asn1_db:dbput(S#state.mname,NewName,NewTDef),
+			asn1ct_gen:insert_once(parameterized_objects,{NewName,type,NewTDef}),
+			NewTDef;
 		    true ->
 			case asn1ct_gen:type(asn1ct_gen:get_inner(TypeDef)) of
 			    ERef = #'Externaltypereference'{module=CurrMod} ->
+				{RefMod,T} = get_referenced_type(S,ERef),
+				check_and_save(S,RefMod,T),
+% 				T#typedef{checked=true,
+% 					  typespec=check_type(S,T,
+% 							      T#typedef.typespec)},
+				ERef#'Externaltypereference'{module=RefMod};
+			    ERef = #'Externaltypereference'{} ->
 				{_,T} = get_referenced_type(S,ERef),
-				T#typedef{checked=true,
-					  typespec=check_type(S,T,
-							      T#typedef.typespec)};
-			    ERef = #'Externaltypereference'{module=ExtMod} ->
-				{_,T} = get_referenced_type(S,ERef),
-				#typedef{name=Name} = T,
+%				#typedef{name=Name} = T,
 				check_type(S,T,T#typedef.typespec),
-				#typedef{checked=true,
-					 name={ExtMod,Name},
-					 typespec=ERef};
+% 				#typedef{checked=true,
+% 					 name={ExtMod,Name},
+% 					 typespec=ERef},
+				merged_name(S,ERef);
 			    Bif when Bif=={primitive,bif};Bif=={constructed,bif} ->
 				T = check_type(S,#typedef{typespec=ObjFieldSetting},
 					       ObjFieldSetting),
 				#typedef{checked=true,name=Bif,typespec=T};
+			    OCFT = #'ObjectClassFieldType'{} ->
+				T=check_type(S,#typedef{typespec=ObjFieldSetting},ObjFieldSetting),
+				io:format("OCFT=~p~n,T=~p~n",[OCFT,T]),
+				#typedef{checked=true,typespec=T};
 			    _ ->
+				%this case should not happen any more
 				{Mod,T} = 
-				    %% get_referenced_type(S,#typereference{val=ObjFieldSetting}),
 				    get_referenced_type(S,#'Externaltypereference'{module=S#state.mname,type=ObjFieldSetting}),
 				case Mod of
 				    CurrMod ->
@@ -1310,12 +1515,16 @@ convert_to_defaultfield(S,ObjFieldName,ObjFieldSetting,CField)->
 					check_value(S,#valuedef{name=Val,
 								type=element(3,CField),
 								value=ObjFieldSetting});
-				    {_,VDef} when record(VDef,valuedef) ->
-					check_value(S,VDef);%% XXX
-				    {_,VDef} ->
-					check_value(S,#valuedef{name=Val,
-								type=element(3,CField),
-								value=VDef})
+				    {M,VDef} when record(VDef,valuedef) ->
+					check_value(update_state(S,M),
+						    %%S#state{mname=M},
+						    VDef);%% XXX
+				    {M,VDef} ->
+					check_value(update_state(S,M),
+						    %%S#state{mname=M},
+						    #valuedef{name=Val,
+							      type=element(3,CField),
+							      value=VDef})
 				end,
 			    {ObjFieldName,ValDef}
 		    end;
@@ -1325,42 +1534,38 @@ convert_to_defaultfield(S,ObjFieldName,ObjFieldSetting,CField)->
 	fixedtypevaluesetfield ->
 	    {ObjFieldName,ObjFieldSetting};
 	objectfield ->
+	    CheckObject = 
+		fun(O) ->
+			O#typedef{checked=true,typespec=
+				  check_object(S,O,O#typedef.typespec)}
+		end,
 	    ObjectSpec = 
 		case ObjFieldSetting of
-		    Ref when record(Ref,typereference);record(Ref,identifier);
-			     record(Ref,'Externaltypereference');
-			     record(Ref,'Externalvaluereference') ->
-			{_,R} = get_referenced_type(S,ObjFieldSetting),
-			R;
+%		    Ref when record(Ref,typereference);record(Ref,identifier);
+%			     record(Ref,'Externaltypereference');
+%			     record(Ref,'Externalvaluereference') ->
+		    Ref when record(Ref,'Externalvaluereference') ->
+			{M,O} = get_referenced_type(S,ObjFieldSetting),
+			check_object(S,O,O#typedef.typespec),
+			Ref#'Externalvaluereference'{module=M};
+%			R;
 		    {'ValueFromObject',{_,ObjRef},FieldName} ->
 			%% This is an ObjectFromObject
 			{_,Object} = get_referenced_type(S,ObjRef),
 			ChObject = check_object(S,Object,
 						Object#typedef.typespec),
-			_ObjFromObj=
+			ObjFromObj=
 			    get_fieldname_element(S,Object#typedef{
 						      typespec=ChObject},
-						  FieldName);
-			%%ClassName = ObjFromObj#'Object'.classname,
-			%%#typedef{name=,
-			%%	 typespec=
-			%%	 ObjFromObj#'Object'{classname=
-			%%			     {objectclassname,ClassName}}};
+						  FieldName),
+			CheckObject(ObjFromObj);
 		    {object,_,_} ->
 			%% An object defined inlined in another object
 			#type{def=Ref} = element(3,CField),
-% 			CRef = case Ref of
-% 				   #'Externaltypereference'{module=CurrMod,
-% 							    type=CName} ->
-% 				       CName;
-% 				    #'Externaltypereference'{module=ExtMod,
-% 							    type=CName} ->
-% 				       {ExtMod,CName}
-% 			       end,
 			InlinedObjName=
 			    list_to_atom(lists:concat([S#state.tname]++
 						      ['_',ObjFieldName])),
-%			ObjSpec = #'Object'{classname={objectclassname,CRef},
+
 			ObjSpec = #'Object'{classname=Ref,
 					    def=ObjFieldSetting},
 			CheckedObj=
@@ -1372,17 +1577,16 @@ convert_to_defaultfield(S,ObjFieldName,ObjFieldSetting,CField)->
 			asn1_db:dbput(S#state.mname,InlinedObjName,InlObj),
 			InlObj;
 		    #type{def=Eref} when record(Eref,'Externaltypereference') ->
-			{_,R} = get_referenced_type(S,Eref),
-			R;
+			{_,O} = get_referenced_type(S,Eref),
+			CheckObject(O);
 		    _ ->
-%%			{_,R} = get_referenced_type(S,#typereference{val=ObjFieldSetting}),
-			{_,R} = get_referenced_type(S,#'Externaltypereference'{module=S#state.mname,type=ObjFieldSetting}),
-			R
+			{_,O} = get_referenced_type(S,#'Externaltypereference'{module=S#state.mname,type=ObjFieldSetting}),
+			CheckObject(O)
 		end,
-	    {ObjFieldName,
-	     ObjectSpec#typedef{checked=true,
-		      typespec=check_object(S,ObjectSpec,
-					    ObjectSpec#typedef.typespec)}};
+	    {ObjFieldName,ObjectSpec};
+% 	     ObjectSpec#typedef{checked=true,
+% 		      typespec=check_object(S,ObjectSpec,
+% 					    ObjectSpec#typedef.typespec)}};
 	variabletypevaluefield ->
 	    {ObjFieldName,ObjFieldSetting};
 	variabletypevaluesetfield ->
@@ -1413,22 +1617,15 @@ convert_to_defaultfield(S,ObjFieldName,ObjFieldSetting,CField)->
 %					       {objectclassname,ClassRef},
 					       ClassDef,
 					       set=ObjectList}}};
-		    ObjectSet={'SingleValue',_} ->
+
+		    {'SingleValue',_} ->
 			%% a Union of defined objects
-			{_,_,Type,_} = CField,
-			ClassDef = Type#type.def,
-% 			ClassRef = 
-% 			    case ClassDef#'Externaltypereference'.module of
-% 				CurrMod -> 
-% 				    ClassDef#'Externaltypereference'.type;
-% 				ExtMod ->
-% 				    {ExtMod,
-% 				     ClassDef#'Externaltypereference'.type}
-% 			    end,
-			{no_name,
-%			 #typedef{typespec=#'ObjectSet'{class={objectclassname,ClassRef},
-			 #typedef{typespec=#'ObjectSet'{class=ClassDef,
-							set=ObjectSet}}};
+			union_of_defed_objs(CField,ObjFieldSetting);
+
+		    {{'SingleValue',_},_} ->
+			%% a Union of defined objects
+			union_of_defed_objs(CField,ObjFieldSetting);
+
 		    {object,_,[#type{def={'TypeFromObject',
 					 {object,RefedObj},
 					 FieldName}}]} ->
@@ -1440,7 +1637,6 @@ convert_to_defaultfield(S,ObjFieldName,ObjFieldSetting,CField)->
 			  record(Eref,'Externaltypereference') ->
 			get_referenced_type(S,Eref);
 		    _ ->
-%%			get_referenced_type(S,#typereference{val=ObjFieldSetting})
 			get_referenced_type(S,#'Externaltypereference'{module=S#state.mname,type=ObjFieldSetting})
 		end,
 	    {ObjFieldName,
@@ -1448,6 +1644,51 @@ convert_to_defaultfield(S,ObjFieldName,ObjFieldSetting,CField)->
 				typespec=check_object(S,ObjSetSpec,
 						      ObjSetSpec#typedef.typespec)}}
     end.
+
+
+merged_name(#state{inputmodules=[]},ERef) ->
+    ERef;
+merged_name(S,ERef=#'Externaltypereference'{module=M}) ->
+    case {S#state.mname,lists:member(M,S#state.inputmodules)} of
+	{M,_} ->
+	    ERef;
+	{MergeM,true} -> 
+	    %% maybe the reference is renamed
+	    NewName=get_renamed_name(S,ERef#'Externaltypereference'.type,MergeM),
+	    ERef#'Externaltypereference'{module=MergeM,type=NewName};
+	{_,_} -> % i.e. M /= MergeM, not an inputmodule
+	    ERef
+    end.
+
+oCFT_def(S,T) ->
+    case get_OCFT_inner(S,T) of
+	ERef=#'Externaltypereference'{} -> ERef;
+	{Name,Type} -> #typedef{checked=true,name=Name,typespec=Type};
+	'ASN1_OPEN_TYPE' -> 
+	    #typedef{checked=true,typespec=T#type{def='ASN1_OPEN_TYPE'}}
+    end.
+	    
+get_OCFT_inner(_S,T) ->
+%    Module=S#state.mname,
+    Def = T#type.def,
+    case Def#'ObjectClassFieldType'.type of
+	{fixedtypevaluefield,_,InnerType} ->
+	    case asn1ct_gen:type(asn1ct_gen:get_inner(InnerType#type.def)) of
+		Bif when Bif=={primitive,bif};Bif=={constructed,bif} ->
+		    {Bif,InnerType};
+		ERef = #'Externaltypereference'{} ->
+		    ERef
+	    end;
+	'ASN1_OPEN_TYPE' -> 'ASN1_OPEN_TYPE'
+    end.
+	    
+	
+	
+union_of_defed_objs({_,_,Type,_},ObjFieldSetting) -> 
+    ClassDef = Type#type.def,
+    {no_name,#typedef{typespec=#'ObjectSet'{class=ClassDef,
+					    set=ObjFieldSetting}}}.
+    
 
 check_value(OldS,V) when record(V,pvaluesetdef) ->
     #pvaluesetdef{checked=Checked,type=Type} = V,
@@ -1510,8 +1751,10 @@ check_value(OldS=#state{recordtopname=TopName},V) when record(V,valuedef) ->
 		case Def of
 		    Ext when record(Ext,'Externaltypereference') ->
 			RecName = Ext#'Externaltypereference'.type,
-			{_,Type} = get_referenced_type(S,Ext),
+			{RefM,Type} = get_referenced_type(S,Ext),
 			%% If V isn't a value but an object Type is a #classdef{}
+			%%NewS = S#state{mname=RefM},
+			NewS = update_state(S,RefM),
 			case Type of
 			    #classdef{} ->
 				throw({objectdef});
@@ -1519,11 +1762,11 @@ check_value(OldS=#state{recordtopname=TopName},V) when record(V,valuedef) ->
 				case is_contextswitchtype(Type) of
 				    true ->
 					#valuedef{value=CheckedVal}=
-					    check_value(S,V#valuedef{type=Type#typedef.typespec}),
+					    check_value(NewS,V#valuedef{type=Type#typedef.typespec}),
 					#newv{value=CheckedVal};
 				    _ ->
 					#valuedef{value=CheckedVal}=
-					    check_value(S#state{recordtopname=[RecName|TopName]},
+					    check_value(NewS#state{recordtopname=[RecName|TopName]},
 							V#valuedef{type=Type#typedef.typespec}),
 					#newv{value=CheckedVal}
 				end
@@ -1610,8 +1853,13 @@ check_value(OldS=#state{recordtopname=TopName},V) when record(V,valuedef) ->
 		    {'SET OF',Components} ->
 			validate_setof(S,Value,Components,Constr),
 			#newv{value=normalize_value(S,Vtype,Value,TopName)};
+		    {'SelectionType',SelName,SelT} ->
+			CheckedT = check_selectiontype(S,SelName,SelT),
+			NewV = V#valuedef{type=CheckedT},
+			SelVDef=check_value(S#state{value=NewV},NewV),
+			#newv{value=SelVDef#valuedef.value};
 		    Other ->
-			exit({'cant check value of type' ,Other})
+			exit({'cannot check value of type' ,Other})
 		end,
 	    case NewDef#newv.value of
 		unchanged ->
@@ -1687,6 +1935,9 @@ is_space_list([],Acc) ->
 is_space_list([H|T],Acc) ->
     is_space_list(T,[H|Acc]).
 
+validate_objectidentifier(S,ERef,C) 
+  when record(ERef,'Externalvaluereference') ->
+    validate_objectidentifier(S,[ERef],C);
 validate_objectidentifier(S,L,_) ->
     case is_space_list(L,[]) of
 	NewL when list(NewL) ->
@@ -1701,11 +1952,21 @@ validate_objectidentifier(S,L,_) ->
 
 validate_objectidentifier1(S, [Id|T]) when record(Id,'Externalvaluereference') ->
     case catch get_referenced_type(S,Id) of
-	{_,V} when record(V,valuedef) -> 
-	    case check_value(S,V) of
-		#valuedef{type=#type{def='OBJECT IDENTIFIER'},
-			  checked=true,value=Value} when tuple(Value) ->
-		    validate_objectid(S, T, lists:reverse(tuple_to_list(Value)));
+	{M,V} when record(V,valuedef) -> 
+	    %%NewS = S#state{mname=M},
+	    NewS = update_state(S,M),
+	    case check_value(NewS,V) of
+% 		#valuedef{type=#type{def='OBJECT IDENTIFIER'},
+% 			  checked=true,value=Value} when tuple(Value) ->
+% 		    validate_objectid(S, T, lists:reverse(tuple_to_list(Value)));
+		#valuedef{type=#type{def=ERef},checked=true,
+			  value=Value} when tuple(Value) ->
+		    case is_object_id(NewS,ERef) of
+			true ->
+			    validate_objectid(NewS, T, lists:reverse(tuple_to_list(Value)));
+			_ ->
+			    error({value, "illegal OBJECT IDENTIFIER", S})
+		    end;
 		_ -> 
 		    error({value, "illegal OBJECT IDENTIFIER", S})
 	    end;
@@ -1725,10 +1986,12 @@ validate_objectid(S, [{'NamedNumber',_Name,Value}|Vrest], Acc)
 validate_objectid(S, [Id|Vrest], Acc) 
   when record(Id,'Externalvaluereference') ->
     case catch get_referenced_type(S, Id) of
-	{_,V} when record(V,valuedef) -> 
-	    case check_value(S, V) of
+	{M,V} when record(V,valuedef) ->
+	    %%NewS = S#state{mname=M},
+	    NewS = update_state(S,M),
+	    case check_value(NewS, V) of
 		#valuedef{checked=true,value=Value} when integer(Value) ->
-		    validate_objectid(S, Vrest, [Value|Acc]);
+		    validate_objectid(NewS, Vrest, [Value|Acc]);
 		_ -> 
 		    error({value, "illegal OBJECT IDENTIFIER", S})
 	    end;
@@ -1756,6 +2019,15 @@ validate_objectid(S, [{Atom,EVRef}],[])
 validate_objectid(S, _V, _Acc) ->
     error({value, "illegal OBJECT IDENTIFIER",S}).
 
+is_object_id(S,ERef=#'Externaltypereference'{}) ->
+    {_,OI} = get_referenced_type(S,ERef),
+    is_object_id(S,OI#typedef.typespec);
+is_object_id(_S,'OBJECT IDENTIFIER') ->
+    true;
+is_object_id(S,#type{def=Def}) ->
+    is_object_id(S,Def);
+is_object_id(_S,_) ->
+    false.
 
 %% ITU-T Rec. X.680 Annex B - D
 reserved_objectid('itu-t',[]) -> 0;
@@ -1923,8 +2195,10 @@ normalize_value(S,Type,{'DEFAULT',Value},NameList) ->
 	    normalize_setof(S,Value,CType,NewNameList);
 	{restrictedstring,CType,_} ->
 	    normalize_restrictedstring(S,Value,CType);
-	_ ->
-	    io:format("WARNING: could not check default value ~p~n",[Value]),
+	{'ASN1_OPEN_TYPE',{typefield,_},NL} -> %an open type
+	    normalize_objectclassfieldvalue(S,Value,NL);
+	Err ->
+	    io:format("WARNING: could not check default value ~p~nType:~n~p~nNameList:~n~p~n",[Value,Type,Err]),
 	    Value
     end;
 normalize_value(S,Type,Val,NameList) ->
@@ -2166,7 +2440,28 @@ normalize_set(S,{Name,Value},Components,NameList)
   when atom(Name),list(Value) ->
     normalized_record('SET',S,Value,Components,NameList);
 normalize_set(S,Value,Components,NameList) ->
-    normalized_record('SET',S,Value,Components,NameList).
+    SortedVal = sort_value(Components,Value),
+    normalized_record('SET',S,SortedVal,Components,NameList).
+
+sort_value(Components,Value) ->
+    ComponentNames = lists:map(fun(#'ComponentType'{name=Cname}) -> Cname end,
+			       Components),
+    sort_value1(ComponentNames,Value,[]).
+sort_value1(_,V=#'Externalvaluereference'{},_) ->
+    %% sort later, get the value in normalize_seq_or_set
+    V;
+sort_value1([N|Ns],Value,Acc) ->
+    case lists:keysearch(N,1,Value) of
+	{value,V} ->sort_value1(Ns,Value,[V|Acc]);
+	_ -> sort_value1(Ns,Value,Acc)
+    end;
+sort_value1([],_,Acc) ->
+    lists:reverse(Acc).
+
+sort_val_if_set(['SET'|_],Val,Type) ->
+    sort_value(Type,Val);
+sort_val_if_set(_,Val,_) ->
+    Val.
 
 normalized_record(SorS,S,Value,Components,NameList) ->
     NewName = list_to_atom(asn1ct_gen:list2name(NameList)),
@@ -2284,14 +2579,14 @@ normalize_s_of(SorS,S,Value,Type,NameList)
 
 %% normalize_restrictedstring handles all format of restricted strings.
 %% tuple case
-normalize_restrictedstring(_S,[Int1,Int2],_) when integer(Int1),integer(Int2) ->
-    {Int1,Int2};
-%% quadruple case
-normalize_restrictedstring(_S,[Int1,Int2,Int3,Int4],_) when integer(Int1),
-							   integer(Int2),
-							   integer(Int3),
-							   integer(Int4) ->
-    {Int1,Int2,Int3,Int4};
+% normalize_restrictedstring(_S,[Int1,Int2],_) when integer(Int1),integer(Int2) ->
+%     {Int1,Int2};
+% %% quadruple case
+% normalize_restrictedstring(_S,[Int1,Int2,Int3,Int4],_) when integer(Int1),
+% 							   integer(Int2),
+% 							   integer(Int3),
+% 							   integer(Int4) ->
+%     {Int1,Int2,Int3,Int4};
 %% character string list case
 normalize_restrictedstring(S,[H|T],CType) when list(H);tuple(H) ->
     [normalize_restrictedstring(S,H,CType)|normalize_restrictedstring(S,T,CType)];
@@ -2317,18 +2612,22 @@ normalize_restrictedstring(S,ERef,CType) when record(ERef,'Externalvaluereferenc
 normalize_restrictedstring(S,{Name,Val},CType) when atom(Name) ->
     normalize_restrictedstring(S,Val,CType).
 
+normalize_objectclassfieldvalue(S,{opentypefieldvalue,Type,Value},NameList) ->
+    normalize_value(S,Type,Value,NameList).
 
 get_normalized_value(S,Val,Type,Func,AddArg) ->
     case catch get_referenced_type(S,Val) of
 	{_,#valuedef{type=_T,value=V}} -> 
 	    %% should check that Type and T equals
-	    call_Func(S,V,Type,Func,AddArg);
+	    V2 = sort_val_if_set(AddArg,V,Type),
+	    call_Func(S,V2,Type,Func,AddArg);
 	{error,_} ->
 	    io:format("WARNING: default value not "
 		      "comparable ~p~n",[Val]),
 	    Val;
 	{_,NewVal} ->
-	    call_Func(S,NewVal,Type,Func,AddArg);
+	    V2 = sort_val_if_set(AddArg,NewVal,Type),
+	    call_Func(S,V2,Type,Func,AddArg);
 	_ ->
 	    io:format("WARNING: default value not "
 		      "comparable ~p~n",[Val]),
@@ -2362,7 +2661,9 @@ get_canonic_type(S,Type,NameList) ->
 	    Seq when record(Seq,'SEQUENCE') -> 
 		{'SEQUENCE',Seq#'SEQUENCE'.components,NameList};
 	    Set when record(Set,'SET') -> 
-		{'SET',Set#'SET'.components,NameList}
+		{'SET',Set#'SET'.components,NameList};
+	    #'ObjectClassFieldType'{type=T} ->
+		{'ASN1_OPEN_TYPE',T,NameList}
 	end,
     {asn1ct_gen:unify_if_string(InnerType),NewType,NewNameList}.
 
@@ -2387,7 +2688,10 @@ check_ptype(_S,Type,Ts) when record(Ts,type) ->
 	      #newt{type=TDef}->
 		  Ts#type{def=TDef}
 	  end,
-    Ts2.
+    Ts2;
+%parameterized class
+check_ptype(_S,_PTDef,Ts) when record(Ts,objectclass) ->
+    throw({asn1_param_class,Ts}).
 
 
 % check_type(S,Type,ObjSpec={{objectclassname,_},_}) ->
@@ -2400,7 +2704,7 @@ check_type(_S,Type,Ts) when record(Type,typedef),
     Ts;
 check_type(S=#state{recordtopname=TopName},Type,Ts) when record(Ts,type) ->
     {Def,Tag,Constr} = 
-	case match_parameters(Ts#type.def,S#state.parameters) of
+	case match_parameters(S,Ts#type.def,S#state.parameters) of
 	    #type{constraint=_Ctmp,def=Dtmp} ->
 		{Dtmp,Ts#type.tag,Ts#type.constraint};
 	    Dtmp ->
@@ -2426,7 +2730,7 @@ check_type(S=#state{recordtopname=TopName},Type,Ts) when record(Ts,type) ->
     NewDef= 
 	case Def of 
 	    Ext when record(Ext,'Externaltypereference') ->
-		{_,RefTypeDef} = get_referenced_type(S,Ext),
+		{RefMod,RefTypeDef} = get_referenced_type(S,Ext),
 % 		case RefTypeDef of
 % 		    Class when record(Class,classdef) ->
 % 			throw({asn1_class,Class});
@@ -2445,37 +2749,39 @@ check_type(S=#state{recordtopname=TopName},Type,Ts) when record(Ts,type) ->
 			    RefTypeDef#typedef.typespec;
 			_ ->  
 			    NewRefTypeDef1 = RefTypeDef#typedef{checked=idle},
-			    asn1_db:dbput(S#state.mname,
+			    asn1_db:dbput(RefMod,
 					  NewRefTypeDef1#typedef.name,NewRefTypeDef1), 
+			    NewS = S#state{abscomppath=[],recordtopname=[]},
 			    RefType1 = 
-				check_type(S,RefTypeDef,RefTypeDef#typedef.typespec),
+				check_type(NewS,RefTypeDef,RefTypeDef#typedef.typespec),
 			    NewRefTypeDef2 = 
 				RefTypeDef#typedef{checked=true,typespec = RefType1},
-			    asn1_db:dbput(S#state.mname,
+			    asn1_db:dbput(RefMod,
 					  NewRefTypeDef2#typedef.name,NewRefTypeDef2), 
 			    %% update the type and mark as checked
 			    RefType1
 		    end,
 %			      _ -> RefTypeDef#typedef.typespec
-%			  end,
+%			  end,NewAbsCPath
 
 		case asn1ct_gen:prim_bif(asn1ct_gen:get_inner(RefType#type.def)) of
 		    true ->
 			%% Here we expand to a built in type and inline it
+			NewS2 = S#state{type=#typedef{typespec=RefType}},
 			TempNewDef#newt{
 			  type=
 			  RefType#type.def, 
 			  tag=
 			  merge_tags(Ct,RefType#type.tag),
 			  constraint=
-			  merge_constraints(check_constraints(S,Constr),
+			  merge_constraints(check_constraints(NewS2,Constr),
 					    RefType#type.constraint)};
 		    _ ->
 			%% Here we only expand the tags and keep the ext ref
-
+			NewExt = Ext#'Externaltypereference'{module=merged_mod(S,RefMod,Ext)},
 			TempNewDef#newt{
 			  type=
-			  check_externaltypereference(S,Ext),
+			  check_externaltypereference(S,NewExt),
 			  tag = 
 			  case S#state.erule of
 			      ber_bin_v2 ->
@@ -2538,7 +2844,8 @@ check_type(S=#state{recordtopname=TopName},Type,Ts) when record(Ts,type) ->
 				{'ENUMERATED',
 				 check_enumerated(S,NamedNumberList,Constr)},
 				tag=
-				merge_tags(Tag,?TAG_PRIMITIVE(?N_ENUMERATED))};
+				merge_tags(Tag,?TAG_PRIMITIVE(?N_ENUMERATED)),
+				constraint=[]};
 	    'EMBEDDED PDV' ->
 %		AssociatedType = asn1_db:dbget(S#state.mname,'EMBEDDED PDV'),
 %		CheckedType = check_type(S,Type,
@@ -2603,6 +2910,10 @@ check_type(S=#state{recordtopname=TopName},Type,Ts) when record(Ts,type) ->
 		check_restrictedstring(S,Def,Constr),
 		TempNewDef#newt{tag=
 				merge_tags(Tag,?TAG_PRIMITIVE(?N_UniversalString))};
+	    'UTF8String' ->
+		check_restrictedstring(S,Def,Constr),
+		TempNewDef#newt{tag=
+				merge_tags(Tag,?TAG_PRIMITIVE(?N_UTF8String))};
 	    'CHARACTER STRING' ->
 %		AssociatedType = asn1_db:dbget(S#state.mname,
 %					       'CHARACTER STRING'),
@@ -2674,7 +2985,8 @@ check_type(S=#state{recordtopname=TopName},Type,Ts) when record(Ts,type) ->
 		%% calling function.
 		{_,Ptypedef} = get_referenced_type(S,Ptype),
 		notify_if_not_ptype(S,Ptypedef),
-		NewParaList = [match_parameters(TmpParam,S#state.parameters)|| 
+		NewParaList = 
+		    [match_parameters(S,TmpParam,S#state.parameters)|| 
 				  TmpParam <- ParaList],
 		Instance = instantiate_ptype(S,Ptypedef,NewParaList),
 		TempNewDef#newt{type=Instance#type.def,
@@ -2683,7 +2995,8 @@ check_type(S=#state{recordtopname=TopName},Type,Ts) when record(Ts,type) ->
 				inlined=yes};
 
 %	    {ClRef,FieldRefList} when record(ClRef,'Externaltypereference') ->
-	    OCFT=#'ObjectClassFieldType'{class=ClRef} ->
+%	    OCFT=#'ObjectClassFieldType'{class=ClRef} ->
+	    OCFT=#'ObjectClassFieldType'{classname=ClRef} ->
 		%% this case occures in a SEQUENCE when 
 		%% the type of the component is a ObjectClassFieldType
 		ClassSpec = check_class(S,ClRef),
@@ -2698,8 +3011,13 @@ check_type(S=#state{recordtopname=TopName},Type,Ts) when record(Ts,type) ->
 			    MergedTag
 		    end,
 		TempNewDef#newt{type=NewTypeDef,tag=Ct};
+
 	    {valueset,Vtype} ->
 		TempNewDef#newt{type={valueset,check_type(S,Type,Vtype)}};
+	    {'SelectionType',Name,T} ->
+		CheckedT = check_selectiontype(S,Name,T),
+		TempNewDef#newt{tag=CheckedT#type.tag,
+				type=CheckedT#type.def};
 	    Other ->
 		exit({'cant check' ,Other})
 	end,
@@ -2769,6 +3087,15 @@ maybe_illicit_implicit_tag(Kind,Tag) ->
 	    Tag % unchanged
     end.
 
+
+merged_mod(S,RefMod,Ext) ->
+    case S of
+	#state{inputmodules=[]} ->
+	    RefMod;
+	_ ->
+	    Ext#'Externaltypereference'.module
+    end.
+
 %% maybe_open_type/2 -> {ClassSpec,FieldRefList} | 'ASN1_OPEN_TYPE'
 %% if the FieldRefList points out a typefield and the class don't have
 %% any UNIQUE field, so that a component relation constraint cannot specify
@@ -2781,23 +3108,23 @@ maybe_open_type(S,ClassSpec=#objectclass{fields=Fs},
     FieldNames=get_referenced_fieldname(FieldRefList),
     case lists:last(FieldRefList) of
 	{valuefieldreference,_} ->
-	    OCFT#'ObjectClassFieldType'{class=ClassSpec,
-					fieldname=FieldNames,
+%	    OCFT#'ObjectClassFieldType'{class=ClassSpec,
+	    OCFT#'ObjectClassFieldType'{fieldname=FieldNames,
 					type=Type};
 	{typefieldreference,_} ->
 	    case {catch get_unique_fieldname(#classdef{typespec=ClassSpec}),
 		  asn1ct_gen:get_constraint(Constr,componentrelation)}of
 		{Tuple,_} when tuple(Tuple) ->
-		    OCFT#'ObjectClassFieldType'{class=ClassSpec,
-						fieldname=FieldNames,
+%		    OCFT#'ObjectClassFieldType'{class=ClassSpec,
+		    OCFT#'ObjectClassFieldType'{fieldname=FieldNames,
 						type='ASN1_OPEN_TYPE'};
 		{_,no} ->
-		    OCFT#'ObjectClassFieldType'{class=ClassSpec,
-						fieldname=FieldNames,
+%		    OCFT#'ObjectClassFieldType'{class=ClassSpec,
+		    OCFT#'ObjectClassFieldType'{fieldname=FieldNames,
 						type='ASN1_OPEN_TYPE'};
 		_ ->
-		    OCFT#'ObjectClassFieldType'{class=ClassSpec,
-						fieldname=FieldNames,
+%		    OCFT#'ObjectClassFieldType'{class=ClassSpec,
+		    OCFT#'ObjectClassFieldType'{fieldname=FieldNames,
 						type=Type}
 	    end
     end.
@@ -2805,6 +3132,8 @@ maybe_open_type(S,ClassSpec=#objectclass{fields=Fs},
 is_open_type(#'ObjectClassFieldType'{type='ASN1_OPEN_TYPE'}) ->
     true;
 is_open_type(#'ObjectClassFieldType'{}) ->
+    false;
+is_open_type(_) ->
     false.
 
 
@@ -2820,9 +3149,27 @@ notify_if_not_ptype(S,#pvaluesetdef{type=Type}) ->
 	T when record(T,type) -> % this must be a value set
 	    throw(pvalueset)
     end;
-notify_if_not_ptype(_S,#ptypedef{}) ->
-    ok.
-
+notify_if_not_ptype(_S,PT=#ptypedef{}) ->
+    %% this may be a parameterized CLASS, in that case throw an
+    %% asn1_class exception
+    case PT#ptypedef.typespec of
+	#objectclass{} -> throw({asn1_class,PT});
+	_ -> ok
+    end;
+notify_if_not_ptype(S,#pobjectsetdef{class=Cl}) ->
+    case Cl of
+	#'Externaltypereference'{} ->
+	    case get_referenced_type(S,Cl) of
+		{_,#classdef{}} ->
+		    throw(pobjectsetdef);
+		{_,#typedef{}} ->
+		    throw(pvalueset)
+	    end;
+	_ ->
+	    throw(pobjectsetdef)
+    end;
+notify_if_not_ptype(_S,PT) ->
+    throw({error,{"supposed to be a parameterized type",PT}}).
 % fix me
 instantiate_ptype(S,Ptypedef,ParaList) ->
     #ptypedef{args=Args,typespec=Type} = Ptypedef,
@@ -2856,7 +3203,16 @@ get_pt_spec(#pobjectdef{def=Def}) ->
 get_pt_spec(#pobjectsetdef{def=Def}) ->
     Def.
 
-
+get_pt_name(#ptypedef{name=Name}) ->
+    Name;
+get_pt_name(#pvaluedef{name=Name}) ->
+    Name;
+get_pt_name(#pvaluesetdef{name=Name}) ->
+    Name;
+get_pt_name(#pobjectdef{name=Name}) ->
+    Name;
+get_pt_name(#pobjectsetdef{name=Name}) ->
+    Name.
 	       
 match_args([FormArg|Ft], [ActArg|At], Acc) ->
     match_args(Ft, At, [{FormArg,ActArg}|Acc]);
@@ -2881,7 +3237,7 @@ resolv_tuple_or_list(S,{Lb,Ub}) ->
 %% is replaced by the actual value
 %%
 resolv_value(S,Val) ->
-    case match_parameters(Val, S#state.parameters) of
+    case match_parameters(S,Val, S#state.parameters) of
 	Id -> % unchanged 
 	    resolv_value1(S,Id);
 	Other ->
@@ -2944,13 +3300,34 @@ resolv_value2(S,ModuleName,Name,Pos) ->
 		{ok,Imodule} ->
 		    {_,V2} = get_referenced(S,Imodule,Name,Pos),
 		    V2#valuedef.value;
-		_  ->
-		    throw({error,{asn1,{undefined_type_or_value,Name}}})
+		_ -> %% May be a name in an enumerations list of a
+                     %% referenced type.
+		    case catch resolve_namednumber(S,S#state.type,Name) of
+			V when integer(V) -> V;
+			_ ->
+			    throw({error,{asn1,{undefined_type_or_value,
+						Name}}})
+		    end
 	    end;
 	Val ->
 	    Val#valuedef.value
     end.
 
+resolve_namednumber(S,#typedef{typespec=Type},Name) ->
+    case Type#type.def of
+	{'ENUMERATED',NameList} ->
+	    NamedNumberList=check_enumerated(S,NameList,Type#type.constraint),
+	    N = normalize_enumerated(Name,NamedNumberList),
+	    {value,{_,V}} = lists:keysearch(N,1,NamedNumberList),
+	    V;
+	{'INTEGER',NameList} ->
+	    NamedNumberList = check_enumerated(S,NameList,Type#type.constraint),
+	    {value,{_,V}} = lists:keysearch(Name,1,NamedNumberList),
+	    V;
+	_ ->
+	    not_enumerated
+    end.
+    
 check_constraints(S,[{'ContainedSubtype',Type} | Rest], Acc) ->
     {_,CTDef} = get_referenced_type(S,Type#type.def),
     CType = check_type(S,S#state.tname,CTDef#typedef.typespec),    
@@ -3024,22 +3401,43 @@ check_constraint(S,{valueset,Type}) ->
     {valueset,check_type(S,S#state.tname,Type)};
 
 check_constraint(S,{simpletable,Type}) ->
-    OSName = (Type#type.def)#'Externaltypereference'.type,
-    C = match_parameters(Type#type.def,S#state.parameters),
+    Def = Type#type.def,
+    OSName = Def#'Externaltypereference'.type,
+    C = match_parameters(S,Def,S#state.parameters),
     case C of
 	#'Externaltypereference'{} ->
-	     Type#type{def=check_externaltypereference(S,C)},
-	    {simpletable,OSName};
-	_ ->
-	    check_type(S,S#state.tname,Type),
+%	     Type#type{def=check_externaltypereference(S,C)},
+	    ERef = check_externaltypereference(S,C),
+%	    {simpletable,OSName};
+	    {simpletable,ERef#'Externaltypereference'.type};
+	#type{def=#'Externaltypereference'{}} ->
+	    check_externaltypereference(S,C#type.def),
+	    {simpletable,C#'Externaltypereference'.type};
+	{valueset,#type{def=ERef=#'Externaltypereference'{}}} -> % this is an object set
+	    {_,TDef} = get_referenced_type(S,ERef),
+	    case TDef#typedef.typespec of 
+		#'ObjectSet'{} ->
+		    check_object(S,TDef,TDef#typedef.typespec),
+		    {simpletable,ERef#'Externaltypereference'.type};
+		Err ->
+		    exit({error,{internal_error,Err}})
+	    end;
+	_ -> 
+	    check_type(S,S#state.tname,Type),%% this seems stupid.
 	    {simpletable,OSName}
     end;
 
 check_constraint(S,{componentrelation,{objectset,Opos,Objset},Id}) ->
     %% Objset is an 'Externaltypereference' record, since Objset is
     %% a DefinedObjectSet.
-    RealObjset = match_parameters(Objset,S#state.parameters),
-    Ext = check_externaltypereference(S,RealObjset),
+    RealObjset = match_parameters(S,Objset,S#state.parameters),
+    ObjSetRef =
+	case RealObjset of
+	    #'Externaltypereference'{} -> RealObjset;
+	    #type{def=#'Externaltypereference'{}} -> RealObjset#type.def;
+	    {valueset,OS = #type{def=#'Externaltypereference'{}}} -> OS#type.def
+	end,
+    Ext = check_externaltypereference(S,ObjSetRef),
     {componentrelation,{objectset,Opos,Ext},Id};
 
 check_constraint(S,Type) when record(Type,type) ->
@@ -3167,7 +3565,15 @@ constraint_union_vr(VR) ->
 	   ({_,{A1,_B1}},{_,{A2,_B2}}) when integer(A1),integer(A2),A1<A2 -> true;
 	   ({_,{A,B1}},{_,{A,B2}}) when B1=<B2->true;
 	   (_,_)->false end,
-    constraint_union_vr(lists:usort(Fun,VR),[]).
+    % sort and remove duplicates
+    SortedVR = lists:sort(Fun,VR),
+    RemoveDup = fun([],_) ->[];
+		   ([H],_) -> [H];
+		   ([H,H|T],F) -> F([H|T],F);
+		   ([H|T],F) -> [H|F(T,F)]
+		end,
+    
+    constraint_union_vr(RemoveDup(SortedVR,RemoveDup),[]).
 
 constraint_union_vr([],Acc) ->
     lists:reverse(Acc);
@@ -3537,11 +3943,11 @@ check_reference(S,#'Externaltypereference'{pos=Pos,module=Emod,type=Name}) ->
 		    #'Externaltypereference'{module=Imodule,type=Name};
 		_ ->
 		    %may be a renamed type in multi file compiling!
-		    {_,T}=renamed_reference(S,Name,Emod),
+		    {M,T}=renamed_reference(S,Name,Emod),
 		    NewName = asn1ct:get_name_of_def(T),
 		    NewPos = asn1ct:get_pos_of_def(T),
 		    #'Externaltypereference'{pos=NewPos,
-					     module=ModName,
+					     module=M,
 					     type=NewName}
 	    end;
 	_ ->
@@ -3559,7 +3965,7 @@ name2Extref(Mod,Name) ->
     #'Externaltypereference'{module=Mod,type=Name}.
 
 get_referenced_type(S,Ext) when record(Ext,'Externaltypereference') ->
-    case match_parameters(Ext, S#state.parameters) of
+    case match_parameters(S,Ext, S#state.parameters) of
 	Ext -> 
 	    #'Externaltypereference'{pos=Pos,module=Emod,type=Etype} = Ext,
 	    case S#state.mname of
@@ -3573,13 +3979,15 @@ get_referenced_type(S,Ext) when record(Ext,'Externaltypereference') ->
 			    get_referenced(S,Emod,Etype,Pos)
 		    end
 	    end;
+	ERef = #'Externaltypereference'{} ->
+	    get_referenced_type(S,ERef);
 	Other ->
 	    {undefined,Other}
     end;
 get_referenced_type(S=#state{mname=Emod},
 		    ERef=#'Externalvaluereference'{pos=P,module=Emod,
 						   value=Eval}) ->
-    case match_parameters(ERef,S#state.parameters) of
+    case match_parameters(S,ERef,S#state.parameters) of
 	ERef ->
 	    get_referenced1(S,Emod,Eval,P);
 	OtherERef when record(OtherERef,'Externalvaluereference') ->
@@ -3589,7 +3997,7 @@ get_referenced_type(S=#state{mname=Emod},
     end;
 get_referenced_type(S,ERef=#'Externalvaluereference'{pos=Pos,module=Emod,
 						value=Eval}) ->
-    case match_parameters(ERef,S#state.parameters) of
+    case match_parameters(S,ERef,S#state.parameters) of
 	ERef ->
 	    case lists:member(Emod,S#state.inputmodules) of
 		true ->
@@ -3612,12 +4020,24 @@ get_referenced_type(_S,Type) ->
 %% Emod may be the module that imports the entity Ename and not holds the
 %% data about Ename. 
 get_referenced(S,Emod,Ename,Pos) ->
+    parse_and_save(S,Emod),
     case asn1_db:dbget(Emod,Ename) of
 	undefined ->
-	    %% May be an imported entity in module Emod
+	    %% May be an imported entity in module Emod or Emod may not exist
 %	    throw({error,{asn1,{undefined_type_or_value,{Emod,Ename}}}});
-	    NewS = S#state{module=asn1_db:dbget(Emod,'MODULE')},
-	    get_imported(NewS,Ename,Emod,Pos);
+	    case asn1_db:dbget(Emod,'MODULE') of
+		undefined ->
+		    case parse_and_save(S,Emod) of
+			ok ->
+			    get_referenced(S,Emod,Ename,Pos);
+			_ ->
+			    throw({error,{asn1,{module_not_found,Emod}}})
+		    end;
+		_ ->
+%%		    NewS = S#state{module=M},
+		    NewS = update_state(S,Emod),
+		    get_imported(NewS,Ename,Emod,Pos)
+	    end;
 	T when record(T,typedef) ->
 	    Spec = T#typedef.typespec,
 	    case Spec#type.def of
@@ -3647,9 +4067,15 @@ get_referenced1(S,ModuleName,Name,Pos) ->
 get_imported(S,Name,Module,Pos) ->
     case imported(S,Name) of
 	{ok,Imodule} ->
+	    parse_and_save(S,Imodule),
 	    case asn1_db:dbget(Imodule,'MODULE') of
 		undefined ->
-		    throw({error,{asn1,{module_not_found,Imodule}}});
+		    case parse_and_save(S,Imodule) of
+			ok ->
+			    get_referenced(S,Module,Name,Pos);
+			_ ->
+			    throw({error,{asn1,{module_not_found,Imodule}}})
+		    end;
 		Im when record(Im,module) ->
 		    case is_exported(Im,Name) of
 			false ->
@@ -3664,6 +4090,61 @@ get_imported(S,Name,Module,Pos) ->
 	    end;
 	_ ->
 	    renamed_reference(S,Name,Module)
+    end.
+
+check_and_save(S,M,#typedef{checked=false}=TDef) when S#state.mname /= M ->
+    Type=check_type(S,TDef,TDef#typedef.typespec),
+    CheckedTDef = TDef#typedef{checked=true,
+			       typespec=Type},
+    asn1_db:dbput(M,TDef#typedef.name,CheckedTDef),
+    CheckedTDef;
+check_and_save(_S,_M,TDef) ->
+    TDef.
+
+parse_and_save(S,Module) when record(S,state) ->
+    Erule = S#state.erule,
+    case asn1db_member(S,Erule,Module) of
+	true ->
+	    ok;
+	_ ->
+	    save_asn1db_uptodate(S,Erule,Module),
+	    asn1ct:parse_and_save(Module,S)
+    end.
+
+asn1db_member(S,Erule,Module) ->
+    Asn1dbUTL = get_asn1db_uptodate(S),
+    lists:member({Erule,Module},Asn1dbUTL).
+
+save_asn1db_uptodate(S,Erule,Module) ->
+    Asn1dbUTL = get_asn1db_uptodate(S),
+    Asn1dbUTL2 = lists:keydelete(Module,2,Asn1dbUTL),
+    put_asn1db_uptodate([{Erule,Module}|Asn1dbUTL2]).
+	    
+get_asn1db_uptodate(S) ->
+    case get(asn1db_uptodate) of
+	undefined -> [{S#state.erule,S#state.mname}]; %initialize
+	L -> L
+    end.
+
+put_asn1db_uptodate(L) ->
+    put(asn1db_uptodate,L).
+
+update_state(S,ModuleName) ->
+    case asn1_db:dbget(ModuleName,'MODULE') of
+	RefedMod when record(RefedMod,module) ->
+	    S#state{mname=ModuleName,module=RefedMod};
+	_ -> throw({error,{asn1,{module_does_not_exist,ModuleName}}})
+    end.
+
+get_renamed_name(_S,Name,Module) ->
+    case ets:info(renamed_defs) of
+	undefined -> Name;
+	_ ->
+	    case ets:match(renamed_defs,{'$1',Name,Module}) of
+		[[NewTypeName]] ->
+		    NewTypeName;
+		_ -> Name
+	    end
     end.
 
 renamed_reference(S,Name,Module) ->
@@ -3707,12 +4188,12 @@ get_importmoduleoftype([],_) ->
     undefined.
 		     
 
-match_parameters(Name,[]) ->
+match_parameters(_S,Name,[]) ->
     Name;
 
-match_parameters(#'Externaltypereference'{type=Name},[{#'Externaltypereference'{type=Name},NewName}|_T]) ->
+match_parameters(_S,#'Externaltypereference'{type=Name},[{#'Externaltypereference'{type=Name},NewName}|_T]) ->
     NewName;
-match_parameters(#'Externaltypereference'{type=Name},[{{_,#'Externaltypereference'{type=Name}},NewName}|_T]) ->
+match_parameters(_S,#'Externaltypereference'{type=Name},[{{_,#'Externaltypereference'{type=Name}},NewName}|_T]) ->
     NewName;
 % match_parameters(#'Externaltypereference'{type=Name},[{#typereference{val=Name},NewName}|T]) ->
 %     NewName;
@@ -3720,20 +4201,60 @@ match_parameters(#'Externaltypereference'{type=Name},[{{_,#'Externaltypereferenc
 %     NewName;
 %match_parameters(#typereference{val=Name},[{#typereference{val=Name},NewName}|T]) ->
 %    NewName;
-match_parameters(#'Externalvaluereference'{value=Name},[{#'Externalvaluereference'{value=Name},NewName}|_T]) ->
+match_parameters(_S,#'Externalvaluereference'{value=Name},[{#'Externalvaluereference'{value=Name},NewName}|_T]) ->
     NewName;
-match_parameters(#'Externalvaluereference'{value=Name},[{{_,#'Externalvaluereference'{value=Name}},NewName}|_T]) ->
+match_parameters(_S,#'Externalvaluereference'{value=Name},[{{_,#'Externalvaluereference'{value=Name}},NewName}|_T]) ->
     NewName;
 % match_parameters(#identifier{val=Name},[{#identifier{val=Name},NewName}|T]) ->
 %     NewName;
 % match_parameters(#identifier{val=Name},[{{_,#identifier{val=Name}},NewName}|T]) ->
 %     NewName;
-match_parameters({valueset,#type{def=#'Externaltypereference'{type=Name}}},
+match_parameters(_S,{valueset,#type{def=#'Externaltypereference'{type=Name}}},
 		 [{{_,#'Externaltypereference'{type=Name}},{valueset,#type{def=NewName}}}|_T]) ->
     NewName;
-match_parameters({valueset,#type{def=#'Externaltypereference'{type=Name}}},
+match_parameters(_S,{valueset,#type{def=#'Externaltypereference'{type=Name}}},
+		 [{{_,#'Externaltypereference'{type=Name}},
+		   NewName=#type{def=#'Externaltypereference'{}}}|_T]) ->
+    NewName#type.def;
+match_parameters(_S,{valueset,#type{def=#'Externaltypereference'{type=Name}}},
 		 [{{_,#'Externaltypereference'{type=Name}},NewName}|_T]) ->
     NewName;
+%% When a parameter is a parameterized element it has to be
+%% instantiated now!
+match_parameters(S,{valueset,T=#type{def={pt,_,_Args}}},_Parameters) ->
+    case catch check_type(S,#typedef{name=S#state.tname,typespec=T},T) of
+	pobjectsetdef ->
+%%	    MatchedArgs = [match_parameters(S,TmpArg,Parameters)|| TmpArg <- Args],
+%%	    NewS = S#state{parameters=MatchedArgs},
+ 	    {_,ObjRef,_Params} = T#type.def,
+ 	    {_,ObjDef}=get_referenced_type(S,ObjRef),
+	    %%ObjDef is a pvaluesetdef where the type field holds the class
+	    ClassRef = 
+		case ObjDef of
+		    #pvaluesetdef{type=TDef} ->
+			TDef#type.def;
+		    #pobjectsetdef{class=ClRef} -> ClRef
+		end,
+	    %% The reference may not have the home module of the class
+	    {HomeMod,_} = get_referenced_type(S,ClassRef),
+	    RightClassRef = 
+		ClassRef#'Externaltypereference'{module=HomeMod},
+
+	    ObjectSet = #'ObjectSet'{class=RightClassRef,set=T},
+ 	    ObjSpec = check_object(S,#typedef{typespec=ObjectSet},ObjectSet),
+	    Name = list_to_atom(asn1ct_gen:list2name([get_pt_name(ObjDef)|S#state.recordtopname])),	    
+	    NewObj = #typedef{checked=true,name=Name,typespec=ObjSpec},
+	    asn1_db:dbput(S#state.mname,Name,NewObj),
+	    asn1ct_gen:insert_once(parameterized_objects,{Name,objectset,NewObj}),
+	    #'Externaltypereference'{module=S#state.mname,type=Name};
+	pvaluesetdef -> error({pvaluesetdef,"parameterized valueset",S});
+	{error,_Reason} -> error({type,"error in parameter",S});
+	Ts when record(Ts,type) -> Ts#type.def
+    end;
+%% same as previous, only depends on order of parsing
+match_parameters(S,{valueset,{pos,{objectset,_,POSref},Args}},Parameters) ->
+    match_parameters(S,{valueset,#type{def={pt,POSref,Args}}},Parameters);
+    
 % match_parameters({valueset,#type{def=#'Externaltypereference'{type=Name}}},
 % 		 [{{_,#typereference{val=Name}},{valueset,#type{def=NewName}}}|T]) ->
 %     NewName;
@@ -3741,9 +4262,9 @@ match_parameters({valueset,#type{def=#'Externaltypereference'{type=Name}}},
 % 		 [{{_,#typereference{val=Name}},NewName}|T]) ->
 %     NewName;
 
-match_parameters(Name, [_H|T]) ->
+match_parameters(S,Name, [_H|T]) ->
     %%io:format("match_parameters(~p,~p)~n",[Name,[H|T]]),
-    match_parameters(Name,T).
+    match_parameters(S,Name,T).
 
 imported(S,Name) ->
     {imports,Ilist} = (S#state.module)#module.imports,
@@ -3810,10 +4331,13 @@ check_bitstr(S,[],Acc) ->
 	L when list(L) ->
 	    error({type,{duplicate_values,L},S}),
 	    unchanged
-    end.
+    end;
+%% When a BIT STRING already is checked, for instance a COMPONENTS OF S
+%% where S is a sequence that has a component that is a checked BS, the
+%% NamedNumber list is a list of {atom(),integer()} elements.
+check_bitstr(S,[El={Id,Num}|Rest],Acc) when atom(Id),integer(Num) ->
+    check_bitstr(S,Rest,[El|Acc]).
     
-%%check_bitstring(S,NamedNumberList,Constr) ->
-%%    NamedNumberList.
     
 %% Check INSTANCE OF
 %% check that DefinedObjectClass is of TYPE-IDENTIFIER class
@@ -4046,6 +4570,13 @@ expand_components(S, [{'COMPONENTS OF',Type}|T]) ->
 		    {Root,_Ext} -> Root;
 		    Root -> Root
 		end;
+	    {_,#typedef{typespec=#type{def=Set}}} when record(Set,'SET') ->
+		case Set#'SET'.components of
+		    {Root,_Ext} -> Root;
+		    Root -> Root
+		end;
+	    {_,#typedef{typespec=RefType=#type{def=#'Externaltypereference'{}}}} ->
+		[{'COMPONENTS OF',RefType}];
 	    Err -> throw({error,{asn1,{illegal_COMPONENTS_OF,Err}}})
 	end,
     expand_components(S,CompList) ++ expand_components(S,T);
@@ -4081,11 +4612,13 @@ check_sequenceof(S,Type,Component) when record(Component,type) ->
 
 check_set(S,Type,Components) ->
     {TableCInf,NewComponents} = check_sequence(S,Type,Components),
+    check_distinct_tags(S#state.erule,NewComponents,[]),
     case lists:member(der,S#state.options) of
 	true when S#state.erule == ber;
-		  S#state.erule == ber_bin ->
+		  S#state.erule == ber_bin;
+		  S#state.erule == ber_bin_v2 ->
 	    {Sorted,SortedComponents} = 
-		sort_components(S#state.tname,
+		sort_components(S,
 				(S#state.module)#module.tagdefault,
 				NewComponents),
 	    {Sorted,TableCInf,SortedComponents};
@@ -4093,10 +4626,38 @@ check_set(S,Type,Components) ->
 	    {false,TableCInf,NewComponents}
     end.
 
-sort_components(_TypeName,'AUTOMATIC',Components) ->
+
+%% check that all tags are distinct according to X.680 26.3
+check_distinct_tags(Erule,Cs,Acc) 
+  when Erule == ber; Erule == ber_bin; Erule == ber_bin_v2 ->
+    check_distinct_tags(Cs,Acc);
+check_distinct_tags(_,_,_) ->
+    ok. % should check tags even for per, fix later
+
+check_distinct_tags({C1,C2},Acc) when list(C1),list(C2) ->
+    check_distinct_tags(C1++C2,Acc);
+check_distinct_tags([#'ComponentType'{tags=[T]}|Cs],Acc) ->
+    check_distinct(T,Acc),
+    check_distinct_tags(Cs,[T|Acc]);
+check_distinct_tags([C=#'ComponentType'{tags=[T|Ts]}|Cs],Acc) ->
+    check_distinct(T,Acc),
+    check_distinct_tags([C#'ComponentType'{tags=Ts}|Cs],[T|Acc]);
+check_distinct_tags([#'ComponentType'{tags=[]}|_Cs],_Acc) ->
+%    error({type,"Not distinct tags in SET",S});
+    throw({error,"Not distinct tags in SET"});
+check_distinct_tags([],_) ->
+    ok.
+check_distinct(T,Acc) ->
+    case lists:member(T,Acc) of
+	true ->
+	    throw({error,"Not distinct tags in SET"});
+	_ -> ok
+    end.
+
+sort_components(_S,'AUTOMATIC',Components) ->
     {true,Components};
-sort_components(TypeName,_TagDefault,Components) ->
-    case untagged_choice(Components) of
+sort_components(S=#state{tname=TypeName},_TagDefault,Components) ->
+    case untagged_choice(S,Components) of
 	false ->
 	    {true,sort_components1(TypeName,Components,[],[],[],[])};
 	true ->
@@ -4135,7 +4696,7 @@ ascending_order_check1(TypeName,
 ascending_order_check1(TypeName,
 		       [C1 = #'ComponentType'{tags=[{'UNIVERSAL',T1}|_]},
 			C2 = #'ComponentType'{tags=[{'UNIVERSAL',T2}|_]}|Rest]) ->
-    case (asn1ct_gen_ber:decode_type(T1) == asn1ct_gen_ber:decode_type(T2)) of
+    case (decode_type(T1) == decode_type(T2)) of
 	true ->
 	    io:format("WARNING: Indistinct tags ~p and ~p in"
 		      " SET ~p, components ~p and ~p~n",
@@ -4155,21 +4716,76 @@ ascending_order_check1(_,[]) ->
 sort_universal_type(Components) ->
     List = lists:map(fun(C) ->
 			     #'ComponentType'{tags=[{_,T}|_]} = C,
-			     {asn1ct_gen_ber:decode_type(T),C}
+			     {decode_type(T),C}
 		     end,
 		     Components),
     SortedList = lists:keysort(1,List),
     lists:map(fun(X)->element(2,X) end,SortedList).
 
-untagged_choice([#'ComponentType'{typespec=#type{tag=[],def={'CHOICE',_}}}|_Rest]) ->
+decode_type(I) when integer(I) ->
+    I;
+decode_type(T) ->
+    asn1ct_gen_ber:decode_type(T).
+
+untagged_choice(_S,[#'ComponentType'{typespec=#type{tag=[],def={'CHOICE',_}}}|_Rest]) ->
     true;
-untagged_choice([_|Rest]) ->
-    untagged_choice(Rest);
-untagged_choice([]) ->
+untagged_choice(S,[#'ComponentType'{typespec=#type{tag=[],def=ExRef}}|Rest])
+  when record(ExRef,'Externaltypereference')->
+    case get_referenced_type(S,ExRef) of
+	{_,#typedef{typespec=#type{tag=[],
+				   def={'CHOICE',_}}}} -> true;
+	_ -> untagged_choice(S,Rest)
+    end;
+untagged_choice(S,[_|Rest]) ->
+    untagged_choice(S,Rest);
+untagged_choice(_,[]) ->
     false.
     
 check_setof(S,Type,Component) when record(Component,type) ->
     check_type(S,Type,Component).
+
+check_selectiontype(S,Name,#type{def=Eref}) 
+  when record(Eref,'Externaltypereference') ->
+    {_,TypeDef} = get_referenced_type(S,Eref),
+    check_selectiontype2(S,Name,TypeDef);
+%     CheckedType = check_type(S,TypeDef,TypeDef#typedef.typespec),
+%     {'CHOICE',Components} = CheckedType#type.def,
+%     case lists:keysearch(Name,#'ComponentType'.name,Components) of
+% 	{value,C} -> C#'ComponentType'.typespec;
+% 	_ -> 
+% 	    Msg = lists:flatten(io_lib:format("error checking SelectionType: ~w~n",[Name])),
+% 	    error({type,Msg,S})
+%     end;
+%% this is a parameterized type reference that is inlined
+check_selectiontype(S,Name,Type=#type{def={pt,_,_}}) ->
+    TName =
+	case S#state.recordtopname of
+	    [] ->
+		S#state.tname;
+	    N -> N
+	end,
+    TDef = #typedef{name=TName,typespec=Type},
+    check_selectiontype2(S,Name,TDef);
+check_selectiontype(S,Name,Type) ->
+    Msg = lists:flatten(io_lib:format("SelectionType error: ~w < ~w must be a reference to a CHOICE.",[Name,Type])),
+    error({type,Msg,S}).
+
+check_selectiontype2(S,Name,TypeDef) ->
+    NewS = S#state{recordtopname=TypeDef#typedef.name},
+    CheckedType = check_type(NewS,TypeDef,TypeDef#typedef.typespec),
+    {'CHOICE',Components} = CheckedType#type.def,
+    case lists:keysearch(Name,#'ComponentType'.name,Components) of
+	{value,C} -> 
+	    %% The selected type will have the tag of its asn1 type.
+	    T = C#'ComponentType'.typespec,
+	    T1 = T#type{tag=[]},
+	    check_type(S#state{recordtopname=[]},
+		       #typedef{typespec=T1},T1);
+	_ -> 
+	    Msg = lists:flatten(io_lib:format("error checking SelectionType: ~w~n",[Name])),
+	    error({type,Msg,S})
+    end.
+	    
 
 check_restrictedstring(_S,_Def,_Constr) ->
     ok.
@@ -4237,11 +4853,14 @@ is_automatic_tagged_in_multi_file(Name) ->
 	    %% this case when not multifile compilation
 	    false;
 	_ ->
-	    case ets:member(automatic_tags,Name) of
-		true ->
-		     true;
-		_ ->
-		    false
+%	    case ets:member(automatic_tags,Name) of
+	    case ets:lookup(automatic_tags,Name) of
+% 		true ->
+% 		     true;
+% 		_ ->
+% 		    false
+		[] -> false;
+		_ -> true
 	    end
     end.
 
@@ -4598,44 +5217,73 @@ get_simple_table_info1(S,#'ComponentType'{typespec=TS},[],Path) ->
     %% In this component there must be a simple table constraint
     %% o.w. the asn1 code is wrong.
     #type{def=OCFT,constraint=Cnstr} = TS,
-    case Cnstr of
-	[{simpletable,_OSRef}] ->
-	    #'ObjectClassFieldType'{classname=ClRef,
-				    class=ObjectClass,
-				    fieldname=FieldName} = OCFT,
-%	    #'ObjectClassFieldType'{ObjectClass,FieldType} = ObjectClassFieldType,
-	    ObjectClassFieldName =
-		case FieldName of
-		    {LastFieldName,[]} -> LastFieldName;
-		    {_FirstFieldName,FieldNames} ->
-			lists:last(FieldNames)
-		end,
-	    %%ObjectClassFieldName is the last element in the dotted
-	    %%list of the ObjectClassFieldType. The last element may
-	    %%be of another class, that is referenced from the class
-	    %%of the ObjectClassFieldType
-	    ClassDef =
-		case ObjectClass of
-		    [] ->
-			{_,CDef}=get_referenced_type(S,ClRef),
-			CDef;
-		    _ -> #classdef{typespec=ObjectClass}
-		end,
-	    UniqueName =
-		case (catch get_unique_fieldname(ClassDef)) of
-		    {error,'__undefined_'} -> no_unique;
-		    {asn1,Msg,_} ->
-			error({type,Msg,S});
-		    Other -> Other
-		end,
-	    {lists:reverse(Path),ObjectClassFieldName,UniqueName};
+    case constraint_member(simpletable,Cnstr) of
+%%	[{simpletable,_OSRef}] ->
+	{true,{simpletable,_OSRef}} ->
+	    simple_table_info(S,OCFT,Path);
+% 	    #'ObjectClassFieldType'{classname=ClRef,
+% 				    class=ObjectClass,
+% 				    fieldname=FieldName} = OCFT,
+% %	    #'ObjectClassFieldType'{ObjectClass,FieldType} = ObjectClassFieldType,
+% 	    ObjectClassFieldName =
+% 		case FieldName of
+% 		    {LastFieldName,[]} -> LastFieldName;
+% 		    {_FirstFieldName,FieldNames} ->
+% 			lists:last(FieldNames)
+% 		end,
+% 	    %%ObjectClassFieldName is the last element in the dotted
+% 	    %%list of the ObjectClassFieldType. The last element may
+% 	    %%be of another class, that is referenced from the class
+% 	    %%of the ObjectClassFieldType
+% 	    ClassDef =
+% 		case ObjectClass of
+% 		    [] ->
+% 			{_,CDef}=get_referenced_type(S,ClRef),
+% 			CDef;
+% 		    _ -> #classdef{typespec=ObjectClass}
+% 		end,
+% 	    UniqueName =
+% 		case (catch get_unique_fieldname(ClassDef)) of
+% 		    {error,'__undefined_'} -> no_unique;
+% 		    {asn1,Msg,_} ->
+% 			error({type,Msg,S});
+% 		    Other -> Other
+% 		end,
+% 	    {lists:reverse(Path),ObjectClassFieldName,UniqueName};
 	_ ->
-	    error({type,{asn1,"missing expected simple table constraint",
+	    error({type,{"missing expected simple table constraint",
 			 Cnstr},S})
     end;
 get_simple_table_info1(S,#'ComponentType'{typespec=TS},Cnames,Path) ->
     Components = get_atlist_components(TS#type.def),
     get_simple_table_info1(S,Components,Cnames,Path).
+
+
+simple_table_info(S,#'ObjectClassFieldType'{classname=ClRef,
+					  fieldname=FieldName},Path) ->
+    
+    ObjectClassFieldName =
+	case FieldName of
+	    {LastFieldName,[]} -> LastFieldName;
+	    {_FirstFieldName,FieldNames} ->
+		lists:last(FieldNames)
+	end,
+    %%ObjectClassFieldName is the last element in the dotted
+    %%list of the ObjectClassFieldType. The last element may
+    %%be of another class, that is referenced from the class
+    %%of the ObjectClassFieldType
+    {_,ClassDef}=get_referenced_type(S,ClRef),
+    UniqueName =
+	case (catch get_unique_fieldname(ClassDef)) of
+	    {error,'__undefined_'} -> no_unique;
+	    {asn1,Msg,_} ->
+		error({type,Msg,S});
+	    Other -> Other
+	end,
+    {lists:reverse(Path),ObjectClassFieldName,UniqueName};
+simple_table_info(S,Type,_) ->
+    error({type,{"the type referenced by a componentrelation constraint must be a ObjectClassFieldType",Type},S}).
+
 
 %% any_component_relation searches for all component relation
 %% constraints that refers to the actual level and returns a list of
@@ -4651,8 +5299,9 @@ any_component_relation(S,[C|Cs],CNames,NamePath,Acc) ->
     CName = C#'ComponentType'.name,
     Type = C#'ComponentType'.typespec,
     CRelPath =
-	case Type#type.constraint of
-	    [{componentrelation,_,AtNotation}] ->
+	case constraint_member(componentrelation,Type#type.constraint) of
+%%	    [{componentrelation,_,AtNotation}] ->
+	    {true,{_,_,AtNotation}} ->
 		%% Found component relation constraint, now check
 		%% whether this constraint is relevant for the level
 		%% where the search started
@@ -4668,21 +5317,54 @@ any_component_relation(S,[C|Cs],CNames,NamePath,Acc) ->
 	case {Type#type.inlined,
 	      asn1ct_gen:type(asn1ct_gen:get_inner(Type#type.def))} of
 	    {no,{constructed,bif}} ->
+		{InnerCs,NewNamePath} = 
+		    case get_components(Type#type.def) of
+			{IC1,_IC2} -> {IC1 ++ IC1,[CName|NamePath]};
+			T when record(T,type) -> {T,NamePath};
+			IC -> {IC,[CName|NamePath]}
+		    end,
+		%% here we are interested in components of an
+		%% SEQUENCE/SET OF as well as SEQUENCE, SET and CHOICE
+		any_component_relation(S,InnerCs,CNames,NewNamePath,[]);
+	    _ ->
+		[]
+	end,
+    any_component_relation(S,Cs,CNames,NamePath,InnerAcc++CRelPath++Acc);
+any_component_relation(S,Type,CNames,NamePath,Acc) when record(Type,type) ->
+    CRelPath =
+	case constraint_member(componentrelation,Type#type.constraint) of
+	    {true,{_,_,AtNotation}} ->
+		AtNot = extract_at_notation(AtNotation),
+		evaluate_atpath(S#state.abscomppath,NamePath,CNames,AtNot);
+	    _ ->
+		[]
+	end,
+    InnerAcc =
+	case {Type#type.inlined,
+	      asn1ct_gen:type(asn1ct_gen:get_inner(Type#type.def))} of
+	    {no,{constructed,bif}} ->
 		InnerCs = 
 		    case get_components(Type#type.def) of
 			{IC1,_IC2} -> IC1 ++ IC1;
 			IC -> IC
 		    end,
-		%% here we are interested in components of an
-		%% SEQUENCE/SET OF as well as SEQUENCE, SET and CHOICE
-		any_component_relation(S,InnerCs,CNames,[CName|NamePath],[]);
+		any_component_relation(S,InnerCs,CNames,NamePath,[]);
 	    _ ->
 		[]
 	end,
-    any_component_relation(S,Cs,CNames,NamePath,InnerAcc++CRelPath++Acc);
+    InnerAcc  ++ CRelPath ++ Acc;
 any_component_relation(_,[],_,_,Acc) ->
     Acc.
 
+constraint_member(componentrelation,[CRel={componentrelation,_,_}|_Rest]) ->
+    {true,CRel};
+constraint_member(simpletable,[ST={simpletable,_}|_Rest]) ->
+    {true,ST};
+constraint_member(Key,[_H|T]) ->
+    constraint_member(Key,T);
+constraint_member(_,[]) ->
+    false.
+    
 %% evaluate_atpath/4 finds out whether the at notation refers to the
 %% search level. The list of referenced names in the AtNot list shall
 %% begin with a name that exists on the level it refers to. If the
@@ -4736,10 +5418,13 @@ get_components(_,#'SET'{components=Cs}) ->
     Cs;
 get_components(_,{'CHOICE',Cs}) ->
     Cs;
-get_components(any,{'SEQUENCE OF',#type{def=Def}}) ->
-    get_components(any,Def);
-get_components(any,{'SET OF',#type{def=Def}}) ->
-    get_components(any,Def);
+%do not step in inlined structures
+get_components(any,{'SEQUENCE OF',T = #type{def=_Def,inlined=no}}) ->
+%    get_components(any,Def);
+    T;
+get_components(any,{'SET OF',T = #type{def=_Def,inlined=no}}) ->
+%    get_components(any,Def);
+    T;
 get_components(_,_) ->
     [].
 
@@ -4768,8 +5453,10 @@ extract_at_notation1([]) ->
 componentrelation1(S,C = #type{def=Def,constraint=Constraint,tablecinf=TCI},
 		   Path) ->
     Ret =
-	case Constraint of
-	    [{componentrelation,{_,_,ObjectSet},AtList}|_Rest] ->
+%	case Constraint of
+%	    [{componentrelation,{_,_,ObjectSet},AtList}|_Rest] ->
+	case constraint_member(componentrelation,Constraint) of
+	    {true,{_,{_,_,ObjectSet},AtList}} ->
 		[{_,AL=[#'Externalvaluereference'{}|_R1]}|_R2] = AtList,
 		%% Note: if Path is longer than one,i.e. it is within
 		%% an inner type of the actual level, then the only
@@ -4780,7 +5467,7 @@ componentrelation1(S,C = #type{def=Def,constraint=Constraint,tablecinf=TCI},
 		    lists:map(fun(#'Externalvaluereference'{value=V})->V end,
 			      AL),
 		{[{ObjectSet,AtPath,ClassDef,Path}],Def};
-	    _Other ->
+	    _ ->
 		%% check the inner type of component
 		innertype_comprel(S,Def,Path)
 	end,
@@ -4854,8 +5541,10 @@ componentlist_comprel(_,[],Acc,_,NewCL) ->
 
 innertype_comprel1(S,T = #type{def=Def,constraint=Cons,tablecinf=TCI},Path) ->
     Ret =
-	case Cons of
-	    [{componentrelation,{_,_,ObjectSet},AtList}|_Rest] ->
+%	case Cons of
+%	    [{componentrelation,{_,_,ObjectSet},AtList}|_Rest] ->
+	case constraint_member(componentrelation,Cons) of
+	    {true,{_,{_,_,ObjectSet},AtList}} ->
 		%% This AtList must have an "outermost" at sign to be
 		%% relevent here.
 		[{_,AL=[#'Externalvaluereference'{value=_Attr}|_R1]}|_R2] 
@@ -4987,16 +5676,11 @@ get_tableconstraint_info(S,Type,[C|Cs],Acc) ->
     AccComp = 
 	case CheckedTs#type.def of 
 	    %% ObjectClassFieldType
-	    OCFT=#'ObjectClassFieldType'{class=#objectclass{},
-					 type=_AType} ->
-%		AType = get_ObjectClassFieldType(S,Fields,FieldRef),
-%		RefedFieldName = 
-%		    get_referencedclassfield(CheckedTs#type.def),%is probably obsolete
+	    OCFT=#'ObjectClassFieldType'{} ->
 		NewOCFT =
 		    OCFT#'ObjectClassFieldType'{class=[]},
 		C#'ComponentType'{typespec=
 				  CheckedTs#type{
-%				    def=AType,
 				    def=NewOCFT
 				    }};
 %				    constraint=[{tableconstraint_info,
@@ -5053,8 +5737,7 @@ check_PrimitiveFieldNames(_S,_Fields,_) ->
 %% been checked (it may be a field type of an internal SEQUENCE) the
 %% class field = [], then the classdef has to be fetched by help of
 %% the class reference in the classname field.
-get_ObjectClassFieldType_classdef(S,#'ObjectClassFieldType'{classname=Name,
-							  class=[]}) ->
+get_ObjectClassFieldType_classdef(S,#'ObjectClassFieldType'{classname=Name}) ->
     {_,#classdef{typespec=TS}} = get_referenced_type(S,Name),
     TS;
 get_ObjectClassFieldType_classdef(_,#'ObjectClassFieldType'{class=Cl}) ->
@@ -5080,7 +5763,8 @@ get_OCFType(S,Fields,[{_FieldType,PrimFieldName}|Rest]) ->
 	{value,Other} ->
 	    {element(1,Other),PrimFieldName};
 	_  ->
-	    error({type,"undefined FieldName in ObjectClassFieldType",S})
+	    throw({error,lists:flatten(io_lib:format("undefined FieldName in ObjectClassFieldType: ~w",[PrimFieldName]))})
+%%	    error({type,"undefined FieldName in ObjectClassFieldType",S})
     end.
 
 get_taglist(#state{erule=per},_) ->
@@ -5322,6 +6006,16 @@ error({export,Msg,#state{mname=Mname,type=Ref,tname=Typename}}) ->
     Pos = Ref#'Externaltypereference'.pos,
     io:format("asn1error:~p:~p:~p ~p~n",[Pos,Mname,Typename,Msg]),
     {error,{export,Pos,Mname,Typename,Msg}};
+% error({type,{Msg1,Msg2},#state{mname=Mname,type=Type,tname=Typename}}) 
+%   when record(Type,typedef) ->
+%     io:format("asn1error:~p:~p:~p ~p~n",
+% 	      [Type#typedef.pos,Mname,Typename,Msg1]),
+%     {error,{type,Type#typedef.pos,Mname,Typename,Msg1,Msg2}};
+error({type,Msg,#state{mname=Mname,type=Type,tname=Typename}}) 
+  when record(Type,type) ->
+    io:format("asn1error:~p:~p ~p~n",
+	      [Mname,Typename,Msg]),
+    {error,{type,Mname,Typename,Msg}};
 error({type,Msg,#state{mname=Mname,type=Type,tname=Typename}}) 
   when record(Type,typedef) ->
     io:format("asn1error:~p:~p:~p ~p~n",
@@ -5429,14 +6123,14 @@ default_type_list() ->
     Octet_aligned =
 	#'ComponentType'{name='octet-aligned',
 			 typespec=#type{tag=[{tag,'CONTEXT',1,
-					      'IMPLICIT',32}],
+					      'IMPLICIT',0}],
 					def='OCTET STRING'},
 			 prop=mandatory},
 
     Arbitrary =
 	#'ComponentType'{name=arbitrary,
 			 typespec=#type{tag=[{tag,'CONTEXT',2,
-					      'IMPLICIT',32}],
+					      'IMPLICIT',0}],
 					def={'BIT STRING',[]}},
 			 prop=mandatory},
 
@@ -5516,14 +6210,15 @@ include_default_class(Module) ->
 
 include_default_class1(_,[]) ->
     ok;
-include_default_class1(Module,[{Name,TS}|_Rest]) ->
+include_default_class1(Module,[{Name,TS}|Rest]) ->
     case asn1_db:dbget(Module,Name) of
 	undefined ->
 	    C = #classdef{checked=true,name=Name,
 			  typespec=TS},
 	    asn1_db:dbput(Module,Name,C);
 	_ -> ok
-    end.
+    end,
+    include_default_class1(Module,Rest).
 
 default_class_list() ->
     [{'TYPE-IDENTIFIER',

@@ -53,16 +53,47 @@ ERL_FILES = $(MODULES:%=%.erl)
 TARGET_FILES = \
 	$(ERL_FILES:%.erl=$(EBIN)/%.$(EMULATOR))
 
-MEGACO_ROOT_DIR = $(shell (chdir .. ; dirname `pwd`))
+MEGACO_ROOT_DIR = $(shell (cd .. ; dirname `pwd`))
 
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
+ifeq ($(WARN_UNUSED_WARS),true)
+ERL_COMPILE_FLAGS += +warn_unused_vars
+endif
+
 ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
 ERL_COMPILE_FLAGS += -I../../include
 
 ifneq ($(MGC_HOST),)
-MG_START_ARGS = $(MGC_HOST)
+MG_START_ARGS = "{mgc_host, $(MGC_HOST)}"
+endif
+
+ifneq ($(MG_INLINE_TRACE),true)
+MG_MEGACO_FILTER  = -s megaco_filter 
+MG_START_ARGS    += "{trace,false}"
+else
+MG_START_ARGS    += "{trace,true}"
+endif
+
+ifneq ($(MG_DEBUG),)
+MG_START_ARGS += "{debug,true}"
+else
+MG_START_ARGS += "{debug,false}"
+endif
+
+
+ifneq ($(MGC_INLINE_TRACE),true)
+MGC_MEGACO_FILTER  = -s megaco_filter 
+MGC_START_ARGS    += "{trace,false}"
+else
+MGC_START_ARGS    += "{trace,true}"
+endif
+
+ifneq ($(MGC_DEBUG),)
+MGC_START_ARGS += "{debug,true}"
+else
+MGC_START_ARGS += "{debug,false}"
 endif
 
 
@@ -89,13 +120,15 @@ info:
 
 mg: opt
 	erl -noshell -pa $(MEGACO_ROOT_DIR)/ebin \
-          -s megaco_filter -s megaco \
+          $(MG_MEGACO_FILTER) \
+          -s megaco \
           -s megaco_simple_mg start_batch $(MG_START_ARGS)
 
 mgc: opt
 	erl -noshell -pa $(MEGACO_ROOT_DIR)/ebin \
-          -s megaco_filter -s megaco \
-          -s megaco_simple_mgc start_batch
+          $(MGC_MEGACO_FILTER) \
+          -s megaco \
+          -s megaco_simple_mgc start_batch $(MGC_START_ARGS)
 
 # ----------------------------------------------------
 # Release Target

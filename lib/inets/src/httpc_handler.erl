@@ -39,42 +39,40 @@ init_connection(Req,Session) when record(Req,request) ->
 	{ok,Socket} ->
 	    case catch http_request(Req,Socket) of
 		ok ->
-		    case Session#session.clientclose of
+		    case Session#tcp_session.clientclose of
 			true ->
 			    ok;
 			false ->
 			    httpc_manager:register_socket(Req#request.address,
-							  Session#session.id,
+							  Session#tcp_session.id,
 							  Socket)
 		    end,
 		    next_response_with_request(Req,
-					       Session#session{socket=Socket});
+					       Session#tcp_session{socket=Socket});
 		{error,Reason} -> % Not possible to use new session
-		    gen_server:cast(Req#request.from,
-				    {Req#request.ref,Req#request.id,{error,Reason}}),
+		    http_error_response(Req,Reason),
 		    exit_session_ok(Req#request.address,
-				    Session#session{socket=Socket})
+				    Session#tcp_session{socket=Socket})
 	    end;
 	{error,Reason} -> % Not possible to set up new session
-	    gen_server:cast(Req#request.from,
-			    {Req#request.ref,Req#request.id,{error,Reason}}),
+	    http_error_response(Req,Reason),
 	    exit_session_ok2(Req#request.address,
-			     Session#session.clientclose,Session#session.id)
+			     Session#tcp_session.clientclose,
+			     Session#tcp_session.id)
     end.
 
 next_response_with_request(Req,Session) ->
     Timeout=(Req#request.settings)#client_settings.timeout,
-    case catch read(Timeout,Session#session.scheme,Session#session.socket) of
+    case catch read(Timeout,Session#tcp_session.scheme,
+		    Session#tcp_session.socket) of
 	{Status,Headers,Body} ->
 	    NewReq=handle_response({Status,Headers,Body},Timeout,Req,Session),
 	    next_response_with_request(NewReq,Session);
 	{error,Reason} ->
-	    gen_server:cast(Req#request.from,
-			    {Req#request.ref,Req#request.id,{error,Reason}}),
+	    http_error_response(Req,Reason),
 	    exit_session(Req#request.address,Session,aborted_request);
 	{'EXIT',Reason} ->
-	    gen_server:cast(Req#request.from,
-			    {Req#request.ref,Req#request.id,{error,Reason}}),
+	    http_error_response(Req,Reason),
 	    exit_session(Req#request.address,Session,aborted_request)
     end.
 
@@ -85,8 +83,7 @@ handle_response(Response,Timeout,Req,Session) ->
 	stop ->
 	    exit(normal);
 	{error,Reason} ->
-	    gen_server:cast(Req#request.from,
-			    {Req#request.ref,Req#request.id,{error,Reason}}),
+	    http_error_response(Req,Reason),
 	    exit_session(Req#request.address,Session,aborted_request)
     end.
 
@@ -103,12 +100,13 @@ handle_response(Response,Timeout,Req,Session) ->
 %%% - When invoked there are no pending responses on received requests.
 %%% - Never close the session explicitly, let it timeout instead!
 next_response(Timeout,Address,Session) ->
-    case httpc_manager:next_request(Address,Session#session.id) of
+    case httpc_manager:next_request(Address,Session#tcp_session.id) of
 	no_more_requests ->
 	    %% There are no more pending responses, now just wait for
 	    %% timeout or a new response.
 	    case catch read(Timeout,
-			    Session#session.scheme,Session#session.socket) of
+			    Session#tcp_session.scheme,
+			    Session#tcp_session.socket) of
 		{error,Reason} when Reason==session_remotely_closed;
 				    Reason==session_local_timeout ->
 		    exit_session_ok(Address,Session);
@@ -118,7 +116,7 @@ next_response(Timeout,Address,Session) ->
 		    exit_session(Address,Session,aborted_request);
 		{Status2,Headers2,Body2} ->
 		    case httpc_manager:next_request(Address,
-						    Session#session.id) of
+						    Session#tcp_session.id) of
 			no_more_requests -> % Should not happen!
 			    exit_session(Address,Session,aborted_request);
 			{error,Reason} -> % Should not happen!
@@ -162,7 +160,7 @@ read_response(SockType,Socket,Info,Timeout) ->
     case http_lib:recv0(SockType,Socket,Timeout) of
 	{ok,{http_response,{1,VerMin}, Status, _Phrase}} when VerMin==0;
 							      VerMin==1 ->
-	    Info1=Info#response{status=Status,http_version=VerMin},
+	    Info1=Info#response{status=Status,version=VerMin},
 	    http_lib:read_client_headers(Info1,Timeout);
 	{ok,{http_response,_Version, _Status, _Phrase}} ->
 	    throw({error,bad_status_line});
@@ -182,7 +180,6 @@ read_response(SockType,Socket,Info,Timeout) ->
 %%   it; the presence in a request of a Range header with multiple byte-
 %%   range specifiers from a 1.1 client implies that the client can parse
 %%   multipart/byteranges responses.
-%%% FIXME !!
 range_response_body(Info,Timeout,Param) ->
     Headers=Info#response.headers,
     case {Headers#res_headers.content_length,
@@ -274,7 +271,10 @@ method(Method) ->
     httpd_util:to_upper(atom_to_list(Method)).
 
 
-%%% ----------------------------------------------------------------------------
+%%% --------------------------------------------------------------------------
+http_error_response(#request{from=From,ref=Ref,id=Id},Reason) ->
+    gen_server:cast(From,{Ref,Id,{error,Reason}}).
+
 http_response({Status,Headers,Body},Req,Session) ->
     case Status of
 	100 ->
@@ -283,7 +283,7 @@ http_response({Status,Headers,Body},Req,Session) ->
 	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 					      {Status,Headers,Body}}),
 	    ServerClose=http_lib:connection_close(Headers),
-	    handle_connection(Session#session.clientclose,ServerClose,
+	    handle_connection(Session#tcp_session.clientclose,ServerClose,
 			      Req,Session);
 	300 -> status_multiple_choices(Headers,Body,Req,Session);
 	301 -> status_moved_permanently(Req#request.method,
@@ -302,7 +302,7 @@ http_response({Status,Headers,Body},Req,Session) ->
 	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 					      {Status,Headers,Body}}),
 	    ServerClose=http_lib:connection_close(Headers),
-	    handle_connection(Session#session.clientclose,ServerClose,
+	    handle_connection(Session#tcp_session.clientclose,ServerClose,
 			      Req,Session)
     end.
 
@@ -321,7 +321,7 @@ http_response({Status,Headers,Body},Req,Session) ->
 %%% status code.
 status_continue(Req,Session) ->
     {_,Body}=Req#request.content,
-    http_lib:send(Session#session.scheme,Session#session.socket,Body),
+    http_lib:send(Session#tcp_session.scheme,Session#tcp_session.socket,Body),
     next_response_with_request(Req,Session).
 
 
@@ -345,17 +345,17 @@ status_multiple_choices(Headers,Body,Req,Session)
 	undefined ->
 	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 					      {300,Headers,Body}}),
-	    handle_connection(Session#session.clientclose,ServerClose,
+	    handle_connection(Session#tcp_session.clientclose,ServerClose,
 			      Req,Session);
 	RedirUrl ->
-	    Scheme=Session#session.scheme,
+	    Scheme=Session#tcp_session.scheme,
 	    case uri:parse(RedirUrl) of
 		{error,Reason} ->
 		    {error,Reason};
 		{Scheme,Host,Port,PathQuery} -> % Automatic redirection
 		    NewReq=Req#request{redircount=Req#request.redircount+1,
 				       address={Host,Port},pathquery=PathQuery},
-		    handle_redirect(Session#session.clientclose,ServerClose,
+		    handle_redirect(Session#tcp_session.clientclose,ServerClose,
 				    NewReq,Session)
 	    end
     end;
@@ -363,7 +363,7 @@ status_multiple_choices(Headers,Body,Req,Session) ->
     ServerClose=http_lib:connection_close(Headers),
     gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 				      {300,Headers,Body}}),
-    handle_connection(Session#session.clientclose,ServerClose,Req,Session).
+    handle_connection(Session#tcp_session.clientclose,ServerClose,Req,Session).
 
 
 %%% Received a 301 Status code ("Moved Permanently")
@@ -383,17 +383,17 @@ status_moved_permanently(Method,Headers,Body,Req,Session)
 	undefined ->
 	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 					      {301,Headers,Body}}),
-	    handle_connection(Session#session.clientclose,ServerClose,
+	    handle_connection(Session#tcp_session.clientclose,ServerClose,
 			      Req,Session);
 	RedirUrl ->
-	    Scheme=Session#session.scheme,
+	    Scheme=Session#tcp_session.scheme,
 	    case uri:parse(RedirUrl) of
 		{error,Reason} ->
 		    {error,Reason};
 		{Scheme,Host,Port,PathQuery} -> % Automatic redirection
 		    NewReq=Req#request{redircount=Req#request.redircount+1,
 				       address={Host,Port},pathquery=PathQuery},
-		    handle_redirect(Session#session.clientclose,ServerClose,
+		    handle_redirect(Session#tcp_session.clientclose,ServerClose,
 				    NewReq,Session)
 	    end
     end;
@@ -401,7 +401,7 @@ status_moved_permanently(_Method,Headers,Body,Req,Session) ->
     ServerClose=http_lib:connection_close(Headers),
     gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 				      {301,Headers,Body}}),
-    handle_connection(Session#session.clientclose,ServerClose,Req,Session).
+    handle_connection(Session#tcp_session.clientclose,ServerClose,Req,Session).
 
 
 %%% Received a 302 Status code ("Found")
@@ -415,17 +415,21 @@ status_found(Headers,Body,Req,Session)
 	undefined ->
 	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 					      {302,Headers,Body}}),
-	    handle_connection(Session#session.clientclose,ServerClose,
+	    handle_connection(Session#tcp_session.clientclose,ServerClose,
 			      Req,Session);
 	RedirUrl ->
-	    Scheme=Session#session.scheme,
 	    case uri:parse(RedirUrl) of
+		{error,no_scheme} when
+		      (Req#request.settings)#client_settings.relaxed ->
+		    NewLocation=fix_relative_uri(Req,RedirUrl),
+		    status_found(Headers#res_headers{location=NewLocation},
+				 Body,Req,Session);
 		{error,Reason} ->
 		    {error,Reason};
 		{Scheme,Host,Port,PathQuery} -> % Automatic redirection
 		    NewReq=Req#request{redircount=Req#request.redircount+1,
 				       address={Host,Port},pathquery=PathQuery},
-		    handle_redirect(Session#session.clientclose,ServerClose,
+		    handle_redirect(Session#tcp_session.clientclose,ServerClose,
 				    NewReq,Session)
 	    end
     end;
@@ -433,7 +437,7 @@ status_found(Headers,Body,Req,Session) ->
     ServerClose=http_lib:connection_close(Headers),
     gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 				      {302,Headers,Body}}),
-    handle_connection(Session#session.clientclose,ServerClose,Req,Session).
+    handle_connection(Session#tcp_session.clientclose,ServerClose,Req,Session).
 
 %%% Received a 303 Status code ("See Other")
 %%% The request found under a different URI and should be retrieved using GET
@@ -446,10 +450,10 @@ status_see_other(Headers,Body,Req,Session)
 	undefined ->
 	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 					      {303,Headers,Body}}),
-	    handle_connection(Session#session.clientclose,ServerClose,
+	    handle_connection(Session#tcp_session.clientclose,ServerClose,
 			      Req,Session);
 	RedirUrl ->
-	    Scheme=Session#session.scheme,
+	    Scheme=Session#tcp_session.scheme,
 	    case uri:parse(RedirUrl) of
 		{error,Reason} ->
 		    {error,Reason};
@@ -457,7 +461,7 @@ status_see_other(Headers,Body,Req,Session)
 		    NewReq=Req#request{redircount=Req#request.redircount+1,
 				       method=get,
 				       address={Host,Port},pathquery=PathQuery},
-		    handle_redirect(Session#session.clientclose,ServerClose,
+		    handle_redirect(Session#tcp_session.clientclose,ServerClose,
 				    NewReq,Session)
 	    end
     end;
@@ -465,7 +469,7 @@ status_see_other(Headers,Body,Req,Session) ->
     ServerClose=http_lib:connection_close(Headers),
     gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 				      {303,Headers,Body}}),
-    handle_connection(Session#session.clientclose,ServerClose,Req,Session).
+    handle_connection(Session#tcp_session.clientclose,ServerClose,Req,Session).
 
 
 %%% Received a 304 Status code ("Not Modified")
@@ -485,17 +489,17 @@ status_not_modified(Headers,Body,Req,Session)
 	undefined ->
 	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 					      {304,Headers,Body}}),
-	    handle_connection(Session#session.clientclose,ServerClose,
+	    handle_connection(Session#tcp_session.clientclose,ServerClose,
 			      Req,Session);
 	RedirUrl ->
-	    Scheme=Session#session.scheme,
+	    Scheme=Session#tcp_session.scheme,
 	    case uri:parse(RedirUrl) of
 		{error,Reason} ->
 		    {error,Reason};
 		{Scheme,Host,Port,PathQuery} -> % Automatic redirection
 		    NewReq=Req#request{redircount=Req#request.redircount+1,
 				       address={Host,Port},pathquery=PathQuery},
-		    handle_redirect(Session#session.clientclose,ServerClose,
+		    handle_redirect(Session#tcp_session.clientclose,ServerClose,
 				    NewReq,Session)
 	    end
     end;
@@ -503,7 +507,7 @@ status_not_modified(Headers,Body,Req,Session) ->
     ServerClose=http_lib:connection_close(Headers),
     gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 				      {304,Headers,Body}}),
-    handle_connection(Session#session.clientclose,ServerClose,Req,Session).
+    handle_connection(Session#tcp_session.clientclose,ServerClose,Req,Session).
 
 
 
@@ -517,17 +521,17 @@ status_use_proxy(Headers,Body,Req,Session)
 	undefined ->
 	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 					      {305,Headers,Body}}),
-	    handle_connection(Session#session.clientclose,ServerClose,
+	    handle_connection(Session#tcp_session.clientclose,ServerClose,
 			      Req,Session);
 	RedirUrl ->
-	    Scheme=Session#session.scheme,
+	    Scheme=Session#tcp_session.scheme,
 	    case uri:parse(RedirUrl) of
 		{error,Reason} ->
 		    {error,Reason};
 		{Scheme,Host,Port,PathQuery} -> % Automatic redirection
 		    NewReq=Req#request{redircount=Req#request.redircount+1,
 				       address={Host,Port},pathquery=PathQuery},
-		    handle_redirect(Session#session.clientclose,ServerClose,
+		    handle_redirect(Session#tcp_session.clientclose,ServerClose,
 				    NewReq,Session)
 	    end
     end;
@@ -535,7 +539,7 @@ status_use_proxy(Headers,Body,Req,Session) ->
     ServerClose=http_lib:connection_close(Headers),
     gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 				      {305,Headers,Body}}),
-    handle_connection(Session#session.clientclose,ServerClose,Req,Session).
+    handle_connection(Session#tcp_session.clientclose,ServerClose,Req,Session).
 
 
 %%% Received a 307 Status code ("Temporary Redirect")
@@ -546,17 +550,17 @@ status_temporary_redirect(Headers,Body,Req,Session)
 	undefined ->
 	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 					      {307,Headers,Body}}),
-	    handle_connection(Session#session.clientclose,ServerClose,
+	    handle_connection(Session#tcp_session.clientclose,ServerClose,
 			      Req,Session);
 	RedirUrl ->
-	    Scheme=Session#session.scheme,
+	    Scheme=Session#tcp_session.scheme,
 	    case uri:parse(RedirUrl) of
 		{error,Reason} ->
 		    {error,Reason};
 		{Scheme,Host,Port,PathQuery} -> % Automatic redirection
 		    NewReq=Req#request{redircount=Req#request.redircount+1,
 				       address={Host,Port},pathquery=PathQuery},
-		    handle_redirect(Session#session.clientclose,ServerClose,
+		    handle_redirect(Session#tcp_session.clientclose,ServerClose,
 				    NewReq,Session)
 	    end
     end;
@@ -564,7 +568,18 @@ status_temporary_redirect(Headers,Body,Req,Session) ->
     ServerClose=http_lib:connection_close(Headers),
     gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
 				      {307,Headers,Body}}),
-    handle_connection(Session#session.clientclose,ServerClose,Req,Session).
+    handle_connection(Session#tcp_session.clientclose,ServerClose,Req,Session).
+
+
+%%% Guessing that we received a relative URI, fix it to become an absoluteURI
+fix_relative_uri(Req,RedirUrl) ->
+    {Server,Port}=Req#request.address,
+    Path=case uri:scan_abspath(Req#request.pathquery) of
+	     {error,Reason} -> throw({error,bad_requestpath});
+	     {[],[]} -> "/";
+	     {_,ReqPath} -> ReqPath
+	 end,
+    atom_to_list(Req#request.scheme)++"://"++Server++Path++RedirUrl.
 
 
 
@@ -609,8 +624,7 @@ handle_redirect(ClientClose,ServerClose,Req,Session) ->
 	{ok,_ReqId} -> % FIXME Should I perhaps reuse the Reqid?
 	    handle_connection(ClientClose,ServerClose,Req,Session);
 	{error,Reason} ->
-	    gen_server:cast(Req#request.from,{Req#request.ref,Req#request.id,
-					      {error,Reason}}),
+	    http_error_response(Req,Reason),
 	    handle_connection(ClientClose,ServerClose,Req,Session)
     end.
 
@@ -641,25 +655,26 @@ handle_connection(ClientClose,ServerClose,Req,Session) ->
 %%% FIXME! Should not always abort the session (see close_session in
 %%%     httpc_manager for more details)
 close_session(client_connection_close,_Req,Session) ->
-    http_lib:close(Session#session.scheme,Session#session.socket),
+    http_lib:close(Session#tcp_session.scheme,Session#tcp_session.socket),
     stop;
 close_session(server_connection_close,Req,Session) ->
-    http_lib:close(Session#session.scheme,Session#session.socket),
-    httpc_manager:abort_session(Req#request.address,Session#session.id,
+    http_lib:close(Session#tcp_session.scheme,Session#tcp_session.socket),
+    httpc_manager:abort_session(Req#request.address,Session#tcp_session.id,
 			       aborted_request),
     stop.
 
 exit_session(Address,Session,Reason) ->
-    http_lib:close(Session#session.scheme,Session#session.socket),
-    httpc_manager:abort_session(Address,Session#session.id,Reason),
+    http_lib:close(Session#tcp_session.scheme,Session#tcp_session.socket),
+    httpc_manager:abort_session(Address,Session#tcp_session.id,Reason),
     exit(normal).
 
 %%% This is the "normal" case to close a persistent connection. I.e., there are
 %%% no more requests waiting and the session was closed by the client, or
 %%% server because of a timeout or user request.
 exit_session_ok(Address,Session) ->
-    http_lib:close(Session#session.scheme,Session#session.socket),
-    exit_session_ok2(Address,Session#session.clientclose,Session#session.id).
+    http_lib:close(Session#tcp_session.scheme,Session#tcp_session.socket),
+    exit_session_ok2(Address,Session#tcp_session.clientclose,
+		     Session#tcp_session.id).
 
 exit_session_ok2(Address,ClientClose,Sid) ->
     case ClientClose of

@@ -29,8 +29,6 @@
  * Microsoft-specific function to map a WIN32 error code to a Posix errno.
  */
 
-extern void _dosmaperr(DWORD);
-
 #define ISSLASH(a)  ((a) == '\\' || (a) == '/')
 
 #define ISDIR(st) (((st).st_mode&S_IFMT) == S_IFDIR)
@@ -44,6 +42,101 @@ static int set_error(Efile_error* errInfo);
 static int IsRootUNCName(const char* path);
 static int extract_root(char* name);
 static unsigned short dos_to_posix_mode(int attr, const char *name);
+
+static int errno_map(DWORD last_error) {
+
+    switch (last_error) {
+    case ERROR_SUCCESS:
+	return 0;
+    case ERROR_INVALID_FUNCTION:
+    case ERROR_INVALID_DATA:
+    case ERROR_INVALID_PARAMETER:
+    case ERROR_INVALID_TARGET_HANDLE:
+    case ERROR_INVALID_CATEGORY:
+    case ERROR_NEGATIVE_SEEK:
+	return EINVAL;
+    case ERROR_DIR_NOT_EMPTY:
+	return EEXIST;
+    case ERROR_BAD_FORMAT:
+	return ENOEXEC;
+    case ERROR_PATH_NOT_FOUND:
+    case ERROR_FILE_NOT_FOUND:
+    case ERROR_NO_MORE_FILES:
+	return ENOENT;
+    case ERROR_TOO_MANY_OPEN_FILES:
+	return EMFILE;
+    case ERROR_ACCESS_DENIED:
+    case ERROR_INVALID_ACCESS:
+    case ERROR_CURRENT_DIRECTORY:
+    case ERROR_SHARING_VIOLATION:
+    case ERROR_LOCK_VIOLATION:
+    case ERROR_INVALID_PASSWORD:
+    case ERROR_DRIVE_LOCKED:
+	return EACCES;
+    case ERROR_INVALID_HANDLE:
+	return EBADF;
+    case ERROR_NOT_ENOUGH_MEMORY:
+    case ERROR_OUTOFMEMORY:
+    case ERROR_OUT_OF_STRUCTURES:
+	return ENOMEM;
+    case ERROR_INVALID_DRIVE:
+    case ERROR_BAD_UNIT:
+    case ERROR_NOT_READY:
+    case ERROR_REM_NOT_LIST:
+    case ERROR_DUP_NAME:
+    case ERROR_BAD_NETPATH:
+    case ERROR_NETWORK_BUSY:
+    case ERROR_DEV_NOT_EXIST:
+    case ERROR_BAD_NET_NAME:
+	return ENXIO;
+    case ERROR_NOT_SAME_DEVICE:
+	return EXDEV;
+    case ERROR_WRITE_PROTECT:
+	return EROFS;
+    case ERROR_BAD_LENGTH:
+    case ERROR_BUFFER_OVERFLOW:
+	return E2BIG;
+    case ERROR_SEEK:
+    case ERROR_SECTOR_NOT_FOUND:
+	return ESPIPE;
+    case ERROR_NOT_DOS_DISK:
+	return ENODEV;
+    case ERROR_GEN_FAILURE:
+	return ENODEV;
+    case ERROR_SHARING_BUFFER_EXCEEDED:
+    case ERROR_NO_MORE_SEARCH_HANDLES:
+	return EMFILE;
+    case ERROR_HANDLE_EOF:
+    case ERROR_BROKEN_PIPE:
+	return EPIPE;
+    case ERROR_HANDLE_DISK_FULL:
+    case ERROR_DISK_FULL:
+	return ENOSPC;
+    case ERROR_NOT_SUPPORTED:
+	return ENOTSUP;
+    case ERROR_FILE_EXISTS:
+    case ERROR_ALREADY_EXISTS:
+    case ERROR_CANNOT_MAKE:
+	return EEXIST;
+    case ERROR_ALREADY_ASSIGNED:
+	return EBUSY;
+    case ERROR_NO_PROC_SLOTS:
+	return EAGAIN;
+    case ERROR_ARENA_TRASHED:
+    case ERROR_INVALID_BLOCK:
+    case ERROR_BAD_ENVIRONMENT:
+    case ERROR_BAD_COMMAND:
+    case ERROR_CRC:
+    case ERROR_OUT_OF_PAPER:
+    case ERROR_READ_FAULT:
+    case ERROR_WRITE_FAULT:
+    case ERROR_WRONG_DISK:
+    case ERROR_NET_WRITE_FAULT:
+	return EIO;
+    default: /* not to do with files I expect. */
+	return EIO;
+    }	
+}
 
 static int
 check_error(result, errInfo)
@@ -70,8 +163,7 @@ static int
 set_error(errInfo)
     Efile_error* errInfo;	/* Information about the error. */
 {
-    _dosmaperr(errInfo->os_errno = GetLastError());
-    errInfo->posix_errno = errno;
+    errInfo->posix_errno = errno_map(errInfo->os_errno = GetLastError());
     return 0;
 }
 
@@ -120,7 +212,7 @@ char* name;			/* Name of directory to delete. */
     if (RemoveDirectory(name) != FALSE) {
 	return 1;
     }
-    _dosmaperr(GetLastError());
+    errno = errno_map(GetLastError());
     if (errno == EACCES) {
 	attr = GetFileAttributes(name);
 	if (attr != (DWORD) -1) {
@@ -200,7 +292,7 @@ char* name;			/* Name of file to delete. */
 	return 1;
     }
 
-    _dosmaperr(GetLastError());
+    errno = errno_map(GetLastError());
     if (errno == EACCES) {
         attr = GetFileAttributes(name);
 	if (attr != (DWORD) -1) {
@@ -279,7 +371,7 @@ char* dst;			/* New name. */
 	return 1;
     }
 
-    _dosmaperr(GetLastError());
+    errno = errno_map(GetLastError());
     srcAttr = GetFileAttributes(src);
     dstAttr = GetFileAttributes(dst);
     if (srcAttr == (DWORD) -1) {
@@ -385,7 +477,7 @@ char* dst;			/* New name. */
 		     * could be, but report this one.
 		     */
 
-		    _dosmaperr(GetLastError());
+		    errno = errno_map(GetLastError());
 		    CreateDirectory(dst, NULL);
 		    SetFileAttributes(dst, dstAttr);
 		    if (errno == EACCES) {
@@ -447,7 +539,7 @@ char* dst;			/* New name. */
 		     * error.  Could happen if an open file refers to dst.
 		     */
 
-		    _dosmaperr(GetLastError());
+		    errno = errno_map(GetLastError());
 		    if (errno == EACCES) {
 			/*
 			 * Decode the EACCES to a more meaningful error.
@@ -1212,6 +1304,83 @@ efile_readlink(Efile_error* errInfo, char* name, char* buffer, size_t size)
 {
     errno = ENOTSUP;
     return check_error(-1, errInfo);
+}
+
+
+int
+efile_altname(Efile_error* errInfo, char* orig_name, char* buffer, size_t size)
+{
+    WIN32_FIND_DATA wfd;
+    HANDLE fh;
+    char name[_MAX_PATH];
+    int name_len;
+    char* path;
+    char pathbuf[_MAX_PATH];
+    int drive;			/* Drive for filename (1 = A:, 2 = B: etc). */
+
+    /* Don't allow wildcards to be interpreted by system */
+
+    if (strpbrk(orig_name, "?*")) {
+    enoent:
+	errInfo->posix_errno = ENOENT;
+	errInfo->os_errno = ERROR_FILE_NOT_FOUND;
+        return 0;
+    }
+
+    /*
+     * Move the name to a buffer and make sure to remove a trailing
+     * slash, because it causes FindFirstFile() to fail on Win95.
+     */
+
+    if ((name_len = strlen(orig_name)) >= _MAX_PATH) {
+	goto enoent;
+    } else {
+	strcpy(name, orig_name);
+	if (name_len > 2 && ISSLASH(name[name_len-1]) &&
+	    name[name_len-2] != ':') {
+	    name[name_len-1] = '\0';
+	}
+    }
+    
+    /* Try to get disk from name.  If none, get current disk.  */
+
+    if (name[1] != ':') {
+        drive = 0;
+        if (GetCurrentDirectory(sizeof(pathbuf), pathbuf) &&
+	    pathbuf[1] == ':') {
+	    drive = tolower(pathbuf[0]) - 'a' + 1;
+	}
+    } else if (*name && name[2] == '\0') {
+	/*
+	 * X: and nothing more is an error.
+	 */
+	goto enoent;
+    } else {
+        drive = tolower(*name) - 'a' + 1;
+    }
+    fh = FindFirstFile(name,&wfd);
+    if (fh == INVALID_HANDLE_VALUE) {
+        if (!(strpbrk(name, "./\\") &&
+	      (path = _fullpath(pathbuf, name, _MAX_PATH)) &&
+	      /* root dir. ('C:\') or UNC root dir. ('\\server\share\') */
+	      ((strlen(path) == 3) || IsRootUNCName(path)) &&
+	      (GetDriveType(path) > 1)   ) ) {
+	    errno = errno_map(GetLastError());
+	    return check_error(-1, errInfo);
+	}
+        /*
+         * Root directories (such as C:\ or \\server\share\ are fabricated.
+         */
+	strcpy(buffer,name);
+	return 1;
+    }
+	
+    strcpy(buffer,wfd.cAlternateFileName);
+    if (!*buffer) {
+	strcpy(buffer,wfd.cFileName);
+    }
+
+    return 1;
 }
 
 int

@@ -18,7 +18,6 @@
 %%
 %%-----------------------------------------------------------------
 %% File: orber_socket.erl
-%% Author: Lars Thorsen
 %% 
 %% Description:
 %%    This file contains a standard interface to the sockets to handle the differences
@@ -31,13 +30,13 @@
 
 -include_lib("orber/include/corba.hrl").
 -include_lib("orber/src/orber_iiop.hrl").
--include_lib("orber/src/orber_debug.hrl").
+
 
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
 -export([start/0, connect/4, listen/3, accept/2, write/3,
-	 controlling_process/3, close/2, peername/2]).
+	 controlling_process/3, close/2, peername/2, setopts/3]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -56,17 +55,25 @@ start() ->
     inet_db:start().
 
 %%-----------------------------------------------------------------
+%% Invoke the required setopts (i.e., inet or ssl)
+setopts(normal, Socket, Opts) ->
+    inet:setopts(Socket, Opts);
+setopts(ssl, Socket, Opts) ->
+    ssl:setopts(Socket, Opts).
+
+%%-----------------------------------------------------------------
 %% Connect to IIOP Port at Host in CDR mode, in order to 
 %% establish a connection.
 %%
 connect(Type, Host, Port, Options) ->
     Timeout = orber:iiop_setup_connection_timeout(),
+    Options1 = check_options(Type, Options),
     case orber:iiop_out_ports() of
 	{Min, Max} ->
 	    multi_connect(Min, Max, Type, Host, Port, 
-			  [binary, {packet,cdr}| Options], Timeout);
+			  [binary, {packet,cdr}| Options1], Timeout);
 	_ ->
-	    connect(Type, Host, Port, [binary, {packet,cdr}| Options], Timeout)
+	    connect(Type, Host, Port, [binary, {packet,cdr}| Options1], Timeout)
     end.
 
 connect(normal, Host, Port, Options, Timeout) ->
@@ -74,13 +81,15 @@ connect(normal, Host, Port, Options, Timeout) ->
 	{ok, Socket} ->
 	    Socket;
 	{error, timeout} ->
-	    orber:debug_level_print("[~p] orber_socket:connect(normal, ~p, ~p, ~p);
-Timeout after ~p msec.", [?LINE, Host, Port, Options, Timeout], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_socket:connect(normal, ~p, ~p, ~p);~n"
+		      "Timeout after ~p msec.", 
+		      [?LINE, Host, Port, Options, Timeout], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{minor=(?ORBER_VMCID bor 4),
 					completion_status=?COMPLETED_NO});
 	Error ->
-	    orber:debug_level_print("[~p] orber_socket:connect(normal, ~p, ~p, ~p);
-Failed with reason: ~p", [?LINE, Host, Port, Options, Error], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_socket:connect(normal, ~p, ~p, ~p);~n"
+		      "Failed with reason: ~p", 
+		      [?LINE, Host, Port, Options, Error], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end;
 connect(ssl, Host, Port, Options, Timeout) ->
@@ -88,20 +97,22 @@ connect(ssl, Host, Port, Options, Timeout) ->
 	{ok, Socket} ->
 	    Socket;
 	{error, timeout} ->
-	    orber:debug_level_print("[~p] orber_socket:connect(ssl, ~p, ~p, ~p); 
-Timeout after ~p msec.", [?LINE, Host, Port, Options, Timeout], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_socket:connect(ssl, ~p, ~p, ~p);~n"
+		      "Timeout after ~p msec.", 
+		      [?LINE, Host, Port, Options, Timeout], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{minor=(?ORBER_VMCID bor 4), 
 					completion_status=?COMPLETED_NO});
 	Error ->
-	    orber:debug_level_print("[~p] orber_socket:connect(ssl, ~p, ~p, ~p); 
-Failed with reason: ~p", [?LINE, Host, Port, Options, Error], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_socket:connect(ssl, ~p, ~p, ~p);~n"
+		      "Failed with reason: ~p", 
+		      [?LINE, Host, Port, Options, Error], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end.
 
 multi_connect(CurrentPort, Max, Type, Host, Port, Options, _) when CurrentPort > Max ->
-    orber:debug_level_print("[~p] orber_socket:multi_connect(~p, ~p, ~p, ~p); 
-Unable to use any of the sockets defined by 'iiop_out_ports'.
-Either all ports are in use or to many connections already exists.", 
+    orber:dbg("[~p] orber_socket:multi_connect(~p, ~p, ~p, ~p);~n"
+	      "Unable to use any of the sockets defined by 'iiop_out_ports'.~n"
+	      "Either all ports are in use or to many connections already exists.", 
 			    [?LINE, Type, Host, Port, Options], ?DEBUG_LEVEL),
     corba:raise(#'IMP_LIMIT'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});
 multi_connect(CurrentPort, Max, normal, Host, Port, Options, Timeout) ->
@@ -125,51 +136,81 @@ multi_connect(CurrentPort, Max, ssl, Host, Port, Options, Timeout) ->
 %% Create a listen socket at Port in CDR mode for 
 %% data connection.
 %%
-listen(normal, Port, Options) ->
+listen(normal, Port, Options0) ->
+    Options = check_options(normal, Options0),
+    Backlog = orber:iiop_backlog(),
     Options1 = case orber:ip_address_variable_defined() of
-		   true ->
-		       {ok, IP} = inet:getaddr(orber:host(),inet),
-		       [{ip, IP} | Options];
 		   false ->
-		       Options
+		       Options;
+		   Host ->
+		       IPVersion = orber:ip_version(),
+		       {ok, IP} = inet:getaddr(Host, IPVersion),
+		       [{ip, IP} | Options]
 	       end,
-    case catch gen_tcp:listen(Port, [binary, {packet,cdr}, {reuseaddr,true} |
-				     Options1]) of
+    Options2 = case orber:iiop_max_in_requests() of
+		   infinity ->
+		       Options1;
+		   _MaxRequests ->
+		       [{active, once}|Options1]
+	       end,
+    case catch gen_tcp:listen(Port, [binary, {packet,cdr},
+				     {reuseaddr,true}, {backlog, Backlog} |
+				     Options2]) of
 	{ok, ListenSocket} ->
-	    ListenSocket;
-	{error, eaddrinuse} ->	
-	    orber:debug_level_print("[~p] orber_socket:listen(normal, ~p, ~p);
-Looks like the listen port is already in use. Check if another Orber is started
-on the same node and uses the same listen port (iiop_port). But it may also
-be used by any other application; confirm with 'netstat'.",
-[?LINE, Port, Options1], ?DEBUG_LEVEL),
+	    {ok, ListenSocket, check_port(Port, normal, ListenSocket)};
+	{error, eaddrinuse} ->
+	    AllOpts = [binary, {packet,cdr}, 
+		       {reuseaddr,true} | Options2],
+	    orber:dbg("[~p] orber_socket:listen(normal, ~p, ~p);~n"
+		      "Looks like the listen port is already in use.~n"
+		      "Check if another Orber is started~n"
+		      "on the same node and uses the same listen port (iiop_port). But it may also~n"
+		      "be used by any other application; confirm with 'netstat'.",
+		      [?LINE, Port, AllOpts], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
 	Error ->
-	    orber:debug_level_print("[~p] orber_socket:listen(normal, ~p, ~p); 
-Failed with reason: ~p", [?LINE, Port, Options1, Error], ?DEBUG_LEVEL),
+	    AllOpts = [binary, {packet,cdr}, 
+		       {reuseaddr,true} | Options2],
+	    orber:dbg("[~p] orber_socket:listen(normal, ~p, ~p);~n"
+		      "Failed with reason: ~p", 
+		      [?LINE, Port, AllOpts, Error], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end;
-listen(ssl, Port, Options) ->
+listen(ssl, Port, Options0) ->
+    Backlog = orber:iiop_ssl_backlog(),
+    Options = check_options(ssl, Options0),
     Options1 = case orber:ip_address_variable_defined() of
-		   true ->
-		       {ok, IP} = inet:getaddr(orber:host(),inet),
-		       [{ip, IP} | Options];
 		   false ->
-		       Options
+		       Options;
+		   Host ->
+		       IPVersion = orber:ip_version(),
+		       {ok, IP} = inet:getaddr(Host, IPVersion),
+		       [{ip, IP} | Options]
 	       end,
-    case catch ssl:listen(Port, [binary, {packet,cdr} | Options1]) of
+    Options2 = case orber:iiop_max_in_requests() of
+		   infinity ->
+		       Options1;
+		   _MaxRequests ->
+		       [{active, once}|Options1]
+	       end,
+    case catch ssl:listen(Port, [binary, {packet,cdr}, 
+				 {backlog, Backlog} | Options2]) of
 	{ok, ListenSocket} ->
-	    ListenSocket;
+	    {ok, ListenSocket, check_port(Port, ssl, ListenSocket)};
 	{error, eaddrinuse} ->	
-	    orber:debug_level_print("[~p] orber_socket:listen(ssl, ~p, ~p);
-Looks like the listen port is already in use. Check if another Orber is started
-on the same node and uses the same listen port (iiop_port). But it may also
-be used by any other application; confirm with 'netstat'.",
-[?LINE, Port, Options1], ?DEBUG_LEVEL),
+	    AllOpts = [binary, {packet,cdr} | Options2],
+	    orber:dbg("[~p] orber_socket:listen(ssl, ~p, ~p);~n"
+		      "Looks like the listen port is already in use. Check if~n"
+		      "another Orber is started on the same node and uses the~n"
+		      "same listen port (iiop_port). But it may also~n"
+		      "be used by any other application; confirm with 'netstat'.",
+		      [?LINE, Port, AllOpts], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
 	Error ->
-	    orber:debug_level_print("[~p] orber_socket:listen(ssl, ~p, ~p);
-Failed with reason: ~p", [?LINE, Port, Options1, Error], ?DEBUG_LEVEL),
+	    AllOpts = [binary, {packet,cdr} | Options2],
+	    orber:dbg("[~p] orber_socket:listen(ssl, ~p, ~p);~n"
+		      "Failed with reason: ~p", 
+		      [?LINE, Port, AllOpts, Error], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end.
 
@@ -181,8 +222,9 @@ accept(normal, ListenSocket) ->
 	{ok, S} ->
 	    S;
 	Error ->
-	    orber:debug_level_print("[~p] orber_socket:accept(normal, ~p); 
-Failed with reason: ~p", [?LINE, ListenSocket, Error], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_socket:accept(normal, ~p);~n"
+		      "Failed with reason: ~p", 
+		      [?LINE, ListenSocket, Error], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end;
 accept(ssl, ListenSocket) ->
@@ -190,8 +232,9 @@ accept(ssl, ListenSocket) ->
 	{ok, S} ->
 	    S;
 	Error ->
-	    orber:debug_level_print("[~p] orber_socket:accept(ssl, ~p);
-Failed with reason: ~p", [?LINE, ListenSocket, Error], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_socket:accept(ssl, ~p);~n"
+		      "Failed with reason: ~p", 
+		      [?LINE, ListenSocket, Error], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end.
 
@@ -223,8 +266,71 @@ controlling_process(ssl, Socket, Pid) ->
 %% Get peername
 %% 
 peername(normal, Socket) ->
-    {ok, {{N1,N2,N3,N4}, Port}} = inet:peername(Socket),
-    {lists:concat([N1, ".", N2, ".", N3, ".", N4]), Port};
+    create_peerdata(inet:peername(Socket));
 peername(ssl, Socket) ->
-    {ok, {{N1,N2,N3,N4}, Port}} = ssl:peername(Socket),
-    {lists:concat([N1, ".", N2, ".", N3, ".", N4]), Port}.
+    create_peerdata(ssl:peername(Socket)).
+
+%% IPv4
+create_peerdata({ok, {{N1,N2,N3,N4}, Port}}) ->
+    {lists:concat([N1, ".", N2, ".", N3, ".", N4]), Port};
+%% IPv6 
+create_peerdata({ok, {{N1,N2,N3,N4,N5,N6,N7,N8}, Port}}) ->
+    {lists:concat([N1, ":", N2, ":", N3, ":", N4, ":",
+		   N5, ":", N6, ":", N7, ":", N8]), Port};
+create_peerdata(What) ->
+    orber:dbg("[~p] orber_socket:peername();~n"
+	      "Failed with reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
+    {"Unable to lookup peername", 0}.
+
+
+
+%%-----------------------------------------------------------------
+%% Check Port. If the user supplies 0 we pick any vacant port. But then
+%% we must change the associated environment variable
+check_port(0, normal, Socket) ->
+    case inet:port(Socket) of
+	{ok, Port} ->
+	    orber:configure_override(iiop_port, Port),
+	    Port;
+	What ->
+	    orber:dbg("[~p] orber_socket:check_port(~p);~n"
+		      "Unable to extract the port number via inet:port/1~n",
+		      [?LINE, What], ?DEBUG_LEVEL),
+	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
+    end;
+check_port(0, ssl, Socket) ->
+    case ssl:sockname(Socket) of
+	{ok, {_Address, Port}} ->
+	    orber:configure_override(iiop_ssl_port, Port),
+	    Port;
+	What ->
+	    orber:dbg("[~p] orber_socket:check_port(~p);~n"
+		      "Unable to extract the port number via ssl:sockname/1~n",
+		      [?LINE, What], ?DEBUG_LEVEL),
+	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
+    end;
+check_port(Port, _, _) ->
+    Port.
+
+%%-----------------------------------------------------------------
+%% Check Options. 
+%% We need this as a work-around since the SSL-app doesn't allow us
+%% to pass 'inet' as an option. Also needed for R9B :-(
+check_options(normal, Options) ->
+    case orber:ip_version() of
+	inet ->
+	    Options;
+	inet6 ->
+	    %% Necessary for R9B. Should be [orber:ip_version()|Options];
+	    [inet6|Options]
+    end;
+check_options(ssl, Options) ->
+    case orber:ip_version() of
+	inet ->
+	    Options;
+	inet6 ->
+	    %% Will fail until SSL supports this option. 
+	    %% Note, we want this happen!
+	    [inet6|Options]
+    end.
+

@@ -41,7 +41,7 @@
 emit_attribute_prototype(G, N, X, Fd) ->
     emit_attribute_prototype(G, N, X, Fd, ic_forms:get_idlist(X)).
 
-emit_attribute_prototype(_G, _N, _X, Fd, []) ->
+emit_attribute_prototype(_G, _N, _X, _Fd, []) ->
     ok;
 emit_attribute_prototype(G, N, X, Fd, [V|Vs]) ->
     WireAttrName = ic_forms:get_id(V),
@@ -59,7 +59,7 @@ emit_attr_prototype(G, N, X, Fd, OpName, WireOpName) ->
     
     AT = ic_forms:get_type(X),
     Type = ic_java_type:getType(G, N, AT),
-    HolderType = ic_java_type:getHolderType(G, N, AT),
+%    HolderType = ic_java_type:getHolderType(G, N, AT),
 
     ic_codegen:emit(Fd, "    ~s ~s() throws java.lang.Exception;\n\n",[Type, OpName]),
    
@@ -130,7 +130,7 @@ emit_attribute_switch_case(G, N, X, Fd, Tk, C, [V|Vs]) ->
     end.
 
 
-emit_attribute_switch_case1(G, N, X, Fd, "_get_", Name, Tk, C) ->
+emit_attribute_switch_case1(G, N, X, Fd, "_get_", Name, _Tk, C) ->
 
     R = ic_forms:get_type(X),
     RT = ic_java_type:getParamType(G,N,R,ret),
@@ -157,7 +157,7 @@ emit_attribute_switch_case1(G, N, X, Fd, "_get_", Name, Tk, C) ->
     ic_codegen:emit(Fd, "        } break;\n\n");
 
 
-emit_attribute_switch_case1(G, N, X, Fd, "_set_", Name, Tk, C) ->
+emit_attribute_switch_case1(G, N, X, Fd, "_set_", Name, _Tk, C) ->
     ic_codegen:emit(Fd, "        case ~p:  {  // Set operation for attribute ~s\n\n",[C,ic_util:to_dot([Name|N])]),
     
     Type = ic_forms:get_type(X),

@@ -46,7 +46,8 @@
 	 socket,
 	 proxy_pid,
 	 receive_handle,
-	 module = megaco
+	 module = megaco,
+	 serialize = false % false: Spawn a new process for each message
 	}).
 
 
@@ -58,25 +59,16 @@
 %% Event Trace
 %%----------------------------------------------------------------------
 
+-define(tcp_report(Level, TcpRec, From, To, Label, Contents),
+        megaco:report_event(Level, From, To, Label,
+			    [{line, ?MODULE, ?LINE}, TcpRec | Contents])).
+
 -define(tcp_debug(TcpRec, Label, Contents),
 	?tcp_report_debug(TcpRec,
 			  megaco_tcp,
 			  megaco_tcp,
 			  Label,
 			  Contents)).
-
--define(tcp_report(Level, TcpRec, From, To, Label, Contents),
-        if
-            list(Contents) ->
-                megaco:report_event(Level, From, To, Label,
-				    [{line, ?MODULE, ?LINE}, TcpRec | Contents]);
-            true ->
-                ok = error_logger:format("~p(~p): Bad arguments to et:
-"
-                                         "report(~p, ~p, ~p, ~p, ~p, ~p)~n",
-                                         [?MODULE, ?LINE,
-                                          Level, TcpRec, From, To, Label, Contents])
-        end).
 
 -define(tcp_report_important(C, From, To, Label, Contents), 
 	?tcp_report(20, C, From, To, Label, Contents)).
@@ -86,4 +78,5 @@
 	?tcp_report(60, C, From, To, Label, Contents)).
 -define(tcp_report_trace(C,     From, To, Label, Contents), 
 	?tcp_report(80, C, From, To, Label, Contents)).
+
 

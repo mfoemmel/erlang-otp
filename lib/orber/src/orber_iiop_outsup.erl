@@ -31,12 +31,11 @@
 
 -behaviour(supervisor).
 
--include_lib("orber/src/orber_debug.hrl").
 
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/2, connect/4]).
+-export([start/2, connect/5]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -52,8 +51,7 @@
 start(sup, Opts) ->
     supervisor:start_link({local, orber_iiop_outsup}, orber_iiop_outsup,
 			  {sup, Opts});
-start(A1, A2) -> 
-    ?PRINTDEBUG2("error: start/2 called with parameters ~p ~p", [A1, A2]),
+start(_A1, _A2) -> 
     ok.
 
 
@@ -63,31 +61,27 @@ start(A1, A2) ->
 %%-----------------------------------------------------------------
 %% Func: init/1
 %%-----------------------------------------------------------------
-init({sup, Opts}) ->
-    ?PRINTDEBUG2("orber_iiop_outsup init supervisor ~p", [self()]),
+init({sup, _Opts}) ->
     SupFlags = {simple_one_for_one, 500, 100},
     ChildSpec = [
 		 {name2, {orber_iiop_outproxy, start, []}, temporary, 
 		  10000, worker, [orber_iiop_outproxy]}
 		],
     {ok, {SupFlags, ChildSpec}};
-init(Opts) ->
-    ?PRINTDEBUG2("plain init ~p", [self()]),
+init(_Opts) ->
     {ok, []}.
 
 
 %%-----------------------------------------------------------------
 %% Func: terminate/1
 %%-----------------------------------------------------------------
-terminate(Reason, State) ->
-    ?PRINTDEBUG2("outproxy supervisor terminated with reason: ~p", [Reason]),
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------------
 %% Func: connect/3
 %%-----------------------------------------------------------------
-connect(Host, Port, SocketType, SocketOptions) ->
-    ?PRINTDEBUG2("supervisor ~p starting proxy for host ~p port ~p",
-		 [self(), Host, Port]),
-    supervisor:start_child(orber_iiop_outsup, [{connect, Host, Port, SocketType, SocketOptions}]).
+connect(Host, Port, SocketType, SocketOptions, Parent) ->
+    supervisor:start_child(orber_iiop_outsup, [{connect, Host, Port, SocketType, 
+						SocketOptions, Parent}]).
 

@@ -27,10 +27,10 @@
 %%                       : $Var in the boot script is expanded to
 %%                         Value.
 %%        -loader LoaderMethod
-%%                       : efile, inet
+%%                       : efile, inet, ose_inet
 %%                         (Optional - default efile)
 %%        -hosts [Node]  : List of hosts from which we can boot.
-%%                         (Mandatory if -loader inet)
+%%                         (Mandatory if -loader inet or ose_inet)
 %%        -mode embedded : Load all modules at startup, no automatic
 %%                         loading
 %%        -mode interactive : Auto. load modules (default system behaviour).
@@ -182,8 +182,12 @@ boot(Start,Flags,Args) ->
     boot_loop(BootPid,State).
 
 %%% Convert a term to a printable string, if possible.
-to_string(X) when list(X) ->
-    X;						% assume it's a string..
+to_string(X) when list(X) ->			% assume string
+    F = flatten(X, []),
+    case printable_list(F) of
+	true ->  F;
+	false -> ""
+    end;
 to_string(X) when atom(X) ->
     atom_to_list(X);
 to_string(X) when pid(X) ->
@@ -195,6 +199,25 @@ to_string(X) when integer(X) ->
 to_string(_X) ->
     "".						% can't do anything with it
 
+%% This is an incorrect and narrow definition of printable characters.
+%% The correct one is in io_lib:printable_list/1
+%%
+printable_list([H|T]) when integer(H), H >= 32, H =< 126 ->
+    printable_list(T);
+printable_list([$\n|T]) -> printable_list(T);
+printable_list([$\r|T]) -> printable_list(T);
+printable_list([$\t|T]) -> printable_list(T);
+printable_list([]) -> true;
+printable_list(_) ->  false.
+
+flatten([H|T], Tail) when list(H) ->
+    flatten(H, flatten(T, Tail));
+flatten([H|T], Tail) ->
+    [H|flatten(T, Tail)];
+flatten([], Tail) ->
+    Tail.
+
+    
 things_to_string([X|Rest]) ->
     " (" ++ to_string(X) ++ ")" ++ things_to_string(Rest);
 things_to_string([]) ->
@@ -872,28 +895,19 @@ start_em([]) -> ok.
 
 start_it([]) -> 
     ok;
-start_it([M]) ->
-    case catch apply(M,start,[]) of
+start_it([_|_]=MFA) ->
+    Ref = make_ref(),
+    case catch {Ref,case MFA of
+			[M]        -> M:start();
+			[M,F]      -> M:F();
+			[M,F|Args] -> M:F(Args)	% Args is a list
+		    end} of
+	{Ref,R} ->
+	    R;
 	{'EXIT',Reason} ->
 	    exit(Reason);
-	Else -> 
-	    Else
-    end;
-
-start_it([M,F]) ->
-    case catch apply(M,F,[]) of
-	{'EXIT',Reason} ->
-	    exit(Reason);
-	Else -> 
-	    Else
-    end;
-
-start_it([M,F|Args]) ->
-    case catch apply(M,F,[Args]) of	%One variable len arg only
-	{'EXIT',Reason} ->
-	    exit(Reason);
-	Else -> 
-	    Else
+	Other ->
+	    throw(Other)
     end.
 
 %%

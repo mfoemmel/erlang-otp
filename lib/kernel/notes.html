@@ -124,7 +124,10 @@
     (and hence gen_server:abcast/2) has been corrected to not get stuck
     waiting for automatic node connection; if a node has to be connected
     for the cast to be sent, a helper process is spawned to do the send so
-    that execution flow can return to the sender immediately.<br>
+    that execution flow can return to the sender immediately.
+    <P>The function gen_server:cast/2 has also been corrected to crash
+    for invalid arguments.<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
     (Own Id: OTP-3968)<br>
     (Aux Id: Seq 4387)<p>
   </li>

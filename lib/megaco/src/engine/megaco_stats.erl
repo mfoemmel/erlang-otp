@@ -45,15 +45,12 @@ init(Name, GlobalCounters) ->
     create_global_snmp_counters(Name, GlobalCounters).
 
 
-% create_global_snmp_counters(_Name, []) ->
-%     ok;
-% create_global_snmp_counters(Name, [Counter|Counters]) ->
-%     ets:insert(Name, {Counter, 0}),
-%     create_global_snmp_counters(Name, Counters).
+create_global_snmp_counters(_Name, []) ->
+    ok;
+create_global_snmp_counters(Name, [Counter|Counters]) ->
+    ets:insert(Name, {Counter, 0}),
+    create_global_snmp_counters(Name, Counters).
 
-create_global_snmp_counters(Name, Counters) ->
-    F = fun(Counter) -> ets:insert(Name, {Counter, 0}) end,
-    lists:foreach(F, Counters).
 
 
 %%-----------------------------------------------------------------

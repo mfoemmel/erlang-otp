@@ -47,6 +47,8 @@
          process_received_message/4,
          receive_message/4,
 
+	 encode_actions/3,
+
 	 parse_digit_map/1,
 	 eval_digit_map/1,
 	 eval_digit_map/2,
@@ -60,7 +62,10 @@
 
 	 enable_trace/2, disable_trace/0, set_trace/1,
 
-	 report_event/4, report_event/5
+	 report_event/4, report_event/5,
+
+	 test_request/5,
+	 test_reply/5
         ]).
 
 -export([
@@ -72,7 +77,6 @@
 -include_lib("megaco/include/megaco.hrl").
 -include("megaco_message_internal.hrl").
 -include("megaco_internal.hrl").
-
 
 
 %%-----------------------------------------------------------------
@@ -168,6 +172,23 @@ cast(ConnHandle, ActionRequests, Options) ->
 
 
 %%-----------------------------------------------------------------
+%% Test the validity of the actions
+%%-----------------------------------------------------------------
+    
+test_request(ConnHandle, Version, EncodingMod, EncodingConfig, 
+	     ActionRequests) ->
+    megaco_messenger:test_request(ConnHandle, ActionRequests, 
+				  Version, EncodingMod, EncodingConfig).
+
+%% This tests the actual_reply() type of return from the 
+%% handle_trans_request function.
+%% 
+test_reply(ConnHandle, Version, EncodingMod, EncodingConfig, 
+	   Reply) ->
+    megaco_messenger:test_reply(ConnHandle, Version, 
+				EncodingMod, EncodingConfig, Reply).
+
+%%-----------------------------------------------------------------
 %% Func: get_stats/0, get_stats/1, get_stats/2
 %% Description: Retreive statistics (counters) for TCP
 %%-----------------------------------------------------------------
@@ -210,6 +231,14 @@ process_received_message(ReceiveHandle, ControlPid, SendHandle, BinMsg) ->
 receive_message(ReceiveHandle, ControlPid, SendHandle, BinMsg) ->
     megaco_messenger:receive_message(ReceiveHandle, ControlPid, 
 				     SendHandle, BinMsg).
+
+
+%%-----------------------------------------------------------------
+%% Encode the actions list for one or more transactions.
+%%-----------------------------------------------------------------
+
+encode_actions(ConnHandle, ActionRequests, Options) ->
+    megaco_messenger:encode_actions(ConnHandle, ActionRequests, Options).
 
 
 %%-----------------------------------------------------------------
@@ -271,21 +300,26 @@ decode_binary_term_id(Config, TermId) ->
 
 %%-----------------------------------------------------------------
 
+%% BUGBUG BUGBUG BUGBUG
 ms() ->
-    [
-     megaco,
-     megaco_config,
-     megaco_digit_map,
-     megaco_edist_encoder,
-     megaco_filter,
-     megaco_messenger,
-     megaco_monitor,
-     megaco_sup,
-     megaco_user
-    ]. 
+    App    = megaco,
+    LibDir = code:lib_dir(App),
+    File   = filename:join([LibDir, "ebin", atom_to_list(App) ++ ".app"]),
+    case file:consult(File) of
+        {ok, [{application, App, AppFile}]} ->
+	    case lists:keysearch(modules, 1, AppFile) of
+		{value, {modules, Mods}} ->
+		    {ok, Mods};
+		_ ->
+		    {error, {invalid_format, modules}}
+	    end;
+        Error ->
+            {error, {invalid_format, Error}}
+    end.
+
 
 nc() ->
-    Mods = ms(),
+    {ok, Mods} = ms(),
     nc(Mods).
 
 nc(all) ->
@@ -392,20 +426,36 @@ find_file([], File) ->
 %% 
 %% Parameters:
 %% Level -> max | min | integer()
-%% Destination -> File | Port
+%% Destination -> File | Port | io | {io, Verbosity} | HandlerSpec
 %% File -> string()
 %% Port -> integer()
+%% Verbosity -> true | false
+%% HandlerSpec = {function(), Data}
+%% Data = term()
 %%
 %% Description:
 %% This function is used to start tracing at level Level and send
 %% the result either to the file File or the port Port. Note that
 %% it starts a tracer server.
+%% When Destination is the atom io (or the tuple {io, Verbosity}), 
+%% all (printable) megaco trace events (trace_ts events which has 
+%% Severity withing Limit) will be written to stdout using io:format. 
+%% 
 %%-----------------------------------------------------------------
 enable_trace(Level, File) when list(File) ->
     dbg:tracer(port, dbg:trace_port(file, File)),
     set_trace(Level);
 enable_trace(Level, Port) when integer(Port) ->
     dbg:tracer(port, dbg:trace_port(ip, Port)),
+    set_trace(Level);
+enable_trace(Level, io) ->
+    HandleSpec = {fun handle_trace/2, false},
+    dbg:tracer(process, HandleSpec),
+    set_trace(Level);
+enable_trace(Level, {io, Verbosity}) 
+  when Verbosity == true; Verbosity == false ->
+    HandleSpec = {fun handle_trace/2, Verbosity},
+    dbg:tracer(process, HandleSpec),
     set_trace(Level);
 enable_trace(Level, {Fun, _Data} = HandleSpec) when function(Fun) ->
     dbg:tracer(process, HandleSpec),
@@ -433,7 +483,7 @@ disable_trace() ->
 %% already been started. 
 %%-----------------------------------------------------------------
 set_trace(Level) ->
-    Pat = et_selector:make_pattern(Level),
+    Pat = et_selector:make_pattern({?MODULE, Level}),
     et_selector:change_pattern(Pat).
 
 report_event(DetailLevel, FromTo, Label, Contents) ->
@@ -444,3 +494,109 @@ report_event(_DetailLevel, _From, _To, _Label, _Contents) ->
     hopefully_traced.
     
 
+%% ----------------------------------------------------------------------
+%% handle_trace(Event, Verbosity) -> Verbosity
+%% 
+%% Parameters:
+%% Event -> The trace event (only megaco 'trace_ts' events are printed)
+%% Verbosity -> max | min | integer() (see Level above)
+%%
+%% Description:
+%% This function is "receive" and print the trace events. 
+%% Events are printed if:
+%%   - Verbosity is max
+%%   - Severity is =< Verbosity (e.g. Severity = 30, and Verbosity = 40)
+%% Events are not printed if:
+%%   - Verbosity is min
+%%   - Severity is > Verbosity
+%%-----------------------------------------------------------------
+
+handle_trace({trace_ts, Who, call, 
+       {?MODULE, report_event, 
+	[Sev, From, To, Label, Content]}, Timestamp}, 
+      Verbosity) ->
+    print_megaco_trace(Sev, Who, Timestamp, Label, From, To, Content),
+    Verbosity;
+handle_trace(Event, true = Verbosity) ->
+    %% io:format("[trace] ~n~p~n", [Event]),
+    print_trace(Event),
+    Verbosity;
+handle_trace(_Event, Verbosity) ->
+    Verbosity.
+
+
+print_megaco_trace(Sev, Who, Timestamp, Label, From, To, Content) ->
+    Ts = format_timestamp(Timestamp),
+    io:format("[megaco trace ~w ~w ~s] ~s "
+	      "~n   From:     ~p"
+	      "~n   To:       ~p"
+	      "~n   Content:  ~p"
+	      "~n", 
+	      [Sev, Who, Ts, Label, From, To, Content]).
+    
+print_trace({trace, Who, What, Where}) ->
+    io:format("[trace]"
+              "~n   Who:   ~p"
+              "~n   What:  ~p"
+              "~n   Where: ~p"
+              "~n", [Who, What, Where]);
+
+print_trace({trace, Who, What, Where, Extra}) ->
+    io:format("[trace]"
+              "~n   Who:   ~p"
+              "~n   What:  ~p"
+              "~n   Where: ~p"
+              "~n   Extra: ~p"
+              "~n", [Who, What, Where, Extra]);
+
+print_trace({trace_ts, Who, What, Where, When}) ->
+    Ts = format_timestamp(When),
+    io:format("[trace ~s]"
+              "~n   Who:   ~p"
+              "~n   What:  ~p"
+              "~n   Where: ~p"
+              "~n", [Ts, Who, What, Where]);
+
+print_trace({trace_ts, Who, What, Where, Extra, When}) ->
+    Ts = format_timestamp(When),
+    io:format("[trace ~s]"
+              "~n   Who:   ~p"
+              "~n   What:  ~p"
+              "~n   Where: ~p"
+              "~n   Extra: ~p"
+              "~n", [Ts, Who, What, Where, Extra]);
+
+print_trace({seq_trace, What, Where}) ->
+    io:format("[seq trace]"
+              "~n   What:       ~p"
+              "~n   Where:      ~p"
+              "~n", [What, Where]);
+
+print_trace({seq_trace, What, Where, When}) ->
+    Ts = format_timestamp(When),
+    io:format("[seq trace ~s]"
+              "~n   What:       ~p"
+              "~n   Where:      ~p"
+              "~n", [Ts, What, Where]);
+
+print_trace({drop, Num}) ->
+    io:format("[drop trace] ~p~n", [Num]);
+
+print_trace(Trace) ->
+    io:format("[trace] "
+              "~n   ~p"
+              "~n", [Trace]).
+
+
+format_timestamp(Now) ->
+    {_N1, _N2, N3}   = Now,
+    {Date, Time}   = calendar:now_to_datetime(Now),
+    {YYYY,MM,DD}   = Date,
+    {Hour,Min,Sec} = Time,
+    FormatDate = 
+        io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+                      [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),  
+    lists:flatten(FormatDate).
+
+
+ 

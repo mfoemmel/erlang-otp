@@ -53,7 +53,6 @@
 -include_lib("orber/include/ifr_types.hrl").
 -include_lib("orber/include/orber_pi.hrl").
 -include_lib("orber/src/orber_iiop.hrl").
--include_lib("orber/src/orber_debug.hrl").
 
 %%--------------- EXPORTS-------------------------------------
 %% API external
@@ -175,21 +174,6 @@
 
 
 %%--------------- DEFINES ------------------------------------
--define(is_SystemExc(S), orber_exceptions:type(S) == ?SYSTEM_EXCEPTION).
-
--define(write_ErrorMsg(Txt, Arg),
-error_logger:error_msg("========== PortableInterceptors ===========~n"
-		       Txt
-		       "===========================================~n",
-		       Arg)).
-
--ifdef(debug).
--define(debug_print(F,A),
-        io:format("[LINE: ~p MODULE: ~p] "++F,[?LINE, ?MODULE]++A)).
--else.
--define(debug_print(F,A), ok).
--endif.    
-
 -define(DEBUG_LEVEL, 9).
 
 %%------------------------------------------------------------
@@ -204,12 +188,12 @@ error_logger:error_msg("========== PortableInterceptors ===========~n"
 new_in_connection(PIs, Host, Port) ->
     case catch new_in_connection(PIs, undefined, Host, Port) of
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_pi:new_in_connection(~p); exit(~p)", 
-				    [?LINE, PIs, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:new_in_connection(~p); exit(~p)", 
+		      [?LINE, PIs, R], ?DEBUG_LEVEL),
 	    exit("Supplied Interceptors unable to create a valid new_in_connection");
 	{'EXCEPTION', E} ->
-	    orber:debug_level_print("[~p] orber_pi:new_in_connection(~p); exception(~p)", 
-				    [?LINE, PIs, E], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:new_in_connection(~p); exception(~p)", 
+		      [?LINE, PIs, E], ?DEBUG_LEVEL),
 	    exit("Supplied Interceptors unable to create a valid new_in_connection");
 	Ref ->
 	    Ref
@@ -231,18 +215,18 @@ new_in_connection([Mod|T], Ref, Host, Port) ->
 closed_in_connection(PIs, Ref) ->
     case catch closed_in_connection_helper(PIs, Ref) of
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_pi:closed_in_connection(~p, ~p); exit(~p)", 
-				    [?LINE, PIs, Ref, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:closed_in_connection(~p, ~p); exit(~p)", 
+		      [?LINE, PIs, Ref, R], ?DEBUG_LEVEL),
 	    ok;
 	{'EXCEPTION', E} ->
-	    orber:debug_level_print("[~p] orber_pi:closed_in_connection(~p, ~p); exception(~p)", 
-				    [?LINE, PIs, Ref, E], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:closed_in_connection(~p, ~p); exception(~p)", 
+		      [?LINE, PIs, Ref, E], ?DEBUG_LEVEL),
 	    ok;
 	_ ->
 	    ok
     end.
 
-closed_in_connection_helper([], Ref) ->
+closed_in_connection_helper([], _Ref) ->
     ok;
 closed_in_connection_helper([Mod|T], Ref) ->
     NewRef = Mod:closed_in_connection(Ref),
@@ -259,12 +243,12 @@ closed_in_connection_helper([Mod|T], Ref) ->
 new_out_connection(PIs, Host, Port) ->
     case catch new_out_connection(PIs, undefined, Host, Port) of
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_pi:new_out_connection(~p); exit(~p)", 
-				    [?LINE, PIs, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:new_out_connection(~p); exit(~p)", 
+		      [?LINE, PIs, R], ?DEBUG_LEVEL),
 	    exit("Supplied Interceptors unable to create a valid new_out_connection");
 	{'EXCEPTION', E} ->
-	    orber:debug_level_print("[~p] orber_pi:new_out_connection(~p); exception(~p)", 
-				    [?LINE, PIs, E], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:new_out_connection(~p); exception(~p)", 
+		      [?LINE, PIs, E], ?DEBUG_LEVEL),
 	    exit("Supplied Interceptors unable to create a valid new_out_connection");
 	Ref ->
 	    Ref
@@ -286,18 +270,18 @@ new_out_connection([Mod|T], Ref, Host, Port) ->
 closed_out_connection(PIs, Ref) ->
     case catch closed_out_connection_helper(PIs, Ref) of
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_pi:closed_out_connection(~p); exit(~p)", 
-				    [?LINE, PIs, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:closed_out_connection(~p); exit(~p)", 
+		      [?LINE, PIs, R], ?DEBUG_LEVEL),
 	    ok;
 	{'EXCEPTION', E} ->
-	    orber:debug_level_print("[~p] orber_pi:closed_out_connection(~p); exception(~p)", 
-				    [?LINE, PIs, E], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:closed_out_connection(~p); exception(~p)", 
+		      [?LINE, PIs, E], ?DEBUG_LEVEL),
 	    ok;
 	_ ->
 	    ok
     end.
 
-closed_out_connection_helper([], Ref) ->
+closed_out_connection_helper([], _Ref) ->
     ok;
 closed_out_connection_helper([Mod|T], Ref) ->
     NewRef = Mod:closed_out_connection(Ref),
@@ -313,12 +297,12 @@ closed_out_connection_helper([Mod|T], Ref) ->
 in_request_enc(PIs, ReqHdr, Ref, Msg) ->
     case catch in_request_enc(PIs, ReqHdr, Ref, Msg, undefined) of
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_pi:in_request_enc(~p, ~p, ~p); exit(~p)", 
-				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:in_request_enc(~p, ~p, ~p); exit(~p)", 
+		      [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
 	{'EXCEPTION', E} ->
-	    orber:debug_level_print("[~p] orber_pi:in_request_enc(~p, ~p, ~p); exception(~p)", 
-				    [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:in_request_enc(~p, ~p, ~p); exception(~p)", 
+		      [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
 	    corba:raise(E);
 	NewMsg ->
 	    NewMsg
@@ -343,12 +327,12 @@ in_request_enc([Mod|T], ReqHdr, Ref, Msg, Args) ->
 in_request(PIs, ReqHdr, Ref, Msg) ->
     case catch in_request(PIs, ReqHdr, Ref, Msg, undefined) of
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_pi:in_request(~p, ~p, ~p); exit(~p)", 
-				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:in_request(~p, ~p, ~p); exit(~p)", 
+		      [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
 	{'EXCEPTION', E} ->
-	    orber:debug_level_print("[~p] orber_pi:in_request(~p, ~p, ~p); exception(~p)", 
-				    [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:in_request(~p, ~p, ~p); exception(~p)", 
+		      [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
 	    corba:raise(E);
 	NewMsg ->
 	    NewMsg
@@ -373,12 +357,12 @@ in_request([Mod|T], ReqHdr, Ref, Msg, Args) ->
 out_reply_enc(PIs, ReqHdr, Ref, Msg, Ctx) ->
     case catch out_reply_enc(PIs, ReqHdr, Ref, Msg, undefined, Ctx) of
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_pi:out_reply_enc(~p, ~p, ~p); exit(~p)", 
-				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:out_reply_enc(~p, ~p, ~p); exit(~p)", 
+		      [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
 	{'EXCEPTION', E} ->
-	    orber:debug_level_print("[~p] orber_pi:out_reply_enc(~p, ~p, ~p); exception(~p)", 
-				    [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:out_reply_enc(~p, ~p, ~p); exception(~p)", 
+		      [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
 	    corba:raise(E);
 	NewMsg ->
 	    NewMsg
@@ -403,8 +387,8 @@ out_reply_enc([Mod|T], ReqHdr, Ref, Msg, Args, Ctx) ->
 out_reply(PIs, ReqHdr, Ref, Msg, Ctx) ->
     case catch out_reply(PIs, ReqHdr, Ref, Msg, undefined, Ctx) of
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_pi:out_reply(~p, ~p, ~p); exit(~p)", 
-				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:out_reply(~p, ~p, ~p); exit(~p)", 
+		      [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
 	NewMsg ->
 	    NewMsg
@@ -429,12 +413,12 @@ out_reply([Mod|T], ReqHdr, Ref, Msg, Args, Ctx) ->
 out_request_enc(PIs, ObjKey, Ctx, Op, Ref, Msg) ->
     case catch out_request_enc(PIs, ObjKey, Ctx, Op, Ref, Msg, undefined) of
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_pi:out_request_enc(~p, ~p, ~p); exit(~p)", 
-				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:out_request_enc(~p, ~p, ~p); exit(~p)", 
+		      [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
 	{'EXCEPTION', E} ->
-	    orber:debug_level_print("[~p] orber_pi:out_request_enc(~p, ~p, ~p); exception(~p)", 
-				    [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:out_request_enc(~p, ~p, ~p); exception(~p)", 
+		      [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
 	    corba:raise(E);
 	NewMsg ->
 	    NewMsg
@@ -457,12 +441,12 @@ out_request_enc([Mod|T], ObjKey, Ctx, Op, Ref, Msg, Args) ->
 out_request(PIs, ObjKey, Ctx, Op, Ref, Msg) ->
     case catch out_request(PIs, ObjKey, Ctx, Op, Ref, Msg, undefined) of
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_pi:out_request(~p, ~p, ~p); exit(~p)", 
-				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:out_request(~p, ~p, ~p); exit(~p)", 
+		      [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_NO});
 	{'EXCEPTION', E} ->
-	    orber:debug_level_print("[~p] orber_pi:out_request(~p, ~p, ~p); exception(~p)", 
-				    [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:out_request(~p, ~p, ~p); exception(~p)", 
+		      [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
 	    corba:raise(E);
 	NewMsg ->
 	    NewMsg
@@ -485,12 +469,12 @@ out_request([Mod|T], ObjKey, Ctx, Op, Ref, Msg, Args) ->
 in_reply_enc(PIs, ObjKey, Ctx, Op, Ref, Msg) ->
     case catch in_reply_enc(PIs, ObjKey, Ctx, Op, Ref, Msg, undefined) of
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_pi:in_reply_enc(~p, ~p, ~p); exit(~p)", 
-				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:in_reply_enc(~p, ~p, ~p); exit(~p)", 
+		      [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
 	{'EXCEPTION', E} ->
-	    orber:debug_level_print("[~p] orber_pi:in_reply_enc(~p, ~p, ~p); exception(~p)", 
-				    [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:in_reply_enc(~p, ~p, ~p); exception(~p)", 
+		      [?LINE, PIs, Ref, Msg, E], ?DEBUG_LEVEL),
 	    corba:raise(E);
 	NewMsg ->
 	    NewMsg
@@ -512,8 +496,8 @@ in_reply_enc([Mod|T], ObjKey, Ctx, Op, Ref, Msg, Args) ->
 in_reply(PIs, ObjKey, Ctx, Op, Ref, Msg) ->
     case catch in_reply(PIs, ObjKey, Ctx, Op, Ref, Msg, undefined) of
 	{'EXIT', R} ->
-	    orber:debug_level_print("[~p] orber_pi:in_reply(~p, ~p, ~p); exit(~p)", 
-				    [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] orber_pi:in_reply(~p, ~p, ~p); exit(~p)", 
+		      [?LINE, PIs, Ref, Msg, R], ?DEBUG_LEVEL),
 	    corba:raise(#'MARSHAL'{completion_status=?COMPLETED_MAYBE});
 	NewMsg ->
 	    NewMsg
@@ -558,7 +542,7 @@ codec_encode(Version, Any) when record(Any, any) ->
     {Bytes, Len} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
     list_to_binary(lists:reverse(cdr_encode:enc_type('tk_any', Version, Any,
 						     Bytes, Len)));
-codec_encode(Version, Any) ->
+codec_encode(_Version, _Any) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%------------------------------------------------------------
@@ -573,7 +557,7 @@ codec_encode_value(Version, #any{typecode = TC, value = Val}) ->
     %% Encode ByteOrder
     {Bytes, Len} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
     list_to_binary(lists:reverse(cdr_encode:enc_type(TC, Version, Val, Bytes, Len)));
-codec_encode_value(Version, NotAnAny) ->
+codec_encode_value(_Version, _NotAnAny) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%------------------------------------------------------------
@@ -592,7 +576,7 @@ codec_decode(Version, Bytes) when binary(Bytes) ->
 	_->
 	    corba:raise(#'IOP_N_Codec_FormatMismatch'{})
     end;
-codec_decode(Version, Any) ->
+codec_decode(_Version, _Any) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%------------------------------------------------------------
@@ -612,7 +596,7 @@ codec_decode_value(Version, Bytes, TypeCode) when binary(Bytes) ->
 	_->
 	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end;
-codec_decode_value(Version, Bytes, TypeCode) ->
+codec_decode_value(_Version, _Bytes, _TypeCode) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 
@@ -672,27 +656,27 @@ server_start_receive(PIs, Version, ReqHdr, Rest, Len, ByteOrder, Msg) ->
 			 ReqHdr#request_header.response_expected),
     server_receive(receive_service_contexts, SRI, PIs, [], PIs).
 
-server_receive(receive_service_contexts, SRI, [], Acc, PIs) ->
+server_receive(receive_service_contexts, SRI, [], _Acc, PIs) ->
     server_receive(receive_request, SRI, PIs, [], PIs);
 server_receive(receive_service_contexts, SRI, [H|T], Acc, PIs) ->
     case catch receive_service_contexts(SRI, H) of
-	{'EXCEPTION', #'PortableInterceptor_ForwardRequest'{forward=Obj, 
-							    permanent=Bool}} ->
+	{'EXCEPTION', #'PortableInterceptor_ForwardRequest'{forward=_Obj, 
+							    permanent=_Bool}} ->
 	    server_send(send_other, SRI, Acc, [], PIs);
-	{'EXCEPTION', E} ->
+	{'EXCEPTION', _E} ->
 	    server_send(send_exception, SRI, Acc, [], PIs);
 	_ ->
 	    server_receive(receive_service_contexts, SRI, T, Acc, PIs)
     end;
-server_receive(receive_request, SRI, [], Acc, PIs) ->
+server_receive(receive_request, SRI, [], _Acc, _PIs) ->
     %% Done with receive interceptors, now we can call the server.
     SRI;
 server_receive(receive_request, SRI, [H|T], Acc, PIs)  ->
     case catch receive_request(SRI, H) of
-	{'EXCEPTION', #'PortableInterceptor_ForwardRequest'{forward=Obj, 
-							    permanent=Bool}} ->
+	{'EXCEPTION', #'PortableInterceptor_ForwardRequest'{forward=_Obj, 
+							    permanent=_Bool}} ->
 	    server_send(send_other, SRI, Acc, [], PIs);
-	{'EXCEPTION', E} ->
+	{'EXCEPTION', _E} ->
 	    server_send(send_exception, SRI, Acc, [], PIs);
 	_ ->
 	    server_receive(receive_request, SRI, T, Acc, PIs)
@@ -719,32 +703,32 @@ server_start_send(PIs, SRI) ->
 	    server_send(send_other, SRI, PIs, [], PIs)
     end.
 
-server_send(_, SRI, [], Acc, PIs) ->
+server_send(_, SRI, [], _Acc, _PIs) ->
     %% Done
     SRI;
 server_send(send_exception, SRI, [H|T], Acc, PIs) ->
     case catch send_exception(SRI, H) of
-	{'EXCEPTION', #'PortableInterceptor_ForwardRequest'{forward=Obj, 
-							    permanent=Bool}} ->
+	{'EXCEPTION', #'PortableInterceptor_ForwardRequest'{forward=_Obj, 
+							    permanent=_Bool}} ->
 	    server_send(send_other, SRI, Acc, [], PIs);
-	{'EXCEPTION', E} ->
+	{'EXCEPTION', _E} ->
 	    server_send(send_exception, SRI, Acc, [], PIs);
 	_ ->
 	    server_send(send_exception, SRI, T, Acc, PIs)
     end;
 server_send(send_other, SRI, [H|T], Acc, PIs) ->
     case catch send_other(SRI, H) of
-	{'EXCEPTION', #'PortableInterceptor_ForwardRequest'{forward=Obj, 
-							    permanent=Bool}} ->
+	{'EXCEPTION', #'PortableInterceptor_ForwardRequest'{forward=_Obj, 
+							    permanent=_Bool}} ->
 	    server_send(send_other, SRI, T, Acc, PIs);
-	{'EXCEPTION', E} ->
+	{'EXCEPTION', _E} ->
 	    server_send(send_exception, SRI, T, Acc, PIs);
 	_ ->
 	    server_send(send_other, SRI, T, Acc, PIs)
     end;
 server_send(send_reply, SRI, [H|T], Acc, PIs) ->
     case catch send_reply(SRI, H) of
-	{'EXCEPTION', E} ->
+	{'EXCEPTION', _E} ->
 	    server_send(send_exception, SRI, T, Acc, PIs);
 	_ ->
 	    server_send(send_reply, SRI, T, Acc, PIs)
@@ -807,10 +791,10 @@ client_send(send_request, CRI, [], _, _) ->
     CRI;
 client_send(send_request, CRI, [H|T], Acc, PIs) ->
     case catch send_request(CRI, H) of
-	{'EXCEPTION', #'PortableInterceptor_ForwardRequest'{forward=Obj, 
-							    permanent=Bool}} ->
+	{'EXCEPTION', #'PortableInterceptor_ForwardRequest'{forward=_Obj, 
+							    permanent=_Bool}} ->
 	    client_receive(receive_other, CRI, T, [], PIs);
-	{'EXCEPTION', E} ->
+	{'EXCEPTION', _E} ->
 	    client_receive(receive_exception, CRI, Acc, [], PIs);
 	_ ->
 	    client_send(send_request, CRI, T, Acc, PIs)
@@ -844,27 +828,27 @@ client_receive(_, CRI, [], _, _) ->
     CRI;
 client_receive(receive_reply, CRI, [H|T], Acc, PIs) ->
     case catch receive_reply(CRI, H) of
-	{'EXCEPTION', E} ->
+	{'EXCEPTION', _E} ->
 	    client_receive(receive_exception, CRI, T, [H|Acc], PIs);
 	_ ->
 	    client_receive(receive_reply, CRI, T, [H|Acc], PIs)
     end;
 client_receive(receive_exception, CRI, [H|T], Acc, PIs) ->
     case catch receive_exception(CRI, H) of
-	{'EXCEPTION', #'PortableInterceptor_ForwardRequest'{forward=Obj, 
-							    permanent=Bool}} ->
+	{'EXCEPTION', #'PortableInterceptor_ForwardRequest'{forward=_Obj, 
+							    permanent=_Bool}} ->
 	    client_receive(receive_other, CRI, T, [], PIs);
-	{'EXCEPTION', E} ->
+	{'EXCEPTION', _E} ->
 	    client_receive(receive_exception, CRI, T, [H|Acc], PIs);
 	_ ->
 	    client_receive(receive_exception, CRI, T, [H|Acc], PIs)
     end;
 client_receive(receive_other, CRI, [H|T], Acc, PIs) ->
     case catch receive_other(CRI, H) of
-	{'EXCEPTION', #'PortableInterceptor_ForwardRequest'{forward=Obj, 
-							    permanent=Bool}} ->
+	{'EXCEPTION', #'PortableInterceptor_ForwardRequest'{forward=_Obj, 
+							    permanent=_Bool}} ->
 	    client_receive(receive_other, CRI, T, [], PIs);
-	{'EXCEPTION', E} ->
+	{'EXCEPTION', _E} ->
 	    client_receive(receive_exception, CRI, T, [H|Acc], PIs);
 	_ ->
 	    client_receive(receive_other, CRI, T, [H|Acc], PIs)
@@ -1007,7 +991,7 @@ receive_exception(CRI, Mod) ->
 %%            SlotId - ulong()
 %% Returns  : {'EXCEPTION', #'PortableInterceptor_InvalidSlot'{}}
 %%------------------------------------------------------------
-get_slot(XRI, SlotId) ->
+get_slot(_XRI, _SlotId) ->
     corba:raise(#'PortableInterceptor_InvalidSlot'{}).
 
 %%------------------------------------------------------------
@@ -1016,9 +1000,9 @@ get_slot(XRI, SlotId) ->
 %%            ServiceId - IOP::ServiceId (defined in orber_iiop.hrl)
 %% Returns  : IOP::ServiceContext
 %%------------------------------------------------------------
-get_request_service_context(#'ClientRequestInfo'{contexts = Ctx}, ServiceId) ->
+get_request_service_context(#'ClientRequestInfo'{contexts = Ctx}, _ServiceId) ->
     Ctx;
-get_request_service_context(#'ServerRequestInfo'{contexts = Ctx}, ServiceId) ->
+get_request_service_context(#'ServerRequestInfo'{contexts = Ctx}, _ServiceId) ->
     Ctx.
 
 %%------------------------------------------------------------
@@ -1027,9 +1011,9 @@ get_request_service_context(#'ServerRequestInfo'{contexts = Ctx}, ServiceId) ->
 %%            ServiceId - IOP::ServiceId (defined in orber_iiop.hrl)
 %% Returns  :  IOP::ServiceContext
 %%------------------------------------------------------------
-get_reply_service_context(#'ClientRequestInfo'{contexts = Ctx}, ServiceId) ->
+get_reply_service_context(#'ClientRequestInfo'{contexts = Ctx}, _ServiceId) ->
     Ctx;
-get_reply_service_context(#'ServerRequestInfo'{contexts = Ctx}, ServiceId) ->
+get_reply_service_context(#'ServerRequestInfo'{contexts = Ctx}, _ServiceId) ->
     Ctx.
     
 %%------------------------------------------------------------
@@ -1079,7 +1063,7 @@ get_reply_service_context(#'ServerRequestInfo'{contexts = Ctx}, ServiceId) ->
 %% Arguments: ClientRequestInfo
 %% Returns  : IOR::TaggedComponent
 %%------------------------------------------------------------
-get_effective_component(#'ClientRequestInfo'{target = Target}, Id) ->
+get_effective_component(#'ClientRequestInfo'{target = Target}, _Id) ->
     Target.
 
 %%------------------------------------------------------------
@@ -1088,7 +1072,7 @@ get_effective_component(#'ClientRequestInfo'{target = Target}, Id) ->
 %%            Id -IOP::ComponentId (ulong())
 %% Returns  : IOP_N::TaggedComponentSeq
 %%------------------------------------------------------------
-get_effective_components(#'ClientRequestInfo'{target = Target}, Id) ->
+get_effective_components(#'ClientRequestInfo'{target = Target}, _Id) ->
     Target.
 
 %%------------------------------------------------------------
@@ -1097,7 +1081,7 @@ get_effective_components(#'ClientRequestInfo'{target = Target}, Id) ->
 %%            Type - CORBA::PolicyType
 %% Returns  : IOP_N::TaggedComponentSeq
 %%------------------------------------------------------------
-get_request_policy(#'ClientRequestInfo'{target = Target}, Type) ->
+get_request_policy(#'ClientRequestInfo'{target = Target}, _Type) ->
     Target.
 
 %%------------------------------------------------------------
@@ -1107,7 +1091,8 @@ get_request_policy(#'ClientRequestInfo'{target = Target}, Type) ->
 %%            Replace - boolean()
 %% Returns  : -
 %%------------------------------------------------------------
-add_request_service_policy(#'ClientRequestInfo'{target = Target}, Ctx, Replace) ->
+add_request_service_policy(#'ClientRequestInfo'{target = _Target}, 
+			   _Ctx, _Replace) ->
     ok.
 
 %%------------------------------------------------------------
@@ -1151,7 +1136,7 @@ add_request_service_policy(#'ClientRequestInfo'{target = Target}, Ctx, Replace) 
 %%            PolicyType - CORBA::PolicyType
 %% Returns  : CORBA::Policy
 %%------------------------------------------------------------
-get_server_policy(#'ServerRequestInfo'{contexts = Ctxs}, PolicyType) ->
+get_server_policy(#'ServerRequestInfo'{contexts = Ctxs}, _PolicyType) ->
     Ctxs.
 
 %%------------------------------------------------------------
@@ -1161,7 +1146,7 @@ get_server_policy(#'ServerRequestInfo'{contexts = Ctxs}, PolicyType) ->
 %%            Data - #any{}
 %% Returns  : {'EXCEPTION', #'PortableInterceptor_InvalidSlot'{}}
 %%------------------------------------------------------------
-set_slot(SRI, SlotId, Data) ->
+set_slot(_SRI, _SlotId, _Data) ->
     corba:raise(#'PortableInterceptor_InvalidSlot'{}).
 
 %%-----------------------------------------------------------%
@@ -1180,7 +1165,7 @@ target_is_a(#'ServerRequestInfo'{object_id = ObjId}, IFRId) ->
 %%            Replace - boolean()
 %% Returns  : -
 %%------------------------------------------------------------
-add_reply_service_context(#'ServerRequestInfo'{contexts = Ctxs}, Ctx, Replace) ->
+add_reply_service_context(#'ServerRequestInfo'{contexts = Ctxs}, _Ctx, _Replace) ->
     Ctxs.
 
 

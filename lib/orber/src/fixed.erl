@@ -60,18 +60,19 @@ create(Digits, Scale, Value) when integer(Digits), Digits >= 0, Digits < 32,
 	Dig when Dig =< Digits ->
 	    #fixed{digits = Digits, scale = Scale, value = Value};
 	Overflow ->
-	    orber:dbg("[~p] fixed:create(~p, ~p, ~p).
-The Value exceeds the Digits limit: ~p.", 
-		      [?LINE, Digits, Scale, Value, Digits], ?DEBUG_LEVEL),
+	    orber:dbg("[~p] fixed:create(~p, ~p, ~p).~n"
+		      "The Value exceeds the Digits limit: ~p, ~p", 
+		      [?LINE, Digits, Scale, Value, Digits, Overflow], ?DEBUG_LEVEL),
 	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO})
     end;
 create(Digits, Scale, Value) ->
-    orber:dbg("[~p] fixed:add(~p, ~p, ~p).
-At least one of the supplied arguments is incorrect.
-Digits and Scale must be a positive integer with the following limits:
- * 0 =< Digits < 32
- * Digits >= Scale
- * Value range +/- 9999999999999999999999999999999", 
+    orber:dbg("[~p] fixed:add(~p, ~p, ~p).~n"
+	      "At least one of the supplied arguments is incorrect.~n"
+	      "Digits and Scale must be a positive integer with the following~n"
+	      "limits:~n"
+	      " * 0 =< Digits < 32~n"
+	      " * Digits >= Scale~n"
+	      " * Value range +/- 9999999999999999999999999999999", 
 	      [?LINE, Digits, Scale, Value], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
@@ -95,8 +96,8 @@ add(#fixed{digits = D1, scale = S1, value = V1},
 				scale = Scale, 
 				value = (PV1 + PV2)});
 add(F1, F2) ->
-    orber:dbg("[~p] fixed:add(~p, ~p).
-At least one of the supplied arguments is not a Fixed Type.", 
+    orber:dbg("[~p] fixed:add(~p, ~p).~n"
+	      "At least one of the supplied arguments is not a Fixed Type.", 
 	      [?LINE, F1, F2], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
@@ -110,13 +111,13 @@ subtract(#fixed{digits = D1, scale = S1, value = V1},
 				scale = Scale, 
 				value = (PV1 - PV2)});
 subtract(F1, F2) ->
-    orber:dbg("[~p] fixed:subtract(~p, ~p).
-At least one of the supplied arguments is not a Fixed Type.", 
+    orber:dbg("[~p] fixed:subtract(~p, ~p).~n"
+	      "At least one of the supplied arguments is not a Fixed Type.", 
 	      [?LINE, F1, F2], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 divide(#fixed{digits = D1, scale = S1, value = V1}, 
-	    #fixed{digits = D2, scale = S2, value = V2}) ->
+	    #fixed{digits = _D2, scale = S2, value = V2}) ->
     {PV1, PV2} = normalize(S1, V1, S2, V2),
     DigitsMin = (D1-S1+S2),
     R1 = (PV1 div PV2),
@@ -125,8 +126,8 @@ divide(#fixed{digits = D1, scale = S1, value = V1},
     check_fixed_overflow(#fixed{digits = DigitsMin + Sinf, scale = Sinf, 
 				value = Result2});
 divide(F1, F2) ->
-    orber:dbg("[~p] fixed:divide(~p, ~p).
-At least one of the supplied arguments is not a Fixed Type.", 
+    orber:dbg("[~p] fixed:divide(~p, ~p).~n"
+	      "At least one of the supplied arguments is not a Fixed Type.", 
 	      [?LINE, F1, F2], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
@@ -137,16 +138,17 @@ multiply(#fixed{digits = D1, scale = S1, value = V1},
 				scale = (S1+S2), 
 				value = V1*V2});
 multiply(F1, F2) ->
-    orber:dbg("[~p] fixed:multiply(~p, ~p).
-At least one of the supplied arguments is not a Fixed Type.", 
+    orber:dbg("[~p] fixed:multiply(~p, ~p).~n"
+	      "At least one of the supplied arguments is not a Fixed Type.", 
 	      [?LINE, F1, F2], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 unary_minus(Fixed) when record(Fixed, fixed) ->
     Fixed#fixed{value = -(Fixed#fixed.value)};
 unary_minus(Fixed) ->
-    orber:dbg("[~p] fixed:unary_minus(~p).
-The supplied argument is not a Fixed Type.", [?LINE, Fixed], ?DEBUG_LEVEL),
+    orber:dbg("[~p] fixed:unary_minus(~p).~n"
+	      "The supplied argument is not a Fixed Type.", 
+	      [?LINE, Fixed], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 
@@ -200,7 +202,6 @@ check_fixed_overflow(#fixed{digits = Digits, scale = Scale, value = Value}) ->
     case count_digits(abs(Value)) of
 	overflow ->
 	    {N, NewVal} = cut_overflow(0, Value),
-	    NewDigits = Digits - N,
 	    if
 		N > Scale ->
 		    #fixed{digits = 31, scale = 0, value = NewVal};
@@ -296,7 +297,7 @@ count_digits(X) when X >= 10000 -> 5;
 count_digits(X) when X >= 1000 -> 4;
 count_digits(X) when X >= 100 -> 3;
 count_digits(X) when X >= 10 -> 2;
-count_digits(X) -> 1.
+count_digits(_X) -> 1.
 
 %%-----------------------------------------------------------------
 %%------------- END OF MODULE -------------------------------------

@@ -25,17 +25,6 @@
 
 /* FIXME only include if needed? */
  
-#ifdef __WIN32__
-#include <winsock2.h>
-#include <windows.h>
-#include <winbase.h>
-#endif
-
-#ifdef VXWORKS
-#include <vxWorks.h>
-#include <semLib.h>
-#endif
-
 #include "ei.h"			/* ei is the base */
 
 /* -------------------------------------------------------------------- */
@@ -365,7 +354,7 @@ ETERM *erl_mk_tuple(ETERM**,int);
 ETERM *erl_mk_uint(unsigned int);
 ETERM *erl_mk_var(const char*);
 int    erl_print_term(FILE*,const ETERM*);
-int    erl_sprint_term(char*,const ETERM*);
+/* int    erl_sprint_term(char*,const ETERM*); */
 int    erl_size(const ETERM*);
 ETERM *erl_tl(const ETERM*);
 ETERM *erl_var_content(const ETERM*, const char*);
@@ -398,9 +387,41 @@ unsigned char erl_ext_type(unsigned char*); /* Note: returned 'char' before R9C 
 unsigned char *erl_peek_ext(unsigned char*,int);
 int    erl_term_len(ETERM*);
 
+
+/* -------------------------------------------------------------------- */
+/*                      Wrappers around ei functions                    */
+/* -------------------------------------------------------------------- */
+
+/* 
+ * Undocumented before R9C, included for compatibility with old code
+ */
+
+struct hostent *erl_gethostbyname(const char *name);
+struct hostent *erl_gethostbyaddr(const char *addr, int len, int type);
+struct hostent *erl_gethostbyname_r(const char *name, 
+				    struct hostent *hostp, 
+				    char *buffer, 
+				    int buflen, 
+				    int *h_errnop);
+struct hostent *erl_gethostbyaddr_r(const char *addr,
+				    int length, 
+				    int type, 
+				    struct hostent *hostp,
+				    char *buffer,  
+				    int buflen, 
+				    int *h_errnop);
+
+/* 
+ * Undocumented, included for compatibility with old code
+ */
+
+void erl_init_resolve(void);
+int erl_distversion(int fd);
+int erl_epmd_connect(struct in_addr *inaddr);
+int erl_epmd_port(struct in_addr *inaddr, const char *alive, int *dist);
+
 #ifdef __cplusplus
 }
 #endif
 
 #endif
-

@@ -66,8 +66,6 @@ remove_ext(File) ->
 %%
 %% For each module a separate file is generated.
 %%
-%% Each function needs to generate a function head and
-%% a body. IDL parameters must be converted into C parameters. XXX
 %% 
 %%------------------------------------------------------------
 
@@ -125,14 +123,14 @@ gen(G, N, [X| Xs]) when record(X, union) ->
 gen(G, N, [_| Xs]) ->
     gen(G, N, Xs);
 
-gen(G, N, []) -> 
+gen(_G, _N, []) -> 
     ok.
 
 %%------------------------------------------------------------
 %% Change file stack
 %%------------------------------------------------------------
 
-change_file_stack(G, N, line_nr, X) ->
+change_file_stack(G, _N, line_nr, X) ->
     Id = ic_forms:get_id2(X), 
     Flags = X#preproc.aux, 
     case Flags of
@@ -144,7 +142,7 @@ change_file_stack(G, N, line_nr, X) ->
 		 ({_, _, "3"}, G1) -> ic_genobj:sys_file(G1, Id) 
 	      end, G, Flags)
     end;
-change_file_stack(G, N, Other, X) ->
+change_file_stack(G, _N, _Other, _X) ->
     G.
 
 %%------------------------------------------------------------
@@ -162,7 +160,7 @@ gen_headers(G, N, X) when record(X, module) ->
 	    ic_code:gen_includes(HFd, G, X, c_server);
 	false -> ok
     end;
-gen_headers(G, [], X) -> 
+gen_headers(G, [], _X) -> 
     case ic_genobj:is_hrlfile_open(G) of
 	true ->
 	    HFd = ic_genobj:hrlfiled(G), 
@@ -173,7 +171,7 @@ gen_headers(G, [], X) ->
 	    ic_code:gen_includes(HFd, G, c_server);
 	false -> ok
     end;
-gen_headers(G, N, X) -> 
+gen_headers(_G, _N, _X) -> 
     ok.
 
 %%------------------------------------------------------------
@@ -195,6 +193,7 @@ gen_prototypes(G, N, X) ->
 		end, 
 
 	    IName = ic_util:to_undersc(N), 
+	    INameUC = ic_util:to_uppercase(IName), 
 
 	    emit(HFd, "#include \"~s\"\n", [filename:basename(Filename)]), 
 	    ic_code:gen_includes(HFd, G, X, c_server), 
@@ -207,11 +206,24 @@ gen_prototypes(G, N, X) ->
 						     "object "
 						     "definition: ~s", 
 						     [IName])], c), 
+	    case get_c_timeout(G, "") of
+		"" ->
+		    ok;
+		{SendTmo, RecvTmo} ->
+		    emit(HFd, "#define OE_~s_SEND_TIMEOUT  ~s\n", 
+			 [INameUC, SendTmo]), 
+		    emit(HFd, "#define OE_~s_RECV_TIMEOUT  ~s\n", 
+			 [INameUC, RecvTmo]), 
+		    emit(HFd, "#ifndef EI_HAVE_TIMEOUT\n"),
+		    emit(HFd, "#error Functions for send and receive with "
+			 "timeout not defined in erl_interface\n"),
+		    emit(HFd, "#endif\n\n")
+	    end,
+
 	    emit(HFd, "typedef CORBA_Object ~s;\n\n", [IName]), 	
 	    emit(HFd, "#endif\n\n"), 
 	    
-	    Bodies = [{N, ic_forms:get_body(X)}| 
-		      X#interface.inherit_body],
+	    Bodies = [{N, ic_forms:get_body(X)}| X#interface.inherit_body],
 
 	    emit(HFd, "\n/* Structure definitions  */\n", []), 
 	    foreach(fun({N2, Body}) ->
@@ -221,8 +233,8 @@ gen_prototypes(G, N, X) ->
 	    emit(HFd, "\n/* Switch and exec functions  */\n", []), 
 	    emit(HFd, "int ~s__switch(~s oe_obj, CORBA_Environment "
 		 "*oe_env);\n", [IName, IName]), 
-	    foreach(fun({N2, Body}) ->
-			    emit_prototypes(G, HFd, N2, Body) end, 
+	    foreach(fun({_N2, Body}) ->
+			    emit_exec_prototypes(G, HFd, N, Body) end, 
 		    Bodies),
 
 	    emit(HFd, "\n/* Generic decoder */\n", []), 
@@ -230,23 +242,23 @@ gen_prototypes(G, N, X) ->
 		 "*oe_env);\n", [IName, IName]), 
 
 	    emit(HFd, "\n/* Restore function typedefs */\n", []), 
-	    foreach(fun({N2, Body}) ->
-			    emit_restore_typedefs(G, HFd, N2, Body) end, 
+	    foreach(fun({_N2, Body}) ->
+			    emit_restore_typedefs(G, HFd, N, Body) end, 
 		    Bodies),
 
 	    emit(HFd, "\n/* Callback functions */\n", []), 
-	    foreach(fun({N2, Body}) ->
-			    emit_callback_prototypes(G, HFd, N2, Body) end, 
+	    foreach(fun({_N2, Body}) ->
+			    emit_callback_prototypes(G, HFd, N, Body) end, 
 		    Bodies),
 
 	    emit(HFd, "\n/* Parameter decoders */\n", []), 
-	    foreach(fun({N2, Body}) ->
-			    emit_decoder_prototypes(G, HFd, N2, Body) end, 
+	    foreach(fun({_N2, Body}) ->
+			    emit_decoder_prototypes(G, HFd, N, Body) end, 
 		    Bodies),
 
 	    emit(HFd, "\n/* Message encoders */\n", []), 
-	    foreach(fun({N2, Body}) ->
-			    emit_encoder_prototypes(G, HFd, N2, Body) end, 
+	    foreach(fun({_N2, Body}) ->
+			    emit_encoder_prototypes(G, HFd, N, Body) end, 
 		    Bodies),
 
 	    %% Emit operation mapping structures
@@ -261,6 +273,7 @@ gen_prototypes(G, N, X) ->
 %%------------------------------------------------------------
 %% Generate the server encoding/decoding function
 %%------------------------------------------------------------
+
 
 gen_serv(G, N, X) ->
     case ic_genobj:is_stubfile_open(G) of
@@ -291,7 +304,7 @@ gen_serv(G, N, X) ->
 %% Emit structs inside module
 %%------------------------------------------------------------
 
-emit_structs_inside_module(G, Fd, N, Xs)->
+emit_structs_inside_module(G, _Fd, N, Xs)->
     lists:foreach(
       fun(X) when record(X, enum) ->
 	      icenum:enum_gen(G, N, X, c);
@@ -306,10 +319,10 @@ emit_structs_inside_module(G, Fd, N, Xs)->
       end, Xs).
 
 %%------------------------------------------------------------
-%% Emit prototypes
+%% Emit exec prototypes
 %%------------------------------------------------------------
 
-emit_prototypes(G, Fd, N, Xs) ->
+emit_exec_prototypes(G, Fd, N, Xs) ->
     lists:foreach(
       fun(X) when record(X, op) ->
 	      {ScopedName, _, _} = ic_cbe:extract_info(G, N, X), 
@@ -385,9 +398,9 @@ emit_restore_typedefs(G, Fd, N, [X| Xs]) when record(X, op) ->
     emit_restore_typedefs(G, Fd, N, Xs);
 emit_restore_typedefs(G, Fd, N, [X| Xs]) when record(X, attr) ->
     emit_restore_typedefs(G, Fd, N, Xs);
-emit_restore_typedefs(G, Fd, N, [X| Xs]) ->
+emit_restore_typedefs(G, Fd, N, [_X| Xs]) ->
     emit_restore_typedefs(G, Fd, N, Xs);
-emit_restore_typedefs(G, Fd, N, []) -> ok.
+emit_restore_typedefs(_G, _Fd, _N, []) -> ok.
 
 
 %%------------------------------------------------------------
@@ -395,7 +408,7 @@ emit_restore_typedefs(G, Fd, N, []) -> ok.
 %%------------------------------------------------------------
 
 emit_callback_prototypes(G, Fd, N, [X| Xs]) when record(X, op) ->
-    %% Check if to use scoped call names XXX
+    %% Check scoped names XXX
     {ScopedName, ArgNames, Types} = ic_cbe:extract_info(G, N, X), 
     {RetType, ParTypes, _} = Types, 
     TypeAttrArgs = mk_type_attr_arg_list(ParTypes, ArgNames),
@@ -453,9 +466,9 @@ emit_callback_prototypes(G, Fd, N, [X| Xs]) when record(X, op) ->
     emit_callback_prototypes(G, Fd, N, Xs);
 emit_callback_prototypes(G, Fd, N, [X| Xs]) when record(X, attr) ->
     emit_callback_prototypes(G, Fd, N, Xs);
-emit_callback_prototypes(G, Fd, N, [X| Xs]) ->
+emit_callback_prototypes(G, Fd, N, [_X| Xs]) ->
     emit_callback_prototypes(G, Fd, N, Xs);
-emit_callback_prototypes(G, Fd, N, []) -> ok.
+emit_callback_prototypes(_G, _Fd, _N, []) -> ok.
 
 %%------------------------------------------------------------
 %% Emit decoder prototypes
@@ -464,7 +477,7 @@ emit_callback_prototypes(G, Fd, N, []) -> ok.
 emit_decoder_prototypes(G, Fd, N, [X| Xs]) when record(X, op) ->
     %% Check if to use scoped call names
     {ScopedName, ArgNames, Types} = ic_cbe:extract_info(G, N, X), 
-    {RetType, ParTypes, _} = Types, 
+    {_RetType, ParTypes, _} = Types, 
     TypeAttrArgs = mk_type_attr_arg_list(ParTypes, ArgNames),
     case ic_util:mk_list(mk_par_list_for_decoder_prototypes(G, N, X, 
 							    TypeAttrArgs)) of
@@ -478,9 +491,9 @@ emit_decoder_prototypes(G, Fd, N, [X| Xs]) when record(X, op) ->
     emit_decoder_prototypes(G, Fd, N, Xs);
 emit_decoder_prototypes(G, Fd, N, [X| Xs]) when record(X, attr) ->
     emit_decoder_prototypes(G, Fd, N, Xs);
-emit_decoder_prototypes(G, Fd, N, [X| Xs]) ->
+emit_decoder_prototypes(G, Fd, N, [_X| Xs]) ->
     emit_decoder_prototypes(G, Fd, N, Xs);
-emit_decoder_prototypes(G, Fd, N, []) -> ok.
+emit_decoder_prototypes(_G, _Fd, _N, []) -> ok.
 
 
 %%------------------------------------------------------------
@@ -527,9 +540,9 @@ emit_encoder_prototypes(G, Fd, N, [X| Xs]) when record(X, op) ->
     end;
 emit_encoder_prototypes(G, Fd, N, [X| Xs]) when record(X, attr) ->
     emit_encoder_prototypes(G, Fd, N, Xs);
-emit_encoder_prototypes(G, Fd, N, [X| Xs]) ->
+emit_encoder_prototypes(G, Fd, N, [_X| Xs]) ->
     emit_encoder_prototypes(G, Fd, N, Xs);
-emit_encoder_prototypes(G, Fd, N, []) -> ok.
+emit_encoder_prototypes(_G, _Fd, _N, []) -> ok.
 
 %%------------------------------------------------------------
 %% Emit operation mapping declaration
@@ -539,13 +552,19 @@ emit_operation_mapping_declaration(G, Fd, N, Bodies) ->
     Interface = ic_util:to_undersc(N), 
     Length = erlang:length(get_all_opnames(G, N, Bodies)),
     emit(Fd, "\n/* Operation mapping */\n", []), 
-    emit(Fd, "extern ___map___ ___~s_map___;\n", [Interface]), 
+    emit(Fd, "extern oe_map_t oe_~s_map;\n", [Interface]), 
+    emit(Fd, "/* For backward compatibility */\n"),
+    emit(Fd, "#define ___~s_map___ oe_~s_map\n", 
+		 [Interface, Interface]),
     case Length of 
 	0 ->
 	    ok;
 	_ ->
-	    emit(Fd, "extern ___operation___ ___~s_operations___[];\n", 
-		 [Interface]) 
+	    emit(Fd, "extern oe_operation_t oe_~s_operations[];\n", 
+		 [Interface]), 
+	    emit(Fd, "/* For backward compatibility */\n"),
+	    emit(Fd, "#define ___~s_operations___ oe_~s_operations\n", 
+		 [Interface, Interface])
     end.
 
 
@@ -576,7 +595,7 @@ get_all_opnames(G, N, Bodies) ->
 %% Emit switch 
 %%------------------------------------------------------------
 
-emit_switch(G, Fd, N, X) ->
+emit_switch(_G, Fd, N, _X) ->
     StartCode =
 	"#include <string.h>\n" 
 	"#include \"ic.h\"\n"
@@ -588,7 +607,7 @@ emit_switch(G, Fd, N, X) ->
 	" */\n\n"
 	"int ~s__switch(~s oe_obj, CORBA_Environment *oe_env)\n"
 	"{\n"
-	"   return ___switch___(oe_obj, oe_env, &___~s_map___);\n"
+	"   return oe_exec_switch(oe_obj, oe_env, &oe_~s_map);\n"
 	"}\n\n", 
     ScopedName = ic_util:to_undersc(N), 
     emit(Fd, StartCode, [ScopedName, ScopedName, ScopedName, ScopedName]).
@@ -598,16 +617,17 @@ emit_switch(G, Fd, N, X) ->
 %%------------------------------------------------------------
 
 emit_server_generic_decoding(G, Fd, N) ->
+    UserProto = get_user_proto(G, oe),
     Code = 
 	"/*\n"
 	" * Returns call identity (left only for backward compatibility)\n"
 	" */\n\n"
 	"int ~s__call_info(~s oe_obj, CORBA_Environment *oe_env)\n"
 	"{\n"
-	"   return ___call_info___(oe_obj, oe_env);\n"
+	"   return ~s_prepare_request_decoding(oe_env);\n"
 	"}\n\n", 
     IName = ic_util:to_undersc(N), 
-    emit(Fd, Code, [IName, IName]).
+    emit(Fd, Code, [IName, IName, UserProto]).
 
 %%------------------------------------------------------------
 %% Emit dispatch
@@ -637,9 +657,9 @@ emit_operation_mapping(G, Fd, N, Bodies) ->
     emit(Fd, "\n/* Operation mapping */\n\n", []), 
     case Length of 
 	0 ->
-	    emit(Fd, "___map___ ___~s_map___ = { 0, NULL };\n\n", [Interface]);
+	    emit(Fd, "oe_map_t oe_~s_map = { 0, NULL };\n\n", [Interface]);
 	_ ->
-	    emit(Fd, "\n___operation___ ___~s_operations___[~p]  =  {\n", 
+	    emit(Fd, "\noe_operation_t oe_~s_operations[~p]  =  {\n",
 		 [Interface, Length]), 
 	    Members = lists:map(
 			fun({OpN, ScOpN}) ->
@@ -650,8 +670,8 @@ emit_operation_mapping(G, Fd, N, Bodies) ->
 			end, OpNames),
 	    emit(Fd, ic_util:join(Members, ",\n")),
 	    emit(Fd, "};\n\n", []), 
-	    emit(Fd, "___map___ ___~s_map___ = "
-		 "{~p, ___~s_operations___};\n\n", 
+	    emit(Fd, "oe_map_t oe_~s_map = "
+		 "{~p, oe_~s_operations};\n\n", 
 		 [Interface, Length, Interface])
     end.
 
@@ -741,7 +761,7 @@ emit_exec_function(G, Fd, N, X, Name, RetType, TypeAttrArgs) ->
 %% Emit parameter decoder
 %%------------------------------------------------------------
 
-emit_parameter_decoder(G, Fd, N, X, Name, RetType, TypeAttrArgs) ->
+emit_parameter_decoder(G, Fd, N, X, Name, _RetType, TypeAttrArgs) ->
     %% Decoding operation specific part
     InTypeAttrArgs = 
 	lists:filter(fun({_, in, _}) -> true;
@@ -766,7 +786,7 @@ emit_parameter_decoder(G, Fd, N, X, Name, RetType, TypeAttrArgs) ->
 	    
 	    APars = [],				% XXX Alloced parameters
 	    foldl(
-	      fun({{'void', _}, _, _}, Acc) ->
+	      fun({{'void', _}, _, _}, _Acc) ->
 		      ok;
 		 ({T1, A1, N1}, Acc) ->
 		      emit_one_decoding(G, N, Fd, T1, A1, N1, Acc)
@@ -860,19 +880,18 @@ emit_message_encoder(G, Fd, N, X, Name, RetType, TypeAttrArgs) ->
 		    end
 	    end, 
 
-	    emit(Fd, "\n  int oe_error_code;    \n  oe_env->_iout = 0;\n\n"), 
 
-	    %% Encoding
-	    emit(Fd, "  oe_ei_encode_version(oe_env);\n"), 
+	    emit(Fd, "\n"),
+	    emit(Fd, "  int oe_error_code;\n\n"),
+	    UserProto = get_user_proto(G, oe),
+	    emit(Fd, "  ~s_prepare_reply_encoding(oe_env);\n", [UserProto]),
+
 	    OutTypeAttrArgs = 
 		lists:filter(fun({_, out, _}) -> true;
 				({_, _, _}) -> false
 			     end, TypeAttrArgs),
-	    emit(Fd, "  oe_ei_encode_tuple_header(oe_env, 2);\n"), 
-	    emit(Fd, "  oe_ei_encode_ref(oe_env, &oe_env->_unique);\n"), 
 
 	    OutLength = length(OutTypeAttrArgs), 
-
 	    case OutLength > 0 of
 		false ->
 		    ic_codegen:nl(Fd);
@@ -886,17 +905,11 @@ emit_message_encoder(G, Fd, N, X, Name, RetType, TypeAttrArgs) ->
 				  "oe_return"), 
 	    emit_encoding_stmt(G, N, X, Fd, RetType, "oe_return"), 
 
-	    foreach(fun({T1, A1, N1}) ->
+	    foreach(fun({T1, _A1, N1}) ->
 			    case T1 of
 				{'void', _} ->
 				    ok;
 				_ ->
-				    %%IndOp = mk_ind_op(A1), 
-				    %%IndOp is removed from the
-				    %%following two calls and it must
-				    %%be checked that all parameers
-				    %%have correct type.  But I think
-				    %%it's ok
 				    emit_encoding_comment(G, N, Fd, "Encode", 
 							  "", T1, N1), 
 				    emit_encoding_stmt(G, N, X, Fd, T1, N1) 
@@ -960,7 +973,7 @@ emit_message_encoder_call(G, Fd, N, X, Name, RetType, TypeAttrArgs) ->
 %% Emit parameter decoding call
 %%------------------------------------------------------------
 
-emit_parameter_decoder_call(G, Fd, N, X, Name, R, TypeAttrArgs) ->
+emit_parameter_decoder_call(G, Fd, N, X, Name, _R, TypeAttrArgs) ->
     case ic_util:mk_list(mk_dec_par_list(G, N, X, TypeAttrArgs)) of
 	"" -> %% No parameters ! skip it !
 	    ok;
@@ -1030,8 +1043,7 @@ emit_callback(G, Fd, N, X, Name, RetType, TypeAttrArgs) ->
 %% Emit restore
 %%------------------------------------------------------------
 
-emit_restore(G, Fd, N, X, Name, RetType, TypeAttrArgs) ->
-    RestoreName = Name ++ "__rs", 
+emit_restore(G, Fd, N, X, _Name, RetType, TypeAttrArgs) ->
     emit(Fd, "    /* Restore function call */\n"), 
     emit(Fd, "    if (oe_restore != NULL)\n"), 
     PL = ic_util:mk_list(mk_cb_par_list(G, N, X, TypeAttrArgs)), 
@@ -1078,7 +1090,7 @@ emit_restore(G, Fd, N, X, Name, RetType, TypeAttrArgs) ->
 %% Emit variable defs
 %%------------------------------------------------------------
 
-emit_variable_defs(G, Fd, N, X, Name, RetType, TypeAttrArgs) ->
+emit_variable_defs(G, Fd, N, X, _Name, RetType, TypeAttrArgs) ->
     {ScopedName, _, _} = ic_cbe:extract_info(G, N, X), 
     emit(Fd, "    ~s__rs* oe_restore = NULL;\n", [ScopedName]), 
     RestVars = mk_var_list(mk_var_decl_list(G, N, X, TypeAttrArgs)), 
@@ -1122,12 +1134,7 @@ emit_variable_defs(G, Fd, N, X, Name, RetType, TypeAttrArgs) ->
 			false ->
 			    TK = ic_forms:get_tk(X), 
 			    case TK of
-				{tk_enum, _, _, List} ->
-				    %% Enumerants are initiated to the
-				    %% first element in their
-				    %% definition emit(Fd, "~s ~s
-				    %% oe_return =
-				    %% ~s;\n\n", [RestVars, RType, hd(List)]);
+				{tk_enum, _, _, _List} ->
 				    emit(Fd, "~s    ~s oe_return;\n\n", 
 					 [RestVars, RType]);
 				_ ->
@@ -1246,7 +1253,7 @@ mk_dec_par_list(G, N, X, TypeAttrArgs0) ->
     TypeAttrArgs1 = filter_type_attr_arg_list(G, X, [in], 
 					      TypeAttrArgs0),
     lists:map(
-      fun({Type, Attr, Arg}) ->
+      fun({Type, _Attr, Arg}) ->
 	      Ctype = mk_c_type(G, N, Type), 
 	      case ic_cbe:is_variable_size(G, N, Type) of
 		  true ->
@@ -1280,7 +1287,7 @@ mk_enc_par_list(G, N, X, TypeAttrArgs0) ->
     TypeAttrArgs1 = filter_type_attr_arg_list(G, X, [out], 
 					      TypeAttrArgs0),
     lists:map(
-      fun({Type, Attr, Arg}) ->
+      fun({Type, _Attr, Arg}) ->
 	      Ctype = mk_c_type(G, N, Type), 
 	      case Ctype of
 		  "erlang_pid" ->
@@ -1313,10 +1320,10 @@ filter_type_attr_arg_list(G, X, InOrOut, TypeAttrArgs) when atom(InOrOut) ->
 filter_type_attr_arg_list(G, X, InOrOut, TypeAttrArgs) ->
     lists:filter(
 
-      fun({Type, inout, Arg}) ->
+      fun({_Type, inout, Arg}) ->
 	      ic_error:error(G, {inout_spec_for_c, X, Arg}),
 	      false;
-	 ({Type, Attr, Arg}) ->
+	 ({_Type, Attr, _Arg}) ->
 	      lists:member(Attr, InOrOut)
       end, TypeAttrArgs).
 
@@ -1339,7 +1346,6 @@ mk_par_list_for_decoder(G, N, X, TypeAttrArgs0) ->
     TypeAttrArgs1 = filter_type_attr_arg_list(G, X, [in], TypeAttrArgs0),
     lists:map(
       fun({Type, Attr, Arg}) ->
-	      IndOp = mk_ind_op(Attr),
 	      Ctype = mk_c_type(G, N, Type), 
 	      Dyn = case ic_cbe:is_variable_size(G, N, Type) of
 			true ->
@@ -1378,7 +1384,7 @@ mk_par_list_for_decoder(G, N, X, TypeAttrArgs0) ->
 mk_par_list_for_encoder(G, N, X, TypeAttrArgs0) ->
     TypeAttrArgs1 = filter_type_attr_arg_list(G, X, [out], TypeAttrArgs0),
     lists:map(
-      fun({Type, Attr, Arg}) ->
+      fun({Type, _Attr, Arg}) ->
 	      Ctype = mk_c_type(G, N, Type), 
 	      Dyn = case ic_cbe:is_variable_size(G, N, Type) of
 			true ->
@@ -1421,8 +1427,7 @@ mk_par_list_for_encoder(G, N, X, TypeAttrArgs0) ->
 mk_par_list_for_decoder_prototypes(G, N, X, TypeAttrArgs0) ->
     TypeAttrArgs1 = filter_type_attr_arg_list(G, X, [in], TypeAttrArgs0),
     lists:map(
-      fun({Type, Attr, Arg}) ->
-	      IndOp = mk_ind_op(Attr),
+      fun({Type, Attr, _Arg}) ->
 	      Ctype = mk_c_type(G, N, Type), 
 	      Dyn = case ic_cbe:is_variable_size(G, N, Type) of
 			true ->
@@ -1461,7 +1466,7 @@ mk_par_list_for_decoder_prototypes(G, N, X, TypeAttrArgs0) ->
 mk_par_list_for_encoder_prototypes(G, N, X, TypeAttrArgs0) ->
     TypeAttrArgs1 = filter_type_attr_arg_list(G, X, [out], TypeAttrArgs0),
     lists:map(
-      fun({Type, Attr, Arg}) ->
+      fun({Type, _Attr, _Arg}) ->
 	      Ctype = mk_c_type(G, N, Type), 
 	      Dyn = case ic_cbe:is_variable_size(G, N, Type) of
 			true ->
@@ -1505,7 +1510,7 @@ mk_par_list_for_callback_prototypes(G, N, X, TypeAttrArgs0) ->
     TypeAttrArgs1 = filter_type_attr_arg_list(G, X, [in, out], 
 					      TypeAttrArgs0),
     lists:map(
-      fun({Type, Attr, Arg}) ->
+      fun({Type, Attr, _Arg}) ->
 	      IndOp = mk_ind_op(Attr),
 	      Ctype = mk_c_type(G, N, Type), 
 	      Dyn = case ic_cbe:is_variable_size(G, N, Type) of
@@ -1552,7 +1557,6 @@ mk_var_decl_list(G, N, X, TypeAttrArgs0) ->
 					      TypeAttrArgs0),
     lists:map(
       fun({Type, Attr, Arg}) ->
-	      IndOp = mk_ind_op(Attr),
 	      Ctype = mk_c_type(G, N, Type), 
 	      VarDecl = case ic_cbe:is_variable_size(G, N, Type) of
 			    true ->
@@ -1611,7 +1615,7 @@ mk_c_type(G, N, S) ->
     mk_c_type(G, N, S, evaluate).
 
 mk_c_type(G, N, S, evaluate) when element(1, S) == scoped_id ->
-    {FullScopedName, T, TK, _} = ic_symtab:get_full_scoped_name(G, N, S), 
+    {FullScopedName, _T, _TK, _} = ic_symtab:get_full_scoped_name(G, N, S), 
     BT = ic_code:get_basetype(G, ic_util:to_undersc(FullScopedName)), 
     case BT of
 	"erlang_binary" ->
@@ -1630,7 +1634,7 @@ mk_c_type(G, N, S, evaluate) when element(1, S) == scoped_id ->
 	    mk_c_type(G, N, Type, evaluate)
     end;
 mk_c_type(G, N, S, evaluate_not) when element(1, S) == scoped_id ->
-    {FullScopedName, T, TK, _} = ic_symtab:get_full_scoped_name(G, N, S), 
+    {FullScopedName, _T, _TK, _} = ic_symtab:get_full_scoped_name(G, N, S), 
     BT = ic_code:get_basetype(G, ic_util:to_undersc(FullScopedName)), 
     case BT of
 	"erlang_binary" ->
@@ -1646,19 +1650,19 @@ mk_c_type(G, N, S, evaluate_not) when element(1, S) == scoped_id ->
 	Type ->
 	    Type
     end;
-mk_c_type(G, N, S, _) when list(S) ->
+mk_c_type(_G, _N, S, _) when list(S) ->
     S;
-mk_c_type(G, N, S, _) when record(S, string) ->
+mk_c_type(_G, _N, S, _) when record(S, string) ->
     "CORBA_char";
-mk_c_type(G, N, S, _) when record(S, wstring) ->  %% WSTRING
+mk_c_type(_G, _N, S, _) when record(S, wstring) ->  %% WSTRING
     "CORBA_wchar";
-mk_c_type(G, N, {boolean, _}, _) ->
+mk_c_type(_G, _N, {boolean, _}, _) ->
     "CORBA_boolean";
-mk_c_type(G, N, {octet, _}, _) ->
+mk_c_type(_G, _N, {octet, _}, _) ->
     "CORBA_octet";
-mk_c_type(G, N, {void, _}, _) ->
+mk_c_type(_G, _N, {void, _}, _) ->
     "void";
-mk_c_type(G, N, {unsigned, U}, _) ->
+mk_c_type(_G, _N, {unsigned, U}, _) ->
     case U of
 	{short, _} ->
 	    "CORBA_unsigned_short";
@@ -1667,11 +1671,11 @@ mk_c_type(G, N, {unsigned, U}, _) ->
 	{'long long', _} ->
 	    "CORBA_unsigned_long_long"
     end;
-mk_c_type(G, N, {'long long', _}, _) ->
+mk_c_type(_G, _N, {'long long', _}, _) ->
     "CORBA_long_long";
-mk_c_type(G, N, {'any', _}, _) ->  %% Fix for any type
+mk_c_type(_G, _N, {'any', _}, _) ->  %% Fix for any type
     "CORBA_long";
-mk_c_type(G, N, {T, _}, _) ->
+mk_c_type(_G, _N, {T, _}, _) ->
     "CORBA_" ++ atom_to_list(T).
 
 %%------------------------------------------------------------
@@ -1708,7 +1712,7 @@ emit_encoding_stmt(G, N, X, Fd, T, LName) when element(1, T) == scoped_id ->
 	FSN ->
 	    emit_encoding_stmt(G, N, X, Fd, FSN, LName)
     end;
-emit_encoding_stmt(G, N, X, Fd, T, LName) when list(T) -> 
+emit_encoding_stmt(G, _N, X, Fd, T, LName) when list(T) -> 
     %% Already a fullscoped name
     case get_param_tk(LName, X) of
 	error ->
@@ -1915,21 +1919,21 @@ emit_encoding_stmt(G, N, X, Fd, T, LName) when list(T) ->
 		    end
 	    end
     end;
-emit_encoding_stmt(G, N, X, Fd, T, LName)  when record(T, string) ->
+emit_encoding_stmt(_G, _N, _X, Fd, T, LName)  when record(T, string) ->
     emit(Fd, "  if ((oe_error_code = "
 	 "oe_ei_encode_string(oe_env, (const char*) ~s)) < 0) {\n", 
 	 [LName]), 
     emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 	 "BAD_PARAM, \"Cannot encode string\");\n"), 
     emit(Fd, "    return oe_error_code;\n  }\n\n");
-emit_encoding_stmt(G, N, X, Fd, T, LName) when record(T, wstring) ->
+emit_encoding_stmt(_G, _N, _X, Fd, T, LName) when record(T, wstring) ->
     emit(Fd, "  if ((oe_error_code = "
 	 "oe_ei_encode_wstring(oe_env, ~s)) < 0) {\n", 
 	 [LName]), 
     emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, "
 	 "BAD_PARAM, \"Cannot encode string\");\n"), 
     emit(Fd, "    return oe_error_code;\n  }\n\n");
-emit_encoding_stmt(G, N, X, Fd, T, LName) ->
+emit_encoding_stmt(G, N, _X, Fd, T, LName) ->
     case T of
 	{unsigned, {short, _}} -> 
 	    emit(Fd, "  if ((oe_error_code = "
@@ -2074,7 +2078,7 @@ get_param(Name, Op) when record(Op, op) ->
 get_param(_Name, _Op) ->
     error.
 
-get_param_loop(Name, []) ->
+get_param_loop(_Name, []) ->
     error;
 get_param_loop(Name, [Param| Params]) ->
     case ic_forms:get_id2(Param) of
@@ -2126,7 +2130,7 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos,
 	    emit_decoding_stmt(G, N, Fd, FSN, LName, IndOp, 
 			       InBuffer, Align, NextPos, DecType, AllocedPars) 
     end;
-emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos, 
+emit_decoding_stmt(G, _N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos, 
 		   DecType, AllocedPars)  when list(T) ->
     %% Already a fullscoped name
     Type = ictype:name2type(G, T), 
@@ -2157,16 +2161,16 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos,
 	    emit(Fd, "      }\n"),
 	    emit(Fd, "    }\n")
     end;
-emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos, 
-		   DecType, AllocedPars)  when record(T, string) ->
+emit_decoding_stmt(_G, _N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos, 
+		   _DecType, AllocedPars)  when record(T, string) ->
     emit(Fd, "    if ((oe_error_code = ei_decode_string(~s, "
 	 "&oe_env->_iin, ~s~s)) < 0) {\n", 
 	 [InBuffer, IndOp, LName]), 
     ic_cbe:emit_dealloc_stmts(Fd, "      ", AllocedPars),
     emit(Fd, "      return oe_error_code;\n"),
     emit(Fd, "    }\n");
-emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos, 
-		   DecType, AllocedPars)  when record(T, wstring) ->  
+emit_decoding_stmt(_G, _N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos, 
+		   _DecType, AllocedPars)  when record(T, wstring) ->  
     %% WSTRING
     emit(Fd, "    if ((oe_error_code = "
 	 "oe_ei_decode_wstring(~s, "
@@ -2175,8 +2179,8 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos,
     ic_cbe:emit_dealloc_stmts(Fd, "      ", AllocedPars),
     emit(Fd, "      return oe_error_code;\n\n"),
     emit(Fd, "    }\n");
-emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, Align, NextPos, 
-		   DecType, AllocedPars) ->
+emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, _NextPos, 
+		   _DecType, AllocedPars) ->
     case ic_cbe:normalize_type(T) of
 	{basic, Type} ->
 	    emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp, 
@@ -2287,6 +2291,31 @@ emit_decoding_stmt_for_basic_type(Fd, Type, InBuffer, IndOp,
 	    emit(Fd, Ret)
     end.
 
+
+%%------------------------------------------------------------
+%% Prefix for generic functions
+%%------------------------------------------------------------
+get_user_proto(G, Default) ->
+    case ic_options:get_opt(G, user_protocol) of
+	false ->
+	    Default;
+	Pfx ->
+	    Pfx
+     end.
+
+%%------------------------------------------------------------
+%% Timeout. Returns a string (or Default).
+%%------------------------------------------------------------
+get_c_timeout(G, Default) ->
+    case ic_options:get_opt(G, c_timeout) of
+	Tmo when integer(Tmo) ->
+	    TmoStr = integer_to_list(Tmo),
+	    {TmoStr, TmoStr};
+	{SendTmo, RecvTmo}  when integer(SendTmo), integer(RecvTmo) ->
+	    {integer_to_list(SendTmo), integer_to_list(RecvTmo)};
+	false ->
+	    Default
+    end.
 
 %%------------------------------------------------------------
 %% ZIPPERS (merging of successive elements of two lists).

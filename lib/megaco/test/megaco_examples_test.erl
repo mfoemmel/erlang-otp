@@ -35,11 +35,13 @@ init_per_testcase(Case, Config) ->
     put(dbg,true),
     purge_examples(),
     load_examples(),
+    megaco:enable_trace(max, io),
     megaco_test_lib:init_per_testcase(Case, Config).
 
 fin_per_testcase(Case, Config) ->
     purge_examples(),
     erase(dbg),
+    megaco:disable_trace(),
     megaco_test_lib:fin_per_testcase(Case, Config).
 
 example_modules() ->
@@ -96,6 +98,7 @@ simple(Config) when list(Config) ->
 	    ?APPLY(ProxyPid, fun() -> megaco_simple_mg:start() end),
 	    receive
 		{res, _, MgList} when list(MgList), length(MgList) == 4 ->
+		    d("simple -> received res: ~p",[MgList]),		    
 		    Verify = fun({MgMid, {TransId, Res}}) when TransId == 1 ->
 				     case Res of
 					 {ok, [AR]} when record(AR, 'ActionReply') ->

@@ -388,15 +388,17 @@ validate(Mode, Request, StatusCode, Socket, Timeout, SoFar) ->
 	    ?CLOSE(Mode, Socket),
 	    ?FAIL({connection_error, Reason});
 	Res when list(Res) ->
-	    ?DEBUG("validate -> Res: ~p", [Res]),
-	    case terminated_header(SoFar++Res) of
+	    SoFar1 = SoFar++Res,
+	    case terminated_header(SoFar1) of
 		{true, Header, Stuff} ->
-		    ?DEBUG("validate -> Header: ~p", [Header]),
+		    ?DEBUG("validate -> "
+			"~n   Header: ~p"
+			"~n   Stuff:  ~p", [Header, Stuff]),
 		    trash_the_rest(Socket,Header,Request,length(Stuff)),
-		    validate1(Mode, Request, StatusCode, Socket, Response1);
+		    validate1(Mode, Request, StatusCode, Socket, Header);
 		false ->
-		    validate(Mode, Request, StatusCode, Socket, Timeout,
-			     SoFar++Res)
+		    validate(Mode, Request, StatusCode, Socket, Timeout, 
+			     SoFar1)
 	    end
     end.
 
@@ -426,11 +428,13 @@ validate1(Mode, Request, StatusCode, Socket, Response) ->
 			   Request, Response})
 	    end;
 	Reason ->
-	    ?FAIL({bad_response, Request, lists:flatten(Response)})
+	    ?FAIL({bad_response, Reason, Request, lists:flatten(Response)})
     end.
 
 
 trash_the_rest(Socket, ResponseHeader, [$H,$E,$A,$D|Request], ReceivedLen) ->
+    ?DEBUG("trash_the_rest(head) -> entry when"
+	"~n   ReceivedLen: ~p", [ReceivedLen]),
     case string:str(Request,"HTTP/1.1") of
 	0 ->
 	    %% Remove the socket closed meessage from the message que
@@ -441,6 +445,8 @@ trash_the_rest(Socket, ResponseHeader, [$H,$E,$A,$D|Request], ReceivedLen) ->
 	
 trash_the_rest(Socket, ResponseHeader, Request, ReceivedLen)
   when list(ResponseHeader) ->
+    ?DEBUG("trash_the_rest -> entry when"
+	"~n   ReceivedLen: ~p", [ReceivedLen]),
     case string:str(httpd_util:to_lower(ResponseHeader),"content-length:") of
 	0 ->
 	    trash_the_rest(Socket);
@@ -451,14 +457,17 @@ trash_the_rest(Socket, ResponseHeader, Request, ReceivedLen)
 		    trash_the_rest(Socket);
 		_Number ->
 		    Size = get_body_size(ResponseHeader++"\r\n"),
+		    ?DEBUG("trash_the_rest -> Size: ~p", [Size]),
 		    trash_the_rest(Socket,Size-ReceivedLen)
 	    end
     end.
 
 trash_the_rest(Socket) ->			   
+    ?DEBUG("trash_the_rest -> entry", []),
     trash_the_rest(Socket, nosize).
 
 trash_the_rest(Socket, nosize) ->
+    ?DEBUG("trash_the_rest(nosize) -> entry", []),
     receive
 	%%
 	%% TCP
@@ -492,6 +501,8 @@ trash_the_rest(Socket, nosize) ->
     end;
 
 trash_the_rest(Socket, Size) when Size > 0 ->
+    ?DEBUG("trash_the_rest -> entry when"
+	"~n   Size: ~p", [Size]),
     receive
 	%%
 	%% TCP

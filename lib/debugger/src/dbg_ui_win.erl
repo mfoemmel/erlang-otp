@@ -19,6 +19,7 @@
 
 %% External exports
 -export([init/0,
+	 font/1,
 	 create_menus/2, select/2, selected/1,
 	 add_break/2, update_break/2, delete_break/1,
 	 motion/2
@@ -37,6 +38,25 @@
 %%--------------------------------------------------------------------
 init() ->
     gs:start([{kernel, true}]).
+
+%%--------------------------------------------------------------------
+%% font(Style) -> Font
+%%   Style = normal | bold
+%% Select a suitable font. Defaults to {screen,12} and, if it does not
+%% exist, {courier,12}.
+%%--------------------------------------------------------------------
+font(Style) ->
+    GS = init(),
+    Style2 = if
+		 Style==normal -> [];
+		 true -> [Style]
+	     end,
+    case gs:read(GS, {choose_font, {screen,Style2,12}}) of
+	Font when element(1, Font)==screen ->
+	    Font;
+	_ ->
+	    gs:read(GS, {choose_font, {courier,Style2,12}})
+    end.
 
 %%--------------------------------------------------------------------
 %% create_menus(MenuBar, [Menu])
@@ -72,16 +92,16 @@ create_menus(MenuBar, [{Title, Items}|Menus]) ->
     Menu = gs:menu(Title, MenuBtn, []),
     create_items(Menu, Items, Title),
     create_menus(MenuBar, Menus);
-create_menus(MenuBar, []) ->
+create_menus(_MenuBar, []) ->
     done.
 
 create_items(Menu, [Item|Items], Group) ->
     create_item(Menu, Item, Group),
     create_items(Menu, Items, Group);
-create_items(Menu, [], Group) ->
+create_items(_Menu, [], _Group) ->
     done.
 
-create_item(Menu, {Name, N, cascade, Items}, _Group) ->
+create_item(Menu, {Name, _N, cascade, Items}, _Group) ->
     MenuBtn = gs:menuitem(Menu, [{label, {text,Name}},
 				 {itemtype, cascade}]),
     SubMenu = gs:menu(Name, MenuBtn, []),

@@ -22,9 +22,7 @@
  * 
  */
 
-#ifdef VXWORKS
-#include <vxWorks.h>
-#endif
+#include "eidef.h"
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -124,6 +124,7 @@ static ErlDrvTermData mfs_MuxToken = 0;
 static ErlDrvTermData mfs_NEQUAL = 0;
 static ErlDrvTermData mfs_NotifyCompletionToken = 0;
 static ErlDrvTermData mfs_NotifyToken = 0;
+static ErlDrvTermData mfs_Nx64kToken = 0;
 static ErlDrvTermData mfs_ObservedEventsToken = 0;
 static ErlDrvTermData mfs_OffToken = 0;
 static ErlDrvTermData mfs_OnOffToken = 0;
@@ -165,6 +166,7 @@ static ErlDrvTermData mfs_SynchISDNToken = 0;
 static ErlDrvTermData mfs_TerminationStateToken = 0;
 static ErlDrvTermData mfs_TestToken = 0;
 static ErlDrvTermData mfs_TimeOutToken = 0;
+static ErlDrvTermData mfs_TimeStampToken = 0; /* OTP-5042 */
 static ErlDrvTermData mfs_TopologyToken = 0;
 static ErlDrvTermData mfs_TransToken = 0;
 static ErlDrvTermData mfs_V18Token = 0;
@@ -197,6 +199,7 @@ static int 	       mfs_digit_map_value_len = 0;
 static char* 	       mfs_digit_map_start_ptr = 0;
 static char* 	       mfs_digit_map_short_ptr = 0;
 static char* 	       mfs_digit_map_long_ptr  = 0;
+static char* 	       mfs_digit_map_duration_ptr = 0;
 static int 	       mfs_error               = FALSE;
 static char 	       mfs_error_msg[256];
 static char* 	       mfs_text_buf            = 0;
@@ -306,6 +309,8 @@ wild        ((w\-)?)
 
 <SKIP_RBRKT>{rbrkt}                     BEGIN(INITIAL);
                            
+{digit}{8,8}t{digit}{8,8}               LOAD_TOKEN(mfs_TimeStampToken); /* OTP-5042 */
+                                        
 (MTP){lbrkt}                            BEGIN(MTP_HEXDIG);
 <MTP_HEXDIG>{hexdig}{4,8}               {LOAD_TOKEN(mfs_MtpAddressToken); BEGIN(SKIP_RBRKT);}
                                         
@@ -329,6 +334,7 @@ wild        ((w\-)?)
 <MAP_VALUE>t{colon}{digit}{1,2}         {mfs_load_map_timer(); BEGIN(MAP_SKIP_COMMA);}
 <MAP_VALUE>s{colon}{digit}{1,2}         {mfs_load_map_timer(); BEGIN(MAP_SKIP_COMMA);}
 <MAP_VALUE>l{colon}{digit}{1,2}         {mfs_load_map_timer(); BEGIN(MAP_SKIP_COMMA);}
+<MAP_VALUE>z{colon}{digit}{1,2}         {mfs_load_map_timer(); BEGIN(MAP_SKIP_COMMA);}
 <MAP_VALUE>.|\n                         {yyless(0); BEGIN(MAP_BODY);}
 
 <MAP_SKIP_COMMA>{comma}                 BEGIN(MAP_VALUE);
@@ -448,6 +454,8 @@ mx                                      LOAD_TOKEN(mfs_MuxToken);
 {opt}n                                  LOAD_TOKEN(mfs_NotifyToken);
 notifycompletion                        LOAD_TOKEN(mfs_NotifyCompletionToken);
 nc                                      LOAD_TOKEN(mfs_NotifyCompletionToken);
+nx64kservice                            LOAD_TOKEN(mfs_Nx64kToken);
+n64                                     LOAD_TOKEN(mfs_Nx64kToken);
 observedevents                          LOAD_TOKEN(mfs_ObservedEventsToken);
 oe                                      LOAD_TOKEN(mfs_ObservedEventsToken);
 oneway                                  LOAD_TOKEN(mfs_OnewayToken);
@@ -547,7 +555,7 @@ v                                       LOAD_TOKEN(mfs_VersionToken);
  */
 #define LINENO_OR_TOKENCNT %MEGACO_LINENO_OR_TOKENCOUNTER%
 
-/* #define MFS_DEBUG true  temporary */
+/* #define MFS_DEBUG true    temporary */
 #if defined(MFS_DEBUG)
 #  define DBG( proto ) mfs_dbg proto
 #  define DBG_BUF(func, bufName, buf, bufSz) mfs_dbg_buf_print(func, bufName, buf, bufSz)
@@ -790,7 +798,8 @@ static void mfs_load_map_value()
 static void mfs_load_map_timer()
 {
   /* The digit map timer consists of 3 or 4 characters:
-   * 0 - the kind of timer (t|T|s|S|l|L)
+   * z and Z are actually version 2 only
+   * 0 - the kind of timer (t|T|s|S|l|L|z|Z)
    * 1 - a colon
    * 2 - mandatory digit
    * 3 - optional digit
@@ -840,6 +849,10 @@ static void mfs_load_map_timer()
   case 'l':
   case 'L':
     mfs_digit_map_long_ptr = mfs_text_ptr;
+    break;;
+  case 'z':
+  case 'Z':
+    mfs_digit_map_duration_ptr = mfs_text_ptr;
     break;;
   }
 
@@ -904,12 +917,15 @@ static void mfs_load_map_token()
     load_timer_field(mfs_digit_map_long_ptr);
     mfs_digit_map_long_ptr = NULL;
     
+    load_timer_field(mfs_digit_map_duration_ptr);
+    mfs_digit_map_duration_ptr = NULL;
+    
     ASSIGN_TERM_SPEC(ERL_DRV_STRING);
     ASSIGN_TERM_SPEC((ErlDrvTermData)mfs_digit_map_value_ptr);
     ASSIGN_TERM_SPEC(mfs_digit_map_value_len);
     mfs_digit_map_value_ptr = NULL; 
     ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
-    ASSIGN_TERM_SPEC(5);
+    ASSIGN_TERM_SPEC(6);
   }
   
   ASSIGN_TERM_SPEC(ERL_DRV_TUPLE);
@@ -998,6 +1014,7 @@ static ErlDrvData mfs_start(ErlDrvPort port, char *buf)
   mfs_NEQUAL = driver_mk_atom("NEQUAL");
   mfs_NotifyCompletionToken = driver_mk_atom("NotifyCompletionToken");
   mfs_NotifyToken = driver_mk_atom("NotifyToken");
+  mfs_Nx64kToken = driver_mk_atom("Nx64kToken");
   mfs_ObservedEventsToken = driver_mk_atom("ObservedEventsToken");
   mfs_OffToken = driver_mk_atom("OffToken");
   mfs_OnOffToken = driver_mk_atom("OnOffToken");
@@ -1039,6 +1056,7 @@ static ErlDrvData mfs_start(ErlDrvPort port, char *buf)
   mfs_TerminationStateToken = driver_mk_atom("TerminationStateToken");
   mfs_TestToken = driver_mk_atom("TestToken");
   mfs_TimeOutToken = driver_mk_atom("TimeOutToken");
+  mfs_TimeStampToken = driver_mk_atom("TimeStampToken"); /* OTP-5042 */
   mfs_TopologyToken = driver_mk_atom("TopologyToken");
   mfs_TransToken = driver_mk_atom("TransToken");
   mfs_V18Token = driver_mk_atom("V18Token");
@@ -1069,7 +1087,7 @@ static void mfs_stop(ErlDrvData handle)
 }
 
 static void mfs_command(ErlDrvData handle, 
-					char *buf, int buf_len)
+			char *buf, int buf_len)
 {
   driver_failure_atom(mfs_port, "bad_usage");
 
@@ -1153,7 +1171,7 @@ static int mfs_control(ErlDrvData          handle,
   if (!mfs_error) {
 
     /* 
-     * Prepare the rest of the {tokens, TokenList, LastLine} tuple 
+     * Prepare the rest of the {tokens, TokenList, Vsn LastLine} tuple 
      * and send it as message top caller. 
      */
     mfs_ensure_term_spec(7);

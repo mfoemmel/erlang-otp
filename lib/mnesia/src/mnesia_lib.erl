@@ -548,8 +548,13 @@ core_file() ->
 	     (I) -> ["_", I]
 	  end,
     List = lists:append([Fun(I) || I <- Integers]),
-    filename:absname(lists:concat(["MnesiaCore.", node()] ++ List)).
-
+    case mnesia_monitor:get_env(core_dir) of
+	Dir when list(Dir) ->
+	    filename:absname(lists:concat(["MnesiaCore.", node()] ++ List), Dir);
+	_ ->
+	    filename:absname(lists:concat(["MnesiaCore.", node()] ++ List))
+    end.
+   
 mkcore(CrashInfo) ->
 %   dbg_out("Making a Mnesia core dump...~p~n", [CrashInfo]),
     Nodes = [node() |nodes()],
@@ -628,14 +633,20 @@ relatives() ->
 	   end,
     lists:zf(Info, mnesia:ms()).
 
-workers({workers, Loader, Sender, Dumper}) ->
-    Info = fun({Name, Pid}) ->
+workers({workers, Loader, Senders, Dumper}) ->
+    Info = fun({Pid, {send_table, Tab, _Receiver, _St}}) ->
+		   case Pid of
+		       undefined -> false;
+		       Pid -> {true, {Pid, Tab, catch process_info(Pid)}}
+		   end;
+	       ({Name, Pid}) ->
 		   case Pid of
 		       undefined -> false;
 		       Pid -> {true, {Name, Pid, catch process_info(Pid)}}
 		   end
 	   end,
-    lists:zf(Info, [{loader, Loader}, {sender, Sender}, {dumper, Dumper}]).
+    SInfo = lists:zf(Info, Senders),
+    [{senders, SInfo} | lists:zf(Info, [{loader, Loader}, {dumper, Dumper}])].
 
 locking_procs(LockList) when list(LockList) ->
     Tids = [element(1, Lock) || Lock <- LockList],

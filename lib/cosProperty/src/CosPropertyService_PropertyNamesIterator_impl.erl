@@ -93,7 +93,7 @@ init(Properties) ->
 %% Description: Shutdown the server
 %% Returns    : any (ignored by gen_server)
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%----------------------------------------------------------------------
@@ -101,7 +101,7 @@ terminate(Reason, State) ->
 %% Description: Convert process state when code is changed
 %% Returns    : {ok, NewState}
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%---------------------------------------------------------------------%

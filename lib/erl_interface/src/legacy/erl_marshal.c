@@ -18,7 +18,7 @@
 /*
  * Purpose: Decoding and encoding Erlang terms.
  */  
-#include "config.h"
+#include "eidef.h"
 
 /* Try to find a good alloca() */
 /* AIX requires this to be the first thing in the file. */
@@ -61,12 +61,13 @@
 #include "erl_internal.h"
 
 #include "eiext.h" /* replaces external.h */
-
-#include "eicode.h"
-
 #include "putget.h"
 
 static int is_string(ETERM* term);
+#if defined(VXWORKS) && CPU == PPC860
+static int erl_fp_compare(unsigned *a, unsigned *b);
+static void erl_long_to_fp(long l, unsigned *d);
+#endif
 
 /* Used when comparing two encoded byte arrays */
 /* this global data is ok (from threading point of view) since it is
@@ -91,6 +92,7 @@ static int init_cmp_array_p=1; /* initialize array, the first time */
 #endif
 
 static INLINE int cmp_floats(double f1, double f2);
+static INLINE double to_float(long l);
 
 #define ERL_NUM_CMP 1
 #define ERL_REF_CMP 3
@@ -1566,6 +1568,18 @@ static INLINE int cmp_floats(double f1, double f2)
 #endif
 }
 
+static INLINE double to_float(long l) 
+{
+    double f;
+#if defined(VXWORKS) && CPU == PPC860
+    erl_long_to_fp(l, (unsigned *) &f);
+#else
+    f = l;
+#endif
+    return f;
+}
+
+
 static int cmp_small_big(unsigned char**e1, unsigned char **e2)
 {
     int i1,i2;
@@ -1619,7 +1633,7 @@ static int cmp_small_float(unsigned char**e1, unsigned char **e2)
     if ( ei_decode_long(*e1,&i1,&l1) < 0 ) return -1;
     if ( ei_decode_double(*e2,&i2,&f2) < 0 ) return 1;
     
-    f1 = l1;
+    f1 = to_float(l1);
 
     return cmp_floats(f1,f2);
 }
@@ -1794,7 +1808,7 @@ int erl_compare_ext(unsigned char *e1, unsigned char *e2)
 
 #if defined(VXWORKS) && CPU == PPC860
 /* FIXME we have no floating point but don't we have emulation?! */
-int erl_fp_compare(unsigned *a, unsigned *b) 
+static int erl_fp_compare(unsigned *a, unsigned *b) 
 {
     /* Big endian mode of powerPC, IEEE floating point. */
     unsigned a_split[4] = {a[0] >> 31,             /* Sign bit */
@@ -1845,6 +1859,47 @@ int erl_fp_compare(unsigned *a, unsigned *b)
         res = -1 * res;
     return res;
 }
+
+static void join(unsigned d_split[4], unsigned *d)
+{
+    d[0] = (d_split[0] << 31) |         /* Sign bit */
+	((d_split[1] & 0x7FFU) << 20) | /* Exponent */
+	(d_split[2] & 0xFFFFFU);        /* Mantissa MS bits */
+    d[1] = d_split[3];                  /* Mantissa LS bits */
+}
+
+static int blength(unsigned long l)
+{
+    int i;
+    for(i = 0; l; ++i)
+	l >>= 1;
+    return i;
+}
+
+static void erl_long_to_fp(long l, unsigned *d) 
+{
+    unsigned d_split[4];
+    unsigned x;
+    if (l < 0) {
+	d_split[0] = 1;
+	x = -l;
+    } else {
+	d_split[0] = 0;
+	x = l;
+    }
+
+    if (!l) {
+	memset(d_split,0,sizeof(d_split));
+    } else {
+	int len = blength(x);
+	x <<= (33 - len);
+	d_split[2] = (x >> 12);
+	d_split[3] = (x << 20);
+	d_split[1] = 1023 + len - 1;
+    }
+    join(d_split,d);
+}
+
 #endif
 
 

@@ -64,6 +64,7 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/examples/certs
 	tar cf - Makefile ebin etc rnd src  | \
 		(cd $(RELSYSDIR)/examples/certs; tar xf -)
+	chmod -f -R ug+w $(RELSYSDIR)/examples
 
 release_docs_spec:
 

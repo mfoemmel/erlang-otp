@@ -59,11 +59,11 @@
 %% Effect   : Functions demanded by the gen_server module. 
 %%------------------------------------------------------------
 
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-handle_info(Info, State) ->
-    ?debug_print("INFO: ~p  DATA: ~p~n", [State, Info]),
+handle_info(_Info, State) ->
+    ?debug_print("INFO: ~p  DATA: ~p~n", [State, _Info]),
     {noreply, State}.
 
 %%----------------------------------------------------------%
@@ -75,7 +75,7 @@ init(Options) ->
     process_flag(trap_exit, true),
     {ok, #state{options = Options}}.
 
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %%-----------------------------------------------------------

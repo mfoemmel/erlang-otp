@@ -17,6 +17,282 @@
 
 <CENTER><H1>Asn1 Release Notes</H1></CENTER>
 
+<h2>Asn1 1.4.4.2</h2>
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>An error due to unchecked referenced imported type resulted
+  in missing tag in some table constraint cases. This error is
+  now corrected. Error occured during decode in 
+  <c>ber_bin optimized</c> version.
+  (Own Id: OTP-5022)<p>
+  </li>
+
+</ul>
+
+<!--- ----------------------------------------------------------------- --->
+
+<h2>Asn1 1.4.4.1</h2>
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>When a referenced value in another module in turn referenced a
+  defined value the compilation crashed. This is due to the new
+  rutines for compilation, that external referencies are resolved
+  during compilation, and not by the order in which modules are
+  compiled. This error is now corrected.
+  (Own Id: OTP-4970)<p>
+  </li>
+
+</ul>
+
+
+
+<h2>Asn1 1.4.4</h2>
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+  Functionality for parameterized class is added. Parsing failures on
+  WithSyntax spec is corrected.
+  (Own Id: OTP-4893)<p>
+  </li>
+
+  <li>
+  The failure due to Parameterized Type when parameter is an object
+  set is corrected.
+  (Own Id: OTP-4894)<p>
+  (Aux Id: OTP-4893)
+  </li>
+
+  <li>
+  Object Identifier values with two components and teh first was a
+  value reference failed due to parsing conflicts. Now it is
+  corrected.
+  (Own Id: OTP-4895)<p>
+  </li>
+
+  <li>
+  The errorounus comparison of file name and asn1 module name could
+  cause compilation failure. The situation for this failure is rare,
+  it requires that other processes modifies the compiled file during
+  the compilation procedure. It is now fixed.
+  (Own Id: OTP-4944)
+  (Aux Id: seq8429)<p>
+  </li>
+
+  <li>
+  Selective decode was ignored when exclusive decode spec in asn1
+  configfile was missing. Selective decode failed when the selected
+  type was the top type. These bugs are now removed.
+  (Own Id: OTP-4953)
+  (Aux Id: seq8436)<p>
+  </li>
+
+  <li>
+  The test interface asn1ct:test/1,2,3 and asn1ct:value/2 failed for
+  open type and EXTERNAL. The bug is now removed.
+  (Own Id: OTP-4955)
+  (Aux Id: seq8438)<p>
+  </li>
+
+  <li>
+  Two equal functions were generated for two components referencing
+  the same type when they were picked by the action "parts". The bug
+  is now fixed.
+  (Own Id: OTP-4957)
+  (Aux Id: seq8434)<p>
+  </li>
+
+</ul>
+
+<h3>Improvements and new features</h3>
+
+<ul>
+    <li>
+    INTEGER with named number list and ENUMERATED can now be sub
+    constrained with names from the names list.
+    (Own Id: OTP-4917)<p>
+    </li>
+
+    <li>
+    Now there is support for SelectionType (X 680 section 29)
+    (Own Id: OTP-4918)<p>
+    </li>
+
+    <li>
+    The compiler now resolves circular dependencies. When asn1 specs
+    IMPORTS from each other so that there are circular dependencies.
+    (Own Id: OTP-4919)<p>
+    </li>
+
+    <li>
+    Now is the asn1 type UTF8String supported. For user instructions
+    see documentation.
+    (Own Id: OTP-4965)<p>
+    </li>
+</ul>
+
+<h2>Asn1 1.4.3.2</h2>
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+    <li>Release of Asn1 1.4.3.1 on R7B, The functionality is the same, but
+    the layer between the driver and the asn1 erlang code is different.
+    </li>
+
+</ul>
+
+<!--- ----------------------------------------------------------------- --->
+
+
+<h2>Asn1 1.4.3.1</h2>
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+  The <c>{internal_error,...,{ unrecognized_type,...}}</c> error occuring for a SET type when compiling with options <c>[ber_bin,optimize,der]</c> is now corrected.
+  (Own Id: OTP-4866)<p>
+  </li>
+
+  <li>
+  False encode of BIT STRING in PER (per_bin,optimize) is fixed. The error occured when there was a type like BIT STRING (SIZE(C)) and C > 16.
+  (Own Id: OTP-4869)<p>
+  </li>
+
+</ul>
+<!--- ----------------------------------------------------------------- --->
+
+
+<h2>Asn1 1.4.3</h2>
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+  Functionality to handle parameterized object sets have been added.<br>
+  (Own Id: OTP-4832)<p>
+  </li>
+
+  <li>
+  Bug causing duplicated fuction definitions using exclusive decode is removed.<br>
+  (Own Id: OTP-4833)<p>
+  </li>
+
+  <li>
+  The race condition when loading asn1 driver is solved.<br>
+  (Own Id: OTP-4835)<p>
+  </li>
+
+</ul>
+<!--- ----------------------------------------------------------------- --->
+
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+    A specialized decode, <em>selective decode</em> is now available. It decodes a chosen internal sub-type of a constructed type.<br>
+    (Own Id: OTP-4856)<p>
+  </li>
+
+</ul>
+
+<!--- ----------------------------------------------------------------- --->
+
+
+<h2>Asn1 1.4.2.2</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+    <li>Release of Asn1 1.4.2.1 on R7B, The functionality is the same, but
+    the layer between the driver and the asn1 erlang code is different.
+    </li>
+</ul>
+
+<!--- ----------------------------------------------------------------- --->
+
+
+
+<h2>Asn1 1.4.2.1</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+  ObjectDescriptor does now work as part of a sequence, set or choice.<br>
+  (Own Id: OTP-4773)
+  </li>
+
+  <li>
+  When a SEQUENCE that have extension mark was decoded inside a
+  SEQUENCE OF it could cause decode error due to a failure in
+  restbytes2. It is now corrected.<br> 
+  (Own Id: OTP-4791)<p>
+  </li>
+
+  <li>
+  Now the bug is fixed that caused the compiler crash on an untaged
+  optional open type.<br>
+  (Own Id: OTP-4792)
+  </li>
+
+  <li>
+  The earlier exit caused by bad indata is now fixed so it will
+  rreturn an {error,Reason} tuple.<br>
+  (Own Id: OTP-4797)
+  </li>
+
+  <li>
+  Open type encoded with indefinite length is now correct decoded.<br>
+  (Own Id: OTP-4798)
+  </li>
+
+  <li>
+  Now is absent optional open types handled correctly.<br>
+  (Own Id: OTP-4799)
+  </li>
+
+  <li>
+  Now is the necessary functions available for sorting in run-time of
+  SET and SET OF components.<br>
+  (Own Id: OTP-4809)
+  </li>
+
+</ul>
+<!--- ----------------------------------------------------------------- --->
+
+
+
 
 <h2>Asn1 1.4.2</h2>
 

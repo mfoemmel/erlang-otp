@@ -215,8 +215,8 @@ gen_decode_constructed(_Erules,Typename,D) when record(D,type) ->
 				   valueindex=ValIndex} ->
 %%		{AttrN,ObjectSet};
 		F = fun(#'ComponentType'{typespec=CT})->
-			    case {CT#type.constraint,CT#type.tablecinf} of
-				{[],[{objfun,_}|_R]} -> true;
+			    case {asn1ct_gen:get_constraint(CT#type.constraint,componentrelation),CT#type.tablecinf} of
+				{no,[{objfun,_}|_R]} -> true;
 				_ -> false
 			    end
 		    end,
@@ -475,6 +475,7 @@ gen_decode_sof_components(Typename,SeqOrSetOf,Cont) ->
     Conttype = asn1ct_gen:get_inner(Cont#type.def),
     Ctgenmod = list_to_atom(lists:concat(["asn1ct_gen_",per,
 					  asn1ct_gen:rt2ct_suffix()])),
+    CurrMod = get(currmod),
     case asn1ct_gen:type(Conttype) of
 	{primitive,bif} ->
 	    Ctgenmod:gen_dec_prim(per,Cont,"Bytes"),
@@ -485,6 +486,8 @@ gen_decode_sof_components(Typename,SeqOrSetOf,Cont) ->
 		  "'(Bytes, telltype",ObjFun,"),",nl});
 	#typereference{val=Dname} ->
 	    emit({"'dec_",Dname,"'(Bytes,telltype),",nl});
+	#'Externaltypereference'{module=CurrMod,type=EType} ->
+	    emit({"'dec_",EType,"'(Bytes,telltype),",nl});
 	#'Externaltypereference'{module=EMod,type=EType} ->
 	    emit({"'",EMod,"':'dec_",EType,"'(Bytes,telltype),",nl});
 	_ ->
@@ -1033,7 +1036,13 @@ gen_dec_line(TopType,Cname,Type,Pos,DecInfObj,Ext)  ->
     %% Prepare return value
     case DecInfObj of
 	{Cname,ObjSet} ->
-	    {[{ObjSet,Cname,asn1ct_gen:mk_var(asn1ct_name:curr(term))}],
+	    ObjSetName =
+		case ObjSet of
+		    {deep,OSName,_,_} ->
+			OSName;
+		    _ -> ObjSet
+		end,
+	    {[{ObjSetName,Cname,asn1ct_gen:mk_var(asn1ct_name:curr(term))}],
 	     SaveBytes};
 	_ ->
 	    {[],SaveBytes}

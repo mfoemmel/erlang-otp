@@ -81,28 +81,18 @@
 
 %%
 %% Define the message macros with or without logging,
-%% defending on the HIPE_LOGGING flag
 
--ifdef(HIPE_LOGGING).
 -define(msg(Msg, Args),
-   error_logger:info_msg(?MSGTAG ++ Msg, Args)).
+	code_server:info_msg(?MSGTAG ++ Msg, Args)).
 -define(mmsg(Msg, Args, Mod),
-   error_logger:info_msg(?MMSGTAG(Mod) ++ Msg, Args)).
+	code_server:info_msg(?MMSGTAG(Mod) ++ Msg, Args)).
 -define(untagged_msg(Msg, Args),
-	error_logger:info_msg(Msg, Args)).
--else.
--define(msg(Msg, Args),
-	io:format(?MSGTAG ++ Msg, Args)).
--define(mmsg(Msg, Args, Mod),
-	io:format(?MMSGTAG(Mod) ++ Msg, Args)).
--define(untagged_msg(Msg, Args),
-   io:format(Msg, Args)).
--endif.
+	code_server:info_msg(Msg, Args)).
 
 %%
 %% Define error and warning messages.
 -define(error_msg(Msg, Args),
-	error_logger:error_msg(
+	code_server:error_msg(
 	  ?MSGTAG ++
 	  "ERROR:~s:~w: " ++ Msg,
 	  [?FILE,?LINE|Args])).
@@ -134,12 +124,12 @@
 %% Define the exit macro
 %%
 -ifdef(VERBOSE).
--define(EXIT(Reason),erlang:fault({?MODULE,?LINE,Reason})).
--else.
 -define(EXIT(Reason),
  	?msg("EXITED with reason ~w @~w:~w\n",
  	    [Reason,?MODULE,?LINE]),
  	erlang:fault({?MODULE,?LINE,Reason})).
+-else.
+-define(EXIT(Reason),erlang:fault({?MODULE,?LINE,Reason})).
 -endif.
 
 

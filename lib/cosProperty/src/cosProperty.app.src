@@ -34,7 +34,6 @@
 	'CosPropertyService_PropertyTypes',
 	'CosPropertyService_ReadOnlyProperty',
 	'CosPropertyService_UnsupportedMode',
-	'CosPropertyService_UnsupportedMode',
 	'CosPropertyService_UnsupportedProperty',
 	'CosPropertyService_UnsupportedTypeCode'
        ]

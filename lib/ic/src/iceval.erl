@@ -77,32 +77,33 @@ check_op(G, S, N, Tk, Types, Op, E1) ->
 
 %% Match the declared type TK against the factual value of an constant
 %%
-check_tk(G, Any, default) -> true;		% Default case in union
-check_tk(G, positive_int, V) when integer(V), V >= 0 -> true;
-check_tk(G, tk_long, V) when integer(V) -> true;
-check_tk(G, tk_longlong, V) when integer(V) -> true;  %% LLONG
-check_tk(G, tk_short, V) when integer(V) -> true;
-check_tk(G, tk_ushort, V) when integer(V), V >= 0 -> true;
-check_tk(G, tk_ulong, V) when integer(V), V >= 0 -> true;
-check_tk(G, tk_ulonglong, V) when integer(V), V >= 0 -> true;  %% ULLONG
-check_tk(G, tk_float, V) when float(V) -> true;
-check_tk(G, tk_double, V) when float(V) -> true;
-check_tk(G, tk_boolean, V) -> is_bool(V);
-check_tk(G, tk_char, {char, V}) -> true;
-check_tk(G, tk_wchar, {wchar, V}) -> true; %% WCHAR
-check_tk(G, {tk_string, Len}, {string, V}) -> true;
-check_tk(G, {tk_wstring, Len}, {wstring, V}) -> true;  %% WSTRING
-check_tk(G, {tk_fixed, Digits, Scale}, {fixed, Digits, Scale, V}) -> true;
-check_tk(G, tk_octet, V) when integer(V) -> true;
-%%check_tk(G, tk_null, V) when integer(V) -> true;
-%%check_tk(G, tk_void, V) when integer(V) -> true;
-%%check_tk(G, tk_any, V) when integer(V) -> true;
-%%check_tk(G, {tk_objref, "", "Object"}, V) when integer(V) -> true.
-check_tk(G, {tk_enum, _, _, Body}, {enum_id, Id}) -> 
+check_tk(_G, _Any, default) -> true;		% Default case in union
+check_tk(_G, positive_int, V) when integer(V), V >= 0 -> true;
+check_tk(_G, tk_long, V) when integer(V) -> true;
+check_tk(_G, tk_longlong, V) when integer(V) -> true;  %% LLON_G
+check_tk(_G, tk_short, V) when integer(V) -> true;
+check_tk(_G, tk_ushort, V) when integer(V), V >= 0 -> true;
+check_tk(_G, tk_ulong, V) when integer(V), V >= 0 -> true;
+check_tk(_G, tk_ulonglong, V) when integer(V), V >= 0 -> true;  %% ULLON_G
+check_tk(_G, tk_float, V) when float(V) -> true;
+check_tk(_G, tk_double, V) when float(V) -> true;
+check_tk(_G, tk_boolean, V) -> is_bool(V);
+check_tk(_G, tk_char, {char, _V}) -> true;
+check_tk(_G, tk_wchar, {wchar, _V}) -> true; %% WCHAR
+check_tk(_G, {tk_string, _Len}, {string, _V}) -> true;
+check_tk(_G, {tk_wstring, _Len}, {wstring, _V}) -> true;  %% WSTRING
+check_tk(_G, {tk_fixed, Digits, Scale}, {fixed, Digits, Scale, _V}) -> true;
+check_tk(_G, tk_octet, V) when integer(V) -> true;
+%%check_tk(_G, tk_null, V) when integer(V) -> true;
+%%check_tk(_G, tk_void, V) when integer(V) -> true;
+%%check_tk(_G, tk_any, V) when integer(V) -> true;
+%%check_tk(_G, {tk_objref, "", "Object"}, V) when integer(V) -> true.
+check_tk(_G, {tk_enum, _, _, Body}, {enum_id, Id}) -> 
     until(fun(X) when X == Id -> true;
-	     (X) -> %%io:format("Checking ~p to ~p~n", [X, Id]),
-		    false end, Body);
-check_tk(G, TK, V) -> %%io:format("Matching ~p and ~p~n", [TK, V]),
+	     (_X) -> 
+		  false 
+	  end, Body);
+check_tk(_G, _TK, _V) ->
     false.
 
 get_val({string, X}) -> X;
@@ -135,7 +136,7 @@ until(F, [H|T]) ->
 	true -> true;
 	false -> until(F, T)
     end;
-until(F, []) -> false.
+until(_F, []) -> false.
 
 %% Section of all the boolean operators (because Erlang ops don't like
 %% boolean values.
@@ -185,7 +186,7 @@ e_fixed_mul(#fixed{digits = D1, scale = S1, value = V1},
 
 %% Boundries determined as fixed<(d1-s1+s2) + s inf ,s inf>
 e_fixed_div(#fixed{digits = D1, scale = S1, value = V1}, 
-	    #fixed{digits = D2, scale = S2, value = V2}) ->
+	    #fixed{digits = _D2, scale = S2, value = V2}) ->
     {PV1, PV2} = normalize(S1, V1, S2, V2),
     DigitsMin = (D1-S1+S2),
     R1 = (PV1 div PV2),
@@ -207,10 +208,11 @@ check_comb({X, _}, {X, _}) -> true;		% Strings and chars are tuples
 check_comb({fixed, _, _, _}, {fixed, _, _, _}) -> true;
 check_comb(X, Y) ->
     case {is_bool(X), is_bool(Y)} of
-	{true, true} -> true;
-	_ -> false
-    end;
-check_comb(_, _) -> false.
+	{true, true} -> 
+	    true;
+	_ -> 
+	    false
+    end.
 
 is_bool(true) -> true;
 is_bool(false) -> true;
@@ -276,14 +278,14 @@ eval_e(G, S, N, Tk, {'%', T1, T2}) ->
     E1 rem E2;
 
 %%%% (21)
-eval_e(G, S, N, Tk, {{'-', Line}, T}) ->
+eval_e(G, S, N, Tk, {{'-', _Line}, T}) ->
     case check_op(G, S, N, Tk, [int, float, fixed], '-', T) of
 	F when record(F,fixed) ->
 	    F#fixed{value = -(F#fixed.value)};
 	Number ->
 	    -Number
     end;
-eval_e(G, S, N, Tk, {{'+', Line}, T}) ->
+eval_e(G, S, N, Tk, {{'+', _Line}, T}) ->
     check_op(G, S, N, Tk, [int, float, fixed], '+', T);
 eval_e(G, S, N, Tk, {{'~', Line}, T}) ->
     ic_error:error(G, {unsupported_op, {'~', Line}}),
@@ -295,9 +297,9 @@ eval_e(G, S, N, Tk, {{'~', Line}, T}) ->
 %% checking. These tuples are removed just before returning from top
 %% function.
 %%
-eval_e(G, S, N, tk_fixed, {'<fixed_pt_literal>', Line, X}) ->
+eval_e(_G, _S, _N, tk_fixed, {'<fixed_pt_literal>', _Line, X}) ->
     create_fixed(X);
-eval_e(G, S, N, {tk_fixed, Digits, Scale}, {'<fixed_pt_literal>', Line, X})
+eval_e(G, _S, _N, {tk_fixed, Digits, Scale}, {'<fixed_pt_literal>', Line, X})
   when Digits < 32, Digits >= Scale ->
     case convert_fixed(X, [], Digits, Digits-Scale) of
 	{error, Format, Args} ->
@@ -305,32 +307,32 @@ eval_e(G, S, N, {tk_fixed, Digits, Scale}, {'<fixed_pt_literal>', Line, X})
 	FixedData ->
 	    {fixed, Digits, Scale, FixedData}
     end;
-eval_e(G, S, N, Tk, {'<integer_literal>', Line, X}) -> list_to_integer(X);
-eval_e(G, S, N, {tk_string,_}, {'<string_literal>', Line, X}) -> {string, X};
-eval_e(G, S, N, {tk_wstring,_}, {'<wstring_literal>', Line, X}) -> {wstring, X}; %% WSTRING
-eval_e(G, S, N, tk_char, {'<character_literal>', Line, X}) -> {char, hd(X)};
-eval_e(G, S, N, tk_wchar, {'<wcharacter_literal>', Line, X}) -> {wchar, hd(X)}; %% WCHAR
-eval_e(G, S, N, Tk, {'TRUE', Line}) -> true;
-eval_e(G, S, N, Tk, {'FALSE', Line}) -> false;
-eval_e(G, S, N, Tk, {'<floating_pt_literal>', Line, X}) -> to_float(X);
+eval_e(_G, _S, _N, _Tk, {'<integer_literal>', _Line, X}) -> list_to_integer(X);
+eval_e(_G, _S, _N, {tk_string,_}, {'<string_literal>', _Line, X}) -> {string, X};
+eval_e(_G, _S, _N, {tk_wstring,_}, {'<wstring_literal>', _Line, X}) -> {wstring, X}; %% WSTRING
+eval_e(_G, _S, _N, tk_char, {'<character_literal>', _Line, X}) -> {char, hd(X)};
+eval_e(_G, _S, _N, tk_wchar, {'<wcharacter_literal>', _Line, X}) -> {wchar, hd(X)}; %% WCHAR
+eval_e(_G, _S, _N, _Tk, {'TRUE', _Line}) -> true;
+eval_e(_G, _S, _N, _Tk, {'FALSE', _Line}) -> false;
+eval_e(_G, _S, _N, _Tk, {'<floating_pt_literal>', _Line, X}) -> to_float(X);
 %% Some possible error conditions
-eval_e(G, S, N, Tk, {'<character_literal>', Line, X}) -> {char, hd(X)}; %% ERROR?
+eval_e(_G, _S, _N, _Tk, {'<character_literal>', _Line, X}) -> {char, hd(X)}; %% ERROR?
 %%
-eval_e(G, S, N, Tk, X) when element(1, X) == scoped_id ->
+eval_e(G, S, N, _Tk, X) when element(1, X) == scoped_id ->
     mk_val(ictype:scoped_lookup(G, S, N, X));
-eval_e(G, S, N, Tk, {default, _}) -> default;	% Default case in union
-eval_e(G, S, N, Tk, Val) ->
+eval_e(_G, _S, _N, _Tk, {default, _}) -> default;	% Default case in union
+eval_e(G, _S, _N, Tk, Val) ->
     ic_error:error(G, {plain_error_string, Val, 
 		       io_lib:format("value and declared type ~p differ", [Tk])}).
 
 %% A fixed type can be 123.45 or 123 but we represent it as integers (i.e. 12345 or 123).
 convert_fixed([], Acc, 0, _) ->
     list_to_integer(lists:reverse(Acc));
-convert_fixed([], Acc, _, _) ->
+convert_fixed([], _Acc, _, _) ->
     {error, "Fixed type do not match the digits field", []};
 convert_fixed([$.|Rest], Acc, Digits, 0) ->
     convert_fixed(Rest, Acc, Digits, -1);
-convert_fixed([$.|Rest], Acc, _, _) ->
+convert_fixed([$.|_Rest], _Acc, _, _) ->
     {error, "Fixed decimal point placed incorrectly", []};
 convert_fixed([X|Rest], Acc, Digits, Position) ->
     convert_fixed(Rest, [X|Acc], Digits-1, Position-1).
@@ -347,7 +349,7 @@ create_fixed([], Acc, Total, Frac, true) ->
     Digits = Total-N,
     Scale = Frac-N,
     #fixed{digits = Digits, scale = Scale, value = list_to_integer(Fixed)};
-create_fixed([], Acc, Total, Frac, false) ->
+create_fixed([], Acc, Total, _Frac, false) ->
     %% A '.' never found. Hence, must be 2000D
     #fixed{digits = Total, scale = 0, value = list_to_integer(lists:reverse(Acc))};
 create_fixed([$.|Rest], Acc, Total, _, _) ->
@@ -368,7 +370,7 @@ mk_val({_, _, tk_wchar, V}) -> {wchar, V}; %% WCHAR
 mk_val({_, _, enum_val, V}) -> 
     {enum_id, ic_forms:get_id2(V)};
 mk_val(X) when element(1, X) == error -> X;
-mk_val({_, _, TK, V}) -> 
+mk_val({_, _, _TK, V}) -> 
     V;
 mk_val(V) -> V.
 
@@ -448,7 +450,7 @@ check_fixed_overflow(#fixed{digits = Digits, scale = Scale, value = Value}) ->
     case count_digits(abs(Value)) of
 	overflow ->
 	    {N, NewVal} = cut_overflow(0, Value),
-	    NewDigits = Digits - N,
+%	    NewDigits = Digits - N,
 	    if
 		N > Scale ->
 		    #fixed{digits = 31, scale = 0, value = NewVal};
@@ -544,7 +546,7 @@ count_digits(X) when X >= 10000 -> 5;
 count_digits(X) when X >= 1000 -> 4;
 count_digits(X) when X >= 100 -> 3;
 count_digits(X) when X >= 10 -> 2;
-count_digits(X) -> 1.
+count_digits(_X) -> 1.
     
 %%------------------------------------------------------------------
 %%--------------- END Fixed Datatype Helper Functions --------------

@@ -143,7 +143,7 @@
 %%
 %% 
 %%--------------------------------------------------------------------
-allowed_opt(default_opts, V)		-> true;
+allowed_opt(default_opts, _V)		-> true;
 allowed_opt(debug, V)			-> is_bool(V);
 allowed_opt(tokens, V)			-> is_bool(V);
 allowed_opt(form, V)			-> is_bool(V);
@@ -172,28 +172,32 @@ allowed_opt(serv_last_call, exception)	-> true;
 allowed_opt(serv_last_call, exit)	-> true;
 allowed_opt(silent, V)			-> is_bool(V);
 allowed_opt(silent2, V)			-> is_bool(V);
-allowed_opt({serv, _}, V)		-> true;
-allowed_opt({impl, _}, V)		-> true;
-allowed_opt(outdir, V)			-> true;
-allowed_opt(servdir, V)			-> true;
-allowed_opt(stubdir, V)			-> true;
-allowed_opt(cfgfile, V)			-> true;
+allowed_opt({serv, _}, _V)		-> true;
+allowed_opt({impl, _}, _V)		-> true;
+allowed_opt(outdir, _V)			-> true;
+allowed_opt(servdir, _V)		-> true;
+allowed_opt(stubdir, _V)		-> true;
+allowed_opt(cfgfile, _V)		-> true;
 allowed_opt(use_preproc, V)		-> is_bool(V);
-allowed_opt(preproc_cmd, V)		-> true;
-allowed_opt(preproc_flags, V)		-> true;
-allowed_opt(this, V)			-> true;
+allowed_opt(preproc_cmd, _V)		-> true;
+allowed_opt(preproc_flags, _V)		-> true;
+allowed_opt(this, _V)			-> true;
 allowed_opt({this, _}, V)		-> is_bool(V);
-allowed_opt(from, V)			-> true;
+allowed_opt(from, _V)			-> true;
 allowed_opt({from, _}, V)		-> is_bool(V);
-allowed_opt(handle_info, V)		-> true;
+allowed_opt(handle_info, _V)		-> true;
 allowed_opt({handle_info, _}, V)	-> is_bool(V);
-allowed_opt(timeout, V)		        -> true;
+allowed_opt(timeout, _V)	        -> true;
 allowed_opt({timeout, _}, V)     	-> is_bool(V);
+allowed_opt(c_timeout, {V1, V2})	-> is_int(V1) and is_int(V2);
+allowed_opt(c_timeout, V)               -> is_int(V);
 allowed_opt(scoped_op_calls, V)         -> is_bool(V);
 % Compatibility option (semantic check limitation)
 allowed_opt(scl, V)                     -> is_bool(V);
 % Added switches for non corba generation
+allowed_opt(flags, V)                   -> is_int(V);
 allowed_opt(be, erl_corba)	        -> true;
+allowed_opt(be, erl_template)	        -> true;
 allowed_opt(be, erl_genserv)	        -> true;
 allowed_opt(be, c_genserv)		-> true;
 allowed_opt(be, erl_plain)		-> true; 
@@ -207,13 +211,15 @@ allowed_opt({broker,_},{_,Term})  	-> is_term(Term);
 allowed_opt({use_tk,_},V)               -> is_bool(V);
 %
 % Multiple be
-allowed_opt(multiple_be, List)    	-> true;
+allowed_opt(multiple_be, _List)    	-> true;
 %
-allowed_opt(precond, {M, F})            -> true;
-allowed_opt({precond, _}, {M, F})       -> true;
-allowed_opt(postcond, {M, F})           -> true;
-allowed_opt({postcond, _}, {M, F})      -> true;
-allowed_opt(no_codechange, V)             -> is_bool(V);
+allowed_opt(precond, {_M, _F})          -> true;
+allowed_opt({precond, _}, {_M, _F})     -> true;
+allowed_opt(postcond, {_M, _F})         -> true;
+allowed_opt({postcond, _}, {_M, _F})    -> true;
+allowed_opt(no_codechange, V)           -> is_bool(V);
+allowed_opt(user_protocol, _V)		-> true;
+allowed_opt(light_ifr, V)               -> is_bool(V);
 allowed_opt(_, _)			-> false.
 
 
@@ -235,7 +241,7 @@ add_opt(G, K, V) ->
     do_add_opt(G, K, V).
 
 
-assure_directory(G, Dir) ->
+assure_directory(_G, Dir) ->
     Dirs = filename:split(Dir),
     check_dirs(Dirs, [], filename:pathtype(Dir)).
     
@@ -247,7 +253,7 @@ check_dirs([X | Xs], SoFar, Type) ->
 	  end,
     assert_dir(New),
     check_dirs(Xs, New, Type);
-check_dirs([], SoFar, Type) ->
+check_dirs([], SoFar, _Type) ->
     SoFar.
 
 assert_dir(D) ->
@@ -258,39 +264,6 @@ assert_dir(D) ->
 		 _ -> exit({could_not_create, D})
 	     end
     end.
-
-%%assure_directory(G, Dir) ->
-%%    Dir2 = parse_dir([], Dir),
-%%%%    io:format("Trying dir: ~p to ~p~n", [Dir, Dir2]),
-%%    Dir2.
-
-%%parse_dir([],[]) -> [];
-%%parse_dir(SoFar, [$/ | Rest]) ->
-%%    New = SoFar ++ [$/],
-%%    assert_dir(New),
-%%    parse_dir(New, Rest);
-%%parse_dir(SoFar, [C|Rest]) ->
-%%    parse_dir(SoFar++[C], Rest);
-%%parse_dir(SoFar, []) -> 
-%%    assert_dir(SoFar),
-%%    fix(SoFar).
-
-%%assert_dir(D) ->
-%%    case file:file_info(D) of
-%%	{ok, {_, directory, _, _, _, _, _}} -> ok;
-%%	_ -> case file:make_dir(D) of
-%%		 ok -> ok;
-%%		 _ -> exit({could_not_create, D})
-%%	     end
-%%    end.
-
-%%fix(D) ->
-%%    F = case lists:reverse(D) of
-%%	[$/ | R] -> D;
-%%	_ -> D ++ "/"
-%%    end,
-%%    F.
-    
 
 do_add_opt(G, handle_info, V) ->
     ?insert(G#genobj.options, {option, {handle_info, V}}, true);
@@ -357,7 +330,7 @@ read_cfg(G, Opts) ->
     case file:consult(Name) of
 	{ok, OptList} ->
 	    add_opt(G, OptList, true);
-	X when Name == ?DEFAULTCFGFILE -> ok;
+	_X when Name == ?DEFAULTCFGFILE -> ok;
 %%	{error, X} ->
 %%	    ic_error:warn(G, {cfg_open, X, Name});
 	X -> ic_error:warn(G, {cfg_open, X, Name})
@@ -374,12 +347,12 @@ is_bool(true) -> true;
 is_bool(false) -> true;
 is_bool(_) -> false.
 
-is_intorbool(X) when integer(X) -> true;
-is_intorbool(X) -> is_bool(X).
+is_int(V) when integer(V) -> true;
+is_int(_) -> false.
 
 is_intorinfinity(X) when integer(X) -> true;
 is_intorinfinity(infinity) -> true;
-is_intorinfinity(X) -> false.
+is_intorinfinity(_X) -> false.
 
 
 is_term(Term) when tuple(Term) -> true;

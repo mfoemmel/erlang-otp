@@ -27,7 +27,6 @@
 %%-----------------------------------------------------------------
 -module(orber_tc).
 
--include_lib("orber/src/orber_debug.hrl").
 -include_lib("orber/include/ifr_types.hrl").
 -include_lib("orber/include/corba.hrl").
 
@@ -53,6 +52,11 @@
 %%-----------------------------------------------------------------
 %% External interface functions
 %%-----------------------------------------------------------------
+
+%%-----------------------------------------------------------------
+%% Macros
+%%-----------------------------------------------------------------
+-define(DEBUG_LEVEL, 5).
 
 %%-----------------------------------------------------------------
 %% A number of function which can be used to create TypeCodes
@@ -148,6 +152,8 @@ get_tc(T) when tuple(T) ->
     Type = element(1, T),
     case catch Type:tc() of
 	{'EXIT', R} ->
+	    orber:dbg("[~p] ~p:get_tc(~p); Exit: ~p",
+		      [?LINE, ?MODULE, T, R], ?DEBUG_LEVEL),
 	    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO});
 	X ->
 	    X
@@ -182,21 +188,97 @@ check_tc('tk_octet') -> true;
 check_tc('tk_any') -> true;
 check_tc('tk_TypeCode') -> true;
 check_tc('tk_Principal') -> true;
-check_tc({'tk_objref', RepId, Name}) -> true;
-check_tc({'tk_struct', RepId, Name, ElementList}) -> true;
-check_tc({'tk_union', RepId, Name, DiscrTC, Default, ElementList}) -> true;
-check_tc({'tk_enum', RepId, Name, ElementList}) -> true;
-check_tc({'tk_string', MaxLength}) -> true;
-check_tc({'tk_wstring', MaxLength}) -> true;
-check_tc({'tk_fixed', Digits, Scale}) -> true;
-check_tc({'tk_sequence', ElemTC, MaxLength}) -> true;
-check_tc({'tk_array', ElemTC, Length}) -> true;
-check_tc({'tk_alias', RepId, Name, TC}) -> true;
-check_tc({'tk_except', RepId, Name, ElementList}) -> true;
-check_tc({'tk_value', RepId, Name, ValueModifier, TC, ElementList}) -> true;
-check_tc({'tk_value_box', RepId, Name, TC}) -> true;
-check_tc({'tk_native', RepId, Name}) -> true;
-check_tc({'tk_abstract_interface', RepId, Name}) -> true;
-check_tc({'none', Indirection}) -> true;
+check_tc({'tk_objref', RepId, Name}) when list(RepId), 
+					  list(Name) -> true;
+check_tc({'tk_struct', RepId, Name, ElementList}) when list(RepId), 
+						       list(Name) -> 
+    Fun = fun(X) -> 			  
+		  case X of
+		      {MemberName, MemberTC} when list(MemberName) ->
+			  check_tc(MemberTC);
+		      _ ->
+			  false
+		  end
+	  end,
+    lists:all(Fun, ElementList);
+check_tc({'tk_union', RepId, Name, DiscrTC, 
+	  Default, ElementList}) when list(RepId), 
+				      list(Name),
+				      integer(Default) -> 
+    case check_tc(DiscrTC) of
+	false ->
+	    false;
+	true ->
+	    Fun = fun(X) -> 			  
+			  case X of
+			      {_, MemberName, MemberTC} when
+				    list(MemberName) ->
+				  check_tc(MemberTC);
+			      _ ->
+				  false
+			  end
+		  end,
+	    lists:all(Fun, ElementList)
+    end;
+check_tc({'tk_enum', RepId, Name, ElementList}) when list(RepId),
+						     list(Name) -> 
+    Fun = fun(X) -> 
+		  if
+		      list(X) ->
+			  true;
+		      true ->
+			  false
+		  end
+	  end,
+    lists:all(Fun, ElementList);
+check_tc({'tk_string', MaxLength}) when integer(MaxLength) -> true;
+check_tc({'tk_wstring', MaxLength}) when integer(MaxLength) -> true;
+check_tc({'tk_fixed', Digits, Scale}) when integer(Digits), 
+					   integer(Scale) -> true;
+check_tc({'tk_sequence', ElemTC, MaxLength}) when integer(MaxLength) -> 
+    check_tc(ElemTC);
+check_tc({'tk_array', ElemTC, Length})  when integer(Length) -> 
+    check_tc(ElemTC);
+check_tc({'tk_alias', RepId, Name, TC}) when list(RepId), 
+					     list(Name) -> 
+    check_tc(TC);
+check_tc({'tk_except', RepId, Name, ElementList}) when list(RepId), 
+						       list(Name) -> 
+    Fun = fun(X) -> 
+		  case X of
+		      {MemberName, TC} when list(MemberName) ->
+			  check_tc(TC);
+		      _ ->
+			  false
+		  end
+	  end,
+    lists:all(Fun, ElementList);
+check_tc({'tk_value', RepId, Name, ValueModifier, 
+	  TC, ElementList}) when list(RepId), 
+				 list(Name),
+				 integer(ValueModifier) -> 
+    case check_tc(TC) of
+	false ->
+	    false;
+	true ->
+	    Fun = fun(X) -> 
+			  case X of
+			      {MemberName, MemberTC, Visibility} when 
+				    list(MemberName), integer(Visibility) ->
+				  check_tc(MemberTC);
+			      _ ->
+				  false
+			  end
+		  end,
+	    lists:all(Fun, ElementList)
+    end;
+check_tc({'tk_value_box', RepId, Name, TC}) when list(RepId), 
+						 list(Name) -> 
+    check_tc(TC);
+check_tc({'tk_native', RepId, Name}) when list(RepId), 
+					  list(Name) -> true;
+check_tc({'tk_abstract_interface', RepId, Name}) when list(RepId), 
+						      list(Name) -> true;
+check_tc({'none', Indirection}) when integer(Indirection) -> true;
 check_tc(_) -> false.
     

@@ -215,12 +215,12 @@ is_well_formed_list(_) ->
     false.
 
 crasher(Node,Mod,Fun,Args,[],Reason) ->
-    error_logger:error_msg("** Can not start ~w:~w,~w on ~w **~n",
-			  [ Mod,Fun,Args,Node]),
+    error_logger:warning_msg("** Can not start ~w:~w,~w on ~w **~n",
+			     [Mod,Fun,Args,Node]),
     exit(Reason);
 crasher(Node,Mod,Fun,Args,Opts,Reason) ->
-    error_logger:error_msg("** Can not start ~w:~w,~w (~w) on ~w **~n",
-			  [ Mod,Fun,Args,Opts,Node]),
+    error_logger:warning_msg("** Can not start ~w:~w,~w (~w) on ~w **~n",
+			     [Mod,Fun,Args,Opts,Node]),
     exit(Reason).
 
 

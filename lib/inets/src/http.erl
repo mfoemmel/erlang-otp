@@ -23,7 +23,7 @@
 %%%      - RFC 3230 Instance Digests in HTTP (not yet!)
 %%%      - RFC 3310 Authentication and Key Agreement (AKA) (not yet!)
 %%%      - HTTP/1.1 Specification Errata found at
-%%%        http://world.std.com/~lawrence/http_errata.html
+%%%        http://skrb.org/ietf/http_errata.html
 %%%    Additionaly follows the following recommendations:
 %%%      - RFC 3143 Known HTTP Proxy/Caching Problems (not yet!)
 %%%      - draft-nottingham-hdrreg-http-00.txt (not yet!)
@@ -57,7 +57,9 @@
 %% Note:
 %% - Some servers (e.g. Microsoft-IIS/5.0) may sometimes not return a proper
 %%   'Location' header on a redirect.
-%%   The client will fail with {error,no_scheme} in these cases.
+%%   The client will normally fail with {error,no_scheme} in these cases.
+%%   Setting the relax option will cause the client to interpret the value as
+%%   relativeURI 
 
 -module(http).
 -author("johan.blom@mobilearts.se").
@@ -85,7 +87,7 @@ start() ->
 %%% 
 %%% Returns: {ok,ReqId} |
 %%%          {error,Reason}
-%%% If {ok,Pid} was returned, the handler will return with
+%%% If {ok,ReqId} was returned, the handler will return with
 %%%    gen_server:cast(From,{Ref,ReqId,{error,Reason}}) |
 %%%    gen_server:cast(From,{Ref,ReqId,{Status,Headers,Body}})
 %%%  where Reason is an atom and Headers a #res_headers{} record
@@ -159,7 +161,7 @@ request_sync(Method,{Url,Headers},Settings)
 	{error,Reason} ->
 	    {error,Reason};
 	ParsedUrl ->
-	    request_sync(Method,{ParsedUrl,Headers,[],[]},Settings,0)
+	    request_sync2(Method,{ParsedUrl,Headers,[],[]},Settings)
     end;
 request_sync(Method,{Url,Headers,ContentType,Body},Settings)
   when Method==post;Method==put ->
@@ -167,21 +169,19 @@ request_sync(Method,{Url,Headers,ContentType,Body},Settings)
 	{error,Reason} ->
 	    {error,Reason};
 	ParsedUrl ->
-	    request_sync(Method,{ParsedUrl,Headers,ContentType,Body},Settings,0)
+	    request_sync2(Method,{ParsedUrl,Headers,ContentType,Body},Settings)
     end;
 request_sync(Method,Request,Settings) ->
     {error,bad_request}.
 
-request_sync(Method,HTTPCont,Settings,_Redirects) ->
+request_sync2(Method,HTTPCont,Settings) ->
     case request(request_sync,Method,HTTPCont,Settings,self()) of
 	{ok,_ReqId} ->
 	    receive
 		{'$gen_cast',{request_sync,_ReqId2,{Status,Headers,Body}}} ->
 		    {Status,pp_headers(Headers),binary_to_list(Body)};
 		{'$gen_cast',{request_sync,_ReqId2,{error,Reason}}} ->
-		    {error,Reason};
-		Error ->
-		    Error
+		    {error,Reason}
 	    end;
 	Error ->
 	    Error
@@ -208,6 +208,8 @@ create_settings([{http_pipelinesize,Val}|Settings],Out)
 create_settings([{http_sessions,Val}|Settings],Out)
   when integer(Val),Val>0 ->
     create_settings(Settings,Out#client_settings{max_sessions=Val});
+create_settings([{http_relaxed,Val}|Settings],Out) when Val==true;Val==false ->
+    create_settings(Settings,Out#client_settings{relaxed=Val});
 create_settings([{Key,_Val}|_Settings],_Out) ->
     io:format("ERROR bad settings, got ~p~n",[Key]),
     {error,bad_settings}.

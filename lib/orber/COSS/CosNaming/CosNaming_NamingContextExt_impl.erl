@@ -77,7 +77,9 @@
 %%----------------------------------------------------------------------
 %% Macros
 %%----------------------------------------------------------------------
- 
+%% DEBUG INFO
+-define(DEBUG_LEVEL, 5).
+
 %%======================================================================
 %% External functions
 %%======================================================================
@@ -103,7 +105,7 @@ init(DBKey) ->
 %% Description: Shutdown the server
 %% Returns    : any (ignored by gen_server)
 %%----------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
  
 %%---------------------------------------------------------------------%
@@ -111,7 +113,7 @@ terminate(Reason, State) ->
 %% Description: Convert process state when code is changed
 %% Returns    : {ok, State}
 %%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
  
 %%---------------------------------------------------------------------%
@@ -183,6 +185,9 @@ bind(OE_THIS, OE_State, [N], Obj) ->
 							      nameindex=[{N, nobject, Obj} | X]})
 			end;
 		    Other ->
+			orber:dbg("[~p] ~p:bind(~p, ~p);~n"
+				  "DB access returned ~p", 
+				  [?LINE, ?MODULE, N, SubobjKey, Other], ?DEBUG_LEVEL),
 			{'EXCEPTION', #'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
 									       cxt=OE_THIS}}
 		end
@@ -191,8 +196,11 @@ bind(OE_THIS, OE_State, [N], Obj) ->
 	{atomic, {'EXCEPTION', E}} ->
 	    corba:raise(E);
 	{atomic, ok} ->
-	    {reply, ok, OE_THIS};
+	    {reply, ok, OE_State};
 	Other ->
+	    orber:dbg("[~p] ~p:bind(~p, ~p);~n"
+		      "DB transaction returned ~p", 
+		      [?LINE, ?MODULE, N, SubobjKey, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 bind(OE_THIS, OE_State, [H|T], Obj) ->
@@ -228,7 +236,7 @@ rebind(OE_THIS, OE_State, [N], Obj) ->
 		    [#orber_CosNaming{nameindex = X}] ->
 			KList = 
 			    case lists:keysearch(N, 1, X) of
-				{value, {N, _, V}} ->
+				{value, {N, _, _V}} ->
 				    lists:keyreplace(N, 1, X, {N, nobject, Obj});
 				false ->
 				    [{N, nobject, Obj} | X]
@@ -236,6 +244,9 @@ rebind(OE_THIS, OE_State, [N], Obj) ->
 			mnesia:write(#orber_CosNaming{name_context=SubobjKey,
 						      nameindex=KList});
 		    Other ->
+			orber:dbg("[~p] ~p:rebind(~p, ~p);~n"
+				  "DB access returned ~p", 
+				  [?LINE, ?MODULE, N, SubobjKey, Other], ?DEBUG_LEVEL),
 			{'EXCEPTION', #'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
 									       cxt=OE_THIS}}
 		end
@@ -244,8 +255,11 @@ rebind(OE_THIS, OE_State, [N], Obj) ->
 	{atomic, {'EXCEPTION', E}} ->
 	    corba:raise(E);
 	{atomic, ok} ->
-	    {reply, ok, OE_THIS};
+	    {reply, ok, OE_State};
 	Other ->
+	    orber:dbg("[~p] ~p:rebind(~p, ~p);~n"
+		      "DB transaction returned ~p", 
+		      [?LINE, ?MODULE, N, SubobjKey, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 rebind(OE_THIS, OE_State, [H|T], Obj) ->
@@ -288,6 +302,9 @@ bind_context(OE_THIS, OE_State, [N], Obj) ->
 							      [{N, ncontext, Obj} | X]})
 			end;
 		    Other ->
+			orber:dbg("[~p] ~p:bind_context(~p, ~p);~n"
+				  "DB access returned ~p", 
+				  [?LINE, ?MODULE, N, SubobjKey, Other], ?DEBUG_LEVEL),
 			{'EXCEPTION', #'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
 									       cxt=OE_THIS}}
 		end
@@ -296,8 +313,11 @@ bind_context(OE_THIS, OE_State, [N], Obj) ->
 	{atomic, {'EXCEPTION', E}} ->
 	    corba:raise(E);
 	{atomic, ok} ->
-	    {reply, ok, OE_THIS};
+	    {reply, ok, OE_State};
 	Other ->
+	    orber:dbg("[~p] ~p:bind_context(~p, ~p);~n"
+		      "DB transaction returned ~p", 
+		      [?LINE, ?MODULE, N, SubobjKey, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 bind_context(OE_THIS, OE_State, [H|T], Obj) ->
@@ -334,7 +354,7 @@ rebind_context(OE_THIS, OE_State, [N], Obj) ->
 		    [#orber_CosNaming{nameindex = X}] ->
 			KList = 
 			    case lists:keysearch(N, 1, X) of
-				{value, {N, _, V}} ->
+				{value, {N, _, _V}} ->
 				    lists:keyreplace(N, 1, X, {N, ncontext, Obj});
 				false ->
 				    [{N, ncontext, Obj} | X]
@@ -342,6 +362,9 @@ rebind_context(OE_THIS, OE_State, [N], Obj) ->
 			mnesia:write(#orber_CosNaming{name_context=SubobjKey,
 						      nameindex= KList});
 		    Other ->
+			orber:dbg("[~p] ~p:rebind_context(~p, ~p);~n"
+				  "DB access returned ~p", 
+				  [?LINE, ?MODULE, N, SubobjKey, Other], ?DEBUG_LEVEL),
 			{'EXCEPTION', #'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
 									       cxt=OE_THIS}}
 		end
@@ -350,8 +373,11 @@ rebind_context(OE_THIS, OE_State, [N], Obj) ->
 	{atomic, {'EXCEPTION', E}} ->
 	    corba:raise(E);
 	{atomic, ok} ->
-	    {reply, ok, OE_THIS};
+	    {reply, ok, OE_State};
 	Other ->
+	    orber:dbg("[~p] ~p:rebind_context(~p, ~p);~n"
+		      "DB transaction returned ~p", 
+		      [?LINE, ?MODULE, N, SubobjKey, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 rebind_context(OE_THIS, OE_State, [H|T], Obj) ->
@@ -431,6 +457,9 @@ unbind(OE_THIS, OE_State, [N]) ->
 			mnesia:write(#orber_CosNaming{name_context=SubobjKey,
 						      nameindex= KList});
 		    Other ->
+			orber:dbg("[~p] ~p:unbind(~p, ~p);~n"
+				  "DB transaction returned ~p", 
+				  [?LINE, ?MODULE, N, SubobjKey, Other], ?DEBUG_LEVEL),
 			{'EXCEPTION', #'CosNaming_NamingContext_CannotProceed'{rest_of_name=[N],
 									       cxt=OE_THIS}}
 		end
@@ -439,8 +468,11 @@ unbind(OE_THIS, OE_State, [N]) ->
 	{atomic, {'EXCEPTION', E}} ->
 	    corba:raise(E);
 	{atomic, ok} ->
-	    {reply, ok, OE_THIS};
+	    {reply, ok, OE_State};
 	Other ->
+	    orber:dbg("[~p] ~p:unbind(~p, ~p);~n"
+		      "DB transaction returned ~p", 
+		      [?LINE, ?MODULE, N, SubobjKey, Other], ?DEBUG_LEVEL),
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
     end;
 unbind(OE_THIS, OE_State, [H|T]) ->
@@ -469,7 +501,7 @@ unbind(OE_THIS, OE_State, [H|T]) ->
 %% Description: 
 %% Returns    : 
 %%----------------------------------------------------------------------
-new_context(OE_THIS, OE_State) ->
+new_context(_OE_THIS, OE_State) ->
     DBKey = term_to_binary({now(), node()}),
     %% Create a record in the table and set the key to a newly
     {reply, 
@@ -513,17 +545,27 @@ list(OE_THIS, OE_State, HowMany) ->
 	error ->
 	    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO});
 	X ->
-	    List = lists:sublist(X, HowMany),
-	    BList = lists:map(
-		      fun({N, T, O}) ->
-			      #'CosNaming_Binding'{binding_name=[N],
-						   binding_type=T}
-		      end, List),
-	    BIterator = 'CosNaming_BindingIterator':oe_create({SubobjKey, HowMany},
-							      ?CREATE_OPTS),
-	    {reply, {ok, BList, BIterator}, OE_State}
+	    case convert_list(X, HowMany, 0, []) of
+		{false, List} ->
+		    {reply, {ok, List, ?ORBER_NIL_OBJREF}, OE_State};
+		{true, List, Rest} ->
+		    %% By setting HowMany to '-1' it will never match
+		    %% the Counter. Hence, the whole list will be transformed.
+		    {false, List2} = convert_list(Rest, -1, 0, []),
+		    BIterator = 'CosNaming_BindingIterator':
+			oe_create(List2, ?CREATE_OPTS),
+		    {reply, {ok, List, BIterator}, OE_State}
+	    end
     end.
 
+convert_list([], _, _, Acc) ->
+    {false, Acc};
+convert_list(Rest, Counter, Counter, Acc) ->
+    {true, Acc, Rest};
+convert_list([{N, T, _O}|Rest], HowMany, Counter, Acc) ->
+    convert_list(Rest, HowMany, Counter+1,
+		 [#'CosNaming_Binding'{binding_name=[N],
+				       binding_type=T}|Acc]).
 
 %%----------------------------------------------------------------------
 %% Function   : destroy
@@ -543,8 +585,14 @@ destroy(OE_THIS, OE_State) ->
 			    [#orber_CosNaming{nameindex = []}] ->
 				mnesia:delete({orber_CosNaming, SubobjKey});
 			    Other when list(Other) ->
+				orber:dbg("[~p] ~p:destroy(~p);~n"
+					  "DB access returned ~p", 
+					  [?LINE, ?MODULE, SubobjKey, Other], ?DEBUG_LEVEL),
 				{'EXCEPTION', #'CosNaming_NamingContext_NotEmpty'{}};
 			    Other ->
+				orber:dbg("[~p] ~p:destroy(~p);~n"
+					  "DB access returned ~p", 
+					  [?LINE, ?MODULE, SubobjKey, Other], ?DEBUG_LEVEL),
 				{'EXCEPTION', #'INTERNAL'{completion_status=?COMPLETED_NO}}
 			end
 		end,
@@ -552,8 +600,11 @@ destroy(OE_THIS, OE_State) ->
 		{atomic, {'EXCEPTION', E}} ->
 		    corba:raise(E);
 		{atomic, ok} ->
-		    {reply, ok, OE_THIS};
+		    {reply, ok, OE_State};
 		Other ->
+		    orber:dbg("[~p] ~p:destroy(~p);~n"
+			      "DB transaction returned ~p", 
+			      [?LINE, ?MODULE, SubobjKey, Other], ?DEBUG_LEVEL),
 		    corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO})
 	    end
     end.
@@ -568,7 +619,7 @@ destroy(OE_THIS, OE_State) ->
 %% Returns    : StringName |
 %%              {'EXCEPTION', NamingContext::InvalidName{}}
 %%----------------------------------------------------------------------
-to_string(OE_This, OE_State, Name) ->
+to_string(_OE_This, OE_State, Name) ->
     {reply, orber_cosnaming_utils:name2string(Name), OE_State}.
 
 
@@ -579,7 +630,7 @@ to_string(OE_This, OE_State, Name) ->
 %% Returns    : Name |
 %%              {'EXCEPTION', NamingContext::InvalidName{}}
 %%----------------------------------------------------------------------
-to_name(OE_This, OE_State, StringName) ->
+to_name(_OE_This, OE_State, StringName) ->
     {reply, orber_cosnaming_utils:string2name(StringName), OE_State}.
 
 
@@ -595,11 +646,11 @@ to_name(OE_This, OE_State, StringName) ->
 to_url(_, _, "", _) ->
     %% Empty address not allowed.
     corba:raise(#'CosNaming_NamingContextExt_InvalidAddress'{});
-to_url(OE_This, OE_State, Address, "") ->
+to_url(_OE_This, OE_State, Address, "") ->
     %% Empty stringname => use corbaloc
     orber_cosnaming_utils:check_addresses(Address),
     {reply, "corbaloc:"++orber_cosnaming_utils:escape_string(Address), OE_State};
-to_url(OE_This, OE_State, Address, StringName) ->
+to_url(_OE_This, OE_State, Address, StringName) ->
     %% Non-empty stringname => use corbaname
     orber_cosnaming_utils:check_addresses(Address),
     orber_cosnaming_utils:check_name(StringName),
@@ -626,7 +677,7 @@ resolve_str(OE_This, OE_State, StringName) ->
 %%======================================================================
 %% Check a write transaction
 write_result({atomic,ok}) -> ok;
-write_result(Foo) ->
+write_result(_What) ->
     corba:raise(#'INTERNAL'{completion_status=?COMPLETED_NO}).
 
  

@@ -22,10 +22,12 @@
 	 snmpTargetAddrExtTable/3,
 	 community2vacm/2, vacm2community/2,
 	 get_target_addr_ext_mms/2]).
+-export([add_community/5, delete_community/1]).
 
 -include("SNMP-COMMUNITY-MIB.hrl").
 -include("SNMP-TARGET-MIB.hrl").
 -include("SNMPv2-TC.hrl").
+-include("snmp_types.hrl").
 
 -define(VMODULE,"COMMUNITY-MIB").
 -include("snmp_verbosity.hrl").
@@ -98,9 +100,36 @@ init_comm_table([Row | T]) ->
     init_comm_table(T);
 init_comm_table([]) -> true.
 
-table_create_row(Tab,Name,Row) ->
-    ?vtrace("create table ~w row with Name: ~s",[Tab,Name]),
-    snmp_local_db:table_create_row(db(Tab), Name, Row).
+table_create_row(Tab, Key, Row) ->
+    ?vtrace("create table ~w row with Key: ~w",[Tab,Key]),
+    snmp_local_db:table_create_row(db(Tab), Key, Row).
+
+
+add_community(Idx, CommName, SecName, CtxName, TransportTag) ->
+    Community = {Idx, CommName, SecName, CtxName, TransportTag},
+    case (catch snmp_conf:check_community(Community)) of
+	{ok, Row} ->
+	    Key = element(1, Row),
+	    case table_create_row(snmpCommunityTable, Key, Row) of
+		true ->
+		    update_cache(Key),
+		    {ok, Key};
+		false ->
+		    {error, create_failed}
+	    end;
+	Error ->
+	    {error, Error}
+    end.
+
+delete_community(Key) ->
+    invalidate_cache(Key),
+    Db = db(snmpCommunityTable),
+    case snmp_local_db:table_delete_row(Db, Key) of
+	true ->
+	    ok;
+	false ->
+	    {error, delete_row_failed}
+    end.
 
 
 gc_tabs() ->
@@ -265,6 +294,8 @@ get_target_addr_ext_mms(TDomain, TAddress, Key) ->
 		    get_target_addr_ext_mms(TDomain, TAddress, NextKey)
 	    end
     end.
+
+
 %%-----------------------------------------------------------------
 %% Instrumentation Functions
 %%-----------------------------------------------------------------
@@ -281,19 +312,73 @@ snmpCommunityTable(is_set_ok, RowIndex, Cols) ->
     LocalEngineID = snmp_framework_mib:get_engine_id(),
     NCols =
 	case lists:keysearch(?snmpCommunityContextEngineID, 1, Cols) of
-	    {value, {_, LocalEngineID}} -> Cols;
+	    {value, {_, LocalEngineID}} -> 
+		Cols;
 	    {value, _} -> 
-		throw({inconsistentValue, ?snmpCommunityContextEngineID});
-	    false -> kinsert(Cols, LocalEngineID)
+		{inconsistentValue, ?snmpCommunityContextEngineID};
+	    false -> 
+		kinsert(Cols, LocalEngineID)
 	end,
     snmp_generic:table_func(is_set_ok, RowIndex, NCols, db(snmpCommunityTable));
-snmpCommunityTable(set, RowIndex, Cols) ->
-    invalidate_cache(RowIndex),
-    Res = snmp_generic:table_func(set, RowIndex, Cols, db(snmpCommunityTable)),
-    update_cache(RowIndex),
-    Res;
+snmpCommunityTable(set, RowIndex, Cols0) ->
+    case (catch verify_snmpCommunityTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    invalidate_cache(RowIndex),
+	    Res = snmp_generic:table_func(set, RowIndex, Cols, db(snmpCommunityTable)),
+	    update_cache(RowIndex),
+	    Res;
+	Error ->
+	    Error
+    end;
 snmpCommunityTable(Op, Arg1, Arg2) ->
     snmp_generic:table_func(Op, Arg1, Arg2, db(snmpCommunityTable)).
+
+
+verify_snmpCommunityTable_cols([], Cols) ->
+    {ok, lists:reverse(Cols)};
+verify_snmpCommunityTable_cols([{Col, Val0}|Cols], Acc) ->
+    Val = verify_snmpCommunityTable_col(Col, Val0),
+    verify_snmpCommunityTable_cols(Cols, [{Col, Val}|Acc]).
+
+verify_snmpCommunityTable_col(?snmpCommunityIndex, Index) ->
+    case (catch snmp_conf:check_string(Index,{gt,0})) of
+	true ->
+	    Index;
+	_ ->
+	    wrongValue(?snmpCommunityIndex)
+    end;
+verify_snmpCommunityTable_col(?snmpCommunityName, Name) ->
+    case (catch snmp_conf:check_string(Name)) of
+	true ->
+	    Name;
+	_ ->
+	    wrongValue(?snmpCommunityName)
+    end;
+verify_snmpCommunityTable_col(?snmpCommunitySecurityName, Name) ->
+    case (catch snmp_conf:check_string(Name)) of
+	true ->
+	    Name;
+	_ ->
+	    wrongValue(?snmpCommunitySecurityName)
+    end;
+verify_snmpCommunityTable_col(?snmpCommunityContextName, Name) ->
+    case (catch snmp_conf:check_string(Name)) of
+	true ->
+	    Name;
+	_ ->
+	    wrongValue(?snmpCommunityContextName)
+    end;
+verify_snmpCommunityTable_col(?snmpCommunityTransportTag, Tag) ->
+    case (catch snmp_conf:check_string(Tag)) of
+	true ->
+	    Tag;
+	_ ->
+	    wrongValue(?snmpCommunityTransportTag)
+    end;
+verify_snmpCommunityTable_col(_, Val) ->
+    Val.
+
+
 
 %% Op == get | is_set_ok | set | get_next
 snmpTargetAddrExtTable(get, RowIndex, Cols) ->
@@ -302,14 +387,50 @@ snmpTargetAddrExtTable(get, RowIndex, Cols) ->
 snmpTargetAddrExtTable(get_next, RowIndex, Cols) ->
     NCols = conv1(Cols),
     conv2(next(snmpTargetAddrExtTable, RowIndex, NCols));
-snmpTargetAddrExtTable(set, RowIndex, Cols) ->
-    NCols = conv3(Cols),
-    snmp_generic:table_func(set, RowIndex, NCols, 
-			    db(snmpTargetAddrExtTable));
-snmpTargetAddrExtTable(is_set_ok, RowIndex, Cols) ->
-    NCols = conv3(Cols),
-    snmp_generic:table_func(is_set_ok, RowIndex, NCols, 
-			    db(snmpTargetAddrExtTable)).
+snmpTargetAddrExtTable(set, RowIndex, Cols0) ->
+    case (catch verify_snmpTargetAddrExtTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    NCols = conv3(Cols),
+	    snmp_generic:table_func(set, RowIndex, NCols, 
+				    db(snmpTargetAddrExtTable));
+	Error ->
+	    Error
+    end;
+snmpTargetAddrExtTable(is_set_ok, RowIndex, Cols0) ->
+    case (catch verify_snmpTargetAddrExtTable_cols(Cols0, [])) of
+	{ok, Cols} ->
+	    NCols = conv3(Cols),
+	    snmp_generic:table_func(is_set_ok, RowIndex, NCols, 
+				    db(snmpTargetAddrExtTable));
+	Error ->
+	    Error
+    end.
+
+
+verify_snmpTargetAddrExtTable_cols([], Cols) ->
+    {ok, lists:reverse(Cols)};
+verify_snmpTargetAddrExtTable_cols([{Col, Val0}|Cols], Acc) ->
+    Val = verify_snmpTargetAddrExtTable_col(Col, Val0),
+    verify_snmpTargetAddrExtTable_cols(Cols, [{Col, Val}|Acc]).
+
+verify_snmpTargetAddrExtTable_col(?snmpTargetAddrTMask, []) ->
+    [];
+verify_snmpTargetAddrExtTable_col(?snmpTargetAddrTMask, TMask) ->
+    case (catch snmp_conf:check_ip_udp(TMask)) of
+	true ->
+	    TMask; 
+	_ ->
+	    wrongValue(?snmpTargetAddrTMask)
+    end;
+verify_snmpTargetAddrExtTable_col(?snmpTargetAddrMMS, MMS) ->
+    case (catch snmp_conf:check_packet_size(MMS)) of
+	true ->
+	    MMS;
+	_ ->
+	    wrongValue(?snmpTargetAddrMMS)
+    end;
+verify_snmpTargetAddrExtTable_col(_, Val) ->
+    Val.
 
 db(snmpTargetAddrExtTable) -> {snmpTargetAddrTable, persistent};
 db(X) -> {X, persistent}.
@@ -352,6 +473,8 @@ kinsert([H | T], EngineID) when element(1, H) < ?snmpCommunityContextEngineID ->
 kinsert(Cols, EngineID) ->
     [{?snmpCommunityContextEngineID, EngineID} | Cols].
 
+
+wrongValue(V) -> throw({wrongValue, V}).
 
 set_sname() ->
     set_sname(get(sname)).

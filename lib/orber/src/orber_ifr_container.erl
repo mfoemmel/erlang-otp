@@ -33,7 +33,7 @@
 	 describe_contents/4,
 	 make_absolute_name/2,			%not in CORBA 2.0
 	 make_containing_repository/1,		%not in CORBA 2.0
-	 add_to_container/2,			%not in CORBA 2.0
+	 add_to_container/5,			%not in CORBA 2.0
 	 create_module/4,
 	 create_constant/6,
 	 create_struct/5,
@@ -51,7 +51,6 @@
 -include("orber_ifr.hrl").
 -include("ifr_objects.hrl").
 -include_lib("orber/include/ifr_types.hrl").
-
 
 %%%======================================================================
 %%% Container (IRObject)
@@ -105,13 +104,12 @@ destroy_thing({ObjType,ObjID}) when ObjType == ir_OperationDef ->
     orber_ifr_operationdef:cleanup_for_destroy({ObjType,ObjID});
 destroy_thing({ObjType,ObjID}) when ObjType == ir_InterfaceDef ->
     orber_ifr_interfacedef:cleanup_for_destroy({ObjType,ObjID});
-destroy_thing({ObjType,ObjID}) ->
-    ?debug_print("Unknown object in Container contents: ", [{ObjType,ObjID}]),
+destroy_thing({_ObjType,_ObjID}) ->
+    %% Unknown object in Container contents.
     true.
 
 %%%----------------------------------------------------------------------
 %%% Non-inherited interfaces
-
 lookup(ObjRef, Search_name) ->
     Contents = contents(ObjRef, dk_All, false),
 
@@ -223,20 +221,67 @@ make_containing_repository({ObjType,ObjID}) ->
 	    orber_ifr_contained:'_get_containing_repository'({ObjType, ObjID})
     end.
 
-add_to_container(ContainerRef,Object) ->
+add_to_container(ContainerRef,Object, Id, Table, Index) ->
     F = fun() ->
-		[Container_obj] = mnesia:read(ContainerRef),
-		ObjectRef = makeref(Object),
-		New_container_obj =
-		    construct(Container_obj,contents,
-			      [ObjectRef | select(Container_obj,contents)]),
-		mnesia:write(New_container_obj),
-		mnesia:write(Object)
+		[Container_obj] = mnesia:wread(ContainerRef),
+		case mnesia:index_read(Table, Id, Index) of
+		    [] ->
+			ObjectRef = makeref(Object),
+			New_container_obj =
+			    construct(Container_obj,contents,
+				      [ObjectRef | select(Container_obj,contents)]),
+			mnesia:write(New_container_obj),
+			mnesia:write(Object);
+		    _ ->
+			mnesia:abort("duplicate")
+		end
 	end,
-    orber_ifr_utils:ifr_transaction_write(F).
+    case mnesia:transaction(F) of 
+        {aborted, "duplicate"} ->
+	    %% Must keep the misspelled word (must match IC generated code).
+            exit({allready_registered, Id});
+	{atomic, _} ->
+	    ok
+    end.
 
+add_to_light(#orber_light_ifr_ref{data = Data} = LRef, Id, Type, Name) ->
+    BaseId = get_base_id(Data#lightdata.id, Id),
+    NewScope = scoped_name(Data#lightdata.scope, Name, Type),
+    F = fun() ->
+		case mnesia:wread({orber_light_ifr, Id}) of
+		    [] ->
+			D = #orber_light_ifr{id = Id, 
+					     module = list_to_atom(NewScope),
+					     type = Type, base_id = BaseId},
+			mnesia:write(D);
+		    _ ->
+			mnesia:abort("duplicate")
+		end
+	end,
+    case mnesia:transaction(F) of 
+        {aborted, "duplicate"} ->
+	    %% Must keep the misspelled word (must match IC generated code).
+            exit({allready_registered, Id});
+	{atomic, _} ->
+	    LRef#orber_light_ifr_ref{data = Data#lightdata{scope = NewScope,
+							   id = BaseId}}
+    end.
+
+get_base_id("", Id) ->
+    Id;
+get_base_id(Id, _) ->
+    Id.
+
+scoped_name("", Name, _) ->
+    Name;
+scoped_name(Scope, _, ?IFR_ConstantDef) ->
+    Scope;
+scoped_name(Scope, Name, _) ->
+    Scope ++ "_" ++ Name.
+
+create_module(#orber_light_ifr_ref{} = LRef, Id, Name, _Version) ->
+    add_to_light(LRef, Id, ?IFR_ModuleDef, Name);
 create_module(ObjRef, Id, Name, Version) ->
-    ?exists_check(Id, ir_ModuleDef, #ir_ModuleDef.id),
     New_module = #ir_ModuleDef{ir_Internal_ID = unique(),
 			       def_kind = dk_Module,
 			       contents = [],
@@ -248,17 +293,21 @@ create_module(ObjRef, Id, Name, Version) ->
 			       make_absolute_name(ObjRef, Name),
 			       containing_repository =
 			       make_containing_repository(ObjRef)},
-    add_to_container(ObjRef,New_module),
+    add_to_container(ObjRef,New_module, Id, ir_ModuleDef, #ir_ModuleDef.id),
     makeref(New_module).
 
+create_constant(#orber_light_ifr_ref{} = LRef, Id, Name, _Version, _Type, _Value) ->
+    add_to_light(LRef, Id, ?IFR_ConstantDef, Name);
 create_constant(ObjRef, Id, Name, Version, Type, Value) ->
-    ?exists_check(Id, ir_ConstantDef, #ir_ConstantDef.id),
     IDL_typecode = get_field(Type,type),
     {Typecode, _} = Value,
     case IDL_typecode == Typecode of
 	false ->
-	    ?ifr_exception("Wrong type in create_constant ",
-			   {ObjRef, Id, Name, Version, Type, Value});
+	    orber:dbg("[~p] ~p:create_constant(~p, ~p, ~p, ~p, ~p, ~p);~n"
+		      "Wrong type.~n", 
+		      [?LINE, ?MODULE, ObjRef, Id, Name, Version, Type, Value], 
+		      ?DEBUG_LEVEL),
+	    corba:raise(#'INTF_REPOS'{completion_status=?COMPLETED_NO});
 	true ->
 	    New_constant = #ir_ConstantDef{ir_Internal_ID = unique(),
 					   def_kind = dk_Constant,
@@ -273,12 +322,14 @@ create_constant(ObjRef, Id, Name, Version, Type, Value) ->
 					   type = get_field(Type,type),
 					   type_def = Type,
 					   value = Value},
-	    add_to_container(ObjRef,New_constant),
+	    add_to_container(ObjRef,New_constant, 
+			     Id, ir_ConstantDef, #ir_ConstantDef.id),
 	    makeref(New_constant)
     end.
 
+create_struct(#orber_light_ifr_ref{} = LRef, Id, Name, _Version, _Members) ->
+    add_to_light(LRef, Id, ?IFR_StructDef, Name);
 create_struct(ObjRef, Id, Name, Version, Members) ->
-    ?exists_check(Id, ir_StructDef, #ir_StructDef.id),
     New_struct = #ir_StructDef{ir_Internal_ID = unique(),
 			       def_kind = dk_Struct,
 			       id = Id,
@@ -295,12 +346,14 @@ create_struct(ObjRef, Id, Name, Version, Members) ->
 						   {MemName,Type} end,
 						 Members)},
 			       members = Members},
-    add_to_container(ObjRef, New_struct),
+    add_to_container(ObjRef, New_struct, Id, ir_StructDef, #ir_StructDef.id),
     makeref(New_struct).
 
+create_union(#orber_light_ifr_ref{} = LRef, Id, Name, _Version,
+	     _Discriminator_type, _Members) ->
+    add_to_light(LRef, Id, ?IFR_UnionDef, Name);
 create_union(ObjRef, Id, Name, Version,
 	     Discriminator_type, Members) ->
-    ?exists_check(Id, ir_UnionDef, #ir_UnionDef.id),
     Discriminator_type_code = get_field(Discriminator_type, type),
     New_union = #ir_UnionDef{ir_Internal_ID = unique(),
 			     def_kind = dk_Union,
@@ -322,11 +375,12 @@ create_union(ObjRef, Id, Name, Version,
 			     discriminator_type = Discriminator_type_code,
 			     discriminator_type_def = Discriminator_type,
 			     members = Members},
-    add_to_container(ObjRef, New_union),
+    add_to_container(ObjRef, New_union, Id, ir_UnionDef, #ir_UnionDef.id),
     makeref(New_union).
 
+create_enum(#orber_light_ifr_ref{} = LRef, Id, Name, _Version, _Members) ->
+    add_to_light(LRef, Id, ?IFR_EnumDef, Name);
 create_enum(ObjRef, Id, Name, Version, Members) ->
-    ?exists_check(Id, ir_EnumDef, #ir_EnumDef.id),
     New_enum = #ir_EnumDef{ir_Internal_ID = unique(),
 			   def_kind = dk_Enum,
 			   id = Id,
@@ -339,11 +393,12 @@ create_enum(ObjRef, Id, Name, Version, Members) ->
 			   make_containing_repository(ObjRef),
 			   type = {tk_enum, Id, Name, Members},
 			   members = Members},
-    add_to_container(ObjRef, New_enum),
+    add_to_container(ObjRef, New_enum, Id, ir_EnumDef, #ir_EnumDef.id),
     makeref(New_enum).
 
+create_alias(#orber_light_ifr_ref{} = LRef, Id, Name, _Version, _Original_type) ->
+    add_to_light(LRef, Id, ?IFR_AliasDef, Name);
 create_alias(ObjRef, Id, Name, Version, Original_type) ->
-    ?exists_check(Id, ir_AliasDef, #ir_AliasDef.id),
     New_alias = #ir_AliasDef{ir_Internal_ID = unique(),
 			     def_kind = dk_Alias,
 			     id = Id,
@@ -357,11 +412,12 @@ create_alias(ObjRef, Id, Name, Version, Original_type) ->
 			     type = {tk_alias, Id, Name,
 				     get_field(Original_type,type)},
 			     original_type_def = Original_type},
-    add_to_container(ObjRef, New_alias),
+    add_to_container(ObjRef, New_alias, Id, ir_AliasDef, #ir_AliasDef.id),
     makeref(New_alias).
 
+create_interface(#orber_light_ifr_ref{} = LRef, Id, Name, _Version, _Base_interfaces) ->
+    add_to_light(LRef, Id, ?IFR_InterfaceDef, Name);
 create_interface(ObjRef, Id, Name, Version, Base_interfaces) ->
-    ?exists_check(Id, ir_InterfaceDef, #ir_InterfaceDef.id),
     New_interface = #ir_InterfaceDef{ir_Internal_ID = unique(),
 				     def_kind = dk_Interface,
 				     contents = [],
@@ -375,11 +431,12 @@ create_interface(ObjRef, Id, Name, Version, Base_interfaces) ->
 				     make_containing_repository(ObjRef),
 				     type = {tk_objref, Id, Name},
 				     base_interfaces = Base_interfaces},
-    add_to_container(ObjRef, New_interface),
+    add_to_container(ObjRef, New_interface, Id, ir_InterfaceDef, #ir_InterfaceDef.id),
     makeref(New_interface).
 
+create_exception(#orber_light_ifr_ref{} = LRef, Id, Name, _Version, _Members) ->
+    add_to_light(LRef, Id, ?IFR_ExceptionDef, Name);
 create_exception(ObjRef, Id, Name, Version, Members) ->
-    ?exists_check(Id, ir_ExceptionDef, #ir_ExceptionDef.id),
     New_exception = #ir_ExceptionDef{ir_Internal_ID = unique(),
 				     def_kind = dk_Exception,
 				     id = Id,
@@ -397,5 +454,5 @@ create_exception(ObjRef, Id, Name, Version, Members) ->
 							{MemName,Type} end,
 						Members)},
 				     members = Members},
-    add_to_container(ObjRef, New_exception),
+    add_to_container(ObjRef, New_exception, Id, ir_ExceptionDef, #ir_ExceptionDef.id),
     makeref(New_exception).

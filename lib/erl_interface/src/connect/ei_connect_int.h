@@ -106,10 +106,7 @@ const char* ei_getfdcookie(int fd);
 short       ei_thiscreation(const ei_cnode* ec);
 const char *ei_thiscookie(const ei_cnode* ec);
 
-/* FIXME ei_reg_send_timeout not used */
-int ei_reg_send_timeout(ei_cnode* ec, int fd, char *server_name,
-			char* buf, int len, int timeout);
 int ei_do_receive_msg(int fd, int staticbuffer_p, 
-		      erlang_msg* msg, ei_x_buff* x);
+		      erlang_msg* msg, ei_x_buff* x, unsigned ms);
 
 #endif /* _EI_CONNECT_H */

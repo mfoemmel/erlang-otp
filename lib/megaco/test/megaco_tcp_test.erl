@@ -87,7 +87,6 @@ fin_per_testcase(Case, Config) ->
 all(suite) ->
     [
      start,
-     start,
      sending,
      errors
     ].

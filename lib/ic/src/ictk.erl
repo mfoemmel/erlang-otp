@@ -43,18 +43,12 @@
 -define(VARID(G), mk_name(G, "VAR")).
 -define(IFRMOD, orber_ifr).
 
-%% Used internally for debugging of symbol table store and lookup
-%%-define(DBG(F,A), io:format(F,A)).
--define(DBG(F,A), ok).
-
-
-
 reg_gen(G, N, X) ->
-    ?DBG("Reg Gen: ~n", []),
     S = ic_genobj:tktab(G),
+    Light = ic_options:get_opt(G, light_ifr),
     init_var(),
     case ic_genobj:is_stubfile_open(G) of
-	true ->
+	true when Light == false ->
 	    Var = ?IFRID(G),
 	    Fd = ic_genobj:stubfiled(G),
 	    nl(Fd), nl(Fd), nl(Fd),
@@ -77,9 +71,73 @@ reg_gen(G, N, X) ->
 	    %% Write functopn that registers modules only if  
             %% they are not registered.
 	    register_if_unregistered(Fd);
-	false -> ok
+	true when Light == true ->
+	    Fd = ic_genobj:stubfiled(G),
+	    nl(Fd), nl(Fd), nl(Fd),
+	    Regname = to_atom(register_name(G)),
+	    emit(Fd, "~p() ->\n\t~p([]).\n\n", [Regname, Regname]),
+	    emit(Fd, "~p(OE_Options) ->\n\t~p:add_items(?MODULE, OE_Options,\n\t[", 
+		 [Regname, ?IFRMOD]),
+	    reg_light(G, N, X),
+	    emit(Fd, "ok]),\n\tok.\n");
+	false -> 
+	    ok
     end.
 
+reg_light(G, N, X)  when list(X) -> 
+    reg_light_list(G, N, X);
+reg_light(G, N, X) when record(X, module) ->
+    reg_light_list(G, [get_id2(X) | N], get_body(X));
+reg_light(G, N, X) when record(X, struct) ->
+    emit(ic_genobj:stubfiled(G), "{~p, ~p, struct},\n\t", 
+	 [get_IR_ID(G, N, X), get_module(X, N)]);
+reg_light(G, N, X) when record(X, except) ->
+    emit(ic_genobj:stubfiled(G), "{~p, ~p, except},\n\t", 
+	 [get_IR_ID(G, N, X), get_module(X, N)]);
+reg_light(G, N, X) when record(X, union) ->
+    emit(ic_genobj:stubfiled(G), "{~p, ~p, union},\n\t", 
+	 [get_IR_ID(G, N, X), get_module(X, N)]);
+reg_light(G, N, X) when record(X, interface) ->
+    emit(ic_genobj:stubfiled(G), "{~p, ~p, interface},\n\t", 
+	 [get_IR_ID(G, N, X), get_module(X, N)]),
+    reg_light_list(G, [get_id2(X)|N], get_body(X));
+reg_light(_G, _N, _X) ->  
+    ok.
+
+get_module(X, N) ->
+    List = [get_id2(X) | N],
+    list_to_atom(lists:foldl(fun(E, Acc) -> E++"_"++Acc end, 
+			     hd(List), tl(List))).
+
+%% This function filters off all "#include <FileName>.idl" code that 
+%% come along from preprocessor and scanner. Produces code ONLY for
+%% the actuall file. See ticket OTP-2133
+reg_light_list(_G, _N, []) -> [];
+reg_light_list(G, N, List ) ->
+    CurrentFileName = ic_genobj:idlfile(G), 
+    reg_light_list(G, N, {CurrentFileName,true}, List).
+
+%% The filter function + loop 
+reg_light_list(_G, _N, {_CFN, _Status}, []) -> [];
+reg_light_list(G, N, {CFN,Status}, [X | Xs]) ->
+    case Status of 
+	true ->
+	    case X of
+		{preproc,_,{_,_,_FileName},[{_,_,"1"}]} ->
+		    reg_light_list(G, N, {CFN,false}, Xs);
+		_ ->
+		    reg_light(G, N, X),
+		    reg_light_list(G, N, {CFN,Status}, Xs)
+	    end;
+	false ->
+	    case X of
+		{preproc,_,{_,_,CFN},[{_,_,"2"}]} ->
+		    reg_light(G, N, X),
+		    reg_light_list(G, N, {CFN,true}, Xs);
+		_ ->
+		    reg_light_list(G, N, {CFN,Status}, Xs)
+	    end
+    end.
 
 
 %% reg2 is top level registration 
@@ -135,28 +193,28 @@ reg2(G, S, N, C, V, X) when record(X, op) ->
 	     get_params(G, S, N, X#op.params), get_exceptions(G, S, N, X),
 	     get_context(G, S, N, X)]);
 
-reg2(G, S, N, C, V, X)  when record(X, preproc) -> ok;
+reg2(_G, _S, _N, _C, _V, X)  when record(X, preproc) -> ok;
 
-reg2(G, S, N, C, V, X)  when record(X, pragma) -> ok;
+reg2(_G, _S, _N, _C, _V, X)  when record(X, pragma) -> ok;
 
-reg2(G, S, N, C, V, X) ->  ok.
+reg2(_G, _S, _N, _C, _V, _X) ->  ok.
 
 
 %% This function filters off all "#include <FileName>.idl" code that 
 %% come along from preprocessor and scanner. Produces code ONLY for
 %% the actuall file. See ticket OTP-2133
-reg2_list(G, S, N, C, V, []) -> [];
+reg2_list(_G, _S, _N, _C, _V, []) -> [];
 reg2_list(G, S, N, C, V, List ) ->
     CurrentFileName = ic_genobj:idlfile(G), 
     reg2_list(G, S, N, C, V, {CurrentFileName,true}, List).
 
 %% The filter function + loop 
-reg2_list(G, S, N, C, V, {CFN,Status}, []) -> [];
+reg2_list(_G, _S, _N, _C, _V, {_CFN, _Status}, []) -> [];
 reg2_list(G, S, N, C, V, {CFN,Status}, [X | Xs]) ->
     case Status of 
 	true ->
 	    case X of
-		{preproc,_,{_,_,FileName},[{_,_,"1"}]} ->
+		{preproc,_,{_,_,_FileName},[{_,_,"1"}]} ->
 		    reg2_list(G, S, N, C, V, {CFN,false}, Xs);
 		_ ->
 		    F = reg2(G, S, N, C, V, X),
@@ -270,24 +328,20 @@ do_typedef(G, S, N, C, V, X) ->
     end.
 
 
-do_union(G, S, N, C, V, X, {tk_union, IFRID, Name, DiscrTK, DefNr, L}) ->
+do_union(G, S, N, C, V, X, {tk_union, _IFRID, _Name, DiscrTK, _DefNr, L}) ->
     N2 = [get_id2(X) | N],
     r_emit2(G, S, N, C, V, X, ", ~s, [~s]", 
 	    [get_idltype_tk(G, S, N, DiscrTK),
 	     get_union_member_def(G, S, N2, L)]),
     look_for_types(G, S, N2, C, V, get_body(X)).
 
-%%    r_emit2(G, S, N, C, V, X, ", [~s]", 
-%%	    [get_member_def(G, S, N, ElemList)]),
-%%    look_for_types(G, S, N2, C, V, ElemList).
-
-do_struct(G, S, N, C, V, X, {tk_struct, IFRID, Name, ElemList}) ->
+do_struct(G, S, N, C, V, X, {tk_struct, _IFRID, _Name, ElemList}) ->
     N2 = [get_id2(X) | N],
     r_emit2(G, S, N, C, V, X, ", [~s]", 
 	    [get_member_def(G, S, N, ElemList)]),
     look_for_types(G, S, N2, C, V, get_body(X)).
 
-do_except(G, S, N, C, V, X, {tk_except, IFRID, Name, ElemList}) ->
+do_except(G, S, N, C, V, X, {tk_except, _IFRID, _Name, ElemList}) ->
     N2 = [get_id2(X) | N],
     r_emit2(G, S, N, C, V, X, ", [~s]", 
 	    [get_member_def(G, S, N, ElemList)]),
@@ -311,17 +365,15 @@ unregister_name(G) ->
 
 look_for_types(G, S, N, C, V, L) when list(L) ->
     lists:foreach(fun(X) -> look_for_types(G, S, N, C, V, X) end, L);
-look_for_types(G, S, N, C, V, {Name, TK}) ->	% member
+look_for_types(G, S, N, C, V, {_Name, TK}) ->	% member
     look_for_types(G, S, N, C, V, TK);
-look_for_types(G, S, N, C, V, {tk_union, IFRID, Name, DT, Def, L}) ->
-    %%io:format("Found new union~n", []),
+look_for_types(_G, _S, _N, _C, _V, {tk_union, _IFRID, _Name, _DT, _Def, _L}) ->
     ok;
-look_for_types(G, S, N, C, V, {Label, Name, TK}) ->	% case_dcl
+look_for_types(G, S, N, C, V, {_Label, _Name, TK}) ->	% case_dcl
     look_for_types(G, S, N, C, V, TK);
-look_for_types(G, S, N, C, V, {tk_struct, IFRID, Name, L}) ->
-    %%io:format("Found new struct~n", []),
+look_for_types(_G, _S, _N, _C, _V, {tk_struct, _IFRID, _Name, _L}) ->
     ok;
-look_for_types(G, S, N, C, V, X) ->
+look_for_types(_G, _S, _N, _C, _V, _X) ->
     ok.
 
     
@@ -378,10 +430,7 @@ call_fun_str(G,S) ->
 %%	formatted and inserted as a string (don't forget to start with
 %%	", ")
 %%
-
-r_emit2(G, S, N, C, V, X) ->
-    r_emit2(G, S, N, C, V, X, "", []).
-r_emit2(G, S, N, C, V, X, F, A) ->
+r_emit2(G, _S, N, C, V, X, F, A) ->
     case ic_genobj:is_stubfile_open(G) of
 	false -> ok;
 	true ->
@@ -409,7 +458,7 @@ r_emit2(G, S, N, C, V, X, F, A) ->
 %%
 %% All parameters shall be strings unless otherwise noted
 %%
-%% Fd		- File descriptor (not a string, stupid)
+%% Fd		- File descriptor
 %% AssignStr	- Assign or not, empty except for interfaces and modules
 %% Create	- Create has diff. names dep. on into what we register
 %% Thing	- WHAT is registered, interface
@@ -442,25 +491,21 @@ r_emit_raw(_G, _X, Fd, AssignStr, Create, Thing, Var, IR_ID, Id, IR_VSN, F, A) -
 %% Used by r_emit. Returns tuple {Var, Str} where Var is the resulting
 %% output var (if any, otherwise same as input arg) and Str is a
 %% string of the assignment if any ("" or "Var = ")
-get_assign(G, V, X) when record(X, module) ->
+get_assign(G, _V, X) when record(X, module) ->
     mk_assign(G);
-get_assign(G, V, X) when record(X, interface) ->
+get_assign(G, _V, X) when record(X, interface) ->
     mk_assign(G);
-get_assign(G, V, X) -> {V, ""}.
+get_assign(_G, V, _X) -> {V, ""}.
 mk_assign(G) ->
     V = new_var(G),
     {V, io_lib:format("~s = ", [V])}.
 
 %% Returns a list of strings of all enum members (suitable for ~p)
-get_enum_member_list(G, S, N, L) ->
+get_enum_member_list(_G, _S, _N, L) ->
     lists:map(fun(M) -> get_id2(M) end, L).
 
-%%enum_member2str(G, S, N, X) -> get_id2(X).
-%%    io_lib:format("~p", [get_id2(X)]).
-
-
 %% Will output a string of the union members.
-get_union_member_def(G, S, N, []) -> [];
+get_union_member_def(_G, _S, _N, []) -> [];
 get_union_member_def(G, S, N, L) ->
     [union_member2str(G, S, N, hd(L)) | 
      lists:map(fun(M) -> [", ", union_member2str(G, S, N, M)] end, tl(L))].
@@ -477,7 +522,7 @@ union_member2str(G, S, N, {Label, Name, TK}) ->
 %% Will output a string of the struct members. Works for exceptions
 %% and structs
 %%
-get_member_def(G, S, N, []) -> [];
+get_member_def(_G, _S, _N, []) -> [];
 get_member_def(G, S, N, L) ->
     [member2str(G, S, N, hd(L)) | 
      lists:map(fun(M) -> [", ", member2str(G, S, N, M)] end, tl(L))].
@@ -498,17 +543,17 @@ get_thing_name(X) -> to_list(element(1,X)).
 
 %% Returns the mode (in, out, oneway etc) of ops and params. Return
 %% value is an atom.
-get_mode(G, N, X) when record(X, op) ->
+get_mode(_G, _N, X) when record(X, op) ->
     case X#op.oneway of
 	{oneway, _} -> 'OP_ONEWAY';
 	_ -> 'OP_NORMAL'
     end;
-get_mode(G, N, X) when record(X, attr) ->
+get_mode(_G, _N, X) when record(X, attr) ->
     case X#attr.readonly of
 	{readonly, _} -> 'ATTR_READONLY';
 	_ -> 'ATTR_NORMAL'
     end;
-get_mode(G, N, X) when record(X, param) ->
+get_mode(_G, _N, X) when record(X, param) ->
     case X#param.inout of
 	{in, _} -> 'PARAM_IN';
 	{inout, _} -> 'PARAM_INOUT';
@@ -522,7 +567,7 @@ get_mode(G, N, X) when record(X, param) ->
 %%    get_idltype_tk(G, S, N, TK).
 get_idltype(G, S, N, X) ->
     get_idltype_tk(G, S, N, ic_forms:get_tk(X)).
-get_idltype_tk(G, S, N, TK) ->
+get_idltype_tk(G, _S, _N, TK) ->
     io_lib:format("~p:~p(~s, ~p)", [orber_ifr, 'Repository_create_idltype',
 				    ?IFRID(G), TK]).
 
@@ -533,7 +578,7 @@ get_idltype_tk(G, S, N, TK) ->
 
 
 %% Returns the string form of a list of parameters.
-get_params(G, S, N, []) ->  "";
+get_params(_G, _S, _N, []) ->  "";
 get_params(G, S, N, L) -> 
     lists:foldl(fun(X, Acc) -> param2str(G, S, N, X)++", "++Acc end,
 		param2str(G, S, N, hd(L)), tl(L)).
@@ -604,7 +649,7 @@ slashify(List) -> lists:foldl(fun(X, Acc) -> X++"/"++Acc end,
 
 
 %% Returns the context literals of an op
-get_context(G, S, N, X) -> 
+get_context(_G, _S, _N, X) -> 
     lists:map(fun(C) -> element(3, C) end, X#op.ctx).
 
 
@@ -641,7 +686,7 @@ excdef(G, S, N, X, L) ->
 %% This list becomes a list of object references when the main function
 %% "orber_ifr:InterfaceDef_create_operation" is called.
 
-get_EXC_ID(G, S, N, X, ScopedId) ->
+get_EXC_ID(G, _S, N, X, ScopedId) ->
     case ic_pragma:get_alias(G,ScopedId) of
 	none ->
 	    case ic_pragma:pragma_id(G, N, X) of
@@ -676,11 +721,9 @@ get_EXC_ID(G, S, N, X, ScopedId) ->
 %% unreg_gen/1 uses the information stored in pragma table
 %% to decide which modules are to be unregistered
 unreg_gen(G, N, X) ->
-
-    ?DBG("UNReg Gen: ~n", []),
-    S = ic_genobj:tktab(G),
+    Light = ic_options:get_opt(G, light_ifr),
     case ic_genobj:is_stubfile_open(G) of
-	true ->
+	true when Light == false ->
 	    Var = ?IFRID(G),
 	    Fd = ic_genobj:stubfiled(G),
 	    nl(Fd), nl(Fd), nl(Fd),
@@ -692,13 +735,19 @@ unreg_gen(G, N, X) ->
 	    unreg2(G, N, X),
 	    emit(Fd, "    ok.\n\n"),
 	    destroy(Fd);
+	true ->
+	    Fd = ic_genobj:stubfiled(G),
+	    nl(Fd), nl(Fd),
+	    Unregname = to_atom(unregister_name(G)),
+	    emit(Fd, "~p() ->\n\t~p([]).\n\n~p(OE_Options) ->\n", 
+		 [Unregname, Unregname, Unregname]),
+	    emit(Fd, "\t~p:remove(?MODULE, OE_Options),\n\tok.\n\n", [?IFRMOD]);
 	false -> ok
     end.
 
 
 destroy(Fd) ->
 emit(Fd,"
-
 oe_destroy_if_empty(OE_IFR,IFR_ID) ->
     case orber_ifr:'Repository_lookup_id'(OE_IFR, IFR_ID) of
 	[] ->
@@ -765,31 +814,31 @@ unreg3(G, N, X) when record(X, typedef) ->
 unreg3(G, N, X) when record(X, interface) ->
     unreg_collect(G, N, X);
 
-unreg3(G, N, X) when record(X, op) -> [];
+unreg3(_G, _N, X) when record(X, op) -> [];
 
-unreg3(G, N, X) when record(X, attr) -> [];
+unreg3(_G, _N, X) when record(X, attr) -> [];
 
-unreg3(G, N, X)  when record(X, preproc) -> [];
+unreg3(_G, _N, X)  when record(X, preproc) -> [];
 
-unreg3(G, N, X)  when record(X, pragma) -> [];
+unreg3(_G, _N, X)  when record(X, pragma) -> [];
 
-unreg3(G, N, X) ->  [].
+unreg3(_G, _N, _X) ->  [].
 
 
-unreg3_list(G, N, [], Found) -> 
+unreg3_list(_G, _N, [], Found) -> 
     Found;
 unreg3_list(G, N, List, Found) ->
     CurrentFileName = ic_genobj:idlfile(G), 
     unreg3_list(G, N, {CurrentFileName,true}, List, Found).
 
 %% The filter function + loop 
-unreg3_list(G, N, {CFN,Status}, [], Found) -> 
+unreg3_list(_G, _N, {_CFN, _Status}, [], Found) -> 
     Found;
 unreg3_list(G, N, {CFN,Status}, [X | Xs], Found) ->
     case Status of 
 	true ->
 	    case X of
-		{preproc,_,{_,_,FileName},[{_,_,"1"}]} ->
+		{preproc,_,{_,_,_FileName},[{_,_,"1"}]} ->
 		    unreg3_list(G, N, {CFN,false}, Xs, Found);
 		_ ->
 		    unreg3_list(G, N, {CFN,Status}, Xs, [unreg3(G, N, X) | Found])

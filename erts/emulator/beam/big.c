@@ -1097,28 +1097,18 @@ int
 big_to_double(Eterm x, double* resp)
 {
     double d = 0.0;
-    double d_base = 1.0;
     Eterm* xp = big_val(x);
-    digit_t* s = BIG_V(xp);
     dsize_t xl = BIG_SIZE(xp);
+    digit_t* s = BIG_V(xp) + xl;
     short xsgn = BIG_SIGN(xp);
     ERTS_SAVE_FP_EXCEPTION();
 
     ERTS_FP_CHECK_INIT();
-    while(xl--) {
-	digit_t ds = *s;
-	double d_next = ds * d_base + d;
+    while (xl--) {
+	d = d * D_BASE + *--s;
 
-	ERTS_FP_ERROR(d_next, ERTS_RESTORE_FP_EXCEPTION(); return -1);
-	s++;
-	d = d_next;
-	d_base *= D_BASE;
+	ERTS_FP_ERROR(d, ERTS_RESTORE_FP_EXCEPTION(); return -1);
     }
-
-    /*
-     * Note: The last multiplication in the loop could trigger an exception,
-     * which we will ignore because the result will never be used.
-     */
 
     *resp = xsgn ? -d : d;
     ERTS_FP_ERROR(*resp,;);
