@@ -18,17 +18,17 @@
 %%              * 2001-07-30 EJ (happi@csd.uu.se):
 %%               Fixed some bugs and started cleanup.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2004/04/08 16:01:18 $
-%%              $Revision: 1.18 $
+%%              $Author: richardc $
+%%              $Date: 2004/10/28 05:13:11 $
+%%              $Revision: 1.19 $
 %% ====================================================================
 %%  Exports  :
-%%    gen_switch_val(I, VarMap, ConstTab, Options, ExitInfo)
-%%    gen_switch_tuple(I, Map, ConstTab, Options, ExitInfo)
+%%    gen_switch_val(I, VarMap, ConstTab, Options)
+%%    gen_switch_tuple(I, Map, ConstTab, Options)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_rtl_mk_switch).
--export([gen_switch_val/5,gen_switch_tuple/5]).
+-export([gen_switch_val/4,gen_switch_tuple/4]).
 
 %%-------------------------------------------------------------------------
 
@@ -79,13 +79,13 @@
 %%    supported on SPARC (and not on x86) and probably needs a bit
 %%    more testing before it can be turned on by default.
 
-gen_switch_val(I, VarMap, ConstTab, Options, ExitInfo) ->
+gen_switch_val(I, VarMap, ConstTab, Options) ->
   case proplists:get_bool(use_indexing, Options) of
-    false -> gen_slow_switch_val(I, VarMap, ConstTab, Options, ExitInfo);
-    true -> gen_fast_switch_val(I, VarMap, ConstTab, Options, ExitInfo)
+    false -> gen_slow_switch_val(I, VarMap, ConstTab, Options);
+    true -> gen_fast_switch_val(I, VarMap, ConstTab, Options)
   end.
 
-gen_fast_switch_val(I, VarMap, ConstTab, Options, ExitInfo) ->
+gen_fast_switch_val(I, VarMap, ConstTab, Options) ->
   {Arg, VarMap0} = 
     hipe_rtl_varmap:icode_var2rtl_var(hipe_icode:switch_val_arg(I), VarMap),
   IcodeFail = hipe_icode:switch_val_fail_label(I),
@@ -98,7 +98,7 @@ gen_fast_switch_val(I, VarMap, ConstTab, Options, ExitInfo) ->
   %% This check is currently not really necessary.  The checking
   %% happens at an earlier phase of the compilation.
   {Types, InitCode} = split_types(Cases, Arg),
-  handle_types(Types, InitCode, VarMap1, ConstTab, Arg, {I, Fail, Options, ExitInfo}).
+  handle_types(Types, InitCode, VarMap1, ConstTab, Arg, {I, Fail, Options}).
 
 handle_types([{Type,Lbl,Cases}|Types], Code, VarMap, ConstTab, Arg, Info) ->
   {Code1,VarMap1,ConstTab1} = gen_fast_switch_on(Type, Cases, 
@@ -109,7 +109,7 @@ handle_types([], Code, VarMap, ConstTab, _, _) ->
   {Code, VarMap, ConstTab}.
 
 
-gen_fast_switch_on(integer, Cases, VarMap, ConstTab, Arg, {I, Fail, Options, _ExitInfo})  ->
+gen_fast_switch_on(integer, Cases, VarMap, ConstTab, Arg, {I, Fail, Options})  ->
   {First,_} = hd(Cases),
   Min = hipe_icode:const_value(First),
   if length(Cases) < ?MINFORJUMPTABLE ->
@@ -132,7 +132,7 @@ gen_fast_switch_on(integer, Cases, VarMap, ConstTab, Arg, {I, Fail, Options, _Ex
 	  find_cluster(CM,VarMap,ConstTab,Options,Arg,Fail,hipe_icode:switch_val_fail_label(I))
       end
   end;
-gen_fast_switch_on(atom, Cases, VarMap, ConstTab, Arg, {_I, Fail, Options, _ExitInfo})  ->
+gen_fast_switch_on(atom, Cases, VarMap, ConstTab, Arg, {_I, Fail, Options})  ->
   case proplists:get_bool(use_inline_atom_search, Options) of
     true ->
       if
@@ -150,10 +150,10 @@ gen_fast_switch_on(atom, Cases, VarMap, ConstTab, Arg, {_I, Fail, Options, _Exit
 	  gen_search_switch_val(Arg, Cases, Fail, VarMap, ConstTab, Options)
       end
   end;	
-gen_fast_switch_on(_, _, VarMap, ConstTab, _, {I,_Fail,Options,ExitInfo})  ->
+gen_fast_switch_on(_, _, VarMap, ConstTab, _, {I,_Fail,Options})  ->
   %% We can only handle smart indexing of integers and atoms
   %% TODO: Consider bignum
-  gen_slow_switch_val(I, VarMap, ConstTab, Options, ExitInfo).
+  gen_slow_switch_val(I, VarMap, ConstTab, Options).
 
 
 %% Split different types into separate switches.
@@ -702,10 +702,10 @@ dense_interval([], Max, _, _, _) ->
 %% switch_val without jumptable
 %%
 
-gen_slow_switch_val(I, VarMap, ConstTab, Options, ExitInfo) ->
+gen_slow_switch_val(I, VarMap, ConstTab, Options) ->
   Is = rewrite_switch_val(I),
   ?IF_DEBUG_LEVEL(3,?msg("Switch: ~w\n",[Is]),no_debug),
-  hipe_icode2rtl:translate_instrs(Is, VarMap, ConstTab, Options, ExitInfo).
+  hipe_icode2rtl:translate_instrs(Is, VarMap, ConstTab, Options).
 
 rewrite_switch_val(I) ->
   Arg = hipe_icode:switch_val_arg(I),
@@ -945,7 +945,7 @@ split_cases([{V,L}|Rest], Vs, Ls) ->
 %% 
 %%-------------------------------------------------------------------------
 
-gen_switch_tuple(I, Map, ConstTab, _Options, _ExitInfo) ->
+gen_switch_tuple(I, Map, ConstTab, _Options) ->
   {X, Map1} = 
     hipe_rtl_varmap:icode_var2rtl_var(hipe_icode:switch_tuple_arity_arg(I), Map),
   Fail0 = hipe_icode:switch_tuple_arity_fail_label(I),

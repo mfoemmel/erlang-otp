@@ -33,6 +33,7 @@
 	 display_text_messages/2,
 	 test_msgs/6,
 
+	 plain_decode_encode/5,
 	 plain_encode_decode/5,
 	 trans_first_encode_decode/5,
 	 actions_first_encode_decode/5,
@@ -47,7 +48,7 @@
 
 display_text_messages(_, []) ->
     ok;
-display_text_messages(V, [{Name, Msg, _Check, _ED, Conf}|Msgs]) ->
+display_text_messages(V, [{Name, Msg, _ED, Conf}|Msgs]) ->
     display_text_message(Name, Msg, V),
     display_text_messages(V, Msgs).
 
@@ -77,6 +78,10 @@ test_msgs(_Codec, _DD, _Ver, _EC, _Check, [], []) ->
     ok;
 test_msgs(_Codec, _DD, _Ver, _EC, _Check, [], Errs) ->
     ?ERROR(lists:reverse(Errs));
+test_msgs(Codec, DD, Ver, EC, Check, 
+	  [{Name, {error, Error}, ED, Conf}|Msgs], Acc) ->
+    io:format("error~n", []),
+    test_msgs(Codec, DD, Ver, EC, Check, Msgs, [{Name, Error}|Acc]);
 test_msgs(Codec, DD, Ver, EC, Check, 
 	  [{Name, Msg, ED, Conf}|Msgs], Acc) ->
     Dbg = test_msgs_debug(Conf),
@@ -130,6 +135,20 @@ plain_encode_decode(Codec, DynamicDecode, Ver, EC, M1) ->
     case (catch encode_message(Codec, Ver, EC, M1)) of
 	{ok, Bin} ->
 	    decode_message(Codec, DynamicDecode, Ver, EC, Bin);
+	Error ->
+	    Error 
+    end.
+
+
+%% *** plain_decode_encode ***
+
+plain_decode_encode(Codec, DynamicDecode, Ver, EC, M) when list(M) ->
+    Bin = list_to_binary(M),
+    plain_decode_encode(Codec, DynamicDecode, Ver, EC, Bin);
+plain_decode_encode(Codec, DynamicDecode, Ver, EC, B) when binary(B) ->
+    case (catch decode_message(Codec, DynamicDecode, Ver, EC, B)) of
+	{ok, M} ->
+	    encode_message(Codec, Ver, EC, M);
 	Error ->
 	    Error 
     end.

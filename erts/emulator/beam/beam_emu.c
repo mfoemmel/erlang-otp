@@ -975,6 +975,7 @@ static void terminate_proc(Process* c_p, Eterm Value);
 static Eterm add_stacktrace(Process* c_p, Eterm Value, Eterm exc);
 static void save_stacktrace(Process* c_p, Eterm* pc, Eterm* reg,
 			     BifFunction bf, Eterm args);
+static struct StackTrace * get_trace_from_exc(Eterm exc);
 static Eterm make_arglist(Process* c_p, Eterm* reg, int a);
 static Eterm call_error_handler(Process* p, Eterm* ip, Eterm* reg);
 static Eterm call_breakpoint_handler(Process* p, Eterm* fi, Eterm* reg);
@@ -1522,6 +1523,7 @@ void process_main(void)
      if (is_non_value(r(0))) {
 	 r(0) = x(1);
 	 x(1) = x(2);
+	 x(2) = x(3);
      }
      Next(1);
  }
@@ -2814,42 +2816,46 @@ void process_main(void)
      goto do_schedule;
  }
 
- /* not possible to call as a BIF yet, but will probably be */
  OpCase(raise_ss): {
-   /* XXX note: should do sanity check on given trace if it can be
-      passed from a user! Currently only expecting generated calls.
-
-      Right now we have to hope that the existing c_p->ftrace
-      is still correct (it should be, most of the time). When this
-      can be called with three arguments, it will fix that problem.
-
-     GetArg1(2, tmp_arg1);
-     c_p->ftrace = tmp_arg1;
-   */
-     GetArg1(1, tmp_arg1);
-     c_p->fvalue = tmp_arg1;
+     /* This was not done very well in R10-0; then, we passed the tag in
+	the first argument and hoped that the existing c_p->ftrace was
+	still correct. But the ftrace-object already includes the tag
+	(or rather, the freason). Now, we pass the original ftrace in
+	the first argument. We also handle atom tags in the first
+	argument for backwards compatibility.
+     */
+     GetArg2(0, tmp_arg1, tmp_arg2);
+     c_p->fvalue = tmp_arg2;
      if (c_p->freason == EXC_NULL) {
-       /* should not happen unless it can be called as a BIF */
+       /* a safety check for the R10-0 case; should not happen */
        c_p->ftrace = NIL;
-       c_p->freason = EXC_ERROR;  /* new stack trace */
-     } else {
-         GetArg1(0, tmp_arg1);
-	 switch (tmp_arg1) {
-	 case am_throw:
-	     c_p->freason = EXC_THROWN & ~EXF_SAVETRACE;
-	     break;
-	 case am_error:
-	     c_p->freason = EXC_ERROR & ~EXF_SAVETRACE;
-	     break;
-	 case am_exit:
-	     c_p->freason = EXC_EXIT & ~EXF_SAVETRACE;
-	     break;
-	 default:
-	     /* should not happen unless it can be called as a BIF */
-	     c_p->ftrace = NIL;
-	     c_p->freason = EXC_BADARG;  /* new stack trace */
-	     break;
+       c_p->freason = EXC_ERROR;
+     }
+     /* for R10-0 code, keep existing c_p->ftrace and hope it's correct */
+     switch (tmp_arg1) {
+     case am_throw:
+       c_p->freason = EXC_THROWN & ~EXF_SAVETRACE;
+       break;
+     case am_error:
+       c_p->freason = EXC_ERROR & ~EXF_SAVETRACE;
+       break;
+     case am_exit:
+       c_p->freason = EXC_EXIT & ~EXF_SAVETRACE;
+       break;
+     default:
+       {/* R10-1 and later
+	   XXX note: should do sanity check on given trace if it can be
+	   passed from a user! Currently only expecting generated calls.
+	*/
+	 struct StackTrace *s;
+	 c_p->ftrace = tmp_arg1;
+	 s = get_trace_from_exc(tmp_arg1);
+	 if (s == NULL) {
+	   c_p->freason = EXC_ERROR;
+	 } else {
+	   c_p->freason = PRIMARY_EXCEPTION(s->freason);
 	 }
+       }
      }
      goto find_func_info;
  }
@@ -4129,7 +4135,7 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
     }
 
     /* Get the fully expanded error term */
-    Value = expand_error_value(c_p, Value);
+    Value = expand_error_value(c_p, c_p->freason, Value);
 
     /* Save final error term and stabilize the exception flags so no
        further expansion is done. */
@@ -4140,10 +4146,12 @@ handle_error(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf)
     if ((c_p->catches <= 0) || (c_p->freason & EXF_PANIC)) {
 	terminate_proc(c_p, Value);
     } else {
-        /* The Beam handler code checks reg[0] for THE_NON_VALUE to see
-	   if the previous code finished abnormally. If so, reg[1] and
-	   reg[2] should hold the exception data. (If the handler is
-	   just a trap to native code, these registers will be ignored.)  */
+        /* The Beam handler code (catch_end or try_end) checks reg[0]
+	   for THE_NON_VALUE to see if the previous code finished
+	   abnormally. If so, reg[1], reg[2] and reg[3] should hold the
+	   exception class, term and trace, respectively. (If the
+	   handler is just a trap to native code, these registers will
+	   be ignored.) */
 	reg[0] = THE_NON_VALUE;
 	reg[1] = exception_tag[GET_EXC_CLASS(c_p->freason)];
 	reg[2] = Value;
@@ -4219,11 +4227,11 @@ add_stacktrace(Process* c_p, Eterm Value, Eterm exc) {
  * This does not update c_p->fvalue or c_p->freason.
  */
 Eterm
-expand_error_value(Process* c_p, Eterm Value) {
+expand_error_value(Process* c_p, Uint freason, Eterm Value) {
     Eterm* hp;
     Uint r;
 
-    r = GET_EXC_INDEX(c_p->freason);
+    r = GET_EXC_INDEX(freason);
     ASSERT(r < NUMBER_EXIT_CODES); /* range check */
     ASSERT(is_value(Value));
 
@@ -4266,17 +4274,6 @@ expand_error_value(Process* c_p, Eterm Value) {
  * However, it is probably not possible to ever change the format of
  * error terms.)  */
 
-struct StackTrace {
-  Uint header;	/* bignum header - must be first in struct */
-  Uint freason;
-  Eterm* pc;
-  Eterm* cp;
-  Eterm* current;
-  int bif;	/* BIF table index, or -1 */
-  int depth;	/* number of saved pointers in trace[] */
-  Uint trace[1];  /* varying size - must be last in struct */
-};
-
 static void
 save_stacktrace(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf,
 		Eterm args) {
@@ -4286,16 +4283,19 @@ save_stacktrace(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf,
     int depth = erts_backtrace_depth;    /* max depth (never negative) */
 
     /* Create a container for the exception data */
-    sz = (offsetof(struct StackTrace, trace) + sizeof(Uint) - 1)
-      / sizeof(Uint) + depth;
-    hp = HAlloc(c_p, (sz + 3) * sizeof(Uint));
+    sz = (offsetof(struct StackTrace, trace) + sizeof(Uint) * depth
+          + sizeof(Eterm) - 1) / sizeof(Eterm);
+    hp = HAlloc(c_p, (sz + 3));
     s = (struct StackTrace *) (hp + 2);
     c_p->ftrace = CONS(hp, args, make_big((Uint *) s));
     s->header = make_pos_bignum_header(sz);
+
+    /* The following fields are inside the bignum */
+    
+    s->freason = c_p->freason;
     s->pc = pc;
     s->cp = c_p->cp;
     s->current = c_p->current;
-    s->freason = c_p->freason;
 
     /*
      * If the failure was in a BIF other than 'error', 'exit' or
@@ -4362,6 +4362,28 @@ save_stacktrace(Process* c_p, Eterm* pc, Eterm* reg, BifFunction bf,
 }
 
 /*
+ * Getting the relevant fields from the term pointed to by ftrace
+ */
+
+static struct StackTrace *
+get_trace_from_exc(Eterm exc) {
+    if (exc == NIL) {
+      return NULL;
+    } else {
+      return (struct StackTrace *) big_val(CDR(list_val(exc)));
+    }
+}
+
+static Eterm
+get_args_from_exc(Eterm exc) {
+    if (exc == NIL) {
+      return NIL;
+    } else {
+      return CAR(list_val(exc));
+    }
+}
+
+/*
  * Creating a list with the argument registers
  */
 static Eterm
@@ -4393,11 +4415,18 @@ build_stacktrace(Process* c_p, Eterm exc) {
     Eterm Where = NIL;
     Eterm* next_p = &Where;
 
-    if (exc == NIL) {
+    s = get_trace_from_exc(exc);
+    if (s == NULL) {
         return NIL;
     }
-    args = CAR(list_val(exc));
-    s = (struct StackTrace *) big_val(CDR(list_val(exc)));
+
+    if (s->freason & EXF_NATIVE) {
+      /* Just return a null trace if the exception was in native code.
+       */
+      return NIL;
+    }
+
+    args = get_args_from_exc(exc);
     pc = s->pc;
     bif = s->bif;
     depth = s->depth;
@@ -4535,7 +4564,9 @@ build_stacktrace(Process* c_p, Eterm exc) {
         int i;
 	Uint* fi;
         Eterm mfa;
-        Eterm* hp = HAlloc(c_p, 6 * depth);
+        Eterm *hp, *hp_start;
+
+        hp_start = hp = HAlloc(c_p, 6 * depth);
 	for (i = 0; i < depth; i++) {
 	    fi = find_function_from_pc((Uint *) s->trace[i]);
 	    if (fi == NULL) continue;
@@ -4546,6 +4577,7 @@ build_stacktrace(Process* c_p, Eterm exc) {
 	    next_p = hp + 1;
 	    hp += 2;
 	}
+        HRelease(c_p,hp_start + (6 * depth),hp);
     }
     return Where;
 }

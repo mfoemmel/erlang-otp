@@ -91,11 +91,15 @@ do_compile(Input, Opts0) ->
 output_generated(Opts) ->
     any(fun ({save_binary,_F}) -> true;
 	    (_Other) -> false
-	end, passes(file, Opts)).
+	end, passes(file, expand_opts(Opts))).
 
 expand_opts(Opts) ->
     foldr(fun expand_opt/2, [], Opts).
 
+expand_opt(basic_validation, Os) ->
+    [no_code_generation,to_pp,binary|Os];
+expand_opt(strong_validation, Os) ->
+    [no_code_generation,to_kernel,binary|Os];
 expand_opt(report, Os) ->
     [report_errors,report_warnings|Os];
 expand_opt(return, Os) ->
@@ -239,17 +243,17 @@ run_tc({Name,Fun}, St) ->
 	      [Name, (After_c-Before_c) / 1000, os_process_size()]),
     Val.
 
-comp_ret_ok(St) ->
+comp_ret_ok(#compile{code=Code,warnings=Warn,module=Mod,options=Opts}=St) ->
     report_warnings(St),
-    Ret1 = case member(binary, St#compile.options) of
-	       true -> [St#compile.code];
+    Ret1 = case member(binary, Opts) andalso not member(no_code_generation, Opts) of
+	       true -> [Code];
 	       false -> []
 	   end,
-    Ret2 = case member(return_warnings, St#compile.options) of
-	       true -> Ret1 ++ [St#compile.warnings];
+    Ret2 = case member(return_warnings, Opts) of
+	       true -> Ret1 ++ [Warn];
 	       false -> Ret1
 	   end,
-    list_to_tuple([ok,St#compile.module|Ret2]).
+    list_to_tuple([ok,Mod|Ret2]).
 
 comp_ret_err(St) ->
     report_errors(St),
@@ -411,11 +415,9 @@ core_passes() ->
     [{unless,no_copt,
       [{core_old_inliner,fun test_old_inliner/1,fun core_old_inliner/1},
        ?pass(core_fold_module),
-       {unless,no_inline, 
-	[{iff,inline,
-	  [?pass(core_inline_module),		%The new inliner.
-	   ?pass(core_fold_module)]} ]} ]},
-     {unless,no_copt,?pass(core_transforms)},
+       {core_inline_module,fun test_core_inliner/1,fun core_inline_module/1},
+       {core_fold_after_inline,fun test_core_inliner/1,fun core_fold_module/1},
+       ?pass(core_transforms)]},
      {iff,dcopt,{listing,"copt"}},
      {iff,'to_core',{done,"core"}}
      | kernel_passes()].
@@ -429,6 +431,7 @@ kernel_passes() ->
      %% Kernel Erlang and code generation.
      ?pass(kernel_module),
      {iff,dkern,{listing,"kernel"}},
+     {iff,'to_kernel',{done,"kernel"}},
      {pass,v3_life},
      {iff,dlife,{listing,"life"}},
      {pass,v3_codegen},
@@ -726,6 +729,17 @@ test_old_inliner(#compile{options=Opts}) ->
 	any(fun({inline,_}) -> true;
 	       (_) -> false
 	    end, Opts)
+    end.
+
+test_core_inliner(#compile{options=Opts}) ->
+    case any(fun(no_inline) -> true;
+		(_) -> false
+	     end, Opts) of
+	true -> false;
+	false ->
+	    any(fun(inline) -> true;
+		   (_) -> false
+		end, Opts)
     end.
 
 core_old_inliner(#compile{code=Code0,options=Opts}=St) ->

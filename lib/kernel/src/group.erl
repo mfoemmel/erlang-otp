@@ -20,6 +20,7 @@
 %% A group leader process for user io.
 
 -export([start/2,server/2]).
+-export([interfaces/1]).
 
 -import(io_lib, [deep_char_list/1]).
 
@@ -30,9 +31,32 @@ server(Drv, Shell) ->
     process_flag(trap_exit, true),
     edlin:init(),
     put(line_buffer, []),
-    put(read_mode,list),
+    put(read_mode, list),
+    put(user_drv, Drv),
     start_shell(Shell),
     server_loop(Drv, get(shell), []).
+
+%% Return the pid of user_drv and the shell process.
+%% Note: We can't ask the group process for this info since it
+%% may be busy waiting for data from the driver.
+interfaces(Group) ->
+    case process_info(Group, dictionary) of
+	{dictionary,Dict} ->
+	    get_pids(Dict, [], false);
+	_ ->
+	    []
+    end.
+
+get_pids([Drv = {user_drv,_} | Rest], Found, _) ->
+    get_pids(Rest, [Drv | Found], true);
+get_pids([Sh = {shell,_} | Rest], Found, Active) ->
+    get_pids(Rest, [Sh | Found], Active);
+get_pids([_ | Rest], Found, Active) ->
+    get_pids(Rest, Found, Active);
+get_pids([], Found, true) ->
+    Found;
+get_pids([], _Found, false) ->
+    [].
 
 %% start_shell(Shell)
 %%  Spawn a shell with its group_leader from the beginning set to ourselves.
@@ -45,8 +69,8 @@ start_shell({Node,Mod,Func,Args}) ->
 start_shell(Shell) when atom(Shell) ->
     start_shell1(Shell, start, []);
 start_shell(Shell) when pid(Shell) ->
-    group_leader(self(), Shell),		%We are the shells group leader
-    link(Shell),				%We're linked to it.
+    group_leader(self(), Shell),		% we are the shells group leader
+    link(Shell),				% we're linked to it.
     put(shell, Shell);
 start_shell(_Shell) ->
     ok.
@@ -54,16 +78,23 @@ start_shell(_Shell) ->
 start_shell1(M, F, Args) ->
     G = group_leader(),
     group_leader(self(), self()),
-    Shell = apply(M, F, Args),
-    group_leader(G, self()),
-    link(Shell),				%We're linked to it.
-    put(shell, Shell).
+    case catch apply(M, F, Args) of
+	Shell when pid(Shell) ->
+	    group_leader(G, self()),
+	    link(Shell),			% we're linked to it.
+	    put(shell, Shell);
+	Error ->				% start failure
+	    exit(Error)				% let the group process crash
+    end.
 
 server_loop(Drv, Shell, Buf0) ->
     receive
 	{io_request,From,ReplyAs,Req} when pid(From) ->
 	    Buf = io_request(Req, From, ReplyAs, Drv, Buf0),
 	    server_loop(Drv, Shell, Buf);
+	{driver_id,ReplyTo} ->
+	    ReplyTo ! {self(),driver_id,Drv},
+	    server_loop(Drv, Shell, Buf0);
 	{'EXIT',Drv,interrupt} ->
 	    %% Send interrupt to the shell.
 	    exit_shell(interrupt),

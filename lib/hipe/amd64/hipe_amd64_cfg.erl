@@ -58,6 +58,10 @@ branch_successors(Branch) ->
 	#ret{} -> []
     end.
 
+-ifdef(REMOVE_TRIVIAL_BBS_NEEDED).
+fails_to(_Instr) -> [].
+-endif.
+
 redirect_jmp(I, Old, New) ->
     case I of
 	#jmp_label{label=Label} ->

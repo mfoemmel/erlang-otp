@@ -15,7 +15,7 @@
 %% 
 %%     $Id$
 %%
-%% Purpose : Clean up, such as removing unused functions.
+%% Purpose : Clean up, such as removing unused labels and unused functions.
 
 -module(beam_clean).
 
@@ -85,6 +85,11 @@ add_to_work_list(F, {Fs,Used}=Sets) ->
 %%% Coalesce adjacent labels. Renumber all labels to eliminate gaps.
 %%% This cleanup will slightly reduce file size and slightly speed up loading.
 %%%
+%%% We also expand internal_is_record/3 to a sequence of instructions. It is done
+%%% here merely because this module will always be called even if optimization
+%%% is turned off. We don't want to do the expansion in beam_asm because we
+%%% want to see the expanded code in a .S file.
+%%%
 
 -record(st, {lmap,				%Translation tables for labels.
 	     entry,				%Number of entry label.
@@ -93,17 +98,43 @@ add_to_work_list(F, {Fs,Used}=Sets) ->
 
 clean_labels(Fs0) ->
     St0 = #st{lmap=dict:new(),lc=1},
-    {Fs1,St1} = mapfoldl(fun function_renumber/2, St0, Fs0),
-    Dict = St1#st.lmap,
-    {map(fun(F) -> function_replace(F, Dict) end, Fs1),St1#st.lc}.
+    {Fs1,#st{lmap=Lmap,lc=Lc}} = mapfoldl(fun function_renumber/2, St0, Fs0),
+    {map(fun(F) -> function_replace(F, Lmap) end, Fs1),Lc}.
 		
 function_renumber({function,Name,Arity,_Entry,Asm0}, St0) ->
-    {Asm,St1} = renumber_labels(Asm0, [], St0),
-    {{function,Name,Arity,St1#st.entry,Asm},St1}.
+    {Asm,St} = renumber_labels(Asm0, [], St0),
+    {{function,Name,Arity,St#st.entry,Asm},St}.
 
-renumber_labels([{label,Old}|Is], [{label,New}|_]=Acc, St0) ->
-    D = dict:store(Old, New, St0#st.lmap),
-    renumber_labels(Is, Acc, St0#st{lmap=D});
+renumber_labels([{bif,internal_is_record,{f,_},
+		  [Term,Tag,{integer,Arity}],Dst}|Is], Acc, St) ->
+    ContLabel = 900000000+2*St#st.lc,
+    FailLabel = ContLabel+1,
+    Fail = {f,FailLabel},
+    Tmp = Dst,
+    renumber_labels([{test,is_tuple,Fail,[Term]},
+		     {test,test_arity,Fail,[Term,Arity]},
+		     {get_tuple_element,Term,0,Tmp},
+		     {test,is_eq_exact,Fail,[Tmp,Tag]},
+		     {move,{atom,true},Dst},
+		     {jump,{f,ContLabel}},
+		     {label,FailLabel},
+		     {move,{atom,false},Dst},
+		     {label,ContLabel}|Is], Acc, St);
+renumber_labels([{test,internal_is_record,{f,_}=Fail,
+		  [Term,Tag,{integer,Arity}]}|Is], Acc, St) ->
+    Tmp = {x,1023},
+    case Term of
+	{Reg,_} when Reg == x; Reg == y ->
+	    renumber_labels([{test,is_tuple,Fail,[Term]},
+			     {test,test_arity,Fail,[Term,Arity]},
+			     {get_tuple_element,Term,0,Tmp},
+			     {test,is_eq_exact,Fail,[Tmp,Tag]}|Is], Acc, St);
+	_ ->
+	    renumber_labels([{jump,Fail}|Is], Acc, St)
+    end;
+renumber_labels([{label,Old}|Is], [{label,New}|_]=Acc, #st{lmap=D0}=St) ->
+    D = dict:store(Old, New, D0),
+    renumber_labels(Is, Acc, St#st{lmap=D});
 renumber_labels([{label,Old}|Is], Acc, St0) ->
     New = St0#st.lc,
     D = dict:store(Old, New, St0#st.lmap),

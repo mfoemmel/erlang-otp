@@ -117,6 +117,12 @@
 	 compact_otp4920_msg23/1, 
 	 compact_otp4920_msg24/1, 
 	 compact_otp4920_msg25/1, 
+	 compact_otp5186_msg01/1, 
+	 compact_otp5186_msg02/1, 
+	 compact_otp5186_msg03/1, 
+	 compact_otp5186_msg04/1, 
+	 compact_otp5186_msg05/1, 
+	 compact_otp5186_msg06/1, 
 
 	 pretty_tickets/1, 
 	 pretty_otp4632_msg1/1, 
@@ -153,7 +159,6 @@
 	 flex_pretty_otp5085_msg5/1, 
 	 flex_pretty_otp5085_msg6/1, 
 	 flex_pretty_otp5085_msg7/1, 
-	 
 
 	 init_per_testcase/2, fin_per_testcase/2]).  
 
@@ -185,7 +190,8 @@
 %% ----
 
 display_text_messages() ->
-    megaco_codec_test_lib:display_text_messages(?VERSION, msgs1() ++ msgs3()).
+    Msgs = msgs1() ++ msgs4(),
+    megaco_codec_test_lib:display_text_messages(?VERSION, Msgs).
 
 
 %% ----
@@ -403,7 +409,13 @@ compact_tickets(suite) ->
      compact_otp4920_msg22,
      compact_otp4920_msg23,
      compact_otp4920_msg24,
-     compact_otp4920_msg25
+     compact_otp4920_msg25,
+     compact_otp5186_msg01,
+     compact_otp5186_msg02,
+     compact_otp5186_msg03,
+     compact_otp5186_msg04,
+     compact_otp5186_msg05,
+     compact_otp5186_msg06
     ].
 
 pretty_tickets(suite) ->
@@ -568,7 +580,6 @@ flex_pretty_otp5085_msg7(Config) when list(Config) ->
     d("flex_pretty_otp5085_msg7 -> entry", []),
     ?ACQUIRE_NODES(1, Config),
     pretty_otp5085(ok, pretty_otp5085_msg7()).
-
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1418,11 +1429,11 @@ compact_otp4920_msg_1(M1, CheckEqual) ->
 		    io:format(", encoded:", []),
 		    ok;
 		Else ->
-		    io:format(", encode failed ", []),
+		    io:format(", encode failed:", []),
 		    exit({unexpected_encode_result, Else})
 	    end;
 	Else ->
-	    io:format("decode failed ", []),
+	    io:format("decode failed:", []),
 	    exit({unexpected_decode_result, Else})
     end.
 
@@ -1535,6 +1546,514 @@ compact_otp4920_msg24() ->
 compact_otp4920_msg25() ->
     M = "!/" ?VERSION_STR " [2031:FFEE:0000:130F:2132:4354:09C0:876A:130B::]\nT=125{C=${A=${M{O{MO=SR,RG=OFF,RV=OFF}}}}}",
     M.
+
+
+compact_otp5186_msg01(suite) ->
+    [];
+compact_otp5186_msg01(Config) when list(Config) ->
+    d("compact_otp5186_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5186_msg_1(compact_otp5186_msg01(), error, ignore).
+
+compact_otp5186_msg02(suite) ->
+    [];
+compact_otp5186_msg02(Config) when list(Config) ->
+    d("compact_otp5186_msg02 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5186_msg_1(compact_otp5186_msg02(), ok, ok).
+
+compact_otp5186_msg03(suite) ->
+    [];
+compact_otp5186_msg03(Config) when list(Config) ->
+    d("compact_otp5186_msg03 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5186_msg_2(compact_otp5186_msg03(), ok, ok).
+
+compact_otp5186_msg04(suite) ->
+    [];
+compact_otp5186_msg04(Config) when list(Config) ->
+    d("compact_otp5186_msg04 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5186_msg_2(compact_otp5186_msg04(), ok, ok).
+
+compact_otp5186_msg05(suite) ->
+    [];
+compact_otp5186_msg05(Config) when list(Config) ->
+    d("compact_otp5186_msg05 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5186_msg_2(compact_otp5186_msg05(), ok, ok).
+
+compact_otp5186_msg06(suite) ->
+    [];
+compact_otp5186_msg06(Config) when list(Config) ->
+    d("compact_otp5186_msg06 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5186_msg_2(compact_otp5186_msg06(), ok, ok).
+
+compact_otp5186_msg_1(M1, DecodeExpect, EncodeExpect) ->
+    Bin1 = list_to_binary(M1),
+    case decode_message(megaco_compact_text_encoder, false, [], Bin1) of
+	{ok, Msg} when DecodeExpect == ok ->
+ 	    io:format(" decoded", []),
+	    case encode_message(megaco_compact_text_encoder, [], Msg) of
+		{ok, Bin1} when EncodeExpect == ok ->
+		    io:format(", encoded - equal:", []),
+		    ok;
+		{ok, Bin2} when EncodeExpect == ok ->
+		    M2 = binary_to_list(Bin2),
+		    io:format(", encoded - not equal:", []),
+		    exit({messages_not_equal, Msg, M1, M2});
+		{ok, Bin3} when EncodeExpect == error ->
+		    M3 = binary_to_list(Bin3),
+		    io:format(", unexpected encode:", []),
+		    exit({unexpected_encode_success, Msg});
+		Else when EncodeExpect == error ->
+		    io:format(", encode failed ", []),
+		    ok
+	    end;
+	{ok, Msg} when DecodeExpect == error ->
+ 	    io:format(" decoded", []),
+	    exit({unexpected_decode_success, Msg});
+	_Else when DecodeExpect == error ->
+	    io:format(" decode failed ", []),
+	    ok;
+	Else when DecodeExpect == ok ->
+	    io:format(" decode failed ", []),
+	    exit({unexpected_decode_result, Else})
+    end.
+
+compact_otp5186_msg_2(Msg1, EncodeExpect, DecodeExpect) ->
+    case encode_message(megaco_compact_text_encoder, [], Msg1) of
+	{ok, Bin} when EncodeExpect == ok ->
+ 	    io:format(" encoded", []),
+	    case decode_message(megaco_compact_text_encoder, false, [], Bin) of
+		{ok, Msg1} when DecodeExpect == ok ->
+		    io:format(", decoded - equal:", []),
+		    ok;
+		{ok, Msg2} when DecodeExpect == ok ->
+		    M = binary_to_list(Bin),
+		    case (catch compact_otp5186_check_megamsg(Msg1, Msg2)) of
+			ok ->
+			    io:format(", decoded - not equal - ok:", []),
+			    ok;
+			{'EXIT', Reason} ->
+			    io:format(", decoded - not equal:", []),
+			    exit({messages_not_equal, M, Reason, Msg1, Msg2})
+		    end;
+		{ok, Msg3} when DecodeExpect == error ->
+		    M = binary_to_list(Bin),
+		    io:format(", decoded:", []),
+		    exit({unexpected_decode_success, M, Msg1, Msg3});
+		Else when DecodeExpect == ok ->
+		    M = binary_to_list(Bin),
+		    io:format(", decode failed ", []),
+		    exit({unexpected_decode_success, Msg1, M, Else});
+		Else when DecodeExpect == error ->
+		    io:format(", decode failed ", []),
+		    ok
+	    end;
+	{ok, Bin} when EncodeExpect == error ->
+	    M = binary_to_list(Bin),
+	    io:format(" encoded", []),
+	    exit({unexpected_encode_success, Msg1, M});
+	_Else when EncodeExpect == error ->
+	    io:format(" encode failed ", []),
+	    ok;
+	Else when EncodeExpect == ok ->
+	    io:format(" encode failed ", []),
+	    exit({unexpected_encode_result, Else})
+    end.
+
+
+%% --
+						   
+compact_otp5186_msg01() ->
+    "!/2 <mg5>\nP=67111298{C=2699{AV=mg5_ipeph/0x0f0001{}}}".
+
+compact_otp5186_msg02() ->
+    "!/2 <mg5>\nP=67111298{C=2699{AV=mg5_ipeph/0x0f0001}}".
+
+compact_otp5186_msg03() ->
+    {'MegacoMessage',
+     asn1_NOVALUE,
+     {'Message',
+      2,
+      {domainName,{'DomainName',"mg5",asn1_NOVALUE}},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',67111298,asn1_NOVALUE,
+	  {actionReplies,[
+			  {'ActionReply',2699,asn1_NOVALUE,asn1_NOVALUE,
+			   [
+			    {auditValueReply,
+			     {auditResult,
+			      {'AuditResult',
+			       {megaco_term_id,false,["mg5_ipeph","0x0f0001"]},
+			       [
+			       ]
+			      }
+			     }
+			    }
+			   ]
+			  }
+			 ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+compact_otp5186_msg04() ->
+    {'MegacoMessage',asn1_NOVALUE,
+     {'Message',2,{domainName,{'DomainName',"mg5",asn1_NOVALUE}},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',67111298,asn1_NOVALUE,
+	  {actionReplies,[
+			  {'ActionReply',2699,asn1_NOVALUE,asn1_NOVALUE,
+			   [
+			    {auditValueReply,
+			     {auditResult,
+			      {'AuditResult',
+			       {megaco_term_id,false,["mg5_ipeph","0x0f0001"]},
+			       [
+				{emptyDescriptors,
+				 {'AuditDescriptor',asn1_NOVALUE,asn1_NOVALUE}
+				}
+			       ]
+			      }
+			     }
+			    }
+			   ]
+			  }
+			 ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+compact_otp5186_msg05() ->
+    {'MegacoMessage',
+     asn1_NOVALUE,
+     {'Message',
+      2,
+      {domainName,{'DomainName',"mg5",asn1_NOVALUE}},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',67111298,asn1_NOVALUE,
+	  {actionReplies,[
+			  {'ActionReply',2699,asn1_NOVALUE,asn1_NOVALUE,
+			   [
+			    {addReply,
+			     {'AmmsReply',
+			      [
+			       {megaco_term_id,false,["mg5_ipeph","0x0f0001"]}
+			      ],
+			      [
+			      ]
+			     }
+			    }
+			   ]
+			  }
+			 ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+compact_otp5186_msg06() ->
+    {'MegacoMessage',asn1_NOVALUE,
+     {'Message',2,{domainName,{'DomainName',"mg5",asn1_NOVALUE}},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',67111298,asn1_NOVALUE,
+	  {actionReplies,[
+			  {'ActionReply',2699,asn1_NOVALUE,asn1_NOVALUE,
+			   [
+			    {addReply,
+			     {'AmmsReply',
+			      [
+			       {megaco_term_id,false,["mg5_ipeph","0x0f0001"]}
+			      ],
+			      [
+			       {emptyDescriptors,
+				{'AuditDescriptor',asn1_NOVALUE,asn1_NOVALUE}
+			       }
+			      ]
+			     }
+			    }
+			   ]
+			  }
+			 ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+%% --
+
+compact_otp5186_check_megamsg(M1, M1) ->
+    ok;
+compact_otp5186_check_megamsg(#'MegacoMessage'{authHeader = AH,
+					       mess = M1}, 
+			      #'MegacoMessage'{authHeader = AH,
+					       mess = M2}) ->
+    compact_otp5186_check_mess(M1, M2);
+compact_otp5186_check_megamsg(#'MegacoMessage'{authHeader = AH1},
+			      #'MegacoMessage'{authHeader = AH2}) ->
+    exit({not_equal, authHeader, AH1, AH2}).
+
+compact_otp5186_check_mess(M, M) ->
+    ok;
+compact_otp5186_check_mess(#'Message'{version     = V, 
+				      mId         = MId,
+				      messageBody = B1},
+			   #'Message'{version     = V, 
+				      mId         = MId,
+				      messageBody = B2}) ->
+    compact_otp5186_check_body(B1, B2);
+compact_otp5186_check_mess(#'Message'{version     = V, 
+				      mId         = MId1},
+			   #'Message'{version     = V, 
+				      mId         = MId2}) ->
+    exit({not_equal, mId, MId1, MId2});
+compact_otp5186_check_mess(#'Message'{version     = V1, 
+				      mId         = MId},
+			   #'Message'{version     = V2, 
+				      mId         = MId}) ->
+    exit({not_equal, version, V1, V2}).
+
+compact_otp5186_check_body(B, B) ->
+    ok;
+compact_otp5186_check_body({transactions, T1}, {transactions, T2}) ->
+    compact_otp5186_check_trans(T1, T2);
+compact_otp5186_check_body({messageError, E1}, {messageError, E2}) ->
+    compact_otp5186_check_merr(E1, E2);
+compact_otp5186_check_body(B1, B2) ->
+    exit({not_equal, messageBody, B1, B2}).
+
+compact_otp5186_check_trans([], []) ->
+    ok;
+compact_otp5186_check_trans([], T2) ->
+    exit({not_equal, transactions, [], T2});
+compact_otp5186_check_trans(T1, []) ->
+    exit({not_equal, transactions, T1, []});
+compact_otp5186_check_trans([Tran1|Trans1], [Tran2|Trans2]) ->
+    compact_otp5186_check_trans(Trans1, Trans2),
+    compact_otp5186_check_transaction(Tran1, Tran2).
+
+compact_otp5186_check_merr(ME, ME) ->
+    ok;
+compact_otp5186_check_merr(#'ErrorDescriptor'{errorCode = EC,
+					      errorText = ET1},
+			   #'ErrorDescriptor'{errorCode = EC,
+					      errorText = ET2}) ->
+    exit({not_equal, errorText, ET1, ET2});
+compact_otp5186_check_merr(#'ErrorDescriptor'{errorCode = EC1,
+					      errorText = ET},
+			   #'ErrorDescriptor'{errorCode = EC2,
+					      errorText = ET}) ->
+    exit({not_equal, errorCode, EC1, EC2}).
+
+compact_otp5186_check_transaction(T, T) ->
+    ok;
+compact_otp5186_check_transaction({transactionReply, TR1}, 
+				  {transactionReply, TR2}) ->
+    compact_otp5186_check_transRep(TR1, TR2);
+compact_otp5186_check_transaction(T1, T2) ->
+    exit({unexpected_transactions, T1, T2}).
+    
+compact_otp5186_check_transRep(T, T) ->
+    ok;
+compact_otp5186_check_transRep(#'TransactionReply'{transactionId     = TId,
+						   immAckRequired    = IAR,
+						   transactionResult = TR1},
+			       #'TransactionReply'{transactionId     = TId,
+						   immAckRequired    = IAR,
+						   transactionResult = TR2}) ->
+    compact_otp5186_check_transRes(TR1, TR2);
+compact_otp5186_check_transRep(T1, T2) ->
+    exit({unexpected_transaction_reply, T1, T2}).
+
+compact_otp5186_check_transRes(TR, TR) ->
+    ok;
+compact_otp5186_check_transRes({actionReplies, AR1}, 
+			       {actionReplies, AR2}) ->
+    compact_otp5186_check_actReps(AR1, AR2);
+compact_otp5186_check_transRes(TR1, TR2) ->
+    exit({unexpected_transaction_result, TR1, TR2}).
+
+compact_otp5186_check_actReps([], []) ->
+    ok;
+compact_otp5186_check_actReps(AR1, []) ->
+    exit({not_equal, actionReplies, AR1, []});
+compact_otp5186_check_actReps([], AR2) ->
+    exit({not_equal, actionReplies, [], AR2});
+compact_otp5186_check_actReps([AR1|ARs1], [AR2|ARs2]) ->
+    compact_otp5186_check_actRep(AR1, AR2),
+    compact_otp5186_check_actReps(ARs1, ARs2).
+
+compact_otp5186_check_actRep(AR, AR) ->
+    ok;
+compact_otp5186_check_actRep(#'ActionReply'{contextId       = ID,
+					    errorDescriptor = ED,
+					    contextReply    = CtxRep,
+					    commandReply    = CmdRep1},
+			     #'ActionReply'{contextId       = ID,
+					    errorDescriptor = ED,
+					    contextReply    = CtxRep,
+					    commandReply    = CmdRep2}) ->
+    compact_otp5186_check_cmdReps(CmdRep1, CmdRep2);
+compact_otp5186_check_actRep(AR1, AR2) ->
+    exit({unexpected_actionReply, AR1, AR2}).
+
+compact_otp5186_check_cmdReps([], []) ->
+    ok;
+compact_otp5186_check_cmdReps(CR1, []) ->
+    exit({not_equal, commandReplies, CR1, []});
+compact_otp5186_check_cmdReps([], CR2) ->
+    exit({not_equal, commandReplies, [], CR2});
+compact_otp5186_check_cmdReps([CR1|CRs1], [CR2|CRs2]) ->
+    compact_otp5186_check_cmdRep(CR1, CR2),
+    compact_otp5186_check_cmdReps(CRs1, CRs2).
+
+compact_otp5186_check_cmdRep(CR, CR) ->
+    ok;
+compact_otp5186_check_cmdRep({auditValueReply, AVR1}, 
+			     {auditValueReply, AVR2}) ->
+    compact_otp5186_check_auditReply(AVR1, AVR2);
+compact_otp5186_check_cmdRep({addReply, AVR1}, 
+			     {addReply, AVR2}) ->
+    compact_otp5186_check_ammsReply(AVR1, AVR2);
+compact_otp5186_check_cmdRep(CR1, CR2) ->
+    exit({unexpected_commandReply, CR1, CR2}).
+
+compact_otp5186_check_auditReply(AR, AR) ->
+    ok;
+compact_otp5186_check_auditReply({auditResult, AR1}, 
+				 {auditResult, AR2}) ->
+    compact_otp5186_check_auditRes(AR1, AR2);
+compact_otp5186_check_auditReply(AR1, AR2) ->
+    exit({unexpected_auditReply, AR1, AR2}).
+
+compact_otp5186_check_ammsReply(AR, AR) ->
+    ok;
+compact_otp5186_check_ammsReply(#'AmmsReply'{terminationID = ID,
+					     terminationAudit = TA1},
+				#'AmmsReply'{terminationID = ID,
+					     terminationAudit = TA2}) ->
+    %% This is just to simplify the test
+    F = fun(asn1_NOVALUE) -> [];
+	   (E) -> E
+	end,
+    compact_otp5186_check_termAudit(F(TA1), F(TA2));
+compact_otp5186_check_ammsReply(AR1, AR2) ->
+    exit({unexpected_ammsReply, AR1, AR2}).
+
+compact_otp5186_check_auditRes(AR, AR) ->
+    ok;
+compact_otp5186_check_auditRes(#'AuditResult'{terminationID = ID,
+					      terminationAuditResult = TAR1},
+			       #'AuditResult'{terminationID = ID,
+					      terminationAuditResult = TAR2}) ->
+    compact_otp5186_check_termAuditRes(TAR1, TAR2);
+compact_otp5186_check_auditRes(AR1, AR2) ->
+    exit({unexpected_auditResult, AR1, AR2}).
+
+compact_otp5186_check_termAuditRes([], []) ->
+    ok;
+%% An empty empty descriptor is removed
+compact_otp5186_check_termAuditRes([{emptyDescriptors,
+				     #'AuditDescriptor'{auditToken = asn1_NOVALUE,
+							auditPropertyToken = asn1_NOVALUE}}|TAR1], []) ->
+    compact_otp5186_check_termAuditRes(TAR1, []);
+compact_otp5186_check_termAuditRes(TAR1, []) ->
+    exit({not_equal, termAuditRes, TAR1, []});
+%% An empty empty descriptor is removed
+compact_otp5186_check_termAuditRes([], [{emptyDescriptors,
+					 #'AuditDescriptor'{auditToken = asn1_NOVALUE,
+							    auditPropertyToken = asn1_NOVALUE}}|TAR2]) ->
+    compact_otp5186_check_termAuditRes([], TAR2);
+compact_otp5186_check_termAuditRes([], TAR2) ->
+    exit({not_equal, termAuditRes, [], TAR2});
+compact_otp5186_check_termAuditRes([ARP1|TAR1], [ARP2|TAR2]) ->
+    compact_otp5186_check_auditRetParm(ARP1, ARP2),
+    compact_otp5186_check_termAuditRes(TAR1, TAR2).
+
+compact_otp5186_check_termAudit([], []) ->
+    ok;
+%% An empty empty descriptor is removed
+compact_otp5186_check_termAudit([{emptyDescriptors,
+				  #'AuditDescriptor'{auditToken = asn1_NOVALUE,
+						     auditPropertyToken = asn1_NOVALUE}}|TAR1], []) ->
+    compact_otp5186_check_termAudit(TAR1, []);
+compact_otp5186_check_termAudit(TAR1, []) ->
+    exit({not_equal, termAudit, TAR1, []});
+%% An empty empty descriptor is removed
+compact_otp5186_check_termAudit([], 
+				[{emptyDescriptors,
+				  #'AuditDescriptor'{auditToken = asn1_NOVALUE,
+						     auditPropertyToken = asn1_NOVALUE}}|TAR2]) ->
+    compact_otp5186_check_termAudit([], TAR2);
+compact_otp5186_check_termAudit([], TAR2) ->
+    exit({not_equal, termAudit, [], TAR2});
+compact_otp5186_check_termAudit([ARP1|TAR1], [ARP2|TAR2]) ->
+    compact_otp5186_check_auditRetParm(ARP1, ARP2),
+    compact_otp5186_check_termAudit(TAR1, TAR2).
+
+compact_otp5186_check_auditRetParm(ARP, ARP) ->
+    ok;
+compact_otp5186_check_auditRetParm({emptyDescriptors, AD1}, 
+				   {emptyDescriptors, AD2}) ->
+    compact_otp5186_check_auditDesc(AD1, AD2);
+compact_otp5186_check_auditRetParm(ARP1, ARP2) ->
+    exit({unexpected_auditRetParm, ARP1, ARP2}).
+
+compact_otp5186_check_auditDesc(AD, AD) ->
+    ok;
+compact_otp5186_check_auditDesc(#'AuditDescriptor'{auditToken = L1,
+						   auditPropertyToken = asn1_NOVALUE},
+				#'AuditDescriptor'{auditToken = L2,
+						   auditPropertyToken = asn1_NOVALUE}) ->
+    compact_otp5186_check_auditDesc_auditItems(L1, L2);
+compact_otp5186_check_auditDesc(#'AuditDescriptor'{auditToken = asn1_NOVALUE,
+						   auditPropertyToken = APT1},
+				#'AuditDescriptor'{auditToken = asn1_NOVALUE,
+						   auditPropertyToken = APT2}) ->
+    compact_otp5186_check_auditDesc_apt(APT1, APT2);
+compact_otp5186_check_auditDesc(AD1, AD2) ->
+    exit({unexpected_auditDesc, AD1, AD2}).
+
+compact_otp5186_check_auditDesc_auditItems([], []) ->
+    ok;
+compact_otp5186_check_auditDesc_auditItems(AI1, []) ->
+    exit({not_equal, auditItems, AI1, []});
+compact_otp5186_check_auditDesc_auditItems([], AI2) ->
+    exit({not_equal, auditItems, [], AI2});
+compact_otp5186_check_auditDesc_auditItems([AI1|AIs1], [AI2|AIs2]) ->
+    compact_otp5186_check_auditDesc_auditItem(AI1, AI2),
+    compact_otp5186_check_auditDesc_auditItems(AIs1, AIs2).
+
+compact_otp5186_check_auditDesc_auditItem(AI, AI) ->
+    ok;
+compact_otp5186_check_auditDesc_auditItem(AI1, AI2) ->
+    exit({not_equal, auditItem, AI1, AI2}).
+
+compact_otp5186_check_auditDesc_apt(APT, APT) ->
+    ok;
+compact_otp5186_check_auditDesc_apt(APT1, APT2) ->
+    exit({not_equal, auditPropertyToken, APT1, APT2}).
 
 
 %% --------------------------------------------------------------
@@ -2070,7 +2589,7 @@ pretty_otp5042_msg1(Config) when list(Config) ->
     end.
 
 pretty_otp5042_msg1() ->
-"MEGACO/2 <CATAPULT>:2944
+"MEGACO/" ?VERSION_STR " <CATAPULT>:2944
 Transaction = 102 { 
 Context =  5 { Notify =  MUX/1 { ObservedEvents = 1 { 
 h245bh/h245msgin { Stream =  1
@@ -2518,7 +3037,7 @@ rfc3525_decode(M) when binary(M) ->
 	{ok, Msg} ->
 	    Msg;
 	Error ->
-	    throw({rfc3525_decode_error, Error})
+	    {error, {rfc3525_decode_error, Error}}
     end.
 
 
@@ -3297,7 +3816,7 @@ msg51h(Mid) ->
     IASP  = cre_IndAudStreamParms(IALCD),
     SID   = 123,
     IASD  = cre_IndAudStreamDescriptor(SID, IASP),
-    msg51(Mid, IASP).
+    msg51(Mid, [IASD]).
 
 
 msg51i() ->
@@ -3314,7 +3833,7 @@ msg51i(Mid) ->
     IASP  = cre_IndAudStreamParms(IALCD),
     SID   = 123,
     IASD  = cre_IndAudStreamDescriptor(SID, IASP),
-    msg51(Mid, IASP).
+    msg51(Mid, [IASD]).
 
 
 %% IndAudEventsDescriptor:
@@ -4843,9 +5362,12 @@ chk_opt_AuditDescriptor(D1,D2) ->
 
 chk_AuditDescriptor(D,D) when record(D,'AuditDescriptor') ->
     {equal,'AuditDescriptor'};
-chk_AuditDescriptor(#'AuditDescriptor'{auditToken = T1} = D1,
-		    #'AuditDescriptor'{auditToken = T2} = D2) ->
+chk_AuditDescriptor(#'AuditDescriptor'{auditToken = T1,
+				       auditPropertyToken = APT1} = D1,
+		    #'AuditDescriptor'{auditToken = T2,
+				       auditPropertyToken = APT2} = D2) ->
     chk_opt_auditToken(T1,T2),
+    chk_opt_auditPropertyToken(APT1, APT2),
     throw({error,{equal,{'AuditDescriptor',D1,D2}}});
 chk_AuditDescriptor(D1,D2) ->
     throw({wrong_type,{'AuditDescriptor',D1,D2}}).
@@ -4890,6 +5412,175 @@ chk_auditToken2(T1,T2) when atom(T1), atom(T2) ->
     throw({not_equal,{auditToken,T1,T2}});
 chk_auditToken2(T1,T2) ->
     throw({wrong_type,{auditToken,T1,T2}}).
+
+chk_opt_auditPropertyToken(asn1_NOVALUE,asn1_NOVALUE) ->
+    {equal,'AuditDescriptor'};
+chk_opt_auditPropertyToken(T1, T2) ->
+    chk_auditPropertyToken(T1, T2).
+
+chk_auditPropertyToken([], []) ->
+    {equal,auditPropertyToken};
+chk_auditPropertyToken([{Tag, Val}|T1], [{Tag, Val}|T2]) ->
+    chk_auditPropertyToken(T1, T2);
+chk_auditPropertyToken([{Tag1, Val1}|T1], [{Tag2, Val2}|T2]) ->
+    chk_IndAuditParameter(Tag1, Val1, Tag2, Val2),
+    chk_auditPropertyToken(T1, T2).
+
+chk_IndAuditParameter(indAudMediaDescriptor, D1,
+		      indAudMediaDescriptor, D2) ->
+    chk_IndAudMediaDescriptor(D1, D2);
+chk_IndAuditParameter(indAudEventsDescriptor, D1,
+		      indAudEventsDescriptor, D2) ->
+    chk_IndAudEventsDescriptor(D1, D2);
+chk_IndAuditParameter(indAudEventBufferDescriptor, D1,
+		      indAudEventBufferDescriptor, D2) ->
+    chk_IndAudEventBufferDescriptor(D1, D2);
+chk_IndAuditParameter(indAudSignalsDescriptor, D1,
+		      indAudSignalsDescriptor, D2) ->
+    chk_IndAudSignalsDescriptor(D1, D2);
+chk_IndAuditParameter(indAudDigitMapDescriptor, D1,
+		      indAudDigitMapDescriptor, D2) ->
+    chk_IndAudDigitMapDescriptor(D1, D2);
+chk_IndAuditParameter(indAudStatisticsDescriptor, D1,
+		      indAudStatisticsDescriptor, D2) ->
+    chk_IndAudStatisticsDescriptor(D1, D2);
+chk_IndAuditParameter(indAudPackagesDescriptor, D1,
+		      indAudPackagesDescriptor, D2) ->
+    chk_IndAudPackagesDescriptor(D1, D2);
+chk_IndAuditParameter(Tag1, Val1, Tag2, Val2) ->
+    throw({wrong_type, {'IndAuditParameter', Tag1, Val1, Tag2, Val2}}).
+
+
+chk_IndAudMediaDescriptor(D, D) when record(D, 'IndAudMediaDescriptor') ->
+    {equal, 'IndAudMediaDescriptor'};
+chk_IndAudMediaDescriptor(#'IndAudMediaDescriptor'{termStateDescr = TSD1,
+						   streams        = S1},
+			  #'IndAudMediaDescriptor'{termStateDescr = TSD2,
+						   streams        = S2}) ->
+    chk_IndAudMediaDescriptor_termStateDescr(TSD1, TSD2),
+    chk_IndAudMediaDescriptor_streams(S1, S2),
+    {equal, 'IndAudMediaDescriptor'};
+chk_IndAudMediaDescriptor(D1, D2) ->
+    throw({wrong_type, {'IndAudMediaDescriptor', D1, D2}}).
+
+chk_IndAudMediaDescriptor_termStateDescr(asn1_NOVALUE, asn1_NOVALUE) ->
+    {equal, 'IndAudTerminationStateDescriptor'};
+chk_IndAudMediaDescriptor_termStateDescr(TSD, TSD) 
+  when record(TSD, 'IndAudTerminationStateDescriptor') ->
+    {equal, 'IndAudTerminationStateDescriptor'};
+chk_IndAudMediaDescriptor_termStateDescr(TSD1, TSD2) 
+  when record(TSD1, 'IndAudTerminationStateDescriptor'), 
+       record(TSD2, 'IndAudTerminationStateDescriptor') ->
+    throw({not_equal, {'IndAudTerminationStateDescriptor', TSD1, TSD2}});
+chk_IndAudMediaDescriptor_termStateDescr(D1, D2) ->
+    throw({wrong_type, {'IndAudTerminationStateDescriptor', D1, D2}}).
+
+chk_IndAudMediaDescriptor_streams(asn1_NOVALUE, asn1_NOVALUE) ->
+    {equal, streams};
+chk_IndAudMediaDescriptor_streams({oneStream, S1}, {oneStream, S2}) ->
+    chk_IndAudStreamParms(S1, S2);
+chk_IndAudMediaDescriptor_streams({multiStream, MS1}, {multiStream, MS2}) ->
+    chk_IndAudMediaDescriptor_multiStream(MS1, MS2);
+chk_IndAudMediaDescriptor_streams(S1, S2) ->
+    throw({wrong_type, {streams, S1, S2}}).
+
+chk_IndAudStreamParms(
+  #'IndAudStreamParms'{localControlDescriptor = LCD,
+		       localDescriptor        = LD,
+		       remoteDescriptor       = RD},
+  #'IndAudStreamParms'{localControlDescriptor = LCD,
+		       localDescriptor        = LD,
+		       remoteDescriptor       = RD}) ->
+    {equal, 'IndAudStreamParms'};
+chk_IndAudStreamParms(IASP1, IASP2) 
+  when record(IASP1, 'IndAudStreamParms'), 
+       record(IASP2, 'IndAudStreamParms') ->
+    throw({not_equal, {'IndAudStreamParms', IASP1, IASP2}});
+chk_IndAudStreamParms(S1, S2) ->
+    throw({wrong_type, {'IndAudStreamParms', S1, S2}}).
+
+chk_IndAudMediaDescriptor_multiStream([], []) ->
+    {equal, multiStream};
+chk_IndAudMediaDescriptor_multiStream([H|T1], [H|T2]) 
+  when record(H, 'IndAudStreamDescriptor') ->
+    chk_IndAudMediaDescriptor_multiStream(T1, T2);
+chk_IndAudMediaDescriptor_multiStream([H1|T1], [H2|T2]) ->
+    chk_IndAudStreamDescriptor(H1, H2),
+    chk_IndAudMediaDescriptor_multiStream(T1, T2);
+chk_IndAudMediaDescriptor_multiStream(MS1, MS2) ->
+    throw({not_equal, {multiStream, MS1, MS2}}).
+
+chk_IndAudStreamDescriptor(D, D) when record(D, 'IndAudStreamDescriptor') ->
+    {equal, 'IndAudStreamDescriptor'};
+chk_IndAudStreamDescriptor(
+  #'IndAudStreamDescriptor'{streamID    = SID1,
+			    streamParms = SP1} = D1,
+  #'IndAudStreamDescriptor'{streamID    = SID2,
+			    streamParms = SP2} = D2) ->
+    chk_StreamId(SID1, SID2),
+    chk_IndAudStreamParms(SP1, SP2),
+    throw({error, {equal, D1, D2}});
+chk_IndAudStreamDescriptor(D1, D2) ->
+    throw({wrong_type, {'IndAudStreamDescriptor', D1, D2}}).
+
+chk_IndAudEventsDescriptor(D, D) when record(D, 'IndAudEventsDescriptor') ->
+    {equal, 'IndAudEventsDescriptor'};
+chk_IndAudEventsDescriptor(D1, D2) 
+  when record(D1, 'IndAudEventsDescriptor'),
+       record(D2, 'IndAudEventsDescriptor') ->
+    throw({not_equal, {'IndAudEventsDescriptor', D1, D2}});
+chk_IndAudEventsDescriptor(D1, D2) ->
+    throw({wrong_type, {'IndAudEventsDescriptor', D1, D2}}).
+
+chk_IndAudEventBufferDescriptor(D, D) 
+  when record(D, 'IndAudEventBufferDescriptor') ->
+    {equal, 'IndAudEventBufferDescriptor'};
+chk_IndAudEventBufferDescriptor(D1, D2) 
+  when record(D1, 'IndAudEventBufferDescriptor'),
+       record(D2, 'IndAudEventBufferDescriptor') ->
+    throw({not_equal, {'IndAudEventBufferDescriptor', D1, D2}});
+chk_IndAudEventBufferDescriptor(D1, D2) ->
+    throw({wrong_type, {'IndAudEventBufferDescriptor', D1, D2}}).
+
+chk_IndAudSignalsDescriptor(D, D) ->
+    {equal, 'IndAudSignalsDescriptor'};
+chk_IndAudSignalsDescriptor({signal, S1}, {signal, S2}) ->
+    throw({not_equal, {signal, S1, S2}});
+chk_IndAudSignalsDescriptor({seqSigList, S1}, {seqSigList, S2}) ->
+    throw({not_equal, {seqSigList, S1, S2}});
+chk_IndAudSignalsDescriptor(D1, D2) ->
+    throw({wrong_type, {'IndAudSignalsDescriptor', D1, D2}}).
+
+chk_IndAudDigitMapDescriptor(D, D) 
+  when record(D, 'IndAudDigitMapDescriptor') ->
+    {equal, 'IndAudDigitMapDescriptor'};
+chk_IndAudDigitMapDescriptor(D1, D2) 
+  when record(D1, 'IndAudDigitMapDescriptor'),
+       record(D2, 'IndAudDigitMapDescriptor') ->
+    throw({not_equal, {'IndAudDigitMapDescriptor', D1, D2}});
+chk_IndAudDigitMapDescriptor(D1, D2) ->
+    throw({wrong_type, {'IndAudDigitMapDescriptor', D1, D2}}).
+
+chk_IndAudStatisticsDescriptor(D, D) 
+  when record(D, 'IndAudStatisticsDescriptor') ->
+    {equal, 'IndAudStatisticsDescriptor'};
+chk_IndAudStatisticsDescriptor(D1, D2) 
+  when record(D1, 'IndAudStatisticsDescriptor'),
+       record(D2, 'IndAudStatisticsDescriptor') ->
+    throw({not_equal, {'IndAudStatisticsDescriptor', D1, D2}});
+chk_IndAudStatisticsDescriptor(D1, D2) ->
+    throw({wrong_type, {'IndAudStatisticsDescriptor', D1, D2}}).
+
+chk_IndAudPackagesDescriptor(D, D) 
+  when record(D, 'IndAudPackagesDescriptor') ->
+    {equal, 'IndAudPackagesDescriptor'};
+chk_IndAudPackagesDescriptor(D1, D2) 
+  when record(D1, 'IndAudPackagesDescriptor'),
+       record(D2, 'IndAudPackagesDescriptor') ->
+    throw({not_equal, {'IndAudPackagesDescriptor', D1, D2}});
+chk_IndAudPackagesDescriptor(D1, D2) ->
+    throw({wrong_type, {'IndAudPackagesDescriptor', D1, D2}}).
+
 
 chk_ObservedEventsDescriptor(D,D) when record(D,'ObservedEventsDescriptor') ->
     {equal,'ObservedEventsDescriptor'};
@@ -5298,7 +5989,7 @@ cre_IndAudMediaDescriptor(IASP)
   when record(IASP, 'IndAudStreamParms') ->
     #'IndAudMediaDescriptor'{streams = {oneStream, IASP}};
 cre_IndAudMediaDescriptor(IASDs) when list(IASDs) ->
-    #'IndAudMediaDescriptor'{streams = {miltiStream, IASDs}}.
+    #'IndAudMediaDescriptor'{streams = {multiStream, IASDs}}.
 
 cre_IndAudStreamDescriptor(SID, SP) 
   when record(SP, 'IndAudStreamParms') ->

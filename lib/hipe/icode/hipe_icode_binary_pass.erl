@@ -213,7 +213,7 @@ extract_binary_matches(CFG, Label) ->
   CurrentBB = hipe_icode_cfg:bb(CFG, Label),
   Exit_set0 = hipe_icode_cfg:none_visited(),
   Bin_match_call = hipe_bb:last(CurrentBB),
-  Exit_set = hipe_icode_cfg:visit(pass_by_restore_catch(hipe_icode:call_fail_label(Bin_match_call),CFG), Exit_set0),
+  Exit_set = hipe_icode_cfg:visit(pass_by_begin_handler(hipe_icode:call_fail_label(Bin_match_call),CFG), Exit_set0),
   Chunk = [{Label, 0, Successors = [hipe_icode:call_continuation(Bin_match_call)] }],
   {Label, extract_binary_matches(CFG, Successors, Exit_set, Chunk)}.
 
@@ -237,7 +237,7 @@ extract_binary_matches(CFG, [Label | Labels], Exit_set0, Chunk0) ->
 	    false ->
 	      Exit_set0
 	  end,
-	PossibleLabels = pass_by_restore_catch(hipe_icode_cfg:succ(CFG, Label), CFG, []), 
+	PossibleLabels = pass_by_begin_handler(hipe_icode_cfg:succ(CFG, Label), CFG, []), 
 	AcceptableLabels = remove_members(PossibleLabels, Exit_set1),
 	Chunk1 = [{Label, Size, AcceptableLabels} | Chunk0],
 	extract_binary_matches(CFG, AcceptableLabels, Exit_set1, Chunk1)
@@ -246,15 +246,15 @@ extract_binary_matches(CFG, [Label | Labels], Exit_set0, Chunk0) ->
 extract_binary_matches(_CFG, [], Exit_set0, Chunk0) ->    
   {Exit_set0, Chunk0}.
 
-pass_by_restore_catch([Label| Labels], CFG, Acc) -> 
-  pass_by_restore_catch(Labels, CFG, [pass_by_restore_catch(Label, CFG)|Acc]);
-pass_by_restore_catch([], _CFG, Acc) ->
+pass_by_begin_handler([Label| Labels], CFG, Acc) -> 
+  pass_by_begin_handler(Labels, CFG, [pass_by_begin_handler(Label, CFG)|Acc]);
+pass_by_begin_handler([], _CFG, Acc) ->
   Acc.
 
-pass_by_restore_catch(Label, CFG) -> 
+pass_by_begin_handler(Label, CFG) -> 
   CurrentBB = hipe_icode_cfg:bb(CFG, Label), 
   [First|_] = hipe_bb:code(CurrentBB),
-  case hipe_icode:is_restore_catch(First) of 
+  case hipe_icode:is_begin_handler(First) of 
     true ->  
       hipe_icode:goto_label(hipe_bb:last(CurrentBB)); 
     false -> Label 
@@ -476,28 +476,52 @@ add_state_to_bs_primops([{Label,_,_}|Rest], CFG,
 add_state_to_bs_primops([], CFG, _State) ->
   CFG.
 
+get_local_mapping(Code) ->
+  get_local_mapping(Code, gb_trees:empty()).
+
+get_local_mapping([Instr|Instrs], Map) ->
+  case hipe_icode:is_move(Instr) of
+    true ->
+      Dst = hipe_icode:move_dst(Instr), 
+      Src = hipe_icode:move_src(Instr),
+      get_local_mapping(Instrs, gb_trees:enter(Dst, Src, Map)); 
+    false ->
+      get_local_mapping(Instrs, Map)
+  end;
+get_local_mapping([], Map) ->
+  Map.
+
+get_alias(Arg, Map) ->
+  case gb_trees:lookup(Arg, Map) of
+    {value, Val} -> Val;
+    none -> Arg
+  end.       
+
 runtime_effects(Chunk, CFG) ->
   {Vars, Bin}=find_results(Chunk, CFG),
   runtime_effects(Chunk, CFG, [], [], Vars, Bin).
 
 runtime_effects([{Label,_,_}|Rest], CFG, Shifts, Args, Vars, Bin) ->
-  Instruction=hipe_bb:last(hipe_icode_cfg:bb(CFG, Label)),
+  BB = hipe_icode_cfg:bb(CFG, Label),
+  LocalMapping = get_local_mapping(hipe_bb:code(BB)),
+  Instruction=hipe_bb:last(BB),
   case hipe_icode:is_call(Instruction) of
     true ->
       case hipe_icode:call_fun(Instruction) of
 	{hipe_bs_primop, {bs_get_integer, Size,_}} ->
 	  {Shifts1, Args1} =
 	    case hipe_icode:call_args(Instruction) of
-		[Arg] ->
-		  case lists:member(Arg, Vars) of
-		    true ->
-		      {[size|Shifts], [Bin|Args]};
-		    false ->
-		      {[rooflog2(Size)|Shifts], [Arg|Args]}
-		  end;
-		_ ->
-		  {Shifts,Args}
-	      end,
+	      [Arg] ->
+		RealArg  = get_alias(Arg, LocalMapping),
+		case lists:member(RealArg, Vars) of
+		  true ->
+		    {[size|Shifts], [Bin|Args]};
+		  false ->
+		    {[rooflog2(Size)|Shifts], [RealArg|Args]}
+		end;
+	      _ ->
+		{Shifts,Args}
+	    end,
 	  runtime_effects(Rest, CFG, Shifts1, Args1, Vars, Bin);
 	_ ->
 	  runtime_effects(Rest, CFG, Shifts, Args, Vars, Bin)

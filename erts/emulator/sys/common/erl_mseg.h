@@ -85,10 +85,11 @@ void  erts_mseg_exit(void);
 Eterm erts_mseg_info_options(CIO *ciop, Uint **hpp, Uint *szp);
 Eterm erts_mseg_info(CIO *ciop, Uint **hpp, Uint *szp);
 
-#endif
+#endif /* #if HAVE_ERTS_MSEG */
 
-#endif
+unsigned long erts_mseg_test(unsigned long,
+			     unsigned long,
+			     unsigned long,
+			     unsigned long);
 
-
-
-
+#endif /* #ifndef ERL_MSEG_H_ */

@@ -1,6 +1,0 @@
-{eventTable, {eva_snmp_adaptation, table_func, [eventTable]}}.
-{alarmTable, {eva_snmp_adaptation, table_func, [alarmTable]}}.
-{numberOfCurrentAlarms, {eva_snmp_adaptation, numberOfCurAlarms, []}}.
-{currentAlarmLastTimeChanged,
-   {eva_snmp_adaptation, curAlarmLastTimeChanged, []}}.
-{currentAlarmTable, {eva_snmp_adaptation, curAlarmTable, []}}.

@@ -20,6 +20,7 @@
 %% Basic standard i/o server for user interface port.
 
 -export([start/0, start/1, start_out/0]).
+-export([interfaces/1]).
 
 -define(NAME, user).
 
@@ -50,6 +51,23 @@ start_port(PortSettings) ->
     register(?NAME,Id),
     Id.
 
+%% Return the pid of the shell process.
+%% Note: We can't ask the user process for this info since it
+%% may be busy waiting for data from the port.
+interfaces(User) ->
+    case process_info(User, dictionary) of
+	{dictionary,Dict} ->
+	    case lists:keysearch(shell, 1, Dict) of
+		{value,Sh={shell,Shell}} when pid(Shell) ->
+		    [Sh];
+		_ ->
+		    []
+	    end;
+	_ ->
+	    []
+    end.
+
+
 server(Pid) when pid(Pid) ->
     process_flag(trap_exit, true),
     link(Pid),
@@ -65,7 +83,7 @@ run(P) ->
     case init:get_argument(noshell) of
 	%% non-empty list -> noshell
 	{ok, [_|_]} -> 
-	    put(noshell, true),
+	    put(shell, noshell),
 	    server_loop(P, queue:new());
 	_ ->
 	    group_leader(self(), self()),
@@ -98,13 +116,14 @@ catch_loop(Port, Shell, Q) ->
 start_new_shell() ->
     Shell = shell:start(),
     link(Shell),
+    put(shell, Shell),
     Shell.
 
 server_loop(Port, Q) ->
     receive
 	{Port,{data,Bytes}} ->
-	    case get(noshell) of
-		undefined ->
+	    case get(shell) of
+		noshell ->
 		    case string_chr(Bytes, 7) of
 			0 ->
 			    server_loop(Port, queue:snoc(Q, Bytes));
@@ -128,13 +147,13 @@ server_loop(Port, Q) ->
 
 	%% Check if shell has exited
 	{'EXIT',SomePid,What} ->
-	    case get(noshell) of
-		undefined ->
-		    throw({unknown_exit,{SomePid,What},Q});
+	    case get(shell) of
+		noshell ->
+		    server_loop(Port, Q);	% Ignore
 		_ ->
-		    server_loop(Port, Q)	% Ignore
+		    throw({unknown_exit,{SomePid,What},Q})
 	    end;
-
+	
 	_Other ->				% Ignore other messages
 	    server_loop(Port, Q)
     end.
@@ -282,17 +301,17 @@ get_chars_req(Prompt, M, F, XtraArg, Port, Q, State,
 %% Second loop. Pass data to client as long as it wants more.
 %% A ^G in data interrupts loop if 'noshell' is not undefined.
 get_chars_bytes(State, M, F, Xa, Port, Q, Bytes) ->
-    case get(noshell) of
-	undefined ->
+    case get(shell) of
+	noshell ->
+	    get_chars_apply(State, M, F, Xa, Port, queue:snoc(Q, Bytes));
+	_ ->
 	    case string_chr(Bytes, 7) of
 		0 ->
 		    get_chars_apply(State, M, F, Xa, Port, 
 				    queue:snoc(Q, Bytes));
 		_ ->
 		    throw(new_shell)
-	    end;
-	_ ->
-	    get_chars_apply(State, M, F, Xa, Port, queue:snoc(Q, Bytes))
+	    end
     end.
 
 get_chars_apply(State0, M, F, Xa, Port, Q) ->

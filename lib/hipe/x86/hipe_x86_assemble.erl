@@ -3,7 +3,6 @@
 %%% HiPE/x86 assembler
 %%%
 %%% TODO:
-%%% - Repair X86_SIMULATE_NSP.
 %%% - Migrate old resolve_arg users to translate_src/dst.
 %%% - Simplify combine_label_maps and mk_data_relocs.
 %%% - Move find_const to hipe_pack_constants?
@@ -221,6 +220,61 @@ translate_insn(I, MFA, ConstMap) ->
       [{test, Arg, I}]
   end.
 
+-ifdef(X86_SIMULATE_NSP).
+
+translate_call(I) ->
+  WordSize = 4, % XXX: s/4/8/ if AMD64
+  RegSP = 2#100, % esp
+  TempSP = hipe_x86:mk_temp(RegSP, untagged),
+  FunOrig = hipe_x86:call_fun(I),
+  Fun =
+    case FunOrig of
+      #x86_mem{base=#x86_temp{reg=4}, off=#x86_imm{value=Off}} ->
+	FunOrig#x86_mem{off=#x86_imm{value=Off+WordSize}};
+      _ -> FunOrig
+    end,
+  PatchTypeExt =
+    case hipe_x86:call_linkage(I) of
+      remote -> ?PATCH_TYPE2EXT(call_remote);
+      not_remote -> ?PATCH_TYPE2EXT(call_local)
+    end,
+  JmpArg = translate_fun(Fun, PatchTypeExt),
+  I3 = {'.sdesc', hipe_x86:call_sdesc(I), #comment{term=sdesc}},
+  I2 = {jmp, {JmpArg}, #comment{term=call}},
+  Size2 = hipe_x86_encode:insn_sizeof(jmp, {JmpArg}),
+  I1 = {mov, {mem_to_rm32(hipe_x86:mk_mem(TempSP,
+					  hipe_x86:mk_imm(0),
+					  untagged)),
+	      {imm32,{?PATCH_TYPE2EXT(x86_abs_pcrel),4+Size2}}},
+	#comment{term=call}},
+  I0 = {sub, {temp_to_rm32(TempSP), {imm8,WordSize}}, I},
+  [I0,I1,I2,I3].
+
+translate_ret(I) ->
+  NPOP = hipe_x86:ret_npop(I) + 4, % XXX: s/4/8/ if AMD64
+  RegSP = 2#100, % esp
+  TempSP = hipe_x86:mk_temp(RegSP, untagged),
+  RegRA = 2#011, % ebx
+  TempRA = hipe_x86:mk_temp(RegRA, untagged),
+  [{mov,
+    {temp_to_reg32(TempRA),
+     mem_to_rm32(hipe_x86:mk_mem(TempSP,
+				 hipe_x86:mk_imm(0),
+				 untagged))},
+    I},
+   {add,
+    {temp_to_rm32(TempSP),
+     case NPOP < 128 of
+       true -> {imm8,NPOP};
+       false -> {imm32,NPOP}
+     end},
+    #comment{term=ret}},
+   {jmp,
+    {temp_to_rm32(TempRA)},
+    #comment{term=ret}}].
+
+-else. % not X86_SIMULATE_NSP
+
 translate_call(I) ->
   %% call and jmp are patched the same, so no need to distinguish
   %% call from tailcall
@@ -240,6 +294,8 @@ translate_ret(I) ->
       N -> {{imm16,N}}
     end,
   [{ret, Arg, I}].
+
+-endif. % X86_SIMULATE_NSP
 
 translate_label(Label) when integer(Label) ->
   {label,Label}.	% symbolic, since offset is not yet computable
@@ -408,53 +464,6 @@ fix_jumps(I, InsnAddress, FunAddress, LabelMap) ->
   end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--ifdef(X86_SIMULATE_NSP).
-
-call_encode(I, MFA, Addr, Map, ConstMap) ->
-  RegSP = hipe_x86_encode:esp(),
-  TempSP = hipe_x86:mk_temp(RegSP, untagged),
-  I0 = {sub, {temp_to_rm32(TempSP), {imm8,4}}},
-  Size0 = hipe_x86_encode:insn_sizeof(I0),
-  I1 = {mov, {mem_to_rm32(hipe_x86:mk_mem(TempSP,
-					  hipe_x86:mk_imm(0),
-					  untagged)),
-	      {imm32,0}}},
-  Size1 = hipe_x86_encode:insn_sizeof(I1),
-  FunOrig = hipe_x86:call_fun(I),
-  Fun =
-    case FunOrig of
-      #x86_mem{base=#x86_temp{reg=4}, off=#x86_imm{value=Off}} ->
-	FunOrig#x86_mem{off=#x86_imm{value=Off+4}};
-      _ -> FunOrig
-    end,
-  {Arg,Refs2} = resolve_jmp_arg(Fun, MFA, Addr+Size0+Size1, Map, 0, undefined),
-  I2 = {jmp, {Arg}},
-  Size2 = hipe_x86_encode:insn_sizeof(I2),
-  Ref1 = {?PATCH_TYPE2EXT(x86_abs_pcrel), Addr+Size0+Size1-4, 4+Size2},
-  {[I0,I1,I2],[Ref1|Refs2]}.
-
-ret_encode(I) ->
-  NPOP = 4 + hipe_x86:ret_npop(I),
-  RegSP = hipe_x86_encode:esp(),
-  TempSP = hipe_x86:mk_temp(RegSP, untagged),
-  RegRA = hipe_x86_encode:ebx(),
-  TempRA = hipe_x86:mk_temp(RegRA, untagged),
-  I1 = {mov, {temp_to_reg32(TempRA),
-	      mem_to_rm32(hipe_x86:mk_mem(TempSP,
-					  hipe_x86:mk_imm(0),
-					  untagged))}},
-  I2 = {add, {temp_to_rm32(TempSP),
-	      case NPOP < 128 of
-		true -> {imm8,NPOP};
-		false -> {imm32,NPOP}
-	      end}},
-  I3 = {jmp, {temp_to_rm32(TempRA)}},
-  [I1,I2,I3].
-
--else.	% X86_SIMULATE_NSP
-
--endif.	% X86_SIMULATE_NSP
 
 list_to_array(List, Array, Addr) ->
   lists:foldl(fun(X,I) -> hipe_bifs:array_update(Array,I,X), I+1 end, Addr, List).

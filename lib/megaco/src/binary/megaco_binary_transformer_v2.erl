@@ -627,7 +627,8 @@ tr_indAudStreamDescriptor(#'IndAudStreamDescriptor'{streamID = ID,
 						    streamParms = Parms},
 			  State) ->
     #'IndAudStreamDescriptor'{streamID    = tr_StreamID(ID, State),
-			      streamParms = tr_StreamParms(Parms, State)}.
+			      streamParms = tr_indAudStreamParms(Parms, 
+								 State)}.
 
 
 %% -
@@ -637,10 +638,6 @@ tr_indAudEventsDescriptor(#'IndAudEventsDescriptor'{requestID = RID,
 						    streamID  = SID},
 			  State) ->
 
-%     i("tr_indAudEventsDescriptor -> entry with"
-%       "~n   RID:   ~p"
-%       "~n   Name0: ~p"
-%       "~n   SID:   ~p", [RID, Name0, SID]),
     Constraint = fun(Item) -> tr_PkgdName(Item, State) end,
     Name = resolve(event, Name0, State, Constraint),
     #'IndAudEventsDescriptor'{requestID = tr_opt_RequestID(RID, State),

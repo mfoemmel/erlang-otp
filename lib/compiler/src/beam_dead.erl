@@ -144,6 +144,10 @@ split_blocks([I|Is], Acc) ->
     split_blocks(Is, [I|Acc]);
 split_blocks([], Acc) -> reverse(Acc).
 
+split_block([{set,[R],[_,_,_]=As,{bif,internal_is_record,{f,Lbl}}}|Is], Bl, Acc) ->
+    %% internal_is_record/3 must be translated by beam_clean; therefore,
+    %% it must be outside of any block.
+    split_block(Is, [], [{bif,internal_is_record,{f,Lbl},As,R}|make_block(Bl, Acc)]);
 split_block([{set,[R],As,{bif,N,{f,Lbl}}}|Is], Bl, Acc) when Lbl =/= 0 ->
     split_block(Is, [], [{bif,N,{f,Lbl},As,R}|make_block(Bl, Acc)]);
 split_block([{set,[R],[],{'catch',L}}|Is], Bl, Acc) ->

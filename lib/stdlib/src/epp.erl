@@ -330,14 +330,17 @@ scan_toks(Toks0, From, St) ->
     end.
 
 scan_module([{'-',_Lh},{atom,_Lm,module},{'(',_Ll}|Ts], Ms) ->
-    scan_module_1(Ts,[],Ms);
+    scan_module_1(Ts, [], Ms);
 scan_module(_Ts, Ms) -> Ms.
 
-scan_module_1([{atom,Ln,A},{')',_Lr}|_Ts], As, Ms) ->
+scan_module_1([{atom,_,_}=A,{',',L}|Ts], As, Ms) ->
+    %% Parameterized modules.
+    scan_module_1([A,{')',L}|Ts], As, Ms);
+scan_module_1([{atom,Ln,A},{')',_Lr}|_Ts], As, Ms0) ->
     Mod = lists:concat(lists:reverse([A|As])),
-    Ms1 = dict:store({atom,'MODULE'}, {none,[{atom,Ln,list_to_atom(Mod)}]},
-		     Ms),
-    dict:store({atom,'MODULE_STRING'}, {none,[{string,Ln,Mod}]},Ms1);
+    Ms = dict:store({atom,'MODULE'},
+		     {none,[{atom,Ln,list_to_atom(Mod)}]}, Ms0),
+    dict:store({atom,'MODULE_STRING'}, {none,[{string,Ln,Mod}]}, Ms);
 scan_module_1([{atom,_Ln,A},{'.',_Lr}|Ts], As, Ms) ->
     scan_module_1(Ts, [".",A|As], Ms);
 scan_module_1([{'.',_Lr}|Ts], As, Ms) ->

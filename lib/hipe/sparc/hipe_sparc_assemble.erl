@@ -6,9 +6,7 @@
 %%  Notes    :  Not all SPARC instructions are handled.
 %%  History  :	* 1998-06-18 Erik Johansson (happi@csd.uu.se): Created.
 %% CVS:
-%%    $Author: mikpe $
-%%    $Date: 2004/09/22 07:39:42 $
-%%    $Revision: 1.32 $
+%%     $Id$
 %% ====================================================================
 %% @doc
 %%
@@ -73,7 +71,7 @@
 -include("../rtl/hipe_literals.hrl").
 
 %%---------------------------------------------------------------------
-%% @spec assemble(term(), term(), [Option]) -> binary()
+%% @spec assemble(term(), term(), [terms()], [Option]) -> binary()
 %%     Option = term()
 %% @doc  Assembles the compiled code in a SPARC-specific way and
 %%       returns a binary according to HiPE's external format.

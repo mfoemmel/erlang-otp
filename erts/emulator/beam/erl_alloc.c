@@ -160,7 +160,7 @@ set_default_std_alloc_opts(struct au_init *ip)
     SET_DEFAULT_ALLOC_OPTS(ip);
     ip->enable			= AU_ALLOC_DEFAULT_ENABLE(1);
     ip->atype			= BESTFIT;
-    ip->init.util.name_prefix	= "def_";
+    ip->init.util.name_prefix	= "std_";
 #ifndef SMALL_MEMORY
     ip->init.util.mmbcs 	= 128*1024; /* Main carrier size */
 #else
@@ -2016,6 +2016,7 @@ unsigned long erts_alc_test(unsigned long op,
     case 0x1:	return erts_gfalc_test(op, a1, a2);
     case 0x2:	return erts_bfalc_test(op, a1, a2);
     case 0x3:	return erts_afalc_test(op, a1, a2);
+    case 0x4:	return erts_mseg_test(op,  a1, a2, a3);
     case 0xf:
 	switch (op) {
 	case 0xf00:

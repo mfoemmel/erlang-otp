@@ -26,7 +26,7 @@
 %%
 %% We want multisets for easier (and faster) creation of env->ssa_edges
 %% 
-%% Maybe do things with restore_catch, pushcatch if possible
+%% Maybe do things with begin_handler, begin_try if possible
 %%
 %% Propagation of constant arguments when some of the arguments are bottom
 %%
@@ -73,33 +73,34 @@ visit_expression(Instruction, Environment) ->
       visit_switch_val        (Instruction, EvaluatedArguments, Environment);
     switch_tuple_arity ->
       visit_switch_tuple_arity(Instruction, EvaluatedArguments, Environment);
-    restore_catch ->
-      visit_restore_catch     (Instruction, EvaluatedArguments, Environment);
-    pushcatch ->
-      visit_pushcatch         (Instruction, EvaluatedArguments, Environment);
+    begin_handler ->
+      visit_begin_handler     (Instruction, EvaluatedArguments, Environment);
+    begin_try ->
+      visit_begin_try        (Instruction, EvaluatedArguments, Environment);
     _ ->
-      %% label, remove_catch, comment, return, fail
+      %% label, end_try, comment, return, fail
       {[], [], Environment}
   end.
 
 %%-----------------------------------------------------------------------------
 
-visit_pushcatch(Instruction, [], Environment) ->
-  Label     = hipe_icode:pushcatch_label(Instruction), 
-  Successor = hipe_icode:pushcatch_successor(Instruction),
+visit_begin_try(Instruction, [], Environment) ->
+  Label     = hipe_icode:begin_try_label(Instruction), 
+  Successor = hipe_icode:begin_try_successor(Instruction),
   {[Label, Successor], [], Environment}.
 
 %%-----------------------------------------------------------------------------
 
-visit_restore_catch(Instruction, _Arguments, Environment) ->
-  Destination1 = hipe_icode:restore_catch_type_dst(Instruction),
-  {Environment1, SSAWork1} = update_lattice_value({Destination1, bottom},
-						  Environment),
-  Destination2 = hipe_icode:restore_catch_reason_dst(Instruction),
-  {Environment2, SSAWork2} = update_lattice_value({Destination2, bottom},
-						  Environment1),
-  MoreSSAWork  = SSAWork1 ++ SSAWork2,
-  {[], MoreSSAWork, Environment2}.
+visit_begin_handler(Instruction, _Arguments, Environment) ->
+  Destinations = hipe_icode:begin_handler_dstlist(Instruction),
+  {Environment1, SSAWork} =
+    lists:foldl(fun (Dst, {Env0,Work0}) ->
+		    {Env, Work} = update_lattice_value({Dst, bottom}, Env0),
+		    {Env, Work ++ Work0}
+		end,
+		{Environment, []},
+		Destinations),
+  {[], SSAWork, Environment1}.
 
 %%-----------------------------------------------------------------------------
 
@@ -348,6 +349,8 @@ evaluate_call_or_enter([Argument1,Argument2], Fun) ->
       hipe_icode:mk_const(Argument1 -- Argument2);
     {erlang, append_element, 2} ->
       hipe_icode:mk_const(erlang:append_element(Argument1, Argument2));
+    {unsafe_update_element, N} ->
+      hipe_icode:mk_const(setelement(N, Argument1, Argument2));
     mktuple -> 
       hipe_icode:mk_const(list_to_tuple([Argument1,Argument2]));
     _Other ->
@@ -445,8 +448,8 @@ update_instruction(Instruction, Environment) ->
     switch_tuple_arity ->
       update_switch_tuple_arity(Instruction, Environment);
     _ ->
-      %% goto, comment, label, return, restore_catch, remove_catch,
-      %% pushcatch, fail
+      %% goto, comment, label, return, begin_handler, end_try,
+      %% begin_try, fail
       %% We could but don't handle: catch?, fail?
       [Instruction]
   end.

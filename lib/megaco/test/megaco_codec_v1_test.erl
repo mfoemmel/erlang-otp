@@ -116,6 +116,12 @@
 	 compact_otp4920_msg23/1, 
 	 compact_otp4920_msg24/1, 
 	 compact_otp4920_msg25/1, 
+	 compact_otp5186_msg01/1, 
+	 compact_otp5186_msg02/1, 
+	 compact_otp5186_msg03/1, 
+	 compact_otp5186_msg04/1, 
+	 compact_otp5186_msg05/1, 
+	 compact_otp5186_msg06/1, 
 
 	 pretty_tickets/1, 
 	 pretty_otp4632_msg1/1, 
@@ -152,7 +158,6 @@
 	 flex_pretty_otp5085_msg5/1, 
 	 flex_pretty_otp5085_msg6/1, 
 	 flex_pretty_otp5085_msg7/1, 
-	 
 
 	 init_per_testcase/2, fin_per_testcase/2]).  
 
@@ -406,7 +411,13 @@ compact_tickets(suite) ->
      compact_otp4920_msg22,
      compact_otp4920_msg23,
      compact_otp4920_msg24,
-     compact_otp4920_msg25
+     compact_otp4920_msg25,
+     compact_otp5186_msg01,
+     compact_otp5186_msg02,
+     compact_otp5186_msg03,
+     compact_otp5186_msg04,
+     compact_otp5186_msg05,
+     compact_otp5186_msg06
     ].
 
 pretty_tickets(suite) ->
@@ -1367,11 +1378,11 @@ compact_otp4920_msg_1(M1, CheckEqual) ->
 		    io:format(", encoded:", []),
 		    ok;
 		Else ->
-		    io:format(", encode failed ", []),
+		    io:format(", encode failed:", []),
 		    exit({unexpected_encode_result, Else})
 	    end;
 	Else ->
-	    io:format("decode failed ", []),
+	    io:format("decode failed:", []),
 	    exit({unexpected_decode_result, Else})
     end.
 
@@ -1484,6 +1495,498 @@ compact_otp4920_msg24() ->
 compact_otp4920_msg25() ->
     M = "!/" ?VERSION_STR " [2031:FFEE:0000:130F:2132:4354:09C0:876A:130B::]\nT=125{C=${A=${M{O{MO=SR,RG=OFF,RV=OFF}}}}}",
     M.
+
+
+compact_otp5186_msg01(suite) ->
+    [];
+compact_otp5186_msg01(Config) when list(Config) ->
+    d("compact_otp5186_msg01 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5186_msg_1(compact_otp5186_msg01(), error, ignore).
+
+compact_otp5186_msg02(suite) ->
+    [];
+compact_otp5186_msg02(Config) when list(Config) ->
+    d("compact_otp5186_msg02 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5186_msg_1(compact_otp5186_msg02(), ok, ok).
+
+compact_otp5186_msg03(suite) ->
+    [];
+compact_otp5186_msg03(Config) when list(Config) ->
+    d("compact_otp5186_msg03 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5186_msg_2(compact_otp5186_msg03(), ok, ok).
+
+compact_otp5186_msg04(suite) ->
+    [];
+compact_otp5186_msg04(Config) when list(Config) ->
+    d("compact_otp5186_msg04 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5186_msg_2(compact_otp5186_msg04(), ok, ok).
+
+compact_otp5186_msg05(suite) ->
+    [];
+compact_otp5186_msg05(Config) when list(Config) ->
+    d("compact_otp5186_msg05 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5186_msg_2(compact_otp5186_msg05(), ok, ok).
+
+compact_otp5186_msg06(suite) ->
+    [];
+compact_otp5186_msg06(Config) when list(Config) ->
+    d("compact_otp5186_msg06 -> entry", []),
+    ?ACQUIRE_NODES(1, Config),
+    compact_otp5186_msg_2(compact_otp5186_msg06(), ok, ok).
+
+compact_otp5186_msg_1(M1, DecodeExpect, EncodeExpect) ->
+    Bin1 = list_to_binary(M1),
+    case decode_message(megaco_compact_text_encoder, false, [], Bin1) of
+	{ok, Msg} when DecodeExpect == ok ->
+ 	    io:format(" decoded", []),
+	    case encode_message(megaco_compact_text_encoder, [], Msg) of
+		{ok, Bin1} when EncodeExpect == ok ->
+		    io:format(", encoded - equal:", []),
+		    ok;
+		{ok, Bin2} when EncodeExpect == ok ->
+		    M2 = binary_to_list(Bin2),
+		    io:format(", encoded - not equal:", []),
+		    exit({messages_not_equal, Msg, M1, M2});
+		{ok, Bin3} when EncodeExpect == error ->
+		    M3 = binary_to_list(Bin3),
+		    io:format(", unexpected encode:", []),
+		    exit({unexpected_encode_success, Msg});
+		Else when EncodeExpect == error ->
+		    io:format(", encode failed ", []),
+		    ok
+	    end;
+	{ok, Msg} when DecodeExpect == error ->
+ 	    io:format(" decoded", []),
+	    exit({unexpected_decode_success, Msg});
+	_Else when DecodeExpect == error ->
+	    io:format(" decode failed ", []),
+	    ok;
+	Else when DecodeExpect == ok ->
+	    io:format(" decode failed ", []),
+	    exit({unexpected_decode_result, Else})
+    end.
+
+compact_otp5186_msg_2(Msg1, EncodeExpect, DecodeExpect) ->
+    case encode_message(megaco_compact_text_encoder, [], Msg1) of
+	{ok, Bin} when EncodeExpect == ok ->
+ 	    io:format(" encoded", []),
+	    case decode_message(megaco_compact_text_encoder, false, [], Bin) of
+		{ok, Msg1} when DecodeExpect == ok ->
+		    io:format(", decoded - equal:", []),
+		    ok;
+		{ok, Msg2} when DecodeExpect == ok ->
+		    M = binary_to_list(Bin),
+		    case (catch compact_otp5186_check_megamsg(Msg1, Msg2)) of
+			ok ->
+			    io:format(", decoded - not equal - ok:", []),
+			    ok;
+			{'EXIT', Reason} ->
+			    io:format(", decoded - not equal:", []),
+			    exit({messages_not_equal, M, Reason, Msg1, Msg2})
+		    end;
+		{ok, Msg3} when DecodeExpect == error ->
+		    M = binary_to_list(Bin),
+		    io:format(", decoded:", []),
+		    exit({unexpected_decode_success, M, Msg1, Msg3});
+		Else when DecodeExpect == ok ->
+		    M = binary_to_list(Bin),
+		    io:format(", decode failed ", []),
+		    exit({unexpected_decode_success, Msg1, M, Else});
+		Else when DecodeExpect == error ->
+		    io:format(", decode failed ", []),
+		    ok
+	    end;
+	{ok, Bin} when EncodeExpect == error ->
+	    M = binary_to_list(Bin),
+	    io:format(" encoded", []),
+	    exit({unexpected_encode_success, Msg1, M});
+	_Else when EncodeExpect == error ->
+	    io:format(" encode failed ", []),
+	    ok;
+	Else when EncodeExpect == ok ->
+	    io:format(" encode failed ", []),
+	    exit({unexpected_encode_result, Else})
+    end.
+
+
+%% --
+						   
+compact_otp5186_msg01() ->
+    "!/1 <mg5>\nP=67111298{C=2699{AV=mg5_ipeph/0x0f0001{}}}".
+
+compact_otp5186_msg02() ->
+    "!/1 <mg5>\nP=67111298{C=2699{AV=mg5_ipeph/0x0f0001}}".
+
+compact_otp5186_msg03() ->
+    {'MegacoMessage',
+     asn1_NOVALUE,
+     {'Message',
+      1,
+      {domainName,{'DomainName',"mg5",asn1_NOVALUE}},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',67111298,asn1_NOVALUE,
+	  {actionReplies,[
+			  {'ActionReply',2699,asn1_NOVALUE,asn1_NOVALUE,
+			   [
+			    {auditValueReply,
+			     {auditResult,
+			      {'AuditResult',
+			       {megaco_term_id,false,["mg5_ipeph","0x0f0001"]},
+			       [
+			       ]
+			      }
+			     }
+			    }
+			   ]
+			  }
+			 ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+compact_otp5186_msg04() ->
+    {'MegacoMessage',asn1_NOVALUE,
+     {'Message',1,{domainName,{'DomainName',"mg5",asn1_NOVALUE}},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',67111298,asn1_NOVALUE,
+	  {actionReplies,[
+			  {'ActionReply',2699,asn1_NOVALUE,asn1_NOVALUE,
+			   [
+			    {auditValueReply,
+			     {auditResult,
+			      {'AuditResult',
+			       {megaco_term_id,false,["mg5_ipeph","0x0f0001"]},
+			       [
+				{emptyDescriptors,
+				 {'AuditDescriptor',asn1_NOVALUE}
+				}
+			       ]
+			      }
+			     }
+			    }
+			   ]
+			  }
+			 ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+compact_otp5186_msg05() ->
+    {'MegacoMessage',
+     asn1_NOVALUE,
+     {'Message',
+      1,
+      {domainName,{'DomainName',"mg5",asn1_NOVALUE}},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',67111298,asn1_NOVALUE,
+	  {actionReplies,[
+			  {'ActionReply',2699,asn1_NOVALUE,asn1_NOVALUE,
+			   [
+			    {addReply,
+			     {'AmmsReply',
+			      [
+			       {megaco_term_id,false,["mg5_ipeph","0x0f0001"]}
+			      ],
+			      [
+			      ]
+			     }
+			    }
+			   ]
+			  }
+			 ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+compact_otp5186_msg06() ->
+    {'MegacoMessage',asn1_NOVALUE,
+     {'Message',1,{domainName,{'DomainName',"mg5",asn1_NOVALUE}},
+      {transactions,
+       [{transactionReply,
+	 {'TransactionReply',67111298,asn1_NOVALUE,
+	  {actionReplies,[
+			  {'ActionReply',2699,asn1_NOVALUE,asn1_NOVALUE,
+			   [
+			    {addReply,
+			     {'AmmsReply',
+			      [
+			       {megaco_term_id,false,["mg5_ipeph","0x0f0001"]}
+			      ],
+			      [
+			       {emptyDescriptors,
+				{'AuditDescriptor',asn1_NOVALUE}
+			       }
+			      ]
+			     }
+			    }
+			   ]
+			  }
+			 ]
+	  }
+	 }
+	}
+       ]
+      }
+     }
+    }.
+
+%% --
+
+compact_otp5186_check_megamsg(M1, M1) ->
+    ok;
+compact_otp5186_check_megamsg(#'MegacoMessage'{authHeader = AH,
+					       mess = M1}, 
+			      #'MegacoMessage'{authHeader = AH,
+					       mess = M2}) ->
+    compact_otp5186_check_mess(M1, M2);
+compact_otp5186_check_megamsg(#'MegacoMessage'{authHeader = AH1},
+			      #'MegacoMessage'{authHeader = AH2}) ->
+    exit({not_equal, authHeader, AH1, AH2}).
+
+compact_otp5186_check_mess(M, M) ->
+    ok;
+compact_otp5186_check_mess(#'Message'{version     = V, 
+				      mId         = MId,
+				      messageBody = B1},
+			   #'Message'{version     = V, 
+				      mId         = MId,
+				      messageBody = B2}) ->
+    compact_otp5186_check_body(B1, B2);
+compact_otp5186_check_mess(#'Message'{version     = V, 
+				      mId         = MId1},
+			   #'Message'{version     = V, 
+				      mId         = MId2}) ->
+    exit({not_equal, mId, MId1, MId2});
+compact_otp5186_check_mess(#'Message'{version     = V1, 
+				      mId         = MId},
+			   #'Message'{version     = V2, 
+				      mId         = MId}) ->
+    exit({not_equal, version, V1, V2}).
+
+compact_otp5186_check_body(B, B) ->
+    ok;
+compact_otp5186_check_body({transactions, T1}, {transactions, T2}) ->
+    compact_otp5186_check_trans(T1, T2);
+compact_otp5186_check_body({messageError, E1}, {messageError, E2}) ->
+    compact_otp5186_check_merr(E1, E2);
+compact_otp5186_check_body(B1, B2) ->
+    exit({not_equal, messageBody, B1, B2}).
+
+compact_otp5186_check_trans([], []) ->
+    ok;
+compact_otp5186_check_trans([], T2) ->
+    exit({not_equal, transactions, [], T2});
+compact_otp5186_check_trans(T1, []) ->
+    exit({not_equal, transactions, T1, []});
+compact_otp5186_check_trans([Tran1|Trans1], [Tran2|Trans2]) ->
+    compact_otp5186_check_trans(Trans1, Trans2),
+    compact_otp5186_check_transaction(Tran1, Tran2).
+
+compact_otp5186_check_merr(ME, ME) ->
+    ok;
+compact_otp5186_check_merr(#'ErrorDescriptor'{errorCode = EC,
+					      errorText = ET1},
+			   #'ErrorDescriptor'{errorCode = EC,
+					      errorText = ET2}) ->
+    exit({not_equal, errorText, ET1, ET2});
+compact_otp5186_check_merr(#'ErrorDescriptor'{errorCode = EC1,
+					      errorText = ET},
+			   #'ErrorDescriptor'{errorCode = EC2,
+					      errorText = ET}) ->
+    exit({not_equal, errorCode, EC1, EC2}).
+
+compact_otp5186_check_transaction(T, T) ->
+    ok;
+compact_otp5186_check_transaction({transactionReply, TR1}, 
+				  {transactionReply, TR2}) ->
+    compact_otp5186_check_transRep(TR1, TR2);
+compact_otp5186_check_transaction(T1, T2) ->
+    exit({unexpected_transactions, T1, T2}).
+    
+compact_otp5186_check_transRep(T, T) ->
+    ok;
+compact_otp5186_check_transRep(#'TransactionReply'{transactionId     = TId,
+						   immAckRequired    = IAR,
+						   transactionResult = TR1},
+			       #'TransactionReply'{transactionId     = TId,
+						   immAckRequired    = IAR,
+						   transactionResult = TR2}) ->
+    compact_otp5186_check_transRes(TR1, TR2);
+compact_otp5186_check_transRep(T1, T2) ->
+    exit({unexpected_transaction_reply, T1, T2}).
+
+compact_otp5186_check_transRes(TR, TR) ->
+    ok;
+compact_otp5186_check_transRes({actionReplies, AR1}, 
+			       {actionReplies, AR2}) ->
+    compact_otp5186_check_actReps(AR1, AR2);
+compact_otp5186_check_transRes(TR1, TR2) ->
+    exit({unexpected_transaction_result, TR1, TR2}).
+
+compact_otp5186_check_actReps([], []) ->
+    ok;
+compact_otp5186_check_actReps(AR1, []) ->
+    exit({not_equal, actionReplies, AR1, []});
+compact_otp5186_check_actReps([], AR2) ->
+    exit({not_equal, actionReplies, [], AR2});
+compact_otp5186_check_actReps([AR1|ARs1], [AR2|ARs2]) ->
+    compact_otp5186_check_actRep(AR1, AR2),
+    compact_otp5186_check_actReps(ARs1, ARs2).
+
+compact_otp5186_check_actRep(AR, AR) ->
+    ok;
+compact_otp5186_check_actRep(#'ActionReply'{contextId       = ID,
+					    errorDescriptor = ED,
+					    contextReply    = CtxRep,
+					    commandReply    = CmdRep1},
+			     #'ActionReply'{contextId       = ID,
+					    errorDescriptor = ED,
+					    contextReply    = CtxRep,
+					    commandReply    = CmdRep2}) ->
+    compact_otp5186_check_cmdReps(CmdRep1, CmdRep2);
+compact_otp5186_check_actRep(AR1, AR2) ->
+    exit({unexpected_actionReply, AR1, AR2}).
+
+compact_otp5186_check_cmdReps([], []) ->
+    ok;
+compact_otp5186_check_cmdReps(CR1, []) ->
+    exit({not_equal, commandReplies, CR1, []});
+compact_otp5186_check_cmdReps([], CR2) ->
+    exit({not_equal, commandReplies, [], CR2});
+compact_otp5186_check_cmdReps([CR1|CRs1], [CR2|CRs2]) ->
+    compact_otp5186_check_cmdRep(CR1, CR2),
+    compact_otp5186_check_cmdReps(CRs1, CRs2).
+
+compact_otp5186_check_cmdRep(CR, CR) ->
+    ok;
+compact_otp5186_check_cmdRep({auditValueReply, AVR1}, 
+			     {auditValueReply, AVR2}) ->
+    compact_otp5186_check_auditReply(AVR1, AVR2);
+compact_otp5186_check_cmdRep({addReply, AVR1}, 
+			     {addReply, AVR2}) ->
+    compact_otp5186_check_ammsReply(AVR1, AVR2);
+compact_otp5186_check_cmdRep(CR1, CR2) ->
+    exit({unexpected_commandReply, CR1, CR2}).
+
+compact_otp5186_check_auditReply(AR, AR) ->
+    ok;
+compact_otp5186_check_auditReply({auditResult, AR1}, 
+				 {auditResult, AR2}) ->
+    compact_otp5186_check_auditRes(AR1, AR2);
+compact_otp5186_check_auditReply(AR1, AR2) ->
+    exit({unexpected_auditReply, AR1, AR2}).
+
+compact_otp5186_check_ammsReply(AR, AR) ->
+    ok;
+compact_otp5186_check_ammsReply(#'AmmsReply'{terminationID = ID,
+					     terminationAudit = TA1},
+				#'AmmsReply'{terminationID = ID,
+					     terminationAudit = TA2}) ->
+    %% This is just to simplify the test
+    F = fun(asn1_NOVALUE) -> [];
+	   (E) -> E
+	end,
+    compact_otp5186_check_termAudit(F(TA1), F(TA2));
+compact_otp5186_check_ammsReply(AR1, AR2) ->
+    exit({unexpected_ammsReply, AR1, AR2}).
+
+compact_otp5186_check_auditRes(AR, AR) ->
+    ok;
+compact_otp5186_check_auditRes(#'AuditResult'{terminationID = ID,
+					      terminationAuditResult = TAR1},
+			       #'AuditResult'{terminationID = ID,
+					      terminationAuditResult = TAR2}) ->
+    compact_otp5186_check_termAuditRes(TAR1, TAR2);
+compact_otp5186_check_auditRes(AR1, AR2) ->
+    exit({unexpected_auditResult, AR1, AR2}).
+
+compact_otp5186_check_termAuditRes([], []) ->
+    ok;
+%% An empty empty descriptor is removed
+compact_otp5186_check_termAuditRes([{emptyDescriptors,
+				     #'AuditDescriptor'{auditToken = asn1_NOVALUE}}|TAR1], []) ->
+    compact_otp5186_check_termAuditRes(TAR1, []);
+compact_otp5186_check_termAuditRes(TAR1, []) ->
+    exit({not_equal, termAuditRes, TAR1, []});
+%% An empty empty descriptor is removed
+compact_otp5186_check_termAuditRes([], [{emptyDescriptors,
+					 #'AuditDescriptor'{auditToken = asn1_NOVALUE}}|TAR2]) ->
+    compact_otp5186_check_termAuditRes([], TAR2);
+compact_otp5186_check_termAuditRes([], TAR2) ->
+    exit({not_equal, termAuditRes, [], TAR2});
+compact_otp5186_check_termAuditRes([ARP1|TAR1], [ARP2|TAR2]) ->
+    compact_otp5186_check_auditRetParm(ARP1, ARP2),
+    compact_otp5186_check_termAuditRes(TAR1, TAR2).
+
+compact_otp5186_check_termAudit([], []) ->
+    ok;
+%% An empty empty descriptor is removed
+compact_otp5186_check_termAudit([{emptyDescriptors,
+				  #'AuditDescriptor'{auditToken = asn1_NOVALUE}}|TAR1], []) ->
+    compact_otp5186_check_termAudit(TAR1, []);
+compact_otp5186_check_termAudit(TAR1, []) ->
+    exit({not_equal, termAudit, TAR1, []});
+%% An empty empty descriptor is removed
+compact_otp5186_check_termAudit([], 
+				[{emptyDescriptors,
+				  #'AuditDescriptor'{auditToken = asn1_NOVALUE}}|TAR2]) ->
+    compact_otp5186_check_termAudit([], TAR2);
+compact_otp5186_check_termAudit([], TAR2) ->
+    exit({not_equal, termAudit, [], TAR2});
+compact_otp5186_check_termAudit([ARP1|TAR1], [ARP2|TAR2]) ->
+    compact_otp5186_check_auditRetParm(ARP1, ARP2),
+    compact_otp5186_check_termAudit(TAR1, TAR2).
+
+compact_otp5186_check_auditRetParm(ARP, ARP) ->
+    ok;
+compact_otp5186_check_auditRetParm({emptyDescriptors, AD1}, 
+				   {emptyDescriptors, AD2}) ->
+    compact_otp5186_check_auditDesc(AD1, AD2);
+compact_otp5186_check_auditRetParm(ARP1, ARP2) ->
+    exit({unexpected_auditRetParm, ARP1, ARP2}).
+
+compact_otp5186_check_auditDesc(AD, AD) ->
+    ok;
+compact_otp5186_check_auditDesc(#'AuditDescriptor'{auditToken = L1},
+				#'AuditDescriptor'{auditToken = L2}) ->
+    compact_otp5186_check_auditDesc_auditItems(L1, L2);
+compact_otp5186_check_auditDesc(AD1, AD2) ->
+    exit({unexpected_auditDesc, AD1, AD2}).
+
+compact_otp5186_check_auditDesc_auditItems([], []) ->
+    ok;
+compact_otp5186_check_auditDesc_auditItems(AI1, []) ->
+    exit({not_equal, auditItems, AI1, []});
+compact_otp5186_check_auditDesc_auditItems([], AI2) ->
+    exit({not_equal, auditItems, [], AI2});
+compact_otp5186_check_auditDesc_auditItems([AI1|AIs1], [AI2|AIs2]) ->
+    compact_otp5186_check_auditDesc_auditItem(AI1, AI2),
+    compact_otp5186_check_auditDesc_auditItems(AIs1, AIs2).
+
+compact_otp5186_check_auditDesc_auditItem(AI, AI) ->
+    ok;
+compact_otp5186_check_auditDesc_auditItem(AI1, AI2) ->
+    exit({not_equal, auditItem, AI1, AI2}).
 
 
 %% --------------------------------------------------------------
@@ -2019,7 +2522,7 @@ pretty_otp5042_msg1(Config) when list(Config) ->
     end.
 
 pretty_otp5042_msg1() ->
-"MEGACO/1 <CATAPULT>:2944
+"MEGACO/" ?VERSION_STR " <CATAPULT>:2944
 Transaction = 102 { 
 Context =  5 { Notify =  MUX/1 { ObservedEvents = 1 { 
 h245bh/h245msgin { Stream =  1
@@ -2466,7 +2969,7 @@ rfc3525_decode(M) when binary(M) ->
 	{ok, Msg} ->
 	    Msg;
 	Error ->
-	    throw({rfc3525_decode_error, Error})
+	    {error, {rfc3525_decode_error, Error}}
     end.
 
 

@@ -21,7 +21,8 @@
 -export([behaviour_info/1]).
 
 behaviour_info(callbacks) ->
-    [{handle_agent,    4}, 
+    [{handle_error,    3}, 
+     {handle_agent,    4}, 
      {handle_pdu,      5},
      {handle_trap,     4},
      {handle_inform,   4},
@@ -29,6 +30,12 @@ behaviour_info(callbacks) ->
 behaviour_info(_) ->
     undefined.
 
+
+%% handle_error(ReqId, Reason, UserData) -> Reply
+%% ReqId       -> integer()
+%% Reason      -> term()
+%% UserData    -> term()     (supplied when the user regester)
+%% Reply       -> ignore 
 
 %% handle_agent(Addr, Port, SnmpInfo, UserData) -> Reply
 %% Addr        -> term()

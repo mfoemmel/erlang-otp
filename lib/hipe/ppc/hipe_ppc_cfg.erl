@@ -63,6 +63,10 @@ branch_successors(Branch) ->
     #pseudo_tailcall{} -> []
   end.
 
+-ifdef(REMOVE_TRIVIAL_BBS_NEEDED).
+fails_to(_Instr) -> [].
+-endif.
+
 -ifdef(notdef).
 redirect_jmp(I, Old, New) ->
   case I of

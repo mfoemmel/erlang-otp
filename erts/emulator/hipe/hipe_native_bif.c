@@ -114,73 +114,130 @@ void hipe_select_msg(Process *p)
     free_message(msgp);
 }
 
+/* Saving a stacktrace from native mode. Right now, we only create a
+ *  minimal struct with no fields filled in except freason. The flag
+ *  EXF_NATIVE is set, so that build_stacktrace (in beam_emu.c) does not
+ *  try to interpret any other field.
+ */
+static void
+hipe_save_stacktrace(Process* c_p, Eterm args) {
+    Eterm *hp;
+    struct StackTrace* s;
+    int sz;
+    int depth = 0;    /* max depth (never negative) */
+
+    /* Create a container for the exception data. This must be done just
+       as in the save_stacktrace function in beam_emu.c */
+    sz = (offsetof(struct StackTrace, trace) + sizeof(Uint) - 1)
+      / sizeof(Uint) + depth;
+    hp = HAlloc(c_p, (sz + 3) * sizeof(Uint));
+    s = (struct StackTrace *) (hp + 2);
+    c_p->ftrace = CONS(hp, args, make_big((Uint *) s));
+    s->header = make_pos_bignum_header(sz);
+
+    /* All the other fields are inside the bignum */
+
+    /* Must mark this as a native-code exception. */
+    s->freason = NATIVE_EXCEPTION(c_p->freason);
+    return;
+}
+
 /*
  * hipe_handle_exception() is called from hipe_${ARCH}_glue.S when an
- * exception has been thrown, to "fix up" the exception value and to
- * locate the current handler.
+ * exception has been thrown, to expand the exception value, set the
+ * stack trace, and locate the current handler.
  */
 void hipe_handle_exception(Process *c_p)
 {
-#if 0 /* NEW_EXCEPTIONS */ 
     Eterm Value = c_p->fvalue;
-#else
-    Eterm* hp;
-    Eterm Value;
-    Uint r;
-#endif
+    Eterm Args = am_true;
 
     ASSERT(c_p->freason != TRAP); /* Should have been handled earlier. */
     ASSERT(c_p->freason != RESCHEDULE); /* Should have been handled earlier. */
-#if 0 /* NEW_EXCEPTIONS */ 
+
+    /*
+     * Check if we have an arglist for the top level call. If so, this
+     * is encoded in Value, so we have to dig out the real Value as well
+     * as the Arglist.
+     */
+    if (c_p->freason & EXF_ARGLIST) {
+	  Eterm* tp;
+	  ASSERT(is_tuple(Value));
+	  tp = tuple_val(Value);
+	  Value = tp[1];
+	  Args = tp[2];
+    }
+
+    /* If necessary, build a stacktrace object. */
+    if (c_p->freason & EXF_SAVETRACE) {
+        hipe_save_stacktrace(c_p, Args);
+    }
+
     /* Get the fully expanded error term */
-    Value = expand_error_value(c_p, Value);
+    Value = expand_error_value(c_p, c_p->freason, Value);
 
     /* Save final error term and stabilize the exception flags so no
        further expansion is done. */
     c_p->fvalue = Value;
     c_p->freason = PRIMARY_EXCEPTION(c_p->freason);
-#else
-    r = GET_EXC_INDEX(c_p->freason);
-    ASSERT(r < NUMBER_EXIT_CODES); /* range check */
-    if (r < NUMBER_EXIT_CODES) {
-       Value = error_atom[r];
-    } else {
-       Value = am_internal_error;
-       c_p->freason = EXC_INTERNAL_ERROR;
-    }
 
-    r = c_p->freason;
-    switch (GET_EXC_INDEX(r)) {
-    case (GET_EXC_INDEX(EXC_PRIMARY)):
-        /* Primary exceptions use fvalue directly */
-        ASSERT(is_value(c_p->fvalue));
-        Value = c_p->fvalue;
-        break;
-    case (GET_EXC_INDEX(EXC_BADMATCH)):
-    case (GET_EXC_INDEX(EXC_CASE_CLAUSE)):
-    case (GET_EXC_INDEX(EXC_BADFUN)):
-       ASSERT(is_value(c_p->fvalue));
-       hp = HAlloc(c_p, 3);
-       Value = TUPLE2(hp, Value, c_p->fvalue);
-       break;
-    default:
-       hp = HAlloc(c_p, 3);
-       Value = TUPLE2(hp, Value, NIL);
-       break;
-    }
-
-    r = PRIMARY_EXCEPTION(r);    /* make the exception stable */
-    c_p->freason = r;
-    c_p->fvalue = Value;
-#endif
-
+    /* Synthesized to avoid having to generate code for it. */
+    c_p->def_arg_reg[0] = exception_tag[GET_EXC_CLASS(c_p->freason)];
+    
     hipe_find_handler(c_p);
 }
 
-Eterm hipe_get_exit_tag(Process *c_p)
-{
-    return exception_tag[GET_EXC_CLASS(c_p->freason)];
+/* This is duplicated from beam_emu.c for now */
+static struct StackTrace *
+get_trace_from_exc(Eterm exc) {
+    if (exc == NIL) {
+      return NULL;
+    } else {
+      return (struct StackTrace *) big_val(CDR(list_val(exc)));
+    }
 }
+
+/*
+ * This does what the (misnamed) Beam instruction 'raise_ss' does,
+ * namely, a proper re-throw of an exception that was caught by 'try'.
+ */
+Eterm hipe_rethrow(Process *c_p, Eterm exc, Eterm value)
+{
+     c_p->fvalue = value;
+     if (c_p->freason == EXC_NULL) {
+       /* a safety check for the R10-0 case; should not happen */
+       c_p->ftrace = NIL;
+       BIF_ERROR(c_p, EXC_ERROR);
+     }
+     /* For R10-0 code, 'exc' might be an atom. In that case, just
+	keep the existing c_p->ftrace. */
+     switch (exc) {
+     case am_throw:
+       BIF_ERROR(c_p, (EXC_THROWN & ~EXF_SAVETRACE));
+       break;
+     case am_error:
+       BIF_ERROR(c_p, (EXC_ERROR & ~EXF_SAVETRACE));
+       break;
+     case am_exit:
+       BIF_ERROR(c_p, (EXC_EXIT & ~EXF_SAVETRACE));
+       break;
+     default:
+       {/* R10-1 and later
+	   XXX note: should do sanity check on given exception if it can be
+	   passed from a user! Currently only expecting generated calls.
+	*/
+	 struct StackTrace *s;
+	 c_p->ftrace = exc;
+	 s = get_trace_from_exc(exc);
+	 if (s == NULL) {
+	   BIF_ERROR(c_p, EXC_ERROR);
+	 } else {
+	   BIF_ERROR(c_p, PRIMARY_EXCEPTION(s->freason));
+	 }
+       }
+     }
+}
+
 
 /*
  * Support for compiled binary syntax operations.

@@ -536,6 +536,12 @@ handle_info({sync_timeout, ReqId, From}, State) ->
     {noreply, State};
 
 
+handle_info({snmp_error, Pdu, Reason}, State) ->
+    ?vlog("received snmp_error message", []),
+    handle_snmp_error(Pdu, Reason, State),
+    {noreply, State};
+
+
 handle_info({snmp_pdu, Pdu, Addr, Port}, State) ->
     ?vlog("received snmp_pdu message", []),
     handle_snmp_pdu(Pdu, Addr, Port, State),
@@ -963,6 +969,105 @@ handle_sync_timeout(ReqId, From) ->
     end.
 
     
+handle_snmp_error(#pdu{request_id = ReqId} = Pdu, Reason, _State) ->
+
+    ?vtrace("handle_snmp_error -> entry with"
+	    "~n   Reason: ~p"
+	    "~n   Pdu:    ~p", [Reason, Pdu]),
+
+    case ets:lookup(snmpm_request_table, ReqId) of
+
+	%% Failed async request
+	[#request{user_id   = UserId, 
+		  from      = undefined, 
+		  ref       = undefined, 
+		  mon       = MonRef,
+		  discovery = Disco}] ->
+
+	    ?vdebug("handle_snmp_error -> "
+		    "found corresponding request: "
+		    "~n   failed async request"
+		    "~n   UserId: ~p"
+		    "~n   ModRef: ~p"
+		    "~n   Disco:  ~p", [UserId, MonRef, Disco]),
+
+	    maybe_demonitor(MonRef),
+	    case snmpm_config:user_info(UserId) of
+		{ok, UserMod, UserData} ->
+		    handle_error(UserId, UserMod, Reason, ReqId, UserData),
+		    maybe_delete(Disco, ReqId);
+		_ ->
+		    %% reply to outstanding request, for which there is no
+		    %% longer any owner (the user has unregistered).
+		    %% Therefor send it to the default user
+		    case snmpm_config:user_info() of
+			{ok, DefUserId, DefMod, DefData} ->
+			    handle_error(DefUserId, DefMod, Reason, ReqId, 
+					 DefData),
+			    maybe_delete(Disco, ReqId);
+			_ ->
+			    error_msg("failed retreiving the default user "
+				      "info handling error [~w]: "
+				      "~n~w", [ReqId, Reason])
+		    end
+	    end;
+
+
+	%% Failed sync request
+	%%
+	[#request{ref = Ref, mon = MonRef, from = From}] -> 
+
+	    ?vdebug("handle_snmp_error -> "
+		    "found corresponding request: "
+		    "~n   failed sync request"
+		    "~n   Ref:    ~p"
+		    "~n   ModRef: ~p"
+		    "~n   From:   ~p", [Ref, MonRef, From]),
+
+	    Remaining = 
+		case (catch erlang:cancel_timer(Ref)) of
+		    R when integer(R) ->
+			R;
+		    _ ->
+			0
+		end,
+
+	    ?vtrace("handle_snmp_error -> Remaining: ~p", [Remaining]),
+
+	    erlang:demonitor(MonRef),
+	    Reply = {error, {send_failed, ReqId, Reason}},
+	    ?vtrace("handle_snmp_error -> deliver (error-) reply",[]), 
+	    gen_server:reply(From, Reply),
+	    ets:delete(snmpm_request_table, ReqId),
+	    ok;
+		
+
+	%% A very old reply, see if this agent is handled by
+	%% a user. In that case send it there, else to the 
+	%% default user.
+	_ ->
+
+	    ?vdebug("handle_snmp_error -> no request?", []), 
+
+	    case snmpm_config:user_info() of
+		{ok, DefUserId, DefMod, DefData} ->
+		    handle_error(DefUserId, DefMod, Reason, 
+				 ReqId, DefData);
+		_ ->
+		    error_msg("failed retreiving the default "
+			      "user info handling error [~w]: "
+			      "~n~w",[ReqId, Reason])
+	    end
+    end.
+
+
+handle_error(_UserId, Mod, Reason, ReqId, Data) ->
+    ?vtrace("handle_error -> entry when"
+	    "~n   Mod: ~p", [Mod]),
+    (catch Mod:handle_error(ReqId, Reason, Data)),
+    ok.
+
+
 handle_snmp_pdu(#pdu{type = 'get-response', request_id = ReqId} = Pdu, 
 		Addr, Port, _State) ->
 

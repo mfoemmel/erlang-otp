@@ -103,16 +103,6 @@ conv_insn(I, Map, Data) ->
 	    {Fun, Map1} = conv_fun(hipe_rtl:enter_fun(I), Map0),
 	    I2 = conv_tailcall(Fun, Args, hipe_rtl:enter_type(I)),
 	    {I2, Map1, Data};
-	fail_to ->		% for SPARC this is eliminated by hipe_frame
-	    {Src, Map0} = conv_src(hipe_rtl:fail_to_reason(I), Map),
-	    Dst = mk_eax(),
-	    I2 = case hipe_rtl:fail_to_label(I) of
-		   [] -> [hipe_x86:mk_move(Src, Dst)];
-                   FailToLabel ->
-		     [hipe_x86:mk_move(Src, Dst),
-		      hipe_x86:mk_jmp_label(FailToLabel)]
-		 end,
-	    {I2, Map0, Data};
 	goto ->
 	    I2 = [hipe_x86:mk_jmp_label(hipe_rtl:goto_label(I))],
 	    {I2, Map, Data};
@@ -161,8 +151,8 @@ conv_insn(I, Map, Data) ->
 	    {Src, Map1} = conv_src(hipe_rtl:move_src(I), Map0),
 	    I2 = [hipe_x86:mk_move(Src, Dst)],
 	    {I2, Map1, Data};
-	restore_catch ->	% for SPARC this is eliminated by hipe_frame
-	    [Dst0] = hipe_rtl:restore_catch_varlist(I),
+	begin_handler ->	% for SPARC this is eliminated by hipe_frame
+	    [Dst0] = hipe_rtl:begin_handler_varlist(I),
 	    {Dst1,Map1} = conv_dst(Dst0, Map),
 	    Src = mk_eax(),
 	    {[hipe_x86:mk_move(Src, Dst1)], Map1, Data};

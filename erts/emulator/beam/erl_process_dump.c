@@ -28,7 +28,6 @@
 #include "bif.h"
 #include "erl_db.h"
 #include "dist.h"
-#include "error.h"
 #include "beam_catches.h"
 #include "erl_binary.h"
 

@@ -60,6 +60,7 @@
 -define(OP_SET_TIMEOUT, set_timeout).
 -define(OP_CLEAR_TIMEOUT, clear_timeout).
 -define(OP_WAIT_FOR_MESSAGE, suspend_msg).
+-define(OP_APPLY_FIXARITY(N), {apply_N, N}).
 -define(OP_MAKE_FUN(M, F, A, H, I), {mkfun, {M, F, A}, H, I}).
 -define(OP_FUN_ELEMENT(N), {closure_element, N}).
 
@@ -109,9 +110,11 @@
 
 -record(ctxt, {final = false,
 	       effect = false,
-	       fail = [],
-	       class = expr,
-	       'receive'}).
+	       fail = [],		% [] or fail-to label
+	       class = expr,		% expr | guard
+	       line = 0,		% current line number
+	       'receive'		% undefined | #receive{}
+	      }).		
 
 -record('receive', {loop}).
 -record(var, {name}).
@@ -152,7 +155,7 @@ module(E) ->
 module(E, Options) ->
     module_1(cerl_hipeify:transform(E, Options), Options).
 
-module_1(E, _Options) ->
+module_1(E, Options) ->
     M = cerl:atom_val(cerl:module_name(E)),
     if atom(M) ->
 	    ok;
@@ -160,7 +163,8 @@ module_1(E, _Options) ->
 	    error_msg("bad module name: ~P.", [M, 5]),
 	    throw(error)
     end,
-    S = init(M),
+    S0 = init(M),
+    S =  s__set_pmatch(proplists:get_value(pmatch, Options), S0),
     {Icode, _} = mapfoldl(fun function_definition/2,
 			  S, cerl:module_defs(E)),
     Icode.
@@ -294,7 +298,6 @@ function_1(Name, Fun, Degree, S) ->
     reset_var_counter(),
     LowV = max_var(),
     LowL = max_label(),
-    %io:format("Fun: ~w ~n~p~n", [Name, cerl:fun_body(Fun)]),
     %% Create input variables for the function parameters, and a list of
     %% target variables for the result of the function.
     Args = cerl:fun_vars(Fun),
@@ -338,7 +341,20 @@ function_1(Name, Fun, Degree, S) ->
 %% ---------------------------------------------------------------------
 %% Main expression handler
 
-expr(E, Ts, Ctxt, Env, S) ->
+expr(E, Ts, Ctxt, Env, S0) ->
+    %% Insert source code position information
+    case get_line(cerl:get_ann(E)) of
+	none ->
+	    expr_1(E, Ts, Ctxt, Env, S0);
+	Line when Line > Ctxt#ctxt.line ->
+	    Txt = "Line: " ++ integer_to_list(Line),
+	    S1 = add_code([icode_comment(Txt)], S0),
+	    expr_1(E, Ts, Ctxt#ctxt{line = Line}, Env, S1);
+	_ ->
+	    expr_1(E, Ts, Ctxt, Env, S0)
+    end.
+
+expr_1(E, Ts, Ctxt, Env, S) ->
     case cerl:type(E) of
 	var ->
 	    expr_var(E, Ts, Ctxt, Env, S);
@@ -362,14 +378,11 @@ expr(E, Ts, Ctxt, Env, S) ->
 	primop ->
 	    expr_primop(E, Ts, Ctxt, Env, S);
 	'case' ->
-	    
 	    expr_case(E, Ts, Ctxt, Env, S);
 	'receive' ->
 	    expr_receive(E, Ts, Ctxt, Env, S);
 	'try' ->
 	    expr_try(E, Ts, Ctxt, Env, S);
-	'catch' ->
-	    expr_catch(E, Ts, Ctxt, Env, S);
 	binary ->
 	    expr_binary(E, Ts, Ctxt, Env, S);
 	letrec ->
@@ -407,6 +420,13 @@ exprs([], _, _Ctxt, _Env, S) ->
 exprs(_, [], _Ctxt, _Env, _S) ->
     error_high_degree(),
     throw(error).
+
+get_line([L | _As]) when integer(L) ->
+    L;
+get_line([_ | As]) ->
+    get_line(As);
+get_line([]) ->
+    none.
 
 
 %% ---------------------------------------------------------------------
@@ -485,8 +505,7 @@ expr_tuple(E, _Ts, #ctxt{effect = true} = Ctxt, Env, S) ->
     S1;
 expr_tuple(E, [_V] = Ts, Ctxt, Env, S) ->
     {Vs, S1} = expr_list(cerl:tuple_es(E), Ctxt, Env, S),
-    S2 = add_code(make_op(?OP_TUPLE, Ts, Vs, Ctxt), S1),
-    maybe_return(Ts, Ctxt, S2);
+    add_code(make_op(?OP_TUPLE, Ts, Vs, Ctxt), S1);
 expr_tuple(E, Ts, _Ctxt, _Env, _S) ->
     error_degree_mismatch(length(Ts), E),
     throw(error).
@@ -500,8 +519,7 @@ expr_cons(E, _Ts, #ctxt{effect = true} = Ctxt, Env, S) ->
 expr_cons(E, [_V] = Ts, Ctxt, Env, S) ->
     {Vs, S1} = expr_list([cerl:cons_hd(E), cerl:cons_tl(E)],
 			 Ctxt, Env, S),
-    S2 = add_code(make_op(?OP_CONS, Ts, Vs, Ctxt), S1),
-    maybe_return(Ts, Ctxt, S2);
+    add_code(make_op(?OP_CONS, Ts, Vs, Ctxt), S1);
 expr_cons(E, Ts, _Ctxt, _Env, _S) ->
     error_degree_mismatch(length(Ts), E),
     throw(error).
@@ -866,12 +884,10 @@ expr_call(E, Ts, Ctxt, Env, S) ->
 	    {Vs, S1} = expr_list(cerl:call_args(E), Ctxt, Env, S),
 	    add_code(make_call(M, F, Ts, Vs, Ctxt), S1);
 	false ->
-	    %% XXX FIXME: currently using erlang:apply/3 instead of apply_N!
-	    %% Metacalls should be handled using an Icode `apply'
-	    %% instruction.
-	    Args = cerl:make_list(cerl:call_args(E)),
-	    {Vs, S1} = expr_list([Module, Name, Args], Ctxt, Env, S),
-	    add_code(make_call(erlang, apply, Ts, Vs, Ctxt), S1)
+	    Args = cerl:call_args(E),
+	    N = length(Args),
+	    {Vs, S1} = expr_list([Module, Name | Args], Ctxt, Env, S),
+	    add_code(make_op(?OP_APPLY_FIXARITY(N), Ts, Vs, Ctxt), S1)
     end.
 
 %% ---------------------------------------------------------------------
@@ -925,8 +941,6 @@ expr_primop_1(?PRIMOP_GOTO_LABEL, 1, [A], _, _Ts, _Ctxt, _Env, S) ->
     primop_goto_label(A, S);
 expr_primop_1(?PRIMOP_REDUCTION_TEST, 0, [], _, _Ts, Ctxt, _Env, S) ->
     primop_reduction_test(Ctxt, S);
-expr_primop_1(?PRIMOP_SOURCE_LINE, 1, [A], _, _Ts, _Ctxt, _Env, S) ->
-    primop_source_line(A, S);
 expr_primop_1(Name, Arity, As, E, Ts, Ctxt, Env, S) ->
     Bool = case is_bool_op(Name, Arity) of
 	       true ->
@@ -948,8 +962,7 @@ expr_primop_1(Name, Arity, As, E, Ts, Ctxt, Env, S) ->
     end.
 
 expr_primop_2(?PRIMOP_ELEMENT, 2, Vs, Ts, Ctxt, S) ->
-    maybe_return(Ts, Ctxt, add_code(make_op(?OP_ELEMENT, Ts, Vs, Ctxt),
-				    S));
+    add_code(make_op(?OP_ELEMENT, Ts, Vs, Ctxt), S);
 expr_primop_2(?PRIMOP_EXIT, 1, [V], _Ts, Ctxt, S) ->
     add_exit(V, Ctxt, S);
 expr_primop_2(?PRIMOP_THROW, 1, [V], _Ts, Ctxt, S) ->
@@ -958,8 +971,11 @@ expr_primop_2(?PRIMOP_ERROR, 1, [V], _Ts, Ctxt, S) ->
     add_error(V, Ctxt, S);
 expr_primop_2(?PRIMOP_ERROR, 2, [V, F], _Ts, Ctxt, S) ->
     add_error(V, F, Ctxt, S);
+expr_primop_2(?PRIMOP_RETHROW, 2, [E, V], _Ts, Ctxt, S) ->
+    add_rethrow(E, V, Ctxt, S);
 expr_primop_2(Name, _Arity, Vs, Ts, Ctxt, S) ->
-    maybe_return(Ts, Ctxt, add_code(make_op(Name, Ts, Vs, Ctxt), S)).
+    %% Other ops are assumed to be recognized by the backend.
+    add_code(make_op(Name, Ts, Vs, Ctxt), S).
 
 %% All of M, F, and A must be literals with the right types.
 %% V must represent a proper list.
@@ -979,11 +995,10 @@ primop_make_fun([M, F, A, H, I, V] = As, [_T] = Ts, Ctxt, Env, S) ->
 	    Index = cerl:int_val(I),
 	    {Vs, S1} = expr_list(cerl:list_elements(V),
 				 Ctxt, Env, S),
- 	    S2 = add_code(make_op(?OP_MAKE_FUN(Module, Name, Arity,
- 					       Hash, Index),
- 				  Ts, Vs, Ctxt),
- 			  S1),
-	    maybe_return(Ts, Ctxt, S2);
+ 	    add_code(make_op(?OP_MAKE_FUN(Module, Name, Arity,
+					  Hash, Index),
+			     Ts, Vs, Ctxt),
+		     S1);
 	false ->
 	    error_primop_badargs(?PRIMOP_MAKE_FUN, As),
 	    throw(error)
@@ -1012,23 +1027,19 @@ primop_fun_element([N, F] = As, Ts, Ctxt, Env, S) ->
     case cerl:is_c_int(N) of
 	true ->
 	    V = make_var(),
-	    S1 = expr(F, [V],  Ctxt#ctxt{final = false, effect=false}, Env, S),
-	    S2 = add_code(make_op(?OP_FUN_ELEMENT(cerl:int_val(N)),
-				  Ts, [V], Ctxt),
-			  S1),
-	    maybe_return(Ts, Ctxt, S2);
+	    S1 = expr(F, [V], Ctxt#ctxt{final = false, effect=false},
+		      Env, S),
+	    add_code(make_op(?OP_FUN_ELEMENT(cerl:int_val(N)),
+			     Ts, [V], Ctxt),
+		     S1);
 	false ->
 	    error_primop_badargs(?PRIMOP_FUN_ELEMENT, As),
 	    throw(error)
     end.
 
 primop_goto_label(A, S) ->
-    Label = s__get_label(A, S),
-    add_code([icode_goto(Label)], S).
-
-primop_source_line(A, S) ->
-    Txt = io_lib:format("Line: ~p", [cerl:concrete(A)]),
-    add_code([icode_comment(Txt)], S).
+    {Label,S1} = s__get_label(A, S),
+    add_code([icode_goto(Label)], S1).
 
 is_goto(E) ->
     case cerl:type(E) of 
@@ -1053,36 +1064,13 @@ primop_dsetelement([N | As1] = As, Ts, Ctxt, Env, S) ->
     case cerl:is_c_int(N) of
 	true ->
 	    {Vs, S1} = expr_list(As1, Ctxt, Env, S),
-	    S2 = add_code(make_op(?OP_UNSAFE_SETELEMENT(cerl:int_val(N)),
-				  Ts, Vs, Ctxt),
-			  S1),
-	    maybe_return(Ts, Ctxt, S2);
+	    add_code(make_op(?OP_UNSAFE_SETELEMENT(cerl:int_val(N)),
+			     Ts, Vs, Ctxt),
+		     S1);
 	false ->
 	    error_primop_badargs(?PRIMOP_DSETELEMENT, As),
 	    throw(error)
     end.
-
-%% ---------------------------------------------------------------------
-%% Catch-expressions:
-
-expr_catch(E, [T] = Ts, Ctxt, Env, S) ->
-    Cont = new_label(),
-    Catch = new_label(),
-    Next = new_label(),
-    S1 = add_code([icode_pushcatch(Catch,Cont),icode_label(Cont)], S),
-    Ctxt1 = Ctxt#ctxt{final = false},
-    S2 = expr(cerl:catch_body(E), Ts, Ctxt1, Env, S1),
-    S3 = add_code([icode_remove_catch(Catch),
-		   icode_goto(Next),
-		   icode_label(Catch),
-		   icode_restore_catch(T, Catch),
-		   icode_goto(Next),
-		   icode_label(Next)],
-		  S2),
-    maybe_return(Ts, Ctxt, S3);
-expr_catch(_E, _Ts, _Ctxt, _Env, _S) ->
-    error_msg("use of catch expression expected degree other than 1."),
-    throw(error).
 
 %% ---------------------------------------------------------------------
 %% Try-expressions:
@@ -1097,48 +1085,25 @@ expr_try(E, Ts, Ctxt = #ctxt{class = guard}, Env, S) ->
     S2 = add_code([icode_goto(Next), icode_label(Fail)], S1),
     S3 = expr(cerl:c_atom(false), Ts, Ctxt, Env, S2),
     add_code([icode_label(Next)], S3);
-expr_try(_E, _Ts, _Ctxt, _Env, _S) ->
-    throw(try_expressions_not_handled).
-%%%     %% For now, we rewrite try-expressions to be simulated using
-%%%     %% catch-expressions and unique references. The generated code has the
-%%%     %% following structure:
-%%%     %%
-%%%     %%  let V0 = primop 'make_ref'() in
-%%%     %%    case catch {V0, #TryArg#} of
-%%%     %%      {V1, V2} when primop '=:='(V0, V1) -> V2
-%%%     %%      V1 when 'true' ->
-%%%     %%        let <#TryVars#> =
-%%%     %%          case V1 of
-%%%     %%            {'EXIT', V2} when 'true' -> <'EXIT', V2>
-%%%     %%            V2 when 'true' -> <'THROW', V2>
-%%%     %%          end
-%%%     %% 	  in #TryBody#
-%%%     %%     end
-%%%     %%
-%%%     %% (Note that even though we introduce new variables, they are only used
-%%%     %% locally, so we never need to rename existing variables.)
-%%%     [Id0, Id1, Id2] = env__new_integer_keys(3, Env),
-%%%     V0 = cerl:c_var(Id0),
-%%%     V1 = cerl:c_var(Id1),
-%%%     V2 = cerl:c_var(Id2),
-%%%     True = cerl:c_atom('true'),
-%%%     Exit = cerl:c_atom('EXIT'),
-%%%     Throw = cerl:c_atom('THROW'),
-%%%     Cs2 = [cerl:c_clause([cerl:c_tuple([Exit, V2])], True,
-%%% 			  cerl:c_values([Exit, V2])),
-%%% 	   cerl:c_clause([V2], True,
-%%% 			  cerl:c_values([Throw, V2]))],
-%%%     Body = cerl:c_let(cerl:try_vars(E),
-%%% 		       cerl:c_case(V1, Cs2),
-%%% 		       cerl:try_body(E)),
-%%%     Guard = cerl:c_primop(cerl:c_atom('=:='), [V0, V1]),
-%%%     Cs1 = [cerl:c_clause([cerl:c_tuple([V1, V2])], Guard, V2),
-%%% 	   cerl:c_clause([V1], True, Body)],
-%%%     Catch = cerl:c_catch(cerl:c_tuple([V0, cerl:try_expr(E)])),
-%%%     MakeRef = cerl:c_primop(cerl:c_atom(make_ref), []),
-%%%     E1 = cerl:c_let([V0], MakeRef, cerl:c_case(Catch, Cs1)),
-%%% %%%    info_msg("\n" ++ cerl_prettypr:format(E1), []),
-%%%     expr(Effect, E1, Ts, Ctxt, Env, S).
+expr_try(E, Ts, Ctxt, Env, S) ->
+    Cont = new_continuation_label(Ctxt),
+    Catch = new_label(),
+    Next = new_label(),
+    S1 = add_code([icode_begin_try(Catch,Next),icode_label(Next)], S),
+    Vars = cerl:try_vars(E),
+    Vs = make_vars(length(Vars)),
+    Ctxt1 = Ctxt#ctxt{final = false},
+    S2 = expr(cerl:try_arg(E), Vs, Ctxt1, Env, S1),
+    Env1 = bind_vars(Vars, Vs, Env),
+    S3 = add_code([icode_end_try()], S2),
+    S4 = expr(cerl:try_body(E), Ts, Ctxt, Env1, S3),
+    S5 = add_continuation_jump(Cont, Ctxt, S4),
+    EVars = cerl:try_evars(E),
+    EVs = make_vars(length(EVars)),
+    Env2 = bind_vars(EVars, EVs, Env),
+    S6 = add_code([icode_label(Catch), icode_begin_handler(EVs)], S5),
+    S7 = expr(cerl:try_handler(E), Ts, Ctxt, Env2, S6),
+    add_continuation_label(Cont, Ctxt, S7).
 
 %% ---------------------------------------------------------------------
 %% Letrec-expressions (local goto-labels)
@@ -1292,23 +1257,23 @@ expr_receive_1(C, E, Ts, Ctxt, Env, S0) ->
 
     %% The wait-for-message section looks a bit different depending on
     %% whether we actually need to set a timer or not.
+    Ctxt0 = #ctxt{},
     S3 = case After of
 	     'infinity' ->
 		 %% Only wake up when we get new messages, and never
 		 %% execute the expiry body.
-		 add_code(make_op(?OP_WAIT_FOR_MESSAGE, [], [], #ctxt{})
+		 add_code(make_op(?OP_WAIT_FOR_MESSAGE, [], [], Ctxt0)
 			  ++ [icode_goto(Loop)], S2);
 	     0 ->
 		 %% Zero limit - reset the message pointer (this is what
 		 %% "clear timeout" does) and execute the expiry body.
-		 add_code(make_op(?OP_CLEAR_TIMEOUT, [], [], #ctxt{}),
+		 add_code(make_op(?OP_CLEAR_TIMEOUT, [], [], Ctxt0),
 			  S2);
 	     _ ->
 		 %% Other value - set the timer (if it is already set,
 		 %% nothing is changed) and wait for a message or
 		 %% timeout. Reset the message pointer upon timeout.
 		 Timeout = new_label(),
-		 Ctxt0 = #ctxt{},
 		 add_code(make_op(?OP_SET_TIMEOUT, [], [T], Ctxt0)
 			  ++ [make_if(?TEST_WAIT_FOR_MESSAGE_OR_TIMEOUT,
 				      [], Loop, Timeout),
@@ -1365,9 +1330,7 @@ primop_receive_next(#ctxt{'receive' = R} = Ctxt, S0) ->
 primop_receive_select(Ts, #ctxt{'receive' = R} = Ctxt, S) ->
     case R of
 	#'receive'{} ->
-	    S1 = add_code(make_op(?OP_SELECT_MESSAGE, [], [], Ctxt),
-			  S),
-	    maybe_return(Ts, Ctxt, S1);
+	    add_code(make_op(?OP_SELECT_MESSAGE, Ts, [], Ctxt), S);
 	_ ->
 	    error_not_in_receive(?PRIMOP_RECEIVE_SELECT),
 	    throw(error)
@@ -1376,14 +1339,16 @@ primop_receive_select(Ts, #ctxt{'receive' = R} = Ctxt, S) ->
 %% ---------------------------------------------------------------------
 %% Case expressions
 
-%% We know that the pattern matching compilation has split all switches
-%% into separate groups of tuples, integers, atoms, etc., and that each
-%% such switch over a group of constructors is protected by a type test.
-%% Thus, it is straightforward to generate switch instructions.
+%% Typically, pattern matching compilation has split all switches into
+%% separate groups of tuples, integers, atoms, etc., where each such
+%% switch over a group of constructors is protected by a type test.
+%% Thus, it is straightforward to generate switch instructions. (If no
+%% pattern matching compilation has been done, we don't care about
+%% efficiency anyway, so we don't spend any extra effort here.)
 
 expr_case(E, Ts, Ctxt, Env, S) ->
     Cs = cerl:case_clauses(E),
-    Vs = make_vars(clauses_degree(Cs)),
+    Vs = make_vars(cerl:clause_arity(hd(Cs))),
     S1 = expr(cerl:case_arg(E), Vs,
 	      Ctxt#ctxt{final = false, effect = false}, Env, S),
     case is_constant_switch(Cs) of
@@ -1394,7 +1359,7 @@ expr_case(E, Ts, Ctxt, Env, S) ->
 		true ->
 		    switch_tuple_clauses(Cs, Ts, Vs, Ctxt, Env, S1);
 		false ->
-		    case is_binary_switch(Cs) of
+		    case is_binary_switch(Cs, S1) of
 			true ->
 			    switch_binary_clauses(Cs, Ts, Vs, Ctxt, Env, S1);
 			false ->
@@ -1402,14 +1367,6 @@ expr_case(E, Ts, Ctxt, Env, S) ->
 		    end
 	    end
     end.
-
-%% We check only the first clause to see what the degree of the
-%% corresponding switch expression should be. (I.e., we assume that we
-%% are given nice code that does not combine clauses with differing
-%% pattern degrees.)
-
-clauses_degree([C | _Cs]) ->
-    length(cerl:clause_pats(C)).
 
 %% Check if a list of clauses represents a switch over a number (more
 %% than 1) of constants (atoms or integers/floats), or tuples (whose
@@ -1423,15 +1380,20 @@ is_tuple_switch(Cs) ->
     is_switch(Cs, fun (P) -> cerl:is_c_tuple(P) andalso
 				 all_vars(cerl:tuple_es(P)) end).
 
-is_binary_switch(Cs) ->
-    is_binary_switch(Cs, 0).
+is_binary_switch(Cs, S) ->
+    case s__get_pmatch(S) of
+	False when False == false; False == undefined ->
+	    false;
+	Other when Other == duplicate_all; Other == no_duplicates; Other == true->
+	    is_binary_switch1(Cs, 0)
+    end.
 
-is_binary_switch([C|Cs], N) ->
+is_binary_switch1([C|Cs], N) ->
     case cerl:clause_pats(C) of
 	[P] ->
 	    case cerl:is_c_binary(P) of
 		true ->
-		    is_binary_switch(Cs, N + 1);
+		    is_binary_switch1(Cs, N + 1);
 		false -> 
 		    if Cs == [], N > 0 ->
 			    %% The final clause may be a catch-all.
@@ -1443,8 +1405,7 @@ is_binary_switch([C|Cs], N) ->
 	_ ->
 	    false
     end;
-
-is_binary_switch([], N) ->
+is_binary_switch1([], N) ->
     N > 0.
 
 get_binary_clauses(Cs) ->    
@@ -1532,14 +1493,17 @@ switch_clauses(Cs, Ts, [V], Ctxt, Env, GetVal, Switch, Body, S0) ->
     Fail = new_label(),
     S1 = add_code([Switch(V, Fail, length(Cases), Cases)], S0),
     Next = new_continuation_label(Ctxt),
-    S2 = case Default of
+    S3 = case Default of
 	     [] -> add_infinite_loop(Fail, S1);
 	     [C] ->
-		 clause_body(C, Ts, Next, Ctxt, Env,
-			     add_code([icode_label(Fail)], S1))
+		 %% Bind the catch-all variable (this always succeeds)
+		 {Env1, S2} = patterns(cerl:clause_pats(C), [V], Fail,
+				       Env, S1),
+		 clause_body(C, Ts, Next, Ctxt, Env1,
+			     add_code([icode_label(Fail)], S2))
 	 end,
-    S3 = switch_cases(Cs1, V, Ts, Next, Fail, Ctxt, Env, Body, S2),
-    add_continuation_label(Next, Ctxt, S3).
+    S4 = switch_cases(Cs1, V, Ts, Next, Fail, Ctxt, Env, Body, S3),
+    add_continuation_label(Next, Ctxt, S4).
 
 switch_clause(C, F) ->
     [P] = cerl:clause_pats(C),
@@ -1552,8 +1516,6 @@ switch_clause(C, F) ->
 switch_binary_clauses(Cs, Ts, Vs, Ctxt, Env, S) ->
     {Bins, Default} = get_binary_clauses(Cs),
     BMatch = cerl_binary_pattern_match:add_offset_to_bin(Bins),
-    %io:format("~n~p~n", [BMatch]),
-    %cerl_binary_pattern_match:pp(BMatch),
     Fail = new_label(),
     Next = new_continuation_label(Ctxt),
     S1 = binary_match(BMatch, Ts, Vs, Next, Fail, Ctxt, Env, S),
@@ -1664,9 +1626,9 @@ pattern(P, V, Fail, Env, S) ->
 	cons ->
 	    cons_pattern(P, V, Fail, Env, S);
 	tuple ->
-	    tuple_pattern(P, V, Fail, Env, S)
-%	binary ->
-%	    binary_pattern(P, V, Fail, Env, S)
+	    tuple_pattern(P, V, Fail, Env, S);
+	binary ->
+	    binary_pattern(P, V, Fail, Env, S)
     end.
 
 literal_pattern(P, V, Fail, S) ->
@@ -1707,10 +1669,11 @@ cons_pattern(P, V, Fail, Env, S) ->
     V1 = make_var(),
     V2 = make_var(),
     Next = new_label(),
+    Ctxt = #ctxt{},
     S1 = add_code([make_type([V], ?TYPE_CONS, Next, Fail),
 		   icode_label(Next)]
-		  ++ make_op(?OP_UNSAFE_HD, [V1], [V], #ctxt{})
-		  ++ make_op(?OP_UNSAFE_TL, [V2], [V], #ctxt{}),
+		  ++ make_op(?OP_UNSAFE_HD, [V1], [V], Ctxt)
+		  ++ make_op(?OP_UNSAFE_TL, [V2], [V], Ctxt),
 		  S),
     patterns([cerl:cons_hd(P), cerl:cons_tl(P)], [V1, V2],
 	     Fail, Env, S1).
@@ -1734,6 +1697,55 @@ tuple_elements([V1 | Vs], V0, Ctxt, N, S) ->
     tuple_elements(Vs, V0, Ctxt, N + 1, add_code(Code, S));
 tuple_elements([], _, _, _, S) ->
     S.
+
+binary_pattern(P, V, Fail, Env, S) ->
+    L1 = new_label(),
+    Segs = cerl:binary_segments(P),
+    Arity = length(Segs),
+    Vars = make_vars(Arity),
+    S1 = add_code([icode_guardop([], {hipe_bs_primop, bs_start_match}, [V], L1, Fail),
+		   icode_label(L1)],S),
+    {Env1,S2} = bin_seg_patterns(Segs, Vars, Fail, Env, S1, 0),
+    L2 = new_label(),
+    {Env1,add_code([icode_guardop([], {hipe_bs_primop, {bs_test_tail,0}}, [], L2, Fail),
+		    icode_label(L2)], S2)}.
+
+bin_seg_patterns([Seg|Rest], [T|Ts], Fail, Env, S, Align) ->
+    {{NewEnv, S1}, NewAlign} = bin_seg_pattern(Seg, T, Fail, Env, S, Align),
+    bin_seg_patterns(Rest, Ts, Fail, NewEnv, S1, NewAlign);
+
+bin_seg_patterns([], [], _Fail, Env, S, _Align) ->
+    {Env, S}.
+
+bin_seg_pattern(P, V, Fail, Env, S, Align) ->
+    L = new_label(),
+    Size = cerl:bitstr_size(P),
+    Unit = cerl:bitstr_unit(P),
+    Type = cerl:concrete(cerl:bitstr_type(P)),
+    LiteralFlags = cerl:bitstr_flags(P),
+    T = cerl:bitstr_val(P), 
+    Flags=translate_flags(LiteralFlags, Align),
+    case calculate_size(Unit, Size, Align, Env, S) of
+	{NewUnit, Args, S0, NewAlign} ->
+	    Name =
+		case Type of
+		    integer ->
+			{bs_get_integer, NewUnit, Flags};
+		    float ->
+			{bs_get_float, NewUnit, Flags};
+		    binary ->
+			{bs_get_binary, NewUnit, Flags}
+		end,
+	    S1= add_code([icode_guardop([V],{hipe_bs_primop, Name}, Args, L, Fail),
+			  icode_label(L)], S0),
+	    {pattern(T, V, Fail, Env, S1), NewAlign};
+	{all, NewAlign, S0} ->
+	    Type = binary,
+	    Name = {bs_get_binary_all, Flags},
+	    S1= add_code([icode_guardop([V], {hipe_bs_primop, Name}, [], L, Fail),
+			  icode_label(L)], S0),
+	    {pattern(T, V, Fail, Env, S1), NewAlign}
+    end.
 
 %binary_pattern(P, V, Fail, Env, S) ->
 %    L1 = new_label(),
@@ -1978,8 +1990,6 @@ safe_boolean(E0, True, False, Ctxt, Env, S) ->
 	    safe_boolean(cerl:seq_body(E), True, False, Ctxt, Env, S);
  	'try' ->
 	    safe_boolean(cerl:try_arg(E), True, False, Ctxt, Env, S);
- 	'catch' ->
-	    safe_boolean(cerl:catch_body(E), True, False, Ctxt, Env, S);
 	_ ->
 	    generic_boolean(E, True, False, Ctxt, Env, S)
     end.
@@ -2072,8 +2082,6 @@ comp_test(?PRIMOP_GE) -> ?TEST_GE.
 
 type_test(Name, [A], True, False, Ctxt, Env, S) ->
     V = make_var(),
-    %%ORIGINAL THIS WAS Ctxt ONLY THIS CAUSED A BUG I DON'T KNOW IF
-    %%THIS IS THE RIGHT FIX! /Per
     S1 = expr(A, [V], Ctxt#ctxt{effect=false}, Env, S),
     Test = type_test(Name),
     add_code([make_type([V], Test, True, False)], S1).
@@ -2235,17 +2243,14 @@ add_exit(V, Ctxt, S) ->
 add_throw(V, Ctxt, S) ->
     add_fail([V], throw, Ctxt, S).
 
-%% NEW_EXCEPTIONS
-%% add_error(V, Ctxt, S) ->
-%%     add_fail([V], error, Ctxt, S).
 add_error(V, Ctxt, S) ->
-    add_fail([V], fault, Ctxt, S).
+    add_fail([V], error, Ctxt, S).
 
-%% NEW_EXCEPTIONS
-%% add_error(V, F, Ctxt, S) ->
-%%     add_fail([V, F], error, Ctxt, S).
 add_error(V, F, Ctxt, S) ->
-    add_fail([V, F], fault2, Ctxt, S).
+    add_fail([V, F], error, Ctxt, S).
+
+add_rethrow(E, V, Ctxt, S) ->
+    add_fail([E, V], rethrow, Ctxt, S).
 
 %% Failing is special, because it can "suddenly" end the basic block,
 %% even though the context was expecting the code to fall through, for
@@ -2253,22 +2258,25 @@ add_error(V, F, Ctxt, S) ->
 %% context. In those cases a dummy label must therefore be added after
 %% the fail instruction, to start a new (but unreachable) basic block.
 
-add_fail(Vs, Type, Ctxt, S0) ->
-    S1 = add_code([icode_fail(Vs, Type)], S0),
+add_fail(Vs, Class, Ctxt, S0) ->
+    S1 = add_code([icode_fail(Vs, Class)], S0),
     add_continuation_label(new_continuation_label(Ctxt), Ctxt, S1).
 
 %% We must add continuation- and fail-labels if we are in a guard context.
-%% Note that primops do not in general have an 'enter' form.
-%% XXX FIXME: find out what happens with 'enter_primop' in icode2rtl!
 
 make_op(Name, Ts, As, Ctxt) ->
-    case Ctxt#ctxt.class of
-	guard ->
-	    Next = new_label(),
-	    [icode_guardop(Ts, Name, As, Next, Ctxt#ctxt.fail),
-	     icode_label(Next)];
-	_ ->
-	    [icode_call_primop(Ts, Name, As)]
+    case Ctxt#ctxt.final of
+	false ->
+	    case Ctxt#ctxt.class of
+		guard ->
+		    Next = new_label(),
+		    [icode_guardop(Ts, Name, As, Next, Ctxt#ctxt.fail),
+		     icode_label(Next)];
+		_ ->
+		    [icode_call_primop(Ts, Name, As)]
+	    end;	
+	true ->
+	    [icode_enter_primop(Name, As)]
     end.
 
 make_call(M, F, Ts, As, Ctxt) ->
@@ -2453,7 +2461,7 @@ env__get(Key, Env) ->
 %% ---------------------------------------------------------------------
 %% State (abstract datatype)
 
--record(state, {module, function, local, labels=gb_trees:empty(), code = []}).
+-record(state, {module, function, local, labels=gb_trees:empty(), code = [], pmatch=true}).
 
 s__new(Module) ->
     #state{module = Module}.
@@ -2484,16 +2492,22 @@ s__get_code(S) ->
 s__add_code(Code, S) ->
     S#state{code = lists:reverse(Code, S#state.code)}.
 
-
-s__put_label(Label,Ref, S) ->
-    Labels = S#state.labels, 
-    S1 = S#state{labels=gb_trees:enter(Ref, Label, Labels)},
-    S1.
-
 s__get_label(Ref, S) ->
     Labels = S#state.labels,
-    {value, Label} = gb_trees:lookup(Ref, Labels),
-    Label.
+    case gb_trees:lookup(Ref, Labels) of
+	none ->
+	    Label = new_label(),
+	    S1 = S#state{labels=gb_trees:enter(Ref, Label, Labels)},
+	    {Label, S1};
+	{value, Label} -> 
+	    {Label,S}
+    end.
+
+s__set_pmatch(V, S) ->
+    S#state{pmatch = V}.
+
+s__get_pmatch(S) ->
+    S#state.pmatch.
 
 %% ---------------------------------------------------------------------
 %% Match label State
@@ -2601,17 +2615,17 @@ icode_call_fun(Ts, Vs) ->
 icode_enter_fun(Vs) ->
     icode_enter_primop(enter_fun, Vs).
 
-icode_pushcatch(L,Cont) -> hipe_icode:mk_pushcatch(L,Cont).
+icode_begin_try(L,Cont) -> hipe_icode:mk_begin_try(L,Cont).
 
-icode_remove_catch(L) -> hipe_icode:mk_remove_catch(L).
+icode_end_try() -> hipe_icode:mk_end_try().
 
-icode_restore_catch(T, L) -> hipe_icode:mk_restore_catch(T, L).
+icode_begin_handler(Ts) -> hipe_icode:mk_begin_handler(Ts).
 
 icode_goto(L) -> hipe_icode:mk_goto(L).
 
 icode_return(Ts) -> hipe_icode:mk_return(Ts).
 
-icode_fail(V, T) -> hipe_icode:mk_fail(V, T).
+icode_fail(Vs, C) -> hipe_icode:mk_fail(Vs, C).
 
 icode_guardop(Ts, Name, As, Succ, Fail) ->
     hipe_icode:mk_guardop(Ts, Name, As, Succ, Fail).
@@ -2742,10 +2756,8 @@ read_seg(Instr, NextTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S) 
 bin_guard(Instr, Body, FailTree, VarList, Ts, State, Next, Fail, MState, Ctxt, Env, S) ->
     LabelPrimop = cerl_binary_pattern_match:bin_guard_label(Instr),
     Ref = translate_label_primop(LabelPrimop),
-    FL = new_label(),
-    S1 = s__put_label(FL, Ref, S), 
+    {FL,S1} = s__get_label(Ref, S), 
     {Env1, S2} = translate_bin_guard(Instr, VarList, Env, S1),
-    %io:format("Body:~n~p~nState:~p~n", [Body, S1]), 
     S3 = expr(Body, Ts, Ctxt, Env1, S2),
     S4 = add_continuation_jump(Next, Ctxt, S3),
     S5 = add_code([icode_label(FL)], S4),

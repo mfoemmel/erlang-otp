@@ -12,6 +12,7 @@ define(NR_ARG_REGS,4)dnl admissible values are 0 to 6, inclusive
 define(HP_IN_REGISTER,1)dnl 1 to reserve a global register for HP
 define(FCALLS_IN_REGISTER,0)dnl 1 to reserve global register for FCALLS
 define(HEAP_LIMIT_IN_REGISTER,0)dnl global for HL
+define(SIMULATE_NSP,0)dnl change to 1 to simulate call/ret insns
 
 /*
  * Reserved registers.
@@ -55,6 +56,8 @@ define(NSP,%rsp)dnl
 `#define NSP		'NSP
 `#define SAVE_CSP	movq	%rsp, P_CSP(P)
 #define RESTORE_CSP	movq	P_CSP(P), %rsp'
+
+`#define AMD64_SIMULATE_NSP	'SIMULATE_NSP
 
 /*
  * Context switching macros.
@@ -147,21 +150,29 @@ define(STORE_ARG_REGS,`SAR_N(eval(NR_ARG_REGS-1))')dnl
 
 dnl
 dnl NSP_CALL(FUN)
+dnl Emit a CALL FUN instruction, or simulate it.
 dnl FUN must not be an NSP-based memory operand.
 dnl
-`#define NSP_CALL(FUN)	call	FUN'
+ifelse(eval(SIMULATE_NSP),0,
+``#define NSP_CALL(FUN)	call FUN'',
+``#define NSP_CALL(FUN)	subq $8,NSP; leaq 1f(%rip),%rax; movq %rax,(NSP); jmp FUN; 1:'')dnl
 
 dnl
 dnl NSP_RETN(NPOP)
+dnl Emit a RET $NPOP instruction, or simulate it.
 dnl NPOP should be non-zero.
 dnl
-define(NSP_RETN,`ret	`$'$1')dnl
+ifelse(eval(SIMULATE_NSP),0,
+``#define NSP_RETN(NPOP)	ret $NPOP'',
+``#define NSP_RETN(NPOP)	movq (NSP),TEMP_RV; addq $8+NPOP,NSP; jmp *TEMP_RV'')dnl
 
 dnl
 dnl NSP_RET0
+dnl Emit a RET instruction, or simulate it.
 dnl
-define(NSP_RET0,`ret')dnl
-`#define NSP_RET0	'NSP_RET0
+ifelse(eval(SIMULATE_NSP),0,
+``#define NSP_RET0	ret'',
+``#define NSP_RET0	movq (NSP),TEMP_RV; addq $8,NSP; jmp *TEMP_RV'')dnl
 
 dnl XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 dnl X								X

@@ -3,7 +3,6 @@
 %%% HiPE/amd64 assembler
 %%%
 %%% TODO:
-%%% - Repair AMD64_SIMULATE_NSP.
 %%% - Migrate old resolve_arg users to translate_src/dst.
 %%% - Simplify combine_label_maps and mk_data_relocs.
 %%% - Move find_const to hipe_pack_constants?
@@ -255,6 +254,76 @@ translate_insn(I, MFA, ConstMap) ->
       [{test, Arg, I}]
   end.
 
+-ifdef(AMD64_SIMULATE_NSP).
+
+translate_call(I) ->
+  WordSize = 8, % XXX: s/8/4/ if x86
+  RegSP = 2#100, % rsp
+  TempSP = hipe_amd64:mk_temp(RegSP, untagged),
+  FunOrig = hipe_amd64:call_fun(I),
+  Fun =
+    case FunOrig of
+      #amd64_mem{base=#amd64_temp{reg=4}, off=#amd64_imm{value=Off}} ->
+	FunOrig#amd64_mem{off=#amd64_imm{value=Off+WordSize}};
+      _ -> FunOrig
+    end,
+  RegRA =
+    begin
+      RegTemp0 = hipe_amd64_registers:temp0(),
+      RegTemp1 = hipe_amd64_registers:temp1(),
+      case Fun of
+	#amd64_temp{reg=RegTemp0} -> RegTemp1;
+	#amd64_mem{base=#amd64_temp{reg=RegTemp0}} -> RegTemp1;
+	_ -> RegTemp0
+      end
+    end,
+  TempRA = hipe_amd64:mk_temp(RegRA, untagged),
+  PatchTypeExt =
+    case hipe_amd64:call_linkage(I) of
+      remote -> ?PATCH_TYPE2EXT(call_remote);
+      not_remote -> ?PATCH_TYPE2EXT(call_local)
+    end,
+  JmpArg = translate_fun(Fun, PatchTypeExt),
+  I4 = {'.sdesc', hipe_amd64:call_sdesc(I), #comment{term=sdesc}},
+  I3 = {jmp, {JmpArg}, #comment{term=call}},
+  Size3 = hipe_amd64_encode:insn_sizeof(jmp, {JmpArg}),
+  MovArgs = {mem_to_rmArch(hipe_amd64:mk_mem(TempSP,
+					     hipe_amd64:mk_imm(0),
+					     untagged)),
+	     temp_to_regArch(TempRA)},
+  I2 = {mov, MovArgs, #comment{term=call}},
+  Size2 = hipe_amd64_encode:insn_sizeof(mov, MovArgs),
+  I1 = {lea, {temp_to_regArch(TempRA),
+	      {ea, hipe_amd64_encode:ea_disp32_rip(Size2+Size3)}},
+	#comment{term=call}},
+  I0 = {sub, {temp_to_rmArch(TempSP), {imm8,WordSize}}, I},
+  [I0,I1,I2,I3,I4].
+
+translate_ret(I) ->
+  NPOP = hipe_amd64:ret_npop(I) + 8, % XXX: s/8/4 if x86
+  RegSP = 2#100, % rsp
+  TempSP = hipe_amd64:mk_temp(RegSP, untagged),
+  RegRA = 2#011, % rbx
+  TempRA = hipe_amd64:mk_temp(RegRA, untagged),
+  [{mov,
+    {temp_to_regArch(TempRA),
+     mem_to_rmArch(hipe_amd64:mk_mem(TempSP,
+				     hipe_amd64:mk_imm(0),
+				     untagged))},
+    I},
+   {add,
+    {temp_to_rmArch(TempSP),
+     case NPOP < 128 of
+       true -> {imm8,NPOP};
+       false -> {imm32,NPOP}
+     end},
+    #comment{term=ret}},
+   {jmp,
+    {temp_to_rmArch(TempRA)},
+    #comment{term=ret}}].
+
+-else. % not AMD64_SIMULATE_NSP
+
 translate_call(I) ->
   %% call and jmp are patched the same, so no need to distinguish
   %% call from tailcall
@@ -274,6 +343,8 @@ translate_ret(I) ->
       N -> {{imm16,N}}
     end,
   [{ret, Arg, I}].
+
+-endif. % AMD64_SIMULATE_NSP
 
 translate_label(Label) when integer(Label) ->
   {label,Label}.	% symbolic, since offset is not yet computable
@@ -443,53 +514,6 @@ fix_jumps(I, InsnAddress, FunAddress, LabelMap) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--ifdef(AMD64_SIMULATE_NSP).
-
-call_encode(I, MFA, Addr, Map, ConstMap) ->
-  RegSP = hipe_amd64_encode:esp(),
-  TempSP = hipe_amd64:mk_temp(RegSP, untagged),
-  I0 = {sub, {temp_to_rmArch(TempSP), {imm8,4}}},
-  Size0 = hipe_amd64_encode:insn_sizeof(I0),
-  I1 = {mov, {mem_to_rmArch(hipe_amd64:mk_mem(TempSP,
-					  hipe_amd64:mk_imm(0),
-					  untagged)),
-	      {imm32,0}}},
-  Size1 = hipe_amd64_encode:insn_sizeof(I1),
-  FunOrig = hipe_amd64:call_fun(I),
-  Fun =
-    case FunOrig of
-      #amd64_mem{base=#amd64_temp{reg=4}, off=#amd64_imm{value=Off}} ->
-	FunOrig#amd64_mem{off=#amd64_imm{value=Off+4}};
-      _ -> FunOrig
-    end,
-  {Arg,Refs2} = resolve_jmp_arg(Fun, MFA, Addr+Size0+Size1, Map, 0, undefined),
-  I2 = {jmp, {Arg}},
-  Size2 = hipe_amd64_encode:insn_sizeof(I2),
-  Ref1 = {?PATCH_TYPE2EXT(amd64_abs_pcrel), Addr+Size0+Size1-4, 4+Size2},
-  {[I0,I1,I2],[Ref1|Refs2]}.
-
-ret_encode(I) ->
-  NPOP = 4 + hipe_amd64:ret_npop(I),
-  RegSP = hipe_amd64_encode:esp(),
-  TempSP = hipe_amd64:mk_temp(RegSP, untagged),
-  RegRA = hipe_amd64_encode:ebx(),
-  TempRA = hipe_amd64:mk_temp(RegRA, untagged),
-  I1 = {mov, {temp_to_regArch(TempRA),
-	      mem_to_rmArch(hipe_amd64:mk_mem(TempSP,
-                                              hipe_amd64:mk_imm(0),
-                                              untagged))}},
-  I2 = {add, {temp_to_rmArch(TempSP),
-	      case NPOP < 128 of
-		true -> {imm8,NPOP};
-		false -> {imm32,NPOP}
-	      end}},
-  I3 = {jmp, {temp_to_rmArch(TempRA)}},
-  [I1,I2,I3].
-
--else.	% AMD64_SIMULATE_NSP
-
--endif.	% AMD64_SIMULATE_NSP
-
 list_to_array(List, Array, Addr) ->
   lists:foldl(fun(X,I) -> hipe_bifs:array_update(Array,I,X), I+1 end, Addr, List).
 
@@ -549,7 +573,8 @@ mem_to_rm16(Mem) ->
 %%%%%%%%%%%%%%%%%
 
 mem_to_ea_common(#amd64_mem{base=[], off=#amd64_imm{value=Off}}) ->
-  hipe_amd64_encode:ea_disp32(Off);
+  io:format("~w: WARNING: absolute disp32 ~w\n", [?MODULE,Off]),
+  hipe_amd64_encode:ea_disp32_sindex(Off);
 mem_to_ea_common(#amd64_mem{base=#amd64_temp{reg=Base}, off=#amd64_imm{value=Off}}) ->
   if
     Off =:= 0 ->

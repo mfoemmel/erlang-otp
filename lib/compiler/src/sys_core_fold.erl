@@ -707,6 +707,14 @@ fold_call_1(Call, erlang, setelement, [Arg1,Arg2,Arg3]) ->
 	{Ref,Val} -> Val;
 	_Other -> Call
     end;
+fold_call_1(Call, erlang, internal_is_record, [_,_,_]=Args) ->
+    try
+	[A1,A2,A3] = [core_lib:literal_value(A) || A <- Args],
+	Val = erlang:is_record(A1, A2, A3),
+	core_lib:make_literal(Val)
+    catch
+	error:_ -> Call
+    end;
 fold_call_1(Call, erlang, N, Args) ->
     eval_erlang_call(Call, N, Args);
 fold_call_1(Call, _Mod, _Name, _Args) -> Call.

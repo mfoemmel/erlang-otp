@@ -745,7 +745,8 @@ test_type('>=', 2)  -> {cond_op,is_ge};
 test_type('==', 2)  -> {cond_op,is_eq};
 test_type('/=', 2)  -> {cond_op,is_ne};
 test_type('=:=', 2) -> {cond_op,is_eq_exact};
-test_type('=/=', 2) -> {cond_op,is_ne_exact}.
+test_type('=/=', 2) -> {cond_op,is_ne_exact};
+test_type(internal_is_record, 3) -> {cond_op,internal_is_record}.
 
 %% guard_cg_list([Kexpr], Fail, I, Vdb, StackReg, St) ->
 %%      {[Ainstr],StackReg,St}.
@@ -1210,7 +1211,7 @@ cg_bin_opt([{bs_bits_to_bytes,Fail,{integer,N},_}|Is0]) when N rem 8 =/= 0 ->
     case Fail of
 	{f,0} ->
 	    Is = [{move,{atom,badarg},{x,0}},
-		  {call_ext_only,1,{extfunc,erlang,fault,1}}|Is0],
+		  {call_ext_only,1,{extfunc,erlang,error,1}}|Is0],
 	    cg_bin_opt(Is);
 	_ ->
 	    cg_bin_opt([{jump,Fail}|Is0])

@@ -116,6 +116,7 @@
 %% is_label(Instr) -> bool(), true if instruction is a label.
 %% label_name(Instr) -> term(), the name of a label.
 %% branch_successors(Instr) -> [term()], the successors of a branch.
+%% fails_to(Instr) -> [term()], the fail-successors of an instruction.
 %% is_branch(Instr) -> bool(), true if instruction is a branch.
 %% is_comment(Instr) -> bool(), true if instruction is a comment,
 %%                          used by remmove dead code.
@@ -884,8 +885,11 @@ merge_successor(L,CFG) ->
       Last = hipe_bb:last(BB),
       %% Note: Cannot use succ/2 since the instruction can have more than
       %% one successor that are the same label.
-      case branch_successors(Last) of
-	[Successor] when Successor /= StartLabel ->
+      case {branch_successors(Last), fails_to(Last)} of
+	{[Successor],[Successor]} ->
+	  %% The single successor is the fail-label; don't merge.
+	  CFG;
+	{[Successor],_} when Successor /= StartLabel ->
 	  %% Make sure the succesor only have this block as predecessor.
 	  case  [L] =:= pred(pred_map(CFG),Successor) of
 	    true ->
@@ -897,7 +901,7 @@ merge_successor(L,CFG) ->
 	      CFG
 	  end;
 	_ -> 
-	  %% Not exactly one successsor or tried to merge with the 
+	  %% Not exactly one successor or tried to merge with the 
 	  %% entry point
 	  CFG
       end

@@ -57,6 +57,30 @@ blockify([{test,bs_skip_bits,F,[{integer,I1},Unit1,_]}|Is],
 	 [{test,bs_skip_bits,F,[{integer,I2},Unit2,Flags]}|Acc]) ->
     blockify(Is, [{test,bs_skip_bits,F,
 		   [{integer,I1*Unit1+I2*Unit2},1,Flags]}|Acc]);
+blockify([{test,is_atom,{f,Fail},[Reg]}=I|
+	  [{select_val,Reg,{f,Fail},
+	    {list,[{atom,false},{f,_}=BrFalse,
+		   {atom,true}=AtomTrue,{f,_}=BrTrue]}}|Is]=Is0],
+	 [{block,Bl}|_]=Acc) ->
+    case is_last_bool(Bl, Reg) of
+	false ->
+	    blockify(Is0, [I|Acc]);
+	true ->
+	    blockify(Is, [{jump,BrTrue},
+			  {test,is_eq_exact,BrFalse,[Reg,AtomTrue]}|Acc])
+    end;
+blockify([{test,is_atom,{f,Fail},[Reg]}=I|
+	  [{select_val,Reg,{f,Fail},
+	    {list,[{atom,true}=AtomTrue,{f,_}=BrTrue,
+		   {atom,false},{f,_}=BrFalse]}}|Is]=Is0],
+	 [{block,Bl}|_]=Acc) ->
+    case is_last_bool(Bl, Reg) of
+	false ->
+	    blockify(Is0, [I|Acc]);
+	true ->
+	    blockify(Is, [{jump,BrTrue},
+			  {test,is_eq_exact,BrFalse,[Reg,AtomTrue]}|Acc])
+    end;
 blockify([I|Is0]=IsAll, Acc) ->
     case is_bs_put(I) of
 	true ->
@@ -73,6 +97,15 @@ blockify([I|Is0]=IsAll, Acc) ->
 	    end
     end;
 blockify([], Acc) -> reverse(Acc).
+
+is_last_bool([I,{'%live',_}], Reg) ->
+    is_last_bool([I], Reg);
+is_last_bool([{set,[Reg],As,{bif,N,_}}], Reg) ->
+    Ar = length(As),
+    erl_internal:new_type_test(N, Ar) orelse erl_internal:comp_op(N, Ar)
+	orelse erl_internal:bool_op(N, Ar);
+is_last_bool([_|Is], Reg) -> is_last_bool(Is, Reg);
+is_last_bool([], _) -> false.
 
 collect_block(Is) ->
     collect_block(Is, []).

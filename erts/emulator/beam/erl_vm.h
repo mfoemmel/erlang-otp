@@ -20,7 +20,7 @@
 
 /* #define HEAP_FRAG_ELIM_TEST 1 */
 
-/* Shared do not work yet...
+/* Shared do not work with NOMOVE yet...
  * #if defined(SHARED_HEAP) || defined(HYBRID)
  */
 #if defined(HYBRID)
@@ -52,7 +52,6 @@
 
 #ifdef HYBRID
 #define SH_DEFAULT_SIZE 121393  /* default message area min size */
-//#define SH_DEFAULT_SIZE 300  /* default message area min size */
 #endif
 
 #define CP_SIZE			1
@@ -65,8 +64,8 @@
   (ASSERT_EXPR((sz) >= 0),                              \
    ((((HEAP_LIMIT(p) - HEAP_TOP(p)) <= (sz)))           \
     ? erts_heap_alloc((p),(sz))                         \
-    : (memset(HEAP_TOP(p),1,sz*sizeof(Eterm*)),         \
-      HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
+    : (memset(HEAP_TOP(p),1,(sz)*sizeof(Eterm*)),       \
+       HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
 
 #else
 
@@ -82,30 +81,14 @@
 
 #endif /* DEBUG */
 
-#ifdef HYBRID
-#define HRelease(p, from, to)	        		                  \
-  if (HEAP_TOP(p) == (from)) {	                                          \
-      HEAP_TOP(p) = (to);				                  \
-  } else if (ARITH_HEAP(p) == (from)) {                                   \
-      erts_arith_shrink(p,to);                                            \
-  } else {                                                                \
-      while (to < from) {                                                 \
-          *to++ = NIL;                                                    \
-      }                                                                   \
+#define HRelease(p, endp, ptr)					\
+  if ((ptr) == (endp)) {					\
+     ;								\
+  } else if (HEAP_START(p) <= (ptr) && (ptr) < HEAP_TOP(p)) {	\
+     HEAP_TOP(p) = (ptr);					\
+  } else {							\
+     erts_arith_shrink(p, ptr);					\
   }
-/* FIND ME!
-if (size == 1) *ptr = NIL
-else 
-      *(ptr) = ((((ARITH_HEAP(p) - (ptr)) - 1) << _HEADER_ARITY_OFFS) |   \
-                _TAG_HEADER_HEAP_BIN);                                    \
-
-*/
-#else
-#define HRelease(p, endp, ptr)				                  \
-  if (HEAP_START(p) <= (ptr) && (ptr) < HEAP_TOP(p)) {	                  \
-      HEAP_TOP(p) = (ptr);				                  \
-  } else {}
-#endif
 
 #define HeapWordsLeft(p)				\
   (HEAP_LIMIT(p) - HEAP_TOP(p))

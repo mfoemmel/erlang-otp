@@ -43,8 +43,6 @@
 -import(lists, [all/2, splitwith/2, foldr/3, keysort/2, foldl/3,
 		mapfoldl/3]).
 
--define(AVOID_CODE_DUPLICATION, true).
-
 -define(binary_id, {binary}).
 -define(cons_id, {cons}).
 -define(tuple_id, {tuple}).
@@ -540,8 +538,14 @@ add_defs(Ds, Env) ->
 %% function instead of duplicating the code. In other words, whether its
 %% cost is about the same or smaller than that of a local function call.
 
--ifdef(AVOID_CODE_DUPLICATION).
 is_lightweight(E) ->
+    case get('cerl_pmatch_duplicate_code') of
+	never -> false;    % Avoids all code duplication
+	always -> true;    % Does not lift code to new functions
+	_ -> is_lightweight_1(E)
+    end.
+
+is_lightweight_1(E) ->
     case cerl:type(E) of
 	var -> true;
    	literal -> true;
@@ -551,9 +555,9 @@ is_lightweight(E) ->
    		    andalso is_simple(cerl:cons_tl(E));
    	tuple -> all(fun is_simple/1, cerl:tuple_es(E));
    	'let' -> (is_simple(cerl:let_arg(E)) andalso
-   		  is_lightweight(cerl:let_body(E)));
+   		  is_lightweight_1(cerl:let_body(E)));
    	seq -> (is_simple(cerl:seq_arg(E)) andalso
-   		is_lightweight(cerl:seq_body(E)));
+   		is_lightweight_1(cerl:seq_body(E)));
    	primop ->
    	    all(fun is_simple/1, cerl:primop_args(E));
    	apply ->
@@ -567,9 +571,6 @@ is_lightweight(E) ->
 	    %% The default is to lift the code to a new function.
 	    false
     end.
--else.
-is_lightweight(_) -> true.  % Never lift code to new functions.
--endif.	% AVOID_CODE_DUPLICATION
 
 %% "Simple" things have no (or negligible) runtime cost.
 

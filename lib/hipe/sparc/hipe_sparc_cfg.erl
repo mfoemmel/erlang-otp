@@ -72,6 +72,11 @@ branch_successors(Instr) ->
     _ -> []
   end.
 
+fails_to(Instr) ->
+  case hipe_sparc:type(Instr) of
+    call_link -> [hipe_sparc:call_link_fail(Instr)];
+    _ -> []
+  end.
 
 is_branch(Instr) ->
   case hipe_sparc:type(Instr) of

@@ -661,7 +661,7 @@ erl_crash_dump_v(char *file, int line, char* fmt, va_list args)
     char* dumpname;
     char buf[512];
 #if !defined(VXWORKS) && !defined(__WIN32__)
-    int i;
+    int i, max;
 #endif
 
     if (erts_writing_erl_crash_dump)
@@ -670,18 +670,22 @@ erl_crash_dump_v(char *file, int line, char* fmt, va_list args)
     erts_writing_erl_crash_dump = 1; /* Allow us to pass certain places
 					without locking... */
 
+#ifndef VXWORKS
+    close(3);			/* Make sure we have a free descriptor */
+#ifndef __WIN32__
+    max = sys_max_files();
+    if (max < 1024)
+	max = 1024;
+    for (i = 4; i < max; i++)
+	close(i);
+#endif
+#endif
+
     dumpname = getenv("ERL_CRASH_DUMP");
     if (!dumpname) {
 	dumpname = "erl_crash.dump";
     }
-#ifndef VXWORKS
-    close(3);			/* Make sure we have a free descriptor */
-#ifndef __WIN32__
-    for (i = 4; i < 1024; i++) {
-	close(i);
-    }
-#endif
-#endif
+
     fd = open(dumpname,O_WRONLY | O_CREAT | O_TRUNC,0640);
     if (fd < 0) 
 	return; /* Can't create the crash dump, skip it */

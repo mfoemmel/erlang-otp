@@ -33,7 +33,7 @@
 
 -include("cerl_hipe_primops.hrl").
 
--record(ctxt, {class = expr, line=0}).
+-record(ctxt, {class = expr}).
 
 
 %% @spec core_transform(Module::cerl_records(), Options::[term()]) ->
@@ -68,37 +68,23 @@ core_transform(M, Opts) ->
 
 transform(E, Opts) ->
     %% Start by closure converting the code
-    module(cerl_cconv:transform(E, Opts)).
+    module(cerl_cconv:transform(E, Opts), Opts).
 
-module(E) ->
+module(E, Opts) ->
     {Ds, Env, Ren} = add_defs(cerl:module_defs(E), env__new(),
 			      ren__new()),
     M = cerl:module_name(E),
-    {Ds1, _} = defs(Ds, true, Env, Ren, s__new(cerl:atom_val(M))),
+    S0 = s__new(cerl:atom_val(M)),    	    
+    S = s__set_pmatch(proplists:get_value(pmatch, Opts), S0),
+    {Ds1, _} = defs(Ds, true, Env, Ren, S),
     cerl:update_c_module(E, M, cerl:module_exports(E),
 			 cerl:module_attrs(E), Ds1).
 
 %% Note that the environment is defined on the renamed variables.
 
-expr(E, Env, Ren, Ctxt, S0) ->
+expr(E0, Env, Ren, Ctxt, S0) ->
     %% Do peephole optimizations as we traverse the code.
-    E1 = cerl_lib:reduce_expr(E),
-    case get_line(cerl:get_ann(E1)) of
-	none ->
-	    expr_1(E1, Env, Ren, Ctxt, S0);
-	Line ->
-	    if Line > Ctxt#ctxt.line ->
-		    E2 = cerl:c_seq(cerl:c_primop(
-				      cerl:c_atom(?PRIMOP_SOURCE_LINE),
-				      [cerl:abstract(Line)]),
-				    E1),
-		    expr_1(E2, Env, Ren, Ctxt#ctxt{line = Line}, S0);
-	       true ->
-		    expr_1(E1, Env, Ren, Ctxt, S0)
-	    end
-    end.
-
-expr_1(E, Env, Ren, Ctxt, S0) ->
+    E = cerl_lib:reduce_expr(E0),
     case cerl:type(E) of
  	literal ->
 	    {E, S0};
@@ -154,8 +140,7 @@ expr_1(E, Env, Ren, Ctxt, S0) ->
 	    {H, S3} = expr(cerl:try_handler(E), Env2, Ren2, Ctxt, S2),
 	    {cerl:update_c_try(E, A, Vs1, B, Evs1, H), S3};
  	'catch' ->
-	    {B, S1} = expr(cerl:catch_body(E), Env, Ren, Ctxt, S0),
-	    {cerl:update_c_catch(E, B), S1};
+	    catch_expr(E, Env, Ren, Ctxt, S0);
 	letrec ->
 	    {Ds, Env1, Ren1} = add_defs(cerl:letrec_defs(E), Env, Ren),
 	    {Ds1, S1} = defs(Ds, false, Env1, Ren1, S0),
@@ -246,10 +231,22 @@ defs([{V, F} | Ds], Ds1, Top, Env, Ren, S0) ->
 defs([], Ds, _Top, _Env, _Ren, S) ->
     {lists:reverse(Ds), S}.
 
-clauses(Cs, Env, Ren, Ctxt, S) ->
+clauses([C|_]=Cs, Env, Ren, Ctxt, S) ->
     {Cs1, S1} = clause_list(Cs, Env, Ren, Ctxt, S),
     %% Perform pattern matching compilation on the clauses.
-    {E, Vs} = cerl_pmatch:clauses(Cs1, Env),
+    {E, Vs} = case s__get_pmatch(S) of
+		  true ->
+		      cerl_pmatch:clauses(Cs1, Env);
+		  no_duplicates ->
+		      put('cerl_pmatch_duplicate_code', never),
+		      cerl_pmatch:clauses(Cs1, Env);
+		  duplicate_all ->
+		      put('cerl_pmatch_duplicate_code', always),
+		      cerl_pmatch:clauses(Cs1, Env);
+		  Other when Other == false; Other == undefined ->
+		      Vs0 = new_vars(cerl:clause_arity(C), Env),
+		      {cerl:c_case(cerl:c_values(Vs0), Cs1), Vs0}
+	      end,
     %% We must make sure that we also visit any clause guards generated
     %% by the pattern matching compilation. We pass an empty renaming,
     %% so we do not rename any variables twice.
@@ -365,7 +362,7 @@ rewrite_call(E, M, F, As) ->
 				length(As))
 		of
 		{yes, N} ->
-		    cerl:c_primop(cerl:c_atom(N), As);
+		    cerl:update_c_primop(E, cerl:c_atom(N), As);
 		no ->
 		    cerl:update_c_call(E, M, F, As)
 	    end;
@@ -508,6 +505,36 @@ variable(E, Env, Ren, Ctxt, S) ->
 variable_1(E, V, S) ->
     {cerl:update_c_var(E, V), S}.
 
+%% A catch-expression 'catch Expr' is rewritten as:
+%%
+%%	try Expr
+%%	of (V) -> V
+%%	catch (T, V, E) ->
+%%	    letrec 'wrap'/1 = fun (V) -> {'EXIT', V}
+%%	    in case T of
+%%	         'throw' when 'true' -> V
+%%	         'exit' when 'true' -> 'wrap'/1(V)
+%%	         V when 'true' ->
+%%	             'wrap'/1({V, erlang:get_stacktrace()})
+%%	       end
+
+catch_expr(E, Env, Ren, Ctxt, S) ->
+    T = cerl:c_var('T'),
+    V = cerl:c_var('V'),
+    X = cerl:c_var('X'),
+    W = cerl:c_var({wrap,1}),
+    G = cerl:c_call(cerl:c_atom('erlang'),cerl:c_atom('get_stacktrace'),[]),
+    Cs = [cerl:c_clause([cerl:c_atom('throw')], V),
+	  cerl:c_clause([cerl:c_atom('exit')], cerl:c_apply(W, [V])),
+	  cerl:c_clause([T], cerl:c_apply(W, [cerl:c_tuple([V,G])]))
+	 ],
+    C = cerl:c_case(T, Cs),
+    F = cerl:c_fun([V], cerl:c_tuple([cerl:c_atom('EXIT'), V])),
+    H = cerl:c_letrec([{W,F}], C),
+    As = cerl:get_ann(E),
+    {B, S1} = expr(cerl:catch_body(E),Env, Ren, Ctxt, S),
+    {cerl:ann_c_try(As, B, [V], V, [T,V,X], H), S1}.
+
 %% Receive-expressions are rewritten as follows:
 %%
 %%	receive
@@ -548,12 +575,8 @@ receive_clauses([]) ->
     [cerl:c_clause([V], Call)].
 
 
-get_line([L | _As]) when integer(L) ->
-    L;
-get_line([_ | As]) ->
-    get_line(As);
-get_line([]) ->
-    none.
+new_vars(N, Env) ->
+    [cerl:c_var(V) || V <- env__new_names(N, Env)].
 
 
 %% ---------------------------------------------------------------------
@@ -576,6 +599,9 @@ env__is_defined(Key, Env) ->
 
 env__new_name(Env) ->
     rec_env:new_key(Env).
+
+env__new_names(N, Env) ->
+    rec_env:new_keys(N, Env).
 
 env__new_function_name(F, Env) ->
     rec_env:new_key(F, Env).
@@ -602,7 +628,7 @@ ren__map(Key, Ren) ->
 %% ---------------------------------------------------------------------
 %% State
 
--record(state, {module, function}).
+-record(state, {module, function, pmatch=true}).
 
 s__new(Module) ->
     #state{module = Module}.
@@ -615,3 +641,9 @@ s__enter_function(F, S) ->
 
 s__get_function_name(S) ->
     S#state.function.
+
+s__set_pmatch(V, S) ->
+    S#state{pmatch = V}.
+
+s__get_pmatch(S) ->
+    S#state.pmatch.

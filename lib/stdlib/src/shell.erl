@@ -18,6 +18,7 @@
 -module(shell).
 
 -export([start/0, start/1, server/0, server/1, history/1, results/1]).
+-export([whereis_evaluator/0, whereis_evaluator/1]).
 -export([start_restricted/1, stop_restricted/0]).
 
 -define(LINEMAX, 30).
@@ -32,6 +33,56 @@ start() ->
 start(NoCtrlG) ->
     code:ensure_loaded(user_default),
     spawn(fun() -> server(NoCtrlG) end).
+
+%% Find the pid of the current evaluator process.
+whereis_evaluator() ->
+    %% locate top group leader, always registered as user
+    %% can be implemented by group (normally) or user 
+    %% (if oldshell or noshell)
+    case whereis(user) of
+	undefined ->
+	    undefined;
+	User ->
+	    %% get user_drv pid from group, or shell pid from user
+	    case group:interfaces(User) of
+		[] ->				% old- or noshell		    
+		    case user:interfaces(User) of
+			[] ->
+			    undefined;
+			[{shell,Shell}] ->
+			    whereis_evaluator(Shell)
+		    end;
+		[{user_drv,UserDrv}] ->
+		    %% get current group pid from user_drv
+		    case user_drv:interfaces(UserDrv) of
+			[] ->
+			    undefined;
+			[{current_group,Group}] ->
+			    %% get shell pid from group
+			    GrIfs = group:interfaces(Group),
+			    case lists:keysearch(shell, 1, GrIfs) of
+				{value,{shell,Shell}} ->
+				    whereis_evaluator(Shell);
+				false ->
+				    undefined
+			    end
+		    end
+	    end
+    end.
+
+whereis_evaluator(Shell) ->
+    case process_info(Shell, dictionary) of
+	{dictionary,Dict} ->
+	    case lists:keysearch(evaluator, 1, Dict) of
+		{value,{_,Eval}} when pid(Eval) ->
+		    Eval;
+		_ ->
+		    undefined
+	    end;
+	_ ->
+	    undefined
+    end.
+	    
 
 %% Call this function to start a user restricted shell 
 %% from a normal shell session.
@@ -63,14 +114,29 @@ default_modules() ->
 server(NoCtrlG) ->
     put(no_control_g, NoCtrlG),
     server().
+
+
+%%% The shell should not start until the system is up and running.
+%%% We subscribe with init to get a notification of when.
+
+%%% In older releases we didn't syncronize the shell with init, but let it
+%%% start in parallell with other system processes. This was bad since 
+%%% accessing the shell too early could interfere with the boot procedure.
+%%% Still, by means of a flag, we make it possible to start the shell the
+%%% old way (for backwards compatibility reasons). This should however not 
+%%% be used unless for very special reasons necessary.
     
 server() ->
-    %% The shell shouldn't start until the system is up and running.
-    case init:notify_when_started(self()) of
-	started ->
-	    ok;
+    case init:get_argument(risky_shell) of
+	{ok,_} -> 
+	    ok;					% no sync with init
 	_ ->
-	    init:wait_until_started()
+	    case init:notify_when_started(self()) of
+		started ->
+		    ok;
+		_ ->
+		    init:wait_until_started()
+	    end
     end,
     %% Our spawner has fixed the process groups.
     Bs0 = erl_eval:new_bindings(),
@@ -342,7 +408,9 @@ shell_rep(Ev, Bs0, RT, Ds0) ->
 
 start_eval(Bs, RT, Ds) ->
     Self = self(),
-    spawn_link(fun() -> evaluator(Self, Bs, RT, Ds) end).
+    Eval = spawn_link(fun() -> evaluator(Self, Bs, RT, Ds) end),
+    put(evaluator, Eval),
+    Eval.
 
 %% evaluator(Shell, Bindings, RecordTable, ProcessDictionary)
 %%  Evaluate expressions from the shell. Use the "old" variable bindings
@@ -818,29 +886,13 @@ listify(E) ->
 read_records(FileOrModule, Opts0) ->
     Opts = lists:delete(report_warnings, Opts0),
     case find_file(FileOrModule) of
-        {beam,BeamFile} ->
-            case beam_lib:chunks(BeamFile, [abstract_code,"CInf"]) of
-                {ok,{_Mod,[{abstract_code,{_Version,Forms}},{"CInf",CB}]}} ->
-                    case record_attrs(Forms) of
-                        [] -> 
-                            %% If the version is raw_X, then this test
-                            %% is unnecessary.
-                            try_source(BeamFile, CB);
-                        Records -> 
-                            Records
-                    end;
-                {ok,{_Mod,[{abstract_code,no_abstract_code},{"CInf",CB}]}} ->
-                    try_source(BeamFile, CB);
-                Error ->
-                    Error
-            end;
         {files,[File]} ->
-            parse_file(File, Opts);
+            read_file_records(File, Opts);
         {files,Files} ->
             lists:flatmap(fun(File) ->
-                                  case parse_file(File, Opts) of
-                                      {error,_} -> [];
-                                      RAs when is_list(RAs) -> RAs
+                                  case read_file_records(File, Opts) of
+                                      RAs when is_list(RAs) -> RAs;
+                                      _ -> []
                                   end
                           end, Files);
         Error ->
@@ -852,10 +904,10 @@ read_records(FileOrModule, Opts0) ->
 find_file(Mod) when is_atom(Mod) ->
     case code:which(Mod) of
 	File when is_list(File) ->
-	    {beam,File};
+	    {files,[File]};
 	preloaded ->
 	    {_M,_Bin,File} = code:get_object_code(Mod),
-            {beam,File};
+            {files,[File]};
         _Else -> % non_existing, interpreted, cover_compiled
             {error,nofile}
     end;
@@ -865,6 +917,31 @@ find_file(File) ->
             {error,invalid_filename};
         Files ->
             {files,Files}
+    end.
+
+read_file_records(File, Opts) ->
+    case filename:extension(File) of
+        ".beam" ->
+            case beam_lib:chunks(File, [abstract_code,"CInf"]) of
+                {ok,{_Mod,[{abstract_code,{Version,Forms}},{"CInf",CB}]}} ->
+                    case record_attrs(Forms) of
+                        [] when Version =:= raw_abstract_v1 ->
+                            [];
+                        [] -> 
+                            %% If the version is raw_X, then this test
+                            %% is unnecessary.
+                            try_source(File, CB);
+                        Records -> 
+                            Records
+                    end;
+                {ok,{_Mod,[{abstract_code,no_abstract_code},{"CInf",CB}]}} ->
+                    try_source(File, CB);
+                Error ->
+                    %% Could be that the "Abst" chunk is missing (pre R6).
+                    Error
+            end;
+        _ ->
+            parse_file(File, Opts)
     end.
 
 %% This is how the debugger searches for source files. See int.erl.

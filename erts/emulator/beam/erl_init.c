@@ -25,6 +25,7 @@
 #include "erl_vm.h"
 #include "global.h"
 #include "erl_process.h"
+#include "error.h"
 #include "erl_version.h"
 #include "erl_db.h"
 #include "beam_bp.h"
@@ -550,7 +551,7 @@ erl_start(int argc, char **argv)
     display_items = 200;
     display_loads = 0;
     heap_series = HS_FIBONACCI_SLOW;
-    erts_backtrace_depth = 8;
+    erts_backtrace_depth = DEFAULT_BACKTRACE_SIZE;
     erts_async_max_threads = 0;
     erts_max_gen_gcs = (Uint16) -1;
     H_MIN_SIZE = H_DEFAULT_SIZE;

@@ -588,14 +588,16 @@ subtractRequest      -> 'SubtractToken' 'EQUAL' terminationID optAuditDescriptor
 optAuditDescriptor   -> 'LBRKT' auditDescriptor 'RBRKT'  : '$2'.
 optAuditDescriptor   -> '$empty'                         : asn1_NOVALUE .
 
-auditRequest         -> 'AuditValueToken' 'EQUAL' terminationID optAuditDescriptor
-                            : make_commandRequest({auditValueRequest, '$1'},
-						  #'AuditRequest'{terminationID   = '$3',
-								  auditDescriptor = '$4'}) .
-auditRequest         -> 'AuditCapToken' 'EQUAL' terminationID optAuditDescriptor
-                            : make_commandRequest({auditCapRequest, '$1'},
-						  #'AuditRequest'{terminationID   = '$3',
-								  auditDescriptor = '$4'}) .
+auditRequest -> 'AuditValueToken' 'EQUAL' 
+                terminationID optAuditDescriptor : 
+                make_commandRequest({auditValueRequest, '$1'},
+		                    #'AuditRequest'{terminationID   = '$3',
+				                    auditDescriptor = '$4'}) .
+auditRequest -> 'AuditCapToken' 'EQUAL' 
+                terminationID optAuditDescriptor : 
+                make_commandRequest({auditCapRequest, '$1'},
+				    #'AuditRequest'{terminationID   = '$3',
+						    auditDescriptor = '$4'}) .
 
 auditReply -> 'AuditValueToken' 'EQUAL' 'CtxToken' contextTerminationAudit
 		  : {auditValueReply, '$4'} .

@@ -70,8 +70,6 @@
 %% Constants
 %%
 
-%% Initial call function for the shell. Used to find the shell process.
--define(SHELL_INITIAL_CALL, {shell, evaluator, 3}).
 -define (PMAN_DB, pman_db).  % The pman db for trace windows
 
 
@@ -264,7 +262,7 @@ init_monitor_loop(Win,Ed,Object,Supervisor, DefaultOptions, Db) ->
 
 %% ---------------------------------------------------------------
 %% Return: A list of names on the trace functions
-
+%% ---------------------------------------------------------------
 
 flags() -> [send,'receive',call,procs,set_on_spawn,
 	       set_on_first_spawn, set_on_link, set_on_first_link].
@@ -272,39 +270,19 @@ flags() -> [send,'receive',call,procs,set_on_spawn,
 
 %% ----------------------------------------------------------------
 %% What is the Pid of the shell on our node?
-%% 
-%% Return
-
-%% All except zombies.
-alive_processes() ->
-    lists:filter({erlang, is_process_alive}, processes()).
+%%  ----------------------------------------------------------------
 
 find_shell() ->
-    find_shell(alive_processes(), []).
-
-%% No shell was found, try again.
-find_shell([], []) ->       %%Shell has not been recreated. Release control
-    timer:sleep(100),
-    find_shell();
-
-%% Kludge alert!!!
-%% (???) To use the lists:max/1 function on a list of PID:s is
-%% probably not a very predictable operation.
-find_shell([], Ack) ->
-    lists:max(Ack);
-
-find_shell([P|Tail], Ack) ->
-    case erlang:process_info(P, initial_call) of
-	{initial_call, ?SHELL_INITIAL_CALL} ->
-	    find_shell(Tail, [P|Ack]);
-	_ ->
-	    find_shell(Tail, Ack)
+    case shell:whereis_evaluator() of
+	undefined ->				% noshell
+	    noshell;
+	Pid ->
+	    Pid
     end.
 
 %% ---------------------------------------------------------------
 %% Functions called in case of an exit message 
 %% ---------------------------------------------------------------
-
 
 clean_up(Win, Buff,Pid) ->
 

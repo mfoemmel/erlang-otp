@@ -43,8 +43,6 @@
 %%
 %% We want multisets for easier (and faster) creation of env->ssa_edges
 %% 
-%% Maybe do things with restore_catch, pushcatch if possible
-%%
 %% Propagation of constant arguments when some of the arguments are bottom
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -99,8 +97,6 @@ visit_expression(Instruction, Environment) ->
 %%      visit_comment(Instruction, Environment);
 %%    enter ->
 %%      visit_enter(Instruction, Environment);
-    fail_to ->
-      visit_fail_to(Instruction, Environment);
     fconv ->
       visit_fconv(Instruction, Environment);
     fixnumop ->
@@ -138,8 +134,8 @@ visit_expression(Instruction, Environment) ->
 % phi-nodes are handled in scc
 %    phi ->
 %      visit_phi(Instruction, Environment);
-    restore_catch ->
-      visit_restore_catch(Instruction, Environment);
+    begin_handler ->
+      visit_begin_handler(Instruction, Environment);
 %%    return ->
 %%      visit_return(Instruction, Environment);
 %%    store ->
@@ -147,7 +143,7 @@ visit_expression(Instruction, Environment) ->
     switch ->
       visit_switch(Instruction, Environment);
     _ ->
-      %% label, remove_catch, comment, return, fail, et al
+      %% label, end_try, comment, return, fail, et al
       {[], [], Environment}
   end.
 
@@ -374,8 +370,8 @@ partial_eval_branch(Cond, N, Z, V, C) ->
     bottom -> bottom;  % some operators return e.g. Z
     top    -> top;
     E      -> 
-      io:format("rtl_ssa_const_prop: Rethrowing ~w when doing ~w\n",
-                [E, {Cond, N, Z, V, C}]),
+      io:format("~w: Rethrowing ~w when doing ~w\n",
+                [?MODULE, E, {Cond, N, Z, V, C}]),
       throw(E)
   end.
 
@@ -410,23 +406,6 @@ visit_alub(Inst, Env) ->
   { [], NewSSA, NewEnv } = set_to(hipe_rtl:alub_dst(Inst), NewVal,  Env),
   { Labels, NewSSA, NewEnv}.
       
-%%-----------------------------------------------------------------------------
-%% Procedure : visit_alub/2
-%% Purpose   : do symbolic exection of a fail-to instruction.
-%%             fail_to is like goto. They sound very similar, if you are durnk
-%% Arguments : Inst - The instruction
-%%             Env  - The environment
-%% Returns   : { FlowWorkList, SSAWorkList, NewEnvironment}
-%%-----------------------------------------------------------------------------
-
-visit_fail_to(Inst, Env) ->
-  Labs = case hipe_rtl:fail_to_label(Inst) of
-           [] -> [];
-           [L | Ls] -> [L | Ls];
-           L -> [L]
-         end, 
-  {Labs, [], Env}.
-
 %%-----------------------------------------------------------------------------
 %% Procedure : visit_binbase/2
 %% Purpose   : do symbolic exection of a binbase instruction.
@@ -599,7 +578,7 @@ visit_multimove(Inst, Env) ->
   {[], NewSSA, NewEnv}.
   
 %%-----------------------------------------------------------------------------
-%% Procedure : visit_restore_catch/2
+%% Procedure : visit_begin_handler/2
 %% Purpose   : execute a restore catch instruction. Excatly what is the 
 %%             semantics ? We've assuemd that it sets all dests to bottom for
 %%             now.
@@ -608,7 +587,7 @@ visit_multimove(Inst, Env) ->
 %% Returns   : {FlowWorkList, SSAWorkList, NewEnvironment}
 %%-----------------------------------------------------------------------------
 
-visit_restore_catch(Inst, Env) ->
+visit_begin_handler(Inst, Env) ->
   Dsts = hipe_rtl:defines(Inst),
   {NewEnv, NewSSA} = update_lattice_value({Dsts, bottom}, Env),
   {[], NewSSA, NewEnv}.
@@ -695,8 +674,6 @@ update_instruction(Inst, Env) ->
 %%      [Inst];
     enter ->
       subst_all_uses(Inst, Env);
-    fail_to ->
-      subst_all_uses(Inst, Env);
     fconv ->
       subst_all_uses(Inst, Env);
     fload ->
@@ -729,7 +706,7 @@ update_instruction(Inst, Env) ->
       subst_all_uses(Inst, Env);
     multimove ->
       subst_all_uses(Inst, Env);
-    restore_catch ->
+    begin_handler ->
       subst_all_uses(Inst, Env);
     return ->
       subst_all_uses(Inst, Env);

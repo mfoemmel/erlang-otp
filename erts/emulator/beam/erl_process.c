@@ -28,7 +28,6 @@
 #include "bif.h"
 #include "erl_db.h"
 #include "dist.h"
-#include "error.h"
 #include "beam_catches.h"
 #include "erl_instrument.h"
 
@@ -1035,7 +1034,7 @@ delete_process0(Process* p, int do_delete)
      */
     p->off_heap.mso = (void *) 0x8DEFFACD;
 #endif
-    
+
     if (p->arg_reg != p->def_arg_reg) {
 	ERTS_PROC_LESS_MEM(p->max_arg_reg * sizeof(p->arg_reg[0]));
 	erts_free(ERTS_ALC_T_ARG_REG, p->arg_reg);

@@ -13,7 +13,7 @@
 %%%	    | disp8 sib12		mod == 01, r/m == 100
 %%%	    | (reg)			mod == 00, r/m != ESP and EBP
 %%%	    | sib0			mod == 00, r/m == 100
-%%%	    | disp32			mod == 00, r/m == 101
+%%%	    | disp32(%rip)		mod == 00, r/m == 101
 %%%
 %%% // sib0: mod == 00
 %%% sib0  ::= disp32(,index,scale)	base == EBP, index != ESP
@@ -36,6 +36,9 @@
 %%% 4. disp32 can be represented without [mod == 00, r/m == 101]
 %%%    or with [mod == 00, r/m == 100, base == 101, index == 100]
 %%%    a SIB byte.
+%%% 5. AMD64 and x86 interpret mod==00b r/m==101b EAs differently:
+%%%    on x86 the disp32 is an absolute address, but on AMD64 the
+%%%    disp32 is relative to the %rip of the next instruction.
 
 -module(hipe_amd64_encode).
 
@@ -51,7 +54,7 @@
 	 ea_disp8_base/2, ea_disp8_sib/2,
 	 ea_base/1,
 	 ea_disp32_sindex/1, %%ea_disp32_sindex/2,
-	 ea_sib/1, ea_disp32/1,
+	 ea_sib/1, %ea_disp32_rip/1,
 	 rm_reg/1, rm_mem/1,
 	 % instructions
 	 insn_encode/3, insn_sizeof/2]).
@@ -169,7 +172,7 @@ ea_disp32_sindex(Disp32) -> {ea_disp32_sindex, Disp32, none}.
 ea_sib(SIB) ->
     ?ASSERT(ea_sib, SIB#sib.base =/= ?EBP),
     {ea_sib, SIB}.
-ea_disp32(Disp32) -> {ea_disp32, Disp32}.
+%ea_disp32_rip(Disp32) -> {ea_disp32_rip, Disp32}.
 
 rm_reg(Reg) -> {rm_reg, Reg}.
 rm_mem(EA) -> {rm_mem, EA}.
@@ -254,7 +257,7 @@ enc_ea(EA, RO, Tail) ->
 	    [MODRM, SIB | le32(Disp32, Tail)];
 	{ea_sib, SIB} ->
 	    [mk_modrm(2#00, RO, 2#100), enc_sib(SIB) | Tail];
-	{ea_disp32, Disp32} ->
+	{ea_disp32_rip, Disp32} ->
 	    [mk_modrm(2#00, RO, 2#101) | le32(Disp32, Tail)]
     end.
 
@@ -273,7 +276,7 @@ encode_rm(RM, RO, Tail) ->
 %% 	ea_base -> 1;
 %% 	ea_disp32_sindex -> 6;
 %% 	ea_sib -> 2;
-%% 	ea_disp32 -> 5
+%% 	ea_disp32_rip -> 5
 %%     end.
 
 %% sizeof_rm(RM) ->
@@ -1254,7 +1257,7 @@ t(OS, Op, Opnds) ->
 dotest1(OS) ->
     init(OS),
     % exercise all rm32 types
-    t(OS,lea,{{reg32,?EAX},{ea,ea_disp32(16#87654321)}}),
+    t(OS,lea,{{reg32,?EAX},{ea,ea_disp32_rip(16#87654321)}}),
     t(OS,lea,{{reg32,?EAX},{ea,ea_sib(sib(?ECX))}}),
     t(OS,lea,{{reg32,?EAX},{ea,ea_sib(sib(?ECX,sindex(2#10,?EDI)))}}),
     t(OS,lea,{{reg32,?EAX},{ea,ea_disp32_sindex(16#87654321)}}),
@@ -1440,7 +1443,7 @@ dotest1(OS) ->
     t(OS,'xor',{RM32,Imm8}),
     t(OS,'xor',{RM32,Reg32}),
     t(OS,'xor',{Reg32,RM32}),
-    t(OS,'prefix_fs',{}), t(OS,'add',{{reg32,?EAX},{rm32,rm_mem(ea_disp32(16#20))}}),
+    t(OS,'prefix_fs',{}), t(OS,'add',{{reg32,?EAX},{rm32,rm_mem(ea_disp32_rip(16#20))}}),
     [].
 
 dotest() -> dotest1(group_leader()).	% stdout == group_leader

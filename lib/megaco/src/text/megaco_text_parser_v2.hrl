@@ -275,10 +275,11 @@ merge_indAudMediaDescriptor({termStateDescr, Val}) ->
 merge_indAudMediaDescriptor({streamParm, Val}) ->
     #'IndAudMediaDescriptor'{streams = {oneStream, Val}};
 merge_indAudMediaDescriptor({streamDescr, Val}) ->
-    #'IndAudMediaDescriptor'{streams = {multiStream, Val}}.
+    #'IndAudMediaDescriptor'{streams = {multiStream, [Val]}}.
 
 merge_indAudLocalControlDescriptor(Parms) ->
-    do_merge_indAudLocalControlDescriptor(Parms, #'IndAudLocalControlDescriptor'{}).
+    do_merge_indAudLocalControlDescriptor(Parms, 
+					  #'IndAudLocalControlDescriptor'{}).
 					  
 do_merge_indAudLocalControlDescriptor([Parm | Parms], Desc) ->
     case Parm of

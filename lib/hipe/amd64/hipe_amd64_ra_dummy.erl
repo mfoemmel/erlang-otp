@@ -269,7 +269,8 @@ do_binary(Src0, Dst0) ->
 %%% The fixup may use additional instructions and registers.
 %%% 'src' operands may clobber '%temp0'.
 %%% 'dst' operands may clobber '%temp1'.
-%%% (This is not arbitrary. The translation of restore_catch does a
+%%% XXX Is the following still valid now that fail_to has been dropped?
+%%% (This is not arbitrary. The translation of begin_handler does a
 %%% "move %eax,<dst>", and fail_to does a "move <src>,%eax".)
 
 fix_src_operand(Opnd) ->

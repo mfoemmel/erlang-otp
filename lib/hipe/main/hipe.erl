@@ -618,13 +618,12 @@ get_core_icode(Mod, Core, File, Options) ->
   NeedBeamCode = 
     proplists:get_bool(type_only, Options) 
     orelse (not proplists:get_bool(load, Options)),
-
   BeamBin = 
     case NeedBeamCode of
       true -> [];
       false -> get_beam_code(File)
     end,
-  Exports = [],   %% FIXME: get list of exports from core code
+  Exports = [cerl:var_name(V) || V <- cerl:module_exports(Core)],
   {{Mod, Exports, Icode}, BeamBin}.
 
 get_beam_code(Bin) when is_binary(Bin) -> Bin;
@@ -1316,6 +1315,7 @@ opt_keys() ->
      load,
      measure_regalloc,
      peephole,
+     pmatch,
      pp_asm,
      pp_beam,
      pp_icode,
@@ -1348,6 +1348,7 @@ opt_keys() ->
      timeregalloc,
      timers,
      to_rtl,
+     type_signature,
      type_warnings,
      type_only,
      use_indexing,
@@ -1362,7 +1363,7 @@ opt_keys() ->
 %% Definitions: 
 
 o1_opts() ->
-  Common = [rtl_prop, inline_fp, inline_bs, peephole],
+  Common = [rtl_prop, inline_fp, inline_bs, pmatch, peephole],
   case get(hipe_target_arch) of
     ultrasparc ->
       [sparc_peephole, fill_delayslot | Common];
@@ -1432,6 +1433,7 @@ opt_negations() ->
    {no_inline_fp, inline_fp},
    {no_load, load},
    {no_peephole, peephole},
+   {no_pmatch, pmatch},
    {no_pp_beam, pp_beam},
    {no_pp_icode, pp_icode},
    {no_pp_icode_ssa, pp_icode_ssa},
@@ -1453,6 +1455,7 @@ opt_negations() ->
    {no_sparc_schedule, sparc_schedule},
    {no_time, time},
    {no_type_only, type_only},
+   {no_type_signature, type_signature},
    {no_type_warnings, type_warnings},
    {no_use_callgraph, use_callgraph},
    {no_use_clusters, use_clusters},

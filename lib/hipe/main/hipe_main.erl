@@ -63,8 +63,7 @@ compile_icode(MFA, LinearIcode, Options) ->
 %%
 %% The following constraints apply to the passes on Icode:
 %% 
-%% 1. The no_comment and fixup_fallthroughs passes must be done on
-%%    linear form;
+%% 1. The no_comment pass must be done on linear form;
 %%
 %% 2. linear_to_cfg, which turns linear form into a CFG, must be
 %%    performed before any of the passes on CFG form;
@@ -86,16 +85,19 @@ compile_icode(MFA, LinearIcode0, Options, DebugState) ->
   hipe_gensym:set_label(icode,LMax+1),
   {_VMin,VMax} = hipe_icode:icode_var_range(LinearIcode0),
   hipe_gensym:set_var(icode,VMax+1),
-  %hipe_icode_pp:pp(LinearIcode0),
+  %%hipe_icode_pp:pp(LinearIcode0),
 
   ?opt_start_timer("Icode"),
   LinearIcode1 = icode_no_comment(LinearIcode0, Options),
-  LinearIcode2 = icode_fixup_fallthroughs(LinearIcode1, Options),
-  IcodeCfg0 = icode_linear_to_cfg(LinearIcode2, Options),
+  IcodeCfg0 = icode_linear_to_cfg(LinearIcode1, Options),
+  %%hipe_icode_cfg:pp(IcodeCfg0),
   IcodeCfg1 = icode_binary_pass(IcodeCfg0, Options),
+  %%hipe_icode_cfg:pp(IcodeCfg1),
   IcodeCfg2 = icode_handle_exceptions(IcodeCfg1, MFA, Options),
   icode_pp(IcodeCfg2, MFA, proplists:get_value(pp_icode, Options)),
+
   {Fixpoint, IcodeCfg3} = icode_ssa(IcodeCfg2, MFA, Options),
+  %%hipe_icode_cfg:pp(IcodeCfg3),
   case proplists:get_bool(type_only, Options) of
     false ->
       compile_icode_2(MFA, IcodeCfg3, Options, DebugState);
@@ -105,7 +107,9 @@ compile_icode(MFA, LinearIcode0, Options, DebugState) ->
 
 compile_icode_2(MFA, IcodeCfg3, Options, DebugState) ->  
   IcodeCfg4 = icode_split_arith(IcodeCfg3, MFA, Options),
+  %%hipe_icode_cfg:pp(IcodeCfg4),
   IcodeCfg5 = icode_heap_test(IcodeCfg4, Options),
+  %%hipe_icode_cfg:pp(IcodeCfg5),
   IcodeCfg6 = icode_remove_trivial_bbs(IcodeCfg5, Options),
   icode_pp(IcodeCfg6, MFA, proplists:get_value(pp_opt_icode, Options)),
   icode_liveness_pp(IcodeCfg6, MFA, Options),
@@ -135,10 +139,6 @@ icode_no_comment(LinearIcode, Options) ->
     _ ->
       LinearIcode
   end.
-
-icode_fixup_fallthroughs(LinearIcode, Options) ->
-  ?option_time(hipe_icode:fixup_fallthroughs(LinearIcode),
-	       "Icode fix-up fallthroughs", Options).
 
 icode_linear_to_cfg(LinearIcode, Options) ->
   ?option_time(hipe_icode_cfg:linear_to_cfg(LinearIcode),
@@ -238,6 +238,7 @@ icode_ssa(IcodeCfg0, MFA, Options) ->
   IcodeSSA1 = icode_ssa_binary_pass(IcodeSSA0, Options),
   IcodeSSA2 = icode_ssa_const_prop(IcodeSSA1, Options),
   IcodeSSA3 = icode_ssa_copy_prop(IcodeSSA2, Options),
+  icode_ssa_type_signature(IcodeSSA3, Options),
   {Fixpoint, IcodeSSA4} = icode_ssa_type_info(IcodeSSA3, MFA, Options),
   IcodeSSA5 = icode_ssa_dead_code_elimination(IcodeSSA4, Options),
   icode_ssa_check(IcodeSSA5, Options), %% just for sanity
@@ -276,6 +277,15 @@ icode_ssa_copy_prop(IcodeSSA, Options) ->
       ?option_time(hipe_icode_ssa_copy_prop:cfg(IcodeSSA),
 		   "Icode SSA copy propagation", Options);
     _ -> 
+      IcodeSSA
+  end.
+
+icode_ssa_type_signature(IcodeSSA, Options) ->
+  case proplists:get_bool(type_signature, Options) of
+    true ->
+      ?option_time(hipe_icode_type_signature:cfg(IcodeSSA, Options),
+		   "Icode SSA type signature", Options);
+    false -> 
       IcodeSSA
   end.
 
@@ -345,7 +355,9 @@ icode_ssa_unconvert(IcodeSSA, Options) ->
 icode_to_rtl(MFA, Icode, Options) ->
   debug("ICODE -> RTL: ~w, ~w~n", [MFA, hash(Icode)], Options),
   LinearRTL = translate_to_rtl(Icode, Options),
+  %%hipe_rtl:pp(standard_io, LinearRTL),
   RtlCfg  = initialize_rtl_cfg(LinearRTL, Options),
+  %%hipe_rtl_cfg:pp(RtlCfg),
   RtlCfg0 = hipe_rtl_cfg:remove_unreachable_code(RtlCfg),
   RtlCfg1 = hipe_rtl_cfg:remove_trivial_bbs(RtlCfg0),
   %%hipe_rtl_cfg:pp(RtlCfg1),

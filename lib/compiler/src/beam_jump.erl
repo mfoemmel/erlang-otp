@@ -399,6 +399,8 @@ is_exit_instruction(_) -> false.
 
 is_exit_instruction_1(erlang, exit, 1) -> true;
 is_exit_instruction_1(erlang, throw, 1) -> true;
+is_exit_instruction_1(erlang, error, 1) -> true;
+is_exit_instruction_1(erlang, error, 2) -> true;
 is_exit_instruction_1(erlang, fault, 1) -> true;
 is_exit_instruction_1(erlang, fault, 2) -> true;
 is_exit_instruction_1(_, _, _) -> false.

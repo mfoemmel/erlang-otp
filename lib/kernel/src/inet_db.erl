@@ -748,23 +748,32 @@ handle_call(Request, _From, State) ->
 	    {reply, ok, State};
 
 	{add_host,IP,[TName|TAs]} when tuple(IP), list(TName), list(TAs) ->
-	    [Name|As] = lists:map(fun tolower/1,[TName|TAs]),
+	    As = lists:map(fun tolower/1,[TName|TAs]),
+	    As1 = 
+		case ets:lookup(State#state.hosts, IP) of
+		    [{IP,_,PrevAs}] ->
+			lists:foldl(fun(A,L) -> 
+					    lists:delete(A,L) 
+				    end, PrevAs, As) ++ As;
+		    [] ->
+			As
+		end,
 	    if size(IP) == 4 ->
 		    %% temporary special as above
 		    case ets:lookup(State#state.hosts,{127,0,0,1}) of
-			[{IP,_,[N|AList]}] ->
+			[{IP,_,AList}] ->
 			    ets:insert(State#state.hosts, 
 				       {{127,0,0,1},inet,
 					lists:foldl(fun(A,L) -> 
 							    lists:delete(A,L) 
-						    end, [N|AList], [Name|As])});
+						    end, AList, As1)});
 			_ -> true
 		    end,
 		    %% end temporary special
-		    ets:insert(State#state.hosts, {IP,inet,[Name|As]}),
+		    ets:insert(State#state.hosts, {IP,inet,As1}),
 		    {reply, ok, State};
 	       size(IP) == 8 ->
-		    ets:insert(State#state.hosts, {IP,inet6,[Name|As]}),
+		    ets:insert(State#state.hosts, {IP,inet6,As1}),
 		    {reply, ok, State};
 	       true ->
 		    {reply, error, State}

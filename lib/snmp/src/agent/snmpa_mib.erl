@@ -25,8 +25,8 @@
 
 %% External exports
 -export([start_link/3, stop/1, 
-	 lookup/2, next/3, which_mib/2, 
-	 load_mibs/2, unload_mibs/2,
+	 lookup/2, next/3, which_mib/2, which_mibs/1, whereis_mib/2, 
+	 load_mibs/2, unload_mibs/2, 
 	 register_subagent/3, unregister_subagent/2, info/1, info/2, 
 	 verbosity/2, dump/1, dump/2]).
 
@@ -131,6 +131,18 @@ load_mibs(MibServer, Mibs) ->
 %%----------------------------------------------------------------------
 unload_mibs(MibServer, Mibs) ->
     call(MibServer, {unload_mibs, Mibs}).
+
+
+%%----------------------------------------------------------------------
+%% Purpose: Simple management functions
+%% Args: Mib is the name of the mib (atom)
+%% Returns: ok | {error, Reason}
+%%----------------------------------------------------------------------
+which_mibs(MibServer) ->
+    call(MibServer, which_mibs).
+
+whereis_mib(MibServer, Mib) ->
+    call(MibServer, {whereis_mib, Mib}).
 
 
 %%----------------------------------------------------------------------
@@ -291,6 +303,16 @@ handle_call({unload_mibs, Mibs}, _From,
 	end,
     snmpa_mib_data:store(NData),
     {reply, Reply, State#state{data = NData}};
+
+handle_call(which_mibs, _From, #state{data = Data} = State) ->
+    ?vlog("which mibs",[]),    
+    Reply = snmpa_mib_data:which_mibs(Data),
+    {reply, Reply, State};
+
+handle_call({whereis_mib, Mib}, _From, #state{data = Data} = State) ->
+    ?vlog("whereis mib: ~p",[Mib]),    
+    Reply = snmpa_mib_data:whereis_mib(Data, Mib),
+    {reply, Reply, State};
 
 handle_call({register_subagent, Oid, Pid}, _From, State) ->
     ?vlog("register subagent ~p, ~p",[Oid,Pid]),

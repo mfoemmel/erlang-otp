@@ -7,9 +7,7 @@
 %%% Created : 25 Feb 2003 by Tobias Lindahl <Tobias.Lindahl@it.uu.se>
 %%%
 %%% CVS :
-%%%       $Author$
-%%%       $Date$
-%%%       $Revision$
+%%%     $Id$
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_type).
@@ -18,28 +16,21 @@
 
 -include("hipe_icode_type.hrl").
 
--import(erl_types, [t_any/0, t_atom/1, t_atom/0, t_atom_vals/1, 
-		    t_binary/0, t_bool/0, t_cons/0, 
-		    t_improper_list/0, t_float/0, 
-		    t_from_term/1, t_fun/0, t_fun/2, t_fun_args/1, 
-		    t_identifier/0, t_inf/2, t_inf_lists/2,
-		    t_integer/0, t_integer/1,
-		    t_is_atom/1, t_is_any/1, t_is_binary/1, t_is_bool/1,
-		    t_is_char/1, t_is_cons/1, 
-		    t_is_improper_list/1, t_is_equal/2, t_is_float/1, 
+-import(erl_types, [t_any/0, t_atom/1, t_atom/0, t_atom_vals/1,
+		    t_binary/0, t_bool/0, t_cons/0, t_improper_list/0,
+		    t_float/0, t_from_term/1, t_fun/0, t_fun/2,
+		    t_fun_args/1, t_inf/2, t_inf_lists/2, t_integer/0,
+		    t_integer/1, t_is_atom/1, t_is_any/1, t_is_binary/1,
+		    t_is_bool/1, t_is_char/1, t_is_cons/1,
+		    t_is_improper_list/1, t_is_equal/2, t_is_float/1,
 		    t_is_fun/1, t_is_integer/1, t_is_number/1,
-		    t_is_list/1, t_is_nil/1, t_is_nonempty_list/1,
-		    t_is_port/1, t_is_pid/1, t_is_ref/1, 
-		    t_is_subtype/2, t_is_tuple/1,
-		    t_is_none/1, t_limit/2, t_list/0, t_list/1, 
-		    t_nil/0, t_nonempty_list/0,
-		    t_number/0, t_number/1, t_number_vals/1,
-		    t_pid/0, t_port/0, t_ref/0, t_string/0, t_subtract/2, 
-		    t_sup/1, t_sup/2,
-		    t_to_string/1,
-		    t_tuple/0, t_tuple/1, t_tuple_arity/1, t_tuple_arities/1,
-		    t_none/0]).
-
+		    t_is_list/1, t_is_nil/1, t_is_port/1, t_is_pid/1,
+		    t_is_ref/1, t_is_subtype/2, t_is_tuple/1,
+		    t_is_none/1, t_limit/2, t_list/0, t_nil/0,
+		    t_number/0, t_number/1, t_number_vals/1, t_pid/0,
+		    t_port/0, t_ref/0, t_subtract/2, t_sup/2,
+		    t_to_string/1, t_tuple/0, t_tuple/1,
+		    t_tuple_arity/1, t_tuple_arities/1, t_none/0]).
 
 
 %% If debug_test is defined the type tests are not removed but
@@ -55,21 +46,14 @@ cfg(Cfg, IcodeFun, Options) ->
   pp(NewState, IcodeFun, Options, "Post-specialization"),
   warn_on_type_errors(Cfg, State, NewState, IcodeFun, Options),
   Fixpoint = update_mfa_info(NewState, IcodeFun, OldReturnType, Options),
-  
+
   case proplists:get_bool(inline_fp, Options) of
     true ->
       {Fixpoint, hipe_icode_fp:cfg(state__cfg(NewState), 
 				   state__info_map(NewState))};
     false ->
       {Fixpoint, state__cfg(NewState)}
-  end.
-
-%%  case proplists:get_bool(icode_simplify_arith, Options) of
-%%    true ->
-%%      hipe_icode_simplify_arith:cfg(Cfg1);
-%%    false ->
-%%      state__cfg(State)
-%%  end.
+  end.      
 
 cfg_loop(State) ->
   NewState0 = specialize(State),
@@ -157,7 +141,8 @@ analyse_block(Label, InfoIn, State)->
 	      true ->
 		[{Fail, NewInfoOut}];
 	      false ->
-		case hipe_icode:call_fails(Last) of
+		Fun = hipe_icode:call_fun(Last),
+		case hipe_icode_primops:fails(Fun) of
 		  true ->
 		    [{Cont, ContInfo}, {Fail, NewInfoOut}];
 		  false ->
@@ -194,7 +179,7 @@ analyse_insn(I, Info) ->
     phi ->
       Type = t_limit(join_list(args(I), Info), ?TYPE_DEPTH),
       enter_defines(I, Type, Info);
-    restore_catch ->
+    begin_handler ->
       enter_defines(I, t_any(), Info);
     _ ->
       %% Just an assert
@@ -301,9 +286,9 @@ do_type(I, Info)->
     VarInfo ->
       case hipe_icode:type_type(I) of
 	cons ->
-	  test_cons(Var, VarInfo, TrueLab, FalseLab, Info);
+	  test_cons_or_nil(t_cons(), Var, VarInfo, TrueLab, FalseLab, Info);
 	nil ->
-	  test_nil(Var, VarInfo, TrueLab, FalseLab, Info);
+	  test_cons_or_nil(t_nil(), Var, VarInfo, TrueLab, FalseLab, Info);
 	{atom, A} ->
 	  test_number_or_atom(fun(X)->t_atom(X)end, 
 			      fun(X)->t_atom_vals(X)end,
@@ -440,76 +425,23 @@ switch_val_update_info([{Const, Label}|Left], Arg, ArgType,
 switch_val_update_info([], Arg, _ArgType, FailLabel, FailType,Info, Acc) ->
   [{FailLabel, enter(Arg, FailType, Info)}|Acc].
 
-
-test_cons(Var, VarInfo, TrueLab, FalseLab, Info)->
-  case t_is_improper_list(VarInfo) of
-    false ->
-      case t_is_improper_list(t_inf(VarInfo, t_improper_list())) of
+test_cons_or_nil(Type, Var, VarInfo, TrueLab, FalseLab, Info) ->
+  case t_is_any(VarInfo) of
+    true -> 
+      [{TrueLab, enter(Var, Type, Info)},
+       {FalseLab, Info}];
+    false ->      
+      TrueType = t_inf(VarInfo, Type),
+      FalseType = t_subtract(VarInfo, TrueType),
+      case t_is_none(FalseType) of
 	true ->
-	  TrueType = t_inf(t_cons(), VarInfo),
-	  FalseType = t_subtract(VarInfo, TrueType),
-	  [{TrueLab, enter(Var, TrueType, Info)}, 
-	   {FalseLab, enter(Var, FalseType, Info)}];
+	  [{TrueLab, Info}];
 	false ->
-	  [{FalseLab, Info}]
-      end;
-    true ->
-      case t_is_list(VarInfo) of
-	false ->
-	  case t_is_cons(VarInfo) of
+	  case t_is_none(TrueType) of
 	    true ->
-	      [{TrueLab, Info}];
+	      [{FalseLab, Info}];
 	    false ->
-	      TrueType = t_inf(t_cons(), VarInfo),
-	      FalseType = t_nil(),
 	      [{TrueLab, enter(Var, TrueType, Info)},
-	       {FalseLab, enter(Var, FalseType, Info)}]
-	  end;
-	true ->
-	  case t_is_nil(VarInfo) of
-	    true->
-	      [{FalseLab, Info}];	  
-	    false ->
-	      case t_is_nonempty_list(VarInfo) of
-		true ->
-		  [{TrueLab, Info}];
-		false ->
-		  TrueType = t_inf(t_nonempty_list(), VarInfo),
-		  [{TrueLab, enter(Var, TrueType, Info)},
-		   {FalseLab, enter(Var, t_nil(), Info)}]
-	      end
-	  end
-      end
-  end.
-
-test_nil(Var, VarInfo, TrueLab, FalseLab, Info)->
-  case t_is_improper_list(VarInfo) of
-    false ->
-      case t_is_improper_list(t_inf(VarInfo, t_improper_list())) of
-	true ->
-	  [{TrueLab, enter(Var, t_nil(), Info)}, 
-	   {FalseLab, enter(Var, t_subtract(VarInfo, t_nil()), Info)}];
-	false ->
-	  [{FalseLab, Info}]
-      end;
-    true ->
-      case t_is_cons(VarInfo) of
-	true ->
-	  [{FalseLab, Info}];
-	false ->
-	  case t_is_list(VarInfo) of
-	    true ->
-	      case t_is_nil(VarInfo) of
-		true ->
-		  [{TrueLab, Info}];
-		false ->
-		  FalseType = t_inf(t_nonempty_list(), VarInfo),
-		  [{TrueLab, enter(Var, t_nil(), Info)},
-		   {FalseLab, enter(Var, FalseType, Info)}]
-	      end;
-	    false ->
-	      FalseType = t_inf(t_cons(), VarInfo),
-	      [{TrueLab, enter(Var, t_nil(), Info)},
 	       {FalseLab, enter(Var, FalseType, Info)}]
 	  end
       end
@@ -761,7 +693,7 @@ simplify_controlflow([Label|Left], State, Dirty) ->
 					  integer_to_list(Label)),
 		  Reason = hipe_icode:mk_const(FailAtom),
 		  FailCode = [hipe_icode:mk_move(V, Reason),
-			      hipe_icode:mk_fail([V], fault)],
+			      hipe_icode:mk_fail([V], error)],
 		  FailBB = hipe_bb:mk_bb(FailCode),
 		  Cfg = state__cfg(State),
 		  NewCfg = hipe_icode_cfg:bb_add(Cfg, FailLab, FailBB),
@@ -847,9 +779,6 @@ simplify_controlflow([Label|Left], State, Dirty)->
 		  NewState = state__bb_add(State, Label, NewBB),
 		  simplify_controlflow(Left, NewState, true)
 	      end;
-	    [{_, GotoLabel}] ->
-	      NewState = mk_goto(State, BB, Label, GotoLabel),
-	      simplify_controlflow(Left, NewState, true);
 	    LegalCases ->
 	      NewI =
 		case switch_tuple_arity_can_fail(LegalCases, Type) of
@@ -880,9 +809,8 @@ simplify_controlflow([Label|Left], State, Dirty)->
 	    Cases ->
 	      %% Nothing changed!
 	      simplify_controlflow(Left, State, Dirty);
-	    [{_, GotoLabel}] ->
-	      NewState = mk_goto(State, BB, Label, GotoLabel),
-	      simplify_controlflow(Left, NewState, true);
+	    %% TODO: Find out whether switch_val can fail 
+	    %% just as switch_tuple_arity
 	    LegalCases ->
 	      NewI = hipe_icode:switch_val_cases_update(I, LegalCases),
 	      NewBB = hipe_bb:code_update(BB, hipe_bb:butlast(BB) ++ [NewI]),
@@ -893,7 +821,8 @@ simplify_controlflow([Label|Left], State, Dirty)->
 	  Info = state__info_out(State, Label),
 	  case call_always_fails(I, Info) of
 	    false ->
-	      case hipe_icode:call_fails(I) of
+	      Fun = hipe_icode:call_fun(I),
+	      case hipe_icode_primops:fails(Fun) of
 		false ->
 		  case hipe_icode:call_fail_label(I) of
 		    [] ->
@@ -982,8 +911,7 @@ transform_insn(I, Info) ->
 	'+'    -> transform_arith(I, '+', Info);
 	'-'    -> transform_arith(I, '-', Info);
 	{element, _} ->
-	    transform_insn(hipe_icode:call_fun_update(I, {erlang,element,2}),
-			   Info);
+	  transform_insn(update_call_or_enter(I, {erlang,element,2}), Info);
 	{erlang,element,2} -> 
 	  NewI1 = transform_element2(I, Info),
 	  case IType == call andalso hipe_icode:call_in_guard(I) of
@@ -994,7 +922,7 @@ transform_insn(I, Info) ->
 	      end;
 	    false -> 
 	      NewI1
-	    end;
+	  end;
 	{erlang,hd,1} -> transform_hd_or_tl(I, unsafe_hd, Info);
 	{erlang,tl,1} -> transform_hd_or_tl(I, unsafe_tl, Info);
 	{hipe_bs_primop, {bs_put_integer, Size, Flags, ConstInfo}} ->
@@ -1122,7 +1050,10 @@ transform_bs_put_integer(I, Primop, Info)->
 transform_arith(I, '+', Info)->
   Args = safe_lookup_list(args(I), Info),
   NewInfo = analyse_insn(I, Info),
-  Dst = safe_lookup_list(call_dstlist(I), NewInfo),
+  Dst = case hipe_icode:is_call(I) of
+	  true -> safe_lookup_list(call_dstlist(I), NewInfo);
+	  false -> []
+	end,
   case all_fixnums(Dst++Args) of
     true ->
       update_call_or_enter(I, extra_unsafe_add);
@@ -1473,7 +1404,16 @@ new_state(Cfg)->
 	     lists:foldl(fun(X, Tree)->gb_trees:insert(X, Any, Tree)end,
 			 empty(), hipe_icode_cfg:params(Cfg));
 	   {value,{_, ArgType}}->
-	     add_arg_types(hipe_icode_cfg:params(Cfg), ArgType)
+	     case lists:any(fun(X) -> t_is_none(X)end, ArgType) of
+	       true ->
+		 %% The call to this function is masked by an error.
+		 %% We cannot trust the arguments.
+		 Any = t_any(),
+		 lists:foldl(fun(X, Tree)->gb_trees:insert(X, Any, Tree)end,
+			     empty(), hipe_icode_cfg:params(Cfg));
+	       false ->
+		 add_arg_types(hipe_icode_cfg:params(Cfg), ArgType)
+	     end
 	 end,
   InfoMap = gb_trees:insert({Start, in}, Info, empty()),
   Liveness = hipe_icode_ssa:ssa_liveness__analyze(Cfg),
@@ -1652,26 +1592,18 @@ warn_on_type_errors(PreAnalysisCfg, OrigState, FinalState, IcodeFun, Options) ->
 	    true ->
 	      case (not HasReturn) andalso (not IsExplicit) of
 		true ->
-		  warn(?WARN_RETURN_NO_EXIT, 
-		       io_lib:format("~w: Function will never return"
-				     " a proper value!\n", [IcodeFun]));
+		  warn(?WARN_RETURN_NO_RETURN, 
+		       io_lib:format("~w: Function has no local return\n",
+				     [IcodeFun]));
 		false ->
 		  case IsExplicit andalso not HasReturn of
 		    true ->
 		      warn(?WARN_RETURN_ONLY_EXIT, 
-			   io_lib:format("~w: Function will never return"
-					 " a proper value!\n", [IcodeFun]));
+			   io_lib:format("~w: Function only terminates with "
+					 "explicit exception\n", [IcodeFun]));
+		    
 		    false ->
-		      case IsExplicit of
-			true ->
-			  warn(?WARN_RETURN_BOTH_EXIT_AND_RETURN, 
-			       io_lib:format("~w: Function will never return"
-					     " a proper value!\n", [IcodeFun]));
-			false ->
-			  warn(?WARN_RETURN_ONLY_RETURN, 
-			       io_lib:format("~w: Function will never return"
-					     " a proper value!\n", [IcodeFun]))
-		      end
+		      ok
 		  end
 	      end;
 	    false ->
@@ -1755,40 +1687,33 @@ warn_on_bb([], _State, _IcodeFun, _ControlFlow) ->
 
 warn_on_instr([I|Left], Info, IcodeFun) ->
   NewInfo = analyse_insn(I, Info),
-  ArgTypes = lookup_list(args(I), Info),
-  case lists:any(fun(X) -> t_is_none(X)end, ArgTypes) of
-    true ->
-      %% Try to avoid follow-up warnings!
-      warn_on_instr(Left, Info, IcodeFun);
-    false ->
-      case hipe_icode:type(I) of
-	call ->
-	  case hipe_icode:call_fun(I) of
-	    cons -> 
-	      warn_on_cons(hipe_icode:call_args(I), Info, IcodeFun);
-	    {erlang, '++', 2} -> 
-	      'warn_on_++'(I, Info, IcodeFun);
+  case hipe_icode:type(I) of
+    call ->
+      case hipe_icode:call_fun(I) of
+	cons -> 
+	  warn_on_cons(hipe_icode:call_args(I), Info, IcodeFun);
+	{erlang, '++', 2} -> 
+	  'warn_on_++'(I, Info, IcodeFun);
 	    call_fun -> 
-	      warn_on_call_fun(hipe_icode:call_args(I), Info, IcodeFun);
-	    _ -> 
-	      warn_on_call(I, Info, IcodeFun)
-	  end;
-	enter ->
-	  case hipe_icode:enter_fun(I) of
-	    cons -> 
-	      warn_on_cons(hipe_icode:enter_args(I), Info, IcodeFun);
-	    {erlang, '++', 2} -> 
-	      'warn_on_++'(I, Info, IcodeFun);
-	    enter_fun -> 
-	      warn_on_call_fun(hipe_icode:enter_args(I), Info, IcodeFun);
-	    _ -> 
-	      warn_on_enter(I, Info, IcodeFun)
-	  end;
-	_ ->
+	  warn_on_call_fun(hipe_icode:call_args(I), Info, IcodeFun);
+	_ -> 
+	  warn_on_call(I, Info, IcodeFun)
+      end;
+    enter ->
+      case hipe_icode:enter_fun(I) of
+	cons -> 
+	  warn_on_cons(hipe_icode:enter_args(I), Info, IcodeFun);
+	{erlang, '++', 2} -> 
+	  'warn_on_++'(I, Info, IcodeFun);
+	enter_fun -> 
+	  warn_on_call_fun(hipe_icode:enter_args(I), Info, IcodeFun);
+	_ -> 
+	  warn_on_enter(I, Info, IcodeFun)
+      end;
+    _ ->
 	  ok
-      end,
-      warn_on_instr(Left, NewInfo, IcodeFun)
-  end;
+  end,
+  warn_on_instr(Left, NewInfo, IcodeFun);
 warn_on_instr([], _Info, _IcodeFun) ->
   ok.
 
@@ -1819,22 +1744,39 @@ warn_on_type(I, Info, IcodeFun) ->
     [{FalseLab, _}] ->
       Test = hipe_icode:type_type(I),
       [Arg] = hipe_icode:type_args(I),
-      ArgType = format_type(lookup(Arg, Info)),
-      W = io_lib:format("~w: Type guard ~w will always fail since "
-			"variable is of type ~s!\n",[IcodeFun, Test, ArgType]),
-      warn(?WARN_TYPE_GUARD, W);
+      ArgType = format_type(safe_lookup(Arg, Info)),
+      W = 
+	case Test of
+	  {tuple, N} ->
+	    Tuple = construct_tuple(N),
+	    io_lib:format("~w: Pattern matching with ~s will always fail since "
+			  "variable has type ~s!\n",
+			  [IcodeFun, Tuple, ArgType]);
+	  _ ->
+	    io_lib:format("~w: Type guard ~w will always fail since "
+			  "variable has type ~s!\n", [IcodeFun, Test, ArgType])
+	end,
+      warn(?WARN_MATCHING, W);
     _ ->
       ok
   end.
 
+construct_tuple(N) ->
+  "{"++construct_underscores(N, [])++"}".
+
+construct_underscores(1, Acc) ->
+  "_"++Acc;
+construct_underscores(N, Acc) ->
+  construct_underscores(N-1, ",_"++Acc).
+
 warn_on_cons(Args, Info, IcodeFun) ->
-  [_Head, Tail] = lookup_list(Args, Info),
+  [_Head, Tail] = safe_lookup_list(Args, Info),
   case t_is_list(t_inf(Tail, t_list())) of
     true ->
       ok;
     false ->
       W = io_lib:format("~w: Cons will produce"
-			" a non-proper list since its 2nd arg is of type ~s!\n",
+			" a non-proper list since its 2nd arg is ~s!\n",
 			[IcodeFun, format_type(Tail)]),
       warn(?WARN_NON_PROPER_LIST, W)
   end.
@@ -1843,22 +1785,22 @@ warn_on_cons(Args, Info, IcodeFun) ->
   case call_always_fails(I, Info) of
     true ->
       print_call_warning({erlang, '++', 2}, IcodeFun, 
-			 lookup_list(args(I), Info));
+			 safe_lookup_list(args(I), Info));
     false ->
-      [_Head, Tail] = lookup_list(args(I), Info),
+      [_Head, Tail] = safe_lookup_list(args(I), Info),
       case t_is_list(t_inf(Tail, t_list())) of
 	true ->
 	  ok;
 	false ->
 	  W = io_lib:format("~w: Call to '++'/2 will produce"
-			    " a non-proper list; 2nd arg is of type ~s!\n",
+			    " a non-proper list; 2nd arg is ~s!\n",
 			    [IcodeFun, format_type(Tail)]),
 	  warn(?WARN_NON_PROPER_LIST, W)
       end
   end.
 
 warn_on_call_fun(Args0, Info, IcodeFun) ->
-  Args = lookup_list(Args0, Info),
+  Args = safe_lookup_list(Args0, Info),
   [Fun|TailArgs0] = lists:reverse(Args),
   TailArgs = lists:reverse(TailArgs0),
   ReturnType = primop_type(call_fun, Args),
@@ -1911,8 +1853,8 @@ format_type(T) ->
       case t_is_atom(T) of
 	true -> 
 	  case t_atom_vals(T) of
-	    any -> t_to_string(T);
-	    _ -> "atom("++t_to_string(T)++")"
+	    any -> "an atom";
+	    _ -> t_to_string(T)
 	  end;
 	false -> t_to_string(T)
       end
@@ -1922,11 +1864,22 @@ format_number(T) ->
   case t_number_vals(T) of
     Numbers when is_list(Numbers) ->
       case lists:all(fun(N)->is_float(N)end, Numbers) of
-	true -> io_lib:format("float(~s)", [t_to_string(T)]);
+	true ->
+	  case t_is_any(T) of
+	    true -> io_lib:format("a float", []);
+	    false -> io_lib:format("the float ~s", [t_to_string(T)])
+	  end;
 	false ->
 	  case lists:all(fun(N)->is_integer(N)end, Numbers) of
-	    true -> io_lib:format("integer(~s)", [t_to_string(T)]);
-	    false -> io_lib:format("number(~s)", [t_to_string(T)])
+	    true ->
+	      case t_is_any(T) of
+		true -> io_lib:format("an integer", []);
+		false -> io_lib:format("the integer ~s", [t_to_string(T)])
+	      end;
+	    false ->
+	      case t_is_any(T) of
+		true -> io_lib:format("a number", [])
+	      end
 	  end
       end;
     any ->
@@ -1938,17 +1891,17 @@ warn_on_call(I, Info, IcodeFun) ->
     true ->
       case hipe_icode:call_in_guard(I) of
 	true ->
-	  warn_on_guard(I, IcodeFun, lookup_list(args(I), Info));
+	  warn_on_guard(I, IcodeFun, safe_lookup_list(args(I), Info));
 	false ->
 	  Fun = hipe_icode:call_fun(I),
-	  Args = lookup_list(hipe_icode:call_args(I), Info),
+	  Args = safe_lookup_list(hipe_icode:call_args(I), Info),
 	  case check_for_tuple_as_fun(Fun, Args) of
 	    true -> 
 	      W = io_lib:format("~w: Unsafe use of tuple as a fun"
 				" in call to ~w\n", [IcodeFun, Fun]),
 	      warn(?WARN_TUPLE_AS_FUN, W);
 	    false ->
-	      print_call_warning(Fun, IcodeFun, lookup_list(args(I), Info))
+	      print_call_warning(Fun, IcodeFun, safe_lookup_list(args(I), Info))
 	  end
       end;
     false ->
@@ -1959,14 +1912,14 @@ warn_on_enter(I, Info, IcodeFun)->
   case call_always_fails(I, Info) of
     true ->
       Fun = hipe_icode:enter_fun(I),
-      Args = lookup_list(hipe_icode:enter_args(I), Info),
+      Args = safe_lookup_list(hipe_icode:enter_args(I), Info),
       case check_for_tuple_as_fun(Fun, Args) of
 	true -> 
 	  W = io_lib:format("~w: Unsafe use of tuple as a fun in call "
 			    "to ~w\n", [IcodeFun, Fun]),
 	  warn(?WARN_TUPLE_AS_FUN, W);
 	false ->
-	  print_call_warning(Fun, IcodeFun, lookup_list(args(I), Info))
+	  print_call_warning(Fun, IcodeFun, safe_lookup_list(args(I), Info))
       end;
     false ->
       ok
@@ -1975,7 +1928,7 @@ warn_on_enter(I, Info, IcodeFun)->
 
 warn_on_switch_tuple_arity(I, Info, IcodeFun) ->
   Arg = hipe_icode:switch_tuple_arity_arg(I),
-  ArgType = lookup(Arg, Info),
+  ArgType = safe_lookup(Arg, Info),
   Cases = hipe_icode:switch_tuple_arity_cases(I),
   case legal_switch_tuple_arity_cases(Cases, ArgType) of
     Cases ->
@@ -1994,18 +1947,19 @@ warn_on_switch_tuple_arity(I, Info, IcodeFun) ->
 
 warn_on_switch_val(I, Info, IcodeFun) ->
   Arg = hipe_icode:switch_val_arg(I),
-  ArgType = lookup(Arg, Info),
+  ArgType = safe_lookup(Arg, Info),
   Cases = hipe_icode:switch_val_cases(I),
   case legal_switch_val_cases(Cases, ArgType) of
     Cases ->
       ok;
     LegalCases ->
       IllegalCases = [X || X <- Cases, not lists:member(X, LegalCases)],
-      Vals = [hipe_icode:const_value(X) || {X, _} <- IllegalCases],
+      Vals = [t_from_term(hipe_icode:const_value(X)) || {X, _} <- IllegalCases],
       ArgTypeString = format_type(ArgType),
-      Ws = [io_lib:format("~w: The clause matching on ~w will"
+      Ws = [io_lib:format("~w: The clause matching on ~s will"
 			  " never match; argument is of type ~s\n", 
-			  [IcodeFun, X, ArgTypeString])|| X <- Vals],
+			  [IcodeFun, format_type(X), ArgTypeString])
+	    || X <- Vals],
       [warn(?WARN_MATCHING, X) || X <- Ws],
       ok
   end.
@@ -2021,12 +1975,12 @@ warn_on_if(I, Info, IcodeFun) ->
       W = 
 	case Op of
 	  '=:=' ->
-	    [Arg1, Arg2] = lookup_list(hipe_icode:if_args(I), Info),
+	    [Arg1, Arg2] = safe_lookup_list(hipe_icode:if_args(I), Info),
 	    io_lib:format("~w: =:= between ~s and ~s will"
 			  " always fail!\n",
 			  [IcodeFun, format_type(Arg1), format_type(Arg2)]);
 	  '=/=' ->
-	    [Arg1, Arg2] = lookup_list(hipe_icode:if_args(I), Info),
+	    [Arg1, Arg2] = safe_lookup_list(hipe_icode:if_args(I), Info),
 	    io_lib:format("~w: =/= between ~s and ~s will"
 			  "always fail!\n",
 			  [IcodeFun, format_type(Arg1), format_type(Arg2)])
@@ -2040,7 +1994,7 @@ warn_on_guard(I, IcodeFun, Args) ->
   Fun = hipe_icode:call_fun(I),  
   W = io_lib:format("~w: The guard ~w will always fail since "
 		    "the arguments are of type ~s!\n", 
-		    [IcodeFun, Fun, pp_args(Args)]),
+		    [IcodeFun, format_fun(Fun), pp_args(Args)]),
   warn(?WARN_GUARDS, W).
 
 print_call_warning(Fun, IcodeFun, Args) ->
@@ -2048,7 +2002,7 @@ print_call_warning(Fun, IcodeFun, Args) ->
     true ->
       W = io_lib:format("~w: Call to function ~w will fail "
 			"since the arguments are of type ~s!\n",
-			[IcodeFun, Fun, pp_args(Args)]),
+			[IcodeFun, format_fun(Fun), pp_args(Args)]),
       warn(?WARN_FAILING_CALL, W);
     false ->
       W = io_lib:format("~w: Unsafe BEAM code! "
@@ -2056,6 +2010,11 @@ print_call_warning(Fun, IcodeFun, Args) ->
 			[IcodeFun]),
       warn(?WARN_OLD_BEAM, W)
   end.
+
+format_fun({element, _}) ->
+  {erlang, element, 2};
+format_fun(Other) ->
+  Other.
 
 
 warn(Tag, W) ->
@@ -2208,10 +2167,11 @@ find_return_type([Label|Left], State, ReturnType, ExplExit, HasReturn) ->
 			   NewExplExit, NewHasReturn);
 	fail ->
 	  NewExplExit =
-	    case hipe_icode:fail_type(I) of
+	    case hipe_icode:fail_class(I) of
 	      throw -> true;
 	      exit -> true;
-	      _ -> ExplExit
+	      rethrow -> ExplExit;
+	      error -> ExplExit
 	    end,
 	  find_return_type(Left, State, ReturnType, NewExplExit, HasReturn);
 	_ ->
@@ -2257,248 +2217,13 @@ find_return_type_in_block([I|Left], Info) ->
 update_call_arguments(I, Info) ->
   Args = hipe_icode:call_args(I),
   ArgTypes = lookup_list(Args, Info),
-  case arg_types(hipe_icode:call_fun(I)) of
+  case erl_bif_types:arg_types(hipe_icode:call_fun(I)) of
     any ->
       Info;
     BifArgsTypes ->
       NewArgTypes = t_inf_lists(ArgTypes, BifArgsTypes),
       enter_list(Args, NewArgTypes, Info)
   end.
-
-arg_types({erlang, '-', 1}) ->
-  [t_number()];
-arg_types('+') ->
-  [t_number(), t_number()];
-arg_types('-') ->
-  [t_number(), t_number()];
-arg_types('*') ->
-  [t_number(), t_number()];
-arg_types('div') ->
-  [t_integer(), t_integer()];
-arg_types('band') ->
-  [t_integer(), t_integer()];
-arg_types('bor') ->
-  [t_integer(), t_integer()];
-arg_types('bxor') ->
-  [t_integer(), t_integer()];
-arg_types('bsr') ->
-  [t_integer(), t_integer()];
-arg_types('bsl') ->
-  [t_integer(), t_integer()];
-arg_types('bnot') ->
-  [t_integer()];
-arg_types('rem') ->
-  [t_integer(), t_integer()];
-arg_types({erlang, 'rem', 2}) ->
-  [t_integer(), t_integer()];
-arg_types({erlang, '++', 2}) ->
-  [t_list(), t_any()];
-arg_types({erlang, '--', 2}) ->
-  [t_list(), t_list()];
-arg_types({erlang, 'and', 2}) ->
-  [t_bool(), t_bool()];
-arg_types({erlang, 'or', 2}) ->
-  [t_bool(), t_bool()];
-arg_types({erlang, 'xor', 2}) ->
-  [t_bool(), t_bool()];
-arg_types({erlang, 'not', 1}) ->
-  [t_bool()];
-arg_types({erlang, 'band', 2}) ->
-  [t_integer(), t_integer()];
-arg_types({erlang, 'bor', 2}) ->
-  [t_integer(), t_integer()];
-arg_types({erlang, 'bxor', 2}) ->
-  [t_integer(), t_integer()];
-arg_types({erlang, 'bsr', 2}) ->
-  [t_integer(), t_integer()];
-arg_types({erlang, 'bsl', 2}) ->
-  [t_integer(), t_integer()];
-arg_types({erlang, 'bnot', 1}) ->
-  [t_integer()];
-arg_types({erlang, abs, 1}) ->
-  [t_number()];
-arg_types({erlang, append_element, 2}) ->
-  [t_tuple(), t_any()];
-arg_types({erlang, atom_to_list, 1}) ->
-  [t_atom()];
-arg_types({erlang, binary_to_list, 1}) ->
-  [t_binary()];
-arg_types({erlang, binary_to_list, 3}) ->
-  [t_binary(), t_integer(), t_integer()];
-arg_types({erlang, concat_binary, 1}) ->
-  [t_list(t_binary())];
-arg_types({erlang, element, 2}) ->
-  [t_integer(), t_tuple()];
-arg_types({element, _}) ->
-  [t_integer(), t_tuple()];
-arg_types({erlang, float, 1}) ->
-  [t_number()];
-arg_types({erlang, float_to_list, 1}) ->
-  [t_float()];
-arg_types({erlang, hash, 2}) ->
-  [t_any(), t_integer()];
-arg_types({erlang, hd, 1}) ->
-  [t_cons()];
-arg_types({erlang, tl, 1}) ->
-  [t_cons()];
-arg_types({erlang, integer_to_list, 1}) ->
-  [t_integer()];
-arg_types({erlang, length, 1}) ->
-  [t_list()];
-arg_types({erlang, list_to_atom, 1}) ->
-  [t_list()];
-arg_types({erlang, list_to_binary, 1}) ->
-  [t_list()];
-arg_types({erlang, list_to_float, 1}) ->
-  [t_string()];
-arg_types({erlang, list_to_integer, 1}) ->
-  [t_string()];
-arg_types({erlang, list_to_tuple, 1}) ->
-  [t_list()];
-arg_types({erlang, make_tuple, 2}) ->
-  [t_integer(), t_any()];
-arg_types({erlang, node, 1}) ->
-  [t_identifier()];
-arg_types({erlang, nodes, 1}) ->
-  [t_sup(t_atom(), t_list(t_atom()))];
-arg_types({erlang, open_port, 2}) ->
-  [t_sup(t_atom(), t_tuple()), t_list()];
-arg_types({erlang, phash, 2}) ->
-  [t_any(), t_integer()];
-arg_types({erlang, round, 1}) ->
-  [t_number()];
-arg_types({erlang, send, 2}) -> 
-  arg_types({erlang, '!', 2});  % alias
-arg_types({erlang, '!', 2}) ->
-  Pid = t_sup([t_pid(), t_port(), t_atom(),
-	       t_tuple([t_atom(), t_atom()])]),
-  [Pid, t_any()];
-arg_types({erlang, send_after, 3}) ->
-  [t_integer(), t_sup(t_pid(), t_atom()), t_any()];
-arg_types({erlang, setelement, 3}) ->
-  [t_integer(), t_tuple(), t_any()];
-arg_types({erlang, size, 1}) ->
-  [t_sup(t_tuple(), t_binary())];
-arg_types({erlang, spawn, 1}) -> %% TODO: Tuple?
-  [t_fun()];
-arg_types({erlang, spawn, 2}) -> %% TODO: Tuple?
-  [t_atom(), t_fun()];
-arg_types({erlang, spawn, 3}) -> %% TODO: Tuple?
-  [t_atom(), t_atom(), t_list()];
-arg_types({erlang, spawn, 4}) -> %% TODO: Tuple?
-  [t_atom(), t_atom(), t_atom(), t_list()];
-arg_types({erlang, spawn_link, 1}) -> 
-  arg_types({erlang, spawn, 1});  % same
-arg_types({erlang, spawn_link, 2}) -> 
-  arg_types({erlang, spawn, 2});  % same
-arg_types({erlang, spawn_link, 3}) -> 
-  arg_types({erlang, spawn, 3});  % same
-arg_types({erlang, spawn_link, 4}) -> 
-  arg_types({erlang, spawn, 4});  % same
-arg_types({erlang, spawn_opt, 2}) -> 
-  [t_fun(), t_list()];
-arg_types({erlang, spawn_opt, 3}) -> 
-  [t_atom(), t_fun(), t_list()];
-arg_types({erlang, spawn_opt, 4}) -> 
-  [t_atom(), t_atom(), t_list(), t_list()];
-arg_types({erlang, split_binary, 2}) ->
-  [t_binary(), t_integer()];
-arg_types({erlang, start_timer, 3}) ->
-  [t_integer(), t_sup(t_pid(), t_atom()), t_any()];
-arg_types({erlang, term_to_binary, 1}) ->
-  [t_any()];
-arg_types({erlang, term_to_binary, 2}) ->
-  [t_any(), t_list()];
-arg_types({erlang, trunc, 1}) ->
-  [t_number()];
-arg_types({erlang, tuple_to_list, 1}) ->
-  [t_tuple()];
-arg_types({erlang, universaltime_to_localtime, 1}) ->
-  T = t_tuple([t_tuple([t_integer(), t_integer(), t_integer()]),
-	       t_tuple([t_integer(), t_integer(), t_integer()])]),
-  [T];
-arg_types({lists, all, 2}) ->
-  [t_fun([t_any()], t_bool()), t_list()];
-arg_types({lists, any, 2}) ->
-  [t_fun([t_any()], t_bool()), t_list()];
-arg_types({lists, append, 2}) -> 
-  arg_types({erlang, '++', 2});  % alias
-arg_types({lists, filter, 2}) ->
-  [t_fun([t_any()], t_bool()), t_list()];
-arg_types({lists, flatten, 1}) ->
-  [t_list()];
-arg_types({lists, foreach, 2}) ->
-  [t_fun([t_any()], t_any()), t_list()];
-arg_types({lists, foldl, 3}) ->
-  [t_fun([t_any(), t_any()], t_any()), t_any(), t_list()];
-arg_types({lists, foldr, 3}) -> 
-  arg_types({lists, foldl, 3});    % same
-arg_types({lists, last, 1}) ->
-  [t_list()];
-arg_types({lists, map, 2}) ->
-  [t_fun([t_any()], t_any()), t_list()];
-arg_types({lists, mapfoldl, 3}) ->
-  [t_fun([t_any(), t_any()], t_tuple([t_any(), t_any()])),t_any(), t_list()];
-arg_types({lists, mapfoldr, 3}) -> 
-  arg_types({lists, mapfoldl, 3}); % same
-arg_types({lists, nth, 2}) ->
-  [t_integer(), t_list()];
-arg_types({lists, nthtail, 2}) ->
-  [t_integer(), t_list()];
-arg_types({lists, reverse, 1}) ->
-  [t_list()];
-arg_types({lists, reverse, 2}) ->
-  [t_list(), t_any()];
-arg_types({lists, seq, 2}) ->
-  [t_integer(), t_integer()];
-arg_types({lists, seq, 3}) ->
-  [t_integer(), t_integer(), t_integer()];
-arg_types({lists, subtract, 2}) ->
-  arg_types({erlang, '--', 2});  % alias
-arg_types({math, acos, 1}) ->
-  [t_number()];
-arg_types({math, acosh, 1}) ->
-  [t_number()];
-arg_types({math, asin, 1}) ->
-  [t_number()];
-arg_types({math, asinh, 1}) ->
-  [t_number()];
-arg_types({math, atan, 1}) ->
-  [t_number()];
-arg_types({math, atan2, 2}) ->
-  [t_number(), t_number()];
-arg_types({math, atanh, 1}) ->
-  [t_number()];
-arg_types({math, cos, 1}) ->
-  [t_number()];
-arg_types({math, cosh, 1}) ->
-  [t_number()];
-arg_types({math, erf, 1}) ->
-  [t_number()];
-arg_types({math, erfc, 1}) ->
-  [t_number()];
-arg_types({math, exp, 1}) ->
-  [t_number()];
-arg_types({math, log, 1}) ->
-  [t_number()];
-arg_types({math, log10, 1}) ->
-  [t_number()];
-arg_types({math, pow, 2}) ->
-  [t_number(), t_number()];
-arg_types({math, sin, 1}) ->
-  [t_number()];
-arg_types({math, sinh, 1}) ->
-  [t_number()];
-arg_types({math, sqrt, 1}) ->
-  [t_number()];
-arg_types({math, tan, 1}) ->
-  [t_number()];
-arg_types({math, tanh, 1}) ->
-  [t_number()];
-arg_types(_) ->  
-  any.                     % safe approximation for all functions.
-
-
 
 %% _________________________________________________________________
 %%
@@ -2524,9 +2249,9 @@ update_mfa_info(State, IcodeFun, OldReturnType, Options) ->
     {dets, Dets} ->      
       Labels = hipe_icode_cfg:labels(state__cfg(State)),
       {ReturnType, _, _} = find_return_type(Labels, State),
-      case t_is_none(ReturnType) orelse t_is_any(ReturnType) of
+      case t_is_none(ReturnType) of
 	true ->
-	  ok;
+	  dets:insert(Dets, {IcodeFun, t_any()});
 	false ->
 	  dets:insert(Dets, {IcodeFun, ReturnType})
       end,
@@ -2534,7 +2259,13 @@ update_mfa_info(State, IcodeFun, OldReturnType, Options) ->
       case proplists:get_value(use_callgraph, Options) of
 	fixpoint ->
 	  case t_is_none(ReturnType) andalso t_is_any(OldReturnType) of
-	    true -> fixpoint;
+	    true -> 
+	      case t_is_any(OldReturnType) of
+		true ->
+		  fixpoint;
+		false ->
+		  not_fixpoint
+	      end;
 	    false ->
 	      case t_is_equal(ReturnType, OldReturnType) of
 		true ->

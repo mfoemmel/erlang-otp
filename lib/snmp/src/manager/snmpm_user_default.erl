@@ -20,11 +20,20 @@
 
 -behaviour(snmpm_user).
 
--export([handle_agent/4,
+-export([handle_error/3,
+	 handle_agent/4,
 	 handle_pdu/5,
 	 handle_trap/4,
 	 handle_inform/4,
 	 handle_report/4]).
+
+handle_error(ReqId, Reason, UserData) ->
+    info("received handle_agent:"
+	 "~n   ReqId:    ~p"
+	 "~n   Reason:   ~p"
+	 "~n   UserData: ~p", [ReqId, Reason, UserData]),
+    ignore.
+
 
 handle_agent(Addr, Port, SnmpInfo, UserData) ->
     info("received handle_agent:"

@@ -2,16 +2,38 @@
 %% ====================================================================
 %%  Filename : 	hipe_icode_exceptions.erl
 %%  Module   :	hipe_icode_exceptions
-%%  Purpose  :  Rewrite calls in intermediate code to use cont
-%%              and fail-to labels.
+%%  Purpose  :  Rewrite calls in intermediate code to use Continuation
+%%              and Fail-To labels.
 %%
-%%              The translation from BEAM to Icode handles catches
-%%		as follows:
-%%                - A push_catch(HandlerLabel) starts a catch-block
-%%                  which stretches until a remove_catch instr.
-%%                - The handler begins with a restore_catch instr.
-%%              This pass removes all special catch instructions and
-%%              rewrites calls within a catch to use a fail-to label.
+%%		Catch-instructions work as follows:
+%%                - A begin_try(FailLabel) starts a catch-region which
+%%                  is ended by a corresponding end_try(FailLabel).
+%%                - The handler begins with a begin_handler(FailLabel).
+%%
+%%		However, the begin/end instructions do not always appear
+%%		as parentheses around the section that they protect (in
+%%		linear Beam/Icode). Also, different begin_catch
+%%		instructions can reach the same basic blocks (which may
+%%		raise exceptions), due to code compation optimizations
+%%		in the Beam compiler, even though they have different
+%%		handlers. Because of this, a data flow analysis is
+%%		necessary to find out which catches may reach which
+%%		basic blocks. After that, we clone basic blocks as
+%%		needed to ensure that each block belongs to at most one
+%%		unique begin_catch. The Beam does not have this problem,
+%%		since it will find the correct catch-handler frame
+%%		pushed on the stack. (Note that since there can be no
+%%		tail-calls within a catch region, our dataflow analysis
+%%		for finding all catch-stacks is sure to terminate.)
+%%
+%%		Finally, we can remove all special catch instructions
+%%		and rewrite calls within catch regions to use explicit
+%%		fail-to labels, which is the main point of all this.
+%%		Fail labels that were set before this pass are kept.
+%%		(Note that calls that have only a continuation label do
+%%		not always end their basic blocks. Adding a fail label
+%%		to such a call can thus force us to split the block.)
+%%
 %%  Notes    :  As of November 2003, primops that do not fail in the 
 %%              normal sense are allowed to have a fail-label even
 %%              before this pass. (Used for the mbox-empty + get_msg
@@ -20,10 +42,10 @@
 %%              Native floating point operations cannot fail in the
 %%              normal sense. Instead they throw a hardware exception
 %%              which will be caught by a special fp check error
-%%              instruction. These primops do not need a fail label
-%%              even in a catch, this pass checks for this with
-%%              hipe_icode:call_fails, if a call cannot fail, no fail
-%%              label is added.
+%%              instruction. These primops do not need a fail label even
+%%              in a catch. This pass checks for this with
+%%              hipe_icode_primops:fails/1. If a call cannot fail, no
+%%              fail label is added.
 %%
 %%              Explicit fails (exit, error and throw) inside
 %%              a catch have to be handled. They have to build their
@@ -31,570 +53,405 @@
 %%              alternative solution would be to have a new type of
 %%              fail instruction that takes a fail-to label...
 %%
-%%              When the new `try' construct is introduced, this whole
-%%              approach has to be re-examined.
-%%
-%%  History  :	* 2000-11-15  Erik Johansson (happi@csd.uu.se): 
-%%               New scheme for handling of catches.
-%%              * 2003-11-07  Erik Stenman:
-%%               Allow non-guards to have fail-to labels.
 %%  CVS:
 %%    $Id$
-%%
 %% ====================================================================
-%%
-%%  TODO     : Handle more instructions that cannot fail in the same
-%%             way as fp-ops. 
-%%             Move the call_fails to hipe_bif or some other nice place
-%%             that knows about HiPE primops.
-%%
-%% ====================================================================
-%%
-%%
-%% Code like:
-%%
-%%   L1: push_catch -> L3, L2
-%%   L2:
-%%       ...
-%%       fail(R,exit) 
-%% 
-%%   L3: V1 = restore_catch L3
-%%
-%% Will be rewritten to:
-%%   L1: 
-%%       ...
-%%       V2 = {exit,R}
-%% 
-%%   L3: V1 = V2
-%%
-%%
-%% 
-%% Code like:
-%%
-%%   L1: push_catch -> L3, L4
-%%   L4:
-%%       ...
-%%       V2 = call(foo:bar/0,[])
-%%   L2: remove_catch L3
-%%       ...
-%%       goto L4
-%% 
-%%   L3: V1 = restore_catch L3
-%%
-%% Will be rewritten to:
-%%   L1: 
-%%       ...
-%%       V2 = call(foo:bar/0,[]) Fail to L3
-%%   L2: 
-%%       ...
-%%       goto L4
-%% 
-%%   L3: 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_icode_exceptions).
+
 -export([fix_catches/1]).
 
-%-ifndef(DEBUG).
-%-define(DEBUG,1).  
-%-endif.
--include("../main/hipe.hrl").
 
-%%=====================================================================
+fix_catches(CFG) ->
+  {Map, State} = build_mapping(find_catches(init_state(CFG))),
+  get_cfg(rewrite(State, Map)).
 
-%% @spec fix_catches(icode_cfg()) -> icode_cfg()
-%%
-%% @doc
-%%    Rewrites the Icode (in its CFG form) so that it uses the new
-%%    scheme for handling catches.
-%% @end
+%% This finds the set of possible catch-stacks for each basic block
 
-fix_catches(IcodeCFG) ->
-  ?IF_DEBUG(hipe_icode_cfg:pp(IcodeCFG),ok),
-  ?opt_start_timer("Init"),
-  Icode = hipe_icode_cfg:cfg_to_linear(IcodeCFG),
-  State0 = empty_state(IcodeCFG),
-  ?opt_stop_timer("Init"),  
+find_catches(State) ->
+  find_catches(get_start_labels(State),
+	       clear_visited(clear_changed(State))).
 
-  ?opt_start_timer("Find catches"),
-  State1 = fixpoint(State0), 
-  ?opt_stop_timer("Find catches"),
-  
-  ?opt_start_timer("Linear"),
-  Icode2 = hipe_icode_cfg:cfg_to_linear(cfg(State1)),
-  ?opt_stop_timer("Linear"),
-  Code2 = hipe_icode:icode_code(Icode2),
-  
-  MFA = hipe_icode:icode_fun(Icode2),
-  ?opt_start_timer("Update"),
-  NewCode = rewrite(Code2, reset_visited(State1), MFA),
-  ?opt_stop_timer("Update"),
-  
-  ICode2 = hipe_icode:icode_code_update(Icode, NewCode),
-  
-  CFG3 = hipe_icode_cfg:linear_to_cfg(ICode2),
-  hipe_icode_cfg:remove_unreachable_code(CFG3).
-
-
-fixpoint(State) ->
-  State1 = find_catches(start(State), State),
-  case is_changed(State1) of 
+find_catches([L|Ls], State0) ->
+  case is_visited(L, State0) of
     true ->
-      ?debug_msg("\n\nNew fixpoint iteration:\n\n",[]),
-      fixpoint(reset_visited(unchange(State1)));
+      find_catches(Ls, State0);
     false ->
-      State1
-  end.
-
-%%---------------------------------------------------------------------
-
-find_catches(AllLs=[L|Labels], State) ->
-  case visited(L,State) of
-    true ->
-      find_catches(Labels, State);
-    false ->
-      BB = hipe_icode_cfg:bb(cfg(State), L),
-      Code = hipe_bb:code(BB),
-      case catches_in(L,State) of
-	{ConflictingPred, CatchesIn, _CI2} ->
-	  handle_bb_merge(AllLs,State,Code,ConflictingPred,CatchesIn);
-	CatchesIn ->
-	  handle_bb(AllLs,State,Code,CatchesIn)
+      State1 = set_visited(L, State0),
+      Code = get_bb_code(L, State1),
+      Cs = get_new_catches_in(L, State1),
+      State2 = set_catches_in(L, Cs, State1),  % memorize
+      Cs1 = catches_out(Code, Cs),
+      Ls1 = get_succ(L, State2) ++ Ls,
+      Cs0 = get_catches_out(L, State2),
+      if Cs1 == Cs0 ->
+	  find_catches(Ls1, State2);
+	 true ->
+	  State3 = set_catches_out(L, Cs1, State2),
+	  find_catches(Ls1, set_changed(State3))
       end
   end;
 find_catches([], State) ->
+  case is_changed(State) of
+    true ->
+      find_catches(State);
+    false ->
+      State
+  end.
+
+catches_out([I|Is], Cs) ->
+  catches_out(Is, catches_out_instr(I, Cs));
+catches_out([], Cs) ->
+  Cs.
+
+catches_out_instr(I, Cs) ->
+  case hipe_icode:type(I) of
+    begin_try ->
+      Id = hipe_icode:begin_try_label(I),
+      push_catch(Id, Cs);
+    end_try ->
+      pop_catch(Cs);
+    begin_handler ->
+      pop_catch(Cs);
+    _ ->
+      Cs
+  end.
+
+
+%% This builds the mapping used for cloning
+
+build_mapping(State) ->
+  build_mapping(get_start_labels(State), clear_visited(State),
+		new_mapping()).
+
+build_mapping([L|Ls], State0, Map) ->
+  case is_visited(L, State0) of
+    true ->
+      build_mapping(Ls, State0, Map);
+    false ->
+      State1 = set_visited(L, State0),
+      Cs = list_of_catches(get_catches_in(L, State1)),  % get memorized
+      {Map1, State2} = map_bb(L, Cs, State1, Map),
+      Ls1 = get_succ(L, State2) ++ Ls,
+      build_mapping(Ls1, State2, Map1)
+  end;
+build_mapping([], State, Map) ->
+  {Map, State}.
+
+map_bb(_L, [_C], State, Map) ->
+  {Map, State};
+map_bb(L, [C | Cs], State, Map) ->
+  %% This block will be cloned - we need to create N-1 new labels.
+  %% The identity mapping will be used for the first element.
+  Map1 = new_catch_labels(Cs, L, Map),
+  State1 = set_catches_in(L, single_catch(C), State),  % update catches in
+  Code = get_bb_code(L, State1),
+  State2 = clone(Cs, L, Code, State1, Map1),
+  {Map1, State2}.
+
+clone([C | Cs], L, Code, State, Map) ->
+  Ren = get_renaming(C, Map),
+  L1 = Ren(L),
+  State1 = set_bb_code(L1, Code, State),
+  State2 = set_catches_in(L1, single_catch(C), State1),  % set catches in
+  clone(Cs, L, Code, State2, Map);
+clone([], _L, _Code, State, _Map) ->
   State.
 
-handle_bb([L|Labels],State,Code,CatchesIn) ->	
-  {CatchesOut, State0} = in_catch(Code, CatchesIn, State),
-  %% Mark BB as visited.
-  State1 = visit(L,State0),
-  OldCOut = get_catches_out(L,State),
-  State2 = catches_out(L,CatchesOut,State1),
-  %% Has the state changed?
-  State3 = 
-    if OldCOut == CatchesOut -> State2;
-       true -> change(State2)
-    end,
-  find_catches(succs(State3, L) ++ Labels, State3).
-
-handle_bb_merge([L|Labels],State,Code,ConflictingPred,CatchesIn) ->
-  %% This block is used by several catches
-  %% TODO: A new block is needed for one of the catches.
-  L2i = hipe_icode:mk_new_label(),
-  L2 = hipe_icode:label_name(L2i), 
-  CFG0 = hipe_icode_cfg:bb_add(cfg(State), L2, hipe_bb:mk_bb(Code)),
-  PredBB = hipe_icode_cfg:bb(cfg(State), ConflictingPred),
-  Jmp = hipe_bb:last(PredBB),
-  PredCode = hipe_bb:butlast(PredBB) ++ [hipe_icode:redirect_jmp(Jmp, L, L2)],
-  CFG1 = hipe_icode_cfg:bb_add(CFG0, ConflictingPred, hipe_bb:mk_bb(PredCode)),
-
-  State0 = set_cfg(State, CFG1),
-
-  check_multicatch(Code, CatchesIn, State),
-  State1 = visit(L,State0),
-  State2 = catches_out(L,CatchesIn,State1),
-  find_catches([L2|succs(State2, L)] ++ Labels, State2).
-	
-%%---------------------------------------------------------------------
-%% This is just an assert.
-check_multicatch([], Cs, State) -> {Cs, State};
-check_multicatch([I|Is], Cs, State) ->
-  case hipe_icode:type(I) of
-    remove_catch -> exit(nooo);
-    restore_catch -> exit(nooo);
-    pushcatch -> exit(nooo);
-    _ ->
-      check_multicatch(Is, Cs, State)
-  end.
-
-%%---------------------------------------------------------------------
-in_catch([], Cs, State) ->
-  {Cs, State};
-in_catch([I|Is], Cs, State) ->
-  case hipe_icode:type(I) of
-    remove_catch ->
-      Id = hipe_icode:remove_catch_label(I),
-      case Cs of
-	[Id|Rest] ->
-	  in_catch(Is, Rest, State);
-	_Other ->
-	  in_catch(Is, Cs, State)
-      end;
-    restore_catch ->
-      Id = hipe_icode:restore_catch_label(I),
-      Var = hipe_icode:restore_catch_reason_dst(I),
-      Var1 = hipe_icode:restore_catch_type_dst(I),
-      Lbl = hipe_icode:mk_new_label(),
-      %% msg("\n ~w restore to ~w\n",[Id,Var]),
-      State2 = set_dest(State, Id, {Var,Var1}),
-      State3 = set_shortcut(State2, Id, Lbl),
-      case Cs of
-	[Id|Rest] ->
-	  in_catch(Is, Rest, State3);
-	_Other ->
-	  in_catch(Is, Cs, State3)
-      end;
-    pushcatch ->
-      Id = hipe_icode:pushcatch_label(I),
-      %% msg("In catch: ~w\n",[Id]),
-      case Cs of
-	unknown -> 
-	  in_catch(Is, [Id], State);
-	_ ->
-	  in_catch(Is, [Id| Cs], State)
-      end;
-    _ ->
-      in_catch(Is, Cs, State)
-  end.
-
-%%---------------------------------------------------------------------
-%%---------------------------------------------------------------------
-
-rewrite(Code, State, MFA) ->
-  rewrite(Code, [], State, [], MFA).
-
-%% TODO: Break this up into functions...
-rewrite([], _Catches, _State, Acc, _) ->
-  lists:reverse(Acc);
-rewrite(AllIs=[I|Is], Catches, State, Acc, MFA) ->
-  ?debug_msg("To ~w\n",[case Acc of
-			  [PI,PII|_] -> [PII,PI];
-			  [PI] -> PI;
-			  _ -> none
-			end]),
-  ?debug_msg("~w ~w\n",[I, Catches]),
-  case hipe_icode:type(I) of
-    label -> %% A new BB, get catches to this BB
-      L = hipe_icode:label_name(I),
-      CatchesIn = catches_in(L,State),
-      rewrite(Is, CatchesIn, State, [I|Acc],MFA);
-    remove_catch ->
-      Id = hipe_icode:remove_catch_label(I),
-      case Catches of
-	[Id|Rest]  ->
-	  rewrite(Is, Rest, State, Acc, MFA);
-	Other ->
-	  %% In the failpart...
-	  rewrite(Is, Other, State, Acc, MFA)
-      end;
-    restore_catch ->
-      Id = hipe_icode:restore_catch_label(I),
-      L = get_shortcut(Id,State),
-      %% Create the code in reverse order...
-      Code = [L,hipe_icode:mk_goto(hipe_icode:label_name(L)),I|Acc],
-      rewrite(Is, Catches, State, Code, MFA);
-    pushcatch ->
-      Id = hipe_icode:pushcatch_label(I),
-      rewrite(Is, [Id |Catches], State, Acc, MFA);
-    call -> %% A call has to be updated with the rigth fail-to
-      rewrite_call(AllIs, Catches, State, Acc, MFA);
-    enter ->
-      case Catches of
-	[_|_] -> %% This could be turned into an Assert...
-	  %% Doing a tailcall in a catch is not good!
-	  ?EXIT({tailcallincatch,I});
- 	[] ->
-	  rewrite(Is, Catches, State, [I|Acc], MFA)
-      end;
-    fail ->
-      case Catches of
-	[_|_] -> %% Fail in a catch, has to create value
-	         %% and jump to handler. 
-	  rewrite_fail(AllIs, Catches, State, Acc, MFA);
-	_ -> 
-	  rewrite(Is, Catches, State, [I|Acc], MFA)
-      end;
-    _ ->
-      rewrite(Is, Catches, State, [I|Acc], MFA)
-  end.
+new_catch_labels([C | Cs], L, Map) ->
+  L1 = hipe_icode:label_name(hipe_icode:mk_new_label()),
+  Map1 = set_mapping(C, L, L1, Map),
+  new_catch_labels(Cs, L, Map1);
+new_catch_labels([], _L, Map) ->
+  Map.
 
 
-rewrite_call(AllIs, Catches, State, Acc, MFA)->
-  InGuard = hipe_icode:call_in_guard(hd(AllIs)),
-  case Catches of
-    [_|_] -> %% A call in a catch
-      rewrite_call_in_catch(InGuard, AllIs, Catches, State, Acc, MFA);
-    _ ->     %% A call outside a catch
-      rewrite_call_no_catch(InGuard, AllIs, Catches, State, Acc, MFA)
-  end.
+%% This does all the actual rewriting and cloning.
 
+rewrite(State, Map) ->
+  rewrite(get_start_labels(State), clear_visited(State), Map).
 
-rewrite_call_in_catch(true, [I|Is] , Catches, State, Acc, MFA) ->
-  %% If the catch contains guard-like instructions,
-  %%  then we already have a fail label.
-  rewrite(Is, Catches, State, [I|Acc], MFA);
-rewrite_call_in_catch(false, [I|Is] , Catches, State, Acc, MFA) ->
-  case hipe_icode:call_fails(I) of
+rewrite([L|Ls], State0, Map) ->
+  case is_visited(L, State0) of
     true ->
-      NewCall = hipe_icode:call_set_fail_label(I,hd(Catches)),
-      case  hipe_icode:call_continuation(I) of 
-	[] -> %% This was a fallthrough before.
-	  NewLab = hipe_icode:mk_new_label(),
-	  LabName = hipe_icode:label_name(NewLab),
-	  NewCall2 = hipe_icode:call_set_continuation(NewCall,LabName),
-	  rewrite(Is, Catches, State, [NewLab,NewCall2|Acc], MFA);
-	_ -> %% Has a continuation
-	  case hipe_icode:call_fail_label(I) of 
-	    [] -> %% We have no fail label... so we add one
-	      rewrite(Is, Catches, State, [NewCall|Acc], MFA);
-	    _ ->  %% Don't touch a call that already has a fail-to
-	      rewrite(Is, Catches, State, [I|Acc], MFA)
-	  end
-      end;
-    false -> %% This call doesn't need a fail label
-      rewrite(Is, Catches, State, [I|Acc], MFA)
-  end.
-
-
-rewrite_call_no_catch(true, [I|Is], Catches, State, Acc, MFA) ->
-  case  hipe_icode:call_continuation(I) of 
-    [] -> %% This was a fallthrough before.
-      NewLab = hipe_icode:mk_new_label(),
-      LabName = hipe_icode:label_name(NewLab),
-      NewCall = hipe_icode:call_set_continuation(I,LabName),
-      rewrite(Is, Catches, State, [NewLab,NewCall|Acc], MFA);
-    _ ->
-      rewrite(Is, Catches, State, [I|Acc], MFA)
+      rewrite(Ls, State0, Map);
+    false ->
+      State1 = set_visited(L, State0),
+      Code = get_bb_code(L, State1),
+      Cs = list_of_catches(get_catches_in(L, State1)),  % get memorized
+      State2 = rewrite_bb(L, Cs, Code, State1, Map),
+      Ls1 = get_succ(L, State2) ++ Ls,
+      rewrite(Ls1, State2, Map)
   end;
-rewrite_call_no_catch(false, [I|Is], Catches, State, Acc, MFA) ->
-  case hipe_icode:call_continuation(I) of 
-    [] -> rewrite(Is, Catches, State, [I|Acc], MFA);
-    Cont -> %% We have a cont label
-      %% Can we remove it 
-      case hipe_icode:call_fail_label(I) of 
-	[] -> %% We have no fail label...
-	  %% safe to get rid of cont from call...
-	  NewI = hipe_icode:call_set_continuation(hipe_icode:call_set_fail_label(I,[]),[]),
-	  Goto = hipe_icode:mk_goto(Cont),
-	  rewrite(Is, Catches, State, [Goto,NewI|Acc], MFA);
-	_ ->
-	  rewrite(Is, Catches, State, [I|Acc], MFA)
+rewrite([], State, _Map) ->
+  State.
+
+rewrite_bb(L, [C], Code, State, Map) ->
+  {Code1, State1} = rewrite_code(Code, C, State, Map),
+  set_bb_code(L, Code1, State1).
+
+rewrite_code(Is, C, State, Map) ->
+  rewrite_code(Is, C, State, Map, []).
+
+rewrite_code([I|Is], C, State, Map, As) ->
+  [C1] = list_of_catches(catches_out_instr(I, single_catch(C))),
+  case hipe_icode:type(I) of
+    begin_try ->
+      {I1, Is1, State1} = update_begin_try(I, Is, C, State, Map),
+      I2 = redirect_instr(I1, C, Map),
+      rewrite_code(Is1, C1, State1, Map, [I2 | As]);
+    end_try ->
+      rewrite_code(Is, C1, State, Map, As);
+    call ->
+      {I1, Is1, State1} = update_call(I, Is, C, State, Map),
+      I2 = redirect_instr(I1, C, Map),
+      rewrite_code(Is1, C1, State1, Map, [I2 | As]);
+    fail ->
+      {I1, Is1, State1} = update_fail(I, Is, C, State, Map),
+      I2 = redirect_instr(I1, C, Map),
+      rewrite_code(Is1, C1, State1, Map, [I2 | As]);
+    _ ->
+      I1 = redirect_instr(I, C, Map),
+      rewrite_code(Is, C1, State, Map, [I1 | As])
+  end;
+rewrite_code([], _C, State, _Map, As) ->
+  {lists:reverse(As), State}.
+
+redirect_instr(I, C, Map) ->
+  redirect_instr_1(I, hipe_icode:successors(I), get_renaming(C, Map)).
+
+redirect_instr_1(I, [L0 | Ls], Ren) ->
+  I1 = hipe_icode:redirect_jmp(I, L0, Ren(L0)),
+  redirect_instr_1(I1, Ls, Ren);
+redirect_instr_1(I, [], _Ren) ->
+  I.
+
+update_begin_try(I, Is, _C, State0, _Map) ->
+  L = hipe_icode:begin_try_successor(I),
+  I1 = hipe_icode:mk_goto(L),
+  {I1, Is, State0}.
+
+update_call(I, Is, C, State0, Map) ->
+  case top_of_stack(C) of
+    [] ->
+      %% No active catch. Assume cont./fail labels are correct as is.
+      {I, Is, State0};
+    L ->
+      %% Only update the fail label if the call *can* fail.
+      case hipe_icode_primops:fails(hipe_icode:call_fun(I)) of
+	true ->
+	  %% We only update the fail label if it is not already set.
+	  case hipe_icode:call_fail_label(I) of
+	    [] ->
+	      I1 = hipe_icode:call_set_fail_label(I, L),
+	      %% Now the call will end the block, so we must put the rest of
+	      %% the code (if nonempty) in a new block!
+	      if Is == [] ->
+		  {I1, Is, State0};
+		 true ->
+		  L1 = hipe_icode:label_name(hipe_icode:mk_new_label()),
+		  I2 = hipe_icode:call_set_continuation(I1, L1),
+		  State1 = set_bb_code(L1, Is, State0),
+		  State2 = set_catches_in(L1, single_catch(C), State1),
+		  State3 = rewrite_bb(L1, [C], Is, State2, Map),
+		  {I2, [], State3}
+	      end;
+	    _ when Is == [] ->
+	      %% Something is very wrong if Is is not empty here. A call
+	      %% with a fail label should have ended its basic block.
+	      {I, Is, State0}
+	  end;
+	false ->
+	  %% Make sure that the fail label is not set.
+	  I1 = hipe_icode:call_set_fail_label(I, []),
+	  {I1, Is, State0}
       end
   end.
 
+update_fail(I, Is, C, State, _Map) ->
+  case hipe_icode:fail_label(I) of
+    [] -> 
+      {hipe_icode:fail_set_label(I, top_of_stack(C)), Is, State};
+    _ ->
+      {I, Is, State}
+  end.
 
-rewrite_fail([I|Is], Catches, State, Acc, MFA) ->
-  C = hd(Catches),
-  {Dst1,_Dest2} = get_dest(C,State),
-  Shortcut = hipe_icode:label_name(get_shortcut(C, State)),
-  ExitVar = hipe_icode:mk_new_var(),
-  MkExitAtom = hipe_icode:mk_move(ExitVar, hipe_icode:mk_const('EXIT')),
-  TmpVar = hipe_icode:mk_new_var(),
-  Src = hd(hipe_icode:fail_reason(I)),
-%% NEW_EXCEPTIONS
-%%   Reason = hipe_icode:fail_reason(I),
-%%   Src = hd(Reason),
-%%   Code = 
-%%     case {hipe_icode:fail_type(I), length(Reason)} of
-%%       {exit, 1} -> 
-  Code = 
-    case hipe_icode:fail_type(I) of
-      exit ->
-	%% Build an exit term and put it in Dst.
-	%% Dst = {'EXIT', Src}
-	T = hipe_icode:mk_primop([Dst1], mktuple, [ExitVar,Src], Shortcut, []),
-	%% The code will be reversed, and is created reversed now.
-	[T, MkExitAtom | Acc];
-%% NEW_EXCEPTIONS
-%%       {error, 1} -> 
-      fault -> 
-	%% Build an error value {'EXIT', {Src, Stacktrace}}
-	%% For now the StackTrace will be [MFA]
-	StackTraceVar = hipe_icode:mk_new_var(),
-	MkStackTraceInstr = 
-	  hipe_icode:mk_move(StackTraceVar, hipe_icode:mk_const([MFA])),
-	MkTuple1Instr = 
-	  hipe_icode:mk_primop([TmpVar], mktuple, [Src,StackTraceVar]),
-	MkTuple2Instr =
-	  hipe_icode:mk_primop([Dst1], mktuple, [ExitVar, TmpVar], 
-			       Shortcut, []),
-	%% The code will be reversed, and is created reversed now.
-	[MkTuple2Instr, MkExitAtom, MkTuple1Instr, MkStackTraceInstr |
-	 Acc];
-%% NEW_EXCEPTIONS
-%%       {{error, Atom}, 1} -> 
-%% 	%% Build an error value {'EXIT', {{Atom, Src}, Stacktrace}}
-%% 	%% For now the StackTrace will be [MFA]
-%% 	StackTraceVar = hipe_icode:mk_new_var(),
-%% 	MkStackTraceInstr = 
-%% 	  hipe_icode:mk_move(StackTraceVar, hipe_icode:mk_const([MFA])),
-%% 	MkTuple0Instr = 
-%% 	  hipe_icode:mk_primop([TmpVar], mktuple,
-%% 			       [hipe_icode:mk_const(Atom), Src]),
-%% 	MkTuple1Instr = 
-%% 	  hipe_icode:mk_primop([TmpVar], mktuple, [TmpVar,StackTraceVar]),
-%% 	MkTuple2Instr =
-%% 	  hipe_icode:mk_primop([Dst1], mktuple, [ExitVar, TmpVar], 
-%% 			       Shortcut, []),
-%% 	%% The code will be reversed, and is created reversed now.
-%% 	[MkTuple2Instr, MkExitAtom, MkTuple1Instr, MkTuple0Instr,
-%% 	 MkStackTraceInstr |
-%% 	 Acc];
-%%       {error, 2} -> 
-      fault2 -> 
-	%% Build an error value {'EXIT', {Src, Stacktrace}}
-	%% For now the stacktrace will be [MFA]
-	[_,StackTraceVar] = hipe_icode:fail_reason(I),
-	MkTuple1Instr = 
-	  hipe_icode:mk_primop([TmpVar], mktuple, [Src,StackTraceVar]),
-	MkTuple2Instr =
-	  hipe_icode:mk_primop([Dst1], mktuple, [ExitVar, TmpVar],
-			       Shortcut, []),
-	%% The code will be reversed, and is created reversed now.
-	[MkTuple2Instr, MkExitAtom, MkTuple1Instr | Acc];
-%% NEW_EXCEPTIONS
-%%       {throw, 1} ->
-      throw ->
-	%% Dst = Src
-	%% The code will be reversed, and is created reversed now. 
-	[hipe_icode:mk_goto(Shortcut), hipe_icode:mk_move(Dst1, Src)|Acc]
-    end,
-  rewrite(Is, Catches, State, Code, MFA).
 
 %%---------------------------------------------------------------------
+%% Abstraction for sets of catch stacks.
+
+%% This is the bottom element
+no_catches() -> [].
+
+%% A singleton set
+single_catch(C) -> [C].
+
+%% A single, empty stack
+empty_stack() -> [].
+
+%% Getting the label to fail to
+top_of_stack([C|_]) -> C;
+top_of_stack([]) -> [].    % nil is used in Icode for "no label"
+
+join_catches(Cs1, Cs2) ->
+  ordsets:union(Cs1, Cs2).
+
+list_of_catches(Cs) -> Cs.
+
+%% Note that prepending an element to all elements in the list will
+%% preserve the ordering of the list, and will never make two existing
+%% elements become identical, so the list is still an ordset. 
+
+push_catch(L, []) ->
+  [[L]];
+push_catch(L, Cs) ->
+  push_catch_1(L, Cs).
+
+push_catch_1(L, [C|Cs]) ->
+  [[L|C] | push_catch_1(L, Cs)];
+push_catch_1(_L, []) ->
+  [].
+
+%% However, after discarding the head of all elements, the list
+%% is no longer an ordset, and must be processed.
+
+pop_catch(Cs) ->
+  ordsets:from_list(pop_catch_1(Cs)).
+
+pop_catch_1([[_|C] | Cs]) ->
+  [C | pop_catch_1(Cs)];
+pop_catch_1([]) ->
+  [].
+
+
 %%---------------------------------------------------------------------
+%% Mapping from catch-stacks to renamings on labels.
 
--record(state,{
-	  visited, 
-	  cfg, 
-	  pred_map,
-	  succ_map,
-	  catches_out, 
-	  dest,
-	  start,
-	  entry,
-	  shortcuts,
-	  changed
-	 }).
+new_mapping() ->
+  gb_trees:empty().
 
-empty_state(CFG) ->
-  #state{visited = hipe_icode_cfg:none_visited(),
-	 cfg = CFG,
-	 pred_map = hipe_icode_cfg:pred_map(CFG),
-	 succ_map = hipe_icode_cfg:succ_map(CFG),
-	 start = [hipe_icode_cfg:start_label(CFG)],
-	 entry = hipe_icode_cfg:start_label(CFG),
-	 catches_out = empty_map(),
-	 dest = empty_map(),
-	 shortcuts = empty_map(),
-	 changed = false
-	}.
+set_mapping(C, L0, L1, Map) ->
+  Dict = case gb_trees:lookup(C, Map) of
+	   {value, Dict0} ->
+	     gb_trees:enter(L0, L1, Dict0);
+	   none ->
+	     gb_trees:insert(L0, L1, gb_trees:empty())
+	 end,
+  gb_trees:enter(C, Dict, Map).
 
-set_cfg(State, CFG) ->
-  State#state{cfg = CFG,
-	      pred_map = hipe_icode_cfg:pred_map(CFG),
-	      succ_map = hipe_icode_cfg:succ_map(CFG),
-	      changed = true
+%% Return a label renaming function for a particular catch-stack
+
+get_renaming(C, Map) ->
+  case gb_trees:lookup(C, Map) of
+    {value, Dict} ->
+      fun (L0) ->
+	  case gb_trees:lookup(L0, Dict) of
+	    {value, L1} -> L1;
+	    none -> L0
+	  end
+      end;
+    none ->
+      fun (L0) -> L0 end
+  end.
+
+
+%%---------------------------------------------------------------------
+%% State abstraction
+
+-record(state, {cfg,
+		changed = false,
+		succ,
+		pred,
+		start,
+		visited,
+		out,
+		in
+	       }).
+
+init_state(CFG) ->
+  State = #state{cfg = CFG,
+		 visited = hipe_icode_cfg:none_visited(),
+		 out = gb_trees:empty(),
+		 in = gb_trees:empty()
+		},
+  refresh_state_cache(State).
+
+refresh_state_cache(State) ->
+  CFG = State#state.cfg,
+  State#state{succ = hipe_icode_cfg:succ_map(CFG),
+	      pred = hipe_icode_cfg:pred_map(CFG),
+	      start = [hipe_icode_cfg:start_label(CFG)]
 	     }.
 
-vis(#state{visited=Visited}) -> Visited.
-set_vis(State,Vis) -> State#state{visited=Vis}.
-cfg(#state{cfg=CFG}) -> CFG.
-pred_map(#state{pred_map=PredMap}) -> PredMap.
-succ_map(#state{succ_map=SuccMap}) -> SuccMap.
-catches_out(#state{catches_out=CatchMap}) -> CatchMap.
-set_catches_out(State, Map) -> State#state{catches_out=Map}.
-dest(#state{dest=Dst}) -> Dst.
-start(#state{start=Start}) -> Start.
-entry(#state{entry=Entry}) -> Entry.
-set_dest(State, C, V) -> 
-  Map = dest(State),
-  NewMap = gb_trees:enter(C, V, Map),
-  State#state{dest=NewMap}.
-shortcuts(#state{shortcuts=ShortCuts}) -> ShortCuts.
-set_shortcut(State, C, L) -> 
-  Map = shortcuts(State),
-  NewMap = gb_trees:enter(C, L, Map),
-  State#state{shortcuts=NewMap}.
-change(State) ->
-  State#state{changed=true}.
-unchange(State) ->
-  State#state{changed=false}.
-is_changed(#state{changed=Changed}) -> Changed.
+get_cfg(State) ->
+  State#state.cfg.
 
-preds(State, L) ->
-   hipe_icode_cfg:pred(pred_map(State), L).
-succs(State, L) ->
-   hipe_icode_cfg:succ(succ_map(State), L).
-  
-visited(L, State) ->
-  hipe_icode_cfg:visited(L, vis(State)).
+get_start_labels(State) ->
+  State#state.start.
 
-visit(L,State) ->
-  set_vis(State, hipe_icode_cfg:visit(L, vis(State))).
+get_pred(L, State) ->
+  hipe_icode_cfg:pred(State#state.pred, L).
 
-reset_visited(State) ->
-  %% CFG = cfg(State),
-  set_vis(State, hipe_icode_cfg:none_visited()).
+get_succ(L, State) ->
+  hipe_icode_cfg:succ(State#state.succ, L).
 
-empty_map() -> gb_trees:empty().
+set_changed(State) ->
+  State#state{changed = true}.
 
-catches_in(L,State) ->
-  Preds = preds(State, L),
-  get_all_catches_in(Preds, catches_out(State),
-		     case L == entry(State) of
-		       true ->
-			 [];
-		       _ ->
-			 unknown
-		     end).
+is_changed(State) ->
+  State#state.changed.
 
-get_all_catches_in([P|Ps], Map, unknown) ->
-  case gb_trees:lookup(P,Map) of
-    {value, V} ->
-      get_all_catches_in(Ps, Map, V);
-    none ->
-      get_all_catches_in(Ps, Map, unknown)
-  end;
-get_all_catches_in([P|Ps], Map, Cs) ->
-  case gb_trees:lookup(P,Map) of
-    {value, Cs} ->
-      get_all_catches_in(Ps, Map, Cs);
-    {value, unknown} ->
-      get_all_catches_in(Ps, Map, Cs);
-    {value, Other} ->
-      get_all_catches_in(Ps, Map, {P,Cs, Other});
-    none ->
-      get_all_catches_in(Ps, Map, Cs)
-  end;
-get_all_catches_in([],_,Cs) -> Cs.
+clear_changed(State) ->
+  State#state{changed = false}.
 
-catches_out(L,CatchesOut,State) ->
-  Map = catches_out(State),
-  set_catches_out(State, gb_trees:enter(L, CatchesOut, Map)).
+set_catches_out(L, Cs, State) ->
+  State#state{out = gb_trees:enter(L, Cs, State#state.out)}.
 
 get_catches_out(L, State) ->
-  case gb_trees:lookup(L,catches_out(State)) of
-    {value, V} -> V;
-    none -> unknown
+  case gb_trees:lookup(L, State#state.out) of
+    {value, Cs} -> Cs;
+    none -> no_catches()
   end.
 
-get_dest(C, State) ->  
-  case gb_trees:lookup(C, dest(State)) of
-    {value, V} ->
-      V;
-    none ->
-     hipe_icode:mk_new_var()
+set_catches_in(L, Cs, State) ->
+  State#state{in = gb_trees:enter(L, Cs, State#state.in)}.
+
+get_catches_in(L, State) ->
+  case gb_trees:lookup(L, State#state.in) of
+    {value, Cs} -> Cs;
+    none -> no_catches()
   end.
 
-get_shortcut(C, State) ->  
-  case gb_trees:lookup(C, shortcuts(State)) of
-    {value, L} ->
-      L;
-    none ->
-     hipe_icode:mk_new_label()
-  end.
+set_visited(L, State) ->
+  State#state{visited = hipe_icode_cfg:visit(L, State#state.visited)}.
 
-%% has_catches(CFG) ->
-%%   Icode = hipe_icode_cfg:cfg_to_linear(CFG),
-%%   Code = hipe_icode:icode_code(Icode),
-%%   code_has_catches(Code).
-%% 
-%% code_has_catches([I|Is]) ->
-%%   case hipe_icode:type(I) of
-%%     pushcatch -> true;
-%%     _ -> code_has_catches(Is)
-%%   end;
-%% code_has_catches([]) ->
-%%   false.
+is_visited(L, State) ->
+  hipe_icode_cfg:visited(L, State#state.visited).
+
+clear_visited(State) ->
+  State#state{visited = hipe_icode_cfg:none_visited()}.
+
+get_bb_code(L, State) ->
+  hipe_bb:code(hipe_icode_cfg:bb(State#state.cfg, L)).
+
+set_bb_code(L, Code, State) ->
+  CFG = State#state.cfg,
+  CFG1 = hipe_icode_cfg:bb_add(CFG, L, hipe_bb:mk_bb(Code)),
+  refresh_state_cache(State#state{cfg = CFG1}).
+
+get_new_catches_in(L, State) ->
+  Ps = get_pred(L, State),
+  Cs = case lists:member(L, get_start_labels(State)) of
+	 true -> single_catch(empty_stack());
+	 false -> no_catches()
+       end,
+  get_new_catches_in(Ps, Cs, State).
+
+get_new_catches_in([P | Ps], Cs, State) ->
+  Cs1 = join_catches(Cs, get_catches_out(P, State)),
+  get_new_catches_in(Ps, Cs1, State);
+get_new_catches_in([], Cs, _) ->
+  Cs.
+	  
+
+%%---------------------------------------------------------------------

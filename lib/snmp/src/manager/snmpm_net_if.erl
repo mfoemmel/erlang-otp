@@ -138,7 +138,7 @@ do_init(Server, NoteStore) ->
     {ok, Opts} = snmpm_config:system_info(net_if_options),
 
     %% -- Socket --
-    RecBuf  = get_opt(Opts, recbuf,   1024),
+    RecBuf  = get_opt(Opts, recbuf,   default),
     BindTo  = get_opt(Opts, bind_to,  false),
     NoReuse = get_opt(Opts, no_reuse, false),
     {ok, Port} = snmpm_config:system_info(port),
@@ -353,7 +353,8 @@ handle_recv_msg(Addr, Port, Bytes,
 
 
 handle_send_pdu(Pdu, Vsn, MsgData, Addr, Port, 
-		#state{note_store = NoteStore, 
+		#state{server     = Pid, 
+		       note_store = NoteStore, 
 		       sock       = Sock, 
 		       log        = Log}) ->
     Logger = logger(Log, write, Addr, Port),
@@ -364,14 +365,7 @@ handle_send_pdu(Pdu, Vsn, MsgData, Addr, Port,
 	    udp_send(Sock, Addr, Port, Msg);	    
 	{discarded, Reason} ->
 	    ?vlog("~n   PDU ~p not sent due to ~p", [Pdu, Reason]),
-	    %% 
-	    %% BMK BMK BMK BMK BMK BMK BMK BMK 
-	    %% 
-	    %% We have to inform the server since the user is 
-	    %% propably waiting for a reply
-	    %% 
-	    %% BMK BMK BMK BMK BMK BMK BMK BMK 
-	    %% 
+	    Pid ! {snmp_error, Pdu, Reason},
 	    ok
     end.
 

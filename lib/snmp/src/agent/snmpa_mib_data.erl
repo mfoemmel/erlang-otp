@@ -80,7 +80,7 @@
 
 %% API
 -export([new/0, new/1, store/1, close/1, 
-	 load_mib/4, unload_mib/4, 
+	 load_mib/4, unload_mib/4, which_mibs/1, whereis_mib/2, 
 	 info/1, info/2,
 	 dump/1, dump/2, 
 	 lookup/2, next/3, which_mib/2, 
@@ -351,6 +351,31 @@ register_subagent(#mib_data{tree = T} = MibData, Oid, Pid) ->
 	    T2 = T#tree{root = NewRootTree},
 	    MibData#mib_data{tree = T2, subagents = SAs}
     end.
+
+
+%%----------------------------------------------------------------------
+%% Purpose: Get a list of all loaded mibs
+%% Returns: [{Name, File}]
+%%----------------------------------------------------------------------
+
+which_mibs(#mib_data{mib_db = Db}) ->
+    Mibs = snmpa_general_db:tab2list(Db),
+    [{Name, File} || #mib_info{name = Name, file_name = File} <- Mibs].
+
+
+%%----------------------------------------------------------------------
+%% Purpose: Get a list of all loaded mibs
+%% Returns: [{Name, File}]
+%%----------------------------------------------------------------------
+
+whereis_mib(#mib_data{mib_db = Db}, Name) ->
+    case snmpa_general_db:read(Db, Name) of
+        {value, #mib_info{file_name = File}} ->
+	    {ok, File};
+	false ->
+	    {error, not_found}
+    end.
+
 
 %%----------------------------------------------------------------------
 %% Purpose: Deletes SA with Pid from all subtrees it handles.
@@ -878,7 +903,8 @@ build_subtree(LevelPrefix, [Me | Mes], MibName) ->
 	    {Tree, RestMes} = build_subtree(LevelPrefix, Mes, MibName),
 	    {[{Index, {node, {EType, MibName}}} | Tree], RestMes};
 	{subtree, Index, NewLevelPrefix} ->
-	    ?vtrace("build subtree -> subtree at ~p with ~p",
+	    ?vtrace("build subtree -> subtree at"
+		    "~n   ~w with ~w",
 		   [Index, NewLevelPrefix]),
 	    {BelowTree, RestMes} = 
 		build_subtree(NewLevelPrefix, Mes, MibName),
@@ -886,7 +912,8 @@ build_subtree(LevelPrefix, [Me | Mes], MibName) ->
 		build_subtree(LevelPrefix, RestMes, MibName),
 	    {[{Index, {tree, BelowTree, {EType,MibName}}}| CurTree], RestMes2};
 	{internal_subtree, Index, NewLevelPrefix} ->
-	    ?vtrace("build subtree -> internal_subtree at ~p with ~p",
+	    ?vtrace("build subtree -> internal_subtree at"
+		    "~n   ~w with ~w",
 		   [Index,NewLevelPrefix]),
 	    {BelowTree, RestMes} =
 		build_subtree(NewLevelPrefix, [Me | Mes], MibName),

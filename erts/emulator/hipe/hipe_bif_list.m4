@@ -117,13 +117,13 @@ standard_bif_interface_1(nbif_bnot_1, bnot_1)
 gc_nofail_primop_interface_1(nbif_gc_1, hipe_gc)
 standard_bif_interface_1(nbif_set_timeout, hipe_set_timeout)
 standard_bif_interface_1(nbif_conv_big_to_float, hipe_conv_big_to_float)
+standard_bif_interface_2(nbif_rethrow, hipe_rethrow)
 standard_bif_interface_3(nbif_find_na_or_make_stub, hipe_find_na_or_make_stub)
 
 /*
  * Mbox primops with implicit P parameter.
  */
 nocons_nofail_primop_interface_0(nbif_select_msg, hipe_select_msg)
-nocons_nofail_primop_interface_0(nbif_get_exit_tag, hipe_get_exit_tag)
 
 /*
  * Primops without any P parameter.

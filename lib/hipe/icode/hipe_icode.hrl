@@ -30,12 +30,12 @@
 
 -record(return, {vars}).
 
--record(pushcatch, {label, successor, type='catch'}).
+-record(begin_try, {label, successor}).
 
--record(restore_catch, {reason_dst, type_dst, type, id}).
+-record(end_try, {}).
 
--record(remove_catch, {id}).
+-record(begin_handler, {dstlist}).
 
--record(fail, {reason, type, label}).
+-record(fail, {class, args, fail_label=[]}).
 
 -record(comment, {text}).

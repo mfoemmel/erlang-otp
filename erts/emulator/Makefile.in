@@ -75,6 +75,7 @@ THR_LIB_SFX = .purecov
 TYPE_FLAGS = @DEBUG_CFLAGS@ -DPURECOV -DNO_JUMP_TABLE
 ENABLE_ALLOC_TYPE_VARS += purecov
 else
+TYPE=opt
 PURIFY =
 TYPEMARKER =
 TYPE_FLAGS = @CFLAGS@
@@ -181,9 +182,6 @@ THR_LIBS=$(subst -l$(THR_LIB_NAME),-l$(THR_LIB_NAME)$(THR_LIB_SFX),$(ORG_THR_LIB
 LIBS += $(THR_LIBS)
 
 TARGET_TYPE_DIR=$(TARGET)/$(TYPE)
-ifeq ($(TARGET_TYPE_DIR),$(TARGET)/)
-TARGET_TYPE_DIR=$(TARGET)/opt
-endif
 
 OBJDIR = $(ERL_TOP)/erts/obj$(TYPEMARKER).beam/$(TARGET)
 BINDIR = $(ERL_TOP)/bin/$(TARGET)
@@ -564,8 +562,7 @@ OS_OBJS = \
 	$(OBJDIR)/unix_efile.o \
 	$(OBJDIR)/gzio.o \
 	$(OBJDIR)/elib_malloc.o \
-	$(OBJDIR)/elib_memmove.o \
-	$(OBJDIR)/erl_mseg.o
+	$(OBJDIR)/elib_memmove.o
 
 ifeq ($(findstring ose,$(TARGET)),ose)
 	OS_OBJS += $(OBJDIR)/ose_ddll_drv.o \
@@ -596,6 +593,8 @@ ifneq ($(findstring vxworks,$(TARGET)),vxworks)
 	DRV_OBJS += $(OBJDIR)/ttsl_drv.o
   endif
 endif
+
+OS_OBJS += $(OBJDIR)/erl_mseg.o
 
 HIPE_ultrasparc_OBJS=$(OBJDIR)/hipe_sparc.o $(OBJDIR)/hipe_sparc_glue.o $(OBJDIR)/hipe_sparc_bifs.o $(OBJDIR)/hipe_sparc_stack.o
 HIPE_x86_OBJS=$(OBJDIR)/hipe_x86.o $(OBJDIR)/hipe_x86_glue.o $(OBJDIR)/hipe_x86_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o

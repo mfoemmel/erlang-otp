@@ -117,9 +117,9 @@ wrap(Es, Node, Vars) ->
     Xs = dict:fetch(L, Vars),
     wrap(Es, Xs).
 
-wrap([E | Es], [{_S, _} | Xs]) ->
-%    case ordsets:is_element(any, S) of
-    case cerl:type(E) /= literal of
+wrap([E | Es], [{S, _} | Xs]) ->
+    case ordsets:is_element(unsafe, S) of
+%    case cerl:type(E) /= literal of
 	true ->
 	    [cerl:c_call(cerl:abstract(hybrid),
 			 cerl:abstract(copy),

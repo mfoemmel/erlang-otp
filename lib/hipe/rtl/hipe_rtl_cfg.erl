@@ -76,7 +76,12 @@ branch_successors(Instr) ->
       end;
     goto -> [hipe_rtl:goto_label(Instr)];
     goto_index -> hipe_rtl:goto_index_labels(Instr);
-    fail_to -> [hipe_rtl:fail_to_label(Instr)];
+    _ -> []
+  end.
+
+fails_to(Instr) ->
+  case hipe_rtl:type(Instr) of
+    call -> [hipe_rtl:call_fail(Instr)];
     _ -> []
   end.
 
@@ -87,11 +92,6 @@ is_branch(Instr) ->
       switch -> true;
       goto -> true;
       goto_index -> true;
-      fail_to -> 
-       case  hipe_rtl:fail_to_label(Instr) of
-	 [] -> false;
-	 _ -> true
-       end;
       enter -> true;
       return -> true;
       call -> 

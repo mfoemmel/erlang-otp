@@ -287,6 +287,11 @@ expr({'fun',Line,{function,F,A}},_St) ->
     {'fun',Line,{function,F,A}};
 expr({'fun',Line,{function,M,F,A}},_St) ->    %This is not allowed by lint!
     {'fun',Line,{function,M,F,A}};
+expr({call,Lc,{atom,_,new}=Name,As0},#pmod{parameters=Ps}=St)
+  when length(As0) =:= length(Ps) ->
+    %% The new() function does not take a 'THIS' argument.
+    As1 = expr_list(As0,St),
+    {call,Lc,Name,As1};
 expr({call,Lc,{atom,Lf,F},As0},St) ->
     As1 = expr_list(As0,St),
     {call,Lc,{atom,Lf,F},As1 ++ [{var,0,'THIS'}]};
@@ -298,6 +303,12 @@ expr({'catch',Line,E0},St) ->
     %% No new variables added.
     E1 = expr(E0,St),
     {'catch',Line,E1};
+expr({'try',Line,Es0,Scs0,Ccs0,As0},St) ->
+    Es = exprs(Es0,St),
+    Scs = icr_clauses(Scs0,St),
+    Ccs = icr_clauses(Ccs0,St),
+    As = exprs(As0,St),
+    {'try',Line,Es,Scs,Ccs,As};
 expr({match,Line,P0,E0},St) ->
     E1 = expr(E0,St),
     P1 = pattern(P0,St),

@@ -7,9 +7,9 @@
 %%  History  :	* 2001-10-25 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2004/06/22 22:00:58 $
-%%              $Revision: 1.21 $
+%%              $Author: richardc $
+%%              $Date: 2004/10/28 05:13:11 $
+%%              $Revision: 1.22 $
 %% ====================================================================
 %%  Exports  :
 %%              pp/1,        Pretty prints linear SPARC code.
@@ -204,7 +204,7 @@ pp_instr(I, Dev, Pre) ->
       case hipe_sparc:call_link_fail(I) of
 	[] -> true;
 	L ->
-	  io:format(Dev, " fail_to ~s_~w", [Pre,L])
+	  io:format(Dev, " fail to ~s_~w", [Pre,L])
       end,
       %% io:format(Dev, "~n", []),
       case hipe_sparc:call_link_continuation(I) of

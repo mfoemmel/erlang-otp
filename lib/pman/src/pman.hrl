@@ -36,6 +36,7 @@
 		 focus = 1,	       % PID line with focus
 		 focus_pid,            % pid in focus
 		 node,		       % Current node being supervised
+		 noshell,	       % Node running in noshell mode?
 		 options}).
 
 

@@ -56,16 +56,18 @@
 #define EXF_PANIC	(1<<2)	/* ignore catches */
 #define EXF_THROWN	(1<<3)	/* nonlocal return */
 #define EXF_LOG		(1<<4)	/* write to logger on termination */
-#define EXF_SAVETRACE	(1<<5)	/* save stack trace in internal form */
-#define EXF_ARGLIST	(1<<6)	/* has arglist for top of trace */
+#define EXF_NATIVE	(1<<5)	/* occurred in native code */
+#define EXF_SAVETRACE	(1<<6)	/* save stack trace in internal form */
+#define EXF_ARGLIST	(1<<7)	/* has arglist for top of trace */
 
 #define EXC_FLAGBITS 0x00fc
 
 /*
  * The primary fields of an exception code
  */
-#define EXF_PRIMARY	(EXF_PANIC | EXF_THROWN | EXF_LOG)
+#define EXF_PRIMARY	(EXF_PANIC | EXF_THROWN | EXF_LOG | EXF_NATIVE)
 #define PRIMARY_EXCEPTION(x) ((x) & (EXF_PRIMARY | EXC_CLASSBITS))
+#define NATIVE_EXCEPTION(x) ((x) | EXF_NATIVE)
 
 /*
  * Bits 8-12 of the error code are used for indexing into
@@ -162,7 +164,7 @@
  * The exception stack trace parameters.
  */
 #define MAX_BACKTRACE_SIZE 64    /* whatever - just not too huge */
-#define DEFAULT_BACKTRACE_SIZE 5
+#define DEFAULT_BACKTRACE_SIZE 8
 
 /*
  * The table translating an exception code to an atom.
@@ -173,3 +175,17 @@ extern Eterm error_atom[NUMBER_EXIT_CODES];
  * The exception tag table.
  */
 extern Eterm exception_tag[NUMBER_EXC_TAGS];
+
+/* 
+ * The quick-saved stack trace structure
+ */
+struct StackTrace {
+  Uint header;	/* bignum header - must be first in struct */
+  Uint freason; /* original exception reason is saved in the struct */
+  Eterm* pc;
+  Eterm* cp;
+  Eterm* current;
+  int bif;	/* BIF table index, or -1 */
+  int depth;	/* number of saved pointers in trace[] */
+  Uint trace[1];  /* varying size - must be last in struct */
+};

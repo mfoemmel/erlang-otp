@@ -252,8 +252,9 @@ gexpr_test(E0, Bools0, St0) ->
     case E1 of
 	#icall{anno=Anno,module=#c_atom{val=erlang},name=#c_atom{val=N},args=As} ->
 	    Ar = length(As),
-	    case erl_internal:type_test(N, Ar) or
-		erl_internal:comp_op(N, Ar) of
+	    case erl_internal:type_test(N, Ar) orelse
+		erl_internal:comp_op(N, Ar) orelse
+		(N == internal_is_record andalso Ar == 3) of
 		true -> {E1,Eps0,Bools0,St1};
 		false ->
 		    Lanno = Anno#a.anno,
@@ -394,11 +395,17 @@ expr({'try',L,Es,Cs,Ecs,As}, St0) ->
 expr({'catch',L,E0}, St0) ->
     {E1,Eps,St1} = expr(E0, St0),
     {#icatch{anno=#a{anno=[L]},body=Eps ++ [E1]},[],St1};
-expr({'fun',_,{function,F,A},{_,_,_}=Id}, St) ->
-    {#c_fname{anno=[{id,Id}],id=F,arity=A},[],St};
-expr({'fun',_,{clauses,Cs},{Index,Uniq,_,_,Name}}, St) ->
+expr({'fun',L,{function,F,A},{_,_,_}=Id}, St) ->
+    {#c_fname{anno=[L,{id,Id}],id=F,arity=A},[],St};
+expr({'fun',L,{clauses,Cs},{Index,Uniq,_,_,Name}}, St) ->
     %% Take the new hacky format.
-    fun_tq({Index,Uniq,Name}, Cs, St);
+    fun_tq({Index,Uniq,Name}, Cs, L, St);
+expr({call,L0,{remote,_,{atom,_,erlang},{atom,_,is_record}},[_,_,_]=As}, St)
+  when L0 < 0 ->
+    %% Compiler-generated erlang:is_record/3 should be converted to
+    %% erlang:internal_is_record/3.
+    L = -L0,
+    expr({call,L,{remote,L,{atom,L,erlang},{atom,L,internal_is_record}},As}, St);
 expr({call,L,{remote,_,M,F},As0}, St0) ->
     {[M1,F1|As1],Aps,St1} = safe_list([M,F|As0], St0),
     {#icall{anno=#a{anno=[L]},module=M1,name=F1,args=As1},Aps,St1};
@@ -445,28 +452,25 @@ expr({op,L,Op,L0,R0}, St0) ->
 %% try_exception([ExcpClause], St) -> {[ExcpVar],Handler,St}.
 
 try_exception(Ecs0, St0) ->
-    %% The last arg here will be dropped later to generate raise/2.
-    {Evs,St1} = new_vars(3, St0), % Tag, Value, DebugInfo
+    %% Note that Tag is not needed for rethrow - it is already in Info.
+    {Evs,St1} = new_vars(3, St0), % Tag, Value, Info
     {Ecs1,St2} = clauses(Ecs0, St1),
+    [_,Value,Info] = Evs,
     Ec = #iclause{anno=#a{anno=[compiler_generated]},
 		  pats=[#c_tuple{es=Evs}],guard=[#c_atom{val=true}],
 		  body=[#iprimop{anno=#a{},       %Must have an #a{}
 				 name=#c_atom{val=raise},
-				 args=Evs}]},
-%% Can't pass three args in a Beam-Bif - make loader detect erlang:raise/3!
-%% 		  body=[#icall{anno=#a{},       %Must have an #a{}
-%% 			       module=#c_atom{val=erlang},
-%% 			       name=#c_atom{val=raise},
-%% 			       args=Evs}]},
+				 args=[Info,Value]}]},
     Hs = [#icase{anno=#a{},args=[#c_tuple{es=Evs}],clauses=Ecs1,fc=Ec}],
     {Evs,Hs,St2}.
 
 try_after(As, St0) ->
     %% See above.
-    {Evs,St1} = new_vars(3, St0), % Tag, Value, DebugInfo
+    {Evs,St1} = new_vars(3, St0), % Tag, Value, Info
+    [_,Value,Info] = Evs,
     B = As ++ [#iprimop{anno=#a{},       %Must have an #a{}
 			 name=#c_atom{val=raise},
-			 args=Evs}],
+			 args=[Info,Value]}],
     Ec = #iclause{anno=#a{anno=[compiler_generated]},
 		  pats=[#c_tuple{es=Evs}],guard=[#c_atom{val=true}],
 		  body=B},
@@ -491,15 +495,16 @@ bitstr({bin_element,_,E0,Size0,[Type,{unit,Unit}|Flags]}, St0) ->
 	       flags=core_lib:make_literal(Flags)},
      Eps ++ Eps2,St2}.
 
-%% fun_tq(Id, [Clauses], State) -> {Fun,[PreExp],State}.
+%% fun_tq(Id, [Clauses], Line, State) -> {Fun,[PreExp],State}.
 
-fun_tq(Id, Cs0, St0) ->
+fun_tq(Id, Cs0, L, St0) ->
     {Cs1,St1} = clauses(Cs0, St0),
     Arity = length((hd(Cs1))#iclause.pats),
     {Args,St2} = new_vars(Arity, St1),
     {Ps,St3} = new_vars(Arity, St2),		%Need new variables here
     Fc = fail_clause(Ps, #c_tuple{es=[#c_atom{val=function_clause}|Ps]}),
-    Fun = #ifun{id=[{id,Id}],				%We KNOW!
+    Fun = #ifun{anno=#a{anno=[L]},
+		id=[{id,Id}],				%We KNOW!
 		vars=Args,clauses=Cs1,fc=Fc},
     {Fun,[],St3}.
 

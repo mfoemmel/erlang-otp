@@ -309,14 +309,23 @@ record_test(Line, Term, Name, Vs, St) ->
     end.
 
 record_test_in_guard(Line, Term, Name, Vs, St) ->
+    %% Notes: (1) To keep is_record/3 properly atomic (e.g. when inverted
+    %%            using 'not'), we cannot convert it to an instruction
+    %%            sequence here. It must remain a single call.
+    %%        (2) Later passes assume that the last argument (the size)
+    %%            is a literal.
+    %%        (3) We don't want calls to erlang:is_record/3 (in the source code)
+    %%            confused we the internal instruction. (Reason: (2) above +
+    %%            code bloat.)
+    %%        (4) Xref may be run on the abstract code, so the name in the
+    %%            abstract code must be erlang:is_record/3.
+    %%        (5) To achive both (3) and (4) at the same time, set the name
+    %%            here to erlang:is_record/3, but mark it as compiler-generated.
+    %%            The v3_core pass will change the name to erlang:internal_is_record/3.
     Fs = record_fields(Name, St),
-    expr({op,Line,'and',
-	  {op,Line,'=:=',
-	   {call,Line,{atom,Line,size},[Term]},
-	   {integer,Line,length(Fs)+1}},
-	  {op,Line,'=:=',
-	   {call,Line,{atom,Line,element},[{integer,Line,1},Term]},
-	   {atom,Line,Name}}}, Vs, St).
+    expr({call,-Line,{remote,-Line,{atom,-Line,erlang},{atom,-Line,is_record}},
+	  [Term,{atom,Line,Name},{integer,Line,length(Fs)+1}]},
+	 Vs, St).
 
 record_test_in_body(Line, Expr, Name, Vs, St0) ->
     %% As Expr may have side effects, we must evaluate it

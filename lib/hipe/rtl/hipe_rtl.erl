@@ -16,7 +16,6 @@
 %%   <li> {comment, Text} </li>
 %%   <li> {enter, Fun, ArgList, Type}
 %%           Type is one of {local, remote, primop, closure} </li>
-%%   <li> {fail_to, Reason, Label} </li>
 %%   <li> {fconv, Dst, Src} </li>
 %%   <li> {fload, Dst, Src, Offset} </li>
 %%   <li> {fmove, Dst, Src} </li>
@@ -34,7 +33,7 @@
 %%   <li> {move, Dst, Src} </li>
 %%   <li> {multimove, [Dst1, ..., DstN], [Src1, ..., SrcN]} </li>
 %%   <li> {phi, Dst, Id, [Src1, ..., SrcN]} </li>
-%%   <li> {restore_catch, VarList} </li>
+%%   <li> {begin_handler, VarList} </li>
 %%   <li> {return, VarList} </li>
 %%   <li> {store, Base, Offset, Src, Size} </li>
 %%   <li> {switch, Src1, Labels, SortedBy} </li>
@@ -184,10 +183,6 @@
 	 is_goto/1,
 	 %% goto_label_update/2,
 
-	 mk_fail_to/2,
-	 fail_to_label/1,
-	 fail_to_reason/1,
-
 	 mk_call/6,
 	 call_fun/1,
 	 call_dstlist/1,
@@ -208,8 +203,8 @@
 	 mk_return/1,
 	 return_varlist/1,
 
-	 mk_restore_catch/1,
-	 restore_catch_varlist/1,
+	 mk_begin_handler/1,
+	 begin_handler_varlist/1,
 
 	 mk_gctest/1,
 	 gctest_words/1,
@@ -329,7 +324,6 @@
 -record(call, {dstlist, 'fun', arglist, type, continuation, failcontinuation}).
 -record(comment, {text}).
 -record(enter, {'fun', arglist, type}).
--record(fail_to, {reason, label}).
 -record(fconv, {dst, src}).
 -record(fixnumop, {dst, src, type}).
 -record(fload, {dst, src, offset}).
@@ -349,7 +343,7 @@
 -record(move, {dst, src}).
 -record(multimove, {dstlist, srclist}).
 -record(phi, {dst, id, arglist}).
--record(restore_catch, {varlist}).
+-record(begin_handler, {varlist}).
 -record(return, {varlist}).
 -record(store, {base, offset, src, size}).
 -record(switch, {src, labels, sorted_by=[]}).
@@ -604,18 +598,6 @@ is_goto(#goto{}) -> true;
 is_goto(_) -> false.
 
 %%
-%% fail_to
-%%
-
-mk_fail_to(Reason, Label) -> #fail_to{reason=Reason, label=Label}.
-fail_to_reason(#fail_to{reason=Reason}) -> Reason.
-fail_to_reason_update(I, NewReason) ->
-  I#fail_to{reason=NewReason}.
-fail_to_label(#fail_to{label=Label}) -> Label.
-fail_to_label_update(I, NewL) ->
-  I#fail_to{label=NewL}.
-
-%%
 %% call
 %%
 
@@ -694,13 +676,13 @@ return_varlist(#return{varlist=VarList}) -> VarList.
 return_varlist_update(R, NewVarList) -> R#return{varlist=NewVarList}.
 
 %%
-%% restore_catch
+%% begin_handler
 %%
 
-mk_restore_catch(VarList) -> #restore_catch{varlist=VarList}.
-restore_catch_varlist(#restore_catch{varlist=VarList}) -> VarList.
-restore_catch_varlist_update(RC, NewVarList) ->
-  RC#restore_catch{varlist=NewVarList}.
+mk_begin_handler(VarList) -> #begin_handler{varlist=VarList}.
+begin_handler_varlist(#begin_handler{varlist=VarList}) -> VarList.
+begin_handler_varlist_update(RC, NewVarList) ->
+  RC#begin_handler{varlist=NewVarList}.
 
 %%
 %% gctests
@@ -903,7 +885,6 @@ args(I) ->
 	true ->
 	  hipe_rtl_arch:add_ra_reg(enter_arglist(I))
       end;
-    fail_to -> [fail_to_reason(I)];
     fconv -> [fconv_src(I)];
     fixnumop -> [fixnumop_src(I)];
     fload -> [fload_src(I), fload_offset(I)];
@@ -922,7 +903,7 @@ args(I) ->
     move -> [move_src(I)];
     multimove -> multimove_srclist(I);
     phi -> phi_args(I);
-    restore_catch -> [];
+    begin_handler -> [];
     return -> hipe_rtl_arch:add_ra_reg(return_varlist(I));
     store -> [store_base(I), store_offset(I), store_src(I)];
     switch -> [switch_src(I)]
@@ -941,7 +922,6 @@ defines(Instr) ->
 	   call -> call_dstlist(Instr);
 	   comment -> [];
 	   enter -> [];
-	   fail_to -> [];
 	   fconv -> [fconv_dst(Instr)];
 	   fixnumop -> [fixnumop_dst(Instr)];
 	   fload -> [fload_dst(Instr)];
@@ -960,7 +940,7 @@ defines(Instr) ->
 	   move -> [move_dst(Instr)];
 	   multimove -> multimove_dstlist(Instr);
 	   phi -> [phi_dst(Instr)];
-	   restore_catch -> restore_catch_varlist(Instr);
+	   begin_handler -> begin_handler_varlist(Instr);
 	   return -> [];
 	   store -> [];
 	   switch -> []
@@ -1017,8 +997,6 @@ subst_uses(Subst, I) ->
 	true ->
 	  enter_arglist_update(I, subst_list(Subst, enter_arglist(I)))
       end;
-    fail_to ->
-      fail_to_reason_update(I, subst1(Subst, fail_to_reason(I)));
     fconv -> 
       fconv_src_update(I, subst1(Subst, fconv_src(I)));
     fixnumop ->
@@ -1060,7 +1038,7 @@ subst_uses(Subst, I) ->
       multimove_srclist_update(I, subst_list(Subst, multimove_srclist(I)));
     phi ->
       phi_argvar_subst(I, Subst);
-    restore_catch ->
+    begin_handler ->
       I;
     return ->
       return_varlist_update(I, subst_list(Subst, return_varlist(I)));
@@ -1087,8 +1065,6 @@ subst_defines(Subst, I)->
     comment ->
       I;
     enter ->
-      I;
-    fail_to ->
       I;
     fconv ->
       fconv_dst_update(I, subst1(Subst, fconv_dst(I)));
@@ -1126,8 +1102,8 @@ subst_defines(Subst, I)->
       multimove_dstlist_update(I, subst_list(Subst, multimove_dstlist(I)));
     phi ->
       phi_dst_update(I, subst1(Subst, phi_dst(I)));
-    restore_catch ->
-      restore_catch_varlist_update(I, subst_list(Subst, restore_catch_varlist(I)));
+    begin_handler ->
+      begin_handler_varlist_update(I, subst_list(Subst, begin_handler_varlist(I)));
     return ->
       I;
     store ->
@@ -1161,11 +1137,10 @@ is_safe(Instr) ->
     enter -> false;
     goto -> false;
     goto_index -> false;  % ???
-    fail_to -> false;
     return -> false;
     gctest -> false;
     comment -> false;
-    restore_catch -> false;
+    begin_handler -> false;
     _ -> true
   end.
 
@@ -1246,13 +1221,6 @@ redirect_jmp(Jmp, ToOld, ToNew) ->
       case goto_label(Jmp) of
 	ToOld ->
 	  goto_label_update(Jmp, ToNew);
-	_ ->
-	  Jmp
-      end;
-    fail_to ->
-      case fail_to_label(Jmp) of
-	ToOld ->
-	  fail_to_label_update(Jmp, ToNew);
 	_ ->
 	  Jmp
       end;
@@ -1462,10 +1430,6 @@ pp_instr(Dev, I) ->
 		[alub_true_label(I), alub_pred(I), alub_false_label(I)]);
     goto ->
       io:format(Dev, "    goto L~w~n", [goto_label(I)]);
-    fail_to ->
-      io:format(Dev, "    fail_to L~w(", [fail_to_label(I)]),
-      pp_arg(Dev, fail_to_reason(I)),
-      io:format(Dev, ")~n",[]);
     call ->
       io:format(Dev, "    ", []),
       pp_args(Dev, call_dstlist(I)),
@@ -1495,7 +1459,7 @@ pp_instr(Dev, I) ->
       case call_fail(I) of
 	[] -> true;
 	L ->
-	  io:format(Dev, " fail_to L~w", [L])
+	  io:format(Dev, " fail to L~w", [L])
       end,
       io:format(Dev, "~n", []);
     enter ->
@@ -1523,10 +1487,10 @@ pp_instr(Dev, I) ->
       io:format(Dev, ")~n", []);
     comment ->
       io:format(Dev, "    ;; ~p~n", [comment_text(I)]);
-    restore_catch ->
+    begin_handler ->
       io:format(Dev, "    ", []),
-      pp_args(Dev,  restore_catch_varlist(I)),
-      io:format(Dev, " <- restore_catch()\n", []);
+      pp_args(Dev,  begin_handler_varlist(I)),
+      io:format(Dev, " <- begin_handler()\n", []);
     binbase ->
       pp_arg(Dev, binbase_dst(I)),
       io:format(Dev, " <- ", []),

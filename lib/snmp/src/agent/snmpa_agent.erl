@@ -24,7 +24,7 @@
 %% External exports
 -export([start_link/4, start_link/5, stop/1]).
 -export([subagent_set/2, 
-	 load_mibs/2, unload_mibs/2, info/1,
+	 load_mibs/2, unload_mibs/2, which_mibs/1, whereis_mib/2, info/1,
 	 register_subagent/3, unregister_subagent/2,
 	 send_trap/6, 
          register_notification_filter/5,
@@ -368,6 +368,11 @@ load_mibs(Agent, Mibs) ->
 unload_mibs(Agent, Mibs) ->
     call(Agent, {unload_mibs, Mibs}).
 
+which_mibs(Agent) ->
+    call(Agent, which_mibs).
+
+whereis_mib(Agent, Mib) ->
+    call(Agent, {whereis_mib, Mib}).
 
 info(Agent) ->
     call(Agent, info).
@@ -718,6 +723,14 @@ handle_call({load_mibs, Mibs}, _From, S) ->
 handle_call({unload_mibs, Mibs}, _From, S) ->
     ?vlog("unload mibs ~p", [Mibs]),
     {reply, snmpa_mib:unload_mibs(get(mibserver), Mibs), S};
+
+handle_call(which_mibs, _From, S) ->
+    ?vlog("which mibs", []),
+    {reply, snmpa_mib:which_mibs(get(mibserver)), S};
+
+handle_call({whereis_mib, Mib}, _From, S) ->
+    ?vlog("whereis mib ~p", [Mib]),
+    {reply, snmpa_mib:whereis_mib(get(mibserver), Mib), S};
 
 handle_call(info, _From, S) ->
     {reply, [{vsns, S#state.vsns} | snmpa_mib:info(get(mibserver))], S};

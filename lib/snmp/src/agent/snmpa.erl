@@ -35,6 +35,8 @@
 	 info/0, info/1, 
 	 load_mibs/1, load_mibs/2, 
 	 unload_mibs/1, unload_mibs/2, 
+	 which_mibs/0, which_mibs/1, 
+	 whereis_mib/1, whereis_mib/2, 
 	 dump_mibs/0, dump_mibs/1,
 	 mib_of/1, mib_of/2, 
 	 me_of/1,  me_of/2, 
@@ -182,6 +184,14 @@ unload_mibs(Mibs) ->
     unload_mibs(snmp_master_agent, Mibs).
 unload_mibs(Agent, Mibs) when list(Mibs) -> 
     snmpa_agent:unload_mibs(Agent, Mibs).
+
+which_mibs()      -> which_mibs(snmp_master_agent).
+which_mibs(Agent) -> snmpa_agent:which_mibs(Agent).
+
+whereis_mib(Mib) ->
+    whereis_mib(snmp_master_agent, Mib).
+whereis_mib(Agent, Mib) when atom(Mib) ->
+    snmpa_agent:whereis_mib(Agent, Mib).
 
 
 %% -

@@ -3054,6 +3054,7 @@ BIF_RETTYPE system_flag_2(BIF_ALIST_2)
 	if (!is_small(BIF_ARG_2) || (n = signed_val(BIF_ARG_2)) < 0) {
 	    goto error;
 	}
+	if (n > MAX_BACKTRACE_SIZE) n = MAX_BACKTRACE_SIZE;
 	erts_backtrace_depth = n;
 	BIF_RET(make_small(oval));
     } else if (BIF_ARG_1 == am_trace_control_word) {

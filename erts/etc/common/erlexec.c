@@ -995,15 +995,12 @@ static char *replace_filename(char *path, char *new_base)
 
 static char *path_massage(char *long_path)
 {
-    int i;
-    char *p;
-    int l = strlen(long_path) + 1;
+     char *p;
 
-    p = malloc(l);
-    if (GetShortPathName(long_path,p,l) <= 0) {
-	strcpy(p,long_path);
-    }
-    return p;
+     p = malloc(MAX_PATH+1);
+     strcpy(p, long_path);
+     GetShortPathName(p, p, MAX_PATH);
+     return p;
 }
     
 static char *do_lookup_in_section(InitSection *inis, char *name, 

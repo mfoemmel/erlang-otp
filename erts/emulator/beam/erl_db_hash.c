@@ -809,11 +809,17 @@ int db_select_hash_continue(Process *p,
 	goto done;
     }
 
-    if (chain_pos == tb->nactive) {
-	goto done;
-    }
+    for(;;) {
+	if (chain_pos == tb->nactive) {
+	    goto done;
+	}
 
-    current_list = BUCKET(tb,chain_pos);
+	if ((current_list = BUCKET(tb,chain_pos)) != NULL) {
+	    break;
+	}
+	++chain_pos;
+    }
+	
     
     for(;;) {
 	if (current_list->hvalue != INVALID_HASH && 

@@ -46,7 +46,7 @@
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--define(VERSION(),{2,1,0}).
+-define(VERSION(),{3,0,0}).
 -define(MAJOR_VERSION,element(1,?VERSION())).
 -define(MINOR_VERSION,element(2,?VERSION())).
 -define(PATCH_VERSION,element(3,?VERSION())).

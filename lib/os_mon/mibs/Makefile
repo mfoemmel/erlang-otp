@@ -71,7 +71,7 @@ $(SNMP_BIN_TARGET_DIR)/OTP-TC.bin:     $(ERL_TOP)/lib/$(OTP_MIBDIR)/mibs/OTP-TC.
 $(SNMP_BIN_TARGET_DIR)/OTP-MIB.bin:     $(ERL_TOP)/lib/$(OTP_MIBDIR)/mibs/OTP-MIB.mib
 	$(ERLC) -pa $(SNMP_TOOLKIT)/ebin -I $(SNMP_TOOLKIT)/priv/mibs $(SNMP_FLAGS) -o $(SNMP_BIN_TARGET_DIR) $<
 
-$(SNMP_BIN_TARGET_DIR)/OTP-EVA-MIB.bin:     $(ERL_TOP)/lib/eva/mibs/OTP-EVA-MIB.mib
+$(SNMP_BIN_TARGET_DIR)/OTP-EVA-MIB.bin:     $(ERL_TOP)/lib/$(OTP_MIBDIR)/mibs/OTP-EVA-MIB.mib
 	$(ERLC) -pa $(SNMP_TOOLKIT)/ebin -I $(SNMP_TOOLKIT)/priv/mibs $(SNMP_FLAGS) -o $(SNMP_BIN_TARGET_DIR) $<
 
 v1/%.mib.v1: %.mib

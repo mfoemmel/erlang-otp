@@ -22,11 +22,11 @@
 %% Author contact: richardc@csd.uu.se
 %% =====================================================================
 
-%% These definitions give the internal names of primops in HiPE.  Not
-%% all of these (e.g., 'not'/'and'/'or', and the type tests), are
-%% recognized primops on the Icode level, but are inline-expanded by the
-%% translation from Core Erlang to Icode. They are simply there to help
-%% the translation.
+%% These definitions give the names of Core Erlang primops recognized by
+%% HiPE. Many of them (e.g., 'not'/'and'/'or', and the type tests), are
+%% not primops on the Icode level, but are inline-expanded by the
+%% translation from Core Erlang to Icode, or are renamed/rewritten to a
+%% corresponding ICode primop; they only exist to help the translation.
 
 -define(PRIMOP_NOT, 'not').			% arity 1
 -define(PRIMOP_AND, 'and').			% arity 2
@@ -70,6 +70,7 @@
 -define(PRIMOP_EXIT, exit).			% arity 1
 -define(PRIMOP_THROW, throw).			% arity 1
 -define(PRIMOP_ERROR, error).			% arity 1
+-define(PRIMOP_RETHROW, raise).			% arity 2
 -define(PRIMOP_RECEIVE_SELECT, receive_select).	% arity 0
 -define(PRIMOP_RECEIVE_NEXT, receive_next).	% arity 0
 -define(PRIMOP_ELEMENT, element).		% arity 2
@@ -80,4 +81,3 @@
 -define(PRIMOP_SET_LABEL, set_label).           % arity 1
 -define(PRIMOP_GOTO_LABEL, goto_label).         % arity 1
 -define(PRIMOP_REDUCTION_TEST, reduction_test). % arity 0
--define(PRIMOP_SOURCE_LINE, line).		% arity 1

@@ -681,7 +681,6 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 		    need_heap = BIG_NEED_SIZE(sz);
                     hp = ArithAlloc(p, need_heap);
 		    res = big_times(arg1, arg2, hp);
-                    ArithCheck(p);
 
 		    /*
 		     * Note that the result must be big in this case, since
@@ -694,6 +693,8 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 			p->freason = SYSTEM_LIMIT;
 			return THE_NON_VALUE;
 		    }
+                    maybe_shrink(p, hp, res, need_heap);
+                    ArithCheck(p);
 		    return res;
 		case (_TAG_HEADER_FLOAT >> _TAG_PRIMARY_SIZE):
 		    if (big_to_double(arg1, &f1.fd) < 0) {

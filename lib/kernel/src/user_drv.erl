@@ -21,11 +21,13 @@
 
 -export([start/0,start/1,start/2,start/3,server/2,server/3]).
 
+-export([interfaces/1]).
+
 %% start()
 %% start(ArgumentList)
 %% start(PortName, Shell)
 %% start(InPortName, OutPortName, Shell)
-%%  Start the user dirver server. The arguments to start/1 are slightly
+%%  Start the user driver server. The arguments to start/1 are slightly
 %%  strange as this may be called both at start up from the command line
 %%  and explicitly from other code.
 
@@ -44,6 +46,25 @@ start(Pname, Shell) ->
 
 start(Iname, Oname, Shell) ->
     spawn(user_drv, server, [Iname,Oname,Shell]).
+
+
+%% Return the pid of the active group process.
+%% Note: We can't ask the user_drv process for this info since it
+%% may be busy waiting for data from the port.
+
+interfaces(UserDrv) ->
+    case process_info(UserDrv, dictionary) of
+	{dictionary,Dict} ->
+	    case lists:keysearch(current_group, 1, Dict) of
+		{value,Gr={_,Group}} when pid(Group) ->
+		    [Gr];
+		_ ->
+		    []
+	    end;
+	_ ->
+	    []
+    end.	
+
 
 %% server(Pid, Shell)
 %% server(Pname, Shell)
@@ -79,8 +100,19 @@ server1(Iport, Oport, Shell) ->
     %% Start user and initial shell.
     User = start_user(),
     Gr1 = gr_add_cur(gr_new(), User, {}),
-    Curr = group:start(self(), Shell),
-    Gr = gr_add_cur(Gr1, Curr, Shell),
+
+    {Curr,Shell1} =
+	case init:get_argument(remsh) of
+	    {ok,[[Node]]} ->
+		RShell = {list_to_atom(Node),shell,start,[]},
+		RGr = group:start(self(), RShell),
+		{RGr,RShell};
+	    E when E == error ; E == {ok,[[]]} ->
+		{group:start(self(), Shell),Shell}
+	end,
+
+    put(current_group, Curr),
+    Gr = gr_add_cur(Gr1, Curr, Shell1),
     %% Print some information.
     io_request({put_chars,
 		flatten(io_lib:format("~s\n",
@@ -104,7 +136,9 @@ start_user() ->
     end.
    
 server_loop(Iport, Oport, User, Gr) ->
-    server_loop(Iport, Oport, gr_cur_pid(Gr), User, Gr).
+    Curr = gr_cur_pid(Gr),
+    put(current_group, Curr),
+    server_loop(Iport, Oport, Curr, User, Gr).
 
 server_loop(Iport, Oport, Curr, User, Gr) ->
     receive
@@ -144,6 +178,7 @@ server_loop(Iport, Oport, Curr, User, Gr) ->
 			    Pid1 = group:start(self(), {shell,start,[]}),
 			    {ok,Gr2} = gr_set_cur(gr_set_num(Gr1, Ix, Pid1, 
 							     {shell,start,[]}), Ix),
+			    put(current_group, Pid1),
 			    server_loop(Iport, Oport, Pid1, User, Gr2);
 			_ ->			% remote shell
 			    io_requests([{put_chars,"(^G to start new job) ***\n"}],
@@ -213,8 +248,13 @@ switch_cmd({ok,[{atom,_,c},{integer,_,I}],_}, Iport, Oport, Gr0) ->
 	{ok,Gr} -> Gr;
 	undefined -> unknown_group(Iport, Oport, Gr0)
     end;
-switch_cmd({ok,[{atom,_,c}],_}, _Iport, _Oport, Gr) ->
-    Gr;
+switch_cmd({ok,[{atom,_,c}],_}, Iport, Oport, Gr) ->
+    case gr_get_info(Gr, gr_cur_pid(Gr)) of
+	undefined -> 
+	    unknown_group(Iport, Oport, Gr);
+	_ ->
+	    Gr
+    end;
 switch_cmd({ok,[{atom,_,i},{integer,_,I}],_}, Iport, Oport, Gr) ->
     case gr_get_num(Gr, I) of
 	{pid,Pid} ->
@@ -224,8 +264,14 @@ switch_cmd({ok,[{atom,_,i},{integer,_,I}],_}, Iport, Oport, Gr) ->
 	    unknown_group(Iport, Oport, Gr)
     end;
 switch_cmd({ok,[{atom,_,i}],_}, Iport, Oport, Gr) ->
-    exit(gr_cur_pid(Gr), interrupt),
-    switch_loop(Iport, Oport, Gr);
+    Pid = gr_cur_pid(Gr),
+    case gr_get_info(Gr, Pid) of
+	undefined -> 
+	    unknown_group(Iport, Oport, Gr);
+	_ ->
+	    exit(Pid, interrupt),
+	    switch_loop(Iport, Oport, Gr)
+    end;
 switch_cmd({ok,[{atom,_,k},{integer,_,I}],_}, Iport, Oport, Gr) ->
     case gr_get_num(Gr, I) of
 	{pid,Pid} ->
@@ -247,11 +293,14 @@ switch_cmd({ok,[{atom,_,k},{integer,_,I}],_}, Iport, Oport, Gr) ->
     end;
 switch_cmd({ok,[{atom,_,k}],_}, Iport, Oport, Gr) ->
     Pid = gr_cur_pid(Gr),
-    exit(Pid, die),
-    case gr_get_info(Gr, Pid) of
-	{_Ix,{}} ->			% no shell
+    Info = gr_get_info(Gr, Pid), 
+    case Info of
+	undefined ->
+	    unknown_group(Iport, Oport, Gr);
+	{_Ix,{}} ->				% no shell
 	    switch_loop(Iport, Oport, Gr);
 	_ ->
+	    exit(Pid, die),
 	    Gr1 = 
 		receive {'EXIT',Pid,_} ->
 			gr_del_pid(Gr, Pid)
@@ -388,12 +437,14 @@ put_int16(N, Tail) ->
 %%	{Index,GroupPid,Shell}
 
 gr_new() ->
-    {1,0,none,[]}.
+    {0,0,none,[]}.
 
 gr_get_num({_Next,_CurI,_CurP,Gs}, I) ->
     gr_get_num1(Gs, I).
 
-gr_get_num1([{_I,Pid,_S}|_Gs], _I) ->
+gr_get_num1([{I,_Pid,{}}|_Gs], I) ->
+    undefined;
+gr_get_num1([{I,Pid,_S}|_Gs], I) ->
     {pid,Pid};
 gr_get_num1([_G|Gs], I) ->
     gr_get_num1(Gs, I);
@@ -443,16 +494,16 @@ gr_cur_pid({_Next,_CurI,CurP,_Gs}) ->
     CurP.
 
 gr_list({_Next,CurI,_CurP,Gs}) ->
-    gr_list(Gs, CurI).
+    gr_list(Gs, CurI, []).
 
-gr_list([{Cur,_Pid,Shell}|Gs], Cur) ->
-    [{put_chars,flatten(io_lib:format("~4w* ~w\n", [Cur,Shell]))}|
-     gr_list(Gs, Cur)];
-gr_list([{I,_Pid,Shell}|Gs], Cur) ->
-    [{put_chars,flatten(io_lib:format("~4w  ~w\n", [I,Shell]))}|
-     gr_list(Gs, Cur)];
-gr_list([], _Cur) ->
-    [].
+gr_list([{_I,_Pid,{}}|Gs], Cur, Jobs) ->
+    gr_list(Gs, Cur, Jobs);
+gr_list([{Cur,_Pid,Shell}|Gs], Cur, Jobs) ->
+    gr_list(Gs, Cur, [{put_chars,flatten(io_lib:format("~4w* ~w\n", [Cur,Shell]))}|Jobs]);
+gr_list([{I,_Pid,Shell}|Gs], Cur, Jobs) ->
+    gr_list(Gs, Cur, [{put_chars,flatten(io_lib:format("~4w  ~w\n", [I,Shell]))}|Jobs]);
+gr_list([], _Cur, Jobs) ->
+    lists:reverse(Jobs).
 
 append([H|T], X) ->
     [H|append(T, X)];

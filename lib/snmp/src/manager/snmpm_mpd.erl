@@ -720,7 +720,7 @@ set_vb_null(Vbs) ->
 
 
 generate_v1_v2c_outgoing_msg(Message) ->
-    ?vdebug("generate_v1_v2c_msg -> encode message", []),
+    ?vdebug("generate_v1_v2c_outgoing_msg -> encode message", []),
     case (catch snmp_pdus:enc_message_only(Message)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
@@ -759,7 +759,13 @@ generate_v3_report_msg2(MsgID, ReqID, SecModel, ErrInfo, Log) ->
 
 %% Get "our" (manager) MMS
 get_max_message_size() ->
-    snmpm_config:get_engine_max_message_size().
+    case snmpm_config:get_engine_max_message_size() of
+	{ok, MMS} ->
+	    MMS;
+	E ->
+	    user_err("failed retreiving engine max message size: ~w", [E]),
+	    484
+    end.
 
 %% The the MMS of the agent
 get_agent_max_message_size(Addr, Port) ->

@@ -55,6 +55,9 @@
 #undef TEMP_RV
 #undef LOAD_ARG_REGS
 #undef STORE_ARG_REGS
+#undef NSP_CALL
+#undef NSP_RETN
+#undef NSP_RET0
 #include "hipe_x86_asm.h"
 #undef P
 #undef HP
@@ -203,6 +206,7 @@ static const struct literal {
     { "P_FLAGS", offsetof(struct process, flags) },
     { "P_FVALUE", offsetof(struct process, fvalue) },
     { "P_FREASON", offsetof(struct process, freason) },
+    { "P_FTRACE", offsetof(struct process, ftrace) },
     { "P_FCALLS", offsetof(struct process, fcalls) },
     { "P_BEAM_IP", offsetof(struct process, i) },
     { "P_ARITY", offsetof(struct process, arity) },
@@ -245,10 +249,6 @@ static const struct literal {
     {  "F_TIMO", F_TIMO },
 
     /* freason codes */
-    { "EXC_CLASSBITS", EXC_CLASSBITS },
-    { "EXTAG_ERROR", EXTAG_ERROR },
-    { "EXTAG_EXIT", EXTAG_EXIT },
-    { "EXTAG_THROWN", EXTAG_THROWN },
     { "FREASON_TRAP", TRAP },
     { "FREASON_RESCHEDULE", RESCHEDULE },
 
@@ -305,6 +305,9 @@ static const struct literal {
 #if AMD64_HEAP_LIMIT_IN_REGISTER
     { "AMD64_HEAP_LIMIT_IN_REGISTER", 1 },
     { "AMD64_HEAP_LIMIT_REGISTER", AMD64_HEAP_LIMIT_REGISTER },
+#endif
+#if AMD64_SIMULATE_NSP
+    { "AMD64_SIMULATE_NSP", 1 },
 #endif
 
     /* x86 */

@@ -8,20 +8,19 @@
 /*
  * Prototypes for entry points used by native code.
  */
-Eterm nbif_callemu(void);
-int nbif_suspend_0(void);	/* caller ignores retval */
-int nbif_suspend_msg(void);
-int nbif_suspend_msg_timeout(void);
+extern Eterm nbif_callemu(void);
+extern int nbif_suspend_0(void);	/* caller ignores retval */
+extern int nbif_suspend_msg(void);
+extern int nbif_suspend_msg_timeout(void);
 
-Eterm nbif_set_timeout(Process*, Eterm);
-void hipe_select_msg(Process*);
+extern Eterm nbif_rethrow(Process*, Eterm, Eterm);
+extern Eterm nbif_set_timeout(Process*, Eterm);
+extern void hipe_select_msg(Process*);
 
-Eterm nbif_get_exit_tag(Process*);
+extern Eterm nbif_gc_1(void);
 
-Eterm nbif_gc_1(void);
-
-Eterm nbif_apply(void);
-Eterm nbif_find_na_or_make_stub(void);
+extern Eterm nbif_apply(void);
+extern Eterm nbif_find_na_or_make_stub(void);
 
 Eterm nbif_add_2(void);
 Eterm nbif_sub_2(void);
@@ -66,6 +65,7 @@ Eterm nbif_eq_2(void);
 void hipe_gc(Process*, Eterm);
 Eterm hipe_set_timeout(Process*, Eterm);
 void hipe_handle_exception(Process*);
+Eterm hipe_rethrow(Process *c_p, Eterm exc, Eterm value);
 char *hipe_bs_allocate(int);
 int hipe_bs_put_big_integer(Eterm, Uint, byte*, unsigned, unsigned);
 int hipe_bs_put_small_float(Eterm, Uint, byte*, unsigned, unsigned);

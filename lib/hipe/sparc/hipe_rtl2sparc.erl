@@ -154,18 +154,10 @@ translate_instruction(I, Map, ConstTab) ->
       {RegArgs, Moves} = move_vars_to_retregs(Regs),
       RetIs = [hipe_sparc:pseudo_return_create(RegArgs)],
       {Moves ++ RetIs, Map1, ConstTab};
-    restore_catch ->
-      {Vars, Map1} = rvs2srs(hipe_rtl:restore_catch_varlist(I), Map),
+    begin_handler ->
+      {Vars, Map1} = rvs2srs(hipe_rtl:begin_handler_varlist(I), Map),
       {_Regs, Moves} = move_rets_to_vars(Vars),
       {Moves, Map1, ConstTab};
-    fail_to ->
-      {Vars, Map1} = rvs2srs([hipe_rtl:fail_to_reason(I)], Map),
-      {_RegArgs, Moves} = move_vars_to_retregs(Vars),
-      case hipe_rtl:fail_to_label(I) of
-	[] -> {Moves, Map1, ConstTab};
-	L ->
-	  {Moves ++ [hipe_sparc:goto_create(L)],Map1, ConstTab}
-      end;
     comment ->
       Ins = [hipe_sparc:comment_create(hipe_rtl:comment_text(I))],
       {Ins, Map, ConstTab};

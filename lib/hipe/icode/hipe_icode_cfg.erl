@@ -69,6 +69,9 @@ mk_goto(Name) ->
 branch_successors(Instr) ->
   hipe_icode:successors(Instr).
 
+fails_to(Instr) ->
+  hipe_icode:fails_to(Instr).
+
 %% True if instr has no effect.
 is_comment(Instr) ->
   hipe_icode:is_comment(Instr).

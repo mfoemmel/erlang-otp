@@ -49,6 +49,7 @@ is_safe({hipe_bsi_primop,{bs_get_integer,_Offset,_Flags}}) -> true;
 is_safe({hipe_bsi_primop,{bs_get_integer,_Size,_Offset,_Flags}}) -> true;
 is_safe({mkfun,_,_,_}) -> true;
 is_safe({unsafe_element,_}) -> true;
+is_safe({unsafe_update_element, _}) -> true;
 is_safe(_Op) -> false.
 
 
@@ -178,8 +179,8 @@ pp(Op, Dev) ->
       io:format(Dev, "unsafe_element<~w>", [N]);
     {unsafe_update_element, N} ->
       io:format(Dev, "unsafe_update_element<~w>", [N]);
-    {Fun, _Arity} ->
-      io:format(Dev, "~w", [Fun]);
+    {apply_N, N} ->
+      io:format(Dev, "apply_N<~w>/", [N]);
     {_M, _F, _A} ->
       exit({bad_primop, Op});
     Fun ->
@@ -277,6 +278,30 @@ type(Primop, Args) ->
       end;
     {element, _} ->
       erl_bif_types:type(erlang, element, 2, Args);
+    {unsafe_update_element, N} ->
+      [Tuple, NewElement] = Args,
+      case erl_types:t_is_tuple(Tuple) of
+	false -> erl_types:t_none();
+	true ->
+	  TupleArgs = erl_types:t_tuple_args(Tuple),
+	  case erl_types:t_is_any(TupleArgs) of
+	    true -> 
+	      Arity = erl_types:t_tuple_arity(Tuple),
+	      case erl_types:t_is_any(Arity) of
+		true -> Tuple;
+		false ->
+		  Any = erl_types:t_any(),
+    %% XXX FIXME: check this - I think lists:duplicate has a problem with 0.
+		  Elements = 
+		    lists:duplicate(N-1, Any) ++
+		    [NewElement|lists:duplicate(Arity - N - 1, Any)],
+		  erl_types:t_tuple(Elements)
+	      end;
+	    false ->
+	      {H, [_|T]} = lists:split(N-1, TupleArgs),
+	      erl_types:t_tuple(H++[NewElement|T])
+	  end
+      end;
 %%% -----------------------------------------------------
 %%% Floats
     unsafe_tag_float ->
@@ -317,6 +342,10 @@ type(Primop, Args) ->
     {hipe_bsi_primop, {bs_get_binary, _, _, _}} ->
       erl_types:t_binary();
     {hipe_bsi_primop, {bs_get_binary_all, _, _}} ->
+      erl_types:t_binary();
+    {hipe_bs_primop, {bs_init2,_,_,_}} ->
+      erl_types:t_binary();
+    {hipe_bs_primop, {bs_init2,_,_}} ->
       erl_types:t_binary();
 %%% -----------------------------------------------------
 %%% Funs

@@ -643,7 +643,7 @@ int catchlevel(Process*);
 void init_emulator(_VOID_);
 void process_main(void);
 Eterm build_stacktrace(Process* c_p, Eterm exc);
-Eterm expand_error_value(Process* c_p, Eterm Value);
+Eterm expand_error_value(Process* c_p, Uint freason, Eterm Value);
 
 /* erl_init.c */
 

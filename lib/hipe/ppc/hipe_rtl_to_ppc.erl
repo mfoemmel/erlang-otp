@@ -65,14 +65,13 @@ conv_insn(I, Map, Data) ->
     call -> conv_call(I, Map, Data);
     comment -> conv_comment(I, Map, Data);
     enter -> conv_enter(I, Map, Data);
-    fail_to -> conv_fail_to(I, Map, Data);
     goto -> conv_goto(I, Map, Data);
     label -> conv_label(I, Map, Data);
     load -> conv_load(I, Map, Data);
     load_address -> conv_load_address(I, Map, Data);
     load_atom -> conv_load_atom(I, Map, Data);
     move -> conv_move(I, Map, Data);
-    restore_catch -> conv_restore_catch(I, Map, Data);
+    begin_handler -> conv_begin_handler(I, Map, Data);
     return -> conv_return(I, Map, Data);
     store -> conv_store(I, Map, Data);
     switch -> conv_switch(I, Map, Data);
@@ -610,16 +609,6 @@ mk_enter(Fun, Args, Linkage) ->
 		 [hipe_ppc:mk_pseudo_tailcall_prepare(),
 		  hipe_ppc:mk_pseudo_tailcall(FunC, Arity, StkArgs, Linkage)]).
 
-conv_fail_to(I, Map, Data) ->
-  {Src, Map0} = conv_src(hipe_rtl:fail_to_reason(I), Map),
-  I2 =
-    case hipe_rtl:fail_to_label(I) of
-      [] -> [];
-      FailToLabel -> [hipe_ppc:mk_b_label(FailToLabel)]
-    end,
-  I1 = mk_move(mk_rv(), Src, I2),
-  {I1, Map0, Data}.
-
 conv_goto(I, Map, Data) ->
   I2 = [hipe_ppc:mk_b_label(hipe_rtl:goto_label(I))],
   {I2, Map, Data}.
@@ -741,8 +730,8 @@ mk_move(Dst, Src, Tail) ->
     _ -> mk_li(Dst, Src, Tail)
   end.
 
-conv_restore_catch(I, Map, Data) ->
-  [Dst0] = hipe_rtl:restore_catch_varlist(I),
+conv_begin_handler(I, Map, Data) ->
+  [Dst0] = hipe_rtl:begin_handler_varlist(I),
   {Dst1,Map1} = conv_dst(Dst0, Map),
   {[hipe_ppc:mk_pseudo_move(Dst1, mk_rv())], Map1, Data}.
 

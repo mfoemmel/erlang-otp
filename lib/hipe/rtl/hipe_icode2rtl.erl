@@ -12,7 +12,7 @@
 -module(hipe_icode2rtl).
 
 -export([translate/2]).
--export([translate_instrs/5]).  %% used in hipe_rtl_mk_switch
+-export([translate_instrs/4]).  %% used in hipe_rtl_mk_switch
 
 %%-------------------------------------------------------------------------
 
@@ -39,23 +39,19 @@ translate(IcodeRecord, Options) ->
   {Args, VarMap} = hipe_rtl_varmap:init(IcodeRecord),
   %% Get the name and other info of the function to translate.
   MFA = hipe_icode:icode_fun(IcodeRecord),
-  Data = hipe_icode:icode_data(IcodeRecord),
+  ConstTab = hipe_icode:icode_data(IcodeRecord),
   Icode = hipe_icode:icode_code(IcodeRecord),
   IsClosure = hipe_icode:icode_is_closure(IcodeRecord), 
   IsLeaf = hipe_icode:icode_is_leaf(IcodeRecord),
   IcodeInfo = hipe_icode:icode_info(IcodeRecord),
 
-  %% Create code that build exit terms with a trace.
-  {ExitInfo, ConstTab1} = hipe_rtl_exceptions:gen_exception(MFA, Data),
-
   %% Translate Icode instructions to RTL instructions
   ?opt_start_timer("Icode to nested RTL"),
-  {Code, _VarMap1, ConstTab2} = 
+  {Code, _VarMap1, ConstTab1} = 
     translate_instrs(Icode,
 		     VarMap,
-		     ConstTab1,
-		     Options,
-		     ExitInfo),
+		     ConstTab,
+		     Options),
   ?opt_stop_timer("Icode to nested RTL"),
   %% We build the code as list of lists of...
   %%  in order to avoid appends.
@@ -68,7 +64,7 @@ translate(IcodeRecord, Options) ->
 			IsClosure,
 			IsLeaf,
 			Code1,
-			ConstTab2,
+			ConstTab1,
 			{1, hipe_gensym:get_var(rtl)},
 			{1, hipe_gensym:get_label(rtl)}),
   %% hipe_rtl:pp(Rtl),
@@ -80,40 +76,38 @@ translate(IcodeRecord, Options) ->
 %%
 %% @doc Translates a list of Icode instructions to a list of RTL instructions.
 %%
-translate_instrs(Is, VarMap, ConstTab, Options, ExitInfo) ->
-  translate_instrs(Is, VarMap, [], ConstTab, Options, ExitInfo).
+translate_instrs(Is, VarMap, ConstTab, Options) ->
+  translate_instrs(Is, VarMap, [], ConstTab, Options).
 
-translate_instrs([], VarMap, RTL_Code, ConstTab, _Options, ExitInfo) ->
-  %% We add the code for building exit values last.
-  ExitCode = hipe_rtl_exceptions:exit_code(ExitInfo),
-  {[RTL_Code,ExitCode], VarMap, ConstTab};
-translate_instrs([I|Is], VarMap, AccCode, ConstTab, Options, ExitInfo) ->
+translate_instrs([], VarMap, RTL_Code, ConstTab, _Options) ->
+  {RTL_Code, VarMap, ConstTab};
+translate_instrs([I|Is], VarMap, AccCode, ConstTab, Options) ->
   %% Translate one instruction. 
   {Code, VarMap0, ConstTab0} = 
-    translate_instruction(I, VarMap, ConstTab, Options, ExitInfo),
+    translate_instruction(I, VarMap, ConstTab, Options),
   %%  ?IF_DEBUG_LEVEL(3,?msg("  To Instr: ~w~n",[Code]),no_debug),
   ?IF_DEBUG(?when_option(rtl_show_translation, Options,
 			 ?msg("  To Instr: ~w~n",[Code])),
 	    no_debug),
-  translate_instrs(Is, VarMap0, [AccCode,Code], ConstTab0, Options, ExitInfo).
+  translate_instrs(Is, VarMap0, [AccCode,Code], ConstTab0, Options).
 
 %%
 %% @doc Translates an Icode instruction to one or more RTL instructions.
 %%
 
-translate_instruction(I, VarMap, ConstTab, Options, ExitInfo) ->
+translate_instruction(I, VarMap, ConstTab, Options) ->
   %%  ?IF_DEBUG_LEVEL(3,?msg("From Instr: ~w~n",[I]),no_debug),
   ?IF_DEBUG(?when_option(rtl_show_translation, Options,
 			 ?msg("From Instr: ~w~n",[I])),no_debug),
   case hipe_icode:type(I) of
     call ->  
-      gen_call(I, VarMap, ExitInfo, ConstTab, Options);
+      gen_call(I, VarMap, ConstTab, Options);
     comment ->
       {hipe_rtl:mk_comment(hipe_icode:comment_text(I)), VarMap, ConstTab};  
     enter -> 
-      gen_enter(I, VarMap, ExitInfo, ConstTab, Options);
+      gen_enter(I, VarMap, ConstTab, Options);
     fail ->
-      gen_fail(I, VarMap, ConstTab, ExitInfo);
+      gen_fail(I, VarMap, ConstTab);
     fmove -> 
       gen_fmove(I, VarMap, ConstTab);
     goto -> 
@@ -124,14 +118,14 @@ translate_instruction(I, VarMap, ConstTab, Options, ExitInfo) ->
       gen_label(I, VarMap, ConstTab);
     move ->  
       gen_move(I, VarMap, ConstTab);
-    restore_catch ->
-      hipe_rtl_exceptions:gen_restore_catch(I, VarMap, ConstTab);
+    begin_handler ->
+      hipe_rtl_exceptions:gen_begin_handler(I, VarMap, ConstTab);
     return -> 
       gen_return(I, VarMap, ConstTab);
     switch_val -> 
-      gen_switch_val(I, VarMap, ConstTab, Options, ExitInfo);
+      gen_switch_val(I, VarMap, ConstTab, Options);
     switch_tuple_arity -> 
-      gen_switch_tuple(I, VarMap, ConstTab, Options, ExitInfo);
+      gen_switch_tuple(I, VarMap, ConstTab, Options);
     type -> 
       gen_type(I, VarMap, ConstTab);
     X ->
@@ -143,7 +137,7 @@ translate_instruction(I, VarMap, ConstTab, Options, ExitInfo) ->
 %%
 %% CALL
 %%
-gen_call(I, VarMap, ExitInfo, ConstTab, Options) ->
+gen_call(I, VarMap, ConstTab, Options) ->
   Fun = hipe_icode:call_fun(I),
   {Dst, VarMap0} = hipe_rtl_varmap:ivs2rvs(hipe_icode:call_dstlist(I), VarMap),
   Fail = hipe_icode:call_fail_label(I),
@@ -178,55 +172,35 @@ gen_call(I, VarMap, ExitInfo, ConstTab, Options) ->
     case hipe_icode:call_type(I) of 
       primop ->
 	hipe_rtl_primops:gen_primop(
-	  {Fun, Dst, Args, ContLblName, FailLblName}, IsGuard,
-	  ConstTab1, ExitInfo, Options);
+	  {Fun, Dst, Args, ContLblName, FailLblName},
+	  IsGuard, ConstTab1, Options);
       Type ->
-	Call = gen_call_1(Dst, Fun, Args, IsGuard, ContLblName,
-			  FailLblName, ExitInfo, Type),
+	Call = gen_call_1(Fun, Dst, Args, IsGuard, ContLblName,
+			  FailLblName, Type),
 	{Call, ConstTab1}
     end,
   {[InitCode,Code,ContLbl], VarMap4, ConstTab2}.
 
 %% This catches those standard functions that we inline expand
 
-gen_call_1(Dst, Fun, Args, IsGuard, Cont, Fail, ExitInfo, Type) ->
-  case Fun of
-    {erlang,apply,3} ->
-      hipe_rtl_primops:gen_apply(Dst, Args, Cont, Fail);
-
-    {hipe,apply_N,Arity} ->
-      hipe_rtl_primops:gen_apply_N(Dst, Arity, Args, Cont, Fail);
-
-    {erlang,element,2} ->
-      hipe_rtl_primops:gen_element(Dst, Args, IsGuard, Cont, Fail, ExitInfo);
-
-    {erlang,self,0} ->
-      hipe_rtl_primops:gen_self(Dst, Cont);
-
-    {hipe_bifs,in_native,0} ->
-      Dst1 =
-	case Dst of
-	  [] -> %% The result is not used.
-	    hipe_rtl:mk_new_var();
-	  [Dst0] -> Dst0
-	end,
-      [hipe_rtl:mk_load_atom(Dst1, true), hipe_rtl:mk_goto(Cont)];
-
-    {_M,_F,_A} ->
-      Type1 =
-	case Type of
-	  remote -> remote;
-	  local -> not_remote
-	end,
-      hipe_rtl:mk_call(Dst, Fun, Args, Cont, Fail, Type1)
+gen_call_1(Fun={_M,_F,_A}, Dst, Args, IsGuard, Cont, Fail, Type) ->
+  case hipe_rtl_primops:gen_call_builtin(Fun, Dst, Args, IsGuard, Cont,
+					 Fail) of
+    [] ->
+      hipe_rtl:mk_call(Dst, Fun, Args, Cont, Fail, conv_call_type(Type));
+    Code ->
+      Code
   end.
 
-%% ____________________________________________________________________
+conv_call_type(remote) -> remote;
+conv_call_type(local) -> not_remote.
+
+%% --------------------------------------------------------------------
 
 %%
 %% ENTER
 %%
-gen_enter(I, VarMap, ExitInfo, ConstTab, Options) ->
+gen_enter(I, VarMap, ConstTab, Options) ->
   Fun = hipe_icode:enter_fun(I),
 %%  IsGuard = hipe_icode:call_in_guard(I),
   IsGuard = false, %%Enter can not happen in a guard
@@ -238,7 +212,7 @@ gen_enter(I, VarMap, ExitInfo, ConstTab, Options) ->
     case hipe_icode:enter_type(I) of
       primop ->
 	hipe_rtl_primops:gen_enter_primop({Fun, Args}, IsGuard,
-					  ConstTab1, ExitInfo, Options);
+					  ConstTab1, Options);
       Type ->
 	Call = gen_enter_1(Fun, Args, Type),
 	{Call, ConstTab}
@@ -246,37 +220,16 @@ gen_enter(I, VarMap, ExitInfo, ConstTab, Options) ->
   {[InitCode,Code1], VarMap1, ConstTab3}.  
 
 %% This catches those standard functions that we inline expand
-%% TODO: should we inline expand more functions here? See gen_call_2 above.
 
 gen_enter_1(Fun, Args, Type) ->
-  case Fun of
-    {hipe,apply_N,Arity} ->
-      hipe_rtl_primops:gen_apply_N([], Arity, Args, [], []);
-    {erlang,apply,3} ->
-      %% 'apply' in tail-call context
-      hipe_rtl:mk_enter(hipe_apply, Args, not_remote);
-    {hipe_bifs,in_native,0} ->
-      Dst = hipe_rtl:mk_new_var(),
-      [hipe_rtl:mk_load_atom(Dst, true), hipe_rtl:mk_return([Dst])];
-    _ ->
-      Type1 =
-	case Type of
-	  remote -> remote;
-	  local -> not_remote
-	end,
-      hipe_rtl:mk_enter(Fun, Args, Type1)
+  case hipe_rtl_primops:gen_enter_builtin(Fun, Args) of
+    [] ->
+      hipe_rtl:mk_enter(Fun, Args, conv_call_type(Type));
+    Code ->
+      Code
   end.
 
-
-%% ____________________________________________________________________
-
-gen_fail(I, VarMap, ConstTab, ExitInfo) ->
-  {Args, VarMap1, ConstTab1, InitCode} = 
-    args_to_vars(hipe_icode:fail_reason(I), VarMap, ConstTab),
-  {InitCode ++ 
-   hipe_rtl_exceptions:gen_fail(I, Args, ExitInfo),
-   VarMap1, ConstTab1}.
-
+%% --------------------------------------------------------------------
 
 %%
 %% FMOVE. fvar := fvar or fvar := -fvar
@@ -289,7 +242,29 @@ gen_fmove(I, VarMap, ConstTab) ->
     hipe_rtl_varmap:icode_var2rtl_var(hipe_icode:fmove_src(I), VarMap0),
   {hipe_rtl:mk_fmove(Dst, Src), VarMap1, ConstTab}.
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
+
+%%
+%% FAIL
+%%
+
+gen_fail(I, VarMap, ConstTab) ->
+  Fail = hipe_icode:fail_label(I),
+  {Label, VarMap0} =
+    if Fail == [] ->
+	%% not in a catch
+	{[], VarMap};
+       true ->
+	{Lbl, Map} = hipe_rtl_varmap:icode_label2rtl_label(Fail, VarMap),
+	{hipe_rtl:label_name(Lbl), Map}
+    end,
+  {Args, VarMap1, ConstTab1, InitCode} = 
+    args_to_vars(hipe_icode:fail_args(I), VarMap0, ConstTab),
+  Class = hipe_icode:fail_class(I),
+  FailCode = hipe_rtl_exceptions:gen_fail(Class, Args, Label),
+  {[InitCode, FailCode], VarMap1, ConstTab1}.
+
+%% --------------------------------------------------------------------
 
 %%
 %% GOTO
@@ -300,7 +275,7 @@ gen_goto(I, VarMap, ConstTab)->
     hipe_rtl_varmap:icode_label2rtl_label(hipe_icode:goto_label(I), VarMap),
   {hipe_rtl:mk_goto(hipe_rtl:label_name(Label)), Map0, ConstTab}.
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 
 %%
 %% IF
@@ -322,7 +297,7 @@ gen_if(I, VarMap, ConstTab) ->
   {[InitCode,CondCode], VarMap3, ConstTab1}.
 
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 
 %%
 %% LABEL
@@ -333,7 +308,7 @@ gen_label(I, VarMap, ConstTab)->
   {NewLabel,Map0} = hipe_rtl_varmap:icode_label2rtl_label(LabelName, VarMap),
   {NewLabel,Map0,ConstTab}.
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 
 %%
 %% MOVE
@@ -352,7 +327,7 @@ gen_move(I, VarMap, ConstTab) ->
       {[Code], VarMap0, NewConstMap}
   end.
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 
 %%
 %% RETURN
@@ -363,7 +338,7 @@ gen_return(I, VarMap, ConstTab) ->
     args_to_vars(hipe_icode:return_vars(I), VarMap, ConstTab),
   {Code ++ [hipe_rtl:mk_return(RetVars)], VarMap0, ConstTab0}.
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 
 %%
 %% SWITCH
@@ -391,15 +366,15 @@ gen_return(I, VarMap, ConstTab) ->
 -define(uumess,ok).
 -endif.
 
-gen_switch_val(I, VarMap, ConstTab, Options, ExitInfo) ->
+gen_switch_val(I, VarMap, ConstTab, Options) ->
   %% If you want to see whether jumptables are used or not...
   ?uumess,
-  hipe_rtl_mk_switch:gen_switch_val(I, VarMap, ConstTab, Options, ExitInfo).
+  hipe_rtl_mk_switch:gen_switch_val(I, VarMap, ConstTab, Options).
 
-gen_switch_tuple(I, Map, ConstTab, Options, ExitInfo) ->
-  hipe_rtl_mk_switch:gen_switch_tuple(I, Map, ConstTab, Options, ExitInfo).
+gen_switch_tuple(I, Map, ConstTab, Options) ->
+  hipe_rtl_mk_switch:gen_switch_tuple(I, Map, ConstTab, Options).
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 
 %%
 %% TYPE
@@ -419,7 +394,7 @@ gen_type(I, VarMap, ConstTab)->
 					NewConstTab),
   {Code1 ++ Code2, Map2, NewConstTab1}.
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 
 %%
 %% Generate code for a type test. If X is not of type Type then goto Label.
@@ -512,7 +487,7 @@ gen_type_test(X, Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
   end.
 
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 %%
 %% Generate code for the if-conditional.
 %%
@@ -608,7 +583,7 @@ gen_cond(CondOp, Args, TrueLbl, FalseLbl, Pred) ->
   end.
 
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 %%
 %% Translate a list argument list of icode vars to rtl vars. Also
 %% handles constants in arguments.
@@ -646,7 +621,7 @@ args_to_vars([Arg|Args],VarMap, ConstTab) ->
 args_to_vars([], VarMap, ConstTab) ->
   {[], VarMap, ConstTab, []}.
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 
 %%
 %% Translate a move where the source is a constant

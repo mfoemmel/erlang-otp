@@ -8,8 +8,8 @@
 %%%
 %%% CVS      :
 %%%              $Author: richardc $
-%%%              $Date: 2004/08/13 15:15:14 $
-%%%              $Revision: 1.25 $
+%%%              $Date: 2004/10/28 05:13:10 $
+%%%              $Revision: 1.26 $
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_fp).
@@ -512,7 +512,7 @@ place_error([I|Left], InBlock, Acc) ->
 	X when X == conv_to_float; X == unsafe_untag_float ->
 	  place_error(Left, InBlock, [I|Acc]);
 	_Other ->
-	  case hipe_icode:call_fails(I) of
+	  case hipe_icode_primops:fails(hipe_icode:call_fun(I)) of
 	    false ->
 	      place_error(Left, InBlock, [I|Acc]);
 	    true ->
@@ -580,7 +580,7 @@ instr_allowed_in_fp_ebb(Type) ->
     'if' -> true;
     move -> true;
     phi -> true;
-    restore_catch -> true;
+    begin_handler -> true;
     switch_tuple_arity -> true;
     switch_val -> true;
     type -> true;

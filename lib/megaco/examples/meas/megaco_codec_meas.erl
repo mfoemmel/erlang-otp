@@ -231,6 +231,9 @@ measure_fin(_) ->
     ok.
 
 
+measure(_Dir, _Codec, _Conf, [], [], _MCount) ->
+    {error, no_messages};
+
 measure(_Dir, _Codec, _Conf, [], Res, _MCount) ->
 
     Eavg = avg([Etime/Ecnt || #stat{ecount = Ecnt, etime = Etime} <- Res]),

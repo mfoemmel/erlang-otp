@@ -240,7 +240,7 @@ append_ann(Tag, []) ->
 -record(state, {vars, out, dep, work, funs, k}).
 
 %% Note: We assume that all remote calls and primops return a single
-%% value, if any.
+%% value.
 
 %% The analysis determines which objects (identified by the
 %% corresponding "cons-point" labels in the code) are likely to be
@@ -252,11 +252,11 @@ append_ann(Tag, []) ->
 %% Rules:
 %%   1) An object passed as message argument (or part of such an
 %%   argument) to a known send-operation, will probably be a message.
-%%   2) A received value is always a message.
-%%   3) The external function can return any object.
+%%   2) A received value is always a message (safe).
+%%   3) The external function can return any object (unsafe).
 %%   4) A function called from the external function can receive any
-%%   object as argument.
-%%   5) Unknown functions/operations can return any object.
+%%   object (unsafe) as argument.
+%%   5) Unknown functions/operations can return any object (unsafe).
 
 %% We wrap the given syntax tree T in a fun-expression labeled `top',
 %% which is initially in the set of escaped labels. `top' will be
@@ -264,7 +264,7 @@ append_ann(Tag, []) ->
 %%
 %% We create a separate function labeled `external', defined as:
 %% "'external'/1 = fun () -> Any", which will represent any and all
-%% functions outside T, and which returns the 'any' value.
+%% functions outside T, and which returns the 'unsafe' value.
 
 analyze(T) ->
     analyze(T, ?DEF_LIMIT).
@@ -300,11 +300,11 @@ analyze(T, Limit, Dep0, Esc0) ->
     %% inputs. Bind all module- and letrec-defined variables to their
     %% corresponding labels.
     Esc = sets:from_list(Esc0),
-    Unknown = unknown(),
+    Unsafe = unsafe(),
     Empty = empty(),
     Funs0 = dict:new(),
     Vars0 = dict:store(escape, empty(), 
-		       dict:store(any, Unknown, dict:new())),
+		       dict:store(any, Unsafe, dict:new())),
     Out0 = dict:new(),
     F = fun (T, S = {Fs, Vs, Os}) ->
 		case type(T) of
@@ -312,7 +312,7 @@ analyze(T, Limit, Dep0, Esc0) ->
 			L = get_label(T),
 			As = fun_vars(T),
 			X = case sets:is_element(L, Esc) of
-				true -> Unknown;
+				true -> Unsafe;
 				false -> Empty
 			    end,
 			{dict:store(L, T, Fs),
@@ -396,7 +396,7 @@ visit(T, L, St) ->
 		    {[X], St};
 		error ->
 %%% 		    io:fwrite("free var: ~w.\n",[L1]),
-		    X = unknown(),
+		    X = unsafe(),
 		    St1 = St#state{vars = dict:store(L1, X, Vars)},
 		    {[X], St1}
 	    end;
@@ -407,8 +407,8 @@ visit(T, L, St) ->
 	    St1 = St#state{work = add_work([L1], St#state.work)},
 	    %% Currently, lambda expressions can only be locally
 	    %% allocated, and therefore we have to force copying by
-	    %% treating them as "unknown" for now.
-	    {[unknown()], St1};
+	    %% treating them as "unsafe" for now.
+	    {[unsafe()], St1};
 	    %% {[singleton(L1)], St1};
 	values ->
 	    visit_list(values_es(T), L, St);
@@ -461,7 +461,7 @@ visit(T, L, St) ->
 	    visit_clauses(Xs, case_clauses(T), L, St1);
 	'receive' ->
 	    %% The received value is of course a message, so it
-	    %% is 'empty()', not 'unknown()'.
+	    %% is 'empty()', not 'unsafe()'.
 	    X = empty(),
 	    {Xs1, St1} = visit_clauses([X], receive_clauses(T), L, St),
 	    {_, St2} = visit(receive_timeout(T), L, St1),
@@ -469,22 +469,22 @@ visit(T, L, St) ->
 	    {join(Xs1, Xs2), St3};
 	'try' ->
 	    {Xs1, St1} = visit(try_arg(T), L, St),
-	    X = unknown(),
+	    X = unsafe(),
 	    Vars = bind_vars(try_vars(T), Xs1, St1#state.vars),
 	    {Xs2, St2} = visit(try_body(T), L, St1#state{vars = Vars}),
 	    EVars = bind_vars(try_evars(T), [X, X], St2#state.vars),
 	    {Xs3, St3} = visit(try_handler(T), L, St2#state{vars = EVars}),
 	    {join(Xs2, Xs3), St3};
 	'catch' ->
-	    %% If we catch an exception, we can get unknown data.
+	    %% If we catch an exception, we can get unsafe data.
 	    {Xs, St1} = visit(catch_body(T), L, St),
-	    {join([unknown()], Xs), St1};
+	    {join([unsafe()], Xs), St1};
 	binary ->
 	    %% Binaries are heap objects, but we don't have special
 	    %% shared-heap allocation operators for them at the moment.
-	    %% To be safe, they must therefore be treated as unknowns.
+	    %% They must therefore be treated as unsafe.
 	    {_, St1} = visit_list(binary_segments(T), L, St),
-	    {[unknown()], St1};
+	    {[unsafe()], St1};
 	bitstr ->
 	    %% The other fields are constant literals.
 	    {_, St1} = visit(bitstr_val(T), L, St),
@@ -577,11 +577,11 @@ bind_pat_vars(P, X, Vars) ->
 	    end;
 	binary ->
 	    %% See the handling of binary-expressions.
-	    bind_pats_single(binary_segments(P), unknown(), Vars);
+	    bind_pats_single(binary_segments(P), unsafe(), Vars);
 	bitstr ->
 	    %% See the handling of binary-expressions.
 	    bind_pats_single([bitstr_val(P), bitstr_size(P)],
-			     unknown(), Vars);
+			     unsafe(), Vars);
 	alias ->
 	    P1 = alias_pat(P),
 	    Vars1 = bind_pat_vars(P1, X, Vars),
@@ -769,7 +769,7 @@ remote_call(M, F, Xs, As, L, St) ->
 %% even a "pure" function can still cons up new data.
 
 call_unknown(_Xs, St) ->
-    {[unknown()], St}.
+    {[unsafe()], St}.
 
 %% We need to handle some important standard functions in order to get
 %% decent precision.
@@ -879,7 +879,7 @@ struct(X, Xs) -> {set__singleton(X), Xs}.
 
 elements({_, Xs}) -> Xs.
 
-unknown() -> {set__singleton(any), none}.
+unsafe() -> {set__singleton(unsafe), none}.
 
 equal(none, none) -> true;
 equal(none, _) -> false;

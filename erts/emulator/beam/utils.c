@@ -253,21 +253,51 @@ erts_heap_alloc(Process* p, Uint need)
 
 void erts_arith_shrink(Process* p, Eterm* hp)
 {
-    Uint diff = ARITH_HEAP(p) - hp;
+    ErlHeapFragment* hf;
 
-#ifdef DEBUG
-    {
-	Eterm* thp = ARITH_HEAP(p);
-
-	ARITH_CHECK_ME(p) = thp;
-
-	while (hp <= thp) {
-	    *thp-- = ARITH_MARKER;
-	}
+#if !defined(HYBRID) && !defined(DEBUG)
+    if (ARITH_AVAIL(p) == 0) {
+	/*
+	 * For a non-hybrid system, there is nothing to gain by
+	 * do any work here.
+	 */
+	return;
     }
 #endif
-    ARITH_HEAP(p) = hp;
-    ARITH_AVAIL(p) += diff;
+
+    /*
+     * We must find the heap fragment that hp points into.
+     * If we are unlucky, we might have to search through
+     * a large part of the list. We'll hope that will not
+     * happen to often.
+     */
+    for (hf = MBUF(p); hf != 0; hf = hf->next) {
+	if (hp - hf->mem < hf->size) {
+	    if (ARITH_HEAP(p) - hf->mem < hf->size) {
+		/*
+		 * Regain lost space from the current arith heap
+		 * and make sure that there are no garbage in a heap
+		 * fragment (important for the hybrid heap).
+		 */
+		Uint diff = ARITH_HEAP(p) - hp;
+		ARITH_HEAP(p) = hp;
+		ARITH_AVAIL(p) += diff;
+#if defined(HYBRID) || defined(DEBUG)
+	    } else {
+		/*
+		 * We are not allowed to changed hf->size (because the
+		 * size must be correct when deallocating). Therefore,
+		 * clear out the uninitialized part of the heap fragment.
+		 */
+		Eterm* to = hf->mem + hf->size;
+		while (hp < to) {
+		    *hp++ = NIL;
+		}
+#endif
+	    }
+	    return;
+	}
+    }
 }
 
 #ifdef SHARED_HEAP

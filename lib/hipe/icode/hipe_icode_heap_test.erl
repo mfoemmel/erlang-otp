@@ -121,19 +121,21 @@ need([], Need, Code) ->
 need(I) ->
   case hipe_icode:type(I) of 
     call ->
-      primop_need(I);
+      primop_need(hipe_icode:call_fun(I), hipe_icode:call_args(I));
+    enter ->
+      primop_need(hipe_icode:enter_fun(I), hipe_icode:enter_args(I));
     _ -> 
       0
   end.
 	      
-primop_need(I) ->
-  case hipe_icode:call_fun(I) of
+primop_need(Op, As) ->
+  case Op of
     cons ->
       2;
     mktuple ->
-      length(hipe_icode:call_args(I)) + 1;
+      length(As) + 1;
     {mkfun,_MFA,_MagicNum,_Index} ->
-      NumFree = length(hipe_icode:call_args(I)),
+      NumFree = length(As),
       ?ERL_FUN_SIZE + NumFree;
     unsafe_tag_float ->
       3;

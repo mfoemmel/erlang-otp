@@ -69,29 +69,6 @@ bopt([{test,is_eq_exact,{f,Fail},[Reg,{atom,true}]}=I|Is], [{block,_}|_]=Acc0, S
 	failed -> bopt(Is, [I|Acc0], St0);
 	{Acc,St} -> bopt(Is, Acc, St)
     end;
-% bopt([{test,is_atom,{f,NotBool},[Reg]}=I|
-%       [{select_val,Reg,
-% 	{f,NotBool},
-% 	{list,[{atom,false},{f,Fail},{atom,true},{f,Succ}]}}|Is]=Is0],
-%      [{block,_}|_]=Acc0, St0) ->
-%     AnAtom = {atom,a},
-%     OldIs = [{test,is_eq_exact,{f,Succ},[AnAtom,AnAtom]},
-% 	     {jump,{f,Fail}}|Is],
-%     case bopt_block(Reg, Fail, OldIs, Acc0, St0) of
-% 	failed ->
-% 	    %%io:format("~p\n", [?LINE]),
-% 	    bopt(Is0, [I|Acc0], St0);
-% 	{Acc1,St} ->
-% 	    Acc = [{jump,{f,Succ}}|Acc1],
-% 	    bopt(Is, Acc, St)
-%     end;
-% bopt([{test,is_atom,{f,NotBool},[Reg]}=I,
-%       {select_val,Reg,{f,NotBool},
-%        {list,[{atom,true}=Atrue,Succ,{atom,false}=Afalse,Fail]}}|Is],
-%      Acc, St) ->
-%     bopt([I,{select_val,Reg,
-% 	     {f,NotBool},
-% 	     {list,[Afalse,Fail,Atrue,Succ]}}|Is], Acc, St);
 bopt([I|Is], Acc, St) ->
     bopt(Is, [I|Acc], St);
 bopt([], Acc, St) ->
@@ -125,7 +102,7 @@ bopt_block(Reg, Fail, OldIs, [{block,Bl0}|Acc0], St0) ->
 	    %% BlPre is a (possibly empty list) of instructions preceeding
 	    %% Bl1.
 	    Acc1 = make_block(BlPre, Acc0),
-	    {Bl,Acc} = extend_block(Bl1, Acc1),
+	    {Bl,Acc} = extend_block(Bl1, Fail, Acc1),
 	    case catch bopt_block_1(Bl, Fail, St0) of
 		{'EXIT',_Reason} ->
 		    %% Optimization failed for one of the following reasons:
@@ -162,16 +139,14 @@ bopt_block(Reg, Fail, OldIs, [{block,Bl0}|Acc0], St0) ->
 	    end
     end.
 
-bopt_block_1(Block0, Fail, St) ->
-    Block = pre_opt(Block0),
+bopt_block_1(Block, Fail, St) ->
     {Pre0,[{_,Tree}]} = bopt_tree(Block),
     Pre = update_fail_label(Pre0, Fail, []),
     bopt_cg(Tree, Fail, make_block(Pre, []), St).
 
-
 %% is_opt_safe(OriginalCode, OptCode, FollowingCode, State) -> true|false
 %%  Comparing the original code to the optimized code, determine
-%%  whether the optmized code is guaranteed to work in the same
+%%  whether the optimized code is guaranteed to work in the same
 %%  way as the original code.
 
 is_opt_safe(Bl, NewCode, OldIs, St) ->
@@ -211,9 +186,25 @@ update_fail_label([], _, Acc) -> Acc.
 make_block([], Acc) -> Acc;
 make_block(Bl, Acc) -> [{block,Bl}|Acc].
 
-extend_block(BlAcc, [{protected,_,_,_}=Prot|OldAcc]) ->
-    extend_block([Prot|BlAcc], OldAcc);
-extend_block(BlAcc, OldAcc) -> {BlAcc,OldAcc}.
+extend_block(BlAcc, Fail, [{protected,_,_,_}=Prot|OldAcc]) ->
+    extend_block([Prot|BlAcc], Fail, OldAcc);
+extend_block(BlAcc0, Fail, [{block,Is0}|OldAcc]=OldAcc0) ->
+    case extend_block_1(reverse(Is0), Fail, BlAcc0) of
+	{[],_} -> {BlAcc0,OldAcc0};
+	{BlAcc,[]} -> extend_block(BlAcc, Fail, OldAcc);
+	{BlAcc,Is} -> {BlAcc,[{block,Is}|OldAcc]}
+    end;
+extend_block(BlAcc, _, OldAcc) -> {BlAcc,OldAcc}.
+
+extend_block_1([{set,[_],_,{bif,_,{f,Fail}}}=I|Is], Fail, Acc) ->
+    extend_block_1(Is, Fail, [I|Acc]);
+extend_block_1([{set,[_],As,{bif,Bif,_}}=I|Is]=Is0, Fail, Acc) ->
+    case safe_bool_op(Bif, length(As)) of
+	false -> {Acc,reverse(Is0)};
+	true -> extend_block_1(Is, Fail, [I|Acc])
+    end;
+extend_block_1([_|_]=Is, _, Acc) -> {Acc,reverse(Is)};
+extend_block_1([], _, Acc) -> {Acc,[]}.
 
 split_block(Is0, Dst, Fail) ->
     case reverse(Is0) of
@@ -267,9 +258,15 @@ bopt_tree(Block0) ->
     Block = ssa_block(Block0),
     Reg = free_variables(Block),
     %%io:format("~p\n", [Block]),
-    %%io:format("~p\n", [gb_trees:to_list(Reg)]),
-    bopt_tree_1(Block, Reg, []).
+    %%io:format("~p\n", [Reg]),
+    Res = bopt_tree_1(Block, Reg, []),
+    %%io:format("~p\n", [Res]),
+    Res.
 
+bopt_tree_1([{set,[Dst],As0,{bif,'not',_}}|Is], Forest0, Pre) ->
+    {[Arg],Forest1} = bopt_bool_args(As0, Forest0),
+    Forest = gb_trees:enter(Dst, {'not',Arg}, Forest1),
+    bopt_tree_1(Is, Forest, Pre);
 bopt_tree_1([{set,[Dst],As0,{bif,'and',_}}|Is], Forest0, Pre) ->
     {As,Forest1} = bopt_bool_args(As0, Forest0),
     AndList = make_and_list(As),
@@ -301,8 +298,7 @@ bopt_tree_1([{set,[Dst],As,{bif,N,_}}=Bif|Is], Forest0, Pre) ->
 bopt_tree_1([], Forest, Pre) ->
     {Pre,[R || {_,V}=R <- gb_trees:to_list(Forest), V =/= any]}.
 
-safe_bool_op(is_tuple_arity, 2) -> true;
-safe_bool_op(is_tuple_element, 2) -> true;
+safe_bool_op(internal_is_record, 3) -> true;
 safe_bool_op(N, Ar) ->
     erl_internal:new_type_test(N, Ar) orelse erl_internal:comp_op(N, Ar).
 
@@ -328,13 +324,11 @@ bopt_good_arg({x,_}=X, Regs) ->
     end;
 bopt_good_arg(_, _) -> ok.
 
-bif_to_test(Tmp, is_tuple_element, [Tuple,RecordTag]) ->
-    {test,is_tuple_element,fail,[Tmp,Tuple,RecordTag]};
 bif_to_test(_, N, As) ->
     bif_to_test(N, As).
 
-bif_to_test(is_tuple_arity, [Tuple,{integer,Size}]) ->
-    {test,test_arity,fail,[Tuple,Size]};
+bif_to_test(internal_is_record, [_,_,_]=As) ->
+    {test,internal_is_record,fail,As};
 bif_to_test('=:=', As) -> {test,is_eq_exact,fail,As};
 bif_to_test('=/=', As) -> {test,is_ne_exact,fail,As};
 bif_to_test('==', As) -> {test,is_eq,fail,As};
@@ -363,6 +357,9 @@ make_or_list([]) -> [].
 
 %% Code generation for a boolean tree.
 
+bopt_cg({'not',Arg}, Fail, Acc, St) ->
+    I = bopt_cg_not(Arg),
+    bopt_cg(I, Fail, Acc, St);
 bopt_cg({'and',As}, Fail, Acc, St) ->
     bopt_cg_and(As, Fail, Acc, St);
 bopt_cg({'or',As}, Fail, Acc, St0) ->
@@ -371,14 +368,29 @@ bopt_cg({'or',As}, Fail, Acc, St0) ->
 bopt_cg({test,is_tuple_element,fail,[Tmp,Tuple,RecordTag]}, Fail, Acc, St) ->
     {[{test,is_eq_exact,{f,Fail},[Tmp,RecordTag]},
       {get_tuple_element,Tuple,0,Tmp}|Acc],St};
+bopt_cg({inverted_test,is_tuple_element,fail,[Tmp,Tuple,RecordTag]}, Fail, Acc, St) ->
+    {[{test,is_ne_exact,{f,Fail},[Tmp,RecordTag]},
+      {get_tuple_element,Tuple,0,Tmp}|Acc],St};
 bopt_cg({test,N,fail,As}, Fail, Acc, St) ->
     Test = {test,N,{f,Fail},As},
     {[Test|Acc],St};
+bopt_cg({inverted_test,N,fail,As}, Fail, Acc, St0) ->
+    {Lbl,St} = new_label(St0),
+    {[{label,Lbl},{jump,{f,Fail}},{test,N,{f,Lbl},As}|Acc],St};
 bopt_cg({protected,_,Bl0,{_,_,_}}, Fail, Acc, St0) ->
     {Bl,St} = bopt_block_1(Bl0, Fail, St0),
     {Bl++Acc,St};
 bopt_cg([_|_]=And, Fail, Acc, St) ->
     bopt_cg_and(And, Fail, Acc, St).
+
+bopt_cg_not({'and',As0}) ->
+    As = [bopt_cg_not(A) || A <- As0],
+    {'or',As};
+bopt_cg_not({'or',As0}) ->
+    As = [bopt_cg_not(A) || A <- As0],
+    {'and',As};
+bopt_cg_not({test,Test,Fail,As}) ->
+    {inverted_test,Test,Fail,As}.
 
 bopt_cg_and([{atom,false}|_], Fail, _, St) ->
     {[{jump,{f,Fail}}],St};
@@ -408,8 +420,8 @@ free_vars_1([{set,[Dst],As,{bif,_,_}}|Is], F0, N0) ->
     F = gb_sets:union(F0, gb_sets:difference(var_list(As), N0)),
     N = gb_sets:union(N0, var_list([Dst])),
     free_vars_1(Is, F, N);
-free_vars_1([{protected,_,_,_}|Is], F, N) ->
-    free_vars_1(Is, F, N);
+free_vars_1([{protected,_,Pa,_}|Is], F, N) ->
+    free_vars_1(Pa++Is, F, N);
 free_vars_1([], F, _) ->
     gb_trees:from_orddict([{K,any} || K <- gb_sets:to_list(F)]).
 
@@ -423,24 +435,6 @@ var_list_1([_|Is], D) ->
 var_list_1([], D) -> D.
 
 %%%
-%%% Pre-optimization of a block of guard BIF calls.
-%%%
-
-pre_opt([{set,[TmpA],[Tuple],{bif,size,F}},
-	 {set,[TmpA],[TmpA,Size],{bif,'=:=',F}},
-	 {set,[TmpB],[{integer,1},Tuple],{bif,element,F}},
-	 {set,[TmpB],[TmpB,RecordTag],{bif,'=:=',F}},
-	 {set,[TmpA],[TmpA,TmpB],{bif,'and',F}}|Is]) ->
-    [{set,[TmpA],[Tuple],{bif,is_tuple,F}},
-     {set,[TmpB],[Tuple,Size],{bif,is_tuple_arity,F}},
-     {set,[TmpA],[TmpA,TmpB],{bif,'and',F}},
-     {set,[TmpB],[Tuple,RecordTag],{bif,is_tuple_element,F}},
-     {set,[TmpA],[TmpA,TmpB],{bif,'and',F}}|pre_opt(Is)];
-pre_opt([I|Is]) ->
-    [I|pre_opt(Is)];
-pre_opt([]) -> [].
-
-%%%
 %%% Convert a block to Static Single Assignment (SSA) form.
 %%%
 
@@ -448,18 +442,21 @@ pre_opt([]) -> [].
 	{live,
 	 sub}).
 	 
-ssa_block(Is) ->
-    Next = ssa_first_free(Is, 0),
-    ssa_block_1(Is, #ssa{live=Next,sub=gb_trees:empty()}).
+ssa_block(Is0) ->
+    Next = ssa_first_free(Is0, 0),
+    {Is,_} = ssa_block_1(Is0, #ssa{live=Next,sub=gb_trees:empty()}, []),
+    Is.
 
-ssa_block_1([{protected,[Dst],Pa,Pb}|Is], Sub0) ->
-    Sub = ssa_assign(Dst, Sub0),
-    [{protected,[ssa_sub(Dst, Sub)],Pa,Pb}|ssa_block_1(Is, Sub)];
-ssa_block_1([{set,[Dst],As,Bif}|Is], Sub0) ->
+ssa_block_1([{protected,[_],Pa0,Pb}|Is], Sub0, Acc) ->
+    {Pa,Sub} = ssa_block_1(Pa0, Sub0, []),
+    Dst = ssa_last_target(Pa),
+    ssa_block_1(Is, Sub, [{protected,[Dst],Pa,Pb}|Acc]);
+ssa_block_1([{set,[Dst],As,Bif}|Is], Sub0, Acc0) ->
     Sub1 = ssa_in_use_list(As, Sub0),
     Sub = ssa_assign(Dst, Sub1),
-    [{set,[ssa_sub(Dst, Sub)],ssa_sub_list(As, Sub0),Bif}|ssa_block_1(Is, Sub)];
-ssa_block_1([], _) -> [].
+    Acc = [{set,[ssa_sub(Dst, Sub)],ssa_sub_list(As, Sub0),Bif}|Acc0],
+    ssa_block_1(Is, Sub, Acc);
+ssa_block_1([], Sub, Acc) -> {reverse(Acc),Sub}.
 
 ssa_in_use_list(As, Sub) ->
     foldl(fun ssa_in_use/2, Sub, As).
@@ -510,7 +507,10 @@ ssa_first_free_list(Regs, Next) ->
     foldl(fun({x,R}, N) when R >= N -> R+1;
 	     (_, N) -> N end, Next, Regs).
 
-
+ssa_last_target([{set,[Dst],_,_},{'%live',_}]) -> Dst;
+ssa_last_target([{set,[Dst],_,_}]) -> Dst;
+ssa_last_target([_|Is]) -> ssa_last_target(Is).
+    
 %% index_instructions(FunctionIs) -> GbTree([{Label,Is}])
 %%  Index the instruction sequence so that we can quickly
 %%  look up the instruction following a specific label.
@@ -580,7 +580,7 @@ is_killed_at_all(_, [], _) -> true.
 is_not_used(R, Is, St) ->
     case is_not_used_1(R, Is, St) of
 	false ->
-	    io:format("used ~p: ~P\n", [R,Is,15]),
+	    %%io:format("used ~p: ~P\n", [R,Is,15]),
 	    false;
 	true -> true
     end.

@@ -73,8 +73,8 @@ atom suspend_msg
 atom suspend_msg_timeout
 atom suspend_0
 atom gc_1
-atom get_exit_tag
 atom hipe_apply
+atom rethrow
 atom find_na_or_make_stub
 atom select_msg
 atom set_timeout

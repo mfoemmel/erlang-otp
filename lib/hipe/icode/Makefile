@@ -44,7 +44,7 @@ DOC_MODULES = hipe_icode hipe_icode_cfg hipe_icode_liveness \
 	hipe_icode_ssa \
 	hipe_icode_type hipe_icode_ssa_copy_prop hipe_icode_pp hipe_icode_fp \
 	hipe_icode_ssa_const_prop \
-	hipe_icode_split_arith hipe_icode_callgraph
+	hipe_icode_split_arith hipe_icode_callgraph hipe_icode_type_signature
 
 MODULES = $(DOC_MODULES) hipe_icode_ebb 
 
@@ -65,7 +65,7 @@ DOC_FILES= $(DOC_MODULES:%=$(DOCS)/%.html)
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += 
+ERL_COMPILE_FLAGS += +nowarn_shadow_vars
 
 # ----------------------------------------------------
 # Targets

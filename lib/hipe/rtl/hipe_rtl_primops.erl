@@ -13,19 +13,96 @@
 
 -module(hipe_rtl_primops). 
 
--export([gen_primop/5, gen_enter_primop/5, gen_call_fun/5,
-	 gen_element/6, gen_apply/4, gen_apply_N/5, gen_self/2]).
--export([gen_gc_mk_tuple/2]).
+-export([gen_primop/4, gen_enter_primop/4, gen_call_builtin/6,
+	 gen_enter_builtin/2]).
 
-%%------------------------------------------------------------------------
+%% --------------------------------------------------------------------
 
 -include("../main/hipe.hrl").
 -include("hipe_literals.hrl").
 
-%%------------------------------------------------------------------------
+%% --------------------------------------------------------------------
+%% Handling of known MFA builtins that are inline expanded
 
+gen_call_builtin(Fun, Dst, Args, IsGuard, Cont, Fail) ->
+  case Fun of
+    {erlang,apply,3} ->
+      gen_apply(Dst, Args, Cont, Fail);
 
-%% ____________________________________________________________________
+    {erlang,element,2} ->
+      gen_element(Dst, Args, IsGuard, Cont, Fail);
+
+    {erlang,self,0} ->
+      gen_self(Dst, Cont);
+
+    {hipe_bifs,in_native,0} ->
+      Dst1 =
+	case Dst of
+	  [] -> %% The result is not used.
+	    hipe_rtl:mk_new_var();
+	  [Dst0] -> Dst0
+	end,
+      [hipe_rtl:mk_load_atom(Dst1, true), hipe_rtl:mk_goto(Cont)];
+    
+    _ -> []    % not a builtin
+  end.
+
+%% (Recall that enters cannot occur within a catch-region in the same
+%% function, so we don't need to consider fail-continuations here.)
+%% TODO: should we inline expand more functions here? Cf. above.
+gen_enter_builtin(Fun, Args) ->
+  case Fun of
+    {erlang,apply,3} ->
+      gen_enter_apply(Args);
+
+%% TODO
+%%     {erlang,element,2} ->
+%%       gen_enter_element(Args, IsGuard);
+
+%% TODO
+%%     {erlang,self,0} ->
+%%       gen_enter_self();
+
+    {hipe_bifs,in_native,0} ->
+      Dst = hipe_rtl:mk_new_var(),
+      [hipe_rtl:mk_load_atom(Dst, true), hipe_rtl:mk_return([Dst])];
+
+    _ -> []    % not a builtin
+  end.
+
+%% --------------------------------------------------------------------
+%% Generate code to jump to in case the inlined function fails.
+
+gen_fail_code(Fail, Type) -> 
+  gen_fail_code(Fail, Type, false).
+
+gen_fail_code(Fail, Type, IsGuard) -> 
+  case IsGuard of
+    true when Fail =/= [] ->
+      {Fail, []};  % go directly to target
+    false ->
+      NewLabel =  hipe_rtl:mk_new_label(),
+      NewLabelName = hipe_rtl:label_name(NewLabel),
+      {NewLabelName, [NewLabel | fail_code(Fail, Type)]}
+  end.
+
+fail_code(Fail, Type) when is_atom(Type) ->
+  Var = hipe_rtl:mk_new_var(),
+  [hipe_rtl:mk_load_atom(Var, Type),
+   hipe_rtl_exceptions:gen_fail(error, [Var], Fail)];
+fail_code(Fail, {Type, Value}) when is_atom(Type) ->
+  Var = hipe_rtl:mk_new_var(),
+  [hipe_rtl:mk_load_atom(Var, Type),
+   hipe_rtl:mk_gctest(3),  % room for a 2-tuple
+   gen_mk_tuple(Var,[Var,Value]),
+   hipe_rtl_exceptions:gen_fail(error, [Var], Fail)].
+
+fp_fail_code(TmpFailLbl, FailLbl) ->
+  [TmpFailLbl |
+   hipe_rtl_arch:handle_fp_exception() ++
+   [fail_code(FailLbl, badarith)]].
+
+%% --------------------------------------------------------------------
 %% CALL PRIMOP
 %%
 %% @doc
@@ -33,33 +110,15 @@
 %%   Tail calls to primops (enter_fun, apply, etc.) are not handled here!
 %% @end
 
-gen_fail_code(Fail, Type, Dst, IsGuard, ExitInfo) -> 
-  case IsGuard of
-    true ->
-      {Fail, []};
-    false ->
-      FailLabel =  hipe_rtl:mk_new_label(),
-      FailLabelName = hipe_rtl:label_name(FailLabel),
-      Code =
-	case Fail of
-	  [] ->
-	    hipe_rtl_exceptions:gen_exit_atom(badarg, ExitInfo);
-	  _ ->
-	    hipe_rtl_exceptions:gen_fail_code(Fail, Dst,
-					      Type,  ExitInfo)
-	end,
-      {FailLabelName, [FailLabel|Code]}
-  end.      
-
-gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, ExitInfo, Options) ->
+gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
   GotoCont = hipe_rtl:mk_goto(Cont),
   case Op of
-    %% ------------------------------------------------
+    %%
     %% Binary Syntax
     %%
     {hipe_bs_primop, BsOP} ->
       {FailLabelName, FailCode} = 
-	gen_fail_code(Fail, badarg, hipe_rtl:mk_new_var(), IsGuard, ExitInfo),
+	gen_fail_code(Fail, badarg, IsGuard),
       case proplists:get_bool(inline_bs, Options) of
 	true ->	
 	  {Code1, NewTab} =
@@ -74,12 +133,14 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, ExitInfo, Options) ->
     
     {hipe_bsi_primop, BsOP} ->
       {FailLabelName, FailCode} = 
-	gen_fail_code(Fail, badarg, hipe_rtl:mk_new_var(), IsGuard, ExitInfo),
+	gen_fail_code(Fail, badarg, IsGuard),
       Code1 = hipe_rtl_cerl_bs_ops:gen_rtl(BsOP, Args, Dst, Cont,
 					   FailLabelName),
       
       {[Code1,FailCode], ConstTab};
-
+    %%
+    %% Other primops
+    %%
     _ ->
       Code = 
 	case Op of
@@ -159,9 +220,10 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, ExitInfo, Options) ->
 		[gen_unsafe_element(Dst1, hipe_rtl:mk_imm(N), Tuple),GotoCont]
 	    end;
 	  {unsafe_update_element,N} ->
-	    [] = Dst,
+	    [Dst1] = Dst,
 	    [Tuple, Value] = Args,
 	    [gen_unsafe_update_element(Tuple, hipe_rtl:mk_imm(N), Value),
+	     hipe_rtl:mk_move(Dst1, Tuple),
 	     GotoCont];
 	  {element,TypeInfo} ->
 	    Dst1 =
@@ -172,8 +234,12 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, ExitInfo, Options) ->
 	      end,
 	    [TupleInfo, IndexInfo] = TypeInfo,	    
 	    [Index, Tuple] = Args,	    
-	    [gen_element_1(Dst1, Index, Tuple, IsGuard, Cont, Fail, ExitInfo,
+	    [gen_element_1(Dst1, Index, Tuple, IsGuard, Cont, Fail,
 			   TupleInfo, IndexInfo)];
+
+	  %% Apply-fixarity
+	  {apply_N,Arity} ->
+	    gen_apply_N(Dst, Arity, Args, Cont, Fail);
 
 	  %% GC test
 	  {gc_test,Need} ->
@@ -197,7 +263,7 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, ExitInfo, Options) ->
 
 	  %% Closures
 	  call_fun ->
-	    gen_call_fun(Dst, Args, Cont, Fail, ExitInfo);
+	    gen_call_fun(Dst, Args, Cont, Fail);
 	  {mkfun,MFA,MagicNum,Index} ->
 	    case Dst of
 	      [] -> %% The result is not used.
@@ -259,13 +325,13 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, ExitInfo, Options) ->
 	  fclearerror ->
 	    gen_fclearerror();
 	  fcheckerror ->
-	    gen_fcheckerror(Cont, Fail, ExitInfo);
+	    gen_fcheckerror(Cont, Fail);
 	  conv_to_float ->
 	    case Dst of
 	      [] ->
-		gen_conv_to_float(hipe_rtl:mk_new_fpreg(), Args, Cont, Fail, ExitInfo);
+		gen_conv_to_float(hipe_rtl:mk_new_fpreg(), Args, Cont, Fail);
 	      [Dst1] ->
-		gen_conv_to_float(Dst1, Args, Cont, Fail, ExitInfo)
+		gen_conv_to_float(Dst1, Args, Cont, Fail)
 	    end;
 	  unsafe_untag_float ->
 	    [Arg] = Args,
@@ -285,35 +351,46 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, ExitInfo, Options) ->
 		hipe_tagscheme:unsafe_tag_float(Dst1, Arg)
 	    end;
 
+	  %% MFA:s are not primops!
 	  {_M,_F,_A} ->
 	    exit({bad_primop, Op});
+
+	  %% Catch-all
 	  _ ->
 	    %% Some things still become calls in rtl although they have
 	    %% non-MFA names, such as the arithmetic operation '*'.
-	    %% TODO: This should probably be looked at.
+	    %% XXX FIXME: This should probably be looked at.
 	    [hipe_rtl:mk_call(Dst, Op, Args, Cont, Fail, not_remote)]
 	end,
       {Code, ConstTab}
   end.
 
-gen_enter_primop({Op, Args}, IsGuard, ConstTab, ExitInfo, Options) ->
+gen_enter_primop({Op, Args}, IsGuard, ConstTab, Options) ->
   case Op of
     enter_fun ->
-      %% Tail-call to a closure
-      Code = hipe_rtl_primops:gen_call_fun([], Args, [], [], ExitInfo),
+      %% Tail-call to a closure must preserve tail-callness!
+      %% (Passing Continuation = [] to gen_call_fun/5 does this.)
+      Code = gen_call_fun([], Args, [], []),
       {Code, ConstTab};
+
+    {apply_N,Arity} ->
+      %% Tail-call to a closure must preserve tail-callness!
+      %% (Passing Continuation = [] to gen_apply_N/5 does this.)
+      Code = gen_apply_N([], Arity, Args, [], []),
+      {Code,  ConstTab};
+
     _ ->
-      %% All other bif tail calls are converted to call + return.
+      %% All other primop tail calls are converted to call + return.
       Dst = [hipe_rtl:mk_new_var()],
       OkLab = hipe_rtl:mk_new_label(),
       {Code,ConstTab1} = 
 	gen_primop({Op,Dst,Args,hipe_rtl:label_name(OkLab),[]}, 
-		   IsGuard, ConstTab, ExitInfo, Options),
+		   IsGuard, ConstTab, Options),
       {Code ++ [OkLab, hipe_rtl:mk_return(Dst)], ConstTab1}
   end.
 
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 %% ARITHMETIC
 %%
 
@@ -372,13 +449,13 @@ gen_op_general_case(Res, Op, Args, Cont, Fail, GenCaseLabel) ->
 %% We don't inline multiplication at the moment
 %%
 
-%%gen_mul_2([Res], Args, Cont, Fail, Op, ExitInfo) ->
+%%gen_mul_2([Res], Args, Cont, Fail, Op) ->
 %%   [Arg1, Arg2] = Args,
 %%   GenCaseLabel = hipe_rtl:mk_new_label(),
 %%   [hipe_tagscheme:test_two_fixnums(Arg1, Arg2,
 %%				    hipe_rtl:label_name(GenCaseLabel)),
 %%    hipe_tagscheme:fixnum_mul(Arg1, Arg2, Res, GenCaseLabel)|
-%%    gen_op_general_case(Res, Op, Args, Cont, Fail, GenCaseLabel, ExitInfo)].
+%%    gen_op_general_case(Res, Op, Args, Cont, Fail, GenCaseLabel)].
 
 %%
 %% Inline bitoperations.
@@ -447,7 +524,7 @@ gen_unsafe_bnot_2(Res, Args, Cont) ->
   end.
  
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 %% 
 
 %%
@@ -468,12 +545,11 @@ gen_cons(Dst, [Arg1, Arg2]) ->
    PutHPInsn].
 
 %% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% ____________________________________________________________________
-%%
+%% --------------------------------------------------------------------
 %% Handling of closures...
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 %% gen_mkfun
 %%
 %%    The gc_test should have expanded to
@@ -623,27 +699,22 @@ gen_free_vars([], _, _, _, AccCode) -> AccCode.
 
 %% ------------------------------------------------------------------
 %%
-%% call_fun (also handles enter_fun when called with empty continuation)
+%% call_fun (also handles enter_fun when Continuation = [])
 
-gen_call_fun(Dst, ArgsAndFun, Continuation, Fail, ExitInfo) ->  
+gen_call_fun(Dst, ArgsAndFun, Continuation, Fail) ->  
   NAddressReg = hipe_rtl:mk_new_reg(),
   ArityReg = hipe_rtl:mk_new_reg(),
-  BadFunLab = hipe_rtl:mk_new_label(),
-  BadArityLab = hipe_rtl:mk_new_label(),
-  [Fun|Args] = lists:reverse(ArgsAndFun),
+  [Fun|RevArgs] = lists:reverse(ArgsAndFun),
 
-  %% io:format("Fun = ~p, Args = ~p,\nExitInfo = ~p\n", [Fun,Args,ExitInfo]),
-  FailCode = hipe_rtl_exceptions:gen_funcall_fail(Fail, Fun, BadFunLab,
-						  BadArityLab, ExitInfo),
+  {BadFunLabName, BadFunCode} = gen_fail_code(Fail, {badfun, Fun}),
+  {BadArityLabName, BadArityCode} = gen_fail_code(Fail, {badarity, Fun}),
 
   CheckGetCode = 
-    hipe_tagscheme:if_fun_get_arity_and_address(ArityReg,
-						NAddressReg, Fun, 
-						hipe_rtl:label_name(BadFunLab),
+    hipe_tagscheme:if_fun_get_arity_and_address(ArityReg, NAddressReg,
+						Fun, BadFunLabName,
 						0.9),
-  CheckArityCode = check_arity(ArityReg, length(Args), 
-			       hipe_rtl:label_name(BadArityLab)),
-
+  CheckArityCode = check_arity(ArityReg, length(RevArgs),
+			       BadArityLabName),
   CallCode =
     case Continuation of
       [] -> %% This is a tailcall
@@ -652,8 +723,7 @@ gen_call_fun(Dst, ArgsAndFun, Continuation, Fail, ExitInfo) ->
 	[hipe_rtl:mk_call(Dst, NAddressReg, ArgsAndFun,
 			  Continuation, Fail, not_remote)]
     end,
-  [CheckGetCode, CheckArityCode, CallCode, FailCode].
-
+  [CheckGetCode, CheckArityCode, CallCode, BadFunCode, BadArityCode].
 
 check_arity(ArityReg, Arity, BadArityLab) ->
   TrueLab1 = hipe_rtl:mk_new_label(),
@@ -671,6 +741,10 @@ gen_apply(Dst, Args=[_M,_F,_AppArgs], Cont, Fail) ->
   %% Dst can be [Res] or [].
   [hipe_rtl:mk_call(Dst, hipe_apply, Args, Cont, Fail, not_remote)].
 
+gen_enter_apply(Args=[_M,_F,_AppArgs]) ->
+  %% 'apply' in tail-call context
+  [hipe_rtl:mk_enter(hipe_apply, Args, not_remote)].
+
 %%
 %% apply_N
 %% also handles tailcall case (Cont=[])
@@ -680,7 +754,7 @@ gen_apply_N(Dst, Arity, [M,F|CallArgs], Cont, Fail) ->
   CallLabel = hipe_rtl:mk_new_label(),
   CodeAddress = hipe_rtl:mk_new_reg(),
   [hipe_rtl:mk_call([CodeAddress], find_na_or_make_stub,
-		    [M,F,hipe_rtl:mk_imm(hipe_tagscheme:mk_fixnum(Arity-2))],
+		    [M,F,hipe_rtl:mk_imm(hipe_tagscheme:mk_fixnum(Arity))],
 		    hipe_rtl:label_name(CallLabel),
 		    Fail, not_remote),
    CallLabel,
@@ -696,10 +770,6 @@ gen_apply_N(Dst, Arity, [M,F|CallArgs], Cont, Fail) ->
 %%
 %% mkTuple
 %%
-
-gen_gc_mk_tuple(Dst, Elements) ->
-  Arity = length(Elements),
-  [hipe_rtl:mk_gctest(Arity+1) | gen_mk_tuple(Dst,Elements)].
 
 gen_mk_tuple(Dst, Elements) ->
   {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
@@ -760,7 +830,7 @@ gen_unsafe_tl(Dst, [Arg]) -> hipe_tagscheme:unsafe_cdr(Dst, Arg).
 %%
 %% element
 %%
-gen_element(Dst, Args, IsGuard, Cont, Fail, ExitInfo) ->
+gen_element(Dst, Args, IsGuard, Cont, Fail) ->
   Dst1 =
     case Dst of
       [] -> %% The result is not used.
@@ -768,11 +838,11 @@ gen_element(Dst, Args, IsGuard, Cont, Fail, ExitInfo) ->
       [Dst0] -> Dst0
     end,
   [Index, Tuple] = Args,
-  gen_element_1(Dst1, Index, Tuple, IsGuard, Cont, Fail, ExitInfo, [], []).
+  gen_element_1(Dst1, Index, Tuple, IsGuard, Cont, Fail, [], []).
 
-gen_element_1(Dst, Index, Tuple, IsGuard, Cont, Fail, ExitInfo, TupleInfo,
+gen_element_1(Dst, Index, Tuple, IsGuard, Cont, Fail, TupleInfo,
 	      IndexInfo) ->
-  {FailLblName, FailCode} = gen_fail_code(Fail, badarg, Dst, IsGuard, ExitInfo),
+  {FailLblName, FailCode} = gen_fail_code(Fail, badarg, IsGuard),
   [hipe_tagscheme:element(Dst, Index, Tuple, FailLblName, TupleInfo, IndexInfo),
    hipe_rtl:mk_goto(Cont),
    FailCode].
@@ -887,7 +957,7 @@ gen_select_msg([], Cont) ->
 gen_suspend_msg([], Cont) ->
   hipe_rtl:mk_call([], suspend_msg, [], Cont, [], not_remote).
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 %%
 %% Floating point handling 
 %%
@@ -897,13 +967,11 @@ gen_fclearerror() ->
   [hipe_rtl:mk_load_address(Addr, erl_fp_exception, c_const),
    hipe_rtl:mk_store(Addr, hipe_rtl:mk_imm(0), hipe_rtl:mk_imm(0), int32)].
 
-gen_fcheckerror(ContLbl, FailLbl, ExitInfo)->
+gen_fcheckerror(ContLbl, FailLbl)->
   Tmp = hipe_rtl:mk_new_reg(),
   TmpFailLbl0 = hipe_rtl:mk_new_label(),
-  Result = hipe_rtl:mk_new_var(),
   Addr = hipe_rtl:mk_new_reg(),
-  FailCode = fp_fail_code(TmpFailLbl0,
-			  FailLbl, Result, ExitInfo),
+  FailCode = fp_fail_code(TmpFailLbl0, FailLbl),
   hipe_rtl_arch:fwait() ++
   [hipe_rtl:mk_load_address(Addr, erl_fp_exception, c_const),
    hipe_rtl:mk_load(Tmp, Addr, hipe_rtl:mk_imm(0), int32, unsigned),
@@ -911,7 +979,7 @@ gen_fcheckerror(ContLbl, FailLbl, ExitInfo)->
 		      ContLbl, hipe_rtl:label_name(TmpFailLbl0), 0.9)] ++
     FailCode.
 
-gen_conv_to_float(Dst, [Src], ContLbl, FailLbl, ExitInfo) ->
+gen_conv_to_float(Dst, [Src], ContLbl, FailLbl) ->
   case hipe_rtl:is_var(Src) of
     true ->
       Tmp = hipe_rtl:mk_new_var(),
@@ -929,9 +997,7 @@ gen_conv_to_float(Dst, [Src], ContLbl, FailLbl, ExitInfo) ->
 					  hipe_rtl:label_name(ContFp), 0.5),
       GotoCont = hipe_rtl:mk_goto(ContLbl),
       TmpFailLbl0 = hipe_rtl:mk_new_label(),
-      Result = hipe_rtl:mk_new_var(),
-      FailCode = fp_fail_code(TmpFailLbl0,
-			      FailLbl, Result, ExitInfo),
+      FailCode = fp_fail_code(TmpFailLbl0, FailLbl),
 
       TestFixNum ++
 	[TrueFixNum, 
@@ -952,13 +1018,6 @@ gen_conv_to_float(Dst, [Src], ContLbl, FailLbl, ExitInfo) ->
 	 hipe_tagscheme:unsafe_untag_float(Dst, Tmp)];
     _ ->
       %% This must be an attempt to convert an illegal term.
-      Result = hipe_rtl:mk_new_var(),
-      [hipe_rtl_exceptions:gen_fail_code(FailLbl, Result, badarith, ExitInfo)]
+      [gen_fail_code(FailLbl, badarith)]
   end.
-
-fp_fail_code(TmpFailLbl0, FailLbl, Result, ExitInfo) ->
-  [TmpFailLbl0 |
-   hipe_rtl_arch:handle_fp_exception() ++
-   [hipe_rtl_exceptions:gen_fail_code(FailLbl, Result,
-				      badarith, ExitInfo)]].
 

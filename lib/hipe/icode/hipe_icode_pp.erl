@@ -188,34 +188,24 @@ pp_instr(Dev, I) ->
       io:format(Dev, "    return(", []),
       pp_args(Dev, hipe_icode:return_vars(I)),
       io:format(Dev, ")~n", []);
-    pushcatch ->
-      io:format(Dev, "    pushcatch -> ~w cont ~w~n", 
-		[hipe_icode:pushcatch_label(I), 
-		 hipe_icode:pushcatch_successor(I)]);
-    restore_catch ->
+    begin_try ->
+      io:format(Dev, "    begin_try -> ~w cont ~w~n", 
+		[hipe_icode:begin_try_label(I), 
+		 hipe_icode:begin_try_successor(I)]);
+    begin_handler ->
       io:format(Dev, "    ", []),
-      case hipe_icode:restore_catch_type(I) of
-	'try' ->
-	  pp_args(Dev, [hipe_icode:restore_catch_reason_dst(I),
-			hipe_icode:restore_catch_type_dst(I)]);
-	'catch' ->
-	  pp_arg(Dev, hipe_icode:restore_catch_reason_dst(I))
-      end,
-      io:format(Dev, " := restore_catch(~w)~n",
-		[hipe_icode:restore_catch_label(I)]);
-    remove_catch ->
-      io:format(Dev, "    remove_catch(~w)~n",
-		[hipe_icode:remove_catch_label(I)]);
+      pp_args(Dev, hipe_icode:begin_handler_dstlist(I)),
+      io:format(Dev, " := begin_handler()~n",[]);
+    end_try ->
+      io:format(Dev, "    end_try~n", []);
     fail ->
-%% NEW_EXCEPTIONS
-%%       Type = hipe_icode:fail_type(I),
-      Type = case hipe_icode:fail_type(I) of
-	       fault2 -> fault;
-	       T -> T
-	     end,
+      Type = hipe_icode:fail_class(I),
       io:format(Dev, "    fail(~w, [", [Type]),
-      pp_args(Dev, hipe_icode:fail_reason(I)),
-      io:put_chars(Dev, "])\n");
+      pp_args(Dev, hipe_icode:fail_args(I)),
+      case hipe_icode:fail_label(I) of
+	[] ->  io:put_chars(Dev, "])\n");
+	Fail ->  io:format(Dev, "]) -> ~w\n", [Fail])
+      end;
     'if' ->
       io:format(Dev, "    if ~w(", [hipe_icode:if_op(I)]),
       pp_args(Dev, hipe_icode:if_args(I)),

@@ -146,7 +146,7 @@
 	 t_fun/0, t_fun/2,
 	 t_fun_args/1,
 	 t_fun_range/1, t_identifier/0,
-	 t_inf/2, t_inf_lists/2,
+	 t_inf/1, t_inf/2, t_inf_lists/2,
 	 t_integer/0, t_integer/1,
 	 t_improper_list/0,
 	 t_is_any/1, t_is_atom/1,
@@ -156,33 +156,34 @@
 	 t_is_equal/2,
 	 t_is_none/1,
 	 t_is_float/1, t_is_fun/1,
-	 t_is_integer/1, t_is_list/1, t_is_nonempty_list/1,
+	 t_is_integer/1, t_is_list/1,
 	 t_is_nil/1,
 	 t_is_number/1,
 	 t_is_pid/1, t_is_port/1, t_is_ref/1,
 	 t_is_subtype/2,
 	 t_is_tuple/1,
+	 t_is_var/1,
 	 t_limit/2,
 	 t_list/0, t_list/1, t_list_elements/1, t_nil/0,
-	 t_nonempty_list/0,
 	 t_number/0, t_number/1, t_number_vals/1,
 	 t_pid/0, t_port/0, t_product/1, t_ref/0, t_string/0,
 	 t_subtract/2, t_sup/1, t_sup/2,
 	 t_to_string/1,
 	 t_tuple/0, t_tuple/1, t_tuple_args/1,
 	 t_tuple_arity/1, t_tuple_arities/1, t_tuple_subtypes/1,
+	 t_var/1, 
 	 t_none/0
 	]).
 -ifndef(NO_UNUSED).
 -export([t_bool/1, t_byte/1, t_char/1, t_cons/1, t_data_arity/1,
 	 t_degree/1, t_data_args/1, t_from_term/2, t_fun/1,
-	 t_fun_arity/1, t_improper_list/1, t_inf/1, t_is_atom/2,
-	 t_is_data/1, t_is_identifier/1, t_is_number/2,
-	 t_is_string/1, t_is_var/1, t_is_n_tuple/2,
+	 t_fun_arity/1, t_improper_list/1, t_is_atom/2, t_is_data/1,
+	 t_is_identifier/1, t_is_number/2, t_is_string/1,
+	 t_is_n_tuple/2, t_is_nonempty_list/1,
 	 t_nonempty_improper_list/0, t_nonempty_improper_list/1,
-	 t_nonempty_list/1, t_nonempty_string/0, t_subst/2,
-	 t_tuple_max_arity/1, t_tuple_min_arity/1,
-	 t_unify/2, t_var/1, t_var_name/1]).
+	 t_nonempty_list/0, t_nonempty_list/1, t_nonempty_string/0,
+	 t_subst/2, t_tuple_max_arity/1, t_tuple_min_arity/1, t_unify/2,
+	 t_var_name/1]).
 -endif.
 
 
@@ -405,11 +406,7 @@ t_components(T) -> [T].
 %% @see t_subst/2
 %% @see t_unify/2
 
--ifndef(NO_UNUSED).
 t_var(N) -> #var{n = N}.
--endif.
-%% @clear
-
 
 %% @spec t_is_var(T::type()) -> bool()
 %%
@@ -418,11 +415,8 @@ t_var(N) -> #var{n = N}.
 %%
 %% @see t_var/1
 
--ifndef(NO_UNUSED).
 t_is_var(#var{}) -> true;
 t_is_var(_) -> false.
--endif.
-%% @clear
 
 
 %% @spec t_var_name(t_var()) -> term()
@@ -828,7 +822,7 @@ t_atom() -> ?atom(?any, ?any).
 
 t_atom(true) -> ?atom(?singleton(true), ?atom_class_bool);
 t_atom(false) -> ?atom(?singleton(false), ?atom_class_bool);
-t_atom(V) -> ?atom(?singleton(V), ?any).
+t_atom(V) when is_atom(V) -> ?atom(?singleton(V), ?any).
 
 
 %% @spec t_is_atom(T::type()) -> bool()
@@ -1167,7 +1161,8 @@ t_tuple_arities(_) -> [].
 %%     nil() > none()
 
 -define(c_list(E, C, T), #c{c = list, n = 3, as = [E, C, T]}).
--define(list(E, C, T), ?u_list(?none,  ?c_list(E, C, T))).
+-define(c_nil, ?c_list(?none, ?list_start_nil, ?list_end_nil)).
+-define(list(E, C, T), ?u_list(?none, ?c_list(E, C, T))).
 -define(is_list(E, C, T), ?u_list(?none, ?c_list(E, C, T))).
 -define(list_start_cons, #c{c = cons, n = 0, as = []}).
 -define(list_start_is_cons, #c{c = cons}).
@@ -1206,8 +1201,10 @@ t_is_list(_) -> false.
 %%
 %% @see t_nonempty_list/0
 
+-ifndef(NO_UNUSED).
 t_is_nonempty_list(?is_nonempty_proper_list(_)) -> true;
 t_is_nonempty_list(_) -> false.
+-endif().
 
 
 %% @spec t_is_nil(T::type()) -> bool()
@@ -1476,7 +1473,9 @@ t_improper_list(T) -> ?improper_list(T, ?any).
 %% @see t_is_nonempty_list/1
 %% @see t_list/0
 
+-ifndef(NO_UNUSED).
 t_nonempty_list() -> ?nonempty_proper_list(?any).
+-endif().
 
 
 %% @spec t_nonempty_list(T::type()) -> type()
@@ -1910,7 +1909,10 @@ t_sup(?dunion(As1), ?dunion(As2)) ->
 	As -> ?dunion(As)
     end;
 t_sup(?value_set(S1=#set{}), ?value_set(S2=#set{})) ->
-    ?value_set(set_union(S1, S2));
+    case set_union(S1, S2) of
+	?any -> ?any;
+	SU -> ?value_set(SU)
+    end;
 t_sup(?tuple_mask(M1, As1), ?tuple_mask(M2, As2)) when M1 =/= M2 ->
     t_sup_tuples(M1, M2, As1, As2);
 t_sup(#c{c = C, n = N, as = As1}, #c{c = C, n = N, as = As2}) ->
@@ -2006,11 +2008,8 @@ unique([]) ->
 %% @doc Returns the infimum of a list of types.
 %% @see t_inf/2
 
--ifndef(NO_UNUSED).
 t_inf([T | Ts]) -> t_inf(T, t_inf(Ts));
 t_inf([]) -> ?any.
--endif.
-%% @clear
 
 
 %% @spec t_inf(type(), type()) -> type()
@@ -2375,12 +2374,13 @@ t_subtract(?c_number(?value_set(S0=#set{}), C1), ?c_number(?any, C2)) ->
 		C -> ?c_number(?value_set(S), C)
 	    end
     end;
-t_subtract(T1, ?is_nil) ->
+t_subtract(T1, ?c_nil) ->
     %% Special case, since the element type of ?nil is ?none although
     %% nil can be subtracted from all proper lists.
     case T1 of
-	?is_proper_list(E1) -> ?nonempty_proper_list(E1);
-	?is_nil -> ?none;
+	?c_nil -> ?none;
+	?c_list(E1, _, ?list_end_is_nil) -> 
+	    ?c_list(E1, ?list_start_cons, ?list_end_nil);
 	_ -> T1
     end;
 t_subtract(?c_list(E1, C1, T1) = L1, ?c_list(E2, C2, T2)) ->
@@ -2397,7 +2397,7 @@ t_subtract(?c_list(E1, C1, T1) = L1, ?c_list(E2, C2, T2)) ->
 			?list_start_is_cons ->
 			    case C1 of
 				?any ->
-				    ?nil;
+				    ?c_nil;
 				?list_start_is_cons ->
 				    ?none;
 			        _ ->
@@ -2834,7 +2834,7 @@ t_to_string_1(?is_float) ->
 t_to_string_1(?is_number(_, _)) ->
     "number()";
 t_to_string_1(?is_atom(?singleton(V), _)) ->
-    lists:flatten(io_lib:write(V));
+    lists:flatten(io_lib:fwrite("'~w'", [V]));
 t_to_string_1(?is_bool) ->
     "bool()";
 t_to_string_1(?is_atom(?value_set(S), _)) ->
@@ -2845,7 +2845,8 @@ t_to_string_1(?is_atom(_, _)) ->
 t_to_string_1(?is_tuple(?tuple_arities(As))) ->
     seq(fun (?tuple_types(_, _, As)) ->
 		seq(fun (?tuple_type(_, _, As)) ->
-			    "{" ++ seq(fun t_to_string/1, As) ++ "}"
+			    "{" ++ seq(fun(?any)->"_";(X) -> t_to_string(X)end,
+				       As) ++ "}"
 		    end,
 		    As, ?UNION_SEP)
 	end,
@@ -2855,38 +2856,38 @@ t_to_string_1(?is_tuple(_)) ->
 t_to_string_1(?is_nil) ->
     "[]";
 t_to_string_1(?is_nonempty_proper_list(?any)) ->
-    "nonempty_list()";
+    "[any(),...]";
 t_to_string_1(?is_nonempty_proper_list(T)) ->
     case t_is_char(T) andalso not t_is_byte(T) of
 	true ->
 	    "nonempty_string()";
 	false ->
-	    "nonempty_list(" ++ t_to_string(T) ++ ")"
+	    "[" ++ t_to_string(T) ++ ",...]"
     end;
 t_to_string_1(?is_cons(?any, _)) ->
-    "nonempty_improper_list()";
+    "nonempty_possibly_improper_list()";
 t_to_string_1(?is_cons(T, _)) ->
     S = t_to_string(T),
-    "nonempty_improper_list(" ++ S ++ ")";
+    "nonempty_possibly_improper_list(" ++ S ++ ")";
 t_to_string_1(?is_proper_list(?any)) ->
-    "list()";
+    "[any()]";
 t_to_string_1(?is_proper_list(T)) ->
     case t_is_char(T) andalso not t_is_byte(T) of
 	true ->
 	    "string()";
 	false ->
-	    "list(" ++ t_to_string(T) ++ ")"
+	    "[" ++ t_to_string(T) ++ "]"
     end;
 t_to_string_1(?is_improper_list(?any)) ->
-    "improper_list()";
+    "possibly_improper_list()";
 t_to_string_1(?is_improper_list(T)) ->
-    "improper_list(" ++ t_to_string(T) ++ ")";
+    "possibly_improper_list(" ++ t_to_string(T) ++ ")";
 t_to_string_1(?is_fun(?any, ?any)) ->
     "function()";
 t_to_string_1(?is_fun(?any, R)) ->
     "((...) -> " ++ t_to_string(R) ++ ")";
 t_to_string_1(?is_fun(?fun_domain_args(_, As), R)) ->
-    "((" ++ seq(fun t_to_string/1, As) ++ ") -> " ++ t_to_string(R) ++ ")";
+    "((" ++ seq(fun t_to_string/1, As) ++ ")->" ++ t_to_string(R) ++ ")";
 t_to_string_1(?is_binary) ->
     "binary()";
 t_to_string_1(?is_identifier(?identifier_class_is_pid)) ->
@@ -2899,7 +2900,7 @@ t_to_string_1(?is_identifier(_)) ->
     "identifier()".
 
 seq(F, Ts) ->
-    seq(F, Ts, ", ").
+    seq(F, Ts, ",").
 
 seq(F, [T], _Sep) ->
     F(T);

@@ -733,8 +733,7 @@ BIF_RETTYPE hipe_bifs_primop_address_1(BIF_ALIST_1)
 	check_bif(am_gc_1, nbif_gc_1);
 	check_bif(am_select_msg, nbif_select_msg);
 	check_bif(am_set_timeout, nbif_set_timeout);
-
-	check_bif(am_get_exit_tag, nbif_get_exit_tag);
+	check_bif(am_rethrow, nbif_rethrow);
 
 	check_bif(am_bs_init, nbif_bs_init);
 	check_bif(am_bs_final, nbif_bs_final);

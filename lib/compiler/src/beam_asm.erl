@@ -216,8 +216,7 @@ make_op({'%live',_R}, Dict) ->
     {[],Dict};
 make_op({bif, Bif, nofail, [], Dest}, Dict) ->
     encode_op(bif0, [{extfunc, erlang, Bif, 0}, Dest], Dict);
-make_op({bif, raise, _Fail, [A1,A2,_], _Dest}, Dict) ->
-    %% Drop last arg so we can get a bif2.
+make_op({bif, raise, _Fail, [A1,A2], _Dest}, Dict) ->
     encode_op(raise, [A1,A2], Dict);
 make_op({bif, Bif, Fail, Args, Dest}, Dict) ->
     Arity = length(Args),

@@ -296,7 +296,7 @@ static FUNCTION(void *, child_waiter, (void *));
 /********************* General functions ****************************/
 
 /* This is used by both the drivers and general I/O, must be set early */
-static int max_files;
+static int max_files = -1;
 
 /* 
  * a few variables used by the break handler 
@@ -547,10 +547,18 @@ static RETSIGTYPE user_signal1(void)
 static RETSIGTYPE user_signal1(int signum)
 #endif
 {
+   int i, max;
    /* We do this at interrupt level, since the main reason for
       wanting to generate a crash dump in this way is that the emulator
       is hung somewhere, so it won't be able to poll any flag we set here.
       */
+
+   /* First make sure we unregister at epmd... */
+   max = max_files;
+   if (max < 1024)
+       max = 1024;
+   for (i = 3; i < max; i++)
+       close(i);
 
    erl_exit(1, "Received SIGUSR1\n");
 }

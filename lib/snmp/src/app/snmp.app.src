@@ -92,7 +92,7 @@
   %%               
   %% 
   {registered, [snmp_app_sup]},
-  {env, [{agent, [{agent_type, master}]}]},
+  {env, []},
   %% If v3 authentication or encryption is used, 'crypto' must be started
   %% before snmp.
   {applications, [kernel, stdlib]},

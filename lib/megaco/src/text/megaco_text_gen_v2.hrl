@@ -131,7 +131,9 @@ enc_Message_messageBody({Tag, Val}, State) ->
 	messageError ->
 	    enc_ErrorDescriptor(Val, State);
 	transactions ->
-	    enc_Message_messageBody_transactions(Val, State)
+	    enc_Message_messageBody_transactions(Val, State);
+	_ ->
+	    error({invalid_messageBody_tag, Tag})
     end.
 
 enc_Message_messageBody_transactions({'Message_messageBody_transactions',Val}, 
@@ -144,18 +146,20 @@ enc_Message_messageBody_transactions(Val, State)
 enc_MId({'MId',Val}, State) ->
     enc_MId(Val, State);
 enc_MId({Tag, Val}, State) ->
-     case Tag of
-	 ip4Address ->
-	     enc_IP4Address(Val, State);
-	 ip6Address ->
-	     enc_IP6Address(Val, State);
-	 domainName ->
-	     enc_DomainName(Val, State);
-	 deviceName ->
-	     enc_PathName(Val, State);
-	 mtpAddress ->
-	     enc_mtpAddress(Val, State)
-     end.
+    case Tag of
+	ip4Address ->
+	    enc_IP4Address(Val, State);
+	ip6Address ->
+	    enc_IP6Address(Val, State);
+	domainName ->
+	    enc_DomainName(Val, State);
+	deviceName ->
+	    enc_PathName(Val, State);
+	mtpAddress ->
+	    enc_mtpAddress(Val, State);
+	_ ->
+	    error({invalid_MId_tag, Tag})
+    end.
 
 enc_mtpAddress(Val, State) ->
     [
@@ -328,7 +332,9 @@ enc_Transaction({Tag, Val}, State) ->
 	transactionReply ->
 	    enc_TransactionReply(Val, State);
 	transactionResponseAck ->
-	    enc_TransactionResponseAck(Val, State)
+	    enc_TransactionResponseAck(Val, State);
+	_ ->
+	    error({invalid_Transaction_tag, Tag})
     end.
 
 enc_TransactionResponseAck([Mand | Opt], State) ->
@@ -418,8 +424,10 @@ enc_TransactionReply_transactionResult({Tag, Val}, State) ->
     case Tag of
 	transactionError ->
 	    enc_ErrorDescriptor(Val, State);
-	 actionReplies ->
-	     enc_TransactionReply_transactionResult_actionReplies(Val, State)
+	actionReplies ->
+	    enc_TransactionReply_transactionResult_actionReplies(Val, State);
+	_ ->
+	    error({invalid_TransactionReply_transactionResult_tag, Tag})
      end.
 
 enc_TransactionReply_transactionResult_actionReplies({'TransactionReply_transactionResult_actionReplies',Val}, State) ->
@@ -606,29 +614,33 @@ enc_Command({Tag, Val}, State) ->
 	notifyReq ->
 	    [?NotifyToken, enc_NotifyRequest(Val, State)];
 	serviceChangeReq ->
-	    [?ServiceChangeToken, enc_ServiceChangeRequest(Val, State)]
+	    [?ServiceChangeToken, enc_ServiceChangeRequest(Val, State)];
+	_ ->
+	    error({invalid_Command_tag, Tag})
     end.
 
 enc_CommandReply({'CommandReply',Val}, State) ->
     enc_CommandReply(Val, State);
 enc_CommandReply({Tag, Val}, State) ->
-     case Tag of
-	 addReply ->
-	     [?AddToken, enc_AmmsReply(Val, State)];
-	 moveReply ->
-	     [?MoveToken, enc_AmmsReply(Val, State)];
-	 modReply ->
-	     [?ModifyToken, enc_AmmsReply(Val, State)];
-	 subtractReply ->
-	     [?SubtractToken, enc_AmmsReply(Val, State)];
-	 auditCapReply ->
-	     [?AuditCapToken, enc_AuditReply(Val, State)];
-	 auditValueReply ->
-	     [?AuditValueToken, enc_AuditReply(Val, State)];
-	 notifyReply ->
-	     [?NotifyToken, enc_NotifyReply(Val, State)];
-	 serviceChangeReply ->
-	     [?ServiceChangeToken, enc_ServiceChangeReply(Val, State)]
+    case Tag of
+	addReply ->
+	    [?AddToken, enc_AmmsReply(Val, State)];
+	moveReply ->
+	    [?MoveToken, enc_AmmsReply(Val, State)];
+	modReply ->
+	    [?ModifyToken, enc_AmmsReply(Val, State)];
+	subtractReply ->
+	    [?SubtractToken, enc_AmmsReply(Val, State)];
+	auditCapReply ->
+	    [?AuditCapToken, enc_AuditReply(Val, State)];
+	auditValueReply ->
+	    [?AuditValueToken, enc_AuditReply(Val, State)];
+	notifyReply ->
+	    [?NotifyToken, enc_NotifyReply(Val, State)];
+	serviceChangeReply ->
+	    [?ServiceChangeToken, enc_ServiceChangeReply(Val, State)];
+	_ ->
+	    error({invalid_CommandReply_tag, Tag})
      end.
 
 enc_TopologyRequest(Val, State)
@@ -679,23 +691,35 @@ enc_ammDescriptor({Tag, Desc}, State) ->
         eventBufferDescriptor -> enc_EventBufferDescriptor(Desc, State); 
         signalsDescriptor     -> enc_SignalsDescriptor(Desc, State);    
         digitMapDescriptor    -> enc_DigitMapDescriptor(Desc, State);    
-        auditDescriptor       -> enc_AuditDescriptor(Desc, State)
+        auditDescriptor       -> enc_AuditDescriptor(Desc, State);
+	_ ->
+	    error({invalid_ammDescriptor_tag, Tag})
     end.
 
-enc_AmmsReply(Val, State)
-  when record(Val, 'AmmsReply') ->
+enc_AmmsReply(#'AmmsReply'{terminationID = ID, 
+			   terminationAudit = asn1_NOVALUE}, State) ->
     [
      ?EQUAL,
-     enc_TerminationIDList1(Val#'AmmsReply'.terminationID, State),
-     case Val#'AmmsReply'.terminationAudit of
-	 asn1_NOVALUE ->
-	     [];
+     enc_TerminationIDList1(ID, State)
+    ];
+enc_AmmsReply(#'AmmsReply'{terminationID = ID, 
+			   terminationAudit = []}, State) ->
+    [
+     ?EQUAL,
+     enc_TerminationIDList1(ID, State)
+    ];
+enc_AmmsReply(#'AmmsReply'{terminationID = ID, 
+			   terminationAudit = Res}, State) ->
+    [
+     ?EQUAL,
+     enc_TerminationIDList1(ID, State),
+     case lists:flatten(enc_TerminationAudit(Res, ?INC_INDENT(State))) of
 	 [] ->
 	     [];
-	 TermAudit ->
+	 L ->
 	     [
-	      ?LBRKT_INDENT(State) ,
-	      enc_TerminationAudit(TermAudit, ?INC_INDENT(State)),
+	      ?LBRKT_INDENT(State), 
+	      L,
 	      ?RBRKT_INDENT(State)
 	     ]
      end
@@ -762,17 +786,51 @@ enc_AuditReply({Tag, Val}, State) ->
 	     ?RBRKT_INDENT(State)
 	    ]; 
 	auditResult when record(Val, 'AuditResult') ->
-	    %% auditOther
-	    [
-	     ?EQUAL,
-	     enc_TerminationID(Val#'AuditResult'.terminationID, State),
-	     ?LBRKT_INDENT(State),
-	     enc_TerminationAudit(Val#'AuditResult'.terminationAuditResult, ?INC_INDENT(State)),
-	     ?RBRKT_INDENT(State)
-	    ]
+	    enc_auditOther(Val, State);
+	auditResult ->
+	    error({invalid_auditResult, Val});
+	_ ->
+	    error({invalid_AuditReply_tag, Tag})
     end.
 
+enc_auditOther(#'AuditResult'{terminationID = ID,
+			      terminationAuditResult = asn1_NOVALUE}, State) ->
+    [
+     ?EQUAL,
+     enc_TerminationID(ID, State)
+    ];
+enc_auditOther(#'AuditResult'{terminationID = ID,
+			      terminationAuditResult = []}, State) ->
+    [
+     ?EQUAL,
+     enc_TerminationID(ID, State)
+    ];
+enc_auditOther(#'AuditResult'{terminationID = ID,
+			      terminationAuditResult = Res}, State) ->
+    [
+     ?EQUAL,
+     enc_TerminationID(ID, State),
+     case lists:flatten(enc_TerminationAudit(Res, ?INC_INDENT(State))) of
+	 [] ->
+	     [];
+	 L ->
+	     [
+	      ?LBRKT_INDENT(State), 
+	      L,
+	      ?RBRKT_INDENT(State)
+	     ]
+     end
+    ].
+
+    
 enc_AuditDescriptor(#'AuditDescriptor'{auditToken = asn1_NOVALUE,
+				       auditPropertyToken = asn1_NOVALUE}, 
+		    _State) ->
+    [
+     ?AuditToken,
+     [?LBRKT, ?RBRKT]
+    ];
+enc_AuditDescriptor(#'AuditDescriptor'{auditToken = [],
 				       auditPropertyToken = asn1_NOVALUE}, 
 		    _State) ->
     [
@@ -867,7 +925,9 @@ enc_IndAudauditReturnParameter({Tag, Val}, State) ->
 	indAudStatisticsDescriptor ->
 	    enc_IndAudStatisticsDescriptor(Val, State);
 	indAudPackagesDescriptor ->
-	    enc_IndAudPackagesDescriptor(Val, State)
+	    enc_IndAudPackagesDescriptor(Val, State);
+	_ ->
+	    error({invalid_IndAudauditReturnParameter_tag, Tag})
     end.
 
 %% The ASN.1 does not limit to just one of termStateDescr or streams,
@@ -895,30 +955,35 @@ enc_IndAudMediaDescriptor_streams({Tag, Val}, State) ->
 	oneStream ->
 	    enc_IndAudStreamParms(Val, State);
 	multiStream ->
-	    enc_IndAudMediaDescriptor_multiStream(Val, State)
+	    enc_IndAudMediaDescriptor_multiStream(Val, State);
+	_ ->
+	    error({invalid_IndAudMediaDescriptor_streams_tag, Tag})
     end.
 
-enc_IndAudTerminationStateDescriptor(#'IndAudTerminationStateDescriptor'{propertyParms = [],
-					eventBufferControl = asn1_NOVALUE,
-					serviceState       = 'NULL'}, State) ->
+enc_IndAudTerminationStateDescriptor(
+  #'IndAudTerminationStateDescriptor'{propertyParms = [],
+				      eventBufferControl = asn1_NOVALUE,
+				      serviceState       = 'NULL'}, State) ->
     [
      ?TerminationStateToken,
      ?LBRKT_INDENT(State),
      ?ServiceStatesToken,
      ?RBRKT_INDENT(State)
     ];
-enc_IndAudTerminationStateDescriptor(#'IndAudTerminationStateDescriptor'{propertyParms = [],
-					eventBufferControl = 'NULL',
-					serviceState = asn1_NOVALUE}, State) ->
+enc_IndAudTerminationStateDescriptor(
+  #'IndAudTerminationStateDescriptor'{propertyParms = [],
+				      eventBufferControl = 'NULL',
+				      serviceState = asn1_NOVALUE}, State) ->
     [
      ?TerminationStateToken,
      ?LBRKT_INDENT(State),
      ?BufferToken,
      ?RBRKT_INDENT(State)
     ];
-enc_IndAudTerminationStateDescriptor(#'IndAudTerminationStateDescriptor'{propertyParms = [Parms],
-					eventBufferControl = asn1_NOVALUE,
-					serviceState = asn1_NOVALUE}, State) ->
+enc_IndAudTerminationStateDescriptor(
+  #'IndAudTerminationStateDescriptor'{propertyParms = [Parms],
+				      eventBufferControl = asn1_NOVALUE,
+				      serviceState = asn1_NOVALUE}, State) ->
     #'IndAudPropertyParm'{name = Name} = Parms,
     [
      ?TerminationStateToken,
@@ -956,16 +1021,21 @@ enc_IndAudLocalControlDescriptor(Val, State)
 enc_IndAudPropertyParm(#'IndAudPropertyParm'{name = PkgdName}, State) ->
     enc_PkgdName(PkgdName, State).
 
-enc_IndAudMediaDescriptor_multiStream(Val, State) ->
+enc_IndAudMediaDescriptor_multiStream([Val], State) ->
     [
      enc_IndAudStreamDescriptor(Val, ?INC_INDENT(State))
-    ].
+    ];
+enc_IndAudMediaDescriptor_multiStream(Vals, _State) when list(Vals) ->
+    error({invalid_IndAudMediaDescriptor_multiStream_length, Vals});
+enc_IndAudMediaDescriptor_multiStream(Val, _State) ->
+    error({invalid_IndAudMediaDescriptor_multiStream, Val}).
 
 enc_IndAudStreamDescriptor(#'IndAudStreamDescriptor'{streamID    = SID,
 						     streamParms = Parms}, 
 			   State) ->
     [
      ?StreamToken,
+     ?EQUAL,
      enc_StreamID(SID, State),
      ?LBRKT_INDENT(State),
      enc_IndAudStreamParms(Parms, ?INC_INDENT(State)),
@@ -980,7 +1050,7 @@ enc_IndAudEventBufferDescriptor(Val, State)
      ?EventBufferToken,
      ?LBRKT_INDENT(State),
      enc_PkgdName(EvName, State),
-     enc_IndAudEventBufferDescriptor_eventSpec(ID, State),
+     enc_IndAudEventBufferDescriptor_eventSpec(ID, ?INC_INDENT(State)),
      ?RBRKT_INDENT(State)
     ].
 
@@ -997,7 +1067,7 @@ enc_IndAudEventBufferDescriptor_eventSpec({eventParameterName, ParamName},
 enc_IndAudEventBufferDescriptor_eventSpec(ID, State) ->
     [
      ?LBRKT_INDENT(State),
-     enc_eventStream(ID, State),
+     enc_eventStream(ID, ?INC_INDENT(State)),
      ?RBRKT_INDENT(State)
     ].
 
@@ -1020,7 +1090,7 @@ enc_IndAudSignalsDescriptor(Val, State) ->
     [
      ?SignalsToken,
      ?LBRKT_INDENT(State),
-     enc_IndAudSignalsDescriptor_value(Val, State),
+     enc_IndAudSignalsDescriptor_value(Val, ?INC_INDENT(State)),
      ?RBRKT_INDENT(State)
     ].
 
@@ -1043,7 +1113,7 @@ enc_IndAudSeqSigList(#'IndAudSeqSigList'{id         = ID,
      ?EQUAL,
      enc_UINT16(ID, State),
      ?LBRKT_INDENT(State),
-     enc_IndAudSignal(Parm, State),
+     enc_IndAudSignal(Parm, ?INC_INDENT(State)),
      ?RBRKT_INDENT(State)
     ].
 
@@ -1116,7 +1186,9 @@ enc_AuditReturnParameter({Tag, Val}, State) ->
 	errorDescriptor ->
 	    enc_ErrorDescriptor(Val, State);
         emptyDescriptors ->
-            enc_EmptyDescriptors(Val, State)
+            enc_EmptyDescriptors(Val, State);
+	_ ->
+	    error({invalid_AuditReturnParameter_tag, Tag})
     end.
 
 enc_EmptyDescriptors(#'AuditDescriptor'{auditToken = asn1_NOVALUE}, _State) ->
@@ -1291,7 +1363,9 @@ enc_ServiceChangeResult({Tag, Val}, State) ->
 		     end(?INC_INDENT(State)),
 		     ?RBRKT_INDENT(State)
 		    ]
-	    end
+	    end;
+	_ ->
+	    error({invalid_ServiceChangeResult_tag, Tag})
     end.
 
 %% Required length of termination ID list is 1
@@ -1358,7 +1432,9 @@ decompose_streams({Tag, Val}) ->
 	oneStream ->
 	    decompose_StreamParms(Val);
 	multiStream ->
-	    [{Val, fun enc_StreamDescriptor/2}]
+	    [{Val, fun enc_StreamDescriptor/2}];
+	_ ->
+	    error({invalid_streams_tag, Tag})
     end.
 
 decompose_StreamParms(Val)
@@ -1703,7 +1779,9 @@ enc_EventDM({Tag, Val}, State) ->
 	     ?LBRKT_INDENT(State),
 	     enc_DigitMapValue(Val, ?INC_INDENT(State)),
 	     ?RBRKT_INDENT(State)
-	    ]
+	    ];
+	_ ->
+	    error({invalid_EventDM_tag, Tag})
     end.
 
 enc_SecondEventsDescriptor(Val, State)
@@ -1822,7 +1900,9 @@ enc_SignalRequest({Tag, Val}, State) ->
 	signal ->
 	    enc_Signal(Val, State);
 	seqSigList ->
-	    enc_SeqSigList(Val, State)
+	    enc_SeqSigList(Val, State);
+	_ ->
+	    error({invalid_SignalRequest_tag, Tag})
     end.
 
 
@@ -2075,7 +2155,9 @@ enc_ServiceChangeAddress({Tag, Val}, State) ->
 	 deviceName ->
 	     enc_PathName(Val, State);
 	 mtpAddress ->
-	     enc_mtpAddress(Val, State)
+	     enc_mtpAddress(Val, State);
+	 _ ->
+	     error({invalid_ServiceChangeAddress_tag, Tag})
      end
     ].
 
@@ -2376,7 +2458,17 @@ verify_count(Count, Min, Max) ->
 error(Reason) ->
     exit(Reason).
 
+
+%% -------------------------------------------------------------------
+
 % d(F) ->
 %     d(F,[]).
 % d(F, A) ->
-%     io:format("~p:" ++ F ++ "~n", [?MODULE | A]).
+%     d(get(dbg), F, A).
+
+% d(true, F, A) ->
+%     io:format("~p:" ++ F ++ "~n", [?MODULE | A]);
+% d(_, _, _) ->
+%     ok.
+
+

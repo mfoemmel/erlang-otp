@@ -450,7 +450,7 @@ adjust_cache_size(int force_check_limits)
     int check_limits = force_check_limits;
     Sint max_cached = no_of_segments_watermark - no_of_segments;
 
-    while (cache_size > max_cached && cache_size > 0) {
+    while (((Sint) cache_size) > max_cached && ((Sint) cache_size) > 0) {
 	ASSERT(cache_end);
 	cd = cache_end;
 	if (!check_limits &&
@@ -1161,7 +1161,7 @@ erts_mseg_unit_size(void)
 void
 erts_mseg_init(ErtsMsegInit_t *init)
 {
-    int i;
+    unsigned i;
 
     atoms_initialized = 0;
     is_init_done = 0;
@@ -1246,3 +1246,45 @@ erts_mseg_exit(void)
 }
 
 #endif /* #if HAVE_ERTS_MSEG */
+
+unsigned long
+erts_mseg_test(unsigned long op,
+	       unsigned long a1,
+	       unsigned long a2,
+	       unsigned long a3)
+{
+    switch (op) {
+#if HAVE_ERTS_MSEG
+    case 0x400: /* Have erts_mseg */
+	return (unsigned long) 1;
+    case 0x401:
+	return (unsigned long) erts_mseg_alloc((Uint *) a1);
+    case 0x402:
+	erts_mseg_dealloc((void *) a1, (Uint) a2);
+	return (unsigned long) 0;
+    case 0x403:
+	return (unsigned long) erts_mseg_realloc((void *) a1,
+						 (Uint) a2,
+						 (Uint *) a3);
+    case 0x404:
+	erts_mseg_clear_cache();
+	return (unsigned long) 0;
+    case 0x405:
+	return (unsigned long) erts_mseg_no();
+    case 0x406: {
+	unsigned long res;
+	erts_mtx_lock(&mseg_mutex);
+	res = (unsigned long) cache_size;
+	erts_mtx_unlock(&mseg_mutex);
+	return res;
+    }
+#else /* #if HAVE_ERTS_MSEG */
+    case 0x400: /* Have erts_mseg */
+	return (unsigned long) 0;
+#endif /* #if HAVE_ERTS_MSEG */
+    default:	ASSERT(0); return ~((unsigned long) 0);
+    }
+
+}
+
+

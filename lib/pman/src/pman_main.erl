@@ -83,6 +83,10 @@ init(PidCaller, OSModuleExcluded) ->
     {Window, Grid,Frame, Visible}  =
 	pman_win:pman_window(Grid_size, OSModuleExcluded, LINode),
 
+    Noshell = case pman_shell:find_shell() of
+		  noshell -> true;
+		  _ -> false
+	      end,
 
     Pman_data = #gs_pman{win=Window, grid=Grid, frame=Frame,
 			 size=Visible,
@@ -90,6 +94,7 @@ init(PidCaller, OSModuleExcluded) ->
 			 hide_modules=OSModuleExcluded,
 			 focus= 1,
 			 node= node(),
+			 noshell = Noshell,
 			 nodes= LINode},
 
     Pman_data2 = refresh(Pman_data),
@@ -422,10 +427,13 @@ execute_cmd('Help',Pman_data,_Data,_Args)  ->
 %% Trace the shell
 
 execute_cmd('Trace Shell',Pman_data,_Data,_Args) ->
-    Shell = pman_shell:find_shell(),
-    pman_shell:start({{shell,Shell},self()},Pman_data#gs_pman.options),
-    Pman_data;
-
+    case pman_shell:find_shell() of
+	noshell ->
+	    Pman_data;
+	Shell -> 
+	    pman_shell:start({{shell,Shell},self()},Pman_data#gs_pman.options),
+	    Pman_data#gs_pman{noshell = false}
+    end;
 
 
 %% Start Trace Window
@@ -820,8 +828,13 @@ enable_pid_actions()  ->
     lists:foreach({gse, enable}, ?REQUIRES_FOCUS).
 
 
+%% Check if node is running in noshell mode and if so disable the
+%% 'Trace Shell' menu option.
 
-
+trace_shell_possible(#gs_pman{noshell = true}) ->
+    gse:disable('Trace Shell');
+trace_shell_possible(_) ->
+    ok.
 
 %% ---------------------------------------------------------------
 %% The main loop for the  pman window
@@ -963,12 +976,11 @@ refresh2(Pman_data) ->
     %% All processes are now displayed.
     %% Now set the focus appropriately.
 
-    Pman_data4=set_focus(OSPidShow,Pman_data3),
-
-
-
+    Pman_data4 = set_focus(OSPidShow,Pman_data3),
 
     focus(Pman_data4#gs_pman.focus, Pman_data3),
+
+    trace_shell_possible(Pman_data4),
     
     case Size of
 	1 -> ok;

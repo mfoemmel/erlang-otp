@@ -784,7 +784,7 @@ guard1([], _Bs, _Lf, _Ef) -> false.
 
 %% guard conjunction
 guard0([G|Gs], Bs0, Lf, Ef) ->
-    case erl_lint:is_guard_test(G) of
+    case is_guard_test(G) of
 	true ->
 	    case guard_test(G, Bs0, Lf, Ef) of
 		{value,true,Bs} -> guard0(Gs, Bs, Lf, Ef);
@@ -794,6 +794,12 @@ guard0([G|Gs], Bs0, Lf, Ef) ->
 	    exit({guard_expr,[{erl_eval,expr,3}]})
     end;
 guard0([], _Bs, _Lf, _Ef) -> true.
+
+is_guard_test({call,_,{remote,_,{atom,_,erlang},{atom,_,is_record}},[_,_,_]}) ->
+    %% The new compiler internally uses erlang:is_record/3, which is not
+    %% currently allowed in guards.
+    true;
+is_guard_test(G) -> erl_lint:is_guard_test(G).
 	
 %% guard_test(GuardTest, Bindings, LocalFuncHandler, ExtFuncHandler) ->
 %%	{value,bool(),NewBindings}.

@@ -178,6 +178,10 @@ gexpr_test(#k_bif{anno=A,op=#k_remote{mod=#k_atom{val=erlang},
     %% recognize erlang:is_boolean/1 here.
     {#k_test{anno=A,op=Op,args=Kargs},St};
 gexpr_test(#k_bif{anno=A,op=#k_remote{mod=#k_atom{val=erlang},
+				      name=#k_atom{val=internal_is_record},arity=3}=Op,
+		  args=Kargs}, St) ->
+    {#k_test{anno=A,op=Op,args=Kargs},St};
+gexpr_test(#k_bif{anno=A,op=#k_remote{mod=#k_atom{val=erlang},
 				      name=#k_atom{val=F},arity=Ar}=Op,
 		  args=Kargs}=Ke, St) ->
     %% Either convert to test if ok, or add test.
@@ -669,6 +673,7 @@ is_remote_bif(erlang, is_boolean, 1) ->
     %% XXX Remove this clause in R11. For bootstrap purposes, we must
     %% recognize erlang:is_boolean/1 here.
     true;
+is_remote_bif(erlang, internal_is_record, 3) -> true;
 is_remote_bif(erlang, get, 1) -> true;
 is_remote_bif(erlang, N, A) ->
     case erl_internal:guard_bif(N, A) of

@@ -1,2 +1,0 @@
-{logTable, {log_snmp, log_table, []}}.
-{logTransferTable, {log_snmp, log_tr_table, []}}.

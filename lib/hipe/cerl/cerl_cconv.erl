@@ -534,17 +534,18 @@ fun_expr_1(F, Vs, Env, Ren, S) ->
     {Info, S1} = fun_info(F, Env, S),
     Name = {Info#fun_info.name, Arity},
     S2 = lift_fun(Name, F, Vs, Env, Ren, S1),
-    {make_fun_primop(Name, Vs, Info, S2), S2}.
+    {make_fun_primop(Name, Vs, Info, F, S2), S2}.
 
-make_fun_primop({Name, Arity}, Free, #fun_info{id = Id, hash = Hash}, S) ->
+make_fun_primop({Name, Arity}, Free, #fun_info{id = Id, hash = Hash},
+		F, S) ->
     Module = s__get_module_name(S),
-    cerl:c_primop(cerl:c_atom(?PRIMOP_MAKE_FUN),
-		  [cerl:c_atom(Module),
-		   cerl:c_atom(Name),
-		   cerl:c_int(Arity),
-		   cerl:c_int(Hash),
-		   cerl:c_int(Id),
-		   cerl:make_list(Free)]).
+    cerl:update_c_primop(F, cerl:c_atom(?PRIMOP_MAKE_FUN),
+			 [cerl:c_atom(Module),
+			  cerl:c_atom(Name),
+			  cerl:c_int(Arity),
+			  cerl:c_int(Hash),
+			  cerl:c_int(Id),
+			  cerl:make_list(Free)]).
 
 %% Getting attached fun-info, if present; otherwise making it up.
 
@@ -660,20 +661,20 @@ apply_expr(E, Env, Ren, S) ->
 		    Vs1 = As ++ [cerl:c_var(V) || V <- Vs],
 		    {cerl:update_c_apply(E, cerl:c_var(F), Vs1), S1};
 		variable ->
-		    apply_expr_1(Op, As, Env, Ren, S1)
+		    apply_expr_1(E, Op, As, Env, Ren, S1)
 	    end;
 	_ ->
-	    apply_expr_1(Op, As, Env, Ren, S1)
+	    apply_expr_1(E, Op, As, Env, Ren, S1)
     end.
 
 %% Note that this primop call only communicates the necessary
 %% information to the core-to-icode stage, which rewrites it to use the
 %% real calling convention for funs.
 
-apply_expr_1(Op, As, Env, Ren, S) ->
+apply_expr_1(E, Op, As, Env, Ren, S) ->
     {Op1, S1} = expr(Op, Env, Ren, S),
-    Call = cerl:c_primop(cerl:c_atom(?PRIMOP_APPLY_FUN),
-			 [Op1, cerl:make_list(As)]),
+    Call = cerl:update_c_primop(E, cerl:c_atom(?PRIMOP_APPLY_FUN),
+				[Op1, cerl:make_list(As)]),
     {Call, S1}.
 
 

@@ -232,7 +232,7 @@ g(UserId, Addr, CtxName, Oids, Timeout)
   when list(CtxName), list(Oids), integer(Timeout) ->
     g(UserId, Addr, ?DEFAULT_AGENT_PORT, CtxName, Oids, Timeout).
 
-g(UserId, Addr, CtxName, Port, Oids, Timeout) ->
+g(UserId, Addr, Port, CtxName, Oids, Timeout) ->
     snmpm_server:sync_get(UserId, Addr, CtxName, Port, Oids, Timeout).
 
 
