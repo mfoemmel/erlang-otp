@@ -11,47 +11,13 @@
 -include("../main/hipe.hrl").
 
 rtl_to_x86(MFA, RTL, Options) ->
-  ?when_option(time, Options, ?start_timer("RTL-to-x86")),
-  X86a = hipe_rtl_to_x86:translate(RTL),
-  ?when_option(time, Options, ?stop_timer("RTL-to-x86")),
-  ?when_option(time, Options, ?start_timer("register allocation")),
-  X86b = hipe_x86_ra:ra(X86a, Options),
-  ?when_option(time, Options, ?stop_timer("register allocation")),
-  ?when_option(time, Options, ?start_timer("x86 frame")),
-  X86c = hipe_x86_frame:frame(X86b, Options),
-  ?when_option(time, Options, ?stop_timer("x86 frame")),
-  ?when_option(time, Options, ?start_timer("x86 finalise")),
-  X86d = x86_finalise(X86c, Options),
-  ?when_option(time, Options, ?stop_timer("x86 finalise")),
-  x86_pp(X86d, MFA, Options),
-  {native, x86, {unprofiled, X86d}}.
-
-%%% use option no_finalise_x86 to disable calling hipe_x86_postpass
-x86_finalise(X86, Options) ->
-  case proplists:get_value(finalise_x86, Options, true) of
-    true ->
-      hipe_x86_postpass:postpass(X86, Options);
-    false ->
-      X86	% illegal code, but allows exercising the compiler
-  end.
-
-x86_pp(X86, MFA, Options) ->
-  case proplists:get_value(pp_native, Options) of
-    true ->
-      hipe_x86_pp:pp(X86);
-    {only,Lst} when is_list(Lst) ->
-      case lists:member(MFA,Lst) of
-	true ->
-	  hipe_x86_pp:pp(X86);
-	false ->
-	  ok
-      end;
-    {only,MFA} ->
-       hipe_x86_pp:pp(X86);
-    {file,FileName} ->
-      {ok, File} = file:open(FileName, [write,append]),
-      hipe_x86_pp:pp(File, X86),
-      file:close(File);
-    _ ->
-      []
-  end.
+  Translated = ?option_time(hipe_rtl_to_x86:translate(RTL),
+			    "RTL-to-x86", Options),
+  Allocated  = ?option_time(hipe_x86_ra:ra(Translated, Options),
+			    "x86 register allocation", Options),
+  Framed     = ?option_time(hipe_x86_frame:frame(Allocated, Options), 
+			    "x86 frame", Options),
+  Finalised  = ?option_time(hipe_x86_postpass:postpass(Framed, Options),
+			    "x86 finalise", Options),
+  hipe_x86_pp:optional_pp(Finalised, MFA, Options),
+  {native, x86, {unprofiled, Finalised}}.

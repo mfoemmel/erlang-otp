@@ -16,7 +16,7 @@
 %%
 
 -define(HTTP_REQUEST_TIMEOUT, infinity).
--define(HTTP_PIPELINE_TIMEOUT, infinity).
+-define(HTTP_PIPELINE_TIMEOUT, 0).
 -define(HTTP_PIPELINE_LENGTH, 2).
 -define(HTTP_MAX_TCP_SESSIONS, 2).
 -define(HTTP_MAX_BODY_SIZE, nolimit).
@@ -173,14 +173,8 @@
 %%% HTTP Client per profile setting. Currently there is only one profile.
 -record(options, {
 	  proxy =  {undefined, []}, % {{ProxyHost, ProxyPort}, [NoProxy]},
-	  pipeline_timeout = ?HTTP_PIPELINE_LENGTH,
+	  pipeline_timeout = ?HTTP_PIPELINE_TIMEOUT,
 	  max_pipeline_length = ?HTTP_PIPELINE_LENGTH,
 	  max_sessions =  ?HTTP_MAX_TCP_SESSIONS,
 	  cookies = disabled % enabled | disabled | verify
 	 }).
-
-
-
-
-
-

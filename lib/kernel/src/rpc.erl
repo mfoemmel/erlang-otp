@@ -482,10 +482,9 @@ rec_nodes(Name, [N|Tail], Badnodes, Replies) ->
     end.
 
 %% Now for an asynchronous rpc.
-%%% Barbara Liskov like Call  Streams 
-%% An asyncronous version of rpc that  is faster for series of
-%% rpc's towards the same node. I.e it returns immediately and 
-%% it returns a Key that can be used in a subsequent yield(Key)
+%% An asyncronous version of rpc that is faster for series of
+%% rpc's towards the same node. I.e. it returns immediately and 
+%% it returns a Key that can be used in a subsequent yield(Key).
 
 async_call(Node, Mod, Fun, Args) ->
     ReplyTo = self(),
@@ -495,16 +494,16 @@ async_call(Node, Mod, Fun, Args) ->
 	      ReplyTo ! {self(), {promise_reply, R}}  %% self() is key
       end).
 
-yield(Key) when pid(Key) ->
-    {value, R} = do_yield(Key, infinite),
+yield(Key) when is_pid(Key) ->
+    {value,R} = do_yield(Key, infinity),
     R.
 
-nb_yield(Key, infinite) when pid(Key) ->
-    do_yield(Key, infinite);
-nb_yield(Key, Timeout) when pid(Key), integer(Timeout), Timeout >= 0 ->
+nb_yield(Key, infinity=Inf) when is_pid(Key) ->
+    do_yield(Key, Inf);
+nb_yield(Key, Timeout) when is_pid(Key), is_integer(Timeout), Timeout >= 0 ->
     do_yield(Key, Timeout).
 
-nb_yield(Key) when pid(Key) ->
+nb_yield(Key) when is_pid(Key) ->
     do_yield(Key, 0).
 
 do_yield(Key, Timeout) ->

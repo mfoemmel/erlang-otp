@@ -273,8 +273,15 @@ get_int_measurement(Request, #state{os_type = {unix, openbsd}}) ->
 	    N-1
     end;
 get_int_measurement(Request, #state{os_type = {unix, darwin}}) ->
+    %% Get the load average using uptime.
     D = os:cmd("uptime") -- "\n",
-    {ok, [L1, L5, L15], _} = io_lib:fread("~*s~*s~*s~*s~*s~*s~*s~f,~f,~f", D),
+    %% Here is a sample uptime string from Mac OS 10.3.8:
+    %%    "11:17  up 12 days, 20:39, 2 users, load averages: 1.07 0.95 0.66"
+    %% The safest way to extract the load averages seems to be grab everything
+    %% after the last colon and then do an fread on that.
+    Avg = lists:reverse(hd(string:tokens(lists:reverse(D), ":"))),
+    {ok,[L1,L5,L15],_} = io_lib:fread("~f ~f ~f", Avg),
+
     case Request of
 	?avg1  -> sunify(L1);
 	?avg5  -> sunify(L5);

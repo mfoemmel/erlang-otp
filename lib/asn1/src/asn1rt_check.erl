@@ -307,6 +307,10 @@ transform_to_EXTERNAL1990([asn1_NOVALUE|Rest],Acc) ->
 transform_to_EXTERNAL1990([Data_val_desc,Data_value],Acc) when list(Data_value)->
     list_to_tuple(lists:reverse([{'octet-aligned',Data_value},
 				 Data_val_desc|Acc]));
+transform_to_EXTERNAL1990([Data_val_desc,Data_value],Acc)
+  when binary(Data_value)->
+    list_to_tuple(lists:reverse([{'octet-aligned',binary_to_list(Data_value)},
+				 Data_val_desc|Acc]));
 transform_to_EXTERNAL1990([Data_value],Acc) when list(Data_value)->
     list_to_tuple(lists:reverse([{'octet-aligned',Data_value}|Acc])).
 
@@ -323,8 +327,9 @@ transform_to_EXTERNAL1994(V={'EXTERNAL',DRef,IndRef,Data_v_desc,Encoding}) ->
 		 {'EXTERNAL_identification_context-negotiation',IndRef,DRef}}
 	end,
     case Encoding of
-	{_,Val} when list(Val) ->
+	{_,Val} when list(Val);binary(Val) ->
 	    {'EXTERNAL',Identification,Data_v_desc,Val};
+	
 	_  ->
 	    V
     end.

@@ -23,6 +23,7 @@
 	 community2vacm/2, vacm2community/2,
 	 get_target_addr_ext_mms/2]).
 -export([add_community/5, delete_community/1]).
+-export([check_community/1]).
 
 -include("SNMP-COMMUNITY-MIB.hrl").
 -include("SNMP-TARGET-MIB.hrl").
@@ -129,12 +130,24 @@ check_community({Index, CommunityName, SecName, CtxName, TransportTag}) ->
     snmp_conf:check_string(SecName),
     snmp_conf:check_string(CtxName),
     snmp_conf:check_string(TransportTag),
-    EngineID = snmp_framework_mib:get_engine_id(),
+    EngineID = get_engine_id(),
     Comm = {Index, CommunityName, SecName, EngineID, CtxName, TransportTag,
 	    ?'StorageType_nonVolatile', ?'RowStatus_active'},
     {ok, Comm};
 check_community(X) ->
     error({invalid_community, X}).
+
+%% This is for the case when check_community is called from the 
+%% snmp_config module (to generate community config file) and
+%% the agent is not started. The actual return value is not 
+%% checked, as long as it is '{ok, _}'.
+get_engine_id() ->
+    case (catch snmp_framework_mib:get_engine_id()) of
+	{'EXIT', _} ->
+	    "agentEngine";
+	EngineID ->
+	    EngineID
+    end.
 
 init_comm_table([Row | T]) ->
     ?vtrace("init_comm_table -> entry with"
@@ -269,7 +282,8 @@ loop_v2c_rows([], _Addr) ->
 
 
 get_row(RowIndex) ->
-    case snmp_generic:table_get_row(db(snmpCommunityTable), RowIndex) of
+    case snmp_generic:table_get_row(db(snmpCommunityTable), RowIndex,
+				    foi(snmpCommunityTable)) of
 	{_, CommunityName, SecName, ContextEngineId, ContextName,
 	 TransportTag, _StorageType, ?'RowStatus_active'} ->
 	    {CommunityName, {SecName, ContextEngineId, ContextName}, 

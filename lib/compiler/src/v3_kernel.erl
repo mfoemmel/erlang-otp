@@ -929,7 +929,7 @@ match_con([U|Us], Cs, Def, St0) ->
     %% Extract clauses for different constructors (types).
     %%ok = io:format("match_con ~p~n", [Cs]),
     Ttcs = [ {T,Tcs} || T <- [k_cons,k_tuple,k_atom,k_float,k_int,k_nil,
-			      k_binary,k_bin_end],
+			      k_binary],
 		       begin Tcs = select(T, Cs),
 			     Tcs /= []
 		       end ] ++ select_bin_con(Cs),
@@ -950,7 +950,8 @@ match_con([U|Us], Cs, Def, St0) ->
 
 select_bin_con(Cs0) ->
     Cs1 = lists:filter(fun (C) ->
-			       clause_con(C) == k_bin_seg
+			       Con = clause_con(C),
+			       (Con == k_bin_seg) or (Con == k_bin_end)
 		       end, Cs0),
     select_bin_con_1(Cs1).
 

@@ -272,7 +272,7 @@ annotate_seg(Segment, Tag, Offset, Defs, TagMap) ->
   Size = cerl:bitstr_size(Segment),
   Unit = cerl:bitstr_unit(Segment),
   Key=create_key(Type, Size, Unit, Offset),
-  {ThisTag, UpdatedTags}=find_tag(Key, Tag, TagMap),
+  {ThisTag, UpdatedTags} = find_tag(Key, Tag, TagMap),
   Val = cerl:bitstr_val(Segment),
   Match = #match{val=Val, tag=ThisTag},
   case size_var_def(Size, Defs) of 
@@ -337,7 +337,7 @@ find_tag(Key, PresTag, TagMap) ->
 size_var_def(Size, [Def|Rest]) ->
   case same_var(match_val(Def), Size) of
     true ->
-      Tag=match_tag(Def),
+      Tag = match_tag(Def),
       {true,{tag, Tag}};
     _ ->
       size_var_def(Size, Rest)
@@ -561,8 +561,8 @@ have_same_match(_Match1, []) ->
   false.
     
 create_success_list(MatchSet, Hash, BClause, ITree) ->
-  MatchList=gb_sets:to_list(MatchSet),
-  Tag=match_tag(hd(MatchList)),
+  MatchList = gb_sets:to_list(MatchSet),
+  Tag = match_tag(hd(MatchList)),
   make_successor_list(MatchList, Hash, BClause, #match_group{tag=Tag, vals=[]}, 
 		      gb_trees:empty(), ITree).
 
@@ -685,14 +685,13 @@ is_incompatible(_,_) ->
 
 %%-----------------------------------------------------------------------------
 %%
-%% remove_seg removes prunes all similar read actions
+%% remove_seg prunes all similar read actions
 %%
 %%-----------------------------------------------------------------------------
 
 remove_seg(BinSeg, BClause=#b_clause{segments=BinSegs, next_clause=Next}) ->
-  NewBinSegs  = remove_same_seg(BinSegs, tag(BinSeg)),
+  NewBinSegs = remove_same_seg(BinSegs, tag(BinSeg)),
   BClause#b_clause{segments=NewBinSegs, next_clause=remove_seg(BinSeg, Next)};
-
 remove_seg(_BinSeg, []) ->
   [].
 
@@ -871,7 +870,7 @@ always_read(BinSegs, CountTree, BClause) ->
   find_binseg(BinSegs, CountTree, No).
     
 find_binseg([BinSeg=#read_seg{}|Rest], CountTree, No) ->
-  Tag=tag(BinSeg),
+  Tag = read_seg_tag(BinSeg),
   case gb_trees:lookup(Tag, CountTree) of
     {value, {No, _, _, _}} ->
       {true, BinSeg};
@@ -912,7 +911,7 @@ get_largest_count([BinSeg|Rest], CountTree, Top={_,Count}) ->
   NewTop = 
     case BinSeg of
       #match{} ->
-	Tag=tag(BinSeg),
+	Tag = match_tag(BinSeg),
 	{value, {_, _, IC, _}} = gb_trees:lookup(Tag, CountTree),
 	case IC >= Count of
 	  true -> {BinSeg, IC};
@@ -940,7 +939,7 @@ get_largest_count([BinSeg|Rest], CountTree, Top={_,Count}) ->
   NewTop =
     case BinSeg of
       #match{} ->
-	Tag=tag(BinSeg),
+	Tag = match_tag(BinSeg),
 	{value, {_, MC, _, _}} = gb_trees:lookup(Tag, CountTree),
 	case MC >= Count of
 	  true -> {BinSeg, MC};
@@ -968,7 +967,7 @@ get_largest_count([BinSeg|Rest], CountTree, "uses_read", Top={_,Count}) ->
   NewTop =
     case BinSeg of
       #match{} ->
-	Tag=tag(BinSeg),
+	Tag = match_tag(BinSeg),
 	{value, {_, MC, _, _}} = gb_trees:lookup(Tag, CountTree),
 	NewMC = 1+MC/1000,
 	case NewMC>Count of
@@ -976,7 +975,7 @@ get_largest_count([BinSeg|Rest], CountTree, "uses_read", Top={_,Count}) ->
 	  false -> Top
 	end;
       #read_seg{} ->
-	Tag=tag(BinSeg),
+	Tag = read_seg_tag(BinSeg),
 	{value, {RC, _, _, _}} = gb_trees:lookup(Tag, CountTree),
 	case RC > Count of
 	  true -> {BinSeg, RC};
@@ -1033,7 +1032,6 @@ simpl_count_segs([Seg=#match{}|Rest], Tree) ->
     none ->
       simpl_count_segs(Rest, gb_trees:insert(match_tag(Seg), {0,1,1,gb_sets:singleton(Val)}, Tree))
   end;
-
 simpl_count_segs([Seg=#read_seg{}|Rest], Tree) ->
   Tag = read_seg_tag(Seg),
   case gb_trees:lookup(Tag, Tree) of
@@ -1042,7 +1040,6 @@ simpl_count_segs([Seg=#read_seg{}|Rest], Tree) ->
     none ->
       simpl_count_segs(Rest, gb_trees:insert(Tag, {1,0,0,gb_sets:empty()}, Tree))
   end;
-
 simpl_count_segs([Seg=#size{}|Rest], Tree) ->
   case gb_trees:lookup(Seg, Tree) of
     {value, {SC, MC, IC, Set}} ->
@@ -1050,7 +1047,6 @@ simpl_count_segs([Seg=#size{}|Rest], Tree) ->
     none ->
       simpl_count_segs(Rest, gb_trees:insert(Seg, {0,1,1,gb_sets:empty()}, Tree))
   end;
-
 simpl_count_segs([], Tree) ->
   Tree.
 

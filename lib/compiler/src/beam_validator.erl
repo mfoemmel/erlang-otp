@@ -167,7 +167,8 @@ validate_error_1(Error, Module, Name, Ar) ->
 	 numy=none,			%Number of y registers.
 	 h=0,				%Available heap size.
 	 fls=undefined,			%Floating point state.
-	 ct=[]				%List of hot catch/try labels
+	 ct=[],				%List of hot catch/try labels
+	 bsm=undefined			%Bit syntax matching state.
 	}).
 
 -record(vst,				%Validator state
@@ -299,13 +300,9 @@ valfun_1({'%live',Live}, Vst) ->
     Vst;
 %% Exception generating calls
 valfun_1({call_ext,Live,Func}=I, Vst) ->
-    %% This is ugly since call_ext is taken care of further down, so
-    %% perhaps verify_live/2 is not needed there, and exception is
-    %% not a possible return value in from return_type/2 in call/3
-    %% either... Alas! so little time.
-    verify_live(Live, Vst),
     case return_type(Func, Vst) of
 	exception ->
+	    verify_live(Live, Vst),
 	    kill_state(Vst);
 	_ ->
 	    valfun_2(I, Vst)
@@ -394,9 +391,7 @@ valfun_4({call_fun,Live}, Vst) ->
 valfun_4({call,Live,_}, Vst) ->
     call(Live, Vst);
 valfun_4({call_ext,Live,Func}, Vst) ->
-    %% Exception BIFs has alread been taken care of above,
-    %% and there verify_live(Live, Vst) was also done, so
-    %% both could be removed from call/3.
+    %% Exception BIFs has alread been taken care of above.
     call(Func, Live, Vst);
 valfun_4({call_only,Live,_}, Vst) ->
     tail_call(Live, Vst);
@@ -504,21 +499,31 @@ valfun_4({get_list,Src,D1,D2}, Vst0) ->
 valfun_4({get_tuple_element,Src,I,Dst}, Vst) ->
     assert_type({tuple_element,I+1}, Src, Vst),
     set_type_reg(term, Dst, Vst);
-valfun_4({bs_restore,_}, Vst) ->
-    Vst;
-valfun_4({bs_save,_}, Vst) ->
-    Vst;
+
+%% Bit syntax instructions.
 valfun_4({bs_start_match,{f,Fail},Src}, Vst) ->
+    valfun_4({test,bs_start_match,{f,Fail},[Src]}, Vst);
+valfun_4({test,bs_start_match,{f,Fail},[Src]}, Vst) ->
+    assert_term(Src, Vst),
+    bs_start_match(branch_state(Fail, Vst));
+valfun_4({bs_save,SavePoint}, Vst) ->
+    bs_assert_state(Vst),
+    bs_save(SavePoint, Vst);
+valfun_4({bs_restore,SavePoint}, Vst) ->
+    bs_assert_state(Vst),
+    bs_assert_savepoint(SavePoint, Vst),
+    Vst;
+valfun_4({test,bs_skip_bits,{f,Fail},[Src,_,_]}, Vst) ->
+    bs_assert_state(Vst),
     assert_term(Src, Vst),
     branch_state(Fail, Vst);
-valfun_4({test,bs_skip_bits,{f,Fail},[Src,_,_]}, Vst) ->
-    assert_term(Src, Vst),
+valfun_4({test,bs_test_tail,{f,Fail},_}, Vst) ->
+    bs_assert_state(Vst),
     branch_state(Fail, Vst);
 valfun_4({test,_,{f,Fail},[_,_,_,Dst]}, Vst0) ->
+    bs_assert_state(Vst0),
     Vst = branch_state(Fail, Vst0),
     set_type_reg({integer,[]}, Dst, Vst);
-valfun_4({test,bs_test_tail,{f,Fail},_}, Vst) ->
-    branch_state(Fail, Vst);
 %% Other test instructions.
 valfun_4({test,is_float,{f,Lbl},[Float]}, Vst) ->
     assert_term(Float, Vst),
@@ -568,30 +573,29 @@ valfun_4({bs_final,{f,Fail},Dst}, Vst0) ->
 valfun_4(_, _) ->
     error(unknown_instruction).
 
-kill_state(Vst) -> 
+kill_state(Vst) ->
     Vst#vst{current=none}.
 
 %% A "plain" call.
-%%  The stackframe must have a known size and be initialized.
+%%  The stackframe must be initialized.
 %%  The instruction will return to the instruction following the call.
 call(Live, #vst{current=St}=Vst) ->
     verify_live(Live, Vst),
     verify_y_init(Vst),
     Xs = gb_trees_from_list([{0,term}]),
-    Vst#vst{current=St#st{x=Xs,f=init_fregs()}}.
+    Vst#vst{current=St#st{x=Xs,f=init_fregs(),bsm=undefined}}.
 
 %% A "plain" call.
-%%  The stackframe must have a known size and be initialized.
+%%  The stackframe must be initialized.
 %%  The instruction will return to the instruction following the call.
 call(Name, Live, #vst{current=St}=Vst) ->
     verify_live(Live, Vst),
+    verify_y_init(Vst),
     case return_type(Name, Vst) of
-	exception ->
-	    kill_state(Vst);
-	Type ->
-	    verify_y_init(Vst),
+	Type when Type =/= exception ->
+	    %% Type is never 'exception' because it has been handled earlier.
 	    Xs = gb_trees_from_list([{0,Type}]),
-	    Vst#vst{current=St#st{x=Xs,f=init_fregs()}}
+	    Vst#vst{current=St#st{x=Xs,f=init_fregs(),bsm=undefined}}
     end.
 
 %% Tail call.
@@ -606,16 +610,16 @@ tail_call(Live, Vst) ->
 allocate(Zero, Stk, Heap, Live, #vst{current=#st{numy=none}=St}=Vst0) ->
     verify_live(Live, Vst0),
     Vst = prune_x_regs(Live, Vst0),
-    Ys = init_regs(case Zero of 
-		       true -> Stk;
-		       false -> 0
-		   end, initialized),
-    Vst#vst{current=St#st{y=Ys,numy=Stk,h=heap_alloc_1(Heap)}};
+    Ys = init_regs(Stk, case Zero of 
+			    true -> initialized;
+			    false -> uninitialized
+			end),
+    Vst#vst{current=St#st{y=Ys,numy=Stk,h=heap_alloc_1(Heap),bsm=undefined}};
 allocate(_, _, _, _, #vst{current=#st{numy=Numy}}) ->
     error({existing_stack_frame,{size,Numy}}).
 
 deallocate(#vst{current=St}=Vst) ->
-    Vst#vst{current=St#st{y=init_regs(0, initialized),numy=none}}.
+    Vst#vst{current=St#st{y=init_regs(0, initialized),numy=none,bsm=undefined}}.
 
 test_heap(Heap, Live, Vst0) ->
     verify_live(Live, Vst0),
@@ -623,7 +627,7 @@ test_heap(Heap, Live, Vst0) ->
     heap_alloc(Heap, Vst).
 
 heap_alloc(Heap, #vst{current=St}=Vst) ->
-    Vst#vst{current=St#st{h=heap_alloc_1(Heap)}}.
+    Vst#vst{current=St#st{h=heap_alloc_1(Heap),bsm=undefined}}.
     
 heap_alloc_1({alloc,Alloc}) ->
     {value,{_,Heap}} = lists:keysearch(words, 1, Alloc),
@@ -693,6 +697,39 @@ assert_freg_set({fr,Fr}=Freg, #vst{current=#st{f=Fregs}}) when is_integer(Fr) ->
 assert_freg_set(Fr, _) -> error({bad_source,Fr}).
 
 %%%
+%%% Binary matching.
+%%%
+%%% Possible values for the bsm field (=bit syntax matching state).
+%%%
+%%% undefined 	- Undefined (initial state). No matching instructions allowed.
+%%%		 
+%%% (gb set)	- The gb set contains the defined save points.
+%%%
+%%% The bsm field is reset to 'undefined' by instructions that may cause a
+%%% a garbage collection (might move the binary) and/or context switch
+%%% (may invalidate the save points).
+
+bs_start_match(#vst{current=#st{bsm=undefined}=St}=Vst) ->
+    Vst#vst{current=St#st{bsm=gb_sets:empty()}};
+bs_start_match(Vst) ->
+    %% Must retain save points here - it is possible to restore back
+    %% to a previous binary.
+    Vst.
+
+bs_save(Reg, #vst{current=#st{bsm=Saved}=St}=Vst) ->
+    Vst#vst{current=St#st{bsm=gb_sets:add(Reg, Saved)}}.
+
+bs_assert_savepoint(Reg, #vst{current=#st{bsm=Saved}}) ->
+    case gb_sets:is_member(Reg, Saved) of
+	false -> error({no_save_point,Reg});
+	true -> ok
+    end.
+
+bs_assert_state(#vst{current=#st{bsm=undefined}}) ->
+    error(no_bs_match_state);
+bs_assert_state(_) -> ok.
+
+%%%
 %%% Keeping track of types.
 %%%
 
@@ -719,6 +756,8 @@ set_type_y(Type, {y,Y}=Reg, #vst{current=#st{y=Ys0,numy=NumY}=St}=Vst)
 		     true ->
 			 case gb_trees:lookup(Y, Ys0) of
 			     none -> 
+				 gb_trees:insert(Y, Type, Ys0);
+			     {value,uinitialized} ->
 				 gb_trees:insert(Y, Type, Ys0);
 			     {value,{catchtag,_}=Tag} ->
 				 error(Tag);
@@ -889,8 +928,9 @@ get_term_type_1({x,X}=Reg, #vst{current=#st{x=Xs}}) when is_integer(X) ->
     end;
 get_term_type_1({y,Y}=Reg, #vst{current=#st{y=Ys}}) when is_integer(Y) ->
     case gb_trees:lookup(Y, Ys) of
-	{value,Type} -> Type;
-	none -> error({uninitialized_reg,Reg})
+ 	none -> error({uninitialized_reg,Reg});
+	{value,uninitialized} -> error({uninitialized_reg,Reg});
+	{value,Type} -> Type
     end;
 get_term_type_1(Src, _) -> error({bad_source,Src}).
 
@@ -918,22 +958,21 @@ branch_state(L, #vst{current=St,branched=B}=Vst) ->
 %% to be merged. The type states are downgraded to the least common
 %% subset for the subsequent code.
 
-merge_states(0, St, _Branched) -> St;
-merge_states(L, St, Branched) ->
+merge_states(L, St, Branched) when L =/= 0 ->
     case gb_trees:lookup(L, Branched) of
 	none -> St;
 	{value,OtherSt} when St == none -> OtherSt;
-	{value,OtherSt} ->
-	    merge_states_1(St, OtherSt)
+	{value,OtherSt} -> merge_states_1(St, OtherSt)
     end.
 
-merge_states_1(#st{x=Xs0,y=Ys0,numy=NumY0,h=H0,ct=Ct0}=St,
-	       #st{x=Xs1,y=Ys1,numy=NumY1,h=H1,ct=Ct1}) ->
+merge_states_1(#st{x=Xs0,y=Ys0,numy=NumY0,h=H0,ct=Ct0,bsm=Bsm0}=St,
+	       #st{x=Xs1,y=Ys1,numy=NumY1,h=H1,ct=Ct1,bsm=Bsm1}) ->
     NumY = merge_stk(NumY0, NumY1),
     Xs = merge_regs(Xs0, Xs1),
-    Ys = merge_regs(Ys0, Ys1),
+    Ys = merge_y_regs(Ys0, Ys1),
     Ct = merge_stk(Ct0, Ct1),
-    St#st{x=Xs,y=Ys,numy=NumY,h=min(H0, H1),ct=Ct}.
+    Bsm = merge_bsm(Bsm0, Bsm1),
+    St#st{x=Xs,y=Ys,numy=NumY,h=min(H0, H1),ct=Ct,bsm=Bsm}.
 
 merge_stk(S, S) -> S;
 merge_stk(_, _) -> undecided.
@@ -954,10 +993,29 @@ merge_regs_1([], []) -> [];
 merge_regs_1([], [_|_]) -> [];
 merge_regs_1([_|_], []) -> [].
 
-merge_types(T, T) -> T;
+merge_y_regs(Rs0, Rs1) ->
+    Rs = merge_y_regs_1(gb_trees:to_list(Rs0), gb_trees:to_list(Rs1)),
+    gb_trees_from_list(Rs).
+
+merge_y_regs_1([Same|Rs1], [Same|Rs2]) ->
+    [Same|merge_y_regs_1(Rs1, Rs2)];
+merge_y_regs_1([{R1,_}|Rs1], [{R2,_}|_]=Rs2) when R1 < R2 ->
+    [{R1,uninitialized}|merge_y_regs_1(Rs1, Rs2)];
+merge_y_regs_1([{R1,_}|_]=Rs1, [{R2,_}|Rs2]) when R1 > R2 ->
+    [{R2,uninitialized}|merge_y_regs_1(Rs1, Rs2)];
+merge_y_regs_1([{R,Type1}|Rs1], [{R,Type2}|Rs2]) ->
+    [{R,merge_types(Type1, Type2)}|merge_y_regs_1(Rs1, Rs2)];
+merge_y_regs_1([], []) -> [];
+merge_y_regs_1([], [_|_]=Rs) -> Rs;
+merge_y_regs_1([_|_]=Rs, []) -> Rs.
+
+%% merge_types(Type1, Type2) -> Type
+%%  Return the most specific type possible.
+%%  Note: Type1 must NOT be the same as Type2.
+merge_types(uninitialized=I, _) -> I;
+merge_types(_, uninitialized=I) -> I;
 merge_types(initialized=I, _) -> I;
 merge_types(_, initialized=I) -> I;
-merge_types({tuple,Same}=T, {tuple,Same}) -> T;
 merge_types({tuple,A}, {tuple,B}) ->
     {tuple,[min(tuple_sz(A), tuple_sz(B))]};
 merge_types({Type,A}, {Type,B}) 
@@ -975,7 +1033,13 @@ merge_types(bool, {atom,A}) ->
     merge_bool(A);
 merge_types({atom,A}, bool) ->
     merge_bool(A);
-merge_types(_, _) -> term.
+merge_types(T1, T2) when T1 =/= T2 ->
+    %% Too different. All we know is that the type is a 'term'.
+    term.
+
+merge_bsm(undefined, _) -> undefined;
+merge_bsm(_, undefined) -> undefined;
+merge_bsm(Bsm0, Bsm1) -> gb_sets:intersection(Bsm0, Bsm1).
 
 tuple_sz([Sz]) -> Sz;
 tuple_sz(Sz) -> Sz.
@@ -985,19 +1049,14 @@ merge_bool(true) -> bool;
 merge_bool(false) -> bool;
 merge_bool(_) -> {atom,[]}.
     
-verify_y_init(#vst{current=#st{numy=none}}) -> ok;
-verify_y_init(#vst{current=#st{numy=undecided}}) ->
-    error(unknown_size_of_stackframe);
-verify_y_init(#vst{current=#st{y=Ys,numy=NumY}}) ->
-    verify_y_init_1(NumY, Ys).
+verify_y_init(#vst{current=#st{y=Ys}}) ->
+    verify_y_init_1(gb_trees:to_list(Ys)).
 
-verify_y_init_1(0, _) -> ok;
-verify_y_init_1(N, Ys) ->
-    Y = N-1,
-    case gb_trees:is_defined(Y, Ys) of
-	false -> error({uninitialized_reg,{y,Y}});
-	true -> verify_y_init_1(Y, Ys)
-    end.
+verify_y_init_1([]) -> ok;
+verify_y_init_1([{Y,uninitialized}|_]) ->
+    error({uninitialized_reg,{y,Y}});
+verify_y_init_1([{_,_}|Ys]) ->
+    verify_y_init_1(Ys).
 
 verify_live(0, #vst{}) -> ok;
 verify_live(N, #vst{current=#st{x=Xs}}) ->

@@ -178,8 +178,14 @@ do_open_port(Port, RecvSz, BindTo, NoReuse) ->
     end.
 
 bind_to(true) ->
-    Addr = snmpm_config:system_info(address),
-    [{ip, list_to_tuple(Addr)}];
+    case snmpm_config:system_info(address) of
+	{ok, Addr} when is_list(Addr) ->
+	    [{ip, list_to_tuple(Addr)}];
+	{ok, Addr} ->
+	    [{ip, Addr}];
+	_ ->
+	    []
+    end;
 bind_to(_) ->
     [].
 

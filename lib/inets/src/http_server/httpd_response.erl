@@ -37,7 +37,8 @@
 -define(PROCEED_RESPONSE(StatusCode, Info), 
 	{proceed, 
 	 [{response,{already_sent, StatusCode, 
-		     httpd_util:key1search(Info#mod.data,content_length)}}]}).
+		     httpd_util:key1search(Info#mod.data,
+					   content_length)}}]}).
 
 
 -include("httpd.hrl").
@@ -45,11 +46,14 @@
 -define(VMODULE,"RESPONSE").
 -include("httpd_verbosity.hrl").
 
-%% send
-
+%% If peername does not exist the client already discarded the
+%% request so we do not need to send a reply.
+send(#mod{init_data = #init_data{peername = {_,"unknown"}}}) ->
+    ok;
 send(#mod{config_db = ConfigDB} = Info) ->
     ?vtrace("send -> Request line: ~p", [Info#mod.request_line]),
-    Modules = httpd_util:lookup(ConfigDB,modules,[mod_get, mod_head, mod_log]),
+    Modules = httpd_util:lookup(ConfigDB,modules,
+				[mod_get, mod_head, mod_log]),
     case traverse_modules(Info, Modules) of
 	done ->
 	    Info;
@@ -318,7 +322,6 @@ mapfilter(Fun, [Elem|Rest], [RemoveVal| Acc], RemoveVal) ->
 mapfilter(Fun,[Elem|Rest],Acc,RemoveVal)->
     mapfilter(Fun,Rest,[Fun(Elem)|Acc],RemoveVal).
  
-
 transform(content_type, undefined, _Disable) ->
     ["Content-Type:text/plain\r\n"];
 
@@ -327,7 +330,6 @@ transform(date, undefined, _Disable) ->
 
 transform(date,RFCDate, _Disable) ->
     ["Date:",RFCDate,"\r\n"];
-
 
 transform(_Key, undefined, _Disable) ->
     undefined;
@@ -376,14 +378,11 @@ transform(expires, Value, _Disable) ->
 transform(last_modified, Value, _Disable) ->
     ["Last-Modified:",Value,"\r\n"].
 
-
-
 %%----------------------------------------------------------------------
 %% This is the old way of sending data it is strongly encouraged to 
 %% Leave this method and go on to the newer form of response
 %% OTP-4408
 %%----------------------------------------------------------------------
-
 send_response_old(#mod{socket_type = Type, 
 		       socket      = Sock, 
 		       method      = "HEAD"} = Info,

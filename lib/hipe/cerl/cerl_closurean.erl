@@ -349,7 +349,7 @@ visit(T, L, St) ->
 		    L1 = get_label(T),
 		    D = dict:store(L1, X, St3#state.dep),
 		    {Xs1, St3#state{dep = D}};
-		_ ->
+		none ->
 		    {none, St2}
 	    end;
 	call ->
@@ -418,7 +418,7 @@ visit_list([T | Ts], L, St) ->
     {Xs1, St2} = visit_list(Ts, L, St1),
     X = case Xs of
 	    [X1] -> X1;
-	    _ -> empty()
+	    none -> none
 	end,
     {[X | Xs1], St2};
 visit_list([], _L, St) ->
@@ -638,7 +638,7 @@ primop_call(F, A, Xs, St0) ->
 		      false -> St0
 		  end,
 	    case is_literal_op(F, A) of
-		true -> {[empty()], St1};
+		true -> {none, St1};
 		false -> {[singleton(external)], St1}
 	    end
     end.
@@ -695,6 +695,8 @@ singleton(X) -> set__singleton(X).
 
 from_label_list(X) -> set__from_list(X).
 
+join_single(none, Y) -> Y;
+join_single(X, none) -> X;
 join_single(X, Y) -> set__union(X, Y).
 
 join_list([Xs | Xss]) ->

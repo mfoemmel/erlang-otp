@@ -823,7 +823,7 @@ static void fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
 #endif /* !(NOMOVE && SHARED_HEAP) */
 
 static void
-offset_off_heap(Process* p, Eterm* low, Eterm* high, int offs)
+offset_off_heap(Process* p, Eterm* low, Eterm* high, Sint offs)
 {
     if (MSO(p).mso && ptr_within((Eterm *)MSO(p).mso, low, high)) {
         Eterm** uptr = (Eterm**) &MSO(p).mso;
@@ -846,7 +846,7 @@ offset_off_heap(Process* p, Eterm* low, Eterm* high, int offs)
 }
 
 static void
-offset_rootset(Process *p, int offs, 
+offset_rootset(Process *p, Sint offs, 
 	       Eterm* low, Eterm* high, 
 	       Eterm* objv, int nobj)
 {
@@ -2417,7 +2417,7 @@ static void print_roots(Rootset *rootset, int n) /* FIND ME! */
 static void ma_gen_gc(Process*, int, Eterm*, int);
 
 static void
-ma_offset_rootset(Process *p, int offs, 
+ma_offset_rootset(Process *p, Sint offs, 
 	       Eterm* low, Eterm* high, 
 	       Eterm* objv, int nobj)
 {

@@ -668,7 +668,7 @@ get_current_symbols1([{_, _, Rhs} | Items]) ->
     end.
 
 compute_state([], _, NewState0, TerminalTab, Rules, Lc_table) ->
-    NewState = gb_trees:from_orddict(NewState0),
+    NewState = gb_trees:from_orddict(orddict:from_list(NewState0)),
     NewItems = [{I,X,Y} || {I,{X,Y}} <- NewState0],
     lists:keysort(1, compute_closure(NewItems, NewState, TerminalTab, Rules,
 				     Lc_table));
@@ -989,7 +989,7 @@ compute_parse_actions1([{Rule_pointer, Lookahead, Rhs} | Items], N, GotoTab,
 		[Head | Daughters] ->
 		    [{Lookahead,
 		      {reduce, Rule_pointer bsr 8, Head, length(Daughters),
-		       get_prec(Daughters, PrecTab)}}
+		       get_prec(Daughters ++ [Head], PrecTab)}}
 		     | compute_parse_actions1(Items, N, GotoTab, TerminalTab,
 					      Rules, PrecTab)]
 	    end;

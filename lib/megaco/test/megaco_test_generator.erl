@@ -559,7 +559,7 @@ handle_megaco1([Instruction|Instructions], State0) ->
 	    handle_megaco1(Instructions, State);
 	{error, State} when record(State, megaco) ->
 	    p("handle_megaco1 -> error"), 
-	    Reply = {error, {{instruction_failed, Instructions},
+	    Reply = {error, {{instruction_failed, Instruction, Instructions},
 			     lists:reverse(State#megaco.result)}},
 	    {State, Reply};
 	Error ->
@@ -1270,9 +1270,24 @@ p(P, F, A) ->
     p(P, get(name), F, A).
 
 p([], undefined, F, A) ->
-    io:format("*** ~p *** " ++ F ++ "~n", [self()|A]);
+    io:format("*** [~s] ~p *** " ++ 
+	      "~n   " ++ F ++ "~n", 
+	      [format_timestamp(now()),self()|A]);
 p(P, undefined, F, A) ->
-    io:format("*** ~p ~s *** " ++ F ++ "~n", [self(),P|A]);
+    io:format("*** [~s] ~p ~s *** " ++ 
+	      "~n   " ++ F ++ "~n", 
+	      [format_timestamp(now()),self(),P|A]);
 p(P, N, F, A) ->
-    io:format("*** ~s~s *** " ++ F ++ "~n", [N,P|A]).
+    io:format("*** [~s] ~s~s *** " ++ 
+	      "~n   " ++ F ++ "~n", 
+	      [format_timestamp(now()),N,P|A]).
 
+
+format_timestamp({_N1, _N2, N3} = Now) ->
+    {Date, Time}   = calendar:now_to_datetime(Now),
+    {YYYY,MM,DD}   = Date,
+    {Hour,Min,Sec} = Time,
+    FormatDate = 
+        io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+                      [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),  
+    lists:flatten(FormatDate).

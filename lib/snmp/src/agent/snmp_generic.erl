@@ -21,7 +21,7 @@
 -export([table_func/2, table_func/4, 
 	 table_set_row/5, table_set_cols/3, table_set_cols/4,
 	 table_row_exists/2, table_foreach/2, table_foreach/3,
-	 table_try_row/4, table_get_row/2,
+	 table_try_row/4, table_get_row/2, table_get_row/3, 
          table_get_elements/3, table_get_elements/4, table_get_element/3,
 	 table_set_element/4, table_set_elements/3,
          table_next/2, handle_table_next/6, 

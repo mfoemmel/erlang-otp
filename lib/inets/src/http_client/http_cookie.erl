@@ -28,7 +28,7 @@
 header(Scheme, {Host, _}, Path, CookieDb) ->
     case lookup_cookies(Host, Path, CookieDb) of
 	[] ->
-	    [];
+	    {"cookie", ""};
 	Cookies ->
 	    {"cookie", cookies_to_string(Scheme, Cookies)}
     end.
@@ -37,8 +37,13 @@ cookies(Headers, RequestPath, RequestHost) ->
     Cookies = parse_set_cookies(Headers, {RequestPath, RequestHost}),
     accept_cookies(Cookies, RequestPath, RequestHost).
 	
-open_cookie_db({DbName, SessionDbName}) ->
-    File = filename:join(code:priv_dir(inets), atom_to_list(DbName)),
+open_cookie_db({{_, only_session_cookies}, SessionDbName}) ->
+    EtsDb = ets:new(SessionDbName, [protected, bag,
+				    {keypos, #http_cookie.domain}]),
+    {undefined, EtsDb};
+
+open_cookie_db({{DbName, Dbdir}, SessionDbName}) ->
+    File = filename:join(Dbdir, atom_to_list(DbName)),
     {ok, DetsDb} = dets:open_file(DbName, [{keypos, #http_cookie.domain},
 					   {type, bag},
 					   {file, File},
@@ -47,9 +52,18 @@ open_cookie_db({DbName, SessionDbName}) ->
 				    {keypos, #http_cookie.domain}]),
     {DetsDb, EtsDb}.
 
+close_cookie_db({undefined, EtsDb}) ->
+    ets:delete(EtsDb);
+
 close_cookie_db({DetsDb, EtsDb}) ->
     dets:close(DetsDb),
     ets:delete(EtsDb).
+
+%% If no persistent cookie database is defined we
+%% treat all cookies as if they where session cookies. 
+insert(Cookie = #http_cookie{max_age = Int}, 
+       Dbs = {undefined, _}) when is_integer(Int) ->
+    insert(Cookie#http_cookie{max_age = session}, Dbs);
 
 insert(Cookie = #http_cookie{domain = Key, name = Name, 
 		    path = Path, max_age = session},
@@ -67,7 +81,7 @@ insert(Cookie = #http_cookie{domain = Key, name = Name,
     ok;
 insert(#http_cookie{domain = Key, name = Name, 
 		    path = Path, max_age = 0},
-       {CookieDb, _}) ->
+       Db = {CookieDb, _}) ->
     case dets:match_object(CookieDb, #http_cookie{domain = Key,
 						  name = Name, 
 						  path = Path,
@@ -75,7 +89,7 @@ insert(#http_cookie{domain = Key, name = Name,
 	[] ->
 	    ok;
 	[NewCookie] ->
-	    delete(NewCookie, CookieDb)
+	    delete(NewCookie, Db)
     end,
     ok;
 insert(Cookie = #http_cookie{domain = Key, name = Name, path = Path},
@@ -95,11 +109,14 @@ insert(Cookie = #http_cookie{domain = Key, name = Name, path = Path},
 %%%========================================================================
 %%% Internal functions
 %%%========================================================================
+lookup_cookies(Key, {undefined, Ets}) ->
+    ets:match_object(Ets, #http_cookie{domain = Key,
+				       _ = '_'});
 lookup_cookies(Key, {Dets,Ets}) ->
     SessionCookies = ets:match_object(Ets, #http_cookie{domain = Key,
-					_ = '_'}),
+							_ = '_'}),
     Cookies = dets:match_object(Dets, #http_cookie{domain = Key,
-						    _ = '_'}),
+						   _ = '_'}),
     Cookies ++ SessionCookies.
 
 delete(Cookie = #http_cookie{max_age = session}, {_, CookieDb}) ->
@@ -129,7 +146,7 @@ lookup_domain_cookies([], _, AccCookies) ->
 lookup_domain_cookies([_], _, AccCookies) ->
     lists:flatten(AccCookies);
 lookup_domain_cookies([Next | DomainParts], CookieDb, AccCookies) ->    
-    Domain = merge_domain_parts(DomainParts, [Next]),
+    Domain = merge_domain_parts(DomainParts, [Next ++ "."]),
     lookup_domain_cookies(DomainParts, CookieDb,
 			  [lookup_cookies(Domain, CookieDb) 
 			   | AccCookies]).
@@ -144,7 +161,12 @@ cookies_to_string(Scheme, Cookies = [Cookie | _]) ->
     cookies_to_string(Scheme, path_sort(Cookies), [Version]).
 
 cookies_to_string(_, [], CookieStrs) ->
-    lists:flatten(lists:reverse(CookieStrs));
+    case length(CookieStrs) of
+	1 ->
+	    "";
+	_ ->
+	    lists:flatten(lists:reverse(CookieStrs))
+    end;
 
 cookies_to_string(https, [Cookie = #http_cookie{secure = true}| Cookies], 
 		  CookieStrs) ->
@@ -250,7 +272,7 @@ cookie_attributes([{"domain", Value}| Attributes], Cookie) ->
     cookie_attributes(Attributes, 
 				Cookie#http_cookie{domain = Value});
 cookie_attributes([{"max-age", Value}| Attributes], Cookie) ->
-    ExpireTime = cookie_expires(Value),
+    ExpireTime = cookie_expires(list_to_integer(Value)),
     cookie_attributes(Attributes, 
 				Cookie#http_cookie{max_age = ExpireTime});
 %% Backwards compatibility with netscape cookies
@@ -309,12 +331,16 @@ accept_domain(#http_cookie{domain = Domain}, RequestHost) ->
     HostCheck = case http_util:is_hostname(RequestHost) of 
 		    true ->  		
 			(lists:suffix(Domain, RequestHost) andalso
-			 (not lists:member($., RequestHost -- Domain)));
+			 (not 
+			  lists:member($., 
+				       string:substr(RequestHost, 1,
+						     (length(RequestHost) -
+						      length(Domain))))));
 		    false -> 
 			false
 		end,
-    HostCheck andalso (hd(Domain) == ".") andalso 
-			(length(string:tokens(Domain, ".")) > 1).
+    HostCheck andalso (hd(Domain) == $.) 
+	andalso (length(string:tokens(Domain, ".")) > 1).
 
 cookie_expires(0) ->
     0;

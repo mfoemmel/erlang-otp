@@ -1491,7 +1491,12 @@ ensure_written(Head, DoSync) when Head#head.ram_file == true ->
 	DoSync == true ->
 	    dets_utils:write_file(Head, Bin);
 	DoSync == false ->
-	    file:write_file(Head#head.filename, Bin)
+            case file:write_file(Head#head.filename, Bin) of
+                ok -> 
+                    ok;
+                Error -> 
+                    dets_utils:corrupt_file(Head, Error)
+            end
     end;
 ensure_written(Head, true) when Head#head.ram_file == false ->
     dets_utils:sync(Head);

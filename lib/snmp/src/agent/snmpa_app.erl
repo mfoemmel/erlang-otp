@@ -266,10 +266,7 @@ get_authentication_service(Opts) ->
     get_opt(authentication_service, Opts, snmpa_acm).
 
 get_error_report_mod(Opts) ->
-    case get_opt(snmp_error_report_mod, Opts) of
-	{ok, Mod} when atom(Mod) -> Mod;
-	_ -> snmpa_error_logger
-    end.
+    get_opt(snmp_error_report_mod, Opts, snmpa_error_logger).
 
 
 %% --
@@ -309,9 +306,9 @@ get_master_agent_mibs(Opts) ->
 
 get_force_config_load(Opts) ->
     case get_opt(force_config_load, Opts) of
-	{ok, true} -> true;
-	{ok, false} -> false;
-	_ -> false
+	{value, true}  -> true;
+	{value, false} -> false;
+	_              -> false
     end.
 
 

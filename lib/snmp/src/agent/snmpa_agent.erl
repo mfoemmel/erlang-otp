@@ -476,8 +476,9 @@ db(Tab) ->
 %%% 2. Main loop
 %%%--------------------------------------------------
 handle_info({snmp_pdu, Vsn, Pdu, PduMS, ACMData, Address, Extra}, S) ->
-    ?vdebug("~n   Received PDU ~p"
-	    "~n   from ~p", [Pdu,Address]),
+    ?vdebug("Received PDU: "
+	    "~n   ~p"
+	    "~n   from: ~p", [Pdu, Address]),
     %% XXX OTP-3324
     AuthMod = get(auth_module),
     case AuthMod:init_check_access(Pdu, ACMData) of

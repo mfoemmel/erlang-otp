@@ -22,10 +22,10 @@ BEGIN
     END
     POPUP "&Edit"
     BEGIN
-        MENUITEM "&Copy\tCtrl+Ins",             IDMENU_COPY
+        MENUITEM "&Copy\tCtrl+C",               IDMENU_COPY
         MENUITEM "&Paste\tCtrl+V",              IDMENU_PASTE
         MENUITEM SEPARATOR
-        MENUITEM "Select A&ll",         IDMENU_SELALL
+        MENUITEM "Select A&ll",                 IDMENU_SELALL
     END
     POPUP "&Options"
     BEGIN
@@ -34,7 +34,7 @@ BEGIN
     END
     POPUP "&View"
     BEGIN
-        MENUITEM "&Toolbar",             		IDMENU_TOOLBAR
+        MENUITEM "&Toolbar",             	IDMENU_TOOLBAR
     END
     POPUP "&Help"
     BEGIN
@@ -66,10 +66,12 @@ END
 
 1 ACCELERATORS
 {
-    VK_INSERT,IDMENU_COPY,VIRTKEY,CONTROL
-    "^V",IDMENU_PASTE
-    VK_INSERT,IDMENU_PASTE,VIRTKEY,SHIFT	
-    VK_F1,  IDMENU_ABOUT,  VIRTKEY
+    VK_CANCEL, ID_BREAK,     VIRTKEY, CONTROL
+    "^C",      IDMENU_COPY
+    VK_INSERT, IDMENU_COPY,  VIRTKEY, CONTROL
+    "^V",      IDMENU_PASTE
+    VK_INSERT, IDMENU_PASTE, VIRTKEY, SHIFT
+    VK_F1,     IDMENU_ABOUT, VIRTKEY
 }
 
 

@@ -28,7 +28,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # ----------------------------------------------------
 include ../vsn.mk
 VSN=$(ODBC_VSN)
-
+APP_VSN = "odbc-$(VSN)"
 # ----------------------------------------------------
 # Release directory specification
 # ----------------------------------------------------
@@ -62,10 +62,18 @@ APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
 TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
 # ----------------------------------------------------
+# ODBC FLAGS
+# ----------------------------------------------------
+ODBC_FLAGS = -D'SERVER_SOFTWARE="odbc/$(VSN)"' \
+
+# ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS +=
-ERL_COMPILE_FLAGS += -I$(INCLUDE)
+ERL_COMPILE_FLAGS += -I$(INCLUDE) \
+		     $(ODBC_FLAGS) \
+                     +'{parse_transform,sys_pre_attributes}' \
+                     +'{attribute,insert,app_vsn,$(APP_VSN)}'
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------

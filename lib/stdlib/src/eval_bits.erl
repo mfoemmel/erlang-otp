@@ -223,9 +223,10 @@ match_field({bin_element,L,E,default,[binary|_]=Opts}, Bin, Bs0, BBs,
             Mfun, Efun, Call_maketype) ->
      match_field({bin_element,L,E,{atom,L,all},Opts}, Bin, Bs0, BBs, Mfun,
                  Efun, Call_maketype);
-match_field({bin_element, _,E,Size0,Options0}, Bin, Bs0, BBs, Mfun, Efun,
+match_field({bin_element, _,E0,Size0,Options0}, Bin, Bs0, BBs, Mfun, Efun,
 	    Call_maketype) ->
     {Size1,Options} = maketype(Size0, Options0, Call_maketype),
+    E = coerce_to_float(E0,Options),
     match_check_size(Size1, BBs),
     case Efun(Size1, BBs) of
 	{value,all,_} when binary(Bin) ->
@@ -239,6 +240,16 @@ match_field({bin_element, _,E,Size0,Options0}, Bin, Bs0, BBs, Mfun, Efun,
 	    {Bs,add_bin_binding(E, Val, BBs),Tail}
     end.
 
+%% Identical to the one in sys_pre_expand.
+coerce_to_float({integer,L,I}=E, [float|_]) ->
+    try
+	{float,L,float(I)}
+    catch
+	error:badarg -> E;
+	error:badarith -> E
+    end;
+coerce_to_float(E, _) -> E.
+    
 add_bin_binding({var,_,Var}, Val, BBs) ->
     erl_eval:add_binding(Var, Val, BBs);
 add_bin_binding(_, _, BBs) -> BBs.

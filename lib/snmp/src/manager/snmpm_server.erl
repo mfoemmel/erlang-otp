@@ -29,6 +29,8 @@
 %% User interface
 -export([start_link/0, stop/0, 
 
+	 load_mib/1, unload_mib/1, 
+
 	 register_user/3, register_user_monitor/3, unregister_user/1, 
 
 	 sync_get/5, sync_get/6, async_get/5, async_get/6, 
@@ -37,7 +39,7 @@
 	 sync_set/5, sync_set/6, async_set/5, async_set/6, 
 	 cancel_async_request/2,
 
-	 discovery/1, discovery/2, discovery/3, discovery/4, 
+	 discovery/2, discovery/3, discovery/4, discovery/5, 
 
 	 reconfigure/0,
 
@@ -67,7 +69,7 @@
 -define(SYNC_SET_TIMEOUT,     5000).
 -define(DEFAULT_ASYNC_EXPIRE, 5000).
 
--define(SNMP_AGENT_PORT, 4000).
+-define(SNMP_AGENT_PORT,      161).
 
 
 -ifdef(snmp_debug).
@@ -133,6 +135,13 @@ start_link() ->
 
 stop() ->
     call(stop).
+
+
+load_mib(MibFile) when list(MibFile) ->
+    call({load_mib, MibFile}).
+
+unload_mib(Mib) when list(Mib) ->
+    call({unload_mib, Mib}).
 
 
 register_user(UserId, UserMod, UserData) ->
@@ -233,36 +242,22 @@ cancel_async_request(UserId, ReqId) ->
     call({cancel_async_request, UserId, ReqId}).
 
 
-%% Discovery on our subnet using default port
-discovery(UserId) ->
-    {ok, Host} = inet:gethostname(),
-    {ok, {A1, A2, A3, _A4}} = inet:getaddr(Host, inet),
-    Addr = {A1, A2, A3, 255},
-    discovery(UserId, Addr, ?SNMP_AGENT_PORT, ?DEFAULT_ASYNC_EXPIRE).
+discovery(UserId, BAddr) ->
+    discovery(UserId, BAddr, ?SNMP_AGENT_PORT, [], ?DEFAULT_ASYNC_EXPIRE).
 
-%% Discovery on our subnet
-discovery(UserId, Port) when integer(Port) ->
-    {ok, Host} = inet:gethostname(),
-    {ok, {A1, A2, A3, _A4}} = inet:getaddr(Host, inet),
-    Addr = {A1, A2, A3, 255},
-    discovery(UserId, Addr, Port, ?DEFAULT_ASYNC_EXPIRE);
+discovery(UserId, BAddr, Config) when is_list(Config) ->
+    discovery(UserId, BAddr, ?SNMP_AGENT_PORT, Config, ?DEFAULT_ASYNC_EXPIRE);
 
-%% Discovery using default port
-discovery(UserId, Addr) ->
-    discovery(UserId, Addr, ?SNMP_AGENT_PORT, ?DEFAULT_ASYNC_EXPIRE).
+discovery(UserId, BAddr, Expire) when is_integer(Expire) ->
+    discovery(UserId, BAddr, ?SNMP_AGENT_PORT, [], Expire).
 
-%% Discovery 
-discovery(UserId, Addr, Port) ->
-    discovery(UserId, Addr, Port, ?DEFAULT_ASYNC_EXPIRE).
+discovery(UserId, BAddr, Config, Expire) ->
+    discovery(UserId, BAddr, ?SNMP_AGENT_PORT, Config, Expire).
 
-discovery(UserId, {A1, A2, A3, A4} = Addr, Port, Expire) 
-  when integer(A1), A1 >= 0, A1 =< 255,
-       integer(A2), A2 >= 0, A2 =< 255,
-       integer(A3), A3 >= 0, A3 =< 255,
-       integer(A4), A4 == 255,
-       integer(Port) ->
-    call({discovery, self(), UserId, Addr, Port, Expire}).
+discovery(UserId, BAddr, Port, Config, Expire) ->
+    call({discovery, self(), UserId, BAddr, Port, Config, Expire}).
 
+    
 verbosity(Verbosity) ->
     case ?vvalidate(Verbosity) of
 	Verbosity ->
@@ -422,7 +417,7 @@ handle_call({unregister_user, UserId}, _From, State) ->
     Match = ets:match(snmpm_request_table, Pat),
     F1 = fun([ReqId, Ref, MonRef]) -> 
 		 ets:delete(snmpm_request_table, ReqId),
-		 erlang:cancel_timer(Ref),
+		 cancel_timer(Ref),
 		 erlang:demonitor(MonRef),
 		 ok
 	end,
@@ -497,7 +492,7 @@ handle_call({sync_set, Pid, UserId, Addr, Port, CtxName, VarsAndVals, Timeout}, 
 
 handle_call({async_get, Pid, UserId, Addr, Port, CtxName, Oids, Expire}, 
 	    _From, State) ->
-    ?vlog("received async_get [~p] request", []),
+    ?vlog("received async_get [~p] request", [CtxName]),
     Reply = (catch handle_async_get(Pid, UserId, Addr, Port, CtxName, Oids, 
 				    Expire, State)),
     {reply, Reply, State};
@@ -525,9 +520,11 @@ handle_call({cancel_async_request, UserId, ReqId}, _From, State) ->
     {reply, Reply, State};
 
 
-handle_call({discovery, Pid, UserId, Addr, Port, Expire}, _From, State) ->
+handle_call({discovery, Pid, UserId, BAddr, Port, Config, Expire}, 
+	    _From, State) ->
     ?vlog("received discovery request", []),
-    Reply = (catch handle_discovery(Pid, UserId, Addr, Port, Expire, State)),
+    Reply = (catch handle_discovery(Pid, UserId, BAddr, Port, Config, 
+				    Expire, State)),
     {reply, Reply, State};
 
 
@@ -591,7 +588,7 @@ handle_cast(Msg, State) ->
 
 handle_info({sync_timeout, ReqId, From}, State) ->
     ?vlog("received sync_timeout [~w] message", [ReqId]),
-    handle_sync_timeout(ReqId, From),
+    handle_sync_timeout(ReqId, From, State),
     {noreply, State};
 
 
@@ -875,15 +872,12 @@ handle_async_get(Pid, UserId, Addr, Port, CtxName, Oids, Expire, State) ->
 	    ?vtrace("handle_async_get -> send a ~p message", [Vsn]),
 	    ReqId  = send_get_request(Oids, Vsn, MsgData, Addr, Port, State),
 	    ?vdebug("handle_async_get -> ReqId: ~p", [ReqId]),
-            MonRef = erlang:monitor(process, Pid),
-	    ?vtrace("handle_async_get -> MonRef: ~p", [MonRef]),
 	    Req    = #request{id      = ReqId,
 			      user_id = UserId, 
 			      addr    = Addr,
 			      port    = Port,
 			      type    = get, 
 			      data    = MsgData, 
-			      mon     = MonRef,
 			      expire  = t() + Expire},
 
 	    ets:insert(snmpm_request_table, Req),
@@ -915,15 +909,12 @@ handle_async_get_next(Pid, UserId, Addr, Port, CtxName, Oids, Expire, State) ->
 	    ReqId  = send_get_next_request(Oids, Vsn, MsgData, 
 					   Addr, Port, State),
 	    ?vdebug("handle_async_get_next -> ReqId: ~p", [ReqId]),
-            MonRef = erlang:monitor(process, Pid),
-	    ?vtrace("handle_async_get_next -> MonRef: ~p", [MonRef]),
 	    Req    = #request{id      = ReqId,
 			      user_id = UserId, 
 			      addr    = Addr,
 			      port    = Port,
 			      type    = get_next, 
 			      data    = MsgData, 
-			      mon     = MonRef,
 			      expire  = t() + Expire},
 
 	    ets:insert(snmpm_request_table, Req),
@@ -955,15 +946,12 @@ handle_async_set(Pid, UserId, Addr, Port, CtxName, VarsAndVals, Expire, State) -
 	    ReqId  = send_set_request(VarsAndVals, Vsn, MsgData, 
 				      Addr, Port, State),
 	    ?vdebug("handle_async_set -> ReqId: ~p", [ReqId]),
-            MonRef = erlang:monitor(process, Pid),
-	    ?vtrace("handle_async_set -> MonRef: ~p", [MonRef]),
 	    Req    = #request{id      = ReqId,
 			      user_id = UserId, 
 			      addr    = Addr,
 			      port    = Port,
 			      type    = set, 
 			      data    = MsgData, 
-			      mon     = MonRef,
 			      expire  = t() + Expire},
 
 	    ets:insert(snmpm_request_table, Req),
@@ -985,13 +973,10 @@ handle_cancel_async_request(UserId, ReqId, _State) ->
 	    "~n   ReqId:  ~p", [UserId, ReqId]),
     case ets:lookup(snmpm_request_table, ReqId) of
 	[#request{user_id = UserId,
-		  ref     = Ref, 
-		  mon     = MonRef}] ->
+		  ref     = Ref}] ->
 	    ?vdebug("handle_cancel_async_request -> demonitor and cancel timer"
-		    "~n   Monref: ~p"
-		    "~n   Ref:    ~p", [MonRef, Ref]),
-	    erlang:demonitor(MonRef),
-	    erlang:cancel_timer(Ref),
+		    "~n   Ref: ~p", [Ref]),
+	    cancel_timer(Ref),
 	    ets:delete(snmpm_request_table, ReqId),
 	    ok;
 	
@@ -1006,24 +991,25 @@ handle_cancel_async_request(UserId, ReqId, _State) ->
     end.
     
 
-handle_discovery(Pid, UserId, Addr, Port, Expire, State) ->
+handle_discovery(Pid, UserId, BAddr, Port, Config, Expire, State) ->
     ?vtrace("handle_discovery -> entry with"
 	    "~n   Pid:         ~p"
 	    "~n   UserId:      ~p"
-	    "~n   Addr:        ~p"
+	    "~n   BAddr:       ~p"
 	    "~n   Port:        ~p"
+	    "~n   Config:      ~p"
 	    "~n   Expire:      ~p",
-	    [Pid, UserId, Addr, Port, Expire]),
-    case agent_data(default, default, "") of
+	    [Pid, UserId, BAddr, Port, Config, Expire]),
+    case agent_data(default, default, "", Config) of
 	{ok, Vsn, MsgData} ->
 	    ?vtrace("handle_discovery -> send a ~p disco message", [Vsn]),
-	    ReqId  = send_discovery(Vsn, MsgData, Addr, Port, State),
+	    ReqId  = send_discovery(Vsn, MsgData, BAddr, Port, State),
 	    ?vdebug("handle_discovery -> ReqId: ~p", [ReqId]),
 	    MonRef = erlang:monitor(process, Pid),
 	    ?vtrace("handle_discovery -> MonRef: ~p", [MonRef]),
 	    Req    = #request{id        = ReqId,
 			      user_id   = UserId, 
-			      addr      = Addr, 
+			      addr      = BAddr, 
 			      port      = Port,
 			      type      = get, 
 			      data      = MsgData, 
@@ -1036,14 +1022,14 @@ handle_discovery(Pid, UserId, Addr, Port, Expire, State) ->
 
 	Error ->
 	    ?vinfo("failed retrieving agent data for discovery (get):"
-		   "~n   Addr:  ~p"
+		   "~n   BAddr: ~p"
 		   "~n   Port:  ~p"
-		   "~n   Error: ~p", [Addr, Port, Error]),
+		   "~n   Error: ~p", [BAddr, Port, Error]),
 	    Error
     end.
 
 
-handle_sync_timeout(ReqId, From) ->
+handle_sync_timeout(ReqId, From, State) ->
     ?vtrace("handle_sync_timeout -> entry with"
 	    "~n   ReqId: ~p"
 	    "~n   From:  ~p", [ReqId, From]),
@@ -1068,6 +1054,7 @@ handle_sync_timeout(ReqId, From) ->
 			       from   = undefined, 
 			       expire = t()},
 	    ets:insert(snmpm_request_table, Req),
+	    gct_activate(State#state.gct),
 	    ok;
 	_ ->
 	    ok
@@ -1130,7 +1117,7 @@ handle_snmp_error(#pdu{request_id = ReqId} = Pdu, Reason, _State) ->
 		    "~n   From:   ~p", [Ref, MonRef, From]),
 
 	    Remaining = 
-		case (catch erlang:cancel_timer(Ref)) of
+		case (catch cancel_timer(Ref)) of
 		    R when integer(R) ->
 			R;
 		    _ ->
@@ -1239,7 +1226,7 @@ handle_snmp_pdu(#pdu{type = 'get-response', request_id = ReqId} = Pdu,
 		    "~n   From:   ~p", [Ref, MonRef, From]),
 
 	    Remaining = 
-		case (catch erlang:cancel_timer(Ref)) of
+		case (catch cancel_timer(Ref)) of
 		    R when integer(R) ->
 			R;
 		    _ ->
@@ -1626,7 +1613,7 @@ handle_down_requests_cleanup(MonRef) ->
     Fun = fun([Id, Ref]) -> 
 		  ?vtrace("delete request: ~p", [Id]),
 		  ets:delete(snmpm_request_table, Id),
-		  erlang:cancel_timer(Ref),
+		  cancel_timer(Ref),
 		  ok
 	  end,
     lists:foreach(Fun, Match).
@@ -1650,7 +1637,11 @@ handle_down_user_cleanup(MonRef) ->
 	     end,
     lists:foreach(Fun, Match).
     
-    
+cancel_timer(undefined) ->
+    ok;
+cancel_timer(Ref) ->
+    (catch erlang:cancel_timer(Ref)).
+
 handle_gc(GCT) ->
     ets:safe_fixtable(snmpm_request_table, true),
     case do_gc(ets:first(snmpm_request_table), t()) of
@@ -1746,13 +1737,13 @@ make_pdu(set, VarsAndVals, MiniMIB) ->
     VBs = [var_and_value_to_varbind(VAV, MiniMIB) || VAV <- VarsAndVals],
     make_pdu_impl(set, VBs);
 
-make_pdu(bulk, {NonRepeaters, MaxRepetitions, Oids}, MiniMIB) ->
-    Foids = [flatten_oid(Oid, MiniMIB) || Oid <- Oids],
-    #pdu{type         = 'get-bulk-request', 
-	 request_id   = request_id(),
-	 error_status = NonRepeaters, 
-	 error_index  = MaxRepetitions,
-	 varbinds     = [make_vb(Foid) || Foid <- Foids]};
+% make_pdu(bulk, {NonRepeaters, MaxRepetitions, Oids}, MiniMIB) ->
+%     Foids = [flatten_oid(Oid, MiniMIB) || Oid <- Oids],
+%     #pdu{type         = 'get-bulk-request', 
+% 	 request_id   = request_id(),
+% 	 error_status = NonRepeaters, 
+% 	 error_index  = MaxRepetitions,
+% 	 varbinds     = [make_vb(Foid) || Foid <- Foids]};
 
 make_pdu(Op, Oids, MiniMIB) ->
     Foids = [flatten_oid(Oid, MiniMIB) || Oid <- Oids],
@@ -1877,22 +1868,50 @@ request_id() ->
 %%----------------------------------------------------------------------
 
 agent_data(Addr, Port, CtxName) ->
+    agent_data(Addr, Port, CtxName, []).
+
+agent_data(Addr, Port, CtxName, Config) ->
     case snmpm_config:agent_info(Addr, Port, all) of
 	{ok, Info} ->
 	    {value, {_, Version}} = lists:keysearch(version, 1, Info),
 	    MsgData = 
 		case Version of
 		    v3 ->
-			TargetName = agent_data_item(target_name,  Info),
-			EngineId   = agent_data_item(engine_id,    Info),
-			SecModel   = agent_data_item(sec_model,    Info),
-			SecName    = agent_data_item(sec_name,     Info),
-			SecLevel   = agent_data_item(sec_level,    Info),
+			DefTargetName = agent_data_item(target_name, Info),
+			DefEngineId   = agent_data_item(engine_id,   Info),
+			DefSecModel   = agent_data_item(sec_model,   Info),
+			DefSecName    = agent_data_item(sec_name,    Info),
+			DefSecLevel   = agent_data_item(sec_level,   Info),
+
+			TargetName    = agent_data_item(target_name, 
+							Config, 
+							DefTargetName),
+			EngineId      = agent_data_item(engine_id,   
+							Config, 
+							DefEngineId),
+			SecModel      = agent_data_item(sec_model,   
+							Config, 
+							DefSecModel),
+			SecName       = agent_data_item(sec_name,    
+							Config, 
+							DefSecName),
+			SecLevel      = agent_data_item(sec_level,   
+							Config, 
+							DefSecLevel),
+			
 			{SecModel, SecName, SecLevel, 
 			 EngineId, CtxName, TargetName};
 		    _ ->
-			Comm     = agent_data_item(community, Info),
-			SecModel = agent_data_item(sec_model, Info),
+			DefComm     = agent_data_item(community, Info),
+			DefSecModel = agent_data_item(sec_model, Info),
+
+			Comm        = agent_data_item(community, 
+						      Config, 
+						      DefComm),
+			SecModel    = agent_data_item(sec_model, 
+						      Config, 
+						      DefSecModel),
+			
 			{Comm, SecModel}
 		end,
 	    {ok, version(Version), MsgData};
@@ -1903,6 +1922,15 @@ agent_data(Addr, Port, CtxName) ->
 agent_data_item(Item, Info) ->
     {value, {_, Val}} = lists:keysearch(Item, 1, Info),
     Val.
+
+agent_data_item(Item, Info, Default) ->
+    case lists:keysearch(Item, 1, Info) of
+	{value, {_, Val}} ->
+	    Val;
+	false ->
+	    Default
+    end.
+
 
 version(v1) ->
     'version-1';

@@ -28,6 +28,10 @@
 	 start_link/1, 
 	 stop/0, 
 
+	 load_mib/1, unload_mib/1, 
+	 which_mibs/0, 
+	 name_to_oid/1, oid_to_name/1, 
+
 	 register_user/3, register_user_monitor/3, unregister_user/1, 
 	 which_users/0, 
 
@@ -49,7 +53,7 @@
 	 cancel_async_request/2, 
 	 
 	 %% Extended SNMP API
-	 discovery/1, discovery/2, discovery/3, discovery/4, 
+	 discovery/2, discovery/3, discovery/4, discovery/5, 
 
 	 %% Logging
 	 log_to_txt/2, log_to_txt/3, log_to_txt/4,
@@ -100,6 +104,31 @@ start(Opts) ->
 stop() ->
     snmpm_supervisor:stop().
 
+
+%% -- Mibs --
+
+%% Load a mib into the manager
+load_mib(MibFile) ->
+    snmpm_server:load_mib(MibFile).
+
+%% Unload a mib from the manager
+unload_mib(Mib) ->
+    snmpm_server:unload_mib(Mib).
+
+%% Which mib's are loaded
+which_mibs() ->
+    snmpm_config:which_mibs().
+
+%% Get all the possible oid's for the aliasname
+name_to_oid(Name) ->
+    snmpm_config:name_to_oid(Name).
+
+%% Get the aliasname for an oid
+oid_to_name(Oid) ->
+    snmpm_config:oid_to_name(Oid).
+
+
+%% -- Verbosity -- 
 
 %% Change the verbosity of a process in the manager
 verbosity(config, V) ->
@@ -207,19 +236,17 @@ which_usm_users(EngineID) when list(EngineID) ->
 %% -- Discovery --
 
 %% Start a discovery process
-discovery(UserId) ->
-    snmpm_server:discovery(UserId).
+discovery(UserId, BAddr) ->
+    snmpm_server:discovery(UserId, BAddr).
 
-discovery(UserId, AddrOrPort) ->
-    snmpm_server:discovery(UserId, AddrOrPort).
+discovery(UserId, BAddr, ExpireOrConfig) ->
+    snmpm_server:discovery(UserId, BAddr, ExpireOrConfig).
 
-% discovery(UserId, Port, Expire) when integer(Port), integer(Expire) ->
-%     snmpm_server:discovery(UserId, Port, Expire);
-discovery(UserId, Addr, Port) ->
-    snmpm_server:discovery(UserId, Addr, Port).
+discovery(UserId, BAddr, Config, Expire) ->
+    snmpm_server:discovery(UserId, BAddr, Config, Expire).
 
-discovery(UserId, Addr, Port, Expire) ->
-    snmpm_server:discovery(UserId, Addr, Port, Expire).
+discovery(UserId, BAddr, Port, Config, Expire) ->
+    snmpm_server:discovery(UserId, BAddr, Port, Config, Expire).
 
 
 %% -- Requests --

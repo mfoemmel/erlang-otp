@@ -1170,7 +1170,7 @@ eval_case(#c_case{arg=#c_var{name=V},
 	{ok,Type} ->
 	    case {will_match_type(P, Type),will_succeed(G)} of
 		{yes,yes} ->
-		    {Ps,Es} = remove_non_vars(P, Type, [], []),
+		    {Ps,Es} = remove_non_vars(P, Type),
 		    expr(#c_let{vars=Ps,arg=#c_values{es=Es},body=B}, sub_new());
 		{_,_} -> eval_case_1(Case)
 	    end;

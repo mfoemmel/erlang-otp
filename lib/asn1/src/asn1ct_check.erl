@@ -2656,17 +2656,6 @@ normalize_restrictedstring(S,[H|T],CType) when list(H);tuple(H) ->
     [normalize_restrictedstring(S,H,CType)|normalize_restrictedstring(S,T,CType)];
 %% character sting case
 normalize_restrictedstring(_S,CString,_) when list(CString) ->
-    Fun = 
-	fun(X) ->
-		if 
-		    $X =< 255, $X >= 0 ->
-			ok;
-		    true ->
-			io:format("WARNING: illegal character in string"
-				  " ~p~n",[X])
-		end
-	end,
-    lists:foreach(Fun,CString),
     CString;
 %% definedvalue case or argument in a parameterized type
 normalize_restrictedstring(S,ERef,CType) when record(ERef,'Externalvaluereference') ->
@@ -3109,7 +3098,7 @@ check_type(S=#state{recordtopname=TopName},Type,Ts) when record(Ts,type) ->
 
 get_innertag(_S,#'ObjectClassFieldType'{type=Type}) ->
     case Type of
-	#type{tag=Tag} -> Tag;
+%	#type{tag=Tag} -> Tag;
 	{fixedtypevaluefield,_,#type{tag=Tag}} -> Tag;
 	{TypeFieldName,_} when atom(TypeFieldName) -> [];
 	_ -> []
@@ -3291,12 +3280,8 @@ resolv_tuple_or_list(S,{Lb,Ub}) ->
 %% is replaced by the actual value
 %%
 resolv_value(S,Val) ->
-    case match_parameters(S,Val, S#state.parameters) of
-	Id -> % unchanged 
-	    resolv_value1(S,Id);
-	Other ->
-	    resolv_value(S,Other)
-    end.
+    Id = match_parameters(S,Val, S#state.parameters),
+    resolv_value1(S,Id).
 
 resolv_value1(S = #state{mname=M,inputmodules=InpMods},
 	      V=#'Externalvaluereference'{pos=Pos,module=ExtM,value=Name}) ->
@@ -4774,8 +4759,6 @@ ascending_order_check1(TypeName,
     end;
 ascending_order_check1(N,[_|Rest]) ->
     ascending_order_check1(N,Rest);
-ascending_order_check1(_,[_]) ->
-    ok;
 ascending_order_check1(_,[]) ->
     ok.
     

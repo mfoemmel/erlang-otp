@@ -22,7 +22,7 @@
 -export([help/0,lc/1,c/1,c/2,nc/1,nc/2, nl/1,l/1,i/0,ni/0,
 	 lc_batch/0, lc_batch/1,
 	 i/3,pid/3,m/0,m/1,
-	 zi/0, bt/1, q/0,
+	 bt/1, q/0,
 	 erlangrc/0,erlangrc/1,bi/1, flush/0, regs/0,
 	 nregs/0,pwd/0,ls/0,ls/1,cd/1,memory/1,memory/0, xm/1]).
 
@@ -54,8 +54,7 @@ help() ->
 	   "q()        -- quit - shorthand for init:stop()\n"
 	   "regs()     -- information about registered processes\n"
 	   "nregs()    -- information about all registered processes\n"
-	   "xm(M)      -- cross reference check a module\n"
-	   "zi()       -- information about the system, including zombies\n").
+	   "xm(M)      -- cross reference check a module\n").
 
 %% c(FileName)
 %%  Compile a file/module.
@@ -218,29 +217,10 @@ nl(Mod) ->
 	    Other
     end.
 
-%% All except zombies.
-alive_processes() ->
-    lists:filter(fun palive/1, processes()).
-
-zi() -> i(processes()).
-i() -> i(alive_processes()).
+i() -> i(processes()).
 ni() -> i(all_procs()).
 
 i(Ps) ->
-    Alive = lists:filter(fun palive/1, Ps),
-    i1(Alive),
-    %% Zombies is not the same as Ps-Alive, since the remote process that
-    %% fetched Ps is included among Alive, but has exited (for ni/0).
-    Zombies = lists:filter(fun pzombie/1, Ps),
-    case Zombies of
-	[] ->
-	    ok;
-	Dead ->
-	    io:format("~nDead processes:~n"),
-	    i1(Dead)
-    end.
-
-i1(Ps) ->
     iformat("Pid", "Initial Call", "Heap", "Reds",
 	    "Msgs"),
     iformat("Registered", "Current Function", "Stack", "",
@@ -249,7 +229,7 @@ i1(Ps) ->
     iformat("Total", "", w(H), w(R), w(M)),
     iformat("", "", w(S), "", "").
 
-mfa_string(Fun) when function(Fun) ->
+mfa_string(Fun) when is_function(Fun) ->
     {module,M} = erlang:fun_info(Fun, module),
     {name,F} = erlang:fun_info(Fun, name),
     {arity,A} = erlang:fun_info(Fun, arity),
@@ -308,36 +288,6 @@ all_procs() ->
 	true -> flatmap(fun (N) -> rpc:call(N,erlang,processes,[]) end,
 			[node()|nodes()]);
 	false -> processes()
-    end.
-
-%% Like is_process_alive, but works also for R4 nodes, and also for
-%% remote processes.
-palive(Pid) ->
-    S = case is_alive() of
-	    true -> rpc:call(node(Pid), erlang, process_info, [Pid, status]);
-	    false -> process_info(Pid, status)
-	end,
-    case S of
-	undefined ->
-	    false;
-	{status, exiting} ->
-	    false;
-	_ ->
-	    true
-    end.
-
-pzombie(Pid) ->
-    S = case is_alive() of
-	    true -> rpc:call(node(Pid), erlang, process_info, [Pid, status]);
-	    false -> process_info(Pid, status)
-	end,
-    case S of
-	undefined ->
-	    false;
-	{status, exiting} ->
-	    true;
-	_ ->
-	    false
     end.
 
 pinfo(Pid) ->

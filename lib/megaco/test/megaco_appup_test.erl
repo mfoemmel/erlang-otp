@@ -24,6 +24,7 @@
 
 -include("megaco_test_lib.hrl").
 
+-define(APPLICATION, megaco).
 
 t()     -> megaco_test_lib:t(?MODULE).
 t(Case) -> megaco_test_lib:t({?MODULE, Case}).
@@ -50,8 +51,8 @@ all(suite) ->
 appup_init(suite) -> [];
 appup_init(doc) -> [];
 appup_init(Config) when list(Config) ->
-    AppFile   = file_name(megaco, ".app"),
-    AppupFile = file_name(megaco, ".appup"),
+    AppFile   = file_name(?APPLICATION, ".app"),
+    AppupFile = file_name(?APPLICATION, ".appup"),
     [{app_file, AppFile}, {appup_file, AppupFile}|Config].
     
 
@@ -115,6 +116,17 @@ check_depends(UpDown, [Dep|Deps], Modules) ->
     check_depends(UpDown, Deps, Modules).
 
 
+check_depend(up = UpDown, {add_application, ?APPLICATION} = Instr, Modules) ->
+     d("check_instructions(~w) -> entry with"
+       "~n   Instruction: ~p"
+       "~n   Modules:     ~p", [UpDown, Instr, Modules]),
+     ok;
+check_depend(down = UpDown, {remove_application, ?APPLICATION} = Instr, 
+	     Modules) ->
+     d("check_instructions(~w) -> entry with"
+       "~n   Instruction: ~p"
+       "~n   Modules:     ~p", [UpDown, Instr, Modules]),
+     ok;
 check_depend(UpDown, {V, Instructions}, Modules) ->
     d("check_instructions(~w) -> entry with"
       "~n   V:       ~p"
@@ -228,6 +240,19 @@ check_instruction(_, {update, Module, Change, Pre, Post, Depend},
     check_purge(Pre),
     check_purge(Post);
 
+check_instruction(_, {update, Module, supervisor}, _, Modules) 
+  when is_atom(Module) ->
+    check_module(Module, Modules);
+
+check_instruction(_, {apply, {Module, Function, Args}}, _, Modules)
+   when atom(Module), atom(Function), list(Args) ->
+     d("check_instruction -> entry when down-apply instruction with"
+       "~n   Module:   ~p"
+       "~n   Function: ~p"
+       "~n   Args:     ~p", [Module, Function, Args]),
+     check_module(Module, Modules),
+     check_apply(Module, Function, Args);
+
 check_instruction(_, Instr, _AllInstr, _Modules) ->
     d("check_instruction -> entry when unknown instruction with"
       "~n   Instr: ~p", [Instr]),
@@ -256,10 +281,13 @@ instruction_module({load_module, Module, _, _, _}) ->
     Module;
 instruction_module({update, Module, _, _, _, _}) ->
     Module;
+instruction_module({apply, {Module, _, _}}) ->
+     Module;
 instruction_module(Instr) ->
     d("instruction_module -> entry when unknown instruction with"
       "~n   Instr: ~p", [Instr]),
     error({error, {unknown_instruction, Instr}}).
+
     
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -340,6 +368,29 @@ check_purge(brutal_purge) ->
 check_purge(Purge) ->
     error({bad_purge, Purge}).
 
+
+check_apply(Module, Function, Args) ->
+     case (catch Module:module_info()) of
+	Info when list(Info) ->
+	    check_exported(Function, Args, Info);
+	{'EXIT', {undef, _}} ->
+	    error({not_existing_module, Module})
+     end.
+
+check_exported(Function, Args, Info) ->
+     case lists:keysearch(exports, 1, Info) of
+	{value, {exports, FuncList}} ->
+	     Arity   = length(Args), 
+	     Arities = [A || {F, A} <- FuncList, F == Function],
+	     case lists:member(Arity, Arities) of
+		 true ->
+		     ok;
+		 false ->
+		     error({not_exported_function, Function, Arity})
+	     end;
+	 _ ->
+	     error({bad_export, Info})
+     end.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

@@ -37,6 +37,7 @@
 -endif.
 
 -define(shutdown(Data), dist_util:shutdown(?LINE, Data)).
+-define(shutdown2(Data, Reason), dist_util:shutdown(?LINE, Data, Reason)).
 
 %% Handshake state structure
 -record(hs_data, {

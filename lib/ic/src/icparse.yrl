@@ -144,7 +144,7 @@ Nonterminals
 	'<interface_header>'
 	'OE_preproc'				% NON standard
 	'OE_pragma'				% NON standard
-	'Uggly_pragmas'				% NON standard
+	'Ugly_pragmas'				% NON standard
 	'ZorM_<integer_literal>'
 	'<fixed_pt_type>'
 	'<fixed_pt_const_type>'
@@ -256,9 +256,9 @@ OE_pragma -> '#'  '<integer_literal>' '<identifier>'
 
 
 
-%% Uggly pragmas
-Uggly_pragmas -> '$empty' : [].
-Uggly_pragmas -> 'Uggly_pragmas' 'OE_pragma' : ['$2'|'$1'].
+%% Ugly pragmas
+Ugly_pragmas -> '$empty' : [].
+Ugly_pragmas -> 'Ugly_pragmas' 'OE_pragma' : ['$2'|'$1'].
 
 
 
@@ -617,7 +617,7 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 %%'<member>' -> '<type_spec>' '<declarators>' ';'
 %%  : #member{type='$1', id='$2'} .
 
-'<member>' -> 'Uggly_pragmas' '<type_spec>' '<declarators>' 'Uggly_pragmas' ';' 'Uggly_pragmas'
+'<member>' -> 'Ugly_pragmas' '<type_spec>' '<declarators>' 'Ugly_pragmas' ';' 'Ugly_pragmas'
   : '$1' ++ '$4' ++ '$6' ++ [#member{type='$2', id='$3'}] .
 
 
@@ -654,9 +654,9 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 %%  : '$2'#case_dcl{label=reverse('$1')} .
 
 '<case>' -> 
-	'Uggly_pragmas' 'OorM_<case_label>' 
-	'Uggly_pragmas' '<element_spec>' 
-	'Uggly_pragmas' ';' 'Uggly_pragmas'
+	'Ugly_pragmas' 'OorM_<case_label>' 
+	'Ugly_pragmas' '<element_spec>' 
+	'Ugly_pragmas' ';' 'Ugly_pragmas'
   : '$1' ++ '$3' ++ '$5' ++ '$7' ++ [ '$4'#case_dcl{label=reverse('$2')} ] .
 	
 
@@ -664,9 +664,9 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 %%'OorM_<case_label>' -> '<case_label>' : ['$1'] .
 %%'OorM_<case_label>' -> 'OorM_<case_label>' '<case_label>' : ['$2' | '$1'] .
 
-'OorM_<case_label>' -> 'Uggly_pragmas' '<case_label>' 'Uggly_pragmas' 
+'OorM_<case_label>' -> 'Ugly_pragmas' '<case_label>' 'Ugly_pragmas' 
 	: '$1' ++ ['$2'] ++ '$3' .
-'OorM_<case_label>' -> 'OorM_<case_label>' 'Uggly_pragmas' '<case_label>' 'Uggly_pragmas'
+'OorM_<case_label>' -> 'OorM_<case_label>' 'Ugly_pragmas' '<case_label>' 'Ugly_pragmas'
 	: '$2' ++ ['$3'|'$1'] ++ '$4'.
 
 
@@ -686,7 +686,7 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 %%: #enum{id='$2', body=['$4' | reverse('$5')]} .
 
 '<enum_type>' -> 'enum' '<identifier>' 
-'{' 'Uggly_pragmas' '<enumerator>' 'Uggly_pragmas' 'ZorM_<enumerator>' 'Uggly_pragmas' '}'
+'{' 'Ugly_pragmas' '<enumerator>' 'Ugly_pragmas' 'ZorM_<enumerator>' 'Ugly_pragmas' '}'
 : #enum{id='$2', body='$4'++'$6'++'$8'++['$5' | reverse('$7')]} .
 
 
@@ -696,7 +696,7 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 %%'ZorM_<enumerator>' -> 'ZorM_<enumerator>' ',' '<enumerator>' : ['$3' | '$1'] .
 
 'ZorM_<enumerator>' -> '$empty' : [] .
-'ZorM_<enumerator>' -> 'ZorM_<enumerator>' 'Uggly_pragmas' ',' 'Uggly_pragmas' '<enumerator>' 
+'ZorM_<enumerator>' -> 'ZorM_<enumerator>' 'Ugly_pragmas' ',' 'Ugly_pragmas' '<enumerator>' 
 	: '$2'++'$4'++['$5' | '$1'] .
 
 %% (60)
@@ -773,9 +773,9 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 %  : ['$2' | reverse('$3')] .
 %'<parameter_dcls>' -> '(' ')' : [] .
 
-'<parameter_dcls>' -> '(' 'Uggly_pragmas' '<param_dcl>' 'ZorM_<param_dcl>' ')'
+'<parameter_dcls>' -> '(' 'Ugly_pragmas' '<param_dcl>' 'ZorM_<param_dcl>' ')'
   : '$2' ++ ['$3' | reverse('$4')] .
-'<parameter_dcls>' -> '(' 'Uggly_pragmas' ')' : '$2' .
+'<parameter_dcls>' -> '(' 'Ugly_pragmas' ')' : '$2' .
 
 
 %% Added clause
@@ -783,8 +783,8 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 %'ZorM_<param_dcl>' -> 'ZorM_<param_dcl>' ',' '<param_dcl>' : ['$3' | '$1'] .
 
 
-'ZorM_<param_dcl>' -> 'Uggly_pragmas' : '$1' .
-'ZorM_<param_dcl>' -> 'ZorM_<param_dcl>' 'Uggly_pragmas' ',' 'Uggly_pragmas' '<param_dcl>' 'Uggly_pragmas' 
+'ZorM_<param_dcl>' -> 'Ugly_pragmas' : '$1' .
+'ZorM_<param_dcl>' -> 'ZorM_<param_dcl>' 'Ugly_pragmas' ',' 'Ugly_pragmas' '<param_dcl>' 'Ugly_pragmas' 
 	: '$2' ++ '$4' ++ '$6' ++ ['$5' | '$1'] .
 
 
@@ -845,7 +845,7 @@ OE_preproc -> '#' '<integer_literal>' '<string_literal>'
 %%'ZorM_<member>' -> '$empty' : [] .
 %%'ZorM_<member>' -> 'ZorM_<member>' '<member>' : ['$2' | '$1'] .
 
-'ZorM_<member>' -> 'Uggly_pragmas' : '$1' .
+'ZorM_<member>' -> 'Ugly_pragmas' : '$1' .
 'ZorM_<member>' -> 'ZorM_<member>' '<member>' : '$2' ++ '$1' .
 
 

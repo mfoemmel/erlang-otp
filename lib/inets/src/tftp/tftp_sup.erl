@@ -18,6 +18,7 @@
 %%----------------------------------------------------------------------
 %% Purpose: The top supervisor for tftp hangs under inets_sup.
 %%----------------------------------------------------------------------
+
 -module(tftp_sup).
 
 -behaviour(supervisor).
@@ -32,6 +33,7 @@
 %%%=========================================================================
 %%%  API
 %%%=========================================================================
+
 start_link(TftpServices) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, [TftpServices]).
 
@@ -41,17 +43,39 @@ start_child(Args) ->
 %%%=========================================================================
 %%%  Supervisor callback
 %%%=========================================================================
-init([TftpServices]) ->
+
+init([Services]) when list(Services) ->
     RestartStrategy = one_for_one,
     MaxR = 10,
     MaxT = 3600,
-   
-    Children = child_spec(TftpServices, []),
-
+    KillAfter = timer:seconds(3),
+    Children = [worker_spec(KillAfter, Options) || {tftpd, Options} <- Services],
     {ok, {{RestartStrategy, MaxR, MaxT}, Children}}.
 
 %%%=========================================================================
 %%%  Internal functions
 %%%=========================================================================
-child_spec([], Acc) ->
-    Acc.
+
+worker_spec(KillAfter, Options) ->
+    Modules = [proc_lib, tftp, tftp_engine],
+    KA = supervisor_timeout(KillAfter),
+    Name = unique_name(Options),
+    {Name, {tftp, start, [Options]}, permanent, KA, worker, Modules}.
+
+unique_name(Options) ->
+    case lists:keysearch(port, 1, Options) of
+	{value, {_, Port}} when integer(Port), Port > 0 -> 
+	    {tftpd, Port};
+	_ ->
+	    {tftpd, erlang:now()}
+    end.
+
+%% supervisor_spec(Name) ->
+%%     {Name, {Name, start, []}, permanent, infinity, supervisor,
+%%      [Name, supervisor]}.
+    
+-ifdef(debug_shutdown).
+supervisor_timeout(_KillAfter) -> timer:hours(24).
+-else.
+supervisor_timeout(KillAfter) -> KillAfter.
+-endif.    

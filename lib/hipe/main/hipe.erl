@@ -797,45 +797,45 @@ finalize_fun_fixpoint(CallGraph, Opts, Acc) ->
 				[finalize_fun(SCC, Opts)|Acc]);
 	{SCC, NewCallGraph} ->
 	  %% Ensure that this is only used with the option type_only
-	  Res = dets_fixpoint_loop(SCC, [type_only|Opts]),
+	  Res = plt_fixpoint_loop(SCC, [type_only|Opts]),
 	  finalize_fun_fixpoint(NewCallGraph, Opts, [Res|Acc])
       end
   end.
 
-dets_fixpoint_loop(SCC, Opts) ->
+plt_fixpoint_loop(SCC, Opts) ->
   case proplists:get_value(type_warnings, Opts) of
     {pid, _Pid} ->
       %% Ensure warnings are only sent once.
       TmpOpts = proplists:normalize([no_type_warnings|Opts], 
 				    [{negations, opt_negations()}]),
-      {_Res, Redo} = dets_fixpoint_loop(SCC, false, TmpOpts, []),
+      {_Res, Redo} = plt_fixpoint_loop(SCC, false, TmpOpts, []),
       case Redo of
 	true ->
-	  dets_fixpoint_loop(SCC, Opts);
+	  plt_fixpoint_loop(SCC, Opts);
 	false -> 
 	  %% Additional pass to emit warnings.
-	  {Res1, _} = dets_fixpoint_loop(SCC, false, Opts, []),
+	  {Res1, _} = plt_fixpoint_loop(SCC, false, Opts, []),
 	  Res1
       end;
     _ ->
-      {Res, Redo} = dets_fixpoint_loop(SCC, false, Opts, []),
+      {Res, Redo} = plt_fixpoint_loop(SCC, false, Opts, []),
       case Redo of
 	true ->
-	  dets_fixpoint_loop(SCC, Opts);
+	  plt_fixpoint_loop(SCC, Opts);
 	false -> 
 	  Res
       end
   end.
 
-dets_fixpoint_loop([Fun = {MFA, _}|Left], Redo, Opts, Acc) ->
+plt_fixpoint_loop([Fun = {MFA, _}|Left], Redo, Opts, Acc) ->
   Res = finalize_fun(Fun, Opts),
   case Res of
     {MFA, fixpoint} ->
-      dets_fixpoint_loop(Left, Redo, Opts, [Res|Acc]);
+      plt_fixpoint_loop(Left, Redo, Opts, [Res|Acc]);
     {MFA, not_fixpoint} -> 
-      dets_fixpoint_loop(Left, true, Opts, [Res|Acc])
+      plt_fixpoint_loop(Left, true, Opts, [Res|Acc])
   end;
-dets_fixpoint_loop([], Redo, _Opts, Acc) ->
+plt_fixpoint_loop([], Redo, _Opts, Acc) ->
   {Acc, Redo}.
 
 
@@ -1172,8 +1172,8 @@ option_text(use_indexing) ->
   "Use indexing for multiple-choice branch selection.";
 option_text(use_callgraph) ->
   "Compile the functions in a module according to a reversed topological "
-    "sorted order to gain more information when using a dets for storing "
-    "intra-modular type information.";
+    "sorted order to gain more information when using a persistent lookup "
+    "table for storing intra-modular type information.";
 option_text(verbose) ->
   "Output information about what is being done.";
 option_text(_) ->
@@ -1275,7 +1275,6 @@ opt_keys() ->
      count_temps,
      debug,
      fill_delayslot,
-     finalise_x86,
      frame_x86,
      get_called_modules,
      hot,
@@ -1390,7 +1389,6 @@ opt_negations() ->
   [{no_core, core},
    {no_debug, debug},
    {no_fill_delayslot, fill_delayslot},
-   {no_finalise_x86, finalise_x86},
    {no_get_called_modules, get_called_modules},
    {no_icode_split_arith, icode_split_arith},
    {no_icode_ssa_check, icode_ssa_check},

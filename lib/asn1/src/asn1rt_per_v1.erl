@@ -1204,15 +1204,13 @@ pad_list(N,[]) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 encode_octet_string(C,{Name,Val}) when atom(Name) ->
-    encode_octet_string(C,false,Val);
+    encode_octet_string2(C,Val);
 encode_octet_string(C,Val) ->
-    encode_octet_string(C,false,Val).
+    encode_octet_string2(C,Val).
 
-encode_octet_string(C,Bool,{_Name,Val}) ->
-    encode_octet_string(C,Bool,Val);
-encode_octet_string(_,true,_) -> 
-    exit({error,{asn1,{'not_supported',extensionmarker}}});
-encode_octet_string(C,false,Val) ->
+% encode_octet_string2(C,Bool,{_Name,Val}) ->
+%     encode_octet_string2(C,Bool,Val);
+encode_octet_string2(C,Val) ->
     case get_constraint(C,'SizeConstraint') of
 	0 ->
 	    [];
@@ -1290,12 +1288,7 @@ encode_known_multiplier_string(aligned,StringType,C,_Ext,Val) ->
     NumBits = get_NumBits(C,StringType),
     case get_constraint(C,'SizeConstraint') of
 	Ub when integer(Ub), Ub*NumBits =< 16  ->
-	    case {StringType,Result} of
-		{'BMPString',{octets,Ol}} ->
-		    [{bits,8,Oct}||Oct <- Ol];
-		_ ->
-		    Result
-	    end;
+	    Result;
 	0 ->
 	    [];
 	Ub when integer(Ub),Ub =<65535 -> % fixed length

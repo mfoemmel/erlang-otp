@@ -17,7 +17,7 @@
 %%
 -module(shell).
 
--export([start/0, start/1, server/0, server/1, history/1, results/1]).
+-export([start/0, start/1, start/2, server/1, server/2, history/1, results/1]).
 -export([whereis_evaluator/0, whereis_evaluator/1]).
 -export([start_restricted/1, stop_restricted/0]).
 
@@ -28,11 +28,17 @@
 -define(RECORDS, shell_records).
 
 start() ->
-    start(false).
+    start(false, false).
+
+start(init) ->
+    start(false, true);
 
 start(NoCtrlG) ->
+    start(NoCtrlG, false).
+
+start(NoCtrlG, StartSync) ->
     code:ensure_loaded(user_default),
-    spawn(fun() -> server(NoCtrlG) end).
+    spawn(fun() -> server(NoCtrlG, StartSync) end).
 
 %% Find the pid of the current evaluator process.
 whereis_evaluator() ->
@@ -111,9 +117,9 @@ default_modules() ->
 %%%      {keylist, 'erl.lang.list.keylist'},
 %%%      {debug, 'erl.system.debug'}].
 
-server(NoCtrlG) ->
+server(NoCtrlG, StartSync) ->
     put(no_control_g, NoCtrlG),
-    server().
+    server(StartSync).
 
 
 %%% The shell should not start until the system is up and running.
@@ -126,10 +132,12 @@ server(NoCtrlG) ->
 %%% old way (for backwards compatibility reasons). This should however not 
 %%% be used unless for very special reasons necessary.
     
-server() ->
-    case init:get_argument(risky_shell) of
+server(StartSync) ->
+    case init:get_argument(async_shell_start) of
 	{ok,_} -> 
 	    ok;					% no sync with init
+	_ when StartSync == false ->
+	    ok;
 	_ ->
 	    case init:notify_when_started(self()) of
 		started ->
@@ -640,14 +648,20 @@ prep_check([E | Es]) ->
 prep_check(E) ->
     E.
 
+expand_records([], E0) ->
+    E0;
 expand_records(UsedRecords, E0) ->
-    RecordDefs = [Def || {{record,_Name},Def} <- UsedRecords],
-    L = 1,
-    E = prep_rec(E0),
-    Forms = RecordDefs ++ [{function,L,foo,0,[{clause,L,[],[],[E]}]}],
-    {_,_,[F|_],_} = sys_pre_expand:module(Forms, []), 
-    {function,L,foo,0,[{clause,L,[],[],[NE]}]} = F,
-    prep_rec(NE).
+    try
+        RecordDefs = [Def || {{record,_Name},Def} <- UsedRecords],
+        L = 1,
+        E = prep_rec(E0),
+        Forms = RecordDefs ++ [{function,L,foo,0,[{clause,L,[],[],[E]}]}],
+        {_,_,[F|_],_} = sys_pre_expand:module(Forms, []), 
+        {function,L,foo,0,[{clause,L,[],[],[NE]}]} = F,
+        prep_rec(NE)
+    catch _:_ ->
+        E0
+    end.                               
 
 prep_rec({value,L,V}) ->
     %% sys_pre_expand cannot handle the history expansion {value,_,_}.

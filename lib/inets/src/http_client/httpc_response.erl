@@ -70,7 +70,7 @@ whole_body(Body, Length) ->
 
 %%-------------------------------------------------------------------------
 %% result(Response, Request) ->
-%%   Response - {Version, StatusCode, ReasonPhrase}
+%%   Response - {StatusLine, Headers, Body}
 %%   Request - #request{}
 %%   Session - #tcp_session{}
 %%                                   
@@ -220,7 +220,7 @@ status_server_error_50x(Response, Request) ->
     {stop, {Request#request.id, Msg}}.
 
 
-redirect(Response = {StatusCode, Headers, Body}, Request) ->
+redirect(Response = {StatusLine, Headers, Body}, Request) ->
     {_, Data} =  format_response(Response),
     case Headers#http_response_h.location of
 	undefined ->
@@ -230,7 +230,7 @@ redirect(Response = {StatusCode, Headers, Body}, Request) ->
 		{error, no_scheme} when
 		(Request#request.settings)#http_options.relaxed ->
 		    NewLocation = fix_relative_uri(Request, RedirUrl),
-		    redirect({StatusCode, Headers#http_response_h{
+		    redirect({StatusLine, Headers#http_response_h{
 					    location = NewLocation},
 			      Body}, Request);
 		{error, Reason} ->

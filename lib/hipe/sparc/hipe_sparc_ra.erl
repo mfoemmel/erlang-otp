@@ -10,8 +10,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2005/01/19 10:14:06 $
-%%              $Revision: 1.26 $
+%%              $Date: 2005/03/01 08:01:33 $
+%%              $Revision: 1.27 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -22,36 +22,28 @@
 -define(HIPE_INSTRUMENT_COMPILER, true). %% Turn on instrumentation.
 -include("../main/hipe.hrl").
 
-allocate(_Fun, SparcCfg, Options) ->
-  ?inc_counter(ra_caller_saves_counter,count_caller_saves(SparcCfg)),
+allocate(_Fun, SparcCfg0, Options) ->
+  ?inc_counter(ra_caller_saves_counter,count_caller_saves(SparcCfg0)),
   ?opt_start_timer("Regalloc"),
   ?start_ra_instrumentation(Options, 
-			    count_instrs_cfg(SparcCfg),
+			    count_instrs_cfg(SparcCfg0),
 			    hipe_gensym:get_var(sparc)),
 
+  SparcCfg = hipe_sparc_multimove:remove_multimoves(SparcCfg0),
   {NewCfg, TempMap, NextPos}  = 
     case proplists:get_value(regalloc,Options) of
       linear_scan ->
-	hipe_sparc_ra_ls:alloc(
-	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
+	hipe_sparc_ra_ls:alloc(SparcCfg, Options);
       graph_color ->
-	hipe_sparc_ra_graph_color:lf_alloc(
-	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
+	hipe_sparc_ra_graph_color:lf_alloc(SparcCfg, Options);
       coalescing ->
-	hipe_sparc_ra_coalescing:lf_alloc( 
-	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
+	hipe_sparc_ra_coalescing:lf_alloc(SparcCfg, Options);
       naive ->
-	hipe_sparc_ra_naive:alloc(
-	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
-%%    cs ->
-%%	hipe_sparc_ra_cs:alloc(
-%%	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
+	hipe_sparc_ra_naive:alloc(SparcCfg, Options);
 %%    newls ->
-%%	hipe_sparc_ra_new_ls:alloc(
-%%	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options);
+%%	hipe_sparc_ra_new_ls:alloc(SparcCfg, Options);
       _ -> %% linear_scan made default register allocator
-	hipe_sparc_ra_ls:alloc(
-	  hipe_sparc_multimove:remove_multimoves(SparcCfg), Options)
+	hipe_sparc_ra_ls:alloc(SparcCfg, Options)
     end,
   
   ?opt_stop_timer("Regalloc done"),
@@ -59,7 +51,7 @@ allocate(_Fun, SparcCfg, Options) ->
 			   count_instrs_cfg(NewCfg),
 			   hipe_gensym:get_var(NewCfg)),
 
-  {NewCfg2, FpMap, NextPos2}  = 
+  {NewCfg2, FpMap, NextPos2} = 
     case get(hipe_inline_fp) of
       true ->  
 	hipe_sparc_ra_fp_ls:alloc(NewCfg, Options, NextPos, TempMap);
@@ -67,14 +59,14 @@ allocate(_Fun, SparcCfg, Options) ->
 	{NewCfg, [], NextPos}
     end,
 
-  {NewCfg3, NextPos3}  = 
-    hipe_sparc_caller_saves:rewrite(
-      NewCfg2, TempMap, FpMap, NextPos2, Options),
+  {NewCfg3, NextPos3} = 
+    hipe_sparc_caller_saves:rewrite(NewCfg2, TempMap, FpMap,
+				    NextPos2, Options),
 
   {{NewCfg3,TempMap, NextPos3}, FpMap}.
 
 
-%% This is only a info gathering function used for benchmarking
+%% This is only a info-gathering function used for benchmarking
 %% purposes. 
 count_caller_saves(CFG) ->
   Liveness = hipe_sparc_liveness:analyze(CFG),
@@ -136,8 +128,6 @@ regnames(Regs2, Target) ->
     case Target of
       hipe_sparc_specific ->
 	hipe_sparc:keep_registers(Regs2);
-      %% hipe_sparc_specific_fp ->
-      %%  hipe_sparc:keep_fp_registers(Regs2);
       _ ->
 	Regs2
     end,

@@ -22,9 +22,10 @@
 -include("http.hrl").
 
 %% Application API
--export([start_link/0, request/1, cancel_request/1,
+-export([start_link/1, request/1, cancel_request/1,
 	 request_canceled/1, retry_request/1, redirect_request/1,
-	 insert_session/1, delete_session/1, set_options/1, store_cookies/2]).
+	 insert_session/1, delete_session/1, set_options/1, store_cookies/2,
+	 cookies/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -46,8 +47,9 @@
 %% Description: Starts the http request manger process. (Started by
 %% the intes supervisor.)
 %%--------------------------------------------------------------------
-start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []). 
+start_link({default, CookieDir}) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, 
+			  [{http_default_cookie_db, CookieDir}], []). 
 
 %%--------------------------------------------------------------------
 %% Function: request() -> {ok, Requestid} | {error, Reason}
@@ -149,6 +151,16 @@ store_cookies([], _) ->
 store_cookies(Cookies, Address) ->
     cast({store_cookies, {Cookies, Address}}).
 
+%%--------------------------------------------------------------------
+%% Function: cookies(Url) -> ok
+%%
+%% Url = string()
+%%
+%% Description: Retrieves the cookies that  
+%%--------------------------------------------------------------------
+cookies(Url) ->
+    call({cookies, Url}, infinity).
+
 %%====================================================================
 %% gen_server callback functions
 %%====================================================================
@@ -158,13 +170,14 @@ store_cookies(Cookies, Address) ->
 %%                       {ok, State, Timeout} | ignore |{stop, Reason}
 %% Description: Initiates the httpc_manger process
 %%--------------------------------------------------------------------
-init([]) ->
+init([CookiesConf]) ->
     process_flag(trap_exit, true),
     ets:new(httpc_manager_session_db, 
 	    [public, set, named_table, {keypos, #tcp_session.id}]),
     {ok, #state{handler_db = ets:new(handler_db, [protected, set]),
-		cookie_db = http_cookie:open_cookie_db({cookie_db,
-						       session_cookie_db})
+		cookie_db = 
+		http_cookie:open_cookie_db({CookiesConf, 
+					    http_session_cookie_db})
 	       }}.
 
 %%--------------------------------------------------------------------
@@ -195,6 +208,18 @@ handle_call({cancel_request, RequestId}, From, State) ->
 				  [{RequestId, Pid, From} |
 				   State#state.cancel]}}
     end;
+
+handle_call({cookies, Url}, _, State) ->
+    case http_uri:parse(Url) of
+	{Scheme, Host, Port, Path, _} ->
+	    CookieHeaders = 
+		http_cookie:header(Scheme, {Host, Port}, 
+				   Path, State#state.cookie_db),
+	    {reply, CookieHeaders, State};
+	Msg ->
+	    {reply, Msg, State}
+    end;
+
 handle_call(Msg, From, State) ->
     error_logger:error_report("HTTPC_MANAGER recived unkown call: ~p"
 			      "from: ~p~n", [Msg, From]),
@@ -311,7 +336,8 @@ code_change(_OldVsn, State, _Extra) ->
 handle_request(Request, State) ->
     NewRequest = handle_cookies(generate_request_id(Request), State),
     case select_session(Request#request.method, 
-			Request#request.address, State) of
+			Request#request.address, 
+			Request#request.scheme, State) of
 	{ok, HandlerPid} ->
 	    pipeline(NewRequest, HandlerPid, State);
 	no_connection ->
@@ -329,14 +355,14 @@ handle_request(Request, State) ->
     end,
     {reply, {ok, NewRequest#request.id}, State}.
 
-select_session(Method, HostPort, #state{options = 
-					#options{max_pipeline_length =
-						 Max}}) ->
+select_session(Method, HostPort, Scheme, #state{options = 
+						#options{max_pipeline_length =
+							 Max}}) ->
     case httpc_request:is_idempotent(Method) of
 	true ->
 	    Candidates = ets:match(httpc_manager_session_db,
 				   {'_', {HostPort, '$1'}, 
-				    false, '_', '_', '$2'}),
+				    false, Scheme, '_', '$2'}),
 	    select_session(Candidates, Max);
 	false ->
 	    no_connection
@@ -398,7 +424,7 @@ handle_cookies(Request = #request{scheme = Scheme, address = Address,
 		 Headers = #http_request_h{other = Other}}, 
 	       #state{cookie_db = Db}) ->
     case http_cookie:header(Scheme, Address, Path, Db) of
-	[] ->
+	{"cookie", ""} ->
 	    Request;
 	CookieHeader ->
 	    NewHeaders = 

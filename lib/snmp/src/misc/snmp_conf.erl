@@ -84,11 +84,12 @@ read(File, Check) when function(Check) ->
     ?vdebug("read -> entry with"
 	"~n   File: ~p", [File]),
     Fd = open_file(File),
+
     case loop(Fd, [], Check, 1, File) of
-        {error, Line, R} ->     
+        {error, Reason} ->     
             file:close(Fd),
-            error({failed_reading, Line-1, R});
-        Res ->
+            error(Reason);
+        {ok, Res} ->
             file:close(Fd),
             Res
     end.
@@ -116,18 +117,20 @@ loop(Fd, Res, Check, StartLine, File) ->
 			    "~n   NewRow: ~p", [NewRow]),
                     loop(Fd, [NewRow | Res], Check, EndLine, File);
                 {error, Reason} ->
-		    ?vtrace("loop -> error: "
+		    ?vtrace("loop -> check error: "
 			    "~n   Reason: ~p", [Reason]),
-                    error({failed_check, File, EndLine, Reason});
+                    {error, {failed_check, File, StartLine, EndLine, Reason}};
                 Error ->
-		    ?vtrace("loop -> failure: "
+		    ?vtrace("loop -> check failure: "
 			    "~n   Error: ~p", [Error]),
-                    error({failed_check, File, EndLine, Error})
+                    {error, {failed_check, File, StartLine, EndLine, Error}}
 		end;
         {error, EndLine, Error} ->
-            error({failed_reading, File, EndLine, Error});
+	    ?vtrace("loop -> read failure: "
+		    "~n   Error: ~p", [Error]),
+            {error, {failed_reading, File, StartLine, EndLine, Error}};
         eof ->
-            Res
+            {ok, Res}
     end.
 
 

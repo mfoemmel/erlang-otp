@@ -20,7 +20,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/1]).
 
 %% Supervisor callback
 -export([init/1]).
@@ -28,23 +28,43 @@
 %%%=========================================================================
 %%%  API
 %%%=========================================================================
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+start_link(HttpcServices) ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, [HttpcServices]).
 
 %%%=========================================================================
 %%%  Supervisor callback
 %%%=========================================================================
-init(_) ->
+init([]) ->
+    init([[]]);
+init([HttpcServices]) ->
     RestartStrategy = one_for_one,
     MaxR = 10,
     MaxT = 3600,
+    Children = child_spec(HttpcServices, []),
+    {ok, {{RestartStrategy, MaxR, MaxT}, Children}}.
 
+child_spec([], []) ->
+    [httpc_child_spec(default, only_session_cookies)];
+child_spec([], Acc) ->
+    Acc;
+child_spec([{httpc, {Profile, Dir}} | Rest], Acc) ->
+    case httpc_child_spec(Profile, Dir) of
+	{} ->
+	    child_spec(Rest, Acc);
+	Spec ->
+	    child_spec(Rest, [Spec | Acc])
+    end.
+
+%% Note currently only one profile is supported e.i. the default profile
+httpc_child_spec(default, Dir) ->
     Name = httpc_manager,  
-    StartFunc = {httpc_manager, start_link, []},
+    StartFunc = {httpc_manager, start_link, [{default, Dir}]},
     Restart = permanent, 
     Shutdown = 4000,
     Modules = [httpc_manager],
     Type = worker,
-    
-    ChildSpec = {Name, StartFunc, Restart, Shutdown, Type, Modules},
-    {ok, {{RestartStrategy, MaxR, MaxT}, [ChildSpec]}}.
+    {Name, StartFunc, Restart, Shutdown, Type, Modules};
+httpc_child_spec(_,_) ->
+    {}.
+
+

@@ -287,6 +287,10 @@ expr({'receive',_,Cs,To,ToOpt}, I, _, Hook) ->
      nl_indent(I), "end"];
 expr({'fun',_,{function,F,A}}, _I, _Prec, _Hook) ->
     ["fun ",write(F),$/,write(A)];
+expr({'fun',_,{function,F,A},Extra}, I, _Prec, _Hook) ->
+    [io_lib:format("% fun-info: ~p~n", [Extra]),
+     string:chars($\s, I),
+     "fun ",write(F),$/,write(A)];
 expr({'fun',_,{clauses,Cs}}, I, _Prec, Hook) ->
     ["fun ",
      fun_clauses(Cs, I+4, Hook),

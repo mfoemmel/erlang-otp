@@ -28,6 +28,10 @@
 	 add_access/8,        delete_access/1,
 	 add_view_tree_fam/4, delete_view_tree_fam/1]).
 
+%% Internal exports
+-export([check_vacm/1]).
+
+
 -include("snmp_types.hrl").
 -include("SNMPv2-TC.hrl").
 -include("SNMP-VIEW-BASED-ACM-MIB.hrl").
@@ -58,7 +62,8 @@ configure(Dir) ->
     case db(vacmSecurityToGroupTable) of
         {_, mnesia} ->
             ?vdebug("vacm security-to-group table in mnesia: cleanup",[]),
-            gc_tabs();
+            gc_tabs(),
+	    init_vacm_mnesia();
         TabDb ->
 	    case snmpa_local_db:table_exists(TabDb) of
 		true ->
@@ -314,6 +319,18 @@ gc_tabs() ->
     ViewFOI = foi(vacmViewTreeFamilyTable),
     snmpa_mib_lib:gc_tab(ViewDB, ViewSTC, ViewFOI),
     ok.
+
+init_vacm_mnesia() ->
+    F = fun(RowIndex, Row) ->
+                snmpa_vacm:insert([{RowIndex, Row}], false)
+        end,
+    
+    %% The 5 is intentional: It is a trick to get a tuple with the
+    %% columns needed by the vacm ets-table (corresponding to the 
+    %% tuple read from the config files). Therefor, 5 since it it
+    %% is not a real foi...
+    snmp_generic:table_foreach({vacmAccessTable, mnesia}, F, 5).
+
 
 %%-----------------------------------------------------------------
 %% The context table is actually implemented in an internal,

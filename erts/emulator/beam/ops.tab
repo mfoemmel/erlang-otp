@@ -661,8 +661,8 @@ is_port f y
 
 is_boolean Fail=f a==am_true =>
 is_boolean Fail=f a==am_false =>
-is_boolean Fail=f a => jump Fail
-is_boolean Fail=f c => jump Fail
+is_boolean Fail=f acwo => jump Fail
+
 %cold
 %macro: is_boolean IsBoolean -fail_action
 is_boolean f r

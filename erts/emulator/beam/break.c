@@ -493,7 +493,19 @@ dump_attributes(CIO to, byte* ptr, int size)
 void
 do_break(void)
 {
+#ifdef __WIN32__
     int i;
+    char* mode = getenv("ERL_CONSOLE_MODE");
+
+    /* check if we're in console mode and, if so,
+       halt immediately if break is called */
+    if (mode != NULL)
+	if (strcmp(mode, "window") != 0)
+	    halt_0(0);
+#else
+    int i;
+#endif /* __WIN32__ */
+
     erl_printf(COUT, "\nBREAK: (a)bort (c)ontinue (p)roc info (i)nfo (l)oaded\n");
     erl_printf(COUT, "       (v)ersion (k)ill (D)b-tables (d)istribution\n");
     while (1) {

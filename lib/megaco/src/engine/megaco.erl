@@ -58,6 +58,7 @@
 	 encode_binary_term_id/2,
 	 decode_binary_term_id/2,
 
+	 versions1/0, versions2/0, 
 	 ms/0, nc/0, nc/1, ni/0, ni/1,
 
 	 enable_trace/2, disable_trace/0, set_trace/1,
@@ -311,9 +312,60 @@ decode_binary_term_id(Config, TermId) ->
 
 %%-----------------------------------------------------------------
 
-%% BUGBUG BUGBUG BUGBUG
-ms() ->
-    App    = megaco,
+versions1() ->
+    case ms1() of
+	{ok, Mods} ->
+	    {ok, version_info(Mods)};
+	Error ->
+	    Error
+    end.
+
+versions2() ->
+    case ms2() of
+	{ok, Mods} ->
+	    {ok, version_info(Mods)};
+	Error ->
+	    Error
+    end.
+
+version_info(Mods) ->
+    SysInfo = sys_info(),
+    OsInfo  = os_info(),
+    ModInfo = [mod_version_info(Mod) || Mod <- Mods],
+    [{sys_info, SysInfo}, {os_info, OsInfo}, {mod_info, ModInfo}].
+    
+mod_version_info(Mod) ->
+    Info = Mod:module_info(),
+    {value, {attributes, Attr}}   = lists:keysearch(attributes, 1, Info),
+    {value, {vsn,        [Vsn]}}  = lists:keysearch(vsn,        1, Attr),
+    {value, {app_vsn,    AppVsn}} = lists:keysearch(app_vsn,    1, Attr),
+    {value, {compile,    Comp}}   = lists:keysearch(compile,    1, Info),
+    {value, {version,    Ver}}    = lists:keysearch(version,    1, Comp),
+    {value, {time,       Time}}   = lists:keysearch(time,       1, Comp),
+    {Mod, [{vsn,              Vsn}, 
+	   {app_vsn,          AppVsn}, 
+	   {compiler_version, Ver}, 
+	   {compile_time,     Time}]}.
+
+sys_info() ->
+    SysArch = string:strip(erlang:system_info(system_architecture),right,$\n),
+    SysVer  = string:strip(erlang:system_info(system_version),right,$\n),
+    [{arch, SysArch}, {ver, SysVer}].
+
+os_info() ->
+    V = os:version(),
+    case os:type() of
+        {OsFam, OsName} ->
+            [{fam, OsFam}, {name, OsName}, {ver, V}];
+        OsFam ->
+            [{fam, OsFam}, {ver, V}]
+    end.
+    
+ms() ->    
+    ms1().
+
+ms1() ->
+    App    = ?APPLICATION,
     LibDir = code:lib_dir(App),
     File   = filename:join([LibDir, "ebin", atom_to_list(App) ++ ".app"]),
     case file:consult(File) of
@@ -328,6 +380,8 @@ ms() ->
             {error, {invalid_format, Error}}
     end.
 
+ms2() ->
+    application:get_key(?APPLICATION, modules).
 
 nc() ->
     {ok, Mods} = ms(),
@@ -339,9 +393,8 @@ nc(all) ->
 	{ok, Mods} ->
 	    application:unload(?APPLICATION),
 	    nc(Mods);
-	{error, Reason} ->
-	    io:format( " *** ERROR *** ~p~n", [Reason]),
-	    {error, Reason}
+	_ ->
+	    {error, not_found}
     end;
 nc(Mods) when list(Mods) ->
     [Mod || Mod <- Mods, ok /= load(Mod, compile)].
@@ -356,9 +409,8 @@ ni(all) ->
 	{ok, Mods} ->
 	    application:unload(?APPLICATION),
 	    ni(Mods);
-	{error, Reason} ->
-	    io:format( " *** ERROR *** ~p~n", [Reason]),
-	    {error, Reason}
+	_ ->
+	    {error, not_found}
     end;
 ni(Mods) when list(Mods) ->
     [Mod || Mod <- Mods, ok /= load(Mod, interpret)].
@@ -454,18 +506,19 @@ find_file([], File) ->
 %% 
 %%-----------------------------------------------------------------
 enable_trace(Level, File) when list(File) ->
-    dbg:tracer(port, dbg:trace_port(file, File)),
-    set_trace(Level);
+    case file:open(File, write) of
+	{ok, Fd} ->
+	    HandleSpec = {fun handle_trace/2, Fd},
+	    dbg:tracer(process, HandleSpec),
+	    set_trace(Level);
+	Err ->
+	    Err
+    end;
 enable_trace(Level, Port) when integer(Port) ->
     dbg:tracer(port, dbg:trace_port(ip, Port)),
     set_trace(Level);
 enable_trace(Level, io) ->
-    HandleSpec = {fun handle_trace/2, false},
-    dbg:tracer(process, HandleSpec),
-    set_trace(Level);
-enable_trace(Level, {io, Verbosity}) 
-  when Verbosity == true; Verbosity == false ->
-    HandleSpec = {fun handle_trace/2, Verbosity},
+    HandleSpec = {fun handle_trace/2, standard_io},
     dbg:tracer(process, HandleSpec),
     set_trace(Level);
 enable_trace(Level, {Fun, _Data} = HandleSpec) when function(Fun) ->
@@ -480,6 +533,9 @@ enable_trace(Level, {Fun, _Data} = HandleSpec) when function(Fun) ->
 %% This function is used to stop tracing.
 %%-----------------------------------------------------------------
 disable_trace() ->
+    %% This is to make handle_trace/2 close the output file (if the
+    %% event gets there before dbg closes)
+    report_event(stop_trace, stop_trace, stop_trace, stop_trace, stop_trace),
     dbg:stop().
 
 
@@ -522,79 +578,92 @@ report_event(_DetailLevel, _From, _To, _Label, _Contents) ->
 %%   - Severity is > Verbosity
 %%-----------------------------------------------------------------
 
+handle_trace(_, closed_file = Fd) ->
+    Fd;
+handle_trace({trace_ts, _Who, call, 
+	      {?MODULE, report_event, 
+	       [stop_trace, stop_trace, stop_trace, stop_trace, stop_trace]}, 
+	      _Timestamp}, 
+	     standard_io = Fd) ->
+    Fd;
+handle_trace({trace_ts, _Who, call, 
+	      {?MODULE, report_event, 
+	       [stop_trace, stop_trace, stop_trace, stop_trace, stop_trace]}, 
+	      Timestamp}, 
+	     Fd) ->
+    (catch io:format(Fd, "stop trace at ~s~n", [format_timestamp(Timestamp)])),
+    (catch file:close(Fd)),
+    closed_file;
 handle_trace({trace_ts, Who, call, 
-       {?MODULE, report_event, 
-	[Sev, From, To, Label, Content]}, Timestamp}, 
-      Verbosity) ->
-    print_megaco_trace(Sev, Who, Timestamp, Label, From, To, Content),
-    Verbosity;
-handle_trace(Event, true = Verbosity) ->
-    %% io:format("[trace] ~n~p~n", [Event]),
-    print_trace(Event),
-    Verbosity;
-handle_trace(_Event, Verbosity) ->
-    Verbosity.
+	      {?MODULE, report_event, 
+	       [Sev, From, To, Label, Content]}, Timestamp}, 
+	     Fd) ->
+    (catch print_megaco_trace(Fd, Sev, Who, Timestamp, Label, From, To, Content)),
+    Fd;
+handle_trace(Event, Fd) ->
+    (catch print_trace(Fd, Event)),
+    Fd.
 
 
-print_megaco_trace(Sev, Who, Timestamp, Label, From, To, Content) ->
+print_megaco_trace(Fd, Sev, Who, Timestamp, Label, From, To, Content) ->
     Ts = format_timestamp(Timestamp),
-    io:format("[megaco trace ~w ~w ~s] ~s "
+    io:format(Fd, "[megaco trace ~w ~w ~s] ~s "
 	      "~n   From:     ~p"
 	      "~n   To:       ~p"
 	      "~n   Content:  ~p"
 	      "~n", 
 	      [Sev, Who, Ts, Label, From, To, Content]).
     
-print_trace({trace, Who, What, Where}) ->
-    io:format("[trace]"
+print_trace(Fd, {trace, Who, What, Where}) ->
+    io:format(Fd, "[trace]"
               "~n   Who:   ~p"
               "~n   What:  ~p"
               "~n   Where: ~p"
               "~n", [Who, What, Where]);
 
-print_trace({trace, Who, What, Where, Extra}) ->
-    io:format("[trace]"
+print_trace(Fd, {trace, Who, What, Where, Extra}) ->
+    io:format(Fd, "[trace]"
               "~n   Who:   ~p"
               "~n   What:  ~p"
               "~n   Where: ~p"
               "~n   Extra: ~p"
               "~n", [Who, What, Where, Extra]);
 
-print_trace({trace_ts, Who, What, Where, When}) ->
+print_trace(Fd, {trace_ts, Who, What, Where, When}) ->
     Ts = format_timestamp(When),
-    io:format("[trace ~s]"
+    io:format(Fd, "[trace ~s]"
               "~n   Who:   ~p"
               "~n   What:  ~p"
               "~n   Where: ~p"
               "~n", [Ts, Who, What, Where]);
 
-print_trace({trace_ts, Who, What, Where, Extra, When}) ->
+print_trace(Fd, {trace_ts, Who, What, Where, Extra, When}) ->
     Ts = format_timestamp(When),
-    io:format("[trace ~s]"
+    io:format(Fd, "[trace ~s]"
               "~n   Who:   ~p"
               "~n   What:  ~p"
               "~n   Where: ~p"
               "~n   Extra: ~p"
               "~n", [Ts, Who, What, Where, Extra]);
 
-print_trace({seq_trace, What, Where}) ->
-    io:format("[seq trace]"
+print_trace(Fd, {seq_trace, What, Where}) ->
+    io:format(Fd, "[seq trace]"
               "~n   What:       ~p"
               "~n   Where:      ~p"
               "~n", [What, Where]);
 
-print_trace({seq_trace, What, Where, When}) ->
+print_trace(Fd, {seq_trace, What, Where, When}) ->
     Ts = format_timestamp(When),
-    io:format("[seq trace ~s]"
+    io:format(Fd, "[seq trace ~s]"
               "~n   What:       ~p"
               "~n   Where:      ~p"
               "~n", [Ts, What, Where]);
 
-print_trace({drop, Num}) ->
-    io:format("[drop trace] ~p~n", [Num]);
+print_trace(Fd, {drop, Num}) ->
+    io:format(Fd, "[drop trace] ~p~n", [Num]);
 
-print_trace(Trace) ->
-    io:format("[trace] "
+print_trace(Fd, Trace) ->
+    io:format(Fd, "[trace] "
               "~n   ~p"
               "~n", [Trace]).
 

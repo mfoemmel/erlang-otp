@@ -42,7 +42,7 @@ HIPE_MODULES = hipe_vectors
 else
 HIPE_MODULES =
 endif
-MODULES = hipe_timing hipe_dot $(HIPE_MODULES)
+MODULES = hipe_timing hipe_dot hipe_digraph $(HIPE_MODULES)
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)

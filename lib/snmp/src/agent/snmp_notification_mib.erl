@@ -22,6 +22,7 @@
 	 snmpNotifyFilterTable/3, snmpNotifyFilterProfileTable/3,
 	 get_targets/0, get_targets/1]).
 -export([add_notify/3, delete_notify/1]).
+-export([check_notify/1]).
 
 -include("SNMP-NOTIFICATION-MIB.hrl").
 -include("SNMPv2-TC.hrl").

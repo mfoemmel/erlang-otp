@@ -1477,7 +1477,6 @@ encode_restricted_string(aligned,{Name,Val}) when atom(Name) ->
 
 encode_restricted_string(aligned,Val) when list(Val)->
     Len = length(Val),
-%    [encode_length(undefined,length(Val)),{octets,Val}].
     [encode_length(undefined,Len),octets_to_complete(Len,Val)].
 
 
@@ -1487,20 +1486,12 @@ encode_known_multiplier_string(StringType,SizeC,NumBits,CharOutTab,Val) ->
     Result = chars_encode2(Val,NumBits,CharOutTab),
     case SizeC of
 	Ub when integer(Ub), Ub*NumBits =< 16  ->
-	    case {StringType,Result} of
-		{'BMPString',{octets,Ol}} -> %% this case cannot happen !!??
-		    [{bits,8,Oct}||Oct <- Ol];
-		_ ->
-		    Result
-	    end;
+	    Result;
 	Ub when integer(Ub),Ub =<65535 -> % fixed length
-%%	    [align,Result];
 	    [2,Result];
 	{Ub,Lb} ->
-%	    [encode_length({Ub,Lb},length(Val)),align,Result];
 	    [encode_length({Ub,Lb},length(Val)),2,Result];
 	no  ->
-%	    [encode_length(undefined,length(Val)),align,Result]
 	    [encode_length(undefined,length(Val)),2,Result]
     end.
 

@@ -304,7 +304,7 @@
 %%    Cases = [{symbol(), label_name()}]
 %%
 %% @type type(TypeExpr, Arg, True_label, False_label)
-%%    TypeExpr = type_typr()
+%%    TypeExpr = type_type()
 %%    Args = [arg()]
 %%    TrueLabel = label_name()
 %%    FalseLabel = label_name()
@@ -412,6 +412,8 @@
 	 icode_params/1,
 	 icode_params_update/2,
 	 icode_is_closure/1,
+	 icode_closure_arity/1,
+	 icode_closure_arity_update/2,
 	 icode_is_leaf/1,
 	 icode_code/1,
 	 icode_code_update/2,
@@ -671,6 +673,10 @@ icode_var_range(#icode{var_range=VarRange}) -> VarRange.
 icode_label_range(#icode{label_range=LabelRange}) -> LabelRange.
 icode_info(#icode{info=Info}) -> Info.
 icode_info_update(Icode, Info) -> Icode#icode{info=Info}.
+icode_closure_arity_update(Icode, Arity) -> Icode#icode{closure_arity=Arity}.
+icode_closure_arity(#icode{closure_arity=Arity}) -> Arity.
+  
+
 
 %% ____________________________________________________________________
 %% Instructions
@@ -760,8 +766,8 @@ return_vars(#return{vars=Vars}) -> Vars.
 %% fail
 %%
 
-%% mk_fail(Args) when list(Args) -> #fail{class=error, args=Args}.
-mk_fail(Args, Class) when list(Args) ->
+%% mk_fail(Args) when is_list(Args) -> #fail{class=error, args=Args}.
+mk_fail(Args, Class) when is_list(Args) ->
   case Class of
     error -> ok;
     exit -> ok;
@@ -770,7 +776,7 @@ mk_fail(Args, Class) when list(Args) ->
     _ -> exit({bad_fail_class, Class})
   end,
   #fail{class=Class, args=Args}.
-%% mk_fail(Args, Class, Label) when list(Args) ->
+%% mk_fail(Args, Class, Label) when is_list(Args) ->
 %%   #fail{class=Class, args=Args, fail_label=Label}.
 fail_class(#fail{class=Class}) -> Class.
 fail_args(#fail{args=Args}) -> Args.
@@ -1186,7 +1192,7 @@ subst_defines(Subst, X) ->
     begin_handler -> 
       X#begin_handler{dstlist = subst_list(Subst,
 					   begin_handler_dstlist(X))};
-    fmove -> X#fmove{dst = subst1(Subst, move_dst(X))};
+    fmove -> X#fmove{dst = subst1(Subst, fmove_dst(X))};
     phi -> X#phi{dst = subst1(Subst, phi_dst(X))};
 %%    'if' -> X;
 %%    switch_val -> X;

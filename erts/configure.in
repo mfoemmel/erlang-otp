@@ -1646,7 +1646,6 @@ dnl
   ../lib/crypto/c_src/$host/Makefile:../lib/crypto/c_src/Makefile.in
   ../lib/ssh/c_src/$host/Makefile:../lib/ssh/c_src/Makefile.in
   ../lib/orber/c_src/$host/Makefile:../lib/orber/c_src/Makefile.in
-  ../lib/odbc/c_src/$host/Makefile:../lib/odbc/c_src/Makefile.in
   ../lib/runtime_tools/c_src/$host/Makefile:../lib/runtime_tools/c_src/Makefile.in
   ../lib/asn1/c_src/$host/Makefile:../lib/asn1/c_src/Makefile.in
   )

@@ -104,7 +104,7 @@
 -define(START_PAGE,"/cdv_erl/crashdump_viewer/start_page").
 -define(READ_FILE_PAGE,"/cdv_erl/crashdump_viewer/read_file?path=").
 -define(SERVER, crashdump_viewer_server).
--define(call_timeout,30000).
+-define(call_timeout,3600000).
 -define(chunk_size,1000). % number of bytes read from crashdump at a time
 -define(max_line_size,100). % max number of bytes (i.e. characters) the
 			    % line_head/1 function can return
@@ -353,7 +353,6 @@ redirect(_Env,_Input) ->
 init([]) ->
     ets:new(cdv_menu_table,[set,named_table,{keypos,#menu_item.index},public]),
     ets:new(cdv_dump_index_table,[bag,named_table,public]),
-    ets:new(cdv_decode_heap_table,[set,named_table,public]),
     {ok, #state{}}.
 
 %%--------------------------------------------------------------------
@@ -652,7 +651,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------    
 call(Request) ->
-    gen_server:call(?SERVER,Request,?call_timeout).
+     gen_server:call(?SERVER,Request,?call_timeout).
 
 cast(Msg) ->
     gen_server:cast(?SERVER,Msg).
@@ -828,22 +827,25 @@ val(Fd) ->
 
 get_rest_of_line(Fd) ->
     case get_chunk(Fd) of
-	{ok,Bin} -> get_rest_of_line(Fd,Bin,[]);
+	{ok,Bin} -> get_rest_of_line_1(Fd, Bin, 0, []);
 	eof -> {eof,[]}
     end.
-get_rest_of_line(Fd,<<$\n:8,Bin/binary>>,Acc) ->
-    put_chunk(Fd,Bin),
-    lists:reverse(Acc);
-get_rest_of_line(Fd,<<$\r:8,Bin/binary>>,Acc) ->
-    get_rest_of_line(Fd,Bin,Acc);
-get_rest_of_line(Fd,<<Char:8,Bin/binary>>,Acc) ->
-    get_rest_of_line(Fd,Bin,[Char|Acc]);
-get_rest_of_line(Fd,<<>>,Acc) ->
-    case get_chunk(Fd) of
-	{ok,Bin} -> get_rest_of_line(Fd,Bin,Acc);
-	eof -> {eof,lists:reverse(Acc)}
+
+get_rest_of_line_1(Fd, Bin0, I, Acc) ->
+    case Bin0 of
+	<<_:I/binary,$\n:8,Bin/binary>> ->
+	    put_chunk(Fd, Bin),
+	    lists:reverse(Acc);
+	<<_:I/binary,$\r:8,_/binary>> ->
+	    get_rest_of_line_1(Fd, Bin0, I+1, Acc);
+	<<_:I/binary,Char:8,_/binary>> ->
+	    get_rest_of_line_1(Fd, Bin0, I+1, [Char|Acc]);
+	<<_:I/binary>> ->
+	    case get_chunk(Fd) of
+		{ok,Bin} -> get_rest_of_line_1(Fd, Bin, 0, Acc);
+		eof -> {eof,lists:reverse(Acc)}
+	    end
     end.
-	    
 
 count_rest_of_line(Fd) ->
     case get_chunk(Fd) of
@@ -1341,7 +1343,7 @@ get_num_atoms2() ->
 	[] -> 
 	    ?space;
 	[{"=num_atoms",NA,_Pos}] -> 
-	    %% If dump is translated this will exists
+	    %% If dump is translated this will exist
 	    case get(truncated) of
 		true ->
 		    [NA," (visible in dump)"]; % might be more
@@ -1351,21 +1353,12 @@ get_num_atoms2() ->
     end.
 
 count() ->
-    case erlang:is_builtin(ets,select_count,2) of
-	true ->
-	    {ets:select_count(cdv_dump_index_table,count_ms("=proc")),
-	     ets:select_count(cdv_dump_index_table,count_ms("=ets")),
-	     ets:select_count(cdv_dump_index_table,count_ms("=fun"))};
-	false ->
-	    {length(ets:select(cdv_dump_index_table,select_ms("=proc"))),
-	     length(ets:select(cdv_dump_index_table,select_ms("=ets"))),
-	     length(ets:select(cdv_dump_index_table,select_ms("=fun")))}
-    end.
+    {ets:select_count(cdv_dump_index_table,count_ms("=proc")),
+     ets:select_count(cdv_dump_index_table,count_ms("=ets")),
+     ets:select_count(cdv_dump_index_table,count_ms("=fun"))}.
 
 count_ms(Tag) ->
     [{{Tag,'_','_'},[],[true]}].
-select_ms(Tag) ->
-    [{{Tag,'_','_'},[],[0]}].
 
 
 procs_summary(File) ->
@@ -1555,14 +1548,10 @@ all_procinfo(Fd,Fun,Proc,LineHead) ->
     end.
 
 get_stack_dump(Fd,Proc) ->
-    %% Allways show stackdump as "Expand" link
+    %% Always show stackdump as "Expand" link
     Pos = get(pos),
-    case count_rest_of_tag(Fd) of
-	{eof,Size} ->
-	    Proc#proc{stack_dump={size,true,Size,Pos}};
-	Size ->
-	    Proc#proc{stack_dump={size,false,Size,Pos}}
-    end.
+    Size = count_rest_of_tag(Fd),
+    Proc#proc{stack_dump={size,true,Size,Pos}}.
 
 maybe_other_node(File,Id) ->
     Channel = 
@@ -1594,7 +1583,6 @@ expand_memory(File,What,Pid,Binaries) ->
     Fd = open(File),
     put(fd,Fd),
     Dict = read_heap(Fd,Pid,Binaries),
-    put(expanded,true),
     Expanded = 
 	case What of
 	    "StackDump" -> read_stack_dump(Fd,Pid,Dict);
@@ -1602,21 +1590,10 @@ expand_memory(File,What,Pid,Binaries) ->
 	    "Dictionary" -> read_dictionary(Fd,"=proc_dictionary",Pid,Dict);
 	    "DebugDictionary" -> read_dictionary(Fd,"=debug_proc_dictionary",Pid,Dict)
 	end,
-    erase(expanded),
     erase(fd),
     close(Fd),
     Expanded.
     
-%%%
-%%% Expand term
-%%% 
-expand(Pos,binary,D) ->
-    Fd = get(fd),
-    pos_bof(Fd,Pos),
-    {Bin,Line} = get_binary(val(Fd)),
-    [] = skip_blanks(Line),
-    {Bin,D}.
-
 %%%
 %%% Read binaries.
 %%%
@@ -1678,9 +1655,7 @@ read_stack_dump1(Fd,Dict,Acc) ->
 	"=" ++ _next_tag ->
 	    lists:reverse(Acc);
 	Line ->
-	    Pos = get(pos),
 	    Stack = parse_top(Line,Dict),
-	    pos_bof(Fd,Pos),
 	    read_stack_dump1(Fd,Dict,[Stack|Acc])
     end.
 
@@ -1708,9 +1683,7 @@ read_messages1(Fd,Dict,Acc) ->
 	"=" ++ _next_tag ->
 	    lists:reverse(Acc);
 	Line ->
-	    Pos = get(pos),
 	    Msg = parse_message(Line,Dict),
-	    pos_bof(Fd,Pos),
 	    read_messages1(Fd,Dict,[Msg|Acc])
     end.
     
@@ -1738,9 +1711,7 @@ read_dictionary1(Fd,Dict,Acc) ->
 	"=" ++ _next_tag ->
 	    lists:reverse(Acc);
 	Line ->
-	    Pos = get(pos),
 	    Msg = parse_dictionary(Line,Dict),
-	    pos_bof(Fd,Pos),
 	    read_dictionary1(Fd,Dict,[Msg|Acc])
     end.
     
@@ -1757,37 +1728,26 @@ read_heap(Fd,Pid,Dict0) ->
     case ets:match(cdv_dump_index_table,{"=proc_heap",Pid,'$2'}) of
 	[[Pos]] ->
 	    pos_bof(Fd,Pos),
-	    ets:match_delete(cdv_decode_heap_table,'_'),
-	    read_all_heap_addresses(Fd),
-	    pos_bof(Fd,Pos),
-	    read_heap(Fd,Dict0);
+	    read_heap(Dict0);
 	[] ->
 	    Dict0
     end.
 
-read_heap(Fd,Dict0) ->
+read_heap(Dict0) ->
     %% This function is never called if the dump is truncated in "=proc_heap:Pid"
-    case val(Fd) of
-	"=" ++ _next_tag ->
+    case get(fd) of
+	end_of_heap ->
 	    Dict0;
-	Line ->
-	    Dict = parse(Line,Dict0),
-	    read_heap(Fd,Dict)
+	Fd ->
+	    case val(Fd) of
+		"=" ++ _next_tag ->
+		    put(fd, end_of_heap),
+		    Dict0;
+		Line ->
+		    Dict = parse(Line,Dict0),
+		    read_heap(Dict)
+	    end
     end.
-
-%% Here I just make a list of all exsiting addresses so that I can detect 
-%% later if there is a reference to a non existing address.
-read_all_heap_addresses(Fd) ->
-    case line_head(Fd) of
-	"=" ++ _next_tag ->
-	    ok;
-	Addr ->
-	    {DecAddr,_} = get_hex(Addr),
-	    ets:insert(cdv_decode_heap_table,{DecAddr}),
-	    skip_rest_of_line(Fd),
-	    read_all_heap_addresses(Fd)
-    end.
-    
 
 parse(Line0, Dict0) ->
     {Addr,":"++Line1} = get_hex(Line0),
@@ -2498,7 +2458,7 @@ parse_term([$H|Line0], D) ->			%Pointer to heap term.
 parse_term([$N|Line], D) ->			%[] (nil).
     {[],Line,D};
 parse_term([$I|Line0], D) ->			%Small.
-    {Int,Line} = get_integer(Line0),
+    {Int,Line} = string:to_integer(Line0),
     {Int,Line,D};
 parse_term([$A|Line0], D) ->			%Atom.
     {N,":"++Line1} = get_hex(Line0),
@@ -2515,26 +2475,23 @@ parse_term([$S|Str0], D) ->			%Information string.
     {Str,[],D}.
 
 deref_ptr(Ptr, Line, D0) ->
-    case ets:lookup(cdv_decode_heap_table,Ptr) of
-	[{Ptr}] ->
-	    case gb_trees:lookup(Ptr, D0) of
-		{value,{'#CDVTooBig',Type,Pos}=Term} ->
-		    case get(expanded) of
-			undefined ->
-			    {Term,Line,D0};
-			true  ->
-			    {Expanded,D} = expand(Pos,Type,D0),
-			    {Expanded,Line,D}
-		    end;
-		{value,Term} ->
-		    {Term,Line,D0};
-		none ->
-		    L = val(get(fd)),
-		    D = parse(L, D0),
-		    deref_ptr(Ptr, Line, D)
-	    end;
-	[] ->
-	    {['#CDVIncompleteHeap'],Line,D0}
+    case gb_trees:lookup(Ptr, D0) of
+	{value,Term} ->
+	    {Term,Line,D0};
+	none ->
+	    case get(fd) of
+		end_of_heap ->
+		    {['#CDVIncompleteHeap'],Line,D0};
+		Fd ->
+		    case val(Fd) of
+			"="++_ ->
+			    put(fd, end_of_heap),
+			    deref_ptr(Ptr, Line, D0);
+			L ->
+			    D = parse(L, D0),
+			    deref_ptr(Ptr, Line, D)
+		    end
+	    end
     end.
 
 get_hex(L) ->
@@ -2551,14 +2508,6 @@ get_hex_digit(C) when $0 =< C, C =< $9 -> C-$0;
 get_hex_digit(C) when $a =< C, C =< $f -> C-$a+10;
 get_hex_digit(C) when $A =< C, C =< $F -> C-$A+10;
 get_hex_digit(_) -> none.
-
-get_integer(L) ->
-    get_integer(L, []).
-
-get_integer([H|T], Acc) when $0 =< H, H =< $9; H =:= $- ->
-    get_integer(T, [H|Acc]);
-get_integer(L, Acc) ->
-    {list_to_integer(lists:reverse(Acc)),L}.
 
 skip_blanks([$\s|T]) ->
     skip_blanks(T);

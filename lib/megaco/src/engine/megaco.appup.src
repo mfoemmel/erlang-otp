@@ -1,6 +1,18 @@
 {"%VSN%",
- [],
+ [{"3.0",
+   [
+    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco, soft_purge, soft_purge, []}
+   ]
+  }
+ ],
 
- []
+ [{"3.0",
+   [
+    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco, soft_purge, soft_purge, []}
+   ]
+  }
+ ]
 }.
 

@@ -39,12 +39,15 @@
 	 test_reply/5
         ]).
 
+%% MIB stat functions
 -export([
 	 get_stats/0, get_stats/1, get_stats/2,
 	 reset_stats/0, reset_stats/1
 	]).
 
+%% Misc functions
 -export([
+	 cleanup/2, 
 	 which_requests/1, which_replies/1
 	]).
 
@@ -122,8 +125,8 @@
 -define(report_pending_limit_exceeded(ConnData),
 	?report_important(ConnData, "<ERROR> pending limit exceeded", [])).
 
-%% -define(extended_trace,true).
--ifdef(extended_trace).
+%% -define(megaco_extended_trace,true).
+-ifdef(megaco_extended_trace).
 -define(rt1(T,F,A),?report_trace(T,F,A)).
 -define(rt2(F,A),  ?rt1(ignore,F,A)).
 -define(rt3(F),    ?rt2(F,[])).
@@ -142,6 +145,7 @@
 %% Func: get_stats/0, get_stats/1, get_stats/2
 %% Description: Retreive statistics (counters) for TCP
 %%-----------------------------------------------------------------
+
 get_stats() ->
     megaco_stats:get_stats(megaco_stats).
 
@@ -156,6 +160,7 @@ get_stats(ConnHandle, Counter) ->
 %% Func: reset_stats/0, reaet_stats/1
 %% Description: Reset statistics (counters)
 %%-----------------------------------------------------------------
+
 reset_stats() ->
     megaco_stats:reset_stats(megaco_stats).
 
@@ -163,6 +168,42 @@ reset_stats(ConnHandleOrCounter) ->
     megaco_stats:reset_stats(megaco_stats, ConnHandleOrCounter).
 
 
+
+%%----------------------------------------------------------------------
+%% cleanup utility functions
+%%----------------------------------------------------------------------
+
+cleanup(#megaco_conn_handle{local_mid = LocalMid}, Force) 
+  when Force == true; Force == false ->
+    Pat = #reply{trans_id  = '$1', 
+		 local_mid = LocalMid, 
+		 state     = '$2',
+		 _         = '_'},
+    do_cleanup(Pat, Force);
+cleanup(LocalMid, Force) 
+  when Force == true; Force == false ->
+    Pat = #reply{trans_id  = '$1', 
+		 local_mid = LocalMid, 
+		 state     = '$2',
+		 _         = '_'},
+    do_cleanup(Pat, Force).
+    
+do_cleanup(Pat, Force) ->
+    Match = megaco_monitor:which_replies(Pat),
+    Reps  = [{V1, V2} || [V1, V2] <- Match],
+    do_cleanup2(Reps, Force).
+
+do_cleanup2([], _) ->
+    ok;
+do_cleanup2([{TransId, aborted}|T], Force = false) ->
+    megaco_monitor:delete_reply(TransId),
+    do_cleanup2(T, Force);
+do_cleanup2([_|T], Force = false) ->
+    do_cleanup2(T, Force);
+do_cleanup2([{TransId, _State}|T], Force = true) ->
+    megaco_monitor:delete_reply(TransId),
+    do_cleanup2(T, Force).
+		  
 
 %%----------------------------------------------------------------------
 %% which_requests and which_replies utility functions
@@ -201,10 +242,10 @@ which_requests2([{CH1, S}|T], CH2, Serials, Reqs) ->
 
 which_replies(#megaco_conn_handle{local_mid  = LocalMid, 
 				  remote_mid = RemoteMid}) ->
-    Pat1 = #trans_id{mid    = RemoteMid, % '$1', 
+    Pat1 = #trans_id{mid    = RemoteMid, 
 		     serial = '$1', _ = '_'},
     Pat2 = #reply{trans_id  = Pat1, 
-  		  local_mid = LocalMid, % '$3', 
+  		  local_mid = LocalMid, 
   		  state     = '$2', 
   		  handler   = '$3', _ = '_'},
     Match = megaco_monitor:which_replies(Pat2),
@@ -213,7 +254,7 @@ which_replies(LocalMid) ->
     Pat1 = #trans_id{mid    = '$1', 
 		     serial = '$2', _ = '_'},
     Pat2 = #reply{trans_id  = Pat1, 
-		  local_mid = LocalMid, % '$3', 
+		  local_mid = LocalMid, 
 		  state     = '$3', 
 		  handler   = '$4', _ = '_'},
     Match0 = megaco_monitor:which_replies(Pat2),
@@ -400,6 +441,7 @@ disconnect_remote(_Reason, ConnHandle, UserNode) ->
             {error, {no_connection, ConnHandle}}
     end.
 
+
 %%----------------------------------------------------------------------
 %% Handle incoming message
 %%----------------------------------------------------------------------
@@ -434,6 +476,11 @@ process_received_message(ReceiveHandle, ControlPid, SendHandle, Bin) ->
 			    ?rt3("no requests"),
 			    ignore;
 			[Req|Reqs] when ConnData#conn_data.threaded ->
+% 			    lists:foreach(
+% 			      fun() -> 
+% 				      spawn(?MODULE,handle_request,[R]) 
+% 			      end, 
+% 			      Reqs),
 			    [spawn(?MODULE,handle_request,[R]) || R <- Reqs],
 			    handle_request(Req);
 			_ ->
@@ -801,8 +848,7 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
 	    F = pending_timeout,
 	    A = [ConnData, TransId, CurrTimer],	    
 	    PendingRef = megaco_monitor:apply_after(M, F, A, WaitFor),
-            Rep = #reply{% state             = eval_request,
-			 trans_id          = TransId,
+            Rep = #reply{trans_id          = TransId,
 			 local_mid         = LocalMid,
 			 pending_timer_ref = PendingRef,
 			 handler           = self(),
@@ -864,30 +910,43 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
 
 		    %% 
 		    %% State == eval_request:
-		    %%   This means that the reply timer has been 
-		    %%   started. The reply record will be deleted
-		    %%   eventually by the reply timer, so there is 
-		    %%   no need to do it here.
+		    %%   This means that the request is currently beeing 
+		    %%   evaluated by the user, and the reply timer has 
+		    %%   not yet been started. 
+		    %%   Either:
+		    %%   a) The "other side" will resend (which will 
+		    %%      trigger a pending message send) until we pass the 
+		    %%      pending limit 
+		    %%   b) We will send pending messages (when the pending 
+		    %%      timer expire) until we pass the pending limit.
+		    %%   In any event, we cannot delete the reply record
+		    %%   or the pending counter in this case. Is there
+		    %%   a risk we accumulate aborted reply records?
 		    %% 
 		    %% State == prepare:
-		    %%   The reply timer has not yet been started,
-		    %%   so we must do the cleanup here.
+		    %%   The user does not know about this request
+		    %%   so we can safely perform cleanup.
 		    %% 
 		    ?report_pending_limit_exceeded(ConnData),
 		    megaco_monitor:cancel_apply_after(Ref),
 		    send_pending_limit_error(ConnData),
 		    if 
 			State == eval_request ->
+			    %% 
+			    %% What if the user never replies?
+			    %% In that case we will have a record
+			    %% (and counters) that is never cleaned up...
 			    Rep2 = Rep#reply{state             = aborted,
 					     pending_timer_ref = undefined},
 			    megaco_monitor:insert_reply(Rep2),
 			    handle_request_abort_callback(ConnData, 
-							  TransId, 
-							  Pid);
+							  TransId, Pid);
 			true ->
 			    %% Since the user does not know about
-			    %% this call yet, should we inform?
-			    megaco_monitor:delete_reply(TransId),
+			    %% this call yet, it is safe to cleanup.
+			    %% Should we inform?
+			    Rep2 = Rep#reply{state = aborted},
+			    cancel_reply(ConnData, Rep2, aborted),
 			    ok
 		    end,
 		    prepare_trans(ConnData, Rest, AckList, ReqList);
@@ -899,15 +958,22 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
 		    %% 
 		    %%   Pending limit already exceeded
 		    %% 
-		    %%    ( can we really get here ? )
+		    %%   Cleanup, just to make sure:
+		    %%     reply record & pending counter
 		    %% 
 		    %% -------------------------------------------
+		    case megaco_monitor:lookup_reply(TransId) of
+			[Rep] ->
+			    Rep2 = Rep#reply{state = aborted},
+			    cancel_reply(ConnData, Rep2, aborted);
+			_ ->
+			    ok
+		    end,
 		    prepare_trans(ConnData, Rest, AckList, ReqList)
 
 	    end;
 
         [#reply{state = waiting_for_ack, bytes = Bin, version = Version}] ->
-
 	    ?rt3("request resend when waiting for ack"),
 
             %% We have already sent a reply, but the receiver
@@ -928,15 +994,17 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
                     prepare_trans(ConnData2, Rest, AckList, ReqList)
             end;
 
-	[#reply{state = aborted}] ->
-	    ?rt3("request resend when aborted"),
+	[#reply{state = aborted} = Rep] ->
+	    ?rt3("request resend when already in aborted state"),
 
 	    %% OTP-4956:
 	    %% Already aborted so ignore.
 	    %% This furthermore means that the abnoxious user at the
 	    %% other end has already been informed (pending-limit
-	    %% passed), but keeps sending...
-            %% ?report_trace(ignore, "already aborted", []),
+	    %% passed => error descriptor sent), but keeps sending...
+	    %% 
+	    %% Shall we perform a cleanup?
+	    cancel_reply(ConnData, Rep, aborted),
 	    prepare_trans(ConnData, Rest, AckList, ReqList)
         end.
 
@@ -982,10 +1050,9 @@ do_prepare_ack(ConnData, T, AckList) ->
     end.
 
 
-check_pending_limit(infinity, _, _) ->
+check_and_maybe_create_pending_limit(infinity, _, _) ->
     ok;
-check_pending_limit(Limit, Direction, TransId) ->
-    %% ?report_trace(ignore, "check pending limit", [Direction, Limit]),
+check_and_maybe_create_pending_limit(Limit, Direction, TransId) ->
     case (catch megaco_config:get_pending_counter(Direction, TransId)) of
 	{'EXIT', _} ->
 	    %% Has not been created yet (connect).
@@ -994,10 +1061,32 @@ check_pending_limit(Limit, Direction, TransId) ->
 	Val when Val =< Limit ->
 	    %% Since we have no intention to increment here, it
 	    %% is ok to be _at_ the limit
-	    %% ?report_trace(ignore, "check - ok", [Direction, Val]),
 	    ok;
 	_ ->
-	    %% ?report_trace(ignore, "check - aborted", [Direction]),
+	    aborted
+    end.
+
+check_pending_limit(infinity, _, _) ->
+    ok;
+check_pending_limit(Limit, Direction, TransId) ->
+    ?rt2("check pending limit", [Direction, Limit, TransId]),
+    case (catch megaco_config:get_pending_counter(Direction, TransId)) of
+	{'EXIT', _} ->
+	    %% This function is only called when we "know" the 
+	    %% counter to exist. So, the only reason that this 
+	    %% would happen is of the counter has been removed.
+	    %% This only happen if the pending limit has been 
+	    %% reached. In any case, this is basically the same 
+	    %% as aborted!
+	    ?rt2("check pending limit - exit", []),
+	    aborted;
+	Val when Val =< Limit ->
+	    %% Since we have no intention to increment here, it
+	    %% is ok to be _at_ the limit
+	    ?rt2("check pending limit - ok", [Val]),
+	    ok;
+	Val ->
+	    ?rt2("check pending limit - aborted", [Val]),
 	    aborted
     end.
 
@@ -1008,27 +1097,24 @@ check_and_maybe_incr_pending_limit(Limit, Direction, TransId) ->
     %% 
     %% We need this kind of test to detect when we _pass_ the limit
     %% 
-    %% ?report_trace(ignore, "check and maybe incr pending limit", 
-    %%               [Direction, Limit]),
+    ?rt2("check and maybe incr pending limit", [Direction, Limit, TransId]),
     case (catch megaco_config:get_pending_counter(Direction, TransId)) of
 	{'EXIT', _} ->
 	    %% Has not been created yet (connect).
 	    megaco_config:cre_pending_counter(Direction, TransId, 1),
 	    ok;
 	Val when Val > Limit ->
-	    %% ?report_trace(ignore, "check and maybe incr - aborted", 
-	    %%               [Direction, Val, Limit]),
+	    ?rt2("check and maybe incr - aborted", [Direction, Val, Limit]),
 	    aborted;      % Already passed the limit
 	Val ->
-	    %% ?report_trace(ignore, "check and maybe incr - incr", 
-	    %%               [Direction, Val, Limit]),
+	    ?rt2("check and maybe incr - incr", [Direction, Val, Limit]),
 	    megaco_config:incr_pending_counter(Direction, TransId),
 	    if 
 		Val < Limit ->
 		    ok;   % Still within the limit
 		true ->
-		    %% ?report_trace(ignore, "check and maybe incr - error", 
-		    %%               [Direction, Val, Limit]),
+		    ?rt2("check and maybe incr - error", 
+			 [Direction, Val, Limit]),
 		    error % Passed the limit
 	    end
     end.
@@ -1057,7 +1143,7 @@ handle_request(ConnData, TransId, T) ->
 
     #conn_data{sent_pending_limit = Limit} = ConnData,
 
-    case check_pending_limit(Limit, sent, TransId) of
+    case check_and_maybe_create_pending_limit(Limit, sent, TransId) of
 	ok ->
 	    %% Ok so far, now update state
 	    case megaco_monitor:lookup_reply(TransId) of
@@ -1074,6 +1160,7 @@ handle_request(ConnData, TransId, T) ->
 		    %% it again...
 		    do_handle_request(AckAction, SendReply, 
 				      ConnData, TransId);
+
 		_ ->
 		    %% Ugh?
 		    ignore
@@ -1084,17 +1171,32 @@ handle_request(ConnData, TransId, T) ->
 	    %% Already exceeded the limit
 	    %% The user does not yet know about this request, so
 	    %% don't bother telling that it has been aborted...
-	    %% 
+	    %% Furthermore, the reply timer has not been started,
+	    %% so do the cleanup now
+	    ?rt1(ConnData, "pending limit already passed", [TransId]),
+	    case megaco_monitor:lookup_reply(TransId) of
+		[Rep] ->
+		    cancel_reply(ConnData, Rep, aborted);
+		_ ->
+		    ok
+	    end,
 	    ignore
     end.
 
+do_handle_request(_, ignore, ConnData, TransId) ->
+    ?rt1(ConnData, "ignore: don't reply", [TransId]),
+    ignore;
 do_handle_request({pending, _RequestData}, {aborted, ignore}, _, _) ->
+    ?rt2("handle request: pending - aborted - ignore => don't reply", []),
     ignore;
 do_handle_request({pending, _RequestData}, {aborted, _SendReply}, _, _) ->
+    ?rt2("handle request: pending - aborted => don't reply", []),
     ignore;
 do_handle_request({pending, RequestData}, _SendReply, _ConnData, _) ->
+    ?rt2("handle request: pending", [RequestData]),
     {pending, RequestData};
 do_handle_request(AckAction, {ok, Bin}, ConnData, TransId) ->
+    ?rt1(ConnData, "handle request - ok", [AckAction, TransId]),
     case megaco_monitor:lookup_reply(TransId) of
 	[#reply{pending_timer_ref = PendingRef} = Rep] ->
 
@@ -1129,6 +1231,15 @@ do_handle_request(AckAction, {ok, Bin}, ConnData, TransId) ->
 	    %% Been removed already?
 	    ignore
     end;
+do_handle_request(_, {error, aborted}, ConnData, TransId) ->
+    ?report_trace(ConnData, "aborted during our absence", [TransId]),
+    case megaco_monitor:lookup_reply(TransId) of
+	[Rep] ->
+	    cancel_reply(ConnData, Rep, aborted);
+	_ ->
+	    ok
+    end,
+    ignore;
 do_handle_request(_, {error, Reason}, ConnData, TransId) ->
     ?report_trace(ConnData, "send trans reply error", [TransId, Reason]),
     ignore.
@@ -1162,13 +1273,15 @@ handle_long_request({ConnData, TransId, RequestData}) ->
     %% Pending limit:
     %% We need to check the pending limit, in case it was
     %% exceeded before we got this far...
+    %% We dont need to be able to create the counter here,
+    %% since that was done in the handle_request function.
 
     #conn_data{sent_pending_limit = Limit} = ConnData,
 
     case check_pending_limit(Limit, sent, TransId) of
 	ok ->
 	    handle_long_request(ConnData, TransId, RequestData);
-	aborted ->
+	_ ->
 	    %% Already exceeded the limit
 	    ignore
     end.
@@ -1242,36 +1355,36 @@ handle_request_callback(ConnData, TransId, Actions, T) ->
 	    {discard_ack, ignore};
 	
 	{discard_ack, Replies} when list(Replies) ->
-	    Reply = {actionReplies, Replies},
-	    SendReply = 
-		maybe_send_reply(ConnData, TransId, Reply, asn1_NOVALUE),
+	    Reply     = {actionReplies, Replies},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 asn1_NOVALUE),
 	    {discard_ack, SendReply};
 	{discard_ack, Error} when record(Error, 'ErrorDescriptor') ->
-	    Reply = {transactionError, Error},
-	    SendReply = 
-		maybe_send_reply(ConnData, TransId, Reply, asn1_NOVALUE),
+	    Reply     = {transactionError, Error},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 asn1_NOVALUE),
 	    {discard_ack, SendReply};
 	{{handle_ack, AckData}, Replies} when list(Replies) ->
-	    Reply = {actionReplies, Replies},
-	    SendReply = 
-		maybe_send_reply(ConnData, TransId, Reply, 'NULL'),
+	    Reply     = {actionReplies, Replies},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 'NULL'),
 	    {{handle_ack, AckData}, SendReply};
 	{{handle_ack, AckData}, Error} 
 	when record(Error, 'ErrorDescriptor') ->
-	    Reply = {transactionError, Error},
-	    SendReply = 
-		maybe_send_reply(ConnData, TransId, Reply, 'NULL'),
+	    Reply     = {transactionError, Error},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 'NULL'),
 	    {{handle_ack, AckData}, SendReply};
 	{{handle_sloppy_ack, AckData}, Replies} when list(Replies) ->
-	    Reply = {actionReplies, Replies},
-	    SendReply = 
-		maybe_send_reply(ConnData, TransId, Reply, asn1_NOVALUE),
+	    Reply     = {actionReplies, Replies},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 asn1_NOVALUE),
 	    {{handle_ack, AckData}, SendReply};
 	{{handle_sloppy_ack, AckData}, Error} 
 	when record(Error, 'ErrorDescriptor') ->
-	    Reply = {transactionError, Error},
-	    SendReply = 
-		maybe_send_reply(ConnData, TransId, Reply, asn1_NOVALUE),
+	    Reply     = {transactionError, Error},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 asn1_NOVALUE),
 	    {{handle_ack, AckData}, SendReply};
 	
 	{pending, RequestData} ->
@@ -1283,14 +1396,16 @@ handle_request_callback(ConnData, TransId, Actions, T) ->
 	
 	Error ->
 	    ErrorText = atom_to_list(UserMod),
-	    ED = #'ErrorDescriptor'{errorCode = ?megaco_internal_gateway_error,
-				    errorText = ErrorText},
-	    ?report_important(ConnData, "callback: <ERROR> trans request",
+	    ED = #'ErrorDescriptor'{
+	      errorCode = ?megaco_internal_gateway_error,
+	      errorText = ErrorText},
+	    ?report_important(ConnData, 
+			      "callback: <ERROR> trans request",
 			      [ED, {error, Error}]),
 	    error_msg("trans request callback failed: ~w", [Error]),
 	    Reply = {transactionError, ED},
-	    SendReply = 
-		maybe_send_reply(ConnData, TransId, Reply, asn1_NOVALUE),
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 asn1_NOVALUE),
 	    {discard_ack, SendReply}
     end.
 
@@ -1308,30 +1423,30 @@ handle_long_request_callback(ConnData, TransId, RequestData) ->
     case Res of
 	ignore ->
 	    {discard_ack, ignore};
-
-        {discard_ack, Replies} when list(Replies) ->
-            Reply = {actionReplies, Replies},
-            SendReply = 
-		maybe_send_reply(ConnData, TransId, Reply, asn1_NOVALUE),
-            {discard_ack, SendReply};
-
-        {{handle_ack, AckData}, Replies} when list(Replies) ->
-            Reply = {actionReplies, Replies},
-            SendReply = 
-		maybe_send_reply(ConnData, TransId, Reply, 'NULL'),
-            {{handle_ack, AckData}, SendReply};
-
-        Error ->
+	
+	{discard_ack, Replies} when list(Replies) ->
+	    Reply     = {actionReplies, Replies},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 asn1_NOVALUE),
+	    {discard_ack, SendReply};
+	
+	{{handle_ack, AckData}, Replies} when list(Replies) ->
+	    Reply     = {actionReplies, Replies},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 'NULL'),
+	    {{handle_ack, AckData}, SendReply};
+	
+	Error ->
 	    ErrorText = atom_to_list(UserMod),
 	    ED = #'ErrorDescriptor'{errorCode = ?megaco_internal_gateway_error,
 				    errorText = ErrorText},
-            ?report_important(ConnData, "callback: <ERROR> trans long request",
+	    ?report_important(ConnData, "callback: <ERROR> trans long request",
 			      [ED, {error, Error}]),
 	    error_msg("long trans request callback failed: ~w", [Error]),
-            Reply = {transactionError, ED},
-            SendReply = 
-		maybe_send_reply(ConnData, TransId, Reply, asn1_NOVALUE),
-            {discard_ack, SendReply}
+	    Reply     = {transactionError, ED},
+	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
+					 asn1_NOVALUE),
+	    {discard_ack, SendReply}
     end.
 
 handle_pending(ConnData, T) ->
@@ -2179,7 +2294,10 @@ send_reply(#conn_data{serial = Serial} = CD, Result, ImmAck) ->
             megaco_messenger_misc:send_body(CD, TraceLabel, Body2)
     end.
 
-
+%% Presumably the user would return immediately (with {pending, Data}) if it 
+%% knows or suspects a request to take a long time to process. 
+%% For this reason we assume that handling a resent request 
+%% could not have caused an update of the pending limit counter.
 maybe_send_pending(#conn_data{sent_pending_limit = Limit} = ConnData, 
 		   TransId) ->	    
     case check_and_maybe_incr_pending_limit(Limit, sent, TransId) of
@@ -2376,7 +2494,6 @@ receive_reply_remote(ConnData, UserReply) ->
 	    return_unexpected_trans_reply(ConnData, TransId, UserReply)
     end.
 
-
 cancel_reply(ConnData, #reply{state = wait_for_ack} = Rep, Reason) ->
     ?report_trace(ignore, "cancel reply [wait_for_ack]", [Rep]),
     megaco_monitor:cancel_apply_after(Rep#reply.pending_timer_ref),
@@ -2392,8 +2509,8 @@ cancel_reply(_ConnData, #reply{state = aborted} = Rep, _Reason) ->
 	   pending_timer_ref = PendingRef} = Rep,
     megaco_monitor:delete_reply(TransId),
     megaco_monitor:cancel_apply_after(ReplyRef),
-    megaco_monitor:cancel_apply_after(PendingRef), % BMK BMK Still running?
-    megaco_config:del_pending_counter(TransId),    % BMK BMK Still existing?
+    megaco_monitor:cancel_apply_after(PendingRef),     % BMK Still running?
+    megaco_config:del_pending_counter(sent, TransId),  % BMK Still existing?
     ok;
 
 cancel_reply(_, _, _) ->
@@ -2537,16 +2654,18 @@ reply_timeout(ConnHandle, TransId, timeout) ->
 	    ConnData2 = ConnData#conn_data{serial = Serial},
 	    T = #'TransactionAck'{firstAck = Serial},
 	    handle_ack(ConnData2, {error, timeout}, Rep, T);
-	[#reply{pending_timer_ref = Ref}] ->
+	[#reply{pending_timer_ref = Ref}] -> % aborted?
 	    megaco_monitor:cancel_apply_after(Ref),
-	    megaco_monitor:delete_reply(TransId)
+	    megaco_monitor:delete_reply(TransId),
+	    megaco_config:del_pending_counter(sent, TransId)
     end;
 reply_timeout(ConnHandle, TransId, Timer) ->
     ?report_trace(ConnHandle, "reply timeout", [Timer, TransId]),
     case megaco_monitor:lookup_reply(TransId) of
 	[] ->
 	    ignore; % Trace ??
-	[#reply{state = waiting_for_ack} = Rep] ->
+	[#reply{state = State} = Rep] when State == waiting_for_ack; 
+					   State == aborted ->
 	    {WaitFor, Timer2} = recalc_timer(Timer),
 	    OptBin = opt_garb_binary(Timer2, Rep#reply.bytes),
 	    M = ?MODULE,
@@ -2555,14 +2674,18 @@ reply_timeout(ConnHandle, TransId, Timer) ->
 	    Ref2 = megaco_monitor:apply_after(M, F, A, WaitFor),
 	    Rep2 = Rep#reply{bytes     = OptBin,
 			     timer_ref = Ref2},
-	    megaco_monitor:insert_reply(Rep2) % Timing problem?
+	    megaco_monitor:insert_reply(Rep2); % Timing problem?
+	_ ->
+	    ignore
+		
     end.
 
 pending_timeout(ConnData, TransId, Timer) ->
+    ?report_trace(ConnData, "pending timeout", [Timer, TransId]),
     case megaco_monitor:lookup_reply(TransId) of
 	[#reply{state   = State,
-		handler = Pid} = Rep] 
-	when State == prepare; State == eval_request ->
+		handler = Pid} = Rep] when State == prepare; 
+					   State == eval_request ->
 
 	    #conn_data{sent_pending_limit = Limit,
 		       conn_handle        = ConnHandle} = ConnData,
@@ -2619,7 +2742,9 @@ pending_timeout(ConnData, TransId, Timer) ->
 		    send_message_error(ConnData, Code, Reason),
 		    handle_request_abort_callback(ConnData, TransId, Pid),
 		    %% Timing problem?
-		    megaco_monitor:insert_reply(Rep#reply{state = aborted});
+		    Rep2 = Rep#reply{state = aborted},
+		    %% megaco_monitor:insert_reply(Rep2);
+		    cancel_reply(ConnData, Rep2, aborted);
 
 
 		aborted ->
@@ -2629,7 +2754,8 @@ pending_timeout(ConnData, TransId, Timer) ->
 		    %%   Pending limit already passed 
 		    %% 
 		    %% -------------------------------------------
-
+		    Rep2 = Rep#reply{state = aborted},
+		    cancel_reply(ConnData, Rep2, aborted),
 		    ignore
 
 	    end;
@@ -2641,8 +2767,9 @@ pending_timeout(ConnData, TransId, Timer) ->
 	    %% No need for any pending trans reply
 	    ignore;
 
-	[#reply{state = aborted}] ->
-	    %% glitch
+	[#reply{state = aborted} = Rep] ->
+	    %% glitch, but cleanup just the same
+	    cancel_reply(ConnData, Rep, aborted),
 	    ignore
 
     end.

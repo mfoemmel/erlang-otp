@@ -64,7 +64,8 @@
 	 incr_stats_counter/2,
 	 reset_stats_counter/1,
 
-	 load_mib/1, unload_mib/1, make_mini_mib/0,
+	 load_mib/1, unload_mib/1, which_mibs/0, 
+	 make_mini_mib/0,
 	 name_to_oid/1, oid_to_name/1,
 
 	 system_start_time/0,
@@ -72,6 +73,12 @@
 	 verbosity/1 
 
 	]).
+
+-export([check_manager_config/1, 
+	 check_user_config/1, 
+	 check_agent_config/1,
+	 check_usm_user_config/1]).
+
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
@@ -529,7 +536,7 @@ incr_counter(Counter, Incr, Wrap) ->
 
 
 maybe_cre_stats_counter(Counter, Initial) ->
-    case ets:lookup(snmpm_stats_table, {Counter, Initial}) of
+    case ets:lookup(snmpm_stats_table, Counter) of
 	[_] ->
 	    ok;
 	_ ->
@@ -563,25 +570,24 @@ reset_stats_counter(Counter) ->
     ok.
     
     
-    
 load_mib(Mib) when list(Mib) ->
     call({load_mib, Mib}).
 
 unload_mib(Mib) when list(Mib) ->
     call({unload_mib, Mib}).
 
-make_mini_mib() ->
-    Pat = {{mini_mib, '$1'}, '$2', '$3', '_'},
-    MiniElems = ets:match(snmpm_mib_table, Pat),
-    [list_to_tuple(MiniElem) || MiniElem <- MiniElems].
-
+which_mibs() ->
+    Pattern = {{mib, '_'}, '$1', '$2'},
+    Mibs = ets:match(snmpm_mib_table, Pattern),
+    [list_to_tuple(X) || X <- Mibs].
 
 name_to_oid(Name) ->
     Pat = {{mini_mib, '$1'}, Name, '_', '_'},
     case ets:match(snmpm_mib_table, Pat) of
 	[] ->
 	    {error, not_found};
-	Oids ->
+	X ->
+	    Oids = [Oid || [Oid] <- X],
 	    {ok, Oids}
     end.
 
@@ -592,6 +598,11 @@ oid_to_name(Oid) ->
 	[] ->
 	    {error, not_found}
     end.
+
+make_mini_mib() ->
+    Pat = {{mini_mib, '$1'}, '$2', '$3', '_'},
+    MiniElems = ets:match(snmpm_mib_table, Pat),
+    [list_to_tuple(MiniElem) || MiniElem <- MiniElems].
 
 
 verbosity(Verbosity) ->
@@ -1152,13 +1163,28 @@ init_agent_default(Item, Val)
 
 
 read_agents_config_file(Dir) ->
-    Check = fun(C) -> check_agent_config(C) end,
+    Check = fun(C) -> check_agent_config2(C) end,
     case read_file(Dir, "agents.conf", Check, []) of
 	{ok, Conf} ->
 	    Conf;
 	Error ->
 	    ?vlog("agent config error: ~p", [Error]),
 	    throw(Error)
+    end.
+
+check_agent_config2(Agent) ->
+    case check_agent_config(Agent) of
+	{ok, {UserId, Addr, Port, Conf, Version}} ->
+	    {ok, Vsns} = system_info(versions),
+	    case lists:member(Version, Vsns) of
+		true ->
+		    {ok, {UserId, Addr, Port, Conf}};
+		false ->
+		    error({version_not_supported_by_manager, 
+			   Version, Vsns})
+	    end;
+	Err ->
+	    throw(Err)
     end.
 
 check_agent_config({UserId, 
@@ -1239,14 +1265,7 @@ verify_agent({UserId,
 		],
 	    case verify_agent2(Conf) of
 		ok ->
-		    {ok, Vsns} = system_info(versions),
-		    case lists:member(Version, Vsns) of
-			true ->
-			    {UserId, Addr, Port, Conf};
-			false ->
-			    error({version_not_supported_by_manager, 
-				   Version, Vsns})
-		    end;
+		    {UserId, Addr, Port, Conf, Version};
 		Err ->
 		    throw(Err)
 	    end;
@@ -2192,11 +2211,12 @@ update_mini_mib([{Oid, N, Type, MibName}|Elems]) ->
 handle_unload_mib(Mib) ->
     Key = {mib, Mib},
     case ets:lookup(snmpm_mib_table, Key) of
-	[{Key, MibName}] ->
+	[{Key, MibName, MibFile}] ->
 	    do_unload_mib(MibName),
 	    [{mibs, Mibs0}] = ets:lookup(snmpm_config_table, mibs),
 	    Mibs = lists:delete(Mib, Mibs0),
 	    ets:insert(snmpm_config_table, {mibs, Mibs}),
+	    ets:delete(snmpm_mib_table, Key),
 	    ok;
 	_ ->
 	    {error, not_loaded}
@@ -2218,15 +2238,17 @@ do_load_mib(MibFile) ->
 	    %% Check that the mib was not loaded or loaded
 	    %% with a different filename: 
 	    %% e.g. /tmp/MYMIB.bin and /tmp/mibs/MYMIB.bin
-	    Pattern = {{mib, '$1'}, Name},
+	    Name1   = mib_name(Name),
+	    Pattern = {{mib, '_'}, Name1, '$1'},
 	    case ets:match(snmpm_mib_table, Pattern) of
 		[] ->
-		    Rec = {{mib, MibFile}, Name}, 
+		    
+		    Rec = {{mib, MibFile}, Name1, ActualFileName}, 
 		    ets:insert(snmpm_mib_table, Rec),
-		    init_mini_mib_elems(Name, MEs++Traps, []);
+		    init_mini_mib_elems(Name1, MEs++Traps, []);
 
 		%% This means that the mib has already been loaded
-		[[MibFile]] ->
+		[[ActualFileName]] ->
 		    [];
 
 		%% This means that the mib was loaded before,
@@ -2239,6 +2261,10 @@ do_load_mib(MibFile) ->
 	    error({failed_reading_mib, MibFile, Reason})
     end.
 
+mib_name(N) when list(N) ->
+    list_to_atom(N);
+mib_name(N) ->
+    N.
 
 init_mini_mib_elems(_, [], Res) -> 
     Res;

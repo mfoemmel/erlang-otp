@@ -30,6 +30,9 @@
 %% Deprecated API
 -export([init/1, stop/1]).
 
+-deprecated([{init,1,eventually},
+	     {stop,1,eventually}]).
+
 %% SNMP instrumentation
 -export([load_table/1, load_table/3, disk_table/1, disk_table/3,
 	 mem_sys_mark/1, mem_proc_mark/1, disk_threshold/1]).
@@ -72,8 +75,8 @@
 %% Description: Loads the OTP-OS-MON-MIB
 %%-------------------------------------------------------------------------
 load(Agent) ->
-    MibDir = code:priv_dir(os_mon) ++ "/mibs",
-    snmp:load_mibs(Agent, [MibDir ++ "/OTP-OS-MON-MIB"]).
+    MibDir = filename:join(code:priv_dir(os_mon), "mibs"),
+    snmpa:load_mibs(Agent, [filename:join(MibDir, "OTP-OS-MON-MIB")]).
 
 %%-------------------------------------------------------------------------
 %% unload(Agent) ->  ok | {error, Reason}
@@ -82,7 +85,7 @@ load(Agent) ->
 %% Description: Unloads the OTP-OS-MON-MIB
 %%-------------------------------------------------------------------------
 unload(Agent) ->
-    snmp:unload_mibs(Agent, ["OTP-OS-MON-MIB"]).
+    snmpa:unload_mibs(Agent, ["OTP-OS-MON-MIB"]).
     
 %% To be backwards compatible
 init(Agent) ->

@@ -25,8 +25,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2004/06/22 10:14:01 $
-%%              $Revision: 1.30 $
+%%              $Date: 2005/03/16 20:48:40 $
+%%              $Revision: 1.31 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -295,19 +295,16 @@ rewrite_call(Call, TempMap, Need, Arity) ->
 
 remap_call_regs(I, TempMap) ->
   Defs = hipe_sparc:keep_registers(hipe_sparc:defines(I)),
-  ArgsInRegs = 
-    lists:sublist(hipe_sparc:call_link_args(I), 
-		  hipe_sparc_registers:register_args()),
-
+  ArgsInRegs = lists:sublist(hipe_sparc:call_link_args(I), 
+			     hipe_sparc_registers:register_args()),
   case hipe_sparc:call_link_is_known(I) of
     false ->
       Target = hipe_sparc:call_link_target(I),
       case ?IS_SPILLED(Target,TempMap) of
 	true ->
-	  RemappedCall = 
-	    remap(I, [(Defs ++ ArgsInRegs)],TempMap),
+	  RemappedCall = remap(I, [(Defs ++ ArgsInRegs)],TempMap),
 	  Temp = ?MK_TEMP_REG(),
-	  Pos = get_spill_offset(hipe_temp_map:find(Target, TempMap)),
+	  Pos = get_spill_offset(hipe_temp_map:find(hipe_sparc:reg_nr(Target), TempMap)),
 	  [gen_stack_load(Pos, Temp),
 	   hipe_sparc:call_link_target_update(RemappedCall, Temp)];
 	false ->
@@ -319,7 +316,7 @@ remap_call_regs(I, TempMap) ->
 
 
 %% ____________________________________________________________________
-%%      
+%%
 %% Returns: 	
 %% Arguments:	
 %% Description:	 

@@ -27,7 +27,8 @@
 
 -export([code_to_type/1, type_to_code/1]).
 
--export([corrupt_reason/2, corrupt/2, vformat/2, file_error/2]).
+-export([corrupt_reason/2, corrupt/2, corrupt_file/2, 
+         vformat/2, file_error/2]).
 
 -export([cache_lookup/4, cache_size/1, new_cache/1,
 	 reset_cache/1, is_empty_cache/1]).

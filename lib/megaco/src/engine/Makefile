@@ -61,6 +61,10 @@ ifeq ($(TYPE),debug)
 ERL_COMPILE_FLAGS += -Ddebug
 endif
 
+ifeq ($(MEGACO_EXTENDED_TRACE), true)
+ERL_COMPILE_FLAGS += -Dmegaco_extended_trace
+endif
+
 ifeq ($(USE_MEGACO_TEST_CODE),true)
 ERL_COMPILE_FLAGS += -DMEGACO_TEST_CODE
 endif

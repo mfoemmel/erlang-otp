@@ -1,7 +1,7 @@
 %%% -*- erlang-indent-level: 4 -*-
 %%% $Id$
 %%% Encode symbolic PowerPC instructions to binary form.
-%%% Copyright (C) 2003-2004  Mikael Pettersson
+%%% Copyright (C) 2003-2005  Mikael Pettersson
 %%%
 %%% Notes:
 %%% - PowerPC manuals use reversed bit numbering. In a 32-bit word,
@@ -9,7 +9,6 @@
 %%%   bit has number 31.
 %%% - PowerPC manuals list opcodes in decimal, not hex.
 %%% - This module does not support AltiVec instructions.
-%%% - This module does not support 64-bit mode instructions.
 %%%
 %%% Instruction Operands:
 %%%
@@ -21,12 +20,15 @@
 %%% {nb,NB}		number of bytes to copy (5 bits)
 %%% {sh,SH}		shift count (5 bits)
 %%% {mb,MB}		mask begin bit number (5 bits)
+%%% {mb6,MB6}		mask begin bit number (6 bits) (64-bit)
 %%% {me,ME}		mask end bit number (5 bits)
+%%% {me6,ME6}		mask end bit number (6 bits) (64-bit)
 %%% {sr,SR}		segment register (4 bits)
 %%% {crimm,IMM}		FPSCR CR image (4 bits)
 %%% {simm,SIMM}		immediate operand (16 bits, signed)
 %%% {uimm,UIMM}		immediate operand (16 bits, unsigned)
-%%% {d,Disp}		load/store displacement (16 bits, signed)
+%%% {d,Disp}		load/store byte displacement (16 bits, signed)
+%%% {ds,DS}		load/store word displacement (14 bits, signed) (64-bit)
 %%% {r,R}		integer register (5 bits)
 %%% {fr,FR}		floating-point register (5 bits)
 %%% {crf,CRF}		CR field number (3 bits)
@@ -84,6 +86,7 @@ sc({}) ->
 %%% lbz, lbzu, lha, lhau, lhz, lhzu, lwz, lwzu, lfd, lfdu, lfs, lfsu, lmw
 %%% stb, stbu, sth, sthu, stw, stwu, stfd, stfdu, stfs, stfsu, stmw
 %%% cmpi, cmpli, twi
+%%% tdi (64-bit)
 
 d_form(OPCD, D, A, IMM) ->
     ?BF(0,5,OPCD) bor ?BF(6,10,D) bor ?BF(11,15,A) bor ?BF(16,31,IMM).
@@ -169,40 +172,73 @@ stfs(Opnds) -> d_form_frS_A_d_simple(10#52, Opnds).
 stfsu(Opnds) -> d_form_frS_A_d_update(10#53, Opnds).
 
 cmpi({{crf,CRFD}, L, {r,A}, {simm,SIMM}}) ->
-    ?ASSERT(L == 0),	% L must be zero in 32-bit code
-    d_form(10#11, CRFD bsl 2, A, SIMM).
+    %% ?ASSERT(L == 0),	% L must be zero in 32-bit code
+    d_form(10#11, (CRFD bsl 2) bor L, A, SIMM).
 
 cmpli({{crf,CRFD}, L, {r,A}, {uimm,UIMM}}) ->
-    ?ASSERT(L == 0),	% L must be zero in 32-bit code
-    d_form(10#10, CRFD bsl 2, A, UIMM).
+    %% ?ASSERT(L == 0),	% L must be zero in 32-bit code
+    d_form(10#10, (CRFD bsl 2) bor L, A, UIMM).
 
-twi({{to,TO}, {r,A}, {simm,SIMM}}) ->
-    d_form(10#03, TO, A, SIMM).
+d_form_OPCD_TO_A_SIMM(OPCD, {{to,TO}, {r,A}, {simm,SIMM}}) ->
+    d_form(OPCD, TO, A, SIMM).
+
+tdi(Opnds) -> d_form_OPCD_TO_A_SIMM(10#02, Opnds). % 64-bit
+twi(Opnds) -> d_form_OPCD_TO_A_SIMM(10#03, Opnds).
+
+%%% DS-Form Instructions
+%%% ld, ldu, lwa, std, stdu (64-bit)
+
+ds_form(OPCD, D, A, DS, XO) ->
+    ?BF(0,5,OPCD) bor ?BF(6,10,D) bor ?BF(11,15,A) bor ?BF(16,29,DS) bor ?BF(30,31,XO).
+
+ds_form_D_A_DS_XO_simple(OPCD, {{r,D}, {ds,DS}, {r,A}}, XO) ->
+    ds_form(OPCD, D, A, DS, XO).
+
+ds_form_D_A_DS_XO_update(OPCD, {{r,D}, {ds,DS}, {r,A}}, XO) ->
+    ?ASSERT(A /= 0),
+    ?ASSERT(A /= D),
+    ds_form(OPCD, D, A, DS, XO).
+
+ld(Opnds) -> ds_form_D_A_DS_XO_simple(10#58, Opnds, 10#0). % 64-bit
+ldu(Opnds) -> ds_form_D_A_DS_XO_update(10#58, Opnds, 10#1). % 64-bit
+lwa(Opnds) -> ds_form_D_A_DS_XO_simple(10#58, Opnds, 10#2). % 64-bit
+std(Opnds) -> ds_form_D_A_DS_XO_simple(10#62, Opnds, 10#0). % 64-bit
+stdu(Opnds) -> ds_form_D_A_DS_XO_update(10#62, Opnds, 10#1). % 64-bit
 
 %%% X-Form Instructions
 %%% ecixw, lbzux, lbzx, lhaux, lhax, lhbrx, lhzux, lhzx, lwarx, lwbrx, lwzux, lwzx, lswx
+%%% lwaux, lwax (64-bit)
 %%% lfdux, lfdx, lfsux, lfsx
 %%% lswi
 %%% fabs, fctiw, fctiwz, fmr, fnabs, fneg, frsp
+%%% fcfid, fctid, fctidz (64-bit)
 %%% mfsrin
 %%% mffs
 %%% mfcr, mfmsr
 %%% mfsr
 %%% and, andc, eqv, nand, nor, or, orc, slw, sraw, srw, xor
+%%% sld, srad, srd (64-bit)
 %%% stwcx.
+%%% stdcx. (64-bit)
 %%% ecowx, stbx, stbux, sthbrx, sthx, sthux, stswx, stwbrx, stwx, stwux
+%%% stdux, stdx (64-bit)
 %%% stfdx, stfdux, stfiwx, stfsx, stfsux
 %%% stswi
 %%% cntlzw, extsb, extsh
+%%% cntlzd, extsw (64-bit)
 %%% mtmsr
-%%% mtsr
+%%% mtmsrd (64-bit)
+%%% mtsr, mtsrin
+%%% mtsrd, mtsrdin (64-bit)
 %%% srawi
+%%% sradi (64-bit)
 %%% cmp, cmpl
 %%% fcmpo, fcmpu
 %%% mcrfs
 %%% mcrxr
 %%% mtfsfi
 %%% tw
+%%% td (64-bit)
 %%% mtfsb0, mtfsb1
 %%% dcba, dcbf, dcbi, dcbst, dcbt, dcbtst, dcbz, icbi
 %%% tlbie
@@ -222,6 +258,9 @@ x_form_D_A_B_XO_update({{r,D}, {r,A}, {r,B}}, XO) ->
 eciwx(Opnds) -> x_form_D_A_B_XO_simple(Opnds, 10#310). % optional
 lbzux(Opnds) -> x_form_D_A_B_XO_update(Opnds, 10#119).
 lbzx(Opnds) -> x_form_D_A_B_XO_simple(Opnds, 10#87).
+ldarx(Opnds) -> x_form_D_A_B_XO_simple(Opnds, 10#84). % 64-bit
+ldux(Opnds) -> x_form_D_A_B_XO_update(Opnds, 10#53). % 64-bit
+ldx(Opnds) -> x_form_D_A_B_XO_simple(Opnds, 10#21). % 64-bit
 lhaux(Opnds) -> x_form_D_A_B_XO_update(Opnds, 10#375).
 lhax(Opnds) -> x_form_D_A_B_XO_simple(Opnds, 10#343).
 lhbrx(Opnds) -> x_form_D_A_B_XO_simple(Opnds, 10#790).
@@ -229,6 +268,8 @@ lhzux(Opnds) -> x_form_D_A_B_XO_update(Opnds, 10#311).
 lhzx(Opnds) -> x_form_D_A_B_XO_simple(Opnds, 10#279).
 lswx(Opnds) -> x_form_D_A_B_XO_simple(Opnds, 10#533). % XXX: incomplete checks
 lwarx(Opnds) -> x_form_D_A_B_XO_simple(Opnds, 10#20).
+lwaux(Opnds) -> x_form_D_A_B_XO_update(Opnds, 10#373). % 64-bit
+lwax(Opnds) -> x_form_D_A_B_XO_simple(Opnds, 10#341). % 64-bit
 lwbrx(Opnds) -> x_form_D_A_B_XO_simple(Opnds, 10#534).
 lwzux(Opnds) -> x_form_D_A_B_XO_update(Opnds, 10#55).
 lwzx(Opnds) -> x_form_D_A_B_XO_simple(Opnds, 10#23).
@@ -252,6 +293,9 @@ x_form_D_B_XO_Rc({{fr,D}, {fr,B}}, XO, Rc) ->
     x_form(10#63, D, 0, B, XO, Rc).
 
 fabs_Rc(Opnds, Rc) -> x_form_D_B_XO_Rc(Opnds, 10#264, Rc).
+fcfid_Rc(Opnds, Rc) -> x_form_D_B_XO_Rc(Opnds, 10#846, Rc). % 64-bit
+fctid_Rc(Opnds, Rc) -> x_form_D_B_XO_Rc(Opnds, 10#814, Rc). % 64-bit
+fctidz_Rc(Opnds, Rc) -> x_form_D_B_XO_Rc(Opnds, 10#815, Rc). % 64-bit
 fctiw_Rc(Opnds, Rc) -> x_form_D_B_XO_Rc(Opnds, 10#14, Rc).
 fctiwz_Rc(Opnds, Rc) -> x_form_D_B_XO_Rc(Opnds, 10#15, Rc).
 fmr_Rc(Opnds, Rc) -> x_form_D_B_XO_Rc(Opnds, 10#72, Rc).
@@ -284,13 +328,19 @@ nand_Rc(Opnds, Rc) -> x_form_S_A_B_XO_Rc(Opnds, 10#476, Rc).
 nor_Rc(Opnds, Rc) -> x_form_S_A_B_XO_Rc(Opnds, 10#124, Rc).
 or_Rc(Opnds, Rc) -> x_form_S_A_B_XO_Rc(Opnds, 10#444, Rc).
 orc_Rc(Opnds, Rc) -> x_form_S_A_B_XO_Rc(Opnds, 10#412, Rc).
+sld_Rc(Opnds, Rc) -> x_form_S_A_B_XO_Rc(Opnds, 10#27, Rc). % 64-bit
 slw_Rc(Opnds, Rc) -> x_form_S_A_B_XO_Rc(Opnds, 10#24, Rc).
+srad_Rc(Opnds, Rc) -> x_form_S_A_B_XO_Rc(Opnds, 10#794, Rc). % 64-bit
 sraw_Rc(Opnds, Rc) -> x_form_S_A_B_XO_Rc(Opnds, 10#792, Rc).
+srd_Rc(Opnds, Rc) -> x_form_S_A_B_XO_Rc(Opnds, 10#539, Rc). % 64-bit
 srw_Rc(Opnds, Rc) -> x_form_S_A_B_XO_Rc(Opnds, 10#536, Rc).
 xor_Rc(Opnds, Rc) -> x_form_S_A_B_XO_Rc(Opnds, 10#316, Rc).
 
-stwcx_dot({{r,S}, {r,A}, {r,B}}) ->
-    x_form(10#31, S, A, B, 10#150, 1).
+xform_S_A_B_XO_1({{r,S}, {r,A}, {r,B}}, XO) ->
+    x_form(10#31, S, A, B, XO, 1).
+
+stdcx_dot(Opnds) -> xform_S_A_B_XO_1(Opnds, 10#214). % 64-bit
+stwcx_dot(Opnds) -> xform_S_A_B_XO_1(Opnds, 10#150).
 
 x_form_S_A_B_XO_simple({{r,S}, {r,A}, {r,B}}, XO) ->
     x_form(10#31, S, A, B, XO, 0).
@@ -303,6 +353,8 @@ ecowx(Opnds) -> x_form_S_A_B_XO_simple(Opnds, 10#438). % optional
 stbx(Opnds) -> x_form_S_A_B_XO_simple(Opnds, 10#215).
 stbux(Opnds) -> x_form_S_A_B_XO_update(Opnds, 10#247).
 sthbrx(Opnds) -> x_form_S_A_B_XO_simple(Opnds, 10#918).
+stdx(Opnds) -> x_form_S_A_B_XO_simple(Opnds, 10#149). % 64-bit
+stdux(Opnds) -> x_form_S_A_B_XO_update(Opnds, 10#181). % 64-bit
 sthx(Opnds) -> x_form_S_A_B_XO_simple(Opnds, 10#407).
 sthux(Opnds) -> x_form_S_A_B_XO_update(Opnds, 10#439).
 stswx(Opnds) -> x_form_S_A_B_XO_simple(Opnds, 10#661).
@@ -329,22 +381,42 @@ stswi({{r,S}, {r,A}, {nb,NB}}) ->
 x_form_S_A_XO_Rc({{r,A}, {r,S}}, XO, Rc) ->
     x_form(10#31, S, A, 0, XO, Rc).
 
+cntlzd_Rc(Opnds, Rc) -> x_form_S_A_XO_Rc(Opnds, 10#58, Rc). % 64-bit
 cntlzw_Rc(Opnds, Rc) -> x_form_S_A_XO_Rc(Opnds, 10#26, Rc).
 extsb_Rc(Opnds, Rc) -> x_form_S_A_XO_Rc(Opnds, 10#954, Rc).
 extsh_Rc(Opnds, Rc) -> x_form_S_A_XO_Rc(Opnds, 10#922, Rc).
+extsw_Rc(Opnds, Rc) -> x_form_S_A_XO_Rc(Opnds, 10#986, Rc). % 64-bit
 
 mtmsr({{r,S}}) -> % supervisor
     x_form(10#31, S, 0, 0, 10#146, 0).
 
+mtmsrd({{r,S}}) -> % supervisor, 64-bit
+    x_form(10#31, S, 0, 0, 10#178, 0).
+
 mtsr({{sr,SR}, {r,S}}) -> % supervisor
     x_form(10#31, S, ?BITS(4,SR), 0, 10#210, 0).
+
+mtsrd({{sr,SR}, {r,S}}) -> % supervisor, 64-bit
+    x_form(10#31, S, ?BITS(4,SR), 0, 10#82, 0).
+
+mtsrdin({{r,S}, {r,B}}) -> % supervisor, 64-bit
+    x_form(10#31, S, 0, B, 10#114, 0).
+
+mtsrin({{r,S}, {r,B}}) -> % supervisor, 32-bit
+    x_form(10#31, S, 0, B, 10#242, 0).
+
+slbia({}) -> % supervisor, 64-bit
+    x_form(10#31, 0, 0, 0, 10#498, 0).
+
+slbie({{r,B}}) -> % supervisor, 64-bit
+    x_form(10#31, 0, 0, B, 10#434, 0).
 
 srawi_Rc({{r,A}, {r,S}, {sh,SH}}, Rc) ->
     x_form(10#31, S, A, SH, 10#824, Rc).
 
 x_form_crfD_L_A_B_XO({{crf,CRFD}, L, {r,A}, {r,B}}, XO) ->
-    ?ASSERT(L == 0),	% L should be zero in 32-bit code
-    x_form(10#31, CRFD bsl 2, A, B, XO, 0).
+    %% ?ASSERT(L == 0),	% L should be zero in 32-bit code
+    x_form(10#31, (CRFD bsl 2) bor L, A, B, XO, 0).
 
 cmp(Opnds) -> x_form_crfD_L_A_B_XO(Opnds, 0).
 cmpl(Opnds) -> x_form_crfD_L_A_B_XO(Opnds, 10#32).
@@ -364,8 +436,11 @@ mcrxr({{crf,CRFD}}) ->
 mtfsfi_Rc({{crf,CRFD}, {crimm,IMM}}, Rc) ->
     x_form(10#63, CRFD bsl 2, 0, IMM bsl 1, 10#134, Rc).
 
-tw({{to,TO}, {r,A}, {r,B}}) ->
-    x_form(10#31, TO, A, B, 10#4, 0).
+x_form_TO_A_B_XO({{to,TO}, {r,A}, {r,B}}, XO) ->
+    x_form(10#31, TO, A, B, XO, 0).
+
+td(Opnds) -> x_form_TO_A_B_XO(Opnds, 10#68). % 64-bit
+tw(Opnds) -> x_form_TO_A_B_XO(Opnds, 10#4).
 
 x_form_crbD_XO_Rc({{crb,CRBD}}, XO, Rc) ->
     x_form(10#63, CRBD, 0, 0, XO, Rc).
@@ -405,6 +480,7 @@ tlbsync(Opnds) -> x_form_XO(Opnds, 10#566). % supervisor, optional
 %%% crand, crandc, creqv, crnand, crnor, cror, crorc, crxor
 %%% mcrf
 %%% isync, rfi
+%%% rfid (64-bit)
 
 xl_form(A, B, C, XO, LK) ->
     ?BF(0,5,10#19) bor ?BF(6,10,A) bor ?BF(11,15,B) bor ?BF(16,20,C) bor ?BF(21,30,XO) bor ?BIT(31,LK).
@@ -435,6 +511,7 @@ xl_form_XO({}, XO) ->
 
 isync(Opnds) -> xl_form_XO(Opnds, 10#150).
 rfi(Opnds) -> xl_form_XO(Opnds, 10#50). % supervisor
+rfid(Opnds) -> xl_form_XO(Opnds, 10#18). % supervisor, 64-bit
 
 %%% XFX-Form Instructions
 %%% mfspr, mtspr, mftb, mtcrf
@@ -461,9 +538,20 @@ xfl_form(FM, B, Rc) ->
 
 mtfsf_Rc({{fm,FM}, {fr,B}}, Rc) -> xfl_form(FM, B, Rc).
 
+%%% XS-Form Instructions
+%%% sradi (64-bit)
+
+xs_form(S, A, SH1, XO, SH2, Rc) ->
+    ?BF(0,5,10#31) bor ?BF(6,10,S) bor ?BF(11,15,A) bor ?BF(16,20,SH1) bor ?BF(21,29,XO) bor ?BIT(30,SH2) bor ?BIT(31,Rc).
+
+sradi_Rc({{r,A}, {r,S}, {sh6,SH6}}, Rc) -> % 64-bit
+    xs_form(S, A, sh6_bits0to4(SH6), 10#413, sh6_bit5(SH6), Rc).
+
 %%% XO-Form Instructions
 %%% add, addc, adde, divw, divwu, mullw, subf, subfc, subfe
+%%% divd, divdu, mulld (64-bit)
 %%% mulhw, mulhwu
+%%% mulhd, mulhdu (64-bit)
 %%% addme, addze, neg, subfme, subfze
 
 xo_form(D, A, B, OE, XO, Rc) ->
@@ -475,13 +563,18 @@ xo_form_D_A_B_OE_XO_Rc({{r,D}, {r,A}, {r,B}}, OE, XO, Rc) ->
 add_OE_Rc(Opnds, OE, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, OE, 10#266, Rc).
 addc_OE_Rc(Opnds, OE, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, OE, 10#10, Rc).
 adde_OE_Rc(Opnds, OE, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, OE, 10#138, Rc).
+divd_OE_Rc(Opnds, OE, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, OE, 10#489, Rc). % 64-bit
+divdu_OE_Rc(Opnds, OE, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, OE, 10#457, Rc). % 64-bit
 divw_OE_Rc(Opnds, OE, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, OE, 10#491, Rc).
 divwu_OE_Rc(Opnds, OE, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, OE, 10#459, Rc).
+mulld_OE_Rc(Opnds, OE, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, OE, 10#233, Rc). % 64-bit
 mullw_OE_Rc(Opnds, OE, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, OE, 10#235, Rc).
 subf_OE_Rc(Opnds, OE, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, OE, 10#40, Rc).
 subfc_OE_Rc(Opnds, OE, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, OE, 10#8, Rc).
 subfe_OE_Rc(Opnds, OE, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, OE, 10#136, Rc).
 
+mulhd_Rc(Opnds, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, 0, 10#73, Rc). % 64-bit
+mulhdu_Rc(Opnds, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, 0, 10#9, Rc). % 64-bit
 mulhw_Rc(Opnds, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, 0, 10#75, Rc).
 mulhwu_Rc(Opnds, Rc) -> xo_form_D_A_B_OE_XO_Rc(Opnds, 0, 10#11, Rc).
 
@@ -571,6 +664,43 @@ rlwinm_Rc(Opnds, Rc) -> m_form_S_A_SH_MB_ME_Rc(10#21, Opnds, Rc).
 rlwnm_Rc({{r,A}, {r,S}, {r,B}, {mb,MB}, {me,ME}}, Rc) ->
     m_form(10#23, S, A, B, MB, ME, Rc).
 
+%%% MD-Form Instructions
+%%% rldic, rldicl, rldicr, rldimi (64-bit)
+
+md_form(S, A, SH1, MB, XO, SH2, Rc) ->
+    ?BF(0,5,10#30) bor ?BF(6,10,S) bor ?BF(11,15,A) bor ?BF(16,20,SH1) bor ?BF(21,26,MB) bor ?BF(27,29,XO) bor ?BIT(30,SH2) bor ?BIT(31,Rc).
+
+mb6_reformat(MB6) ->
+    ((MB6 band 16#1F) bsl 1) bor ((MB6 bsr 5) band 1).
+
+sh6_bits0to4(SH6) ->
+    SH6 band 16#1F.
+
+sh6_bit5(SH6) ->
+    (SH6 bsr 5) band 1.
+
+md_form_S_A_SH6_MB6_XO_Rc({{r,A}, {r,S}, {sh6,SH6}, {mb6,MB6}}, XO, Rc) ->
+    md_form(S, A, sh6_bits0to4(SH6), mb6_reformat(MB6), XO, sh6_bit5(SH6), Rc).
+
+rldic_Rc(Opnds, Rc) -> md_form_S_A_SH6_MB6_XO_Rc(Opnds, 10#2, Rc). % 64-bit
+rldicl_Rc(Opnds, Rc) -> md_form_S_A_SH6_MB6_XO_Rc(Opnds, 10#0, Rc). % 64-bit
+rldimi_Rc(Opnds, Rc) -> md_form_S_A_SH6_MB6_XO_Rc(Opnds, 10#3, Rc). % 64-bit
+
+rldicr_Rc({{r,A}, {r,S}, {sh6,SH6}, {me6,ME6}}, Rc) -> % 64-bit
+    md_form(S, A, sh6_bits0to4(SH6), mb6_reformat(ME6), 10#1, sh6_bit5(SH6), Rc).
+
+%%% MDS-Form Instructions
+%%% rldcl, rldcr (64-bit)
+
+mds_form(S, A, B, MB, XO, Rc) ->
+    ?BF(0,5,10#30) bor ?BF(6,10,S) bor ?BF(11,15,A) bor ?BF(16,20,B) bor ?BF(21,26,MB) bor ?BF(27,30,XO) bor ?BIT(31,Rc).
+
+rldcl({{r,A}, {r,S}, {r,B}, {mb6,MB6}}, Rc) -> % 64-bit
+    mds_form(S, A, B, mb6_reformat(MB6), 10#8, Rc).
+
+rldcr({{r,A}, {r,S}, {r,B}, {me6,ME6}}, Rc) -> % 64-bit
+    mds_form(S, A, B, mb6_reformat(ME6), 10#9, Rc).
+
 %%% main encode dispatch
 
 insn_encode(Op, Opnds) ->
@@ -624,9 +754,16 @@ insn_encode(Op, Opnds) ->
 	'stw' -> stw(Opnds);
 	'stwu' -> stwu(Opnds);
 	'subfic' -> subfic(Opnds);
+	'tdi' -> tdi(Opnds);
 	'twi' -> twi(Opnds);
 	'xori' -> xori(Opnds);
 	'xoris' -> xoris(Opnds);
+	%% DS-Form
+	'ld' -> ld(Opnds);
+	'ldu' -> ldu(Opnds);
+	'lwa' -> lwa(Opnds);
+	'std' -> std(Opnds);
+	'stdu' -> stdu(Opnds);
 	%% X-Form
 	'and' -> and_Rc(Opnds, 0);
 	'and.' -> and_Rc(Opnds, 1);
@@ -634,6 +771,8 @@ insn_encode(Op, Opnds) ->
 	'andc.' -> andc_Rc(Opnds, 1);
 	'cmp' -> cmp(Opnds);
 	'cmpl' -> cmpl(Opnds);
+	'cntlzd' -> cntlzd_Rc(Opnds, 0);
+	'cntlzd.' -> cntlzd_Rc(Opnds, 1);
 	'cntlzw' -> cntlzw_Rc(Opnds, 0);
 	'cntlzw.' -> cntlzw_Rc(Opnds, 1);
 	'dcba' -> dcba(Opnds);
@@ -652,10 +791,18 @@ insn_encode(Op, Opnds) ->
 	'extsb.' -> extsb_Rc(Opnds, 1);
 	'extsh' -> extsh_Rc(Opnds, 0);
 	'extsh.' -> extsh_Rc(Opnds, 1);
+	'extsw' -> extsw_Rc(Opnds, 0);
+	'extsw.' -> extsw_Rc(Opnds, 1);
 	'fabs' -> fabs_Rc(Opnds, 0);
 	'fabs.' -> fabs_Rc(Opnds, 1);
+	'fcfid' -> fcfid_Rc(Opnds, 0);
+	'fcfid.' -> fcfid_Rc(Opnds, 1);
 	'fcmpo' -> fcmpo(Opnds);
 	'fcmpu' -> fcmpu(Opnds);
+	'fctid' -> fctid_Rc(Opnds, 0);
+	'fctid.' -> fctid_Rc(Opnds, 1);
+	'fctidz' -> fctidz_Rc(Opnds, 0);
+	'fctidz.' -> fctidz_Rc(Opnds, 1);
 	'fctiw' -> fctiw_Rc(Opnds, 0);
 	'fctiw.' -> fctiw_Rc(Opnds, 1);
 	'fctiwz' -> fctiwz_Rc(Opnds, 0);
@@ -671,6 +818,9 @@ insn_encode(Op, Opnds) ->
 	'icbi' -> icbi(Opnds);
 	'lbzux' -> lbzux(Opnds);
 	'lbzx' -> lbzx(Opnds);
+	'ldarx' -> ldarx(Opnds);
+	'ldux' -> ldux(Opnds);
+	'ldx' -> ldx(Opnds);
 	'lfdux' -> lfdux(Opnds);
 	'lfdx' -> lfdx(Opnds);
 	'lfsux' -> lfsux(Opnds);
@@ -683,6 +833,8 @@ insn_encode(Op, Opnds) ->
 	'lswi' -> lswi(Opnds);
 	'lswx' -> lswx(Opnds);
 	'lwarx' -> lwarx(Opnds);
+	'lwaux' -> lwaux(Opnds);
+	'lwax' -> lwax(Opnds);
 	'lwbrx' -> lwbrx(Opnds);
 	'lwzux' -> lwzux(Opnds);
 	'lwzx' -> lwzx(Opnds);
@@ -701,7 +853,11 @@ insn_encode(Op, Opnds) ->
 	'mtfsfi' -> mtfsfi_Rc(Opnds, 0);
 	'mtfsfi.' -> mtfsfi_Rc(Opnds, 1);
 	'mtmsr' -> mtmsr(Opnds);
+	'mtmsrd' -> mtmsrd(Opnds);
 	'mtsr' -> mtsr(Opnds);
+	'mtsrd' -> mtsrd(Opnds);
+	'mtsrdin' -> mtsrdin(Opnds);
+	'mtsrin' -> mtsrin(Opnds);
 	'nand' -> nand_Rc(Opnds, 0);
 	'nand.' -> nand_Rc(Opnds, 1);
 	'nor' -> nor_Rc(Opnds, 0);
@@ -710,16 +866,27 @@ insn_encode(Op, Opnds) ->
 	'or.' -> or_Rc(Opnds, 1);
 	'orc' -> orc_Rc(Opnds, 0);
 	'orc.' -> orc_Rc(Opnds, 1);
+	'slbia' -> slbia(Opnds);
+	'slbie' -> slbie(Opnds);
+	'sld' -> sld_Rc(Opnds, 0);
+	'sld.' -> sld_Rc(Opnds, 1);
 	'slw' -> slw_Rc(Opnds, 0);
 	'slw.' -> slw_Rc(Opnds, 1);
+	'srad' -> srad_Rc(Opnds, 0);
+	'srad.' -> srad_Rc(Opnds, 1);
 	'sraw' -> sraw_Rc(Opnds, 0);
 	'sraw.' -> sraw_Rc(Opnds, 1);
 	'srawi' -> srawi_Rc(Opnds, 0);
 	'srawi.' -> srawi_Rc(Opnds, 1);
+	'srd' -> srd_Rc(Opnds, 0);
+	'srd.' -> srd_Rc(Opnds, 1);
 	'srw' -> srw_Rc(Opnds, 0);
 	'srw.' -> srw_Rc(Opnds, 1);
 	'stbux' -> stbux(Opnds);
 	'stbx' -> stbx(Opnds);
+	'stdcx.' -> stdcx_dot(Opnds);
+	'stdux' -> stdux(Opnds);
+	'stdx' -> stdx(Opnds);	
 	'stfdux' -> stfdux(Opnds);
 	'stfdx' -> stfdx(Opnds);
 	'stfiwx' -> stfiwx(Opnds);
@@ -735,6 +902,7 @@ insn_encode(Op, Opnds) ->
 	'stwux' -> stwux(Opnds);
 	'stwx' -> stwx(Opnds);
 	'sync' -> sync(Opnds);
+	'td' -> td(Opnds);
 	'tlbia' -> tlbia(Opnds);	% not implemented in MPC603e or MPC7450
 	'tlbie' -> tlbie(Opnds);
 	'tlbld' -> tlbld(Opnds);
@@ -759,6 +927,7 @@ insn_encode(Op, Opnds) ->
 	'isync' -> isync(Opnds);
 	'mcrf' -> mcrf(Opnds);
 	'rfi' -> rfi(Opnds);
+	'rfid' -> rfid(Opnds);
 	%% XFX-Form
 	'mfspr' -> mfspr(Opnds);
 	'mftb' -> mftb(Opnds);
@@ -767,6 +936,9 @@ insn_encode(Op, Opnds) ->
 	%% XFL-Form
 	'mtfsf' -> mtfsf_Rc(Opnds, 0);
 	'mtfsf.' -> mtfsf_Rc(Opnds, 1);
+	%% XS-Form
+	'sradi' -> sradi_Rc(Opnds, 0);
+	'sradi.' -> sradi_Rc(Opnds, 1);
 	%% XO-Form
 	'add' -> add_OE_Rc(Opnds, 0, 0);
 	'add.' -> add_OE_Rc(Opnds, 0, 1);
@@ -788,6 +960,14 @@ insn_encode(Op, Opnds) ->
 	'addze.' -> addze_OE_Rc(Opnds, 0, 1);
 	'addzeo' -> addze_OE_Rc(Opnds, 1, 0);
 	'addzeo.' -> addze_OE_Rc(Opnds, 1, 1);
+	'divd' -> divd_OE_Rc(Opnds, 0, 0);
+	'divd.' -> divd_OE_Rc(Opnds, 0, 1);
+	'divdo' -> divd_OE_Rc(Opnds, 1, 0);
+	'divdo.' -> divd_OE_Rc(Opnds, 1, 1);
+	'divdu' -> divdu_OE_Rc(Opnds, 0, 0);
+	'divdu.' -> divdu_OE_Rc(Opnds, 0, 1);
+	'divduo' -> divdu_OE_Rc(Opnds, 1, 0);
+	'divduo.' -> divdu_OE_Rc(Opnds, 1, 1);
 	'divw' -> divw_OE_Rc(Opnds, 0, 0);
 	'divw.' -> divw_OE_Rc(Opnds, 0, 1);
 	'divwo' -> divw_OE_Rc(Opnds, 1, 0);
@@ -796,10 +976,18 @@ insn_encode(Op, Opnds) ->
 	'divwu.' -> divwu_OE_Rc(Opnds, 0, 1);
 	'divwuo' -> divwu_OE_Rc(Opnds, 1, 0);
 	'divwuo.' -> divwu_OE_Rc(Opnds, 1, 1);
+	'mulhd' -> mulhd_Rc(Opnds, 0);
+	'mulhd.' -> mulhd_Rc(Opnds, 1);
+	'mulhdu' -> mulhdu_Rc(Opnds, 0);
+	'mulhdu.' -> mulhdu_Rc(Opnds, 1);
 	'mulhw' -> mulhw_Rc(Opnds, 0);
 	'mulhw.' -> mulhw_Rc(Opnds, 1);
 	'mulhwu' -> mulhwu_Rc(Opnds, 0);
 	'mulhwu.' -> mulhwu_Rc(Opnds, 1);
+	'mulld' -> mulld_OE_Rc(Opnds, 0, 0);
+	'mulld.' -> mulld_OE_Rc(Opnds, 0, 1);
+	'mulldo' -> mulld_OE_Rc(Opnds, 1, 0);
+	'mulldo.' -> mulld_OE_Rc(Opnds, 1, 1);
 	'mullw' -> mullw_OE_Rc(Opnds, 0, 0);
 	'mullw.' -> mullw_OE_Rc(Opnds, 0, 1);
 	'mullwo' -> mullw_OE_Rc(Opnds, 1, 0);
@@ -878,6 +1066,20 @@ insn_encode(Op, Opnds) ->
 	'rlwinm.' -> rlwinm_Rc(Opnds, 1);
 	'rlwnm' -> rlwnm_Rc(Opnds, 0);
 	'rlwnm.' -> rlwnm_Rc(Opnds, 1);
+	%% MD-Form
+	'rldic' -> rldic_Rc(Opnds, 0);
+	'rldic.' -> rldic_Rc(Opnds, 1);
+	'rldicl' -> rldicl_Rc(Opnds, 0);
+	'rldicl.' -> rldicl_Rc(Opnds, 1);
+	'rldicr' -> rldicr_Rc(Opnds, 0);
+	'rldicr.' -> rldicr_Rc(Opnds, 1);
+	'rldimi' -> rldimi_Rc(Opnds, 0);
+	'rldimi.' -> rldimi_Rc(Opnds, 1);
+	%% MDS-Form
+	'rldcl' -> rldcl(Opnds, 0);
+	'rldcl.' -> rldcl(Opnds, 1);
+	'rldcr' -> rldcr(Opnds, 0);
+	'rldcr.' -> rldcr(Opnds, 1);
 	_ -> exit({?MODULE,insn_encode,Op})
     end.
 
@@ -922,6 +1124,7 @@ dotest1(OS) ->
     F6 = {fr,6},
     F8 = {fr,8},
     DispM3 = {d,16#FFFD},
+    DS = {ds,16#FFFD bsr 2},
     SIMM99 = {simm,10#99},
     UIMM4711 = {uimm,10#4711},
     TO_LLE = {to, 2#00110},	% =, <U
@@ -938,8 +1141,11 @@ dotest1(OS) ->
     SR9 = {sr,9},
     NB7 = {nb,7},
     SH16 = {sh,16},
+    SH45 = {sh6,45},
     MB10 = {mb,10},
+    MB40 = {mb6,40},
     ME20 = {me,20},
+    ME50 = {me6,50},
     LI = {li,16#ffffff},
     BD = {bd,16#3ff},
     BO_NZ_PLUS = {bo,2#01101},	% branch if cond true, predict taken
@@ -964,7 +1170,9 @@ dotest1(OS) ->
     t(OS,'andi.',{R14,R10,UIMM4711}),
     t(OS,'andis.',{R14,R10,UIMM4711}),
     t(OS,'cmpi',{CR7,0,R10,SIMM99}),
+    t(OS,'cmpi',{CR7,1,R10,SIMM99}),
     t(OS,'cmpli',{CR7,0,R10,UIMM4711}),
+    t(OS,'cmpli',{CR7,1,R10,UIMM4711}),
     t(OS,'lbz',{R14,DispM3,R10}),
     t(OS,'lbzu',{R14,DispM3,R10}),
     t(OS,'lfd',{F2,DispM3,R10}),
@@ -993,16 +1201,27 @@ dotest1(OS) ->
     t(OS,'stw',{R14,DispM3,R10}),
     t(OS,'stwu',{R14,DispM3,R10}),
     t(OS,'subfic',{R14,R10,SIMM99}),
+    t(OS,'tdi',{TO_LLE,R10,SIMM99}),
     t(OS,'twi',{TO_LLE,R10,SIMM99}),
     t(OS,'xori',{R14,R10,UIMM4711}),
     t(OS,'xoris',{R14,R10,UIMM4711}),
+    %% DS-Form
+    t(OS,'ld',{R14,DS,R10}),
+    t(OS,'ldu',{R14,DS,R10}),
+    t(OS,'lwa',{R14,DS,R10}),
+    t(OS,'std',{R14,DS,R10}),
+    t(OS,'stdu',{R14,DS,R10}),
     %% X-Form
     t(OS,'and',{R14,R10,R11}),
     t(OS,'and.',{R14,R10,R11}),
     t(OS,'andc',{R14,R10,R11}),
     t(OS,'andc.',{R14,R10,R11}),
     t(OS,'cmp',{CR7,0,R10,R11}),
+    t(OS,'cmp',{CR7,1,R10,R11}),
     t(OS,'cmpl',{CR7,0,R10,R11}),
+    t(OS,'cmpl',{CR7,1,R10,R11}),
+    t(OS,'cntlzd',{R14,R10}),
+    t(OS,'cntlzd.',{R14,R10}),
     t(OS,'cntlzw',{R14,R10}),
     t(OS,'cntlzw.',{R14,R10}),
     t(OS,'dcba',{R10,R11}),
@@ -1021,10 +1240,18 @@ dotest1(OS) ->
     t(OS,'extsb.',{R14,R10}),
     t(OS,'extsh',{R14,R10}),
     t(OS,'extsh.',{R14,R10}),
+    t(OS,'extsw',{R14,R10}),
+    t(OS,'extsw.',{R14,R10}),
     t(OS,'fabs',{F2,F8}),
     t(OS,'fabs.',{F2,F8}),
+    t(OS,'fcfid',{F2,F8}),
+    t(OS,'fcfid.',{F2,F8}),
     t(OS,'fcmpo',{CR7,F4,F8}),
     t(OS,'fcmpu',{CR7,F4,F8}),
+    t(OS,'fctid',{F2,F8}),
+    t(OS,'fctid.',{F2,F8}),
+    t(OS,'fctidz',{F2,F8}),
+    t(OS,'fctidz.',{F2,F8}),
     t(OS,'fctiw',{F2,F8}),
     t(OS,'fctiw.',{F2,F8}),
     t(OS,'fctiwz',{F2,F8}),
@@ -1040,6 +1267,9 @@ dotest1(OS) ->
     t(OS,'icbi',{R10,R11}),
     t(OS,'lbzux',{R14,R10,R11}),
     t(OS,'lbzx',{R14,R10,R11}),
+    t(OS,'ldarx',{R14,R10,R11}),
+    t(OS,'ldux',{R14,R10,R11}),
+    t(OS,'ldx',{R14,R10,R11}),
     t(OS,'lfdux',{F2,R10,R11}),
     t(OS,'lfdx',{F2,R10,R11}),
     t(OS,'lfsux',{F2,R10,R11}),
@@ -1052,6 +1282,8 @@ dotest1(OS) ->
     t(OS,'lswi',{R14,R10,NB7}),
     t(OS,'lswx',{R14,R10,R11}),
     t(OS,'lwarx',{R14,R10,R11}),
+    t(OS,'lwaux',{R14,R10,R11}),
+    t(OS,'lwax',{R14,R10,R11}),
     t(OS,'lwbrx',{R14,R10,R11}),
     t(OS,'lwzux',{R14,R10,R11}),
     t(OS,'lwzx',{R14,R10,R11}),
@@ -1070,7 +1302,11 @@ dotest1(OS) ->
     t(OS,'mtfsfi',{CR7,CRIMM15}),
     t(OS,'mtfsfi.',{CR7,CRIMM15}),
     t(OS,'mtmsr',{R14}),
+    t(OS,'mtmsrd',{R14}),
     t(OS,'mtsr',{SR9,R14}),
+    t(OS,'mtsrd',{SR9,R14}),
+    t(OS,'mtsrdin',{R14,R11}),
+    t(OS,'mtsrin',{R14,R11}),
     t(OS,'nand',{R14,R10,R11}),
     t(OS,'nand.',{R14,R10,R11}),
     t(OS,'nor',{R14,R10,R11}),
@@ -1079,16 +1315,27 @@ dotest1(OS) ->
     t(OS,'or.',{R14,R10,R11}),
     t(OS,'orc',{R14,R10,R11}),
     t(OS,'orc.',{R14,R10,R11}),
+    t(OS,'slbia',{}),
+    t(OS,'slbie',{R11}),
+    t(OS,'sld',{R14,R10,R11}),
+    t(OS,'sld.',{R14,R10,R11}),
     t(OS,'slw',{R14,R10,R11}),
     t(OS,'slw.',{R14,R10,R11}),
+    t(OS,'srad',{R14,R10,R11}),
+    t(OS,'srad.',{R14,R10,R11}),
     t(OS,'sraw',{R14,R10,R11}),
     t(OS,'sraw.',{R14,R10,R11}),
     t(OS,'srawi',{R14,R10,SH16}),
     t(OS,'srawi.',{R14,R10,SH16}),
+    t(OS,'srd',{R14,R10,R11}),
+    t(OS,'srd.',{R14,R10,R11}),
     t(OS,'srw',{R14,R10,R11}),
     t(OS,'srw.',{R14,R10,R11}),
     t(OS,'stbux',{R14,R10,R11}),
     t(OS,'stbx',{R14,R10,R11}),
+    t(OS,'stdcx.',{R14,R10,R11}),
+    t(OS,'stdux',{R14,R10,R11}),
+    t(OS,'stdx',{R14,R10,R11}),
     t(OS,'stfdux',{F2,R10,R11}),
     t(OS,'stfdx',{F2,R10,R11}),
     t(OS,'stfiwx',{F2,R10,R11}),
@@ -1104,6 +1351,7 @@ dotest1(OS) ->
     t(OS,'stwux',{R14,R10,R11}),
     t(OS,'stwx',{R14,R10,R11}),
     t(OS,'sync',{}),
+    t(OS,'td',{TO_LLE,R10,R11}),
     t(OS,'tlbia',{}),
     t(OS,'tlbie',{R11}),
     t(OS,'tlbld',{R11}),
@@ -1128,6 +1376,7 @@ dotest1(OS) ->
     t(OS,'isync',{}),
     t(OS,'mcrf',{CR7,CR5}),
     t(OS,'rfi',{}),
+    t(OS,'rfid',{}),
     %% XFX-Form
     t(OS,'mfspr',{R14,SPR9}),
     t(OS,'mftb',{R14,TBR268}),
@@ -1136,6 +1385,9 @@ dotest1(OS) ->
     %% XFL-Form
     t(OS,'mtfsf',{FM255,F8}),
     t(OS,'mtfsf.',{FM255,F8}),
+    %% XS-Form
+    t(OS,'sradi',{R14,R10,SH45}),
+    t(OS,'sradi.',{R14,R10,SH45}),
     %% XO-Form
     t(OS,'add',{R14,R10,R11}),
     t(OS,'add.',{R14,R10,R11}),
@@ -1157,6 +1409,14 @@ dotest1(OS) ->
     t(OS,'addze.',{R14,R10}),
     t(OS,'addzeo',{R14,R10}),
     t(OS,'addzeo.',{R14,R10}),
+    t(OS,'divd',{R14,R10,R11}),
+    t(OS,'divd.',{R14,R10,R11}),
+    t(OS,'divdo',{R14,R10,R11}),
+    t(OS,'divdo.',{R14,R10,R11}),
+    t(OS,'divdu',{R14,R10,R11}),
+    t(OS,'divdu.',{R14,R10,R11}),
+    t(OS,'divduo',{R14,R10,R11}),
+    t(OS,'divduo.',{R14,R10,R11}),
     t(OS,'divw',{R14,R10,R11}),
     t(OS,'divw.',{R14,R10,R11}),
     t(OS,'divwo',{R14,R10,R11}),
@@ -1165,10 +1425,18 @@ dotest1(OS) ->
     t(OS,'divwu.',{R14,R10,R11}),
     t(OS,'divwuo',{R14,R10,R11}),
     t(OS,'divwuo.',{R14,R10,R11}),
+    t(OS,'mulhd',{R14,R10,R11}),
+    t(OS,'mulhd.',{R14,R10,R11}),
+    t(OS,'mulhdu',{R14,R10,R11}),
+    t(OS,'mulhdu.',{R14,R10,R11}),
     t(OS,'mulhw',{R14,R10,R11}),
     t(OS,'mulhw.',{R14,R10,R11}),
     t(OS,'mulhwu',{R14,R10,R11}),
     t(OS,'mulhwu.',{R14,R10,R11}),
+    t(OS,'mulld',{R14,R10,R11}),
+    t(OS,'mulld.',{R14,R10,R11}),
+    t(OS,'mulldo',{R14,R10,R11}),
+    t(OS,'mulldo.',{R14,R10,R11}),
     t(OS,'mullw',{R14,R10,R11}),
     t(OS,'mullw.',{R14,R10,R11}),
     t(OS,'mullwo',{R14,R10,R11}),
@@ -1247,6 +1515,20 @@ dotest1(OS) ->
     t(OS,'rlwinm.',{R14,R10,SH16,MB10,ME20}),
     t(OS,'rlwnm',{R14,R10,R11,MB10,ME20}),
     t(OS,'rlwnm.',{R14,R10,R11,MB10,ME20}),
+    %% MD-Form
+    t(OS,'rldic',{R14,R10,SH45,MB40}),
+    t(OS,'rldic.',{R14,R10,SH45,MB40}),
+    t(OS,'rldicl',{R14,R10,SH45,MB40}),
+    t(OS,'rldicl.',{R14,R10,SH45,MB40}),
+    t(OS,'rldicr',{R14,R10,SH45,ME50}),
+    t(OS,'rldicr.',{R14,R10,SH45,ME50}),
+    t(OS,'rldimi',{R14,R10,SH45,MB40}),
+    t(OS,'rldimi.',{R14,R10,SH45,MB40}),
+    %% MDS-Form
+    t(OS,'rldcl',{R14,R10,R11,MB40}),
+    t(OS,'rldcl.',{R14,R10,R11,MB40}),
+    t(OS,'rldcr',{R14,R10,R11,ME50}),
+    t(OS,'rldcr.',{R14,R10,R11,ME50}),
     [].
 
 dotest() -> dotest1(group_leader()).

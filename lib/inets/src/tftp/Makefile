@@ -38,9 +38,14 @@ RELSYSDIR = $(RELEASE_PATH)/lib/inets-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 MODULES = \
+	tftp \
+	tftp_binary \
+	tftp_engine \
+	tftp_file \
+	tftp_lib \
 	tftp_sup 
 
-HRL_FILES = 
+HRL_FILES = tftp.hrl
 
 ERL_FILES = $(MODULES:%=%.erl)
 

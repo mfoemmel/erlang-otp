@@ -6,9 +6,9 @@
 %%              
 %%  History  :	* 2000-11-03 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2004/12/09 21:07:45 $
-%%              $Revision: 1.3 $
+%%              $Author: dalu7049 $
+%%              $Date: 2005/02/22 15:12:55 $
+%%              $Revision: 1.4 $
 %% ====================================================================
 %%
 %% Defines:
@@ -152,11 +152,11 @@
 -define(get_hipe_timer_val(Timer), get(Timer)).
 -define(set_hipe_timer_val(Timer, Val), put(Timer, Val)).
 -define(option_time(Stmnt, Text, Options),
-	?when_option(time, Options, ?start_timer(Text)),
-	fun(R) ->
-	    ?when_option(time, Options, ?stop_timer(Text)),
-	    R
-	end(Stmnt)).
+        if true -> ?when_option(time, Options, ?start_timer(Text)),
+                   fun(R) ->
+                           ?when_option(time, Options, ?stop_timer(Text)),
+                           R
+                   end(Stmnt)end).
 
 -define(option_start_time(Text,Options),
 	?when_option(time, Options, ?start_timer(Text))).

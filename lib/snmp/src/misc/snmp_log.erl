@@ -32,6 +32,9 @@
 -define(VMODULE,"LOG").
 -include("snmp_verbosity.hrl").
 
+-define(LOG_FORMAT, internal).
+-define(LOG_TYPE,   wrap).
+
 
 %% --------------------------------------------------------------------
 %% Exported functions
@@ -41,20 +44,28 @@
 %% -- create ---
 
 create(Name, File, Size, Repair) ->
+    ?vtrace("create -> entry with"
+	    "~n   Name:   ~p"
+	    "~n   File:   ~p"
+	    "~n   Size:   ~p"
+	    "~n   Repair: ~p", [Name, File, Size, Repair]),
     log_open(Name, File, Size, Repair).
     
 
 %% -- close ---
 
 close(Log) ->
+    ?vtrace("close -> entry with"
+	    "~n   Log: ~p", [Log]),
     disk_log:close(Log).
 
 
 %% -- close ---
 
 sync(Log) ->
+    ?vtrace("sync -> entry with"
+	    "~n   Log: ~p", [Log]),
     disk_log:sync(Log).
-
 
 %% -- info ---
 
@@ -90,16 +101,23 @@ info_filter([Item|Items], Info, Acc) ->
 %% log(Log, Packet, Addr, Port)
 %%-----------------------------------------------------------------
 
+
 log(Log, Packet, Addr, Port) ->
+    ?vtrace("log -> entry with"
+	    "~n   Log:  ~p"
+	    "~n   Addr: ~p"
+	    "~n   Port: ~p", [Log, Addr, Port]),
     Entry = {timestamp(), Packet, Addr, Port},
     disk_log:alog(Log, Entry).
-
 
 
 
 %% -- change_size ---
 
 change_size(Log, NewSize) ->
+    ?vtrace("change_size -> entry with"
+	    "~n   Log:     ~p"
+	    "~n   NewSize: ~p", [Log, NewSize]),
     disk_log:change_size(Log, NewSize).
 
 
@@ -113,6 +131,15 @@ log_to_txt(Log, FileName, Dir, Mibs, TextFile, Start) ->
 
 log_to_txt(Log, FileName, Dir, Mibs, TextFile, Start, Stop) 
   when list(Mibs), list(TextFile) ->
+    ?vtrace("log_to_txt -> entry with"
+	    "~n   Log:      ~p"
+	    "~n   FileName: ~p"
+	    "~n   Dir:      ~p"
+	    "~n   Mibs:     ~p"
+	    "~n   TextFile: ~p"
+	    "~n   Start:    ~p"
+	    "~n   Stop:     ~p", 
+	    [Log, FileName, Dir, Mibs, TextFile, Start, Stop]),
     File = filename:join(Dir, FileName),
     Converter = fun() ->
 			do_log_to_file(Log, TextFile, Mibs, Start, Stop)
@@ -153,10 +180,14 @@ log_convert(Log, File, Converter) ->
 	    Converter();
 	false ->
 	    %% Not yet member of the ruling party, apply for membership...
-	    case log_open(Log, File) of
+	    %% If a log is opened as read_write it is not possible to 
+	    %% open it as read_only. So, to get around this we open 
+	    %% it under a different name...
+	    Log2 = convert_name(Log),
+	    case log_open(Log2, File) of
 		{ok, _} ->
 		    Res = Converter(),
-		    disk_log:close(Log),
+		    disk_log:close(Log2),
 		    Res;
 		{error, {name_already_open, _}} ->
                     Converter();
@@ -164,6 +195,13 @@ log_convert(Log, File, Converter) ->
                     {error, {Log, Reason}}
 	    end
     end.
+
+convert_name(Name) when list(Name) ->
+    Name ++ "_tmp";
+convert_name(Name) when atom(Name) ->
+    list_to_atom(atom_to_list(Name) ++ "_txt");
+convert_name(Name) ->
+    lists:flatten(io_lib:format("~w_txt", [Name])).
 
 
 %% -- do_log_to_text ---
@@ -417,8 +455,8 @@ log_open(Name, File, Size, Repair) ->
 do_log_open(Name, File, Size, Repair) ->
     Opts = [{name,   Name},
 	    {file,   File},
-	    {type,   wrap},
-	    {format, internal},
+	    {type,   ?LOG_TYPE},
+	    {format, ?LOG_FORMAT},
 	    {mode,   read_write},
 	    {repair, Repair}],
     case disk_log:open(Opts) of
@@ -430,7 +468,11 @@ do_log_open(Name, File, Size, Repair) ->
     end.
 
 log_open(Name, File) ->
-    Opts = [{name, Name}, {file, File}, {mode, read_only}],
+    Opts = [{name,   Name}, 
+	    {file,   File}, 
+	    {type,   ?LOG_TYPE},
+	    {format, ?LOG_FORMAT},	    
+	    {mode,   read_only}],
     disk_log:open(Opts).
 
 clean_dir(Dir) ->

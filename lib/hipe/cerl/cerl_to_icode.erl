@@ -285,10 +285,10 @@ function_1(Name, Fun, Degree, S) ->
     %% Create input variables for the function parameters, and a list of
     %% target variables for the result of the function.
     Args = cerl:fun_vars(Fun),
-    RealArity = length(Args),
+    IcodeArity = length(Args),
     ArgType = get_arg_types(Fun),
-    Vs = make_vars(RealArity),
-    Vs1 = make_vars(RealArity),    % input variable temporaries
+    Vs = make_vars(IcodeArity),
+    Vs1 = make_vars(IcodeArity),    % input variable temporaries
     Ts = make_vars(Degree),
 
     %% Initialise environment and context.
@@ -318,8 +318,14 @@ function_1(Name, Fun, Degree, S) ->
     Code = s__get_code(S2),
     Function = icode_icode(Module, Name, Vs1, Closure, Code,
 			   {LowV, HighV}, {LowL, HighL}, ArgType),
-    {Function, S2}.
-
+    if Closure -> 
+	    {value, {_, OrigArity}} =
+		lists:keysearch(closure_orig_arity, 1, cerl:get_ann(Fun)),
+	    {hipe_icode:icode_closure_arity_update(Function, 
+						   OrigArity), 
+	     S2};
+       true -> {Function, S2}
+    end.
 
 %% ---------------------------------------------------------------------
 %% Main expression handler
@@ -2588,7 +2594,17 @@ make_reg() ->
     icode_reg(new_var()).
 
 get_arg_types(Fun) ->
-    get_type(cerl:fun_vars(Fun)).
+    Type = get_typesig(Fun),
+    case erl_types:t_is_fun(Type) of
+	true -> erl_types:t_fun_args(Type);
+	false -> get_type(cerl:fun_vars(Fun))
+    end.
+
+get_typesig(E) ->
+    case lists:keysearch(typesig, 1, cerl:get_ann(E)) of
+	{value, {typesig, Type}} -> Type;
+	false -> erl_types:t_any()
+    end.
 
 get_type(List) when is_list(List)->
     get_type_list(List, []);

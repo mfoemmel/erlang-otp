@@ -16,9 +16,7 @@
 %%     $Id$
 %%
 
-%% shell_default is intended for 'rolling you own'
-%% add or remove code as you feel free
-%% This is just a empty template which calls routoines in the modulke c
+%% This is just a empty template which calls routines in the module c
 %% to do all the work!
 
 -module(shell_default).
@@ -26,7 +24,7 @@
 -export([help/0,lc/1,c/1,c/2,nc/1,nl/1,l/1,i/0,pid/3,i/3,m/0,m/1,
          memory/0,memory/1,
 	 erlangrc/1,bi/1, regs/0, flush/0,pwd/0,ls/0,ls/1,cd/1, 
-	 zi/0, bt/1, q/0,
+	 bt/1, q/0,
 	 ni/0, nregs/0]).
 
 -export([ih/0,iv/0,im/0,ii/1,ii/2,iq/1,ini/1,ini/2,inq/1,ib/2,ib/3,
@@ -37,30 +35,30 @@
 -import(io, [format/1]).
 
 help() ->
-    format('** shell internal commands **~n'),
-    format('b()        -- display all variable bindings~n'),
-    format('e(N)       -- repeat the expression in query <N>~n'),
-    format('f()        -- forget all variable bindings~n'),
-    format('f(X)       -- forget the binding of variable X~n'),
-    format('h()        -- history~n'),    
-    format('history(N) -- set how many previous commands to keep\n'),
-    format('results(N) -- set how many previous command results to keep\n'),
-    format('v(N)       -- use the value of query <N>~n'),
-    format('rd(R,D)    -- define a record~n'),
-    format('rf()       -- remove all record information~n'),
-    format('rf(R)      -- remove record information about R~n'),
-    format('rl()       -- display all record information~n'),
-    format('rl(R)      -- display record information about R~n'),
-    format('rp(Term)   -- display Term using the shell\'s record information~n'),
-    format('rr(File)   -- read record information from File (wildcards allowed)~n'),
-    format('rr(F,R)    -- read selected record information from file(s)~n'),
-    format('rr(F,R,O)  -- read selected record information with options~n'),
-    format('** commands in module c **~n'),
+    format("** shell internal commands **~n"),
+    format("b()        -- display all variable bindings\n"),
+    format("e(N)       -- repeat the expression in query <N>\n"),
+    format("f()        -- forget all variable bindings\n"),
+    format("f(X)       -- forget the binding of variable X\n"),
+    format("h()        -- history\n"),    
+    format("history(N) -- set how many previous commands to keep\n"),
+    format("results(N) -- set how many previous command results to keep\n"),
+    format("v(N)       -- use the value of query <N>\n"),
+    format("rd(R,D)    -- define a record\n"),
+    format("rf()       -- remove all record information\n"),
+    format("rf(R)      -- remove record information about R\n"),
+    format("rl()       -- display all record information\n"),
+    format("rl(R)      -- display record information about R\n"),
+    format("rp(Term)   -- display Term using the shell's record information\n"),
+    format("rr(File)   -- read record information from File (wildcards allowed)\n"),
+    format("rr(F,R)    -- read selected record information from file(s)\n"),
+    format("rr(F,R,O)  -- read selected record information with options\n"),
+    format("** commands in module c **\n"),
     c:help(),
-    format('** commands in module i (interpreter interface) **~n'),
-    format('ih()       -- print help for the i module~n'),
-    %% format('** private commands ** ~n'),
-    %% format('myfunc()   -- does my operation ...\n'),
+    format("** commands in module i (interpreter interface) **\n"),
+    format("ih()       -- print help for the i module\n"),
+    %% format("** private commands ** \n"),
+    %% format("myfunc()   -- does my operation ...\n"),
     true.
 
 %% these are in alphabetic order it would be nice if they
@@ -91,7 +89,6 @@ pid(X,Y,Z) 	-> c:pid(X,Y,Z).
 pwd()           -> c:pwd().
 q()		-> c:q().
 regs()          -> c:regs().
-zi() 		-> c:zi().
 
 iaa(Flag)       -> i:iaa(Flag).
 iaa(Flag,Fnk)   -> i:iaa(Flag,Fnk).

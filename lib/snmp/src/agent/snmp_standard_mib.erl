@@ -39,6 +39,7 @@
 	 inc/1, inc/2]).
 -export([dummy/1, snmp_set_serial_no/1, snmp_set_serial_no/2]).
 -export([add_agent_caps/2, del_agent_caps/1, get_agent_caps/0]).
+-export([check_standard/1]).
 
 
 %%-----------------------------------------------------------------

@@ -95,7 +95,9 @@
 #ifdef BSD4_4
 #include <sys/types.h>
 #include <sys/sysctl.h>
+#ifndef __OpenBSD__
 #include <vm/vm_param.h>
+#endif
 #ifdef __FreeBSD__
 #include <sys/vmmeter.h>
 #endif

@@ -1641,7 +1641,10 @@ merge_clauses([], _Fun, Result) ->
     reverse(Result).
 
 merge_functions([{_MFA,R}|Functions], MFun) ->
-    merge_functions(Functions, MFun, R).
+    merge_functions(Functions, MFun, R);
+merge_functions([],_MFun) ->         % There are no clauses.
+    {0,0}.                           % No function can be covered or notcov.
+
 merge_functions([{_MFA,R}|Functions], MFun, Result) ->
     merge_functions(Functions, MFun, MFun(Result, R));
 merge_functions([], _MFun, Result) ->

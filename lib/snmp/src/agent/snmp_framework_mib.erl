@@ -38,8 +38,7 @@
 %% External exports
 -export([init/0, configure/1]).
 -export([intContextTable/1, intContextTable/3,
-	 intAgentUDPPort/1,
-	 intAgentIpAddress/1,
+	 intAgentUDPPort/1, intAgentIpAddress/1,
 	 snmpEngineID/1,
 	 snmpEngineBoots/1,
 	 snmpEngineTime/1,
@@ -49,6 +48,7 @@
 	 set_engine_boots/1, set_engine_time/1,
 	 table_next/2, check_status/3]).
 -export([add_context/1, delete_context/1]).
+-export([check_agent/1, check_context/1]).
 
 
 %%-----------------------------------------------------------------
@@ -225,7 +225,7 @@ init_tabs(Contexts) ->
 init_context_table([Row | T]) ->
     Context = element(1, Row),
     Key = [length(Context) | Context],
-    ?vtrace("create intContextTable table row for: ~s",[Key]),
+    ?vtrace("create intContextTable table row for: ~w",[Key]),
     snmpa_local_db:table_create_row(db(intContextTable), Key, Row),
     init_context_table(T);
 init_context_table([]) -> true.

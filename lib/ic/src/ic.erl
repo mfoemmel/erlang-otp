@@ -291,27 +291,25 @@ main(G, File, _Opts) ->
 	true -> help();
 
 	_ ->
-	    scaning(G, File)
+	    scanning(G, File)
     end.
 
 
 
-scaning(G, File) ->
+scanning(G, File) ->
     S = ?ifopt2(G, time,
 	       time("input file scanning  ", ic, do_scan, [G]),
 	       ic:do_scan(G)),
-    ?ifopt(G, tokens, io:format("TOKENS: ~p~n", [S])),
-    parsing(G, File, S).
-
-
+    ?ifopt2(G, tokens, io:format("TOKENS: ~p~n", [S]), 
+				 parsing(G, File, S)).
 
 parsing(G, File, S) ->
     T = ?ifopt2(G, 
 		time, 
 		time("input file parsing   ", ic, do_parse, [G,S]),
 		ic:do_parse(G,S)),
-    ?ifopt(G, form, io:format("PARSE FORM: ~p~n", [T])),
-    pragma(G, File, T).
+    ?ifopt2(G, form, io:format("PARSE FORM: ~p~n", [T]), 
+	     pragma(G, File, T)).
 
 
 
@@ -339,9 +337,8 @@ typing(G, File, Clean) ->
 	    error;
        
 	T2 ->	    
-	    ?ifopt(G, tform, io:format("TYPE FORM: ~p~n", [T2])),
-        
-	    generation(G, File, T2)
+	    ?ifopt2(G, tform, io:format("TYPE FORM: ~p~n", [T2]),
+		    generation(G, File, T2))
     end.
 
 

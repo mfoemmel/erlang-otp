@@ -320,28 +320,20 @@ dsend({Name, Node}, Msg, Opts) ->
     end.
 
 dmonitor_p(process, ProcSpec) ->
-    {_Proc, Node} =
-	case ProcSpec of
-	    _ when pid(ProcSpec) ->
-		{ProcSpec, node(ProcSpec)};
-	    %% N when atom(N) -> will not happen since that
-	    %% is a local name and will not require a 
-	    %% net_kernel:connect().
-	    {S, N} when atom(S), atom(N), N /= node() ->
-		ProcSpec
-	end,
+    %% ProcSpec = pid() | {atom(),atom()}
+    %% ProcSpec CANNOT be an atom because a locally registered process
+    %% is never handled here.
+
+    Node = case ProcSpec of
+	       {S,N} when is_atom(S), is_atom(N), N =/= node() -> N;
+	       _ when is_pid(ProcSpec) -> node(ProcSpec)
+	   end,
     case net_kernel:connect(Node) of
 	true ->
 	    erlang:monitor(process, ProcSpec);
 	false ->
 	    Ref = make_ref(),
-	    DownProcSpec = case ProcSpec of
-			       RegName when atom(RegName) ->
-				   {RegName, node()};
-			       _ -> % {atom(), atom()} | pid()
-				   ProcSpec
-			   end,
-	    self() ! {'DOWN', Ref, process, DownProcSpec, noconnection},
+	    self() ! {'DOWN', Ref, process, ProcSpec, noconnection},
 	    Ref
     end.
 

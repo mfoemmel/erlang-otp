@@ -109,11 +109,15 @@ extern int erts_use_r9_pids_ports;
  * For this node (and previous incarnations of this node), 0 is used as
  * channel no. For other nodes, the atom index of the atom corresponding
  * to the node name is used as channel no.
+ *
+ * (We used to assert for correct node names, but we removed that assertion
+ *  as it is possible to sneak in incorrect node names for instance using
+ *  the external format.)
  */
 #define dist_entry_channel_no(x)				\
   ((x) == erts_this_dist_entry					\
    ? ((Uint) 0)							\
-   : (ASSERT_EXPR(is_node_name_atom((x)->sysname)),		\
+   : (ASSERT_EXPR(is_atom((x)->sysname)),			\
       (Uint) atom_val((x)->sysname)))
 #define internal_channel_no(x) ((Uint) ERST_INTERNAL_CHANNEL_NO)
 #define external_channel_no(x) \

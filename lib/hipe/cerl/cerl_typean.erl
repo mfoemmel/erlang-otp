@@ -34,7 +34,7 @@
 -export([core_transform/2, analyze/1, pp_hook/0]).
 %%-export([analyze/2, analyze/5, annotate/1, annotate/2, annotate/5]).
 
--import(erl_types, [t_any/0, t_atom/0, t_binary/0, t_cons/2,
+-import(erl_types, [t_any/0, t_atom/0, t_is_atom/1, t_binary/0, t_cons/2,
 		    t_cons_hd/1, t_cons_tl/1, t_improper_list/0,
 		    t_components/1, t_float/0, t_fun/0, t_fun/2,
 		    t_inf/2, t_integer/0, t_atom_vals/1, t_is_cons/1,
@@ -444,10 +444,10 @@ visit(T, Env, St) ->
 	    {X1, St1} = join_visit_clauses([Any], receive_clauses(T),
 					   Env, St),
 	    {X2, St2} = visit(receive_timeout(T), Env, St1),
-	    case t_atom_vals(X2) of
-		[infinity] ->
+	    case t_is_atom(X2) andalso (t_atom_vals(X2) == [infinity]) of
+		true ->
 		    {X1, St2};
-		_ ->
+		false ->
 		    {X3, St3} = visit(receive_action(T), Env, St2),
 		    {join(X1, X3), St3}
 	    end;
@@ -686,8 +686,8 @@ add_dep(Source, Target, Deps) ->
 %% to the actual parameters.
 
 call_site(Ls, Xs, St) ->
-%%%     io:fwrite("call site: ~w ~s.\n",
-%%% 	      [Ls, erl_types:t_to_string(erl_types:t_product(Xs))]),
+%%     io:fwrite("call site: ~w ~s.\n",
+%% 	      [Ls, erl_types:t_to_string(erl_types:t_product(Xs))]),
     {W, V} = call_site(Ls, Xs, St#state.work, St#state.vars,
 		       St#state.funs, St#state.k),
     St#state{work = W, vars = V}.

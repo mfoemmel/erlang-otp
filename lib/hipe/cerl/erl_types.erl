@@ -167,10 +167,11 @@
 	 t_list/0, t_list/1, t_list_elements/1, t_nil/0,
 	 t_number/0, t_number/1, t_number_vals/1,
 	 t_pid/0, t_port/0, t_product/1, t_ref/0, t_string/0,
-	 t_subtract/2, t_sup/1, t_sup/2,
+	 t_subst/2, t_subtract/2, t_sup/1, t_sup/2,
 	 t_to_string/1,
 	 t_tuple/0, t_tuple/1, t_tuple_args/1,
 	 t_tuple_arity/1, t_tuple_arities/1, t_tuple_subtypes/1,
+	 t_unify/2,
 	 t_var/1, t_var_name/1,
 	 t_none/0
 	]).
@@ -182,7 +183,7 @@
 	 t_is_n_tuple/2, t_is_nonempty_list/1,
 	 t_nonempty_improper_list/0, t_nonempty_improper_list/1,
 	 t_nonempty_list/0, t_nonempty_list/1, t_nonempty_string/0,
-	 t_subst/2, t_tuple_max_arity/1, t_tuple_min_arity/1, t_unify/2]).
+	 t_tuple_max_arity/1, t_tuple_min_arity/1]).
 -endif.
 
 
@@ -218,6 +219,7 @@
 %% ordered list, sorted on constructor name and arity.
 
 -define(dunion(Ts), #c{c = #cs{as = Ts}, n = 0, as = []}).
+-define(DUNION_LIMIT, 4).
 
 %% Mask wrapper for same-arity tuples separated by tagging.
 
@@ -1200,7 +1202,7 @@ t_is_list(_) -> false.
 -ifndef(NO_UNUSED).
 t_is_nonempty_list(?is_nonempty_proper_list(_)) -> true;
 t_is_nonempty_list(_) -> false.
--endif().
+-endif.
 
 
 %% @spec t_is_nil(T::type()) -> bool()
@@ -1471,7 +1473,7 @@ t_improper_list(T) -> ?improper_list(T, ?any).
 
 -ifndef(NO_UNUSED).
 t_nonempty_list() -> ?nonempty_proper_list(?any).
--endif().
+-endif.
 
 
 %% @spec t_nonempty_list(T::type()) -> type()
@@ -1633,7 +1635,7 @@ t_fun_range(?'fun'(_, R)) -> R.
 
 -define(c_binary, #c{c = binary, n = 0, as = []}).
 -define(binary, ?u_binary(?none, ?c_binary)).
--define(is_binary, ?u_binary(_, ?c_binary)).
+-define(is_binary, ?u_binary(?none, ?c_binary)).
 
 %% @spec t_binary() -> type()
 %% @doc Returns the <code>binary()</code> type.
@@ -1840,6 +1842,11 @@ t_is_subtype(?value_set(S1=#set{}), ?value_set(S2=#set{})) ->
     is_subset(S1, S2);
 t_is_subtype(#c{c = C, n = N, as = As1}, #c{c = C, n = N, as = As2}) ->
     t_is_subtype_lists(As1, As2);
+t_is_subtype(?tuple_mask(M1, As1), ?tuple_mask(M2, As2)) 
+  when M1 /= M2  ->
+    M = M1 band M2,
+    t_is_subtype_dunion(reduce_tuple_keys_unique(M, M1, As1), 
+			reduce_tuple_keys_unique(M, M2, As2));
 t_is_subtype(?none, _) ->
     true;
 t_is_subtype(_, ?any) ->
@@ -1906,7 +1913,9 @@ t_sup(?value_set(S1=#set{}), ?value_set(S2=#set{})) ->
 	?any -> ?any;
 	SU -> ?value_set(SU)
     end;
-t_sup(?tuple_mask(M1, As1), ?tuple_mask(M2, As2)) when M1 =/= M2 ->
+t_sup(?tuple_mask(M, As1), ?tuple_mask(M, As2)) ->
+    t_sup_tuples(M, As1, As2);
+t_sup(?tuple_mask(M1, As1), ?tuple_mask(M2, As2)) ->
     t_sup_tuples(M1, M2, As1, As2);
 t_sup(#c{c = C, n = N, as = As1}, #c{c = C, n = N, as = As2}) ->
     #c{c = C, n = N, as = t_sup_lists(As1, As2)};
@@ -1941,6 +1950,17 @@ t_sup_dunion([], Ts) ->
 t_sup_dunion(Ts, []) ->
     Ts.
 
+t_sup_tuples(M, As1, As2) ->
+    As = t_sup_dunion(As1, As2),
+    if length(As) > ?DUNION_LIMIT ->
+	    NewM = reduce_key_mask(M),
+	    t_sup_tuples(NewM, 
+			 reduce_tuple_keys_unique(NewM, M, As1),
+			 reduce_tuple_keys_unique(NewM, M, As2));
+       true ->
+	    ?tuple_mask(M, As)
+    end.
+
 %% This is only called when M1 =/= M2.
 
 t_sup_tuples(M1, M2, As1, As2) ->
@@ -1949,6 +1969,16 @@ t_sup_tuples(M1, M2, As1, As2) ->
 		      reduce_tuple_keys_unique(M, M2, As2)),
     ?tuple_mask(M, As).
 
+reduce_key_mask(M) ->
+    reduce_key_mask_1(M, 0).
+
+reduce_key_mask_1(M, S) when (M band 1) =:= 1 ->
+    (M bxor 1) bsl S;
+reduce_key_mask_1(M, S) when M > 0->
+    reduce_key_mask_1(M bsr 1, S + 1);
+reduce_key_mask_1(0, _S) ->
+    0.
+    
 %% Note that removing one or more fields from the keys can change the
 %% relative order and also create duplicates, so we must sort the lists
 %% afterwards, and merge adjacent elements with the same key.
@@ -2072,6 +2102,20 @@ t_inf(?c_fun(?fun_domain_args(N, Ts1), R1),
       ?c_fun(?fun_domain_args(N, Ts2), R2)) ->
     %% The function domain and range can be none().
     ?c_fun(?fun_domain_args(N, t_inf_lists(Ts1, Ts2)), t_inf(R1, R2));
+t_inf(?c_fun(?fun_domain_args(N1, _Ts1), _R1),
+      ?c_fun(?fun_domain_args(N2, _Ts2), _R2)) when N1 =/= N2 ->
+    ?none;
+t_inf(?c_fun(D1, R1), ?c_fun(D2, R2)) ->
+    %% The function domain and range can be any() or none().
+    case D1 of
+	?any -> ?c_fun(D2, t_inf(R1, R2));
+	?none -> ?c_fun(?none, t_inf(R1, R2));
+	_ ->
+	    case D2 of
+		?any -> ?c_fun(D1, t_inf(R1, R2));
+		?none -> ?c_fun(?none, t_inf(R1, R2))
+	    end
+    end;
 t_inf(?union(Ts1), ?union(Ts2)) ->
     %% Unions map to none() only if all elements are none().
     case t_inf_lists_all(Ts1, Ts2) of
@@ -2613,7 +2657,6 @@ t_subtract_dunion_dup(Ts, []) ->
 %% @see t_subst/2
 %% @see t_var/1
 
--ifndef(NO_UNUSED).
 t_unify(T1, T2) ->
     {T, Subs} = t_unify(T1, T2, dict:new()),
     {t_subst(T, Subs), lists:keysort(1,dict:to_list(Subs))}.
@@ -2626,6 +2669,12 @@ t_unify(?value_set(S1=#set{}), ?value_set(S2=#set{}), Subs) ->
 t_unify(?dunion(As1), ?dunion(As2), Subs) ->
     {As, Subs1} = t_unify_list(As1, As2, Subs),
     {?dunion(As), Subs1};
+t_unify(?tuple_mask(M1, As1), ?tuple_mask(M2, As2), Subs)
+  when M1 =/= M2 ->
+    M = M1 band M2,
+    {As, Subs1} = t_unify_list(reduce_tuple_keys_unique(M, M1, As1),
+			       reduce_tuple_keys_unique(M, M2, As2), Subs),
+    {?tuple_mask(M, As), Subs1};
 t_unify(#c{c = C, n = N, as = As1}, #c{c = C, n = N, as = As2}, Subs) ->
     {As, Subs1} = t_unify_list(As1, As2, Subs),
     {#c{c = C, n = N, as = As}, Subs1};
@@ -2661,8 +2710,6 @@ t_unify_var(N, T, Subs) ->
 	{ok, T1} -> t_unify(T, T1, Subs);
 	error -> {T, dict:store(N, T, Subs)}
     end.
--endif.
-%% @clear
 
 
 %% @spec t_subst(T::type(), Dict::dict()) -> type()
@@ -2676,7 +2723,6 @@ t_unify_var(N, T, Subs) ->
 %% @see t_unify/2
 %% @see dict
 
--ifndef(NO_UNUSED).
 t_subst(?dunion(As), Subs) ->
     ?dunion([t_subst(A, Subs) || A <- As]);
 t_subst(#c{c = C, n = N, as = As}, Subs) ->
@@ -2688,8 +2734,6 @@ t_subst(T = #var{n = N}, Subs) ->
 	{ok, T1} -> T1; 
 	error -> T
     end.
--endif.
-%% @clear
 
 
 %% ---------------------------------------------------------------------
@@ -2882,7 +2926,10 @@ t_to_string_1(?is_fun(?any, ?any)) ->
 t_to_string_1(?is_fun(?any, R)) ->
     "((...) -> " ++ t_to_string(R) ++ ")";
 t_to_string_1(?is_fun(?fun_domain_args(_, As), R)) ->
-    "((" ++ seq(fun t_to_string/1, As) ++ ")->" ++ t_to_string(R) ++ ")";
+    Fun = fun(?any) -> "_";
+	     (X) -> t_to_string(X)
+	  end,
+    "((" ++ seq(Fun, As) ++ ") -> " ++ t_to_string(R) ++ ")";
 t_to_string_1(?is_binary) ->
     "binary()";
 t_to_string_1(?is_identifier(?identifier_class_is_pid)) ->
@@ -2903,7 +2950,6 @@ seq(F, [T | Ts], Sep) ->
     F(T) ++ Sep ++ seq(F, Ts, Sep);
 seq(_F, [], _Sep) ->
     "".
-
 
 %% ---------------------------------------------------------------------
 
@@ -2945,13 +2991,10 @@ list_to_set(S) ->
 is_subset(S1, S2) ->
     ordsets:is_subset(set_to_list(S1), set_to_list(S2)).
 
--ifndef(NO_UNUSED).
 set_is_equal(#set{n = N, s = S1}, #set{n = N, s = S2}) ->
     S1 == S2;
 set_is_equal(_, _) ->
     false.
--endif.
-%% @clear
 
 %% Note that union can return 'any()'
 

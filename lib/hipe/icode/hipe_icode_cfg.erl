@@ -5,6 +5,9 @@
 
 -export([bb/2, bb_add/3,
 	 cfg_to_linear/1,
+	 is_closure/1,
+	 closure_arity/1,
+	 closure_arity_update/2,
          info/1, linear_to_cfg/1,
          labels/1, start_label/1,
 	 params/1, params_update/2,
@@ -39,9 +42,10 @@ linear_to_cfg(LinearIcode) ->
 		      hipe_icode:icode_is_leaf(LinearIcode),
 		      hipe_icode:icode_params(LinearIcode),
 		      []),
-  CFG = hipe_icode_cfg:info_update(CFG0, hipe_icode:icode_info(LinearIcode)),
+  CFG1 = hipe_icode_cfg:info_update(CFG0, hipe_icode:icode_info(LinearIcode)),
+  CFG2 = hipe_icode_cfg:closure_arity_update(CFG1, hipe_icode:icode_closure_arity(LinearIcode)),
   ?opt_start_timer("Get BBs icode"),
-  FullCFG = take_bbs(Code, CFG),
+  FullCFG = take_bbs(Code, CFG2),
   ?opt_stop_timer("Get BBs icode"),
   FullCFG.
   
@@ -109,7 +113,8 @@ cfg_to_linear(CFG) ->
 			      data(CFG),
 			      hipe_gensym:var_range(icode), 
 			      hipe_gensym:label_range(icode)),
-  hipe_icode:icode_info_update(Icode, info(CFG)).
+  Icode1 = hipe_icode:icode_info_update(Icode, info(CFG)),
+  hipe_icode:icode_closure_arity_update(Icode1, closure_arity(CFG)).
 
 %% init_gensym(CFG) ->
 %%   HighestVar = find_highest_var(CFG),

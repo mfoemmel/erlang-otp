@@ -622,7 +622,42 @@ static void my_do_break(int dummy1, int dummy2)
     do_break();
 }
 
+BOOL WINAPI ctrl_handler_ignore_break(DWORD dwCtrlType)
+{
+    return TRUE;
+}
+
 void erts_set_ignore_break(void) {
+    ConSetCtrlHandler(ctrl_handler_ignore_break);
+    SetConsoleCtrlHandler(ctrl_handler_ignore_break, TRUE);
+}
+
+BOOL WINAPI ctrl_handler_replace_intr(DWORD dwCtrlType)
+{
+    switch (dwCtrlType) {
+    case CTRL_C_EVENT:
+	return FALSE;
+    case CTRL_BREAK_EVENT:
+	SetEvent(break_event);
+	break;
+    case CTRL_LOGOFF_EVENT:
+	if (nohup)
+	    return TRUE;
+	/* else pour through... */
+    case CTRL_CLOSE_EVENT:
+    case CTRL_SHUTDOWN_EVENT:
+	erl_exit(0, "");
+	break;
+    }
+    return TRUE;
+}
+
+
+/* Don't use ctrl-c for break handler but let it be 
+   used by the shell instead (see user_drv.erl) */
+void erts_replace_intr(void) {
+    ConSetCtrlHandler(ctrl_handler_replace_intr);
+    SetConsoleCtrlHandler(ctrl_handler_replace_intr, TRUE);
 }
 
 BOOL WINAPI ctrl_handler(DWORD dwCtrlType)

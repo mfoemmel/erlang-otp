@@ -145,8 +145,22 @@ Uint reclaimed;			/* no of words reclaimed in GCs */
 Eterm system_seq_tracer;
 
 int ignore_break;
+int replace_intr;
 
-
+static char*
+progname(char *fullname) 
+{
+    int i;
+    
+    i = strlen(fullname);
+    while (i >= 0) {
+	if ((fullname[i] != '/') && (fullname[i] != '\\')) 
+	    i--;
+	else 
+	    break;
+    }
+    return fullname+i+1;
+}
 
 static int
 this_rel_num(void)
@@ -504,12 +518,22 @@ load_preloaded(void)
 /* be helpful (or maybe downright rude:-) */
 void erts_usage(void)
 {
-    erl_printf(CERR, "usage: %s [flags] [ -- [init_args] ]\n", program);
+    erl_printf(CERR, "Usage: %s [flags] [ -- [init_args] ]\n", progname(program));
     erl_printf(CERR, "The flags are:\n\n");
-    erl_printf(CERR, "-v         turn on chatty mode, GCs will be reported etc\n");
-    erl_printf(CERR, "-l         turn on auto load tracing\n");
-    erl_printf(CERR, "-i module  set the boot module (default init)\n");
-    erl_printf(CERR, "-b fun     set the boot function (default boot)\n");
+
+    /*    erl_printf(CERR, "-# number  set the number of items to be used in traces etc\n"); */
+
+    erl_printf(CERR, "-A number  set number of threads in async thread pool,\n");
+    erl_printf(CERR, "           valid range is [0-256]\n");
+
+    erl_printf(CERR, "-B[c|d|i]  c to have Ctrl-c interrupt the Erlang shell,\n");
+    erl_printf(CERR, "           d (or no extra option) to disable the break\n");
+    erl_printf(CERR, "           handler, i to ignore break signals\n");
+
+    /*    erl_printf(CERR, "-b func    set the boot function (default boot)\n"); */
+
+    erl_printf(CERR, "-c         disable continuous date/time correction with\n");
+    erl_printf(CERR, "           respect to uptime\n");
 #ifdef SHARED_HEAP
     erl_printf(CERR, "-h number  set minimum heap size in words (default %d)\n",
 	       SH_DEFAULT_SIZE);
@@ -517,23 +541,35 @@ void erts_usage(void)
     erl_printf(CERR, "-h number  set minimum heap size in words (default %d)\n",
 	       H_DEFAULT_SIZE);
 #endif
-    erl_printf(CERR, "-# number  set the number of items to be used in traces etc\n");
-    erl_printf(CERR, "-B[i]      turn break handler off or ignore break signals\n");
-    erl_printf(CERR, "-C         set break handler mode\n");
-    erl_printf(CERR, "-P number  set maximum number of processes on this node\n");
+
+    /*    erl_printf(CERR, "-i module  set the boot module (default init)\n"); */
+
+    erl_printf(CERR, "-K boolean enable or disable kernel poll\n");
+
+    erl_printf(CERR, "-l         turn on auto load tracing\n");
+
+    erl_printf(CERR, "-M<X> <Y>  memory allocator switches,\n");
+    erl_printf(CERR, "           see the erts_alloc(3) man page for more info.\n");
+
+    erl_printf(CERR, "-P number  set maximum number of processes on this node,\n");
     erl_printf(CERR, "           valid range is [%d-%d]\n",
 	       ERTS_MIN_PROCESSES, ERTS_MAX_PROCESSES);
-    erl_printf(CERR, "-R number  set compatibility release number\n");
+    erl_printf(CERR, "-R number  set compatibility release number,\n");
     erl_printf(CERR, "           valid range [%d-%d]\n",
 	       ERTS_MIN_COMPAT_REL, this_rel_num());
-    erl_printf(CERR, "-A number  set number of threads in async thread pool\n");
-    erl_printf(CERR, "           valid range is [0-256]\n");
-    erl_printf(CERR, "-M<X> <Y>  Memory allocator switches\n");
-    erl_printf(CERR, "           see the erts_alloc(3) man page for more information.\n");
-    erl_printf(CERR, "-K boolean Enable or disable kernel poll\n");
-    erl_printf(CERR, "-W {i|w|e} Set error logger warnings mapping\n");
-    erl_printf(CERR, "           see error_logger documentation for "
-	       "details\n");
+
+    erl_printf(CERR, "-r         force ets memory block to be moved on realloc\n");
+
+    erl_printf(CERR, "-V         print Erlang version\n");
+
+    erl_printf(CERR, "-v         turn on chatty mode (GCs will be reported etc)\n");
+
+    erl_printf(CERR, "-W<i|w>    set error logger warnings mapping,\n");
+    erl_printf(CERR, "           see error_logger documentation for details\n");
+
+    erl_printf(CERR, "\n");
+    erl_printf(CERR, "Note that if the emulator is started with erlexec (typically\n");
+    erl_printf(CERR, "from the erl script), these flags should be specified with +.\n");
     erl_printf(CERR, "\n\n");
     erl_exit(-1, "");
 }
@@ -561,6 +597,7 @@ erl_start(int argc, char **argv)
     erts_writing_erl_crash_dump = 0;
     erts_initialized = 0;
     ignore_break = 0;
+    replace_intr = 0;
     program = argv[0];
 
     erts_compat_rel = this_rel_num();
@@ -675,7 +712,7 @@ erl_start(int argc, char **argv)
 	    }
 	    break;
 
-	case 'H':
+	case 'H':		/* undocumented */
 	    if (argv[i][2] == 'f') {
 		heap_series = HS_FIBONACCI;
 	    } else if (argv[i][2] == 'F') {
@@ -728,9 +765,21 @@ erl_start(int argc, char **argv)
 	case 'B':
 	  if (argv[i][2] == 'i')          /* +Bi */
 	    ignore_break = 1;
+	  else if (argv[i][2] == 'c')     /* +Bc */
+	    replace_intr = 1;
+	  else if (argv[i][2] == 'd')     /* +Bd */
+	    have_break_handler = 0;
 	  else if (argv[i+1][0] == 'i') { /* +B i */
 	    get_arg(argv[i]+2, argv[i+1], &i);
 	    ignore_break = 1;
+	  }
+	  else if (argv[i+1][0] == 'c') { /* +B c */
+	    get_arg(argv[i]+2, argv[i+1], &i);
+	    replace_intr = 1;
+	  }
+	  else if (argv[i+1][0] == 'd') { /* +B d */
+	    get_arg(argv[i]+2, argv[i+1], &i);
+	    have_break_handler = 0;
 	  }
 	  else			          /* +B */
 	    have_break_handler = 0;
@@ -794,7 +843,7 @@ erl_start(int argc, char **argv)
 	    break;
 	case 'n':   /* XXX obsolete */
 	    break;
-	case 'c':
+	case 'c':   /* undocumented */
 	    if (argv[i][2] == 0) {
 		erts_disable_tolerant_timeofday = 1;
 	    } else if (argv[i][2] == 'i') {
@@ -819,7 +868,7 @@ erl_start(int argc, char **argv)
 	    break;
 
 	default:
-	    erl_printf(CERR, "%s unknown flag %s\n", argv[0], argv[i]);
+	    erl_printf(CERR, "%s unknown flag %s\n", progname(argv[0]), argv[i]);
 	    erts_usage();
 	}
 	i++;
@@ -835,11 +884,21 @@ erl_start(int argc, char **argv)
     }
 
    /* Restart will not reinstall the break handler */
+#ifdef __WIN32__
     if (ignore_break)
-        erts_set_ignore_break();
-    else 
-        if (have_break_handler)
-	  init_break_handler();
+	erts_set_ignore_break();
+    else if (replace_intr)
+	erts_replace_intr();
+    else
+	init_break_handler();
+#else
+    if (ignore_break)
+	erts_set_ignore_break();
+    else if (have_break_handler)
+	init_break_handler();
+    if (replace_intr)
+	erts_replace_intr();
+#endif
 
     boot_argc = argc - i;  /* Number of arguments to init */
     boot_argv = &argv[i];

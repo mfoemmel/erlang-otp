@@ -25,7 +25,8 @@
 -module(http).
 
 %% API
--export([request/4, cancel_request/1, set_options/1, verify_cookies/2]).
+-export([request/4, cancel_request/1, set_options/1, verify_cookies/2,
+	 cookie_header/1]).
 
 -include("http.hrl").
 
@@ -125,6 +126,9 @@ verify_cookies(SetCookieHeaders, Url) ->
     Cookies = http_cookie:cookies(SetCookieHeaders, Path, Host),
     httpc_manager:store_cookies(Cookies, {Host, Port}),
     ok.
+
+cookie_header(Url) ->
+    httpc_manager:cookies(Url).
 
 %%%========================================================================
 %%% Internal functions

@@ -175,12 +175,8 @@ clearerror([], OrigIs) -> [{set,[],[],fclearerror}|OrigIs].
 %%  Update the type database to account for executing an instruction.
 %%
 %%  First the cases for instructions inside basic blocks.
-update({set,[D],[S],move}, Ts0) ->
-    Ops = case tdb_find(S, Ts0) of
-	      error -> [{D,kill}];
-	      Info -> [{D,Info}]
-	  end,
-    tdb_update(Ops, Ts0);
+update({set,[D],[S],move}, Ts) ->
+    tdb_copy(S, D, Ts);
 update({set,[D],[{integer,I},Reg],{bif,element,_}}, Ts0) ->
     tdb_update([{Reg,{tuple,I,[]}},{D,kill}], Ts0);
 update({set,[D],[_Index,Reg],{bif,element,_}}, Ts0) ->
@@ -474,19 +470,34 @@ are_live_regs_determinable([]) -> false.
 tdb_new() -> [].
 
 %% tdb_find(Register, Db) -> Information|error
-%%  Returns type information or the atom error if there are no type
+%%  Returns type information or the atom error if there is no type
 %%  information available for Register.
 
-tdb_find(Key, [{K,_}|_]) when Key < K -> error;
-tdb_find(Key, [{Key,Info}|_]) -> Info;
-tdb_find(Key, [_|Db]) -> tdb_find(Key, Db);
-tdb_find(_, []) -> error.
+tdb_find({x,_}=K, Ts) -> tdb_find_1(K, Ts);
+tdb_find({y,_}=K, Ts) -> tdb_find_1(K, Ts);
+tdb_find(_, _) -> error.
+
+tdb_find_1(K, Ts) ->
+    case orddict:find(K, Ts) of
+	{ok,Val} -> Val;
+	error -> error
+    end.
+
+%% tdb_copy(Source, Dest, Db) -> Db'
+%%  Update the type information for Dest to have the same type
+%%  as the Source.
+
+tdb_copy(S, D, Ts) ->
+    case tdb_find(S, Ts) of
+	error -> orddict:erase(D, Ts);
+	Type -> orddict:store(D, Type, Ts)
+    end.
 
 %% tdb_update([UpdateOp], Db) -> NewDb
 %%        UpdateOp = {Register,kill}|{Register,NewInfo}
 %%  Updates a type database.  If a 'kill' operation is given, the type
 %%  information for that register will be removed from the database.
-%%  A kill operation takes precende over other operations for the same
+%%  A kill operation takes precedence over other operations for the same
 %%  register (i.e. [{{x,0},kill},{{x,0},{tuple,5}}] means that the
 %%  the existing type information, if any, will be discarded, and the
 %%  the '{tuple,5}' information ignored.

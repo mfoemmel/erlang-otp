@@ -80,6 +80,8 @@
 %%% --------------------------------------------------------------------
 
 start(Node, Mid, Encoding, Transport, Verbosity) ->
+    %% Conf = [{megaco_trace, io}],
+    %% Conf = [{megaco_trace, "megaco-mg.trace"}],
     Conf = [{megaco_trace, false}],
     start(Node, Mid, Encoding, Transport, Conf, Verbosity).
 
@@ -285,6 +287,10 @@ init(Config) ->
     case lists:keysearch(megaco_trace, 1, Config) of
 	{value, {megaco_trace, true}} ->
 	    megaco:enable_trace(max, io);
+	{value, {megaco_trace, io}} ->
+	    megaco:enable_trace(max, io);
+	{value, {megaco_trace, File}} when list(File) ->
+	    megaco:enable_trace(max, File);
 	_ ->
 	    ok
     end,
@@ -701,6 +707,8 @@ loader_main(EAF, N, CH) ->
 
 
 handle_exit(#mg{parent = Pid}, Pid, Reason) ->
+    error_msg("received exit from the parent:"
+	      "~n   ~p", [Reason]),
     exit({parent_terminated, Reason});
 
 handle_exit(#mg{parent = Parent, req_handler = Pid} = MG, Pid, Reason) ->
@@ -1335,7 +1343,7 @@ d(F) ->
     d(F, []).
 
 d(F, A) ->
-    print(debug, get(verbosity), "DBG: ", F, A).
+    print(debug, get(verbosity), "DBG", F, A).
 
 
 printable(_, debug)   -> true;

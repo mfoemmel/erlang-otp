@@ -59,7 +59,10 @@ dnl ----------------------------------------------------------------------
 # if pthreads exists (for test purposes).
 AC_ARG_ENABLE(threads,
 [  --disable-threads       use to only build single threaded libs],
-[ threads_disabled=yes ],
+[ case "$enableval" in
+    no) threads_disabled=yes ;;
+    *)  threads_disabled=no ;;
+  esac ],
 [ threads_disabled=no ])
 
 dnl ----------------------------------------------------------------------

@@ -711,16 +711,15 @@ emit_decode(sequence_head, G, N, T, Fd, SeqName, ElType) ->
 	    emit(Fd, "      CORBA_free(~s);\n\n", [TmpBuf]),
 	    emit_c_dec_rpt(Fd, "      ", "string1", []),
 	    emit(Fd, "      return oe_error_code;\n    }\n"),
-
 	    emit(Fd, "    for (oe_seq_count = 0; "
 		 "oe_seq_count < oe_out->_length; oe_seq_count++)\n"), 
 	    case ictype:isBasicType(G, N, ElType) of
-		true -> %% BasicType
-		    emit(Fd, "      oe_out->_buffer[oe_seq_count] = "
+		true -> 
+		    emit(Fd, "      oe_out->_buffer[oe_seq_count] = (unsigned char) "
 			 "~s[oe_seq_count];\n\n", [TmpBuf]);
 		false -> %% Term
 		    emit(Fd, "      oe_out->_buffer[oe_seq_count] = "
-			 "erl_mk_int(~s[oe_seq_count]);\n\n",[TmpBuf])
+			 "erl_mk_int(~s[oe_seq_count]);\n\n",[TmpBuf]) % XXXX What?
 	    end,
 	    emit(Fd, "    CORBA_free(~s);\n\n", [TmpBuf]);
 	false ->

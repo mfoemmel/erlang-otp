@@ -1527,7 +1527,9 @@ patch_closure_entry(Icode, ClosureInfo)->
   Icode1 = hipe_icode:icode_code_update(Icode, MoveCode ++
 					hipe_icode:icode_code(Icode)),
   Icode2 = hipe_icode:icode_params_update(Icode1, Args),
-  Icode2.
+  %% Arity - 1 since the original arity did not have the closure argument.
+  Icode3 = hipe_icode:icode_closure_arity_update(Icode2, Arity-1),
+  Icode3.
 
 %%-----------------------------------------------------------------------
 

@@ -1072,7 +1072,7 @@ tk2type(G,N,_X,{'tk_struct', IFRId, Name, _ElementList}) ->
 	    %% Right path, use N instead
 	    ic_util:to_dot(G,[Name|N]);
 	_ ->
-	    %% Uggly work arround 
+	    %% Ugly work arround 
 	    ic_util:to_dot(G,ScopedId)
     end;
 tk2type(G,N,_X,{'tk_union', IFRId, Name, _, _, _ElementList}) ->
@@ -1084,7 +1084,7 @@ tk2type(G,N,_X,{'tk_union', IFRId, Name, _, _, _ElementList}) ->
 	    %% Right path, use N instead
 	    ic_util:to_dot(G,[Name|N]);
 	_ ->
-	    %% Uggly work arround 
+	    %% Ugly work arround 
 	    ic_util:to_dot(G,ScopedId)
     end;
 tk2type(_G,_N,_X,{'tk_enum', _Id, Name, _ElementList}) -> 

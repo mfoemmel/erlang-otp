@@ -27,7 +27,7 @@
 -export([handshake_we_started/1, handshake_other_started/1,
 	 start_timer/1, setup_timer/2, 
 	 reset_timer/1, cancel_timer/1,
-	 shutdown/2]).
+	 shutdown/2, shutdown/3]).
 
 -import(error_logger,[error_msg/2]).
 
@@ -291,18 +291,19 @@ do_remark_pending(Kernel, Node) ->
 %%
 %% This will tell the net_kernel about the nodedown as it
 %% recognizes the exit signal.
-%% Terminate with reason shutdown so inet processes want
-%% generate crash reports.
 %% The termination of this process does also imply that the Socket
 %% is closed in a controlled way by inet_drv.
 %%
 
-shutdown(_Line, _Data) ->
+shutdown(Line, Data) ->
+    shutdown(Line, Data, shutdown).
+
+shutdown(_Line, _Data, Reason) ->
     flush_down(),
-    exit(shutdown).
+    exit(Reason).
 %% Use this line to debug connection.  
 %% Set net_kernel verbose = 1 as well.
-%%    exit({shutdown, ?MODULE, _Line, _Data, erlang:now()}).
+%%    exit({Reason, ?MODULE, _Line, _Data, erlang:now()}).
 
 
 flush_down() ->
@@ -371,7 +372,7 @@ connection(#hs_data{other_node = Node,
 				     HSData#hs_data.mf_tick,
 				     HSData#hs_data.mf_getstat);
 			_ ->
-			    ?shutdown(Node)
+			    ?shutdown2(Node, connection_setup_failed)
 		    end;
 		_ ->
 		    ?shutdown(Node)
@@ -478,9 +479,9 @@ con_loop(Kernel, Node, Socket, TcpAddress,
 	 MyNode, Type, Tick, MFTick, MFGetstat) ->
     receive
 	{tcp_closed, Socket} ->
-	    ?shutdown(Node);
+	    ?shutdown2(Node, connection_closed);
 	{Kernel, disconnect} ->
-	    ?shutdown(Node);
+	    ?shutdown2(Node, disconnected);
 	{Kernel, aux_tick} ->
 	    case MFGetstat(Socket) of
 		{ok, _, _, PendWrite} ->
@@ -501,9 +502,9 @@ con_loop(Kernel, Node, Socket, TcpAddress,
  		    error_msg("** Node ~p not responding **~n"
  			      "** Removing (timedout) connection **~n",
  			      [Node]),
- 		    ?shutdown(Node);
+ 		    ?shutdown2(Node, net_tick_timeout);
 		_Other ->
-		    ?shutdown(Node)
+		    ?shutdown2(Node, send_net_tick_failed)
 	    end;
 	{From, get_status} ->
 	    case MFGetstat(Socket) of
@@ -514,7 +515,7 @@ con_loop(Kernel, Node, Socket, TcpAddress,
 			     Type, Tick, 
 			     MFTick, MFGetstat);
 		_ ->
-		    ?shutdown(Node)
+		    ?shutdown2(Node, get_status_failed)
 	    end
     end.
 

@@ -3907,6 +3907,13 @@ exported_from_module(Process* p, /* Process whose heap to use. */
 	
 	if (ep->code[0] == mod) {
 	    Eterm tuple;
+	    
+	    if (ep->address == ep->code+3 &&
+		ep->code[3] == (Eterm) em_call_error_handler) {
+		/* There is a call to the function, but it does not exist. */ 
+		continue;
+	    }
+
 	    if (hp == hend) {
 		int need = 10 * 5;
 		hp = HAlloc(p, need);

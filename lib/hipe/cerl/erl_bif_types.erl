@@ -41,7 +41,7 @@
 		    t_is_any/1, t_is_byte/1, t_is_integer/1, t_is_nil/1,
 		    t_is_none/1, t_list/0, t_list/1,
 		    t_list_elements/1, t_number/0, t_number_vals/1,
-		    t_pid/0, t_port/0, t_ref/0, t_string/0, t_tuple/0,
+		    t_nil/0, t_pid/0, t_port/0, t_ref/0, t_string/0, t_tuple/0,
 		    t_tuple/1, t_tuple_args/1, t_tuple_arity/1, t_sup/1,
 		    t_tuple_subtypes/1,
 		    t_sup/2, t_inf/2, t_subtract/2, t_none/0,
@@ -493,22 +493,23 @@ type(lists, foreach, 2, Xs) ->
 	   fun (_) -> t_atom(ok) end);
 type(lists, foldl, 3, Xs) ->
     strict([t_fun([t_any(), t_any()], t_any()), t_any(), t_list()], Xs,
-	   fun ([X, _, _]) -> t_fun_range(X) end);
+	   fun ([X, Y, _]) -> 
+		   t_sup(t_fun_range(X), Y) end);
 type(lists, foldr, 3, Xs) -> type(lists, foldl, 3, Xs);    % same
 type(lists, map, 2, Xs) ->
     strict([t_fun([t_any()], t_any()), t_list()], Xs,
-	   fun ([X, _]) -> t_list(t_fun_range(X)) end);
+	   fun ([X, _]) -> t_sup(t_list(t_fun_range(X)), t_nil()) end);
 type(lists, mapfoldl, 3, Xs) ->
     strict([t_fun([t_any(), t_any()], t_tuple([t_any(), t_any()])),
 	    t_any(), t_list()], Xs,
-	   fun ([X, _, _]) ->
+	   fun ([X, Acc, _]) ->
 		   R = t_fun_range(X),
 		   case t_is_none(R) of
-		       true -> R;
+		       true -> t_tuple([t_nil(), Acc]);
 		       false ->
 			   case t_tuple_args(R) of
 			       [T1, T2] ->
-				   t_tuple([t_list(T1), T2]);
+				   t_tuple([t_list(T1), t_sup(Acc, T2)]);
 			       _ ->
 				   t_tuple([t_list(), t_any()])
 			   end

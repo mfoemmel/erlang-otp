@@ -87,7 +87,7 @@ run(P) ->
 	    server_loop(P, queue:new());
 	_ ->
 	    group_leader(self(), self()),
-	    catch_loop(P, start_new_shell())
+	    catch_loop(P, start_init_shell())
     end.
 
 catch_loop(Port, Shell) ->
@@ -113,18 +113,23 @@ catch_loop(Port, Shell, Q) ->
 	    exit(R)
     end.
 
-start_new_shell() ->
-    Shell = shell:start(),
+link_and_save_shell(Shell) ->
     link(Shell),
     put(shell, Shell),
-    Shell.
+    Shell.        
+
+start_init_shell() ->
+    link_and_save_shell(shell:start(init)).
+
+start_new_shell() ->
+    link_and_save_shell(shell:start()).
 
 server_loop(Port, Q) ->
     receive
 	{Port,{data,Bytes}} ->
 	    case get(shell) of
 		noshell ->
-		    case string_chr(Bytes, 7) of
+		    case string_chr(Bytes, [7,3]) of
 			0 ->
 			    server_loop(Port, queue:snoc(Q, Bytes));
 			_ ->
@@ -305,7 +310,7 @@ get_chars_bytes(State, M, F, Xa, Port, Q, Bytes) ->
 	noshell ->
 	    get_chars_apply(State, M, F, Xa, Port, queue:snoc(Q, Bytes));
 	_ ->
-	    case string_chr(Bytes, 7) of
+	    case string_chr(Bytes, [7,3]) of
 		0 ->
 		    get_chars_apply(State, M, F, Xa, Port, 
 				    queue:snoc(Q, Bytes));
@@ -378,27 +383,44 @@ err_func(_, F, _) ->
 
 %% Search for a character in a list or binary
 string_chr(Bin, Character) when binary(Bin), integer(Character) ->
-    string_chr_bin(0, Bin, Character);
+    string_chr_bin(0, Bin, [Character]);
 string_chr(List, Character) when list(List), integer(Character) ->
-    string_chr_list(1, List, Character).
+    string_chr_list(1, List, [Character]);
+string_chr(Bin, Characters) when binary(Bin), list(Characters) ->
+    string_chr_bin(0, Bin, Characters);
+string_chr(List, Characters) when list(List), list(Characters) ->
+    string_chr_list(1, List, Characters).
 
-string_chr_bin(I, B, C) when I < size(B) ->
+string_chr_bin(I, B, Cs) when I < size(B) ->
     J = I+1,
-    case B of
-	<<_:I/binary,C,_/binary>> ->
+    case string_chr_bin_check(I, B, Cs) of
+	ok ->
 	    J;
-	_ ->
-	    string_chr_bin(J, B, C)
+	0 ->
+	    string_chr_bin(J, B, Cs)
     end;
 string_chr_bin(_, _, _) ->
     0.
 
+string_chr_bin_check(I, B, [C|Cs]) ->
+    case B of
+	<<_:I/binary,C,_/binary>> ->
+	    ok;
+	_ ->
+	    string_chr_bin_check(I, B, Cs)
+    end;
+string_chr_bin_check(_, _, []) ->
+    0.
+    
+string_chr_list(I, [C|T], Cs) ->
+    case lists:member(C, Cs) of
+	true ->
+	    I;
+	false ->
+	    string_chr_list(I+1, T, Cs)
+    end;
 string_chr_list(_, [], _) ->
-    0;
-string_chr_list(I, [C|_], C) ->
-    I;
-string_chr_list(I, [_|T], C) ->
-    string_chr_list(I+1, T, C).
+    0.
 
 %% Convert a buffer between list and binary
 cast(Data) ->

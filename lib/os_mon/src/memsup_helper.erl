@@ -1,14 +1,22 @@
-%%%----------------------------------------------------------------------
-%%% File    : memsup_helper.erl
-%%% Author  : Patrik Nyblom <support@erlang.ericsson.se>
-%%% Purpose : Scans processes for the worst memory user
-%%% Created : 23 May 2001 by Patrik Nyblom <support@erlang.ericsson.se>
-%%%----------------------------------------------------------------------
+%% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%% 
+%%     $Id$
+%%
 
 -module(memsup_helper).
-
-%%-compile(export_all).
-%%-export([Function/Arity, ...]).
 
 -behaviour(supervisor_bridge).
 
@@ -129,31 +137,23 @@ system_code_change(Port, _Module, _OldVsn, _Extra) ->
 %% Returns: {Pid, MemoryBytes}
 %%-----------------------------------------------------------------
 
-%% All except zombies.
-alive_processes() ->
-    lists:filter({erlang, is_process_alive}, processes()).
-
 get_worst_memory_user()  ->
-    get_worst_memory_user(alive_processes(), {self(), 0}).
+    get_worst_memory_user(processes(), self(), 0).
 
-get_worst_memory_user([Pid|Rest], {MaxPid, MaxMemBytes}) ->
+get_worst_memory_user([Pid|Rest], MaxPid, MaxMemBytes) ->
     case process_memory(Pid) of
 	undefined ->
-	    get_worst_memory_user(Rest, {MaxPid, MaxMemBytes});
-	MemoryBytes ->
-	    if 
-		MemoryBytes > MaxMemBytes ->
-		    get_worst_memory_user(Rest, {Pid, MemoryBytes});
-		true ->
-		    get_worst_memory_user(Rest, {MaxPid, MaxMemBytes})
-	    end
+	    get_worst_memory_user(Rest, MaxPid, MaxMemBytes);
+	MemoryBytes when MemoryBytes > MaxMemBytes ->
+	    get_worst_memory_user(Rest, Pid, MemoryBytes);
+	_ ->
+	    get_worst_memory_user(Rest, MaxPid, MaxMemBytes)
     end;
-get_worst_memory_user([], Return) ->
-    Return.
-
+get_worst_memory_user([], MaxPid, MaxMemBytes) ->
+    {MaxPid, MaxMemBytes}.
 
 process_memory(Pid) ->
-    case process_info(Pid,memory) of
+    case process_info(Pid, memory) of
 	{memory, Bytes} ->
 	    Bytes;
 	_ ->
@@ -212,12 +212,33 @@ get_memory_usage_win32(_Port) ->
 %% Returns {Allocated,Total}
 %%-----------------------------------------------------------------
 get_memory_usage_linux(_) ->
-    {ok,F} = file:open("/proc/meminfo",[read,raw]),
-    {ok,D} = file:read(F,1024),
-    ok = file:close(F),
-    {ok,[_Headers,MemInfo | _]} = regexp:split(D,"\n"),
-    {ok,[_,NMemTotal,NMemUsed],_} = io_lib:fread("~s ~d ~d",MemInfo),
-    {NMemUsed,NMemTotal}.
+    {ok,F} = file:open("/proc/meminfo", [read,read_ahead]),
+    try
+	case get_memory_usage_linux_1(F, undefined, undefined) of
+	    {MemTotal,MemFree} when is_integer(MemTotal), is_integer(MemFree) ->
+		{MemTotal-MemFree,MemTotal}
+	end
+	after
+	    file:close(F)
+	end.
+
+get_memory_usage_linux_1(_, Tot, Free) when is_integer(Tot), is_integer(Free) ->
+    {Tot,Free};
+get_memory_usage_linux_1(F, Tot0, Free0) ->
+    case io:get_line(F, '') of
+	"MemTotal:"++T ->
+	    Tot = get_kbytes(T),
+	    get_memory_usage_linux_1(F, Tot, Free0);
+	"MemFree:"++T ->
+	    Free = get_kbytes(T),
+	    get_memory_usage_linux_1(F, Tot0, Free);
+	Line when is_list(Line) ->
+	    get_memory_usage_linux_1(F, Tot0, Free0)
+    end.
+
+get_kbytes(Line) ->
+    {ok,[N],_}  = io_lib:fread("~d", Line),
+    N*1024.
 
 %%-----------------------------------------------------------------
 %% get_memory_usage_freebsd(_Port)
@@ -241,7 +262,7 @@ freebsd_sysctl(Def) ->
 %%
 %% Uses vm_stat command. This appears to lie about the page size in
 %% Mac OS X 10.2.2 - the pages given are based on 4000 bytes, but
-%% the vm_stat command tells us that it is 4096..
+%% the vm_stat command tells us that it is 4096...
 %% Returns {Allocated,Total}
 %%-----------------------------------------------------------------
 get_memory_usage_darwin(_) ->

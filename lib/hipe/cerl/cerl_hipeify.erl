@@ -337,10 +337,10 @@ add_defs([{V, F} | Ds], Ds1, Env, Ren) ->
 	    true ->
 		{N, A} = Name,
 		S = atom_to_list(N) ++ "_",
-		F = fun (N) ->
-			    {list_to_atom(S ++ integer_to_list(N)), A}
+		F1 = fun (Num) ->
+			    {list_to_atom(S ++ integer_to_list(Num)), A}
 		    end,
-		New = env__new_function_name(F, Env),
+		New = env__new_function_name(F1, Env),
 		{New, ren__add(Name, New, Ren)}
 	end,
     add_defs(Ds, [{cerl:update_c_var(V, Name1), F} | Ds1],

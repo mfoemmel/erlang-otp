@@ -117,25 +117,12 @@ main(int argc, char** argv)
 				 */
     int eargv_size;
     int eargc_base;		/* How many arguments in the base of eargv. */
-    char** orig_argv = argv;
     char* emulator;
-    int can_use_ecc = 1;	/* All files are .erl files. */
-
-    /*
-     * XXX Currently, never use ecc.
-     */
-    can_use_ecc = 0;
 
     emulator = getenv("ERLC_EMULATOR");
     if (emulator == NULL) {
 	emulator = get_default_emulator(argv[0]);
-    } else {
-	can_use_ecc = 0;
     }
-
-#if defined(__WIN32__) || defined(VXWORKS)
-    can_use_ecc = 0;		/* There is no ecc for Windows yet. */
-#endif
 
     /*
      * Allocate the argv vector to be used for arguments to Erlang.
@@ -250,7 +237,6 @@ main(int argc, char** argv)
 		    } else {
 			char option[4];
 
-			can_use_ecc = 0; /* ecc cannot handle -pa/-pz */
 			UNSHIFT(process_opt(&argc, &argv, 1));
 			option[0] = '-';
 			option[1] = 'p';
@@ -260,19 +246,9 @@ main(int argc, char** argv)
 		    }
 		}
 		break;
-	    case 'r':
-		if (strcmp(argv[1], "-rpc") != 0)
-		    goto error;
-		break;
 	    case 's':
 		if (argv[1][2] == '\0') {
 		    ;
-		} else if (strcmp(argv[1], "-stop") == 0) {
-		    /*
-		     * Not exiting here allows us to write:
-		     *    erlc -stop jam file.erl
-		     * to restart the compiler node before compiling.
-		     */
 		} else
 		    goto error;
 		break;
@@ -342,21 +318,8 @@ main(int argc, char** argv)
 
     PUSH("@files");
     while (argc > 1) {
-	char* p;
-	if ((p = strrchr(argv[1], '.')) == NULL || strcmp(p, ".erl") != 0) {
-	    can_use_ecc = 0;
-	}
 	PUSH(argv[1]);
 	argc--, argv++;
-    }
-
-    /*
-     * If all files were .erl files, we can use ecc.
-     */
-
-    if (can_use_ecc) {
-	orig_argv[0] = "ecc";
-	return run_erlang(orig_argv[0], orig_argv);
     }
 
     /*
@@ -552,11 +515,13 @@ usage(void)
 	{"-help", "shows this help text"},
 	{"-I path", "where to search for include files"},
 	{"-o name", "name output directory or file"},
-	{"-pa path", "add path to Erlang's code path"},
-	{"-rpc", "use a running Erlang node for compilation"},
-	{"-stop", "stop the compiler Erlang node (implies -rpc)"},
+	{"-pa path", "add path to the front of Erlang's code path"},
+	{"-pa path", "add path to then of Erlang's code path"},
 	{"-v", "verbose compiler output"},
-	{"-W", "enable warnings"},
+	{"-W0", "disable warnings"},
+	{"-Wnumber", "set warning level to number"},
+	{"-Wall", "enable all warnings"},
+	{"-W", "enable warnings (default; same as -W1)"},
 	{"-E", "generate listing of expanded code (Erlang compiler)"},
 	{"-S", "generate assembly listing (Erlang compiler)"},
 	{"-P", "generate listing of preprocessed code (Erlang compiler)"},

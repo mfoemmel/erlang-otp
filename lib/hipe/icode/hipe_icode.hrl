@@ -2,7 +2,7 @@
 %% This should only be used by hipe_icode.erl and hipe_beam_to_icode.erl!
 %%
 
--record(icode, {'fun', params, closure, leaf, 
+-record(icode, {'fun', params, closure, closure_arity, leaf, 
 		code, data, var_range, label_range, info=[]}).
 
 -record('if', {op, args, true_label, false_label, p}).

@@ -21,8 +21,46 @@
 -include("snmp_types.hrl").
 
 -export([config/0]).
--export([write_agent_snmp_files/7,
-	 write_manager_snmp_files/8]).
+-export([write_agent_snmp_files/7, write_agent_snmp_files/12,
+
+	 write_agent_snmp_conf/5, 
+	 write_agent_snmp_context_conf/1, 
+	 write_agent_snmp_community_conf/1, 
+	 write_agent_snmp_standard_conf/2, 
+	 write_agent_snmp_target_addr_conf/4, 
+	 write_agent_snmp_target_params_conf/2, 
+	 write_agent_snmp_notify_conf/2, 
+	 write_agent_snmp_usm_conf/5, 
+	 write_agent_snmp_vacm_conf/3, 
+
+	 write_manager_snmp_files/8,
+	 write_manager_snmp_conf/5, 
+	 write_manager_snmp_users_conf/2, 
+	 write_manager_snmp_agents_conf/2, 
+	 write_manager_snmp_usm_conf/2
+ 	 
+	]).
+
+-export([write_agent_config/3, 
+	 write_agent_context_config/3, 
+	 write_agent_community_config/3, 
+	 write_agent_standard_config/3, 
+	 write_agent_target_addr_config/3, 
+	 write_agent_target_params_config/3, 
+	 write_agent_notify_config/3, 
+	 write_agent_vacm_config/3, 
+	 write_agent_usm_config/3, 
+
+	 write_manager_config/3,
+	 write_manager_users_config/3,
+	 write_manager_agents_config/3,
+	 write_manager_usm_config/3
+	]).
+
+-export([write_manager_snmp_conf2/5,
+	 write_manager_snmp_agents_conf2/2,
+	 write_manager_snmp_users_conf2/2,
+	 write_manager_snmp_usm_conf2/2]).
 
 
 %%----------------------------------------------------------------------
@@ -1217,6 +1255,10 @@ write_agent_snmp_files(Dir, Vsns, ManagerIP, TrapUdp,
     write_agent_snmp_files(Dir, Vsns, ManagerIP, TrapUdp, AgentIP, AgentUDP,
 			   SysName, "trap", none, "", "agentEngine", 484).
 
+%% 
+%% ----- Agent config files generator functions -----
+%% 
+
 write_agent_snmp_files(Dir, Vsns, ManagerIP, TrapUdp, AgentIP, AgentUDP, 
 		       SysName, NotifType, SecType, Passwd, EngineID, MMS) ->
     write_agent_snmp_conf(Dir, AgentIP, AgentUDP, EngineID, MMS),
@@ -1230,9 +1272,14 @@ write_agent_snmp_files(Dir, Vsns, ManagerIP, TrapUdp, AgentIP, AgentUDP,
     write_agent_snmp_vacm_conf(Dir, Vsns, SecType),
     ok.
 
+
+%% 
+%% ------ agent.conf ------
+%% 
+
 write_agent_snmp_conf(Dir, AgentIP, AgentUDP, EngineID, MMS) -> 
     Comment = 
-"%% This files defines the Agent local configuration info\n"
+"%% This file defines the Agent local configuration info\n"
 "%% The data is inserted into the snmpEngine* variables defined\n"
 "%% in SNMP-FRAMEWORK-MIB, and the intAgent* variables defined\n"
 "%% in OTP-SNMPEA-MIB.\n"
@@ -1245,19 +1292,58 @@ write_agent_snmp_conf(Dir, AgentIP, AgentUDP, EngineID, MMS) ->
 "%% {snmpEngineID, \"agentEngine\"}.\n"
 "%% {snmpEngineMaxMessageSize, 484}.\n"
 "%%\n\n",
-    {ok, Fid} = file:open(filename:join(Dir,"agent.conf"),write),
-    ok = io:format(Fid, 
-		   "~s~s\n"
-		   "{intAgentUDPPort,          ~w}.\n"
-		   "{intAgentIpAddress,        ~w}.\n"
-		   "{snmpEngineID,            \"~s\"}.\n"
-		   "{snmpEngineMaxMessageSize, ~w}.\n",
-		   [header(), Comment, AgentUDP, AgentIP, EngineID, MMS]),
-    file:close(Fid).
+    Hdr = header() ++ Comment, 
+    Conf = [{intAgentUDPPort,          AgentUDP}, 
+	    {intAgentIpAddress,        AgentIP},
+	    {snmpEngineID,             EngineID},
+	    {snmpEngineMaxMessageSize, MMS}],
+    write_agent_config(Dir, Hdr, Conf).
+
+write_agent_config(Dir, Hdr, Conf) 
+  when list(Dir), list(Hdr), list(Conf) ->
+    Verify = fun()    -> verify_agent_conf(Conf)           end,
+    Write  = fun(Fid) -> write_agent_conf(Fid, Hdr, Conf)  end,
+    write_config_file(Dir, "agent.conf", Verify, Write).
+    
+verify_agent_conf([]) ->
+    ok;
+verify_agent_conf([H|T]) ->
+    snmp_framework_mib:check_agent(H),
+    verify_agent_conf(T);
+verify_agent_conf(X) ->
+    throw({error, {invalid_agent_conf, X}}).
+
+write_agent_conf(Fid, "", Conf) ->
+    write_agent_conf(Fid, Conf);
+write_agent_conf(Fid, Hdr, Conf) ->
+    io:format(Fid, "~s~n", [Hdr]),
+    write_agent_conf(Fid, Conf).
+
+write_agent_conf(_Fid, []) ->
+    ok;
+write_agent_conf(Fid, [H|T]) ->
+    do_write_agent_conf(Fid, H),
+    write_agent_conf(Fid, T).
+
+do_write_agent_conf(Fid, {intAgentIpAddress = Tag, Val}) ->
+    io:format(Fid, "{~w, ~w}.~n", [Tag, Val]);
+do_write_agent_conf(Fid,{intAgentUDPPort = Tag, Val} ) ->
+    io:format(Fid, "{~w, ~w}.~n", [Tag, Val]);
+do_write_agent_conf(Fid,{intAgentMaxPacketSize = Tag, Val} ) ->
+    io:format(Fid, "{~w, ~w}.~n", [Tag, Val]);
+do_write_agent_conf(Fid,{snmpEngineMaxMessageSize = Tag, Val} ) ->
+    io:format(Fid, "{~w, ~w}.~n", [Tag, Val]);
+do_write_agent_conf(Fid,{snmpEngineID = Tag, Val} ) ->
+    io:format(Fid, "{~w, \"~s\"}.~n", [Tag, Val]).
+
+
+%% 
+%% ------ context.conf ------
+%% 
 
 write_agent_snmp_context_conf(Dir) ->
     Comment = 
-"%% This files defines the contexts known to the agent.\n"
+"%% This file defines the contexts known to the agent.\n"
 "%% The data is inserted into the vacmContextTable defined\n"
 "%% in SNMP-VIEW-BASED-ACM-MIB.\n"
 "%% Each row is a string:\n"
@@ -1268,14 +1354,46 @@ write_agent_snmp_context_conf(Dir) ->
 "%% \"bridge1\".\n"
 "%% \"bridge2\".\n"
 "%%\n\n",
-    {ok, Fid} = file:open(filename:join(Dir,"context.conf"),write),
-    ok = io:format(Fid, "~s~s\"\".\n",
-		   [header(), Comment]),
-    file:close(Fid).
+    Hdr = header() ++ Comment,
+    Conf = [""],
+    write_agent_context_config(Dir, Hdr, Conf).
+
+write_agent_context_config(Dir, Hdr, Conf) 
+  when list(Dir), list(Hdr), list(Conf) ->
+    Verify = fun()    -> verify_agent_context_conf(Conf)           end,
+    Write  = fun(Fid) -> write_agent_context_conf(Fid, Hdr, Conf)  end,
+    write_config_file(Dir, "context.conf", Verify, Write).
+
+verify_agent_context_conf([]) ->
+    ok;
+verify_agent_context_conf([H|T]) ->
+    snmp_framework_mib:check_context(H),
+    verify_agent_context_conf(T);
+verify_agent_context_conf(X) ->
+    throw({error, {invalid_context_conf, X}}).
+
+write_agent_context_conf(Fid, "", Conf) ->
+    write_agent_context_conf(Fid, Conf);
+write_agent_context_conf(Fid, Hdr, Conf) ->
+    io:format(Fid, "~s~n", [Hdr]),
+    write_agent_context_conf(Fid, Conf).
+    
+write_agent_context_conf(_Fid, []) ->
+    ok;
+write_agent_context_conf(Fid, [H|T]) ->
+    io:format(Fid, "\"~s\".~n", [H]),
+    write_agent_context_conf(Fid, T);
+write_agent_context_conf(_Fid, X) ->
+    throw({error, {invalid_context_conf, X}}).
+
+    
+%% 
+%% ------ community.conf ------
+%% 
 
 write_agent_snmp_community_conf(Dir) ->
     Comment = 
-"%% This files defines the community info which maps to VACM parameters.\n"
+"%% This file defines the community info which maps to VACM parameters.\n"
 "%% The data is inserted into the snmpCommunityTable defined\n"
 "%% in SNMP-COMMUNITY-MIB.\n"
 "%% Each row is a 5-tuple:\n"
@@ -1285,18 +1403,51 @@ write_agent_snmp_community_conf(Dir) ->
 "%% {\"2\", \"secret\", \"secret_name\", \"\", \"tag\"}.\n"
 "%% {\"3\", \"bridge1\", \"initial\", \"bridge1\", \"\"}.\n"
 "%%\n\n",
-    {ok, Fid} = file:open(filename:join(Dir,"community.conf"),write),
-    ok = io:format(
-	   Fid, "~s~s"
-	   "{\"public\", \"public\", \"initial\", \"\", \"\"}.\n"
-	   "{\"all-rights\", \"all-rights\", \"all-rights\", \"\", \"\"}.\n"
-	   "{\"standard trap\", \"standard trap\", \"initial\", \"\", \"\"}.\n",
-	   [header(), Comment]),
-    file:close(Fid).
+    Hdr = header() ++ Comment,
+    Conf = [{"public", "public", "initial", "", ""}, 
+	    {"all-rights", "all-rights", "all-rights", "", ""}, 
+	    {"standard trap", "standard trap", "initial", "", ""}], 
+    write_agent_community_config(Dir, Hdr, Conf).
+
+write_agent_community_config(Dir, Hdr, Conf)
+  when list(Dir), list(Hdr), list(Conf) ->
+    Verify = fun()    -> verify_agent_community_conf(Conf)           end,
+    Write  = fun(Fid) -> write_agent_community_conf(Fid, Hdr, Conf)  end,
+    write_config_file(Dir, "community.conf", Verify, Write).
+
+verify_agent_community_conf([]) ->
+    ok;
+verify_agent_community_conf([H|T]) ->
+    snmp_community_mib:check_community(H),
+    verify_agent_community_conf(T);
+verify_agent_community_conf(X) ->
+    throw({error, {invalid_community_conf, X}}).
+
+write_agent_community_conf(Fid, "", Conf) ->
+    write_agent_community_conf(Fid, Conf);
+write_agent_community_conf(Fid, Hdr, Conf) ->
+    io:format(Fid, "~s~n", [Hdr]),
+    write_agent_community_conf(Fid, Conf).
+
+write_agent_community_conf(_Fid, []) ->
+    ok;
+write_agent_community_conf(Fid, [H|T]) ->
+    do_write_agent_community_conf(Fid, H),
+    write_agent_community_conf(Fid, T).
+
+do_write_agent_community_conf(Fid, 
+			      {Idx, Name, SecName, CtxName, TranspTag}) ->
+    io:format(Fid, "{\"~s\", \"~s\", \"~s\", \"~s\", \"~s\"}.~n", 
+	      [Idx, Name, SecName, CtxName, TranspTag]).
+    
+
+%% 
+%% ------ standard.conf ------
+%% 
 
 write_agent_snmp_standard_conf(Dir, SysName) ->
     Comment = 
-"%% This files defines the STANDARD-MIB info.\n"
+"%% This file defines the STANDARD-MIB info.\n"
 "%% Each row is a 2-tuple:\n"
 "%% {StandardVariable, Value}.\n"
 "%% For example\n"
@@ -1307,21 +1458,66 @@ write_agent_snmp_standard_conf(Dir, SysName) ->
 "%% {sysLocation, \"erlang\"}.\n"
 "%% {sysServices, 72}.\n"
 "%% {snmpEnableAuthenTraps, enabled}.\n"
-"%%\n\n"
-"{sysDescr, \"Erlang SNMP agent\"}.\n"
-"{sysObjectID, [1,2,3]}.\n"
-"{sysContact, \"{mbj,eklas}@erlang.ericsson.se\"}.\n"
-"{sysLocation, \"erlang\"}.\n"
-"{sysServices, 72}.\n"
-"{snmpEnableAuthenTraps, enabled}.\n",
-    {ok, Fid} = file:open(filename:join(Dir,"standard.conf"),write),
-    ok = io:format(Fid, "~s~s{sysName, \"~s\"}.\n",
-		   [header(), Comment, SysName]),
-    file:close(Fid).
-	
+"%%\n\n",
+    Hdr = header() ++ Comment,
+    Conf = [{sysDescr,              "Erlang SNMP agent"},
+	    {sysObjectID,           [1,2,3]},
+	    {sysContact,            "{mbj,eklas}@erlang.ericsson.se"},
+	    {sysLocation,           "erlang"}, 
+	    {sysServices,           72}, 
+	    {snmpEnableAuthenTraps, enabled},
+	    {sysName,               SysName}],
+    write_agent_standard_config(Dir, Hdr, Conf).
+
+write_agent_standard_config(Dir, Hdr, Conf) 
+  when list(Dir), list(Hdr), list(Conf) ->
+    Verify = fun()    -> verify_agent_standard_conf(Conf)           end,
+    Write  = fun(Fid) -> write_agent_standard_conf(Fid, Hdr, Conf)  end,
+    write_config_file(Dir, "standard.conf", Verify, Write).
+
+verify_agent_standard_conf([]) ->
+    ok;
+verify_agent_standard_conf([H|T]) ->
+    snmp_standard_mib:check_standard(H),
+    verify_agent_standard_conf(T);
+verify_agent_standard_conf(X) ->
+    throw({error, {invalid_standard_conf, X}}).
+
+write_agent_standard_conf(Fid, "", Conf) ->
+    write_agent_standard_conf(Fid, Conf);
+write_agent_standard_conf(Fid, Hdr, Conf) ->
+    io:format(Fid, "~s~n", [Hdr]),
+    write_agent_standard_conf(Fid, Conf).
+
+write_agent_standard_conf(_Fid, []) ->
+    ok;
+write_agent_standard_conf(Fid, [H|T]) ->
+    do_write_agent_standard_conf(Fid, H),
+    write_agent_standard_conf(Fid, T).
+
+do_write_agent_standard_conf(Fid, {sysDescr = Tag,    Val}) -> 
+    io:format(Fid, "{~w, \"~s\"}.~n", [Tag, Val]);
+do_write_agent_standard_conf(Fid, {sysObjectID = Tag, Val}) -> 
+    io:format(Fid, "{~w, ~w}.~n", [Tag, Val]);
+do_write_agent_standard_conf(Fid, {sysContact = Tag,  Val}) -> 
+    io:format(Fid, "{~w, \"~s\"}.~n", [Tag, Val]);
+do_write_agent_standard_conf(Fid, {sysName = Tag,     Val}) -> 
+    io:format(Fid, "{~w, \"~s\"}.~n", [Tag, Val]);
+do_write_agent_standard_conf(Fid, {sysLocation = Tag, Val}) -> 
+    io:format(Fid, "{~w, \"~s\"}.~n", [Tag, Val]);
+do_write_agent_standard_conf(Fid, {sysServices = Tag, Val}) -> 
+    io:format(Fid, "{~w, ~w}.~n", [Tag, Val]);
+do_write_agent_standard_conf(Fid, {snmpEnableAuthenTraps = Tag, Val}) ->
+    io:format(Fid, "{~w, ~w}.~n", [Tag, Val]).
+
+
+%% 
+%% ------ target_addr.conf ------
+%% 
+
 write_agent_snmp_target_addr_conf(Dir, ManagerIp, UDP, Vsns) -> 
     Comment = 
-"%% This files defines the target address parameters.\n"
+"%% This file defines the target address parameters.\n"
 "%% The data is inserted into the snmpTargetAddrTable defined\n"
 "%% in SNMP-TARGET-MIB, and in the snmpTargetAddrExtTable defined\n"
 "%% in SNMP-COMMUNITY-MIB.\n"
@@ -1338,25 +1534,59 @@ write_agent_snmp_target_addr_conf(Dir, ManagerIp, UDP, Vsns) ->
 "%%  1500, 3, \"std_inform\", \"otp_v2\", \"\",\n"
 "%%  [127,0,0,0],  2048}.\n"
 "%%\n\n",
-    {ok, Fid} = file:open(filename:join(Dir,"target_addr.conf"),write),
-    io:format(Fid, "~s~s", [header(), Comment]),
-    lists:foreach(fun(Vsn) ->
-			  ok = io:format(Fid, 
-					 "{\"~s\", ~w, ~w, 1500, 3, "
-					 "\"std_trap\", \"target_~w\", "
-					 "\"\", [], 2048}.\n",
-					 [mk_ip(ManagerIp, Vsn),
-					  ManagerIp, UDP, Vsn])
-		  end,
-		  Vsns),
-    file:close(Fid).
+    Hdr = header() ++ Comment,
+    Conf = [{mk_ip(ManagerIp, Vsn), ManagerIp, UDP, 
+	     1500, 3, "std_trap", 
+	     lists:flatten(io_lib:format("target_~w", [Vsn])), 
+	     "", [], 2048} || Vsn <- Vsns], 
+    write_agent_target_addr_config(Dir, Hdr, Conf).
 
 mk_ip([A,B,C,D], Vsn) ->
     lists:flatten(io_lib:format("~w.~w.~w.~w ~w", [A,B,C,D,Vsn])).
 
+write_agent_target_addr_config(Dir, Hdr, Conf) 
+  when list(Dir), list(Hdr), list(Conf) ->
+    Verify = fun()    -> verify_agent_target_addr_conf(Conf)           end,
+    Write  = fun(Fid) -> write_agent_target_addr_conf(Fid, Hdr, Conf)  end,
+    write_config_file(Dir, "target_addr.conf", Verify, Write).
+
+verify_agent_target_addr_conf([]) ->
+    ok;
+verify_agent_target_addr_conf([H|T]) ->
+    snmp_target_mib:check_target_addr(H),
+    verify_agent_target_addr_conf(T);
+verify_agent_target_addr_conf(X) ->
+    throw({error, {invalid_target_addr_conf, X}}).
+
+write_agent_target_addr_conf(Fid, "", Conf) ->
+    write_agent_target_addr_conf(Fid, Conf);
+write_agent_target_addr_conf(Fid, Hdr, Conf) ->
+    io:format(Fid, "~s~n", [Hdr]),
+    write_agent_target_addr_conf(Fid, Conf).
+
+write_agent_target_addr_conf(_Fid, []) ->
+    ok;
+write_agent_target_addr_conf(Fid, [H|T]) ->
+    do_write_agent_target_addr_conf(Fid, H),
+    write_agent_target_addr_conf(Fid, T).
+
+do_write_agent_target_addr_conf(Fid, 
+				{Name, Ip, Udp, 
+				 Timeout, RetryCount, TagList, 
+				 ParamsName, EngineId,
+				 TMask, MaxMessageSize}) ->
+    io:format(Fid, "{\"~s\", ~w, ~w, ~w, ~w, ~w, \"~s\", \"~s\", ~w, ~w}.~n", 
+	      [Name, Ip, Udp, Timeout, RetryCount, TagList, 
+	       ParamsName, EngineId, TMask, MaxMessageSize]).
+
+
+%% 
+%% ------ target_params.conf ------
+%% 
+
 write_agent_snmp_target_params_conf(Dir, Vsns) -> 
     Comment = 
-"%% This files defines the target parameters.\n"
+"%% This file defines the target parameters.\n"
 "%% The data is inserted into the snmpTargetParamsTable defined\n"
 "%% in SNMP-TARGET-MIB.\n"
 "%% Each row is a 5-tuple:\n"
@@ -1364,28 +1594,62 @@ write_agent_snmp_target_params_conf(Dir, Vsns) ->
 "%% For example\n"
 "%% {\"target_v3\", v3, usm, \"\", noAuthNoPriv}.\n"
 "%%\n\n",
-    {ok, Fid} = file:open(filename:join(Dir,"target_params.conf"),write),
-    io:format(Fid, "~s~s", [header(), Comment]),
-    lists:foreach(fun(Vsn) ->
-			  MP = if Vsn == v1 -> v1;
-				  Vsn == v2 -> v2c;
-				  Vsn == v3 -> v3
-			       end,
-			  SM = if Vsn == v1 -> v1;
-				  Vsn == v2 -> v2c;
-				  Vsn == v3 -> usm
-			       end,
-			  ok = io:format(Fid, 
-					 "{\"target_~w\", ~w, ~w, "
-					 "\"initial\", noAuthNoPriv}.\n",
-					 [Vsn, MP, SM])
-		  end,
-		  Vsns),
-    file:close(Fid).
+    Hdr = header() ++ Comment,
+    Conf = [fun(V) ->
+		    MP = if V == v1 -> v1;
+			    V == v2 -> v2c;
+			    V == v3 -> v3
+			 end,
+		    SM = if V == v1 -> v1;
+			    V == v2 -> v2c;
+			    V == v3 -> usm
+			 end,
+		    Name = lists:flatten(
+			     io_lib:format("target_~w", [V])),
+		    {Name, MP, SM, "initial", noAuthNoPriv}
+	    end(Vsn) || Vsn <- Vsns],
+    write_agent_target_params_config(Dir, Hdr, Conf).
+
+write_agent_target_params_config(Dir, Hdr, Conf) 
+  when list(Dir), list(Hdr), list(Conf) ->
+    Verify = fun()    -> verify_agent_target_params_conf(Conf)           end,
+    Write  = fun(Fid) -> write_agent_target_params_conf(Fid, Hdr, Conf)  end,
+    write_config_file(Dir, "target_params.conf", Verify, Write).
+
+verify_agent_target_params_conf([]) ->
+    ok;
+verify_agent_target_params_conf([H|T]) ->
+    snmp_target_mib:check_target_params(H),
+    verify_agent_target_params_conf(T);
+verify_agent_target_params_conf(X) ->
+    throw({error, {invalid_target_params_conf, X}}).
+
+write_agent_target_params_conf(Fid, "", Conf) ->
+    write_agent_target_params_conf(Fid, Conf);
+write_agent_target_params_conf(Fid, Hdr, Conf) ->
+    io:format(Fid, "~s~n", [Hdr]),
+    write_agent_target_params_conf(Fid, Conf).
+
+write_agent_target_params_conf(_Fid, []) ->
+    ok;
+write_agent_target_params_conf(Fid, [H|T]) ->
+    do_write_agent_target_params_conf(Fid, H),
+    write_agent_target_params_conf(Fid, T).
+
+do_write_agent_target_params_conf(Fid, 
+				  {Name, MpModel, 
+				   SecModel, SecName, SecLevel}) ->
+    io:format(Fid, "{\"~s\", ~w, ~w, \"~s\", ~w}.~n", 
+	      [Name, MpModel, SecModel, SecName, SecLevel]).
+
+
+%% 
+%% ------ notify.conf ------
+%% 
 
 write_agent_snmp_notify_conf(Dir, NotifyType) -> 
     Comment = 
-"%% This files defines the notification parameters.\n"
+"%% This file defines the notification parameters.\n"
 "%% The data is inserted into the snmpNotifyTable defined\n"
 "%% in SNMP-NOTIFICATION-MIB.\n"
 "%% The Name is used as CommunityString for v1 and v2c.\n"
@@ -1395,10 +1659,43 @@ write_agent_snmp_notify_conf(Dir, NotifyType) ->
 "%% {\"standard trap\", \"std_trap\", trap}.\n"
 "%% {\"standard inform\", \"std_inform\", inform}.\n"
 "%%\n\n",
-    {ok, Fid} = file:open(filename:join(Dir,"notify.conf"),write),
-    ok = io:format(Fid, "~s~s{\"standard trap\", \"std_trap\", ~s}.\n",
-		   [header(), Comment, NotifyType]),
-    file:close(Fid).
+    Hdr = header() ++ Comment, 
+    Conf = [{"stadard_trap", "std_trap", NotifyType}],
+    write_agent_notify_config(Dir, Hdr, Conf).
+
+write_agent_notify_config(Dir, Hdr, Conf) 
+  when list(Dir), list(Hdr), list(Conf) ->
+    Verify = fun()    -> verify_agent_notify_conf(Conf)           end,
+    Write  = fun(Fid) -> write_agent_notify_conf(Fid, Hdr, Conf)  end,
+    write_config_file(Dir, "notify.conf", Verify, Write).
+
+verify_agent_notify_conf([]) ->
+    ok;
+verify_agent_notify_conf([H|T]) ->
+    snmp_notification_mib:check_notify(H),
+    verify_agent_notify_conf(T);
+verify_agent_notify_conf(X) ->
+    throw({error, {invalid_notify_conf, X}}).
+
+write_agent_notify_conf(Fid, "", Conf) ->
+    write_agent_notify_conf(Fid, Conf);
+write_agent_notify_conf(Fid, Hdr, Conf) ->
+    io:format(Fid, "~s~n", [Hdr]),
+    write_agent_notify_conf(Fid, Conf).
+
+write_agent_notify_conf(_Fid, []) ->
+    ok;
+write_agent_notify_conf(Fid, [H|T]) ->
+    do_write_agent_notify_conf(Fid, H),
+    write_agent_notify_conf(Fid, T).
+
+do_write_agent_notify_conf(Fid, {Name, Tag, Type}) ->
+    io:format(Fid, "{\"~s\", \"~s\", ~w}.~n", [Name, Tag, Type]).
+
+
+%% 
+%% ------ usm.conf ------
+%% 
 
 write_agent_snmp_usm_conf(Dir, Vsns, EngineID, SecType, Passwd) -> 
     case lists:member(v3, Vsns) of
@@ -1408,7 +1705,7 @@ write_agent_snmp_usm_conf(Dir, Vsns, EngineID, SecType, Passwd) ->
 
 write_agent_snmp_usm_conf(Dir, EngineID, SecType, Passwd) -> 
     Comment = 
-"%% This files defines the security parameters for the user-based\n"
+"%% This file defines the security parameters for the user-based\n"
 "%% security model.\n"
 "%% The data is inserted into the usmUserTable defined\n"
 "%% in SNMP-USER-BASED-SM-MIB.\n"
@@ -1420,53 +1717,101 @@ write_agent_snmp_usm_conf(Dir, EngineID, SecType, Passwd) ->
 "%%  usmNoAuthProtocol, \"\", \"\", usmNoPrivProtocol, \"\", \"\", \"\",\n"
 "%%  \"\", \"\"}.\n"
 "%%\n\n",
-    {ok, Fid} = file:open(filename:join(Dir,"usm.conf"),write),
-    case SecType of
-	none ->
-	    ok = io:format(Fid, "~s~s\n"
-			   "{\"~s\", \"initial\", \"initial\", zeroDotZero, "
-			   "usmNoAuthProtocol, \"\", \"\", "
-			   "usmNoPrivProtocol, \"\", \"\", \"\", "
-			   "\"\", \"\"}.\n",
-			   [header(), Comment, EngineID]);
-	_ ->
-	    Secret16 = agent_snmp_mk_secret(md5, Passwd, EngineID),
-	    Secret20 = agent_snmp_mk_secret(sha, Passwd, EngineID),
-	    {PrivProt, PrivSecret} = 
-		case SecType of
-		    minimum ->
-			{usmNoPrivProtocol, ""};
-		    semi ->
-			{usmDESPrivProtocol, Secret16}
-		end,
-	    ok = io:format(Fid, "~s~s\n"
-			   "{\"~s\", \"initial\", \"initial\", zeroDotZero, "
-			   "usmHMACMD5AuthProtocol, \"\", \"\", "
-			   "~w, \"\", \"\", \"\", "
-			   "~w, ~w}.\n",
-			   [header(), Comment, EngineID, PrivProt,
-			    Secret16, PrivSecret]),
-	    ok = io:format(Fid,
-			   "{\"~s\", \"templateMD5\", \"templateMD5\", "
-			   "zeroDotZero, "
-			   "usmHMACMD5AuthProtocol, \"\", \"\", "
-			   "~w, \"\", \"\", \"\", "
-			   "~w, ~w}.\n",
-			   [EngineID, PrivProt, Secret16, PrivSecret]),
-	    ok = io:format(Fid,
-			   "{\"~s\", \"templateSHA\", \"templateSHA\", "
-			   "zeroDotZero, "
-			   "usmHMACSHAAuthProtocol, \"\", \"\", "
-			   "~w, \"\", \"\", \"\", "
-			   "~w, ~w}.\n",
-			   [EngineID, PrivProt, Secret20, PrivSecret])
-    end,
-    file:close(Fid).
+    Hdr = header() ++ Comment,
+    Conf = write_agent_snmp_usm_conf2(EngineID, SecType, Passwd),
+    write_agent_usm_config(Dir, Hdr, Conf).
+
+write_agent_snmp_usm_conf2(EngineID, none, _Passwd) ->
+    [{EngineID, "initial", "initial", zeroDotZero, 
+      usmNoAuthProtocol, "", "", 
+      usmNoPrivProtocol, "", "", 
+      "", "", ""}];
+write_agent_snmp_usm_conf2(EngineID, SecType, Passwd) ->
+    Secret16 = agent_snmp_mk_secret(md5, Passwd, EngineID),
+    Secret20 = agent_snmp_mk_secret(sha, Passwd, EngineID),
+    {PrivProt, PrivSecret} = 
+	case SecType of
+	    minimum ->
+		{usmNoPrivProtocol, ""};
+	    semi ->
+		{usmDESPrivProtocol, Secret16}
+	end,
+    [{EngineID, "initial", "initial", zeroDotZero, 
+      usmHMACMD5AuthProtocol, "", "", 
+      PrivProt, "", "", 
+      "", Secret16, PrivSecret},
+     
+     {EngineID, "templateMD5", "templateMD5", zeroDotZero, 
+      usmHMACMD5AuthProtocol, "", "", 
+      PrivProt, "", "", 
+      "", Secret16, PrivSecret}, 
+
+     {EngineID, "templateSHA", "templateSHA", zeroDotZero, 
+      usmHMACSHAAuthProtocol, "", "", 
+      PrivProt, "", "", 
+      "", Secret20, PrivSecret}].
+
+write_agent_usm_config(Dir, Hdr, UsmConf) 
+  when list(Dir), list(Hdr), list(UsmConf) ->
+    ensure_started(crypto),
+    Verify = fun()    -> verify_usm(UsmConf)          end, 
+    Write  = fun(Fid) -> write_usm(Fid, Hdr, UsmConf) end, 
+    write_config_file(Dir, "usm.conf", Verify, Write).
+
+verify_usm([]) ->
+    ok;
+verify_usm([H|T]) ->
+    snmp_user_based_sm_mib:check_usm(H),
+    verify_usm(T);
+verify_usm(X) ->
+    throw({error, {invalid_usm, X}}).
+
+write_usm(Fid, "", Conf) ->
+    write_usm(Fid, Conf);
+write_usm(Fid, Hdr, Conf) ->
+    io:format(Fid, "~s~n", [Hdr]),
+    write_usm(Fid, Conf).
+
+write_usm(_Fid, []) ->
+    ok;
+write_usm(Fid, [H|T]) ->
+    do_write_usm(Fid, H),
+    write_usm(Fid, T).
+
+do_write_usm(Fid, 
+	     {EngineID, UserName, SecName, Clone, 
+	      AuthP, AuthKeyC, OwnAuthKeyC,
+	      PrivP, PrivKeyC, OwnPrivKeyC, 
+	      Public, AuthKey, PrivKey}) ->
+    io:format(Fid, "{", []),
+    io:format(Fid, "\"~s\", ", [EngineID]),
+    io:format(Fid, "\"~s\", ", [UserName]),
+    io:format(Fid, "\"~s\", ", [SecName]),
+    io:format(Fid, "~w, ",     [Clone]),
+    io:format(Fid, "~w, ",     [AuthP]),
+    do_write_usm2(Fid, AuthKeyC, ", "), 
+    do_write_usm2(Fid, OwnAuthKeyC, ", "),
+    io:format(Fid, "~w, ",     [PrivP]),
+    do_write_usm2(Fid, PrivKeyC, ", "),
+    do_write_usm2(Fid, OwnPrivKeyC, ", "),
+    do_write_usm2(Fid, Public, ", "),
+    do_write_usm2(Fid, AuthKey, ", "),
+    do_write_usm2(Fid, PrivKey, ""),
+    io:format(Fid, "}.~n", []).
+
+do_write_usm2(Fid, "", P) ->
+    io:format(Fid, "\"\"~s", [P]);
+do_write_usm2(Fid, X, P) ->
+    io:format(Fid, "~w~s", [X, P]).
 
 
-write_agent_snmp_vacm_conf(Dir, Vsns, SecType) -> 
+%% 
+%% ------ vacm.conf ------
+%% 
+
+write_agent_snmp_vacm_conf(Dir, Vsns, SecType) ->
     Comment = 
-"%% This files defines the Mib Views.\n"
+"%% This file defines the Mib Views.\n"
 "%% The data is inserted into the vacm* tables defined\n"
 "%% in SNMP-VIEW-BASED-ACM-MIB.\n"
 "%% Each row is one of 3 tuples; one for each table in the MIB:\n"
@@ -1484,69 +1829,117 @@ write_agent_snmp_vacm_conf(Dir, Vsns, SecType) ->
 " % for EX1-MIB\n"
 "%% {vacmViewTreeFamily, \"internet\", [1,3,6,1], included, null}.\n"
 "%%\n\n",
-    {ok, Fid} = file:open(filename:join(Dir,"vacm.conf"),write),
-    Groups = lists:foldl(
-	       fun(V, Str) ->
-		       io_lib:format("~s{vacmSecurityToGroup, ~w, \"initial\", "
-				     "\"initial\"}.\n"
-				     "{vacmSecurityToGroup, ~w, "
-				     "\"all-rights\", \"all-rights\"}.\n",
-				     [Str, agent_snmp_vacm_ver(V), 
-				      agent_snmp_vacm_ver(V)])
-	       end,
-	       "", Vsns),
-    Restricted = case SecType of
-		     none ->
-			 "{vacmViewTreeFamily, \"restricted\", "
-			     "[1,3,6,1], included, null}.\n";
-		     minimum ->
-			 "{vacmViewTreeFamily, \"restricted\", "
-			     "[1,3,6,1], included, null}.\n";
-		     semi ->
-			 "{vacmViewTreeFamily, \"restricted\", "
-			     "[1,3,6,1,2,1,1], included, null}.\n"
-			 "{vacmViewTreeFamily, \"restricted\", "
-			     "[1,3,6,1,2,1,11], included, null}.\n"
-			 "{vacmViewTreeFamily, \"restricted\", "
-			     "[1,3,6,1,6,3,10,2,1], included, null}.\n"
-			 "{vacmViewTreeFamily, \"restricted\", "
-			     "[1,3,6,1,6,3,11,2,1], included, null}.\n"
-			 "{vacmViewTreeFamily, \"restricted\", "
-			     "[1,3,6,1,6,3,15,1,1], included, null}.\n"
-		 end,
-    ok = io:format(Fid, "~s~s\n~s\n"
-		   "{vacmAccess, \"initial\", \"\", any, noAuthNoPriv, exact, "
-		   "\"restricted\", \"\", \"restricted\"}.\n"
-		   "{vacmAccess, \"initial\", \"\", usm, authNoPriv, exact, "
-		   "\"internet\", \"internet\", \"internet\"}.\n"
-		   "{vacmAccess, \"initial\", \"\", usm, authPriv, exact, "
-		   "\"internet\", \"internet\", \"internet\"}.\n\n"
-		   "{vacmAccess, \"all-rights\", \"\", any, noAuthNoPriv, "
-		   "exact, \"internet\", \"internet\", \"internet\"}.\n\n"
+    Hdr = lists:flatten(header()) ++ Comment,
+    Groups = 
+	lists:foldl(
+	  fun(V, Acc) ->
+		  [{vacmSecurityToGroup, vacm_ver(V), 
+		    "initial",    "initial"},
+		   {vacmSecurityToGroup, vacm_ver(V), 
+		    "all-rights", "all-rights"}|
+		   Acc]
+	  end, [], Vsns),
+    Acc = 
+	[{vacmAccess, "initial", "", any, noAuthNoPriv, exact, 
+	  "restricted", "", "restricted"}, 
+	 {vacmAccess, "initial", "", usm, authNoPriv, exact, 
+	  "internet", "internet", "internet"}, 
+	 {vacmAccess, "initial", "", usm, authPriv, exact, 
+	  "internet", "internet", "internet"}, 
+	 {vacmAccess, "all-rights", "", any, noAuthNoPriv, exact, 
+	  "internet", "internet", "internet"}],
+    VTF0 = 
+	case SecType of
+	    none ->
+		[{vacmViewTreeFamily, 
+		  "restricted", [1,3,6,1], included, null}];
+	    minimum ->
+		[{vacmViewTreeFamily, 
+		  "restricted", [1,3,6,1], included, null}];
+	    semi ->
+		[{vacmViewTreeFamily, 
+		  "restricted", [1,3,6,1,2,1,1], included, null},
+		 {vacmViewTreeFamily, 
+		  "restricted", [1,3,6,1,2,1,11], included, null},
+		 {vacmViewTreeFamily, 
+		  "restricted", [1,3,6,1,6,3,10,2,1], included, null},
+		 {vacmViewTreeFamily, 
+		  "restricted", [1,3,6,1,6,3,11,2,1], included, null},
+		 {vacmViewTreeFamily, 
+		  "restricted", [1,3,6,1,6,3,15,1,1], included, null}]
+	end,
+    VTF = VTF0 ++ [{vacmViewTreeFamily,"internet",[1,3,6,1],included,null}],
+    write_agent_vacm_config(Dir, Hdr, Groups ++ Acc ++ VTF).
 
-		   "{vacmViewTreeFamily, \"internet\", [1,3,6,1], "
-		   "included, null}.\n"
-		   "~s",
-		   [header(), Comment, Groups, Restricted]),
-    file:close(Fid).
+write_agent_vacm_config(Dir, Hdr, VacmConf) 
+  when list(Dir), list(Hdr), list(VacmConf) ->
+    Verify = fun()    -> verify_vacm(VacmConf)          end, 
+    Write  = fun(Fid) -> write_vacm(Fid, Hdr, VacmConf) end, 
+    write_config_file(Dir, "vacm.conf", Verify, Write).
 
-agent_snmp_vacm_ver(v1) -> v1;
-agent_snmp_vacm_ver(v2) -> v2c;
-agent_snmp_vacm_ver(v3) -> usm.
+verify_vacm([]) ->
+    ok;
+verify_vacm([H|T]) ->
+    snmp_view_based_acm_mib:check_vacm(H),
+    verify_vacm(T);
+verify_vacm(X) ->
+    throw({error, {invalid_vacm, X}}).
+
+write_vacm(Fid, "", Conf) ->
+    write_vacm(Fid, Conf);
+write_vacm(Fid, Hdr, Conf) ->
+    io:format(Fid, "~s~n", [Hdr]),
+    write_vacm(Fid, Conf).
+
+write_vacm(_Fid, []) ->
+    ok;
+write_vacm(Fid, [H|T]) ->
+    do_write_vacm(Fid, H),
+    write_vacm(Fid, T).
+
+do_write_vacm(Fid, 
+	      {vacmSecurityToGroup, 
+	       SecModel, SecName, GroupName}) ->
+    io:format(Fid, "{vacmSecurityToGroup, ~w, \"~s\", \"~s\"}.~n", 
+	      [SecModel, SecName, GroupName]);
+do_write_vacm(Fid, 
+	      {vacmAccess, 
+	       GroupName, Prefix, SecModel, SecLevel, Match, RV, WV, NV}) ->
+    io:format(Fid, "{vacmAccess, \"~s\", \"~s\", ~w, ~w, ~w, "
+	      "\"~s\", \"~s\", \"~s\"}.~n", 
+	      [GroupName, Prefix, SecModel, SecLevel, 
+	       Match, RV, WV, NV]);
+do_write_vacm(Fid, 
+	      {vacmViewTreeFamily, 
+	       ViewIndex, ViewSubtree, ViewStatus, ViewMask}) ->
+    io:format(Fid, "{vacmViewTreeFamily, \"~s\", ~w, ~w, ~w}.~n", 
+	      [ViewIndex, ViewSubtree, ViewStatus, ViewMask]).
+
+vacm_ver(v1) -> v1;
+vacm_ver(v2) -> v2c;
+vacm_ver(v3) -> usm.
      
 
+%% 
+%% ----- Manager config files generator functions -----
+%% 
 
 write_manager_snmp_files(Dir, IP, Port, MMS, EngineID, 
 			 Users, Agents, Usms) ->
     write_manager_snmp_conf(Dir, IP, Port, MMS, EngineID),
     write_manager_snmp_users_conf(Dir, Users),
     write_manager_snmp_agents_conf(Dir, Agents),
-    write_manager_snmp_usms_conf(Dir, Usms),  
+    write_manager_snmp_usm_conf(Dir, Usms),  
     ok.
+
+
+%% 
+%% ------ manager.conf ------
+%% 
 
 write_manager_snmp_conf(Dir, IP, Port, MMS, EngineID) -> 
     Comment = 
-"%% This files defines the Manager local configuration info\n"
+"%% This file defines the Manager local configuration info\n"
 "%% Each row is a 2-tuple:\n"
 "%% {Variable, Value}.\n"
 "%% For example\n"
@@ -1565,9 +1958,67 @@ write_manager_snmp_conf(Dir, IP, Port, MMS, EngineID) ->
 		   [header(), Comment, Port, IP, EngineID, MMS]),
     file:close(Fid).
 
+write_manager_snmp_conf2(Dir, IP, Port, MMS, EngineID) -> 
+    Comment = 
+"%% This file defines the Manager local configuration info\n"
+"%% Each row is a 2-tuple:\n"
+"%% {Variable, Value}.\n"
+"%% For example\n"
+"%% {port,             5000}.\n"
+"%% {address,          [127,42,17,5]}.\n"
+"%% {engine_id,        \"managerEngine\"}.\n"
+"%% {max_message_size, 484}.\n"
+"%%\n\n",
+    Hdr = header() ++ Comment,
+    Conf = [{port,             Port}, 
+            {address,          IP}, 
+	    {engine_id,        EngineID}, 
+	    {max_message_size, MMS}], 
+    write_manager_config(Dir, Hdr, Conf).
+
+write_manager_config(Dir, Hdr, Conf) 
+  when list(Dir), list(Hdr), list(Conf) ->
+    Verify = fun()    -> verify_manager_conf(Conf)           end,
+    Write  = fun(Fid) -> write_manager_conf(Fid, Hdr, Conf)  end,
+    write_config_file(Dir, "manager.conf", Verify, Write).
+    
+verify_manager_conf([]) ->
+    ok;
+verify_manager_conf([H|T]) ->
+    snmpm_config:check_manager_config(H),
+    verify_manager_conf(T);
+verify_manager_conf(X) ->
+    throw({error, {invalid_manager_conf, X}}).
+
+write_manager_conf(Fid, "", Conf) ->
+    write_manager_conf(Fid, Conf);
+write_manager_conf(Fid, Hdr, Conf) ->
+    io:format(Fid, "~s~n", [Hdr]),
+    write_manager_conf(Fid, Conf).
+    
+write_manager_conf(_Fid, []) ->
+    ok;
+write_manager_conf(Fid, [H|T]) ->
+    do_write_manager_conf(Fid, H),
+    write_manager_conf(Fid, T).
+
+do_write_manager_conf(Fid, {address = Tag, Val}) ->
+    io:format(Fid, "{~w, ~w}.~n", [Tag, Val]);
+do_write_manager_conf(Fid,{port = Tag, Val} ) ->
+    io:format(Fid, "{~w, ~w}.~n", [Tag, Val]);
+do_write_manager_conf(Fid,{engine_id = Tag, Val} ) ->
+    io:format(Fid, "{~w, \"~s\"}.~n", [Tag, Val]);
+do_write_manager_conf(Fid,{max_message_size = Tag, Val} ) ->
+    io:format(Fid, "{~w, ~w}.~n", [Tag, Val]).
+
+
+%% 
+%% ------ users.conf ------
+%% 
+
 write_manager_snmp_users_conf(Dir, Users) ->
     Comment = 
-"%% This files defines the users the manager handles\n"
+"%% This file defines the users the manager handles\n"
 "%% Each row is a 3-tuple:\n"
 "%% {UserId, UserMod, UserData}.\n"
 "%% For example\n"
@@ -1582,10 +2033,54 @@ write_manager_snmp_users_conf(Dir, Users) ->
     lists:foreach(F, Users),
     file:close(Fid).
 
+write_manager_snmp_users_conf2(Dir, Users) ->
+    Comment = 
+"%% This file defines the users the manager handles\n"
+"%% Each row is a 3-tuple:\n"
+"%% {UserId, UserMod, UserData}.\n"
+"%% For example\n"
+"%% {kalle, kalle_callback_user_mod, \"dummy\"}.\n"
+"%%\n\n",
+    Hdr = header() ++ Comment,
+    write_manager_users_config(Dir, Hdr, Users).
+
+write_manager_users_config(Dir, Hdr, Users) 
+  when list(Dir), list(Hdr), list(Users) ->
+    Verify = fun()    -> verify_manager_users_conf(Users)          end,
+    Write  = fun(Fid) -> write_manager_users_conf(Fid, Hdr, Users) end,
+    write_config_file(Dir, "users.conf", Verify, Write).
+
+verify_manager_users_conf([]) ->
+    ok;
+verify_manager_users_conf([H|T]) ->
+    snmpm_config:check_user_config(H),
+    verify_manager_users_conf(T);
+verify_manager_users_conf(X) ->
+    throw({error, {invalid_manager_users_conf, X}}).
+
+write_manager_users_conf(Fid, "", Conf) ->
+    write_manager_users_conf(Fid, Conf);
+write_manager_users_conf(Fid, Hdr, Conf) ->
+    io:format(Fid, "~s~n", [Hdr]),
+    write_manager_users_conf(Fid, Conf).
+    
+write_manager_users_conf(_Fid, []) ->
+    ok;
+write_manager_users_conf(Fid, [H|T]) ->
+    do_write_manager_users_conf(Fid, H),
+    write_manager_users_conf(Fid, T).
+
+do_write_manager_users_conf(Fid, {Id, Mod, Data}) ->
+    io:format(Fid, "{~w, ~w, ~w}.~n", [Id, Mod, Data]).
+
+
+%% 
+%% ------ agents.conf ------
+%% 
 
 write_manager_snmp_agents_conf(Dir, Agents) ->
     Comment = 
-"%% This files defines the agents the manager handles\n"
+"%% This file defines the agents the manager handles\n"
 "%% Each row is a 12-tuple:\n"
 "%% {UserId, \n"
 "%%  TargetName, Comm, Ip, Port, EngineID, Timeout, \n"
@@ -1609,10 +2104,58 @@ write_manager_snmp_agents_conf(Dir, Agents) ->
     lists:foreach(F, Agents),
     file:close(Fid).
 
-
-write_manager_snmp_usms_conf(Dir, Usms) ->
+write_manager_snmp_agents_conf2(Dir, Agents) ->
     Comment = 
-"%% This files defines the usm users the manager handles\n"
+"%% This file defines the agents the manager handles\n"
+"%% Each row is a 12-tuple:\n"
+"%% {UserId, \n"
+"%%  TargetName, Comm, Ip, Port, EngineID, Timeout, \n"
+"%%  MaxMessageSize, Version, SecModel, SecName, SecLevel}\n"
+"%%\n\n",
+    Hdr = header() ++ Comment, 
+    write_manager_agents_config(Dir, Hdr, Agents).
+
+write_manager_agents_config(Dir, Hdr, Agents) 
+  when list(Dir), list(Hdr), list(Agents) ->
+    Verify = fun()    -> verify_manager_agents_conf(Agents)          end,
+    Write  = fun(Fid) -> write_manager_agents_conf(Fid, Hdr, Agents) end,
+    write_config_file(Dir, "agents.conf", Verify, Write).
+
+verify_manager_agents_conf([]) ->
+    ok;
+verify_manager_agents_conf([H|T]) ->
+    snmpm_config:check_agent_config(H),
+    verify_manager_agents_conf(T);
+verify_manager_agents_conf(X) ->
+    throw({error, {invalid_manager_agents_conf, X}}).
+
+write_manager_agents_conf(Fid, "", Conf) ->
+    write_manager_agents_conf(Fid, Conf);
+write_manager_agents_conf(Fid, Hdr, Conf) ->
+    io:format(Fid, "~s~n", [Hdr]),
+    write_manager_agents_conf(Fid, Conf).
+    
+write_manager_agents_conf(_Fid, []) ->
+    ok;
+write_manager_agents_conf(Fid, [H|T]) ->
+    do_write_manager_agent_conf(Fid, H),
+    write_manager_agents_conf(Fid, T).
+
+do_write_manager_agent_conf(Fid, 
+			    {UserId, 
+			     TargetName, Comm, Ip, Port, EngineID, 
+			     Timeout, MaxMessageSize, Version, 
+			     SecModel, SecName, SecLevel} = A) ->
+    io:format(Fid, "{~w, \"~s\", \"~s\", ~w, ~w, \"~s\", ~w, ~w, ~w, ~w, \"~s\", ~w}.~n", [UserId, TargetName, Comm, Ip, Port, EngineID, Timeout, MaxMessageSize, Version, SecModel, SecName, SecLevel]).
+
+
+%% 
+%% ------ usm.conf -----
+%% 
+
+write_manager_snmp_usm_conf(Dir, Usms) ->
+    Comment = 
+"%% This file defines the usm users the manager handles\n"
 "%% Each row is a 6 or 7-tuple:\n"
 "%% {EngineID, UserName, AuthP, AuthKey, PrivP, PrivKey}\n"
 "%% {EngineID, UserName, SecName, AuthP, AuthKey, PrivP, PrivKey}\n"
@@ -1630,6 +2173,57 @@ write_manager_snmp_usms_conf(Dir, Usms) ->
     lists:foreach(F, Usms),
     file:close(Fid).
 
+write_manager_snmp_usm_conf2(Dir, Usms) ->
+    Comment = 
+"%% This file defines the usm users the manager handles\n"
+"%% Each row is a 6 or 7-tuple:\n"
+"%% {EngineID, UserName, AuthP, AuthKey, PrivP, PrivKey}\n"
+"%% {EngineID, UserName, SecName, AuthP, AuthKey, PrivP, PrivKey}\n"
+"%%\n\n",
+    Hdr = header() ++ Comment,
+    write_manager_usm_config(Dir, Hdr, Usms).
+
+write_manager_usm_config(Dir, Hdr, Users) 
+  when list(Dir), list(Hdr), list(Users) ->
+    Verify = fun()    -> verify_manager_usm_conf(Users)          end,
+    Write  = fun(Fid) -> write_manager_usm_conf(Fid, Hdr, Users) end,
+    write_config_file(Dir, "usm.conf", Verify, Write).
+
+verify_manager_usm_conf([]) ->
+    ok;
+verify_manager_usm_conf([H|T]) ->
+    snmpm_config:check_usm_user_config(H),
+    verify_manager_usm_conf(T);
+verify_manager_usm_conf(X) ->
+    throw({error, {invalid_manager_usm_conf, X}}).
+
+write_manager_usm_conf(Fid, "", Conf) ->
+    write_manager_usm_conf(Fid, Conf);
+write_manager_usm_conf(Fid, Hdr, Conf) ->
+    io:format(Fid, "~s~n", [Hdr]),
+    write_manager_usm_conf(Fid, Conf).
+    
+write_manager_usm_conf(_Fid, []) ->
+    ok;
+write_manager_usm_conf(Fid, [H|T]) ->
+    do_write_manager_usm_conf(Fid, H),
+    write_manager_usm_conf(Fid, T).
+
+do_write_manager_usm_conf(Fid, 
+			  {EngineID, UserName, 
+			   AuthP, AuthKey, PrivP, PrivKey}) ->
+    io:format(Fid, "{\"~s\", \"~s\", ~w, ~w, ~w, ~w}.~n", 
+	      [EngineID, UserName, AuthP, AuthKey, PrivP, PrivKey]);
+do_write_manager_usm_conf(Fid, 
+			  {EngineID, UserName, SecName, 
+			   AuthP, AuthKey, PrivP, PrivKey}) ->
+    io:format(Fid, "{\"~s\", \"~s\", \"~s\", í~w, ~w, ~w, ~w}.~n", 
+	      [EngineID, UserName, SecName, AuthP, AuthKey, PrivP, PrivKey]).
+
+
+%% 
+%% -------------------------------------------------------------------------
+%% 
 
 write_sys_config_file(Dir, Services) ->
     {ok, Fid} = file:open(filename:join(Dir,"sys.config"),write),
@@ -1846,19 +2440,39 @@ header() ->
 		  "~2.2.0w:~2.2.0w:~2.2.0w\n",
 		  [?version,Y,Mo,D,H,Mi,S]).
 
+
+write_config_file(Dir, FileName, Verify, Write) 
+  when list(Dir), list(FileName), function(Verify), function(Write) ->
+    (catch do_write_config_file(Dir, FileName, Verify, Write)).
+
+do_write_config_file(Dir, FileName, Verify, Write) ->
+    Verify(),
+    case file:open(filename:join(Dir, FileName),write) of
+	{ok, Fid} ->
+	    Write(Fid),
+	    file:close(Fid),
+	    ok;
+	Error ->
+	    Error
+    end.
+
+
 agent_snmp_mk_secret(Alg, Passwd, EngineID) ->
     snmp_usm:passwd2localized_key(Alg, Passwd, EngineID).
 
 
 ensure_crypto_started() ->
     i("making sure crypto server is started..."),
-    case (catch crypto:start()) of
+    ensure_started(crypto).
+
+ensure_started(App) ->
+    case (catch App:start()) of
 	ok ->
 	    ok;
-	{error, {already_started, crypto}} ->
+	{error, {already_started, App}} ->
 	    ok;
 	E ->
-	    error({failed_starting_crypto, E})
+	    error({failed_starting, App, E})
     end.
 
 

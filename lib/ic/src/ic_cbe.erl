@@ -29,7 +29,7 @@
 -export([emit_malloc_size_stmt/7, emit_encoding_stmt/6,
 	 emit_encoding_stmt/7, emit_decoding_stmt/10,
 	 emit_decoding_stmt/11, emit_dealloc_stmts/3,
-	 mk_variable_name/1, mk_c_type/3, mk_c_type/4,
+	 mk_variable_name/1, mk_c_type/3, mk_c_type/4, mk_c_type2/3,
 	 is_variable_size/1, is_variable_size/3, mk_dim/1,
 	 mk_slice_dim/1, emit_tmp_variables/1, store_tmp_decl/2,
 	 extract_info/3, normalize_type/1]).
@@ -1060,6 +1060,72 @@ mk_c_type(_G, _N, {'any', _}, _) ->  %% Fix for any type
 
 mk_c_type(_G, _N, {T, _}, _) ->
     "CORBA_" ++ atom_to_list(T).
+
+%%-------------------------------------------------------------------
+%%    IDL to C type conversion used by the emit_c_*_rpt macros.
+%%-------------------------------------------------------------------
+mk_c_type2(G, N, S) when element(1, S) == scoped_id ->
+    {FullScopedName, _T, _TK, _} = ic_symtab:get_full_scoped_name(G, N, S),
+    BT = ic_code:get_basetype(G, ic_util:to_undersc(FullScopedName)),
+    case BT of
+	"erlang_binary" ->
+	    "erlang_binary";
+	"erlang_pid" ->
+	    "erlang_pid";
+	"erlang_port" ->
+	    "erlang_port";
+	"erlang_ref" ->
+	    "erlang_ref";
+	"erlang_term" ->
+	    "ETERM*";
+	{enum, Type} ->
+	    mk_c_type2(G, N, Type);
+	Type ->
+	    mk_c_type2(G, N, Type)
+    end;
+
+mk_c_type2(_G, _N, S) when list(S) ->
+    S;
+mk_c_type2(_G, _N, S) when record(S, string) ->
+    "CORBA_char *";
+mk_c_type2(_G, _N, S) when record(S, wstring) -> 
+    "CORBA_wchar *";
+mk_c_type2(_G, _N, {boolean, _}) ->
+    "CORBA_boolean";
+mk_c_type2(_G, _N, {octet, _}) ->
+    "CORBA_octet";
+mk_c_type2(_G, _N, {void, _}) ->
+    "void";
+mk_c_type2(_G, _N, {unsigned, U}) ->
+    case U of
+	{short,_} ->
+	    "CORBA_unsigned_short";
+	{long,_} ->
+	    "CORBA_unsigned_long";
+	{'long long',_} ->
+	    "CORBA_unsigned_long_long"
+    end;
+
+mk_c_type2(_G, _N, {'long long', _}) ->
+    "CORBA_long_long";
+
+mk_c_type2(_G, _N, S) when record(S, union)->
+    ic_forms:get_id2(S);
+
+mk_c_type2(_G, N, S) when record(S, struct) ->
+    Fullname = [ic_forms:get_id2(S) | N],
+    ic_util:to_undersc(Fullname);
+
+mk_c_type2(_G, _N, S) when record(S, sequence) ->
+    mk_c_type2(_G, _N, S#sequence.type);
+
+mk_c_type2(_G, _N, {'any', _}) ->  %% Fix for any type
+    "CORBA_long";
+
+mk_c_type2(_G, _N, {T, _}) ->
+    "CORBA_" ++ atom_to_list(T).
+
+%%-----
 
 is_variable_size_rec(Es) ->
     lists:any(

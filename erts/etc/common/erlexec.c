@@ -552,14 +552,13 @@ int main(int argc, char **argv)
 
 	      case '+':
 		switch (argv[i][1]) {
-		  case 'i':
-		  case 'b':
-		  case 's':
-		  case 'h':
 		  case '#':
+		  case 'A':
+		  case 'b':
+		  case 'h':
+		  case 'i':
 		  case 'P':
 		  case 'R':
-		  case 'A':
 		  case 'W':
 		  case 'K':
 		      if (argv[i][2] != '\0')
@@ -574,7 +573,9 @@ int main(int argc, char **argv)
 		  case 'B':
 		      argv[i][0] = '-';
 		      if (argv[i][2] != '\0') {
-			  if (argv[i][2] != 'i') {
+			  if ((argv[i][2] != 'i') &&
+			      (argv[i][2] != 'c') &&
+			      (argv[i][2] != 'd')) { 
 			  usage(argv[i]);
 			} else {
 			  add_Eargs(argv[i]);
@@ -752,10 +753,9 @@ usage(const char *switchname)
 	  "[-start_erl [datafile]] "
 #endif
 	  "[-make] [-man [manopts] MANPAGE] [-x] [-emu_args] "
-	  "[+i BOOT_MODULE] [+b BOOT_FUN] [+s STACK_SIZE] "
-	  "[+h HEAP_SIZE] [+# ITEMS] [+P MAX_PROCS] [+A THREADS] "
-	  "[+R COMPAT_REL] [+K BOOLEAN]"
-	  "[+M<SUBSWITCH> <ARGUMENT>] [args ...]\n");
+	  "[+A THREADS] [+B[c|d|i]] [+c] [+h HEAP_SIZE] [+K BOOLEAN] "
+	  "[+l] [+M<SUBSWITCH> <ARGUMENT>] [+P MAX_PROCS] [+R COMPAT_REL] "
+	  "[+r] [+V] [+v] [+W<i|w>] [args ...]\n");
   exit(1);
 }
 

@@ -449,7 +449,7 @@ static void one_link_size(ErtsLink *lnk, void *vpu)
     *pu += ERTS_LINK_SIZE*sizeof(Uint);
     if(!IS_CONST(lnk->pid))
 	*pu += NC_HEAP_SIZE(lnk->pid)*sizeof(Uint);
-    if (lnk->root != NULL) {
+    if (lnk->type != LINK_NODE && lnk->root != NULL) {
 	erts_doforall_links(lnk->root,&one_link_size,vpu);
     }
 }

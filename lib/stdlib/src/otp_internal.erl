@@ -28,21 +28,13 @@ obsolete(init, get_args, 0) ->
 obsolete(unix, cmd, 1) ->
     {true, {os, cmd, 1}};
 
-obsolete(calendar, time_difference, 2) ->
-    {true, "not recommended; use the functions for gregorian "
-     "days/seconds instead"};
+%% This function is sometimes useful.
+%% obsolete(calendar, time_difference, 2) ->
+%%    {true, "not recommended; use the functions for gregorian "
+%%     "days/seconds instead"};
 
 obsolete(net, _, _) ->
     {true, "module 'net' obsolete; use 'net_adm'"};
-
-%obsolete(lib, _, _) ->
-%    {true, "module 'lib' is deprecated"};
-obsolete(socket, _, _) ->
-    {true, "module 'socket' obsolete; use 'gen_tcp'"};
-obsolete(udp, _, _) ->
-    {true, "module 'udp' obsolete; use 'gen_udp'"};
-obsolete(bplus_tree, _, _) ->
-    {true, "module 'bplus_tree' is deprecated"};
 
 obsolete(erl_internal, builtins, 0) ->
     {true, {erl_internal, bif, 2}};
@@ -124,44 +116,6 @@ obsolete(lists, filter, 3) ->
 obsolete(lists, foreach, 3) ->
     {true, {lists, foreach, 2}};
 
-obsolete(erlang, db_all_tables, 0) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_create, 2) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_erase, 1) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_erase, 2) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_first, 1) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_fixtable, 2) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_get, 2) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_get_element, 3) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_info, 2) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_last, 1) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_match, 2) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_match_erase, 2) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_match_object, 3) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_next_key, 2) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_prev_key, 2) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_put, 2) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_rename, 2) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_slot, 2) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, db_update_counter, 3) ->
-    {true, "deprecated BIF"};
 obsolete(ets, fixtable, 2) ->
     {true, {ets, safe_fixtable, 2}};
 
@@ -204,5 +158,61 @@ obsolete(ordsets, subset, 2) ->
 obsolete(calendar, local_time_to_universal_time, 1) ->
     {true, {calendar, local_time_to_universal_time_dst, 1}};
 
+obsolete(snmp, N, A) ->
+    case is_snmp_agent_function(N, A) of
+	false -> false;
+	true ->
+	    {true,"Deprecated; use snmpa:"++atom_to_list(N)++"/"++
+	     integer_to_list(A)++" instead"}
+    end;
+
+obsolete(os_mon_mib, init, 1) ->
+    {true, {os_mon_mib, load, 1}};
+obsolete(os_mon_mib, stop, 1) ->
+    {true, {os_mon_mib, unload, 1}};
+
 obsolete(_, _, _) ->
     false.
+
+is_snmp_agent_function(c,                     1) -> true;
+is_snmp_agent_function(c,                     2) -> true;
+is_snmp_agent_function(compile,               3) -> true;
+is_snmp_agent_function(is_consistent,         1) -> true;
+is_snmp_agent_function(mib_to_hrl,            1) -> true;
+is_snmp_agent_function(change_log_size,       1) -> true;
+is_snmp_agent_function(log_to_txt,            2) -> true;
+is_snmp_agent_function(log_to_txt,            3) -> true;
+is_snmp_agent_function(log_to_txt,            4) -> true;
+is_snmp_agent_function(current_request_id,    0) -> true;
+is_snmp_agent_function(current_community,     0) -> true;
+is_snmp_agent_function(current_address,       0) -> true;
+is_snmp_agent_function(current_context,       0) -> true;
+is_snmp_agent_function(current_net_if_data,   0) -> true;
+is_snmp_agent_function(get_symbolic_store_db, 0) -> true;
+is_snmp_agent_function(name_to_oid,           1) -> true;
+is_snmp_agent_function(name_to_oid,           2) -> true;
+is_snmp_agent_function(oid_to_name,           1) -> true;
+is_snmp_agent_function(oid_to_name,           2) -> true;
+is_snmp_agent_function(int_to_enum,           2) -> true;
+is_snmp_agent_function(int_to_enum,           3) -> true;
+is_snmp_agent_function(enum_to_int,           2) -> true;
+is_snmp_agent_function(enum_to_int,           3) -> true;
+is_snmp_agent_function(get,                   2) -> true;
+is_snmp_agent_function(info,                  1) -> true;
+is_snmp_agent_function(load_mibs,             2) -> true;
+is_snmp_agent_function(unload_mibs,           2) -> true;
+is_snmp_agent_function(dump_mibs,             0) -> true;
+is_snmp_agent_function(dump_mibs,             1) -> true;
+is_snmp_agent_function(register_subagent,     3) -> true;
+is_snmp_agent_function(unregister_subagent,   2) -> true;
+is_snmp_agent_function(send_notification,     3) -> true;
+is_snmp_agent_function(send_notification,     4) -> true;
+is_snmp_agent_function(send_notification,     5) -> true;
+is_snmp_agent_function(send_notification,     6) -> true;
+is_snmp_agent_function(send_trap,             3) -> true;
+is_snmp_agent_function(send_trap,             4) -> true;
+is_snmp_agent_function(add_agent_caps,        2) -> true;
+is_snmp_agent_function(del_agent_caps,        1) -> true;
+is_snmp_agent_function(get_agent_caps,        0) -> true;
+is_snmp_agent_function(_,		      _) -> false.
+

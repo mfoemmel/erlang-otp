@@ -19,7 +19,7 @@
 -module(icunion).
 
 -import(ic_codegen, [emit/2, emit/3, emit/4, emit_c_enc_rpt/4, emit_c_dec_rpt/4]).
--import(ic_cbe, [mk_c_type/4]).
+-import(ic_cbe, [mk_c_type/3, mk_c_type/4]).
 
 -include("icforms.hrl").
 -include("ic.hrl").
@@ -658,7 +658,7 @@ get_c_union_discriminator_scope(G, N, X) ->
 	     Other ->
 		 Other
 	 end,
-    tl(lists:reverse(string:tokens(BT,"_"))). %% Uggly work arround
+    tl(lists:reverse(string:tokens(BT,"_"))). %% Ugly work arround
 
 
 
@@ -778,7 +778,7 @@ getCaseTypeSizecalc(G, N, X, Fd, I, T) ->
 		    emit(Fd, "      return oe_error_code;\n    }");
 		{double,_} ->
 		    emit(Fd, "    if ((oe_error_code = ei_decode_double(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
-		    ?emit_c_dec_rpt(Fd, "      ", "dobule:ei_decode_double", []),
+		    ?emit_c_dec_rpt(Fd, "      ", "double:ei_decode_double", []),
 		    emit(Fd, "      return oe_error_code;\n    }\n");
 		{boolean,_} ->
 		    emit(Fd, "    if ((oe_error_code = ei_decode_atom(oe_env->_inbuf, oe_size_count_index, 0)) < 0) {\n"),
@@ -1018,7 +1018,7 @@ getCaseTypeEncode(G, N, X, Fd, I, T) when element(1, T) == scoped_id ->
 	enum ->
 	    emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, oe_rec->_u.~s)) < 0) {\n",
 		 [getCaseTypeStr(G, N, X, I, T),ic_forms:get_id2(I)]),
-	    ?emit_c_enc_rpt(Fd, "      ", "enum:oe_encode_~", 
+	    ?emit_c_enc_rpt(Fd, "      ", "enum:oe_encode_~s", 
 			    [getCaseTypeStr(G, N, X, I, T)]),
 	    emit(Fd, "      return oe_error_code;\n    }\n");
 	any -> %% Fix for any type

@@ -59,8 +59,8 @@
 -define(A5555, ["11111111", "11111111", "00000000"]).
 -define(A5556, ["11111111", "11111111", "11111111"]).
 
--define(MGC_START(Pid, Mid, ET, Verb), 
-	megaco_test_mgc:start(Pid, Mid, ET, Verb)).
+-define(MGC_START(Pid, Mid, ET, Conf, Verb), 
+	megaco_test_mgc:start(Pid, Mid, ET, Conf, Verb)).
 -define(MGC_STOP(Pid), megaco_test_mgc:stop(Pid)).
 -define(MGC_GET_STATS(Pid, No), megaco_test_mgc:get_stats(Pid, No)).
 -define(MGC_RESET_STATS(Pid),   megaco_test_mgc:reset_stats(Pid)).
@@ -175,13 +175,14 @@ sent_timer_late_reply(Config) when list(Config) ->
     %% Start the MGC and MGs
     i("[MGC] start"),    
     ET = [{text,tcp}, {text,udp}, {binary,tcp}, {binary,udp}],
+    MgcConf = [{megaco_trace, false}],
     {ok, Mgc} = 
-	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, ?MGC_VERBOSITY),
+	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, MgcConf, ?MGC_VERBOSITY),
 
     i("[MG] start"),    
     MgMid = {deviceName, "mg"},
-    MgConfig = [],
-    {ok, Mg} = ?MG_START(MgNode, MgMid, text, tcp, MgConfig, ?MG_VERBOSITY),
+    MgConf = [{megaco_trace, io}],
+    {ok, Mg} = ?MG_START(MgNode, MgMid, text, tcp, MgConf, ?MG_VERBOSITY),
 
     d("MG user info: ~p", [?MG_USER_INFO(Mg, all)]),
 
@@ -202,12 +203,17 @@ sent_timer_late_reply(Config) when list(Config) ->
 
     d("[MGC] late reply to requests "
       "(simulate that the request takes a long time)"),
-    ?MGC_REQ_DISC(Mgc, 11000),
+    {ok, _} = ?MGC_REQ_DISC(Mgc, 11000),
 
     d("[MG] send the notify"),
     {ok, Reply} = ?MG_NOTIF_RAR(Mg),
     d("[MG] Reply: ~p", [Reply]),
-    {_Version, {ok, [_ActionReply]}} = Reply,
+    case Reply of
+	{_Version, {ok, [_ActionReply]}} ->
+	    ok;
+	_ ->
+	    ?ERROR({unexpected_reply, Reply})
+    end,
 
     %% Tell MG to stop
     i("[MG] stop"),
@@ -245,7 +251,7 @@ sent_timer_exceeded(Config) when list(Config) ->
     i("[MGC] start"),    
     ET = [{text,tcp}, {text,udp}, {binary,tcp}, {binary,udp}],
     {ok, Mgc} = 
-	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, ?MGC_VERBOSITY),
+	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, [], ?MGC_VERBOSITY),
 
     i("[MG] start"),    
     MgMid = {deviceName, "mg"},
@@ -315,7 +321,7 @@ sent_timer_exceeded_long(Config) when list(Config) ->
     i("[MGC] start"),    
     ET = [{text,tcp}, {text,udp}, {binary,tcp}, {binary,udp}],
     {ok, Mgc} = 
-	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, ?MGC_VERBOSITY),
+	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, [], ?MGC_VERBOSITY),
 
     i("[MG] start"),    
     MgMid = {deviceName, "mg"},
@@ -391,7 +397,7 @@ sent_resend_late_reply(Config) when list(Config) ->
     i("[MGC] start"),    
     ET = [{text,tcp}, {text,udp}, {binary,tcp}, {binary,udp}],
     {ok, Mgc} = 
-	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, ?MGC_VERBOSITY),
+	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, [], ?MGC_VERBOSITY),
 
     i("[MG] start"),    
     MgMid = {deviceName, "mg"},
@@ -491,7 +497,7 @@ sent_resend_exceeded(Config) when list(Config) ->
     i("[MGC] start"),    
     ET = [{text,tcp}, {text,udp}, {binary,tcp}, {binary,udp}],
     {ok, Mgc} = 
-	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, ?MGC_VERBOSITY),
+	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, [], ?MGC_VERBOSITY),
 
     i("[MG] start"),    
     MgMid = {deviceName, "mg"},
@@ -586,7 +592,7 @@ sent_resend_exceeded_long(Config) when list(Config) ->
     i("[MGC] start"),    
     ET = [{text,tcp}, {text,udp}, {binary,tcp}, {binary,udp}],
     {ok, Mgc} = 
-	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, ?MGC_VERBOSITY),
+	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, [], ?MGC_VERBOSITY),
 
     i("[MG] start"),    
     MgMid = {deviceName, "mg"},
@@ -1109,13 +1115,14 @@ otp_4956_mgc_event_sequence(text, tcp) ->
          ],
     ConnectVerify = fun otp_4956_mgc_verify_handle_connect/1,
     ServiceChangeReqVerify = otp_4956_mgc_verify_service_change_req_fun(Mid),
-    NotifyReqVerify = otp_4956_mgc_verify_notify_request_fun(),
+    NotifyReqVerify1 = otp_4956_mgc_verify_notify_request_fun1(),
+    NotifyReqVerify2 = otp_4956_mgc_verify_notify_request_fun2(),
     ReqAbortVerify = fun otp_4956_mgc_verify_handle_trans_request_abort/1, 
     DiscoVerify = fun otp_4956_mgc_verify_handle_disconnect/1,
     EvSeq = [
              {debug, true},
 	     {megaco_trace, disable},
-             %% {megaco_trace, 100},
+	     {megaco_trace, max},
              megaco_start,
              {megaco_start_user, Mid, RI, []},
 	     {megaco_update_user_info, sent_pending_limit, 4},
@@ -1123,10 +1130,11 @@ otp_4956_mgc_event_sequence(text, tcp) ->
              listen,
              {megaco_callback, handle_connect, ConnectVerify},
 	     {megaco_conn_info, all},
-             {megaco_callback, handle_trans_request, ServiceChangeReqVerify},
-             {megaco_callback, handle_trans_request, NotifyReqVerify},
+             {megaco_callback, handle_trans_request_sc, ServiceChangeReqVerify},
+             {megaco_callback, handle_trans_request_1, NotifyReqVerify1},
              {megaco_callback, handle_trans_request_abort, ReqAbortVerify},
              {megaco_callback, nocall, 1000},
+             {megaco_callback, handle_trans_request_6, NotifyReqVerify2},
              {megaco_callback, handle_disconnect, DiscoVerify},
              megaco_stop_user,
              megaco_stop
@@ -1200,10 +1208,8 @@ otp_4956_mgc_verify_service_change_req_fun(Mid) ->
             {error, Else, ErrReply}
     end.
 
-otp_4956_mgc_verify_notify_request_fun() ->
+otp_4956_mgc_verify_notify_request_fun1() ->
     fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-%             io:format("otp_4956_mgc_verify_notify_request:fun -> ok"
-%                       "~n   AR: ~p~n", [AR]),
             case AR of
                 #'ActionRequest'{contextId = Cid, 
                                  commandRequests = [CR]} ->
@@ -1222,8 +1228,31 @@ otp_4956_mgc_verify_notify_request_fun() ->
                     {error, AR, ErrReply}
             end;
        (Else) ->
-%             io:format("otp_4956_mgc_verify_notify_request:fun -> unknown"
-%                       "~n   Else: ~p~n", [Else]),
+            ED = otp_4956_err_desc(Else),
+            ErrReply = {discard_ack, ED},
+            {error, Else, ErrReply}
+    end.
+
+otp_4956_mgc_verify_notify_request_fun2() ->
+    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
+            case AR of
+                #'ActionRequest'{contextId = Cid, 
+                                 commandRequests = [CR]} ->
+                    #'CommandRequest'{command = Cmd} = CR,
+                    {notifyReq, NR} = Cmd,
+                    #'NotifyRequest'{terminationID = [Tid],
+                                     observedEventsDescriptor = OED,
+                                     errorDescriptor = asn1_NOVALUE} = NR,
+                    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+                    #'ObservedEvent'{eventName = "al/of"} = OE,
+                    Reply = ignore,
+                    {ok, 100, AR, Reply};
+                _ ->
+                    ED = otp_4956_err_desc(AR),
+                    ErrReply = {discard_ack, ED},
+                    {error, AR, ErrReply}
+            end;
+       (Else) ->
             ED = otp_4956_err_desc(Else),
             ErrReply = {discard_ack, ED},
             {error, Else, ErrReply}
@@ -1235,15 +1264,15 @@ otp_4956_mgc_verify_handle_trans_request_abort({handle_trans_request_abort,
 otp_4956_mgc_verify_handle_trans_request_abort(Else) ->
     {error, Else, ok}.
 
-otp_4956_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, _}) -> 
-%     io:format("otp_4956_mgc_verify_handle_disconnect -> ok"
-%               "~n   CH: ~p"
-%               "~n   R:  ~p"
-%               "~n", [CH, R]),
+otp_4956_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, _R}) -> 
+    io:format("otp_4956_mgc_verify_handle_disconnect -> ok"
+	      "~n   CH: ~p"
+	      "~n   _R:  ~p"
+	      "~n", [CH, _R]),
     {ok, CH, ok};
 otp_4956_mgc_verify_handle_disconnect(Else) ->
-%     io:format("otp_4956_mgc_verify_handle_disconnect -> unknown"
-%               "~n   Else: ~p~n", [Else]),
+    io:format("otp_4956_mgc_verify_handle_disconnect -> unknown"
+	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
 otp_4956_mgc_service_change_reply_ar(Mid, Cid) ->
@@ -1316,7 +1345,7 @@ otp_4956_mg_event_sequence(text, tcp) ->
 	      {PendingLimitVerify, 1000}},
 	     {sleep, 2000},
 	     {send, "notify request (resend 6)", NotifyReq}, 
-	     {expect_nothing, 2000},
+	     {expect_nothing, 4000},
 	     disconnect
 	    ],
     EvSeq.
@@ -1462,7 +1491,7 @@ otp_5310(Config) when list(Config) ->
     i("[MGC] start"),    
     ET = [{text,tcp}, {text,udp}, {binary,tcp}, {binary,udp}],
     {ok, Mgc} = 
-	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, ?MGC_VERBOSITY),
+	?MGC_START(MgcNode, {deviceName, "ctrl"}, ET, [], ?MGC_VERBOSITY),
 
     i("[MG] start"),    
     MgMid = {deviceName, "mg"},
@@ -1533,9 +1562,11 @@ otp_5310(Config) when list(Config) ->
     ConnReps2 = ?MGC_CONN_INFO(Mgc, replies),
     case filter_aborted1(ConnReps2, []) of
 	[{_, [TransId]}] ->
-	    ok;
-	_ ->
-	    ?ERROR({unexpected_reply_state, conn_info, ConnReps2})
+	    ok; 
+	[{_, []}] ->
+	    ok; % has already been cleaned up...
+	ConnFlt2 ->
+	    ?ERROR({unexpected_reply_state, conn_info, ConnReps2, ConnFlt2})
     end,
     d("[MGC] ConnReps2: ~p", [ConnReps2]),
     UserReps2 = ?MGC_USER_INFO(Mgc, replies),
@@ -1543,8 +1574,10 @@ otp_5310(Config) when list(Config) ->
     case filter_aborted1(UserReps2, []) of
 	[{_, [TransId]}] ->
 	    ok;
-	_ ->
-	    ?ERROR({unexpected_reply_state, user_info, UserReps2})
+	[{_, []}] ->
+	    ok; % has already been cleaned up...
+	UserFlt2 ->
+	    ?ERROR({unexpected_reply_state, user_info, UserReps2, UserFlt2})
     end,
 
     %% do disconnect and the do cancel in the handle function
@@ -1589,6 +1622,9 @@ filter_aborted2([], Aborted) ->
     lists:reverse(Aborted);
 filter_aborted2([{TransId, aborted, _}|T], Aborted) ->
     filter_aborted2(T, [TransId|Aborted]);
+filter_aborted2([{TransId, State, _}|T], Aborted) ->
+    d("Transaction ~w actually in state ~w", [TransId, State]),
+    filter_aborted2(T, Aborted);
 filter_aborted2([_|T], Aborted) ->
     filter_aborted2(T, Aborted).
     

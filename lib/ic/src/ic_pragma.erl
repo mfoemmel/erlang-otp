@@ -61,7 +61,7 @@ pragma_reg(G,X) ->
     denote_specific_code_opts(G), %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     case get_pragma_compilation_status(S) of
 	true ->
-	    %% Remove uggly pragmas from form
+	    %% Remove ugly pragmas from form
 	    PragmaCleanForm = cleanup(X),
 	    {ok,PragmaCleanForm};
 	false ->

@@ -121,9 +121,9 @@ static void sweep_proc_funs(Process *p, int fullsweep);
 static void sweep_proc_externals(Process *p, int fullsweep);
 static void offset_heap(Eterm* hp, Uint sz, Sint offs, char* area, Uint area_size);
 static void offset_heap_ptr(Eterm* hp, Uint sz, Sint offs, char* area, Uint area_size);
-static void offset_rootset(Process *p, int offs, char* area, Uint area_size,
+static void offset_rootset(Process *p, Sint offs, char* area, Uint area_size,
 			   Eterm* objv, int nobj);
-static void offset_off_heap(Process* p, int offs, char* area, Uint area_size);
+static void offset_off_heap(Process* p, Sint offs, char* area, Uint area_size);
 static void offset_mqueue(Process *p, Sint offs, char* area, Uint area_size);
 static char* print_pid(Process *p);
 #ifdef DEBUG
@@ -1282,7 +1282,7 @@ grow_new_heap(Process *p, Uint new_sz, Eterm* objv, int nobj)
     Eterm* new_heap;
     int heap_size = HEAP_TOP(p) - HEAP_START(p);
     int stack_size = p->hend - p->stop;
-    Sint32 offs;
+    Sint offs;
 
     ASSERT(HEAP_SIZE(p) < new_sz);
     new_heap = (Eterm *) ERTS_HEAP_REALLOC(ERTS_ALC_T_HEAP,
@@ -1596,7 +1596,7 @@ offset_heap_ptr(Eterm* hp, Uint sz, Sint offs, char* area, Uint area_size)
 }
 
 static void
-offset_off_heap(Process* p, int offs, char* area, Uint area_size)
+offset_off_heap(Process* p, Sint offs, char* area, Uint area_size)
 {
     if (MSO(p).mso && in_area((Eterm *)MSO(p).mso, area, area_size)) {
         Eterm** uptr = (Eterm**) &MSO(p).mso;
@@ -1645,7 +1645,7 @@ offset_mqueue(Process *p, Sint offs, char* area, Uint area_size)
 }
 
 static void ERTS_INLINE
-offset_one_rootset(Process *p, int offs, char* area, Uint area_size,
+offset_one_rootset(Process *p, Sint offs, char* area, Uint area_size,
 	       Eterm* objv, int nobj)
 {
     if (p->dictionary)  {
@@ -1671,7 +1671,7 @@ offset_one_rootset(Process *p, int offs, char* area, Uint area_size,
 }
 
 static void
-offset_rootset(Process *p, int offs, char* area, Uint area_size,
+offset_rootset(Process *p, Sint offs, char* area, Uint area_size,
 	       Eterm* objv, int nobj)
 {
     offset_one_rootset(p, offs, area, area_size, objv, nobj);

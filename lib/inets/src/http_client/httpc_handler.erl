@@ -35,9 +35,9 @@
                 headers,        % #http_response_h{}
                 body,           % binary()
                 mfa,            % {Moduel, Function, Args}
-                pipeline = queue:new(),  % queue() 
-		status = new,                % new | pipeline | close
-		canceled = [],	             % [RequestId]
+                pipeline = queue:new(),% queue() 
+		status = new,          % new | pipeline | close | ssl_tunnel
+		canceled = [],	       % [RequestId]
                 max_header_size = nolimit,   % nolimit | integer() 
                 max_body_size = nolimit,     % nolimit | integer()
 		options,                     % #options{}
@@ -100,40 +100,20 @@ cancel(RequestId, Pid) ->
 %%--------------------------------------------------------------------
 init([Request, Options]) ->
     process_flag(trap_exit, true),
-    Addr = handle_proxy(Request#request.address, Options#options.proxy),
-    case http_transport:connect(Request#request{address = Addr}) of
-        {ok, Socket} ->
-            case httpc_request:send(Addr, Request, Socket) of
-                ok ->
-		    ClientClose = 
-			httpc_request:is_client_closing(
-			  Request#request.headers),
-		    Session = 
-			#tcp_session{id = {Request#request.address, self()},
-				     scheme = Request#request.scheme,
-				     socket = Socket,
-				     client_close = ClientClose},
-                    State = #state{request = Request, 
-				   session = Session},
-		    TmpState = State#state{mfa = 
-					   {httpc_response, parse,
-					    [State#state.max_header_size]},
-					   options = Options},
-		    http_transport:setopts(Session#tcp_session.scheme, 
-					   Socket, [{active, once}]),
-                    NewState = activate_request_timeout(TmpState),
-                    {ok, NewState};
-                {error, Reason} -> 
-		    self() ! {init_error, error_sending, 
-			      httpc_response:error(Request, Reason)},
-		    {ok, #state{request = Request,
-				options = Options,
-				session = #tcp_session{socket = Socket}}}
-            end;
-        {error, Reason} -> 
-            self() ! {init_error, error_connecting,
-		      httpc_response:error(Request, Reason)},
-            {ok, #state{request = Request, options = Options}}
+    Address = handle_proxy(Request#request.address, Options#options.proxy),
+    case {Address /= Request#request.address, Request#request.scheme} of
+	{true, https} ->
+	    Error = https_through_proxy_is_not_currently_supported,
+	    self() ! {init_error, Error, httpc_response:error(Request, Error)},
+	    {ok, #state{request = Request, options = Options,
+			status = ssl_tunnel}};
+	%% This is what we should do if and when ssl supports 
+	%% "socket upgrading"
+	%%send_ssl_tunnel_request(Address, Request,
+	%%		    #state{options = Options,
+	%%		   status = ssl_tunnel});
+	{_, _} ->
+	    send_first_request(Address, Request, #state{options = Options})
     end.
 
 %%--------------------------------------------------------------------
@@ -149,8 +129,8 @@ handle_call(Request, _, State = #state{session = Session =
 				       #tcp_session{socket = Socket},
 				       timers = Timers,
 				       options = Options}) ->
-    Addr = handle_proxy(Request#request.address, Options#options.proxy),
-    case httpc_request:send(Addr, Request, Socket) of
+    Address = handle_proxy(Request#request.address, Options#options.proxy),
+    case httpc_request:send(Address, Request, Socket) of
         ok ->
 	    NewState = activate_request_timeout(State),
 	    ClientClose = httpc_request:is_client_closing(
@@ -346,6 +326,65 @@ code_change(_, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
+send_first_request(Address, Request, State) ->
+    case http_transport:connect(Request) of
+	{ok, Socket} ->
+	    case httpc_request:send(Address, Request, Socket) of
+		ok ->
+		    ClientClose = 
+			httpc_request:is_client_closing(
+			  Request#request.headers),
+		    Session =
+			#tcp_session{id = {Request#request.address, self()},
+				     scheme = Request#request.scheme,
+				     socket = Socket,
+				     client_close = ClientClose},
+		    TmpState = State#state{request = Request, 
+					   session = Session, 
+					   mfa = 
+					   {httpc_response, parse,
+					    [State#state.max_header_size]},
+					   status_line = undefined,
+					   headers = undefined,
+					   body = undefined,
+					   status = new},
+		    http_transport:setopts(Session#tcp_session.scheme, 
+					   Socket, [{active, once}]),
+		    NewState = activate_request_timeout(TmpState),
+		    {ok, NewState};
+		{error, Reason} -> 
+		    case State#state.status of
+			new -> % Called from init/1
+			    self() ! {init_error, error_sending, 
+				      httpc_response:error(Request, Reason)},
+			    {ok, State#state{request = Request,
+					     session = 
+					     #tcp_session{socket = Socket}}};
+			ssl_tunnel -> % Not called from init/1
+			    NewState = 
+				answer_request(Request, 
+					       httpc_response:error(Request, 
+								    Reason),
+					       State),
+			    {stop, normal, NewState}
+		    end
+	    end;
+	{error, Reason} ->
+	    case State#state.status of
+		new -> % Called from init/1
+		    self() ! {init_error, error_connecting, 
+			      httpc_response:error(Request, Reason)},
+		    {ok, State#state{request = Request}};
+		ssl_tunnel -> % Not called from init/1
+			    NewState = 
+			answer_request(Request, 
+				       httpc_response:error(Request, 
+							    Reason),
+				       State),
+		    {stop, normal, NewState}
+	    end
+    end.
+
 handle_http_msg({Version, StatusCode, ReasonPharse, Headers, Body}, 
 		State) ->
     
@@ -418,6 +457,25 @@ handle_http_body(Body, State = #state{headers = Headers, session = Session,
                     {stop, normal, NewState}
             end
     end.
+
+%%% Normaly I do not comment out code, I throw it away. But this might
+%%% actually be used on day if ssl is improved.
+%% handle_response(State = #state{status = ssl_tunnel,
+%% 			       request = Request,
+%% 			       options = Options,
+%% 			       session = #tcp_session{socket = Socket,
+%% 						      scheme = Scheme},
+%% 			       status_line = {_, 200, _}}) ->
+%%     %%% Insert code for upgrading the socket if and when ssl supports this.  
+%%     Address = handle_proxy(Request#request.address, Options#options.proxy),   
+%%     send_first_request(Address, Request, State);
+%% handle_response(State = #state{status = ssl_tunnel,
+%% 			      request = Request}) ->
+%%     NewState = answer_request(Request,
+%% 			      httpc_response:error(Request,
+%% 						   ssl_proxy_tunnel_failed),
+%% 			      State),
+%%                     {stop, normal, NewState};
 
 handle_response(State = #state{status = new}) ->
    handle_response(try_to_enable_pipline(State));
@@ -550,8 +608,7 @@ handle_pipeline(State = #state{status = pipeline, session = Session},
 			_ ->
 			    %% If we already received some bytes of
 			    %% the next response
-			    handle_info({httpc_handler, dummy, Data},
-					NewState)   
+			    handle_info({httpc_handler, dummy, Data}, NewState)   
 		    end
 	    end
     end.
@@ -696,7 +753,6 @@ is_no_proxy_dest(Host, [NoProxyDest | NoProxyDests]) ->
 	    is_no_proxy_dest(Host, NoProxyDests)
     end.
 
-
 is_no_proxy_host_name(Host, Host) ->
     true;
 is_no_proxy_host_name(_,_) ->
@@ -709,3 +765,49 @@ is_no_proxy_dest_address(Dest, Dest) ->
     true;
 is_no_proxy_dest_address(Dest, AddressPart) ->
     lists:prefix(AddressPart, Dest).
+
+%%% Normaly I do not comment out code, I throw it away. But this might
+%%% actually be used on day if ssl is improved.
+%% send_ssl_tunnel_request(Address, Request = #request{address = {Host, Port}}, 
+%% 			State) ->
+%%     %% A ssl tunnel request is a special http request that looks like
+%%     %% CONNECT host:port HTTP/1.1
+%%     SslTunnelRequest = #request{method = connect, scheme = http,
+%% 				headers = 
+%% 				#http_request_h{
+%% 				  host = Host, 
+%% 				  address = Address, 
+%% 				  path = Host ++ ":",
+%% 				  pquery = integer_to_list(Port),
+%% 				  other = [{ "Proxy-Connection", "keep-alive"}]},
+%%     case http_transport:connect(SslTunnelRequest) of
+%% 	{ok, Socket} ->
+%% 	    case httpc_request:send(Address, SslTunnelRequest, Socket) of
+%% 		ok ->
+%% 		    Session = #tcp_session{id = 
+%% 					   {SslTunnelRequest#request.address,
+%% 					    self()},
+%% 					   scheme = 
+%% 					   SslTunnelRequest#request.scheme,
+%% 					   socket = Socket},
+%% 		    NewState = State#state{mfa = 
+%% 					   {httpc_response, parse,
+%% 					    [State#state.max_header_size]},
+%% 					   request = Request,
+%% 					   session = Session},
+%% 		    http_transport:setopts(SslTunnelRequest#request.scheme, 
+%% 					   Socket, 
+%% 					   [{active, once}]),
+%% 		    {ok, NewState};
+%% 		{error, Reason} -> 
+%% 		    self() ! {init_error, error_sending, 
+%% 			      httpc_response:error(Request, Reason)},
+%% 		    {ok, State#state{request = Request,
+%% 				     session = #tcp_session{socket = 
+%% 							    Socket}}}
+%% 	    end;
+%% 	{error, Reason} ->
+%% 	    self() ! {init_error, error_connecting, 
+%% 		      httpc_response:error(Request, Reason)},
+%% 	    {ok, State#state{request = Request}}
+%%     end.

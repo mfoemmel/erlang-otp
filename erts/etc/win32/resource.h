@@ -9,6 +9,7 @@
 #define IDMENU_ABOUT            40008
 #define IDMENU_SELALL           40009
 #define IDMENU_SELECTBKG        40010
-#define ID_VERSIONSTRING        40000    
+#define ID_BREAK                40011    
+#define ID_VERSIONSTRING        40000
 #define ID_COMBOBOX                 3
 

@@ -93,7 +93,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined MULTITHREAD_WIN32
+#if defined WIN32
 #include <winsock2.h>
 #include <windows.h> 
 #include <fcntl.h>
@@ -115,7 +115,7 @@
 /* ---------------- Main functions ---------------------------------------*/
 
 static void spawn_odbc_connection(int port);
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
 DWORD WINAPI database_handler(int port);
 #else
 void database_handler(int port);
@@ -167,7 +167,7 @@ static byte * receive_erlang_port_msg(void);
 
 /* ------------- Socket communication functions --------------------------*/
 
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
 static void connect_to_erlang(SOCKET socket, int port); 
 static SOCKET create_socket(void);
 static void send_msg(db_result_msg *msg, SOCKET socket);
@@ -176,7 +176,7 @@ static Boolean receive_msg_part(SOCKET socket, byte * buffer, size_t msg_len);
 static Boolean send_msg_part(SOCKET socket, byte * buffer, size_t msg_len);
 static void close_socket(SOCKET socket);
 static void init_winsock(void);
-#elif MULTITHREAD_UNIX
+#elif UNIX
 static void connect_to_erlang(int socket, int port);
 static int create_socket(void);
 static void send_msg(db_result_msg *msg, int socket);
@@ -233,7 +233,7 @@ static Boolean sql_success(SQLRETURN result);
 
 /* ----------------------------- CODE ------------------------------------*/
 
-#if defined(MULTITHREAD_WIN32)
+#if defined(WIN32)
 #  define DO_EXIT(code) do { ExitProcess((code)); exit((code));} while (0)
 /* exit() called only to avoid a warning */
 #else
@@ -246,11 +246,11 @@ int main(void)
 {
     byte *msg = NULL;
     int reason, msg_len, supervisor_port, odbc_port;
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
     SOCKET socket;
     init_winsock();
     _setmode(_fileno( stdin),  _O_BINARY);
-#elif MULTITHREAD_UNIX
+#elif UNIX
     int socket;
 #endif
     
@@ -281,13 +281,13 @@ int main(void)
 }
   
 
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
 static void spawn_odbc_connection(int port)
 {
     DWORD threadId;
     (HANDLE)_beginthreadex(NULL, 0, database_handler, port, 0, &threadId);
 }
-#elif MULTITHREAD_UNIX
+#elif UNIX
 static void spawn_odbc_connection(int port)
 {
     pthread_t thread;
@@ -302,7 +302,7 @@ static void spawn_odbc_connection(int port)
 #endif   
 
 
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
 DWORD WINAPI database_handler(int port)
 #else
     void database_handler(int port) 
@@ -313,9 +313,9 @@ DWORD WINAPI database_handler(int port)
     db_state state =
     {NULL, NULL, NULL, NULL, 0, {NULL, 0, 0}, FALSE, FALSE, FALSE, FALSE};
     byte request_id;
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
     SOCKET socket;
-#elif MULTITHREAD_UNIX
+#elif UNIX
     int socket;
 #endif
 
@@ -1394,7 +1394,7 @@ static Boolean decode_params(byte *buffer, int *index, param_array **params,
 /*------------- Erlang port communication functions ----------------------*/
 
 /* read from stdin */ 
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
 static int read_exact(byte *buffer, int len)
 {
     HANDLE standard_input = GetStdHandle(STD_INPUT_HANDLE);
@@ -1419,7 +1419,7 @@ static int read_exact(byte *buffer, int len)
 	}
     }
 } 
-#elif MULTITHREAD_UNIX
+#elif UNIX
 static int read_exact(byte *buffer, int len) {
     int i, got = 0;
     
@@ -1462,13 +1462,13 @@ static byte * receive_erlang_port_msg(void)
  
 /* ------------- Socket communication functions --------------------------*/
 
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
 static SOCKET create_socket(void)
 {
     return socket(AF_INET, SOCK_STREAM, 0);
     
 }
-#elif MULTITHREAD_UNIX
+#elif UNIX
 static int create_socket(void)
 {
     struct protoent *protocol;
@@ -1479,9 +1479,9 @@ static int create_socket(void)
 #endif   
 
 
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
 static void connect_to_erlang(SOCKET socket, int port)
-#elif MULTITHREAD_UNIX
+#elif UNIX
 static void connect_to_erlang(int socket, int port)
 #endif
 {
@@ -1498,21 +1498,21 @@ static void connect_to_erlang(int socket, int port)
     }    
 }
 
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
 static void close_socket(SOCKET socket)
 {
     closesocket(socket);
 }
-#elif MULTITHREAD_UNIX
+#elif UNIX
 static void close_socket(int socket)
 {
     close(socket);
 }
 #endif
 
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
 static byte * receive_msg(SOCKET socket) 
-#elif MULTITHREAD_UNIX
+#elif UNIX
     static byte * receive_msg(int socket) 
 #endif
 {
@@ -1541,9 +1541,9 @@ static byte * receive_msg(SOCKET socket)
     return buffer;
 }
 
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
 static Boolean receive_msg_part(SOCKET socket, byte * buffer, size_t msg_len)
-#elif MULTITHREAD_UNIX  
+#elif UNIX  
 static Boolean receive_msg_part(int socket, byte * buffer, size_t msg_len)
 #endif
 {
@@ -1564,9 +1564,9 @@ static Boolean receive_msg_part(int socket, byte * buffer, size_t msg_len)
     }
 }
 
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
 static void send_msg(db_result_msg *msg, SOCKET socket)
-#elif MULTITHREAD_UNIX   
+#elif UNIX   
     static void send_msg(db_result_msg *msg, int socket)
 #endif
 {
@@ -1591,9 +1591,9 @@ static void send_msg(db_result_msg *msg, SOCKET socket)
     }
 }
 
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
 static Boolean send_msg_part(SOCKET socket, byte * buffer, size_t msg_len)
-#elif MULTITHREAD_UNIX  
+#elif UNIX  
 static Boolean send_msg_part(int socket, byte * buffer, size_t msg_len)
 #endif
 {
@@ -1614,7 +1614,7 @@ static Boolean send_msg_part(int socket, byte * buffer, size_t msg_len)
     }
 }
 
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
 static void init_winsock(void)
 {
     WORD wVersionRequested;
@@ -1638,7 +1638,7 @@ static void init_winsock(void)
 
 static void clean_socket_lib(void)
 {
-#ifdef MULTITHREAD_WIN32
+#ifdef WIN32
     WSACleanup();
 #endif
 }

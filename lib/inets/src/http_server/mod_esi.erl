@@ -195,20 +195,22 @@ exec(Info,Method,CGIBody,Modules,Mod,Func,{Type,Input}) ->
 	true ->
 	    {_,RemoteAddr} = (Info#mod.init_data)#init_data.peername,
 	    ServerName     = (Info#mod.init_data)#init_data.resolve,
-	    Env = get_environment(Info, ServerName, Method, RemoteAddr, Type, 
-				  Input),
+	    Env = get_environment(Info, ServerName, Method, 
+				  RemoteAddr, Type, Input),
 	    ?vtrace("and now call the module",[]),
 	    case try_new_erl_scheme_method(Info, Env, Input, 
 					   list_to_atom(Mod),
 					   list_to_atom(Func)) of
 		{error, not_new_method} ->
 		    ?vtrace("new method failed, so try old method",[]),
-		    case catch apply(list_to_atom(Mod),
-				     list_to_atom(Func), [Env,Input]) of
+		    Module = list_to_atom(Mod),
+		    Function = list_to_atom(Func),
+		    case catch Module:Function(Env,Input) of
 			{'EXIT',Reason} ->
 			    ?vlog("old method failed, exit with Reason: ~p",
 				[Reason]),
-			    {proceed,[{status,{500,none,Reason}}|Info#mod.data]};
+			    {proceed, [{status, {500,none,Reason}} |
+				       Info#mod.data]};
 			Response ->
 			    control_response_header(Info,Mod,Func,Response)
 		    end;
@@ -218,19 +220,24 @@ exec(Info,Method,CGIBody,Modules,Mod,Func,{Type,Input}) ->
 	false ->
 	    ?vlog("unknown module",[]),
 	    {proceed,[{status,{403,Info#mod.request_uri,
-			       ?NICE("Client not authorized to evaluate: "++CGIBody)}}|Info#mod.data]}
+			       ?NICE("Client not authorized to evaluate: "
+				     ++ CGIBody)}} | Info#mod.data]}
     end.
 
 control_response_header(Info,Mod,Func,Response)->
     case control_response(Response,Info,Mod,Func) of
 	{proceed,[{response,{StatusCode,Response}}|Rest]} ->
-	    case httpd_util:lookup(Info#mod.config_db,erl_script_nocache,false) of
+	    case httpd_util:lookup(Info#mod.config_db,
+				   erl_script_nocache,false) of
 		true ->
 		    case httpd_util:split(Response,"\r\n\r\n|\n\n",2) of
 			{ok,[Head,Body]}->
 			    Date  = httpd_util:rfc1123_date(),
-			    Cache = "Cache-Control:no-cache\r\nPragma:no-cache\r\nExpires:"++ Date ++ "\r\n",
-			    {proceed,[{response,{StatusCode,[Head,"\r\n",Cache,"\r\n",Body]}}|Rest]};
+			    Cache = "Cache-Control:no-cache\r\nPragma:"
+				"no-cache\r\nExpires:"++ Date ++ "\r\n",
+			    {proceed,[{response,{StatusCode,
+						 [Head,"\r\n",Cache,
+						  "\r\n",Body]}}|Rest]};
 			_->    
 			   {proceed,[{response,{StatusCode,Response}}|Rest]}
 		    end;
@@ -275,8 +282,6 @@ multi_value([Value|Rest]) ->
 %%
 %% Eval mechanism
 %% 
-
-
 eval(#mod{request_uri = ReqUri, http_version = Version, data = Data}, 
      "POST", _CGIBody, _Modules) ->
     ?vtrace("eval(POST) -> method not supported",[]),	    
@@ -305,17 +310,19 @@ eval(Info,"GET",CGIBody,Modules) ->
 			    "~n   Response: ~p",[Response]),	    
 		    case mod_cgi:status_code(lists:flatten(Response)) of
 			{ok,StatusCode} ->
-			    {proceed,[{response,{StatusCode,Response}}|Info#mod.data]};
+			    {proceed,[{response, {StatusCode,Response}} | 
+				      Info#mod.data]};
 			{error,Reason} ->
-			    {proceed,[{status,{400,none,Reason}}|Info#mod.data]}
+			    {proceed, [{status,{400,none,Reason}} | 
+				      Info#mod.data]}
 		    end
 	    end;
 	false ->
 	    ?vlog("eval -> auth failed",[]),	    
 	    {proceed,[{status,
 		       {403,Info#mod.request_uri,
-			?NICE("Client not authorized to evaluate: "++CGIBody)}}|
-		      Info#mod.data]}
+			?NICE("Client not authorized to evaluate: "
+			      ++ CGIBody)}} | Info#mod.data]}
     end.
 
 auth(_CGIBody, ["all"]) ->
@@ -355,7 +362,8 @@ get_environment(Type,Input,Env,Info)->
 	    path_info ->
 		Aliases = httpd_util:multi_lookup(Info#mod.config_db,alias),
 		{_,PathTranslated,_} = 
-		    mod_alias:real_name(Info#mod.config_db,[$/|Input],Aliases),
+		    mod_alias:real_name(Info#mod.config_db,[$/|Input],
+					Aliases),
 		[{path_info,"/"++httpd_util:decode_hex(Input)},
 		 {path_translated,PathTranslated}|Env];
 
@@ -382,7 +390,7 @@ get_environment(Info,Env)->
 
 %% load
 
-load([$E,$r,$l,$S,$c,$r,$i,$p,$t,$A,$l,$i,$a,$s,$ |ErlScriptAlias],[]) ->
+load("ErlScriptAlias " ++ ErlScriptAlias, []) ->
     case regexp:split(ErlScriptAlias," ") of
 	{ok, [ErlName|Modules]} ->
 	    {ok, [], {erl_script_alias, {ErlName,Modules}}};
@@ -390,7 +398,7 @@ load([$E,$r,$l,$S,$c,$r,$i,$p,$t,$A,$l,$i,$a,$s,$ |ErlScriptAlias],[]) ->
 	    {error,?NICE(httpd_conf:clean(ErlScriptAlias)++
 			 " is an invalid ErlScriptAlias")}
     end;
-load([$E,$v,$a,$l,$S,$c,$r,$i,$p,$t,$A,$l,$i,$a,$s,$ |EvalScriptAlias],[]) ->
+load("EvalScriptAlias " ++ EvalScriptAlias,[]) ->
     case regexp:split(EvalScriptAlias, " ") of
 	{ok, [EvalName|Modules]} ->
 	    {ok, [], {eval_script_alias, {EvalName,Modules}}};
@@ -398,7 +406,7 @@ load([$E,$v,$a,$l,$S,$c,$r,$i,$p,$t,$A,$l,$i,$a,$s,$ |EvalScriptAlias],[]) ->
 	    {error, ?NICE(httpd_conf:clean(EvalScriptAlias)++
 			  " is an invalid EvalScriptAlias")}
     end;
-load([$E,$r,$l,$S,$c,$r,$i,$p,$t,$T,$i,$m,$e,$o,$u,$t,$ |Timeout],[])->
+load("ErlScriptTimeout " ++ Timeout, [])->
     case catch list_to_integer(httpd_conf:clean(Timeout)) of
 	TimeoutSec when integer(TimeoutSec)  ->
 	   {ok, [], {erl_script_timeout,TimeoutSec*1000}};
@@ -406,7 +414,7 @@ load([$E,$r,$l,$S,$c,$r,$i,$p,$t,$T,$i,$m,$e,$o,$u,$t,$ |Timeout],[])->
 	   {error, ?NICE(httpd_conf:clean(Timeout)++
 			 " is an invalid ErlScriptTimeout")}
     end;
-load([$E,$r,$l,$S,$c,$r,$i,$p,$t,$N,$o,$C,$a,$c,$h,$e |CacheArg],[])->
+load("ErlScriptNoCache " ++ CacheArg, [])->
     case catch list_to_atom(httpd_conf:clean(CacheArg)) of
         true ->
 	    {ok, [], {erl_script_nocache,true}};
@@ -416,9 +424,6 @@ load([$E,$r,$l,$S,$c,$r,$i,$p,$t,$N,$o,$C,$a,$c,$h,$e |CacheArg],[])->
 	   {error, ?NICE(httpd_conf:clean(CacheArg)++
 			 " is an invalid ErlScriptNoCache directive")}
     end.
-
-
-
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%                                                                    %%
@@ -445,15 +450,21 @@ deliver(_SessionID, _Data) ->
 
 %% It would be nicer to use erlang:function_exported/3 but if the 
 %% Module isn't loaded the function says that it is not loaded
-
-
 try_new_erl_scheme_method(Info, Env, Input, Mod, Func) -> 
-    process_flag(trap_exit,true),
-    Pid    = spawn_link(Mod,Func,[self(),Env,Input]),
-    RetVal = proxy(Info, Pid),
+    process_flag(trap_exit, true),
+    Self = self(),
+    Pid = spawn_link(
+	    fun() ->
+		    case catch Mod:Func(Self, Env, Input) of
+			{'EXIT',{undef,_}} ->
+			    exit(not_new_method);
+			_ ->
+			    ok  
+		    end
+	    end),
+    RetVal = proxy(Info, Pid), 
     process_flag(trap_exit,false),
     RetVal.
-
 
 %%----------------------------------------------------------------------
 %% The function recieves the data from the process that generates the page
@@ -473,7 +484,8 @@ proxy(#mod{config_db = Db} = Info, Pid) ->
 	"~n   DisableChunkedSend: ~p", [Timeout, DisableChunkedSend]),
     proxy(Info, Pid, 0, undefined, [], Timeout, DisableChunkedSend).
 
-proxy(Info, Pid, Size, StatusCode, AccResponse, Timeout, DisableChunkedSend) ->
+proxy(Info, Pid, Size, StatusCode, AccResponse, Timeout, 
+      DisableChunkedSend) ->
     ?vdebug("proxy -> entry with"
 	"~n   Size:       ~p"
 	"~n   StatusCode: ~p", [Size, StatusCode]),
@@ -505,11 +517,11 @@ proxy(Info, Pid, Size, StatusCode, AccResponse, Timeout, DisableChunkedSend) ->
 		    proxy(Info, Pid, NewSize, NewStatusCode, 
 			  "notempty", Timeout, DisableChunkedSend)
 	    end;
-
+	
 	{'EXIT', Pid, Reason} when pid(Pid), AccResponse == [] ->
-	    ?vtrace("proxy -> unexpected exit signal from ~p: ~p",
-		[Pid, Reason]),
-	    {error, not_new_method};
+	    ?vtrace("proxy -> expected exit signal from ~p: ~p",
+		    [Pid, Reason]),
+	    {error, Reason};
 
 	{'EXIT', Pid, Reason} when pid(Pid) ->
 	    ?vtrace("proxy -> exit signal from ~p: ~p",[Pid, Reason]),
@@ -535,12 +547,3 @@ proxy(Info, Pid, Size, StatusCode, AccResponse, Timeout, DisableChunkedSend) ->
 	    httpd_socket:close(Info#mod.socket_type, Info#mod.socket),
 	    {proceed,[{response,{already_sent,200,Size}}|Info#mod.data]}
     end.
-
-
-
-
-
-
-
-
-

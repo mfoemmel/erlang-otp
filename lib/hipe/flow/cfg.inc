@@ -40,6 +40,7 @@
 -record(cfg_info, {'fun',
 		   start_label,
 		   closure,
+		   closure_arity,
 		   leaf,
 		   params,
 		   extra,
@@ -54,6 +55,7 @@
 -endif.
 
 -ifdef(ICODE_CFG).
+-define(CLOSURE_ARITY_NEEDED,true).
 -define(INFO_NEEDED,true).
 -define(PARAMS_NEEDED,true).
 -define(PARAMS_UPDATE_NEEDED,true).
@@ -185,6 +187,16 @@ params(CFG) -> (CFG#cfg.info)#cfg_info.params.
 params_update(CFG, NewParams) ->
   Info = CFG#cfg.info,
   CFG#cfg{info=Info#cfg_info{params=NewParams}}.
+-endif.
+
+-ifdef(CLOSURE_ARITY_NEEDED).
+closure_arity(CFG) ->
+  Info = CFG#cfg.info,
+  Info#cfg_info.closure_arity.
+
+closure_arity_update(CFG, Arity) ->
+  Info = CFG#cfg.info,
+  CFG#cfg{info=Info#cfg_info{closure_arity=Arity}}.
 -endif.
 
 %% %% Don't forget to do a start_label_update if neccessary.

@@ -32,14 +32,14 @@
 %%  and explicitly from other code.
 
 start() ->					%Default line editing shell
-    spawn(user_drv, server, ['tty_sl -c -e',{shell,start,[]}]).
+    spawn(user_drv, server, ['tty_sl -c -e',{shell,start,[init]}]).
 
 start([Pname]) ->
-    spawn(user_drv, server, [Pname,{shell,start,[]}]);
+    spawn(user_drv, server, [Pname,{shell,start,[init]}]);
 start([Pname|Args]) ->
     spawn(user_drv, server, [Pname|Args]);
 start(Pname) ->
-    spawn(user_drv, server, [Pname,{shell,start,[]}]).
+    spawn(user_drv, server, [Pname,{shell,start,[init]}]).
 
 start(Pname, Shell) ->
     spawn(user_drv, server, [Pname,Shell]).
@@ -201,6 +201,9 @@ server_loop(Iport, Oport, Curr, User, Gr) ->
 port_bytes([$\^G|_Bs], Iport, Oport, _Curr, User, Gr) ->
     handle_escape(Iport, Oport, User, Gr);
 
+port_bytes([$\^C|_Bs], Iport, Oport, Curr, User, Gr) ->
+    interrupt_shell(Iport, Oport, Curr, User, Gr);
+
 port_bytes([B], Iport, Oport, Curr, User, Gr) ->
     Curr ! {self(),{data,[B]}},
     server_loop(Iport, Oport, Curr, User, Gr);
@@ -212,6 +215,15 @@ port_bytes(Bs, Iport, Oport, Curr, User, Gr) ->
 	    Curr ! {self(),{data,Bs}},
 	    server_loop(Iport, Oport, Curr, User, Gr)
     end.
+
+interrupt_shell(Iport, Oport, Curr, User, Gr) ->
+    case gr_get_info(Gr, Curr) of
+	undefined -> 
+	    ok;					% unknown
+	_ ->
+	    exit(Curr, interrupt)
+    end,
+    server_loop(Iport, Oport, Curr, User, Gr).
 
 handle_escape(Iport, Oport, User, Gr) ->
     case application:get_env(stdlib, shell_esc) of

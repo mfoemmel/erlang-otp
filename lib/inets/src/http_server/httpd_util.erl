@@ -184,8 +184,12 @@ message(403,RequestURI,_) ->
     "You don't have permission to access "++RequestURI++" on this server.";
 message(404,RequestURI,_) ->
     "The requested URL "++RequestURI++" was not found on this server.";
+message(408, Timeout, _) ->
+    Timeout;
 message(412,none,_) ->
     "The requested preconditions where false";
+message(413, Reason,_) ->
+    "Entity: " ++ Reason;
 message(414,ReasonPhrase,_) ->
     "Message "++ReasonPhrase++".";
 message(416,ReasonPhrase,_) ->

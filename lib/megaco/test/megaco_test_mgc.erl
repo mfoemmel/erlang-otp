@@ -75,6 +75,8 @@
 %%% ------------------------------------------------------------------
 
 start(Node, Mid, ET, Verbosity) ->
+    %% Conf = [{megaco_trace, io}],
+    %% Conf = [{megaco_trace, "megaco-mgc.trace"}],
     Conf = [{megaco_trace, false}],
     start(Node, Mid, ET, Conf, Verbosity).
 
@@ -271,6 +273,10 @@ init(Config) ->
     case lists:keysearch(megaco_trace, 1, Config) of
 	{value, {megaco_trace, true}} ->
 	    megaco:enable_trace(max, io);
+	{value, {megaco_trace, io}} ->
+	    megaco:enable_trace(max, io);
+	{value, {megaco_trace, File}} when list(File) ->
+	    megaco:enable_trace(max, File);
 	_ ->
 	    ok
     end,
@@ -899,12 +905,21 @@ request(Pid, Request) ->
     Pid ! {request, Request, self()},
     receive
 	{reply, {delay_reply, To, Reply}, Pid} ->
+	    megaco:report_event(ignore, self(), Pid, 
+				"reply: delay_reply", [To, Reply]),
 	    sleep(To),
+	    megaco:report_event(ignore, self(), Pid, 
+				"reply: delay done now return", []),
 	    Reply;
 	{reply, {exit, To, Reason}, Pid} ->
+	    megaco:report_event(ignore, self(), Pid, 
+				"reply: exit", [To, Reason]),
 	    sleep(To),
+	    megaco:report_event(ignore, self(), Pid, 
+				"reply: sleep done now exit", []),
 	    exit(Reason);
 	{reply, Reply, Pid} ->
+	    megaco:report_event(ignore, self(), Pid, "reply", [Reply]),
 	    Reply
     end.
 

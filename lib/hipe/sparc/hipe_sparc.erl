@@ -1158,25 +1158,25 @@ new_max([],Max) -> Max.
 
 %% Integer regs %%
 %% @spec (Name::integer) -> reg()
-mk_reg(RegNr) -> {sparc_reg, RegNr}.
+mk_reg(RegNr) when is_integer(RegNr) -> {sparc_reg, RegNr}.
 %% @spec () -> reg()
 mk_new_reg() -> mk_reg(hipe_gensym:get_next_var(sparc)).
 %% @spec (operand()) -> bool()
-is_reg(I) -> case I of {sparc_reg, _} -> true; _ -> false end.
-%% @spec (reg(Name)) -> Name
-%%  Name = integer() 
-reg_nr({sparc_reg, Name}) -> Name.
+is_reg(I) -> case I of {sparc_reg, _} -> true ; _ -> false end.
+%% @spec (reg(RegNr)) -> RegNr
+%%  RegNr = integer() 
+reg_nr({sparc_reg, RegNr}) when is_integer(RegNr) -> RegNr.
 
 %% FP regs %%
 %% @spec (Name::integer) -> fp_reg()
-mk_fpreg(RegNr) -> {sparc_fpreg, RegNr}.
+mk_fpreg(RegNr) when is_integer(RegNr) -> {sparc_fpreg, RegNr}.
 %% @spec () -> fp_reg()
 mk_new_fpreg() -> mk_fpreg(hipe_gensym:get_next_var(sparc)).
 %% @spec (operand()) -> bool()
 is_fpreg(I) -> case I of {sparc_fpreg, _} -> true; _ -> false end.
 %% @spec (fp_reg(Name)) -> Name
 %%  Name = integer() 
-fpreg_nr({sparc_fpreg, RegNr}) -> RegNr.
+fpreg_nr({sparc_fpreg, RegNr}) when is_integer(RegNr) -> RegNr.
 
 %% Immediates %%
 %% @spec (Value::integer()) -> imm()

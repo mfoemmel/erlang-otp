@@ -60,6 +60,7 @@ else
           cosTransactions cosEvent cosTime cosNotification cosProperty \
           cosFileTransfer cosEventDomain et megaco webtool syntax_tools \
 	  xmerl edoc
+        OTHER_SUB_DIRECTORIES += hipe
       else # BUILD_ALL on unix
         OTHER_SUB_DIRECTORIES += \
           snmp otp_mibs appmon erl_interface asn1 jinterface debugger gs inets \

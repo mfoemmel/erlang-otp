@@ -32,6 +32,33 @@
 -define(debug(Term), ok).
 -endif.
 
+-define(ENABLE_PENDING_NODEDOWN_BUG, true).
+
+%-define(mn_debug,1).
+%-define(mn_hard_debug,1).
+
+-ifdef(mn_debug).
+-define(send_nodeup(Ms, N, T),
+	erlang:display({?LINE, 'NODEUP', N, T}),
+	send_nodeup(Ms, N, T)).
+-define(send_nodedown(Ms, N, T, R),
+	erlang:display({?LINE, 'NODEDOWN', N, T, R}),
+	send_nodedown(Ms, N, T, R)).
+-ifdef(mn_hard_debug).
+-define(mn_send(P, M),
+	erlang:display({P, M}),
+	safesend(P, M)).
+-else.
+-define(mn_send(P, M), safesend(P, M)).
+-endif.
+-else.
+-define(send_nodeup(Ms, N, T), send_nodeup(Ms, N, T)).
+-define(send_nodedown(Ms, N, T, R), send_nodedown(Ms, N, T, R)).
+-define(mn_send(P, M), safesend(P, M)).
+-endif.
+
+
+
 %% Default ticktime change transition period in seconds
 -define(DEFAULT_TRANSITION_PERIOD, 60).
 
@@ -47,6 +74,7 @@
 -export([start/1, start_link/1, stop/0,
 	 kernel_apply/3,
 	 monitor_nodes/1,
+	 monitor_nodes/2,
 	 longnames/0,
 	 allow/1,
 	 protocol_childspecs/0,
@@ -88,7 +116,7 @@
 	  %% used for cleanup of really crashed
 	  %% (e.g. exit(Owner, kill)) connections !!
 	  listen,       %% list of  #listen
-	  monitor,      %% list of monitors for nodeup/nodedown
+	  monitor,      %% list of monitors (#nmon{}) for nodeup/nodedown
 	  pending_nodeup = [],
 	  allowed,       %% list of allowed nodes in a restricted system
 	  verbose = 0,   %def_verb()    %% level of verboseness
@@ -132,6 +160,14 @@
 		      how     %% What type of change        : atom()
 		     }).
 
+
+-record(nmon, {proc,                       % Process monitoring nodes
+	       want_type = visible,        % Node type(s) monitored
+	       info = false,               % Include info element
+	       node_type = false,          % Node type in info element
+	       nodedown_reason = false}).  % Nodedown reason in info element
+
+
 %% Default connection setup timeout in milliseconds.
 %% This timeout is set for every distributed action during
 %% the connection setup.
@@ -143,7 +179,8 @@
 
 kernel_apply(M,F,A) ->         request({apply,M,F,A}).
 allow(Nodes) ->                request({allow, Nodes}).
-monitor_nodes(Flag) ->         request({monitor_nodes, Flag}).
+monitor_nodes(Flag) ->         monitor_nodes(Flag, []).
+monitor_nodes(Flag, Opts) ->   request({monitor_nodes, Flag, Opts}).
 longnames() ->                 request(longnames).
 stop() ->                      erl_distribution:stop().
 
@@ -250,7 +287,7 @@ init({Name, LongOrShortNames, TickT}) ->
 	    case auth:get_cookie(Node) of
 		Cookie when atom(Cookie) ->
 		    Monitor = std_monitors(),
-		    send_list(Monitor, {nodeup, Node}),
+		    ?send_nodeup(Monitor, Node, visible),
 		    {ok, #state{name = Name,
 				node = Node,
 				type = LongOrShortNames,
@@ -354,8 +391,8 @@ handle_call({allow, Nodes}, _From, State) ->
 %% Toggle monitor of all nodes. Pid receives {nodeup, Node}
 %% and {nodedown, Node} whenever a node appears/disappears.
 %% 
-handle_call({monitor_nodes, Flag}, {Pid, _}, State0) ->
-    {Res, State} = monitor_nodes(Flag, Pid, State0),
+handle_call({monitor_nodes, Flag, Opts}, {Pid, _}, State0) ->
+    {Res, State} = monitor_nodes(Flag, Pid, Opts, State0),
     {reply,Res,State};
 
 %% 
@@ -460,20 +497,29 @@ code_change(_OldVsn, State, _Extra) ->
 
 terminate(no_network, State) ->
     lists:foreach(
-      fun(Node) ->
-	      ?nodedown(Node, State),
-	      send_list(State#state.monitor, {nodedown,Node})
-      end, get_nodes(up) ++ [node()]);
+      fun({Node, Type}) ->
+	      case Type of
+		  normal -> ?nodedown(Node, State);
+		  _ -> ok
+	      end,
+	      ?send_nodedown(State#state.monitor, Node, Type, no_network)
+      end, get_nodes_with_type(up) ++ [{node(), normal}]);
 terminate(_Reason, State) ->
     lists:foreach(
       fun(#listen {listen = Listen,module = Mod}) ->
 	      Mod:close(Listen)
       end, State#state.listen),
     lists:foreach(
-      fun(Node) ->
-	      ?nodedown(Node, State),
-	      send_list(State#state.monitor, {nodedown,Node})
-      end, get_nodes(up) ++ [node()]).
+      fun({Node, Type}) ->
+	      case Type of
+		  normal -> ?nodedown(Node, State);
+		  _ -> ok
+	      end,
+	      ?send_nodedown(State#state.monitor,
+			    Node,
+			    Type,
+			    net_kernel_terminated)
+      end, get_nodes_with_type(up) ++ [{node(), normal}]).
 
 
 %% ------------------------------------------------------------
@@ -517,8 +563,7 @@ handle_info({SetupPid, {nodeup,Node,Address,Type,Immediate}},
 		normal ->
 		    case Immediate of
 			true ->
-			    send_list(State#state.monitor, 
-				      {nodeup, Node}),
+			    ?send_nodeup(State#state.monitor, Node, visible),
 			    {noreply, State};
 			_ ->
 			    Pid = spawn_link(net_kernel, 
@@ -532,6 +577,7 @@ handle_info({SetupPid, {nodeup,Node,Address,Type,Immediate}},
 					  Pending]}}
 		    end;
 		hidden ->
+		    ?send_nodeup(State#state.monitor, Node, hidden),
 		    {noreply, State}
 	    end;
 	_ ->
@@ -544,7 +590,7 @@ handle_info({From,nodeup,Node}, State) ->
     case lookup_pend(Node, Pending) of
         {ok, NodeUp} when NodeUp#pend_nodeup.pid == From ->
             ?nodeup(Node, State),
-            send_list(State#state.monitor, {nodeup, Node}),
+            ?send_nodeup(State#state.monitor, Node, visible),
             {noreply, State#state{pending_nodeup = del_pend(Node, Pending)}};
         _ ->
             {noreply,State}
@@ -618,7 +664,7 @@ handle_info({SetupPid, {is_pending, Node}}, State) ->
 %%
 handle_info({'EXIT', From, Reason}, State) when pid(From) ->
     verbose({'EXIT', From, Reason}, 1, State),
-    handle_exit(From, State);
+    handle_exit(From, Reason, State);
 
 %%
 %% Handle badcookie and badname messages !
@@ -661,9 +707,10 @@ handle_info(transition_period_end,
     end,
     {noreply,State#state{tick = #tick{ticker = Tckr, time = T}}};
 
-handle_info({From, {set_monitors, L}}, State) ->
+handle_info({From, {set_monitors, ProcList}}, State) ->
+    NewState = set_monitors(ProcList, State),
     From ! {net_kernel, done},
-    {noreply,State#state{monitor = L}};
+    {noreply, NewState};
 
 handle_info(X, State) ->
     error_msg("Net kernel got ~w~n",[X]),
@@ -685,14 +732,14 @@ handle_info(X, State) ->
 %% the handle_info return value !
 %% -----------------------------------------------------------
 
-handle_exit(Pid, State) ->
-    catch do_handle_exit(Pid, State).
+handle_exit(Pid, Reason, State) ->
+    catch do_handle_exit(Pid, Reason, State).
 
-do_handle_exit(Pid, State) ->
+do_handle_exit(Pid, Reason, State) ->
     State1 = remove_conn_pid(Pid, State),
     listen_exit(Pid, State1),
     accept_exit(Pid, State1),
-    conn_own_exit(Pid, State1),
+    conn_own_exit(Pid, Reason, State1),
     nodeup_exit(Pid, State1),
     monitor_exit(Pid, State1),
     pending_own_exit(Pid, State1),
@@ -725,11 +772,11 @@ accept_exit(Pid, State) ->
 	    false
     end.
 
-conn_own_exit(Pid, State) ->
+conn_own_exit(Pid, Reason, State) ->
     Owners = State#state.conn_owners,
     case lists:keysearch(Pid, 1, Owners) of
 	{value, {Pid, Node}} ->
-	    throw({noreply, nodedown(Pid, Node, State)});
+	    throw({noreply, nodedown(Pid, Node, Reason, State)});
 	_ ->
 	    false
     end.
@@ -745,7 +792,7 @@ nodeup_exit(Pid, State) ->
 
 monitor_exit(Pid, State) ->
     Monitor = State#state.monitor,
-    case delete_all(Pid, Monitor) of
+    case monitor_delete_all(Pid, Monitor) of
 	Monitor ->
 	    false;
 	NewMonitor ->
@@ -785,13 +832,13 @@ ticker_exit(_, _) ->
 
 %% -----------------------------------------------------------
 %% A node has gone down !!
-%% nodedown(Owner, Node, State) -> State'
+%% nodedown(Owner, Node, Reason, State) -> State'
 %% -----------------------------------------------------------
 
-nodedown(Owner, Node, State) ->
+nodedown(Owner, Node, Reason, State) ->
     case get_conn(Node) of
 	{ok, Conn} ->
-	    nodedown(Conn, Owner, Node, Conn#connection.type, State);
+	    nodedown(Conn, Owner, Node, Reason, Conn#connection.type, State);
 	_ ->
 	    State
     end.
@@ -802,47 +849,45 @@ get_conn(Node) ->
 	_      -> error
     end.
 
-nodedown(Conn, Owner, Node, Type, OldState) ->
+nodedown(Conn, Owner, Node, Reason, Type, OldState) ->
     Owners = lists:keydelete(Owner, 1, OldState#state.conn_owners),
     State = OldState#state{conn_owners = Owners},
     case Conn#connection.state of
 	pending when Conn#connection.owner == Owner ->
-	    pending_nodedown(Conn, Node, Type, State);
+	    pending_nodedown(Conn, Node, Reason, Type, State);
 	up when Conn#connection.owner == Owner ->
-	    up_nodedown(Conn, Node, Type, State);
+	    up_nodedown(Conn, Node, Reason, Type, State);
 	up_pending when Conn#connection.owner == Owner ->
-	    up_pending_nodedown(Conn, Node, Type, State);
+	    up_pending_nodedown(Conn, Node, Reason, Type, State);
 	_ ->
 	    OldState
     end.
 
-pending_nodedown(Conn, Node, Type, State) ->
+pending_nodedown(Conn, Node, Reason, Type, State) ->
     mark_sys_dist_nodedown(Node),
     reply_waiting(Conn#connection.waiting, false),
     case Type of
 	normal ->
-	    ?nodedown(Node, State),
+	    ?nodedown(Node, State);
 	    %% Tony says: 
 	    %% Do not send any nodedown to monitors in this case !
 	    %% But that affected application_SUITE:start_phases 
-	    %% and others, so I reinserted the send_list below.
+	    %% and others, so I reinserted the send below.
 	    %% (uabrani)
- 	    send_list(State#state.monitor, {nodedown, Node});
-	_      ->
-	    ok
-    end,
-    State.
-
-up_pending_nodedown(Conn, Node, Type, State) ->
-    AcceptPid = Conn#connection.pending_owner,
-    Owners = State#state.conn_owners,
-    Pend = lists:keydelete(AcceptPid, 1, State#state.pend_owners),
-    case Type of
-	normal ->
-	    send_list(State#state.monitor, {nodedown, Node});
 	_ ->
 	    ok
     end,
+    case ?ENABLE_PENDING_NODEDOWN_BUG of
+	true -> ?send_nodedown(State#state.monitor, Node, Type, Reason);
+	false -> ok
+    end,
+    State.
+
+up_pending_nodedown(Conn, Node, Reason, Type, State) ->
+    AcceptPid = Conn#connection.pending_owner,
+    Owners = State#state.conn_owners,
+    Pend = lists:keydelete(AcceptPid, 1, State#state.pend_owners),
+    ?send_nodedown(State#state.monitor, Node, Type, Reason),
     Conn1 = Conn#connection { owner = AcceptPid,
 			      pending_owner = undefined,
 			      state = pending },
@@ -851,12 +896,12 @@ up_pending_nodedown(Conn, Node, Type, State) ->
     State#state{conn_owners = [{AcceptPid,Node}|Owners], pend_owners = Pend}.
 
 
-up_nodedown(_Conn, Node, Type, State) ->
+up_nodedown(_Conn, Node, Reason, Type, State) ->
     mark_sys_dist_nodedown(Node),
+    ?send_nodedown(State#state.monitor, Node, Type, Reason),
     case Type of
 	normal ->
 	    ?nodedown(Node, State),
-	    send_list(State#state.monitor, {nodedown, Node}),
 	    Pending = State#state.pending_nodeup,
 	    case lookup_pend(Node, Pending) of
 		{ok, NodeUp} ->
@@ -884,29 +929,185 @@ mark_sys_dist_nodedown(Node) ->
 %% End handle_exit/2 !!
 %% -----------------------------------------------------------
 
-%% A process wants to toggle monitoring nodeup/nodedown from nodes.
 
-monitor_nodes(true, Pid, State) ->
-    %% Used to monitor all changes in the nodes list
-    link(Pid),
-    Monitor = State#state.monitor,
-    {ok, State#state{monitor = [Pid|Monitor]}};
-monitor_nodes(false, Pid, State) ->
-    Monitor = State#state.monitor,
-    State1 = State#state{monitor = delete_all(Pid,Monitor)},
-    do_unlink(Pid, State1),
-    {ok, State1};
-monitor_nodes(_, _, State) ->
-    {error, State}.
+%% -----------------------------------------------------------
+%% node monitoring.
+%% -----------------------------------------------------------
 
-%% do unlink if we have no more references to Pid.
-do_unlink(Pid, State) ->
-    case lists:member(Pid, State#state.monitor) of
-	true ->
-	    false;
-	_ ->
-	    unlink(Pid)
+check_opt(Opt, Opts) ->
+    check_opt(Opt, Opts, false, []).
+
+check_opt(_Opt, [], false, _OtherOpts) ->
+    false;
+check_opt(_Opt, [], {true, ORes}, OtherOpts) ->
+    {true, ORes, OtherOpts};
+check_opt(Opt, [Opt|RestOpts], false, OtherOpts) ->
+    check_opt(Opt, RestOpts, {true, Opt}, OtherOpts);
+check_opt(Opt, [Opt|RestOpts], {true, Opt} = ORes, OtherOpts) ->
+    check_opt(Opt, RestOpts, ORes, OtherOpts);
+check_opt({Opt, value}=TOpt,
+	  [{Opt, _Val}=ORes|RestOpts],
+	  false,
+	  OtherOpts) ->
+    check_opt(TOpt, RestOpts, {true, ORes}, OtherOpts);
+check_opt({Opt, value}=TOpt,
+	  [{Opt, _Val}=ORes|RestOpts],
+	  {true, ORes}=TORes,
+	  OtherOpts) ->
+    check_opt(TOpt, RestOpts, TORes, OtherOpts);
+check_opt({Opt, value},
+	  [{Opt, _Val} = ORes1| _RestOpts],
+	  {true, {Opt, _OtherVal} = ORes2},
+	  _OtherOpts) ->
+    throw({error, {option_value_mismatch, [ORes1, ORes2]}});
+check_opt(Opt, [OtherOpt | RestOpts], TORes, OtherOpts) ->
+    check_opt(Opt, RestOpts, TORes, [OtherOpt | OtherOpts]).
+
+mk_nmon(Proc, Opts) when list(Opts) ->
+    NMon0 = #nmon{proc = Proc},
+    {NMon1, RestOpts1} = case check_opt({node_type, value}, Opts) of
+			     {true, {node_type,Type}, RO1} when Type == visible;
+								Type == hidden;
+								Type == all ->
+				 {NMon0#nmon{want_type = Type,
+					     info = true,
+					     node_type = true}, RO1};
+			     {true, {node_type, _Type} = Opt, _RO1} ->
+				 throw({error, {bad_option_value, Opt}});
+			     false ->
+				 {NMon0, Opts}
+			 end,
+    {NMon2, RestOpts2} = case check_opt(nodedown_reason, RestOpts1) of
+			     {true, nodedown_reason, RO2} ->
+				 {NMon1#nmon{info = true,
+					     nodedown_reason = true}, RO2};
+			     false ->
+				 {NMon1, RestOpts1}
+			 end,
+    case RestOpts2 of
+	[] -> NMon2;
+	_ -> {error, {unknown_options, RestOpts2}}
+    end;
+mk_nmon(_Pid, Opts) ->
+    {error, {options_not_a_list, Opts}}.
+
+monitor_member(_P, []) -> false;
+monitor_member(P, [#nmon{proc = P}|_]) -> true;
+monitor_member(P, [_|T]) -> monitor_member(P, T).
+
+check_monitor_link(true, Pid, _Monitor) when pid(Pid) ->
+    link(Pid);
+check_monitor_link(false, Pid, Monitor) when pid(Pid) ->
+    %% do unlink if we have no more references to Pid.
+    case monitor_member(Pid, Monitor) of
+	true -> ok;
+	_ -> unlink(Pid)
+    end;
+check_monitor_link(_Flag, _Proc, _Monitor) ->
+    ok.
+
+monitor_nodes(Flag, _Proc, _Opts, State) when Flag /= true,
+					     Flag /= false ->
+    %% Bad flag
+    {error, State};
+monitor_nodes(Flag, Proc, Opts, State) ->
+    case catch mk_nmon(Proc, Opts) of
+	#nmon{} = NMon ->
+	    NewMonitor = case Flag of
+			     true -> [NMon | State#state.monitor];
+			     false -> delete_all(NMon, State#state.monitor)
+			 end,
+	    check_monitor_link(Flag, Proc, NewMonitor),
+	    {ok, State#state{monitor = NewMonitor}};
+	{error, _} = Error ->
+	    {Error, State};
+	UnexpectedError ->
+	    {{error, {internal_error, UnexpectedError}}, State}
     end.
+
+set_monitors(ProcList, State) when list(ProcList) ->
+    lists:foreach(fun (#nmon{proc = Pid}) when pid(Pid) -> unlink(Pid);
+		      (_) -> ok
+		  end,
+		  State#state.monitor),
+    lists:foldl(fun (Proc, StateAcc) when pid(Proc); atom(Proc) ->
+			{_, NewStateAcc} = monitor_nodes(true,Proc,[],StateAcc),
+			NewStateAcc;
+		    ({Name, Node} = Proc, StateAcc) when atom(Name),
+							 atom(Node)->
+			{_, NewStateAcc} = monitor_nodes(true,Proc,[],StateAcc),
+			NewStateAcc;
+		    (_, StateAcc) ->
+			StateAcc
+		end,
+		State#state{monitor = []},
+		ProcList);
+set_monitors(_, State) ->
+    State#state{monitor = []}.
+
+send_nodeup([], _Node, _Type) ->
+    ok;
+send_nodeup([#nmon{proc = Proc,
+		   want_type = Type,
+		   info = false}|Mons],
+	    Node,
+	    Type) ->
+    ?mn_send(Proc, {nodeup, Node}),
+    send_nodeup(Mons, Node, Type);
+send_nodeup([#nmon{proc = Proc,
+		   want_type = WantType,
+		   info = true,
+		   node_type = GetNodeType}|Mons],
+	    Node,
+	    Type) when WantType == all; WantType == Type ->
+    Info0 = case GetNodeType of
+		true -> [{node_type, Type}];
+		false -> []
+	    end,
+    ?mn_send(Proc, {nodeup, Node, Info0}),
+    send_nodeup(Mons, Node, Type);
+send_nodeup([#nmon{}|Mons], Node, Type) ->
+    send_nodeup(Mons, Node, Type).
+
+send_nodedown([], _Node, _Type, _Reason) ->
+    ok;
+send_nodedown(Mons, Node, normal, Reason) -> % visible also known as normal
+    send_nodedown(Mons, Node, visible, Reason);
+send_nodedown([#nmon{proc = Proc,
+		     want_type = Type,
+		     info = false} | Mons],
+	      Node,
+	      Type,
+	      Reason) ->
+    ?mn_send(Proc, {nodedown, Node}),
+    send_nodedown(Mons, Node, Type, Reason);
+send_nodedown([#nmon{proc = Proc,
+		     want_type = WantType,
+		     info = true,
+		     node_type = GetNodeType,
+		     nodedown_reason = GetNodedownReason} | Mons],
+	      Node,
+	      Type,
+	      Reason) when WantType == all; WantType == Type ->
+    Info0 = case GetNodeType of
+		true -> [{node_type, Type}];
+		false -> []
+	    end,
+    Info1 = case GetNodedownReason of
+	       true -> [{nodedown_reason, Reason}|Info0];
+	       false -> Info0
+	    end,
+    ?mn_send(Proc, {nodedown, Node, Info1}),
+    send_nodedown(Mons, Node, Type, Reason);
+send_nodedown([#nmon{} | Mons], Node, Type, Reason) ->
+    send_nodedown(Mons, Node, Type, Reason).
+
+monitor_delete_all(Proc, [#nmon{proc = Proc}|Tail]) -> delete_all(Proc, Tail);
+monitor_delete_all(Proc, [Head|Tail]) ->  [Head | delete_all(Proc, Tail)];
+monitor_delete_all(_, []) -> [].
+
+% -------------------------------------------------------------
+
 do_disconnect(Node, State) ->
     case ets:lookup(sys_dist, Node) of
 	[Conn] when Conn#connection.state == up ->
@@ -917,12 +1118,13 @@ do_disconnect(Node, State) ->
 	    {false, State}
     end.
 
+
 disconnect_pid(Pid, State) ->
     exit(Pid, disconnect),
     %% Sync wait for connection to die!!!
     receive
-	{'EXIT',Pid,_Reason} ->
-	    {_,State1} = handle_exit(Pid, State),
+	{'EXIT',Pid,Reason} ->
+	    {_,State1} = handle_exit(Pid, Reason, State),
 	    {true, State1}
     end.
 
@@ -946,12 +1148,22 @@ get_nodes(Key, Which) ->
 	    get_nodes(ets:next(sys_dist, Key), Which)
     end.
 
--ifdef(NOTUSED).
-stop_dist([], _) -> ok;
-stop_dist([Node|Nodes], Monitor) ->
-    send_list(Monitor, {nodedown, Node}),
-    stop_dist(Nodes, Monitor).
--endif.
+get_nodes_with_type(Which) ->
+    get_nodes_with_type(ets:first(sys_dist), Which).
+
+get_nodes_with_type('$end_of_table', _) ->
+    [];
+get_nodes_with_type(Key, Which) ->
+    case ets:lookup(sys_dist, Key) of
+ 	[Conn = #connection{state = up}] ->
+ 	    [{Conn#connection.node, Conn#connection.type}
+	     | get_nodes_with_type(ets:next(sys_dist, Key), Which)];
+ 	[Conn = #connection{}] when Which == all ->
+ 	    [{Conn#connection.node, Conn#connection.type}
+	     | get_nodes_with_type(ets:next(sys_dist, Key), Which)];
+ 	_ ->
+ 	    get_nodes_with_type(ets:next(sys_dist, Key), Which)
+    end.
 
 ticker(Kernel, Tick) when integer(Tick) ->
     process_flag(priority, max),
@@ -1022,9 +1234,6 @@ safesend(Name,Mess) when atom(Name) ->
 	    P ! Mess
     end;
 safesend(Pid, Mess) -> Pid ! Mess.
-
-send_list([P|T], M) -> safesend(P, M), send_list(T, M);
-send_list([], _) -> ok.
 
 do_spawn(SpawnFuncArgs, SpawnOpts, State) ->
     case catch spawn_opt(?MODULE, spawn_func, SpawnFuncArgs, SpawnOpts) of
@@ -1332,8 +1541,7 @@ set_node(Node, Creation) when node() == nonode@nohost ->
 set_node(Node, _Creation) when node() == Node ->
     ok.
 
-%std_monitors() -> [global_name_server].
-std_monitors() -> [global_group].
+std_monitors() -> [#nmon{proc = global_group}].
 
 connecttime() ->
     case application:get_env(kernel, net_setuptime) of

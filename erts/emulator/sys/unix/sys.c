@@ -304,6 +304,7 @@ static int max_files = -1;
 static volatile int break_requested = 0;
 /* set early so the break handler has access to initial mode */
 static struct termios initial_tty_mode;
+static int replace_intr = 0;
 /* assume yes initially, ttsl_init will clear it */
 int using_oldshell = 1; 
 
@@ -312,7 +313,7 @@ int using_oldshell = 1;
  */
 void sys_tty_reset(void)
 {
-  if (using_oldshell) {
+  if (using_oldshell && !replace_intr) {
     SET_BLOCKING(0);
   }
   else if (isatty(0)) {
@@ -525,7 +526,7 @@ static RETSIGTYPE request_break(int signum)
    * in main thread (not signal handler).
    * see check_io() 
    */
-#ifdef DEBUG
+#ifdef DEBUG			
   fprintf(stderr,"break!\n");
 #endif
   if (break_requested > 0)
@@ -585,10 +586,29 @@ static RETSIGTYPE do_quit(int signum)
     halt_0(0);
 }
 
+/* Disable break */
 void erts_set_ignore_break(void) {
     sys_sigset(SIGINT,  SIG_IGN);
     sys_sigset(SIGQUIT, SIG_IGN);
     sys_sigset(SIGTSTP, SIG_IGN);
+}
+
+/* Don't use ctrl-c for break handler but let it be 
+   used by the shell instead (see user_drv.erl) */
+void erts_replace_intr(void) {
+  struct termios mode;
+
+  if (isatty(0)) {
+    tcgetattr(0, &mode);
+    
+    /* here's an example of how to replace ctrl-c with ctrl-u */
+    /* mode.c_cc[VKILL] = 0;
+       mode.c_cc[VINTR] = CKILL; */
+    
+    mode.c_cc[VINTR] = 0;	/* disable ctrl-c */
+    tcsetattr(0, TCSANOW, &mode);
+    replace_intr = 1;
+  }
 }
 
 void init_break_handler(void)
@@ -2311,7 +2331,7 @@ static void do_break_handling(void)
     
     /* during break we revert to initial settings */
     /* this is done differently for oldshell */
-    if (using_oldshell) {
+    if (using_oldshell && !replace_intr) {
       SET_BLOCKING(1);
     }
     else if (isatty(0)) {
@@ -2326,7 +2346,7 @@ static void do_break_handling(void)
     fflush(stdout);
     
     /* after break we go back to saved settings */
-    if (using_oldshell) {
+    if (using_oldshell && !replace_intr) {
       SET_NONBLOCKING(1);
     }
     else if (saved) {

@@ -495,10 +495,10 @@ select_cg(#l{ke={type_clause,nil,[S]}}, {var,V}, Tf, Vf, Bef, St) ->
     select_nil(S, V, Tf, Vf, Bef, St);
 select_cg(#l{ke={type_clause,binary,[S]}}, {var,V}, Tf, Vf, Bef, St) ->
     select_binary(S, V, Tf, Vf, Bef, St);
-select_cg(#l{ke={type_clause,bin_seg,S}}, {var,V}, Tf, Vf, Bef, St) ->
-    select_bin_segs(S, V, Tf, Vf, Bef, St);
-select_cg(#l{ke={type_clause,bin_end,[S]}}, {var,V}, Tf, Vf, Bef, St) ->
-    select_bin_end(S, V, Tf, Vf, Bef, St);
+select_cg(#l{ke={type_clause,bin_seg,S}}, {var,V}, Tf, _Vf, Bef, St) ->
+    select_bin_segs(S, V, Tf, Bef, St);
+select_cg(#l{ke={type_clause,bin_end,[S]}}, {var,V}, Tf, _Vf, Bef, St) ->
+    select_bin_end(S, V, Tf, Bef, St);
 select_cg(#l{ke={type_clause,Type,Scs}}, {var,V}, Tf, Vf, Bef, St0) ->
     {Vis,{Aft,St1}} =
 	mapfoldl(fun (S, {Int,Sta}) ->
@@ -563,7 +563,7 @@ select_binary(#l{ke={val_clause,{binary,{var,Ivar}},B},i=I,vdb=Vdb},
     {[{test,bs_start_match,{f,Tf},[fetch_var(V, Bef)]},{bs_save,Ivar}|Bis],
      Aft,St1}.
 
-select_bin_segs(Scs, Ivar, Tf, _Vf, Bef, St) ->
+select_bin_segs(Scs, Ivar, Tf, Bef, St) ->
     match_fmf(fun(S, Fail, Sta) ->
 		      select_bin_seg(S, Ivar, Fail, Bef, Sta) end,
 	      Tf, St, Scs).
@@ -599,8 +599,8 @@ get_bin_size_reg(Literal, _Bef) ->
     Literal.
 
 select_bin_end(#l{ke={val_clause,bin_end,B}},
-		   Ivar, Tf, Vf, Bef, St0) ->
-    {Bis,Aft,St2} = match_cg(B, Vf, Bef, St0),
+	       Ivar, Tf, Bef, St0) ->
+    {Bis,Aft,St2} = match_cg(B, Tf, Bef, St0),
     {[{bs_restore,Ivar},{test,bs_test_tail,{f,Tf},[0]}|Bis],Aft,St2}.
     
 get_bits_instr(integer) -> bs_get_integer;

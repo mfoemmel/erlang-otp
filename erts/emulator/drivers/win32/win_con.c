@@ -41,6 +41,10 @@
  */
 #define SET_CURSOR (0x80)
 
+
+#define SCAN_CODE_BREAK 0x46	/* scan code for Ctrl-Break */
+
+
 typedef struct ScreenLine_s {
     struct ScreenLine_s* next;
     struct ScreenLine_s* prev;
@@ -345,6 +349,7 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
     RECT r;
     int cy,i,bufsize;
     unsigned char c;
+    unsigned long l;
     char buf[128];
 
     switch (iMsg) {         
@@ -418,7 +423,7 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 		/* check for toolbar buttons */
 		switch (lpttt->hdr.idFrom) { 
                 case IDMENU_COPY: 
-                    lstrcpy(lpttt->lpszText,"Copy (Ctrl+Ins)"); 
+                    lstrcpy(lpttt->lpszText,"Copy (Ctrl+C)"); 
                     break; 
                 case IDMENU_PASTE: 
                     lstrcpy(lpttt->lpszText,"Paste (Ctrl+V)"); 
@@ -495,6 +500,12 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
             case CBN_SELENDCANCEL:
                 break;
             }
+	case ID_BREAK:
+	    if ((*ctrl_handler)(CTRL_C_EVENT) == FALSE) {
+		c = 0x03;
+		write_inbuf(&c,1);
+	    }
+	    return 0;
         }
         break;
     case WM_KEYDOWN :
@@ -519,10 +530,6 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 	return 0;
     case WM_CHAR:
 	c = (unsigned char)wParam;
-	if (c == 0x03) {
-	    (*ctrl_handler)(CTRL_C_EVENT);
-	    return 0;
-	}
         write_inbuf(&c,1);
 	return 0;
     case WM_CLOSE :

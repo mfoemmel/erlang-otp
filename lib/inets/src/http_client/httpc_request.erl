@@ -78,7 +78,7 @@ is_client_closing(Headers) ->
 %%%========================================================================
 post_data(Method, Headers, {ContentType, Body}) 
   when Method == post; Method == put ->
-    ContentLength = length(Body),
+    ContentLength = integer_to_list(length(Body)),
     NewBody = case Headers#http_request_h.expect of
 		  "100-continue" ->
 		      "";

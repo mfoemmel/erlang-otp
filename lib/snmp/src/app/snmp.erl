@@ -26,6 +26,8 @@
 -export([start/0,
 	 config/0,
 	 
+         versions1/0, versions2/0,
+ 
 	 date_and_time/0, 
 	 universal_time_to_date_and_time/1,
 	 local_time_to_date_and_time_dst/1, 
@@ -122,6 +124,9 @@
 	     {get_agent_caps,        0, eventually}]).
  
 
+-define(APPLICATION, snmp).
+
+
 %%-----------------------------------------------------------------
 %% Application
 %%-----------------------------------------------------------------
@@ -131,6 +136,77 @@ start() ->
 
 
 config() -> snmp_config:config().
+
+
+%%-----------------------------------------------------------------
+
+versions1() ->
+    case ms1() of
+        {ok, Mods} ->
+            {ok, version_info(Mods)};
+        Error ->
+            Error
+    end.
+ 
+versions2() ->
+    case ms2() of
+        {ok, Mods} ->
+            {ok, version_info(Mods)};
+        Error ->
+            Error
+    end.
+ 
+version_info(Mods) ->
+    SysInfo = sys_info(),
+    OsInfo  = os_info(),
+    ModInfo = [mod_version_info(Mod) || Mod <- Mods],
+    [{sys_info, SysInfo}, {os_info, OsInfo}, {mod_info, ModInfo}].
+     
+mod_version_info(Mod) ->
+    Info = Mod:module_info(),
+    {value, {attributes, Attr}}   = lists:keysearch(attributes, 1, Info),
+    {value, {vsn,        [Vsn]}}  = lists:keysearch(vsn,        1, Attr),
+    {value, {app_vsn,    AppVsn}} = lists:keysearch(app_vsn,    1, Attr),
+    {value, {compile,    Comp}}   = lists:keysearch(compile,    1, Info),
+    {value, {version,    Ver}}    = lists:keysearch(version,    1, Comp),
+    {value, {time,       Time}}   = lists:keysearch(time,       1, Comp),
+    {Mod, [{vsn,              Vsn},
+           {app_vsn,          AppVsn},
+           {compiler_version, Ver},
+           {compile_time,     Time}]}.
+
+sys_info() ->
+    SysArch = string:strip(erlang:system_info(system_architecture),right,$\n),
+    SysVer  = string:strip(erlang:system_info(system_version),right,$\n),
+    [{arch, SysArch}, {ver, SysVer}].
+ 
+os_info() ->
+    V = os:version(),
+    case os:type() of
+        {OsFam, OsName} ->
+            [{fam, OsFam}, {name, OsName}, {ver, V}];
+        OsFam ->
+            [{fam, OsFam}, {ver, V}]
+    end.
+
+ms1() ->
+    App    = ?APPLICATION,
+    LibDir = code:lib_dir(App),
+    File   = filename:join([LibDir, "ebin", atom_to_list(App) ++ ".app"]),
+    case file:consult(File) of
+        {ok, [{application, App, AppFile}]} ->
+            case lists:keysearch(modules, 1, AppFile) of
+                {value, {modules, Mods}} ->
+                    {ok, Mods};
+                _ ->
+                    {error, {invalid_format, modules}}
+            end;
+        Error ->
+            {error, {invalid_format, Error}}
+    end.
+
+ms2() ->
+    application:get_key(?APPLICATION, modules).
 
 
 %%-----------------------------------------------------------------

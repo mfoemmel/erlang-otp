@@ -25,6 +25,10 @@
 	 mk_key_change/3, mk_key_change/5, extract_new_key/3, mk_random/1]).
 -export([add_user/13, delete_user/1]).
 
+%% Internal
+-export([check_usm/1]).
+
+
 -include("SNMP-USER-BASED-SM-MIB.hrl").
 -include("SNMPv2-TC.hrl").
 -include("snmp_types.hrl").
@@ -316,7 +320,7 @@ is_engine_id_known(EngineID) ->
 
 get_user(EngineID, UserName) ->
     Key = [length(EngineID) | EngineID] ++ [length(UserName) | UserName],
-    snmp_generic:table_get_row(db(usmUserTable), Key).
+    snmp_generic:table_get_row(db(usmUserTable), Key, foi(usmUserTable)).
 
 get_user_from_security_name(EngineID, SecName) ->
     %% Since the normal mapping between UserName and SecName is the
@@ -324,7 +328,8 @@ get_user_from_security_name(EngineID, SecName) ->
     %% and check the resulting row.  If it doesn't match, we'll have to
     %% loop through the entire table.
     Key = [length(EngineID) | EngineID] ++ [length(SecName) | SecName],
-    case snmp_generic:table_get_row(db(usmUserTable), Key) of
+    case snmp_generic:table_get_row(db(usmUserTable), Key, 
+				    foi(usmUserTable)) of
 	Row when tuple(Row) ->
 	    Row;
 	undefined ->
@@ -833,7 +838,8 @@ set_clone_from(RowIndex, Cols) ->
     case lists:keysearch(?usmUserCloneFrom, 1, Cols) of
 	{value, {_Col, RowPointer}} ->
 	    RowIndex2 = extract_row(RowPointer), % won't fail
-	    CloneRow = snmp_generic:table_get_row(db(usmUserTable), RowIndex2),
+	    CloneRow = snmp_generic:table_get_row(db(usmUserTable), RowIndex2,
+						  foi(usmUserTable)),
 	    AuthP = element(?usmUserAuthProtocol, CloneRow),
 	    PrivP = element(?usmUserPrivProtocol, CloneRow),
 	    AuthK = element(?usmUserAuthKey, CloneRow),

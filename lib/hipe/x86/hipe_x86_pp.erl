@@ -5,12 +5,32 @@
 -ifndef(HIPE_X86_PP).
 -define(HIPE_X86_PP,        hipe_x86_pp).
 -define(HIPE_X86_REGISTERS, hipe_x86_registers).
--define(MOVE64, #move64{} -> exit({?MODULE, no_move64_on_x86})).	   
+-define(HIPE_X86_PP_MOVE64(Dev, I), exit({?MODULE, I})).
 -endif.
 
 -module(?HIPE_X86_PP).
--export([pp/1, pp/2, pp_insn/1]).
+-export([% pp/1, pp/2,
+         pp_insn/1, optional_pp/3]).
 -include("../x86/hipe_x86.hrl").
+
+optional_pp(Defun, MFA, Options) ->
+  case proplists:get_value(pp_native, Options) of
+    true -> 
+      pp(Defun);
+    {only,Lst} when is_list(Lst) ->
+      case lists:member(MFA,Lst) of
+	true -> pp(Defun);
+	false -> ok
+      end;
+    {only,MFA} -> 
+      pp(Defun);
+    {file,FileName} ->
+      {ok, File} = file:open(FileName, [write,append]),
+      pp(File, Defun),
+      file:close(File);
+    _ ->
+      []
+  end.
 
 pp(Defun) ->
   pp(standard_io, Defun).
@@ -101,7 +121,8 @@ pp_insn(Dev, I, Pre) ->
       io:format(Dev, ", ", []),
       pp_dst(Dev, Dst),
       io:format(Dev, "\n", []);
-    ?MOVE64;
+    #move64{} ->
+      ?HIPE_X86_PP_MOVE64(Dev, I);
     #movsx{src=Src, dst=Dst} ->
       io:format(Dev, "\tmovsx ", []),
       pp_src(Dev, Src),

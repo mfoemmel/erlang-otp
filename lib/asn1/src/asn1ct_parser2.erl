@@ -2673,9 +2673,12 @@ parse_PresenceConstraint(Tokens) ->
     {asn1_empty,Tokens}.
 
 
-merge_constraints({Rlist,ExtList}) -> % extensionmarker in constraint
-    {merge_constraints(Rlist,[],[]),
-     merge_constraints(ExtList,[],[])};
+% merge_constraints({Rlist,ExtList}) -> % extensionmarker in constraint
+%     {merge_constraints(Rlist,[],[]),
+%      merge_constraints(ExtList,[],[])};
+
+%% An arg with a constraint with extension marker will look like
+%% [#constraint{c={Root,Ext}}|Rest]
 	
 merge_constraints(Clist) ->
     merge_constraints(Clist, [], []).

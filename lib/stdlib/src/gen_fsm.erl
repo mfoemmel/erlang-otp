@@ -324,10 +324,10 @@ print_event(Dev, {in, Msg}, {Name, StateName}) ->
 	    io:format(Dev,
 		      "*DBG* ~p got all_state_event ~p in state ~w~n",
 		      [Name, Event, StateName]);
-	{timeout, Ref, {'$gen_timer', Msg}} ->
+	{timeout, Ref, {'$gen_timer', Message}} ->
 	    io:format(Dev,
 		      "*DBG* ~p got timer ~p in state ~w~n",
-		      [Name, {timeout, Ref, Msg}, StateName]);
+		      [Name, {timeout, Ref, Message}, StateName]);
 	{timeout, _Ref, {'$gen_event', Event}} ->
 	    io:format(Dev,
 		      "*DBG* ~p got timer ~p in state ~w~n",

@@ -114,7 +114,7 @@ compile1(File,Options) when list(Options) ->
     Includes = [I || {i,I} <- Options],
     EncodingRule = get_rule(Options),
     create_ets_table(asn1_functab,[named_table]),
-    Continue1 = scan({true,true},File,Options),
+    Continue1 = scan(File,Options),
     Continue2 = parse(Continue1,File,Options),
     Continue3 = check(Continue2,File,OutFile,Includes,EncodingRule,
 		      DbFile,Options,[]),
@@ -681,7 +681,7 @@ delete_double_of_symbol1([],Acc) ->
 scan_set(DirName,Files,Options) ->
     lists:map(
       fun(F)->
-	      case scan({true,true},filename:join([DirName,F]),Options) of
+	      case scan(filename:join([DirName,F]),Options) of
 		  {false,{error,Reason}} ->
 		      throw({error,{'scan error in file:',F,Reason}});
 		  {TrueOrFalse,Res} ->
@@ -706,7 +706,7 @@ parse_set(ScanRes,Options) ->
 %%***********************************
 
 
-scan({true,_}, File,Options) ->
+scan(File,Options) ->
     case asn1ct_tok:file(File) of
 	{error,Reason} ->
 	    io:format("~p~n",[Reason]),
@@ -718,9 +718,7 @@ scan({true,_}, File,Options) ->
 		false -> % continue with next pass
 		    {true,Tokens}
 	    end
-    end;
-scan({false,Result},_,_) ->
-    Result.
+    end.
 
 
 parse({true,Tokens},File,Options) ->
@@ -864,7 +862,7 @@ parse_and_save1(File,Options) ->
     Base = filename:basename(File,Ext),
     DbFile = outfile(Base,"asn1db",Options),
     Includes = [I || {i,I} <- Options],
-    Continue1 = scan({true,true},File,Options),
+    Continue1 = scan(File,Options),
     M =
 	case parse(Continue1,File,Options) of
 	    {true,Mod} -> Mod;
@@ -1079,8 +1077,6 @@ debug_off(_Options) ->
     erase(asn_keyed_list).
 
 
-outfile(Base, Ext, Opts) when atom(Ext) ->
-    outfile(Base, atom_to_list(Ext), Opts);
 outfile(Base, Ext, Opts) ->
     Obase = case lists:keysearch(outdir, 1, Opts) of
 		{value, {outdir, Odir}} -> filename:join(Odir, Base);
@@ -2013,16 +2009,11 @@ read_config_file1(ModuleName,[H|T]) ->
     end.
     
 get_config_info(CfgList,InfoType) ->
-    case InfoType of
-	all ->
-	    CfgList;
-	_ ->
-	    case lists:keysearch(InfoType,1,CfgList) of
-		{value,{InfoType,Value}} ->
-		    Value;
-		false ->
-		    []
-	    end
+    case lists:keysearch(InfoType,1,CfgList) of
+	{value,{InfoType,Value}} ->
+	    Value;
+	false ->
+	    []
     end.
 
 %% save_config/2 saves the Info with the key Key
@@ -2312,8 +2303,13 @@ generated_refed_func(Name) ->
 
 %% adds Data to gen_refed_funcs field in gen_state.
 add_generated_refed_func(Data) ->
-    L = get_gen_state_field(gen_refed_funcs),
-    update_gen_state(gen_refed_funcs,[Data|L]).
+    case is_function_generated(Data) of
+	true ->
+	    ok;
+	_ ->
+	    L = get_gen_state_field(gen_refed_funcs),
+	    update_gen_state(gen_refed_funcs,[Data|L])
+    end.
 
 next_refed_func() ->
     case get_gen_state_field(tobe_refed_funcs) of

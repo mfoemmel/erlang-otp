@@ -288,7 +288,7 @@ icode_ssa_type_info(IcodeSSA, MFA, Options) ->
     true ->
       ?option_time(hipe_icode_type:cfg(IcodeSSA, MFA, Options),
 		   "Icode type info", Options);
-    {dets, _Dets} ->
+    {plt, _Plt} ->
       ?option_time(hipe_icode_type:cfg(IcodeSSA, MFA, Options),
 		   "Icode type info", Options)
   end.
@@ -348,12 +348,7 @@ icode_to_rtl(MFA, Icode, Options) ->
   RtlCfg1 = hipe_rtl_cfg:remove_trivial_bbs(RtlCfg0),
   %% hipe_rtl_cfg:pp(RtlCfg1),
 
-%  rtl_pp(MFA, RtlCfg1, Options),	%% TAKE ME OUT
-%  RtlCfg2 = rtl_lcm(RtlCfg1, Options),
-  RtlCfg2 = RtlCfg1,
-%  rtl_pp(MFA, RtlCfg2, Options),	%% TAKE ME OUT
-
-  RtlCfg3 = rtl_ssa(RtlCfg2, Options),
+  RtlCfg3 = rtl_ssa(RtlCfg1, Options),
   RtlCfg5 = rtl_symbolic(RtlCfg3, Options),
   %% hipe_rtl_cfg:pp(RtlCfg4),
   RtlCfg6 = rtl_prop(RtlCfg5, Options),

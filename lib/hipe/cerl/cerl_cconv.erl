@@ -630,7 +630,7 @@ lift_fun_1(Name, F, Free, Env, Ren, S) ->
     B1 = cerl:c_let(Free, cerl:c_values(Es), B),
     %% The closure itself is passed as the last argument. The new
     %% function is annotated as being a closure-call entry point.
-    E = cerl:ann_c_fun([closure], Vs ++ [cerl:c_var(V)], B1),
+    E = cerl:ann_c_fun([closure, {closure_orig_arity, cerl:fun_arity(F)}], Vs ++ [cerl:c_var(V)], B1),
     s__add_def(cerl:c_var(Name), E, S1).
 
 closure_elements(N, V) ->

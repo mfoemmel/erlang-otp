@@ -308,7 +308,7 @@ get_agent_caps() ->
 
 
 %%%-----------------------------------------------------------------
-%%% Audit Trail Log functions (for backward compatibillity)
+%%% Audit Trail Log functions 
 %%%-----------------------------------------------------------------
 log_to_txt(LogDir, Mibs) -> 
     OutFile = "snmpa_log.txt",       

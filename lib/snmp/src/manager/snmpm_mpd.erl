@@ -897,7 +897,7 @@ counters() ->
 %%  the local mib. (e.g. snmpInPkts)
 %%-----------------------------------------------------------------
 inc(Name)    -> inc(Name, 1).
-inc(Name, N) -> ets:update_counter(snmpm_stats_table, Name, N).
+inc(Name, N) -> snmpm_config:incr_stats_counter(Name, N).
 
 inc_snmp_in(#pdu{type = Type}) ->
     inc_in_type(Type);

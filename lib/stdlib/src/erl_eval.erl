@@ -447,10 +447,10 @@ do_apply({M,F}=Func, As, Bs0, Ef, RBs)
             apply(M, F, As);
         none ->
             ret_expr(apply(M, F, As), Bs0, RBs);
-        {value,F} when RBs == value ->
-            F(Func, As);
-        {value,F} ->
-            ret_expr(F(Func, As), Bs0, RBs)
+        {value,Fun} when RBs == value ->
+            Fun(Func, As);
+        {value,Fun} ->
+            ret_expr(Fun(Func, As), Bs0, RBs)
     end;
 do_apply(Func, As, Bs0, Ef, RBs) ->
     Info = if

@@ -480,6 +480,7 @@ Eterm erts_module_info_1(Process* p, Eterm module, Eterm what);
 /* break.c */
 void init_break_handler(void);
 void erts_set_ignore_break(void);
+void erts_replace_intr(void);
 void process_info(CIO);
 void print_process_info(Process*, CIO);
 void info(CIO);

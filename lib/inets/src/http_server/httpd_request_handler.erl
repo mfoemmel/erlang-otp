@@ -21,27 +21,39 @@
 -export([start_link/2, synchronize/3]).
 
 %% module internal api
--export([connection/2, do_next_connection/6]). %%, read_header/7]). 
-%-export([parse_trailers/1, newline/1]).
+-export([connection/2, do_next_connection/6]). 
 
 -include("httpd.hrl").
 -include("httpd_verbosity.hrl").
 -include("http.hrl").
 
-%% start_link
-
+%%--------------------------------------------------------------------
+%% Function: start_link() -> {ok, Pid}
+%%
+%% Description: Starts a httpd-request handler process. Intended to be
+%% called by the httpd acceptor process.
+%% %%--------------------------------------------------------------------
 start_link(Manager, ConfigDB) ->
     Pid = proc_lib:spawn(?MODULE, connection, [Manager, ConfigDB]),
     {ok, Pid}.
 
-
-%% synchronize
-
+%%--------------------------------------------------------------------
+%% Function: synchronize(Pid, SocketType, Socket) -> void()
+%%
+%% Pid = pid()
+%% SocketType = ip_comm | ssl 
+%% Socket = socket()
+%% Description: Send a synchronize message. Intended to be called by
+%% the http acceptor process when it has transfered the socket ownership
+%% to this process. 
+%%--------------------------------------------------------------------
 synchronize(Pid, SocketType, Socket) ->
     Pid ! {synchronize, SocketType, Socket}.
 
-% connection 
 
+%%--------------------------------------------------------------------
+%%% Internal functions
+%%--------------------------------------------------------------------
 connection(Manager, ConfigDB) ->
     {SocketType, Socket, {Status, Verbosity}} = await_synchronize(Manager),
     put(sname,self()),
@@ -58,9 +70,6 @@ connection1({reject, blocked}, Manager, ConfigDB, SocketType, Socket) ->
 connection1(accept, Manager, ConfigDB, SocketType, Socket) ->
     handle_connection(Manager, ConfigDB, SocketType, Socket).
 
-
-%% await_synchronize
-
 await_synchronize(Manager) ->
     receive
 	{synchronize, SocketType, Socket} ->
@@ -72,37 +81,26 @@ await_synchronize(Manager) ->
 	    exit(synchronize_timeout)
     end.
 
-
-% handle_busy
-
 handle_busy(Manager, ConfigDB, SocketType, Socket) ->
     ?vlog("handle busy: ~p", [Socket]),
     MaxClients = httpd_util:lookup(ConfigDB, max_clients, 150),
     String = io_lib:format("heavy load (>~w processes)", [MaxClients]),
     reject_connection(Manager, ConfigDB, SocketType, Socket, String).
 
-
-% handle_blocked 
-
 handle_blocked(Manager, ConfigDB, SocketType, Socket) ->
     ?vlog("handle blocked: ~p", [Socket]),
     String = "Server maintenance performed, try again later",
     reject_connection(Manager, ConfigDB, SocketType, Socket, String).
 
-
-% reject_connection
-
 reject_connection(_Manager, ConfigDB, SocketType, Socket, Info) ->
     String = lists:flatten(Info),
     ?vtrace("send status (503) message", []),
     httpd_response:send_status(SocketType, Socket, 503, String, ConfigDB),
-    %% This ugly thing is to make ssl deliver the message, before the close...
+    %% This ugly thing is to make ssl deliver the message, before the
+    %% close...
     close_sleep(SocketType, 1000),  
     ?vtrace("close the socket", []),
-    close(SocketType, Socket, ConfigDB).
-
-
-% handle_connection
+    httpd_socket:close(SocketType, Socket).
 
 handle_connection(Manager, ConfigDB, SocketType, Socket) ->
     ?vlog("handle connection: ~p", [Socket]),
@@ -110,16 +108,15 @@ handle_connection(Manager, ConfigDB, SocketType, Socket) ->
     Peername    = httpd_socket:peername(SocketType, Socket),
     InitData    = #init_data{peername=Peername, resolve=Resolve},
     TimeOut     = httpd_util:lookup(ConfigDB, keep_alive_timeout, 150000),
-    NrOfRequest = httpd_util:lookup(ConfigDB, max_keep_alive_request, forever),
+    NrOfRequest = httpd_util:lookup(ConfigDB, 
+				    max_keep_alive_request, forever),
     ?MODULE:do_next_connection(ConfigDB, InitData, 
 			       SocketType, Socket,NrOfRequest,TimeOut),
     ?vlog("handle connection: done", []),
     httpd_manager:done_connection(Manager),
     ?vlog("handle connection: close socket", []),
-    close(SocketType, Socket, ConfigDB).
+    httpd_socket:close(SocketType, Socket).
 
-
-% do_next_connection
 do_next_connection(_ConfigDB, _InitData, _SocketType, _Socket, NrOfRequests, 
 		   _Timeout) when NrOfRequests < 1 -> 
     ?vtrace("do_next_connection: done", []),
@@ -127,7 +124,8 @@ do_next_connection(_ConfigDB, _InitData, _SocketType, _Socket, NrOfRequests,
 do_next_connection(ConfigDB, InitData, SocketType, Socket, NrOfRequests, 
 		   Timeout) ->
     Peername = InitData#init_data.peername,
-    case (catch read(ConfigDB, SocketType, Socket, InitData, Timeout)) of
+    case (catch receive_request(ConfigDB, SocketType, Socket, 
+				InitData, Timeout)) of
         {'EXIT', Reason} ->
             ?vlog("exit reading from socket: ~p",[Reason]),
             error_logger:error_report({'EXIT',Reason}),
@@ -140,15 +138,18 @@ do_next_connection(ConfigDB, InitData, SocketType, Socket, NrOfRequests,
 	    error_log(mod_disk_log, 
 		      SocketType, Socket, ConfigDB, Peername, String);
         {error, Reason} ->
-            handle_read_error(Reason,SocketType,Socket,ConfigDB,Peername);
-        Info when record(Info, mod) ->
-            case Info#mod.connection of
+            handle_request_receive_error(Reason,SocketType,Socket,
+					 ConfigDB,Peername);
+        ModData when record(ModData, mod) ->
+            case ModData#mod.connection of
                 true ->
-                    ReqTimeout = httpd_util:lookup(ConfigDB, 
-						   keep_alive_timeout, 150000),
-		    ?MODULE:do_next_connection(ConfigDB,          InitData,
-					       SocketType,        Socket,
-					       dec(NrOfRequests), ReqTimeout);
+                    ReqTimeout = 
+			httpd_util:lookup(ConfigDB, 
+					  keep_alive_timeout, 150000),
+		    ?MODULE:do_next_connection(ConfigDB, InitData,
+					       SocketType, Socket,
+					       dec(NrOfRequests),
+					       ReqTimeout);
 		_ ->
                     ok
             end;
@@ -156,8 +157,7 @@ do_next_connection(ConfigDB, InitData, SocketType, Socket, NrOfRequests,
             ok
     end.
 
-
-read(ConfigDB, SocketType, Socket, InitData, Timeout) ->
+receive_request(ConfigDB, SocketType, Socket, InitData, Timeout) ->
     MaxHeaderSize =
 	httpd_util:lookup(ConfigDB, max_header_size, ?HTTP_MAX_HEADER_SIZE),
     {Method, Uri, Version, {RecordHeaders, Headers}, Body} =
@@ -166,29 +166,29 @@ read(ConfigDB, SocketType, Socket, InitData, Timeout) ->
     
     case httpd_request:validate(Method, Uri, Version) of
 	ok  ->
-	    {ok, Info} = httpd_request:mod_data(Socket, SocketType, 
-					       ConfigDB,
-					       Method, Uri,
-					       Version,
-					       Method ++ " " ++
-					       Uri ++ " " ++
-					       Version, 
-					       Headers,
+	    {ok, ModData} = httpd_request:mod_data(Socket, SocketType, 
+						ConfigDB,
+						Method, Uri,
+						Version,
+						Method ++ " " ++
+						Uri ++ " " ++
+						Version, 
+						Headers,
 					       [], InitData),
 	    
-	    case is_host_specified_if_required(Info#mod.absolute_uri,
+	    case is_host_specified_if_required(ModData#mod.absolute_uri,
 					       RecordHeaders, Version) of
 		true ->
 		    case handle_body(RecordHeaders, MaxHeaderSize, ConfigDB,
-				     Socket, SocketType, Body, Info,
+				     Socket, SocketType, Body, ModData,
 				     Timeout) of
 			{ok, NewBody} ->
-			    finish_request(NewBody, [], Info);
+			    finish_request(NewBody, [], ModData);
 			Other ->
 			    Other
 		    end;
 		false ->
-		    httpd_response:send_status(Info, 400, none),
+		    httpd_response:send_status(ModData, 400, none),
 		    {error,"No host specified"}
 	    end;
 	{error, {not_supported, What}} ->
@@ -198,7 +198,7 @@ read(ConfigDB, SocketType, Socket, InitData, Timeout) ->
 				       {Method, Uri, Version},
 				       ConfigDB),
 	    {error, "Not supported"};
-	{bad_request, {forbidden, URI}} ->
+	{error, {bad_request, {forbidden, URI}}} ->
 	    httpd_response:send_status(SocketType, Socket, 
 				       403, URI, ConfigDB),
 	    {error,"Forbidden Request"}
@@ -230,12 +230,12 @@ receive_http_msg({Module, Function, Args},
     end.
 
 handle_body(RecordHeaders, MaxHdrSz, ConfigDB, Socket, SocketType, Body, 
-	    Info, Timeout) ->
+	    ModData, Timeout) ->
     
     MaxBodySize = httpd_util:lookup(ConfigDB, max_body_size, nolimit),
     
     case handle_expect(RecordHeaders, ConfigDB, Socket, SocketType,
-		       Info, MaxBodySize) of 
+		       ModData, MaxBodySize) of 
 	ok ->
 	    case (catch handle_body(RecordHeaders, MaxHdrSz, 
 				    Body, MaxBodySize, 
@@ -246,17 +246,23 @@ handle_body(RecordHeaders, MaxHdrSz, ConfigDB, Socket, SocketType, Body,
 					   is_list(NewBody) ->  
 		    {ok, NewBody};
 		{error, unknown_coding} ->
-		    httpd_response:send_status(Info, 501, 
+		    httpd_response:send_status(ModData, 501, 
 					       "Unknown Transfer-Encoding"),
 		    httpd_socket:close(SocketType, Socket),
 		    {socket_closed,"Expect conditions was not fullfilled"};
 		{error, body_too_big} ->
-		    httpd_response:send_status(Info, 417, "Body too big"),
+		    httpd_response:send_status(ModData, 417, "Body too big"),
 		    httpd_socket:close(SocketType, Socket),
 		    {socket_closed,"Expect denied according to size"};
+		{error, session_local_timeout} ->
+		    httpd_response:send_status(ModData, 408, 
+					       "Request timeout"),
+		    httpd_socket:close(SocketType, Socket),
+		    {socket_closed, "Local timeout"};
 		Other ->
-		    io:format("OTHER: ~p~n", [Other]),
-		    httpd_response:send_status(Info, 500, none),
+		    error_logger:error_report("Reason for internal" 
+					      "server error: ~p~n", [Other]),
+		    httpd_response:send_status(ModData, 500, none),
 		    httpd_socket:close(SocketType, Socket),
 		    {socket_closed, Other}
 	    end;
@@ -305,54 +311,52 @@ is_host_specified_if_required(nohost, #http_request_h{host = undefined},
 is_host_specified_if_required(_, _, _) ->
     true.
 
-handle_expect(Headers, ConfigDB, Socket, SocketType,Info, MaxBodySize) ->
+handle_expect(Headers, ConfigDB, Socket, SocketType,ModData, MaxBodySize) ->
     Length = Headers#http_request_h.'content-length',
-    case expect(Headers, Info#mod.http_version, ConfigDB) of
+    case expect(Headers, ModData#mod.http_version, ConfigDB) of
 	continue when MaxBodySize > Length; MaxBodySize == nolimit ->
-	    httpd_response:send_status(Info, 100, ""),
+	    httpd_response:send_status(ModData, 100, ""),
 	    ok;
 	continue when MaxBodySize < Length ->
-	    httpd_response:send_status(Info, 417, "Body too big"),
+	    httpd_response:send_status(ModData, 417, "Body too big"),
 	    httpd_socket:close(SocketType, Socket),
 	    {socket_closed,"Expect denied according to size"};
 	break ->
-	    httpd_response:send_status(Info, 417, "Method not allowed"),
+	    httpd_response:send_status(ModData, 417, "Method not allowed"),
 	    httpd_socket:close(SocketType, Socket),
 	    {socket_closed,"Expect conditions was not fullfilled"};
 	no_expect_header ->
 	    ok;
 	http_1_0_expect_header ->
-	    httpd_response:send_status(Info, 400, 
+	    httpd_response:send_status(ModData, 400, 
 				       "Only HTTP/1.1 Clients "
 				       "may use the Expect Header"),
 	    httpd_socket:close(SocketType, Socket),
 	    {socket_closed,"Due to a HTTP/1.0 expect header"}
     end.
 
-
 %% The request is read in send it forward to the module that 
 %% generates the response
 
 finish_request(EntityBody, ExtraHeader, 
-	       #mod{parsed_header = ParsedHeader} = Info) ->
+	       #mod{parsed_header = ParsedHeader} = ModData) ->
     ?DEBUG("finish_request -> ~n"
 	      "    EntityBody:   ~p~n"
 	      "    ExtraHeader:  ~p~n"
 	      "    ParsedHeader: ~p~n",
 	      [EntityBody, ExtraHeader, ParsedHeader]),
-    httpd_response:send(Info#mod{parsed_header = ParsedHeader ++ ExtraHeader,
-				 entity_body   = EntityBody}).
-
-
+    httpd_response:send(ModData#mod{parsed_header = 
+				    ParsedHeader ++ ExtraHeader,
+				    entity_body = EntityBody}).
 
 %%----------------------------------------------------------------------
-%% If the user sends an expect header-field with the value 100-continue
-%% We must send a 100 status message if he is a HTTP/1.1 client. 
-%% If it is an HTTP/1.0 client it's little more difficult.
-%% If expect is not defined it is easy but in the other case shall we 
-%% Break or the transmission or let it continue the standard is not clear 
-%% if to break connection or wait for data.  
-%%----------------------------------------------------------------------
+%% If the user sends an expect header-field with the value
+%% 100-continue We must send a 100 status message if he is a HTTP/1.1
+%% client.  If it is an HTTP/1.0 client it's little more difficult.
+%% If expect is not defined it is easy but in the other case shall we
+%% Break or end the transmission or let it continue the standard is
+%% not clear if to break connection or wait for data.
+%% ----------------------------------------------------------------------
 
 expect(Headers, "HTTP/1.1", _) ->
     case Headers#http_request_h.expect of
@@ -377,41 +381,33 @@ expect(Headers, _, ConfigDB) ->
 	    end
     end.
 
-
-
-handle_read_error({header_too_long, Max, Rem},
-                  SocketType, Socket, ConfigDB, Peername) ->
+handle_request_receive_error({header_too_long, Max, Rem},
+		     SocketType, Socket, ConfigDB, Peername) ->
     String = io_lib:format("header too long: ~p : ~p",[Max, Rem]),
-    handle_read_error(ConfigDB, String, SocketType, Socket, Peername,
-                      max_header_action, close);
-handle_read_error({body_too_long, Max, Actual},
+    handle_request_receive_error(ConfigDB, 413, String, SocketType, 
+			 Socket, Peername);
+handle_request_receive_error({body_too_long, Max, Actual},
                   SocketType, Socket, ConfigDB, Peername) ->
     String = io_lib:format("body too long: ~p : ~p", [Max, Actual]),
-    handle_read_error(ConfigDB, String, SocketType, Socket, Peername,
-                      max_body_action, close);
-handle_read_error(_Error, _SocketType, _Socket, _ConfigDB, _Peername) ->
+    handle_request_receive_error(ConfigDB, 413, String, SocketType, 
+			 Socket, Peername);
+handle_request_receive_error(session_local_timeout,
+		     SocketType, Socket, ConfigDB, Peername) ->
+    handle_request_receive_error(ConfigDB, 408, "Request timeout", 
+			 SocketType, Socket, Peername);
+handle_request_receive_error(_, _, _, _, _) ->
     ok.
 
-
-handle_read_error(ConfigDB, ReasonString, SocketType, Socket, Peername,
-                  Item, Default) ->
+handle_request_receive_error(ConfigDB, ReasonCode, 
+		     ReasonString, SocketType, Socket, Peername) ->
     ?vlog("error reading request: ~s",[ReasonString]),
     E = lists:flatten(
           io_lib:format("Error reading request: ~s",[ReasonString])),
     error_log(mod_log, SocketType, Socket, ConfigDB, Peername, E),
     error_log(mod_disk_log, SocketType, Socket, ConfigDB, Peername, E),
-    case httpd_util:lookup(ConfigDB,Item,Default) of
-        reply414 ->
-            send_read_status(SocketType, Socket, 414, ReasonString, ConfigDB);
-        _ ->
-            ok
-    end.
+    httpd_response:send_status(SocketType, Socket, ReasonCode, 
+			       ReasonString, ConfigDB).
     
-send_read_status(SocketType, Socket, Code, ReasonString, ConfigDB) ->
-    httpd_response:send_status(SocketType, Socket, Code, ReasonString, 
-			       ConfigDB).
-
-
 error_log(Mod, SocketType, Socket, ConfigDB, Peername, String) ->
     Modules = httpd_util:lookup(ConfigDB, modules,
 				[mod_get, mod_head, mod_log]),
@@ -422,28 +418,14 @@ error_log(Mod, SocketType, Socket, ConfigDB, Peername, String) ->
 	    ok
     end.
 
-
-%% Socket utility functions:
-
-close(SocketType, Socket, _ConfigDB) ->
-    case httpd_socket:close(SocketType, Socket) of
-        ok ->
-            ok;
-        {error, Reason} ->
-            ?vlog("error while closing socket: ~p",[Reason]),
-	    ok
-    end.
-
 close_sleep({ssl, _}, Time) ->
     sleep(Time);
 close_sleep(_, _) ->
     ok.
 
-
 sleep(T) -> receive after T -> ok end.
 
-
-dec(N) when integer(N) ->
+dec(N) when integer(N)->
     N-1;
 dec(N) ->
     N.

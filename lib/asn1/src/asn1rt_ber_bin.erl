@@ -1013,7 +1013,7 @@ decode_real2(Buffer0, Form, Len, RemBytes1) ->
 		    _ -> exit({error,{asn1, {non_supported_scaling, First}}}) 
 		end, 
 						%	    ok = io:format("Buffer2: ~w~n",[Buffer2]), 
-	    {FirstLen, {Exp, Buffer3}, RemBytes2} = 
+	    {FirstLen, {Exp, Buffer3,_Rb2}, RemBytes2} = 
 		case B1_0 of
 		    0 -> {2, decode_integer2(1, Buffer2, RemBytes1), RemBytes1+1}; 
 		    1 -> {3, decode_integer2(2, Buffer2, RemBytes1), RemBytes1+2}; 
@@ -1140,7 +1140,7 @@ remove_unused_then_dotag(DoTag,StringType,Unused,BinBits) ->
 	0 when (size(BinBits) == 0) ->
 	    dotag(DoTag,StringType,{<<0>>,1});
 	0 when DoTag==[]-> % time optimization of next case
-	    dotag_universal(StringType,[Unused|BinBits],size(BinBits)+1);
+	    dotag_universal(StringType,[Unused|[BinBits]],size(BinBits)+1);
 % 	    {LenEnc,Len} = encode_legth(size(BinBits)+1),
 % 	    {[StringType,LenEnc,[Unused|BinBits]],size(BinBits)+1+Len+1};
 	0 ->
