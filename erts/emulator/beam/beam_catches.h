@@ -8,10 +8,10 @@
 
 #define BEAM_CATCHES_NIL	(-1)
 
-extern void beam_catches_init(void);
-extern unsigned beam_catches_cons(uint32 *cp, unsigned cdr);
-extern uint32 *beam_catches_car(unsigned i);
-extern void beam_catches_delmod(unsigned head, uint32 *code, unsigned code_bytes);
+void beam_catches_init(void);
+unsigned beam_catches_cons(Eterm* cp, unsigned cdr);
+Eterm *beam_catches_car(unsigned i);
+void beam_catches_delmod(unsigned head, Eterm* code, unsigned code_bytes);
 
 #define catch_pc(x)	beam_catches_car(catch_val((x)))
 

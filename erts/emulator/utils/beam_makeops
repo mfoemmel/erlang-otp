@@ -79,7 +79,7 @@ my @pred_table;
 # Operand types for generic instructions.
 
 my $compiler_types = "uiaxyfhz";
-my $loader_types = "nprowv";
+my $loader_types = "nprowvl";
 my $genop_types = $compiler_types . $loader_types;
 
 #
@@ -106,6 +106,7 @@ my %arg_size = ('r' => 0,	# x(0) - x register zero
 		'o' => 2,	# float
 		'w' => 1,	# bignumber
 		'h' => 1,	# character
+		'l' => 1,	# float reg
 	     );
 
 #
@@ -501,7 +502,7 @@ sub emulator_output {
     print "\n";
 
     print "extern char tag_to_letter[];\n";
-    print "extern uint32 op_transform[];\n";
+    print "extern Uint op_transform[];\n";
     print "\n";
 
     for ($i = 0; $i < @op_to_name; $i++) {
@@ -633,7 +634,7 @@ sub compiler_output {
     &comment('erlang');
 
     print "-export([format_number/0]).\n";
-    print "-export([opcode/2]).\n";
+    print "-export([opcode/2,opname/1]).\n";
     print "\n";
     print "format_number() -> $BEAM_FORMAT_NUMBER.\n\n";
 
@@ -641,7 +642,14 @@ sub compiler_output {
 	next unless defined $gen_opname[$i];
 	print "opcode(", &quote($gen_opname[$i]), ", $gen_arity[$i]) -> $i;\n";
     }
-    print "opcode(Name, Arity) -> erlang:fault(badarg, [Name,Arity]).\n";
+    print "opcode(Name, Arity) -> erlang:fault(badarg, [Name,Arity]).\n\n";
+
+    for ($i = 0; $i < @gen_opname; $i++) {
+	next unless defined $gen_opname[$i];
+	print "opname($i) -> {",
+	&quote($gen_opname[$i]), ",$gen_arity[$i]};\n";
+    }
+    print "opname(Number) -> erlang:fault(badarg, [Number]).\n";
 
     #
     # Generate .hrl file.
@@ -804,7 +812,7 @@ sub basic_generator {
 
 	    /[fp]/ and do { $fail_type = $_; last SWITCH };
 
-	    /[eLIFEbASjPow]/ and do { last SWITCH; };
+	    /[eLIFEbASjPowl]/ and do { last SWITCH; };
 
 	    die "$name: The generator can't handle $_, at";
 	}
@@ -862,7 +870,7 @@ sub basic_generator {
 	} else {
 	    $code = join("\n",
 			 "{ $var_decls",
-			 "uint32* next;",
+			 "Eterm* next;",
 			 "PreFetch($size, next);",
 			 "$macro_code",
 			 "NextPF($size, next);",
@@ -1129,7 +1137,7 @@ sub tr_gen {
     # Print the generated transformation engine.
     #
     my($offset) = 0;
-    print "uint32 op_transform[] = {\n";
+    print "Uint op_transform[] = {\n";
     foreach $key (keys %gen_transform) {
 	$gen_transform_offset{$key} = $offset;
 	foreach $instr (@{$gen_transform{$key}}) {

@@ -28,7 +28,7 @@
 #include "global.h"
 #include "erl_process.h"
 #include "error.h"
-#include "driver.h"
+#include "erl_driver.h"
 #include "bif.h"
 #include "big.h"
 #include "dist.h"
@@ -43,7 +43,7 @@ os_getpid_0(Process* p)
 {
      char pid_string[21]; /* enough for a 64 bit number */
      int n;
-     uint32* hp;
+     Eterm* hp;
      sys_get_pid(pid_string); /* In sys.c */
      n = sys_strlen(pid_string);
      hp = HAlloc(p, n*2);

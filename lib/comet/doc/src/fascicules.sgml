@@ -1,0 +1,15 @@
+<!doctype fascicules PUBLIC "-//Stork//DTD fascicules//EN">
+<fascicules>
+  <fascicule file="users_guide" href="users_guide_frame.html">
+    User's Guide
+  </fascicule>
+  <fascicule file="refman" href="refman_frame.html" entry="yes">
+    Reference Manual
+  </fascicule>
+  <fascicule file="part_notes" href="part_notes_frame.html">
+    Release Notes
+  </fascicule>
+  <fascicule file="" href="../../../../doc/print.html">
+    Off-Print
+  </fascicule>
+</fascicules>

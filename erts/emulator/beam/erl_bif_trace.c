@@ -28,7 +28,7 @@
 #include "global.h"
 #include "erl_process.h"
 #include "error.h"
-#include "driver.h"
+#include "erl_driver.h"
 #include "bif.h"
 #include "big.h"
 #include "dist.h"
@@ -747,13 +747,13 @@ erts_set_trace_pattern(Eterm* mfa, int specified, Binary* match_prog_set,
     */
     if (is_local) {
 	if (on) {
-	    matches += erts_set_break(mfa, specified, match_prog_set);
+	    matches += erts_set_trace_break(mfa, specified, match_prog_set);
 	} else {
-	    matches += erts_clear_break(mfa, specified);
+	    matches += erts_clear_trace_break(mfa, specified);
 	}
     } else {
 	if (on) {
-	   erts_clear_break(mfa, specified);
+	   erts_clear_trace_break(mfa, specified);
 	}
     }
     return matches;
@@ -784,6 +784,15 @@ setup_func_trace(Export* ep, void* match_prog)
 	    return 0;
 	}
     }
+
+#ifdef HIPE
+    /*
+     * Currently no trace support for native code.
+     */
+    if (((Eterm *) ep->address)[-4] != 0) {
+	return 0;
+    }
+#endif
 
     ep->code[3] = (Uint) em_call_traced_function;
     ep->code[4] = (Uint) ep->address;
@@ -844,6 +853,16 @@ reset_func_trace(Export* ep)
 	    return 0;
 	}
     }
+
+
+#ifdef HIPE
+    /*
+     * Currently no trace support for native code.
+     */
+    if (((Eterm *) ep->address)[-4] != 0) {
+	return 0;
+    }
+#endif
 
     /*
      * Nothing to do, but the export entry matches.
@@ -973,7 +992,7 @@ Eterm erts_seq_trace(Process *p, Eterm arg1, Eterm arg2,
 	return old_value;
     }
     else if (arg1 == am_label) {
-	if (!(is_atom(arg2) || is_small(arg2))) {
+	if (! is_small(arg2)) {
 	    return THE_NON_VALUE;
 	}
         new_seq_trace_token(p);
@@ -984,7 +1003,7 @@ Eterm erts_seq_trace(Process *p, Eterm arg1, Eterm arg2,
     	return old_value;
     }
     else if (arg1 == am_serial) {
-	uint32* tp;
+	Eterm* tp;
 	if (is_not_tuple(arg2)) {
 	    return THE_NON_VALUE;
 	}
@@ -1019,24 +1038,28 @@ Eterm erts_seq_trace(Process *p, Eterm arg1, Eterm arg2,
     }
 }
 
-void new_seq_trace_token(Process* p) {
-    uint32* hp;
+void
+new_seq_trace_token(Process* p)
+{
+    Eterm* hp;
+
     if (SEQ_TRACE_TOKEN(p) == NIL) {
-      hp = HAlloc(p, 6);
-      SEQ_TRACE_TOKEN(p) = TUPLE5(hp, make_small(0), /*Flags*/ 
-				      make_small(0), /*Label*/
-                                      make_small(0), /*Serial*/
-				      p->id,         /*From*/
-	                              make_small(p->seq_trace_lastcnt));
+	hp = HAlloc(p, 6);
+	SEQ_TRACE_TOKEN(p) = TUPLE5(hp, make_small(0), /*Flags*/ 
+				    make_small(0), /*Label*/
+				    make_small(0), /*Serial*/
+				    p->id,         /*From*/
+				    make_small(p->seq_trace_lastcnt));
     }
 }
 
 BIF_RETTYPE seq_trace_info_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 item, res;
-    uint32* hp;
-    uint32 current_flag;
+    Eterm item;
+    Eterm res;
+    Eterm* hp;
+    Uint current_flag;
 
     if (is_not_atom(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -1050,12 +1073,10 @@ BIF_ADECL_1
 	    hp = HAlloc(BIF_P,3);
 	    res = TUPLE2(hp, item, am_false);
 	    BIF_RET(res);
-	} 
-	else if ((item == am_label) || (item == am_serial)) {
+	} else if ((item == am_label) || (item == am_serial)) {
 	    BIF_RET(NIL);
-	}
-	else {
-	    BIF_ERROR(BIF_P, BADARG);
+	} else {
+	    goto error;
 	}
     }
 
@@ -1067,23 +1088,20 @@ BIF_ADECL_1
 	current_flag = SEQ_TRACE_PRINT; 
     } else if (BIF_ARG_1 == am_timestamp) {
 	current_flag = SEQ_TRACE_TIMESTAMP; 
-    }
-    else
+    } else {
 	current_flag = 0;
-
+    }
 
     if (current_flag) {
-      res = unsigned_val(SEQ_TRACE_TOKEN_FLAGS(BIF_P)) & current_flag ? 
-	  am_true : am_false;
-    }
-    else if (item == am_label) {
-      res = SEQ_TRACE_TOKEN_LABEL(BIF_P);
-    }
-    else if (item  == am_serial) {
+	res = unsigned_val(SEQ_TRACE_TOKEN_FLAGS(BIF_P)) & current_flag ? 
+	    am_true : am_false;
+    } else if (item == am_label) {
+	res = SEQ_TRACE_TOKEN_LABEL(BIF_P);
+    } else if (item  == am_serial) {
 	hp = HAlloc(BIF_P, 3);
 	res = TUPLE2(hp, SEQ_TRACE_TOKEN_LASTCNT(BIF_P), SEQ_TRACE_TOKEN_SERIAL(BIF_P));
-    }
-    else {
+    } else {
+    error:
 	BIF_ERROR(BIF_P, BADARG);
     }
     hp = HAlloc(BIF_P, 3);

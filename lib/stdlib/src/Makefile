@@ -38,6 +38,10 @@ MODULES= \
 	c \
 	calendar \
 	dets \
+	dets_server \
+	dets_utils \
+	dets_v8 \
+	dets_v9 \
 	dict \
 	digraph \
 	digraph_utils \
@@ -58,8 +62,11 @@ MODULES= \
 	error_logger_tty_h \
 	ets \
 	eval_bits \
+	file_sorter \
 	filelib \
 	filename \
+	gb_trees \
+	gb_sets \
 	gen \
 	gen_event \
 	gen_fsm \
@@ -71,6 +78,7 @@ MODULES= \
 	io_lib_pretty \
 	lib \
 	lists \
+	lists_sort \
 	log_mf_h \
 	math \
 	otp_internal \
@@ -79,6 +87,7 @@ MODULES= \
 	pg \
 	pool \
 	proc_lib \
+	property_lists \
 	queue \
 	random \
 	regexp \
@@ -86,6 +95,7 @@ MODULES= \
 	shell \
 	shell_default \
 	slave \
+	sofs \
 	string \
 	supervisor \
 	supervisor_bridge \
@@ -153,9 +163,3 @@ release_spec: opt
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 
 release_docs_spec:
-
-
-
-
-
-

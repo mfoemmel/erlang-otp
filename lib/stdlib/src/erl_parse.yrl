@@ -23,7 +23,8 @@ form
 attribute attr_val
 function function_clauses function_clause
 clause_args clause_guard clause_body
-expr expr_100 expr_200 expr_300 expr_400 expr_500 expr_600 expr_700 expr_800
+expr expr_100 expr_150 expr_160 expr_200 expr_300 expr_400 expr_500
+expr_600 expr_700 expr_800
 expr_max
 list tail
 list_comprehension lc_expr lc_exprs
@@ -32,7 +33,7 @@ tuple
 record_expr record_tuple record_field record_fields
 if_expr if_clause if_clauses case_expr cr_clause cr_clauses receive_expr
 fun_expr fun_clause fun_clauses
-query_expr
+try_expr query_expr
 function_call argument_list
 exprs guard
 atomic strings
@@ -42,11 +43,11 @@ binary bin_elements bin_element bit_expr
 opt_bit_size_expr bit_size_expr opt_bit_type_list bit_type_list bit_type.
 
 Terminals
-atom float integer string var
+char integer float atom string var
 
 '(' ')' ',' '->' ':-' '{' '}' '[' ']' '|' '||' '<-' ';' ':' '#' '.'
-'after' 'begin' 'case' 'catch' 'end' 'fun' 'if' 'of' 'receive' 'when' 'query'
-
+'after' 'begin' 'case' 'try' 'catch' 'end' 'fun' 'if' 'of' 'receive' 'when'
+'andalso' 'orelse' 'query'
 'bnot' 'not'
 '*' '/' 'div' 'rem' 'band' 'and'
 '+' '-' 'bor' 'bxor' 'bsl' 'bsr' 'or' 'xor'
@@ -87,9 +88,15 @@ clause_body -> '->' exprs: '$2'.
 expr -> 'catch' expr : {'catch',line('$1'),'$2'}.
 expr -> expr_100 : '$1'.
 
-expr_100 -> expr_200 '=' expr_100 : {match,line('$2'),'$1','$3'}.
-expr_100 -> expr_200 '!' expr_100 : mkop('$1', '$2', '$3').
-expr_100 -> expr_200 : '$1'.
+expr_100 -> expr_150 '=' expr_100 : {match,line('$2'),'$1','$3'}.
+expr_100 -> expr_150 '!' expr_100 : mkop('$1', '$2', '$3').
+expr_100 -> expr_150 : '$1'.
+
+expr_150 -> expr_160 'orelse' expr_150 : mkop('$1', '$2', '$3').
+expr_150 -> expr_160 : '$1'.
+
+expr_160 -> expr_200 'andalso' expr_160 : mkop('$1', '$2', '$3').
+expr_160 -> expr_200 : '$1'.
 
 expr_200 -> expr_300 comp_op expr_300 :
 	mkop('$1', '$2', '$3').
@@ -132,6 +139,7 @@ expr_max -> if_expr : '$1'.
 expr_max -> case_expr : '$1'.
 expr_max -> receive_expr : '$1'.
 expr_max -> fun_expr : '$1'.
+expr_max -> try_expr : '$1'.
 expr_max -> query_expr : '$1'.
 
 
@@ -209,8 +217,8 @@ record_tuple -> '{' record_fields '}' : '$2'.
 record_fields -> record_field : ['$1'].
 record_fields -> record_field ',' record_fields : ['$1' | '$3'].
 
+record_field -> var '=' expr : {record_field,line('$1'),'$1','$3'}.
 record_field -> atom '=' expr : {record_field,line('$1'),'$1','$3'}.
-
 
 %% N.B. This is called from expr_700.
 
@@ -256,6 +264,10 @@ fun_clause -> argument_list clause_guard clause_body :
 	{Args,Pos} = '$1',
 	{clause,Pos,'fun',Args,'$2','$3'}.
 
+try_expr -> 'try' exprs 'catch' cr_clauses 'end' :
+	{'try',line('$1'),'$2','$4'}.
+try_expr -> 'try' exprs 'end' :
+	{'try',line('$1'),'$2',[]}.
 
 query_expr -> 'query' list_comprehension 'end' :
 	{'query',line('$1'),'$2'}.
@@ -271,6 +283,7 @@ exprs -> expr ',' exprs : ['$1' | '$3'].
 guard -> exprs : ['$1'].
 guard -> exprs ';' guard : ['$1'|'$3'].
 
+atomic -> char : '$1'.
 atomic -> integer : '$1'.
 atomic -> float : '$1'.
 atomic -> atom : '$1'.
@@ -505,10 +518,10 @@ mapl(_, []) ->
 %% abstract(Term)
 %%  Convert between the abstract form of a term and a term.
 
-normalise({atom,_,A}) -> A;
+normalise({char,_,C}) -> C;
 normalise({integer,_,I}) -> I;
 normalise({float,_,F}) -> F;
-normalise({char,_,C}) -> C;
+normalise({atom,_,A}) -> A;
 normalise({string,_,S}) -> S;
 normalise({nil,_}) -> [];
 normalise({bin,_,Fs}) ->
@@ -523,8 +536,10 @@ normalise({cons,_,Head,Tail}) ->
 normalise({tuple,_,Args}) ->
     list_to_tuple(normalise_list(Args));
 %% Special case for unary +/-.
+normalise({op,_,'+',{char,_,I}}) -> I;
 normalise({op,_,'+',{integer,_,I}}) -> I;
 normalise({op,_,'+',{float,_,F}}) -> F;
+normalise({op,_,'-',{char,_,I}}) -> -I;		%Weird, but compatible!
 normalise({op,_,'-',{integer,_,I}}) -> -I;
 normalise({op,_,'-',{float,_,F}}) -> -F.
 
@@ -533,14 +548,10 @@ normalise_list([H|T]) ->
 normalise_list([]) ->
     [].
 
-abstract(T) when atom(T) ->
-    {atom,0,T};
-abstract(T) when integer(T) ->
-    {integer,0,T};
-abstract(T) when float(T) ->
-    {float,0,T};
-abstract([]) ->
-    {nil,0};
+abstract(T) when integer(T) -> {integer,0,T};
+abstract(T) when float(T) -> {float,0,T};
+abstract(T) when atom(T) -> {atom,0,T};
+abstract([]) -> {nil,0};
 abstract(B) when binary(B) ->
     {bin, 0, lists:map(fun(Byte) ->
 			       {bin_element, 0,
@@ -572,14 +583,10 @@ abstract_list([]) ->
     [].
 
 %%% abstract/2 keeps the line number
-abstract(T, Line) when atom(T) ->
-    {atom,Line,T};
-abstract(T, Line) when integer(T) ->
-    {integer,Line,T};
-abstract(T, Line) when float(T) ->
-    {float,Line,T};
-abstract([], Line) ->
-    {nil,Line};
+abstract(T, Line) when integer(T) -> {integer,Line,T};
+abstract(T, Line) when float(T) -> {float,Line,T};
+abstract(T, Line) when atom(T) -> {atom,Line,T};
+abstract([], Line) -> {nil,Line};
 abstract(B, Line) when binary(B) ->
     {bin, Line, lists:map(fun(Byte) ->
 			       {bin_element, Line,
@@ -617,10 +624,10 @@ abstract_list([], Line) ->
 tokens(Abs) ->
     tokens(Abs, []).
 
-tokens({atom,L,A}, More) -> [{atom,L,A}|More];
+tokens({char,L,C}, More) -> [{char,L,C}|More];
 tokens({integer,L,N}, More) -> [{integer,L,N}|More];
 tokens({float,L,F}, More) -> [{float,L,F}|More];
-tokens({char,L,C}, More) -> [{char,L,C}|More];
+tokens({atom,L,A}, More) -> [{atom,L,A}|More];
 tokens({var,L,V}, More) -> [{var,L,V}|More];
 tokens({string,L,S}, More) -> [{string,L,S}|More];
 tokens({nil,L}, More) -> [{'[',L},{']',L}|More];
@@ -646,8 +653,10 @@ tokens_tuple([], Line, More) ->
 
 %% Give the relative precedences of operators.
 
-inop_prec('=') -> {200,100,100};
-inop_prec('!') -> {200,100,100};
+inop_prec('=') -> {150,100,100};
+inop_prec('!') -> {150,100,100};
+inop_prec('orelse') -> {160,150,150};
+inop_prec('andalso') -> {200,160,160};
 inop_prec('==') -> {300,200,300};
 inop_prec('/=') -> {300,200,300};
 inop_prec('=<') -> {300,200,300};

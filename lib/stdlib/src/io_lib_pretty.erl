@@ -186,7 +186,11 @@ write_length(Fun, D, Acc, Max) when function(Fun) ->
 write_length(Tuple, D, Acc, Max) when tuple(Tuple) ->
     write_length_list(tuple_to_list(Tuple), D, Acc, Max);
 write_length(Bin, D, Acc, Max) when binary(Bin) ->
-    Acc + length(io_lib:write(Bin));
+    if  D < 0 ->                                %Used to print all
+            Acc + 4 + 4*size(Bin);		%Acc + << 4*size >>
+        true ->
+            Acc + 4 + 4*(D+1)
+    end;
 write_length(Vec, D, Acc, Max) when size(Vec) >= 0 ->
     write_length_list(vector:to_list(Vec), D, Acc, Max);
 write_length(Term, D, Acc, Max) ->

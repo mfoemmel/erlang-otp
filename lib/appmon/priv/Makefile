@@ -34,7 +34,11 @@ HELP_FILES = \
 
 TOOLBAR_FILES = \
 	appmon.tool \
-	appmon.gif
+	appmon.gif \
+	start_info.html \
+	main_frame.html \
+	info_frames.html \
+	blank.html
 
 #
 # Rules

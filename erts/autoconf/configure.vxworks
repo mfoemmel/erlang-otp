@@ -33,7 +33,7 @@ target=$host
 
 # Find out the HOST and WIND_BASE environment
 HOST_TYPE=${HOST_TYPE:=sun4-solaris2}
-WIND_BASE=${WIND_BASE:=/home/gandalf/tornado/wind}
+WIND_BASE=${WIND_BASE:=/home/tornado/wind}
 
 # These are created by autoconf.
 MKDIRS="${ERL_TOP}/lib/os_mon/priv/bin/$target

@@ -19,6 +19,7 @@
 %%% This file is meant to be included by xref_* only.
 
 -define(VAR_EXPR, '$F_EXPR').
+-define(MOD_EXPR, '$M_EXPR').
 
 %%% Filenames are stored as directory and basename. A lot of heap can
 %%% be saved by keeping only one (or few) copy of the directory name.
@@ -30,7 +31,7 @@
 	  mode = functions,
 	  variables = not_set_up,       % table of variables
 
-	  modules = dict:new(),         % dict-of(xref_module())
+	  modules = dict:new(),         % dict-of(xref_mod())
 	  applications = dict:new(),    % dict-of(xref_app())
 	  releases = dict:new(),        % dict-of(xref_rel())
 
@@ -39,7 +40,7 @@
 
 	  builtins_default = false,  % Default value of the 'builtins' option.
 	  recurse_default = false,   % Default value of the 'recurse' option.
-	  verbose_default = true,    % Default value of the 'verbose' option.
+	  verbose_default = false,   % Default value of the 'verbose' option.
 	  warnings_default = true    % Default value of the 'warnings' option.
 	  }).
 
@@ -52,10 +53,10 @@
 	  info,              % number of exports, locals etc.
 	  no_unresolved = 0, % number of unresolved calls
 	  data               
-	  %% Data has been read from the BEAM file as a set.
+	  %% Data has been read from the BEAM file, and is represented here
+          %% as a list of sets.
 	  %% If xref.mode = functions:
-	  %% ( 
-	  %% Module,        M
+          %% [
 	  %% DefAt,         M -> P(V * N)
 	  %% L,             M -> P(V)
 	  %% X,             M -> P(V)
@@ -66,17 +67,16 @@
 	  %% XC,            M -> P(V * V)
 	  %% LU,            M -> P(V)
 	  %% EE,            M -> P(EV * EV)
-	  %% ECallAt        M -> P(EV * EV -> P(N))
-	  %% Unres          M -> P(V * V)
+	  %% ECallAt,       M -> P(EV * EV -> P(N))
+	  %% Unres,         M -> P(V * V)
 	  %% LPredefined    M -> P(V)
-	  %% )
+          %% ]
 	  %%
 	  %% If xref.mode = modules:
-	  %% (
-	  %% Module,        M
+          %% [
 	  %% X,             M -> P(V)
-	  %% I,             M -> P(V)
-	  %% )
+	  %% I              M -> P(V)
+          %% ]
 	  }).
 
 -record(xref_app, {

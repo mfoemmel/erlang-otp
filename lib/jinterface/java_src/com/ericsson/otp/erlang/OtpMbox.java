@@ -52,10 +52,14 @@ package com.ericsson.otp.erlang;
  * <p> Additionally, mailboxes can be linked in much the same way as
  * Erlang processes. If a link is active when a mailbox is {@link
  * #close closed}, any linked Erlang processes or OtpMboxes will be
- * sent an exit signal. Additionally, exit signals will be
- * (eventually) sent if a mailbox goes out of scope, causing it to be
- * garbage collected and its {@link #finalize finalize()} method
- * called. </p>
+ * sent an exit signal. As well, exit signals will be (eventually)
+ * sent if a mailbox goes out of scope and its {@link #finalize
+ * finalize()} method called. However due to the nature of
+ * finalization (i.e. Java makes no guarantees about when {@link
+ * #finalize finalize()} will be called) it is recommended that you
+ * always explicitly close mailboxes if you are using links instead of
+ * relying on finalization to notify other parties in a timely manner.
+ * </p>
  *
  * When retrieving messages from a mailbox that has received an exit
  * signal, an {@link OtpErlangExit OtpErlangExit} exception will be

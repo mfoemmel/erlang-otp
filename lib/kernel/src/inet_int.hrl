@@ -153,6 +153,8 @@
 -define(TCP_PB_FCGI,    7).
 -define(TCP_PB_LINE_LF, 8).
 -define(TCP_PB_TPKT,    9).
+-define(TCP_PB_HTTP,    10).
+-define(TCP_PB_HTTPH,   11).
 
 %% bit options
 -define(INET_BIT8_CLEAR, 0).
@@ -315,4 +317,3 @@
 	  fd     = -1,
 	  opts   = [{active,true}]
 	 }).
-	  

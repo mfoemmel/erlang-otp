@@ -47,9 +47,11 @@ RT_MODULES= \
 	asn1rt \
 	asn1rt_per \
 	asn1rt_ber \
+	asn1rt_per_bin \
 	asn1rt_per_v1 \
 	asn1rt_ber_bin \
-	asn1rt_ber_v1 
+	asn1rt_ber_v1 \
+	asn1rt_check
 
 # the rt module to use is defined in asn1_records.hrl
 # and must be updated when an incompatible change is done in the rt modules

@@ -16,6 +16,7 @@
 %%     $Id$
 %%
 -module(tool_file_dialog).
+-include_lib("kernel/include/file.hrl").
 
 -compile(export_all).
 
@@ -164,16 +165,12 @@ open_save_loop(State) ->
 
 
 open_save_init(From, Options) ->
-    case gs:assq(type,Options) of
-	{value,open} ->
-	    Title = "Open file",
-	    Butt = "Open",
-	    Fun =  fun exists/1;
-	{value,save} ->
-	    Title = "Save file",
-	    Butt = "Save",
-	    Fun = fun (File) -> true end
-    end,
+    {Title,Butt,Fun} = case gs:assq(type,Options) of
+			   {value,open} ->
+			       {"Open file", "Open", fun exists/1};
+			   {value,save} ->
+			       {"Save file", "Save", fun (File) -> true end}
+		       end,
     FD = make_window(Title,Options),
     gs:button(open_save,buttframe,[{label,{text,Butt}},{pack_x,2},{pack_y,2}]),
     C=gs:button(cancel,buttframe,[{label,{text,"Cancel"}},
@@ -187,8 +184,8 @@ open_save_init(From, Options) ->
 
     
 exists(AbsFile) ->
-    case file:file_info(AbsFile) of
-	{ok,{_,regular,_,_,_,_,_}} ->
+    case file:read_file_info(AbsFile) of
+	{ok,#file_info{type=regular}} ->
 	    true;
 	_ -> false
     end.

@@ -223,7 +223,8 @@ handle_call({variable_get, Name, Db}, _From, State) ->
     {reply, lookup(Db, Name, State), State};
 
 handle_call({variable_set, Name, Db, Val}, _From, State) -> 
-    ?vlog("variable set: ~p -> ~p",[Name,Val]),
+    ?vlog("variable ~p set: "
+	  "~n   Val:  ~p",[Name, Val]),
     {reply, insert(Db, Name, Val, State), State};
 
 handle_call({variable_delete, Name, Db}, _From, State) -> 
@@ -259,7 +260,8 @@ handle_call({table_exists, Name, Db}, _From, State) ->
 	    {value, _} -> true;
 	    undefined -> false
 	end,
-    ?vdebug("table exist result: ~p",[Res]),
+    ?vdebug("table exist result: "
+	    "~n   ~p",[Res]),
     {reply, Res, State};
 
 handle_call({table_delete, Name, Db}, _From, State) ->
@@ -268,53 +270,64 @@ handle_call({table_delete, Name, Db}, _From, State) ->
     {reply, true, State};
 
 handle_call({table_create_row, Name, Db, Indexes, Row}, _From, State) ->
-    ?vlog("table create row: ~p -> ~p, ~p",[Name, Indexes, Row]),
+    ?vlog("table ~p create row: "
+	  "~n   Indexes: ~p"
+	  "~n   Row:     ~p",[Name, Indexes, Row]),
     Res = 
 	case catch handle_create_row(Db, Name, Indexes, Row, State) of
 	    {'EXIT', _} -> false;
 	    _ -> true
 	end,
-    ?vdebug("table create row result: ~p",[Res]),
+    ?vdebug("table create row result: "
+	    "~n   ~p",[Res]),
     {reply, Res, State};
 
 handle_call({table_delete_row, Name, Db, Indexes}, _From, State) ->
-    ?vlog("table delete row: ~p -> ~p",[Name, Indexes]),
+    ?vlog("table ~p delete row: "
+	  "~n   Indexes: ~p", [Name, Indexes]),
     Res = 
 	case catch handle_delete_row(Db, Name, Indexes, State) of
 	    {'EXIT', _} -> false;
 	    _ -> true
 	end,
-    ?vdebug("table delete row result: ~p",[Res]),
+    ?vdebug("table delete row result: "
+	    "~n   ~p",[Res]),
     {reply, Res, State};
 
 handle_call({table_get_row, Name, Db, Indexes}, _From, State) -> 
-    ?vlog("table get row: ~p -> ~p",[Name, Indexes]),
+    ?vlog("table ~p get row: "
+	  "~n   Indexes: ~p",[Name, Indexes]),
     Res = case lookup(Db, {Name, Indexes}, State) of
 	      undefined -> undefined;
 	      {value, {Row, Prev, Next}} -> Row
 	  end,
-    ?vdebug("table get row result: ~p",[Res]),
+    ?vdebug("table get row result: "
+	    "~n   ~p",[Res]),
     {reply, Res, State};
 
 handle_call({table_get_element, Name, Db, Indexes, Col}, _From, State) ->
-    ?vlog("table get element: ~p -> ~p, ~p",
-	  [Name, Indexes, Col]),
+    ?vlog("table ~p get element: "
+	  "~n   Indexes: ~p"
+	  "~n   Col:     ~p", [Name, Indexes, Col]),
     Res = case lookup(Db, {Name, Indexes}, State) of
 	      undefined -> undefined;
 	      {value, {Row, Prev, Next}} -> {value, element(Col, Row)}
 	  end,
-    ?vdebug("table get element result: ~p",[Res]),
+    ?vdebug("table get element result: "
+	    "~n   ~p",[Res]),
     {reply, Res, State};
 
 handle_call({table_set_elements, Name, Db, Indexes, Cols}, _From, State) ->
-    ?vlog("table set element: ~p -> ~p, ~p",
-	  [Name, Indexes, Cols]),
+    ?vlog("table ~p set element: "
+	  "~n   Indexes: ~p"
+	  "~n   Cols:    ~p", [Name, Indexes, Cols]),
     Res = 
 	case catch handle_set_elements(Db, Name, Indexes, Cols, State) of
 	    {'EXIT', _} -> false;
 	    _ -> true
 	end,
-    ?vdebug("table set element result: ~p",[Res]),
+    ?vdebug("table set element result: "
+	    "~n   ~p",[Res]),
     {reply, Res, State};
 
 handle_call({table_next, Name, Db, []}, From, State) ->
@@ -322,7 +335,8 @@ handle_call({table_next, Name, Db, []}, From, State) ->
     handle_call({table_next, Name, Db, first}, From, State);
     
 handle_call({table_next, Name, Db, Indexes}, _From, State) ->
-    ?vlog("table next: ~p -> ~p",[Name,Indexes]),
+    ?vlog("table ~p next: "
+	  "~n   Indexes: ~p",[Name,Indexes]),
     Res = case lookup(Db, {Name, Indexes}, State) of
 	      {value, {Row, Prev, Next}} -> 
 		  if 
@@ -332,17 +346,21 @@ handle_call({table_next, Name, Db, Indexes}, _From, State) ->
 	      undefined -> 
 		  table_search_next(Db, Name, Indexes, State)
 	  end,
-    ?vdebug("table next result: ~p",[Res]),
+    ?vdebug("table next result: "
+	    "~n   ~p",[Res]),
     {reply, Res, State};
 
 handle_call({table_max_col, Name, Db, Col}, _From, State) ->
-    ?vlog("table max col: ~p -> ~p",[Name,Col]),
+    ?vlog("table ~p max col: "
+	  "~n   Col: ~p",[Name,Col]),
     Res = table_max_col(Db, Name, Col, 0, first, State),
-    ?vdebug("table max col result: ~p",[Res]),
+    ?vdebug("table max col result: "
+	    "~n   ~p",[Res]),
     {reply, Res, State};
 
 handle_call({match, Name, Db, Pattern}, _From, State) ->
-    ?vlog("match: ~p -> ~p",[Name,Pattern]),
+    ?vlog("~p match:"
+	  "~n   Pattern: ~p", [Name, Pattern]),
     REts =
 	case Db of
 	    volatile -> State#state.ets;
@@ -378,7 +396,9 @@ handle_call({print, Table, Db}, _From, State) ->
     {reply, lists:delete([undef], L1), State};
 
 handle_call({register_notify_client, Client, Module}, _From, State) ->
-    ?vlog("register_notify_client: ~p, ~p",[Client,Module]),
+    ?vlog("register_notify_client: "
+	  "~n   Client: ~p"
+	  "~n   Module: ~p", [Client, Module]),
     Nc = State#state.notify_clients,
     case lists:keysearch(Client,1,Nc) of
 	{value,{Client,Mod}} ->
@@ -407,7 +427,8 @@ handle_call(stop, _From, State) ->
 
 
 handle_cast({variable_inc, Name, Db, N}, State) ->
-    ?vlog("variable inc: ~p -> ~p",[Name,N]),
+    ?vlog("variable ~p inc"
+	  "~n   N: ~p", [Name, N]),
     M = case lookup(Db, Name, State) of
 	    {value, Val} -> Val;
 	    _ -> 0 

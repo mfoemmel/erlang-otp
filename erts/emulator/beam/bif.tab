@@ -44,6 +44,7 @@ bif erlang:erase/0
 bif erlang:erase/1
 bif erlang:exit/1
 bif erlang:exit/2
+bif erlang:external_size/1
 bif erlang:float/1
 bif erlang:float_to_list/1
 bif erlang:fun_info/2
@@ -130,10 +131,14 @@ bif erlang:dist_exit/3
 bif erlang:dist_unlink/2
 bif erlang:dist_link/2
 
+bif erlang:port_call/2
+bif erlang:port_call/3
 bif erlang:port_command/2
 bif erlang:port_control/3
 bif erlang:port_close/1
 bif erlang:port_connect/2
+bif erlang:port_set_data/2
+bif erlang:port_get_data/1
 
 # Tracing & debugging.
 bif erlang:trace_pattern/2
@@ -228,6 +233,11 @@ bif erlang:'bnot'/1
 bif erlang:'-'/1	sminus_1
 bif erlang:'+'/1	splus_1
 
+# New operators in R8. These were the only operators missing.
+
+bif erlang:'!'/2	erlang_send_2
+bif erlang:'++'/2	erlang_append_2
+bif erlang:'--'/2	erlang_subtract_2
 
 bif erlang:is_atom/1
 bif erlang:is_list/1
@@ -260,22 +270,35 @@ bif ets:all/0
 bif ets:new/2
 bif ets:db_delete/1
 bif ets:delete/2
+bif ets:delete_all_objects/1
+bif ets:delete_object/2
 bif ets:first/1
 bif ets:fixtable/2
 bif ets:lookup/2
 bif ets:lookup_element/3
 bif ets:db_info/2
 bif ets:last/1
+bif ets:match/1
 bif ets:match/2
-bif ets:match_delete/2
-bif ets:db_match_object/3
+bif ets:match/3
+bif ets:match_object/1
+bif ets:match_object/2
+bif ets:match_object/3
+bif ets:member/2
 bif ets:next/2
 bif ets:prev/2
 bif ets:insert/2
 bif ets:rename/2
+bif ets:safe_fixtable/2
 bif ets:slot/2
 bif ets:update_counter/3
+bif ets:select/1
 bif ets:select/2
+bif ets:select/3
+bif ets:select_reverse/1
+bif ets:select_reverse/2
+bif ets:select_reverse/3
+bif ets:select_delete/2
 bif ets:match_spec_compile/1
 bif ets:match_spec_run/2
 bif ets:match_spec_run/3
@@ -315,4 +338,16 @@ bif vector:set/3
 
 bif erts_debug:disassemble/1
 bif erts_debug:make_fun/1
+bif erts_debug:breakpoint/2
+bif erts_debug:same/2
+bif erts_debug:flat_size/1
 # There is also a pseudo-BIF named erts_debug:apply/4.
+
+#
+# New Bifs in R8.
+#
+
+bif code:get_chunk/2
+bif code:module_md5/1
+bif code:make_stub_module/3
+bif code:is_module_native/1

@@ -213,9 +213,9 @@ append(Log, Term) ->
 
 %% Synced append
 sappend(Log, Bin) when binary(Bin) ->
-    disk_log:blog(Log, Bin);  %% BUGBUG FIXR8 match error
+    ok = disk_log:blog(Log, Bin);  
 sappend(Log, Term) ->
-    disk_log:log(Log, Term).  %% BUGBUG FIXR8 match error
+    ok = disk_log:log(Log, Term).  
 
 %% Write commit records to the latest_log
 log(C) when  C#commit.disc_copies == [],
@@ -369,6 +369,7 @@ stop() ->
     end.
 
 close_log(Log) ->
+%%    io:format("mnesia_log:close_log ~p~n", [Log]),
 %%    io:format("mnesia_log:close_log ~p~n", [Log]),
     case disk_log:sync(Log) of 
 	ok -> ok;
@@ -949,9 +950,10 @@ insert_dcdchunk({Cont, [LogH | Rest]}, Log, Tab)
   when record(LogH, log_header),  
        LogH#log_header.log_kind == dcd_log, 
        LogH#log_header.log_version >= "1.0" ->    
-    insert_dcdchunk({Cont, Rest}, Log, Tab);   %% BUGBUG Error handling repaired files
-insert_dcdchunk({Cont, Recs}, Log, Tab) ->     %% trashed data?? 
-    lists:foreach(fun(Rec) -> true = ets:insert(Tab, Rec) end, Recs), % FIX R8
+    insert_dcdchunk({Cont, Rest}, Log, Tab);   
+
+insert_dcdchunk({Cont, Recs}, Log, Tab) ->     
+    true = ets:insert(Tab, Recs),
     insert_dcdchunk(chunk_log(Log, Cont), Log, Tab);
 insert_dcdchunk(eof, Log, Tab) ->
     ok.

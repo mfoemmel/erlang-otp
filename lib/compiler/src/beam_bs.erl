@@ -21,7 +21,7 @@
 
 -export([module/2]).
 
--import(lists, [reverse/1,keysearch/3]).
+-import(lists, [reverse/1,keysearch/3,keydelete/3]).
 
 module({Mod,Exp,Attr,Forms0,Lbl}, Opts) ->
     Forms = [function(F) || F <- Forms0],
@@ -39,14 +39,11 @@ needed([{label,Lbl},{bs_restore,Name}|T], N, Dict0) ->
     end;
 needed([H|T], N, Dict) -> needed(T, N, Dict);
 needed([], N, Dict) -> Dict.
-	    
-replace([{bs_save,Name},{bs_restore,Name}|T], Dict, Acc) ->
-    case keysearch(Name, 1, Dict) of
-	{value,{Name,N}} ->
-	    replace(T, Dict, [{bs_save,N}|Acc]);
-	false ->
-	    replace(T, Dict, Acc)
-    end;
+
+replace([{bs_save,Name}=Save,{bs_restore,Name}|T], Dict, Acc) ->
+    replace([Save|T], Dict, Acc);
+replace([{bs_save,Name}|[{test,bs_test_tail,_,_}|_]=T], Dict, Acc) ->
+    replace(T, keydelete(Name, 1, Dict), Acc);
 replace([{bs_save,Name}|T], Dict, Acc) ->
     case keysearch(Name, 1, Dict) of
 	{value,{Name,N}} ->
@@ -68,12 +65,12 @@ replace([{bs_put_integer,_,{integer,_},_,Fl0,{integer,_}}=H|T]=List, Dict, Acc) 
 	_ ->
 	    replace(T, Dict, [H|Acc])
     end;
-replace([{test,bs_test_tail,F,Bits}|T], Dict,
-	[{test,bs_skip_bits,F,{integer,I},Unit,Flags}|Acc]) ->
-    replace(T, Dict, [{test,bs_test_tail,F,Bits+I*Unit}|Acc]);
-replace([{test,bs_skip_bits,F,{integer,I1},Unit1,_}|T], Dict,
-	[{test,bs_skip_bits,F,{integer,I2},Unit2,Flags}|Acc]) ->
-    replace(T, Dict, [{test,bs_skip_bits,F,{integer,I1*Unit1+I2*Unit2},1,Flags}|Acc]);
+replace([{test,bs_test_tail,F,[Bits]}|T], Dict,
+	[{test,bs_skip_bits,F,[{integer,I},Unit,Flags]}|Acc]) ->
+    replace(T, Dict, [{test,bs_test_tail,F,[Bits+I*Unit]}|Acc]);
+replace([{test,bs_skip_bits,F,[{integer,I1},Unit1,_]}|T], Dict,
+	[{test,bs_skip_bits,F,[{integer,I2},Unit2,Flags]}|Acc]) ->
+    replace(T, Dict, [{test,bs_skip_bits,F,[{integer,I1*Unit1+I2*Unit2},1,Flags]}|Acc]);
 replace([H|T], Dict, Acc) ->
     replace(T, Dict, [H|Acc]);
 replace([], Dict, Acc) -> reverse(Acc).

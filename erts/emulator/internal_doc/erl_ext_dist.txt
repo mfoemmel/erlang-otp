@@ -274,7 +274,7 @@ See 2.7 (REFERENCE_EXT).
 
   1      4    N1      N2      N3      N4      4*Len
 +-----+-----+-----+--------+-------+------+--------------+
-| 114 | Len | Pid | Module | Index | Uniq | Free vars... |
+| 117 | Len | Pid | Module | Index | Uniq | Free vars... |
 +-----+-----+-----+--------+-------+------+--------------+
 
 Pid is process identifier as in PID_EXT. It represents the process in which
@@ -682,22 +682,23 @@ These are only recognized by Erlang nodes, not by hidden nodes.
 
 4.4.1 MONITOR_P
 
-	{19, FromPid, ToPid, Ref}
+	{19, FromPid, ToProc, Ref}
 
 	FromPid = monitoring process
-	ToPid = monitored process
+	ToProc = monitored process pid or name (atom)
 
 4.4.2 DEMONITOR_P
 
-	{20, FromPid, ToPid, Ref}
+	{20, FromPid, ToProc, Ref}
 	We include the FromPid just in case we want to trace this.
 
 	FromPid = monitoring process
-	ToPid = monitored process
+	ToProc = monitored process pid or name (atom)
 
 4.4.3 MONITOR_P_EXIT
 
-	{21, FromPid, ToPid, Ref}
+	{21, FromProc, ToPid, Ref, Reason}
 
-	FromPid = monitored process
+	FromProc = monitored process pid or name (atom)
 	ToPid = monitoring process
+	Reason = exit reason for the monitored process

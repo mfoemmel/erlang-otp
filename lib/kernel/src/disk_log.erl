@@ -13,7 +13,7 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id $
 %%
 -module(disk_log).
 
@@ -151,7 +151,7 @@ info(Log) ->
 	      
 pid2name(Pid) ->
     disk_log_server:start(),
-    case ets:lookup(inv_disk_log_names, Pid) of
+    case ets:lookup(?DISK_LOG_PID_TABLE, Pid) of
         [] -> undefined;
         [{_Pid, Log}] -> {ok, Log}
     end.

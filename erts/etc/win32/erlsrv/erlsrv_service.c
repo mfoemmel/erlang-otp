@@ -9,6 +9,8 @@
 #include "erlsrv_service.h"
 
 static HANDLE eventStop;
+
+static HANDLE eventKillErlang;
   
 static CRITICAL_SECTION crit;
 
@@ -100,6 +102,7 @@ typedef struct _server_info {
   RegEntry *keys;
   PROCESS_INFORMATION info;
   HANDLE erl_stdin;
+  char *event_name;
 } ServerInfo;
 
 
@@ -391,10 +394,18 @@ static BOOL start_a_service(ServerInfo *srvi){
   if(srvi->keys[DebugType].data.value == DEBUG_TYPE_CONSOLE)
       strcat(namebuff," -keep_window");
 
-  sprintf(execbuff,"\"%s\" %s %s",
-	  srvi->keys[Machine].data.bytes,
-	  namebuff,
-	  srvi->keys[Args].data.bytes);
+  if (srvi->event_name != NULL) {
+      sprintf(execbuff,"\"%s\" -service_event %s %s %s",
+	      srvi->keys[Machine].data.bytes,
+	      srvi->event_name,
+	      namebuff,
+	      srvi->keys[Args].data.bytes);
+  } else {
+      sprintf(execbuff,"\"%s\" %s %s",
+	      srvi->keys[Machine].data.bytes,
+	      namebuff,
+	      srvi->keys[Args].data.bytes);
+  }
 
   memset (&start, 0, sizeof (start));
   start.cb = sizeof (start);
@@ -534,6 +545,21 @@ static BOOL start_a_service(ServerInfo *srvi){
   return TRUE;
 }
 
+static HANDLE create_erlang_event(char *event_name)
+{
+    HANDLE e;
+    if ((e = OpenEvent(EVENT_ALL_ACCESS,FALSE,event_name)) == NULL) {
+	if ((e = CreateEvent(NULL, TRUE, FALSE, event_name)) == NULL) {
+	    log_warning("Could not create or access erlang termination event");
+	}
+    } else {
+	if (!ResetEvent(e)) {
+	    log_warning("Could not reset erlang termination event.");
+	}
+    }
+    return e;
+}
+
 static BOOL stop_erlang(ServerInfo *srvi, int waithint, 
 			int *checkpoint){
   DWORD written = 0;
@@ -566,7 +592,7 @@ static BOOL stop_erlang(ServerInfo *srvi, int waithint,
   } 
   log_debug("Terminating erlang...");
   kill = 1;
-  if(PostThreadMessage(srvi->info.dwThreadId,WM_USER,(WPARAM) 0, (LPARAM) 0)){
+  if(eventKillErlang != NULL && SetEvent(eventKillErlang) != 0){
     for(i=0;i<10;++i){
 	if(WaitForSingleObject(srvi->info.hProcess, 1000) == WAIT_OBJECT_0){
           kill = 0;
@@ -601,6 +627,9 @@ static BOOL stop_erlang(ServerInfo *srvi, int waithint,
   GetExitCodeProcess(srvi->info.hProcess,&exitcode);
   CloseHandle(srvi->info.hProcess);
   CloseHandle(srvi->info.hThread);
+  if (eventKillErlang != NULL) {
+      ResetEvent(eventKillErlang);
+  }
   return TRUE;
 }
 
@@ -647,6 +676,7 @@ static VOID WINAPI service_main_loop(DWORD argc, char **argv){
   FILETIME creationt,exitt,kernelt,usert;
   LONGLONG creationl,exitl,diffl;
   char *envadd;
+  char event_name[MAX_PATH] = "ErlSrv_";
   char executable_name[MAX_PATH];
 #ifdef DEBUG
   char errorbuff[2048]; /* FIXME... */
@@ -664,6 +694,9 @@ static VOID WINAPI service_main_loop(DWORD argc, char **argv){
   sprintf(envadd,"%s=%s",SERVICE_ENV,service_name);
   _putenv(envadd);
 
+  strncat(event_name, service_name, MAX_PATH - strlen(event_name));
+  event_name[MAX_PATH - 1] = '\0';
+
   if(!GetModuleFileName(NULL, executable_name, MAX_PATH)){
       log_error("Unable to retrieve module file name, " EXECUTABLE_ENV 
 		" will not be set.");
@@ -678,6 +711,11 @@ static VOID WINAPI service_main_loop(DWORD argc, char **argv){
   currentState = SERVICE_START_PENDING;
   InitializeCriticalSection(&crit);
   eventStop = CreateEvent(NULL,FALSE,FALSE,NULL); 
+  if ((eventKillErlang = create_erlang_event(event_name)) != NULL) {
+      srvi.event_name = event_name;
+  } else {
+      srvi.event_name = NULL;
+  }
   statusHandle = RegisterServiceCtrlHandler(real_service_name, &handler);
   if(!statusHandle)
     return;
@@ -695,6 +733,9 @@ static VOID WINAPI service_main_loop(DWORD argc, char **argv){
   if(!start_a_service(&srvi)){
     log_error("Could not start erlang machine");
     set_stopped(ERROR_PROCESS_ABORTED);
+    if (eventKillErlang != NULL) {
+	CloseHandle(eventKillErlang);
+    }
     free_keys(keys);
     return;
   }
@@ -724,6 +765,9 @@ static VOID WINAPI service_main_loop(DWORD argc, char **argv){
     if(ret == WAIT_FAILED || (int)(ret-WAIT_OBJECT_0) >= 2){
       set_stopped(WAIT_FAILED);
       log_error("Internal error, could not wait for objects.");
+      if (eventKillErlang != NULL) {
+	  CloseHandle(eventKillErlang);
+      }
       free_keys(keys);
       return;
     }
@@ -735,6 +779,9 @@ static VOID WINAPI service_main_loop(DWORD argc, char **argv){
       if(stop_erlang(&srvi,waithint,&checkpoint)){
 	log_debug("Erlang machine is stopped");
 	CloseHandle(eventStop);
+	if (eventKillErlang != NULL) {
+	    CloseHandle(eventKillErlang);
+	}
 	set_stopped(NO_ERROR);
 	if(srvi.erl_stdin)
 	  CloseHandle(srvi.erl_stdin);
@@ -773,6 +820,9 @@ static VOID WINAPI service_main_loop(DWORD argc, char **argv){
 	if(srvi.erl_stdin)
 	  CloseHandle(srvi.erl_stdin);
 	set_stopped(rcode);
+	if (eventKillErlang != NULL) {
+	    CloseHandle(eventKillErlang);
+	}
 	free_keys(keys);
 	return;
       }
@@ -797,6 +847,9 @@ static VOID WINAPI service_main_loop(DWORD argc, char **argv){
 		    "aborting.");
 	  CloseHandle(eventStop);
 	  set_stopped(ERROR_PROCESS_ABORTED);
+	  if (eventKillErlang != NULL) {
+	      CloseHandle(eventKillErlang);
+	  }
 	  free_keys(keys);
 	  return;
 	}
@@ -816,6 +869,9 @@ static VOID WINAPI service_main_loop(DWORD argc, char **argv){
 	}
 	CloseHandle(eventStop);
 	set_stopped(ERROR_PROCESS_ABORTED);
+	if (eventKillErlang != NULL) {
+	    CloseHandle(eventKillErlang);
+	}
 	free_keys(keys);
 	return;
       }
@@ -844,6 +900,9 @@ static VOID WINAPI service_main_loop(DWORD argc, char **argv){
 	if(srvi.erl_stdin != NULL)
 	  CloseHandle(srvi.erl_stdin);
 	set_stopped(NO_ERROR);
+	if (eventKillErlang != NULL) {
+	    CloseHandle(eventKillErlang);
+	}
 	free_keys(keys);
 	return;
       }
@@ -864,6 +923,9 @@ static VOID WINAPI service_main_loop(DWORD argc, char **argv){
       if(srvi.erl_stdin != NULL)
 	CloseHandle(srvi.erl_stdin);
       set_stopped(ecode);
+      if (eventKillErlang != NULL) {
+	  CloseHandle(eventKillErlang);
+      }
       free_keys(keys);
       return;
     }      

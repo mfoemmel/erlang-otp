@@ -472,7 +472,7 @@ check_info(Window) ->
 save_info(S,File,ToolInfo) ->
 
     %% First check if file already exists
-    case file:file_info(File) of
+    case file:read_file_info(File) of
 	{ok,_FileInfo} ->
 
 	    %% Request the user to confirm that the file should

@@ -26,7 +26,7 @@
 init([Name]) ->
     Flags = {simple_one_for_one, 0, 3600},
     MFA = {odbc, start_link_sup, []},
-    Modules = [?MODULE, supervisor, odbc, odbclli, oe_odbclli],
+    Modules = [odbc],
     Workers = [{Name, MFA, temporary, brutal_kill, worker, Modules}],
     {ok, {Flags, Workers}}.
 

@@ -24,11 +24,11 @@
 -define(INFO_SIZE, 28).
 
 memory_data() ->
-    erlang:info(allocated).
+    erlang:system_info(allocated).
 
 store_memory_data(File) ->
     %% The BIF returns 'true' when all goes well.
-    erlang:info({allocated, File}),
+    erlang:system_info({allocated, File}),
     ok.
 
 read_memory_data(File) ->

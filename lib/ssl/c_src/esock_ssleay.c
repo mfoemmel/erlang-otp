@@ -87,7 +87,6 @@ typedef struct {
     char *text;
 } err_entry;
 
-static int check_return_flags(Connection *cp, int retval, int ssl_error);
 static void set_want(Connection *cp, int ssl_error);
 static char *ssl_error_str(int error);
 static void reset_err_str(void);

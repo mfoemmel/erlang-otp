@@ -47,20 +47,19 @@ if ( $file ) {
 print <<EOF;
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
-#endif HAVE_CONFIG_H
+#endif /* HAVE_CONFIG_H */
 #include <stdio.h>
-#include "driver.h"
 #include "global.h"
 
 EOF
 
 # "extern" declarations
 foreach (@drivers) {
-    print "extern struct driver_entry ${_}driver_entry;\n";
+    print "extern ErlDrvEntry ${_}driver_entry;\n";
 }
 
 # The array itself
-print "\nstruct driver_entry *driver_tab[DRIVER_TAB_SIZE] =\n{\n";
+print "\nErlDrvEntry *driver_tab[DRIVER_TAB_SIZE] =\n{\n";
 
 foreach (@drivers) {
     print "    &${_}driver_entry,\n";

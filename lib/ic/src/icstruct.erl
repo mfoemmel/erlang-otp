@@ -132,6 +132,19 @@ emit_struct(G, N, X, erlang) ->
 	false -> ok
     end;
 emit_struct(G, N, X, c) ->
+
+    N1 = [ic_forms:get_id2(X) | N],
+    case ic_pragma:is_local(G,N1) of
+	true ->
+	    emit_c_struct(G, N, X,local);
+	false ->
+	    emit_c_struct(G, N, X,included)
+    end.
+
+
+emit_c_struct(G, N, X, included) -> %% Do not generate included types att all.
+    ok;
+emit_c_struct(G, N, X, local) ->
     case ic_genobj:is_hrlfile_open(G) of
 	true ->
 	    Fd = ic_genobj:hrlfiled(G),
@@ -160,7 +173,17 @@ emit_struct(G, N, X, c) ->
 					    ic_codegen:emit(Fd, "\n#endif\n\n"),
 					    { {Type, XXX}, ic_forms:get_id2(XXX) };
 				       true ->
-					    { ic_forms:get_type(XX), ic_forms:get_id2(XXX)}
+
+					    %% Uggly work around to fix the ETO return
+					    %% patch problem
+					    Name = case ic_forms:get_id2(XXX) of
+						       "return" ->
+							   "return1";
+						       Other ->
+							   Other
+						   end,
+
+					    { ic_forms:get_type(XX), Name }
 				    end
 			    end,
 			    ic_forms:get_idlist(XX))
@@ -703,6 +726,13 @@ emit_decode(struct, G, N, Fd, StructName, ElTypes) ->
 			  case ic_cbe:check_dynamic_size(G, N, ET) of
 			      true ->
 				  case ET of
+
+				      {struct, _, _, _} ->
+					  %% Sequence member = a struct
+					  ic_cbe:gen_decoding_fun(G, N, Fd, StructName ++ "_" ++ ic_forms:get_id2(ET), 
+								  "&oe_out->" ++ EN ,
+								  "", "oe_env->_inbuf", 0, "oe_outindex", generator);
+
 				      {sequence, _, _} ->
 					  %% Sequence member = a struct
 					  ic_cbe:gen_decoding_fun(G, N, Fd, StructName ++ "_" ++ EN, "&oe_out->" ++ EN ,
@@ -748,6 +778,12 @@ emit_decode(struct, G, N, Fd, StructName, ElTypes) ->
 				  end;
 			      false ->
 				  case ET of
+
+				      {struct, _, _, _} ->
+					  %% A struct member
+					  ic_cbe:gen_decoding_fun(G, N, Fd, StructName ++ "_" ++ ic_forms:get_id2(ET), 
+								  "&oe_out->" ++ EN ,
+								  "", "oe_env->_inbuf", 0, "oe_outindex", generator);
 
 				      {_,{array, _, _}} ->
 					  ic_cbe:gen_decoding_fun(G, N, Fd, StructName ++ "_" ++ EN, "oe_out->" ++ EN ,
@@ -961,6 +997,12 @@ emit_encode(struct, G, N, Fd, StructName, ElTypes) ->
 							  "&oe_rec->" ++ EN,
 							  "oe_env->_outbuf");
 
+			      {struct,_,_,_} ->
+				  ic_cbe:gen_encoding_fun(G, N, Fd, 
+							  StructName ++ "_" ++ ic_forms:get_id2(ET), 
+							  "&oe_rec->" ++ EN,
+							  "oe_env->_outbuf");
+
 			      {scoped_id,_,_,_} ->
 				  case ictype:member2type(G,StructName,EN) of
 				      struct ->
@@ -1156,6 +1198,12 @@ emit_sizecount(struct, G, N, Fd, StructName, ElTypes) ->
 			      ic_cbe:gen_malloc_size_calculation(G, N, Fd, 
 								 StructName ++ "_" ++ ic_forms:get_id2(ET),
 								 "oe_env->_inbuf", 0, generator);
+
+			  {struct,_,_,_} ->
+			      ic_cbe:gen_malloc_size_calculation(G, N, Fd, 
+								 StructName ++ "_" ++ ic_forms:get_id2(ET),
+								 "oe_env->_inbuf", 0, generator);
+
 			  _  ->
 			      ic_cbe:gen_malloc_size_calculation(G, N, Fd, ET, "oe_env->_inbuf", 0, generator)
 		      end;
@@ -1166,6 +1214,11 @@ emit_sizecount(struct, G, N, Fd, StructName, ElTypes) ->
 								 "oe_env->_inbuf", 0, generator);
 
 			  {union,_,_,_,_} ->
+			      ic_cbe:gen_malloc_size_calculation(G, N, Fd, 
+								 StructName ++ "_" ++ ic_forms:get_id2(ET),
+								 "oe_env->_inbuf", 0, generator);
+
+			  {struct,_,_,_} ->
 			      ic_cbe:gen_malloc_size_calculation(G, N, Fd, 
 								 StructName ++ "_" ++ ic_forms:get_id2(ET),
 								 "oe_env->_inbuf", 0, generator);

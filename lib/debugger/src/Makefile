@@ -38,20 +38,16 @@ MODULES= \
 	i \
 	int \
 	dbg_ets \
-	dbg_iasm \
 	dbg_icmd \
-	dbg_icompile \
 	dbg_ieval \
 	dbg_iload \
 	dbg_imeta \
-	dbg_imsg \
+	dbg_debugged \
 	dbg_iserver \
 	dbg_iserver_api \
 	dbg_pretty \
 	dbg_ui_aux \
 	dbg_ui_break \
-	dbg_ui_compilerdefs \
-	dbg_ui_get_file \
 	dbg_ui_interpret \
 	dbg_ui_mon \
 	dbg_ui_mon_win \
@@ -72,14 +68,20 @@ HRL_FILES= \
 
 ERL_FILES= $(MODULES:%=%.erl)
 
-TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET)
+TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 
 #TOOLBOX_FILES= debugger.tool debugger.gif
 #TARGET_TOOLBOX_FILES= $(EBIN)/debugger.tool $(EBIN)/debugger.gif
 
 APP_FILE =  debugger.app
+APPUP_FILE = debugger.appup
+
 APP_SRC = $(APP_FILE).src
+APPUP_SRC = $(APPUP_FILE).src
+
 APP_TARGET = $(EBIN)/$(APP_FILE)
+APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
+
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
@@ -98,6 +100,9 @@ clean:
 	rm -f errs core *~
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
+
+$(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 docs:

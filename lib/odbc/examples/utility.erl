@@ -26,47 +26,52 @@
 
 
 %% Note that the SQL syntax is database and ODBC Driver dependent.
-%%
+
 start() ->
     % Start a new ODBC server. The application must already be started.
-    {ok, _Pid} = odbc:start_link({local, odbc1}, [], []),
+    {ok, Pid1} = odbc:start_link([], []),
+					
+    % Connect to the database.
+    ok  = 
+	odbc:erl_connect(Pid1, ?ConnectStr, infinity),
 
-    % Initialise the environment (also loads the Driver Manager).
-    {ok, EnvHandle} = odbc:init_env(odbc1, infinity),
-
-    % Load the Driver and connect to the database.
-    {ok, ConnectionHandle} = odbc:connect(odbc1, EnvHandle, ?ConnectStr, infinity),
-
-    % Create a new table.
+    % Create a table
     % By default, all transactions are automatically committed.
-    CreateStmt = "CREATE TABLE TAB1 (ID number(3), DATA char(10))",
-    {updated, NAffectedRows1} =
-	odbc:execute_stmt(odbc1, ConnectionHandle, CreateStmt, infinity),
-    ok = io:format("Create: Number of affected rows: ~p~n", [NAffectedRows1]),
+    CreateStmt = "CREATE TABLE testtable (ID number(3), DATA char(100))",
+    SqlRet1 =
+	odbc:erl_executeStmt(Pid1, CreateStmt, infinity),
+    io:format("executeStmt Create a table returns ~p~n",[SqlRet1]),
+   
+    % Insert data into the table
+    InsertStmt = "INSERT INTO testtable VALUES(1, '1a2b3c4d5e')",
+    SqlRet2 = 
+	odbc:erl_executeStmt(Pid1, InsertStmt, infinity),
+    io:format("executeStmt Insert into table returns ~p~n",[SqlRet2]),
 
-    % Insert a row.
-    InsertStmt = "INSERT INTO TAB1 VALUES (1, 'a1a2a3a4a5')",
-    {updated, NAffectedRows2} =
-	odbc:execute_stmt(odbc1, ConnectionHandle, InsertStmt, infinity),
-    ok = io:format("Insert: Number of affected rows: ~p~n", [NAffectedRows2]),
-
-    % Select all rows.
-    SelectStmt = "SELECT * FROM TAB1",
-    {selected, ColumnNames, Rows} =
-	odbc:execute_stmt(odbc1, ConnectionHandle, SelectStmt, infinity),
-    ok = io:format("Select: Column names: ~p, Rows: ~p~n", [ColumnNames, Rows]),
-
-    % Delete the table.
-    DropStmt = "DROP TABLE TAB1",
-    {updated, NAffectedRows3} =
-	odbc:execute_stmt(odbc1, ConnectionHandle, DropStmt, infinity),
-    ok = io:format("Delete: Number of affected rows: ~p~n", [NAffectedRows3]),
-
+    % Select all rows
+    % By default, all transactions are automatically committed.
+    SelectStmt = "SELECT * FROM testtable",
+    {selected, Columnnames, Rows} =
+	odbc:erl_executeStmt(Pid1, SelectStmt, infinity),
+    io:format("execute_stmt Select statement returns ~p~n",
+	      [{selected, Columnnames, Rows}]),
+    
+    % Delete the table
+    DropStmt = "DROP TABLE testtable",
+   {updated, NAffectedRows3} =
+	odbc:erl_executeStmt(Pid1, DropStmt, infinity),
+    io:format("Delete: Number of affected rows: ~p~n", [NAffectedRows3]),
+    
     % Disconnect.
-    ok = odbc:disconnect(odbc1, ConnectionHandle, infinity),
-
-    % Terminate the environment.
-    ok = odbc:terminate_env(odbc1, EnvHandle, infinity),
+    odbc:erl_disconnect(Pid1, infinity),
 
     % Stop the server.
-    ok = odbc:stop(odbc1, infinity).
+    odbc:stop(Pid1, infinity).
+
+
+
+
+
+
+
+

@@ -1695,6 +1695,9 @@ allowed_opt({broker,_},{_,transparent}) -> true;
 allowed_opt({broker,_},{_,Term})  	-> is_term(Term);
 allowed_opt({use_tk,_},V)               -> is_bool(V);
 %
+% Multiple be
+allowed_opt(multiple_be, List)    	-> true;
+%
 allowed_opt(precond, {M, F})            -> true;
 allowed_opt({precond, _}, {M, F})       -> true;
 allowed_opt(postcond, {M, F})           -> true;

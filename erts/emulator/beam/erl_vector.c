@@ -38,11 +38,8 @@
  * to the new heap.
  *
  * XXX Partial list of features not working (will crasch emulator):
- *  - Term comparisions of whole vectors.
  *  - Taking hash values of vectors.
  *  - term_to_binary(Vector)
- *  - Creating circular terms will cause an infinite loop in term copying
- *    (and perhaps in other places).
  */
 
 #ifdef HAVE_CONFIG_H
@@ -55,18 +52,13 @@
 #include "erl_process.h"
 #include "error.h"
 #include "bif.h"
+#include "erl_vector.h"
 
 static Eterm reroot(Process* p, Eterm Vec);
 
 Eterm
 vector_new_2(Process* p, Eterm Sz, Eterm Value)
 {
-    /*
-     * XXX Don't allow creation of vectors since you can easily crasch
-     * the emulator by using them.
-     */
-    BIF_ERROR(p, BADARG);
-#if 0
     size_t n;
     size_t need;
     Eterm* hp;
@@ -90,19 +82,11 @@ vector_new_2(Process* p, Eterm Sz, Eterm Value)
     hp[3] = NIL;
     hp[4] = tmp;
     return res;
-#endif
 }
 
 Eterm
 vector_from_list_1(Process* p, Eterm list)
 {
-    /*
-     * XXX Don't allow creation of vectors since you can easily crasch
-     * the emulator by using them.
-     */
-    BIF_ERROR(p, BADARG);
-
-#if 0
     Eterm* cons;
     size_t need;
     Eterm* hp;
@@ -130,7 +114,6 @@ vector_from_list_1(Process* p, Eterm list)
     hp[3] = NIL;
     hp[4] = tmp;
     return res;
-#endif
 }
 
 Eterm
@@ -229,8 +212,52 @@ vector_set_3(Process* p, Eterm Index, Eterm Vec, Eterm New)
     hp[3] = NIL;
     hp[4] = make_tuple(tp);
 
+#ifdef UNIFIED_HEAP
+    global_gc_flags |= F_NEED_FULLSWEEP;
+#else
     p->flags |= F_NEED_FULLSWEEP;
+#endif
     return res;
+}
+
+/*
+ * This version of vector:get/2 doesn't check its arguments
+ * for validity. The caller must ensure validity.
+ */
+Eterm
+erts_unchecked_vector_get(int index, Eterm Vec)
+{
+    Eterm Index = make_small(index);
+
+    while (is_not_tuple(vector_val(Vec)[4])) {
+	if (vector_val(Vec)[2] == Index) {
+	    return vector_val(Vec)[3];
+	}
+	Vec = vector_val(Vec)[4];
+    }
+    return tuple_val(vector_val(Vec)[4])[index];
+}
+
+Eterm*
+erts_copy_vector(Eterm vec, Eterm* hp, Eterm* resp)
+{
+    int i;
+    int n;
+    Eterm tmp;
+
+    n = VECTOR_SIZE(vec);
+    tmp = make_tuple(hp);
+    *hp++ = make_arityval(n);
+    for (i = 1; i <= n; i++) {
+	*hp++ = erts_unchecked_vector_get(i, vec);
+    }
+    *resp = make_vector(hp);
+    hp[0] = HEADER_VECTOR;
+    hp[1] = make_small(n);
+    hp[2] = NIL;
+    hp[3] = NIL;
+    hp[4] = tmp;
+    return hp+5;
 }
 
 /*
@@ -259,7 +286,11 @@ reroot(Process* p, Eterm Vec)
 
     tp[i] = vp[3];
 
+#ifdef UNIFIED_HEAP
+    global_gc_flags |= F_NEED_FULLSWEEP;
+#else
     p->flags |= F_NEED_FULLSWEEP;
+#endif
     return Vec;
 }
 

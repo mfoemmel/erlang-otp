@@ -96,6 +96,8 @@
 	 system_code_change/4,
 	 format_status/2]).
 
+-export([behaviour_info/1]).
+
 %% Internal exports
 -export([init_it/6, print_event/3
 	 %%, safe_send/2
@@ -106,6 +108,12 @@
 %%% ---------------------------------------------------
 %%% Interface functions.
 %%% ---------------------------------------------------
+
+behaviour_info(callbacks) ->
+    [{init,1},{handle_call,3},{handle_cast,2},{handle_info,2},
+     {terminate,2},{code_change,3}];
+behaviour_info(Other) ->
+    undefined.
 
 %%% ---------------------------------------------------
 %%% Starts a generic server.

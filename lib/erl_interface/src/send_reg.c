@@ -45,67 +45,88 @@ extern int ei_trace_distribution;
 #include "ei.h"
 #include "erl_connect.h"
 #include "putget.h"
+#include "ei_connect.h"
 
 extern erlang_trace *ei_trace(int query, erlang_trace *token);
-extern const char *erl_getfdcookie(int fd);
+
+
+
+int ei_rw_timeout(int fd, int f_write, int* timeout, char* buf, int len);
 
 /* length (4), PASS_THROUGH (1), header, message */
-int ei_send_reg_encoded(int fd, const erlang_pid *from, const char *to, const char *msg, int msglen)
+int ei_send_reg_encoded_timeout(int fd, const erlang_pid *from,
+				const char *to, const char *msg, int msglen,
+				int timeout)
 {
-  char *s, header[1400]; /* see size calculation below */
-  erlang_trace *token = NULL;
-  int index = 5; /* reserve 5 bytes for control message */
+    char *s, header[1400]; /* see size calculation below */
+    erlang_trace *token = NULL;
+    int index = 5; /* reserve 5 bytes for control message */
 #ifdef HAVE_WRITEV
-  struct iovec v[2];
+    struct iovec v[2];
 #endif
+    
+    /* are we tracing? */
+    /* check that he can receive trace tokens first */
+    if (ei_distversion(fd) > 0)
+	token = ei_trace(0,NULL);
+    
+    /* header = REG_SEND, from, cookie, toname         max sizes: */
+    ei_encode_version(header,&index);                     /*   1 */
+    if (token) { 
+	ei_encode_tuple_header(header,&index,5);            /*   2 */
+	ei_encode_long(header,&index,ERL_REG_SEND_TT);      /*   2 */
+    } else {
+	ei_encode_tuple_header(header,&index,4);    
+	ei_encode_long(header,&index,ERL_REG_SEND); 
+    }
+    ei_encode_pid(header, &index, from);                    /* 268 */
+    ei_encode_atom(header, &index, ei_getfdcookie(fd));       /* 258 */
+    ei_encode_atom(header, &index, to);                     /* 268 */
 
-  /* are we tracing? */
-  /* check that he can receive trace tokens first */
-  if (erl_distversion(fd) > 0) token = ei_trace(0,NULL);
+    if (token) ei_encode_trace(header,&index,token);      /* 534 */
 
-  /* header = REG_SEND, from, cookie, toname         max sizes: */
-  ei_encode_version(header,&index);                     /*   1 */
-  if (token) { 
-    ei_encode_tuple_header(header,&index,5);            /*   2 */
-    ei_encode_long(header,&index,ERL_REG_SEND_TT);      /*   2 */
-  }
-  else {
-    ei_encode_tuple_header(header,&index,4);    
-    ei_encode_long(header,&index,ERL_REG_SEND); 
-  }
-  ei_encode_pid(header,&index,from);                    /* 268 */
-  ei_encode_atom(header,&index,erl_getfdcookie(fd));       /* 258 */
-  ei_encode_atom(header,&index,to);                     /* 268 */
-
-  if (token) ei_encode_trace(header,&index,token);      /* 534 */
-
-  /* control message (precedes header actually) */
-  /* length = 1 ('p') + header len + message len */
-  s = header;
-  put32be(s, index + msglen - 4);                       /*   4 */
-  put8(s, ERL_PASS_THROUGH);                                /*   1 */
+    /* control message (precedes header actually) */
+    /* length = 1 ('p') + header len + message len */
+    s = header;
+    put32be(s, index + msglen - 4);                       /*   4 */
+    put8(s, ERL_PASS_THROUGH);                                /*   1 */
                                                 /*** sum: 1336 */
-  
 #ifdef DEBUG_DIST
-  if (ei_trace_distribution > 0) ei_show_sendmsg(stderr,header,msg);
+    if (ei_trace_distribution > 0) 
+	ei_show_sendmsg(stderr,header,msg);
 #endif
-  
+
+    if (timeout > 0) {
+	int r = ei_rw_timeout(fd, 1, &timeout, header, index);
+	if (r == 0)
+	    r = ei_rw_timeout(fd, 1, &timeout, (char*)msg, msglen);
+	return r;
+    }
+
 #ifdef HAVE_WRITEV
 
-  v[0].iov_base = (char *)header;
-  v[0].iov_len = index;
-  v[1].iov_base = (char *)msg;
-  v[1].iov_len = msglen;
-
-  if (writev(fd,v,2) != index+msglen) return -1;
-  
+    v[0].iov_base = (char *)header;
+    v[0].iov_len = index;
+    v[1].iov_base = (char *)msg;
+    v[1].iov_len = msglen;
+    
+    if (writev(fd,v,2) != index+msglen) return -1;
+    
 #else
-  
-  /* no writev() */
-  if (writesocket(fd,header,index) != index) return -1;
-  if (writesocket(fd,msg,msglen) != msglen) return -1;
-
+    
+    /* no writev() */
+    if (writesocket(fd,header,index) != index) return -1;
+    if (writesocket(fd,msg,msglen) != msglen) return -1;
+    
 #endif
-
-  return 0;
+    
+    return 0;
 }
+
+
+int ei_send_reg_encoded(int fd, const erlang_pid *from, const char *to,
+			const char *msg, int msglen)
+{
+    return ei_send_reg_encoded_timeout(fd, from, to, msg, msglen, 0);
+}
+

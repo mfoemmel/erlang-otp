@@ -29,24 +29,22 @@
  
   <p>Notes for Comet
 
- <section><title>Comet</title>
+ <section><title>Comet 1.1.1</title>
     
     <section><title>Improvements and New Features</title>
       <list>
-	<item>Generates Erlang wrapper modules from COM TypeLibs.</item>
-	<item>More examples, better documentation.</item>
+	<item>Small improvements on wrapper code generation.</item>
+	<item>Support for enumeration interfaces.</item>
       </list>
     </section>
     
-    <section><title>Fixed Bugs and Malfunctions</title>
-      <p>
-	Improved stability, now works as a port program too.
-    </section>
- 
     <section><title>Known Bugs and Problems</title>
       <p>
 	No way to avoid context switches (in Win32) when calling
 	COM-object. This might be addressed in future versions.
+      <p>
+	Some types from code generations are wrong, and needs
+	manual adjustment (i.e. Word 2000).
     </section>
   </section>
   

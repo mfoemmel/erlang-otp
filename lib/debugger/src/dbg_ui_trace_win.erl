@@ -617,7 +617,7 @@ br_col(inactive) -> blue.   %%Inactive Break
 
 %%% Refresh the line
 %%% FIXME: The second case in the case clause fixes a problem originating in
-%%%        gtk_editor/read_option/5. It should of course be handled there
+%%%        gstk_editor/read_option/5. It should of course be handled there
 %%%        but I don't know how to do it. /olin
 
 refresh_line(_Editor, 0) -> ok;

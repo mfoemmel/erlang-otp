@@ -30,11 +30,11 @@ CONFIG_FILES="../emulator/$host/Makefile
 	  ../../lib/orber/c_src/$host/Makefile
 	  ../../lib/crypto/c_src/$host/Makefile
 	  ../../lib/ic/c_src/$host/Makefile
-	  ../../lib/etk/c_src/$host/Makefile
 	  ../../lib/runtime_tools/c_src/$host/Makefile
 	  ../../lib/ssl/c_src/$host/Makefile
-	  ../../lib/odbc/src/$host/Makefile
+	  ../../lib/odbc/c_src/$host/Makefile
 	  ../../lib/comet/c_src/$host/Makefile
+	  ../../lib/megaco/src/flex/$host/Makefile
 	  ../../make/$host/otp.mk"
 
 for file in $CONFIG_FILES; do

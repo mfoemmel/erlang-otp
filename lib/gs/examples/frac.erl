@@ -107,12 +107,6 @@ subst([],_) -> [];
 subst([H|T],Index) ->
     [rule(Index,H)|subst(T,Index)].
 
-showstring([H|T]) ->
-    io:format('~s ',[H]),
-    showstring(T);
-showstring([]) ->
-    true.
-
 
 draw_frac(Id, Index, Width, Ht) ->
     X0 = 100,

@@ -50,11 +50,12 @@ typedef union db_table {
 
 EXTERN_FUNCTION(void, init_db, (_VOID_));
 void init_db(void);
-void db_proc_dead(eTerm pid);
+void db_proc_dead(Eterm pid);
 void db_info(CIO, int);
-DbTable* db_get_table(Process *p, eTerm id, int what);
+DbTable* db_get_table(Process *p, Eterm id, int what);
 
 extern int user_requested_db_max_tabs; /* set in erl_init */
-
+extern Export ets_select_delete_continue_exp;
+extern Export ets_select_continue_exp;
 #endif
 

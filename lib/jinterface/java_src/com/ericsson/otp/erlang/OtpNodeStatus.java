@@ -54,12 +54,31 @@ public class OtpNodeStatus {
 
   /**
    * Notify about local node exceptions.
+   *
+   * @param node the node whose status change is being indicated by
+   * this call.
+   *
+   * @param up true if the node has come up, false if it has gone
+   * down.
+   *
+   * @param info additional info that may be available, for example an
+   * exception that was raised causing the event in question (may be
+   * null).
    **/
   public void localStatus(String node, boolean up, Object info) {
   }
 
   /**
-   * Notify about failed connection attempts by remote nodes.
+   * Notify about failed connection attempts.
+   *
+   * @param node The name of the remote node
+   *
+   * @param incoming The direction of the connection attempt, i.e.
+   * true for incoming, false for outgoing.
+   *
+   * @param info additional info that may be available, for example an
+   * exception that was raised causing the event in question (may be
+   * null).
    **/
   public void connAttempt(String node, boolean incoming, Object info) {
   }

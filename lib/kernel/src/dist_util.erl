@@ -100,8 +100,8 @@ make_this_flags(RequestType, OtherNode) ->
 	?DFLAG_DIST_MONITOR bor
 	?DFLAG_FUN_TAGS bor
 	?DFLAG_DIST_MONITOR_NAME bor
-	?DFLAG_HIDDEN_ATOM_CACHE.
-
+	?DFLAG_HIDDEN_ATOM_CACHE bor
+	?DFLAG_NEW_FUN_TAGS.
 
 handshake_other_started(#hs_data{request_type = ReqType} = HSData) ->
     {PreOtherFlags,Node,Version} = recv_name(HSData),
@@ -389,11 +389,24 @@ do_setnode(#hs_data{other_node = Node, socket = Socket,
 		   [Node, Port, {publish_type(Flags), 
 				 '(', Flags, ')', 
 				 Version}]),
-	    erlang:setnode(Node, Port, 
-			   {Flags, Version, '', ''}),
-	    ok;
+	    case (catch 
+		  erlang:setnode(Node, Port, 
+				 {Flags, Version, '', ''})) of
+		{'EXIT', {system_limit, _}} ->
+		    error_msg("** Distribution system limit reached, "
+			      "no table space left for node ~w ** ~n",
+			      [Node]),
+		    ?shutdown(Node);
+		{'EXIT', Other} ->
+		    exit(Other);
+		Else ->
+		    ok
+	    end;
 	_ ->
-	    error
+	    error_msg("** Distribution connection error, "
+		      "could not get low level port for node ~w ** ~n",
+		      [Node]),
+	    ?shutdown(Node)
     end.
 
 mark_nodeup(#hs_data{kernel_pid = Kernel, 

@@ -25,7 +25,7 @@
 #include "global.h"
 #include "erl_process.h"
 #include "error.h"
-#include "driver.h"
+#include "erl_driver.h"
 #include "bif.h"
 #include "external.h"
 #include "beam_load.h"
@@ -34,15 +34,20 @@
 #include "beam_catches.h"
 #include "erl_binary.h"
 
+#ifdef HIPE
+#include "hipe_mode_switch.h"
+#include "hipe_bif0.h"
+#endif
+
 #define MAX_OPARGS 8
 #define CALLED    0
 #define DEFINED   1
 #define EXPORTED  2
 
 #ifdef NO_JUMP_TABLE
-#  define BeamOpCode(Op) ((uint32)(Op))
+#  define BeamOpCode(Op) ((Uint)(Op))
 #else
-#  define BeamOpCode(Op) ((uint32)beam_ops[Op])
+#  define BeamOpCode(Op) ((Eterm)beam_ops[Op])
 #endif
 
 /*
@@ -53,8 +58,8 @@
 #define TE_SHORT_WINDOW (-2)
 
 typedef struct {
-    uint32 value;		/* Value of label (NULL if not known yet). */
-    uint32 patches;		/* Index (into code buffer) to first location
+    Uint value;			/* Value of label (NULL if not known yet). */
+    Uint patches;		/* Index (into code buffer) to first location
 				 * which must be patched with the value of this label.
 				 */
 } Label;
@@ -65,8 +70,8 @@ typedef struct {
 
 typedef struct {
     unsigned type;		/* Type of operand. */
-    uint32 val;			/* Value of operand. */
-    uint32 bigarity;		/* Arity for bignumbers (only). */
+    Uint val;			/* Value of operand. */
+    Uint bigarity;		/* Arity for bignumbers (only). */
 } GenOpArg;
 
 /*
@@ -94,10 +99,10 @@ typedef struct genop_block {
  * This structure contains information for a imported function or BIF.
  */
 typedef struct {
-    uint32 module;		/* Tagged atom for module. */
-    uint32 function;		/* Tagged atom for function. */
+    Eterm module;		/* Tagged atom for module. */
+    Eterm function;		/* Tagged atom for function. */
     int arity;			/* Arity. */
-    uint32 patches;		/* Index to locations in code to
+    Uint patches;		/* Index to locations in code to
 				 * eventually patch with a pointer into
 				 * the export entry.
 				 */
@@ -111,23 +116,24 @@ typedef struct {
  */
 
 typedef struct {
-    uint32 function;		/* Tagged atom for function. */
+    Eterm function;		/* Tagged atom for function. */
     int arity;			/* Arity. */
-    uint32* address;		/* Address to function in code. */
+    Eterm* address;		/* Address to function in code. */
 } ExportEntry;
 
 #define MakeIffId(a, b, c, d) \
-  (((uint32) (a) << 24) | ((uint32) (b) << 16) | ((uint32) (c) << 8) | (uint32) (d))
+  (((Uint) (a) << 24) | ((Uint) (b) << 16) | ((Uint) (c) << 8) | (Uint) (d))
 
-#define CODE_CHUNK 0
-#define ATOM_CHUNK 1
-#define IMP_CHUNK 2
-#define EXP_CHUNK 3
-#define STR_CHUNK 4
+#define ATOM_CHUNK 0
+#define CODE_CHUNK 1
+#define STR_CHUNK 2
+#define IMP_CHUNK 3
+#define EXP_CHUNK 4
 #define NUM_MANDATORY 5
 
-#define ATTR_CHUNK 5
-#define COMPILE_CHUNK 6
+#define LAMBDA_CHUNK 5
+#define ATTR_CHUNK 6
+#define COMPILE_CHUNK 7
 
 #define NUM_CHUNK_TYPES (sizeof(chunk_types)/sizeof(chunk_types[0]))
 
@@ -135,21 +141,22 @@ typedef struct {
  * An array with all chunk types recognized by the loader.
  */
 
-static uint32 chunk_types[] = {
+static Uint chunk_types[] = {
     /*
      * Mandatory chunk types -- these MUST be present.
      */
-    MakeIffId('C', 'o', 'd', 'e'), /* 0 */
-    MakeIffId('A', 't', 'o', 'm'), /* 1 */
-    MakeIffId('I', 'm', 'p', 'T'), /* 2 */
-    MakeIffId('E', 'x', 'p', 'T'), /* 3 */
-    MakeIffId('S', 't', 'r', 'T'), /* 4 */
+    MakeIffId('A', 't', 'o', 'm'), /* 0 */
+    MakeIffId('C', 'o', 'd', 'e'), /* 1 */
+    MakeIffId('S', 't', 'r', 'T'), /* 2 */
+    MakeIffId('I', 'm', 'p', 'T'), /* 3 */
+    MakeIffId('E', 'x', 'p', 'T'), /* 4 */
 
     /*
      * Optional chunk types -- the loader will use them if present.
      */
-    MakeIffId('A', 't', 't', 'r'), /* 5 */
-    MakeIffId('C', 'I', 'n', 'f'), /* 6 */
+    MakeIffId('F', 'u', 'n', 'T'), /* 5 */
+    MakeIffId('A', 't', 't', 'r'), /* 6 */
+    MakeIffId('C', 'I', 'n', 'f'), /* 7 */
 };
 
 /*
@@ -157,8 +164,11 @@ static uint32 chunk_types[] = {
  */
 
 typedef struct {
-    unsigned label;		/* Label of function entry */
-    unsigned uniq;		/* Unique number for lambda. */
+    ErlFunEntry* fe;		/* Entry in fun table. */
+    unsigned label;		/* Label of function entry. */
+    Uint32 num_free;		/* Number of free variables. */
+    Eterm function;		/* Name of local function. */
+    int arity;			/* Arity (including free variables). */
 } Lambda;
 
 /*
@@ -178,9 +188,9 @@ typedef struct {
      * The following are used mainly for diagnostics.
      */
 
-    uint32 group_leader;	/* Group leader (for diagnostics). */
-    uint32 module;		/* Tagged atom for module name. */
-    uint32 function;		/* Tagged atom for current function
+    Eterm group_leader;		/* Group leader (for diagnostics). */
+    Eterm module;		/* Tagged atom for module name. */
+    Eterm function;		/* Tagged atom for current function
 				 * (or 0 if none).
 				 */
     unsigned arity;		/* Arity for current function. */
@@ -204,20 +214,21 @@ typedef struct {
     int num_functions;		/* Number of functions in module. */
     int num_labels;		/* Number of labels. */
     int code_buffer_size;	/* Size of code buffer in words.  */
-    uint32* code;		/* Loaded code. */
+    Eterm* code;		/* Loaded code. */
     int ci;			/* Current index into loaded code. */
     Label* labels;
-    uint32 put_strings;		/* Linked list of put_string instructions. */
+    Uint put_strings;		/* Linked list of put_string instructions. */
     Uint bs_put_strings;	/* Linked list of bs_put_string instructions. */
-    uint32 catches;		/* Linked list of catch_yf instructions. */
+    Uint catches;		/* Linked list of catch_yf instructions. */
     unsigned loaded_size;	/* Final size of code when loaded. */
+    byte mod_md5[16];		/* MD5 for module code. */
 
     /*
      * Atom table.
      */
 
     int num_atoms;		/* Number of atoms in atom table. */
-    uint32* atom;		/* Atom table. */
+    Eterm* atom;		/* Atom table. */
 
     int num_exps;		/* Number of exports. */
     ExportEntry* export;	/* Pointer to export table. */
@@ -236,9 +247,9 @@ typedef struct {
      * Heap for floats and bignums.
      */
 
-    uint32* temp_heap;		/* Pointer to base of temporary heap. */
-    uint32 temp_heap_top;	/* Index of next free word on heap. */
-    uint32 temp_heap_size;	/* Points to the word beyond the heap. */
+    Uint* temp_heap;		/* Pointer to base of temporary heap. */
+    Uint temp_heap_top;		/* Index of next free word on heap. */
+    Uint temp_heap_size;	/* Points to the word beyond the heap. */
 
     /*
      * Lambda table.
@@ -248,6 +259,7 @@ typedef struct {
     int lambdas_allocated;	/* Size of allocated lambda table. */
     Lambda* lambdas;		/* Pointer to lambdas. */
     Lambda def_lambdas[16];	/* Default storage for lambda table. */
+    char* lambda_error;		/* Delayed missing 'FunT' error. */
 
     /*
      * Bit syntax.
@@ -258,12 +270,12 @@ typedef struct {
 
 typedef struct {
     unsigned num_functions;	/* Number of functions. */
-    uint32* func_tab[1];	/* Pointers to each function. */
+    Eterm* func_tab[1];		/* Pointers to each function. */
 } LoadedCode;
 
 #define GetTagAndValue(Stp, Tag, Val) \
    do { \
-      uint32 __w; \
+      Uint __w; \
       GetByte(Stp, __w); \
       Tag = __w & 0x07; \
       if ((__w & 0x08) == 0) { \
@@ -383,10 +395,16 @@ typedef struct {
    (Genop)->a = safe_alloc((Genop)->arity * sizeof(GenOpArg)); \
   } while (0)
 
-static int scan_iff_file(LoaderState* stp);
+
+static void init_state(LoaderState* stp);
+static int insert_new_code(Eterm group_leader, Eterm module,
+			   Eterm* code, Uint size, Uint catches);
+static int scan_iff_file(LoaderState* stp, Uint* chunk_types,
+			 Uint num_types, Uint num_mandatory);
 static int load_atom_table(LoaderState* stp);
 static int load_import_table(LoaderState* stp);
 static int read_export_table(LoaderState* stp);
+static int read_lambda_table(LoaderState* stp);
 static int read_code_header(LoaderState* stp);
 static int load_code(LoaderState* stp);
 static GenOp* gen_element(LoaderState* stp, GenOpArg Fail, GenOpArg Index,
@@ -402,18 +420,25 @@ static GenOp* const_select_val(LoaderState* stp, GenOpArg S, GenOpArg Fail,
 static GenOp* gen_func_info(LoaderState* stp, GenOpArg mod, GenOpArg Func,
 			    GenOpArg arity, GenOpArg label);
 static int freeze_code(LoaderState* stp);
+
 static void final_touch(LoaderState* stp);
 static void short_file(int line, LoaderState* stp, unsigned needed);
 static void load_printf(int line, LoaderState* context, char *fmt, ...);
 static int transform_engine(LoaderState* st);
-static void id_to_string(uint32 id, char* s);
+static void id_to_string(Uint id, char* s);
 static void new_genop(LoaderState* stp);
-static int get_int_val(LoaderState* stp, uint32 len_code, uint32* result);
-static int get_erlang_integer(LoaderState* stp, uint32 len_code, uint32* result);
-static uint32 temp_alloc(LoaderState* stp, unsigned needed);
+static int get_int_val(LoaderState* stp, Uint len_code, Uint* result);
+static int get_erlang_integer(LoaderState* stp, Uint len_code, Uint* result);
+static Uint temp_alloc(LoaderState* stp, unsigned needed);
 static int new_label(LoaderState* stp);
 static int genopargcompare(GenOpArg* a, GenOpArg* b);
-
+static Eterm exported_from_module(Process* p, Eterm mod);
+static Eterm functions_in_module(Process* p, Eterm mod);
+static Eterm attributes_for_module(Process* p, Eterm mod);
+static Eterm compilation_info_for_module(Process* p, Eterm mod);
+static Eterm native_addresses(Process* p, Eterm mod);
+int patch_funentries(Eterm Patchlist);
+int patch(Eterm Addresses, Uint fe);
 
 static int must_swap_floats;
 
@@ -445,51 +470,23 @@ void init_load(void)
     num_loaded_modules = 0;
 }
 
-
+static void
+define_file(LoaderState* stp, char* name, int idx)
+{
+    stp->file_name = name;
+    stp->file_p = stp->chunks[idx].start;
+    stp->file_left = stp->chunks[idx].size;
+}
+
 int
-bin_load(group_leader, module_to_load, bytes, unloaded_size)
-uint32 group_leader;		/* Group leader to use for error reporting. */
-uint32 module_to_load;		/* Tagged atom for module name. */
-byte* bytes;			/* Pointer to code for module. */
-int unloaded_size;		/* Size of code. */
+bin_load(Eterm group_leader, Eterm module_to_load, byte* bytes, int unloaded_size)
 {
     LoaderState state;
-    int rval;
+    int rval = -1;
 
-    /*
-     * Initialize state so that error diagnostics will work (without core dumps).
-     */
-
+    init_state(&state);
     state.module = module_to_load;
     state.group_leader = group_leader;
-    state.function = 0;		/* Function not known yet */
-    state.arity = 0;
-    state.specific_op = -1;
-    state.genop = NULL;
-    state.atom = NULL;
-    state.code = NULL;
-    state.labels = NULL;
-    state.import = NULL;
-    state.export = NULL;
-    state.free_genop = NULL;
-    state.genop_blocks = NULL;
-    state.temp_heap = NULL;
-    state.temp_heap_top = 0;
-    state.temp_heap_size = 0;
-    state.num_lambdas = 0;
-    state.lambdas_allocated = sizeof(state.def_lambdas)/sizeof(Lambda);
-    state.lambdas = state.def_lambdas;
-    state.generate_heap_bin = 0;
-
-    if ((rval = beam_make_current_old(state.module)) < 0) {
-	cerr_pos = 0;
-	erl_printf(CBUF, "Module ");
-	print_atom(atom_val(state.module), CBUF);
-	erl_printf(CBUF, " must be purged before loading\n");
-	send_error_to_logger(state.group_leader);
-	return -3;
-    }
-    rval = -1;
 
     /*
      * Scan the IFF file.
@@ -498,22 +495,15 @@ int unloaded_size;		/* Size of code. */
     state.file_name = "IFF header for Beam file";
     state.file_p = bytes;
     state.file_left = unloaded_size;
-    if (!scan_iff_file(&state)) {
+    if (!scan_iff_file(&state, chunk_types, NUM_CHUNK_TYPES, NUM_MANDATORY)) {
 	goto load_error;
     }
-
-
-#define DefineFile(Stp, Name, Idx) \
-     do { state.file_name = (Name); \
-          state.file_p = (Stp)->chunks[Idx].start; \
-          state.file_left = (Stp)->chunks[Idx].size; \
-     } while (0)
 
     /*
      * Read the header for the code chunk.
      */
 
-    DefineFile(&state, "code chunk header", CODE_CHUNK);
+    define_file(&state, "code chunk header", CODE_CHUNK);
     if (!read_code_header(&state)) {
 	goto load_error;
     }
@@ -522,7 +512,7 @@ int unloaded_size;		/* Size of code. */
      * Read the atom table.
      */
 
-    DefineFile(&state, "atom table", ATOM_CHUNK);
+    define_file(&state, "atom table", ATOM_CHUNK);
     if (!load_atom_table(&state)) {
 	goto load_error;
     }
@@ -531,9 +521,20 @@ int unloaded_size;		/* Size of code. */
      * Read the import table.
      */
 
-    DefineFile(&state, "import table", IMP_CHUNK);
+    define_file(&state, "import table", IMP_CHUNK);
     if (!load_import_table(&state)) {
 	goto load_error;
+    }
+
+    /*
+     * Read the lambda (fun) table.
+     */
+
+    if (state.chunks[LAMBDA_CHUNK].size > 0) {
+	define_file(&state, "lambda (fun) table", LAMBDA_CHUNK);
+	if (!read_lambda_table(&state)) {
+	    goto load_error;
+	}
     }
 
     /*
@@ -552,7 +553,7 @@ int unloaded_size;		/* Size of code. */
      * loading the code, because it contains labels.)
      */
     
-    DefineFile(&state, "export table", EXP_CHUNK);
+    define_file(&state, "export table", EXP_CHUNK);
     if (!read_export_table(&state)) {
 	goto load_error;
     }
@@ -561,10 +562,13 @@ int unloaded_size;		/* Size of code. */
      * Ready for the final touch: fixing the export table entries for
      * exported and imported functions.  This can't fail.
      */
-
+    
+    rval = insert_new_code(state.group_leader, state.module,
+			   state.code, state.loaded_size, state.catches);
+    if (rval < 0) {
+	goto load_error;
+    }
     final_touch(&state);
-
-#undef DefineFile
 
     /*
      * Loading succeded.
@@ -603,12 +607,83 @@ int unloaded_size;		/* Size of code. */
     return rval;
 }
 
-
-static int
-scan_iff_file(LoaderState* stp)
+
+static void
+init_state(LoaderState* stp)
 {
-    uint32 id;
-    uint32 count;
+    stp->function = THE_NON_VALUE; /* Function not known yet */
+    stp->arity = 0;
+    stp->specific_op = -1;
+    stp->genop = NULL;
+    stp->atom = NULL;
+    stp->code = NULL;
+    stp->labels = NULL;
+    stp->import = NULL;
+    stp->export = NULL;
+    stp->free_genop = NULL;
+    stp->genop_blocks = NULL;
+    stp->temp_heap = NULL;
+    stp->temp_heap_top = 0;
+    stp->temp_heap_size = 0;
+    stp->num_lambdas = 0;
+    stp->lambdas_allocated = sizeof(stp->def_lambdas)/sizeof(Lambda);
+    stp->lambdas = stp->def_lambdas;
+    stp->lambda_error = NULL;
+    stp->generate_heap_bin = 0;
+}
+
+static int
+insert_new_code(Eterm group_leader, Eterm module, Eterm* code, Uint size, Uint catches)
+{
+    Module* modp;
+    int rval;
+    int i;
+
+    if ((rval = beam_make_current_old(module)) < 0) {
+	cerr_pos = 0;
+	erl_printf(CBUF, "Module ");
+	print_atom(atom_val(module), CBUF);
+	erl_printf(CBUF, " must be purged before loading\n");
+	send_error_to_logger(group_leader);
+	return rval;
+    }
+
+    /*
+     * Update module table.
+     */
+
+    modp = erts_put_module(module);
+    modp->code = code;
+    modp->code_length = size;
+    modp->catches = catches;
+
+    /*
+     * Update address table (used for finding a function from a PC value).
+     */
+
+    if (num_loaded_modules == allocated_modules) {
+	allocated_modules *= 2;
+	modules = (Range *) sys_realloc(modules, allocated_modules * sizeof(Range));
+    }
+    for (i = num_loaded_modules; i > 0; i--) {
+	if (code > modules[i-1].start) {
+	    break;
+	}
+	modules[i] = modules[i-1];
+    }
+    modules[i].start = code;
+    modules[i].end = (Eterm *) (((byte *)code) + size);
+    num_loaded_modules++;
+    mid_module = &modules[num_loaded_modules/2];
+    return 0;
+}
+
+static int
+scan_iff_file(LoaderState* stp, Uint* chunk_types, Uint num_types, Uint num_mandatory)
+{
+    MD5_CTX context;
+    Uint id;
+    Uint count;
     int i;
 
     /*
@@ -637,7 +712,7 @@ scan_iff_file(LoaderState* stp)
 
     /*
      * Retrieve the chunk size and verify it.  If the size is equal to
-     * or less than the size of the binary, it is ok and we will use
+     * or less than the size of the binary, it is ok and we will use it
      * as the limit for the logical file size.
      */
 
@@ -661,7 +736,7 @@ scan_iff_file(LoaderState* stp)
      * Initialize the chunks[] array in the state.
      */
 
-    for (i = 0; i < NUM_CHUNK_TYPES; i++) {
+    for (i = 0; i < num_types; i++) {
 	stp->chunks[i].start = NULL;
 	stp->chunks[i].size = 0;
     }
@@ -697,7 +772,7 @@ scan_iff_file(LoaderState* stp)
 	/*
 	 * See if the chunk is useful for the loader.
 	 */
-	for (i = 0; i < NUM_CHUNK_TYPES; i++) {
+	for (i = 0; i < num_types; i++) {
 	    if (chunk_types[i] == id) {
 		stp->chunks[i].start = stp->file_p;
 		stp->chunks[i].size = count;
@@ -717,18 +792,26 @@ scan_iff_file(LoaderState* stp)
      * At this point, we have read the entire IFF file, and we
      * know that it is syntactically correct.
      *
-     * Now check that it contains all mandatory chunks.
+     * Now check that it contains all mandatory chunks. At the
+     * same time calculate the MD5 for the module.
      */
 
-    for (i = 0; i < NUM_MANDATORY; i++) {
-	if (stp->chunks[i].start == NULL) {
+    MD5Init(&context);
+    for (i = 0; i < num_mandatory; i++) {
+	if (stp->chunks[i].start != NULL) {
+	    MD5Update(&context, stp->chunks[i].start, stp->chunks[i].size);
+	} else {
 	    char sbuf[5];
 
 	    id_to_string(chunk_types[i], sbuf);
 	    LoadError1(stp, "mandatory chunk of type '%s' not found\n", sbuf);
 	}
     }
-
+    if (num_mandatory >= LAMBDA_CHUNK && stp->chunks[LAMBDA_CHUNK].start != 0) {
+	MD5Update(&context, stp->chunks[LAMBDA_CHUNK].start,
+		  stp->chunks[LAMBDA_CHUNK].size);
+    }
+    MD5Final(stp->mod_md5, &context);
     return 1;
 
  load_error:
@@ -743,7 +826,7 @@ load_atom_table(LoaderState* stp)
 
     GetInt(stp, 4, stp->num_atoms);
     stp->num_atoms++;
-    stp->atom = safe_alloc(next_heap_size(stp->num_atoms * sizeof(uint32), 0));
+    stp->atom = safe_alloc(next_heap_size(stp->num_atoms * sizeof(Eterm), 0));
 
     /*
      * Read all atoms.
@@ -751,7 +834,7 @@ load_atom_table(LoaderState* stp)
 
     for (i = 1; i < stp->num_atoms; i++) {
 	byte* atom;
-	uint32 n;
+	Uint n;
 
 	GetByte(stp, n);
 	GetString(stp, atom, n);
@@ -785,13 +868,13 @@ load_import_table(LoaderState* stp)
     int i;
 
     GetInt(stp, 4, stp->num_imports);
-    stp->import = safe_alloc(next_heap_size(stp->num_imports
-					    * sizeof(ImportEntry), 0));
+    stp->import = safe_alloc(next_heap_size(stp->num_imports *
+					    sizeof(ImportEntry), 0));
     for (i = 0; i < stp->num_imports; i++) {
 	int n;
 	Eterm mod;
 	Eterm func;
-	uint32 arity;
+	Uint arity;
 	Export* e;
 
 	GetInt(stp, 4, n);
@@ -842,8 +925,8 @@ read_export_table(LoaderState* stp)
     stp->export = (ExportEntry *) safe_alloc(stp->num_exps * sizeof(ExportEntry));
 
     for (i = 0; i < stp->num_exps; i++) {
-	uint32 n;
-	uint32 value;
+	Uint n;
+	Uint value;
 
 	GetInt(stp, 4, n);
 	GetAtom(stp, n, stp->export[i].function);
@@ -861,6 +944,47 @@ read_export_table(LoaderState* stp)
 	    LoadError2(stp, "export table entry %d: label %d not resolved", i, n);
 	}
 	stp->export[i].address = stp->code + value;
+    }
+    return 1;
+
+ load_error:
+    return 0;
+}
+
+static int
+read_lambda_table(LoaderState* stp)
+{
+    int i;
+
+    GetInt(stp, 4, stp->num_lambdas);
+    stp->lambdas_allocated = stp->num_lambdas;
+    stp->lambdas = (Lambda *) safe_alloc(stp->num_lambdas * sizeof(Lambda));
+    for (i = 0; i < stp->num_lambdas; i++) {
+	Uint n;
+	Uint32 Index;
+	Uint32 OldUniq;
+	ErlFunEntry* fe;
+	Uint arity;
+
+	GetInt(stp, 4, n);	/* Function. */
+	GetAtom(stp, n, stp->lambdas[i].function);
+	GetInt(stp, 4, arity);
+	if (arity > MAX_REG) {
+	    LoadError2(stp, "lambda entry %d: absurdly high arity %d", i, arity);
+	}
+	stp->lambdas[i].arity = arity;
+	GetInt(stp, 4, n);
+	if (n >= stp->num_labels) {
+	    LoadError3(stp, "lambda entry %d: invalid label %d (highest defined label is %d)",
+		       i, n, stp->num_labels);
+	}
+	stp->lambdas[i].label = n;
+	GetInt(stp, 4, Index);
+	GetInt(stp, 4, stp->lambdas[i].num_free);
+	GetInt(stp, 4, OldUniq);
+	fe = erts_put_fun_entry2(stp->module, OldUniq, i, stp->mod_md5,
+				 Index, arity-stp->lambdas[i].num_free);
+	stp->lambdas[i].fe = fe;
     }
     return 1;
 
@@ -926,7 +1050,7 @@ read_code_header(LoaderState* stp)
      * Initialize code area.
      */
     stp->code_buffer_size = next_heap_size(2048 + stp->num_functions, 0);
-    stp->code = (uint32*) safe_alloc(sizeof(uint32) * stp->code_buffer_size);
+    stp->code = (Eterm*) safe_alloc(sizeof(Eterm) * stp->code_buffer_size);
 
     stp->code[MI_NUM_FUNCTIONS] = stp->num_functions;
     stp->ci = MI_FUNCTIONS + stp->num_functions + 1;
@@ -935,8 +1059,6 @@ read_code_header(LoaderState* stp)
     stp->code[MI_ATTR_SIZE_ON_HEAP] = 0;
     stp->code[MI_COMPILE_PTR] = 0;
     stp->code[MI_COMPILE_SIZE_ON_HEAP] = 0;
-    stp->code[MI_LAMBDA_PTR] = 0;
-    stp->code[MI_NUM_LAMBDAS] = 0;
     stp->code[MI_NUM_BREAKPOINTS] = 0;
 
     stp->put_strings = 0;
@@ -958,8 +1080,8 @@ read_code_header(LoaderState* stp)
     ASSERT(ci <= code_buffer_size); \
     if (code_buffer_size < ci+(w)) { \
         code_buffer_size = next_heap_size(ci+(w), 0); \
-	stp->code = code = (uint32 *) safe_realloc((char *) code, \
-               code_buffer_size * sizeof(uint32)); \
+	stp->code = code = (Eterm *) safe_realloc((char *) code, \
+               code_buffer_size * sizeof(Eterm)); \
     }
     
 
@@ -973,11 +1095,11 @@ load_code(LoaderState* stp)
     char* sign;
     int arg;			/* Number of current argument. */
     int num_specific;		/* Number of specific ops for current. */
-    uint32* code;
+    Eterm* code;
     int code_buffer_size;
     int specific;
-    uint32 last_label = 0;	/* Number of last label. */
-    uint32 function_number = 0;
+    Uint last_label = 0;	/* Number of last label. */
+    Uint function_number = 0;
     GenOp* last_op = NULL;
     GenOp** last_op_next = NULL;
     int arity;
@@ -1031,7 +1153,7 @@ load_code(LoaderState* stp)
       if (((First) & 0x08) == 0) { \
 	 Val = (First) >> 4; \
       } else if (((First) & 0x10) == 0) { \
-         uint32 __w; \
+         Uint __w; \
 	 GetByte(Stp, __w); \
 	 Val = (((First) >> 5) << 8) | __w; \
       } else { \
@@ -1040,7 +1162,7 @@ load_code(LoaderState* stp)
    } while (0)
 
 	for (arg = 0; arg < arity; arg++) {
-	    uint32 first;
+	    Uint first;
 
 	    GetByte(stp, first);
 	    last_op->a[arg].type = first & 0x07;
@@ -1049,7 +1171,7 @@ load_code(LoaderState* stp)
 		if ((first & 0x08) == 0) {
 		    last_op->a[arg].val = make_small(first >> 4);
 		} else if ((first & 0x10) == 0) {
-		    uint32 w;
+		    Uint w;
 		    GetByte(stp, w);
 		    ASSERT(first < 0x800);
 		    last_op->a[arg].val = make_small(((first >> 5) << 8) | w);
@@ -1101,9 +1223,9 @@ load_code(LoaderState* stp)
 		break;
 	    case TAG_z:
 		{
-		    uint32 ext_tag;
-		    uint32 high, low;
-		    uint32 hp;
+		    Uint ext_tag;
+		    Uint high, low;
+		    Uint hp;
 		    unsigned tag;
 
 		    GetValue(stp, first, ext_tag);
@@ -1112,7 +1234,7 @@ load_code(LoaderState* stp)
 			GetInt(stp, 4, high);
 			GetInt(stp, 4, low);
 			if (must_swap_floats) {
-			    uint32 t = high;
+			    Uint t = high;
 			    high = low;
 			    low = t;
 			}
@@ -1134,6 +1256,11 @@ load_code(LoaderState* stp)
 			memcpy(last_op->a, last_op->def_args,
 			       arity*sizeof(GenOpArg));
 			arity += last_op->a[arg].val;
+			break;
+		    case 2:	/* Float register. */
+			GetTagAndValue(stp, tag, last_op->a[arg].val);
+			VerifyTag(stp, tag, TAG_u);
+			last_op->a[arg].type = TAG_l;
 			break;
 		    default:
 			LoadError1(stp, "invalid extended tag %d", ext_tag);
@@ -1192,7 +1319,7 @@ load_code(LoaderState* stp)
 	 */
 
 	{
-	    uint32 mask[2] = {0, 0};
+	    Uint mask[2] = {0, 0};
 
 	    tmp_op = stp->genop;
 	    arity = gen_opc[tmp_op->op].arity;
@@ -1236,7 +1363,7 @@ load_code(LoaderState* stp)
 	ASSERT(sign != NULL);
 	arg = 0;
 	while (*sign) {
-	    uint32 tag;
+	    Uint tag;
 
 	    ASSERT(arg < stp->genop->arity);
 	    tag = stp->genop->a[arg].type;
@@ -1261,8 +1388,8 @@ load_code(LoaderState* stp)
 		break;
 	    case 'w':		/* Big number */
 		{
-		    uint32* bigp;
-		    uint32 size;
+		    Eterm* bigp;
+		    Uint size;
 
 		    VerifyTag(stp, tag_to_letter[tag], *sign);
 		    bigp = stp->temp_heap+tmp_op->a[arg].val;
@@ -1336,7 +1463,7 @@ load_code(LoaderState* stp)
 		    break;
 		}
 		break;
-	    case 'I':	/* Untagged integer. */
+	    case 'I':	/* Untagged integer (or pointer). */
 		VerifyTag(stp, tag, TAG_u);
 		code[ci++] = tmp_op->a[arg].val;
 		break;
@@ -1399,16 +1526,16 @@ load_code(LoaderState* stp)
 		if (stp->import[i].bf == NULL) {
 		    LoadError1(stp, "not a BIF: import table index %d", i);
 		}
-		code[ci++] = (uint32) stp->import[i].bf;
+		code[ci++] = (Eterm) stp->import[i].bf;
 		break;
 	    case 'P':		/* Byte offset into tuple */
 		VerifyTag(stp, tag, TAG_u);
 		tmp = tmp_op->a[arg].val;
-		code[ci++] = (uint32) ((tmp_op->a[arg].val+1) * sizeof(uint32 *));
+		code[ci++] = (Eterm) ((tmp_op->a[arg].val+1) * sizeof(Eterm *));
 		break;
 	    case 'o':		/* Floating point number. */
 		{
-		    uint32* fptr;
+		    Eterm* fptr;
 
 		    VerifyTag(stp, tag, TAG_o);
 		    fptr = stp->temp_heap + tmp_op->a[arg].val;
@@ -1416,6 +1543,10 @@ load_code(LoaderState* stp)
 		    code[ci++] = *fptr++;
 		    break;
 		}
+	    case 'l':		/* Floating point register. */
+		VerifyTag(stp, tag_to_letter[tag], *sign);
+		code[ci++] = tmp_op->a[arg].val * 2 * sizeof(Eterm);
+		break;
 	    default:
 		LoadError1(stp, "bad argument tag: %d", *sign);
 	    }
@@ -1438,8 +1569,8 @@ load_code(LoaderState* stp)
 		break;
 	    case TAG_w:
 		{
-		    uint32* bigp;
-		    uint32 size;
+		    Eterm* bigp;
+		    Uint size;
 
 		    bigp = stp->temp_heap+tmp_op->a[arg].val;
 		    size = thing_arityval(*bigp);
@@ -1458,7 +1589,7 @@ load_code(LoaderState* stp)
 		break;
 	    case TAG_o:
 		{
-		    uint32* fptr;
+		    Eterm* fptr;
 
 		    fptr = stp->temp_heap + tmp_op->a[arg].val;
 		    Need(2);
@@ -1477,9 +1608,9 @@ load_code(LoaderState* stp)
 	 */
 	if (opc[stp->specific_op].pack[0]) {
 	    char* prog;		/* Program for packing engine. */
-	    uint32 stack[8];	/* Stack. */
-	    uint32* sp = stack;	/* Points to next free position. */
-	    uint32 packed = 0;	/* Accumulator for packed operations. */
+	    Uint stack[8];	/* Stack. */
+	    Uint* sp = stack;	/* Points to next free position. */
+	    Uint packed = 0;	/* Accumulator for packed operations. */
 	    
 	    for (prog = opc[stp->specific_op].pack; *prog; prog++) {
 		switch (*prog) {
@@ -1518,7 +1649,7 @@ load_code(LoaderState* stp)
 	switch (stp->specific_op) {
 	case op_i_func_info_IaaI:
 	    {
-		uint32 offset;
+		Uint offset;
 
 		if (function_number >= stp->num_functions) {
 		    LoadError1(stp, "too many functions in module (header said %d)",
@@ -1562,8 +1693,8 @@ load_code(LoaderState* stp)
 		 * code[ci-4]	pointer to next put_string instruction (or 0
 		 *		if this is the last)
 		 */
-		uint32 offset = code[ci-2];
-		uint32 len = code[ci-3];
+		Uint offset = code[ci-2];
+		Uint len = code[ci-3];
 		unsigned strtab_size = stp->chunks[STR_CHUNK].size;
 		if (offset > strtab_size || offset + len > strtab_size) {
 		    LoadError2(stp, "invalid string reference %d, size %d", offset, len);
@@ -1614,30 +1745,6 @@ load_code(LoaderState* stp)
 	     * End of code found.
 	     */
 	case op_int_code_end:
-	    if (stp->num_lambdas > 0) {
-		int ltab = new_label(stp);
-
-		stp->labels[ltab].value = ci;
-		code[MI_LAMBDA_PTR] = stp->labels[ltab].patches;
-		stp->labels[ltab].patches = MI_LAMBDA_PTR;
-		code[MI_NUM_LAMBDAS] = stp->num_lambdas;
-		
-		/*
-		 * Load the lambda table.
-		 */
-
-		Need(2 * stp->num_lambdas);
-		for (i = 0; i < stp->num_lambdas; i++) {
-		    unsigned entry_label = stp->lambdas[i].label;
-
-		    code[ci] = make_small(stp->lambdas[i].uniq);
-		    ci++;
-		    code[ci] = stp->labels[entry_label].patches;
-		    stp->labels[entry_label].patches = ci;
-		    ci++;
-		}
-	    }
-
 	    stp->code_buffer_size = code_buffer_size;
 	    stp->ci = ci;
 	    return 1;
@@ -1665,8 +1772,14 @@ load_code(LoaderState* stp)
 #define succ2(St, X, Y) ((X).type == (Y).type && (X).val + 2 == (Y).val)
 #define succ3(St, X, Y) ((X).type == (Y).type && (X).val + 3 == (Y).val)
 
+#ifdef NO_FPE_SIGNALS 
+#define no_fpe_signals(St) 1
+#else
+#define no_fpe_signals(St) 0
+#endif
+
 /*
- * Predicate which tests if a jump table can be used.
+ * Predicate that tests if a jump table can be used.
  */
 
 static int
@@ -1755,7 +1868,7 @@ static int
 mixed_types(LoaderState* stp, GenOpArg Size, GenOpArg* Rest)
 {
     int i;
-    uint32 type;
+    Uint type;
 
     if (Size.val < 2 || Size.val % 2 != 0) {
 	return 0;
@@ -1827,13 +1940,36 @@ gen_get_integer(LoaderState* stp, GenOpArg Fail, GenOpArg Size, GenOpArg Unit,
     NEW_GENOP(stp, op);
 
     if (Size.type == TAG_i) {
-	op->op = genop_i_bs_get_integer_imm_4;
-	op->arity = 4;
-	op->a[0] = Fail;
-	op->a[1].type = TAG_u;
-	op->a[1].val = signed_val(Size.val) * Unit.val;
-	op->a[2] = Flags;
-	op->a[3] = Dst;
+	if (Flags.val & BSF_ALIGNED && (Flags.val & BSF_SIGNED) == 0) {
+	    Uint bits = signed_val(Size.val) * Unit.val;
+	    if (bits == 8) {
+		op->op = genop_i_bs_get_integer8_2;
+		op->arity = 2;
+		op->a[0] = Fail;
+		op->a[1] = Dst;
+	    } else if (bits == 16 && (Flags.val & BSF_LITTLE) == 0) {
+		op->op = genop_i_bs_get_integer16_2;
+		op->arity = 2;
+		op->a[0] = Fail;
+		op->a[1] = Dst;
+	    } else if (bits == 32 && (Flags.val & BSF_LITTLE) == 0) {
+		op->op = genop_i_bs_get_integer32_2;
+		op->arity = 2;
+		op->a[0] = Fail;
+		op->a[1] = Dst;
+	    } else {
+		goto generic;
+	    }
+	} else {
+	generic:
+	    op->op = genop_i_bs_get_integer_imm_4;
+	    op->arity = 4;
+	    op->a[0] = Fail;
+	    op->a[1].type = TAG_u;
+	    op->a[1].val = signed_val(Size.val) * Unit.val;
+	    op->a[2] = Flags;
+	    op->a[3] = Dst;
+	}
     } else {
 	op->op = genop_i_bs_get_integer_4;
 	op->arity = 4;
@@ -1884,8 +2020,9 @@ gen_get_binary(LoaderState* stp, GenOpArg Fail, GenOpArg Size, GenOpArg Unit,
     return op;
 }
 
-static GenOp* gen_put_binary(LoaderState* stp, GenOpArg Fail,GenOpArg Size,
-			     GenOpArg Unit, GenOpArg Flags, GenOpArg Src)
+static GenOp*
+gen_put_binary(LoaderState* stp, GenOpArg Fail,GenOpArg Size,
+	       GenOpArg Unit, GenOpArg Flags, GenOpArg Src)
 {
     GenOp* op;
     NEW_GENOP(stp, op);
@@ -1916,8 +2053,9 @@ static GenOp* gen_put_binary(LoaderState* stp, GenOpArg Fail,GenOpArg Size,
     return op;
 }
 
-static GenOp* gen_put_integer(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
-			      GenOpArg Unit, GenOpArg Flags, GenOpArg Src)
+static GenOp*
+gen_put_integer(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
+		GenOpArg Unit, GenOpArg Flags, GenOpArg Src)
 {
     GenOp* op;
     NEW_GENOP(stp, op);
@@ -1943,20 +2081,30 @@ static GenOp* gen_put_integer(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
     return op;
 }
 
-static GenOp* gen_put_float(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
-			     GenOpArg Unit, GenOpArg Flags, GenOpArg Dst)
+static GenOp*
+gen_put_float(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
+	      GenOpArg Unit, GenOpArg Flags, GenOpArg Src)
 {
     GenOp* op;
     NEW_GENOP(stp, op);
 
-    op->op = genop_i_bs_put_float_4;
-    op->arity = 4;
-    op->a[0] = Fail;
-    op->a[1] = Size;
-    op->a[2].type = TAG_u;
-    op->a[2].val = (Unit.val << 3) | Flags.val;
-    op->a[3] = Dst;
-
+    if (Size.type == TAG_i) {
+	op->op = genop_i_bs_put_float_imm_4;
+	op->arity = 4;
+	op->a[0] = Fail;
+	op->a[1].type = TAG_u;
+	op->a[1].val = signed_val(Size.val) * Unit.val;
+	op->a[2] = Flags;
+	op->a[3] = Src;
+    } else {
+	op->op = genop_i_bs_put_float_4;
+	op->arity = 4;
+	op->a[0] = Fail;
+	op->a[1] = Size;
+	op->a[2].type = TAG_u;
+	op->a[2].val = (Unit.val << 3) | Flags.val;
+	op->a[3] = Src;
+    }
     op->next = NULL;
     return op;
 }
@@ -2040,7 +2188,7 @@ gen_literal_timeout(LoaderState* stp, GenOpArg Fail, GenOpArg Time)
     if (Time.type == TAG_i && (timeout = signed_val(Time.val)) >= 0) {
 	op->a[1].val = timeout;
     } else if (Time.type == TAG_w) {
-	uint32* bigp = stp->temp_heap + Time.val;
+	Eterm* bigp = stp->temp_heap + Time.val;
 	if (thing_arityval(*bigp) > 1 || BIG_SIGN(bigp)) {
 	    op->op = genop_i_wait_error_0;
 	    op->arity = 0;
@@ -2128,7 +2276,7 @@ gen_split_values(LoaderState* stp, GenOpArg S, GenOpArg Fail,
     GenOp* op1;
     GenOp* op2;
     GenOp* label;
-    uint32 type;
+    Uint type;
     int i;
 
     ASSERT(Size.val >= 2 && Size.val % 2 == 0);
@@ -2390,12 +2538,12 @@ const_select_val(LoaderState* stp, GenOpArg S, GenOpArg Fail,
      */
 
     if (S.type == TAG_w) {
-	uint32* given_big = stp->temp_heap + S.val;
-	uint32 given_arity = *given_big;
-	uint32 given_size = (thing_arityval(given_arity) + 1) * sizeof(uint32);
+	Eterm* given_big = stp->temp_heap + S.val;
+	Uint given_arity = *given_big;
+	Uint given_size = (thing_arityval(given_arity) + 1) * sizeof(Uint);
 	for (i = 0; i < Size.val; i += 2) {
 	    if (Rest[i].type == TAG_w) {
-		uint32* big = stp->temp_heap + Rest[i].val;
+		Eterm* big = stp->temp_heap + Rest[i].val;
 		if (*big == given_arity) {
 		    if (memcmp(given_big, big, given_size) == 0) {
 			ASSERT(Rest[i+1].type == TAG_f);
@@ -2406,10 +2554,10 @@ const_select_val(LoaderState* stp, GenOpArg S, GenOpArg Fail,
 	    }
 	}
     } else if (S.type == TAG_o) {
-	uint32* given_float = stp->temp_heap + S.val;
+	Eterm* given_float = stp->temp_heap + S.val;
 	for (i = 0; i < Size.val; i += 2) {
 	    if (Rest[i].type == TAG_o) {
-		uint32* fl = stp->temp_heap + Rest[i].val;
+		Eterm* fl = stp->temp_heap + Rest[i].val;
 		if (given_float[0] == fl[0] && given_float[1] == fl[1]) {
 		    ASSERT(Rest[i+1].type == TAG_f);
 		    op->a[0] = Rest[i+1];
@@ -2455,8 +2603,8 @@ gen_func_info(LoaderState* stp, GenOpArg mod, GenOpArg func,
     if (func.val == am_module_info && arity.val < 2) {
 	NEW_GENOP(stp, op->next);
 	op = op->next;
-	op->op = arity.val == 0 ? genop_i_module_info_0_1 :
-	    genop_i_module_info_1_1;
+	op->op = arity.val == 0 ? genop_i_module_info_0_0 :
+	    genop_i_module_info_1_0;
 	op->arity = 1;
 	op->a[0] = mod;
 	op->next = NULL;
@@ -2468,17 +2616,21 @@ gen_func_info(LoaderState* stp, GenOpArg mod, GenOpArg func,
 static GenOp*
 gen_make_fun(LoaderState* stp, GenOpArg lbl, GenOpArg uniq, GenOpArg num_free)
 {
+    ErlFunEntry* fe;
+    int old_uniq;
+    int old_index;
     GenOp* op;
 
+    old_uniq = uniq.val;
+    old_index = stp->num_lambdas;
+    fe = erts_put_fun_entry(stp->module, old_uniq, old_index);
+
     NEW_GENOP(stp, op);
-    op->op = genop_i_make_fun_4;
-    op->arity = 4;
-    op->a[0].type = TAG_a;
-    op->a[0].val = stp->module;
-    op->a[1].type = TAG_u;
-    op->a[1].val = stp->num_lambdas;
-    op->a[2] = uniq;
-    op->a[3] = num_free;
+    op->op = genop_i_make_fun_2;
+    op->arity = 2;
+    op->a[0].type = TAG_u;
+    op->a[0].val = (Uint) fe;
+    op->a[1] = num_free;
     op->next = NULL;
 
     if (stp->num_lambdas >= stp->lambdas_allocated) {
@@ -2493,10 +2645,35 @@ gen_make_fun(LoaderState* stp, GenOpArg lbl, GenOpArg uniq, GenOpArg num_free)
 	    stp->lambdas = safe_realloc((char *) stp->lambdas, need);
 	}
     }
+    stp->lambdas[stp->num_lambdas].fe = fe;
     stp->lambdas[stp->num_lambdas].label = lbl.val;
-    stp->lambdas[stp->num_lambdas].uniq = uniq.val;
+    /* The number_of free vars is needed to create the right native-stub */
+    stp->lambdas[stp->num_lambdas].num_free = num_free.val;
     stp->num_lambdas++;
+    return op;
+}
 
+static GenOp*
+gen_make_fun2(LoaderState* stp, GenOpArg idx)
+{
+    ErlFunEntry* fe;
+    GenOp* op;
+
+    if (idx.val >= stp->num_lambdas) {
+	stp->lambda_error = "missing or short chunk 'FunT'";
+	fe = 0;
+    } else {
+	fe = stp->lambdas[idx.val].fe;
+    }
+
+    NEW_GENOP(stp, op);
+    op->op = genop_i_make_fun_2;
+    op->arity = 2;
+    op->a[0].type = TAG_u;
+    op->a[0].val = (Uint) fe;
+    op->a[1].type = TAG_u;
+    op->a[1].val = stp->lambdas[idx.val].num_free;
+    op->next = NULL;
     return op;
 }
 
@@ -2509,34 +2686,44 @@ gen_make_fun(LoaderState* stp, GenOpArg lbl, GenOpArg uniq, GenOpArg num_free)
 static int
 freeze_code(LoaderState* stp)
 {
-    uint32* code = stp->code;
-    uint32 index;
+    Eterm* code = stp->code;
+    Uint index;
     int i;
     byte* str_table;
     unsigned strtab_size = stp->chunks[STR_CHUNK].size;
     unsigned attr_size = stp->chunks[ATTR_CHUNK].size;
     unsigned compile_size = stp->chunks[COMPILE_CHUNK].size;
-    uint32 size;
+    Uint size;
     unsigned catches;
 
+    /*
+     * Verify that there was a correct 'FunT' chunk if there were
+     * make_fun2 instructions in the file.
+     */
+
+    if (stp->lambda_error != NULL) {
+	LoadError0(stp, stp->lambda_error);
+    }
+
+    
     /*
      * Calculate the final size of the code.
      */
 
-    size = stp->ci * sizeof(uint32) + strtab_size + attr_size + compile_size;
+    size = stp->ci * sizeof(Eterm) + strtab_size + attr_size + compile_size;
 
     /*
      * Move the code to its final location and place the string table
      * and, optionally, attributes, after the code.
      */
 
-    code = (uint32 *) safe_realloc((char *) code, size);
+    code = (Eterm *) safe_realloc((char *) code, size);
     memcpy(code+stp->ci, stp->chunks[STR_CHUNK].start, strtab_size);
     str_table = (byte *) (code+stp->ci);
     if (attr_size) {
 	byte* attr = str_table + strtab_size;
 	memcpy(attr, stp->chunks[ATTR_CHUNK].start, stp->chunks[ATTR_CHUNK].size);
-	code[MI_ATTR_PTR] = (uint32) attr;
+	code[MI_ATTR_PTR] = (Eterm) attr;
 	if ((code[MI_ATTR_SIZE_ON_HEAP] = decode_size(attr, attr_size)) < 0) {
 	    LoadError0(stp, "bad external term representation of module attributes");
 	}
@@ -2545,7 +2732,7 @@ freeze_code(LoaderState* stp)
 	byte* compile_info = str_table + strtab_size + attr_size;
 	memcpy(compile_info, stp->chunks[COMPILE_CHUNK].start,
 	       stp->chunks[COMPILE_CHUNK].size);
-	code[MI_COMPILE_PTR] = (uint32) compile_info;
+	code[MI_COMPILE_PTR] = (Eterm) compile_info;
 	if ((code[MI_COMPILE_SIZE_ON_HEAP] = decode_size(compile_info,
 							 compile_size)) < 0) {
 	    LoadError0(stp, "bad external term representation of compilation information");
@@ -2558,7 +2745,7 @@ freeze_code(LoaderState* stp)
      * function table in the beginning of the file.
      */
 
-    code[MI_FUNCTIONS+stp->num_functions] = (uint32) (code + stp->ci - 1);
+    code[MI_FUNCTIONS+stp->num_functions] = (Eterm) (code + stp->ci - 1);
 
     /*
      * Go through all put_strings instructions, restore the pointer to
@@ -2568,9 +2755,9 @@ freeze_code(LoaderState* stp)
 
     index = stp->put_strings;
     while (index != 0) {
-	uint32 next = code[index];
+	Uint next = code[index];
 	code[index] = BeamOpCode(op_put_string_IId);
-	code[index+2] = (uint32) (str_table + code[index+2] + code[index+1] - 1);
+	code[index+2] = (Uint) (str_table + code[index+2] + code[index+1] - 1);
 	index = next;
     }
 
@@ -2593,9 +2780,9 @@ freeze_code(LoaderState* stp)
      */
 
     for (i = 0; i < stp->num_labels; i++) {
-	uint32 this_patch;
-	uint32 next_patch;
-	uint32 value = stp->labels[i].value;
+	Uint this_patch;
+	Uint next_patch;
+	Uint value = stp->labels[i].value;
 	
 	if (value == 0 && stp->labels[i].patches != 0) {
 	    LoadError1(stp, "label %d not resolved", i);
@@ -2606,7 +2793,7 @@ freeze_code(LoaderState* stp)
 	    ASSERT(this_patch < stp->ci);
 	    next_patch = code[this_patch];
 	    ASSERT(next_patch < stp->ci);
-	    code[this_patch] = (uint32) (code + value);
+	    code[this_patch] = (Uint) (code + value);
 	    this_patch = next_patch;
 	}
     }
@@ -2617,9 +2804,9 @@ freeze_code(LoaderState* stp)
     index = stp->catches;
     catches = BEAM_CATCHES_NIL;
     while (index != 0) {
-	uint32 next = code[index];
+	Uint next = code[index];
 	code[index] = BeamOpCode(op_catch_yf);
-	catches = beam_catches_cons((uint32*)code[index+2], catches);
+	catches = beam_catches_cons((Uint*)code[index+2], catches);
 	code[index+2] = make_catch(catches);
 	index = next;
     }
@@ -2642,7 +2829,6 @@ freeze_code(LoaderState* stp)
 static void
 final_touch(LoaderState* stp)
 {
-    Module* modp;
     int i;
 
     /*
@@ -2660,17 +2846,17 @@ final_touch(LoaderState* stp)
      */
 
     for (i = 0; i < stp->num_imports; i++) {
-	uint32 mod;
-	uint32 func;
-	uint32 arity;
-	uint32 import;
-	uint32 current;
-	uint32 next;
+	Eterm mod;
+	Eterm func;
+	Uint arity;
+	Uint import;
+	Uint current;
+	Uint next;
 
 	mod = stp->import[i].module;
 	func = stp->import[i].function;
 	arity = stp->import[i].arity;
-	import = (uint32) erts_export_put(mod, func, arity);
+	import = (Uint) erts_export_put(mod, func, arity);
 	current = stp->import[i].patches;
 	while (current != 0) {
 	    ASSERT(current < stp->ci);
@@ -2681,48 +2867,42 @@ final_touch(LoaderState* stp)
     }
 
     /*
-     * Update module table.
-     */
+     * Fix all funs.
+     */ 
 
-    modp = erts_put_module(stp->module);
-    modp->code = stp->code;
-    modp->code_length = stp->loaded_size;
-    modp->catches = stp->catches;
+    if (stp->num_lambdas > 0) {
+	for (i = 0; i < stp->num_lambdas; i++) {
+	    unsigned entry_label = stp->lambdas[i].label;
+	    ErlFunEntry* fe = stp->lambdas[i].fe;
+	    Eterm* code_ptr = (Eterm *) (stp->code + stp->labels[entry_label].value);
 
-    /*
-     * Update address table (used for finding a function from a PC value).
-     */
-
-    if (num_loaded_modules == allocated_modules) {
-	allocated_modules *= 2;
-	modules = (Range *) sys_realloc(modules, 
-					allocated_modules * sizeof(Range));
-    }
-    for (i = num_loaded_modules; i > 0; i--) {
-	if (stp->code > modules[i-1].start) {
-	    break;
+	    if (fe->address[0] != 0) {
+		/*
+		 * We are hiding a pointer into older code.
+		 */
+		fe->refc--;
+	    }
+	    fe->address = code_ptr;
+#ifdef HIPE
+	    hipe_set_closure_stub(fe, stp->lambdas[i].num_free);
+#endif
 	}
-	modules[i] = modules[i-1];
     }
-    modules[i].start = stp->code;
-    modules[i].end = stp->code + stp->ci;
-    num_loaded_modules++;
-    mid_module = &modules[num_loaded_modules/2];
 }
 
 
 static int
 transform_engine(LoaderState* st)
 {
-    uint32 op;
+    Uint op;
     int ap;			/* Current argument. */
-    uint32* restart;		/* Where to restart if current match fails. */
+    Uint* restart;		/* Where to restart if current match fails. */
     GenOpArg def_vars[TE_MAX_VARS]; /* Default buffer for variables. */
     GenOpArg* var = def_vars;
     int i;			/* General index. */
-    uint32 mask;
+    Uint mask;
     GenOp* instr;
-    uint32* pc;
+    Uint* pc;
     int rval;
 
     ASSERT(gen_opc[st->genop->op].transform != -1);
@@ -2826,7 +3006,7 @@ transform_engine(LoaderState* st)
 		if (i >= st->num_imports || st->import[i].bf == NULL)
 		    goto restart;
 		if (bif_number != -1 &&
-		    bif_export[bif_number]->code[4] != (uint32) st->import[i].bf) {
+		    bif_export[bif_number]->code[4] != (Uint) st->import[i].bf) {
 		    goto restart;
 		}
 	    }
@@ -2836,8 +3016,8 @@ transform_engine(LoaderState* st)
 #if defined(TOP_is_func)
 	case TOP_is_func:
 	    {
-		uint32 mod = *pc++;
-		uint32 func = *pc++;
+		Eterm mod = *pc++;
+		Eterm func = *pc++;
 		int arity = *pc++;
 
 		ASSERT(instr->a[ap].type == TAG_u);
@@ -3002,6 +3182,11 @@ load_printf(int line, LoaderState* context, char *fmt,...)
     char* ep = error;
     Atom* ap;
 
+    if (is_non_value(context->module)) {
+	/* Suppressed by code:get_chunk/2 */
+	return;
+    }
+
     va_start(va, fmt);
     vsprintf(sbuf, fmt, va);
     va_end(va);
@@ -3051,9 +3236,9 @@ load_printf(int line, LoaderState* context, char *fmt,...)
 
 
 static int
-get_int_val(LoaderState* stp, uint32 len_code, uint32* result)
+get_int_val(LoaderState* stp, Uint len_code, Uint* result)
 {
-    uint32 count;
+    Uint count;
     int val;
 
     len_code >>= 5;
@@ -3063,7 +3248,7 @@ get_int_val(LoaderState* stp, uint32 len_code, uint32* result)
     }
     count = len_code + 2;
     if (count == 5) {
-	uint32 msb;
+	Uint msb;
 	GetByte(stp, msb);
 	if (msb == 0) {
 	    count--;
@@ -3083,18 +3268,18 @@ get_int_val(LoaderState* stp, uint32 len_code, uint32* result)
 
 
 static int
-get_erlang_integer(LoaderState* stp, uint32 len_code, uint32* result)
+get_erlang_integer(LoaderState* stp, Uint len_code, Uint* result)
 {
-    uint32 count;
+    Uint count;
     int val;
     byte default_buf[128];
     byte* bigbuf = default_buf;
     byte* s;
     int i;
     int neg = 0;
-    uint32 arity;
-    uint32* hp;
-    uint32 hindex;
+    Uint arity;
+    Eterm* hp;
+    Uint hindex;
 
     /*
      * Retrieve the size of the value in bytes.
@@ -3104,7 +3289,7 @@ get_erlang_integer(LoaderState* stp, uint32 len_code, uint32* result)
     if (len_code < 7) {
 	count = len_code + 2;
     } else {
-	uint32 tag;
+	Uint tag;
 
 	ASSERT(len_code == 7);
 	GetTagAndValue(stp, tag, len_code);
@@ -3174,7 +3359,7 @@ get_erlang_integer(LoaderState* stp, uint32 len_code, uint32* result)
     if (bigbuf[count-1] == 0) {
 	LoadError0(stp, "bignum not normalized");
     }
-    while (count % sizeof(uint32) != 0) {
+    while (count % sizeof(Eterm) != 0) {
 	bigbuf[count++] = 0;
     }
 
@@ -3213,7 +3398,7 @@ get_erlang_integer(LoaderState* stp, uint32 len_code, uint32* result)
  */
 
 static void
-id_to_string(uint32 id, char* s)
+id_to_string(Uint id, char* s)
 {
     int i;
 
@@ -3240,20 +3425,20 @@ new_genop(LoaderState* stp)
 }
 
 
-static uint32
+static Uint
 temp_alloc(LoaderState* stp, unsigned needed)
 {
-    uint32 rval = stp->temp_heap_top;
+    Uint rval = stp->temp_heap_top;
 
     needed += rval;
     while (stp->temp_heap_size < needed) {
 	stp->temp_heap_size = next_heap_size(needed, 0);
     }
     if (stp->temp_heap == NULL) {
-	stp->temp_heap = safe_alloc(stp->temp_heap_size * sizeof(uint32));
+	stp->temp_heap = safe_alloc(stp->temp_heap_size * sizeof(Eterm));
     } else {
 	stp->temp_heap = safe_realloc((char *) stp->temp_heap,
-				      stp->temp_heap_size * sizeof(uint32));
+				      stp->temp_heap_size * sizeof(Eterm));
     }
     stp->temp_heap_top = needed;
     return rval;
@@ -3274,6 +3459,49 @@ new_label(LoaderState* stp)
 }
 
 
+Eterm
+erts_module_info_0(Process* p, Eterm module)
+{
+    Eterm *hp;
+    Eterm list = NIL;
+    Eterm tup;
+
+#define BUILD_INFO(What) \
+    tup = erts_module_info_1(p, module, What); \
+    hp = HAlloc(p, 5); \
+    tup = TUPLE2(hp, What, tup); \
+    hp += 3; \
+    list = CONS(hp, tup, list)
+
+    BUILD_INFO(am_compile);
+    BUILD_INFO(am_attributes);
+    BUILD_INFO(am_imports);
+    BUILD_INFO(am_exports);
+#undef BUILD_INFO
+    return list;
+}
+
+Eterm
+erts_module_info_1(Process* p, Eterm module, Eterm what)
+{
+    if (what == am_module) {
+	return module;
+    } else if (what == am_imports) {
+	return NIL;
+    } else if (what == am_exports) {
+	return exported_from_module(p, module);
+    } else if (what == am_functions) {
+	return functions_in_module(p, module);
+    } else if (what == am_attributes) {
+	return attributes_for_module(p, module);
+    } else if (what == am_compile) {
+	return compilation_info_for_module(p, module);
+    } else if (what == am_native_addresses) {
+	return native_addresses(p, module);
+    }
+    return THE_NON_VALUE;
+}
+
 /*
  * Builds a list of all functions in the given module:
  *     [{Name, Arity},...]
@@ -3302,7 +3530,7 @@ functions_in_module(Process* p, /* Process whose heap to use. */
     }
     code = modp->code;
     for (i = code[MI_NUM_FUNCTIONS]-1; i >= 0 ; i--) {
-	Eterm* func_info = (uint32 *) code[MI_FUNCTIONS+i];
+	Eterm* func_info = (Eterm *) code[MI_FUNCTIONS+i];
 	Eterm name = func_info[3];
 	int arity = func_info[4];
 	Eterm tuple;
@@ -3317,6 +3545,56 @@ functions_in_module(Process* p, /* Process whose heap to use. */
 	hp += 3;
 	result = CONS(hp, tuple, result);
 	hp += 2;
+    }
+    return result;
+}
+
+/*
+ * Builds a list of all functions including native addresses.
+ *     [{Name,Arity,NativeAddress},...]
+ *
+ * Returns a tagged term, or 0 on error.
+ */
+
+static Eterm
+native_addresses(Process* p, Eterm mod)
+{
+    Module* modp;
+    Eterm* code;
+    int i;
+    Eterm* hp = NULL;
+    Eterm* hend = NULL;
+    Eterm result = NIL;
+
+    if (is_not_atom(mod)) {
+	return THE_NON_VALUE;
+    }
+
+    modp = erts_get_module(mod);
+    if (modp == NULL) {
+	return THE_NON_VALUE;
+    }
+    code = modp->code;
+    for (i = code[MI_NUM_FUNCTIONS]-1; i >= 0 ; i--) {
+	Eterm* func_info = (Eterm *) code[MI_FUNCTIONS+i];
+	Eterm name = func_info[3];
+	int arity = func_info[4];
+	Eterm tuple;
+
+	ASSERT(is_atom(name));
+	if (func_info[1] != 0) {
+	    Eterm addr = make_small_or_big(func_info[1], p);
+
+	    if (hp == hend) {
+		int need = 10 * 6;
+		hp = HAlloc(p, need);
+		hend = hp + need;
+	    }
+	    tuple = TUPLE3(hp, name, make_small(arity), addr);
+	    hp += 4;
+	    result = CONS(hp, tuple, result);
+	    hp += 2;
+	}
     }
     return result;
 }
@@ -3349,7 +3627,7 @@ exported_from_module(Process* p, /* Process whose heap to use. */
     }
     code = modp->code;
     for (i = code[MI_NUM_FUNCTIONS]-1; i >= 0 ; i--) {
-	Eterm* func_info = (uint32 *) code[MI_FUNCTIONS+i];
+	Eterm* func_info = (Eterm *) code[MI_FUNCTIONS+i];
 	Eterm name = func_info[3];
 	int arity = func_info[4];
 	Eterm tuple;
@@ -3474,9 +3752,9 @@ find_function_from_pc(Eterm* pc)
 	} else if (pc > mid->end) {
 	    low = mid + 1;
 	} else {
-	    uint32** low1 = (uint32 **) (mid->start + MI_FUNCTIONS);
-	    uint32** high1 = low1 + mid->start[MI_NUM_FUNCTIONS];
-	    uint32** mid1;
+	    Eterm** low1 = (Eterm **) (mid->start + MI_FUNCTIONS);
+	    Eterm** high1 = low1 + mid->start[MI_NUM_FUNCTIONS];
+	    Eterm** mid1;
 
 	    while (low1 < high1) {
 		mid1 = low1 + (high1-low1) / 2;
@@ -3495,3 +3773,549 @@ find_function_from_pc(Eterm* pc)
     }
     return NULL;
 }
+
+/*
+ * Read a specific chunk from a Beam binary.
+ */
+
+Eterm
+code_get_chunk_2(Process* p, Eterm Bin, Eterm Chunk)
+{
+    LoaderState state;
+    Uint chunk = 0;
+    ErlSubBin* sb;
+    Uint offset;
+    byte* start;
+    int i;
+
+    if (is_not_binary(Bin)) {
+	goto error;
+    }
+    state.module = THE_NON_VALUE; /* Suppress diagnostiscs */
+    state.file_name = "IFF header for Beam file";
+    GET_BINARY_BYTES(Bin, start);
+    state.file_p = start;
+    state.file_left = binary_size(Bin);
+    for (i = 0; i < 4; i++) {
+	Eterm* chunkp;
+	Eterm num;
+	if (is_not_list(Chunk)) {
+	    goto error;
+	}
+	chunkp = list_val(Chunk);
+	num = CAR(chunkp);
+	Chunk = CDR(chunkp);
+	if (!is_byte(num)) {
+	    goto error;
+	}
+	chunk = chunk << 8 | unsigned_val(num);
+    }
+    if (is_not_nil(Chunk)) {
+	goto error;
+    }
+
+    if (!scan_iff_file(&state, &chunk, 1, 1)) {
+	return am_undefined;
+    }
+    sb = (ErlSubBin *) HAlloc(p, ERL_SUB_BIN_SIZE);
+    GET_REAL_BIN(Bin, sb->orig, offset);
+    sb->thing_word = HEADER_SUB_BIN;
+    sb->size = state.chunks[0].size;
+    sb->offs = offset + (state.chunks[0].start-start);
+    return make_binary(sb);
+
+ error:
+    BIF_ERROR(p, BADARG);
+}
+
+/*
+ * Calculate the MD5 for a module.
+ */
+  
+Eterm
+code_module_md5_1(Process* p, Eterm Bin)
+{
+    LoaderState state;
+    byte* start;
+
+    if (is_not_binary(Bin)) {
+	BIF_ERROR(p, BADARG);
+    }
+    state.module = THE_NON_VALUE; /* Suppress diagnostiscs */
+    state.file_name = "IFF header for Beam file";
+    GET_BINARY_BYTES(Bin, start);
+    state.file_p = start;
+    state.file_left = binary_size(Bin);
+
+    if (!scan_iff_file(&state, chunk_types, NUM_CHUNK_TYPES, NUM_MANDATORY)) {
+	return am_undefined;
+    }
+    return new_binary(p, state.mod_md5, sizeof(state.mod_md5));
+}
+
+#define WORDS_PER_FUNCTION 6
+
+static Eterm*
+make_stub(Eterm* fp, Eterm mod, Eterm func, Uint arity, Uint native, Eterm OpCode)
+{
+    fp[0] = (Eterm) BeamOp(op_i_func_info_IaaI);
+    fp[1] = native;
+    fp[2] = mod;
+    fp[3] = func;
+    fp[4] = arity;
+    fp[5] = OpCode;
+    return fp + WORDS_PER_FUNCTION;
+}
+
+static void
+stub_init_state(LoaderState* stp, Eterm Bin)
+{
+    byte* start;
+
+    init_state(stp);
+    stp->file_name = "IFF header for Beam file";
+    GET_BINARY_BYTES(Bin, start);
+    stp->file_p = start;
+    stp->file_left = binary_size(Bin);
+}
+
+static byte*
+stub_copy_info(LoaderState* stp,
+	       int chunk,	/* Chunk: ATTR_CHUNK or COMPILE_CHUNK */
+	       byte* info,	/* Where to store info. */
+	       Eterm* ptr_word,	/* Where to store pointer into info. */
+	       Eterm* size_word) /* Where to store size of info. */
+{
+    Uint size = stp->chunks[chunk].size;
+    if (size != 0) {
+	memcpy(info, stp->chunks[chunk].start, size);
+	*ptr_word = (Eterm) info;
+	if ((*size_word = decode_size(info, size)) < 0) {
+	    return 0;
+	}
+    }
+    return info + size;
+}
+
+static int
+stub_read_export_table(LoaderState* stp)
+{
+    int i;
+
+    GetInt(stp, 4, stp->num_exps);
+    if (stp->num_exps > stp->num_functions) {
+	LoadError2(stp, "%d functions exported; only %d functions defined",
+		   stp->num_exps, stp->num_functions);
+    }
+    stp->export = (ExportEntry *) safe_alloc(stp->num_exps * sizeof(ExportEntry));
+
+    for (i = 0; i < stp->num_exps; i++) {
+	Uint n;
+
+	GetInt(stp, 4, n);
+	GetAtom(stp, n, stp->export[i].function);
+	GetInt(stp, 4, n);
+	if (n > MAX_REG) {
+	    LoadError2(stp, "export table entry %d: absurdly high arity %d", i, n);
+	}
+	stp->export[i].arity = n;
+	GetInt(stp, 4, n);	/* Ignore label */
+    }
+    return 1;
+
+ load_error:
+    return 0;
+}
+
+static void
+stub_final_touch(LoaderState* stp, Eterm* fp)
+{
+    int i;
+    int n = stp->num_exps;
+    Eterm function = fp[3];
+    int arity = fp[4];
+#ifdef HIPE
+    Lambda* lp;
+#endif
+
+    /*
+     * Test if the function should be exported.
+     */
+
+    for (i = 0; i < n; i++) {
+	if (stp->export[i].function == function && stp->export[i].arity == arity) {
+	    Export* ep = erts_export_put(fp[2], function, arity);
+	    ep->address = fp+5;
+	    return;
+	}
+    }
+
+    /*
+     * Must be a plain local function or a lambda local function.
+     * Search the lambda table to find out which.
+     */
+    
+#ifdef HIPE
+    n = stp->num_lambdas;
+    for (i = 0, lp = stp->lambdas; i < n; i++, lp++) {
+        ErlFunEntry* fe = stp->lambdas[i].fe;
+	if (lp->function == function && lp->arity == arity) {
+	    fp[5] = (Eterm) BeamOpCode(op_hipe_trap_call_closure);
+            fe->address = &(fp[5]);
+	}
+    }
+#endif
+    return;
+}
+
+
+/* Takes an erlang list of addresses:
+   [{Adr, Patchtyppe} | Addresses]
+   and the address of a fun_entry.
+*/
+int 
+patch(Eterm Addresses, Uint fe) 
+ {
+#ifdef HIPE
+  Eterm* listp;
+  Eterm tuple;
+  Eterm* tp;
+  Eterm  patchtype;
+  Uint AddressToPatch;
+
+  while (!is_nil(Addresses)) {
+    listp = list_val(Addresses);
+
+    tuple = CAR(listp);
+    if (is_not_tuple(tuple)) {
+      return 0; /* Signal error */
+    }
+
+    tp = tuple_val(tuple);
+    if (tp[0] != make_arityval(2)) {
+      return 0; /* Signal error */
+    }
+    
+    if(term_to_Uint(tp[1], &AddressToPatch) == 0) {
+      return 0; /* Signal error */
+    }
+
+    patchtype = tp[2];    
+    if (is_not_atom(patchtype)) {
+      return 0; /* Signal error */
+    }
+    
+    hipe_patch_address((Uint *)AddressToPatch, patchtype, fe);
+
+    Addresses = CDR(listp);
+
+
+  }
+
+#endif
+  return 1;
+}
+
+
+int
+patch_funentries(Eterm Patchlist) 
+ {
+#ifdef HIPE   
+  while (!is_nil(Patchlist)) {
+    Eterm Info;
+    Eterm MFA;
+    Eterm Addresses;
+    Eterm tuple;
+    Eterm Mod;
+    Eterm* listp;
+    Eterm* tp;
+    ErlFunEntry* fe;
+    Uint index;
+    Uint uniq;
+    Uint native_address;
+     
+    listp = list_val(Patchlist);
+    tuple = CAR(listp);
+    Patchlist = CDR(listp);
+
+    if (is_not_tuple(tuple)) {
+      return 0; /* Signal error */
+    }
+
+    tp = tuple_val(tuple);
+    if (tp[0] != make_arityval(3)) {
+      return 0; /* Signal error */
+    }
+    
+    Info = tp[1];
+    if (is_not_tuple(Info)) {
+      return 0; /* Signal error */
+    }
+    Addresses = tp[2];    
+     if (is_not_list(Addresses)) {
+       return 0; /* Signal error */
+    }
+    
+    if(term_to_Uint(tp[3], &native_address) == 0) {
+      return 0; /* Signal error */
+    }
+
+
+
+    tp = tuple_val(Info);
+    if (tp[0] != make_arityval(3)) {
+      return 0; /* Signal error */
+    }
+    MFA = tp[1];
+    if (is_not_tuple(MFA)) {
+      return 0; /* Signal error */
+    }
+    if(term_to_Uint(tp[2], &uniq) == 0){
+      return 0; /* Signal error */
+    }
+    if(term_to_Uint(tp[3], &index) == 0) {
+      return 0; /* Signal error */
+    }
+
+
+
+
+    tp = tuple_val(MFA);
+    if (tp[0] != make_arityval(3)) {
+      return 0; /* Signal error */
+     }
+    Mod = tp[1];
+    if (is_not_atom(Mod)) {
+      return 0; /* Signal error */
+    }
+      
+  
+
+    fe = erts_get_fun_entry(Mod, uniq, index);
+    fe->native_address = (Uint *)native_address;
+
+
+    if (!patch(Addresses, (Uint) fe))
+      return 0;
+
+  }
+#endif
+  return 1; /* Signal that all went well */
+}
+
+
+/*
+ * Do a dummy load of a module. No threaded code will be loaded.
+ * Used for loading native code.
+ * Will also patch all referenses to fun_entries to point to 
+ * the new fun_entries created.
+ */
+
+Eterm
+code_make_stub_module_3(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
+{
+    LoaderState state;
+    Eterm Funcs;
+    Eterm Patchlist;
+    Eterm* tp;
+    Eterm* code = NULL;
+    Eterm* ptrs;
+    Eterm* fp;
+    byte* info;
+    Uint ci;
+    int n;
+    int code_size;
+    int rval;
+    int i;
+
+    if (is_not_atom(Mod)) {
+	goto error;
+    }
+    if (is_not_tuple(Info)) {
+	goto error;
+    }
+    tp = tuple_val(Info);
+    if (tp[0] != make_arityval(2)) {
+      goto error;
+    }
+    Funcs = tp[1];
+    Patchlist = tp[2];        
+   
+    if ((n = list_length(Funcs)) < 0) {
+	goto error;
+    }
+    n += 2;			/* module_info/0 and module_info/1 */
+
+    /*
+     * Scan the Beam binary and read the interesting sections.
+     */
+
+    stub_init_state(&state, Beam);
+    state.module = Mod;
+    state.group_leader = p->group_leader;
+    state.num_functions = n;
+    if (!scan_iff_file(&state, chunk_types, NUM_CHUNK_TYPES, NUM_MANDATORY)) {
+	goto error;
+    }
+    define_file(&state, "code chunk header", CODE_CHUNK);
+    if (!read_code_header(&state)) {
+	goto error;
+    }
+    define_file(&state, "atom table", ATOM_CHUNK);
+    if (!load_atom_table(&state)) {
+	goto error;
+    }
+    define_file(&state, "export table", EXP_CHUNK);
+    if (!stub_read_export_table(&state)) {
+	goto error;
+    }
+    
+    if (state.chunks[LAMBDA_CHUNK].size > 0) {
+	define_file(&state, "lambda (fun) table", LAMBDA_CHUNK);
+	if (!read_lambda_table(&state)) {
+	    goto error;
+	}
+    }
+
+    /*
+     * Allocate memory for the stub module.
+     */
+
+    code_size = ((WORDS_PER_FUNCTION+1)*n + MI_FUNCTIONS + 2) * sizeof(Eterm);
+    code_size += state.chunks[ATTR_CHUNK].size;
+    code_size += state.chunks[COMPILE_CHUNK].size;
+    if ((code = sys_alloc(code_size)) == NULL) {
+	goto error;
+    }
+
+    /*
+     * Initialize code area.
+     */
+
+    code[MI_NUM_FUNCTIONS] = n;
+    code[MI_ATTR_PTR] = 0;
+    code[MI_ATTR_SIZE_ON_HEAP] = 0;
+    code[MI_COMPILE_PTR] = 0;
+    code[MI_COMPILE_SIZE_ON_HEAP] = 0;
+    code[MI_NUM_BREAKPOINTS] = 0;
+    ci = MI_FUNCTIONS + n + 1;
+
+    /*
+     * Make stubs for all functions.
+     */
+
+    ptrs = code + MI_FUNCTIONS;
+    fp = code + ci;
+    for (i = 0; i < n; i++) {
+	Eterm* listp;
+	Eterm tuple;
+	Eterm* tp;
+	Eterm func;
+	Eterm arity_term;
+	Uint arity;
+	Uint native_address;
+	Eterm op;
+
+	if (is_nil(Funcs)) {
+	    break;
+	}
+	listp = list_val(Funcs);
+	tuple = CAR(listp);
+	Funcs = CDR(listp);
+
+	/* Error checking */
+	if (is_not_tuple(tuple)) {
+	    goto error;
+	}
+	tp = tuple_val(tuple);
+	if (tp[0] != make_arityval(3)) {
+	    goto error;
+	}
+	func = tp[1];
+	arity_term = tp[2];
+	if (is_not_atom(func) || is_not_small(arity_term)) {
+	    goto error;
+	}
+	arity = signed_val(arity_term);
+	if (arity < 0) {
+	    goto error;
+	}
+	if (term_to_Uint(tp[3], &native_address) == 0) {
+	    goto error;
+	}
+
+	/*
+	 * Set the pointer and make the stub. Put a return instruction
+	 * as the body until we know what kind of trap we should put there.
+	 */
+	ptrs[i] = (Eterm) fp;
+#ifdef HIPE
+	op = (Eterm) BeamOpCode(op_hipe_trap_call); /* Might be changed later. */
+#else
+	op = (Eterm) BeamOpCode(op_move_return_nr);
+#endif
+	fp = make_stub(fp, Mod, func, arity, (Uint)native_address, op);
+    }
+
+    /*
+     * Add the module_info/0,1 functions.
+     */
+
+    ptrs[i++] = (Eterm) fp;
+    fp = make_stub(fp, Mod, am_module_info, 0, 0, (Eterm) BeamOp(op_i_module_info_0));
+    ptrs[i++] = (Eterm) fp;
+    fp = make_stub(fp, Mod, am_module_info, 1, 0, (Eterm) BeamOp(op_i_module_info_1));
+
+    /*
+     * Insert the last pointer and the int_code_end instruction.
+     */
+
+    ptrs[i] = (Eterm) fp;
+    *fp++ = (Eterm) BeamOp(op_int_code_end);
+
+    /*
+     * Copy attributes and compilation information.
+     */
+
+    info = (byte *) fp;
+    info = stub_copy_info(&state, ATTR_CHUNK, info,
+			  code+MI_ATTR_PTR, code+MI_ATTR_SIZE_ON_HEAP);
+    if (info == NULL) {
+	goto error;
+    }
+    info = stub_copy_info(&state, COMPILE_CHUNK, info,
+			  code+MI_COMPILE_PTR, code+MI_COMPILE_SIZE_ON_HEAP);
+    if (info == NULL) {
+	goto error;
+    }
+
+    /*
+     * Insert the module in the module table.
+     */
+
+    rval = insert_new_code(p->group_leader, Mod, code, code_size, BEAM_CATCHES_NIL);
+    if (rval < 0) {
+	goto error;
+    }
+
+    /*
+     * Export all stub functions and insert the correct type of HiPE trap.
+     */
+
+    fp = code + ci;
+    for (i = 0; i < n; i++) {
+	stub_final_touch(&state, fp);
+	fp += WORDS_PER_FUNCTION;
+    }
+
+    if (patch_funentries(Patchlist))
+      return Mod;
+
+ error:
+    if (code != NULL) {
+	sys_free(code);
+    }
+    BIF_ERROR(p, BADARG);
+}
+
+#undef WORDS_PER_FUNCTION

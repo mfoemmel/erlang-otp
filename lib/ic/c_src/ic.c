@@ -227,3 +227,150 @@ int ic_wstrcmp(CORBA_wchar * ws1, CORBA_wchar * ws2) {
   }
 }
 
+
+/* Generic call information extractor */
+int ___call_info___(CORBA_Object obj, CORBA_Environment *env) {
+    
+    char gencall_atom[10];
+    int error = 0;
+    int rec_version = 0;
+    env->_iin = 0;
+    env->_received = 0;
+    
+    memset(gencall_atom, 0, 10);
+    ei_decode_version(env->_inbuf, &env->_iin, &rec_version);
+    ei_decode_tuple_header(env->_inbuf, &env->_iin, &env->_received);
+    ei_decode_atom(env->_inbuf, &env->_iin, gencall_atom);
+    
+    if (strcmp(gencall_atom, "$gen_cast") == 0) {
+	
+	if ((error = ei_decode_atom(env->_inbuf, &env->_iin, env->_operation)) < 0) {
+	    ei_decode_tuple_header(env->_inbuf, &env->_iin, &env->_received);
+	    if ((error = ei_decode_atom(env->_inbuf, &env->_iin, env->_operation)) < 0) { 
+		CORBA_exc_set(env, 
+			      CORBA_SYSTEM_EXCEPTION, 
+			      BAD_OPERATION, 
+			      "Bad Message, cannot extract operation");
+		return error;
+	    }
+	    env->_received -= 1;
+	} else
+	    env->_received -= 2;
+	
+	return 0;
+    }
+    
+    if (strcmp(gencall_atom, "$gen_call") == 0) {
+	
+	ei_decode_tuple_header(env->_inbuf, &env->_iin, &env->_received);
+	
+	if ((error = ei_decode_pid(env->_inbuf, &env->_iin, &env->_caller)) < 0) {
+	    CORBA_exc_set(env, 
+			  CORBA_SYSTEM_EXCEPTION, 
+			  MARSHAL, 
+			  "Bad Message, bad caller identity");
+	    return error;
+	}
+	
+	if ((error = ei_decode_ref(env->_inbuf, &env->_iin, &env->_unique)) < 0) {
+	    CORBA_exc_set(env, 
+			  CORBA_SYSTEM_EXCEPTION, 
+			  MARSHAL, 
+			  "Bad Message, bad message reference");
+	    return error;
+	}
+	
+	if ((error = ei_decode_atom(env->_inbuf, &env->_iin, env->_operation)) < 0) {
+	    
+	    ei_decode_tuple_header(env->_inbuf, &env->_iin, &env->_received);
+	    
+	    if ((error = ei_decode_atom(env->_inbuf, &env->_iin, env->_operation)) < 0) { 
+		CORBA_exc_set(env, 
+			      CORBA_SYSTEM_EXCEPTION, 
+			      BAD_OPERATION, 
+			      "Bad Message, cannot extract operation");
+		return error;
+	    }
+	    
+	    env->_received -= 1;
+	    return 0;	  
+	}
+	else {
+	    env->_received -= 2;
+	    return 0;
+	}
+    }
+    
+    CORBA_exc_set(env, 
+		  CORBA_SYSTEM_EXCEPTION, 
+		  MARSHAL, 
+		  "Bad message, neither cast nor call");
+    return -1;
+}
+
+
+/* Generic switch */
+int ___switch___(CORBA_Object obj, CORBA_Environment *env, ___map___ *map) {
+
+    /* Setting local variables */
+    int status = 0;
+    int index = 0;
+    int length = map->length;
+    
+    /* Initiating exception indicator */
+    env->_major = CORBA_NO_EXCEPTION;
+    
+    /* Call switch */
+    if ((status = ___call_info___(obj, env)) >= 0) {
+	
+	for (index=0; index<length; index++)
+	    if(strcmp(map->operations[index].name,env->_operation)==0) 
+		return (int)map->operations[index].function(obj, env);
+	
+	
+	/* Bad call */
+	CORBA_exc_set(env, CORBA_SYSTEM_EXCEPTION, BAD_OPERATION, "Invalid operation");
+	return -1;
+    }
+    
+    /* Exit */
+    return status;
+}
+
+
+
+
+___map___* ___merge___(___map___ * maps, int size) { 
+
+    if ((maps==NULL) || (size<=0))
+	return NULL;
+    else {
+	int malloc_size = 0;
+	int length = 0;
+	int i = 0;
+	int j = 0;
+	___map___* merged = NULL;
+	
+	for (i=0; i<size; i++)
+	    length+=(maps[i].length);
+	
+	/* Calculate malloc size */
+	malloc_size = (sizeof(___map___)+(length*sizeof(___operation___)));
+	malloc_size = (malloc_size+sizeof(double)-1)&~(sizeof(double)-1);
+    
+	merged = (___map___ *)malloc(malloc_size);
+	if (merged == NULL)
+	    return NULL;
+
+	merged->length = length;
+	merged->operations=(void*)(merged+sizeof(___map___));
+	
+	for (i=0; i<size; i++) 	
+	    for(j=0; j<maps[i].length; j++)
+		merged->operations[i+j]=maps[i].operations[j];
+	    	
+	return merged;
+    }
+}
+
+

@@ -65,16 +65,15 @@ reg_gen(G, N, X) ->
 	    
             %% Write call function that checks if included
             %% modules and interfaces are created.
-	    emit(Fd, "    include_reg_test(~s),\n",[?IFRID(G)]),
+	    emit(Fd, "    register_tests(~s),\n",[?IFRID(G)]),
 	    
 	    reg2(G, S, N, Var, X),
 	    nl(Fd),
 	    emit(Fd, "    ok.\n"),
 
-            %% Write function implementation that checks 
-            %% existance of included modules and interfaces.
-	    emit(Fd, "~s",[check_include_regs(G)]),
-
+	    %% Write general register test function.
+	    register_tests(Fd,G),
+	    
 	    %% Write functopn that registers modules only if  
             %% they are not registered.
 	    register_if_unregistered(Fd);
@@ -175,16 +174,42 @@ reg2_list(G, S, N, C, V, {CFN,Status}, [X | Xs]) ->
 
 
 
+
+
+%% General registration tests
+register_tests(Fd,G) ->
+    IfrId = ?IFRID(G),
+    emit(Fd,"\n\n%% General IFR registration checks.\n", []),
+    emit(Fd,"register_tests(~s)->\n",[IfrId]),
+    emit(Fd,"  re_register_test(~s),\n",[IfrId]),
+    emit(Fd,"  include_reg_test(~s).\n\n",[IfrId]),
+
+    emit(Fd,"\n%% IFR type Re-registration checks.\n", []),
+    case ic_pragma:fetchRandomLocalType(G) of
+	{ok,TypeId} ->
+	    emit(Fd,"re_register_test(~s)->\n",[IfrId]),
+	    emit(Fd,"  case orber_ifr:'Repository_lookup_id'(~s,~p) of\n", [IfrId,TypeId]),
+	    emit(Fd,"    []  ->\n      true;\n",[]),
+	    emit(Fd,"    _ ->\n      exit({allready_registered,~p})\n end.\n\n", [TypeId]);
+	false ->
+	    emit(Fd,"re_register_test(_)-> true.\n",[])
+    end,
+
+    emit(Fd,"~s",[check_include_regs(G)]).
+
+
+
+
 %% This function produces code for existance check over
 %% top level included modules and interfaces
 check_include_regs(G) ->
     IfrId = ?IFRID(G),
     case ic_pragma:get_incl_refs(G) of
 	none ->
-	    io_lib:format("~n%% No included idl-files detected.~n", []) ++
+	    io_lib:format("\n%% No included idl-files detected.\n", []) ++
 	    io_lib:format("include_reg_test(~s) -> true.\n",[IfrId]);
 	IMs ->
-	    io_lib:format("~n%% IFR registration checks for included idl files.~n", []) ++
+	    io_lib:format("\n%% IFR registration checks for included idl files.\n", []) ++
 	    io_lib:format("include_reg_test(~s) ->\n",[IfrId]) ++
 		check_incl_refs(G,IfrId,IMs)
     end.

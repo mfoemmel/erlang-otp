@@ -435,7 +435,7 @@ insert_op(Tid, _, {op, change_table_copy_type, N, FromS, ToS, TabDef}, InPlace, 
 	true ->
 	    ignore
     end,
-    if
+    if  
 	N == node() ->
 	    Dmp  = mnesia_lib:tab2dmp(Tab),
 	    Dat  = mnesia_lib:tab2dat(Tab),
@@ -665,9 +665,13 @@ insert_op(Tid, _, {op, del_snmp, TabDef}, InPlace, InitBy) ->
     if
 	InitBy /= startup,
 	Storage /= unknown ->
-	    Stab = val({Tab, {index, snmp}}),
-	    mnesia_snmp_hook:delete_table(Tab, Stab),
-	    mnesia_lib:unset({Tab, {index, snmp}});
+	    case ?catch_val({Tab, {index, snmp}}) of
+		{'EXIT', _} -> 
+		    ignore;
+		Stab -> 
+		    mnesia_snmp_hook:delete_table(Tab, Stab),
+		    mnesia_lib:unset({Tab, {index, snmp}})
+	    end;
 	true ->
 	    ignore
     end,
@@ -922,26 +926,8 @@ raw_named_dump_table(Tab, Ftype) ->
 	    exit({has_no_disc, node()})
     end.
 
-%raw_dump_table(DetsRef, EtsRef) ->  FIX R8
-%    ok = ets:foldl(fun(Rec, Acc) -> ok = dets:insert(DetsRef, Rec) end, ok, EtsRef).
-
 raw_dump_table(DetsRef, EtsRef) ->
-    raw_dump_table(DetsRef, EtsRef, 0).
-
-raw_dump_table(DetsRef, EtsRef, Slot) ->
-    case ?ets_slot(EtsRef, Slot) of
-	'$end_of_table' ->
-	    ok;
-	Recs ->
-	    dets_insert(Recs, DetsRef),
-	    raw_dump_table(DetsRef, EtsRef, Slot + 1)
-    end.
-
-dets_insert([Rec | Recs], DetsRef) ->
-    ok = dets:insert(DetsRef, Rec),
-    dets_insert(Recs, DetsRef);
-dets_insert([], DetsRef) ->
-    ok.
+    dets:from_ets(DetsRef, EtsRef).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Load regulator

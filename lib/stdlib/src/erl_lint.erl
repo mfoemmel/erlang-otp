@@ -26,10 +26,7 @@
 -export([is_pattern_expr/1,is_guard_test/1,is_guard_expr/1]).
 -export([bool_option/4,value_option/3,value_option/7]).
 
--import(lists, [member/2,reverse/1,sort/1,
-		map/2,foldl/3,foldr/3,mapfoldl/3,filter/2,all/2]).
--import(ordsets, [list_to_set/1,is_element/2,add_element/2,set_to_list/1,
-		  union/2,intersection/2,subtract/2]).
+-import(lists, [member/2,map/2,foldl/3,foldr/3,mapfoldl/3,all/2]).
 
 %% bool_option(OnOpt, OffOpt, Default, Options) -> true | false.
 %% value_option(Flag, Default, Options) -> Value.
@@ -74,15 +71,18 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 	       exports=[],			%Exports
 	       imports=[],			%Imports
 	       compile=[],			%Compile flags
-	       records=od_new(),		%Record definitions
+	       records=orddict:new(),		%Record definitions
 	       defined=[],			%Defined fuctions
-	       called=od_new(),			%Called functions
-	       calls=od_new(),			%Who calls who
+	       called=orddict:new(),		%Called functions
+	       calls=orddict:new(),		%Who calls who
 	       imported=[],			%Actually imported functions
 	       func=[],				%Current function
 	       warn_format=0,			%Warn format calls
+	       warn_shadow=true,		%     shadowed variables
+	       warn_export=false,		%     all exported variables
 	       warn_unused=false,		%     unused variables
 	       warn_import=false,		%     unused imports
+	       warn_var_export=false,		%     *all* uses of exports
 	       errors=[],			%Current errors
 	       warnings=[]			%Current warnings
 	      }).
@@ -102,6 +102,9 @@ format_error(invalid_record) ->
 
 format_error({attribute,A}) ->
     io_lib:format("attribute '~w' after function definitions", [A]);
+format_error({redefine_import,{bif,{F,A},M}}) ->
+    io_lib:format("function ~w/~w already auto-imported from ~w",
+		  [F,A,M]);
 format_error({redefine_import,{{F,A},M}}) ->
     io_lib:format("function ~w/~w already imported from ~w", [F,A,M]);
 
@@ -126,6 +129,8 @@ format_error({obsolete, {M1, F1, A1}, {M2, F2, A2}}) ->
     io_lib:format("~p:~p/~p obsolete; use ~p:~p/~p", [M1, F1, A1, M2, F2, A2]);
 format_error({obsolete, {M1, F1, A1}, String}) when list(String) ->
     io_lib:format("~p:~p/~p: ~s", [M1, F1, A1, String]);
+format_error({reserved_for_future,K}) ->
+    io_lib:format("atom ~w: future reserved keyword - rename or quote", [K]);
 
 format_error(illegal_pattern) -> "illegal pattern";
 format_error(illegal_expr) -> "illegal expression";
@@ -141,6 +146,10 @@ format_error({undefined_field,T,F}) ->
     io_lib:format("field ~w undefined in record ~w", [F,T]);
 format_error(illegal_record_info) ->
     "illegal record info";
+format_error({field_name_is_variable,T,F}) ->
+    io_lib:format("field ~w is not an atom or _ in record ~w", [F,T]);
+format_error({wildcard_in_update,T}) ->
+    io_lib:format("meaningless use of _ in update of record ~w", [T]);
 
 format_error({unbound_var,V}) ->
     io_lib:format("variable ~w is unbound", [V]);
@@ -155,8 +164,8 @@ format_error({unused_var, V}) ->
 
 format_error({undefined_bittype,Type}) ->
     io_lib:format("bit type ~w undefined", [Type]);
-format_error({bittype_mismatch,T1,T2}) ->
-    io_lib:format("bit type mismatch between ~p and ~p", [T1,T2]);
+format_error({bittype_mismatch,T1,T2,What}) ->
+    io_lib:format("bit type mismatch (~s) between ~p and ~p", [What,T1,T2]);
 format_error(illegal_bitsize) ->
     "illegal bit size";
 format_error({bad_bitsize,Type}) ->
@@ -169,12 +178,19 @@ format_error({format_error,{Fmt,Args}}) ->
 
 format_error({mnemosyne,What}) ->
     "mnemosyne " ++ What ++ ", missing transformation";
-format_error({undefined_behaviour,Behaviour}) ->
-    io_lib:format("behaviour ~w undefined", [Behaviour]);
+
 format_error({several_behaviours,Behaviours}) ->
     io_lib:format("several behaviours defined - ~p", [Behaviours]);
 format_error({undefined_behaviour_func, {Func, Arity}}) ->
-    io_lib:format("undefined call-back function ~w/~w", [Func, Arity]).
+    io_lib:format("undefined call-back function ~w/~w", [Func, Arity]);
+format_error({undefined_behaviour,Behaviour}) ->
+    io_lib:format("behaviour ~w undefined", [Behaviour]);
+format_error({undefined_behaviour_callbacks,Behaviour}) ->
+    io_lib:format("behaviour ~w callback functions are undefined",
+		  [Behaviour]);
+format_error({ill_defined_behaviour_callbacks,Behaviour}) ->
+    io_lib:format("behaviour ~w callback functions erroneously defined",
+		  [Behaviour]).
 
 %% module([Form]) ->
 %% module([Form], FileName) ->
@@ -208,20 +224,28 @@ start(File) ->
 
 start(File, Opts) ->
     #lint{state=start,
-	  exports=list_to_set([{module_info,0},{module_info,1}]),
+	  exports=ordsets:list_to_set([{module_info,0},
+				       {module_info,1}]),
 	  compile=Opts,
-	  defined=list_to_set([{module_info,0},
-			       {module_info,1},
-			       {record_info,2}]),
+	  defined=ordsets:list_to_set([{module_info,0},
+				       {module_info,1},
+				       {record_info,2}]),
 	  %% Must hang record_info on default export so it will be called.
-	  called=od_append({record_info,2}, 0, od_new()),
-	  calls=od_append({module_info,1}, {record_info,2}, od_new()),
-	  warn_format=value_option(warn_format, 0, warn_format, 3,
-				   nowarn_format, 0, Opts),
+	  called=orddict:append({record_info,2}, 0, orddict:new()),
+	  calls=orddict:append({module_info,1}, {record_info,2},
+			       orddict:new()),
+ 	  warn_format=value_option(warn_format, 1, warn_format, 1,
+  				   nowarn_format, 0, Opts),
+	  warn_shadow = bool_option(warn_shadow_vars, nowarn_shadow_vars,
+				    true, Opts),
+	  warn_export = bool_option(warn_export_vars, nowarn_export_vars,
+				    false, Opts),
 	  warn_unused = bool_option(warn_unused_vars, nowarn_unused_vars,
 				    false, Opts),
 	  warn_import = bool_option(warn_unused_import, nowarn_unused_import,
 				    false, Opts),
+	  warn_var_export = bool_option(warn_var_export, nowarn_var_export,
+					false, Opts),
 	  errors=[{file,File}],
 	  warnings=[{file,File}]
 	 }.
@@ -345,15 +369,17 @@ eof(Line, St0) ->
 		  %% Generate warnings.
 		  Used = reached_functions(St1#lint.exports, St1#lint.calls),
 		  func_warning(Line, unused_function,
-			       subtract(St1#lint.defined, Used), St1)
+			       ordsets:subtract(St1#lint.defined, Used),
+			       St1)
 	  end,
     %% Check for unused imports.
     St3 = func_warning(St2#lint.warn_import, Line, unused_import,
-		       subtract(St2#lint.imports, St2#lint.imported), St2),
+		       ordsets:subtract(St2#lint.imports, St2#lint.imported),
+		       St2),
     %% Check for undefined functions.
-    Undef = foldl(fun (NA, Called) -> od_erase(NA, Called) end,
+    Undef = foldl(fun (NA, Called) -> orddict:erase(NA, Called) end,
 		  St3#lint.called, St3#lint.defined),
-    od_fold(fun (NA, Ls, St) ->
+    orddict:fold(fun (NA, Ls, St) ->
 		    foldl(fun (L, Sta) ->
 				  add_error(L, {undefined_function,NA}, Sta)
 			  end, St, Ls)
@@ -372,18 +398,46 @@ behaviour_check(Bs, St) ->
     Mult = length(Bs) > 1,			%More than one behaviour?
     foldl(fun ({Line,B}, St0) ->
 		  St1 = add_warning(Mult, Line, {several_behaviours,B}, St0),
-		  case member(B, otp_internal:behaviour_info()) of
-		      true ->
-			  Bfs = otp_internal:behaviour_info(B),
-			  Missing = subtract(list_to_set(Bfs),
-					     St1#lint.exports),
-			  func_warning(Line, undefined_behaviour_func,
-				       Missing, St1);
-		      false ->
-			  func_warning(Line, undefined_behaviour,
-				       [B], St1)
-		  end
+		  {Bfs, St2} = behaviour_callbacks(Line, B, St1),
+		  Missing = ordsets:subtract(ordsets:list_to_set(Bfs),
+					     St2#lint.exports),
+		  func_warning(Line, undefined_behaviour_func,
+			       Missing, St2)
 	  end, St, Bs).
+
+behaviour_callbacks(Line, B, St0) ->
+    case catch B:behaviour_info(callbacks) of
+	{'EXIT', Reason} ->
+	    St1 = add_warning(Line, {undefined_behaviour,B}, St0),
+	    {[], St1};
+	Funcs when list(Funcs) ->
+	    All = lists:all(fun({FuncName, Arity}) ->
+				    if
+					atom(FuncName), integer(Arity) ->
+					    true;
+					true ->
+					    false
+				    end;
+			       (Other) ->
+				    false
+			    end,
+			    Funcs),
+	    if
+		All==true ->
+		    {Funcs, St0};
+		true ->
+		    St1 = add_warning(Line,
+				      {ill_defined_behaviour_callbacks,B},
+				      St0),
+		    {[], St1}
+	    end;
+	undefined ->
+	    St1 = add_warning(Line, {undefined_behaviour_callbacks,B}, St0),
+	    {[], St1};
+	Other ->
+	    St1 = add_warning(Line, {ill_defined_behaviour_callbacks,B}, St0),
+	    {[], St1}
+    end.
 
 %% asm(Line, Function, State) -> State'
 
@@ -392,17 +446,17 @@ asm(Line, {function,Name,Arity,Code}, St) ->
 asm(Line, Func, St) ->
     add_error(Line, asm, St).
 
-%% For storing the import list we use our own version of the module dict.
-%% This is/was the same as the original but we must be sure of the format
-%% (sorted list of pairs) so we can do ordset operations on them (see the
-%% the function eof/2. We know an empty set is [].
+%% For storing the import list we use the orddict module. 
+%% We know an empty set is [].
 
 %% export(Line, Exports, State) -> State.
 %%  Mark functions as exported, also as called from the export line.
 
 export(Line, Es, #lint{exports=Es0,called=C0}=St) ->
     {Es1,C1} = foldl(fun (NA, {E,C}) ->
-			     {add_element(NA, E),od_append(NA, Line, C)} end,
+			     {ordsets:add_element(NA, E),
+			      orddict:append(NA, Line, C)}
+		     end,
 		     {Es0,C0}, Es),
     St#lint{exports=Es1,called=C1}.
 
@@ -410,7 +464,7 @@ export(Line, Es, #lint{exports=Es0,called=C0}=St) ->
 %% imported(Name, Arity, State) -> {yes,Module} | no.
 
 import(Line, {Mod,Fs}, St) ->
-    Mfs = list_to_set(Fs),
+    Mfs = ordsets:list_to_set(Fs),
     case check_imports(Line, Mfs, St#lint.imports) of
 	[] ->
 	    St#lint{imports=add_imports(Mod, Mfs, St#lint.imports)};
@@ -422,16 +476,23 @@ import(Line, {Mod,Fs}, St) ->
 
 check_imports(Line, Fs, Is) ->
     foldl(fun (F, Efs) ->
-	      case od_find(F, Is) of
+	      case orddict:find(F, Is) of
 		  {ok,Mod} -> [{F,Mod}|Efs];
-		  error -> Efs
+		  error ->
+		      {N,A} = F,
+		      case erl_internal:bif(N, A) of
+			  true ->
+			      [{bif,F,erlang}|Efs];
+			  false ->
+			      Efs
+		      end
 	      end end, [], Fs).
 
 add_imports(Mod, Fs, Is) ->
-    foldl(fun (F, Is0) -> od_store(F, Mod, Is0) end, Is, Fs).
+    foldl(fun (F, Is0) -> orddict:store(F, Mod, Is0) end, Is, Fs).
 
 imported(F, A, St) ->
-    case od_find({F,A}, St#lint.imports) of
+    case orddict:find({F,A}, St#lint.imports) of
 	{ok,Mod} -> {yes,Mod};
 	error -> no
     end.
@@ -441,8 +502,8 @@ imported(F, A, St) ->
 
 call_function(Line, F, A, #lint{called=Cd,calls=Cs,func=Func}=St) ->
     NA = {F,A},
-    St#lint{called=od_append(NA, Line, Cd),
-	    calls=od_append(Func, NA, Cs)}.
+    St#lint{called=orddict:append(NA, Line, Cd),
+	    calls=orddict:append(Func, NA, Cs)}.
 
 %% reached_functions(RootSet, CallRef) -> [ReachedFunc].
 %% reached_functions(RootSet, CallRef, [ReachedFunc]) -> [ReachedFunc].
@@ -450,11 +511,11 @@ call_function(Line, F, A, #lint{called=Cd,calls=Cs,func=Func}=St) ->
 reached_functions(Root, Ref) -> reached_functions(Root, Ref, []).
 
 reached_functions([R|Rs], Ref, Reached) ->
-    case is_element(R, Reached) of
+    case ordsets:is_element(R, Reached) of
 	true -> reached_functions(Rs, Ref, Reached);
 	false ->
-	    Reached1 = add_element(R, Reached),	%It IS reached
-	    case od_find(R, Ref) of
+	    Reached1 = ordsets:add_element(R, Reached),	%It IS reached
+	    case orddict:find(R, Ref) of
 		{ok,More} -> reached_functions(Rs ++ More, Ref, Reached1);
 		error -> reached_functions(Rs, Ref, Reached1)
 	    end
@@ -470,20 +531,21 @@ function(Line, Name, Arity, Cs, St0) ->
 %% define_function(Line, Name, Arity, State) -> State.
 
 define_function(Line, Name, Arity, St0) ->
+    St1 = keyword_warning(Line, Name, St0),
     NA = {Name,Arity},
-    case member(NA, St0#lint.defined) of
+    case member(NA, St1#lint.defined) of
 	true ->
-	    add_error(Line, {redefine_function,NA}, St0);
+	    add_error(Line, {redefine_function,NA}, St1);
 	false ->
-	    St1 = St0#lint{defined=add_element(NA, St0#lint.defined)},
-	    St2 = case erl_internal:bif(Name, Arity) of
+	    St2 = St1#lint{defined=ordsets:add_element(NA, St1#lint.defined)},
+	    St = case erl_internal:bif(Name, Arity) of
 		      true ->
-			  add_warning(Line, {redefine_bif,NA}, St1);
-		      false -> St1
+			 add_warning(Line, {redefine_bif,NA}, St2);
+		     false -> St2
 		  end,
-	    case imported(Name, Arity, St2) of
-		{yes,M} -> add_error(Line, {define_import,NA}, St2);
-		no -> St2
+	    case imported(Name, Arity, St) of
+		{yes,M} -> add_error(Line, {define_import,NA}, St);
+		no -> St
 	    end
     end.
 
@@ -510,58 +572,76 @@ clause({clause,Line,H,G,B}, Vt0, St0) ->
 %%  Check a patterns in head returning "all" variables. Not updating the
 %%  known variable list will result in multiple error messages/warnings.
 
-head([P|Ps], Vt, St0) ->
-    {Pvt,St1} = pattern(P, Vt, St0),
-    {Psvt,St2} = head(Ps, Vt, St1),
+head(Ps, Vt, St0) ->
+    head(Ps, Vt, Vt, St0).    % Old = Vt
+
+head([P|Ps], Vt, Old, St0) ->
+    {Pvt,St1} = pattern(P, Vt, Old, St0),
+    {Psvt,St2} = head(Ps, Vt, Old, St1),
     {vtmerge_pat(Pvt, Psvt),St2};
-head([], Vt, St) -> {[],St}.
+head([], Vt, Env, St) -> {[],St}.
 
-%% pattern(Pattern, VarTable, State) -> {UpdVarTable,State}.
-%%  Check pattern return variables.
+%% pattern(Pattern, VarTable, Old, State) -> {UpdVarTable,State}.
+%%  Check pattern return variables. Old is the set of variables used for
+%%  deciding whether an occurrence is a binding occurrence or a use, and
+%%  VarTable is the set of variables used for arguments to binary
+%%  patterns.
 
-pattern({var,Line,'_'}, Vt, St) -> {[],St};	%Ignore anonymous variable
-pattern({var,Line,V}, Vt, St) -> pat_var(V, Line, Vt, St);
-pattern({integer,Line,I}, Vt, St) -> {[],St};
-pattern({float,Line,F}, Vt, St) -> {[],St};
-pattern({atom,Line,A}, Vt, St) -> {[],St};
-pattern({string,Line,S}, Vt, St) -> {[],St};
-pattern({nil,Line}, Vt, St) -> {[],St};
-pattern({cons,Line,H,T}, Vt,  St0) ->
-    {Hvt,St1} = pattern(H, Vt, St0),
-    {Tvt,St2} = pattern(T, Vt, St1),
+pattern(P, Vt, St) ->
+    pattern(P, Vt, Vt, St).    % Old = Vt
+
+pattern({var,Line,'_'}, Vt, Old, St) -> {[],St};   %Ignore anonymous variable
+pattern({var,Line,V}, Vt, Old, St) -> pat_var(V, Line, Old, St);
+pattern({char,Line,C}, Vt, Old, St) -> {[],St};
+pattern({integer,Line,I}, Vt, Old, St) -> {[],St};
+pattern({float,Line,F}, Vt, Old, St) -> {[],St};
+pattern({atom,Line,A}, Vt, Old, St) ->
+    {[],keyword_warning(Line, A, St)};
+pattern({char,Line,C}, Vt, Old, St) -> {[],St};
+pattern({string,Line,S}, Vt, Old, St) -> {[],St};
+pattern({nil,Line}, Vt, Old, St) -> {[],St};
+pattern({cons,Line,H,T}, Vt, Old,  St0) ->
+    {Hvt,St1} = pattern(H, Vt, Old, St0),
+    {Tvt,St2} = pattern(T, Vt, Old, St1),
     {vtmerge_pat(Hvt, Tvt),St2};
-pattern({tuple,Line,Ps}, Vt, St) ->
-    pattern_list(Ps, Vt, St);
-%%pattern({struct,Line,Tag,Ps}, St) ->
-%%    pattern_list(Ps, Vt, St);
-pattern({record_index,Line,Name,Field}, Vt, St) ->
+pattern({tuple,Line,Ps}, Vt, Old, St) ->
+    pattern_list(Ps, Vt, Old, St);
+%%pattern({struct,Line,Tag,Ps}, Vt, Old, St) ->
+%%    pattern_list(Ps, Vt, Old, St);
+pattern({record_index,Line,Name,Field}, Vt, Old, St) ->
     check_record(Line, Name, St,
-		 fun (Dfs) -> pattern_field(Field, Name, Dfs, Vt, St) end);
-pattern({record,Line,Name,Pfs}, Vt, St) ->
+		 fun (Dfs) ->
+			 pattern_field(Field, Name, Dfs, Vt, Old, St)
+		 end);
+pattern({record,Line,Name,Pfs}, Vt, Old, St) ->
     check_record(Line, Name, St,
-		 fun (Dfs) -> pattern_fields(Pfs, Name, Dfs, Vt, St) end);
-pattern({bin,Line,Fs}, Vt, St) ->
-    pattern_bin(Line, Fs, Vt, St);
-pattern({op,Line,'++',{nil,_},R}, Vt, St) ->
-    pattern(R, Vt, St);
-pattern({op,Line,'++',{cons,Li,{integer,L2,I},T},R}, Vt, St) ->
-    pattern({op,Li,'++',T,R}, Vt, St);		%Integer unimportant here
-pattern({op,Line,'++',{string,Li,L},R}, Vt, St) ->
-    pattern(R, Vt, St);				%String unimportant here
-pattern({match,Line,Pat1,Pat2}, Vt, St0) ->
-    {Lvt,St1} = pattern(Pat1, Vt, St0),
-    {Rvt,St2} = pattern(Pat2, Vt, St1),
+		 fun (Dfs) ->
+			 pattern_fields(Pfs, Name, Dfs, Vt, Old, St)
+		 end);
+pattern({bin,Line,Fs}, Vt, Old, St) ->
+    pattern_bin(Line, Fs, Vt, Old, St);
+pattern({op,Line,'++',{nil,_},R}, Vt, Old, St) ->
+    pattern(R, Vt, Old, St);
+pattern({op,Line,'++',{cons,Li,{char,L2,C},T},R}, Vt, Old, St) ->
+    pattern({op,Li,'++',T,R}, Vt, Old, St);    %Char unimportant here
+pattern({op,Line,'++',{cons,Li,{integer,L2,I},T},R}, Vt, Old, St) ->
+    pattern({op,Li,'++',T,R}, Vt, Old, St);    %Weird, but compatible!
+pattern({op,Line,'++',{string,Li,L},R}, Vt, Old, St) ->
+    pattern(R, Vt, Old, St);		       %String unimportant here
+pattern({match,Line,Pat1,Pat2}, Vt, Old, St0) ->
+    {Lvt,St1} = pattern(Pat1, Vt, Old, St0),
+    {Rvt,St2} = pattern(Pat2, Vt, Old, St1),
     {vtmerge_pat(Lvt, Rvt),St2};
 %% Catch legal constant expressions, including unary +,-.
-pattern(Pat, Vt, St) ->
+pattern(Pat, Vt, Old, St) ->
     case is_pattern_expr(Pat) of
         true -> {[],St};
         false -> {[],add_error(element(2, Pat), illegal_pattern, St)}
     end.
 
-pattern_list(Ps, Vt, St) ->
+pattern_list(Ps, Vt, Old, St) ->
     foldl(fun (P, {Psvt,St0}) ->
-		  {Pvt,St1} = pattern(P, Vt, St0),
+		  {Pvt,St1} = pattern(P, Vt, Old, St0),
 		  {vtmerge_pat(Pvt, Psvt),St1}
 	  end, {[],St}, Ps).
 
@@ -569,8 +649,10 @@ pattern_list(Ps, Vt, St) ->
 %%	true | false.
 %%  Test if a general expression is a valid pattern expression.
 
+is_pattern_expr({char,L,C}) -> true;
 is_pattern_expr({integer,L,I}) -> true;
 is_pattern_expr({float,L,F}) -> true;
+is_pattern_expr({atom,L,A}) -> true;
 is_pattern_expr({tuple,L,Es}) ->
     all(fun is_pattern_expr/1, Es);
 is_pattern_expr({nil,L}) -> true;
@@ -591,35 +673,37 @@ is_pattern_expr({op,L,Op,A1,A2}) ->
     end;
 is_pattern_expr(Other) -> false.
 
-%% pattern_bin(Line, [Element], VarTable, State) -> {UpdVarTable,State}.
+%% pattern_bin(Line, [Element], VarTable, Old, State) -> {UpdVarTable,State}.
 %%  Check a pattern group.
 
-pattern_bin(Line, Es, Vt, St0) ->
-    {Sz,Esvt,St1} = foldl(fun (E, Acc) -> pattern_element(E, Vt, Acc) end,
-			 {0,[],St0}, Es),
+pattern_bin(Line, Es, Vt, Old, St0) ->
+    {Sz,Esvt,St1} = foldl(fun (E, Acc) ->
+				  pattern_element(E, Vt, Old, Acc)
+			  end,
+			  {0,[],St0}, Es),
     St2 = if integer(Sz), Sz rem 8 =/= 0 -> 
                   add_warning(Line,unaligned_bitpat, St1);
-              true -> St1
+	     true -> St1
           end,
     {Esvt,St2}.
 
-pattern_element({bin_element,Line,E,Sz0,Ts}, Vt, {Size0,Esvt,St0}) ->
-    {Vt1,St1} = pat_bit_expr(E, Vt, St0),
+pattern_element({bin_element,Line,E,Sz0,Ts}, Vt, Old, {Size0,Esvt,St0}) ->
+    {Vt1,St1} = pat_bit_expr(E, Vt, Old, St0),
     {Sz1,Vt2,St2} = pat_bit_size(Sz0, Vt, St1),
     {Sz2,Bt,St3} = bit_type(Line, Sz1, Ts, St2),
     {Sz3,St4} = bit_size_check(Line, Sz2, Bt, St3),
     {Size1,St5} = add_bit_size(Line, Sz3, Size0, false, St4),
     {Size1,vtmerge(Vt2, vtmerge_pat(Vt1, Esvt)),St5}.
 
-%% pat_bit_expr(Pattern, VarTable, State) -> {UpdVarTable,State}.
+%% pat_bit_expr(Pattern, VarTable, Old, State) -> {UpdVarTable,State}.
 %%  Check pattern bit expression, only allow really valid patterns!
 
-pat_bit_expr({var,_,'_'},Vt,St) -> {[],St};
-pat_bit_expr({var,Ln,V}, Vt, St) -> pat_var(V,Ln,Vt,St);
-pat_bit_expr({string,_,_}, Vt, St) -> {[],St};
-pat_bit_expr({bin,L,Fs}, Vt, St) ->
+pat_bit_expr({var,_,'_'},Vt,Old,St) -> {[],St};
+pat_bit_expr({var,Ln,V}, Vt, Old, St) -> pat_var(V,Ln,Old,St);
+pat_bit_expr({string,_,_}, Vt, Old, St) -> {[],St};
+pat_bit_expr({bin,L,Fs}, Vt, Old, St) ->
     {[],add_error(L, illegal_pattern, St)};
-pat_bit_expr(P, Vt, St) ->
+pat_bit_expr(P, Vt, Old, St) ->
     case is_pattern_expr(P) of
         true -> {[],St};
         false -> {[],add_error(element(2, P), illegal_pattern, St)}
@@ -735,50 +819,45 @@ add_bit_size(Line, Sz1, Sz2, B, St) -> {Sz1 + Sz2,St}.
 %%	{UsedVarTable,State}
 %%  Check a guard, return all variables.
 
-%% disjunction of guard conjunctions
+%% Disjunction of guard conjunctions
 guard([L|R], Vt, St0) when list(L) ->
-    {Gvt, St1} = guard0(L, Vt, St0),
+    {Gvt, St1} = guard_tests(L, Vt, St0),
     {Gsvt, St2} = guard(R, vtupdate(Gvt, Vt), St1),
     {vtupdate(Gvt, Gsvt),St2};
 guard(L, Vt, St0) ->
-    guard0(L, Vt, St0).
+    guard_tests(L, Vt, St0).
 
 %% guard conjunction
-guard0([G|Gs], Vt, St0) ->
+guard_tests([G|Gs], Vt, St0) ->
     {Gvt,St1} = guard_test(G, Vt, St0),
-    {Gsvt,St2} = guard0(Gs, vtupdate(Gvt, Vt), St1),
+    {Gsvt,St2} = guard_tests(Gs, vtupdate(Gvt, Vt), St1),
     {vtupdate(Gvt, Gsvt),St2};
-guard0([], Vt, St) -> {[],St}.
+guard_tests([], Vt, St) -> {[],St}.
 
 %% guard_test(Test, VarTable, State) ->
 %%	{UsedVarTable,State'}
-%%  Check one guard test, returns NewVariables
+%%  Check one guard test, returns NewVariables.  We now allow more
+%%  expressions in guards including the new is_XXX type tests, but
+%%  only allow the ols type tests at the top level.
 
-%% These are special for now.
-guard_test({atom,Line,true}, Vt, St) -> {[], St};
 %% Specially handle record type test here.
-guard_test({call,Line,{atom,Lr,record},[E,{atom,Ln,Name}]}, Vt, St0) ->
+guard_test({call,Line,{atom,Lr,record},[E,A]}, Vt, St0) ->
+    guard_test({call,Line,{atom,Lr,is_record},[E,A]}, Vt, St0);
+guard_test({call,Line,{atom,Lr,is_record},[E,{atom,Ln,Name}]}, Vt, St0) ->
     {Rvt,St1} = gexpr(E, Vt, St0),
     {Rvt,exist_record(Ln, Name, St1)};
-guard_test({call,Line,{atom,Lr,record},[E,R]}, Vt, St) ->
+guard_test({call,Line,{atom,Lr,is_record},[E,R]}, Vt, St) ->
     {[],add_error(Line, illegal_guard_expr, St)};
 guard_test({call,Line,{atom,La,F},As}, Vt, St0) ->
-    {Asvt,St1} = gexpr_list(As, Vt, St0),
+    {Asvt,St1} = gexpr_list(As, Vt, St0),	%Always check this.
     A = length(As),
     case erl_internal:type_test(F, A) of
 	true -> {Asvt,St1};
 	false -> {Asvt,add_error(Line, illegal_guard_expr, St1)}
     end;
-guard_test({op,Line,Op,L,R}, Vt, St0) ->
-    {Avt,St1} = gexpr_list([L,R], Vt, St0),
-    case erl_internal:comp_op(Op, 2) of
-	true -> {Avt,St1};
-	false -> {Avt,add_error(Line, illegal_guard_expr, St1)}
-    end;
-%% Everything else is illegal! You could put explicit tests here to get
-%% better error diagnostics.
 guard_test(G, Vt, St) ->
-    {[],add_error(element(2, G), illegal_guard_expr, St)}.
+    %%  Everything else is a guard expression.
+    gexpr(G, Vt, St).
 
 %% gexpr(GuardExpression, VarTable, State) ->
 %%      {UsedVarTable,State'}
@@ -786,9 +865,12 @@ guard_test(G, Vt, St) ->
 
 gexpr({var,Line,V}, Vt, St) ->
     expr_var(V, Line, Vt, St);
+gexpr({char,Line,C}, Vt, St) -> {[],St};
 gexpr({integer,Line,I}, Vt, St) -> {[],St};
 gexpr({float,Line,F}, Vt, St) -> {[],St};
-gexpr({atom,Line,A}, Vt, St) -> {[],St};
+gexpr({atom,Line,A}, Vt, St) ->
+    {[],keyword_warning(Line, A, St)};
+gexpr({char,Line,C}, Vt, St) -> {[],St};
 gexpr({string,Line,S}, Vt, St) -> {[],St};
 gexpr({nil,Line}, Vt, St) -> {[],St};
 gexpr({cons,Line,H,T}, Vt, St) ->
@@ -821,17 +903,27 @@ gexpr({call,Line,{atom,La,F},As}, Vt, St0) ->
 	true -> {Asvt,St1};
 	false -> {Asvt,add_error(Line, illegal_guard_expr, St1)}
     end;
+gexpr({call,Line,{remote,Lr,{atom,Lm,erlang},{atom,Lf,F}},As}, Vt, St0) ->
+    {Asvt,St1} = gexpr_list(As, Vt, St0),
+    A = length(As),
+    case erl_internal:guard_bif(F, A) of
+	true -> {Asvt,St1};
+	false -> {Asvt,add_error(Line, illegal_guard_expr, St1)}
+    end;
 gexpr({op,Line,Op,A}, Vt, St0) ->
     {Avt,St1} = gexpr(A, Vt, St0),
-    case erl_internal:arith_op(Op, 1) of
-	true -> {Avt,St1};
-	false -> {Avt,add_error(Line, illegal_guard_expr, St1)}
+    case catch erl_internal:op_type(Op, 1) of
+	arith -> {Avt,St1};
+	bool -> {Avt,St1};
+	Other -> {Avt,add_error(Line, illegal_guard_expr, St1)}
     end;
 gexpr({op,Line,Op,L,R}, Vt, St0) ->
     {Avt,St1} = gexpr_list([L,R], Vt, St0),
-    case erl_internal:arith_op(Op, 2) of
-	true -> {Avt,St1};
-	false -> {Avt,add_error(Line, illegal_guard_expr, St1)}
+    case catch erl_internal:op_type(Op, 2) of
+	arith -> {Avt,St1};
+	bool -> {Avt,St1};
+	comp -> {Avt,St1};
+	Other -> {Avt,add_error(Line, illegal_guard_expr, St1)}
     end;
 %% Everything else is illegal! You could put explicit tests here to
 %% better error diagnostics.
@@ -847,23 +939,21 @@ gexpr_list(Es, Vt, St) ->
 		  {vtmerge(Evt, Esvt),St1}
 	  end, {[],St}, Es).
 
-%% is_guard_test(Expression) ->
-%%	true | false
+%% is_guard_test(Expression) -> true | false.
 %%  Test if a general expression is a guard test.
 
-is_guard_test({op,Line,Op,L,R}) ->
-    %% all_of erl_internal:comp_op(Op, 2), is_gexpr(L), is_gexpr(R) end.
-    case erl_internal:comp_op(Op, 2) of
-	true -> is_gexpr_list([L,R]);
-	false -> false
-    end;
+is_guard_test({call,Line,{atom,Lr,record},[E,A]}) ->
+    is_guard_test({call,Line,{atom,Lr,is_record},[E,A]});
+is_guard_test({call,Line,{atom,Lr,is_record},[E,{atom,Ln,Name}]}) ->
+    is_gexpr(E);
 is_guard_test({call,Line,{atom,La,Test},As}) ->
     case erl_internal:type_test(Test, length(As)) of
 	true -> is_gexpr_list(As);
 	false -> false
     end;
-is_guard_test({atom,Line,true}) -> true;
-is_guard_test(Other) -> false.
+is_guard_test(G) ->
+    %%Everything else is a guard expression.
+    is_gexpr(G).
 
 %% is_guard_expr(Expression) -> true | false.
 %%  Test if an expression is a guard expression.
@@ -871,9 +961,10 @@ is_guard_test(Other) -> false.
 is_guard_expr(E) -> is_gexpr(E). 
 
 is_gexpr({var,L,V}) -> true;
-is_gexpr({atom,L,A}) -> true;
+is_gexpr({char,L,C}) -> true;
 is_gexpr({integer,L,I}) -> true;
 is_gexpr({float,L,F}) -> true;
+is_gexpr({atom,L,A}) -> true;
 is_gexpr({string,L,S}) -> true;
 is_gexpr({nil,L}) -> true;
 is_gexpr({cons,L,H,T}) -> is_gexpr_list([H,T]);
@@ -886,20 +977,32 @@ is_gexpr({record_field,L,Rec,Name,Field}) ->
     is_gexpr_list([Rec,Field]);
 is_gexpr({record,L,Name,Inits}) ->
     is_gexpr_fields(Inits);
-is_gexpr({call,L,{atom,La,F},As}) ->
+is_gexpr({bin,L,Fs}) ->
+    all(fun ({bin_element,Line,E,Sz,Ts}) -> is_gexpr(E) and is_gexpr(Sz) end,
+	Fs);
+is_gexpr({call,L,{atom,Lf,F},As}) ->
+    case erl_internal:guard_bif(F, length(As)) of
+	true -> is_gexpr_list(As);
+	false -> false
+    end;
+is_gexpr({call,L,{remote,Lr,{atom,Lm,erlang},{atom,Lf,F}},As}) ->
     case erl_internal:guard_bif(F, length(As)) of
 	true -> is_gexpr_list(As);
 	false -> false
     end;
 is_gexpr({op,L,Op,A}) ->
-    case erl_internal:arith_op(Op, 1) of
-	true -> is_gexpr(A);
-	false -> false
+    case catch erl_internal:op_type(Op, 1) of
+	arith -> is_gexpr(A);
+	bool -> is_gexpr(A);
+	comp -> is_gexpr(A);
+	Other -> false
     end;
 is_gexpr({op,L,Op,A1,A2}) ->
-    case erl_internal:arith_op(Op, 2) of
-	true -> is_gexpr_list([A1,A2]);
-	false -> false
+    case catch erl_internal:op_type(Op, 2) of
+	arith -> is_gexpr_list([A1,A2]);
+	bool -> is_gexpr_list([A1,A2]);
+	comp -> is_gexpr_list([A1,A2]);
+	Other -> false
     end;
 is_gexpr(Other) -> false.
 
@@ -929,9 +1032,13 @@ exprs([], Vt, St) -> {[],St}.
 
 expr({var,Line,V}, Vt, St) ->
     expr_var(V, Line, Vt, St);
+expr({char,Line,C}, Vt, St) -> {[],St};
 expr({integer,Line,I}, Vt, St) -> {[],St};
 expr({float,Line,F}, Vt, St) -> {[],St};
+expr({atom,Line,A}, Vt, St) ->
+    {[],keyword_warning(Line, A, St)};
 expr({atom,Line,A}, Vt, St) -> {[],St};
+expr({char,Line,C}, Vt, St) -> {[],St};
 expr({string,Line,S}, Vt, St) -> {[],St};
 expr({nil,Line}, Vt, St) -> {[],St};
 expr({cons,Line,H,T}, Vt, St) ->
@@ -940,7 +1047,7 @@ expr({lc,Line,E,Qs}, Vt0, St0) ->
     %% No new variables added.
     {Qvt,St1} = lc_quals(Qs, Vt0, St0),		%Qvt is used variables
     {Evt,St2} = expr(E, vtupdate(Qvt, Vt0), St1),
-    {[],St2};					%Export nothing!
+    {vtold(Qvt, Vt0),St2};			%Don't export local variables
 expr({tuple,Line,Es}, Vt, St) ->
     expr_list(Es, Vt, St);
 %%expr({struct,Line,Tag,Es}, Vt, St) ->
@@ -964,7 +1071,10 @@ expr({record,Line,Rec,Name,Upds}, Vt, St0) ->
 			  fun (Dfs) ->
 				  update_fields(Upds, Name, Dfs, Vt, St1)
 			  end ),
-    {vtmerge(Rvt, Usvt),St2};
+    case has_wildcard_field(Upds) of
+	true -> {[],add_error(Line, {wildcard_in_update,Name}, St2)};
+	false -> {vtmerge(Rvt, Usvt),St2}
+    end;
 expr({bin,Line,Fs}, Vt, St) ->
     expr_bin(Line, Fs, Vt, St, fun expr/3);
 expr({block,Line,Es}, Vt, St) ->
@@ -1003,37 +1113,38 @@ expr({'fun',Line,Body}, Vt, St) ->
 expr({call,Line,{remote,Lr,{atom,Lm,M},{atom,Lf,F}},As}, Vt, St0) ->
     St1 = check_remote_function(Line, M, F, As, St0),
     expr_list(As, Vt, St1);			%They see the same variables
-expr({call,Line,{remote,Lr,M,F},As}, Vt, St) ->
+expr({call,Line,{remote,Lr,M,F},As}, Vt, St0) ->
+    St1 = keyword_warning(Lr, M, St0),
+    St = keyword_warning(Lr, F, St1),
     expr_list([M,F|As], Vt, St);		%They see the same variables
-expr({call,Line,{atom,La,record_info},[{atom,Li,Info},{atom,Ln,Name}]},
-     Vt, St) ->
-    case member(Info, [fields,size]) of
-	true -> {[],exist_record(La, Name, St)};
-	false -> {[],add_error(Li, illegal_record_info, St)}
-    end;
-expr({call,Line,{atom,La,record_info},[I,N]}, Vt, St) ->
-    {[],add_error(Line, illegal_record_info, St)};
 expr(T={call,Line,{atom,La,F},As}, Vt, St0) ->
-    {Asvt,St1} = expr_list(As, Vt, St0),
+    St1 = keyword_warning(La, F, St0),
+    {Asvt,St2} = expr_list(As, Vt, St1),
     A = length(As),
     case erl_internal:bif(F, A) of
-	true -> {Asvt,St1};
+	true -> {Asvt,St2};
 	false ->
-	    {Asvt,case imported(F, A, St1) of
+	    {Asvt,case imported(F, A, St2) of
 		      {yes,M} ->
-			  St2 = check_remote_function(Line, M, F, As, St1),
-			  St2#lint{imported=add_element({{F,A},M},
-							St1#lint.imported)};
+			  St2 = check_remote_function(Line, M, F, As, St2),
+			  St2#lint{imported=ordsets:add_element({{F,A},M},
+								St2#lint.imported)};
 		      no ->
-			  case {F,A} == St1#lint.func of
-			      true -> St1;
-			      false -> call_function(Line, F, A, St1)
+			  case {F,A} of
+			      {record_info,2} ->
+				  check_record_info_call(Line,La,As,St2);
+			      N when N == St2#lint.func -> St2;
+			      _ -> call_function(Line, F, A, St2)
 			  end
 		  end}
     end;
 expr({call,Line,F,As}, Vt, St0) ->
     St = warn_invalid_call(Line,F,St0),
     expr_list([F|As], Vt, St);			%They see the same variables
+expr({'try',Line,Es,Cs}, Vt, St0) ->
+    {Evt,St1} = exprs(Es, Vt, St0),
+    {Cvt,St2} = icr_clauses(Cs, {'try',Line}, Vt, St1),
+    {vtmerge(Evt, Cvt),St2};
 expr({'catch',Line,E}, Vt, St0) ->
     %% No new variables added, flag new variables as unsafe.
     {Evt,St1} = expr(E, Vt, St0),
@@ -1042,9 +1153,9 @@ expr({'catch',Line,E}, Vt, St0) ->
 expr({match,Line,P,E}, Vt, St0) ->
     {Evt,St1} = expr(E, Vt, St0),
     {Pvt,St2} = pattern(P, vtupdate(Evt, Vt), St1),
-    %% Must do some work here to get just new stuff.
-    Mvt = intersection(vtnames_no_binsize(Pvt),
-		       vunion(Evt, Vt)),	%Matching variables
+%     %% Must do some work here to get just new stuff.
+%     Mvt = ordsets:intersection(vtnames_no_binsize(Pvt),
+% 			       vunion(Evt, Vt)),	%Matching variables
     {vtmerge(Evt, Pvt),St2};
 %% No comparison or boolean operators yet.
 expr({op,Line,Op,A}, Vt, St) ->
@@ -1085,9 +1196,10 @@ warn_invalid_record(Line, R, St) ->
 
 is_valid_record(Rec) ->
     case Rec of
-	{atom, _, _} -> false;
+	{char, _, _} -> false;
 	{integer, _, _} -> false;
 	{float, _, _} -> false;
+	{atom, _, _} -> false;
 	{string, _, _} -> false;
 	{cons, _, _, _} -> false;
 	{nil, _} -> false;
@@ -1110,8 +1222,10 @@ warn_invalid_call(Line, F, St) ->
 
 is_valid_call(Call) ->
     case Call of
+	{char, _, _} -> false;
 	{integer, _, _} -> false;
 	{float, _, _} -> false;
+	{char, _, _} -> false;
 	{string, _, _} -> false;
 	{cons, _, _, _} -> false;
 	{nil, _} -> false;
@@ -1126,11 +1240,11 @@ is_valid_call(Call) ->
 %%  so that all fields have explicit initial value.
 
 record_def(Line, Name, Fs0, St0) ->
-    case od_is_key(Name, St0#lint.records) of
+    case orddict:is_key(Name, St0#lint.records) of
 	true -> add_error(Line, {redefine_record,Name}, St0);
 	false ->
 	    {Fs1,St1} = def_fields(normalise_fields(Fs0), Name, St0),
-	    St1#lint{records=od_store(Name, Fs1, St1#lint.records)}
+	    St1#lint{records=orddict:store(Name, Fs1, St1#lint.records)}
     end.
 
 %% def_fields([RecDef], RecordName, State) -> {[DefField],State}.
@@ -1158,7 +1272,7 @@ normalise_fields(Fs) ->
 %%  Check if a record exists.  Set State.
 
 exist_record(Line, Name, St) ->
-    case od_is_key(Name, St#lint.records) of
+    case orddict:is_key(Name, St#lint.records) of
 	true -> St;
 	false -> add_error(Line, {undefined_record,Name}, St)
     end.
@@ -1175,7 +1289,7 @@ exist_record(Line, Name, St) ->
 %%	{UpdatedVarTable,State}
 
 check_record(Line, Name, St, CheckFun) ->
-    case od_find(Name, St#lint.records) of
+    case orddict:find(Name, St#lint.records) of
 	{ok,Fields} -> CheckFun(Fields);
 	error -> {[],add_error(Line, {undefined_record,Name}, St)}
     end.
@@ -1204,23 +1318,30 @@ check_field({record_field,Lf,{atom,La,F},Val}, Name, Fields,
 		 {ok,I} -> CheckFun(Val, Vt, St);
 		 error -> {[],add_error(La, {undefined_field,Name,F}, St)}
 	     end}
-    end.
+    end;
+check_field({record_field,Lf,{var,La,'_'},Val}, Name, Fields,
+	    Vt, St, Sfs, CheckFun) ->
+    {Sfs,CheckFun(Val, Vt, St)};
+check_field({record_field,Lf,{var,La,V},Val}, Name, Fields,
+	    Vt, St, Sfs, CheckFun) ->
+    {Sfs,{Vt,add_error(La, {field_name_is_variable,Name,V}, St)}}.
 
-%% pattern_field(Field, RecordName, [RecDefField], VarTable, State) ->
+%% pattern_field(Field, RecordName, [RecDefField], VarTable, Old, State) ->
 %%	{UpdVarTable,State}.
 %%  Test if record RecordName has field Field. Set State.
 
-pattern_field({atom,La,F}, Name, Fields, Vt, St) ->
+pattern_field({atom,La,F}, Name, Fields, Vt, Old, St) ->
     case find_field(F, Fields) of
 	{ok,I} -> {[],St};
 	error -> {[],add_error(La, {undefined_field,Name,F}, St)}
     end.
 
-%% pattern_fields([PatField], RecordName, [RecDefField], VarTable, State) ->
+%% pattern_fields([PatField], RecordName, [RecDefField], VarTable, Old, State) ->
 %%	{UpdVarTable,State}.
 
-pattern_fields(Fs, Name, Fields, Vt, St) ->
-    check_fields(Fs, Name, Fields, Vt, St, fun pattern/3).
+pattern_fields(Fs, Name, Fields, Vt0, Old, St0) ->
+    check_fields(Fs, Name, Fields, Vt0, St0,
+		 fun (Val, Vt, St) -> pattern(Val, Vt, Old, St) end).
 
 %% record_field(Field, RecordName, [RecDefField], VarTable, State) ->
 %%	{UpdVarTable,State}.
@@ -1285,11 +1406,12 @@ icr_clauses(Cs, In, Vt, St0) ->
 
 icr_export(Csvt, Vt, In, St) ->
     %%{Cvt,St1} = icr_clauses(Cs, Vt, St0),	%Cvt is new variables.
-    All = subtract(vintersection(Csvt), vtnames(Vt)),
+    All = ordsets:subtract(vintersection(Csvt), vtnames(Vt)),
     %% All = vintersection(Csvt),
-    Some = subtract(vunion(Csvt), vtnames(Vt)),
+    Some = ordsets:subtract(vunion(Csvt), vtnames(Vt)),
     %% Some = vunion(Csvt),
-    {vtmerge(vtexport(All, In, vtunsafe(subtract(Some, All), In, [])),
+    {vtmerge(vtexport(All, In, vtunsafe(ordsets:subtract(Some, All),
+					In, [])),
 	     vtmerge(Csvt)),
      St}.
 
@@ -1316,10 +1438,10 @@ icr_clause({clause,Line,H,G,B}, Vt0, St0) ->
 
 lc_quals([{generate,Line,P,E}|Qs], Vt0, St0) ->
     {Evt,St1} = expr(E, Vt0, St0),
-    Vt1 = vtupdate(Evt, Vt0),
-    {Pvt,St2} = pattern(P, Vt1, St1),
-    St3 = shadow_vars(Line, vtnames_no_binsize(vtold(Pvt, Vt1)),
-		      generate, St2),
+    Vt1 = vtupdate(vtold(Evt, Vt0), Vt0),    % Don't export local variables
+    {Pvt,St2} = pattern(P, Vt0, [], St1),    % No imported pattern variables
+    Old = vtold(Pvt, vt_no_unsafe(Vt1)),
+    St3 = shadow_vars(Line, vtnames_no_binsize(Old), generate, St2),
     Vt2 = vtupdate(Pvt, Vt1),
     lc_quals(Qs, Vt2, St3);
 lc_quals([F|Qs], Vt, St0) ->
@@ -1341,8 +1463,9 @@ fun_clauses(Cs, Vt, St) ->
 	  end, {[],St}, Cs).
 
 fun_clause({clause,Line,H,G,B}, Vt0, St0) ->
-    {Hvt,St1} = head(H, Vt0, St0),
-    St2 = shadow_vars(Line, vtnames_no_binsize(vtold(Hvt, Vt0)), 'fun', St1),
+    {Hvt,St1} = head(H, Vt0, [], St0),    % No imported pattern variables
+    Old = vtold(Hvt, vt_no_unsafe(Vt0)),
+    St2 = shadow_vars(Line, vtnames_no_binsize(Old), 'fun', St1),
     Vt1 = vtupdate(Hvt, Vt0),
     {Gvt,St3} = guard(G, Vt1, St2),
     Vt2 = vtupdate(Gvt, Vt1),
@@ -1382,9 +1505,7 @@ fun_clause({clause,Line,H,G,B}, Vt0, St0) ->
 %% use {bound, binsize} to indicate such an occurrence. When merging
 %% ordsets, 'binsize' is converted to the usual 'used'.
 
-%% For storing the variable table we use our own version of the module
-%% dict. This is/was the same as the original but we must be sure of the
-%% format (sorted list of pairs) so we can do ordset operations on them.
+%% For storing the variable table we use the orddict module.
 %% We know an empty set is [].
 
 %% pat_var(Variable, LineNo, VarTable, State) ->
@@ -1393,7 +1514,7 @@ fun_clause({clause,Line,H,G,B}, Vt0, St0) ->
 %%  all variables as bound so errors and warnings are only reported once.
 
 pat_var(V, Line, Vt, St) ->
-    case od_find(V, Vt) of
+    case orddict:find(V, Vt) of
 	{ok,{bound,Used}} -> {[{V,{bound,used}}],St};
 	{ok,{{unsafe,In},Used}} ->
 	    {[{V,{bound,used}}],add_error(Line, {unsafe_var,V,In}, St)};
@@ -1409,7 +1530,7 @@ pat_var(V, Line, Vt, St) ->
 %%  all variables as bound so errors and warnings are only reported once.
 
 pat_binsize_var(V, Line, Vt, St) ->
-    case od_find(V, Vt) of
+    case orddict:find(V, Vt) of
 	{ok,{bound,Used}} -> {[{V,{bound,binsize}}],St};
 	{ok,{{unsafe,In},Used}} ->
 	    {[{V,{bound,used}}],add_error(Line, {unsafe_var,V,In}, St)};
@@ -1423,24 +1544,35 @@ pat_binsize_var(V, Line, Vt, St) ->
 %% expr_var(Variable, LineNo, VarTable, State) ->
 %%	{UpdVarTable,State}
 %%  Check if a variable is defined, or if there is an error or warning
-%%  connected to its usage. Return all variables as bound so errors and
-%%  warnings are only reported once.
+%%  connected to its usage. Return all variables as bound so errors
+%%  and warnings are only reported once.  As this is not matching
+%%  exported vars are probably safe, warn only if warn_export_vars is
+%%  set.
 
 expr_var(V, Line, Vt, St0) ->
-    St1 = case od_find(V, Vt) of
+    St1 = case orddict:find(V, Vt) of
 	      {ok,{bound, Used}} -> St0;
 	      {ok,{{unsafe,In}, Used}} ->
 		  add_error(Line, {unsafe_var,V,In}, St0);
 	      {ok,{{export,From}, Used}} ->
-		  add_warning(Line, {exported_var,V,From}, St0);
+		  case St0#lint.warn_export of
+		      true -> add_warning(Line, {exported_var,V,From}, St0);
+		      false -> St0
+		  end;
 	      error ->
 		  add_error(Line, {unbound_var,V}, St0)
 	  end,
     {[{V,{bound,used}}],St1}.
 
 shadow_vars(Line, Vs, In, St0) ->
-    foldl(fun (V, St) -> add_warning(Line, {shadowed_var,V,In}, St) end,
-	  St0, Vs).
+    case St0#lint.warn_shadow of
+	true ->
+	    foldl(fun (V, St) ->
+			  add_warning(Line, {shadowed_var,V,In}, St)
+		  end,
+		  St0, Vs);
+	false -> St0
+    end.
 
 check_unused_vars(Vt, St) ->
     case St#lint.warn_unused of
@@ -1476,23 +1608,23 @@ vtunsafe(Uvt, In, Vt0) ->
 
 store_merge(Key, {S,Used1}=New, Tab) ->
     Merge = fun ({_,Used0}) -> {S,merge_used(Used0, Used1)} end,
-    od_update(Key, Merge, New, Tab).
+    orddict:update(Key, Merge, New, Tab).
 
 %% vtmerge(VarTable, VarTable) -> VarTable.
 %%  Merge two variables tables generating a new vartable.  Give prioriy to
 %%  errors then warnings.
 
 vtmerge(Vt1, Vt2) ->
-    od_merge(fun (V, {S1,U1}, {S2,U2}) ->
-		     {merge_state(S1, S2),merge_used(U1, U2)}
-	     end, Vt1, Vt2).
+    orddict:merge(fun (V, {S1,U1}, {S2,U2}) ->
+			  {merge_state(S1, S2),merge_used(U1, U2)}
+		  end, Vt1, Vt2).
 
 vtmerge(Vts) -> foldl(fun (Vt, Mvts) -> vtmerge(Vt, Mvts) end, [], Vts).
 
 vtmerge_pat(Vt1, Vt2) ->
-    od_merge(fun (V, {S1,U1}, {S2,U2}) ->
-		     {merge_state(S1, S2),used}
-	     end, Vt1, Vt2).
+    orddict:merge(fun (V, {S1,U1}, {S2,U2}) ->
+			  {merge_state(S1, S2),used}
+		  end, Vt1, Vt2).
 
 merge_state({unsafe,F1}=S1, S2) -> S1;		%Take the error case
 merge_state(S1, {unsafe,F2}=S2) -> S2;
@@ -1513,7 +1645,7 @@ merge_used(U1, U2) -> U1.
 %%  Return all the truly new variables in NewVarTable.
 
 vtnew(New, Old) ->
-    od_filter(fun (V, How) -> not od_is_key(V, Old) end, New).
+    orddict:filter(fun (V, How) -> not orddict:is_key(V, Old) end, New).
 
 %% vtsubtract(VarTable1, VarTable2) -> NewVarTable.
 %%  Return all the variables in VarTable1 which don't occur in VarTable2.
@@ -1525,11 +1657,17 @@ vtsubtract(New, Old) ->
 %%  Return all the truly old variables in NewVarTable.
 
 vtold(New, Old) ->
-    od_filter(fun (V, How) -> od_is_key(V, Old) end, New).
+    orddict:filter(fun (V, How) -> orddict:is_key(V, Old) end, New).
 
 vtnames(Vt) -> [ V || {V,How} <- Vt ].
 
 vtnames_no_binsize(Vt) -> [ V || {V,{S,U}} <- Vt, U /= binsize ].
+
+vt_no_unsafe(Vt) -> [V || {_,{S,_}}=V <- Vt,
+			  case S of
+			      {unsafe,_} -> false;
+			      _ -> true
+			  end].
 
 %% vunion(VarTable1, VarTable2) -> [VarName].
 %% vunion([VarTable]) -> [VarName].
@@ -1537,17 +1675,22 @@ vtnames_no_binsize(Vt) -> [ V || {V,{S,U}} <- Vt, U /= binsize ].
 %% vintersection([VarTable]) -> [VarName].
 %%  Union/intersection of names of vars in VarTable.
 
-vunion(Vs1, Vs2) -> union(vtnames(Vs1), vtnames(Vs2)).
+%vunion(Vs1, Vs2) -> ordsets:union(vtnames(Vs1), vtnames(Vs2)).
 
-vunion(Vss) -> foldl(fun (Vs, Uvs) -> union(vtnames(Vs), Uvs) end, [], Vss).
+vunion(Vss) -> foldl(fun (Vs, Uvs) -> 
+			     ordsets:union(vtnames(Vs), Uvs)
+		     end, [], Vss).
 
 -ifdef(NOTUSED).
-vintersection(Vs1, Vs2) -> intersection(vtnames(Vs1), vtnames(Vs2)).
+vintersection(Vs1, Vs2) -> ordsets:intersection(vtnames(Vs1), vtnames(Vs2)).
 -endif.
 
-vintersection([Vs]) -> vtnames(Vs);		%Boundary conditions!!!
-vintersection([Vs|Vss]) -> intersection(vtnames(Vs), vintersection(Vss));
-vintersection([]) -> [].
+vintersection([Vs]) ->
+    vtnames(Vs);		%Boundary conditions!!!
+vintersection([Vs|Vss]) ->
+    ordsets:intersection(vtnames(Vs), vintersection(Vss));
+vintersection([]) ->
+    [].
 
 %% copy_expr(Expr, Line) -> Expr.
 %%  Make a copy of Expr converting all line numbers to Line.
@@ -1575,6 +1718,22 @@ copy_expr([H|T], Line) ->
 copy_expr([], Line) -> [];
 copy_expr(E, Line) when constant(E) -> E.
 
+%% Check a record_info call. We have already checked that it is not
+%% shadowed by an import.
+
+check_record_info_call(Line,La,[{atom,Li,Info},{atom,Ln,Name}],St) ->
+    case member(Info, [fields,size]) of
+	true -> exist_record(La, Name, St);
+	false -> add_error(Li, illegal_record_info, St)
+    end;
+check_record_info_call(Line,La,As,St) ->
+    add_error(Line, illegal_record_info, St).
+
+has_wildcard_field([{record_field,Lf,{var,La,'_'},Val}|Fs]) -> true;
+has_wildcard_field([_|Fs]) -> has_wildcard_field(Fs);
+has_wildcard_field([]) -> false.
+     
+
 %% check_remote_function(Line, ModuleName, FuncName, [Arg], State) -> State.
 %%  Perform checks on known remote calls.
 
@@ -1593,6 +1752,14 @@ obsolete_function(Line, M, F, As, St) ->
 	false -> St
     end.
 
+%% keyword_warning(Line, Atom, State) -> State.
+%%  Add warning for atoms that will be reserved keywords in the future.
+keyword_warning(Line, 'try', St) ->
+    add_warning(Line, {reserved_for_future,'try'}, St);
+keyword_warning(Line, 'cond', St) ->
+    add_warning(Line, {reserved_for_future,'cond'}, St);
+keyword_warning(Line, A, St) -> St.
+
 %% format_function(Line, ModName, FuncName, [Arg], State) -> State.
 %%  Add warning for bad calls to io:fwrite/format functions.
 
@@ -1601,10 +1768,10 @@ format_function(Line, M, F, As, St) ->
 	true ->
 	    case St#lint.warn_format of
 		Lev when Lev > 0 ->
-		    case check_format_1(Lev, As) of
-			{warn,Fmt,Fas} ->
+		    case check_format_1(As) of
+			{warn,Level,Fmt,Fas} when Level =< Lev ->
 			    add_warning(Line, {format_error,{Fmt,Fas}}, St);
-			ok -> St
+			_ -> St
 		    end;
 		Lev -> St
 	    end;
@@ -1617,51 +1784,60 @@ is_format_function(io_lib, fwrite) -> true;
 is_format_function(io_lib, format) -> true;
 is_format_function(M, F) -> false.
 
-%% check_format_1(Level, [Arg]) -> ok | {warn,Format,[Arg]}.
+%% check_format_1([Arg]) -> ok | {warn,Level,Format,[Arg]}.
 
-check_format_1(Lev, Args) when Lev < 1 -> ok;
-check_format_1(Lev, [Fmt]) ->
-    check_format_1(Lev, [Fmt,[]]);
-check_format_1(Lev, [Fmt,As]) ->
-    check_format_2(Lev, Fmt, As);
-check_format_1(Lev, [Dev,Fmt,As]) ->
-    check_format_1(Lev, [Fmt,As]);
-check_format_1(Lev, As) ->
-    {warn,"format call with wrong number of arguments",[]}.
+check_format_1([Fmt]) ->
+    check_format_1([Fmt,{nil,0}]);
+check_format_1([Fmt,As]) ->
+    check_format_2(Fmt, canonicalize_string(As));
+check_format_1([Dev,Fmt,As]) ->
+    check_format_1([Fmt,As]);
+check_format_1(As) ->
+    {warn,1,"format call with wrong number of arguments",[]}.
 
-%% check_format_2(Level, [Arg]) -> ok | {warn,Format,[Arg]}.
+canonicalize_string({string,Line,Cs}) ->
+    foldr(fun (C, T) -> {cons,Line,{integer,Line,C},T} end, {nil,Line}, Cs);
+canonicalize_string(Term) ->
+    Term.
 
-check_format_2(Lev, Fmt, As) when Lev < 2 -> ok;
-check_format_2(Lev, Fmt, As) ->
+%% check_format_2([Arg]) -> ok | {warn,Level,Format,[Arg]}.
+
+check_format_2(Fmt, As) ->
     case Fmt of
-	{string,L,S} -> check_format_2a(Lev, S, As);
-	{atom,L,A} -> check_format_2a(Lev, atom_to_list(A), As);
-	_ -> {warn,"format string not a string",[]}
+	{string,L,S} -> check_format_2a(S, As);
+	{atom,L,A} -> check_format_2a(atom_to_list(A), As);
+	_ -> {warn,2,"format string not a textual constant",[]}
     end.
 
-check_format_2a(Lev, Fmt, As) ->
+check_format_2a(Fmt, As) ->
     case args_list(As) of
-	true -> check_format_3(Lev, Fmt, As);
-	false -> {warn,"format arguments not a list",[]}
+	true -> check_format_3(Fmt, As);
+	false -> {warn,1,"format arguments not a list",[]};
+	maybe -> {warn,2,"format arguments perhaps not a list",[]}
     end.
 
-%% check_format_3(Level, FormatString, [Arg]) -> ok | {warn,Format,[Arg]}.
+%% check_format_3(FormatString, [Arg]) -> ok | {warn,Level,Format,[Arg]}.
 
-check_format_3(Lev, Fmt, As) when Lev < 3 -> ok;
-check_format_3(Lev, Fmt, As) ->
+check_format_3(Fmt, As) ->
     case check_format_string(Fmt) of
 	{ok,Need} ->
 	    case args_length(As) of
 		Len when length(Need) == Len -> ok;
-		Len -> {warn,"format call with wrong number of arguments",[]}
+		Len -> {warn,1,"wrong number of arguments in format call",[]}
 	    end;
 	{error,S} ->
-	    {warn,"format string invalid (~s)",[S]}
+	    {warn,1,"format string invalid (~s)",[S]}
     end.
 
 args_list({cons,L,H,T}) -> args_list(T);
+%% Strange case: user has written something like [a | "bcd"]; pretend
+%% we don't know:
+args_list({string,L,Cs}) -> maybe;
 args_list({nil,L}) -> true;
-args_list(Other) -> false.
+args_list({atom,_,_}) -> false;
+args_list({integer,_,_}) -> false;
+args_list({float,_,_}) -> false;
+args_list(Other) -> maybe.
 
 args_length({cons,L,H,T}) -> 1 + args_length(T);
 args_length({nil,L}) -> 0.
@@ -1710,88 +1886,3 @@ control_type($P) -> [term,int];
 control_type($n) -> [];
 control_type($i) -> [term];
 control_type(C) -> error.
-
-%% This is our own version of the module 'orddict'.  When 'orddict'
-%% becomes officially available to be used in the compiler then
-%% replace all the od_XXX calls with calls to orddict:XXX.  We can't
-%% use 'dict' here as the new 'dict' does not use lists and we USE the
-%% fact that these are ordered lists.
-
-%% od_new() -> Dictionary.
-
-od_new() -> [].
-
-%% od_is_key(Key, Dictionary) -> bool().
-
-od_is_key(Key, [{K,Val}|D]) when Key < K -> false;
-od_is_key(Key, [{K,Val}|D]) when Key == K -> true;
-od_is_key(Key, [{K,Val}|D]) when Key > K -> od_is_key(Key, D);
-od_is_key(Key, []) -> false.
-
-%% od_find(Key, Dictionary) -> {ok,Value} | error
-
-od_find(Key, [{K,Value}|_]) when Key < K -> error;
-od_find(Key, [{K,Value}|_]) when Key == K -> {ok,Value};
-od_find(Key, [{K,Value}|D]) when Key > K -> od_find(Key, D);
-od_find(Key, []) -> error.
-
-%% od_erase(Key, Dictionary) -> Dictionary'
-
-od_erase(Key, [{K,Value}=E|Dict]) when Key < K -> [E|Dict];
-od_erase(Key, [{K,Value}=E|Dict]) when Key == K -> Dict;
-od_erase(Key, [{K,Value}=E|Dict]) when Key > K ->
-    [E|od_erase(Key, Dict)];
-od_erase(Key, []) -> [].
-
-%% od_store(Key, Value, Dictionary) -> Dictionary.
-
-od_store(Key, New, [{K,Old}=E|Dict]) when Key < K ->
-    [{Key,New},E|Dict];
-od_store(Key, New, [{K,Old}=E|Dict]) when Key == K ->
-    [{Key,New}|Dict];
-od_store(Key, New, [{K,Old}=E|Dict]) when Key > K ->
-    [E|od_store(Key, New, Dict)];
-od_store(Key, New, []) -> [{Key,New}].
-
-%% od_append(Key, Value, Dictionary) -> Dictionary.
-
-od_append(Key, New, [{K,Old}=E|Dict]) when Key < K ->
-    [{Key,[New]},E|Dict];
-od_append(Key, New, [{K,Old}=E|Dict]) when Key == K ->
-    [{Key,Old ++ [New]}|Dict];
-od_append(Key, New, [{K,Old}=E|Dict]) when Key > K ->
-    [E|od_append(Key, New, Dict)];
-od_append(Key, New, []) -> [{Key,[New]}].
-
-%% od_update(Key, UpdateFun, InitialValue, Dictionary) -> Dictionary.
-%%  Note the Fun is not applied to initial value.
-
-od_update(Key, Fun, Init, [{K,Val}=E|Dict]) when Key < K ->
-    [{Key,Init},E|Dict];
-od_update(Key, Fun, Init, [{K,Val}=E|Dict]) when Key == K ->
-    [{Key,Fun(Val)}|Dict];
-od_update(Key, Fun, Init, [{K,Val}=E|Dict]) when Key > K ->
-    [E|od_update(Key, Fun, Init, Dict)];
-od_update(Key, Fun, Init, []) -> [{Key,Init}].
-
-%% od_fold(FoldFun, Accumulator, Dictionary) -> Accumulator.
-
-od_fold(F, Acc, [{Key,Val}|D]) ->
-    od_fold(F, F(Key, Val, Acc), D);
-od_fold(F, Acc, []) -> Acc.
-
-%% od_filter(FilterFun, Dictionary) -> Dictionary.
-
-od_filter(F, D) ->
-    lists:filter(fun ({K,V}) -> F(K, V) end, D).
-
-%% od_merge(MergeFun, Dictionary1, Dictionary2) -> Dictionary.
-
-od_merge(F, [{K1,V1}=E1|D1], [{K2,V2}=E2|D2]) when K1 < K2 ->
-    [E1|od_merge(F, D1, [E2|D2])];
-od_merge(F, [{K1,V1}=E1|D1], [{K2,V2}=E2|D2]) when K1 =:= K2 ->
-    [{K1,F(K1, V1, V2)}|od_merge(F, D1, D2)];
-od_merge(F, [{K1,V1}=E1|D1], [{K2,V2}=E2|D2]) when K1 > K2 ->
-    [E2|od_merge(F, [E1|D1], D2)];
-od_merge(F, [], D2) -> D2;
-od_merge(F, D1, []) -> D1.

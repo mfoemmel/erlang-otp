@@ -29,18 +29,18 @@
 #endif
 
 #ifdef DEBUG
-#define ASSERT(e) \
+#  define ASSERT(e) \
   if (e) { \
      ; \
   } else { \
      erl_assert_error(#e, __FILE__, __LINE__); \
   }
-#define ASSERT_EXPR(e) \
-  ((void) ((e) ? 1 : (erl_assert_error(#e, __FILE__, __LINE__), 0)))
+#  define ASSERT_EXPR(e) \
+    ((void) ((e) ? 1 : (erl_assert_error(#e, __FILE__, __LINE__), 0)))
 void erl_assert_error(char* expr, char* file, int line);
 #else
-#define ASSERT(e)
-#define ASSERT_EXPR(e) ((void) 1)
+#  define ASSERT(e)
+#  define ASSERT_EXPR(e) ((void) 1)
 #endif
 
 /*
@@ -56,47 +56,47 @@ void erl_assert_error(char* expr, char* file, int line);
  */
 
 #if defined(__STDC__) || defined(_MSC_VER)
-#include <stdarg.h>
-#define VA_START(x, y) va_start(x, y)
+#  include <stdarg.h>
+#  define VA_START(x, y) va_start(x, y)
 #else
-#include <varargs.h>
-#define VA_START(x, y) va_start(x)
+#  include <varargs.h>
+#  define VA_START(x, y) va_start(x)
 #endif
 
 #if defined(__STDC__) || defined(_MSC_VER)
-#define EXTERN_FUNCTION(t, f, x)  extern t f x
-#define FUNCTION(t, f, x) t f x
-#define _DOTS_ ...
-#define _VOID_      void
+#  define EXTERN_FUNCTION(t, f, x)  extern t f x
+#  define FUNCTION(t, f, x) t f x
+#  define _DOTS_ ...
+#  define _VOID_      void
 #elif defined(__cplusplus)
-#define EXTERN_FUNCTION(f, x) extern "C" { f x }
-#define FUNCTION(t, f, x) t f x
-#define _DOTS_ ...
-#define _VOID_    void
+#  define EXTERN_FUNCTION(f, x) extern "C" { f x }
+#  define FUNCTION(t, f, x) t f x
+#  define _DOTS_ ...
+#  define _VOID_    void
 #else
-#define EXTERN_FUNCTION(t, f, x) extern t f (/*x*/)
-#define FUNCTION(t, f, x) t f (/*x*/)
-#define _DOTS_
-#define _VOID_
+#  define EXTERN_FUNCTION(t, f, x) extern t f (/*x*/)
+#  define FUNCTION(t, f, x) t f (/*x*/)
+#  define _DOTS_
+#  define _VOID_
 #endif
 
 /* This isn't sys-dependent, but putting it here benefits sys.c and drivers
    - allow use of 'const' regardless of compiler */
 
 #if !defined(__STDC__) && !defined(_MSC_VER)
-#define const
+#  define const
 #endif
 
 #ifdef VXWORKS
 /* Replace VxWorks' printf with a real one that does fprintf(stdout, ...) */
 EXTERN_FUNCTION(int, real_printf, (const char *fmt, ...));
-#define printf real_printf
+#  define printf real_printf
 #endif
 
 #if __GNUC__
-#define __noreturn __attribute__((noreturn))
+#  define __noreturn __attribute__((noreturn))
 #else
-#define __noreturn
+#  define __noreturn
 #endif
 
 /*
@@ -113,22 +113,21 @@ EXTERN_FUNCTION(int, real_printf, (const char *fmt, ...));
 */
 
 #if defined(SIZEOF_LONG) && (SIZEOF_LONG == 8)
+#define ARCH_64
+#endif
+
+#ifdef ARCH_64
 
 /* The new and preferred datatypes */
-typedef unsigned int    Eterm;  /* To be unsigned long in a real 64 bit port */
-typedef unsigned int    Uint;   
-typedef int             Sint;
-typedef unsigned int    Uint32;
-typedef int             Sint32;
-typedef unsigned short  Uint16;
-typedef short           Sint16;
+typedef unsigned long    Eterm;
+typedef unsigned long    Uint;   
+typedef long             Sint;
+typedef unsigned int     Uint32;
+typedef int              Sint32;
+typedef unsigned short   Uint16;
+typedef short            Sint16;
 
-/* The old and deprecated types */
-typedef int		sint32;
-typedef unsigned int	uint32;
-typedef short		sint16;
-typedef unsigned short	uint16;
-typedef unsigned char	byte;
+typedef unsigned char	 byte;
 
 #else
 
@@ -159,36 +158,36 @@ typedef unsigned char	byte;
 
 /* xxxP */
 #if defined(USE_BCOPY)
-#define memcpy(a, b, c) bcopy((b), (a), (c))
-#define memcmp(a, b, c) bcmp((a), (b), (c))
-#define memzero(buf, len) bzero((buf), (len))
+#  define memcpy(a, b, c) bcopy((b), (a), (c))
+#  define memcmp(a, b, c) bcmp((a), (b), (c))
+#  define memzero(buf, len) bzero((buf), (len))
 #else
-#define memzero(buf, len) memset((buf), '\0', (len))
+#  define memzero(buf, len) memset((buf), '\0', (len))
 #endif
 
 /* Stuff that is useful for port programs, drivers, etc */
 
 #ifdef ISC32			/* Too much for the Makefile... */
-#define signal	sigset
-#define lgamma	undef_math_func_1
-#define asinh	undef_math_func_1
-#define acosh	undef_math_func_1
-#define atanh	undef_math_func_1
-#define NO_FTRUNCATE
-#define SIG_SIGHOLD
-#define _POSIX_SOURCE 
-#define _XOPEN_SOURCE
+#  define signal	sigset
+#  define lgamma	undef_math_func_1
+#  define asinh	undef_math_func_1
+#  define acosh	undef_math_func_1
+#  define atanh	undef_math_func_1
+#  define NO_FTRUNCATE
+#  define SIG_SIGHOLD
+#  define _POSIX_SOURCE 
+#  define _XOPEN_SOURCE
 #endif
 
 #ifdef QNX			/* Too much for the Makefile... */
-#define SYS_SELECT_H
-#define erf	undef_math_func_1
-#define erfc	undef_math_func_1
-#define lgamma	undef_math_func_1
+#  define SYS_SELECT_H
+#  define erf	undef_math_func_1
+#  define erfc	undef_math_func_1
+#  define lgamma	undef_math_func_1
 /* This definition doesn't take NaN into account, but matherr() gets those */
-#define finite(x) (fabs(x) != HUGE_VAL)
-#define USE_MATHERR
-#define HAVE_FINITE
+#  define finite(x) (fabs(x) != HUGE_VAL)
+#  define USE_MATHERR
+#  define HAVE_FINITE
 #endif
 
 
@@ -203,104 +202,48 @@ typedef unsigned char	byte;
    in non-blocking mode - and ioctl FIONBIO on AIX *doesn't* work for
    pipes or ttys (O_NONBLOCK does)!!! For now, we'll use FIONBIO for AIX. */
 
-#ifdef __WIN32__
+#  ifdef __WIN32__
 
 static unsigned long zero_value = 0, one_value = 1;
-#define SET_BLOCKING(fd)	{ if (ioctlsocket((fd), FIONBIO, &zero_value) != 0) fprintf(stderr, "Error setting socket to non-blocking: %d\n", WSAGetLastError()); }
-#define SET_NONBLOCKING(fd)	ioctlsocket((fd), FIONBIO, &one_value)
+#    define SET_BLOCKING(fd)	{ if (ioctlsocket((fd), FIONBIO, &zero_value) != 0) fprintf(stderr, "Error setting socket to non-blocking: %d\n", WSAGetLastError()); }
+#    define SET_NONBLOCKING(fd)	ioctlsocket((fd), FIONBIO, &one_value)
 
-#else
-#ifdef VXWORKS
-#include <fcntl.h> /* xxxP added for O_WRONLY etc ... macro:s ... */
-#include <ioLib.h>
+#  else
+#    ifdef VXWORKS
+#      include <fcntl.h> /* xxxP added for O_WRONLY etc ... macro:s ... */
+#      include <ioLib.h>
 static const int zero_value = 0, one_value = 1;
-#define SET_BLOCKING(fd)	ioctl((fd), FIONBIO, (int)&zero_value)
-#define SET_NONBLOCKING(fd)	ioctl((fd), FIONBIO, (int)&one_value)
-#define ERRNO_BLOCK EWOULDBLOCK
-
-#else
-#ifdef NB_FIONBIO		/* Old BSD */
-#include <sys/ioctl.h>
-static const int zero_value = 0, one_value = 1;
-#define SET_BLOCKING(fd)	ioctl((fd), FIONBIO, &zero_value)
-#define SET_NONBLOCKING(fd)	ioctl((fd), FIONBIO, &one_value)
-#define ERRNO_BLOCK EWOULDBLOCK
-#else /* !NB_FIONBIO */
-#include <fcntl.h>
-#ifdef NB_O_NDELAY		/* Nothing needs this? */
-#   define NB_FLAG O_NDELAY
-#   ifndef ERRNO_BLOCK		/* allow override (e.g. EAGAIN) via Makefile */
+#      define SET_BLOCKING(fd)	ioctl((fd), FIONBIO, (int)&zero_value)
+#      define SET_NONBLOCKING(fd)	ioctl((fd), FIONBIO, (int)&one_value)
 #      define ERRNO_BLOCK EWOULDBLOCK
-#   endif
-#else  /* !NB_O_NDELAY */	/* The True Way - POSIX!:-) */
-#   define NB_FLAG O_NONBLOCK
-#   define ERRNO_BLOCK EAGAIN
-#endif /* !NB_O_NDELAY */
-#define SET_BLOCKING(fd)	fcntl((fd), F_SETFL, \
-				      fcntl((fd), F_GETFL, 0) & ~NB_FLAG)
-#define SET_NONBLOCKING(fd)	fcntl((fd), F_SETFL, \
-				      fcntl((fd), F_GETFL, 0) | NB_FLAG)
-#endif /* !NB_FIONBIO */
-#endif /* _WXWORKS_ */
-#endif /* WANT_NONBLOCKING */
 
-#endif /* !__WIN32__ */
-     
-/*************** Floating point exception handling ***************/
-#ifndef VXWORKS             /* currently defined in erl_vxworks_sys.h */
-#ifdef __WIN32__
-extern int erl_fp_exception;	/* defined in sys.c */
-#define FP_PRE_CHECK_OK() (erl_fp_exception=0, 1)
-#define FP_RESULT_OK(f) (!erl_fp_exception && _finite(f))
-#endif
-
-#ifndef __WIN32__
-#ifdef USE_ISINF_ISNAN		/* simulate finite() */
-#  define finite(f) (!isinf(f) && !isnan(f))
-#  define HAVE_FINITE
-#endif
-#ifdef NO_FPE_CHECK		/* No FPE handling whatsoever */
-#  define FP_RESULT_OK(f) (1)
-#  define FP_PRE_CHECK_OK() (1)
-#  define NO_FPE_SIGNALS
-#endif
-
-#if defined(HAVE_IEEE_HANDLER) && !defined(NO_FPE_SIGNALS)
-   extern int erl_fp_exception;        /* defined in sys.c */
-#  define FP_PRE_CHECK_OK() (erl_fp_exception=0, 1)
-#  ifdef HAVE_FINITE
-#    define FP_RESULT_OK(f) (!erl_fp_exception && finite(f))
-#  else
-#    define FP_RESULT_OK(f) (!erl_fp_exception)
-#  endif
-#else
-   /* No FPE signal handling */
-#  define NO_FPE_SIGNALS
-#  ifdef HAVE_FINITE
-#    ifdef USE_MATHERR
-       extern int erl_fp_exception;        /* defined in sys.c */
-#      define FP_PRE_CHECK_OK() (erl_fp_exception=0, 1)
-#      define FP_RESULT_OK(f) (!erl_fp_exception && finite(f))
 #    else
-#      define FP_RESULT_OK(f) (finite(f))
-#    endif
-#  else
-#    ifdef USE_MATHERR
-       extern int erl_fp_exception;        /* defined in sys.c */
-#      define FP_PRE_CHECK_OK() (erl_fp_exception=0, 1)
-#      define FP_RESULT_OK(f) (!erl_fp_exception)
-#    endif
-#  endif
-#endif
-
-/* This macro is used *before* the actual floating point op is performed */
-#ifndef FP_PRE_CHECK_OK
-#  define FP_PRE_CHECK_OK() (1)
-#endif
-
-#endif /* !__WIN32__ */
-#endif /* !VXWORKS */
-
+#      ifdef NB_FIONBIO		/* Old BSD */
+#        include <sys/ioctl.h>
+  static const int zero_value = 0, one_value = 1;
+#        define SET_BLOCKING(fd)	ioctl((fd), FIONBIO, &zero_value)
+#        define SET_NONBLOCKING(fd)	ioctl((fd), FIONBIO, &one_value)
+#        define ERRNO_BLOCK EWOULDBLOCK
+#      else /* !NB_FIONBIO */
+#        include <fcntl.h>
+#        ifdef NB_O_NDELAY		/* Nothing needs this? */
+#          define NB_FLAG O_NDELAY
+#          ifndef ERRNO_BLOCK		/* allow override (e.g. EAGAIN) via Makefile */
+#            define ERRNO_BLOCK EWOULDBLOCK
+#          endif
+#        else  /* !NB_O_NDELAY */	/* The True Way - POSIX!:-) */
+#          define NB_FLAG O_NONBLOCK
+#          define ERRNO_BLOCK EAGAIN
+#        endif /* !NB_O_NDELAY */
+#        define SET_BLOCKING(fd)	fcntl((fd), F_SETFL, \
+	  			      fcntl((fd), F_GETFL, 0) & ~NB_FLAG)
+#        define SET_NONBLOCKING(fd)	fcntl((fd), F_SETFL, \
+				      fcntl((fd), F_GETFL, 0) | NB_FLAG)
+#      endif /* !NB_FIONBIO */
+#    endif /* _WXWORKS_ */
+#  endif /* !__WIN32__ */
+#endif /* WANT_NONBLOCKING */
+     
 EXTERN_FUNCTION(int, check_async_ready, (_VOID_));
 
 #ifdef USE_THREADS
@@ -353,9 +296,16 @@ extern void erts_deliver_time(SysTimeval *);
 extern void erts_time_remaining(SysTimeval *);
 extern int erts_init_time_sup(void);
 
+/*
+ * System interfaces for startup/sae code (functions found in respective sys.c)
+ */
+extern void erl_sys_init(void);
+extern void erl_sys_args(int *argc, char **argv);
+extern void erl_sys_schedule_loop(void);
+void sys_tty_reset(void);
 
 EXTERN_FUNCTION(int, sys_max_files, (_VOID_));
-EXTERN_FUNCTION(void, sys_init_io, (byte*, uint32));
+void sys_init_io(byte*, Uint);
 Preload* sys_preloaded(void);
 EXTERN_FUNCTION(unsigned char*, sys_preload_begin, (Preload*));
 EXTERN_FUNCTION(void, sys_preload_end, (Preload*));
@@ -368,7 +318,7 @@ EXTERN_FUNCTION(void, get_localtime, (int*, int*, int*, int*, int*, int*));
 EXTERN_FUNCTION(void, get_universaltime, (int*, int*, int*, int*, int*, int*));
 EXTERN_FUNCTION(int, univ_to_local, (int*, int*, int*, int*, int*, int*));
 EXTERN_FUNCTION(int, local_to_univ, (int*, int*, int*, int*, int*, int*));
-EXTERN_FUNCTION(void, get_now, (uint32*, uint32*, uint32*));
+void get_now(Uint32*, Uint32*, Uint32*);
 EXTERN_FUNCTION(void, set_break_quit, (void (*)(), void (*)()));
 
 
@@ -390,45 +340,45 @@ EXTERN_FUNCTION(void, sys_get_pid, (char *));
 EXTERN_FUNCTION(int, sys_putenv, (char *));
 
 /* Defined in sys.c (util.c when instrumented) */
-EXTERN_FUNCTION(void*, sys_alloc, (unsigned int));
-EXTERN_FUNCTION(void*, sys_realloc, (void*,unsigned int));
+EXTERN_FUNCTION(void*, sys_alloc, (Uint));
+EXTERN_FUNCTION(void*, sys_realloc, (void*,Uint));
 EXTERN_FUNCTION(void,  sys_free, (void*));
 /* Defined in erts_sl_malloc.c (util.c when instrumented) */
-EXTERN_FUNCTION(void*, sys_sl_alloc, (unsigned int));
-EXTERN_FUNCTION(void*, sys_sl_realloc, (void*, unsigned int, unsigned int));
+EXTERN_FUNCTION(void*, sys_sl_alloc, (Uint));
+EXTERN_FUNCTION(void*, sys_sl_realloc, (void*, Uint, Uint));
 EXTERN_FUNCTION(void,  sys_sl_free, (void*));
 
 #ifdef INSTRUMENT
 /* Defined in sys.c */
 #ifndef sys_alloc2 /* Declare if not macros */
-EXTERN_FUNCTION(void*, sys_alloc2, (unsigned int));
-EXTERN_FUNCTION(void*, sys_realloc2, (void*,unsigned int));
+EXTERN_FUNCTION(void*, sys_alloc2, (Uint));
+EXTERN_FUNCTION(void*, sys_realloc2, (void*, Uint));
 EXTERN_FUNCTION(void,  sys_free2, (void*));
 #endif /* !sys_alloc2 */
 
 
 EXTERN_FUNCTION(void *,
 		instr_alloc,
-		(int, void *(*)(unsigned int), unsigned int));
+		(int, void *(*)(Uint), Uint));
 EXTERN_FUNCTION(void *,
 		instr_realloc,
 		(int,
-		 void *(*)(void *, unsigned int, unsigned int),
+		 void *(*)(void *, Uint, Uint),
 		 void *,
-		 unsigned int,
-		 unsigned int));
+		 Uint,
+		 Uint));
 EXTERN_FUNCTION(void,
 		instr_free,
 		(void (*free_func)(void *), void *));
 
 /* Defined in erts_sl_malloc.c */
 #ifndef sys_sl_alloc2 /* Declare if not macros */
-EXTERN_FUNCTION(void*, sys_sl_alloc2, (unsigned int));
-EXTERN_FUNCTION(void*, sys_sl_realloc2, (void*, unsigned int, unsigned int));
+EXTERN_FUNCTION(void*, sys_sl_alloc2, (Uint));
+EXTERN_FUNCTION(void*, sys_sl_realloc2, (void*, Uint, Uint));
 EXTERN_FUNCTION(void,  sys_sl_free2, (void*));
 #endif /* !sys_sl_alloc2 */
 
-EXTERN_FUNCTION(void*, sys_realloc3, (void*, unsigned int, unsigned int));
+EXTERN_FUNCTION(void*, sys_realloc3, (void*, Uint, Uint));
 
 #define sys_alloc_from(Where, Size) \
   instr_alloc((Where), sys_alloc2, (Size))
@@ -586,16 +536,16 @@ EXTERN_FUNCTION(void*, sys_calloc2, (size_t, size_t));
 EXTERN_FUNCTION(void, erl_debug, (char* format, ...));
 EXTERN_FUNCTION(void, erl_bin_write, (unsigned char *, int, int));
 
-#define DEBUGF(x) erl_debug x
+#  define DEBUGF(x) erl_debug x
 #else
-#define DEBUGF(x)
+#  define DEBUGF(x)
 #endif
 
 
 #ifdef VXWORKS
 /* This includes redefines of malloc etc 
    this should be done after sys_alloc, etc, above */
-#include "reclaim.h"
+#  include "reclaim.h"
 /*********************Malloc and friends************************
  * There is a problem with the naming of malloc and friends, 
  * malloc is used throughout sys.c and the resolver to mean save_alloc,
@@ -608,23 +558,23 @@ EXTERN_FUNCTION(void, erl_bin_write, (unsigned char *, int, int));
  * I also add an own calloc, to make the BSD resolver source happy.
  ***************************************************************/
 /* Undefine malloc and friends */
-#ifdef malloc
-#undef malloc
-#endif
-#ifdef calloc
-#undef calloc
-#endif
-#ifdef realloc
-#undef realloc
-#endif
-#ifdef free
-#undef free
-#endif
+#  ifdef malloc
+#    undef malloc
+#  endif
+#  ifdef calloc
+#    undef calloc
+#  endif
+#  ifdef realloc
+#    undef realloc
+#  endif
+#  ifdef free
+#    undef free
+#  endif
 /* Redefine malloc and friends */
-#define malloc sys_alloc
-#define calloc  sys_calloc
-#define realloc  sys_realloc
-#define free sys_free
+#  define malloc sys_alloc
+#  define calloc  sys_calloc
+#  define realloc  sys_realloc
+#  define free sys_free
 
 #endif
 
@@ -636,4 +586,7 @@ char* win32_errorstr(int);
 
 
 #endif
+
+
 #endif
+

@@ -77,7 +77,7 @@ $(SNMP_BIN_TARGET_DIR)/OTP-SNMPEA-MIB.bin:     $(ERL_TOP)/lib/snmp/mibs/OTP-SNMP
 	$(ERLC) -pa $(SNMP_TOOLKIT)/ebin -I $(SNMP_TOOLKIT)/priv/mibs $(SNMP_FLAGS) -o $(SNMP_BIN_TARGET_DIR) $<
 
 v1/%.mib.v1: %.mib
-	$(ERL_TOP)/lib/snmp/bin/snmp-v2tov1 -o $@ $<
+	AWK=$(AWK) $(ERL_TOP)/lib/snmp/bin/snmp-v2tov1 -o $@ $<
 
 
 # ----------------------------------------------------

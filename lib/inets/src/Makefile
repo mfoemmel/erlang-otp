@@ -51,6 +51,7 @@ MODULES= ftp \
 	mod_auth_plain \
 	mod_auth_dets \
 	mod_auth_mnesia \
+	mod_browser \
 	mod_security \
 	mod_cgi \
 	mod_dir \
@@ -58,6 +59,7 @@ MODULES= ftp \
 	mod_esi \
 	mod_get \
 	mod_head \
+	mod_htaccess \
 	mod_include \
 	mod_log
 
@@ -81,10 +83,10 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # DONT_USE_VERBOSITY = -Ddont_use_verbosity=true
 INETS_FLAGS = -D'SERVER_SOFTWARE="inets/$(VSN)"' \
-              -Ddefault_verbosity=info \
+              -Ddefault_verbosity=silence \
               $(DONT_USE_VERBOSITY)
 
-# INETS_DEBUG_DEFAULT = l
+# INETS_DEBUG_DEFAULT = d
 ifeq ($(INETS_DEBUG),)
   INETS_DEBUG = $(INETS_DEBUG_DEFAULT)
 endif

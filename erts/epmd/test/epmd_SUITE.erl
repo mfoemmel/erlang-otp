@@ -137,7 +137,7 @@ register_name(suite) ->
 register_name(Config) when list(Config) ->
     ?line ok = epmdrun(),
     ?line {ok,Sock} = register_node("foobar"),
-    ?line ok = ?m(ok,close(Sock)),			% Unregister
+    ?line ok = close(Sock),			% Unregister
     ok.
 
 register_names_1(doc) ->
@@ -148,8 +148,8 @@ register_names_1(Config) when list(Config) ->
     ?line ok = epmdrun(),
     ?line {ok,Sock1} = register_node("foobar"),
     ?line {ok,Sock2} = register_node("foozap"),
-    ?line ok = ?m(ok,close(Sock1)),			% Unregister
-    ?line ok = ?m(ok,close(Sock2)),			% Unregister
+    ?line ok = close(Sock1),			% Unregister
+    ?line ok = close(Sock2),			% Unregister
     ok.
 
 register_names_2(doc) ->
@@ -160,8 +160,8 @@ register_names_2(Config) when list(Config) ->
     ?line ok = epmdrun(),
     ?line {ok,Sock1} = register_node("foobar"),
     ?line {ok,Sock2} = register_node("foozap"),
-    ?line ok = ?m(ok,close(Sock2)),			% Unregister
-    ?line ok = ?m(ok,close(Sock1)),			% Unregister
+    ?line ok = close(Sock2),			% Unregister
+    ?line ok = close(Sock1),			% Unregister
     ok.
 
 register_duplicate_name(doc) ->
@@ -171,8 +171,8 @@ register_duplicate_name(suite) ->
 register_duplicate_name(Config) when list(Config) ->
     ?line ok = epmdrun(),
     ?line {ok,Sock} = register_node("foobar"),
-    ?line ok = ?m(error,register_node("foobar")),
-    ?line ok = ?m(ok,close(Sock)),			% Unregister
+    ?line error = register_node("foobar"),
+    ?line ok = close(Sock),			% Unregister
     ok.
 
 % Internal function to register a node name, no close, i.e. unregister
@@ -213,7 +213,7 @@ name_with_null_inside(suite) ->
     [];
 name_with_null_inside(Config) when list(Config) ->
     ?line ok = epmdrun(),
-    ?line ok = ?m(error,register_node("foo\000bar")),
+    ?line error = register_node("foo\000bar"),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -225,8 +225,8 @@ name_null_terminated(suite) ->
 name_null_terminated(Config) when list(Config) ->
     ?line ok = epmdrun(),
     ?line {ok,Sock} = register_node("foobar\000"),
-    ?line ok = ?m(error,register_node("foobar")),
-    ?line ok = ?m(ok,close(Sock)),			% Unregister
+    ?line error = register_node("foobar"),
+    ?line ok = close(Sock),			% Unregister
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -357,10 +357,10 @@ port_request(M) ->
     Port = 1042,
     ?line {ok,RSock} = register_node("foo", Port),
     ?line {ok,Sock} = connect(),
-    ?line ok = ?m(ok,send(Sock,[size16(M),M])),
+    ?line ok = send(Sock,[size16(M),M]),
     R = put16(Port),
-    ?line ok = ?m({ok,R},recv(Sock,length(R))),
-    ?line ok = ?m(ok,close(RSock)),
+    ?line {ok,R} = recv(Sock,length(R)),
+    ?line ok = close(RSock),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -374,10 +374,10 @@ unregister_others_name_1(Config) when list(Config) ->
     ?line {ok,RSock} = register_node("foo"),
     ?line {ok,Sock} = connect(),
     M = [?EPMD_STOP_REQ,"foo"],
-    ?line ok = ?m(ok,send(Sock,[size16(M),M])),
+    ?line ok = send(Sock,[size16(M),M]),
     R = "STOPPED",
-    ?line ok = ?m({ok,R},recv(Sock,length(R))),
-    ?line ok = ?m(ok,close(RSock)),
+    ?line {ok,R} = recv(Sock,length(R)),
+    ?line ok = close(RSock),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -390,9 +390,9 @@ unregister_others_name_2(Config) when list(Config) ->
     ?line ok = epmdrun(),
     ?line {ok,Sock} = connect(),
     M = [?EPMD_STOP_REQ,"xxx42"],
-    ?line ok = ?m(ok,send(Sock,[size16(M),M])),
+    ?line ok = send(Sock,[size16(M),M]),
     R = "NOEXIST",
-    ?line ok = ?m({ok,R},recv(Sock,length(R))),
+    ?line {ok,R} = recv(Sock,length(R)),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -495,7 +495,7 @@ no_data(Config) when list(Config) ->
     ?line ok = epmdrun(),
     ?line {ok,Sock} = connect(),
     sleep(?LONG_PAUSE),
-    ?line ok = ?m(closed,recv(Sock,1)),
+    ?line closed = recv(Sock,1),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -507,9 +507,9 @@ one_byte(suite) ->
 one_byte(Config) when list(Config) ->
     ?line ok = epmdrun(),
     ?line {ok,Sock} = connect(),
-    ?line ok = ?m(ok,send(Sock,[0])),
+    ?line ok = send(Sock,[0]),
     sleep(?LONG_PAUSE),
-    ?line ok = ?m(closed,recv(Sock,1)),
+    ?line closed = recv(Sock,1),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -521,9 +521,9 @@ two_bytes(suite) ->
 two_bytes(Config) when list(Config) ->
     ?line ok = epmdrun(),
     ?line {ok,Sock} = connect(),
-    ?line ok = ?m(ok,send(Sock,[put16(3)])),
+    ?line ok = send(Sock,[put16(3)]),
     sleep(?LONG_PAUSE),
-    ?line ok = ?m(closed,recv(Sock,1)),
+    ?line closed = recv(Sock,1),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -535,9 +535,9 @@ partial_packet(suite) ->
 partial_packet(Config) when list(Config) ->
     ?line ok = epmdrun(),
     ?line {ok,Sock} = connect(),
-    ?line ok = ?m(ok,send(Sock,[put16(100),"only a few bytes"])),
+    ?line ok = send(Sock,[put16(100),"only a few bytes"]),
     sleep(?LONG_PAUSE),
-    ?line ok = ?m(closed,recv(Sock,1)),
+    ?line closed = recv(Sock,1),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -549,9 +549,9 @@ zero_length(suite) ->
 zero_length(Config) when list(Config) ->
     ?line ok = epmdrun(),
     ?line {ok,Sock} = connect(),
-    ?line ok = ?m(ok,send(Sock,[0,0,0,0,0,0,0,0,0,0])),
+    ?line ok = send(Sock,[0,0,0,0,0,0,0,0,0,0]),
     sleep(?MEDIUM_PAUSE),
-    ?line ok = ?m(closed,recv(Sock,1)),
+    ?line closed = recv(Sock,1),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -565,9 +565,9 @@ too_large(Config) when list(Config) ->
     ?line {ok,Sock} = connect(),
     Size = 63000,
     M = lists:duplicate(Size, $z),
-    ?line ok = ?m(ok,send(Sock,[put16(Size),M])),
+    ?line ok = send(Sock,[put16(Size),M]),
     sleep(?MEDIUM_PAUSE),
-    ?line ok = ?m(closed,recv(Sock,1)),
+    ?line closed = recv(Sock,1),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -580,9 +580,9 @@ alive_req_too_small_1(Config) when list(Config) ->
     ?line ok = epmdrun(),
     ?line {ok,Sock} = connect(),
     M = [?EPMD_ALIVE_REQ, 42],
-    ?line ok = ?m(ok,send(Sock, [size16(M), M])),
+    ?line ok = send(Sock, [size16(M), M]),
     sleep(?MEDIUM_PAUSE),
-    ?line ok = ?m(closed,recv(Sock,1)),
+    ?line closed = recv(Sock,1),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -595,9 +595,9 @@ alive_req_too_small_2(Config) when list(Config) ->
     ?line ok = epmdrun(),
     ?line {ok,Sock} = connect(),
     M = [?EPMD_ALIVE_REQ, put16(?DUMMY_PORT)],
-    ?line ok = ?m(ok,send(Sock, [size16(M), M])),
+    ?line ok = send(Sock, [size16(M), M]),
     sleep(?MEDIUM_PAUSE),
-    ?line ok = ?m(closed,recv(Sock,1)),
+    ?line closed = recv(Sock,1),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -624,9 +624,9 @@ alive_req_too_large(Config) when list(Config) ->
 	 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	 ],
     M = [?EPMD_ALIVE_REQ, put16(?DUMMY_PORT), L],
-    ?line ok = ?m(ok,send(Sock, [size16(M), M])),
+    ?line ok = send(Sock, [size16(M), M]),
     sleep(?MEDIUM_PAUSE),
-    ?line ok = ?m(closed,recv(Sock,1)),
+    ?line closed = recv(Sock,1),
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -677,14 +677,9 @@ osrun(Cmd) ->
 
 connect() ->
     connect(?PORT, passive).
-connect(Port) ->
-    connect(Port, passive).
-
 
 connect_active() ->
     connect(?PORT, active).
-connect_active(Port) ->
-    connect(Port, active).
 
 
 % Try a few times before giving up
@@ -753,8 +748,8 @@ recv(Sock, Len, Timeout) ->
 	    timeout;
 	{error,closed} ->
 	    closed;
-	{error,_} ->
-	    error;
+	{error,_}=Error ->
+	    Error;
 	Any ->
 	    test_server:format("unknown message: ~w~n",[Any]),
 	    exit(1)
@@ -826,26 +821,14 @@ put16(N) ->
     [N bsr 8, N  band 16#ff].
 
 size16(List) ->
-    {N,_} = flatten_count(List, 0, []),
+    N = flat_count(List, 0),
     [N bsr 8, N  band 16#ff].
-    
 
-flatten(List) ->
-    {Count,NewList} = flatten_count(List),
-    NewList.
-
-flatten_count(List) ->
-    {C,A} = flatten_count(List, 0, []),
-    {C,lists:reverse(A)}.
-
-flatten_count([], C, A) ->
-    {C,A};
-flatten_count([H | T], C, A) when list(H) ->
-    {Ci,Ai} = flatten_count(H, C, A),
-    flatten_count(T, Ci, Ai);
-flatten_count([H | T], C, A) when integer(H) ->
-    flatten_count(T, C + 1, [H | A]);
-flatten_count([H | T], C, A) ->
-    flatten_count(T, C, [H | A]).
-
+flat_count([H|T], N) when integer(H) ->
+    flat_count(T, N+1);
+flat_count([H|T], N) when list(H) ->
+    flat_count(T, flat_count(H, N));
+flat_count([H|T], N) ->
+    flat_count(T, N);
+flat_count([], N) -> N.
     

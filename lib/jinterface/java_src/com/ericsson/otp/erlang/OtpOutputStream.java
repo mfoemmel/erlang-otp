@@ -415,13 +415,14 @@ public class OtpOutputStream {
       this.write1(OtpExternal.smallBigTag);
       this.write1(4); // length
 
+      // obs! little endian here
       if (l < 0) {
 	this.write1(1); // sign
-	this.write4BE(-l); // value
+	this.write4LE(-l); // value
       }
       else {
 	this.write1(0); // sign
-	this.write4BE(l); //value
+	this.write4LE(l); //value
       }
     }
   }

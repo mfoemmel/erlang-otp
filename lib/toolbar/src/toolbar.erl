@@ -417,12 +417,24 @@ tool_info(ToolFile) ->
 	    {error,nofile};
 	{error,read} ->
 	    {error,format};
-	{ok,[{version,Vsn},InfoTuple]} ->
+	{ok,[{version,Vsn},InfoTuple]} when tuple(InfoTuple)->
 	    case toolbar_lib:tool_info_syntax(Vsn,InfoTuple) of
 		
 		%% Syntax check ok, start additional checks
 		{ok,InfoList} ->
 
+		    tool_info2(filename:dirname(ToolFile),
+			       InfoList,#toolinfo{});
+		
+		%% Syntax error
+		Error ->
+		    Error
+	    end;
+	{ok,[{version,Vsn},ToolInfo]} when list(ToolInfo)->
+	    case toolbar_lib:tool_info_syntax(Vsn,ToolInfo) of
+		
+		%% Syntax check ok, start additional checks
+		{ok,InfoList} ->
 		    tool_info2(filename:dirname(ToolFile),
 			       InfoList,#toolinfo{});
 		

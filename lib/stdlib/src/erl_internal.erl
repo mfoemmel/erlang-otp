@@ -21,7 +21,6 @@
 
 -export([bif/2,bif/3,guard_bif/2,type_test/2,obsolete/3]).
 -export([arith_op/2,bool_op/2,comp_op/2,list_op/2,send_op/2,op_type/2]).
--export([behaviour_info/0, behaviour_info/1]).
 
 %% -type guard_bif(Name, Arity) -> bool()
 %%	when Name = atom(), Arity = integer().
@@ -39,12 +38,38 @@ guard_bif(element, 2) -> true;
 guard_bif(self, 0) -> true;
 guard_bif(node,0) -> true;
 guard_bif(node,1) -> true;
+guard_bif(is_atom, 1) -> true;
+guard_bif(is_binary, 1) -> true;
+guard_bif(is_constant, 1) -> true;
+guard_bif(is_float, 1) -> true;
+guard_bif(is_function, 1) -> true;
+guard_bif(is_integer, 1) -> true;
+guard_bif(is_list, 1) -> true;
+guard_bif(is_number, 1) -> true;
+guard_bif(is_pid, 1) -> true;
+guard_bif(is_port, 1) -> true;
+guard_bif(is_reference, 1) -> true;
+guard_bif(is_tuple, 1) -> true;
+guard_bif(is_record, 2) -> true;
 guard_bif(N, A) -> false.
 
 %% -type type_test(Name, Arity) -> bool()
 %%	when Name = atom(), Arity = integer().
 %%  Erlang type tests.
 
+type_test(is_atom, 1) -> true;
+type_test(is_binary, 1) -> true;
+type_test(is_constant, 1) -> true;
+type_test(is_float, 1) -> true;
+type_test(is_function, 1) -> true;
+type_test(is_integer, 1) -> true;
+type_test(is_list, 1) -> true;
+type_test(is_number, 1) -> true;
+type_test(is_pid, 1) -> true;
+type_test(is_port, 1) -> true;
+type_test(is_reference, 1) -> true;
+type_test(is_tuple, 1) -> true;
+type_test(is_record, 2) -> true;
 type_test(integer, 1) -> true;
 type_test(float, 1) -> true;
 type_test(number, 1) -> true;
@@ -187,6 +212,19 @@ bif(hd, 1) -> true;
 bif(integer_to_list, 1) -> true;
 bif(is_alive, 0) -> true;
 bif(is_process_alive, 1) -> true;
+bif(is_atom, 1) -> true;
+bif(is_binary, 1) -> true;
+bif(is_constant, 1) -> true;
+bif(is_float, 1) -> true;
+bif(is_function, 1) -> true;
+bif(is_integer, 1) -> true;
+bif(is_list, 1) -> true;
+bif(is_number, 1) -> true;
+bif(is_pid, 1) -> true;
+bif(is_port, 1) -> true;
+bif(is_reference, 1) -> true;
+bif(is_tuple, 1) -> true;
+bif(is_record, 2) -> true;
 bif(length, 1) -> true;
 bif(link, 1) -> true;
 bif(list_to_atom, 1) -> true;
@@ -246,9 +284,6 @@ bif(unlink, 1) -> true;
 bif(unregister, 1) -> true;
 bif(whereis, 1) -> true;
 bif(Name, Arity) -> false.
-
-behaviour_info() -> otp_internal:behaviour_info().
-behaviour_info(Key) -> otp_internal:behaviour_info(Key).
 
 obsolete(Mod, Fun, Arity) ->
     %% Just in case.

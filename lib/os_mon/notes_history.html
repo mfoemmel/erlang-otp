@@ -7,6 +7,18 @@
 
 <CENTER><H1>Os_mon Release Notes</H1></CENTER>
 
+<H2>Os_mon 1.3.9</H2>
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI>
+      A bug in the disksup service has been corrected, where
+      <CODE>disk_almost_full</CODE> alarms were not cleared correctly but
+      remained in <CODE>alarm_handler</CODE>.<BR>
+      Own Id: OTP-3696<BR>
+      Aux Id: seq4888
+    </LI>
+  </UL>
+
 <H2>Os_mon 1.3.7</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
@@ -44,7 +56,7 @@
   <UL>
     <LI>
       Events in the Windows NT event log can be imported into erlang
-      with the generic module nteventlog.<BR.
+      with the generic module nteventlog.<BR>
       Own Id: OTP-1673
     </LI>
   </UL>

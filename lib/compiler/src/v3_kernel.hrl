@@ -20,7 +20,7 @@
 
 %% It would be nice to incorporate some generic functions as well but
 %% this could make including this file difficult.
-%% N.B. the annotaion field is ALWAYS the first field!
+%% N.B. the annotation field is ALWAYS the first field!
 
 %% Kernel annotation record.
 -record(k, {us,					%Used variables
@@ -28,19 +28,20 @@
 	    a}).				%Core annotation
 
 %% Literals
+%% NO CHARACTERS YET.
+%%-record(k_char, {anno=[],val}).
 -record(k_int, {anno=[],val}).
 -record(k_float, {anno=[],val}).
--record(k_atom, {anno=[],name}).
--record(k_char, {anno=[],val}).
+-record(k_atom, {anno=[],val}).
 -record(k_string, {anno=[],val}).
--record(k_var, {anno=[],name}).
 -record(k_nil, {anno=[]}).
 
 -record(k_tuple, {anno=[],es}).
--record(k_bin, {anno=[],val}).
--record(k_cons, {anno=[],head,tail}).
--record(k_binary_cons, {anno=[],head,tail,size,info}).
--record(k_zero_binary, {anno=[]}).
+-record(k_cons, {anno=[],hd,tl}).
+-record(k_binary, {anno=[],segs}).
+-record(k_bin_seg, {anno=[],size,unit,type,flags,seg,next}).
+-record(k_bin_end, {anno=[]}).
+-record(k_var, {anno=[],name}).
 
 -record(k_local, {anno=[],name,arity}).
 -record(k_remote, {anno=[],mod,name,arity}).
@@ -52,6 +53,7 @@
 -record(k_seq, {anno=[],arg,body}).
 -record(k_put, {anno=[],arg,ret=[]}).
 -record(k_bif, {anno=[],op,args,ret=[]}).
+-record(k_test, {anno=[],op,args}).
 -record(k_call, {anno=[],op,args,ret=[]}).
 -record(k_enter, {anno=[],op,args}).
 -record(k_receive, {anno=[],var,body,timeout,action,ret=[]}).
@@ -67,6 +69,10 @@
 -record(k_val_clause, {anno=[],val,body}).
 -record(k_guard, {anno=[],clauses}).
 -record(k_guard_clause, {anno=[],guard,body}).
+-record(k_guard_and, {anno=[],args}).
+-record(k_guard_or, {anno=[],args}).
+-record(k_guard_not, {anno=[],arg}).
+-record(k_protected, {anno=[],body,ret=[]}).
 
 -record(k_break, {anno=[],args=[]}).
 -record(k_return, {anno=[],args=[]}).

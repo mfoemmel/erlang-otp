@@ -16,6 +16,7 @@
 %%     $Id$
 %%
 -module(toolbar_lib).
+-include_lib("kernel/include/file.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
@@ -42,15 +43,14 @@
 % Return the directory of the GS contributions
 %----------------------------------------
 gs_contribs_dir() ->
-    filename:join(gtk_port_handler:gs_dir(),"../contribs/ebin/").
+    filename:join(code:lib_dir(gs),"contribs/ebin/").
 
 %----------------------------------------
 % help_file() => string()
 % Returns the address to the toolbar help file
 %----------------------------------------
 help_file() ->
-    filename:join(filename:dirname(code:which(toolbar)),
-		 "../doc/index.html").
+    filename:join(code:lib_dir(toolbar),"doc/index.html").
 
 %----------------------------------------
 % otp_file() => string()
@@ -81,10 +81,10 @@ error_string(waccess) ->  "File is not writeable".
 % Checks if File is an existing and readable file.
 %----------------------------------------
 legal_file(File) ->
-    case file:file_info(File) of
+    case file:read_file_info(File) of
 
 	%% File exists...
-	{ok,{_Size,regular,Access,_LastAccess,_LastModify,_,_}} ->
+	{ok,#file_info{type=regular,access=Access}} ->
 	    if
 		
 		%% ...but is read protected
@@ -96,15 +96,13 @@ legal_file(File) ->
 		true ->
 		    ok
 	    end;
+
+	{ok,#file_info{type=directory}} ->
+	    directory;
 	
 	%% File does not exist
-	Error -> % {error,file_info}
-	    case file:list_dir(File) of
-		{ok,_FileNameList} ->
-		    directory;
-		Error ->
-		    {error,nofile}
-	    end
+	Error ->
+	    {error,nofile}
     end.
 
 %----------------------------------------
@@ -140,8 +138,11 @@ tool_info_syntax("0.1",ToolInfo) when tuple(ToolInfo) ->
     syntax01(tuple_to_list(ToolInfo),false,false,[]);
 tool_info_syntax("0.1",_) ->
     {error,format};
+tool_info_syntax("1.2",ToolInfo) when list(ToolInfo)->
+    syntax01(ToolInfo,false,false,[]);
 tool_info_syntax(Vsn,_) ->
     {error,version}.
+
 
 %%% Internal functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -186,6 +187,10 @@ syntax01([{html,Str}|Rest],NameF,StartF,Res) when list(Str) ->
 	Html ->
 	    syntax01(Rest,NameF,StartF,[{html,Html}|Res])
     end;
+%%The fields used by webtool must be removed
+syntax01([_|Rest],NameF,StartF,Res) ->
+    syntax01(Rest,NameF,StartF,Res);
+
 syntax01([],true,true,Res) ->
     {ok,Res};
 syntax01([],false,_,_) ->
@@ -194,3 +199,24 @@ syntax01([],_,false,_) ->
     {error,nostart};
 syntax01(_,_,_,_) ->
     {error,format}.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -161,7 +161,7 @@ predef_macros(File) ->
     Ms2 = dict:store({atom,'LINE'}, {none,[{integer,1,1}]}, Ms1),
     Ms3 = dict:store({atom,'MODULE'}, undefined, Ms2),
     Ms31 = dict:store({atom,'MODULE_STRING'}, undefined, Ms3),
-    Machine = list_to_atom(erlang:info(machine)),
+    Machine = list_to_atom(erlang:system_info(machine)),
     Ms4 = dict:store({atom,'MACHINE'}, {none,[{atom,1,Machine}]}, Ms31),
     dict:store({atom,Machine}, {none,[{atom,1,true}]}, Ms4).
 
@@ -247,9 +247,20 @@ enter_file(NewF, Pname, From, St) ->
 
 enter_file_reply(From, Name, Line) ->
     Rep = {ok, [{'-',Line},{atom,Line,file},{'(',Line},
-		{string,Line,Name},{',',Line},{integer,Line,Line},
-		{')',Line},{dot,Line}]},
+		{string,Line,file_name(Name)},{',',Line},
+		{integer,Line,Line},{')',Line},{dot,Line}]},
     epp_reply(From, Rep).
+
+%% Flatten filename to a string. Must be a valid filename.
+
+file_name([C | T]) when integer(C), C > 0, C =< 255 ->
+    [C | file_name(T)];
+file_name([H|T]) ->
+    file_name(H) ++ file_name(T);
+file_name([]) ->
+    [];
+file_name(N) when atom(N) ->
+    atom_to_list(N).
 
 leave_file(From, St) ->
     case St#epp.istk of
@@ -400,20 +411,7 @@ scan_define_cont(F, St, M, Def) ->
 
 macro_uses({Args, Tokens}) ->
     Uses0 = macro_ref(Tokens),
-    remove_dup(lists:sort(Uses0)).    
-
-%%% Removes duplicates from a sorted list.
-remove_dup([E | Rest]) ->
-    remove_dup(E, Rest);
-remove_dup([]) ->
-    [].
-
-remove_dup(E, [E | Rest]) ->
-    remove_dup(E, Rest);
-remove_dup(E, [X | Rest]) ->
-    [E | remove_dup(X, Rest)];
-remove_dup(E, []) ->
-    [E].
+    lists:usort(Uses0).
 
 macro_ref([]) ->
     [];

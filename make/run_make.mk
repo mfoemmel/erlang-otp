@@ -30,6 +30,6 @@ include $(ERL_TOP)/make/target.mk
 debug opt instr purify quantify purecov:
 	$(MAKE) -f $(TARGET)/Makefile TYPE=$@
 
-clean depend docs release release_spec release_docs release_docs_spec \
+clean generate depend docs release release_spec release_docs release_docs_spec \
   tests release_tests release_tests_spec:
 	$(MAKE) -f $(TARGET)/Makefile $@

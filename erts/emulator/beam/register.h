@@ -34,11 +34,15 @@
 #include "erl_process.h"
 #endif
 
+struct port;
+
 typedef struct reg_proc
 {
     HashBucket bucket;  /* MUST BE LOCATED AT TOP OF STRUCT!!! */
-    Process   *p;       /* The process registered */
-    Eterm      name;    /* Atom name */
+    Process *p;         /* The process registerd (only one of this and
+			   'pt' is non-NULL */
+    struct port *pt;    /* The port registered */
+    Eterm name;         /* Atom name */
 } RegProc;
 
 extern Hash process_reg;
@@ -46,9 +50,10 @@ extern Hash process_reg;
 void init_register_table(void);
 void register_info(CIO to);
 Process *register_process(Process *c_p, Eterm name, Process *p);
+struct port *register_port(Eterm name, struct port *pt);
 Process *whereis_process(Eterm name);
-Process *unregister_process(Process *c_p, Eterm name);
-
+void whereis_name(Eterm name, Process **p, struct port **pt);
+int unregister_name(Process *c_p, Eterm name);
 
 
 #endif

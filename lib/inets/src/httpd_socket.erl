@@ -17,10 +17,14 @@
 %%
 -module(httpd_socket).
 -export([start/1,listen/2,listen/3,accept/2,accept/3,
-	 deliver/3,send/3,close/2,
+	 deliver/3,send/3,recv/4,close/2,
 	 peername/2,resolve/1,config/1]).
 
 -include("httpd.hrl").
+
+-define(VMODULE,"SOCKET").
+-include("httpd_verbosity.hrl").
+
 -include_lib("kernel/include/inet.hrl").
 
 %% start -> ok | {error,Reason}
@@ -51,7 +55,7 @@ listen(SocketType,Port) ->
 
 listen(ip_comm,Addr,Port) ->
     ?DEBUG("listening(ip_comm) to port ~p", [Port]),
-    Opt = sock_opt(Addr,[{packet,0},{backlog,128},{reuseaddr,true}]),
+    Opt = sock_opt(Addr,[{backlog,128},{reuseaddr,true}]),
     case gen_tcp:listen(Port,Opt) of
 	{ok,ListenSocket} ->
 	    ListenSocket;
@@ -60,8 +64,8 @@ listen(ip_comm,Addr,Port) ->
     end;
 listen({ssl,SSLConfig},Addr,Port) ->
     ?DEBUG("listening(ssl) to port ~p"
-	   "~n   SSLConfig: ~p", [Port,SSLConfig]),
-    Opt = sock_opt(Addr,[{packet,0}|SSLConfig]),
+           "~n   SSLConfig: ~p", [Port,SSLConfig]),
+    Opt = sock_opt(Addr,SSLConfig),
     case ssl:listen(Port, Opt) of
 	{ok,ListenSocket} ->
 	    ListenSocket;
@@ -69,8 +73,8 @@ listen({ssl,SSLConfig},Addr,Port) ->
 	    Error
     end.
 
-sock_opt(undefined,Opt) -> Opt;
-sock_opt(Addr,Opt)      -> [{ip, Addr}|Opt].
+sock_opt(undefined,Opt) -> [{packet,0},{active,false}|Opt];
+sock_opt(Addr,Opt)      -> [{ip, Addr},{packet,0},{active,false}|Opt].
 
 %% accept
 
@@ -84,6 +88,8 @@ accept(ip_comm,ListenSocket, T) ->
 	{ok,Socket} ->
 	    Socket;
 	Error ->
+	    ?vtrace("accept(ip_comm) failed for reason:"
+		    "~n   Error: ~p",[Error]),
 	    Error
     end;
 accept({ssl,_SSLConfig},ListenSocket, T) ->
@@ -92,6 +98,8 @@ accept({ssl,_SSLConfig},ListenSocket, T) ->
 	{ok,Socket} ->
 	    Socket;
 	Error ->
+	    ?vtrace("accept(ssl) failed for reason:"
+		    "~n   Error: ~p",[Error]),
 	    Error
     end.
 
@@ -100,6 +108,8 @@ accept({ssl,_SSLConfig},ListenSocket, T) ->
 deliver(SocketType, Socket, IOListOrBinary)  ->
     case send(SocketType, Socket, IOListOrBinary) of
 	{error, _Reason} ->
+	    ?vlog("deliver(~p) failed for reason:"
+		  "~n   Reason: ~p",[SocketType,_Reason]),
 	    (catch close(SocketType, Socket)), 
 	    socket_closed;
 	_ ->
@@ -112,6 +122,13 @@ send(ip_comm,Socket,Data) ->
 send({ssl,SSLConfig},Socket,Data) ->
     ?DEBUG("send(ssl) -> ~p bytes on socket ~p",[data_size(Data),Socket]),
     ssl:send(Socket, Data).
+
+recv(ip_comm,Socket,Length,Timeout) ->
+    ?DEBUG("recv(ip_comm) -> read from socket ~p",[Socket]),
+    gen_tcp:recv(Socket,Length,Timeout);
+recv({ssl,SSLConfig},Socket,Length,Timeout) ->
+    ?DEBUG("recv(ssl) -> read from socket ~p",[Socket]),
+    ssl:recv(Socket,Length,Timeout).
 
 -ifdef(inets_debug).
 data_size(L) when list(L) -> 
@@ -134,6 +151,10 @@ peername(ip_comm, Socket) ->
 		   [Socket,{Port,PeerName}]),
 	    {Port,PeerName};
 	{error,Reason} ->
+	    ?vlog("failed getting peername:"
+		  "~n   Reason: ~p"
+		  "~n   Socket: ~p",
+		  [Reason,Socket]),
 	    {-1,"unknown"}
     end;
 peername({ssl,_SSLConfig},Socket) ->
@@ -157,23 +178,27 @@ resolve(_) ->
 %% close
 
 close(ip_comm,Socket) ->
-    ?DEBUG("close(ip_comm) socket ~p", [Socket]),
-    case (catch gen_tcp:close(Socket)) of
-	ok ->                  ok;
-	{error,Reason} ->      {error,Reason};
-	{'EXIT',{noproc,_}} -> {error,closed};
-	{'EXIT',Reason} ->     {error,Reason};
-	Otherwise ->           {error,Otherwise}
-    end;
+    Res = 
+	case (catch gen_tcp:close(Socket)) of
+	    ok ->                  ok;
+	    {error,Reason} ->      {error,Reason};
+	    {'EXIT',{noproc,_}} -> {error,closed};
+	    {'EXIT',Reason} ->     {error,Reason};
+	    Otherwise ->           {error,Otherwise}
+	end,
+    ?vtrace("close(ip_comm) result: ~p",[Res]),
+    Res;
 close({ssl,_SSLConfig},Socket) ->
-    ?DEBUG("close(ssl) socket ~p", [Socket]),
-    case (catch ssl:close(Socket)) of
-	ok ->                  ok;
-	{error,Reason} ->      {error,Reason};
-	{'EXIT',{noproc,_}} -> {error,closed};
-	{'EXIT',Reason} ->     {error,Reason};
-	Otherwise ->           {error,Otherwise}
-    end.
+    Res = 
+	case (catch ssl:close(Socket)) of
+	    ok ->                  ok;
+	    {error,Reason} ->      {error,Reason};
+	    {'EXIT',{noproc,_}} -> {error,closed};
+	    {'EXIT',Reason} ->     {error,Reason};
+	    Otherwise ->           {error,Otherwise}
+	end,
+    ?vtrace("close(ssl) result: ~p",[Res]),
+    Res.
 
 %% config (debug: {certfile, "/var/tmp/server_root/conf/ssl_server.pem"})
 

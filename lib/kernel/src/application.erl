@@ -20,10 +20,18 @@
 -export([start/1, start/2, start_boot/1, start_boot/2, stop/1, 
 	 load/1, load/2, unload/1, takeover/2,
 	 which_applications/0, loaded_applications/0, permit/2]).
+-export([set_env/3]).
 -export([get_env/1, get_env/2, get_all_env/0, get_all_env/1]).
 -export([get_key/1, get_key/2, get_all_key/0, get_all_key/1]).
 -export([get_application/0, get_application/1, info/0]).
 -export([start_type/0]).
+
+-export([behaviour_info/1]).
+
+behaviour_info(callbacks) ->
+    [{start,2},{stop,1}];
+behaviour_info(Other) ->
+    undefined.
 
 %%%-----------------------------------------------------------------
 %%% This module is API towards application_controller and
@@ -101,6 +109,10 @@ which_applications() -> application_controller:which_applications().
 loaded_applications() -> application_controller:loaded_applications().
 
 info() -> application_controller:info().
+
+set_env(Application, Key, Val) -> 
+    application_controller:set_env(Application, Key, Val).
+    
 
 get_env(Key) -> application_controller:get_pid_env(group_leader(), Key).
 get_env(Application, Key) -> application_controller:get_env(Application, Key).

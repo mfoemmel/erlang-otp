@@ -364,15 +364,16 @@ parse({true,Tokens},File,Options) ->
 	    if 
 		integer(Line) ->
 		    BaseName = filename:basename(File),
-		    io:format("~s:syntax error at line ~p:~n",
-			      [BaseName,Line]);
+		    io:format("syntax error at line ~p in module ~s:~n",
+			      [Line,BaseName]);
 		true ->
-		    io:format("~p: syntax error:~n",[File])
+		    io:format("syntax error in module ~p:~n",[File])
 	    end,
 	    print_error_message(Message),
 	    {false,{error,Message}};
 	{error,{Line,Mod,[Message,Token]}} ->
-	    io:format("~p ~p at line ~p~n",[Message,Token,Line]),
+	    io:format("syntax error: ~p ~p at line ~p~n",
+		      [Message,Token,Line]),
 	    {false,{error,{Line,[Message,Token]}}};
 	{ok,M} ->
 	    case lists:member(sp,Options) of
@@ -396,7 +397,8 @@ check({true,M},File,OutFile,Includes,EncodingRule,DbFile,Options,InputMods) ->
 	    State = #state{mname=Module#module.name,
 			   module=Module#module{typeorval=[]},
 			   erule=EncodingRule,
-			   inputmodules=InputMods},
+			   inputmodules=InputMods,
+			   options=Options},
 	    Check = asn1ct_check:check(State,Module#module.typeorval),
 	    case {Check,lists:member(abs,Options)} of
 		{{error,Reason},_} ->
@@ -423,9 +425,13 @@ generate({true,{M,Module,GenTOrV}},OutFile,EncodingRule,Options) ->
 	true -> put(compact_bit_string,true);
 	_ -> ok
     end,
+    put(encoding_options,Options),
+    ets:new(check_functions,[named_table]),
     asn1ct_gen:pgen(OutFile,EncodingRule,M#module.name,GenTOrV),
     debug_off(Options),
     put(compact_bit_string,false),
+    erase(encoding_options),
+    ets:delete(check_functions),
     case lists:member(sg,Options) of
 	true -> % terminate here , with .erl file generated
 	    {false,true};
@@ -500,7 +506,7 @@ get_file_list1(Stream,Acc) ->
     end.
 
 get_rule(Options) ->
-    case [Rule ||Rule <-[per,ber,ber_bin, per_bin],% added ber_bin
+    case [Rule ||Rule <-[per,ber,ber_bin,per_bin],% added ber_bin
 		 Opt <- Options,
 		 Rule==Opt] of
 	[Rule] ->
@@ -520,7 +526,15 @@ erl_compile(OutFile,Options) ->
 			 {value, {outdir, Odir}} -> [{outdir,Odir}]; 
 			 _ -> []
 		     end,
-	    case c:c(OutFile,ErlOpt) of
+	    ErlOpt2 = case lists:member(native,Options) of
+			  true -> [native];
+			  _ -> []
+		      end,
+	    ErlOpt3 = case lists:keysearch(hipe,1,Options) of
+			  {value, HipeFlag} -> [HipeFlag];
+			  _ -> []
+		      end,
+	    case c:c(OutFile,ErlOpt++ErlOpt2++ErlOpt3) of
 		{ok,Module} ->
 		    ok;
 		_ ->
@@ -580,8 +594,9 @@ compile(File, _OutFile, Options) ->
 	    io:format("~p~n~s~n",[Exit,"error"]),
 	    error;
 	{error,Reason} ->
+	    %% case occurs due to error in asn1ct_parser2,asn1ct_check
 %%	    io:format("~p~n",[Reason]),
-	    	    io:format("error~n"),
+%%	    io:format("~p~n~s~n",[Reason,"error"]),
 	    error;
 	ok -> 
 	    io:format("ok~n"),
@@ -647,7 +662,8 @@ make_erl_options(Opts) ->
 	    undefined -> [ber]; % temporary default (ber when it's ready)
 	    ber -> [ber];
 	    ber_bin -> [ber_bin];
-	    per -> [per]
+	    per -> [per];
+	    per_bin -> [per_bin]
 	end,
 
     Options++[report_errors, {cwd, Cwd}, {outdir, Outdir}|

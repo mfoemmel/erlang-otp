@@ -42,7 +42,7 @@ open(Name, Mode) ->
     end.
 
 open1({binary, Bin}, read, Opts) ->
-    case ram_file:open(Bin, [binary, read|Opts]) of
+    case file:open(Bin, [ram, binary, read|Opts]) of
 	{ok, File} ->
 	    {ok, {read, File}};
 	Error ->
@@ -272,20 +272,6 @@ format_error(Term) ->
 -define(record_size, 512).
 -define(block_size, (512*20)).
 
-fields() ->
-    Fields = #tar_header {name={s, 100},
-			  mode={o, 8},
-			  uid={o, 8},
-			  gid={o, 8},
-			  size={o, ?th_size_len},
-			  mtime = {o, ?th_mtime_len},
-			  chksum = {s, ?th_chksum_len},
-			  typeflag = {s, 1},
-			  linkname = {s, ?th_linkname_len},
-			  filler = {s, ?th_prefix-?th_linkname-?th_linkname_len},
-			  prefix = {s, ?th_prefix_len}},
-    tl(tuple_to_list(Fields)).
-
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -341,71 +327,50 @@ create_header(Name, Info) ->
 create_header(Name, #file_info {mode=Mode, uid=Uid, gid=Gid,
 				size=Size, mtime=Mtime0, type=Type}, Linkname) ->
     Mtime = posix_time(erlang:localtime_to_universaltime(Mtime0)),
-    {Prefix, Suffix} = split_filename(Name),
-    create_header(#tar_header {name = Suffix,
-			       mode = Mode,
-			       uid = Uid,
-			       gid = Gid,
-			       size = Size,
-			       mtime = Mtime,
-			       typeflag = file_type(Type),
-			       linkname = Linkname,
-			       prefix = Prefix}).
+    {Prefix,Suffix} = split_filename(Name),
+    H0 = [to_string(Suffix, 100),
+	  to_octal(Mode, 8),
+	  to_octal(Uid, 8),
+	  to_octal(Gid, 8),
+	  to_octal(Size, ?th_size_len),
+	  to_octal(Mtime, ?th_mtime_len),
+	  <<"        ">>,
+	  file_type(Type),
+	  to_string(Linkname, ?th_linkname_len),
+	  zeroes(?th_prefix-?th_linkname-?th_linkname_len),
+	  to_string(Prefix, ?th_prefix_len)],
+    H = list_to_binary(H0),
+    512 = size(H),				%Assertion.
+    ChksumString = to_octal(checksum(H), 6, [0,$\s]),
+    <<Before:?th_chksum/binary,_:?th_chksum_len/binary,After/binary>> = H,
+    [Before,ChksumString|After].
 
-file_type(regular) -> "0";
-file_type(symlink) -> "2";
-file_type(directory) -> "5".
+
+file_type(regular) -> $0;
+file_type(symlink) -> $2;
+file_type(directory) -> $5.
     
-%% Creates header from record.
-
-create_header(Record0) ->
-    %% Very important: There must 8 blanks in the chksum field below.
-    Record = Record0#tar_header {chksum = "        "},
-    create_header(tl(tuple_to_list(Record)), fields(), 0, []).
-
-create_header([Value|Records], [{Type, Size}|Types], TotalSize, Result) ->
-    create_header(Records, Types, TotalSize+Size,
-		  [create_field(Type, Size, Value)|Result]);
-create_header([], [], TotalSize, Result) ->
-    512 = TotalSize,
-    H = list_to_binary(lists:reverse(Result)),
-
-    %% Calculate the checksum and insert it into the header.
-
-    Checksum = flatsum(Result, 0),
-    ChksumString = to_octal(Checksum, 6, [0, $\s]),
-    {Before, _} = split_binary(H, ?th_chksum),
-    {_, After} = split_binary(H, ?th_chksum+?th_chksum_len),
-    [Before, ChksumString, After].
-
-create_field(o, Size, Int) when integer(Int) ->
-    to_octal(Int, Size);
-create_field(s, Size, String) when list(String) ->
-    to_string(String, Size, []);
-create_field(b, Size, Int) when integer(Int) ->
-    Int.
-
 to_octal(Int, Count) when Count > 1 ->
     to_octal(Int, Count-1, [0]).
 
-to_octal(Int, 0, Result) ->
-    Result;
+to_octal(Int, 0, Result) -> Result;
 to_octal(Int, Count, Result) ->
     to_octal(Int div 8, Count-1, [Int rem 8 + $0|Result]).
 
-to_string(String, 0, Result) ->
-    lists:reverse(Result);
-to_string([C|Rest], Count, Result) ->
-    to_string(Rest, Count-1, [C|Result]);
-to_string([], Count, Result) ->
-    to_string([], Count-1, [0|Result]).
+to_string(Str0, Count) ->
+    Str = list_to_binary(Str0),
+    case size(Str) of
+	Size when Size < Count ->
+	    [Str|zeroes(Count-Size)];
+	_ -> Str
+    end.
 
 %% Pads out end of file.
 
 pad_file(File) ->
-    {ok, Position} = file:position(File, {cur, 0}),
+    {ok,Position} = file:position(File, {cur,0}),
     %% There must be at least one empty record at the end of the file.
-    Zeros = zeros(?block_size - (Position rem ?block_size)),
+    Zeros = zeroes(?block_size - (Position rem ?block_size)),
     file:write(File, Zeros).
 
 split_filename(Name) when length(Name) =< ?th_name_len ->
@@ -414,12 +379,12 @@ split_filename(Name0) ->
     split_filename(lists:reverse(filename:split(Name0)), [], [], 0).
 
 split_filename([Comp|Rest], Prefix, Suffix, Len) 
-when Len+length(Comp) < ?th_name_len ->
+  when Len+length(Comp) < ?th_name_len ->
     split_filename(Rest, Prefix, [Comp|Suffix], Len+length(Comp)+1);
 split_filename([Comp|Rest], Prefix, Suffix, Len) ->
     split_filename(Rest, [Comp|Prefix], Suffix, Len+length(Comp)+1);
 split_filename([], Prefix, Suffix, Len) ->
-    {filename:join(Prefix), filename:join(Suffix)}.
+    {filename:join(Prefix),filename:join(Suffix)}.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -635,6 +600,8 @@ from_octal([$\s|Rest]) ->
     from_octal(Rest);
 from_octal([Digit|Rest]) when $0 =< Digit, Digit =< $7 ->
     from_octal(Rest, Digit-$0);
+from_octal(Bin) when binary(Bin) ->
+    from_octal(binary_to_list(Bin));
 from_octal(Other) ->
     throw({error, {bad_header, "Bad octal number: ~p", [Other]}}).
 
@@ -652,50 +619,42 @@ from_octal(Other, _) ->
 
 get_element(File, #tar_header{size = 0}) ->
     skip_to_next(File),
-    {ok, list_to_binary([])};
+    {ok,<<>>};
 get_element(File, #tar_header{size = Size}) ->
     case file:read(File, Size) of
-	{ok, Bin} when size(Bin) == Size ->
+	{ok,Bin}=Res when size(Bin) == Size ->
 	    skip_to_next(File),
-	    {ok, Bin};
-	{ok, List} when length(List) == Size ->
+	    Res;
+	{ok,List} when length(List) == Size ->
 	    skip_to_next(File),
-	    {ok, list_to_binary(List)};
-	{ok, _Bin} ->
-	    throw({error, eof});
-	eof ->
-	    throw({error, eof});
-	{error, Reason} ->
-	    throw({error, Reason})
+	    {ok,list_to_binary(List)};
+	{ok,Bin} -> throw({error,eof});
+	{error, Reason} -> throw({error, Reason});
+	eof -> throw({error,eof})
     end.
 
 %% Verify the checksum in the header.  First try an unsigned addition
 %% of all bytes in the header (as it should be according to Posix).
 
 verify_checksum(Bin) ->
-    AfterChecksum = ?th_chksum+?th_chksum_len+1,
-    Data1 = binary_to_list(Bin, 1, ?th_chksum),
-    Data2 = binary_to_list(Bin, AfterChecksum, size(Bin)),
-    case lists:sum(Data1) + lists:sum(Data2) of
-	0 ->
-	    eof;
+    <<H1:?th_chksum/binary,CheckStr:?th_chksum_len/binary,H2/binary>> = Bin,
+    case checksum(H1) + checksum(H2) of
+	0 -> eof;
 	Checksum0 ->
-	    Csum = from_octal(Bin, ?th_chksum+1, ?th_chksum_len),
+	    Csum = from_octal(CheckStr),
 	    CsumInit = ?th_chksum_len * $\s,
 	    case Checksum0 + CsumInit of 
-		Csum ->
-		    ok;
+		Csum -> ok;
 		Unsigned ->
-		    verify_checksum(Data1, Data2, CsumInit, Csum, Unsigned)
+		    verify_checksum(H1, H2, CsumInit, Csum, Unsigned)
 	    end
     end.
 
 %% The checksums didn't match.  Now try a signed addition.
 
-verify_checksum(Data1, Data2, Csum, ShouldBe, Unsigned) ->
-    case signed_sum(Data1, signed_sum(Data2, Csum)) of
-	ShouldBe ->
-	    ok;
+verify_checksum(H1, H2, Csum, ShouldBe, Unsigned) ->
+    case signed_sum(binary_to_list(H1), signed_sum(binary_to_list(H2), Csum)) of
+	ShouldBe -> ok;
 	Signed ->
 	    throw({error,
 		   {bad_header, 
@@ -707,8 +666,7 @@ signed_sum([C|Rest], Sum) when C < 128 ->
     signed_sum(Rest, Sum+C);
 signed_sum([C|Rest], Sum) ->
     signed_sum(Rest, Sum+C-256);
-signed_sum([], Sum) ->
-    Sum.
+signed_sum([], Sum) -> Sum.
 
 write_extracted_element(Header, Bin, Opts) ->
     Name = filename:absname(Header#tar_header.name, Opts#read_opts.cwd),
@@ -733,26 +691,20 @@ write_extracted_element(Header, Bin, Opts) ->
 create_extracted_dir(Name, Header, Opts) ->
     case file:make_dir(Name) of
 	ok -> ok;
-	{error, enotsup} ->
+	{error,enotsup} ->
 	    read_verbose(Opts, "x ~s - symbolic links not supported~n", [Name]),
 	    not_written;
-	{error, eexist} ->
-	    not_written;
-	{error, enoent} ->
-	    make_dirs(Name, dir);
-	{error, Reason} ->
-	    throw({error, Reason})
+	{error,eexist} -> not_written;
+	{error,enoent} -> make_dirs(Name, dir);
+	{error,Reason} -> throw({error, Reason})
     end.
 
 create_symlink(Name, Header, Opts) ->
     case file:make_symlink(Header#tar_header.linkname, Name) of
 	ok -> ok;
-	{error, eexist} ->
-	    not_written;
-	{error, enoent} ->
-	    not_written;
-	{error, Reason} ->
-	    throw({error, Reason})
+	{error,eexist} -> not_written;
+	{error,enotsup} -> not_written;
+	{error,Reason} -> throw({error, Reason})
     end.
 
 write_extracted_file(Name, Header, Bin, Opts) ->
@@ -763,8 +715,7 @@ write_extracted_file(Name, Header, Bin, Opts) ->
 		    {ok, _} -> false;
 		    _ -> true
 		end;
-	    false ->
-		true
+	    false -> true
 	end,
     case Write of
 	true ->
@@ -777,12 +728,11 @@ write_extracted_file(Name, Header, Bin, Opts) ->
 
 write_file(Name, Bin) ->
     case file:write_file(Name, Bin) of
-	ok ->
-	    ok;
-	{error, enoent} ->
+	ok -> ok;
+	{error,enoent} ->
 	    ok = make_dirs(Name, file),
 	    write_file(Name, Bin);
-	{error, Reason} ->
+	{error,Reason} ->
 	    throw({error, Reason})
     end.
 
@@ -839,10 +789,19 @@ read_verbose(_, _, _) ->
 %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%% Returns a list of zeros to pad out to the given block size.
+%% Returns the checksum of a binary.
+
+checksum(Bin) -> checksum(Bin, 0).
+checksum(<<A,B,C,D,E,F,G,H,T/binary>>, Sum) ->
+    checksum(T, Sum+A+B+C+D+E+F+G+H);
+checksum(<<A,T/binary>>, Sum) ->
+    checksum(T, Sum+A);
+checksum(<<>>, Sum) -> Sum.
+
+%% Returns a list of zeroes to pad out to the given block size.
 
 padding(Size, BlockSize) ->
-    zeros(pad_size(Size, BlockSize)).
+    zeroes(pad_size(Size, BlockSize)).
 
 pad_size(Size, BlockSize) ->
     case Size rem BlockSize of
@@ -850,14 +809,11 @@ pad_size(Size, BlockSize) ->
 	Rem -> BlockSize-Rem
     end.
 
-zeros(0) ->
-    [];
-zeros(1) ->
-    [0];
-zeros(2) ->
-    [0, 0];
-zeros(Number) ->
-    Half = zeros(Number div 2),
+zeroes(0) -> [];
+zeroes(1) -> [0];
+zeroes(2) -> [0,0];
+zeroes(Number) ->
+    Half = zeroes(Number div 2),
     case Number rem 2 of
 	0 -> [Half|Half];
 	1 -> [Half|[0|Half]]
@@ -884,15 +840,6 @@ skip_to_next(File) ->
 %%	Other -> Other
     end.
 
-%% Sums integers in a deep list.
-
-flatsum([C|Rest], Sum) when integer(C) ->
-    flatsum(Rest, Sum+C);
-flatsum([List|Rest], Sum) when list(List) ->
-    flatsum(Rest, flatsum(List, Sum));
-flatsum([], Sum) ->
-    Sum.
-
 %% Prints the message on if the verbose option is given.
 
 add_verbose(#add_opts{verbose=true}, Format, Args) ->
@@ -904,8 +851,8 @@ add_verbose(_, _, _) ->
 %% since Jan 1, 1970).
 
 posix_time(Time) ->
-    EpochStart = {{1970, 1, 1}, {0, 0, 0}},
-    {Days, {Hour, Min, Sec}} = calendar:time_difference(EpochStart, Time),
+    EpochStart = {{1970,1,1},{0,0,0}},
+    {Days,{Hour,Min,Sec}} = calendar:time_difference(EpochStart, Time),
     86400*Days + 3600*Hour + 60*Min + Sec.
 
 posix_to_erlang_time(Sec) ->
@@ -916,35 +863,32 @@ posix_to_erlang_time(Sec) ->
 read_file_and_info(Name, Opts) ->
     ReadInfo = Opts#add_opts.read_info,
     case ReadInfo(Name) of
-	{ok, Info} when Info#file_info.type == regular ->
+	{ok,Info} when Info#file_info.type == regular ->
 	    case file:read_file(Name) of
-		{ok, Bin} ->
-		    {ok, Bin, Info};
+		{ok,Bin} ->
+		    {ok,Bin,Info};
 		Error ->
 		    Error
 	    end;
-	{ok, Info} when Info#file_info.type == symlink ->
+	{ok,Info} when Info#file_info.type == symlink ->
 	    case file:read_link(Name) of
-		{ok, PointsTo} ->
-		    {ok, PointsTo, Info};
+		{ok,PointsTo} ->
+		    {ok,PointsTo,Info};
 		Error ->
 		    Error
 	    end;
 	{ok, Info} ->
-	    {ok, [], Info};
+	    {ok,[],Info};
 	Error ->
 	    Error
     end.
 
 foreach_while_ok(Fun, [First|Rest]) ->
     case Fun(First) of
-	ok ->
-	    foreach_while_ok(Fun, Rest);
-	Other ->
-	    Other
+	ok -> foreach_while_ok(Fun, Rest);
+	Other -> Other
     end;
-foreach_while_ok(_, []) ->
-    ok.
+foreach_while_ok(_, []) -> ok.
     
 open_mode(Mode) ->
     open_mode(Mode, false, []).

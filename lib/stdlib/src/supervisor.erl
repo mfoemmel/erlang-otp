@@ -26,8 +26,11 @@
 	 which_children/1,
 	 check_childspecs/1]).
 
+-export([behaviour_info/1]).
+
 %% Internal exports
 -export([init/1, handle_call/3, handle_info/2, terminate/2, code_change/3]).
+-export([handle_cast/2]).
 
 -record(state, {name,
 		strategy,
@@ -48,6 +51,11 @@
 		modules = []}).
 
 -define(is_simple(State), State#state.strategy == simple_one_for_one).
+
+behaviour_info(callbacks) ->
+    [{init,1}];
+behaviour_info(Other) ->
+    undefined.
 
 %%% ---------------------------------------------------
 %%% This is a general process supervisor built upon gen_server.erl.
@@ -329,6 +337,9 @@ code_change(_, State, _) ->
 	Error ->
 	    Error
     end.
+
+handle_cast(null, State) ->
+    {noreply, State}.
 
 check_flags({Strategy, MaxIntensity, Period}) ->
     validStrategy(Strategy),

@@ -30,6 +30,7 @@ name2type( G, Name ) ->
     filter( InfoList ).
 
 
+
 %% This is en overloaded function,
 %% differs in input on unions
 member2type(G, X, I) when record(X, union)->
@@ -38,19 +39,89 @@ member2type(G, X, I) when record(X, union)->
 	false ->
 	    error;
 	{value,Rec} ->
-	    ic_fetch:fetchType(element(3,Rec))
+	    fetchType(element(3,Rec))
     end;
 member2type( G, SName, MName ) ->
+
     S = icgen:tktab( G ),
     SNList = lists:reverse(string:tokens(SName,"_")),
     ScopedName = [MName | SNList],
     InfoList = ets:lookup( S, ScopedName ),
+
     case filter( InfoList ) of
 	error ->
-	    error;
+	    %% Try a little harder, seeking inside tktab
+	    case lookup_member_type_in_tktab(S, ScopedName, MName) of
+		error ->
+		    %% Check if this is the "return to return1" case
+		    case MName of
+			"return1" ->
+			    %% Do it all over again !
+			    ScopedName2 = ["return" | SNList],
+			    InfoList2 = ets:lookup( S, ScopedName2 ),
+			    case filter( InfoList2 ) of
+				error ->
+				    %% Last resort: seek in pragma table
+				    lookup_type_in_pragmatab(G, SName);
+				
+				Other ->
+				    Other
+			    end;		
+			_ ->
+			    %% Last resort: seek in pragma table
+			    lookup_type_in_pragmatab(G, SName)
+		    end;
+		Other ->
+		    Other
+	    end;
 	Other ->
 	    Other
     end.
+
+
+lookup_member_type_in_tktab(S, ScopedName, MName) ->
+    case ets:match_object(S, {'_',member,{MName,'_'},nil}) of
+	[] ->
+	    error;
+	[{FullScopedName,member,{MName,TKInfo},nil}]->
+	    fetchType( TKInfo );
+	List ->
+	    lookup_member_type_in_tktab(List,ScopedName)
+    end.
+
+lookup_member_type_in_tktab([],_ScopedName) ->
+    error;
+lookup_member_type_in_tktab([{FullScopedName,_,{_,TKInfo},_}|Rest],ScopedName) ->
+    case lists:reverse(string:tokens(icgen:to_undersc(FullScopedName),"_")) of
+	ScopedName ->
+	    fetchType(TKInfo);
+	_ ->
+	    lookup_member_type_in_tktab(Rest,ScopedName)
+    end.
+
+
+lookup_type_in_pragmatab(G, SName) ->    
+    S = icgen:pragmatab(G),
+
+    %% Look locally first
+    case ets:match(S,{file_data_local,'_','_','$2','_','_',SName,'_','_'}) of 
+	[] ->
+	    %% No match, seek included
+	    case ets:match(S,{file_data_included,'_','_','$2','_','_',SName,'_','_'}) of 
+		
+		[] ->
+		    error;
+		[[Type]] ->
+		    io:format("1 Found(~p) : ~p~n",[SName,Type]),
+		    Type
+	    end;
+
+	[[Type]] ->
+	    io:format("2 Found(~p) : ~p~n",[SName,Type]),
+	    Type
+    end.
+
+
 
 
 filter( [] ) ->

@@ -8,8 +8,10 @@ include ../epmd.mk
 ROOT 		= \erts
 !if defined(NODEBUG) || defined(RELEASE)
 ETCOBJDIR	= $(ROOT)\erts\obj\win32
+CC_DEBUG   =
 !else
 ETCOBJDIR	= $(ROOT)\erts\obj.debug\win32
+CC_DEBUG   = -Zi
 !endif
 ENTRY_OBJ	= $(ETCOBJDIR)\port_entry.obj
 PORT_ENTRY_POINT= erl_port_entry
@@ -28,22 +30,28 @@ EPMD_R4_OBJS = $(OBJDIR)\epmd.obj $(OBJDIR)\epmd_cli.obj $(OBJDIR)\epmd_srv.obj
 
 CC         = cl -nologo
 LIBRARIAN  = lib
-#CC_DEBUG   = -Zi
+
 INCL_PATHS = -I.
 
 # Collect all the flags specified above.
 ETARGET    = -D__WIN32__ -MT
 CFLAGS     = $(CC_DEBUG) $(ETARGET) $(EPMD_R4_FLAGS) 
-CFLAGS_MD  = $(CFLAGS:-MT=-MD)
-CFLAGS_MDD = $(CFLAGS:-MT=-MDd) -Yd
+
+!if defined(NODEBUG) || defined(RELEASE)
+CLIB_MT = -MD
+!else
+CLIB_MT = -MDd
+!endif
+
+CFLAGS_MD  = $(CFLAGS:-MT=$(CLIB_MT))
 
 all:	$(EPMD_PROGS)
 
 $(BINDIR)\epmd.exe: $(EPMD_R4_OBJS) $(ENTRY_OBJ)
-	$(CC) $(CC_DEBUG) -MT -o $@ $** wsock32.lib $(ERL_ENTRY_LFLAGS)
+	$(CC) $(CC_DEBUG) $(CLIB_MT) -o $@ $** wsock32.lib $(ERL_ENTRY_LFLAGS)
 
 {}.c{$(OBJDIR)}.obj:
-	$(CC) $(CFLAGS) -c -Fo$@ $(INCL_PATHS) $<
+	$(CC) $(CFLAGS_MD) -c -Fo$@ $(INCL_PATHS) $<
 
 # This is to avoid 'command line to long' errors on NT when deleting...
 # Extremely ugly, but I know no way of avoiding this!

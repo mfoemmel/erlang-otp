@@ -15,10 +15,6 @@
  * 
  *     $Id$
  */
-/*
-** Copy struct & size struct
-**
-*/
 
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
@@ -30,6 +26,7 @@
 #include "erl_process.h"
 #include "big.h"
 #include "erl_binary.h"
+#include "erl_vector.h"
 
 void
 init_copy(void)
@@ -97,17 +94,21 @@ size_object(Eterm obj)
 		    obj = *++ptr;
 		    break;
 		case VECTOR_SUBTAG:
-		    /*
-		     * XXX This does not handle circular references properly.
-		     */
-		    ptr = vector_val(obj);
-		    arity = vector_arity(hdr);
-		    sum += arity + 1;
-		    if (!IS_CONST(ptr[3])) {
-			ESTACK_PUSH(s, ptr[3]);
+		    {
+			int i;
+			int n;
+			ptr = vector_val(obj);
+			arity = vector_arity(hdr);
+			n = VECTOR_SIZE(obj);
+			sum += arity + 1 + n + 1;
+			for (i = 1; i <= n; i++) {
+			    Eterm tmp = erts_unchecked_vector_get(i, obj);
+			    if (!IS_CONST(tmp)) {
+				ESTACK_PUSH(s, tmp);
+			    }
+			}
+			goto size_common;
 		    }
-		    obj = ptr[4];
-		    break;
 		case FUN_SUBTAG:
 		    {
 			Eterm* bptr = fun_val(obj);
@@ -173,24 +174,24 @@ size_object(Eterm obj)
 }
 
 /*
-**  Copy a structure to the heap of p
-*/
+ *  Copy a structure to a heap.
+ */
 Eterm
-copy_struct(Eterm obj, uint32 sz, uint32** hpp, ErlOffHeap* off_heap)
+copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 {
 #define COPIED(x) (ptr_val(x) >= hstart && ptr_val(x) < hend)
-    uint32* hstart;
-    uint32* hend;
-    uint32* htop;
-    uint32* hbot;
-    uint32* hp;
-    uint32* objp;
-    uint32* tp;
-    uint32  res;
-    uint32  elem;
-    uint32* tailp;
-    uint32* argp;
-    uint32* const_tuple;
+    Eterm* hstart;
+    Eterm* hend;
+    Eterm* htop;
+    Eterm* hbot;
+    Eterm* hp;
+    Eterm* objp;
+    Eterm* tp;
+    Eterm  res;
+    Eterm  elem;
+    Eterm* tailp;
+    Eterm* argp;
+    Eterm* const_tuple;
     Eterm hdr;
     int i;
 
@@ -288,17 +289,7 @@ copy_struct(Eterm obj, uint32 sz, uint32** hpp, ErlOffHeap* off_heap)
 		}
 		break;
 	    case VECTOR_SUBTAG:
-		{
-		    /*
-		     * XXX This does not handle circular references properly.
-		     */
-		    i = vector_arity(hdr);
-		    *argp = make_vector(htop);
-		    *htop++ = *objp++; /* copy arity value */
-		    while (i--) {
-			*htop++ = *objp++;
-		    }
-		}
+		htop = erts_copy_vector(obj, htop, argp);
 		break;
 	    case REFC_BINARY_SUBTAG:
 		{
@@ -369,6 +360,7 @@ copy_struct(Eterm obj, uint32 sz, uint32** hpp, ErlOffHeap* off_heap)
 		    funp = (ErlFunThing *) tp;
 		    funp->next = off_heap->funs;
 		    off_heap->funs = funp;
+		    funp->fe->refc++;
 		    *argp = make_fun(tp);
 		}
 		break;
@@ -409,11 +401,11 @@ copy_struct(Eterm obj, uint32 sz, uint32** hpp, ErlOffHeap* off_heap)
  * Typically used to copy a term from an ets table.
  */
 Eterm
-copy_shallow(Eterm* ptr, uint32 sz, Eterm** hpp, ErlOffHeap* off_heap)
+copy_shallow(Eterm* ptr, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 {
     Eterm* tp = ptr;
     Eterm* hp = *hpp;
-    sint32 offs = hp - tp;
+    Sint offs = hp - tp;
 
     while (sz--) {
 	Eterm val = *tp++;
@@ -457,6 +449,7 @@ copy_shallow(Eterm* ptr, uint32 sz, Eterm** hpp, ErlOffHeap* off_heap)
 		    }
 		    funp->next = off_heap->funs;
 		    off_heap->funs = funp;
+		    funp->fe->refc++;
 		}
 		break;
 	    default:

@@ -73,8 +73,13 @@
 %% Computes the total number of days starting from year 0,
 %% January 1st.
 %%
-date_to_gregorian_days(Year, Month, Day) ->
-    dy(Year) + dm(Month) + df(Year, Month) + Day - 1.
+%% df/2 catches the case Year<0
+date_to_gregorian_days(Year, Month, Day) when integer(Day), Day > 0 ->
+    Last = last_day_of_the_month(Year, Month),
+    if
+	Day =< Last ->
+	    dy(Year) + dm(Month) + df(Year, Month) + Day - 1
+    end.
 
 date_to_gregorian_days({Year, Month, Day}) ->
     date_to_gregorian_days(Year, Month, Day).
@@ -112,7 +117,7 @@ gregorian_days_to_date(Days) ->
 
 %% gregorian_seconds_to_datetime(Secs)
 %%
-gregorian_seconds_to_datetime(Secs) ->
+gregorian_seconds_to_datetime(Secs) when Secs >= 0 ->
     Days = Secs div ?SECONDS_PER_DAY,
     Rest = Secs rem ?SECONDS_PER_DAY,
     {gregorian_days_to_date(Days), seconds_to_time(Rest)}.
@@ -120,27 +125,34 @@ gregorian_seconds_to_datetime(Secs) ->
 
 %% is_leap_year(Year) = true | false
 %%
-is_leap_year(Year) when Year rem 4 == 0, Year rem 100 > 0 ->
+is_leap_year(Y) when integer(Y), Y >= 0 ->
+    is_leap_year1(Y).
+
+is_leap_year1(Year) when Year rem 4 == 0, Year rem 100 > 0 ->
     true;
-is_leap_year(Year) when Year rem 400 == 0 ->
+is_leap_year1(Year) when Year rem 400 == 0 ->
     true;
-is_leap_year(_) -> false.
+is_leap_year1(_) -> false.
 
 
 %% last_day_of_the_month(Year, Month)
 %%
 %% Returns the number of days in a month.
 %%
-last_day_of_the_month(Y, 4) -> 30;
-last_day_of_the_month(Y, 6) -> 30;
-last_day_of_the_month(Y, 9) -> 30;
-last_day_of_the_month(Y,11) -> 30;
-last_day_of_the_month(Y, 2) ->
+last_day_of_the_month(Y, M) when integer(Y), Y >= 0 ->
+    last_day_of_the_month1(Y, M).
+
+last_day_of_the_month1(Y, 4) -> 30;
+last_day_of_the_month1(Y, 6) -> 30;
+last_day_of_the_month1(Y, 9) -> 30;
+last_day_of_the_month1(Y,11) -> 30;
+last_day_of_the_month1(Y, 2) ->
    case is_leap_year(Y) of
       true -> 29;
       _    -> 28
    end;
-last_day_of_the_month(_, _) -> 31.
+last_day_of_the_month1(_, M) when integer(M), M > 0, M < 13 ->
+    31.
 
 
 %% local_time()
@@ -201,7 +213,7 @@ seconds_to_daystime(Secs) ->
 %%
 %% Wraps.
 %%
-seconds_to_time(Secs) ->
+seconds_to_time(Secs) when Secs >= 0, Secs < ?SECONDS_PER_DAY ->
     Secs0 = Secs rem ?SECONDS_PER_DAY,
     Hour = Secs0 div ?SECONDS_PER_HOUR,
     Secs1 = Secs0 rem ?SECONDS_PER_HOUR,
@@ -228,7 +240,7 @@ time_difference({{Y1, Mo1, D1}, {H1, Mi1, S1}},
 %%
 %% time_to_seconds(Time)
 %%
-time_to_seconds({H, M, S}) ->
+time_to_seconds({H, M, S}) when integer(H), integer(M), integer(S) ->
     H * ?SECONDS_PER_HOUR +
 	M * ?SECONDS_PER_MINUTE + S.
       
@@ -249,14 +261,13 @@ universal_time_to_local_time(DateTime) ->
 %% valid_date(Year, Month, Day) = true | false
 %% valid_date({Year, Month, Day}) = true | false
 %%
-valid_date(Y, M, D) ->
-   if Y > 0, M > 0, M < 13, D > 0 ->
- L = last_day_of_the_month(Y, M),
- if D > L -> false;
-    true -> true
- end;
-      true -> false
-   end.
+valid_date(Y, M, D) when integer(Y), integer(M), integer(D) ->
+    valid_date1(Y, M, D).
+
+valid_date1(Y, M, D) when Y >= 0, M > 0, M < 13, D > 0 ->
+    D =< last_day_of_the_month(Y, M);
+valid_date1(_, _, _) ->
+    false.
 
 valid_date({Y, M, D}) ->
     valid_date(Y, M, D).
@@ -271,8 +282,10 @@ valid_date({Y, M, D}) ->
 %% The idea here is to first guess a year, and then adjust. Although
 %% the implementation is recursive, at most 1 or 2 recursive steps
 %% are taken.
+%% If DayOfEpoch is very large, we need far more than 1 or 2 iterations,
+%% since we just subtract a yearful of days at a time until we're there.
 %%
-day_to_year(DayOfEpoch) ->
+day_to_year(DayOfEpoch) when DayOfEpoch >= 0 ->
     Y0 = DayOfEpoch div ?DAYS_PER_YEAR,
     {Y1, D1} = dty(Y0, DayOfEpoch, dy(Y0)),
     {Y1, DayOfEpoch - D1}.
@@ -356,7 +369,3 @@ df(Year, _) ->
 	true -> 1;
 	false  -> 0
     end.
-
-
-
-    

@@ -68,7 +68,7 @@
 #    define ASSERT(X)
 #endif 
 
-#include "driver.h"
+#include "erl_driver.h"
 
 /*
 ** Protocol from driver:
@@ -166,7 +166,7 @@ typedef struct trace_ip_data {
     unsigned event_mask;
     HANDLE event;
 #endif
-    long port;
+    ErlDrvPort port;
     struct trace_ip_data *next;
     int quesiz;
     int questart;
@@ -179,17 +179,17 @@ static TraceIpData *first_data;
 /*
 ** Interface routines
 */
-static long trace_ip_start(long port, char *buff);
-static int trace_ip_stop(long handle);
-static int trace_ip_output(long handle, unsigned char *buff, int bufflen);
+static ErlDrvData trace_ip_start(ErlDrvPort port, char *buff);
+static void trace_ip_stop(ErlDrvData handle);
+static void trace_ip_output(ErlDrvData handle, char *buff, int bufflen);
 #ifdef __WIN32__
-static int trace_ip_event(long handle, HANDLE event);
+static void trace_ip_event(ErlDrvData handle, ErlDrvEvent event);
 #endif
-static int trace_ip_ready_input(long handle, int fd);
-static int trace_ip_ready_output(long handle, int fd);
-static int trace_ip_finish(void); /* No arguments, despite what might be stated
+static void trace_ip_ready_input(ErlDrvData handle, ErlDrvEvent fd);
+static void trace_ip_ready_output(ErlDrvData handle, ErlDrvEvent fd);
+static void trace_ip_finish(void); /* No arguments, despite what might be stated
 				     in any documentation */
-static int trace_ip_control(long handle, unsigned int command, 
+static int trace_ip_control(ErlDrvData handle, unsigned int command, 
 			    char* buff, int count, 
 			    char** res, int res_size);
 
@@ -197,7 +197,7 @@ static int trace_ip_control(long handle, unsigned int command,
 ** Internal routines
 */
 static void *my_alloc(size_t size);
-static DriverBinary *my_alloc_binary(int size);
+static ErlDrvBinary *my_alloc_binary(int size);
 static int write_until_done(SOCKET s, char *buff, int bufflen);
 static unsigned get_be(unsigned char *s);
 static void put_be32(unsigned n, unsigned char *s);
@@ -217,14 +217,14 @@ static int my_driver_select(TraceIpData *desc, SOCKET fd, int flags, int on);
 /*
 ** The driver struct
 */
-DriverEntry trace_ip_driver_entry = {
-    null_func,             /* F_PTR init, N/A */
+ErlDrvEntry trace_ip_driver_entry = {
+    NULL,	           /* F_PTR init, N/A */
     trace_ip_start,        /* L_PTR start, called when port is opened */
     trace_ip_stop,         /* F_PTR stop, called when port is closed */
     trace_ip_output,       /* F_PTR output, called when erlang has sent */
 #ifdef __WIN32__
     trace_ip_event,        /* Anything happens on an associated event */
-    null_func,             /* Write selections not supported on win32 */
+    NULL,                  /* Write selections not supported on win32 */
 #else
     trace_ip_ready_input,  /* F_PTR ready_input, called when input descriptor 
 			      ready */
@@ -235,8 +235,8 @@ DriverEntry trace_ip_driver_entry = {
     trace_ip_finish,       /* F_PTR finish, called when unloaded */
     NULL,                  /* void * that is not used */
     trace_ip_control,      /* F_PTR control, port_control callback */
-    null_func,             /* F_PTR timeout, reserved */
-    null_func              /* F_PTR outputv, reserved */
+    NULL,                  /* F_PTR timeout, reserved */
+    NULL                   /* F_PTR outputv, reserved */
 };
 
 /*
@@ -245,14 +245,10 @@ DriverEntry trace_ip_driver_entry = {
 ** No matter what's stated otherwise, this function shall return a pointer.
 */
 
-#ifdef __WIN32__
-__declspec(dllexport) void * driver_init(void *handle)
-#else
-void *DRIVER_INIT(trace_ip_drv)(void *handle) 
-#endif
+DRIVER_INIT(trace_ip_drv)
 {
     first_data = NULL;
-    trace_ip_driver_entry.handle = handle; /* ??? What is this, and why? */
+    /*trace_ip_driver_entry.handle = handle; ??? What is this, and why? It is no more! */
     return &trace_ip_driver_entry;
 }
 
@@ -263,7 +259,7 @@ void *DRIVER_INIT(trace_ip_drv)(void *handle)
 /*
 ** Open a port
 */
-static long trace_ip_start(long port, char *buff)
+static ErlDrvData trace_ip_start(ErlDrvPort port, char *buff)
 {
     TraceIpData *ret;
     int portno;
@@ -277,21 +273,21 @@ static long trace_ip_start(long port, char *buff)
     fprintf(stderr,"trace_ip_drv/trace_ip_start (%s)\r\n", buff);
 #endif
     if (sscanf(buff,"trace_ip_drv %d %d %d",&portno, &quesiz, &flags) != 3)
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
 
     if (flags > 3 || flags < 0 || portno < 0 || quesiz < 0)
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     
     if (lookup_data_by_port(portno) != NULL)
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     
     if (IS_INVALID_SOCKET(s = socket(AF_INET, SOCK_STREAM, 0)))
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
 
     if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, 
 		   (char *) &reuse, sizeof(reuse)) < 0) {
 	closesocket(s);
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     }
 
 
@@ -302,27 +298,27 @@ static long trace_ip_start(long port, char *buff)
     
     if (bind(s, (struct sockaddr *)&sin, sizeof(sin)) != 0) {
 	closesocket(s);
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     }
 
     if (portno == 0) {
 	size_t sinlen = sizeof(sin);
 	if (getsockname(s, (struct sockaddr *)&sin, &sinlen) != 0) {
 	    closesocket(s);
-	    return -1;
+	    return ERL_DRV_ERROR_GENERAL;
 	} else {
-	    portno = sin.sin_port;
+	    portno = ntohs(sin.sin_port);
 	}
     }    
 
     if (listen(s, 1)) { /* No significant backlog needed */
 	closesocket(s);
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     }
 
     if (set_nonblocking(s) != 0){
 	closesocket(s);
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     }
     
     /* OK, the socket is created, lets build the structure. */
@@ -350,32 +346,31 @@ static long trace_ip_start(long port, char *buff)
     my_driver_select(ret, s, FLAG_READ, 1);
     set_port_control_flags(port, PORT_CONTROL_FLAG_BINARY);
 
-    return (long) ret;
+    return (ErlDrvData) ret;
 }
 
 /*
 ** Close a port
 */
-static int trace_ip_stop(long handle)
+static void trace_ip_stop(ErlDrvData handle)
 {
     close_unlink_port((TraceIpData *) handle);
-    return 0;
 }
 
 /*
 ** Data sent from erlang to port.
 */
-static int trace_ip_output(long handle, unsigned char *buff, int bufflen)
+static void trace_ip_output(ErlDrvData handle, char *buff, int bufflen)
 {
     TraceIpData *data = (TraceIpData *) handle;
     if (data->flags & FLAG_LISTEN_PORT) {
 	if (data->flags & FLAG_FILL_ALWAYS) {
 	    enque_message(data, buff, bufflen, 0);
 	}
-	return 0;
+	return;
     }
     if (data->que[data->questart] != NULL) {
-	trace_ip_ready_output((long) data, data->fd);
+	trace_ip_ready_output(handle, (ErlDrvEvent)data->fd);
     }
     if (data->que[data->questart] == NULL) {
 	int written = trywrite(data, buff, bufflen);
@@ -383,21 +378,21 @@ static int trace_ip_output(long handle, unsigned char *buff, int bufflen)
 	    enque_message(data, buff, bufflen, written);
 	    my_driver_select(data, data->fd, FLAG_WRITE, 1);
 	}
-	return 0;
+	return;
     }
     enque_message(data, buff, bufflen, 0);
-    return 0;
+    return;
 }
 
 /*
 ** We have something to read from a file descriptor
 */
-static int trace_ip_ready_input(long handle, int fd)
+static void trace_ip_ready_input(ErlDrvData handle, ErlDrvEvent fd)
 {
     TraceIpData *data = (TraceIpData *) handle;
     int client;
 
-    if (!(data->flags & FLAG_LISTEN_PORT) && fd == data->listenfd) {
+    if (!(data->flags & FLAG_LISTEN_PORT) && (SOCKET)fd == data->listenfd) {
 	/*
 	** Someone tries to connect to already connected port, 
 	** just accept and close.
@@ -405,10 +400,10 @@ static int trace_ip_ready_input(long handle, int fd)
 	if (!IS_INVALID_SOCKET((client = my_accept(data->listenfd)))) {
 	    closesocket(client);
 	}
-	return 0;
+	return;
     }
 
-    if (fd == data->listenfd) {
+    if ((SOCKET)fd == data->listenfd) {
 	/*
 	** Maybe accept, we are a listen port...
 	*/
@@ -422,24 +417,21 @@ static int trace_ip_ready_input(long handle, int fd)
 	    }
 	    data->flags &= ~(FLAG_LISTEN_PORT);
 	}
-	return 0;
+	return;
     }
 
-    ASSERT(fd == data->fd);
+    ASSERT((SOCKET)fd == data->fd);
     close_client(data);
-    return 0;
 }
 
 #ifdef __WIN32__
-static int trace_ip_event(long handle, HANDLE event) 
+static void trace_ip_event(ErlDrvData handle, ErlDrvEvent event) 
 {
    TraceIpData *data = (TraceIpData *) handle;
-   if (event == data->event) {
-       return trace_ip_ready_output(handle, data->fd);
-   } else if (event == data->listen_event) {
-       return trace_ip_ready_input(handle, data->listenfd);
-   } else {
-       return -1;
+   if ((HANDLE)event == data->event) {
+       trace_ip_ready_output(handle, (ErlDrvEvent)data->fd);
+   } else if ((HANDLE)event == data->listen_event) {
+       trace_ip_ready_input(handle, (ErlDrvEvent)data->listenfd);
    }
 }
 #endif __WIN32__
@@ -447,7 +439,7 @@ static int trace_ip_event(long handle, HANDLE event)
 /*
 ** We can write to a file descriptor
 */
-static int trace_ip_ready_output(long handle, int fd)
+static void trace_ip_ready_output(ErlDrvData handle, ErlDrvEvent fd)
 {
     TraceIpData *data = (TraceIpData *) handle;
     int res;
@@ -456,7 +448,7 @@ static int trace_ip_ready_output(long handle, int fd)
 
     ASSERT(!(data->flags & FLAG_LISTEN_PORT) &&
 	   data->que[data->questart] != NULL &&
-	   fd == data->fd);
+	   (SOCKET)fd == data->fd);
     
     tim = data->que[data->questart];
     towrite = tim->siz - tim->written;
@@ -474,7 +466,7 @@ static int trace_ip_ready_output(long handle, int fd)
 	    /*
 	    ** We are really done...
 	    */
-	    return 0;
+	    return;
 	}
 	if (++(data->questart) == data->quesiz)
 	    data->questart = 0;
@@ -484,17 +476,16 @@ static int trace_ip_ready_output(long handle, int fd)
     }
     if (res < 0) {
 	close_client(data);
-	return 0;
+	return;
     }
 
     tim->written += res;
-    return 0;
 }
 
 /*
 ** Control message from erlang, we handle $p, which is get_listen_port.
 */
-static int trace_ip_control(long handle, unsigned int command, 
+static int trace_ip_control(ErlDrvData handle, unsigned int command, 
 			      char* buff, int count, 
 			      char** res, int res_size)
 {
@@ -502,7 +493,7 @@ static int trace_ip_control(long handle, unsigned int command,
 
     if (command == 'p') {
 	TraceIpData *data = (TraceIpData *) handle;
-	DriverBinary *b = my_alloc_binary(3);
+	ErlDrvBinary *b = my_alloc_binary(3);
 	b->orig_bytes[0] = '\0'; /* OK */
 	put_be16(data->listen_portno, &(b->orig_bytes[1]));
 	*res = void_ptr = b;
@@ -514,12 +505,11 @@ static int trace_ip_control(long handle, unsigned int command,
 /*
 ** Driver unloaded
 */
-static int trace_ip_finish(void)
+static void trace_ip_finish(void)
 {
     while (first_data != NULL) {
 	close_unlink_port(first_data);
     }
-    return 0;
 }
 
 /*
@@ -544,9 +534,9 @@ static void *my_alloc(size_t size)
 /*
 ** Yet another malloc wrapper
 */
-static DriverBinary *my_alloc_binary(int size)
+static ErlDrvBinary *my_alloc_binary(int size)
 {
-    DriverBinary *ret;
+    ErlDrvBinary *ret;
     if ((ret = driver_alloc_binary(size)) == NULL) {
 	/* May or may not work... */
 	fprintf(stderr, "Could not allocate a binary of %d bytes in %s.",
@@ -849,7 +839,7 @@ error:
 
 static int my_driver_select(TraceIpData *desc, SOCKET fd, int flags, int on)
 {
-    return driver_select(desc->port, fd, flags, on);
+    return driver_select(desc->port, (ErlDrvEvent)fd, flags, on);
 }	    
 
 #endif /* !__WIN32__ */

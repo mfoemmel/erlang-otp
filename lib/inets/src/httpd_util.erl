@@ -492,8 +492,13 @@ make_name(Prefix,Addr,Port) ->
     
 make_name(Prefix,"*",Port,Postfix) ->
     make_name(Prefix,undefined,Port,Postfix);
+
 make_name(Prefix,undefined,Port,Postfix) ->
     make_name1(io_lib:format("~s_~w~s",[Prefix,Port,Postfix]));
+
+make_name(Prefix,any,Port,Postfix) ->
+    make_name1(io_lib:format("~s_~w~s",[Prefix,Port,Postfix]));
+
 make_name(Prefix,Addr,Port,Postfix) ->
     NameString = 
         Prefix ++ "__" ++ make_name2(Addr) ++ "__" ++ 

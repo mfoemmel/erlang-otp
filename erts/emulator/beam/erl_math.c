@@ -37,283 +37,225 @@
 #include "bif.h"
 #include "big.h"
 
-#define MATHERR_BADARG   make_small(BADARG)
-#define MATHERR_BADARITH make_small(BADARITH)
-#define MATHERR_UNDEF    make_small(UNDEF)
-
-static double undef_math_func_1(double x)
+static double
+undef_math_func_1(double x)
 {
     return x;
 }
 
-static double undef_math_func_2(double x, double y)
+static double
+undef_math_func_2(double x, double y)
 {
     return x+y;
 }
 
-static uint32 math_call_1(p, func, arg1)
-Process* p; FUNCTION(double, (*func), (double)); uint32 arg1;
+static Eterm
+math_call_1(Process* p, double (*func)(double), Eterm arg1)
 {
     FloatDef a1;
-    uint32 res;
-    uint32* hp;
+    Eterm res;
+    Eterm* hp;
 
-    if (func == undef_math_func_1)
-	return MATHERR_UNDEF;
-    if (!FP_PRE_CHECK_OK())
-	return MATHERR_BADARITH;
+    if (func == undef_math_func_1) {
+	p->freason = EXC_UNDEF;
+	return THE_NON_VALUE;
+    }
 
-    if (is_float(arg1))
+    ERTS_FP_CHECK_INIT();
+    if (is_float(arg1)) {
 	GET_DOUBLE(arg1, a1);
-    else if (is_small(arg1))
+    } else if (is_small(arg1)) {
 	a1.fd = signed_val(arg1);
-    else if (is_big(arg1)) {
-	a1.fd = big_to_double(arg1);
-	if (!FP_RESULT_OK(a1.fd))
-	    return MATHERR_BADARITH;
+    } else if (is_big(arg1)) {
+	if (big_to_double(arg1, &a1.fd) < 0) {
+	badarith:
+	    p->freason = BADARITH;
+	    return THE_NON_VALUE;
+	}
+    } else {
+	p->freason = BADARG;
+	return THE_NON_VALUE;
     }
-    else
-	return MATHERR_BADARG;
     a1.fd = (*func)(a1.fd);
-    if (FP_RESULT_OK(a1.fd)) {
-	hp = HAlloc(p, 3);
-	res = make_float(hp);
-	PUT_DOUBLE(a1, hp);
-	return res;
-    }
-    return MATHERR_BADARITH;
+    ERTS_FP_ERROR(a1.fd, goto badarith);
+    hp = HAlloc(p, 3);
+    res = make_float(hp);
+    PUT_DOUBLE(a1, hp);
+    return res;
 }
 
 
-static uint32 math_call_2(p, func, arg1, arg2)
-Process* p; FUNCTION(double, (*func), (double, double));
-uint32 arg1; uint32 arg2;
+static Eterm
+math_call_2(Process* p, double (*func)(double, double), Eterm arg1, Eterm arg2)
 {
     FloatDef a1;
     FloatDef a2;
-    uint32 res;
-    uint32* hp;
+    Eterm res;
+    Eterm* hp;
 
-    if (func == undef_math_func_2)
-	return MATHERR_UNDEF;
-    if (!FP_PRE_CHECK_OK())
-	return MATHERR_BADARITH;
+    if (func == undef_math_func_2) {
+	p->freason = EXC_UNDEF;
+	return THE_NON_VALUE;
+    }
 
-    if (is_float(arg1))
+    ERTS_FP_CHECK_INIT();
+    if (is_float(arg1)) {
 	GET_DOUBLE(arg1, a1);
-    else if (is_small(arg1))
+    } else if (is_small(arg1)) {
 	a1.fd = signed_val(arg1);
-    else if (is_big(arg1)) {
-	a1.fd = big_to_double(arg1);
-	if (!FP_RESULT_OK(a1.fd))
-	    return MATHERR_BADARITH;
+    } else if (is_big(arg1)) {
+	if (big_to_double(arg1, &a1.fd) < 0) {
+	badarith:
+	    p->freason = BADARITH;
+	    return THE_NON_VALUE;
+	}
+    } else {
+	p->freason = BADARG;
+	return THE_NON_VALUE;
     }
-    else
-	return MATHERR_BADARG;
 
-    if (is_float(arg2))
+    if (is_float(arg2)) {
 	GET_DOUBLE(arg2, a2);
-    else if (is_small(arg2))
+    } else if (is_small(arg2)) {
 	a2.fd = signed_val(arg2);
-    else if (is_big(arg2)) {
-	a2.fd = big_to_double(arg2);
-	if (!FP_RESULT_OK(a2.fd))
-	    return MATHERR_BADARITH;
+    } else if (is_big(arg2)) {
+	if (big_to_double(arg2, &a2.fd) < 0) {
+	    goto badarith;
+	}
+    } else {
+	p->freason = BADARG;
+	return THE_NON_VALUE;
     }
-    else
-	return MATHERR_BADARG;
 
-    a1.fd = (*func)(a1.fd,a2.fd);
-    if (FP_RESULT_OK(a1.fd)) {
-	hp = HAlloc(p, 3);
-	res = make_float(hp);
-	PUT_DOUBLE(a1, hp);
-	BIF_RET(res);
-    }
-    return MATHERR_BADARITH;
+    a1.fd = (*func)(a1.fd, a2.fd);
+    ERTS_FP_ERROR(a1.fd, goto badarith);
+    hp = HAlloc(p, 3);
+    res = make_float(hp);
+    PUT_DOUBLE(a1, hp);
+    return res;
 }
 
 BIF_RETTYPE math_cos_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, cos, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, cos, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_cosh_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, cosh, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, cosh, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_sin_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, sin, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, sin, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_sinh_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, sinh, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, sinh, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_tan_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, tan, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, tan, BIF_ARG_1);
 }
 
 
 BIF_RETTYPE math_tanh_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, tanh, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, tanh, BIF_ARG_1);
 }
 
 
 BIF_RETTYPE math_acos_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, acos, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, acos, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_acosh_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, acosh, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, acosh, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_asin_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, asin, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, asin, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_asinh_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, asinh, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, asinh, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_atan_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, atan, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, atan, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_atanh_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, atanh, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, atanh, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_erf_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, erf, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, erf, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_erfc_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, erfc, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, erfc, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_exp_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, exp, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, exp, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_log_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, log, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, log, BIF_ARG_1);
 }
 
 
 BIF_RETTYPE math_log10_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, log10, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, log10, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_sqrt_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    uint32 res = math_call_1(BIF_P, sqrt, BIF_ARG_1);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_1(BIF_P, sqrt, BIF_ARG_1);
 }
 
 BIF_RETTYPE math_atan2_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    uint32 res = math_call_2(BIF_P, atan2, BIF_ARG_1, BIF_ARG_2);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res))
-    BIF_RET(res);
+    return math_call_2(BIF_P, atan2, BIF_ARG_1, BIF_ARG_2);
 }
 
 BIF_RETTYPE math_pow_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    uint32 res = math_call_2(BIF_P, pow, BIF_ARG_1, BIF_ARG_2);
-    if (is_small(res))
-	BIF_ERROR(BIF_P, unsigned_val(res));
-    BIF_RET(res);
+    return math_call_2(BIF_P, pow, BIF_ARG_1, BIF_ARG_2);
 }
 
 

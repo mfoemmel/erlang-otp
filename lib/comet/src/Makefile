@@ -39,12 +39,17 @@ HRL_FILES= $(MODULES:%=%.hrl)
 
 ERL_FILES= $(MODULES:%=%.erl)
 
-TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 
 APP_FILE= comet.app
 
 APP_SRC= $(APP_FILE).src
 APP_TARGET= $(EBIN)/$(APP_FILE)
+
+APPUP_FILE= comet.appup
+
+APPUP_SRC= $(APPUP_FILE).src
+APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 
 # ----------------------------------------------------
 # FLAGS
@@ -56,13 +61,16 @@ ERL_COMPILE_FLAGS +=
 # Targets
 # ----------------------------------------------------
 
-debug opt: $(TARGET_FILES) $(APP_TARGET) 
+debug opt: $(TARGET_FILES)
 
 clean:
 	rm -f $(TARGET_FILES) $(APP_TARGET)
 	rm -f errs core *~
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
+
+$(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 docs:
@@ -77,13 +85,6 @@ release_spec: opt
 	$(INSTALL_DATA) $(ERL_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(HRL_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
-	$(INSTALL_DATA) $(TARGET_FILES) $(APP_TARGET) $(RELSYSDIR)/ebin
+	$(INSTALL_DATA) $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) $(RELSYSDIR)/ebin
 
 release_docs_spec:
-
-
-
-
-
-
-

@@ -64,7 +64,10 @@ handle_call(get_disk_data, _From, State) ->
 handle_call(get_check_interval, _From, State) ->
     {reply, State#state.timeout, State};
 handle_call(get_almost_full_threshold, _From, State) ->
-    {reply, State#state.threshold, State}.
+    {reply, State#state.threshold, State};
+
+handle_call({set_threshold, Threshold}, _From, State) -> % test purposes only
+    {reply, ok, State#state{threshold=Threshold}}.
 
 handle_info(timeout, State) ->
     NewDiskData = check_disk_space(State),
@@ -83,10 +86,17 @@ check_disk_space(State) when element(1,State#state.os) == win32 ->
 check_disk_space(State) when State#state.os == {unix, solaris} ->
     Result = my_cmd("/usr/bin/df -lk",State#state.port),
     check_disks_solaris(skip_to_eol(Result), State#state.threshold);
+check_disk_space(State) when State#state.os == {unix, linux} ->
+    Result = my_cmd("/bin/df -lk",State#state.port),
+    check_disks_solaris(skip_to_eol(Result), State#state.threshold);
+check_disk_space(State) when State#state.os == {unix, freebsd} ->
+    Result = my_cmd("/bin/df -k -t ufs",State#state.port),
+    check_disks_solaris(skip_to_eol(Result), State#state.threshold);
 check_disk_space(State) when State#state.os == {unix, sunos4} ->
     Result = my_cmd("df",State#state.port),
     check_disks_solaris(skip_to_eol(Result), State#state.threshold).
 
+% This code works for Linux and FreeBSD as well
 check_disks_solaris("", _Threshold) ->
     [];
 check_disks_solaris("\n", _Threshold) ->
@@ -164,8 +174,12 @@ get_os() ->
 		{4,_,_} -> {unix, sunos4};
 		V -> exit({{unknown_os_version, V}, {disk_sup, get_os, []}})
 	    end;
+	{unix, linux} ->
+	    {unix, linux};
+	{unix, freebsd} ->
+	    {unix, freebsd};
 	{win32,W} ->
-	    {win32,W};	    
+	    {win32,W};
 	Type ->
 	    exit({{unknown_os_type, Type}, {disk_sup, get_os, []}})
     end.

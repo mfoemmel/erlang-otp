@@ -35,6 +35,10 @@
 
 -include_lib("kernel/include/file.hrl").
 
+-define(XREF_SERVER, systools_make).
+
+-compile({inline,[{badarg,2}]}).
+
 %%-----------------------------------------------------------------
 %% Create a boot script from a release file.
 %% Options is a list of {path, Path} | silent | local where path sets
@@ -52,7 +56,7 @@
 make_script(RelName) when list(RelName) ->
     make_script(RelName, []);
 make_script(RelName) ->
-    badarg(make_script,RelName,[RelName]).
+    badarg(RelName,[RelName]).
 
 make_script(RelName, Flags) when list(RelName), list(Flags) ->
     make_script(RelName, RelName, Flags).
@@ -63,7 +67,7 @@ make_script(RelName, Output, Flags) when list(RelName), list(Output), list(Flags
 	    Path0 = get_path(Flags),
 	    Path = mk_path(Path0),
 	    ModTestP = {not member(no_module_tests, Flags),
-			exref_p(Flags)},
+			xref_p(Flags)},
 	    case get_release(RelName, Path, ModTestP, machine(Flags)) of
 		{ok, Release, Appls, Warnings} ->
 		    generate_script(RelName, Output, Release, Appls, Flags),
@@ -72,16 +76,17 @@ make_script(RelName, Output, Flags) when list(RelName), list(Output), list(Flags
 		    return(Error,[],Flags)
 	    end;
 	{R_Path, R_Sil, R_Loc, R_Test, R_Var, R_Mach, R_Xref, R_XrefApps, ErrorVars} ->
-	    badarg(make_script, ErrorVars, [RelName, Flags])
+	    badarg(ErrorVars, [RelName, Flags])
     end;
 
 make_script(RelName, Output, Flags) when list(Flags) ->
-    badarg(make_script,RelName,[RelName, Flags]);
+    badarg(RelName,[RelName, Flags]);
 make_script(RelName, Output, Flags) ->
-    badarg(make_script,Flags,[RelName, Flags]).
+    badarg(Flags,[RelName, Flags]).
 
-badarg(Func, BadArg, Args) ->
-    exit({{badarg,BadArg},{systools_make,Func,Args}}).
+%% Inlined.
+badarg(BadArg, Args) ->
+    erlang:fault({badarg,BadArg}, Args).
 
 machine(Flags) ->
     case get_flag(machine,Flags) of
@@ -149,7 +154,7 @@ return({error,Mod,Error},_,Flags) ->
 make_tar(RelName) when list(RelName) ->
     make_tar(RelName, []);
 make_tar(RelName) ->
-    badarg(make_tar,RelName,[RelName]).
+    badarg(RelName,[RelName]).
 
 make_tar(RelName, Flags) when list(RelName), list(Flags) ->
     case check_args_tar(Flags) of
@@ -158,7 +163,7 @@ make_tar(RelName, Flags) when list(RelName), list(Flags) ->
 	    Path0 = get_path(Flags),
 	    Path = mk_path(Path0),
 	    ModTestP = {not member(no_module_tests, Flags),
-			exref_p(Flags)},
+			xref_p(Flags)},
 	    case get_release(RelName, Path, ModTestP, machine(Flags)) of
 		{ok, Release, Appls, Warnings} ->
 		    case catch mk_tar(RelName, Release, Appls, Flags) of
@@ -172,12 +177,12 @@ make_tar(RelName, Flags) when list(RelName), list(Flags) ->
 	    end;
 	{R_Path, R_Sil, R_Dirs, R_Erts, R_Test, R_Var, R_VarTar, 
 	 R_Mach, R_Xref, R_XrefApps, ErrorVars} ->
-	    badarg(make_tar, ErrorVars, [RelName, Flags])
+	    badarg(ErrorVars, [RelName, Flags])
     end;
 make_tar(RelName, Flags) when list(Flags) ->
-    badarg(make_tar,RelName,[RelName, Flags]);
+    badarg(RelName,[RelName, Flags]);
 make_tar(RelName, Flags) ->
-    badarg(make_tar,Flags,[RelName, Flags]).
+    badarg(Flags,[RelName, Flags]).
     
 %%______________________________________________________________________    
 %% get_release(File, Path) ->
@@ -749,14 +754,13 @@ get_mod_vsn([]) ->
 %% Use the module extension of the running machine as extension for
 %% the checked modules.
 
-check_mods(Modules, Appls, Path, {true, ExrefP}, Machine) ->
+check_mods(Modules, Appls, Path, {true, XrefP}, Machine) ->
     Ext = objfile_extension(Machine),
     IncPath = create_include_path(Appls, Path),
-    start_exref(IncPath, ExrefP),
     Res = append(map(fun(ModT) ->
 			     {Mod,Vsn,App,_,Dir} = ModT,
 			     case check_mod(Mod,Vsn,App,Dir,Ext,
-					    IncPath,ExrefP) of
+					    IncPath,XrefP) of
 				 ok ->
 				     [];
 				 {error, Error} ->
@@ -766,37 +770,101 @@ check_mods(Modules, Appls, Path, {true, ExrefP}, Machine) ->
 			     end
 		     end,
 		     Modules)),
+    Res2 = Res ++ check_xref(Appls, Path, XrefP),
     case filter(fun({error, _}) -> true;
 		   (_)          -> false
 		end,
-		Res) of
+		Res2) of
 	[] ->
-	    Warnings = Res ++ check_exref(Res, Appls, ExrefP),
-	    stop_exref(ExrefP),
 	    {ok, filter(fun({warning, _}) -> true;
 			   (_)            -> false
 			end,
-			Warnings)};
+			Res2)};
 	Errors ->
-	    stop_exref(ExrefP),
 	    {error, Errors}
     end;
 check_mods(_, _, _, _, _) ->
     {ok, []}.
 
-%%
+check_xref(_Appls, _Path, false) ->
+    [];
+check_xref(Appls, Path, XrefP) ->
+    AppDirsL = [{App,A#application.dir} || {{App,_Appv},A} <- Appls],
+    AppDirs0 = sofs:relation(AppDirsL),
+    AppDirs = case XrefP of
+		  true ->
+		      AppDirs0;
+		  {true, Apps} ->
+		      sofs:restriction(AppDirs0, sofs:set(Apps))
+	      end,
+    XrefArgs = [{xref_mode, modules}],
+    case catch xref:start(?XREF_SERVER, XrefArgs) of
+	{ok, _Pid} ->
+	    ok;
+	{error, {already_started, _Pid}} ->
+	    xref:stop(?XREF_SERVER), %% Clear out any previous data
+	    xref:start(?XREF_SERVER, XrefArgs)
+    end,
+    {ok, _} = xref:set_default(?XREF_SERVER, verbose, false),
+    LibPath = case Path == code:get_path() of
+		  true -> code_path; % often faster
+		  false -> Path
+	      end,
+    ok = xref:set_library_path(?XREF_SERVER, LibPath),
+    check_xref(sofs:to_external(AppDirs)).
+
+check_xref([{App,AppDir} | Appls]) ->
+    case xref:add_application(?XREF_SERVER, AppDir, {name,App}) of
+	{ok, _App} ->
+	    check_xref(Appls);
+	Error ->
+	    xref:stop(?XREF_SERVER),
+	    [{error, Error}]
+    end;
+check_xref([]) ->
+    R = case xref:analyze(?XREF_SERVER, undefined_functions) of
+	    {ok, []} ->
+		[];
+	    {ok, Undefined} -> 
+		%% This clause is a (temporary?) fix for hipe.
+		adjust_for_hipe(Undefined);
+	    {ok, Undefined} ->
+		[{warning, {exref_undef, Undefined}}];
+	    Error ->
+		[{error, Error}]
+	end,
+    xref:stop(?XREF_SERVER),
+    R.
+
+adjust_for_hipe(Undef) ->
+    case erlang:system_info(hipe_architecture) of
+	undefined ->
+	    U = lists:filter(fun ({hipe_bifs,_,_}) -> false;
+				 ({hipe,_,_}) -> false;
+				 (_) -> true
+			     end, Undef),
+	    if 
+		[] == U ->
+		    [];
+		true ->
+		    [{warning, {exref_undef, U}}]
+	    end;
+	_Arch -> 
+	    [{warning, {exref_undef, Undef}}]
+    end.
+
 %% Perform cross reference checks between all modules specified
 %% in .app files.
 %%
-exref_p(Flags) ->
+xref_p(Flags) ->
     case member(exref, Flags) of
 	true ->
-	    exists_exref(true);
+	    exists_xref(true);
 	_ ->
 	    case get_flag(exref, Flags) of
 		{exref, Appls} when list(Appls) ->
 		    case a_list_p(Appls) of
-			true -> exists_exref({true, Appls});
+			true -> exists_xref({true, Appls});
 			_    -> false
 		    end;
 		_ ->
@@ -804,156 +872,10 @@ exref_p(Flags) ->
 	    end
     end.
 
-exists_exref(Flag) ->
-    case code:ensure_loaded(exref) of
+exists_xref(Flag) ->
+    case code:ensure_loaded(xref) of
 	{error, _} -> false;
 	_          -> Flag
-    end.
-
-start_exref(_, false) ->
-    ok;
-start_exref(IncPath, _) ->
-    case catch exref:start() of
-	{ok, _Pid} ->
-	    ok;
-	{'EXIT', {_String, {error, {already_started, _Pid}}}} ->
-	    exref:stop(), %% Clear out any previous data
-	    exref:start()
-    end,
-    exref:includes(IncPath).
-
-stop_exref(false) -> ok;
-stop_exref(_)     -> exref:stop().
-
-load_module_exref(_, _, _, false) ->
-    ok;
-load_module_exref(Dir, Mod, App, {true, Apps}) ->
-    case member(App, Apps) of
-	true ->
-	    load_module_exref(Dir, Mod, App, true);
-	_ ->
-	    ok
-    end;
-load_module_exref(Dir, Mod, _, _) ->
-    exref:directory_module(Dir, Mod, [check_lib]).
-
-check_exref(_, _, false) ->
-    [];
-check_exref(Warnings, Appls, ExrefP) ->
-    AppMods = map(fun({{App,_},Appl}) ->
-			  {App,Appl#application.modules}
-		  end,
-		  Appls),
-    NotExrefd = not_exrefd_mods(ExrefP, Appls),
-    NotFound = append(map(fun({warning,{source_not_found,{Mod,_,_,_,_}}}) ->
-				  [Mod];
-			     (_) ->
-				  []
-			  end, Warnings)),
-    case exref:analyse(undefined_functions) of 
-	{undefined_functions, _X, Undefd0} ->
-	    Warn = calls_not_exrefd_apps(Undefd0, ExrefP, Appls,
-					 NotExrefd, AppMods),
-	    case filter_modules(Undefd0, NotExrefd ++ NotFound) of
-		[]     -> Warn ++ [];
-		Undefd -> Warn ++ [{warning, {exref_undef, Undefd}}]
-	    end;
-	_ ->
-	    []
-    end.
-		 
-%% All modules in not exref'd applications.
-not_exrefd_mods({true, Apps}, Appls) ->
-    append(map(fun({{App, _}, Appl}) ->
-		       case member(App, Apps) of
-			   false -> to_names(Appl#application.modules);
-			   _     -> []
-		       end
-	       end,
-	       Appls));
-not_exrefd_mods(_, _) ->
-    [].
-
-to_names([{Mod,_}|Mods]) -> [Mod|to_names(Mods)];
-to_names([Mod|Mods])     -> [Mod|to_names(Mods)];
-to_names([])             -> [].
-
-%%
-%% Do not generate warnings for undefined functions located
-%% in modules for which no source code is found.
-%% For this modules other warnings are reported.
-%% Do not generate warnings for modules located in applications
-%% not exref'ed.
-%% The exref module itself is not exref'd !!
-%%
-filter_modules(Undefd, NotFound0) ->
-    NotFound = [exref|NotFound0],
-    filter(fun({undefined, {Mod,_,_}, Called}) ->
-		   case member(Mod, NotFound) of
-		       true -> false;
-		       _    -> valid_undef_p(Called)
-		   end;
-	      (_) ->
-		   false
-	   end,
-	   Undefd).
-
-%%
-%% Make a warning for applications calling functions
-%% in not exref'd applications.
-%%
-calls_not_exrefd_apps(Undefd, {true, Apps}, Appls, NotExrefd, AppMods) ->
-    AppRel =
-	append(map(fun({undefined, {Mod,_,_}, Called}) ->
-			   case {member(Mod, NotExrefd),
-				 valid_undef_p(Called)} of
-			       {true, true} ->
-				   App = application(Mod,AppMods),
-				   called_from_appls(App, Called, AppMods);
-			       _ ->
-				   []
-			   end
-		   end,
-		   Undefd)),
-    case ordsets:set_to_list(ordsets:list_to_set(AppRel)) of
-	[] ->  [];
-	W  ->  [{warning, {exref_app_rel, W}}]
-    end;
-calls_not_exrefd_apps(_, _, _, _, _) ->
-    [].
-
-%% We know that Mod exists in an application.
-application(Mod, [{App,Mods}|Apps]) ->
-    case app_mod(Mod, Mods) of
-	true -> App;
-	_    -> application(Mod, Apps)
-    end.
-
-app_mod(Mod, [Mod|_])      -> true;
-app_mod(Mod, [{Mod, _}|_]) -> true;
-app_mod(Mod, [_|Mods])     -> app_mod(Mod, Mods);
-app_mod(_, [])             -> false.
-
-called_from_appls(App, Called, AppMods) ->
-    map(fun({called_by, {_, _, Mod, _, _}}) ->
-		{application(Mod, AppMods), App}
-	end, Called).
-
-%%
-%% Do not generate warnings for undefined functions called
-%% from the Filter modules. As this modules calls for example
-%% the interpreter, and snmp stuff not included in all releases.
-%%
-valid_undef_p(Called) ->
-    Filter = [c,shell_default,error_handler,otp_mib,erl_lint],
-    case filter(fun({called_by, {_, _, Mod, _, _}}) ->
-			not member(Mod, Filter);
-		   (_) ->
-			false
-		end,
-		Called) of
-	[] -> false;
-	_  -> true
     end.
 
 objfile_extension(false) ->
@@ -961,23 +883,23 @@ objfile_extension(false) ->
 objfile_extension(Machine) ->
     "." ++ atom_to_list(Machine).
 
-check_mod(Mod,Vsn,App,Dir,Ext,IncPath,ExrefP) ->
-    case file:read_file_info(filename:join(Dir, to_list(Mod) ++ Ext)) of
+check_mod(Mod,Vsn,App,Dir,Ext,IncPath,XrefP) ->
+    ObjFile = filename:join(Dir, to_list(Mod) ++ Ext),
+    case file:read_file_info(ObjFile) of
 	{ok,FileInfo} ->
 	    LastModTime = FileInfo#file_info.mtime,
-	    load_module(Mod,Vsn,App,Dir,LastModTime,IncPath,ExrefP);
+	    check_module(ObjFile,Mod,Vsn,App,Dir,LastModTime,IncPath,XrefP);
 	_ ->
-	    {error, module_not_found}
+	    {error, {module_not_found, App, Mod}}
     end.
 
-load_module(Mod,Vsn,App,Dir,ObjModTime,IncPath,ExrefP) ->
+check_module(ObjFile,Mod,Vsn,App,Dir,ObjModTime,IncPath,XrefP) ->
     {SrcDirs,IncDirs}= smart_guess(Dir,IncPath),
     case locate_src(Mod,SrcDirs) of
 	{ok,FDir,File,LastModTime} ->
-	    load_module_exref(FDir,Mod,App,ExrefP),
 	    if
 		LastModTime > ObjModTime ->
-		    {warning, {obj_out_of_date, File}};
+		    {warning, obj_out_of_date};
 		true ->
 		    ok
 	    end;
@@ -2055,7 +1977,7 @@ form_err({bad_application_name,{Name,Found}}) ->
     io_lib:format("~p: Mismatched application id: ~p~n",[Name,Found]);
 form_err({error_reading, {Name, What}}) ->
     io_lib:format("~p: ~s~n",[Name,form_reading(What)]);
-form_err({module_not_found,{Mod,_,App,_,_}}) ->
+form_err({module_not_found,App,Mod}) ->
     io_lib:format("~p: Module (~p) not found~n",[App,Mod]);
 form_err({{vsn_diff,File},{Mod,Vsn,App,_,_}}) ->
     io_lib:format("~p: Module (~p) version (~p) differs in file ~p~n",
@@ -2106,36 +2028,17 @@ format_warning(Warnings) ->
 form_warn({source_not_found,{Mod,_,App,_,_}}) ->
     io_lib:format("*WARNING* ~p: Source code not found: ~p.erl~n",
 		  [App,Mod]);
-form_warn({{could_not_open, File},{_,_,App,_,_}}) ->
-    io_lib:format("*WARNING* ~p: Could not open file: ~p~n",
-		  [App,File]);
-form_warn({{include_not_found, File, IncF},{_,_,App,_,_}}) ->
-    io_lib:format("*WARNING* ~p: Include (~p) file not found: ~p~n",
-		  [App,IncF,File]);
 form_warn({{parse_error, File},{_,_,App,_,_}}) ->
     io_lib:format("*WARNING* ~p: Parse error: ~p~n",
 		  [App,File]);
-form_warn({{obj_out_of_date, _},{Mod,_,App,_,_}}) ->
+form_warn({obj_out_of_date,{Mod,_,App,_,_}}) ->
     io_lib:format("*WARNING* ~p: Object code (~p) out of date~n",[App,Mod]);
-form_warn({exref_undef, Undefd}) ->
-    map(fun({undefined,{M,F,A},Called}) ->
-		MCall = append(map(fun({called_by,{_,ML,MM,MF,MA}}) ->
-					   io_lib:format("\t~p:~p/~p at line ~p~n",
-							 [MM,MF,MA,ML]);
-				      (_) ->
-					   []
-				   end, Called)),
-		io_lib:format("*WARNING* Undefined function ~p:~p/~p called by:~n~s",
-			      [M,F,A,MCall]);
-		
-	   (_) ->
-		[]
-	end, Undefd);
-form_warn({exref_app_rel, AppRels}) ->
-    map(fun({App1, App2}) ->
-		io_lib:format("*WARNING* ~p: Calls functions in not "
-			      "exref'ed application ~p~n", [App1, App2])
-	end, AppRels);
+form_warn({exref_undef, Undef}) ->
+    F = fun({M,F,A}) -> 
+		io_lib:format("*WARNING* Undefined function ~p:~p/~p~n", 
+			      [M,F,A])
+	end,
+    map(F, Undef);
 form_warn(What) ->
-    io_lib:format("*WARNING* ~p~n",[What]).
+    io_lib:format("*WARNING* ~p~n", [What]).
 		       

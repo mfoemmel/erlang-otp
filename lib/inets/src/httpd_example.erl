@@ -18,11 +18,15 @@
 -module(httpd_example).
 -export([print/1,get/2,post/2,yahoo/2]).
 
+%% These are used by the inets test-suite
+-export([delay/1]).
+
+
 print(String) ->
   [header(),
    top("Print"),
    String++"\n",
-   bottom()].
+   footer()].
 
 get(Env,[]) ->
   [header(),
@@ -32,7 +36,7 @@ get(Env,[]) ->
 <INPUT TYPE=\"text\" NAME=\"input2\">
 <INPUT TYPE=\"submit\"><BR>
 </FORM>" ++ "\n",
-   bottom()];
+   footer()];
 
 get(Env,Input) ->
   default(Env,Input).
@@ -45,7 +49,7 @@ post(Env,[]) ->
 <INPUT TYPE=\"text\" NAME=\"input2\">
 <INPUT TYPE=\"submit\"><BR>
 </FORM>" ++ "\n",
-   bottom()];
+   footer()];
 
 post(Env,Input) ->
   default(Env,Input).
@@ -60,7 +64,7 @@ default(Env,Input) ->
    "<B>Input:</B> ",Input,"<BR>\n\n",
    "<B>Parsed Input:</B> ",
    io_lib:format("~p",[httpd:parse_query(Input)]),"\n",
-   bottom()].
+   footer()].
 
 header() ->
   header("text/html").
@@ -74,6 +78,33 @@ top(Title) ->
 </HEAD>
 <BODY>\n".
 
-bottom() ->
+footer() ->
   "</BODY>
 </HTML>\n".
+
+
+%% ------------------------------------------------------
+
+delay(Time) when integer(Time) ->
+    i("httpd_example:delay(~p) -> do the delay",[Time]),
+    sleep(Time),
+    i("httpd_example:delay(~p) -> done, now reply",[Time]),
+    delay_reply("delay ok");
+delay(Time) when list(Time) ->
+    delay(httpd_conf:make_integer(Time));
+delay({ok,Time}) when integer(Time) ->
+    delay(Time);
+delay({error,_Reason}) ->
+    i("delay -> called with invalid time"),
+    delay_reply("delay failed: invalid delay time").
+
+delay_reply(Reply) ->
+    [header(),
+     top("delay"),
+     Reply,
+     footer()].
+
+i(F)   -> i(F,[]).
+i(F,A) -> io:format(F ++ "~n",A).
+
+sleep(T) -> receive after T -> ok end.

@@ -131,7 +131,7 @@ interface_out_param(suit) -> [];
 interface_out_param(doc) -> ["Testing interface out parameter"];
 interface_out_param(Config) when list(Config) ->
     ?line I= get_erl_test_obj(driver),
-    ?line J= erl_com:invoke(I, "Clone", [{out, vt_dispatch}]),
+    ?line J= erl_com:invoke(I, "Clone"),
     ?line J= is_int(J),
     ?line io:format("~p ~n", [J]),
     ?line JI= erl_com:package_interface(I, J),

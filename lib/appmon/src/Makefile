@@ -40,18 +40,24 @@ MODULES= \
 	appmon_info \
 	appmon_place \
 	appmon_txt \
-	appmon_lb
+	appmon_lb \
+	process_info \
+	appmon_web
 
 HRL_FILES= appmon_dg.hrl
 
 ERL_FILES= $(MODULES:%=%.erl)
 
-TARGET_FILES= $(MODULES:%=../ebin/%.$(EMULATOR)) $(APP_TARGET)
+TARGET_FILES= $(MODULES:%=../ebin/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 
 APP_FILE= appmon.app
+APPUP_FILE= appmon.appup
 
 APP_SRC= $(APP_FILE).src
+APPUP_SRC= $(APPUP_FILE).src
+
 APP_TARGET= ../ebin/$(APP_FILE)
+APPUP_TARGET= ../ebin/$(APPUP_FILE)
 
 # ----------------------------------------------------
 # FLAGS
@@ -76,6 +82,9 @@ docs:
 # ----------------------------------------------------
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
+
+$(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 # ----------------------------------------------------

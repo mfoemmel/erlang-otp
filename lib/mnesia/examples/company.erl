@@ -78,6 +78,15 @@ females() ->
     mnesia:transaction(F).
 %2
 
+%20
+all_females() ->
+    F = fun() ->
+		Female = #employee{sex = female, name = '$1', _ = '_'},
+		mnesia:select(employee, [{Female, [], ['$1']}])
+        end,
+    mnesia:transaction(F).
+%20
+
 %16
 females2() ->
     F = fun() ->
@@ -128,7 +137,7 @@ over_write([], _) ->
 %5
 raise(Eno, Raise) ->
     F = fun() ->
-                [E] = mnesia:read({employee, Eno}),
+                [E] = mnesia:read(employee, Eno, write),
                 Salary = E#employee.salary + Raise,
                 New = E#employee{salary = Salary},
                 mnesia:write(New)
@@ -314,6 +323,90 @@ tabs() -> [employee, dept, project, at_dep, in_proj, manager].
 %14
 
 
+find_male_on_second_floor() ->
+    Select = fun() ->
+%21
+      MatchHead = #employee{name='$1', sex=male, room_no={'$2', '_'}, _='_'},
+      Guard = [{'>=', '$2', 220},{'<', '$2', 230}],
+      Result = '$1',
+      mnesia:select(employee,[{MatchHead, Guard, [Result]}])
+%21
+    end,
+    mnesia:transaction(Select).
+
 panic(X) -> exit({panic, X}).
 
 
+fill_tables() ->
+    Emps = 
+        [
+	 {employee, 104465, "Johnson Torbjorn",   1, male, 99184, {242,038}},
+	 {employee, 107912, "Carlsson Tuula",     2, female,94556, {242,056}},
+	 {employee, 114872, "Dacker Bjarne",      3, male, 99415, {221,035}},
+	 {employee, 104531, "Nilsson Hans",       3, male, 99495, {222,026}},
+	 {employee, 104659, "Tornkvist Torbjorn", 2, male, 99514, {222,022}},
+	 {employee, 104732, "Wikstrom Claes",     2, male, 99586, {221,015}},
+	 {employee, 117716, "Fedoriw Anna",       1, female,99143, {221,031}},
+	 {employee, 115018, "Mattsson Hakan",     3, male, 99251, {203,348}}
+        ],
+
+    Dept = [
+	    {dept, 'B/SF',  "Open Telecom Platform"},
+	    {dept, 'B/SFP', "OTP - Product Development"},
+	    {dept, 'B/SFR', "Computer Science Laboratory"}
+	   ],
+
+    Projects = [
+		{project, erlang, 1},
+		{project, otp, 2},
+		{project, beam, 3},
+		{project, mnesia, 5},
+		{project, wolf, 6},
+		{project, documentation, 7},
+		{project, www, 8}
+	       ],
+
+    Manager = [
+	       {manager, 104465, 'B/SF'},
+	       {manager, 104465, 'B/SFP'},
+	       {manager, 114872, 'B/SFR'}
+	      ],
+
+    At_dep = [
+	      {at_dep, 104465, 'B/SF'},
+	      {at_dep, 107912, 'B/SF'},
+	      {at_dep, 114872, 'B/SFR'},
+	      {at_dep, 104531, 'B/SFR'},
+	      {at_dep, 104659, 'B/SFR'},
+	      {at_dep, 104732, 'B/SFR'},
+	      {at_dep, 117716, 'B/SFP'},
+	      {at_dep, 115018, 'B/SFP'}
+	     ],
+
+    In_proj = [
+	       {in_proj, 104465, otp},
+	       {in_proj, 107912, otp},
+	       {in_proj, 114872, otp},
+	       {in_proj, 104531, otp},
+	       {in_proj, 104531, mnesia},
+	       {in_proj, 104545, wolf},
+	       {in_proj, 104659, otp},
+	       {in_proj, 104659, wolf},
+	       {in_proj, 104732, otp},
+	       {in_proj, 104732, mnesia},
+	       {in_proj, 104732, erlang},
+	       {in_proj, 117716, otp},
+	       {in_proj, 117716, documentation},
+	       {in_proj, 115018, otp},
+	       {in_proj, 115018, mnesia}
+	      ],
+    
+    [mnesia:dirty_write(W) || W <- Emps],
+    [mnesia:dirty_write(W) || W <- Dept],
+    [mnesia:dirty_write(W) || W <- Projects],
+    %% Relations
+    [mnesia:dirty_write(W) || W <- Manager],
+    [mnesia:dirty_write(W) || W <- At_dep],
+    [mnesia:dirty_write(W) || W <- In_proj],
+    
+    ok.

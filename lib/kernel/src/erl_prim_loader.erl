@@ -54,7 +54,7 @@
 -export([get_from_port/3,stop_port/1,exit_port/3]).
 
 %% Exports for efile as prim_loader
--export([get_from_port_efile/3]).
+-export([get_from_port_efile/3, efile_stop_port/1]).
 
 %% Exports for inet prim_loader
 -export([get_from_port_inet/3, inet_in_handler/3, inet_exit_port/3]).
@@ -135,12 +135,12 @@ start_it("inet",Id,Pid,Hosts) ->
     loop(State,Pid,[]);
 start_it("efile",Id,Pid,Hosts) ->
     process_flag(trap_exit,true),
-    Port = erlang:open_port_prim({spawn,efile},[binary]),
+    {ok, Port} = prim_file:open([binary]),
     init_ack(Pid),
     State = #state {
 		    id = Id,
 		    get = get_from_port_efile,
-		    stop = stop_port,
+		    stop = efile_stop_port,
 		    exit = exit_port,
 		    data = Port
 		    },
@@ -305,17 +305,19 @@ get_from_port_efile1(File,[P|Paths],State) ->
 get_from_port_efile1(_,[],State) ->
     {error,State}.
 
-get_from_port_efile(File,State) ->
-    Port = State#state.data,
-    Port ! {self(),{command,[?efile_get_file,File,[0]]}},
-    receive
-	{Port,{data, [?FILE_RESP_OK|BinFile]}} ->
-	    {{ok,BinFile,File},State};
-	{Port,{data, _Other}} ->
-	    {error,State};
-	{'EXIT', Port, _} ->
-	    exit('prim_load port died')
+get_from_port_efile(File, #state{data = Port} = State) ->
+    case prim_file:read_file(Port, File) of
+	{error, port_died} ->
+	    exit('prim_load port died');
+	{error, _} ->
+	    {error, State};
+	{ok, BinFile} ->
+	    {{ok, BinFile, File}, State}
     end.
+
+efile_stop_port(#state{data = Port}) ->
+    prim_file:close(Port),
+    ok.
 
 %%% --------------------------------------------------------
 %%% Functions which handles inet prim_loader
@@ -376,7 +378,7 @@ find_loop(U, Retry, AL, RequestDelay, RetrySleep, Ignore) ->
 find_loop(U, 0, AL, Delay, Acc) ->
     Acc;
 find_loop(U, Retry, AL, Delay, Acc) ->
-    send_all(U, AL, [?EBOOT_REQUEST, erlang:info(version)]),
+    send_all(U, AL, [?EBOOT_REQUEST, erlang:system_info(version)]),
     find_collect(U, Retry-1, AL, Delay, Acc).
 
 find_collect(U,Retry,AL,Delay,Acc) ->
@@ -526,7 +528,7 @@ absolute_filename(File) ->
 	true ->
 	    true;
 	false ->
-	    case erlang:info(os_type) of
+	    case erlang:system_info(os_type) of
 		{win32, _} ->
 		    member($\\, File);
 		_ ->

@@ -25,7 +25,7 @@
 #include <wincon.h>
 #include <process.h>
 #include "sys.h"
-#include "driver.h"
+#include "erl_driver.h"
 
 #include "erl_api.h"
 
@@ -86,6 +86,7 @@ start_emulator(char* emu, char** argv, int start_detached)
     static char console_mode[] = "ERL_CONSOLE_MODE=tty:ccc";
     char* fd_type;
     char* title;
+    int argc = 0;
 
     fd_type = strchr(console_mode, ':');
     fd_type++;
@@ -118,23 +119,14 @@ start_emulator(char* emu, char** argv, int start_detached)
     }
 
     putenv(console_mode);
-    {
-	int argc = 0;
-	while (argv[argc] != NULL) {
-	    ++argc;
-	}
-	if (keep_window) {
-	    atexit(do_keep_window);
-	}
-	ErlOtpStart(argc, argv);
-	return 0;
+    while (argv[argc] != NULL) {
+	++argc;
     }
-
-    if (getenv("ERLSRV_SERVICE_NAME")){
-	/* Running as a service, prepare to handle the WM_USER thread
-	   message which means "SIGHUP" == die semi-gracefully... */
+    if (keep_window) {
+	atexit(do_keep_window);
     }
-    return result;
+    ErlOtpStart(argc, argv);
+    return 0;
 }
 
 void

@@ -40,18 +40,25 @@
 	 terminate/2,
          code_change/3]).
 
+
 %% Management exports
--export([get_status/1,get_status/2,is_busy/1,is_busy/2]).
+-export([block/2,block/3,unblock/1]).
+-export([get_admin_state/1,get_usage_state/1]).
+-export([is_busy/1,is_busy/2,is_busy_or_blocked/1,is_blocked/1]).
+-export([get_status/1,get_status/2]).
 -export([verbosity/2,verbosity/3]).
 
 
--record(state,{socket_type = ip_comm,
+-record(state,{socket_type  = ip_comm,
 	       socket,
 	       config_file,
-	       config_db = null,
-	       connection_count = 0,
-	       listener,
-	       status = []}).
+	       config_db    = null,
+	       connections, %% Previous listeners now handling requests
+	       listener,    %% Current listener
+	       admin_state  = unblocked,
+	       blocker_ref  = undefined,
+	       blocking_tmr = undefined,
+	       status       = []}).
 
 
 %%
@@ -82,7 +89,55 @@ stop(ServerRef) ->
 %% restart
 
 restart(ServerRef) ->
-    gen_server:cast(ServerRef, restart).
+    gen_server:call(ServerRef, restart).
+
+
+%%%----------------------------------------------------------------
+
+block(ServerRef,disturbing) ->
+    call(ServerRef,block);
+
+block(ServerRef,non_disturbing) ->
+    do_block(ServerRef,non_disturbing,infinity).
+
+block(ServerRef,Method,Timeout) ->
+    do_block(ServerRef,Method,Timeout).
+
+
+%% The reason for not using call here, is that the manager cannot
+%% _wait_ for completion of the requests. It must be able to do
+%% do other things at the same time as the blocking goes on.
+do_block(ServerRef,Method,infinity) ->
+    Ref = make_ref(),
+    cast(ServerRef,{block,Method,infinity,self(),Ref}),
+    receive
+	{block_reply,Reply,Ref} ->
+	    Reply
+    end;
+do_block(ServerRef,Method,Timeout) when Timeout > 0 ->
+    Ref = make_ref(),
+    cast(ServerRef,{block,Method,Timeout,self(),Ref}),
+    receive
+	{block_reply,Reply,Ref} ->
+	    Reply
+    end.
+
+
+%%%----------------------------------------------------------------
+
+%% unblock
+
+unblock(ServerRef) ->
+    call(ServerRef,unblock).
+
+%% get admin/usage state
+
+get_admin_state(ServerRef) ->
+    call(ServerRef,get_admin_state).
+
+get_usage_state(ServerRef) ->
+    call(ServerRef,get_usage_state).
+
 
 %% get_status
 
@@ -103,8 +158,9 @@ verbosity(ServerRef,manager,Verbosity) ->
 verbosity(ServerRef,listener,Verbosity) ->
     gen_server:call(ServerRef,{verbosity,listener,Verbosity});
 verbosity(ServerRef,manager,Verbosity) ->
-    gen_server:call(ServerRef,{verbosity,security,Verbosity}).
-
+    gen_server:call(ServerRef,{verbosity,security,Verbosity});
+verbosity(ServerRef,auth,Verbosity) ->
+    gen_server:call(ServerRef,{verbosity,auth,Verbosity}).
 
 %%
 %% Internal API
@@ -133,6 +189,25 @@ is_busy(ServerRef) ->
 is_busy(ServerRef,Timeout) ->
     gen_server:call(ServerRef,is_busy,Timeout).
 
+
+%% is_busy_or_blocked(ServerRef) -> busy | blocked | false
+%% 
+%% Tests if the server is busy (usage state), i.e. has rached,
+%% the heavy load limit, or blocked (admin state) .
+%% 
+
+is_busy_or_blocked(ServerRef) ->
+    gen_server:call(ServerRef,is_busy_or_blocked).
+    
+
+%% is_blocked(ServerRef) -> true | false
+%% 
+%% Tests if the server is blocked (admin state) .
+%% 
+
+is_blocked(ServerRef) ->
+    gen_server:call(ServerRef,is_blocked).
+    
 
 %%
 %% Module API. Theese functions are intended for use from modules only.
@@ -197,13 +272,13 @@ init([ConfigFile, ConfigList, Addr, Port, Verbosity]) ->
 				      {last_heavy_load,never},
 				      {last_connection,never}],
 
-			    State = #state{socket_type      = SocketType,
-					   socket           = ListenSocket,
-					   config_file      = ConfigFile,
-					   config_db        = ConfigDB,
-					   connection_count = 0,
-					   listener         = Pid,
-					   status           = Status},
+			    State = #state{socket_type = SocketType,
+					   socket      = ListenSocket,
+					   config_file = ConfigFile,
+					   config_db   = ConfigDB,
+					   connections = [],
+					   listener    = Pid,
+					   status      = Status},
 			    {ok,State}
 		    end;
 		{error,Reason} ->
@@ -221,55 +296,81 @@ init([ConfigFile, ConfigList, Addr, Port, Verbosity]) ->
 %% handle_call
 
 handle_call(stop, _From, State) ->
-    ?LOG("handle_call -> stop", []),
     ?vlog("stop",[]),
     {stop, normal, ok, State};
 
 handle_call({config_lookup, Query}, _From, State) ->
-    ?LOG("handle_call -> config_lookup: Query = ~p", [Query]),
     ?vlog("config lookup: Query = ~p",[Query]),
     Res = httpd_util:lookup(State#state.config_db, Query),
-    ?DEBUG("handle_call -> config_lookup: Res   = ~p", [Res]),
     ?vdebug("config lookup result: ~p",[Res]),
     {reply, Res, State};
 
 handle_call({config_multi_lookup, Query}, _From, State) ->
-    ?LOG("handle_call -> config_multi_lookup: Query = ~p", [Query]),
     ?vlog("multi config lookup: Query = ~p",[Query]),
     Res = httpd_util:multi_lookup(State#state.config_db, Query),
-    ?DEBUG("handle_call -> config_multi_lookup: Res   = ~p", [Res]),
     ?vdebug("multi config lookup result: ~p",[Res]),
     {reply, Res, State};
 
 handle_call({config_match, Query}, _From, State) ->
-    ?LOG("handle_call -> config_match: Query = ~p", [Query]),
     ?vlog("config match: Query = ~p",[Query]),
     Res = ets:match_object(State#state.config_db, Query),
-    ?DEBUG("handle_call -> config_match: Res   = ~p", [Res]),
     ?vdebug("config match result: ~p",[Res]),
     {reply, Res, State};
 
 handle_call(get_status, _From, State) ->
-    ?LOG("handle_call -> get_status", []),
     ?vdebug("get status",[]),
     ManagerStatus  = manager_status(self()),
     ListenerStatus = listener_status(State#state.listener),
-    S1 = [{current_conn,State#state.connection_count}|State#state.status]++
+    S1 = [{current_conn,length(State#state.connections)}|State#state.status]++
 	[ManagerStatus,ListenerStatus],
     ?vtrace("status = ~p",[S1]),
     {reply,S1,State};
 
 handle_call(is_busy, From, State) ->
-    ?LOG("handle_call -> is_busy(~p) when connection count: ~p", 
-	 [From,State#state.connection_count]),
-    Reply = case get_usage_state(State) of
+    Reply = case get_ustate(State) of
 		busy ->
 		    true;
 		_ ->
 		    false
 	  end,
-    ?DEBUG("handle_call -> is_busy: ~p", [Reply]),
-    ?vlog("is busy = ~p",[Reply]),
+    ?vlog("is busy: ~p",[Reply]),
+    {reply,Reply,State};
+
+handle_call(is_busy_or_blocked, From, State) ->
+    Reply = 
+	case get_astate(State) of
+	    unblocked ->
+		case get_ustate(State) of
+		    busy ->
+			busy;
+		    _ ->
+			false
+		end;
+	    _ ->
+		blocked
+	  end,
+    ?vlog("is busy or blocked: ~p",[Reply]),
+    {reply,Reply,State};
+
+handle_call(is_blocked, From, State) ->
+    Reply = 
+	case get_astate(State) of
+	    unblocked ->
+		false;
+	    _ ->
+		true
+	  end,
+    ?vlog("is blocked: ~p",[Reply]),
+    {reply,Reply,State};
+
+handle_call(get_admin_state, From, State) ->
+    Reply = get_astate(State),
+    ?vlog("admin state: ~p",[Reply]),
+    {reply,Reply,State};
+
+handle_call(get_usage_state, From, State) ->
+    Reply = get_ustate(State),
+    ?vlog("usage state: ~p",[Reply]),
     {reply,Reply,State};
 
 handle_call({verbosity,Who,Verbosity}, From, State) ->
@@ -277,6 +378,25 @@ handle_call({verbosity,Who,Verbosity}, From, State) ->
     ?vlog("~n   Set new verbosity to ~p for ~p",[V,Who]),
     Reply = set_verbosity(Who,V,State),
     {reply,Reply,State};
+
+handle_call(restart, From, State) when State#state.admin_state == blocked ->
+    ?vlog("restart",[]),
+    {Reply,S1} = handle_restart(State),
+    {reply,Reply,S1};
+
+handle_call(restart, From, State) ->
+    ?vlog("restart(~p)",[State#state.admin_state]),
+    {reply,{error,{invalid_admin_state,State#state.admin_state}},State};
+
+handle_call(block, From, State) ->
+    ?vlog("block(disturbing)",[]),
+    {Reply,S1} = handle_block(State),
+    {reply,Reply,S1};
+
+handle_call(unblock, {From,_Tag}, State) ->
+    ?vlog("unblock",[]),
+    {Reply,S1} = handle_unblock(State,From),
+    {reply,Reply,S1};
 
 handle_call(Request, From, State) ->
     ?ERROR("handle_call -> ~n"
@@ -300,44 +420,59 @@ handle_call(Request, From, State) ->
 %% handle_cast
 
 handle_cast({new_connection,reject,OldListener}, State) ->
-    ?LOG("handle_cast -> new_connection(reject,~p) when connection count: ~p",
-	 [OldListener,State#state.connection_count]),
     ?vlog("~n   New connection rejected by ~p when connection count = ~p",
-	  [OldListener,State#state.connection_count]),
+	  [OldListener,length(State#state.connections)]),
     Status   = update_heavy_load_status(State#state.status),
     Listener = create_listener(State),
-    ?DEBUG("handle_cast -> new_connection(reject,~p): New Listener: ~p", 
-	   [OldListener,Listener]),
     ?vdebug("New listener = ~p",[Listener]),
     {noreply,State#state{listener = Listener, status = Status}};
 
 handle_cast({new_connection,accept,OldListener}, State) ->
-    Cnt = State#state.connection_count,
-    ?LOG("handle_cast -> new_connection(accept,~p) when connection count: ~p",
-	 [OldListener,Cnt]),
+    Connections = State#state.connections,
     ?vlog("~n   New connection accepted by ~p when connection count = ~p",
-	  [OldListener,Cnt]),
-    S1       = State#state{connection_count = Cnt+1},
-    Status   = update_connection_status(State#state.status,Cnt+1),
+	  [OldListener,length(Connections)]),
+    S1       = State#state{connections = [OldListener|Connections]},
+    Status   = update_connection_status(State#state.status,
+					length(Connections)+1),
     Listener = create_listener(S1),
-    ?DEBUG("handle_cast -> new_connection(accept,~p): New listener: ~p",
-	   [OldListener,Listener]),
     ?vdebug("New listener = ~p",[Listener]),
     {noreply,S1#state{listener = Listener, status = Status}};
 
 handle_cast({done_connection,reject,Pid},State) ->
-    ?LOG("handle_cast -> done_connection(reject,~p)", [Pid]),
     ?vlog("~n   Done rejected connection (~p)",[Pid]),
     {noreply, State};
 
 handle_cast({done_connection,accept,Pid},State) ->
-    Cnt = State#state.connection_count,
-    ?LOG("handle_cast -> done_connection(accept,~p): Connection count: ~p", 
-	 [Pid,Cnt]),
+    Connections = State#state.connections,
     ?vlog("~n   Done accepted connection (~p) when connection count = ~p",
-	  [Pid,Cnt]),
-    S1 = State#state{connection_count = Cnt-1},
+	  [Pid,length(Connections)]),
+    S1 = 
+	case {State#state.admin_state,lists:delete(Pid,Connections)} of
+	    {shutting_down,[]} ->
+		%% Ok, block complete
+		?vlog("block complete",[]),
+		demonitor_blocker(State#state.blocker_ref),
+		{Tmr,From,Ref} = State#state.blocking_tmr,
+		?vlog("(possibly) stop block timer",[]),
+		stop_block_tmr(Tmr),
+		?vlog("and send the reply",[]),
+		From ! {block_reply,ok,Ref},
+		State#state{admin_state = blocked, connections = [],
+			    blocker_ref = undefined};
+	    {_AdminState,Connections1} ->
+		State#state{connections = Connections1}
+	end,
     {noreply, S1};
+
+handle_cast({block,disturbing,Timeout,From,Ref}, State) ->
+    ?vlog("block(disturbing,~p)",[Timeout]),
+    S1 = handle_block(State,Timeout,From,Ref),
+    {noreply,S1};
+
+handle_cast({block,non_disturbing,Timeout,From,Ref}, State) ->
+    ?vlog("block(non-disturbing,~p)",[Timeout]),
+    S1 = handle_nd_block(State,Timeout,From,Ref),
+    {noreply,S1};
 
 handle_cast(Message,State) ->
     ?ERROR("handle_cast -> Unknown message: ~p", [Message]),
@@ -355,6 +490,23 @@ handle_cast(Message,State) ->
 
 %% handle_info
 
+handle_info({block_timeout,Method}, State) ->
+    ?vlog("received block_timeout event",[]),
+    S1 = handle_block_timeout(State,Method),
+    {noreply, S1};
+
+handle_info({'DOWN', Ref, process, _Object, Info}, State) ->
+    ?vlog("~n   down message for ~p",[Ref]),
+    S1 = 
+	case State#state.blocker_ref of
+	    Ref ->
+		handle_blocker_exit(State);
+	    _ ->
+		%% Not our blocker, so ignore
+		State
+	end,
+    {noreply, S1};
+
 handle_info({'EXIT', Pid, normal}, State) ->
     ?vdebug("~n   Normal exit message from ~p",[Pid]),
     {noreply, State};
@@ -371,6 +523,11 @@ handle_info({'EXIT', Pid, {accept_failed, Err}},State) ->
     L = create_listener(State),
     ?vdebug("New listener: ~p",[L]),
     {noreply, State#state{listener = L}};
+
+handle_info({'EXIT', Pid, blocked}, S) ->
+    ?vdebug("handle_info -> blocked exit signal from connection handler (~p)",
+	    [Pid]),
+    {noreply, S};
 
 handle_info({'EXIT', Pid, Reason}, State) ->
     ?ERROR("handle_info -> exit signal:"
@@ -400,14 +557,9 @@ handle_info(Info, State) ->
 %% terminate
 
 terminate(Reason, State) -> 
-    ?LOG("terminate -> \n"
-	 "\tReason:    ~p\n"
-	 "\tProcesses: ~p\n"
-	 "\tStatus:    ~p",
-	 [Reason,State#state.connection_count,State#state.status]),
     ?vlog("~n   Terminating for reason: ~p",[Reason]),
     Res = httpd_socket:close(State#state.socket_type,State#state.socket),
-    ?DEBUG("terminate -> socket close result: ~p", [Res]),
+    ?vtrace("terminate -> socket close result: ~p", [Res]),
     httpd_conf:remove_all(State#state.config_db),
     ok.
 
@@ -420,79 +572,285 @@ terminate(Reason, State) ->
 %% these function is actually never used. The reason for keeping
 %% this stuff is only for future use.
 %%
-code_change({down,103432255266931353046884123370331229687},State,Extra) ->
-    ?vlog("~n   Downgrade to 2.5.1"
-	  "~n   when state '~p'",[State]),
-    {ok,downgrade_to_2_5_1(State)};
+code_change({down,ToVsn},State,Extra) ->
+    {ok,State};
 
 %% code_change(FromVsn, State, Extra)
 %%
-code_change(103432255266931353046884123370331229687,State,Extra) ->
-    ?vlog("~n   Upgrade from 2.5.1"
-	  "~n   when state '~p'",[State]),
-    {ok,upgrade_from_2_5_1(State)}.
+code_change(FromVsn,State,Extra) ->
+    {ok,State}.
 
 
-upgrade_from_2_5_1([SocketType,ListenSocket,ConfigFile,ConfigDB,Processes]) ->
-    #state{socket_type      = SocketType,
-	   socket           = ListenSocket,
-	   config_file      = ConfigFile,
-	   config_db        = ConfigDB,
-	   connection_count = Processes,
-	   listener         = upgrade_undefined,
-	   status           = []}.
 
-downgrade_to_2_5_1(State) ->
-    [State#state.socket_type,
-     State#state.socket,
-     State#state.config_file,
-     State#state.config_db,
-     State#state.connection_count].
-
-
+%% Check and (if needed) Create new listener
 check_and_create(Crasher,State,Reason) ->
     check_and_create(Crasher,State#state.listener,State,Reason).
 
 check_and_create(Crasher,Crasher,State,Reason) ->
+    ?vtrace("check_and_create -> entry when listener crashed",[]),
     String = 
 	lists:flatten(
 	  io_lib:format("Listener process (~p) crashed ~n\t=> ~p",
 			[Crasher,Reason])),
+    ?vtrace("check_and_create -> report error",[]),
     report_error(State,String),    
+    ?vtrace("check_and_create -> create new listener",[]),
     create_listener(State);
 check_and_create(Crasher,Listener,State,Reason) ->
+    ?vtrace("check_and_create -> entry with:"
+	    "~n   Crasher:  ~p"
+	    "~n   Listener: ~p"
+	    "~n   Reason:   ~p",[Crasher,Listener,Reason]),
     Listener.
+
 
 %% create_listener
 
 create_listener(State) ->
-    UsageState    = get_usage_state(State),
-    ?DEBUG("create_listener -> Connection count: ~p => ~p",
-	   [State#state.connection_count,UsageState]), 
-    ?vtrace("Create listener when connection count = ~p and usage state = ~p",
-	    [State#state.connection_count,UsageState]),
+    create_listener(State,get_astate(State)).
+
+create_listener(State,AdminState) ->
+    UsageState = get_ustate(State),
+    ?vtrace("Create listener when "
+	    "~n   connection count = ~p"
+	    "~n   admin state      = ~p"
+	    "~n   usage state      = ~p",
+	    [length(State#state.connections),AdminState,UsageState]),
     ConfigDB      = State#state.config_db,
     SocketType    = State#state.socket_type,
     ListenSocket  = State#state.socket,
-    create_listener(UsageState,SocketType,ListenSocket,ConfigDB).
+    create_listener(AdminState,UsageState,SocketType,ListenSocket,ConfigDB).
 
-create_listener(UsageState,SocketType,ListenSocket,ConfigDB) ->
-    httpd_listener:start_link(UsageState,SocketType,ListenSocket,ConfigDB).
+create_listener(AdminState,UsageState,SocketType,ListenSocket,ConfigDB) ->
+    ?vtrace("create_listener/5 -> entry",[]),
+    httpd_listener:start_link(AdminState,UsageState,
+			      SocketType,ListenSocket,ConfigDB).
 
 
-%% get_usage_state(State) -> idle | active | busy
+handle_block(S) ->
+    handle_block(S,S#state.admin_state).
+
+handle_block(S,unblocked) ->
+    %% Kill all connections
+    ?vtrace("handle_block -> kill all connection handlers",[]),
+    [exit(Pid,blocked) || Pid <- S#state.connections],
+    {ok,S#state{connections = [], admin_state = blocked}};
+handle_block(S,blocked) ->
+    {ok,S};
+handle_block(S,shutting_down) ->
+    {{error,shutting_down},S}.
+    
+handle_block(S,Timeout,From,Ref) when Timeout >= 0 ->
+    do_block(S,Timeout,From,Ref);
+
+handle_block(S,Timeout,From,Ref) ->
+    Reply = {error,{invalid_block_request,Timeout}},
+    From ! {block_reply,Reply,Ref},
+    S.
+
+do_block(S,Timeout,From,Ref) ->
+    case S#state.connections of
+	[] ->
+	    %% Already in idle usage state => go directly to blocked
+	    ?vdebug("do_block -> already in idle usage state",[]),
+	    From ! {block_reply,ok,Ref},
+	    S#state{admin_state = blocked};
+	_ ->
+	    %% Active or Busy usage state => go to shutting_down
+	    ?vdebug("do_block -> active or busy usage state",[]),
+	    %% Make sure we get to know if blocker dies...
+	    ?vtrace("do_block -> create blocker monitor",[]),
+	    MonitorRef = monitor_blocker(From),
+	    ?vtrace("do_block -> (possibly) start block timer",[]),
+	    Tmr = {start_block_tmr(Timeout,disturbing),From,Ref},
+	    S#state{admin_state = shutting_down, 
+		    blocker_ref = MonitorRef, blocking_tmr = Tmr}
+    end.
+
+handle_nd_block(S,infinity,From,Ref) ->
+    do_nd_block(S,infinity,From,Ref);
+
+handle_nd_block(S,Timeout,From,Ref) when Timeout >= 0 ->
+    do_nd_block(S,Timeout,From,Ref);
+
+handle_nd_block(S,Timeout,From,Ref) ->
+    Reply = {error,{invalid_block_request,Timeout}},
+    From ! {block_reply,Reply,Ref},
+    S.
+
+do_nd_block(S,Timeout,From,Ref) ->
+    case S#state.connections of
+	[] ->
+	    %% Already in idle usage state => go directly to blocked
+	    ?vdebug("do_nd_block -> already in idle usage state",[]),
+	    From ! {block_reply,ok,Ref},
+	    S#state{admin_state = blocked};
+	_ ->
+	    %% Active or Busy usage state => go to shutting_down
+	    ?vdebug("do_nd_block -> active or busy usage state",[]),
+	    %% Make sure we get to know if blocker dies...
+	    ?vtrace("do_nd_block -> create blocker monitor",[]),
+	    MonitorRef = monitor_blocker(From),
+	    ?vtrace("do_nd_block -> (possibly) start block timer",[]),
+	    Tmr = {start_block_tmr(Timeout,non_disturbing),From,Ref},
+	    S#state{admin_state = shutting_down, 
+		    blocker_ref = MonitorRef, blocking_tmr = Tmr}
+    end.
+
+handle_block_timeout(S,Method) ->
+    %% Time to take this to the road...
+    demonitor_blocker(S#state.blocker_ref),
+    handle_block_timeout1(S,Method,S#state.blocking_tmr).
+
+handle_block_timeout1(S,non_disturbing,{_,From,Ref}) ->
+    ?vdebug("handle_block_timeout1(non-disturbing) -> send reply: timeout",[]),
+    From ! {block_reply,{error,timeout},Ref},
+    S#state{admin_state = unblocked, 
+	    blocker_ref = undefined, blocking_tmr = undefined};
+
+handle_block_timeout1(S,disturbing,{_,From,Ref}) ->
+    ?vdebug("handle_block_timeout1(disturbing) -> kill all connections",[]),
+    [exit(Pid,blocked) || Pid <- S#state.connections],
+
+    ?vdebug("handle_block_timeout1 -> send reply: ok",[]),
+    From ! {block_reply,ok,Ref},
+    S#state{admin_state = blocked,    connections = [], 
+	    blocker_ref = undefined, blocking_tmr = undefined};
+
+handle_block_timeout1(S,Method,{_,From,Ref}) ->
+    ?vinfo("received block timeout with unknown block method:"
+	   "~n   Method:  ~p",[Method]),
+    From ! {block_reply,{error,{unknown_block_method,Method}},Ref},
+    S#state{admin_state = blocked,    connections = [], 
+	    blocker_ref = undefined, blocking_tmr = undefined};
+
+handle_block_timeout1(S,Method,TmrInfo) ->
+    ?vinfo("received block timeout with erroneous timer info:"
+	   "~n   Method:  ~p"
+	   "~n   TmrInfo: ~p",[Method,TmrInfo]),
+    S#state{admin_state = unblocked,
+	    blocker_ref = undefined, blocking_tmr = undefined}.
+
+handle_unblock(S,FromA) ->
+    handle_unblock(S,FromA,S#state.admin_state).
+
+handle_unblock(S,_FromA,unblocked) ->
+    {ok,S};
+handle_unblock(S,FromA,_AdminState) ->
+    ?vtrace("handle_unblock -> (possibly) stop block timer",[]),
+    stop_block_tmr(S#state.blocking_tmr),
+    case S#state.blocking_tmr of
+	{Tmr,FromB,Ref} ->
+	    %% Another process is trying to unblock
+	    %% Inform the blocker
+	    FromB ! {block_reply, {error,{unblocked,FromA}},Ref};
+	_ ->
+	    ok
+    end,
+    {ok,S#state{admin_state = unblocked, blocking_tmr = undefined}}.
+    
+%% The blocker died so we give up on the block.
+handle_blocker_exit(S) ->
+    {Tmr,_From,_Ref} = S#state.blocking_tmr,
+    ?vtrace("handle_blocker_exit -> (possibly) stop block timer",[]),
+    stop_block_tmr(Tmr),
+    S#state{admin_state = unblocked,
+	    blocker_ref = undefined, blocking_tmr = undefined}.
+    
+
+
+%% -------------------------------------------------------------------------
+%% handle_restart
+%%
+%%
+%%
+%%
+handle_restart(State) ->
+    handle_restart(State,State#state.config_file).
+
+handle_restart(State,ConfigFile) ->
+    ?vtrace("load new configuration",[]),
+    {ok,Config} = httpd_conf:load(ConfigFile),
+    ?vtrace("check for illegal changes (addr, port and socket-type)",[]),
+    case (catch check_constant_values(State,Config)) of
+	ok ->
+	    ?vtrace("temporary rename old config db",[]),
+	    TmpDb = rename(State),
+	    ?vtrace("store new configuration",[]),
+	    case httpd_conf:store(Config) of
+		{ok,NewConfigDB} ->
+		    ?vtrace("now remove old configuration",[]),
+		    httpd_conf:remove_all(TmpDb),
+		    ?vtrace("restart done",[]),
+		    {ok,State#state{config_db = NewConfigDB}};
+		Error ->
+		    ?vlog("failed store new config: ~n   ~p",[Error]),
+		    {Error,State}
+	    end;
+	Error ->
+	    ?vlog("restart NOT performed due to:"
+		  "~n   ~p",[Error]),
+	    Error
+    end.
+
+
+check_constant_values(State,Config) ->
+    Db = State#state.config_db,
+
+    %% Check port number
+    ?vtrace("check_constant_values -> check port number",[]),
+    Port = httpd_util:lookup(Db,port),
+    case httpd_util:key1search(Config,port) of  %% MUST be equal
+	Port ->
+	    ok;
+	OtherPort ->
+	    throw({error,{port_number_changed,Port,OtherPort}})
+    end,
+
+    %% Check bind address
+    ?vtrace("check_constant_values -> check bind address",[]),
+    Addr = httpd_util:lookup(Db,bind_address),
+    case httpd_util:key1search(Config,bind_address) of  %% MUST be equal
+	Addr ->
+	    ok;
+	OtherAddr ->
+	    throw({error,{addr_changed,Addr,OtherAddr}})
+    end,
+
+    %% Check socket type
+    ?vtrace("check_constant_values -> check socket type",[]),
+    SockType = httpd_util:lookup(Db,com_type),
+    case httpd_util:key1search(Config,com_type) of  %% MUST be equal
+	SockType ->
+	    ok;
+	OtherSockType ->
+	    throw({error,{sock_type_changed,SockType,OtherSockType}})
+    end,
+    ?vtrace("check_constant_values -> done",[]),
+    ok.
+
+
+rename(State) ->
+    Db      = State#state.config_db,
+    Port    = httpd_util:lookup(Db,port),
+    Addr    = httpd_util:lookup(Db,bind_address),
+    TmpName = httpd_util:make_name("tmp_httpd",Addr,Port),
+    ets:rename(Db,TmpName).
+
+
+%% get_ustate(State) -> idle | active | busy
 %%
 %% Retrieve the usage state of the HTTP server:
-%%   0 active connection          -> idle
-%%   max_count active connections -> busy
-%%   Otherwise                    -> active
+%%   0 active connection            -> idle
+%%   max_clients active connections -> busy
+%%   Otherwise                      -> active
 %%
-get_usage_state(State) ->
-    get_usage_state(State#state.connection_count,State).
+get_ustate(State) ->
+    get_ustate(length(State#state.connections),State).
 
-get_usage_state(0,_State) ->
+get_ustate(0,_State) ->
     idle;
-get_usage_state(ConnectionCnt,State) ->
+get_ustate(ConnectionCnt,State) ->
     ConfigDB = State#state.config_db,
     case httpd_util:lookup(ConfigDB, max_clients, 150) of
 	ConnectionCnt ->
@@ -500,6 +858,38 @@ get_usage_state(ConnectionCnt,State) ->
 	_ ->
 	    active
     end.
+
+
+get_astate(S) -> S#state.admin_state.
+
+
+%% Timer handling functions
+start_block_tmr(infinity,_) ->
+    undefined;
+start_block_tmr(T,M) ->
+    erlang:send_after(T,self(),{block_timeout,M}).
+
+stop_block_tmr(undefined) ->
+    ok;
+stop_block_tmr(Ref) ->
+    erlang:cancel_timer(Ref).
+
+
+%% Monitor blocker functions
+monitor_blocker(Pid) when pid(Pid) ->
+    case (catch erlang:monitor(process,Pid)) of
+	MonitorRef ->
+	    MonitorRef;
+	{'EXIT',Reason} ->
+	    undefined
+    end;
+monitor_blocker(_) ->
+    undefined.
+
+demonitor_blocker(undefined) ->
+    ok;
+demonitor_blocker(Ref) ->
+    (catch erlang:demonitor(Ref)).
 
 
 %% Some status utility functions
@@ -570,15 +960,30 @@ set_verbosity(security,V,S) ->
     Addr = httpd_util:lookup(S#state.config_db, bind_address),
     Port = httpd_util:lookup(S#state.config_db, port),
     mod_security:verbosity(Addr,Port,V);
+set_verbosity(auth,V,S) ->
+    put(auth_verbosity,V),
+    Addr = httpd_util:lookup(S#state.config_db, bind_address),
+    Port = httpd_util:lookup(S#state.config_db, port),
+    mod_auth:verbosity(Addr,Port,V);
+
+
 set_verbosity(all,V,S) ->
     OldMv = get(verbosity),
     put(verbosity,V),
     OldLv = get(listener_verbosity),
     put(listener_verbosity,V),
     put(security_verbosity,V),
-    Addr = httpd_util:lookup(S#state.config_db, bind_address),
-    Port = httpd_util:lookup(S#state.config_db, port),
+    put(auth_verbosity,V),
+    Addr  = httpd_util:lookup(S#state.config_db, bind_address),
+    Port  = httpd_util:lookup(S#state.config_db, port),
     OldSv = mod_security:verbosity(Addr,Port,V),
     [{manager,OldMv},{listener,OldLv},{security,OldSv}].
     
     
+%%
+call(ServerRef,Request) ->
+    gen_server:call(ServerRef,Request).
+
+cast(ServerRef,Message) ->
+    gen_server:cast(ServerRef,Message).
+

@@ -24,6 +24,6 @@
     {registered, [sasl_sup, alarm_handler, overload, release_handler]},
     {applications, [kernel, stdlib]},
     {env, [{sasl_error_logger, tty},
-           {sasl_error_logger_type, all}]},
+           {errlog_type, all}]},
     {mod, {sasl, []}}]}.
 

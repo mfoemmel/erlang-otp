@@ -391,13 +391,13 @@ char* src;
 
     dst = sbuf;
     while ((*dst++ = *src++) != '\0') {
-	if (isspace(*src)) {
+	if (isspace((int)*src)) {
 	    *dst = '\0';
 	    PUSH(strsave(sbuf));
 	    dst = sbuf;
 	    do {
 		src++;
-	    } while (isspace(*src));
+	    } while (isspace((int)*src));
 	}
     }
     if (sbuf[0])
@@ -553,9 +553,20 @@ possibly_quote(char* arg)
      */
 
     for (s = arg; *s; s++, n++) {
-	if (*s == ' ' || *s == '"') {
+	switch(*s) {
+	case ' ':
+	    mustQuote = YES;
+	    continue;
+	case '"':
 	    mustQuote = YES;
 	    n++;
+	    continue;
+	case '\\':
+	    if(s[1] == '"')
+		n++;
+	    continue;
+	default:
+	    continue;
 	}
     }
     if (!mustQuote) {
@@ -569,7 +580,7 @@ possibly_quote(char* arg)
 
     s = narg = emalloc(n+2+1);
     for (*s++ = '"'; *arg; arg++, s++) {
-	if (*s == '"') {
+	if (*arg == '"' || (*arg == '\\' && arg[1] == '"')) {
 	    *s++ = '\\';
 	}
 	*s = *arg;

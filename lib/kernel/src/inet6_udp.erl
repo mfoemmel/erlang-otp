@@ -47,14 +47,16 @@ open(Port, Opts) when Port >= 0, Port =< 16#ffff ->
 	    inet:open(Fd,BAddr,BPort,SockOpts,dgram,inet,?MODULE)
     end.
 
-send(S,{A,B,C,D,E,F,G,H},P,Data) when ?ip6(A,B,C,D,E,F,G,H),P>=0,P=<16#ffff ->
-    prim_inet:sendto(S, {A,B,C,D,E,F,G,H}, P, Data).
+send(S, Addr = {A,B,C,D,E,F,G,H}, P, Data) 
+  when ?ip6(A,B,C,D,E,F,G,H),P>=0,P=<16#ffff ->
+    prim_inet:sendto(S, Addr, P, Data).
 
 send(S, Data) ->
     prim_inet:sendto(S, {0,0,0,0,0,0,0,0}, 0, Data).
     
-connect(S, {A,B,C,D,E,F,G,H}, P) when ?ip6(A,B,C,D,E,F,G,H), P>=0, P=<16#ffff->
-    prim_inet:connect(S, {A,B,C,D,E,F,G,H}, P).
+connect(S, Addr = {A,B,C,D,E,F,G,H}, P) 
+  when ?ip6(A,B,C,D,E,F,G,H), P>=0, P=<16#ffff->
+    prim_inet:connect(S, Addr, P).
 
 recv(S,Len) ->
     prim_inet:recvfrom(S, Len).

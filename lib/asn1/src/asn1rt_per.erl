@@ -852,7 +852,7 @@ encode_bit_string(C, BitListValue, NamedBitList) when list(BitListValue) ->
 	    []; % nothing to encode
 	V when integer(V),V=<16 -> % fixed length 16 bits or less
 	    pad_list(V,BitList);
-	V when integer(V) -> % fixed length 16 bits or less
+	V when integer(V) -> % fixed length more than 16 bits
 	    [align,pad_list(V,BitList)];
 	{Lb,Ub} when integer(Lb),integer(Ub) ->
 	    [encode_length({Lb,Ub},length(BitList)),align,BitList];

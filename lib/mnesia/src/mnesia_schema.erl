@@ -2140,7 +2140,8 @@ info2(_, []) ->
     io:format("~n", []).
 
 get_table_properties(Tab) ->
-    case catch mnesia_lib:safe_match_object(ets, mnesia_gvar, {{Tab, '_'}, '_'}) of
+    case catch mnesia_lib:db_match_object(ram_copies, 
+					  mnesia_gvar, {{Tab, '_'}, '_'}) of
 	{'EXIT', _} ->
 	    mnesia:abort({no_exists, Tab, all});
 	RawGvar ->

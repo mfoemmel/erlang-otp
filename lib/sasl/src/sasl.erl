@@ -28,7 +28,6 @@
 %%% and a supervisor for SASL.
 %%%-----------------------------------------------------------------
 -behaviour(application).
--behaviour(supervisor).
 
 -record(state, {sasl_error_logger, error_logger_mf}).
 

@@ -28,17 +28,17 @@
 	 handle_call/3,
 	 handle_cast/2,
 	 handle_info/2,
+	 code_change/3,
 	 terminate/2]).
 
-
-
 -include_lib("kernel/include/file.hrl").
+
+-import(lists, [foreach/2]).
 
 -record(state,{root,
 	       path,
 	       moddb,
 	       namedb,
-	       ints=[],				%Interpreted modules
 	       mode=interactive}).
 
 
@@ -52,50 +52,43 @@ init([Root, Mode]) ->
 		interactive ->
 		    LibDir = filename:append(Root, "lib"),
 		    {ok,Dirs} = file:list_dir(LibDir),
-		    {Paths, Libs} = make_path(LibDir,Dirs),
+		    {Paths, Libs} = make_path(LibDir, Dirs),
 		    ["."|Paths];
 		_ ->
 		    []
 	    end,
 
-    Path = add_loader_path(IPath,Mode),
+    Db = ets:new(code, [private]),
+    foreach(fun (M) -> ets:insert(Db, {M,preloaded}) end, erlang:pre_loaded()),
+    foreach(fun (MF) -> ets:insert(Db, MF) end, Loaded=init:fetch_loaded()),
+
+    Path = add_loader_path(IPath, Mode),
     {ok,#state{root = Root,
 	       path = Path,
-	       moddb = init_db(),
+	       moddb = Db,
 	       namedb = init_namedb(Path),
 	       mode = Mode}}.
 
 
+code_change(OldVsn, State, Extra) ->
+    %% I doubt that changing the code for this module will work,
+    %% but at least we avoid a compilation warning.
+    {ok,State}.
 
 %%
 %% The gen_server call back functions.
 %%
-%handle_call(Req,{From,Tag},S) ->
-%   case Req of
 
 handle_call({stick_dir,Dir}, {From, Tag}, S) ->
-    case file:list_dir(Dir) of
-	{ok,Listing} ->
-	    stick_library(Listing, S#state.moddb),
-	    {reply,ok,S};
-	Other ->
-	    {reply,Other,S}
-    end;
+    {reply,stick_dir(Dir, true, S),S};
 
 handle_call({unstick_dir,Dir}, {From,Tag}, S) ->
-    case file:list_dir(Dir) of
-	{ok,Listing} ->
-	    unstick_library(Listing, S#state.moddb),
-	    {reply,ok,S};
-	Other ->
-	    {reply,Other,S}
-    end;
+    {reply,stick_dir(Dir, false, S),S};
 
 handle_call({dir,Dir},{From,Tag}, S) ->
     Root = S#state.root,
     Resp = do_dir(Root,Dir,S#state.namedb),
     {reply,Resp,S};
-
 
 handle_call({load_file,Mod},{From,Tag}, S) ->
     case modp(Mod) of
@@ -103,13 +96,9 @@ handle_call({load_file,Mod},{From,Tag}, S) ->
 	    {reply,{error, badarg},S};
 	_ ->
 	    Path = S#state.path,
-	    Int = S#state.ints,
 	    Status = load_file(Mod, Path, S#state.moddb),
-	    NewS = S#state{ints =
-			   code_server_int:del_interpret(Status,Int)},
-	    {reply,Status,NewS}
+	    {reply,Status,S}
     end;
-
 
 handle_call({add_path,Where,Dir},{From,Tag}, S) ->
     {Resp,Path} = add_path(Where,Dir,S#state.path,S#state.namedb),
@@ -132,7 +121,6 @@ handle_call({replace_path,Name,Dir},{From,Tag}, S) ->
     {Resp,Path} = replace_path(Name,Dir,S#state.path,S#state.namedb),
     {reply,Resp,S#state{path = Path}};
 
-
 handle_call(get_path,{From,Tag}, S) ->
     {reply,S#state.path,S};
 
@@ -143,145 +131,63 @@ handle_call({load_abs,File},{From,Tag}, S) ->
 	    {reply,{error,badarg},S};
 	_ ->
 	    Status = load_abs(File, S#state.moddb),
-	    Int = S#state.ints,
-	    NewS = S#state{ints =
-			   code_server_int:del_interpret(Status,Int)},
-	    {reply,Status,NewS}
+	    {reply,Status,S}
     end;
 
 handle_call({load_binary,Mod,File,Bin},{From,Tag}, S) ->
     Status = do_load_binary(Mod,File,Bin,S#state.moddb),
-    Int = S#state.ints,
-    NewS = S#state{ints = code_server_int:del_interpret(Status,Int)},
-    {reply,Status,NewS};
+    {reply,Status,S};
 
-handle_call({ensure_loaded,Mod},{From,Tag}, S) ->
-    case modp(Mod) of
-	false ->
-	    {reply,{error,badarg},S};
-	_ ->
-	    case erlang:module_loaded(code_aux:to_atom(Mod)) of
-		true ->
-		    %% Should we check code_server's
-		    %% internal database here?
-		    {reply,{module,Mod},S};
-		false ->
-		    {reply,do_ensure(Mod,S),S}
-	    end
-    end;
+handle_call({ensure_loaded,Mod0}, {From,Tag}, St0) ->
+    Fun = fun (M, St) ->
+		  case erlang:module_loaded(M) of
+		      true ->
+			  {module,M};
+		      false when St#state.mode =:= interactive ->
+			  Path = St#state.path,
+			  load_file(M, Path, St#state.moddb);
+		      false -> {error,embedded}
+		  end
+	  end,
+    do_mod_call(Fun, Mod0, {error,badarg}, St0);
 
-handle_call({delete,Mod},{From,Tag}, S) ->
-    {reply,do_delete(Mod,S),S};
+handle_call({delete,Mod0}, {From,Tag}, S) ->
+    Fun = fun (M, St) ->
+		  case catch erlang:delete_module(M) of
+		      true ->
+			  ets:delete(St#state.moddb, M),
+			  true;
+		      _ -> false
+		  end
+	  end,
+    do_mod_call(Fun, Mod0, false, S);
 
+handle_call({purge,Mod0}, {From,Tag}, St0) ->
+    do_mod_call(fun (M, St) -> do_purge(M) end, Mod0, false, St0);
 
-handle_call({purge,Mod},{From,Tag}, S) ->
-    case modp(Mod) of
-	false ->
-	    {reply,false,S};
-	_ ->
-	    {reply,code_aux:do_purge(Mod),S}
-    end;
+handle_call({soft_purge,Mod0},{From,Tag}, St0) ->
+    do_mod_call(fun (M, St) -> do_soft_purge(M) end, Mod0, true, St0);
 
-handle_call({soft_purge,Mod},{From,Tag}, S) ->
-    case modp(Mod) of
-	false ->
-	    {reply,true,S};
-	_ ->
-	    {reply,do_soft_purge(Mod),S}
-    end;
-
-handle_call({is_loaded,Module},{From,Tag}, S) ->
-    case modp(Module) of
-	false ->
-	    {reply,false,S};
-	_ ->
-	    %% compare ensure_loaded! (here we only check
-	    %% internal struct)
-	    Where = is_loaded(Module, S#state.moddb, S#state.ints),
-	    {reply,Where,S}
-    end;
+handle_call({is_loaded,Mod0},{From,Tag}, St0) ->
+    do_mod_call(fun (M, St) -> is_loaded(M, St#state.moddb) end, Mod0, false, St0);
 
 handle_call(all_loaded,{From,Tag}, S) ->
     Db = S#state.moddb,
-    Int = S#state.ints,
-    {reply,all_loaded(Db,Int),S};
+    {reply,all_loaded(Db),S};
 
-handle_call({rel_loaded_p,Mod},{From,Tag}, S) ->
-    case modp(Mod) of
-	false ->
-	    {reply,false,S};
-	_ ->
-	    Db = S#state.moddb,
-	    {reply,rel_loaded_p(Mod,Db),S}
-    end;
+handle_call({get_object_code,Mod0}, {From,Tag}, St0) ->
+    Fun = fun(M, St) ->
+		  Path = St#state.path,
+		  case mod_to_bin(Path, atom_to_list(M)) of
+		      {_,Bin,FName} -> {M,Bin,FName};
+		      Error -> Error
+		  end
+	  end,
+    do_mod_call(Fun, Mod0, error, St0);
 
-
-%% Messages to handle interpretation of modules
-handle_call({interpret,Module},{From,Tag}, S) ->
-    Int = S#state.ints,
-    {Status,Int1} =
-	code_server_int:add_interpret(Module,Int,S#state.moddb),
-    {reply,Status,S#state{ints = Int1}};
-
-handle_call({interpreted,Module},{From,Tag}, S) ->
-    case modp(Module) of
-	false ->
-	    {reply,false,S};
-	_ ->
-	    Int = S#state.ints,
-	    {reply,lists:member(code_aux:to_atom(Module), Int),S}
-    end;
-
-handle_call({interpreted},{From,Tag}, S) ->
-    {reply,S#state.ints,S};
-
-handle_call({interpret_binary,Mod,File,Bin},{From,Tag}, S) ->
-    {Status,Int1} =
-	code_server_int:add_interpret(Mod,S#state.ints,S#state.moddb),
-    NewS = S#state{ints = Int1},
-    case Status of
-	{error,_} ->
-	    {reply,Status,NewS};
-	_ ->
-	    case modp(File) of
-		true when binary(Bin) ->
-		    %% The interpreter server acknowledges
-		    %% the request.
-		    case code_server_int:load_interpret({From,Tag},File,Mod,Bin) of
-			ok ->
-			    {noreply, NewS};
-			Error ->
-			    {reply,Error,S}
-		    end;
-		_ ->
-		    {reply,{error,badarg},S}
-	    end
-    end;
-
-handle_call({delete_int,Module},{From,Tag}, S) ->
-    case modp(Module) of
-	false ->
-	    {reply,{error,badarg},S};
-	_ ->
-	    Int1 =
-		code_server_int:delete_interpret(Module,S#state.ints),
-	    {reply,ok,S#state{ints = Int1}}
-    end;
-
-handle_call({get_object_code, Mod},{From,Tag}, S) ->
-    case modp(Mod) of
-	false ->
-	    {reply,error,S};
-	_ ->
-	    Path = S#state.path,
-	    case mod_to_bin(Path, Mod) of
-		{Mod, Bin, FName} ->
-		    Rep = {Mod,Bin,filename:absname(FName)},
-		    {reply,Rep,S};
-		Error ->
-		    {reply,Error,S}
-	    end
-    end;
+handle_call({is_sticky, Mod}, {From, Tag}, S) ->
+    Db = S#state.moddb,
+    {reply, is_sticky(Mod,Db), S};
 
 handle_call(stop,{From,Tag}, S) ->
     {stop,normal,stopped,S};
@@ -290,74 +196,23 @@ handle_call(Other,{From,Tag}, S) ->
     error_logger:error_msg(" ** Codeserver*** ignoring ~w~n ",[Other]),
     {noreply,S}.
 
-
-
-
 handle_cast(_,S) ->
     {noreply,S}.
-
 handle_info(_,S) ->
     {noreply,S}.
 
 terminate(_Reason,_) ->
     ok.
 
-
-
-
-
-do_ensure(Mod,S) ->
-    Int = S#state.ints,
-    Mode = S#state.mode,
-    case lists:member(code_aux:to_atom(Mod),Int) of
-	true ->
-	    {interpret,Mod};
-	_ when Mode == interactive ->
-	    Path = S#state.path,
-	    load_file(Mod, Path, S#state.moddb);
-	_ ->
-	    {error,embedded}
+do_mod_call(Action, Module, Error, St) when atom(Module) ->
+    {reply,Action(Module, St),St};
+do_mod_call(Action, Module, Error, St) ->
+    case catch list_to_atom(Module) of
+	{'EXIT',_} ->
+	    {reply,Error,St};
+	Atom when atom(Atom) ->
+	    {reply,Action(Atom, St),St}
     end.
-
-do_delete(Mod,S) when atom(Mod) ->
-    case catch erlang:delete_module(Mod) of
-	true ->
-	    ets:delete(S#state.moddb, Mod),
-	    true;
-	_ ->
-	    false
-    end;
-do_delete(Mod,S) when list(Mod) ->
-    do_delete(list_to_atom(Mod),S);
-do_delete(_,_) ->
-    false.
-
-
-
-init_db() ->
-    Db = ets:new(code,[private]),
-    Mods = init:fetch_loaded() ++ fix(erlang:pre_loaded()),
-    init_insert(Db,Mods),
-    Db.
-
-
-fix([]) -> [];
-fix([H|Tail]) -> [{H,preloaded}|fix(Tail)].
-
-
-
-init_insert(Db,[{Mod,Info}|Mods]) ->
-    add_module(Mod,Info,Db),
-    init_insert(Db,Mods);
-init_insert(_,[]) ->
-    ok.
-
-	    
-add_module(Module, FileName, Db) when hd(FileName) == $. ->
-    ets:insert(Db, {Module,filename:absname(FileName),true});
-add_module(Module, FileName, Db) ->
-    ets:insert(Db, {Module,FileName}).
-
 
 %% --------------------------------------------------------------
 %% Path handling functions.
@@ -485,7 +340,7 @@ excl([D|Ds], P) ->
 %%
 %% Keep only 'valid' paths in code server.
 %% Only if mode is interactive, in an embedded
-%% system we cant rely on file.
+%% system we can't rely on file.
 %%
 strip_path([P0|Ps], embedded) ->
     P = filename:join([P0]), % Normalize
@@ -840,8 +695,6 @@ lookup_name(Name, Db) ->
 %%
 do_dir(Root,lib_dir,_) ->
     filename:append(Root, "lib");
-do_dir(Root,uc_dir,_) ->
-    filename:append(Root, "uc");
 do_dir(Root,root_dir,_) ->
     Root;
 do_dir(Root,compiler_dir,NameDb) ->
@@ -862,25 +715,19 @@ do_dir(Root,{priv_dir,Name},NameDb) ->
 do_dir(Root,_,_) ->
     'bad request to code'.
 
-
-
-%% Put/Erase all library modules into local process dict
-
-stick_library(LibDirListing, Db) ->
-    putem(get_mods(LibDirListing, code_aux:objfile_extension()), Db).
-unstick_library(LibDirListing, Db) ->
-    eraseem(get_mods(LibDirListing, code_aux:objfile_extension()), Db).
-    
-
-putem([], _) -> done;
-putem([M|Tail], Db) ->
-    ets:insert(Db, {{sticky, code_aux:to_atom(M)}, true}),
-    putem(Tail, Db).
-
-eraseem([], _) -> done;
-eraseem([M|Tail], Db) ->
-    ets:delete(Db, {sticky, code_aux:to_atom(M)}),
-    eraseem(Tail, Db).
+stick_dir(Dir, Stick, St) ->
+    case file:list_dir(Dir) of
+	{ok,Listing} ->
+	    Mods = get_mods(Listing, code_aux:objfile_extension()),
+	    Db = St#state.moddb,
+	    case Stick of
+		true ->
+		    foreach(fun (M) -> ets:insert(Db, {{sticky,M},true}) end, Mods);
+		false ->
+		    foreach(fun (M) -> ets:delete(Db, {sticky,M}) end, Mods)
+	    end;
+	Error -> Error
+    end.
 
 get_mods([File|Tail], Extension) ->
     case filename:extension(File) of
@@ -890,19 +737,23 @@ get_mods([File|Tail], Extension) ->
 	_ ->
 	    get_mods(Tail, Extension)
     end;
-get_mods([], _) ->
-    [].
+get_mods([], _) -> [].
 
-
-
+is_sticky(Mod, Db) ->
+    case erlang:module_loaded(Mod) of
+	true ->
+	    case ets:lookup(Db, {sticky,Mod}) of
+		[] -> false;
+		_  -> true
+	    end;
+	_ -> false
+    end.
 
 add_paths(Where,[Dir|Tail],Path,NameDb) ->
     {_,NPath} = add_path(Where,Dir,Path,NameDb),
     add_paths(Where,Tail,NPath,NameDb);
 add_paths(_,_,Path,_) ->
     {ok,Path}.
-
-
 
 
 do_load_binary(Module,File,Binary,Db) ->
@@ -938,56 +789,109 @@ load_abs(File, Db) ->
 
 try_load_module(File, Mod, Bin, Db) ->
     M = code_aux:to_atom(Mod),
-    case code_aux:sticky(M, Db) of
+
+    case is_sticky(M, Db) of
 	true ->                         %% Sticky file reject the load
 	    error_logger:error_msg("Can't load module that resides in sticky dir\n",[]),
 	    {error, sticky_directory};
 	false ->
+	case catch load_native_code(Mod, Bin) of
+	  {module,M} ->
+	    ets:insert(Db, {M,File}),
+	    {module,Mod};
+	  no_native ->
 	    case erlang:load_module(M, Bin) of
-		{module,M} ->
-		    add_module(M, File, Db),
-		    {module,Mod};
-		{error,What} ->
-		    error_logger:error_msg("Loading of ~s failed: ~p\n", [File, What]),
-		    {error,What}
-	    end
+	      {module,M} ->
+		ets:insert(Db, {M,File}),
+		{module,Mod};
+	      {error,What} ->
+		error_logger:error_msg("Loading of ~s failed: ~p\n", [File, What]),
+		{error,What}
+	    end;
+	  Error ->
+	   error_logger:error_msg("Native loading of ~s failed: ~p\n", [File, Error])
+	end
+    end.
+
+load_native_code(Mod, Bin) ->
+    case erlang:system_info(hipe_architecture) of
+	ultrasparc ->
+	    hipe_sparc_loader:patch_to_emu(Mod),
+	    load_native_code(Mod, Bin, "HS8P",
+			     fun(M, B) -> 
+				     hipe_sparc_loader:load_module(M, B, Bin) 
+			     end);
+	x86 ->
+	    hipe_x86_loader:patch_to_emu(Mod),
+	    load_native_code(Mod, Bin, "HX86",
+			     fun(M, B) -> 
+				     hipe_x86_loader:load_module(M, B, Bin) 
+			     end);
+	  
+	_ -> no_native
     end.
 
 
+load_native_code(Mod, Bin, ChunkTag, Loader) ->
+    case code:get_chunk(Bin, ChunkTag) of
+	undefined -> no_native;
+	NativeCode when binary(NativeCode) ->
+	    Loader(Mod, NativeCode)
+    end.
 
 int_list([H|T]) when integer(H) -> int_list(T);
 int_list([_|T])                 -> false;
 int_list([])                    -> true.
 
 
+load_file(Mod, Path, Db) ->
+    case mod_to_bin(Path, Mod) of
+	error -> {error,nofile};
+	{Mod,Binary,File} -> try_load_module(File, Mod, Binary, Db)
+    end.
 
-mod_to_bin([Dir|Tail],Mod) ->
+mod_to_bin([Dir|Tail], Mod) ->
     File = filename:append(Dir, code_aux:to_list(Mod) ++ code_aux:objfile_extension()),
     case erl_prim_loader:get_file(File) of
 	error -> 
-	    mod_to_bin(Tail,Mod);
+	    mod_to_bin(Tail, Mod);
 	{ok,Bin,FName} ->
-	    {Mod,Bin,FName}
+	    {Mod,Bin,absname(FName)}
     end;
-mod_to_bin([],Mod) ->
-    %% At last, try also erl_prim_loader's own method !!
+mod_to_bin([], Mod) ->
+    %% At last, try also erl_prim_loader's own method
     File = lists:concat([Mod,code_aux:objfile_extension()]),
     case erl_prim_loader:get_file(File) of
 	error -> 
 	    error;     % No more alternatives !
 	{ok,Bin,FName} ->
-	    {Mod,Bin,FName}
+	    {Mod,Bin,absname(FName)}
     end.
 
-load_file(Mod,Path,Db) ->
-    case mod_to_bin(Path,Mod) of
-	error -> {error,nofile};
-	{Mod,Binary,File} -> try_load_module(File, Mod, Binary, Db)
+absname(File) ->
+    case prim_file:get_cwd() of
+	{ok,Cwd} -> filename:absname(File, Cwd);
+	Error -> File
     end.
 
+%% do_purge(Module)
+%%  Kill all processes running code from *old* Module, and then purge the
+%%  module. Return true if any processes killed, else false.
 
+do_purge(Mod) ->
+    do_purge(processes(), Mod, false).
 
-
+do_purge([P|Ps], Mod, Purged) ->
+    case erlang:check_process_code(P, Mod) of
+	true ->
+	    exit(P, kill),
+	    do_purge(Ps, Mod, true);
+	false ->
+	    do_purge(Ps, Mod, Purged)
+    end;
+do_purge([], Mod, Purged) ->
+    catch erlang:purge_module(Mod),
+    Purged.
 
 %% do_soft_purge(Module)
 %% Purge old code only if no procs remain that run old code
@@ -995,66 +899,37 @@ load_file(Mod,Path,Db) ->
 %% case old code is not purged)
 
 do_soft_purge(Mod) ->
-    M = code_aux:to_atom(Mod),
-    catch do_soft_purge(processes(), M).
+    catch do_soft_purge(processes(), Mod).
 
 do_soft_purge([P|Ps], Mod) ->
     case erlang:check_process_code(P, Mod) of
-	true ->
-	    throw(false);
-	false ->
-	    do_soft_purge(Ps, Mod)
+	true -> throw(false);
+	false -> do_soft_purge(Ps, Mod)
     end;
 do_soft_purge([], Mod) ->
     catch erlang:purge_module(Mod),
     true.
 
-
-is_loaded(Module, Db, Ints) ->
-    M = code_aux:to_atom(Module),
+is_loaded(M, Db) ->
     case ets:lookup(Db, M) of
-       [File] ->
-	   {file,element(2,File)};
-       _ ->
-	    case lists:member(M, Ints) of
-		true ->
-		    {file, interpreted};
-		_ ->
-		    false
-	    end
-   end.
+	[{M,File}] -> {file,File};
+	[] -> false
+    end.
 
 %% -------------------------------------------------------
 %% Internal functions.
 %% -------------------------------------------------------
 
-all_loaded(Db,Int) ->
-    %% ++ is not efficient for long lists but here we know that 
-    %% the list of interpreted modules is short 
-    code_server_int:ints(Int) ++ all_l(Db). 
-
-all_l(Db) -> all_l(Db, ets:slot(Db,0), 1, []).
+all_loaded(Db) ->
+    all_l(Db, ets:slot(Db, 0), 1, []).
 
 all_l(Db, '$end_of_table', _, Acc) ->
     Acc;
 all_l(Db, ModInfo, N, Acc) ->
-    NewAcc = strip_mod_info(ModInfo,Acc), 
-    all_l(Db, ets:slot(Db,N), N + 1, NewAcc).
+    NewAcc = strip_mod_info(ModInfo,Acc),
+    all_l(Db, ets:slot(Db, N), N + 1, NewAcc).
 
 
 strip_mod_info([{{sticky,_},_}|T], Acc) -> strip_mod_info(T, Acc);
-strip_mod_info([{M,F,_}|T], Acc)        -> strip_mod_info(T,[{M,F}|Acc]);
-strip_mod_info([H|T], Acc)              -> strip_mod_info(T,[H|Acc]);
+strip_mod_info([H|T], Acc)              -> strip_mod_info(T, [H|Acc]);
 strip_mod_info([], Acc)                 -> Acc.
-
-
-%% Check if a module was loaded relative current directory
-%% (at the time of loading).
-rel_loaded_p(Mod,Db) ->
-    case ets:lookup(Db, Mod) of
-	[{_,_,true}] -> true;
-	_            -> false
-    end.
-
-
-

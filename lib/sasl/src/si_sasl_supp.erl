@@ -37,6 +37,9 @@
 %% exports for use within module
 -export([init/1, start_log_impl/1, pi_impl/2, ppi_impl/1]).
 
+%% other gen_server callbacks (not used)
+-export([handle_cast/2, handle_info/2, code_change/3]).
+
 %%--------------------------------------------------
 %% Table of contents
 %% 1. Interface
@@ -160,6 +163,13 @@ handle_call(stop, _From, State) ->
 terminate(_Reason, State) ->
     close_device(get(device)),
     ok.
+
+handle_cast(Msg, State) ->
+    {noreply, State}.
+handle_info(Info, State) ->
+    {noreply, State}.
+code_change(OldVsn, State, Extra) ->
+    {ok, State}.
 
 close_device(standard_io) -> ok;
 close_device(Fd) -> file:close(Fd).

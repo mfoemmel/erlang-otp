@@ -17,9 +17,12 @@
 %%
 -module(shell).
 
--export([start/0,start/1,server/0,server/1,evaluator/3,local_func/4]).
+-export([start/0,start/1,server/0,server/1,evaluator/3,local_func/4,
+	 history/1, results/1]).
 
 -define(LINEMAX, 30).
+-define(DEF_HISTORY, 20).
+-define(DEF_RESULTS, 20).
 
 start()->
     start(false).
@@ -38,14 +41,19 @@ server() ->
     process_flag(trap_exit, true),
     case get(no_control_g) of
 	true ->
-	    io:fwrite("Eshell V~s~n", [erlang:info(version)]);
+	    io:fwrite("Eshell V~s~n", [erlang:system_info(version)]);
 	_undefined_or_false ->
-	    io:fwrite("Eshell V~s  (abort with ^G)~n", [erlang:info(version)])
+	    io:fwrite("Eshell V~s  (abort with ^G)~n",
+		      [erlang:system_info(version)])
     end,
     erase(no_control_g),
-    server_loop(0, start_eval(Bs, []), Bs, []).
+    check_env(shell_history_length, "shell history length"),
+    check_env(shell_saved_results, "max number of saved results"),
+    History = get_env(shell_history_length, ?DEF_HISTORY),
+    Results = get_env(shell_saved_results, ?DEF_RESULTS),
+    server_loop(0, start_eval(Bs, []), Bs, [], History, Results).
 
-server_loop(N0, Eval_0, Bs0, Ds0) ->
+server_loop(N0, Eval_0, Bs0, Ds0, History0, Results0) ->
     N = N0 + 1,
     {Res, Eval0} = get_command(prompt(N), Eval_0, Bs0, Ds0),
     case Res of 
@@ -53,28 +61,32 @@ server_loop(N0, Eval_0, Bs0, Ds0) ->
 	    case expand_hist(Es0, N) of
 		{ok,Es} ->
 		    {V,Eval,Bs,Ds} = shell_cmd(Es, Eval0, Bs0, Ds0, N),
-		    del_cmd(N - 20),
+		    History = get_env(shell_history_length, ?DEF_HISTORY),
+		    Results = min(History,
+				  get_env(shell_saved_results, ?DEF_RESULTS)),
 		    add_cmd(N, Es, V),
-		    server_loop(N, Eval, Bs, Ds);
+		    del_cmd(command, N - History, N - History0),
+		    del_cmd(result, N - Results, N - Results0),
+		    server_loop(N, Eval, Bs, Ds, History, Results);
 		{error,E} ->
 		    io:fwrite("** ~s **\n", [E]),
-		    server_loop(N0, Eval0, Bs0, Ds0)
+		    server_loop(N0, Eval0, Bs0, Ds0, History0, Results0)
 	    end;
 	{error,{Line,Mod,What},EndLine} ->
 	    io:fwrite("** ~w: ~s **\n", [Line,apply(Mod,format_error,[What])]),
-	    server_loop(N0, Eval0, Bs0, Ds0);
+	    server_loop(N0, Eval0, Bs0, Ds0, History0, Results0);
 	{error,terminated} ->			%Io process terminated
 	    exit(Eval0, kill),
 	    terminated;
 	{error,interrupted} ->			%Io process interrupted us
 	    exit(Eval0, kill),
 	    {_,Eval,_,_} = shell_rep(Eval0, Bs0, Ds0),
-	    server_loop(N0, Eval, Bs0, Ds0);
+	    server_loop(N0, Eval, Bs0, Ds0, History0, Results0);
 	{eof,EndLine} ->
-	    io:fwrite("** Terminating erlang **\n"),
+	    io:fwrite("** Terminating erlang (~w) **\n", [node()]),
 	    halt();
 	eof ->
-	    io:fwrite("** Terminating erlang **\n"),
+	    io:fwrite("** Terminating erlang (~w) **\n", [node()]),
 	    halt()
     end.
 
@@ -191,17 +203,25 @@ no_command(N) ->
 %% del_cmd(Number)
 
 add_cmd(N, Es, V) ->
-    put({command,N}, {Es, V}).
+    put({command,N}, Es),
+    put({result,N}, V).
+
+getc(N) ->
+    {get({command,N}),
+     get({result,N})}.
 
 get_cmd(Num, C) ->
     case catch erl_eval:expr(Num, []) of
-	{value,N,_} when N < 0 -> get({command,C+N});
-	{value,N,_} -> get({command,N});
+	{value,N,_} when N < 0 -> getc(C+N);
+	{value,N,_} -> getc(N);
 	Other -> undefined
     end.
 
-del_cmd(N) ->
-    erase({command,N}).
+del_cmd(Type, N, N0) when N < N0 ->
+    ok;
+del_cmd(Type, N, N0) ->
+    erase({Type,N}),
+    del_cmd(Type, N-1, N0).
 
 %% shell_cmd(Sequence, Evaluator, Bindings, Dictionary, CommandNumber)
 %% shell_rep(Evaluator) ->
@@ -269,7 +289,15 @@ init_dict([]) -> true.
 
 local_func(h, [], Bs, Shell) ->
     Cs = shell_req(Shell, get_cmd),
-    {value,list_commands(lists:keysort(1, Cs)),Bs};
+    Cs1 = lists:filter(fun({{command, _},_}) -> true;
+			  ({{result, _},_}) -> true;
+			  (_) -> false
+		       end,
+		       Cs),
+    Cs2 = lists:map(fun({{T, N}, V}) -> {{N, T}, V} end,
+		    Cs1),
+    Cs3 = lists:keysort(1, Cs2),
+    {value,list_commands(Cs3),Bs};
 local_func(b, [], Bs, Shell) ->
     {value,list_bindings(erl_eval:bindings(Bs)),Bs};
 local_func(f, [], Bs, Shell) ->
@@ -278,6 +306,14 @@ local_func(f, [{var,_,Name}], Bs, Shell) ->
     {value,ok,erl_eval:del_binding(Name, Bs)};
 local_func(f, [Other], Bs, Shell) ->
     exit({function_clause,{shell,f,1}});
+local_func(history, [{integer,_,N}], Bs, Shell) ->
+    {value,history(N),Bs};
+local_func(history, [Other], Bs, Shell) ->
+    exit({function_clause,{shell,history,1}});
+local_func(results, [{integer,_,N}], Bs, Shell) ->
+    {value,results(N),Bs};
+local_func(results, [Other], Bs, Shell) ->
+    exit({function_clause,{shell,results,1}});
 local_func(exit, [], Bs, Shell) ->
     shell_req(Shell, exit),			%This terminates us
     exit(normal);
@@ -299,9 +335,12 @@ shell_req(Shell, Req) ->
 	{shell_rep,Shell,Rep} -> Rep
     end.
 
-list_commands([{{command,N},{Es,V}}|Ds]) ->
+list_commands([{{N,command},Es}, {{N,result}, V} |Ds]) ->
     io:requests([{format,"~w: ~s~n",[N,erl_pp:exprs(Es)]},
 		 {format,"-> ~P~n",[V,?LINEMAX]}]),
+    list_commands(Ds);
+list_commands([{{N,command},Es} |Ds]) ->
+    io:requests([{format,"~w: ~s~n",[N,erl_pp:exprs(Es)]}]),
     list_commands(Ds);
 list_commands([D|Ds]) ->
     list_commands(Ds);
@@ -312,3 +351,44 @@ list_bindings([{Name,Val}|Bs]) ->
     list_bindings(Bs);
 list_bindings([]) ->
     ok.
+
+min(X, Y) when X < Y ->
+    X;
+min(X, Y) ->
+    Y.
+
+get_env(V, Def) ->
+    case application:get_env(stdlib, V) of
+	{ok, Val} when integer(Val) ->
+	    Val;
+	_ ->
+	    Def
+    end.
+	    
+check_env(V, Name) ->
+    case application:get_env(stdlib, V) of
+	undefined ->
+	    ok;
+	{ok, Val} when integer(Val) ->
+	    ok;
+	{ok, Val} ->
+	    Txt = io_lib:format("Invalid ~s ~p~n", [Name, Val]),
+	    error_logger:info_report(lists:flatten(Txt)),
+	    ok
+    end.
+	    
+set_env(App, Name, Val, Default) ->
+    Prev = case application:get_env(App, Name) of
+	       undefined ->
+		   Default;
+	       {ok, Old} ->
+		   Old
+    end,
+    application_controller:set_env(App, Name, Val),
+    Prev.
+
+history(L) when integer(L), L >= 0 ->
+    set_env(stdlib, shell_history_length, L, ?DEF_HISTORY).
+
+results(L) when integer(L), L >= 0 ->
+    set_env(stdlib, shell_saved_results, L, ?DEF_RESULTS).

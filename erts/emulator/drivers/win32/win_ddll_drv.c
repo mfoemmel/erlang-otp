@@ -69,11 +69,9 @@ void *ddll_open(full_name)
 /* 
  * Find a symbol in the shared object
  */
-uint32 *ddll_sym(handle, func_name)
-    void *handle;
-    char *func_name;
+void *ddll_sym(void *handle, char *func_name)
 {
-    return (uint32*) GetProcAddress((HINSTANCE) handle, func_name);
+    return GetProcAddress((HINSTANCE) handle, func_name);
 }
 
 /* 

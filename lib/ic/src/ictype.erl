@@ -58,6 +58,7 @@ scoped_lookup(G, S, N, X) ->
 	false ->
 	    lookup(G, S, N, X, Id)
     end.
+    
 
 %%--------------------------------------------------------------------
 %% maybe_array
@@ -90,16 +91,86 @@ member2type(G, X, I) when record(X, union)->
 	    fetchType(element(3,Rec))
     end;
 member2type( G, SName, MName ) ->
+
     S = icgen:tktab( G ),
     SNList = lists:reverse(string:tokens(SName,"_")),
     ScopedName = [MName | SNList],
     InfoList = ets:lookup( S, ScopedName ),
+
     case filter( InfoList ) of
 	error ->
-	    error;
+	    %% Try a little harder, seeking inside tktab
+	    case lookup_member_type_in_tktab(S, ScopedName, MName) of
+		error ->
+		    %% Check if this is the "return to return1" case
+		    case MName of
+			"return1" ->
+			    %% Do it all over again !
+			    ScopedName2 = ["return" | SNList],
+			    InfoList2 = ets:lookup( S, ScopedName2 ),
+			    case filter( InfoList2 ) of
+				error ->
+				    %% Last resort: seek in pragma table
+				    lookup_type_in_pragmatab(G, SName);
+				
+				Other ->
+				    Other
+			    end;		
+			_ ->
+			    %% Last resort: seek in pragma table
+			    lookup_type_in_pragmatab(G, SName)
+		    end;
+		Other ->
+		    Other
+	    end;
 	Other ->
 	    Other
     end.
+
+
+lookup_member_type_in_tktab(S, ScopedName, MName) ->
+    case ets:match_object(S, {'_',member,{MName,'_'},nil}) of
+	[] ->
+	    error;
+	[{FullScopedName,member,{MName,TKInfo},nil}]->
+	    fetchType( TKInfo );
+	List ->
+	    lookup_member_type_in_tktab(List,ScopedName)
+    end.
+
+lookup_member_type_in_tktab([],_ScopedName) ->
+    error;
+lookup_member_type_in_tktab([{FullScopedName,_,{_,TKInfo},_}|Rest],ScopedName) ->
+    case lists:reverse(string:tokens(icgen:to_undersc(FullScopedName),"_")) of
+	ScopedName ->
+	    fetchType(TKInfo);
+	_ ->
+	    lookup_member_type_in_tktab(Rest,ScopedName)
+    end.
+
+
+lookup_type_in_pragmatab(G, SName) ->    
+    S = icgen:pragmatab(G),
+
+    %% Look locally first
+    case ets:match(S,{file_data_local,'_','_','$2','_','_',SName,'_','_'}) of 
+	[] ->
+	    %% No match, seek included
+	    case ets:match(S,{file_data_included,'_','_','$2','_','_',SName,'_','_'}) of 
+		
+		[] ->
+		    error;
+		[[Type]] ->
+		    io:format("1 Found(~p) : ~p~n",[SName,Type]),
+		    Type
+	    end;
+
+	[[Type]] ->
+	    io:format("2 Found(~p) : ~p~n",[SName,Type]),
+	    Type
+    end.
+
+
 
 
 isString(G, N, T) when element(1, T) == scoped_id ->
@@ -235,7 +306,9 @@ isEterm(G, N, S) when element(1, S) == scoped_id ->
 isEterm(G, Ni, X) -> 
     false.
 
-isBasicType(G, N, S) when element(1, S) == scoped_id -> 
+isBasicType(G, N,  {scoped_id,_,_,["term","erlang"]}) ->
+    false;
+isBasicType(G, N, S) when element(1, S) == scoped_id ->
     {_, _, TK, _} = icgen:get_full_scoped_name(G, N, S),
     isBasicType(fetchType(TK));
 isBasicType(G, N, {string, _} ) -> 
@@ -246,7 +319,7 @@ isBasicType(G, N, {unsigned, {long, _}} ) ->
     true;
 isBasicType(G, N, {unsigned, {short, _}} ) -> 
     true;
-isBasicType(G, N, {Type, _} ) -> 
+isBasicType(G, N, {Type, _} ) ->
     isBasicType(Type);
 isBasicType(G, N, X) ->
     false.
@@ -269,7 +342,8 @@ isBasicType( Type ) ->
 		  tk_boolean,boolean,
 		  tk_char,char,
 		  tk_wchar,wchar,  %% WCHAR
-		  tk_octet,octet]).
+		  tk_octet,octet,
+		  tk_any,any]).    %% Fix for any
 
 
 
@@ -863,41 +937,83 @@ lookup(G, S, N, X, Id) ->
     N2 = Id ++ N,
     ?DBG("  Trying ~p ...~n", [N2]),
     case ets:lookup(S, N2) of
-	[] -> 
+	[] ->	    
 	    case look_for_interface(G, S, [hd(N2)], tl(N2)) of
-		[T] -> ?DBG("    --  found ~p~n", [T]), 
-		       lookup_found(T);
+
+		%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% First attempt: filtering inherited members !
+		[{_, member, _, _}] ->	    
+		    case look_for_interface(G, S, [hd(N)], tl(N2)) of
+			[T] -> 
+			    ?DBG("    --  found ~p~n", [T]), 
+			    T;
+			_ ->
+			    if  N == [] -> 
+				    icgen:error(G, {tk_not_found, X});
+				true ->
+				    lookup(G, S, tl(N), X, Id)
+			    end
+		    end;
+		%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+		[T] -> 
+		    ?DBG("    --  found ~p~n", [T]), 
+		    T;
+
 		_ ->
-		    if  N == [] -> icgen:error(G, {tk_not_found, X});
-			true -> lookup(G, S, tl(N), X, Id)
+		    if  N == [] -> 
+			    icgen:error(G, {tk_not_found, X});
+			true ->
+			    lookup(G, S, tl(N), X, Id)
+		    end
+
+	    end;
+
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Second attempt: filtering members !
+	[{_, member, _, _}] ->	    
+	    case look_for_interface(G, S, [hd(N2)], tl(N2)) of
+		[T] -> 
+		    ?DBG("    --  found ~p~n", [T]), 
+		    T;
+		_ ->
+		    if  N == [] -> 
+			    icgen:error(G, {tk_not_found, X});
+			true ->
+			    lookup(G, S, tl(N), X, Id)
 		    end
 	    end;
-	[T] -> ?DBG("    --  found ~p~n", [T]),
-	       lookup_found(T)
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+	[T] -> 
+	    ?DBG("    --  found ~p~n", [T]),
+	    T
     end.
 
-%%lookup_found(K, interface, {TK, Inh}) -> TK;
-lookup_found(X) -> X.
 
-
-look_for_interface(G, S, Hd, []) -> false;
+look_for_interface(G, S, Hd, []) -> 
+    false;
 look_for_interface(G, S, Hd, Tl) ->
     case ets:lookup(S, Tl) of
 	[{_, interface, TK, Inh}] -> 
 	    case look_in_inherit(G, S, Hd, Inh) of
 		%% gather_inherit(G, S, Inh, [])) of
-		[X] when tuple(X) -> [X];
-		_ -> look_for_interface(G, S, Hd ++ [hd(Tl)], tl(Tl))
+		[X] when tuple(X) -> 
+		    [X];
+		_ -> 
+		    look_for_interface(G, S, Hd ++ [hd(Tl)], tl(Tl))
 	    end;
-	_ -> look_for_interface(G, S, Hd ++ [hd(Tl)], tl(Tl))
+	_ -> 
+	    look_for_interface(G, S, Hd ++ [hd(Tl)], tl(Tl))
     end.
 
 look_in_inherit(G, S, Id, [I | Is]) ->
     case ets:lookup(S, Id ++ I) of
-	[X] when tuple(X) -> [X];
-	[] ->  look_in_inherit(G, S, Id, Is)
+	[X] when tuple(X) -> 
+	    [X];
+	[] ->  
+	    look_in_inherit(G, S, Id, Is)
     end;
-look_in_inherit(G, S, Id, []) -> false.
+look_in_inherit(G, S, Id, []) -> 
+    false.
 
 
 %% L is a list of names

@@ -22,10 +22,10 @@
 
 
 %% External API
--export([start_link/3, start_link/4]).
+-export([start_link/3, start_link/5]).
 
 %% Other exports (for spawn's etc.)
--export([connection/5,connection/6]).
+-export([connection/6,connection/7]).
 
 
 %% ----
@@ -53,22 +53,23 @@
 %% start_link
 
 start_link(SocketType,ListenSocket,ConfigDB) ->
-    start_link(idle,SocketType,ListenSocket,ConfigDB).
+    start_link(unblocked,idle,SocketType,ListenSocket,ConfigDB).
 
-start_link(UsageState,SocketType,ListenSocket,ConfigDB) ->
+start_link(AdminState,UsageState,SocketType,ListenSocket,ConfigDB) ->
     ?DEBUG("start_link(~p) -> ~n"
 	   "      SocketType:   ~p~n"
 	   "      ListenSocket: ~p~n",
 	   [UsageState,SocketType,ListenSocket]),
     proc_lib:spawn_link(?MODULE,connection,
-			[UsageState,self(),SocketType,ListenSocket,ConfigDB,
+			[AdminState,UsageState,
+			 self(),SocketType,ListenSocket,ConfigDB,
 			 get_verbosity()]).
 
 
-connection(Us,Manager,SocketType,ListenSocket,ConfigDB,Verbosity) ->
+connection(As,Us,Manager,SocketType,ListenSocket,ConfigDB,Verbosity) ->
     put(sname,self()),
     put(verbosity,Verbosity),
-    connection(Us,Manager,SocketType,ListenSocket,ConfigDB).
+    connection(As,Us,Manager,SocketType,ListenSocket,ConfigDB).
 
 
 %% connection (busy)
@@ -88,35 +89,46 @@ connection(Us,Manager,SocketType,ListenSocket,ConfigDB,Verbosity) ->
 %% still busy (still at max_client), which is done in the handle_busy 
 %% function.
 
-connection(busy,Manager,SocketType,ListenSocket,ConfigDB) ->
+connection(unblocked,busy,Manager,SocketType,ListenSocket,ConfigDB) ->
     ?LOG("connection(busy) -> ListenSocket: ~p~n",[ListenSocket]),
-    ?vlog("starting when busy",[]),
+    ?vlog("starting when"
+	  "~n   admin state: unblocked"
+	  "~n   usage state: busy",[]),
     case (catch httpd_socket:accept(SocketType,ListenSocket,30000)) of
 	{error, timeout} ->
 	    ?DEBUG("connection(busy) -> error:  timeout",[]),
 	    ?vdebug("Accept timeout",[]),
 	    ?REPORT_ERROR(ConfigDB," accept timeout",[]),
-	    ?MODULE:connection(busy,Manager,SocketType,ListenSocket,ConfigDB);
+	    ?MODULE:connection(unblocked,busy,
+			       Manager,SocketType,ListenSocket,ConfigDB);
 	{error, {enfile, _}} ->
 	    ?LOG("connection(busy) -> error: enfile",[]),
 	    ?vinfo("Accept error: enfile",[]),
 	    ?REPORT_ERROR(ConfigDB,"connection accept error: enfile",[]),
 	    %% Out of sockets...
 	    receive after 200 -> ok end,
-	    ?MODULE:connection(busy,Manager,SocketType,ListenSocket,ConfigDB);
+	    ?MODULE:connection(unblocked,busy,
+			       Manager,SocketType,ListenSocket,ConfigDB);
 	{error, emfile} ->
 	    ?LOG("connection(busy) -> error: emfile",[]),
 	    ?vinfo("Accept error: emfile",[]),
 	    ?REPORT_ERROR(ConfigDB,"connection accept error: emfile",[]),
 	    %% Too many open files -> Out of sockets...
 	    receive after 200 -> ok end,
-	    ?MODULE:connection(busy,Manager,SocketType,ListenSocket,ConfigDB);
+	    ?MODULE:connection(unblocked,busy,
+			       Manager,SocketType,ListenSocket,ConfigDB);
 	{error, closed} ->
 	    ?LOG("connection(busy) -> error: closed",[]),
 	    ?vlog("Accept error: closed",[]),
 	    %% This propably only means that our manager is stopping
 	    ?REPORT_ERROR(ConfigDB,"connection accept error: closed",[]),
 	    exit(normal);
+	{error,esslaccept}->
+	    %%The user has selected to cancel the installation of 
+	    %%the certifikate, This is not a real error, so we do not write 
+	    %%a error message.
+	    ?MODULE:connection(unblocked,busy,
+			       Manager,SocketType,ListenSocket,ConfigDB);
 	{error, Reason} ->
 	    ?LOG("connection(busy) -> error: ~p",[Reason]),
 	    ?vinfo("Accept error:~n   ~p",[Reason]),
@@ -134,29 +146,39 @@ connection(busy,Manager,SocketType,ListenSocket,ConfigDB) ->
 
 %% connection (non-busy, i.e. idle or active)
 
-connection(Us,Manager,SocketType,ListenSocket,ConfigDB) ->
+connection(unblocked,Us,Manager,SocketType,ListenSocket,ConfigDB) ->
     ?LOG("connection(~p) -> ListenSocket: ~p",[Us,ListenSocket]),
-    ?vlog("starting when ~p",[Us]),
+    ?vlog("starting when"
+	  "~n   admin state: unblocked"
+	  "~n   usage state: ~p",[Us]),
     case (catch httpd_socket:accept(SocketType,ListenSocket, 30000)) of
 	{error, timeout} ->
 	    ?DEBUG("connection(~p) -> error: timeout",[Us]),
 	    ?vdebug("Accept timeout",[]),
 	    ?REPORT_ERROR(ConfigDB,"connection accept timeout",[]),
-	    ?MODULE:connection(Us,Manager,SocketType,ListenSocket,ConfigDB);
+	    ?MODULE:connection(unblocked,Us,
+			       Manager,SocketType,ListenSocket,ConfigDB);
 	{error, {enfile, _}} ->
 	    ?LOG("connection(~p) -> error: enfile",[Us]),
 	    ?vinfo("Accept error: enfile",[]),
 	    ?REPORT_ERROR(ConfigDB,"connection accept error: enfile",[]),
 	    %% Out of sockets...
 	    receive after 200 -> ok end,
-	    ?MODULE:connection(Us,Manager,SocketType,ListenSocket,ConfigDB);
+	    ?MODULE:connection(unblocked,Us,
+			       Manager,SocketType,ListenSocket,ConfigDB);
 	{error, emfile} ->
 	    ?LOG("connection(~p) -> error: emfile",[Us]),
 	    ?vinfo("Accept error: emfile",[]),
 	    ?REPORT_ERROR(ConfigDB,"connection accept error: emfile",[]),
 	    %% Too many open files -> Out of sockets...
 	    receive after 200 -> ok end,
-	    ?MODULE:connection(Us,Manager,SocketType,ListenSocket,ConfigDB);
+	    ?MODULE:connection(unblocked,Us,
+			       Manager,SocketType,ListenSocket,ConfigDB);
+	{error,esslaccept}->
+	    %%Not a real error the user has selected to not install
+	    %%the certifikate.
+	    ?MODULE:connection(unblocked,Us,
+			       Manager,SocketType,ListenSocket,ConfigDB);
 	{error, closed} ->
 	    ?LOG("connection(~p) -> error: closed",[Us]),
 	    ?vlog("Accept error: closed",[]),
@@ -175,35 +197,71 @@ connection(Us,Manager,SocketType,ListenSocket,ConfigDB) ->
 	    ?DEBUG("connection(~p) -> accepted: ~p",[Us,Socket]),
 	    ?vlog("accepted(~p)",[Us]),
 	    handle_connection(Manager, SocketType, Socket, ConfigDB)
+    end;
+
+
+connection(As,Us,Manager,SocketType,ListenSocket,ConfigDB) ->
+    ?LOG("connection(~p,~p) -> ListenSocket: ~p~n",[As,Us,ListenSocket]),
+    ?vlog("starting when"
+	  "~n   admin state: ~p"
+	  "~n   usage state: ~p",[As,Us]),
+    case (catch httpd_socket:accept(SocketType,ListenSocket,30000)) of
+	{error, timeout} ->
+	    ?DEBUG("connection(busy) -> error:  timeout",[]),
+	    ?vdebug("Accept timeout",[]),
+	    ?REPORT_ERROR(ConfigDB," accept timeout",[]),
+	    ?MODULE:connection(As,Us,Manager,SocketType,ListenSocket,ConfigDB);
+	{error, {enfile, _}} ->
+	    ?LOG("connection(busy) -> error: enfile",[]),
+	    ?vinfo("Accept error: enfile",[]),
+	    ?REPORT_ERROR(ConfigDB,"connection accept error: enfile",[]),
+	    %% Out of sockets...
+	    receive after 200 -> ok end,
+	    ?MODULE:connection(As,Us,Manager,SocketType,ListenSocket,ConfigDB);
+	{error, emfile} ->
+	    ?LOG("connection(busy) -> error: emfile",[]),
+	    ?vinfo("Accept error: emfile",[]),
+	    ?REPORT_ERROR(ConfigDB,"connection accept error: emfile",[]),
+	    %% Too many open files -> Out of sockets...
+	    receive after 200 -> ok end,
+	    ?MODULE:connection(As,Us,Manager,SocketType,ListenSocket,ConfigDB);
+	{error,esslaccept}->
+	    %%This is not a real error the user has selected to not install 
+	    %%the client certifikate.
+	    ?MODULE:connection(unblocked,busy,
+			       Manager,SocketType,ListenSocket,ConfigDB);
+	{error, closed} ->
+	    ?LOG("connection(busy) -> error: closed",[]),
+	    ?vlog("Accept error: closed",[]),
+	    %% This propably only means that our manager is stopping
+	    ?REPORT_ERROR(ConfigDB,"connection accept error: closed",[]),
+	    exit(normal);
+	{error, Reason} ->
+	    ?LOG("connection(busy) -> error: ~p",[Reason]),
+	    ?vinfo("accept error:~n   ~p",[Reason]),
+	    accept_failed(SocketType, ConfigDB, {error,Reason});
+	{'EXIT', Reason} ->
+	    ?LOG("connection(busy) -> exit: ~p",[Reason]),
+	    ?vinfo("accept exit:~n   ~p",[Reason]),
+	    accept_failed(SocketType, ConfigDB, {'EXIT', Reason});
+	Socket ->
+	    ?DEBUG("connection(busy) -> accepted: ~p",[Socket]),
+	    ?vlog("accepted",[]),
+	    handle_blocked(Manager,SocketType,Socket,ConfigDB)
     end.
-
-
-handle_busy(Manager,SocketType,Socket,ConfigDB) ->
-    %% This process was created when we hade reached max connections
-    %% (busy), but are we still? Check if it really is heavy load (busy)
-    case httpd_manager:is_busy(Manager) of
-	true -> %% busy state
-	    ?LOG("handle_busy -> still busy, so reject",[]),
-	    ?vlog("still busy usage state => reject",[]),
-	    reject_connection(Manager, SocketType, Socket, ConfigDB);
-
-	false -> %% not busy state
-	    ?LOG("handle_busy -> no longer busy, so handle",[]),
-	    ?vlog("no longer busy usage state => handle",[]),
-	    handle_connection(Manager, SocketType, Socket, ConfigDB)
-    end.
-
-
-reject_connection(Manager,SocketType,Socket,ConfigDB) ->
-    httpd_manager:new_connection(Manager,reject),
-    MaxClients = httpd_util:lookup(ConfigDB,max_clients,150),
-    String = io_lib:format("heavy load (>~w processes)",[MaxClients]),
-    httpd_response:send_status(SocketType,Socket,503,String,ConfigDB),
-    httpd_manager:done_connection(Manager,reject),
-    close(SocketType,Socket,ConfigDB).
 
 
 handle_connection(Manager, SocketType, Socket, ConfigDB) ->
+    case httpd_manager:is_blocked(Manager) of
+	true -> %% blocked state
+	    handle_blocked(Manager,SocketType,Socket,ConfigDB);
+
+	false -> %% not blocked state
+	    handle_connection1(Manager, SocketType, Socket, ConfigDB)
+    end.
+
+handle_connection1(Manager, SocketType, Socket, ConfigDB) ->
+    ?vlog("no longer busy usage state => handle",[]),
     Resolve  = httpd_socket:resolve(SocketType),
     Peername = httpd_socket:peername(SocketType, Socket),
     InitData = #init_data{peername=Peername, resolve=Resolve},
@@ -212,6 +270,53 @@ handle_connection(Manager, SocketType, Socket, ConfigDB) ->
     do_next_connection(InitData, SocketType, Socket, ConfigDB, 
 		       MaxRequests, 60000), % XXX Was infinity
     httpd_manager:done_connection(Manager,accept),
+    close(SocketType,Socket,ConfigDB).
+
+
+handle_busy(Manager,SocketType,Socket,ConfigDB) ->
+    %% This process was created when we hade reached max connections
+    %% (busy), but are we still? Check if it really is heavy load (busy)
+    case httpd_manager:is_busy_or_blocked(Manager) of
+	busy -> %% busy state
+	    handle_busy1(Manager,SocketType,Socket,ConfigDB);
+
+	blocked -> %% blocked state
+	    handle_blocked(Manager,SocketType,Socket,ConfigDB);
+
+	false -> %% not busy state
+	    handle_connection1(Manager, SocketType, Socket, ConfigDB)
+    end.
+
+handle_busy1(Manager,SocketType,Socket,ConfigDB) ->
+    ?LOG("handle_busy -> still busy, so reject",[]),
+    ?vlog("still busy usage state => reject",[]),
+    MaxClients = httpd_util:lookup(ConfigDB,max_clients,150),
+    String = io_lib:format("heavy load (>~w processes)",[MaxClients]),
+    reject_connection(Manager, SocketType, Socket, String, ConfigDB).
+
+
+handle_blocked(Manager,SocketType,Socket,ConfigDB) ->
+    %% This process was created when we where in admin state blocked,
+    %% but are we still? 
+    case httpd_manager:is_blocked(Manager) of
+	true -> %% Still in blocked state
+	    handle_blocked1(Manager,SocketType,Socket,ConfigDB);
+
+	false -> %% no longer in blocked state
+	    handle_connection1(Manager, SocketType, Socket, ConfigDB)
+    end.
+
+handle_blocked1(Manager,SocketType,Socket,ConfigDB) ->
+    ?vlog("still blocked admin state => reject",[]),
+    String = "Server maintenance performed, try again later",
+    reject_connection(Manager, SocketType, Socket, String, ConfigDB).
+
+
+reject_connection(Manager,SocketType,Socket,Info,ConfigDB) ->
+    httpd_manager:new_connection(Manager,reject),
+    String = lists:flatten(Info),
+    httpd_response:send_status(SocketType,Socket,503,Info,ConfigDB),
+    httpd_manager:done_connection(Manager,reject),
     close(SocketType,Socket,ConfigDB).
 
 
@@ -225,8 +330,7 @@ do_next_connection(InitData,SocketType,Socket,ConfigDB,MaxRequests,Timeout) ->
 				  InitData, 
 				  Timeout) of
 	{'EXIT',Reason} ->
-	    ?LOG("do_next_connection -> exit: ~p",[Reason]),
-	    ?vlog("exit reading request: ~p",[Reason]),
+	    ?vlog("exit handling connection: ~p",[Reason]),
 	    error_logger:error_report({'EXIT',Reason}),
 	    mod_log:error_log(SocketType,Socket,ConfigDB,Peername,Reason),
 	    mod_disk_log:error_log(SocketType,Socket,ConfigDB,Peername,Reason);
@@ -256,7 +360,7 @@ handle_read_error({header_too_long,Max,Rem},
     ?LOG("handle_read_error(header_too_long) -> entry with"
 	 "~n   Max: ~p"
 	 "~n   Rem: ~p",[Max,Rem]),
-    String = io_lib:format("header too long: ~p + ~p",[Max,Rem]),
+    String = io_lib:format("header too long: ~p : ~p",[Max,Rem]),
     handle_read_error(ConfigDB,String,SocketType,Socket,Peername,
 		      max_header_action,close);
 handle_read_error({body_too_long,Max,Actual},
@@ -273,7 +377,8 @@ handle_read_error(Error,SocketType,Socket,ConfigDB,Peername) ->
 handle_read_error(ConfigDB,ReasonString,SocketType,Socket,Peername,
 		  Item,Default) ->
     ?vlog("error reading request: ~s",[ReasonString]),
-    E = io_lib:format("Error reading request: ~s",[ReasonString]),
+    E = lists:flatten(
+	  io_lib:format("Error reading request: ~s",[ReasonString])),
     mod_log:error_log(SocketType,Socket,ConfigDB,Peername,E),
     mod_disk_log:error_log(SocketType,Socket,ConfigDB,Peername,E),
     case httpd_util:lookup(ConfigDB,Item,Default) of
@@ -308,6 +413,7 @@ report_error(ConfigDB,FStr,Args,Line) ->
 %% Socket utility functions:
 
 close(SocketType,Socket,ConfigDB) ->
+    sleep(1000),
     case httpd_socket:close(SocketType,Socket) of
 	ok ->
 	    ok;
@@ -348,3 +454,6 @@ get_verbosity(undefined) ->
     ?default_verbosity;
 get_verbosity(V) ->
     ?vvalidate(V).
+
+
+sleep(T) -> receive after T -> ok end.

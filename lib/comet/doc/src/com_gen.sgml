@@ -137,7 +137,7 @@ no_base_virtual  Generate virtual interfaces without including
     <func>
       <name>gen_enum(ComInterface, EnumName) -> {Erlfilename, Hrlfilename, ok}</name>
       <name>gen_enum(ComInterface, EnumName, Options) -> {Erlfilename, Hrlfilename, ok}</name>
-      <fsummary>Generates an enum to a module and a header.</fsummary>
+      <fsummary>Generate an enum to a module and a header.</fsummary>
       <type>
 	<v>EnumName = string()</v>
       </type>
@@ -157,7 +157,7 @@ no_base_virtual  Generate virtual interfaces without including
     <func>
       <name>gen_coclass(ClassName, ClsID) -> {ok, Filename}</name>
       <name>gen_coclass(ClassName, ClsID, Options) -> {ok, Filename}</name>
-      <fsummary>Generates a file for a COM class.</fsummary>
+      <fsummary>Generate a file for a COM class.</fsummary>
       <type>
 	<v>ClassName = ClsID = Filename = string()</v>
       </type>
@@ -179,7 +179,7 @@ no_base_virtual  Generate virtual interfaces without including
       <name>gen_interface(ComInterface, VirtualOrDispatch, Options) -> {ok, Filename}</name>
       <name>gen_interface(ComInterface, IntfName, VirtualOrDispatch) -> {ok, Filename}</name>
       <name>gen_interface(ComInterface, IntfName, VirtualOrDispatch, Options) -> {ok, Filename}</name>
-      <fsummary>Starts or gets a named server.</fsummary>
+      <fsummary>Start or get a named server.</fsummary>
       <type>
 	<v>VirtualOrDispatch = virtual | dispatch</v>
 	<v>IntfName, Filename = string()</v>

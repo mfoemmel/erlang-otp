@@ -44,8 +44,6 @@ set_token({Flags,Label,Serial,_From,Lastcnt}) ->
 % expects that, the BIF can however "unofficially" handle atoms as well , and
 % atoms can be used if only Erlang nodes are involved
 
-set_token(label,Val) when atom(Val) -> 
-    erlang:fault(badarg, [label, Val]);
 set_token(Type,Val) ->
     erlang:seq_trace(Type,Val).
 

@@ -15,8 +15,7 @@
 %% 
 %%     $Id$
 %%
-%% Purpose : Load a new version of a module to be
-%%           interpreted.
+%% Purpose : Load a new version of a module to be interpreted.
 
 -module(dbg_iload).
 
@@ -25,6 +24,8 @@
 %% ------------------------------------------------
 
 -export([load_mod/3,load_mod1/3]).
+
+-import(lists, [map/2,all/2]).
 
 %%% =================================================
 %%% Load a new module into the database.
@@ -37,7 +38,7 @@
 %%% We are suspended until the module has been loaded.
 %%% =================================================
 
-load_mod(Mod,File,Binary) ->
+load_mod(Mod, File, Binary) ->
     Flag = process_flag(trap_exit,true),
     Pid = spawn_link(?MODULE,load_mod1,[Mod,File,Binary]),
     receive
@@ -47,22 +48,30 @@ load_mod(Mod,File,Binary) ->
     end.
 
 load_mod1(Mod,File,Binary) ->
-    store_module(Mod,File,Binary),
+    store_module(Mod, File, Binary),
     int:int_module(Mod),
     exit({ok,Mod}).
 
 store_module(Mod, File, Binary) ->
-    {interpreter_module,Exp,Defs,Forms,Src} = binary_to_term(Binary),
+    {interpreter_module,Exp,Abst,Src,MD5} = binary_to_term(Binary),
+    Forms = case abstr(Abst) of
+		{abstract_v1,Forms0} -> Forms0;
+		{abstract_v2,Forms0} -> Forms0
+	    end,
     Db = dbg_idb:cr_new_module(Mod),
     dbg_idb:insert(Db, mod_file, File),
     dbg_idb:insert(Db, exports, Exp),
-    dbg_idb:insert(Db, defs, Defs),
+    dbg_idb:insert(Db, defs, []),
 
+    put(vcount, 0),
     put(fun_count, 0),
     put(funs, []),
+    put(mod_md5, MD5),
     Attr = store_forms(Forms, Mod, Db, Exp, []),
+    erase(mod_md5),
     erase(current_function),
     store_funs(Db, Mod),
+    erase(vcount),
     erase(funs),
     erase(fun_count),
     
@@ -71,13 +80,41 @@ store_module(Mod, File, Binary) ->
     dbg_idb:insert(Db, mod_bin, NewBinary),
     dbg_idb:insert(Db, module, Mod).
 
-store_funs(Db, Mod) ->
-    store_funs(get(funs), Db, Mod).
+abstr(Bin) when binary(Bin) -> binary_to_term(Bin);
+abstr(Term) -> Term.
 
-store_funs([{Name,I,Uniq,Arity,Cs}|Fs], Db, Mod) ->
-    dbg_idb:insert(Db, {'fun',Mod,I,Uniq}, {Name,Arity,Cs}),
+store_funs(Db, Mod) ->
+    store_funs(get(funs), Db, Mod),
+    store_funs2(get(funs), Db, Mod).
+
+store_funs([{Name,_,_,OldIndex,Uniq,Arity,Cs}|Fs], Db, Mod) ->
+    dbg_idb:insert(Db, {Mod,Name,Arity,false}, renumber_funs(Cs)),
     store_funs(Fs, Db, Mod);
 store_funs([], Db, Mod) -> ok.
+
+store_funs2([{Name,Index,Uniq,I,OldUniq,Arity,Cs}|Fs], Db, Mod) ->
+    OldIndex = case get({I,OldUniq}) of
+		   undefined -> I;
+		   Other -> Other
+	       end,
+    dbg_idb:insert(Db, {'fun',Mod,OldIndex,OldUniq}, {Name,Arity,Cs}),
+    case {Index,Uniq} of
+	{none,none} -> ok;
+	_ -> dbg_idb:insert(Db, {'fun',Mod,Index,Uniq}, {Name,Arity,Cs})
+    end,
+    store_funs2(Fs, Db, Mod);
+store_funs2([], Db, Mod) -> ok.
+
+renumber_funs({make_fun,Lf,Index,Uniq,OldIndex0,OldUniq,Free}) ->
+    OldIndex = get(fun_count),
+    put(fun_count, OldIndex+1),
+    put({OldIndex0,Uniq}, OldIndex),
+    {make_fun,Lf,Index,Uniq,OldIndex,OldUniq,Free};
+renumber_funs([H|T]) ->
+    [renumber_funs(H)|renumber_funs(T)];
+renumber_funs(Tuple) when tuple(Tuple) ->
+    list_to_tuple(renumber_funs(tuple_to_list(Tuple)));
+renumber_funs(Other) -> Other.
 
 store_forms([{function,Line,module_info,0,Cs0}|Fs], Mod, Db, Exp, Attr) ->
     Cs = [{clause,0,[],[], [{module_info_0,0,Mod}]}],
@@ -90,6 +127,7 @@ store_forms([{function,Line,module_info,1,Cs0}|Fs], Mod, Db, Exp, Attr) ->
 store_forms([{function,Line,Name,Arity,Cs0}|Fs], Mod, Db, Exp, Attr) ->
     FA = {Name,Arity},
     put(current_function, FA),
+    put(fun_count_in_current, 0),
     Cs = clauses(Cs0),
     Exported = lists:member(FA, Exp),
     dbg_idb:insert(Db, {Mod,Name,Arity,Exported}, Cs),
@@ -157,6 +195,7 @@ patterns([]) -> [].
 %%  N.B. Only valid patterns are included here.
 
 pattern({var,Line,V}) -> {var,Line,V};
+pattern({char,Line,I}) -> {value,Line,I};
 pattern({integer,Line,I}) -> {value,Line,I};
 pattern({match,Line,Pat1,Pat2}) ->
     {match,Line,pattern(Pat1),pattern(Pat2)};
@@ -175,20 +214,21 @@ pattern({op,Line1,'-',{integer,Line,I}}) ->
     {value,Line,-I};
 pattern({op,Line1,'+',{integer,Line,I}}) ->
     {value,Line,I};
+pattern({op,Line1,'-',{char,Line,I}}) ->
+    {value,Line,-I};
+pattern({op,Line1,'+',{char,Line,I}}) ->
+    {value,Line,I};
 pattern({op,Line1,'-',{float,Line,I}}) ->
     {value,Line,-I};
 pattern({op,Line1,'+',{float,Line,I}}) ->
     {value,Line,I};
-%% BITS:
 pattern({bin,Line,Grp}) ->
     Grp1 = pattern_list(Grp),
     {bin,Line,Grp1};
 pattern({bin_element,Line,Expr,Size,Type}) ->
     Expr1 = pattern(Expr),
     Size1 = expr(Size),
-    {bin_element,Line,Expr1,Size1,Type};
-pattern({bin_tail,Line,{var,Ln,V}}) ->
-    {bin_tail,Line,{var,Ln,V}}.
+    {bin_element,Line,Expr1,Size1,Type}.
 
 %%  These patterns are processed "in parallel" for purposes of variable
 %%  definition etc.
@@ -203,6 +243,8 @@ guard([G0|Gs]) ->
     [G1|guard(Gs)];
 guard([]) -> [].
 
+and_guard([{atom,_,true}|Gs]) ->
+    and_guard(Gs);
 and_guard([G0|Gs]) ->
     G1 = guard_test(G0),
     [G1|and_guard(Gs)];
@@ -219,17 +261,13 @@ guard_test({call,Line,{remote,Lr,{atom,Lm,erlang},{atom,Lf,F}},As0}) ->
 	false ->
 	    {safe_bif,Line,erlang,F,As};
 	Other ->
-	    exit({?LINE,Other})
+	    erlang:fault({badguard,?LINE,F,Other})
     end;
 guard_test({op,Line,Op,L0,R0}) ->
-    case erl_internal:comp_op(Op, 2) of
-	true ->
-	    L1 = gexpr(L0),
-	    R1 = gexpr(R0),			%They see the same variables
-	    {safe_bif,Line,erlang,Op,[L1,R1]};
-	Other ->
-	    exit({?LINE,Other})
-    end.
+    true = erl_internal:comp_op(Op, 2) orelse erl_internal:bool_op(Op, 2),
+    L1 = gexpr(L0),
+    R1 = gexpr(R0),			%They see the same variables
+    {safe_bif,Line,erlang,Op,[L1,R1]}.
 
 map_guard_bif(integer, 1) -> {ok,is_integer};
 map_guard_bif(float, 1) -> {ok,is_float};
@@ -247,6 +285,7 @@ map_guard_bif(_, _) -> false.
 
 gexpr({var,Line,V}) -> {var,Line,V};
 gexpr({integer,Line,I}) -> {value,Line,I};
+gexpr({char,Line,I}) -> {value,Line,I};
 gexpr({float,Line,F}) -> {value,Line,F};
 gexpr({atom,Line,A}) -> {value,Line,A};
 gexpr({string,Line,S}) -> {value,Line,S};
@@ -259,6 +298,13 @@ gexpr({cons,Line,H0,T0}) ->
 gexpr({tuple,Line,Es0}) ->
     Es1 = gexpr_list(Es0),
     {tuple,Line,Es1};
+gexpr({bin,Line,Flds0}) ->
+    Flds = gexpr_list(Flds0),
+    {bin,Line,Flds};
+gexpr({bin_element,Line,Expr0,Size0,Type}) ->
+    Expr = gexpr(Expr0),
+    Size = gexpr(Size0),
+    {bin_element,Line,Expr,Size,Type};
 %%% The previous passes have added the module name 'erlang' to
 %%% all BIF calls, even in guards.
 gexpr({call,Line,{remote,L1,{atom,L2,erlang},{atom,La,self}},[]}) ->
@@ -267,18 +313,14 @@ gexpr({call,Line,{remote,L1,{atom,L2,erlang},{atom,La,F}},As0}) ->
     As = gexpr_list(As0),
     {safe_bif,Line,erlang,F,As};
 gexpr({op,Line,Op,A0}) ->
-    case erl_internal:arith_op(Op, 1) of
-	true ->
-	    A1 = gexpr(A0),
-	    {safe_bif,Line,erlang,Op,[A1]}
-    end;
+    erl_internal:arith_op(Op, 1),
+    A1 = gexpr(A0),
+    {safe_bif,Line,erlang,Op,[A1]};
 gexpr({op,Line,Op,L0,R0}) ->
-    case erl_internal:arith_op(Op, 2) of
-	true ->
-	    L1 = gexpr(L0),
-	    R1 = gexpr(R0),			%They see the same variables
-	    {safe_bif,Line,erlang,Op,[L1,R1]}
-    end.
+    true = erl_internal:arith_op(Op, 2) orelse erl_internal:comp_op(Op, 2),
+    L1 = gexpr(L0),
+    R1 = gexpr(R0),			%They see the same variables
+    {safe_bif,Line,erlang,Op,[L1,R1]}.
 
 %%  These expressions are processed "in parallel" for purposes of variable
 %%  definition etc.
@@ -298,6 +340,7 @@ exprs([]) -> [].
 
 expr({var,Line,V}) -> {var,Line,V};
 expr({integer,Line,I}) -> {value,Line,I};
+expr({char,Line,I}) -> {value,Line,I};
 expr({float,Line,F}) -> {value,Line,F};
 expr({atom,Line,A}) -> {value,Line,A};
 expr({string,Line,S}) -> {value,Line,S};
@@ -329,16 +372,44 @@ expr({'receive',Line,Cs0,To0,ToEs0}) ->
     ToEs1 = exprs(ToEs0),
     Cs1 = icr_clauses(Cs0),
     {'receive',Line,Cs1,To1,ToEs1};
-expr({'fun',Line,{clauses,Cs0},{Uniq,Hvss,Free}}) ->
-    I = get(fun_count),
-    put(fun_count, I+1),
+expr({'fun',Line,{clauses,Cs0},{OldUniq,Hvss,Free}}) ->
+    %% Old format (abstract_v1).
+    OldIndex = get(fun_count),
+
     {F,A} = get(current_function),
-    Name = new_fun_name(I, F, A),
+    I_in_func = get(fun_count_in_current),
+    I_in_func = put(fun_count_in_current, I_in_func+1),
+    Name = new_fun_name(I_in_func, F, A),
+    Cs = fun_clauses(Cs0, Hvss, Free),
+
+    put(fun_count, OldIndex+1),
+    [{clause,_,H,G,B}|_] = Cs,
+    Arity = length(H),
+
+    put(funs, [{Name,none,none,OldIndex,OldUniq,Arity,Cs}|get(funs)]),
+    {make_fun,Line,none,none,OldIndex,OldUniq,Free};
+expr({'fun',Line,{clauses,Cs0},{Index,OldUniq,Hvss,Free,Name}}) ->
+    %% New R8 format (abstract_v2).
+
+    OldIndex = get(fun_count),
     Cs = fun_clauses(Cs0, Hvss, Free),
     [{clause,_,H,G,B}|_] = Cs,
     Arity = length(H),
-    put(funs, [{Name,I,Uniq,Arity,Cs}|get(funs)]),
-    {make_fun,Line,I,Uniq,Free};
+    put(fun_count, OldIndex+1),
+    Uniq = get(mod_md5),
+    
+    put(funs, [{Name,Index,Uniq,OldIndex,OldUniq,Arity,Cs}|get(funs)]),
+    {make_fun,Line,Index,Uniq,OldIndex,OldUniq,Free};
+expr({'fun',Line,{function,F,A},{Index,OldUniq,Name}}) ->
+    %% New R8 format (abstract_v2).
+    As = new_vars(A, Line),
+    Cs = [{clause,Line,As,[],[{local_call,Line,F,As}]}],
+    OldIndex = get(fun_count),
+    put(fun_count, OldIndex+1),
+    Uniq = get(mod_md5),
+
+    put(funs, [{Name,Index,Uniq,OldIndex,OldUniq,A,Cs}|get(funs)]),
+    {make_fun,Line,Index,Uniq,OldIndex,OldUniq,[]};
 expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,self}},[]}) ->
     self;
 expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,throw}},As0}) when length(As0) == 1 ->
@@ -359,6 +430,12 @@ expr({call,Line,{remote,_,{atom,_,Mod},{atom,_,Func}},As0}) ->
 		unsafe ->{bif,Line,Mod,Func,As}
 	    end
     end;
+expr({call,Line,{remote,_,Mod0,Func0},As0}) ->
+    %% New R8 format (abstract_v2).
+    Mod = expr(Mod0),
+    Func = expr(Func0),
+    As = consify(expr_list(As0)),
+    {apply,Line,[Mod,Func,As]};
 expr({call,Line,{atom,_,Func},As0}) ->
     As = expr_list(As0),
     {local_call,Line,Func,As};
@@ -371,9 +448,17 @@ expr({'catch',Line,E0}) ->
     E1 = expr(E0),
     {'catch',Line,E1};
 expr({'query', Line, E0}) ->
-    %% lc expression
     E = expr(E0),
     {'query', Line, E};
+expr({lc,Line,E0,Gs0}) ->			%R8.
+    Gs = map(fun ({generate,L,P0,Qs}) -> {generate,L,expr(P0),expr(Qs)};
+		 (Expr) ->
+		     case is_guard_test(Expr) of
+			 true -> {guard,[[guard_test(Expr)]]};
+			 false -> expr(Expr)
+		     end
+	     end, Gs0),
+    {lc,Line,expr(E0),Gs};
 expr({match,Line,P0,E0}) ->
     E1 = expr(E0),
     P1 = pattern(P0),
@@ -397,12 +482,6 @@ expr({op,Line,Op,L0,R0}) ->
     L1 = expr(L0),
     R1 = expr(R0),				%They see the same variables
     {op,Line,Op,[L1,R1]};
-%% The following are not allowed to occur anywhere!
-expr({remote,Line,M0,F0}) ->
-    M1 = expr(M0),
-    F1 = expr(F0),
-    {remote,Line,M1,F1};
-%% BITS:
 expr({bin,Line,Grp}) ->
     Grp1 = expr_list(Grp),
     {bin,Line,Grp1};
@@ -410,11 +489,63 @@ expr({bin_element,Line,Expr,Size,Type}) ->
     Expr1 = expr(Expr),
     Size1 = expr(Size),
     {bin_element,Line,Expr1,Size1,Type};
-expr({bin_tail,Line,V}) ->
-    V1 = expr(V),
-    {bin_tail,Line,V1};
 expr(Other) ->
     exit({?MODULE,{unknown_expr,Other}}).
+
+%% is_guard_test(Expression) -> true | false.
+%%  Test if a general expression is a guard test.  Cannot use erl_lint
+%%  here as sys_pre_expand has transformed source.
+
+is_guard_test({op,Line,Op,L,R}) ->
+    case erl_internal:comp_op(Op, 2) of
+	true -> is_gexpr_list([L,R]);
+	false -> false
+    end;
+is_guard_test({call,Line,{remote,Lr,{atom,Le,erlang},{atom,La,Test}},As}) ->
+    case erl_internal:type_test(Test, length(As)) of
+	true -> is_gexpr_list(As);
+	false -> false
+    end;
+is_guard_test({atom,Line,true}) -> true;
+is_guard_test(Other) -> false.
+
+is_gexpr({var,L,V}) -> true;
+is_gexpr({atom,L,A}) -> true;
+is_gexpr({integer,L,I}) -> true;
+is_gexpr({char,L,I}) -> true;
+is_gexpr({float,L,F}) -> true;
+is_gexpr({string,L,S}) -> true;
+is_gexpr({nil,L}) -> true;
+is_gexpr({cons,L,H,T}) -> is_gexpr_list([H,T]);
+is_gexpr({tuple,L,Es}) -> is_gexpr_list(Es);
+is_gexpr({call,L,{remote,Lr,{atom,Le,erlang},{atom,La,F}},As}) ->
+    Ar = length(As),
+    case erl_internal:guard_bif(F, Ar) of
+	true -> is_gexpr_list(As);
+	false ->
+	    case erl_internal:arith_op(F, Ar) of
+		true -> is_gexpr_list(As);
+		false -> false
+	    end
+    end;
+is_gexpr({op,L,Op,A}) ->
+    case erl_internal:arith_op(Op, 1) of
+	true -> is_gexpr(A);
+	false -> false
+    end;
+is_gexpr({op,L,Op,A1,A2}) ->
+    case erl_internal:arith_op(Op, 2) of
+	true -> is_gexpr_list([A1,A2]);
+	false -> false
+    end;
+is_gexpr(Other) -> false.
+
+is_gexpr_list(Es) -> all(fun (E) -> is_gexpr(E) end, Es).
+
+consify([A|As]) -> 
+    {cons,0,A,consify(As)};
+consify([]) -> {value,0,[]}.
+
 
 %% -type expr_list([Expression]) -> [Expression].
 %%  These expressions are processed "in parallel" for purposes of variable
@@ -445,6 +576,23 @@ new_fun_name(I, F, A) ->
     Name = "-" ++ atom_to_list(F) ++ "/" ++ integer_to_list(A)
 	++ "-fun-" ++ integer_to_list(I) ++ "-",
     list_to_atom(Name).
+
+%% new_var_name() -> VarName.
+
+new_var_name() ->
+    C = get(vcount),
+    put(vcount, C+1),
+    list_to_atom("%" ++ integer_to_list(C)).
+
+%% new_vars(Count, Line) -> [Var].
+%%  Make Count new variables.
+
+new_vars(N, L) -> new_vars(N, L, []).
+
+new_vars(N, L, Vs) when N > 0 ->
+    V = {var,L,new_var_name()},
+    new_vars(N-1, L, [V|Vs]);
+new_vars(0, L, Vs) -> Vs.
 
 bif_type(erlang, Name) -> bif_type(Name);
 bif_type(_, _) -> unsafe.

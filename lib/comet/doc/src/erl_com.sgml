@@ -93,7 +93,7 @@ ThreadNo = InterfaceNo = integer()
       <name>start_program() -> {ok, Pid}</name>
       <name>start_program(ServerName) -> {ok, Pid}</name>
       <name>get_program(ServerName) -> {ok, Pid}</name>
-      <fsummary>Starts the server and starts a port program (in a separate
+      <fsummary>Start the server and start a port program (in a separate
 	process).</fsummary>
       <type>
 	<v>Pid = pid()</v>
@@ -135,7 +135,7 @@ ThreadNo = InterfaceNo = integer()
       <name>start_driver() -> {ok, Pid}</name>
       <name>start_driver(ServerName) -> {ok, Pid}</name>
       <name>get_driver(ServerName) -> {ok, Pid}</name>
-      <fsummary>Starts the server and loads a port driver.</fsummary>
+      <fsummary>Start the server and load a port driver.</fsummary>
       <type>
 	<v>Pid = pid()</v>
 	<v>ServerName = atom</v>
@@ -171,7 +171,7 @@ ThreadNo = InterfaceNo = integer()
     </func>
     <func>
       <name>get_or_start(Name, ProgramFlag) -> {ok, Pid}</name>
-      <fsummary>Starts or gets a named server.</fsummary>
+      <fsummary>Start or get a named server.</fsummary>
       <type>
 	<v>Name = atom()</v>
 	<v>ProgramFlag = program | driver</v>
@@ -185,7 +185,7 @@ ThreadNo = InterfaceNo = integer()
 
     <func>
       <name>stop(ServerRef) -> ok</name>
-      <fsummary>Stops the server.</fsummary>
+      <fsummary>Stop the server.</fsummary>
       <type>
 	<v>ServerRef = Name | Pid</v>
 	<v>Name = atom()</v>
@@ -206,7 +206,7 @@ ThreadNo = InterfaceNo = integer()
     
     <func>
       <name>new_thread(ServerRef | PrevComThread) -> ComThread</name>
-      <fsummary>Creates a new Windows thread for COM execution.</fsummary>
+      <fsummary>Create a new Windows thread for COM execution.</fsummary>
       <type>
 	<v>ServerRef = Name | Pid</v>
 	<v>PrevComThread = ComThread = {com_thread, ServerRef, ThreadNo}</v>
@@ -243,7 +243,7 @@ ThreadNo = InterfaceNo = integer()
 
     <func>
       <name>end_thread(ComThread) -> ok</name>
-      <fsummary>Ends a Windows thread in Comet.</fsummary>
+      <fsummary>End a Windows thread in Comet.</fsummary>
       <type>
 	<v>ComThread = {com_thread, ServerRef, ThreadNo}</v>
 	<v>ThreadNo = integer()</v>
@@ -267,7 +267,7 @@ ThreadNo = InterfaceNo = integer()
       <name>create_object(ThreadOrServer, Class, RefID, Ctx) -> ComInterface</name>
       <name>create_dispatch(ThreadOrServer, Class) -> ComInterface</name>
       <name>create_dispatch(ThreadOrServer, Class, Ctx) -> ComInterface</name>
-      <fsummary>Creates a COM object.</fsummary>
+      <fsummary>Create a COM object.</fsummary>
       <type>
 	<v>ThreadOrServer = ComThread | ServerRef</v>
 	<v>ServerRef = Pid | Name</v>
@@ -283,7 +283,7 @@ ThreadNo = InterfaceNo = integer()
       <desc>
 	<p>
 	  This function creates a COM object. It calls the Win32 API
-	  function, <c>CoCreateFunction</c>. Refer to Windows
+	  function, <c>CoCreateInstance</c>. Refer to Windows
 	  documentation. The string <c>Class</c> can be either a GUID
 	  for a class, or a COM program string. Values for the
 	  <c>Ctx</c> are defined in <c>erl_com.hrl</c>. If no
@@ -295,13 +295,42 @@ ThreadNo = InterfaceNo = integer()
 	  the object, that is used for calling methods, and releasing
 	  the object.
 	<p>
-	  Note that this is the only way to get COM objects in
-	  <c>erl_com</c>, currently there is no access to the class
-	  object. This might change in future versions.
-	<p>
 	  The <c>create_dispatch</c> variant creates an object with
 	  the <c>IDispatch</c> interface. The interface wanted can be
 	  specified in the <c>RefID</c> parameters.
+      </desc>
+    </func>
+    <func>
+      <name>get_object(ThreadOrServer, Name) -> ComInterface</name>
+      <name>get_object(ThreadOrServer, Name, Interface) -> ComInterface</name>
+      <name>get_dispatch(ThreadOrServer, Name) -> ComInterface</name>
+      <fsummary>Get a COM object.</fsummary>
+      <type>
+	<v>ThreadOrServer = ComThread | ServerRef</v>
+	<v>ServerRef = Pid | Name</v>
+	<v>Pid = pid()</v>
+	<v>Name = atom()</v>
+	<v>ComThread = {com_thread, Pid, ThreadNo}</v>
+	<v>Name = string()</v>
+	<v>Interface = string()</v>
+      </type>
+      <desc>
+	<p>
+	  This function gets a COM object. It calls the Win32 API
+	  function, <c>CoGetObject</c>. Refer to Windows
+	  documentation. The string <c>name</c> is a name that is
+	  used to get the object using a moniker.
+	  The <c>bindOptions</c> parameter of <c>CoGetObject</c> 
+	  always contains default values.
+	<p>
+	  When successful, this function references a COM object, and
+	  returns a tuple <c>ComInterface</c>, which is a handle for
+	  the object, that is used for calling methods, and releasing
+	  the object.
+	<p>
+	  The <c>get_dispatch</c> variant gets an object with
+	  the <c>IDispatch</c> interface. Other interface wanted can be
+	  specified in the <c>Interface</c> parameter.
       </desc>
     </func>
     <func>
@@ -442,7 +471,7 @@ ThreadNo = InterfaceNo = integer()
     </func>
     <func>
       <name>get_method_id(DispatchInterface, MethodName) -> MethodID</name>
-      <fsummary>Converts a named method to its corresponding ID</fsummary>
+      <fsummary>Convert a named method to its corresponding ID</fsummary>
       <type>
 	<v>DispatchInterface = ComInterface</v>
 	<v>MethodName = string()</v>
@@ -457,7 +486,7 @@ ThreadNo = InterfaceNo = integer()
     <func>
       <name>get_interface_info(ComInterface, VirtualOrDispatch) -> TypeInfo</name>
       <name>get_interface_info(ComInterface, TypeName, VirtualOrDispatch) -> TypeInfo</name>
-      <fsummary>Returns interface information from the COM TypeLib.</fsummary>
+      <fsummary>Return interface information from the COM TypeLib.</fsummary>
       <type>
 	<v>VirtualOrDispatch = virtual | dispatch</v>
 	<v>TypeName = string()</v>
@@ -515,7 +544,7 @@ ThreadNo = InterfaceNo = integer()
     </func>
     <func>
       <name>get_typelib_info(ComInterface) -> TypeLibInfo</name>
-      <fsummary>Returns information on types in a COM type library.</fsummary>
+      <fsummary>Return information on types in a COM type library.</fsummary>
       <type>
 	<v>TypeLibInfo = {TypeLibName, [TypeInfo...]}</v>
 	<v>TypeInfo = {TypeKind, TypeName, IID}</v>
@@ -535,16 +564,76 @@ ThreadNo = InterfaceNo = integer()
     </func>
     <func>
       <name>test(ComInterface) -> []</name>
-      <fsummary>Test function, breaks into Windows debugger.</fsummary>
+      <fsummary>Test function, break into Windows debugger.</fsummary>
       <desc>
 	<p>
-	  The test function simply makes the COM port to a
+	  The <c>test</c> function simply makes the COM port to a
 	  <c>DebugBreak()</c> Win32 API call. This breaks into the
 	  debugger (such as Visual C++). It is really handy to debug COM
 	  interfaces written in C. It is also useful for finding bugs in
 	  comet. (Luckily, there are no bugs left in the code.)
       </desc>
     </func>
+    <func>
+      <name>enum(ComInterface) -> ComEnum</name>
+      <fsummary>Get an iterator (called enum in COM) for a
+	COM-object.</fsummary>
+      <type>
+	<v>ComEnum = ComInterface</v>
+      </type>
+      <desc>
+	<p>
+	  This is a utility function that calls the <c>DISPID_ENUM</c>
+	  property on a COM-object, and returns the result as an
+	  interface, suitable for <c>next</c> and <c>nexti</c>.
+      </desc>
+    </func>
+    <func>
+      <name>next(ComEnum) -> Variant</name>
+      <name>nexti(ComEnum) -> ComInterface</name>
+      <name>intfenum_next(ComEnum) -> ComInterface</name>
+      <fsummary>Get the next item of a COM iterator.</fsummary>
+      <type>
+	<v>ComEnum = ComInterface</v>
+      </type>
+      <desc>
+	<p>
+	  The <c>next</c> function calls the <c>Next</c> method
+	  on an <c>IEnumVARIANT</c> interface. The <c>nexti</c>
+	  function does this too, and also packages the result with
+	  <c>package_interface</c> (often the <c>Variant</c> result
+	  is known to be an interface).
+	<p>
+	  The <c>intfenum_next</c> calls the <c>Next</c> method on
+	  an <c>IEnumIUnknown</c>, the only difference is the size of
+	  the result.
+	<p>
+	  When the iterator reaches the end, an empty tuple <c>{}</c>
+	  is returned, this is a value that cannot be in a variant.
+      </desc>
+    </func>
+    <func>
+      <name>map_enum(ComEnum, Fun)</name>
+      <name>map_enumi(ComEnum, IFun)</name>
+      <name>map_intfenumi(ComEnum, IFun)</name>
+      <fsummary>Map over an COM iterator.</fsummary>
+      <type>
+	<v>ComEnum = ComInterface</v>
+	<v>Fun = fun(Variant)</v>
+	<v>IFun = fun(ComInterface)</v>
+      </type>
+      <desc>
+	<p>
+	  These functions maps over a COM iterator (Com enum) and
+	  applies the given fun, the values are collected in a list.
+	<p>
+	  The interface functions (<c>map_enumi</c> and <c>
+	    map_intfenumi</c>) uses <c>nexti</c> to iterate. They also
+	  releases the interface return from <c>nexti</c>.
+	  (This means that the value parameter of the fun shouldn't be
+	  returned or stored anywhere.)
+      </desc>
+    </func>    
   </funcs>
   <authors>
     <aname>Jakob Cederlund</aname>

@@ -18,6 +18,8 @@
 include $(ERL_TOP)/make/target.mk
 include ../vsn.mk
 
+HIPE_ENABLED=@HIPE_ENABLED@
+
 #
 # Run this make file with TYPE set to the type of emulator you want.
 # Different versions of the emulator for different uses. The default
@@ -26,30 +28,36 @@ include ../vsn.mk
 ifeq ($(TYPE),debug)
 PURIFY =
 TYPEMARKER = .debug
-TYPE_FLAGS = -DDEBUG -DINSTRUMENT @DEBUG_FLAGS@
+TYPE_FLAGS = @DEBUG_CFLAGS@ -DDEBUG -DINSTRUMENT
 else
 ifeq ($(TYPE),instr)
 PURIFY =
 TYPEMARKER = .instr
-TYPE_FLAGS = -g -O2 -DINSTRUMENT
+TYPE_FLAGS = @CFLAGS@ -DINSTRUMENT
 else
 ifeq ($(TYPE),purify)
 PURIFY = purify
 TYPEMARKER = .purify
-TYPE_FLAGS = -g -O2 -DPURIFY -DNO_JUMP_TABLE
+TYPE_FLAGS = @CFLAGS@ -DPURIFY -DNO_JUMP_TABLE
 else
 ifeq ($(TYPE),quantify)
 PURIFY = quantify
 TYPEMARKER = .quantify
-TYPE_FLAGS = -g -O2 -DQUANTIFY -DNO_JUMP_TABLE
+TYPE_FLAGS = @CFLAGS@ -g -O2 -DQUANTIFY -DNO_JUMP_TABLE
 else
 PURIFY =
 TYPEMARKER =
-TYPE_FLAGS = -g -O2
+TYPE_FLAGS = @CFLAGS@
 endif
 endif
 endif
 endif
+
+ARCH=@ARCH@
+ultrasparcCFLAGS=-Wa,-xarch=v8plusa
+x86CFLAGS=
+noarchCFLAGS=
+ARCHCFLAGS=$($(ARCH)CFLAGS)
 
 #
 #
@@ -57,7 +65,8 @@ endif
 SHELL   = /bin/sh
 CC      = @CC@
 WFLAGS  = @WFLAGS@
-CFLAGS  = @CFLAGS@ @DEFS@ $(TYPE_FLAGS) $(WFLAGS) @THR_DEFS@
+CFLAGS  = $(TYPE_FLAGS) @DEFS@ $(WFLAGS) @THR_DEFS@ \
+ -DHIPE_ARCHITECTURE=$(ARCH) $(ARCHCFLAGS)
 HCC     = @HCC@
 LD      = @LD@
 DEXPORT = @DEXPORT@
@@ -88,7 +97,7 @@ zlib:
 	@set -e ; cd zlib && $(MAKE) $(TYPE)
 
 clean:
-	rm -f $(TARGET)/*.c $(TARGET)/*.h
+	rm -f $(TARGET)/*.c $(TARGET)/*.h $(TARGET)/depend.mk
 	rm -f $(ERL_TOP)/erts/obj.*beam/$(TARGET)/*.o
 
 .PHONY: all sae zlib clean
@@ -100,7 +109,7 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 RELSYSDIR = $(RELEASE_PATH)/erts-$(VSN)
 
-RELEASE_INCLUDES = beam/erl_driver.h beam/driver.h sys/$(ERLANG_OSTYPE)/driver_int.h 
+RELEASE_INCLUDES = beam/erl_driver.h sys/$(ERLANG_OSTYPE)/driver_int.h 
 
 release_spec: all
 	$(INSTALL_DIR) $(RELSYSDIR)
@@ -112,6 +121,8 @@ release_spec: all
 	$(INSTALL_DATA) $(RELEASE_INCLUDES) $(RELEASE_PATH)/usr/include
 	$(INSTALL_DATA) $(RELEASE_INCLUDES) $(RELSYSDIR)/src
 	$(INSTALL_PROGRAM) $(BINDIR)/$(EMULATOR_EXECUTABLE) $(RELSYSDIR)/bin
+	$(INSTALL_DIR) $(RELEASE_PATH)/usr/include/obsolete
+	$(INSTALL_DATA) obsolete/driver.h $(RELEASE_PATH)/usr/include/obsolete
 
 release_docs_spec:
 
@@ -126,14 +137,26 @@ generate: $(TARGET)/beam_opcodes.h $(TARGET)/erl_bif_table.c \
 		$(TARGET)/driver_tab.c $(TARGET)/preload.c
 
 # opcode table
-$(TARGET)/beam_opcodes.h $(TARGET)/beam_opcodes.c: beam/ops.tab
-	$(PERL) utils/beam_makeops -outdir $(TARGET) -emulator \
-		$(ERL_TOP)/lib/compiler/src/genop.tab beam/ops.tab
+
+OPCODE_TABLES = $(ERL_TOP)/lib/compiler/src/genop.tab beam/ops.tab
+ifdef HIPE_ENABLED
+OPCODE_TABLES += hipe/hipe_ops.tab
+endif
+
+$(TARGET)/beam_opcodes.h $(TARGET)/beam_opcodes.c: $(OPCODE_TABLES)
+	$(PERL) utils/beam_makeops -outdir $(TARGET) -emulator $(OPCODE_TABLES)
 
 # bif and atom table
-$(TARGET)/erl_bif_table.c $(TARGET)/erl_bif_table.h $(TARGET)/erl_bif_wrap.c \
-  $(TARGET)/erl_atom_table.c $(TARGET)/erl_atom_table.h: \
-    beam/atom.names beam/bif.tab
+ATOMS=	beam/atom.names
+BIFS =	beam/bif.tab
+ifdef HIPE_ENABLED
+BIFS += hipe/hipe_bif0.tab hipe/hipe_bif1.tab hipe/hipe_bif2.tab
+endif
+
+TABLES=	$(TARGET)/erl_bif_table.c $(TARGET)/erl_bif_table.h	\
+	$(TARGET)/erl_bif_wrap.c $(TARGET)/erl_bif_list.h	\
+	$(TARGET)/erl_atom_table.c $(TARGET)/erl_atom_table.h
+$(TABLES):	$(ATOMS) $(BIFS)
 	$(PERL) utils/make_tables -src $(TARGET) -include $(TARGET) $^
 
 # version include file
@@ -150,6 +173,7 @@ $(TARGET)/driver_tab.c:	Makefile.in
 $(TARGET)/preload.c: $(ERL_TOP)/lib/kernel/ebin/otp_ring0.beam \
 			$(ERL_TOP)/lib/kernel/ebin/init.beam \
 			$(ERL_TOP)/lib/kernel/ebin/prim_inet.beam \
+			$(ERL_TOP)/lib/kernel/ebin/prim_file.beam \
 			$(ERL_TOP)/lib/kernel/ebin/erl_prim_loader.beam
 	$(PERL) utils/make_preload -old $^ > $@
 
@@ -160,7 +184,7 @@ $(TARGET)/preload_sae.c: $(ERL_TOP)/erts/sae/ebin/ring0.beam
 # ----------------------------------------------------------------------
 # Pattern rules
 #
-INCLUDES  =  -Ibeam -Isys/$(ERLANG_OSTYPE) -I$(TARGET) -Izlib
+INCLUDES  =  -Ibeam -Isys/$(ERLANG_OSTYPE) -I$(TARGET) -Izlib -Ihipe
 
 # Need to include etc dir on VxWorks
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
@@ -186,14 +210,6 @@ $(OBJDIR)/%.o: drivers/$(ERLANG_OSTYPE)/%.c
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 $(OBJDIR)/%.o: drivers/unix/%.c
 	$(CC) $(CFLAGS) $(INCLUDES) -Idrivers/common -c $< -o $@
-endif
-
-# ----------------------------------------------------------------------
-# Specials
-
-ifeq ($(CC), gcc)
-$(OBJDIR)/ggc.o: beam/ggc.c
-	$(CC) $(subst O2,O3, $(CFLAGS)) $(INCLUDES) -fno-inline -c $< -o $@
 endif
 
 # ----------------------------------------------------------------------
@@ -242,38 +258,96 @@ RUN_OBJS = \
 	$(OBJDIR)/erl_async.o		$(OBJDIR)/sys_threads.o \
 	$(OBJDIR)/ggc.o			$(OBJDIR)/erl_posix_str.o \
 	$(OBJDIR)/erl_bits.o 		$(OBJDIR)/erl_math.o \
-	$(OBJDIR)/erl_vector.o		$(OBJDIR)/erl_term.o
+	$(OBJDIR)/erl_vector.o		$(OBJDIR)/erl_term.o \
+	$(OBJDIR)/erl_fun.o             $(OBJDIR)/erl_bif_port.o
 
-OS_OBJS =					\
+
+OS_OBJS = \
 	$(OBJDIR)/sys.o \
-	$(OBJDIR)/driver_tab.o		$(OBJDIR)/unix_efile.o \
-	$(OBJDIR)/gzio.o		$(OBJDIR)/elib_malloc.o	\
-	$(OBJDIR)/elib_memmove.o	$(OBJDIR)/erts_sl_alloc.o
+	$(OBJDIR)/driver_tab.o \
+	$(OBJDIR)/unix_efile.o \
+	$(OBJDIR)/gzio.o \
+	$(OBJDIR)/erts_sl_alloc.o \
+	$(OBJDIR)/elib_malloc.o \
+	$(OBJDIR)/elib_memmove.o
 
-# Until recently (ummm...not *that* recently), both these were named
-# `ddll_drv.o'.
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
-	OS_OBJS += $(OBJDIR)/vxworks_ddll_drv.o
+	OS_OBJS += $(OBJDIR)/vxworks_ddll_drv.o \
+                    $(OBJDIR)/int64.o 
 else
-	OS_OBJS += $(OBJDIR)/unix_ddll_drv.o
+	OS_OBJS += $(OBJDIR)/unix_ddll_drv.o \
+                   $(OBJDIR)/sys_float.o
 endif
 
-DRV_OBJS =					\
-	$(OBJDIR)/efile_drv.o		$(OBJDIR)/ddll_drv.o \
-	$(OBJDIR)/inet_drv.o		$(OBJDIR)/ram_file_drv.o
-
-ifeq ($(findstring vxworks,$(TARGET)),vxworks)
-	OS_OBJS += $(OBJDIR)/int64.o 
-endif
+DRV_OBJS = \
+	$(OBJDIR)/efile_drv.o \
+	$(OBJDIR)/ddll_drv.o \
+	$(OBJDIR)/inet_drv.o \
+	$(OBJDIR)/ram_file_drv.o
 
 ifneq ($(findstring vxworks,$(TARGET)),vxworks)
-DRV_OBJS += $(OBJDIR)/ttsl_drv.o
+	DRV_OBJS += $(OBJDIR)/ttsl_drv.o
+endif
+
+HIPE_ultrasparc_OBJS=$(OBJDIR)/hipe_sparc_glue.o $(OBJDIR)/hipe_sparc_bifs.o $(OBJDIR)/hipe_sparc_stack.o
+HIPE_x86_OBJS=$(OBJDIR)/hipe_x86_glue.o $(OBJDIR)/hipe_x86_bifs.o $(OBJDIR)/hipe_x86_signal.o $(OBJDIR)/hipe_x86_stack.o
+HIPE_noarch_OBJS=
+HIPE_ARCH_OBJS=$(HIPE_$(ARCH)_OBJS)
+
+HIPE_OBJS= \
+	$(OBJDIR)/hipe_bif0.o \
+	$(OBJDIR)/hipe_bif1.o \
+	$(OBJDIR)/hipe_bif2.o $(OBJDIR)/hipe_debug.o \
+	$(OBJDIR)/hipe_mode_switch.o \
+	$(OBJDIR)/hipe_native_bif.o $(HIPE_ARCH_OBJS)
+ifdef HIPE_ENABLED
+EXTRA_BASE_OBJS += $(HIPE_OBJS)
 endif
 
 BASE_OBJS = $(RUN_OBJS) $(EMU_OBJS) $(OS_OBJS) $(EXTRA_BASE_OBJS)
 
 OBJS =	$(BASE_OBJS) $(DRV_OBJS)
 
+########################################
+# HiPE section
+
+.PHONY: pre_hipe
+
+ifdef HIPE_ENABLED
+pre_hipe: generate $(BINDIR)/hipe_mkliterals
+else
+pre_hipe:
+	@echo Nothing to be done for pre_hipe target.
+endif
+
+$(TARGET)/%.S: hipe/%.m4
+	m4 $(INCLUDES) $< > $@
+
+$(OBJDIR)/%.o: $(TARGET)/%.S
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(OBJDIR)/%.o: hipe/%.S
+	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+
+$(OBJDIR)/%.o: hipe/%.c
+	$(CC) $(subst O2,O3, $(CFLAGS)) $(INCLUDES) -c $< -o $@
+
+$(BINDIR)/hipe_mkliterals:	$(OBJDIR)/hipe_mkliterals.o
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $<
+
+$(TARGET)/hipe_literals.h:	$(BINDIR)/hipe_mkliterals
+	$(BINDIR)/hipe_mkliterals -c > $@
+
+$(OBJDIR)/hipe_sparc_glue.o:	hipe/hipe_sparc_glue.S hipe/hipe_sparc_asm.h hipe/hipe_mode_switch.h $(TARGET)/hipe_literals.h
+$(TARGET)/hipe_sparc_bifs.S:	hipe/hipe_sparc_bifs.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
+$(OBJDIR)/hipe_sparc_bifs.o:	$(TARGET)/hipe_sparc_bifs.S hipe/hipe_sparc_asm.h hipe/hipe_mode_switch.h $(TARGET)/hipe_literals.h
+
+$(OBJDIR)/hipe_x86_glue.o:	hipe/hipe_x86_glue.S hipe/hipe_x86_asm.h hipe/hipe_mode_switch.h $(TARGET)/hipe_literals.h
+$(TARGET)/hipe_x86_bifs.S:	hipe/hipe_x86_bifs.m4 $(TARGET)/erl_bif_list.h hipe/hipe_gbif_list.h
+$(OBJDIR)/hipe_x86_bifs.o:	$(TARGET)/hipe_x86_bifs.S hipe/hipe_x86_asm.h hipe/hipe_mode_switch.h $(TARGET)/hipe_literals.h
+
+# end of HiPE section
+########################################
 
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 ########################################
@@ -315,12 +389,16 @@ $(BINDIR)/$(EMULATOR_EXECUTABLE_SAE): $(TARGET)/preload_sae.c \
 # ----------------------------------------------------------------------
 # Dependencies
 #
+$(TARGET)/Makefile: Makefile.in
+	@echo
+	@echo "Makefile.in has been updated, please re-run configure!"
+	@echo
+	@exit 1
+
 depend:
-	$(CC) -MM -MG $(CFLAGS) $(INCLUDES) \
+	$(CC) -MM -MG $(CFLAGS) $(INCLUDES) -Idrivers/common \
 		  beam/*.c drivers/common/*.c drivers/$(ERLANG_OSTYPE)/*.c \
-		  sys/$(ERLANG_OSTYPE)/*.c | \
+		  sys/$(ERLANG_OSTYPE)/*.c hipe/*.c | \
 		sed 's|^\([^:]*:\)|$$(OBJDIR)/\1|g' > $(TARGET)/depend.mk
 
 -include $(TARGET)/depend.mk
-
-

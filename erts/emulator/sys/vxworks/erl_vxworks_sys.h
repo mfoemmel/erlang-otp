@@ -103,18 +103,7 @@
 /* There are no known ways to customize the handling of invalid floating
    point operations, such as matherr() or ieee_handler(), in VxWorks 5.1. */
 
-#if (CPU == SPARC)
-
-/* VxWorks 5.1 on sparc generates SIGFPE immediatley and unconditionally
-   when you make an invalid floating point op, and you must longjmp() out
-   of the handler (if you just return from it, the task is killed as if
-   there was no handler at all). */
-#include <setjmp.h>
-extern jmp_buf fpe_jmp;
-#define FP_PRE_CHECK_OK() (setjmp(fpe_jmp) == 0)
-#define FP_RESULT_OK(f) (1)
-
-#elif (CPU == MC68040 || CPU == CPU32 || CPU == PPC860 || CPU == PPC603)
+#if (CPU == MC68040 || CPU == CPU32 || CPU == PPC860 || CPU == PPC603)
 
 /* VxWorks 5.1 on Motorola 68040 never generates SIGFPE, but sets the
    result of invalid floating point ops to Inf and NaN - unfortunately
@@ -123,8 +112,11 @@ extern jmp_buf fpe_jmp;
 /* Haven't found any better way, as of yet, for ppc860 xxxP*/
 
 #include <private/mathP.h>
-#define FP_PRE_CHECK_OK() (1)
-#define FP_RESULT_OK(f) (!isInf(f) && !isNan(f))
+#define NO_FPE_SIGNALS
+#define ERTS_FP_CHECK_INIT() do {} while (0)
+#define ERTS_FP_ERROR(f, Action) if (isInf(f) || isNan(f)) { Action; } else {}
+#define ERTS_SAVE_FP_EXCEPTION()
+#define ERTS_RESTORE_FP_EXCEPTION()
 
 #if (CPU == PPC603)
 /* Need fppLib to change the Floating point registers  

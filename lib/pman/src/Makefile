@@ -61,12 +61,16 @@ HRL_FILES= \
 
 ERL_FILES= $(MODULES:%=%.erl)
 
-TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET)
-
+TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 
 APP_FILE = pman.app
 APP_SRC = $(APP_FILE).src
 APP_TARGET = $(EBIN)/$(APP_FILE)
+
+APPUP_FILE = pman.appup
+APPUP_SRC = $(APPUP_FILE).src
+APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
+
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
@@ -84,6 +88,9 @@ clean:
 	rm -f errs core *~
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
+
+$(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 docs:

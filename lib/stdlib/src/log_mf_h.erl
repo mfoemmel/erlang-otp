@@ -22,6 +22,7 @@
 -export([init/3, init/4]).
 
 -export([init/1, handle_event/2, handle_info/2, terminate/2]).
+-export([handle_call/2, code_change/3]). 
 
 -record(state, {dir, maxB, maxF, curB, curF, cur_fd, index = [], pred}).
 
@@ -106,6 +107,11 @@ handle_info(_, State) ->
 terminate(_, State) ->
     file:close(State#state.cur_fd),
     State.
+
+handle_call(null, State) ->
+    {ok, null, State}.
+code_change(OldVsn, State, Extra) ->
+    {ok, State}.
 
 %%-----------------------------------------------------------------
 %% Misc functions

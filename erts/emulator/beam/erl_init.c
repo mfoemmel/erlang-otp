@@ -28,6 +28,10 @@
 #include "erl_db.h"
 #include "beam_bp.h"
 #include "erl_bits.h"
+#ifdef HIPE
+#include "hipe_mode_switch.h"	/* for hipe_mode_switch_init() */
+extern void hipe_signal_init(void);
+#endif
 
 extern void erl_crash_dump();
 #ifdef __WIN32__
@@ -38,9 +42,9 @@ extern void ConWaitForExit(void);
  * Configurable parameters.
  */
 
-Uint32 max_process = MAX_PROCESS;
-uint32 display_items = 100;	/* no of items to display in traces etc */
-uint32 display_loads = 0;	/* print info about loaded modules */
+Uint max_process = MAX_PROCESS;
+Uint display_items = 200;	/* no of items to display in traces etc */
+Uint display_loads = 0;		/* print info about loaded modules */
 int H_MIN_SIZE = H_DEFAULT_SIZE; /* The minimum heap grain */
 
 Uint32 erts_debug_flags;	/* Debug flags. */
@@ -54,21 +58,61 @@ int erts_async_max_threads = 0;  /* number of threads for async support */
 Uint16 erts_max_gen_gcs = (Uint16) -1;
 
 #ifdef DEBUG
-uint32 verbose;		/* noisy mode = 1 */
+Uint verbose;			/* noisy mode = 1 */
 #endif
 
 /*
  * Other global variables.
  */
 
-byte*      tmp_buf;
-int        tot_bin_allocated = 0;
-uint32     do_time;		/* set at clock interupt */
-uint32     garbage_cols;	/* no of garbage collections */
-uint32     reclaimed;		/* no of words reclaimed in GCs */
+#ifdef UNIFIED_HEAP
+Eterm *global_heap;
+Eterm *global_hend;
+Eterm *global_htop;
+Uint   global_heap_sz;
+Uint   global_heap_min_sz;
+
+Eterm *global_high_water;
+Eterm *global_old_hend;
+Eterm *global_old_htop;
+Eterm *global_old_heap;
+Uint16 global_gen_gcs;
+Uint16 global_max_gen_gcs;
+
+Uint   global_gc_flags;
+ErlHeapFragment * global_mbuf;
+Uint global_mbuf_sz;
+#endif
+
+byte* tmp_buf;
+Uint tot_bin_allocated = 0;
+Uint do_time;			/* set at clock interupt */
+Uint garbage_cols;		/* no of garbage collections */
+Uint reclaimed;			/* no of words reclaimed in GCs */
+
+#ifdef BENCH_STAT
+double messages_sent;
+Uint message_sizes[1000];
+double major_garbage_cols;
+double minor_garbage_cols;
+Uint biggest_heap_size_ever;
+Uint max_allocated_heap;
+double live_major_sum;
+double live_minor_sum;
+double ptrs_to_old;
+double ptrs_to_young;
+
+hrtime_t sys_time;
+hrtime_t minor_gc_time;
+hrtime_t major_gc_time;
+hrtime_t send_time;
+hrtime_t copy_time;
+hrtime_t max_major_time;
+hrtime_t max_minor_time;
+#endif
 
 #ifdef INSTRUMENT
-uint32 instr_send_sizes[INSTR_SEND_SIZES_MAX];
+Uint instr_send_sizes[INSTR_SEND_SIZES_MAX];
 #endif
 
 Eterm system_seq_tracer;
@@ -92,6 +136,27 @@ erl_init(void)
 {
     garbage_cols = 0;
     reclaimed = 0;
+#ifdef BENCH_STAT
+    sys_time = sys_gethrtime();
+    minor_gc_time = 0;
+    major_gc_time = 0;
+    send_time = 0;
+    copy_time = 0;
+    max_major_time = 0;
+    max_minor_time = 0;
+    major_garbage_cols = 0;
+    minor_garbage_cols = 0;
+    biggest_heap_size_ever = 0;
+    max_allocated_heap = 0;
+    live_major_sum = 0;
+    live_minor_sum = 0;
+    ptrs_to_old = 0;
+    ptrs_to_young = 0;
+    messages_sent = 0;
+    { int i;
+      for (i=0; i<1000; i++) message_sizes[i] = 0;
+    }
+#endif
 
     ASSERT(TMP_BUF_SIZE >= 16384);
     tmp_buf = (byte *)safe_alloc_from(130, TMP_BUF_SIZE);
@@ -100,7 +165,25 @@ erl_init(void)
 
     H_MIN_SIZE = next_heap_size(H_MIN_SIZE, 0);
 
+#ifdef UNIFIED_HEAP
+    global_heap_sz = next_heap_size(H_MIN_SIZE,0);
+    global_heap = (Eterm *) safe_alloc_from(4711,
+                                            sizeof(Eterm) * global_heap_sz);
+    global_hend = global_heap + global_heap_sz;
+    global_htop = global_heap;
+
+    global_old_hend = global_old_htop = global_old_heap = NULL;
+    global_high_water = global_heap;
+    global_gen_gcs = 0;
+    global_max_gen_gcs = erts_max_gen_gcs;
+
+    global_gc_flags = erts_default_process_flags;
+    global_mbuf = NULL;
+    global_mbuf_sz = 0;
+#endif
+
     erts_init_bits();
+    erts_init_fun_table();
     init_atom_table();
     init_export_table();
     init_module_table();
@@ -116,6 +199,9 @@ erl_init(void)
     init_copy();
     init_load();
     erts_init_bif();
+#ifdef HIPE
+    hipe_mode_switch_init(); /* Must be after init_load/beam_catches/init */
+#endif
 
 #ifdef INSTRUMENT
     {int j;
@@ -272,7 +358,7 @@ static void usage()
     erl_printf(CERR, "-P number  set maximum number of processes on this node\n");
     erl_printf(CERR, "           valid range is [%d-%d]\n",
 	       MIN_PROCESS, MAX_PROCESS);
-    erl_printf(CERR, "-A number  set number or threads in async thread pool\n");
+    erl_printf(CERR, "-A number  set number of threads in async thread pool\n");
     erl_printf(CERR, "           valid range is [0-256]\n");
     erl_printf(CERR, "-m number  set mmap threshold (Kb)\n");
     erl_printf(CERR, "           valid range is [0-%d]\n", INT_MAX/1024);
@@ -319,14 +405,18 @@ erl_start(int argc, char **argv)
        initial thread have been started. */
     sys_sl_alloc_init(use_sl_alloc);
 
-    erl_sys_init();
-    erl_sys_args(&argc, argv);
-
     erts_init_utils();
     sys_alloc_opt(SYS_ALLOC_OPT_TRIM_THRESHOLD, trim_threshold);
     sys_alloc_opt(SYS_ALLOC_OPT_TOP_PAD, top_pad);
     /* Permanently disable use of mmap for sys_alloc (malloc). */
     sys_alloc_opt(SYS_ALLOC_OPT_MMAP_MAX, 0);
+
+#if defined(HIPE) && defined(__i386__)
+    hipe_signal_init();	/* must be done very early */
+#endif
+
+    erl_sys_init();
+    erl_sys_args(&argc, argv);
 
     tmpenvbuf = getenv(ERL_MAX_ETS_TABLES_ENV);
     if (tmpenvbuf != NULL) 
@@ -383,7 +473,7 @@ erl_start(int argc, char **argv)
 	    break;
 	case 'V' :
 	    {
-		char tmp[100];
+		char tmp[256];
 
 		tmp[0] = tmp[1] = '\0';
 #ifdef DEBUG
@@ -394,6 +484,12 @@ erl_start(int argc, char **argv)
 #endif
 #ifdef USE_THREADS
 		strcat(tmp, ",THREADS");
+#endif
+#ifdef HIPE
+		strcat(tmp, ",HIPE");
+#endif
+#ifdef UNIFIED_HEAP
+                strcat(tmp, ",UNIFIED_HEAP");
 #endif
 		erl_printf(CERR, "Erlang ");
 		if (tmp[1]) {
@@ -610,6 +706,20 @@ void erl_exit0(char *file, int line, int n, char *fmt,...)
 
     va_start(args, fmt);
 
+#ifdef UNIFIED_HEAP
+    if (global_heap) sys_free((void*)global_heap);
+    global_heap = NULL;
+
+    {
+      ErlHeapFragment *tmp;
+      while (global_mbuf != NULL) {
+        tmp = global_mbuf->next;
+        free_message_buffer(global_mbuf);
+        global_mbuf = tmp;
+      }
+    }
+#endif
+
     /* Produce an Erlang core dump if error */
     if(n > 0) erl_crash_dump(file,line,fmt,args); 
 #if defined(VXWORKS)
@@ -638,6 +748,20 @@ void erl_exit(int n, char *fmt,...)
     va_list args;
 
     va_start(args, fmt);
+
+#ifdef UNIFIED_HEAP
+    if (global_heap) sys_free((void*)global_heap);
+    global_heap = NULL;
+
+    {
+      ErlHeapFragment *tmp;
+      while (global_mbuf != NULL) {
+        tmp = global_mbuf->next;
+        free_message_buffer(global_mbuf);
+        global_mbuf = tmp;
+      }
+    }
+#endif
 
     /* Produce an Erlang core dump if error */
     if(n > 0) erl_crash_dump((char*) NULL,0,fmt,args); 

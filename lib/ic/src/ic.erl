@@ -498,7 +498,48 @@ typing(G, File, Clean) ->
     end.
 
 
+
 generation(G, File, T2) ->
+    case ic_options:get_opt(G, multiple_be) of
+	false ->
+	    single_generation(G, File, T2);
+	List ->
+	    OutDir = 
+		case ic_options:get_opt(G, outdir) of
+		    false -> 
+			[];
+		    Dir ->
+			Dir
+		end,
+	    
+	    case ic_options:get_opt(G, be) of
+		false ->
+		    ok;
+		Be ->
+		    %% Generate this first
+		    ic_options:add_opt(G,[{outdir,OutDir++atom_to_list(Be)}],true),
+		    single_generation(G, File, T2)
+	    end,
+	    multiple_generation(G, File, T2, OutDir, List)
+    end.
+
+multiple_generation(G,File,T2,RootDir,[]) ->
+    ok;
+multiple_generation(G,File,T2,RootDir,[Be|Bes]) ->
+    ic_options:add_opt(G,[{outdir,RootDir++atom_to_list(Be)}],true),
+    ic_options:add_opt(G,[{be,Be}],true),
+    single_generation(G, File, T2),
+
+    case icgen:get_error_count(G) of
+	0 ->
+	     multiple_generation(G,File,T2,RootDir,Bes);
+	 _ ->
+	     %% Errors reported, abort
+	     ok
+     end.
+
+
+single_generation(G, File, T2) ->
     case icgen:get_error_count(G) of
 	0 ->
 	    %% Check if user has sett backend option

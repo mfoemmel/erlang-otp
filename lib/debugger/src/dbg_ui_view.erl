@@ -78,7 +78,7 @@ start_view_loop (Module, Win) ->
     X = gs:read (Win, width),
     Y = gs:read (Win, height),
     {Name, Breaks} = dbg_ui_aux:load_file (Module, [], [], undefined, Win),
-    Mods = lists:sort (code:interpreted ()),
+    Mods = lists:sort(int:interpreted()),
     {ok, Dir} = file:get_cwd (),
 
     Trace = #trace {cm = Name,
@@ -203,7 +203,7 @@ view_loop (Trace) ->
 %%% Execute user commands specific to the view Window
 
 execute_view_cmd (a, Trace) ->
-    lists:map ({int, nn}, [], Trace#trace.mods),
+    lists:map ({int, nn}, Trace#trace.mods),
     Trace;
 
 execute_view_cmd ({'Delete', Mod}, Trace) ->

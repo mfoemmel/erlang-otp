@@ -6,8 +6,9 @@
 #endif
 
 #include "sys.h"
+#include "erl_sys_driver.h"
 #include "global.h"
-#include "driver.h"
+#include "erl_threads.h"
 
 EXTERN_FUNCTION(int, async_ready, (int, void*));
 extern  int erts_async_max_threads;
@@ -27,9 +28,9 @@ typedef struct _erl_async {
 } ErlAsync;
 
 typedef struct {
-    erl_mutex_t lck;
-    erl_cond_t cv;
-    erl_thread_t thr;
+    erts_mutex_t lck;
+    erts_cond_t cv;
+    erts_thread_t thr;
     int   len;
     int   hndl;
     ErlAsync* head;
@@ -39,7 +40,7 @@ typedef struct {
 static long async_id = 0;
 
 
-erl_mutex_t async_ready_lck;
+erts_mutex_t async_ready_lck;
 static ErlAsync* async_ready_list = NULL;
 
 
@@ -194,7 +195,6 @@ static int async_del(long id)
     return 0;
 }
 
-
 static void* async_main(void* arg)
 {
     AsyncQueue* q = (AsyncQueue*) arg;
@@ -265,7 +265,7 @@ int check_async_ready()
 **      async_data     data to pass to invoke function
 **      async_free     function for relase async_data in case of failure
 */
-long driver_async(int ix, unsigned int* key,
+long driver_async(ErlDrvPort ix, unsigned int* key,
 		  void (*async_invoke)(void*), void* async_data,
 		  void (*async_free)(void*))
 {
@@ -319,7 +319,7 @@ long driver_async(int ix, unsigned int* key,
     return id;
 }
 
-int driver_async_cancel(long id)
+int driver_async_cancel(unsigned int id)
 {
 #ifdef USE_THREADS
     if (erts_async_max_threads > 0)

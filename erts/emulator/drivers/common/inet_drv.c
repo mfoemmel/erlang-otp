@@ -32,11 +32,16 @@
 #include <sys/uio.h>
 #endif
 
+/* use http processing */
+#define USE_HTTP 
 /* All platforms fail on malloc errors. */
 #define FATAL_MALLOC
 
 
+#include "erl_driver.h"
+
 #ifdef __WIN32__
+#define  STRNCASECMP strncasecmp
 
 #define INCL_WINSOCK_API_TYPEDEFS 1
 
@@ -46,8 +51,6 @@
 #include <winsock_func.h>
 
 #include <Ws2tcpip.h>   /* NEED VC 6.0 !!! */
-
-#include "driver.h"
 
 #undef WANT_NONBLOCKING
 #include "sys.h"
@@ -187,7 +190,23 @@ static unsigned long one_value = 1;
 
 #define WANT_NONBLOCKING
 #include "sys.h"
-#include "driver.h"
+
+#if !defined(__WIN32__) && !defined(HAVE_STRNCASECMP)
+#define STRNCASECMP my_strncasecmp
+
+static int my_strncasecmp(const char *s1, const char *s2, size_t n)
+{
+    int i;
+
+    for (i=0;i<n-1 && s1[i] && s2[i] && toupper(s1[i]) == toupper(s2[i]);++i)
+	;
+    return (toupper(s1[i]) - toupper(s2[i]));
+}
+	
+
+#else
+#define  STRNCASECMP strncasecmp
+#endif
 
 #define INVALID_SOCKET -1
 #define INVALID_EVENT  -1
@@ -246,7 +265,7 @@ extern int gethostname();
                  ((d)->event_mask | (flags)) : \
                  ((d)->event_mask & ~(flags)); \
         DEBUGF(("sock_select(%d): flags=%02X, onoff=%d, event_mask=%02X\r\n", 		(d)->port, (flags), (onoff), (d)->event_mask)); \
-        driver_select((d)->port, (d)->event, (flags), (onoff)); \
+        driver_select((d)->port, (ErlDrvEvent)(d)->event, (flags), (onoff)); \
    } while(0)
 
 #endif
@@ -453,29 +472,29 @@ typedef union {
 
 typedef struct {
     int            id;      /* id used to identify reply */
-    DriverTermData caller;  /* recipient of async reply */
+    ErlDrvTermData caller;  /* recipient of async reply */
     int            req;     /* Request id (CONNECT/ACCEPT/RECV) */
     unsigned long  timeout; /* Request timeout (since op issued,not started) */
 } inet_async_op;
 
 typedef struct subs_list_ {
-  DriverTermData subscriber;
+  ErlDrvTermData subscriber;
   struct subs_list_ *next;
 } subs_list;
 
 #define NO_PROCESS 0
 #define NO_SUBSCRIBERS(SLP) ((SLP)->subscriber == NO_PROCESS)
-static void send_to_subscribers(long, subs_list *, int,
-				DriverTermData [], int);
+static void send_to_subscribers(ErlDrvPort, subs_list *, int,
+				ErlDrvTermData [], int);
 static void free_subscribers(subs_list*);
-static int save_subscriber(subs_list *, DriverTermData);
+static int save_subscriber(subs_list *, ErlDrvTermData);
 
 typedef struct {
     SOCKET s;                   /* the socket or INVALID_SOCKET if not open */
     HANDLE event;               /* Event handle (same as s in unix) */
     long  event_mask;           /* current FD events */
-    long  port;                 /* the port identifier */
-    DriverTermData dport;       /* the port identifier as DriverTermData */
+    ErlDrvPort  port;           /* the port identifier */
+    ErlDrvTermData dport;       /* the port identifier as DriverTermData */
     int   state;                /* status */
     int   prebound;             /* only set when opened with inet_fdopen */
     int   mode;                 /* BINARY | LIST
@@ -484,7 +503,7 @@ typedef struct {
     int   bit8f;                /* check if data has bit number 7 set */
     int   deliver;              /* Delivery mode, TERM or PORT */
 
-    DriverTermData caller;      /* recipient of sync reply */
+    ErlDrvTermData caller;      /* recipient of sync reply */
 
     inet_async_op* oph;          /* queue head or NULL */
     inet_async_op* opt;          /* queue tail or NULL */
@@ -546,26 +565,29 @@ typedef struct {
 #define TCP_PB_FCGI    7
 #define TCP_PB_LINE_LF 8
 #define TCP_PB_TPKT    9
+#define TCP_PB_HTTP    10
+#define TCP_PB_HTTPH   11
+
 
 #define TCP_MAX_PACKET_SIZE 0x1000000  /* 16 M */
 
 #define MAX_VSIZE 16		/* Max number of entries allowed in an I/O
 				 * vector sock_sendv().
 				 */
-static int tcp_inet_init();
-static int tcp_inet_stop();
-static int tcp_inet_command();
-static int tcp_inet_commandv();
-static int tcp_inet_input();
-static int tcp_inet_output();
-static long tcp_inet_start();
-static int  tcp_inet_ctl();
-static int  tcp_inet_timeout();
+static int tcp_inet_init(void);
+static void tcp_inet_stop(ErlDrvData);
+static void tcp_inet_command(ErlDrvData, char*, int);
+static void tcp_inet_commandv(ErlDrvData, ErlIOVec*);
+static void tcp_inet_drv_input(ErlDrvData, ErlDrvEvent);
+static void tcp_inet_drv_output(ErlDrvData data, ErlDrvEvent event);
+static ErlDrvData tcp_inet_start(ErlDrvPort, char* command);
+static int tcp_inet_ctl(ErlDrvData, unsigned int, char*, int, char**, int);
+static void  tcp_inet_timeout(ErlDrvData);
 #ifdef __WIN32__
-static int tcp_inet_event();
+static void tcp_inet_event(ErlDrvData, ErlDrvEvent);
 #endif
 
-static struct driver_entry tcp_inet_driver_entry = 
+static struct erl_drv_entry tcp_inet_driver_entry = 
 {
     tcp_inet_init,  /* inet_init will add this driver !! */
     tcp_inet_start, 
@@ -573,10 +595,10 @@ static struct driver_entry tcp_inet_driver_entry =
     tcp_inet_command,
 #ifdef __WIN32__
     tcp_inet_event,
-    null_func,
+    NULL,
 #else
-    tcp_inet_input,
-    tcp_inet_output,
+    tcp_inet_drv_input,
+    tcp_inet_drv_output,
 #endif
     "tcp_inet",
     NULL,
@@ -593,20 +615,20 @@ static struct driver_entry tcp_inet_driver_entry =
 #define UDP_STATE_BOUND      (UDP_STATE_OPEN | INET_F_BOUND)
 #define UDP_STATE_CONNECTED  (UDP_STATE_BOUND | INET_F_ACTIVE)
 
-static int udp_inet_init();
-static int udp_inet_stop();
-static int udp_inet_command();
-static int udp_inet_input();
-static long udp_inet_start();
-static int  udp_inet_ctl();
-static int  udp_inet_timeout();
+static int udp_inet_init(void);
+static void udp_inet_stop(ErlDrvData);
+static void udp_inet_command(ErlDrvData, char*, int);
+static void udp_inet_drv_input(ErlDrvData e, ErlDrvEvent event);
+static ErlDrvData udp_inet_start(ErlDrvPort, char* command);
+static int udp_inet_ctl(ErlDrvData, unsigned int, char*, int, char**, int);
+static void udp_inet_timeout(ErlDrvData);
 #ifdef __WIN32__
-static int udp_inet_event();
+static void udp_inet_event(ErlDrvData, ErlDrvEvent);
 static SOCKET make_noninheritable_handle(SOCKET s);
 static int winsock_event_select(inet_descriptor *, int, int);
 #endif
 
-static struct driver_entry udp_inet_driver_entry = 
+static struct erl_drv_entry udp_inet_driver_entry = 
 {
     udp_inet_init,  /* inet_init will add this driver !! */
     udp_inet_start,
@@ -615,9 +637,9 @@ static struct driver_entry udp_inet_driver_entry =
 #ifdef __WIN32__
     udp_inet_event,
 #else
-    udp_inet_input,
+    udp_inet_drv_input,
 #endif
-    null_func, 
+    NULL, 
     "udp_inet",
     NULL,
     NULL,
@@ -640,15 +662,23 @@ typedef struct {
     int   busy_on_send;         /* busy on send with timeout! */
     int   i_ix;                 /* accept descriptor index / read indicator */
     int   i_bufsz;              /* current input buffer size (<= bufsz) */
-    DriverBinary* i_buf;        /* current binary buffer */
+    ErlDrvBinary* i_buf;        /* current binary buffer */
     char*         i_ptr;        /* current pos in buf */
     char*         i_ptr_start;  /* packet start pos in buf */
     int           i_remain;     /* remaining chars to read */
+#ifdef USE_HTTP
+    int           http_state;   /* 0 = response|request  1=headers fields */
+#endif
 } tcp_descriptor;
+
+static int tcp_inet_output(tcp_descriptor* desc, HANDLE event);
+static int tcp_inet_input(tcp_descriptor* desc, HANDLE event);
 
 typedef struct {
     inet_descriptor inet;   /* common data structre (DONT MOVE) */
 } udp_descriptor;
+
+static int udp_inet_input(udp_descriptor* desc, HANDLE event);
 
 /* convert descriptor poiner to inet_descriptor pointer */
 #define INETP(d) (&(d)->inet)
@@ -665,43 +695,42 @@ static int async_ref = 0;          /* async reference id generator */
 #define NEW_ASYNC_ID() ((async_ref++) & 0xffff)
 
 
-static DriverTermData am_ok;
-static DriverTermData am_tcp;
-static DriverTermData am_udp;
-static DriverTermData am_error;
-static DriverTermData am_inet_async;
-static DriverTermData am_inet_reply;
-static DriverTermData am_timeout;
-static DriverTermData am_closed;
-static DriverTermData am_tcp_closed;
-static DriverTermData am_tcp_error;
-static DriverTermData am_udp_closed;
-static DriverTermData am_udp_error;
-static DriverTermData am_empty_out_q;
+static ErlDrvTermData am_ok;
+static ErlDrvTermData am_tcp;
+static ErlDrvTermData am_udp;
+static ErlDrvTermData am_error;
+static ErlDrvTermData am_inet_async;
+static ErlDrvTermData am_inet_reply;
+static ErlDrvTermData am_timeout;
+static ErlDrvTermData am_closed;
+static ErlDrvTermData am_tcp_closed;
+static ErlDrvTermData am_tcp_error;
+static ErlDrvTermData am_udp_closed;
+static ErlDrvTermData am_udp_error;
+static ErlDrvTermData am_empty_out_q;
 
 /* speical errors for bad ports and sequences */
 #define EXBADPORT "exbadport"
 #define EXBADSEQ  "exbadseq"
 
 
-static int inet_init();
+static int inet_init(void);
 static int ctl_reply(int, char*, int, char**, int);
 
-
-struct driver_entry inet_driver_entry = 
+struct erl_drv_entry inet_driver_entry = 
 {
     inet_init,  /* inet_init will add tcp and udp drivers */
-    (long (*)()) null_func,   /* cast to avoid warnings */
-    null_func,
-    null_func,
-    null_func,
-    null_func,
+    NULL, /* start */
+    NULL, /* stop */
+    NULL, /* output */
+    NULL, /* ready_input */
+    NULL, /* ready_output */
     "inet"
 };
 
 /* XXX: is this a driver interface function ??? */
-EXTERN_FUNCTION(void, erl_exit, (int n, char*, _DOTS_));
-EXTERN_FUNCTION(int,  send_error_to_logger, (int));
+extern void erl_exit(int n, char*, _DOTS_);
+extern int send_error_to_logger(int);
 
 /*
  * Malloc wrapper, we could actually use safe_alloc instead, but
@@ -744,7 +773,7 @@ static void *realloc_wrapper(void *current, size_t size){
 
 #define LOAD_INT(vec, i, val) \
   (((vec)[(i)] = ERL_DRV_INT), \
-  ((vec)[(i)+1] = (DriverTermData)(val)), \
+  ((vec)[(i)+1] = (ErlDrvTermData)(val)), \
   (i+2))
 
 #define LOAD_PORT(vec, i, port) \
@@ -759,20 +788,20 @@ static void *realloc_wrapper(void *current, size_t size){
 
 #define LOAD_BINARY(vec, i, bin, offs, len) \
   (((vec)[(i)] = ERL_DRV_BINARY), \
-  ((vec)[(i)+1] = (DriverTermData)(bin)), \
+  ((vec)[(i)+1] = (ErlDrvTermData)(bin)), \
   ((vec)[(i)+2] = (len)), \
   ((vec)[(i)+3] = (offs)), \
   (i+4))
 
 #define LOAD_STRING(vec, i, str, len) \
   (((vec)[(i)] = ERL_DRV_STRING), \
-  ((vec)[(i)+1] = (DriverTermData)(str)), \
+  ((vec)[(i)+1] = (ErlDrvTermData)(str)), \
   ((vec)[(i)+2] = (len)), \
   (i+3))
 
 #define LOAD_STRING_CONS(vec, i, str, len) \
   (((vec)[(i)] = ERL_DRV_STRING_CONS), \
-  ((vec)[(i)+1] = (DriverTermData)(str)), \
+  ((vec)[(i)+1] = (ErlDrvTermData)(str)), \
   ((vec)[(i)+2] = (len)), \
   (i+3))
 
@@ -788,46 +817,46 @@ static void *realloc_wrapper(void *current, size_t size){
 
 
 static int load_ip_port(spec, i, buf) 
-DriverTermData* spec; int i; char* buf;
+ErlDrvTermData* spec; int i; char* buf;
 {
     spec[i++] = ERL_DRV_INT;
-    spec[i++] = (DriverTermData) get_int16(buf);
+    spec[i++] = (ErlDrvTermData) get_int16(buf);
     return i;
 }
 
 static int load_ip_address(spec, i, family, buf)
-DriverTermData* spec; int i; int family; char* buf;
+ErlDrvTermData* spec; int i; int family; char* buf;
 {
     if (family == AF_INET) {
 	spec[i++] = ERL_DRV_INT;
-	spec[i++] = (DriverTermData) ((unsigned char)buf[0]);
+	spec[i++] = (ErlDrvTermData) ((unsigned char)buf[0]);
 	spec[i++] = ERL_DRV_INT;
-	spec[i++] = (DriverTermData) ((unsigned char)buf[1]);
+	spec[i++] = (ErlDrvTermData) ((unsigned char)buf[1]);
 	spec[i++] = ERL_DRV_INT;
-	spec[i++] = (DriverTermData) ((unsigned char)buf[2]);
+	spec[i++] = (ErlDrvTermData) ((unsigned char)buf[2]);
 	spec[i++] = ERL_DRV_INT;
-	spec[i++] = (DriverTermData) ((unsigned char)buf[3]);
+	spec[i++] = (ErlDrvTermData) ((unsigned char)buf[3]);
 	spec[i++] = ERL_DRV_TUPLE;
 	spec[i++] = 4;
     }
 #if defined(HAVE_IN6) && defined(AF_INET6)
     else if (family == AF_INET6) {
 	spec[i++] = ERL_DRV_INT;
-	spec[i++] = (DriverTermData) get_int16(buf);
+	spec[i++] = (ErlDrvTermData) get_int16(buf);
 	spec[i++] = ERL_DRV_INT;
-	spec[i++] = (DriverTermData) get_int16(buf+2);
+	spec[i++] = (ErlDrvTermData) get_int16(buf+2);
 	spec[i++] = ERL_DRV_INT;
-	spec[i++] = (DriverTermData) get_int16(buf+4);
+	spec[i++] = (ErlDrvTermData) get_int16(buf+4);
 	spec[i++] = ERL_DRV_INT;
-	spec[i++] = (DriverTermData) get_int16(buf+6);
+	spec[i++] = (ErlDrvTermData) get_int16(buf+6);
 	spec[i++] = ERL_DRV_INT;
-	spec[i++] = (DriverTermData) get_int16(buf+8);
+	spec[i++] = (ErlDrvTermData) get_int16(buf+8);
 	spec[i++] = ERL_DRV_INT;
-	spec[i++] = (DriverTermData) get_int16(buf+10);
+	spec[i++] = (ErlDrvTermData) get_int16(buf+10);
 	spec[i++] = ERL_DRV_INT;
-	spec[i++] = (DriverTermData) get_int16(buf+12);
+	spec[i++] = (ErlDrvTermData) get_int16(buf+12);
 	spec[i++] = ERL_DRV_INT;
-	spec[i++] = (DriverTermData) get_int16(buf+14);
+	spec[i++] = (ErlDrvTermData) get_int16(buf+14);
 	spec[i++] = ERL_DRV_TUPLE;
 	spec[i++] = 8;
     }
@@ -846,7 +875,7 @@ DriverTermData* spec; int i; int family; char* buf;
 */
 #define BUFFER_STACK_SIZE 16
 
-static DriverBinary* buffer_stack[BUFFER_STACK_SIZE];
+static ErlDrvBinary* buffer_stack[BUFFER_STACK_SIZE];
 static int buffer_stack_pos = 0;
 
 #ifdef DEBUG
@@ -872,10 +901,10 @@ static int max_buf_allocated = 0; /* max allocated */
 
 #endif
 
-static DriverBinary* alloc_buffer(minsz)
+static ErlDrvBinary* alloc_buffer(minsz)
 int minsz;
 {
-    DriverBinary* buf = NULL;
+    ErlDrvBinary* buf = NULL;
 
     DEBUGF(("alloc_buffer: sz = %d, tot = %d, max = %d\r\n", 
 	    minsz, tot_buf_allocated, max_buf_allocated));
@@ -905,7 +934,7 @@ int minsz;
 ** (16 * 64k ~ 1M)
 */
 static void release_buffer(buf)
-DriverBinary* buf;
+ErlDrvBinary* buf;
 {
     DEBUGF(("release_buffer: %d\r\n", (buf==NULL) ? 0 : buf->orig_size));
     if (buf == NULL)
@@ -921,10 +950,10 @@ DriverBinary* buf;
     }
 }
 
-static DriverBinary* realloc_buffer(buf, newsz)
-DriverBinary* buf; int newsz;
+static ErlDrvBinary* realloc_buffer(buf, newsz)
+ErlDrvBinary* buf; int newsz;
 {
-    DriverBinary* bin;
+    ErlDrvBinary* bin;
 
     if ((bin = driver_realloc_binary(buf,newsz)) != NULL) {
 	COUNT_BUF_ALLOC(newsz - buf->orig_size);
@@ -938,7 +967,7 @@ DriverBinary* buf; int newsz;
  * release_buffer instead
  */
 static void free_buffer(buf)
-DriverBinary* buf;
+ErlDrvBinary* buf;
 {
     DEBUGF(("free_buffer: %d\r\n", (buf==NULL) ? 0 : buf->orig_size));
 
@@ -955,36 +984,32 @@ DriverBinary* buf;
 
 #ifdef __WIN32__
 
-static int dummy_start(port, size)
-long port; int size;
+static ErlDrvData dummy_start(ErlDrvPort port, char* command)
 {
-    return port;
+    return (ErlDrvData)port;
 }
 
-static int dummy_ctl(int port, int cmd, char* buf, int len,
+static int dummy_ctl(ErlDrvData data, unsigned int cmd, char* buf, int len,
 		     char** rbuf, int rsize)
 {
     static char error[] = "no_winsock2";
 
-    driver_failure_atom(port, error);
+    driver_failure_atom((ErlDrvPort)data, error);
     return ctl_reply(INET_REP_ERROR, error, sizeof(error), rbuf, rsize);
 }
 
-static int dummy_command(port, buf, len)
-int port; char* buf; int len;
+static void dummy_command(ErlDrvData data, char* buf, int len)
 {
-    return 0;
 }
 
-
-static struct driver_entry dummy_tcp_driver_entry = 
+static struct erl_drv_entry dummy_tcp_driver_entry = 
 {
-    null_func,			/* init */
+    NULL,			/* init */
     dummy_start,		/* start */
-    null_func,			/* stop */
+    NULL,			/* stop */
     dummy_command,		/* command */
-    null_func,			/* input */
-    null_func,			/* output */
+    NULL,			/* input */
+    NULL,			/* output */
     "tcp_inet",			/* name */
     NULL,
     NULL,
@@ -993,14 +1018,14 @@ static struct driver_entry dummy_tcp_driver_entry =
     NULL
 };
 
-static struct driver_entry dummy_udp_driver_entry = 
+static struct erl_drv_entry dummy_udp_driver_entry = 
 {
-    null_func,			/* init */
+    NULL,			/* init */
     dummy_start,		/* start */
-    null_func,			/* stop */
+    NULL,			/* stop */
     dummy_command,		/* command */
-    null_func,			/* input */
-    null_func,			/* output */
+    NULL,			/* input */
+    NULL,			/* output */
     "udp_inet",			/* name */
     NULL,
     NULL,
@@ -1010,7 +1035,6 @@ static struct driver_entry dummy_udp_driver_entry =
 };
 
 #endif
-
 
 /* general control reply function */
 static int ctl_reply(int rep, char* buf, int len, char** rbuf, int rsize)
@@ -1047,7 +1071,7 @@ static int ctl_xerror(char* xerr, char** rbuf, int rsize)
 }
 
 
-static DriverTermData error_atom(err)
+static ErlDrvTermData error_atom(err)
 int err;
 {
     char errstr[256];
@@ -1093,7 +1117,7 @@ inet_descriptor* desc; char* buf; int req;
 }
 
 static int deq_async(desc, ap, cp, rp)
-inet_descriptor* desc; int* ap; DriverTermData* cp; int* rp;
+inet_descriptor* desc; int* ap; ErlDrvTermData* cp; int* rp;
 {
     inet_async_op* opp;
 
@@ -1124,9 +1148,9 @@ inet_descriptor* desc; int* ap; DriverTermData* cp; int* rp;
 **     {inet_async, Port, Ref, ok} 
 */
 static int send_async_ok(port, sender, aid, recipient)
-int port; DriverTermData sender; int aid; DriverTermData recipient; 
+ErlDrvPort port; ErlDrvTermData sender; int aid; ErlDrvTermData recipient; 
 {
-    DriverTermData spec[10];
+    ErlDrvTermData spec[10];
     int i = 0;
 
     i = LOAD_ATOM(spec, i, am_inet_async);
@@ -1144,10 +1168,10 @@ int port; DriverTermData sender; int aid; DriverTermData recipient;
 **      {inet_async, Port, Ref, {error,Reason}}
 */
 static int send_async_error(port, Port, Ref, recipient, Reason)
-int port; DriverTermData Port; int Ref; DriverTermData recipient; 
-DriverTermData Reason;
+ErlDrvPort port; ErlDrvTermData Port; int Ref; ErlDrvTermData recipient; 
+ErlDrvTermData Reason;
 {
-    DriverTermData spec[14];
+    ErlDrvTermData spec[14];
     int i = 0;
 
     i = 0;
@@ -1170,7 +1194,7 @@ inet_descriptor* desc;
 {
     int req;
     int aid;
-    DriverTermData caller;
+    ErlDrvTermData caller;
 
     if (deq_async(desc, &aid, &caller, &req) < 0)
 	return -1;
@@ -1179,11 +1203,11 @@ inet_descriptor* desc;
 
 
 static int async_error_am(desc, reason)
-inet_descriptor* desc; DriverTermData reason;
+inet_descriptor* desc; ErlDrvTermData reason;
 {
     int req;
     int aid;
-    DriverTermData caller;
+    ErlDrvTermData caller;
 
     if (deq_async(desc, &aid, &caller, &req) < 0)
 	return -1;
@@ -1193,11 +1217,11 @@ inet_descriptor* desc; DriverTermData reason;
 
 /* dequeue all operations */
 static int async_error_am_all(desc, reason)
-inet_descriptor* desc; DriverTermData reason;
+inet_descriptor* desc; ErlDrvTermData reason;
 {
     int req;
     int aid;
-    DriverTermData caller;
+    ErlDrvTermData caller;
 
     while (deq_async(desc, &aid, &caller, &req) == 0) {
 	send_async_error(desc->port, desc->dport, aid, caller,
@@ -1229,8 +1253,8 @@ inet_descriptor* desc; int err;
 static int inet_reply_ok(desc)
 inet_descriptor* desc;
 {
-    DriverTermData spec[8];
-    DriverTermData caller = desc->caller;
+    ErlDrvTermData spec[8];
+    ErlDrvTermData caller = desc->caller;
     int i = 0;
 
     i = LOAD_ATOM(spec, i, am_inet_reply);
@@ -1247,10 +1271,10 @@ inet_descriptor* desc;
 **   {inet_reply, S, {error, Reason}} 
 */
 static int inet_reply_error_am(desc, reason)
-inet_descriptor* desc; DriverTermData reason;
+inet_descriptor* desc; ErlDrvTermData reason;
 {
-    DriverTermData spec[12];
-    DriverTermData caller = desc->caller;
+    ErlDrvTermData spec[12];
+    ErlDrvTermData caller = desc->caller;
     int i = 0;
 
     i = LOAD_ATOM(spec, i, am_inet_reply);
@@ -1296,7 +1320,7 @@ inet_descriptor* desc; char* buf; int len;
 ** Deliver port data from binary
 */
 static int inet_port_binary_data(desc,  bin, offs, len)
-inet_descriptor* desc; DriverBinary* bin; int offs; int len;
+inet_descriptor* desc; ErlDrvBinary* bin; int offs; int len;
 {
     unsigned int hsz = desc->hsz;
 
@@ -1310,6 +1334,752 @@ inet_descriptor* desc; DriverBinary* bin; int offs; int len;
 				    bin, offs+hsz, len-hsz);
 }
 
+#ifdef USE_HTTP
+
+#define HTTP_HDR_HASH_SIZE  53
+#define HTTP_METH_HASH_SIZE 13
+
+static char tspecial[128];
+
+static char* http_hdr_strings[] = {
+  "Cache-Control",
+  "Connection",
+  "Date",
+  "Pragma",
+  "Transfer-Encoding",
+  "Upgrade",
+  "Via",
+  "Accept",
+  "Accept-Charset",
+  "Accept-Encoding",
+  "Accept-Language",
+  "Authorization",
+  "From",
+  "Host",
+  "If-Modified-Since",
+  "If-Match",
+  "If-None-Match",
+  "If-Range",
+  "If-Unmodified-Since",
+  "Max-Forwards",
+  "Proxy-Authorization",
+  "Range",
+  "Referer",
+  "User-Agent",
+  "Age",
+  "Location",
+  "Proxy-Authenticate",
+  "Public",
+  "Retry-After",
+  "Server",
+  "Vary",
+  "Warning",
+  "Www-Authenticate",
+  "Allow",
+  "Content-Base",
+  "Content-Encoding",
+  "Content-Language",
+  "Content-Length",
+  "Content-Location",
+  "Content-Md5",
+  "Content-Range",
+  "Content-Type",
+  "Etag",
+  "Expires",
+  "Last-Modified",
+  "Accept-Ranges",
+  "Set-Cookie",
+  "Set-Cookie2",
+  "X-Forwarded-For",
+  "Cookie",
+  "Keep-Alive",
+  "Proxy-Connection",
+    NULL
+};
+
+
+static char* http_meth_strings[] = {
+  "OPTIONS",
+  "GET",
+  "HEAD",
+  "POST",
+  "PUT",
+  "DELETE",
+  "TRACE",
+    NULL
+};
+
+typedef struct http_atom {
+  struct http_atom* next;   /* next in bucket */
+  unsigned long h;          /* stored hash value */
+  char* name;
+  int   len;
+  int index;                /* index in table + bit-pos */
+  ErlDrvTermData atom;      /* erlang atom rep */
+} http_atom_t;
+
+static http_atom_t http_hdr_table[sizeof(http_hdr_strings)/sizeof(char*)];
+static http_atom_t http_meth_table[sizeof(http_meth_strings)/sizeof(char*)];
+
+static http_atom_t* http_hdr_hash[HTTP_HDR_HASH_SIZE];
+static http_atom_t* http_meth_hash[HTTP_METH_HASH_SIZE];
+
+static ErlDrvTermData am_http_eoh;
+static ErlDrvTermData am_http_header;
+static ErlDrvTermData am_http_request;
+static ErlDrvTermData am_http_response;
+static ErlDrvTermData am_http_error;
+static ErlDrvTermData am_abs_path;
+static ErlDrvTermData am_absoluteURI;
+static ErlDrvTermData am_star;
+static ErlDrvTermData am_undefined;
+static ErlDrvTermData am_http;
+static ErlDrvTermData am_https;
+static ErlDrvTermData am_scheme;
+
+
+
+#define CRNL(ptr) (((ptr)[0] == '\r') && ((ptr)[1] == '\n'))
+#define NL(ptr)   ((ptr)[0] == '\n')
+#define SP(ptr)   (((ptr)[0] == ' ') || ((ptr)[0] == '\t'))
+#define is_tspecial(x) ((((x) > 32) && ((x) < 128)) ? tspecial[(x)] : 1)
+
+#define hash_update(h,c) do { \
+    unsigned long __g; \
+    (h) = ((h) << 4) + (c); \
+    if ((__g = (h) & 0xf0000000)) { \
+       (h) ^= (__g >> 24); \
+       (h) ^= __g; \
+    } \
+ } while(0)
+
+static void http_hash(char* name, http_atom_t* entry,
+		      http_atom_t** hash, int hsize)
+{
+  unsigned long h = 0;
+  unsigned char* ptr = (unsigned char*) name;
+  int ix;
+  int len = 0;
+
+  while(*ptr != '\0') {
+    hash_update(h, *ptr);
+    ptr++;
+    len++;
+  }
+  ix = h % hsize;
+
+  entry->next = hash[ix];
+  entry->h    = h;
+  entry->name = name;
+  entry->len  = len;
+  entry->atom = driver_mk_atom(name);
+    
+  hash[ix] = entry;
+}
+
+static http_atom_t* http_hash_lookup(unsigned char* name, int len,
+				     unsigned long h,
+				     http_atom_t** hash, int hsize)
+{
+  int ix = h % hsize;
+  http_atom_t* ap = hash[ix];
+
+  while (ap != NULL) {
+    if ((ap->h == h) && (ap->len == len) && 
+	(strncmp(ap->name, name, len) == 0))
+      return ap;
+    ap = ap->next;
+  }
+  return NULL;
+}
+     
+
+
+static int http_init()
+{
+  int i;
+  unsigned char* ptr;
+
+  for (i = 0; i < 33; i++)
+    tspecial[i] = 1;
+  for (i = 33; i < 127; i++)
+    tspecial[i] = 0;
+  for (ptr = "()<>@,;:\\\"/[]?={} \t"; *ptr != '\0'; ptr++)
+    tspecial[*ptr] = 1;
+
+  am_http_eoh      = driver_mk_atom("http_eoh");
+  am_http_header   = driver_mk_atom("http_header");
+  am_http_request  = driver_mk_atom("http_request");
+  am_http_response = driver_mk_atom("http_response");
+  am_http_error    = driver_mk_atom("http_error");
+  am_star          = driver_mk_atom("*");
+  am_undefined     = driver_mk_atom("undefined");
+  am_abs_path      = driver_mk_atom("abs_path");
+  am_absoluteURI   = driver_mk_atom("absoluteURI");
+  am_http          = driver_mk_atom("http");
+  am_https         = driver_mk_atom("https");
+  am_scheme        = driver_mk_atom("scheme");
+
+  for (i = 0; i < HTTP_HDR_HASH_SIZE; i++)
+    http_hdr_hash[i] = NULL;
+  for (i = 0; http_hdr_strings[i] != NULL; i++) {
+    http_hdr_table[i].index = i;
+    http_hash(http_hdr_strings[i], 
+	      &http_hdr_table[i], 
+	      http_hdr_hash, HTTP_HDR_HASH_SIZE);
+  }
+
+  for (i = 0; i < HTTP_METH_HASH_SIZE; i++)
+    http_meth_hash[i] = NULL;
+  for (i = 0; http_meth_strings[i] != NULL; i++) {
+    http_meth_table[i].index = i;
+    http_hash(http_meth_strings[i],
+	      &http_meth_table[i], 
+	      http_meth_hash, HTTP_METH_HASH_SIZE);
+  }
+  return 0;
+}
+
+static int http_response_message(desc, major, minor, status, 
+				 phrase, phrase_len)
+     tcp_descriptor* desc; int major; int minor; int status; 
+     char* phrase; int phrase_len;
+{
+  int i = 0;
+  ErlDrvTermData spec[27];
+
+  if (desc->inet.active == INET_PASSIVE) {
+    /* {inet_async,S,Ref,{ok,{http_response,Version,Status,Phrase}}} */
+    int req;
+    int aid;
+    ErlDrvTermData caller;
+
+    if (deq_async(desc, &aid, &caller, &req) < 0)
+      return -1;
+    i = LOAD_ATOM(spec, i,  am_inet_async);
+    i = LOAD_PORT(spec, i,  desc->inet.dport);
+    i = LOAD_INT(spec, i,   aid);
+    i = LOAD_ATOM(spec, i,  am_ok);
+    i = LOAD_ATOM(spec, i,  am_http_response);
+    i = LOAD_INT(spec, i, major);
+    i = LOAD_INT(spec, i, minor);
+    i = LOAD_TUPLE(spec, i, 2);
+    i = LOAD_INT(spec, i, status);
+    i = LOAD_STRING(spec, i, phrase, phrase_len);
+    i = LOAD_TUPLE(spec, i, 4);
+    i = LOAD_TUPLE(spec, i, 2);
+    i = LOAD_TUPLE(spec, i, 4);
+    return driver_send_term(desc->inet.port, caller, spec, i);
+  }
+  else {
+    /* {http_response, S, Version, Status, Phrase} */
+    i = LOAD_ATOM(spec, i,  am_http_response);
+    i = LOAD_PORT(spec, i,  desc->inet.dport);
+    i = LOAD_INT(spec, i, major);
+    i = LOAD_INT(spec, i, minor);
+    i = LOAD_TUPLE(spec, i, 2);
+    i = LOAD_INT(spec, i, status);
+    i = LOAD_STRING(spec, i, phrase, phrase_len);
+    i = LOAD_TUPLE(spec, i, 5);
+    return driver_output_term(desc->inet.port, spec, i);
+  }
+}
+
+/*
+** Handle URI syntax:
+**
+**  Request-URI    = "*" | absoluteURI | abs_path
+**  absoluteURI    = scheme ":" *( uchar | reserved )
+**  net_path       = "//" net_loc [ abs_path ]
+**  abs_path       = "/" rel_path
+**  rel_path       = [ path ] [ ";" params ] [ "?" query ]
+**  path           = fsegment *( "/" segment )
+**  fsegment       = 1*pchar
+**  segment        = *pchar
+**  params         = param *( ";" param )
+**  param          = *( pchar | "/" )
+**  query          = *( uchar | reserved )
+**
+**  http_URL       = "http:" "//" host [ ":" port ] [ abs_path ]
+**
+**  host           = <A legal Internet host domain name
+**                   or IP address (in dotted-decimal form),
+**                   as defined by Section 2.1 of RFC 1123>
+**  port           = *DIGIT
+**
+**  {absoluteURI, <scheme>, <host>, <port>, <path+params+query>}
+**       when <scheme> = http | https
+**  {scheme, <scheme>, <chars>}
+**       wheb <scheme> is something else then http or https
+**  {abs_path,  <path>}
+**
+**  <string>  (unknown form)
+**
+*/
+
+/* host [ ":" port ] [ abs_path ] */
+static int http_load_absoluteURI(spec, i, scheme, uri_ptr, uri_len)
+     ErlDrvTermData* spec; int i; ErlDrvTermData scheme;
+     char* uri_ptr; int uri_len;
+{
+  char* p;
+  char* abs_path_ptr;
+  int   abs_path_len;
+
+  if ((p = memchr(uri_ptr, '/', uri_len)) == NULL) {
+    /* host [":" port] */
+    abs_path_ptr = "/";
+    abs_path_len = 1;
+  }
+  else {
+    int n = (p - uri_ptr);
+
+    abs_path_ptr = p;
+    abs_path_len = uri_len - n;
+    uri_len = n;
+  }
+  i = LOAD_ATOM(spec, i, am_absoluteURI);
+  i = LOAD_ATOM(spec, i, scheme);
+
+  /* host[:port]  */
+  if ((p = memchr(uri_ptr, ':', uri_len)) == NULL) {
+    i = LOAD_STRING(spec, i, uri_ptr, uri_len);
+    i = LOAD_ATOM(spec, i, am_undefined);
+  }
+  else {
+    int n = (p - uri_ptr);
+    int port = 0;
+
+    i = LOAD_STRING(spec, i, uri_ptr, n);
+    n = uri_len - (n+1);
+    p++;
+    while(n && isdigit((int) *p)) {
+      port = port*10 + (*p - '0');
+      n--;
+      p++;
+    }
+    if ((n != 0) || (port == 0))
+      i = LOAD_ATOM(spec, i, am_undefined);
+    else
+      i = LOAD_INT(spec, i, port);
+  }
+  i = LOAD_STRING(spec, i, abs_path_ptr, abs_path_len);
+  i = LOAD_TUPLE(spec, i, 5);
+  return i;
+}
+
+static int http_load_uri(spec, i, uri_ptr, uri_len)
+     ErlDrvTermData* spec; int i; char* uri_ptr; int uri_len;
+{
+  if ((uri_len == 1) && (uri_ptr[0] == '*'))
+    i = LOAD_ATOM(spec, i, am_star);
+  else if ((uri_len <= 1) || (uri_ptr[0] == '/')) {
+    i = LOAD_ATOM(spec, i, am_abs_path);
+    i = LOAD_STRING(spec, i, uri_ptr, uri_len);
+    i = LOAD_TUPLE(spec, i, 2);
+  }
+  else {
+    if ((uri_len>=7) && (STRNCASECMP(uri_ptr, "http://", 7) == 0)) {
+      uri_len -= 7;
+      uri_ptr += 7;
+      return http_load_absoluteURI(spec, i, am_http, uri_ptr, uri_len);
+    }
+    else if ((uri_len>=8) && (STRNCASECMP(uri_ptr, "https://", 8) == 0)) {
+      uri_len -= 8;
+      uri_ptr += 8;    
+      return http_load_absoluteURI(spec, i, am_https, uri_ptr,uri_len);
+    }
+    else {
+      char* ptr;
+      if ((ptr = memchr(uri_ptr, ':', uri_len)) == NULL)
+	i = LOAD_STRING(spec, i, uri_ptr, uri_len);
+      else {
+	int slen = ptr - uri_ptr;
+	i = LOAD_ATOM(spec, i, am_scheme);
+	i = LOAD_STRING(spec, i, uri_ptr, slen);
+	i = LOAD_STRING(spec, i, uri_ptr+(slen+1), uri_len-(slen+1));
+	i = LOAD_TUPLE(spec, i, 3);
+      }
+    }
+  }
+  return i;
+}
+
+static int http_request_message(desc, meth, meth_ptr, meth_len,
+				uri_ptr, uri_len, major, minor)
+     tcp_descriptor* desc; http_atom_t* meth; char* meth_ptr; int meth_len;
+     char* uri_ptr; int uri_len; int major; int minor;
+{
+  int i = 0;
+  ErlDrvTermData spec[43];
+
+  if (desc->inet.active == INET_PASSIVE) {
+    /* {inet_async, S, Ref, {ok,{http_request,Meth,Uri,Version}}} */
+    int req;
+    int aid;
+    ErlDrvTermData caller;
+
+    if (deq_async(desc, &aid, &caller, &req) < 0)
+      return -1;
+    i = LOAD_ATOM(spec, i,  am_inet_async);
+    i = LOAD_PORT(spec, i,  desc->inet.dport);
+    i = LOAD_INT(spec, i,   aid);
+    i = LOAD_ATOM(spec, i,  am_ok);
+    i = LOAD_ATOM(spec, i,  am_http_request);
+    if (meth != NULL)
+      i = LOAD_ATOM(spec, i, meth->atom);
+    else
+      i = LOAD_STRING(spec, i, meth_ptr, meth_len);
+    i = http_load_uri(spec, i, uri_ptr, uri_len);
+    i = LOAD_INT(spec, i, major);
+    i = LOAD_INT(spec, i, minor);
+    i = LOAD_TUPLE(spec, i, 2);
+    i = LOAD_TUPLE(spec, i, 4);
+    i = LOAD_TUPLE(spec, i, 2);
+    i = LOAD_TUPLE(spec, i, 4);
+    ASSERT(i <= 43);
+    return driver_send_term(desc->inet.port, caller, spec, i);
+  }
+  else {
+    /* {http_request, S, Meth, Uri, Version} */
+    i = LOAD_ATOM(spec, i,  am_http_request);
+    i = LOAD_PORT(spec, i,  desc->inet.dport);
+    if (meth != NULL)
+      i = LOAD_ATOM(spec, i, meth->atom);
+    else
+      i = LOAD_STRING(spec, i, meth_ptr, meth_len);
+    i = http_load_uri(spec, i, uri_ptr, uri_len);
+    i = LOAD_INT(spec, i, major);
+    i = LOAD_INT(spec, i, minor);
+    i = LOAD_TUPLE(spec, i, 2);
+    i = LOAD_TUPLE(spec, i, 5);
+    ASSERT(i <= 43);
+    return driver_output_term(desc->inet.port, spec, i);
+  }
+}
+
+static int http_header_message(desc, name, name_ptr, name_len,
+			       value_ptr, value_len)
+     tcp_descriptor* desc; http_atom_t* name; char* name_ptr; int name_len;
+     char* value_ptr; int value_len;
+{
+  int i = 0;
+  ErlDrvTermData spec[26];
+
+  if (desc->inet.active == INET_PASSIVE) {
+    /* {inet_async,S,Ref,{ok,{http_header,Bit,Name,IValue,Value}} */
+    int req;
+    int aid;
+    ErlDrvTermData caller;
+
+    if (deq_async(desc, &aid, &caller, &req) < 0)
+      return -1;
+    i = LOAD_ATOM(spec, i,  am_inet_async);
+    i = LOAD_PORT(spec, i,  desc->inet.dport);
+    i = LOAD_INT(spec, i,   aid);
+    i = LOAD_ATOM(spec, i,  am_ok);
+    i = LOAD_ATOM(spec, i,  am_http_header);
+    if (name != NULL) {
+      i = LOAD_INT(spec, i,  name->index+1);
+      i = LOAD_ATOM(spec, i, name->atom);
+    }
+    else {
+      i = LOAD_INT(spec, i,  0);
+      i = LOAD_STRING(spec, i, name_ptr, name_len);
+    }
+    i = LOAD_ATOM(spec, i, am_undefined);
+    i = LOAD_STRING(spec, i, value_ptr, value_len);
+    i = LOAD_TUPLE(spec, i, 5);
+    i = LOAD_TUPLE(spec, i, 2);
+    i = LOAD_TUPLE(spec, i, 4);
+    ASSERT(i <= 26);
+    return driver_send_term(desc->inet.port, caller, spec, i);
+  }
+  else {
+    /* {http_header,S,Bit,Name,Code,Value} */
+    i = LOAD_ATOM(spec, i,  am_http_header);
+    i = LOAD_PORT(spec, i,  desc->inet.dport);
+    if (name != NULL) {
+      i = LOAD_INT(spec, i,  name->index+1);
+      i = LOAD_ATOM(spec, i, name->atom);
+    }
+    else {
+      i = LOAD_INT(spec, i,  0);
+      i = LOAD_STRING(spec, i, name_ptr, name_len);
+    }
+    i = LOAD_ATOM(spec, i, am_undefined);
+    i = LOAD_STRING(spec, i, value_ptr, value_len);
+    i = LOAD_TUPLE(spec, i, 6);
+    ASSERT(i <= 26);
+    return driver_output_term(desc->inet.port, spec, i);
+  }
+}
+
+static int http_eoh_message(desc)
+     tcp_descriptor* desc;
+{
+  int i = 0;
+  ErlDrvTermData spec[14];
+
+  if (desc->inet.active == INET_PASSIVE) {
+    /* {inet_async,S,Ref,{ok,http_eoh}} */
+    int req;
+    int aid;
+    ErlDrvTermData caller;
+
+    if (deq_async(desc, &aid, &caller, &req) < 0)
+      return -1;
+    i = LOAD_ATOM(spec, i,  am_inet_async);
+    i = LOAD_PORT(spec, i,  desc->inet.dport);
+    i = LOAD_INT(spec, i,   aid);
+    i = LOAD_ATOM(spec, i,  am_ok);
+    i = LOAD_ATOM(spec, i,  am_http_eoh);
+    i = LOAD_TUPLE(spec, i, 2);
+    i = LOAD_TUPLE(spec, i, 4);
+    ASSERT(i <= 14);
+    return driver_send_term(desc->inet.port, caller, spec, i);
+  }
+  else {
+    /* {http_eoh,S} */
+    i = LOAD_ATOM(spec, i,  am_http_eoh);
+    i = LOAD_PORT(spec, i,  desc->inet.dport);
+    i = LOAD_TUPLE(spec, i, 2);
+    ASSERT(i <= 14);
+    return driver_output_term(desc->inet.port, spec, i);
+  }
+}
+
+static int http_error_message(desc, buf, len)
+     tcp_descriptor* desc; char* buf; int len;
+{
+  int i = 0;
+  ErlDrvTermData spec[19];
+
+  if (desc->inet.active == INET_PASSIVE) {
+    /* {inet_async,S,Ref,{error,{http_error,Line}}} */
+    int req;
+    int aid;
+    ErlDrvTermData caller;
+
+    if (deq_async(desc, &aid, &caller, &req) < 0)
+      return -1;
+    i = LOAD_ATOM(spec, i,  am_inet_async);
+    i = LOAD_PORT(spec, i,  desc->inet.dport);
+    i = LOAD_INT(spec, i,   aid);
+    i = LOAD_ATOM(spec, i,  am_error);
+    i = LOAD_ATOM(spec, i,  am_http_error);
+    i = LOAD_STRING(spec, i, buf, len);
+    i = LOAD_TUPLE(spec, i, 2);
+    i = LOAD_TUPLE(spec, i, 2);
+    i = LOAD_TUPLE(spec, i, 4);
+    ASSERT(i <= 19);
+    return driver_send_term(desc->inet.port, caller, spec, i);
+  }
+  else {
+    /* {http_error,S,Line} */
+    i = LOAD_ATOM(spec, i,  am_http_error);
+    i = LOAD_PORT(spec, i,  desc->inet.dport);
+    i = LOAD_STRING(spec, i, buf, len);
+    i = LOAD_TUPLE(spec, i, 3);
+    ASSERT(i <= 19);
+    return driver_output_term(desc->inet.port, spec, i);
+  }
+}
+
+/*
+** load http message:
+**  {http_eoh, S}                          - end of headers
+**  {http_header,   S, Key, Value}         - Key = atom() | string()
+**  {http_request,  S, Method,Url,Version}
+**  {http_response, S, Version, Status, Message}
+**  {http_error,    S, Error-Line}
+*/
+static int http_message(desc, buf, len)
+     tcp_descriptor* desc; char* buf; int len;
+{
+  char* ptr = buf;
+  int n = len;
+
+  /* remove trailing CRNL (accept NL as well) */
+  if ((n >= 2) && (buf[n-2] == '\r'))
+    n -= 2;
+  else if ((n >= 1) && (buf[n-1] == '\n'))
+    n -= 1;
+
+  if (desc->http_state == 0) {
+    unsigned long h;
+    http_atom_t* meth;
+    char* meth_ptr;
+    int   meth_len;
+    int c;
+    /* start-line = Request-Line | Status-Line */
+    if (n == 0)
+      return 0;
+    h = 0;
+    meth_ptr = ptr;
+    while (n && !is_tspecial((unsigned char)*ptr)) {
+      c = *ptr;
+      hash_update(h, c);
+      ptr++;
+      n--;
+    }
+    if ((meth_len = (ptr - meth_ptr)) == 0)
+      return -1;
+    meth = http_hash_lookup(meth_ptr, meth_len, h,
+			    http_meth_hash, HTTP_METH_HASH_SIZE);
+    if (n) {
+      if ((*ptr == '/') && (strncmp(buf, "HTTP", 4) == 0)) {
+	int major  = 0;
+	int minor  = 0;
+	int status = 0;
+	/* Status-Line = HTTP-Version SP 
+	 *              Status-Code SP Reason-Phrase 
+	 *              CRNL
+	 * HTTP-Version   = "HTTP" "/" 1*DIGIT "." 1*DIGIT
+	 */
+	ptr++;
+	n--;
+	if (!n || !isdigit((int) *ptr)) return -1;
+	while(n && isdigit((int) *ptr)) {
+	  major = 10*major + (*ptr - '0');
+	  ptr++;
+	  n--;
+	}
+	if (!n || (*ptr != '.'))
+	  return -1;
+	ptr++;
+	n--;
+	if (!n || !isdigit((int) *ptr)) return -1;
+	while(n && isdigit((int) *ptr)) {
+	  minor = 10*minor + (*ptr - '0');
+	  ptr++;
+	  n--;
+	}
+	if (!n || !SP(ptr))
+	  return -1;
+
+	while(n && SP(ptr)) { ptr++; n--; }
+
+	while(n && isdigit((int) *ptr)) {
+	  status = 10*status + (*ptr - '0');
+	  ptr++;
+	  n--;
+	}
+	if (!n || !SP(ptr))
+	  return -1;
+
+	while(n && SP(ptr)) { ptr++; n--; }
+
+	/* NOTE: the syntax allows empty reason phrases */
+	desc->http_state++;
+
+	return http_response_message(desc, major, minor, status,
+				     (char*)ptr, n);
+      }
+      else if (SP(ptr)) {
+	/* Request-Line = Method SP Request-URI SP HTTP-Version CRLF */
+	char* uri_ptr;
+	int   uri_len;
+	int major  = 0;
+	int minor  = 0;
+	
+	while(n && SP(ptr)) { ptr++; n--; }
+	uri_ptr = ptr;
+	while(n && !SP(ptr)) { ptr++; n--; }
+	if ((uri_len = (ptr - uri_ptr)) == 0)
+	  return -1;
+	while(n && SP(ptr)) { ptr++; n--; }
+	if (n == 0) {
+	  return http_request_message(desc, meth,
+				      meth_ptr, meth_len,
+				      uri_ptr, uri_len,
+				      0, 9);
+	}
+	if (n < 8)
+	  return -1;
+	if (strncmp(ptr, "HTTP/", 5) != 0)
+	  return -1;
+	ptr += 5;
+	n   -= 5;
+
+	if (!n || !isdigit((int) *ptr)) return -1;
+	while(n && isdigit((int) *ptr)) {
+	  major = 10*major + (*ptr - '0');
+	  ptr++;
+	  n--;
+	}
+
+	if (!n || (*ptr != '.'))
+	  return -1;
+	ptr++;
+	n--;
+
+	if (!n || !isdigit((int) *ptr)) return -1;
+	while(n && isdigit((int) *ptr)) {
+	  minor = 10*minor + (*ptr - '0');
+	  ptr++;
+	  n--;
+	}
+	desc->http_state++;
+	return http_request_message(desc, meth,
+				    meth_ptr, meth_len,
+				    uri_ptr, uri_len,
+				    major, minor);
+      }
+    }
+    return -1;
+  }
+  else {
+    int up = 1;      /* make next char uppercase */
+    http_atom_t* name;
+    char* name_ptr;
+    int   name_len;
+    unsigned long h;
+
+    if (n == 0) {
+      /* end of headers */
+      desc->http_state = 0;  /* reset state (for next request) */
+      return http_eoh_message(desc);
+    }
+    h = 0;
+    while(n && !is_tspecial((unsigned char)*ptr)) {
+      int c = *ptr;
+      if (up) {
+	if (islower(c)) {
+	  c = toupper(c);
+	}
+	up = 0;
+      }
+      else {
+	if (isupper(c))
+	  c = tolower(c);
+	else if (c == '-')
+	  up = 1;
+      }
+      *ptr = c;
+      hash_update(h, c);
+      ptr++;
+      n--;
+    }
+    if (*ptr != ':') {
+      /* Error case */
+      return -1;
+    }
+    name_ptr = buf;
+    name_len = (ptr - buf);
+    name = http_hash_lookup(name_ptr, name_len, h,
+			    http_hdr_hash, HTTP_HDR_HASH_SIZE);
+    ptr++;
+    n--;
+    /* Skip white space */
+    while(n && SP(ptr)) { ptr++; n--; }
+
+    return http_header_message(desc, name, name_ptr, name_len,
+			       ptr, n);
+  }
+}
+#endif
+
 /* 
 ** passive mode reply:
 **        {inet_async, S, Ref, {ok,[H1,...Hsz | Data]}}
@@ -1318,8 +2088,8 @@ static int inet_async_data(desc, buf, len)
 inet_descriptor* desc; char* buf; int len;
 {
     unsigned int hsz = desc->hsz;
-    DriverTermData spec[20];
-    DriverTermData caller;
+    ErlDrvTermData spec[20];
+    ErlDrvTermData caller;
     int req;
     int aid;
     int i = 0;
@@ -1344,7 +2114,7 @@ inet_descriptor* desc; char* buf; int len;
     }
     else {
 	/* INET_MODE_BINARY => [H1,H2,...HSz | Binary] */
-	DriverBinary* bin;
+	ErlDrvBinary* bin;
 	int sz = len - hsz;
 	int code;
 
@@ -1370,11 +2140,11 @@ inet_descriptor* desc; char* buf; int len;
 */
 static int inet_async_binary_data(desc, phsz, bin, offs, len)
      inet_descriptor* desc; unsigned int phsz;
-     DriverBinary* bin; int offs; int len;
+     ErlDrvBinary* bin; int offs; int len;
 {
     unsigned int hsz = desc->hsz + phsz;
-    DriverTermData spec[20];
-    DriverTermData caller = desc->caller;
+    ErlDrvTermData spec[20];
+    ErlDrvTermData caller = desc->caller;
     int aid;
     int req;
     int i = 0;
@@ -1417,7 +2187,7 @@ static int tcp_message(desc, buf, len)
 inet_descriptor* desc; char* buf; int len;
 {
     unsigned int hsz = desc->hsz;
-    DriverTermData spec[20];
+    ErlDrvTermData spec[20];
     int i = 0;
 
     DEBUGF(("tcp_message(%d): len = %d\r\n", desc->port, len));    
@@ -1433,7 +2203,7 @@ inet_descriptor* desc; char* buf; int len;
     }
     else {
 	/* INET_MODE_BINARY => [H1,H2,...HSz | Binary] */
-	DriverBinary* bin;
+	ErlDrvBinary* bin;
 	int sz = len - hsz;
 	int code;
 
@@ -1456,10 +2226,10 @@ inet_descriptor* desc; char* buf; int len;
 **        {tcp, S, [H1,...Hsz | Data]}
 */
 static int tcp_binary_message(desc, bin, offs, len)
-inet_descriptor* desc; DriverBinary* bin; int offs; int len;
+inet_descriptor* desc; ErlDrvBinary* bin; int offs; int len;
 {
     unsigned int hsz = desc->hsz;
-    DriverTermData spec[20];
+    ErlDrvTermData spec[20];
     int i = 0;
 
     DEBUGF(("tcp_binary_message(%d): len = %d\r\n", desc->port, len)); 
@@ -1490,7 +2260,7 @@ inet_descriptor* desc; DriverBinary* bin; int offs; int len;
 static int tcp_closed_message(desc)
 tcp_descriptor* desc;
 {
-    DriverTermData spec[6];
+    ErlDrvTermData spec[6];
     int i = 0;
 
     DEBUGF(("tcp_closed_message(%d):\r\n", desc->inet.port)); 
@@ -1508,8 +2278,8 @@ tcp_descriptor* desc;
 static int tcp_error_message(desc, err)
 tcp_descriptor* desc; int err;
 {
-    DriverTermData spec[8];
-    DriverTermData am_err = error_atom(err);
+    ErlDrvTermData spec[8];
+    ErlDrvTermData am_err = error_atom(err);
     int i = 0;
 
     DEBUGF(("tcp_error_message(%d): %d\r\n", desc->inet.port, err)); 
@@ -1532,7 +2302,7 @@ static int udp_message(desc, buf, len)
 inet_descriptor* desc; char* buf; int len;
 {
     unsigned int hsz = desc->hsz;
-    DriverTermData spec[30];
+    ErlDrvTermData spec[30];
     int i = 0;
     int alen;
 
@@ -1555,7 +2325,7 @@ inet_descriptor* desc; char* buf; int len;
     }
     else {
 	/* INET_MODE_BINARY => [H1,H2,...HSz | Binary] */
-	DriverBinary* bin;
+	ErlDrvBinary* bin;
 	int sz = len - hsz;
 	int code;
 
@@ -1579,10 +2349,10 @@ inet_descriptor* desc; char* buf; int len;
 **        {udp, S, IP, Port, [H1,...Hsz | Data]}
 */
 static int udp_binary_message(desc, bin, offs, len)
-inet_descriptor* desc; DriverBinary* bin; int offs; int len;
+inet_descriptor* desc; ErlDrvBinary* bin; int offs; int len;
 {
     unsigned int hsz = desc->hsz;
-    DriverTermData spec[30];
+    ErlDrvTermData spec[30];
     int i = 0;
     int alen;
 
@@ -1621,8 +2391,8 @@ inet_descriptor* desc; DriverBinary* bin; int offs; int len;
 static int udp_error_message(desc, err)
 udp_descriptor* desc; int err;
 {
-    DriverTermData spec[8];
-    DriverTermData am_err = error_atom(err);
+    ErlDrvTermData spec[8];
+    ErlDrvTermData am_err = error_atom(err);
     int i = 0;
 
     DEBUGF(("udp_error_message(%d): %d\r\n", desc->inet.port, err)); 
@@ -1701,12 +2471,12 @@ inet_descriptor* desc; char* buf; int len;
 **       {async, S, Ref, {ok,[H1,...Hsz | Data]}}
 */
 static int tcp_reply_data(desc, buf, len)
-inet_descriptor* desc; char* buf; int len;
+tcp_descriptor* desc; char* buf; int len;
 {
     int code;
 
     /* adjust according to packet type */
-    switch(desc->htype) {
+    switch(desc->inet.htype) {
     case TCP_PB_1:  buf += 1; len -= 1; break;
     case TCP_PB_2:  buf += 2; len -= 2; break;
     case TCP_PB_4:  buf += 4; len -= 4; break;
@@ -1715,23 +2485,32 @@ inet_descriptor* desc; char* buf; int len;
 	break;
     }
 
-    scanbit8(desc, buf, len);
+    scanbit8(INETP(desc), buf, len);
 
-    if (desc->active == INET_PASSIVE)
-	return inet_async_data(desc, buf, len);
-    else if (desc->deliver == INET_DELIVER_PORT)
-	code = inet_port_data(desc, buf, len);
+    if (desc->inet.deliver == INET_DELIVER_PORT)
+        code = inet_port_data(INETP(desc), buf, len);
+#ifdef USE_HTTP
+    else if ((desc->inet.htype == TCP_PB_HTTP) ||
+	     (desc->inet.htype == TCP_PB_HTTPH)) {
+        if ((code = http_message(desc, buf, len)) < 0)
+	    http_error_message(desc, buf, len);
+	code = 0;
+    }
+#endif    
+    else if (desc->inet.active == INET_PASSIVE)
+        return inet_async_data(INETP(desc), buf, len);
     else
-	code = tcp_message(desc, buf, len);
+        code = tcp_message(INETP(desc), buf, len);
+
     if (code < 0)
 	return code;
-    if (desc->active == INET_ONCE)
-	desc->active = INET_PASSIVE;
+    if (desc->inet.active == INET_ONCE)
+	desc->inet.active = INET_PASSIVE;
     return code;
 }
 
 static int tcp_reply_binary_data(desc, bin, offs, len)
-     tcp_descriptor* desc;  DriverBinary* bin; int offs; int len;
+     tcp_descriptor* desc;  ErlDrvBinary* bin; int offs; int len;
 {
     int code;
 
@@ -1749,6 +2528,14 @@ static int tcp_reply_binary_data(desc, bin, offs, len)
 
     if (desc->inet.deliver == INET_DELIVER_PORT)
         code = inet_port_binary_data(INETP(desc), bin, offs, len);
+#ifdef USE_HTTP
+    else if ((desc->inet.htype == TCP_PB_HTTP) ||
+	     (desc->inet.htype == TCP_PB_HTTPH)) {
+        if ((code = http_message(desc, bin->orig_bytes+offs, len)) < 0)
+	    http_error_message(desc, bin->orig_bytes+offs, len);
+	code = 0;
+    }
+#endif
     else if (desc->inet.active == INET_PASSIVE)
 	return inet_async_binary_data(INETP(desc), 0, bin, offs, len);
     else
@@ -1793,7 +2580,7 @@ inet_descriptor* desc; char* buf; int len;
 
 
 static int udp_reply_binary_data(desc, hsz, bin, offs, len)
-     inet_descriptor* desc; unsigned int hsz; DriverBinary* bin; 
+     inet_descriptor* desc; unsigned int hsz; ErlDrvBinary* bin; 
      int offs; int len;
 {
     int code;
@@ -1872,6 +2659,9 @@ static int inet_init()
     add_driver_entry(&udp_inet_driver_entry);
     /* remove the dummy inet driver */
     remove_driver_entry(&inet_driver_entry);
+#ifdef USE_HTTP
+    http_init();
+#endif
     return 0;
 
  error:
@@ -2205,10 +2995,8 @@ static int inet_ctl_getiflist(inet_descriptor* desc, char** rbuf, int rsize)
     char* sptr;
     INTERFACE_INFO* ifp;
     DWORD len;
-    struct sockaddr_in* sinp;
     int n;
     int err;
-    int size;
 
     ifp = (INTERFACE_INFO*) buf;
     err = (*winSock.WSAIoctl)(desc->s, SIO_GET_INTERFACE_LIST, NULL, 0,
@@ -2246,9 +3034,7 @@ static int inet_ctl_ifget(inet_descriptor* desc, char* buf, int len,
     int namlen;
     int   err;
     INTERFACE_INFO* ifp;
-    int ix;
     int n;
-    struct sockaddr_in* sinp;
     long namaddr;
 
     if ((len == 0) || ((namlen = buf[0]) > len))
@@ -3243,7 +4029,7 @@ static void
 send_empty_out_q_msgs(desc)
 inet_descriptor* desc;
 {
-  DriverTermData msg[6];
+  ErlDrvTermData msg[6];
   int msg_len = 0;
 
   if(NO_SUBSCRIBERS(&desc->empty_out_q_subs))
@@ -3303,8 +4089,7 @@ inet_descriptor* desc;
 
 
 /* Allocate descriptor */
-static inet_descriptor* inet_start(port, size)
-long port; int size;
+static ErlDrvData inet_start(ErlDrvPort port, int size)
 {
     inet_descriptor* desc;
     int ix = inet_desc_ix;
@@ -3368,7 +4153,7 @@ long port; int size;
 
     inet_desc_table[ix] = desc;
 
-    return desc;
+    return (ErlDrvData)desc;
 }
 
 
@@ -3771,7 +4556,7 @@ inet_descriptor* desc; int len;
 static int tcp_expand_buffer(desc, len)
 tcp_descriptor* desc; int len;
 {
-    DriverBinary* bin;
+    ErlDrvBinary* bin;
     int offs1;
     int offs2;
     int used = desc->i_ptr_start - desc->i_buf->orig_bytes;
@@ -3804,7 +4589,7 @@ tcp_descriptor* desc; int len;
 static int tcp_push_buffer(desc, buf, len)
 tcp_descriptor* desc; char* buf; int len;
 {
-    DriverBinary* bin;
+    ErlDrvBinary* bin;
 
     if (desc->i_buf == NULL) {
 	bin = alloc_buffer(len);
@@ -3855,7 +4640,7 @@ tcp_descriptor* desc;
 static void tcp_clear_output(desc)
 tcp_descriptor* desc;
 {
-    int ix  = desc->inet.port;
+    ErlDrvPort ix  = desc->inet.port;
     int qsz = driver_sizeq(ix);
 
     driver_deq(ix, qsz);
@@ -3885,14 +4670,13 @@ static int tcp_inet_init()
 
 /* initialize the tcp descriptor */
 
-static long tcp_inet_start(port, args)
-long port; char *args;
+static ErlDrvData tcp_inet_start(ErlDrvPort port, char* args)
 {
     tcp_descriptor* desc;
 
     desc = (tcp_descriptor*)inet_start(port, sizeof(tcp_descriptor));
     if (desc == NULL)
-	return -2;
+	return ERL_DRV_ERROR_ERRNO;
     desc->high = INET_HIGH_WATERMARK;
     desc->low  = INET_LOW_WATERMARK;
     desc->send_timeout = INET_INFINITY;
@@ -3903,7 +4687,10 @@ long port; char *args;
     desc->i_ptr_start = NULL;
     desc->i_remain = 0;
     desc->i_bufsz = 0;
-    return (long) desc;
+#ifdef USE_HTTP
+    desc->http_state = 0;
+#endif
+    return (ErlDrvData) desc;
 }
 
 /*
@@ -3966,22 +4753,22 @@ tcp_descriptor* desc;
 /*
 ** Cleanup & Free
 */
-static int tcp_inet_stop(desc)
-tcp_descriptor* desc;
+static void tcp_inet_stop(ErlDrvData e)
 {
+    tcp_descriptor* desc = (tcp_descriptor*)e;
     tcp_close_check(desc);
     /* free input buffer & output buffer */
     if (desc->i_buf != NULL)
 	release_buffer(desc->i_buf);
     inet_stop(&desc->inet);
-    return 0;
 }
 
 
 
-static int tcp_inet_ctl(tcp_descriptor* desc, int cmd, char* buf, int len,
+static int tcp_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 			char** rbuf, int rsize)
 {
+    tcp_descriptor* desc = (tcp_descriptor*)e;
     switch(cmd) {
     case INET_REQ_OPEN:   /* open socket and return internal index */
 	DEBUGF(("tcp_inet_ctl(%d): OPEN\r\n", desc->inet.port));
@@ -4215,36 +5002,35 @@ static int tcp_inet_ctl(tcp_descriptor* desc, int cmd, char* buf, int len,
 **
 */
 
-static int tcp_inet_timeout(desc)
-tcp_descriptor* desc;
+static void tcp_inet_timeout(ErlDrvData e)
 {
+    tcp_descriptor* desc = (tcp_descriptor*)e;
     int state = desc->inet.state;
 
     if ((state & TCP_STATE_CONNECTED) == TCP_STATE_CONNECTED) {
 	if (desc->busy_on_send) {
 	    desc->busy_on_send = 0;
-	    return inet_reply_error_am(INETP(desc), am_timeout);
+	    inet_reply_error_am(INETP(desc), am_timeout);
 	}
 	else {
 	    /* assume recv timeout */
 	    ASSERT(!desc->inet.active);
 	    sock_select(INETP(desc),(FD_READ|FD_CLOSE),0);
 	    desc->i_remain = 0;
-	    return async_error_am(INETP(desc), am_timeout);
+	    async_error_am(INETP(desc), am_timeout);
 	}
     }
     else if ((state & TCP_STATE_CONNECTING) == TCP_STATE_CONNECTING) {
 	/* assume connect timeout */
 	/* close the socket since it's not usable (see man pages) */
 	inet_close(INETP(desc));
-	return async_error_am(INETP(desc), am_timeout);
+	async_error_am(INETP(desc), am_timeout);
     }
     else if ((state & TCP_STATE_ACCEPTING) == TCP_STATE_ACCEPTING) {
 	/* timer is set on accepting port */
 	tcp_clear_listener(desc);
-	return async_error_am(INETP(desc), am_timeout);
+	async_error_am(INETP(desc), am_timeout);
     }
-    return 0;
 }
 
 /*
@@ -4256,29 +5042,27 @@ tcp_descriptor* desc;
 ** but distribution still uses the tcp_inet_command!!
 */
 
-static int tcp_inet_command(desc, buf, len)
-tcp_descriptor* desc; char *buf; int len;
+static void tcp_inet_command(ErlDrvData e, char *buf, int len)
 {
+    tcp_descriptor* desc = (tcp_descriptor*)e;
     desc->inet.caller = driver_caller(desc->inet.port);
 
     if (!IS_CONNECTED(INETP(desc)))
-	return inet_reply_error(INETP(desc), ENOTCONN);
-    if (tcp_send(desc, buf, len) == 0)
-	return inet_reply_ok(INETP(desc));
-    return 0;
+	inet_reply_error(INETP(desc), ENOTCONN);
+    else if (tcp_send(desc, buf, len) == 0)
+	inet_reply_ok(INETP(desc));
 }
 
 
-static int tcp_inet_commandv(desc, ev)
-tcp_descriptor* desc; ErlIOVec* ev;
+static void tcp_inet_commandv(ErlDrvData e, ErlIOVec* ev)
 {
+    tcp_descriptor* desc = (tcp_descriptor*)e;
     desc->inet.caller = driver_caller(desc->inet.port);
 
     if (!IS_CONNECTED(INETP(desc)))
-	return inet_reply_error(INETP(desc), ENOTCONN);
-    if (tcp_sendv(desc, ev) == 0)
-	return inet_reply_ok(INETP(desc));
-    return 0;
+	inet_reply_error(INETP(desc), ENOTCONN);
+    else if (tcp_sendv(desc, ev) == 0)
+	inet_reply_ok(INETP(desc));
 }
 
 
@@ -4505,7 +5289,49 @@ tcp_descriptor* desc; int* len;
 	    + hp->paddingLength;
 	goto remain;
     }
+#ifdef USE_HTTP
+    case TCP_PB_HTTPH:
+	desc->http_state = 1;
+    case TCP_PB_HTTP: {
+        /* TCP_PB_HTTP:  data \r\n(SP data\r\n)*  */
+        plen = n;
+	if (((plen == 1) && NL(ptr)) || ((plen == 2) && CRNL(ptr)))
+	    goto done;
+	else {
+	    char* ptr1 = ptr;
+	    int   len = plen;
 
+	    while(1) {
+	      char* ptr2 = memchr(ptr1, '\n', len);
+
+	      if  (ptr2 == NULL) {
+		  if ((nsz == 0) && (nfill == n)) { /* buffer full */
+		      plen = n;
+		      goto done;
+		  }
+		  goto more;
+	      }
+	      else {
+  		  plen = (ptr2 - ptr) + 1;
+
+		  if (desc->http_state == 0) 
+		      goto done;
+	        
+		  if (plen < n) {
+		      if (SP(ptr2+1)) {
+			  ptr1 = ptr2+1;
+			  len -= plen;
+		      }
+		      else
+			  goto done;
+		  }
+		  else
+		      goto more;
+	      }
+	    }
+	}
+    }
+#endif
     case TCP_PB_TPKT: {
 	struct tpkt_head* hp;
 	hlen = sizeof(struct tpkt_head);
@@ -4526,6 +5352,11 @@ tcp_descriptor* desc; int* len;
 	return -1;
     }
 
+ done: {
+      *len = plen;
+      DEBUGF((" => nothing remain packet=%d\r\n", plen));
+      return 0;
+    }
 
  remain: {
      int remain = (plen+hlen) - n;
@@ -4601,7 +5432,7 @@ tcp_descriptor* desc; int len;
 		tcp_clear_input(desc);
 	    }
 	    else { /* move trail to beginning of a new buffer */
-		DriverBinary* bin;
+		ErlDrvBinary* bin;
 		char* ptr_end = desc->i_ptr_start + len;
 		int sz = desc->i_ptr - ptr_end;
 
@@ -4793,9 +5624,9 @@ static int winsock_event_select(inet_descriptor *desc, int flags, int on)
     return 0;
 }
 
-static int tcp_inet_event(desc, event)
-tcp_descriptor* desc; HANDLE event;
+static void tcp_inet_event(ErlDrvData e, ErlDrvEvent event)
 {
+    tcp_descriptor* desc = (tcp_descriptor*)e;
     WSANETWORKEVENTS netEv;
     int err;
 
@@ -4803,7 +5634,7 @@ tcp_descriptor* desc; HANDLE event;
     if ((*winSock.WSAEnumNetworkEvents)(desc->inet.s, desc->inet.event,
 					&netEv) != 0) {
 	DEBUGF((" => EnumNetworkEvents = %d\r\n", sock_errno() ));
-	return -1;
+	return; /* -1;*/
     }
 
     DEBUGF((" => event=%02X, mask=%02X\r\n",
@@ -4826,7 +5657,7 @@ tcp_descriptor* desc; HANDLE event;
     if (netEv.lNetworkEvents & FD_READ) {
 	do {
 	    if (tcp_inet_input(desc, event) < 0)
-		return -1;
+		return; /* -1;*/
 	    if (netEv.lNetworkEvents & FD_CLOSE) {
 		DEBUGF(("Retrying read due to closed port\r\n"));
 	    }
@@ -4834,24 +5665,24 @@ tcp_descriptor* desc; HANDLE event;
     }
     if (netEv.lNetworkEvents & FD_WRITE) {
 	if (tcp_inet_output(desc, event) < 0)
-	    return -1;
+	    return; /*-1;*/
     }
     if (netEv.lNetworkEvents & FD_CONNECT) {
 	if ((err = netEv.iErrorCode[FD_CONNECT_BIT]) != 0) {
-	    return async_error(INETP(desc), err);
-	}
-	return tcp_inet_output(desc, event);
+	    async_error(INETP(desc), err);
+	} else
+	    tcp_inet_output(desc, event);
     } else if (netEv.lNetworkEvents & FD_ACCEPT) {
 	if ((err = netEv.iErrorCode[FD_ACCEPT_BIT]) != 0)
-	    return async_error(INETP(desc), err);
-	return tcp_inet_input(desc, event);
+	    async_error(INETP(desc), err);
+	else
+	    tcp_inet_input(desc, event);
     }
     if (netEv.lNetworkEvents & FD_CLOSE) {
 	/* error in err = netEv.iErrorCode[FD_CLOSE_BIT] */
 	DEBUGF(("Detected close in %s, line %d\r\n", __FILE__, __LINE__));
-	return tcp_recv_closed(desc);
+	tcp_recv_closed(desc);
     }
-    return 0;
 }
 
 #endif
@@ -4968,7 +5799,7 @@ tcp_descriptor* desc; ErlIOVec* ev;
     char buf[4];
     int h_len;
     int n;
-    int ix = desc->inet.port;
+    ErlDrvPort ix = desc->inet.port;
     int len = ev->size;
 
     switch(desc->inet.htype) {
@@ -5049,7 +5880,7 @@ tcp_descriptor* desc; char* ptr; int len;
     char buf[4];
     int h_len;
     int n;
-    int ix = desc->inet.port;
+    ErlDrvPort ix = desc->inet.port;
     SysIOVec iov[2];
 
     switch(desc->inet.htype) {
@@ -5127,6 +5958,16 @@ tcp_descriptor* desc; char* ptr; int len;
     return 0;
 }
 
+static void tcp_inet_drv_output(ErlDrvData data, ErlDrvEvent event)
+{
+    (void)tcp_inet_output((tcp_descriptor*)data, (HANDLE)event);
+}
+
+static void tcp_inet_drv_input(ErlDrvData data, ErlDrvEvent event)
+{
+    (void)tcp_inet_input((tcp_descriptor*)data, (HANDLE)event);
+}
+
 /* socket has ouput:
 ** 1. TCP_STATE_CONNECTING => non block connect ?
 ** 2. TCP_STATE_CONNECTED  => write output
@@ -5134,7 +5975,7 @@ tcp_descriptor* desc; char* ptr; int len;
 static int tcp_inet_output(desc, event)
 tcp_descriptor* desc; HANDLE event;
 {
-    int ix = desc->inet.port;
+    ErlDrvPort ix = desc->inet.port;
 
     if (desc->inet.state == TCP_STATE_CONNECTING) {
 	sock_select(INETP(desc),FD_CONNECT,0);
@@ -5236,25 +6077,22 @@ static int udp_inet_init()
 }
 
 
-static long udp_inet_start(port, args)
-long port; char* args;
+static ErlDrvData udp_inet_start(ErlDrvPort port, char* args)
 {
     udp_descriptor* desc;
-    
+  
     desc = (udp_descriptor*) inet_start(port, sizeof(udp_descriptor));
     if (desc == NULL)
-	return -2;
-    return (long) desc;
+	return ERL_DRV_ERROR_ERRNO;
+    return (ErlDrvData) desc;
 }
 
-static int udp_inet_stop(desc)
-udp_descriptor* desc;
+static void udp_inet_stop(ErlDrvData e)
 {
     /* There should *never* be any "empty out q" subscribers on
        an udp socket! */
-    ASSERT(NO_SUBSCRIBERS(&INETP(desc)->empty_out_q_subs));
-    inet_stop(&desc->inet);
-    return 0;
+    ASSERT(NO_SUBSCRIBERS(&INETP((udp_descriptor*) e)->empty_out_q_subs));
+    inet_stop(&((udp_descriptor*)e)->inet);
 }
 
 static int udp_error(desc, err)
@@ -5266,10 +6104,11 @@ udp_descriptor* desc; int err;
     return -1;
 }
 
-static int udp_inet_ctl(udp_descriptor* desc, int cmd, char* buf, int len,
+static int udp_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 			char** rbuf, int rsize)
 {
     int replen;
+    udp_descriptor* desc = (udp_descriptor*)e;
 
     switch(cmd) {
     case INET_REQ_OPEN:   /* open socket and return internal index */
@@ -5422,19 +6261,18 @@ static int udp_inet_ctl(udp_descriptor* desc, int cmd, char* buf, int len,
     }
 }
 
-static int udp_inet_timeout(desc)
-udp_descriptor* desc;
+static void udp_inet_timeout(ErlDrvData e)
 {
-    if (!desc->inet.active)
-	sock_select(INETP(desc),FD_READ,0);
-    return async_error_am(INETP(desc), am_timeout);
+    if (!((udp_descriptor*)e)->inet.active)
+	sock_select(INETP((udp_descriptor*)e),FD_READ,0);
+    async_error_am(INETP((udp_descriptor*)e), am_timeout);
 }
 
 
 /* input should: P1 P0 Address buffer */
-static int udp_inet_command(desc, buf, len)
-udp_descriptor* desc; char *buf; int len;
+static void udp_inet_command(ErlDrvData e, char* buf, int len)
 {
+    udp_descriptor* desc = (udp_descriptor*)e;
     char* ptr = buf;
     char* qtr;
     int sz;
@@ -5443,15 +6281,21 @@ udp_descriptor* desc; char *buf; int len;
 
     desc->inet.caller = driver_caller(desc->inet.port);
 
-    if (!IS_OPEN(INETP(desc)))
-	return inet_reply_error(INETP(desc), EINVAL);
-    if (!IS_BOUND(INETP(desc)))
-	return inet_reply_error(INETP(desc), EINVAL);
+    if (!IS_OPEN(INETP(desc))) {
+	inet_reply_error(INETP(desc), EINVAL);
+	return;
+    }
+    if (!IS_BOUND(INETP(desc))) {
+	inet_reply_error(INETP(desc), EINVAL);
+	return;
+    }
 
     sz = len;
     qtr = inet_set_address(desc->inet.sfamily, &other, ptr, &sz);
-    if (qtr == NULL)
-	return inet_reply_error(INETP(desc), EINVAL);
+    if (qtr == NULL) {
+	inet_reply_error(INETP(desc), EINVAL);
+	return;
+    }
     len -= (qtr - ptr);
     ptr = qtr;
     inet_output_count(INETP(desc), len);
@@ -5462,7 +6306,7 @@ udp_descriptor* desc; char *buf; int len;
 	    int err = sock_errno();
 	    inet_reply_error(INETP(desc), err);
 	}
-	return inet_reply_ok(INETP(desc));	
+	inet_reply_ok(INETP(desc));	
     }
     else {
 	code = sock_sendto(desc->inet.s, ptr, len, 0,
@@ -5471,36 +6315,38 @@ udp_descriptor* desc; char *buf; int len;
 	    int err = sock_errno();
 	    inet_reply_error(INETP(desc), err);
 	}
-	return inet_reply_ok(INETP(desc));
+	inet_reply_ok(INETP(desc));
     }
 }
 
 
 #ifdef __WIN32__
 
-static int udp_inet_event(desc, event)
-udp_descriptor* desc; HANDLE event;
+static void udp_inet_event(ErlDrvData e, ErlDrvEvent event)
 {
+    udp_descriptor* desc = (udp_descriptor*)e;
     WSANETWORKEVENTS netEv;
 
     if ((winSock.WSAEnumNetworkEvents)(desc->inet.s, desc->inet.event,
 				       &netEv) != 0) {
 	DEBUGF(( "port %d: EnumNetwrokEvents = %d\r\n", 
 		desc->inet.port, sock_errno() ));
-	return -1;
+	return; /* -1; */
     }
     if (netEv.lNetworkEvents == 0)  /* NOTHING */
-		return 0;
+	return; /* 0; */
     if (netEv.lNetworkEvents & FD_READ)
-		udp_inet_input(desc, event);
-    return 0;
+	udp_inet_input(desc, (HANDLE)event);
 }
 
 #endif
 
+static void udp_inet_drv_input(ErlDrvData e, ErlDrvEvent event)
+{
+    (void)udp_inet_input((udp_descriptor*)e, (HANDLE)event);
+}
 
-static int udp_inet_input(desc, event)
-udp_descriptor* desc; HANDLE event;
+static int udp_inet_input(udp_descriptor* desc, HANDLE event)
 {
     int n;
     int len;
@@ -5508,7 +6354,7 @@ udp_descriptor* desc; HANDLE event;
     char abuf[sizeof(inet_address)];  /* buffer address */
     int sz;
     char* ptr;
-    DriverBinary* buf; /* binary */
+    ErlDrvBinary* buf; /* binary */
     int packet_count = INET_UDP_POLL;
     int count = 0;   /* number of packets delivered to owner */
 
@@ -5563,7 +6409,7 @@ udp_descriptor* desc; HANDLE event;
 	    /* check if we need to reallocate binary */
 	    if ((desc->inet.mode == INET_MODE_BINARY) &&
 		(desc->inet.hsz < n) && (nsz < BIN_REALLOC_LIMIT(sz))) {
-		DriverBinary* tmp;
+		ErlDrvBinary* tmp;
 		if ((tmp = realloc_buffer(buf,nsz+offs)) != NULL)
 		    buf = tmp;
 	    }
@@ -5732,7 +6578,7 @@ make_noninheritable_handle(SOCKET s)
 
 static int
 save_subscriber(subs, subs_pid)
-subs_list *subs; DriverTermData subs_pid;
+subs_list *subs; ErlDrvTermData subs_pid;
 {
   subs_list *tmp;
 
@@ -5773,10 +6619,10 @@ subs_list *subs;
 
 static void
 send_to_subscribers(port, subs, free_subs, msg, msg_len)
-long port;
+ErlDrvPort port;
 subs_list *subs;
 int free_subs;
-DriverTermData msg[];
+ErlDrvTermData msg[];
 int msg_len;
 {
   subs_list *this;

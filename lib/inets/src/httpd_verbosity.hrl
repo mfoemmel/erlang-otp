@@ -19,7 +19,7 @@
 -ifndef(dont_use_verbosity).
 
 -ifndef(default_verbosity).
--defined(default_verbosity,silence).
+-define(default_verbosity,silence).
 -endif.
 
 -define(vvalidate(V), httpd_verbosity:validate(V)).

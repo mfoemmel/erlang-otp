@@ -13,7 +13,7 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id: sets.erl,v 1.1.1.1 1999/11/25 13:52:10 erlang Exp $
+%%     $Id$
 %%
 
 %% We use the dynamic hashing techniques by Per-Åke Larsson as
@@ -144,7 +144,7 @@ union(S1, S2) ->
 union([S1,S2|Ss]) ->
     union1(union(S1, S2), Ss);
 union([S]) -> S;
-union([]) -> [].
+union([]) -> new().
 
 union1(S1, [S2|Ss]) ->
     union1(union(S1, S2), Ss);
@@ -163,8 +163,7 @@ intersection(S1, S2) ->
 
 intersection([S1,S2|Ss]) ->
     intersection1(intersection(S1, S2), Ss);
-intersection([S]) -> S;
-intersection([]) -> [].
+intersection([S]) -> S.
 
 intersection1(S1, [S2|Ss]) ->
     intersection1(intersection(S1, S2), Ss);

@@ -50,7 +50,8 @@ HRL_FILES = \
 DATA_FILES = \
 	DATA
 
-TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+# TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+TARGET_FILES = 
 
 # ----------------------------------------------------
 # FLAGS
@@ -77,8 +78,24 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/examples
 	$(INSTALL_DATA) $(ERL_FILES) $(DATA_FILES) $(HRL_FILES) $(RELSYSDIR)/examples
-	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/examples
-
+	$(INSTALL_DIR) $(RELSYSDIR)/examples/bench
+	(cd bench; $(INSTALL_DATA) \
+          Makefile \
+          README \
+          bench.erl \
+          bench.hrl \
+          bench_generate.erl \
+          bench_populate.erl \
+          bench_trans.erl \
+          bench.config1 \
+          bench.config2 \
+          bench.config3 \
+          bench.config4 \
+          bench.config5 \
+          bench.config6 \
+          bench.config7 \
+          $(RELSYSDIR)/examples/bench)
+	(cd bench; $(INSTALL_PROGRAM) bench.sh $(RELSYSDIR)/examples/bench)
 
 release_docs_spec:
 

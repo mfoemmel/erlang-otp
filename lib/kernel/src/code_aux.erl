@@ -28,7 +28,7 @@
 
 
 objfile_extension() ->
-    case erlang:info(machine) of
+    case erlang:system_info(machine) of
 	"JAM" -> ".jam";
 	"VEE" -> ".vee";
 	"BEAM" -> ".beam"

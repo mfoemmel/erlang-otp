@@ -25,20 +25,26 @@ TARGET = win32
 OBJDIR = ..\obj\$(TARGET)
 BINDIR = ..\bin\$(TARGET)
 
-ERL_OBJS = $(OBJDIR)\epmd_port.obj $(OBJDIR)\epmd_publish.obj $(OBJDIR)\epmd_unpublish.obj $(OBJDIR)\erl_connect.obj $(OBJDIR)\erl_error.obj $(OBJDIR)\erl_eterm.obj $(OBJDIR)\erl_fix_alloc.obj $(OBJDIR)\erl_format.obj $(OBJDIR)\erl_locking.obj $(OBJDIR)\erl_malloc.obj $(OBJDIR)\erl_marshal.obj $(OBJDIR)\erl_nothreads.obj $(OBJDIR)\erl_pthreads.obj $(OBJDIR)\erl_resolve.obj $(OBJDIR)\erl_rport.obj $(OBJDIR)\erl_start.obj $(OBJDIR)\erl_sthreads.obj $(OBJDIR)\global_register.obj $(OBJDIR)\global_names.obj $(OBJDIR)\global_unregister.obj $(OBJDIR)\global_whereis.obj
-
 # what pain to have to specify full path for each file
 # why doesn't WinMake (or whatever) understand $addprefix ??
 #
 
-IDL_OBJS = $(OBJDIR)\decode_atom.obj $(OBJDIR)\decode_binary.obj $(OBJDIR)\decode_boolean.obj $(OBJDIR)\decode_char.obj $(OBJDIR)\decode_double.obj $(OBJDIR)\decode_list_header.obj $(OBJDIR)\decode_long.obj $(OBJDIR)\decode_pid.obj $(OBJDIR)\decode_port.obj $(OBJDIR)\decode_ref.obj $(OBJDIR)\decode_string.obj $(OBJDIR)\decode_term.obj $(OBJDIR)\decode_trace.obj $(OBJDIR)\decode_tuple_header.obj $(OBJDIR)\decode_ulong.obj $(OBJDIR)\decode_version.obj $(OBJDIR)\encode_atom.obj $(OBJDIR)\encode_binary.obj $(OBJDIR)\encode_boolean.obj $(OBJDIR)\encode_char.obj $(OBJDIR)\encode_double.obj $(OBJDIR)\encode_list_header.obj $(OBJDIR)\encode_long.obj $(OBJDIR)\encode_pid.obj $(OBJDIR)\encode_port.obj $(OBJDIR)\encode_ref.obj $(OBJDIR)\encode_string.obj $(OBJDIR)\encode_term.obj $(OBJDIR)\encode_trace.obj $(OBJDIR)\encode_tuple_header.obj $(OBJDIR)\encode_ulong.obj $(OBJDIR)\encode_version.obj $(OBJDIR)\get_type.obj $(OBJDIR)\receive.obj $(OBJDIR)\send.obj $(OBJDIR)\send_exit.obj $(OBJDIR)\send_link.obj $(OBJDIR)\send_reg.obj $(OBJDIR)\show_msg.obj $(OBJDIR)\trace.obj $(OBJDIR)\whereis.obj $(OBJDIR)\eimd5.obj
+EI_HEADERS = ei.h eicode.h eiext.h eisend.h eihash.h eireg.h eimd5.h ei_format.h ei_printterm.h ei_decode_term.h ei_connect.h ei_x_encode.h
+
+EI_EXTRA_OBJS = $(OBJDIR)\ei_connect.obj $(OBJDIR)\ei_printterm.obj $(OBJDIR)\erl_rport.obj $(OBJDIR)\erl_resolve.obj $(OBJDIR)\epmd_port.obj $(OBJDIR)\epmd_publish.obj $(OBJDIR)\epmd_unpublish.obj $(OBJDIR)\erl_error.obj $(OBJDIR)\ei_nothreads.obj $(OBJDIR)\ei_pthreads.obj $(OBJDIR)\ei_sthreads.obj $(OBJDIR)\ei_malloc.obj $(OBJDIR)\erl_locking.obj
+
+IDL_OBJS = $(OBJDIR)\decode_atom.obj $(OBJDIR)\decode_binary.obj $(OBJDIR)\decode_boolean.obj $(OBJDIR)\decode_char.obj $(OBJDIR)\decode_double.obj $(OBJDIR)\decode_list_header.obj $(OBJDIR)\decode_long.obj $(OBJDIR)\decode_pid.obj $(OBJDIR)\decode_port.obj $(OBJDIR)\decode_ref.obj $(OBJDIR)\decode_string.obj $(OBJDIR)\decode_term.obj $(OBJDIR)\decode_trace.obj $(OBJDIR)\decode_tuple_header.obj $(OBJDIR)\decode_ulong.obj $(OBJDIR)\decode_version.obj $(OBJDIR)\encode_atom.obj $(OBJDIR)\encode_binary.obj $(OBJDIR)\encode_boolean.obj $(OBJDIR)\encode_char.obj $(OBJDIR)\encode_double.obj $(OBJDIR)\encode_list_header.obj $(OBJDIR)\encode_long.obj $(OBJDIR)\encode_pid.obj $(OBJDIR)\encode_port.obj $(OBJDIR)\encode_ref.obj $(OBJDIR)\encode_string.obj $(OBJDIR)\encode_term.obj $(OBJDIR)\encode_trace.obj $(OBJDIR)\encode_tuple_header.obj $(OBJDIR)\encode_ulong.obj $(OBJDIR)\encode_version.obj $(OBJDIR)\get_type.obj $(OBJDIR)\receive.obj $(OBJDIR)\send.obj $(OBJDIR)\send_exit.obj $(OBJDIR)\send_link.obj $(OBJDIR)\send_reg.obj $(OBJDIR)\show_msg.obj $(OBJDIR)\trace.obj $(OBJDIR)\whereis.obj $(OBJDIR)\eimd5.obj $(OBJDIR)\ei_format.obj $(OBJDIR)\ei_decode_term.obj $(OBJDIR)\decode_fun.obj $(OBJDIR)\encode_fun.obj $(OBJDIR)\ei_x_encode.obj
+
+#IDL_OBJS = $(OBJDIR)\ei_decode.obj $(OBJDIR)\encode_atom.obj $(OBJDIR)\encode_binary.obj $(OBJDIR)\encode_boolean.obj $(OBJDIR)\encode_char.obj $(OBJDIR)\encode_double.obj $(OBJDIR)\encode_list_header.obj $(OBJDIR)\encode_long.obj $(OBJDIR)\encode_pid.obj $(OBJDIR)\encode_port.obj $(OBJDIR)\encode_ref.obj $(OBJDIR)\encode_string.obj $(OBJDIR)\encode_term.obj $(OBJDIR)\encode_trace.obj $(OBJDIR)\encode_tuple_header.obj $(OBJDIR)\encode_ulong.obj $(OBJDIR)\encode_version.obj $(OBJDIR)\get_type.obj $(OBJDIR)\receive.obj $(OBJDIR)\send.obj $(OBJDIR)\send_exit.obj $(OBJDIR)\send_link.obj $(OBJDIR)\send_reg.obj $(OBJDIR)\show_msg.obj $(OBJDIR)\trace.obj $(OBJDIR)\whereis.obj $(OBJDIR)\eimd5.obj $(OBJDIR)\ei_format.obj $(OBJDIR)\encode_fun.obj $(OBJDIR)\ei_x_encode.obj
 
 HASH_OBJS = $(OBJDIR)\hash_dohash.obj $(OBJDIR)\hash_foreach.obj $(OBJDIR)\hash_freetab.obj $(OBJDIR)\hash_insert.obj $(OBJDIR)\hash_isprime.obj $(OBJDIR)\hash_lookup.obj $(OBJDIR)\hash_newtab.obj $(OBJDIR)\hash_remove.obj $(OBJDIR)\hash_resize.obj $(OBJDIR)\hash_rlookup.obj
 
 REG_OBJS = $(OBJDIR)\reg_close.obj $(OBJDIR)\reg_delete.obj $(OBJDIR)\reg_dirty.obj $(OBJDIR)\reg_dump.obj $(OBJDIR)\reg_free.obj $(OBJDIR)\reg_get.obj $(OBJDIR)\reg_getf.obj $(OBJDIR)\reg_geti.obj $(OBJDIR)\reg_getp.obj $(OBJDIR)\reg_gets.obj $(OBJDIR)\reg_make.obj $(OBJDIR)\reg_open.obj $(OBJDIR)\reg_purge.obj $(OBJDIR)\reg_resize.obj $(OBJDIR)\reg_restore.obj $(OBJDIR)\reg_set.obj $(OBJDIR)\reg_setf.obj $(OBJDIR)\reg_seti.obj $(OBJDIR)\reg_setp.obj $(OBJDIR)\reg_sets.obj $(OBJDIR)\reg_stat.obj $(OBJDIR)\reg_tabstat.obj
 
+EI_OBJS = $(IDL_OBJS) $(HASH_OBJS) $(REG_OBJS) $(EI_EXTRA_OBJS)
 
-EI_OBJS = $(IDL_OBJS) $(HASH_OBJS) $(REG_OBJS) $(OBJDIR)\erl_error.obj
+ERL_OBJS = $(OBJDIR)\erl_connect.obj $(OBJDIR)\erl_eterm.obj $(OBJDIR)\erl_fix_alloc.obj $(OBJDIR)\erl_format.obj $(OBJDIR)\erl_malloc.obj $(OBJDIR)\erl_marshal.obj $(OBJDIR)\erl_start.obj $(OBJDIR)\global_register.obj $(OBJDIR)\global_names.obj $(OBJDIR)\global_unregister.obj $(OBJDIR)\global_whereis.obj $(OBJDIR)\decode_term.obj $(OBJDIR)\encode_term.obj $(OBJDIR)\erl_nothreads.obj $(OBJDIR)\erl_pthreads.obj $(OBJDIR)\erl_sthreads.obj
+
 
 # Now, we want to create something else to... Multithreaded DLL linked and
 # Dito debug
@@ -55,7 +61,7 @@ INCL_EMUL_RUNTIME = -I..\..\..\system\emulator\runtime
 
 CC = cl -DEPMD_PORT=$(EPMD_PORT_NO) -nologo
 LIBRARIAN = lib
-CC_DEBUG = -Zi
+CC_DEBUG = -Zi -Yd
 INCL_PATHS = $(INCL_HERE) $(INCL_ETC) $(INCL_EMUL_RUNTIME)
 
 .SUFFIXES: .mdobj .mddobj
@@ -68,14 +74,14 @@ $(OBJDIR):
 $(BINDIR):
 	-mkdir $(BINDIR)
 
-$(OBJDIR)/erl_interface.lib: $(ERL_OBJS)
-	$(LIBRARIAN) /OUT:$@ $**
+$(OBJDIR)/erl_interface.lib: $(ERL_OBJS) $(OBJDIR)\ei.lib
+	$(LIBRARIAN) /OUT:$@ $(ERL_OBJS)
 
 $(OBJDIR)/erl_interface_md.lib: $(ERL_OBJS_MD)
-	$(LIBRARIAN) /OUT:$@ $**
+	$(LIBRARIAN) /OUT:$@ $(ERL_OBJS_MD) $(OBJDIR)\ei_md.lib
 
-$(OBJDIR)/erl_interface_mdd.lib: $(ERL_OBJS_MDD)
-	$(LIBRARIAN) /OUT:$@ $**
+$(OBJDIR)/erl_interface_mdd.lib: $(ERL_OBJS_MDD) $(OBJDIR)\ei_mdd.lib
+	$(LIBRARIAN) /OUT:$@ $(ERL_OBJS_MDD)
 
 $(OBJDIR)/ei.lib: $(EI_OBJS)
 	$(LIBRARIAN) /OUT:$@ $**

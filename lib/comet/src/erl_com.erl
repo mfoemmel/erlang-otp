@@ -35,7 +35,8 @@
 	 driver_or_program/1,
 	 create_dispatch/3, create_object/4, create_object/3, 
 	 create_dispatch/2, create_object/2, 
-	 query_interface/2, release/1, 
+	 get_object/3, get_object/2, get_dispatch/2,
+	 query_interface/2, release/1,
 	 invoke/3, invoke/2, com_call/3, com_call/2,
 	 property_put/3, property_get/2, property_get/3, property_put_ref/3,
 	 new_thread/1, end_thread/1, current_thread/1,
@@ -44,7 +45,10 @@
 	 get_interface_info/2, get_interface_info/3,
 	 get_typelib_info/1, get_typelib_info/2,
 	 package_interface/2,
-	 test/1]).
+	 test/1, idispatch/0,
+	 reset/1, next/1, enumintf_next/1, nexti/1, intfnexti/1,
+	 value/1, enum/1, evaluate/1,
+	 map_enum/2, map_enumi/2, map_intfenumi/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -134,11 +138,24 @@ create_object(Thread, Clsid, Refiid, Ctx) ->
     {com_thread, Pid, Threadn}= get_thread(Thread),
     gen_server:call(Pid, {create_object, Threadn, Clsid, Refiid, Ctx}, infinity).
 
+%% get a com object with given name and interface
+get_object(Thread, Name, Refiid) ->
+    {com_thread, Pid, Threadn}= get_thread(Thread),
+    gen_server:call(Pid, {get_object, Threadn, Name, Refiid}, infinity).
+
+get_object(Thread, Name) ->
+    get_object(Thread, Name, "").
+
+get_dispatch(Thread, Name) ->
+    get_object(Thread, Name, ?IID_IDispatch).
+
 %% package an interface
-package_interface({com_thread, Pid, Threadn}, I) ->
+package_interface({com_thread, Pid, Threadn}, I) when integer(I) ->
     {com_interface, Pid, Threadn, I};
-package_interface({com_interface, Pid, Threadn, _}, I) ->
-    {com_interface, Pid, Threadn, I}.
+package_interface({com_interface, Pid, Threadn, _}, I) when integer(I) ->
+    {com_interface, Pid, Threadn, I};
+package_interface(_, I) ->			% to get errors through
+    I.
 
 %% get thread from interface (or thread)
 get_thread({com_interface, Pid, Threadn, _}) ->
@@ -156,7 +173,7 @@ get_thread(T) ->
 query_interface({com_interface, Pid, Threadn, Inum}, Iid) ->
     gen_server:call(Pid, {query_interface, Threadn, Inum, Iid}, infinity).
 
-%% release, release a com interface or object
+%% release, release a com interface
 release({com_interface, Pid, Threadn, Inum}) ->
     gen_server:call(Pid, {release, Threadn, Inum}, infinity).
 
@@ -242,9 +259,53 @@ stop(Pid) when pid(Pid) ->
 stop(Pid) ->
     stop(whereis(Pid)).
 
+%% get next from IEnumVARIANT or IEnumUnknown
+next({com_interface, Pid, Threadn, Inum}) ->
+    gen_server:call(Pid, {next, Threadn, Inum}, infinity).
+
+enumintf_next({com_interface, Pid, Threadn, Inum}) ->
+    gen_server:call(Pid, {enumintf_next, Threadn, Inum}, infinity).
+
+%% reset IEnumVARIANT or IEnumUnknown
+reset({com_interface, Pid, Threadn, Inum}) ->
+    gen_server:call(Pid, {reset, Threadn, Inum}, infinity).
+
+%% some util functions
+
+nexti(I) -> package_interface(I, next(I)).
+intfnexti(I) -> package_interface(I, enumintf_next(I)).
+value(I) -> property_get(I, ?DISPID_VALUE).
+enum(I) -> package_interface(I, property_get(I, ?DISPID_NEWENUM)).
+evaluate(I) -> property_get(I, ?DISPID_EVALUATE).
+
+map_enum_aux(Enum, Next, F, A) ->
+    reset(Enum),
+    case Next(Enum) of
+	{com_error, _, _}= E -> E;
+	{} -> lists:reverse(A);
+	N -> V= F(N),
+	     map_enum_aux(Enum, Next, F, [V | A])
+    end.
+
+map_enum(Enum, F) ->
+    map_enum_aux(Enum, {?MODULE, next}, F, []).
+
+map_enumi(Enum, F) ->
+    map_enum_aux(Enum, {?MODULE, nexti}, F, []).
+
+map_intfenumi(Enum, F) ->
+    map_enum_aux(Enum, {?MODULE, intfenum_next}, F, []).    
+
+%% the test function just do a DebugBreak in the driver/port-program
 test(Thread) ->
     {com_thread, Pid, Threadn}= get_thread(Thread),
     gen_server:call(Pid, {test, Threadn}, infinity).
+
+
+
+
+idispatch() ->
+    ?IID_IDispatch.
 
 %%%----------------------------------------------------------------------
 %%% Callback functions from gen_server
@@ -297,6 +358,9 @@ handle_call(stop, From, State) ->
 handle_call({create_object, Threadn, Clsid, Refiid, Ctx}, From, State) ->
     do_call(?ERLCOM_CreateObject, create_object, Threadn,
 	    {Clsid, Refiid, Ctx}, From, State);
+handle_call({get_object, Threadn, Name, Refiid}, From, State) ->
+    do_call(?ERLCOM_GetObject, create_object, Threadn,
+	    {Name, Refiid}, From, State);
 handle_call({query_interface, Threadn, Inum, Iid}, From, State) ->
     do_call(?ERLCOM_QueryInterface, query_interface, Threadn,
 	    {Inum, Iid}, From, State);
@@ -330,6 +394,16 @@ handle_call({get_interface_info, Threadn, Tname, Inum, Dispflag}, From, State) -
 handle_call({get_typelib_info, Threadn, Inum}, From, State) ->
     do_call(?ERLCOM_GetTypeLibInfo, get_typelib_info, Threadn,
 	   Inum, From, State);
+handle_call({next, Threadn, Inum}, From, State) ->
+    do_call(?ERLCOM_Next, next, Threadn,
+	    Inum, From, State);
+handle_call({enumintf_next, Threadn, Inum}, From, State) ->
+    do_call(?ERLCOM_NextIntf, enumintf_next, Threadn,
+	    Inum, From, State);
+handle_call({reset, Threadn, Inum}, From, State) ->
+    do_call(?ERLCOM_Reset, reset, Threadn,
+	    Inum, From, State);
+
 handle_call({test, Threadn}, From, State) ->
     do_call(?ERLCOM_Test, test, Threadn, {}, From, State);
 

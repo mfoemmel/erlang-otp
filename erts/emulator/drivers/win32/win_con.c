@@ -699,7 +699,7 @@ ClientWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 	HANDLE_MSG(hwnd, WM_VSCROLL, Client_OnVScroll);
 	HANDLE_MSG(hwnd, WM_HSCROLL, Client_OnHScroll);
     case WM_CONBEEP:
-        Beep(440, 400);
+        if (0) Beep(440, 400);
         return 0;
     case WM_CONTEXT:
         ConDrawText(hwnd);
@@ -932,10 +932,11 @@ OnEditPaste(HWND hwnd)
         pClipMem = GlobalLock(hClipMem);
         pMem = (char *)malloc(GlobalSize(hClipMem));
         pMem2 = pMem;
-        while (*pMem2 = *pClipMem++) {
+        while ((*pMem2 = *pClipMem) != '\0') {
             if (*pClipMem == '\r')
                 *pMem2 = '\n';
-            pMem2++;
+            ++pMem2;
+	    ++pClipMem;
         }
         GlobalUnlock(hClipMem);
         write_inbuf(pMem, strlen(pMem));
@@ -1506,7 +1507,7 @@ InitToolBar(HWND hwndParent)
 		(WPARAM) sizeof(TBBUTTON),0); 
     /*tbbitmap.hInst = beam_module; 
     tbbitmap.nID   = 1;*/
-    tbbitmap.hInst = NULL; 
+    tbbitmap.hInst = NULL;
     tbbitmap.nID   = LoadBitmap(beam_module, MAKEINTRESOURCE(1));
     SendMessage(hwndTB, TB_ADDBITMAP, (WPARAM) 4, 
 		(WPARAM) &tbbitmap); 

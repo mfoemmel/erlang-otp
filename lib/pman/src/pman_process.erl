@@ -61,11 +61,10 @@
 
 	 %% GS processes
 	 {gs_frontend,init,1},
-	 {gtk,init,1},
-	 {gtk,worker_init,1},
-	 {gtk_port_handler,init,1},
-	 {gtk_port_handler,init_nt,1},
-	 {gtk,config_workaround_init,2},
+	 {gstk,init,1},
+	 {gstk,worker_init,1},
+	 {gstk_port_handler,init,1},
+	 {gstk_port_handler,init_nt,1},
 
 	 %% PMAN processes
 	 {pman_main,init,2},
@@ -120,6 +119,7 @@
 	 auth,
 	 coast_server,
 	 code_server,
+	 cover_server,
 	 cover_server_001,
 	 dbg,
 	 dets,

@@ -99,6 +99,5 @@ is_string_2(_) -> false.
 %%-----------------------------------------------------------------
 multi_map(Func, [[] | ListOfLists]) -> [];
 multi_map(Func, ListOfLists) ->
-    [apply(Func, lists:map({erlang, hd}, [], ListOfLists)) |
-     multi_map(Func, lists:map({erlang, tl}, [], ListOfLists))].
-
+    [apply(Func, lists:map(fun(List) -> hd(List) end, ListOfLists)) |
+     multi_map(Func, lists:map(fun(List) -> tl(List) end, ListOfLists))].

@@ -328,7 +328,7 @@ root_to_handle(hkcc) -> ?hkey_current_config;
 root_to_handle(dyn_data) -> ?hkey_dyn_data;
 root_to_handle(hkdd) -> ?hkey_dyn_data;
 root_to_handle(performance_data) -> ?hkey_performance_data;
-root_to_handle(Other) -> false.
+root_to_handle(_) -> false.
 
 hkey_to_string(?hkey_classes_root) -> "\\hkey_classes_root";
 hkey_to_string(?hkey_current_user) -> "\\hkey_current_user";

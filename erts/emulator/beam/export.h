@@ -36,6 +36,7 @@ typedef struct export
     void* address;		/* Pointer to code for function. */
     struct binary* match_prog_set; /* Match program for tracing. */
 
+    Eterm fake_op_func_info_for_hipe[2]; /* MUST be just before code[] */
     /*
      * code[0]: Tagged atom for module.
      * code[1]: Tagged atom for function.
@@ -47,7 +48,7 @@ typedef struct export
      * code[4]: Beam: Function pointer to BIF function (for BIFs only).
      *		Otherwise: 0.
      */
-    uint32 code[5];
+    Eterm code[5];
 } Export;
 
 

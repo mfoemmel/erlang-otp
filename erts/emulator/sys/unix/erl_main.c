@@ -21,8 +21,9 @@
 #include "sys.h"
 #include "erl_api.h"
 
-void 
+int
 main(int argc, char **argv)
 {
     ErlOtpStart(argc, argv);
+    return 0;
 }

@@ -7,6 +7,102 @@
 
 <CENTER><H1>Tools Release Notes</H1></CENTER>
 
+<H2>Tools 1.6.2</H2>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The functions <CODE>xref:m/1</CODE> and <CODE>xref:d/1</CODE> return 
+a list of undefined functions in case the BEAM files do not 
+contain debug information.
+<br>Own Id: OTP-3879
+
+
+</UL>
+
+<H2>Tools 1.6.1</H2>
+  <H3>Known Problems</H3>
+  <P>See Tools 1.6.</P>
+
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>
+      The following changes has been made to Xref:
+      <UL>
+        <LI><CODE>xref:m/1</CODE> has been changed to accept a filename.</LI>
+        <LI>bug fix: the predefined analysis <CODE>locals_not_called</CODE>
+          and <CODE>xref:m/1</CODE> could sometimes miss unused local
+          functions.</LI>
+        <LI>bug fix: the bit syntax is now recognized...</LI>
+        <LI>bug fix: setting the library path to <CODE>code_path</CODE> did
+          not force the setting up of data.</LI>
+        <LI># has lower precedence now.</LI>
+        <LI>only atoms are allowed as release and application names.</LI>
+        <LI>invalid symbolic links are ignored unless the extension is
+          recognized (<CODE>.beam</CODE> typically).</LI>
+        <LI>calls where the module is fixed but the function is not are no
+          longer unresolved; instead the "function" <CODE>'$F_EXPR'</CODE>
+          is "called".</LI>
+        <LI><CODE>xref_compiler:format_error/1</CODE> has been improved.</LI>
+        <LI>bug fix: calls to <CODE>'MNEMOSYNE RULE'</CODE> et al removed.
+        </LI>
+        <LI><CODE>m/1</CODE> and <CODE>d/1</CODE> return a list that always
+          contains two elements.</LI>
+        <LI><CODE>xref_parser:t2s/1</CODE> adds quotes to atoms that need
+          them.</LI>
+        <LI>the documentation is less incomplete and buggy.</LI>
+        <LI>the strict operator has been documented (it was present in the
+          code before).</LI>
+      </UL>
+      Own Id: OTP-3681
+    </LI>
+  </UL>
+
+
+<H2>Tools 1.6</H2>
+  <H3>Known Problems</H3>
+  <UL>
+    <LI>Externally defined macros are not handled correctly in Coast.<BR>
+      Own Id: OTP-3273<BR>
+      Aux Id: seq3910
+    </LI>
+  </UL>
+
+  <H3>Fixed Errors and Malfunctions</H3>
+  <UL>
+    <LI><CODE>make:all()</CODE> no longer unnecessarily recompiles modules located in other directories than the current working directory.<BR>
+      Own Id: OTP-3336<BR>
+      Aux Id: Seq 4055
+    </LI>
+    <LI>When waiting for a reply from the Coast server process, the user interface functions did a <CODE>receive</CODE> that accepted any term. The <CODE>receive</CODE> has now been restricted to accept only the correct replies and not accidently a message from some other process.<BR>
+      Own Id: OTP-3394<BR>
+      Aux Id: Seq 4209
+    </LI>
+    <LI><CODE>coast:compile_all/1,2</CODE> now returns the correct return value <CODE>{error,Reason}</CODE> if the directory given as argument does not exist or cannot be read.<BR>
+      Own Id: OTP-3500<BR>
+      Aux Id: Seq 4394
+    </LI>
+    <LI>The function <CODE>instrument:memory_data/0</CODE> returned invalid information if an address or size exceeded 2^27. <CODE>instrument:store_memory_data</CODE> did not have that problem.<BR>
+      Own Id: OTP-3635
+    </LI>
+  </UL>
+
+  <H3>Improvements and new features</H3>
+  <UL>
+    <LI><CODE>make:all()</CODE> now recompiles modules where an include file has been modified.<BR>
+      Own Id: OTP-3088<BR>
+      Aux Id: seq1645, seq4228
+    </LI>
+    <LI>The eprof module has been optimised to minimise the measuring overhead. Typically, the measured program runs at about 50% of its ordinary speed.<BR>
+      Own Id: OTP-3163
+    </LI>
+    <LI>xref is a new cross reference tool.<BR>
+      Own Id: OTP-3639
+    </LI>
+  </UL>
+
+
 <H2>Tools 1.5.2</H2>
   <H3>Fixed Errors and Malfunctions</H3>
   <UL>
@@ -100,7 +196,6 @@
   <H3>Incompatibilities With Tools 1.2.1</H3>
   <UL>
     <LI><CODE>exref:module</CODE> no longer accepts modules specified as strings, so the implementation now agrees with the documentation.</LI>
-    </LI>
   </UL>
 
   <H3>Known Problems</H3>

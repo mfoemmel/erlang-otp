@@ -27,6 +27,9 @@
 #include "big.h"
 #include "bif.h"
 #include "erl_binary.h"
+#include "erl_threads.h"
+#include "register.h"
+#include "erl_vector.h"
 
 #undef M_TRIM_THRESHOLD
 #undef M_TOP_PAD
@@ -41,14 +44,21 @@
 #define HAVE_MALLOPT 0
 #endif
 
-/* Imported from drv/gzio.c. Why not in any header file? */
-EXTERN_FUNCTION(DriverBinary*, gzinflate_buffer, (char*, int));
-#ifdef INSTRUMENT
-EXTERN_FUNCTION(erl_mutex_t, erts_mutex_sys, (int mno));
+#ifdef UNIFIED_HEAP
+  #define HEAP_SIZE global_heap_sz
+  #define MBUF      global_mbuf
+  #define MBUF_SIZE global_mbuf_sz
+#else
+  #define HEAP_SIZE p->heap_sz
+  #define MBUF      p->mbuf
+  #define MBUF_SIZE p->mbuf_sz
 #endif
 
+/* Imported from drv/gzio.c. Why not in any header file? */
+ErlDrvBinary* gzinflate_buffer(char*, int);
+
 /* Forward */
-static int is_printable_string(uint32);
+static int is_printable_string(Eterm);
 
 Eterm*
 arith_alloc(Process* p, Uint need)
@@ -97,10 +107,10 @@ arith_alloc(Process* p, Uint need)
 #endif
     }
 
-    bp->next = p->mbuf;
-    p->mbuf = bp;
+    bp->next = MBUF;
+    MBUF = bp;
     bp->size = n;
-    p->mbuf_sz += n;
+    MBUF_SIZE += n;
     bp->off_heap.mso = NULL;
     bp->off_heap.funs = NULL;
     bp->off_heap.overhead = 0;
@@ -111,7 +121,7 @@ arith_alloc(Process* p, Uint need)
      */
 
     p->off_heap.overhead += (sizeof(ErlHeapFragment)/sizeof(Eterm) - 1); 
-    if (((p->mbuf_sz + p->off_heap.overhead)*MBUF_GC_FACTOR) >= p->heap_sz) {
+    if (((MBUF_SIZE + p->off_heap.overhead)*MBUF_GC_FACTOR) >= HEAP_SIZE) {
 	BUMP_ALL_REDS(p);
     }
     return bp->mem;
@@ -120,13 +130,13 @@ arith_alloc(Process* p, Uint need)
 #ifdef INSTRUMENT
 /* Does what arith_alloc does, but only ensures that the space is
    allocated; doesn't actually start using it. */
-void arith_ensure_alloc(Process* p, uint32 need)
+void arith_ensure_alloc(Process* p, Uint need)
 {
     ErlHeapFragment* bp;
-    uint32 n;
-    uint32* hp;
+    Uint n;
+    Eterm* hp;
 #ifdef DEBUG
-    uint32 i;
+    int i;
 #endif
 
     if (p->arith_avail >= need)
@@ -134,9 +144,9 @@ void arith_ensure_alloc(Process* p, uint32 need)
 
     n = (need < 128) ? 128 : need;
     bp = new_message_buffer(n+1);
-    bp->next = p->mbuf;
-    p->mbuf = bp;
-    p->mbuf_sz += n+1;
+    bp->next = MBUF;
+    MBUF = bp;
+    MBUF_SIZE += n+1;
     p->arith_avail = n;
     hp = bp->mem;
 #ifdef DEBUG
@@ -211,7 +221,7 @@ double_to_integer(Process* p, double x)
     size_t sz;
     Eterm* hp;
 
-    if ((x <= (float) MAX_SMALL) && (x >= (float) MIN_SMALL)) {
+    if ((x < (double) (MAX_SMALL+1)) && (x > (double) (MIN_SMALL-1))) {
 	sint32 xi = x;
 	return make_small(xi);
     }
@@ -262,10 +272,10 @@ double_to_integer(Process* p, double x)
 }
 
 /*
-** Create a new link with ref
-*/
-ErlLink* new_ref_link(next, type, item, data, ref)
-ErlLink* next; ErlLinkType type; uint32 item; uint32 data; uint32 ref;
+ * Create a new link with ref.
+ */
+ErlLink*
+new_ref_link(ErlLink* next, ErlLinkType type, Eterm item, Eterm data, Eterm ref)
 {
     ErlLink* lnk = (ErlLink*) fix_alloc(link_desc);
 
@@ -282,10 +292,10 @@ ErlLink* next; ErlLinkType type; uint32 item; uint32 data; uint32 ref;
 }
 
 /*
-** Create a new link
-*/
-ErlLink* new_link(next, type, item, data)
-ErlLink* next; ErlLinkType type; uint32 item; uint32 data;
+ * Create a new link.
+ */
+ErlLink*
+new_link(ErlLink* next, ErlLinkType type, Eterm item, Eterm data)
 {
    return new_ref_link(next, type, item, data, NIL);
 }
@@ -301,7 +311,7 @@ ErlLink** lnk;
     if (lnk != NULL) {
 	tlink = *lnk;
 	*lnk = tlink->next;
-	fix_free(link_desc, (uint32*)tlink);
+	fix_free(link_desc, (Eterm *)tlink);
     }
 }
 
@@ -310,8 +320,8 @@ ErlLink** lnk;
 ** Result is NULL if not found 
 ** otherwise a pointer to a pointer to it is returned (fit with del_link)
 */
-ErlLink** find_link_by_ref(first, ref)
-ErlLink** first; Ref *ref;
+ErlLink** 
+find_link_by_ref(ErlLink** first, Ref *ref)
 {
     ErlLink* lnk = *first;
     ErlLink* prev = NULL;
@@ -331,8 +341,8 @@ ErlLink** first; Ref *ref;
 ** Result is NULL if not found 
 ** otherwise a pointer to a pointer to it is returned (fit with del_link)
 */
-ErlLink** find_link(first, type, item, data)
-ErlLink** first; ErlLinkType type; uint32 item; uint32 data;
+ErlLink**
+find_link(ErlLink** first, ErlLinkType type, Eterm item, Eterm data)
 {
     ErlLink* lnk = *first;
     ErlLink* prev = NULL;
@@ -349,11 +359,11 @@ ErlLink** first; ErlLinkType type; uint32 item; uint32 data;
 }
 
 /*
-** Calculate length of a list 
-** -1 if not a proper list i.e not terminated with NIL
-*/
-int list_length(list)
-uint32 list;
+ * Calculate length of a list.
+ * Returns -1 if not a proper list (i.e. not terminated with NIL)
+ */
+int
+list_length(Eterm list)
 {
     int i = 0;
 
@@ -361,8 +371,9 @@ uint32 list;
 	i++;
 	list = CDR(list_val(list));
     }
-    if (is_not_nil(list))
+    if (is_not_nil(list)) {
 	return -1;
+    }
     return i;
 }
 
@@ -436,6 +447,7 @@ uint32 list;
 #define FUNNY_NUMBER8  268437511
 #define FUNNY_NUMBER9  268439627
 #define FUNNY_NUMBER10 268440479
+#define FUNNY_NUMBER11 268440577
 
 Uint32
 make_hash(Eterm term, Uint32 hash)
@@ -470,9 +482,13 @@ make_hash(Eterm term, Uint32 hash)
 		
 	    
     /* 
-    ** Significant additions needed for 64 bit port.
+    ** Significant additions needed for real 64 bit port with larger fixnums.
     */	    
-    ASSERT(sizeof(Eterm) == 4);
+    ASSERT(SMALL_BITS <= 32);
+    /* 
+    ** Note, for the simple 64bit port, not utilizing the 
+    ** larger word size this function will work without modification. 
+    */
 
     switch (tag_val_def(term)) {
     case NIL_DEF:
@@ -507,9 +523,9 @@ make_hash(Eterm term, Uint32 hash)
 
 	    hash = hash * FUNNY_NUMBER10 + num_free;
 	    hash = hash*FUNNY_NUMBER1 + 
-		(atom_tab(funp->modp->module)->slot.bucket.hvalue);
-	    hash = hash*FUNNY_NUMBER2 + funp->index;
-	    hash = hash*FUNNY_NUMBER2 + unsigned_val(funp->uniq);
+		(atom_tab(atom_val(funp->fe->module))->slot.bucket.hvalue);
+	    hash = hash*FUNNY_NUMBER2 + funp->fe->old_index;
+	    hash = hash*FUNNY_NUMBER2 + funp->fe->old_uniq;
 	    for (i = 0; i < num_free; i++) {
 		hash = make_hash(funp->env[i], hash);
 	    }
@@ -557,25 +573,28 @@ make_hash(Eterm term, Uint32 hash)
     case BIG_DEF:
 	/* Note that this is the exact same thing as the hashing of smalls.*/
 	{
+	  /* FIXED: __alpha__ this was remade to be backwards +
+	   * compaible with 32 bit implmentation 
+	   */
 	    Eterm* ptr  = big_val(term);
-	    Uint i = thing_arityval(*ptr);
+	    Uint n = BIG_SIZE(ptr);
 	    int is_neg = BIG_SIGN(ptr);
-	    Uint j;
+	    Uint i;
 
-	    ptr++;
-	    while (i--) {
-		for (j = 0; j < (sizeof(Eterm) / 2); ++j) {
-		    hash =  
-			((Uint32) (hash * FUNNY_NUMBER2 + 
-				   (((Uint16 *) ptr)[j] & 0xFF))) * 
-			FUNNY_NUMBER2 + (((Uint16 *) ptr)[j] >> 8);
-		}
-		++ptr;
+	    if (n & 1) /* emulate 32 bit behaviour (add a MSB 0 :-( )*/
+	      n++;
+
+	    for (i = 0; i < n; i++)  {
+	      digit_t d = BIG_DIGIT(ptr, i);
+	    
+	      hash = (hash*FUNNY_NUMBER2 + (d & 0xff))* FUNNY_NUMBER2 +
+		(d >> 8);
 	    }
 	    if (is_neg) {
 		return hash*FUNNY_NUMBER4;
-	    } else {
-		return hash*FUNNY_NUMBER3;
+	    }
+	    else {
+	      return hash*FUNNY_NUMBER3;
 	    }
 	}
 	break;
@@ -583,7 +602,7 @@ make_hash(Eterm term, Uint32 hash)
     case TUPLE_DEF: 
 	{
 	    Eterm* ptr = tuple_val(term);
-	    uint32 arity = arityval(*ptr);
+	    Uint arity = arityval(*ptr);
 	    int i = arity;
 
 	    ptr++;
@@ -593,6 +612,18 @@ make_hash(Eterm term, Uint32 hash)
 	}
 	break;
 
+    case VECTOR_DEF:
+	{
+	    Uint siz = (Uint) VECTOR_SIZE(term);
+	    int i = 1;
+
+	    for(i=1;i<=siz;++i)
+		hash = make_hash(erts_unchecked_vector_get(i,term), hash);
+	    return hash*FUNNY_NUMBER11 + siz;
+	}
+	break;
+	
+
     default:
 	erl_exit(1, "Invalid tag in make_hash(0x%X)\n", term);
 	return 0;
@@ -600,8 +631,13 @@ make_hash(Eterm term, Uint32 hash)
 #undef UINT32_HASH_RET
 }
 
+#ifdef ARCH_64
+Uint32
+make_broken_hash(Eterm term, Uint32 hash)
+#else
 Uint
 make_broken_hash(Eterm term, Uint hash)
+#endif
 {
     switch (tag_val_def(term)) {
     case NIL_DEF:
@@ -631,9 +667,9 @@ make_broken_hash(Eterm term, Uint hash)
 
 	    hash = hash * FUNNY_NUMBER10 + num_free;
 	    hash = hash*FUNNY_NUMBER1 + 
-		(atom_tab(funp->modp->module)->slot.bucket.hvalue);
-	    hash = hash*FUNNY_NUMBER2 + funp->index;
-	    hash = hash*FUNNY_NUMBER2 + unsigned_val(funp->uniq);
+		(atom_tab(atom_val(funp->fe->module))->slot.bucket.hvalue);
+	    hash = hash*FUNNY_NUMBER2 + funp->fe->old_index;
+	    hash = hash*FUNNY_NUMBER2 + funp->fe->old_uniq;
 	    for (i = 0; i < num_free; i++) {
 		hash = make_broken_hash(funp->env[i], hash);
 	    }
@@ -659,7 +695,7 @@ make_broken_hash(Eterm term, Uint hash)
 
     case LIST_DEF:
 	{
-	    uint32* list = list_val(term);
+	    Eterm* list = list_val(term);
 
 	    while(1) {
 		hash = make_broken_hash(*list, hash);
@@ -671,28 +707,28 @@ make_broken_hash(Eterm term, Uint hash)
 	break;
 
     case BIG_DEF:
-      {
-	uint32* ptr  = big_val(term);
-	uint32 arity = BIG_ARITY(ptr);
-	int is_neg = BIG_SIGN(ptr);
-	int i = arity;
+	{
+	    Eterm* ptr  = big_val(term);
+	    Uint arity = BIG_ARITY(ptr);
+	    int is_neg = BIG_SIGN(ptr);
+	    int i = arity;
+	    
+	    ptr++;
+	    while (i--) {
+		hash = hash*FUNNY_NUMBER2 + *ptr++;
+	    }
 	
-	ptr++;
-	while (i--) {
-	    hash = hash*FUNNY_NUMBER2 + *ptr++;
+	    if (is_neg)
+		return hash*FUNNY_NUMBER3 + arity;
+	    else
+		return hash*FUNNY_NUMBER2 + arity;
 	}
-	
-	if (is_neg)
-	    return hash*FUNNY_NUMBER3 + arity;
-	else
-	    return hash*FUNNY_NUMBER2 + arity;
-      }
-      break;
+	break;
 
     case TUPLE_DEF: 
 	{
-	    uint32* ptr = tuple_val(term);
-	    uint32 arity = arityval(*ptr);
+	    Eterm* ptr = tuple_val(term);
+	    Uint arity = arityval(*ptr);
 	    int i = arity;
 
 	    ptr++;
@@ -702,6 +738,18 @@ make_broken_hash(Eterm term, Uint hash)
 	}
 	break;
 
+    case VECTOR_DEF:
+	{
+	    Uint siz = (Uint) VECTOR_SIZE(term);
+	    int i = 1;
+
+	    for(i=1;i<=siz;++i)
+		hash = make_broken_hash(erts_unchecked_vector_get(i,term), 
+					hash);
+	    return hash*FUNNY_NUMBER11 + siz;
+	}
+	break;
+	
     default:
 	erl_exit(1, "Invalid tag in make_broken_hash\n");
 	return 0;
@@ -712,11 +760,11 @@ int send_error_to_logger(Eterm gleader)
 {
     Process* p;
     ErlHeapFragment* bp;
-    uint32* hp;
-    uint32 name;
-    uint32 res;
-    uint32 gl;
-    uint32 list;
+    Eterm* hp;
+    Eterm name;
+    Eterm res;
+    Eterm gl;
+    Eterm list;
     int i;
     
     if (is_nil(gleader))
@@ -745,58 +793,58 @@ int send_error_to_logger(Eterm gleader)
 
 #ifdef INSTRUMENT
 
-void *safe_alloc_from(int from, unsigned int len)
+void *safe_alloc_from(int from, Uint len)
 {
-    char *buf;
+    void *buf;
 
     if ((buf = sys_alloc_from(from, len)) == NULL)
 	erl_exit(1, "Can't allocate %d bytes of memory\n", len);
     return(buf);
 }
 
-void *safe_realloc_from(int from, void* ptr, unsigned int len)
+void *safe_realloc_from(int from, void* ptr, Uint len)
 {
-    char *buf;
+    void *buf;
 
     if ((buf = sys_realloc_from(from, ptr, len)) == NULL)
 	erl_exit(1, "Can't reallocate %d bytes of memory\n", len);
     return(buf);
 }
 
-void *safe_sl_alloc_from(int from, unsigned int len)
+void *safe_sl_alloc_from(int from, Uint len)
 {
-    char *buf;
+    void *buf;
 
     if ((buf = sys_sl_alloc_from(from, len)) == NULL)
 	erl_exit(1, "Can't allocate %d bytes of memory\n", len);
     return(buf);
 }
 
-void *safe_sl_realloc_from(int from, void* ptr, unsigned int save_size, unsigned int size)
+void *safe_sl_realloc_from(int from, void* ptr, Uint save_size, Uint size)
 {
-    char *buf;
+    void *buf;
 
     if ((buf = sys_sl_realloc_from(from, ptr, save_size, size)) == NULL)
 	erl_exit(1, "Can't reallocate %d bytes of memory\n", size);
     return(buf);
 }
 
-void *safe_alloc(unsigned int len)
+void *safe_alloc(Uint len)
 {
   return safe_alloc_from(-1, len);
 }
 
-void *safe_realloc(void *ptr, unsigned int len)
+void *safe_realloc(void *ptr, Uint len)
 {
   return safe_realloc_from(-1, ptr, len);
 }
 
-void *safe_sl_alloc(unsigned int len)
+void *safe_sl_alloc(Uint len)
 {
   return safe_sl_alloc_from(-1, len);
 }
 
-void *safe_sl_realloc(void* ptr, unsigned int save_size, unsigned int size)
+void *safe_sl_realloc(void* ptr, Uint save_size, Uint size)
 {
   return safe_sl_realloc_from(-1, ptr, save_size, size);
 }
@@ -804,36 +852,37 @@ void *safe_sl_realloc(void* ptr, unsigned int save_size, unsigned int size)
 #else
 
 
-void *safe_alloc(unsigned int len)
+void *safe_alloc(Uint len)
 {
-    char *buf;
+    void *buf;
 
     if ((buf = sys_alloc(len)) == NULL)
 	erl_exit(1, "Can't allocate %d bytes of memory\n", len);
     return(buf);
 }
 
-void *safe_realloc(void *ptr, unsigned int len)
+
+void *safe_realloc(void* ptr, Uint len)
 {
-    char *buf;
+    void *buf;
 
     if ((buf = sys_realloc(ptr, len)) == NULL)
 	erl_exit(1, "Can't reallocate %d bytes of memory\n", len);
     return(buf);
 }
 
-void *safe_sl_alloc(unsigned int len)
+void *safe_sl_alloc(Uint len)
 {
-    char *buf;
+    void *buf;
 
     if ((buf = sys_sl_alloc(len)) == NULL)
 	erl_exit(1, "Can't allocate %d bytes of memory\n", len);
     return(buf);
 }
 
-void *safe_sl_realloc(void* ptr, unsigned int save_size, unsigned int size)
+void *safe_sl_realloc(void* ptr, Uint save_size, Uint size)
 {
-    char *buf;
+    void *buf;
 
     if ((buf = sys_sl_realloc(ptr, save_size, size)) == NULL)
 	erl_exit(1, "Can't reallocate %d bytes of memory\n", size);
@@ -910,8 +959,10 @@ eq(Eterm a, Eterm b)
 			return 0;
 		    f1 = (ErlFunThing *) fun_val(a);
 		    f2 = (ErlFunThing *) fun_val(b);
-		    if (f1->modp != f2->modp || f1->index != f2->index ||
-			f1->uniq != f2->uniq || f1->num_free != f2->num_free) {
+		    if (f1->fe->module != f2->fe->module ||
+			f1->fe->old_index != f2->fe->old_index ||
+			f1->fe->old_uniq != f2->fe->old_uniq ||
+			f1->num_free != f2->num_free) {
 			return 0;
 		    }
 		    num_free = f1->num_free;
@@ -976,6 +1027,26 @@ eq(Eterm a, Eterm b)
 		    GET_DOUBLE(a, af);
 		    GET_DOUBLE(b, bf);
 		    return (af.fd == bf.fd) ? 1 : 0;
+		}
+	    case VECTOR_SUBTAG:
+		{
+		    int i;
+		    int n;
+		    if (is_not_vector(b)) {
+			return 0;
+		    }
+		    n = VECTOR_SIZE(a);
+		    if (n != VECTOR_SIZE(b)) {
+			return 0;
+		    }
+		    for (i = 1; i <= n; i++) {
+			Eterm atmp = erts_unchecked_vector_get(i, a);
+			Eterm btmp = erts_unchecked_vector_get(i, b);
+			if (!EQ(atmp, btmp)) {
+			    return 0;
+			}
+		    }
+		    return 1;
 		}
 	    }
 	    break;
@@ -1056,6 +1127,7 @@ cmp(Eterm a, Eterm b)
     Eterm* bb;
     int i;
     int j;
+    int n;
     Eterm big_buf[2];
     int a_tag;
     int b_tag;
@@ -1157,16 +1229,19 @@ cmp(Eterm a, Eterm b)
 	{
 	    Uint a_size = binary_size(a);
 	    Uint b_size = binary_size(b);
+	    Uint min_size;
+	    int cmp;
 	    byte* a_ptr;
 	    byte* b_ptr;
-	    int diff = a_size - b_size;
 
-	    if (diff != 0) {
-		return diff;
-	    }
+	    min_size = (a_size < b_size) ? a_size : b_size;
 	    GET_BINARY_BYTES(a, a_ptr);
 	    GET_BINARY_BYTES(b, b_ptr);
-	    return sys_memcmp(a_ptr, b_ptr, a_size);
+	    if ((cmp = sys_memcmp(a_ptr, b_ptr, min_size)) != 0) {
+		return cmp;
+	    } else {
+		return a_size - b_size;
+	    }
 	}
     case FUN_DEF:
 	if (is_not_fun(b))
@@ -1177,18 +1252,18 @@ cmp(Eterm a, Eterm b)
 	    int num_free;
 	    int diff;
 
-	    diff = cmpbytes(atom_tab(f1->modp->module)->name,
-			    atom_tab(f1->modp->module)->len,
-			    atom_tab(f2->modp->module)->name,
-			    atom_tab(f2->modp->module)->len);
+	    diff = cmpbytes(atom_tab(atom_val(f1->fe->module))->name,
+			    atom_tab(atom_val(f1->fe->module))->len,
+			    atom_tab(atom_val(f2->fe->module))->name,
+			    atom_tab(atom_val(f2->fe->module))->len);
 	    if (diff != 0) {
 		return diff;
 	    }
-	    diff = f1->index - f2->index;
+	    diff = f1->fe->old_index - f2->fe->old_index;
 	    if (diff != 0) {
 		return diff;
 	    }
-	    diff = f1->uniq - f2->uniq;
+	    diff = f1->fe->old_uniq - f2->fe->old_uniq;
 	    if (diff != 0) {
 		return diff;
 	    }
@@ -1211,7 +1286,7 @@ cmp(Eterm a, Eterm b)
 	    (pid_number(a) == pid_number(b)) &&
 	    (pid_serial(a) == pid_serial(b))) { /* equal numbers */
 	    
-	    uint32 atoma, atomb;
+	    Eterm atoma, atomb;
 	    i = pid_node(a); /* index in atom table */
 	    j = pid_node(b);
 	    atoma = dist_addrs[i].sysname;
@@ -1226,6 +1301,20 @@ cmp(Eterm a, Eterm b)
 	if (is_not_port(b))
 	    break;
 	return (a < b) ? -1 : 1;
+    case VECTOR_DEF:
+	if (is_not_vector(b))
+	    break;
+	n = VECTOR_SIZE(a);
+	if (n < VECTOR_SIZE(b)) return(-1);
+	if (n > VECTOR_SIZE(b)) return(1);
+	for (i = 1; i <= n; i++) {
+	    Eterm atmp = erts_unchecked_vector_get(i, a);
+	    Eterm btmp = erts_unchecked_vector_get(i, b);
+	    if ((j = cmp(atmp, btmp)) != 0) {
+		return j;
+	    }
+	}
+	return 0;
     }
 
     b_tag = tag_val_def(b);
@@ -1250,22 +1339,20 @@ cmp(Eterm a, Eterm b)
 	    big = small_to_big(signed_val(b), big_buf);
 	    return big_comp(a, big);
 	case BIG_FLOAT:
-	    f1.fd = big_to_double(a);
-	    GET_DOUBLE(b, f2);
-	    if (!FP_RESULT_OK(f1.fd)) {
+	    if (big_to_double(a, &f1.fd) < 0) {
 		return big_sign(a) ? -1 : 1;
 	    }
+	    GET_DOUBLE(b, f2);
 	    return float_comp(f1.fd, f2.fd);
 	case FLOAT_SMALL:
 	    GET_DOUBLE(a, f1);
 	    f2.fd = signed_val(b);
 	    return float_comp(f1.fd, f2.fd);
 	case FLOAT_BIG:
-	    GET_DOUBLE(a, f1);
-	    f2.fd = big_to_double(b);
-	    if (!FP_RESULT_OK(f2.fd)) {
-	       return big_sign(b) ? 1 : -1;
+	    if (big_to_double(b, &f2.fd) < 0) {
+		return big_sign(b) ? 1 : -1;
 	    }
+	    GET_DOUBLE(a, f1);
 	    return float_comp(f1.fd, f2.fd);
 	default:
 	    return b_tag - a_tag;
@@ -1273,8 +1360,8 @@ cmp(Eterm a, Eterm b)
     }
 }
 
-Process* pid2proc(pid)
-uint32 pid;
+Process*
+pid2proc(Eterm pid)
 {
     Process *rp;
     int i;
@@ -1310,7 +1397,7 @@ display1(Eterm obj, CIO fd)
     if (dcount-- <= 0) return(1);
 
     if (is_CP(obj)) {
-	erl_printf(fd, "<cp/header:%08X", obj);
+	erl_printf(fd, "<cp/header:%08X>", obj);
 	return 0;
     }
 
@@ -1405,7 +1492,8 @@ display1(Eterm obj, CIO fd)
     case BINARY_DEF:
 	{
 	    ProcBin* pb = (ProcBin *) binary_val(obj);
-	    erl_printf(fd, "<<%d bytes>>", pb->size);
+	    erl_printf(fd, pb->size == 1 ? "<<%d byte>>" : "<<%d bytes>>",
+		       pb->size);
 	}
 	break;
     case FUN_DEF:
@@ -1414,11 +1502,12 @@ display1(Eterm obj, CIO fd)
 	    Atom* ap;
 
 	    erl_printf(fd, "#Fun<");
-	    ap = atom_tab(funp->modp->module);
+	    ap = atom_tab(atom_val(funp->fe->module));
 	    for (i = 0; i < ap->len; i++) {
 		erl_putc(ap->name[i], fd);
 	    }
-	    erl_printf(fd, ".%d.%d>", funp->index, unsigned_val(funp->uniq));
+	    erl_printf(fd, ".%d.%d>", funp->fe->old_index,
+		       funp->fe->old_uniq);
 	}
 	break;
     case VECTOR_DEF:
@@ -1446,8 +1535,7 @@ display(Eterm obj, CIO fd)
 
 
 /* as above, but limit the number of items printed */
-void ldisplay(obj, fd, count)
-uint32 obj; CIO fd; int count;
+void ldisplay(Eterm obj, CIO fd, int count)
 {
     dcount = count;
     display1(obj, fd);
@@ -1531,10 +1619,10 @@ print_atom(int i, CIO fd)
  *  returns 2 if Y is not a list or is a badly formed list
  */
 
-int member(x,y)
-uint32 x,y;
+int
+member(Eterm x, Eterm y)
 {
-    uint32 *z;
+    Eterm* z;
     if (is_nil(y)) return(1); /* empty list */
     if (is_not_list(y)) return(2); /* bad argument */
     z = list_val(y);
@@ -1568,12 +1656,10 @@ int sz;
 /* Fill buf with the contents of bytelist list 
    return number of chars in list or -1 for error */
 
-int intlist_to_buf(list,buf,len)
-uint32 list;
-byte *buf;
-int len;
+int
+intlist_to_buf(Eterm list, byte *buf, int len)
 {
-    uint32 *listptr;
+    Eterm* listptr;
     int sz = 0;
 
     if (is_nil(list)) 
@@ -1628,10 +1714,10 @@ int n; char* buf;
 ** this pointer is updated to point after the list
 */
 
-uint32 buf_to_intlist(hpp, buf, len, tail)
-uint32** hpp; byte *buf; int len; uint32 tail;
+Eterm
+buf_to_intlist(Eterm** hpp, byte *buf, int len, Eterm tail)
 {
-    uint32* hp = *hpp;
+    Eterm* hp = *hpp;
 
     buf += (len-1);
     while(len > 0) {
@@ -1840,14 +1926,14 @@ io_list_len(Eterm list)
 */
 /* return 0 if item is not a non-empty flat list of bytes */
 
-int is_string(list)
-uint32 list;
+int
+is_string(Eterm list)
 {
     int len = 0;
 
     while(is_list(list)) {
-	uint32* consp = list_val(list);
-	uint32  hd = CAR(consp);
+	Eterm* consp = list_val(list);
+	Eterm hd = CAR(consp);
 
 	if (!is_byte(hd))
 	    return 0;
@@ -1861,14 +1947,15 @@ uint32 list;
 
 /* return 0 if item is not a non-empty flat list of printable characters */
 
-static int is_printable_string(uint32 list)
+static int
+is_printable_string(Eterm list)
 {
     int len = 0;
     int c;
 
     while(is_list(list)) {
-	uint32* consp = list_val(list);
-	uint32  hd = CAR(consp);
+	Eterm* consp = list_val(list);
+	Eterm hd = CAR(consp);
 
 	if (!is_byte(hd))
 	    return 0;
@@ -1885,16 +1972,15 @@ static int is_printable_string(uint32 list)
 }
 
 int
-do_load(group_leader, mod, code, size)
-    Eterm group_leader;		/* Group leader or NIL if none. */
-    uint32 mod;			/* Module name as an atom. */
-    byte* code;			/* Points to the code to load */
-    int size;			/* Size of code to load. */
+do_load(Eterm group_leader,	/* Group leader or NIL if none. */
+	Eterm mod,		/* Module name as an atom. */
+	byte* code,		/* Points to the code to load */
+	int size)		/* Size of code to load. */
 {
-    DriverBinary* bin;
+    ErlDrvBinary* bin;
     int result;
 
-    if ((bin = (DriverBinary *) gzinflate_buffer(code, size)) == NULL) {
+    if ((bin = (ErlDrvBinary *) gzinflate_buffer(code, size)) == NULL) {
 	return -1;
     }
     result = bin_load(group_leader, mod, bin->orig_bytes, bin->orig_size);
@@ -1922,9 +2008,9 @@ typedef struct mem_link
 
 static mem_link *mem_anchor;
 static int need_instr_init;
-static erl_mutex_t instr_lck;
-static Uint totally_allocated = 0;
-static Uint maximum_allocated = 0;
+static erts_mutex_t instr_lck;
+static Uint totally_allocated;
+static Uint maximum_allocated;
 
 static void instr_init(void);
 
@@ -1944,8 +2030,6 @@ void erts_init_utils(void)
 #ifdef INSTRUMENT
     mem_anchor = NULL;
     need_instr_init = 1;
-    totally_allocated = 0;
-    maximum_allocated = 0;
 #endif
 }
 
@@ -2022,15 +2106,13 @@ sys_alloc_stat(SysAllocStat *sasp)
 
    erts_mutex_unlock(instr_lck);
 #endif
+
 }
 
 #ifdef INSTRUMENT
 extern Eterm current_process;
 
-static void link_in(l, size, from)
-mem_link *l;
-unsigned size;
-int from;
+static void link_in(mem_link *l, unsigned size, int from)
 {
    l->next = mem_anchor;
    if (mem_anchor != NULL)
@@ -2044,8 +2126,7 @@ int from;
    l->p = current_process;
 }
 
-static void link_out(l)
-mem_link *l;
+static void link_out(mem_link *l)
 {
    mem_link *prev, *next;
 
@@ -2059,6 +2140,8 @@ mem_link *l;
    if (next != NULL)
       next->prev = prev;
 }
+
+erts_mutex_t erts_mutex_sys(int);
 
 static void
 init_instr_lock(void)
@@ -2100,12 +2183,11 @@ static void instr_init(void)
     totally_allocated = 0;
     maximum_allocated = 0;
     need_instr_init = 0;
-
 }
 
 
 void *
-instr_alloc(int from, void *(*alloc_func)(unsigned int), unsigned int size)
+instr_alloc(int from, void *(*alloc_func)(Uint), Uint size)
 {
    char *p;
    mem_link *l;
@@ -2134,10 +2216,10 @@ instr_alloc(int from, void *(*alloc_func)(unsigned int), unsigned int size)
 
 void *
 instr_realloc(int from,
-	      void *(*realloc_func)(void *, unsigned int, unsigned int),
+	      void *(*realloc_func)(void *, Uint, Uint),
 	      void *ptr,
-	      unsigned int save_size,
-	      unsigned int size)
+	      Uint save_size,
+	      Uint size)
 {
    char *p, *new_p;
    mem_link *l;
@@ -2208,19 +2290,19 @@ instr_free(void (*free_func)(void *), void *ptr)
 }
 
 void *
-sys_alloc(unsigned int size)
+sys_alloc(Uint size)
 {
   return instr_alloc(-1, sys_alloc2, size);
 }
 
 void *
-sys_realloc3(void* ptr, unsigned int unused, unsigned int size)
+sys_realloc3(void* ptr, Uint unused, Uint size)
 {
   return sys_realloc2(ptr, size);
 }
 
 void *
-sys_realloc(void* ptr, unsigned int size)
+sys_realloc(void* ptr, Uint size)
 {
   return instr_realloc(-1, sys_realloc3, ptr, 0, size);
 }
@@ -2232,13 +2314,13 @@ sys_free(void* ptr)
 }
 
 void *
-sys_sl_alloc(unsigned int size)
+sys_sl_alloc(Uint size)
 {
   return instr_alloc(-1, sys_sl_alloc2, size);
 }
 
 void *
-sys_sl_realloc(void* ptr, unsigned int save_size, unsigned int size)
+sys_sl_realloc(void* ptr, Uint save_size, Uint size)
 {
   return instr_realloc(-1, sys_sl_realloc2, ptr, save_size, size);
 }
@@ -2303,98 +2385,98 @@ const char *name;
    return 1;
 }
 
-uint32 collect_memory(process)
-Process *process;
+Eterm
+collect_memory(Process *process)
 {
-   uint32 list, tup;
-   uint32 *hp, *end_hp;
-   mem_link *l;
-   uint32 need, need_big;
-   uint32 pid;
-   uint32 p;
+    Eterm list, tup;
+    Eterm *hp, *end_hp;
+    mem_link *l;
+    Uint need, need_big;
+    Eterm pid;
+    Uint p;
+    
+    list = NIL;
+    
+    need = 0;
+    need_big = 0;
+    l = mem_anchor;
+    while (l != NULL)
+    {
+	if ((unsigned) l > MAX_SMALL)
+	    need_big += 1;
+	if (l->size > MAX_SMALL)
+	    need_big += 1;
+	need += 4+2;
+	l = l->next;
+    }
+    
+    /* The "alloc" operation itself is likely to add to the list,
+       so add a little. */
+    need += 20;
+    
+    hp = HAlloc(process, need);
+    end_hp = hp + need;
+    arith_ensure_alloc(process, 2*need_big); /* 2 = BIG_NEED_SIZE(2) */
+    
+    l = mem_anchor;
+    while (l != NULL)
+    {
+	/* If it should turn out we need more than we allocated, jump
+	   out, and continue allocating on the heap instead. */
+	if (hp >= end_hp - (4+5+2))
+	    break;
 
-   list = NIL;
+	if (is_non_value(l->p))
+	    pid = am_undefined;
+	else
+	{
+	    pid = TUPLE3(hp,
+			 make_small(pid_node(l->p)),
+			 make_small(pid_number(l->p)),
+			 make_small(pid_serial(l->p)));
+	    hp += 4;
+	}
 
-   need = 0;
-   need_big = 0;
-   l = mem_anchor;
-   while (l != NULL)
-   {
-      if ((unsigned) l > MAX_SMALL)
-	  need_big += 1;
-      if (l->size > MAX_SMALL)
-	  need_big += 1;
-      need += 4+2;
-      l = l->next;
-   }
+	p = ((unsigned) l) + sizeof(mem_link);
+	tup = TUPLE4(hp,
+		     make_small(l->type),
+		     make_small_or_big(p, process),
+		     make_small_or_big(l->size, process),
+		     pid);
+	hp += 5;
+	list = CONS(hp, tup, list);
+	hp += 2;
 
-   /* The "alloc" operation itself is likely to add to the list,
-      so add a little. */
-   need += 20;
+	l = l->next;
+    }
+    
+    while (l != NULL)
+    {
+	if (is_non_value(l->p))
+	    pid = am_undefined;
+	else
+	{
+	    hp = HAlloc(process, 4);
+	    pid = TUPLE3(hp,
+			 make_small(pid_node(l->p)),
+			 make_small(pid_number(l->p)),
+			 make_small(pid_serial(l->p)));
+	}
 
-   hp = HAlloc(process, need);
-   end_hp = hp + need;
-   arith_ensure_alloc(process, 2*need_big); /* 2 = BIG_NEED_SIZE(2) */
+	hp = HAlloc(process, 5);
+	p = ((unsigned) l) + sizeof(mem_link);
+	tup = TUPLE4(hp,
+		     make_small(l->type),
+		     make_small_or_big(p, process),
+		     make_small_or_big(l->size, process),
+		     pid);
+	hp = HAlloc(process, 2);
+	list = CONS(hp, tup, list);
 
-   l = mem_anchor;
-   while (l != NULL)
-   {
-      /* If it should turn out we need more than we allocated, jump
-	 out, and continue allocating on the heap instead. */
-      if (hp >= end_hp - (4+5+2))
-	 break;
-
-      if (is_non_value(l->p))
-	 pid = am_undefined;
-      else
-      {
-	 pid = TUPLE3(hp,
-		      make_small(pid_node(l->p)),
-		      make_small(pid_number(l->p)),
-		      make_small(pid_serial(l->p)));
-	 hp += 4;
-      }
-
-      p = ((unsigned) l) + sizeof(mem_link);
-      tup = TUPLE4(hp,
-		   make_small(l->type),
-		   make_small_or_big(p, process),
-		   make_small_or_big(l->size, process),
-		   pid);
-      hp += 5;
-      list = CONS(hp, tup, list);
-      hp += 2;
-
-      l = l->next;
-   }
-
-   while (l != NULL)
-   {
-      if (is_non_value(l->p))
-	 pid = am_undefined;
-      else
-      {
-	 hp = HAlloc(process, 4);
-	 pid = TUPLE3(hp,
-		      make_small(pid_node(l->p)),
-		      make_small(pid_number(l->p)),
-		      make_small(pid_serial(l->p)));
-      }
-
-      hp = HAlloc(process, 5);
-      p = ((unsigned) l) + sizeof(mem_link);
-      tup = TUPLE4(hp,
-		   make_small(l->type),
-		   make_small_or_big(p, process),
-		   make_small_or_big(l->size, process),
-		   pid);
-      hp = HAlloc(process, 2);
-      list = CONS(hp, tup, list);
-
-      l = l->next;
-   }
-
-   return list;
+	l = l->next;
+    }
+    
+    return list;
 }
 
 #endif
@@ -2411,7 +2493,6 @@ int sz;
     bin_write(CERR,buf,sz);
 }
 
-/* Print an atom as an uint32 or just as an index */     
 void pat(Eterm atom)
 {
     upp(atom_tab(atom_val(atom))->name,
@@ -2436,24 +2517,31 @@ void ppi(Eterm pid)
     pp(process_tab[pid_number(pid)]);
 }
 
-void td(x) 
-uint32 x;
+void td(Eterm x)
 {
     display(x, CERR);
     erl_putc('\n', CERR);
 }
 
-void ps(p, stop)
-Process* p; uint32* stop;
+void
+ps(Process* p, Eterm* stop)
 {
-    uint32* sp = p->hend-1;
+#ifdef UNIFIED_HEAP
+    Eterm* sp = p->stack-1;
+
+    if (stop <= p->send) {
+        stop = p->send + 1;
+    }
+#else
+    Eterm* sp = p->hend-1;
 
     if (stop <= p->htop) {
 	stop = p->htop + 1;
     }
+#endif
 
     while(sp >= stop) {
-	erl_printf(COUT,"%08lx: ", (uint32) sp);
+	erl_printf(COUT,"%08lx: ", (Eterm) sp);
 	ldisplay(*sp, COUT, 75);
 	erl_putc('\r', COUT);
 	erl_putc('\n', COUT);

@@ -34,7 +34,7 @@
 %%% -------------------------------------------------------
 
 start() ->
-    DbT = dbg_ets:new(int_db,[set,protected]),
+    DbT = dbg_ets:new(int_db,[ordered_set,protected]),
     dbg_ets:insert(DbT,{trace,false}),
     dbg_ets:insert(DbT,{stack_trace,all}),
     dbg_ets:insert(DbT,{breakpoints,[]}),
@@ -79,10 +79,6 @@ main_db_loop(DbT) ->
 				    get_db(DbT,breakpoints)),
 	    From ! {self(),all_breaks,Module,Breaks},
 	    main_db_loop(DbT);
-	{From,get_all_funcs,Module} ->
-	    Funcs = get_all_funcs(DbT,Module),
-	    From ! {self(),all_funcs,Funcs},
-	    main_db_loop(DbT);
 	{From,del_mod,Module} ->
 	    del_mod(DbT,Module),
 	    main_db_loop(DbT);
@@ -105,7 +101,7 @@ insert1(trace,Value,DbT) ->
 insert1(stack_trace,Value,DbT) ->
     dbg_ets:insert(DbT,{stack_trace,Value});
 insert1(interpret,Value,DbT) ->
-    dbg_ets:insert(DbT,{interpret,Value});
+    erlang:fault(badarg, [interpret,Value,DbT]);
 insert1(Break,Options,DbT) when tuple(Break),
                                 size(Break) == 2,
                                 integer(element(2,Break)) ->
@@ -151,7 +147,7 @@ lookup(trace,From,DbT) ->
 lookup(stack_trace,From,DbT) ->
     From ! {self(),look_resp,{ok,get_db(DbT,stack_trace)}};
 lookup(interpret,From,DbT) ->
-    From ! {self(),look_resp,{ok,get_db(DbT,interpret)}};
+    From ! {self(),look_resp,{ok,get_interpreted(DbT)}};
 lookup(breakpoints,From,DbT) ->
     From ! {self(),look_resp,{ok,get_db(DbT,breakpoints)}};
 lookup(Break,From,DbT) ->
@@ -163,6 +159,9 @@ lookup(Break,From,DbT) ->
     end;
 lookup(_,From,DbT) ->
     From ! {self(),look_resp,not_found}.
+
+get_interpreted(T) ->
+    dbg_ets:select(T, [{{{'$1',refs},'_'},[],['$1']}]).
 
 %%% -------------------------------------------------------
 %%% Lookup a key in a module table (not specified).
@@ -347,26 +346,6 @@ get_all_breaks(DbT,Mod,[_|Breaks]) ->
 get_all_breaks(_,_,[]) ->
     [].
 
-
-%%% ---------------------------------------------------------
-%%% Get all functions in Module.
-%%% Return: [{Name,Arity}] or [].
-%%% ---------------------------------------------------------
-
-get_all_funcs(DbT,Module) ->
-    case get_db(DbT,{Module,refs}) of
-	undefined ->
-	    [];
-	[DbRef|_] ->
-	    Fs = lists:map(fun(Fun) ->
-				   list_to_tuple(Fun)
-			   end,
-			   dbg_ets:match(DbRef,{{'$1','$2'},'_'})),
-	    lists:sort(Fs)
-    end.
-
-
-
 %%% -------------------------------------------------------
 %%% The Module is not interpreted any longer, delete
 %%% existing database tables and entries.
@@ -463,7 +442,6 @@ which_db(DbT,Pid,[Db|Dbs]) ->
     end;
 which_db(_,_,[]) ->
     not_found.
-
 
 
 

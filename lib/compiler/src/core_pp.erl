@@ -37,67 +37,96 @@
 	       body_indent = 4,
 	       tab_width = 8}).
 
+format(Node) -> format(Node, #ctxt{});
 format(Node) -> case catch format(Node, #ctxt{}) of
 		    {'EXIT',R} -> io_lib:format("~p",[Node]);
 		    Other -> Other
 		end.
 
 format(Node, Ctxt) ->
-    case canno(Node) of
+    case core_lib:get_anno(Node) of
 	[] ->
 	    format_1(Node, Ctxt);
 	List ->
-	    Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.item_indent),
+	    Ctxt1 = ctxt_bump_indent(Ctxt, 2),
+	    Ctxt2 = ctxt_bump_indent(Ctxt1, 3),
 	    ["( ",
 	     format_1(Node, Ctxt1),
 	     nl_indent(Ctxt1),
-	     "-| ",io_lib:write(List)," )"
+	     "-| ",format_1(core_lib:make_literal(List), Ctxt2)," )"
 	    ]
     end.
 
-canno(Cthing) -> element(2, Cthing).
-
-format_1(#c_atom{name=A}, Ctxt) -> core_atom(A);
 format_1(#c_char{val=C}, Ctxt) -> io_lib:write_char(C);
-format_1(#c_float{val=F}, Ctxt) -> float_to_list(F);
 format_1(#c_int{val=I}, Ctxt) -> integer_to_list(I);
+format_1(#c_float{val=F}, Ctxt) -> float_to_list(F);
+format_1(#c_atom{val=A}, Ctxt) -> core_atom(A);
 format_1(#c_nil{}, Ctxt) -> "[]";
 format_1(#c_string{val=S}, Ctxt) -> io_lib:write_string(S);
 format_1(#c_var{name=V}, Ctxt) ->
-    case atom_to_list(V) of
-	[C|Cs] when C == $_; C >= $A, C =< $Z -> [C|Cs];
-	Cs -> [$_|Cs]
+    %% Internal variable names may be:
+    %%     - atoms representing proper Erlang variable names, or
+    %%     any atoms that may be printed without single-quoting
+    %%     - nonnegative integers.
+    %% It is important that when printing variables, no two names
+    %% should ever map to the same string.
+    if atom(V) ->
+	    S = atom_to_list(V),
+	    case S of
+		[C | _] when C >= $A, C =< $Z ->
+		    %% Ordinary uppercase-prefixed names are
+		    %% printed just as they are.
+		    S;
+		[$_ | _] ->
+		    %% Already "_"-prefixed names are prefixed
+		    %% with "_X", e.g. '_foo' => '_X_foo', to
+		    %% avoid generating things like "____foo" upon
+		    %% repeated writing and reading of code.
+		    %% ("_X_X_X_foo" is better.)
+		    [$_, $X | S];
+		_ ->
+		    %% Plain atoms are prefixed with a single "_".
+		    %% E.g. foo => "_foo".
+		    [$_ | S]
+	    end;
+       integer(V) ->
+	    %% Integers are also simply prefixed with "_".
+	    [$_ | integer_to_list(V)]
     end;
-format_1(#c_bin{}=Type, Ctxt) ->
-    ["<<",
-     io_lib:write(Type),
-     ">>"
+format_1(#c_binary{segs=Segs}, Ctxt) ->
+    ["#<",
+     format_hseq(Segs, ",", ctxt_bump_indent(Ctxt, 2), fun format_bin_seg/2),
+     ">#"
     ];
 format_1(#c_tuple{es=Es}, Ctxt) ->
     [${,
      format_hseq(Es, ",", ctxt_bump_indent(Ctxt, 1), fun format/2),
      $}
     ];
-format_1(Cons, Ctxt) when record(Cons, c_cons) ->
-    [$[,
-     format_list_elements(Cons, ctxt_bump_indent(Ctxt, 1)),
-     $]
-    ];
+format_1(#c_cons{hd=H,tl=T}, Ctxt) ->
+    Txt = ["["|format(H, ctxt_bump_indent(Ctxt, 1))],
+    [Txt|format_list_tail(T, ctxt_bump_indent(Ctxt, width(Txt, Ctxt)))];
 format_1(#c_values{es=Es}, Ctxt) ->
-    [$<,
-     format_hseq(Es, ",", ctxt_bump_indent(Ctxt, 1), fun format/2),
-     $>
-    ];
+    format_values(Es, Ctxt);
 format_1(#c_alias{var=V,pat=P}, Ctxt) ->
-    Txt = [format(V)|" = "],
+    Txt = [format(V, Ctxt)|" = "],
     [Txt|format(P, ctxt_bump_indent(Ctxt, width(Txt, Ctxt)))];
 format_1(#c_let{vars=Vs,arg=A,body=B}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
-    ["let <",
-     format_hseq(Vs, ",", ctxt_bump_indent(Ctxt, 5), fun format/2),
-     "> =",
+    ["let ",
+     format_values(Vs, ctxt_bump_indent(Ctxt, 4)),
+     " =",
      nl_indent(Ctxt1),
      format(A, Ctxt1),
+     nl_indent(Ctxt),
+     "in  "
+     | format(B, ctxt_bump_indent(Ctxt, 4))
+    ];
+format_1(#c_letrec{defs=Fs,body=B}, Ctxt) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
+    ["letrec",
+     nl_indent(Ctxt1),
+     format_funcs(Fs, Ctxt1),
      nl_indent(Ctxt),
      "in  "
      | format(B, ctxt_bump_indent(Ctxt, 4))
@@ -106,8 +135,6 @@ format_1(#c_seq{arg=A,body=B}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, 4),
     ["do  ",
      format(A, Ctxt1),
-     nl_indent(Ctxt),
-     "then",
      nl_indent(Ctxt1)
      | format(B, Ctxt1)
     ];
@@ -117,26 +144,24 @@ format_1(#c_case{arg=A,clauses=Cs}, Ctxt) ->
      format(A, ctxt_bump_indent(Ctxt, 5)),
      " of",
      nl_indent(Ctxt1),
-     format_vseq(Cs,
-		 "", "",
-		 ctxt_set_class(Ctxt1, clause),
-		 fun format/2),
+     format_clauses(Cs, Ctxt1),
      nl_indent(Ctxt)
      | "end"
     ];
-format_1(#c_clause{pats=Ps,guard=G,body=B}, Ctxt) ->
-    %% Context class should be `clause'.
-    Ptxt = ["<",
-	    format_hseq(Ps, ", ", ctxt_bump_indent(Ctxt, 1), fun format/2),
-	    ">"],
-    Ctxt2 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
-    [Ptxt,
-     " when ",
-     format(G, ctxt_set_bump(Ctxt, expr, width(Ptxt, Ctxt) + 6)),
+format_1(#c_receive{clauses=Cs,timeout=T,action=A}, Ctxt) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.item_indent),
+    ["receive",
+     nl_indent(Ctxt1),
+     format_clauses(Cs, Ctxt1),
+     nl_indent(Ctxt),
+     "after ",
+     format(T, ctxt_bump_indent(Ctxt, 6)),
      " ->",
-     nl_indent(Ctxt2)
-     | format(B, ctxt_set_class(Ctxt2, expr))
+     nl_indent(Ctxt1),
+     format(A, Ctxt1)
     ];
+format_1(#c_fname{id=I,arity=A}, Ctxt) ->
+    [core_atom(I),$/,integer_to_list(A)];
 format_1(#c_fun{vars=Vs,body=B}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
     ["fun (",
@@ -145,20 +170,32 @@ format_1(#c_fun{vars=Vs,body=B}, Ctxt) ->
      nl_indent(Ctxt1)
      | format(B, Ctxt1)
     ];
-format_1(#c_call{op=Op,args=As}, Ctxt) ->
-    Txt = [$(,format(Op, ctxt_bump_indent(Ctxt, 1)),$)],
-    Ctxt1 = ctxt_bump_indent(Ctxt, 4),
-    [Txt,
-     nl_indent(Ctxt1),
-     $(,format_hseq(As, ", ", Ctxt1, fun format/2),$)
+format_1(#c_apply{op=O,args=As}, Ctxt0) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt0, 6),		%"apply "
+    Op = format(O, Ctxt1),
+    Ctxt2 = ctxt_bump_indent(Ctxt0, 4),
+    ["apply ",Op,
+     nl_indent(Ctxt2),
+     $(,format_hseq(As, ", ", ctxt_bump_indent(Ctxt2, 1), fun format/2),$)
     ];
-format_1(#c_local{name=N,arity=A}, Ctxt) ->
-    "local " ++ format_fa_pair({N,A}, Ctxt);
-format_1(#c_remote{mod=M,name=N,arity=A}, Ctxt) when atom(M) ->
-    %% This is for our internal translator.
-    io_lib:format("remote ~s:~s/~w", [core_atom(M),core_atom(N),A]);
-format_1(#c_internal{name=N,arity=A}, Ctxt) ->
-    "internal " ++ format_fa_pair({N,A}, Ctxt);
+format_1(#c_call{module=M,name=N,args=As}, Ctxt0) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt0, 5),		%"call "
+    Mod = format(M, Ctxt1),
+    Ctxt2 = ctxt_bump_indent(Ctxt1, width(Mod, Ctxt1)+1),
+    Name = format(N, Ctxt2),
+    Ctxt3 = ctxt_bump_indent(Ctxt0, 4),
+    ["call ",Mod,":",Name,
+     nl_indent(Ctxt3),
+     $(,format_hseq(As, ", ", ctxt_bump_indent(Ctxt3, 1), fun format/2),$)
+    ];
+format_1(#c_primop{name=N,args=As}, Ctxt0) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt0, 7),		%"primop "
+    Name = format(N, Ctxt1),
+    Ctxt2 = ctxt_bump_indent(Ctxt0, 4),
+    ["primop ",Name,
+     nl_indent(Ctxt2),
+     $(,format_hseq(As, ", ", ctxt_bump_indent(Ctxt2, 1), fun format/2),$)
+    ];
 format_1(#c_catch{body=B}, Ctxt) ->
     Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
     ["catch",
@@ -179,50 +216,30 @@ format_1(#c_try{expr=E,vars=Vs,body=B}, Ctxt) ->
      nl_indent(Ctxt1)
      | format(B, Ctxt1)
     ];
-format_1(#c_receive{clauses=Cs,timeout=T,action=A}, Ctxt) ->
-    Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.item_indent),
-    ["receive",
-     nl_indent(Ctxt1),
-     format_vseq(Cs, "", "", ctxt_set_class(Ctxt1, clause), fun format/2),
-     nl_indent(Ctxt),
-     "after ",
-     format(T, ctxt_bump_indent(Ctxt, 6)),
-     " ->",
-     nl_indent(Ctxt1),
-     format(A, Ctxt1),
-     nl_indent(Ctxt)
-     | "end"
-    ];
-format_1(#c_fdef{func=F,arity=A,body=B}, Ctxt) ->
+format_1(#c_def{name=N,val=V}, Ctxt) ->
     Ctxt1 = ctxt_set_bump(Ctxt, expr, Ctxt#ctxt.body_indent),
-    ["fdef ",
-     format_fa_pair({F,A}, ctxt_set_bump(Ctxt, term, 5)),
+    [format(N, Ctxt),
      " =",
      nl_indent(Ctxt1)
-     | format(B, Ctxt1)
+     | format(V, Ctxt1)
     ];
-format_1(#c_mdef{name=N,exports=Es,attributes=As,body=B}, Ctxt) ->
-    ["module ",
-     format(#c_atom{name=N}, ctxt_set_bump(Ctxt, term, 7)),
-     nl_indent(Ctxt),
-     "export [",
+format_1(#c_module{name=N,exports=Es,attrs=As,defs=Ds}, Ctxt) ->
+    Mod = ["module ", format(N, Ctxt)],
+    [Mod," [",
      format_vseq(Es,
 		 "", ",",
-		 ctxt_set_bump(Ctxt, term, 8),
-		 fun format_fa_pair/2),
+		 ctxt_set_bump(Ctxt, term, width(Mod, Ctxt)+2),
+		 fun format/2),
      "]",
      nl_indent(Ctxt),
-     "attributes [",
+     "    attributes [",
      format_vseq(As,
 		 "", ",",
-		 ctxt_set_bump(Ctxt, term, 12),
-		 fun format_attribute/2),
+		 ctxt_set_bump(Ctxt, def, 16),
+		 fun format/2),
      "]",
      nl_indent(Ctxt),
-     format_vseq(B,
-		 "", "",
-		 ctxt_set_class(Ctxt, fdef),
-		 fun format/2),
+     format_funcs(Ds, Ctxt),
      nl_indent(Ctxt)
      | "end"
     ];
@@ -232,7 +249,71 @@ format_1(Type, Ctxt) ->
      | " **"
     ].
 
+format_funcs(Fs, Ctxt) ->
+    format_vseq(Fs,
+		"", "",
+		ctxt_set_class(Ctxt, def),
+		fun format/2).
+
+format_values(Vs, Ctxt) ->
+    [$<,
+     format_hseq(Vs, ",", ctxt_bump_indent(Ctxt, 1), fun format/2),
+     $>].
+
+format_bin_seg(#c_bin_seg{val=V,size=S,unit=U,type=T,flags=Fs}, Ctxt0) ->
+    Vtxt = format(V, Ctxt0),
+    Ctxt1 = ctxt_bump_indent(Ctxt0, width(Vtxt, Ctxt0)+1), %":"
+    Stxt = format(S, Ctxt1),
+    [Vtxt,$:,Stxt,
+     if  U == 1 -> "";				%This is default
+	 true -> [$*|io_lib:write(U)]
+     end,
+     $:,core_atom(T),
+     lists:map(fun (F) -> [$-|core_atom(F)] end, Fs)
+    ].
+
+format_clauses(Cs, Ctxt) ->
+    format_vseq(Cs, "", "", ctxt_set_class(Ctxt, clause),
+		fun format_clause/2).
+
+format_clause(#c_clause{pats=Ps,guard=G,body=B}, Ctxt) ->
+    Ptxt = format_values(Ps, Ctxt),
+    Ctxt2 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.body_indent),
+    [Ptxt,
+     " when ",
+     format_guard(G, ctxt_set_bump(Ctxt, expr, width(Ptxt, Ctxt) + 6)),
+     " ->",
+     nl_indent(Ctxt2)
+     | format(B, ctxt_set_class(Ctxt2, expr))
+    ].
+
+format_guard(Node, Ctxt) ->
+    case core_lib:get_anno(Node) of
+	[] -> format_guard_1(Node, Ctxt);
+	List ->
+	    Ctxt1 = ctxt_bump_indent(Ctxt, 2),
+	    Ctxt2 = ctxt_bump_indent(Ctxt1, 3),
+	    ["( ",
+	     format_guard_1(Node, Ctxt1),
+	     nl_indent(Ctxt1),
+	     "-| ",format_1(core_lib:make_literal(List), Ctxt2)," )"
+	    ]
+    end.
+
+format_guard_1(#c_call{module=M,name=N,args=As}, Ctxt0) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt0, 5),		%"call "
+    Mod = format(M, Ctxt1),
+    Ctxt2 = ctxt_bump_indent(Ctxt1, width(Mod, Ctxt1)+1),
+    Name = format(N, Ctxt2),
+    Ctxt3 = ctxt_bump_indent(Ctxt0, 4),
+    ["call ",Mod,":",Name,
+     nl_indent(Ctxt3),
+     $(,format_vseq(As, "",",", ctxt_bump_indent(Ctxt3, 1), fun format_guard/2),$)
+    ];
+format_guard_1(E, Ctxt) -> format_1(E, Ctxt).	%Anno already done
+
 %% format_hseq([Thing], Separator, Context, Fun) -> Txt.
+%%  Format a sequence horizontally on the same line with Separator between.
 
 format_hseq([H], Sep, Ctxt, Fun) ->
     Fun(H, Ctxt);
@@ -243,6 +324,9 @@ format_hseq([H|T], Sep, Ctxt, Fun) ->
 format_hseq([], _, _, _) -> "".
 
 %% format_vseq([Thing], LinePrefix, LineSuffix, Context, Fun) -> Txt.
+%%  Format a sequence vertically in indented lines adding LinePrefix
+%%  to the beginning of each line and LineSuffix to the end of each
+%%  line.  No prefix on the first line or suffix on the last line.
 
 format_vseq([H], Pre, Suf, Ctxt, Fun) ->
     Fun(H, Ctxt);
@@ -251,35 +335,13 @@ format_vseq([H|T], Pre, Suf, Ctxt, Fun) ->
      format_vseq(T, Pre, Suf, Ctxt, Fun)];
 format_vseq([], _, _, _, _) -> "".
 
-format_fa_pair({F,A}, Ctxt) -> [core_atom(F),$/,integer_to_list(A)].
-
-%% format_attribute({Name,Val}, Context) -> Txt.
-
-format_attribute({Name,Val}, Ctxt) when list(Val) ->
-    Txt = format(#c_atom{name=Name}, Ctxt),
-    Ctxt1 = ctxt_bump_indent(Ctxt, width(Txt,Ctxt)+4),
-    [Txt," = ",
-     $[,format_vseq(Val, "", ",", Ctxt1,
-		    fun (A, C) -> format(core_parse:abstract(A), C) end),$]
-    ];
-format_attribute({Name,Val}, Ctxt) ->
-    Txt = format(#c_atom{name=Name}, Ctxt),
-    [Txt," = ",format(core_parse:abstract(Val),
-		      ctxt_bump_indent(Ctxt, width(Txt, Ctxt) + 3))].
-
-format_list_elements(#c_cons{head=H,tail=T}, Ctxt) ->
-    A = canno(T),
-    case T of
-	#c_nil{} when A == [] ->
-	    format(H, Ctxt);
-	#c_cons{} when A == [] ->
-	    Txt = [format(H, Ctxt)|","],
-	    Ctxt1 = ctxt_bump_indent(Ctxt, width(Txt, Ctxt)),
-	    [Txt|format_list_elements(T, Ctxt1)];
-	_ ->
-	    Txt = [format(H, Ctxt)|"|"],
-	    [Txt|format(T, ctxt_bump_indent(Ctxt, width(Txt, Ctxt)))]
-    end.
+format_list_tail(#c_nil{anno=[]}, Ctxt) -> "]";
+format_list_tail(#c_cons{anno=[],hd=H,tl=T}, Ctxt) ->
+    Txt = [$,|format(H, Ctxt)],
+    Ctxt1 = ctxt_bump_indent(Ctxt, width(Txt, Ctxt)),
+    [Txt|format_list_tail(T, Ctxt1)];
+format_list_tail(Tail, Ctxt) ->
+    ["|",format(Tail, ctxt_bump_indent(Ctxt, 1)),"]"].
 
 indent(Ctxt) -> indent(Ctxt#ctxt.indent, Ctxt).
 
@@ -315,7 +377,10 @@ unindent([], N, Ctxt, []) -> [].
 
 
 width(Txt, Ctxt) ->
-    width(Txt, 0, Ctxt, []).
+    case catch width(Txt, 0, Ctxt, []) of
+	{'EXIT',R} -> exit({bad_text,Txt});
+	Other -> Other
+    end.
 
 width([$\t|T], A, Ctxt, C) ->
     width(T, A + Ctxt#ctxt.tab_width, Ctxt, C);

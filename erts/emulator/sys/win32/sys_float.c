@@ -18,13 +18,16 @@
 /* Float conversions */
 
 #include "sys.h"
+#include "signal.h"
 
 /* global variable for floating point checks, (see sys.h) */
 /* Note! This is part of the interface Machine <---> sys.c */
-int erl_fp_exception = 0;
+volatile int erl_fp_exception = 0;
+
+static void fpe_exception(int sig);
 
 void
-init_sys_float(void)
+erts_sys_init_float(void)
 {
 }
 
@@ -86,7 +89,14 @@ double fp; char* buf;
 int
 matherr(struct _exception *exc)
 {
-  erl_fp_exception++;
-  DEBUGF(("FP exception (matherr) (0x%x) (%d)\n", exc->type, erl_fp_exception));
-  return 1;
+    erl_fp_exception = 1;
+    DEBUGF(("FP exception (matherr) (0x%x) (%d)\n", exc->type, erl_fp_exception));
+    return 1;
+}
+
+static void
+fpe_exception(int sig)
+{
+    erl_fp_exception = 1;
+    DEBUGF(("FP exception\n"));
 }

@@ -26,9 +26,10 @@
 #define DFLAG_FUN_TAGS            0x10
 #define DFLAG_DIST_MONITOR_NAME   0x20
 #define DFLAG_HIDDEN_ATOM_CACHE   0x40
+#define DFLAG_NEW_FUN_TAGS        0x80
 
 /* All flags that should be enabled when term_to_binary/1 is used. */
-#define TERM_TO_BINARY_DFLAGS (DFLAG_EXTENDED_REFERENCES|DFLAG_FUN_TAGS)
+#define TERM_TO_BINARY_DFLAGS (DFLAG_EXTENDED_REFERENCES|DFLAG_NEW_FUN_TAGS)
 
 /* opcodes used in distribution messages */
 #define DOP_LINK		1
@@ -63,19 +64,19 @@ extern Export* dmonitor_node2_trap;
 #endif
 extern Export* dmonitor_p_trap;
 
-EXTERN_FUNCTION(int, dist_link, (int, uint32, uint32));
-int dist_send(Process*, int, Eterm, Eterm);
-EXTERN_FUNCTION(int, dist_exit_tt, (int, uint32, uint32, uint32, uint32));
-EXTERN_FUNCTION(int, dist_exit_old, (int, uint32, uint32, uint32));
+extern int dist_link(int, Eterm, Eterm);
+extern int dist_send(Process*, int, Eterm, Eterm);
+extern int dist_exit_tt(int, Eterm, Eterm, Eterm, Eterm);
+extern int dist_exit_old(int, Eterm, Eterm, Eterm);
 #define dist_exit(a, b, c, d) dist_exit_old(a, b, c, d)
-EXTERN_FUNCTION(int, dist_unlink, (int, uint32, uint32));
-int dist_reg_send(Process*, int, Eterm, Eterm);
-EXTERN_FUNCTION(int, dist_group_leader, (int, uint32, uint32));
-EXTERN_FUNCTION(int, dist_exit2, (int, uint32, uint32, uint32));
+extern int dist_unlink(int, Eterm, Eterm);
+extern int dist_reg_send(Process*, int, Eterm, Eterm);
+extern int dist_group_leader(int, Eterm, Eterm);
+extern int dist_exit2(int, Eterm, Eterm, Eterm);
 #endif
 
-EXTERN_FUNCTION(int, dist_demonitor, (int, uint32, uint32, Ref *, int));
-EXTERN_FUNCTION(int, dist_monitor, (int, uint32, uint32, Ref *));
-EXTERN_FUNCTION(int, dist_m_exit, (int, uint32, uint32, Ref *, uint32));
+extern int dist_demonitor(int, Eterm, Eterm, Ref *, int);
+extern int dist_monitor(int, Eterm, Eterm, Ref *);
+extern int dist_m_exit(int, Eterm, Eterm, Ref *, Eterm);
 
 #endif

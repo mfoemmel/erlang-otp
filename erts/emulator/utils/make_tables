@@ -68,8 +68,6 @@ while (@ARGV && $ARGV[0] =~ /^-(\w+)/) {
 }
 
 
-$atom[0] = '';			# Reserved.
-
 while (<>) {
     next if /^#/;
     next if /^\s*$/;
@@ -106,7 +104,7 @@ extern char* erl_atom_names[];
 
 EOF
 my $i;
-for ($i = 1; $i < @atom; $i++) {
+for ($i = 0; $i < @atom; $i++) {
     my $alias = $atom_alias{$atom[$i]};
     print "#define am_$alias make_atom($i)\n"
 	if defined $alias;
@@ -126,6 +124,17 @@ for ($i = 0; $i < @atom; $i++) {
 }
 print "  0\n";
 print "};\n";
+
+#
+# Generate the generic bif list file.
+#
+
+open_file("$include/erl_bif_list.h");
+my $i;
+for ($i = 0; $i < @bif; $i++) {
+    # module atom, function atom, arity, C function, table index
+    print "BIF_LIST($bif[$i]->[0],$bif[$i]->[1],$bif[$i]->[2],$bif[$i]->[3],$i)\n";
+}
 
 #
 # Generate the bif header file.
@@ -236,7 +245,7 @@ sub open_file {			# or die
 sub includes {
     print "#ifdef HAVE_CONFIG_H\n";
     print "#  include \"config.h\"\n";
-    print "#endif HAVE_CONFIG_H\n";
+    print "#endif /* HAVE_CONFIG_H */\n";
     print map { "#include \"$_\"\n"; } @_;
     print "\n";
 }

@@ -214,8 +214,37 @@ expr({match,_,Lhs,Rhs0}, Bs0, Lf) ->
 expr({op,_,Op,A0}, Bs0, Lf) ->
     {value,A,Bs} = expr(A0, Bs0, Lf),
     {value,eval_op(Op, A),Bs};
+expr({op,_,'andalso',L0,R0}, Bs0, Lf) ->
+    {value,L,Bs1} = expr(L0, Bs0, Lf),
+    V = case L of
+	    true ->
+		{value,R,_} = expr(R0, Bs1, Lf),
+		case R of
+		    true -> true;
+		    false -> false;
+		    _ -> exit({{badarg,R},[{erl_eval,expr,3}]})
+		end;
+	    false -> false;
+	    _ -> exit({{badarg,L},[{erl_eval,expr,3}]})
+	end,
+    {value,V,Bs1};
+expr({op,_,'orelse',L0,R0}, Bs0, Lf) ->
+    {value,L,Bs1} = expr(L0, Bs0, Lf),
+    V = case L of
+	    true -> true;
+	    false ->
+		{value,R,_} = expr(R0, Bs1, Lf),
+		case R of
+		    true -> true;
+		    false -> false;
+		    _ -> exit({{badarg,R},[{erl_eval,expr,3}]})
+		end;
+	    _ -> exit({{badarg,L},[{erl_eval,expr,3}]})
+	end,
+    {value,V,Bs1};
 expr({op,_,Op,L0,R0}, Bs0, Lf) ->
     {value,L,Bs1} = expr(L0, Bs0, Lf),
+    
     {value,R,Bs2} = expr(R0, Bs0, Lf),
     {value,eval_op(Op, L, R),merge_bindings(Bs1, Bs2)};
 expr({bin,_,Fs}, Bs0, Lf) ->
@@ -510,41 +539,63 @@ guard_test({op,_,Op,Lhs0,Rhs0}, Bs0, Lf) ->
     end;
 guard_test({atom,_,true}, Bs, Lf) -> {value,true,Bs}.
 
-type_test(integer, [A]) when integer(A) -> true;
-type_test(float, [A]) when float(A) -> true;
-type_test(number, [A]) when number(A) -> true;
-type_test(atom, [A]) when atom(A) -> true;
-type_test(constant, [A]) when constant(A) -> true;
-type_test(list, [A]) when list(A) -> true;
-type_test(tuple, [A]) when tuple(A) -> true;
-type_test(pid, [A]) when pid(A) -> true;
-type_test(reference, [A]) when reference(A) -> true;
-type_test(port, [A]) when port(A) -> true;
-type_test(record, [R,A]) when atom(R), element(1, A) == R -> true;
-type_test(function, [A]) when function(A) -> true;
-type_test(binary, [A]) when binary(A) -> true;
-type_test(_, _) -> false.
+type_test(integer, [A]) -> erlang:is_integer(A);
+type_test(float, [A]) ->  erlang:is_float(A);
+type_test(number, [A]) -> erlang:is_number(A);
+type_test(atom, [A]) -> erlang:is_atom(A);
+type_test(constant, [A]) -> erlang:is_constant(A);
+type_test(list, [A]) -> erlang:is_list(A);
+type_test(tuple, [A]) -> erlang:is_tuple(A);
+type_test(pid, [A]) -> erlang:is_pid(A);
+type_test(reference, [A]) -> erlang:is_reference(A);
+type_test(port, [A]) -> erlang:is_port(A);
+type_test(function, [A]) -> erlang:is_function(A);
+type_test(binary, [A]) -> erlang:is_binary(A);
+type_test(record, As) -> type_test(is_record, As);
+type_test(is_record, [R,A]) when tuple(R), atom(A) ->
+    erlang:is_record(R, A, size(R));
+type_test(is_record, [R,A]) -> false;
+type_test(Test, As) -> erlang:apply(erlang, Test, As).
+
 
 %% match(Pattern, Term, Bindings) ->
 %%	{match,NewBindings} | nomatch
+%%      or exit({illegal_pattern, Pattern}).
 %%  Try to match Pattern against Term with the current bindings.
 
 match(Pat, Term, Bs) ->
-    catch match1(Pat, Term, Bs).
+    case catch match1(Pat, Term, Bs) of
+	invalid ->
+	    exit({{illegal_pattern,Pat},[{erl_eval,expr,3}]});
+	Other ->
+	    Other
+    end.
 
 string_to_conses([], Line, Tail) ->
     Tail;
 string_to_conses([E|Rest], Line, Tail) ->
     {cons, Line, {integer, Line, E}, string_to_conses(Rest, Line, Tail)}.
 
-match1({atom,_,A}, A, Bs) ->
-    {match,Bs};
-match1({integer,_,I}, I, Bs) ->
-    {match,Bs};
-match1({float,_,F}, F, Bs) ->
-    {match,Bs};
-match1({char,_,C}, C, Bs) ->
-    {match,Bs};
+match1({atom,_,A0}, A, Bs) ->
+    case A of
+	A0 -> {match,Bs};
+	_ -> throw(nomatch)
+    end;
+match1({integer,_,I0}, I, Bs) ->
+    case I of
+	I0 -> {match,Bs};
+	_ -> throw(nomatch)
+    end;
+match1({float,_,F0}, F, Bs) ->
+    case F of
+	F0 -> {match,Bs};
+	_ -> throw(nomatch)
+    end;
+match1({char,_,C0}, C, Bs) ->
+    case C of
+	C0 -> {match,Bs};
+	_ -> throw(nomatch)
+    end;
 match1({var,_,'_'}, _, Bs) ->			%Anonymous variable matches
     {match,Bs};					% everything, no new bindings
 match1({var,_,Name}, Term, Bs) ->
@@ -559,20 +610,30 @@ match1({var,_,Name}, Term, Bs) ->
 match1({match,Line,Pat1,Pat2}, Term, Bs0) ->
     {match, Bs1} = match1(Pat1, Term, Bs0),
     match1(Pat2, Term, Bs1);
-match1({string,_,S}, S, Bs) ->
-    {match,Bs};
-match1({nil,_}, [], Bs) ->
-    {match,Bs};
+match1({string,_,S0}, S, Bs) ->
+    case S of
+	S0 -> {match,Bs};
+	_ -> throw(nomatch)
+    end;
+match1({nil,_}, Nil, Bs) ->
+    case Nil of
+	[] -> {match,Bs};
+	_ -> throw(nomatch)
+    end;
 match1({cons,_,H,T}, [H1|T1], Bs0) ->
     {match,Bs} = match1(H, H1, Bs0),
     match1(T, T1, Bs);
 match1({tuple,_,Elts}, Tuple, Bs) when length(Elts) == size(Tuple) ->
     match_tuple(Elts, Tuple, 1, Bs);
+match1({tuple,_,Elts}, Tuple, Bs) ->
+    throw(nomatch);
 match1({bin, _, Fs}, B, Bs0) when binary(B) ->
     eval_bits:match_bits(Fs, B, Bs0,
 			 fun(L, R, Bs) -> match1(L, R, Bs) end,
 			 fun(E, Bs) -> expr(E, Bs, none) end,
 			 true);
+match1({bin, _, Fs}, B, Bs0) ->
+    throw(nomatch);
 match1({op,Line,'++',{nil,_},R}, Term, Bs) ->
     match1(R, Term, Bs);
 match1({op,_,'++',{cons,Li,{integer,L2,I},T},R}, Term, Bs) ->
@@ -582,19 +643,19 @@ match1({op,_,'++',{string,Li,L},R}, Term, Bs) ->
 match1({op,Line,Op,A}, Term, Bs) ->
     case partial_eval({op,Line,Op,A}) of
 	{op,Line,Op,A} ->
-	    throw(nomatch);
+	    throw(invalid);
 	X ->
 	    match1(X, Term, Bs)
     end;
 match1({op,Line,Op,L,R}, Term, Bs) ->
     case partial_eval({op,Line,Op,L,R}) of
 	{op,Line,Op,L,R} ->
-	    throw(nomatch);
+	    throw(invalid);
 	X ->
 	    match1(X, Term, Bs)
     end;
 match1(_, _, _) ->
-    throw(nomatch).
+    throw(invalid).
 
 match_tuple([E|Es], Tuple, I, Bs0) ->
     {match,Bs} = match1(E, element(I, Tuple), Bs0),
@@ -607,15 +668,12 @@ match_tuple([], _, _, Bs) ->
 %%  Try to match a list of patterns against a list of terms with the
 %%  current bindings.
 
-match_list(Ps, Ts, Bs) ->
-    catch match_list1(Ps, Ts, Bs).
-
-match_list1([P|Ps], [T|Ts], Bs0) ->
+match_list([P|Ps], [T|Ts], Bs0) ->
     case match(P, T, Bs0) of
-	{match,Bs1} -> match_list1(Ps, Ts, Bs1);
-	nomatch -> throw(nomatch)
+	{match,Bs1} -> match_list(Ps, Ts, Bs1);
+	nomatch -> nomatch
     end;
-match_list1([], [], Bs) ->
+match_list([], [], Bs) ->
     {match,Bs}.
 
 %% new_bindings()

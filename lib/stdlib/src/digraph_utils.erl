@@ -125,17 +125,17 @@ forest(G, SF, Vs, HandleFirst) ->
 pretraverse(first, V, SF, G, T, LL) ->
     ptraverse([V], SF, G, T, [], LL);
 pretraverse(not_first, V, SF, G, T, LL) ->
-    case ets:lookup(T, V) of
-	[] -> ptraverse(SF(G, V, []), SF, G, T, [], LL);
-	_  -> LL
+    case ets:member(T, V) of
+	false -> ptraverse(SF(G, V, []), SF, G, T, [], LL);
+	true  -> LL
     end.
 
 ptraverse([V | Vs], SF, G, T, Rs, LL) ->
-    case ets:lookup(T, V) of
-	[] ->
+    case ets:member(T, V) of
+	false ->
 	    ets:insert(T, {V}),
 	    ptraverse(SF(G, V, Vs), SF, G, T, [V | Rs], LL);
-	_ ->
+	true ->
 	    ptraverse(Vs, SF, G, T, Rs, LL)
     end;
 ptraverse([], _SF, _G, _T, [], LL) ->
@@ -153,11 +153,11 @@ revpostorder(G) ->
     L.
 
 posttraverse([V | Vs], G, T, L) ->
-    L1 = case ets:lookup(T, V) of
-	     [] ->
+    L1 = case ets:member(T, V) of
+	     false ->
 		 ets:insert(T, {V}),
 		 [V | posttraverse(out(G, V, []), G, T, L)];
-	     _ ->
+	     true ->
 		 L
 	 end,
     posttraverse(Vs, G, T, L1);

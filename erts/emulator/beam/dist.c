@@ -54,7 +54,7 @@ Export* dmonitor_p_trap = NULL;
 
 DistEntry* dist_addrs;
 int        this_creation;      /* set by setnode/2 */
-uint32     this_node;          /* mysyst@myhost    */
+Eterm      this_node;          /* mysyst@myhost    */
 int        MAXDIST;
 
 
@@ -66,11 +66,10 @@ static Eterm* dmem;
 
 /* forward declarations */
 
-static FUNCTION(int, clear_dist_entry, (int));
+static int clear_dist_entry(int);
 static int pack_and_send(int, Eterm, Eterm, int);
 
-void clear_cache(slot)
-int slot;
+void clear_cache(int slot)
 {
     ErlCache* cp;
 
@@ -83,8 +82,7 @@ int slot;
     }
 }
 
-void delete_cache(slot)
-int slot;
+void delete_cache(int slot)
 {
     ErlCache* cp;
 
@@ -95,8 +93,7 @@ int slot;
 }
 
 
-void create_cache(slot)
-int slot;
+void create_cache(int slot)
 {
     ErlCache* cp;
 
@@ -118,8 +115,7 @@ int slot;
 ** many distributed operations are guaranteed not to work then.
 */
 
-int is_node_name(ptr, len)
-char* ptr; int len;
+int is_node_name(char *ptr, int len)
 {
    int c = '\0';		/* suppress use-before-set warning */
    int pos = 0;
@@ -152,12 +148,11 @@ char* ptr; int len;
 ** port or process terminates
 */
 
-int do_net_exits(slot)
-int slot;
+int do_net_exits(int slot)
 {
-    uint32 tup;
-    uint32 name;
-    uint32 item;
+    Eterm tup;
+    Eterm name;
+    Eterm item;
     int i;
     ErlLink* lnk;
     Process *rp;
@@ -241,7 +236,7 @@ int slot;
 		name = dp->sysname;
 		if (is_pid(item)) {
 		    ErlHeapFragment* bp;
-		    uint32* hp;
+		    Eterm* hp;
 		    if ((rp = pid2proc(item)) == NULL)
 			break;
 		    del_link(find_link(&rp->links,LNK_NODE,name,slot));
@@ -255,7 +250,7 @@ int slot;
 #ifdef MONITOR_ENHANCE
 	    case LNK_NODE1:
 		{
-		   uint32 ref;
+		   Eterm ref;
 
 		   ref = lnk->ref;
 		   rp = pid2proc(item);
@@ -288,9 +283,12 @@ trap_function(Eterm func, int arity)
     return erts_export_put(am_erlang, func, arity);
 }
 
-void init_dist()
+void init_dist(void)
 {
     int i;
+#ifdef DEBUG
+    char *dbg_maxdist;
+#endif
 
     net_kernel = NULL;
 
@@ -302,8 +300,17 @@ void init_dist()
 	MAXDIST = MAX_NODE;
     else 
 	MAXDIST = i;
+#ifdef DEBUG
+    if ((dbg_maxdist = getenv("ERL_DEBUG_MAXDIST"))) {
+	int md = atoi(dbg_maxdist);
+	if (md > 0) {
+	    MAXDIST = md;
+	}
+	erl_printf(CERR,"MAXDIST = %d\r\n",MAXDIST);
+    }
+#endif
 
-    dmem = (uint32*) safe_alloc_from(151, DMEM_SIZE * sizeof(uint32));
+    dmem = (Eterm *) safe_alloc_from(151, DMEM_SIZE * sizeof(Eterm));
     dist_addrs = (DistEntry *) safe_alloc_from(152,
 					       MAXDIST * sizeof(DistEntry));
 
@@ -334,8 +341,7 @@ void init_dist()
     this_creation = 0;
 }
 
-static int clear_dist_entry(slot)
-int slot;
+static int clear_dist_entry(int slot)
 {
     clear_cache(slot);
     dist_addrs[slot].cid = NIL;
@@ -355,8 +361,7 @@ int slot;
 /*
 ** Send a DOP_LINK link message
 */
-int dist_link(slot, local, remote)
-int slot; uint32 remote; uint32 local;
+int dist_link(int slot, Eterm local, Eterm remote)
 {
     Eterm ctl = TUPLE3(dmem, make_small(DOP_LINK), local, remote);
 
@@ -365,8 +370,7 @@ int slot; uint32 remote; uint32 local;
 }
 
 
-int dist_unlink(slot, local, remote)
-int slot; uint32 remote; uint32 local;
+int dist_unlink(int slot, Eterm local, Eterm remote)
 {
     Eterm ctl = TUPLE3(dmem, make_small(DOP_UNLINK), local, remote);
 
@@ -374,13 +378,13 @@ int slot; uint32 remote; uint32 local;
     return pack_and_send(slot, ctl, THE_NON_VALUE, 0);
 }
 
-int dist_m_exit(slot, watcher, watched, ref0, reason)
-int slot; uint32 watcher; uint32 watched; Ref *ref0; uint32 reason;
+int dist_m_exit(int slot, Eterm watcher, Eterm watched, 
+		Ref *ref0, Eterm reason)
 {
-    uint32 ref, ref1;
-    uint32 rsize;
-    uint32 ctl;
-    uint32 *hp = dmem;
+    Eterm ref, ref1;
+    Uint rsize;
+    Eterm ctl;
+    Eterm *hp = dmem;
 
     ref1 = make_ref(ref0);
     rsize = size_object(ref1);
@@ -395,13 +399,12 @@ int slot; uint32 watcher; uint32 watched; Ref *ref0; uint32 reason;
     return pack_and_send(slot, ctl, THE_NON_VALUE, 1);
 }
 
-int dist_monitor(slot, watcher, watched, ref0)
-int slot; uint32 watcher; uint32 watched; Ref *ref0;
+int dist_monitor(int slot, Eterm watcher, Eterm watched, Ref *ref0)
 {
-    uint32 ref, ref1;
-    uint32 rsize;
-    uint32 ctl;
-    uint32 *hp = dmem;
+    Eterm ref, ref1;
+    Uint rsize;
+    Eterm ctl;
+    Eterm *hp = dmem;
 
     ref1 = make_ref(ref0);
     rsize = size_object(ref1);
@@ -416,13 +419,13 @@ int slot; uint32 watcher; uint32 watched; Ref *ref0;
     return pack_and_send(slot, ctl, THE_NON_VALUE, 0);
 }
 
-int dist_demonitor(slot, watcher, watched, ref0, force)
-int slot; uint32 watcher; uint32 watched; Ref *ref0; int force;
+int dist_demonitor(int slot, Eterm watcher, Eterm watched, 
+		   Ref *ref0, int force)
 {
-    uint32 ref, ref1;
-    uint32 rsize;
-    uint32 ctl;
-    uint32 *hp = dmem;
+    Eterm ref, ref1;
+    Uint rsize;
+    Eterm ctl;
+    Eterm *hp = dmem;
 
     ref1 = make_ref(ref0);
     rsize = size_object(ref1);
@@ -437,13 +440,12 @@ int slot; uint32 watcher; uint32 watched; Ref *ref0; int force;
     return pack_and_send(slot, ctl, THE_NON_VALUE, force);
 }
 
-int
-dist_send(Process* sender, int slot, Eterm remote, Eterm message)
+int dist_send(Process* sender, int slot, Eterm remote, Eterm message)
 {
-    uint32 ctl;
-    uint32 cookie = dist_addrs[slot].out_cookie;
+    Eterm ctl;
+    Eterm cookie = dist_addrs[slot].out_cookie;
     unsigned long version = dist_addrs[slot].version;
-    uint32 token = NIL;
+    Eterm token = NIL;
 
     if (cookie == NIL) {
 	cookie = dist_addrs[THIS_NODE].out_cookie;
@@ -464,13 +466,12 @@ dist_send(Process* sender, int slot, Eterm remote, Eterm message)
     return pack_and_send(slot, ctl, message, 0);
 }
 
-int
-dist_reg_send(Process* sender, int slot, Eterm remote_name, Eterm message)
+int dist_reg_send(Process* sender, int slot, Eterm remote_name, Eterm message)
 {
-    uint32 ctl;
-    uint32 cookie = dist_addrs[slot].out_cookie;
+    Eterm ctl;
+    Eterm cookie = dist_addrs[slot].out_cookie;
     unsigned long version = dist_addrs[slot].version;
-    uint32 token = NIL;
+    Eterm token = NIL;
 
     if (cookie == NIL) {
 	cookie = dist_addrs[THIS_NODE].out_cookie;
@@ -497,8 +498,8 @@ dist_reg_send(Process* sender, int slot, Eterm remote_name, Eterm message)
 ** this implies that the driver must always be ready to queue
 ** data even if it has signaled that it is busy !!!
 */
-int dist_exit_tt(slot, local, remote, reason, token)
-int slot; uint32 local; uint32 remote; uint32 reason; uint32 token;
+int dist_exit_tt(int slot, Eterm local, Eterm remote, 
+		 Eterm reason, Eterm token)
 {
     Eterm ctl;
 
@@ -514,18 +515,16 @@ int slot; uint32 local; uint32 remote; uint32 reason; uint32 token;
     return pack_and_send(slot, ctl, THE_NON_VALUE, 1);  /* forced, i.e ignore busy */
 }
 
-int dist_exit(slot, local, remote, reason)
-int slot; uint32 local; uint32 remote; uint32 reason;
+int dist_exit(int slot, Eterm local, Eterm remote, Eterm reason)
 {
-    uint32 ctl = TUPLE4(dmem, make_small(DOP_EXIT), local, remote, reason);
+    Eterm ctl = TUPLE4(dmem, make_small(DOP_EXIT), local, remote, reason);
     del_link(find_link(&dist_addrs[slot].links, LNK_LINK, local, remote));
     ASSERT(is_port(dist_addrs[slot].cid));
     return pack_and_send(slot, ctl, THE_NON_VALUE, 1);  /* forced, i.e ignore busy */
 }
 
 /* internal version of dist_exit2 that force send through busy port */
-int dist_exit2(slot, local, remote, reason)
-int slot; uint32 local; uint32 remote; uint32 reason;
+int dist_exit2(int slot, Eterm local, Eterm remote, Eterm reason)
 {
     Eterm ctl = TUPLE4(dmem, make_small(DOP_EXIT2), local, remote, reason);
 
@@ -534,8 +533,7 @@ int slot; uint32 local; uint32 remote; uint32 reason;
 }
 
 
-int dist_group_leader(slot, leader, remote)
-int slot; uint32 leader; uint32 remote;
+int dist_group_leader(int slot, Eterm leader, Eterm remote)
 {
     Eterm ctl = TUPLE3(dmem, make_small(DOP_GROUP_LEADER), leader, remote);
 
@@ -552,21 +550,20 @@ int slot; uint32 leader; uint32 remote;
 **
 **   assert  hlen == 0 !!!
 */
-int net_mess2(slot, hbuf, hlen, buf, len)
-int slot; byte* hbuf; int hlen; byte* buf; int len;
+int net_mess2(int slot, byte *hbuf, int hlen, byte *buf, int len)
 {
     ErlLink **lnkp;
     byte *t;
     int i;
     int ctl_len;
-    uint32 arg;
-    uint32 from, to;
-    uint32 watcher, watched;
-    uint32 ref;
-    uint32 res;
-    uint32 *tuple;
-    uint32 message;
-    uint32 reason;
+    Eterm arg;
+    Eterm from, to;
+    Eterm watcher, watched;
+    Eterm ref;
+    Eterm res;
+    Eterm *tuple;
+    Eterm message;
+    Eterm reason;
     Process* rp;
     ErlHeapFragment* msg = NULL;
     Eterm ctl_default[64];
@@ -838,7 +835,7 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 #endif
 	    if (rp->flags & F_TRAPEXIT) {
 		/* token updated by remote node */
-		deliver_exit_message_tt(from, rp, reason, token); 
+		deliver_exit_message_tt(from, rp, reason, token);
 		if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlinkpp != NULL) {
 		    trace_proc(NULL, rp, am_getting_unlinked, from);
 		}
@@ -911,6 +908,9 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
     if (off_heap.mso) {
 	erts_cleanup_mso(off_heap.mso);
     }
+    if (off_heap.funs) {
+	erts_cleanup_funs(off_heap.funs);
+    }
     if (ctl != ctl_default) {
 	sys_free(ctl);
     }
@@ -919,6 +919,9 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
  data_error:
     if (off_heap.mso) {
 	erts_cleanup_mso(off_heap.mso);
+    }
+    if (off_heap.funs) {
+	erts_cleanup_funs(off_heap.funs);
     }
     if (ctl != ctl_default) {
 	sys_free(ctl);
@@ -937,8 +940,7 @@ int slot; byte* hbuf; int hlen; byte* buf; int len;
 ** the slot entry must have a valid connetion entry
 */
 
-int sysname_to_dist_slot(sysname) 
-Eterm sysname;
+int sysname_to_dist_slot(Eterm sysname) 
 {
     int start;
     int pos;
@@ -958,8 +960,7 @@ Eterm sysname;
     return -1;
 }
 
-int find_or_insert_dist_slot(sysname)
-Eterm sysname;
+int find_or_insert_dist_slot(Eterm sysname)
 {
     int start;
     int pos;
@@ -1026,8 +1027,7 @@ Eterm sysname;
 /*         1 on resend  */
 
 
-static int 
-pack_and_send(int slot, Eterm ctl, Eterm mess, int force_busy)
+static int pack_and_send(int slot, Eterm ctl, Eterm mess, int force_busy)
 {
     byte *t;
     Port* p;
@@ -1069,8 +1069,7 @@ pack_and_send(int slot, Eterm ctl, Eterm mess, int force_busy)
 
 
 
-int distribution_info(to)		/* Called by break handler */
-CIO to;
+int distribution_info(CIO to)		/* Called by break handler */
 {
     int slot;
     ErlLink* lnk;
@@ -1083,6 +1082,14 @@ CIO to;
     erl_printf(to,"------------------------\n");
     for (slot = 1; slot < MAXDIST; slot++) {
 	if (dist_addrs[slot].cid == NIL) {
+#ifdef DEBUG
+	    if (dist_addrs[slot].sysname != NIL && 
+		dist_addrs[slot].sysname != am_invalid) {
+		erl_printf(to,"Dead node: ");
+		display(dist_addrs[slot].sysname, to);
+		erl_printf(to, "\n");
+	    }
+#endif
 	    if (dist_addrs[slot].links)
 		erl_printf(to,"error .. Got links on channel %d\n", slot);
 	    continue;
@@ -1128,21 +1135,18 @@ CIO to;
 #ifdef MESS_DEBUG
 
 
-void upp(buf,sz)
-byte* buf;
-int sz;
+void upp(byte *buf, int sz)
 {
     bin_write(CERR,buf,sz);
 }
 
-void print_pass_through(slot, t, len)
-int slot; byte *t; int len;
+void print_pass_through(int slot, byte *t, int len)
 {
     ErlHeapFragment* ctl = NULL;
     ErlHeapFragment* msg = NULL;
-    uint32* hp;
+    Eterm* hp;
     byte *orig = t;
-    uint32 i;
+    Uint i;
 
     if ((i = decode_size(t, len)) == -1) {
 	erl_printf(CERR,"Bailing out in decode_size control message\n\r");
@@ -1228,7 +1232,7 @@ BIF_ADECL_2
     long seed;
     int n;
     int i;
-    uint32 cookie;
+    Eterm cookie;
 
     if (is_not_atom(BIF_ARG_1) || is_not_small(BIF_ARG_2))
 	goto error;
@@ -1348,8 +1352,11 @@ BIF_ADECL_3
      */
 
     /* get slot (0 is this node name) */
-    if ((slot = find_or_insert_dist_slot(BIF_ARG_1)) <= 0)
+    if ((slot = find_or_insert_dist_slot(BIF_ARG_1)) == 0) {
 	goto error;
+    } else if (slot < 0) {
+	BIF_ERROR(BIF_P,SYSTEM_LIMIT);
+    }
 
     if (dist_addrs[slot].cid == BIF_ARG_2)
 	goto done;
@@ -1370,8 +1377,7 @@ BIF_ADECL_3
     if (!(flags & DFLAG_ATOM_CACHE) ||
 	(!(flags & DFLAG_PUBLISHED) && !(flags & DFLAG_HIDDEN_ATOM_CACHE))
 	/* Nodes which cannot use atom cache on non-published connections
-	   (pre r7b01_patched nodes) doesn't send the DFLAG_HIDDEN_ATOM_CACHE
-	   flag. */) {
+	   (pre R8 nodes) doesn't send the DFLAG_HIDDEN_ATOM_CACHE flag. */) {
 	delete_cache(slot);
     } else {
 	create_cache(slot);
@@ -1398,11 +1404,11 @@ error:
 BIF_RETTYPE dist_exit_3(BIF_ALIST_3)
 BIF_ADECL_3
 {
-    uint32 local;
-    uint32 remote;
-    uint32 rslot;
+    Eterm local;
+    Eterm remote;
+    int rslot;
     Process *lp;
-    uint32 exit_value = (BIF_ARG_2 == am_kill) ? am_killed : BIF_ARG_2;
+    Eterm exit_value = (BIF_ARG_2 == am_kill) ? am_killed : BIF_ARG_2;
 
     local = BIF_ARG_1;
     remote = BIF_ARG_3;
@@ -1462,8 +1468,8 @@ BIF_ADECL_3
 BIF_RETTYPE dist_link_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    uint32 local;
-    uint32 remote;
+    Eterm local;
+    Eterm remote;
     Process *lp;
     int slot = BIF_P->dslot;
 
@@ -1506,8 +1512,8 @@ BIF_ADECL_2
 BIF_RETTYPE dist_unlink_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-    uint32 local = BIF_ARG_1;
-    uint32 remote = BIF_ARG_2;
+    Eterm local = BIF_ARG_1;
+    Eterm remote = BIF_ARG_2;
     Process *lp;
     int slot = BIF_P->dslot;
 
@@ -1604,9 +1610,9 @@ BIF_ADECL_1
   } while(0)
 
     int i;
-    uint32 previous;
+    Eterm previous;
     int length;
-    uint32* hp;
+    Eterm* hp;
     int connected = 0;
     int published = 0;
     int hidden = 0;
@@ -1681,14 +1687,13 @@ BIF_ADECL_2
 	((this_node == am_Noname) && (BIF_ARG_1 != this_node))) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if ((slot = find_or_insert_dist_slot(BIF_ARG_1)) < 0 ) {
-	BIF_ERROR(BIF_P, BADARG);
+    if ((slot = sysname_to_dist_slot(BIF_ARG_1)) < 0 ) {
+	BIF_TRAP2(dmonitor_node_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
     }
     if (slot == 0) 
 	BIF_RET(am_true);
     if (BIF_ARG_2 == am_true) {
-	if (dist_addrs[slot].cid == NIL)
-	    BIF_TRAP2(dmonitor_node_trap, BIF_P, BIF_ARG_1, BIF_ARG_2);
+	ASSERT(dist_addrs[slot].cid != NIL);
 	dist_addrs[slot].links = new_link(dist_addrs[slot].links,
 					  LNK_NODE, BIF_P->id, NIL);
 	/* slot is inserted in process side (easy removal) */

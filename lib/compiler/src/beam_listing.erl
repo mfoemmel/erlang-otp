@@ -21,7 +21,7 @@
 
 -import(lists, [foreach/2]).
 
-module(File, Core) when element(1, Core) == c_mdef ->
+module(File, Core) when element(1, Core) == c_module ->
     %% This is a core module.
     io:put_chars(File, core_pp:format(Core));
 module(File, Kern) when element(1, Kern) == k_mdef ->

@@ -802,6 +802,20 @@ erl_copy_term (ETERM *ep)
 	ERL_BIN_PTR(cp) = (unsigned char *) erl_malloc(ERL_BIN_SIZE(ep));
 	memcpy(ERL_BIN_PTR(cp), ERL_BIN_PTR(ep), ERL_BIN_SIZE(ep));
 	break;
+    case ERL_FUNCTION:
+	i = ERL_CLOSURE_SIZE(cp) = ERL_CLOSURE_SIZE(ep);
+	ERL_FUN_ARITY(cp)     = ERL_FUN_ARITY(ep);
+	ERL_FUN_NEW_INDEX(cp) = ERL_FUN_NEW_INDEX(ep);
+	ERL_FUN_INDEX(cp)     = erl_copy_term(ERL_FUN_INDEX(ep));
+	ERL_FUN_UNIQ(cp)      = erl_copy_term(ERL_FUN_UNIQ(ep));
+	ERL_FUN_CREATOR(cp)   = erl_copy_term(ERL_FUN_CREATOR(ep));
+	ERL_FUN_MODULE(cp)    = erl_copy_term(ERL_FUN_MODULE(ep));
+	memcpy(ERL_FUN_MD5(cp), ERL_FUN_MD5(ep), sizeof(ERL_FUN_MD5(ep)));
+	ERL_CLOSURE(cp) = (ETERM**) erl_malloc(i * sizeof(ETERM*));
+	for(i=0; i < ERL_CLOSURE_SIZE(ep); i++) 
+	    ERL_CLOSURE_ELEMENT(cp,i) = 
+		erl_copy_term(ERL_CLOSURE_ELEMENT(ep, i));
+	break;
     default:
 	erl_err_msg("<ERROR> erl_copy_term: wrong type encountered !");
 	erl_free_term(cp);
@@ -937,6 +951,18 @@ int erl_print_term(FILE *fp, ETERM *ep)
       break;
     case ERL_FLOAT:
       ch_written += fprintf(fp, "%f", ERL_FLOAT_VALUE(ep));
+      break;
+    case ERL_FUNCTION:
+      ch_written += fprintf(fp, "#Fun<");
+      ch_written += erl_print_term(fp, ERL_FUN_MODULE(ep));
+      putc('.', fp);
+      ch_written++;
+      ch_written += erl_print_term(fp, ERL_FUN_INDEX(ep));
+      putc('.', fp);
+      ch_written++;
+      ch_written += erl_print_term(fp, ERL_FUN_UNIQ(ep));
+      putc('>', fp);
+      ch_written++;
       break;
     default:
       ch_written = -10000;

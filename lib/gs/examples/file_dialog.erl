@@ -23,6 +23,8 @@
 
 -export([start/0,start/1,start/2,fs_init/3]).
 
+-include_lib("kernel/include/file.hrl").
+
 
 %% ----- File Selection ----
 start() ->
@@ -154,11 +156,6 @@ double_clicked(Dir,Owner) ->
     end.
 
 
-cut_suffix(N,L) when N=<0 -> 
-    [];
-cut_suffix(N,[H|T]) ->
-    [H|cut_suffix(N-1,T)].
-
 %% checks if a file exists
 %% returns {file,Dir,File}
 %%         {dir,Dir}
@@ -189,7 +186,7 @@ check_file(Dir,File) ->
 			[$/|SubDir] -> lists:flatten([Dir,SubDir,$/])
 		    end
 	    end,
-	    case file:file_info(lists:append(NewDir,NewFile)) of
+	    case file:read_file_info(lists:append(NewDir,NewFile)) of
 		{ok,_} -> 
 		    {file,NewDir,NewFile};
 		_ -> 
@@ -204,8 +201,8 @@ get_files(Dir) ->
  
 add_slash(_,[]) -> [];
 add_slash(Dir,[H|T]) ->
-    case file:file_info(lists:append(Dir,[$/|H])) of
-        {ok,{_,directory,_,_,_,_,_}} ->
+    case file:read_file_info(lists:append(Dir,[$/|H])) of
+	{ok,FI} when FI#file_info.type==directory ->
             [lists:append(H,"/")|add_slash(Dir,T)];
         _ ->
 	    [H|add_slash(Dir,T)]

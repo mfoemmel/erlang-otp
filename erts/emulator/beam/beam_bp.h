@@ -84,8 +84,10 @@ do {						\
 ** Function interface exported from beam_bp.c
 */
 void erts_bp_init(void);
-int erts_set_break(Eterm mfa[3], int specified, Binary *match_spec);
-int erts_clear_break(Eterm mfa[3], int specified);
+int erts_set_trace_break(Eterm mfa[3], int specified, Binary *match_spec);
+int erts_clear_trace_break(Eterm mfa[3], int specified);
+int erts_set_debug_break(Eterm mfa[3], int specified);
+int erts_clear_debug_break(Eterm mfa[3], int specified);
 void erts_clear_module_break(Module *modp);
 Uint erts_process_break(Process *p, Uint *pc, Eterm *mfa, 
 			Eterm *args, Uint32 *ret_flags);

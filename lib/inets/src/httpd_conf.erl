@@ -16,11 +16,14 @@
 %%     $Id$
 %%
 -module(httpd_conf).
--export([load/1, load/2, store/1, store/2,
+-export([load/1, load/2, store/1, store/2, 
 	 remove_all/1, remove/1,
 	 is_directory/1, is_file/1, 
 	 make_integer/1, clean/1, custom_clean/3, check_enum/2]).
 
+
+-define(VMODULE,"CONF").
+-include("httpd_verbosity.hrl").
 
 %% The configuration data is handled in three (3) phases:
 %% 1. Parse the config file and put all directives into a key-vale
@@ -228,28 +231,34 @@ load_traverse(Line, [Context|Contexts], [Module|Modules], NewContexts, ConfigLis
 load(eof, []) ->
     eof;
 load([$M,$a,$x,$H,$e,$a,$d,$e,$r,$S,$i,$z,$e,$ |MaxHeaderSize], []) ->
+    ?DEBUG("load -> MaxHeaderSize: ~p",[MaxHeaderSize]),
     case make_integer(MaxHeaderSize) of
-	{ok, Integer} ->
-	    {ok, [], {max_header_size,Integer}};
-	{error, _} ->
-	    {error, ?NICE(clean(MaxHeaderSize)++
-			  " is an invalid number of MaxHeaderSize")}
+        {ok, Integer} ->
+            {ok, [], {max_header_size,Integer}};
+        {error, _} ->
+            {error, ?NICE(clean(MaxHeaderSize)++
+                          " is an invalid number of MaxHeaderSize")}
     end;
 load([$M,$a,$x,$H,$e,$a,$d,$e,$r,$A,$c,$t,$i,$o,$n,$ |Action], []) ->
+    ?DEBUG("load -> MaxHeaderAction: ~p",[Action]),
     {ok, [], {max_header_action,list_to_atom(clean(Action))}};
 load([$M,$a,$x,$B,$o,$d,$y,$S,$i,$z,$e,$ |MaxBodySize], []) ->
+    ?DEBUG("load -> MaxBodySize: ~p",[MaxBodySize]),
     case make_integer(MaxBodySize) of
-	{ok, Integer} ->
-	    {ok, [], {max_body_size,Integer}};
-	{error, _} ->
-	    {error, ?NICE(clean(MaxBodySize)++
-			  " is an invalid number of MaxBodySize")}
+        {ok, Integer} ->
+            {ok, [], {max_body_size,Integer}};
+        {error, _} ->
+            {error, ?NICE(clean(MaxBodySize)++
+                          " is an invalid number of MaxBodySize")}
     end;
 load([$M,$a,$x,$B,$o,$d,$y,$A,$c,$t,$i,$o,$n,$ |Action], []) ->
+    ?DEBUG("load -> MaxBodyAction: ~p",[Action]),
     {ok, [], {max_body_action,list_to_atom(clean(Action))}};
 load([$S,$e,$r,$v,$e,$r,$N,$a,$m,$e,$ |ServerName], []) ->
+    ?DEBUG("load -> ServerName: ~p",[ServerName]),
     {ok,[],{server_name,clean(ServerName)}};
 load([$S,$o,$c,$k,$e,$t,$T,$y,$p,$e,$ |SocketType], []) ->
+    ?DEBUG("load -> SocketType: ~p",[SocketType]),
     case check_enum(clean(SocketType),["ssl","ip_comm"]) of
 	{ok, ValidSocketType} ->
 	    {ok, [], {com_type,ValidSocketType}};
@@ -257,6 +266,7 @@ load([$S,$o,$c,$k,$e,$t,$T,$y,$p,$e,$ |SocketType], []) ->
 	    {error, ?NICE(clean(SocketType) ++ " is an invalid SocketType")}
     end;
 load([$P,$o,$r,$t,$ |Port], []) ->
+    ?DEBUG("load -> Port: ~p",[Port]),
     case make_integer(Port) of
 	{ok, Integer} ->
 	    {ok, [], {port,Integer}};
@@ -311,6 +321,7 @@ load([$S,$e,$r,$v,$e,$r,$R,$o,$o,$t,$ |ServerRoot], []) ->
 	    {error, ?NICE(clean(ServerRoot)++" is an invalid ServerRoot")}
     end;
 load([$M,$a,$x,$C,$l,$i,$e,$n,$t,$s,$ |MaxClients], []) ->
+    ?DEBUG("load -> MaxClients: ~p",[MaxClients]),
     case make_integer(MaxClients) of
 	{ok, Integer} ->
 	    {ok, [], {max_clients,Integer}};
@@ -452,18 +463,25 @@ store(ConfigList) ->
     store(ConfigDB, ConfigList, lists:append(Modules,[?MODULE]),ConfigList).
 
 store(ConfigDB, ConfigList, Modules,[]) ->
+    ?vtrace("store -> done",[]),
     ?CDEBUG("store -> done",[]),
     {ok, ConfigDB};
 store(ConfigDB, ConfigList, Modules, [ConfigListEntry|Rest]) ->
+    ?vtrace("store -> entry with"
+	    "~n   ConfigListEntry: ~p",[ConfigListEntry]),
     ?CDEBUG("store -> ~n"
 	    "      ConfigListEntry: ~p",[ConfigListEntry]),
     case store_traverse(ConfigListEntry,ConfigList,Modules) of
 	{ok, ConfigDBEntry} when tuple(ConfigDBEntry) ->
+	    ?vtrace("store -> ~n"
+		    "      ConfigDBEntry(tuple): ~p",[ConfigDBEntry]),
 	    ?CDEBUG("store -> ~n"
 		    "      ConfigDBEntry(tuple): ~p",[ConfigDBEntry]),
 	    ets:insert(ConfigDB,ConfigDBEntry),
 	    store(ConfigDB,ConfigList,Modules,Rest);
 	{ok, ConfigDBEntry} when list(ConfigDBEntry) ->
+	    ?vtrace("store -> ~n"
+		    "      ConfigDBEntry(list): ~p",[ConfigDBEntry]),
 	    ?CDEBUG("store -> ~n"
 		    "      ConfigDBEntry(list): ~p",[ConfigDBEntry]),
 	    lists:foreach(fun(Entry) ->
@@ -471,6 +489,7 @@ store(ConfigDB, ConfigList, Modules, [ConfigListEntry|Rest]) ->
 			  end,ConfigDBEntry),
 	    store(ConfigDB,ConfigList,Modules,Rest);
 	{error, Reason} ->
+	    ?vlog("store -> error: ~p",[Reason]),
 	    ?ERROR("store -> error: ~p",[Reason]),
 	    {error,Reason}
     end.

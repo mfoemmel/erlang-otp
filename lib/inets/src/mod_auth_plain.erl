@@ -97,11 +97,15 @@ delete_user(DirData, UserName) ->
 		   "    SomePassword: ~p~n"
 		   "    SomeData:     ~p",[SomePassword,SomeData]),
 	    ets:delete(PWDB, UserName),
-	    lists:foreach(fun(Group) -> 
-				  delete_group_member(DirData, Group, UserName) 
-			  end, 
-			  list_groups(DirData)),
-	    true;
+	    case list_groups(DirData) of
+		{ok,Groups}->
+		    lists:foreach(fun(Group) -> 
+					  delete_group_member(DirData, Group, UserName) 
+				  end,Groups),
+		    true;
+		_->
+		    true
+	    end;
 	_ ->
 	    {error, no_such_user}
     end.

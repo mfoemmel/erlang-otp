@@ -142,7 +142,19 @@ call({global, Name}=Process, Label, Request, Timeout)
        integer(Timeout), Timeout >= 0 ->
     case where(Process) of
 	Pid when pid(Pid) ->
-	    do_call(Pid, Label, Request, Timeout);
+	    Node = node(Pid),
+	    case catch do_call(Pid, Label, Request, Timeout) of
+		{'EXIT', {nodedown, Node}} ->
+		    % A nodedown not yet detected by global, pretend that it
+		    % was.
+		    exit(noproc);
+		{'EXIT', noproc} ->
+		    exit(noproc);
+		{'EXIT', OtherExits} ->
+		    exit(OtherExits);
+		Result ->
+		    Result
+	    end;
 	undefined ->
 	    exit(noproc)
     end;

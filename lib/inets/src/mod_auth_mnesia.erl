@@ -142,7 +142,7 @@ add_user(DirData, UStruct) ->
 	{aborted,Reason} ->
 	    {error,Reason};
 	_ ->
-	    ok
+	    true
     end.
 
 get_user(DirData, UserName) ->

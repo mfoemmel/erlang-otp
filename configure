@@ -13,12 +13,6 @@ ac_default_prefix=/usr/local
 # Any additions from configure.in:
 ac_help="$ac_help
   --disable-erlang-mandir do not install Erlang man pages in a private directory"
-ac_help="$ac_help
-  --enable-threads        use threads"
-ac_help="$ac_help
-  --with-ssl=PATH         specify location of openSSL/ssleay include and lib
-  --with-ssl              use SSL (default)
-  --without-ssl           don't use SSL"
 
 # Initialize some variables set by options.
 # The variables have the same names as the options, with
@@ -576,7 +570,7 @@ else { echo "configure: error: can not run $ac_config_sub" 1>&2; exit 1; }
 fi
 
 echo $ac_n "checking host system type""... $ac_c" 1>&6
-echo "configure:580: checking host system type" >&5
+echo "configure:574: checking host system type" >&5
 
 host_alias=$host
 case "$host_alias" in
@@ -606,7 +600,7 @@ TARGET=$host
 # We need GNU make, complain if we can't find it
 #
 echo $ac_n "checking for GNU make""... $ac_c" 1>&6
-echo "configure:610: checking for GNU make" >&5
+echo "configure:604: checking for GNU make" >&5
 # If there is a Makefile created we don't want make to start making, run
 # in a subdirectory and -f /dev/null
 mkdir conftestmake
@@ -646,7 +640,7 @@ esac
 # SVR4 /usr/ucb/install, which tries to use the nonexistent group "staff"
 # ./install, which can be erroneously created by make from ./install.sh.
 echo $ac_n "checking for a BSD compatible install""... $ac_c" 1>&6
-echo "configure:650: checking for a BSD compatible install" >&5
+echo "configure:644: checking for a BSD compatible install" >&5
 if test -z "$INSTALL"; then
 if eval "test \"`echo '$''{'ac_cv_path_install'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
@@ -703,7 +697,7 @@ if test X"${INSTALL}" = "X${ac_aux_dir}/install-sh -c" && test -f /usr/ucb/insta
 fi
 
 echo $ac_n "checking whether ln -s works""... $ac_c" 1>&6
-echo "configure:707: checking whether ln -s works" >&5
+echo "configure:701: checking whether ln -s works" >&5
 if eval "test \"`echo '$''{'ac_cv_prog_LN_S'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -726,7 +720,7 @@ fi
 # Extract the first word of "ranlib", so it can be a program name with args.
 set dummy ranlib; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:730: checking for $ac_word" >&5
+echo "configure:724: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_prog_RANLIB'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -777,60 +771,8 @@ fi
 
 
 
-#
-# threads option to pass to "erts/autoconf/configure"
-#
-#
-# Check whether --enable-threads or --disable-threads was given.
-if test "${enable_threads+set}" = set; then
-  enableval="$enable_threads"
-   case "$enableval" in
-    no) threads_option="--disable-threads" ;;
-    *)  threads_option="--enable-threads" ;;
-  esac 
-else
-  threads_option=""
-fi
-
-
-
-#
-# Read options for SSL. Pass this information to "erts/autoconf/configure"
-#
-# Check whether --with-ssl or --without-ssl was given.
-if test "${with_ssl+set}" = set; then
-  withval="$with_ssl"
-  ssl_arg="--with-ssl=$with_ssl"
-fi
-
-
-
-
-#
-# The parameters are basically the same as in erts/autoconf/Makefile
-#
-if test ! -d system  \
-    || test x"$ssl_arg" != x"" \
-    || test x"$threads_option" != x""; then
-  echo "Running ${ERL_TOP}/erts/autoconf/configure $ssl_arg $threads_option --cache-file ${ERL_TOP}/erts/autoconf/${TARGET}/config.cache --srcdir=${ERL_TOP}/erts"
-  (cd erts/autoconf && \
-   if test ! -d ${TARGET}; then mkdir ${TARGET}; fi; \
-   /bin/sh -c "ERL_TOP=${ERL_TOP} \
-	      CONFIG_STATUS=${ERL_TOP}/erts/autoconf/${TARGET}/config.status \
-	      ./configure \
-		$ssl_arg \
-		$threads_option \
-		--cache-file ${ERL_TOP}/erts/autoconf/${TARGET}/config.cache \
-		--srcdir=${ERL_TOP}/erts" \
-  )
-
-  if test $? -ne 0 ; then
-    { echo "configure: error: Configure in erts failed" 1>&2; exit 1; }
-  fi
-fi
-
 export ERL_TOP
-subdirs="lib"
+subdirs="lib erts"
 
 
 trap '' 1 2 15
@@ -1085,7 +1027,7 @@ if test "$no_recursion" != yes; then
     esac
   done
 
-  for ac_config_dir in lib; do
+  for ac_config_dir in lib erts; do
 
     # Do not complain, so a configure script can configure whichever
     # parts of a large source tree are present.

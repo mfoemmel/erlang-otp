@@ -31,8 +31,10 @@
 	 rlock/3,
 	 rlock_table/3,
 	 rwlock/3,
+	 sticky_rwlock/3,
 	 start/0,
 	 sticky_wlock/3,
+	 sticky_wlock_table/3,
 	 wlock/3,
 	 wlock_no_exist/4,
 	 wlock_table/3
@@ -46,11 +48,28 @@
 
 -include("mnesia.hrl").
 -import(mnesia_lib, [dbg_out/2, error/2, verbose/2]).
+
+-define(dbg(S,V), ok).
+%-define(dbg(S,V), dbg_out("~p:~p: " ++ S, [?MODULE, ?LINE] ++ V)).
+
 -define(ALL, '______WHOLETABLE_____').
 -define(STICK, '______STICK_____').
 -define(GLOBAL, '______GLOBAL_____').
 
 -record(state, {supervisor}).
+
+-record(queue, {oid, tid, op, pid, lucky}).
+
+%% mnesia_held_locks: contain       {Oid, Op, Tid} entries  (bag)
+-define(match_oid_held_locks(Oid),  {Oid, '_', '_'}).
+%% mnesia_tid_locks: contain        {Tid, Oid, Op} entries  (bag) 
+-define(match_oid_tid_locks(Tid),   {Tid, '_', '_'}).
+%% mnesia_sticky_locks: contain     {Oid, Node} entries and {Tab, Node} entries (set)
+-define(match_oid_sticky_locks(Oid),{Oid, '_'}).
+%% mnesia_lock_queue: contain       {queue, Oid, Tid, Op, ReplyTo, WaitForTid} entries (ordered_set)
+-define(match_oid_lock_queue(Oid),  #queue{oid=Oid, tid='_', op = '_', pid = '_', lucky = '_'}). 
+%% mnesia_lock_counter:             {{write, Tab}, Number} &&
+%%                                  {{read, Tab}, Number} entries  (set)
 
 start() ->
     mnesia_monitor:start_proc(?MODULE, ?MODULE, init, [self()]).
@@ -61,16 +80,14 @@ init(Parent) ->
     proc_lib:init_ack(Parent, {ok, self()}),
     loop(#state{supervisor = Parent}).
 
-
 val(Var) ->
     case ?catch_val(Var) of
 	{'EXIT', _ReASoN_} -> mnesia_lib:other_val(Var, _ReASoN_); 
 	_VaLuE_ -> _VaLuE_ 
     end.
 
-reply(From, R, State) ->
-    From ! {?MODULE, node(), R},
-    loop(State).
+reply(From, R) ->
+    From ! {?MODULE, node(), R}.
 
 l_request(Node, X, Store) ->
     {?MODULE, Node} ! {self(), X},
@@ -108,34 +125,25 @@ receive_release_tid_acc([Node | Nodes], Tid) ->
 receive_release_tid_acc([], Tid) ->
     ok.
 
-%% mnesia_held_locks: contain       {Oid, Op, Tid} entries  (bag)
--define(match_oid_held_locks(Oid),  {Oid, '_', '_'}).
-%% mnesia_tid_locks: contain        {Tid, Oid, Op} entries  (bag) 
--define(match_oid_tid_locks(Oid),   {Oid, '_', '_'}).
-%% mnesia_sticky_locks: contain     {Oid, Node} entries and {Tab, Node} entries (set)
--define(match_oid_sticky_locks(Oid),{Oid, '_'}).
-%% mnesia_lock_queue: contain       {Oid, Op, ReplyTo, Tid, WaitForTid} entries (bag)
--define(match_oid_lock_queue(Oid),  {Oid, '_', '_', '_', '_'}). 
-%% mnesia_lock_counter:             {{write, Tab}, Number} &&
-%%                                  {{read, Tab}, Number} entries  (set)
-
-
 loop(State) ->
     receive
 	{From, {write, Tid, Oid}} ->
-	    try_lock(Tid, write, From, Oid, State);
+	    try_sticky_lock(Tid, write, From, Oid),
+	    loop(State);
 
 	%% If Key == ?ALL it's a request to lock the entire table
 	%%
 
 	{From, {read, Tid, Oid}} ->
-	    try_sticky_lock(Tid, read, From, Oid, State);
+	    try_sticky_lock(Tid, read, From, Oid),
+	    loop(State);
 
 	%% Really do a  read, but get hold of a write lock
 	%% used by mnesia:wread(Oid).
 	
 	{From, {read_write, Tid, Oid}} ->
-	    try_sticky_lock(Tid, read_write, From, Oid, State);
+	    try_sticky_lock(Tid, read_write, From, Oid),
+	    loop(State);
 	
 	%% Tid has somehow terminated, clear up everything
 	%% and pass locks on to queued processes.
@@ -146,25 +154,25 @@ loop(State) ->
 	    loop(State);
 	
 	%% stick lock, first tries this to the where_to_read Node
-	{From, {test_set_sticky, Tid, Oid}} ->
-	    Tab = element(1, Oid),
-	    case catch ?ets_lookup_element(mnesia_sticky_locks, Oid, 2) of
-		{'EXIT', _} -> 
-		    reply(From, not_stuck, State);
-		Node when Node == node() ->
+	{From, {test_set_sticky, Tid, {Tab, _} = Oid, Lock}} ->
+	    case ?ets_lookup(mnesia_sticky_locks, Tab) of
+		[] -> 
+		    reply(From, not_stuck),
+		    loop(State);
+		[{_,Node}] when Node == node() ->
 		    %% Lock is stuck here, see now if we can just set 
 		    %% a regular write lock
-		    try_lock(Tid, write, From, Oid, State);
-		Node ->
-		   reply(From, {stuck_elsewhere, Node}, State) 
+		    try_lock(Tid, Lock, From, Oid),
+		    loop(State);
+		[{_,Node}] ->
+		    reply(From, {stuck_elsewhere, Node}),
+		    loop(State)
 	    end;
 
 	%% If test_set_sticky fails, we send this to all nodes
 	%% after aquiring a real write lock on Oid
 
-	{stick, Oid, N} ->
-	    Tab = element(1, Oid),
-	    ?ets_insert(mnesia_sticky_locks, {Oid, N}),
+	{stick, {Tab, _}, N} ->
 	    ?ets_insert(mnesia_sticky_locks, {Tab, N}),
 	    loop(State);
 
@@ -172,23 +180,26 @@ loop(State) ->
 	%% aquired a write lock on the entire table
 	{unstick, Tab} ->
 	    ?ets_delete(mnesia_sticky_locks, Tab),
-	    ?ets_match_delete(mnesia_sticky_locks, 
-			      ?match_oid_sticky_locks({Tab, '_'})),
 	    loop(State);
 
 	{From, {ix_read, Tid, Tab, IxKey, Pos}} ->
 	    case catch mnesia_index:get_index_table(Tab, Pos) of
 		{'EXIT', _} ->
-		    reply(From, {not_granted, {no_exists, Tab, {index, [Pos]}}}, State);
+		    reply(From, {not_granted, {no_exists, Tab, {index, [Pos]}}}),
+		    loop(State);
 		Index ->
 		    Rk = mnesia_lib:elems(2,mnesia_index:db_get(Index, IxKey)),
 		    %% list of real keys
-		    case catch ?ets_lookup_element(mnesia_sticky_locks, Tab, 2) of
-			{'EXIT',_} ->
-			    set_read_lock_on_all_keys(Tid, From,Tab,Rk,Rk, [],State);
-			N when N == node() ->
-			    set_read_lock_on_all_keys(Tid, From,Tab,Rk,Rk, [], State);
-			N ->
+		    case ?ets_lookup(mnesia_sticky_locks, Tab) of
+			[] ->
+			    set_read_lock_on_all_keys(Tid, From,Tab,Rk,Rk, 
+						      []),
+			    loop(State);
+			[{_,N}] when N == node() ->
+			    set_read_lock_on_all_keys(Tid, From,Tab,Rk,Rk, 
+						      []),
+			    loop(State);
+			[{_,N}] ->
 			    Req = {From, {ix_read, Tid, Tab, IxKey, Pos}},
 			    From ! {?MODULE, node(), {switch, N, Req}},
 			    loop(State)
@@ -197,7 +208,8 @@ loop(State) ->
 
 	{From, {sync_release_tid, Tid}} ->
 	    do_release_tid(Tid),
-	    reply(From, {tid_released, Tid}, State);
+	    reply(From, {tid_released, Tid}),
+	    loop(State);
 	
 	{release_remote_non_pending, Node, Pending} ->
 	    release_remote_non_pending(Node, Pending),
@@ -208,7 +220,7 @@ loop(State) ->
 	    do_stop();
 
 	{system, From, Msg} ->
-	    dbg_out("~p got {system, ~p, ~p}~n", [?MODULE, From, Msg]),
+	    verbose("~p got {system, ~p, ~p}~n", [?MODULE, From, Msg]),
 	    Parent = State#state.supervisor,
 	    sys:handle_system_msg(Msg, From, Parent, ?MODULE, [], State);
 	    
@@ -218,74 +230,45 @@ loop(State) ->
     end.
 
 set_lock(Tid, Oid, Op) ->
+    ?dbg("Granted ~p ~p ~p~n", [Tid,Oid,Op]),
     ?ets_insert(mnesia_held_locks, {Oid, Op, Tid}),
-    ?ets_insert(mnesia_tid_locks, {Tid, Oid, Op}),
-    Tab = element(1, Oid),
-    incr_counter({Op, Tab}).
-
-incr_counter(Counter) ->
-    case catch ?ets_update_counter(mnesia_lock_counter, Counter, 1) of
-	{'EXIT', _} ->
-	    ?ets_insert(mnesia_lock_counter, {Counter, 1});
-	_ -> 
-	    ok
-    end.
-
-decr_counter(Counter) ->
-    catch ?ets_update_counter(mnesia_lock_counter, Counter, -1).
-
-get_counter(Counter) ->
-    case catch ?ets_lookup_element(mnesia_lock_counter, Counter, 2) of
-	{'EXIT', _} -> 0;
-	Val -> Val
-    end.
+    ?ets_insert(mnesia_tid_locks, {Tid, Oid, Op}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Acquire locks
 
-try_sticky_lock(Tid, Op, Pid, Oid, State) ->
-    StickyKey = sticky_key(Oid),
-    case catch ?ets_lookup_element(mnesia_sticky_locks, StickyKey, 2) of
-	{'EXIT', _} ->
-	    try_lock(Tid, Op, Pid, Oid, State);
-	N when N == node() ->
-	    try_lock(Tid, Op, Pid, Oid, State);
-	N ->
+try_sticky_lock(Tid, Op, Pid, {Tab, _} = Oid) ->
+    case ?ets_lookup(mnesia_sticky_locks, Tab) of
+	[] ->
+	    try_lock(Tid, Op, Pid, Oid);
+	[{_,N}] when N == node() ->
+	    try_lock(Tid, Op, Pid, Oid);
+	[{_,N}] ->
 	    Req = {Pid, {Op, Tid, Oid}},
-	    Pid ! {?MODULE, node(), {switch, N, Req}},
-	    loop(State)
-   end.
+	    Pid ! {?MODULE, node(), {switch, N, Req}}
+    end.
 
-sticky_key({Tab, Key}) when Key /= ?ALL ->
-    {Tab, Key};
-sticky_key({Tab, Key}) ->
-    Tab.
+try_lock(Tid, read_write, Pid, Oid) ->
+    try_lock(Tid, read_write, read, write, Pid, Oid);
+try_lock(Tid, Op, Pid, Oid) ->
+    try_lock(Tid, Op, Op, Op, Pid, Oid).
 
-try_lock(Tid, read_write, Pid, Oid, State) ->
-    try_lock(Tid, read_write, read, write, Pid, Oid, State);
-try_lock(Tid, Op, Pid, Oid, State) ->
-    try_lock(Tid, Op, Op, Op, Pid, Oid, State).
-
-try_lock(Tid, Op, SimpleOp, Lock, Pid, Oid, State) ->
-    case catch can_lock(Tid, Lock, Oid, {no, bad_luck}) of
+try_lock(Tid, Op, SimpleOp, Lock, Pid, Oid) ->
+    case can_lock(Tid, Lock, Oid, {no, bad_luck}) of
 	yes ->
 	    Reply = grant_lock(Tid, Pid, SimpleOp, Lock, Oid),
-	    reply(Pid, Reply, State);
+	    reply(Pid, Reply);
 	{no, Lucky} ->
 	    C = #cyclic{op = SimpleOp, lock = Lock, oid = Oid, lucky = Lucky},
-	    if
-		Tid#tid.pid == Lucky#tid.pid ->
-		    verbose("Detected spurious lock conflict ~w: ~w -> ~w~n",
-			    [Tid#tid.counter == Lucky#tid.counter, Tid, C]);
-		true ->
-		    ignore
-	    end,
-	    reply(Pid, {not_granted, C}, State);
+	    ?dbg("Rejected ~p ~p ~p ~p ~n", [Tid, Oid, Lock, Lucky]),
+	    reply(Pid, {not_granted, C});
 	{queue, Lucky} ->
+	    ?dbg("Queued ~p ~p ~p ~p ~n", [Tid, Oid, Lock, Lucky]),
 	    %% Append to queue: Nice place for trace output
-	    ?ets_insert(mnesia_lock_queue, {Oid, Op, Pid, Tid, Lucky}),
-	    ?ets_insert(mnesia_tid_locks, {Tid, Oid, {queued, Op}}),
-	    loop(State)
+	    ?ets_insert(mnesia_lock_queue, 
+			#queue{oid = Oid, tid = Tid, op = Op, 
+			       pid = Pid, lucky = Lucky}),
+	    ?ets_insert(mnesia_tid_locks, {Tid, Oid, {queued, Op}})
     end.
 
 grant_lock(Tid, ClientPid, read, Lock, {Tab, Key})
@@ -314,95 +297,116 @@ grant_lock(Tid, _ClientPid, write, Lock, Oid) ->
     set_lock(Tid, Oid, Lock),
     granted.
 
-%% Impose an ordering on all transactions 
-%% favour old transactions
-%% newer transactions may never wait on older ones
+%% 1) Impose an ordering on all transactions favour old (low tid) transactions
+%%    newer (higher tid) transactions may never wait on older ones,
+%% 2) When releasing the tids from the queue always begin with youngest (high tid)
+%%    because of 1) it will avoid the deadlocks.
+%% 3) TabLocks is the problem :-) They should not starve and not deadlock 
+%%    handle tablocks in queue as they had locks on unlocked records.
 
 can_lock(Tid, read, {Tab, Key}, AlreadyQ) when Key /= ?ALL ->
     %% The key is bound, no need for the other BIF
     Oid = {Tab, Key}, 
     ObjLocks = ?ets_match_object(mnesia_held_locks, {Oid, write, '_'}),
     TabLocks = ?ets_match_object(mnesia_held_locks, {{Tab, ?ALL}, write, '_'}),
-    check_lock(Tid, Oid, ObjLocks, TabLocks, yes, AlreadyQ);
+    check_lock(Tid, Oid, ObjLocks, TabLocks, yes, AlreadyQ, read);
 
 can_lock(Tid, read, Oid, AlreadyQ) -> % Whole tab
     Tab = element(1, Oid),
-    ObjLocks =
-	case get_counter({write, Tab}) of
-	    0 ->
-		[];
-	    _ ->
-		?ets_match_object(mnesia_held_locks, {{Tab, '_'}, write, '_'})
-	end,
-    check_lock(Tid, Oid, ObjLocks, [], yes, AlreadyQ);
+    ObjLocks = ?ets_match_object(mnesia_held_locks, {{Tab, '_'}, write, '_'}),
+    check_lock(Tid, Oid, ObjLocks, [], yes, AlreadyQ, read);
 
 can_lock(Tid, write, {Tab, Key}, AlreadyQ) when Key /= ?ALL -> 
     Oid = {Tab, Key},
     ObjLocks = ?ets_lookup(mnesia_held_locks, Oid),
     TabLocks = ?ets_lookup(mnesia_held_locks, {Tab, ?ALL}),
-    check_lock(Tid, Oid, ObjLocks, TabLocks, yes, AlreadyQ);
+    check_lock(Tid, Oid, ObjLocks, TabLocks, yes, AlreadyQ, write);
 
 can_lock(Tid, write, Oid, AlreadyQ) -> % Whole tab
     Tab = element(1, Oid),
     ObjLocks = ?ets_match_object(mnesia_held_locks, ?match_oid_held_locks({Tab, '_'})),
-    check_lock(Tid, Oid, ObjLocks, [], yes, AlreadyQ).
+    check_lock(Tid, Oid, ObjLocks, [], yes, AlreadyQ, write).
 
 %% Check held locks for conflicting locks
-check_lock(Tid, Oid, [Lock | Locks], TabLocks, X, AlreadyQ) ->
+check_lock(Tid, Oid, [Lock | Locks], TabLocks, X, AlreadyQ, Type) ->
     case element(3, Lock) of
 	Tid ->
-	    check_lock(Tid, Oid, Locks, TabLocks, X, AlreadyQ);
+	    check_lock(Tid, Oid, Locks, TabLocks, X, AlreadyQ, Type);
 	WaitForTid when WaitForTid > Tid -> % Important order
-	    check_lock(Tid, Oid, Locks, TabLocks, {queue, WaitForTid}, AlreadyQ);
+	    check_lock(Tid, Oid, Locks, TabLocks, {queue, WaitForTid}, AlreadyQ, Type);
 	WaitForTid when Tid#tid.pid == WaitForTid#tid.pid ->
-	    verbose("Spurious lock conflict ~w ~w: ~w -> ~w~n",
-		    [Oid, Lock, Tid, WaitForTid]),
-	    check_lock(Tid, Oid, Locks, TabLocks, {queue, WaitForTid}, AlreadyQ);
+	    dbg_out("Spurious lock conflict ~w ~w: ~w -> ~w~n",
+		    [Oid, Lock, Tid, WaitForTid]),  
+%%	    check_lock(Tid, Oid, Locks, TabLocks, {queue, WaitForTid}, AlreadyQ);
+	    %% BUGBUG Fix this if possible
+	    {no, WaitForTid};
 	WaitForTid ->
 	    {no, WaitForTid}
     end;
 
-check_lock(_, _, [], [], X, {queue, bad_luck}) ->
+check_lock(_, _, [], [], X, {queue, bad_luck}, _) ->
     X;  %% The queue should be correct already no need to check it again
 
-check_lock(Tid, Oid, [], [], X, AlreadyQ) ->
+check_lock(_Tid, _Oid, [], [], X = {queue, Tid}, AlreadyQ, _) ->
+    X;  
+
+check_lock(Tid, Oid, [], [], X, AlreadyQ, Type) ->
     {Tab, Key} = Oid,
     if
+	Type == write ->
+	    check_queue(Tid, Tab, X, AlreadyQ);
 	Key == ?ALL ->
-	    Locks = ?ets_match_object(mnesia_lock_queue, 
-				      ?match_oid_lock_queue({Tab, '_'})),
-	    check_queue(Tid, Locks, [], X, AlreadyQ);
+	    %% hmm should be solvable by a clever select expr but not today...
+	    check_queue(Tid, Tab, X, AlreadyQ);
 	true ->
-	    ObjLocks = ?ets_lookup(mnesia_lock_queue, Oid),
-	    TabLocks = ?ets_lookup(mnesia_lock_queue, {Tab, ?ALL}),
-	    check_queue(Tid, ObjLocks, TabLocks, X, AlreadyQ)
+	    %% If there is a queue on that object, read_lock shouldn't be granted
+	    ObjLocks = ets:lookup(mnesia_lock_queue, Oid),
+	    Greatest = max(ObjLocks),
+	    case Greatest of
+		empty -> 
+		    check_queue(Tid, Tab, X, AlreadyQ);
+		ObjL when Tid > ObjL -> 
+		    {no, ObjL}; %% Starvation Preemption (write waits for read)
+		ObjL ->
+		    check_queue(Tid, Tab, {queue, ObjL}, AlreadyQ)
+	    end
     end;
 
-check_lock(Tid, Oid, [], TabLocks, X, AlreadyQ) ->
-    check_lock(Tid, Oid, TabLocks, [], X, AlreadyQ).
+check_lock(Tid, Oid, [], TabLocks, X, AlreadyQ, Type) ->
+    check_lock(Tid, Oid, TabLocks, [], X, AlreadyQ, Type).
 
 %% Check queue for conflicting locks
 %% Assume that all queued locks belongs to other tid's
-check_queue(Tid, [Lock | Locks], TabLocks, X, AlreadyQ) ->
-    case element(4, Lock) of
-	Tid -> 
+
+check_queue(Tid, Tab, X, AlreadyQ) ->
+    TabLocks = ets:lookup(mnesia_lock_queue, {Tab,?ALL}),
+    Greatest = max(TabLocks),
+    case Greatest of
+	empty -> 
+	    X;
+	Tid ->
 	    X; 
-	WaitForTid when WaitForTid > Tid -> % Important order
-	    check_queue(Tid, Locks, TabLocks, {queue, WaitForTid}, AlreadyQ);
-	WaitForTid ->
-	    %% Do not bother with the remaining queue since
-	    %% the rest of the queue only may contain older
-	    %% transactions.
+	WaitForTid when WaitForTid#queue.tid > Tid -> % Important order
+	    {queue, WaitForTid};
+	WaitForTid -> 
 	    case AlreadyQ of
 		{no, bad_luck} -> {no, WaitForTid};
-		{queue, bad_luck} -> {queue, WaitForTid};  %% Nicer debug
-		_  -> AlreadyQ
+		_ ->  
+		    erlang:fault({mnesia_locker, assert, AlreadyQ})
 	    end
-    end;
-check_queue(Tid, [], [], X, AlreadyQ) ->
-    X;
-check_queue(Tid, [], TabLocks, X, AlreadyQ) ->
-    check_queue(Tid, TabLocks, [], X, AlreadyQ).
+    end.
+
+max([]) ->
+    empty;
+max([H|R]) ->
+    max(R, H#queue.tid).
+
+max([H|R], Tid) when H#queue.tid > Tid ->
+    max(R, H#queue.tid);
+max([H|R], Tid) ->
+    max(R, Tid);
+max([], Tid) ->
+    Tid.
 
 %% We can't queue the ixlock requests since it
 %% becomes to complivated for little me :-)
@@ -411,34 +415,27 @@ check_queue(Tid, [], TabLocks, X, AlreadyQ) ->
 %% 
 %% BUGBUG: this is actually a bug since we may starve
 
-set_read_lock_on_all_keys(Tid, From, Tab, [RealKey | Tail], Orig, Ack, S) ->
+set_read_lock_on_all_keys(Tid, From, Tab, [RealKey | Tail], Orig, Ack) ->
     Oid = {Tab, RealKey},
-    case catch can_lock(Tid, read, Oid, no) of
+    case can_lock(Tid, read, Oid, {no, bad_luck}) of
 	yes ->
 	    {granted, Val} = grant_lock(Tid, from, read, read, Oid),
 	    case opt_lookup_in_client(Val, Oid, read) of  % Ought to be invoked
 		C when record(C, cyclic) ->               % in the client
-		    reply(From, {not_granted, C}, S);
+		    reply(From, {not_granted, C});
 		Val2 -> 
 		    Ack2 = lists:append(Val2, Ack),
-		    set_read_lock_on_all_keys(Tid, From, Tab, Tail, Orig, Ack2, S)
+		    set_read_lock_on_all_keys(Tid, From, Tab, Tail, Orig, Ack2)
 	    end;
 	{no, Lucky} ->
 	    C = #cyclic{op = read, lock = read, oid = Oid, lucky = Lucky},
-	    if
-		Tid#tid.pid == Lucky#tid.pid ->
-		    verbose("Detected spurious lock conflict ~w: ~w -> ~w~n",
-			    [Tid#tid.counter == Lucky#tid.counter, Tid, C]);
-		true ->
-		    ignore
-	    end,
-	    reply(From, {not_granted, C}, S);
+	    reply(From, {not_granted, C});
 	{queue, Lucky} ->
 	    C = #cyclic{op = read, lock = read, oid = Oid, lucky = Lucky},
-	    reply(From, {not_granted, C}, S)
+	    reply(From, {not_granted, C})
     end;
-set_read_lock_on_all_keys(Tid, From, Tab, [], Orig, Ack, State) ->
-    reply(From, {granted, Ack, Orig}, State).
+set_read_lock_on_all_keys(Tid, From, Tab, [], Orig, Ack) ->
+    reply(From, {granted, Ack, Orig}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Release of locks
@@ -465,9 +462,19 @@ do_release_tids([]) ->
 
 do_release_tid(Tid) ->
     Locks = ?ets_lookup(mnesia_tid_locks, Tid),
+    ?dbg("Release ~p ~p ~n", [Tid, Locks]),
     ?ets_delete(mnesia_tid_locks, Tid),
     release_locks(Locks),
-    rearrange_queue(Locks).
+    %% Removed queued locks which has had locks
+    UniqueLocks = keyunique(lists:sort(Locks),[]),
+    rearrange_queue(UniqueLocks).
+
+keyunique([{Tid, Oid, Op}|R], Acc = [{_, Oid, _}|_]) ->
+    keyunique(R, Acc);
+keyunique([H|R], Acc) ->
+    keyunique(R, [H|Acc]);
+keyunique([], Acc) ->
+    Acc.
 
 release_locks([Lock | Locks]) ->
     release_lock(Lock),
@@ -476,77 +483,114 @@ release_locks([]) ->
     ok.
 
 release_lock({Tid, Oid, {queued, Op}}) ->
-    ?ets_match_delete(mnesia_lock_queue, {Oid, Op, '_', Tid, '_'});
-
+    ?ets_match_delete(mnesia_lock_queue, 
+		      #queue{oid=Oid, tid = Tid, op = '_',
+			     pid = '_', lucky = '_'});
 release_lock({Tid, Oid, Op}) ->
     if
 	Op == write ->
 	    ?ets_delete(mnesia_held_locks, Oid);
 	Op == read ->
 	    ?ets_match_delete(mnesia_held_locks, {Oid, Op, Tid})
-    end,
-    Tab = element(1, Oid),
-    decr_counter({Op, Tab}).
+    end.
 
 rearrange_queue([{Tid, {Tab, Key}, Op} | Locks]) ->
     if
-	Key /= ?ALL->
-	    ObjWaiters = ?ets_lookup(mnesia_lock_queue, {Tab, Key}),
-	    TabWaiters = ?ets_lookup(mnesia_lock_queue, {Tab, ?ALL}),
-	    try_waiters(ObjWaiters, TabWaiters, Op);
-	true ->
+	Key /= ?ALL->	    
+	    Queue =  
+		ets:lookup(mnesia_lock_queue, {Tab, ?ALL}) ++ 
+		ets:lookup(mnesia_lock_queue, {Tab, Key}),
+	    case Queue of 
+		[] -> 
+		    ok;
+		_ ->
+		    Sorted = lists:reverse(lists:keysort(#queue.tid, Queue)),
+		    try_waiters_obj(Sorted)
+	    end;	
+	true -> 
 	    Pat = ?match_oid_lock_queue({Tab, '_'}),
-	    Waiters = ?ets_match_object(mnesia_lock_queue, Pat),
-	    try_waiters(Waiters, Op)
+	    Queue = ?ets_match_object(mnesia_lock_queue, Pat),	    
+	    Sorted = lists:reverse(lists:keysort(#queue.tid, Queue)),
+	    try_waiters_tab(Sorted)
     end,
+    ?dbg("RearrQ ~p~n", [Queue]),
     rearrange_queue(Locks);
 rearrange_queue([]) ->
     ok.
 
-try_waiters([OW | ObjWaiters], [TW | TabWaiters], OldLock) ->
-    if
-	element(4, OW) > element(4, TW) -> % Important order
-	    try_waiter(OW, OldLock),
-	    try_waiters(ObjWaiters, [TW | TabWaiters], OldLock);
-	true ->
-	    try_waiter(TW, OldLock),
-	    try_waiters([OW | ObjWaiters], TabWaiters, OldLock)
+try_waiters_obj([W | Waiters]) ->
+    case try_waiter(W) of
+	queued ->
+	    no;
+	_ -> 	    
+	    try_waiters_obj(Waiters)
     end;
-try_waiters(ObjWaiters, TabWaiters, OldLock) ->
-    try_waiters(ObjWaiters, OldLock),
-    try_waiters(TabWaiters, OldLock).
-
-try_waiters([W | Waiters], OldLock) ->
-    try_waiter(W, OldLock),
-    try_waiters(Waiters, OldLock);
-try_waiters([], _) ->
+try_waiters_obj([]) ->
     ok.
 
-try_waiter({Oid, read_write, ReplyTo, Tid, _}, OldLock) ->
-    try_waiter(Oid, read_write, read, write, ReplyTo, Tid, OldLock);
-try_waiter({Oid, Op, ReplyTo, Tid, _}, OldLock) ->
-    try_waiter(Oid, Op, Op, Op, ReplyTo, Tid, OldLock).
+try_waiters_tab([W | Waiters]) ->
+    case W#queue.oid of
+	{Tab, ?ALL} ->
+	    case try_waiter(W) of
+		queued ->
+		    no;
+		_ ->
+		    try_waiters_tab(Waiters)
+	    end;
+	Oid ->
+	    case try_waiter(W) of
+		queued -> 	    
+		    Rest = key_delete_all(Oid, #queue.oid, Waiters),
+		    try_waiters_tab(Rest);
+		_ ->		    
+		    try_waiters_tab(Waiters)
+	    end
+    end;
+try_waiters_tab([]) ->
+    ok.
 
-try_waiter(Oid, Op, SimpleOp, Lock, ReplyTo, Tid, OldLock) ->
-    case catch can_lock(Tid, Lock, Oid, {queue, bad_luck}) of
+try_waiter({queue, Oid, Tid, read_write, ReplyTo, _}) ->
+    try_waiter(Oid, read_write, read, write, ReplyTo, Tid);
+try_waiter({queue, Oid, Tid, Op, ReplyTo, _}) ->
+    try_waiter(Oid, Op, Op, Op, ReplyTo, Tid).
+
+try_waiter(Oid, Op, SimpleOp, Lock, ReplyTo, Tid) ->
+    case can_lock(Tid, Lock, Oid, {queue, bad_luck}) of
 	yes ->
 	    %% Delete from queue: Nice place for trace output
-	    ?ets_match_delete(mnesia_lock_queue, {Oid, Op, ReplyTo, Tid, '_'}),
-	    Reply = grant_lock(Tid, ReplyTo, SimpleOp, Lock, Oid),
-	    ReplyTo ! {?MODULE, node(), Reply};
+	    ?ets_match_delete(mnesia_lock_queue, 
+			      #queue{oid=Oid, tid = Tid, op = Op,
+				     pid = ReplyTo, lucky = '_'}),
+	    Reply = grant_lock(Tid, ReplyTo, SimpleOp, Lock, Oid),	    
+	    ReplyTo ! {?MODULE, node(), Reply},
+	    locked;
 	{queue, Why} ->
-	    ignore; % Keep waiter in queue	
+	    ?dbg("Keep ~p ~p ~p ~p~n", [Tid, Oid, Lock, Why]),
+	    queued; % Keep waiter in queue	
 	{no, Lucky} ->
 	    C = #cyclic{op = SimpleOp, lock = Lock, oid = Oid, lucky = Lucky},
-	    verbose("** ERROR ** Possible deadlock in lock queue ~w ~w ~w: old = ~w~n",
-		    [OldLock, Tid, ReplyTo, C]),
-	    ?ets_match_delete(mnesia_lock_queue, {Oid, Op, ReplyTo, Tid, '_'}),	    
+	    verbose("** WARNING ** Restarted transaction, possible deadlock in lock queue ~w: cyclic = ~w~n",
+		    [Tid, C]),
+	    ?ets_match_delete(mnesia_lock_queue, 
+			      #queue{oid=Oid, tid = Tid, op = Op,
+				     pid = ReplyTo, lucky = '_'}),
 	    Reply = {not_granted, C},
-	    ReplyTo ! {?MODULE, node(), Reply}
+	    ReplyTo ! {?MODULE, node(), Reply},
+	    removed
     end.
 
+key_delete_all(Key, Pos, TupleList) ->
+    key_delete_all(Key, Pos, TupleList, []).
+key_delete_all(Key, Pos, [H|T], Ack) when element(Pos, H) == Key ->
+    key_delete_all(Key, Pos, T, Ack);
+key_delete_all(Key, Pos, [H|T], Ack) ->
+    key_delete_all(Key, Pos, T, [H|Ack]);
+key_delete_all(_, _, [], Ack) ->
+    lists:reverse(Ack).
+
+
 %% ********************* end server code ********************
-%% The following code executes at the client side of a transaction
+%% The following code executes at the client side of a transactions
 
 mnesia_down(N, Pending) ->
     case whereis(?MODULE) of
@@ -620,33 +664,79 @@ w_nodes(Tab) ->
 %% transaction.
 
 sticky_wlock(Tid, Store, Oid) ->
-    Tab = element(1, Oid),
+    sticky_lock(Tid, Store, Oid, write).
+
+sticky_rwlock(Tid, Store, Oid) ->
+    sticky_lock(Tid, Store, Oid, read_write).
+
+sticky_lock(Tid, Store, {Tab, Key} = Oid, Lock) ->
     N = val({Tab, where_to_read}), 
     if
 	node() == N ->
-	    ?MODULE ! {self(), {test_set_sticky, Tid, Oid}},
-	    receive
-		{?MODULE, N, granted} ->
-		    granted;
-		{?MODULE, N, {not_granted, Reason}} ->
-		    exit({aborted, Reason});
-		{?MODULE, N, not_stuck} ->
-		    wlock(Tid, Store, Oid),           %% pefect sync
-		    wlock(Tid, Store, {Tab, ?STICK}), %% max one sticker/table
-		    Ns = val({Tab, where_to_write}),
-		    rpc:abcast(Ns, ?MODULE, {stick, Oid, N});
-		{mnesia_down, N} ->
-		    exit({aborted, {node_not_running, N}});
-		{?MODULE, N, {stuck_elsewhere, N2}} ->
-		    rlock(Tid, Store, {Tab, ?ALL}),
-		    wlock(Tid, Store, Oid),           %% pefect sync
-		    wlock(Tid, Store, {Tab, ?STICK}), %% max one sticker/table
-		    Ns = val({Tab, where_to_write}),
-		    rpc:abcast(Ns, ?MODULE, {unstick, Tab})
+	    case need_lock(Store, Tab, Key, write) of
+	    	yes ->
+		    do_sticky_lock(Tid, Store, Oid, Lock);
+		no ->
+		    dirty_sticky_lock(Tab, Key, [N], Lock)
 	    end;
 	true ->
 	    mnesia:abort({not_local, Tab})
     end.
+
+do_sticky_lock(Tid, Store, {Tab, Key} = Oid, Lock) ->
+    ?MODULE ! {self(), {test_set_sticky, Tid, Oid, Lock}},
+    receive
+	{?MODULE, N, granted} ->
+	    ?ets_insert(Store, {{locks, Tab, Key}, write}),
+	    granted;
+	{?MODULE, N, {granted, Val}} -> %% for rwlocks
+	    case opt_lookup_in_client(Val, Oid, write) of
+		C when record(C, cyclic) ->
+		    exit({aborted, C});
+		Val2 ->
+		    ?ets_insert(Store, {{locks, Tab, Key}, write}),
+		    Val2
+	    end;
+	{?MODULE, N, {not_granted, Reason}} ->
+	    exit({aborted, Reason});
+	{?MODULE, N, not_stuck} ->
+	    not_stuck(Tid, Store, Tab, Key, Oid, Lock, N),
+	    dirty_sticky_lock(Tab, Key, [N], Lock);
+	{mnesia_down, N} ->
+	    exit({aborted, {node_not_running, N}});
+	{?MODULE, N, {stuck_elsewhere, N2}} ->
+	    stuck_elsewhere(Tid, Store, Tab, Key, Oid, Lock),
+	    dirty_sticky_lock(Tab, Key, [N], Lock)
+    end.
+
+not_stuck(Tid, Store, Tab, Key, Oid, Lock, N) ->
+    rlock(Tid, Store, {Tab, ?ALL}),   %% needed?
+    wlock(Tid, Store, Oid),           %% perfect sync
+    wlock(Tid, Store, {Tab, ?STICK}), %% max one sticker/table
+    Ns = val({Tab, where_to_write}),
+    rpc:abcast(Ns, ?MODULE, {stick, Oid, N}).
+
+stuck_elsewhere(Tid, Store, Tab, Key, Oid, Lock) ->
+    rlock(Tid, Store, {Tab, ?ALL}),   %% needed?
+    wlock(Tid, Store, Oid),           %% perfect sync
+    wlock(Tid, Store, {Tab, ?STICK}), %% max one sticker/table
+    Ns = val({Tab, where_to_write}),
+    rpc:abcast(Ns, ?MODULE, {unstick, Tab}).
+
+dirty_sticky_lock(Tab, Key, Nodes, Lock) ->
+    if
+	Lock == read_write ->
+	    mnesia_lib:db_get(Tab, Key);
+	Key == ?ALL ->
+	    Nodes;
+	Tab == ?GLOBAL ->
+	    Nodes;
+	true ->
+	    ok
+    end.	   
+
+sticky_wlock_table(Tid, Store, Tab) ->
+    sticky_lock(Tid, Store, {Tab, ?ALL}, write).
 
 %% aquire a wlock on Oid
 %% We store a {Tabname, write, Tid} in all locktables
@@ -677,8 +767,6 @@ wlock_no_exist(Tid, Store, Tab, Ns) ->
     Oid = {Tab, ?ALL},
     Op = {self(), {write, Tid, Oid}},
     get_wlocks_on_nodes(Ns, Ns, Store, Op, Oid).
-
-
 
 need_lock(Store, Tab, Key, LockPattern) ->
     TabL = ?ets_match_object(Store, {{locks, Tab, ?ALL}, LockPattern}),
@@ -911,10 +999,11 @@ rec_requests([], Oid, Store) ->
     ok.
 
 get_held_locks() ->
-    mnesia_lib:safe_match_object(ets, mnesia_held_locks, '_').
+    ?ets_match_object(mnesia_held_locks, '_').
 
 get_lock_queue() ->
-    mnesia_lib:safe_match_object(ets, mnesia_lock_queue, '_').
+    Q = ?ets_match_object(mnesia_lock_queue, '_'),
+    [{Oid, Op, Pid, Tid, WFT} || {queue, Oid, Tid, Op, Pid, WFT} <- Q].
 
 do_stop() ->
     exit(shutdown).
@@ -927,20 +1016,6 @@ system_continue(Parent, Debug, State) ->
 
 system_terminate(Reason, Parent, Debug, State) ->
     do_stop().
-
-system_code_change(State, Module, {down, OldVsn}, "3.9.1") ->
-    Locks = ets:tab2list(mnesia_lock_queue),
-    ets:match_delete(mnesia_lock_queue, '_'),    
-    [ets:insert(mnesia_lock_queue, {Oid, Op, ReplyTo, Tid}) || 
-	{Oid, Op, ReplyTo, Tid, WaitForTid} <- Locks],
-    {ok, State};
-
-system_code_change(State, Module, OldVsn, "3.9.1") ->
-    Locks = ets:tab2list(mnesia_lock_queue),
-    ets:match_delete(mnesia_lock_queue, '_'),
-    [ets:insert(mnesia_lock_queue, {Oid, Op, ReplyTo, Tid, unknown}) || 
-	{Oid, Op, ReplyTo, Tid} <- Locks],
-    {ok, State};
 
 system_code_change(State, Module, OldVsn, Extra) ->
     {ok, State}.

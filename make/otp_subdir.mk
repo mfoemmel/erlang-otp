@@ -25,22 +25,29 @@
 # Targets that don't affect documentation directories
 #
 debug opt instr release docs release_docs tests release_tests clean depend:
-	@set -e ;				\
-	case "$(MAKE)" in *clearmake*) tflag="-T";; *) tflag="";; esac ; \
-	for d in $(SUB_DIRECTORIES); do		\
-		if test -f $$d/SKIP ; then	\
-			echo "=== Skipping subdir $$d, reason:" ; \
-			cat $$d/SKIP ;		\
-			echo "===" ;		\
-		else				\
-			if test ! -d $$d ; then	\
-				echo "=== Skipping subdir $$d" ; \
-			else			\
-				xflag="" ;	\
-				if test -f $$d/ignore_config_record.inf; then \
-					xflag=$$tflag ;	\
-				fi ;			\
-				(cd $$d && $(MAKE) $$xflag $@) ; \
-			fi ;			\
-		fi ;				\
-	done
+	@set -e ;							\
+	app_pwd=`pwd` ;							\
+	if test -f vsn.mk; then						\
+	    echo "=== Entering application" `basename $$app_pwd` ;	\
+	fi ;								\
+	case "$(MAKE)" in *clearmake*) tflag="-T";; *) tflag="";; esac;	\
+	for d in $(SUB_DIRECTORIES); do					\
+	    if test -f $$d/SKIP ; then					\
+		echo "=== Skipping subdir $$d, reason:" ;		\
+		cat $$d/SKIP ;						\
+		echo "===" ;						\
+	    else							\
+		if test ! -d $$d ; then					\
+		    echo "=== Skipping subdir $$d, it is missing" ;	\
+		else							\
+		    xflag="" ;						\
+		    if test -f $$d/ignore_config_record.inf; then	\
+			xflag=$$tflag ;					\
+		    fi ;						\
+		    (cd $$d && $(MAKE) $$xflag $@) ;			\
+		fi ;							\
+	    fi ;							\
+	done ;								\
+	if test -f vsn.mk; then						\
+	    echo "=== Exiting application" `basename $$app_pwd` ;	\
+	fi

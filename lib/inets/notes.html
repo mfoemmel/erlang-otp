@@ -1,300 +1,187 @@
-<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
 <html>
 <head>
-   <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
-   <meta name="GENERATOR" content="Mozilla/4.5 [en] (X11; I; SunOS 5.7 sun4u) [Netscape]">
-   <title>Inets Release Notes</title>
+  <title>Inets Release Notes</title>
+  <style type="text/css">
+<!--
+    body          { background: white; margin: 3em }
+
+    body          { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1 h2 h3 h4   { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1            { font-size: 48 }
+    p li          { font-family: Verdana, Arial, Helvetica, sans-serif }
+-->
+  </style>
 </head>
-<body bgcolor="#FFFFFF">
 
-<center>
-<h1>
-Inets Release Notes</h1></center>
+<body bgcolor=white>
 
-<h2>Inets 2.5.6</h2>
+<center><h1>Inets Release Notes</h1></center>
+
+
+<!--- ################################################################# --->
+
+<h2>Inets 2.6.0, R8B</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    Trailing data sent to a webserver from a client is now ignored.<br>
+    (Own Id: OTP-3940)<br>
+    (Aux Id: Seq 5201)<p>
+  </li>
+
+  <li>
+    Only one ErlScriptAlias is actually used (the first).<br>
+    (Own Id: OTP-3974)<p>
+  </li>
+
+  <li>
+    Fixed a bug in <CODE>mod_auth:load/2</CODE>.<br>
+    (Own Id: OTP-3975)<br>
+    (Aux Id: Seq 5249)<p>
+  </li>
+
+  <li>
+    <CODE>httpd_listener</CODE> exited when a call to
+    <CODE>ssl:accept</CODE> returned <CODE>{error,esslaccept}</CODE>.<br>
+    (Own Id: OTP-4029)<br>
+    (Aux Id: Seq 7030)<p>
+  </li>
+
+  <li>
+    Made a correction to the example configuration file
+    <CODE>ssl.conf</CODE> by removing mod_auth_mnesia from the Modules
+    directive.<br>
+    (Own Id: OTP-4051)<br>
+    (Aux Id: Seq 7049)<p>
+  </li>
+
+  <li>
+    Fixed bad return value from <CODE>mod_auth:add_user/2</CODE> when
+    Mnesia is used.<br>
+    (Own Id: OTP-4052)<br>
+    (Aux Id: Seq 7049)<p>
+  </li>
+
+  <li>
+    Fixed a bug in <CODE>mod_auth_plain:delete_user/2</CODE>.<br>
+    (Own Id: OTP-4068)<p>
+  </li>
+
+  <li>
+    The configuration parameter AuthAccessPassword should now work.<br>
+    (Own Id: OTP-4069)<br>
+    (Aux Id: Seq 7049)<p>
+  </li>
+
+  <li>
+    httpd crashed when given the start address *.<br>
+    (Own Id: OTP-4138)<p>
+  </li>
+
+</ul>
+
+
+<!--- ----------------------------------------------------------------- --->
 
 <h3>Improvements and new features</h3>
 
 <ul>
-<li>Added some (ssl related) configuration directives. See documentation
-for further information.
-<ul>
-<li>SSLCACertificateFile
-<li>SSLCiphers
-<li>SSLPasswordCallbackModule
-<li>SSLPasswordCallbackFunction
-<li>SSLVerifyClient
-</ul>
-Own Id: OTP-3873
-<br>Aux Id: Seq 5088
 
-<li>Improving handling of DOS attacks. The following configuration directives 
-has been added to improve the handling of DOS attacks by malformed GET request:
-<ul>
-<li>MaxHeaderSize
-<li>MaxHeaderAction
-<li>MaxBodySize
-<li>MaxBodyAction
-</ul>
-Own Id: OTP-3640
-<br>Aux Id: Seq 4607 & 5077
+  <li>
+    Added limited user support for user configurable access restriction
+    (.htaccess).<br>
+    (Own Id: OTP-2981)<p>
+  </li>
+
+  <li>
+    Introduced ability to block/unblock the webserver.<br>
+    (Own Id: OTP-3624)<p>
+  </li>
+
+  <li>
+    Added support for the account command to ftp.<br>
+    (Own Id: OTP-3752)<p>
+  </li>
+
+  <li>
+    Added support for the append command to ftp.<br>
+    (Own Id: OTP-3753)<p>
+  </li>
+
+  <li>
+    Re-introduced the abillity to restart the webserver (uses
+    block/unblock).<br>
+    (Own Id: OTP-3794)<br>
+    (Aux Id: Seq 5020)<p>
+  </li>
+
+  <li>
+    Socket mode changed from active to passive.<br>
+    (Own Id: OTP-4001)<p>
+  </li>
+
+  <li>
+    Added the possibility to set a timeout in <CODE>ftp:open/1</CODE>.<br>
+    (Own Id: OTP-4062)<p>
+  </li>
+
 </ul>
 
-<h3>Fixed errors and malfunctions</h3>
-
-<h3>Known bugs and problems</h3>
-None.
+<h2>Inets 2.5.6</h2>
+<h3>Improvements and new features</h3>
 <ul>
+  <li>
+    Improved handling of DOS attacks. The following configuration
+    directives have been added to improve the handling of DOS attacks by
+    malformed GET requests:<br>
+    -MaxHeaderSize<br>
+    -MaxHeaderAction<br>
+    -MaxBodySize<br>
+    -MaxBodyAction<br>
+    (Own Id: OTP-3640)<br>
+    (Aux Id: Seq 4607, Seq 5077)<p>
+  </li>
+
+  <li>
+    Added some (SSL related) configuration directives. See documentation
+    for further information.<br>
+    -SSLCACertificateFile<br>
+    -SSLCiphers<br>
+    -SSLPasswordCallbackModule<br>
+    -SSLVerifyClient<br>
+    (Own Id: OTP-3873)<br>
+    (Aux Id: Seq 5088)<p>
+  </li>
 </ul>
 
 <h2>Inets 2.5.5</h2>
-
-<h3>Improvements and new features</h3>
-
-<ul>
-<li>Better handling of invalid server response (e.g. as a result of 
-an erroneous server config). 
-</ul>
-
 <h3>Fixed errors and malfunctions</h3>
-
 <ul>
-<li>Invalid guard in function ftp:open/2.
-<br>This problem exist only in inets-2.5.4. Use ftp:open/3 instead.
-<br>Own Id: OTP-3892
-<br>Aux Id: Seq 4958
+  <li>
+    Invalid guard in function <code>ftp:open/2</code>.<br>
+    This problem exists only in Inets 2.5.4. Use <code>ftp:open/3</code>
+    instead.<br>
+    (Own Id: OTP-3892)<br>
+    (Aux Id: Seq 4958)<p>
+  </li>
 </ul>
-
-<h3>Known bugs and problems</h3>
-
-<ul>
-</ul>
-
-<h2>Inets 2.5.4</h2>
-
 <h3>Improvements and new features</h3>
-
 <ul>
-<li>Support for choosing port number when opening FTP connection.</li>
-<br>It is now possible to open a connection using a user specified port number.
-<br>Default is still 21.
-<br>Own Id: OTP-3751
-
+  <li>
+    Better handling of invalid server response (e.g. as a result of an
+    erroneous server config).
+  </li>
 </ul>
 
-<h3>Fixed errors and malfunctions</h3>
+<p>
+There are also release notes for
+<a href="notes_history.html">older versions</a>.
 
-<ul>
-<li>Wrong return value from FTP function recv_bin.
-<br>The function actually returned: {ok,{ok,binary()}} instead of {ok,binary()}
-<br>Own Id: OTP-3755
-<br>Aux Id: Seq 4958
-
-<li>The HTTP server hangs due to unhandled info:  {'EXIT',<0.12542.6>,badsig}
-<br>Crash of the listener process for this reason not handled.
-<br>Own Id: OTP-3793
-<br>Aux Id: Seq 5020
-
-</ul>
-
-<h3>Known bugs and problems</h3>
-
-<ul>
-<li>ftp:open(Host,Port) does not work. Use ftp:open(Host,Port,[]) instead.
-</ul>
-
-<h2>Inets 2.5.3</h2>
-
-<h3>Improvements and new features</h3>
-
-<ul>
-<li>It's now possible to perform runtime upgrade/downgrade</li>
-<br>of the HTTPD server from/to 2.5.1.
-<br>The upgrade/downgrade is rather crude: An application restart!
-<li>Further improvment of handling of lack-of-resources situations.</li>
-</ul>
-
-<h3>Fixed errors and malfunctions</h3>
-
-<ul>
-<li>CGI related problem with executable files on win32.</li>
-<br>A problem related to the win32 platform and cgi caused HTTPD to fail to 
-<br>detect executable files if the file name (of the retrieved file) 
-<br>contained a "executanle" extension (i.e. '.exe', '.com' or '.bat').
-<br>Own Id: OTP-3627
-
-<li>Heavy load state incorrect.</li>
-<br>A special heavy load listener process was created when HTTPD reaches
-<br>the heavy load state. The next request was be rejected, regardless of 
-<br>the actual state at that time.
-<br>Own Id: OTP-3528
-
-</ul>
-
-<h3>Known bugs and problems</h3>
-
-<ul>
-No known problems.
-</ul>
-
-<h2>
-Inets 2.5.2</h2>
-
-<h3>
-Improvements and new features</h3>
-
-<ul>
-<li>
-Now possible to run more then one HTTP server in a node listening
-to the same port number but different addresses.</li>
-
-<br>Own Id: OTP-3493</ul>
-
-<h3>
-Fixed errors and malfunctions</h3>
-
-<ul>
-<li>
-Status code 404 incorrectly used instead of 500.</li>
-
-<br>Own Id: OTP-3402
-<li>
-Handling of lack of resources (to many open files, ...) improved.</li>
-
-<br>Own Id: OTP-3403, OTP-3461
-<li>
-Use of obsolete and not recommended functions removed.</li>
-
-<br>Functions httpd_conf:is_directory/1 and httpd_conf:is_file/1 has changed
-so that when they are called with a path which is not a directory (in the
-first case) or file (in the second case) then the return value will be
-<i>{error,FileInfo},</i>
-where FileInfo is now a file_info record according to <i>kernel/include/file.hrl.</i>
-<br>Own Id: OTP-3405
-<li>
-Call of non-existing function 'inet:getaddr/1' in httpd_conf:load/2 Corrected.</li>
-
-<br>Own Id: OTP-3457
-<li>
-Call to non-existing module 'http_conf' in mod_auth:load/2. Corrected.</li>
-
-<br>Own Id: OTP-3459
-<li>
-An error (module mod_include) in the parsing of SHTML files could cause 
-the handling process to crash. The reason was the reading of files was 
-done in chunks. If a directive or comment starts at the end of a chunk
-but ends in the next chunk, this was taken as EOF and an exception was
-thrown. This exception was not handled which caused the process to crash.</li>
-
-<br>Own Id: OTP-3527
-<li>
-The FTP failure 'File system full' during file transfer is not handled properly.</li>
-
-<br>Own Id: OTP-3268, OTP-3503</ul>
-
-<h3>
-Known bugs and problems</h3>
-
-<ul>
-<li>
-It is not possible to perform runtime upgrade from older versions.
-This is temporary and will be <i>fixed</i> in the next release</li>
-</ul>
-
-<h2>
-Inets 2.5.1</h2>
-
-<h3>
-Improvements and new features</h3>
-
-<ul>
-<li>
-New option added to httpd_core: BindAddress. BindAddress defines which
-address the server will listen to.</li>
-
-<br>Bugs reported since R5 has been fixed.
-<br>Own Id: OTP-3295</ul>
-
-<h2>
-Inets 2.5</h2>
-
-<h3>
-Fixed errors and malfunctions</h3>
-
-<ul>
-<li>
-Possible error codes from http_socket were not handled. Corrected.</li>
-
-<br>Own Id: OTP-3214
-<br>Aux Id: Seq 3752</ul>
-
-<h3>
-Improvements and new features</h3>
-
-<ul>
-<li>
-Errors in the examples and documentation were corrected.</li>
-
-<br>Own Id: OTP-3263
-<br>Aux Id: seq 3921</ul>
-
-<h2>
-Inets 2.3</h2>
-
-<h3>
-Fixed errors and malfunctions</h3>
-
-<ul>
-<li>
-ftp:open crashed if connection was closed before a complete welcome message
-was received, this is now fixed.</li>
-
-<br>Own Id: OTP-2723
-<br>Aux Id: HA98434, seq 1151</ul>
-
-<h3>
-Improvements and new features</h3>
-
-<ul>
-<li>
-The authentication modules have been rewritten with support for dets, plain
-and mnesia authentication databases. There is also a new module called
-'mod_secrity', which implements security event logging and notification.
-Both the mod_auth and mod_security modules have an API for the programmer
-that implements functions they will require to have full control over access
-restricted parts of a site. NOTE: The mod_auth_mnesia module does not implement
-the API previously found there, please see the mod_auth documentation.</li>
-
-<br>Own Id: OTP-2281
-<br>Aux Id: seq 740,OTP-2273
-<li>
-Support for the sockets application has been removed from INETS, use SocketType
-ssl or ip_comm instead.</li>
-
-<br>Own Id: OTP-2848
-<li>
-The HTTP server has got improved efficiency through recognition of the
-'If-Modified-Since' header field.</li>
-
-<br>Own Id: OTP-2870
-<li>
-CGI scripts are now supported on Windows aswell as UNIX platforms.</li>
-
-<br>Own Id: OTP-2915
-<li>
-mod_auth now supports the 'deny from' directive.</li>
-
-<br>Own Id: OTP-2982
-<li>
-The HTTP server now experimentaly supports persistent connections (as defined
-in RFC2068). This is the first step towards HTTP/1.1 support. Enabling
-this feature may greatly improve performance, as the server then uses the
-same TCP connection for more than one HTTP request. Two new configuration
-directives are defined for httpd_core: KeepAlive max-requests KeepAliveTimeout
-seconds</li>
-
-<br>Own Id: OTP-3032</ul>
-You can find older release note
-<a href="notes_history.html">here</a>.
 </body>
 </html>

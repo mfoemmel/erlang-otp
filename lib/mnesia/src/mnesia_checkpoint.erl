@@ -780,7 +780,7 @@ retainer_fixtable({dets, Tab}, Bool) ->
     mnesia_lib:db_fixtable(disc_only_copies, Tab, Bool).
 
 retainer_delete({ets, Store}) ->
-    catch ?ets_delete_table(Store);
+    ?ets_delete_table(Store);
 retainer_delete({dets, Store}) ->
     mnesia_lib:dets_sync_close(Store),
     Fname = tab2retainer(Store),
@@ -871,7 +871,7 @@ retainer_loop(Cp) ->
 	{From, collect_pending} ->
 	    PendingTab = Cp#checkpoint_args.pending_tab,
 	    del(pending_checkpoints, PendingTab),
-	    Pending = mnesia_lib:safe_match_object(ets, PendingTab, '_'),
+	    Pending = ?ets_match_object(PendingTab, '_'),
 	    reply(From, Name, {ok, Pending}),
 	    retainer_loop(Cp);
 

@@ -398,7 +398,7 @@ res_option(search)         -> db_get(res_search);
 res_option(retry)          -> db_get(res_retry);
 res_option(timeout)        -> db_get(res_timeout);
 res_option(inet6)          -> db_get(res_inet6);
-res_option(next_id)        -> 
+res_option(next_id)        ->
     Cnt = ets:update_counter(inet_db, res_id, 1),
     case Cnt band 16#ffff of
 	0 ->
@@ -614,13 +614,13 @@ dnt(_) ->
 %% Register socket Modules
 %%
 register_socket(Socket, Module) when port(Socket), atom(Module) ->
-    call({register_socket, Socket, Module}).
+    catch erlang:port_set_data(Socket,Module).
 
 unregister_socket(Socket) when port(Socket) ->
-    ets:delete(inet_db, {socket,Socket}).
+    ok. %% not needed any more
 
 lookup_socket(Socket) when port(Socket) ->
-    case catch ets:lookup_element(inet_db, {socket,Socket}, 2) of
+    case catch erlang:port_get_data(Socket) of
 	Module when atom(Module) ->
 	    {ok, Module};
 	_ ->
@@ -778,16 +778,6 @@ handle_call(Request, From, State) ->
 
 	{lookup_rr, Domain, Class, Type} ->
 	    {reply, do_lookup_rr(Domain, Class, Type), State};
-
-	{register_socket, Socket, Module} ->
-	    ets:insert(inet_db, {{socket,Socket}, Module}),
-	    link(Socket),
-	    {reply, ok, State};
-
-	{unregister_socket, Socket} ->
-	    ets:delete(inet_db, {socket,Socket}),
-	    unlink(Socket),
-	    {reply, ok, State};
 
 	%% XXX Fix IPv6 nameservers
 	{ins_ns, {A,B,C,D},Port} when ?ip(A,B,C,D), integer(Port) ->
@@ -1019,10 +1009,6 @@ handle_info(refresh_timeout, State) ->
     do_refresh_cache(State#state.cache),
     {noreply, State#state{cache_timer = init_timer()}};
 
-handle_info({'EXIT', Socket, _}, State) when port(Socket) ->
-    ets:delete(inet_db, {socket,Socket}),
-    {noreply, State};
-
 handle_info(Info, State) ->
     {noreply, State}.
 
@@ -1252,5 +1238,3 @@ delete_older(Domain, CacheDb, TM, N, M) ->
 	  end,
     M1 = lists:foldl(Fun, M, ets:lookup(CacheDb, Domain)),
     delete_older(Next, CacheDb, TM, N, M1).
-
-

@@ -18,6 +18,7 @@
 %%% Purpose : A generic file dialog toolkit.
 
 -module(tool_genfd).
+-include_lib("kernel/include/file.hrl").
 
 -compile(export_all).
 
@@ -81,17 +82,17 @@ init(Parent,Owner,Options) ->
     {value, E} = gs:assq(extensions,Options),
     {value, Hid} = gs:assq(hidden,Options),
 
-    case  gs:assq(save,Options) of
-	{value, true} ->
-	    {value, SaveFile} = gs:assq(file,Options),
-	    State = #state{dir=filename:join(filename:split(D)),
+    State = case gs:assq(save,Options) of
+		{value, true} ->
+		    {value, SaveFile} = gs:assq(file,Options),
+		    #state{dir=filename:join(filename:split(D)),
 			   extensions=E,hidden=Hid, owner=Owner,
 			   save=true, file=SaveFile};
-	{value,false} ->
-	    State = #state{dir=filename:join(filename:split(D)),
+		{value,false} ->
+		    #state{dir=filename:join(filename:split(D)),
 			   extensions=E,hidden=Hid, owner=Owner,
 			   save=false}
-    end,
+	    end,
     refresh(State),
     Owner ! fdok,
     loop(State).
@@ -241,12 +242,12 @@ get_files(Dir,Hidden,Extensions) ->
 get_files(_,[],Dirs,Files,_) ->
     lists:sort(Dirs) ++ lists:sort(Files);
 get_files(Dir,[File|Files],ResDirs,ResFiles,Extensions) ->
-    case file:file_info(filename:join(Dir,File)) of
-	{ok,{_,directory,_,_,_,_,_}} ->
+    case file:read_file_info(filename:join(Dir,File)) of
+	{ok,#file_info{type=directory}} ->
 	    get_files(Dir,Files,[File++"/"|ResDirs],ResFiles,Extensions);
-	{ok,{_,regular,_,_,_,_,_}} when Extensions == [] ->
+	{ok,#file_info{type=regular}} when Extensions == [] ->
 	    get_files(Dir,Files,ResDirs,[File|ResFiles],Extensions);
-	{ok,{_,regular,_,_,_,_,_}} ->
+	{ok,#file_info{type=regular}} ->
 	    case lists:member(filename:extension(File),
 			      Extensions) of
 		true -> 
@@ -322,10 +323,10 @@ check_file(#state{dir=Dir},DirOrFile) ->
 	       volumerelative ->
 		   DirOrFile ++ "/"
 	   end,
-    case file:file_info(Path) of
-	{ok,{_,directory,_,_,_,_,_}} ->
+    case file:read_file_info(Path) of
+	{ok,#file_info{type=directory}} ->
 	    {dir,Path};
-	{ok,{_,regular,_,_,_,_,_}} ->
+	{ok,#file_info{type=regular}} ->
 	    FileName = filename:basename(Path),
 	    {file,filename:dirname(Path),FileName};
 	_ ->

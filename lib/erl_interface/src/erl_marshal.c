@@ -23,7 +23,6 @@
 #include <ctype.h>
 #include <sys/types.h>
 #include <string.h>
-
 /*
  * MS thinks alloca() should live in <malloc.h>
  */
@@ -45,6 +44,8 @@
 #include "erl_internal.h"
 
 #include "eiext.h" /* replaces external.h */
+
+#include "putget.h"
 
 /* I hate those warnings... :-(  */
 #ifdef SUNOS4 
@@ -73,19 +74,21 @@ void erl_init_marshal(void)
 {
   if (init_cmp_array_p) {
     memset(cmp_array, 0, CMP_ARRAY_SIZE);
-    cmp_array[ERL_NIL_EXT] = 1;
+    cmp_array[ERL_NIL_EXT]           = 1;
     cmp_array[ERL_SMALL_INTEGER_EXT] = 2;
-    cmp_array[ERL_INTEGER_EXT] = 2;
-    cmp_array[ERL_FLOAT_EXT] = 3;
-    cmp_array[ERL_ATOM_EXT] = 4;
-    cmp_array[ERL_REFERENCE_EXT] = ERL_REF_CMP;
-    cmp_array[ERL_NEW_REFERENCE_EXT] = ERL_REF_CMP;
-    cmp_array[ERL_PORT_EXT] = 6;
-    cmp_array[ERL_SMALL_TUPLE_EXT] = 7;
-    cmp_array[ERL_LARGE_TUPLE_EXT] = 7;
-    cmp_array[ERL_STRING_EXT] = 8;
-    cmp_array[ERL_LIST_EXT] = 8;
-    cmp_array[ERL_BINARY_EXT] = 9;
+    cmp_array[ERL_INTEGER_EXT]       = 2;
+    cmp_array[ERL_FLOAT_EXT]         = 3;
+    cmp_array[ERL_ATOM_EXT]          = 4;
+    cmp_array[ERL_REFERENCE_EXT]     = 5;
+    cmp_array[ERL_NEW_REFERENCE_EXT] = 5;
+    cmp_array[ERL_FUN_EXT]           = 6;
+    cmp_array[ERL_PORT_EXT]          = 7;
+    cmp_array[ERL_PID_EXT]           = 8;
+    cmp_array[ERL_SMALL_TUPLE_EXT]   = 9;
+    cmp_array[ERL_LARGE_TUPLE_EXT]   = 9;
+    cmp_array[ERL_STRING_EXT]        = 10;
+    cmp_array[ERL_LIST_EXT]          = 10;
+    cmp_array[ERL_BINARY_EXT]        = 11;
     init_cmp_array_p = 0;
   }
 }
@@ -314,6 +317,44 @@ extern int erl_encode_it(ETERM *ep, unsigned char **ext, int dist)
 	memcpy((char *) *ext, (char*) ep->uval.bval.b, i);
 	*ext += i;
 	break;
+    case ERL_FUNCTION:
+	if (ERL_FUN_ARITY(ep) != -1) {
+	    unsigned char *size_p = *ext + 1;
+	    *(*ext)++ = ERL_NEW_FUN_EXT;
+	    *ext += 4;
+	    i = ERL_FUN_ARITY(ep);
+	    put8(*ext, i);
+	    memcpy(*ext, ERL_FUN_MD5(ep), 16);
+	    *ext += 16;
+	    i = ERL_FUN_NEW_INDEX(ep);
+	    put32be(*ext, i);
+	    i = ERL_CLOSURE_SIZE(ep);
+	    put32be(*ext, i);
+	    erl_encode_it(ERL_FUN_MODULE(ep), ext, dist);
+	    erl_encode_it(ERL_FUN_INDEX(ep), ext, dist);
+	    erl_encode_it(ERL_FUN_UNIQ(ep), ext, dist);
+	    erl_encode_it(ERL_FUN_CREATOR(ep), ext, dist);
+	    for (i = 0; i < ERL_CLOSURE_SIZE(ep); i++)
+		erl_encode_it(ep->uval.funcval.closure[i], ext, dist);
+	    if (size_p != NULL) {
+		i = *ext - size_p;
+		put32be(size_p, i);
+	    }
+	} else {
+	    *(*ext)++ = ERL_FUN_EXT;
+	    i = ERL_CLOSURE_SIZE(ep);
+	    *(*ext)++ = (i >> 24) & 0xff;
+	    *(*ext)++ = (i >> 16) & 0xff;
+	    *(*ext)++ = (i >> 8) & 0xff;
+	    *(*ext)++ = i  & 0xff;
+	    erl_encode_it(ERL_FUN_CREATOR(ep), ext, dist);
+	    erl_encode_it(ERL_FUN_MODULE(ep), ext, dist);
+	    erl_encode_it(ERL_FUN_INDEX(ep), ext, dist);
+	    erl_encode_it(ERL_FUN_UNIQ(ep), ext, dist);
+	    for (i = 0; i < ERL_CLOSURE_SIZE(ep); i++)
+		erl_encode_it(ep->uval.funcval.closure[i], ext, dist);
+	}
+	break;
     default:
 	return 1;
     }
@@ -446,6 +487,26 @@ static int erl_term_len_helper(ETERM *ep, int dist)
       len = 5 + i;
       break;
 
+    case ERL_FUNCTION:
+      if (ERL_FUN_ARITY(ep) == -1) {
+	  len = 1 + 4;
+	  len += erl_term_len_helper(ERL_FUN_CREATOR(ep),dist);
+	  len += erl_term_len_helper(ERL_FUN_MODULE(ep),dist);
+	  len += erl_term_len_helper(ERL_FUN_INDEX(ep),dist);
+	  len += erl_term_len_helper(ERL_FUN_UNIQ(ep),dist);
+	  for (i = 0; i < ERL_CLOSURE_SIZE(ep); i++)
+	      len += erl_term_len_helper(ERL_CLOSURE_ELEMENT(ep,i), dist);
+      } else {
+	  len = 1 + 4 + 16 + 4 + 4;
+	  len += erl_term_len_helper(ERL_FUN_MODULE(ep),dist);
+	  len += erl_term_len_helper(ERL_FUN_INDEX(ep),dist);
+	  len += erl_term_len_helper(ERL_FUN_UNIQ(ep),dist);
+	  len += erl_term_len_helper(ERL_FUN_CREATOR(ep),dist);
+	  for (i = 0; i < ERL_CLOSURE_SIZE(ep); i++)
+	      len += erl_term_len_helper(ERL_CLOSURE_ELEMENT(ep,i), dist);
+      }
+      break;
+
     default:
 #ifdef DEBUG
 	fprintf(stderr, "Shouldn't happen: erl_term_len, unknown term type: '%c'\n",ERL_TYPE(ep));
@@ -498,88 +559,88 @@ len = i
  */
 static ETERM *erl_decode_it(unsigned char **ext)
 {
-  char *cp;
-  ETERM *ep,*tp,*np;
-  unsigned int u,sign;
-  int i,j,len,arity;
-  double ff;
-  
-  /* Assume we are going to decode an integer */
-  ep = erl_alloc_eterm(ERL_INTEGER);
-  ERL_COUNT(ep) = 1;
-
-  switch (*(*ext)++) 
+    char *cp;
+    ETERM *ep,*tp,*np;
+    unsigned int u,sign;
+    int i,j,len,arity;
+    double ff;
+    
+    /* Assume we are going to decode an integer */
+    ep = erl_alloc_eterm(ERL_INTEGER);
+    ERL_COUNT(ep) = 1;
+    
+    switch (*(*ext)++) 
     {
     case ERL_INTEGER_EXT:
-      i = (int) (**ext << 24) | ((*ext)[1] << 16) |
-	((*ext)[2] << 8) | (*ext)[3];
-      *ext += 4;
-      ep->uval.ival.i = i;
-      return ep;
+	i = (int) (**ext << 24) | ((*ext)[1] << 16) |
+	    ((*ext)[2] << 8) | (*ext)[3];
+	*ext += 4;
+	ep->uval.ival.i = i;
+	return ep;
 
     case ERL_SMALL_INTEGER_EXT:
-      i = *(*ext)++;
-      ep->uval.ival.i = i;
-      return ep;
+	i = *(*ext)++;
+	ep->uval.ival.i = i;
+	return ep;
 
     case ERL_SMALL_BIG_EXT:
-      arity = *(*ext)++; 
-      goto big_cont;
+	arity = *(*ext)++; 
+	goto big_cont;
     case ERL_LARGE_BIG_EXT:
-      arity = (**ext << 24) | ((*ext)[1])<< 16 | 
-	((*ext)[2]) << 8 |((*ext)[3]); 
-      *ext += 4;
+	arity = (**ext << 24) | ((*ext)[1])<< 16 | 
+	    ((*ext)[2]) << 8 |((*ext)[3]); 
+	*ext += 4;
     big_cont:
-      sign = *(*ext)++; 
-      if (arity != 4)             
-	goto big_truncate;
-      if ((*ext)[3] & 0x80) { 
-	/* MSB already occupied ! */
-	if (sign)
-	  goto big_truncate;
-	else {                
-	  /* It will fit into an unsigned int !! */
-	  u = (((*ext)[3] << 24)|((*ext)[2])<< 16|((*ext)[1]) << 8 |(**ext));
-	  ERL_TYPE(ep) = ERL_U_INTEGER;
-	  ep->uval.uival.u = u;
-	  /* *ext += i; */
-	  *ext += arity;
-	  return ep;
+	sign = *(*ext)++; 
+	if (arity != 4)             
+	    goto big_truncate;
+	if ((*ext)[3] & 0x80) { 
+	    /* MSB already occupied ! */
+	    if (sign)
+		goto big_truncate;
+	    else {                
+		/* It will fit into an unsigned int !! */
+		u = (((*ext)[3] << 24)|((*ext)[2])<< 16|((*ext)[1]) << 8 |(**ext));
+		ERL_TYPE(ep) = ERL_U_INTEGER;
+		ep->uval.uival.u = u;
+		/* *ext += i; */
+		*ext += arity;
+		return ep;
+	    }
 	}
-      }
-      else {       
-	/* It will fit into an int !! 
-	 * Note: It comes in "one's-complement notation" 
-	 */
-	if (sign)
-	  i = (int) (~(((*ext)[3] << 24) | ((*ext)[2])<< 16 |
-		       ((*ext)[1]) << 8 | (**ext)) | (unsigned int) sign);
-	else
-	  i = (int) (((*ext)[3] << 24) | ((*ext)[2])<< 16 |
-		     ((*ext)[1]) << 8 | (**ext));
-	ep->uval.ival.i = i;
+	else {       
+	    /* It will fit into an int !! 
+	     * Note: It comes in "one's-complement notation" 
+	     */
+	    if (sign)
+		i = (int) (~(((*ext)[3] << 24) | ((*ext)[2])<< 16 |
+			     ((*ext)[1]) << 8 | (**ext)) | (unsigned int) sign);
+	    else
+		i = (int) (((*ext)[3] << 24) | ((*ext)[2])<< 16 |
+			   ((*ext)[1]) << 8 | (**ext));
+	    ep->uval.ival.i = i;
+	    *ext += arity;
+	    return ep;
+	}
+    big_truncate: 
+	/* truncate to: (+/-) 1 */
+#ifdef DEBUG
+	erl_err_msg("<WARNING> erl_decode_it: Integer truncated...");
+#endif
+	ep->uval.ival.i = sign?-1:1;
 	*ext += arity;
 	return ep;
-      }
-    big_truncate: 
-      /* truncate to: (+/-) 1 */
-#ifdef DEBUG
-      erl_err_msg("<WARNING> erl_decode_it: Integer truncated...");
-#endif
-      ep->uval.ival.i = sign?-1:1;
-      *ext += arity;
-      return ep;
       
     case ERL_ATOM_EXT:
-      ERL_TYPE(ep) = ERL_ATOM;
-      i = (**ext << 8) | (*ext)[1];
-      cp = (char *) *(ext) + 2;
-      *ext += (i + 2);
-      ep->uval.aval.len = i;
-      ep->uval.aval.a = (char *) erl_malloc(i+1);
-      memcpy(ep->uval.aval.a, cp, i);
-      ep->uval.aval.a[i]='\0';
-      return ep;
+	ERL_TYPE(ep) = ERL_ATOM;
+	i = (**ext << 8) | (*ext)[1];
+	cp = (char *) *(ext) + 2;
+	*ext += (i + 2);
+	ep->uval.aval.len = i;
+	ep->uval.aval.a = (char *) erl_malloc(i+1);
+	memcpy(ep->uval.aval.a, cp, i);
+	ep->uval.aval.a[i]='\0';
+	return ep;
       
     case ERL_PID_EXT:
 	erl_free_term(ep);
@@ -697,105 +758,143 @@ static ETERM *erl_decode_it(unsigned char **ext)
 	}
 
     case ERL_NIL_EXT:
-      ERL_TYPE(ep) = ERL_EMPTY_LIST;
-      return ep;
+	ERL_TYPE(ep) = ERL_EMPTY_LIST;
+	return ep;
 
     case ERL_LIST_EXT:
-      ERL_TYPE(ep) = ERL_LIST;
-      i = (**ext << 24) | ((*ext)[1] << 16) |((*ext)[2] << 8) | (*ext)[3];
-      *ext += 4;	
-      /* ASSERT(i != 0);	*/	/* Should be represented by ERL_NIL_EXT. */
-      tp = ep;
-      for (j = 0; j < i; j++) 
-	  if ((HEAD(tp) = erl_decode_it(ext)) == NULL) 
-	      goto failure;
-	  else if (j + 1 < i) {
-	      /* We have to watch out for how we allocates the
-	       * last tail element since we may encounter non-
-	       * well formed lists.
-	       */
-	      np = erl_alloc_eterm(ERL_LIST);
-	      ERL_COUNT(np) = 1;
-	      TAIL(tp) = np;
-	      tp = np;
-	  }
-      if ((TAIL(tp) = erl_decode_it(ext)) == NULL) 
-	  goto failure;
-      return ep;
+	ERL_TYPE(ep) = ERL_LIST;
+	i = (**ext << 24) | ((*ext)[1] << 16) |((*ext)[2] << 8) | (*ext)[3];
+	*ext += 4;	
+	/* ASSERT(i != 0);	*/	/* Should be represented by ERL_NIL_EXT. */
+	tp = ep;
+	for (j = 0; j < i; j++) 
+	    if ((HEAD(tp) = erl_decode_it(ext)) == NULL) 
+		goto failure;
+	    else if (j + 1 < i) {
+		/* We have to watch out for how we allocates the
+		 * last tail element since we may encounter non-
+		 * well formed lists.
+		 */
+		np = erl_alloc_eterm(ERL_LIST);
+		ERL_COUNT(np) = 1;
+		TAIL(tp) = np;
+		tp = np;
+	    }
+	if ((TAIL(tp) = erl_decode_it(ext)) == NULL) 
+	    goto failure;
+	return ep;
 
     case ERL_STRING_EXT:
-      {
-	  unsigned char* s;
+	{
+	    unsigned char* s;
 	  
-	  ERL_TYPE(ep) = ERL_EMPTY_LIST;
-	  i = (**ext << 8) | ((*ext)[1]);
-	  *ext += 2;
-	  s = *ext+i;
+	    ERL_TYPE(ep) = ERL_EMPTY_LIST;
+	    i = (**ext << 8) | ((*ext)[1]);
+	    *ext += 2;
+	    s = *ext+i;
 
-	  while (*ext < s) {
-	      ETERM* integer;
-	      ETERM* cons;
+	    while (*ext < s) {
+		ETERM* integer;
+		ETERM* cons;
 
-	      integer = erl_alloc_eterm(ERL_INTEGER);
-	      ERL_COUNT(integer) = 1;
-	      integer->uval.ival.i = *--s;
+		integer = erl_alloc_eterm(ERL_INTEGER);
+		ERL_COUNT(integer) = 1;
+		integer->uval.ival.i = *--s;
 
-	      cons = erl_alloc_eterm(ERL_LIST);
-	      ERL_COUNT(cons) = 1;
-	      HEAD(cons) = integer;
-	      TAIL(cons) = ep;
-	      ep = cons;
-	  }
-	  *ext += i;
-	  return ep;
-      }
+		cons = erl_alloc_eterm(ERL_LIST);
+		ERL_COUNT(cons) = 1;
+		HEAD(cons) = integer;
+		TAIL(cons) = ep;
+		ep = cons;
+	    }
+	    *ext += i;
+	    return ep;
+	}
 
     case ERL_SMALL_TUPLE_EXT:
-      ERL_TYPE(ep) = ERL_TUPLE;
-      i = *(*ext)++;
-      goto decode_tuple;
+	ERL_TYPE(ep) = ERL_TUPLE;
+	i = *(*ext)++;
+	goto decode_tuple;
 
     case ERL_LARGE_TUPLE_EXT:
-      i = (**ext << 24) | ((*ext)[1]) << 16 | 
-	((*ext)[2]) << 8 | ((*ext)[3]) ;	
-      *ext += 4;
+	i = (**ext << 24) | ((*ext)[1]) << 16 | 
+	    ((*ext)[2]) << 8 | ((*ext)[3]) ;	
+	*ext += 4;
     decode_tuple:
-      ep->uval.tval.size = i;
-      j = (i + 1) * sizeof(ETERM*);
-      ep->uval.tval.elems = (ETERM**) erl_malloc(j);
-      memset(ep->uval.tval.elems, 0, j); /* in case of failure below... */
-      for (i=0; i<ep->uval.tval.size; i++)
-	if ((tp = erl_decode_it(ext)) == NULL)
-	  goto failure;
-	else
-	  ep->uval.tval.elems[i] = tp;
-      return ep;
+	ep->uval.tval.size = i;
+	j = (i + 1) * sizeof(ETERM*);
+	ep->uval.tval.elems = (ETERM**) erl_malloc(j);
+	memset(ep->uval.tval.elems, 0, j); /* in case of failure below... */
+	for (i=0; i<ep->uval.tval.size; i++)
+	    if ((tp = erl_decode_it(ext)) == NULL)
+		goto failure;
+	    else
+		ep->uval.tval.elems[i] = tp;
+	return ep;
 
     case ERL_FLOAT_EXT:
-      ERL_TYPE(ep) = ERL_FLOAT;
-      if (sscanf((char *) *ext, "%lf", &ff) != 1)
-	goto failure;
-      *ext += 31;
-      ep->uval.fval.f = ff;
-      return ep;
+	ERL_TYPE(ep) = ERL_FLOAT;
+	if (sscanf((char *) *ext, "%lf", &ff) != 1)
+	    goto failure;
+	*ext += 31;
+	ep->uval.fval.f = ff;
+	return ep;
 
     case ERL_BINARY_EXT:
-      ERL_TYPE(ep) = ERL_BINARY;
-      i = (**ext << 24) | ((*ext)[1] << 16) |
-	((*ext)[2] << 8) | (*ext)[3];
-      *ext += 4;
-      ep->uval.bval.size = i;
-      ep->uval.bval.b = (unsigned char *) erl_malloc(i);
-      memcpy(ep->uval.bval.b, *ext, i);
-      *ext += i;
-      return ep;
+	ERL_TYPE(ep) = ERL_BINARY;
+	i = (**ext << 24) | ((*ext)[1] << 16) |
+	    ((*ext)[2] << 8) | (*ext)[3];
+	*ext += 4;
+	ep->uval.bval.size = i;
+	ep->uval.bval.b = (unsigned char *) erl_malloc(i);
+	memcpy(ep->uval.bval.b, *ext, i);
+	*ext += i;
+	return ep;
+
+    case ERL_FUN_EXT:		/* FIXME: error checking */
+	ERL_TYPE(ep) = ERL_FUNCTION;
+	i = get32be(*ext);
+	/*i = *(**ext << 24) | ((*ext)[1] << 16) | ((*ext)[2] << 8) | (*ext)[3];
+	 *ext += 4; */
+	ERL_FUN_ARITY(ep) = -1;
+	ERL_CLOSURE_SIZE(ep) = i;
+	ERL_FUN_CREATOR(ep) = erl_decode_it(ext);
+	ERL_FUN_MODULE(ep) = erl_decode_it(ext);
+	ERL_FUN_INDEX(ep) = erl_decode_it(ext);
+	ERL_FUN_UNIQ(ep) = erl_decode_it(ext);
+	j = i * sizeof(ETERM*);
+	ERL_CLOSURE(ep) = (ETERM**) erl_malloc(j);
+	memset(ERL_CLOSURE(ep), 0, j);
+	for (i = 0; i < ERL_CLOSURE_SIZE(ep); i++)
+	    ERL_CLOSURE_ELEMENT(ep,i) = erl_decode_it(ext);
+	return ep;
+
+    case ERL_NEW_FUN_EXT:	/* FIXME: error checking */
+	ERL_TYPE(ep) = ERL_FUNCTION;
+	i = get32be(*ext);	/* size, we don't use it here */
+	ERL_FUN_ARITY(ep) = get8(*ext);
+	memcpy(ERL_FUN_MD5(ep), *ext, 16);
+	*ext += 16;
+	ERL_FUN_NEW_INDEX(ep) = get32be(*ext);
+	i = get32be(*ext);
+	ERL_CLOSURE_SIZE(ep) = i;
+	ERL_FUN_MODULE(ep) = erl_decode_it(ext);
+	ERL_FUN_INDEX(ep) = erl_decode_it(ext);
+	ERL_FUN_UNIQ(ep) = erl_decode_it(ext);
+	ERL_FUN_CREATOR(ep) = erl_decode_it(ext);
+	j = i * sizeof(ETERM*);
+	ERL_CLOSURE(ep) = (ETERM**) erl_malloc(j);
+	memset(ERL_CLOSURE(ep), 0, j);
+	for (i = 0; i < ERL_CLOSURE_SIZE(ep); i++)
+	    ERL_CLOSURE_ELEMENT(ep,i) = erl_decode_it(ext);
+	return ep;
 
     } /* switch */
-
+    
  failure:
-  erl_free_term(ep);
-  return (ETERM *) NULL;
-
+    erl_free_term(ep);
+    return (ETERM *) NULL;
+    
 } /* erl_decode_it */
 
 /*
@@ -876,37 +975,39 @@ int erl_verify_magic(unsigned char *ext)
  */ 
 char erl_ext_type(unsigned char *ext)
 {
-  if (*ext == ERL_VERSION_MAGIC) 
-    return erl_ext_type(ext+1);
+    if (*ext == ERL_VERSION_MAGIC) 
+	return erl_ext_type(ext+1);
   
-  switch(*ext) 
-    {
+    switch (*ext) {
     case ERL_SMALL_INTEGER_EXT:
     case ERL_INTEGER_EXT:
-      return ERL_INTEGER;
+	return ERL_INTEGER;
     case ERL_ATOM_EXT:
-      return ERL_ATOM;
+	return ERL_ATOM;
     case ERL_PID_EXT:
-      return ERL_PID;
+	return ERL_PID;
     case ERL_PORT_EXT:
-      return ERL_PORT;
+	return ERL_PORT;
     case ERL_REFERENCE_EXT:
-      return ERL_REF;
+	return ERL_REF;
     case ERL_NEW_REFERENCE_EXT:
-      return ERL_REF;
+	return ERL_REF;
     case ERL_NIL_EXT: 
-      return ERL_EMPTY_LIST;
+	return ERL_EMPTY_LIST;
     case ERL_LIST_EXT:
-      return ERL_LIST;
+	return ERL_LIST;
     case ERL_SMALL_TUPLE_EXT:
     case ERL_LARGE_TUPLE_EXT:
-      return ERL_TUPLE;
+	return ERL_TUPLE;
     case ERL_FLOAT_EXT:
-      return ERL_FLOAT;
+	return ERL_FLOAT;
     case ERL_BINARY_EXT:
-      return ERL_BINARY;
+	return ERL_BINARY;
+    case ERL_FUN_EXT:
+    case ERL_NEW_FUN_EXT:
+	return ERL_FUNCTION;
     default:
-      return 0;
+	return 0;
 
     } /* switch */
 
@@ -919,15 +1020,14 @@ char erl_ext_type(unsigned char *ext)
  */
 int erl_ext_size(unsigned char *t)
 {
-  int i;
-  unsigned char *v;
+    int i;
+    unsigned char *v;
 
-  if (*t == ERL_VERSION_MAGIC) 
-    return erl_ext_size(t+1);
+    if (*t == ERL_VERSION_MAGIC) 
+	return erl_ext_size(t+1);
  
-  v = t+1;
-  switch(*t) 
-    {
+    v = t+1;
+    switch(*t) {
     case ERL_SMALL_INTEGER_EXT:
     case ERL_INTEGER_EXT:
     case ERL_ATOM_EXT:
@@ -939,21 +1039,30 @@ int erl_ext_size(unsigned char *t)
     case ERL_BINARY_EXT:
     case ERL_STRING_EXT:
     case ERL_FLOAT_EXT:
-      return 0;
-      break;
+	return 0;
+	break;
     case ERL_SMALL_TUPLE_EXT:
-      i = v[0];
-      return i;
-      break;
+	i = v[0];
+	return i;
+	break;
     case ERL_LIST_EXT:
     case ERL_LARGE_TUPLE_EXT:
-      i = (v[0] << 24) | (v[1] << 16) | (v[2] << 8) | v[3];
-      return i;
-      break;
+	i = (v[0] << 24) | (v[1] << 16) | (v[2] << 8) | v[3];
+	return i;
+	break;
+    case ERL_FUN_EXT:
+	i = (v[0] << 24) | (v[1] << 16) | (v[2] << 8) | v[3];
+	return i+4;
+	break;
+    case ERL_NEW_FUN_EXT:
+        v += 4 + 1 + 16 + 4;
+	i = get32be(v);
+	return i + 4;
+	break;
     default:
-      return -1;
-      break;
-  } /* switch */
+	return -1;
+	break;
+    } /* switch */
 
 } /* ext_size */
 
@@ -974,84 +1083,95 @@ i = (**ext << 8) | (*ext)[1]; \
  */
 static int jump(unsigned char **ext) 
 {
-  int j,k,i=0;
-  int n;
+    int j,k,i=0;
+    int n;
     
-  switch (*(*ext)++) 
-    {
+    switch (*(*ext)++) {
     case ERL_VERSION_MAGIC:
-      return jump(ext);
+	return jump(ext);
     case ERL_INTEGER_EXT:
-      *ext += 4;
-      break;
+	*ext += 4;
+	break;
     case ERL_SMALL_INTEGER_EXT:
-      *ext += 1;
-      break;
-    case ERL_ATOM_EXT:
-      i = (**ext << 8) | (*ext)[1];
-      *ext += (i + 2);
-      break;
-    case ERL_PID_EXT:
-      /* eat first atom */
-      JUMP_ATOM(ext,i);
-      *ext += 9; /* Two int's and the creation field */
-      break;
-    case ERL_REFERENCE_EXT:
-    case ERL_PORT_EXT:
-      /* first field is an atom */
-      JUMP_ATOM(ext,i);
-      *ext += 5; /* One int and the creation field */
-      break;
-    case ERL_NEW_REFERENCE_EXT:
-      n = (**ext << 8) | (*ext)[1];
-      *ext += 2;
-      /* first field is an atom */
-      JUMP_ATOM(ext,i);
-      *ext += 4*n+1;
-      break;
-    case ERL_NIL_EXT:
-      /* We just passed it... */
-      break;
-    case ERL_LIST_EXT:
-      i = j = 0;
-      j = (**ext << 24) | ((*ext)[1] << 16) |((*ext)[2] << 8) | (*ext)[3];
-      *ext += 4;	
-      for(k=0; k<j; k++) 
-	if ((i = jump(ext)) == 0)
-	  return(0);
-      if (**ext == ERL_NIL_EXT) {
 	*ext += 1;
 	break;
-      }
-      if (jump(ext) == 0) return 0;
-      break;
+    case ERL_ATOM_EXT:
+	i = (**ext << 8) | (*ext)[1];
+	*ext += (i + 2);
+	break;
+    case ERL_PID_EXT:
+	/* eat first atom */
+	JUMP_ATOM(ext,i);
+	*ext += 9;		/* Two int's and the creation field */
+	break;
+    case ERL_REFERENCE_EXT:
+    case ERL_PORT_EXT:
+	/* first field is an atom */
+	JUMP_ATOM(ext,i);
+	*ext += 5;		/* One int and the creation field */
+	break;
+    case ERL_NEW_REFERENCE_EXT:
+	n = (**ext << 8) | (*ext)[1];
+	*ext += 2;
+	/* first field is an atom */
+	JUMP_ATOM(ext,i);
+	*ext += 4*n+1;
+	break;
+    case ERL_NIL_EXT:
+	/* We just passed it... */
+	break;
+    case ERL_LIST_EXT:
+	i = j = 0;
+	j = (**ext << 24) | ((*ext)[1] << 16) |((*ext)[2] << 8) | (*ext)[3];
+	*ext += 4;	
+	for(k=0; k<j; k++) 
+	    if ((i = jump(ext)) == 0)
+		return(0);
+	if (**ext == ERL_NIL_EXT) {
+	    *ext += 1;
+	    break;
+	}
+	if (jump(ext) == 0) return 0;
+	break;
     case ERL_STRING_EXT:
-      i = **ext << 8 | (*ext)[1];
-      *ext += 2 + i;
-      break;
+	i = **ext << 8 | (*ext)[1];
+	*ext += 2 + i;
+	break;
     case ERL_SMALL_TUPLE_EXT:
-      i = *(*ext)++;
-      goto jump_tuple;
+	i = *(*ext)++;
+	goto jump_tuple;
     case ERL_LARGE_TUPLE_EXT:
-      i = (**ext << 24) | ((*ext)[1] << 16) |((*ext)[2] << 8) | (*ext)[3];
-      *ext += 4;
+	i = (**ext << 24) | ((*ext)[1] << 16) |((*ext)[2] << 8) | (*ext)[3];
+	*ext += 4;
     jump_tuple:
-      for (j = 0; j < i; j++) 
-	if ((k = jump(ext)) == 0)
-	  return(0);
-      break;
+	for (j = 0; j < i; j++) 
+	    if ((k = jump(ext)) == 0)
+		return(0);
+	break;
     case ERL_FLOAT_EXT:
-      *ext += 31;
-      break;
+	*ext += 31;
+	break;
     case ERL_BINARY_EXT:
-      i = (**ext << 24) | ((*ext)[1] << 16) |((*ext)[2] << 8) | (*ext)[3];
-      *ext += 4+i;
-      break;
+	i = (**ext << 24) | ((*ext)[1] << 16) |((*ext)[2] << 8) | (*ext)[3];
+	*ext += 4+i;
+	break;
+    case ERL_FUN_EXT:
+	i = (**ext << 24) | ((*ext)[1] << 16) |((*ext)[2] << 8) | (*ext)[3];
+	*ext += 4;
+	i += 4;
+	for (j = 0; j < i; j++)
+	    if ((k = jump(ext)) == 0)
+		return(0);
+	break;
+    case ERL_NEW_FUN_EXT:
+	i = get32be(*ext);
+	*ext += i + 4;
+	break;
     default:
-      return 0;
+	return 0;
     } /* switch */
 
-  return 1;
+    return 1;
 
 } /* jump */
 
@@ -1141,7 +1261,7 @@ static int cmp_refs(unsigned char **e1, unsigned char **e2)
     int l1, l2;
     int t1, t2;
     int n1, n2, n;
-    int c1, c2;
+    int c1 = 0, c2 = 0;
     int ret, i;
 
     t1 = *(*e1)++;
@@ -1302,6 +1422,11 @@ static int cmp_exe2(unsigned char **e1, unsigned char **e2)
       ret = cmpbytes(*e1, i , *e2 , j);
       *e1 += i; *e2 += j;
       return ret;
+
+    case ERL_FUN_EXT:  /* FIXME: */
+    case ERL_NEW_FUN_EXT:  /* FIXME: */
+      return -1;
+
     default:
       return cmpbytes(*e1, 1, *e2, 1);
 

@@ -38,9 +38,12 @@
 
 %% ---------------------------------------------------------------
 %% open(Info,Name,Type) -> term()
-%% Info   -> ets | {mnesia,Nodes} | {mnesia,Nodes,Action}
+%% Info   -> ets | 
+%%           {dets, Dir} | {dets, Dir, Action} |
+%%           {mnesia,Nodes} | {mnesia,Nodes,Action}
 %% Name   -> atom()
 %% Type   -> set | bag
+%% Dir    -> string
 %% Nodes  -> [node()]
 %% Action -> keep | clear
 %% 
@@ -50,27 +53,28 @@
 %% An empty node list ([]), is traslated into a list containing
 %% only the own node.
 %% ---------------------------------------------------------------
-open({mnesia,Nodes,clear},Name,RecName,Attr,Type) when list(Nodes) ->
-    ?vtrace("open ~p database ~p for ~p on ~p; clear",
-	    [Type,Name,RecName,Nodes]),
-    mnesia_open(mnesia_table_check(Name),Nodes,RecName,Attr,Type,clear);
-open({mnesia,Nodes,_},Name,RecName,Attr,Type) ->
-    ?vtrace("open ~p database ~p for ~p on ~p; keep",
-	    [Type,Name,RecName,Nodes]),
-    open({mnesia,Nodes},Name,RecName,Attr,Type);
-open({mnesia,Nodes},Name,RecName,Attr,Type) when list(Nodes) ->
-    ?vtrace("open ~p database ~p for ~p on ~p; ",[Type,Name,RecName,Nodes]),
-    mnesia_open(mnesia_table_check(Name),Nodes,RecName,Attr,Type,keep);
+open({mnesia,Nodes,clear}, Name, RecName, Attr, Type) when list(Nodes) ->
+    ?vtrace("mnesia: open ~p database ~p for ~p on ~p; clear",
+	    [Type, Name, RecName, Nodes]),
+    mnesia_open(mnesia_table_check(Name), Nodes, RecName, Attr, Type, clear);
+open({mnesia,Nodes,_}, Name, RecName, Attr, Type) ->
+    ?vtrace("mnesia: open ~p database ~p for ~p on ~p; keep",
+	    [Type, Name, RecName, Nodes]),
+    open({mnesia,Nodes}, Name, RecName, Attr, Type);
+open({mnesia,Nodes}, Name, RecName, Attr, Type) when list(Nodes) ->
+    ?vtrace("mnesia: open ~p database ~p for ~p on ~p; ",
+	    [Type, Name, RecName, Nodes]),
+    mnesia_open(mnesia_table_check(Name), Nodes, RecName, Attr, Type, keep);
 
-open({dets,Dir,clear},Name,_RecName,_Attr,Type) ->
-    dets_open(dets_table_check(Name),Dir,Type,clear);
-open({dets,Dir,_},Name,_RecName,_Attr,Type) ->
-    dets_open(dets_table_check(Name),Dir,Type,keep);
-open({dets,Dir},Name,_RecName,_Attr,Type) ->
-    dets_open(dets_table_check(Name),Dir,Type,keep);
+open({dets, Dir, clear}, Name, _RecName, _Attr, Type) ->
+    dets_open(dets_table_check(Name, Dir), Type, clear);
+open({dets, Dir, _}, Name, _RecName, _Attr, Type) ->
+    dets_open(dets_table_check(Name, Dir), Type, keep);
+open({dets, Dir}, Name, _RecName, _Attr, Type) ->
+    dets_open(dets_table_check(Name, Dir), Type, keep);
 
 %% This function creates the ets table 
-open(ets,Name,_RecName,_Attr,Type) ->
+open(ets, Name, _RecName, _Attr, Type) ->
     Ets = ets:new(Name, [Type, protected, {keypos, 2}]),
     {ets,Ets}.
 
@@ -111,35 +115,46 @@ mnesia_table_check(Name) ->
     end.
     
 
-dets_open({table_exist,Name},_Dir,_Type,keep) ->
-    ?vtrace("database ~p already exists; keep content",[Name]),
-    {dets,Name};
-dets_open({table_exist,Name},_Dir,_Type,clear) ->
-    ?vtrace("database ~p already exists; clear content",[Name]),
-    dets:delete(Name,'_'),
-    {dets,Name};
-dets_open({no_table,Name},Dir,Type,_Action) ->
-    ?vtrace("no database ~p: create of type ~p",[Name,Type]),
-    Dir1 = dets_open1(Dir),
-    Dir2 = string:strip(Dir1,right,$/),
-    File = io_lib:format("~s/~p.dat",[Dir2,Name]),
-    {ok,N} = dets:open_file(Name,[{file,File},{type,Type},{keypos,2}]),
-    {dets,N}.
+dets_open({table_exist, Name, File}, Type, keep) ->
+    ?vtrace("database ~p already exists", [Name]),
+    N = dets_open1(Name, File, Type),
+    {dets, N};
+dets_open({table_exist, Name, File}, Type, clear) ->
+    ?vtrace("database ~p already exists", [Name]),
+    N = dets_open1(Name, File, Type),
+    dets:delete(N,'_'),
+    {dets, N};
+dets_open({no_table, Name, File}, Type, _Action) ->
+    ?vtrace("no database ~p exists", [Name]),
+    N = dets_open1(Name, File, Type),
+    {dets, N}.
 
-
-dets_open1([])  -> ".";
-dets_open1(Dir) -> Dir.
-
-
-dets_table_check(Name) ->
-    ?vtrace("check existens of database ~p",[Name]),
-    case (catch dets:info(Name,size)) of
-	{'EXIT',Reason} ->
-	    {no_table,Name};
+dets_open1(Name, File, Type) ->
+    ?vtrace("create database ~p of type ~p",[Name, Type]),
+    {ok, N} = dets:open_file(Name, [{file, File}, {type, Type}, {keypos, 2}]),
+    N.
+    
+dets_table_check(Name, Dir) ->
+    Filename = dets_filename(Name, Dir),
+    ?vtrace("check existens of database ~p -> ~s",[Name, Filename]),
+    case (catch dets:info(Filename, size)) of
+	{'EXIT', Reason} ->
+	    {no_table, Name, Filename};
+	undefined -> %% Introduced in R8
+	    {no_table, Name, Filename};
 	_ ->
-	    {table_exist,Name}
+	    {table_exist, Name, Filename}
     end.
     
+
+dets_filename(Name, Dir) ->
+    Dir1 = dets_filename1(Dir),
+    Dir2 = string:strip(Dir1, right, $/),
+    io_lib:format("~s/~p.dat", [Dir2, Name]).
+    
+dets_filename1([])  -> ".";
+dets_filename1(Dir) -> Dir.
+
 
 %% ---------------------------------------------------------------
 %% close(DbRef) -> 
@@ -269,24 +284,10 @@ tab2list({mnesia,Name}) ->
     match_object({mnesia,Name},mnesia:table_info(Name,wild_pattern));
 tab2list({dets,Name}) ->
     ?vtrace("dets tab -> list of ~p",[Name]),
-    dets_tab2list(Name);
+    match_object({dets,Name},'_');
 tab2list({ets,Name}) ->
     ?vtrace("ets tab -> list of ~p",[Name]),
     ets:tab2list(Name).
-
-
-dets_tab2list(Name) ->
-    dets_tab2list(dets:first(Name),Name,[]).
-
-dets_tab2list('$end_of_table',_Name,L) ->
-    lists:flatten(L);
-dets_tab2list(Key,Name,L) ->
-    case dets:lookup(Name,Key) of
-	{error,_Reason} ->
-	    dets_tab2list(dets:next(Name,Key),Name,L);
-	L1 when list(L1) ->
-	    dets_tab2list(dets:next(Name,Key),Name,[L1|L])
-    end.
 
 
 %% ---------------------------------------------------------------
@@ -308,12 +309,12 @@ match_delete({mnesia,Name},Pattern) ->
     case mnesia:transaction(F) of
 	{aborted,Reason} ->
 	    exit({aborted,Reason});
-	 {atomic,_} ->
+	{atomic,_} ->
 	    ok
     end;
 match_delete({dets,Name},Pattern) -> 
     ?vtrace("match_delete(dets) in ~p of ~p",[Name,Pattern]),
-    ets:match_delete(Name, Pattern);
+    dets:match_delete(Name, Pattern);
 match_delete({ets,Name},Pattern) -> 
     ?vtrace("match_delete(ets) in ~p of ~p",[Name,Pattern]),
     ets:match_delete(Name, Pattern).

@@ -14,7 +14,7 @@ TARGET = win32
 
 # Roots
 CC_ROOT = 
-SSLEAY_ROOT = \libraries\ssl\usr\ssleay\win32
+SSLEAY_ROOT = \erts\lib\ssl\usr\ssleay\win32
 
 LINK = link
 MLFLAGS= /nologo /subsystem:console /machine:I386

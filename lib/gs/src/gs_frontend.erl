@@ -24,7 +24,7 @@
 
 -compile(export_all).
 
--include("gtk.hrl").
+-include("gstk.hrl").
 
 
 %%----------------------------------------------------------------------
@@ -135,7 +135,7 @@ doit({FromOwner,{config, Args}},State) ->
 	undefined ->
 	    reply(FromOwner,{error,{no_such_object,IdOrName}});
 	Obj ->
-	    reply(FromOwner,gtk:config(backend(State,Obj),{Obj,Opts}))
+	    reply(FromOwner,gstk:config(backend(State,Obj),{Obj,Opts}))
     end;
 
 doit({event,ToOwner,{gs,Obj,Etype,Data,Args}}, #state{db=DB,self=Self}) ->
@@ -161,7 +161,7 @@ doit({FromOwner,{create,Args}}, State) ->
 		    reply(FromOwner, {error,{no_such_parent,Parent}});
 		ParentObj ->
 		    {Id,NewState} = inc(ParentObj,State),
-		    case gtk:create(backend(State,ParentObj),
+		    case gstk:create(backend(State,ParentObj),
 				    {FromOwner,{Objtype,Id,ParentObj,Opts}}) of
 			ok ->
 			    link(FromOwner),
@@ -188,7 +188,7 @@ doit({FromOwner,{read, Args}}, State) ->
 	undefined ->
 	    reply(FromOwner,{error,{no_such_object,IdOrName}});
 	Obj -> 
-	    reply(FromOwner,gtk:read(backend(State,Obj),{Obj,Opt}))
+	    reply(FromOwner,gstk:read(backend(State,Obj),{Obj,Opt}))
     end;
 
 doit({'EXIT', UserBackend, Reason}, State)
@@ -205,12 +205,12 @@ doit({'EXIT', KernelBackend, Reason}, State)
 doit({'EXIT', Pid, Reason}, #state{kernel=K,user=U,db=DB}) ->
     %% io:format("Pid ~w died reason ~w~n", [Pid, Reason]),
     if pid(U) -> 
-	    DeadObjU = gtk:pid_died(U,Pid),
+	    DeadObjU = gstk:pid_died(U,Pid),
 	    remove_objs(DB,DeadObjU);
        true -> ok
     end,
     if pid(K) ->
-	    DeadObjK = gtk:pid_died(K,Pid),
+	    DeadObjK = gstk:pid_died(K,Pid),
 	    remove_objs(DB,DeadObjK);
        true -> true end,
     done;
@@ -221,7 +221,7 @@ doit({FromOwner,{destroy, IdOrName}}, State) ->
 	undefined ->
 	    reply(FromOwner, {error,{no_such_object,IdOrName}});
 	Obj ->
-	    DeadObj = gtk:destroy(backend(State,Obj),Obj),
+	    DeadObj = gstk:destroy(backend(State,Obj),Obj),
 	    remove_objs(DB,DeadObj),
 	    reply(FromOwner,done)	    
     end;
@@ -232,7 +232,7 @@ doit({From,{instance,user,Opts}},State) ->
 	[_] -> reply(From, {1,Self});
 	[] ->
 	    ets:insert(DB,{1,lives}), % parent of all user gs objs
-	    case gtk:start_link(1, Self, Self, Opts) of
+	    case gstk:start_link(1, Self, Self, Opts) of
 		{ok, UserBackend} ->
 		    reply(From, {1, Self}),
 		    case UC of
@@ -253,7 +253,7 @@ doit({From,{instance,kernel,Opts}},State) ->
 	[_] -> reply(From, {0,Self});
 	[] ->
 	    ets:insert(DB,{0,lives}), % parent of all user gs objs
-	    case gtk:start_link(0,Self,Self,Opts) of
+	    case gstk:start_link(0,Self,Self,Opts) of
 		{ok, KernelBackend} ->
 		    reply(From, {0,Self}),
 		    State#state{kernel_count=0,kernel=KernelBackend};
@@ -266,25 +266,25 @@ doit({From,{instance,kernel,Opts}},State) ->
 
 doit({From,stop}, State) ->
     #state{kernel=K,user=U} = State,
-    if pid(U) -> gtk:stop(U);
+    if pid(U) -> gstk:stop(U);
        true -> true end,
-    if pid(K) -> gtk:stop(K);
+    if pid(K) -> gstk:stop(K);
        true -> true end,
     reply(From,stopped),
     stop;
 
-doit({From,{gtk,user,Msg}},State) ->
-    reply(From,gtk:request(State#state.user,Msg));
-doit({From,{gtk,kernel,Msg}},State) ->
-    reply(From,gtk:request(State#state.kernel,Msg));
+doit({From,{gstk,user,Msg}},State) ->
+    reply(From,gstk:request(State#state.user,Msg));
+doit({From,{gstk,kernel,Msg}},State) ->
+    reply(From,gstk:request(State#state.kernel,Msg));
 
 doit({From,{info,gs_db}},State) ->
     io:format("gs_db:~p~n",[ets:tab2list(State#state.db)]),
     reply(From,State);
 doit({From,{info,kernel_db}},State) ->
-    reply(From,gtk:request(State#state.kernel,dump_db));
+    reply(From,gstk:request(State#state.kernel,dump_db));
 doit({From,{info,user_db}},State) ->
-    reply(From,gtk:request(State#state.user,dump_db)).
+    reply(From,gstk:request(State#state.user,dump_db)).
 
 terminate(Reason,#state{db=DB}) ->
     if DB==undefined -> ok;

@@ -50,16 +50,19 @@ format(Node, Ctxt) ->
 	[] ->
 	    format_1(Node, Ctxt);
 	List ->
-	    Ctxt1 = ctxt_bump_indent(Ctxt, Ctxt#ctxt.item_indent),
-	    ["( ",
-	     format_1(Node, Ctxt1),
-	     nl_indent(Ctxt1),
-	     "-| ",io_lib:write(List)," )"
-	    ]
+	    format_anno(List, Ctxt, fun (Ctxt1) -> format_1(Node, Ctxt1) end)
     end.
 
-format_1(#k_atom{name=A}, Ctxt) -> core_atom(A);
-format_1(#k_char{val=C}, Ctxt) -> io_lib:write_char(C);
+format_anno(Anno, Ctxt, ObjFun) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt, 2),
+    ["( ",
+     ObjFun(Ctxt1),
+     nl_indent(Ctxt1),
+     "-| ",io_lib:write(Anno),
+     " )"].
+
+format_1(#k_atom{val=A}, Ctxt) -> core_atom(A);
+%%format_1(#k_char{val=C}, Ctxt) -> io_lib:write_char(C);
 format_1(#k_float{val=F}, Ctxt) -> float_to_list(F);
 format_1(#k_int{val=I}, Ctxt) -> integer_to_list(I);
 format_1(#k_nil{}, Ctxt) -> "[]";
@@ -69,36 +72,25 @@ format_1(#k_var{name=V}, Ctxt) ->
 	[C|Cs] when C == $_; C >= $A, C =< $Z -> [C|Cs];
 	Cs -> [$_|Cs]
     end;
-format_1(#k_cons{}=Cons, Ctxt) ->
-    [$[,
-     format_list_elements(Cons, ctxt_bump_indent(Ctxt, 1)),
-     $]
-    ];
+format_1(#k_cons{hd=H,tl=T}, Ctxt) ->
+    Txt = ["["|format(H, ctxt_bump_indent(Ctxt, 1))],
+    [Txt|format_list_tail(T, ctxt_bump_indent(Ctxt, width(Txt, Ctxt)))];
 format_1(#k_tuple{es=Es}, Ctxt) ->
     [${,
      format_hseq(Es, ",", ctxt_bump_indent(Ctxt, 1), fun format/2),
      $}
     ];
-format_1(#k_bin{val=B}, Ctxt) ->
-    A = canno(B),
-    case B of
-	#k_binary_cons{} when A == [] ->
-	    format(B, Ctxt);
-	#k_zero_binary{} when A == [] ->
-	    format(B, Ctxt);
-	Other ->
-	    ["<<",
-	     format(B, ctxt_bump_indent(Ctxt, 2)),
-	     ">>"]
-    end;
-format_1(#k_binary_cons{}=Bc, Ctxt) ->
-    ["<<",format_bin_elements(Bc, ctxt_bump_indent(Ctxt, 2)),">>"];
-format_1(#k_zero_binary{}, Ctxt) -> "<<>>";
+format_1(#k_binary{segs=S}, Ctxt) ->
+    ["#<",format(S, ctxt_bump_indent(Ctxt, 2)),">#"];
+format_1(#k_bin_seg{}=S, Ctxt) ->
+    [format_bin_seg_1(S, Ctxt),
+     format_bin_seg(S#k_bin_seg.next, ctxt_bump_indent(Ctxt, 2))];
+format_1(#k_bin_end{}, Ctxt) -> "#<>#";
 format_1(#k_local{name=N,arity=A}, Ctxt) ->
     "local " ++ format_fa_pair({N,A}, Ctxt);
-format_1(#k_remote{mod=M,name=N,arity=A}, Ctxt) when atom(M) ->
+format_1(#k_remote{mod=M,name=N,arity=A}, Ctxt) ->
     %% This is for our internal translator.
-    io_lib:format("remote ~s:~s/~w", [core_atom(M),core_atom(N),A]);
+    io_lib:format("remote ~s:~s/~w", [format(M),format(N),A]);
 format_1(#k_internal{name=N,arity=A}, Ctxt) ->
     "internal " ++ format_fa_pair({N,A}, Ctxt);
 format_1(#k_seq{arg=A,body=B}, Ctxt) ->
@@ -162,6 +154,21 @@ format_1(#k_guard_clause{guard=G,body=B}, Ctxt) ->
      nl_indent(Ctxt1)
      | format(B, Ctxt1)
     ];
+format_1(#k_guard_and{args=As}, Ctxt) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt, 2),
+    ["guard_and",nl_indent(Ctxt1),
+     format_vseq(As, "", "", Ctxt1, fun format/2)];
+format_1(#k_guard_or{args=As}, Ctxt) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt, 2),
+    ["guard_or",nl_indent(Ctxt1),
+     format_vseq(As, "", "", Ctxt1, fun format/2)];
+format_1(#k_guard_not{arg=A}, Ctxt) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt, 2),
+    ["guard_not",nl_indent(Ctxt1),format(A, Ctxt1)];
+format_1(#k_protected{body=B,ret=Rs}, Ctxt) ->
+    Ctxt1 = ctxt_bump_indent(Ctxt, 2),
+    ["protected",nl_indent(Ctxt1),format(B, Ctxt1),
+    nl_indent(Ctxt),format_ret(Rs, Ctxt)];
 format_1(#k_call{op=Op,args=As,ret=Rs}, Ctxt) ->
     Txt = ["call (",format(Op, ctxt_bump_indent(Ctxt, 6)),$)],
     Ctxt1 = ctxt_bump_indent(Ctxt, 2),
@@ -178,10 +185,10 @@ format_1(#k_bif{op=Op,args=As,ret=Rs}, Ctxt) ->
     [Txt,$(,format_hseq(As, ", ", Ctxt1, fun format/2),$),
      format_ret(Rs, Ctxt1)
     ];
-%%format_1(#k_test{op=Op,args=As}, Ctxt) ->
-%%    Txt = ["test (",format(Op, ctxt_bump_indent(Ctxt, 6)),$)],
-%%    Ctxt1 = ctxt_bump_indent(Ctxt, 2),
-%%    [Txt,$(,format_hseq(As, ", ", Ctxt1, fun format/2),$)];
+format_1(#k_test{op=Op,args=As}, Ctxt) ->
+    Txt = ["test (",format(Op, ctxt_bump_indent(Ctxt, 6)),$)],
+    Ctxt1 = ctxt_bump_indent(Ctxt, 2),
+    [Txt,$(,format_hseq(As, ", ", Ctxt1, fun format/2),$)];
 format_1(#k_put{arg=A,ret=Rs}, Ctxt) ->
     [format(A, Ctxt),
      format_ret(Rs, ctxt_bump_indent(Ctxt, 1))
@@ -235,7 +242,7 @@ format_1(#k_fdef{func=F,arity=A,vars=Vs,body=B}, Ctxt) ->
     ];
 format_1(#k_mdef{name=N,exports=Es,attributes=As,body=B}, Ctxt) ->
     ["module ",
-     format(#k_atom{name=N}, ctxt_bump_indent(Ctxt, 7)),
+     format(#k_atom{val=N}, ctxt_bump_indent(Ctxt, 7)),
      nl_indent(Ctxt),
      "export [",
      format_vseq(Es,
@@ -319,46 +326,54 @@ format_fa_pair({F,A}, Ctxt) -> [core_atom(F),$/,integer_to_list(A)].
 %% format_attribute({Name,Val}, Context) -> Txt.
 
 format_attribute({Name,Val}, Ctxt) when list(Val) ->
-    Txt = format(#k_atom{name=Name}, Ctxt),
+    Txt = format(#k_atom{val=Name}, Ctxt),
     Ctxt1 = ctxt_bump_indent(Ctxt, width(Txt,Ctxt)+4),
     [Txt," = ",
      $[,format_vseq(Val, "", ",", Ctxt1,
 		    fun (A, C) -> io_lib:write(A) end),$]
     ];
 format_attribute({Name,Val}, Ctxt) ->
-    Txt = format(#k_atom{name=Name}, Ctxt),
+    Txt = format(#k_atom{val=Name}, Ctxt),
     [Txt," = ",io_lib:write(Val)].
 
-format_list_elements(#k_cons{head=H,tail=T}, Ctxt) ->
-    A = canno(T),
-    case T of
-	#k_nil{} when A == [] ->
-	    format(H, Ctxt);
-	#k_cons{} when A == [] ->
-	    Txt = [format(H, Ctxt)|","],
-	    Ctxt1 = ctxt_bump_indent(Ctxt, width(Txt, Ctxt)),
-	    [Txt|format_list_elements(T, Ctxt1)];
-	_ ->
-	    Txt = [format(H, Ctxt)|"|"],
-	    [Txt|format(T, ctxt_bump_indent(Ctxt, width(Txt, Ctxt)))]
-    end.
+format_list_tail(#k_nil{anno=[]}, Ctxt) -> "]";
+format_list_tail(#k_cons{anno=[],hd=H,tl=T}, Ctxt) ->
+    Txt = [$,|format(H, Ctxt)],
+    Ctxt1 = ctxt_bump_indent(Ctxt, width(Txt, Ctxt)),
+    [Txt|format_list_tail(T, Ctxt1)];
+format_list_tail(Tail, Ctxt) ->
+    ["|",format(Tail, ctxt_bump_indent(Ctxt, 1)), "]"].
 
-format_bin_elements(#k_binary_cons{head=H,tail=T,size=S,info=I}, Ctxt) ->
-    A = canno(T),
-    Fe = fun (Eh, Es, Ei, Ct) ->
-		 [format(Eh, Ct),":",format(Es, Ct),"/",io_lib:write(Ei)]
-	 end,
-    case T of
-	#k_zero_binary{} when A == [] ->
-	    Fe(H, S, I, Ctxt);
-	#k_binary_cons{} when A == [] ->
-	    Txt = [Fe(H, S, I, Ctxt)|","],
-	    Ctxt1 = ctxt_bump_indent(Ctxt, width(Txt, Ctxt)),
-	    [Txt|format_bin_elements(T, Ctxt1)];
-	_ ->
-	    Txt = [Fe(H, S, I, Ctxt)|"|"],
-	    [Txt|format(T, ctxt_bump_indent(Ctxt, width(Txt, Ctxt)))]
-    end.
+format_bin_seg(#k_bin_end{anno=[]}, Ctxt) -> "";
+format_bin_seg(#k_bin_seg{anno=[],next=N}=Seg, Ctxt) ->
+    Txt = [$,|format_bin_seg_1(Seg, Ctxt)],
+    [Txt|format_bin_seg(N, ctxt_bump_indent(Ctxt, width(Txt, Ctxt)))];
+format_bin_seg(Seg, Ctxt) ->
+    ["|",format(Seg, ctxt_bump_indent(Ctxt, 2))].
+
+format_bin_seg_1(#k_bin_seg{size=S,unit=U,type=T,flags=Fs,seg=Seg}, Ctxt) ->
+    [format(Seg, Ctxt),
+     ":",format(S, Ctxt),"*",io_lib:write(U),
+     ":",io_lib:write(T),
+     lists:map(fun (F) -> [$-,io_lib:write(F)] end, Fs)
+    ].
+
+% format_bin_elements(#k_binary_cons{hd=H,tl=T,size=S,info=I}, Ctxt) ->
+%     A = canno(T),
+%     Fe = fun (Eh, Es, Ei, Ct) ->
+% 		 [format(Eh, Ct),":",format(Es, Ct),"/",io_lib:write(Ei)]
+% 	 end,
+%     case T of
+% 	#k_zero_binary{} when A == [] ->
+% 	    Fe(H, S, I, Ctxt);
+% 	#k_binary_cons{} when A == [] ->
+% 	    Txt = [Fe(H, S, I, Ctxt)|","],
+% 	    Ctxt1 = ctxt_bump_indent(Ctxt, width(Txt, Ctxt)),
+% 	    [Txt|format_bin_elements(T, Ctxt1)];
+% 	_ ->
+% 	    Txt = [Fe(H, S, I, Ctxt)|"|"],
+% 	    [Txt|format(T, ctxt_bump_indent(Ctxt, width(Txt, Ctxt)))]
+%     end.
 
 indent(Ctxt) -> indent(Ctxt#ctxt.indent, Ctxt).
 

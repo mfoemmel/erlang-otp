@@ -20,7 +20,8 @@
 #include <winsock2.h>
 #endif
 
-#include "errno.h"
+#include <stdio.h>
+#include <errno.h>
 
 /*
  *----------------------------------------------------------------------
@@ -38,7 +39,7 @@
  *----------------------------------------------------------------------
  */
 
-static char errstrbuf[25];
+static char errstrbuf[32];
 
 char *esock_posix_str(int error)
 {
@@ -628,8 +629,9 @@ char *esock_posix_str(int error)
 #ifdef WSA_E_CANCELLED
     case WSA_E_CANCELLED: return "e_cancelled";
 #endif
+    default:
+	sprintf(errstrbuf, "unknown:%d", error); 
+	return errstrbuf;
     }
-    sprintf("unknown:%d", error); 
-    return errstrbuf;
 }
 

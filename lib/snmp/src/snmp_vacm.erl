@@ -80,6 +80,10 @@ auth(ViewType, SecModel, SecName, SecLevel, ContextName) ->
 		 [?vacmGroupName, ?vacmSecurityToGroupStatus]) of
 	    [{value, GN}, {value, ?'RowStatus_active'}] ->
 		GN;
+	    [{value, GN}, {value, RowStatus}] ->
+		?vlog("valid SecModel and SecName but wrong row status:"
+		      "~n   RowStatus: ~p", [RowStatus]),
+		throw({discarded, noGroupName});
 	    _ ->
 		throw({discarded, noGroupName})
 	end,

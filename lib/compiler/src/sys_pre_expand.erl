@@ -29,7 +29,7 @@
 
 -import(ordsets, [list_to_set/1,add_element/2,
 		  union/1,union/2,intersection/1,intersection/2,subtract/2]).
--import(lists,   [member/2,map/2,foldl/3,foldr/3]).
+-import(lists,   [member/2,map/2,foldl/3,foldr/3,sort/1,reverse/1]).
 
 -include("../include/erl_bits.hrl").
 
@@ -42,6 +42,9 @@
 		 defined=[],			%Defined functions
 		 vcount=0,			%Variable counter
 		 func=[],			%Current function
+		 arity=[],			%Arity for current function
+		 fcount=0,			%Local fun count
+		 fun_index=0,			%Global index for funs
 		 bitdefault,
 		 bittypes
 		}).
@@ -142,7 +145,7 @@ attribute(L, Name, Val, St) ->
     St#expand{attributes=St#expand.attributes ++ [{Name,[Val]}]}.
 
 function(L, N, A, Cs0, St0) ->
-    {Cs,St} = clauses(Cs0, St0#expand{func=N}),
+    {Cs,St} = clauses(Cs0, St0#expand{func=N,arity=A,fcount=0}),
     {{function,L,N,A,Cs},St}.
 
 %% -type clauses([Clause], State) ->
@@ -171,12 +174,16 @@ pattern({var,Line,'_'}=Var, St) ->		%Ignore anonymous variable.
     {Var,[],[],St};
 pattern({var,Line,V}=Var, St) ->
     {Var,[V],[],St};
+pattern({char,Line,C}=Char, St) ->
+    {Char,[],[],St};
 pattern({integer,Line,I}=Int, St) ->
     {Int,[],[],St};
 pattern({float,Line,F}=Float, St) ->
     {Float,[],[],St};
 pattern({atom,Line,A}=Atom, St) ->
     {Atom,[],[],St};
+pattern({char,Line,C}=Char, St) ->
+    {Char,[],[],St};
 pattern({string,Line,S}=String, St) ->
     {String,[],[],St};
 pattern({nil,Line}=Nil, St) ->
@@ -234,26 +241,46 @@ guard([G0|Gs0], Vs, St0) ->
     {[G|Gs],union(Hvs, Tvs),union(Hus, Tus),St2};
 guard([], Vs, St) -> {[],[],[],St}.
 
-guard_tests([{op,Line,Op,L0,R0}|Gs0], Vs, St0) ->
-    {L,Lvs,Lus,St1} = expr(L0, Vs, St0),
-    {R,Rvs,Rus,St2} = expr(R0, Vs, St1),
-    {Gs,Gsvs,Gsus,St3} = guard_tests(Gs0, union(Lvs, Rvs), St2),
-    {[{op,Line,Op,L,R}|Gs],union([Lvs,Rvs,Gsvs]),union([Lus,Rus,Gsus]),St3};
-guard_tests([{call,Line,{atom,Lr,record},[A,{atom,Ln,Name}]}|Gs], Vs, St) ->
+guard_tests([Gt0|Gts0], Vs, St0) ->
+    {Gt1,Gvs,Gus,St1} = guard_test(Gt0, Vs, St0),
+    {Gts1,Gsvs,Gsus,St2} = guard_tests(Gts0, union(Gvs, Vs), St1),
+    {[Gt1|Gts1],union(Gvs, Gsvs),union(Gus, Gsus),St2};
+guard_tests([], Vs, St) -> {[],[],[],St}.
+
+guard_test({call,Line,{atom,Lr,record},[A,{atom,Ln,Name}]}, Vs, St) ->
+    record_test(Line, A, Name, Vs, St);
+guard_test({call,Line,{atom,Lr,is_record},[A,{atom,Ln,Name}]}, Vs, St) ->
+    record_test(Line, A, Name, Vs, St);
+guard_test({call,Line,{atom,Lt,Tname},As}, Vs, St) ->
+    Test = {remote,Lt,
+	    {atom,Lt,erlang},
+	    {atom,Lt,normalise_test(Tname, length(As))}},
+    expr({call,Line,Test,As}, Vs, St);
+guard_test(Test, Vs, St) -> expr(Test, Vs, St).
+
+record_test(Line, Term, Name, Vs, St) ->
     Fs = record_fields(Name, St),
-    guard_tests([{op,Line,'==',{call,Line,{atom,Ln,size},[A]},
-		  {integer,Ln,length(Fs)+1}},
-		 {op,Line,'==',{call,Line,{atom,Ln,element},[{integer,Ln,1},A]},
-		  {atom,Ln,Name}}|Gs], Vs, St);
-guard_tests([{call,Line,Test,As0}|Gs0], Vs, St0) ->
-    {As,Asvs,Asus,St1} = expr_list(As0, Vs, St0),
-    {Gs,Gsvs,Gsus,St2} = guard_tests(Gs0, union(Asvs, Vs), St1),
-    TestF = {remote,Line,{atom,Line,erlang},Test},
-    {[{call,Line,TestF,As}|Gs],union(Asvs, Gsvs),union(Asus, Gsus),St2};
-guard_tests([{atom,Line,true}|Gs], Vs, St) ->
-    guard_tests(Gs, Vs, St);
-guard_tests([], Vs, St) ->
-    {[],[],[],St}.
+    expr({op,Line,'and',
+	  {op,Line,'=:=',
+	   {call,Line,{atom,Line,size},[Term]},
+	   {integer,Line,length(Fs)+1}},
+	  {op,Line,'=:=',
+	   {call,Line,{atom,Line,element},[{integer,Line,1},Term]},
+	   {atom,Line,Name}}}, Vs, St).
+
+normalise_test(atom, 1)      -> is_atom;
+normalise_test(binary, 1)    -> is_binary;
+normalise_test(constant, 1)  -> is_constant;
+normalise_test(float, 1)     -> is_float;
+normalise_test(function, 1)  -> is_function;
+normalise_test(integer, 1)   -> is_integer;
+normalise_test(list, 1)      -> is_list;
+normalise_test(number, 1)    -> is_number;
+normalise_test(pid, 1)       -> is_pid; 
+normalise_test(port, 1)      -> is_port; 
+normalise_test(reference, 1) -> is_reference;
+normalise_test(tuple, 1)     -> is_tuple;
+normalise_test(Name, _) -> Name.
 
 %% exprs(Expressions, VisibleVariables, State) ->
 %%	{TransformedExprs,NewVariables,UsedVariables,State'}
@@ -268,24 +295,27 @@ exprs([], Vs, St) ->
 %% expr(Expression, VisibleVariables, State) ->
 %%	{TransformedExpression,NewVariables,UsedVariables,State'}
 
-expr({var,Line,V}, Vs, St) ->
-    {{var,Line,V},[],[V],St};
-expr({integer,Line,I}, Vs, St) ->
-    {{integer,Line,I},[],[],St};
-expr({float,Line,F}, Vs, St) ->
-    {{float,Line,F},[],[],St};
-expr({atom,Line,A}, Vs, St) ->
-    {{atom,Line,A},[],[],St};
-expr({string,Line,S}, Vs, St) ->
-    {{string,Line,S},[],[],St};
-expr({nil,Line}, Vs, St) ->
-    {{nil,Line},[],[],St};
+expr({var,Line,V}=Var, Vs, St) ->
+    {Var,[],[V],St};
+expr({char,Line,C}=Char, Vs, St) ->
+    {Char,[],[],St};
+expr({integer,Line,I}=Int, Vs, St) ->
+    {Int,[],[],St};
+expr({float,Line,F}=Float, Vs, St) ->
+    {Float,[],[],St};
+expr({atom,Line,A}=Atom, Vs, St) ->
+    {Atom,[],[],St};
+expr({string,Line,S}=String, Vs, St) ->
+    {String,[],[],St};
+expr({nil,Line}=Nil, Vs, St) ->
+    {Nil,[],[],St};
 expr({cons,Line,H0,T0}, Vs, St0) ->
     {H,Hvs,Hus,St1} = expr(H0, Vs, St0),
     {T,Tvs,Tus,St2} = expr(T0, Vs, St1),
     {{cons,Line,H,T},union(Hvs, Tvs),union(Hus, Tus),St2};
-expr({lc,Line,E,Qs}, Vs, St) ->
-    lc_tq(Line, E, Qs, {nil,Line}, Vs, St);
+expr({lc,Line,E0,Qs0}, Vs, St0) ->
+    {E1,Qs1,_,Lvs,Lus,St1} = lc_tq(Line, E0, Qs0, {nil,Line}, Vs, St0),
+    {{lc,Line,E1,Qs1},Lvs,Lus,St1};
 expr({tuple,Line,Es0}, Vs, St0) ->
     {Es1,Esvs,Esus,St1} = expr_list(Es0, Vs, St0),
     {{tuple,Line,Es1},Esvs,Esus,St1};
@@ -332,15 +362,8 @@ expr({'receive',Line,Cs0,To0,ToEs0}, Vs, St0) ->
     {{'receive',Line,Cs,To,ToEs},union(Tovs, All),union([Tous|Csuss]),St3};
 expr({'fun',Line,Body}, Vs, St) ->
     fun_tq(Line, Body, Vs, St);
-expr({call,Line,{atom,La,apply},As0}, Vs, St0) when length(As0) == 2 ->
-    {As,Asvs,Asus,St1} = expr_list(As0, Vs, St0),
-    {{call,Line,{remote,La,{atom,La,erlang},{atom,La,apply}},As},Asvs,Asus,St1};
-expr({call,Line,{atom,La,record_info},[{atom,Li,Info},{atom,Ln,Name}]}, Vs, St) ->
-    case Info of
-	size -> {{integer,Line,1+length(record_fields(Name, St))},[],[],St};
-	fields -> {make_list(field_names(record_fields(Name, St)), Line),
-		   [],[],St}
-    end;
+expr({call,Line,{atom,La,is_record},[A,{atom,Ln,Name}]}, Vs, St) ->
+    record_test(Line, A, Name, Vs, St);
 expr({call,Line,{atom,La,N},As0}, Vs, St0) ->
     {As,Asvs,Asus,St1} = expr_list(As0, Vs, St0),
     Ar = length(As),
@@ -354,17 +377,28 @@ expr({call,Line,{atom,La,N},As0}, Vs, St0) ->
 		    {{call,Line,{remote,La,{atom,La,Mod},{atom,La,N}},As},
 		     Asvs,Asus,St1};
 		no ->
-		    {{call,Line,{atom,La,N},As},Asvs,Asus,St1}
+		    case {N,Ar} of
+			{record_info,2} ->
+			    record_info_call(Line, As, St1);
+			_ ->
+			    {{call,Line,{atom,La,N},As},Asvs,Asus,St1}
+		    end
 	    end
     end;
-expr({call,Line,{remote,Lr,{atom,Lm,M},{atom,Lf,F}},As0}, Vs, St0) ->
-    {As1,Asvs,Asus,St1} = expr_list(As0, Vs, St0),
-    {{call,Line,{remote,Lr,{atom,Lm,M},{atom,Lf,F}},As1},Asvs,Asus,St1};
-expr({call,Line,{remote,Lr,M,F},As}, Vs, St) ->
-    expr({call,Line,{atom,Line,apply},[M,F,make_list(As, Line)]}, Vs, St);
+expr({call,Line,{remote,Lr,M,F},As0}, Vs, St0) ->
+    {[M1,F1|As1],Asvs,Asus,St1} = expr_list([M,F|As0], Vs, St0),
+    {{call,Line,{remote,Lr,M1,F1},As1},Asvs,Asus,St1};
 expr({call,Line,F,As0}, Vs, St0) ->
     {[Fun1|As1],Asvs,Asus,St1} = expr_list([F|As0], Vs, St0),
     {{call,Line,Fun1,As1},Asvs,Asus,St1};
+expr({'try',Line,Es0,[]}, Vs, St0) ->
+    {V,St1} = new_var(Line,St0),
+    expr({'try',Line,Es0,[{clause,Line,[V],[],[V]}]}, Vs, St1);
+expr({'try',Line,Es0,Cs0}, Vs, St0) ->
+    {Es,Esvs,Esus,St1} = exprs(Es0, Vs, St0),
+    {Cs,Csvss,Csuss,St2} = icr_clauses(Cs0, union(Esvs, Vs), St1),
+    {All,Some} = new_in(Vs, Csvss),
+    {{'try',Line,Es,Cs},union(Esvs, All),union([Esus|Csuss]),St2};
 expr({'catch',Line,E0}, Vs, St0) ->
     %% Catch exports no new variables.
     {E,Evs,Eus,St1} = expr(E0, Vs, St0),
@@ -375,17 +409,30 @@ expr({match,Line,P0,E0}, Vs, St0) ->
     {{match,Line,P,E},
      union(subtract(Pvs, Vs), Evs),
      union(intersection(Pvs, Vs), union(Eus,Pus)),St2};
-expr({op,Line,'++',{lc,Ll,E,Qs},L2}, Vs, St) ->
-    lc_tq(Ll, E, Qs, L2, Vs, St);
+expr({op,L,'andalso',E1,E2}, Vs, St0) ->
+    {V,St1} = new_var(L,St0),
+    E = make_bool_switch(L,E1,V,
+			 make_bool_switch(L,E2,V,{atom,L,true},
+					  {atom,L,false}),
+			 {atom,L,false}),
+    expr(E, Vs, St1);
+expr({op,L,'orelse',E1,E2}, Vs, St0) ->
+    {V,St1} = new_var(L,St0),
+    E = make_bool_switch(L,E1,V,{atom,L,true},
+			 make_bool_switch(L,E2,V,{atom,L,true},
+					  {atom,L,false})),
+    expr(E, Vs, St1);
+expr({op,Line,'++',{lc,Ll,E0,Qs0},M0}, Vs, St0) ->
+    {E1,Qs1,M1,Lvs,Lus,St1} = lc_tq(Ll, E0, Qs0, M0, Vs, St0),
+    {{op,Line,'++',{lc,Ll,E1,Qs1},M1},Lvs,Lus,St1};
 expr({op,Ll,'++',{string,L1,S1},{string,L2,S2}}, Vs, St) ->
     {{string,L1,S1 ++ S2},[],[],St};
 expr({op,Ll,'++',{string,L1,S1},R0}, Vs, St0) ->
     {R1,Rvs,Rus,St1} = expr(R0, Vs, St0),
     E = case R1 of
 	    {string,L2,S2} -> {string,L1,S1 ++ S2};
-	    Other when length(S1) < 8 -> string_to_conses(L1, S1, R1);
-	    Other -> {op,Ll,'++',{string,L1,S1},R1}
-	end,
+	    Other -> string_to_conses(L1, S1, R1)
+    end,
     {E,Rvs,Rus,St1};
 expr({op,Ll,'++',{cons,Lc,H,T},L2}, Vs, St) ->
     expr({cons,Ll,H,{op,Lc,'++',T,L2}}, Vs, St);
@@ -411,90 +458,78 @@ expr_list([], Vs, St) ->
 %%  Be very careful here to return the variables that are really used
 %%  and really new.
 
-icr_clauses([{clause,Line,H0,G0,B0}|Cs0], Vs, St0) ->
+icr_clauses([], Vs, St) ->
+    {[],[[]],[],St};
+icr_clauses(Clauses, Vs, St) ->
+    icr_clauses2(Clauses, Vs, St).
+
+icr_clauses2([{clause,Line,H0,G0,B0}|Cs0], Vs, St0) ->
     {H,Hvs,Hus,St1} = head(H0, St0),		%Hvs is really used!
     {G,Gvs,Gus,St2} = guard(G0, union(Hvs, Vs), St1),
     {B,Bvs,Bus,St3} = exprs(B0, union([Vs,Hvs,Gvs]), St2),
     New = subtract(union([Hvs,Gvs,Bvs]), Vs),	%Really new
     Used = intersection(union([Hvs,Hus,Gus,Bus]), Vs), %Really used
-    {Cs,Csvs,Csus,St4} = icr_clauses(Cs0, Vs, St3),
+    {Cs,Csvs,Csus,St4} = icr_clauses2(Cs0, Vs, St3),
     {[{clause,Line,H,G,B}|Cs],[New|Csvs],[Used|Csus],St4};
-icr_clauses([], Vs, St) ->
+icr_clauses2([], Vs, St) ->
     {[],[],[],St}.
 
 %% lc_tq(Line, Expr, Qualifiers, More, [VisibleVar], State) ->
-%%	{ListComp,[NewVar],[UsedVar],State'}
-%%
-%% This TQ from Simon PJ pp 127-138.  No need to call ourselves
-%% recursively on append as this is special cased in expr as an
-%% optimisation. As Erlang doesn't have letrec's we explicitly pass
-%% the lambda as an extra argument to be able to do the recursive
-%% call. We also do the argument matching in the head of the lambda
-%% instead of in a 'case' so as to automatically get the correct
-%% shadowing.
+%%	{TransExpr,[TransQual],TransMore,[NewVar],[UsedVar],State'}
 
-lc_tq(Line, E, Qs, More, Vs, St0) ->
-    {Lc,St1} = lc_tq(Line, E, Qs, More, St0),
-    expr(Lc, Vs, St1).
-
-lc_tq(Line, E, [{generate,Lg,P,G}|Qs], More, St0) ->
-    {Fun,St1} = new_var(Lg, St0),
-    {Tail,St2} = new_var(Lg, St1),
-    NewMore = {call,Lg,Fun,[Tail,Fun]},
-    {Lc,St3} = lc_tq(Line, E, Qs, NewMore, St2),
-    {{block,Lg,
-      [{match,Lg,Fun,
-	{'fun',Lg,
-	 {clauses,[{clause,Lg,[{cons,Lg,P,Tail},Fun],[],[Lc]},
-		   {clause,Lg,[{cons,Lg,{var,Lg,'_'},Tail},Fun],[],[NewMore]},
-		   {clause,Lg,[{nil,Lg},Fun],[],[More]}]}}},
-       {call,Lg,Fun,[G,Fun]}]},
-     St3};
-lc_tq(Line, E, [F|Qs], More, St0) ->
-    Lf = element(2, F),
-    {Lc,St1} = lc_tq(Line, E, Qs, More, St0),
-    case erl_lint:is_guard_test(F) of
+lc_tq(Line, E0, [{generate,Lg,P0,G0}|Qs0], M0, Vs, St0) ->
+    {G1,Gvs,Gus,St1} = expr(G0, Vs, St0),
+    {P1,Pvs,Pus,St2} = pattern(P0, St1),
+    {E1,Qs1,M1,Lvs,Lus,St3} = lc_tq(Line, E0, Qs0, M0, union(Pvs, Vs), St2),
+    {E1,[{generate,Lg,P1,G1}|Qs1],M1,
+     union(Gvs, Lvs),union([Gus,Pus,Lus]),St3};
+lc_tq(Line, E0, [F0|Qs0], M0, Vs, St0) ->
+    %% Allow record/2 and expand out as guard test.
+    case erl_lint:is_guard_test(F0) of
 	true ->
-	    {{'if',Lf,
-	      [{clause,Lf,[],[[F]],[Lc]},
-	       {clause,Lf,[],[],[More]}]},St1};
+	    {F1,Fvs,Fus,St1} = guard_tests([F0], Vs, St0),
+	    {E1,Qs1,M1,Lvs,Lus,St2} = lc_tq(Line, E0, Qs0, M0, union(Fvs, Vs), St1),
+	    {E1,F1++Qs1,M1,Lvs,Lus,St2};
 	false ->
-	    case F of
-		{op,_,'not',F1} ->		%Get rid of not operator.
-		    {{'case',Lf,F1,
-		      [{clause,Lf,[{atom,Lf,false}],[],[Lc]},
-		       {clause,Lf,[{atom,Lf,true}],[],[More]}]},St1};
-		Other ->
-		    {{'case',Lf,F,
-		      [{clause,Lf,[{atom,Lf,true}],[],[Lc]},
-		       {clause,Lf,[{atom,Lf,false}],[],[More]}]},St1}
-	    end
+	    {F1,Fvs,Fus,St1} = expr(F0, Vs, St0),
+	    {E1,Qs1,M1,Lvs,Lus,St2} = lc_tq(Line, E0, Qs0, M0, union(Fvs, Vs), St1),
+	    {E1,[F1|Qs1],M1,Lvs,Lus,St2}
     end;
-lc_tq(Line, E, [], More, St) ->
-    {{cons,Line,E,More},St}.
+lc_tq(Line, E0, [], M0, Vs, St0) ->
+    {E1,Evs,Eus,St1} = expr(E0, Vs, St0),
+    {M1,Mvs,Mus,St2} = expr(M0, Vs, St1),
+    {E1,[],M1,union(Evs, Mvs),union(Eus, Mus),St2}.
 
 %% fun_tq(Line, Body, VisibleVariables, State) ->
 %%	{Fun,NewVariables,UsedVariables,State'}
-%%  Transform a fun into into a tuple {'fun',Mod,I,Uniq,Free} and add
-%%  clauses to module_lambdas/4 to hold the code. Process the body
-%%  sequence directly to get the new and used variables, this also
-%%  allows recursives call for the function case to correctly handle
-%%  BIFs. N.B. erl_lint disallows imports so we don't have to check.
+%% Transform an "explicit" fun {'fun', Line, {clauses, Cs}} into an
+%% extended form {'fun', Line, {clauses, Cs}, Info}, unless it is the
+%% name of a BIF (erl_lint has checked that it is not an import).
+%% Process the body sequence directly to get the new and used variables.
+%% "Implicit" funs {'fun', Line, {function, F, A}} are not changed.
 
 fun_tq(Lf, {function,F,A}, Vs, St0) ->
-    %% Core {{'fun',Lf,{function,F,A}},[],[],St0}
     {As,St1} = new_vars(A, Lf, St0),
-    fun_tq(Lf, {clauses,[{clause,Lf,As,[],[{call,Lf,{atom,Lf,F},As}]}]},
-	   Vs, St1);
+    Cs = [{clause,Lf,As,[],[{call,Lf,{atom,Lf,F},As}]}],
+    case erl_internal:bif(F, A) of
+ 	true ->
+ 	    fun_tq(Lf, {clauses,Cs}, Vs, St1);
+ 	false ->
+	    Index = St0#expand.fun_index,
+	    Uniq = erlang:hash(Cs, (1 bsl 27)-1),
+	    {Fname,St2} = new_fun_name(St1),
+ 	    {{'fun',Lf,{function,F,A},{Index,Uniq,Fname}},[],[],
+	     St2#expand{fun_index=Index+1}}
+    end;
 fun_tq(Lf, {clauses,Cs0}, Vs, St0) ->
     Uniq = erlang:hash(Cs0, (1 bsl 27)-1),
-    %% The added clauses are transformed directly to get
-    %% new/used vars.  The line number hack is to get the same
-    %% indentifier in both cases.  This SUCKS!
     {Cs1,Hvss,Frees,St1} = fun_clauses(Cs0, Vs, St0),
     Ufrees = union(Frees),
     Free = intersection(Ufrees, Vs),
-    {{'fun',Lf,{clauses,Cs1},{Uniq,Hvss,Free}},[],Ufrees,St1}.
+    Index = St1#expand.fun_index,
+    {Fname,St2} = new_fun_name(St1),
+    {{'fun',Lf,{clauses,Cs1},{Index,Uniq,Hvss,Free,Fname}},[],Ufrees,
+     St2#expand{fun_index=Index+1}}.
 
 fun_clauses([{clause,L,H0,G0,B0}|Cs0], Vs, St0) ->
     {H,Hvs,Hus,St1} = head(H0, St0),
@@ -506,6 +541,14 @@ fun_clauses([{clause,L,H0,G0,B0}|Cs0], Vs, St0) ->
     {Cs,Hvss,Frees,St4} = fun_clauses(Cs0, Vs, St3),
     {[{clause,L,H,G,B}|Cs],[Hvs|Hvss],[Free|Frees],St4};
 fun_clauses([], Vs, St) -> {[],[],[],St}.
+
+%% new_fun_name(State) -> {FunName,State}.
+
+new_fun_name(#expand{func=F,arity=A,fcount=I}=St) ->
+    Name = "-" ++ atom_to_list(F) ++ "/" ++ integer_to_list(A)
+	++ "-fun-" ++ integer_to_list(I) ++ "-",
+    {list_to_atom(Name),St#expand{fcount=I+1}}.
+
 
 %% normalise_fields([RecDef]) -> [Field].
 %%  Normalise the field definitions to always have a default value. If
@@ -549,10 +592,12 @@ index_expr(F, [_|Fs], I) ->
 %%  scanning the record definition field list!
 
 pattern_fields(Fs, Ms) ->
+    Wildcard = record_wildcard_init(Ms),
     map(fun ({record_field,L,{atom,La,F},D}) ->
 		case find_field(F, Ms) of
 		    {ok,Match} -> Match;
-		    error -> {var,L,'_'}
+		    error when Wildcard =:= none -> {var,L,'_'};
+		    error -> Wildcard
 		end end,
 	Fs).
 
@@ -562,12 +607,18 @@ pattern_fields(Fs, Ms) ->
 %%  again. N.B. We are scanning the record definition field list!
 
 record_inits(Fs, Is) ->
+    WildcardInit = record_wildcard_init(Is),
     map(fun ({record_field,L,{atom,La,F},D}) ->
 		case find_field(F, Is) of
 		    {ok,Init} -> Init;
-		    error -> D
+		    error when WildcardInit =:= none -> D;
+		    error -> WildcardInit
 		end end,
 	Fs).
+
+record_wildcard_init([{record_field,L,{var,La,'_'},D}|Is]) -> D;
+record_wildcard_init([_|Is]) -> record_wildcard_init(Is);
+record_wildcard_init([]) -> none.
 
 %% record_update(Record, RecordName, [RecDefField], [Update], State) ->
 %%	{Expr,State'}
@@ -575,21 +626,28 @@ record_inits(Fs, Is) ->
 %%  record.  Try to be smart and optimise this. This expansion must be
 %%  passed through expr again.
 
-record_update(R, Name, Fs, Us, St) ->
+record_update(R, Name, Fs, Us0, St0) ->
+    {Pre,Us,St1} = record_exprs(Us0, St0),
     Nf = length(Fs),				%# of record fields
     Nu = length(Us),				%# of update fields
     Nc = Nf - Nu,				%# of copy fields
     %% Try to be intelligent about which method of updating record to use.
-    if
-	Nu == 0 ->
-	    {record_el(R, Name, Fs, Us),St};
-	Nu == 1 ->
-	    {record_setel(R, Name, Fs, Us),St};
-	Nc == 1 ->
-	    {record_el(R, Name, Fs, Us),St};
-	true ->
-	    record_match(R, Name, Fs, Us, St)
-    end.	
+    {Update,St} =
+	if
+	    Nu == 0 -> {R,St1};			%No fields updated
+	    Nc =< 1 ->				%Few fields copied
+		{record_el(R, Name, Fs, Us),St1};
+	    Nu =< Nc ->				%Few fields updated
+		{record_setel(R, Name, Fs, Us),St1};
+	    Nu =< 1 ->				%Few fields updated
+		{record_setel(R, Name, Fs, Us),St1};
+	    true ->					%The wide area inbetween
+		record_match(R, Name, Fs, Us, St1)
+	end,
+    {case Pre of
+	 [] -> Update;
+	 _ -> {block,element(2, R),Pre ++ [Update]}
+     end,St}.
 
 %% record_match(Record, RecordName, [RecDefField], [Update], State)
 %%  Build a 'case' expression to modify record fields.
@@ -606,14 +664,11 @@ record_match(R, Name, Fs, Us, St0) ->
      St1}.
 
 record_upd_fs([{record_field,Lf,{atom,La,F},Val}|Fs], Us, St0) ->
+    {P,St1} = new_var(Lf, St0),
+    {Ps,News,St2} = record_upd_fs(Fs, Us, St1),
     case find_field(F, Us) of
-	{ok,New} ->
-	    {Ps,News,St1} = record_upd_fs(Fs, Us, St0),
-	    {[{var,Lf,'_'}|Ps],[New|News],St1};
-	error ->
-	    {P,St1} = new_var(Lf, St0),
-	    {Ps,News,St2} = record_upd_fs(Fs, Us, St1),
-	    {[P|Ps],[P|News],St2}
+	{ok,New} -> {[P|Ps],[New|News],St2};
+	error -> {[P|Ps],[P|News],St2}
     end;
 record_upd_fs([], Us, St) -> {[],[],St}.
 
@@ -639,11 +694,54 @@ record_el2(R, Name, {record_field,Lf,{atom,La,F},Val}, Us) ->
 %% record_setel(Record, RecordName, [RecDefField], [Update])
 %%  Build a nested chain of setelement calls to build updated record tuple.
 
-record_setel(R, Name, Fs, Us) ->
-    foldr(fun ({record_field,Lf,Field,Val}, Acc) ->
-		  I = index_expr(Lf, Field, Name, Fs),
+record_setel(R, Name, Fs, Us0) ->
+    Us1 = foldl(fun ({record_field,Lf,Field,Val}, Acc) ->
+			I = index_expr(Lf, Field, Name, Fs),
+			[{I,Lf,Val}|Acc]
+		end, [], Us0),
+    Us = sort(Us1),
+    foldr(fun ({I,Lf,Val}, Acc) ->
 		  {call,Lf,{atom,Lf,setelement},[I,Acc,Val]} end,
 	  R, Us).
+
+%% Expand a call to record_info/2. We have checked that it is not
+%% shadowed by an import.
+
+record_info_call(Line, [{atom,Li,Info},{atom,Ln,Name}], St) ->
+    case Info of
+	size ->
+	    {{integer,Line,1+length(record_fields(Name, St))},[],[],St};
+	fields ->
+	    {make_list(field_names(record_fields(Name, St)), Line),
+	     [],[],St}
+    end.
+
+%% Break out expressions from an record update list and bind to new
+%% variables. The idea is that we will evaluate all update expressions
+%% before starting to update the record.
+
+record_exprs(Us, St) ->
+    record_exprs(Us, St, [], []).
+
+record_exprs([{record_field,Lf,{atom,La,F}=Name,Val}=Field0|Us], St0, Pre, Fs) ->
+    case is_simple_val(Val) of
+	true ->
+	    record_exprs(Us, St0, Pre, [Field0|Fs]);
+	false ->
+	    {Var,St} = new_var(Lf, St0),
+	    Bind = {match,Lf,Var,Val},
+	    Field = {record_field,Lf,Name,Var},
+	    record_exprs(Us, St, [Bind|Pre], [Field|Fs])
+    end;
+record_exprs([], St, Pre, Fs) ->
+    {reverse(Pre),Fs,St}.
+	    
+is_simple_val({var,_,_}) -> true;
+is_simple_val({atom,_,_}) -> true;
+is_simple_val({integer,_,_}) -> true;
+is_simple_val({float,_,_}) -> true;
+is_simple_val({nil,_}) -> true;
+is_simple_val(Other) -> false.
 
 %% pattern_bin([Element], State) -> {[Element],[Variable],[UsedVar],State}.
 
@@ -691,19 +789,19 @@ bin_element({bin_element,Line,Expr,Size,Type}, Vs, {Es,Esvs,Esus,St0}) ->
     {[{bin_element,Line,Expr1,Size2,Type1}|Es],
      union([Vs1,Vs2,Esvs]),union([Us1,Us2,Esus]),St2}.
 
-bin_expand_strings(Es0) ->
-    foldr(fun ({bin_element,Line,{string,_,S},default,default}, Es) ->
-		  foldr(fun (C, Es) ->
-				[{bin_element,Line,{integer,Line,C},default,default}|Es]
-			end, Es, S);
-	      (E, Es) -> [E|Es]
-	  end, [], Es0).
+bin_expand_strings(Es) ->
+    foldr(fun ({bin_element,Line,{string,_,S},default,default}, Es1) ->
+		  foldr(fun (C, Es2) ->
+				[{bin_element,Line,{char,Line,C},default,default}|Es2]
+			end, Es1, S);
+	      (E, Es1) -> [E|Es1]
+	  end, [], Es).
 
 %% new_var_name(State) -> {VarName,State}.
 
 new_var_name(St) ->
     C = St#expand.vcount,
-    {list_to_atom("%" ++ integer_to_list(C)),St#expand{vcount=C+1}}.
+    {list_to_atom("pre" ++ integer_to_list(C)),St#expand{vcount=C+1}}.
 
 %% new_var(Line, State) -> {Var,State}.
 
@@ -727,7 +825,18 @@ make_list(Ts, Line) ->
     foldr(fun (H, T) -> {cons,Line,H,T} end, {nil,Line}, Ts).
 
 string_to_conses(Line, Cs, Tail) ->
-    foldr(fun (C, T) -> {cons,Line,{integer,Line,C},T} end, Tail, Cs).
+    foldr(fun (C, T) -> {cons,Line,{char,Line,C},T} end, Tail, Cs).
+
+%% Create a case-switch on true/false, generating badarg for all other
+%% values.
+
+make_bool_switch(L,E,V,T,F) ->
+    {'case',L,E,
+     [{clause,L,[{atom,L,true}],[],[T]},
+      {clause,L,[{atom,L,false}],[],[F]},
+      {clause,L,[V],[],
+       [call_fault(L,{tuple,L,[{atom,L,badarg},V]})]}
+     ]}.
 
 %% call_fault(Line, Reason) -> Expr.
 %%  Build a call to erlang:fault/1 with reason Reason.

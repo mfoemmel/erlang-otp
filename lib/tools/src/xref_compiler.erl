@@ -13,7 +13,7 @@
 %% Portions created by Ericsson are Copyright 2000, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id$
+%%     $Id $
 %%
 
 -module(xref_compiler).
@@ -42,11 +42,12 @@
 -import(lists, 
 	[concat/1, foldl/3, map/2, nthtail/2, reverse/1, sort/1, sublist/2]).
 
--import(xsets,
-	[composition/2, difference/2, empty_set/0, family_union/1,
-	 from_term/1, intersection/2, is_empty_set/1, multiple_compositions/2,
-	 projection/2, relation/1, relation_to_family/1, restriction/2,
-	 substitution/2, to_external/1, union/2]).
+-import(sofs,
+	[composite/2, difference/2, empty_set/0, from_term/1,
+	 intersection/2, is_empty_set/1, multiple_relative_product/2,
+	 projection/2, relation/1, relation_to_family/1,
+	 restriction/2, substitution/2, to_external/1, union/2,
+	 union_of_family/1]).
 
 %%
 %%  Exported functions
@@ -165,7 +166,7 @@ t_expr(E, Table) ->
 %%%      | {convert, ObjectType, Type, Type}
 %%%      | {convert, Type, Type}
 %%% Constant = atom() | {atom(), atom()} | MFA | {MFA, MFA}
-%%% Call = function() % often function in xsets
+%%% Call = function() % often function in the sofs module
 %%%      | {module(), function()}
 %%% Type = {line, LineType} | function | module | application | release 
 %%%      | number
@@ -191,7 +192,7 @@ check_expr({variable, Name}, Table) ->
 		    {predef, application, _} -> V0;
 		    {predef, module, _} -> V0;
 		    {predef, function, vertex} -> V0;
-		    {predef, function, edge} -> {call, family_union, V0};
+		    {predef, function, edge} -> {call, union_of_family, V0};
 		    _Else  -> V0
 	    end,
 	    {expr, Type, OType, V};
@@ -384,12 +385,12 @@ conversions(edge, {line, Line}, To)
 conversions(vertex, {line, line}, To) when atom(To) -> ok;
 conversions(_OType, _From, _To) -> not_ok.
 
-set_op(union, {line, _LineType}, edge) -> union_of_families;
-set_op(intersection, {line, _LineType}, edge) -> intersection_of_families;
-set_op(difference, {line, _LineType}, edge) -> difference_of_families;
-set_op(union, function, vertex) -> union_of_families;
-set_op(intersection, function, vertex) -> intersection_of_families;
-set_op(difference, function, vertex) -> difference_of_families;
+set_op(union, {line, _LineType}, edge) -> family_union;
+set_op(intersection, {line, _LineType}, edge) -> family_intersection;
+set_op(difference, {line, _LineType}, edge) -> family_difference;
+set_op(union, function, vertex) -> family_union;
+set_op(intersection, function, vertex) -> family_intersection;
+set_op(difference, function, vertex) -> family_difference;
 set_op(SOp, _Type, _OType) -> SOp.
 
 set_op(weak) -> weak_relation;
@@ -403,9 +404,9 @@ ari_op(difference) -> {erlang, '-'}.
 restriction(ROp, E1, Type1, NE1, Type2, NE2) ->
     {Column, _} = restr_op(ROp),
     case NE1 of 
-	{call, family_union, _E} when ROp == '|' ->
+	{call, union_of_family, _E} when ROp == '|' ->
 	    restriction(Column, Type1, E1, Type2, NE2);
-	{call, family_union, _E} when ROp == '||' ->
+	{call, union_of_family, _E} when ROp == '||' ->
 	    E1p = {inverse, E1},
 	    restriction(Column, Type1, E1p, Type2, NE2);
 	_ ->
@@ -416,7 +417,7 @@ restriction(ROp, E1, Type1, NE1, Type2, NE2) ->
 
 restriction(Column, Type1, VE, Type2, E2) when Type1 == function ->
     M = {convert, vertex, Type2, module, E2},
-    Restr = {call, family_union, {call, restriction, VE, M}},
+    Restr = {call, union_of_family, {call, restriction, VE, M}},
     C = {convert, vertex, Type2, Type1, E2},
     F = family_to_function_vertices(Type1, vertex, C),
     {expr, Type1, edge, {call, restriction, Column, Restr, F}}.
@@ -506,8 +507,8 @@ constant_vertices([], L) ->
     L.
 
 known_vertices('Fun', Cs, T) ->
-    M = substitution(1, Cs),
-    F = family_union(restriction(fetch_value(v, T), M)),
+    M = projection(1, Cs),
+    F = union_of_family(restriction(fetch_value(v, T), M)),
     intersection(Cs, F);
 known_vertices('Mod', Cs, T) ->
     intersection(Cs, fetch_value('M', T));
@@ -517,12 +518,12 @@ known_vertices('Rel', Cs, T) ->
     intersection(Cs, fetch_value('R', T)).
 
 function_vertices_to_family(function, vertex, E) ->
-    {call, family_partition, 1, E};
+    {call, partition_family, 1, E};
 function_vertices_to_family(_Type, _OType, E) ->
     E.
 
 family_to_function_vertices(function, vertex, E) ->
-    {call, family_union, E};
+    {call, union_of_family, E};
 family_to_function_vertices(_Type, _OType, E) ->
     E.
 
@@ -572,10 +573,12 @@ convert(E, OType, FromType, ToType) ->
 general(_ObjectType, FromType, ToType, X) when FromType == ToType ->
     X;
 general(edge, {line, _LineType}, ToType, LEs) -> 
-    VEs = {substitution, ?Q(fun({V1V2,_Ls}) -> V1V2 end), LEs},
+    VEs = {projection, ?Q({external, fun({V1V2,_Ls}) -> V1V2 end}), LEs},
     general(edge, function, ToType, VEs);
 general(edge, function, ToType, VEs) ->
-    MEs = {substitution, ?Q(fun({{M1,_,_},{M2,_,_}}) -> {M1,M2} end), VEs},
+    MEs = {projection, 
+	   ?Q({external, fun({{M1,_,_},{M2,_,_}}) -> {M1,M2} end}),
+	   VEs},
     general(edge, module, ToType, MEs);
 general(edge, module, ToType, MEs) ->
     AEs = {image, {get, me2ae}, MEs},
@@ -583,7 +586,7 @@ general(edge, module, ToType, MEs) ->
 general(edge, application, release, AEs) ->
     {image, {get, ae}, AEs};
 general(vertex, {line, _LineType}, ToType, L) -> 
-    V = {family_partition, ?Q(1), {domain, L}},
+    V = {partition_family, ?Q(1), {domain, L}},
     general(vertex, function, ToType, V);
 general(vertex, function, ToType, V) ->
     M = {domain, V},
@@ -598,7 +601,9 @@ special(_ObjectType, FromType, ToType, X) when FromType == ToType ->
     X;
 special(edge, {line, _LineType}, {line, all_line_call}, Calls) ->
    {put, ?T(mods), 
-       {substitution, ?Q(fun({{{M1,_,_},{M2,_,_}},_}) -> {M1,M2} end), Calls},
+       {projection, 
+	?Q({external, fun({{{M1,_,_},{M2,_,_}},_}) -> {M1,M2} end}), 
+	Calls},
        {put, ?T(def_at), 
            {union, {image, {get, def_at},
                            {union, {domain, {get, ?T(mods)}}, 
@@ -614,13 +619,13 @@ special(edge, function, {line, LineType}, VEs) ->
 	  end,
     line_edges(VEs, Var);
 special(edge, module, ToType, MEs) ->
-    VEs = {image,{substitution, ?Q(fun(FE={{M1,_,_},{M2,_,_}}) -> 
-					   {{M1,M2},FE} 
-				   end),
-		    {union, 
-		     {image, {get, e},
-		      {substitution, ?Q(fun({M1,_M2}) -> M1 end), MEs}}}},
-		   MEs},
+    VEs = {image,
+	   {projection, 
+	    ?Q({external, fun(FE={{M1,_,_},{M2,_,_}}) -> {{M1,M2},FE} end}),
+	    {union, 
+	     {image, {get, e},
+	      {projection, ?Q({external, fun({M1,_M2}) -> M1 end}), MEs}}}},
+	   MEs},
     special(edge, function, ToType, VEs);
 special(edge, application, ToType, AEs) ->
     MEs = {inverse_image, {get, me2ae}, AEs},
@@ -630,8 +635,8 @@ special(edge, release, ToType, REs) ->
     special(edge, application, ToType, AEs);
 special(vertex, function, {line, _LineType}, V) ->
     {restriction, 
-       {family_union, {restriction, {get, def_at}, {domain, V}}},
-       {family_union, V}};
+       {union_of_family, {restriction, {get, def_at}, {domain, V}}},
+       {union_of_family, V}};
 special(vertex, module, ToType, M) ->
     V = {restriction, {get, v}, M},
     special(vertex, function, ToType, V);
@@ -645,18 +650,19 @@ special(vertex, release, ToType, R) ->
 line_edges(VEs, CallAt) ->
     {put, ?T(ves), VEs, 
         {put, ?T(m1), 
-             {substitution, ?Q(fun({{M1,_,_},_}) -> M1 end), {get, ?T(ves)}},
-	     {image, {substitution, ?Q(fun(C={VV,_L}) -> {VV,C} end),
-			  {union, {image, {get, CallAt}, {get, ?T(m1)}}}},
+             {projection, ?Q({external, fun({{M1,_,_},_}) -> M1 end}), 
+	      {get, ?T(ves)}},
+	     {image, {projection, ?Q({external, fun(C={VV,_L}) -> {VV,C} end}),
+		      {union, {image, {get, CallAt}, {get, ?T(m1)}}}},
 		     {get, ?T(ves)}}}}.
 
 %% {(((v1,l1),(v2,l2)),l) : 
 %%       (v1,l1) in DefAt and (v2,l2) in DefAt and ((v1,v2),L) in CallAt}
 funs_to_lines(DefAt, CallAt) ->
-    T1 = multiple_compositions({DefAt, DefAt}, substitution(1, CallAt)),
-    T2 = composition(projection(1, T1), CallAt),
+    T1 = multiple_relative_product({DefAt, DefAt}, projection(1, CallAt)),
+    T2 = composite(substitution(1, T1), CallAt),
     Fun = fun({{{V1,V2},{L1,L2}},Ls}) -> {{{V1,L1},{V2,L2}},Ls} end,
-    substitution(Fun, T2).
+    projection({external, Fun}, T2).
 
 what_type('Rel')         -> release;
 what_type('App')         -> application;
@@ -680,7 +686,7 @@ type_ord(release)               -> 5.
 %% Calls (with line numbers) are "straightened" out here, but will be
 %% families again shortly, unless just counted.
 un_familiarize(function, vertex, E) ->
-    {family_union, E};
+    {union_of_family, E};
 un_familiarize({line, _}, edge, E) ->
     {family_to_relation, E};
 un_familiarize(_Type, _OType, E) ->
@@ -727,7 +733,7 @@ find_nodes(Tuple, I, T) when tuple(Tuple) ->
 		  {[NA | L0], NI, NT}
 	  end,
     {NL, NI, T1} = foldl(Fun, {[], I, T}, L),
-    Tag = case Tag0 of {_,_} -> Tag0; _Else -> {xsets, Tag0} end,
+    Tag = case Tag0 of {_,_} -> Tag0; _Else -> {sofs, Tag0} end,
     find_node({apply, Tag, NL}, NI, T1).
 
 find_node(E, I, T) ->

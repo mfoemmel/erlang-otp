@@ -29,12 +29,13 @@
 -export([pseudo/1,
 	 pseudo/2,
 	 start/1, start/2, start/3,
+	 start/5,
 	 start_link/1, start_link/2, start_link/3,
 	 stop/1,
 	 relay/1]).
 
 %% Internal exports 
--export([wait_for_slave/6, slave_start/1, wait_for_master_to_die/2]).
+-export([wait_for_slave/7, slave_start/1, wait_for_master_to_die/2]).
 
 -import(error_logger, [error_msg/2]).
 
@@ -143,6 +144,10 @@ start_link(Host, Name, Args) ->
     start(Host, Name, Args, self()).
 
 start(Host0, Name, Args, LinkTo) ->
+    Prog = lib:progname(),
+    start(Host0, Name, Args, LinkTo, Prog).
+
+start(Host0, Name, Args, LinkTo, Prog) ->
     Host =
 	case net_kernel:longnames() of
 	    true -> dns(Host0);
@@ -152,7 +157,7 @@ start(Host0, Name, Args, LinkTo) ->
     Node = list_to_atom(lists:concat([Name, "@", Host])),
     case net_adm:ping(Node) of
 	pang ->
-	    start_it(Host, Name, Node, Args, LinkTo);
+	    start_it(Host, Name, Node, Args, LinkTo, Prog);
 	pong -> 
 	    {error, {already_running, Node}}
     end.
@@ -166,17 +171,18 @@ stop(Node) ->
 
 %% Starts a new slave node.
 
-start_it(Host, Name, Node, Args, LinkTo) ->
-    spawn(?MODULE, wait_for_slave, [self(), Host, Name, Node, Args, LinkTo]),
+start_it(Host, Name, Node, Args, LinkTo, Prog) ->
+    spawn(?MODULE, wait_for_slave, [self(), Host, Name, Node, Args, LinkTo,
+				    Prog]),
     receive
 	{result, Result} -> Result
     end.
 
 %% Waits for the slave to start.
 
-wait_for_slave(Parent, Host, Name, Node, Args, LinkTo) ->
+wait_for_slave(Parent, Host, Name, Node, Args, LinkTo, Prog) ->
     Waiter = register_unique_name(0),
-    case mk_cmd(Host, Name, Args, Waiter) of
+    case mk_cmd(Host, Name, Args, Waiter, Prog) of
 	{ok, Cmd} ->
 %%	    io:format("Command: ~s~n", [Cmd]),
 	    open_port({spawn, Cmd}, [stream]),
@@ -237,13 +243,13 @@ register_unique_name(Number) ->
 %% If the node should run on the local host, there is
 %% no need to use rsh.
 
-mk_cmd(Host, Name, Args, Waiter) ->
-    Prog = lib:progname(),			% assuming the path is right 
-    Master = lists:concat([]),
-    BasicCmd = lists:concat([Prog, " -detached -noinput -master ", node(), " ",
-			     long_or_short(), Name,
-			     " -s slave slave_start ", node(), " ", Waiter, " ",
-			     Args]),
+mk_cmd(Host, Name, Args, Waiter, Prog) ->
+    BasicCmd = lists:concat([Prog,
+			     " -detached -noinput -master ", node(),
+			     " ", long_or_short(), Name, "@", Host,
+			     " -s slave slave_start ", node(),
+			     " ", Waiter,
+			     " ", Args]),
 	   
     case after_char($@, atom_to_list(node())) of
 	Host ->

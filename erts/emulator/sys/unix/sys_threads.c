@@ -26,7 +26,8 @@
 #endif
 
 #include "sys.h"
-#include "driver.h"
+#include "erl_driver.h"
+#include "erl_threads.h"
 #include <signal.h>
 
 
@@ -58,7 +59,7 @@ struct _thread_data
 
 static pthread_mutex_t sys_mutex[MAX_SYS_MUTEX];
 
-erl_mutex_t erts_mutex_create()
+erts_mutex_t erts_mutex_create()
 {
     pthread_mutex_t* mp = (pthread_mutex_t*)
 	sys_alloc(sizeof(pthread_mutex_t));
@@ -66,10 +67,10 @@ erl_mutex_t erts_mutex_create()
 	sys_free((void*)mp);
 	return NULL;
     }
-    return (erl_mutex_t) mp;
+    return (erts_mutex_t) mp;
 }
 
-erl_mutex_t erts_mutex_sys(int mno)
+erts_mutex_t erts_mutex_sys(int mno)
 {
     pthread_mutex_t* mp;    
     if (mno >= MAX_SYS_MUTEX || mno < 0)
@@ -77,7 +78,7 @@ erl_mutex_t erts_mutex_sys(int mno)
     mp = &sys_mutex[mno];
     if (pthread_mutex_init(mp,NULL))
 	return NULL;
-    return (erl_mutex_t) mp;
+    return (erts_mutex_t) mp;
 }
 
 #ifndef HAVE_PTHREAD_ATFORK
@@ -97,7 +98,7 @@ int erts_atfork_sys(void (*prepare)(void),
 }
 
 
-int erts_mutex_destroy(erl_mutex_t mtx)
+int erts_mutex_destroy(erts_mutex_t mtx)
 {
     if (mtx != NULL) {
 	int code = pthread_mutex_destroy((pthread_mutex_t*)mtx);
@@ -107,17 +108,17 @@ int erts_mutex_destroy(erl_mutex_t mtx)
     return -1;
 }
 
-int erts_mutex_lock (erl_mutex_t mtx)
+int erts_mutex_lock (erts_mutex_t mtx)
 {
     return pthread_mutex_lock((pthread_mutex_t*) mtx);
 }
 
-int erts_mutex_unlock (erl_mutex_t mtx)
+int erts_mutex_unlock (erts_mutex_t mtx)
 {
     return pthread_mutex_unlock((pthread_mutex_t*) mtx);
 }
 
-erl_cond_t erts_cond_create()
+erts_cond_t erts_cond_create()
 {
     pthread_cond_t* cv = (pthread_cond_t*)
 	sys_alloc(sizeof(pthread_cond_t));
@@ -125,10 +126,10 @@ erl_cond_t erts_cond_create()
 	sys_free((void*)cv);
 	return NULL;
     }
-    return (erl_cond_t) cv;
+    return (erts_cond_t) cv;
 }
 
-int erts_cond_destroy(erl_cond_t cv)
+int erts_cond_destroy(erts_cond_t cv)
 {
     if (cv != NULL) {
 	int code = pthread_cond_destroy((pthread_cond_t*)cv);
@@ -138,17 +139,17 @@ int erts_cond_destroy(erl_cond_t cv)
     return -1;
 }
 
-int erts_cond_signal(erl_cond_t cv)
+int erts_cond_signal(erts_cond_t cv)
 {
     return pthread_cond_signal((pthread_cond_t*) cv);
 }
 
-int erts_cond_broadcast (erl_cond_t cv)
+int erts_cond_broadcast (erts_cond_t cv)
 {
     return pthread_cond_broadcast((pthread_cond_t*) cv);
 }
 
-int erts_cond_wait(erl_cond_t cv, erl_mutex_t mtx)
+int erts_cond_wait(erts_cond_t cv, erts_mutex_t mtx)
 {
     int res;
     do {
@@ -157,7 +158,7 @@ int erts_cond_wait(erl_cond_t cv, erl_mutex_t mtx)
     return res;
 }
 
-int erts_cond_timedwait(erl_cond_t cv, erl_mutex_t mtx, long time)
+int erts_cond_timedwait(erts_cond_t cv, erts_mutex_t mtx, long time)
 {
     SysTimeval tv;
     struct timespec ts;
@@ -183,7 +184,7 @@ int erts_cond_timedwait(erl_cond_t cv, erl_mutex_t mtx, long time)
     return res;
 }
 
-static void* erl_thread_func_wrap(void* args)
+static void* erts_thread_func_wrap(void* args)
 {
     struct _thread_data td;
     sigset_t new;
@@ -202,7 +203,7 @@ static void* erl_thread_func_wrap(void* args)
 }
 
 
-int erts_thread_create(erl_thread_t* tpp, 
+int erts_thread_create(erts_thread_t* tpp, 
 		      void* (*func)(void*),
 		      void* arg,
 		      int detached)
@@ -222,18 +223,18 @@ int erts_thread_create(erl_thread_t* tpp,
     pthread_attr_setdetachstate(&attr, detached ?
 				PTHREAD_CREATE_DETACHED :
 				PTHREAD_CREATE_JOINABLE);
-    if ((code = pthread_create(&thr, &attr, erl_thread_func_wrap,
+    if ((code = pthread_create(&thr, &attr, erts_thread_func_wrap,
 			       (void*) td)) == 0)
-	*tpp = (erl_thread_t) thr;
+	*tpp = (erts_thread_t) thr;
     else
 	sys_free(td);
     pthread_attr_destroy(&attr);
     return code;
 }
 
-erl_thread_t erts_thread_self()
+erts_thread_t erts_thread_self()
 {
-    return (erl_thread_t) pthread_self();
+    return (erts_thread_t) pthread_self();
 }
 
 void erts_thread_exit(void* val)
@@ -241,12 +242,12 @@ void erts_thread_exit(void* val)
     pthread_exit(val);
 }
 
-int erts_thread_join(erl_thread_t tp, void** vp)
+int erts_thread_join(erts_thread_t tp, void** vp)
 {
     return pthread_join((pthread_t)tp, vp);
 }
 
-int erts_thread_kill(erl_thread_t tp)
+int erts_thread_kill(erts_thread_t tp)
 {
     return pthread_kill((pthread_t)tp, SIGINT);
 }
@@ -267,7 +268,7 @@ int erts_thread_sigwait(const sigset_t *set, int *sig)
 
 static mutex_t sys_mutex[MAX_SYS_MUTEX];
 
-erl_mutex_t erts_mutex_create()
+erts_mutex_t erts_mutex_create()
 {
     mutex_t* mp = (mutex_t*)
 	sys_alloc(sizeof(mutex_t));
@@ -275,10 +276,10 @@ erl_mutex_t erts_mutex_create()
 	sys_free((void*)mp);
 	return NULL;
     }
-    return (erl_mutex_t) mp;
+    return (erts_mutex_t) mp;
 }
 
-erl_mutex_t erts_mutex_sys(int mno)
+erts_mutex_t erts_mutex_sys(int mno)
 {
     mutex_t* mp;    
     if (mno >= MAX_SYS_MUTEX || mno < 0)
@@ -286,7 +287,7 @@ erl_mutex_t erts_mutex_sys(int mno)
     mp = &sys_mutex[mno];
     if (mutex_init(mp, USYNC_THREAD, NULL))
 	return NULL;
-    return (erl_mutex_t) mp;
+    return (erts_mutex_t) mp;
 }
 
 int erts_atfork_sys(void (*prepare)(void),
@@ -297,7 +298,7 @@ int erts_atfork_sys(void (*prepare)(void),
   return 0;
 }
 
-int erts_mutex_destroy(erl_mutex_t mtx)
+int erts_mutex_destroy(erts_mutex_t mtx)
 {
     if (mtx != NULL) {
 	int code = mutex_destroy((mutex_t*)mtx);
@@ -307,17 +308,17 @@ int erts_mutex_destroy(erl_mutex_t mtx)
     return -1;
 }
 
-int erts_mutex_lock (erl_mutex_t mtx)
+int erts_mutex_lock (erts_mutex_t mtx)
 {
     return mutex_lock((mutex_t*) mtx);
 }
 
-int erts_mutex_unlock (erl_mutex_t mtx)
+int erts_mutex_unlock (erts_mutex_t mtx)
 {
     return mutex_unlock((mutex_t*) mtx);
 }
 
-erl_cond_t erts_cond_create()
+erts_cond_t erts_cond_create()
 {
     cond_t* cv = (cond_t*)
 	sys_alloc(sizeof(cond_t));
@@ -325,10 +326,10 @@ erl_cond_t erts_cond_create()
 	sys_free((void*)cv);
 	return NULL;
     }
-    return (erl_cond_t) cv;
+    return (erts_cond_t) cv;
 }
 
-int erts_cond_destroy(erl_cond_t cv)
+int erts_cond_destroy(erts_cond_t cv)
 {
     if (cv != NULL) {
 	int code = cond_destroy((cond_t*)cv);
@@ -338,17 +339,17 @@ int erts_cond_destroy(erl_cond_t cv)
     return -1;
 }
 
-int erts_cond_signal(erl_cond_t cv)
+int erts_cond_signal(erts_cond_t cv)
 {
     return cond_signal((cond_t*) cv);
 }
 
-int erts_cond_broadcast (erl_cond_t cv)
+int erts_cond_broadcast (erts_cond_t cv)
 {
     return cond_broadcast((cond_t*) cv);
 }
 
-int erts_cond_wait(erl_cond_t cv, erl_mutex_t mtx)
+int erts_cond_wait(erts_cond_t cv, erts_mutex_t mtx)
 {
     int res;
     do {
@@ -357,7 +358,7 @@ int erts_cond_wait(erl_cond_t cv, erl_mutex_t mtx)
     return res;
 }
 
-int erts_cond_timedwait(erl_cond_t cv, erl_mutex_t mtx, long time)
+int erts_cond_timedwait(erts_cond_t cv, erts_mutex_t mtx, long time)
 {
     SysTimeval tv;
     struct timespec ts;
@@ -382,7 +383,7 @@ int erts_cond_timedwait(erl_cond_t cv, erl_mutex_t mtx, long time)
     return res;
 }
 
-static void* erl_thread_func_wrap(void* args)
+static void* erts_thread_func_wrap(void* args)
 {
     struct _thread_data td;
     sigset_t new;
@@ -401,7 +402,7 @@ static void* erl_thread_func_wrap(void* args)
 }
 
 
-int erts_thread_create(erl_thread_t* tpp,
+int erts_thread_create(erts_thread_t* tpp,
 		      void* (*func)(void*),
 		      void* arg,
 		      int detached)
@@ -417,17 +418,17 @@ int erts_thread_create(erl_thread_t* tpp,
     td->arg  = arg;
 
     if ((code = thr_create(NULL, 0, 
-			   erl_thread_func_wrap, (void*) td, 
+			   erts_thread_func_wrap, (void*) td, 
 			   detached ? THR_DETACHED : 0, &thr)) == 0)
-	*tpp = (erl_thread_t) thr;
+	*tpp = (erts_thread_t) thr;
     else
 	sys_free(td);
     return code;
 }
 
-erl_thread_t erts_thread_self()
+erts_thread_t erts_thread_self()
 {
-    return (erl_thread_t) thr_self();
+    return (erts_thread_t) thr_self();
 }
 
 void erts_thread_exit(void* val)
@@ -435,12 +436,12 @@ void erts_thread_exit(void* val)
     thr_exit(val);
 }
 
-int erts_thread_join(erl_thread_t tp, void** vp)
+int erts_thread_join(erts_thread_t tp, void** vp)
 {
     return thr_join((thread_t)tp, NULL, vp);
 }
 
-int erts_thread_kill(erl_thread_t tp)
+int erts_thread_kill(erts_thread_t tp)
 {
     return thr_kill((thread_t)tp, SIGINT);
 }
@@ -458,12 +459,12 @@ int erts_thread_sigwait(const sigset_t *set, int *sig)
 
 #else
 
-erl_mutex_t erts_mutex_create()
+erts_mutex_t erts_mutex_create()
 {
     return NULL;
 }
 
-erl_mutex_t erts_mutex_sys(int mno)
+erts_mutex_t erts_mutex_sys(int mno)
 {
     return NULL;
 }
@@ -475,52 +476,52 @@ int erts_atfork_sys(void (*prepare)(void),
     return -1;
 }
 
-int erts_mutex_destroy(erl_mutex_t mtx)
+int erts_mutex_destroy(erts_mutex_t mtx)
 {
     return -1;
 }
 
-int erts_mutex_lock (erl_mutex_t mtx)
+int erts_mutex_lock (erts_mutex_t mtx)
 {
     return -1;
 }
 
-int erts_mutex_unlock (erl_mutex_t mtx)
+int erts_mutex_unlock (erts_mutex_t mtx)
 {
     return -1;
 }
 
-erl_cond_t erts_cond_create()
+erts_cond_t erts_cond_create()
 {
     return NULL;
 }
 
-int erts_cond_destroy(erl_cond_t cv)
+int erts_cond_destroy(erts_cond_t cv)
 {
     return -1;
 }
 
-int erts_cond_signal(erl_cond_t cv)
+int erts_cond_signal(erts_cond_t cv)
 {
     return -1;
 }
 
-int erts_cond_broadcast (erl_cond_t cv)
+int erts_cond_broadcast (erts_cond_t cv)
 {
     return -1;
 }
 
-int erts_cond_wait(erl_cond_t cv, erl_mutex_t mtx)
+int erts_cond_wait(erts_cond_t cv, erts_mutex_t mtx)
 {
     return -1;
 }
 
-int erts_cond_timedwait(erl_cond_t cp, erl_mutex_t mp, long time)
+int erts_cond_timedwait(erts_cond_t cp, erts_mutex_t mp, long time)
 {
     return -1;
 }
 
-int erts_thread_create(erl_thread_t* tpp, 
+int erts_thread_create(erts_thread_t* tpp, 
 		      void* (*func)(void*),
 		      void* arg,
 		      int detached)
@@ -528,7 +529,7 @@ int erts_thread_create(erl_thread_t* tpp,
     return -1;
 }
 
-erl_thread_t erts_thread_self()
+erts_thread_t erts_thread_self()
 {
     return NULL;
 }
@@ -537,12 +538,12 @@ void erts_thread_exit(void* val)
 {
 }
 
-int erts_thread_join(erl_thread_t tp, void** vp)
+int erts_thread_join(erts_thread_t tp, void** vp)
 {
     return -1;
 }
 
-int erts_thread_kill(erl_thread_t tp)
+int erts_thread_kill(erts_thread_t tp)
 {
     return -1;
 }

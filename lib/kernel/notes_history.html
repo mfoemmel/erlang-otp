@@ -7,6 +7,551 @@
 <BLOCKQUOTE>
 <P>This document describes the changes made to the Kernel application.
 
+
+<H2>Kernel 2.6.2</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+<CODE>inet_res:nslookup/4</CODE> has been made backwards compatible.
+<br>Own Id: OTP-3763<br>
+Aux Id: Seq 4972
+
+<LI>
+When R6 nodes and unpatched R7 nodes are in the same
+network, <CODE>global:register_name</CODE> hangs. This is fixed
+with a patch to R7. Patched R7 nodes can communicate with
+unpatched R7 nodes.
+<br>Own Id: OTP-3714
+
+<LI>
+A hanging bug in the protocol between dist_ac and
+application_controller has been fixed. It occurred
+when dist_ac had stopped an application with 
+{ac_change_application_req,AppName,stop_it} and then
+tried to start it with {ac_change_application_req,
+AppName,{takeover,FromNode,RestartType}}.
+<br>Own Id: OTP-3773<br>
+Aux Id: Seq 4996
+
+
+<LI>
+If a new application was added using code:replace_path/2,
+the code:lib_dir/1 function would fail on the new application
+name. This has been corrected.
+<br>Own Id: OTP-3780<br>
+Aux Id: Seq 5003
+
+
+<LI>
+The internal inet_db counter next_id did not keep within
+the bounds [0, 65535] imposed by DNS query field width.
+The reply was then not recognized since the reply
+id was truncated to 16 bits. This bug is now fixed.
+<br>Own Id: OTP-3798<br>
+Aux Id: Seq 5001
+
+
+<LI>
+The default receive buffer size for UDP has been 
+restored to 8192 bytes, which it was before R7.
+<br>Own Id: OTP-3807<br>
+Aux Id: OTP-3797
+
+
+<LI>
+gen_upd:recv/2,3 now works better. The option 
+combination [binary, {active, false}] was broken.
+<br>Own Id: OTP-3823
+
+
+<LI>
+A bug in efile_drv that randomly caused memory access 
+violation when using file:get_cwd() has been fixed.
+<br>Own Id: OTP-3832
+
+
+<LI>
+gen_tcp:connect/3,4, and gen_udp:send/4 now exits with 
+badarg if an IP address tuple with a field
+integer value that is is not in the range 0 through 
+255 is passed as argument. Previously this caused a 
+function clause.
+<br>Own Id: OTP-3836<br>
+Aux Id: Seq 5091
+
+
+<LI>
+The function inet:gethostbyname/2,3 sometimes returned
+{error, timeout} when failing to lookup a name. This
+has been changed to the more appropriate response
+{error, nxdomain}.
+<br>Own Id: OTP-3883
+
+
+<LI>
+The function inet:gethostbyname/2,3 now accepts an
+IP-string as the Name argument for all resolver
+types. This previously did not work for the built in
+DNS resolver, nor for the /etc/hosts file resolver.
+<br>Own Id: OTP-3886
+
+
+<LI>
+The native version of the resolver for erlang no longer may 
+crash the system due to external causes like catatonic DNS 
+servers.
+<br>Own Id: OTP-3887
+
+
+<LI>
+When a host machine was misconfigured so that 
+inet:gethostbyname/1 returned an empty hostname
+for the host on which an erlang node was started, 
+inet_config crashed with a function clause during node 
+start on some platforms. This has now been fixed.
+<br>Own Id: OTP-3894<br>
+Aux Id: Seq 5127
+
+
+<LI>
+A close of a tcp socket could be delayed up to 5
+seconds after all pending output had been sent. Now
+the socket is closed immediately after all pending
+output has been sent.
+<br>Own Id: OTP-3963<br>
+Aux Id: OTP-3924
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+<CODE>disk_log</CODE> handles huge terms better when reading
+log files using <CODE>chunk/2</CODE>. Bugs in
+<CODE>chunk/2</CODE> and <CODE>chunk_step/3</CODE> as well as in
+<CODE>wrap_log_reader</CODE> have been fixed.
+<br>Own Id: OTP-3716
+
+<LI>
+A number of bug fixes and improvements have been done
+to applications <CODE>runtime_tools</CODE>, 
+<CODE>kernel</CODE> and <CODE>erts</CODE>:
+<UL>
+<br>
+<LI>A read timeout no longer resets the sequential
+trace token. This is an incompatibility towards
+the previous behaviour. Use
+<CODE>seq_trace:set_token([])</CODE> to reset the
+sequential trace token.
+<br>
+<LI><CODE>seq_trace:get_token/0</CODE> and 
+<CODE>seq_trace:set_token/1</CODE> now have compatible
+token formats. 
+<br>
+<LI><CODE>dbg:trace_port/2</CODE> and 
+<CODE>dbg:trace_client/2,3</CODE> now supports trace
+to and read from a size limited "wrap file set".
+<br>
+<LI><CODE>dbg:trace_port_control/1</CODE> now supports
+operation <CODE>get_listen_port</CODE> for the ip
+trace driver.
+<br>
+<LI>New match spec functions 
+<CODE>{is_seq_trace}</CODE> and 
+<CODE>{get_seq_trace}</CODE> has been added to test
+and read the sequential trace token in match specs.
+<br>
+<LI>New match spec functions 
+<CODE>{get_tcw}</CODE> and 
+<CODE>{set_tcw Value}</CODE> that reads and sets 
+a "trace control word" in the node has been added.
+The "trace control word" is a word in each
+Erlang node of at least 24 bits.
+There are also enhancements of BIFs:
+<CODE>erlang:system_info(trace_control_word)</CODE> and
+<CODE>erlang:system_flag(trace_control_word, Value)</CODE>
+for the same purpose.
+<br>
+<LI>A new match spec function
+<CODE>{silent, TrueOrFalse}</CODE> for setting a 
+silent call trace flag per process that inhibits
+call trace messages, both local and global, has
+been added. The BIF 
+<CODE>erlang:trace/3</CODE> has been extended to 
+recognize the flag 'silent' to start a call
+trace in silent mode.
+<br>
+<LI>Some bugs in the <CODE>dbg</CODE> module has been
+fixed, e.g the 'old_trace_call' flag has been
+removed from the 'all' flags list, and the dbg server
+no longer hangs if the supplied tracer fails to
+start.
+<br>
+<LI>A bug in the emulator that made 'EXIT' messages
+from a process involved in a sequential call trace
+get overwritten by the sequential trace token
+itself has been fixed.
+<br>
+<LI>The documentation regarding the above has
+been updated. Especially, the fact that the match spec
+function <CODE>{return_trace}</CODE> destroys the 
+tail recursiveness of the traced function has been 
+pointed out.
+<br>
+</UL>
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3747<br>
+Aux Id: OTP-3592, OTP-3744
+
+<LI>
+Hidden nodes and hidden global groups have been
+introduced. This makes it possible to establish hidden
+connections between Erlang nodes. See <code>global_group(3)</code>,
+and <code>erl(1)</code>.
+<br>Own Id: OTP-3963<br>
+Aux Id: OTP-3916
+
+</UL>
+
+<H2>Kernel 2.6.1 (R7B)</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+A new better and more portable hash BIF, <c>erlang:phash/2</c>, has been
+introduced. The <c>dets</c> module will use the <c>erlang:phash/2</c>
+for newly created tables. To rebuild an old table and start to use the
+new hash BIF, give the <c>{repair,force}</c> option to <c>dets:open_file/2</c>.
+See the documentation.
+<br>Own Id: OTP-3397
+
+<LI>
+In OTP R7A, command line arguments could not be longer than
+255 characters. This restriction has been removed again, but
+since the length limit on atoms is enforced more thoroughly
+than in earlier releases, <CODE>init:get_args/0</CODE> will fail
+for such arguments. A new function
+<CODE>init:get_plain_arguments/0</CODE> has been introduced,
+which returns strings, and should be used instead.
+The same problem with the command line flag <CODE>-s</CODE> is
+solved by the introduction of a new command line flag
+<CODE>-run</CODE>
+with the same semantics as <CODE>-s</CODE>, except that the
+user's function is called with a list of strings instead
+of a list of atoms.
+<br>Own Id: OTP-3687
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+On Unix, <CODE>os:cmd/1</CODE> previously used a dedicated
+subprocess, which meant that calls to <CODE>os:cmd/1</CODE> were
+serialized. This is no longer the case.
+(For R7A users: the solution in R7A was too simple;
+compatibility with earlier releases has been restored.)
+The kernel configuration parameter <CODE>start_os</CODE> has
+been removed.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3466<br>
+Aux Id: seq4333
+
+
+<LI>
+A new callback <CODE>Mod:prep_stop/1</CODE> has been introduced
+in <CODE>application</CODE>, for actions that need to be performed
+before the children are terminated.
+<br>Own Id: OTP-3590<br>
+Aux Id: Seq 4578
+
+
+<LI>
+<CODE>disk_log</CODE>: <CODE>lclose/2</CODE> is a new function.
+<br>Own Id: OTP-3685
+
+
+<LI>
+When supplying option {packet, PacketType} to
+gen_udp:open(Portnum, Options) it now exits with badarg.
+In previous releases this option was silently ignored,
+which was too forgiving since UDP datagrams 
+are packets by definition, and hence this option
+was obsolete. Furthermore, the more exotic 
+PacketType values, e.g. asn1, cdr, sunrm, fcgi, 
+has never been implemented for UDP. 
+Programs that supply this obsolete option 
+to gen_udp:open/2 will probably crash
+when running on this release.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3690
+
+
+</UL>
+<H2>Kernel 2.6 (R7A)</H2>
+<H3>Known problems</H3>
+
+<UL>
+
+<LI>
+<CODE>code:is_loaded/1</CODE> doesn't type check its arguments.
+<br>Own Id: OTP-2607
+
+
+<LI>
+If more than 1024 bytes of text (more than 256 in release R4)
+are pasted into the shell, and this text consists of
+more than one expression sequence (each ending with a period),
+text after the first 1024 bytes may be lost.
+<br>Own Id: OTP-3041
+
+
+</UL>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+If an error occurred when accessing a file, the file
+process died, and further attempts to access the file
+could cause the caller to hang. Now, it will no longer
+hang, but return <CODE>{error, terminated}</CODE>.
+<br>Own Id: OTP-1400<br>
+Aux Id: OTP-1034, OTP-2400
+
+
+<LI>
+Using <code>gen_tcp:send</code> on a closed socket no
+longer causes the caller to hang.
+<br>Own Id: OTP-2714<br>
+Aux Id: seq 1122
+
+<LI>
+A few problems having to do with start phases in the application
+controller were corrected.
+<br>Own Id: OTP-3380<br>
+Aux Id: Seq 4166
+
+
+<LI>
+<CODE>net_adm:names</CODE> always returned the empty list.
+This is now corrected. A similar error was corrected
+in inet_db.
+<br>Own Id: OTP-3432<br>
+Aux Id: Seq 4274
+
+
+<LI>
+<CODE>rpc:multicall</CODE> could leave a <CODE>nodedown</CODE> message
+in the caller's message queue under some circumstances.
+This has been fixed.
+<br>Own Id: OTP-3449<br>
+Aux Id: Seq 4305
+
+
+<LI>
+A fix in the <CODE>disk_log</CODE> module: changing the size of a 
+non-full wrap log could return the error <CODE>einval</CODE>.
+<br>Own Id: OTP-3484<br>
+Aux Id: seq4354, seq4259
+
+
+<LI>
+After using <CODE>erlang:demonitor/1</CODE> on a remote process,
+a <CODE>DOWN</CODE> message would appear anyway if the remote
+node went down. This has been fixed.
+<br>Own Id: OTP-3499<br>
+Aux Id: Seq 4393
+
+
+<LI>
+<CODE>global:register_name</CODE> and similar functions could
+sometimes fail to modify the names consistently on all nodes,
+if new nodes appeared in the network during the operation.
+<br>Own Id: OTP-3552<br>
+Aux Id: Seq 4490
+
+
+<LI>
+If a partly partitioned net is brought together again,
+<CODE>global</CODE> could enter deadlock.
+<br>Own Id: OTP-3575<br>
+Aux Id: OTP-2766
+
+
+<LI>
+In a net which had been partly partitioned and brought
+together again, it could happen that the name registry
+would remain inconsistent indefinitely.
+<br>Own Id: OTP-3576
+
+
+<LI>
+When starting up a configured network, a deadlock could
+occur, especially if the nodes were much different in
+speed. This has been fixed.
+<br>Own Id: OTP-3625<br>
+Aux Id: Seq 4552
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+When several versions of an application existed 
+simultaneously in the lib directory, the code server
+did not neccessarily pick the latest version of the
+application case any version number was greater than 
+9, when in interactive mode (for instance, 1.9 was
+considered later that 1.10).
+<br>Own Id: OTP-2976
+
+
+<LI>
+Documentation for the function application:get_key/1/2
+has been improved.
+<br>Own Id: OTP-3379<br>
+Aux Id: seq4164
+
+
+<LI>
+On Unix, <CODE>os:cmd/1</CODE> previously used a dedicated
+subprocess, which meant that calls to <CODE>os:cmd/1</CODE> were
+serialized. This is no longer the case.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3466<br>
+Aux Id: seq4333
+
+
+<LI>
+The <CODE>disk_log</CODE> module has been improved as regards
+distribution. The value returned from <CODE>open/1</CODE> when
+opening a distributed log has been modified. The modification
+is incompatible with the previously returned value. Attempts
+to open a distributed log on a node running new code from
+a node running old code, and vice versa, results in a
+<CODE>nodedown</CODE> error message.
+<CODE>info/1</CODE> returns two more tags, 'node' and 'distributed'.
+The new	function <CODE>lclose/1</CODE> closes a log on the current 
+node. The layout of the continuation returned from
+<CODE>chunk{_step}</CODE> has	been changed, 
+and the new function <CODE>chunk_info/1</CODE>
+returns the node where chunks are read from. The new
+function <CODE>accessible_logs/0</CODE> returns the names
+of disk logs accessible on the current node.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3531<br>
+Aux Id: Seq 4426, Seq 4258
+
+
+<LI>
+The BIF erlang:monitor(process, Proc) has been extended
+to accept named processes, local and remote. 
+See the documentation for erlang:monitor/2 and 
+erlang:demonitor/1.
+<br>Own Id: OTP-3657
+
+
+<LI>
+The gen_ family (mostly gen_server and gen_fsm)
+and rpc has been rewritten to use the new BIF
+erlang:monitor/2 as much as possible. This should
+improve performance and remove some possibilities 
+of hanging gen_server calls. In particular, 
+gen_server:multi_call/2..4 and 
+rpc:multi_server_call/2,3 should now never hang,
+at least not when all nodes are of this
+release. See also the documentation for 
+gen_server and rpc.
+<br>Own Id: OTP-3660
+
+
+<LI>
+The inet driver (inet_drv, i.e the driver for 
+(TCP&UDP)/IP) and a lot of supporting Erlang 
+code in the application kernel, has been replaced.
+The new code, courtesy of Tony Rogvall,
+eliminates one data relay process per socket
+and thereby gives a throughput boost.
+<br>Own Id: OTP-3661
+
+
+<LI>
+For completeness, a new function 
+rpc:nb_yield/2 has been added. 
+See the documentation.
+<br>Own Id: OTP-3662
+
+
+<LI>
+The <CODE>erlang:info/1</CODE> and <CODE>erlang:system_info/1</CODE> BIFs have been
+merged into one. The recommended way to use the combined
+BIF is by the name <CODE>erlang:system_info/1</CODE>, but
+<CODE>erlang:info/1</CODE> will also work.
+<br>Own Id: OTP-3669
+
+
+<LI>
+There is a new os:getenv/0 function that retrieves a list
+of all (operating system) environment variables.
+<br>Own Id: OTP-3670
+
+
+<LI>
+New socket options for TCP/IP sockets: 
+'tpkt' and 'line'. See the documentation for 
+inet:setopts/2.
+<br>Own Id: OTP-3674
+
+
+<LI>
+Most of the previously undocumented BIFs in the <CODE>erlang</CODE>
+module have been documented. Still undocumented are BIFs
+which are of no use in applications, for instance the set
+of BIFs	used to implement the distribution protocol.
+The newly documented BIFs are:
+<br>
+<CODE>append_element/2</CODE>,
+<CODE>bump_reductions/1</CODE>,
+<CODE>display/1</CODE>,
+<CODE>function_exported/3</CODE>,
+<CODE>garbage_collect/0,1</CODE>,
+<CODE>is_builtin/3</CODE>,
+<CODE>loaded/0</CODE>,
+<CODE>make_tuple/2</CODE>,
+<CODE>md5/1</CODE>,
+<CODE>md5_final/1</CODE>,
+<CODE>md5_init/1</CODE>,
+<CODE>md5_update/2</CODE>,
+<CODE>port_close/1</CODE>,
+<CODE>port_command/2</CODE>,
+<CODE>port_connect/2</CODE>,
+<CODE>port_control/3</CODE>,
+<CODE>port_to_list/1</CODE>,
+<CODE>ref_to_list/1</CODE>,
+<CODE>system_info/1</CODE>, and
+<CODE>yield/0</CODE>.
+<br>Own Id: OTP-3675
+
+
+<LI>
+The new BIF term_to_binary/2 can be used for automatically
+compressing the external representation of an Erlang term.
+The binary_to_term/1 BIF in R7 automatically recognises
+and decompresses such compressed terms.
+<br>Own Id: OTP-3676
+
+
+</UL>
+
 <H2>Kernel 2.4.1</H2>
 <H3>Fixed errors and malfunctions</H3>
 

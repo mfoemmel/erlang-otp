@@ -158,7 +158,7 @@ open_outfile(Outfile0) ->
     end.
 
 duplicates(List) ->
-    Unique = ord_unique(lists:sort(List)),
+    Unique = lists:usort(List),
     {Unique, List -- Unique}.
 
 pick_nonterminals(Grammar) ->
@@ -604,7 +604,7 @@ compute_states2([Sym | Syms], N, S, Try, StateTab, RulePointerTab, CurrState, Go
 				    TerminalTab, Rules, Lc_table);
 		{merge, M, Change_list} ->
 		    %% io:format("Merging with state ~w~n", [M]),
-		    New_current = ord_unique(lists:sort(Change_list)),
+		    New_current = lists:usort(Change_list),
 		    Try1 = case lists:keysearch(M, 1, Try) of
 			       false ->
 				   [{M, New_current} | Try];
@@ -658,7 +658,7 @@ is_terminal(Tab, Terminal) ->
     end.
 		
 get_current_symbols(State) ->
-    ord_unique(lists:sort(get_current_symbols1(State))).
+    lists:usort(get_current_symbols1(State)).
 
 get_current_symbols1([]) ->
     [];
@@ -1749,15 +1749,6 @@ ord_subset(L, []) ->
     false;
 ord_subset(L, [_ | T]) ->
     ord_subset(L, T).
-
-ord_unique([]) ->
-    [];
-ord_unique([H]) ->
-    [H];
-ord_unique([H, H | T]) ->
-    ord_unique([H | T]);
-ord_unique([H | T]) ->
-    [H | ord_unique(T)].
 
 subset([], _) ->
     true;

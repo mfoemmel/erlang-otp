@@ -71,7 +71,7 @@ extern int ei_send_exit(int fd, const erlang_pid *from, const erlang_pid *to, co
 
   /* are we tracing? */
   /* check that he can receive trace tokens first */
-  if (erl_distversion(fd) > 0) token = ei_trace(0,NULL);
+  if (ei_distversion(fd) > 0) token = ei_trace(0,NULL);
 
   index = 5;                                     /* max sizes: */
   ei_encode_version(msgbuf,&index);                     /*   1 */

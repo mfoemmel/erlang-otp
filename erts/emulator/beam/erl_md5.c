@@ -36,25 +36,9 @@
 #include "bif.h"
 #include "erl_binary.h"
 
-typedef unsigned UINT4;		/* Should be 32 bits. */
 typedef void *POINTER;
 
-
-/*
- * MD5 context.
- */
-
-typedef struct {
-    UINT4 state[4];		/* state (ABCD) */
-    UINT4 count[2];		/* number of bits, modulo 2^64 (lsb first) */
-    unsigned char buffer[64];	/* input buffer */
-} MD5_CTX;
-
-void MD5Init(MD5_CTX *);
-void MD5Update(MD5_CTX *, unsigned char *, unsigned int);
-void MD5Final(unsigned char [16], MD5_CTX *);
-
-static int update(MD5_CTX* context, uint32 obj);
+static int update(MD5_CTX* context, Eterm obj);
 
 
 /*
@@ -78,9 +62,9 @@ static int update(MD5_CTX* context, uint32 obj);
 #define S43 15
 #define S44 21
 
-static void MD5Transform(UINT4 [4], unsigned char [64]);
-static void Encode(unsigned char *, UINT4 *, unsigned int);
-static void Decode(UINT4 *, unsigned char *, unsigned int);
+static void MD5Transform(Uint32 [4], unsigned char [64]);
+static void Encode(unsigned char *, Uint32 *, unsigned int);
+static void Decode(Uint32 *, unsigned char *, unsigned int);
 
 static unsigned char PADDING[64] = {
     0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -106,22 +90,22 @@ static unsigned char PADDING[64] = {
  * Rotation is separate from addition to prevent recomputation.
  */
 #define FF(a, b, c, d, x, s, ac) { \
-	(a) += F ((b), (c), (d)) + (x) + (UINT4)(ac); \
+	(a) += F ((b), (c), (d)) + (x) + (Uint32)(ac); \
 	(a) = ROTATE_LEFT ((a), (s)); \
 	(a) += (b); \
 }
 #define GG(a, b, c, d, x, s, ac) { \
-	(a) += G ((b), (c), (d)) + (x) + (UINT4)(ac); \
+	(a) += G ((b), (c), (d)) + (x) + (Uint32)(ac); \
 	(a) = ROTATE_LEFT ((a), (s)); \
 	(a) += (b); \
 }
 #define HH(a, b, c, d, x, s, ac) { \
-	(a) += H ((b), (c), (d)) + (x) + (UINT4)(ac); \
+	(a) += H ((b), (c), (d)) + (x) + (Uint32)(ac); \
 	(a) = ROTATE_LEFT ((a), (s)); \
 	(a) += (b); \
 }
 #define II(a, b, c, d, x, s, ac) { \
-	(a) += I ((b), (c), (d)) + (x) + (UINT4)(ac); \
+	(a) += I ((b), (c), (d)) + (x) + (Uint32)(ac); \
 	(a) = ROTATE_LEFT ((a), (s)); \
 	(a) += (b); \
 }
@@ -322,10 +306,10 @@ void MD5Update (context, input, inputLen)
     index = (unsigned int)((context->count[0] >> 3) & 0x3F);
 
     /* Update number of bits */
-    if ((context->count[0] += ((UINT4)inputLen << 3))
-	< ((UINT4)inputLen << 3))
+    if ((context->count[0] += ((Uint32)inputLen << 3))
+	< ((Uint32)inputLen << 3))
 	context->count[1]++;
-    context->count[1] += ((UINT4)inputLen >> 29);
+    context->count[1] += ((Uint32)inputLen >> 29);
 
     partLen = 64 - index;
 
@@ -394,10 +378,10 @@ void MD5Final (digest, context)
  * MD5 basic transformation. Transforms state based on block.
  */
 static void MD5Transform (state, block)
-    UINT4 state[4];
+    Uint32 state[4];
     unsigned char block[64];
 {
-    UINT4 a = state[0], b = state[1], c = state[2], d = state[3], x[16];
+    Uint32 a = state[0], b = state[1], c = state[2], d = state[3], x[16];
 
     Decode (x, block, 64);
 
@@ -485,12 +469,12 @@ static void MD5Transform (state, block)
 }
 
 /*
- * Encodes input (UINT4) into output (unsigned char). Assumes len is
+ * Encodes input (Uint32) into output (unsigned char). Assumes len is
  * a multiple of 4.
  */
 static void Encode (output, input, len)
     unsigned char *output;
-    UINT4 *input;
+    Uint32 *input;
     unsigned int len;
 {
     unsigned int i, j;
@@ -504,17 +488,17 @@ static void Encode (output, input, len)
 }
 
 /*
- * Decodes input (unsigned char) into output (UINT4). Assumes len is
+ * Decodes input (unsigned char) into output (Uint32). Assumes len is
  * a multiple of 4.
  */
 static void Decode (output, input, len)
-    UINT4 *output;
+    Uint32 *output;
     unsigned char *input;
     unsigned int len;
 {
     unsigned int i, j;
 
     for (i = 0, j = 0; j < len; i++, j += 4)
-	output[i] = ((UINT4)input[j]) | (((UINT4)input[j+1]) << 8) |
-	    (((UINT4)input[j+2]) << 16) | (((UINT4)input[j+3]) << 24);
+	output[i] = ((Uint32)input[j]) | (((Uint32)input[j+1]) << 8) |
+	    (((Uint32)input[j+2]) << 16) | (((Uint32)input[j+3]) << 24);
 }

@@ -1,54 +1,98 @@
-<HTML>
-<HEAD>
-  <TITLE>Debugger Release Notes</TITLE>
-</HEAD>
+<html>
+<head>
+  <title>Debugger Release Notes</title>
+  <style type="text/css">
+<!--
+    body          { background: white; margin: 3em }
 
-<BODY BGCOLOR="#FFFFFF">
+    body          { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1 h2 h3 h4   { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1            { font-size: 48 }
+    p li          { font-family: Verdana, Arial, Helvetica, sans-serif }
+-->
+  </style>
+</head>
 
-<CENTER><H1>Debugger Release Notes</H1></CENTER>
+<body bgcolor=white>
 
-<H2>Debugger 1.5.3</H2>
-<H3>Fixed errors and malfunctions</H3>
-
-<UL>
-
-<LI>
-The debugger could not be run in embedded mode, because the
-dbg_ets module was not listed in the app file.
-<br>Own Id: OTP-3829<br>
-Aux Id: Seq 5084
-
-
-<LI>
-In some cases, the debugger would in a call to undefined
-function <CODE>erts_debug:apply/4</CODE>. This problem has been
-corrected.
-<br>Own Id: OTP-3845<br>
-Aux Id: Seq 5094
+<center><h1>Debugger Release Notes</h1></center>
 
 
-</UL>
+<!--- ################################################################# --->
 
-<H2>Debugger 1.5.2</H2>
-  <H3>Known Problems</H3>
-  <UL>
-    <LI>The "Interpret Dialog" window hangs if one tries to debug-compile a module residing in a sticky directory.<BR>
-      Own Id: OTP-2665
-    </LI>
-    <LI>Included source code is not shown in the "Attached Process" window.<BR>
-       Own Id: OTP-3579
-    </LI>
-  </UL>
+<h2>Debugger 1.5.4</h2>
 
-  <H3>Improvements and New Features</H3>
-  <UL>
-    <LI>The user is notified if the record editor cannot read a record definition, instead of it silently failing.<BR>
-      Own Id: OTP-3437<BR>
-      Aux Id: Seq 4285
-    </LI>
-  </UL>
 
-<P>There are also release notes for <A HREF="notes_history.html">older versions</A>.</P>
+<!--- ----------------------------------------------------------------- --->
 
-</BODY>
-</HTML>
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    Debugger crashed when trying to save or load settings if the default
+    directory <code>$HOME/.erlang_tools/debugger</code> had restricted
+    access.<br>
+    (Own Id: OTP-3244)<br>
+    (Aux Id: seq3852 in supportsystem)<p>
+  </li>
+
+  <li>
+    The debugger can now handle bit syntax construction in guards.<br>
+    (Own Id: OTP-3741)<p>
+  </li>
+
+</ul>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+    Code has been cleared up to get rid of compiler warnings.<br>
+    (Own Id: OTP-3728)<p>
+  </li>
+
+  <li>
+    The debugger now uses debugged information in beam files, instead of
+    compiling the modules to be debugged. That implies modules to be
+    debugged must be compiled beforehand and they must be compiled with
+    <code>debug_info</code> option. Also, there is no need to set any
+    include paths (because no compilation is done). The source code is
+    still needed for display purposes. <br> <p>The record editor has been
+    removed, as record names are no longer known by the debugger.<br>
+    (Own Id: OTP-4151)<p>
+  </li>
+
+</ul>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Known problems</h3>
+
+<ul>
+
+  <li>
+    The "Interpret Dialog" window hangs if one tries to debug-compile a
+    module residing in a sticky directory.<br>
+    (Own Id: OTP-2665)<p>
+  </li>
+
+  <li>
+    Included source code is not shown in the "Attached Process" window.<br>
+    (Own Id: OTP-3579)<p>
+  </li>
+
+</ul>
+
+
+
+There are also release notes for
+<a href="notes_history.html">older versions</a>.
+
+</body>
+</html>

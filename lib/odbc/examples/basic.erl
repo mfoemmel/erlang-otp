@@ -30,175 +30,100 @@
 %-define(UID, "myself").
 %-define(PWD, "secret").
 
-
-% The maximum length for column names + 1.
-% The 1 is there to allow room for a null-termination character.
--define(BufLenColName, 64).
-
-%% The maximum length of table data + 1.
--define(MaxDataBufLen, 1024).
-
 %% Note that the SQL syntax is database and ODBC Driver dependent.
 %% Error handling is not covered by the example.
-%%
+
 start() ->
     % Start a new ODBC server. The application must already be started.
     {ok, _Pid} = odbc:start_link({local, odbc1}, [], []),
 
-    % Allocate an environment handle (also loads the Driver Manager).
-    {?SQL_SUCCESS, EnvHandle} =
-      odbc:sql_alloc_handle(odbc1, ?SQL_HANDLE_ENV, ?SQL_NULL_HANDLE, infinity),
 
-    % Set the ODBC version attribute to tell the Driver we're a 3.0 application.
-    ?SQL_SUCCESS =
-      odbc:sql_set_env_attr(odbc1,
-			      EnvHandle,
-			      ?SQL_ATTR_ODBC_VERSION,
-			      ?SQL_OV_ODBC3,
-			      ?SQL_C_ULONG,
-			      infinity),
-
-    % Allocate a connection handle.
-    {?SQL_SUCCESS, ConnectionHandle} =
-      odbc:sql_alloc_handle(odbc1, ?SQL_HANDLE_DBC, EnvHandle, infinity),
 
     % Connect to the database (also loads the Driver).
     ?SQL_SUCCESS =
-      odbc:sql_connect(odbc1, ConnectionHandle, ?DSN, ?UID, ?PWD, infinity),
-
-    % Turn the autocommit mode off (if you don't want it).
-    ?SQL_SUCCESS = odbc:sql_set_connect_attr(odbc1,
-					     ConnectionHandle,
-					     ?SQL_ATTR_AUTOCOMMIT,
-					     ?SQL_AUTOCOMMIT_OFF,
-					     ?SQL_C_ULONG,
-					     infinity),
-
-    % Allocate a statement handle.
-    {?SQL_SUCCESS, StmtHandle} =
-      odbc:sql_alloc_handle(odbc1, ?SQL_HANDLE_STMT, ConnectionHandle, 
-                            infinity),
+      odbc:sqlConnect(odbc1, ?DSN, ?UID, ?PWD, infinity),
 
     % Create a new table.
-    CreateStmt = "CREATE TABLE TAB1 (ID number(3), DATA char(10))",
-    ?SQL_SUCCESS = odbc:sql_exec_direct(odbc1, StmtHandle, CreateStmt, 
-                                        infinity),
+    CreateStmt = 
+	"CREATE TABLE TAB1 (ID number(3), DATA char(10))",
+    ?SQL_SUCCESS = odbc:sqlExecDirect(odbc1, CreateStmt, infinity),
 
     % Print how many rows were affected by the statement.
-    {?SQL_SUCCESS, NAffectedRows1} = odbc:sql_row_count(odbc1, StmtHandle, 
-                                                        infinity),
-    ok = io:format("Create: Number of affected rows: ~p~n", [NAffectedRows1]),
+    {?SQL_SUCCESS, NAffectedRows1} = 
+	odbc:sqlRowCount(odbc1, infinity),
+    io:format("Create: Number of affected rows: ~p~n", [NAffectedRows1]),
 
-    % Commit the transaction.
-    ?SQL_SUCCESS =
-      odbc:sql_end_tran(odbc1,
-			  ?SQL_HANDLE_DBC,
-			  ConnectionHandle,
-			  ?SQL_COMMIT,
-			  infinity),
 
     % Insert a new row.
-    InsertStmt = "INSERT INTO TAB1 VALUES (1, 'a1a2a3a4a5')",
-    ?SQL_SUCCESS = odbc:sql_exec_direct(odbc1, StmtHandle, InsertStmt, 
-                                        infinity),
+    InsertStmt1 = "INSERT INTO TAB1 VALUES (1, 'a1a2a3a4a5')",
+    ?SQL_SUCCESS = odbc:sqlExecDirect(odbc1,InsertStmt1, infinity),
 
     % Print how many rows were affected by the statement.
     {?SQL_SUCCESS, NAffectedRows2} =
-      odbc:sql_row_count(odbc1, StmtHandle, infinity),
-    ok = io:format("Insert: Number of affected rows: ~p~n", [NAffectedRows2]),
+      odbc:sqlRowCount(odbc1, infinity),
+    io:format("Insert: Number of affected rows: ~p~n", [NAffectedRows2]),
 
-    % Commit the transaction.
-    ?SQL_SUCCESS =
-      odbc:sql_end_tran(odbc1,
-			  ?SQL_HANDLE_DBC,
-			  ConnectionHandle,
-			  ?SQL_COMMIT,
-			  infinity),
-
-    % Select the DATA column from all rows.
-    SelectStmt = "SELECT DATA FROM TAB1",
-    ?SQL_SUCCESS = odbc:sql_exec_direct(odbc1, StmtHandle, SelectStmt, infinity),
+    % Select all columns from all rows.
+    SelectStmt = "SELECT * FROM TAB1",
+    ?SQL_SUCCESS = odbc:sqlExecDirect(odbc1, SelectStmt, infinity),
 
     % Print how many columns there are in the table resulting from the 
     % statement.
     {?SQL_SUCCESS, NSelectedCols} =
-      odbc:sql_num_result_cols(odbc1, StmtHandle, infinity),
-    ok = io:format("Select: Number of columns: ~p~n", [NSelectedCols]),
+      odbc:sqlNumResultCols(odbc1, infinity),
+    io:format("Select: Number of columns: ~p~n", [NSelectedCols]),
 
     % Describe the column(s) of the resulting table.
-    {?SQL_SUCCESS, {ColName, _LenColName}, SqlType, ColSize, _DecDigits, 
-                    _Nullable} =
-      odbc:sql_describe_col(odbc1, StmtHandle, 1, ?BufLenColName, infinity),
+    {?SQL_SUCCESS, ColName1, Nullable1} =
+      odbc:sqlDescribeCol(odbc1, 1, infinity),
+    {?SQL_SUCCESS, ColName2, Nullable2} =
+      odbc:sqlDescribeCol(odbc1, 2, infinity),
 
-    % Calculate the size of the buffer(s) we're going to use to retrieve data.
-    % Make sure you protect yourself from trying to allocate huge amounts of
-    % memory.
-    DispSize = odbc:display_size(SqlType, ColSize),
-    BufSz =
-	if
-	    ColSize > ?MaxDataBufLen ->
-		?MaxDataBufLen;
-	    true ->
-		DispSize
-	end,
+    % Create references for columns
+    Buf1 = odbc:columnRef(),
+    Buf2 = odbc:columnRef(),
 
-    % Allocate data buffer(s).
-    {ok, Buf} =
-      odbc:alloc_buffer(odbc1, ?SQL_C_CHAR, BufSz, infinity),
+    % Bind the refererces to the columns.
+    ?SQL_SUCCESS = odbc:sqlBindColumn(odbc1, 1, Buf1, infinity),
+    ?SQL_SUCCESS = odbc:sqlBindColumn(odbc1, 2, Buf2, infinity),
 
-    % Bind the buffer(s) to the column.
-    ?SQL_SUCCESS = odbc:sql_bind_col(odbc1, StmtHandle, 1, Buf, infinity),
-
-    % Fetch the first row into the bound buffer(s) (only one buffer bound here).
-    ?SQL_SUCCESS = odbc:sql_fetch(odbc1, StmtHandle, infinity),
+    % Fetch the first row of selected rows.
+    ?SQL_SUCCESS = odbc:sqlFetch(odbc1, infinity),
 
     % Read the value from the buffer(s).
-    {ok, {ColValue, _LenColValue}} =
-      odbc:read_buffer(odbc1, Buf, infinity),
-    io:format("Select: Column name: ~p, Data: ~p~n", [ColName, ColValue]),
+    {ok, ColValue1} =
+      odbc:readData(odbc1, Buf1, infinity),
+    io:format("Select: Column name: ~p, Data: ~p~n", [ColName1, ColValue1]),
+    {ok, ColValue2} =
+      odbc:readData(odbc1, Buf2, infinity),
+    io:format("Select: Column name: ~p, Data: ~p~n", [ColName2, ColValue2]),
 
     % Check that there are no more rows to fetch.
-    ?SQL_NO_DATA = odbc:sql_fetch(odbc1, StmtHandle, infinity),
+    ?SQL_NO_DATA = odbc:sqlFetch(odbc1, infinity),
 
     % Close the cursor on the statement.
-    ?SQL_SUCCESS = odbc:sql_close_cursor(odbc1, StmtHandle, infinity),
-
-    % Deallocate the buffer(s).
-    ok = odbc:dealloc_buffer(odbc1, Buf, infinity),
+    ?SQL_SUCCESS = odbc:sqlCloseCursor(odbc1, infinity),
 
     % Delete the table.
     DropStmt = "DROP TABLE TAB1",
-    ?SQL_SUCCESS = odbc:sql_exec_direct(odbc1, StmtHandle, DropStmt, infinity),
+    ?SQL_SUCCESS = odbc:sqlExecDirect(odbc1, DropStmt, infinity),
 
     % Print how many rows were affected by the statement.
-    {?SQL_SUCCESS, NAffectedRows3} = odbc:sql_row_count(odbc1, StmtHandle, 
-                                                        infinity),
-    ok = io:format("Delete: Number of affected rows: ~p~n", [NAffectedRows3]),
-
-    % Commit the transaction.
-    ?SQL_SUCCESS =
-      odbc:sql_end_tran(odbc1,
-			  ?SQL_HANDLE_DBC,
-			  ConnectionHandle,
-			  ?SQL_COMMIT,
-			  infinity),
-
-    % Free the statement handle.
-    ?SQL_SUCCESS =
-	odbc:sql_free_handle(odbc1, ?SQL_HANDLE_STMT, StmtHandle, infinity),
+    {?SQL_SUCCESS, NAffectedRows3} = 
+	odbc:sqlRowCount(odbc1, infinity),
+    io:format("Delete: Number of affected rows: ~p~n", [NAffectedRows3]),
 
     % Disconnect from the database.
-    ?SQL_SUCCESS = odbc:sql_disconnect(odbc1, ConnectionHandle, infinity),
-
-    % Free the connection handle.
-    ?SQL_SUCCESS =
-      odbc:sql_free_handle(odbc1, ?SQL_HANDLE_DBC, ConnectionHandle, infinity),
-
-    % Free the environment handle.
-    ?SQL_SUCCESS =
-      odbc:sql_free_handle(odbc1, ?SQL_HANDLE_ENV, EnvHandle, infinity),
+    ?SQL_SUCCESS = odbc:sqlDisConnect(odbc1, infinity),
 
     % Stop the server.
     ok = odbc:stop(odbc1).
+
+
+
+
+
+
+
 
 

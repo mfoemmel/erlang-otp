@@ -72,7 +72,7 @@
 #include "global.h" 
 #include "bif.h"
 
-#include "driver.h"
+#include "erl_sys_driver.h"
 
 #include "elib_stat.h"
 
@@ -87,14 +87,11 @@ EXTERN_FUNCTION(void, erl_exit, (int n, char*, _DOTS_));
 EXTERN_FUNCTION(void, erl_error, (char*, va_list));
 EXTERN_FUNCTION(void, input_ready, (int, int));
 EXTERN_FUNCTION(void, output_ready, (int, int));
-EXTERN_FUNCTION(int, driver_output, (int, char*, int));
-EXTERN_FUNCTION(int, driver_failure, (int, int));
 EXTERN_FUNCTION(int, driver_interrupt, (int, int));
 EXTERN_FUNCTION(void, increment_time, (int));
 EXTERN_FUNCTION(int, next_time, (_VOID_));
 EXTERN_FUNCTION(int, send_error_to_logger, (uint32));
 EXTERN_FUNCTION(int, schedule, (_VOID_));
-EXTERN_FUNCTION(void, set_busy_port, (int, int));
 EXTERN_FUNCTION(void, set_reclaim_free_function, (FreeFunction));
 EXTERN_FUNCTION(int, erl_mem_info_get, (MEM_PART_STATS *));
 
@@ -506,42 +503,60 @@ static struct fd_data {
     
 
 /* Driver interfaces */
-static long spawn_start(int port_num, char *name,SysDriverOpts* opts);
-static long fd_start(int port_num, char *name, SysDriverOpts* opts);
-static int long vanilla_start(int port_num, char *name, SysDriverOpts* opts);
+static ErlDrvData spawn_start(ErlDrvPort port_num, char *name, SysDriverOpts* opts);
+static ErlDrvData fd_start(ErlDrvPort port_num, char *name, SysDriverOpts* opts);
+static ErlDrvData vanilla_start(ErlDrvPort port_num, char *name, SysDriverOpts* opts);
 static int spawn_init(void);
-static int fd_stop(long fd);
-static int stop(int fd);
-static int ready_input(long fd, int ready_fd);
-static int ready_output(long fd, int ready_fd);
-static int output(long fd, char *buf, int len);
+static void fd_stop(ErlDrvData);
+static void stop(ErlDrvData);
+static void ready_input(ErlDrvData fd, ErlDrvEvent ready_fd);
+static void ready_output(ErlDrvData fd, ErlDrvEvent ready_fd);
+static void output(ErlDrvData fd, char *buf, int len);
 
-const struct driver_entry spawn_driver_entry = {
-  spawn_init,
-  spawn_start,
-  stop,
-  output,
-  ready_input,
-  ready_output,
-  "spawn"
+const struct erl_drv_entry spawn_driver_entry = {
+    spawn_init,
+    spawn_start,
+    stop,
+    output,
+    ready_input,
+    ready_output,
+    "spawn",
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL
 };
-const struct driver_entry fd_driver_entry = {
-  null_func,
-  fd_start,
-  fd_stop,
-  output,
-  ready_input,
-  ready_output,
-  "fd"
+const struct erl_drv_entry fd_driver_entry = {
+    NULL,
+    fd_start,
+    fd_stop,
+    output,
+    ready_input,
+    ready_output,
+    "fd",
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL
 };
-const struct driver_entry vanilla_driver_entry = {
-  null_func,
-  vanilla_start,
-  stop,
-  output,
-  ready_input,
-  ready_output,
-  "vanilla"
+const struct erl_drv_entry vanilla_driver_entry = {
+    NULL,
+    vanilla_start,
+    stop,
+    output,
+    ready_input,
+    ready_output,
+    "vanilla",
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL
 };
 
 /*
@@ -815,129 +830,139 @@ static void init_fd_data(int fd, int port_unused_argument)
   fd_data[fd].remain = fd_data[fd].sz = 0;
 }
 
-static long spawn_start(int port_num, char *name,SysDriverOpts* opts)
+static ErlDrvData spawn_start(ErlDrvPort port_num, char *name,SysDriverOpts* opts)
 {
-  int ifd[2], ofd[2], len, nl, id;
-  char taskname[11], *progname, *bname;
-  char *space_in_command;
-  int packet_bytes = opts->packet_bytes;
-  int read_write = opts->read_write;
-  int use_stdio = opts->use_stdio;
-  int redir_stderr = opts->redir_stderr;
-  int driver_index;
+    int ifd[2], ofd[2], len, nl, id;
+    char taskname[11], *progname, *bname;
+    char *space_in_command;
+    int packet_bytes = opts->packet_bytes;
+    int read_write = opts->read_write;
+    int use_stdio = opts->use_stdio;
+    int redir_stderr = opts->redir_stderr;
+    int driver_index;
 
-  if (!use_stdio){
-    return(-3);
+    if (!use_stdio){
+	return (ErlDrvData) -3;
   }
-  /* Create pipes and set the Erlang task as owner of its 
-   * read and write ends (through save_fd()).
-   */
-  switch (read_write) {
-  case DO_READ:
-    if (pipe(ifd) < 0){
-	return(-2);
+
+    /* Create pipes and set the Erlang task as owner of its 
+     * read and write ends (through save_fd()).
+     */
+    switch (read_write) {
+    case DO_READ:
+	if (pipe(ifd) < 0){
+	    return (ErlDrvData) -2;
+	}
+	if (ifd[0] >= max_files) {
+	    close_pipes(ifd, ofd, read_write);
+	    errno = ENFILE;
+	    return (ErlDrvData) -2;
+	}
+	save_fd(ifd[0]);
+	break;
+    case DO_WRITE:
+	if (pipe(ofd) < 0) {
+	    return (ErlDrvData) -2;
+	}
+	if (ofd[1] >= max_files) {
+	    close_pipes(ifd, ofd, read_write);
+	    errno = ENFILE;
+	    return (ErlDrvData) -2;
+	}
+	save_fd(ofd[1]);
+	break;
+    case DO_READ|DO_WRITE:
+	if (pipe(ifd) < 0){
+	    return (ErlDrvData) -2;
+	}
+	if (ifd[0] >= max_files || pipe(ofd) < 0) {
+	    close_pipes(ifd, ofd, DO_READ);
+	    errno = ENFILE;
+	    return (ErlDrvData) -2;
+	}
+	if (ofd[1] >= max_files) {
+	    close_pipes(ifd, ofd, read_write);
+	    errno = ENFILE;
+	    return (ErlDrvData) -2;
+	}
+	save_fd(ifd[0]);
+	save_fd(ofd[1]);
+	break;
+    default:
+	return (ErlDrvData) -1;
     }
-    if (ifd[0] >= max_files) {
-      close_pipes(ifd, ofd, read_write);
-      errno = ENFILE;
-      return(-2);
+
+    /* Allocate space for program name to be freed by the
+     * spawned task. We use plain_malloc so that the allocated
+     * space is not owned by the Erlang task.
+     */
+
+    if ((progname = plain_malloc(strlen(name) + 1)) == NULL) {
+	close_pipes(ifd, ofd, read_write);
+	errno = ENOMEM;
+	return (ErlDrvData) -2;
     }
-    save_fd(ifd[0]);
-    break;
-  case DO_WRITE:
-    if (pipe(ofd) < 0){
-	return(-2);
+    strcpy(progname, name);
+
+    /* Check if name contains a space 
+     *  (e.g "port_test -o/home/gandalf/tornado/wind/target/erlang")
+     */
+    if ((space_in_command = strrchr(progname, ' ')) != NULL) {
+	*space_in_command = '\0';
     }
-    if (ofd[1] >= max_files) {
-      close_pipes(ifd, ofd, read_write);
-      errno = ENFILE;
-      return(-2);
-    }
-    save_fd(ofd[1]);
-    break;
-  case DO_READ|DO_WRITE:
-    if (pipe(ifd) < 0){
-	return(-2);
-    }
-    if (ifd[0] >= max_files || pipe(ofd) < 0) {
-      close_pipes(ifd, ofd, DO_READ);
-      errno = ENFILE;
-      return(-2);
-    }
-    if (ofd[1] >= max_files) {
-      close_pipes(ifd, ofd, read_write);
-      errno = ENFILE;
-      return(-2);
-    }
-    save_fd(ifd[0]);
-    save_fd(ofd[1]);
-    break;
-  default:
-    return(-1);
-  }
-  /* Allocate space for program name to be freed by the
-   * spawned task. We use plain_malloc so that the allocated
-   * space is not owned by the Erlang task.
-   */
-  if ((progname = plain_malloc(strlen(name) + 1)) == NULL) {
-      close_pipes(ifd, ofd, read_write);
-      errno = ENOMEM;
-      return(-2);
-  }
-  strcpy(progname, name);
-  /* Check if name contains a space 
-   *  (e.g "port_test -o/home/gandalf/tornado/wind/target/erlang")
-   */
-  if ((space_in_command = strrchr(progname, ' ')) != NULL)
-      *space_in_command = '\0';
-  /* resulting in "port_test" */
-  if ((bname = strrchr(progname, '/')) != NULL)
-    bname++;
-  else
-    bname = progname;
-  /* resulting in "port_test" */
-  len = strlen(bname);
-  nl = len > 10 ? 10 : len;
-  strncpy(taskname, bname, nl);
-  taskname[nl] = '\0';
-  if (space_in_command != NULL) 
-      *space_in_command = ' ';
-  driver_index = pre_set_driver_data(ifd[0], ofd[1], 
-				     read_write, opts->exit_status);
-  /* reseting to "port_test -o/home/gandalf/tornado/wind/target/erlang" */
-  if ((id = taskSpawn(taskname, spTaskPriority, spTaskOptions,
-		      port_stack_size, (FUNCPTR)call_proc, (int)progname,
-		      ofd[0], ifd[1], read_write, redir_stderr, driver_index,
-		      0,0,0,0))
-      == ERROR) {
-    close_pipes(ifd, ofd, read_write);
-    plain_free(progname);	/* only when spawn fails */
-    errno = ENOMEM;
-    return(-2);
-  }    
+
+    /* resulting in "port_test" */
+    if ((bname = strrchr(progname, '/')) != NULL)
+	bname++;
+    else
+	bname = progname;
+
+    /* resulting in "port_test" */
+    len = strlen(bname);
+    nl = len > 10 ? 10 : len;
+    strncpy(taskname, bname, nl);
+    taskname[nl] = '\0';
+    if (space_in_command != NULL) 
+	*space_in_command = ' ';
+    driver_index = pre_set_driver_data(ifd[0], ofd[1], 
+				       read_write, opts->exit_status);
+
+  /* resetting to "port_test -o/home/gandalf/tornado/wind/target/erlang" */
+    if ((id = taskSpawn(taskname, spTaskPriority, spTaskOptions,
+			port_stack_size, (FUNCPTR)call_proc, (int)progname,
+			ofd[0], ifd[1], read_write, redir_stderr, driver_index,
+			0,0,0,0))
+	== ERROR) {
+	close_pipes(ifd, ofd, read_write);
+	plain_free(progname);	/* only when spawn fails */
+	errno = ENOMEM;
+	return (ErlDrvData) -2;
+    }    
 #ifdef DEBUG
-  fdprintf(2, "Spawned %s as %s[0x%x]\n", name, taskname, id);
+    fdprintf(2, "Spawned %s as %s[0x%x]\n", name, taskname, id);
 #endif
-   if (read_write & DO_READ) 
-    init_fd_data(ifd[0], port_num);
-  if (read_write & DO_WRITE) 
-    init_fd_data(ofd[1], port_num);
-  return(set_driver_data(port_num, ifd[0], ofd[1], packet_bytes,read_write,
-			 opts->exit_status));
+    if (read_write & DO_READ) 
+	init_fd_data(ifd[0], port_num);
+    if (read_write & DO_WRITE) 
+	init_fd_data(ofd[1], port_num);
+    return (ErlDrvData) (set_driver_data(port_num, ifd[0], ofd[1],
+					 packet_bytes,read_write,
+					 opts->exit_status));
 }
 
-static long fd_start(int port_num, char *name, SysDriverOpts* opts)
+static ErlDrvData fd_start(ErlDrvPort port_num, char *name, SysDriverOpts* opts)
 {
-  if (((opts->read_write & DO_READ) && opts->ifd >= max_files) ||
-      ((opts->read_write & DO_WRITE) && opts->ofd >= max_files))
-    return(-1);
+    if (((opts->read_write & DO_READ) && opts->ifd >= max_files) ||
+	((opts->read_write & DO_WRITE) && opts->ofd >= max_files)) {
+	return (ErlDrvData) -1;
+    }
 
-  if (opts->read_write & DO_READ) 
-    init_fd_data(opts->ifd, port_num);
-  if (opts->read_write & DO_WRITE) 
-    init_fd_data(opts->ofd, port_num);
-  return(set_driver_data(port_num, opts->ifd, opts->ofd,
-			 opts->packet_bytes, opts->read_write, 0));
+    if (opts->read_write & DO_READ) 
+	init_fd_data(opts->ifd, port_num);
+    if (opts->read_write & DO_WRITE) 
+	init_fd_data(opts->ofd, port_num);
+    return (ErlDrvData) (set_driver_data(port_num, opts->ifd, opts->ofd,
+					 opts->packet_bytes, opts->read_write, 0));
 }
 
 static void clear_fd_data(int fd) 
@@ -967,69 +992,72 @@ static void nbio_stop_fd(int port_num, int fd)
   fd_data[fd].pending = NULL;
 }
 
-static int fd_stop(long fd)
+static void fd_stop(ErlDrvData drv_data)
 {
-  int ofd;
+    int ofd;
+    int fd = (int) drv_data;
 
-  nbio_stop_fd(driver_data[fd].port_num, (int)fd);
-  ofd = driver_data[fd].ofd;
-  if (ofd != fd && ofd != -1) 
-    nbio_stop_fd(driver_data[fd].port_num, (int)ofd); /* XXX fd = ofd? */
-  return 1;
+    nbio_stop_fd(driver_data[fd].port_num, (int)fd);
+    ofd = driver_data[fd].ofd;
+    if (ofd != fd && ofd != -1) 
+	nbio_stop_fd(driver_data[fd].port_num, (int)ofd); /* XXX fd = ofd? */
 }
 
-static int long vanilla_start(int port_num, char *name, SysDriverOpts* opts)
+static ErlDrvData
+vanilla_start(ErlDrvPort port_num, char *name, SysDriverOpts* opts)
 {
-  int flags, fd;
-  struct stat statbuf;
+    int flags, fd;
+    struct stat statbuf;
 
-  DEBUGF(("vanilla_start, name: %s [r=%1i w=%1i]\n", name, 
-	  opts->read_write & DO_READ, 
-	  opts->read_write & DO_WRITE));
+    DEBUGF(("vanilla_start, name: %s [r=%1i w=%1i]\n", name, 
+	    opts->read_write & DO_READ, 
+	    opts->read_write & DO_WRITE));
   
-  flags = (opts->read_write == DO_READ ? O_RDONLY :
-	   opts->read_write == DO_WRITE ? O_WRONLY|O_CREAT|O_TRUNC :
-	   O_RDWR|O_CREAT);
-  if ((fd = open(name, flags, 0666)) < 0){
-    errno = ENFILE;
-    return(-2);
-  }if (fd >= max_files) {
-    close(fd);
-    errno = ENFILE;
-    return(-2);
-  }
-  if (fstat(fd, &statbuf) < 0) {
-      close(fd);
-      errno = ENFILE;
-      return(-2);
-  }
-  /* Return error for reading regular files (doesn't work) */
-  if (ISREG(statbuf) && ((opts->read_write) & DO_READ)) {
-      close(fd);
-      return(-3);
-  }
-  init_fd_data(fd, port_num);
-  return(set_driver_data(port_num, fd, fd,
-			 opts->packet_bytes, opts->read_write, 0));
+    flags = (opts->read_write == DO_READ ? O_RDONLY :
+	     opts->read_write == DO_WRITE ? O_WRONLY|O_CREAT|O_TRUNC :
+	     O_RDWR|O_CREAT);
+    if ((fd = open(name, flags, 0666)) < 0){
+	errno = ENFILE;
+	return (ErlDrvData) -2;
+    }
+    if (fd >= max_files) {
+	close(fd);
+	errno = ENFILE;
+	return (ErlDrvData) -2;
+    }
+    if (fstat(fd, &statbuf) < 0) {
+	close(fd);
+	errno = ENFILE;
+	return (ErlDrvData) -2;
+    }
+
+    /* Return error for reading regular files (doesn't work) */
+    if (ISREG(statbuf) && ((opts->read_write) & DO_READ)) {
+	close(fd);
+	return (ErlDrvData) -3;
+    }
+    init_fd_data(fd, port_num);
+    return (ErlDrvData) (set_driver_data(port_num, fd, fd,
+					 opts->packet_bytes, opts->read_write, 0));
 }
 
 /* Note that driver_data[fd].ifd == fd if the port was opened for reading, */
 /* otherwise (i.e. write only) driver_data[fd].ofd = fd.  */
 
-static int stop(int fd)
+static void stop(ErlDrvData drv_data)
 {
-  int port_num, ofd;
+    int port_num, ofd;
+    int fd = (int) drv_data;
 
-  port_num = driver_data[fd].port_num;
-  nbio_stop_fd(port_num, fd);
-  close(fd);
+    port_num = driver_data[fd].port_num;
+    nbio_stop_fd(port_num, fd);
+    close(fd);
 
-  ofd = driver_data[fd].ofd;
-  if (ofd != fd && ofd != -1) {
-    nbio_stop_fd(port_num, ofd);
-    close(ofd);
-  }
-  return 1;
+    ofd = driver_data[fd].ofd;
+    if (ofd != fd && ofd != -1) {
+	nbio_stop_fd(port_num, ofd);
+	close(ofd);
+    }
 }
 
 static int sched_write(int port_num,int fd, char *buf, int len, int pb)
@@ -1072,64 +1100,65 @@ static int sched_write(int port_num,int fd, char *buf, int len, int pb)
 }
 
 /* Fd is the value returned as drv_data by the start func */
-static int output(long fd, char *buf, int len)
+static void output(ErlDrvData drv_data, char *buf, int len)
 {
-  int buf_done, port_num, wval, pb, ofd;
-  byte lb[4];
-  struct iovec iv[2];
-  pb = driver_data[fd].packet_bytes;
-  port_num = driver_data[fd].port_num;
+    int buf_done, port_num, wval, pb, ofd;
+    byte lb[4];
+    struct iovec iv[2];
+    int fd = (int) drv_data;
 
-  if ((ofd = driver_data[fd].ofd) == -1)
-    return(-1);
+    pb = driver_data[fd].packet_bytes;
+    port_num = driver_data[fd].port_num;
 
-  if (FD_ISSET(ofd, &output_fds)) {
-    return sched_write(port_num, ofd, buf, len, pb);
-  }
-    
-  if ((pb == 2 && len > 65535) || (pb == 1 && len > 255)) {
-    driver_failure_posix(port_num, EINVAL);
-    return(-1);
-  }
-  if (pb == 0) {
-    wval = write(ofd, buf, len);
-  }
-  else {
-    lb[0] = (len >> 24) & 255;	/* MSB */
-    lb[1] = (len >> 16) & 255;
-    lb[2] = (len >> 8) & 255;
-    lb[3] = len & 255;		/* LSB */
-    iv[0].iov_base = (char*) lb + (4 - pb);
-    iv[0].iov_len = pb;
-    iv[1].iov_base = buf;
-    iv[1].iov_len = len;
-    wval = writev(ofd, iv, 2);
-  }
-  if (wval == pb + len )
-    return 0;
-  if (wval < 0) {
-    if ((errno == EINTR) || (errno == ERRNO_BLOCK)) {
-      if (pb) {
-	sched_write(port_num, ofd, buf ,len, pb);
-	return 0;
-      }
-      else if (pb == 0) {
-	sched_write(port_num, ofd, buf ,len, 0);
-	return 0;
-      }
+    if ((ofd = driver_data[fd].ofd) == -1) {
+	return;
     }
-    driver_failure_posix(driver_data[fd].port_num, EINVAL);
-    return(-1);
-  }
-  if (wval < pb) {
-    sched_write(port_num, ofd, (lb +4 -pb)  + wval, pb-wval, 0);
-    sched_write(port_num, ofd, buf ,len, 0);
-    return 0;
-  }
-  /* we now know that  wval < (pb + len) */
-  buf_done = wval - pb;
-  sched_write(port_num, ofd, buf + buf_done, len - buf_done,0);
-  return 0;
+
+    if (FD_ISSET(ofd, &output_fds)) {
+	sched_write(port_num, ofd, buf, len, pb);
+    }
+    
+    if ((pb == 2 && len > 65535) || (pb == 1 && len > 255)) {
+	driver_failure_posix(port_num, EINVAL);
+	return;
+    }
+    if (pb == 0) {
+	wval = write(ofd, buf, len);
+    } else {
+	lb[0] = (len >> 24) & 255;	/* MSB */
+	lb[1] = (len >> 16) & 255;
+	lb[2] = (len >> 8) & 255;
+	lb[3] = len & 255;		/* LSB */
+	iv[0].iov_base = (char*) lb + (4 - pb);
+	iv[0].iov_len = pb;
+	iv[1].iov_base = buf;
+	iv[1].iov_len = len;
+	wval = writev(ofd, iv, 2);
+    }
+    if (wval == pb + len ) {
+	return;
+    }
+    if (wval < 0) {
+	if ((errno == EINTR) || (errno == ERRNO_BLOCK)) {
+	    if (pb) {
+		sched_write(port_num, ofd, buf ,len, pb);
+	    } else if (pb == 0) {
+		sched_write(port_num, ofd, buf ,len, 0);
+	    }
+	    return;
+	}
+	driver_failure_posix(driver_data[fd].port_num, EINVAL);
+	return;
+    }
+    if (wval < pb) {
+	sched_write(port_num, ofd, (lb +4 -pb)  + wval, pb-wval, 0);
+	sched_write(port_num, ofd, buf ,len, 0);
+	return;
+    }
+
+    /* we now know that  wval < (pb + len) */
+    buf_done = wval - pb;
+    sched_write(port_num, ofd, buf + buf_done, len - buf_done,0);
 }
 
 
@@ -1179,11 +1208,13 @@ static int port_inp_failure(int port_num, int ready_fd, int res)
 /* initial start routine                        */
 /* ready_fd is the descriptor that is ready to read */
 
-static int ready_input(long fd, int ready_fd)
+static void ready_input(ErlDrvData drv_data, ErlDrvEvent drv_event)
 {
   int port_num, packet_bytes, res;
   uint32 h = 0;
   char *buf;
+  int fd = (int) drv_data;
+  int ready_fd = (int) drv_event;
 
   port_num = driver_data[fd].port_num;
   packet_bytes = driver_data[fd].packet_bytes;
@@ -1191,9 +1222,10 @@ static int ready_input(long fd, int ready_fd)
   if (packet_bytes == 0) {
     if ((res = read(ready_fd, tmp_buf, tmp_buf_size)) > 0) {
       driver_output(port_num, (char*)tmp_buf, res);
-      return 0;
+      return;
     }
-    return port_inp_failure(port_num, ready_fd, res);
+    port_inp_failure(port_num, ready_fd, res);
+    return;
   }
 
   if (fd_data[ready_fd].remain > 0) { /* We try to read the remainder */
@@ -1201,24 +1233,22 @@ static int ready_input(long fd, int ready_fd)
     res = read(ready_fd, fd_data[ready_fd].cpos, 
 	       fd_data[ready_fd].remain);
     if (res < 0) {
-      if ((errno == EINTR) || (errno == ERRNO_BLOCK))
-	return 0;
-      else
-	return port_inp_failure(port_num, ready_fd, res);
+      if ((errno == EINTR) || (errno == ERRNO_BLOCK)) {
+	  ;
+      } else {
+	  port_inp_failure(port_num, ready_fd, res);
+      }
+    } else if (res == 0) { 
+	port_inp_failure(port_num, ready_fd, res);
+    } else if (res == fd_data[ready_fd].remain) { /* we're done  */
+	driver_output(port_num, fd_data[ready_fd].buf, 
+		      fd_data[ready_fd].sz);
+	clear_fd_data(ready_fd);
+    } else {			/*  if (res < fd_data[ready_fd].remain) */
+	fd_data[ready_fd].cpos += res;
+	fd_data[ready_fd].remain -= res;
     }
-    else if (res == 0) 
-      return port_inp_failure(port_num, ready_fd, res);
-    else if (res == fd_data[ready_fd].remain) { /* we're done  */
-      driver_output(port_num, fd_data[ready_fd].buf, 
-		    fd_data[ready_fd].sz);
-      clear_fd_data(ready_fd);
-      return 0;
-    }
-    else {			/*  if (res < fd_data[ready_fd].remain) */
-      fd_data[ready_fd].cpos += res;
-      fd_data[ready_fd].remain -= res;
-      return 0;
-    }
+    return;
   }
 
 
@@ -1227,71 +1257,81 @@ static int ready_input(long fd, int ready_fd)
     res = read(ready_fd, tmp_buf, tmp_buf_size);
     if (res < 0) {  
       if ((errno == EINTR) || (errno == ERRNO_BLOCK))
-	return 0;
-      return port_inp_failure(port_num, ready_fd, res);
+	return;
+      port_inp_failure(port_num, ready_fd, res);
+      return;
     }
-    else if (res == 0)		/* eof */
-      return port_inp_failure(port_num, ready_fd, res);
+    else if (res == 0) {		/* eof */
+      port_inp_failure(port_num, ready_fd, res);
+      return;
+    }
     else if (res < packet_bytes) { /* Ugly case... get at least */
-      if ((h = ensure_header(ready_fd, tmp_buf, packet_bytes, res))==-1)
-	return port_inp_failure(port_num, ready_fd, -1);
-      if ((buf = sys_alloc(h)) == NULL) 
-	return port_inp_failure(port_num, ready_fd, -1);
+      if ((h = ensure_header(ready_fd, tmp_buf, packet_bytes, res))==-1) {
+	port_inp_failure(port_num, ready_fd, -1);
+	return;
+      }
+      if ((buf = sys_alloc(h)) == NULL) {
+	port_inp_failure(port_num, ready_fd, -1);
+	return;
+      }
       fd_data[ready_fd].buf = buf;
       fd_data[ready_fd].sz = h;
       fd_data[ready_fd].remain = h;
       fd_data[ready_fd].cpos = buf;
-      return 0;
+      return;
     }
     else  {			/* if (res >= packet_bytes) */
       unsigned char* cpos = tmp_buf;
       int bytes_left = res;
       while (1) {		/* driver_output as many as possible */
-	if (bytes_left == 0) {
-	  clear_fd_data(ready_fd);
-	  return 0;
-	}
-	if (bytes_left < packet_bytes) { /* Yet an ugly case */
-	  if((h=ensure_header(ready_fd, cpos, 
-			      packet_bytes, bytes_left))==-1)
-	    return port_inp_failure(port_num, ready_fd, -1);
-	  if ((buf = sys_alloc(h)) == NULL) 
-	    return port_inp_failure(port_num, ready_fd, -1);
-	  fd_data[ready_fd].buf = buf;
-	  fd_data[ready_fd].sz = h;
-	  fd_data[ready_fd].remain = h;
-	  fd_data[ready_fd].cpos = buf;
-	  return 0;
-	}
-	switch (packet_bytes) {
-	case 1: h = get_int8(cpos); cpos += 1; break;
-	case 2: h = get_int16(cpos); cpos += 2; break;
-	case 4: h = get_int32(cpos); cpos += 4; break;
-	}
-	bytes_left -= packet_bytes;
-	/* we've got the header, now check if we've got the data */
-	if (h <= (bytes_left)) {
-	  driver_output(port_num, (char*) cpos, h);
-	  cpos += h;
-	  bytes_left -= h;
-	  continue;
-	}
-	else {			/* The last message we got was split */
-	  if ((buf = sys_alloc(h)) == NULL)
-	    return port_inp_failure(port_num, ready_fd, -1);
-	  sys_memcpy(buf, cpos, bytes_left);
-	  fd_data[ready_fd].buf = buf;
-	  fd_data[ready_fd].sz = h;
-	  fd_data[ready_fd].remain = h - bytes_left;
-	  fd_data[ready_fd].cpos = buf + bytes_left;
-	  return 0;
-	}
+	  if (bytes_left == 0) {
+	      clear_fd_data(ready_fd);
+	      return;
+	  }
+	  if (bytes_left < packet_bytes) { /* Yet an ugly case */
+	      if((h=ensure_header(ready_fd, cpos, 
+				  packet_bytes, bytes_left))==-1) {
+		  port_inp_failure(port_num, ready_fd, -1);
+		  return;
+	      }
+	      if ((buf = sys_alloc(h)) == NULL) 
+		  port_inp_failure(port_num, ready_fd, -1);
+	      fd_data[ready_fd].buf = buf;
+	      fd_data[ready_fd].sz = h;
+	      fd_data[ready_fd].remain = h;
+	      fd_data[ready_fd].cpos = buf;
+	      return;
+	  }
+	  switch (packet_bytes) {
+	  case 1: h = get_int8(cpos); cpos += 1; break;
+	  case 2: h = get_int16(cpos); cpos += 2; break;
+	  case 4: h = get_int32(cpos); cpos += 4; break;
+	  }
+	  bytes_left -= packet_bytes;
+	  /* we've got the header, now check if we've got the data */
+	  if (h <= (bytes_left)) {
+	      driver_output(port_num, (char*) cpos, h);
+	      cpos += h;
+	      bytes_left -= h;
+	      continue;
+	  }
+	  else {			/* The last message we got was split */
+	      if ((buf = sys_alloc(h)) == NULL) {
+		  port_inp_failure(port_num, ready_fd, -1);
+	  }
+	      sys_memcpy(buf, cpos, bytes_left);
+	      fd_data[ready_fd].buf = buf;
+	      fd_data[ready_fd].sz = h;
+	      fd_data[ready_fd].remain = h - bytes_left;
+	      fd_data[ready_fd].cpos = buf + bytes_left;
+	      return;
+	  }
       }
-      return 0;
+      return;
     }
   }
   fprintf(stderr, "remain %d \n", fd_data[ready_fd].remain);
-  return port_inp_failure(port_num, ready_fd, -1);
+  port_inp_failure(port_num, ready_fd, -1);
 }
 
 
@@ -1299,15 +1339,19 @@ static int ready_input(long fd, int ready_fd)
 /* initial start routine                        */
 /* ready_fd is the descriptor that is ready to read */
 
-static int ready_output(long fd, int ready_fd)
+static void ready_output(ErlDrvData drv_data, ErlDrvEvent drv_event)
 {
   Pend *p;
   int wval;
+
+  int fd = (int) drv_data;
+  int ready_fd = (int) drv_event;
+
   while(1) {
     if ((p = fd_data[ready_fd].pending) == NULL) {
       driver_select(driver_data[fd].port_num, ready_fd, 
 		    DO_WRITE, 0);
-      return 0;
+      return;
     }
     wval = write(p->fd, p->cpos, p->remain);
     if (wval == p->remain) {
@@ -1317,25 +1361,25 @@ static int ready_output(long fd, int ready_fd)
 	driver_select(driver_data[fd].port_num, ready_fd, 
 		      DO_WRITE, 0);
 	set_busy_port(driver_data[fd].port_num, 0);
-	return wval;
+	return;
       }
       else
 	continue;
     }
     else if (wval < 0) {
       if (errno == ERRNO_BLOCK || errno == EINTR)
-	return(0);
+	return;
       else {
 	driver_select(driver_data[fd].port_num, ready_fd, 
 		      DO_WRITE, 0);
 	driver_failure(driver_data[fd].port_num, -1);
-	return(-1);
+	return;
       }
     }
     else if (wval < p->remain) {
       p->cpos += wval;
       p->remain -= wval;
-      return wval;
+      return;
     }
   }
 }
@@ -1345,7 +1389,7 @@ static int ready_output(long fd, int ready_fd)
 
 
 /* Interface function available to driver writers */
-int driver_select(int this_port, int fd, int mode, int on)
+int driver_select(ErlDrvPort this_port, ErlDrvEvent fd, int mode, int on)
 {
   if (fd >= 0 && fd < max_files) {
     if (on) {
@@ -1481,11 +1525,6 @@ static int read_fill(int fd, char *buf, int len)
 extern const char pre_loaded_code[];
 extern char* const pre_loaded[];
 
-
-/* This is maintained by sys_alloc() in the Unix version - we don't bother */
-#ifdef DEBUG
-int tot_allocated = 0;
-#endif
 
 /* Float conversion */
 
@@ -1910,13 +1949,13 @@ void *sys_calloc2(size_t nelem, size_t elsize){
 /*
  * The malloc wrapper
  */
-void *SYS_ALLOC(size_t size){
+void *SYS_ALLOC(Uint size) {
     register void *ret;
     ELIB_LOCK;
     if(USER_RECLAIM())
-	ret = save_malloc2(size,actual_alloc);
+	ret = save_malloc2((size_t)size,actual_alloc);
     else
-	ret = (*actual_alloc)(size);
+	ret = (*actual_alloc)((size_t)size);
     ELIB_UNLOCK;
     return ret;
 }
@@ -1925,25 +1964,25 @@ void *SYS_ALLOC(size_t size){
  * The realloc wrapper, may respond to the "realloc-always-moves" flag
  * if the area is initially allocated with elib_malloc.
  */
-void *SYS_REALLOC(void *ptr, size_t size){
+void *SYS_REALLOC(void *ptr, Uint size) {
     register void *ret;
     if(use_save_free(ptr)){
 	if((alloc_flags & WARN_MALLOC_MIX) && 
 	   (alloc_flags & USING_ELIB_MALLOC))
 	    erl_printf(CERR,"Warning, save_malloced data realloced "
 		       "by sys_realloc2\n");
-	return save_realloc(ptr,size);
+	return save_realloc(ptr, (size_t) size);
     } else {	
 	ELIB_LOCK;
 	if((alloc_flags & REALLOC_MOVES) && 
 	   (alloc_flags & USING_ELIB_MALLOC)){
 	    size_t osz = elib_sizeof(ptr);
 	    if(USER_RECLAIM())
-		ret = save_malloc2(size, actual_alloc);
+		ret = save_malloc2((size_t) size, actual_alloc);
 	    else
-		ret = (*actual_alloc)(size);
+		ret = (*actual_alloc)((size_t) size);
 	    if(ret != NULL){
-		memcpy(ret,ptr,(size < osz) ? size : osz);
+		memcpy(ret,ptr,(((size_t)size) < osz) ? ((size_t)size) : osz);
 		if(USER_RECLAIM())
 		    save_free2(ptr,actual_free);
 		else
@@ -1951,9 +1990,9 @@ void *SYS_REALLOC(void *ptr, size_t size){
 	    }
 	} else {
 	    if(USER_RECLAIM())
-		ret = save_realloc2(ptr,size,actual_realloc);
+		ret = save_realloc2(ptr,(size_t)size,actual_realloc);
 	    else
-		ret = (*actual_realloc)(ptr,size);
+		ret = (*actual_realloc)(ptr,(size_t)size);
 	}
 	ELIB_UNLOCK;
 	return ret;
@@ -1963,7 +2002,7 @@ void *SYS_REALLOC(void *ptr, size_t size){
 /*
  * Wrapped free().
  */
-void SYS_FREE(void *ptr){
+void SYS_FREE(void *ptr) {
     if(use_save_free(ptr)){
 	/* 
 	 * This might happen when linked in drivers use save_malloc etc 

@@ -20,38 +20,43 @@
 #include "ei.h"
 #include "putget.h"
 
+
 int ei_encode_string(char *buf, int *index, const char *p)
 {
-  char *s = buf + *index;
-  char *s0 = s;
-  int len = strlen(p);
-  int i;
+    return ei_encode_string_len(buf, index, p, strlen(p));
+}
 
-  if (len <= 0xffff) {
-    if (!buf) s += 3;
-    else {
-      put8(s,ERL_STRING_EXT);
-      put16be(s,len);
-      memmove(s,p,len); /* unterminated string */
+int ei_encode_string_len(char *buf, int *index, const char *p, int len)
+{
+    char *s = buf + *index;
+    char *s0 = s;
+    int i;
+
+    if (len <= 0xffff) {
+	if (!buf) s += 3;
+	else {
+	    put8(s,ERL_STRING_EXT);
+	    put16be(s,len);
+	    memmove(s,p,len);	/* unterminated string */
+	}
+	s += len;
     }
-    s += len;
-  }
-  else {
-    if (!buf) s += 5 + (2*len);
     else {
-      /* strings longer than 65535 are encoded as lists */
-      put8(s,ERL_LIST_EXT);
-      put32be(s,len);
+	if (!buf) s += 5 + (2*len);
+	else {
+	    /* strings longer than 65535 are encoded as lists */
+	    put8(s,ERL_LIST_EXT);
+	    put32be(s,len);
 
-      for (i=0; i<len; i++) {
-	put8(s,ERL_SMALL_INTEGER_EXT);
-	put8(s,p[i]);
-      }
+	    for (i=0; i<len; i++) {
+		put8(s,ERL_SMALL_INTEGER_EXT);
+		put8(s,p[i]);
+	    }
+	}
     }
-  }
 
-  *index += s-s0; 
+    *index += s-s0; 
 
-  return 0; 
+    return 0; 
 }
 

@@ -2291,9 +2291,9 @@ parse_Value(Tokens) ->
 	end.
 
 parse_BuiltinValue([{bstring,_,Bstr}|Rest]) ->
-    {Bstr,Rest};
+    {{bstring,Bstr},Rest};
 parse_BuiltinValue([{hstring,_,Hstr}|Rest]) ->
-    {Hstr,Rest};
+    {{hstring,Hstr},Rest};
 parse_BuiltinValue(Tokens = [{'{',_},{'}',_}|Rest]) ->
     {[],Rest};
 parse_BuiltinValue(Tokens = [{'{',_}|Rest]) ->

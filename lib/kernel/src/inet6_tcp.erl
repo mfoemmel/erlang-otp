@@ -18,7 +18,7 @@
 -module(inet6_tcp).
 
 -export([connect/3, connect/4, listen/2, accept/1, accept/2, close/1]).
--export([send/2, recv/2, recv/3]).
+-export([send/2, recv/2, recv/3, unrecv/2]).
 -export([controlling_process/2]).
 -export([fdopen/2]).
 
@@ -74,7 +74,7 @@ connect(Address, Port, Opts, infinity) ->
 connect(Address, Port, Opts, Timeout) when integer(Timeout), Timeout >= 0 ->
     do_connect(Address, Port, Opts, Timeout).
 
-do_connect({A,B,C,D,E,F,G,H}, Port, Opts, Time) when 
+do_connect(Addr = {A,B,C,D,E,F,G,H}, Port, Opts, Time) when 
   ?ip6(A,B,C,D,E,F,G,H), integer(Port) ->
     case inet:connect_options(Opts, inet6) of
 	{error, Reason} -> exit(Reason);
@@ -85,7 +85,7 @@ do_connect({A,B,C,D,E,F,G,H}, Port, Opts, Time) when
 	    SockOpts = R#connect_opts.opts,
 	    case inet:open(Fd,BAddr,BPort,SockOpts,stream,inet6,?MODULE) of
 		{ok, S} ->
-		    case prim_inet:connect(S, {A,B,C,D}, Port, Time) of
+		    case prim_inet:connect(S, Addr, Port, Time) of
 			ok    -> {ok,S};
 			Error ->  prim_inet:close(S), Error
 		    end;

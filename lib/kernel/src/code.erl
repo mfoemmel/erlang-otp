@@ -38,10 +38,10 @@
 	 lib_dir/0,
 	 lib_dir/1,
 	 compiler_dir/0,
-	 uc_dir/0,
 	 priv_dir/1,
 	 stick_dir/1,
 	 unstick_dir/1,
+	 is_sticky/1,
 	 get_object_code/1,
 	 add_path/1,
 	 add_pathsz/1,
@@ -51,29 +51,12 @@
 	 add_pathz/1,
 	 del_path/1,
 	 replace_path/2,
-	 add_uc/1,
 	 start/0, start/1,
 	 start_link/0, start_link/1,
 	 which/1,
-	 clash/0,
-	 rel_loaded_p/1]).
-
-%% Following functions are exported for the interpreter
--export([interpret/1,
-	 interpret_binary/3,
-	 delete_interpret/1,
-	 interpreted/0,
-	 interpreted/1]).
-
+	 clash/0]).
 
 -include_lib("kernel/include/file.hrl").
-
-%% moddb in state contains:
-%%     {Module,FileName}      - Loaded module from FileName
-%%     {Module,FileName,true} - Loaded module from FileName, relative current
-%%                              directory at loading time.
-%%     {{sticky,Module},true} - A sticky module.
-
 
 %% User interface.
 %%
@@ -91,22 +74,20 @@
 %% load_file(File)		-> {error,What} | {module, Mod}
 %% load_abs(File)		-> {error,What} | {module, Mod}
 %% load_binary(Mod,File,Bin)    -> {error,What} | {module,Mod}
-%% ensure_loaded(Module)	-> {error,What} | {module, Mod} |
-%%                                 {interpret, Mod}
+%% ensure_loaded(Module)	-> {error,What} | {module, Mod}
 %% delete(Module)
 %% purge(Module)  kills all procs running old code
 %% soft_purge(Module)           -> true | false
 %% is_loaded(Module)		-> {file, File} | false
 %% all_loaded()			-> {Module, File}*
-%% add_uc(Name)			-> true
 %% get_object_code(Mod)         -> error | {Mod, Bin, Filename}
 %% stop()			-> true
 %% root_dir()                   
 %% compiler_dir()
-%% uc_dir()
 %% lib_dir()
 %% priv_dir(Name)
 %% stick_dir(Dir)               -> ok | {error ,Reason}
+%% is_sticky(Module)           -> true | false
 %% which(Module)                -> Filename
 %% clash() ->                   -> print out
 
@@ -115,8 +96,6 @@
 
 objfile_extension() ->
     code_aux:objfile_extension().
-
-
 
 load_file(Mod)     ->  call({load_file,Mod}).
 ensure_loaded(Mod) ->  call({ensure_loaded,Mod}).
@@ -133,10 +112,10 @@ root_dir()         ->  call({dir,root_dir}).
 lib_dir()          ->  call({dir,lib_dir}).
 lib_dir(Name)      ->  call({dir,{lib_dir,Name}}).
 compiler_dir()     ->  call({dir,compiler_dir}).
-uc_dir()           ->  call({dir,uc_dir}).
 priv_dir(Name)     ->  call({dir,{priv_dir,Name}}).
 stick_dir(Dir)     ->  call({stick_dir,Dir}).
 unstick_dir(Dir)   ->  call({unstick_dir,Dir}).
+is_sticky(Mod)     ->  call({is_sticky,Mod}).
 set_path(PathList) ->  call({set_path,PathList}).
 get_path()         ->  call(get_path).
 add_path(Dir)      ->  call({add_path,last,Dir}).
@@ -147,34 +126,9 @@ add_pathsz(Dirs)   ->  call({add_paths,last,Dirs}).
 add_pathsa(Dirs)   ->  call({add_paths,first,Dirs}).
 del_path(Name)     ->  call({del_path,Name}).
 replace_path(Name,Dir)   ->  call({replace_path,Name,Dir}).
-rel_loaded_p(Mod)  -> call({rel_loaded_p,Mod}).
-interpreted()      ->  call({interpreted}).
-
-%% interpret/1 - 
-%% 
-
-interpret(Module)  ->  call({interpret,Module}).
-
-interpreted(Module)->  call({interpreted,Module}).
-delete_interpret(Module) ->  call({delete_int,Module}).
-
-%% interpret_binary/3 - Adds a "compiled" binary to the interpreter database
-%%
-%% Returns:
-%%   ok
-%%   {{module, Module}, List}
-%%   {error, sticky_directory} 
-%%   {error, no_interpreter}
-%% 
-
-interpret_binary(Mod,File,Bin) ->
-    call({interpret_binary,Mod,File,Bin}).
 
 call(Req) ->
     gen_server:call(code_server,Req,infinity).
-
-add_uc(Name) ->
-    add_pathz(filename:join(uc_dir(),code_aux:to_list(Name))).
 
 start() ->
     start([stick]).
@@ -205,11 +159,17 @@ do_start(F,Flags) ->
     %% Otherwise a dead-lock may occur when the code_server is starting.
 
     ets:module_info(module),
-    fixtable_server:module_info(module),
     code_server:module_info(module),
-    code_server_int:module_info(module),
     code_aux:module_info(module),
     string:module_info(module),
+    file:module_info(module),
+    case erlang:system_info(hipe_architecture) of
+        ultrasparc -> hipe_sparc_loader:module_info(module);
+	x86 -> hipe_x86_loader:module_info(module);
+	undefined -> ok
+    end,
+    hipe_unified_loader:module_info(module),
+    lists_sort:module_info(module),
 
     Mode = get_mode(Flags),
     case init:get_argument(root) of 
@@ -248,13 +208,9 @@ do_s(Lib) ->
 	    stick_dir(filename:append(Dir, "ebin"))
     end.
 
-
-
-
 get_mode(Flags) ->
-    case lists:member(embedded,Flags) of
-	true ->
-	    embedded;
+    case lists:member(embedded, Flags) of
+	true -> embedded;
 	_Otherwise -> 
 	    case init:get_argument(mode) of
 		{ok,[["embedded"]]} ->
@@ -265,7 +221,7 @@ get_mode(Flags) ->
     end.
 
 %% Find out which version of a particular module we would
-%% load if we tried to load it, unless it's allready loaded.    
+%% load if we tried to load it, unless it's already loaded.
 %% In that case return the name of the file which contains
 %% the loaded object code
 
@@ -287,11 +243,15 @@ which(_,[]) ->
     non_existing;
 
 which(Module,[Directory|Tail]) ->
-    {ok,Files} = file:list_dir(Directory),
-    case lists:member(Module,Files) of
-	true ->
-	    filename:append(Directory, Module);
-	false ->
+    case file:list_dir(Directory) of
+	{ok,Files} ->
+	    case lists:member(Module,Files) of
+		true ->
+		    filename:append(Directory, Module);
+		false ->
+		    which(Module,Tail)
+	    end;
+	_ ->
 	    which(Module,Tail)
     end.
 

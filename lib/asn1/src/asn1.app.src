@@ -6,7 +6,10 @@
 	asn1rt_ber,
 	asn1rt_per,
 	asn1rt_ber_v1,
-	asn1rt_per_v1
+	asn1rt_per_v1,
+	asn1rt_ber_bin,
+	asn1rt_per_bin,
+	asn1rt_check
              ]},
   {registered, [
 		]},

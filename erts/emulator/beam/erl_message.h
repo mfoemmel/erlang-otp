@@ -31,7 +31,7 @@ typedef struct {
     ErlMessage* first;
     ErlMessage** last;  /* point to the last next pointer */
     ErlMessage** save;
-    int len;            /* quaue length */
+    int len;            /* queue length */
 } ErlMessageQueue;
 
 /*
@@ -87,18 +87,16 @@ struct erl_heap_fragment {
 
 struct process;
 
-EXTERN_FUNCTION(void, init_message, (_VOID_));
-EXTERN_FUNCTION(void, free_message, (ErlMessage*));
-EXTERN_FUNCTION(ErlHeapFragment*, new_message_buffer, (uint32));
-EXTERN_FUNCTION(void, free_message_buffer, (ErlHeapFragment*));
-EXTERN_FUNCTION(ErlMessage*, new_message, (uint32, uint32));
-EXTERN_FUNCTION(void, queue_message_tt, (struct process*, ErlHeapFragment*,
-					 uint32, uint32));
+void init_message(void);
+void free_message(ErlMessage *);
+ErlHeapFragment* new_message_buffer(Uint);
+void free_message_buffer(ErlHeapFragment *);
+void queue_message_tt(struct process*, ErlHeapFragment*, Eterm, Eterm);
 #define queue_message(a, b, c) queue_message_tt(a, b, c, NIL)
-EXTERN_FUNCTION(void, deliver_exit_message_tt, (uint32, struct process*, uint32, uint32));
+void deliver_exit_message_tt(Eterm, struct process*, Eterm, Eterm);
 #define deliver_exit_message(a, b, c) deliver_exit_message_tt(a, b, c, NIL)
 void send_message(struct process*, struct process*, Eterm);
 
-EXTERN_FUNCTION(void, deliver_result, (uint32, uint32, uint32));
+void deliver_result(Eterm, Eterm, Eterm);
 
 #endif

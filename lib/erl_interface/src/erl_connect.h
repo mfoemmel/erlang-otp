@@ -25,6 +25,7 @@ extern "C" {
 #endif
 
 /* Return values */
+#ifndef ERL_ERROR	/* these are also defined in ei_connect */
 #define ERL_ERROR -1           /* Error of some kind */
 #define ERL_NO_DAEMON -2       /* No contact with EPMD */
 #define ERL_NO_PORT -3         /* No port received from EPMD */   
@@ -36,7 +37,7 @@ extern "C" {
 #define ERL_MSG 1    
 
 #define ERL_NO_TIMEOUT -1
-
+#endif
 
 #ifndef MAXHOSTLEN
 #define MAXHOSTLEN 255

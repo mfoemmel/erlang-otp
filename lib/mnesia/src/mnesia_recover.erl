@@ -264,7 +264,7 @@ log_mnesia_down(Node) ->
 get_mnesia_downs() ->
     Tab = mnesia_decision,
     Pat = {mnesia_down, '_', '_', '_'},
-    Downs = mnesia_lib:safe_match_object(ets, Tab, Pat),
+    Downs = ?ets_match_object(Tab, Pat),
     [Node || {mnesia_down, Node, _Date, _Time} <- Downs].
 
 %% Check if we have got a mnesia_down from Node
@@ -341,7 +341,7 @@ log_master_nodes2([], UseDir, IsRunning, WorstRes) ->
 get_master_node_info() ->
     Tab = mnesia_decision,
     Pat = {master_nodes, '_', '_'},
-    case catch mnesia_lib:safe_match_object(ets, Tab, Pat) of
+    case catch mnesia_lib:db_match_object(ram_copies,Tab, Pat) of
 	{'EXIT', _} ->
 	    [];
 	Masters ->
@@ -363,7 +363,7 @@ what_happened(Tid, Protocol, Nodes) ->
     Default = 
 	case Protocol of
 	    asym_trans -> aborted;
-	    sym_trans -> unclear
+	    _ -> unclear  %% sym_trans and sync_sym_trans
 	end,
     This = node(),
     case lists:member(This, Nodes) of
@@ -497,7 +497,7 @@ confirm_decision_log_dump() ->
 
 dump_decision_tab() ->
     Tab = mnesia_decision,
-    All = mnesia_lib:safe_match_object(ets, Tab, '_'),
+    All = mnesia_lib:db_match_object(ram_copies,Tab, '_'),
     mnesia_log:save_decision_tab({decision_list, All}).
 
 note_log_decisions([What | Tail], InitBy) ->
@@ -1109,7 +1109,7 @@ add_remote_decision(Node, NewD, State) ->
 announce_all([], _Tabs) ->
     ok;
 announce_all(ToNodes, [Tab | Tabs]) ->
-    case catch mnesia_lib:safe_match_object(ets, Tab, '_') of
+    case catch mnesia_lib:db_match_object(ram_copies, Tab, '_') of
 	{'EXIT', _} ->
 	    %% Oops, we are in the middle of a 'garb_decisions'
 	    announce_all(ToNodes, Tabs);

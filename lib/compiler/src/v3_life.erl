@@ -45,7 +45,7 @@
 -export([vdb_find/2]).
 
 -import(lists, [map/2,foldl/3]).
--import(ordsets, [add_element/2,intersection/2,union/2]).
+-import(ordsets, [add_element/2,intersection/2,union/2,union/1]).
 
 -include("v3_kernel.hrl").
 -include("v3_life.hrl").
@@ -60,7 +60,7 @@ module(#k_mdef{anno=A,name=M,exports=Es,attributes=As,body=Fs0}, Options) ->
 %% function(Kfunc) -> Func.
 
 function(#k_fdef{anno=A,func=F,arity=Ar,vars=Vs,body=Kb}) ->
-    %%ok = io:fwrite("fun: ~p~n", [{F,Ar}]),
+    %%ok = io:fwrite("life ~w: ~p~n", [?LINE,{F,Ar}]),
     As = var_list(Vs),
     Vdb0 = foldl(fun ({var,N}, Vdb) -> new_var(N, 0, Vdb) end, [], As),
     %% Force a top-level match!
@@ -89,46 +89,106 @@ body(#k_enter{anno=Ea,op=#k_internal{name=match_fail,arity=1},args=[Arg]},
     Vdb1 = use_vars(Ea#k.us, I, Vdb0),
     {[match_fail(Arg, I, Ea#k.a)],I,Vdb1};
 body(#k_seq{arg=Ke,body=Kb}, I, Vdb0) ->
-    %%ok = io:fwrite("body:~p~n", [{Ke,I,Vdb0}]),
+    %%ok = io:fwrite("life ~w:~p~n", [?LINE,{Ke,I,Vdb0}]),
     A = get_kanno(Ke),
     Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
     {Es,MaxI,Vdb2} = body(Kb, I+1, Vdb1),
     E = expr(Ke, I, Vdb2),
     {[E|Es],MaxI,Vdb2};
 body(Ke, I, Vdb0) ->
-    %%ok = io:fwrite("body:~p~n", [{Ke,I,Vdb0}]),
+    %%ok = io:fwrite("life ~w:~p~n", [?LINE,{Ke,I,Vdb0}]),
     A = get_kanno(Ke),
     Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
     E = expr(Ke, I, Vdb1),
     {[E],I,Vdb1}.
 
-%% guard(Kguard, I, Vdb) -> {[Expr],MaxI,Vdb}.
-%%  A guard is like a body but much more specialised.
+%% guard(Kguard, I, Vdb) -> Guard.
 
-guard(#k_seq{arg=Ke,body=Kb}, I, Vdb0) ->
-    %% ok = io:fwrite("guard:~p~n", [{Ke,I,Vdb0}]),
+guard(#k_guard_not{anno=A,arg=Not}, I, Vdb0) ->
+    Gnot = guard(Not, I+1, Vdb0),
+    #l{ke={guard_not,Gnot},i=I,a=A#k.a,vdb=Gnot#l.vdb};
+guard(#k_guard_and{anno=A,args=As}, I, Vdb0) ->
+    {Es,MaxI,Vdb1} = guard_and_list(As, I+1, Vdb0),
+    #l{ke={guard_and,Es},i=I,a=A#k.a,vdb=Vdb1};
+guard(#k_guard_or{anno=A,args=As}, I, Vdb0) ->
+    {Es,MaxI,Vdb1} = guard_or_list(As, I+1, Vdb0),
+    #l{ke={guard_or,Es},i=I,a=A#k.a,vdb=Vdb1};
+guard(#k_protected{anno=A,body=Ts,ret=Rs}, I, Vdb) ->
+    %% Lock variables that are alive before the protect and used afterwards.
+    %% Don't lock variables that are only used inside the protect.
+    Pdb0 = vdb_sub(I, I+1, Vdb),
+    {T,MaxI,Pdb1} = guard_body(Ts, I+1, Pdb0),
+    Pdb2 = use_vars(A#k.ns, MaxI+1, Pdb1),	%Save "return" values
+    #l{ke={protected,T,var_list(Rs)},i=I,a=A#k.a,vdb=Pdb2};
+guard(#k_seq{}=G, I, Vdb0) ->
+    {Es,MaxI,Vdb1} = guard_body(G, I, Vdb0),
+    #l{ke={block,Es},i=I,vdb=Vdb1,a=[]};
+guard(G, I, Vdb) -> guard_expr(G, I, Vdb).
+
+%% guard_body(Kbody, I, Vdb) -> {[Expr],MaxI,Vdb}.
+
+guard_body(#k_seq{arg=Ke,body=Kb}, I, Vdb0) ->
     A = get_kanno(Ke),
     Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
-    {Es,MaxI,Vdb2} = guard(Kb, I+1, Vdb1),
+    {Es,MaxI,Vdb2} = guard_body(Kb, I+1, Vdb1), 
     E = guard_expr(Ke, I, Vdb2),
     {[E|Es],MaxI,Vdb2};
-guard(Ke, I, Vdb0) ->
-    %% ok = io:fwrite("guard:~p~n", [{Ke,I,Vdb0}]),
+guard_body(Ke, I, Vdb0) ->
     A = get_kanno(Ke),
     Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
     E = guard_expr(Ke, I, Vdb1),
-    {[E],I+1,Vdb1}.
+    {[E],I,Vdb1}.
+
+guard_and_list([G], I, Vdb0) ->
+    A = get_kanno(G),
+    Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
+    E = guard(G, I, Vdb1),
+    {[E],I+1,Vdb1};
+guard_and_list([G|Gs], I, Vdb0) ->
+    A = get_kanno(G),
+    Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
+    {Es,MaxI,Vdb2} = guard_and_list(Gs, I+1, Vdb1),
+    E = guard(G, I, Vdb2),
+    {[E|Es],MaxI,Vdb2}.
+
+guard_or_list([G], I, Vdb0) ->
+    A = get_kanno(G),
+    Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
+    E = guard(G, I, Vdb1),
+    {[E],I,Vdb1};
+guard_or_list([G|Gs], I, Vdb0) ->
+    A = get_kanno(G),
+    Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
+    {Es,MaxI,Vdb2} = guard_or_list(Gs, I, Vdb1),
+    E = guard(G, I, Vdb2),
+    {[E|Es],MaxI,Vdb2}.
+
+% %% protected(KguardTest, I, Vdb) -> {[Expr],MaxI,Vdb}.
+% %%  A guard test is like a body but much more specialised.
+
+% protected(#k_seq{arg=Ke,body=Kb}, I, Vdb0) ->
+%     %% ok = io:fwrite("life ~w:~p~n", [?LINE,{Ke,I,Vdb0}]),
+%     A = get_kanno(Ke),
+%     Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
+%     {Es,MaxI,Vdb2} = protected(Kb, I+1, Vdb1),
+%     E = guard_expr(Ke, I, Vdb2),
+%     {[E|Es],MaxI,Vdb2};
+% protected(Ke, I, Vdb0) ->
+%     %% ok = io:fwrite("life ~w:~p~n", [?LINE,{Ke,I,Vdb0}]),
+%     A = get_kanno(Ke),
+%     Vdb1 = use_vars(A#k.us, I, new_vars(A#k.ns, I, Vdb0)),
+%     E = guard_expr(Ke, I, Vdb1),
+%     {[E],I+1,Vdb1}.
 
 %% guard_expr(Call, I, Vdb) -> Expr
-%%  We know that guard bifs are tests if they return no values,
-%%  otherwise just bif.
 
-guard_expr(#k_bif{anno=A,op=Op,args=As,ret=[]}, I, Vdb) ->
+guard_expr(#k_test{anno=A,op=Op,args=As}, I, Vdb) ->
     #l{ke={test,test_op(Op),atomic_list(As)},i=I,a=A#k.a};
 guard_expr(#k_bif{anno=A,op=Op,args=As,ret=Rs}, I, Vdb) ->
     #l{ke={bif,bif_op(Op),atomic_list(As),var_list(Rs)},i=I,a=A#k.a};
 guard_expr(#k_put{anno=A,arg=Arg,ret=Rs}, I, Vdb) ->
-    #l{ke={set,var_list(Rs),literal(Arg)},i=I,a=A#k.a}.
+    #l{ke={set,var_list(Rs),literal(Arg)},i=I,a=A#k.a};
+guard_expr(G, I, Vdb) -> guard(G, I, Vdb).
 
 %% expr(Kexpr, I, Vdb) -> Expr.
 
@@ -139,8 +199,14 @@ expr(#k_call{anno=A,op=Op,args=As,ret=Rs}, I, Vdb) ->
 expr(#k_enter{anno=A,op=Op,args=As}, I, Vdb) ->
     #l{ke={enter,call_op(Op),atomic_list(As)},i=I,a=A#k.a};
 expr(#k_bif{anno=A,op=Op,args=As,ret=[]}, I, Vdb) ->
-    %% Must generate unique variable here.
-    #l{ke={bif,bif_op(Op),atomic_list(As),[{var,I}]},i=I,a=A#k.a};
+    case Op of
+	#k_internal{name=dsetelement,arity=3} -> ok;
+	Other ->
+	    ok = io:fwrite("v3_life:expr/3:~w - ~p~n", [?LINE,Op])
+    end,
+%     %% Must generate unique variable here.
+%     #l{ke={bif,bif_op(Op),atomic_list(As),[{var,I}]},i=I,a=A#k.a};
+    #l{ke={bif,bif_op(Op),atomic_list(As),[]},i=I,a=A#k.a};
 expr(#k_bif{anno=A,op=Op,args=As,ret=Rs}, I, Vdb) ->
     #l{ke={bif,bif_op(Op),atomic_list(As),var_list(Rs)},i=I,a=A#k.a};
 expr(#k_match{anno=A,body=Kb,ret=Rs}, I, Vdb) ->
@@ -182,24 +248,28 @@ expr(#k_return{anno=A,args=As}, I, Vdb) ->
 %%  Do any necessary name translations here to munge into beam format.
 
 call_op(#k_local{name=N}) -> N; 
-call_op(#k_remote{mod=erlang,name='++'}) -> {remote,erlang,append};
-call_op(#k_remote{mod=erlang,name='--'}) -> {remote,erlang,subtract};
-call_op(#k_remote{mod=M,name=N}) -> {remote,M,N};
+call_op(#k_remote{mod=#k_atom{val=erlang},name=#k_atom{val='++'}}) ->
+    {remote,{atom,erlang},{atom,append}};
+call_op(#k_remote{mod=#k_atom{val=erlang},name=#k_atom{val='--'}}) ->
+    {remote,{atom,erlang},{atom,subtract}};
+call_op(#k_remote{mod=M,name=N}) ->
+    {remote,atomic(M),atomic(N)};
 call_op(Other) -> variable(Other).
 
-bif_op(#k_local{name=N}) -> N; 
-bif_op(#k_remote{mod=M,name=N}) -> N.
+bif_op(#k_internal{name=dsetelement,arity=3}) -> dsetelement;
+bif_op(#k_internal{name=make_fun,arity=Ar}) -> make_fun;
+bif_op(#k_remote{mod=#k_atom{val=erlang},name=#k_atom{val=N}}) -> N.
 
-test_op(#k_local{name=N}) -> N; 
-test_op(#k_remote{mod=M,name=N}) -> N.
+test_op(#k_remote{mod=#k_atom{val=erlang},name=#k_atom{val=N}}) -> N.
 
 %% internal_call(Anno, Op, [Arg], [Ret], I, Vdb) -> Expr.
 %%  Handling of internal calls, these are special.
 
 internal_call(A, #k_internal{name=make_fun},
-	      [#k_atom{name=Fun},#k_int{val=Arity},#k_int{val=Id}|Free],
+	      [#k_atom{val=Fun},#k_int{val=Arity},
+	       #k_int{val=Index},#k_int{val=Uniq}|Free],
 	      Rs, I, Vdb) ->
-    #l{ke={call,{make_fun,Fun,Arity,Id},var_list(Free),var_list(Rs)},
+    #l{ke={call,{make_fun,Fun,Arity,Index,Uniq},var_list(Free),var_list(Rs)},
        i=I,a=A#k.a}.
 
 %% match(Kexpr, [LockVar], I, Vdb) -> Expr.
@@ -225,7 +295,7 @@ match(Other, Ls, I, Vdb0) ->
     #l{ke={block,B},i=I,vdb=Vdb2,a=[]}.
 
 type_clause(#k_type_clause{anno=A,type=T,values=Kvs}, Ls, I, Vdb0) ->
-    %% io:format("tc ~p ~p~n", [T, Kvs]),
+    %%ok = io:format("life ~w: ~p~n", [?LINE,{T,Kvs}]),
     Vdb1 = use_vars(union(A#k.us, Ls), I+1, Vdb0),
     Vs = map(fun (Vc) -> val_clause(Vc, Ls, I+1, Vdb1) end, Kvs),
     #l{ke={type_clause,type(T),Vs},i=I,vdb=Vdb1,a=A#k.a}.
@@ -234,44 +304,53 @@ val_clause(#k_val_clause{anno=A,val=V,body=Kb}, Ls0, I, Vdb0) ->
     {Used,New} = match_pat_vars(V),
     %% Not clear yet how Used should be used.
     Bus = (get_kanno(Kb))#k.us,
-    %% io:format("Ls0 = ~p, Used=~p\n  New=~p, Bus=~p\n", [Ls0,Used,New,Bus]),
+    %%ok = io:format("Ls0 = ~p, Used=~p\n  New=~p, Bus=~p\n", [Ls0,Used,New,Bus]),
     Ls1 = union(intersection(New, Bus), Ls0),	%Lock for safety
     Vdb1 = use_vars(union(A#k.us, Ls1), I+1, new_vars(New, I, Vdb0)),
     B = match(Kb, Ls1, I+1, Vdb1),
     #l{ke={val_clause,literal(V),B},i=I,vdb=use_vars(Bus, I+1, Vdb1),a=A#k.a}.
 
 guard_clause(#k_guard_clause{anno=A,guard=Kg,body=Kb}, Ls, I, Vdb0) ->
-    {G,AfterG,Vdb1} = guard(Kg, I+1, Vdb0),
-    Vdb2 = use_vars(union(A#k.us, Ls), AfterG, Vdb1),
-    B = match(Kb, Ls, AfterG, Vdb2),
+    Vdb1 = use_vars(union(A#k.us, Ls), I+2, Vdb0),
+    Gdb = vdb_sub(I+1, I+2, Vdb1),
+    G = guard(Kg, I+1, Gdb),
+    B = match(Kb, Ls, I+2, Vdb1),
     #l{ke={guard_clause,G,B},
-       i=I,vdb=use_vars((get_kanno(Kg))#k.us, AfterG, Vdb2),
+       i=I,vdb=use_vars((get_kanno(Kg))#k.us, I+2, Vdb1),
        a=A#k.a}.
+
+%     {G,AfterG,Vdb1} = guard(Kg, I+1, Vdb0),
+%     Vdb2 = use_vars(union(A#k.us, Ls), AfterG, Vdb1),
+%     B = match(Kb, Ls, AfterG, Vdb2),
+%     #l{ke={guard_clause,G,B},
+%        i=I,vdb=use_vars((get_kanno(Kg))#k.us, AfterG, Vdb2),
+%        a=A#k.a}.
 
 %% match_fail(FailValue, I, Anno) -> Expr.
 %%  Generate the correct match_fail instruction.  N.B. there is no
 %%  generic case for when the fail value has been created elsewhere.
 
-match_fail(#k_tuple{es=[#k_atom{name=function_clause}|As]}, I, A) ->
+match_fail(#k_tuple{es=[#k_atom{val=function_clause}|As]}, I, A) ->
     #l{ke={match_fail,{function_clause,literal_list(As)}},i=I,a=A};
-match_fail(#k_tuple{es=[#k_atom{name=badmatch},Val]}, I, A) ->
+match_fail(#k_tuple{es=[#k_atom{val=badmatch},Val]}, I, A) ->
     #l{ke={match_fail,{badmatch,literal(Val)}},i=I,a=A};
-match_fail(#k_tuple{es=[#k_atom{name=case_clause},Val]}, I, A) ->
+match_fail(#k_tuple{es=[#k_atom{val=case_clause},Val]}, I, A) ->
     #l{ke={match_fail,{case_clause,literal(Val)}},i=I,a=A};
-match_fail(#k_atom{name=if_clause}, I, A) ->
+match_fail(#k_atom{val=if_clause}, I, A) ->
     #l{ke={match_fail,if_clause},i=I,a=A}.
 
 %% type(Ktype) -> Type.
 
 type(k_int) -> integer;
+type(k_char) -> integer;			%Hhhmmm???
 type(k_float) -> float;
 type(k_atom) -> atom;
 type(k_nil) -> nil;
 type(k_cons) -> cons;
 type(k_tuple) -> tuple;
-type(k_binary_cons) -> binary_cons;
-type(k_zero_binary) -> zero_binary;
-type(k_bin) -> binary.
+type(k_binary) -> binary;
+type(k_bin_seg) -> bin_seg;
+type(k_bin_end) -> bin_end.
 
 %% variable(Klit) -> Lit.
 %% var_list([Klit]) -> [Lit].
@@ -286,8 +365,8 @@ var_list(Ks) -> map(fun variable/1, Ks).
 atomic(#k_var{name=N}) -> {var,N};
 atomic(#k_int{val=I}) -> {integer,I};
 atomic(#k_float{val=F}) -> {float,F};
-atomic(#k_atom{name=N}) -> {atom,N};
-atomic(#k_char{val=C}) -> {char,C};
+atomic(#k_atom{val=N}) -> {atom,N};
+%%atomic(#k_char{val=C}) -> {char,C};
 %%atomic(#k_string{val=S}) -> {string,S};
 atomic(#k_nil{}) -> nil.
 
@@ -299,17 +378,17 @@ atomic_list(Ks) -> map(fun atomic/1, Ks).
 literal(#k_var{name=N}) -> {var,N};
 literal(#k_int{val=I}) -> {integer,I};
 literal(#k_float{val=F}) -> {float,F};
-literal(#k_atom{name=N}) -> {atom,N};
-literal(#k_char{val=C}) -> {char,C};
+literal(#k_atom{val=N}) -> {atom,N};
+%%literal(#k_char{val=C}) -> {char,C};
 literal(#k_string{val=S}) -> {string,S};
 literal(#k_nil{}) -> nil;
-literal(#k_cons{head=H,tail=T}) ->
+literal(#k_cons{hd=H,tl=T}) ->
     {cons,[literal(H),literal(T)]};
-literal(#k_bin{val=V}) ->
+literal(#k_binary{segs=V}) ->
     {binary,literal(V)};
-literal(#k_binary_cons{size=Size,info=Info,head=H,tail=T}) ->
-    {binary_cons,literal(Size),Info,[literal(H),literal(T)]};
-literal(#k_zero_binary{}) -> zero_binary;
+literal(#k_bin_seg{size=S,unit=U,type=T,flags=Fs,seg=Seg,next=N}) ->
+    {bin_seg,literal(S),U,T,Fs,[literal(Seg),literal(N)]};
+literal(#k_bin_end{}) -> bin_end;
 literal(#k_tuple{es=Es}) ->
     {tuple,literal_list(Es)}.
 
@@ -321,19 +400,19 @@ match_pat_vars(#k_var{name=N}) -> {[],[N]};
 match_pat_vars(#k_int{}) -> {[],[]};
 match_pat_vars(#k_float{}) -> {[],[]};
 match_pat_vars(#k_atom{}) -> {[],[]};
-match_pat_vars(#k_char{}) -> {[],[]};
+%%match_pat_vars(#k_char{}) -> {[],[]};
 match_pat_vars(#k_string{}) -> {[],[]};
 match_pat_vars(#k_nil{}) -> {[],[]};
-match_pat_vars(#k_cons{head=H,tail=T}) ->
+match_pat_vars(#k_cons{hd=H,tl=T}) ->
     match_pat_list_vars([H,T]);
-match_pat_vars(#k_bin{val=V}) ->
+match_pat_vars(#k_binary{segs=V}) ->
     match_pat_vars(V);
-match_pat_vars(#k_binary_cons{size=Size,head=H,tail=T}) ->
-    {U1,New} = match_pat_list_vars([H,T]),
-    {[],U2} = match_pat_vars(Size),
-    {union(U1, U2),New};
-match_pat_vars(#k_zero_binary{}) ->
-    {[],[]};
+match_pat_vars(#k_bin_seg{size=S,seg=Seg,next=N}) ->
+    {U1,New1} = match_pat_vars(Seg),
+    {U2,New2} = match_pat_vars(N),
+    {[],U3} = match_pat_vars(S),
+    {union([U1,U2,U3]),union(New1, New2)};
+match_pat_vars(#k_bin_end{}) -> {[],[]};
 match_pat_vars(#k_tuple{es=Es}) ->
     match_pat_list_vars(Es).
 
@@ -387,13 +466,15 @@ vdb_find(V, Vdb) ->
 %vdb_find(V, [{V1,F,L}=Vd|Vdb]) when V > V1 -> vdb_find(V, Vdb);
 %vdb_find(V, []) -> error.
 
-vdb_store(V, F, L, [{V1,F1,L1}=Vd|Vdb]) when V < V1 -> [{V,F,L},Vd|Vdb];
-vdb_store(V, F, L, [{V1,F1,L1}=Vd|Vdb]) when V == V1 -> [{V,F,L}|Vdb];
 vdb_store(V, F, L, [{V1,F1,L1}=Vd|Vdb]) when V > V1 ->
     [Vd|vdb_store(V, F, L, Vdb)];
+vdb_store(V, F, L, [{V1,F1,L1}=Vd|Vdb]) when V < V1 -> [{V,F,L},Vd|Vdb];
+vdb_store(V, F, L, [{V1,F1,L1}=Vd|Vdb]) -> [{V,F,L}|Vdb]; %V == V1
 vdb_store(V, F, L, []) -> [{V,F,L}].
 
 %% vdb_sub(Min, Max, Vdb) -> Vdb.
+%%  Extract variables which are used before and after Min.  Lock
+%%  variables alive after Max.
 
 vdb_sub(Min, Max, Vdb) ->
     [ if L >= Max -> {V,F,1000000};

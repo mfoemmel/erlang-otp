@@ -17,6 +17,7 @@
 %%
 -module(sounder).
 -export([start/0,play/1,new/1,go/0,stop/0,nosound/0,silent/0]).
+-include_lib("kernel/include/file.hrl").
 %%----------------------------------------------------------------------
 %% sounder.erl  -  An interface to /dev/audio 
 %%
@@ -51,8 +52,8 @@ start() ->
     case whereis(sounder) of
 	undefined ->
 	    %% first we check if the workstation has audio capabilities
-	    case file:file_info('/dev/audio') of
-		{ok, {_, _, read_write, _, _, _, _}} -> 	
+	    case file:read_file_info('/dev/audio') of
+		{ok, FI} when FI#file_info.access==read_write ->
 		    register(sounder, spawn(sounder,go,[])),
 		    ok;
 		Other ->

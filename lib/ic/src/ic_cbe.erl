@@ -860,6 +860,7 @@ gen_cc_type(G, N, S, evaluate) when element(1, S) == scoped_id ->
 	Type ->
 	    gen_cc_type(G, N, Type, evaluate)
     end;
+
 gen_cc_type(G, N, S, evaluate_not) when element(1, S) == scoped_id ->
     {FullScopedName, T, TK, _} = icgen:get_full_scoped_name(G, N, S),
     BT = icgen:get_basetype(G, icgen:to_undersc(FullScopedName)),
@@ -898,10 +899,20 @@ gen_cc_type(G, N, {unsigned, U}, _) ->
 	{'long long',_} ->
 	    "CORBA_unsigned_long_long"
     end;
+
 gen_cc_type(G, N, {'long long', _}, _) ->
     "CORBA_long_long";
+
 gen_cc_type(G, N, S, _) when record(S, union)->
     icgen:get_id2(S);
+
+gen_cc_type(G, N, S, _) when record(S, struct) -> %% Locally defined member
+    Fullname = [icgen:get_id2(S) | N],
+    icgen:to_undersc(Fullname);
+
+gen_cc_type(G, N, {'any', _}, _) ->  %% Fix for any type
+    "CORBA_long";
+
 gen_cc_type(G, N, {T, _}, _) ->
     "CORBA_" ++ atom_to_list(T).
 
@@ -983,10 +994,14 @@ gen_encoding_fun(G, N, Fd, T, LName, OutBuffer)  when list(T) -> %% Already a fu
 		wchar ->  %% WCHAR
 		    emit(Fd, "  if ((oe_error_code = oe_ei_encode_wchar(oe_env, ~s)) < 0)\n",
 			 [LName]),
-		    emit(Fd, "    return oe_error_code;\n\n");
-		
+		    emit(Fd, "    return oe_error_code;\n\n");		
 		octet ->
 		    emit(Fd, "  if ((oe_error_code = oe_ei_encode_char(oe_env, ~s)) < 0)\n",
+			 [LName]),
+		    emit(Fd, "    return oe_error_code;\n\n");
+
+		any -> %% Fix for any type
+		    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, ~s)) < 0)\n",
 			 [LName]),
 		    emit(Fd, "    return oe_error_code;\n\n")
 	    end;
@@ -1085,6 +1100,15 @@ gen_encoding_fun(G, N, Fd, T, LName, OutBuffer) ->
 
 	{union, _, _, _, _} -> %% Union as a member in struct !  
 	    emit(Fd, "    return oe_error_code;\n\n");
+
+	{struct, _, _, _} -> %% Struct as a member in struct !  
+	    emit(Fd, "    return oe_error_code;\n\n");
+
+	{any, _} -> %% Fix for any type
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, ~s)) < 0)\n",
+		 [LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+	
 	_ ->  
 	    icgen:fatal_error(G, {illegal_typecode_for_c, T, N})
     end.
@@ -1202,6 +1226,12 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer)  when list(T) -> %% Already a
 				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_char(oe_env, ~s)) < 0)\n",
 					 [LName]),
 				    emit(Fd, "    return oe_error_code;\n\n");
+
+				tk_any ->   %% Fix for any type
+				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, ~s)) < 0)\n",
+					 [LName]),
+				    emit(Fd, "    return oe_error_code;\n\n");
+
 				_ ->
 				    emit(Fd, "    return oe_error_code;\n\n"),
 				    ok
@@ -1308,6 +1338,15 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer) ->
 	{ArrayType, {array, _, _}} ->
 	    emit(Fd, "    return oe_error_code;\n\n"),
 	    ok;
+	{struct, _, _, _} -> %% Struct as a member in struct !  
+	    emit(Fd, "    return oe_error_code;\n\n"),
+	    ok;
+	
+	{any, _} ->   %% Fix for any type
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, ~s)) < 0)\n",
+		 [LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+
 	_ ->
 	    %%io:format("2 ------------> ~p~n", [T]),
 	    icgen:fatal_error(G, {illegal_typecode_for_c, T, N})
@@ -1460,6 +1499,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring,
 		
 		octet ->
 		    emit(Fd, "  if ((oe_error_code = ei_decode_char(~s, &oe_env->_iin, ~s~s)) < 0)\n",
+			 [InBuffer, Refstring, LName]),
+		    emit(Fd, "    return oe_error_code;\n\n");
+
+		any -> %% Fix for any type
+		    emit(Fd, "  if ((oe_error_code = ei_decode_long(~s, &oe_env->_iin, ~s~s)) < 0)\n",
 			 [InBuffer, Refstring, LName]),
 		    emit(Fd, "    return oe_error_code;\n\n")
 	    
@@ -1678,6 +1722,14 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring, InBuffer, Align, NextPos, DecTyp
 		 [icgen:mk_oe_name(G, "decode_"),get_id2(SId), NextPos, Ptr]),
 	    emit(Fd, "    return oe_error_code;\n\n");
 
+	{struct, _, _, _} -> %% Struct as a member in struct !  
+	    ok;
+
+	{any, _} ->   %% Fix for any type
+	    emit(Fd, "  if ((oe_error_code = ei_decode_long(~s, &oe_env->_iin, ~s~s)) < 0)\n",
+		 [InBuffer, Refstring, LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+
 	_ ->
 	    %%io:format("3 ------------> ~p~n", [T]),
 	    icgen:fatal_error(G, {illegal_typecode_for_c, T, N})
@@ -1771,7 +1823,11 @@ gen_malloc_size_calculation(G, N, Fd, T, InBuffer, Align, CalcType)  when list(T
 			 [InBuffer]);
 		octet ->
 		    emit(Fd, "    if ((oe_error_code = ei_decode_char(~s, oe_size_count_index, 0)) < 0)\n",
+			 [InBuffer]);
+		any -> %% Fix for any type
+		    emit(Fd, "    if ((oe_error_code = ei_decode_long(~s, oe_size_count_index, 0)) < 0)\n",
 			 [InBuffer])
+	    
 	    end,
 	    emit(Fd, "      return oe_error_code;\n\n");
 	false ->
@@ -1948,6 +2004,21 @@ gen_malloc_size_calculation(G, N, Fd, T, InBuffer, Align, CalcType) ->
 		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, &oe_size_count_index, &oe_malloc_size)) < 0)\n",
 			 [icgen:mk_oe_name(G, "sizecalc_"), get_id2(UId)])
 	    end;
+
+	{struct, UId, _, _} -> %% Struct as a member in struct !
+	    case CalcType of
+		generator ->
+		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0)\n",
+			 [icgen:mk_oe_name(G, "sizecalc_"), get_id2(UId)]);
+		_ ->
+		    emit(Fd, "    if ((oe_error_code = ~s~s(oe_env, &oe_size_count_index, &oe_malloc_size)) < 0)\n",
+			 [icgen:mk_oe_name(G, "sizecalc_"), get_id2(UId)])
+	    end;
+
+	{any, _} ->   %% Fix for any type
+	    emit(Fd, "    if ((oe_error_code = ei_decode_long(~s, oe_size_count_index, 0)) < 0)\n",
+		 [InBuffer]);
+
 	_ ->
 	    icgen:fatal_error(G, {illegal_typecode_for_c, T, N})
     end,
@@ -2299,20 +2370,32 @@ gen_client_enc_func(G, N, X, Name, ArgNames, TypeList)->
 		    end
 	    end,
 
-	    emit(Fd, "  int oe_error_code = 0;\n  oe_env->_iout = 0;\n\n"),
 
-	    emit_encoding(G, N, Fd, X, lists:filter(fun({_, A, _}) ->
-								     case A of
-									 out ->
-									     false;
-									 inout ->
-									     false;
-									 _ ->
-									     true
-								     end
-							     end,
-							     TAlist),
-			  is_oneway(X)),
+	    EncList = lists:filter(fun({_, A, _}) ->
+					   case A of
+					       out ->
+						   false;
+					       inout ->
+						   false;
+					       _ ->
+						   true
+					   end
+				   end,
+				   TAlist),
+
+	    case EncList of 
+		[] ->
+		    case is_oneway(X) of
+			true ->
+			    emit(Fd, "  oe_env->_iout = 0;\n\n");
+			false ->
+			    emit(Fd, "  int oe_error_code = 0;\n  oe_env->_iout = 0;\n\n")
+		    end;
+		_ ->
+		    emit(Fd, "  int oe_error_code = 0;\n  oe_env->_iout = 0;\n\n")
+	    end,
+
+	    emit_encoding(G, N, Fd, X, EncList,is_oneway(X)),
  
 	    emit(Fd, "  return 0;\n}\n\n\n"),
 	    ok;

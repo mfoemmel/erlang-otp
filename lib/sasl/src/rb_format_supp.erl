@@ -20,9 +20,6 @@
 %% user interface
 -export([print/3]).
 
-%% exports for use within module
--export([transform_mfa/1]).
-
 %%-----------------------------------------------------------------
 %% This module prints error reports. Called from rb.
 %%-----------------------------------------------------------------
@@ -49,12 +46,26 @@ print(Date, Report, Device) ->
 					       [{header, Header} |
 						format_s(SupReport)]),
 		    true;
+		{error_report, _GL, {Pid, _Type, Report1}} ->
+		    Header = format_h(Line, "ERROR REPORT", Pid, Date),
+		    format_lib_supp:print_info(Device,
+					       Line,
+					       [{header, Header},
+						{data, Report1}]),
+		    true;
 		{info_report, _GL, {Pid, progress, SupProgress}} ->
 		    Header = format_h(Line, "PROGRESS REPORT", Pid, Date),
 		    format_lib_supp:print_info(Device,
 					       Line,
 					       [{header, Header} |
 						format_p(SupProgress)]);
+		{info_report, _GL, {Pid, _Type, Report1}} ->
+		    Header = format_h(Line, "INFO REPORT", Pid, Date),
+		    format_lib_supp:print_info(Device,
+					       Line,
+					       [{header, Header},
+						{data, Report1}]),
+		    true;
 		{error, _GL, {Pid, Format, Args}} ->
 		    Header = format_h(Line, "ERROR REPORT", Pid, Date),
 		    format_lib_supp:print_info(Device,
@@ -112,7 +123,7 @@ format_s(Data) ->
      {items, {"Child process", 
 	      [{errorContext, ErrorContext}, 
 	       {reason, Reason} |
-	       lists:map({rb_format_supp, transform_mfa}, [], ChildInfo)]}}].
+               lists:map(fun(CI) -> transform_mfa(CI) end, ChildInfo)]}}].
 
 transform_mfa({mfa, Value}) -> {start_function, Value};
 transform_mfa(X) -> X.

@@ -22,10 +22,15 @@
 #  include "config.h"
 #endif
 #include "sys.h"
+#include "erl_driver.h"
 #include "erl_efile.h"
 #include <utime.h>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif
+#ifdef HAVE_SYS_UIO_H
+#include <sys/types.h>
+#include <sys/uio.h>
 #endif
 #ifdef VXWORKS
 #include <ioLib.h>
@@ -57,6 +62,15 @@ extern STATUS copy(char *, char *);
 
 #ifdef SUNOS4
 #  define getcwd(buf, size) getwd(buf)
+#endif
+
+/* Find a definition of MAXIOV, that is used in the code later. */
+#if defined IOV_MAX
+#define MAXIOV IOV_MAX
+#elif defined UIO_MAXIOV
+#define MAXIOV UIO_MAXIOV
+#else
+#define MAXIOV 16
 #endif
 
 /*
@@ -271,7 +285,10 @@ efile_mkdir(Efile_error* errInfo,	/* Where to return error codes. */
 	 */
     if (mkdir(name) < 0) {
 	struct stat sb;
-	if (stat(name, &sb) == OK) {
+	if (name[0] == '\0') {
+	/* Return the correct error code enoent */ 
+	    errno = S_nfsLib_NFSERR_NOENT;
+	} else if (stat(name, &sb) == OK) {
 	    errno = S_nfsLib_NFSERR_EXIST;
 	} else if((strchr(name, '/') != NULL) && (errno == 0xd)) {
 	/* Return the correct error code enoent */ 
@@ -295,6 +312,12 @@ efile_rmdir(Efile_error* errInfo,	/* Where to return error codes. */
     if (rmdir(name) == 0) {
 	return 1;
     }
+#ifdef VXWORKS
+    if (name[0] == '\0') {
+	/* Return the correct error code enoent */ 
+	errno = S_nfsLib_NFSERR_NOENT;
+    }
+#else
     if (errno == ENOTEMPTY) {
 	errno = EEXIST;
     }
@@ -314,6 +337,7 @@ efile_rmdir(Efile_error* errInfo,	/* Where to return error codes. */
 	}
 	errno = saved_errno;
     }
+#endif
     return check_error(-1, errInfo);
 }
 
@@ -406,6 +430,11 @@ efile_rename(Efile_error* errInfo,	/* Where to return error codes. */
 	char srcPath[MAXPATHLEN], dstPath[MAXPATHLEN];
 	DIR *dirPtr;
 	struct dirent *dirEntPtr;
+
+#ifdef PURIFY
+	memset(srcPath, '\0', sizeof(srcPath));
+	memset(dstPath, '\0', sizeof(dstPath));
+#endif
 
 	if ((realpath(src, srcPath) != NULL)
 		&& (realpath(dst, dstPath) != NULL)
@@ -691,6 +720,13 @@ efile_fileinfo(Efile_error* errInfo, Efile_info* pInfo,
     struct tm *timep;		/* Broken-apart filetime. */
     int result;
 
+#ifdef VXWORKS
+    if (*name == '\0') {
+	errInfo->posix_errno = errInfo->os_errno = ENOENT;
+	return 0;
+    }
+#endif
+
     CHECK_PATHLEN(name, errInfo);
 
     if (info_for_link) {
@@ -885,6 +921,93 @@ efile_write(Efile_error* errInfo,	/* Where to return error codes. */
 	buf += written;
 	count -= written;
     }
+    return 1;
+}
+
+int
+efile_writev(Efile_error* errInfo,   /* Where to return error codes */
+	     int flags,              /* Flags given when file was
+				      * opened */
+	     int fd,                 /* File descriptor to write to */
+	     SysIOVec* iov,          /* Vector of buffer structs.
+				      * The structs are unchanged 
+				      * after the call */
+	     int iovcnt,             /* Number of structs in vector */
+	     int size)               /* Number of bytes to write */
+{
+    int cnt = 0;                     /* Buffers so far written */
+    int p = 0;                       /* Position in next buffer */
+
+    ASSERT(iovcnt >= 0);
+    ASSERT(size >= 0);
+    
+#ifdef VXWORKS
+    if (flags & EFILE_MODE_APPEND) {
+	lseek(fd, 0, SEEK_END);      /* Naive append emulation on VXWORKS */
+    }
+#endif
+
+    while (cnt < iovcnt) {
+#ifdef HAVE_WRITEV
+	int w;                       /* Bytes written in this call */
+	int b = iovcnt - cnt;        /* Buffers to write */
+	if (b > MAXIOV)
+	    b = MAXIOV;
+	if (iov[cnt].iov_base && iov[cnt].iov_len > 0) {
+	    if (b == 1) {
+		/* Degenerated io vector */
+		do {
+		    w = write(fd, iov[cnt].iov_base + p, iov[cnt].iov_len - p);
+		} while (w < 0 && errno == EINTR);
+	    } else {
+		/* Non-empty vector first.
+		 * Adjust pos in first buffer in case of 
+		 * previous incomplete writev */
+		iov[cnt].iov_base += p;
+		iov[cnt].iov_len  -= p;
+		do {
+		    w = writev(fd, &iov[cnt], b);
+		} while (w < 0 && errno == EINTR);
+		iov[cnt].iov_base -= p;
+		iov[cnt].iov_len  += p;
+	    }
+	    if (w < 0)
+		return check_error(-1, errInfo);
+	} else {
+	    /* Empty vector first - skip */
+	    cnt++;
+	    continue;
+	}
+	ASSERT(w >= 0);
+	/* Move forward to next vector to write */
+	for (; cnt < iovcnt; cnt++) {
+	    if (iov[cnt].iov_base && iov[cnt].iov_len > 0) {
+		if (w < iov[cnt].iov_len)
+		    break;
+		else
+		    w -= iov[cnt].iov_len;
+	    }
+	}
+	ASSERT(w >= 0);
+	p = w > 0 ? w : 0; /* Skip p bytes next writev */
+#else /* #ifdef HAVE_WRITEV */
+	if (iov[cnt].iov_base && iov[cnt].iov_len > 0) {
+	    /* Non-empty vector */
+	    int w;                   /* Bytes written in this call */
+	    while (p < iov[cnt].iov_len) {
+		do {
+		    w = write(fd, iov[cnt].iov_base + p, iov[cnt].iov_len - p);
+		} while (w < 0 && errno == EINTR);
+		if (w < 0)
+		    return check_error(-1, errInfo);
+		p += w;
+	    }
+	}
+	cnt++;
+	p = 0;
+#endif /* #ifdef HAVE_WRITEV */
+    } /* while (cnt< iovcnt) */
+    size = 0; /* Avoid compiler warning */
     return 1;
 }
 

@@ -54,9 +54,10 @@ WINSOCK_LIB = ws2_32.lib
 # 
 # NOTE: Size of fd_set set here.
 #
-OPTS = /G5 /Ox /O2 /Ob2
+##OPTS = /MD /G5 /Ox /O2 /Ob2
+OPTS = /MDd /G5 /Ox /O2 /Ob2 /Z7
 DEFS = -DFD_SETSIZE=256 -D__WIN32__ -DWIN32
-CFLAGS = $(INCLUDES) /nologo /MT $(OPTS) $(DEFS)
+CFLAGS = $(INCLUDES) /nologo $(OPTS) $(DEFS)
 
 # Object files
 #

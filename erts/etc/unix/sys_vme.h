@@ -8,7 +8,9 @@
 #ifndef	_SYS_VME_H
 #define	_SYS_VME_H
 
-#pragma ident   "@(#)vme.h 1.1   93/07/13"
+#if !defined(__GNUC__)
+#pragma ident   "@(#)vme.h 1.1   93/07/13" /* */
+#endif
 
 #ifdef  __cplusplus
 extern "C" {

@@ -25,7 +25,7 @@
 
 #include "sys.h"
 #include "erl_vm.h"
-#include "driver.h"
+#include "erl_sys_driver.h"
 #include "global.h"
 #include "erl_ddll.h"
 
@@ -59,13 +59,13 @@
  ************************************************************************/
 #define LOAD_FAILED   2
 
-typedef FUNCTION(DriverEntry*, (*DRV_INITFN), (void*));
+/*typedef FUNCTION(DriverEntry*, (*DRV_INITFN), (void*));*/
 
-static long dyn_start();
-static int dyn_stop();
-static int handle_command();
+static ErlDrvData dyn_start(ErlDrvPort, char*, SysDriverOpts* opts);
+static void dyn_stop(ErlDrvData);
+static void handle_command(ErlDrvData, char*, int);
 
-struct driver_entry ddll_driver_entry = {
+struct erl_drv_entry ddll_driver_entry = {
     NULL,			/* init */
     dyn_start,			/* start */
     dyn_stop,			/* stop */
@@ -109,18 +109,19 @@ error_reply(char* atom, char* string)
     return 0;
 }
 
-static long dyn_start(long port, char *buf)
+static ErlDrvData dyn_start(ErlDrvPort port, char *buf, SysDriverOpts* opts)
 {
     if (erlang_port != -1) {
-	return -1;			/* Already started! */
+	return ERL_DRV_ERROR_GENERAL;	/* Already started! */
     }
-    return erlang_port = port;
+    erlang_port = port;
+    return (ErlDrvData)port;
 }
 
-static int dyn_stop()
+static void dyn_stop(ErlDrvData d)
 {
     erlang_port = -1;
-    return 0;
+    return;
 }
 
 
@@ -164,10 +165,10 @@ static int unload(void* arg1, void* arg2)
 
 static int load(char* full_name, char* driver_name)
 {
-    DriverEntry *dp;
+    ErlDrvEntry *dp;
     DE_Handle* dh;
     void *lib;
-    uint32 *initfn;
+    ErlDrvEntry* (* initfn)(DE_Handle *);
 
     DEBUGF(("ddll_drv: load: %s, %s\r\n", full_name, driver_name));
 
@@ -196,7 +197,7 @@ static int load(char* full_name, char* driver_name)
     dh->cb = NULL;
     dh->ca[0] = NULL;
 
-    if ((dp = (((DriverEntry *(*)())initfn)(dh))) == NULL) {
+    if ((dp = initfn(dh)) == NULL) {
 	ddll_close(lib);
 	sys_free(dh);
 	return reply(erlang_port, 'e', "driver_init_failed");
@@ -234,7 +235,7 @@ static int reload(void* arg1, void* arg2, void* arg3, void* arg4)
 }
 
 
-static int handle_command(long inport, char *buf, int count)
+static void handle_command(ErlDrvData inport, char *buf, int count)
 {
     char *driver_name;
     
@@ -244,7 +245,8 @@ static int handle_command(long inport, char *buf, int count)
      */
     
     if (count == 0 || (count > 1 && buf[count-1] != 0)) {
-	return driver_failure(erlang_port, 100);
+	driver_failure(erlang_port, 100);
+	return;
     }
   
     switch (*buf++) {
@@ -256,13 +258,15 @@ static int handle_command(long inport, char *buf, int count)
 	    int j;
 
 	    if (count < 5) {
-		return driver_failure(erlang_port, 110);
+		driver_failure(erlang_port, 110);
+		return;
 	    }
 
 	    driver_name = buf;
 	    j = strlen(driver_name);
 	    if (j == 0 || j+3 >= count) {
-		return driver_failure(erlang_port, 111);
+		driver_failure(erlang_port, 111);
+		return;
 	    }
 
 	    full_name = buf+j+1;
@@ -280,7 +284,7 @@ static int handle_command(long inport, char *buf, int count)
 			    dh->ca[1] = driver_alloc(strlen(driver_name)+1);
 			    strcpy((char*)dh->ca[0], full_name);
 			    strcpy((char*)dh->ca[1], driver_name);
-			    return 0;
+			    return;
 			}
 			else if (dh->status == ERL_DE_RELOAD) {
 			    driver_free(dh->ca[0]);
@@ -289,13 +293,15 @@ static int handle_command(long inport, char *buf, int count)
 			    dh->ca[1] = driver_alloc(strlen(driver_name)+1);
 			    strcpy((char*)dh->ca[0], full_name);
 			    strcpy((char*)dh->ca[1], driver_name);
-			    return 0;
+			    return;
 			}
 		    }
-		    return reply(erlang_port, 'e', "already_loaded");
+		    reply(erlang_port, 'e', "already_loaded");
+		    return;
 		}
 	    }
-	    return load(full_name, driver_name);
+	    load(full_name, driver_name);	    
+	    return;
 	}
 
     case UNLOAD_DRIVER:
@@ -304,7 +310,8 @@ static int handle_command(long inport, char *buf, int count)
 	    DE_Handle* dh;
 
 	    if (count < 3) {
-		return driver_failure(erlang_port, 200);
+		driver_failure(erlang_port, 200);
+		return;
 	    }
 	    driver_name = buf;
 
@@ -313,8 +320,10 @@ static int handle_command(long inport, char *buf, int count)
 	    for (de = driver_list; de != NULL; de = de->next) {
 		if (strcmp(de->drv->driver_name, driver_name) == 0) {
 		    dh = de->de_hndl;
-		    if (dh == NULL)
-			return reply(erlang_port, 'e', "linked_in_driver");
+		    if (dh == NULL) {
+			reply(erlang_port, 'e', "linked_in_driver");
+			return;
+		    }
 		    dh->ref_count--;
 		    if (dh->ref_count > 0) {
 			DEBUGF(("ddll_drv: UNLOAD: ref_count =%d\r\n",
@@ -324,7 +333,7 @@ static int handle_command(long inport, char *buf, int count)
 			    dh->cb = unload;
 			    dh->ca[0] = (void*) de;
 			    dh->ca[1] = (void*) erlang_port;
-			    return 0;  /* delayed op */
+			    return;  /* delayed op */
 			}
 			else if (dh->status == ERL_DE_RELOAD) {
 			    dh->status = ERL_DE_UNLOAD;
@@ -333,17 +342,19 @@ static int handle_command(long inport, char *buf, int count)
 			    driver_free(dh->ca[1]);
 			    dh->ca[0] = (void*) de;
 			    dh->ca[1] = (void*) erlang_port;
-			    return 0;
+			    return;
 			}
 			else if (dh->status == ERL_DE_UNLOAD)
-			    return 0;
+			    return;
 		    }
 		    else {
-			return unload((void*) de, (void*) erlang_port);
+			unload((void*) de, (void*) erlang_port);
+			return;
 		    }
 		}
 	    }
-	    return reply(erlang_port, 'e', "not_loaded");
+	    reply(erlang_port, 'e', "not_loaded");
+	    return;
 	}
     
     case GET_DRIVERS:
@@ -353,11 +364,12 @@ static int handle_command(long inport, char *buf, int count)
 	    for (pos = driver_list; pos != NULL; pos = pos->next) {
 		reply(erlang_port, 'i', pos->drv->driver_name);
 	    }
-	    return reply(erlang_port, 'o', "");
+	    reply(erlang_port, 'o', "");
+	    return;
 	}
 	
     default:
 	driver_failure(erlang_port, 999);
     }
-    return 0;
+    return;
 }

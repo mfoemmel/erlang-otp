@@ -54,18 +54,28 @@ MODULES =  \
 	beam_block \
 	beam_jump \
 	beam_type \
+	beam_clean \
 	beam_flatten \
 	beam_listing \
 	beam_asm \
 	beam_dict \
-	beam_opcodes
+	beam_opcodes \
+	beam_disasm \
+	beam_pp \
+        erl_bifs \
+	cerl \
+	cerl_clauses \
+	cerl_inline \
+	cerl_trees \
+	rec_env
 
 BEAM_H = $(wildcard ../priv/beam_h/*.h)
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
-TARGET_FILES= beam_opcodes.hrl $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
-
+INSTALL_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
+TARGET_FILES= beam_opcodes.hrl $(INSTALL_FILES)
+ 
 APP_FILE= compiler.app
 APP_SRC= $(APP_FILE).src
 APP_TARGET= $(EBIN)/$(APP_FILE)
@@ -84,7 +94,7 @@ ERL_COMPILE_FLAGS += -I../../stdlib/include -W
 # Targets
 # ----------------------------------------------------
 
-debug opt: $(TARGET_FILES) 
+debug opt: $(TARGET_FILES)
 
 docs:
 
@@ -105,8 +115,13 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 beam_opcodes.erl beam_opcodes.hrl: genop.tab
 	$(PERL) $(ERL_TOP)/erts/emulator/utils/beam_makeops -compiler $<
 
-$(EBIN)/beam_asm.beam: $(ESRC)/beam_asm.erl
+$(EBIN)/beam_asm.beam: $(ESRC)/beam_asm.erl beam_opcodes.hrl
 	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -DCOMPILER_VSN='"$(VSN)"' -o$(EBIN) $<
+
+$(EBIN)/cerl_inline.beam: $(ESRC)/cerl_inline.erl
+	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) +nowarn_shadow_vars -o$(EBIN) $<
+
+$(EBIN)/beam_disasm.beam: beam_opcodes.hrl
 
 # ----------------------------------------------------
 # Release Target
@@ -114,7 +129,9 @@ $(EBIN)/beam_asm.beam: $(ESRC)/beam_asm.erl
 include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
+	$(INSTALL_DIR) $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(ERL_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
-	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
+	$(INSTALL_DATA) $(INSTALL_FILES) $(RELSYSDIR)/ebin
 
 release_docs_spec:

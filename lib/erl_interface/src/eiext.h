@@ -42,9 +42,10 @@ extern "C" {
 #define ERL_BINARY_EXT        'm'
 #define ERL_SMALL_BIG_EXT     'n'
 #define ERL_LARGE_BIG_EXT     'o'
-#define ERL_PASS_THROUGH      'p'
+#define ERL_NEW_FUN_EXT	      'p'
+#define ERL_FUN_EXT	      'u'
  
-#define ERL_NEW_CACHE         'N' /* c nodes dont know these two */
+#define ERL_NEW_CACHE         'N' /* c nodes don't know these two */
 #define ERL_CACHED_ATOM       'C'
 
 #define ERL_VERSION_MAGIC 131   /* 130 in erlang 4.2 */
@@ -52,7 +53,6 @@ extern "C" {
 /* from erl_eterm.h */
 #define ERL_MAX ((1 << 27)-1)
 #define ERL_MIN -(1 << 27)
-
 
 /* these are the control message types */
 #define ERL_LINK          1
@@ -63,6 +63,7 @@ extern "C" {
 #define ERL_REG_SEND      6
 #define ERL_GROUP_LEADER  7
 #define ERL_EXIT2         8
+#define ERL_PASS_THROUGH      'p'
 
 /* new ones for tracing, from Kenneth */
 #define ERL_SEND_TT      12

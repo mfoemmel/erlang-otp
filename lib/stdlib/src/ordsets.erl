@@ -13,7 +13,7 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
-%%     $Id: ordsets.erl,v 1.1.1.1 1999/11/25 13:52:10 erlang Exp $
+%%     $Id$
 %%
 
 -module(ordsets).
@@ -57,44 +57,42 @@ to_list(S) -> S.
 %% from_list([Elem]) -> Set.
 %%  Build an ordered set from the elements in List.
 
-from_list([E|Es]) ->
-    add_element(E, from_list(Es));
-from_list([]) ->
-    [].
+from_list(L) ->
+    lists:usort(L).
 
 %% is_element(Element, OrdSet) -> bool().
 %%  Return 'true' if Element is an element of OrdSet, else 'false'.
 
-is_element(E, [H|Es]) when E < H -> false;
-is_element(E, [H|Es]) when E == H -> true;
 is_element(E, [H|Es]) when E > H -> is_element(E, Es);
+is_element(E, [H|Es]) when E < H -> false;
+is_element(E, [H|Es]) -> true;			%E == H
 is_element(E, []) -> false.
 
 %% add_element(Element, OrdSet) -> OrdSet.
 %%  Return OrdSet with Element inserted in it.
 
-add_element(E, [H|_]=Es) when E < H -> [E|Es];
-add_element(E, [H|_]=Es) when E == H -> Es;
-add_element(E, [H|Es]) when E > H ->[H|add_element(E, Es)];
+add_element(E, [H|Es]) when E > H -> [H|add_element(E, Es)];
+add_element(E, [H|Es]=Set) when E < H -> [E|Set];
+add_element(E, [H|Es]=Set) -> Set;		%E == H
 add_element(E, []) ->[E].
 
 %% del_element(Element, OrdSet) -> OrdSet.
 %%  Return OrdSet but with Element removed.
 
-del_element(E, [H|_]=Es) when E < H -> Es;
-del_element(E, [H|Es]) when E == H -> Es;
 del_element(E, [H|Es]) when E > H -> [H|del_element(E, Es)];
+del_element(E, [H|Es]=Set) when E < H -> Set;
+del_element(E, [H|Es]) -> Es;			%E == H
 del_element(E, []) ->[].
 
 %% union(OrdSet1, OrdSet2) -> OrdSet
 %%  Return the union of OrdSet1 and OrdSet2.
 
-union([H1|Es1], [H2|Es2]) when H1 < H2 ->
-    [H1|union(Es1, [H2|Es2])];
-union([H1|Es1], [H2|Es2]) when H1 == H2 ->
-    [H1|union(Es1, Es2)];
-union([H1|Es1], [H2|Es2]) when H1 > H2 ->
-    [H2|union([H1|Es1], Es2)];
+union([E1|Es1], [E2|Es2]=Set2) when E1 < E2 ->
+    [E1|union(Es1, Set2)];
+union([E1|Es1]=Set1, [E2|Es2]) when E1 > E2 ->
+    [E2|union(Es2, Set1)];			% switch arguments!
+union([E1|Es1], [E2|Es2]) ->			%E1 == E2
+    [E1|union(Es1, Es2)];
 union([], Es2) -> Es2;
 union(Es1, []) -> Es1.
 
@@ -112,12 +110,12 @@ union1(S1, []) -> S1.
 %% intersection(OrdSet1, OrdSet2) -> OrdSet.
 %%  Return the intersection of OrdSet1 and OrdSet2.
 
-intersection([H1|Es1], [H2|Es2]) when H1 < H2 ->
-    intersection(Es1, [H2|Es2]);
-intersection([H1|Es1], [H2|Es2]) when H1 == H2 ->
-    [H1|intersection(Es1, Es2)];
-intersection([H1|Es1], [H2|Es2]) when H1 > H2 ->
-    intersection([H1|Es1], Es2);
+intersection([E1|Es1], [E2|Es2]=Set2) when E1 < E2 ->
+    intersection(Es1, Set2);
+intersection([E1|Es1]=Set1, [E2|Es2]) when E1 > E2 ->
+    intersection(Es2, Set1);			% switch arguments!
+intersection([E1|Es1], [E2|Es2]) ->		%E1 == E2
+    [E1|intersection(Es1, Es2)];
 intersection([], Es2) ->
     [];
 intersection(Es1, []) ->
@@ -128,8 +126,7 @@ intersection(Es1, []) ->
 
 intersection([S1,S2|Ss]) ->
     intersection1(intersection(S1, S2), Ss);
-intersection([S]) -> S;
-intersection([]) -> [].
+intersection([S]) -> S.
 
 intersection1(S1, [S2|Ss]) ->
     intersection1(intersection(S1, S2), Ss);
@@ -139,12 +136,12 @@ intersection1(S1, []) -> S1.
 %%  Return all and only the elements of OrdSet1 which are not also in
 %%  OrdSet2.
 
-subtract([H1|Es1], [H2|Es2]) when H1 < H2 ->
-    [H1|subtract(Es1, [H2|Es2])];
-subtract([H1|Es1], [H2|Es2]) when H1 == H2 ->
+subtract([E1|Es1], [E2|Es2]=Set2) when E1 < E2 ->
+    [E1|subtract(Es1, Set2)];
+subtract([E1|Es1]=Set1, [E2|Es2]) when E1 > E2 ->
+    subtract(Set1, Es2);
+subtract([E1|Es1], [E2|Es2]) ->			%E1 == E2
     subtract(Es1, Es2);
-subtract([H1|Es1], [H2|Es2]) when H1 > H2 ->
-    subtract([H1|Es1], Es2);
 subtract([], Es2) -> [];
 subtract(Es1, []) -> Es1.
 
@@ -152,12 +149,12 @@ subtract(Es1, []) -> Es1.
 %%  Return 'true' when every element of OrdSet1 is also a member of
 %%  OrdSet2, else 'false'.
 
-is_subset([H1|Es1], [H2|Es2]) when H1 < H2 ->	%H1 not in Set2
+is_subset([E1|Es1], [E2|Es2]) when E1 < E2 ->	%E1 not in Set2
     false;
-is_subset([H1|Es1], [H2|Es2]) when H1 == H2 ->
+is_subset([E1|Es1]=Set1, [E2|Es2]) when E1 > E2 ->
+    is_subset(Set1, Es2);
+is_subset([E1|Es1], [E2|Es2]) ->		%E1 == E2
     is_subset(Es1, Es2);
-is_subset([H1|Es1], [H2|Es2]) when H1 > H2 ->
-    is_subset([H1|Es1], Es2);
 is_subset([], Es2) -> true;
 is_subset(Es1, []) -> false.
 

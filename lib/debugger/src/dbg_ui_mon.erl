@@ -1,5 +1,5 @@
 %% ``The contents of this file are subject to the Erlang Public License,
-%% Version 1.1, (the "License"); you may not use this file except in
+%% Version 1.1,(the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved via the world wide web at http://www.erlang.org/.
@@ -16,21 +16,13 @@
 %%     $Id$
 %%
 -module(dbg_ui_mon).
+-include_lib("kernel/include/file.hrl").
+   
+%% External exports
+-export([start_timeout/1, quick/3, attach_menus/1]).
 
-%% -- Exported user functions.
--export([
-	 start_timeout/1,
-	 q/3,
-	 quick/3
-	]).
-
-
-%% -- Exported internal functions.
--export([
-	 init/1,
-	 attach_menus/1
-	]).
-
+%% Internal exports
+-export([init/1]).
 
 -define(FRAMEDEFS,{open,open,open,close}).
 -define(BACKTRACE,100).
@@ -56,83 +48,91 @@
 		nodes,  % Nodes being monitored
 		btrace, % Back Trace default
 		focus,  % Process in focus
-		table
+		setting_file % string() File for saving/loading settings
 	       }). 
 
+%%%----------------------------------------------------------------------
+%%% External exports
+%%%----------------------------------------------------------------------
 
-
+%% start_timeout(Timeout) -> Pid | exit(Reason)
+%%   Timeout = integer() | infinity (timeout in milliseconds)
+%%   Pid = pid()
 start_timeout(Timeout) ->
-    PidInit = spawn (?MODULE, init, [self ()]),
+    PidInit = spawn(?MODULE, init, [self()]),
 
     %% Wait for a initialization completion message from
     %% the spawned process before returning its Pid.
-
     receive
         {initialization_complete, PidInit} ->
             PidInit;
 
         {already_exists, PidInit} ->
-            exit (PidInit, kill),
-            exit (already_exists)
+            exit(already_exists)
 
-    %% (Conditional) Failure to start within the time limit will
-    %% result in termination (Timeout may be infinite).
-
+    %%(Conditional) Failure to start within the time limit will
+    %% result in termination(Timeout may be infinite).
     after
 	Timeout ->
-            exit (PidInit, kill),
-            exit ({startup_timeout, ?MODULE})
+            exit(PidInit, kill),
+            exit({startup_timeout, ?MODULE})
     end.
 
+%% quick(Module, Function, Args) -> term()
+%%   Module = Function = atom()
+%%   Args = [term()]
+%% Opens an attach window with the given module.
+quick(Module, Function, Args) ->
+    int:i(Module),
+    int:auto_attach(init),
+    apply(Module, Function, Args).
 
+attach_menus(init) ->
+    dbg_ui_aux:select_menus(['First Call'],true);
+attach_menus(exit) ->
+    dbg_ui_aux:select_menus(['On Exit'],true);
+attach_menus(break) ->
+    dbg_ui_aux:select_menus(['On Break'],true).
 
-%%% quick  /3
-%%% 
-%%% quick opens an attach window with the given module
-%%%
+%%%----------------------------------------------------------------------
+%%% Internal exports
+%%%----------------------------------------------------------------------
 
-quick (Module, Fun, Args) ->
-    int:i (Module),
-    int:auto_attach (init),
-    apply (Module, Fun, Args).
-
-
-q (Module, Fun, Args) ->
-    quick (Module, Fun, Args).
-
-
-
-%%% init  /1
-%%% Initializes the necessary environment needed to follow attached
-%%% processes. Creates the monitor window and initializes it, as well
-%%% as updating menus
-%%%
-%%% Before entering the loop it sends a message to the calling function
-%%% that the initialization was complete.
-%%%
-
-init (CallingPid) ->
-    Text = dbg_ui_mon_win:mon_title (),
-    case dbg_ui_winman:win_started (self (), Text) of 
+%% init(Pid)
+%% Initializes the necessary environment needed to follow attached
+%% processes. Creates the monitor window and initializes it, as well
+%% as updating menus.
+%%
+%% Before entering the loop it sends a message to the calling function
+%% that the initialization was complete.
+init(CallingPid) ->
+    Title = dbg_ui_mon_win:mon_title(),
+    case dbg_ui_winman:win_started(self(), Title) of 
 	true ->
-	    CallingPid ! {already_exists, self ()};
+	    CallingPid ! {already_exists, self()};
 
-	_false ->
-	    ok
-    end,
+	false ->
+	    init2(CallingPid)
+    end.
+
+%%%----------------------------------------------------------------------
+%%% Internal functions
+%%%----------------------------------------------------------------------
+
+init2(CallingPid) ->
     
     process_flag(trap_exit,true),
     GS = gs:start([{kernel,true}]),
     int:start(),
     int:refresh(),
-    {Processes,Nodes} =initial_procs([],[]),
+    {Processes,Nodes} = initial_procs([],[]),
     ForProcesses = format_procs(Processes),
 
     {Win, Grid} = dbg_ui_mon_win:mon_window(ForProcesses),
-    dbg_ui_winman:insert_win (monitor, Win, self ()),    % windows manager
+    dbg_ui_winman:insert_win(monitor, Win, self()),    % windows manager
     dbg_ui_mon_win:update_backtrace_menu(?BACKTRACE),
     Size = length(ForProcesses),
-    Mods = lists:sort(code:interpreted()),
+    Mods = lists:sort(int:interpreted()),
     Breaks = int:all_breaks(),
     dbg_ui_aux:insert_breaks(Breaks,0),
     {Button,Eval,Bind,Trace} = get_frame(),
@@ -141,8 +141,6 @@ init (CallingPid) ->
     dbg_idb:insert(stack_defs,all),
     dbg_idb:insert(backtrace_def,?BACKTRACE),
     {ok,Dir} = file:get_cwd(),
-    TabId = dbg_ets:new(interpreter_includedirs_macros, 
-		    [set, public, {keypos,1}]),
     Gs_mon = #gs_mon{win    = Win,
 		     grid   = Grid,
 		     size   = Size,
@@ -163,18 +161,17 @@ init (CallingPid) ->
 		     nodes  = Nodes,
 		     btrace = ?BACKTRACE,
 		     stack  = all,
-		     table  = TabId},
+		     setting_file=default_setting_file()
+		    },
 
     check_focus_buttons(Gs_mon),
 
-    CallingPid ! {initialization_complete, self ()},
+    CallingPid ! {initialization_complete, self()},
 
     loop(new_mods(Gs_mon,Mods)).
 
-    
 %%% initial_procs(Pids) -> [PidTuple]
 %%% Reads all the messages regarding already attached pids
-
 initial_procs(Pids,Nodes) ->
     receive
 	{IntPid,new_proc,PidTuple} ->
@@ -188,8 +185,6 @@ initial_procs(Pids,Nodes) ->
 %% Functions for monitoring of remote Erlang nodes.
 %% Interpreted processes at a disconnected remote node
 %% are not accessible !!!
-
-
 monitor_nodes(PidTuple,Nodes) ->
     Pid = element(1,PidTuple),
     case is_alive() of
@@ -205,7 +200,6 @@ monitor_nodes(PidTuple,Nodes) ->
 	_ ->
 	    Nodes
     end.
-
 
 nodedown(Node,Gs_mon) ->
     NewNodes = lists:delete(Node,Gs_mon#gs_mon.nodes),
@@ -229,21 +223,19 @@ get_frame() ->
 	{ok,Frames}-> Frames
     end.
 
-
 %%% loop(#gs_mon).
 %%% The user loop where events from the attached processes are monitored.
 %%% User events in the window, with the exception of motion, are 
 %%% handled in the gs_cmd set of functions.
-
 loop(Gs_mon) ->
     receive
 	{ping, Pid} ->
 	    Pid ! {debugger, alive},
- 	    loop (Gs_mon);
+ 	    loop(Gs_mon);
 
 	{stop, Pid} ->
 	    Pid ! {debugger, stopped},
-            exit_debugger (Gs_mon, stop);
+            exit_debugger(Gs_mon, stop);
 	
         {new_dir,Dir}         ->
 	    loop(Gs_mon#gs_mon{dir=Dir});
@@ -291,8 +283,8 @@ loop(Gs_mon) ->
 	    loop(backtrace(Gs_mon,Size));
 
 	{update_windows, Data} ->
-	    dbg_ui_winman:update_windows_menu (Data),
-	    loop (Gs_mon);
+	    dbg_ui_winman:update_windows_menu(Data),
+	    loop(Gs_mon);
 
 	{gs,_,motion,_,[X,Y]} ->
 	    loop(flush_motion(X,Y,Gs_mon));
@@ -304,11 +296,9 @@ loop(Gs_mon) ->
 	    loop(Gs_mon)
     end.
 
-
 %%% stack_trace(Opt,Gs_mon) -> #gs_mon
 %%% Called when the stack options have been changed. The menus are
 %%% updated, as is GS_mon
- 
 stack_trace(Opt,Gs_mon) ->
     On = case Opt of
 	     all     -> 'Stack Tail';
@@ -323,33 +313,23 @@ stack_trace(Opt,Gs_mon) ->
 %%% auto_attached(Opt,Gs_mon) -> #gs_mon
 %%% Called when the auto attach options have been changed. The menus are
 %%% updated, as is GS_mon
-
 auto_attach(Opt,Gs_mon) ->
     case Opt of
 	false ->
 	    Menus = ['First Call','On Break','On Exit'],
 	    dbg_ui_aux:select_menus(Menus,false);
 	{Opts,_} ->
-	    lists:map({?MODULE,attach_menus},[],Opts)
+	    lists:map({?MODULE,attach_menus},Opts)
     end,
     Gs_mon#gs_mon{attach=Opt}.
-
-attach_menus(init) ->
-    dbg_ui_aux:select_menus(['First Call'],true);
-attach_menus(exit) ->
-    dbg_ui_aux:select_menus(['On Exit'],true);
-attach_menus(break) ->
-    dbg_ui_aux:select_menus(['On Break'],true).
 
 %%% trace_flag(Opt,Gs_mon) -> #gs_mon
 %%% Called when the trace flags options have been changed.
 %%% This is ignored, seen that trace flags should be controled
 %%% by the individual processes.
-
 trace_flag(Flag,Gs_mon) ->
     %%Ignore global trace flags
     Gs_mon.
-
 
 get_flags(#gs_mon{trace=Trace,bind=Bind,
 		 button=Button,eval=Eval})->	   
@@ -358,7 +338,6 @@ get_flags(#gs_mon{trace=Trace,bind=Bind,
 %%% clear(Gs_mon) -> #gs_mon
 %%% Removes all the dead processes from the debugger and monitor 
 %%% window.
-
 clear(Gs_mon) ->
     int:clear(),
     Gs_mon.
@@ -387,37 +366,28 @@ clear_grid(Gs_mon) ->
     dbg_ui_mon_win:change_colour(Grid, Focus, NewFocus),
     NewGs_mon.
 
-
-
 clear_pids(Pids) -> 
     clear_pids(Pids,1).
 
-
 clear_pids([{_,P,_,_,exit,_,_,_}|Pids],Count) ->
-    dbg_ui_winman:delete_att_win (P),
+    dbg_ui_winman:delete_att_win(P),
     clear_pids(Pids,Count);
-
 
 clear_pids([{_,P,_,_,no_conn,_,_,_}|Pids],Count) ->
-    dbg_ui_winman:delete_att_win (P),
+    dbg_ui_winman:delete_att_win(P),
     clear_pids(Pids,Count);
-
 
 clear_pids([{_R,P,M,C,S,I,E,N}|Pids],Count) ->
     [{Count,P,M,C,S,I,E,N}|clear_pids(Pids,Count+1)];
 
-
 clear_pids([],_) ->
     [].
-
-
 
 %%% new_status(StatTup,Gs_mon) -> #gs_mon
 %%% StatTup = {Pid,Meta,Func,Status,Where,Exit}
 %%% New Status is called whenever a running process changes
 %%% status. The monitor window is updated, as is the information 
 %%% in the GS_mon record.
-
 new_status(StatTup,Gs_mon) ->
     Pids = Gs_mon#gs_mon.pids,
     {Pid,Meta,Func,Status,Where,Exit} = flush_new_status(StatTup),
@@ -431,7 +401,8 @@ new_status(StatTup,Gs_mon) ->
 	_ ->
 	    dbg_ui_mon_win:update_field(Gs_mon#gs_mon.grid,{5,Row},Where,Data)
     end,
-    P = lists:keyreplace(Pid,2,Pids,{Row,Pid,Meta,Func,Status,Where,Exit,Name}),
+    P = lists:keyreplace(Pid,2,Pids,
+			 {Row,Pid,Meta,Func,Status,Where,Exit,Name}),
     NewGs_mon = Gs_mon#gs_mon{pids=P},
     check_focus_buttons(NewGs_mon),
     NewGs_mon.
@@ -448,7 +419,6 @@ flush_new_status(StatTuple) ->
 %%% new_proc(StatTup,Gs_mon) -> #gs_mon
 %%% StatTup = a tuple describing the newly attached process
 %%% Usen whenever a new process is to be displaied in the monitor window
-
 new_proc(StatTup,Gs_mon) ->
     Grid = Gs_mon#gs_mon.grid,
     Size = Gs_mon#gs_mon.size+1,
@@ -464,7 +434,6 @@ new_proc(StatTup,Gs_mon) ->
 %%% Mods = list of interpreted modules
 %%% called whenever a new set of modules have been trace compiled
 %%% Menues are added, and possible turned on depending on the state
-
 new_mods(Gs_mon,[]) -> Gs_mon;
 new_mods(Gs_mon,[Mod|Mods]) ->
     new_mods(new_mod(Gs_mon,Mod),Mods).
@@ -512,7 +481,6 @@ no_interpret(Gs_mon, Mod) ->
 %%% or added to the monitor window. The state is determined by the 
 %%% tuple passed to the function call. The return value is always 
 %%% the new #gs_mon record, updated with the new break information.
-
 break(Gs_mon,{new_break,{{Mod,Line},Status}}) ->
     Breaks = Gs_mon#gs_mon.breaks,
     case lists:keysearch({Mod,Line},1,Breaks) of
@@ -559,7 +527,6 @@ filter_mod_breaks(Mod,[{{O_Mod,Line},Opts}|Breaks],{New,Old}) ->
 %%%       by the user. 
 %%%   this function redirects the flow of command to the functions
 %%%   handling these events. 
-
 gs_cmd(Cmd,Gs_mon) ->
     Win   = Gs_mon#gs_mon.win,
     case Cmd of
@@ -569,7 +536,7 @@ gs_cmd(Cmd,Gs_mon) ->
 	    execute_cmd({configure,X,Y},Gs_mon);
 
 	{gs,_W,destroy,_,_} ->
-	    exit_debugger (Gs_mon, destroy);
+	    exit_debugger(Gs_mon, destroy);
 
 	%%Dynamic commands
 	{gs,Menu_Id, click,{break,{Module,Line,Action}} , _A} ->
@@ -619,48 +586,36 @@ gs_cmd(Cmd,Gs_mon) ->
 	    Gs_mon
     end.
 
-
-% Start of additions made by Fredrik Gustafson
-
 %%% Help Menu
-
 execute_cmd('Help',Gs_mon) -> 
     HelpFile = filename:join(code:priv_dir(debugger), "../doc/index.html"),
     tool_utils:open_help(gs:start([{kernel, true}]), HelpFile),
     Gs_mon;
 
-% End of additions made by Fredrik Gustafson
-
-
-
 %%% File Menu
-
 execute_cmd('Save',Gs_mon) -> 
-    save_setting(Gs_mon),
-    Gs_mon;
+    save_setting(Gs_mon);
 execute_cmd('Load',Gs_mon) -> 
     load_setting(Gs_mon);
 execute_cmd('Reset Options',Gs_mon) -> 
-    reset_options (Gs_mon);
+    reset_options(Gs_mon);
 execute_cmd('Exit',Gs_mon) -> 
-    confirm_exit_debugger (Gs_mon, exit);      
+    confirm_exit_debugger(Gs_mon, exit);      
 						
 %%% Edit Menu
-
 execute_cmd('Clear',Gs_mon) -> 
     clear(Gs_mon);
 execute_cmd('Kill All',Gs_mon) -> 
     kill_all(tl(Gs_mon#gs_mon.pids)),Gs_mon;
 
 %%% Modules Menu
-
 execute_cmd('Interpret',Gs_mon) ->
     Pos = get_cursor_pos(Gs_mon#gs_mon.win,Gs_mon#gs_mon.coords),
     dbg_ui_interpret:start({int,ni,[]},
 			  Pos,
 			  "Interpret Dialog",
-			  Gs_mon#gs_mon.dir, 
-			  Gs_mon#gs_mon.table),
+			   Gs_mon#gs_mon.dir, 
+			   no_table),		%XXX Remove argument.
     Gs_mon;
 execute_cmd('Delete All Modules',Gs_mon) ->
     delete_all(Gs_mon#gs_mon.mods),
@@ -672,9 +627,7 @@ execute_cmd({'View',Mod},Gs_mon)  ->
     dbg_ui_view:start(Mod),
     Gs_mon;
 
-
 %%% Process Menu
-
 execute_cmd({focus,To},Gs_mon) ->
     Real_to = check_focus_choice(To,Gs_mon#gs_mon.size),
     dbg_ui_mon_win:change_colour(Gs_mon#gs_mon.grid, Gs_mon#gs_mon.focus,
@@ -701,7 +654,7 @@ execute_cmd('Trace',Gs_mon) ->
 		 %% FIXME: 
 		 %% This case is added to remedy an intermittent problem
 		 %% with the lists:keysearch() call not returning
-		 %% expected values. (OTP-2246)
+		 %% expected values.(OTP-2246)
 		 %% 
 		 Catchall ->
 		     ok				%Do nothing
@@ -768,7 +721,6 @@ execute_cmd('Delete All Breaks',Gs_mon) ->
     int:no_break(),Gs_mon;
 
 %%% Options Commands
-
 execute_cmd('Never Attach',Gs_mon) ->
     int:auto_attach(false,{dbg_ui_trace,a_start}), Gs_mon;
 execute_cmd('On Exit',Gs_mon) ->
@@ -822,10 +774,7 @@ execute_cmd('Trace Flag',Gs_mon) ->
     dbg_idb:insert(frame_defs,NFlags),
     NGs_mon;
 
-
-
 %%% The window has been reconfigured.
-
 execute_cmd({configure,X,Y},Gs_mon) ->
     dbg_ui_mon_win:config_win(Gs_mon#gs_mon.win,Gs_mon#gs_mon.grid,{X,Y}),
     dbg_ui_mon_win:config_grid(Gs_mon#gs_mon.grid, {X, Y}),
@@ -836,7 +785,6 @@ execute_cmd(Other,Gs_mon) ->
     Gs_mon.
 
 %%% An new auto attach option has been chosen.
-
 attach_cmd(Which,Gs_mon) ->
     case Gs_mon#gs_mon.attach of
 	false -> int:auto_attach(Which);
@@ -853,83 +801,46 @@ attach_cmd(Which,Gs_mon) ->
     Gs_mon.
 
 %%% Kill all attached processes
-
 kill_all([]) -> ok;
 kill_all([Pid|Pids]) ->
     exit(element(2,Pid),kill),
     kill_all(Pids).
 
 %%% Delete all trace compiled modules.
-
 delete_all([]) ->     ok;
 delete_all([Mod|Mods]) ->
     int:nn(Mod),
     delete_all(Mods).
 
 %%% Load settings from the current working directory
-
 load_setting(Gs_mon) ->
-    make_dir (),
-    Pos =  get_cursor_pos(Gs_mon#gs_mon.win,Gs_mon#gs_mon.coords),
+    case tool_utils:file_dialog(fd_options(open, Gs_mon)) of
+	{ok, AbsFile, _State} ->
+	    case file:read_file(AbsFile) of
+		{ok, Data} ->
+		    Settings = binary_to_term(Data),
+		    Busy_win_pid =
+			dbg_ui_aux:start_busy_window(Gs_mon#gs_mon.win,
+						     "Loading settings..."),
+		    dbg_ui_aux:mark_busy(Gs_mon#gs_mon.win),
+		    NGs_mon = initialize_setting(Gs_mon, Settings),
+		    dbg_ui_aux:stop_busy_window(Busy_win_pid),
+		    dbg_ui_aux:mark_nonbusy(Gs_mon#gs_mon.win),
+		    NGs_mon#gs_mon{setting_file=AbsFile};
 
-    case file_to_load (Pos) of
-	{error, Error} ->
-	    Text = io_lib:format("Error, could not load file~n~s", [Error]),
-	    dbg_ui_aux:message_window (Text, self (), Pos),
-	    Gs_mon;
+		{error, Reason} ->
+		    Text = io_lib:format("Could not load file~n~s",[Reason]),
+		    Pos = get_cursor_pos(Gs_mon#gs_mon.win,
+					 Gs_mon#gs_mon.coords),
+		    dbg_ui_aux:message_window(Text, self(), Pos),
+		    load_setting(Gs_mon#gs_mon{setting_file=AbsFile})
+	    end;
 
-	{ok, List} ->
-	    Busy_win_pid =
-		dbg_ui_aux:start_busy_window (Gs_mon#gs_mon.win,
-					      "Loading settings..."),
-            dbg_ui_aux:mark_busy (Gs_mon#gs_mon.win),
-            NGs_mon = initialize_setting(Gs_mon,List),
-            dbg_ui_aux:stop_busy_window (Busy_win_pid),
-            dbg_ui_aux:mark_nonbusy (Gs_mon#gs_mon.win),
-            NGs_mon;
-
-	no_file ->
+	Error -> % {error,close} | {error,cancel}
 	    Gs_mon
     end.
 
-
-
-%%% file_to_load  /2
-%%%
-%%% file_to_load returns a file or no_file
-%%%
-%%% Pre:
-%%%    Pos   ==  tuple
-%%%              {X, Y}
-%%%
-%%% Def:
-%%%    file_to_load  ==  a file  ||  no_file
-%%%
-
-file_to_load (Pos) ->
-    case dbg_ui_get_file:get_file ('Load', Pos) of
-	no_file ->
-	    no_file;
-	
-	File ->
-	    load_file (list_to_atom (File))
-    end.
-
-
-
-load_file (File) ->
-    case file:read_file (File) of
-        {ok, Bin} -> 
-	    {ok, binary_to_term(Bin)};
-
-	{error, Reason} -> 
-	    {error, Reason}
-    end.
-
-
-
 %%% Initialize all settings in accordance to the elements in List
-
 initialize_setting(Gs_mon,List) ->
     [{load, Load},
      {mods, Mods},
@@ -944,10 +855,7 @@ initialize_setting(Gs_mon,List) ->
      {dir, Dir},
      {opts, Opts}] = List,
 
-    load_opts (Gs_mon#gs_mon.table, Opts),
-    Opts2 = dbg_ui_compilerdefs:get_opts (Gs_mon#gs_mon.table, 
-					  Gs_mon#gs_mon.dir),
-    file_interpret(Mods, Opts2),
+    file_interpret(Mods, []),			%XXX Options are obsolete.
     file_breaks(Breaks),
     file_attach(Attach),
     dbg_ui_mon_win:update_backtrace_menu(Btrace),
@@ -958,7 +866,6 @@ initialize_setting(Gs_mon,List) ->
 		  button = Button,btrace=Btrace,dir=Dir}.
 
 %%% Handle special cases needed when loading settings.
-
 switch_bool(open)  -> true;
 switch_bool(close) -> false.
 
@@ -997,14 +904,10 @@ break_cond(Mod,Line,{TestMod,TestFunc}) ->
 break_cond(_,_,_) -> ok.
 
 %%% Save the settings.
-
 save_setting(Gs_mon) ->
-    make_dir (),
-    Pos =  get_cursor_pos(Gs_mon#gs_mon.win,Gs_mon#gs_mon.coords),
-    Mods = get_abs_modules (),
-    Opts = dbg_ui_compilerdefs:get_complete_opts (Gs_mon#gs_mon.table,
-						  Gs_mon#gs_mon.dir),
-    
+
+    %% Make a binary of the current settings
+    Mods = get_abs_modules(),
     Data = term_to_binary([{load, Gs_mon#gs_mon.load},
 			   {mods, Mods},
 			   {breaks, int:all_breaks()},
@@ -1016,106 +919,54 @@ save_setting(Gs_mon) ->
 			   {stack, Gs_mon#gs_mon.stack},
 			   {btrace, Gs_mon#gs_mon.btrace},
 			   {dir, Gs_mon#gs_mon.dir},
-			   {opts, Opts}]),
+			   {opts, []}]),
 
-    case file_to_save (Pos, Data) of
-	ok ->
-	    ok;
+    case tool_utils:file_dialog(fd_options(save, Gs_mon)) of
+	{ok, AbsFile, _State} ->
+	    case file:write_file(AbsFile, Data) of
+		ok ->
+		    Gs_mon#gs_mon{setting_file=AbsFile};
+		{error, Reason} ->
+		    Text = io_lib:format("Could not save file~n~s",[Reason]),
+		    Pos = get_cursor_pos(Gs_mon#gs_mon.win,
+					 Gs_mon#gs_mon.coords),
+		    dbg_ui_aux:message_window(Text, self(), Pos),
+		    save_setting(Gs_mon#gs_mon{setting_file=AbsFile})
+	    end;
 
-	no_file ->
-	    no_file;
-
-	{error,Error} ->
-	    Text = io_lib:format("Error, could not save file~n~s", [Error]),
-	    dbg_ui_aux:message_window(Text,self(),Pos),
-	    error
+	Error -> % {error,close} | {error,cancel}
+	    Gs_mon
     end.
-    
-
-
-%%% file_to_save  /2
-%%%
-%%% file_to_save returns a file or no_file
-%%%
-%%% Pre:
-%%%    Pos   ==  tuple
-%%%              {X, Y}
-%%%    Data  ==  binary
-%%%              data to store in file
-%%%
-%%% Def:
-%%%    file_to_save  ==  a file  ||  no_file
-%%%
-
-file_to_save (Pos, Data) ->
-    case dbg_ui_get_file:get_file ('Save', Pos) of
-	no_file ->
-	    no_file;
-	
-	File ->
-	    save_file (list_to_atom (File), Data)
-    end.
-
-
-
-save_file (File, Data) ->
-    case file:write_file(File, Data) of
-        ok -> 
-	    ok;
-	
-	{error, Reason} -> 
-	    {error, Reason}
-    end.
-
-
-
-%%% make_dir  /0
-%%%
-%%% make_dir returns the default directory for the setting files
-%%%
-
-make_dir () ->
-    Dir = tool_utils:appstate_filename (debugger, "."),
-    tool_utils:mkdir_for_file (Dir).
-
-
 
 %%% get_abs_modules  /0
 %%%
 %%% get_abs_modules returns the interpreted modules with their
 %%% absolute path.
 %%%
+get_abs_modules() ->
+    get_abs_modules(int:interpreted(), []).
 
-get_abs_modules () ->
-    get_abs_modules (int:interpreted (), []).
+get_abs_modules([], L) ->
+    lists:reverse(L);
 
-
-
-get_abs_modules ([], L) ->
-    lists:reverse (L);
-
-
-get_abs_modules ([H | T], L) ->
-    get_abs_modules (T, [int:file (H) | L]).
-
-
+get_abs_modules([H | T], L) ->
+    get_abs_modules(T, [int:file(H) | L]).
 
 %%% reset_options /1
 %%%
 %%% reset_options sets the options to the default start up settings
 %%%
-
-reset_options (Gs_mon) ->
-    Gs_mon1 = execute_cmd ('Never Attach', Gs_mon),
-    Gs_mon2 = execute_cmd ('Stack Tail', Gs_mon1),
+reset_options(Gs_mon) ->
+    Gs_mon1 = execute_cmd('Never Attach', Gs_mon),
+    Gs_mon2 = execute_cmd('Stack Tail', Gs_mon1),
     
-    gs:config ('Stack Tail', {select, true}),
-    gs:config ('Button Frame', {select, true}),
-    gs:config ('Evaluator Frame', {select, true}),
-    gs:config ('Bindings Frame', {select, true}),
-    gs:config ('Trace Flag', {select, false}),
+    gs:config('Stack Tail', {select, true}),
+    gs:config('Button Frame', {select, true}),
+    gs:config('Evaluator Frame', {select, true}),
+    gs:config('Bindings Frame', {select, true}),
+    gs:config('Trace Flag', {select, false}),
 
-    dbg_idb:insert (frame_defs,
+    dbg_idb:insert(frame_defs,
 		   {open, open, open, close}), % {button, eval, bind, trace}
 
     Gs_mon2#gs_mon{button = open, 
@@ -1123,79 +974,50 @@ reset_options (Gs_mon) ->
 		   bind = open, 
 		   trace = close}.
     
-    
-    
 %%% exit_debugger  /2
-%%%
-
-exit_debugger (Gs_mon, Reason) ->
-    [H1 | Metas] = get_pids (3, Gs_mon#gs_mon.pids, []),
-    [H2 | Pids] = get_pids (2, Gs_mon#gs_mon.pids, []),
+exit_debugger(Gs_mon, Reason) ->
+    [H1 | Metas] = get_pids(3, Gs_mon#gs_mon.pids, []),
+    [H2 | Pids] = get_pids(2, Gs_mon#gs_mon.pids, []),
 
     %% Remove all metas and pids to avoid exit-attach windows 
     %% after closing the debugger.
 
-    lists:foldl (fun(Pid, Sum) -> exit(Pid, kill), Sum + 1 end, 0, Metas),
-    lists:foldl (fun(Pid, Sum) -> exit(Pid, kill), Sum + 1 end, 0, Pids),
+    lists:foldl(fun(Pid, Sum) -> exit(Pid, kill), Sum + 1 end, 0, Metas),
+    lists:foldl(fun(Pid, Sum) -> exit(Pid, kill), Sum + 1 end, 0, Pids),
 
     delete_all(Gs_mon#gs_mon.mods),  
-    reset_options (Gs_mon),
-    clear (Gs_mon),
-    dbg_ui_winman:delete_win (Gs_mon#gs_mon.win),
-    exit (Reason).
+    reset_options(Gs_mon),
+    clear(Gs_mon),
+    dbg_ui_winman:delete_win(Gs_mon#gs_mon.win),
+    exit(Reason).
 
+get_pids(_N, [], L) ->
+    lists:reverse(L);
 
+get_pids(N, [H | T], L) when element(5, H) == exit ->
+    get_pids(N, T, L);
 
-get_pids (_N, [], L) ->
-    lists:reverse (L);
-
-get_pids (N, [H | T], L) when element (5, H) == exit ->
-    get_pids (N, T, L);
-
-get_pids (N, [H | T], L) ->
-    get_pids (N, T, [element (N, H) | L]).
-
-
+get_pids(N, [H | T], L) ->
+    get_pids(N, T, [element(N, H) | L]).
 
 %%% confirm_exit_debugger  /2
-%%%
-
-confirm_exit_debugger (Gs_mon, Reason) ->
-    case confirm_exit () of
+confirm_exit_debugger(Gs_mon, Reason) ->
+    case tool_utils:confirm_yesno(gs:start([{kernel,true}]),
+				  ["Would you like to save your settings",
+				   "before you exit?"]) of
 	yes ->
-	    case save_setting (Gs_mon) of
-		ok ->
-		    exit_debugger (Gs_mon, Reason);
-		
-		no_file ->
-		    confirm_exit_debugger (Gs_mon, Reason);
-
-		_error ->
-		    Gs_mon
-	    end;
+	    save_setting(Gs_mon),
+	    exit_debugger(Gs_mon, Reason);
 	
 	no ->
-	    exit_debugger (Gs_mon, Reason);
+	    exit_debugger(Gs_mon, Reason);
 
-	_cancel ->
+	cancel ->
 	    Gs_mon
 	
     end.
 
-
-
-%%% confirm_exit  /0
-%%%
-
-confirm_exit () ->
-    tool_utils:confirm_exit (gs:start (), 
-			     ["Would you like to save your settings",
-			      "before you exit?"]).
-
-
-
 %%% Handle all change of states in breaks requested by the user.
-
 break_points(GS_mon,Module,Line,delete,ID) ->
     int:delete_break(Module,Line),GS_mon;
 break_points(GS_mon,Module,Line,inactive,ID) ->
@@ -1223,7 +1045,11 @@ flush_motion(X,Y,Gs_mon) ->
 	    Gs_mon#gs_mon{coords = {X,Y}}
     end.
 
-%%% Get the last known cursor position in the monitor window
+%% get_cursor_pos(Win, {Xw,Yw}) -> {Xs,Ys}
+%%   Win = gsobj()
+%%   Xw = Yw = Xs = Ys
+%% Given a cursor position relative the window, return the cursor position
+%% relative the screen.
 get_cursor_pos(Win,{X,Y}) ->
     WinX = gs:read(Win,x),
     WinY = gs:read(Win,y),
@@ -1233,7 +1059,6 @@ switch_state(false) -> close;
 switch_state(true)  -> open.
 
 %%% Get the meta process for an attached process.
-
 get_focus_meta(Gs_mon) ->
      case get_focus_data(Gs_mon) of
 	 {true,{pidfunc,Pid,_}} ->
@@ -1247,7 +1072,6 @@ get_focus_meta(Gs_mon) ->
 %% -----------------------------------------------------------------
 %%% Format the information on the processes prior to their being
 %%% printed out in the monitor grid.
-
 format_procs(Procs) ->
     format_procs(Procs,[{1,'Pid',{},'Initial Call','Status','Information'
 			 ,{},'Name'}],1).
@@ -1261,7 +1085,6 @@ format_proc(Pos,{Pid,Meta,Func,Status,Where,Exit}) ->
     {Pos+1,Pid,Meta,Func,Status,Where,Exit,Name}.
 
 %%% Find the registered name of a process.
-
 registered_name(Node,Node,Pid) ->  %handles case when local/not distributed
     case erlang:process_info(Pid,registered_name) of
 	{registered_name,Reg} -> Reg;
@@ -1279,7 +1102,6 @@ registered_name(Node,_LocalNode,Pid) ->
 %% if the change is legitimate. It also retrives the data stored
 %% for each process which is currently on focus.
 %% ---------------------------------------------------------------
-
 check_focus_choice(To,      0) ->  1;
 check_focus_choice(0,    Size) ->  Size; 
 check_focus_choice(To,   Size) ->  
@@ -1357,8 +1179,6 @@ check_focus_buttons(Gs_mon) ->
 	    end
     end.
 
-
-
 %%%Key accelerators
 key(K) ->
     Command =  key_acc(K),
@@ -1390,10 +1210,82 @@ key_acc(d) -> 'Delete All Breaks';
 
 key_acc(_) -> false.
 
+%% fd_options(Action, #gs_mon{}) -> [Option]
+%%   Action = open | save
+%% This function creates the list of options needed for the file dialog
+%% used to chose a file to load settings from or save settings to.
+%%
+%% The following strategy is used:
+%% 
+%% Initial default settings file is defined as below.
+%% 
+%% If settings are loaded from/saved to another file, this file name and its
+%% directory become the new default file and -directory.
+%%
+%% When loading settings and the default directory cannot be read,
+%% the current working directory is used instead.
+%%
+%% When saving settings and the default directory does not exist, the user
+%% is asked whether it should be created. If not, and also in the case
+%% creation fails, the current working directory is used instead.
+%%
+%% If the default directory cannot be read for any other reason than that it
+%% does not exist, again the current working directory is used instead.
+fd_options(Action, Gs_mon) ->
+    Default = Gs_mon#gs_mon.setting_file,
+    DefDir = filename:dirname(Default),
+    DefFile = filename:basename(Default),
+    {ok, CWD} = file:get_cwd(),
+    DefOptions = [{type,Action}, {dir,DefDir}, {file,DefFile}],
+    CwdOptions = [{type,Action}, {dir,CWD}, {file,DefFile}],
 
+    case file:read_file_info(DefDir) of
+	{ok, FileInfo} when FileInfo#file_info.type==directory ->
+	    Access = FileInfo#file_info.access,
+	    if
+		Action==open, Access/=none ->
+		    DefOptions; 
+		Action==save, Access==read_write ->
+		    DefOptions;
+		true ->
+		    CwdOptions
+	    end;
 
-load_opts (Table, [{Key, L} | T]) ->
-    dbg_ets:insert(Table, {Key, L}),
-    load_opts (Table, T);
-load_opts (_, []) ->
-    ok.
+	{error, enoent} when Action==save ->
+	    case tool_utils:confirm(gs:start([{kernel,true}]),
+				    ["Default settings directory "++DefDir,
+				     "does not exist. Create it?"]) of
+		ok ->
+		    case catch mkdir_p(DefDir) of
+			{'EXIT', Reason} ->
+			    RStr = io_lib:format("~p", [Reason]),
+			    Strings = [DefDir, "could not be created:",RStr],
+			    tool_utils:notify(gs:start([{kernel,true}]),
+						       Strings),
+			    CwdOptions;
+			DefDir ->
+			    DefOptions
+		    end;
+		cancel ->
+		    CwdOptions
+	    end;
+	Error ->
+	    CwdOptions
+    end.
+
+default_setting_file() ->
+    {ok, [[ResultDir]]} = init:get_argument(home),
+    filename:join([ResultDir, ".erlang_tools", "debugger", "NoName.state"]).
+
+mkdir_p(Dir) ->
+    [Drive|Rest] = filename:split(Dir),
+    lists:foldl(fun(Comp, Acc) ->
+			Dir1 = filename:join([Acc, Comp]),
+			case file:make_dir(Dir1) of
+			    {error, eexist} -> Dir1;
+			    {error, Reason} -> exit(Reason);
+			    ok -> Dir1
+			end
+		end,
+		Drive,
+		Rest).

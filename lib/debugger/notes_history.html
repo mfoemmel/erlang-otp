@@ -7,6 +7,47 @@
 
 <CENTER><H1>Debugger Release Notes</H1></CENTER>
 
+<H2>Debugger 1.5.3</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+The debugger could not be run in embedded mode, because the
+dbg_ets module was not listed in the app file.
+<br>Own Id: OTP-3829<br>
+Aux Id: Seq 5084
+
+
+<LI>
+In some cases, the debugger would in a call to undefined
+function <CODE>erts_debug:apply/4</CODE>. This problem has been
+corrected.
+<br>Own Id: OTP-3845<br>
+Aux Id: Seq 5094
+
+
+</UL>
+
+<H2>Debugger 1.5.2</H2>
+  <H3>Known Problems</H3>
+  <UL>
+    <LI>The "Interpret Dialog" window hangs if one tries to debug-compile a module residing in a sticky directory.<BR>
+      Own Id: OTP-2665
+    </LI>
+    <LI>Included source code is not shown in the "Attached Process" window.<BR>
+       Own Id: OTP-3579
+    </LI>
+  </UL>
+
+  <H3>Improvements and New Features</H3>
+  <UL>
+    <LI>The user is notified if the record editor cannot read a record definition, instead of it silently failing.<BR>
+      Own Id: OTP-3437<BR>
+      Aux Id: Seq 4285
+    </LI>
+  </UL>
+
 <H2>Debugger 1.5.1</H2>
   <H3>Improvements and New Features</H3>
   <UL>
@@ -29,7 +70,7 @@
     <LI>The Attachment window in the DEBUGGER is now faster. Once a module has been loaded in an Attachment window that module is cached. Ten modules are cached in one single Attachment window.<BR>
       Own Id: OTP-2641
     </LI>
-    <LI>There are no longer any errors when using File->Load Settings distributed.<BR>
+    <LI>There are no longer any errors when using File-&gt;Load Settings distributed.<BR>
       Own Id: OTP-2706
     </LI>
     <LI>The debugger no longer crashes when another node goes down that has an active process.<BR>
@@ -112,7 +153,7 @@
     <LI>Problems with stack Up and Down in Attach window resulting in {badmatch,'my style? ...} error messages have been fixed.<BR>
       Own Id: OTP-2322
     </LI>
-    <LI>Problems with Process->Kill in Monitor window have been fixed.<BR>
+    <LI>Problems with Process-&gt;Kill in Monitor window have been fixed.<BR>
       Own Id: OTP-2343
     </LI>
     <LI>The Module menu of the Attach window is now updated when modules are interpreted/uninterpreted.<BR>
@@ -162,7 +203,7 @@
       Own Id: OTP-2190<BR>
       Aux Id: OTP-2188
     </LI>
-    <LI>When choosing Edit->Clear the attach windows of exited processes are closed.<BR>
+    <LI>When choosing Edit-&gt;Clear the attach windows of exited processes are closed.<BR>
       Own Id: OTP-2195
     </LI>
     <LI>All interpreter/debugger settings are cleared when the monitor window is closed.<BR>
@@ -216,7 +257,7 @@
     </LI>
   </UL>
 
-  <H3>Incompatibilities with Debugger 1.0.3</H4>
+  <H3>Incompatibilities with Debugger 1.0.3</H3>
   <UL>
     <LI>The buttons 'Time Out', 'Skip', 'Stop' and 'Messages' are removed, but they still exists in the pull-down menu.
     </LI>
@@ -232,7 +273,7 @@
     </LI>
   </UL>
 
-<H2>Source Debugger 1.0.3</H3>
+<H2>Source Debugger 1.0.3</H2>
   <H3>Improvements and New Features</H3>
   <P>This debugger is the only option on the Windows platform. To use this new debugger instead of the old <STRONG>interpreter</STRONG> on Unix you start erlang with the command line option <CODE>-new_debugger</CODE>.</P>
 

@@ -1,0 +1,3 @@
+group: runtime The Run-Time System
+short: The Erlang Run-Time System
+release: %RELEASE%

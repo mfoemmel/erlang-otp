@@ -7,6 +7,7 @@ include ../../vsn.mk
 CC = cl -nologo
 RC = rc
 APPROOT = ..\..
+LINK = link
 #TOOLS32		= c:\msdev
 TOOLS32		= d:\progra~1\devstudio\vc
 

@@ -26,10 +26,11 @@
 
 #include <stdio.h>
 #include "sys.h"
-#include "driver.h"
+#include "erl_driver.h"
+#include "erl_threads.h"
 #include "elib_stat.h"
 
-extern erl_mutex_t erts_mutex_sys _ANSI_ARGS_((int mno));
+extern erts_mutex_t erts_mutex_sys(int mno);
 
 /* To avoid clobbering of names becaure of reclaim on VxWorks,
    we undefine all possible malloc, calloc etc. */
@@ -223,7 +224,7 @@ static EWord eheap_size = 0;
 
 /* we must have room for head,tail,next,prev */
 
-erl_mutex_t heap_lock;
+erts_mutex_t heap_lock;
 static int heap_locked;
 
 /* Fixed block pointer chains:

@@ -31,7 +31,7 @@ erlsrv(EVer) ->
     filename:join([Root, "erts-" ++ EVer, "bin", "erlsrv.exe"]).
 
 current_version() ->
-    hd(string:tokens(erlang:info(version),"_ ")).
+    hd(string:tokens(erlang:system_info(version),"_ ")).
 
 %%% Returns {ok, Output} | failed | {error, Reason}
 run_erlsrv(Command) ->

@@ -48,7 +48,7 @@
 
 -export([string/1,string/2,tokens/3,format_error/1,reserved_word/1]).
 
--import(lists, [reverse/1]).
+-import(lists, [reverse/1,member/2]).
 
 %% tokens(Continuation, CharList, StartPos) ->
 %%	{done, {ok, [Tok], EndPos}, Rest} |
@@ -75,23 +75,14 @@ tokens({Chars,SoFar0,Cp,Sp}, MoreChars, _) ->
 	{more,eof,SoFar1,Cp1} ->		%Missing end token
 	    Res = case is_end(SoFar1) of
 		      true -> {eof,Cp1};
-		      false -> pre_error(scan, Cp1)
+		      false -> pre_error(scan, Cp1, Cp1)
 		  end,
 	    {done,Res,[]};
 	{more,Rest,SoFar1,Cp1} ->		%Missing end token
 	    {more,{Rest,SoFar1,Cp1,Sp}};
 	Other ->				%An error has occurred
-	    Other1 = fix_error_start_line(Sp, Other),
-	    {done,Other1,[]}
+	    {done,Other,[]}
     end.
-
-%% For the particular error where a quoted string or atom wasn't
-%% terminated, let the error term contain the line where the item
-%% started, not the line at the end of the file.
-fix_error_start_line(Start, {error, {_, M, {string, Q, S}}, NewPos}) ->
-    {error, {Start, M, {string, Q, S}}, NewPos};
-fix_error_start_line(_, Term) ->
-    Term.
 
 %% string([Char]) ->
 %% string([Char], StartPos) ->
@@ -141,9 +132,8 @@ string_thing($') -> "atom";
 string_thing(_) -> "string".
 
 format_error({string,Quote,Head}) ->
-    ["next form/expression contains unterminated "
-     ++ string_thing(Quote)
-     ++ " starting with " ++ io_lib:write_string(Head,Quote)];
+    ["unterminated " ++ string_thing(Quote) ++
+     " starting with " ++ io_lib:write_string(Head,Quote)];
 format_error({illegal,Type}) -> io_lib:fwrite("illegal ~w", [Type]);
 format_error(char) -> "unterminated character";
 format_error(scan) -> "premature end";
@@ -187,16 +177,16 @@ pre_scan($$, Cs0, SoFar0, Pos) ->
 	more ->
 	    {more,[$$|Cs0],SoFar0, Pos};
 	error ->
-	    pre_error(char, Pos)
+	    pre_error(char, Pos, Pos)
     end;
 pre_scan($', Cs, SoFar, Pos) ->
-    pre_string(Cs, $', '\'', [$'|SoFar], Pos);
-pre_scan('\'', Cs, SoFar, Pos) ->		%Re-entering quoted atom
-    pre_string(Cs, $', '\'', SoFar, Pos);
+    pre_string(Cs, $', '\'', Pos, [$'|SoFar], Pos);
+pre_scan({'\'',Sp}, Cs, SoFar, Pos) ->		%Re-entering quoted atom
+    pre_string(Cs, $', '\'', Sp, SoFar, Pos);
 pre_scan($", Cs, SoFar, Pos) ->
-    pre_string(Cs, $", '"', [$"|SoFar], Pos);
-pre_scan('"', Cs, SoFar, Pos) ->		%Re-entering string
-    pre_string(Cs, $", '"', SoFar, Pos);
+    pre_string(Cs, $", '"', Pos, [$"|SoFar], Pos);
+pre_scan({'"',Sp}, Cs, SoFar, Pos) ->		%Re-entering string
+    pre_string(Cs, $", '"', Sp, SoFar, Pos);
 pre_scan($%, Cs, SoFar, Pos) ->
     pre_comment(Cs, SoFar, Pos);
 pre_scan('%', Cs, SoFar, Pos) ->		%Re-entering comment
@@ -208,31 +198,31 @@ pre_scan($\n, Cs, SoFar, Pos) ->
 pre_scan(C, Cs, SoFar, Pos) ->
     pre_scan(Cs, [C|SoFar], Pos).
 
-%% pre_string([Char], Quote, Reent, SoFar, Pos)
+%% pre_string([Char], Quote, Reent, StartPos, SoFar, Pos)
 
-pre_string([Q|Cs], Q, Reent, SoFar, Pos) ->
+pre_string([Q|Cs], Q, Reent, Sp, SoFar, Pos) ->
     pre_scan(Cs, [Q|SoFar], Pos);
-pre_string([$\n|Cs], Q, Reent, SoFar, Pos) ->
-    pre_string(Cs, Q, Reent, [$\n|SoFar], Pos+1);
-pre_string([$\\|Cs0], Q, Reent, SoFar0, Pos) ->
+pre_string([$\n|Cs], Q, Reent, Sp,SoFar, Pos) ->
+    pre_string(Cs, Q, Reent, Sp, [$\n|SoFar], Pos+1);
+pre_string([$\\|Cs0], Q, Reent, Sp, SoFar0, Pos) ->
     case pre_escape(Cs0, SoFar0) of
 	{Cs,SoFar} ->
-	    pre_string(Cs, Q, Reent, SoFar, Pos);
+	    pre_string(Cs, Q, Reent, Sp, SoFar, Pos);
 	more ->
-	    {more,[Reent,$\\|Cs0],SoFar0,Pos};
+	    {more,[{Reent,Sp},$\\|Cs0],SoFar0,Pos};
 	error ->
-	    pre_string_error(Q, SoFar0, Pos)
+	    pre_string_error(Q, Sp, SoFar0, Pos)
     end;
-pre_string([C|Cs], Q, Reent, SoFar, Pos) ->
-    pre_string(Cs, Q, Reent, [C|SoFar], Pos);
-pre_string([], Q, Reent, SoFar, Pos) ->
-    {more,[Reent],SoFar,Pos};
-pre_string(eof, Q, _, SoFar, Pos) ->
-    pre_string_error(Q, SoFar, Pos).
+pre_string([C|Cs], Q, Reent, Sp, SoFar, Pos) ->
+    pre_string(Cs, Q, Reent, Sp, [C|SoFar], Pos);
+pre_string([], Q, Reent, Sp, SoFar, Pos) ->
+    {more,[{Reent,Sp}],SoFar,Pos};
+pre_string(eof, Q, _, Sp, SoFar, Pos) ->
+    pre_string_error(Q, Sp, SoFar, Pos).
 
-pre_string_error(Q, SoFar, Pos) ->
+pre_string_error(Q, Sp, SoFar, Pos) ->
     S = reverse(string:substr(SoFar, 1, string:chr(SoFar, Q)-1)),
-    pre_error({string,Q,string:substr(S, 1, 16)}, Pos).
+    pre_error({string,Q,string:substr(S, 1, 16)}, Sp, Pos).
 
 pre_char([C|Cs], SoFar) -> pre_char(C, Cs, SoFar);
 pre_char([], _) -> more;
@@ -285,8 +275,8 @@ pre_dot([], SoFar, Pos) ->
 pre_dot(eof, SoFar, Pos) ->
     {done,eof,[$\s,$.|SoFar],Pos}.
 
-pre_error(In, Pos) ->
-    {error,{Pos,erl_scan,In}, Pos}.
+pre_error(E, Epos, Pos) ->
+    {error,{Epos,erl_scan,E}, Pos}.
 
 %% scan(CharList, StartPos)
 %%  This takes a list of characters and tries to tokenise them.
@@ -325,7 +315,7 @@ scan1([$_|Cs], Toks, Pos) ->				%_ variables
     scan_variable($_, Cs, Toks, Pos);
 scan1([$$|Cs0], Toks, Pos) ->				%Character constant
     {C,Cs,Pos1} = scan_char(Cs0, Pos),
-    scan1(Cs, [{integer,Pos,C}|Toks], Pos1);
+    scan1(Cs, [{char,Pos,C}|Toks], Pos1);
 scan1([$'|Cs0], Toks, Pos) ->				%Quoted atom
     {S,Cs1,Pos1} = scan_string(Cs0, $', Pos),
     case catch list_to_atom(S) of
@@ -584,7 +574,12 @@ scan_error(In, Pos) ->
 reserved_word('after') -> true;
 reserved_word('begin') -> true;
 reserved_word('case') -> true;
+reserved_word('try') ->
+    Opts = get_compiler_options(),
+    member('enable_try', Opts);
 reserved_word('catch') -> true;
+reserved_word('andalso') -> true;
+reserved_word('orelse') -> true;
 reserved_word('end') -> true;
 reserved_word('fun') -> true;
 reserved_word('if') -> true;
@@ -607,4 +602,15 @@ reserved_word('or') -> true;
 reserved_word('xor') -> true;
 reserved_word(_) -> false.
 
-
+get_compiler_options() ->
+    %% Who said that Erlang has no global variables?
+    case get(compiler_options) of
+	undefined ->
+	    Opts = case catch ets:lookup(compiler__tab, compiler_options) of
+		       [{compiler_options,O}] -> O;
+		       _ -> []
+		   end,
+	    put(compiler_options, Opts),
+	    Opts;
+	Opts -> Opts
+    end.

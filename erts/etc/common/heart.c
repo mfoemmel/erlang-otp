@@ -206,7 +206,7 @@ unsigned long heart_beat_kill_pid = 0;
 
 /*  macros */
 
-#define  NULLFDS  ((struct fd_set *) NULL)
+#define  NULLFDS  ((fd_set *) NULL)
 #define  NULLTV   ((struct timeval *) NULL)
 
 /*  prototypes */
@@ -238,6 +238,7 @@ static BOOL do_shutdown(int);
 static void print_last_error(void);
 static HANDLE start_reader_thread(void);
 static DWORD WINAPI reader(LPVOID);
+static int test_win95(void);
 #define read _read
 #define write _write
 #endif
@@ -339,13 +340,15 @@ main(int argc, char **argv){
 	debug_on=1;
 #ifdef __WIN32__
     if (debug_on) {
-      /* this redirects stderr to a separate console (for debugging purposes)*/
-	erlin_fd = _dup(0);
-	erlout_fd = _dup(1);
-	AllocConsole();
-	conh = freopen("CONOUT$","w",stderr);
-	if (conh != NULL)
-	    fprintf(conh,"console alloced\n");
+	if(getenv("ERLSRV_SERVICE_NAME") == NULL) {
+	    /* this redirects stderr to a separate console (for debugging purposes)*/
+	    erlin_fd = _dup(0);
+	    erlout_fd = _dup(1);
+	    AllocConsole();
+	    conh = freopen("CONOUT$","w",stderr);
+	    if (conh != NULL)
+		fprintf(conh,"console alloced\n");
+	}
 	debugf("stderr\n");
     }
     _setmode(erlin_fd,_O_BINARY);
@@ -436,7 +439,6 @@ start_hw_wd(int timeout,
     return 0;
   }
 
-  /* fprintf(stderr, "HW watchdog timer successfully started\n"); */
   return child_pid;
 }
 #endif
@@ -583,13 +585,9 @@ kill_old_erlang(void){
 			       PROCESS_QUERY_INFORMATION ,
 			       FALSE,
 			       (DWORD) heart_beat_kill_pid)) == NULL){
-	    /*print_error("Unable to kill old process, OpenProcess failed.");*/
-	    
 	    return;
 	}
 	if(!TerminateProcess(erlh, 1)){
-	    /*print_error("Unable to kill old process, "
-			"TerminateProcess failed.");*/
 	    CloseHandle(erlh);
 	    return;
 	}
@@ -628,6 +626,60 @@ kill_old_erlang(void){
 }
 #endif /* Not on VxWorks */
 
+#ifdef __WIN32__
+void win_system(char *command)
+{
+    char *comspec;
+    char * cmdbuff;
+    char * extra = " /C ";
+    STARTUPINFO start;
+    SECURITY_ATTRIBUTES attr;
+    PROCESS_INFORMATION info;
+
+    if (!debug_on || test_win95()) {
+	system(command);
+	return;
+    }
+    comspec = getenv("COMSPEC");
+    if (!comspec)
+	comspec = "CMD.EXE";
+    cmdbuff = malloc(strlen(command) + strlen(comspec) + strlen(extra) + 1);
+    strcpy(cmdbuff, comspec);
+    strcat(cmdbuff, extra);
+    strcat(cmdbuff, command);
+
+    debugf("running \"%s\"\r\n", cmdbuff);
+
+    memset (&start, 0, sizeof (start));
+    start.cb = sizeof (start);
+    start.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+    start.wShowWindow = SW_HIDE;
+    start.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    start.hStdOutput = GetStdHandle(STD_ERROR_HANDLE);
+    start.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+    
+    attr.nLength = sizeof(attr);
+    attr.lpSecurityDescriptor = NULL;
+    attr.bInheritHandle = TRUE;
+
+    fflush(stderr);
+
+    if (!CreateProcess(NULL,
+		       cmdbuff,
+		       &attr,
+		       NULL,
+		       TRUE,
+		       0,
+		       NULL,
+		       NULL,
+		       &start,
+		       &info)) {
+	debugf("Could not create process for the command %s.\r\n", cmdbuff);
+    }
+    WaitForSingleObject(info.hProcess,INFINITE);
+    free(cmdbuff);
+}
+#endif /* defined(__WIN32__) */		       
 
 /*
  * do_terminate
@@ -667,7 +719,7 @@ do_terminate(reason)
 	  kill_old_erlang();
 	  /* High prio combined with system() works badly indeed... */
 	  SetPriorityClass(GetCurrentProcess(), NORMAL_PRIORITY_CLASS);
-	  system(command);
+	  win_system(command);
 	  print_error("Executed \"%s\". Terminating.",command);
 	}
       }
@@ -675,24 +727,11 @@ do_terminate(reason)
 	kill_old_erlang();
 	/* High prio combined with system() works badly indeed... */
 	SetPriorityClass(GetCurrentProcess(), NORMAL_PRIORITY_CLASS);
-	system(&cmd[0]);
+	win_system(&cmd[0]);
 	print_error("Executed \"%s\". Terminating.",cmd);
       }
     }
 
-/*
-    {
-	char *command = getenv(HEART_COMMAND_ENV);
-	if (!cmd[0] && !command) {
-	    debugf("Initiated reboot\n");
-	    do_shutdown(1);
-	} else {
-	    debugf("Initiated and interrupted reboot\n");
-	    do_shutdown(0);
-	}
-    }
-    print_error("Would reboot. Terminating.");
-*/
 #else
     {
       if(!cmd[0]) {
@@ -731,7 +770,6 @@ notify_ack(fd)
   m.op = HEART_ACK;
   *tmp = 0;
   *(tmp+1) = 1;
-  /*m.len = htons(1);*/
   return write_message(fd, &m);
 }
 
@@ -913,6 +951,7 @@ va_dcl
   format = va_arg(args, char *);
 #endif
   if (!debug_on) return;
+  fprintf(stderr, "Heart: ");
   vfprintf(stderr, format, args);
   va_end(args);
   fprintf(stderr, "\r\n");
@@ -954,13 +993,15 @@ void print_last_error() {
 		NULL 
 	);
 
-	// Display the string.
+	/* Display the string.*/
 	fprintf(stderr,"GetLastError:%s\n",lpMsgBuf);
 
-	// Free the buffer.
+	/* Free the buffer. */
 	LocalFree( lpMsgBuf );
 }
-static int test_win95() {
+
+static int test_win95(void)
+{
     OSVERSIONINFO osinfo;
     osinfo.dwOSVersionInfoSize=sizeof(OSVERSIONINFO);
     GetVersionEx(&osinfo);
@@ -987,25 +1028,25 @@ static BOOL enable_privilege() {
 
 static BOOL do_shutdown(int really_shutdown) {
     if (test_win95()) {
-    	if (ExitWindowsEx(EWX_REBOOT,0))
+    	if (ExitWindowsEx(EWX_REBOOT,0)) {
 		return TRUE;
-	else {
+	} else {
 		print_last_error();
 		return FALSE;
 	}
-    }
-    else {
+    } else {
 	enable_privilege();
 	if (really_shutdown) {
 	    if (InitiateSystemShutdown(NULL,"shutdown by HEART",10,TRUE,TRUE))
 		return TRUE;
-	} else 
-	    if (InitiateSystemShutdown(NULL,"shutdown by HEART\nwill be interrupted",
-				       30,TRUE,TRUE)) {
-		AbortSystemShutdown(NULL);
-		return TRUE;
-	    }
-
+	} else if (InitiateSystemShutdown(NULL,
+					  "shutdown by HEART\n"
+					  "will be interrupted",
+					  30,TRUE,TRUE)) {
+	    AbortSystemShutdown(NULL);
+	    return TRUE;
+	}
+	return FALSE;
     }
 }
 

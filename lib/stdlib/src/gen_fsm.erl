@@ -110,6 +110,8 @@
 	 sync_send_all_state_event/2, sync_send_all_state_event/3,
 	 reply/2]).
 
+-export([behaviour_info/1]).
+
 %% Internal exports
 -export([init_it/6, print_event/3,
 	 system_continue/3,
@@ -122,6 +124,12 @@
 %%% ---------------------------------------------------
 %%% Interface functions.
 %%% ---------------------------------------------------
+
+behaviour_info(callbacks) ->
+    [{init,1},{handle_event,3},{handle_sync_event,4},{handle_info,3},
+     {terminate,3},{code_change,4}];
+behaviour_info(Other) ->
+    undefined.
 
 %%% ---------------------------------------------------
 %%% Starts a generic state machine.

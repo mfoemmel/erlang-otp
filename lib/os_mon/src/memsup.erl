@@ -128,7 +128,13 @@ handle_call(get_check_interval, _From, State) ->
 handle_call(get_sysmem_high_watermark, _From, State) ->
     {reply, trunc(100 * State#state.sys_mem_watermark), State};
 handle_call(get_procmem_high_watermark, _From, State) ->
-    {reply, trunc(100 * State#state.proc_mem_watermark), State}.
+    {reply, trunc(100 * State#state.proc_mem_watermark), State};
+
+handle_call({set_sys_hw,HW}, _From, State) -> % test purposes only
+    {reply, ok, State#state{sys_mem_watermark=HW}};
+handle_call({set_pid_hw,HW}, _From, State) -> % test purposes only
+    {reply, ok, State#state{proc_mem_watermark=HW}}.
+
 
 handle_info(time_to_collect, State) ->
     LastTimeout = get_timestamp(),

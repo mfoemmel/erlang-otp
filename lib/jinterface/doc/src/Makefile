@@ -42,14 +42,13 @@ RELSYSDIR = $(RELEASE_PATH)/lib/jinterface-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 
-
-SGML_APPLICATION_FILES = application.sgml
+# Renamed this var to fool otp.mk.in
+SGML_APP_FILES = application.sgml
 SGML_REF3_FILES = jinterface.sgml
 
 SGML_PART_FILES = \
 	part.sgml\
-	part_notes.sgml \
-	part_jinterface.sgml  
+	part_notes.sgml
 
 SGML_CHAPTER_FILES = \
 	notes.sgml \
@@ -68,7 +67,7 @@ GIF_FILES = \
 TEX_FILES_BOOK = \
 	$(BOOK_FILES:%.sgml=%.tex)
 TEX_FILES_REF_MAN = $(SGML_REF3_FILES:%.sgml=%.tex) \
-	$(SGML_APPLICATION_FILES:%.sgml=%.tex)
+	$(SGML_APP_FILES:%.sgml=%.tex)
 TEX_FILES_USERS_GUIDE = \
 	$(SGML_CHAPTER_FILES:%.sgml=%.tex)
 
@@ -87,8 +86,8 @@ JAVADOC = javadoc
 JAVADOC_PKGS = com.ericsson.otp.erlang
 JAVA_PKG_PATH = com/ericsson/otp/erlang
 JAVADOC_TITLE = 'Java-Erlang Interface Library'
-JAVA_TOP_INDEX = $(HTMLDIR)/index.html
-JAVADOC_DEST = ../doc/html
+JAVA_TOP_INDEX = $(HTMLDIR)/java/index.html
+JAVADOC_DEST = ../doc/html/java
 JAVA_SRC_PATH = $(ERL_TOP)/lib/jinterface/java_src/$(JAVA_PKG_PATH)
 
 # don't add filenames to the Makefile!
@@ -109,28 +108,26 @@ JAVA_DOC_FILES = \
 	help-doc.html 
 
 INFO_FILE = ../../info
-JAVA_EXTRA_FILES = $(JAVA_DOC_FILES:%=$(HTMLDIR)/%)
+JAVA_EXTRA_FILES = $(JAVA_DOC_FILES:%=$(HTMLDIR)/java/%)
 
 JAVA_GEN_FILES = \
-	$(JAVA_FILES:%=$(HTMLDIR)/$(JAVA_PKG_PATH)/%.html) \
-	$(HTMLDIR)/$(JAVA_PKG_PATH)/package-summary.html \
-	$(HTMLDIR)/$(JAVA_PKG_PATH)/package-tree.html \
-	$(HTMLDIR)/$(JAVA_PKG_PATH)/package-frame.html
+	$(JAVA_FILES:%=$(JAVADOC_DEST)/$(JAVA_PKG_PATH)/%.html) \
+	$(JAVADOC_DEST)/$(JAVA_PKG_PATH)/package-summary.html \
+	$(JAVADOC_DEST)/$(JAVA_PKG_PATH)/package-tree.html \
+	$(JAVADOC_DEST)/$(JAVA_PKG_PATH)/package-frame.html
 
 
 # ----------------------------------------------------
 
 
 HTML_FILES = \
-	$(SGML_APPLICATION_FILES:%.sgml=$(HTMLDIR)/%.html) \
 	$(SGML_PART_FILES:%.sgml=$(HTMLDIR)/%.html)
 
 
 EXTRA_FILES = \
 	summary.html.src \
-	../html/min_head.gif \
+	$(DEFAULT_GIF_FILES) \
 	$(DEFAULT_HTML_FILES) \
-	$(SGML_REF3_FILES:%.sgml=$(HTMLDIR)/%.html) \
 	$(SGML_CHAPTER_FILES:%.sgml=$(HTMLDIR)/%.html)
 
 
@@ -170,7 +167,8 @@ ps: $(TOP_PS_FILE)
 html:$(HTML_FILES)
 
 jdoc:$(JAVA_SRC_FILES)
-	(cd ../../java_src;$(JAVADOC) -d $(JAVADOC_DEST) -windowtitle $(JAVADOC_TITLE) $(JAVADOC_PKGS))
+	(cd ../../java_src;$(JAVADOC) -d $(JAVADOC_DEST) \
+		-windowtitle $(JAVADOC_TITLE) $(JAVADOC_PKGS))
 
 man: 
 
@@ -207,9 +205,11 @@ else
 release_docs_spec: docs
 	$(INSTALL_DIR) $(RELSYSDIR)/doc/html
 	$(INSTALL_DATA) $(INFO_FILE) $(RELSYSDIR)
-	$(INSTALL_DATA) $(GIF_FILES) $(EXTRA_FILES) $(JAVA_EXTRA_FILES) $(JAVA_TOP_INDEX) \
-		$(HTML_FILES) $(RELSYSDIR)/doc/html
-	$(INSTALL_DIR) $(RELSYSDIR)/doc/html/$(JAVA_PKG_PATH)
+	$(INSTALL_DATA) $(GIF_FILES) $(EXTRA_FILES) $(HTML_FILES) \
+		$(RELSYSDIR)/doc/html
+	$(INSTALL_DIR) $(RELSYSDIR)/doc/html/java/$(JAVA_PKG_PATH)
+	$(INSTALL_DATA) $(JAVA_EXTRA_FILES) $(JAVA_TOP_INDEX) \
+		$(RELSYSDIR)/doc/html/java
 	(/bin/cp -rf  ../../doc/html $(RELSYSDIR)/doc)
 	$(INSTALL_DATA) $(TOP_HTML_FILES) $(RELSYSDIR)/doc
 endif

@@ -54,7 +54,7 @@
 %% General function info.
 -record(fstat, {func,				%Function name
 		arity,				%         arity
-		fdef,				%Original definition
+		def,				%Original definition
 		weight=0,			%Weight
 		inline=false,			%Inline func flag
 		modified=false}).		%Mod flag
@@ -66,11 +66,17 @@
 	       body,				%    body
 	       weight}).			%Weight
 
-module(#c_mdef{exports=Es,body=B0}=Mod, Opts) ->
+module(#c_module{exports=Es,defs=Ds0}=Mod, Opts) ->
     case inline_option(10, 0, Opts) of
 	{Thresh,Fs} when integer(Thresh), Thresh > 0; Fs /= [] ->
-	    B1 = inline(B0, #inline{exports=Es,thresh=Thresh,inline=Fs}),
-	    {ok,Mod#c_mdef{body=B1}};
+	    case property_lists:get_bool(verbose, Opts) of
+		true ->
+		    io:format("Old inliner: threshold=~p functions=~p\n",
+			      [Thresh,Fs]);
+		false -> ok
+	    end,
+	    Ds1 = inline(Ds0, #inline{exports=Es,thresh=Thresh,inline=Fs}),
+	    {ok,Mod#c_module{defs=Ds1}};
 	Other -> {ok,Mod}
     end.
     
@@ -81,7 +87,10 @@ inline_option(OnVal, OffVal, Opts) ->
 		  {T,Val ++ Fs};
 	      ({inline,Val}, {T,Fs}) when integer(Val) ->
 		  {Val,Fs};
-	      (inline, {T,Fs}) -> {OnVal,Fs};
+
+	      %% Clashes with Richard's new inliner.
+	      %%(inline, {T,Fs}) -> {OnVal,Fs};
+
 	      (noinline, {T,Fs}) -> {OffVal,Fs};
 	      (Opt, Def) -> Def
 	  end, {0,[]}, Opts).
@@ -91,17 +100,17 @@ inline_option(OnVal, OffVal, Opts) ->
 
 inline(Fs0, St0) ->
     %% Generate list of augmented functions.
-    Fs1 = map(fun (#c_fdef{func=F,arity=A,body=#c_fun{vars=Vs,body=B}}=Fdef) ->
+    Fs1 = map(fun (#c_def{name=#c_fname{id=F,arity=A},
+			  val=#c_fun{vars=Vs,body=B}}=Def) ->
 		      Weight = core_lib:fold(fun weight_func/2, 0, B),
-		      #fstat{func=F,arity=A,fdef=Fdef,
-			     weight=Weight}
+		      #fstat{func=F,arity=A,def=Def,weight=Weight}
 	      end, Fs0),
     %% Get inlineable functions, and inline them with themselves.
     {Fs2,Is0} = mapfoldl(fun (Fst, Ifs) ->
 			      case is_inlineable(Fst, St0#inline.thresh,
 						 St0#inline.inline) of
 				  true ->
-				      Ffun = (Fst#fstat.fdef)#c_fdef.body,
+				      Ffun = (Fst#fstat.def)#c_def.val,
 				      If = #ifun{func=Fst#fstat.func,
 						 arity=Fst#fstat.arity,
 						 vars=Ffun#c_fun.vars,
@@ -120,10 +129,10 @@ inline(Fs0, St0) ->
     %% Use fixed inline functions on all functions.
     Fs3 = lists:map(fun (F) -> inline_func(F, Is2) end, Fs2),
     %% Regenerate module body.
-    map(fun (#fstat{fdef=Fdef,inline=I,modified=M}) ->
+    map(fun (#fstat{def=Def,inline=I,modified=M}) ->
 		case M of
-		    true -> sys_core_fold:function(Fdef);
-		    false -> Fdef
+		    true -> sys_core_fold:function(Def);
+		    false -> Def
 		end
 	end, Fs3).
 
@@ -139,7 +148,7 @@ is_inlineable(#fstat{func=F,arity=A}, Thresh, Ofs) ->
 %%  ourselves.
 
 inline_inline(#ifun{body=B,weight=Iw}=If, Is) ->
-    Inline = fun (#c_call{op=#c_local{name=F,arity=A},args=As}=Call) ->
+    Inline = fun (#c_apply{op=#c_fname{id=F,arity=A},args=As}=Call) ->
 		     case find_inl(F, A, Is) of
 			 #ifun{vars=Vs,body=B,weight=W} when W < Iw ->
 			     #c_let{vars=Vs,
@@ -155,8 +164,8 @@ inline_inline(#ifun{body=B,weight=Iw}=If, Is) ->
 %%  Try to inline calls in a normal function.  Here we inline anything
 %%  in the inline list.
 
-inline_func(#fstat{fdef=F0}=Fstat, Is) ->
-    Inline = fun (#c_call{op=#c_local{name=F,arity=A},args=As}=Call, Mod) ->
+inline_func(#fstat{def=F0}=Fstat, Is) ->
+    Inline = fun (#c_apply{op=#c_fname{id=F,arity=A},args=As}=Call, Mod) ->
 		     case find_inl(F, A, Is) of
 			 #ifun{vars=Vs,body=B} ->
 			     {#c_let{vars=Vs,
@@ -168,7 +177,7 @@ inline_func(#fstat{fdef=F0}=Fstat, Is) ->
 		 (Core, Mod) -> {Core,Mod}
 	     end,
     {F1,Mod} = core_lib:mapfold(Inline, false, F0),
-    Fstat#fstat{fdef=F1,modified=Mod}.
+    Fstat#fstat{def=F1,modified=Mod}.
 
 weight_func(Core, Acc) -> Acc + 1.
 
@@ -177,11 +186,11 @@ weight_func(Core, Acc) -> Acc + 1.
 %% function_clause match_fail (if they have one).
 
 match_fail_fun() ->
-    fun (#c_call{op=#c_internal{name=match_fail,arity=1},
-		 args=[#c_tuple{es=[#c_atom{name=function_clause}|As]}]}=C) ->
-	    Fail = #c_tuple{es=[#c_atom{name=case_clause},
+    fun (#c_primop{name=match_fail,
+		   args=[#c_tuple{es=[#c_atom{val=function_clause}|As]}]}=P) ->
+	    Fail = #c_tuple{es=[#c_atom{val=case_clause},
 				#c_tuple{es=As}]},
-	    C#c_call{args=[Fail]};
+	    P#c_primop{args=[Fail]};
 	(Other) -> Other
     end.
 

@@ -1,14 +1,11 @@
 # ROOT    	   	Top of ERTS directories (must be absolute).
 #
-# TOOLS32 	  	Location of VC++ 32-bit development tools.
 
 include ../vsn.mk
 
 CC = cl -nologo
 RC = rc
 APPROOT = ..
-#TOOLS32		= c:\msdev
-TOOLS32		= d:\progra~1\devstudio\vc
 
 # Comment the following line to compile with symbols
 #NODEBUG=1

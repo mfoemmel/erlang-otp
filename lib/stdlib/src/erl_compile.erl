@@ -13,6 +13,8 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
+%% Purpose: Consistent interface to various compilers. Invoked from erlc.
+%%
 %%     $Id$
 %%
 -module(erl_compile).
@@ -20,48 +22,40 @@
 -include("erl_compile.hrl").
 -include("file.hrl").
 
-%% Purpose: Consistent interface to various compilers.
-
--export([compile_cmdline/1, remote_compile/1]).
+-export([compile_cmdline/1]).
 
 %% Internal exports.
--export([capture_init/0, compiler_runner/1]).
+-export([compiler_runner/1]).
 
-%% Here is the mapping from file extensions to the module and function
-%% that should handle it.
+%% Mapping from extension to {M,F} to run the correct compiler.
 
-suffix_rules() ->
-    [{".S", compile, compile},
-     {".erl", compile, compile},
-     {".mib", snmp, compile},
-     {".bin", snmp_mib_to_hrl, compile},
-     {".yrl", yecc, compile},
-     {".xrl", leex, compile},
-     {".script", systools, script2boot},
-     {".rel", systools, compile_rel},
-     {".h",ig,compile},
-     {".idl",ic,compile},
-     {".asn1", asn1ct, compile_asn1},
-     {".asn", asn1ct, compile_asn},
-     {".py", asn1ct, compile_py}].
-
-%% Entry point from remote C node.
-
-remote_compile(List) ->
-    capture_output(),
-    Result = compile(List),
-    Output = lists:flatten(get_captured_output()),
-    {Result, Output}.
+compiler(".S") -> {compile,compile};
+compiler(".erl") -> {compile,compile};
+compiler(".core") -> {corec,compile};
+compiler(".mib") -> {snmp,compile};
+compiler(".bin") -> {snmp_mib_to_hrl,compile};
+compiler(".yrl") -> {yecc,compile};
+compiler(".xrl") -> {leex,compile};
+compiler(".script") -> {systools,script2boot};
+compiler(".rel") -> {systools,compile_rel};
+compiler(".h") -> {ig,compile};
+compiler(".idl") -> {ic,compile};
+compiler(".asn1") -> {asn1ct,compile_asn1};
+compiler(".asn") -> {asn1ct,compile_asn};
+compiler(".py") -> {asn1ct,compile_py};
+compiler(_) -> no.
 
 %% Entry from command line.
 
 compile_cmdline(List) ->
-    Code = case compile(List) of
-	       ok -> 0;
-	       error -> 1;
-	       _ -> 2
-	   end,
-    halt(Code).
+    %% I experimented using init:stop/0 instead of halt/0,
+    %% to make sure we don't lose output, but it turned out
+    %% to be too slow for practial use.
+    case compile(List) of
+	ok -> halt();
+	error -> halt(1);
+	_ -> halt(2)
+    end.
 
 %% Run the the compiler in a separate process, trapping EXITs.
 
@@ -79,7 +73,6 @@ compile(List) ->
 compiler_runner(List) ->
     exit({compiler_result, compile1(List)}).
 
-
 %% Parses the first part of the option list.
 
 compile1(['@cwd', Cwd|Rest]) ->
@@ -130,7 +123,7 @@ compile1(['@files'|Rest], Cwd, Opts) ->
     compile2(Rest, Cwd, Opts#options{includes=Includes}).
 
 compile2(Files, Cwd, Opts) ->
-    case {Opts#options.outfile, length(Files)} of
+    case {Opts#options.outfile,length(Files)} of
 	{"", _} ->
 	    compile3(Files, Cwd, Opts);
 	{[C|_], 1} ->
@@ -159,38 +152,32 @@ compile3([File|Rest], Cwd, Options) ->
 	Other ->
 	    Other
     end;
-compile3([], _Cwd, _Options) ->
-    ok.
+compile3([], _Cwd, _Options) -> ok.
 
-
 %% Invokes the appropriate compiler, depending on the file extension.
 
 compile_file("", Input, Output, Options) ->
     io:format("File has no extension: ~s~n", [Input]),
     error;
 compile_file(Ext, Input, Output, Options) ->
-    compile_file1(suffix_rules(), Ext, [Input, Output, Options]).
-
-compile_file1([{Ext, Mod, Func}|Rest], Ext, Args) ->
-    case catch apply(Mod, Func, Args) of
-	{'EXIT', Reason} ->
-	    io:format("Compiler function ~p:~p/~p failed:\n~p~n",
-		      [Mod, Func, length(Args), Reason]),
+    case compiler(Ext) of
+	no ->
+	    io:format("Unknown extension: '~s'\n", [Ext]),
 	    error;
-	ok ->
-	    ok;
-	error ->
-	    error;
-	Other ->
-	    io:format("Compiler function ~p:~p/~p returned:\n~p~n",
-		      [Mod, Func, length(Args), Other]),
-	    error
-    end;
-compile_file1([_|Rest], Ext, Args) ->
-    compile_file1(Rest, Ext, Args);
-compile_file1([], Ext, _Args) ->
-    io:format("Extension '~s' is not known.\n", [Ext]),
-    error.
+	{M, F} ->
+	    case catch M:F(Input, Output, Options) of
+		ok -> ok;
+		error -> error;
+		{'EXIT',Reason} ->
+		    io:format("Compiler function ~w:~w/3 failed:\n~p~n",
+			      [M,F,Reason]),
+		    error;
+		Other ->
+		    io:format("Compiler function ~w:~w/3 returned:\n~p~n",
+			      [M,F,Other]),
+		    error
+	    end
+    end.
 
 %% Guesses if a give name refers to a file or a directory.
 
@@ -207,7 +194,6 @@ file_or_directory(Name) ->
 	    end
     end.
 
-
 %% Makes an Erlang term given a string.
 
 make_term(Str) -> 
@@ -223,78 +209,3 @@ make_term(Str) ->
 	    io:format("~s: ~s~n", [Reason, Str]),
 	    throw(error)
     end.
-    
-
-%%% Capture standard output.
-
-%% Start to collect the standard output of the current process.
-
-capture_output() ->
-    Leader = spawn_link(?MODULE, capture_init, []),
-    group_leader(Leader, self()).
-
-%% Gets the collected output and terminates the sink process.
-
-get_captured_output() ->
-    group_leader() ! {get_buffer, self()},
-    receive
-	{buffer, Buffer} ->
-	    Buffer
-    end.
-
-capture_init() ->
-    capture_loop([]).
-
-capture_loop(Buf0) ->
-    receive
-	{get_buffer, From} when pid(From) ->
-	    From ! {buffer, Buf0};
-	{io_request, From, ReplyAs, Request} when pid(From) ->
-	    capture_loop(io_request(Request, From, ReplyAs, Buf0));
-	Other ->				% Ignore other messages
-	    capture_loop(Buf0)
-    end.
-
-%% io_request(Request, Sender, ReplyAs, Buffer)
-%%  Returns the new buffer.
-
-io_request(Req, From, ReplyAs, Buf0) ->
-    case io_request(Req, Buf0) of
-	{Status, Reply, Buf} ->
-	    io_reply(From, ReplyAs, Reply),
-	    Buf;
-	{exit, normal} ->
-	    io_reply(From, ReplyAs, ok),
-	    exit(normal);
-	{exit, R} ->
-	    io_reply(From, ReplyAs, {error,R}),
-	    exit(normal)
-    end.
-
-io_request({put_chars, Chars}, Buf0) ->
-    {ok, ok, [Buf0|Chars]};
-
-io_request({put_chars, Mod, Func, Args}, Buf) ->
-    case catch apply(Mod, Func, Args) of
-	Chars when list(Chars) ->
-	    io_request({put_chars, Chars}, Buf);
-	Other ->
-	    {error, {error, Func}, Buf}
-    end;
-io_request({requests,Reqs},  Buf) ->
-    io_requests(Reqs, {ok,ok,Buf});
-io_request(R, Buf) ->	                	% Unknown request
-    {ok, {error, {request,R}}, Buf}.		% Ignore, but give error
-
-%% Status = io_requests(RequestList, PrevStat, Descriptor, Server)
-%%  Process a list of output requests as long as the previous status is 'ok'.
-
-io_requests([R|Rs], {ok,Res,Buf}) ->
-    io_requests(Rs, io_request(R, Buf));
-io_requests([_|_], Error) ->
-    Error;
-io_requests([], Stat) ->
-    Stat.
-
-io_reply(From, ReplyAs, Reply) ->
-    From ! {io_reply, ReplyAs, Reply}.

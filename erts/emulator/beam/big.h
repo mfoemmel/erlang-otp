@@ -50,10 +50,20 @@
 
 #define BIG_V(xp)        ((digit_t*)((xp)+1))
 #define BIG_SIGN(xp)     (!!bignum_header_is_neg(*xp))
-#define BIG_ARITY(xp)    ((uint32)bignum_header_arity(*(xp)))
+#define BIG_ARITY(xp)    ((Uint)bignum_header_arity(*(xp)))
 #define BIG_DIGIT(xp,i)  *(BIG_V(xp)+(i))
-#define BIG_SIZE(xp)     ((dsize_t)(BIG_DIGIT(xp,2*BIG_ARITY(xp)-1) != 0 ? \
-                            2*BIG_ARITY(xp) : 2*BIG_ARITY(xp)-1))
+
+/* FIXME: */
+#ifdef ARCH_64
+#define BIG_SIZE(xp) \
+( 4*BIG_ARITY(xp) -  \
+ ((BIG_DIGIT(xp, 4*BIG_ARITY(xp)-1) == 0) ? \
+  ((BIG_DIGIT(xp, 4*BIG_ARITY(xp)-2) == 0) ? \
+   ((BIG_DIGIT(xp, 4*BIG_ARITY(xp)-3) == 0) ? 3 : 2) : 1) : 0))
+#else
+#define BIG_SIZE(xp) \
+( 2*BIG_ARITY(xp)  -  ((BIG_DIGIT(xp, 2*BIG_ARITY(xp)-1) == 0) ? 1 : 0))
+#endif
 
 /* Check for small */
 #define IS_USMALL(sgn,x)  ((sgn) ? ((x) <= MAX_SMALL+1) : ((x) <= MAX_SMALL))
@@ -62,26 +72,34 @@
 /* The heap size needed for a bignum is
 ** Number of digits 'x' in words = (x+1)/2 plus 
 ** The thing word
+**
+** FIXME: 
+** Replace with: ( ((x)+sizeof(Uint)-1) / sizeof(Uint) ) + 1
 */
+#ifdef ARCH_64
+#define BIG_NEED_SIZE(x) ((((x)+3) >> 2) + 1)
+#else
 #define BIG_NEED_SIZE(x)  ((((x)+1) >> 1) + 1)
+#endif
 
 
 /* sizeof(digit_t) <= sizeof(D_BASE-1) */
 
-typedef unsigned long  reg_t;    /* register type */
-typedef unsigned short digit_t;  /* digit type */
-typedef unsigned long  dsize_t;	 /* Vector size type */
+typedef Uint32   reg_t;    /* register type 32 bit */
+typedef Uint16 digit_t;  /* digit type    16 bit */
+typedef Uint  dsize_t;	 /* Vector size type */
+
 
 #define ZERO_DIGITS(v, sz) \
   do { \
-    int _t_sz = sz; \
+    dsize_t _t_sz = sz; \
     digit_t* _t_v  = v; \
     while(_t_sz--) *_t_v++ = 0; \
   } while(0)
 
 #define MOVE_DIGITS(dst, src, sz) \
   do { \
-    int _t_sz = sz; \
+    dsize_t _t_sz = sz; \
     digit_t* _t_dst; \
     digit_t* _t_src; \
     if (dst < src) { \
@@ -176,38 +194,38 @@ typedef unsigned long  dsize_t;	 /* Vector size type */
      } while(0)
 
 
-int big_decimal_estimate(uint32);
-char* big_to_decimal(uint32, char*, int);
-uint32 big_to_list(uint32, uint32**);
+int big_decimal_estimate(Eterm);
+char* big_to_decimal(Eterm, char*, int);
+Eterm big_to_list(Eterm, Eterm**);
 
-uint32 big_plus(uint32, uint32, uint32*);
-uint32 big_minus(uint32, uint32, uint32*);
-uint32 big_times(uint32, uint32, uint32*);
-uint32 big_div(uint32, uint32, uint32*);
-uint32 big_rem(uint32, uint32, uint32*);
-uint32 big_neg(uint32, uint32*);
+Eterm big_plus(Eterm, Eterm, Eterm*);
+Eterm big_minus(Eterm, Eterm, Eterm*);
+Eterm big_times(Eterm, Eterm, Eterm*);
+Eterm big_div(Eterm, Eterm, Eterm*);
+Eterm big_rem(Eterm, Eterm, Eterm*);
+Eterm big_neg(Eterm, Eterm*);
 
-uint32 big_minus_small(uint32, uint32, uint32*);
-uint32 big_plus_small(uint32, uint32, uint32*);
-uint32 big_times_small(uint32, uint32, uint32*);
+Eterm big_minus_small(Eterm, Uint, Eterm*);
+Eterm big_plus_small(Eterm, Uint, Eterm*);
+Eterm big_times_small(Eterm, Uint, Eterm*);
 
-uint32 big_band(uint32, uint32, uint32*);
-uint32 big_bor(uint32, uint32, uint32*);
-uint32 big_bxor(uint32, uint32, uint32*);
-uint32 big_bnot(uint32, uint32*);
+Eterm big_band(Eterm, Eterm, Eterm*);
+Eterm big_bor(Eterm, Eterm, Eterm*);
+Eterm big_bxor(Eterm, Eterm, Eterm*);
+Eterm big_bnot(Eterm, Eterm*);
 
-uint32 big_lshift(uint32, sint32, uint32*);
-int big_comp (uint32, uint32);
-int big_ucomp (uint32, uint32);
-double big_to_double(uint32);
-uint32 small_to_big(sint32, uint32*);
-uint32 uint32_to_big(uint32, uint32*);
-uint32 make_small_or_big(uint32, Process*);
+Eterm big_lshift(Eterm, Sint, Eterm*);
+int big_comp (Eterm, Eterm);
+int big_ucomp (Eterm, Eterm);
+int big_to_double(Eterm x, double* resp);
+Eterm small_to_big(Sint, Eterm*);
+Eterm uint_to_big(Uint, Eterm*);
+Eterm make_small_or_big(Uint, Process*);
 
-dsize_t big_bytes(uint32);
-int bytes_eq_big(byte*, dsize_t, int, uint32);
-uint32 bytes_to_big(byte*, dsize_t, int, uint32*);
-byte* big_to_bytes(uint32, byte*);
+dsize_t big_bytes(Eterm);
+int bytes_eq_big(byte*, dsize_t, int, Eterm);
+Eterm bytes_to_big(byte*, dsize_t, int, Eterm*);
+byte* big_to_bytes(Eterm, byte*);
 
 int big_fits_in_sint32(Eterm b);
 int big_fits_in_uint32(Eterm b);
@@ -215,3 +233,4 @@ Uint32 big_to_uint32(Eterm b);
 Sint32 big_to_sint32(Eterm b);
 
 #endif
+

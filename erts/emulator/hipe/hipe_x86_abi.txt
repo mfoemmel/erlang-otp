@@ -1,0 +1,124 @@
+$Id$
+
+HiPE x86 ABI
+============
+
+Register Usage
+--------------
+%esp and %ebp are fixed and must be preserved by calls (callee-save).
+%eax, %edx, %ecx, %ebx, %edi are clobbered by calls (caller-save).
+%esi is a fixed global register (unallocatable).
+
+%esp is the native code stack pointer, growing towards lower addresses.
+%ebp (aka P) is the current process' "Process*".
+%esi (aka HP) is the current process' heap pointer.
+
+The first return value from a function is placed in %eax, the second
+(if any) is placed in %edx.
+
+The caller-save registers are used as temporary scratch registers.
+
+[XXX: Eventually, when we have better register allocation in place,
+the current "Process*" may be put in %fs instead, which will make
+%ebp available as a general-purpose register.]
+
+Calling Convention
+------------------
+Parameters are pushed on the stack, in left-to-right order.
+Left-to-right order is used to cater for the BEAM interpreter's
+calling convention for closures.
+
+The callee deallocates the actual parameters from the stack
+before returning, by using the "ret $N" instruction. This is
+required for correct implementation of tailcalls.
+
+Stack Frame Layout
+------------------
+[From top to bottom: formals in left-to-right order, incoming return
+address, fixed-size chunk for locals & spills, variable-size area
+for actuals, outgoing return address. %esp normally points at the
+bottom of the fixed-size chunk, except during a recursive call.
+The callee pops the actuals, so no %esp adjustment at return.]
+
+Stack Descriptors
+-----------------
+For each native code call site there is a stack descriptor which
+describes certain static properties of that call:
+- The call site's return address, used as key for lookups.
+- The caller's local exception handler code address, if present.
+- The caller's (fixed) frame size, in words.
+- The set of "dead" or "untraceable" words in the caller's frame.
+- The caller's arity. If f/N recursively calls g/M, then the
+  call site's arity is N, not M. (M is not a function of the
+  return address, due to the presence of tailcalls.)
+
+Exceptions
+----------
+A recursive call occurring within the scope of a local exception
+handler is indicated by having a stack descriptor with a non-NULL
+exception handler code address.
+
+If an exception is thrown, the runtime system will unwind the native
+stack one frame at a time, using the stack descriptors associated
+with each frame's return address.
+
+When a frame with an active exception handler is found, the stack
+pointer is reset to the low address of the fixed portion of that frame,
+and a branch is made to the handler with the exception value in %eax.
+
+Garbage Collection Interface
+----------------------------
+At any point where a garbage collection may occur, the
+stack must contain only valid tagged Erlang terms. Thus:
+- Return addresses must be 32-bit aligned. This means that
+  call instructions may have to be prefixed with NOPs.
+- Values which are not tagged Erlang terms may not be live
+  across function calls.
+- Stack slots containing uninitialised or dead values must be
+  overwritten with zeroes before garbage collection.
+  This is handled by the runtime system, using the compiler-
+  generated stack descriptors.
+
+BIFs
+----
+C BIFs are called on the C stack, not the current native stack.
+
+A C BIF returns a single tagged Erlang value. To indicate an
+exceptional condition, it puts an error code in p->freason
+and returns zero (THE_NON_VALUE).
+
+If p->freason == TRAP, then the BIF redirects its call to some
+other function, given by p->fvalue and p->def_arg_reg[].
+The other function has the same arity as the BIF.
+
+A BIF can suspend the call by setting p->freason == RESCHEDULE.
+The caller should return immediately to the scheduler. When
+the process is resumed, the caller should re-execute the call.
+
+The "hipe_x86_bifs.m4" macro file takes care of these issues
+by automatically generating assembly code which performs the
+necessary stack switching, parameter copying, and checking for
+and handling of exceptional conditions. To compiled Erlang code,
+a call to a C BIF looks like an ordinary function call.
+
+Stacks and Unix Signal Handlers
+-------------------------------
+Each Erlang process has its own private native code stack.
+This stack is managed by the compiler and the runtime system.
+It is not guaranteed to have space for a Unix signal handler.
+The Unix process MUST employ an "alternate signal stack" using
+sigaltstack(), and all user-defined signal handlers MUST be
+registered with sigaction() and the SA_ONSTACK flag. Failure
+to observe these rules may lead to memory corruption errors.
+
+
+Standard Unix x86 Calling Conventions
+=====================================
+
+%eax, %edx, %ecx are clobbered by calls (caller-save)
+%esp, %ebp, %ebx, %esi, %edi are preserved by calls (callee-save)
+%eax and %edx receive function call return values
+%esp is the stack pointer (fixed)
+%ebp is optional frame pointer or local variable
+actual parameters are pushed right-to-left
+caller deallocates parameters after return (addl $N,%esp)

@@ -76,28 +76,27 @@
 #include "erl_vm.h"
 #include "global.h"
 
-#define TIW_SIZE 8192   /* timing wheel size (should be a power of 2) */
-static ErlTimer** tiw;  /* the timing wheel, allocated in init_time() */
-static uint32 tiw_pos;  /* current position in wheel */
-static uint32 tiw_nto;  /* number of timeouts in wheel */
-static ErlTimer* tm_list; /* new timers created while bumping */
+#define TIW_SIZE 8192		/* timing wheel size (should be a power of 2) */
+static ErlTimer** tiw;		/* the timing wheel, allocated in init_time() */
+static Uint tiw_pos;		/* current position in wheel */
+static Uint tiw_nto;		/* number of timeouts in wheel */
+static ErlTimer* tm_list;	/* new timers created while bumping */
 
 /* Actual interval time chosen by sys_init_time() */
 static int itime;
 static int bump_lock;  /* set while bumping */
 
-
-void increment_time(ticks)
-int ticks;
+void
+increment_time(int ticks)
 {
     do_time += ticks;
 }
 
-static void insert_timer(p, t)
-ErlTimer* p; uint32 t;
+static void
+insert_timer(ErlTimer* p, Uint t)
 {
-    uint32 tm;
-    uint32 ticks;
+    Uint tm;
+    Uint ticks;
 
     /* The current slot (tiw_pos) in timing wheel is the next slot to be
      * be processed. Hence no extra time tick is needed.
@@ -109,8 +108,8 @@ ErlTimer* p; uint32 t;
     
     /* calculate slot */
     tm = (ticks + tiw_pos) % TIW_SIZE;
-    p->slot = (uint32)tm;
-    p->count = (uint32)(ticks / TIW_SIZE);
+    p->slot = (Uint) tm;
+    p->count = (Uint) (ticks / TIW_SIZE);
   
     /* insert at head of list at slot */
     p->next = tiw[tm];
@@ -118,20 +117,25 @@ ErlTimer* p; uint32 t;
     tiw_nto++;
 }
 
-void bump_timer()
+void
+bump_timer(void)
 {
-    uint32 keep_pos, count;
+    Uint keep_pos;
+    Uint count;
     ErlTimer* p;
     ErlTimer** prev;
-    uint32 dtime = do_time;  /* local copy */
+    Uint dtime = do_time;  /* local copy */
 
     do_time = 0;
     /* no need to bump the position if there aren't any timeouts */
-    if (tiw_nto == 0)
+    if (tiw_nto == 0) {
 	return;
+    }
+
     bump_lock = 1; /* avoid feedback loops in timeout proc */
+
     /* if do_time > TIW_SIZE we want to go around just once */
-    count = (uint32)(dtime / TIW_SIZE) + 1;
+    count = (Uint)(dtime / TIW_SIZE) + 1;
     keep_pos = (tiw_pos + dtime) % TIW_SIZE;
     if (dtime > TIW_SIZE) dtime = TIW_SIZE;
   
@@ -176,31 +180,29 @@ void bump_timer()
 
 /* this routine links the time cells into a free list at the start
    and sets the time queue as empty */
-void init_time()
+void
+init_time(void)
 {
-  int i;
+    int i;
 
-  if ((tiw = (ErlTimer**)sys_alloc_from(140,TIW_SIZE * sizeof(ErlTimer*))) == NULL)
-      erl_exit(1, "can't allocate timing wheel\n");
-  for(i = 0; i < TIW_SIZE; i++)
-      tiw[i] = NULL;
-  do_time = tiw_pos = tiw_nto = 0;
-  tm_list = NULL;
-  bump_lock = 0;
+    if ((tiw = (ErlTimer**)sys_alloc_from(140,TIW_SIZE * sizeof(ErlTimer*))) == NULL)
+	erl_exit(1, "can't allocate timing wheel\n");
+    for(i = 0; i < TIW_SIZE; i++)
+	tiw[i] = NULL;
+    do_time = tiw_pos = tiw_nto = 0;
+    tm_list = NULL;
+    bump_lock = 0;
 
-  /* system dependant init */
-  itime = erts_init_time_sup();
+    /* system dependent init */
+    itime = erts_init_time_sup();
 }
 
 /*
 ** Insert a process into the time queue, with a timeout 't'
 */
-void erl_set_timer(p, timeout, cancel, arg, t)
-ErlTimer* p;
-ErlTimeoutProc timeout;
-ErlCancelProc cancel;
-void* arg;
-uint32 t;
+void
+erl_set_timer(ErlTimer* p, ErlTimeoutProc timeout, ErlCancelProc cancel,
+	      void* arg, Uint t)
 {
     if (p->active)  /* XXX assert ? */
 	return;
@@ -212,13 +214,13 @@ uint32 t;
 	p->next = tm_list;
 	tm_list = p;
 	p->count = t;  /* time is saved here used by bump */
-    }
-    else
+    } else {
 	insert_timer(p, t);
+    }
 }
 
-void erl_cancel_timer(p)
-ErlTimer* p;
+void
+erl_cancel_timer(ErlTimer* p)
 {
     ErlTimer *tp;
     ErlTimer **prev;
@@ -285,10 +287,10 @@ int next_time()
   0 is returned also if the timer is overdue (i.e., would have triggered
   immediately if it hadn't been cancelled).
 */
-uint32 time_left(p)
-ErlTimer *p;
+Uint
+time_left(ErlTimer *p)
 {
-    uint32 left;
+    Uint left;
 
     if (!p->active)
 	return 0;

@@ -265,7 +265,7 @@ infoS() ->
 
 		   case mnemosyne_catalog:is_running() of
 		       true ->  tbl_info();
-		       false -> io_lib:format(" *** Not running!\n")
+		       false -> io_lib:format(" *** Not running!\n", [])
 		   end
 		  ]).
     

@@ -19,11 +19,51 @@
 
 %% Low-level debugging support. EXPERIMENTAL!
 
--export([df/1,df/2,df/3]).
+-export([size/1,df/1,df/2,df/3]).
 
 %% This module contains the following *experimental* BIFs:
 %%   apply/4 
 %%   disassemble/1
+%%   breakpoint/2
+%%   same/2
+%%   flat_size/1
+
+%% size(Term)
+%%  Returns the size of Term in actual heap words. Shared subterms are
+%%  counted once.  Example: If A = [a,b], B =[A,A] then size(B) returns 8,
+%%  while flat_size(B) returns 12.
+
+size(Term) ->
+    {Sum,Seen} = size(Term, [], 0),
+    Sum.
+
+size(Term, Seen0, Sum0) ->
+    case erts_debug:flat_size(Term) of
+	0 -> {Sum0,Seen0};
+	Sz ->
+	    case is_seen(Term, Seen0) of
+		yes -> {Sum0,Seen0};
+		no ->
+		    Seen1 = [Term|Seen0],
+		    case Term of
+			[H|T] ->
+			    {Sum,Seen} = size(H, Seen1, Sum0+2),
+			    size(T, Seen, Sum);
+			Tuple when tuple(Tuple) ->
+			    Sum = Sum0 + 1 - size(Tuple),
+			    size(tuple_to_list(Tuple), Seen1, Sum);
+			Other ->
+			    {Sum0+Sz,Seen1}
+		    end
+	    end
+    end.
+
+is_seen(Term, [H|T]) ->
+    case erts_debug:same(Term, H) of
+	true -> yes;
+	false -> is_seen(Term, T)
+    end;
+is_seen(Term, []) -> no.
 
 %% df(Mod)               -- Disassemble Mod to file Mod.dis.
 %% df(Mod, Func)         -- Disassemble Mod:Func/Any to file Mod_Func.dis.

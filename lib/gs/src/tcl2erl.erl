@@ -25,7 +25,7 @@
 
 -compile(export_all).
 
--include("gtk.hrl").
+-include("gstk.hrl").
 
 
 
@@ -260,7 +260,7 @@ scan_string([],Ack1,Ack2) ->
 %% Used by read to return a proper type or fail.
 
 ret_int(Str) ->
-    case gtk:call(Str) of
+    case gstk:call(Str) of
 	{result, Result} ->
 	    case str_to_term(Result) of
 		{_,Value} -> Value;
@@ -270,7 +270,7 @@ ret_int(Str) ->
     end.
 
 ret_atom(Str) ->
-    case gtk:call(Str) of
+    case gstk:call(Str) of
 	{result, Result} ->
 	    case str_to_term(Result) of
 		{_,Value} -> Value;
@@ -280,13 +280,13 @@ ret_atom(Str) ->
     end.
 
 ret_str(Str) ->
-    case gtk:call(Str) of
+    case gstk:call(Str) of
 	{result, Val} -> Val;
 	Bad_result -> Bad_result
     end.
 
 ret_tuple(Str) ->
-    case gtk:call(Str) of
+    case gstk:call(Str) of
 	{result,S} ->
 	    case scan(S) of
 		{tokens,Toks} ->
@@ -299,7 +299,7 @@ ret_tuple(Str) ->
     end.
 
 ret_coords(Str) ->
-    case gtk:call(Str) of
+    case gstk:call(Str) of
         {result,S} ->
             case parse_coords(S, []) of
                 error -> 
@@ -371,7 +371,7 @@ ret_geometry(Str) ->
     end.
 
 ret_list(Str) ->    
-    case gtk:call(Str) of
+    case gstk:call(Str) of
 	{result,S} ->
 	    case scan(S) of
 		{tokens,Toks} ->
@@ -384,7 +384,7 @@ ret_list(Str) ->
     end.
     
 ret_str_list(Str) ->
-    case gtk:call(Str) of
+    case gstk:call(Str) of
 	{result,S} ->
 	    mk_quotes0(S,[]);
 	Bad_result -> Bad_result
@@ -424,14 +424,14 @@ ret_disabled(Str) ->
     end.
 
 ret_focus(W, Str) ->
-    case gtk:call(Str) of
+    case gstk:call(Str) of
 	{result, W} -> true;
 	_           -> false
     end.
 
 
 ret_file(Str) ->
-    case gtk:call(Str) of
+    case gstk:call(Str) of
 	{result, [$@|File]} -> File;
 	{result, []}        -> [];
 	Bad_result          -> Bad_result
@@ -464,7 +464,7 @@ ret_enable(Str) ->
 
 
 ret_color(Str) ->
-    case gtk:call(Str) of
+    case gstk:call(Str) of
 	{result,[$#,R1,G1,B1]} ->
 	    {hex2dec([R1,$0]),hex2dec([G1,$0]),hex2dec([B1,$0])};
 	{result,[$#,R1,R2,G1,G2,B1,B2]} ->
@@ -484,7 +484,7 @@ ret_color(Str) ->
 
 
 ret_stipple(Str) ->
-    case gtk:call(Str) of
+    case gstk:call(Str) of
 	{result, Any} -> true;
 	Other -> false
     end.

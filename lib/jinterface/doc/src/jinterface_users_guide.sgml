@@ -30,7 +30,7 @@
     <FILE>jinterface.sgml
   </HEADER>
 
-<P>The <seealso marker="com/ericsson/otp/erlang/package-summary.html">Jinterface</> package provides 
+<P>The <seealso marker="java/com/ericsson/otp/erlang/package-summary.html">Jinterface</> package provides 
 a set of tools for communication with Erlang processes. It can also be used for communication with 
 other Java processes using the same package, as well as C processes using the Erl_Interface library.  
 
@@ -49,7 +49,7 @@ assumed that even Erlang processes are included, unless specified
 otherwise.
 
 The classes in
-<seealso marker="com/ericsson/otp/erlang/package-summary.html">Jinterface</> support the following:
+<seealso marker="java/com/ericsson/otp/erlang/package-summary.html">Jinterface</> support the following:
 <LIST>
 
 <ITEM>manipulation of data represented as Erlang data types
@@ -84,52 +84,52 @@ This section describes the mapping of Erlang basic types to Java.
 
 <row><cell>atom</cell>
 	    <cell>
-	      <seealso marker="com/ericsson/otp/erlang/OtpErlangAtom.html">OtpErlangAtom</></cell></row>
+	      <seealso marker="java/com/ericsson/otp/erlang/OtpErlangAtom.html">OtpErlangAtom</></cell></row>
 
 <row><cell>binary</cell>
 	    <cell>
-	      <seealso marker="com/ericsson/otp/erlang/OtpErlangBinary.html">OtpErlangBinary</></cell></row>
+	      <seealso marker="java/com/ericsson/otp/erlang/OtpErlangBinary.html">OtpErlangBinary</></cell></row>
 
 <row><cell>floating point types</cell>
 	    <cell>
-	      <seealso marker="com/ericsson/otp/erlang/OtpErlangFloat.html">OtpErlangFloat</> or 
-	      <seealso marker="com/ericsson/otp/erlang/OtpErlangDouble.html">OtpErlangDouble</>,
+	      <seealso marker="java/com/ericsson/otp/erlang/OtpErlangFloat.html">OtpErlangFloat</> or 
+	      <seealso marker="java/com/ericsson/otp/erlang/OtpErlangDouble.html">OtpErlangDouble</>,
 	      depending on the floating point value size</cell></row>
 
 <row><cell>integral types</cell>
      <cell>One of 
-	   <seealso marker="com/ericsson/otp/erlang/OtpErlangByte.html">OtpErlangByte</>,
-	   <seealso marker="com/ericsson/otp/erlang/OtpErlangChar.html">OtpErlangChar</>,
-	   <seealso marker="com/ericsson/otp/erlang/OtpErlangShort.html">OtpErlangShort</>,
-	   <seealso marker="com/ericsson/otp/erlang/OtpErlangUShort.html">OtpErlangUShort</>,
-           <seealso marker="com/ericsson/otp/erlang/OtpErlangInt.html">OtpErlangInt</>,
-           <seealso marker="com/ericsson/otp/erlang/OtpErlangUInt.html">OtpErlangUInt</> or
-           <seealso marker="com/ericsson/otp/erlang/OtpErlangLong.html">OtpErlangLong</>,
+	   <seealso marker="java/com/ericsson/otp/erlang/OtpErlangByte.html">OtpErlangByte</>,
+	   <seealso marker="java/com/ericsson/otp/erlang/OtpErlangChar.html">OtpErlangChar</>,
+	   <seealso marker="java/com/ericsson/otp/erlang/OtpErlangShort.html">OtpErlangShort</>,
+	   <seealso marker="java/com/ericsson/otp/erlang/OtpErlangUShort.html">OtpErlangUShort</>,
+           <seealso marker="java/com/ericsson/otp/erlang/OtpErlangInt.html">OtpErlangInt</>,
+           <seealso marker="java/com/ericsson/otp/erlang/OtpErlangUInt.html">OtpErlangUInt</> or
+           <seealso marker="java/com/ericsson/otp/erlang/OtpErlangLong.html">OtpErlangLong</>,
 	   depending on the integral value size and sign</cell></row>
 
 <row><cell>list</cell>
 	    <cell>
-	      <seealso marker="com/ericsson/otp/erlang/OtpErlangList.html">OtpErlangList</></cell></row>
+	      <seealso marker="java/com/ericsson/otp/erlang/OtpErlangList.html">OtpErlangList</></cell></row>
 
 <row><cell>pid</cell>
 	    <cell>
-	      <seealso marker="com/ericsson/otp/erlang/OtpErlangPid.html">OtpErlangPid</></cell></row>
+	      <seealso marker="java/com/ericsson/otp/erlang/OtpErlangPid.html">OtpErlangPid</></cell></row>
 
 <row><cell>port</cell>
 	    <cell>
-	      <seealso marker="com/ericsson/otp/erlang/OtpErlangPort.html">OtpErlangPort</></cell></row>
+	      <seealso marker="java/com/ericsson/otp/erlang/OtpErlangPort.html">OtpErlangPort</></cell></row>
 
 <row><cell>ref</cell>
 	    <cell>
-	      <seealso marker="com/ericsson/otp/erlang/OtpErlangRef.html">OtpErlangRef</></cell></row>
+	      <seealso marker="java/com/ericsson/otp/erlang/OtpErlangRef.html">OtpErlangRef</></cell></row>
 
 <row><cell>tuple</cell>
 	    <cell>
-	     <seealso marker="com/ericsson/otp/erlang/OtpErlangTuple.html">OtpErlangTuple</></cell></row>
+	     <seealso marker="java/com/ericsson/otp/erlang/OtpErlangTuple.html">OtpErlangTuple</></cell></row>
 
 <row><cell>term</cell>
 	    <cell>
-	      <seealso marker="com/ericsson/otp/erlang/OtpErlangObject.html">OtpErlangObject</></cell></row>
+	      <seealso marker="java/com/ericsson/otp/erlang/OtpErlangObject.html">OtpErlangObject</></cell></row>
 
 <tcaption>Mapping of Erlang basic types to Java</tcaption>
 </table>
@@ -138,10 +138,10 @@ This section describes the mapping of Erlang basic types to Java.
 <SECTION><TITLE>Special Mapping Issues</TITLE>
 
 <p>The atoms <c>true</> and <c>false</> are special atoms, used as boolean values. 
-The class <seealso marker="com/ericsson/otp/erlang/OtpErlangBoolean.html">OtpErlangBoolean</> can be used to represent these.
+The class <seealso marker="java/com/ericsson/otp/erlang/OtpErlangBoolean.html">OtpErlangBoolean</> can be used to represent these.
 
 <p>Lists in Erlang are also used to describe sequences of printable characters (strings).
-A convenience class <seealso marker="com/ericsson/otp/erlang/OtpErlangString.html">OtpErlangString</>
+A convenience class <seealso marker="java/com/ericsson/otp/erlang/OtpErlangString.html">OtpErlangString</>
 is provided to represent Erlang strings.
 
 </SECTION>
@@ -155,11 +155,11 @@ unique name in the form of an identifier composed partly of the
 hostname on which the node is running, e.g "gurka@sallad.com". Several
 such nodes can run on the same host as long as their names are unique.
 
-The class <seealso marker="com/ericsson/otp/erlang/OtpNode.html">OtpNode</> 
+The class <seealso marker="java/com/ericsson/otp/erlang/OtpNode.html">OtpNode</> 
 represents an Erlang node. It is created with a name
 and optionally a port number on which it listens for incoming
 connections. Before creating an instance of 
-<seealso marker="com/ericsson/otp/erlang/OtpNode.html">OtpNode</>, 
+<seealso marker="java/com/ericsson/otp/erlang/OtpNode.html">OtpNode</>, 
 ensure that Epmd is running on the host machine. See the Erlang documentation 
 for more information about Epmd. In this example, the host name is appended
 automatically to the identifier, and the port number is chosen by the
@@ -181,11 +181,11 @@ receive messages; the mailbox is identified with the pid of the
 process.
 
 <P>Jinterface provides a similar mechanism with the class 
-<seealso marker="com/ericsson/otp/erlang/OtpMbox.html">OtpMbox</>, a
+<seealso marker="java/com/ericsson/otp/erlang/OtpMbox.html">OtpMbox</>, a
 mailbox that can be used to send and receive messages asynchronously.
 Each OtpMbox is identified with a unique pid and , optionally, a registered 
 name unique within the 
-<seealso marker="com/ericsson/otp/erlang/OtpNode.html">OtpNode</>. 
+<seealso marker="java/com/ericsson/otp/erlang/OtpNode.html">OtpNode</>. 
 
 <P>Applications are free to create mailboxes as necessary. This is done
 as follows:
@@ -267,7 +267,7 @@ a connection may be broken however.
 <SECTION><TITLE>Sending and Receiving Messages</TITLE>
 
 <P>Messages sent with this package must be instances of 
-<seealso marker="com/ericsson/otp/erlang/OtpErlangObject.html">OtpErlangObject</>
+<seealso marker="java/com/ericsson/otp/erlang/OtpErlangObject.html">OtpErlangObject</>
 or one of its subclasses. Message can be sent to processes or pids,
 either by specifying the pid of the remote, or its registered name and
 node.
@@ -346,7 +346,7 @@ desireable to send other data types.
 
 <P>The simplest way to do this is to encapsulate arbitrary data in
 messages of type 
-<seealso marker="com/ericsson/otp/erlang/OtpErlangBinary.html">OtpErlangBinary</>. 
+<seealso marker="java/com/ericsson/otp/erlang/OtpErlangBinary.html">OtpErlangBinary</>. 
 The OtpErlangBinary class can be created from arbitrary Java objects that implement the 
 Serializable or Externalizable interface:
 
@@ -432,18 +432,18 @@ another node, it first contacts epmd in order to find out the correct
 port number to connect to.
 
 <p>The basic interaction with EPMD is done through instances of 
-<seealso marker="com/ericsson/otp/erlang/OtpEpmd.html">OtpEpmd</> class.
+<seealso marker="java/com/ericsson/otp/erlang/OtpEpmd.html">OtpEpmd</> class.
 Nodes wishing to contact other nodes must first request information 
 from Epmd before a connection can be set up, however this is done automatically 
-by <seealso marker="com/ericsson/otp/erlang/OtpSelf#connect(com.ericsson.otp.erlang.OtpPeer)">OtpSelf.connect()</> when necessary. 
+by <seealso marker="java/com/ericsson/otp/erlang/OtpSelf#connect(com.ericsson.otp.erlang.OtpPeer)">OtpSelf.connect()</> when necessary. 
 
-<p>When you use <seealso marker="com/ericsson/otp/erlang/OtpSelf#connect(com.ericsson.otp.erlang.OtpPeer)">OtpSelf.connect()</> to connect to an Erlang node, 
+<p>When you use <seealso marker="java/com/ericsson/otp/erlang/OtpSelf#connect(com.ericsson.otp.erlang.OtpPeer)">OtpSelf.connect()</> to connect to an Erlang node, 
 a connection is first made to epmd and, if the node is known, a
 connection is then made to the Erlang node.
 
 <p>Java nodes can also register themselves with epmd if they want other
 nodes in the system to be able to find and connect to them.
-This is done by call to method <seealso marker="com/ericsson/otp/erlang/OtpEpmd#publishPort(com.ericsson.otp.erlang.OtpLocalNode)">OtpEpmd.publishPort()</>.
+This is done by call to method <seealso marker="java/com/ericsson/otp/erlang/OtpEpmd#publishPort(com.ericsson.otp.erlang.OtpLocalNode)">OtpEpmd.publishPort()</>.
 
 <p>Be aware that on some systems (such as VxWorks), a failed node will
 not be detected by this mechanism since the operating system does not
@@ -451,7 +451,7 @@ automatically close descriptors that were left open when the node
 failed. If a node has failed in this way, epmd will prevent you from
 registering a new node with the old name, since it thinks that the old
 name is still in use. In this case, you must unregister the name
-explicitly, by using <seealso marker="com/ericsson/otp/erlang/OtpEpmd#unPublishPort(com.ericsson.otp.erlang.OtpLocalNode)">OtpEpmd.unPublishPort()</>
+explicitly, by using <seealso marker="java/com/ericsson/otp/erlang/OtpEpmd#unPublishPort(com.ericsson.otp.erlang.OtpLocalNode)">OtpEpmd.unPublishPort()</>
 
 <p>This will cause epmd to close the connection from the far end. Note
 that if the name was in fact still in use by a node, the results of
@@ -468,9 +468,9 @@ local end of the connection to close, so resources may be consumed.
 typically sends a request and waits for a reply. Such a request is
 included in a function call at a remote node and is called a remote
 procedure call. Remote procedure calls are supported through the class
-<seealso marker="com/ericsson/otp/erlang/OtpConnection.html">OtpConnection</>.
+<seealso marker="java/com/ericsson/otp/erlang/OtpConnection.html">OtpConnection</>.
 The following example shows how the
-<seealso marker="com/ericsson/otp/erlang/OtpConnection.html">OtpConnection</> 
+<seealso marker="java/com/ericsson/otp/erlang/OtpConnection.html">OtpConnection</> 
 class is used for remote procedure calls:
 
 <CODE>
@@ -492,7 +492,7 @@ from a remote host.
 
 <SECTION><TITLE>Compiling and Loading Your Code</TITLE>
 
-<p>In order to use any of the <seealso marker="com/ericsson/otp/erlang/package-summary.html">Jinterface</> 
+<p>In order to use any of the <seealso marker="java/com/ericsson/otp/erlang/package-summary.html">Jinterface</> 
 classes, include the following line in your code:
 </P>
 
@@ -543,7 +543,7 @@ before the communication classes in this package are initialized.
 The value system property "OtpConnection.trace" is the default trace
 level for all connections. Normally the default trace level is zero,
 i.e. no tracing is performed. By setting 
-<seealso marker="com/ericsson/otp/erlang/OtpConnection.html">OtpConnection.trace</> 
+<seealso marker="java/com/ericsson/otp/erlang/OtpConnection.html">OtpConnection.trace</> 
 to some non-zero value, the communication protocol can be shown in more or
 less detail. The valid values are:
 

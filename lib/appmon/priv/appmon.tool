@@ -1,6 +1,7 @@
-{version,"0.1"}.
-{{tool,"Appmon"},
+{version,"1.2"}.
+[{config_func,{appmon_web,configData,[]}},
+{tool,"Appmon"},
  {start,{appmon,start,[]}},
  {icon,"appmon.gif"},
  {message,"Application Monitor"},
- {html,"../doc/index.html"}}.
+ {html,"../doc/index.html"}].

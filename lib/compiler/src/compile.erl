@@ -95,10 +95,19 @@ output_generated(Opts) ->
 
 expand_opt(report, Os) -> [report_errors,report_warnings|Os];
 expand_opt(return, Os) -> [return_errors,return_warnings|Os];
+expand_opt(r7, Os) -> [no_float_opt,no_new_funs];
 expand_opt(O, Os) -> [O|Os].
 
 %% format_error(ErrorDescriptor) -> string()
 
+format_error(no_native_support) ->
+    "this system is not configured for native-code compilation.";
+format_error({native, E}) ->
+    io_lib:fwrite("native-code compilation failed with reason: ~P.",
+		  [E, 25]);
+format_error({native_crasch, E}) ->
+    io_lib:fwrite("native-code compilation crasched with reason: ~P.",
+		  [E, 25]);
 format_error(jam_is_dead) ->
     "JAM is dead!";
 format_error(v1_is_dead) ->
@@ -112,7 +121,9 @@ format_error(write_error) ->
 format_error({rename,S}) ->
     io_lib:format("error renaming ~s", [S]);
 format_error({parse_transform,M,R}) ->
-    io_lib:format("error in transform '~s': ~p", [M, R]);
+    io_lib:format("error in parse transform '~s': ~p", [M, R]);
+format_error({core_transform,M,R}) ->
+    io_lib:format("error in core transform '~s': ~p", [M, R]);
 format_error({crash,Pass,Reason}) ->
     io_lib:format("internal error in ~p;\ncrash reason: ~p", [Pass,Reason]);
 format_error({bad_return,Pass,Reason}) ->
@@ -240,10 +251,9 @@ passes(file, Ver, Opts) ->
 		 [?pass(parse_module)|standard_passes(Ver)]
 	 end,
     Fs = select_passes(Ps, Opts),
-
+    
     %% If the last pass saves the resulting binary to a file,
     %% insert a first pass to remove the file.
-
     [?pass(error_if_jam)|
      case last(Fs) of
 	 {save_binary,Fun} -> [?pass(remove_file)|Fs];
@@ -329,11 +339,6 @@ standard_passes(v3) ->
     [?pass(transform_module),
      {iff,'P',{src_listing,"P"}},
      ?pass(lint_module),
-
-     %% Note: erl_lint only warns for obviously unused functions, not
-     %% for self-recursive functions never called. 
-%%     ?pass(remove_unused_functions),
-
      ?pass(expand_module),
      {iff,dexp,{listing,"expand"}},
      {iff,'E',{src_listing,"E"}},
@@ -344,6 +349,7 @@ standard_passes(v3) ->
      {pass,v3_core},
      {iff,dcore,{listing,"core"}},
      {unless,no_copt,{pass,v3_core_opt}},
+     {unless,no_copt,?pass(core_transforms)},
      {iff,dcopt,{listing,"coreopt"}},
      {iff,clint,?pass(core_lint_module)},
 
@@ -365,11 +371,14 @@ standard_passes(v3) ->
        {iff,djmp,{listing,"jump"}},
        {unless,no_topt,{pass,beam_type}},
        {iff,dtype,{listing,"type"}},
+       {pass,beam_clean},
+       {iff,dclean,{listing,"clean"}},
        {pass,beam_flatten}]},
      {iff,dopt,{listing,"optimize"}},
      {iff,'S',{listing,"S"}},
 
      ?pass(beam_asm),
+     {iff,native,?pass(native_compile)},
      {unless,binary,?pass(save_binary)}].
 
 compiler_version(Opts) ->
@@ -396,7 +405,13 @@ remove_file(St) ->
     file:delete(St#compile.ofile),
     {ok,St}.
 
--record(asm_module, {module, exports, labels, functions=[], cfun, code}).
+-record(asm_module, {module,
+		     exports,
+		     labels,
+		     functions=[],
+		     cfun,
+		     code,
+		     attributes=[]}).
 
 preprocess_asm_forms(Forms) ->
     R = #asm_module{},
@@ -404,6 +419,7 @@ preprocess_asm_forms(Forms) ->
     {R1#asm_module.module,
      {R1#asm_module.module,
       R1#asm_module.exports,
+      R1#asm_module.attributes,
       R1#asm_module.functions,
       R1#asm_module.labels}}.
 
@@ -430,6 +446,8 @@ collect_asm([{function,A,B,C} | Rest], R) ->
 			      [{function,A0,B0,C0,R#asm_module.code}]}
 	 end,
     collect_asm(Rest, R1#asm_module{cfun={A,B,C}, code=[]});
+collect_asm([{attributes, Attr} | Rest], R) ->
+    collect_asm(Rest, R#asm_module{attributes=Attr});
 collect_asm([X | Rest], R) ->
     collect_asm(Rest, R#asm_module{code=R#asm_module.code++[X]}).
 
@@ -467,7 +485,11 @@ parse_module(St) ->
 	      _ -> "."
 	  end,
     IncludePath = [Cwd, St#compile.dir|inc_paths(Opts)],
-    case epp:parse_file(St#compile.ifile, IncludePath, pre_defs(Opts)) of
+    Tab = ets:new(compiler__tab, [protected,named_table]),
+    ets:insert(Tab, {compiler_options,Opts}),
+    R =  epp:parse_file(St#compile.ifile, IncludePath, pre_defs(Opts)),
+    ets:delete(Tab),
+    case R of
 	{ok,Forms} ->
 	    {ok,St#compile{code=Forms}};
 	{error,E} ->
@@ -505,6 +527,30 @@ foldl_transform(St, [T|Ts]) ->
 	    foldl_transform(St#compile{code=Forms}, Ts)
     end;
 foldl_transform(St, []) -> {ok,St}.
+
+get_core_transforms(Opts) -> [M || {core_transform,M} <- Opts]. 
+
+core_transforms(St) ->
+    %% The options field holds the complete list of options at this
+
+    Ts = get_core_transforms(St#compile.options),
+    foldl_core_transforms(St, Ts).
+
+foldl_core_transforms(St, [T|Ts]) ->
+    Name = "core transform " ++ atom_to_list(T),
+    Fun = fun(S) -> T:core_transform(S#compile.code, S#compile.options) end,
+    Run = case member(time, St#compile.options) of
+	      true  -> fun run_tc/2;
+	      false -> fun({N,F}, S) -> catch F(S) end
+	  end,
+    case Run({Name, Fun}, St) of
+	{'EXIT',R} ->
+	    Es = [{St#compile.ifile,[{none,compile,{core_transform,T,R}}]}],
+	    {error,St#compile{errors=St#compile.errors ++ Es}};
+	Forms ->
+	    foldl_core_transforms(St#compile{code=Forms}, Ts)
+    end;
+foldl_core_transforms(St, []) -> {ok,St}.
 
 %%% Fetches the module name from a list of forms. The module attribute must
 %%% be present.
@@ -547,22 +593,6 @@ core_lint_module(St) ->
 			      errors=St#compile.errors ++ Es}}
     end.
 
-%% remove_unused_functions(State) -> State'
-%%  Remove any local functions not called in the module, based on the warnings
-%%  generated by erl_lint.
-
-%% See comment in standard_passes/1.
-% remove_unused_functions(St0) ->
-%     Eds = flatmap(fun({F,Ws}) -> Ws end,  St0#compile.warnings),
-%     case [{Func,Arity} || {L,erl_lint,{not_called,{Func,Arity}}} <- Eds] of
-% 	[] -> {ok,St0};
-% 	NotCalled ->
-% 	    Code = filter(fun({function,L,N,A,Cs}) -> not member({N,A}, NotCalled);
-% 			     (Other) -> true end,
-% 			  St0#compile.code),
-% 	    {ok,St0#compile{code=Code}}
-%     end.
-
 %% expand_module(State) -> State'
 %%  Do the common preprocessing of the input forms.
 
@@ -575,7 +605,7 @@ save_abstract_code(St) ->
     {ok,St#compile{abstract_code=abstract_code(St)}}.
 
 abstract_code(#compile{code={Mod,Exp,Forms}}) ->
-    Abstr = {abstract_v1,Forms},
+    Abstr = {abstract_v2,Forms},
     case catch erlang:term_to_binary(Abstr, [compressed]) of
 	{'EXIT',_} -> term_to_binary(Abstr);
 	Other -> Other
@@ -587,6 +617,57 @@ beam_asm(#compile{code=Code0,abstract_code=Abst,options=Opts0}=St) ->
 	{ok,Code} -> {ok,St#compile{code=Code,abstract_code=[]}};
 	{error,Es} -> {error,St#compile{errors=St#compile.errors ++ Es}}
     end.
+
+native_compile(St) ->
+    case erlang:system_info(hipe_architecture) of
+	undefined ->
+	    Ws = [{St#compile.ifile,[{none,compile,no_native_support}]}],
+	    {ok,St#compile{warnings=St#compile.warnings ++ Ws}};
+	_ ->
+	    native_compile_1(St)
+    end.
+
+native_compile_1(St) ->
+    Opts0 = St#compile.options,
+    IgnoreErrors = member(ignore_native_errors, Opts0),
+    Opts = case keysearch(hipe, 1, Opts0) of
+	       {value,{hipe, L}} when list(L) -> L;
+	       _ -> []
+	   end,
+    case catch hipe:compile(St#compile.module, St#compile.code, Opts) of
+	{ok, {Type,Bin}} when binary(Bin) ->
+	    {ok, embed_native_code(St, {Type,Bin})};
+	{error, R} ->
+	    case IgnoreErrors of
+		true ->
+		    Ws = [{St#compile.ifile,[{none,?MODULE,{native,R}}]}],
+		    {ok,St#compile{warnings=St#compile.warnings ++ Ws}};
+		false ->
+		    Es = [{St#compile.ifile,[{none,?MODULE,{native,R}}]}],
+		    {error,St#compile{errors=St#compile.errors ++ Es}}
+	    end;
+	{'EXIT',R} ->
+	    case IgnoreErrors of
+		true ->
+		    Ws = [{St#compile.ifile,[{none,?MODULE,{native_crasch,R}}]}],
+		    {ok,St#compile{warnings=St#compile.warnings ++ Ws}};
+		false ->
+		    exit(R)
+	    end
+    end.
+
+embed_native_code(St, {Type,NativeCode}) ->
+    {ok, _, Chunks0} = beam_lib:all_chunks(St#compile.code),
+    ChunkName =
+	case Type of
+	    ultrasparc -> "HS8P"; %% HiPE, SPARC, V8+ (implicit: 32-bit)
+	    x86 ->        "HX86"  %% HiPE, x86, (implicit: Unix)
+	    %% Future:     HSV9      HiPE, SPARC, V9 (implicit: 64-bit)
+            %%             HW32      HiPE, x86, Win32 
+	end,
+    Chunks = Chunks0 ++ [{ChunkName,NativeCode}],
+    {ok, BeamPlusNative} = beam_lib:build_module(Chunks),
+    St#compile{code=BeamPlusNative}.
 
 %% Returns true if the option is informative and therefore should be included
 %% in the option list of the compiled module.
@@ -735,7 +816,7 @@ listing(Ext, St) ->
 
 listing(LFun, Ext, St) ->
     Lfile = outfile(St#compile.base, Ext, St#compile.options),
-    case file:open(Lfile, [write]) of
+    case file:open(Lfile, [write,delayed_write]) of
 	{ok,Lf} -> 
 	    LFun(Lf, St#compile.code),
 	    ok = file:close(Lf),
@@ -840,7 +921,8 @@ make_erl_options(Opts) ->
 	case OutputType of
 	    undefined -> [];
 	    jam -> [jam];
-	    beam -> [beam]
+	    beam -> [beam];
+	    native -> [native]
 	end,
 
     Options++[report_errors, {cwd, Cwd}, {outdir, Outdir}|

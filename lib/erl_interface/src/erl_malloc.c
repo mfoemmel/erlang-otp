@@ -28,24 +28,6 @@ void erl_init_malloc(Erl_Heap *hp, long heap_size)
   erl_init_eterm_alloc();
 } /* erl_init_malloc */
 
-void *
-erl_malloc (long size)
-{
-  void *res;
-
-  if ((res =  malloc(size)) == NULL)
-      erl_err_sys("<ERROR> erl_malloc: Failed to allocate more memory");
-  
-  return res;
-} /* erl_malloc */
-
-void 
-erl_free (void *ptr)
-{
-  free(ptr);
-} /* erl_free */
-
-
 ETERM *erl_alloc_eterm(unsigned char type)
 {
   ETERM *e;
@@ -184,6 +166,21 @@ restart:
 	    case ERL_SMALL_BIG:
 	    case ERL_U_SMALL_BIG:
 	    case ERL_FLOAT:
+		break;
+	    case ERL_FUNCTION: 
+		{
+		    int i;
+
+		    _erl_free_term(ERL_FUN_INDEX(ep), INTERNAL, compound);
+		    _erl_free_term(ERL_FUN_UNIQ(ep), INTERNAL, compound);
+		    _erl_free_term(ERL_FUN_CREATOR(ep), INTERNAL, compound);
+		    _erl_free_term(ERL_FUN_MODULE(ep), INTERNAL, compound);
+		    if (ERL_CLOSURE(ep) != NULL) {
+			for (i = 0;  i < ERL_CLOSURE_SIZE(ep); i++) 
+			    _erl_free_term(ERL_CLOSURE_ELEMENT(ep,i),
+					   INTERNAL, compound);
+		    }
+		}
 		break;
 	    } /* switch */
 

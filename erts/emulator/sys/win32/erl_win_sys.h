@@ -79,13 +79,13 @@
 #define erfc  undef_math_func_1
 #define lgamma undef_math_func_1
 
-#define	ELIB_HEAP_SBRK
-#define ELIB_ALLOC_IS_CLIB
 #define NO_SYSLOG
 #define NO_SYSCONF
 #define NO_DAEMON
 #define NO_PWD
 #define HAVE_MEMMOVE
+
+#define strncasecmp _strnicmp
 
 /*
  * Make sure that ENOTSUP is defined.
@@ -150,13 +150,25 @@ extern SysHrTime sys_gethrtime(void);
 extern clock_t sys_times(SysTimes *buffer);
 
 /*
-** These are to avoid irritating warnings
-*/
+ ** These are to avoid irritating warnings
+ */
 #pragma warning(disable : 4244)
 #pragma warning(disable : 4018)
+
+/*
+ * Floating point support.
+ */
+
+extern volatile int erl_fp_exception;
 
 #include <float.h>
 #if defined (__GNUC__)
 int _finite(double x);
 #endif
 #endif
+
+#define NO_FPE_SIGNALS
+#define ERTS_FP_CHECK_INIT() do {} while (0)
+#define ERTS_FP_ERROR(f, Action) if (!_finite(f)) { Action; } else {}
+#define ERTS_SAVE_FP_EXCEPTION()
+#define ERTS_RESTORE_FP_EXCEPTION()

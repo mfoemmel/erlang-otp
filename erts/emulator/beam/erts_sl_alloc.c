@@ -74,7 +74,7 @@ static int initialized = 0;
 #ifdef THREAD_SAFE_SL_ALLOC
 /* Thread synchronization */
 
-#include "driver.h"
+#include "erl_threads.h"
 
 #define SL_MALLOC_MUTEX_NO 3
 
@@ -89,8 +89,8 @@ static int initialized = 0;
 int erts_atfork_sys(void (*prepare)(void),
 		    void (*parent)(void),
 		    void (*child)(void));
-erl_mutex_t erts_mutex_sys(int mno);
-erl_mutex_t sl_malloc_lock;
+erts_mutex_t erts_mutex_sys(int mno);
+erts_mutex_t sl_malloc_lock;
 
 #ifndef INIT_MUTEX_IN_CHILD_AT_FORK
 #define INIT_MUTEX_IN_CHILD_AT_FORK 0
@@ -136,23 +136,23 @@ static int exiting;
 /* -- Fence around allocated blocks when debug compiled ------- */
 
 /* Fence used by sys_alloc */
-#define SYS_ALLOC_BEFORE_PATTERN ((unsigned long) (0xABCDEF97))
-#define SYS_ALLOC_AFTER_PATTERN0 ((unsigned char) 0xBA)
-#define SYS_ALLOC_AFTER_PATTERN1 ((unsigned char) 0xDC)
-#define SYS_ALLOC_AFTER_PATTERN2 ((unsigned char) 0xFE)
-#define SYS_ALLOC_AFTER_PATTERN3 ((unsigned char) 0x77)
+#define SYS_ALLOC_BEFORE_PATTERN ((Uint) (0xABCDEF97))
+#define SYS_ALLOC_AFTER_PATTERN0 ((byte) 0xBA)
+#define SYS_ALLOC_AFTER_PATTERN1 ((byte) 0xDC)
+#define SYS_ALLOC_AFTER_PATTERN2 ((byte) 0xFE)
+#define SYS_ALLOC_AFTER_PATTERN3 ((byte) 0x77)
 
 /* Fence used by sys_sl_alloc */
-#define BEFORE_PATTERN           ((unsigned long) ~SYS_ALLOC_BEFORE_PATTERN)
-#define AFTER_PATTERN0           ((unsigned char) ~SYS_ALLOC_AFTER_PATTERN0)
-#define AFTER_PATTERN1           ((unsigned char) ~SYS_ALLOC_AFTER_PATTERN1)
-#define AFTER_PATTERN2           ((unsigned char) ~SYS_ALLOC_AFTER_PATTERN2)
-#define AFTER_PATTERN3           ((unsigned char) ~SYS_ALLOC_AFTER_PATTERN3)
+#define BEFORE_PATTERN           ((Uint) ~SYS_ALLOC_BEFORE_PATTERN)
+#define AFTER_PATTERN0           ((byte) ~SYS_ALLOC_AFTER_PATTERN0)
+#define AFTER_PATTERN1           ((byte) ~SYS_ALLOC_AFTER_PATTERN1)
+#define AFTER_PATTERN2           ((byte) ~SYS_ALLOC_AFTER_PATTERN2)
+#define AFTER_PATTERN3           ((byte) ~SYS_ALLOC_AFTER_PATTERN3)
 
 /* Beginning of block. */
 typedef struct {
-  unsigned long pattern;
-  unsigned long block_size;
+  Uint pattern;
+  Uint block_size;
   align_t block[1];
 } mem_guard;
 
@@ -170,7 +170,7 @@ void *
 set_guard_and_get_fake_block(void *p, size_t s)
 {
   mem_guard *mg = (mem_guard *) p;
-  unsigned char *ep = ((char *) (mg->block)) + s;
+  byte *ep = ((byte *) (mg->block)) + s;
 
   mg->block_size = s;
   mg->pattern = BEFORE_PATTERN;
@@ -185,7 +185,7 @@ void *
 check_guard_and_get_real_block(void *p, char *file, int line, char *func)
 {
   mem_guard *mg = FBLK2GUARD(p);
-  unsigned char *ep = ((unsigned char *) (mg->block)) + mg->block_size;
+  byte *ep = ((byte *) (mg->block)) + mg->block_size;
 
   if(exiting)
     return (void *) mg;
@@ -256,8 +256,8 @@ typedef struct mmap_chunk_ {
       struct mmap_chunk_ *prev;  /* used when regions are used               */
     } dlist;                    
   } u;
-  unsigned long block_size;      /* Size of block (memory returned to user)  */
-  unsigned long chunk_size;      /* Size of chunk (memory mapped by mmap())  */
+  Uint block_size;               /* Size of block (memory returned to user)  */
+  Uint chunk_size;               /* Size of chunk (memory mapped by mmap())  */
   /* ------------------------------ Header end ----------------------------- */
   align_t block[1];              /* Beginning of block                       */
 } mmap_chunk;
@@ -276,18 +276,18 @@ static int mmap_fd;
 /* Number of mmapped chunks */
 static int mmapped_chunks;
 /* Number of mmapped chunks */
-static unsigned long mmapped_chunks_size;
+static Uint mmapped_chunks_size;
 /* Number of mmapped chunks */
-static unsigned long mmapped_blocks_size;
+static Uint mmapped_blocks_size;
 /* Lists of all mmapped chunks when mmap/malloc regions are used to
    distinguish between mmapped and malloced memory */
 static mmap_chunk *mmap_list;
 /* Mmap region mmap_min_addr -> 0xffffffff (on 32 bit arch). mmap_min_addr
    is the lowest address returned by mmap() */
-static unsigned long mmap_min_addr;
+static Uint mmap_min_addr;
 /* Malloc region 0 -> malloc_max_addr. malloc_max_addr is the highest
    address returned by mmap() */
-static unsigned long malloc_max_addr;
+static Uint malloc_max_addr;
 /* Hash table used to distingush between mmapped and malloced memory. */ 
 static Hash mmap_table;
 /* Mmap/malloc regions used? */
@@ -325,8 +325,8 @@ static size_t pagesize_;
 /* If we need more memory than we have or if unused pages exceeds 80%
    of the chunk we move an mmapped block to another mmapped block */
 #define MOVE_MMAP2MMAP(NEEDED, PREVIOUS)                                      \
-  ((NEEDED) > (PREVIOUS)                                                    \
-   ? 1                                                                      \
+  ((NEEDED) > (PREVIOUS)                                                      \
+   ? 1                                                                        \
    : (((PREVIOUS) - (NEEDED)) > ((PREVIOUS)*4/5) ? 1 : 0))
 
 #undef  MAX
@@ -347,13 +347,13 @@ static size_t pagesize_;
 
 #define IS_MMAPPED_CHUNK(P)                                                 \
   (use_regions                                                              \
-   ? mmap_min_addr <= ((unsigned long) (P))                                 \
+   ? mmap_min_addr <= ((Uint) (P))                                          \
    : (((void *) 0) != hash_get(&mmap_table,                                 \
 			       (void *) ((mmap_chunk *) (P))->block)))
 
 #define IS_MMAPPED_BLOCK(P)                                                 \
   (use_regions                                                              \
-   ? mmap_min_addr <= ((unsigned long) (P))                                 \
+   ? mmap_min_addr <= ((Uint) (P))                                          \
    : (((void *) 0) != hash_get(&mmap_table, (void *)(P))))
 
 
@@ -367,8 +367,8 @@ static size_t pagesize_;
 #define UPDATE_MALLOC_REGION(P)                                             \
 do {                                                                        \
   if(use_regions) {                                                         \
-    if(((unsigned long) (P)) > malloc_max_addr)                             \
-      malloc_max_addr = ((unsigned long) (P));                              \
+    if(((Uint) (P)) > malloc_max_addr)                                      \
+      malloc_max_addr = ((Uint) (P));                                       \
     CHECK_REGIONS;                                                          \
   }                                                                         \
 } while (0)
@@ -376,8 +376,8 @@ do {                                                                        \
 #define UPDATE_MMAP_REGION(P)                                               \
 do {                                                                        \
   if(use_regions) {                                                         \
-    if(((unsigned long) (P)) < mmap_min_addr)                               \
-      mmap_min_addr = ((unsigned long) (P));                                \
+    if(((Uint) (P)) < mmap_min_addr)                                        \
+      mmap_min_addr = ((Uint) (P));                                         \
     CHECK_REGIONS;                                                          \
   }                                                                         \
 } while (0)
@@ -481,7 +481,7 @@ fake_mremap(void *p, size_t s)
 static HashValue
 mmap_table_hash(void *p)
 {
-  unsigned char *c = (unsigned char *) &p;
+  byte *c = (byte *) &p;
 
   if(sizeof(void *) == 4) {
     return ((((PRIME0 + c[0])
@@ -684,7 +684,7 @@ unlink_mmap_chunk(void *p)
 
 /* -- sys_sl_alloc() ------------------------------------------------------ */
 void *
-SL_MALLOC(unsigned int size)
+SL_MALLOC(Uint size)
 {
   size_t sz = (size_t) size;
   void *p;
@@ -730,7 +730,7 @@ SL_MALLOC(unsigned int size)
 #endif
 
   /* For now small requests are just malloced */
-  p = MALLOC(sz);
+  p = MALLOC((Uint) sz);
 
 #if HAVE_MMAP
   UPDATE_MALLOC_REGION(p);
@@ -785,7 +785,7 @@ SL_FREE(void *ptr)
 /* -- sys_sl_realloc() ---------------------------------------------------- */
 
 void *
-SL_REALLOC(void *ptr, unsigned int save_size, unsigned int size)
+SL_REALLOC(void *ptr, Uint save_size, Uint size)
 {
   size_t sz = (size_t) size;
   size_t save_sz = (size_t) save_size;
@@ -950,7 +950,7 @@ SL_REALLOC(void *ptr, unsigned int save_size, unsigned int size)
 #endif /* #if HAVE_MMAP */
 
   /* malloced -> malloced */
-  p = REALLOC(ptr, sz);
+  p = REALLOC(ptr, (Uint) sz);
 
 #if HAVE_MMAP
   UPDATE_MALLOC_REGION(p);
@@ -1066,7 +1066,7 @@ sys_sl_alloc_init(int enable_sl_alloc)
   mmap_list = NULL;
   /* Mmap region mmap_min_addr -> 0xffffffff (on 32 bit arch). mmap_min_addr
      is the lowest address returned by mmap() */
-  mmap_min_addr = ~((unsigned long) 0);
+  mmap_min_addr = ~((Uint) 0);
   /* Malloc region 0 -> malloc_max_addr. malloc_max_addr is the highest
      address returned by mmap() */
   malloc_max_addr = 0;

@@ -20,7 +20,7 @@
 -module(dbg_idb).
 -export([new/0,destroy/0,insert/2,lookup/1,lookup/2,lookup/3,
 	 cr_new_module/1,delete/1,delete_all_breaks/0,delete_all_breaks/1,
-	 get_all_funcs/1,get_all_breaks/0,get_all_breaks/1,rm_usage/1,
+	 get_all_breaks/0,get_all_breaks/1,rm_usage/1,
 	 del_mod/1,insert/3,mod_db/2,which_db/2,
 	 match_object/2]).
 
@@ -216,30 +216,6 @@ get_all_breaks(Module) ->
 		    Breaks
 	    end
     end.
-
-%%% -------------------------------------------------------
-%%% Get all functions in Module.
-%%% Returns: [{Name,Arity},...] or []
-%%% -------------------------------------------------------
-
-get_all_funcs(Module) when atom(Module) ->
-    case whereis(int_db) of
-	undefined ->
-	    [];
-	Db ->
-	    Db ! {self(),get_all_funcs,Module},
-	    receive
-		{Db,all_funcs,Funcs} ->
-		    Funcs
-	    end
-    end;
-get_all_funcs(DbRef) ->
-    Fs = lists:map(fun(Fun) ->
-			   list_to_tuple(Fun)
-		   end,
-		   dbg_ets:match(DbRef,{{'$1','$2'},'_'})),
-    lists:sort(Fs).
-
 
 %%% -------------------------------------------------------
 %%% Fetch the database reference to the table used by Pid

@@ -51,6 +51,7 @@ static RegProc* reg_alloc(RegProc *tmpl) {
     
     obj->name = tmpl->name;
     obj->p = tmpl->p;
+    obj->pt = tmpl->pt;
     return obj;
 }
 
@@ -71,6 +72,27 @@ void init_register_table(void)
 }
 
 /*
+** Register a port (cant be registerd twice)
+** Returns 0 if port already registered
+** Returns rp the portes registered (does not have to be p)
+*/
+Port* register_port(Eterm name, Port *pt) {
+    RegProc r, *rp;
+
+    if (pt->reg != (RegProc*) 0)
+	return (Port*) 0;
+
+    r.name = name;
+    r.pt = pt;
+    r.p = NULL;
+    
+    rp = (RegProc*) hash_put(&process_reg, (void*) &r);
+    if (rp->pt == pt)
+	pt->reg = rp;
+    return rp->pt;
+}
+
+/*
 ** Register a process (cant be registered twice)
 ** Returns 0 if process already registered
 ** Returns rp the processes registered (does not have to be p)
@@ -83,10 +105,11 @@ Process* register_process(Process *c_p, Eterm name, Process *p) {
 
     r.name = name;
     r.p = p;
+    r.pt = NULL;
     
     rp = (RegProc*) hash_put(&process_reg, (void*) &r);
     if (rp->p == p) {
-	if (IS_TRACED(p) && (p->flags & F_TRACE_PROCS) != 0) {
+	if (IS_TRACED_FL(p, F_TRACE_PROCS)) {
 	    trace_proc(c_p, p, am_register, name);
 	}
 	p->reg = rp;
@@ -106,27 +129,45 @@ Process* whereis_process(Eterm name) {
     return (Process*) 0;
 }
 
-/*
-** Unregister a process 
-** Return 0 if not registered
-** Otherwise returns the process unregistered
-*/
-Process* unregister_process(Process *c_p, Eterm name) {
+void whereis_name(Eterm name, Process **p, Port **pt)
+{
     RegProc r, *rp;
 
     r.name = name;
+    *p = NULL;
+    *pt = NULL;
+    if ((rp = (RegProc*) hash_get(&process_reg, (void*) &r)) != NULL) {
+	*p = rp->p;
+	*pt = rp->pt;
+    }
+}
+
+/*
+** Unregister a name
+** Return 0 if not registered
+** Otherwise returns 1
+*/
+int unregister_name(Process *c_p, Eterm name) {
+    RegProc r, *rp;
+    
+    r.name = name;
     if ((rp = (RegProc*) hash_get(&process_reg, (void*) &r)) != NULL) {
 	Process* p = rp->p;
-	if (p->status == P_EXITING)
-	   p->reg_atom = name;
-	p->reg = NULL;
-	hash_erase(&process_reg, (void*) &r);
-	if (IS_TRACED(p) && (p->flags & F_TRACE_PROCS) != 0) {
-	    trace_proc(c_p, p, am_unregister, name);
+	Port* pt = rp->pt;
+	if (pt != NULL) {
+	    pt->reg = NULL;
+	} else if (p != NULL) {
+	    if (p->status == P_EXITING)
+		p->reg_atom = name;
+	    p->reg = NULL;
+	    if (IS_TRACED_FL(p, F_TRACE_PROCS)) {
+		trace_proc(c_p, p, am_unregister, name);
+	    }
 	}
-	return p;
+	hash_erase(&process_reg, (void*) &r);
+	return 1;
     }
-    return (Process*) 0;
+    return 0;
 }
 
 

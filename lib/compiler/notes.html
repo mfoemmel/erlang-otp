@@ -1,157 +1,137 @@
-<HTML>
-<HEAD>
-  <TITLE>Compiler Release Notes</TITLE>
-</HEAD>
+<html>
+<head>
+  <title>Compiler Release Notes</title>
+  <style type="text/css">
+<!--
+    body          { background: white; margin: 3em }
 
-<BODY BGCOLOR="#FFFFFF">
+    body          { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1 h2 h3 h4   { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1            { font-size: 48 }
+    p li          { font-family: Verdana, Arial, Helvetica, sans-serif }
+-->
+  </style>
+</head>
 
-<CENTER><H1>Compiler Release Notes</H1></CENTER>
+<body bgcolor=white>
 
-<HTML>
-<HEAD>
-  <TITLE>Compiler Release Notes</TITLE>
-</HEAD>
-
-<BODY BGCOLOR="#FFFFFF">
-
-<H2>Compiler 3.0.1.2</H2>
-<H3>Fixed errors and malfunctions</H3>
-
-<UL>
-
-<LI>
-The compiler would sometimes reorder bit syntax clauses
-causing them to be execute in the wrong order.
-This has been corrected.
-<br>Own Id: OTP-3748<br>
-Aux Id: Seq 4954
+<center><h1>Compiler Release Notes</h1></center>
 
 
-<LI>
-Modules containing long literals string concatenated with
-variables would take long time to compile and the beam module
-would be unecesserialy large. Both problems have been
-corrected.
-<br>Own Id: OTP-3831<br>
-Aux Id: Seq 5085
+<!--- ################################################################# --->
+
+<h2>Compiler 4.0</h2>
 
 
-<LI>
-By default, debug information is no longer included in
-beam modules. Use the compiler option <CODE>debug_info</CODE>
-to include debug information.
-<br>Own Id: OTP-3885
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    If records happened to be defined with initializers so that they
+    included each other recursively, the compilation would eat up all
+    memory and then crash. Now, an error message is given instead.<br>
+    (Own Id: OTP-2677)<p>
+  </li>
+
+  <li>
+    When using the <code>warn_unused_vars</code> option to the compiler,
+    warnings could previously be incorrectly given for variables used
+    within list comprehensions.<br>
+    (Own Id: OTP-3412)<p>
+  </li>
+
+  <li>
+    When using the option <code>warn_unused_vars</code> when compiling,
+    unused variables introduced inside a <code>case</code>,
+    <code>receive</code> or <code>if</code> were not always reported.<br>
+    (Own Id: OTP-3729)<p>
+  </li>
+
+</ul>
 
 
-</UL>
+<!--- ----------------------------------------------------------------- --->
 
-<H2>Compiler 3.0.1</H2>
-<H3>Improvements and new features</H3>
+<h3>Improvements and new features</h3>
 
-<UL>
+<ul>
 
-<LI>
-Several minor compiler bugs corncerning the bit syntax
-were corrected.
-<br>Own Id: OTP-3707
+  <li>
+    The guard tests <CODE>list/1</CODE>, <CODE>atom/1</CODE> etc. now also
+    have the names <CODE>is_list/1</CODE>, <CODE>is_atom/1</CODE>. All
+    these guard tests are also BIFs that can be used in expression in
+    function bodies, too.<br>
+    (Own Id: OTP-3791)<p>
+  </li>
 
+  <li>
+    There are more compiler optimisations. In particular, lists
+    comprenhensions and record updates are faster.<br>
+    (Own Id: OTP-4142)<p>
+  </li>
 
-</UL>
+  <li>
+    Floating point operations are significantly faster if the compiler
+    knows that floating point is involved. The guard bif
+    <code>is_float/1</code> can be used ensure that the compiler knows the
+    type.<br>
+    (Own Id: OTP-4143)<p>
+  </li>
 
-<H2>Compiler 3.0</H2>
-<H3>Known problems</H3>
+  <li>
+    To faciliate constructing records containing wildcards for functions
+    such as <code>ets:match/2</code> and
+    <code>mnesia:match_object/3</code>, a special field named
+    <code>_</code> can now be assigned, meaning that all fields not
+    explicitly assigned in the same record update will be assigned.
+    Example: <code>#person{name = "Nisse", _ = '_'}</code><br>
+    (Own Id: OTP-4147)<p>
+  </li>
 
-<UL>
+  <li>
+    New short-circuit versions of <code>and</code> and <code>or</code>
+    called <code>andalso</code> and <code>orelse</code> have been added.
+    They terminate evaluation of the boolean expression as soon as the
+    truth value is known. The new operators cannot be used in guards.<br>
+    (Own Id: OTP-4148)<p>
+  </li>
 
-<LI>
-Use of recursively defined records causes the compiler to
-crash instead of reporting an error.
-<br>Own Id: OTP-2677
+  <li>
+    The boolean operators <code>and</code>, <code>or</code>, and
+    <code>not</code> can now be used in guards.<br>
+    (Own Id: OTP-4149)<p>
+  </li>
 
+  <li>
+    The compiler in R8 will issue a warnings when the atoms or functions
+    <code>try</code> or <code>cond</code> are used, as these will be
+    keywords in a future version of Erlang.
+    <br>
+    (Own Id: OTP-4150)<p>
+  </li>
 
-</UL>
-<H3>Fixed errors and malfunctions</H3>
+  <li>
+    In the Open-Source release of Erlang/OTP, the HiPE (High Performance
+    Erlang) extension can be enabled. (Using <code>./configure
+    --enable-hipe</code> when building.) If the runtime-system is
+    hipe-enabled, a module can be native-code compiled like this: <br>
+    <p><code>c(Module, [native|OtherOptions])</code>. <br> <p>Compiling in
+    this way, the beam file will contain both standard beam byte-code and
+    the native code. If loaded on a hipe-enabled system the native code
+    will be loaded; otherwise the beam-code will be loaded. <br> <p>HiPE is
+    supported for Ultra Sparc and Intel Pentium.<br>
+    (Own Id: OTP-4153)<p>
+  </li>
 
-<UL>
-
-<LI>
-The Erlang compiler builds lists and tuples in a smarter
-way than previous compilers, meaning that literal lists and tuples
-practically any size can now be built.
-<br>Own Id: OTP-2388<br>
-Aux Id: seq 821
-
-
-<LI>
-Using a literal atom in a call to atom_to_list/1 resulted
-in a compiled module that could not be loaded. This has been corrected.
-<br>Own Id: OTP-3438
-
-
-</UL>
-<H3>Improvements and new features</H3>
-
-<UL>
-
-<LI>
-We have made several changes to the garbage collector
-and internal memory allocation routines to reduce
-memory consumption and memory fragmentation.
-Also, the compiler now makes sure that references
-to any data that will not be used again will be killed,
-so that the garbage collector can discard it as soon
-as possible.
-(Thanks to Claes Wickstrom at Bluetail who suggested
-most of the changes to the garbage collector.)
-<br>Own Id: OTP-2375<br>
-Aux Id: seq 816, HA81951
-
-
-<LI>
-It is now allowed to use an expression within a pattern,
-if the expression uses only numeric or bitwise operators,
-and can
-be evaluated to a constant at compile-time. E.g.,
-<CODE>
-case X of
-{1+2, T} -> T
-end.
-</CODE>
-<br>Own Id: OTP-3144<br>
-Aux Id: OTP-3143
+</ul>
 
 
-<LI>
-There now exists syntax for constructing and matching
-binaries. For more infomation, see Extensions to Erlang.
-Also, the handling of small binaries (up to 64 bytes) has
-been optimised, as well as splitting of binaries.
-<br>Own Id: OTP-3376
 
-
-<LI>
-The construction <CODE>??Arg</CODE> for an argument to a macro
-expands to a string containing the tokens of the argument,
-similar to the <CODE>#arg</CODE> stringifying construction in C.
-<br>Own Id: OTP-3425
-
-
-<LI>
-The compiler now supports inlining within a module
-(see the compiler documentation). Numerous known
-problems and limitations have been corrected, and
-the optimisation is better (for instance, tuples
-used in cases for grouping are no longer built).
-The earlier compiler versions v1 (R5) and v2 (R6)
-have been discontinued because there are no longer
-any reason to use them.
-<br>Own Id: OTP-3672
-
-
-</UL>
-
-There are also release notes for 
-<A HREF="notes_history.html">older versions</A>.
+There are also release notes for
+<a href="notes_history.html">older versions</a>.
 
 </body>
 </html>

@@ -1,0 +1,113 @@
+#
+# Makefile for Win32
+# Written for Visual C++ version 5.0 or higher
+#
+
+# If necessary, edit this to match your installation
+# NOTE: Be careful to use DOS names!
+# "C:\Program Files\" = C:\PROGRA~1\
+
+# directories of the ODBC installation
+#
+# ODBCLIBS = <location and name of ODBC import library>
+# ODBCINCLUDE = <location of ODBC header files>
+# OTPROOT - root directory of the Erlang/OTP installation
+#
+ODBCLIBS = "C:\Program Files\Microsoft Visual Studio\VC98\lib\Odbc32.lib"
+ODBCINCLUDE = "C:\Program Files\Microsoft Visual Studio\VC98\include"
+OTPROOT = ..\..\..
+
+# Make sure erlc is in your PATH
+ERLC = erlc
+
+
+# The rest should be OK.
+#
+EMULATOR = %EMU%
+
+.SUFFIXES : .erl .hrl .idl .$(EMULATOR)
+
+EIROOT = $(OTPROOT)\lib\%EI%
+
+INCDIR = ..\include
+PRIVDIR = ..\priv
+BINDIR = $(PRIVDIR)\bin
+OBJDIR = $(PRIVDIR)\obj
+EBINDIR = ..\ebin
+
+# If you want debuging set Flags
+# CDEBUG=-DDEBUG   For C debugging
+# EDEBUG=-DDEBUG   For Erlang debugging 
+
+INCLUDES = /I. /I$(EIROOT)\include /I$(ODBCINCLUDE)
+OPTS = /Ox
+CFLAGS = $(INCLUDES) /nologo /MT $(OPTS) -D__WIN32__ -DWIN32 $(CDEBUG)
+
+ERLSRC = odbc.erl odbc_app.erl odbc_sup.erl
+ERLOBJS = $(EBINDIR)\odbc.$(EMULATOR) \
+	$(EBINDIR)\odbc_app.$(EMULATOR) $(EBINDIR)\odbc_sup.$(EMULATOR)
+
+ODBC_OBJS = $(OBJDIR)\odbcserver.obj 
+
+WINSOCK_LIB = ws2_32.lib
+EILIBS = $(EIROOT)\lib\erl_interface.lib \
+	$(EIROOT)\lib\ei.lib $(WINSOCK_LIB)
+EFLAGS = -I ..\include $(EDEBUG)
+
+# Compile odbcserver file
+codbcserver: directories $(BINDIR)\odbcserver.exe
+
+# Compile the convert_macro file and make odbc.hrl
+cconvertmacros: $(BINDIR)\convert_macros.exe ..\include\odbc.hrl
+
+# Compile all erlang-files
+eall: $(ERLOBJS)
+
+# Compile all files
+all: codbcserver cconvertmacros eall
+
+directories:
+	-mkdir $(INCDIR)
+	-mkdir $(PRIVDIR)
+	-mkdir $(BINDIR)
+	-mkdir $(OBJDIR)
+	-mkdir $(EBINDIR)
+
+clean:
+	del $(ERLOBJS)
+	del ..\include\odbc.hrl
+	del $(BINDIR)\*.exe
+	del $(OBJDIR)\*.obj
+
+$(BINDIR)\convert_macros.exe: $(OBJDIR)\convert_macros.obj
+	$(CC) $(CFLAGS) /Fe$@ $(OBJDIR)\convert_macros.obj
+
+$(BINDIR)\odbcserver.exe: $(ODBC_OBJS)
+	link /OUT:$@ /LIBPATH:. $(ODBC_OBJS) \
+		$(EILIBS) $(ODBCLIBS)
+
+..\include\odbc.hrl: $(BINDIR)\convert_macros.exe
+	$(BINDIR)\convert_macros.exe $@
+
+$(OBJDIR)\odbcserver.obj: 
+
+
+{.}.c{$(OBJDIR)}.obj:
+	$(CC) $(CFLAGS) /c /Fo$@ $(*B).c
+
+{.}.erl{$(EBINDIR)}.$(EMULATOR):
+	$(ERLC) $(EFLAGS) -o $(EBINDIR) $(*B).erl
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,3 +1,3 @@
 
-ODBC_VSN = 0.8.2
+ODBC_VSN = 0.9.1
 

@@ -33,7 +33,7 @@
 #define EXPORT_HASH(m,f,a) ((m)*(f)+(a))
 IndexTable export_table;
 
-extern uint32* em_call_error_handler;
+extern Eterm* em_call_error_handler;
 extern Uint* em_call_traced_function;
 
 void
@@ -68,7 +68,7 @@ export_alloc(Export* tmpl)
     obj->code[2] = tmpl->code[2];
     obj->slot.index = -1;
     obj->address = obj->code+3;
-    obj->code[3] = (uint32) em_call_error_handler;
+    obj->code[3] = (Eterm) em_call_error_handler;
     obj->code[4] = 0;
     obj->match_prog_set = NULL;
     return obj;
@@ -178,7 +178,6 @@ erts_export_put(Eterm mod, Eterm func, int arity)
     e.code[0] = mod;
     e.code[1] = func;
     e.code[2] = arity;
-    e.slot.index = -1;
     e.address = e.code+3;
     e.code[4] = 0;
     e.match_prog_set = NULL;

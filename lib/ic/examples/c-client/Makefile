@@ -16,13 +16,13 @@
 #     $Id$
 #
 # Point this at your version of OTP
-OTPROOT=/usr/local/otp/releases/otp_jam_sunos5_latest
+OTPROOT=/usr/local/otp/daily_build/otp_beam_sunos5_r8a.latest
 
 # Type actual IC Version
-ICVSN=4.0
+ICVSN=4.1.1
 
 # Type actual Erl Interface Vesrion
-EIVSN=3.2
+EIVSN=3.3.0
 
 # IDL file(s)
 IDLS=random.idl

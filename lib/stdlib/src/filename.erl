@@ -594,17 +594,17 @@ find_src(File0, Rules) when list(File0) ->
     File = rootname(File0, ".erl"),
     case readable_file(File++".erl") of
 	true  ->
-	    try(File, Mod, Rules);
+	    try_file(File, Mod, Rules);
 	false ->
-	    try(undefined, Mod, Rules)
+	    try_file(undefined, Mod, Rules)
     end.
 
-try(File, Mod, Rules) ->
+try_file(File, Mod, Rules) ->
     case code:which(Mod) of
 	Possibly_Rel_Path when list(Possibly_Rel_Path) ->
 	    {ok, Cwd} = file:get_cwd(),
 	    Path = filename:join(Cwd, Possibly_Rel_Path),
-	    try(File, Path, Mod, Rules);
+	    try_file(File, Path, Mod, Rules);
 	Ecode when atom(Ecode) -> % Ecode = non_existing | preloaded | interpreted
 	    {error, {Ecode, Mod}}
     end.
@@ -614,12 +614,12 @@ try(File, Mod, Rules) ->
 %% Then get the compilation options.
 %% Returns: {SrcFile, Options}
 
-try(undefined, ObjFilename, Mod, Rules) ->
+try_file(undefined, ObjFilename, Mod, Rules) ->
     case get_source_file(ObjFilename, Mod, Rules) of
-	{ok, File} -> try(File, ObjFilename, Mod, Rules);
+	{ok, File} -> try_file(File, ObjFilename, Mod, Rules);
 	Error -> Error
     end;
-try(Src, _ObjFilename, Mod, Rules) ->
+try_file(Src, _ObjFilename, Mod, Rules) ->
     List = apply(Mod, module_info, [compile]),
     {value, {options, Options}} = lists:keysearch(options, 1, List),
     {ok, Cwd} = file:get_cwd(),

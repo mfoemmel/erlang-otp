@@ -63,32 +63,19 @@ tokens([], Chars, Pos) ->			%First call
 tokens({Chars,SoFar0,Cp,Sp}, MoreChars, _) ->
     In = Chars ++ MoreChars,
     case pre_scan(In, SoFar0, Cp) of
+	{done,Rest,[],Ep} ->			%Found nothing
+	    {done,{eof,Ep},[]};
 	{done,Rest,SoFar1,Ep} ->		%Got complete tokens
 	    Res = case scan(reverse(SoFar1), Sp) of
 		      {ok,Toks} -> {ok,Toks,Ep};
 		      {error,E} -> {error,E,Ep}
 		  end,
-	    {done,Res,Rest};
-	{more,eof,SoFar1,Cp1} ->		%Missing end token
-	    Res = case is_end(SoFar1) of
-		      true -> {eof,Cp1};
-		      false -> pre_error(scan, Cp1)
-		  end,
 	    {done,Res,[]};
 	{more,Rest,SoFar1,Cp1} ->		%Missing end token
 	    {more,{Rest,SoFar1,Cp1,Sp}};
 	Other ->				%An error has occurred
-	    Other1 = fix_error_start_line(Sp, Other),
-	    {done,Other1,[]}
+	    {done,Other,[]}
     end.
-
-%% For the particular error where a quoted string or atom wasn't
-%% terminated, let the error term contain the line where the item
-%% started, not the line at the end of the file.
-fix_error_start_line(Start, {error, {_, M, {string, Q, S}}, NewPos}) ->
-    {error, {Start, M, {string, Q, S}}, NewPos};
-fix_error_start_line(_, Term) ->
-    Term.
 
 %% string([Char]) ->
 %% string([Char], StartPos) ->
@@ -99,7 +86,7 @@ string(Cs) -> string(Cs, 1).
 
 string(Cs, Sp) ->
     %% Add an 'eof' to always get correct handling.
-    case string_pre_scan(Cs ++ eof, [], Sp) of
+    case string_pre_scan(Cs, [], Sp) of
 	{done,Rest,SoFar,Ep} ->			%Got tokens
 	    case scan(reverse(SoFar), Sp) of
 		{ok,Toks} -> {ok,Toks,Ep};
@@ -114,28 +101,14 @@ string(Cs, Sp) ->
 string_pre_scan(Cs, SoFar0, Sp) ->
     case pre_scan(Cs, SoFar0, Sp) of
 	{done,Rest,SoFar1,Ep} ->		%Got complete tokens
-	    string_pre_scan(Rest, SoFar1, Ep);
-	{more,Rest,SoFar1,Ep} ->		%Missing end token
 	    {done,Rest,SoFar1,Ep};
+	{more,Rest,SoFar1,Ep} ->		%Missing end token
+	    string_pre_scan(Rest ++ eof, SoFar1, Ep);
 	Other -> Other				%An error has occurred
     end.
 
-%% is_end(OutChars) -> bool().
-%%  Have hit end-of-file before . <blank>, check if just "blanks" or if
-%%  this is a premature end.
-
-is_end([C|Cs]) when C >= $\000, C =< $\s ->
-    is_end(Cs);
-is_end([C|Cs]) when C >= $\200, C =< $\240 ->
-    is_end(Cs);
-is_end([C|Cs]) -> false;
-is_end([]) -> true.
-
 %% format_error(Error)
 %%  Return a string describing the error.
-
-string_thing($') -> "atom";
-string_thing($") -> "string".
 
 format_error({string,Quote,Head}) ->
     ["unterminated " ++ string_thing(Quote) ++
@@ -145,8 +118,10 @@ format_error(char) -> "unterminated character";
 format_error(scan) -> "premature end";
 format_error({base,Base}) -> io_lib:fwrite("illegal base '~w'", [Base]);
 format_error(float) -> "bad float";
-
 format_error(Other) -> io_lib:write(Other).
+
+string_thing($') -> "atom";
+string_thing($") -> "string".
 
 %% Re-entrant pre-scanner.
 %%
@@ -171,8 +146,10 @@ format_error(Other) -> io_lib:write(Other).
 
 pre_scan([C|Cs], SoFar, Pos) ->
     pre_scan(C, Cs, SoFar, Pos);
-pre_scan(Other, SoFar, Pos) ->
-    {more,Other,SoFar,Pos}.
+pre_scan([], SoFar, Pos) ->
+    {more,[],SoFar,Pos};
+pre_scan(eof, SoFar, Pos) ->
+    {done,eof,SoFar,Pos}.
 
 %% pre_scan(Char, [Char], SoFar, Pos)
 
@@ -183,16 +160,16 @@ pre_scan($$, Cs0, SoFar0, Pos) ->
 	more ->
 	    {more,[$$|Cs0],SoFar0, Pos};
 	error ->
-	    pre_error(char, Pos)
+	    pre_error(char, Pos, Pos)
     end;
 pre_scan($', Cs, SoFar, Pos) ->
-    pre_string(Cs, $', '\'', [$'|SoFar], Pos);
-pre_scan('\'', Cs, SoFar, Pos) ->		%Re-entering quoted atom
-    pre_string(Cs, $', '\'', SoFar, Pos);
+    pre_string(Cs, $', '\'', Pos, [$'|SoFar], Pos);
+pre_scan({'\'',Sp}, Cs, SoFar, Pos) ->		%Re-entering quoted atom
+    pre_string(Cs, $', '\'', Sp, SoFar, Pos);
 pre_scan($", Cs, SoFar, Pos) ->
-    pre_string(Cs, $", '"', [$"|SoFar], Pos);
-pre_scan('"', Cs, SoFar, Pos) ->		%Re-entering string
-    pre_string(Cs, $", '"', SoFar, Pos);
+    pre_string(Cs, $", '"', Pos, [$"|SoFar], Pos);
+pre_scan({'"',Sp}, Cs, SoFar, Pos) ->		%Re-entering string
+    pre_string(Cs, $", '"', Sp, SoFar, Pos);
 pre_scan($%, Cs, SoFar, Pos) ->
     pre_comment(Cs, SoFar, Pos);
 pre_scan('%', Cs, SoFar, Pos) ->		%Re-entering comment
@@ -202,31 +179,31 @@ pre_scan($\n, Cs, SoFar, Pos) ->
 pre_scan(C, Cs, SoFar, Pos) ->
     pre_scan(Cs, [C|SoFar], Pos).
 
-%% pre_string([Char], Quote, Reent, SoFar, Pos)
+%% pre_string([Char], Quote, Reent, StartPos, SoFar, Pos)
 
-pre_string([Q|Cs], Q, Reent, SoFar, Pos) ->
+pre_string([Q|Cs], Q, Reent, Sp, SoFar, Pos) ->
     pre_scan(Cs, [Q|SoFar], Pos);
-pre_string([$\n|Cs], Q, Reent, SoFar, Pos) ->
-    pre_string(Cs, Q, Reent, [$\n|SoFar], Pos+1);
-pre_string([$\\|Cs0], Q, Reent, SoFar0, Pos) ->
+pre_string([$\n|Cs], Q, Reent, Sp, SoFar, Pos) ->
+    pre_string(Cs, Q, Reent, Sp, [$\n|SoFar], Pos+1);
+pre_string([$\\|Cs0], Q, Reent, Sp, SoFar0, Pos) ->
     case pre_escape(Cs0, SoFar0) of
 	{Cs,SoFar} ->
-	    pre_string(Cs, Q, Reent, SoFar, Pos);
+	    pre_string(Cs, Q, Reent, Sp, SoFar, Pos);
 	more ->
-	    {more,[Reent,$\\|Cs0],SoFar0,Pos};
+	    {more,[{Reent,Sp},$\\|Cs0],SoFar0,Pos};
 	error ->
-	    pre_string_error(Q, SoFar0, Pos)
+	    pre_string_error(Q, Sp, SoFar0, Pos)
     end;
-pre_string([C|Cs], Q, Reent, SoFar, Pos) ->
-    pre_string(Cs, Q, Reent, [C|SoFar], Pos);
-pre_string([], Q, Reent, SoFar, Pos) ->
-    {more,[Reent],SoFar,Pos};
-pre_string(eof, Q, _, SoFar, Pos) ->
-    pre_string_error(Q, SoFar, Pos).
+pre_string([C|Cs], Q, Reent, Sp, SoFar, Pos) ->
+    pre_string(Cs, Q, Reent, Sp, [C|SoFar], Pos);
+pre_string([], Q, Reent, Sp, SoFar, Pos) ->
+    {more,[{Reent,Sp}],SoFar,Pos};
+pre_string(eof, Q, _, Sp, SoFar, Pos) ->
+    pre_string_error(Q, Sp, SoFar, Pos).
 
-pre_string_error(Q, SoFar, Pos) ->
+pre_string_error(Q, Sp, SoFar, Pos) ->
     S = reverse(string:substr(SoFar, 1, string:chr(SoFar, Q)-1)),
-    pre_error({string,Q,string:substr(S, 1, 16)}, Pos).
+    pre_error({string,Q,string:substr(S, 1, 16)}, Sp, Pos).
 
 pre_char([C|Cs], SoFar) -> pre_char(C, Cs, SoFar);
 pre_char([], _) -> more;
@@ -261,8 +238,8 @@ pre_comment([], SoFar, Pos) ->
 pre_comment(eof, Sofar, Pos) ->
     pre_scan(eof, [$\s|Sofar], Pos).
 
-pre_error(In, Pos) ->
-    {error,{Pos,core_scan,In}, Pos}.
+pre_error(E, Epos, Pos) ->
+    {error,{Epos,core_scan,E}, Pos}.
 
 %% scan(CharList, StartPos)
 %%  This takes a list of characters and tries to tokenise them.
@@ -317,10 +294,14 @@ scan1([$"|Cs0], Toks, Pos) ->				%String
     {S,Cs1,Pos1} = scan_string(Cs0, $", Pos),
     scan1(Cs1, [{string,Pos,S}|Toks], Pos1);
 %% Punctuation characters and operators, first recognise multiples.
-scan1([$-,$>|Cs], Toks, Pos) ->
+scan1("->" ++ Cs, Toks, Pos) ->
     scan1(Cs, [{'->',Pos}|Toks], Pos);
-scan1([$-,$||Cs], Toks, Pos) ->
+scan1("-|" ++ Cs, Toks, Pos) ->
     scan1(Cs, [{'-|',Pos}|Toks], Pos);
+scan1("#<" ++ Cs, Toks, Pos) ->
+    scan1(Cs, [{'#<',Pos}|Toks], Pos);
+scan1(">#" ++ Cs, Toks, Pos) ->
+    scan1(Cs, [{'>#',Pos}|Toks], Pos);
 scan1([C|Cs], Toks, Pos) ->				%Punctuation character
     P = list_to_atom([C]),
     scan1(Cs, [{P,Pos}|Toks], Pos);

@@ -19,12 +19,12 @@
 -define('RT_BER_BIN',"asn1rt_ber_bin").
 -define('RT_PER',"asn1rt_per_v1").
 %% change to this when we have this module -define('RT_PER_BIN',"asn1rt_per_bin").
--define('RT_PER_BIN',"asn1rt_per_v1").
+-define('RT_PER_BIN',"asn1rt_per_bin").
 
 -record(module,{pos,name,defid,tagdefault='EXPLICIT',exports={exports,[]},imports={imports,[]}, extensiondefault=empty,typeorval}).
 
 -record('SEQUENCE',{pname=false,tablecinf=false,components=[]}).
--record('SET',{pname=false,tablecinf=false,components=[]}).
+-record('SET',{pname=false,sorted=false,tablecinf=false,components=[]}).
 -record('ComponentType',{pos,name,typespec,prop,tags}).
 
 -record(typedef,{checked=false,pos,name,typespec}).
@@ -65,7 +65,7 @@
 -record('Externalvaluereference',{pos,module,value}).
 
 -record(state,{module,mname,type,tname,value,vname,erule,parameters=[],
-	       inputmodules,abscomppath=[]}).
+	       inputmodules,abscomppath=[],recordtopname=[],options}).
 
 
 

@@ -38,6 +38,7 @@
 atom false true
 atom Underscore='_'
 atom Noname='nonode@nohost'
+atom EOT='$end_of_table'
 
 #
 # Used in Beam emulator loop.
@@ -57,6 +58,7 @@ atom atom_desc
 atom atom_space
 atom atom_table
 atom and
+atom andalso
 atom andthen
 atom arity
 atom attributes
@@ -68,6 +70,7 @@ atom binary
 atom bnot
 atom bor
 atom bxor
+atom breakpoint
 atom bsl
 atom bsr
 atom call
@@ -115,6 +118,7 @@ atom eol
 atom Eq='=:='
 atom Eqeq='=='
 atom erlang
+atom ERROR='ERROR'
 atom error
 atom error_handler
 atom error_logger
@@ -145,7 +149,6 @@ atom get_tcw
 atom getenv
 atom getting_linked
 atom getting_unlinked
-atom getting_unlinked
 atom glibc
 atom global
 atom Gt='>'
@@ -154,6 +157,7 @@ atom heap_sizes
 atom hidden
 atom hide
 atom high
+atom hipe_architecture
 atom id
 atom if_clause
 atom imports
@@ -211,10 +215,13 @@ atom monitors
 atom more
 atom name
 atom named_table
+atom native_addresses
 atom Neq='=/='
 atom Neqeq='/='
 atom net_kernel
 atom new
+atom new_index
+atom new_uniq
 atom nocatch
 atom noconnection
 atom nocookie
@@ -265,6 +272,7 @@ atom reductions
 atom register
 atom register_table
 atom registered_name
+atom refc
 atom rem
 atom return_from
 atom return_to
@@ -304,6 +312,7 @@ atom table
 atom table_desc
 atom this
 atom thread_pool_size
+atom THROW='THROW'
 atom timeout
 atom timeout_value
 atom Times='*'

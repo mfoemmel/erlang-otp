@@ -16,38 +16,40 @@
 %%     $Id$
 %%
 -module(httpd_request).
--include("httpd.hrl").
+
 -export([read/5]).
+
+-include("httpd.hrl").
+
+-define(VMODULE,"REQUEST").
+-include("httpd_verbosity.hrl").
+
 
 %% read
 
-read(SocketType,Socket,ConfigDB,InitData, Timeout) ->
-  read(SocketType,Socket,[],ConfigDB,InitData, Timeout).
+read(SocketType, Socket, ConfigDB, InitData, Timeout) ->
+  read(SocketType, Socket, [], ConfigDB, InitData, Timeout).
 
-read(SocketType,Socket,Data,ConfigDB,InitData, Timeout) ->
-    ?DEBUG("read -> entry with"
-	   "~n   Socket: ~p", [Socket]),
-    MaxHdrSz = httpd_util:lookup(ConfigDB,max_header_size,256),
-    ?DEBUG("read -> MaxHdrSz: ~p", [MaxHdrSz]),
-    case read_header(Socket, MaxHdrSz, Data, Timeout) of
+read(SocketType, Socket, Data, ConfigDB, InitData, Timeout) ->
+    ?vdebug("read from socket ~p with Timeout ~p",[Socket,Timeout]),
+    MaxHdrSz = httpd_util:lookup(ConfigDB,max_header_size,10240),
+    case read_header(SocketType, Socket, Timeout, MaxHdrSz, []) of
 	{socket_closed,Reason} ->
-	    ?DEBUG("read -> Socket closed while reading header: ~p", 
-		   [Reason]),
+	    ?vlog("Socket closed while reading request header: "
+		  "~n   ~p", [Reason]),
 	    socket_close;
-	{Header,EntityBodyPart} ->
-	    MaxBodySz = httpd_util:lookup(ConfigDB,max_body_size,2048),
-	    ContentLength = content_length(Header) - length(EntityBodyPart),
-	    ?DEBUG("read -> ContentLength: ~p", [ContentLength]),
-	    case read_entity_body(Socket,MaxBodySz,
-				  EntityBodyPart,ContentLength) of
+	{ok,Header} ->
+	    MaxBodySz     = httpd_util:lookup(ConfigDB,max_body_size,nolimit),
+	    ContentLength = content_length(Header),
+	    ?vtrace("ContentLength: ~p", [ContentLength]),
+	    case read_entity_body(SocketType,Socket,Timeout,
+				  MaxBodySz,ContentLength) of
 		{socket_closed,Reason} ->
-		    ?DEBUG("read -> "
-			   "Socket closed while reading entity body: ~p", 
-			   [Reason]),
+		    ?vlog("Socket closed while reading request body: "
+			  "~n   ~p", [Reason]),
 		    socket_close;
-		EntityBody ->
-		    ?DEBUG("read -> Entity body received ok", []),
-		    Request=lists:append(Header,EntityBody),
+		{ok,EntityBody} ->
+		    Request = lists:append(Header,EntityBody),
 		    httpd_response:send(SocketType,Socket,Request,
 					ConfigDB,InitData)
 	    end
@@ -55,64 +57,58 @@ read(SocketType,Socket,Data,ConfigDB,InitData, Timeout) ->
 
 %% read_header
 
-read_header(Socket, MaxHdrSz, SoFar, Timeout) ->
-    ?DEBUG("read_header() -> entry when size(SoFar): ~p",[sz(SoFar)]),
-    case terminated_header(MaxHdrSz,SoFar) of
-	{true,Header,EntityBodyPart} ->
-	    ?DEBUG("read_header -> done when"
-		   "~n   Header:         ~p"
-		   "~n   EntityBodyPart: ~p", [Header,EntityBodyPart]),
-	    {Header,EntityBodyPart};
-	false ->
-	    ?DEBUG("read_header -> await message...",[]),
-	    receive
-		{tcp,Socket,Data} ->
-		    ?DEBUG("read_header(tcp) -> got some data: ~p",[sz(Data)]),
-		    read_header(Socket, MaxHdrSz, [SoFar,Data], Timeout);
-		{tcp_closed,Socket} ->
-		    ?DEBUG("read_header(tcp) -> socket closed",[]),
-		    {socket_closed,normal};
-		{tcp_error,Socket,Reason} ->
-		    {socket_closed,Reason};
-		{ssl,Socket,Data} ->
-		    ?DEBUG("read_header(ssl) -> got some data: ~p",[sz(Data)]),
-		    read_header(Socket, MaxHdrSz, [SoFar,Data], Timeout);
-		{ssl_closed,Socket} ->
-		    ?DEBUG("read_header(ssl) -> socket closed",[]),
-		    {socket_closed,normal};
-		{ssl_error,Socket,Reason} ->
-		    {socket_closed,Reason}
-	    after Timeout ->
-		    {socket_closed,timeout}
-	    end
+read_header(_,_,_,MaxHdrSz,Bs) when MaxHdrSz < length(Bs) ->
+    ?vlog("header to long: "
+	  "~n   MaxHdrSz:   ~p"
+	  "~n   length(Bs): ~p", [MaxHdrSz,length(Bs)]),
+    throw({error,{header_too_long,MaxHdrSz,length(Bs)}});
+read_header(SocketType,Socket,Timeout,MaxHdrSz,[$\n, $\r, $\n, $\r | Rest]) ->
+    {ok,lists:reverse([$\n, $\r, $\n, $\r | Rest])};
+read_header(SocketType,Socket,Timeout,MaxHdrSz,Bs) ->
+    %% ?vlog("read_header -> entry with Timeout: ~p",[Timeout]),
+    T = t(),
+    case (catch httpd_socket:recv(SocketType,Socket,1,Timeout)) of
+	{ok,[B]} ->
+	    read_header(SocketType,Socket,Timeout-(t()-T),MaxHdrSz,[B|Bs]);
+	{error,closed} ->
+	    {socket_closed,normal};
+	{error,etimedout} ->
+	    {socket_closed, timeout};
+	{error,Reason} ->
+	    {socket_closed, Reason};
+	Other ->
+	    {socket_closed,Other}
     end.
 
-hsplit(_MaxHdrSz, Accu,[]) ->
-    ?DEBUG("hsplit -> not terminated",[]),
-    not_terminated;
-hsplit(_MaxHdrSz, Accu, [ $\r, $\n, $\r, $\n | Tail]) ->
-    ?DEBUG("hsplit -> new-line when:"
-	   "~n   Accu length: ~p"
-	   "~n   Tail length: ~p",[sz(Accu),sz(Tail)]),
-    [lists:reverse(Accu), Tail];
-hsplit(nolimit, Accu, [H|T]) ->
-    hsplit(nolimit,[H|Accu],T);
-hsplit(MaxHdrSz, Accu, [H|T]) when length(Accu) < MaxHdrSz ->
-    hsplit(MaxHdrSz,[H|Accu],T);
-hsplit(MaxHdrSz, Accu, D) ->
-    throw({error,{header_too_long,length(Accu),length(D)}}).
-
-terminated_header(MaxHdrSz, Data) ->
-    D1 = lists:flatten(Data),
-    ?DEBUG("terminated_header -> Data size: ~p",[sz(D1)]),
-    case hsplit(MaxHdrSz,[],D1) of
-	not_terminated ->
-	    ?DEBUG("terminated_header -> not terminated",[]),
-	    false;
-	[Header,EntityBodyPart] ->
-	    ?DEBUG("terminated_header -> done",[]),
-	    {true, Header++"\r\n\r\n",EntityBodyPart}
+read_entity_body(_SocketType,_Socket,_Timeout,_Max,0) ->
+    {ok,[]};
+read_entity_body(_SocketType,_Socket,_Timeout,Max,Len) when Max < Len ->
+    ?vlog("body to long: "
+	  "~n   Max: ~p"
+	  "~n   Len: ~p", [Max,Len]),
+    throw({error,{body_too_long,Max,Len}});
+read_entity_body(SocketType,Socket,Timeout,Max,Len) ->
+    T = t(),
+    case httpd_socket:recv(SocketType,Socket,Len,Timeout-(t()-T)) of
+	{ok,Body} ->
+	    {ok,Body};
+	{error,closed} ->
+	    {socket_closed,normal};
+	{error,etimedout} ->
+	    {socket_closed, timeout};
+	{error,Reason} ->
+	    {socket_closed, Reason};
+	Other ->
+	    {socket_closed,Other}
     end.
+
+
+
+%% Time in milli seconds
+t() ->
+    {A,B,C} = erlang:now(),
+    A*1000000000+B*1000+(C div 1000).
+
 
 %% content_length
 
@@ -129,39 +125,4 @@ cut([$\r,$\n|_]) ->
   [];
 cut([N|Rest]) ->
   [N|cut(Rest)].
-
-%% read_entity_body
-
-read_entity_body(Socket,MaxBodySz,EntityBody,ContentLength) 
-    when MaxBodySz < ContentLength ->
-    throw({error,{body_too_long,MaxBodySz,ContentLength}});
-read_entity_body(Socket,MaxBodySz,EntityBody,ContentLength) 
-    when ContentLength < 1 ->
-    lists:flatten(EntityBody);
-read_entity_body(Socket,MaxBodySz,SoFar,ContentLength) ->
-    receive
-	{tcp,Socket,Data} ->
-	    read_entity_body(Socket,MaxBodySz,[SoFar,Data],
-			     ContentLength-length(Data));
-	{tcp_closed,Socket} ->
-	    {socket_closed,normal};
-	{tcp_error,Socket,Reason} ->
-	    {socket_closed,Reason};
-	{ssl,Socket,Data} ->
-	    read_entity_body(Socket,MaxBodySz,[SoFar,Data],
-			     ContentLength-length(Data));
-	{ssl_closed,Socket} ->
-	    {socket_closed,normal};
-	{ssl_error,Socket,Reason} ->
-	    {socket_closed,Reason}
-    end.
-
-
-sz(L) when list(L) ->
-    length(L);
-sz(B) when binary(B) ->
-    size(B);
-sz(O) ->
-    {unknown_size,O}.
-
 

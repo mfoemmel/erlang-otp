@@ -64,7 +64,7 @@ check(S,{Types,Values,ParameterizedTypes,Classes,Objects,ObjectSets}) ->
 	      NewClasses,Objects,ObjectSets},
 	     {NewTypes,Values,ParameterizedTypes,NewClasses,
 	      lists:subtract(Objects,ExclO),lists:subtract(ObjectSets,ExclOS)}};
-	L ->{error,{asn1,L}}
+	L ->{error,{asn1,lists:flatten([NewTerror,NewVerror,Cerror,Oerror,Exporterror])}}
     end.
 
 check_exports(S,Module = #module{name=MName}) ->
@@ -87,8 +87,11 @@ check_exports(S,Module = #module{name=MName}) ->
 		    [];
 		NoDefExp ->
 		    GetName =
-			fun(#'Externaltypereference'{type=N})-> 
-				{exported,undefined,entity,N} end,
+			fun(T = #'Externaltypereference'{type=N})-> 
+				%%{exported,undefined,entity,N} 
+				NewS=S#state{type=T,tname=N},
+				error({export,"exported undefined entity",NewS})
+			end,
 		    lists:map(GetName,NoDefExp)
 	    end
     end.
@@ -758,7 +761,8 @@ match_optional_field(S,[Setting|Rest],[{_,W}|Ws],ClassFields,Ret) ->
 	    Type when record(Type,type) -> Type;
 	    #'Externalvaluereference'{value=WordOrSetting} -> WordOrSetting;
 	    {_,_,WordOrSetting} -> WordOrSetting;
-	    Atom when atom(Atom) -> Atom
+%%	    Atom when atom(Atom) -> Atom
+	    Other -> Other
 	end,
     case lists:keysearch(W,2,ClassFields) of
 	false ->
@@ -781,7 +785,6 @@ match_mandatory_field(S,[],WithSyntax,_,Acc) ->
 match_mandatory_field(S,Fields,WithSyntax=[W|Ws],ClassFields,[Acc]) when list(W) ->
     {Acc,Fields,WithSyntax};
 %% identify and skip word
-%match_mandatory_field(S,[#'Externaltypereference'{type=WorS}|Rest],
 match_mandatory_field(S,[{_,_,WorS}|Rest],
 		      [WorS|Ws],ClassFields,Acc) ->
     match_mandatory_field(S,Rest,Ws,ClassFields,Acc);
@@ -789,42 +792,14 @@ match_mandatory_field(S,[{_,_,WorS}|Rest],
 match_mandatory_field(S,[{WorS,_}|Rest],[{WorS,_}|Ws],ClassFields,Ret) ->
     match_mandatory_field(S,Rest,Ws,ClassFields,Ret);
 %% identify and save field data
-% match_mandatory_field(S,[#'Externalvaluereference'{value=WorS}|Rest],
-% %match_mandatory_field(S,[{_,_,WorS}|Rest],
-% 		      [{_,W}|Ws],ClassFields,Acc) ->
-%     case lists:keysearch(W,2,ClassFields) of
-% 	false ->
-% 	    throw({asn1,{mandatory_matcherror,WorS,W}});
-% 	{value,CField} ->
-% 	    NewField = convert_to_defaultfield(S,W,WorS,CField),
-% 	    match_mandatory_field(S,Rest,Ws,ClassFields,[NewField|Acc])
-%     end;
-% match_mandatory_field(S,[WorS|Rest],[{typefieldreference,W}|Ws],
-% 		      ClassFields,Acc) when record(WorS,type)->
-%     case lists:keysearch(W,2,ClassFields) of
-% 	false ->
-% 	    throw({asn1,{mandatory_matcherror,WorS,W}});
-% 	{value,CField} ->
-% 	    NewField = convert_to_defaultfield(S,W,WorS,CField),
-%     	    match_mandatory_field(S,Rest,Ws,ClassFields,[NewField|Acc])
-%     end;
-% match_mandatory_field(S,[WorS|Rest],[{valuefieldreference,W}|Ws],
-% 		      ClassFields,Acc) ->
-%     case lists:keysearch(W,2,ClassFields) of
-% 	false ->
-% 	    throw({asn1,{mandatory_matcherror,WorS,W}});
-% 	{value,CField} ->
-% 	    NewField = convert_to_defaultfield(S,W,WorS,CField),
-% 	    match_mandatory_field(S,Rest,Ws,ClassFields,[NewField|Acc])
-%     end;
 match_mandatory_field(S,[Setting|Rest],[{_,W}|Ws],ClassFields,Acc) ->
     WorS = 
 	case Setting of
-	    Atom when atom(Atom) -> Atom;
+%	    Atom when atom(Atom) -> Atom;
 	    #'Externalvaluereference'{value=WordOrSetting} -> WordOrSetting;
 	    {_,_,WordOrSetting} -> WordOrSetting;
 	    Type when record(Type,type) -> Type;
-	    Other -> throw({asn1,{mandatory_matcherror,Other,W}})
+	    Other -> Other
 	end,
     case lists:keysearch(W,2,ClassFields) of
 	false ->
@@ -959,7 +934,7 @@ check_value(OldS,V) when record(V,pvaluesetdef) ->
 		_ -> continue
 	    end
     end;
-check_value(OldS,V) when record(V,valuedef) ->
+check_value(OldS=#state{recordtopname=TopName},V) when record(V,valuedef) ->
     #valuedef{name=Name,checked=Checked,type=Vtype,value=Value} = V,
     case Checked of
 	true -> 
@@ -972,78 +947,95 @@ check_value(OldS,V) when record(V,valuedef) ->
 	    S = OldS#state{type=Vtype,tname=Def,value=V,vname=Name},
 	    NewDef = 
 		case Def of
-		    Tref when record(Tref,typereference) ->
-			{_,Type} = get_referenced_type(S,Tref),
-			check_value(S,V#valuedef{type=Type#typedef.typespec}),
-			#newv{};
 		    Ext when record(Ext,'Externaltypereference') ->
+			RecName = Ext#'Externaltypereference'.type,
 			{_,Type} = get_referenced_type(S,Ext),
-			check_value(S,V#valuedef{type=Type#typedef.typespec}),
-			#newv{};
+			#valuedef{value=CheckedVal}=
+			    check_value(S#state{recordtopname=[RecName|TopName]},
+					V#valuedef{type=Type#typedef.typespec}),
+			#newv{value=CheckedVal};  
 		    'ANY' ->
 			throw({error,{asn1,{'cant check value of type',Def}}});
 		    'INTEGER' ->
-			#newv{value=validate_integer(S,Value,[],Constr)};
+			Int = validate_integer(S,Value,[],Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    {'INTEGER',NamedNumberList} ->
-			#newv{value=validate_integer(S,Value,NamedNumberList,Constr)};
+			Int = validate_integer(S,Value,NamedNumberList,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    {'BIT STRING',NamedNumberList} ->
-			#newv{value=validate_bitstring(S,Value,NamedNumberList,Constr)};
+			BStr = validate_bitstring(S,Value,NamedNumberList,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'NULL' ->
 			validate_null(S,Value,Constr),
 			#newv{};
 		    'OBJECT IDENTIFIER' ->
-			#newv{value = validate_objectidentifier(S,Value,Constr)};
+			OId = validate_objectidentifier(S,Value,Constr),
+			#newv{value = normalize_value(S,Vtype,Value,[])};
 		    'ObjectDescriptor' ->
-			validate_objectdescriptor(S,Value,Constr),
-			#newv{};
+			ODesc = validate_objectdescriptor(S,Value,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    {'ENUMERATED',NamedNumberList} ->
-			#newv{value=validate_enumerated(S,Value,NamedNumberList,Constr)};
+			Enum=validate_enumerated(S,Value,NamedNumberList,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'BOOLEAN'->
-			#newv{value=validate_boolean(S,Value,Constr)};
+			Bool = validate_boolean(S,Value,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'OCTET STRING' ->
-			#newv{value=validate_octetstring(S,Value,Constr)};
+			OStr = validate_octetstring(S,Value,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'NumericString' ->
-			#newv{value=validate_restrictedstring(S,Value,Def,Constr)};
+			NumStr = validate_restrictedstring(S,Value,Def,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'TeletexString' ->
-			#newv{value=validate_restrictedstring(S,Value,Def,Constr)};
+			TtexStr = validate_restrictedstring(S,Value,Def,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'VideotexString' ->
-			#newv{value=validate_restrictedstring(S,Value,Def,Constr)};
+			VtexStr = validate_restrictedstring(S,Value,Def,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'UTCTime' ->
-			exit({'cant check value of type' ,Def});
+			#newv{value=normalize_value(S,Vtype,Value,[])};
+%			exit({'cant check value of type' ,Def});
 		    'GeneralizedTime' ->
-			exit({'cant check value of type' ,Def});
+			#newv{value=normalize_value(S,Vtype,Value,[])};
+%			exit({'cant check value of type' ,Def});
 		    'GraphicString' ->
-			#newv{value=validate_restrictedstring(S,Value,Def,Constr)};
+			GrphStr = validate_restrictedstring(S,Value,Def,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'VisibleString' ->
-			#newv{value=validate_restrictedstring(S,Value,Def,Constr)};
+			VisStr=validate_restrictedstring(S,Value,Def,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'GeneralString' ->
-			#newv{value=validate_restrictedstring(S,Value,Def,Constr)};
+			GenStr=validate_restrictedstring(S,Value,Def,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'PrintableString' ->
-			#newv{value=validate_restrictedstring(S,Value,Def,Constr)};
+			PrntStr = validate_restrictedstring(S,Value,Def,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'IA5String' ->
-			#newv{value=validate_restrictedstring(S,Value,Def,Constr)};
+			IA5Str = validate_restrictedstring(S,Value,Def,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 		    'BMPString' ->
-			#newv{value=validate_restrictedstring(S,Value,Def,Constr)};
+			BMPStr = validate_restrictedstring(S,Value,Def,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,[])};
 %%		    'UniversalString' -> %added 6/12 -00
 %%			#newv{value=validate_restrictedstring(S,Value,Def,Constr)};
 		    Seq when record(Seq,'SEQUENCE') ->
-			#newv{value=
-			      validate_sequence(S,
-						Value,
-						Seq#'SEQUENCE'.components,
-						Constr)};
+			SeqVal = validate_sequence(S,Value,
+						   Seq#'SEQUENCE'.components,
+						   Constr),
+			#newv{value=normalize_value(S,Vtype,Value,TopName)};
 		    {'SEQUENCE OF',Components} ->
-			#newv{value=validate_sequenceof(S,Value,Components,Constr)};
+			SOFVal = validate_sequenceof(S,Value,Components,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,TopName)};
 		    {'CHOICE',Components} ->
-			#newv{value=validate_choice(S,Value,Components,Constr)};
+			ChVal = validate_choice(S,Value,Components,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,TopName)};
 		    Set when record(Set,'SET') ->
-			#newv{value=
-			      validate_set(S,
-					   Value,
-					   Set#'SET'.components,
-					   Constr)};
+			SetVal = validate_set(S,Value,Set#'SET'.components,
+					      Constr),
+			#newv{value=normalize_value(S,Vtype,Value,TopName)};
 		    {'SET OF',Components} ->
-			#newv{value=validate_setof(S,Value,Components,Constr)};
+			SOFVal = validate_setof(S,Value,Components,Constr),
+			#newv{value=normalize_value(S,Vtype,Value,TopName)};
 		    Other ->
 			exit({'cant check value of type' ,Other})
 		end,
@@ -1059,11 +1051,12 @@ check_value(OldS,V) when record(V,valuedef) ->
 	    end
     end.
 
-validate_integer(S,{identifier,Pos,Id},NamedNumberList,Constr) ->
-    case lists:keysearch(Id,1,NamedNumberList) of
-	{value,_} -> ok;
-	false -> error({value,"unknown NamedNumber",S})
-    end;
+% validate_integer(S,{identifier,Pos,Id},NamedNumberList,Constr) ->
+%     case lists:keysearch(Id,1,NamedNumberList) of
+% 	{value,_} -> ok;
+% 	false -> error({value,"unknown NamedNumber",S})
+%     end;
+%% This case occurs when there is a valuereference
 validate_integer(S=#state{mname=M},
 		 #'Externalvaluereference'{module=M,value=Id},
 		 NamedNumberList,Constr) ->
@@ -1123,7 +1116,7 @@ validate_objectidentifier(S,L,_) ->
 	    error({value, "illegal OBJECT IDENTIFIER", S})
     end.
 
-validate_objectidentifier1(S, [Id|T]) when record(Id,identifier) ->
+validate_objectidentifier1(S, [Id|T]) when record(Id,'Externalvaluereference') ->
     case catch get_referenced_type(S,Id) of
 	{_,V} when record(V,valuedef) -> 
 	    case NewV = check_value(S,V) of
@@ -1147,7 +1140,7 @@ validate_objectid(S, [{'NamedNumber',_Name,Value}|Vrest], Acc)
   when integer(Value) ->
     validate_objectid(S, Vrest, [Value|Acc]);
 validate_objectid(S, [Id|Vrest], Acc) 
-  when record(Id,identifier) ->
+  when record(Id,'Externalvaluereference') ->
     case catch get_referenced_type(S, Id) of
 	{_,V} when record(V,valuedef) -> 
 	    case NewV = check_value(S, V) of
@@ -1157,7 +1150,7 @@ validate_objectid(S, [Id|Vrest], Acc)
 		    error({value, "illegal OBJECT IDENTIFIER", S})
 	    end;
 	Error ->
-	    case reserved_objectid(Id#identifier.val, Acc) of
+	    case reserved_objectid(Id#'Externalvaluereference'.value, Acc) of
 		Value when integer(Value) ->
 		    validate_objectid(S, Vrest, [Value|Acc]);
 		false ->
@@ -1178,14 +1171,14 @@ reserved_objectid('administration',[0]) -> 2;
 reserved_objectid('network-operator',[0]) -> 3;
 reserved_objectid('identified-organization',[0]) -> 4;
 
-reserved_objectid(iso,0) -> 1;
+reserved_objectid(iso,[]) -> 1;
 %% arcs below "iso", note that number 1 is not used
 reserved_objectid('standard',[1]) -> 0;
 reserved_objectid('member-body',[1]) -> 2;
 reserved_objectid('identified-organization',[1]) -> 3;
 
-reserved_objectid('joint-iso-itu-t',0) -> 2;
-reserved_objectid('joint-iso-ccitt',0) -> 2;
+reserved_objectid('joint-iso-itu-t',[]) -> 2;
+reserved_objectid('joint-iso-ccitt',[]) -> 2;
 
 reserved_objectid(_,_) -> false.
 
@@ -1239,6 +1232,486 @@ validate_setof(S,Value,Components,Constr) ->
 
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Functions to normalize the default values of SEQUENCE 
+%% and SET components into Erlang valid format
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+normalize_value(_,_,mandatory,_) ->
+    mandatory;
+normalize_value(_,_,'OPTIONAL',_) ->
+    'OPTIONAL';
+normalize_value(S,Type,{'DEFAULT',Value},NameList) ->
+    case catch get_canonic_type(S,Type,NameList) of
+	{'BOOLEAN',CType,_} ->
+	    normalize_boolean(S,Value,CType);
+	{'INTEGER',CType,_} ->
+	    normalize_integer(S,Value,CType);
+	{'BIT STRING',CType,_} ->
+	    normalize_bitstring(S,Value,CType);
+	{'OCTET STRING',CType,_} ->
+	    normalize_octetstring(S,Value,CType);
+	{'NULL',CType,_} ->
+	    %%normalize_null(Value);
+	    'NULL';
+	{'OBJECT IDENTIFIER',CType,_} ->
+	    normalize_objectidentifier(S,Value);
+	{'ObjectDescriptor',CType,_} ->
+	    normalize_objectdescriptor(Value);
+	{'REAL',CType,_} ->
+	    normalize_real(Value);
+	{'ENUMERATED',CType,_} ->
+	    normalize_enumerated(Value,CType);
+	{'CHOICE',CType,NewNameList} ->
+	    normalize_choice(S,Value,CType,NewNameList);
+	{'SEQUENCE',CType,NewNameList} ->
+	    normalize_sequence(S,Value,CType,NewNameList);
+	{'SEQUENCE OF',CType,NewNameList} ->
+	    normalize_seqof(S,Value,CType,NewNameList);
+	{'SET',CType,NewNameList} ->
+	    normalize_set(S,Value,CType,NewNameList);
+	{'SET OF',CType,NewNameList} ->
+	    normalize_setof(S,Value,CType,NewNameList);
+	{restrictedstring,CType,_} ->
+	    normalize_restrictedstring(S,Value,CType);
+	_ ->
+	    io:format("WARNING: could not check default value ~p~n",[Value]),
+	    Value
+    end;
+normalize_value(S,Type,Val,NameList) ->
+    normalize_value(S,Type,{'DEFAULT',Val},NameList).
+
+normalize_boolean(S,{Name,Bool},CType) when atom(Name) ->
+    normalize_boolean(S,Bool,CType);
+normalize_boolean(_,true,_) ->
+    true;
+normalize_boolean(_,false,_) ->
+    false;
+normalize_boolean(S,Bool=#'Externalvaluereference'{value=Value},CType) ->
+    get_normalized_value(S,Bool,CType,fun normalize_boolean/3,[]);
+normalize_boolean(_,Other,_) ->
+    throw({error,{asn1,{'invalid default value',Other}}}).
+
+normalize_integer(S,Int,_) when integer(Int) ->
+    Int;
+normalize_integer(S,{Name,Int},_) when atom(Name),integer(Int) ->
+    Int;
+normalize_integer(S,{Name,Int=#'Externalvaluereference'{value=Value}},
+		  Type) when atom(Name) ->
+    normalize_integer(S,Int,Type);
+normalize_integer(S,Int=#'Externalvaluereference'{value=Value},Type) ->
+    case Type of
+	NNL when list(NNL) ->
+	    case lists:keysearch(Int,1,NNL) of
+		{value,{Int,Val}} ->
+		    Int;
+		false ->
+		    get_normalized_value(S,Int,Type,
+					 fun normalize_integer/3,[])
+	    end;
+	_ ->
+	    get_normalized_value(S,Int,Type,fun normalize_integer/3,[])
+    end;
+normalize_integer(_,Int,_) ->
+    exit({'Unknown INTEGER value',Int}).
+
+normalize_bitstring(S,Value,Type)->
+    %% There are four different Erlang formats of BIT STRING:
+    %% 1 - a list of ones and zeros.
+    %% 2 - a list of atoms.
+    %% 3 - as an integer, for instance in hexadecimal form.
+    %% 4 - as a tuple {Unused, Binary} where Unused is an integer
+    %%   and tells how many bits of Binary are unused.
+    %% 
+    %% normalize_bitstring/3 transforms Value according to:
+    %% A to 3,
+    %% B to 1,
+    %% C to 1 or 3
+    %% D to 2,
+    %% Value can be on format:
+    %% A - {hstring, String}, where String is a hexadecimal string.
+    %% B - {bstring, String}, where String is a string on bit format
+    %% C - #'Externalvaluereference'{value=V}, where V is a defined value
+    %% D - list of #'Externalvaluereference', where each value component
+    %%     is an identifier corresponing to NamedBits in Type.
+    case Value of
+	{hstring,String} when list(String) ->
+	    hstring_to_int(String);
+	{bstring,String} when list(String) ->
+	    bstring_to_bitlist(String);
+	Rec when record(Rec,'Externalvaluereference') ->
+	    get_normalized_value(S,Value,Type,
+				 fun normalize_bitstring/3,[]);
+	RecList when list(RecList) ->
+	    case Type of
+		NBL when list(NBL) ->
+		    F = fun(#'Externalvaluereference'{value=Name}) ->
+				case lists:keysearch(Name,1,NBL) of
+				    {value,{Name,_}} ->
+					Name;
+				    Other ->
+					throw({error,Other})
+				end;
+			   (Other) ->
+				throw({error,Other})
+			end,
+		    case catch lists:map(F,RecList) of
+			{error,Reason} ->
+			    io:format("WARNING: default value not "
+				      "compatible with type definition ~p~n",
+				      [Reason]),
+			    Value;
+			NewList ->
+			    NewList
+		    end;
+		_ ->
+		    io:format("WARNING: default value not "
+			      "compatible with type definition ~p~n",
+			      [RecList]),
+		    Value
+	    end;
+	{Name,String} when atom(Name) ->
+	    normalize_bitstring(S,String,Type);
+	Other ->
+	    io:format("WARNING: illegal default value ~p~n",[Other]),
+	    Value
+    end.
+
+hstring_to_int(L) when list(L) ->
+    hstring_to_int(L,0).
+hstring_to_int([H|T],Acc) when H >= $A, H =< $F ->
+    hstring_to_int(T,(Acc bsl 4) + (H - $A + 10) ) ;
+hstring_to_int([H|T],Acc) when H >= $0, H =< $9 ->
+    hstring_to_int(T,(Acc bsl 4) + (H - $0));
+hstring_to_int([],Acc) ->
+    Acc.
+
+bstring_to_bitlist([H|T]) when H == $0; H == $1 ->
+    [H - $0 | bstring_to_bitlist(T)];
+bstring_to_bitlist([]) ->
+    [].
+
+%% normalize_octetstring/1 changes representation of input Value to a 
+%% list of octets.
+%% Format of Value is one of:
+%% {bstring,String} each element in String corresponds to one bit in an octet
+%% {hstring,String} each element in String corresponds to one byte in an octet
+%% #'Externalvaluereference'
+normalize_octetstring(S,Value,CType) ->
+    case Value of
+	{bstring,String} ->
+	    bstring_to_octetlist(String);
+	{hstring,String} ->
+	    hstring_to_octetlist(String);
+	Rec when record(Rec,'Externalvaluereference') ->
+	    get_normalized_value(S,Value,CType,
+				 fun normalize_octetstring/3,[]);
+	{Name,String} when atom(Name) ->
+	    normalize_octetstring(S,String,CType);
+	List when list(List) ->
+	    %% check if list elements are valid octet values
+	    lists:map(fun([])-> ok;
+			 (H)when H > 255->
+			      io:format("WARNING: not legal octet value ~p in OCTET STRING, ~p~n",[H,List]);
+			 (H)-> ok
+		      end, List),
+	    List;
+	Other ->
+	    io:format("WARNING: unknown default value ~p~n",[Other]),
+	    Value
+    end.
+
+
+bstring_to_octetlist([]) ->
+    [];
+bstring_to_octetlist(L= [H|T]) when H == $0 ; H == $1 ->
+    bstring_to_octetlist(T,6,[(H - $0) bsl 7]).
+bstring_to_octetlist([H|T],0,[Hacc|Tacc]) when H == $0; H == $1 ->
+    bstring_to_octetlist(T, 7, [0,Hacc + (H -$0)| Tacc]);
+bstring_to_octetlist([H|T],BSL,[Hacc|Tacc]) when H == $0; H == $1 ->
+    bstring_to_octetlist(T, BSL-1, [Hacc + ((H - $0) bsl BSL)| Tacc]);
+bstring_to_octetlist([],7,[0|Acc]) ->
+    lists:reverse(Acc);
+bstring_to_octetlist([],_,Acc) ->
+    lists:reverse(Acc).
+
+hstring_to_octetlist([]) ->
+    [];
+hstring_to_octetlist(L) ->
+    hstring_to_octetlist(L,4,[]).
+hstring_to_octetlist([H|T],0,[Hacc|Tacc]) when H >= $A, H =< $F ->
+    hstring_to_octetlist(T,4,[Hacc + (H - $A + 10)|Tacc]);
+hstring_to_octetlist([H|T],BSL,Acc) when H >= $A, H =< $F ->
+    hstring_to_octetlist(T,0,[(H - $A + 10) bsl BSL|Acc]);
+hstring_to_octetlist([H|T],0,[Hacc|Tacc]) when H >= $0; H =< $9 ->
+    hstring_to_octetlist(T,4,[Hacc + (H - $0)|Tacc]);
+hstring_to_octetlist([H|T],BSL,Acc) when H >= $0; H =< $9 ->
+    hstring_to_octetlist(T,0,[(H - $0) bsl BSL|Acc]);
+hstring_to_octetlist([],_,Acc) ->
+    lists:reverse(Acc).
+
+normalize_objectidentifier(S,Value) ->
+    validate_objectidentifier(S,Value,[]).
+
+normalize_objectdescriptor(Value) ->
+    Value.
+
+normalize_real(Value) ->
+    Value.
+
+normalize_enumerated(Value=#'Externalvaluereference'{value=V},CType) 
+  when list(CType) ->
+    normalize_enumerated2(V,CType);
+normalize_enumerated(Value,CType) when atom(Value),list(CType) ->
+    normalize_enumerated2(Value,CType);
+normalize_enumerated({Name,EnumV},CType) when atom(Name) ->
+    normalize_enumerated(EnumV,CType);
+normalize_enumerated(V,CType) ->
+    io:format("WARNING: Enumerated unknown type ~p~n",[CType]),
+    V.
+normalize_enumerated2(V,Enum) ->
+    case lists:keysearch(V,1,Enum) of
+	{value,{_,Val}} -> Val;
+	_ -> 
+	    io:format("WARNING: Enumerated value is not correct ~p~n",[V]),
+	    V
+    end.
+		      
+normalize_choice(S,{'CHOICE',{C,V}},CType,NameList) when atom(C) ->
+    Value =
+	case V of
+	    Rec when record(Rec,'Externalvaluereference') ->
+		get_normalized_value(S,V,CType,
+				     fun normalize_choice/4,
+				     [NameList]);
+	    _ -> V
+	end,
+    case catch lists:keysearch(C,#'ComponentType'.name,CType) of
+	{value,#'ComponentType'{typespec=CT,name=Name}} ->
+	    {C,normalize_value(S,CT,{'DEFAULT',Value},
+			       [Name|NameList])};
+	Other ->
+	    io:format("WARNING: Wrong format of type/value ~p/~p~n",
+		      [Other,Value]),
+	    {C,Value}
+    end;
+normalize_choice(S,{'DEFAULT',ValueList},CType,NameList) ->
+    lists:map(fun(X)-> normalize_choice(S,X,CType,NameList) end, ValueList);
+normalize_choice(S,{Name,ChoiceVal},CType,NameList) 
+  when atom(Name) ->
+    normalize_choice(S,ChoiceVal,CType,NameList).
+	    
+normalize_sequence(S,{Name,Value},Components,NameList) 
+  when atom(Name),list(Value) ->
+    normalized_record('SEQUENCE',S,Value,Components,NameList);
+normalize_sequence(S,Value,Components,NameList) ->
+    normalized_record('SEQUENCE',S,Value,Components,NameList).
+
+normalize_set(S,{Name,Value},Components,NameList) 
+  when atom(Name),list(Value) ->
+    normalized_record('SET',S,Value,Components,NameList);
+normalize_set(S,Value,Components,NameList) ->
+    normalized_record('SET',S,Value,Components,NameList).
+
+normalized_record(SorS,S,Value,Components,NameList) ->
+    NewName = list_to_atom(asn1ct_gen:list2name(NameList)),
+    NoComps = length(Components),
+    case normalize_seq_or_set(SorS,S,Value,Components,NameList,[]) of
+	ListOfVals when length(ListOfVals) == NoComps ->
+	    list_to_tuple([NewName|ListOfVals]);
+	List ->
+	    error({type,{illegal,default,value,Value},S})
+    end.
+    
+normalize_seq_or_set(SorS,S,[{Cname,V}|Vs],
+		     [#'ComponentType'{name=Cname,typespec=TS}|Cs],
+		     NameList,Acc) ->
+    NewNameList = 
+	case TS#type.def of
+	    #'Externaltypereference'{type=TName} ->
+		[TName];
+	    _ -> [Cname|NameList]
+	end,
+    NVal = normalize_value(S,TS,{'DEFAULT',V},NewNameList),
+    normalize_seq_or_set(SorS,S,Vs,Cs,NameList,[NVal|Acc]);
+normalize_seq_or_set(SorS,S,Values=[{Cname1,V}|Vs],
+		     [#'ComponentType'{prop='OPTIONAL'}|Cs],
+		     NameList,Acc) ->
+    normalize_seq_or_set(SorS,S,Values,Cs,NameList,[asn1_NOVALUE|Acc]);
+normalize_seq_or_set(SorS,S,Values=[{Cname1,V}|Vs],
+		    [#'ComponentType'{name=Cname2,typespec=TS,
+				      prop={'DEFAULT',Value}}|Cs],
+		    NameList,Acc) ->
+    NewNameList = 
+	case TS#type.def of
+	    #'Externaltypereference'{type=TName} ->
+		[TName];
+	    _ -> [Cname2|NameList]
+	end,
+    NVal =  normalize_value(S,TS,{'DEFAULT',Value},NewNameList),
+    normalize_seq_or_set(SorS,S,Values,Cs,NameList,[NVal|Acc]);
+normalize_seq_or_set(SorS,S,[],[],_,Acc) ->
+    lists:reverse(Acc);
+%% If default value is {} ComponentTypes in SEQUENCE are marked DEFAULT 
+%% or OPTIONAL (or the type is defined SEQUENCE{}, which is handled by
+%% the previous case).
+normalize_seq_or_set(SorS,S,[],
+		     [#'ComponentType'{name=Name,typespec=TS,
+				       prop={'DEFAULT',Value}}|Cs],
+		     NameList,Acc) ->
+    NewNameList =
+	case TS#type.def of
+	    #'Externaltypereference'{type=TName} ->
+		[TName];
+	    _ -> [Name|NameList]
+	end,
+    NVal =  normalize_value(S,TS,{'DEFAULT',Value},NewNameList),
+    normalize_seq_or_set(SorS,S,[],Cs,NameList,[NVal|Acc]);
+normalize_seq_or_set(SorS,S,[],[#'ComponentType'{prop='OPTIONAL'}|Cs],
+		     NameList,Acc) ->
+    normalize_seq_or_set(SorS,S,[],Cs,NameList,[asn1_NOVALUE|Acc]);
+normalize_seq_or_set(SorS,S,Value=#'Externalvaluereference'{value=V},
+		     Cs,NameList,Acc) ->
+    get_normalized_value(S,Value,Cs,fun normalize_seq_or_set/6,
+			 [SorS,NameList,Acc]);
+normalize_seq_or_set(SorS,S,V,_,_,_) ->
+    error({type,{illegal,default,value,V},S}).
+	
+normalize_seqof(S,Value,Type,NameList) ->
+    normalize_s_of('SEQUENCE OF',S,Value,Type,NameList).
+
+normalize_setof(S,Value,Type,NameList) ->
+    normalize_s_of('SET OF',S,Value,Type,NameList).
+
+normalize_s_of(SorS,S,Value,Type,NameList) when list(Value) ->
+    DefValueList = lists:map(fun(X) -> {'DEFAULT',X} end,Value),
+    Suffix = asn1ct_gen:constructed_suffix(SorS,Type),
+    Def = Type#type.def,
+    InnerType = asn1ct_gen:get_inner(Def),
+    WhatKind = asn1ct_gen:type(InnerType),
+    NewNameList =
+	case WhatKind of
+	    {constructed,bif} ->
+		[Suffix|NameList];
+	    #'Externaltypereference'{type=Name} ->
+		[Name];
+	    _ -> []
+	end,
+    NormFun = 	fun (X) -> normalize_value(S,Type,X,
+					   NewNameList) end,
+    case catch lists:map(NormFun, DefValueList) of
+	List when list(List) ->
+	    List;
+	_ ->
+	    io:format("WARNING: ~p could not handle value ~p~n",
+		      [SorS,Value]),
+	    Value
+    end;
+normalize_s_of(SorS,S,Value,Type,NameList) 
+  when record(Value,'Externalvaluereference') ->
+    get_normalized_value(S,Value,Type,fun normalize_s_of/5,
+			 [SorS,NameList]).
+%     case catch get_referenced_type(S,Value) of
+% 	{_,#valuedef{value=V}} ->
+% 	    normalize_s_of(SorS,S,V,Type);
+% 	{error,Reason} ->
+% 	    io:format("WARNING: ~p could not handle value ~p~n",
+% 		      [SorS,Value]),
+% 	    Value;
+% 	{_,NewVal} ->
+% 	    normalize_s_of(SorS,S,NewVal,Type);
+% 	_ ->
+% 	    io:format("WARNING: ~p could not handle value ~p~n",
+% 		      [SorS,Value]),
+% 	    Value
+%     end.
+
+
+%% normalize_restrictedstring handles all format of restricted strings.
+%% tuple case
+normalize_restrictedstring(S,[Int1,Int2],_) when integer(Int1),integer(Int2) ->
+    {Int1,Int2};
+%% quadruple case
+normalize_restrictedstring(S,[Int1,Int2,Int3,Int4],_) when integer(Int1),
+							   integer(Int2),
+							   integer(Int3),
+							   integer(Int4) ->
+    {Int1,Int2,Int3,Int4};
+%% character string list case
+normalize_restrictedstring(S,[H|T],CType) when list(H);tuple(H) ->
+    [normalize_restrictedstring(S,H,CType)|normalize_restrictedstring(S,T,CType)];
+%% character sting case
+normalize_restrictedstring(S,CString,_) when list(CString) ->
+    Fun = 
+	fun(X) ->
+		if 
+		    $X =< 255, $X >= 0 ->
+			ok;
+		    true ->
+			io:format("WARNING: illegal character in string"
+				  " ~p~n",[X])
+		end
+	end,
+    lists:foreach(Fun,CString),
+    CString;
+%% definedvalue case or argument in a parameterized type
+normalize_restrictedstring(S,ERef,CType) when record(ERef,'Externalvaluereference') ->
+    get_normalized_value(S,ERef,CType,
+			 fun normalize_restrictedstring/3,[]);
+%% 
+normalize_restrictedstring(S,{Name,Val},CType) when atom(Name) ->
+    normalize_restrictedstring(S,Val,CType).
+
+
+get_normalized_value(S,Val,Type,Func,AddArg) ->
+    case catch get_referenced_type(S,Val) of
+	{_,#valuedef{type=T,value=V}} -> 
+	    %% should check that Type and T equals
+	    call_Func(S,V,Type,Func,AddArg);
+	{error,Reason} ->
+	    io:format("WARNING: default value not "
+		      "comparable ~p~n",[Val]),
+	    Val;
+	{_,NewVal} ->
+	    call_Func(S,NewVal,Type,Func,AddArg);
+	_ ->
+	    io:format("WARNING: default value not "
+		      "comparable ~p~n",[Val]),
+	    Val
+    end.
+
+call_Func(S,Val,Type,Func,ArgList) ->	    
+    case ArgList of
+	[] ->
+	    Func(S,Val,Type);
+	[LastArg] ->
+	    Func(S,Val,Type,LastArg);
+	[Arg1,LastArg1] ->
+	    Func(Arg1,S,Val,Type,LastArg1);
+	[Arg1,LastArg1,LastArg2] ->
+	    Func(Arg1,S,Val,Type,LastArg1,LastArg2)
+    end.
+
+    
+get_canonic_type(S,Type,NameList) ->
+    {InnerType,NewType,NewNameList} =
+	case Type#type.def of
+	    Name when atom(Name) ->
+		{Name,Type,NameList};
+	    Ref when record(Ref,'Externaltypereference') ->
+		{_,#typedef{name=Name,typespec=RefedType}} =
+		    get_referenced_type(S,Ref),
+		get_canonic_type(S,RefedType,[Name]);
+	    {Name,T} when atom(Name) -> 
+		{Name,T,NameList};
+	    Seq when record(Seq,'SEQUENCE') -> 
+		{'SEQUENCE',Seq#'SEQUENCE'.components,NameList};
+	    Set when record(Set,'SET') -> 
+		{'SET',Set#'SET'.components,NameList}
+	end,
+    {asn1ct_gen:unify_if_string(InnerType),NewType,NewNameList}.
+
+
+
 check_ptype(S,Type,Ts) when record(Ts,type) ->
     Tag = Ts#type.tag,
     Constr = Ts#type.constraint,
@@ -1265,7 +1738,7 @@ check_type(S,Type,ObjSpec={{objectclassname,_},_}) ->
     check_class(S,ObjSpec);
 check_type(S,Type,Ts) when record(Type,typedef),(Type#typedef.checked==true) ->
     Ts;
-check_type(S,Type,Ts) when record(Ts,type) ->
+check_type(S=#state{recordtopname=TopName},Type,Ts) when record(Ts,type) ->
     {Def,Tag,Constr} = 
 	case match_parameters(Ts#type.def,S#state.parameters) of
 	    #type{constraint=Ctmp,def=Dtmp} ->
@@ -1400,8 +1873,17 @@ check_type(S,Type,Ts) when record(Ts,type) ->
 		check_restrictedstring(S,Def,Constr),
 		#newt{};
 	    Seq when record(Seq,'SEQUENCE') ->
+		RecordName = 
+		    case TopName of
+			[] ->
+			    [Type#typedef.name];
+			_ -> 
+			    TopName
+		    end,
 		{TableCInf,Components} =
-		    check_sequence(S,Type,Seq#'SEQUENCE'.components),
+		    check_sequence(S#state{recordtopname=
+					   RecordName},
+					   Type,Seq#'SEQUENCE'.components),
 		#newt{type=Seq#'SEQUENCE'{tablecinf=TableCInf,
 					  components=Components}};
 	    {'SEQUENCE OF',Components} ->
@@ -1417,9 +1899,18 @@ check_type(S,Type,Ts) when record(Ts,type) ->
 		end,
 		#newt{type={'CHOICE',check_choice(S,Type,Components)},tag=Ct};
 	    Set when record(Set,'SET') ->
-		{TableCInf,Components} =
-		    check_set(S,Type,Set#'SET'.components),
-		#newt{type=Set#'SET'{tablecinf=TableCInf,
+		RecordName=
+		    case TopName of
+			[] ->
+			    [Type#typedef.name];
+			_ -> 
+			    TopName
+		    end,
+		{Sorted,TableCInf,Components} =
+		    check_set(S#state{recordtopname=RecordName},
+			      Type,Set#'SET'.components),
+		#newt{type=Set#'SET'{sorted=Sorted,
+				     tablecinf=TableCInf,
 				     components=Components}};
 	    {'SET OF',Components} ->
 		#newt{type={'SET OF',check_setof(S,Type,Components)}};
@@ -1446,7 +1937,7 @@ check_type(S,Type,Ts) when record(Ts,type) ->
 	end,
     Ts2 = case NewDef of
 	      #newt{type=unchanged} ->
-		  Ts;
+		  Ts#type{def=Def};
 	      #newt{type=TDef}->
 		  Ts#type{def=TDef}
 	  end,
@@ -1686,7 +2177,7 @@ check_constraint(S,Type) when record(Type,type) ->
 
 % else keep the constraint unchanged
 check_constraint(S,Any) ->
-    io:format("Constraint = ~p~n",[Any]),
+%%    io:format("Constraint = ~p~n",[Any]),
     Any.
 
 
@@ -1753,7 +2244,10 @@ check_typereference(S,#typereference{pos=Pos,val=Name}) ->
 		    %Tref
 	    end;
 	_ ->
-%	    Tref
+	    %% cannot do check_type here due to recursive definitions, like
+	    %% S ::= SEQUENCE {a INTEGER, b S}. This implies that references
+	    %% that appear before the definition will be an 
+	    %% Externaltypereference in the abstract syntax tree
 	    #'Externaltypereference'{pos=Pos,module=ModName,type=Name}
     end.
 
@@ -1795,8 +2289,16 @@ get_referenced_type(S,Tref) when record(Tref,typereference) ->
 	    {undefined,Other}
     end;
 get_referenced_type(S=#state{mname=Emod},
-		    #'Externalvaluereference'{pos=P,module=Emod,value=Eval}) ->
-    get_referenced1(S,Eval,P);
+		    ERef=#'Externalvaluereference'{pos=P,module=Emod,
+						   value=Eval}) ->
+    case match_parameters(ERef,S#state.parameters) of
+	ERef ->
+	    get_referenced1(S,Eval,P);
+	OtherERef when record(OtherERef,'Externalvaluereference') ->
+	    get_referenced_type(S,OtherERef);
+	Value ->
+	    {Emod,Value}
+    end;
 get_referenced_type(S,#'Externalvaluereference'{pos=Pos,module=Emod,
 						value=Eval}) ->
     case lists:member(Emod,S#state.inputmodules) of
@@ -2047,7 +2549,7 @@ check_sequence(S,Type,Comps)  ->
     case check_unique([C||C <- Components ,record(C,'ComponentType')]
 		      ,#'ComponentType'.name) of
 	[] ->
-	    %%    sort_canonical(Components),
+	    %% sort_canonical(Components),
 	    Components2 = maybe_automatic_tags(S,Components),
 	    %% check the table constraints from here. The outermost type
 	    %% is Type, the innermost is Comps (the list of components)
@@ -2106,22 +2608,97 @@ check_unique_sequence_tags1(S,[],Acc) ->
     check_unique_tags(S,lists:reverse(Acc)).
 
 check_sequenceof(S,Type,Component) when record(Component,type) ->
-    case check_type(S,Type,Component) of
-	T = #type{def={'ENUMERATED',CheckedComponent}} ->
-	    case Component#type.def of
-		#'Externaltypereference'{type=RefName} ->
-		    T#type{def={'ENUMERATED',RefName,CheckedComponent}};
-		_ -> T
-	    end;
-	Other -> Other
-    end.
-
-% check_sequenceof(S,Type,Component) when record(Component,type) ->
-%     check_type(S,Type,Component).
+    check_type(S,Type,Component).
 
 check_set(S,Type,Components) ->
-    check_sequence(S,Type,Components).
+    {TableCInf,NewComponents} = check_sequence(S,Type,Components),
+    case lists:member(der,S#state.options) of
+	true when S#state.erule == ber;
+		  S#state.erule == ber_bin ->
+	    {Sorted,SortedComponents} = 
+		sort_components(S#state.tname,
+				(S#state.module)#module.tagdefault,
+				NewComponents),
+	    {Sorted,TableCInf,SortedComponents};
+	_ ->
+	    {false,TableCInf,NewComponents}
+    end.
 
+sort_components(TypeName,'AUTOMATIC',Components) ->
+    {true,Components};
+sort_components(TypeName,TagDefault,Components) ->
+    case untagged_choice(Components) of
+	false ->
+	    {true,sort_components1(TypeName,Components,[],[],[],[])};
+	true ->
+	    {dynamic,Components} % sort in run-time
+    end.
+
+sort_components1(TypeName,[C=#'ComponentType'{tags=[{'UNIVERSAL',_}|R]}|Cs],
+		 UnivAcc,ApplAcc,ContAcc,PrivAcc) ->
+    sort_components1(TypeName,Cs,[C|UnivAcc],ApplAcc,ContAcc,PrivAcc);
+sort_components1(TypeName,[C=#'ComponentType'{tags=[{'APPLICATION',_}|R]}|Cs],
+		 UnivAcc,ApplAcc,ContAcc,PrivAcc) ->
+    sort_components1(TypeName,Cs,UnivAcc,[C|ApplAcc],ContAcc,PrivAcc);
+sort_components1(TypeName,[C=#'ComponentType'{tags=[{'CONTEXT',_}|R]}|Cs],
+		 UnivAcc,ApplAcc,ContAcc,PrivAcc) ->
+    sort_components1(TypeName,Cs,UnivAcc,ApplAcc,[C|ContAcc],PrivAcc);
+sort_components1(TypeName,[C=#'ComponentType'{tags=[{'PRIVATE',_}|R]}|Cs],
+		 UnivAcc,ApplAcc,ContAcc,PrivAcc) ->
+    sort_components1(TypeName,Cs,UnivAcc,ApplAcc,ContAcc,[C|PrivAcc]);
+sort_components1(TypeName,[],UnivAcc,ApplAcc,ContAcc,PrivAcc) ->
+    I = #'ComponentType'.tags,
+    ascending_order_check(TypeName,sort_universal_type(UnivAcc)) ++ 
+	ascending_order_check(TypeName,lists:keysort(I,ApplAcc)) ++
+	ascending_order_check(TypeName,lists:keysort(I,ContAcc)) ++ 
+	ascending_order_check(TypeName,lists:keysort(I,PrivAcc)).
+
+ascending_order_check(TypeName,Components) ->
+    ascending_order_check1(TypeName,Components),
+    Components.
+
+ascending_order_check1(TypeName,
+		       [C1 = #'ComponentType'{tags=[{_,T}|_]},
+			C2 = #'ComponentType'{tags=[{_,T}|_]}|Rest]) ->
+    io:format("WARNING: Indistinct tag ~p in SET ~p, components ~p and ~p~n",
+	      [T,TypeName,C1#'ComponentType'.name,C2#'ComponentType'.name]),
+    ascending_order_check1(TypeName,[C2|Rest]);
+ascending_order_check1(TypeName,
+		       [C1 = #'ComponentType'{tags=[{'UNIVERSAL',T1}|_]},
+			C2 = #'ComponentType'{tags=[{'UNIVERSAL',T2}|_]}|Rest]) ->
+    case (asn1ct_gen_ber:decode_type(T1) == asn1ct_gen_ber:decode_type(T2)) of
+	true ->
+	    io:format("WARNING: Indistinct tags ~p and ~p in"
+		      " SET ~p, components ~p and ~p~n",
+		      [T1,T2,TypeName,C1#'ComponentType'.name,
+		       C2#'ComponentType'.name]),
+	    ascending_order_check1(TypeName,[C2|Rest]);
+	_ ->
+	    ascending_order_check1(TypeName,[C2|Rest])
+    end;
+ascending_order_check1(N,[C|Rest]) ->
+    ascending_order_check1(N,Rest);
+ascending_order_check1(_,[C]) ->
+    ok;
+ascending_order_check1(_,[]) ->
+    ok.
+    
+sort_universal_type(Components) ->
+    List = lists:map(fun(C) ->
+			     #'ComponentType'{tags=[{_,T}|_]} = C,
+			     {asn1ct_gen_ber:decode_type(T),C}
+		     end,
+		     Components),
+    SortedList = lists:keysort(1,List),
+    lists:map(fun(X)->element(2,X) end,SortedList).
+
+untagged_choice([#'ComponentType'{typespec=#type{tag=[],def={'CHOICE',_}}}|Rest]) ->
+    true;
+untagged_choice([C|Rest]) ->
+    untagged_choice(Rest);
+untagged_choice([]) ->
+    false.
+    
 check_setof(S,Type,Component) when record(Component,type) ->
     check_type(S,Type,Component).
 
@@ -2243,14 +2820,27 @@ check_each_component(S,Type,{Rlist,ExtList}) ->
 check_each_component(S,Type,Components) ->
     check_each_component(S,Type,Components,[],[],noext).
 
-check_each_component(S = #state{abscomppath=Path},Type,
+check_each_component(S = #state{abscomppath=Path,recordtopname=TopName},Type,
 		     [C|Ct],Acc,Extacc,Ext) when record(C,'ComponentType') ->
     #'ComponentType'{name=Cname,typespec=Ts,prop=Prop} = C,
     NewTags = get_taglist(S,Ts),
 %    CheckedTs = check_tableconstraint(S,Type,check_type(S,Type,Ts)),
-    CheckedTs = check_type(S#state{abscomppath=[Cname|Path]},Type,Ts),
-%    TblConsInf = extract_tableconstraint_info(S,Type,CheckedTs),
-    NewC = C#'ComponentType'{typespec=CheckedTs,tags=NewTags},
+    CheckedTs = check_type(S#state{abscomppath=[Cname|Path],
+				   recordtopname=[Cname|TopName]},Type,Ts),
+    NewProp =
+	case lists:member(der,S#state.options) of
+%	    true ->
+	    True -> %% always this case
+		case normalize_value(S,CheckedTs,Prop,[Cname|TopName]) of
+		    mandatory -> mandatory;
+		    'OPTIONAL' -> 'OPTIONAL';
+		    DefaultValue -> {'DEFAULT',DefaultValue}
+		end;
+	    _ ->
+		Prop
+	end,
+    %%    TblConsInf = extract_tableconstraint_info(S,Type,CheckedTs),
+    NewC = C#'ComponentType'{typespec=CheckedTs,prop=NewProp,tags=NewTags},
     case Ext of
 	noext ->
 	    check_each_component(S,Type,Ct,[NewC|Acc],Extacc,Ext);
@@ -2272,12 +2862,14 @@ check_each_alternative(S,Type,{Rlist,ExtList}) ->
 check_each_alternative(S,Type,[C|Ct]) ->
     check_each_alternative(S,Type,[C|Ct],[],[],noext).
 
-check_each_alternative(S=#state{abscomppath=Path},Type,[C|Ct],
+check_each_alternative(S=#state{abscomppath=Path,recordtopname=TopName},Type,[C|Ct],
 		       Acc,Extacc,Ext) when record(C,'ComponentType') ->
     #'ComponentType'{name=Cname,typespec=Ts,prop=Prop} = C,
     NewTags = get_taglist(S,Ts),
-    NewC = C#'ComponentType'{typespec=check_type(S#state{abscomppath=[Cname|Path]},
-						 Type,Ts),tags=NewTags},
+    NewState =
+	S#state{abscomppath=[Cname|Path],recordtopname=[Cname|TopName]},
+    NewC = 
+	C#'ComponentType'{typespec=check_type(NewState,Type,Ts),tags=NewTags},
     case Ext of
 	noext ->
 	    check_each_alternative(S,Type,Ct,[NewC|Acc],Extacc,Ext);
@@ -2361,6 +2953,10 @@ componentrelation_leadingattr(S,[C|Cs],CompList,STList,Acc,CRIAcc,CompAcc) ->
 					  Acc,CRIAcc,[C|CompAcc])
     end.
 
+%% any_simple_table/3 checks if any of the components on this level
+%% is constrained by a simple table constraint. It returns a list of
+%% tuples with information about the place in the type structure where
+%% the constraint is, and  the name of the object set.
 any_simple_table(S = #state{mname=M,abscomppath=Path},
 		 [#'ComponentType'{name=Name,typespec=Type}|Cs],Acc) ->
     Constraint = Type#type.constraint,
@@ -2386,18 +2982,18 @@ any_simple_table(S,[Other|Cs],Acc) ->
 %% componentrelation1/1 identifies all componentrelation constraints
 %% that exist in C or in the substructure of C, info about the found constraints
 %% are returned in a list
-componentrelation1(C = #type{constraint=Constraint,tablecinf=TCI},Path) ->
+componentrelation1(C = #type{def=Def,constraint=Constraint,tablecinf=TCI},Path) ->
     Ret =
-	case C#type.constraint of
+	case Constraint of
 	    [{componentrelation,{_,_,ObjectSet},AtList}|Rest] ->		
 		[{_,AL=[#'Externalvaluereference'{value=Attr}|R1]}|R2] = AtList,
-		{ClassDef,_} = C#type.def,
+		{ClassDef,_} = Def,
 		AttrPath = 
 		    lists:map(fun(#'Externalvaluereference'{value=V})->V end,
 			      AL),
-		{[{ObjectSet,AttrPath,ClassDef,Path}],C#type.def};
+		{[{ObjectSet,AttrPath,ClassDef,Path}],Def};
 	    Other ->
-		innertype_comprel(C#type.def,Path)
+		innertype_comprel(Def,Path)
 	end,
     case Ret of
 	nofunobj ->
@@ -2548,15 +3144,11 @@ get_tableconstraint_info(S,Type,[C|Cs],Acc) ->
 	case CheckedTs#type.def of 
 	    {{objectclass,Fields,_},FieldRef} ->
 		AType = get_ObjectClassFieldType(S,Fields,FieldRef),
-%%		AType = asn1ct_gen:get_inner(CheckedTs#type.def),
 		RefedFieldName = get_referencedclassfield(CheckedTs#type.def),%is probably obsolete
-%%		C#'ComponentType'{typespec={tableconstraint_info,
-%%					    AType,
-%%					    RefedFieldName}};
 		C#'ComponentType'{typespec=
 				  CheckedTs#type{def=AType,
-						 constraint={tableconstraint_info,
-							     RefedFieldName}}};
+						 constraint=[{tableconstraint_info,
+							      RefedFieldName}]}};
 	    {'SEQUENCE OF',SOType} when record(SOType,type),
 					(element(1,SOType#type.def) == 'CHOICE') ->
 		CTypeList = element(2,SOType#type.def),
@@ -2801,6 +3393,11 @@ findtypes_and_values([],Tacc,Vacc,Pacc,Cacc,Oacc,OSacc) ->
      lists:reverse(Cacc),lists:reverse(Oacc),lists:reverse(OSacc)}.
     
 
+
+error({export,Msg,#state{mname=Mname,type=Ref,tname=Typename}}) ->
+    Pos = Ref#'Externaltypereference'.pos,
+    io:format("asn1error:~p:~p:~p ~p~n",[Pos,Mname,Typename,Msg]),
+    {error,{export,Pos,Mname,Typename,Msg}};
 error({type,Msg,#state{mname=Mname,type=Type,tname=Typename}}) ->
     io:format("asn1error:~p:~p:~p ~p~n",[Type#typedef.pos,Mname,Typename,Msg]),
     {error,{type,Type#typedef.pos,Mname,Typename,Msg}};
@@ -2810,9 +3407,12 @@ error({type,Msg,#state{mname=Mname,value=Value,vname=Valuename}}) ->
 error({value,Msg,#state{mname=Mname,value=Value,vname=Valuename}}) ->
     io:format("asn1error:~p:~p:~p ~p~n",[Value#valuedef.pos,Mname,Valuename,Msg]),
     {error,{value,Value#valuedef.pos,Mname,Valuename,Msg}};
-error({Other,Msg,#state{mname=Mname,value=Value,vname=Valuename}}) ->
-    io:format("asn1error:~p:~p:~p ~p~n",[Value#valuedef.pos,Mname,Valuename,Msg]),
-    {error,{Other,Value#valuedef.pos,Mname,Valuename,Msg}}.
+error({Other,Msg,#state{mname=Mname,value=#valuedef{pos=Pos},vname=Valuename}}) ->
+    io:format("asn1error:~p:~p:~p ~p~n",[Pos,Mname,Valuename,Msg]),
+    {error,{Other,Pos,Mname,Valuename,Msg}};
+error({Other,Msg,#state{mname=Mname,type=#typedef{pos=Pos},tname=Typename}}) ->
+    io:format("asn1error:~p:~p:~p ~p~n",[Pos,Mname,Typename,Msg]),
+    {error,{type,Pos,Mname,Typename,Msg}}.
 
 
 include_default_class(Module) ->

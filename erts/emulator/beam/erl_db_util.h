@@ -31,12 +31,6 @@
 #endif
 
 /*
-** During development...
-*/
-
-typedef Eterm eTerm; /* Tagged erlang term */
-
-/*
  * These values can be returned from the functions performing the 
  * BIF operation for different types of tables. When the
  * actual operations have been performed, the BIF function
@@ -63,7 +57,7 @@ typedef Eterm eTerm; /* Tagged erlang term */
 typedef struct db_term {
     Eterm *tpl;			/* Untagged pointer to the beginning of term*/
     ErlOffHeap off_heap;	/* Off heap data for term. */
-    uint32 size;		/* Size of term in "words" */
+    Uint size;		        /* Size of term in "words" */
     Eterm v[1];			/* Beginning of buffer for the terms */
 } DbTerm;
 
@@ -75,14 +69,24 @@ typedef struct db_term {
  * operations may be the same on different types of tables.
  */
 
+typedef struct db_fixation {
+    Eterm pid;
+    Uint counter;
+    struct db_fixation *next;
+} DbFixation;
+
 typedef struct db_table_common {
     Eterm owner;              /* Pid of the creator */
     Eterm the_name;           /* an atom   */
     Eterm id;                 /* atom | integer | DB_USED | DB_NOTUSED */
-    uint32 status;            /* bit masks defined  below */
+    Uint32 status;            /* bit masks defined  below */
     int slot;                 /* slot in db_tables */
     int keypos;               /* defaults to 1 */
     int nitems;               /* Total number of items */
+    int kept_items;           /* Number of kept elements due to fixation */
+    Uint megasec,sec,microsec; /* Last fixation time */
+    DbFixation *fixations;   /* List of processes who have fixed 
+				 the table */
 } DbTableCommon;
 
 /* XXX: as long as NIL is atom, don't use NIL as USED marker */
@@ -108,7 +112,6 @@ typedef struct db_table_common {
 				  DB_ORDERED_SET))
      /*TT*/
 
-extern Eterm db_am_eot;		/* Atom '$end_of_table' */
 extern Eterm db_big_buf[];
 
 /* optimised version of copy_object (normal case? atomic object) */
@@ -120,20 +123,6 @@ extern Eterm db_big_buf[];
 #define DB_WRITE DB_PUBLIC
 #define DB_INFO  (DB_PROTECTED|DB_PUBLIC|DB_PRIVATE)
 
-/*
- * Number of pre allocated bindings when db_do_match is called.
- */
-#define DB_MATCH_NBIND 8  
-/* Zero binding structure */
-#define ZEROB(bind) do { int ii; for(ii = 0; ii < bind.size; ++ii) bind.ptr[ii] = THE_NON_VALUE; } while(0)
-
-/* The actual binding structure */
-typedef struct db_bindings {
-    int size;
-    Eterm *ptr;
-    Uint *sz;
-} DbBindings;
-
 /* tb is an DbTableCommon and obj is an Eterm (tagged) */
 #define TERM_GETKEY(tb, obj) db_getkey((tb)->common.keypos, (obj)) 
 
@@ -143,19 +132,18 @@ Eterm db_set_trace_control_word_1(Process *p, Eterm val);
 
 void db_initialize_util(void);
 Eterm db_getkey(int keypos, Eterm obj);
-int db_do_match(Eterm obj, Eterm pattern, DbBindings *bs);
 Eterm add_counter(Eterm counter, Eterm incr);
-int db_realloc_counter(void** bp, DbTerm *b, uint32 offset, uint32 sz, 
+int db_realloc_counter(void** bp, DbTerm *b, Uint offset, Uint sz, 
 		       Eterm new_counter, int counterpos);
 void db_free_term_data(DbTerm* p);
-void* db_get_term(DbTerm* old, uint32 offset, Eterm obj);
+void* db_get_term(DbTerm* old, Uint offset, Eterm obj);
 int db_has_variable(Eterm obj);
 int db_is_variable(Eterm obj);
 int db_do_update_counter(Process *p, 
 			 void *bp /* {Tree|Hash|XXX}DbTerm **bp */, 
 			 Eterm *tpl, 
 			 int counterpos,
-			 int (*realloc_fun)(void *, uint32, Eterm, int),
+			 int (*realloc_fun)(void *, Uint, Eterm, int),
 			 Eterm incr,
 			 Eterm *ret);
 Eterm db_match_set_lint(Process *p, Eterm matchexpr, int flags);
@@ -211,13 +199,15 @@ typedef struct dmc_err_info {
 
 /*
 ** Compilation flags
+**
+** These are mutually excluding alternatives, interspaced so
+** 1 may be added to either without colliding, which is used to 
+** distinguish between guard and body in erl_db_util.c.
 */
-#define DCOMP_BODY_RETURN       1 /* The body should return a value (ets),
-				     otherwise body return value is ignored.*/
-#define DCOMP_ALLOW_DBIF_BODY   2 /* Allow Non guard BIF's in body
-				     expression (trace) */
-#define DCOMP_MATCH_ARRAY       4 /* The parameter to the execution
-				     will be an array, not a tuple (trace). */
+#define DCOMP_TABLE 0 /* Ets and dets. The body returns a value, 
+		       * and the parameter to the execution is a tuple. */
+#define DCOMP_TRACE 2 /* Trace. More functions are allowed, and the 
+		       * parameter to the execution will be an array. */
 
 
 Binary *db_match_compile(Eterm *matchexpr, Eterm *guards,
@@ -236,6 +226,9 @@ Eterm db_format_dmc_err_info(Process *p, DMCErrInfo *ei);
 void db_free_dmc_err_info(DMCErrInfo *ei);
 /* Completely free's an error info structure, including all recorded 
    errors */
+Eterm db_make_mp_binary(Process *p, Binary *mp);
+/* Convert a match program to a erlang "magic" binary to be returned to userspace,
+   increments the reference counter. */
 
 /*
 ** Convenience when compiling into Binary structures

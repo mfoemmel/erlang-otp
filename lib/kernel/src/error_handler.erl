@@ -17,9 +17,10 @@
 %%
 -module(error_handler).
 
-%% A simple error handler
+%% A simple error handler.
 
--export([undefined_function/3, undefined_lambda/3, stub_function/3]).
+-export([undefined_function/3, undefined_lambda/3, stub_function/3,
+	 breakpoint/3]).
 
 undefined_function(Module, Func, Args) ->
     case ensure_loaded(Module) of
@@ -32,16 +33,10 @@ undefined_function(Module, Func, Args) ->
 	    end;
 	{module, Other} ->
 	    crash(Module, Func, Args);
-	{interpret, Module} ->
-	    int:eval(Module, Func, Args);
 	Other ->
 	    crash(Module, Func, Args)
     end.
 
-%%
-%% This function will currently only be called in Beam, where funs are
-%% first-class citizens.
-%%
 undefined_lambda(Module, Fun, Args) ->
     case ensure_loaded(Module) of
 	{module, Module} ->
@@ -50,11 +45,12 @@ undefined_lambda(Module, Fun, Args) ->
 	    apply(Fun, Args);
 	{module, Other} ->
 	    crash(Fun, Args);
-	{interpret, Module} ->
-	    int:eval(Module, Fun, Args);
 	Other ->
 	    crash(Fun, Args)
     end.
+
+breakpoint(Module, Func, Args) ->
+    int:eval(Module, Func, Args).
 
 %%
 %% Crash providing a beautiful stack backtrace.
@@ -70,7 +66,17 @@ crash(MFA) ->
 %% If the code_server has not been started yet dynamic code loading
 %% is handled by init.
 ensure_loaded(Module) ->
+    Self = self(),
     case whereis(code_server) of
+	%% Perhaps double fault should be detected in code:ensure_loaded/1 
+	%% instead, since this error handler cannot know whether the 
+	%% code server can resolve the problem or not.
+	%% An {error, Reason} return from there would crash the code server and 
+	%% bring down the node.
+	Self ->
+	    Error = "The code server called the unloaded module `" ++
+		atom_to_list(Module) ++ "'",
+	    halt(Error);
 	Pid when pid(Pid) ->
 	    code:ensure_loaded(Module);
 	_ ->

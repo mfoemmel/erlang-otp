@@ -1,25 +1,65 @@
-<HTML>
-<HEAD>
-  <TITLE>Os_mon Release Notes</TITLE>
-</HEAD>
+<html>
+<head>
+  <title>Os_mon Release Notes</title>
+  <style type="text/css">
+<!--
+    body          { background: white; margin: 3em }
 
-<BODY BGCOLOR="#FFFFFF">
+    body          { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1 h2 h3 h4   { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1            { font-size: 48 }
+    p li          { font-family: Verdana, Arial, Helvetica, sans-serif }
+-->
+  </style>
+</head>
 
-<CENTER><H1>Os_mon Release Notes</H1></CENTER>
+<body bgcolor=white>
 
-<H2>Os_mon 1.3.9</H2>
-  <H3>Fixed Errors and Malfunctions</H3>
-  <UL>
-    <LI>
-      A bug in the disksup service has been corrected, where
-      <CODE>disk_almost_full</CODE> alarms were not cleared correctly but
-      remained in <CODE>alarm_handler</CODE>.<BR>
-      Own Id: OTP-3696<BR>
-      Aux Id: seq4888
-    </LI>
-  </UL>
+<center><h1>Os_mon Release Notes</h1></center>
 
-<P>There are also release notes for <A HREF="notes_history.html">older versions</A>.</P>
 
-</BODY>
-</HTML>
+<!--- ################################################################# --->
+
+<h2>Os_mon 1.5.0</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    Gen_server calls to the memsup server of the os_mon application could
+    fail due to slow responses from the memsup port program. The memory
+    polling is now handled by a separate process making answers from memsup
+    more or less instant. <br> The disksup server of the os_mon application
+    is modified so that it does not use os:cmd() on Unix systems.<br>
+    (Own Id: OTP-4000)<br>
+    (Aux Id: Seq5275)<p>
+  </li>
+
+</ul>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+    Support for os_mon disksup, memsup and cpu_sup for Linux was added.
+    Code was contributed by Miguel Barreiro Paz &lt;enano@fi.udc.es&gt;.<br>
+    (Own Id: OTP-3996)<p>
+  </li>
+
+</ul>
+
+
+
+There are also release notes for
+<a href="notes_history.html">older versions</a>.
+
+</body>
+</html>

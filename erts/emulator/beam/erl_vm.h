@@ -28,11 +28,27 @@
 
 #define INPUT_REDUCTIONS   (2 * CONTEXT_REDS)
 
+#ifdef UNIFIED_HEAP
+#define S_DEFAULT_SIZE  233     /* defaulf stack size */
+#define H_DEFAULT_SIZE  500000  /* default heap min size */
+#else
 #define H_DEFAULT_SIZE  233	/* default (heap + stack) min size */
+#endif
 
 #define CP_SIZE			1
 
 /* Allocate heap memory */
+#ifdef UNIFIED_HEAP
+#define HAlloc(p, sz) \
+    (((global_hend - global_htop <= (sz))) ? \
+        arith_alloc((p),(sz)) : (global_htop = global_htop + (sz), \
+                                 global_htop - (sz)))
+
+#define HRelease(p, ptr)                                \
+  if (global_heap <= (ptr) && (ptr) < global_htop) {    \
+      global_htop = (ptr);                                \
+  } else {}
+#else
 #define HAlloc(p, sz)                                   \
   (ASSERT_EXPR((sz) >= 0),                              \
    (((((p)->stop - (p)->htop) <= (sz)))                 \
@@ -43,6 +59,7 @@
   if ((p)->heap <= (ptr) && (ptr) < (p)->htop) {	\
       (p)->htop = (ptr);				\
   } else {}
+#endif
 
 /* Allocate memory on secondary arithmetic heap. */
 #if defined(DEBUG)
@@ -82,11 +99,7 @@ typedef struct op_entry {
 extern OpEntry opc[];		/* Description of all instructions. */
 extern int num_instructions;	/* Number of instruction in opc[]. */
 
-extern uint32* ready;
-
 /* some constants for various  table sizes etc */
-/* "constants" which are declared as 'extern int' have been moved to
-   mkconfig.c, to allow users to set them in config.c */
 
 #define ATOM_TEXT_SIZE  32768	/* Increment for allocating atom text space */
 
@@ -130,65 +143,7 @@ extern int H_MIN_SIZE;		/* minimum (heap + stack) */
 #define VERBOSE(x)
 #endif
 
-#define GET_MATH_ARG2(Type,Arg1,Arg2,F1,F2) \
-    if (!FP_PRE_CHECK_OK()) \
-	BIF_ERROR3(BADARITH, am_math, Type, Arg1, Arg2); \
-    if (is_float(Arg1)) { \
-	GET_DOUBLE(Arg1,F1); \
-    } else if (is_small(Arg1)) \
-	F1.fd = signed_val(Arg1); \
-    else if (is_big(Arg1)) \
-	F1.fd = big_to_double(Arg1); \
-    else \
-      BIF_ERROR3(BADARG, am_math, Type, Arg1, Arg2); \
-    if (is_float(Arg2)) { \
-	GET_DOUBLE(Arg2, F2); \
-    } else if (is_small(Arg2)) \
-	F2.fd = signed_val(Arg2); \
-    else if (is_big(Arg2)) \
-	F2.fd = big_to_double(Arg2); \
-    else \
-      BIF_ERROR3(BADARG, am_math, Type, Arg1, Arg2)
-
-
-#define GET_MATH_ARG1(Type,Arg1,F1) \
-    if (!FP_PRE_CHECK_OK()) \
-	BIF_ERROR2(BADARITH, am_math, Type, Arg1); \
-    if (is_float(Arg1)) { \
-	GET_DOUBLE(Arg1, F1); \
-    } else if (is_small(Arg1)) \
-	F1.fd = signed_val(Arg1); \
-    else if (is_big(Arg1)) \
-	F1.fd = big_to_double(Arg1); \
-    else \
-      BIF_ERROR2(BADARG, am_math, Type, Arg1)
-
-#define PUT_MATH_RES2(Res, Type, Arg) \
-  { uint32 result, *hp; \
-    if (FP_RESULT_OK(Res.fd)) { \
-        hp = HAlloc(BIF_P, 3); \
-        result = make_float(hp); \
-        PUT_DOUBLE(Res, hp); \
-	BIF_RET(result); \
-    } else { \
-	BIF_ERROR2(BADARITH, am_math, Type, Arg); \
-    } \
-  }
-
-#define PUT_MATH_RES3(Res, Type, Arg0, Arg1) \
-  { uint32 result, *hp; \
-    if (FP_RESULT_OK(Res.fd)) { \
-        hp = HAlloc(BIF_P, 3); \
-        result = make_float(hp); \
-        PUT_DOUBLE(Res, hp); \
-	BIF_RET(result); \
-    } else { \
-	BIF_ERROR3(BADARITH, am_math, Type, Arg0, Arg1); \
-    } \
-  }
-
-double big_to_double(uint32);
-void load_module(char*, uint32(*)(), uint32(*)());
+int big_to_double(Eterm x, double* resp);
 
 #include "erl_term.h"
 

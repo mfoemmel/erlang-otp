@@ -41,12 +41,17 @@ HRL_FILES = ../include/yeccpre.hrl
 
 ERL_FILES = $(MODULES:%=%.erl)
 
-TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 
 APP_FILE = parsetools.app
 
 APP_SRC = $(APP_FILE).src
 APP_TARGET = $(EBIN)/$(APP_FILE)
+
+APPUP_FILE= parsetools.appup
+
+APPUP_SRC= $(APPUP_FILE).src
+APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 
 # ----------------------------------------------------
 # FLAGS
@@ -72,6 +77,9 @@ docs:
 # ----------------------------------------------------
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
+
+$(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 # ----------------------------------------------------

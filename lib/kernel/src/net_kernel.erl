@@ -111,7 +111,7 @@
 %% Default connection setup timeout in milliseconds.
 %% This timeout is set for every distributed action during
 %% the connection setup.
--define(SETUPTIME, 7000). 
+-define(SETUPTIME, 7000).
 
 -include("net_address.hrl").
 
@@ -155,7 +155,9 @@ hidden_connect_node(Node) when atom(Node) ->
     request({connect, hidden, Node}).
 
 connect(Node, Type) -> %% Type = normal | hidden
-    case ets:lookup(sys_dist, Node) of
+    case catch ets:lookup(sys_dist, Node) of
+	{'EXIT', _} ->
+	    false;
 	[#barred_connection{}] ->
 	    false;
 	_ ->

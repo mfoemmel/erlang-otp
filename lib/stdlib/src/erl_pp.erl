@@ -277,6 +277,17 @@ expr({call,_,Name,Args}, I, Prec, Hook) ->
     Nl = expr(Name, I, F, Hook),
     El = [Nl|expr_list(Args, "(", ")", indentation(Nl, I), Hook)],
     maybe_paren(P, Prec, El);
+expr({'try',_,Es,Cs}, I, _, Hook) ->
+    I1 = I + 4,
+    ["try",nl_indent(I1),
+     exprs(Es, I1, Hook),
+     if Cs == [] ->
+	     [nl_indent(I),"end"];
+	true ->
+	     [nl_indent(I), "catch",
+	      nl_indent(I1),cr_clauses(Cs, I1, Hook),
+	      nl_indent(I),"end"]
+     end];
 expr({'catch',_,Expr}, I, Prec, Hook) ->
     {P,R} = preop_prec('catch'),
     El = ["catch ",expr(Expr, I+6, R, Hook)],
@@ -304,8 +315,8 @@ expr({remote,_,M,F}, I, Prec, Hook) ->
     El = [Ml,":",expr(F, indentation(Ml, I)+1, R, Hook)],
     maybe_paren(P, Prec, El);
 %% BIT SYNTAX:
-expr({bin,_,Fs}, I, Prec, Hook) ->
-    bit_grp(Fs,I,Prec,Hook);
+expr({bin,_,Fs}, I, _, Hook) ->
+    bit_grp(Fs,I,Hook);
 %% Special case for straight values.
 expr({value,_,Val}, _, _,_) ->
     write(Val);
@@ -318,55 +329,39 @@ expr(Expr, Indentation, Precedence, Func) ->
     Func(Expr, Indentation, Precedence, Func).
 
 %% BITS:
-bit_grp(Fs,I,Prec,Hook) ->
-    ["<<", bit_elems(Fs,I,Prec,Hook),">>"].
+bit_grp(Fs,I,Hook) ->
+    ["<<", bit_elems(Fs,I+2,Hook),">>"].
 
-bit_elems([E], I, Prec, Hook) ->
-    [ bit_elem(E, I, Prec, Hook) ];
-bit_elems([E1,E2],I,Prec,Hook) ->
-    [ bit_elem(E1,I,Prec,Hook), separator(E2), bit_elem(E2,I,Prec,Hook) ];
-bit_elems([E|Es],I,Prec,Hook) ->
-    [ bit_elem(E,I,Prec,Hook), ",", bit_elems(Es,I,Prec,Hook) ];
-bit_elems([],I,Prec,Hook) ->
+bit_elems([E], I, Hook) ->
+    [ bit_elem(E, I, Hook) ];
+bit_elems([E|Es], I, Hook) ->
+    [ bit_elem(E, I, Hook), ",", nl_indent(I),
+      bit_elems(Es, I, Hook) ];
+bit_elems([],I,Hook) ->
     [].
 
-bit_elem({bin_tail,_,Var}, I, Prec, Hook) ->
-    expr(Var,I,Prec,Hook);
-bit_elem({bin,_,Fs}, I, Prec, Hook) ->
-    bit_grp(Fs,I,Prec,Hook);
-bit_elem({bin_element,_,Expr,Sz,Types}, I, Prec, Hook) ->
+bit_elem({bin_element,_,Expr,Sz,Types}, I, Hook) ->
     Expr1 = 
 	if Sz =/= default ->
 		{remote, 0, Expr, Sz};
 	   true ->
 		Expr
 	end,
-    Expr2 =
-	if Types =/= default ->
-		{op, 0, '/', Expr1, bit_elem_types(lists:reverse(Types))};
-	   true ->
-		Expr1
-	end,
-    expr(Expr2,I,Prec,Hook).
+    if Types =/= default ->
+	    [expr(Expr1,I,0,Hook), $/, bit_elem_types(Types)];
+       true ->
+	    expr(Expr1,I,0,Hook)
+    end.
 
 bit_elem_types([T]) ->
-    case T of
-	{A, B} ->
-	    {remote, 0,
-	     erl_parse:abstract(A),
-	     erl_parse:abstract(B)};
-	_ ->
-	    erl_parse:abstract(T)
-    end;    
+    bit_elem_type(T);
 bit_elem_types([T | Rest]) ->
-    {op, 0, '-', bit_elem_types(Rest), bit_elem_types([T])}.
+    [bit_elem_type(T), $-, bit_elem_types(Rest)].
 
-separator(Elem) ->
-    case element(1,Elem) of
-        bin_tail -> "|";
-        bin  -> ",";
-        bin_element -> ","
-    end.
+bit_elem_type({A, B}) ->
+    expr({remote, 0, erl_parse:abstract(A), erl_parse:abstract(B)});
+bit_elem_type(T) ->
+    expr(erl_parse:abstract(T)).
 
 %%% end of BITS
 

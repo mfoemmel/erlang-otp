@@ -6,6 +6,143 @@
 <BLOCKQUOTE>
 <P>These document describes the release notes for older versions of the <CODE>compiler</CODE> application.
 
+<H2>Compiler 3.0.1.2</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+The compiler would sometimes reorder bit syntax clauses
+causing them to be execute in the wrong order.
+This has been corrected.
+<br>Own Id: OTP-3748<br>
+Aux Id: Seq 4954
+
+
+<LI>
+Modules containing long literals string concatenated with
+variables would take long time to compile and the beam module
+would be unecesserialy large. Both problems have been
+corrected.
+<br>Own Id: OTP-3831<br>
+Aux Id: Seq 5085
+
+
+<LI>
+By default, debug information is no longer included in
+beam modules. Use the compiler option <CODE>debug_info</CODE>
+to include debug information.
+<br>Own Id: OTP-3885
+
+
+</UL>
+
+<H2>Compiler 3.0.1</H2>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+Several minor compiler bugs corncerning the bit syntax
+were corrected.
+<br>Own Id: OTP-3707
+
+
+</UL>
+
+<H2>Compiler 3.0</H2>
+<H3>Known problems</H3>
+
+<UL>
+
+<LI>
+Use of recursively defined records causes the compiler to
+crash instead of reporting an error.
+<br>Own Id: OTP-2677
+
+
+</UL>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+The Erlang compiler builds lists and tuples in a smarter
+way than previous compilers, meaning that literal lists and tuples
+practically any size can now be built.
+<br>Own Id: OTP-2388<br>
+Aux Id: seq 821
+
+
+<LI>
+Using a literal atom in a call to atom_to_list/1 resulted
+in a compiled module that could not be loaded. This has been corrected.
+<br>Own Id: OTP-3438
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+We have made several changes to the garbage collector
+and internal memory allocation routines to reduce
+memory consumption and memory fragmentation.
+Also, the compiler now makes sure that references
+to any data that will not be used again will be killed,
+so that the garbage collector can discard it as soon
+as possible.
+(Thanks to Claes Wickstrom at Bluetail who suggested
+most of the changes to the garbage collector.)
+<br>Own Id: OTP-2375<br>
+Aux Id: seq 816, HA81951
+
+
+<LI>
+It is now allowed to use an expression within a pattern,
+if the expression uses only numeric or bitwise operators,
+and can
+be evaluated to a constant at compile-time. E.g.,
+<CODE>
+case X of
+{1+2, T} -&gt; T
+end.
+</CODE>
+<br>Own Id: OTP-3144<br>
+Aux Id: OTP-3143
+
+
+<LI>
+There now exists syntax for constructing and matching
+binaries. For more infomation, see Extensions to Erlang.
+Also, the handling of small binaries (up to 64 bytes) has
+been optimised, as well as splitting of binaries.
+<br>Own Id: OTP-3376
+
+
+<LI>
+The construction <CODE>??Arg</CODE> for an argument to a macro
+expands to a string containing the tokens of the argument,
+similar to the <CODE>#arg</CODE> stringifying construction in C.
+<br>Own Id: OTP-3425
+
+
+<LI>
+The compiler now supports inlining within a module
+(see the compiler documentation). Numerous known
+problems and limitations have been corrected, and
+the optimisation is better (for instance, tuples
+used in cases for grouping are no longer built).
+The earlier compiler versions v1 (R5) and v2 (R6)
+have been discontinued because there are no longer
+any reason to use them.
+<br>Own Id: OTP-3672
+
+
+</UL>
+
+
 <H2>Compiler 2.1</H2>
 <H3>Improvements and new features</H3>
 
@@ -177,12 +314,12 @@ is generated wrong are:
 <br>
 handle_cast({a,DpId},State) when State ==
 #state{e1=true,            
-e2=a} ->
+e2=a} -&gt;
 process_info(DpId);
 <br>
 handle_cast({a,DpId},State) when State ==
 #state{e1=true,            
-e2=b} ->
+e2=b} -&gt;
 process_info(DpId).
 <br>
 </pre>
@@ -191,10 +328,10 @@ or like this:
 -module(beamfel2).
 -export([f/2]).
 <br>
-f({a,DpId},16#7fffffff) ->
+f({a,DpId},16#7fffffff) -&gt;
 process_info(DpId);
 <br>
-f({a,DpId},16#80000000) ->
+f({a,DpId},16#80000000) -&gt;
 process_info(DpId).
 <br>
 </pre>
@@ -214,8 +351,8 @@ message is better.
 
 
 <LI>
-BEAM only: If the '<CODE><</CODE>' operator was used in a body context
-(<CODE>Bool = Expr1 < Expr</CODE>), the compiler could crasch
+BEAM only: If the '<CODE>&lt;</CODE>' operator was used in a body context
+(<CODE>Bool = Expr1 &lt; Expr</CODE>), the compiler could crasch
 or generate incorrect code.  This has been corrected.
 <br>Own Id: OTP-2871<br>
 Aux Id: seq 1343
@@ -282,16 +419,16 @@ Aux Id: Seq 1233
 A new construction has been added to the language: the
 match operator (i.e., the = operator) can now be used
 within patterns. For example, the following is now valid:
-<pre>	f({'+',X,Y}=T) -> {X+Y,T}.
+<pre>	f({'+',X,Y}=T) -&gt; {X+Y,T}.
 </pre>
 This often makes it possible to avoid rebuilding a term
 which is already present but has no name, since it was
 matched with a complex pattern. It also makes it possible
 to rewrite the construction
-<pre>	f(X) when X == #rec{x=1, y=a} -> ...
+<pre>	f(X) when X == #rec{x=1, y=a} -&gt; ...
 </pre>
 as
-<pre>	f(#rec{x=1, y=a} = X) -> ...
+<pre>	f(#rec{x=1, y=a} = X) -&gt; ...
 </pre>
 In the absence of optimization for the former case, the
 latter case is more efficient.
@@ -361,10 +498,10 @@ files.
 <LI>
 A new construction is allowed in patterns, namely a literal
 string as the first operand of the ++ operator. Example:
-<pre>	f("prefix" ++ L) -> ...
+<pre>	f("prefix" ++ L) -&gt; ...
 </pre>
 This is syntactic sugar for the equivalent, but harder to read
-<pre>	f([$p,$r,$e,$f,$i,$x | L]) -> ...
+<pre>	f([$p,$r,$e,$f,$i,$x | L]) -&gt; ...
 </pre>
 <br>Own Id: OTP-3069
 
@@ -454,7 +591,7 @@ Aux Id: seq 649
 
 <LI>
 The compiler sometimes failed to compile modules where conditions
-were invariably false (e.g. <CODE>case 1 of [X] -> ...</CODE>).
+were invariably false (e.g. <CODE>case 1 of [X] -&gt; ...</CODE>).
 <br>Own Id: OTP-2330<br>
 Aux Id: seq 791
 
@@ -521,7 +658,7 @@ Aux Id: SEQ 400
 
 <LI>
 Giving floating points attributes in module attributes 
-(like <c>-vsn(1.0)</c>) crashes the Erlang compiler.
+(like <code>-vsn(1.0)</code>) crashes the Erlang compiler.
 <br>Own Id: OTP-2141
 
 

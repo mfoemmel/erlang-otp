@@ -40,13 +40,19 @@ norm_block([], Acc) -> Acc.
 norm({set,[D],As,{bif,N}})        -> {bif,N,nofail,As,D};
 norm({set,[D],As,{bif,N,F}})      -> {bif,N,F,As,D};
 norm({set,[D],[S],move})          -> {move,S,D};
+norm({set,[D],[S],fmove})         -> {fmove,S,D};
+norm({set,[D],[S],fconv})         -> {fconv,S,D};
 norm({set,[D],[S1,S2],put_list})  -> {put_list,S1,S2,D};
 norm({set,[D],[],{put_tuple,A}})  -> {put_tuple,A,D};
 norm({set,[],[S],put})            -> {put,S};
 norm({set,[D],[],{put_string,L,S}})       -> {put_string,L,S,D};
 norm({set,[D],[S],{get_tuple_element,I}}) -> {get_tuple_element,S,I,D};
+norm({set,[],[S,D],{set_tuple_element,I}}) -> {set_tuple_element,S,D,I};
 norm({set,[D1,D2],[S],get_list})          -> {get_list,S,D1,D2};
 norm({set,[],[],remove_message})   -> remove_message;
+norm({set,[],[],fclearerror}) -> fclearerror;
+norm({set,[],[],fcheckerror}) -> {fcheckerror,{f,0}};
+norm({'%',_}=Comment)   -> Comment;
 norm({'%live',R})                  -> {'%live',R}.
 
 norm_allocate({Any,nostack,Nh,[]}, Regs) -> [{test_heap,Nh,Regs}];

@@ -42,115 +42,14 @@
 
 #include "erl_error.h"
 
-extern int erl_locking_init_done;
+extern void ei_init_pthreads();
 extern void erl_common_init(void *, long);
 
-static pthread_key_t erl_errno_key;
-
-int 
-erl_init_pthreads (void *x, long y)
+int erl_init_pthreads (void *x, long y)
 {
-#ifdef DEBUG
-  fprintf(stderr,"erl_interface using POSIX threads\n");
-#endif
-
-  erl_common_init(x,y);
-  return 0; /*success */
-}
-
-pthread_mutex_t *erl_m_create(void)  
-{ 
-  pthread_mutex_t *l;
- 
-#ifdef DEBUG
-  fprintf(stderr,"POSIX threads create\n");
-#endif
-
-  if (!erl_locking_init_done) return 0;
-
-  if ((l = malloc(sizeof(*l)))) {
-    pthread_mutex_init(l,NULL);
-  }
-
-  return l;
-}
-
-int erl_m_destroy(pthread_mutex_t *l) 
-{ 
-  int r;
-  if (!erl_locking_init_done) return 0;
-  r = pthread_mutex_destroy(l);
-  free(l);
-  
-  return r;
-}
-
-int erl_m_lock(pthread_mutex_t *l)    
-{ 
-  if (!erl_locking_init_done) return 0;
-  return pthread_mutex_lock(l);
-}
-
-int erl_m_trylock(pthread_mutex_t *l) 
-{ 
-  if (!erl_locking_init_done) return 0;
-  return pthread_mutex_trylock(l);
-}
-
-int erl_m_unlock(void *l)  
-{ 
-  if (!erl_locking_init_done) return 0;
-  return pthread_mutex_unlock(l);
-} 
-
-
-/*
- * Thread-specific erl_errno variable.
- */
-
-static pthread_key_t erl_errno_key;
-static pthread_once_t erl_errno_key_once = PTHREAD_ONCE_INIT;
-
-/*
- * Destroy per-thread erl_errno locus
- */
-static void
-erl_errno_destroy (void * ptr)
-{
-    free(ptr);
-}
-
-/*
- * Allocate erl_errno key.
- */
-static void
-erl_errno_key_alloc (void)
-{
-    pthread_key_create(&erl_errno_key, erl_errno_destroy);
-}
-
-/*
- * Allocate (and initialize) per-thread erl_errno locus.
- */
-static void
-erl_errno_alloc (void)
-{
-    pthread_setspecific(erl_errno_key, malloc(sizeof(__erl_errno)));
-    *(int *)pthread_getspecific(erl_errno_key) = 0;
-}
-
-/*
- * Return a pointer to the erl_errno locus.
- */
-volatile int *
-__erl_errno_place (void)
-{
-    pthread_once(&erl_errno_key_once, erl_errno_key_alloc);
-    if (pthread_getspecific(erl_errno_key) == NULL)
-    {
-	erl_errno_alloc();
-    }
-    return (int *)pthread_getspecific(erl_errno_key);
+    ei_init_pthreads();
+    erl_common_init(x,y);
+    return 0; /*success */
 }
 
 

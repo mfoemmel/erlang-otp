@@ -61,8 +61,10 @@ connect(Address, Port, Options, Timeout) ->
 controlling_process(Socket, NewOwner) when pid(NewOwner) ->
     ssl_broker:controlling_process(Socket, NewOwner).
 
-%% listen(Port, Options) -> {ok, ListenSock}
+%% listen(Port, Options) -> {ok, ListenSock} | {error, Reason}
 %%
+listen(Port, []) ->
+    {error, enooptions};
 listen(Port, Options) ->
     {ok, Pid} = ssl_broker:start_broker(listener),
     ssl_broker:listen(Pid, Port, Options).
@@ -151,6 +153,8 @@ format_error(enotlistener) ->
     "Attempt to accept on a non-listening socket.";
 format_error(enoproxysocket) ->
     "No proxy socket found (internal error).";
+format_error(enooptions) ->
+    "List of options is empty.";
 format_error(eoptions) ->
     "Invalid list of options.";
 format_error(epeercert) ->

@@ -22,10 +22,15 @@
 
 int ei_encode_atom(char *buf, int *index, const char *p)
 {
+    return ei_encode_atom_len(buf, index, p, strlen(p));
+}
+
+int ei_encode_atom_len(char *buf, int *index, const char *p, int len)
+{
   char *s = buf + *index;
   char *s0 = s;
-  int len = strlen(p) & 0xff; /* max 256 characters */
 
+  len &= 0xff; /* max 256 characters */
   if (!buf) s += 3;
   else {
     put8(s,ERL_ATOM_EXT);

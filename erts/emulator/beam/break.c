@@ -209,6 +209,7 @@ Process *p; CIO to;
 	erl_printf(to, "]\n");
     }
 
+#ifndef UNIFIED_HEAP
     {
        long s = 0;
        ErlHeapFragment *m = p->mbuf;
@@ -218,6 +219,7 @@ Process *p; CIO to;
        }
        erl_printf(to, "Message buffer data: %d words\n", s);
     }
+#endif
 
     if (p->ct != NULL) {
        int i, j;
@@ -286,6 +288,16 @@ Process *p; CIO to;
     }
     
     /* print the number of reductions etc */
+#ifdef UNIFIED_HEAP
+    erl_printf(to,"Reductions %d heap_sz %d old_heap_sz=%d \n",
+               p->reds, global_heap_sz,
+               (global_old_heap == NULL) ? 0 :
+               global_old_hend - global_old_heap );
+    erl_printf(to,"Heap unused=%d OldHeap unused=%d\n",
+               global_hend - global_htop,
+               (global_old_heap == NULL) ? 0 :
+               global_old_hend - global_old_heap);
+#else
     erl_printf(to,"Reductions %d stack+heap %d old_heap_sz=%d \n",
 	       p->reds, p->heap_sz,
 	       (p->old_heap == NULL) ? 0 : 
@@ -294,6 +306,7 @@ Process *p; CIO to;
 	       p->stop - p->htop, 
 	       (p->old_heap == NULL) ? 0 : 
 	       p->old_hend - p->old_heap);
+#endif
 
     if (garbing) {
 	print_garb_info(p, to);
@@ -312,12 +325,21 @@ CIO to;
 {
     erl_printf(to, "new heap: %-8s %-8s %-8s %-8s\n",
 	       "start", "top", "sp", "end");
+#ifdef UNIFIED_HEAP
+    erl_printf(to, "          %08X %08X %08X %08X\n",
+               global_heap, global_htop, p->stop, global_hend);
+    erl_printf(to, "old heap: %-8s %-8s %-8s\n",
+               "start", "top", "end");
+    erl_printf(to, "          %08X %08X %08X\n",
+               global_old_heap, global_old_htop, global_old_hend);
+#else
     erl_printf(to, "          %08X %08X %08X %08X\n",
 	       p->heap, p->htop, p->stop, p->hend);
     erl_printf(to, "old heap: %-8s %-8s %-8s\n",
 	       "start", "top", "end");
     erl_printf(to, "          %08X %08X %08X\n",
 	       p->old_heap, p->old_htop, p->old_hend);
+#endif
 }
 
 void info(to)
@@ -328,15 +350,17 @@ CIO to;
     module_info(to);
     export_info(to);
     register_info(to);
+    erts_fun_info(to);
     sys_sl_alloc_info(to);
-    erl_printf(to,"Allocated binary %d\n",tot_bin_allocated);
-    erl_printf(to,"Allocated by process_desc %d\n", fix_info(process_desc));
-    erl_printf(to,"Allocated by table_desc %d\n",fix_info(table_desc));
-    erl_printf(to,"Allocated by link_desc %d\n",fix_info(link_desc));
-    erl_printf(to,"Allocated by atom_desc %d\n",fix_info(atom_desc));
-    erl_printf(to,"Allocated by export_desc %d\n",fix_info(export_desc));
-    erl_printf(to,"Allocated by module_desc %d\n",fix_info(module_desc));
-    erl_printf(to,"Allocated by preg_desc %d\n",fix_info(preg_desc));
+    erl_printf(to, "Allocated binary data %d\n", tot_bin_allocated);
+    erl_printf(to, "Allocated by process_desc %d\n", fix_info(process_desc));
+    erl_printf(to, "Allocated by table_desc %d\n", fix_info(table_desc));
+    erl_printf(to, "Allocated by link_desc %d\n", fix_info(link_desc));
+    erl_printf(to, "Allocated by atom_desc %d\n", fix_info(atom_desc));
+    erl_printf(to, "Allocated by export_desc %d\n", fix_info(export_desc));
+    erl_printf(to, "Allocated by module_desc %d\n", fix_info(module_desc));
+    erl_printf(to, "Allocated by preg_desc %d\n", fix_info(preg_desc));
+    erl_printf(to, "Allocated by erts_fun_desc %d\n", fix_info(erts_fun_desc));
 #ifdef INSTRUMENT
     {
       SysAllocStat sas;
@@ -458,7 +482,7 @@ void do_break()
 #endif
 	case '\n':
 	    continue;
-	default: 
+	default:
 	    erl_printf(COUT, "Eh?\n\n");
 	}
     }
@@ -578,6 +602,9 @@ void erl_crash_dump(char *file, int line, char* fmt, va_list args)
     distribution_info(fd);
     erl_printf(fd,"\nLoaded Modules Information\n");
     loaded(fd);
+    erl_printf(fd,"\nFun table\n");
+    erl_printf(fd,"--------------------------------------------------\n");
+    erts_dump_fun_entries(fd);
     erl_printf(fd,"\nAtoms\n");
     erl_printf(fd,"--------------------------------------------------\n");
     dump_atoms(fd);

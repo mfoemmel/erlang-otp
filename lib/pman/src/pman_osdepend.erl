@@ -34,8 +34,9 @@
 %%
 
 options_file_name() ->
-    tool_utils:options_filename("pman").
-
+    Filename = "pman.opts",
+    {ok,[[ResultDir]]} = init:get_argument(home),
+    filename:join([ResultDir,".erlang_tools",Filename]).
     
 
 
@@ -71,16 +72,4 @@ mkdir_p(DirName) ->
 %%
 
 mkdir_for_file(FileName) ->
-    All = filename:split(FileName),
-    Butlast = butlast(All),
-    DirName = filename:join(Butlast),
-    mkdir_p(DirName).
-
-
-%%
-%% Missing lists-library function.
-%%
-
-butlast([X]) -> [];
-butlast([Hd|Tl]) -> [Hd | butlast(Tl)].
-
+    mkdir_p(filename:dirname(FileName)).

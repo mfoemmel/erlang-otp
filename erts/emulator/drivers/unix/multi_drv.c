@@ -27,7 +27,7 @@
 #  include "config.h"
 #endif
 
-#include "driver.h"
+#include "erl_driver.h"
 #include "sys.h"
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -37,77 +37,68 @@
 
 static char buf[BUFSIZ];
 
-static long multi_start();
-static int multi_init(),multi_stop(),multi_erlang_read();
+static ErlDrvData multi_start(ErlDrvPort, char*);
+static int multi_init(void);
+static void multi_stop(ErlDrvData),multi_erlang_read(ErlDrvData, char*, int);
 
 struct driver_entry multi_driver_entry = {
-    multi_init,multi_start,multi_stop,multi_erlang_read,
-    null_func,null_func,"multi"
-    };
+    multi_init,
+    multi_start,
+    multi_stop,
+    multi_erlang_read,
+    NULL,
+    NULL,
+    "multi"
+};
 
 
 struct channel {
-    int portno;
+    ErlDrvPort portno;
     int channel;
 };
 
 struct channel channels[MAXCHANNEL]; /* Max MAXCHANNEL instances */
 
-
-
-
-static int multi_init()
+static int multi_init(void)
 {
     memzero(channels,MAXCHANNEL * sizeof(struct channel));
+    return 0;
 }
 
-
-static long multi_start(port,buf) 
-int port;
-char *buf;
+static ErlDrvData multi_start(ErlDrvPort port, char* buf) 
 {
-
     int chan;
     chan = get_new_channel();
     channels[port].portno = port;
     channels[port].channel = chan;
     fprintf(stderr,"Opening channel %d port is %d\n",chan,port);
-    return(port);
+    return (ErlDrvData)port;
 }
 
 
-static int multi_stop(port)
-int port;
+static int multi_stop(ErlDrvData port)
 {
     fprintf(stderr,"Closing channel %d\n",channels[port].channel);
-    remove_channel(channels[port].channel);
+    remove_channel(channels[(int)port].channel);
 }
 
  
-static int multi_erlang_read(port,buf,count)
-long port;
-char *buf;
-int count;
-
+static int multi_erlang_read(ErlDrvData port, char* buf, int count)
 {
     fprintf(stderr,"Writing %d bytes to channel %d\n",
 	    count,
-	    channels[port].channel);
+	    channels[(int)port].channel);
 }
-
 
 
 /* These two funs are fake */
 
-get_new_channel() 
+int get_new_channel() 
 {
     static int ch = 1;
-    
     return(ch++);
 }
 
-remove_channel(ch)
-int ch;
+void remove_channel(int ch)
 {
-    return;
 }

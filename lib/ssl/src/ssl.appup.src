@@ -1,20 +1,8 @@
 {"%VSN%",
- [{"2.2", []}, 
-  {"2.1", [{load_module, ssl, soft_purge, soft_purge, []}, 
-	   {load_module, ssl_socket, soft_purge, soft_purge, []}, 
-	   {load_module, ssl_app, soft_purge, soft_purge, []}, 
-	   {load_module, ssl_sup, soft_purge, soft_purge, []}, 
-	   {load_module, ssl_server, soft_purge, soft_purge, []}, 
-	   {load_module, ssl_broker, soft_purge, soft_purge, []}, 
-	   {load_module, ssl_broker_sup, soft_purge, soft_purge, []}]}
+ [{"2.3.2", [{load_module, ssl, soft_purge, soft_purge, []}, 
+	     {load_module, ssl_server, soft_purge, soft_purge, []}]}
  ], 
- [{"2.2", []}, 
-  {"2.1", [{load_module, ssl, soft_purge, soft_purge, []}, 
-	   {load_module, ssl_socket, soft_purge, soft_purge, []}, 
-	   {load_module, ssl_app, soft_purge, soft_purge, []}, 
-	   {load_module, ssl_sup, soft_purge, soft_purge, []}, 
-	   {load_module, ssl_server, soft_purge, soft_purge, []}, 
-	   {load_module, ssl_broker, soft_purge, soft_purge, []}, 
-	   {load_module, ssl_broker_sup, soft_purge, soft_purge, []}]}
+ [{"2.3.2", [{load_module, ssl, soft_purge, soft_purge, []}, 
+	     {load_module, ssl_server, soft_purge, soft_purge, []}]} 
  ]}.
 

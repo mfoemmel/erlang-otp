@@ -33,14 +33,15 @@
 #include <netdb.h>
 #endif
 #include "rmod_random__s.h"
+#include "ei_connect.h"
 
 /* Used functions */
 extern int gethostname(char *buf, int buflen);
 static int getport(int sockd);
 static int getlisten(int port);
-static int init(int *sd, int *portnr, int *epmd_fd);
+static int init(ei_cnode *ec, int *sd, int *portnr, int *epmd_fd);
 void terminate(int *fd, int *sd, int *epmd_fd);
-static void server_loop(int fd, int sd);
+static void server_loop(ei_cnode *ec, int fd, int sd);
 
 /* change these, or even better, make command-line args to program... */
 #define COOKIE "flash"
@@ -49,147 +50,146 @@ static void server_loop(int fd, int sd);
 #define HOSTNAMESZ 256
 #define INBUFSZ 1024
 #define OUTBUFSZ 1024
- 
+
 
 int main(int argc, char **argv)
 {
-  int sd;
-  int portnr;
-  int epmd_fd;
-  
-  /* crate file descriptors */
-  if (init(&sd, &portnr, &epmd_fd) < 0)
-    return -1;
+    int sd;
+    int portnr;
+    int epmd_fd;
+    ei_cnode ec;
 
-  /* start server loop */
-  server_loop(sd,epmd_fd);
+    /* crate file descriptors */
+    if (init(&ec, &sd, &portnr, &epmd_fd) < 0)
+	return -1;
 
-  return 0;
+    /* start server loop */
+    server_loop(&ec, sd, epmd_fd);
+
+    return 0;
 }
 
 
 
-static void server_loop(int sd, int epmd_fd)
+static void server_loop(ei_cnode *ec, int sd, int epmd_fd)
 {
-  ErlConnect conn;
-  erlang_msg msg;
-  int status=1;
-  CORBA_Environment *env;
+    ErlConnect conn;
+    erlang_msg msg;
+    int status=1;
+    CORBA_Environment *env;
   
-  /* Create and init CORBA_Environment */
-  env = CORBA_Environment_alloc(INBUFSZ,OUTBUFSZ);
+    /* Create and init CORBA_Environment */
+    env = CORBA_Environment_alloc(INBUFSZ,OUTBUFSZ);
   
-  while (status >= 0) {
+    while (status >= 0) {
+	status = 1;
     
-    status = 1;
-    
-    if ((env->_fd = erl_accept(sd,&conn)) < 0) {       
-      /* error */
-      fprintf(stderr,"Accept failed: %s\n",strerror(errno));
-    }
-    else {
-      /* connection */
-      fprintf(stderr,"Accepted connection from %s\n",conn.nodename);
+	if ((env->_fd = ei_accept(ec, sd, &conn)) < 0) {       
+	    /* error */
+	    fprintf(stderr,"Accept failed: %s\n",strerror(errno));
+	} else {
+	    /* connection */
+	    fprintf(stderr,"Accepted connection from %s\n",conn.nodename);
       
-      while (status >= 0) {
+	    while (status >= 0) {
 
-	/* write message to buffer */
-	status = ei_receive_encoded(env->_fd, &env->_inbuf, &env->_inbufsz, &msg, &env->_iin); 
-	switch(status) {
-	case ERL_SEND:
-	case ERL_REG_SEND :
-	  /* do transaction with fd */
-	  rmod_random__switch(NULL,env);
+		/* write message to buffer */
+		status = ei_receive_encoded(env->_fd, &env->_inbuf, &env->_inbufsz, &msg, &env->_iin); 
+		switch(status) {
+		case ERL_SEND:
+		case ERL_REG_SEND :
+		    /* do transaction with fd */
+		    rmod_random__switch(NULL,env);
 	  
-	  switch(env->_major) {
-	  case CORBA_NO_EXCEPTION: /* Success */
-	    break;
-	  case CORBA_SYSTEM_EXCEPTION: /* System exception */
-	    printf("Request failure, reason : %s\n",(char *) CORBA_exception_value(env));
-	  CORBA_exception_free(env);
-	  break;
-	  default: /* Should not come here */
-	    CORBA_exception_free(env);
-	    break;
+		    switch(env->_major) {
+		    case CORBA_NO_EXCEPTION: /* Success */
+			break;
+		    case CORBA_SYSTEM_EXCEPTION: /* System exception */
+			printf("Request failure, reason : %s\n",(char *) CORBA_exception_value(env));
+			CORBA_exception_free(env);
+			break;
+		    default:	/* Should not come here */
+			CORBA_exception_free(env);
+			break;
+		    }
+	  
+		    /* send outdata */
+		    if (env->_iout > 0) 
+			ei_send_encoded(env->_fd,&env->_caller,env->_outbuf,env->_iout);
+		    break;
+	  
+		case ERL_TICK :
+		    break;
+		default :	/* < 0 */
+		    printf("Connection terminated\n");
+		    break;
+		}  
+	    }
 	}
-	  
-	  /* send outdata */
-	  if (env->_iout > 0) 
-	    ei_send_encoded(env->_fd,&env->_caller,env->_outbuf,env->_iout);
-	  break;
-	  
-      case ERL_TICK :
-	break;
-	default : /* < 0 */
-	  printf("Connection terminated\n");
-	  break;
-	}  
-      }
+	status=0;		/* restart */
     }
-    status=0; /* restart */
-  }
   
-  /* close file descriptors */
-  terminate(&env->_fd, &sd, &epmd_fd);
+    /* close file descriptors */
+    terminate(&env->_fd, &sd, &epmd_fd);
   
-  /* Free env & buffers */
-  CORBA_free(env->_inbuf);
-  CORBA_free(env->_outbuf);
-  CORBA_free(env);
+    /* Free env & buffers */
+    CORBA_free(env->_inbuf);
+    CORBA_free(env->_outbuf);
+    CORBA_free(env);
 } 
 
 
 
 static int init(int *sd, int *portnr, int *epmd_fd)
 {
-  char host[HOSTNAMESZ];
-  char servernode[NODENAMESZ];
-  struct hostent *h;
+    char host[HOSTNAMESZ];
+    char servernode[NODENAMESZ];
+    struct hostent *h;
 
-  /* get the host name */
-  if ((gethostname(host,HOSTNAMESZ)))
-    fprintf(stderr,"can't find own hostname\n");
-  else {
-    /* identify host */
-    if (!(h = erl_gethostbyname(host)))
-      fprintf(stdout,"can't find own ip address\n");
+    /* get the host name */
+    if ((gethostname(host,HOSTNAMESZ)))
+	fprintf(stderr,"can't find own hostname\n");
     else {
+	/* identify host */
+	if (!(h = erl_gethostbyname(host)))
+	    fprintf(stdout,"can't find own ip address\n");
+	else {
 
-      /* get a listen port. 0 means let system choose port number */
-      *sd = getlisten(0);
+	    /* get a listen port. 0 means let system choose port number */
+	    *sd = getlisten(0);
       
-      /* what port did we get? */
-      /* this call not necessary if we specified port in call to getlisten() */
-      *portnr = getport(*sd);
+	    /* what port did we get? */
+	    /* this call not necessary if we specified port in call to getlisten() */
+	    *portnr = getport(*sd);
       
-      /* make the nodename server@host */
-      sprintf(servernode,"%s@%s",SERVER,host);
+	    /* make the nodename server@host */
+	    sprintf(servernode,"%s@%s",SERVER,host);
       
-      /* initiate */
-      erl_init(NULL,0);
-
-      /* host, alive, alive@host, addr, cookie, creation */
-      erl_connect_xinit(host,SERVER,servernode,(Erl_IpAddr)(h->h_addr_list[0]),COOKIE,0);
-      
-      /* let epmd know we are here */
-      *epmd_fd = erl_publish(*portnr);
-
-      return 0;
-    } 
-  }
-  return -1;
+	    /* initiate */
+	    /* cnode, host, alive, alive@host, addr, cookie, creation */
+	    if (ei_connect_xinit(ec, host, SERVER, servernode,
+				 (Erl_IpAddr)(h->h_addr_list[0]),
+				 COOKIE, 0) == 0) {
+		/* let epmd know we are here */
+		*epmd_fd = ei_publish(ec, *portnr);
+		if (*epmd_fd >= 0)
+		    return 0;
+	    }
+	} 
+    }
+    return -1;
 }
 
 
 void terminate(int *fd, int *sd, int *epmd_fd) {
 
-  close(*fd);
+    close(*fd);
 
-  /* remove info from epnd */
-  close(*epmd_fd);
+    /* remove info from epnd */
+    close(*epmd_fd);
 
-  /* return socket */
-  close(*sd);
+    /* return socket */
+    close(*sd);
 
 }
 
@@ -198,16 +198,16 @@ void terminate(int *fd, int *sd, int *epmd_fd) {
 /* tells you what port you are using on given socket */
 static int getport(int sockd)
 {
-  struct sockaddr_in addr;
-  int namelen = sizeof(addr);
-  int i;
+    struct sockaddr_in addr;
+    int namelen = sizeof(addr);
+    int i;
 
-  memset(&addr,0,sizeof(addr));
+    memset(&addr,0,sizeof(addr));
   
-  if ((i = getsockname(sockd,(struct sockaddr *)&addr,&namelen))<0)
-    return i;
+    if ((i = getsockname(sockd,(struct sockaddr *)&addr,&namelen))<0)
+	return i;
   
-  return ntohs(addr.sin_port);
+    return ntohs(addr.sin_port);
 }
 
 
@@ -216,27 +216,27 @@ static int getport(int sockd)
 /* specify port = 0 to let system assign port */
 static int getlisten(int port)
 {
-  int sockd;
-  struct sockaddr_in inaddr;
-  int opt = 1;
-  int i;
+    int sockd;
+    struct sockaddr_in inaddr;
+    int opt = 1;
+    int i;
 
-  /* get listen socket */
-  if ((sockd = socket(AF_INET,SOCK_STREAM,0)) < 0) return sockd;
+    /* get listen socket */
+    if ((sockd = socket(AF_INET,SOCK_STREAM,0)) < 0) return sockd;
   
-  if ((i=setsockopt(sockd,SOL_SOCKET,SO_REUSEADDR,(void *)&opt,sizeof(opt)))<0) 
-    return i;
+    if ((i=setsockopt(sockd,SOL_SOCKET,SO_REUSEADDR,(void *)&opt,sizeof(opt)))<0) 
+	return i;
 
-  /* bind to requested port */
-  memset(&inaddr,0,sizeof(inaddr));
-  inaddr.sin_family = AF_INET;              
-  inaddr.sin_addr.s_addr = htonl(INADDR_ANY); 
-  inaddr.sin_port = htons(port);
+    /* bind to requested port */
+    memset(&inaddr,0,sizeof(inaddr));
+    inaddr.sin_family = AF_INET;              
+    inaddr.sin_addr.s_addr = htonl(INADDR_ANY); 
+    inaddr.sin_port = htons(port);
 
-  if ((i = bind(sockd,(struct sockaddr*) &inaddr, sizeof(inaddr))) < 0)
-    return i;
+    if ((i = bind(sockd,(struct sockaddr*) &inaddr, sizeof(inaddr))) < 0)
+	return i;
 
-  listen(sockd,5);
+    listen(sockd,5);
 
-  return sockd;
+    return sockd;
 }

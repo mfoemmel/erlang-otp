@@ -35,7 +35,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/comet-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 SGML_APPLICATION_FILES = refman.sgml
-SGML_REF3_FILES = comet.sgml erl_com.sgml
+SGML_REF3_FILES = comet.sgml erl_com.sgml com_gen.sgml
 
 SGML_PART_FILES = users_guide.sgml part_notes.sgml
 SGML_CHAPTER_FILES = ch_intro.sgml ch_comet.sgml ch_examples.sgml notes.sgml

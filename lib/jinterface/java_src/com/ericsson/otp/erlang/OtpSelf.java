@@ -32,10 +32,11 @@ import java.io.IOException;
  * instance of this class, after which it may connect to the remote
  * node.
  *
- * <p> This class does not bind a socket to a listen port as {@link
- * OtpServer} does, so it cannot be used when you want other nodes to
- * be able to establish connections to this one. However it can make
- * outgoing connections to other nodes as follows:
+ * <p> When you create an instance of this class, it will bind a
+ * socket to a port so that incoming connections can be accepted.
+ * However the port number will not be made available to other nodes
+ * wishing to connect until you explicitely register with the port
+ * mapper daemon by calling {@link #publishPort()}. </p>
  *
  * <pre>
  * OtpSelf self = new OtpSelf("client","authcookie");  // identify self

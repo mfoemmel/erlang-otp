@@ -26,15 +26,14 @@
 /* Operations */
 
 /* defined "file" functions  */
-/* XXX these must be updated if efile_drv.c change (build include file) */
-#define FILE_OPEN		 1
-#define FILE_READ		 2
-#define FILE_LSEEK		 3
-#define FILE_WRITE		 4
-#define FILE_FSYNC               9
-#define FILE_TRUNCATE           14
-#define FILE_PREAD              17
-#define FILE_PWRITE             18
+#define RAM_FILE_OPEN		1
+#define RAM_FILE_READ		2
+#define RAM_FILE_LSEEK		3
+#define RAM_FILE_WRITE		4
+#define RAM_FILE_FSYNC          9
+#define RAM_FILE_TRUNCATE      14
+#define RAM_FILE_PREAD         17
+#define RAM_FILE_PWRITE        18
 
 /* other operations */
 #define RAM_FILE_GET           30
@@ -53,32 +52,33 @@
 */
 
 /*
- * Open modes for efile_openfile().
+ * Open modes for RAM_FILE_OPEN.
  */
-#define EFILE_MODE_READ       1
-#define EFILE_MODE_WRITE      2  /* Implies truncating file when used alone. */
-#define EFILE_MODE_READ_WRITE 3
+#define RAM_FILE_MODE_READ       1
+#define RAM_FILE_MODE_WRITE      2  /* Implies truncating file 
+				     * when used alone. */
+#define RAM_FILE_MODE_READ_WRITE 3
 
 /*
- * Seek modes for efile_seek().
+ * Seek modes for RAM_FILE_LSEEK.
  */
-#define	EFILE_SEEK_SET	0
-#define	EFILE_SEEK_CUR	1
-#define	EFILE_SEEK_END	2
+#define	RAM_FILE_SEEK_SET	0
+#define	RAM_FILE_SEEK_CUR	1
+#define	RAM_FILE_SEEK_END	2
 
 /* Return codes */
 
-#define FILE_RESP_OK         0
-#define FILE_RESP_ERROR      1
-#define FILE_RESP_DATA       2
-#define FILE_RESP_NUMBER     3
-#define FILE_RESP_INFO       4
+#define RAM_FILE_RESP_OK         0
+#define RAM_FILE_RESP_ERROR      1
+#define RAM_FILE_RESP_DATA       2
+#define RAM_FILE_RESP_NUMBER     3
+#define RAM_FILE_RESP_INFO       4
 
 #include <stdio.h>
 #include <ctype.h>
 
 #include "sys.h"
-#include "driver.h"
+#include "erl_driver.h"
 
 #ifndef NULL
 #define NULL ((void*)0)
@@ -86,8 +86,8 @@
 
 #define BFILE_BLOCK  1024
 
-EXTERN_FUNCTION(DriverBinary*, gzinflate_buffer, (char*, int));
-EXTERN_FUNCTION(DriverBinary*, gzdeflate_buffer, (char*, int));
+EXTERN_FUNCTION(ErlDrvBinary*, gzinflate_buffer, (char*, int));
+EXTERN_FUNCTION(ErlDrvBinary*, gzdeflate_buffer, (char*, int));
 
 
 #define get_int32(s) ((((unsigned char*) (s))[0] << 24) | \
@@ -114,18 +114,19 @@ EXTERN_FUNCTION(DriverBinary*, gzdeflate_buffer, (char*, int));
 
 typedef unsigned char uchar;
 
-static long rfile_start();
-static int  rfile_init();
-static int  rfile_stop();
-static int  rfile_command();
+static ErlDrvData rfile_start(ErlDrvPort, char*);
+static int rfile_init(void);
+static void rfile_stop(ErlDrvData);
+static void rfile_command(ErlDrvData, char*, int);
 
-struct driver_entry ram_file_driver_entry = {
+
+struct erl_drv_entry ram_file_driver_entry = {
     rfile_init,
     rfile_start,
     rfile_stop,
     rfile_command,
-    null_func,
-    null_func,
+    NULL,
+    NULL,
     "ram_file_drv"
 };
 
@@ -135,9 +136,9 @@ struct driver_entry ram_file_driver_entry = {
    when we have the commandv/driver_outputv
 */
 typedef struct ram_file {
-    int port;           /* the associcated port */
+    ErlDrvPort port;	/* the associcated port */
     int flags;          /* flags read/write */
-    DriverBinary* bin;  /* binary to hold binary file */
+    ErlDrvBinary* bin;  /* binary to hold binary file */
     int bin_sz;         /* size of allocated binary */
     uchar* bin_start;   /* buffer start */
     uchar* bin_end;     /* buffer end (outside) */
@@ -162,8 +163,8 @@ void* handle;
     ram_file_driver_entry.start = rfile_start;
     ram_file_driver_entry.stop = rfile_stop;
     ram_file_driver_entry.output = rfile_command;
-    ram_file_driver_entry.ready_input = null_func;
-    ram_file_driver_entry.ready_output = null_func;
+    ram_file_driver_entry.ready_input = NULL;
+    ram_file_driver_entry.ready_output = NULL;
     return &ram_file_driver_entry;
 }
 #endif
@@ -173,13 +174,12 @@ static int rfile_init()
     return 0;
 }
 
-static long rfile_start(port, buf)
-int port; uchar *buf;
+static ErlDrvData rfile_start(ErlDrvPort port, char* buf)
 {
     RamFile* f;
 
     if ((f = (RamFile*) sys_alloc(sizeof(RamFile))) == NULL)
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     f->port = port;
     f->flags = 0;
     f->bin = NULL;
@@ -188,16 +188,15 @@ int port; uchar *buf;
     f->bin_end = NULL;
     f->ptr = NULL;
     f->ptr_max = NULL;
-    return (long) f;
+    return (ErlDrvData)f;
 }
 
-static int rfile_stop(f)
-RamFile* f;
+static void rfile_stop(ErlDrvData e)
 {
+    RamFile* f = (RamFile*)e;
     if (f->bin != NULL) 
 	driver_free_binary(f->bin);
     sys_free(f);
-    return 0;
 }
 
 /*
@@ -215,10 +214,10 @@ RamFile* f; int err;
      * Contents of buffer sent back:
      *
      * +-----------------------------------------+
-     * | FILE_RESP_ERROR | Posix error id string |
+     * | RAM_FILE_RESP_ERROR | Posix error id string |
      * +-----------------------------------------+
      */
-    response[0] = FILE_RESP_ERROR;
+    response[0] = RAM_FILE_RESP_ERROR;
     for (s = erl_errno_id(err), t = response+1; *s; s++, t++)
 	*t = tolower(*s);
     driver_output2(f->port, response, t-response, NULL, 0);
@@ -231,7 +230,7 @@ RamFile* f; int ok; int err;
     if (!ok)
 	error_reply(f, err);
     else {
-	uchar c = FILE_RESP_OK;
+	uchar c = RAM_FILE_RESP_OK;
         driver_output2(f->port, &c, 1, NULL, 0);
     }
     return 0;
@@ -246,11 +245,11 @@ RamFile* f; int result;
      * Contents of buffer sent back:
      *
      * +-----------------------------------------------+
-     * | FILE_RESP_NUMBER | 32-bit number (big-endian) |
+     * | RAM_FILE_RESP_NUMBER | 32-bit number (big-endian) |
      * +-----------------------------------------------+
      */
 
-    tmp[0] = FILE_RESP_NUMBER;
+    tmp[0] = RAM_FILE_RESP_NUMBER;
     put_int32(result, tmp+1);
     driver_output2(f->port, tmp, sizeof(tmp), NULL, 0);
     return 0;
@@ -259,7 +258,7 @@ RamFile* f; int result;
 /* install bin as the new binary reset all pointer */
 
 static void ram_file_set(f, bin, bsize, len)
-RamFile* f; DriverBinary* bin; int bsize; int len;
+RamFile* f; ErlDrvBinary* bin; int bsize; int len;
 {
     char* start;
 
@@ -276,7 +275,7 @@ static int ram_file_init(f, buf, count, error)
 RamFile* f; uchar* buf; int count; int* error;
 {
     int bsize = ((count + BFILE_BLOCK - 1) / BFILE_BLOCK) * BFILE_BLOCK;
-    DriverBinary* bin;
+    ErlDrvBinary* bin;
 
     if (f->bin == NULL)
 	bin = driver_alloc_binary(bsize);
@@ -296,7 +295,7 @@ static int ram_file_expand(f, size, error)
 RamFile* f; int size; int* error;
 {
     int bsize = ((size + BFILE_BLOCK - 1) / BFILE_BLOCK) * BFILE_BLOCK;
-    DriverBinary* bin;
+    ErlDrvBinary* bin;
     uchar* start;
 
     if (bsize <= f->bin_sz)
@@ -324,7 +323,7 @@ RamFile* f; uchar* buf; int length; int* location; int* error;
 {
     uchar* ptr;
 
-    if (!(f->flags & EFILE_MODE_WRITE)) {
+    if (!(f->flags & RAM_FILE_MODE_WRITE)) {
 	*error = EBADF;
 	return -1;
     }
@@ -347,12 +346,12 @@ RamFile* f; uchar* buf; int length; int* location; int* error;
 }
 
 static int ram_file_read(f, length, bp, location, error)
-RamFile* f; int length; DriverBinary** bp; int *location; int* error;
+RamFile* f; int length; ErlDrvBinary** bp; int *location; int* error;
 {
-    DriverBinary* bin;
+    ErlDrvBinary* bin;
     uchar* ptr;
 
-    if (!(f->flags & EFILE_MODE_READ)) {
+    if (!(f->flags & RAM_FILE_MODE_READ)) {
 	*error = EBADF;
 	return -1;
     }
@@ -383,9 +382,9 @@ RamFile* f; int offset; int whence; int* error;
 	return -1;
     }	
     switch(whence) {
-    case EFILE_SEEK_SET: pos = offset; break;
-    case EFILE_SEEK_CUR: pos = (f->ptr - f->bin_start) + offset; break;
-    case EFILE_SEEK_END: pos = (f->ptr_max - f->bin_start) + offset; break;
+    case RAM_FILE_SEEK_SET: pos = offset; break;
+    case RAM_FILE_SEEK_CUR: pos = (f->ptr - f->bin_start) + offset; break;
+    case RAM_FILE_SEEK_END: pos = (f->ptr_max - f->bin_start) + offset; break;
     default: *error = EINVAL; return -1;
     }
     if (pos < 0) {
@@ -423,7 +422,7 @@ RamFile* f;
     int code_len = UULINE(UNIX_LINE);
     int len = (f->ptr_max - f->bin_start);
     int usize = (len*4+2)/3 + 2*(len/code_len+1) + 2 + 1;
-    DriverBinary* bin;
+    ErlDrvBinary* bin;
     uchar* inp;
     uchar* outp;
     int count = 0;
@@ -481,7 +480,7 @@ RamFile* f;
 {
     int len = (f->ptr_max - f->bin_start);
     int usize = ( (len+3) / 4 ) * 3;
-    DriverBinary* bin;
+    ErlDrvBinary* bin;
     uchar* inp;
     uchar* outp;
     int count = 0;
@@ -544,7 +543,7 @@ static int ram_file_compress(f)
 RamFile* f;
 {
     int size = f->ptr_max - f->bin_start;
-    DriverBinary* bin;
+    ErlDrvBinary* bin;
 
     if ((bin = gzdeflate_buffer(f->bin_start, size)) == NULL)
 	return error_reply(f, EINVAL);
@@ -562,7 +561,7 @@ static int ram_file_uncompress(f)
 RamFile* f;
 {
     int size = f->ptr_max - f->bin_start;
-    DriverBinary* bin;
+    ErlDrvBinary* bin;
 
     if ((bin = gzinflate_buffer(f->bin_start, size)) == NULL)
 	return error_reply(f, EINVAL);
@@ -574,133 +573,155 @@ RamFile* f;
 }
 
 
-static int rfile_command(f, buf, count)
-RamFile* f; uchar *buf; int count;
+static void rfile_command(ErlDrvData e, char* buf, int count)
 {
+    RamFile* f = (RamFile*)e;
     int error = 0;
-    DriverBinary* bin;
+    ErlDrvBinary* bin;
     char header[5];     /* result code + count */
     int offset;
     int origin;		/* Origin of seek. */
     int n;
 
     count--;
-    switch(*buf++) {
-    case FILE_OPEN:  /* args is initial data */
+    switch(*(uchar*)buf++) {
+    case RAM_FILE_OPEN:  /* args is initial data */
 	f->flags = get_int32(buf);
 	if (ram_file_init(f, buf+4, count-4, &error) < 0)
-	    return error_reply(f, error);
-	return numeric_reply(f, 0); /* 0 is not used */
+	    error_reply(f, error);
+	else
+	    numeric_reply(f, 0); /* 0 is not used */
+	break;
 
-    case FILE_FSYNC:
+    case RAM_FILE_FSYNC:
 	if (f->flags == 0)
-	    return error_reply(f, EBADF);
-	return reply(f, 1, 0);
+	    error_reply(f, EBADF);
+	else
+	    reply(f, 1, 0);
+	break;
 
-    case FILE_WRITE:
+    case RAM_FILE_WRITE:
 	if (ram_file_write(f, buf, count, NULL, &error) < 0)
-	    return error_reply(f, error);
-	return numeric_reply(f, count);
+	    error_reply(f, error);
+	else
+	    numeric_reply(f, count);
+	break;
 
-    case FILE_PWRITE:
+    case RAM_FILE_PWRITE:
         if ((offset = get_int32(buf)) < 0)
-	    return error_reply(f, EINVAL);
-	if (ram_file_write(f, buf+4, count-4, &offset, &error) < 0)
-	    return error_reply(f, error);
-	return numeric_reply(f, count-4);
+	    error_reply(f, EINVAL);
+	else if (ram_file_write(f, buf+4, count-4, &offset, &error) < 0)
+	    error_reply(f, error);
+	else
+	    numeric_reply(f, count-4);
+	break;
 
-    case FILE_LSEEK:
+    case RAM_FILE_LSEEK:
 	offset = get_int32(buf);
 	origin = get_int32(buf+4);
 	if ((offset = ram_file_seek(f, offset, origin, &error)) < 0)
-	    return error_reply(f, error);
-	return numeric_reply(f, offset);
+	    error_reply(f, error);
+	else
+	    numeric_reply(f, offset);
+	break;
 
-    case FILE_PREAD:
-	if ((offset = get_int32(buf)) < 0)
-	    return error_reply(f, EINVAL);
+    case RAM_FILE_PREAD:
+	if ((offset = get_int32(buf)) < 0) {
+	    error_reply(f, EINVAL);
+	    break;
+	}
+	
 	count = get_int32(buf+4);
-	if ((n = ram_file_read(f, count, &bin, &offset, &error)) < 0)
-	    return error_reply(f, error);
-	else {
-	    header[0] = FILE_RESP_DATA;
+	if ((n = ram_file_read(f, count, &bin, &offset, &error)) < 0) {
+	    error_reply(f, error);
+	} else {
+	    header[0] = RAM_FILE_RESP_DATA;
 	    put_int32(n, header+1);
 	    driver_output_binary(f->port, header, sizeof(header),
 				 bin, 0, n);
+	    driver_free_binary(bin);
 	}
-	driver_free_binary(bin);
-	return 0;
+	break;
 
-    case FILE_READ:
+    case RAM_FILE_READ:
 	count = get_int32(buf);
 	if ((n = ram_file_read(f, count, &bin, NULL, &error)) < 0)
-	    return error_reply(f, error);
+	    error_reply(f, error);
 	else {
-	    header[0] = FILE_RESP_DATA;
+	    header[0] = RAM_FILE_RESP_DATA;
 	    put_int32(n, header+1);
 	    driver_output_binary(f->port, header, sizeof(header),
 				 bin, 0, n);
+	    driver_free_binary(bin);
 	}
-	driver_free_binary(bin);
-	return 0;
+	break;
 
-    case FILE_TRUNCATE:
-	if (f->flags == 0)
-	    return error_reply(f, EBADF);
+    case RAM_FILE_TRUNCATE:
+	if (!(f->flags & RAM_FILE_MODE_WRITE)) {
+	    error_reply(f, EACCES);
+	    break;
+	}
 	if (f->ptr_max > f->ptr)
 	    sys_memzero(f->ptr, (f->ptr_max - f->ptr));
 	f->ptr_max = f->ptr;
-	return reply(f, 1, 0);
+	reply(f, 1, 0);
+	break;
 
     case RAM_FILE_GET:        /* return a copy of the file */
 	n = (f->ptr_max - f->bin_start);  /* length */
-	if ((bin = driver_alloc_binary(n)) == NULL)
-	    return error_reply(f, ENOMEM);
+	if ((bin = driver_alloc_binary(n)) == NULL) {
+	    error_reply(f, ENOMEM);
+	    break;
+	}
 	sys_memcpy(bin->orig_bytes, f->bin_start, n);
 	
-	header[0] = FILE_RESP_DATA;
+	header[0] = RAM_FILE_RESP_DATA;
 	put_int32(n, header+1);
 	driver_output_binary(f->port, header, sizeof(header),
 			     bin, 0, n);
 	driver_free_binary(bin);
-	return 0;
+	break;
 
     case RAM_FILE_GET_CLOSE:  /* return the file and close driver */
 	n = (f->ptr_max - f->bin_start);  /* length */
 	bin = f->bin;
 	f->bin = NULL;  /* NUKE IT */
-	header[0] = FILE_RESP_DATA;
+	header[0] = RAM_FILE_RESP_DATA;
 	put_int32(n, header+1);
 	driver_output_binary(f->port, header, sizeof(header),
 			     bin, 0, n);
 	driver_free_binary(bin);
 	driver_failure(f->port, 0);
-	return 0;
+	break;
 
     case RAM_FILE_SIZE:
-	return numeric_reply(f, (f->ptr_max - f->bin_start));
+	numeric_reply(f, (f->ptr_max - f->bin_start));
+	break;
 
     case RAM_FILE_SET:        /* re-init file with new data */
 	if ((n = ram_file_init(f, buf, count, &error)) < 0)
-	    return error_reply(f, error);
-	return numeric_reply(f, n); /* 0 is not used */
+	    error_reply(f, error);
+	else
+	    numeric_reply(f, n); /* 0 is not used */
+	break;
 	
     case RAM_FILE_COMPRESS:   /* inline compress the file */
-	return ram_file_compress(f);
+	ram_file_compress(f);
+	break;
 
     case RAM_FILE_UNCOMPRESS: /* inline uncompress file */
-	return ram_file_uncompress(f);
+	ram_file_uncompress(f);
+	break;
 
     case RAM_FILE_UUENCODE:   /* uuencode file */
-	return ram_file_uuencode(f);
+	ram_file_uuencode(f);
+	break;
 	
     case RAM_FILE_UUDECODE:   /* uudecode file */
-	return ram_file_uudecode(f);
-
+	ram_file_uudecode(f);
+	break;
     }
     /*
      * Ignore anything else -- let the caller hang.
      */
-     
-    return 0;
 }

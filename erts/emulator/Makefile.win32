@@ -1,6 +1,5 @@
 # ROOT    	   	Top of ERTS directories (must be absolute).
 #
-# TOOLS32 	  	Location of VC++ 32-bit development tools.
 
 #
 # How to build a release:
@@ -19,9 +18,6 @@ RC = rc
 ROOT = \erts
 CP=copy
 
-#TOOLS32		= c:\progra~1\devstudio\vc
-
-#SETARGV=$(TOOLS32)\lib\setargv.obj
 SETARGV=setargv.obj
 
 # Comment the following line to compile with symbols
@@ -113,8 +109,10 @@ ATOMS 		= atom.names bif.names
 BOOTBEAMDIR	= $(ROOT)\lib\kernel\ebin
 BOOTBEAMS 	= $(BOOTBEAMDIR)\otp_ring0.beam \
                   $(BOOTBEAMDIR)\init.beam \
-                 $(BOOTBEAMDIR)\erl_prim_loader.beam \
-                  $(BOOTBEAMDIR)\prim_inet.beam
+                  $(BOOTBEAMDIR)\erl_prim_loader.beam \
+                  $(BOOTBEAMDIR)\prim_inet.beam \
+                  $(BOOTBEAMDIR)\prim_file.beam
+
 GENOPTAB = $(ROOT)\lib\compiler\src\genop.tab
 
 INIT_OBJS = $(OBJDIR)\erl_main.obj		$(OBJDIR)\preload.obj
@@ -136,6 +134,7 @@ ERLOBJS = \
 	$(OBJDIR)\erl_db_hash.obj \
 	$(OBJDIR)\erl_db_tree.obj \
 	$(OBJDIR)\dist.obj \
+	$(OBJDIR)\erl_fun.obj \
 	$(OBJDIR)\erl_init.obj \
 	$(OBJDIR)\erl_math.obj \
 	$(OBJDIR)\erl_message.obj \
@@ -150,6 +149,7 @@ ERLOBJS = \
 	$(OBJDIR)\erl_bif_lists.obj \
 	$(OBJDIR)\erl_bif_op.obj \
 	$(OBJDIR)\erl_bif_os.obj \
+	$(OBJDIR)\erl_bif_port.obj \
 	$(OBJDIR)\erl_bif_wrap.obj \
 	$(OBJDIR)\erl_bits.obj \
 	$(OBJDIR)\erl_async.obj \
@@ -248,10 +248,12 @@ DEFINES =  $(ERL_INCLUDES) -DNT -D__WIN32__ -DWINDOWS -DWIN32 -D_WIN32 \
 !endif
 
 !if defined(NODEBUG)
-ERL_CFLAGS_COMMON = -c -MD $(DEFINES) -W3 -DUSE_THREADS
+ERL_CLIBCMT = -MD
+ERL_CFLAGS_COMMON = -c $(ERL_CLIBCMT) $(DEFINES) -W3 -DUSE_THREADS
 ERL_LIBCMT = MSVCRT.LIB
 !else
-ERL_CFLAGS_COMMON = -c -MDd $(DEFINES) -W3 -DUSE_THREADS
+ERL_CLIBCMT = -MDd
+ERL_CFLAGS_COMMON = -c $(ERL_CLIBCMT) $(DEFINES) -W3 -DUSE_THREADS
 ERL_LIBCMT = MSVCRTD.LIB
 !endif
 
@@ -358,21 +360,12 @@ $(OBJDIR)\beam_emu.obj: $(OBJDIR)\beam_emu.o $(BINDIR)\coffix.exe
 	$(CP) $*.o $*.obj
 	$(BINDIR)\coffix -e $*.obj
 
-$(OBJDIR)\ggc.obj: $(OBJDIR)\ggc.o $(BINDIR)\coffix.exe
-	$(CP) $*.o $*.obj
-	$(BINDIR)\coffix -e $*.obj
-
 # The emulator loop, gives +2000 EStones on a pentium II 266 MHz
 $(OBJDIR)\beam_emu.o: 	beam\beam_emu.c $(TARGET)\beam_cold.h \
 			$(TARGET)\beam_opcodes.h \
 			$(TARGET)\erl_version.h $(TARGET)\beam_hot.h beam\version.h
 	$(CGCC) $(GCC_CFLAGS) -o $(OBJDIR)\beam_emu.o \
 		-c beam\beam_emu.c
-
-# The garbage collector, gives minor effects using jump tables.
-$(OBJDIR)\ggc.o: 	beam\ggc.c
-	$(CGCC) $(GCC_CFLAGS) -fno-inline -o $(OBJDIR)\ggc.o \
-		-c beam\ggc.c
 
 !else
 
@@ -410,12 +403,14 @@ $(BINDIR)\werl.exe: $(WERL_OBJS) $(BINDIR)\$(EMULATOR)
 	$(CC) -Zi -Fe$@ $(WERL_OBJS) $(ERL_RES) advapi32.lib user32.lib
 !else
 $(BINDIR)\erl.exe: $(DLL_ERL_OBJS) $(BINDIR)\$(BEAM_DLL)
-	$(CC) -MDd -Zi -Fe$@ $(DLL_ERL_OBJS) $(ERL_RES) \
+	$(CC) $(ERL_CLIBCMT) $(ERL_DEBUG) $(BEAM_DEBUG) \
+		-Fe$@ $(DLL_ERL_OBJS) $(ERL_RES) \
 		$(BINDIR)\$(ERLDLLLIB) \
 		advapi32.lib user32.lib
 
 $(BINDIR)\werl.exe: $(DLL_WERL_OBJS) $(BINDIR)\$(BEAM_DLL)
-	$(CC) -MDd -Zi -Fe$@ $(DLL_WERL_OBJS) $(ERL_RES) \
+	$(CC) $(ERL_CLIBCMT) $(ERL_DEBUG) $(BEAM_DEBUG) \
+		-Fe$@ $(DLL_WERL_OBJS) $(ERL_RES) \
 		$(BINDIR)\$(ERLDLLLIB) \
 		advapi32.lib user32.lib
 !endif

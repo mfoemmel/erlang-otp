@@ -8,6 +8,264 @@
 of the <CODE>stdlib</CODE> application.
 
 
+<H2>Stdlib 1.9.4</H2>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+Dets file repair failed with {error, eaccess} on the Windows
+platforms in stdlib-1.9.3 (patched R7B). This is now corrected
+and dets files can be repaired.
+<br>Own Id: OTP-3909<br>
+Aux Id: Seq 5146
+
+
+<LI>
+Ets:info/2 and dets:info/2 no longer returns values other than
+'undefined' for non existing ets/dets tables. The behaviour is
+now as described in the documentation.
+<br>Own Id: OTP-3877<br>
+Aux Id: Seq 5112
+
+
+<LI>
+The (betatest) ets:select/2 call in R7B may no longer
+crash the emulator. This only affects customers beta testing
+this functionality.
+<br>Own Id: OTP-3882
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The <CODE>ets</CODE> module now contains iterator functions
+<CODE>foldl/3</CODE> and <CODE>foldr/3</CODE> analogous to the ones
+in the <CODE>lists</CODE> module.
+<br>Own Id: OTP-3746
+
+<LI>
+Somewhat faster repair of dets files.
+<br>Own Id: OTP-3782<br>
+Aux Id: OTP-3746
+
+
+</UL>
+
+<H2>Stdlib 1.9.1 (R7B)</H2>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+A new better and more portable hash BIF, <code>erlang:phash/2</code>, has been
+introduced. The <code>dets</code> module will use the <code>erlang:phash/2</code>
+for newly created tables. To rebuild an old table and start to use the
+new hash BIF, give the <code>{repair,force}</code> option to <code>dets:open_file/2</code>.
+See the documentation.
+<br>Own Id: OTP-3397
+
+<LI>
+Function c:memory/[0,1] added. It can be used to
+retrieve current memory allocation status,
+see the documentation of the c module.
+<br>Own Id: OTP-3698
+
+
+<LI>
+A new predefined macro has been introduced:
+<CODE>?MODULE_STRING</CODE>, which expands to the name of the
+current module, as a string.
+<br>Own Id: OTP-3705<br>
+Aux Id: OTP-3706
+
+
+</UL>
+<H2>Stdlib 1.9 (R7A)</H2>
+<H3>Known problems</H3>
+
+<UL>
+
+<LI>
+If Erlang is started with longnames
+(e.g., <code>erl -name foo</code>),
+then <code>slave:start/1</code> on a nonexistent host exits
+instead of returning an error tuple.
+<br>Own Id: OTP-2635
+
+
+<LI>
+Excessively large variable numbers in the matching functions
+in the <CODE>ets</CODE> module can crash Erlang or block it for
+a long time, e.g., <CODE>ets:match(Table, '$123456789')</CODE>.
+<br>Own Id: OTP-3064
+
+
+<LI>
+The shell allows patterns which do not have pattern syntax
+(for example function calls); they become patterns which
+always fail to match.
+<br>Own Id: OTP-3284
+
+
+<LI>
+When using the <CODE>warn_unused_vars</CODE> option to the compiler,
+warnings may be incorrectly
+given for variables used within list comprehensions.
+<br>Own Id: OTP-3412
+
+
+</UL>
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+Exporting variables from a <CODE>catch</CODE>, which is not legal
+Erlang, was not caught by the linter in OTP R6, but caused the
+compiler to crash instead.
+<br>Own Id: OTP-3440
+
+
+<LI>
+Using functions in the <CODE>io</CODE> module to do I/O on a
+remote node could hang if the file process had terminated.
+<br>Own Id: OTP-3497<br>
+Aux Id: OTP-2400
+
+
+<LI>
+In OTP R6, if there were many <CODE>case</CODE>, <CODE>if</CODE>
+or <CODE>receive</CODE> constructions
+in one function and variables were exported from them,
+<CODE>erl_lint</CODE> (and thus compilation)
+could consume too much memory, even making compilation
+impossible.
+<br>Own Id: OTP-3504
+
+
+<LI>
+The (previously undocumented) function
+<CODE>gen_server:multi_call/4</CODE> reported good nodes as bad,
+if one of the nodes was on an unreachable host.
+<br>Own Id: OTP-3587<br>
+Aux Id: Seq 4568, OTP-3588
+
+
+</UL>
+<H3>Improvements and new features</H3>
+
+<UL>
+
+<LI>
+The <CODE>win32reg</CODE> module has now been documented.
+At the same time, a few problems were fixed.
+<br>Own Id: OTP-1704
+
+
+<LI>
+The construction <CODE>??Arg</CODE> for an argument to a macro
+expands to a string containing the tokens of the argument,
+similar to the <CODE>#arg</CODE> stringifying construction in C.
+<br>Own Id: OTP-3425
+
+
+<LI>
+Calls using <CODE>gen_server</CODE>, <CODE>gen_fsm</CODE> and
+<CODE>gen_event</CODE> to a process on another node no longer
+hang indefinitely if the timeout is <CODE>infinity</CODE> and
+the process doesn't exist. The exit reason in that case
+is <CODE>noproc</CODE> (for local
+processes, this change was made already in OTP R5).
+<br>Own Id: OTP-3470<br>
+Aux Id: OTP-3074
+
+
+<LI>
+Warnings for variables exported from a <CODE>case</CODE>,
+<CODE>if</CODE> or <CODE>receive</CODE> are now
+only given if the variables are later used within a
+pattern.
+<br>Own Id: OTP-3475
+
+
+<LI>
+The sets and dict modules have been updated. There are now
+the following modules: <CODE>dict</CODE> (unorded dictionary),
+<CODE>orddict</CODE> (ordered dictionary), <CODE>sets</CODE> (unordered set),
+and <CODE>ordsets</CODE> (ordered set). The API functions have
+been extended to allow more efficient updates of sets and
+dictionaries. Some API functions are now considered deprecated.
+See the documentation for each module.
+<br>
+<p>Note that <CODE>dict</CODE> module uses a new internal representation.
+Applications that bypassed the documented API functions and
+assumed that dictionaries were lists will no longer work.
+<br>(*** POTENTIAL INCOMPATIBILITY ***)
+<br>Own Id: OTP-3519
+
+
+<LI>
+Bug-fix in <CODE>digraph</CODE>: one can no longer create loops 
+in acyclic graphs. New functions in <CODE>digraph</CODE>: 
+<CODE>info/1</CODE>, <CODE>no_vertices/1</CODE>, <CODE>no_edges/1</CODE>.
+<br>Own Id: OTP-3522
+
+
+<LI>
+The new module <CODE>digraph_utils</CODE> implements some
+algorithms based on depth-first traversal of directed graphs.
+<br>Own Id: OTP-3523
+
+
+<LI>
+The function <CODE>gen_server:multi_call/4</CODE>, which was
+previously undocumented, is now documented.
+<br>Own Id: OTP-3588<br>
+Aux Id: OTP-3587
+
+
+<LI>
+Bug-fix in <CODE>digraph</CODE>: <CODE>get_path/3</CODE> and 
+<CODE>get_cycle/2</CODE> no longer occasionally duplicate the 
+first vertex in the presence of a loop.
+New functions in <CODE>digraph</CODE>: <CODE>get_short_path/3</CODE> and 
+<CODE>get_short_cycle/2</CODE>.
+<br>Own Id: OTP-3630
+
+
+<LI>
+The new module <CODE>beam_lib</CODE> reads data from BEAM files.
+<br>Own Id: OTP-3637
+
+
+<LI>
+The system event {out, ...} that gen_server
+generates now includes State. See the documentation
+for gen_server, System Events.
+<br>Own Id: OTP-3651
+
+
+<LI>
+The gen_ family (mostly gen_server and gen_fsm)
+and rpc has been rewritten to use the new BIF
+erlang:monitor/2 as much as possible. This should
+improve performance and remove some possibilities 
+of hanging gen_server calls. In particular, 
+gen_server:multi_call/2..4 and 
+rpc:multi_server_call/2,3 should now never hang,
+at least not when all nodes are of this
+release. See also the documentation for 
+gen_server and rpc.
+<br>Own Id: OTP-3660
+
+
+</UL>
+
+
 <H2>Stdlib 1.8.1</H2>
 <H3>Improvements and new features</H3>
 
@@ -249,11 +507,10 @@ Erlang shell line editing (e.g., M-B to back up over a word)
 didn't handle all Latin-1 characters correctly.
 <br>Own Id: OTP-3158
 
-
 </UL>
+
 <H2>Stdlib 1.6.1</H2>
 
-</UL>
 <H3>Improvements and new features</H3>
 
 <UL>
@@ -286,7 +543,7 @@ Aux Id: Seq 1069
 
 <LI>
 A tab in the Erlang shell (modulename completion) could
-block a big system (>1000 modules) for several seconds and
+block a big system (&gt;1000 modules) for several seconds and
 consumed a huge amount of memory. The reason for this was that 
 <CODE>append</CODE> was used to create the list of all modules and
 this is very inefficient. This has now been corrected: 
@@ -474,9 +731,12 @@ These constructions are still legal, but will produce
 warnings in future releases, and at some point may be
 removed from the language.
 Instead, use: 1) character constant syntax; 2) the
-escape code "</CODE>\n</CODE>"; 3) the character constant
-"</CODE>$\s</CODE>".
+escape code "<CODE>\n</CODE>"; 3) the character constant
+"<CODE>$\s</CODE>".
 <br>Own Id: OTP-3083
+
+</UL>
+
 
 <H2>Stdlib 1.5.2</H2>
 <H3>Fixed errors and malfunctions</H3>

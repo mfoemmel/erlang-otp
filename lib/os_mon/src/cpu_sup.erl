@@ -17,7 +17,7 @@
 %%
 -module(cpu_sup).
 
-%%% Purpose : Obtain cpu statistics on Solaris 2
+%%% Purpose : Obtain cpu statistics
 
 -export([nprocs/0,avg1/0,avg5/0,avg15/0,ping/0]).
 
@@ -66,12 +66,19 @@ ping()   -> gen_server:call(?NAME,?ping).
 %%          {stop, Reason}
 %%----------------------------------------------------------------------
 init([]) ->
-    Prog = code:priv_dir(?APPLICATION) ++ ?PORT_PROG,
-    Port = open_port({spawn,Prog},[stream]),
-    if port(Port) ->
-	    {ok, #state{port=Port}};
-       true ->
-	    {stop, {port_prog_not_available,Port}}
+    case os:type() of
+	{unix,sunos} ->
+	    Prog = code:priv_dir(?APPLICATION) ++ ?PORT_PROG,
+	    Port = open_port({spawn,Prog},[stream]),
+	    if port(Port) ->
+		    {ok, #state{port=Port}};
+	       true ->
+		    {stop, {port_prog_not_available,Port}}
+	    end;
+	{unix,linux} ->
+	    {ok,#state{port=not_used}};
+	{unix,freebsd} ->
+	    {ok,#state{port=not_used}}
     end.
 
 %%----------------------------------------------------------------------
@@ -84,8 +91,13 @@ init([]) ->
 %%          {stop, Reason, Reply, State}     (terminate/2 is called)
 %%----------------------------------------------------------------------
 handle_call(?quit, From, State) ->
-    State#state.port ! {self(), {command, ?quit}},
-    State#state.port ! {self(), close},
+    case State#state.port of
+	not_used ->
+	    ok;
+	Port ->
+	    Port ! {self(), {command, ?quit}},
+	    Port ! {self(), close}
+    end,
     {stop, shutdown, ok, State};
 handle_call(Request, From, State) ->
     Reply = get_measurement(Request,State#state.port),
@@ -124,11 +136,44 @@ terminate(Reason, State) ->
 %%%----------------------------------------------------------------------
 
 get_measurement(Request,Port) ->
-    Port ! {self(), {command, Request}},
-    receive
-	{Port,{data,[D3,D2,D1,D0]}} ->
-	    (D3 bsl 24) bor (D2 bsl 16) bor (D1 bsl 8) bor D0
+    case os:type() of
+	{unix,sunos} ->
+	    Port ! {self(), {command, Request}},
+	    receive
+		{Port,{data,[D3,D2,D1,D0]}} ->
+		    (D3 bsl 24) bor (D2 bsl 16) bor (D1 bsl 8) bor D0
+	    end;
+	{unix,linux} ->
+	    {ok,F} = file:open("/proc/loadavg",[read,raw]),
+	    {ok,D} = file:read(F,24),
+	    {ok,[Load1,Load5,Load15,PRun,PTotal],_} =
+		io_lib:fread("~f ~f ~f ~d/~d", D),
+	    case Request of
+		?avg1  -> sunify(Load1);
+		?avg5  -> sunify(Load5);
+		?avg15 -> sunify(Load15);
+		?ping -> 4711;
+		?nprocs -> PTotal
+	    end;
+	{unix,freebsd} ->
+	    D = os:cmd("/sbin/sysctl -n vm.loadavg") -- "\n",
+	    {ok,[Load1,Load5,Load15],_} =
+		io_lib:fread("{ ~f ~f ~f }", D),
+	    % We could count the lines from the ps command as well
+	    case Request of
+		?avg1  -> sunify(Load1);
+		?avg5  -> sunify(Load5);
+		?avg15 -> sunify(Load15);
+		?ping -> 4711;
+		?nprocs ->
+		    {ok, DirList} = file:list_dir("/proc"),
+		    length(DirList)
+	    end
     end.
+
+sunify(Val)  ->
+    round(Val*256). % Note that Solaris and Linux load averages are
+		    % measured quite differently anyway
 
 %%%----------------------------------------------------------------------
 

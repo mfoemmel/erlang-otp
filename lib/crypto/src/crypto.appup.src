@@ -1,16 +1,2 @@
-{"%VSN%",
- [
-  {"1.1.1", []},
-  {"1.1", [{load_module, crypto, soft_purge, soft_purge, []}, 
-	   {load_module, crypto_app, soft_purge, soft_purge, []}, 
-	   {load_module, crypto_server, soft_purge, soft_purge, []}, 
-	   {load_module, crypto_sup, soft_purge, soft_purge, []}]}
- ], 
- [
-  {"1.1.1", []},
-  {"1.1", [{load_module, crypto, soft_purge, soft_purge, []}, 
-	   {load_module, crypto_app, soft_purge, soft_purge, []}, 
-	   {load_module, crypto_server, soft_purge, soft_purge, []}, 
-	   {load_module, crypto_sup, soft_purge, soft_purge, []}]}
- ]}.
+{"%VSN%", [], []}.
 

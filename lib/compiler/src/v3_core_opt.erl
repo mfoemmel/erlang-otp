@@ -30,10 +30,10 @@
 -import(lists, [foldl/3]).
 
 module(Mod0, Options) ->
-    %% List optimisations to done.
+    %% List optimisations to be done.
     Opts = [fun(M, Opts) -> sys_core_inline:module(M, Opts) end,
-	    fun(M, Opts) -> sys_core_fold:module(M, Opts) end
-	   ],
+	    fun(M, Opts) -> sys_core_fold:module(M, Opts) end,
+	    fun(M, Opts) -> {ok, cerl_inline:core_transform(M, Opts)} end],
     Mod1 = fold_opt(Opts, Mod0, Options),
     {ok,Mod1}.
 

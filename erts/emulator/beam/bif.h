@@ -28,30 +28,43 @@
 #define BIF_ALIST_3 A__p, A_1, A_2, A_3
 
 #define BIF_ADECL_0 Process* A__p;
-#define BIF_ADECL_1 Process* A__p; uint32 A_1;
-#define BIF_ADECL_2 Process* A__p; uint32 A_1; uint32 A_2;
-#define BIF_ADECL_3 Process* A__p; uint32 A_1; uint32 A_2; uint32 A_3;
+#define BIF_ADECL_1 Process* A__p; Eterm A_1;
+#define BIF_ADECL_2 Process* A__p; Eterm A_1; Eterm A_2;
+#define BIF_ADECL_3 Process* A__p; Eterm A_1; Eterm A_2; Eterm A_3;
 
 #define BIF_ARG_1  A_1
 #define BIF_ARG_2  A_2
 #define BIF_ARG_3  A_3
 
-#define BUMP_ALL_REDS(p) do {if ((p)->ct == NULL) (p)->fcalls = 0; else (p)->fcalls = -CONTEXT_REDS;} while(0)
+#define BUMP_ALL_REDS(p) do {			\
+    if ((p)->ct == NULL) 			\
+	(p)->fcalls = 0; 			\
+    else 					\
+	(p)->fcalls = -CONTEXT_REDS;		\
+} while(0)
 
-#define BIF_RET2(x, gc) do { \
-     BIF_P->fcalls -= (gc); \
-     if (BIF_P->fcalls < 0) { \
-	if (BIF_P->ct == NULL) \
-           BIF_P->fcalls = 0; \
-	else if (BIF_P->fcalls < -CONTEXT_REDS) \
-           BIF_P->fcalls = -CONTEXT_REDS; \
-     } \
-     return (x); \
+#define BUMP_REDS(p, gc) do {			\
+     (p)->fcalls -= (gc); 			\
+     if ((p)->fcalls < 0) { 			\
+	if ((p)->ct == NULL) 			\
+           (p)->fcalls = 0; 			\
+	else if ((p)->fcalls < -CONTEXT_REDS) 	\
+           (p)->fcalls = -CONTEXT_REDS; 	\
+     } 						\
+} while(0)
+    
+
+#define BIF_RET2(x, gc) do {			\
+    BUMP_REDS(BIF_P, (gc));			\
+    return (x);					\
 } while(0)
 
 #define BIF_RET(x) return (x)
 
-#define BIF_ERROR(p,r) { (p)->freason = r; return THE_NON_VALUE; }
+#define BIF_ERROR(p,r) do { 			\
+    (p)->freason = r; 				\
+    return THE_NON_VALUE; 			\
+} while(0)
 
 #define BIF_TRAP(p, Trap_) do { \
       (p)->fvalue = (Eterm) (Trap_); \

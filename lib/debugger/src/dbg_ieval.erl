@@ -19,7 +19,7 @@
 
 -module(dbg_ieval).
 
--export([eval_function/10,eval_expr/6]).
+-export([eval_function/4,eval_expr/6]).
 
 -export([format_args/1,
 	 trace_out/1,
@@ -27,10 +27,14 @@
 	 exit/5,
 	 pop/1,
 	 get_stack/0,
-	 in_use_p/2
+	 in_use_p/2,
+	 trace_fnk_ret/3
 	]).
 
--import(dbg_imeta,[add_catch_lev/0,dec_catch_lev/0,get_catch_lev/0]).
+-import(dbg_imeta, [add_catch_lev/0,dec_catch_lev/0,get_catch_lev/0,
+		    main_meta_loop/7]).
+
+-import(lists, [reverse/1,reverse/2]).
 
 %% FIXME: My understanding of the contents of a stack_frame
 %% FIXME: Needs to be implemented throughout all modules.
@@ -40,6 +44,10 @@
 		     line,			%Current line (source code?)
 		     bindings			%Variable bindings
 		     }).
+
+
+eval_function(Mod, Func, As, Le) ->
+    catch eval_function(Mod, Func, As, [], Mod, false, Le, extern, -1, local).
 
 %% seq(ExpressionSeq, Bindings, CurrentModule, LastCall, Level, Function)
 %%  Returns:
@@ -73,7 +81,7 @@ eval_expr(E, Bs, Cm, Lc, Le, F) ->
     Msg_handler = get(self),
     Msg_handler ! {sys,self(),{eval,E,Bs}},
     Line = element(2, E),
-    wait_fnk(Msg_handler, Bs, Le, Lc, Cm, Line, F).
+    main_meta_loop(Msg_handler, Bs, Le, Lc, Cm, Line, F).
 
 %% expr(Expression, Bindings, CurrentModule, LastCall, Level, Function)
 %%  Returns:
@@ -157,9 +165,9 @@ expr({match,Line,Lhs,Rhs0}, Bs0, Cm, Lc, Le, F) ->
 %%
 %% Construct a fun.
 %%
-expr({make_fun,Line,I,Uniq,Free0}, Bs, Cm, Lc, Le, F) ->
+expr({make_fun,Line,Index,Uniq,OldIndex,OldUniq,Free0}, Bs, Cm, Lc, Le, F) ->
     Free = get_free_vars(Free0, Bs),
-    {value,erts_debug:make_fun({get(self),Cm,I,Uniq,Free}),Bs};
+    {value,erts_debug:make_fun({get(self),Cm,Index,Uniq,OldIndex,OldUniq,Free}),Bs};
 
 %%
 %% Local function call
@@ -199,7 +207,7 @@ expr({bif,Line,Mod,Func,As0}, Bs0, Cm, Lc, Le, F) ->
     trace_bif_call(Le, Line, Func, As),
     Msg_handler ! {sys,self(),{catch_bif(get_catch_lev()),Mod,Func,As,
 			       clean_mfa(F),false}},
-    wait_fnk(Msg_handler, Bs, Le, Lc, Cm, Line, F);
+    main_meta_loop(Msg_handler, Bs, Le, Lc, Cm, Line, F);
 
 %%
 %% Call to a BIF that spawns a new process.
@@ -210,7 +218,7 @@ expr({spawn_bif,Line,Mod,Func,As0}, Bs0, Cm, Lc, Le, F) ->
     trace_bif_call(Le, Line, Func, As),
     Msg_handler ! {sys,self(),{catch_bif(get_catch_lev()),Mod,Func,As,
 			       clean_mfa(F),follow_mod()}},
-    wait_fnk(Msg_handler, Bs, Le, Lc, Cm, Line, F);
+    main_meta_loop(Msg_handler, Bs, Le, Lc, Cm, Line, F);
 
 %%
 %% Call to an operation.
@@ -258,7 +266,7 @@ expr({throw,Line,As0}, Bs0, Cm, Lc, Le, F) ->
 	    Msg_handler ! {sys,self(),
 			   {catch_bif(get_catch_lev()),erlang,throw,[Term],
 			    clean_mfa(F),false}},
-	    wait_fnk(Msg_handler, Bs, Le, Lc, Cm, Line, F);
+	    main_meta_loop(Msg_handler, Bs, Le, Lc, Cm, Line, F);
 	N ->
 	    throw(Term)
     end;
@@ -306,11 +314,45 @@ expr({bin,_,Fs}, Bs0, Cm, Lc, Le, F) ->
 		       [],
 		       false);
 
+expr({lc,Line,E,Qs}, Bs, Cm, Lc, Le, F) ->
+    eval_lc(E, Qs, Bs, Cm, Lc, Le, F);
 
 %% Brutal exit on unknown expressions/clauses/values/etc.
 %%
 expr(E, _, _, _, _, _) ->			%Not Yet Implemented
     exit({'NYI',E}).
+
+%% eval_lc(Expr, [Qualifier], Bindings, Mod, LastCall, Level, Func) ->
+%%	{value,Value,Bindings}.
+%%  This is evaluating list comprehensions "straight out of the book".
+%%  Copied from rv's implementation in erl_eval.
+
+eval_lc(E, Qs, Bs, Cm, Lc, Le, F) ->
+    {value,eval_lc1(E, Qs, Bs, Cm, Lc, Le, F), Bs}.
+
+eval_lc1(E, [{generate,_,P,L0}|Qs], Bs0, Cm, Lc, Le, F) ->
+    {value,L1,Bs1} = expr(L0, Bs0, Cm, false, Le, F),
+    lists:flatmap(fun (V) ->
+		    case match(P, V, []) of
+			{match,Bsn} ->
+			    Bs2 = add_bindings(Bsn, Bs1),
+			    eval_lc1(E, Qs, Bs2, Cm, Lc, Le, F);
+			nomatch -> []
+		    end end, L1);
+eval_lc1(E, [{guard,Q}|Qs], Bs0, Cm, Lc, Le, F) ->
+    case guard(Q, Bs0) of
+	true -> eval_lc1(E, Qs, Bs0, Cm, Lc, Le, F);
+	false -> []
+    end;
+eval_lc1(E, [Q|Qs], Bs0, Cm, Lc, Le, F) ->
+    case expr(Q, Bs0, Cm, false, Le, F) of
+	{value,true,Bs1} -> eval_lc1(E, Qs, Bs1, Cm, Lc, Le, F);
+	{value,false,Bs1} -> [];
+	Other -> exit({bad_filter,in_fnk(F)})
+    end;
+eval_lc1(E, [], Bs, Cm, Lc, Le, F) ->
+    {value,V,_} = expr(E, Bs, Cm, false, Le, F),
+    [V].
 
 module_info(Mod, module) -> Mod;
 module_info(Mod, compile) -> [];
@@ -342,20 +384,12 @@ exit(Reason, Cm, Line, Bs) ->
     put_error(Reason, Cm, Line, Bs),
     exit(Reason).
 
-confirmed_exit(Reason, Cm, Line, Bs) ->
-    put_error(Reason, Cm, Line, Bs),
-    exit({confirmed,Reason}).
-
 %% exit/5
 
 exit(Msg_handler,Reason,Cm,Line,Bs) ->  % We will only die if the real
     put_error(Reason,Cm,Line,Bs),       % process has terminated.
     exit({Msg_handler,Reason}).
     
-throw(Value,Cm,Line,Bs) ->
-    do_put_error(nocatch,Cm,Line,Bs),
-    throw(Value).
-
 put_error(Reason,Cm,Line,Bs) ->
     case get(error) of
 	none when Line =/= -1 ->
@@ -391,18 +425,18 @@ eval_function(_Mod, Fun, As0, Bs, Cm, Lc, Le, F, Line, _Called) when function(Fu
 	    Msg_handler ! {sys,self(),{catch_apply(get_catch_lev()),
 				       erlang,apply,[Fun,As0]}},
 	    %% Enter meta-wait state
-	    {value,Val,_} = wait_fnk(Msg_handler,Bs,Le,false,Cm,Line,F),
+	    {value,Val,_} = main_meta_loop(Msg_handler,Bs,Le+1,false,Cm,Line,F),
 	    pop(Le),
 	    {value,Val,Bs};
 	{Cs,Mod,Name,As} when Lc == false ->
-	    {value,Val,_} = fnk_clauses(Name,Cs,As,Mod,true,Le+1,1,Cm,Line,Bs),
+	    {value,Val,_} = fnk_clauses(Name,Cs,As,Mod,true,Le+1,Cm,Line,Bs),
 	    trace_fnk_ret(Le,Val,Lc),
 	    pop(Le),
 	    {value,Val,Bs};
 	{Cs,Mod,Name,As} ->
 	    %% Note, this MUST be the last call, since we are interpreting
 	    %% code that executes their last call.
-	    fnk_clauses(Name,Cs,As,Mod,Lc,Le+1,1,Cm,Line,Bs)
+	    fnk_clauses(Name,Cs,As,Mod,Lc,Le+1,Cm,Line,Bs)
     end;
 eval_function(Mod, Name, As, Bs, Cm, Lc, Le, F, Line, Called) ->
     push(Bs,F,Cm,Lc,Le,Line),
@@ -410,105 +444,28 @@ eval_function(Mod, Name, As, Bs, Cm, Lc, Le, F, Line, Called) ->
 
 	%% Continue evaluation in meta process.
 	Cs when list(Cs), Lc == false ->
-	    {value,Val,_} = fnk_clauses(Name,Cs,As,Mod,true,Le+1,1,Cm,Line,Bs),
+	    {value,Val,_} = fnk_clauses(Name,Cs,As,Mod,true,Le+1,Cm,Line,Bs),
 	    trace_fnk_ret(Le,Val,Lc),
 	    pop(Le),
 	    {value,Val,Bs};
 	Cs when list(Cs) ->
 	    %% Note, this MUST be the last call, since we are interpreting
 	    %% code that executes their last call.
-	    fnk_clauses(Name,Cs,As,Mod,Lc,Le+1,1,Cm,Line,Bs);
+	    fnk_clauses(Name,Cs,As,Mod,Lc,Le+1,Cm,Line,Bs);
 
 	%% Continue evaluation in non-interpreted code.
 	not_interpreted ->
 	    Msg_handler = get(self),
 	    Msg_handler ! {sys,self(),{catch_apply(get_catch_lev()),Mod,Name,As}},
-	    {value,Val,_} = wait_fnk(Msg_handler,Bs,Le,false,Cm,Line,F),
+	    {value,Val,_} = main_meta_loop(Msg_handler,Bs,Le+1,false,Cm,Line,F),
 	    pop(Le),
 	    {value,Val,Bs};
 	undef ->
 	    exit({undef,[{Mod,Name,As}|in_fnk(F)]}, Cm, Line, Bs)
     end.
 
-catch_apply(0) ->
-    apply;
-catch_apply(Lev) when integer(Lev) ->
-    catch_apply.
-
-%% wait_fnk/7 - Waits for a return value from the interpreted process.
-%%
-%% This function represents the state where the Meta process
-%% is waiting for the interpreted process to evaluate non-interpreted
-%% code or a BIF.
-%%
-%% Returns:
-%% {value, Value, Bindings}
-
-wait_fnk(Msg_handler,Bs,Le,Lc,Cm,Line,F) when integer(Le) ->
-    receive
-	{sys,Msg_handler,{apply_result,Val}} when Lc == false ->
-	    trace_fnk_ret(Le,Val,Lc),
-	    {value,Val,Bs};
-	{sys,Msg_handler,{apply_result,Val}} ->
-	    {value,Val,Bs};
-	{sys,Msg_handler,{eval_result,Val,NewBs}} ->
-	    {value,Val,NewBs};
-	{sys,Msg_handler,{thrown,Value}} ->
-	    throw(Value);
-	{sys,Msg_handler,{thrown_nocatch,Value}} ->
-	    throw(Value, Cm, Line, Bs);
-	{sys,Msg_handler,{exited_nocatch,Value}} ->
-	    confirmed_exit(Value, Cm, Line, Bs);
-	{error_handler,Msg_handler,{eval,Func}} ->
-	    dbg_imeta:int(Msg_handler,Func,Le+1),
-	    wait_fnk(Msg_handler,Bs,Le,Lc,Cm,Line,F);
-	{attach,Msg_handler,AttPid} ->
-	    dbg_icmd:attach(AttPid,Cm,Line),
-	    AttPid ! {self(),func_at,Cm,Line,Le},
-	    wait_fnk(Msg_handler,Bs,Le,Lc,Cm,Line,F);
-	{break_msg,Type,Data} ->
-	    dbg_icmd:break_msg(Type,Data),
-	    wait_fnk(Msg_handler,Bs,Le,Lc,Cm,Line,F);
-
-	%% Handle removal of interpreted code.
-	{old_code, Module} ->
-	    case in_use_p(Module,Cm) of
-		%% A call to the Module is on the stack (or unknown), so we must terminate.
-		true ->
-%		    dbg_icmd:tell_attached({self(),old_code,Module}),
-		    exit(get(self), kill),
-		    exit(old_code, Cm, Line, Bs);
-		false ->
-		    erase([Module|db]),
-		    erase(cache),
-		    wait_fnk(Msg_handler,Bs,Le,Lc,Cm,Line,F)
-	    end;
-
-
-	%%FIXME: Handle new code
-	{new_code,Module} ->				
-	    io:format("~p:~p: NYI: Handling of {new_code,~p}\n", [?MODULE,?LINE,Module]),
-	    wait_fnk(Msg_handler,Bs,Le,Lc,Cm,Line,F);
-
-	Cmd when tuple(Cmd), element(1,Cmd) == cmd ->
-	    dbg_icmd:wait_cmd(Cmd,Bs),
-	    wait_fnk(Msg_handler,Bs,Le,Lc,Cm,Line,F);
-
-	%% The interpreted process terminated
-	{'EXIT',Msg_handler,Reason} ->
-	    exit(Msg_handler,Reason,Cm,Line,Bs);
-
-
-	%% Some other (?) linked process terminated. FIXME: Describe which
-	{'EXIT',Pid,Reason} ->
-	    case dbg_icmd:attached_p(Pid) of
-		true ->
-		    dbg_icmd:detach(Pid),
-		    wait_fnk(Msg_handler,Bs,Le,Lc,Cm,Line,F);
-		_ ->
-		    exit(Reason,Cm,Line,Bs)
-	    end
-    end.
+catch_apply(0) -> apply;
+catch_apply(Lev) when integer(Lev) -> catch_apply.
 
 
 %% ---
@@ -520,59 +477,38 @@ wait_fnk(Msg_handler,Bs,Le,Lc,Cm,Line,F) when integer(Le) ->
 %% by looking at the stack_trace option stored in the process 
 %% dictonary
 %% 
-push(Bs,F,Cm,Lc,Le,Line) when Line > 0 ->
-    push(Bs,F,Cm,Lc,Le,Line,get(stack_trace));
-push(_,_,_,_,_,_) ->
-    true.
+push(Bs, F, Cm, Lc, Le, Line) when Line > 0 ->
+    push(Bs, F, Cm, Lc, Le, Line, get(stack_trace));
+push(_, _, _, _, _, _) -> true.
 
-push(Bs,F,Cm,_,Le,Line,all) ->
+push(Bs, F, Cm, _, Le, Line, all) ->
     put(stack, [{Le,{Cm,extract_fnk(F),Line,Bs}}|get_stack()]);
-push(Bs,F,Cm,Lc,Le,Line,no_tail) when Lc == false ->
+push(Bs, F, Cm, false, Le, Line, no_tail) ->
     put(stack, [{Le,{Cm,extract_fnk(F),Line,Bs}}|get_stack()]);
-push(_,_,_,_,_,_,_) ->
-    true.
+push(_, _, _, _, _, _, _) -> true.
 
 extract_fnk({Cm,Fnk,Args,No}) -> {Fnk,length(Args)};
 extract_fnk(_)                -> extern.
 
-pop(Le) ->
-    put(stack, pop(Le, get_stack())).
+pop(Le) -> put(stack, pop(Le, get_stack())).
 
 pop(Le, [{L,_}|Stack]) when Le =< L ->
     pop(Le, Stack);
-pop(Le, Stack) ->
-    Stack.
+pop(Le, Stack) -> Stack.
 
-get_stack() ->
-    case get(stack) of 
-	undefined -> [];
-	Stack     -> Stack
-    end.
+get_stack() -> get(stack).
 
-%% Returns true if Module is on the stack
-in_use_p(Module, CurrentModule) when Module == CurrentModule ->
-    true;
+%% in_use_p(Module, CurrentModule) -> true|false
+%%  Returns true if Module is found on the stack, otherwise false.
 
-in_use_p(Module,_CurrentModule) ->
-    StackStatus = get(stack_trace),
-    case StackStatus of
-	false ->
-	    true;
-	_Otherwise1 ->
-	    Stack = get_stack(),
-	    %% InFrameP returns 'true' if its argument is a stackframe that 
-	    %% refers to the same module as the imported variable Module.
-	    InFrameP =
-		fun({Level, {CurrentModule,Function, Line, Bindings}}) ->
-			case CurrentModule of
-			    Module ->
-				true;
-			    _Otherwise2 ->
-				false
-			end
-		end,
-	    Result = lists:any(InFrameP, Stack),
-	    Result
+in_use_p(Mod, Mod) -> true;
+in_use_p(Mod, _) ->
+    case get(stack_trace) of
+	false -> true;
+	_ ->
+	    lists:any(fun ({Le,{Cm,Func,Line,Bs}}) when Cm =:= Mod -> true;
+			  (_) -> false
+		      end, get_stack())
     end.
 
 %%
@@ -580,7 +516,7 @@ in_use_p(Module,_CurrentModule) ->
 %% 
 
 follow_mod() ->
-    case get(state) of
+    case get(next_break) of
 	break ->
 	    follow_mod1();
 	_ ->
@@ -725,12 +661,12 @@ eval_receive(Msg_handler,Cs,ToVal,ToExprs,ToBs,Bs0,Cm,Lc,Le,Line,_,Stamp,F) -> %
     end.
 
 tell_att_if_break(running,_,_,_) ->
-    case get(state) of
+    case get(next_break) of
 	break -> dbg_icmd:tell_attached({self(),running});
 	_     -> ok
     end;
 tell_att_if_break(RecAt,Cm,Line,Le) ->
-    case get(state) of
+    case get(next_break) of
 	break -> dbg_icmd:tell_attached({self(),RecAt,Cm,Line,Le});
 	_     -> ok
     end.
@@ -921,39 +857,26 @@ case_clauses(Val, [{clause,_,[P],G,B}|Cs], Bs0, Cm, Lc, Le, Line, F) ->
 case_clauses(Val, [], Bs, Cm, Lc, Le, Line, F) ->
     exit({{case_clause,Val},F},Cm,Line,Bs).
 
-fnk_clauses(F,[{clause,_,Pars,G,B}|Cs],Args,Cm,Lc,Le,Clause,CallM,Line,Bs0)
-  when integer(Clause) ->
-    case fnk_match(F,Pars,Args,[]) of
+fnk_clauses(F,[{clause,_,Pars,G,B}|Cs], Args, Cm, Lc, Le, CallM, Line, Bs0) ->
+    case head_match(Pars, Args, []) of
 	{match,Bs} ->
 	    case guard(G, Bs) of
 		true ->
-		    seq(B,Bs,Cm,Lc,Le,{Cm,F,Args,fnk_no()});
+		    seq(B,Bs,Cm,Lc,Le,{Cm,F,Args,make_ref()});
 		false ->
-		    fnk_clauses(F,Cs,Args,Cm,Lc,Le,Clause+1,CallM,Line,Bs0)
+		    fnk_clauses(F,Cs,Args,Cm,Lc,Le,CallM,Line,Bs0)
 	    end;
 	nomatch ->
-	    fnk_clauses(F,Cs,Args,Cm,Lc,Le,Clause+1,CallM,Line,Bs0)
+	    fnk_clauses(F,Cs,Args,Cm,Lc,Le,CallM,Line,Bs0)
     end;
-fnk_clauses(F,[],Args,Cm,Lc,Le,Clause,CallM,Line,Bs0) ->
-    exit({function_clause,{Cm,F,Args,fnk_no()}},CallM,Line,Bs0).
+fnk_clauses(F,[],Args,Cm,Lc,Le,CallM,Line,Bs0) ->
+    exit({function_clause,{Cm,F,Args,make_ref()}},CallM,Line,Bs0).
 
-%% Identifies each function call uniquely.
-%% Counts the number of interpreted function calls.
-%% Used especially for the finish functionality.
-fnk_no() ->
-    Number = get(fnk_no) + 1,
-    put(fnk_no,Number),
-    Number.
+in_fnk({M,F,A,_}) -> [{M,F,A}];
+in_fnk({M,F,A}=MFA) -> [MFA];
+in_fnk(Fnk) -> Fnk.
 
-%Strip fnk_no !
-in_fnk({M,F,A,No}) when integer(No) ->
-    [{M,F,A}];
-in_fnk({M,F,A}) -> 
-    [{M,F,A}];
-in_fnk(Fnk) ->
-    Fnk.
-
-clean_mfa({M,F,A,Num}) when integer(Num) -> {M,F,A};
+clean_mfa({M,F,A,_}) -> {M,F,A};
 clean_mfa(Other) -> Other.
 
 receive_clauses(Cs,Bs0,Cm,Le,[Msg|Msgs]) ->
@@ -1027,7 +950,14 @@ guard_expr({cons,Line,H0,T0}, Bs) ->
     {value,[H|T]};
 guard_expr({tuple,Line,Es0}, Bs) ->
     {values,Es} = guard_exprs(Es0, Bs),
-    {value,list_to_tuple(Es)}.
+    {value,list_to_tuple(Es)};
+guard_expr({bin,Line,Flds}, Bs) ->
+    {value,V,_Bs} = eval_bits:expr_grp(Flds, Bs,
+				       fun(E, B) ->
+					       {value,V} = guard_expr(E, B),
+					       {value,V,B}
+				       end, [], false),
+    {value,V}.
 
 
 %% match(Pattern, Term, Bindings)
@@ -1074,13 +1004,12 @@ match_tuple([E|Es], Tuple, I, Bs0) ->
 match_tuple([], _, _, Bs) ->
     {match,Bs}.
 
-fnk_match(F, [Par|Pars], [Arg|Args], Bs0) ->
+head_match([Par|Pars], [Arg|Args], Bs0) ->
     case match(Par, Arg, Bs0) of
-	{match,Bs} -> fnk_match(F, Pars, Args, Bs);
+	{match,Bs} -> head_match(Pars, Args, Bs);
 	nomatch -> nomatch
     end;
-fnk_match(F,[],[],Bs) ->
-    {match,Bs}.
+head_match([], [], Bs) -> {match,Bs}.
 
 rec_match([Par],Msg,Bs0) ->
     match(Par,Msg,Bs0).
@@ -1167,14 +1096,43 @@ merge_bindings([{Name,V}|B1s], B2s, Cm, Line, F) ->
     end;
 merge_bindings([], B2s, _, _, _) ->
     B2s.
+%% add_bindings(Bindings1, Bindings2)
+%%  Add Bindings1 to Bindings2. Bindings in
+%%  Bindings1 hides bindings in Bindings2.
+%%  Used in list comprehensions (and funs).
 
-reverse([H1,H2,H3,H4,H5], S)   -> [H5,H4,H3,H2,H1|S];
-reverse([H1,H2,H3,H4,H5|T], S) -> reverse(T, [H5,H4,H3,H2,H1|S]);
-reverse([H1,H2,H3,H4], S)      -> [H4,H3,H2,H1|S];
-reverse([H1,H2,H3], S)         -> [H3,H2,H1|S];
-reverse([H1,H2], S)            -> [H2,H1|S];
-reverse([H], S)                -> [H|S];
-reverse([], S)                 -> S.
+add_bindings([{Name,V}|Bs], ToBs0) ->
+    ToBs = add_binding(Name, V, ToBs0),
+    add_bindings(Bs, ToBs);
+add_bindings([], ToBs) ->
+    ToBs.
+
+add_binding(N, Val, [{N,_}|Bs]) ->
+    [{N,Val}|Bs];
+add_binding(N, Val, [B1,{N,_}|Bs]) ->
+    [B1,{N,Val}|Bs];
+add_binding(N, Val, [B1,B2,{N,_}|Bs]) ->
+    [B1,B2,{N,Val}|Bs];
+add_binding(N, Val, [B1,B2,B3,{N,_}|Bs]) ->
+    [B1,B2,B3,{N,Val}|Bs];
+add_binding(N, Val, [B1,B2,B3,B4,{N,_}|Bs]) ->
+    [B1,B2,B3,B4,{N,Val}|Bs];
+add_binding(N, Val, [B1,B2,B3,B4,B5,{N,_}|Bs]) ->
+    [B1,B2,B3,B4,B5,{N,Val}|Bs];
+add_binding(N, Val, [B1,B2,B3,B4,B5,B6|Bs]) ->
+    [B1,B2,B3,B4,B5,B6|add_binding(N,Val,Bs)];
+add_binding(N, Val, [B1,B2,B3,B4,B5|Bs]) ->
+    [B1,B2,B3,B4,B5|add_binding(N,Val,Bs)];
+add_binding(N, Val, [B1,B2,B3,B4|Bs]) ->
+    [B1,B2,B3,B4|add_binding(N,Val,Bs)];
+add_binding(N, Val, [B1,B2,B3|Bs]) ->
+    [B1,B2,B3|add_binding(N,Val,Bs)];
+add_binding(N, Val, [B1,B2|Bs]) ->
+    [B1,B2|add_binding(N,Val,Bs)];
+add_binding(N, Val, [B1|Bs]) ->
+    [B1|add_binding(N,Val,Bs)];
+add_binding(N, Val, []) ->
+    [{N,Val}].
 
 format_args(As) -> lists:flatten(format_args1(As)).
 

@@ -45,6 +45,18 @@
 
 /* Get a key from any table structure and a tagged object */
 #define TERM_GETKEY(tb, obj) db_getkey((tb)->common.keypos, (obj)) 
+
+/* Utility macros for determining need of auto fixtable */
+
+#define ONLY_WRITER(P,T) (((T)->common.status & DB_PRIVATE) || \
+(((T)->common.status & DB_PROTECTED) && (T)->common.owner == (P)->id))
+#define ONLY_READER(P,T) (((T)->common.status & DB_PRIVATE) && \
+(T)->common.owner == (P)->id)
+#define DID_TRAP(P,Ret) (!is_value(Ret) && ((P)->freason == TRAP))
+#define SOLE_LOCKER(P,Fixations) ((Fixations) != NULL && \
+(Fixations)->next == NULL && (Fixations)->pid == (P)->id && \
+(Fixations)->counter == 1)
+
 /* 
 ** The id in a tab_entry slot is
 ** DB_NOTUSED if it's never been used(*)
@@ -73,15 +85,20 @@
 
 static struct tab_entry {
     DbTable *t;
-    uint32 id;            /* Automatically initialized */
-    uint32 name;          /* An atom */
+    Uint id;            /* Automatically initialized */
+    Eterm name;          /* An atom */
 } *db_tables;  /* Local variable db_tables */
 
 int user_requested_db_max_tabs;
 static int db_max_tabs;
 static int last_slot;
 static int no_tabs;		/* Number of active tables */
-static DbTable *meta_pid_to_tab; /* Pid mapped to tables */
+static DbTable *meta_pid_to_tab; /* Pid mapped to owned tables */
+static DbTable *meta_pid_to_fixed_tab; /* Pid mapped to fixed tables */
+static int fixed_fixation_desc; /* Fixtable descriptor for safe_fixtable */
+static Eterm ms_delete_all;
+static Eterm ms_delete_all_buff[8]; /* To compare with for deletion 
+				       of all objects */
 /* 
 ** Forward decls, static functions 
 */
@@ -89,6 +106,16 @@ static void meta_mark_free(int idx);
 static void free_table(DbTable *tb);
 static void print_table(CIO fd, int show,  DbTable* tb);
 static int next_prime(int n);
+static BIF_RETTYPE ets_select_delete_1(Process *p, Eterm a1);
+static BIF_RETTYPE ets_select_trap_1(Process *p, Eterm a1);
+static DbFixation *alloc_fixation(void);
+static void free_fixation(DbFixation *fix);
+
+/* 
+ * Exported global
+ */
+Export ets_select_delete_continue_exp;
+Export ets_select_continue_exp;
 
 /*
 ** BIF's
@@ -101,7 +128,7 @@ BIF_RETTYPE ets_fixtable_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
     DbTable* tb;
-    eTerm arg;
+    Eterm arg;
     int cret;
 
     /* This doesn't affect trees, but who cares... */
@@ -110,21 +137,133 @@ BIF_ADECL_2
 	BIF_ERROR(BIF_P, BADARG);
     }
     arg = BIF_ARG_2;
-    if (IS_HASH_TABLE(tb->common.status)) {
-	cret = db_fixtable_hash(BIF_P, &(tb->hash), arg);
+
+    if (arg == am_true) {
+	return ets_safe_fixtable_2(BIF_P, BIF_ARG_1, BIF_ARG_2);
+    } else if (arg == am_false) {
+	DbFixation *fix;
+
+	for (fix = tb->common.fixations; fix != NULL; fix = fix->next) {
+	    db_erase_bag_exact2(&(meta_pid_to_fixed_tab->hash),
+				fix->pid,
+				make_small(tb->common.slot));
+	}
+	while (tb->common.fixations != NULL) {
+	    fix = tb->common.fixations;
+	    tb->common.fixations = fix->next;
+	    free_fixation(fix);
+	}
+	if (IS_HASH_TABLE(tb->common.status)) {
+	    cret = db_fixtable_hash(&(tb->hash), am_false);
+	}	
+	tb->common.status &= ~DB_FIXED;
     } else {
-	cret = DB_ERROR_NONE;
+	BIF_ERROR(BIF_P, BADARG);
     }
+    BIF_RET(am_true);
+}
+
+BIF_RETTYPE ets_safe_fixtable_2(BIF_ALIST_2)
+BIF_ADECL_2
+{
+    DbTable *tb;
+    int cret;
+    DbFixation *fix,**pp;
+    Eterm dummy;
+    Eterm meta_tuple[3];
+
+#ifdef HARDDEBUG
+    erl_printf(CERR,"ets:safe_fixtable(");
+    display(BIF_ARG_1,CERR);
+    erl_printf(CERR,",");
+    display(BIF_ARG_2,CERR);
+    erl_printf(CERR,"); Process: ");
+    display(BIF_P->id,CERR);
+    erl_printf(CERR,", initial: ");
+    display(BIF_P->initial[0],CERR);
+    erl_printf(CERR,":");
+    display(BIF_P->initial[1],CERR);
+    erl_printf(CERR,"/%d\r\n",BIF_P->initial[2]);
+#endif
+    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_READ)) == NULL) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+
+    
+
+    cret = DB_ERROR_NONE;    
+    if (BIF_ARG_2 == am_true) {
+	if (!(tb->common.status & DB_FIXED)) {
+	    if (IS_HASH_TABLE(tb->common.status)) {
+		cret = db_fixtable_hash(&(tb->hash), am_true);
+	    }
+	}
+	if (cret == DB_ERROR_NONE) {
+	    if (!(tb->common.status & DB_FIXED)) { 
+		tb->common.status |= DB_FIXED;
+		get_now(&(tb->common.megasec),
+			&(tb->common.sec), 
+			&(tb->common.microsec));
+	    }
+	    for (fix = tb->common.fixations; fix != NULL; fix = fix->next) {
+		if (fix->pid == BIF_P->id) {
+		    ++(fix->counter);
+		    break;
+		}
+	    }
+	    if (fix == NULL) {
+		fix = alloc_fixation();
+		fix->pid = BIF_P->id;
+		fix->counter = 1;
+		fix->next = tb->common.fixations;
+		tb->common.fixations = fix;
+		BIF_P->flags |= F_USING_DB;        /* So we can remove tb if p dies */
+		if (db_put_hash(NULL,&(meta_pid_to_fixed_tab->hash),
+				TUPLE2(meta_tuple, 
+				       BIF_P->id, 
+				       make_small(tb->common.slot)),
+				&dummy)
+		    != DB_ERROR_NONE) {
+		    erl_exit(1,"Could not insert ets metadata"
+			     " in safe_fixtable.");
+		}	
+	    }
+	}
+    } else if (BIF_ARG_2 == am_false) {
+	if (!(tb->common.status & DB_FIXED)) {
+	    goto done;
+	}
+
+	for (pp = &(tb->common.fixations); *pp != NULL;
+	     pp = &((*pp)->next)) {
+	    if ((*pp)->pid == BIF_P->id) {
+		--((*pp)->counter);
+		ASSERT((*pp)->counter >= 0);
+		if ((*pp)->counter == 0) {
+		    fix = *pp;
+		    *pp = (*pp)->next;
+		    db_erase_bag_exact2(&(meta_pid_to_fixed_tab->hash),
+					BIF_P->id,
+					make_small(tb->common.slot));
+		    free_fixation(fix);
+		}
+		break;
+	    }
+	}
+	if (tb->common.fixations == NULL) {
+	    if (IS_HASH_TABLE(tb->common.status)) {
+		cret = db_fixtable_hash(&(tb->hash), am_false);
+	    }	
+	    tb->common.status &= ~DB_FIXED;
+	}
+    } else {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+
     if (cret != DB_ERROR_NONE) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if (arg == am_true) 
-      tb->common.status |= DB_FIXED;
-    else if (arg == am_false)
-      tb->common.status &= ~DB_FIXED;
-    else {
-	BIF_ERROR(BIF_P, BADARG);
-    }
+done:
     BIF_RET(am_true);
 }
 
@@ -136,7 +275,7 @@ BIF_ADECL_1
 {
     DbTable* tb;
     int cret;
-    eTerm ret;
+    Eterm ret;
 
     CHECK_TABLES();
 
@@ -166,7 +305,7 @@ BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
-    eTerm ret;
+    Eterm ret;
 
     CHECK_TABLES();
 
@@ -196,7 +335,7 @@ BIF_ADECL_1
 {
     DbTable* tb;
     int cret;
-    eTerm ret;
+    Eterm ret;
 
     CHECK_TABLES();
 
@@ -227,7 +366,7 @@ BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
-    eTerm ret;
+    Eterm ret;
 
     CHECK_TABLES();
 
@@ -259,9 +398,9 @@ BIF_RETTYPE ets_update_counter_3(BIF_ALIST_3)
 BIF_ADECL_3
 {
     DbTable* tb;
-    eTerm ret;
+    Eterm ret;
     int cret;
-    eTerm increment = BIF_ARG_3;
+    Eterm increment = BIF_ARG_3;
     int position = 0;
 
     if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE)) == NULL) {
@@ -271,7 +410,7 @@ BIF_ADECL_3
 	BIF_ERROR(BIF_P, BADARG);
     }
     if (is_tuple(BIF_ARG_3)) { /* key position specified */
-	eTerm *tpl = tuple_val(BIF_ARG_3);
+	Eterm *tpl = tuple_val(BIF_ARG_3);
 	if (arityval(*tpl) != 2 || !is_small(tpl[1]) ||
 	    !(is_small(tpl[2]) || is_big(tpl[2]))) {
 	    BIF_ERROR(BIF_P, BADARG);
@@ -311,27 +450,59 @@ BIF_RETTYPE ets_insert_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
     DbTable* tb;
-    int cret;
-    eTerm ret;
+    int cret = DB_ERROR_NONE;
+    Eterm ret = am_true;
+    Eterm lst;
 
     CHECK_TABLES();
 
     if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE)) == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-    if (is_not_tuple(BIF_ARG_2) || 
-	(arityval(*tuple_val(BIF_ARG_2)) < tb->common.keypos)) {
-	BIF_ERROR(BIF_P, BADARG);
+    if (BIF_ARG_2 == NIL) {
+	BIF_RET(am_true);
     }
-    if (IS_HASH_TABLE(tb->common.status)) {
-	cret = db_put_hash(BIF_P, &(tb->hash), 
-			   BIF_ARG_2, &ret);
-    } else if (IS_TREE_TABLE(tb->common.status)) {
-	cret = db_put_tree(BIF_P, &(tb->tree), 
-			   BIF_ARG_2, &ret);
-	/*TT*/
+    if (is_list(BIF_ARG_2)) {
+	for (lst = BIF_ARG_2; is_list(lst); lst = CDR(list_val(lst))) {
+	    if (is_not_tuple(CAR(list_val(lst))) || 
+		(arityval(*tuple_val(CAR(list_val(lst)))) < tb->common.keypos)) {
+		BIF_ERROR(BIF_P, BADARG);
+	    }
+	}
+	if (lst != NIL) {
+	    BIF_ERROR(BIF_P, BADARG);
+	}
+	if (IS_HASH_TABLE(tb->common.status)) {
+	    for (lst = BIF_ARG_2; is_list(lst); lst = CDR(list_val(lst))) {
+		if ((cret = db_put_hash(BIF_P, &(tb->hash), 
+					CAR(list_val(lst)), &ret)) != DB_ERROR_NONE)
+		    break;
+	    }
+	} else if (IS_TREE_TABLE(tb->common.status)) {
+	    for (lst = BIF_ARG_2; is_list(lst); lst = CDR(list_val(lst))) {
+		if ((cret = db_put_tree(BIF_P, &(tb->tree), 
+					CAR(list_val(lst)), &ret)) != DB_ERROR_NONE)
+		    break;
+	    }
+	    /*TT*/
+	} else {
+	    cret = DB_ERROR_UNSPEC;
+	}
     } else {
-	cret = DB_ERROR_UNSPEC;
+	if (is_not_tuple(BIF_ARG_2) || 
+	    (arityval(*tuple_val(BIF_ARG_2)) < tb->common.keypos)) {
+	    BIF_ERROR(BIF_P, BADARG);
+	}
+	if (IS_HASH_TABLE(tb->common.status)) {
+	    cret = db_put_hash(BIF_P, &(tb->hash), 
+			       BIF_ARG_2, &ret);
+	} else if (IS_TREE_TABLE(tb->common.status)) {
+	    cret = db_put_tree(BIF_P, &(tb->tree), 
+			       BIF_ARG_2, &ret);
+	    /*TT*/
+	} else {
+	    cret = DB_ERROR_UNSPEC;
+	}
     }
 
     switch (cret) {
@@ -355,8 +526,21 @@ BIF_ADECL_2
     int oldslot, newslot;
     Eterm dummy;
     Eterm meta_tuple[3];
+    DbFixation *fix;
 
-
+#ifdef HARDDEBUG
+    erl_printf(CERR,"ets:rename(");
+    display(BIF_ARG_1,CERR);
+    erl_printf(CERR,",");
+    display(BIF_ARG_2,CERR);
+    erl_printf(CERR,"); Process: ");
+    display(BIF_P->id,CERR);
+    erl_printf(CERR,", initial: ");
+    display(BIF_P->initial[0],CERR);
+    erl_printf(CERR,":");
+    display(BIF_P->initial[1],CERR);
+    erl_printf(CERR,"/%d\r\n",BIF_P->initial[2]);
+#endif
 
     if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE)) == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -403,6 +587,20 @@ BIF_ADECL_2
     db_erase_bag_exact2(&(meta_pid_to_tab->hash),
 			tb->common.owner,make_small(oldslot));
 
+    for (fix = tb->common.fixations; fix != NULL; fix = fix->next) {
+	db_erase_bag_exact2(&(meta_pid_to_fixed_tab->hash),
+			    fix->pid,
+			    make_small(oldslot));
+	if (db_put_hash(NULL,&(meta_pid_to_fixed_tab->hash),
+			TUPLE2(meta_tuple, 
+			       fix->pid, 
+			       make_small(newslot)),
+			&dummy)
+	    != DB_ERROR_NONE) {
+	    erl_exit(1,"Could not insert ets metadata"
+		     " in rename.");
+	}		
+    }
     BIF_RET(tb->common.id);
 }
 
@@ -417,15 +615,29 @@ BIF_ADECL_2
 {
     DbTable* tb;
     int slot;
-    eTerm list;
-    eTerm val;
-    eTerm ret;
-    uint32 status;
+    Eterm list;
+    Eterm val;
+    Eterm ret;
+    Uint32 status;
     int keypos;
     int is_named;
     int cret;
     Eterm dummy;
     Eterm meta_tuple[3];
+
+#ifdef HARDDEBUG
+    erl_printf(CERR,"ets:new(");
+    display(BIF_ARG_1,CERR);
+    erl_printf(CERR,",");
+    display(BIF_ARG_2,CERR);
+    erl_printf(CERR,"); Process: ");
+    display(BIF_P->id,CERR);
+    erl_printf(CERR,", initial: ");
+    display(BIF_P->initial[0],CERR);
+    erl_printf(CERR,":");
+    display(BIF_P->initial[1],CERR);
+    erl_printf(CERR,"/%d\r\n",BIF_P->initial[2]);
+#endif
 
     if (is_not_atom(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -461,7 +673,7 @@ BIF_ADECL_2
 	}
 	/*TT*/
 	else if (is_tuple(val)) {
-	    eTerm *tp = tuple_val(val);
+	    Eterm *tp = tuple_val(val);
 
 	    if ((arityval(tp[0]) == 2) && (tp[1] == am_keypos) &&
 		is_small(tp[2]) && (signed_val(tp[2]) > 0)) {
@@ -535,8 +747,11 @@ BIF_ADECL_2
     tb->common.owner = BIF_P->id;
 
     tb->common.nitems = 0;
+    tb->common.kept_items = 0;
 
     tb->common.slot = slot;           /* store slot for erase */
+
+    tb->common.fixations = NULL;
 
     if (IS_HASH_TABLE(tb->common.status)) {
 	cret = db_create_hash(BIF_P, &(tb->hash));
@@ -548,7 +763,7 @@ BIF_ADECL_2
     }
 
     if (cret != DB_ERROR_NONE) {
-	fix_free(table_desc, (uint32 *) tb);
+	fix_free(table_desc, (Uint *) tb);
 	BIF_ERROR(BIF_P, BADARG);
     }
 
@@ -576,7 +791,7 @@ BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
-    eTerm ret;
+    Eterm ret;
 
     CHECK_TABLES();
 
@@ -607,6 +822,44 @@ BIF_ADECL_2
 }
 
 /* 
+** The lookup BIF 
+*/
+BIF_RETTYPE ets_member_2(BIF_ALIST_2)
+BIF_ADECL_2
+{
+    DbTable* tb;
+    int cret;
+    Eterm ret;
+
+    CHECK_TABLES();
+
+    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_READ)) == NULL) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+
+    if (IS_HASH_TABLE(tb->common.status)) {
+	cret = db_member_hash(BIF_P, &(tb->hash), 
+			      BIF_ARG_2, &ret);
+    } else if (IS_TREE_TABLE(tb->common.status)) {
+	cret = db_member_tree(BIF_P, &(tb->tree), 
+			      BIF_ARG_2, &ret);
+	/*TT*/
+    } else {
+	cret = DB_ERROR_UNSPEC;
+    }
+
+    switch (cret) {
+    case DB_ERROR_NONE:
+	BIF_RET(ret);
+    case DB_ERROR_SYSRES:
+	BIF_ERROR(BIF_P, SYSTEM_LIMIT);
+    default:
+	BIF_ERROR(BIF_P, BADARG);
+    }
+
+}
+
+/* 
 ** Get an element from a term
 ** get_element_3(Tab, Key, Index)
 ** return the element or a list of elements if bag
@@ -617,7 +870,7 @@ BIF_ADECL_3
     DbTable* tb;
     int index;
     int cret;
-    eTerm ret;
+    Eterm ret;
 
     CHECK_TABLES();
 
@@ -658,6 +911,18 @@ BIF_ADECL_1
 {
     DbTable* tb;
 
+#ifdef HARDDEBUG
+    erl_printf(CERR,"ets:delete(");
+    display(BIF_ARG_1,CERR);
+    erl_printf(CERR,"); Process: ");
+    display(BIF_P->id,CERR);
+    erl_printf(CERR,", initial: ");
+    display(BIF_P->initial[0],CERR);
+    erl_printf(CERR,":");
+    display(BIF_P->initial[1],CERR);
+    erl_printf(CERR,"/%d\r\n",BIF_P->initial[2]);
+#endif
+
     CHECK_TABLES();
 
     if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE)) == NULL) {
@@ -675,7 +940,41 @@ BIF_ADECL_1
 }
 
 /* 
-** Erase an object, or maybe several objects if we have a bag  
+** BIF to erase a whole table and release all memory it holds 
+*/
+BIF_RETTYPE ets_delete_all_objects_1(BIF_ALIST_1)
+BIF_ADECL_1
+{
+    DbTable* tb;
+
+    CHECK_TABLES();
+
+    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE)) == NULL) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    if (IS_HASH_TABLE(tb->common.status)) {
+	if (tb->common.status & DB_FIXED) {
+	    db_mark_all_deleted_hash(&(tb->hash));
+	} else {
+	    free_hash_table(&(tb->hash));
+	    db_create_hash(BIF_P, &(tb->hash));
+	    tb->common.nitems = 0;
+	}
+    } else if (IS_TREE_TABLE(tb->common.status)) {
+	free_tree_table(&(tb->tree));
+	db_create_tree(BIF_P, &(tb->tree));
+	tb->common.nitems = 0;
+    /*TT*/
+    } else {
+	erl_exit(1,"Panic: Unknown table type (status word = 0x%08x)!",
+		 tb->common.status);
+    }
+
+    BIF_RET(am_true);
+}
+
+/* 
+** Erase an object with given key, or maybe several objects if we have a bag  
 ** Called as db_erase(Tab, Key), where Key is element 1 of the
 ** object(s) we want to erase                                  
 */
@@ -684,7 +983,7 @@ BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
-    eTerm ret;
+    Eterm ret;
 
     CHECK_TABLES();
 
@@ -712,31 +1011,32 @@ BIF_ADECL_2
     }
 }
 
-
 /* 
-** Call this BIF as db_erase(Tab,Pattern)
-** If The first element in Pattern is bound, we go directly to the 
-** right slot, otherwise, we search the whole table                
+** Erase a specific object, or maybe several objects if we have a bag  
 */
-BIF_RETTYPE ets_match_delete_2(BIF_ALIST_2)
+BIF_RETTYPE ets_delete_object_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
-    eTerm ret;
+    Eterm ret;
 
     CHECK_TABLES();
 
     if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE)) == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
     }
+    if (is_not_tuple(BIF_ARG_2) || 
+	(arityval(*tuple_val(BIF_ARG_2)) < tb->common.keypos)) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
 
     if (IS_HASH_TABLE(tb->common.status)) {
-	cret = db_match_erase_hash(BIF_P, &(tb->hash), 
-				   BIF_ARG_2, &ret);
+	cret = db_erase_object_hash(BIF_P, &(tb->hash), 
+				    BIF_ARG_2, &ret);
     } else if (IS_TREE_TABLE(tb->common.status)) {
-	cret = db_match_erase_tree(BIF_P, &(tb->tree), 
-				   BIF_ARG_2, &ret);
+	cret = db_erase_object_tree(BIF_P, &(tb->tree), 
+				    BIF_ARG_2, &ret);
 	/*TT*/
     } else {
 	cret = DB_ERROR_UNSPEC;
@@ -752,6 +1052,125 @@ BIF_ADECL_2
     }
 }
 
+/*
+** This is for trapping, cannot be called directly.
+*/
+static BIF_RETTYPE ets_select_delete_1(Process *p, Eterm a1)
+{
+    DbTable* tb;
+    int cret;
+    Eterm ret;
+    Eterm *tptr;
+    
+    CHECK_TABLES();
+#ifdef DEBUG
+    /*
+     * Make sure that the table exists.
+     */
+    if (!is_tuple(a1)) {
+	/* "Cannot" happen, this is not a real BIF, its trapped
+	   to under controlled conditions */
+	erl_exit(1,"Internal error in ets:select_delete");
+    }
+#endif
+    tptr = tuple_val(a1);
+#ifdef DEBUG
+    if (arityval(*tptr) < 1) {
+	erl_exit(1,"Internal error in ets:select_delete");
+    }
+#endif
+    
+    if ((tb = db_get_table(p, tptr[1], 
+			   DB_WRITE)) == NULL) {
+	/* This should be OK, the emulator handles errors in BIF's that aren't
+	   exported nowdays... */
+	BIF_ERROR(p,BADARG);
+    }
+
+    if (IS_HASH_TABLE(tb->common.status)) {
+	DbFixation *fix = tb->common.fixations;
+	if ((tb->common.status & DB_FIXED) && !ONLY_READER(p,tb) &&
+	    SOLE_LOCKER(p,fix)) {
+	    cret = db_select_delete_continue_hash(p, &(tb->hash), a1, &ret,1);
+	} else {
+	    cret = db_select_delete_continue_hash(p, &(tb->hash), a1, &ret,0);
+	}
+    } else if (IS_TREE_TABLE(tb->common.status)) {
+	cret = db_select_delete_continue_tree(p, &(tb->tree), a1, &ret);
+	/*TT*/
+    } else {
+	cret = DB_ERROR_UNSPEC;
+    }
+
+    switch (cret) {
+    case DB_ERROR_NONE:
+	if(IS_HASH_TABLE(tb->common.status) &&
+	   !DID_TRAP(p,ret) &&
+	   !ONLY_READER(p,tb)) {
+	    ets_safe_fixtable_2(p, tb->common.id, am_false);
+	} 
+	BIF_RET(ret);
+    default:
+	if(IS_HASH_TABLE(tb->common.status) &&
+	   !ONLY_READER(p,tb)) {
+	    ets_safe_fixtable_2(p, tb->common.id, am_false);
+	} 
+	BIF_ERROR(p, BADARG);
+    }
+}
+    
+
+BIF_RETTYPE ets_select_delete_2(BIF_ALIST_2)
+BIF_ADECL_2
+{
+    DbTable* tb;
+    int cret;
+    Eterm ret;
+
+    CHECK_TABLES();
+    /*
+     * Make sure that the table exists.
+     */
+
+    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE)) == NULL) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    if(eq(BIF_ARG_2, ms_delete_all)){
+	int nitems = tb->common.nitems;
+	ret = ets_delete_all_objects_1(BIF_P,BIF_ARG_1);
+	if (ret == am_true) {
+	    BIF_RET(make_small_or_big(nitems,BIF_P));
+	} else {
+	    return ret;
+	}
+    }
+    if (IS_HASH_TABLE(tb->common.status)) {
+	cret = db_select_delete_hash(BIF_P, &(tb->hash), 
+				     BIF_ARG_2, &ret);
+    } else if (IS_TREE_TABLE(tb->common.status)) {
+	cret = db_select_delete_tree(BIF_P, &(tb->tree), 
+				     BIF_ARG_2, &ret);
+	/*TT*/
+    } else {
+	cret = DB_ERROR_UNSPEC;
+    }
+
+    switch (cret) {
+    case DB_ERROR_NONE:
+	if(IS_HASH_TABLE(tb->common.status) &&
+	   DID_TRAP(BIF_P,ret) &&
+	   !ONLY_READER(BIF_P,tb)) {
+	    /* We will trap and as we're here this call wasn't a trap... */
+	    ets_safe_fixtable_2(BIF_P, tb->common.id, am_true);
+	} /* Otherwise keep it as is */
+	BIF_RET(ret);
+    case DB_ERROR_SYSRES:
+	BIF_ERROR(BIF_P, SYSTEM_LIMIT);
+    default:
+	BIF_ERROR(BIF_P, BADARG);
+    }
+}
+
 /* 
 ** Return a list of tables on this node 
 */
@@ -759,9 +1178,9 @@ BIF_RETTYPE ets_all_0(BIF_ALIST_0)
 BIF_ADECL_0
 {
     DbTable* tb;
-    uint32 previous;
+    Eterm previous;
     int i, j;
-    uint32* hp = HAlloc(BIF_P, 2*no_tabs);
+    Eterm* hp = HAlloc(BIF_P, 2*no_tabs);
 
     previous = NIL;
     j = 0;
@@ -786,7 +1205,7 @@ BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
-    eTerm ret;
+    Eterm ret;
 
     CHECK_TABLES();
 
@@ -817,27 +1236,74 @@ BIF_ADECL_2
 }
 
 /* 
-** The match BIF,  called as db_match(Table, Pattern)
+** The match BIF,  called as ets:match(Table, Pattern), ets:match(Continuation) or ets:match(Table,Pattern,ChunkSize).
 */
+
+BIF_RETTYPE ets_match_1(BIF_ALIST_1)
+BIF_ADECL_1
+{
+    return ets_select_1(BIF_P, BIF_ARG_1);
+}
 
 BIF_RETTYPE ets_match_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
+    Eterm ms;
+    Eterm buff[8];
+    Eterm *hp = buff;
+    /*hp = HAlloc(BIF_P, 8);*/
+    ms = CONS(hp, am_DollarDollar, NIL);
+    hp += 2;
+    ms = TUPLE3(hp, BIF_ARG_2, NIL, ms); 
+    hp += 4;
+    ms = CONS(hp, ms, NIL);
+    return ets_select_2(BIF_P, BIF_ARG_1, ms);
+}
+
+BIF_RETTYPE ets_match_3(BIF_ALIST_3)
+BIF_ADECL_3
+{
+    Eterm ms;
+    Eterm buff[8];
+    Eterm *hp = buff;
+    /*hp = HAlloc(BIF_P, 8);*/
+    ms = CONS(hp, am_DollarDollar, NIL);
+    hp += 2;
+    ms = TUPLE3(hp, BIF_ARG_2, NIL, ms); 
+    hp += 4;
+    ms = CONS(hp, ms, NIL);
+    return ets_select_3(BIF_P, BIF_ARG_1, ms, BIF_ARG_3);
+}
+
+
+BIF_RETTYPE ets_select_3(BIF_ALIST_3)
+BIF_ADECL_3
+{
     DbTable* tb;
     int cret;
-    eTerm ret;
+    Eterm ret;
+    Sint chunk_size;
 
     CHECK_TABLES();
+    /*
+     * Make sure that the table exists.
+     */
 
     if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_READ)) == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
     }
+    
+    /* Chunk size strictly greater than 0 */
+    if (is_not_small(BIF_ARG_3) || (chunk_size = signed_val(BIF_ARG_3)) <= 0) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+
     if (IS_HASH_TABLE(tb->common.status)) {
-	cret = db_match_hash(BIF_P, &(tb->hash), 
-			     BIF_ARG_2, &ret);
+	cret = db_select_hash(BIF_P, &(tb->hash), 
+				    BIF_ARG_2, chunk_size, &ret);
     } else if (IS_TREE_TABLE(tb->common.status)) {
-	cret = db_match_tree(BIF_P, &(tb->tree), 
-			     BIF_ARG_2, &ret);
+	cret = db_select_chunk_tree(BIF_P, &(tb->tree), 
+				    BIF_ARG_2, chunk_size, 0, &ret);
 	/*TT*/
     } else {
 	cret = DB_ERROR_UNSPEC;
@@ -845,6 +1311,12 @@ BIF_ADECL_2
 
     switch (cret) {
     case DB_ERROR_NONE:
+	if(IS_HASH_TABLE(tb->common.status) &&
+	   DID_TRAP(BIF_P,ret) &&
+	   !ONLY_WRITER(BIF_P,tb)) {
+	    /* We will trap and as we're here this call wasn't a trap... */
+	    ets_safe_fixtable_2(BIF_P, tb->common.id, am_true);
+	} /* Otherwise keep it as is */
 	BIF_RET(ret);
     case DB_ERROR_SYSRES:
 	BIF_ERROR(BIF_P, SYSTEM_LIMIT);
@@ -854,12 +1326,118 @@ BIF_ADECL_2
 }
 
 
+/* We get here instead of in the real BIF when trapping */
+static BIF_RETTYPE ets_select_trap_1(Process *p, Eterm a1)
+{
+    DbTable* tb;
+    int cret;
+    Eterm ret;
+    Eterm *tptr;
+
+    CHECK_TABLES();
+
+    tptr = tuple_val(a1);
+    ASSERT(arityval(*tptr) >= 1)
+    if ((tb = db_get_table(p, tptr[1], DB_READ)) == NULL) {
+	BIF_ERROR(p, BADARG);
+    }
+    
+    if (IS_HASH_TABLE(tb->common.status)) {
+	cret = db_select_hash_continue(p, &(tb->hash), 
+				       a1, &ret);
+    } else if (IS_TREE_TABLE(tb->common.status)) {
+	cret = db_select_tree_continue(p, &
+				       (tb->tree), 
+				       a1, &ret);
+	/*TT*/
+    } else {
+	cret = DB_ERROR_UNSPEC;
+    }
+
+    switch (cret) {
+    case DB_ERROR_NONE:
+	if(IS_HASH_TABLE(tb->common.status) &&
+	   !DID_TRAP(p,ret) &&
+	   !ONLY_WRITER(p,tb)) {
+	    /* We did trap, but no more... */
+	    ets_safe_fixtable_2(p, tb->common.id, am_false);
+	} /* Otherwise keep it fixed */
+	BIF_RET(ret);
+    case DB_ERROR_SYSRES:
+	if(IS_HASH_TABLE(tb->common.status) &&
+	   !ONLY_WRITER(p,tb)) {
+	    ets_safe_fixtable_2(p, tb->common.id, am_false);
+	} 
+	BIF_ERROR(p, SYSTEM_LIMIT);
+    default:
+	if(IS_HASH_TABLE(tb->common.status) &&
+	   !ONLY_WRITER(p,tb)) {
+	    ets_safe_fixtable_2(p, tb->common.id, am_false);
+	} 
+	BIF_ERROR(p, BADARG);
+    }
+}
+
+
+BIF_RETTYPE ets_select_1(BIF_ALIST_1)
+BIF_ADECL_1
+{
+    DbTable* tb;
+    int cret;
+    Eterm ret;
+    Eterm *tptr;
+
+    CHECK_TABLES();
+
+    /*
+     * Make sure that the table exists.
+     */
+
+    if (!is_tuple(BIF_ARG_1)) {
+	if (BIF_ARG_1 == am_EOT) {
+	    BIF_RET(am_EOT);
+	}
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    tptr = tuple_val(BIF_ARG_1);
+    if (arityval(*tptr) < 1 || (tb = db_get_table(BIF_P, tptr[1], DB_READ)) == NULL) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    
+    if (IS_HASH_TABLE(tb->common.status)) {
+	cret = db_select_hash_continue(BIF_P, &(tb->hash), 
+				       BIF_ARG_1, &ret);
+    } else if (IS_TREE_TABLE(tb->common.status)) {
+	cret = db_select_tree_continue(BIF_P, &
+				       (tb->tree), 
+				       BIF_ARG_1, &ret);
+	/*TT*/
+    } else {
+	cret = DB_ERROR_UNSPEC;
+    }
+
+    switch (cret) {
+    case DB_ERROR_NONE:
+	if(IS_HASH_TABLE(tb->common.status) &&
+	   DID_TRAP(BIF_P,ret) &&
+	   !ONLY_WRITER(BIF_P,tb)) {
+	    /* We will trap and as we're here this call wasn't a trap... */
+	    ets_safe_fixtable_2(BIF_P, tb->common.id, am_true);
+	} /* Otherwise keep it as is */
+	BIF_RET(ret);
+    case DB_ERROR_SYSRES:
+	BIF_ERROR(BIF_P, SYSTEM_LIMIT);
+    default:
+	BIF_ERROR(BIF_P, BADARG);
+    }
+}
+
 BIF_RETTYPE ets_select_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
     DbTable* tb;
     int cret;
-    eTerm ret;
+    Eterm ret;
 
     CHECK_TABLES();
     /*
@@ -871,10 +1449,10 @@ BIF_ADECL_2
     }
     if (IS_HASH_TABLE(tb->common.status)) {
 	cret = db_select_hash(BIF_P, &(tb->hash), 
-				    BIF_ARG_2, &ret);
+			      BIF_ARG_2, 0 /* chunk size */, &ret);
     } else if (IS_TREE_TABLE(tb->common.status)) {
 	cret = db_select_tree(BIF_P, &(tb->tree), 
-			      BIF_ARG_2, &ret);
+			      BIF_ARG_2, 0 /* not reversed */, &ret);
 	/*TT*/
     } else {
 	cret = DB_ERROR_UNSPEC;
@@ -882,6 +1460,12 @@ BIF_ADECL_2
 
     switch (cret) {
     case DB_ERROR_NONE:
+	if(IS_HASH_TABLE(tb->common.status) &&
+	   DID_TRAP(BIF_P,ret) &&
+	   !ONLY_WRITER(BIF_P,tb)) {
+	    /* We will trap and as we're here this call wasn't a trap... */
+	    ets_safe_fixtable_2(BIF_P, tb->common.id, am_true);
+	} /* Otherwise keep it as is */
 	BIF_RET(ret);
     case DB_ERROR_SYSRES:
 	BIF_ERROR(BIF_P, SYSTEM_LIMIT);
@@ -891,15 +1475,67 @@ BIF_ADECL_2
 }
 
 
-/* 
-** db_match_object(Table, Pattern, State) 
-*/
-BIF_RETTYPE ets_db_match_object_3(BIF_ALIST_3)
+BIF_RETTYPE ets_select_reverse_3(BIF_ALIST_3)
 BIF_ADECL_3
 {
     DbTable* tb;
     int cret;
-    eTerm ret;
+    Eterm ret;
+    Sint chunk_size;
+
+    CHECK_TABLES();
+    /*
+     * Make sure that the table exists.
+     */
+
+    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_READ)) == NULL) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    
+    /* Chunk size strictly greater than 0 */
+    if (is_not_small(BIF_ARG_3) || (chunk_size = signed_val(BIF_ARG_3)) <= 0) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+
+    if (IS_HASH_TABLE(tb->common.status)) {
+	cret = db_select_hash(BIF_P, &(tb->hash), 
+				    BIF_ARG_2, chunk_size, &ret);
+    } else if (IS_TREE_TABLE(tb->common.status)) {
+	cret = db_select_chunk_tree(BIF_P, &(tb->tree), 
+				    BIF_ARG_2, chunk_size, 1, &ret);
+	/*TT*/
+    } else {
+	cret = DB_ERROR_UNSPEC;
+    }
+
+    switch (cret) {
+    case DB_ERROR_NONE:
+	if(IS_HASH_TABLE(tb->common.status) &&
+	   DID_TRAP(BIF_P,ret) &&
+	   !ONLY_WRITER(BIF_P,tb)) {
+	    /* We will trap and as we're here this call wasn't a trap... */
+	    ets_safe_fixtable_2(BIF_P, tb->common.id, am_true);
+	} /* Otherwise keep it as is */
+	BIF_RET(ret);
+    case DB_ERROR_SYSRES:
+	BIF_ERROR(BIF_P, SYSTEM_LIMIT);
+    default:
+	BIF_ERROR(BIF_P, BADARG);
+    }
+}
+
+BIF_RETTYPE ets_select_reverse_1(BIF_ALIST_1)
+BIF_ADECL_1
+{
+    return ets_select_1(BIF_P, BIF_ARG_1);
+}
+
+BIF_RETTYPE ets_select_reverse_2(BIF_ALIST_2)
+BIF_ADECL_2
+{
+    DbTable* tb;
+    int cret;
+    Eterm ret;
 
     CHECK_TABLES();
     /*
@@ -910,11 +1546,11 @@ BIF_ADECL_3
 	BIF_ERROR(BIF_P, BADARG);
     }
     if (IS_HASH_TABLE(tb->common.status)) {
-	cret = db_match_object_hash(BIF_P, &(tb->hash), 
-				    BIF_ARG_2, BIF_ARG_3, &ret);
+	cret = db_select_hash(BIF_P, &(tb->hash), 
+			      BIF_ARG_2, 0 /* chunk size */, &ret);
     } else if (IS_TREE_TABLE(tb->common.status)) {
-	cret = db_match_object_tree(BIF_P, &(tb->tree), 
-				    BIF_ARG_2, BIF_ARG_3, &ret);
+	cret = db_select_tree(BIF_P, &(tb->tree), 
+			      BIF_ARG_2, 1 /* reversed */, &ret);
 	/*TT*/
     } else {
 	cret = DB_ERROR_UNSPEC;
@@ -922,6 +1558,12 @@ BIF_ADECL_3
 
     switch (cret) {
     case DB_ERROR_NONE:
+	if(IS_HASH_TABLE(tb->common.status) &&
+	   DID_TRAP(BIF_P,ret) &&
+	   !ONLY_WRITER(BIF_P,tb)) {
+	    /* We will trap and as we're here this call wasn't a trap... */
+	    ets_safe_fixtable_2(BIF_P, tb->common.id, am_true);
+	} /* Otherwise keep it as is */
 	BIF_RET(ret);
     case DB_ERROR_SYSRES:
 	BIF_ERROR(BIF_P, SYSTEM_LIMIT);
@@ -930,6 +1572,45 @@ BIF_ADECL_3
     }
 }
 
+
+/* 
+** ets:match_object(Continuation), ets:match_object(Table, Pattern), ets:match_object(Table,Pattern,ChunkSize) 
+*/
+BIF_RETTYPE ets_match_object_1(BIF_ALIST_1)
+BIF_ADECL_1
+{
+    return ets_select_1(BIF_P, BIF_ARG_1);
+}
+
+BIF_RETTYPE ets_match_object_2(BIF_ALIST_2)
+BIF_ADECL_2
+{
+    Eterm ms;
+    Eterm buff[8];
+    Eterm *hp = buff;
+    /*hp = HAlloc(BIF_P, 8);*/
+    ms = CONS(hp, am_DollarUnderscore, NIL);
+    hp += 2;
+    ms = TUPLE3(hp, BIF_ARG_2, NIL, ms); 
+    hp += 4;
+    ms = CONS(hp, ms, NIL);
+    return ets_select_2(BIF_P, BIF_ARG_1, ms);
+}
+
+BIF_RETTYPE ets_match_object_3(BIF_ALIST_3)
+BIF_ADECL_3
+{
+    Eterm ms;
+    Eterm buff[8];
+    Eterm *hp = buff;
+    /*hp = HAlloc(BIF_P, 8);*/
+    ms = CONS(hp, am_DollarUnderscore, NIL);
+    hp += 2;
+    ms = TUPLE3(hp, BIF_ARG_2, NIL, ms); 
+    hp += 4;
+    ms = CONS(hp, ms, NIL);
+    return ets_select_3(BIF_P, BIF_ARG_1, ms, BIF_ARG_3);
+}
 
 /* 
 ** BIF to extract information about a particular table
@@ -963,7 +1644,7 @@ BIF_ADECL_2
     }
     if (BIF_ARG_2 == am_memory) {
 	int cret;
-	eTerm ret;
+	Eterm ret;
 	int reds;
 
 	if (IS_HASH_TABLE(tb->common.status)) {
@@ -1011,6 +1692,36 @@ BIF_ADECL_2
 	else
 	    BIF_RET(am_false);
     }
+    if (BIF_ARG_2 == am_atom_put("kept_objects",12)) 
+	BIF_RET(make_small(tb->common.kept_items));
+    if (BIF_ARG_2 == am_atom_put("safe_fixed",10)) { 
+	if (tb->common.fixations != NULL) {
+	    Uint need;
+	    Eterm *hp;
+	    Eterm tpl, lst;
+	    DbFixation *fix;
+	    need = 7;
+	    for (fix = tb->common.fixations; fix != NULL; fix = fix->next) {
+		need += 5;
+	    }
+	    hp = HAlloc(BIF_P,need);
+	    lst = NIL;
+	    for (fix = tb->common.fixations; fix != NULL; fix = fix->next) {
+		tpl = TUPLE2(hp,fix->pid,make_small(fix->counter));
+		hp += 3;
+		lst = CONS(hp,tpl,lst);
+		hp += 2;
+	    }
+	    tpl = TUPLE3(hp,
+			 make_small(tb->common.megasec),
+			 make_small(tb->common.sec),
+			 make_small(tb->common.microsec));
+	    hp += 4;
+	    BIF_RET(TUPLE2(hp, tpl, lst));
+	} else {
+	    BIF_RET(am_false);
+	}
+    }
     BIF_ERROR(BIF_P, BADARG);
 }
 
@@ -1018,8 +1729,7 @@ BIF_ADECL_2
 BIF_RETTYPE ets_match_spec_compile_1(BIF_ALIST_1)
 BIF_ADECL_1
 {
-    Binary *mp = db_match_set_compile(BIF_P, BIF_ARG_1, 
-				      DCOMP_BODY_RETURN);
+    Binary *mp = db_match_set_compile(BIF_P, BIF_ARG_1, DCOMP_TABLE);
     ProcBin *pb;
     if (mp == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -1111,7 +1821,10 @@ void init_db(void)
 {
     int i;
     int max_ets;
+    extern Eterm* em_apply_bif;
+    Eterm *hp;
 
+    fixed_fixation_desc = new_fix_size(sizeof(DbFixation));
     last_slot = 0;
     db_initialize_util();
     if (( max_ets = (user_requested_db_max_tabs*5)/4 ) < DB_DEF_MAX_TABS)
@@ -1125,7 +1838,6 @@ void init_db(void)
 	db_tables[i].id = DB_NOTUSED;
 	db_tables[i].t = NULL;
     }
-    db_am_eot = am_magic_word("$end_of_table");
     db_initialize_hash();
     db_initialize_tree();
     /*TT*/
@@ -1142,19 +1854,68 @@ void init_db(void)
     if (db_create_hash(NULL, &(meta_pid_to_tab->hash)) != DB_ERROR_NONE) {
 	erl_exit(1,"Unable to create ets metadata tables.");
     }
+    meta_pid_to_fixed_tab = (DbTable*) fix_alloc_from(55,table_desc);
+    meta_pid_to_fixed_tab->common.id = NIL;
+    meta_pid_to_fixed_tab->common.the_name = am_true;
+    meta_pid_to_fixed_tab->common.status = (DB_NORMAL | DB_BAG | DB_LHASH | 
+					    DB_PUBLIC);
+    meta_pid_to_fixed_tab->common.keypos = 1;
+    meta_pid_to_fixed_tab->common.owner = NIL;
+    meta_pid_to_fixed_tab->common.nitems = 0;
+    meta_pid_to_fixed_tab->common.slot = -1;
+    if (db_create_hash(NULL, &(meta_pid_to_fixed_tab->hash)) 
+	!= DB_ERROR_NONE) {
+	erl_exit(1,"Unable to create ets metadata tables.");
+    }
+    /* Non visual BIF to trap to. */
+    memset(&ets_select_delete_continue_exp, 0, sizeof(Export));
+    ets_select_delete_continue_exp.address = 
+	&ets_select_delete_continue_exp.code[3];
+    ets_select_delete_continue_exp.code[0] = am_ets;
+    ets_select_delete_continue_exp.code[1] = am_atom_put("delete_trap",11);
+    ets_select_delete_continue_exp.code[2] = 1;
+    ets_select_delete_continue_exp.code[3] =
+	(Eterm) em_apply_bif;
+    ets_select_delete_continue_exp.code[4] = 
+	(Eterm) &ets_select_delete_1;
+    /* Non visual BIF to trap to. */
+    memset(&ets_select_continue_exp, 0, sizeof(Export));
+    ets_select_continue_exp.address = 
+	&ets_select_continue_exp.code[3];
+    ets_select_continue_exp.code[0] = am_ets;
+    ets_select_continue_exp.code[1] = am_atom_put("select_trap",11);
+    ets_select_continue_exp.code[2] = 1;
+    ets_select_continue_exp.code[3] =
+	(Eterm) em_apply_bif;
+    ets_select_continue_exp.code[4] = 
+	(Eterm) &ets_select_trap_1;
+    hp = ms_delete_all_buff;
+    ms_delete_all = CONS(hp, am_true, NIL);
+    hp += 2;
+    ms_delete_all = TUPLE3(hp,am_Underscore,NIL,ms_delete_all);
+    hp +=4;
+    ms_delete_all = CONS(hp, ms_delete_all,NIL);
 }
 
 /* Called when  a process which has created any tables dies */
 /* So that we can remove the tables ceated by the process   */
 
 #define ARRAY_CHUNK 100
-void db_proc_dead(eTerm pid)
+void db_proc_dead(Eterm pid)
 {
     Eterm arr[ARRAY_CHUNK];
     int arr_siz;
     int ret;
     Eterm dummy;
+    DbFixation *fix,**pp;
     int i;
+
+#ifdef HARDDEBUG
+    erl_printf(CERR,"db_proc_dead(");
+    erl_printf(CERR,"); Process: ");
+    display(pid,CERR);
+    erl_printf(CERR,"\r\n");
+#endif
 
     for (;;) {
 	arr_siz = ARRAY_CHUNK;
@@ -1162,7 +1923,7 @@ void db_proc_dead(eTerm pid)
 					pid, 2, arr, &arr_siz)) == 
 	    DB_ERROR_BADKEY) {
 	    /* done */
-	    return;
+	    break;
 	} else if (ret != DB_ERROR_NONE) {
 	    erl_exit(1,"Inconsistent ets metadata");
 	}
@@ -1179,8 +1940,53 @@ void db_proc_dead(eTerm pid)
 		db_erase_bag_exact2(&(meta_pid_to_tab->hash),pid,arr[i]);
 	    }
 	}
-	if (arr_siz < 100) {
+	if (arr_siz < ARRAY_CHUNK) {
 	    db_erase_hash(NULL,&(meta_pid_to_tab->hash),pid,&dummy);
+	} 
+    }
+    /* And now for the fixations... */
+    for (;;) {
+	arr_siz = ARRAY_CHUNK;
+	if ((ret = db_get_element_array(&(meta_pid_to_fixed_tab->hash), 
+					pid, 2, arr, &arr_siz)) == 
+	    DB_ERROR_BADKEY) {
+	    /* done */
+	    return;
+	} else if (ret != DB_ERROR_NONE) {
+	    erl_exit(1,"Inconsistent ets metadata");
+	}
+	for (i = 0; i < arr_siz; ++i) {
+	    int ix = unsigned_val(arr[i]); /* slot */
+	    DbTable* tb = db_tables[ix].t;
+	    if (tb == NULL) {
+		/* Was owner */
+		continue;
+	    }
+
+	    for (pp = &(tb->common.fixations); *pp != NULL;
+		 pp = &((*pp)->next)) {
+		if ((*pp)->pid == pid) {
+		    fix = *pp;
+		    *pp = (*pp)->next;
+		    if (arr_siz == ARRAY_CHUNK) {
+			db_erase_bag_exact2
+			    (&(meta_pid_to_fixed_tab->hash),
+			     pid,
+			     make_small(tb->common.slot));
+		    }
+		    free_fixation(fix);
+		    break;
+		}
+	    }
+	    if (tb->common.fixations == NULL) {
+		if (IS_HASH_TABLE(tb->common.status)) {
+		    db_fixtable_hash(&(tb->hash), am_false);
+		}	
+		tb->common.status &= ~DB_FIXED;
+	    }
+	}
+	if (arr_siz < ARRAY_CHUNK) {
+	    db_erase_hash(NULL,&(meta_pid_to_fixed_tab->hash),pid,&dummy);
 	} 
     }
 }
@@ -1219,7 +2025,7 @@ static int next_prime(int n)
     }
 }
 
-DbTable* db_get_table(Process *p, eTerm id, int what)
+DbTable* db_get_table(Process *p, Eterm id, int what)
 {
     int i, j;
 
@@ -1251,6 +2057,20 @@ DbTable* db_get_table(Process *p, eTerm id, int what)
 }
 
 static void free_table(DbTable *tb) {
+    /* First free fixation metadata */
+    DbFixation *fix;
+
+    for (fix = tb->common.fixations; fix != NULL; fix = fix->next) {
+	db_erase_bag_exact2(&(meta_pid_to_fixed_tab->hash),
+			    fix->pid,
+			    make_small(tb->common.slot));
+    }
+    while (tb->common.fixations != NULL) {
+	fix = tb->common.fixations;
+	tb->common.fixations = fix->next;
+	free_fixation(fix);
+    }
+
     if (IS_HASH_TABLE(tb->common.status))
 	free_hash_table(&(tb->hash));
     else if (IS_TREE_TABLE(tb->common.status))
@@ -1260,7 +2080,17 @@ static void free_table(DbTable *tb) {
 	erl_exit(1,"Panic: Unknown table type (status word = 0x%08x)!",
 		 tb->common.status);
     
-    fix_free(table_desc, (uint32*) tb);
+    fix_free(table_desc, (Uint *) tb);
+}
+
+static DbFixation *alloc_fixation(void)
+{
+    return (DbFixation *) fix_alloc(fixed_fixation_desc);
+}
+
+static void free_fixation(DbFixation *fix)
+{
+    fix_free(fixed_fixation_desc, (Uint *) fix);
 }
 
 static void print_table(CIO fd, int show,  DbTable* tb)
@@ -1300,6 +2130,8 @@ void db_info(CIO fd, int show)    /* Called by break handler */
 #ifdef DEBUG
     erl_printf(fd, "Process to table index\n");
     print_table(fd, show, meta_pid_to_tab);
+    erl_printf(fd, "Process to fixation index\n");
+    print_table(fd, show, meta_pid_to_fixed_tab);
 #endif
 }
 

@@ -1,478 +1,333 @@
-<HTML>
-<HEAD>
-  <TITLE>Erts Release Notes</TITLE>
-</HEAD>
-
-<BODY BGCOLOR="#FFFFFF">
-
-<CENTER><H1>Erts Release Notes</H1></CENTER>
-<H2>Erts 5.0.2</H2>
-<H3>Fixed errors and malfunctions</H3>
-
-<UL>
-
-<LI>
-Heart could time out due to system time adjustments. Heart is now modified to 
-use timestamps unrelated to system dates.
-<br>Own Id: OTP-3401
-
-<LI>
-The -nohup option didn't work on Windows, causing
-erlsrv to fail.
-<br>Own Id: OTP-3715
-
-
-<LI>
-zlib in the emulator (used during compress/decompress of 
-files) did not use the right memory allocation routines on vxworks.
-<br>Own Id: OTP-3815
-
-
-<LI>
-Instability problems in the erlang emulator introduced in R7 
-are now corrected:
-*) The R7B01 emulator may now be restarted after halting 
-without rebooting the VxWorks node.
-*) Parallel portprogrm execution no longer may cause memory
-access errors in tExecTask.
-*) Use of list_to_binary may no longer cause stack overruns 
-for the emulator.
-<br>Own Id: OTP-3819
-
-
-<LI>
-Name clashes between Erlang emulator and erl_interface
-on VxWorks removed.
-<br>Own Id: OTP-3824
-
-
-<LI>
-A bug in efile_drv that randomly caused memory access 
-violation when using file:get_cwd() has been fixed.
-<br>Own Id: OTP-3832
-
-
-<LI>
-In some cases, the debugger would in a call to undefined
-function <CODE>erts_debug:apply/4</CODE>. This problem has been
-corrected.
-<br>Own Id: OTP-3845<br>
-Aux Id: Seq 5094
-
-
-<LI>
-Running erlang in an console on Windows (erl) no longer causes
-output from erlang to be blocked. Using Ctrl-C to
-interrupt emulator now works as expected.
-<br>Own Id: OTP-3888
-
-<LI>
-Deliverance of SIGCHLD signals to the emulator could
-fail when threads where used on Solaris. This could
-result in the (Solaris) process table being filled
-with defunct processes. Child process management in
-the emulator has been modified to eliminate this
-problem.
-<br>Own Id: OTP-3963<br>
-Aux Id: OTP-3906
-
-<LI>
-When the system limit on maximal number of nodes
-known to a node had been reached (the distribution
-table had been filled), pids, ports, and references
-belonging to previously connected nodes could change
-node belonging. This bug has now been fixed.
-<br>Own Id: OTP-4071<br>
-
-<LI>
-The <CODE>--enable-threads</CODE> flag was previously ignored
-by the <CODE>configure</CODE> script. This has now been
-corrected, and it is now possible to enable threads by
-passing the <CODE>--enable-threads</CODE> flag to the
-<CODE>configure</CODE> script when building the open source
-release.
-<br>Own Id: OTP-4019<br>
-
-</UL>
-<H3>Improvements and new features</H3>
-
-<UL>
-
-<LI>
-A number of bug fixes and improvements have been done
-to applications <CODE>runtime_tools</CODE>, 
-<CODE>kernel</CODE> and <CODE>erts</CODE>:
-<UL>
-<br>
-<LI>A read timeout no longer resets the sequential
-trace token. This is an incompatibility towards
-the previous behaviour. Use
-<CODE>seq_trace:set_token([])</CODE> to reset the
-sequential trace token.
-<br>
-<LI><CODE>seq_trace:get_token/0</CODE> and 
-<CODE>seq_trace:set_token/1</CODE> now have compatible
-token formats. 
-<br>
-<LI><CODE>dbg:trace_port/2</CODE> and 
-<CODE>dbg:trace_client/2,3</CODE> now supports trace
-to and read from a size limited "wrap file set".
-<br>
-<LI><CODE>dbg:trace_port_control/1</CODE> now supports
-operation <CODE>get_listen_port</CODE> for the ip
-trace driver.
-<br>
-<LI>New match spec functions 
-<CODE>{is_seq_trace}</CODE> and 
-<CODE>{get_seq_trace}</CODE> has been added to test
-and read the sequential trace token in match specs.
-<br>
-<LI>New match spec functions 
-<CODE>{get_tcw}</CODE> and 
-<CODE>{set_tcw Value}</CODE> that reads and sets 
-a "trace control word" in the node has been added.
-The "trace control word" is a word in each
-Erlang node of at least 24 bits.
-There are also enhancements of BIFs:
-<CODE>erlang:system_info(trace_control_word)</CODE> and
-<CODE>erlang:system_flag(trace_control_word, Value)</CODE>
-for the same purpose.
-<br>
-<LI>A new match spec function
-<CODE>{silent, TrueOrFalse}</CODE> for setting a 
-silent call trace flag per process that inhibits
-call trace messages, both local and global, has
-been added. The BIF 
-<CODE>erlang:trace/3</CODE> has been extended to 
-recognize the flag 'silent' to start a call
-trace in silent mode.
-<br>
-<LI>Some bugs in the <CODE>dbg</CODE> module has been
-fixed, e.g the 'old_trace_call' flag has been
-removed from the 'all' flags list, and the dbg server
-no longer hangs if the supplied tracer fails to
-start.
-<br>
-<LI>A bug in the emulator that made 'EXIT' messages
-from a process involved in a sequential call trace
-get overwritten by the sequential trace token
-itself has been fixed.
-<br>
-<LI>The documentation regarding the above has
-been updated. Especially, the fact that the match spec
-function <CODE>{return_trace}</CODE> destroys the 
-tail recursiveness of the traced function has been 
-pointed out.
-<br>
-</UL>
-<br>(*** POTENTIAL INCOMPATIBILITY ***)
-<br>Own Id: OTP-3747<br>
-Aux Id: OTP-3592, OTP-3744
-
-
-<LI>
-The use of the environment variable ERL_GC_TYPE to force 
-fullsweep garbage collection is no longer supported in R7B, 
-instead the environment variable ERL_FULLSWEEP_AFTER
-can be set to "0" to get the same result. 
-The misleading README and example start script for VxWorks 
-are now updated.
-<br>Own Id: OTP-3884
-
-
-<LI>
-The dlmalloc malloc() implementation has been included
-in the emulator in order to reduce memory consumption
-and memory fragmentation when running Erlang on Solaris.
-See README file (in top directory) on how to enable dlmalloc
-when building an open source release.
-<br>Own Id: OTP-3997<br>
-Aux Id: OTP-3917
-
-<LI>
-<CODE>dlmalloc</CODE> was introduced in the Erlang emulator
-version 5.0.2.3 because it performed better than
-Solaris <CODE>malloc</CODE> when the emulator needed to allocate
-large short-lived memory blocks. It was later observed
-that it performed worse than Solaris <CODE>malloc</CODE> under some
-conditions. We have therefore now removed <CODE>dlmalloc</CODE>
-and replaced it with our own special treatment of
-short-lived memory blocks (called <CODE>sl_alloc</CODE>) and the
-standard <CODE>malloc</CODE> implementation for other blocks.
-<P>
-The current version of <CODE>sl_alloc</CODE> uses the system call
-<CODE>mmap()</CODE> (on platforms where <CODE>mmap()</CODE> exists)
-in order to
-allocate large blocks (just as <CODE>dlmalloc</CODE>) and uses the
-standard <CODE>malloc</CODE> implementation for small blocks.
-<P>
-Maximum number of mmapped blocks and the threshold
-which is used to determine if a block should be
-mmapped can be adjusted, see "System Flags" in <CODE>erl(1)</CODE>.
-<P>
-<CODE>sl_alloc</CODE> can be disabled. The standard <CODE>malloc</CODE>
-implementation will in this case be used instead, see
-"System Flags" in <CODE>erl(1)</CODE>.
-<br>Own Id: OTP-4075
-
-
-</UL>
-<H2>Erts 5.0.1</H2>
-<H3>Fixed errors and malfunctions</H3>
-
-<UL>
-
-<LI>
-For newer versions of gcc the value of GCCLIB_PATH
-was set incorrectly.
-<br>Own Id: OTP-3785
-
-
-<LI>
-Loading of dynamic drivers on VxWorks works again.
-(erl_ddll:load_driver/2)
-<br>Own Id: OTP-3808<br>
-Aux Id: Seq 5037
-
-
-</UL>
-
-<H2>Erts 5.0.1 (R7B)</H2>
-<H3>Improvements and new features</H3>
-
-<UL>
-
-<LI>
-A new better and more portable hash BIF, <c>erlang:phash/2</c>, has been
-introduced. The <c>dets</c> module will use the <c>erlang:phash/2</c>
-for newly created tables. To rebuild an old table and start to use the
-new hash BIF, give the <c>{repair,force}</c> option to <c>dets:open_file/2</c>.
-See the documentation.
-<br>Own Id: OTP-3397
-
-<LI>
-The <CODE>-detached</CODE> flag has been documented in the <CODE>erl</CODE>
-man page. Some other minor documenation errors were also
-corrected.
-<br>Own Id: OTP-3686
-
-
-<LI>
-Function c:memory/[0,1] added. It can be used to
-retrieve current memory allocation status,
-see the documentation of the c module.
-<br>Own Id: OTP-3698
-
-
-</UL>
-<H2>Erts 5.0 (R7A)</H2>
-<H3>Known problems</H3>
-
-<UL>
-
-<LI>
-System enters unstable state if epmd crashes
-<br>Own Id: OTP-1067<br>
-Aux Id: tir-f-054
-
-
-</UL>
-<H3>Fixed errors and malfunctions</H3>
-
-<UL>
-
-<LI>
-Windows: Some scrollbar problems in Werl were fixed.
-<br>Own Id: OTP-3560
-
-<LI>
-The BIFs split_binary/2 and binary_to_list/3 did not
-accept positions greater than 134217727 (128Mb - 1).
-This has been corrected.
-<br>Own Id: OTP-3594
-
-
-<LI>
-Calling binary_to_term/1 on a term which contains
-several funs could cause an emulator crasch.
-This has been corrected.
-<br>Own Id: OTP-3644
-
-
-</UL>
-<H3>Improvements and new features</H3>
-
-<UL>
-
-<LI>
-We have made several changes to the garbage collector
-and internal memory allocation routines to reduce
-memory consumption and memory fragmentation.
-Also, the compiler now makes sure that references
-to any data that will not be used again will be killed,
-so that the garbage collector can discard it as soon
-as possible.
-(Thanks to Claes Wickstrom at Bluetail who suggested
-most of the changes to the garbage collector.)
-<br>Own Id: OTP-2375<br>
-Aux Id: seq 816, HA81951
-
-
-<LI>
-There now exists syntax for constructing and matching
-binaries. For more infomation, see Extensions to Erlang.
-Also, the handling of small binaries (up to 64 bytes) has
-been optimised, as well as splitting of binaries.
-<br>Own Id: OTP-3376
-
-
-<LI>
-The maximum number of ports that can be opened
-using <CODE>erlang:open_port/2</CODE> can now be configured
-using the environment variable <CODE>ERL_MAX_PORTS</CODE>.
-By default, the maximum number of ports is 1024.
-Note that the default value of 1024 in rare
-cases may be lower than the default value in
-previous releases (it used to be the maximum number
-of file descriptors for the current process on Unix).
-<br>(*** INCOMPATIBILITY with R6 ***)
-<br>Own Id: OTP-3494
-
-
-<LI>
-The new BIF <CODE>erlang:read_timer/1</CODE> returns the remaining time
-(in ms) for a timer started by <CODE>start_timer/3</CODE> or
-<CODE>send_after/3</CODE>.
-<br>Own Id: OTP-3495
-
-
-<LI>
-Call tracing is greatly improved. It is now possible to
-trace local function calls (and calls to local functions)
-set up with the erlang:trace_pattern BIF. Trace compilation 
-for local call is no longer needed.
-<br>Own Id: OTP-3518
-
-
-<LI>
-There is now support for operating system threads in
-drivers. The file driver has been modified to make use
-of this, which means that lengthy file operations no longer
-cause everything on the node to pause. Currently only
-supported on Solaris and Windows. The number of threads in the
-thread pool can be set with the emulator system flag
-<CODE>-A</CODE>. The default number of threads is 0, which means
-that this feature is turned off. The number of threads
-in a node can be obtained by the call
-<CODE>erlang:info(thread_pool_size)</CODE>.
-<br>Own Id: OTP-3599
-
-
-<LI>
-The BIF erlang:monitor(process, Proc) has been extended
-to accept named processes, local and remote. 
-See the documentation for erlang:monitor/2 and 
-erlang:demonitor/1.
-<br>Own Id: OTP-3657
-
-
-<LI>
-The inet driver (inet_drv, i.e the driver for 
-(TCP&UDP)/IP) and a lot of supporting Erlang 
-code in the application kernel, has been replaced.
-The new code, courtesy of Tony Rogvall,
-eliminates one data relay process per socket
-and thereby gives a throughput boost.
-<br>Own Id: OTP-3661
-
-
-<LI>
-Thanks to the HiPE project at Uppsala University,
-the Erlang emulator now uses a 2 bit tag scheme
-internally. This change is not visible at the language
-level, but it means that the Erlang emulator can
-now address the entire 4Gb address space (OTP R6
-could only address 1Gb).
-<br>Own Id: OTP-3667
-
-
-<LI>
-The <CODE>erlang:info/1</CODE> and <CODE>erlang:system_info/1</CODE> BIFs have been
-merged into one. The recommended way to use the combined
-BIF is by the name <CODE>erlang:system_info/1</CODE>, but
-<CODE>erlang:info/1</CODE> will also work.
-<br>Own Id: OTP-3669
-
-
-<LI>
-In Unix, there was once a problem running the erlang emulator
-as part of a pipeline or with redirected input and/or output.
-An earlier OTP release introduced the infamous "cat process"
-which partly solved the problem, but introduced its own new
-problems. In this version, the internal cat process has been
-removed in favour of a cleaner solution without any unpleasant
-side-effects.
-<br>Own Id: OTP-3671
-
-
-<LI>
-The beam emulator now uses the C library function 
-call poll() instead of select() on Unix systems that
-support this, e.g Solaris. On those systems 
-the datatype fd_set no longer limits the number
-of fildescriptor.
-<br>Own Id: OTP-3673
-
-
-<LI>
-New socket options for TCP/IP sockets: 
-'tpkt' and 'line'. See the documentation for 
-inet:setopts/2.
-<br>Own Id: OTP-3674
-
-
-<LI>
-Most of the previously undocumented BIFs in the <CODE>erlang</CODE>
-module have been documented. Still undocumented are BIFs
-which are of no use in applications, for instance the set
-of BIFs	used to implement the distribution protocol.
-The newly documented BIFs are:
-<br>
-<CODE>append_element/2</CODE>,
-<CODE>bump_reductions/1</CODE>,
-<CODE>display/1</CODE>,
-<CODE>function_exported/3</CODE>,
-<CODE>garbage_collect/0,1</CODE>,
-<CODE>is_builtin/3</CODE>,
-<CODE>loaded/0</CODE>,
-<CODE>make_tuple/2</CODE>,
-<CODE>md5/1</CODE>,
-<CODE>md5_final/1</CODE>,
-<CODE>md5_init/1</CODE>,
-<CODE>md5_update/2</CODE>,
-<CODE>port_close/1</CODE>,
-<CODE>port_command/2</CODE>,
-<CODE>port_connect/2</CODE>,
-<CODE>port_control/3</CODE>,
-<CODE>port_to_list/1</CODE>,
-<CODE>ref_to_list/1</CODE>,
-<CODE>system_info/1</CODE>, and
-<CODE>yield/0</CODE>.
-<br>Own Id: OTP-3675
-
-
-<LI>
-The new BIF term_to_binary/2 can be used for automatically
-compressing the external representation of an Erlang term.
-The binary_to_term/1 BIF in R7 automatically recognises
-and decompresses such compressed terms.
-<br>Own Id: OTP-3676
-
-
-</UL>
-
-
-There are also release notes for <A HREF="notes_history.html">older versions</A>.
+<html>
+<head>
+  <title>Erts Release Notes</title>
+  <style type="text/css">
+<!--
+    body          { background: white; margin: 3em }
+
+    body          { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1 h2 h3 h4   { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1            { font-size: 48 }
+    p li          { font-family: Verdana, Arial, Helvetica, sans-serif }
+-->
+  </style>
+</head>
+
+<body bgcolor=white>
+
+<center><h1>Erts Release Notes</h1></center>
+
+
+<!--- ################################################################# --->
+
+<h2>Erts 5.1</h2>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    The call <code>trunc(F)</code> where <code>F</code> is a float such
+    that the expected result is 2^27, instead returned -2^27. Also
+    <code>round(134217727.5)</code> gave an erroneous answer.<br>
+    (Own Id: OTP-3722)<br>
+    (Aux Id: Seq 4925, OTP-3190)<p>
+  </li>
+
+  <li>
+    If the user suspended Erlang (e.g., by pressing ^Z), and the operating
+    system is SunOS 2.6 or higher, trying to continue only resulted in
+    Erlang being suspended again.<br>
+    (Own Id: OTP-3726)<p>
+  </li>
+
+  <li>
+    Deliverance of SIGCHLD signals to the emulator could fail when threads
+    where used on Solaris. This could result in the (Solaris) process table
+    being filled with defunct processes. Child process management in the
+    emulator has been modified to eliminate this problem.<br>
+    (Own Id: OTP-3906)<br>
+    (Aux Id: Seq 5143, OTP-3963)<p>
+  </li>
+
+  <li>
+    A close of a tcp socket could be delayed up to 5 seconds after all
+    pending output had been sent. Now the socket is closed immediately
+    after all pending output has been sent.<br>
+    (Own Id: OTP-3924)<br>
+    (Aux Id: seq 5182, OTP-3963)<p>
+  </li>
+
+  <li>
+    When <code>demonitor/1</code> was used on a monitor for a process on
+    another node (for example, using <code>gen_server</code> calls), not
+    all associated allocated memory was freed, causing a memory leak of
+    some 20 bytes each time. This has been fixed.<br>
+    (Own Id: OTP-3929)<p>
+  </li>
+
+  <li>
+    If <code>erlang:demonitor/1</code> was called in order to demonitor a
+    process on another node, at the same time as the node went down, Erlang
+    could sometimes crash. This has been fixed.<br>
+    (Own Id: OTP-3969)<br>
+    (Aux Id: seq5152)<p>
+  </li>
+
+  <li>
+    When constructing a binary, using a number of bits other than a
+    multiple of 8 from a binary could give the wrong result in compiled
+    code. Example: <code>B1 = <<73>>, B2 = <<0>>,
+    &lt;&lt;B1:6/binary-unit:1,B2:2/binary-unit:1>></code>.<br>
+    (Own Id: OTP-3995)<p>
+  </li>
+
+  <li>
+    The bor operator could return incorrect answer for big integers.<br>
+    (Own Id: OTP-4005)<p>
+  </li>
+
+  <li>
+    <code>binary_to_term</code> on binaries (for example
+    <code>list_to_binary([131,111,255,255,255,0])</code> not corresponding
+    to a term could crash Erlang.<br>
+    (Own Id: OTP-4053)<p>
+  </li>
+
+  <li>
+    When the system limit on maximal number of nodes known to a node had
+    been reached (the distribution table had been filled), pids, ports, and
+    references belonging to previously connected nodes could change node
+    belonging. This bug has now been fixed.
+    (Own Id: OTP-4071)<br>
+    (Aux Id: Seq-5311, OTP-4048)<p>
+  </li>
+
+  <li>
+    A bug in the heap fragment allocation could cause an emulator crash.
+    This bug has now been fixed.<br>
+    (Own Id: OTP-4109)<p>
+  </li>
+
+  <li>
+    Emulator could crash due to exiting process monitoring process on a
+    node that concurrently goes down. This has now been corrected.<br>
+    (Own Id: OTP-4112)<br>
+    (Aux Id: OTP-3969)<p>
+  </li>
+
+  <li>
+    A memory leak of 36 bytes per thread created, and a potential memory
+    leak of 8 bytes per thread created have been fixed.<br>
+    (Own Id: OTP-4115)<p>
+  </li>
+
+  <li>
+    Miscalculation in gc could cause emulator crash. This has now been
+    fixed.<br>
+    (Own Id: OTP-4116)<p>
+  </li>
+
+  <li>
+    An mmap leak in sl_alloc has been fixed.<br>
+    (Own Id: OTP-4120)<p>
+  </li>
+
+</ul>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+    The driver interface (for writing Erlang drivers in C) is now documented.
+    See the man page erl_driver in the ERTS documentation.
+
+    <p>The old <c>driver.h</c> include file has been moved to
+    <c>$(ERL_ROOT)/usr/include/obsolete</c>. It is not recommended to use it,
+    but if you need to use it, you must move it or change the include path
+    to make sure that the C compiler can find it.
+  </li>
+
+  <li>
+    The abstract format for representing Erlang code as Erlang terms is now
+    documented, in the ERTS User's Guide.<br>
+    (Own Id: OTP-3039)<p>
+  </li>
+
+  <li>
+    A number of bug fixes and improvements have been done to applications
+    <CODE>runtime_tools</CODE>, <CODE>kernel</CODE> and <CODE>erts</CODE>:
+    <UL> <br> <LI>A read timeout no longer resets the sequential trace
+    token. This is an incompatibility towards the previous behaviour. Use
+    <CODE>seq_trace:set_token([])</CODE> to reset the sequential trace
+    token. <br> <LI><CODE>seq_trace:get_token/0</CODE> and
+    <CODE>seq_trace:set_token/1</CODE> now have compatible token formats.
+    <br> <LI><CODE>dbg:trace_port/2</CODE> and
+    <CODE>dbg:trace_client/2,3</CODE> now supports trace to and read from a
+    size limited "wrap file set". <br>
+    <LI><CODE>dbg:trace_port_control/1</CODE> now supports operation
+    <CODE>get_listen_port</CODE> for the ip trace driver. <br> <LI>New
+    match spec functions <CODE>{is_seq_trace}</CODE> and
+    <CODE>{get_seq_trace}</CODE> has been added to test and read the
+    sequential trace token in match specs. <br> <LI>New match spec
+    functions <CODE>{get_tcw}</CODE> and <CODE>{set_tcw Value}</CODE> that
+    reads and sets a "trace control word" in the node has been added. The
+    "trace control word" is a word in each Erlang node of at least 24 bits.
+    There are also enhancements of BIFs:
+    <CODE>erlang:system_info(trace_control_word)</CODE> and
+    <CODE>erlang:system_flag(trace_control_word, Value)</CODE> for the same
+    purpose. <br> <LI>A new match spec function <CODE>{silent,
+    TrueOrFalse}</CODE> for setting a silent call trace flag per process
+    that inhibits call trace messages, both local and global, has been
+    added. The BIF <CODE>erlang:trace/3</CODE> has been extended to
+    recognize the flag 'silent' to start a call trace in silent mode. <br>
+    <LI>Some bugs in the <CODE>dbg</CODE> module has been fixed, e.g the
+    'old_trace_call' flag has been removed from the 'all' flags list, and
+    the dbg server no longer hangs if the supplied tracer fails to start.
+    <br> <LI>A bug in the emulator that made 'EXIT' messages from a process
+    involved in a sequential call trace get overwritten by the sequential
+    trace token itself has been fixed. <br> <LI>The documentation regarding
+    the above has been updated. Especially, the fact that the match spec
+    function <CODE>{return_trace}</CODE> destroys the tail recursiveness of
+    the traced function has been pointed out. <br> </UL><br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-3747)<br>
+    (Aux Id: OTP-3592, OTP-3744)<p>
+  </li>
+
+  <li>
+    Hidden nodes and hidden global groups have been introduced. This makes
+    it possible to establish hidden connections between Erlang nodes. See
+    global_group(3), and erl(1).<br>
+    (Own Id: OTP-3916)<br>
+    (Aux Id: OTP-3963)<p>
+  </li>
+
+  <li>
+    The flag 'procs' to erlang:trace/3 has got a slightly new behaviour:
+    Trace tag 'spawn' has a new element, and trace tags 'register',
+    'unregister', and 'getting_unlinked' are new. Therefore, new and/or
+    different trace messages will arrive to the tracer when the 'procs'
+    trace flag is used.<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-3934)<br>
+    (Aux Id: seq5193)<p>
+  </li>
+
+  <li>
+    Wrap file traces now can limit the size of each file with a time
+    instead of a size. See the documentation for dbg:trace_port/2.<br>
+    (Own Id: OTP-3935)<br>
+    (Aux Id: seq5193)<p>
+  </li>
+
+  <li>
+    When using trace flags 'running' and 'timestamp' to determine the
+    amount of running time different processes in the system were using,
+    the results were somewhat unreliable since the time to write the trace
+    buffer itself randomly burdened the traced processes. This is now
+    compensated for by faking process schedule out and in trace messages
+    around the file writes (for the trace file driver trace_file_drv).<br>
+    (Own Id: OTP-3938)<p>
+  </li>
+
+  <li>
+    A new command line argument <code>-extra</code> has been introduced,
+    which causes all following arguments to remain uninterpreted by Erlang;
+    the arguments are included in the list returned by
+    <code>init:get_plain_arguments/0</code>.<br>
+    (Own Id: OTP-3955)<br>
+    (Aux Id: OTP-3030, Seq 5203)<p>
+  </li>
+
+  <li>
+    dlmalloc was introduced in the Erlang emulator version 5.0.2.3 because
+    it performed better than Solaris malloc when the emulator needed to
+    allocate large short-lived memory blocks. It was later observed that it
+    performed worse than Solaris malloc under some conditions. We have
+    therefore now removed dlmalloc and replaced it with our own special
+    treatment of short-lived memory blocks (called sl_alloc) and the
+    standard malloc implementation for other blocks. <p> The current
+    version of sl_alloc uses the system call mmap() (on platforms where
+    mmap() exists) in order to allocate large blocks (just as dlmalloc) and
+    uses the standard malloc implementation for small blocks. <p> Maximum
+    number of mmapped blocks and the threshold which is used to determine
+    if a block should be mmapped can be adjusted, see "System Flags" in
+    erl(1). <p> sl_alloc can be disabled. The standard malloc
+    implementation will in this case be used instead, see "System Flags" in
+    erl(1).<br>
+    (Own Id: OTP-4075)<br>
+    (Aux Id: SEQ-7057,)<p>
+  </li>
+
+  <li>
+    When the emulator runs without the async thread pool, large file read
+    and write operations are now segmented into smaller, so that other
+    Erlang processes can run in parallel. Still, a sync or a close
+    operation on a large file may block the emulator as before. Using the
+    async thread pool is the only cure for that.<br>
+    (Own Id: OTP-4144)<p>
+  </li>
+
+  <li>
+    In the Open-Source release of Erlang/OTP, the HiPE (High Performance
+    Erlang) extension can be enabled. (Using <code>./configure
+    --enable-hipe</code> when building.) If the runtime-system is
+    hipe-enabled, a module can be native-code compiled like this: <br>
+    <p><code>c(Module, [native|OtherOptions])</code>. <br> <p>Compiling in
+    this way, the beam file will contain both standard beam byte-code and
+    the native code. If loaded on a hipe-enabled system the native code
+    will be loaded; otherwise the beam-code will be loaded. <br> <p>HiPE is
+    supported for Ultra Sparc and Intel Pentium.<br>
+    (Own Id: OTP-4153)<p>
+  </li>
+
+  <li>
+    Process termination when the process owns ETS tables is made
+    considerably faster.<br>
+    (Own Id: OTP-4154)<br>
+    (Aux Id: OTP-3547)<p>
+  </li>
+
+  <li>
+    Due to the handling of the ETS name-to-table translations, a ets call
+    when the named table did not exist could take considerable time before
+    throwing "badarg". This is no longer the case.<br>
+    (Own Id: OTP-4155)<br>
+    (Aux Id: OTP-3547)<p>
+  </li>
+
+  <li>
+    The following new functions are added to the ets modules: ets:select/2
+    ets:select/3 ets:select/1 ets:match/3 ets:match/1 ets:match_object/3
+    ets:match_object/1 ets:member/2 ets:delete_all_objects/1
+    ets:delete_object/2 ets:from_dets/2 ets:to_dets/2 ets:test_ms/2 - See
+    the ETS manual page for details. Furthermore the ets:insert/2 function
+    now also accepts a list of objects to be inserted.<br>
+    (Own Id: OTP-4156)<br>
+    (Aux Id: OTP-3547)<p>
+  </li>
+
+  <li>
+    Ets:safe_fixtable/2 is made more efficient. Fixation is done without
+    message passing and structures are held internally by the emulator.<br>
+    (Own Id: OTP-4157)<br>
+    (Aux Id: OTP-3547)<p>
+  </li>
+
+</ul>
+
+
+
+There are also release notes for
+<a href="notes_history.html">older versions</a>.
 
 </body>
 </html>

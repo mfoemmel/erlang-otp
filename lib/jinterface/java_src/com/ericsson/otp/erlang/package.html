@@ -32,14 +32,6 @@
 <p> This package provides support for communication with Erlang and
 representation of Erlang datatypes.
 
-<p> The classes {@link com.ericsson.otp.erlang.OtpPeer}, {@link
-com.ericsson.otp.erlang.OtpSelf} and {@link
-com.ericsson.otp.erlang.OtpServer} are used to represent OTP nodes and
-are neccessary in order to set up communication between the Java
-thread and a remote node. Once a connection has been established, it
-is represented by an {@link com.ericsson.otp.erlang.OtpConnection},
-through which all communication goes.
-
 <p> The classes 
 {@link com.ericsson.otp.erlang.OtpErlangList}, 
 {@link com.ericsson.otp.erlang.OtpErlangTuple},
@@ -62,6 +54,45 @@ through which all communication goes.
 and {@link com.ericsson.otp.erlang.OtpErlangRef}
 represent the various Erlang datatypes.
 
+
+<p> There are two basic mechanisms for communicating with Erlang,
+described briefly here. Note that the two mechanisms are not intended
+to be used together. Which mechanism you choose depends on your
+application and the level of control it needs. </p>
+
+<p> You can use {@link com.ericsson.otp.erlang.OtpNode}, which can
+manage incoming and outgoing connections for you. With {@link
+com.ericsson.otp.erlang.OtpNode} a thread is automatically started to
+listen for incoming connections, make necessary outgoing connections,
+and dispatch messages to their recipients. {@link
+com.ericsson.otp.erlang.OtpNode} supports the concept of {@link
+com.ericsson.otp.erlang.OtpMbox mailboxes}, allowing you to have
+several Java components communicating independently with Erlang.
+</p>
+
+<pre>
+  OtpNode node = new OtpNode("bingo");
+  OtpMbox mbox = node.createMbox();
+  
+  mbox.send("foo@localhost",new OtpErlangAtom("hej"));
+</pre>
+
+<p> If you need more control (but less support from the library), you
+can manage connections yourself using the {@link
+com.ericsson.otp.erlang.OtpSelf} and {@link
+com.ericsson.otp.erlang.OtpConnection} classes, in which case you can
+control explicitly which connections are made and which messages are
+sent. Received messages are not dispatched by {@link
+com.ericsson.otp.erlang.OtpConnection}. </p>
+
+<p> The classes {@link com.ericsson.otp.erlang.OtpPeer}, {@link
+com.ericsson.otp.erlang.OtpSelf} and {@link
+com.ericsson.otp.erlang.OtpServer} are used to represent OTP nodes and
+are neccessary in order to set up communication between the Java
+thread and a remote node. Once a connection has been established, it
+is represented by an {@link com.ericsson.otp.erlang.OtpConnection},
+through which all communication goes.
+
 <p> Setting up a connection with a remote node is straightforward. You
 create objects representing the local and remote nodes, then call the
 local node's {@link
@@ -74,15 +105,13 @@ connect()} method:
   OtpConnection conn = self.connect(other);
 </pre>
 
-<p>The {@link com.ericsson.otp.erlang.OtpSelf OtpSelf} used in the
-previous example is a client-only node, i.e. it can make outgoing
-connections but it cannot accept incoming ones. If your Java node also
-needs to be able to accept incoming connections, you must use an
-{@link com.ericsson.otp.erlang.OtpServer OtpServer} instead, which can
-do both:
+<p>If you wish to be able to accept incoming connections as well as
+make outgoing ones, you first must register the listen port with EPMD
+(described in the Erlang documentation). Once that is done, you can
+accept incoming connections:
 
 <pre>
-  OtpServer self = new OtpServer("client","cookie");
+  OtpServer self = new OtpSelf("server","cookie");
   self.publishPort();
   OtpConnection conn = self.accept();
 </pre>
@@ -90,7 +119,7 @@ do both:
 
 <p>Once the connection is established by one of the above methods ({@link
 com.ericsson.otp.erlang.OtpSelf#connect(com.ericsson.otp.erlang.OtpPeer)
-connect()} or {@link com.ericsson.otp.erlang.OtpServer#accept()
+connect()} or {@link com.ericsson.otp.erlang.OtpSelf#accept()
 accept()}), you can use the resulting {@link
 com.ericsson.otp.erlang.OtpConnection OtpConnection} to send and
 receive messages:
@@ -102,6 +131,11 @@ receive messages:
   OtpErlangObject reply = conn.receive();
   System.out.println("Received " + reply);
 </pre>
+
+<p> Finally, you can get an even greater level of control (and even
+less support from the library) by subclassing {@link
+com.ericsson.otp.erlang.AbstractConnection} and implementing the
+communication primitives needed by your application. </p>
 
 </body>
 </html>

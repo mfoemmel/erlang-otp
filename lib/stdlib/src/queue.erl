@@ -27,8 +27,8 @@ in(X, {In, Out}) -> {[X|In], Out}.
 
 out({In, [H|Out]}) ->
 	{{value, H}, {In, Out}};
-out({[], []}) ->
-	{empty, {[],[]}};
+out({[], []}=Empty) ->
+	{empty, Empty};
 out({In, _}) ->
 	out({[], lists:reverse(In)}).
 

@@ -27,7 +27,7 @@
 #include <string.h>
 #include <signal.h>
 
-#include "driver.h"
+#include "erl_driver.h"
 
 #define TRUE 1
 #define FALSE 0
@@ -61,16 +61,16 @@ int lpos;
 #define NL '\n'
 
 /* Main interface functions. */
-static int ttysl_init();
-static long ttysl_start();
-static int ttysl_stop();
-static int ttysl_from_erlang();
-static int ttysl_from_tty();
+static int ttysl_init(void);
+static ErlDrvData ttysl_start(ErlDrvPort, char*);
+static void ttysl_stop(ErlDrvData);
+static void ttysl_from_erlang(ErlDrvData, char*, int);
+static void ttysl_from_tty(ErlDrvData, ErlDrvEvent);
 static sint16 get_sint16();
 
-static int ttysl_port;
+static ErlDrvPort ttysl_port;
 
-extern HANDLE console_input_event;
+extern ErlDrvEvent console_input_event;
 extern HANDLE console_thread;
 
 static HANDLE ttysl_in = INVALID_HANDLE_VALUE; /* Handle for console input. */
@@ -89,39 +89,47 @@ static int write_buf();
 static void move_cursor(int, int);
 
 /* Define the driver table entry. */
-struct driver_entry ttsl_driver_entry = {
-    ttysl_init, ttysl_start, ttysl_stop, ttysl_from_erlang,
-    ttysl_from_tty, null_func, "tty_sl"
+struct erl_drv_entry ttsl_driver_entry = {
+    ttysl_init,
+    ttysl_start,
+    ttysl_stop,
+    ttysl_from_erlang,
+    ttysl_from_tty,
+    NULL,
+    "tty_sl",
+    NULL,
+    NULL,
+    NULL,
+    NULL
 };
 
 static int ttysl_init()
 {
     lbuf = NULL;		/* For line buffer handling */
-    ttysl_port = -1;
+    ttysl_port = (ErlDrvPort)-1;
     return TRUE;
 }
 
-static long ttysl_start(int port, char* buf)
+static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
 {
-    if (ttysl_port != -1 || console_thread == NULL) {
-	return -1;
+    if ((int)ttysl_port != -1 || console_thread == NULL) {
+	return ERL_DRV_ERROR_GENERAL;
     }
     start_lbuf();
     driver_select(port, console_input_event, DO_READ, 1);
     ttysl_port = port;
-    return ttysl_port;			/* Nothing important to return */
+    return (ErlDrvData)ttysl_port;/* Nothing important to return */
 }
 
-static int ttysl_stop(long ttysl_data)
+static void ttysl_stop(ErlDrvData ttysl_data)
 {
-    if (ttysl_port != -1) {
-        driver_select(ttysl_port,console_input_event,DO_READ,0);
+    if ((int)ttysl_port != -1) {
+        driver_select(ttysl_port, console_input_event, DO_READ, 0);
     }
 
     ttysl_in = ttysl_out = INVALID_HANDLE_VALUE;
     stop_lbuf();
-    ttysl_port = -1;
-    return TRUE;
+    ttysl_port = (ErlDrvPort)-1;
 }
 
 /*
@@ -157,16 +165,13 @@ int n;
     return(1);
 }
 
-static int ttysl_from_erlang(ttysl_data, buf, count)
-long ttysl_data;
-byte *buf;
-int count;
+static void ttysl_from_erlang(ErlDrvData ttysl_data, char* buf, int count)
 {
     if (lpos > MAXSIZE) 
 	put_chars("\n", 1);
     
     if (check_buf_size(buf+1, count-1) == 0)
-	return(-1);
+	return;
     
     switch (buf[0]) {
     case OP_PUTC:
@@ -188,15 +193,15 @@ int count;
 	/* Unknown op, just ignore. */
 	break;
     }
-    return TRUE;
+    return;
 }
 
 extern int read_inbuf(char *data, int n);
-static int ttysl_from_tty(long ttysl_data, int fd)
+
+static void ttysl_from_tty(ErlDrvData ttysl_data, ErlDrvEvent fd)
 {
    char inbuf[64];
-   driver_output(ttysl_port,inbuf,ConReadInput(inbuf,1));   
-   return TRUE;
+   driver_output(ttysl_port, inbuf, ConReadInput(inbuf,1));   
 }
 
 /*

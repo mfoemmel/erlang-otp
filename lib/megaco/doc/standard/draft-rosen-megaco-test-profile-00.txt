@@ -1,0 +1,342 @@
+
+Megaco                                                         B. Rosen
+Internet Draft                                                  Marconi
+Document: draft-rosen-megaco-test-profile-00.txt 
+Category: Informational 
+         
+ 
+                     Interoperability Test Profile 
+ 
+ 
+Status of this Memo 
+ 
+   This document is an Internet-Draft and is in full conformance with 
+   all provisions of Section 10 of RFC2026 [1].  
+    
+   Internet-Drafts are working documents of the Internet Engineering 
+   Task Force (IETF), its areas, and its working groups. Note that 
+   other groups may also distribute working documents as Internet-
+   Drafts. Internet-Drafts are draft documents valid for a maximum of 
+   six months and may be updated, replaced, or obsoleted by other 
+   documents at any time. It is inappropriate to use Internet- Drafts 
+   as reference material or to cite them other than as "work in 
+   progress."  
+   The list of current Internet-Drafts can be accessed at 
+   http://www.ietf.org/ietf/1id-abstracts.txt  
+   The list of Internet-Draft Shadow Directories can be accessed at 
+   http://www.ietf.org/shadow.html. 
+    
+    
+    
+    
+    
+1. Abstract 
+    
+   This document describes a profile for use in interoperability 
+   testing of the Megaco/H.248 protocol and a set of scenarios to try 
+   increasingly difficult mechanisms in the protocol.  To support early 
+   phase testing, it is useful to define a simple, easy to implement 
+   set of characteristics that allow initial implementations to get 
+   very basic functions working. By implementing this profile, testing 
+   a variety of MGs against a variety of MGCs is possible.  The test 
+   scenarios describe high-level behavior expected by the MGs and MGCs, 
+   but not explicit message sequences. 
+    
+   Also included is a set of test messages that may be used to verify 
+   early stage MG/MGC functionality.  They could be used to test 
+   parsers, and they can be used to assure that implementations have 
+   base functionality prior to testing with devices that may not 
+   produce the same messages. 
+    
+    
+    
+2. Profile 
+    
+
+  
+    megaco        Informational - Expires January, 2001               1
+                     Megaco Interop Test Profile             July 2000  
+ 
+   The test profile is described as one profile, but is actually a set 
+   of increasing functionality profiles.  The levels are assigned a 
+   numeric identifier, from Level 1 to Level 4.  The scenarios specify 
+   which level of the profile is required. It is possible to define 4 
+   separate profiles, but many devices will implement several of the 
+   levels, and it was not considered appropriate to have to reconfigure 
+   the device for a specific level for each scenario.   
+   Level 1 corresponds to the simplest possible gateway that can detect 
+           off hook, and create a media stream, but little else 
+   Level 2 corresponds to a low functionality gateway that can detect 
+           DTMF and generate simple call progress tones so that basic 
+           call is possible 
+   Level 3 corresponds to a full functionality residential gateway with 
+           local signalling/DTMF detection  
+   Level 4 corresponds to a fully functional trunk gateway that is 
+           similar to level 3 but supports DS0s 
+    
+   2.1 Identification 
+   This profile shall be entitled "Interoperability Test Profile".   
+   The version number shall be 1.0.  This name shall be returned from a 
+   conforming gateway when sending the ServiceChange message as part of 
+   initial registration of the MG in the Profile section of the 
+   ServiceChange Descriptor.   
+    
+   2.2 Packages Implemented 
+   A conforming gateway shall implement at least the following 
+   packages: 
+      Package Name      ID     Ver Level Defined In 
+       Network          nt      1   1     Annex E 
+       Analog Line Supv al      1   1     Annex E* 
+       RTP              rtp     1   1     Annex E* 
+       Generic          g       1   2     Annex E 
+       Base Root        root    1   2     Annex E 
+       Tone Detect      tonedet 1   2     Annex E 
+       DTMF Detect      dt      1   2     Annex E 
+       Tone Generator   tonegen 1   3     Annex E 
+       DTMF Generate    dg      1   3     Annex E 
+       Continuity       ct      1   4     Annex E 
+       DS0              ds0     1   4     Annex E* 
+    
+   *Note: In general, increasing levels incorporate all lower level 
+   requirements.  Level 4 gateways however do not necessarily implement 
+   analog line (they may only implement DS0). 
+    
+   Gateways not supporting RTP (for example, an MG supporting ATM AAL1) 
+   need not support the RTP package, but instead would support the 
+   appropriate media transport package. 
+    
+   2.3 Naming Conventions 
+    
+   2.3.1 Gateway Naming Conventions 
+   The MG name, used in Registration and in the header of commands, 
+   shall be the string "GATEWAY" followed by one decimal digit.  The 
+  
+    megaco        Informational - Expires January, 2001               2
+                     Megaco Interop Test Profile             July 2000  
+ 
+   digit shall be provisionable.  In single MG test environments, the 
+   digit will normally be zero.  In multiple gateway scenarios, the 
+   gateways are numbered from 0 to 9. 
+    
+   2.3.2 Controller Naming Conventions 
+   The MGC name, used in Registration and in the header of commands, 
+   shall be the string "CONTROLLER" followed by one decimal digit.  The 
+   digit shall be provisionable.  In single MGC test environments, the 
+   digit will normally be zero.  In multiple MGC scenarios, the 
+   gateways are numbered from 0 - 9. 
+    
+   2.3.3 Termination Names 
+    
+   2.3.3.1 Physical Terminations 
+   There shall be two terminations _ "termA" and _termB" 
+    
+   2.3.3.2 Ephemeral Terminations 
+   RTP flows shall be named "rtpA", "rtpB", _ 
+    
+   2.4 Topology Descriptor 
+   A gateway conforming to this profile is not required to implement 
+   Topology and MGCs expecting to control gateways meeting this 
+   specification shall not assume Topology is implemented, for Levels 
+   1-4. 
+    
+   NOTE: As this document evolves, Topology will be introduced. 
+    
+   2.5 Service Change Descriptor 
+   For Level 1, only a Primary MGC should be provisioned (normally, 
+   "GATEWAY0").  For Level 2-4, the Gateway shall allow one primary and 
+   at least two secondary MGCs to be provisioned for registration.   
+    
+   2.6 Transport 
+   Gateways SHALL implement TCP transport of Megaco for Levels 1-4.  
+   Future scenarios will test other transports. 
+    
+   2.7 Security 
+   No security mechanisms are required, but full IPSEC AH is encouraged 
+   for Level 3 and 4 scenarios. 
+    
+   2.8 Encoding 
+   Conforming Gateways SHALL support text encoding.  
+     
+   2.9 Media 
+   IP connected gateways shall implement RTP flows with G.711 encoding.  
+   ATM connected gateways shall _. 
+    
+    
+    
+3. Scenarios 
+    
+   3.1 Hotel Phone 
+   Requires Level 1 
+  
+    megaco        Informational - Expires January, 2001               3
+                     Megaco Interop Test Profile             July 2000  
+ 
+    
+   Registration should have no options, and should always succeed.  No 
+   Audit should be performed.  When off hook is detected on termA, send 
+   ring to termB.  When off hook is detected on termB, stop ring, and 
+   create media flow between termA and termB.  When on hook is detected 
+   on termA, tear down the media flow. 
+    
+   3.2 Basic Call 
+   Requires Level 2 
+    
+   Registration should have no options, and should always succeed.  No 
+   Audit should be performed.  When off hook is detected on termA, 
+   establish a North American Dialing Plan digitmap.  If 555-1212 is 
+   called, send ring to termB.  Proceed as above. 
+    
+   3.3 Normal Operation of Simple Gateway 
+   Requires Level 3. 
+    
+   Use your normal registration procedures.  Registration should always 
+   succeed.  Audit as normal.  When offhook is detected on termA, 
+   return dialtone to termA and establish a North American Dialing 
+   Plan.  If any number except 555-1212 is dialed, return error tone.  
+   If 555-1212 is dialed, send ring to termB and ringback to termA.  
+   When termB goes off-hook, stop ring and ringback and establish media 
+   flow.  When either termA or termB goes on hook, tear down media 
+   flow. 
+    
+   3.4 Two Gateway Basic Call 
+   Requires Level 3 
+    
+   Use your normal registration procedures for two MGs.  Audit as 
+   normal.  Follow the same procedure as in Scenario 3.4, but construct 
+   the call from MG0 termA to MG1 termB. 
+    
+   3.5 Trunk Gateway Hotel Call 
+   Requires Level 4 
+    
+   Use your normal registration procedures.  Registration should always 
+   succeed.  Audit as normal.  When offhook is detected on termA 
+   continuity between termA and termB.  Upon completion, establish 
+   ringing on termB.  When termB goes off hook, establish media flow 
+   between termA and termB.  
+    
+   3.6 Two Trunk Gateway Basic Call 
+   Requires Level 4 
+    
+   As with Scenario 3.5, but between MG0 termA and MG1 termB. 
+    
+   3.7 Secondary Registration 
+   Requires Level 1 
+    
+
+
+  
+    megaco        Informational - Expires January, 2001               4
+                     Megaco Interop Test Profile             July 2000  
+ 
+   Provision MG for MGC0 as primary and MGC1 as secondary.  Attempt to 
+   register to MGC0.   MGC0 should refuse and not offer a 
+   ServiceChangeMgcId.  MGC1 should accept registration.   
+   Repeat with provisioning MG for MGC0 as primary and no secondary.  
+   Attempt to register to MGC0.  MGC0 should refuse and offer MGC1 as 
+   ServiceChangeMgcId.  Registration to MGC1 should succeed. 
+    
+    
+   4. Test Messages 
+    
+   <this section will have test messages as described in the posting by 
+   Thorson and Mattsson (Ericsson) > 
+ 
+ 
+    
+4. References 
+    
+ 
+   1. Cuervo, et. al., _Megaco Protocol_, draft-ietf-megaco-merged-
+      01.txt, June, 2000. 
+    
+    
+    
+    
+5. Author's Addresses 
+    
+   Brian Rosen 
+   Marconi 
+   1000 FORE Drive 
+   Phone: +1 724 742 6826 
+   Email: brian.rosen@marconi.com 
+    
+    
+6. Full Copyright Statement                            
+
+   Copyright (C) The Internet Society July 14, 2000. All Rights 
+   Reserved. This document and translations of it may be copied and 
+   furnished to others, and derivative works that comment on or 
+   otherwise explain it or assist in its implementation may be 
+   prepared, copied, published and distributed, in whole or in part, 
+   without restriction of any kind, provided that the above copyright 
+   notice and this paragraph are included on all such copies and 
+   derivative works. However, this document itself may not be modified 
+   in any way, such as by removing the copyright notice or references 
+   to the Internet Society or other Internet organizations, except as 
+   needed for the purpose of developing Internet standards in which 
+   case the procedures for copyrights defined in the Internet Standards 
+   process must be followed, or as required to translate it into it 
+   into languages other than English. 
+    
+   The limited permissions granted above are perpetual and will not be 
+   revoked by the Internet Society or its successors or assigns. 
+    
+  
+    megaco        Informational - Expires January, 2001               5
+                     Megaco Interop Test Profile             July 2000  
+ 
+   This document and the information contained herein is provided on an 
+   "AS IS" basis and THE INTERNET SOCIETY AND THE INTERNET ENGINEERING 
+   TASK FORCE DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING 
+   BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF THE INFORMATION 
+   HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED WARRANTIES OF 
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE. 
+    
+    
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+    megaco        Informational - Expires January, 2001               6

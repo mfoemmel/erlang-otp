@@ -12,8 +12,8 @@ PersonnelRecord ::= [APPLICATION 0] SET
 }
 
 ChildInformation ::= SET
-{	name			Name,
-	dateOfBirth		Date
+{	name			Name OPTIONAL,
+	dateOfBirth		Date OPTIONAL
 }
 
 Name ::= [APPLICATION 1] SEQUENCE

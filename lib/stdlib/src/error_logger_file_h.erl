@@ -32,7 +32,7 @@
 
 -export([init/1,
 	 handle_event/2, handle_call/2, handle_info/2,
-	 terminate/2]).
+	 terminate/2, code_change/3]).
 
 %% This one is used when we takeover from the simple error_logger.
 init({File, {error_logger, Buf}}) ->
@@ -88,6 +88,9 @@ handle_call(_Query, State) ->
 
 terminate(_Reason, _State) ->
     [].
+
+code_change(OldVsn, State, Extra) ->
+    {ok, State}.
 
 %%% ------------------------------------------------------
 %%% Misc. functions.

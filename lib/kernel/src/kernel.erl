@@ -103,9 +103,13 @@ init([]) ->
     Code = {code_server,
 	    {code, start_link, get_code_args()},
 	    permanent, 2000, worker, [code]},
-    File = {file_server,
-	    {file, start_link, []},
-	    permanent, 2000, worker, [file]},
+    File = {file_server_2,
+	    {file_server, start_link, []},
+	    permanent, 2000, worker, 
+	    [file, file_server, file_io_server, prim_file]},
+    OldFile = {file_server,
+	       {old_file_server, start_link, []},
+	       permanent, 2000, worker, [old_file_server]},
     User = {user,
 	    {user_sup, start, []},
 	    temporary, 2000, supervisor, [user_sup]},
@@ -127,7 +131,8 @@ init([]) ->
 		       [{local, kernel_safe_sup}, ?MODULE, safe]},
 		      permanent, infinity, supervisor, [?MODULE]},
     {ok, {SupFlags,
-	  [Rpc, Global, InetDb | DistAC] ++ [NetSup, Glo_grp, File, Code,
+	  [Rpc, Global, InetDb | DistAC] ++ 
+	  [NetSup, Glo_grp, File, OldFile, Code, 
 	   User, Config, SafeSupervisor] ++
 	  Ddll ++ Timer}};
 

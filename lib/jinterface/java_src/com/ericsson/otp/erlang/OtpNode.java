@@ -266,7 +266,7 @@ public class OtpNode extends OtpLocalNode {
    * handler, specify null as the handler to use.
    *
    **/
-  private synchronized void registerStatusHandler(OtpNodeStatus handler) {
+  public synchronized void registerStatusHandler(OtpNodeStatus handler) {
     this.handler = handler;
   }
   
@@ -437,7 +437,8 @@ public class OtpNode extends OtpLocalNode {
 	    addConnection(conn);
 	  }
 	  catch (Exception e) {
-	    connAttempt(peer.node(),true,e);
+	    /* false = outgoing */
+	    connAttempt(peer.node(),false,e);
 	  }
 	}
       }

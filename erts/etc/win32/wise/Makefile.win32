@@ -2,73 +2,64 @@
 # Win32 Makefile for Wise & automatic installation/test stuff...
 #
 # See the file $ERL_TOP/erts/internal_doc/win32_need.txt for 'must have' stuff.
-#
+# Modified by ingmey
 
 # Version files
 include ../../../vsn.mk
 include ../../../../lib/gs/vsn.mk
 
-#WISEDIR=D:\Progra~1\Wise
 WISE=$(WISEDIR)\Wise32.exe 
 WISE_SCRIPTS = erl_vsn.wse erlang-main.wse data-files.wse doc-files.wse \
-	       psdoc-files.wse test-files.wse
+	       test-files.wse
 
-NTWISEDIR=$(WISEDIR:\\=\\)
-
-EXE_FILE_NAME = otp_lxa_11930_nt.exe
+EXE_FILE_NAME = otp_lxa_11930_win32_$(SYSTEM_VSN).exe
 RM = del
 
 #
 # Targets
 #
 
-install: $(EXE_FILE_NAME) autorun.pl
-	@echo Test12
-	@autorun.pl
+install: $(EXE_FILE_NAME)
+	@echo install erlang on windows
+	do_install.pl "$(VSN)" "$(SERIALNO)" "$(EXE_FILE_NAME)"
 
 clean:
 	$(RM) $(WISE_SCRIPTS)
 	$(RM) *.wsm
 	$(RM) $(EXE_FILE_NAME)
-	$(RM) autorun.pl
 
 #
 # Explicit Rules.
 #
 $(EXE_FILE_NAME): $(WISE_SCRIPTS)
-	@echo Generating EXE file. This will take a while...
-	@$(WISE) /C erlang-main.wse
+	@echo Generating EXE file from erlang-main.wse with WISE
+	$(WISE) /C erlang-main.wse
 
-erlang-main.wse: erlang.wse
-	@echo Test13
-	sed 	-e 's;%EXE_FILE_NAME%;$(EXE_FILE_NAME);' \
-		-e "s;%WISED%;$(NTWISEDIR);" \
-		erlang.wse >erlang-main.wse
+erlang-main.wse: erlang-main.wse.in
+	@echo Creating erlang-main.wse from erlang-main.wse.in
+	replace.pl -r %EXE_FILE_NAME% "$(EXE_FILE_NAME)" \
+	-r %WISED% "$(WISEDIR)" -o erlang-main.wse erlang-main.wse.in
 
 erl_vsn.wse: erl_vsn.wse.in
-	@echo Test14
-	echo $(EMULATOR)
-	sed -e "s;%SERIAL_NO%;$(SERIALNO);" \
-	    -e "s;%SYSTEM_VSN%;$(SYSTEM_VSN);" \
-	    -e "s;%EMU%;$(EMULATOR);" \
-	    -e "s;%ERTS_VSN%;$(VSN);" -e "s;%GS_VSN%;$(GS_VSN);" \
-	    erl_vsn.wse.in >erl_vsn.wse
+	@echo Creating erl_vsn.wse from erl_vsn.wse.in
+	replace.pl -r %SERIAL_NO% "$(SERIALNO)" \
+	-r %SYSTEM_VSN% "$(SYSTEM_VSN)" \
+	-r %EMU% "$(EMULATOR)" \
+	-r %ERTS_VSN% "$(VSN)" \
+	-r %GS_VSN% "$(GS_VSN)" \
+	-o erl_vsn.wse erl_vsn.wse.in
 
 data-files.wse: $(TESTROOT) genwse.pl
+	@echo Generate data-files.wse
 	genwse.pl $(TESTROOT) . data
 
 doc-files.wse: $(TESTROOT) genwse.pl
+	@echo Generate doc-files.wse
 	genwse.pl $(TESTROOT)\doc . doc
 
-psdoc-files.wse: $(TESTROOT) genwse.pl
-	genwse.pl $(TESTROOT)\doc . psdoc
-
 test-files.wse: $(TESTROOT) genwse.pl
+	@echo Generate test-files.wse
 	genwse.pl $(TESTROOT)\test . test
 
-autorun.pl: autorun.pl.in
-	sed -e "s;%ERTS_VSN%;$(VSN);" -e "s;%SERIAL_NO%;$(SERIALNO);" \
-	    -e "s;%EXE_FILE_NAME%;$(EXE_FILE_NAME);" \
-	    -e "s;%SYSTEM_VSN%;$(SYSTEM_VSN);" \
-	    autorun.pl.in >autorun.pl
+
 

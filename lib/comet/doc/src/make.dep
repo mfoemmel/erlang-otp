@@ -10,12 +10,14 @@
 # ----------------------------------------------------
 
 book.dvi: book.tex ch_comet.tex ch_examples.tex ch_intro.tex \
-		comet.tex erl_com.tex notes.tex part_notes.tex \
-		refman.tex users_guide.tex
+		com_gen.tex comet.tex erl_com.tex notes.tex \
+		part_notes.tex refman.tex users_guide.tex
 
 # ----------------------------------------------------
 # Source inlined when transforming from SGML to LaTeX
 # ----------------------------------------------------
 
 book.tex: part_notes.sgml users_guide.sgml
+
+ch_examples.tex: examples/ado.erl examples/xc.erl examples/xc_gen.erl
 

@@ -21,8 +21,15 @@
 
 %% External exports
 -export([start_link/2, start_link/3]).
+-export([behaviour_info/1]).
 %% Internal exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([code_change/3]).
+
+behaviour_info(callbacks) ->
+    [{init,1},{terminate,2}];
+behaviour_info(Other) ->
+    undefined.
 
 %%%-----------------------------------------------------------------
 %%% This is a rewrite of supervisor_bridge from BS.3.
@@ -71,7 +78,7 @@ supname(N, _)      -> N.
 %% A supervisor *must* answer the supervisor:which_children call.
 handle_call(which_children, _From, State) ->
     {reply, [], State};
-handle_call(Req, _From, State) ->
+handle_call(_Req, _From, State) ->
     {reply, {error, badcall}, State}.
 
 handle_cast(_, State) ->
@@ -87,6 +94,9 @@ terminate(_Reason, #state{pid = undefined}) ->
     ok;
 terminate(Reason, State) ->
     terminate_pid(Reason, State).
+
+code_change(OldVsn, State, Extra) ->
+    {ok, State}.
 
 %% This function is supposed to terminate the 'real' server.
 terminate_pid(Reason, #state{mod = Mod, child_state = ChildState}) ->

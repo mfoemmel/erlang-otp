@@ -1,12 +1,10 @@
-README, Erlang/OTP R7B01 for VxWorks on MC68360 (CPU32), PPC860 and PPC603
+README, Erlang/OTP R8B for VxWorks on PPC860 and PPC603
 -----------------------------------------------------------------------
-20010220 -- Patrik Nyblom, support@erlang.ericsson.se
+20011010 -- Patrik Nyblom, support@erlang.ericsson.se
 
-R7B01 is a full OTP release for PPC603 and PPC860, i.e. all 
+R8B is a full OTP release for PPC603 and PPC860, i.e. all 
 applications that can possibly be run on an embedded system with
-limited memory is included. For CPU32 no more than core functionality can be 
-guaranteed, as the slow processor may cause timeouts in more complicated
-applications. The entire package is however distributed even for CPU32. 
+limited memory is included. 
 
 Included OTP applications
 -------------------------
@@ -56,6 +54,8 @@ odbc
 parsetools
 toolbar
 ssl
+megaco
+webtools
 
 As `crypto' and `ssl' provides cryptographic functionality to `inets'
 and `snmp', the latter applications will not handle cryptography on
@@ -78,8 +78,6 @@ Erlang compilation may be done on most platforms.
 Supported boards and configuration
 ----------------------------------
 The following boards and configurations are fully supported:
-
-* SwitchBoard/68360 with its own BSP and a minimum of 32 MB memory.
 
 * Motorola MV2603 with Wind Rivers BSP, VxWorks 5.3.1, SENS 1.1 and
   patch for SPR23938 (recvmsg returning negative value) and a minimum

@@ -10,11 +10,17 @@
 include vsn.mk
 
 EMULATOR=beam
+ifeq ($(findstring clearmake,$(MAKE)),clearmake)
+MAKE_V=$(MAKE) -V
+else
+MAKE_V=$(MAKE)
+endif
 
 # The NT host machine.
 NT_BUILDHOST=beamish
 
-# The view drive.
+# The view drive or the mapped drive where native win32 programs find
+# the ERL_TOP under \erts.
 NT_CC_DRIVE=L:
 
 #Paths on Unix and NT.
@@ -26,8 +32,6 @@ NT_WISE_PATH=D:\Progra~1\Wise
 SERIALNO=
 USER=$(LOGNAME)
 
-# ClearCase Root
-export ERL_TOP = /clearcase/otp/erts
 
 # "Solaris" commands
 CP:=cp -f
@@ -38,42 +42,58 @@ MKDIR:=mkdir -p -m 775
 TESTROOT=$(UNIX_TMP_PATH)/ow_$(SYSTEM_VSN)$(SERIALNO)
 SETUPSRCDIR=$(NT_TMP_PATH)\ow_$(SYSTEM_VSN)$(SERIALNO)
 
-# Erlang Options (STATIC! Don't change!)
-SNAME = ntbuild_$(shell echo $(SYSTEM_VSN) | sed 's,\.,_,g')
-ERLOPTS=-setcookie ntbuild -sname $(SNAME) -pa . -noshell
-
-# Programs (change these if you have to)
-# An old release of erlang for use in RPC's to the NT node
-ERL=/usr/local/otp/releases/otp_jam_sunos5_r4b/bin/erl
-OLDERLC=/usr/local/otp/releases/otp_jam_sunos5_r4b/bin/erlc
-
-# Make shortcuts..
-OMAKE = $(ERL) $(ERLOPTS) -s ntbuild omake "buildserver@$(NT_BUILDHOST)"
-NMAKE = $(ERL) $(ERLOPTS) -s ntbuild nmake "buildserver@$(NT_BUILDHOST)"
-SETDIR= $(ERL) $(ERLOPTS) -s ntbuild setdir "buildserver@$(NT_BUILDHOST)"
-RUNTESTS= $(ERL) $(ERLOPTS) -s ntbuild run_tests "buildserver@$(NT_BUILDHOST)"
-
-#Windows programs
-
-# WISE=$(NT_WISE_PATH)\Wise32.exe 
+WINRPC= ERL_WIN32_BUILD_HOST=$(NT_BUILDHOST) perl $(ERL_TOP)/erts/win32_tools/win32_rpc
+OMAKE= $(WINRPC) winmake #omake -E -EN -f Makefile.win32
 
 # Targets
 
 progress_test: setup unix1 $(EMULATOR) build_epmd apps unix2 tests win2
-progress: setup unix1 $(EMULATOR) build_epmd apps unix2 win2
-release:  setup unix1 $(EMULATOR) build_epmd apps unix2 win2
+progress: setup unix1 $(EMULATOR) build_epmd apps unix2 unix3 win2
+release:  setup unix1 $(EMULATOR) build_epmd apps unix2 unix3 win2
 lite: setup unix1lite $(EMULATOR) build_epmd unix2lite win2
 
-night: progress runtests
+# The following targets can only be used when running in cygwin environment
+cygwin: bootstrap unix1 build_epmd apps local_setup
+cygwin_install: unix2 install_script 
+bootstrap: setup $(EMULATOR)_noclean bootstrap_setup
 
-apps: erl_interface gs os_mon ic crypto comet ssl runtime_tools etk
+bootstrap_setup:
+	-cp $(ERL_TOP)/bin/win32/erl.exe $(ERL_TOP)/bootstrap/bin
+	-cp $(ERL_TOP)/bin/win32/erlc.exe $(ERL_TOP)/bootstrap/bin
+	-cp $(ERL_TOP)/bin/win32/beam.dll $(ERL_TOP)/bootstrap/bin
+	cat < /dev/null > $(ERL_TOP)/bootstrap/bin/bootstrap.reg
+	echo "REGEDIT4" > $(ERL_TOP)/bootstrap/bin/bootstrap.reg
+	echo "[HKEY_LOCAL_MACHINE\SOFTWARE\Ericsson\Erlang\$(VSN)]" >> $(ERL_TOP)/bootstrap/bin/bootstrap.reg
+	echo "\"Bindir\"=\"$(NT_CC_DRIVE)\\\\erts\\\\bootstrap\\\\bin\"" >> $(ERL_TOP)/bootstrap/bin/bootstrap.reg
+	echo "\"Emulator\"=\"beam\"" >> $(ERL_TOP)/bootstrap/bin/bootstrap.reg
+	echo "\"Progname\"=\"erl\"" >> $(ERL_TOP)/bootstrap/bin/bootstrap.reg
+	echo "\"Rootdir\"=\"$(NT_CC_DRIVE)\\\\erts\\\\bootstrap\"" >> $(ERL_TOP)/bootstrap/bin/bootstrap.reg
+	regedit "$(NT_CC_DRIVE)\\erts\\bootstrap\\bin\\bootstrap.reg"
+	
+local_setup:
+	@cd start_scripts && PATH=$(ERL_TOP)/bootstrap/bin:$$PATH \
+		$(MAKE) $(ERL_TOP)/bin/start.script \
+		$(ERL_TOP)/bin/start_sasl.script	
+	cat < /dev/null > $(ERL_TOP)/bin/win32/local.reg
+	echo "REGEDIT4" > $(ERL_TOP)/bin/win32/local.reg
+	echo "[HKEY_LOCAL_MACHINE\SOFTWARE\Ericsson\Erlang\$(VSN)]" >> $(ERL_TOP)/bin/win32/local.reg
+	echo "\"Bindir\"=\"$(NT_CC_DRIVE)\\\\erts\\\\bin\\\\win32\"" >> $(ERL_TOP)/bin/win32/local.reg
+	echo "\"Emulator\"=\"beam\"" >> $(ERL_TOP)/bin/win32/local.reg
+	echo "\"Progname\"=\"erl\"" >> $(ERL_TOP)/bin/win32/local.reg
+	echo "\"Rootdir\"=\"$(NT_CC_DRIVE)\\\\erts\"" >> $(ERL_TOP)/bin/win32/local.reg
+	regedit "$(NT_CC_DRIVE)\\erts\\bin\\win32\\local.reg"
+	
+
+
+night: progress copytests runtests
+
+apps: erl_interface gs os_mon ic crypto comet ssl runtime_tools
 
 tests:
-	(cd $(ERL_TOP) && $(MAKE) -V release_tests TESTROOT=$(TESTROOT)/test/test_suite TARGET=win32)
+	(cd $(ERL_TOP) && $(MAKE_V) release_tests TESTROOT=$(TESTROOT)/test/test_suite TARGET=win32)
 
 # Initial setup in view.
 setup:
-	$(OLDERLC) -bjam ntbuild.erl -o.
 	@if test ! -d $(ERL_TOP)/erts/obj.$(EMULATOR)/win32; then $(MKDIR) $(ERL_TOP)/erts/obj.$(EMULATOR)/win32; fi
 	@if test ! -d $(ERL_TOP)/erts/obj.debug.$(EMULATOR)/win32; then $(MKDIR) $(ERL_TOP)/erts/obj.debug.$(EMULATOR)/win32; fi
 	@if test ! -d $(ERL_TOP)/erts/obj.instr.$(EMULATOR); then $(MKDIR) $(ERL_TOP)/erts/obj.instr.$(EMULATOR); fi
@@ -86,83 +106,107 @@ setup:
 	@if test ! -d $(ERL_TOP)/lib/ic/priv/lib/win32; then $(MKDIR) $(ERL_TOP)/lib/ic/priv/lib/win32; fi
 	@if test ! -d $(ERL_TOP)/lib/ic/priv/obj/win32; then $(MKDIR) $(ERL_TOP)/lib/ic/priv/obj/win32; fi
 	@if test ! -d $(TESTROOT); then $(MKDIR) $(TESTROOT); fi	
-	$(CP) /clearcase/otp/system/README $(TESTROOT)
-	(cd autoconf && $(MAKE) -V win32 EMULATOR=$(EMULATOR))
+	@if test -f /clearcase/otp/system/README; then \
+	$(CP) /clearcase/otp/system/README $(TESTROOT); fi
+	(cd .. && $(MAKE_V) configure_win32 EMULATOR=$(EMULATOR))
 
 
 # UNIX side part 1.
 
 unix1:
-	(cd .. && $(MAKE) -V  lib_and_erts local_setup TYPE=opt LTYPE=opt TARGET=win32 BUILD_ALL=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
+	(cd .. && $(MAKE_V)  lib_and_erts local_setup TYPE=opt LTYPE=opt TARGET=win32 BUILD_ALL=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)) || \
+	(cd .. && $(MAKE_V)  libs local_setup TYPE=opt LTYPE=opt TARGET=win32 BUILD_ALL=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
 
 unix1lite:
-	(cd .. && $(MAKE) -V opt TARGET=win32 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
+	(cd .. && $(MAKE_V) opt TARGET=win32 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
 
+beam_no_clean:
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\erts\emulator" "NODEBUG=1 GCC=1 SERIALNO=$(SERIALNO) RELEASE_FLAGS=-DOTP_RELEASE"
 
 # Emulator
 # We have to do a 'clean' because the VC linker says 'Internal Error' otherwise... 
 $(EMULATOR):
-	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
-	$(OMAKE) "\erts\erts\emulator" "NODEBUG=1 GCC=1 SERIALNO=$(SERIALNO) clean"
-	$(OMAKE) "\erts\erts\emulator" "NODEBUG=1 GCC=1 SERIALNO=$(SERIALNO) RELEASE_FLAGS=-DOTP_RELEASE"
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\erts\emulator" "NODEBUG=1 GCC=1 SERIALNO=$(SERIALNO) clean"
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\erts\emulator" "NODEBUG=1 GCC=1 SERIALNO=$(SERIALNO) RELEASE_FLAGS=-DOTP_RELEASE"
 
 
 # EPMD
 build_epmd:
-	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
-	$(OMAKE) "\erts\erts\epmd\src" "NODEBUG=1 GCC=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\erts\epmd\src" "NODEBUG=1 GCC=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
 
 
 # Applications
 
 erl_interface:
-	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
-	$(OMAKE) "\erts\lib\erl_interface\src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\erl_interface\src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
 
 gs:
-	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
-	$(OMAKE) "\erts\lib\gs\win" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
-
-etk:
-	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
-	$(OMAKE) "\erts\lib\etk\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\gs\win" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
 
 os_mon:
-	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
-	$(OMAKE) "\erts\lib\os_mon\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\os_mon\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
 
+ifeq ($(SSL),no)
 crypto:
-	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
-	$(OMAKE) "\erts\lib\crypto\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+	@echo crypto build skipped
+ssl:
+	@echo ssl build skipped
+else
+crypto:
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\crypto\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
 
 ssl:
-	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
-	$(OMAKE) "\erts\lib\ssl\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
-
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\ssl\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+endif
 ic:
-	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
-	$(OMAKE) "\erts\lib\ic\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\ic\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
 
 runtime_tools:
-	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
-	$(OMAKE) "\erts\lib\runtime_tools\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\runtime_tools\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
 
 comet:
-	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
-	$(OMAKE) "\erts\lib\comet\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
+	$(OMAKE) "$(NT_CC_DRIVE)\erts\lib\comet\c_src" "NODEBUG=1 SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR)"
 
 unix2:
-	(cd ../lib && $(MAKE) -V release TARGET=win32 BUILD_ALL=1 TESTROOT=$(TESTROOT) SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
-	($(MAKE) -V release TARGET=win32 BUILD_ALL=1 TESTROOT=$(TESTROOT) SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
+	(cd ../lib && $(MAKE_V) release TARGET=win32 BUILD_ALL=1 TESTROOT=$(TESTROOT) SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
+	($(MAKE_V) release TARGET=win32 BUILD_ALL=1 TESTROOT=$(TESTROOT) SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
+
+ifdef DOC_TAR
+unix3:
+	if [ -f $(DOC_TAR) ]; then mkdir $(TESTROOT)/doc; (cd $(TESTROOT)/doc; zcat $(DOC_TAR) | tar xf -); fi
+else
+unix3:
+	@echo No documentation available.
+endif
 
 unix2lite:
-	(cd .. && $(MAKE) -V release TARGET=win32 TESTROOT=$(TESTROOT) SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
+	(cd .. && $(MAKE_V) release TARGET=win32 TESTROOT=$(TESTROOT) SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR))
 
 # WISE Build & Install.
-win2:
-	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
-	$(OMAKE) "\erts\erts\etc\win32\wise" "SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR) TESTROOT=$(SETUPSRCDIR) WISEDIR=$(NT_WISE_PATH) install"
+win2: 
+	$(OMAKE) "$(NT_CC_DRIVE)\\erts\\erts\\etc\\win32\\wise" "SERIALNO=$(SERIALNO) EMULATOR=$(EMULATOR) TESTROOT=$(SETUPSRCDIR) WISEDIR=$(NT_WISE_PATH) install"
 
-runtests:
-	$(SETDIR) "$(NT_CC_DRIVE)\\erts\\erts"
-	$(RUNTESTS) $(VSN) $(CENTRAL_LOG_DIR)
+wintools:
+	(cd win32_tools; $(MAKE) all)
+	cp "$(ERL_TOP)/erts/win32_tools"/*.beam "$(UNIX_TMP_PATH)"
+
+runtests: wintools
+	$(WINRPC) \
+	 perl "$(NT_CC_DRIVE)\\erts\\erts\\win32_tools\\run_erl.plx" erl $(VSN) \
+	   -pa "$(NT_TMP_PATH)" -sname build -setcookie build \
+	   -noshell -run runtests just_to_start_epmd
+	$(WINRPC) \
+	 perl "$(NT_CC_DRIVE)\\erts\\erts\\win32_tools\\run_erl.plx" werl $(VSN) \
+	   -pa "$(NT_TMP_PATH)" \
+	   -run runtests install_run_save "$(NT_TEST_PATH)\\test_server"
+
+copytests: wintools
+	cp "$(TEST_TAR)" "$(UNIX_TMP_PATH)"
+	$(WINRPC) \
+	 perl "$(NT_CC_DRIVE)\\erts\\erts\\win32_tools\\run_erl.plx" erl $(VSN) \
+	   -pa "$(NT_TMP_PATH)" \
+	   -noshell -run runtests copy_tests "$(TEST_TAR)" "$(NT_TEST_PATH)" \
+	   "$(NT_TMP_PATH)"
+	rm -f "$(UNIX_TMP_PATH)"/"$(notdir $(TEST_TAR))"
+
+.PHONY: wintools runtests copytests

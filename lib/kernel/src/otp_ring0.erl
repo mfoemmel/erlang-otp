@@ -27,7 +27,7 @@ start(Env, Argv) ->
 run(M, F, A) ->
     case erlang:function_exported(M, F, 1) of
 	false ->
-	    erlang:display({fatal,error,module,M,'does not export',F,'/1'}),
+	    erlang:display({fatal,error,module,M,"does not export",F,"/1"}),
 	    halt(1);
 	true ->
 	    apply(M, F, [A])

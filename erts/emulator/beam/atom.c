@@ -16,15 +16,18 @@
  *     $Id$
  */
 
+
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
 
 #include "sys.h"
+#include "erl_sys_driver.h"
 #include "erl_vm.h"
 #include "global.h"
 #include "hash.h"
 #include "atom.h"
+
 
 #define ATOM_SIZE  3000
 #define ATOM_LIMIT (1024*1024)
@@ -32,25 +35,24 @@
 
 IndexTable atom_table;    /* The index table */
 
-/* functions for allocating space for the ext of atoms. We do not
-** use malloc for each atom to prevent excessive memory fragmentation
-*/
+/* Functions for allocating space for the ext of atoms. We do not
+ * use malloc for each atom to prevent excessive memory fragmentation
+ */
 
 typedef struct _atom_text {
     struct _atom_text* next;
     char text[ATOM_TEXT_SIZE];
 } AtomText;
 
-static AtomText* text_list;  /* list of text buffers */
-
+static AtomText* text_list;	/* List of text buffers */
 static byte *atom_text_pos;
 static byte *atom_text_end;
-uint32 reserved_atom_space;      /* Total amount of atom text space */
-uint32 atom_space;	         /* Amount of atom text space used */
+Uint reserved_atom_space;	/* Total amount of atom text space */
+Uint atom_space;		/* Amount of atom text space used */
 
 /*
-** Print info about atom tables
-*/
+ * Print info about atom tables
+ */
 void atom_info(to)
 CIO to;
 {
@@ -59,14 +61,16 @@ CIO to;
 }
 
 /*
-** Allocate an atom text segments
-*/
-static void more_atom_space()
+ ** Allocate an atom text segment.
+ */
+static void
+more_atom_space(void)
 {
     AtomText* ptr;
 
-    if ((ptr = (AtomText*) sys_alloc_from(1,sizeof(AtomText))) == NULL)
+    if ((ptr = (AtomText*) sys_alloc_from(1, sizeof(AtomText))) == NULL) {
 	erl_exit(1, "out of memory -- panic");
+    }
     ptr->next = text_list;
     text_list = ptr;
 
@@ -79,19 +83,20 @@ static void more_atom_space()
 }
 
 /*
-** Allocate string space with in an atom text segment
-*/
+ * Allocate string space within an atom text segment.
+ */
 
-static byte *atom_text_alloc(bytes)
-int bytes;
+static byte*
+atom_text_alloc(int bytes)
 {
     byte *res;
 
     if (bytes >= ATOM_TEXT_SIZE)
-	erl_exit(1, "absurdly large atom --- panic\n");
+	erl_exit(1, "absurdly large atom\n");
 
-    if (atom_text_pos + bytes >= atom_text_end)
+    if (atom_text_pos + bytes >= atom_text_end) {
 	more_atom_space();
+    }
     res = atom_text_pos;
     atom_text_pos += bytes;
     atom_space    += bytes;
@@ -99,12 +104,12 @@ int bytes;
 }
 
 /*
-** Calculate atom hash value
-** use hash algorrithm hashpjw (from Dragon Book)
-*/
+ * Calculate atom hash value (using the hash algorithm
+ * hashpjw from the Dragon Book).
+ */
 
-static HashValue atom_hash(obj)
-Atom* obj;
+static HashValue
+atom_hash(Atom* obj)
 {
     byte* p = obj->name;
     int len = obj->len;
@@ -121,8 +126,8 @@ Atom* obj;
 }
 
 
-static int atom_cmp(tmpl, obj)
-Atom* tmpl; Atom* obj;
+static int 
+atom_cmp(Atom* tmpl, Atom* obj)
 {
     if (tmpl->len == obj->len &&
 	sys_memcmp(tmpl->name, obj->name, tmpl->len) == 0)
@@ -131,19 +136,16 @@ Atom* tmpl; Atom* obj;
 }
 
 
-static Atom* atom_alloc(tmpl)
-Atom* tmpl;
+static Atom*
+atom_alloc(Atom* tmpl)
 {
     Atom* obj = (Atom*) fix_alloc_from(11, atom_desc);
 
-    if (tmpl->slot.index != -2) {
-	obj->name = atom_text_alloc(tmpl->len);
-	sys_memcpy(obj->name, tmpl->name, tmpl->len);
-    }
-    else
-	obj->name = tmpl->name;
+    obj->name = atom_text_alloc(tmpl->len);
+    sys_memcpy(obj->name, tmpl->name, tmpl->len);
     obj->len = tmpl->len;
     obj->slot.index = -1;
+
     /*
      * Precompute ordinal value of first 3 bytes + 7 bits.
      * This is used by utils.c:cmp_atoms().
@@ -166,54 +168,24 @@ Atom* tmpl;
     return obj;
 }
 
-/* Reuse atom  text ??? */
-
-static void atom_free(obj)
-Atom* obj;
+static void
+atom_free(Atom* obj)
 {
     fix_free(atom_desc, (void*) obj);
 }
 
-
-int atom_get(name, len)
-byte* name; int len;
+Eterm
+am_atom_put(byte* name, int len)
 {
     Atom a;
 
     a.len = len;
     a.name = name;
-
-    return index_get(&atom_table, (void*) &a);
+    return make_atom(index_put(&atom_table, (void*) &a));
 }
 
-int atom_put(name, len)
-byte* name; int len;
-{
-    Atom a;
-
-    a.len = len;
-    a.name = name;
-    a.slot.index = -1;
-
-    return index_put(&atom_table, (void*) &a);
-}
-
-/* Insert atom but do not allocate memory for name */
-
-
-int atom_static_put(name, len)
-byte* name; int len;
-{
-    Atom a;
-
-    a.len = len;
-    a.name = name;
-    a.slot.index = -2;
-
-    return index_put(&atom_table, (void*) &a);
-}
-
-void init_atom_table()
+void
+init_atom_table(void)
 {
     HashFunctions f;
     int i;
@@ -230,25 +202,28 @@ void init_atom_table()
     atom_space = 0;
     text_list = NULL;
 
-    index_init(&atom_table, "atom_tab",
-	       ATOM_SIZE, ATOM_LIMIT, ATOM_RATE, f);
+    index_init(&atom_table, "atom_tab", ATOM_SIZE, ATOM_LIMIT, ATOM_RATE, f);
     more_atom_space();
 
     /* Ordinary atoms */
-    for (i = 1; erl_atom_names[i] != 0; i++) {
+    for (i = 0; erl_atom_names[i] != 0; i++) {
+	int ix;
 	a.len = strlen(erl_atom_names[i]);
 	a.name = erl_atom_names[i];
 	a.slot.index = i;
-	index_put(&atom_table, (void*) &a);
+	ix = index_put(&atom_table, (void*) &a);
+	atom_text_pos -= a.len;
+	atom_space -= a.len;
+	atom_tab(ix)->name = erl_atom_names[i];
     }
 }
 
-void dump_atoms(CIO fd)
+void
+dump_atoms(CIO fd)
 {
    int i = -1;
 
-   while ((i = index_iter(&atom_table, i)) != -1)
-   {
+   while ((i = index_iter(&atom_table, i)) != -1) {
       print_atom(i, fd);
       erl_putc('\n', fd);
    }

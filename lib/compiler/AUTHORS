@@ -17,4 +17,11 @@ and Robert Virding.
 The Core Erlang is used as an intermediate format in the v3 compiler (R7).
 Core Erlang was suggested by Richard Carlsson (HiPE).
 
+The new inliner in R8 is written by Richard Carlsson (HiPE).
+
+Updates, extensions, and bugfixes in the R8 compiler were made by Robert Virding,
+Richard Carlsson (HiPE), and Björn Gustavsson.
+
 Open source contributors:
+
+Robert Virding

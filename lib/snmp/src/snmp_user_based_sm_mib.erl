@@ -740,8 +740,8 @@ extract_new_key(Hash, OldKey, KeyChange) ->
     NewKey = snmp_misc:str_xor(Digest, Delta),
     NewKey.
 
--define(i16(Int), (Int bsr 8) band 255, Int band 255.
--define(i8(Int), Int band 255.
+-define(i16(Int), (Int bsr 8) band 255, Int band 255).
+-define(i8(Int), Int band 255).
 
 mk_random(Len) when Len =< 20 ->
     %% Use of yield():

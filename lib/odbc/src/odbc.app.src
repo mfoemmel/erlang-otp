@@ -1,14 +1,15 @@
 {application, odbc,
- [{description, "ODBC XXX"},
+ [{description, "Erlang ODBC application"},
   {vsn, "%VSN%"},
   {modules, [
 	     odbc,
-	     odbclli,
-	     oe_odbclli
+	     odbc_app,
+	     odbc_sup
             ]},
   {registered, [
 		odbc
 	       ]},
   {applications, [kernel, stdlib]},
-  {mod, {odbc_app, odbc_server}}]}.
+  {env,[]},
+  {mod, {odbc_app, []}}]}.
 

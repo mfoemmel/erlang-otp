@@ -287,7 +287,7 @@ handle_call({setnodelay, Broker, Fd, Boolean}, From, State) ->
 	{ok, _, Cons} ->
 	    Val = if Boolean == true -> 1; true -> 0 end,
 	    send_cmd(State#state.port, ?SET_SOCK_OPT, 
-		     [int32(fd), ?SET_TCP_NODELAY, Val]),
+		     [int32(Fd), ?SET_TCP_NODELAY, Val]),
 	    %% We reply when we get IOCTL_OK or IOCTL_ERR.
 	    {noreply, State#state{cons = Cons}};
 	_Other ->

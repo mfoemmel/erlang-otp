@@ -79,7 +79,8 @@ server1(Iport, Oport, Shell) ->
     Gr = gr_add_cur(Gr1, Curr, Shell),
     %% Print some information.
     io_request({put_chars,
-		flatten(io_lib:format("~s\n", [erlang:info(system_version)]))},
+		flatten(io_lib:format("~s\n",
+				      [erlang:system_info(system_version)]))},
 	       Iport, Oport),
     %% Enter the server loop.
     server_loop(Iport, Oport, Curr, User, Gr).

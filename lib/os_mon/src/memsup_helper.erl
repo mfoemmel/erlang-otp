@@ -70,6 +70,8 @@ server_init(Starter) ->
 	    process_flag(trap_exit,true),
 	    Port = case os:type() of
 		       {win32,_} -> not_used;
+		       {unix,linux} -> not_used;
+		       {unix,freebsd} -> not_used;
 		       _ -> start_portprogram()
 		   end,
 	    process_flag(priority, low),
@@ -89,6 +91,10 @@ loop(Parent,Port) ->
 	    MemUsage = case os:type() of
 			   {win32,_} ->
 			       get_memory_usage_win32(Port);
+			   {unix,linux} ->
+			       get_memory_usage_linux(Port);
+			   {unix,freebsd} ->
+			       get_memory_usage_freebsd(Port);
 			   _ ->
 			       get_memory_usage(Port)
 		       end,
@@ -200,6 +206,31 @@ get_memory_usage_win32(_Port) ->
 	    exit({win32_sysinfo_failed, Reason})
     end.
 
+%%-----------------------------------------------------------------
+%% get_memory_usage_linux(_Port)
+%%-----------------------------------------------------------------
+get_memory_usage_linux(_) ->
+    {ok,F} = file:open("/proc/meminfo",[read,raw]),
+    {ok,D} = file:read(F,1024),
+    {ok,[_Headers,MemInfo | _]} = regexp:split(D,"\n"),
+    {ok,[_,NMemTotal,NMemUsed],_} = io_lib:fread("~s ~d ~d",MemInfo),
+    {NMemUsed,NMemTotal}.
+
+%%-----------------------------------------------------------------
+%% get_memory_usage_freebsd(_Port)
+%%
+%% Look in /usr/include/sys/vmmeter.h for the format of struct vmmeter
+%%-----------------------------------------------------------------
+get_memory_usage_freebsd(_) ->
+    PageSize  = freebsd_sysctl("vm.stats.vm.v_page_size"),
+    PageCount = freebsd_sysctl("vm.stats.vm.v_page_count"),
+    FreeCount = freebsd_sysctl("vm.stats.vm.v_free_count"),
+    NMemUsed  = (PageCount - FreeCount) * PageSize,
+    NMemTotal = PageCount * PageSize,
+    {NMemUsed,NMemTotal}.
+
+freebsd_sysctl(Def) ->
+    list_to_integer(os:cmd("/sbin/sysctl -n " ++ Def) -- "\n").
 
 %%-----------------------------------------------------------------
 %% Return the extended memory data as a tagged list
@@ -224,6 +255,14 @@ get_system_memory_usage(Port) ->
 		_ ->
 		    {error, port_terminated}
 	    end;
+	{unix,linux} ->
+	    {ok,{Alloced,Tot}} = get_memory_usage_linux([]),
+	    [{total_memory,Tot},{free_memory, Tot-Alloced},
+	     {system_total_memory,Tot}]; % correct unless setrlimit() set
+	{unix,freebsd} ->
+	    {ok,{Alloced,Tot}} = get_memory_usage_freebsd([]),
+	    [{total_memory,Tot},{free_memory, Tot-Alloced},
+	     {system_total_memory,Tot}];
 	_ -> 
 	    Port ! {self(), {command, [?SYSTEM_MEM_SHOW]}},
 	    collect_sysmem(Port)
@@ -246,17 +285,17 @@ collect_sysmem(Port,Accum) ->
 		{value, {Tag, ATag}} ->
 		    collect_sysmem(ATag, Port,Accum);
 		_ ->
-		    exit(port_protocol_error)
+		    exit({port_protocol_error,{Port, {data, [Tag]}}})
 	    end;
-	_ ->
-	    exit(port_protocol_error)
+	{Port, Else} ->
+	    exit({port_protocol_error,{Port, Else}})
     end.
 
 collect_sysmem(ATag, Port, Accum) ->
     receive
 	{Port, {data, Value}} ->
 	    collect_sysmem(Port, [{ATag, list_to_integer(Value)} | Accum]);
-	_ ->
-	    exit(port_protocol_error)
+	{Port, Else} ->
+	    exit({port_protocol_error,{Port, Else}})
     end.
 

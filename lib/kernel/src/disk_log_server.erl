@@ -74,8 +74,8 @@ accessible_logs() ->
 
 init([]) ->
     process_flag(trap_exit, true),
-    ets:new(disk_log_names, [public, named_table, set]),
-    ets:new(inv_disk_log_names, [public, named_table, set]),
+    ets:new(?DISK_LOG_NAME_TABLE, [named_table, set]),
+    ets:new(?DISK_LOG_PID_TABLE, [named_table, set]),
     {ok, []}.
 
 handle_call({open, A}, _From, State) ->
@@ -93,8 +93,8 @@ handle_info({'EXIT', Pid, _Reason}, State) ->
 	undefined ->
 	    {noreply, State};
 	Name ->
-	    ets:delete(disk_log_names, Name),
-	    ets:delete(inv_disk_log_names, Pid),
+	    ets:delete(?DISK_LOG_NAME_TABLE, Name),
+	    ets:delete(?DISK_LOG_PID_TABLE, Pid),
 	    erase(Pid),
 	    {noreply, State}
     end;
@@ -143,8 +143,8 @@ do_open(A) ->
 		undefined ->
 		    case start_log(Name, A) of
 			{ok, Pid, R} ->
-			    ets:insert(disk_log_names, {Name, Pid}),
-			    ets:insert(inv_disk_log_names, {Pid, Name}),
+			    ets:insert(?DISK_LOG_NAME_TABLE, {Name, Pid}),
+			    ets:insert(?DISK_LOG_PID_TABLE, {Pid, Name}),
 			    R;
 			Error ->
 			    Error
@@ -193,8 +193,8 @@ do_close(Pid) ->
 	Name ->
 	    case get_local_pid(Name) of
 		{local, Pid} ->
-		    ets:delete(disk_log_names, Name),
-		    ets:delete(inv_disk_log_names, Pid);
+		    ets:delete(?DISK_LOG_NAME_TABLE, Name),
+		    ets:delete(?DISK_LOG_PID_TABLE, Pid);
 		{distributed, _Pid} ->
 		    ok = pg2:leave(?group(Name), Pid)
 	    end,
@@ -203,7 +203,7 @@ do_close(Pid) ->
     end.
 
 do_accessible_logs() ->
-    Local0 = lists:map(fun hd/1, ets:match(disk_log_names, {'$1','_'})),
+    Local0 = lists:map(fun hd/1, ets:match(?DISK_LOG_NAME_TABLE, {'$1','_'})),
     Local = lists:sort(Local0),
     AllDist0 = lists:foldl(fun non_empty_group/2, [], pg2:which_groups()),
     AllDist = lists:sort(AllDist0),
@@ -218,7 +218,7 @@ non_empty_group(_, Gs) ->
     Gs.
 
 get_local_pid(LogName) ->
-    case ets:lookup(disk_log_names, LogName) of
+    case ets:lookup(?DISK_LOG_NAME_TABLE, LogName) of
 	[{_, Pid}] ->
 	    {local, Pid};
 	[] -> 
@@ -234,7 +234,7 @@ own_pid([], _) ->
 
 %% Inlined.
 do_get_log_pids(LogName) ->
-    case catch ets:lookup(disk_log_names, LogName) of
+    case catch ets:lookup(?DISK_LOG_NAME_TABLE, LogName) of
 	[{_, Pid}] ->
 	    {local, Pid};
 	_EmptyOrError -> 

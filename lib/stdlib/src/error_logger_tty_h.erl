@@ -31,7 +31,7 @@
 
 -export([init/1,
 	 handle_event/2, handle_call/2, handle_info/2,
-	 terminate/2]).
+	 terminate/2, code_change/3]).
 
 %% This one is used when we takeover from the simple error_logger.
 init({[], {error_logger, Buf}}) ->
@@ -79,6 +79,9 @@ terminate(install_prev, State) ->
     [];
 terminate(_Reason, {User, PrevHandler}) ->
     {error_logger_tty_h, PrevHandler}.
+
+code_change(OldVsn, State, Extra) ->
+    {ok, State}.
 
 %%% ------------------------------------------------------
 %%% Misc. functions.

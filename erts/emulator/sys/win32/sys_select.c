@@ -72,7 +72,7 @@ N+M  | Object N+M        |		    /
 ***********************************************************************/
 
 #include "sys.h"
-#include "driver.h"
+#include "erl_driver.h"
 
 /*
  * The following values are non-zero, constant, odd, large, and atypical.
@@ -163,7 +163,7 @@ EXTERN_FUNCTION(void, do_break, (void));
  */
 
 extern int nohup;
-
+extern HANDLE erts_service_event;
 
 typedef struct _EventData {
     HANDLE event;		/* For convenience. */
@@ -467,25 +467,24 @@ int wait;
     if (wait && !sys_io_ready) {
 	SysTimeval tv;
 	DWORD timeout;
+	HANDLE harr[2] = {event_io_ready};
+	int num_h = 1;
+	int which;
+
 	erts_time_remaining(&tv);
 	timeout = tv.tv_sec * 1000 + tv.tv_usec / 1000;
-	MsgWaitForMultipleObjects(1,&event_io_ready, FALSE, 
-				  timeout, QS_POSTMESSAGE);
-	
-	/*WaitForSingleObject(event_io_ready, timeout);*/
-    }
-    /*
-     * We shouldn't actually get any other messages than the thread WM_USER,
-     * but windows is windows...
-     */
-    while (PeekMessage(&message, NULL, 0, 0, PM_REMOVE)) {
-	if (message.message == WM_USER) {
-	    erl_exit(0,"");
-	} else {
-	    sys_printf(CERR,
-		       "Got unexpected Windows message %d\r\n", 
-		       (int) message.message);
+
+	if (erts_service_event != NULL) {
+	    harr[num_h++] = erts_service_event;
 	}
+
+	WaitForMultipleObjects(num_h, harr, FALSE, timeout);
+    }
+
+    /* Poll the service event to see if we're to exit. */
+    if (erts_service_event != NULL && 
+	WaitForSingleObject(erts_service_event, 0) == WAIT_OBJECT_0) {
+	    erl_exit(0,"");
     }
 
     /*

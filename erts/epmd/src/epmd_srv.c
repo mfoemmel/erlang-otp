@@ -224,7 +224,7 @@ void run(g)
 	       with no activity for a long period */
 
 	    for (i = 0; i < g->max_conn; i++)
-	      if (g->conn[i].open == TRUE)
+	      if (g->conn[i].open == TRUE) {
 		if (FD_ISSET(g->conn[i].fd,&read_mask))
 		  do_read(g,&g->conn[i]);
 		else if ((g->conn[i].keep == FALSE) &&
@@ -233,6 +233,7 @@ void run(g)
 		    dbg_tty_printf(g,1,"closing because timed out on receive");
 		    epmd_conn_close(g,&g->conn[i]);
 		  }
+	      }
 	  }
 	}
     }

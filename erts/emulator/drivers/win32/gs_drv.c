@@ -24,7 +24,7 @@
 #include <process.h>
 #include "global.h" /* For NIL */
 #include "sys.h"
-#include "driver.h"
+#include "erl_driver.h"
 #include "winsock_func.h"
 
 EXTERN_FUNCTION(int, send_error_to_logger, (uint32));
@@ -32,7 +32,8 @@ EXTERN_FUNCTION(int, send_error_to_logger, (uint32));
 /*
  * Local functions.
  */
-static SOCKET start_local_sock(char*, PROCESS_INFORMATION*);
+static SOCKET accept_sock(SOCKET tmpsock);
+static SOCKET start_listen_sock(unsigned* portno);
 static int start_wish(char*, unsigned, PROCESS_INFORMATION*);
 static int start_winsock(void);
 static int error(int port_num, char* format, ...);
@@ -45,7 +46,7 @@ static char* last_wsa_error(void);
  * Local variables.
  */
 typedef struct {
-    int port;			/* Port number. */
+    ErlDrvPort port;		/* Port number. */
     SOCKET local_sock;		/* Socket which wish is connecte to. */
     HANDLE read_finished;	/* From reader: Read finished. */
     HANDLE start_reading;	/* Ask the threaded reader to start reading. */
@@ -53,20 +54,31 @@ typedef struct {
     size_t wish_buffer_size;	/* Size of buffer. */
     size_t bytes_read;		/* Bytes currently in buffer. */
     PROCESS_INFORMATION pinfo;	/* For wish. */
+    int waiting_for_accept;	/* flag to prevent writing to socket before it's accept-ed */
 } GsPort;
 
 static char key_name[] = "Software\\Ericsson\\Erlang\\";
 static char key_value_name[] = "current_version";
 
 static int gs_init(void);
-static long gs_start();
-static int gs_stop();
-static int gs_from_erlang();
-static int gs_from_wish();
+static ErlDrvData gs_start(ErlDrvPort, char*, SysDriverOpts*);
+static void gs_stop(ErlDrvData);
+static void gs_from_erlang(ErlDrvData, char*, int);
+static void gs_from_wish(ErlDrvData, ErlDrvEvent);
 
-struct driver_entry gs_driver_entry = {
-    gs_init, gs_start, gs_stop, gs_from_erlang,
-    gs_from_wish, null_func, "gs__drv__"
+struct erl_drv_entry gs_driver_entry = {
+    gs_init,
+    gs_start,
+    gs_stop,
+    gs_from_erlang,
+    gs_from_wish,
+    NULL,
+    "gs__drv__",
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL
 };
 
 static int
@@ -76,48 +88,60 @@ gs_init(void)
     return 0;
 }
 
-static long
-gs_start(int port, char* buf)
+static ErlDrvData
+gs_start(ErlDrvPort port, char* buf, SysDriverOpts* opts)
 {
     DWORD rtid;
     GsPort* p;
     char* s;
+    unsigned portno;
 
     DEBUGF(("gs_start(%d, %s)\n", port, buf));
-
     if ((s = strchr(buf, ' ')) != NULL) {
 	buf = s+1;
     } else {
 	buf = "";
     }
     if (start_winsock() == -1) {
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     }
     p = sys_alloc(sizeof(GsPort));
     if (p == NULL) {
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     }
     p->port = port;
-    p->local_sock = start_local_sock(buf, &(p->pinfo));
+    p->waiting_for_accept = TRUE;
+    /* start listen socket for wish to connect to */
+    p->local_sock = start_listen_sock(&portno);
+    if (p->local_sock == INVALID_SOCKET)
+	return ERL_DRV_ERROR_GENERAL;
+    /*
+     * Start Wish and wait for it to connect.
+     */
+
+    if (start_wish(buf, portno, &p->pinfo) == -1) {
+	(*winSock.closesocket)(p->local_sock);
+	return ERL_DRV_ERROR_GENERAL;
+    }
     p->read_finished = CreateEvent(NULL, FALSE, FALSE, NULL);
     p->start_reading = CreateEvent(NULL, FALSE, TRUE, NULL);
     p->wish_buffer_size = 2048;
     p->wish_buffer = sys_alloc(p->wish_buffer_size);
     p->bytes_read = 0;
 
-    driver_select(port, p->read_finished, DO_READ, 1);
+    driver_select(port, (ErlDrvEvent)p->read_finished, DO_READ, 1);
     _beginthreadex(NULL, 0, threaded_reader, (LPVOID) p, 0, &rtid);
-    return (long) p;
+    return (ErlDrvData) p;
 }
 
-static int
-gs_stop(long clientData)
+static void
+gs_stop(ErlDrvData clientData)
 {
     GsPort* p = (GsPort *) clientData;
     int i;
 
     TerminateProcess(p->pinfo.hProcess, 0);
-    driver_select(p->port, p->read_finished, DO_READ, 0);
+    driver_select(p->port, (ErlDrvEvent)p->read_finished, DO_READ, 0);
     switch (i = WaitForSingleObject(p->read_finished, INFINITE)) {
     case WAIT_FAILED:
 	error(-1, "wait for read_finished failed: %s", last_error());
@@ -134,32 +158,31 @@ gs_stop(long clientData)
     WaitForSingleObject(p->read_finished, INFINITE);
     sys_free(p->wish_buffer);
     sys_free(p);
-    return 1;
 }
 
-static int
+static void
 gs_from_erlang(clientData, buf, count)
-long clientData;
-byte *buf;
+ErlDrvData clientData;
+char *buf;
 int count;
 {
     GsPort* p = (GsPort *) clientData;
 
+    if (p->waiting_for_accept)
+	WaitForSingleObject(p->read_finished, 10000);
     if ((*winSock.send)(p->local_sock, buf, count, 0) < 0) {
-	return error(p->port, "error writing to wish shell: %s",
+	error(p->port, "error writing to wish shell: %s",
 		     last_wsa_error());
     }
-    return 1;
 }
 
-static int
-gs_from_wish(long clientData, int event)
+static void
+gs_from_wish(ErlDrvData clientData, ErlDrvEvent event)
 {
     GsPort* p = (GsPort *) clientData;
 
     driver_output(p->port, p->wish_buffer, p->bytes_read);
-    SetEvent(p->start_reading);
-    return 1;
+    SetEvent((HANDLE)p->start_reading);
 }
 
 static DWORD WINAPI
@@ -167,6 +190,12 @@ threaded_reader(LPVOID param)
 {
     GsPort* p = (GsPort *) param;
     
+    p->local_sock = accept_sock(p->local_sock);
+    InterlockedDecrement(&p->waiting_for_accept);
+    SetEvent(p->read_finished);
+    if (p->local_sock == -1)
+	return 0; /* failed */
+
     for (;;) {
 	int i;
 
@@ -243,23 +272,19 @@ start_winsock(void)
 }
 
 static SOCKET
-start_local_sock(char* initScript, PROCESS_INFORMATION* pinfo)
+start_listen_sock(unsigned* portno)
 {
     struct sockaddr_in iserv_addr;
     SOCKET tmpsock;
     int length;
-    u_int portno;
-    static unsigned long one = 1;
-    SOCKET local_sock;
 
     /*
      * Create a socket to which Wish can connect.
      */
 
     tmpsock = (*winSock.socket)(PF_INET, SOCK_STREAM, 0);
-    if (tmpsock == INVALID_SOCKET) {
+    if (tmpsock == INVALID_SOCKET)
 	return error(-1, "socket failed: %s", last_wsa_error());
-    }
     memset((char *) &iserv_addr, 0, sizeof(iserv_addr));
     iserv_addr.sin_family = AF_INET;
     iserv_addr.sin_addr.s_addr = (*winSock.htonl)(INADDR_ANY);
@@ -282,17 +307,15 @@ start_local_sock(char* initScript, PROCESS_INFORMATION* pinfo)
 	return error(-1, "getsockname on listen socket failed: %s",
 		     last_wsa_error);
     }
-    portno = (*winSock.ntohs)(iserv_addr.sin_port);
+    *portno = (*winSock.ntohs)(iserv_addr.sin_port);
+    return tmpsock;
+}
 
-    /*
-     * Start Wish and wait for it to connect.
-     */
 
-    if (start_wish(initScript, portno, pinfo) == -1) {
-	(*winSock.closesocket)(tmpsock);
-	return (SOCKET) -1;
-    }
-
+static SOCKET accept_sock(SOCKET tmpsock)
+{
+    SOCKET local_sock;
+    static unsigned long one = 1;
     local_sock = (*winSock.accept)(tmpsock, (struct sockaddr *) 0, (int *) 0);
     (*winSock.closesocket)(tmpsock);
     if (local_sock == INVALID_SOCKET) {

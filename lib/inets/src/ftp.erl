@@ -35,11 +35,14 @@
 	 nlist/2, open/1, open/2, open/3, pwd/1, recv/2, recv/3,
 	 recv_bin/2, rename/3, rmdir/2, send/2, send/3, 
 	 send_bin/3, send_chunk/2, send_chunk_end/1,
-	 send_chunk_start/2, type/2, user/3]).
+	 send_chunk_start/2, type/2, user/3,user/4,account/2,
+	 append/3,append/2,append_bin/3,
+	 append_chunk/2, append_chunk_end/1,
+	 append_chunk_start/2]).
 
 %% Internal
 -export([init/1, handle_call/3, handle_cast/2, 
-	 handle_info/2, terminate/2]).
+	 handle_info/2, terminate/2,code_change/3]).
 
 
 %%
@@ -55,8 +58,29 @@
 %%           Flags = [Flag], 
 %%           Flag = verbose | debug
 %% Returns:  {ok, Pid} | {error, ehost}
-open(Host) ->
-  open(Host, ?FTP_PORT, []).
+		
+%%Tho only option was the host in textual form
+open({option_list,Option_list})->
+    %% Dbg = {debug,[trace,log,statistics]},
+    %% Options = [Dbg],
+    Options = [],
+    {ok,Pid1}=case lists:keysearch(flags,1,Option_list) of
+		  {value,{flags,Flags}}->
+		      {ok, Pid} = gen_server:start_link(?MODULE, [Flags], Options);
+		  false ->
+		      {ok, Pid} = gen_server:start_link(?MODULE, [], Options)
+	      end,
+    gen_server:call(Pid1, {open, ip_comm,Option_list}, infinity);
+	 
+
+%%The only option was the tuple form of the ip-number
+open(Host)when tuple(Host) ->
+    open(Host, ?FTP_PORT, []);
+
+%%Host is the string form of the hostname 
+open(Host)->
+    open(Host,?FTP_PORT,[]).
+
 
 
 open(Host, Port) when integer(Port) ->
@@ -66,12 +90,11 @@ open(Host, Flags) when list(Flags) ->
     open(Host,?FTP_PORT, Flags).
 
 open(Host,Port,Flags) when integer(Port), list(Flags) ->
-  %% Dbg = {debug,[trace,log,statistics]},
-  %% Options = [Dbg],
-  Options = [],
-  {ok, Pid} = gen_server:start_link(?MODULE, [Flags], Options),
-  gen_server:call(Pid, {open, ip_comm, Host, Port}, infinity).
-
+    %% Dbg = {debug,[trace,log,statistics]},
+    %% Options = [Dbg],
+    Options = [],
+    {ok, Pid} = gen_server:start_link(?MODULE, [Flags], Options),
+    gen_server:call(Pid, {open, ip_comm, Host, Port}, infinity).
 
 %% user(Pid, User, Pass)
 %% Purpose:  Login.
@@ -79,6 +102,20 @@ open(Host,Port,Flags) when integer(Port), list(Flags) ->
 %% Returns:  ok | {error, euser} | {error, econn}
 user(Pid, User, Pass) ->
   gen_server:call(Pid, {user, User, Pass}, infinity).
+
+%% user(Pid, User, Pass,Acc)
+%% Purpose:  Login whith a supplied account name
+%% Args:     Pid = pid(), User = Pass = Acc = string()
+%% Returns:  ok | {error, euser} | {error, econn} | {error, eacct}
+user(Pid, User, Pass,Acc) ->
+  gen_server:call(Pid, {user, User, Pass,Acc}, infinity).
+
+%% account(Pid,Acc)
+%% Purpose:  Set a user Account.
+%% Args:     Pid = pid(), Acc= string()
+%% Returns:  ok | {error, eacct}
+account(Pid,Acc) ->
+  gen_server:call(Pid, {account,Acc}, infinity).
 
 %% pwd(Pid)
 %%
@@ -227,6 +264,15 @@ send_chunk_start(Pid, RFile) ->
   gen_server:call(Pid, {send_chunk_start, RFile}, infinity).
 
 
+%% append_chunk_start(Pid, RFile)
+%%
+%% Purpose:  Start append chunks of data to remote file.
+%% Args:     Pid = pid(), RFile = string().
+%% Returns:  ok | {error, elogin} | {error, epath} | {error, econn}
+append_chunk_start(Pid, RFile) ->
+  gen_server:call(Pid, {append_chunk_start, RFile}, infinity).
+
+
 %% send_chunk(Pid, Bin)
 %%
 %% Purpose:  Send chunk to remote file.
@@ -238,6 +284,17 @@ send_chunk(Pid, Bin) when binary(Bin) ->
 send_chunk(Pid, Bin) ->
   {error, enotbinary}.
 
+%%append_chunk(Pid, Bin)
+%%
+%% Purpose:  Append chunk to remote file.
+%% Args:     Pid = pid(), Bin = binary().
+%% Returns:  ok | {error, elogin} | {error, enotbinary} | {error, echunk}
+%%           | {error, econn}
+append_chunk(Pid, Bin) when binary(Bin) ->
+  gen_server:call(Pid, {append_chunk, Bin}, infinity);
+append_chunk(Pid, Bin) ->
+  {error, enotbinary}.
+
 %% send_chunk_end(Pid)
 %%
 %% Purpose:  End sending of chunks to remote file.
@@ -245,6 +302,37 @@ send_chunk(Pid, Bin) ->
 %% Returns:  ok | {error, elogin} | {error, echunk} | {error, econn}
 send_chunk_end(Pid) ->
   gen_server:call(Pid, send_chunk_end, infinity).
+
+%% append_chunk_end(Pid)
+%%
+%% Purpose:  End appending of chunks to remote file.
+%% Args:     Pid = pid().
+%% Returns:  ok | {error, elogin} | {error, echunk} | {error, econn}
+append_chunk_end(Pid) ->
+  gen_server:call(Pid, append_chunk_end, infinity).
+
+%% append(Pid, LFile,RFile)
+%%
+%% Purpose:  Append the local file to the remote file
+%% Args:     Pid = pid(), LFile = RFile = string()
+%% Returns:  ok | {error, epath} | {error, elogin} | {error, econn}
+append(Pid, LFile) ->
+    append(Pid, LFile, "").
+
+append(Pid, LFile, RFile) ->
+  gen_server:call(Pid, {append, LFile, RFile}, infinity).
+
+%% append_bin(Pid, Bin, RFile)
+%%
+%% Purpose:  Append a binary to a remote file.
+%% Args:     Pid = pid(), Bin = binary(), RFile = string()
+%% Returns:  ok | {error, epath} | {error, elogin} | {error, enotbinary} 
+%%           | {error, econn}
+append_bin(Pid, Bin, RFile) when binary(Bin) ->
+  gen_server:call(Pid, {append_bin, Bin, RFile}, infinity);
+append_bin(Pid, Bin, RFile) ->
+  {error, enotbinary}.
+
 
 %% close(Pid)
 %%
@@ -278,7 +366,7 @@ formaterror(Tag) ->
 %%
 help() ->
   io:format("\n  Commands:\n"
-	    "  ---------\n"
+	    "  ---------\n" 
 	    "  cd(Pid, Dir)\n"
 	    "  close(Pid)\n"
 	    "  delete(Pid, File)\n"
@@ -300,8 +388,15 @@ help() ->
 	    "  send_chunk_start(Pid, RFile)\n"
 	    "  send_chunk_end(Pid)\n"
 	    "  send_bin(Pid, Bin, RFile)\n"
+	    "  append(Pid, LFile [, RFile])\n"
+	    "  append_chunk(Pid, Bin)\n"
+	    "  append_chunk_start(Pid, RFile)\n"
+	    "  append_chunk_end(Pid)\n"
+	    "  append_bin(Pid, Bin, RFile)\n"
 	    "  type(Pid, Type)\n"
-	    "  user(Pid, User, Pass)\n").
+	    "  account(Pid,Account)\n"
+	    "  user(Pid, User, Pass)\n"
+	    "  user(Pid, User, Pass,Account)\n").
 
 %%
 %% INIT
@@ -343,13 +438,14 @@ init([Flags]) ->
 		     State#state{csock = undefined}}).
 
 
-rescode(?POS_PREL,_,_)                   -> pos_prel;
-rescode(?POS_COMPL,_,_)                  -> pos_compl;
-rescode(?POS_INTERM,_,_)                 -> pos_interm;
-rescode(?TRANS_NEG_COMPL,?FILE_SYSTEM,2) -> trans_no_space;
-rescode(?TRANS_NEG_COMPL,_,_)            -> trans_neg_compl;
-rescode(?PERM_NEG_COMPL,?FILE_SYSTEM,2)  -> perm_no_space;
-rescode(?PERM_NEG_COMPL,?FILE_SYSTEM,3)  -> perm_fname_not_allowed;
+rescode(?POS_PREL,_,_)                   -> pos_prel; %%Positive Preleminary Reply
+rescode(?POS_COMPL,_,_)                  -> pos_compl; %%Positive Completion Reply
+rescode(?POS_INTERM,?AUTH_ACC,2)         -> pos_interm_acct; %%Positive Intermediate Reply nedd account
+rescode(?POS_INTERM,_,_)                 -> pos_interm; %%Positive Intermediate Reply
+rescode(?TRANS_NEG_COMPL,?FILE_SYSTEM,2) -> trans_no_space; %%No storage area no action taken
+rescode(?TRANS_NEG_COMPL,_,_)            -> trans_neg_compl;%%Temporary Error, no action taken
+rescode(?PERM_NEG_COMPL,?FILE_SYSTEM,2)  -> perm_no_space; %%Permanent disk space error, the user shall not try again
+rescode(?PERM_NEG_COMPL,?FILE_SYSTEM,3)  -> perm_fname_not_allowed; 
 rescode(?PERM_NEG_COMPL,_,_)             -> perm_neg_compl.
 
 retcode(trans_no_space,_)         -> etnospc;
@@ -357,43 +453,86 @@ retcode(perm_no_space,_)          -> epnospc;
 retcode(perm_fname_not_allowed,_) -> efnamena;
 retcode(_,Otherwise)              -> Otherwise.
 
-
-
+handle_call({open,ip_comm,Conn_data},From,State) ->
+    case lists:keysearch(host,1,Conn_data) of
+	{value,{host,Host}}->
+	    Port=get_key1(port,Conn_data,?FTP_PORT),
+	    Timeout=get_key1(timeout,Conn_data,?OPEN_TIMEOUT),
+	    open(Host,Port,Timeout,State);
+	false ->
+	    ehost
+    end;
+	
 handle_call({open,ip_comm,Host,Port},From,State) ->
-  case sock_connect(Host,Port) of
-    {error, What} ->
-      {stop, normal, {error, What}, State};
-    CSock ->
-      case result(CSock, State#state.flags) of
-	  {error,Reason} ->
-	      sock_close(CSock),
-	      {stop,normal,{error,Reason},State};
-	  _ -> % We should really check this...
-	      {reply, {ok, self()}, State#state{csock = CSock}}
-      end
-  end;
+    open(Host,Port,?OPEN_TIMEOUT,State); 
 
 handle_call({user, User, Pass}, _From, State) ->
-  #state{csock = CSock} = State,
-  case ctrl_cmd(CSock, "USER ~s", [User]) of
-    pos_interm ->
-      case ctrl_cmd(CSock, "PASS ~s", [Pass]) of
+    #state{csock = CSock} = State,
+    case ctrl_cmd(CSock, "USER ~s", [User]) of
+	pos_interm ->
+	    case ctrl_cmd(CSock, "PASS ~s", [Pass]) of
+		pos_compl ->
+		    set_type(binary, CSock),
+		    {reply, ok, State#state{type = binary}};
+		{error,enotconn} ->
+		    ?STOP_RET(econn);
+		_ ->
+		    {reply, {error, euser}, State}
+	    end;
 	pos_compl ->
-	  set_type(binary, CSock),
-	  {reply, ok, State#state{type = binary}};
-	{error,enotconn} ->
-	  ?STOP_RET(econn);
+	    set_type(binary, CSock),
+	    {reply, ok, State#state{type = binary}};
+	{error, enotconn} ->
+	    ?STOP_RET(econn);
+ 	_ ->
+	    {reply, {error, euser}, State}
+    end;
+    
+handle_call({user, User, Pass,Acc}, _From, State) ->
+    #state{csock = CSock} = State,
+    case ctrl_cmd(CSock, "USER ~s", [User]) of
+	pos_interm ->
+	    case ctrl_cmd(CSock, "PASS ~s", [Pass]) of
+		pos_compl ->
+		    set_type(binary, CSock),
+		    {reply, ok, State#state{type = binary}};
+		pos_interm_acct->
+		    case ctrl_cmd(CSock,"ACCT ~s",[Acc]) of
+			pos_compl->
+			    set_type(binary, CSock),
+			    {reply, ok, State#state{type = binary}};
+			{error,enotconn}->
+			    ?STOP_RET(econn);
+			_ ->
+			    {reply, {error, eacct}, State}
+		    end;
+		{error,enotconn} ->
+		    ?STOP_RET(econn);
+		_ ->
+		    {reply, {error, euser}, State}
+	    end;
+	pos_compl ->
+	    set_type(binary, CSock),
+	    {reply, ok, State#state{type = binary}};
+	{error, enotconn} ->
+	    ?STOP_RET(econn);
 	_ ->
-	  {reply, {error, euser}, State}
-      end;
-    pos_compl ->
-      set_type(binary, CSock),
-      {reply, ok, State#state{type = binary}};
-    {error, enotconn} ->
-      ?STOP_RET(econn);
-    _ ->
-      {reply, {error, euser}, State}
-  end;
+	    {reply, {error, euser}, State}
+    end;
+
+%%set_account(Acc,State)->Reply
+%%Reply={reply, {error, euser}, State} | {error,enotconn}->
+handle_call({account,Acc},_From,State)->
+    #state{csock = CSock} = State,
+    case ctrl_cmd(CSock,"ACCT ~s",[Acc]) of
+	pos_compl->
+	    {reply, ok,State};
+	{error,enotconn}->
+	    ?STOP_RET(econn);
+	Error ->
+	    io:format("~p",[Error]),
+	    {reply, {error, eacct}, State}
+    end;
 
 handle_call(pwd, _From, State) when State#state.chunk == false ->
   #state{csock = CSock} = State,
@@ -585,152 +724,52 @@ handle_call({recv_bin, RFile}, _From, State) when State#state.chunk == false ->
 	    {reply, {error, epath}, State}
     end;
 
-handle_call({send, LFile, RFile}, _From, State) when State#state.chunk == false ->
-    #state{csock = CSock, ldir = LDir} = State,
-    ARFile = case RFile of
-	       "" ->
-		   LFile;
-	       _ ->
-		   RFile
-	   end,
-    ALFile = absname(LDir, LFile),
-    case file_open(ALFile, read) of
-      {ok, Fd} ->
-	  LSock = listen_data(CSock, binary),
-	  case ctrl_cmd(CSock, "STOR ~s", [ARFile]) of
-	      pos_prel ->
-		  DSock = accept_data(LSock),
-		  SFreply = send_file(Fd, DSock),
-		  file_close(Fd),
-		  sock_close(DSock),
-		  case {SFreply,result(CSock)} of
-		      {ok,pos_compl} ->
-			  {reply, ok, State};
-		      {ok,Other} ->
-			  debug(" error: unknown reply: ~p~n",[Other]),
-			  {reply, {error, epath}, State};
-		      {{error,Why},Result} ->
-			  ?STOP_RET(retcode(Result,econn))
-		  end;
-	      {error, enotconn} ->
-		  ?STOP_RET(econn);
-	      Other ->
-		  debug(" error: ctrl failed: ~p~n",[Other]),
-		  {reply, {error, epath}, State}
-	  end;
-	{error, Reason} ->
-	    debug(" error: file open: ~p~n",[Reason]),
-	    {reply, {error, epath}, State}
-    end;
+handle_call({send, LFile, RFile}, _From, State)
+  when State#state.chunk == false ->
+    transfer_file("STOR",LFile,RFile,State);
 
-handle_call({send_bin, Bin, RFile}, _From, State) when State#state.chunk == false ->
-    #state{csock = CSock, ldir = LDir} = State,
-    LSock = listen_data(CSock, binary),
-    case ctrl_cmd(CSock, "STOR ~s", [RFile]) of
-	pos_prel ->
-	    DSock  = accept_data(LSock),
-	    SReply = sock_write(DSock, Bin),
-	    sock_close(DSock),
-	    case {SReply,result(CSock)} of
-		{ok,pos_compl} ->
-		    {reply, ok, State};
-		{ok,trans_no_space} ->
-		    ?STOP_RET(etnospc);
-		{ok,perm_no_space} ->
-		    ?STOP_RET(epnospc);
-		{ok,perm_fname_not_allowed} ->
-		    ?STOP_RET(efnamena);
-		{ok,Other} ->
-		    debug(" error: unknown reply: ~p~n",[Other]),
-		    {reply, {error, epath}, State};
-		{{error,Why},Result} ->
-		    ?STOP_RET(retcode(Result,econn))
-	    %% {{error,_Why},_Result} ->
-	    %%    ?STOP_RET(econn)
-	    end;
+handle_call({append, LFile, RFile}, _From, State) 
+when State#state.chunk == false ->
+    transfer_file("APPE",LFile,RFile,State);
 
-	{error, enotconn} ->
-	    ?STOP_RET(econn);
 
-	Other ->
-	    debug(" error: ctrl failed: ~p~n",[Other]),
-	    {reply, {error, epath}, State}
-    end;
+handle_call({send_bin, Bin, RFile}, _From, State)
+  when State#state.chunk == false ->
+    transfer_data("STOR",Bin,RFile,State);
 
-handle_call({send_chunk_start, RFile}, _From, State) when State#state.chunk == false ->
-  #state{csock = CSock, ldir = LDir} = State,
-  LSock = listen_data(CSock, binary),
-  case ctrl_cmd(CSock, "STOR ~s", [RFile]) of
-    pos_prel ->
-      DSock = accept_data(LSock),
-      {reply, ok, State#state{dsock = DSock, chunk = true}};
-    {error, enotconn} ->
-      ?STOP_RET(econn);
-    Otherwise ->
-      debug(" error: ctrl failed: ~p~n",[Otherwise]),
-      {reply, {error, epath}, State}
-  end;
+handle_call({append_bin, Bin, RFile}, _From, State)
+  when State#state.chunk == false ->
+  transfer_data("APPE",Bin,RFile,State);
 
-handle_call({send_chunk, Bin}, _From, State) when State#state.chunk == true ->
-  #state{dsock = DSock, csock = CSock} = State,
-  case DSock of
-    undefined ->
-      {reply,{error,econn},State};
-    _ ->
-      case sock_write(DSock, Bin) of
-	ok ->
-	  {reply, ok, State};
-	Other ->
-	  debug(" error: chunk write error: ~p~n",[Other]),
-	  {reply, {error, econn}, State#state{dsock = undefined}}
-      end
-  end;
 
-handle_call(send_chunk_end, _From, State) when State#state.chunk == true ->
-    #state{csock = CSock, dsock = DSock} = State,
-    case DSock of
-	undefined ->
-	    Result = result(CSock),
-	    case Result of
-		pos_compl ->
-		    {reply,ok,State#state{dsock = undefined, 
-					  chunk = false}};
-		trans_no_space ->
-		    ?STOP_RET(etnospc);
-		perm_no_space ->
-		    ?STOP_RET(epnospc);
-		perm_fname_not_allowed ->
-		    ?STOP_RET(efnamena);
-		Result ->
-		    debug(" error: send chunk end (1): ~p~n",
-			  [Result]),
-		    {reply,{error,epath},State#state{dsock = undefined, 
-						     chunk = false}}
-	    end;
-	_ ->
-	    sock_close(DSock),
-	    Result = result(CSock),
-	    case Result of
-		pos_compl ->
-		    {reply,ok,State#state{dsock = undefined, 
-					  chunk = false}};
-		trans_no_space ->
-		    sock_close(CSock),
-		    ?STOP_RET(etnospc);
-		perm_no_space ->
-		    sock_close(CSock),
-		    ?STOP_RET(epnospc);
-		perm_fname_not_allowed ->
-		    sock_close(CSock),
-		    ?STOP_RET(efnamena);
-		Result ->
-		    debug(" error: send chunk end (2): ~p~n",
-			  [Result]),
-		    {reply,{error,epath},State#state{dsock = undefined, 
-						     chunk = false}}
-	    end
-    end;
 
+
+handle_call({send_chunk_start, RFile}, _From, State)
+  when State#state.chunk == false ->
+    start_chunk_transfer("STOR",RFile,State);
+
+handle_call({append_chunk_start,RFile},_From,State)
+  when State#state.chunk==false->
+    start_chunk_transfer("APPE",RFile,State);
+
+handle_call({send_chunk, Bin}, _From, State) 
+  when State#state.chunk == true ->
+    chunk_transfer(Bin,State);
+
+handle_call({append_chunk, Bin}, _From, State) 
+  when State#state.chunk == true ->
+    chunk_transfer(Bin,State);
+
+handle_call(append_chunk_end, _From, State) 
+  when State#state.chunk == true ->
+    end_chunk_transfer(State);
+
+handle_call(send_chunk_end, _From, State) 
+  when State#state.chunk == true ->
+    end_chunk_transfer(State);
+
+
+    
 handle_call(close, _From, State) when State#state.chunk == false ->
   #state{csock = CSock} = State,
   ctrl_cmd(CSock, "QUIT", []),
@@ -760,8 +799,29 @@ handle_info(Info, State) ->
   error_logger:info_msg("ftp : ~w : Unexpected message: ~w\n", [self(),Info]),
   {noreply, State}.
 
+code_change(OldVsn,State,Extra)->
+    {ok,State}.
+
 terminate(Reason, State) ->
   ok.
+%%
+%% OPEN CONNECTION
+%%
+open(Host,Port,Timeout,State)->
+    case sock_connect(Host,Port,Timeout) of
+	{error, What} ->
+	    {stop, normal, {error, What}, State};
+	CSock ->
+	    case result(CSock, State#state.flags) of
+		{error,Reason} ->
+		    sock_close(CSock),
+		    {stop,normal,{error,Reason},State};
+		_ -> % We should really check this...
+		    {reply, {ok, self()}, State#state{csock = CSock}}
+	    end
+    end.
+
+
 
 %%
 %% CONTROL CONNECTION
@@ -940,6 +1000,8 @@ send_file(Fd, Sock) ->
     true ->
       ok
   end.
+
+
 
 %%
 %% PARSING OF RESULT LINES
@@ -1139,10 +1201,10 @@ sock_start() ->
 %% in order to establish a control connection.
 %%
 
-sock_connect(Host,Port) ->
+sock_connect(Host,Port,TimeOut) ->
     debug(" info : connect to server on ~p:~p~n",[Host,Port]),
     Opts = [{packet, 0}, {active, false}],
-    case (catch gen_tcp:connect(Host, Port, Opts, ?OPEN_TIMEOUT)) of
+    case (catch gen_tcp:connect(Host, Port, Opts,TimeOut)) of
 	{'EXIT', R1} ->	% XXX Probably no longer needed.
 	    debug(" error: socket connectionn failed with exit reason:"
 		  "~n   ~p",[R1]),
@@ -1277,3 +1339,169 @@ print(F,A) -> io:format(F,A).
 
 
     
+transfer_file(Cmd,LFile,RFile,State)->
+    #state{csock = CSock, ldir = LDir} = State,
+    ARFile = case RFile of
+	       "" ->
+		   LFile;
+	       _ ->
+		   RFile
+	   end,
+    ALFile = absname(LDir, LFile),
+    case file_open(ALFile, read) of
+      {ok, Fd} ->
+	  LSock = listen_data(CSock, binary),
+	  case ctrl_cmd(CSock, "~s ~s", [Cmd,ARFile]) of
+	      pos_prel ->
+		  DSock = accept_data(LSock),
+		  SFreply = send_file(Fd, DSock),
+		  file_close(Fd),
+		  sock_close(DSock),
+		  case {SFreply,result(CSock)} of
+		      {ok,pos_compl} ->
+			  {reply, ok, State};
+		      {ok,Other} ->
+			  debug(" error: unknown reply: ~p~n",[Other]),
+			  {reply, {error, epath}, State};
+		      {{error,Why},Result} ->
+			  ?STOP_RET(retcode(Result,econn))
+		  end;
+	      {error, enotconn} ->
+		  ?STOP_RET(econn);
+	      Other ->
+		  debug(" error: ctrl failed: ~p~n",[Other]),
+		  {reply, {error, epath}, State}
+	  end;
+	{error, Reason} ->
+	    debug(" error: file open: ~p~n",[Reason]),
+	    {reply, {error, epath}, State}
+    end.
+
+transfer_data(Cmd,Bin,RFile,State)->
+    #state{csock = CSock, ldir = LDir} = State,
+    LSock = listen_data(CSock, binary),
+    case ctrl_cmd(CSock, "~s ~s", [Cmd,RFile]) of
+	pos_prel ->
+	    DSock  = accept_data(LSock),
+	    SReply = sock_write(DSock, Bin),
+	    sock_close(DSock),
+	    case {SReply,result(CSock)} of
+		{ok,pos_compl} ->
+		    {reply, ok, State};
+		{ok,trans_no_space} ->
+		    ?STOP_RET(etnospc);
+		{ok,perm_no_space} ->
+		    ?STOP_RET(epnospc);
+		{ok,perm_fname_not_allowed} ->
+		    ?STOP_RET(efnamena);
+		{ok,Other} ->
+		    debug(" error: unknown reply: ~p~n",[Other]),
+		    {reply, {error, epath}, State};
+		{{error,Why},Result} ->
+		    ?STOP_RET(retcode(Result,econn))
+	    %% {{error,_Why},_Result} ->
+	    %%    ?STOP_RET(econn)
+	    end;
+
+	{error, enotconn} ->
+	    ?STOP_RET(econn);
+
+	Other ->
+	    debug(" error: ctrl failed: ~p~n",[Other]),
+	    {reply, {error, epath}, State}
+    end.
+
+
+start_chunk_transfer(Cmd,RFile,State)->
+  #state{csock = CSock, ldir = LDir} = State,
+  LSock = listen_data(CSock, binary),
+  case ctrl_cmd(CSock, "~s ~s", [Cmd,RFile]) of
+    pos_prel ->
+      DSock = accept_data(LSock),
+      {reply, ok, State#state{dsock = DSock, chunk = true}};
+    {error, enotconn} ->
+      ?STOP_RET(econn);
+    Otherwise ->
+      debug(" error: ctrl failed: ~p~n",[Otherwise]),
+      {reply, {error, epath}, State}
+  end.
+
+
+chunk_transfer(Bin,State)->
+  #state{dsock = DSock, csock = CSock} = State,
+  case DSock of
+    undefined ->
+      {reply,{error,econn},State};
+    _ ->
+      case sock_write(DSock, Bin) of
+	ok ->
+	  {reply, ok, State};
+	Other ->
+	  debug(" error: chunk write error: ~p~n",[Other]),
+	  {reply, {error, econn}, State#state{dsock = undefined}}
+      end
+  end.
+
+
+
+end_chunk_transfer(State)->
+    #state{csock = CSock, dsock = DSock} = State,
+    case DSock of
+	undefined ->
+	    Result = result(CSock),
+	    case Result of
+		pos_compl ->
+		    {reply,ok,State#state{dsock = undefined, 
+					  chunk = false}};
+		trans_no_space ->
+		    ?STOP_RET(etnospc);
+		perm_no_space ->
+		    ?STOP_RET(epnospc);
+		perm_fname_not_allowed ->
+		    ?STOP_RET(efnamena);
+		Result ->
+		    debug(" error: send chunk end (1): ~p~n",
+			  [Result]),
+		    {reply,{error,epath},State#state{dsock = undefined, 
+						     chunk = false}}
+	    end;
+	_ ->
+	    sock_close(DSock),
+	    Result = result(CSock),
+	    case Result of
+		pos_compl ->
+		    {reply,ok,State#state{dsock = undefined, 
+					  chunk = false}};
+		trans_no_space ->
+		    sock_close(CSock),
+		    ?STOP_RET(etnospc);
+		perm_no_space ->
+		    sock_close(CSock),
+		    ?STOP_RET(epnospc);
+		perm_fname_not_allowed ->
+		    sock_close(CSock),
+		    ?STOP_RET(efnamena);
+		Result ->
+		    debug(" error: send chunk end (2): ~p~n",
+			  [Result]),
+		    {reply,{error,epath},State#state{dsock = undefined, 
+						     chunk = false}}
+	    end
+    end.
+				      
+get_key1(Key,List,Default)->	     
+    case lists:keysearch(Key,1,List)of
+	{value,{_,Val}}->
+	    Val;
+	false->
+	    Default
+    end.
+
+
+
+
+
+
+
+
+

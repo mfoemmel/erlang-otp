@@ -1,0 +1,21 @@
+# HiPE level 1 bifs: performance analysis support
+#
+# bif hipe_bifs:name/arity
+
+bif hipe_bifs:call_count_on/1
+bif hipe_bifs:call_count_off/1
+bif hipe_bifs:call_count_get/1
+bif hipe_bifs:call_count_clear/1
+bif hipe_bifs:system_timer_get/0
+bif hipe_bifs:system_timer_clear/0
+bif hipe_bifs:gc_timer_get/0
+bif hipe_bifs:gc_timer_clear/0
+bif hipe_bifs:send_timer_get/0
+bif hipe_bifs:send_timer_clear/0
+bif hipe_bifs:copy_timer_get/0
+bif hipe_bifs:copy_timer_clear/0
+bif hipe_bifs:gc_info/0
+bif hipe_bifs:clear_gc_info/0
+bif hipe_bifs:bench_info/0
+bif hipe_bifs:clear_bench_info/0
+bif hipe_bifs:message_info/0

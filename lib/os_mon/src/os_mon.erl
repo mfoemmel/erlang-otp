@@ -57,6 +57,16 @@ init([]) ->
 			start_memsup(),
 			[],
 			[]};
+		  {unix,linux} ->
+		      {start_disksup(),
+		       start_memsup(),
+		       start_cpu_sup(),
+		       []};
+		  {unix,freebsd} ->
+		      {start_disksup(),
+		       start_memsup(),
+		       start_cpu_sup(),
+		       []};
 		  _ -> {start_disksup(),
 			start_memsup(),
 			start_cpu_sup(),

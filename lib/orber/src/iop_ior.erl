@@ -550,11 +550,11 @@ code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile
     NewBytes = list_to_binary(code_profile_data(Version, P)),
     [#'IOP_TaggedProfile'{tag=?TAG_INTERNET_IOP, profile_data=NewBytes} | 
      code_profile_datas(Version, Profiles)];
-code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, 
-						  profile_data=P} | Profiles]) ->
-    Profs= code_comp(Version, P, []),
-    [#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, 
-			  profile_data=Profs}| code_profile_datas(Version, Profiles)];
+%code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, 
+%						  profile_data=P} | Profiles]) ->
+%    Profs= code_comp(Version, P, []),
+%    [#'IOP_TaggedProfile'{tag=?TAG_MULTIPLE_COMPONENTS, 
+%			  profile_data=Profs}| code_profile_datas(Version, Profiles)];
 code_profile_datas(Version, [#'IOP_TaggedProfile'{tag=N, profile_data=P} | Profiles]) ->
     [#'IOP_TaggedProfile'{tag=N, profile_data=P} | code_profile_datas(Version, Profiles)];
 code_profile_datas(_, Data) ->

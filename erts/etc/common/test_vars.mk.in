@@ -20,26 +20,26 @@ include $(ERL_TOP)/make/target.mk
 ifeq ($(TYPE),debug)
 PURIFY =
 TYPEMARKER = .debug
-TYPE_FLAGS = -DDEBUG -DINSTRUMENT @DEBUG_FLAGS@
+TYPE_FLAGS = @DEBUG_CFLAGS@ -DDEBUG -DINSTRUMENT
 else
 ifeq ($(TYPE),instr)
 PURIFY =
 TYPEMARKER = .instr
-TYPE_FLAGS = -g -O2 -DINSTRUMENT
+TYPE_FLAGS = @CFLAGS@ -DINSTRUMENT
 else
 ifeq ($(TYPE),purify)
 PURIFY = purify
 TYPEMARKER = .purify
-TYPE_FLAGS = -g -O2 -DPURIFY -DNO_JUMP_TABLE
+TYPE_FLAGS = @CFLAGS@ -DPURIFY -DNO_JUMP_TABLE
 else
 ifeq ($(TYPE),quantify)
 PURIFY = quantify
 TYPEMARKER = .quantify
-TYPE_FLAGS = -g -O2 -DQUANTIFY -DNO_JUMP_TABLE
+TYPE_FLAGS = @CFLAGS@ -g -O2 -DQUANTIFY -DNO_JUMP_TABLE
 else
 PURIFY =
 TYPEMARKER =
-TYPE_FLAGS = -g -O2
+TYPE_FLAGS = @CFLAGS@
 endif
 endif
 endif
@@ -50,15 +50,15 @@ endif
 #
 ERLANG_OSTYPE = @ERLANG_OSTYPE@
 
-SHELL     = /bin/sh
-CC        = @CC@
-WFLAGS    = @WFLAGS@
-CFLAGS    = @CFLAGS@ @DEFS@ $(TYPE_FLAGS) $(WFLAGS) @THR_DEFS@
-LIBS      = @LIBS@ @THR_LIBS@ -L$(ERL_TOP)/erts/obj/$(TARGET) -lz
+SHELL   = /bin/sh
+CC      = @CC@
+WFLAGS  = @WFLAGS@
+CFLAGS  = $(TYPE_FLAGS) @DEFS@ $(WFLAGS) @THR_DEFS@
+LIBS    = @LIBS@ @THR_LIBS@ -L$(ERL_TOP)/erts/obj/$(TARGET) -lz
 
 EMSRCDIR   = $(ERL_TOP)/erts/emulator/beam
 SYSSRCDIR  = $(ERL_TOP)/erts/emulator/sys/$(ERLANG_OSTYPE)
-CONF_H_DIR = $(ERL_TOP)/erts/autoconf/$(TARGET)
+CONF_H_DIR = $(ERL_TOP)/erts/$(TARGET)
 OBJDIR     = $(ERL_TOP)/erts/obj$(TYPEMARKER).beam/$(TARGET)
 
 

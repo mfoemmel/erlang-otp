@@ -20,7 +20,7 @@
  */
 
 #include <windows.h>
-#include "driver.h"
+#include "erl_driver.h"
 #include "sys.h"
 
 /*
@@ -51,7 +51,7 @@ EXTERN_FUNCTION(int, send_error_to_logger, (uint32));
  */
 
 typedef struct {
-    int port;			/* Port number. */
+    ErlDrvPort port;		/* Port handle. */
     REGSAM sam;			/* Access for handles. */
     HKEY hkey;			/* Handle to open key. */
     HKEY hkey_root;		/* Root handle for current key. */
@@ -68,7 +68,7 @@ typedef struct {
  * Local functions.
  */
 
-static int reply(RegPort* rp, LONG result);
+static void reply(RegPort* rp, LONG result);
 static BOOL fix_value_result(RegPort* rp, LONG result, DWORD type,
 			     LPSTR name, DWORD nameSize, LPSTR value,
 			     DWORD valueSize);
@@ -82,13 +82,23 @@ static int maperror(DWORD error);
  */
 
 static int reg_init(void);
-static long reg_start();
-static int reg_stop();
-static int reg_from_erlang();
+static ErlDrvData reg_start(ErlDrvPort, char*);
+static void reg_stop(ErlDrvData);
+static void reg_from_erlang(ErlDrvData, char*, int);
 
-struct driver_entry registry_driver_entry = {
-    reg_init, reg_start, reg_stop, reg_from_erlang,
-    null_func, null_func, "registry__drv__"
+struct erl_drv_entry registry_driver_entry = {
+    reg_init,
+    reg_start,
+    reg_stop,
+    reg_from_erlang,
+    NULL,
+    NULL,
+    "registry__drv__",
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL
 };
 
 static int
@@ -98,8 +108,8 @@ reg_init(void)
     return 0;
 }
 
-static long
-reg_start(int port, char* buf)
+static ErlDrvData
+reg_start(ErlDrvPort port, char* buf)
 {
     RegPort* rp;
     char* s;
@@ -120,7 +130,7 @@ reg_start(int port, char* buf)
   
     rp = sys_alloc(sizeof(RegPort));
     if (rp == NULL) {
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     }
     rp->port = port;
     rp->hkey = rp->hkey_root = HKEY_CLASSES_ROOT;
@@ -131,11 +141,11 @@ reg_start(int port, char* buf)
     rp->name_buf = sys_alloc(rp->name_buf_size);
     rp->value_buf_size = 64;
     rp->value_buf = sys_alloc(rp->value_buf_size);
-    return (long) rp;
+    return (ErlDrvData) rp;
 }
 
-static int
-reg_stop(long clientData)
+static void
+reg_stop(ErlDrvData clientData)
 {
     RegPort* rp = (RegPort *) clientData;
 
@@ -144,14 +154,11 @@ reg_stop(long clientData)
     sys_free(rp->value_buf);
     sys_free(rp->key);
     sys_free(rp);
-    return 1;
+    /* return 1; */
 }
 
-static int
-reg_from_erlang(clientData, buf, count)
-    long clientData;
-    byte *buf;
-    int count;
+static void
+reg_from_erlang(ErlDrvData clientData, char* buf, int count)
 {
     RegPort* rp = (RegPort *) clientData;
     int cmd;
@@ -188,7 +195,8 @@ reg_from_erlang(clientData, buf, count)
 		rp->key = sys_alloc(rp->key_size+1);
 		strcpy(rp->key, key);
 	    }
-	    return reply(rp, result);
+	    reply(rp, result);
+	    return;
 	}
 	break;
     case CMD_CREATE_KEY:
@@ -210,7 +218,8 @@ reg_from_erlang(clientData, buf, count)
 		rp->key = sys_alloc(rp->key_size+1);
 		strcpy(rp->key, key);
 	    }
-	    return reply(rp, result);
+	    reply(rp, result);
+	    return;
 	}
 	break;
     case CMD_GET_ALL_SUBKEYS:
@@ -227,9 +236,11 @@ reg_from_erlang(clientData, buf, count)
 		    rp->name_buf = sys_realloc(rp->name_buf, rp->name_buf_size);
 		    continue;
 		} else if (result == ERROR_NO_MORE_ITEMS) {
-		    return reply(rp, ERROR_SUCCESS);
+		    reply(rp, ERROR_SUCCESS);
+		    return;
 		} else if (result != ERROR_SUCCESS) {
-		    return reply(rp, result);
+		    reply(rp, result);
+		    return;
 		}
 		key_reply(rp, rp->name_buf, nameSize);
 		i++;
@@ -255,7 +266,8 @@ reg_from_erlang(clientData, buf, count)
 		result = RegEnumValue(rp->hkey, i, rp->name_buf, &nameSize,
 				      NULL, &type, rp->value_buf, &valueSize);
 		if (result == ERROR_NO_MORE_ITEMS) {
-		    return reply(rp, ERROR_SUCCESS);
+		    reply(rp, ERROR_SUCCESS);
+		    return;
 		}
 		if (fix_value_result(rp, result, type, rp->name_buf, nameSize,
 				     rp->value_buf, valueSize)) {
@@ -301,7 +313,7 @@ reg_from_erlang(clientData, buf, count)
 	reply(rp, result);
 	break;
     }
-    return 1;
+    /* return 1; */
 }
 
 static BOOL
@@ -324,7 +336,8 @@ fix_value_result(RegPort* rp, LONG result, DWORD type,
 	rp->value_buf = sys_realloc(rp->value_buf, rp->value_buf_size);
 	return FALSE;
     } else if (result != ERROR_SUCCESS) {
-	return reply(rp, result);
+	reply(rp, result);
+	return TRUE;
     }
   
     /*
@@ -362,7 +375,7 @@ fix_value_result(RegPort* rp, LONG result, DWORD type,
  * [$o]						Ok
  */
 
-static int
+static void
 reply(RegPort* rp, LONG result)
 {
     char sbuf[256];
@@ -382,7 +395,7 @@ reply(RegPort* rp, LONG result)
 	}
 	driver_output(rp->port, sbuf, t-sbuf);
     }
-    return 1;
+    /* return 1; */
 }
 
 /*

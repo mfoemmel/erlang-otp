@@ -223,7 +223,7 @@ boot_loop(BootPid, State) ->
             {_,PS} = State#state.status,
 	    loop(State#state{status = {started,PS}});
 	{'EXIT',BootPid,Reason} ->
-	    erlang:display({'init terminating in do_boot',Reason}),
+	    erlang:display({"init terminating in do_boot",Reason}),
 	    crash("init terminating in do_boot", [Reason]);
 	{'EXIT',Pid,Reason} ->
 	    Kernel = State#state.kernel,
@@ -272,7 +272,7 @@ new_kernelpid({Name,ignore},BootPid,State) ->
     BootPid ! {self(),ignore},
     State;
 new_kernelpid({Name,What},BootPid,State) ->
-    erlang:display({'could not start kernel pid',Name,What}),
+    erlang:display({"could not start kernel pid",Name,What}),
     clear_system(BootPid,State),
     crash("could not start kernel pid", [Name, What]).
 
@@ -572,7 +572,7 @@ terminate(Pid,Kernel,Reason) ->
     case kernel_pid(Pid,Kernel) of
 	{ok,Name} ->
 	    sleep(500), %% Flush error printouts !
-	    erlang:display({'Kernel pid terminated',Name,Reason}),
+	    erlang:display({"Kernel pid terminated",Name,Reason}),
 	    crash("Kernel pid terminated", [Name, Reason]);
 	_ ->
 	    false
@@ -604,7 +604,7 @@ start_prim_loader(Init,Id,Pgm,Nodes,Root,Path,{Pa,Pz}) ->
 	    add_to_kernel(Init,Pid),
 	    Pid;
 	{error,Reason} ->
-	    erlang:display({'can not start loader',Reason}),
+	    erlang:display({"can not start loader",Reason}),
 	    exit(Reason)
     end.
 
@@ -649,7 +649,7 @@ do_boot(Init,Flags,Start) ->
 
     %% To help identifying Purify windows that pop up,
     %% print the node name into the Purify log.
-    (catch erlang:info({purify, "Node: " ++ atom_to_list(node())})),
+    (catch erlang:system_info({purify, "Node: " ++ atom_to_list(node())})),
 
     start_em(Start).
 
@@ -913,6 +913,8 @@ parse_boot_args(Args) ->
 
 parse_boot_args([B|Bs], Ss, Fs, As) ->
     case check(B) of
+	start_extra_arg ->
+	    {reverse(Ss),reverse(Fs),reverse(As, Bs)};
 	start_arg ->
 	    {S,Rest} = get_args(Bs, []),
 	    parse_boot_args(Rest, [{s, S}|Ss], Fs, As);
@@ -935,6 +937,7 @@ parse_boot_args([B|Bs], Ss, Fs, As) ->
 parse_boot_args([], Start, Flags, Args) ->
     {reverse(Start),reverse(Flags),reverse(Args)}.
 
+check(<<"-extra">>) -> start_extra_arg;
 check(<<"-s">>) -> start_arg;
 check(<<"-run">>) -> start_arg2;
 check(<<"--">>) -> end_args;
@@ -947,6 +950,7 @@ check(X) -> arg.				%This should never occur
 
 get_args([B|Bs], As) ->
     case check(B) of
+	start_extra_arg -> {reverse(As), [B|Bs]};
 	start_arg -> {reverse(As), [B|Bs]};
 	start_arg2 -> {reverse(As), [B|Bs]};
 	end_args -> {reverse(As), Bs};
@@ -1004,7 +1008,7 @@ get_flag_list(F,Flags) ->
 
 %%
 %% Internal get_flag function.
-%% Fetch all occurances of flag.
+%% Fetch all occurrences of flag.
 %% Return: [Args,Args,...] where Args ::= list(atom())
 %%
 get_flag_args(F,Flags) -> get_flag_args(F,Flags,[]).
@@ -1085,7 +1089,7 @@ search(Key, [_|T]) -> search(Key, T);
 search(Key, []) -> false.
 
 extension() -> 
-    case erlang:info(machine) of
+    case erlang:system_info(machine) of
         "JAM" -> ".jam";
         "VEE" -> ".vee";
         "BEAM" -> ".beam"

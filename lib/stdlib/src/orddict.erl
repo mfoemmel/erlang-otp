@@ -34,8 +34,8 @@ new() -> [].
 %% is_key(Key, Dictionary) -> Boolean
 
 is_key(Key, [{K,Valie}|Dict]) when Key < K -> false;
-is_key(Key, [{K,Value}|Dict]) when Key == K -> true;
 is_key(Key, [{K,Value}|Dict]) when Key > K -> is_key(Key, Dict);
+is_key(Key, [{K,Value}|Dict]) -> true;		%Key == K
 is_key(Key, []) -> false.
 
 %% to_list(Dictionary) -> [{Key,Value}]
@@ -53,14 +53,14 @@ size(D) -> length(D).
 
 %% fetch(Key, Dictionary) -> Value
 
-fetch(Key, [{K,Value}|_]) when Key == K -> Value;
-fetch(Key, [{K,Value}|D]) when Key > K -> fetch(Key, D).
+fetch(Key, [{K,Value}|D]) when Key > K -> fetch(Key, D);
+fetch(Key, [{K,Value}|_]) when Key == K -> Value.
 
 %% find(Key, Dictionary) -> {ok,Value} | error
 
 find(Key, [{K,Value}|_]) when Key < K -> error;
-find(Key, [{K,Value}|_]) when Key == K -> {ok,Value};
 find(Key, [{K,Value}|D]) when Key > K -> find(Key, D);
+find(Key, [{K,Value}|_]) -> {ok,Value};		%Key == K
 find(Key, []) -> error.
 
 %% fetch_keys(Dictionary) -> [Key]
@@ -73,67 +73,67 @@ fetch_keys([]) ->
 %% erase(Key, Dictionary) -> Dictionary'
 
 erase(Key, [{K,Value}=E|Dict]) when Key < K -> [E|Dict];
-erase(Key, [{K,Value}=E|Dict]) when Key == K -> Dict;
 erase(Key, [{K,Value}=E|Dict]) when Key > K ->
     [E|erase(Key, Dict)];
+erase(Key, [{K,Value}=E|Dict]) -> Dict;		%Key == K
 erase(Key, []) -> [].
 
 %% store(Key, Value, Dictionary) -> Dictionary'
 
 store(Key, New, [{K,Old}=E|Dict]) when Key < K ->
     [{Key,New},E|Dict];
-store(Key, New, [{K,Old}=E|Dict]) when Key == K ->
-    [{Key,New}|Dict];
 store(Key, New, [{K,Old}=E|Dict]) when Key > K ->
     [E|store(Key, New, Dict)];
+store(Key, New, [{K,Old}=E|Dict]) ->		%Key == K
+    [{Key,New}|Dict];
 store(Key, New, []) -> [{Key,New}].
 
 %% append(Key, Value, Dictionary) -> Dictionary'.
 
 append(Key, New, [{K,Old}=E|Dict]) when Key < K ->
     [{Key,[New]},E|Dict];
-append(Key, New, [{K,Old}=E|Dict]) when Key == K ->
-    [{Key,Old ++ [New]}|Dict];
 append(Key, New, [{K,Old}=E|Dict]) when Key > K ->
     [E|append(Key, New, Dict)];
+append(Key, New, [{K,Old}=E|Dict]) ->		%Key == K
+    [{Key,Old ++ [New]}|Dict];
 append(Key, New, []) -> [{Key,[New]}].
 
 %% append_list(Key, ValueList, Dictionary) -> Dictionary'
 
 append_list(Key, NewList, [{K,Old}=E|Dict]) when Key < K ->
     [{Key,NewList},E|Dict];
-append_list(Key, NewList, [{K,Old}=E|Dict]) when Key == K ->
-    [{Key,Old ++ NewList}|Dict];
 append_list(Key, NewList, [{K,Old}=E|Dict]) when Key > K ->
     [E|append_list(Key, NewList, Dict)];
+append_list(Key, NewList, [{K,Old}=E|Dict]) ->		%Key == K
+    [{Key,Old ++ NewList}|Dict];
 append_list(Key, NewList, []) ->
 	[{Key,NewList}].
 
 %% update(Key, Fun, Dictionary) -> Dictionary'.
 
-update(Key, Fun, [{K,Val}=E|Dict]) when Key == K ->
-    [{Key,Fun(Val)}|Dict];
 update(Key, Fun, [{K,Val}=E|Dict]) when Key > K ->
-    [E|update(Key, Fun, Dict)].
+    [E|update(Key, Fun, Dict)];
+update(Key, Fun, [{K,Val}=E|Dict]) when Key == K ->
+    [{Key,Fun(Val)}|Dict].
 
 %% update(Key, Fun, Init, Dictionary) -> Dictionary'.
 
 update(Key, Fun, Init, [{K,Val}=E|Dict]) when Key < K ->
     [{Key,Init},E|Dict];
-update(Key, Fun, Init, [{K,Val}=E|Dict]) when Key == K ->
-    [{Key,Fun(Val)}|Dict];
 update(Key, Fun, Init, [{K,Val}=E|Dict]) when Key > K ->
     [E|update(Key, Fun, Init, Dict)];
+update(Key, Fun, Init, [{K,Val}=E|Dict]) ->		%Key == K
+    [{Key,Fun(Val)}|Dict];
 update(Key, Fun, Init, []) -> [{Key,Init}].
 
 %% update_counter(Key, Incr, Dictionary) -> Dictionary'.
 
 update_counter(Key, Incr, [{K,Val}=E|Dict]) when Key < K ->
     [{Key,Incr},E|Dict];
-update_counter(Key, Incr, [{K,Val}=E|Dict]) when Key == K ->
-    [{Key,Val+Incr}|Dict];
 update_counter(Key, Incr, [{K,Val}=E|Dict]) when Key > K ->
     [E|update_counter(Key, Incr, Dict)];
+update_counter(Key, Incr, [{K,Val}=E|Dict]) ->		%Key == K
+    [{Key,Val+Incr}|Dict];
 update_counter(Key, Incr, []) -> [{Key,Incr}].
 
 %% fold(FoldFun, Accumulator, Dictionary) -> Accumulator.
@@ -161,10 +161,10 @@ filter(F, []) -> [].
 
 merge(F, [{K1,V1}=E1|D1], [{K2,V2}=E2|D2]) when K1 < K2 ->
     [E1|merge(F, D1, [E2|D2])];
-merge(F, [{K1,V1}=E1|D1], [{K2,V2}=E2|D2]) when K1 =:= K2 ->
-    [{K1,F(K1, V1, V2)}|merge(F, D1, D2)];
 merge(F, [{K1,V1}=E1|D1], [{K2,V2}=E2|D2]) when K1 > K2 ->
     [E2|merge(F, [E1|D1], D2)];
+merge(F, [{K1,V1}=E1|D1], [{K2,V2}=E2|D2]) ->		%K1 == K2
+    [{K1,F(K1, V1, V2)}|merge(F, D1, D2)];
 merge(F, [], D2) -> D2;
 merge(F, D1, []) -> D1.
 

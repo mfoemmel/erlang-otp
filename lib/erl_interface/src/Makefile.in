@@ -106,18 +106,19 @@ ERL_HEADERS = portability.h erl_connect.h erl_global.h erl_interface.h \
 	erl_eterm.h erl_locking.h erl_format.h erl_malloc.h erl_start.h \
 	erl_resolve.h 
 
-EI_HEADERS = ei.h eicode.h eiext.h eisend.h eihash.h eireg.h eimd5.h
+EI_HEADERS = ei.h eicode.h eiext.h eisend.h eihash.h eireg.h eimd5.h ei_format.h ei_printterm.h ei_decode_term.h ei_connect.h ei_x_encode.h
 
-ERL_OBJS = $(addprefix $(OBJDIR)/,epmd_port.o epmd_publish.o epmd_unpublish.o erl_connect.o erl_error.o erl_eterm.o erl_fix_alloc.o erl_format.o erl_locking.o erl_malloc.o erl_marshal.o erl_nothreads.o erl_pthreads.o erl_resolve.o erl_rport.o erl_start.o erl_sthreads.o global_register.o global_names.o global_unregister.o global_whereis.o)
+EI_EXTRA_OBJS = $(addprefix $(OBJDIR)/,  ei_connect.o ei_printterm.o erl_rport.o erl_resolve.o epmd_port.o epmd_publish.o epmd_unpublish.o erl_error.o ei_nothreads.o ei_pthreads.o ei_sthreads.o ei_malloc.o erl_locking.o)
 
-IDL_OBJS = $(addprefix $(OBJDIR)/,decode_atom.o decode_binary.o decode_boolean.o decode_char.o decode_double.o decode_intlist.o decode_list_header.o decode_long.o decode_pid.o decode_port.o decode_ref.o decode_string.o decode_term.o decode_trace.o decode_tuple_header.o decode_ulong.o decode_version.o encode_atom.o encode_binary.o encode_boolean.o encode_char.o encode_double.o encode_list_header.o encode_long.o encode_pid.o encode_port.o encode_ref.o encode_string.o encode_term.o encode_trace.o encode_tuple_header.o encode_ulong.o encode_version.o get_type.o receive.o send.o send_exit.o send_link.o send_reg.o show_msg.o trace.o whereis.o eimd5.o)
+ERL_OBJS = $(addprefix $(OBJDIR)/,erl_connect.o erl_eterm.o erl_fix_alloc.o erl_format.o erl_malloc.o erl_marshal.o erl_start.o global_register.o global_names.o global_unregister.o global_whereis.o decode_term.o encode_term.o erl_nothreads.o erl_pthreads.o erl_sthreads.o)
+
+IDL_OBJS = $(addprefix $(OBJDIR)/,decode_atom.o decode_binary.o decode_boolean.o decode_char.o decode_double.o decode_intlist.o decode_list_header.o decode_long.o decode_pid.o decode_port.o decode_ref.o decode_string.o decode_trace.o decode_tuple_header.o decode_ulong.o decode_version.o encode_atom.o encode_binary.o encode_boolean.o encode_char.o encode_double.o encode_list_header.o encode_long.o encode_pid.o encode_port.o encode_ref.o encode_string.o encode_trace.o encode_tuple_header.o encode_ulong.o encode_version.o get_type.o receive.o send.o send_exit.o send_link.o send_reg.o show_msg.o trace.o whereis.o eimd5.o ei_format.o ei_decode_term.o decode_fun.o encode_fun.o ei_x_encode.o)
 
 HASH_OBJS = $(addprefix $(OBJDIR)/,hash_dohash.o hash_foreach.o hash_freetab.o hash_insert.o hash_isprime.o hash_lookup.o hash_newtab.o hash_remove.o hash_resize.o hash_rlookup.o)
 
 REG_OBJS = $(addprefix $(OBJDIR)/,reg_close.o reg_delete.o reg_dirty.o reg_dump.o reg_free.o reg_get.o reg_getf.o reg_geti.o reg_getp.o reg_gets.o reg_make.o reg_open.o reg_purge.o reg_resize.o reg_restore.o reg_set.o reg_setf.o reg_seti.o reg_setp.o reg_sets.o reg_stat.o reg_tabstat.o)
 
-EI_OBJS = $(IDL_OBJS) $(HASH_OBJS) $(REG_OBJS)
-
+EI_OBJS = $(IDL_OBJS) $(HASH_OBJS) $(REG_OBJS) $(EI_EXTRA_OBJS)
 
 #---------------------------------
 # Build targets

@@ -149,6 +149,8 @@ load_mib(MibData,FileName,MeOverride,TeOverride) when record(MibData,snmp_mib_da
 		    {error, Reason};
 		{ok, Mib} ->
 		    ?vtrace("loaded mib ~s",[Mib#mib.name]),
+		    ?debug("load_mib -> "
+			   "~n   Mib#mib.mes: ~p", [Mib#mib.mes]),
 		    NonInternalMes = 
 			lists:filter(fun drop_internal_and_imported/1,
 				     Mib#mib.mes),
@@ -156,19 +158,23 @@ load_mib(MibData,FileName,MeOverride,TeOverride) when record(MibData,snmp_mib_da
 			    "are non internal or imported",
 			    [length(Mib#mib.mes),length(NonInternalMes)]),
 		    T = build_tree(NonInternalMes, MibName),
+		    ?debug("load_mib -> "
+			   "~n   T: ~p", [T]),
 		    case catch merge_nodes(T, OldRoot) of
 			{error_merge_nodes, Node1, Node2} ->
 			    ?vlog("error merging nodes ~p and ~p",
 				  [Node1,Node2]),
 			    {error, oid_conflict};
 			NewRoot when tuple(NewRoot),element(1,NewRoot)==tree->
+			    ?debug("load_mib -> "
+				   "~n   NewRoot: ~p", [NewRoot]),
 			    Symbolic = not lists:member(no_symbolic_info,
 							Mib#mib.misc),
-			    case check_notif_and_mes(TeOverride,
-						     MeOverride,
-						     Symbolic, 
-						     Mib#mib.traps,
-						     NonInternalMes) of
+			    case (catch check_notif_and_mes(TeOverride,
+							    MeOverride,
+							    Symbolic, 
+							    Mib#mib.traps,
+							    NonInternalMes)) of
 				true ->
 				    install_mib(Symbolic, Mib, MibName,
 						ActualFileName,
@@ -188,12 +194,12 @@ store(MibData) ->
 
 
 %%----------------------------------------------------------------------
-%% Returns: true | {error, Reason}
 %% (OTP-3601)
 %%----------------------------------------------------------------------
 check_notif_and_mes(TeOverride,MeOverride,Symbolic,Traps,MEs) ->
     ?vtrace("check notifications and mib entries",[]),
-    check_mes(MeOverride,check_notifications(TeOverride,Symbolic,Traps),MEs).
+    check_notifications(TeOverride,Symbolic,Traps),
+    check_mes(MeOverride,MEs).
 
 check_notifications(true, _Symbolic, _Traps) ->
     ?vtrace("trapentry override = true => skip check",[]),
@@ -211,18 +217,17 @@ check_notifications([Trap | Traps]) ->
     ?vtrace("check notification with Key: ~p",[Key]),
     case snmp_symbolic_store:get_notification(Key) of
 	{value, Trap} -> check_notifications(Traps);
-	{value, _} -> {error, {'trap already defined', Key}};
-	undefined -> check_notifications(Traps)
+	{value,    _} -> throw({error, {'trap already defined', Key}});
+	undefined     -> check_notifications(Traps)
     end.
 
-check_mes(true,_,_) ->
+check_mes(true,_) ->
     ?vtrace("mibentry override = true => skip check",[]),
     true; 
-check_mes(_,true,MEs) ->
-    check_mes(MEs);
-check_mes(_,Else,_MEs) ->
-    Else.
+check_mes(_,MEs) ->
+    check_mes(MEs).
 
+check_mes([]) -> true;
 check_mes([ME | MEs]) ->
     Name = ME#me.aliasname,
     Oid1 = ME#me.oid,
@@ -231,10 +236,9 @@ check_mes([ME | MEs]) ->
 	{value, Oid1} -> check_mes(MEs);
 	{value, Oid2} -> 
 	    ?vinfo("~n   expecting '~p'~n   but found '~p'",[Oid1,Oid2]),
-	    {error, {'mibentry already defined', Name}};
+	    throw({error, {'mibentry already defined', Name}});
 	false -> check_mes(MEs)
-    end;
-check_mes([]) -> true.
+    end.
 
 
 %%----------------------------------------------------------------------
@@ -517,6 +521,8 @@ find_next({node, {subagent, SubAgentPid}}, _Index, RevOidSoFar, MibView) ->
 %%%======================================================================
 
 build_tree(Mes, MibName) ->
+    ?debug("build_tree -> "
+	   "~n   Mes: ~p", [Mes]),
     {ListTree, []}  = build_subtree([], Mes, MibName),
     {tree, convert_tree(ListTree), internal}.
 
@@ -534,10 +540,10 @@ build_tree(Mes, MibName) ->
 %% Comment: The assocList in #me is cleared to save some small amount of memory.
 %%----------------------------------------------------------------------
 build_subtree(LevelPrefix, [Me | Mes], MibName) ->
-    ?debug("build subtree: ~n"
+    ?debug("build subtree -> ~n"
 	   "   oid:         ~p~n"
 	   "   LevelPrefix: ~p~n"
-	   "   MibName:     ~p",[Me#me.oid,LevelPrefix,MibName]),
+	   "   MibName:     ~p", [Me#me.oid, LevelPrefix, MibName]),
     EType = Me#me.entrytype,
     ?debug("build subtree: EType = ~p",[EType]),
     case in_subtree(LevelPrefix, Me) of
@@ -569,7 +575,11 @@ build_subtree(LevelPrefix, [Me | Mes], MibName) ->
 	    {[{Index, {tree, BelowTree, internal}} | CurTree], RestMes2}
     end;
 
-build_subtree(_LevelPrefix, [], _MibName) -> {[], []}.
+build_subtree(_LevelPrefix, [], _MibName) -> 
+    ?debug("build subtree -> done when"
+	   "~n   _LevelPrefix: ~p"
+	   "~n   _MibName:     ~p", [_LevelPrefix, _MibName]),
+    {[], []}.
 
 %%--------------------------------------------------
 %% Purpose: Determine how/if/where Me should be inserted in subtree

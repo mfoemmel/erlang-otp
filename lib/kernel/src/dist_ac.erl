@@ -16,7 +16,7 @@
 %%     $Id$
 %%
 -module(dist_ac).
--vsn('$Revision: /main/release/9').
+-vsn('$Revision: /main/release/10').
 
 -behaviour(gen_server).
 
@@ -440,10 +440,19 @@ handle_info({ac_application_not_run, AppName}, S) ->
 		      (_) ->
 			   true
 		   end, S#state.s_reqs),
-    send_msg({dist_ac_app_stopped, AppName}, S#state.known),
+    RS = case Appl#appl.id of
+	     local ->
+		 send_msg({dist_ac_app_stopped, AppName}, S#state.known),
+		 S#state.remote_started;
+	     {distributed, Node} ->
+		 [{Node, AppName} | S#state.remote_started];
+	     _ ->
+		 S#state.remote_started
+	 end,
     NAppl = Appl#appl{id = undefined},
     NAppls = keyreplace(AppName, #appl.name, Appls, NAppl),
-    {noreply, S#state{appls = NAppls, t_reqs = NTReqs, s_reqs = SReqs}};
+    {noreply, S#state{appls = NAppls, t_reqs = NTReqs, s_reqs = SReqs,
+		      remote_started = RS}};
 
 handle_info({ac_application_stopped, AppName}, S) ->
     %% Somebody called application:stop - reset state as it was before
@@ -459,12 +468,21 @@ handle_info({ac_application_stopped, AppName}, S) ->
 		      (_) ->
 			   true
 		   end, S#state.s_reqs),
-    send_msg({dist_ac_app_stopped, AppName}, S#state.known),
+    RS = case Appl#appl.id of
+	     local ->
+		 send_msg({dist_ac_app_stopped, AppName}, S#state.known),
+		 S#state.remote_started;
+	     {distributed, Node} ->
+		 [{Node, AppName} | S#state.remote_started];
+	     _ ->
+		 S#state.remote_started
+	 end,
     NAppl = Appl#appl{id = undefined},
     NAppls = keyreplace(AppName, #appl.name, Appls, NAppl),
     Started = lists:delete(AppName, S#state.started),
     {noreply, S#state{appls = NAppls, started = Started,
-		      t_reqs = NTReqs, s_reqs = SReqs}};
+		      t_reqs = NTReqs, s_reqs = SReqs,
+		      remote_started = RS}};
 
 
 %%-----------------------------------------------------------------
@@ -483,10 +501,9 @@ handle_info({dist_ac_new_node, Vsn, Node, HisAppls, []}, S) ->
     {noreply, S#state{appls = NAppls, known = [Node | S#state.known]}};
 
 handle_info({dist_ac_app_started, Node, Name, Res}, S) ->
-    case lists:member(Name, S#state.started) of
-	true ->
+    case {keysearch(Name, #appl.name, S#state.appls), lists:member(Name, S#state.started)} of
+	{{value, Appl}, true} ->
 	    Appls = S#state.appls,
-	    {value, Appl} = keysearch(Name, #appl.name, Appls),
 	    NId = case Appl#appl.id of
 		      _ when element(1, Res) == error ->
 			  %% Start of appl on some node failed.
@@ -517,7 +534,7 @@ handle_info({dist_ac_app_started, Node, Name, Res}, S) ->
 		{ok, NewS2} ->
 		    {noreply, NewS2}
 	    end;
-	false ->
+	{_, _} ->
 	    %% The app has not been started at this node yet; remember this in
 	    %% remote started.
 	    NRStarted = [{Node, Name} | S#state.remote_started],
@@ -525,12 +542,17 @@ handle_info({dist_ac_app_started, Node, Name, Res}, S) ->
     end;
 
 handle_info({dist_ac_app_stopped, AppName}, S) ->
-    {value, Appl} = keysearch(AppName, #appl.name, Appls = S#state.appls),
-    NAppl = Appl#appl{id = undefined},
-    NAppls = keyreplace(AppName, #appl.name, Appls, NAppl),
-    RStarted = keydelete(AppName, 2, S#state.remote_started),
-    {noreply, S#state{appls = NAppls, remote_started = RStarted}};
-
+    Appls = S#state.appls,
+    case keysearch(AppName, #appl.name, Appls) of
+	false ->
+	    RStarted = keydelete(AppName, 2, S#state.remote_started),
+	    {noreply, S#state{remote_started = RStarted}};
+	{value, Appl} ->
+	    NAppl = Appl#appl{id = undefined},
+	    NAppls = keyreplace(AppName, #appl.name, Appls, NAppl),
+	    RStarted = keydelete(AppName, 2, S#state.remote_started),
+	    {noreply, S#state{appls = NAppls, remote_started = RStarted}}
+    end;
 
 handle_info({dist_ac_weight, Name, Weight, Node}, S) ->
     %% This means another node starts up, and will eventually take over
@@ -629,7 +651,7 @@ handle_info({dist_ac_app_loaded, Node, Name, HisNodes, Permission, HeKnowsMe},
 		    end,
 		    {noreply, S#state{appls = NAppls}};
 		false ->
-		    exit({distribution_mismatch, Name, Node})
+		    dist_mismatch(Name, Node)
 	    end;
 	false ->
 	    Load =[{{Name, Node}, HisNodes, Permission} | S#state.dist_loaded],
@@ -697,7 +719,7 @@ load(AppName, S) ->
 			  {Node, dist_update_run(Appls, AppName,
 						 Node, HisPermission)};
 		      _ ->
-			  exit({distribution_mismatch, AppName, Node})
+			  dist_mismatch(AppName, Node)
 		  end
 	  end, Appls1, DistLoaded),
     Load2 = del_dist_loaded(AppName, Load1),
@@ -742,7 +764,10 @@ start_appl(AppName, S, Type) ->
     %% Get nodes, and check if App is loaded on all involved nodes.
     %% If it is loaded everywhere, we know that we have the same picture
     %% of the nodes; otherwise the load wouldn't have succeeded.
-    {value, Appl} = keysearch(AppName, #appl.name, Appls = S#state.appls),
+    Appl = case keysearch(AppName, #appl.name, Appls = S#state.appls) of
+	       {value, A} -> A;
+	       _ -> throw({error, {unknown_application, AppName}})
+	   end,
     case Appl#appl.id of
 	local ->
 	    %% UW 990913: we've already started the app
@@ -914,7 +939,8 @@ restart_appl(AppName, S) ->
 		{ok, NewS, _} ->
 		    NewS;
 		{error, R}  ->
-		    error_logger:error_msg(R),
+		    error_msg("Error when restarting application ~p: ~p~n",
+			      [AppName, R]),
 		    S
 	    end;
 	_ ->
@@ -1363,8 +1389,6 @@ do_dist_change_update(Appls, AppName, NewTime, NewNodes) ->
 		Appl
 	end, Appls).
 
-
-
 %% Merge his Permissions with mine.
 dist_merge(MyAppls, HisAppls, HisNode) ->
     zf(fun(Appl) ->
@@ -1473,5 +1497,19 @@ validRestartType(temporary)   -> true;
 validRestartType(transient)   -> true;
 validRestartType(RestartType) -> false.
 
+dist_mismatch(AppName, Node) ->
+    error_msg("Distribution mismatch for application \"~p\" on nodes ~p and ~p~n",
+	      [AppName, node(), Node]),
+    exit({distribution_mismatch, AppName, Node}).
 
+error_msg(Format) when list(Format) ->
+    error_msg(Format, []).
 
+error_msg(Format, ArgList) when list(Format), list(ArgList) ->
+    error_logger:error_msg("dist_ac on node ~p:~n" ++ Format, [node()|ArgList]).
+
+info_msg(Format) when list(Format) ->
+    info_msg(Format, []).
+
+info_msg(Format, ArgList) when list(Format), list(ArgList) ->
+    error_logger:info_msg("dist_ac on node ~p:~n" ++ Format, [node()|ArgList]).

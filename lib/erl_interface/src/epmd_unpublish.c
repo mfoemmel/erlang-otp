@@ -51,6 +51,7 @@ extern int ei_trace_distribution;
 #include "erl_interface.h"
 #include "erl_config.h"
 #include "putget.h"
+#include "ei_connect.h"
 
 #ifndef SMALLBUF
 #define SMALLBUF 512
@@ -59,55 +60,60 @@ extern int ei_trace_distribution;
 /* stop the specified node */
 int erl_unpublish(const char *alive)
 {
-  unsigned char buf[SMALLBUF];
-  char *s = buf;
-  int len = 1 + strlen(alive);
-  int fd;
+    unsigned char buf[SMALLBUF];
+    char *s = buf;
+    int len = 1 + strlen(alive);
+    int fd;
 
-  put16be(s,len);
-  put8(s,ERL_EPMD_STOP_REQ);
-  strcpy(buf+3, alive);
+    put16be(s,len);
+    put8(s,ERL_EPMD_STOP_REQ);
+    strcpy(buf+3, alive);
 
-  if ((fd = erl_epmd_connect(NULL)) < 0) return fd;
+    if ((fd = erl_epmd_connect(NULL)) < 0) return fd;
 
-  if (writesocket(fd, buf, len+2) != len+2) {
-    closesocket(fd);
-    erl_errno = EIO;
-    return -1;
-  }
+    if (writesocket(fd, buf, len+2) != len+2) {
+	closesocket(fd);
+	erl_errno = EIO;
+	return -1;
+    }
 
 #ifdef DEBUG_DIST
-  if (ei_trace_distribution > 2) fprintf(stderr,"-> STOP %s\n",alive);
+    if (ei_trace_distribution > 2) fprintf(stderr,"-> STOP %s\n",alive);
 #endif
   
-  if (readsocket(fd, buf, 7) != 7) {
+    if (readsocket(fd, buf, 7) != 7) {
+	closesocket(fd);
+	erl_errno = EIO;
+	return -1; 
+    }
     closesocket(fd);
-    erl_errno = EIO;
-    return -1; 
-  }
-  closesocket(fd);
-  buf[7]=(char)0; /* terminate the string */
+    buf[7]=(char)0;		/* terminate the string */
   
-  if (!strcmp("STOPPED",buf)) {
+    if (!strcmp("STOPPED",buf)) {
 #ifdef DEBUG_DIST
-  if (ei_trace_distribution > 2) fprintf(stderr,"<- STOPPED (success)\n");
+	if (ei_trace_distribution > 2) fprintf(stderr,"<- STOPPED (success)\n");
 #endif
+	return 0;
+    }
+    else if (!strcmp("NOEXIST",buf)) {
+#ifdef DEBUG_DIST
+	if (ei_trace_distribution > 2) fprintf(stderr,"<- NOEXIST (failure)\n");
+#endif
+	erl_errno = EIO;
+	return -1;
+    }
+    else {
+#ifdef DEBUG_DIST
+	if (ei_trace_distribution > 2) fprintf(stderr,"<- unknown (failure)\n");
+#endif
+	erl_errno = EIO;
+	return -1;		/* this shouldn't happen */
+    }
     return 0;
-  }
-  else if (!strcmp("NOEXIST",buf)) {
-#ifdef DEBUG_DIST
-      if (ei_trace_distribution > 2) fprintf(stderr,"<- NOEXIST (failure)\n");
-#endif
-      erl_errno = EIO;
-    return -1;
-  }
-  else {
-#ifdef DEBUG_DIST
-    if (ei_trace_distribution > 2) fprintf(stderr,"<- unknown (failure)\n");
-#endif
-    erl_errno = EIO;
-    return -1; /* this shouldn't happen */
-  }
 }
 
 
+int ei_unpublish(ei_cnode* ec)
+{
+    return erl_unpublish(ei_thisalivename(ec));
+}

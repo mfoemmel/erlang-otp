@@ -27,9 +27,10 @@ label L
 i_func_info I a a I
 int_code_end
 
-i_module_info_0 a
-i_module_info_1 a
-i_breakpoint
+i_module_info_0
+i_module_info_1
+i_trace_breakpoint
+i_debug_breakpoint
 i_return_to_trace
 
 return
@@ -48,6 +49,13 @@ allocate_zero t t
 allocate_heap_zero I I I
 
 test_heap I I
+
+init2 y y
+init3 y y y
+init Y1=y | init Y2=y | init Y3=y => init3 Y1 Y2 Y3
+init Y1=y | init Y2=y => init2 Y1 Y2
+%macro: init2 Init2 -pack
+%macro: init3 Init3 -pack
 
 #
 # Warning: The put_string instruction is specially treated in the loader.
@@ -119,11 +127,15 @@ get_list r y r
 get_list r r x
 get_list r r y
 
-
 catch y f
 catch_end y
 
 # Destructive set tuple element
+
+set_tuple_element Float=o Tuple Pos => \
+   i_put_float Float x | set_tuple_element x Tuple Pos
+
+set_tuple_element Big=w Tuple Pos => i_put_big Big x | set_tuple_element x Tuple Pos
 
 set_tuple_element s d P
 
@@ -887,9 +899,12 @@ i_call_fun I
 i_call_fun_last I P
 
 make_fun Lbl=f Uniq=u NumFree=u => gen_make_fun(Lbl, Uniq, NumFree)
+make_fun2 OldIndex=u => gen_make_fun2(OldIndex)
 
 %macro: i_make_fun MakeFun -pack
-i_make_fun a t I t
+%cold
+i_make_fun I t
+%hot
 
 %macro: is_function IsFunction -fail_action
 is_function f x
@@ -919,8 +934,14 @@ bs_get_integer Fail=f Sz=s Unit=u Flags=u Dst=d => \
 			gen_get_integer(Fail, Sz, Unit, Flags, Dst)
 %macro: i_bs_get_integer_imm BsGetIntegerImm -fail_action -gen_dest
 %macro: i_bs_get_integer BsGetInteger -fail_action -gen_dest
+%macro: i_bs_get_integer8 BsGetInteger8 -fail_action -gen_dest
+%macro: i_bs_get_integer16 BsGetInteger16 -fail_action -gen_dest
+%macro: i_bs_get_integer32 BsGetInteger32 -fail_action -gen_dest
 i_bs_get_integer_imm f I I d
 i_bs_get_integer f s I d
+i_bs_get_integer8 f d
+i_bs_get_integer16 f d
+i_bs_get_integer32 f d
 
 #
 # Fetching integers from binaries.
@@ -1010,13 +1031,27 @@ bs_put_integer Fail=j Sz=s Unit=u Flags=u Src=s => \
 i_bs_put_integer j s I s
 i_bs_put_integer_imm j I I s
 
-bs_put_float Fail=j Sz=s Unit=u Flags=u Bad=w => badarg Fail
+#
+# Storing floats into binaries.
+#
+
+bs_put_float Fail=j Sz=s Unit=u Flags=u Big=w => \
+	i_put_big Big x | bs_put_float Fail Sz Unit Flags x
+
 bs_put_float Fail=j Sz=s Unit=u Flags=u Float=o => \
 	i_put_float Float x | bs_put_float Fail Sz Unit Flags x
 
 bs_put_float Fail=j Sz=s Unit=u Flags=u Src=s => \
 			gen_put_float(Fail, Sz, Unit, Flags, Src)
 i_bs_put_float j s I s
+i_bs_put_float_imm j I I s
+
+%macro: i_bs_put_float BsPutFloat
+%macro: i_bs_put_float_imm BsPutFloatImm
+
+#
+# Storing binaries into binaries.
+#
 
 bs_put_binary Fail=j Sz=s Unit=u Flags=u Bad=ow => badarg Fail
 bs_put_binary Fail=j Sz=s Unit=u Flags=u Src=s => \
@@ -1038,3 +1073,35 @@ i_bs_put_binary_all j s
 bs_put_string I I
 
 %hot
+
+#
+# New floating point instructions (R8).
+#
+
+fadd p FR1 FR2 FR3 => i_fadd FR1 FR2 FR3
+fsub p FR1 FR2 FR3 => i_fsub FR1 FR2 FR3
+fmul p FR1 FR2 FR3 => i_fmul FR1 FR2 FR3
+fdiv p FR1 FR2 FR3 => i_fdiv FR1 FR2 FR3
+fnegate p FR1 FR2 => i_fnegate FR1 FR2
+
+fconv Int=i Dst=l => move Int x | fconv x Dst
+fconv Float=o Dst=l => i_put_float Float x | fmove x Dst
+fconv Big=w Dst=l => i_put_big Big x | fconv x Dst
+
+fmove o l
+fmove d l
+fmove l d
+fconv d l
+
+i_fadd l l l
+i_fsub l l l
+i_fmul l l l
+i_fdiv l l l
+i_fnegate l l
+
+fclearerror | no_fpe_signals() =>
+fcheckerror p | no_fpe_signals() =>
+fcheckerror p => i_fcheckerror
+
+i_fcheckerror
+fclearerror

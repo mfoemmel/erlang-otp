@@ -39,6 +39,7 @@
 #define BINARY_EXT        'm'
 #define SMALL_BIG_EXT     'n'
 #define LARGE_BIG_EXT     'o'
+#define NEW_FUN_EXT       'p'
 #define FUN_EXT           'u'
 
 #define NEW_CACHE         'N'
@@ -49,4 +50,4 @@
 #define VERSION_MAGIC 131   /* 130 in erlang 4.2 */
                 /* Increment this when changing the external format. */
                 /* ON the other hand, don't change the external format */
-                /* since that breaks other peoples code! */
+                /* since that breaks other people's code! */

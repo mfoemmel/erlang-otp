@@ -24,6 +24,7 @@
 	 insert/2,
 	 lookup/2,
 	 lookup_element/3,
+	 select/2,
 	 match/2,
 	 match_delete/2,
 	 match_object/2,
@@ -76,6 +77,15 @@ delete({T, Pid})  ->
     chk(rpc:block_call(node(Pid), ets, delete, [T])).
 
 new(Name, Type) ->     {ets:new(Name, Type),self()}.
+
+select(T,Pattern) when atom(T) ->
+    ets:select(T,Pattern);
+select(T,Pattern) when integer(T) ->
+    ets:select(T,Pattern);
+select({T, Pid},Pattern)   when node(Pid) == node() ->
+    ets:select(T,Pattern);
+select({T, Pid},Pattern)   ->
+    chk(rpc:block_call(node(Pid), ets, select, [T,Pattern])).
 
 match(T,Pattern) when atom(T) ->
     ets:match(T,Pattern);

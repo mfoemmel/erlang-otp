@@ -24,7 +24,7 @@
 	 enable_break/2,test_at_break/3,action_at_break/3]).
 
 -export([continue/1,next/1,finish/1,step/1,skip/1,inspect/2,inspect/3,
-	 inspect_def/3,messages/1,timeout/1,command/4,command/5,
+	 messages/1,timeout/1,command/4,command/5,
 	 up_stack/2,down_stack/2,backtrace/1,backtrace/2]).
 
 -export([trace/1,trace_pid/2,stack_trace/1,stack_trace_pid/2]).
@@ -35,9 +35,9 @@
 %%% Internal exports.
 %%%------------------------------------------------------
 
--export([cmd/5,attach/1,attach/3,attached_p/1,detach/1,
-	 init_breaks/0,break_msg/2,cmd_rec/3,idle_wait/1,
-	 wait_cmd/2,exit_cmd/2,new_break1/2,delete_break1/1,
+-export([command/3,cmd/5,attach/1,attach/3,attached_p/1,detach/1,
+	 init_breaks/0,break_msg/2,cmd_rec/3,
+	 exit_cmd/2,new_break1/2,delete_break1/1,
 	 no_break2/1,update_break/3]).
 
 -export([tell_attached/1]).
@@ -122,13 +122,6 @@ inspect(Meta, Var, SP) ->
 	    Result
     end.
 
-inspect_def(Meta, Def, Mod) ->
-    Meta ! {cmd, inspect_def, {self(),Def,Mod}},
-    receive
-	{Meta, inspect_def_res, Result} ->
-	    Result
-    end.
-
 messages(Meta) ->
     Meta ! {cmd, messages, {self()}},
     receive
@@ -209,13 +202,13 @@ get_binding(Var, Bs) ->
 %%% cmd/5 - Evaluate, then return a list of bindings.
 %%%
 %%%-- Internal command receiver/handler
-%%%-- State = break, running, Next where Next == CallLevel
+%%%-- Next_Break = break, running, Next where Next == CallLevel
 %%%-- or Finish where Finish == {Next,Function}
 %%%-- there we shall break.
 %%%------------------------------------------------------
 
 cmd(Expr, Bs, Cm, Le, F) ->
-    cmd(Expr, Bs, Cm, Le, F, get(state)).
+    cmd(Expr, Bs, Cm, Le, F, get(next_break)).
 
 cmd(_, Bs, {none}, _, _, _) ->
     Bs;
@@ -223,7 +216,7 @@ cmd(Expr, Bs, Cm, Le, F, running) ->
     LineNo = element(2, Expr),
     case break_p(Cm, LineNo, Le, Bs) of
 	true ->
-	    put(state, break),
+	    put(next_break, break),
 	    cmd(Expr, Bs, Cm, Le, F, break);
 	false ->
 	    handle_cmd(Bs, Cm, Le, running, LineNo, F)
@@ -233,7 +226,7 @@ cmd(Expr, Bs, Cm, Le, F, Next) when integer(Next), Next < Le ->
     handle_cmd(Bs, Cm, Le, Next, LineNo, F);
 cmd(Expr, Bs, Cm, Le, F, Next) when integer(Next), Next >= Le ->
     LineNo = element(2, Expr),
-    put(state, break),
+    put(next_break, break),
     cmd(Expr, Bs, Cm, Le, F, break);
 cmd(Expr, Bs, Cm, Le, F, {Next,FP}) when integer(Next), Next < Le ->
     LineNo = element(2, Expr),
@@ -243,7 +236,7 @@ cmd(Expr, Bs, Cm, Le, F, {Next,F}) when integer(Next), Next >= Le ->
     handle_cmd(Bs, Cm, Le, {Next,F}, LineNo, F);
 cmd(Expr, Bs, Cm, Le, F, {Next,_}) when integer(Next), Next >= Le ->
     LineNo = element(2, Expr),
-    put(state, break),
+    put(next_break, break),
     cmd(Expr, Bs, Cm, Le, F, break);
 
 cmd(Expr, Bs, Cm, Le, F, break) ->
@@ -261,7 +254,7 @@ cmd(Expr, Bs, Cm, Le, F, init_break) ->  %% Initial attached
     LineNo = element(2, Expr),
     tell_attached({self(),break_at,Cm,LineNo,Le}),
     dbg_iserver_api:break_at(Cm, LineNo, false),
-    put(state,break),
+    put(next_break,break),
     handle_cmd(Bs, Cm, Le, break, LineNo, F).
 
 %% handle_cmd/6 - Loops for a while - but finally returns a list of bindings.
@@ -276,15 +269,15 @@ handle_cmd(Bs, Cm, Le, break, LineNo, F) ->
         {cmd, continue, _} ->
 	    dbg_iserver_api:set_state(running),
 	    tell_attached({self(),running}),
-	    put(state, running),
+	    put(next_break, running),
 	    Bs;
 	{cmd, next, _} ->
-	    put(state, Le),    % Set the next level to break at!
+	    put(next_break, Le),    % Set the next level to break at!
 	    dbg_iserver_api:set_state(running),
 	    tell_attached({self(),running}),
 	    Bs;
 	{cmd, finish, _} ->
-	    put(state, {Le,F}),  % End up execution in this function !
+	    put(next_break, {Le,F}),  % End up execution in this function !
 	    dbg_iserver_api:set_state(running),
 	    tell_attached({self(),running}),
 	    Bs;
@@ -313,9 +306,6 @@ handle_cmd(Bs, Cm, Le, break, LineNo, F) ->
 	    handle_cmd(Bs, Cm, Le, break, LineNo, F);
 	{cmd, inspect, {From,Var,SP}} ->
 	    inspect_var(From,Var,Bs,SP),
-	    handle_cmd(Bs, Cm, Le, break, LineNo, F);
-	{cmd, inspect_def, Info} ->
-	    inspect_def(Info, Bs),
 	    handle_cmd(Bs, Cm, Le, break, LineNo, F);
 	{cmd, messages, {From}} ->
 	    From ! {self(), messages, get_messages()},
@@ -400,9 +390,6 @@ handle_cmd(Bs, Cm, Le, State, LineNo, F) ->  % State = running or Next Level
 	    handle_cmd(Bs, Cm, Le, State, LineNo, F);
 	{cmd, inspect, {From,Var,SP}} ->
 	    inspect_var(From,Var,Bs,SP),
-	    handle_cmd(Bs, Cm, Le, State, LineNo, F);
-	{cmd, inspect_def, Info} ->
-	    inspect_def(Info, Bs),
 	    handle_cmd(Bs, Cm, Le, State, LineNo, F);
 	{cmd, messages, {From}} ->                        %% TBD: should messages be here ??? 1/9-94
 	    From ! {self(), messages, get_messages()},
@@ -504,16 +491,6 @@ user_command_restricted(From, Cmd, Bs, Mod, CmdNo, SP) ->
 	    user_cmd_restricted(From, Forms, Bs, Mod, CmdNo, SP)
     end.
 
-parse_cmd([$?|Symbol0], LineNo) ->
-    {ok,Tokens,Pos} = erl_scan:string(Symbol0, LineNo),
-    case erl_parse:parse_exprs(Tokens) of
-	{ok,[{atom,_,Symbol}]} ->
-	    {def,Symbol};
-	{ok,[{var,_,Symbol}]} ->
-	    {def,Symbol};
-	_ ->
-	    parse_error
-    end;
 parse_cmd(Cmd, LineNo) ->
     {ok,Tokens,Pos} = erl_scan:string(Cmd, LineNo),
     case erl_parse:parse_exprs(Tokens) of
@@ -523,34 +500,16 @@ parse_cmd(Cmd, LineNo) ->
 	    parse_error
     end.
 
-user_cmd_restricted(From, {def,Symbol}, Bs, Mod, CmdNo, _) -> % Expand macro
-    case inspect_def1(Symbol,Mod,Bs) of
-	{value,Value} ->
-	    From ! {self(),command_resp,CmdNo,Value};
-	Other ->
-	    From ! {self(),command_resp,CmdNo,Other}
-    end;
 user_cmd_restricted(From, [{var,_,Var}], Bs, _, CmdNo, SP) ->
-    case get_var(Var,Bs,SP) of
-	{value,Value} -> Res = Value;
-	Res           -> Res
+    Res = case get_var(Var,Bs,SP) of
+	      {value,Value} -> Value;
+	      Other         -> Other
     end,
     From ! {self(),command_resp,CmdNo,Res};
 user_cmd_restricted(From, _, _, _, CmdNo,_) ->
     From ! {self(),command_resp,CmdNo,
 	    {self(),'Only possible to inspect variables'}}.
 
-user_cmd(From, {def,Symbol}, Mod, Bs, Cm, Le, LineNo, CmdNo, F) -> % Expand macro
-    case inspect_def1(Symbol,Mod,Bs) of
-	{value,Value} ->
-	    From ! {self(),command_resp,CmdNo,Value},
-	    mark_break(Cm,LineNo,Le),
-	    Bs;
-	Other ->
-	    From ! {self(),command_resp,CmdNo,Other},
-	    mark_break(Cm,LineNo,Le),
-	    Bs
-    end;
 user_cmd(From, [{match,_,{var,_,Var},Expr}], _, Bs, Cm, Le, LineNo, CmdNo, F) ->
     {value,Value,Bs1} = dbg_ieval:eval_expr(Expr,Bs,Cm,false,Le,F),
     From ! {self(),command_resp,CmdNo,Value},
@@ -601,19 +560,19 @@ user_cmd(From, [Expr|Exprs], M, Bs, Cm, Le, LineNo, CmdNo, F) ->
     user_cmd(From, Exprs, M, Bs1, Cm, Le, LineNo, CmdNo, F).
     
 mark_running(LineNo,Le) ->
-    put(state,running),
+    put(next_break,running),
     put(user_cmd,[{LineNo,Le}|get(user_cmd)]),
     dbg_iserver_api:set_state(running),
     tell_attached({self(),running}).
 
 mark_break(Cm,LineNo,Le) ->
-    put(state,break),
+    put(next_break,break),
     put(user_cmd,tl(get(user_cmd))),
     tell_attached({self(),break_at,Cm,LineNo,Le}),
     dbg_iserver_api:break_at(Cm, LineNo, false).%% Already attached here !
 
 attach(AttPid) ->     % Idle waiting for new call
-    put(state,break),
+    put(next_break,break),
     Attached = get(attached),
     case lists:member(AttPid,Attached) of
 	false ->
@@ -626,7 +585,7 @@ attach(AttPid) ->     % Idle waiting for new call
     AttPid ! {self(),attached,get(trace_f)}.
 
 attach(AttPid,Cm,LineNo) ->
-    put(state,break),
+    put(next_break,break),
     Attached = get(attached),
     case lists:member(AttPid,Attached) of
 	false ->
@@ -758,49 +717,6 @@ get_bs1(SP,[{Le,_}|_]) when SP > Le -> [];
 get_bs1(SP,[_|S])                   -> get_bs1(SP,S);
 get_bs1(_,[])                       -> [].
 
-%%%------------------------------------------------------
-%%% Get the macro definition of the symbol Def according
-%%% to Mod.
-%%% Return to the requesting process.
-%%%------------------------------------------------------
-
-inspect_def({From,Def,Mod},Bs) ->
-    From ! {self(),inspect_def_res,inspect_def1(Def,Mod,Bs)}.
-    
-inspect_def1(Def0,Mod,Bs) ->
-    Def = to_atom(Def0),
-    case get_db(Mod) of
-	undefined ->
-	    symbol_unknown;
-	DbRef ->
-	    case dbg_idb:lookup(DbRef,defs) of
-		not_found ->
-		    symbol_unknown;
-		{ok,Defs} when list(Defs) ->
-		    case lists:keysearch(Def,1,Defs) of
-			{value,{Def,String}} ->
-			    {value,String};
-			_ ->
-			    symbol_unknown
-		    end;
-		_ ->
-		    symbol_unknown
-	    end
-    end.
-
-get_db(Mod) ->
-    case get([Mod|db]) of
-	undefined ->
-	    case dbg_idb:which_db(get(self),Mod) of  % For exited proc.
-		not_found ->
-		    undefined;
-		DbRef ->
-		    DbRef
-	    end;
-	DbRef ->
-	    DbRef
-    end.
-
 to_atom(Atom) when atom(Atom) -> Atom;
 to_atom(List) when list(List) -> list_to_atom(List);
 to_atom(What)                 -> What.
@@ -908,8 +824,6 @@ cmd_rec(no_break, Mod,_) ->
     no_break1(Mod);
 cmd_rec(inspect,{From,Var,SP},Bs) ->
     inspect_var(From,Var,Bs,SP);
-cmd_rec(inspect_def,Info,Bs) ->
-    inspect_def(Info,Bs);
 cmd_rec(command,{From,Mod,Cmd,CmdNo,SP},Bs) ->
     user_command_restricted(From, Cmd, Bs, Mod, CmdNo, SP);
 cmd_rec(messages,{From},Bs) ->
@@ -927,68 +841,33 @@ cmd_rec(get_bindings,{From,SP},Bs) ->
 cmd_rec(_, _,_) ->
     true.
 
+command(Cmd, Args, Bs) ->
+    do_command(Cmd, Args, Bs, get(next_break)).
 
-%%%------------------------------------------------------
-%%% Command handling while waiting for new function to
-%%% interpret.
-%%%------------------------------------------------------
-
-idle_wait({cmd, break, {Mod, Line}}) ->
-    new_break({Mod,Line});
-idle_wait({cmd, delete_break, {Mod, Line}}) ->
-    delete_break({Mod, Line});
-idle_wait({cmd, no_break, Mod}) ->
+do_command(break, Arg, Bs, State) ->
+    new_break(Arg);
+do_command(delete_break, Arg, Bs, State) ->
+    delete_break(Arg);
+do_command(no_break, Mod, Bs, State) ->
     no_break1(Mod);
-idle_wait({cmd, send, {Msg}}) ->
+do_command(send, {Msg}, Bs, State) ->
     get(self) ! Msg;
-idle_wait({cmd, trace, Trace}) ->
+do_command(trace, Trace, Bs, State) ->
     set_trace(Trace);
-idle_wait({cmd, stack_trace, Flag}) ->
+do_command(stack_trace, Flag, Bs, State) ->
     set_stack_trace(Flag);
-idle_wait({cmd, stack_frame, {From,Dir,SP}}) ->
-    From ! {self(), stack_frame, stack_frame(Dir,SP)},
-    true;
-idle_wait({cmd, backtrace, {From,N}}) ->
-    From ! {self(), backtrace, backtrace1(N)},
-    true;
-idle_wait({cmd, get_bindings, {From, SP}}) ->
+do_command(stack_frame, {From,Dir,SP}, Bs, State) ->
+    From ! {self(),stack_frame,stack_frame(Dir, SP)};
+do_command(backtrace, {From,N}, Bs, State) ->
+    From ! {self(), backtrace, backtrace1(N)};
+do_command(get_bindings, {From,SP}, Bs, State) ->
     return_bindings(From, [], SP);
-idle_wait(_) ->
-    true.
-
-%%%------------------------------------------------------
-%%% Command handling while waiting for external function
-%%% to return.
-%%%------------------------------------------------------
-
-wait_cmd({cmd, break, {Mod, Line}},_) ->
-    new_break({Mod,Line});
-wait_cmd({cmd, delete_break, {Mod, Line}},_) ->
-    delete_break({Mod, Line});
-wait_cmd({cmd, no_break, Mod},_) ->
-    no_break1(Mod);
-wait_cmd({cmd, send, {Msg}},_) ->
-    get(self) ! Msg;
-wait_cmd({cmd,inspect,{From,Var,SP}},Bs) ->
-    inspect_var(From,Var,Bs,SP);
-wait_cmd({cmd,inspect_def,Info},Bs) ->
-    inspect_def(Info,Bs);
-wait_cmd({cmd,command,{From,Mod,Cmd,CmdNo,SP}},Bs) ->
+do_command(inspect, {From,Var,SP}, Bs, State) ->
+    inspect_var(From, Var, Bs, SP);
+do_command(command, {From,Mod,Cmd,CmdNo,SP}, Bs, State) ->
     user_command_restricted(From, Cmd, Bs, Mod, CmdNo, SP);
-wait_cmd({cmd, trace, Trace},Bs) ->
-    set_trace(Trace);
-wait_cmd({cmd, stack_trace, Flag},Bs) ->
-    set_stack_trace(Flag);
-wait_cmd({cmd, stack_frame, {From,Dir,SP}},_) ->
-    From ! {self(), stack_frame, stack_frame(Dir,SP)},
-    true;
-wait_cmd({cmd, backtrace, {From,N}},_) ->
-    From ! {self(), backtrace, backtrace1(N)},
-    true;
-wait_cmd({cmd, get_bindings, {From, SP}},Bs) ->
-    return_bindings(From, Bs, SP);
-wait_cmd(_,_) ->
-    true.
+do_command(_, _, _, _) -> ok.
+
 
 %%%------------------------------------------------------
 %%% Command handling for a terminated process.
@@ -996,8 +875,6 @@ wait_cmd(_,_) ->
 
 exit_cmd({cmd,inspect,{From,Var,SP}},Bs) ->
     inspect_var(From,Var,Bs,SP);
-exit_cmd({cmd,inspect_def,Info},Bs) ->
-    inspect_def(Info,Bs);
 exit_cmd({cmd,command,{From,Mod,Cmd,CmdNo,SP}},Bs) ->
     user_command_restricted(From, Cmd, Bs, Mod, CmdNo, SP);
 exit_cmd({cmd,stack_frame,{From,Dir,SP}},_) ->

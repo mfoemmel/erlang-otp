@@ -53,7 +53,7 @@
 -export([gridline/1,gridline/2,gridline/3]).
 -export([menuitem/1,menuitem/2,menuitem/3]).
 
--include("gtk.hrl").
+-include("gstk.hrl").
 
 %% ----- Start/Stop -----
 
@@ -61,7 +61,7 @@ start() ->
     start([]).
 
 start(Opts) ->
-    Opts2 = gtk_generic:merge_default_options(gs_widgets:default_options(gs),
+    Opts2 = gstk_generic:merge_default_options(gs_widgets:default_options(gs),
 					      lists:sort(Opts)),
     gs_frontend:start(Opts2).
 
@@ -133,9 +133,9 @@ error(Format, Data) ->
     ok = io:format(Format, Data), % don't be quiet when Format is malformed
     io:format("~n").
 
-creation_error(#gtkid{objtype=Ot}, {bad_result, BadResult}) ->
+creation_error(#gstkid{objtype=Ot}, {bad_result, BadResult}) ->
     {error, {creation_error,Ot,BadResult}};
-creation_error(#gtkid{objtype=Ot}, BadResult) ->
+creation_error(#gstkid{objtype=Ot}, BadResult) ->
     {error, {creation_error,Ot,BadResult}}.
 
 

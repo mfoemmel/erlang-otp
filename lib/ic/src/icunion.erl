@@ -43,37 +43,48 @@ emit_c_union(G, N, X) ->
     %%io:format("Rec = ~p\n",[X]),
     case icgen:is_hrlfile_open(G) of
 	true ->
+
 	    %% Sort Union Default = put it last in case list
 	    NewX = #union{ id = X#union.id,
 			   type = X#union.type,
 			   body = mvDefaultToTail(X#union.body),
 			   tk = X#union.tk },
-	
-	    HFd = icgen:hrlfiled(G),
-	    emit_c_union_values(G, N, NewX, HFd),
-	    UnionName = icgen:to_undersc([icgen:get_id2(NewX) | N]),
 
-	    icgen:emit(HFd, "\n#ifndef __~s__\n",[ictype:to_uppercase(UnionName)]),	
-	    icgen:emit(HFd, "#define __~s__\n",[ictype:to_uppercase(UnionName)]),
-	    icgen:mcomment_light(HFd,
-				 [io_lib:format("Union definition: ~s",
-						[UnionName])],
-				 c),
-	    icgen:emit(HFd, "typedef struct {\n"),
-	    icgen:emit(HFd, "  ~s _d;\n", [get_c_union_discriminator(G, N, NewX)]),
-	    icgen:emit(HFd, "  union {\n"),
-	    emit_c_union_values_decl(G, N, NewX, HFd),
-	    icgen:emit(HFd, "  } _u;\n"),
-	    icgen:emit(HFd, "} ~s;\n\n", [UnionName]),
+	    UnionScope = [icgen:get_id2(NewX) | N],
 
-	    icgen:emit(HFd, "int ~s~s(CORBA_Environment *oe_env, int*, int*);\n",
-		       [icgen:mk_oe_name(G, "sizecalc_"), UnionName]),
-	    icgen:emit(HFd, "int ~s~s(CORBA_Environment *oe_env, ~s*);\n",
-		       [icgen:mk_oe_name(G, "encode_"), UnionName, UnionName]),
-	    icgen:emit(HFd, "int ~s~s(CORBA_Environment *oe_env, char *, int*, ~s*);\n",
-		       [icgen:mk_oe_name(G, "decode_"), UnionName, UnionName]),
-	    icgen:emit(HFd, "\n#endif\n\n"),
-	    create_c_union_file(G, N, NewX, UnionName);
+	    case ic_pragma:is_local(G,UnionScope) of
+		
+		true ->
+
+		    HFd = icgen:hrlfiled(G),
+		    emit_c_union_values(G, N, NewX, HFd),
+		    UnionName = icgen:to_undersc(UnionScope),
+
+		    icgen:emit(HFd, "\n#ifndef __~s__\n",[ictype:to_uppercase(UnionName)]),	
+		    icgen:emit(HFd, "#define __~s__\n",[ictype:to_uppercase(UnionName)]),
+		    icgen:mcomment_light(HFd,
+					 [io_lib:format("Union definition: ~s",
+							[UnionName])],
+					 c),
+		    icgen:emit(HFd, "typedef struct {\n"),
+		    icgen:emit(HFd, "  ~s _d;\n", [get_c_union_discriminator(G, N, NewX)]),
+		    icgen:emit(HFd, "  union {\n"),
+		    emit_c_union_values_decl(G, N, NewX, HFd),
+		    icgen:emit(HFd, "  } _u;\n"),
+		    icgen:emit(HFd, "} ~s;\n\n", [UnionName]),
+		    
+		    icgen:emit(HFd, "int ~s~s(CORBA_Environment *oe_env, int*, int*);\n",
+			       [icgen:mk_oe_name(G, "sizecalc_"), UnionName]),
+		    icgen:emit(HFd, "int ~s~s(CORBA_Environment *oe_env, ~s*);\n",
+			       [icgen:mk_oe_name(G, "encode_"), UnionName, UnionName]),
+		    icgen:emit(HFd, "int ~s~s(CORBA_Environment *oe_env, char *, int*, ~s*);\n",
+			       [icgen:mk_oe_name(G, "decode_"), UnionName, UnionName]),
+		    icgen:emit(HFd, "\n#endif\n\n"),
+		    create_c_union_file(G, N, NewX, UnionName);
+
+		false -> %% Do not generate included types att all.
+		    ok
+	    end;
 	false ->
 	    ok
     end.
@@ -327,6 +338,8 @@ getCaseTypeStr(G, N, X, I, T) when element(1, T) == scoped_id ->
 			    icgen:to_undersc([icgen:get_id2(SID), icgen:get_id2(X) | N]);
 			{enum,EID} ->
 			    EID;
+			{any, _} -> %% Fix for any type
+			    "CORBA_long";
 			_ ->
 			    %%io:format("BT = ~p~n",[BT]),
 			    error
@@ -361,6 +374,8 @@ getCaseTypeStr(G, N, X, I, T) ->
 	    icgen:to_undersc([icgen:get_id2(SID), icgen:get_id2(X) | N]);
 	{union,UID,_,_,_} ->
 	    icgen:to_undersc([icgen:get_id2(UID), icgen:get_id2(X) | N]);
+	{any, _} -> %% Fix for any type
+	    "CORBA_long";
 	_ ->
 	    error
     end.
@@ -625,10 +640,35 @@ getCaseTypeSizecalc(G, N, X, Fd, I, T) when element(1, T) == scoped_id ->
 	    icgen:emit(Fd, "    if ((oe_error_code = ei_decode_string(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
 	    icgen:emit(Fd, "      return oe_error_code;\n\n"),
 	    icgen:emit(Fd, "    oe_malloc_size = ~s;\n",[icgen:mk_align("oe_malloc_size+oe_tmp+1")]);
+	any -> %% Fix for any type
+	    icgen:emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
+	    icgen:emit(Fd, "      return oe_error_code;\n");
+
 	_ ->
-	    icgen:emit(Fd, "    if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0)\n",
-		       [getCaseTypeStr(G, N, X, I, T)]),
-	    icgen:emit(Fd, "      return oe_error_code;\n")
+	    case getCaseTypeStr(G, N, X, I, T) of
+		"erlang_pid" ->
+		    icgen:emit(Fd, "  if ((oe_error_code = ei_decode_pid(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n",
+			       []),
+		    icgen:emit(Fd, "    return oe_error_code;\n\n");
+		"erlang_port" ->
+		    icgen:emit(Fd, "  if ((oe_error_code = ei_decode_port(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n",
+			       []),
+		    icgen:emit(Fd, "    return oe_error_code;\n\n");
+		"erlang_ref" ->
+		    icgen:emit(Fd, "  if ((oe_error_code = ei_decode_ref(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n",
+			       []),
+		    icgen:emit(Fd, "    return oe_error_code;\n\n");
+		"erlang_term" ->
+		    icgen:emit(Fd, "  if ((oe_error_code = ei_decode_term(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n",
+			       []),
+		    icgen:emit(Fd, "    return oe_error_code;\n\n");
+		
+		Other ->
+
+		    icgen:emit(Fd, "    if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0)\n",
+			       [Other]),
+		    icgen:emit(Fd, "      return oe_error_code;\n")
+	    end
     end;
 getCaseTypeSizecalc(G, N, X, Fd, I, T) ->
     case I of 
@@ -679,6 +719,7 @@ getCaseTypeSizecalc(G, N, X, Fd, I, T) ->
 		    icgen:emit(Fd, "      return oe_error_code;\n");
 		{struct,SID,_,_} ->
 		    StructName = icgen:to_undersc([icgen:get_id2(SID), icgen:get_id2(X) | N]),
+			    
 		    icgen:emit(Fd, "    if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0)\n",
 			       [StructName]),
 		    icgen:emit(Fd, "      return oe_error_code;\n");
@@ -686,6 +727,9 @@ getCaseTypeSizecalc(G, N, X, Fd, I, T) ->
 		    UnionName = icgen:to_undersc([icgen:get_id2(UID), icgen:get_id2(X) | N]),
 		    icgen:emit(Fd, "    if ((oe_error_code = oe_sizecalc_~s(oe_env, oe_size_count_index, &oe_malloc_size)) < 0)\n",
 			       [UnionName]),
+		    icgen:emit(Fd, "      return oe_error_code;\n");
+		{any, _} -> %% Fix for any type
+		    icgen:emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, oe_size_count_index, 0)) < 0)\n"),
 		    icgen:emit(Fd, "      return oe_error_code;\n");
 		_ ->
 		    icgen:fatal_error(G, {illegal_typecode_for_c, T, N})
@@ -760,7 +804,6 @@ emit_c_union_discr_encode(G, N, X, Fd) ->
     end.
 
 
-
 getCaseTypeEncode(G, N, X, Fd, I, T) when element(1, T) == scoped_id -> 
     case ic_fetch:member2type(G,X,I) of
 	ushort ->
@@ -813,9 +856,28 @@ getCaseTypeEncode(G, N, X, Fd, I, T) when element(1, T) == scoped_id ->
 		       [icgen:get_id2(I)]),
 	    icgen:emit(Fd, "      return oe_error_code;\n");
 	struct ->
-	    icgen:emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0)\n",
-		       [getCaseTypeStr(G, N, X, I, T),icgen:get_id2(I)]),
-	    icgen:emit(Fd, "      return oe_error_code;\n");
+	    case ic_cbe:gen_cc_type(G, N, T, evaluate_not) of
+		"erlang_pid" ->
+		    icgen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_pid(oe_env, &oe_rec->_u.~s)) < 0)\n",
+			 [icgen:get_id2(I)]),
+		    icgen:emit(Fd, "    return oe_error_code;\n");
+		"erlang_port" ->
+		    icgen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_port(oe_env, &oe_rec->_u.~s)) < 0)\n",
+			 [icgen:get_id2(I)]),
+		    icgen:emit(Fd, "    return oe_error_code;\n");
+		"erlang_ref" ->
+		    icgen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_ref(oe_env, &oe_rec->_u.~s)) < 0)\n",
+			 [icgen:get_id2(I)]),
+		    icgen:emit(Fd, "    return oe_error_code;\n");
+		"ETERM*" ->
+		    icgen:emit(Fd, "  if ((oe_error_code = oe_ei_encode_term(oe_env, &oe_rec->_u.~s)) < 0)\n",
+			 [icgen:get_id2(I)]),
+		    icgen:emit(Fd, "    return oe_error_code;\n");
+		_ ->
+		    icgen:emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0)\n",
+			       [getCaseTypeStr(G, N, X, I, T),icgen:get_id2(I)]),
+		    icgen:emit(Fd, "      return oe_error_code;\n")
+	    end;
 	sequence ->
 	    icgen:emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, &oe_rec->_u.~s)) < 0)\n",
 		       [getCaseTypeStr(G, N, X, I, T),icgen:get_id2(I)]),
@@ -831,6 +893,10 @@ getCaseTypeEncode(G, N, X, Fd, I, T) when element(1, T) == scoped_id ->
 	enum ->
 	    icgen:emit(Fd, "    if ((oe_error_code = oe_encode_~s(oe_env, oe_rec->_u.~s)) < 0)\n",
 		       [getCaseTypeStr(G, N, X, I, T),icgen:get_id2(I)]),
+	    icgen:emit(Fd, "      return oe_error_code;\n");
+	any -> %% Fix for any type
+	    icgen:emit(Fd, "    if ((oe_error_code = oe_ei_encode_long(oe_env, oe_rec->_u.~s)) < 0)\n",
+		       [icgen:get_id2(I)]),
 	    icgen:emit(Fd, "      return oe_error_code;\n");
 	_ ->
 	    icgen:fatal_error(G, {illegal_typecode_for_c, T, N})
@@ -1074,9 +1140,29 @@ getCaseTypeDecode(G, N, X, Fd, I, T) when element(1, T) == scoped_id ->
 	    icgen:emit(Fd, "      *oe_index = ~s;\n",[icgen:mk_align("*oe_index+oe_string_ctr+1")]),
 	    icgen:emit(Fd, "    }\n");
 	struct ->
-	    icgen:emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0)\n",
-		       [getCaseTypeStr(G, N, X, I, T),icgen:get_id2(I)]),
-	    icgen:emit(Fd, "    return oe_error_code;\n");
+	    case ic_cbe:gen_cc_type(G, N, T, evaluate_not) of
+		"erlang_pid" ->
+		    icgen:emit(Fd, "  if ((oe_error_code = ei_decode_pid(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
+			       [icgen:get_id2(I)]),
+		    icgen:emit(Fd, "    return oe_error_code;\n\n");
+		"erlang_port" ->
+		    icgen:emit(Fd, "  if ((oe_error_code = ei_decode_port(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
+			       [icgen:get_id2(I)]),
+		    icgen:emit(Fd, "    return oe_error_code;\n\n");
+		"erlang_ref" ->
+		    icgen:emit(Fd, "  if ((oe_error_code = ei_decode_ref(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
+			       [icgen:get_id2(I)]),
+		    icgen:emit(Fd, "    return oe_error_code;\n\n");
+		"ETERM*" ->
+		    icgen:emit(Fd, "  if ((oe_error_code = ei_decode_term(oe_env->_inbuf, &oe_env->_iin, (void **)&oe_rec->_u.~s)) < 0)\n",
+			       [icgen:get_id2(I)]),
+		    icgen:emit(Fd, "    return oe_error_code;\n\n");
+
+		_ ->
+		    icgen:emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0)\n",
+			       [getCaseTypeStr(G, N, X, I, T),icgen:get_id2(I)]),
+		    icgen:emit(Fd, "    return oe_error_code;\n")
+	    end;
 	sequence ->
 	    icgen:emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0)\n",
 		       [getCaseTypeStr(G, N, X, I, T),icgen:get_id2(I)]),
@@ -1092,6 +1178,10 @@ getCaseTypeDecode(G, N, X, Fd, I, T) when element(1, T) == scoped_id ->
 	enum ->
 	    icgen:emit(Fd, "    if ((oe_error_code = oe_decode_~s(oe_env, oe_first, oe_index, &oe_rec->_u.~s)) < 0)\n",
 		       [getCaseTypeStr(G, N, X, I, T),icgen:get_id2(I)]),
+	    icgen:emit(Fd, "    return oe_error_code;\n");
+	any -> %% Fix for any type
+	    icgen:emit(Fd, "    if ((oe_error_code = ei_decode_long(oe_env->_inbuf, &oe_env->_iin, &oe_rec->_u.~s)) < 0)\n",
+		       [icgen:get_id2(I)]),
 	    icgen:emit(Fd, "    return oe_error_code;\n");
 	_ ->
 	    icgen:fatal_error(G, {illegal_typecode_for_c, T, N})

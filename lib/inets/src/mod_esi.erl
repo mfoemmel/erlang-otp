@@ -20,11 +20,15 @@
 
 -include("httpd.hrl").
 
+-define(VMODULE,"ESI").
+-include("httpd_verbosity.hrl").
+
 -define(GATEWAY_INTERFACE,"CGI/1.1").
 
 %% do
 
 do(Info) ->
+    ?vtrace("do",[]),
     case httpd_util:key1search(Info#mod.data,status) of
 	%% A status code has been generated!
 	{StatusCode,PhraseArgs,Reason} ->
@@ -34,7 +38,8 @@ do(Info) ->
 	    case httpd_util:key1search(Info#mod.data,response) of
 		%% No response has been generated!
 		undefined ->
-		    case erl_or_eval(Info#mod.request_uri,Info#mod.config_db) of
+		    case erl_or_eval(Info#mod.request_uri,
+				     Info#mod.config_db) of
 			{eval,CGIBody,Modules} ->
 			    eval(Info,Info#mod.method,CGIBody,Modules);
 			{erl,CGIBody,Modules} ->
@@ -55,40 +60,55 @@ do(Info) ->
 erl_or_eval(RequestURI, ConfigDB) ->
     case erlp(RequestURI, ConfigDB) of
 	false ->
-      case evalp(RequestURI, ConfigDB) of
-	  false ->
-	      proceed;
-	  Other ->
-	      Other
-      end;
+	    case evalp(RequestURI, ConfigDB) of
+		false ->
+		    ?vtrace("neither erl nor eval",[]),
+		    proceed;
+		Other ->
+		    Other
+	    end;
 	Other ->
 	    Other
     end.
 
 erlp(RequestURI, ConfigDB) ->
-    case httpd_util:lookup(ConfigDB, erl_script_alias) of
-	undefined ->
+    case httpd_util:multi_lookup(ConfigDB, erl_script_alias) of
+	[] ->
 	    false;
-	{Alias, Modules} ->
-	    case regexp:first_match(RequestURI,"^"++Alias++"/") of
-		{match,1,Length} ->
-		    {erl,string:substr(RequestURI,Length+1),Modules};
-		nomatch ->
-		    false
-	    end
+	AliasMods ->
+	    erlp_find_alias(RequestURI,AliasMods)
+    end.
+
+erlp_find_alias(_RequestURI,[]) ->
+    ?vtrace("erlp_find_alias -> no match",[]),
+    false;
+erlp_find_alias(RequestURI,[{Alias,Modules}|Rest]) ->
+    case regexp:first_match(RequestURI,"^"++Alias++"/") of
+	{match,1,Length} ->
+	    ?vtrace("erlp -> match with Length: ~p",[Length]),
+	    {erl,string:substr(RequestURI,Length+1),Modules};
+	nomatch ->
+	    erlp_find_alias(RequestURI,Rest)
     end.
 
 evalp(RequestURI, ConfigDB) ->
-    case httpd_util:lookup(ConfigDB, eval_script_alias) of
-	undefined ->
+    case httpd_util:multi_lookup(ConfigDB, eval_script_alias) of
+	[] ->
 	    false;
-	{Alias, Modules} ->
-	    case regexp:first_match(RequestURI,"^"++Alias++"\\?") of
-		{match, 1, Length} ->
-		    {eval, string:substr(RequestURI,Length+1),Modules};
-		nomatch ->
-		    false
-	    end
+	AliasMods ->
+	    evalp_find_alias(RequestURI,AliasMods)
+    end.
+
+evalp_find_alias(_RequestURI,[]) ->
+    ?vtrace("evalp_find_alias -> no match",[]),
+    false;
+evalp_find_alias(RequestURI,[{Alias,Modules}|Rest]) ->
+    case regexp:first_match(RequestURI,"^"++Alias++"\\?") of
+	{match, 1, Length} ->
+	    ?vtrace("evalp_find_alias -> match with Length: ~p",[Length]),
+	    {eval, string:substr(RequestURI,Length+1),Modules};
+	nomatch ->
+	    evalp_find_alias(RequestURI,Rest)
     end.
 
 
@@ -97,26 +117,36 @@ evalp(RequestURI, ConfigDB) ->
 %% 
 
 erl(Info,"GET",CGIBody,Modules) ->
+    ?vtrace("erl GET request",[]),
     case httpd_util:split(CGIBody,":|%3A|/",2) of
 	{ok, [Mod,FuncAndInput]} ->
+	    ?vtrace("~n   Mod:          ~p"
+		    "~n   FuncAndInput: ~p",[Mod,FuncAndInput]),
 	    case httpd_util:split(FuncAndInput,"[\?/]",2) of
 		{ok, [Func,Input]} ->
-		    exec(Info,"GET",CGIBody,Modules,Mod,Func,{input_type(FuncAndInput),
-							      Input});
+		    ?vtrace("~n   Func:  ~p"
+			    "~n   Input: ~p",[Func,Input]),
+		    exec(Info,"GET",CGIBody,Modules,Mod,Func,
+			 {input_type(FuncAndInput),Input});
 		{ok, [Func]} ->
 		    exec(Info,"GET",CGIBody,Modules,Mod,Func,{no_input,""});
 		{ok, BadRequest} ->
 		    {proceed,[{status,{400,none,BadRequest}}|Info#mod.data]}
 	    end;
 	{ok, BadRequest} ->
+	    ?vlog("erl BAD (GET-) request",[]),
 	    {proceed, [{status,{400,none,BadRequest}}|Info#mod.data]}
     end;
 erl(Info, "POST", CGIBody, Modules) ->
+    ?vtrace("erl POST request",[]),
     case httpd_util:split(CGIBody,":|%3A|/",2) of
 	{ok,[Mod,Func]} ->
-	    exec(Info,"POST",CGIBody,Modules,Mod,Func,{entity_body,
-						       Info#mod.entity_body});
+	    ?vtrace("~n   Mod:  ~p"
+		    "~n   Func: ~p",[Mod,Func]),
+	    exec(Info,"POST",CGIBody,Modules,Mod,Func,
+		 {entity_body,Info#mod.entity_body});
 	{ok,BadRequest} ->
+	    ?vlog("erl BAD (POST-) request",[]),
 	    {proceed,[{status,{400,none,BadRequest}}|Info#mod.data]}
     end.
 
@@ -133,8 +163,16 @@ input_type([First|Rest]) ->
 %% exec
 
 exec(Info,Method,CGIBody,["all"],Mod,Func,{Type,Input}) ->
+    ?vtrace("exec ~s 'all'",[Method]),
     exec(Info,Method,CGIBody,[Mod],Mod,Func,{Type,Input});
 exec(Info,Method,CGIBody,Modules,Mod,Func,{Type,Input}) ->
+    ?vtrace("exec ~s request with:"
+	    "~n   Modules: ~p"
+	    "~n   Mod:     ~p"
+	    "~n   Func:    ~p"
+	    "~n   Type:    ~p"
+	    "~n   Input:   ~p",
+	    [Method,Modules,Mod,Func,Type,Input]),
     case lists:member(Mod,Modules) of
 	true ->
 	    {_,RemoteAddr}=(Info#mod.init_data)#init_data.peername,
@@ -170,10 +208,14 @@ exec(Info,Method,CGIBody,Modules,Mod,Func,{Type,Input}) ->
 		    RemoteUser ->
 			[{remote_user,RemoteUser}|Env1]
 		end,
+
+	    ?vtrace("and now call the module",[]),
 	    case catch apply(list_to_atom(Mod),list_to_atom(Func),[Env2,Input]) of
 		{'EXIT',Reason} ->
+		    ?vlog("exit with Reason: ~p",[Reason]),
 		    {proceed,[{status,{500,none,Reason}}|Info#mod.data]};
 		Response ->
+		    ?vdebug("Response: ~n~p",[Response]),
 		    case mod_cgi:status_code(lists:flatten(Response)) of
 			{ok,StatusCode} ->
 			    {proceed,[{response,{StatusCode,Response}}|Info#mod.data]};
@@ -186,6 +228,7 @@ exec(Info,Method,CGIBody,Modules,Mod,Func,{Type,Input}) ->
 		    end
 	    end;
 	false ->
+	    ?vlog("unknown module",[]),
 	    {proceed,[{status,
 		       {403,Info#mod.request_uri,
 			?NICE("Client not authorized to evaluate: "++CGIBody)}}|
@@ -215,16 +258,23 @@ multi_value([Value|Rest]) ->
 %% 
 
 eval(Info,"POST",CGIBody,Modules) ->
+    ?vtrace("eval(POST) -> method not supported",[]),	    
     {proceed,[{status,{501,{"POST",Info#mod.request_uri,Info#mod.http_version},
 		       ?NICE("Eval mechanism doesn't support method POST")}}|
 	      Info#mod.data]};
 eval(Info,"GET",CGIBody,Modules) ->
+    ?vtrace("eval(GET) -> entry when"
+	    "~n   Modules: ~p",[Modules]),	    
     case auth(CGIBody,Modules) of
 	true ->
 	    case lib:eval_str(string:concat(CGIBody,". ")) of
 		{error,Reason} ->
+		    ?vlog("eval -> error:"
+			  "~n   Reason: ~p",[Reason]),	    
 		    {proceed,[{status,{500,none,Reason}}|Info#mod.data]};
 		{ok,Response} ->
+		    ?vtrace("eval -> ok:"
+			    "~n   Response: ~p",[Response]),	    
 		    case mod_cgi:status_code(lists:flatten(Response)) of
 			{ok,StatusCode} ->
 			    {proceed,[{response,{StatusCode,Response}}|Info#mod.data]};
@@ -233,6 +283,7 @@ eval(Info,"GET",CGIBody,Modules) ->
 		    end
 	    end;
 	false ->
+	    ?vlog("eval -> auth failed",[]),	    
 	    {proceed,[{status,
 		       {403,Info#mod.request_uri,
 			?NICE("Client not authorized to evaluate: "++CGIBody)}}|

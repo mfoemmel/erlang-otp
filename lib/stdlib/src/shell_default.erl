@@ -41,7 +41,10 @@ help() ->
     format('b()        -- display all variable bindings~n'),
     format('e(N)       -- repeat the expression in query <N>~n'),
     format('f()        -- forget all variable bindings~n'),
+    format('f(X)       -- forget the binding of variable X~n'),
     format('h()        -- history~n'),    
+    format('history(N) -- set how many previous commands to keep\n'),
+    format('results(N) -- set how many previous command results to keep\n'),
     format('v(N)       -- use the value of query <N>~n'),
     format('** commands in module c **~n'),
     c:help(),
@@ -112,6 +115,3 @@ ir(Mod,Fnk,Arity) -> i:ir(Mod,Fnk,Arity).
 ir(Mod)         -> i:ir(Mod).
 ir()            -> i:ir().
 iv()            -> i:iv().
-
-
-    

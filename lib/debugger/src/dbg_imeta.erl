@@ -19,121 +19,99 @@
 
 -module(dbg_imeta).
 
-%% -- Exported user functions.
+-export([eval/3,add_catch_lev/0,dec_catch_lev/0,get_catch_lev/0,
+	 lambda/2,function/4,exit_info/4,main_meta_loop/7]).
 
--export([start/3,eval/4,int/2,int/3,
-	 add_catch_lev/0,dec_catch_lev/0,get_catch_lev/0,
-	 lambda/2,function/4,
-	 exit_info/4]).
+-import(error_logger, [error_msg/2]).
 
--import(error_logger,[error_msg/2]).
+%% eval(Mod, Func, Args) -> MetaPid
+%%  Entry point from process being debugged.
+%%
+%%  Immediately returns the pid for the meta process.
+%%  The evaluated value will later be sent as a message to
+%%  process that called this function.
 
-start(Mod,Func,Args) ->
-    dbg_imsg:start({interpret,call,Mod,Func,Args}).
+eval(Mod, Func, Args) ->
+    Interpreter = whereis(interpret),
+    Interpreter ! {self(),{interpreted,self()}},
+    Meta = receive
+	       {Interpreter,{interpreted,Res}} -> Res
+	   end,
+    Debugged = self(),
+    case Meta of
+	false ->
+	    spawn_link(fun() -> int(Debugged, Mod, Func, Args) end);
+	Pid ->
+	    Pid ! {error_handler,Debugged,{eval,{Mod,Func,Args}}},
+	    Pid
+    end.
 
-eval(Meta,Mod,Func,Args) ->
-    Meta ! {error_handler,self(),{eval,{Mod,Func,Args}}},
-    dbg_imsg:msg(Meta).
+int(Debugged, M, F, As) ->
+    %% Entry point for first-time initialization of meta process.
+    process_flag(trap_exit, true),
+    State = dbg_iserver_api:int_proc(Debugged, M, F, As),
+    put(self, Debugged),
+    put(next_break, State),
+    put(error, none),
+    put(attached, []),
+    put(user_cmd, []),
+    dbg_icmd:init_breaks(),
+    put(catch_lev, []),
+    Trace = trace_p(),
+    put(trace_f, Trace),
+    put(trace, false),
+    put(stack_trace, stack_p()),
+    put(stack, []),
 
-int(Msg_handler,{M,F,As},Le) ->
+    eval_mfa(Debugged, M, F, As, 1),
+    dbg_iserver_api:set_state(idle),
+    tell_att_if_break(idle),
+    main_meta_loop(Debugged, [], 1, false, extern, -1, extern).
+
+eval_mfa(Debugged, M, F, As, Le) ->
     case get(trace) of
 	true ->
-	    dbg_ieval:trace_out(io_lib:format('++ (~w) ~w:~w(~s)~n',
-					     [Le,M,F,
-					      dbg_ieval:format_args(As)]));
-	_ ->
-	    true
+	    Text = io_lib:format("++ (1) ~w:~w(~s)\n",
+				 [M,F,dbg_ieval:format_args(As)]),
+	    dbg_ieval:trace_out(Text);
+	false -> ok
     end,
     new_catch_lev(),
-    case catch dbg_ieval:eval_function(M, F, As, [],
-				 M, false, Le, extern, -1, extern) of
-	{value,Val,_} ->
-	    Msg_handler ! {sys,self(),{ready,Val}},
-	    del_catch_lev(),
-	    ready;
-	{'EXIT',{Msg_handler,Reason}} ->
+    case dbg_ieval:eval_function(M, F, As, Le) of
+	{value,Val,Bs} ->
+	    Debugged ! {sys,self(),{ready,Val}},
+	    del_catch_lev();
+
+	{'EXIT',{Debugged,Reason}} ->
 	    del_catch_lev(),
 	    dbg_ieval:pop(Le),
-	    exit({Msg_handler,Reason});
+	    if
+		Le > 1 -> exit({Debugged,Reason});
+		true -> do_real_exit(Reason)
+	    end;
+
 	{'EXIT',{confirmed,Reason}} ->
-	    Msg_handler ! {sys,self(),{exit,Reason}},
+	    Debugged ! {sys,self(),{exit,Reason}},
+	    if
+		Le > 1 ->
+		    receive
+			{sys,Debugged,{exited_nocatch,Reason}} ->
+			    Debugged ! {sys,self(),{exit,Reason}}
+		    end;
+		true -> ok
+	    end,
 	    del_catch_lev(),
-	    dbg_ieval:pop(Le),
-	    ready;
-	{'EXIT',Reason} ->
-	    Msg_handler ! {sys,self(),{exit,Reason}},
-	    sync_exit(Msg_handler),
-	    del_catch_lev(),
-	    dbg_ieval:pop(Le),
-	    ready;
-	Throwed ->
-	    del_catch_lev(),
-	    dbg_ieval:pop(Le),
-	    ready
-    end.
-
-sync_exit(Msg_handler) ->
-    receive
-	{sys,Msg_handler,{exited_nocatch,Reason}} ->
-	    Msg_handler ! {sys,self(),{exit,Reason}}  % Yes, you shall die !!
-    end.
-
-%% Does not return a value per se.
-%% The result is returned by sending a message to 
-%% the interpreted process (Msg_handler).
-%%
-int(Msg_handler,{interpret,call,M,F,As}) ->   %% Init interpretation
-    process_flag(trap_exit,true),
-    State = dbg_iserver_api:int_proc(Msg_handler, M, F, As),
-    put(self,Msg_handler),
-    put(state,State),
-    put(error,none),
-    put(attached,[]),
-    put(user_cmd,[]),
-    dbg_icmd:init_breaks(),
-    create_catch_lev(),
-    Trace = trace_p(),
-    put(trace_f,Trace),
-    put(trace,false),   %% Not initial attached 
-    put(stack_trace,stack_p()),
-    put(fnk_no,0),
-    case catch dbg_ieval:eval_function(M, F, As, [],
-				 M, false, 1, extern, -1, extern) of
-
-	%% Finally, return the value to the caller
-	{value,Val,_} ->
-	    Msg_handler ! {sys,self(),{ready,Val}},
-	    dbg_iserver_api:set_state(idle),
-	    tell_att_if_break(idle),
-	    wait_int(Msg_handler);
-
-	%% Handles EXITs in the interpreted process caused by the environment.
-	{'EXIT',{Msg_handler,Reason}} ->
-	    dbg_ieval:pop(1),
-	    do_real_exit(Reason);
-
-	%% The interpreted code terminated due to
-	%% own exit(),bad match, etc. 
-	{'EXIT',{confirmed,Reason}} ->
-	    Msg_handler ! {sys,self(),{exit,Reason}},
-	    dbg_iserver_api:set_state(idle),
-	    tell_att_if_break(idle),
-	    dbg_ieval:pop(1),
-	    wait_int(Msg_handler);
+	    dbg_ieval:pop(Le);
 
 	{'EXIT',Reason} ->
-	    Msg_handler ! {sys,self(),{exit,Reason}},
-	    dbg_iserver_api:set_state(idle),
-	    tell_att_if_break(idle),
-	    dbg_ieval:pop(1),
-	    wait_int(Msg_handler);
+	    Debugged ! {sys,self(),{exit,Reason}},
+	    del_catch_lev(),
+	    dbg_ieval:pop(Le);
 
-	%% FIXME: WHy does this clause exist
-	Throwed ->
-	    dbg_iserver_api:set_state(idle),
-	    tell_att_if_break(idle),
-	    dbg_ieval:pop(1),
-	    wait_int(Msg_handler)
+	%% FIXME: WHy does this clause exist?
+	Thrown ->
+	    del_catch_lev(),
+	    dbg_ieval:pop(Le)
     end.
 
 trace_p() ->
@@ -146,132 +124,163 @@ trace_p() ->
 
 stack_p() ->
     case dbg_idb:lookup(stack_trace) of
-	{ok,true} ->
-	    all;
-	{ok,Flag} ->
-	    Flag;
-	_ ->
-	    false
+	{ok,true} -> all;
+	{ok,Flag} -> Flag;
+	_ -> false
     end.
 
-wait_int(Msg_handler) ->
+%% main_meta_loop/7 - Main receive loop for the meta process.
+%%
+%% Returns: {value,Value,Bindings}
+
+main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F) when integer(Le) ->
     receive
-	%% Re-entry to the META process at top level
-	{error_handler,Msg_handler,{eval,{M,F,As}}} ->
-	    new_catch_lev(),
+	%% The following messages can only be received
+	%% when we (the meta process) is waiting for the debugged
+	%% process (Debugged) to evaluate non-interpreted code
+	%% or a BIF. Le > 1.
+
+	{sys,Debugged,{apply_result,Val}} when Lc == false ->
+	    dbg_ieval:trace_fnk_ret(Le, Val, Lc),
+	    {value,Val,Bs};
+	{sys,Debugged,{apply_result,Val}} ->
+	    {value,Val,Bs};
+	{sys,Debugged,{eval_result,Val,NewBs}} ->
+	    {value,Val,NewBs};
+	{sys,Debugged,{thrown,Value}} ->
+	    throw(Value);
+	{sys,Debugged,{thrown_nocatch,Value}} ->
+	    throw(Value, Cm, Line, Bs);
+
+	%% The following messages can be received any time.
+	%% If Le == 1, the meta process is at the top level.
+	%% If Le > 1, the meta process has been entered
+	%% more than once from the error_handler module.
+
+	{sys,Debugged,{exited_nocatch,Reason}} when Le == 1->
+	    Debugged ! {sys,self(),{exit,Reason}},  % Yes, you shall die !!
+	    main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F);
+	{sys,Debugged,{exited_nocatch,Reason}} ->
+	    confirmed_exit(Reason, Cm, Line, Bs);
+
+	%% Re-entry to the META process at top level.
+	{error_handler,Debugged,{eval,{Mod,Func,As}}} when Le == 1 ->
 	    dbg_iserver_api:set_state(running),
 	    tell_att_if_break(running),
 
 	    %% Tell the attach window to update source code.
-	    dbg_icmd:tell_attached({self(),re_entry, M, F}),
-	    
+	    dbg_icmd:tell_attached({self(),re_entry, Mod, Func}),
 
+	    eval_mfa(Debugged, Mod, Func, As, 1),
+	    dbg_iserver_api:set_state(idle),
+	    tell_att_if_break(idle),
+	    main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F);
+	{error_handler,Debugged,{eval,{Mod,Func,Args}}} ->
+	    eval_mfa(Debugged, Mod, Func, Args, Le),
+	    main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F);
 
-	    case get(trace) of
+	{attach,Debugged,AttPid} when Le == 1 ->
+	    dbg_icmd:attach(AttPid),
+	    main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F);
+	{attach,Debugged,AttPid} ->
+	    dbg_icmd:attach(AttPid,Cm,Line),
+	    AttPid ! {self(),func_at,Cm,Line,Le},
+	    main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F);
+
+	{break_msg,Type,Data} ->
+	    dbg_icmd:break_msg(Type,Data),
+	    main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F);
+
+	%% The code in Module is no longer interpreted.
+	{old_code, Module} when Le == 1 ->
+	    erase(cache),
+	    erase([Module|db]),
+	    main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F);
+	{old_code, Module} ->
+	    case dbg_ieval:in_use_p(Module, Cm) of
 		true ->
-		    dbg_ieval:trace_out(
-		      io_lib:format('++ (1) ~w:~w(~s)~n',
-				    [M,F,dbg_ieval:format_args(As)]));
-		_ ->
-		    true
-	    end,
-
-	    %% "Same" as in int()
-	    case catch dbg_ieval:eval_function(M,F,As,[],
-					 M,false,1,extern,-1,extern) of
-		{value,Val,Bs} ->
-		    Msg_handler ! {sys,self(),{ready,Val}},
-		    del_catch_lev(),
-		    dbg_iserver_api:set_state(idle),
-		    tell_att_if_break(idle),
-		    wait_int(Msg_handler);
-		{'EXIT',{Msg_handler,Reason}} ->
-		    dbg_ieval:pop(1),
-		    do_real_exit(Reason);
-		{'EXIT',{confirmed,Reason}} ->
-		    Msg_handler ! {sys,self(),{exit,Reason}},
-		    del_catch_lev(),
-		    dbg_iserver_api:set_state(idle),
-		    tell_att_if_break(idle),
-		    dbg_ieval:pop(1),
-		    wait_int(Msg_handler);
-
-		{'EXIT',Reason} ->
-		    Msg_handler ! {sys,self(),{exit,Reason}},
-		    del_catch_lev(),
-		    dbg_iserver_api:set_state(idle),
-		    tell_att_if_break(idle),
-		    dbg_ieval:pop(1),
-		    wait_int(Msg_handler);
-		Throwed ->
-		    del_catch_lev(),
-		    dbg_iserver_api:set_state(idle),
-		    tell_att_if_break(idle),
-		    dbg_ieval:pop(1),
-		    wait_int(Msg_handler)
+		    %% A call to Module is on the stack (or might be),
+		    %% so we must terminate.
+		    exit(get(self), kill),
+		    dbg_ieval:exit(old_code, Cm, Line, Bs);
+		false ->
+		    erase([Module|db]),
+		    erase(cache),
+		    main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F)
 	    end;
-	%% Signal received from dying interpreted process
-	%% (Due to exit in non-interpreted code)
-	{'EXIT',Msg_handler,Reason} ->
-	    do_real_exit(Reason);
 
-	%% Catch signals from other linked processes.
+
+	%%FIXME: Handle new code
+	{new_code,Module} ->				
+	    io:format("~p:~p: NYI: Handling of {new_code,~p}\n",
+		      [?MODULE,?LINE,Module]),
+	    erase(cache), 
+	    erase([Module|db]),
+	    main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F);
+	
+	%% Signal received from dying interpreted process
+	%% (due to exit in non-interpreted code).
+	{'EXIT',Debugged,Reason} when Le == 1 ->
+	    do_real_exit(Reason);
+	{'EXIT',Debugged,Reason} ->
+	    dbg_ieval:exit(Debugged, Reason, Cm, Line, Bs);
+
+	%% Some other (?) linked process terminated. FIXME: Describe which
 	{'EXIT',Pid,Reason} ->
 	    case dbg_icmd:attached_p(Pid) of
 		true ->
 		    dbg_icmd:detach(Pid),
-		    wait_int(Msg_handler);
-		_ ->
-		    do_real_exit(Reason)
+		    main_meta_loop(Debugged, Bs, Le, Lc, Cm, Line, F);
+		false ->
+		    if
+			Le == 1 ->
+			    do_real_exit(Reason);
+			true ->
+			    dbg_ieval:exit(Reason,Cm,Line,Bs)
+		    end
 	    end;
-	{sys,Msg_handler,{exited_nocatch,Reason}} ->
-	    Msg_handler ! {sys,self(),{exit,Reason}},  % Yes, you shall die !!
-	    wait_int(Msg_handler);
-	{attach,Msg_handler,AttPid} ->
-	    dbg_icmd:attach(AttPid),
-	    wait_int(Msg_handler);
-	{break_msg,Type,Data} ->
-	    dbg_icmd:break_msg(Type,Data),
-	    wait_int(Msg_handler);
 
-	%% The code in Module is no longer interpreted. This
-	%% process is 'idle', so we just remove it.
-	{old_code, Module} ->
-	    erase(cache),
-	    erase([Module|db]),
-	    wait_int(Msg_handler);
-
-
-
-	%%FIXME: Handle new code
-	%% The code in Module has be re-interpreted, we must handle this.
-	{new_code, Module } ->				
-	    %% Rensa cache
-	    erase(cache), 
-
-	    %% Ta bort modulreferenspekare (cahche:ad)
-	    erase([Module|db]),
-
-	    %% Make sure all {break_at...} messages also contain the
-	    %% module reference.  In this (idle) state, confirm to
-	    %% dbg_idb (in all other cases, reject).  But: Temporarily
-	    %% send a message to the attached processes to tell them
-	    %% to update their module reference.
-
-	    wait_int(Msg_handler);
-
-
-	%% Handle commands from attach process that are
-	%% allowed in "idle" state.
-	Cmd when tuple(Cmd), element(1,Cmd) == cmd ->
-	    dbg_icmd:idle_wait(Cmd),
-	    wait_int(Msg_handler)
+	{cmd,Cmd,Args} ->
+	    case dbg_icmd:command(Cmd, Args, Bs) of
+		{skip,_}=Skip ->
+		    Skip;
+		{run,_}=Run ->
+		    Run;
+		NewBs ->
+		    main_meta_loop(Debugged, NewBs, Le, Lc, Cm, Line, F)
+	    end
     end.
+
+confirmed_exit(Reason, Cm, Line, Bs) ->
+    put_error(Reason, Cm, Line, Bs),
+    exit({confirmed,Reason}).
+
+throw(Value,Cm,Line,Bs) ->
+    do_put_error(nocatch,Cm,Line,Bs),
+    throw(Value).
+
+put_error(Reason,Cm,Line,Bs) ->
+    case get(error) of
+	none when Line =/= -1 ->
+	    do_put_error(Reason,Cm,Line,Bs);
+	{R,_,_,_} when R =/= Reason, Line =/= -1 ->
+	    do_put_error(Reason,Cm,Line,Bs);
+	{Reason,{C,_},_,_} when C =/= Cm, Line =/= -1 ->
+	    do_put_error(Reason,Cm,Line,Bs);
+	{Reason,{Cm,L},_,_} when L =/= Line, Line =/= -1 ->
+	    do_put_error(Reason,Cm,Line,Bs);
+	_ ->
+	    ok
+    end.
+
+do_put_error(Reason, Cm, Line, Bs) ->
+    BinStack = term_to_binary(dbg_ieval:get_stack()),
+    put(error, {Reason,{Cm,Line},Bs,BinStack}),
+    ok.
 
 do_real_exit(Reason) ->
     case get(error) of
 	{Reason,Where,Bs,Stack} ->
-	    %% Send exit-informatio to attech-process, and others.
 	    exit({self(),Reason,Where,Bs,Stack,att_p()});
 	_ ->
 	    exit({self(),Reason,att_p()})
@@ -338,27 +347,24 @@ exit_loop(OrigPid,Reason,Mod,Line,Bs) ->
 	    exit_loop(OrigPid,Reason,Mod,Line,Bs)
     end.
     
-create_catch_lev() ->
-    put(catch_lev,[0]).
-
 get_catch_lev() ->
     [Lev|_] = get(catch_lev),
     Lev.
 
 new_catch_lev() ->
-    put(catch_lev,[0|get(catch_lev)]).
+    put(catch_lev, [0|get(catch_lev)]).
 
 del_catch_lev() ->
     [_|Lev] = get(catch_lev),
-    put(catch_lev,Lev).
+    put(catch_lev, Lev).
 
 add_catch_lev() ->
     [Cur|Levs] = get(catch_lev),
-    put(catch_lev,[Cur+1|Levs]).
+    put(catch_lev, [Cur+1|Levs]).
 	    
 dec_catch_lev() ->
     [Cur|Levs] = get(catch_lev),
-    put(catch_lev,[Cur-1|Levs]).
+    put(catch_lev, [Cur-1|Levs]).
 
 %% Look up the clauses for a fun.
 %%
@@ -366,10 +372,7 @@ dec_catch_lev() ->
 
 lambda(Fun, As0) when function(Fun) ->
     {module,Mod} = erlang:fun_info(Fun, module),
-    {index,I} = erlang:fun_info(Fun, index),
-    {uniq,Uniq} = erlang:fun_info(Fun, uniq),
-    Key = {'fun',Mod,I,Uniq},
-    case fun_call_clauses(Mod, Key) of
+    case fun_call_clauses(Mod, Fun) of
 	{Name,Arity,Cs} ->
 	    {env,Env} = erlang:fun_info(Fun, env),
 	    case As0 ++ Env of
@@ -383,12 +386,23 @@ lambda(Fun, As0) when function(Fun) ->
     end;
 lambda(Fun, As) -> badfun.
 
-fun_call_clauses(Mod, Key) ->
+fun_call_clauses(Mod, Fun) ->
+    {new_index,Index} = erlang:fun_info(Fun, new_index),
+    {new_uniq,Uniq} = erlang:fun_info(Fun, new_uniq),
+    case fun_call_clauses_1(Mod, {'fun',Mod,Index,Uniq}) of
+	{_,_,_}=Data -> Data;
+	Error when atom(Error) ->
+%%	    exit({no_new_index,Index,Uniq}),
+	    {index,OldIndex} = erlang:fun_info(Fun, index),
+	    {uniq,OldUniq} = erlang:fun_info(Fun, uniq),
+	    fun_call_clauses_1(Mod, {'fun',Mod,OldIndex,OldUniq})
+    end.
+
+fun_call_clauses_1(Mod, Key) ->
     case cached(Key) of
 	false ->
 	    case db_ref(Mod) of
-		not_found ->
-		    check_if_interpreted(Mod);
+		not_found -> not_interpreted;
 		Db ->
 		    case dbg_idb:lookup(Db, Key) of
 			{ok,Data} ->
@@ -397,7 +411,7 @@ fun_call_clauses(Mod, Key) ->
 			Error ->
 			    case dbg_idb:lookup(Db, module) of
 				{ok,_} -> undef;
-				Error -> check_if_interpreted(Mod)
+				Error -> not_interpreted
 			    end
 		    end
 	    end;
@@ -431,8 +445,7 @@ function(Mod, Name, Args, extern) ->
     case cached(Key) of
 	false ->
 	    case db_ref(Mod) of
-		not_found ->
-		    check_if_interpreted(Mod);
+		not_found -> not_interpreted;
 		Db ->
 		    case dbg_idb:lookup(Db, {Mod,Name,Arity,true}) of
 			{ok,Data} ->
@@ -441,7 +454,7 @@ function(Mod, Name, Args, extern) ->
 			Error ->
 			    case dbg_idb:lookup(Db, module) of
 				{ok,_} -> undef;
-				Error -> check_if_interpreted(Mod)
+				Error -> not_interpreted
 			    end
 		    end
 	    end;
@@ -449,18 +462,6 @@ function(Mod, Name, Args, extern) ->
 	    Cs;
 	{false,Cs} ->
 	    undef
-    end.
-
-%% Sanity check: Should be called when a module was not found in our database.
-%% Make sure that it is not interpreted.
-
-check_if_interpreted(Mod) ->
-    case code:interpreted(Mod) of
-	true ->
-	    error_msg("** ~w: module interpreted but not loaded **~n", [Mod]),
-	    undef;
-	false ->
-	    not_interpreted
     end.
 
 db_ref(Mod) ->
@@ -517,7 +518,7 @@ cached(Key) ->
     end.
 
 tell_att_if_break(Info) ->
-    case get(state) of
+    case get(next_break) of
 	break ->
 	    dbg_icmd:tell_attached({self(),Info});
 	_     ->

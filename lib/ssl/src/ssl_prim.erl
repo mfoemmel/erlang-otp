@@ -138,6 +138,8 @@ remove_supported([{active, _}|T]) ->
     remove_supported(T);
 remove_supported([{packet,_}|T]) ->
     remove_supported(T);
+remove_supported([{deliver,_}|T]) ->
+    remove_supported(T);
 remove_supported([H|T]) ->
     [H | remove_supported(T)];
 remove_supported([]) ->

@@ -34,30 +34,35 @@ ERL = erl
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-MODULES=    	gs gs_frontend gs_make gs_widgets gtk gtk_arc gtk_button\
-                gtk_canvas gtk_checkbutton gtk_db gtk_editor gtk_entry \
-                gtk_font gtk_frame gtk_grid gtk_gridline gs_packer \
-                gtk_gs gtk_image gtk_label gtk_line gtk_listbox gtk_menu\
-                gtk_menubar gtk_menubutton gtk_menuitem gtk_oval gtk_polygon \
-                gtk_port_handler gtk_radiobutton gtk_rectangle gtk_scale \
-                gtk_text gtk_widgets gtk_window tcl2erl tool_utils tool_genfd \
+MODULES=    	gs gs_frontend gs_make gs_widgets gstk gstk_arc gstk_button\
+                gstk_canvas gstk_checkbutton gstk_db gstk_editor gstk_entry \
+                gstk_font gstk_frame gstk_grid gstk_gridline gs_packer \
+                gstk_gs gstk_image gstk_label gstk_line gstk_listbox gstk_menu\
+                gstk_menubar gstk_menubutton gstk_menuitem gstk_oval gstk_polygon \
+                gstk_port_handler gstk_radiobutton gstk_rectangle gstk_scale \
+                gstk_text gstk_widgets gstk_window tcl2erl tool_utils tool_genfd \
 		tool_file_dialog gse
 
-GTK_GENERIC = gtk_generic.erl
+GSTK_GENERIC = gstk_generic.erl
 
-HRL_FILES = gtk.hrl
-GEN_HRL_FILES = gtk_generic.hrl
-GTK_GENERIC_TARGET = $(EBIN)/gtk_generic.$(EMULATOR)
+HRL_FILES = gstk.hrl
+GEN_HRL_FILES = gstk_generic.hrl
+GSTK_GENERIC_TARGET = $(EBIN)/gstk_generic.$(EMULATOR)
 KEEP_AS_IS = $(EBIN)/gs-color-xdefaults $(EBIN)/fup.bm
 
 ERL_FILES= $(MODULES:%=%.erl)
 
 TARGET_FILES= $(MODULES:%=../ebin/%.$(EMULATOR)) $(GEN_HRL_FILES) \
-	$(GTK_GENERIC_TARGET) $(KEEP_AS_IS) $(APP_TARGET)
+	$(GSTK_GENERIC_TARGET) $(KEEP_AS_IS) $(APP_TARGET) $(APPUP_TARGET)
 
 APP_FILE= gs.app
+APPUP_FILE= gs.appup
+
 APP_SRC= $(APP_FILE).src
+APPUP_SRC= $(APPUP_FILE).src
+
 APP_TARGET= ../ebin/$(APP_FILE)
+APPUP_TARGET= ../ebin/$(APPUP_FILE)
 
 
 # ----------------------------------------------------
@@ -82,7 +87,7 @@ clean:
 # Special Build Targets
 # ----------------------------------------------------
 
-gtk_generic.hrl: gs_make.erl
+gstk_generic.hrl: gs_make.erl
 	$(ERL) -pa $(EBIN) -s gs_make -s erlang halt -noshell
 
 $(EBIN)/gs-color-xdefaults: gs-color-xdefaults
@@ -96,6 +101,9 @@ $(EBIN)/fup.bm: fup.bm
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
+$(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
+
 # ----------------------------------------------------
 # Release Target
 # ---------------------------------------------------- 
@@ -104,7 +112,7 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(APP_SRC) $(ERL_FILES) $(HRL_FILES) $(GEN_HRL_FILES) \
-		$(GTK_GENERIC) $(RELSYSDIR)/src
+		$(GSTK_GENERIC) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(KEEP_AS_IS) $(RELSYSDIR)/ebin
 

@@ -25,37 +25,31 @@
 #include "erl_atom_table.h"
 
 #define MAX_ATOM_LENGTH 255
+
 /*
-** Atom entry
-*/
-typedef struct atom
-{
+ * Atom entry.
+ */
+typedef struct atom {
     IndexSlot slot;  /* MUST BE LOCATED AT TOP OF STRUCT!!! */
     int len;         /* length of atom name */
     int ord0;        /* ordinal value of first 3 bytes + 7 bits */
     byte* name;      /* name of atom */
 } Atom;
 
-extern uint32 reserved_atom_space;
-extern uint32 atom_space;
+extern Uint reserved_atom_space;
+extern Uint atom_space;
 
 extern IndexTable atom_table;
 
 #define atom_tab(i)       ((Atom*) atom_table.table[i])
 #define atom_table_size   atom_table.sz
 
-
-EXTERN_FUNCTION(int, atom_get, (byte*, int));
-EXTERN_FUNCTION(int, atom_put, (byte*, int));
+Eterm am_atom_put(byte*, int);
 EXTERN_FUNCTION(int, atom_erase, (byte*, int));
 EXTERN_FUNCTION(int, atom_static_put, (byte*, int));
 EXTERN_FUNCTION(void, init_atom_table, (_VOID_));
 EXTERN_FUNCTION(void, atom_info, (CIO));
 EXTERN_FUNCTION(void, dump_atoms, (CIO));
-
-#define magic_word(s) atom_static_put((byte*)(s), sys_strlen(s))
-#define am_magic_word(s) make_atom(atom_static_put((byte*)(s), strlen(s)))
-#define am_atom_put(s,n) make_atom(atom_put((byte*)(s), n))
 
 #endif
 

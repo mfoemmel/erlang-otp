@@ -113,10 +113,19 @@ build_file(Code, Attr, Dict, NumLabels, NumFuncs, Abst, Opts) ->
     {StringSize, StringTab} = beam_dict:string_table(Dict),
     StringChunk = chunk(<<"StrT">>, StringTab),
 
+    %% Create the fun table chunk. It is important not to build an empty chunk,
+    %% as that would change the MD5.
+
+    LambdaChunk = case beam_dict:lambda_table(Dict) of
+		      {0,[]} -> [];
+		      {NumLambdas,LambdaTab} ->
+			  chunk(<<"FunT">>, <<NumLambdas:32>>, LambdaTab)
+		  end,
+
     %% Create the attributes and compile info chunks.
 
-    Essentials = [AtomChunk, CodeChunk, StringChunk, ImportChunk, ExpChunk],
-    {Attributes, Compile} = build_attributes(Opts, Attr, Essentials),
+    Essentials = [AtomChunk,CodeChunk,StringChunk,ImportChunk,ExpChunk,LambdaChunk],
+    {Attributes,Compile} = build_attributes(Opts, Attr, Essentials),
     AttrChunk = chunk(<<"Attr">>, Attributes),
     CompileChunk = chunk(<<"CInf">>, Compile),
 
@@ -126,11 +135,11 @@ build_file(Code, Attr, Dict, NumLabels, NumFuncs, Abst, Opts) ->
 
     %% Create IFF chunk.
 
-    build_form(<<"BEAM">>, [Essentials,
-			    LocChunk,
-			    AttrChunk,
-			    CompileChunk,
-			    AbstChunk]).
+    Chunks = case member(slim, Opts) of
+		 true -> [Essentials,AttrChunk,CompileChunk,AbstChunk];
+		 false -> [Essentials,LocChunk,AttrChunk,CompileChunk,AbstChunk]
+	     end,
+    build_form(<<"BEAM">>, Chunks).
 
 %% Build an IFF form.
 
@@ -171,9 +180,13 @@ flatten_imports(Imps) ->
     list_to_binary(map(fun({M,F,A}) -> <<M:32,F:32,A:32>> end, Imps)).
 
 build_attributes(Opts, Attr, Essentials) ->
-    {{Y,Mo,D},{H,Mi,S}} = erlang:universaltime(),
-    Compile = [{time,{Y,Mo,D,H,Mi,S}},{options,Opts},
-	       {version,?COMPILER_VSN}],
+    Time = case member(slim, Opts) of
+	       false ->
+		   {{Y,Mo,D},{H,Mi,S}} = erlang:universaltime(),
+		   [{time,{Y,Mo,D,H,Mi,S}}];
+	       true -> []
+	   end,
+    Compile = [{options,Opts},{version,?COMPILER_VSN}|Time],
     {term_to_binary(calc_vsn(Attr, Essentials)),term_to_binary(Compile)}.
 
 %%
@@ -203,6 +216,11 @@ bif_type('bxor', 2) -> {op, int_bxor};
 bif_type('bsl', 2)  -> {op, int_bsl};
 bif_type('bsr', 2)  -> {op, int_bsr};
 bif_type('bnot', 1) -> {op, int_bnot};
+bif_type(fnegate, 1)   -> {op, fnegate};
+bif_type(fadd, 2)   -> {op, fadd};
+bif_type(fsub, 2)   -> {op, fsub};
+bif_type(fmul, 2)   -> {op, fmul};
+bif_type(fdiv, 2)   -> {op, fdiv};
 bif_type(_, _)      -> bif.
 
 make_op(Comment, Dict) when element(1, Comment) == '%' ->
@@ -224,18 +242,15 @@ make_op({bif, Bif, Fail, Args, Dest}, Dict) ->
 	    encode_op(BifOp, [Fail, {extfunc, erlang, Bif, Arity}|Args++[Dest]],
 		      Dict)
     end;
-make_op({test, Cond, Fail, Src}, Dict) ->
-    make_op({Cond, Fail, Src}, Dict);
-make_op({test, Cond, Fail, S1, S2}, Dict) ->
-    make_op({Cond, Fail, S1, S2}, Dict);
-make_op({test, Cond, Fail, A1, A2}, Dict) ->
-    make_op({Cond, Fail, A1, A2}, Dict);
-make_op({test, Cond, Fail, A1, A2, A3}, Dict) ->
-    make_op({Cond, Fail, A1, A2, A3}, Dict);
-make_op({test, Cond, Fail, A1, A2, A3, A4}, Dict) ->
-    make_op({Cond, Fail, A1, A2, A3, A4}, Dict);
+make_op({test,Cond,Fail,Ops}, Dict) when list(Ops) ->
+    encode_op(Cond, [Fail|Ops], Dict);
+make_op({make_fun2,{f,Lbl},Index,OldUniq,NumFree}, Dict0) ->
+    {Fun,Dict} = beam_dict:lambda(Lbl, Index, OldUniq, NumFree, Dict0),
+    make_op({make_fun2,Fun}, Dict);
 make_op(Op, Dict) when atom(Op) ->
     encode_op(Op, [], Dict);
+make_op({kill,Y}, Dict) ->
+    make_op({init,Y}, Dict);
 make_op({Name, Arg1}, Dict) ->
     encode_op(Name, [Arg1], Dict);
 make_op({Name, Arg1, Arg2}, Dict) ->
@@ -292,6 +307,8 @@ encode_arg({list, List}, Dict0) ->
     {[encode(?tag_z, 1), encode(?tag_u, length(List))|L], Dict};
 encode_arg({float, Float}, Dict) when float(Float) ->
     {[encode(?tag_z, 0)|<<Float:64/float>>], Dict};
+encode_arg({fr, Fr}, Dict) ->
+    {[encode(?tag_z, 2), encode(?tag_u, Fr)], Dict};
 encode_arg({field_flags, Flags0}, Dict) ->
     Flags = lists:foldl(fun (F, S) -> S bor flag_to_bit(F) end, 0, Flags0),
     {encode(?tag_u, Flags), Dict};

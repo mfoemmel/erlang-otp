@@ -38,6 +38,7 @@ static Eterm check_process_code(Process* rp, Module* modp);
 static void delete_code(Module* modp);
 static void delete_export_references(Eterm module);
 static int purge_module(int module);
+static int is_native(Eterm* code);
 
 int erts_match_spec_is_on = 0;
 Binary* erts_default_match_spec = NULL;
@@ -65,6 +66,9 @@ BIF_ADECL_2
 	case -1: reason = am_badfile; break; 
 	case -2: reason = am_nofile; break;
 	case -3: reason = am_not_purged; break;
+	case -4:
+	    reason = am_atom_put("native_code", sizeof("native_code")-1);
+	    break;
 	default: reason = am_badfile; break;
 	}
 	BIF_RET(TUPLE2(hp, am_error, reason));
@@ -87,6 +91,22 @@ BIF_ADECL_1
 	BIF_ERROR(BIF_P, BADARG);
     }
     BIF_RET(am_true);
+}
+
+BIF_RETTYPE code_is_module_native_1(BIF_ALIST_1)
+BIF_ADECL_1
+{
+    Module* modp;
+
+    if (is_not_atom(BIF_ARG_1)) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    if ((modp = erts_get_module(BIF_ARG_1)) == NULL) {
+	return am_undefined;
+    }
+    return (is_native(modp->code) ||
+	    (modp->old_code != 0 && is_native(modp->old_code))) ?
+		am_true : am_false;
 }
 
 Eterm
@@ -191,63 +211,14 @@ BIF_ADECL_0
     BIF_RET(previous);
 }
 
-static int
-check_process_funs(Process* rp, Module* modp)
-{
-    ErlFunThing* funp;
-    int done_gc = 0;
-
- rescan:
-    for (funp = rp->off_heap.funs; funp; funp = funp->next) {
-	Eterm* code;
-
-	if (funp->modp != modp) { /* Wrong module. */
-	    continue;
-	}
-
-	/*
-	 * Check if this fun is found in the current code.  If it is,
-	 * the old code is not needed for this fun.
-	 */
-
-	code = modp->code;
-	if (code != NULL && funp->index < code[MI_NUM_LAMBDAS]) {
-	    Eterm* fun_entry = ((Eterm *) code[MI_LAMBDA_PTR]) + 2*funp->index;
-	    if (fun_entry[0] == funp->uniq) {
-		continue;
-	    }
-	}
-
-	/*
-	 * If the fun is found in the old code, the old code cannot be safely
-	 * purged yet. Unless we have alreday done garbage collection, do
-	 * one to possibly get the offending fun thrown out.
-	 */
-
-	code = modp->old_code;
-	if (code != NULL && funp->index < code[MI_NUM_LAMBDAS]) {
-	    Eterm* fun_entry = ((Eterm *) code[MI_LAMBDA_PTR]) + 2*funp->index;
-	    if (fun_entry[0] == funp->uniq) {
-		if (done_gc) {
-		    return am_true;
-		} else {
-		    done_gc = 1;
-		    rp->flags |= F_NEED_FULLSWEEP;
-		    (void) erts_garbage_collect(rp, 0, rp->arg_reg, rp->arity);
-		    goto rescan;
-		}
-	    }
-	}
-    }
-    return am_false;
-}
-
 static Eterm
 check_process_code(Process* rp, Module* modp)
 {
     Eterm* start;
     Eterm* end;
     Eterm* sp;
+    ErlFunThing* funp;
+    int done_gc = 0;
 
 #define INSIDE(a) (start <= (a) && (a) < end)
     if (modp == NULL) {		/* Doesn't exist. */
@@ -272,7 +243,11 @@ check_process_code(Process* rp, Module* modp)
     /*
      * Check all continuation pointers stored on the stack.
      */
+#ifdef UNIFIED_HEAP
+    for (sp = rp->stop; sp < rp->stack; sp++) {
+#else
     for (sp = rp->stop; sp < rp->hend; sp++) {
+#endif
 	if (is_CP(*sp) && INSIDE(cp_val(*sp))) {
 	    return am_true;
 	}
@@ -281,7 +256,32 @@ check_process_code(Process* rp, Module* modp)
     /*
      * See if there are funs that refer to the old version of the module.
      */
-    return check_process_funs(rp, modp);
+
+ rescan:
+    for (funp = rp->off_heap.funs; funp; funp = funp->next) {
+	Eterm* fun_code;
+
+	fun_code = funp->fe->address;
+
+	if (INSIDE((Eterm *) funp->fe->address)) {
+	    if (done_gc) {
+		return am_true;
+	    } else {
+		/*
+		 * Try to get rid of this fun by garbage collecting.
+		 */
+		done_gc = 1;
+#ifdef UNIFIED_HEAP
+                global_gc_flags |= F_NEED_FULLSWEEP;
+#else
+                rp->flags |= F_NEED_FULLSWEEP;
+#endif
+		(void) erts_garbage_collect(rp, 0, rp->arg_reg, rp->arity);
+		goto rescan;
+	    }
+	}
+    }
+    return am_false;
 #undef INSIDE
 }
 
@@ -290,6 +290,7 @@ static int
 purge_module(int module)
 {
     Eterm* code;
+    Eterm* end;
     Module* modp;
     int i;
 
@@ -313,16 +314,13 @@ purge_module(int module)
 	return -1;
     }
 
-    if (display_loads) {
-	erl_printf(COUT,"Purging code for ");
-	print_atom(module, COUT);
-	erl_printf(COUT,"\n");
-    }
 
     /*
      * Remove the old code.
      */
     code = modp->old_code;
+    end = (Eterm *)((char *)code + modp->old_code_length);
+    erts_cleanup_funs_on_purge(code, end);
     beam_catches_delmod(modp->old_catches, code, modp->old_code_length);
     sys_free((char *) code);
     modp->old_code = NULL;
@@ -376,7 +374,7 @@ delete_code(Module* modp)
    atom index below */
 
 static void
-delete_export_references(uint32 module)
+delete_export_references(Eterm module)
 {
     int i;
 
@@ -420,5 +418,11 @@ beam_make_current_old(Eterm module)
 	delete_export_references(module);
     }
     return 0;
+}
+
+static int
+is_native(Eterm* code)
+{
+    return ((Eterm *)code[MI_FUNCTIONS])[1] != 0;
 }
 

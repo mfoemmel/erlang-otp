@@ -82,14 +82,15 @@ spawn_opt(M, F, A, Opts) ->
 nodes() -> erlang:nodes(visible).
 
 crasher(Node,Mod,Fun,Args,Reason) ->
-    error_logger:error_msg('** Can not start ~w:~w,~w on ~w **~n',
+    error_logger:error_msg("** Can not start ~w:~w,~w on ~w **~n",
 			  [ Mod,Fun,Args,Node]),
     exit(Reason).
 
 disconnect_node(Node) -> net_kernel:disconnect(Node).
 
 fun_info(Fun) when function(Fun) ->
-    [erlang:fun_info(Fun, Key) || Key <- [pid,module,index,uniq,env]].
+    [erlang:fun_info(Fun, Key) ||
+	Key <- [pid,module,new_index,new_uniq,index,uniq,env,arity]].
     
 sand(true, true) -> true;
 sand(true, false) -> false;

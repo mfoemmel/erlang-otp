@@ -25,7 +25,11 @@
 -export([h/0, help/0]).
 
 %% Internal exports
--export([start_link/1, init/1, terminate/2, handle_call/3]).
+-export([start_link/1]).
+
+%% gen_server callbacks
+-export([init/1, terminate/2, handle_call/3,
+	 handle_cast/2, handle_info/2, code_change/3]).
 
 %%%-----------------------------------------------------------------
 %%% Report Browser Tool.
@@ -138,6 +142,8 @@ init(Options) ->
     {ok, #state{dir = Dir ++ "/", data = Data, device = Device,
 		max = Max, type = Type}}.
 
+%% (All those 'catch' are probably unnecessary now that we catch the
+%% formatting in read_rep/4.)
 handle_call({rescan, Options}, _From, State) ->
     Device = 
 	case get_option(Options, start_log, {undefined}) of
@@ -184,6 +190,13 @@ handle_call({grep, RegExp}, _From, State) ->
 
 terminate(_Reason, #state{device = Device}) ->
     close_device(Device).
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+handle_info(_Info, State) ->
+    {noreply, State}.
+code_change(OldVsn, State, Extra) ->
+    {ok, State}.
 
 %%-----------------------------------------------------------------
 %% Func: open_log_file/1
@@ -497,14 +510,14 @@ print_report(Dir, Data, Number, Device) ->
     FileName = lists:concat([Dir, Fname]),
     case file:open(FileName, read) of
 	{ok, Fd} -> read_rep(Fd, FilePosition, Type, Device);
-	_ -> io:format("rb: can't open file ~w~n", Fname)
+	_ -> io:format("rb: can't open file ~p~n", [Fname])
     end.
 
 find_report([{No, Type, ShortDescr, Date, Fname, FilePosition}|T], No) ->
     {Fname, FilePosition, Type};
 find_report([H|T], No) -> find_report(T, No);
 find_report([], No) ->
-    io:format("There is no report with number ~p.~n", No).
+    io:format("There is no report with number ~p.~n", [No]).
     
 print_grep_reports(Dir, [], RegExp, Device) ->
     ok;
@@ -519,14 +532,14 @@ print_grep_report(Dir, Data, Number, Device, RegExp) ->
 	{ok, Fd} when pid(Fd) -> 
 	    check_rep(Fd, FilePosition, Type, Device, RegExp, Number);
 	_ -> 
-	    io:format("rb: can't open file ~w~n", Fname)
+	    io:format("rb: can't open file ~p~n", [Fname])
     end.
 
 check_rep(Fd, FilePosition, Type, Device, RegExp, Number) ->
     case read_rep_msg(Fd, FilePosition, Type) of
 	{Date, Msg} ->
 	    MsgStr = lists:flatten(io_lib:format("~p",[Msg])),
-	    case string:re_match(MsgStr, RegExp) of
+	    case regexp:match(MsgStr, RegExp) of
 		{match, _, _} ->
 		    io:format("Found match in report number ~w~n", [Number]),
 		    rb_format_supp:print(Date, Msg, Device);
@@ -539,7 +552,12 @@ check_rep(Fd, FilePosition, Type, Device, RegExp, Number) ->
 read_rep(Fd, FilePosition, Type, Device) ->
     case read_rep_msg(Fd, FilePosition, Type) of
 	{Date, Msg} ->
-	    rb_format_supp:print(Date, Msg, Device);
+	    case catch rb_format_supp:print(Date, Msg, Device) of
+		{'EXIT', _} ->
+		    io:format(Device, "ERROR: ~p ~p~n", [Date, Msg]);
+		_ ->
+		    ok
+	    end;
 	_ -> 
 	    io:format("rb: Cannot read from file~n")
     end.

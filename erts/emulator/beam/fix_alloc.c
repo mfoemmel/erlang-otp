@@ -30,15 +30,16 @@
 
 typedef struct fix_alloc_block {
     struct fix_alloc_block *next;
-    uint32 mem[1];
+    Eterm mem[1];
 } FixAllocBlock;
 
 typedef struct fix_alloc {
     int item_size;
-    uint32 *freelist;
+    Eterm *freelist;
     FixAllocBlock *blocks;
 } FixAlloc;
 
+static int init_fix_alloc(int);
 
 static FixAlloc *fa;
 static int max_sizes;
@@ -52,24 +53,28 @@ int preg_desc;
 int link_desc;
 int plist_desc;
 int mesg_desc;
+int erts_fun_desc;
 
-void init_alloc()
+void
+init_alloc(void)
 {
-    init_fix_alloc(20);
+    init_fix_alloc(12);
     process_desc = new_fix_size(sizeof(Process));
     table_desc = new_fix_size(sizeof(DbTable));
     atom_desc = new_fix_size(sizeof(Atom));
     export_desc = new_fix_size(sizeof(Export));
     module_desc = new_fix_size(sizeof(Module));
+
     preg_desc = new_fix_size(sizeof(RegProc));
     link_desc = new_fix_size(sizeof(ErlLink));
     plist_desc = new_fix_size(sizeof(ProcessList));
     mesg_desc  = new_fix_size(sizeof(ErlMessage));
+    erts_fun_desc = new_fix_size(sizeof(ErlFunEntry));
 }
 
 
-int init_fix_alloc(max)
-int max;
+static int
+init_fix_alloc(int max)
 {
     max_sizes = max;
     if ((fa = (FixAlloc*) sys_alloc_from(31,max * sizeof(FixAlloc))) == NULL)
@@ -79,8 +84,8 @@ int max;
 }
 
 /* Calculate number of bytes allocated by 'desc' */
-int fix_info(desc)
-int desc;
+int
+fix_info(int desc)
 {
     FixAlloc* f = &fa[desc];
     FixAllocBlock* b = f->blocks;
@@ -94,16 +99,15 @@ int desc;
 }
 
 /* Calculate number of used bytes allocated by 'desc' */
-int fix_used(int desc)
+int
+fix_used(int desc)
 {
     FixAlloc* f = &fa[desc];
     FixAllocBlock* b = f->blocks;
-    uint32 *fp;
+    Eterm* fp;
     int n = 0;
     int allocated;
-#ifdef DEBUG
     int used;
-#endif
 
     while (b) {
         n++;
@@ -115,31 +119,26 @@ int fix_used(int desc)
     fp = f->freelist;
     while(fp) {
       n++;
-      fp = (uint32 *) *fp;
+      fp = (Eterm *) *fp;
     }
-#ifdef DEBUG
     used = allocated - n*f->item_size;
     ASSERT(used >= 0);
     return used;
-#else
-    return allocated - n*f->item_size;
-#endif
-
 }
 
 
 /* Returns a small integer which must be used in all subsequent */
 /* calls to fix_alloc() and fix_free() of this size             */
 
-int new_fix_size(size)
-int size;
+int
+new_fix_size(int size)
 {
     int i;
 
     while (size % sizeof(char*) != 0)     /* Alignment */
 	size++;
     for (i=0; i<max_sizes; i++) {
-	if (fa[i].item_size == 0 && size >= (sizeof(uint32*))) {
+	if (fa[i].item_size == 0 && size >= (sizeof(Eterm*))) {
 	    fa[i].item_size = size;
 	    fa[i].blocks = NULL;
 	    fa[i].freelist = NULL;
@@ -150,8 +149,8 @@ int size;
     return(-1); /* Pedantic (lint does not know about erl_exit) */
 }
 
-void fix_free(desc, ptr)
-int desc; uint32 *ptr;
+void
+fix_free(int desc, Eterm* ptr)
 {
 #if defined(NO_FIX_ALLOC)
     sys_free(ptr);
@@ -163,7 +162,7 @@ int desc; uint32 *ptr;
 #ifdef DEBUG
     sys_memset(ptr, 0xff, f->item_size);    /* Clobber */
 #endif
-    *ptr = (uint32) f->freelist;
+    *ptr = (Eterm) f->freelist;
     f->freelist = ptr;
 #endif
 }
@@ -171,33 +170,29 @@ int desc; uint32 *ptr;
 
 
 #ifdef INSTRUMENT
-uint32 *fix_alloc(desc)
-int desc;
+Eterm *fix_alloc(int desc)
 {
   return fix_alloc_from(-1, desc);
 }
 
-uint32 *fix_alloc_from(from, desc)
-int from; int desc;
+Eterm *fix_alloc_from(int from, int desc)
 #else /* #ifdef INSTRUMENT */
 #define from (-1)
-uint32 *fix_alloc(desc)
-int desc;
+Eterm *fix_alloc(int desc)
 #endif /* #ifdef INSTRUMENT */
 {
-    uint32 *ret;
+    Eterm* ret;
     FixAlloc *f = &fa[desc];
 
 #if defined(NO_FIX_ALLOC)
     ret = sys_alloc(f->item_size);
 #elif defined(PURIFY)
-    ret = (uint32* ) malloc(f->item_size);
+    ret = (Eterm* ) malloc(f->item_size);
 #else
     if (f->freelist == NULL) {  /* Gotta alloc some more mem */
 	char *ptr;
 	FixAllocBlock *bl;
-	int n = f->item_size*(NOPERBLOCK) + sizeof(FixAllocBlock) -
-	    sizeof(uint32);
+	int n = f->item_size*(NOPERBLOCK) + sizeof(FixAllocBlock) - sizeof(Eterm);
 
 	if ((bl = (FixAllocBlock*) sys_alloc_from(from == -1 ? 32 : from,
 						  n)) == NULL)
@@ -209,14 +204,14 @@ int desc;
 	n = NOPERBLOCK;
 	ptr = (char*) &f->blocks->mem[0];
 	while(n--) {
-	    *((uint32*)ptr) = (uint32)f->freelist;
-	    f->freelist = (uint32*) ptr;
+	    *((Eterm*)ptr) = (Eterm)f->freelist;
+	    f->freelist = (Eterm*) ptr;
 	    ptr += f->item_size;
 	}
     }
 
     ret = f->freelist;
-    f->freelist = (uint32*) *f->freelist;
+    f->freelist = (Eterm*) *f->freelist;
 #endif
-    return (ret);
+    return ret;
 }

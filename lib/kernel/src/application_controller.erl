@@ -452,9 +452,6 @@ permit_application(ApplName, Flag) ->
 		    infinity).
 
 
-%%-----------------------------------------------------------------
-%% Undocumented function, used only for test purposes.
-%%-----------------------------------------------------------------
 set_env(AppName, Key, Val) ->
     gen_server:call(?AC, {set_env, AppName, Key, Val}).
 

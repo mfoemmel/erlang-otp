@@ -33,6 +33,6 @@
 
   <include file="comet">
   <include file="erl_com">
-
+  <include file="com_gen">
 </application>
 

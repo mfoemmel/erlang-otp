@@ -45,6 +45,7 @@ __ERL_BEGIN_DECL
 #define ERL_VARIABLE    (12 | ERL_COMPOUND) /* used in patterns */
 #define ERL_SMALL_BIG   13
 #define ERL_U_SMALL_BIG 14
+#define ERL_FUNCTION    (15 | ERL_COMPOUND)
 
 /*  Erlang terms in C  */
 
@@ -132,6 +133,21 @@ typedef struct _variable {
   struct _eterm *v;  
 } Erl_Variable;
 
+
+typedef struct _function {
+    Erl_Header h;
+    int size;			/* size of closure */
+    int arity;			/* arity for new (post R7) external funs */
+    char md5[16];		/* md5 for new funs */
+    int new_index;		/* new funs */
+    struct _eterm*  creator;	/* pid */
+    struct _eterm*  module;	/* module */
+    struct _eterm*  index;
+    struct _eterm*  uniq;
+    struct _eterm** closure;
+} Erl_Function;
+
+
 typedef struct _eterm {
   union {
     Erl_Integer   ival;
@@ -146,6 +162,7 @@ typedef struct _eterm {
     Erl_Tuple     tval;
     Erl_Binary    bval;
     Erl_Variable  vval;
+    Erl_Function  funcval;
   } uval;
 } ETERM;
 
@@ -203,6 +220,16 @@ typedef struct _eterm {
 #define ERL_VAR_NAME(x) ((x)->uval.vval.name)
 #define ERL_VAR_VALUE(x) ((x)->uval.vval.v)
 
+#define ERL_CLOSURE_SIZE(x)  ((x)->uval.funcval.size)
+#define ERL_FUN_CREATOR(x)   ((x)->uval.funcval.creator)
+#define ERL_FUN_MODULE(x)    ((x)->uval.funcval.module)
+#define ERL_FUN_UNIQ(x)      ((x)->uval.funcval.uniq)
+#define ERL_FUN_INDEX(x)     ((x)->uval.funcval.index)
+#define ERL_FUN_ARITY(x)     ((x)->uval.funcval.arity)
+#define ERL_FUN_NEW_INDEX(x) ((x)->uval.funcval.new_index)
+#define ERL_FUN_MD5(x)       ((x)->uval.funcval.md5)
+#define ERL_CLOSURE(x)       ((x)->uval.funcval.closure)
+#define ERL_CLOSURE_ELEMENT(x,i) (ERL_CLOSURE(x)[(i)])
 
 /*
  * Typing checking macros.
@@ -223,6 +250,7 @@ typedef struct _eterm {
 #define ERL_IS_EMPTY_LIST(x) ERL_IS_NIL(x)
 #define ERL_IS_TUPLE(x)    (ERL_TYPE(x) == ERL_TUPLE)
 #define ERL_IS_BINARY(x)   (ERL_TYPE(x) == ERL_BINARY)
+#define ERL_IS_FUNCTION(x) (ERL_TYPE(x) == ERL_FUNCTION)
 
 #define ERL_IS_LIST(x)     (ERL_IS_CONS(x) || ERL_IS_EMPTY_LIST(x))
 

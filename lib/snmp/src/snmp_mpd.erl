@@ -367,7 +367,9 @@ check_sec_module_result(Res, V3Hdr, Data, IsReportable, LogF) ->
 	{error, Reason, []} ->         % case 7.2.6 b
 	    throw({discarded, {securityError, Reason}});
 	{error, Reason, ErrorInfo} when IsReportable == true -> % case 7.2.6 a
-	    ?vtrace("~n\tReason: ~p~n\tErrorInfo: ~p",[Reason,ErrorInfo]),
+	    ?vtrace("security module result:"
+		    "~n   Reason:    ~p"
+		    "~n   ErrorInfo: ~p", [Reason, ErrorInfo]),
 	    #v3_hdr{msgID = MsgID, msgSecurityModel = MsgSecModel} = V3Hdr,
 	    Pdu = get_scoped_pdu(Data),
 	    case generate_v3_report_msg(MsgID, MsgSecModel, Pdu,

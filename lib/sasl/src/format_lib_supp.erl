@@ -29,7 +29,7 @@
 -export([print_info/2, print_info/3]).
 
 %% exports for use within module
--export([maxcol/2, make_column_format/1, print_row/3, term_to_string/1]).
+-export([maxcol/2]).
 
 %%-----------------------------------------------------------------
 %% Format is an ordered list of:
@@ -37,6 +37,8 @@
 %%   {data, List_Of_KeyValue_tuples}
 %%        The KeyValues_tuples will be printed on one line
 %%        (if possible); 'Key:     Value'.
+%%        Elements in the list may also be single terms, which are printed
+%%        as they are.
 %%   {table, {TableName, ColumnNames, Columns}}
 %%        ColumnNames is a tuple of names for the columns, and
 %%        Columns is a list, where each element is a tuple of
@@ -87,6 +89,9 @@ print_format(Device, Line, [_|T]) ->  % ignore any erroneous format.
 print_data(Device, Line, []) -> ok;
 print_data(Device, Line, [{Key, Value}|T]) ->
     print_one_line(Device, Line, Key, Value),
+    print_data(Device, Line, T);
+print_data(Device, Line, [Value|T]) ->
+    io:format(Device, "~p~n", [Value]),
     print_data(Device, Line, T).
 
 print_items(Device, Line, {Name, Items}) ->
@@ -181,20 +186,22 @@ print_table(Device, Line, TableName, TupleOfColumnNames, ListOfTuples)
 	true -> 
 	    print_one_line(Device, Line, TableName, " "),
 	    ListOfColumnNames = tuple_to_list(TupleOfColumnNames),
-	    ListOfLists = lists:map({erlang, tuple_to_list}, [], ListOfTuples),
+	    ListOfLists = lists:map(fun(Tuple) -> tuple_to_list(Tuple) end,
+				    ListOfTuples),
 	    ColWidths = find_max_col([ListOfColumnNames |
 				      ListOfLists],
 				     make_list(length(ListOfColumnNames),0)),
-	    Format = lists:flatten([lists:map({format_lib_supp,
-					       make_column_format},
-					      [], ColWidths), "~n"]),
+	    Format = lists:flatten([lists:map(fun(CW) ->
+						      make_column_format(CW)
+					      end,
+					      ColWidths), "~n"]),
 	    io:format(Device, Format, ListOfColumnNames),
 	    io:format(Device, lists:concat(['~', extra_space_between_columns(),
 					    'c', '~', lists:sum(ColWidths)
 					    + (length(ColWidths) - 1)
 					    * extra_space_between_columns(),
 					    'c~n']), [$ , $-]),
-	    lists:foreach({format_lib_supp, print_row}, [Device, Format],
+	    lists:foreach(fun(List) -> print_row(List, Device, Format) end,
 			  ListOfLists),
 	    io:format(Device, '~n', []),
 	    true;
@@ -207,7 +214,7 @@ print_table(Device, Line, TableName, TupleOfColumnNames, ListOfTuples)
 %% Device MUST be 2nd arg because of extraarg ni foreach...
 %%--------------------------------------------------
 print_row(Row, Device, Format) ->
-    io:format(Device, Format, lists:map({format_lib_supp, term_to_string},
-					[], Row)).
+    io:format(Device, Format, lists:map(fun(Term) -> term_to_string(Term) end,
+					Row)).
 
 

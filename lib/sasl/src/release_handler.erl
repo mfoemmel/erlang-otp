@@ -16,8 +16,9 @@
 %%     $Id$
 %%
 -module(release_handler).
-
 -behaviour(gen_server).
+
+-include_lib("kernel/include/file.hrl").
 
 %% External exports
 -export([start_link/0,
@@ -28,7 +29,8 @@
 	 set_unpacked/2, set_removed/1, install_file/2]).
 
 %% Internal exports
--export([init/1, handle_call/3, handle_info/2, terminate/2]).
+-export([init/1, handle_call/3, handle_info/2, terminate/2,
+	 handle_cast/2, code_change/3]).
 
 %% Internal exports, a client release_handler may call this functions.
 -export([do_write_release/3, do_copy_file/2, do_copy_files/2,
@@ -532,6 +534,11 @@ handle_info(Msg, S) ->
 
 terminate(_Reason, S) ->
     ok.
+
+handle_cast(Msg, State) ->
+    {noreply, State}.
+code_change(OldVsn, State, Extra) ->
+    {ok, State}.
 
 %%%-----------------------------------------------------------------
 %%% Internal functions
@@ -1120,8 +1127,8 @@ memlib(Lib, []) -> false.
 			 
 %% recursively remove file or directory
 remove_file(File) ->
-    case file:file_info(File) of
-	{ok, Info} when element(2, Info) == directory ->
+    case file:read_file_info(File) of
+	{ok, Info} when Info#file_info.type==directory ->
 	    case file:list_dir(File) of
 		{ok, Files} ->
 		    lists:foreach(fun(File2) ->
@@ -1139,7 +1146,7 @@ remove_file(File) ->
 		ok -> ok;
 		{error, Reason} -> throw({error, Reason})
 	    end;
-	_ ->
+	{error, _Reason} ->
 	    throw({error, {no_such_file, File}})
 
     end.
@@ -1354,8 +1361,8 @@ check_file_masters(FileName, Type, []) ->
 
 %% Type == regular | directory
 do_check_file(FileName, Type) ->
-    case file:file_info(FileName) of
-	{ok,{_,Type,_,_,_,_,_}} -> ok;
+    case file:read_file_info(FileName) of
+	{ok, Info} when Info#file_info.type==Type -> ok;
 	{error, _Reason} -> throw({error, {no_such_file, FileName}})
     end.
 
@@ -1539,7 +1546,7 @@ do_remove_files([]) ->
 %% If not create an empty RELEASES file.
 %%-----------------------------------------------------------------
 do_ensure_RELEASES(RelFile) ->
-    case file:file_info(RelFile) of
+    case file:read_file_info(RelFile) of
 	{ok, _} -> ok;
 	_       -> do_write_file(RelFile, "[]. ") 
     end.

@@ -14,7 +14,7 @@
 #include <unistd.h>
 #endif
 #include <ctype.h>
-#include "driver.h"
+#include "erl_driver.h"
 
 #ifdef VXWORKS
 /* pull in FOPEN from zutil.h instead */
@@ -130,7 +130,7 @@ local gzFile gz_open (path, mode, fd)
 	    s->mode = 'r';
 	if (*p == 'w' || *p == 'a')
 	    s->mode = 'w';
-	if (isdigit(*p)) {
+	if (isdigit((int)*p)) {
 	    level = *p - '0';
 	} else {
 	    *m++ = *p;		/* Copy the mode */
@@ -510,7 +510,9 @@ int gzseekk (file, offset, whence)
     switch (whence) {
     case SEEK_SET: pos = offset; break;
     case SEEK_CUR: pos = s->position+offset; break;
-    case SEEK_END: errno = EINVAL; return -1;
+    case SEEK_END: 
+    default:
+      errno = EINVAL; return -1;
     }
 
     if (pos == s->position) {
@@ -683,13 +685,13 @@ const char*  gzerror (file, errnum)
    a NULL pointer is returned.
 */
 
-DriverBinary*
+ErlDrvBinary*
 gzinflate_buffer(start, size)
     char* start;		/* Start of buffer to uncompress. */
     int size;			/* Size of buffer to uncompress. */
 {
-    DriverBinary* bin;
-    DriverBinary* bin2;
+    ErlDrvBinary* bin;
+    ErlDrvBinary* bin2;
     gzFile fd;
     int bytes_read = 0;
 
@@ -734,14 +736,14 @@ gzinflate_buffer(start, size)
 
 #define GZIP_X_SIZE (GZIP_HD_SIZE+GZIP_TL_SIZE)
 
-DriverBinary*
+ErlDrvBinary*
 gzdeflate_buffer(start, size)
     char* start;		/* Start of buffer to compress. */
     int size;			/* Size of buffer to compress. */
 {
     z_stream c_stream; /* compression stream */
-    DriverBinary* bin;
-    DriverBinary* bin2;
+    ErlDrvBinary* bin;
+    ErlDrvBinary* bin2;
     uLong    crc;     /* crc32 of uncompressed data */
     uLong    szIn;
     Byte* ptr;

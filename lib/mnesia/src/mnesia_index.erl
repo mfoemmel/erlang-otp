@@ -238,7 +238,7 @@ delete_transient_index(Tab, Pos, disc_only_copies) ->
 
 delete_transient_index(Tab, Pos, _Storage) ->
     Ixt = val({Tab, {index, Pos}}),
-    catch ?ets_delete_table(Ixt),
+    ?ets_delete_table(Ixt),
     del_index_info(Tab, Pos),
     mnesia_lib:unset({Tab, {index, Pos}}).
 

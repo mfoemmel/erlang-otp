@@ -92,9 +92,7 @@ void *ddll_open(full_name)
 /* 
  * Find a symbol in the shared object
  */
-uint32 *ddll_sym(handle, func_name)
-     void *handle;
-     char *func_name;
+void *ddll_sym(void *handle, char *func_name)
 {
 #if defined(HAVE_DLOPEN)
     return dlsym(handle, func_name);

@@ -1,0 +1,7 @@
+{application,webtool,
+	[{description,"Toolbar lookalike for the web"},
+	{vsn,"%VSN%"},
+	{modules,[webtool,webtool_sup]},
+	{registered,[web_tool,websup]},
+	{applications,[kernel,stdlib]}]}.
+	

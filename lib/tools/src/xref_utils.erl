@@ -27,7 +27,7 @@
 	 filename_to_application/1, select_last_application_version/1,
 	 split_filename/2, scan_directory/4, list_path/2]).
 
--export([predefined_functions/0, all_funfuns/0, is_funfun/3]).
+-export([predefined_functions/0, is_funfun/3, is_builtin/3]).
 
 -export([closure/1, components/1, condensation/1, path/2, use/2, call/2]).
 
@@ -47,12 +47,11 @@
 		keydelete/3, keysearch/3, keysort/2, last/1, map/2, 
 		member/2, reverse/1, sort/1]).
 
--import(xsets, 
-	[difference/2, domain/1, family_of_subsets/1,
-	 family_to_relation/1, from_external/2, from_list/1, 
-	 from_term/2, intersection/2, partition/2, relation/1, 
-	 relation_to_family/1, restriction/2, to_external/1, type/1, 
-	 usort/1]).
+-import(sofs, 
+	[difference/2, domain/1, family/1,
+	 family_to_relation/1, from_external/2, from_term/2, 
+	 intersection/2, partition/2, relation/1, relation_to_family/1, 
+	 restriction/2, set/1, to_external/1, type/1]).
 
 -include_lib("kernel/include/file.hrl").
 
@@ -61,11 +60,13 @@
 %%
 
 xset(L, T) when list (L) ->
-    from_external(usort(L), T);
+    from_external(lists:usort(L), T);
 xset(S, T) ->
     from_external(S, T).
 
 %% -> true | false | {error, ?MODULE, Reason}
+%is_directory(F) ->
+%    filelib:is_dir(F);
 is_directory(F) ->
     case file:read_file_info(F) of
 	{ok, Info} -> 
@@ -181,8 +182,8 @@ release_directory(Dir, UseLib, SubDir) ->
 %% one is returned as application directory rather than the directory
 %% itself.
 %%  
-select_application_directories([File|FileNames], Dir) ->
-    select_application_directories([File|FileNames], Dir, Dir /= [], []).
+select_application_directories(FileNames, Dir) ->
+    select_application_directories(FileNames, Dir, Dir /= [], []).
 
 %% filename_to_application(FileName) -> 
 %%          {ApplicationName,NumbericApplicationVersion}
@@ -286,21 +287,6 @@ list_dirs([], _I, _Exts, C, E) ->
 predefined_functions() ->
     [{module_info,0}, {module_info,1}].
 
-%% Returns functions that take functional arguments.
-all_funfuns() ->
-    [{erlang, apply, 2},
-     {erlang, apply, 3},
-     {erlang, spawn, 1},
-     {erlang, spawn, 2},
-     {erlang, spawn, 3},
-     {erlang, spawn, 4},
-     {erlang, spawn_link, 1},
-     {erlang, spawn_link, 2},
-     {erlang, spawn_link, 3},
-     {erlang, spawn_link, 4},
-     {erlang, spawn_opt, 4},
-     {erts_debug, apply, 4}].
-    
 %% Returns true if an MFA takes functional arguments.
 is_funfun(erlang, apply, 2) -> true;
 is_funfun(erlang, apply, 3) -> true;
@@ -316,7 +302,11 @@ is_funfun(erlang, spawn_opt, 4) -> true;
 is_funfun(erts_debug, apply, 4) -> true;
 is_funfun(_, _, _) -> false.
 
-%%% The following functions implements some of the operators recognized
+is_builtin(erts_debug, apply, 4) -> true;
+is_builtin(M, F, A) ->
+    erlang:is_builtin(M, F, A).
+
+%%% The following functions implement some of the operators recognized
 %%% in xref_compiler.erl.
 
 closure(S) ->
@@ -401,6 +391,8 @@ find_beam(Module) when atom(Module) ->
 	    {ok, File};
 	interpreted ->
 	    error({interpreted, Module});
+        cover_compiled ->
+	    error({cover_compiled, Module});
 	File ->
 	    {ok, File}
     end;
@@ -525,7 +517,7 @@ find_files([F | Fs], Dir, Recurse, Collect, Watch, L) ->
     L1 = case file_info(File) of
 	     {ok, {_, directory, readable, _}} when Recurse == true ->
 		 find_files_dir(File, Recurse, Collect, Watch, L);
-	     {ok, {_, directory, unreadable, _}} ->
+             {ok, {_, directory, _, _}} ->
 		 L;
 	     Info ->
 		 [B | EJU = {E,J,U}] = L,
@@ -617,7 +609,7 @@ split_options([O={Name,_} | Os], A, P, I, V) when atom(Name) ->
 split_options([O | Os], A, P, I, V) ->
     split_options(Os, A, P, [O | I], V);
 split_options([], A, P, I, V) ->
-    Atoms = to_external(from_list(A)),
+    Atoms = to_external(set(A)),
     Pairs = to_external(relation_to_family(relation(P))),
     option_values(V, Atoms, Pairs, I, []);
 split_options(O, A, P, I, V) ->
@@ -636,7 +628,7 @@ option_values([{Name, AllowedValues} | Os], A, P, I, Vs) ->
 	    option_values(Os, A, P, I, [[Default] | Vs])
     end;
 option_values([], A, P, Invalid, Values) ->
-    I2 = to_external(family_to_relation(family_of_subsets(P))),
+    I2 = to_external(family_to_relation(family(P))),
     {reverse(Values), Invalid ++ A ++ I2}.
 
 option_value(Name, [_Deflt, Fun], Vals, A, P, I, Vs, Os) when function(Fun) ->
@@ -649,15 +641,15 @@ option_value(Name, [_Deflt, Fun], Vals, A, P, I, Vs, Os) when function(Fun) ->
     end;
 option_value(Name, AllowedValues, Values, A, P, I, Vs, Os) ->
     P1 = keydelete(Name, 1, P),
-    VS = from_list(Values),
-    AVS = from_list(AllowedValues),
+    VS = set(Values),
+    AVS = set(AllowedValues),
     V1 = to_external(intersection(VS, AVS)),
     {V, NP} = case to_external(difference(VS, AVS)) of
 		  _ when AllowedValues == [] -> {Values,P1};
 		  [] -> {V1,P1};
 		  _ when length(AllowedValues) == 1 -> 
 		      {Values,P1};
-		  I1 -> {V1,[{Name,I1} | P1]}
+ 		  I1 -> {V1,[{Name,I1} | P1]}
 	      end,
     option_values(Os, A, NP, I, [V | Vs]).
 

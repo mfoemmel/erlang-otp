@@ -26,7 +26,13 @@
 	 restart/0,restart/1,restart/2,
 	 parse_query/1]).
 
--export([get_status/1,get_status/2,get_status/3,verbosity/3,verbosity/4]).
+-export([block/0,block/1,block/2,block/3,block/4,
+	 unblock/0,unblock/1,unblock/2]).
+
+-export([verbosity/3,verbosity/4]).
+-export([get_status/1,get_status/2,get_status/3,
+	 get_admin_state/0,get_admin_state/1,get_admin_state/2,
+	 get_usage_state/0,get_usage_state/1,get_usage_state/2]).
 
 -include("httpd.hrl").
 
@@ -146,10 +152,8 @@ stop(Pid) when pid(Pid) ->
 stop(Port) when integer(Port) ->
     stop(undefined,Port);
 stop(ConfigFile) when list(ConfigFile) ->
-    case httpd_conf:load(ConfigFile) of
-	{ok,ConfigList} ->
-	    Port = httpd_util:key1search(ConfigList,port,80),
-	    Addr = httpd_util:key1search(ConfigList,bind_address),
+    case get_addr_and_port(ConfigFile) of
+	{ok,Addr,Port} ->
 	    stop(Addr,Port);
 	Error ->
 	    Error
@@ -201,16 +205,13 @@ mrestart([H|T],Results) ->
 
 %% restart
 
-restart() ->
-  restart(8888).
+restart() -> restart(undefined,8888).
 
 restart(Port) when integer(Port) ->
     restart(undefined,Port);
 restart(ConfigFile) when list(ConfigFile) ->
-    case httpd_conf:load(ConfigFile) of
-	{ok,ConfigList} ->
-	    Port = httpd_util:key1search(ConfigList,port,80),
-	    Addr = httpd_util:key1search(ConfigList,bind_address),
+    case get_addr_and_port(ConfigFile) of
+	{ok,Addr,Port} ->
 	    restart(Addr,Port);
 	Error ->
 	    Error
@@ -218,14 +219,161 @@ restart(ConfigFile) when list(ConfigFile) ->
     
 
 restart(Addr,Port) when integer(Port) ->
-  Name = make_name(Addr,Port),
-  ?LOG("restart -> Name = ~p",[Name]),
-  case whereis(Name) of
-    Pid when pid(Pid) ->
-      httpd_manager:restart(Pid);
-    _ ->
-      not_started
-  end.
+    do_restart(Addr,Port).
+
+do_restart(Addr,Port) when integer(Port) -> 
+    Name = make_name(Addr,Port),
+    case whereis(Name) of
+	Pid when pid(Pid) ->
+	    httpd_manager:restart(Pid);
+	_ ->
+	    {error,not_started}
+    end.
+    
+
+%%% =========================================================
+%%% Function:    block/0, block/1, block/2, block/3, block/4
+%%%              block()
+%%%              block(Port)
+%%%              block(ConfigFile)
+%%%              block(Addr,Port)
+%%%              block(Port,Mode)
+%%%              block(ConfigFile,Mode)
+%%%              block(Addr,Port,Mode)
+%%%              block(ConfigFile,Mode,Timeout)
+%%%              block(Addr,Port,Mode,Timeout)
+%%% 
+%%% Returns:     ok | {error,Reason}
+%%%              
+%%% Description: This function is used to block an HTTP server.
+%%%              The blocking can be done in two ways, 
+%%%              disturbing or non-disturbing. Default is disturbing.
+%%%              When a HTTP server is blocked, all requests are rejected
+%%%              (status code 503).
+%%% 
+%%%              disturbing:
+%%%              By performing a disturbing block, the server
+%%%              is blocked forcefully and all ongoing requests
+%%%              are terminated. No new connections are accepted.
+%%%              If a timeout time is given then, on-going requests
+%%%              are given this much time to complete before the
+%%%              server is forcefully blocked. In this case no new 
+%%%              connections is accepted.
+%%% 
+%%%              non-disturbing:
+%%%              A non-disturbing block is more gracefull. No
+%%%              new connections are accepted, but the ongoing 
+%%%              requests are allowed to complete.
+%%%              If a timeout time is given, it waits this long before
+%%%              giving up (the block operation is aborted and the 
+%%%              server state is once more not-blocked).
+%%%
+%%% Types:       Port       -> integer()             
+%%%              Addr       -> {A,B,C,D} | string() | undefined
+%%%              ConfigFile -> string()
+%%%              Mode       -> disturbing | non_disturbing
+%%%              Timeout    -> integer()
+%%%
+block() -> block(undefined,8888,disturbing).
+
+block(Port) when integer(Port) -> 
+    block(undefined,Port,disturbing);
+
+block(ConfigFile) when list(ConfigFile) ->
+    case get_addr_and_port(ConfigFile) of
+	{ok,Addr,Port} ->
+	    block(Addr,Port,disturbing);
+	Error ->
+	    Error
+    end.
+
+block(Addr,Port) when integer(Port) -> 
+    block(Addr,Port,disturbing);
+
+block(Port,Mode) when integer(Port), atom(Mode) ->
+    block(undefined,Port,Mode);
+
+block(ConfigFile,Mode) when list(ConfigFile), atom(Mode) ->
+    case get_addr_and_port(ConfigFile) of
+	{ok,Addr,Port} ->
+	    block(Addr,Port,Mode);
+	Error ->
+	    Error
+    end.
+
+
+block(Addr,Port,disturbing) when integer(Port) ->
+    do_block(Addr,Port,disturbing);
+block(Addr,Port,non_disturbing) when integer(Port) ->
+    do_block(Addr,Port,non_disturbing);
+
+block(ConfigFile,Mode,Timeout) when list(ConfigFile), atom(Mode), integer(Timeout) ->
+    case get_addr_and_port(ConfigFile) of
+	{ok,Addr,Port} ->
+	    block(Addr,Port,Mode,Timeout);
+	Error ->
+	    Error
+    end.
+
+
+block(Addr,Port,non_disturbing,Timeout) when integer(Port), integer(Timeout) ->
+    do_block(Addr,Port,non_disturbing,Timeout);
+block(Addr,Port,disturbing,Timeout) when integer(Port), integer(Timeout) ->
+    do_block(Addr,Port,disturbing,Timeout).
+
+do_block(Addr,Port,Mode) when integer(Port), atom(Mode) -> 
+    Name = make_name(Addr,Port),
+    case whereis(Name) of
+	Pid when pid(Pid) ->
+	    httpd_manager:block(Pid,Mode);
+	_ ->
+	    {error,not_started}
+    end.
+    
+
+do_block(Addr,Port,Mode,Timeout) when integer(Port), atom(Mode) -> 
+    Name = make_name(Addr,Port),
+    case whereis(Name) of
+	Pid when pid(Pid) ->
+	    httpd_manager:block(Pid,Mode,Timeout);
+	_ ->
+	    {error,not_started}
+    end.
+    
+
+%%% =========================================================
+%%% Function:    unblock/0, unblock/1, unblock/2
+%%%              unblock()
+%%%              unblock(Port)
+%%%              unblock(ConfigFile)
+%%%              unblock(Addr,Port)
+%%%              
+%%% Description: This function is used to reverse a previous block 
+%%%              operation on the HTTP server.
+%%%
+%%% Types:       Port       -> integer()             
+%%%              Addr       -> {A,B,C,D} | string() | undefined
+%%%              ConfigFile -> string()
+%%%
+unblock()                        -> unblock(undefined,8888).
+unblock(Port) when integer(Port) -> unblock(undefined,Port);
+
+unblock(ConfigFile) when list(ConfigFile) ->
+    case get_addr_and_port(ConfigFile) of
+	{ok,Addr,Port} ->
+	    unblock(Addr,Port);
+	Error ->
+	    Error
+    end.
+
+unblock(Addr,Port) when integer(Port) -> 
+    Name = make_name(Addr,Port),
+    case whereis(Name) of
+	Pid when pid(Pid) ->
+	    httpd_manager:unblock(Pid);
+	_ ->
+	    {error,not_started}
+    end.
 
 
 verbosity(Port,Who,Verbosity) ->
@@ -236,6 +384,133 @@ verbosity(Addr,Port,Who,Verbosity) ->
     case whereis(Name) of
 	Pid when pid(Pid) ->
 	    httpd_manager:verbosity(Pid,Who,Verbosity);
+	_ ->
+	    not_started
+    end.
+
+
+%%% =========================================================
+%%% Function:    get_admin_state/0, get_admin_state/1, get_admin_state/2
+%%%              get_admin_state()
+%%%              get_admin_state(Port)
+%%%              get_admin_state(Addr,Port)
+%%%              
+%%% Returns:     {ok,State} | {error,Reason}
+%%%              
+%%% Description: This function is used to retrieve the administrative 
+%%%              state of the HTTP server.
+%%%
+%%% Types:       Port    -> integer()             
+%%%              Addr    -> {A,B,C,D} | string() | undefined
+%%%              State   -> unblocked | shutting_down | blocked
+%%%              Reason  -> term()
+%%%
+get_admin_state()                        -> get_admin_state(undefined,8888).
+get_admin_state(Port) when integer(Port) -> get_admin_state(undefined,Port);
+
+get_admin_state(ConfigFile) when list(ConfigFile) ->
+    case get_addr_and_port(ConfigFile) of
+	{ok,Addr,Port} ->
+	    unblock(Addr,Port);
+	Error ->
+	    Error
+    end.
+
+get_admin_state(Addr,Port) when integer(Port) -> 
+    Name = make_name(Addr,Port),
+    case whereis(Name) of
+	Pid when pid(Pid) ->
+	    httpd_manager:get_admin_state(Pid);
+	_ ->
+	    {error,not_started}
+    end.
+
+
+
+%%% =========================================================
+%%% Function:    get_usage_state/0, get_usage_state/1, get_usage_state/2
+%%%              get_usage_state()
+%%%              get_usage_state(Port)
+%%%              get_usage_state(Addr,Port)
+%%%              
+%%% Returns:     {ok,State} | {error,Reason}
+%%%              
+%%% Description: This function is used to retrieve the usage 
+%%%              state of the HTTP server.
+%%%
+%%% Types:       Port    -> integer()             
+%%%              Addr    -> {A,B,C,D} | string() | undefined
+%%%              State   -> idle | active | busy
+%%%              Reason  -> term()
+%%%
+get_usage_state()                        -> get_usage_state(undefined,8888).
+get_usage_state(Port) when integer(Port) -> get_usage_state(undefined,Port);
+
+get_usage_state(ConfigFile) when list(ConfigFile) ->
+    case get_addr_and_port(ConfigFile) of
+	{ok,Addr,Port} ->
+	    unblock(Addr,Port);
+	Error ->
+	    Error
+    end.
+
+get_usage_state(Addr,Port) when integer(Port) -> 
+    Name = make_name(Addr,Port),
+    case whereis(Name) of
+	Pid when pid(Pid) ->
+	    httpd_manager:get_usage_state(Pid);
+	_ ->
+	    {error,not_started}
+    end.
+
+
+
+%%% =========================================================
+%% Function:    get_status(ConfigFile)        -> Status
+%%              get_status(Port)              -> Status
+%%              get_status(Addr,Port)         -> Status
+%%              get_status(Port,Timeout)      -> Status
+%%              get_status(Addr,Port,Timeout) -> Status
+%%
+%% Arguments:   ConfigFile -> string()  
+%%                            Configuration file from which Port and 
+%%                            BindAddress will be extracted.
+%%              Addr       -> {A,B,C,D} | string()
+%%                            Bind Address of the http server
+%%              Port       -> integer()
+%%                            Port number of the http server
+%%              Timeout    -> integer()
+%%                            Timeout time for the call
+%%
+%% Returns:     Status -> list()
+%%
+%% Description: This function is used when the caller runs in the 
+%%              same node as the http server or if calling with a 
+%%              program such as erl_call (see erl_interface).
+%% 
+
+get_status(ConfigFile) when list(ConfigFile) ->
+    case get_addr_and_port(ConfigFile) of
+	{ok,Addr,Port} ->
+	    get_status(Addr,Port);
+	Error ->
+	    Error
+    end;
+
+get_status(Port) when integer(Port) ->
+    get_status(undefined,Port,5000).
+
+get_status(Port,Timeout) when integer(Port), integer(Timeout) ->
+    get_status(undefined,Port,Timeout);
+
+get_status(Addr,Port) when list(Addr), integer(Port) ->
+    get_status(Addr,Port,5000).
+
+get_status(Addr,Port,Timeout) when integer(Port) ->
+    Name = make_name(Addr,Port), 
+    case whereis(Name) of
+	Pid when pid(Pid) ->
+	    httpd_manager:get_status(Pid,Timeout);
 	_ ->
 	    not_started
     end.
@@ -260,54 +535,16 @@ foreach([KeyValue|Rest]) ->
   end.
 
 
-%% Function:    get_status(ConfigFile)        -> Status
-%%              get_status(Port)              -> Status
-%%              get_status(Addr,Port)         -> Status
-%%              get_status(Port,Timeout)      -> Status
-%%              get_status(Addr,Port,Timeout) -> Status
-%%
-%% Arguments:   ConfigFile -> string()  
-%%                            Configuration file from which Port and 
-%%                            BindAddress will be extracted.
-%%              Addr       -> {A,B,C,D} | string()
-%%                            Bind Address of the http server
-%%              Port       -> integer()
-%%                            Port number of the http server
-%%              Timeout    -> integer()
-%%                            Timeout time for the call
-%%
-%% Returns:     Status -> list()
-%%
-%% Description: This function is used when the caller runs in the 
-%%              same node as the http server or if calling with a 
-%%              program such as erl_call (see erl_interface).
-%% 
-get_status(ConfigFile) when list(ConfigFile) ->
+%% get_addr_and_port
+
+get_addr_and_port(ConfigFile) ->
     case httpd_conf:load(ConfigFile) of
 	{ok,ConfigList} ->
 	    Port = httpd_util:key1search(ConfigList,port,80),
 	    Addr = httpd_util:key1search(ConfigList,bind_address),
-	    get_status(Addr,Port);
+	    {ok,Addr,Port};
 	Error ->
 	    Error
-    end;
-
-get_status(Port) when integer(Port) ->
-    get_status(undefined,Port,5000).
-
-get_status(Port,Timeout) when integer(Port), integer(Timeout) ->
-    get_status(undefined,Port,Timeout);
-
-get_status(Addr,Port) when list(Addr), integer(Port) ->
-    get_status(Addr,Port,5000).
-
-get_status(Addr,Port,Timeout) when integer(Port) ->
-    Name = make_name(Addr,Port), 
-    case whereis(Name) of
-	Pid when pid(Pid) ->
-	    httpd_manager:get_status(Pid,Timeout);
-	_ ->
-	    not_started
     end.
 
 

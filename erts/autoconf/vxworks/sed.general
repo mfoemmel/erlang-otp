@@ -21,13 +21,17 @@ s|@GCCLIB@|libgcc.a|
 s|@DEFS@||
 s|@DEXPORT@||
 s|@DCFLAGS@||
-s|@BEAM_MODE@|-DBEAM_GCC|
 s|@THR_DEFS@||
 s|@THR_LIBS@||
 s|@cc_root@|/clearcase/otp/|
 # Define VxWorks even though cross-compiling. 
 s|@HCFLAGS@|-DVXWORKS|
 s|@HCLIBS@||
+
+# Conditional inclusion of applications
+s|@HIPE_APP@||
+s|@SSL_APP@|ssl|
+s|@CRYPTO_APP@|crypto|
 
 # The target tools prefix, prepended to all cc,ld,as etc commands
 s|@TTPREFIX@|GCC_EXEC_PREFIX=@WIND_BASE@/host/@HOST_TYPE@/lib/gcc-lib/ @WIND_BASE@/host/@HOST_TYPE@/bin/|
@@ -38,7 +42,7 @@ s|@INSTALL@|/usr/ucb/install -c|
 s|@INSTALL_PROGRAM@|${INSTALL}|
 s|@INSTALL_DATA@|${INSTALL} -m 644|
 s|@INSTALL_DIR@|$(INSTALL) -d|
-s|@OSTYPE@|vxworks|
+s|@ERLANG_OSTYPE@|vxworks|
 s|@vxworks_reclaim@|reclaim.h|
 s|@os_mon_programs@||
 s|@erlexec@|erl.exec|
@@ -47,6 +51,7 @@ s|@EMU_LIBOBJS@||
 # General CFLAGS
 s|@GENERAL_CFLAGS@|-DHAVE_LOCALTIME_R -DHAVE_GMTIME_R -DENABLE_ELIB_MALLOC -DELIB_HEAP_USER -DELIB_SORTED_BLOCKS -DWORDS_BIGENDIAN|
 s|@WFLAGS@||
+s|@HIPE_ENABLED@||
 
 # What is this anyway?
 # Disable it and see what breaks.

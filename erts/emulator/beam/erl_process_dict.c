@@ -28,7 +28,7 @@
 #include "global.h"
 #include "erl_process.h" /* Will include erl_process_dict.h */
 #include "error.h"
-#include "driver.h"
+#include "erl_driver.h"
 #include "bif.h"
 #include "big.h"
 #include "dist.h"

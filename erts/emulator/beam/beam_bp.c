@@ -65,12 +65,16 @@ Hash erts_bp_table;
 ** Helpers
 */
 static int do_erts_set_break(Module *m, Eterm mfa[3], int specified,
-			     Binary *match_spec);
-static int do_erts_clear_break(Module *m, Eterm mfa[3], int specified);
+			     Binary *match_spec, Uint break_op);
+static int do_erts_clear_break(Module *m, Eterm mfa[3],
+			       int specified, Uint break_op);
 
 /*
 ** Table access functions
 */
+static int erts_set_break(Eterm mfa[3], int specified,
+		   Binary *match_spec, Uint break_op);
+static int erts_clear_break(Eterm mfa[3], int specified, Uint break_op);
 static TraceBpData *erts_get_bp_data(Uint *pc);
 static void erts_put_bp_data(TraceBpData *bpd);
 static void erts_remove_bp_data(Uint *pc);
@@ -106,8 +110,21 @@ void erts_bp_init(void)
     hash_init(&erts_bp_table, "breakpoint_data", BP_INITIAL_SIZE, bp_hf);
 }
 
-int erts_set_break(Eterm mfa[3], int specified,
-		   Binary *match_spec)
+int 
+erts_set_trace_break(Eterm mfa[3], int specified, Binary *match_spec)
+{
+    return erts_set_break(mfa, specified, match_spec,
+			  (Uint) BeamOp(op_i_trace_breakpoint));
+}
+
+int 
+erts_set_debug_break(Eterm mfa[3], int specified)
+{
+    return erts_set_break(mfa, specified, NULL, (Uint) BeamOp(op_i_debug_breakpoint));
+}
+
+static int 
+erts_set_break(Eterm mfa[3], int specified, Binary *match_spec, Eterm break_op)
 {
     Module *modp;
     int num_processed = 0;
@@ -117,20 +134,32 @@ int erts_set_break(Eterm mfa[3], int specified,
 	while ((current = index_iter(&module_table,current)) >= 0) {
 	    if ((modp = module_code(current)) != NULL) {
 		num_processed += do_erts_set_break(modp, mfa, 
-						   specified, match_spec);
+						   specified, match_spec, break_op);
 	    }
 	}
     } else {
 	/* Process a single module */
 	if ((modp = erts_get_module(mfa[0])) != NULL) {
 	    num_processed += do_erts_set_break(modp, mfa, 
-					       specified, match_spec);
+					       specified, match_spec, break_op);
 	}	
     }
     return num_processed;
 }
+int
+erts_clear_trace_break(Eterm mfa[3], int specified)
+{
+    return erts_clear_break(mfa, specified, (Uint) BeamOp(op_i_trace_breakpoint));
+}
 
-int erts_clear_break(Eterm mfa[3], int specified) 
+int
+erts_clear_debug_break(Eterm mfa[3], int specified)
+{
+    return erts_clear_break(mfa, specified, (Uint) BeamOp(op_i_debug_breakpoint));
+}
+
+static int
+erts_clear_break(Eterm mfa[3], int specified, Uint break_op) 
 {
     int num_processed = 0;
     Module *modp;
@@ -138,13 +167,13 @@ int erts_clear_break(Eterm mfa[3], int specified)
 	int current = -1;
 	while ((current = index_iter(&module_table,current)) >= 0) {
 	    if ((modp = module_code(current)) != NULL) {
-		num_processed += do_erts_clear_break(modp, mfa, specified);
+		num_processed += do_erts_clear_break(modp, mfa, specified, break_op);
 	    }
 	}
     } else {
 	/* Process a single module */
 	if ((modp = erts_get_module(mfa[0])) != NULL) {
-	    num_processed += do_erts_clear_break(modp, mfa, specified);
+	    num_processed += do_erts_clear_break(modp, mfa, specified, break_op);
 	}	
     }
     return num_processed;
@@ -152,7 +181,7 @@ int erts_clear_break(Eterm mfa[3], int specified)
 
 void erts_clear_module_break(Module *modp)
 {
-    (void) do_erts_clear_break(modp,NULL,0);
+    (void) do_erts_clear_break(modp, NULL, 0, 0);
 }
 
 Uint erts_process_break(Process *p, Uint *pc, Eterm *mfa, 
@@ -190,7 +219,7 @@ Uint *erts_find_local_func(Eterm mfa[3])
 
 int erts_is_local_tracepoint(Uint *pc, Binary **match_spec_ret)
 {
-    if (*pc != (Uint) BeamOp(op_i_breakpoint)) {
+    if (*pc != (Uint) BeamOp(op_i_trace_breakpoint)) {
 	return 0;
     }
     if (match_spec_ret != NULL) {
@@ -205,7 +234,7 @@ int erts_is_local_tracepoint(Uint *pc, Binary **match_spec_ret)
 ** Local helpers
 */
 static int do_erts_set_break(Module *m, Eterm mfa[3], int specified,
-			    Binary *match_spec) 
+			    Binary *match_spec, Uint break_op) 
 {
     Uint** code_base;
     Uint* code_ptr;
@@ -224,11 +253,20 @@ static int do_erts_set_break(Module *m, Eterm mfa[3], int specified,
 	code_ptr = code_base[MI_FUNCTIONS+i];
 	if ((specified < 2 || mfa[1] == ((Eterm) code_ptr[3])) &&
 	    (specified < 3 || ((int) mfa[2]) == ((int) code_ptr[4]))) {
+#ifdef HIPE
+	    /*
+	     * Currently no trace support for native code.
+	     */
+	    if (code_ptr[1] != 0) {
+		continue;
+	    }
+#endif
+
 	    bpd.position = code_ptr + 5;
 	    /* Insert only if it's not already a breakpoint */
-	    if (*(bpd.position) != (Uint) BeamOp(op_i_breakpoint)) {
+	    if (*(bpd.position) != break_op) {
 		bpd.orig_instr = *bpd.position;
-		*(bpd.position) = (Uint) BeamOp(op_i_breakpoint);
+		*(bpd.position) = break_op;
 		erts_put_bp_data(&bpd);
 		++(code_base[MI_NUM_BREAKPOINTS]);
 	    } else {
@@ -244,7 +282,8 @@ static int do_erts_set_break(Module *m, Eterm mfa[3], int specified,
     return num_processed;
 }
 
-static int do_erts_clear_break(Module *m, Eterm mfa[3], int specified) 
+static int 
+do_erts_clear_break(Module *m, Eterm mfa[3], int specified, Uint break_op) 
 {
     Uint** code_base;
     Uint* code_ptr;
@@ -264,7 +303,8 @@ static int do_erts_clear_break(Module *m, Eterm mfa[3], int specified)
 	if ((specified < 2 || mfa[1] == ((Eterm) code_ptr[3])) &&
 	    (specified < 3 || ((int) mfa[2]) == ((int) code_ptr[4]))) {
 	    pc = code_ptr + 5;
-	    if ((bp = erts_get_bp_data(pc)) != NULL) {
+	    if ((break_op == 0 || *pc == break_op) &&
+		(bp = erts_get_bp_data(pc)) != NULL) {
 		*pc = bp->orig_instr;
 		erts_remove_bp_data(pc);
 		ASSERT(code_base[MI_NUM_BREAKPOINTS] > 0);

@@ -35,7 +35,7 @@
 	 q/2, q/3, info/1, info/2, info/3, 
 	 update/1, update/2, 
 	 forget/1, forget/2, variables/1, variables/2,
-	 analyze/2, analyze/3,
+	 analyze/2, analyze/3, analyse/2, analyse/3,
 	 get_default/1, get_default/2, 
 	 set_default/2, set_default/3]).
 
@@ -47,7 +47,7 @@
 
 -import(lists, [foldl/3, keydelete/3, keysearch/3]).
 
--import(xsets, [to_external/1, is_set/1]).
+-import(sofs, [to_external/1, is_sofs_set/1]).
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -244,6 +244,12 @@ variables(Name) ->
 variables(Name, Options) ->
     gen_server:call(Name, {variables, Options}, infinity).
 
+analyse(Name, What) ->
+    gen_server:call(Name, {analyze, What}, infinity).
+
+analyse(Name, What, Options) ->
+    gen_server:call(Name, {analyze, What, Options}, infinity).
+
 analyze(Name, What) ->
     gen_server:call(Name, {analyze, What}, infinity).
 
@@ -302,7 +308,7 @@ init(Args) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 handle_call(stop, _From, State) ->
-    {stop, normal, State};
+    {stop, normal, stopped, State};
 handle_call({add_release, Dir}, _From, State) ->
     case xref_base:add_release(State, Dir) of
 	{ok, ReleaseName, NewState} ->
@@ -543,9 +549,8 @@ do_functions_analysis(FFun) ->
 		 {ok, _, S} -> S;
 		 Error2 -> throw(Error2)
 	     end,
-    {{ok, Undef}, State4} = 
-	xref_base:analyze(State3, undefined_function_calls),
-    {{ok, Unused}, _} = xref_base:analyze(State4, locals_not_used),
+    {Undef, State4} = do_analysis(State3, undefined_function_calls),
+    {Unused, _} = do_analysis(State4, locals_not_used),
     [{undefined,to_external(Undef)}, {unused,to_external(Unused)}].
 
 do_modules_analysis(FFun) ->
@@ -557,11 +562,19 @@ do_modules_analysis(FFun) ->
 		 {ok, _, S} -> S;
 		 Error2 -> throw(Error2)
 	     end,
-    {{ok, Undef}, _} = xref_base:analyze(State3, undefined_functions),
+    {Undef, _} = do_analysis(State3, undefined_functions),
     [{undefined,to_external(Undef)}].
 
+do_analysis(State, Analysis) ->
+    case xref_base:analyze(State, Analysis) of
+	{{ok, Reply}, NewState} ->
+	    {Reply, NewState};
+	{Error, _} ->
+	    throw(Error)
+    end.
+
 unsetify(Reply={ok, X}) ->
-    case is_set(X) of
+    case is_sofs_set(X) of
 	true -> {ok, to_external(X)};
 	false -> Reply
     end;

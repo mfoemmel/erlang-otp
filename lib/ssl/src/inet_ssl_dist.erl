@@ -20,11 +20,11 @@
 %% Handles the connection setup phase with other Erlang nodes.
 
 -export([childspecs/0, listen/1, accept/1, accept_connection/5,
-	 setup/4, close/1, select/1, is_node_name/1]).
+	 setup/5, close/1, select/1, is_node_name/1]).
 
 %% internal exports
 
--export([accept_loop/2,do_accept/6,do_setup/5, getstat/1,tick/1]).
+-export([accept_loop/2,do_accept/6,do_setup/6, getstat/1,tick/1]).
 
 -import(error_logger,[error_msg/2]).
 
@@ -155,11 +155,7 @@ do_accept(Kernel, AcceptPid, Socket, MyNode, Allowed, SetupTime) ->
 		      this_node = MyNode,
 		      socket = Socket,
 		      timer = Timer,
-		      this_flags = ?DFLAG_PUBLISHED bor
-		      ?DFLAG_ATOM_CACHE bor
-		      ?DFLAG_EXTENDED_REFERENCES bor
-		      ?DFLAG_DIST_MONITOR bor
-		      ?DFLAG_FUN_TAGS,
+		      this_flags = 0,
 		      allowed = Allowed,
 		      f_send = fun(S,D) -> ssl_prim:send(S,D) end,
 		      f_recv = fun(S,N,T) -> ssl_prim:recv(S,N,T) 
@@ -172,7 +168,8 @@ do_accept(Kernel, AcceptPid, Socket, MyNode, Allowed, SetupTime) ->
 		      f_setopts_post_nodeup = 
 		      fun(S) ->
 			      ssl_prim:setopts(S, 
-					       [{active, true}])
+					       [{deliver, port},
+						{active, true}])
 		      end,
 		      f_getll = fun(S) ->
 					ssl_prim:getll(S)
@@ -207,14 +204,15 @@ get_remote_id(Socket, Node) ->
 %% Performs the handshake with the other side.
 %% ------------------------------------------------------------
 
-setup(Node, MyNode, LongOrShortNames,SetupTime) ->
+setup(Node, Type, MyNode, LongOrShortNames,SetupTime) ->
     spawn_link(?MODULE, do_setup, [self(),
 				   Node,
+				   Type,
 				   MyNode,
 				   LongOrShortNames,
 				   SetupTime]).
 
-do_setup(Kernel, Node, MyNode, LongOrShortNames,SetupTime) ->
+do_setup(Kernel, Node, Type, MyNode, LongOrShortNames,SetupTime) ->
     process_flag(priority, max),
     ?trace("~p~n",[{inet_ssl_dist,self(),setup,Node}]),
     [Name, Address] = splitnode(Node, LongOrShortNames),
@@ -237,11 +235,7 @@ do_setup(Kernel, Node, MyNode, LongOrShortNames,SetupTime) ->
 			      this_node = MyNode,
 			      socket = Socket,
 			      timer = Timer,
-			      this_flags = ?DFLAG_PUBLISHED bor
-			      ?DFLAG_ATOM_CACHE bor
-			      ?DFLAG_EXTENDED_REFERENCES bor
-			      ?DFLAG_DIST_MONITOR bor
-			      ?DFLAG_FUN_TAGS,
+			      this_flags = 0,
 			      other_version = Version,
 			      f_send = fun(S,D) -> 
 					       ssl_prim:send(S,D) 
@@ -259,7 +253,7 @@ do_setup(Kernel, Node, MyNode, LongOrShortNames,SetupTime) ->
 			      fun(S) ->
 				      ssl_prim:setopts
 					(S, 
-					 [{active, true}])
+					 [{deliver, port},{active, true}])
 			      end,
 			      f_getll = fun(S) ->
 						ssl_prim:getll(S)
@@ -273,7 +267,8 @@ do_setup(Kernel, Node, MyNode, LongOrShortNames,SetupTime) ->
 				   family = inet}
 			      end,
 			      mf_tick = {?MODULE, tick},
-			      mf_getstat = {?MODULE,getstat}
+			      mf_getstat = {?MODULE,getstat},
+			      request_type = Type
 			     },
 			    dist_util:handshake_we_started(HSData);
 			_ ->

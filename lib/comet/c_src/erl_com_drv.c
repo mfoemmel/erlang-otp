@@ -67,6 +67,7 @@
 #endif
 
 #include "ei.h"
+#include "ei_format.h"
 
 #include "erl_com_drv.h"
 
@@ -79,13 +80,6 @@ typedef int ErlDrvPort;
 typedef void* ErlDrvData;
 #endif
 
-/* a dynamic version of ei */
-typedef struct x_ei_buff_TAG {
-    char* buff;
-    int buffsz;
-    int index;
-} x_ei_buff;
-
 /* state for erlang thread, one of these for each thread */
 typedef struct erl_com_thread_data_TAG {
     HANDLE emulator_event;	/* event used for driver_select */
@@ -93,7 +87,7 @@ typedef struct erl_com_thread_data_TAG {
     unsigned thread;		/* the thread handle (from _beginthreadex) */
     int op;			/* operation */
     int thread_n;		/* index of thread in erl_data */
-    x_ei_buff x;		/* buffer */
+    ei_x_buff x;		/* buffer */
     int stop;			/* flag to stop a thread */
     void** com_i_ptrs;		/* the interfaces held in the thread */
     int n_com_i_ptrs;
@@ -393,119 +387,6 @@ static erl_com_thread_data* new_erl_com_thread(ErlDrvPort port)
     return ret;
 }
 
-/*
- * yet another dynamic-buffer version of ei 
- */
-enum { X_EI_EXTRA = 100 };
-
-static int x_fix_buff(x_ei_buff* x, int szneeded)
-{
-    int sz = szneeded + X_EI_EXTRA;
-    if (sz > x->buffsz) {
-	sz += X_EI_EXTRA;	/* to avoid reallocating each and every time */
-	x->buffsz = sz;
-	x->buff = driver_realloc(x->buff, sz);
-    }
-    return x->buff != NULL;
-}
-
-static int x_ei_encode_string(x_ei_buff* x, const char* s)
-{
-    int i = x->index;
-    ei_encode_string(NULL, &i, s);
-    if (!x_fix_buff(x, i))
-	return FALSE;
-    return ei_encode_string(x->buff, &x->index, s);
-}
-
-static char* get_erl_str(OLECHAR* oles);
-
-static int x_ei_encode_and_free_bstr(x_ei_buff* x, BSTR* b)
-{    
-    int r;
-    char* s;
-    if (b == NULL) {
-	return -1; }
-    s = get_erl_str(*b);
-    SysFreeString(*b);
-    *b = NULL;
-    r = x_ei_encode_string(x, s);
-    driver_free(s);
-    return r;
-}
-
-static int x_ei_encode_long(x_ei_buff* x, long n)
-{
-    int i = x->index;
-    ei_encode_long(NULL, &i, n);
-    if (!x_fix_buff(x, i))
-	return FALSE;
-    return ei_encode_long(x->buff, &x->index, n);
-}
-
-static int x_ei_encode_ulong(x_ei_buff* x, unsigned long n)
-{
-    int i = x->index;
-    ei_encode_ulong(NULL, &i, n);
-    if (!x_fix_buff(x, i))
-	return FALSE;
-    return ei_encode_ulong(x->buff, &x->index, n);
-}
-
-x_ei_encode_double(x_ei_buff* x, double dbl)
-{
-    int i = x->index;
-    ei_encode_double(NULL, &i, dbl);
-    if (!x_fix_buff(x, i))
-	return FALSE;
-    return ei_encode_double(x->buff, &x->index, dbl);
-}
-
-static int x_ei_encode_list_header(x_ei_buff* x, long n)
-{
-    int i = x->index;
-    ei_encode_list_header(NULL, &i, n);
-    if (!x_fix_buff(x, i))
-	return FALSE;
-    return ei_encode_list_header(x->buff, &x->index, n);
-}
-
-static int x_ei_encode_empty_list(x_ei_buff* x)
-{
-    int i = x->index;
-    ei_encode_empty_list(NULL, &i);
-    if (!x_fix_buff(x, i))
-	return FALSE;
-    return ei_encode_empty_list(x->buff, &x->index);
-}
-
-static int x_ei_encode_version(x_ei_buff* x)
-{
-    int i = x->index;
-    ei_encode_version(NULL, &i);
-    if (!x_fix_buff(x, i))
-	return FALSE;
-    return ei_encode_version(x->buff, &x->index);
-}
-
-static int x_ei_encode_tuple_header(x_ei_buff* x, long n)
-{
-    int i = x->index;
-    ei_encode_tuple_header(NULL, &i, n);
-    if (!x_fix_buff(x, i))
-	return FALSE;
-    return ei_encode_tuple_header(x->buff, &x->index, n);
-}
-
-static int x_ei_encode_atom(x_ei_buff* x, const char* s)
-{
-    int i = x->index;
-    ei_encode_atom(NULL, &i, s);
-    if (!x_fix_buff(x, i))
-	return FALSE;
-    return ei_encode_atom(x->buff, &x->index, s);
-}
-
 #if PORT_DRIVER
 /*
  ** Close a port
@@ -658,10 +539,42 @@ static HRESULT create_obj(erl_com_thread_data* d, BSTR clsid, BSTR refiid, CLSCT
     *i = -1;
     if (SUCCEEDED(r)) {
 	r = CoCreateInstance(&clsid_, NULL, clsctx, &riid, &p);
-	if (SUCCEEDED(r)) {
+	if (SUCCEEDED(r))
 	    *i = add_interface(d, p);
+    }
+    return r;
+}
+
+/* get and bind to com object, and add to interface list */
+static HRESULT get_obj(erl_com_thread_data* d, BSTR name, BSTR refiid, int* i)
+{
+    LPVOID p;
+    IID riid;
+    HRESULT r;
+
+    *i = -1;
+    if (SysStringLen(name) == 0) {
+	r = IIDFromString(refiid, &riid);
+	if (FAILED(r)) 
+	    r = CLSIDFromProgID(refiid, &riid);
+	if (SUCCEEDED(r))
+	    r = GetActiveObject(&riid, NULL, (IUnknown**)&p);
+    } else {
+	if (SysStringLen(refiid) == 0)
+	    riid = IID_IUnknown;
+	else
+	    r = IIDFromString(refiid, &riid);
+	if (SUCCEEDED(r)) {
+	    BIND_OPTS bo;
+	    bo.cbStruct = sizeof(BIND_OPTS);
+	    bo.grfFlags = 0;
+	    bo.grfMode = STGM_READWRITE;
+	    bo.dwTickCountDeadline = 0;
+	    r = CoGetObject(name, &bo, &riid, &p);
 	}
     }
+    if (SUCCEEDED(r))
+	*i = add_interface(d, p);
     return r;
 }
 
@@ -722,6 +635,22 @@ static void init_dates()
     VarDateFromUdate(&s, 0, &date_1970);
 }
 
+static char* get_erl_str(OLECHAR* oles);
+
+static int ei_x_encode_and_free_bstr(ei_x_buff* x, BSTR* b)
+{    
+    int r;
+    char* s;
+    if (b == NULL) {
+	return -1; }
+    s = get_erl_str(*b);
+    SysFreeString(*b);
+    *b = NULL;
+    r = ei_x_encode_string(x, s);
+    driver_free(s);
+    return r;
+}
+
 static const char* bools[] = {"false", "true"};
 static const char vt_error[] = "error";
 static char com_null[] = "null";
@@ -735,50 +664,50 @@ static void encode_variant(erl_com_thread_data* d, VARIANT* v)
     char b[50];
     OLECHAR* oles;
     void* p;
-    x_ei_buff* x = &d->x;
+    ei_x_buff* x = &d->x;
     BOOL ref = (v->vt & VT_BYREF) != 0;
     switch (v->vt) {
     case VT_EMPTY:
-	x_ei_encode_empty_list(x);
+	ei_x_encode_empty_list(x);
 	break;
     case VT_UI1:
     case VT_UI1 | VT_BYREF:
 	u = ref ? *v->pbVal : v->bVal;
-	x_ei_encode_ulong(x, u);
+	ei_x_encode_ulong(x, u);
 	break;
     case VT_UI2:
     case VT_UI2 | VT_BYREF:
 	u = ref ? *v->puiVal : v->uiVal;
-	x_ei_encode_ulong(x, u);
+	ei_x_encode_ulong(x, u);
 	break;
     case VT_UINT:
     case VT_UI4:
     case VT_UINT | VT_BYREF:
     case VT_UI4 | VT_BYREF:
 	u = ref ? *v->pulVal : v->ulVal;
-	x_ei_encode_ulong(x, u);
+	ei_x_encode_ulong(x, u);
 	break;
     case VT_I1:
     case VT_I1 | VT_BYREF:
 	l = ref ? *v->pcVal : v->cVal;
-	x_ei_encode_long(x, l);
+	ei_x_encode_long(x, l);
 	break;
     case VT_I2:
     case VT_I2 | VT_BYREF:
 	l = ref ? *v->piVal : v->iVal;
-	x_ei_encode_long(x, l);
+	ei_x_encode_long(x, l);
 	break;
     case VT_INT:
     case VT_I4:
     case VT_INT | VT_BYREF:
     case VT_I4 | VT_BYREF:
 	l = ref ? *v->plVal : v->lVal;
-	x_ei_encode_long(x, l);
+	ei_x_encode_long(x, l);
 	break;
     case VT_R4:
     case VT_R4 | VT_BYREF:
 	dbl = ref ? *v->pfltVal : v->fltVal;
-	x_ei_encode_double(x, dbl);
+	ei_x_encode_double(x, dbl);
 	break;
     case VT_VARIANT:
     case VT_CY:
@@ -790,48 +719,48 @@ static void encode_variant(erl_com_thread_data* d, VARIANT* v)
     case VT_R8:
     case VT_R8 | VT_BYREF:
 	dbl = ref ? *v->pdblVal : v->dblVal;
-	x_ei_encode_double(x, dbl);
+	ei_x_encode_double(x, dbl);
 	break;
     case VT_BSTR:
     case VT_BSTR | VT_BYREF:
 	oles = ref ? *v->pbstrVal : v->bstrVal;
-	x_ei_encode_and_free_bstr(x, &oles);
+	ei_x_encode_and_free_bstr(x, &oles);
 	break;
     case VT_BOOL:
     case VT_BOOL | VT_BYREF:
 	l = ref ? *v->pboolVal : v->boolVal;
 	l &= 1;
-	x_ei_encode_atom(x, bools[l]);
+	ei_x_encode_atom(x, bools[l]);
 	break;
     case VT_NULL:
 	l = ref ? *v->pboolVal : v->boolVal;
 	l &= 1;
-	x_ei_encode_atom(x, com_null);
+	ei_x_encode_atom(x, com_null);
 	break;
     case VT_DATE:
     case VT_DATE | VT_BYREF:
 	dbl = ref ? *v->pdate : v->date;
-	x_ei_encode_tuple_header(x, 3);
+	ei_x_encode_tuple_header(x, 3);
 	dbl -= date_1970;
 	l = (long)(dbl / 1000000.0 * (24 * 60 * 60));
 	dbl -= l * 1000000.0 / (24 * 60 * 60);
-	x_ei_encode_long(x, l);
+	ei_x_encode_long(x, l);
 	l = (long)(dbl * (24 * 60 * 60));
-	x_ei_encode_long(x, l);
+	ei_x_encode_long(x, l);
 	dbl -= l / (24 * 60 * 60);
 	l = (long)(dbl / 1000000 / (24 * 60 * 60));
-	x_ei_encode_long(x, l);
+	ei_x_encode_long(x, l);
 	break;
     case VT_DISPATCH:	case VT_DISPATCH | VT_BYREF:
     case VT_UNKNOWN:	case VT_UNKNOWN | VT_BYREF:
 	p = ref ? *v->ppunkVal : v->punkVal;
-	x_ei_encode_long(x, add_interface(d, p));
+	ei_x_encode_long(x, add_interface(d, p));
 	break;
     case VT_ERROR:
     default:
 no_conv:
 	sprintf(b, "COMET unknown type %d", v->vt);
-	x_ei_encode_string(x, b);
+	ei_x_encode_string(x, b);
 	break;
     }
 }
@@ -857,11 +786,11 @@ static int my_decode_double(const char* buff, int* index, double* d)
 /* encode and return variant to gen_server */
 static void return_variant(VARIANT* res, erl_com_thread_data* d)
 {
-    x_ei_buff* x = &d->x;
+    ei_x_buff* x = &d->x;
     x->index = 0;
-    x_ei_encode_version(x);
-    x_ei_encode_tuple_header(x, 2);
-    x_ei_encode_long(x, d->thread_n);
+    ei_x_encode_version(x);
+    ei_x_encode_tuple_header(x, 2);
+    ei_x_encode_long(x, d->thread_n);
     encode_variant(d, res);
 }
 
@@ -869,14 +798,14 @@ static void return_variant(VARIANT* res, erl_com_thread_data* d)
 static void return_err(HRESULT r, int bad_param_no, erl_com_thread_data* d)
 {
     LPVOID msg;
-    x_ei_buff* x = &d->x;
+    ei_x_buff* x = &d->x;
     x->index = 0;
-    x_ei_encode_version(x);
-    x_ei_encode_tuple_header(x, 2);
-    x_ei_encode_long(x, d->thread_n);
-    x_ei_encode_tuple_header(x, 3+(bad_param_no!=-1));
-    x_ei_encode_atom(x, "com_error");
-    x_ei_encode_long(x, r);
+    ei_x_encode_version(x);
+    ei_x_encode_tuple_header(x, 2);
+    ei_x_encode_long(x, d->thread_n);
+    ei_x_encode_tuple_header(x, 3+(bad_param_no!=-1));
+    ei_x_encode_atom(x, "com_error");
+    ei_x_encode_long(x, r);
     FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | 
 		      FORMAT_MESSAGE_FROM_SYSTEM | 
 		      FORMAT_MESSAGE_IGNORE_INSERTS,
@@ -887,36 +816,36 @@ static void return_err(HRESULT r, int bad_param_no, erl_com_thread_data* d)
 		  0,
 		  NULL);
     if (msg == NULL) msg = "";
-    x_ei_encode_string(x, msg);
+    ei_x_encode_string(x, msg);
     if (bad_param_no != -1)
-	x_ei_encode_long(x, bad_param_no);
+	ei_x_encode_long(x, bad_param_no);
     LocalFree(msg);
 }
 
 /* encode and return COM error exception */
 static void return_exception(HRESULT r, BSTR bstrDescription, erl_com_thread_data* d)
 {
-    x_ei_buff* x = &d->x;
+    ei_x_buff* x = &d->x;
     x->index = 0;
-    x_ei_encode_version(x);
-    x_ei_encode_tuple_header(x, 2);
-    x_ei_encode_long(x, d->thread_n);
-    x_ei_encode_tuple_header(x, 3);
-    x_ei_encode_atom(x, "com_error");
-    x_ei_encode_ulong(x, r);
-    x_ei_encode_and_free_bstr(x, &bstrDescription);
+    ei_x_encode_version(x);
+    ei_x_encode_tuple_header(x, 2);
+    ei_x_encode_long(x, d->thread_n);
+    ei_x_encode_tuple_header(x, 3);
+    ei_x_encode_atom(x, "com_error");
+    ei_x_encode_ulong(x, r);
+    ei_x_encode_and_free_bstr(x, &bstrDescription);
 }
 
 
 /* encode and return int to gen_server */
 static void return_int(int i, erl_com_thread_data* d)
 {
-    x_ei_buff* x = &d->x;
+    ei_x_buff* x = &d->x;
     x->index = 0;
-    x_ei_encode_version(x);
-    x_ei_encode_tuple_header(x, 2);
-    x_ei_encode_long(x, d->thread_n);
-    x_ei_encode_long(x, i);
+    ei_x_encode_version(x);
+    ei_x_encode_tuple_header(x, 2);
+    ei_x_encode_long(x, d->thread_n);
+    ei_x_encode_long(x, i);
 }
 
 /* encode and return multiple out parameters in a list */
@@ -924,22 +853,22 @@ static void return_var_pars(DISPPARAMS* disp_pars,
 		     int n_results, erl_com_thread_data* d)
 {
     int i;
-    x_ei_buff* x = &d->x;
+    ei_x_buff* x = &d->x;
     UINT j;
     x->index = 0;
-    x_ei_encode_version(x);
-    x_ei_encode_tuple_header(x, 2);
-    x_ei_encode_long(x, d->thread_n);
-    x_ei_encode_list_header(x, n_results);
+    ei_x_encode_version(x);
+    ei_x_encode_tuple_header(x, 2);
+    ei_x_encode_long(x, d->thread_n);
+    ei_x_encode_list_header(x, n_results);
     for (i = 0, j = disp_pars->cArgs-1; i < n_results; ++i) {
 	while ((disp_pars->rgvarg[j].vt & VT_BYREF) == 0 && j>= 0) --j;
 	if (j >= 0) {
 	    encode_variant(d, &disp_pars->rgvarg[j]);
 	} else {
-	    x_ei_encode_long(x, -1);
+	    ei_x_encode_long(x, -1);
 	}
     }
-    x_ei_encode_empty_list(x);
+    ei_x_encode_empty_list(x);
 }
 
 
@@ -993,6 +922,28 @@ static void perform_op(erl_com_thread_data* d)
 	oles2 = get_ole_str(s);
 	ei_decode_long(buff, &index, &m);
 	r = create_obj(d, oles, oles2, (CLSCTX)m, &i);
+	SysFreeString(oles);
+	SysFreeString(oles2);
+	if (SUCCEEDED(r)) {
+	    return_int(i, d); 
+	} else {
+	    return_err(r, 0, d);
+	}
+	break;
+    /* get a running com object
+     * name, iid -> interface
+     */
+    case com_GetObject:
+	ei_decode_tuple_header(buff, &index, &n);
+	if (n != 2) {
+	    return_err(1, 0, d);
+	    break;
+	}
+	ei_decode_string(buff, &index, s);
+	oles = get_ole_str(s);
+	ei_decode_string(buff, &index, s);
+	oles2 = get_ole_str(s);
+	r = get_obj(d, oles, oles2, &i);
 	SysFreeString(oles);
 	SysFreeString(oles2);
 	if (SUCCEEDED(r)) {
@@ -1212,6 +1163,55 @@ static void perform_op(erl_com_thread_data* d)
     case com_CurrentThread:
 	return_int(n_threads-1, d);
 	break;
+    case com_Next:
+    case com_NextIntf:
+	{
+	    IEnumVARIANT* ev;
+	    VARIANT v;
+	    DWORD nr;
+	    ei_decode_long(buff, &index, &i);
+	    if (i <= 0 || i > d->n_com_i_ptrs) {
+		return_err(DISP_E_EXCEPTION, 0, d);
+		break; 
+	    }
+	    ev = (IEnumVARIANT*)d->com_i_ptrs[i];
+	    r = IEnumVARIANT_Next(ev, 1, &v, &nr);
+	    if (SUCCEEDED(r)) {
+		if (r == S_OK) {
+		    if (d->op == com_NextIntf) {
+			v.ppunkVal = *(IUnknown***)&v;
+			v.vt = VT_UNKNOWN;
+		    }
+		return_variant(&v, d);
+		} else { /* return {} when end of Enum (since it's never a variant) */
+		    ei_x_buff* x = &d->x;
+		    x->index = 0;
+		    ei_x_encode_version(x);
+		    ei_x_encode_tuple_header(x, 2);
+		    ei_x_encode_long(x, d->thread_n);
+		    ei_x_encode_tuple_header(x, 0);
+    		}
+    	    } else {
+		return_err(r, 0, d);
+	    }
+	}
+	break;	   
+    case com_Reset:
+	{
+	    IEnumVARIANT* ev;
+	    ei_decode_long(buff, &index, &i);
+	    if (i <= 0 || i > d->n_com_i_ptrs) {
+		return_err(DISP_E_EXCEPTION, 0, d);
+		break; 
+	    }
+	    ev = (IEnumVARIANT*)d->com_i_ptrs[i];
+	    r = IEnumVARIANT_Reset(ev);
+	    if (SUCCEEDED(r))
+		return_int(r, d);
+    	    else
+		return_err(r, 0, d);
+	}
+	break;	   
     /* get type information from com
      * to be used for erlang code generation real soon now
      */
@@ -1223,13 +1223,10 @@ static void perform_op(erl_com_thread_data* d)
 	break;
     case com_Test:
 	{
-	    x_ei_buff* x = &d->x;
+	    ei_x_buff* x = &d->x;
 	    DebugBreak();
-	    x->index = 0;
-	    x_ei_encode_version(x);
-	    x_ei_encode_list_header(x, 1);
-	    x_ei_encode_long(x, 0);
-	    x_ei_encode_empty_list(x); 
+	    return_int(-12, d);
+	    break;
 	}
     /* NewThread is intercepted, nobody should get here */
     case com_NewThread:
@@ -1751,15 +1748,15 @@ static HRESULT stdcall_apply(char* i_p, long m_offset, char* stdcall_pars, int p
 static HRESULT return_stdcall_pars(VARIANT* results, int n_results, erl_com_thread_data* d)
 {
     int i;
-    x_ei_buff* x = &d->x;
+    ei_x_buff* x = &d->x;
     x->index = 0;
-    x_ei_encode_version(x);
-    x_ei_encode_tuple_header(x, 2);
-    x_ei_encode_long(x, d->thread_n);
-    x_ei_encode_list_header(x, n_results);
+    ei_x_encode_version(x);
+    ei_x_encode_tuple_header(x, 2);
+    ei_x_encode_long(x, d->thread_n);
+    ei_x_encode_list_header(x, n_results);
     for (i = 0; i < n_results; ++i)
 	encode_variant(d, &results[i]);
-    x_ei_encode_empty_list(x);
+    ei_x_encode_empty_list(x);
     return S_OK;
 }
 
@@ -1850,30 +1847,30 @@ static const char* get_type_name(UINT com_type)
 }
 
 /* encode flags as list of atoms */
-int x_encode_flags(x_ei_buff* x, int flags, const char* names[], int n)
+int x_encode_flags(ei_x_buff* x, int flags, const char* names[], int n)
 {
     int i, m;
     for (i = 0, m = 0; i < n; ++i) {
 	if ((1 << i) & flags)
 	    ++m;
     }
-    x_ei_encode_list_header(x, m);
+    ei_x_encode_list_header(x, m);
 	for (i = 0; i < n; ++i) {
 	    if ((1 << i) & flags)
-		x_ei_encode_atom(x, names[i]);
+		ei_x_encode_atom(x, names[i]);
 	}
-    return x_ei_encode_empty_list(x);
+    return ei_x_encode_empty_list(x);
 }
 
 // encode type of parameters and/or return value
-static void encode_type(x_ei_buff* x, TYPEDESC* pt, ITypeInfo* t)
+static void encode_type(ei_x_buff* x, TYPEDESC* pt, ITypeInfo* t)
 {
     HRESULT r;
     // pointer type
     while (pt->vt == VT_PTR) {
 	pt = pt->lptdesc;
-	x_ei_encode_tuple_header(x, 2);// A 3 B2?
-	x_ei_encode_atom(x, "pointer");//    B 1
+	ei_x_encode_tuple_header(x, 2);// A 3 B2?
+	ei_x_encode_atom(x, "pointer");//    B 1
     }
     // user defined type
     if (pt->vt == VT_USERDEFINED) {
@@ -1881,30 +1878,30 @@ static void encode_type(x_ei_buff* x, TYPEDESC* pt, ITypeInfo* t)
 	LPTYPEATTR pta2;
 	BSTR b;
 	HREFTYPE rt = pt->hreftype;
-	x_ei_encode_tuple_header(x, 2); // A 3/B 2' D2
+	ei_x_encode_tuple_header(x, 2); // A 3/B 2' D2
 	r = ITypeInfo_GetRefTypeInfo(t, rt, &t2);
 	r = ITypeInfo_GetDocumentation(t2, MEMBERID_NIL, &b, NULL, NULL, NULL);
 	r = ITypeInfo_GetTypeAttr(t2, &pta2);
 	if (SUCCEEDED(r)) {
 	    if (pta2->typekind == TKIND_ALIAS) {
-		x_ei_encode_tuple_header(x, 2);
-		x_ei_encode_atom(x, type_kind_names[pta2->typekind]);// D 1'
+		ei_x_encode_tuple_header(x, 2);
+		ei_x_encode_atom(x, type_kind_names[pta2->typekind]);// D 1'
 		encode_type(x, &pta2->tdescAlias, t2);
 	    } else
-		x_ei_encode_atom(x, type_kind_names[pta2->typekind]);// D 1"
+		ei_x_encode_atom(x, type_kind_names[pta2->typekind]);// D 1"
 	    ITypeInfo_ReleaseTypeAttr(t, pta2); // really void
 	} else
-	    x_ei_encode_atom(x, "unknown");   // D 1'''
-	x_ei_encode_and_free_bstr(x, &b);	    // D 2
+	    ei_x_encode_atom(x, "unknown");   // D 1'''
+	ei_x_encode_and_free_bstr(x, &b);	    // D 2
 	r = IUnknown_Release(t2);
     } else
-	x_ei_encode_atom(x,
+	ei_x_encode_atom(x,
 	    get_type_name(pt->vt));                     // A 3/B 2"
 }
 
 // generate erlang description from TypeInfo
 static HRESULT get_interface(ITypeInfo* t, LPTYPEATTR pt, 
-			     int dispflag, x_ei_buff* x)
+			     int dispflag, ei_x_buff* x)
 {
     int i, n;
     HRESULT r = S_OK;
@@ -1919,7 +1916,7 @@ static HRESULT get_interface(ITypeInfo* t, LPTYPEATTR pt,
 	}
     }
     // get functions
-    x_ei_encode_list_header(x, n);
+    ei_x_encode_list_header(x, n);
     for (i = 0; SUCCEEDED(r) && i < pt->cFuncs; ++i) {
 	LPFUNCDESC pf;
 	r = ITypeInfo_GetFuncDesc(t, i, &pf);
@@ -1934,23 +1931,23 @@ static HRESULT get_interface(ITypeInfo* t, LPTYPEATTR pt,
 			    && pf->elemdescFunc.tdesc.vt != VT_VOID
 			    && pf->elemdescFunc.tdesc.vt != VT_EMPTY);
 		// function name and type
-		x_ei_encode_tuple_header(x, 6);	// T6
-		x_ei_encode_and_free_bstr(x, &names[0]);  //T 1
+		ei_x_encode_tuple_header(x, 6);	// T6
+		ei_x_encode_and_free_bstr(x, &names[0]);  //T 1
 		x_encode_flags(x, pf->invkind, invoke_kind_names, 6); // T 2
-		x_ei_encode_atom(x,  
+		ei_x_encode_atom(x,  
 		    func_kind_names[pf->funckind]);			    // T 3
-		x_ei_encode_long(x, 
+		ei_x_encode_long(x, 
 		    (dispflag == com_DispatchIntf) ? pf->memid : pf->oVft); // T 4
 		// list of parameters
 		if (pf->cParams > 0) {
-		    x_ei_encode_list_header(x, pf->cParams); // T 5 
+		    ei_x_encode_list_header(x, pf->cParams); // T 5 
 		    for (j = 0; j < pf->cParams; ++j) {
 			USHORT parflags = pf->lprgelemdescParam[j].paramdesc.wParamFlags;
-			x_ei_encode_tuple_header(x, 4);	   // A4
+			ei_x_encode_tuple_header(x, 4);	   // A4
 			if (j+1 < n_names)
-			    x_ei_encode_and_free_bstr(x, &names[j+1]); // A 1'
+			    ei_x_encode_and_free_bstr(x, &names[j+1]); // A 1'
 	    		else
-			    x_ei_encode_string(x, "property_"); // A 1"
+			    ei_x_encode_string(x, "property_"); // A 1"
 			x_encode_flags(x, parflags, param_flag_names, 8); // A 2
 			encode_type(x, &pf->lprgelemdescParam[j].tdesc, t);// A 3
 	    		if (parflags & PARAMFLAG_FHASDEFAULT) {
@@ -1961,25 +1958,25 @@ static HRESULT get_interface(ITypeInfo* t, LPTYPEATTR pt,
 				&pf->lprgelemdescParam[j].paramdesc.pparamdescex->varDefaultValue); // A 4'
 			    *x = d.x;
 			} else
-			    x_ei_encode_tuple_header(x, 0);			    // A 4"
+			    ei_x_encode_tuple_header(x, 0);			    // A 4"
 		    }
 		}
-		x_ei_encode_empty_list(x);
+		ei_x_encode_empty_list(x);
 		// return value
 		if (retval) {
 		    encode_type(x, &pf->elemdescFunc.tdesc, t);
 		} else
-		    x_ei_encode_atom(x, "void");		// T 6"
+		    ei_x_encode_atom(x, "void");		// T 6"
 	    } 
 	    ITypeInfo_ReleaseFuncDesc(t, pf);
 	}
     }
-    x_ei_encode_empty_list(x);
+    ei_x_encode_empty_list(x);
     return r;
 }
 
 static HRESULT get_enum(ITypeInfo* t, LPTYPEATTR pt, 
-			     int dispflag, x_ei_buff* x)
+			     int dispflag, ei_x_buff* x)
 {
     int i, n;
     HRESULT r = S_OK;
@@ -1993,7 +1990,7 @@ static HRESULT get_enum(ITypeInfo* t, LPTYPEATTR pt,
 	    ITypeInfo_ReleaseVarDesc(t, pv);
 	}
     }
-    x_ei_encode_list_header(x, n);
+    ei_x_encode_list_header(x, n);
     for (i = 0; SUCCEEDED(r) && i < pt->cVars; ++i) {
 	r = ITypeInfo_GetVarDesc(t, i, &pv);
 	if (SUCCEEDED(r) 
@@ -2004,28 +2001,28 @@ static HRESULT get_enum(ITypeInfo* t, LPTYPEATTR pt,
 	    if (SUCCEEDED(r) && n_names > 0) {
 		erl_com_thread_data d;
 		memset(&d, 0, sizeof(d));
-		x_ei_encode_tuple_header(x, 2);
-		x_ei_encode_and_free_bstr(x, &name);
+		ei_x_encode_tuple_header(x, 2);
+		ei_x_encode_and_free_bstr(x, &name);
 		d.x = *x;
 		encode_variant(&d, pv->lpvarValue); // this will crash mercilessly if value is interface...
 		*x = d.x;
 	    } else
-		x_ei_encode_empty_list(x);
+		ei_x_encode_empty_list(x);
 	    ITypeInfo_ReleaseVarDesc(t, pv);
 	}
     }
-    x_ei_encode_empty_list(x);
+    ei_x_encode_empty_list(x);
     return r;
 }
 
-static HRESULT get_typeinfo(ITypeInfo* t, LPTYPEATTR pt, int dispflag, x_ei_buff* x)
+static HRESULT get_typeinfo(ITypeInfo* t, LPTYPEATTR pt, int dispflag, ei_x_buff* x)
 {
     char* s;
     BSTR b;
     HRESULT r;
     int i;
     //DebugBreak();
-    x_ei_encode_tuple_header(x, 5);
+    ei_x_encode_tuple_header(x, 5);
     if ((pt->wTypeFlags & TYPEFLAG_FDUAL)) {
 	s = "dual";
 	if (dispflag == com_VirtualIntf) {
@@ -2042,19 +2039,19 @@ static HRESULT get_typeinfo(ITypeInfo* t, LPTYPEATTR pt, int dispflag, x_ei_buff
     } else {
 	s = "virtual";
     }
-    x_ei_encode_atom(x, type_kind_names[pt->typekind]);
-    x_ei_encode_atom(x, s);
-    x_ei_encode_tuple_header(x, 2);
+    ei_x_encode_atom(x, type_kind_names[pt->typekind]);
+    ei_x_encode_atom(x, s);
+    ei_x_encode_tuple_header(x, 2);
     ITypeInfo_GetDocumentation(t, MEMBERID_NIL, &b, NULL, NULL, NULL);
-    x_ei_encode_and_free_bstr(x, &b);
+    ei_x_encode_and_free_bstr(x, &b);
     StringFromCLSID(&pt->guid, &b);
-    x_ei_encode_and_free_bstr(x, &b);
+    ei_x_encode_and_free_bstr(x, &b);
     if (pt->typekind == TKIND_INTERFACE || pt->typekind == TKIND_DISPATCH) {
-	r = get_interface(t, pt, dispflag, x);//x_ei_encode_empty_list(x);
+	r = get_interface(t, pt, dispflag, x);//ei_x_encode_empty_list(x);
     } else if (pt->typekind == TKIND_ENUM) {
 	r = get_enum(t, pt, dispflag, x);
     } else
-	x_ei_encode_empty_list(x);
+	ei_x_encode_empty_list(x);
     // implemented types, including inherited type
     for (i = -1; SUCCEEDED(r) && i < pt->cImplTypes; ++i) {
 	ITypeInfo* impt;
@@ -2063,22 +2060,22 @@ static HRESULT get_typeinfo(ITypeInfo* t, LPTYPEATTR pt, int dispflag, x_ei_buff
 	r = ITypeInfo_GetRefTypeOfImplType(t, i, &reft);
 	if (SUCCEEDED(r)) {
 	    if (i == -1)
-		x_ei_encode_list_header(x, pt->cImplTypes+1);
-	    x_ei_encode_tuple_header(x, 3);
-	    x_ei_encode_long(x, i);
+		ei_x_encode_list_header(x, pt->cImplTypes+1);
+	    ei_x_encode_tuple_header(x, 3);
+	    ei_x_encode_long(x, i);
     	    ITypeInfo_GetRefTypeInfo(t, reft, &impt);
 	    ITypeInfo_GetDocumentation(impt, MEMBERID_NIL, &b, NULL, NULL, NULL);
-	    x_ei_encode_and_free_bstr(x, &b);
+	    ei_x_encode_and_free_bstr(x, &b);
 	    ITypeInfo_GetTypeAttr(impt, &imppt);
 	    StringFromCLSID(&imppt->guid, &b);
-	    x_ei_encode_and_free_bstr(x, &b);
+	    ei_x_encode_and_free_bstr(x, &b);
 	    ITypeInfo_ReleaseTypeAttr(impt, imppt);
 	    IUnknown_Release(impt);
 	}
     }
     if (i == 0) 
 	r = S_OK;
-    x_ei_encode_empty_list(x);
+    ei_x_encode_empty_list(x);
     return r;
 }
 
@@ -2099,8 +2096,8 @@ static HRESULT decode_typelib_and_type(erl_com_thread_data* d, int* index, IType
 	    r = IDispatch_GetTypeInfo((LPDISPATCH)d->com_i_ptrs[i], 0, LOCALE_SYSTEM_DEFAULT, t);
 	    if (SUCCEEDED(r) && l != NULL) 
 		r = ITypeInfo_GetContainingTypeLib(*t, l, &i);
-	    else
-		*t = NULL;
+	    //else
+		//*l = NULL;
 	}
     } else if (ty == ERL_STRING_EXT) {
 	char* s = driver_alloc(sz + 1);
@@ -2121,7 +2118,7 @@ static void get_interface_info(erl_com_thread_data* d, int index)
     ITypeLib* l;
     HRESULT r;
     int n, dispflag;
-    x_ei_buff* x = &d->x;
+    ei_x_buff* x = &d->x;
     BSTR mem = NULL;
     ei_decode_tuple_header(x->buff, &index, &n);
     if (n != 2 && n != 3) {
@@ -2148,9 +2145,9 @@ static void get_interface_info(erl_com_thread_data* d, int index)
 	}	    
 	if (SUCCEEDED(r)) {
 	    x->index = 0;
-	    x_ei_encode_version(x);
-	    x_ei_encode_tuple_header(x, 2);
-	    x_ei_encode_long(x, d->thread_n);
+	    ei_x_encode_version(x);
+	    ei_x_encode_tuple_header(x, 2);
+	    ei_x_encode_long(x, d->thread_n);
 	    r = ITypeInfo_GetTypeAttr(t, &pt);
 	    r = get_typeinfo(t, pt, dispflag, x);
 	    ITypeInfo_ReleaseTypeAttr(t, pt);
@@ -2186,7 +2183,7 @@ static void get_typelib_info(erl_com_thread_data* d, int index)
     HRESULT r;
     int n, i;
     BSTR b;
-    x_ei_buff* x = &d->x;
+    ei_x_buff* x = &d->x;
     ITypeLib* l;
 
     r = decode_typelib_and_type(d, &index, &l, &t);
@@ -2195,29 +2192,29 @@ static void get_typelib_info(erl_com_thread_data* d, int index)
     if (SUCCEEDED(r)) {
 	ITypeLib_GetDocumentation(l, -1, &b, NULL, NULL, NULL);
 	x->index = 0;
-	x_ei_encode_version(x);
-	x_ei_encode_tuple_header(x, 2);
-	x_ei_encode_long(x, d->thread_n);
-	x_ei_encode_tuple_header(x, 2);
-	x_ei_encode_and_free_bstr(x, &b);
+	ei_x_encode_version(x);
+	ei_x_encode_tuple_header(x, 2);
+	ei_x_encode_long(x, d->thread_n);
+	ei_x_encode_tuple_header(x, 2);
+	ei_x_encode_and_free_bstr(x, &b);
 	n = ITypeLib_GetTypeInfoCount(l);
 	//DebugBreak();
-	x_ei_encode_list_header(x, n);
+	ei_x_encode_list_header(x, n);
 	for (i = 0; i < n; ++i) {
 	    ITypeInfo* t;
 	    LPTYPEATTR pt;
     	    ITypeLib_GetTypeInfo(l, i, &t);
 	    r = ITypeInfo_GetTypeAttr(t, &pt);
-	    x_ei_encode_tuple_header(x, 3);
-	    x_ei_encode_atom(x, type_kind_names[pt->typekind]);
+	    ei_x_encode_tuple_header(x, 3);
+	    ei_x_encode_atom(x, type_kind_names[pt->typekind]);
 	    ITypeLib_GetDocumentation(l, i, &b, NULL, NULL, NULL);
-	    x_ei_encode_and_free_bstr(x, &b);
+	    ei_x_encode_and_free_bstr(x, &b);
 	    StringFromCLSID(&pt->guid, &b); 
-	    x_ei_encode_and_free_bstr(x, &b);
+	    ei_x_encode_and_free_bstr(x, &b);
 	    ITypeInfo_ReleaseTypeAttr(t, pt);
 	    IUnknown_Release(t);
 	}
-	x_ei_encode_empty_list(x);
+	ei_x_encode_empty_list(x);
 	IUnknown_Release(l);
 	if (t != NULL)
 	    IUnknown_Release(t);

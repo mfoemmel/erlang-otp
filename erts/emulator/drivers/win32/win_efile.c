@@ -19,6 +19,7 @@
  * Purpose: Provides file and directory operations for Windows.
  */
 
+#include <windows.h>
 #include "sys.h"
 #include <ctype.h>
 
@@ -73,6 +74,32 @@ set_error(errInfo)
     errInfo->posix_errno = errno;
     return 0;
 }
+
+/*
+ * A writev with Unix semantics, but with Windows arguments 
+ */
+static int 
+win_writev(Efile_error* errInfo,
+	   HANDLE fd,                  /* handle to file */
+	   FILE_SEGMENT_ELEMENT iov[], /* array of buffer pointers */
+	   DWORD *size)                /* number of bytes to write */
+{
+    OVERLAPPED ov;
+    ov.Offset = 0L;
+    ov.OffsetHigh = 0L;
+    ov.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (ov.hEvent == NULL)
+	return set_error(errInfo);
+    if (! write_file_gather(fd, iov, *size, NULL, &ov))
+	return set_error(errInfo);
+    if (WaitForSingleObject(ov.hEvent, INFINITE) != WAIT_OBJECT_0)
+	return set_error(errInfo);
+    if (! GetOverlappedResult(fd, &ov, size, FALSE))
+	return set_error(errInfo);
+    return 1;
+}
+
+
 
 int
 efile_mkdir(errInfo, name)
@@ -441,7 +468,11 @@ efile_chdir(errInfo, name)
 Efile_error* errInfo;		/* Where to return error codes. */
 char* name;			/* Name of directory to make current. */
 {
-    return check_error(chdir(name), errInfo);
+    int success = check_error(chdir(name), errInfo);
+    if (!success && errInfo->posix_errno == EINVAL)
+	/* POSIXification of errno */
+	errInfo->posix_errno = ENOENT;
+    return success;
 }
 
 int
@@ -921,6 +952,42 @@ unsigned count;			/* Number of bytes to write. */
 	buf += written;
 	count -= written;
     }
+    return 1;
+}
+
+int
+efile_writev(Efile_error* errInfo,   /* Where to return error codes */
+	     int flags,              /* Flags given when file was
+				      * opened */
+	     int fd,                 /* File descriptor to write to */
+	     SysIOVec* iov,          /* Vector of buffer structs.
+				      * The structs are unchanged 
+				      * after the call */
+	     int iovcnt,             /* Number of structs in vector */
+	     int size)               /* Number of bytes to write */
+{
+    int cnt;                         /* Buffers so far written */
+
+    ASSERT(iovcnt >= 0);
+    
+    if (flags & EFILE_MODE_APPEND) {
+	(void) SetFilePointer((HANDLE) fd, 0, NULL, FILE_END);
+    }
+    for (cnt = 0; cnt < iovcnt; cnt++) {
+	if (iov[cnt].iov_base && iov[cnt].iov_len > 0) {
+	    /* Non-empty buffer */
+	    int p;                   /* Position in buffer */
+	    int w = iov[cnt].iov_len;/* Bytes written in this call */
+	    for (p = 0; p < iov[cnt].iov_len; p += w) {
+		if (!WriteFile((HANDLE) fd, 
+			       iov[cnt].iov_base + p, 
+			       iov[cnt].iov_len - p, 
+			       &w, 
+			       NULL))
+		    return set_error(errInfo);
+	    }
+	}
+    }	
     return 1;
 }
 

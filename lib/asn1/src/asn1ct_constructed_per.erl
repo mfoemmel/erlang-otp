@@ -140,8 +140,7 @@ gen_decode_constructed(Erules,Typename,D) when record(D,type) ->
 			  Bnext = asn1ct_name:next(bytes),
 			  emit(MaybeComma1),
 			  emit({"{Opt,",{var,Bnext},"} = ?RT_PER:getoptionals(",
-				{var,Bcurr},",",{asis,Optionals},",",
-				{asis,length(mkcnamelist(CompList))},")"}),
+				{var,Bcurr},",",{asis,length(Optionals)},")"}),
 			  asn1ct_name:new(bytes),
 			  ", "    
 		  end,
@@ -156,8 +155,11 @@ gen_decode_constructed(Erules,Typename,D) when record(D,type) ->
 			    end
 		    end,
 		case lists:any(F,CompList) of
-		    true ->
-			{{AttrN,{deep,ObjectSet,UniqueFieldName}},UniqueFieldName};
+		    true -> % when component relation constraint establish
+			%% relation from a component to another components
+			%% subtype component
+			{{AttrN,{deep,ObjectSet,UniqueFieldName}},
+			 UniqueFieldName};
 		    false ->
 			{{AttrN,ObjectSet},UniqueFieldName}
 		end;
@@ -192,21 +194,18 @@ gen_decode_constructed(Erules,Typename,D) when record(D,type) ->
 gen_dec_listofopentypes(_,[],_) ->
     emit(nl);
 gen_dec_listofopentypes(DecObj,[{Cname,{FirstPFN,PFNList},Term}|Rest],Update) ->
-    case Update of
-	true ->
-%%	    asn1ct_name:new(bytes),
-	    asn1ct_name:new(term);
-	_->
-%%	    asn1ct_name:new(bytes),
-	    asn1ct_name:new(term)
-    end,
-%%    emit({"{",{curr,term},", ",{curr,bytes},"} = "}),
+
+    asn1ct_name:new(term),
     asn1ct_name:new(tmpterm),
+    asn1ct_name:new(reason),
+
     emit({"{",{curr,term},", _} = ",nl}),
     emit({indent(3),"case ",DecObj,"(",
 	  {asis,FirstPFN},", ",Term,", telltype,",{asis,PFNList},") of",nl}),
-    emit({indent(6),"{'EXIT', _} ->",nl}),
-    emit({indent(9),"throw({runtime_error,{","'Type not compatible with table constraint'",",",Term,"}});",nl}),
+    emit({indent(6),"{'EXIT', ",{curr,reason},"} ->",nl}),
+%%    emit({indent(9),"throw({runtime_error,{","'Type not compatible with table constraint'",",",Term,"}});",nl}),
+    emit({indent(9),"exit({'Type not compatible with table constraint',",
+	  {curr,reason},"});",nl}),
     emit({indent(6),{curr,tmpterm}," ->",nl}),
     emit({indent(9),{curr,tmpterm},nl}),
     emit({indent(3),"end,",nl}),
@@ -252,11 +251,12 @@ gen_encode_sof(Erules,Typename,SeqOrSetOf,D) when record(D,type) ->
 % lists:
     {_SeqOrSetOf,ComponentType} = D#type.def,
     emit({"[",nl}),
-    Constraint = D#type.constraint,
-    SizeConstraint = case lists:keysearch('SizeConstraint',1,Constraint) of
-			 {value,{_,Range}} -> Range;
-			 false -> undefined
-		     end,
+    SizeConstraint =
+	case asn1ct_gen:get_constraint(D#type.constraint,
+				       'SizeConstraint') of
+	    no -> undefined;
+	    Range -> Range
+	end,
     ObjFun =
 	case D#type.tablecinf of
 	    [{objfun,_}|R] ->
@@ -284,11 +284,12 @@ gen_decode_sof(Erules,Typename,SeqOrSetOf,D) when record(D,type) ->
 % ?RT_PER:encode_length(length(Val)),
 % lists:
     {_SeqOrSetOf,ComponentType} = D#type.def,
-    Constraint = D#type.constraint,
-    SizeConstraint = case lists:keysearch('SizeConstraint',1,Constraint) of
-			 {value,{_,Range}} -> Range;
-			 false -> undefined
-		     end,
+    SizeConstraint =
+	case asn1ct_gen:get_constraint(D#type.constraint,
+				       'SizeConstraint') of
+	    no -> undefined;
+	    Range -> Range
+	end,
     ObjFun =
 	case D#type.tablecinf of
 	    [{objfun,_}|R] ->
@@ -326,6 +327,7 @@ gen_encode_sof_components(Typename,SeqOrSetOf,Cont) ->
 						       Cont#type.def),
     
     Conttype = asn1ct_gen:get_inner(Cont#type.def),
+    Currmod = get(currmod),
     case asn1ct_gen:type(Conttype) of
 	{primitive,bif} ->
 	    asn1ct_gen_per:gen_encode_prim(per,Cont,false,"H");
@@ -333,7 +335,7 @@ gen_encode_sof_components(Typename,SeqOrSetOf,Cont) ->
 	    NewTypename = [Constructed_Suffix|Typename],
 	    emit({"'enc_",asn1ct_gen:list2name(NewTypename),"'(H",
 		  ObjFun,")",nl,nl});
-	#typereference{val=Ename} ->
+	#'Externaltypereference'{module=Currmod,type=Ename} ->
 	    emit({"'enc_",Ename,"'(H)",nl,nl});
 	#'Externaltypereference'{module=EMod,type=EType} ->
 	    emit({"'",EMod,"':'enc_",EType,"'(H)",nl,nl});
@@ -394,18 +396,6 @@ mkvlist2([H|T]) ->
     mkvlist2(T);
 mkvlist2([]) ->
     true.
-
-mkcnamelist({L1,L2}) ->
-    mkcnamelist(L1,[]); % temporary wrong hack
-mkcnamelist(L) ->
-    mkcnamelist(L,[]).
-
-mkcnamelist([#'ComponentType'{name=Name}|Rest],Acc) ->
-    mkcnamelist(Rest,[Name|Acc]);
-mkcnamelist([H|T],Acc) ->
-    mkcnamelist(T,Acc);
-mkcnamelist([],Acc) ->
-    lists:reverse(Acc).
 
 extensible(CompList) when list(CompList) ->
     noext;
@@ -521,11 +511,12 @@ gen_enc_line(TopType, Cname, Type, [], Pos,DynamicEnc,Ext) ->
     gen_enc_line(TopType,Cname,Type,Element, Pos,DynamicEnc,Ext);
 gen_enc_line(TopType,Cname,Type,Element, Pos,DynamicEnc,Ext) ->
     Atype = 
-	case Type#type.constraint of
-	    {tableconstraint_info,_} ->
-		Type#type.def;
+	case asn1ct_gen:get_constraint(Type#type.constraint,
+				       tableconstraint_info) of
+	    no ->
+		asn1ct_gen:get_inner(Type#type.def);
 	    _ ->
-		asn1ct_gen:get_inner(Type#type.def)
+		Type#type.def
 	end,
     case Ext of
 	{ext,Ep1,_} when  Pos >= Ep1 ->
@@ -536,8 +527,8 @@ gen_enc_line(TopType,Cname,Type,Element, Pos,DynamicEnc,Ext) ->
 	{typefield,_} ->
 	    case DynamicEnc of
 		{LeadingAttrName,Fun} ->
-		    {_,RefedFieldName} = Type#type.constraint,
-		    case RefedFieldName of
+		    case asn1ct_gen:get_constraint(Type#type.constraint,
+						   tableconstraint_info) of
 			{notype,T} ->
 			    throw({error,{notype,type_from_object,T}});
 			{_,Name} when atom(Name) ->
@@ -577,16 +568,8 @@ gen_enc_line(TopType,Cname,Type,Element, Pos,DynamicEnc,Ext) ->
 			    _ ->
 				Type
 			end,
-		    NewElement = 
-			case EncType#type.def of
-			    {'ENUMERATED',_} ->
-				io_lib:format("element2IfTuple(~s)",
-					      [Element]);
-			    _ ->
-				Element
-			end,
 		    asn1ct_gen_per:gen_encode_prim(per,EncType,
-						   false,NewElement);
+						   false,Element);
 		{constructed,bif} ->
 		    NewTypename = [Cname|TopType],
 		    case {Type#type.tablecinf,DynamicEnc} of
@@ -612,13 +595,13 @@ gen_enc_line(TopType,Cname,Type,Element, Pos,DynamicEnc,Ext) ->
 gen_dec_components_call(TopType,{CompList,ExtList},MaybeComma,DecInfObj,Ext) ->
     %% The type has extensionmarker
     {Rpos,AccTerm,AccBytes} = 
-	gen_dec_components_call1(TopType, CompList, 1, MaybeComma,DecInfObj,
+	gen_dec_components_call1(TopType, CompList, 1, 1, MaybeComma,DecInfObj,
 				 noext,[],[]),
     emit([",",nl,"{Extensions,",{next,bytes},"} = "]),
     emit(["?RT_PER:getextension(Ext,",{curr,bytes},"),",nl]),
     asn1ct_name:new(bytes),
     {Epos,AccTermE,AccBytesE} = 
-	gen_dec_components_call1(TopType,ExtList,Rpos,"",DecInfObj,Ext,[],[]),
+	gen_dec_components_call1(TopType,ExtList,Rpos, 1, "",DecInfObj,Ext,[],[]),
     case ExtList of
 	[] -> true;
 	_ -> emit([",",nl])
@@ -631,13 +614,13 @@ gen_dec_components_call(TopType,{CompList,ExtList},MaybeComma,DecInfObj,Ext) ->
 gen_dec_components_call(TopType,CompList,MaybeComma,DecInfObj,Ext) ->
     %% The type has no extensionmarker
     {_,AccTerm,AccBytes} =
-	gen_dec_components_call1(TopType, CompList, 1, MaybeComma,DecInfObj,Ext,[],[]),
+	gen_dec_components_call1(TopType, CompList, 1, 1,MaybeComma,DecInfObj,Ext,[],[]),
     {AccTerm,AccBytes}.
 
 
 gen_dec_components_call1(TopType,
 			 [#'ComponentType'{name=Cname,typespec=Type,prop=Prop}|Rest],
-			 Tpos,MaybeComma,DecInfObj,Ext,AccTerm,AccBytes) ->
+			 Tpos,OptPos,MaybeComma,DecInfObj,Ext,AccTerm,AccBytes) ->
     Pos = case Ext of
 	      noext -> Tpos;
 	      {ext,Epos,Enum} -> Tpos - Epos + 1
@@ -645,11 +628,12 @@ gen_dec_components_call1(TopType,
     emit(MaybeComma),
 %%    asn1ct_name:new(term),
     InnerType = 
-	case Type#type.constraint of
-	    {tableconstraint_info,_} ->
-		Type#type.def;
+	case asn1ct_gen:get_constraint(Type#type.constraint,
+				       tableconstraint_info) of
+	    no ->
+		asn1ct_gen:get_inner(Type#type.def);
 	    _ ->
-		asn1ct_gen:get_inner(Type#type.def)
+		Type#type.def
 	end,
     case InnerType of
 	#'Externaltypereference'{type=T} ->
@@ -665,31 +649,28 @@ gen_dec_components_call1(TopType,
 
     case {InnerType,Type#type.tablecinf} of
 	{{typefield,_},_} ->
-%%	    emit({"{",{next,bytes},", _} = "});
-%%%	    asn1ct_name:delete(bytes),
 	    asn1ct_name:new(tmpterm),
 	    emit({"{",{curr,tmpterm},", ",{next,bytes},"} = "});
 	{{objectfield,_,_},_} ->
 	    asn1ct_name:new(tmpterm),
 	    emit({"{",{curr,tmpterm},", ",{next,bytes},"} = "});
-%%	{_,[{objfun,_}|R]} ->
-%%	    asn1ct_name:new(tmpterm),
-%%	    emit({"{",{curr,tmpterm},", ",{next,bytes},"} = "});
 	_ ->
 	    asn1ct_name:new(term),
 	    emit({"{",{curr,term},",",{next,bytes},"} = "})
     end,
 
-    case {Ext,Prop} of
-	{noext,mandatory} -> true; % generate nothing
-	{noext,_} ->
-	    Element = io_lib:format("element(~w,Opt)",[Pos]),
-	    emit({"case ",Element," of",nl}),
-	    emit({"1 ->"});
-	_ ->
-	    emit(["case Extensions of",nl]),
-	    emit(["_ when size(Extensions) >= ",Pos,",element(",Pos,",Extensions) == 1 ->",nl])
-    end,
+    NewOptPos = 
+	case {Ext,Prop} of
+	    {noext,mandatory} -> OptPos; % generate nothing
+	    {noext,_} ->
+		Element = io_lib:format("element(~w,Opt)",[OptPos]),
+		emit({"case ",Element," of",nl}),
+		emit({"1 ->"}),
+		OptPos+1;
+	    _ ->
+		emit(["case Extensions of",nl]),
+		emit(["_ when size(Extensions) >= ",Pos,",element(",Pos,",Extensions) == 1 ->",nl])
+	end,
 
     {TermVar,BytesVar} = gen_dec_line(TopType,Cname,Type,Tpos,DecInfObj,Ext),
     case {Ext,Prop} of
@@ -699,7 +680,6 @@ gen_dec_components_call1(TopType,
 	    gen_dec_component_no_val(TopType,Cname,Type,Prop,Tpos,Ext);
 	_ ->
 	    emit([";",nl,"_  ->",nl]),
-%%	    emit([";",nl,"_ when element(",Pos,",Extensions) == 0 ->",nl]),
 	    gen_dec_component_no_val(TopType,Cname,Type,Prop,Tpos,Ext)
     end,    
     case {Ext,Prop} of
@@ -709,8 +689,6 @@ gen_dec_components_call1(TopType,
 	_ ->
 	    emit([nl,"end"])
 	    
-%%	    emit([";",nl,"_ -> % unknown extension",nl]),
-%%	    emit(["{asn1_NOEXTVALUE,",{curr,bytes},"}",nl,"end"])
     end,
     asn1ct_name:new(bytes),
     case Rest of
@@ -718,11 +696,11 @@ gen_dec_components_call1(TopType,
 	    {Pos+1,AccTerm++TermVar,AccBytes++BytesVar};
 	_ ->
 	    emit({com,nl}),
-	    gen_dec_components_call1(TopType,Rest,Tpos+1,"",DecInfObj,Ext,
+	    gen_dec_components_call1(TopType,Rest,Tpos+1,NewOptPos,"",DecInfObj,Ext,
 				     AccTerm++TermVar,AccBytes++BytesVar)
     end;
 
-gen_dec_components_call1(_TopType,[],Pos,_,_,_,AccTerm,AccBytes) ->
+gen_dec_components_call1(_TopType,[],Pos,_OptPos,_,_,_,AccTerm,AccBytes) ->
 	{Pos,AccTerm,AccBytes}.
 
 
@@ -738,11 +716,12 @@ gen_dec_component_no_val(TopType,Cname,Type,mandatory,Pos,{ext,Ep,Enum}) ->
 
 gen_dec_line(TopType,Cname,Type,Pos,DecInfObj,Ext)  ->
     Atype = 
-	case Type#type.constraint of
-	    {tableconstraint_info,_} ->
-		Type#type.def;
+	case asn1ct_gen:get_constraint(Type#type.constraint,
+				       tableconstraint_info) of
+	    no ->
+		asn1ct_gen:get_inner(Type#type.def);
 	    _ ->
-		asn1ct_gen:get_inner(Type#type.def)
+		Type#type.def
 	end,
     BytesVar0 = asn1ct_gen:mk_var(asn1ct_name:curr(bytes)),
     BytesVar = case Ext of
@@ -758,18 +737,25 @@ gen_dec_line(TopType,Cname,Type,Pos,DecInfObj,Ext)  ->
 	case Atype of
 	    {typefield,_} ->
 		case DecInfObj of
-		    false ->
-			{_,{_,RefedFieldName}} = Type#type.constraint,
+		    false -> % This is in a choice with typefield components
+			{_,RefedFieldName} = 
+			    asn1ct_gen:get_constraint(Type#type.constraint,
+						      tableconstraint_info),
 			asn1ct_name:new(tmpterm),
+			asn1ct_name:new(reason),
 			emit({indent(3),"{",{curr,tmpterm},", ",{next,bytes},
 			      "} = ?RT_PER:decode_open_type(",{curr,bytes},
 			      ", []),",nl}),
-			emit({indent(3),"case ObjFun(",{asis,RefedFieldName},
-			      ",",{curr,tmpterm},",telltype,[]) of", nl}),
-			emit({indent(6),"{'EXIT',_} ->",nl}),
-			emit({indent(9),"throw({runtime_error,{'Type not ",
-			      "compatible with tableconstraint',",
-			      {curr,tmpterm},"}});",nl}),
+			emit({indent(3),"case (catch ObjFun(",
+			      {asis,RefedFieldName},
+			      ",",{curr,tmpterm},",telltype,[])) of", nl}),
+			emit({indent(6),"{'EXIT',",{curr,reason},"} ->",nl}),
+%%			emit({indent(9),"throw({runtime_error,{'Type not ",
+%%			      "compatible with table constraint',",
+%%			      {curr,tmpterm},"}});",nl}),
+			emit({indent(9),"exit({'Type not ",
+			      "compatible with table constraint', ",
+			      {curr,reason},"});",nl}),
 			asn1ct_name:new(tmpterm),
 			emit({indent(6),"{",{curr,tmpterm},", _} ->",nl}),
 			emit({indent(9),"{",Cname,", {",{curr,tmpterm},", ",
@@ -779,10 +765,11 @@ gen_dec_line(TopType,Cname,Type,Pos,DecInfObj,Ext)  ->
 		    _ ->
 			emit({"?RT_PER:decode_open_type(",{curr,bytes},
 			      ", [])"}),
-			{_,{_,RefedFieldName}} = Type#type.constraint,
+			{_,RefedFieldName} = 
+			    asn1ct_gen:get_constraint(Type#type.constraint,
+						      tableconstraint_info),
 			[{Cname,{RefedFieldName,[]},
 			  asn1ct_gen:mk_var(asn1ct_name:curr(tmpterm))}]
-		    %%		  asn1ct_gen:mk_var(asn1ct_name:next(bytes))}]
 		end;
 	    {objectfield,PrimFieldName1,PFNList} ->
 		emit({"?RT_PER:decode_open_type(",{curr,bytes},", [])"}),
@@ -791,8 +778,7 @@ gen_dec_line(TopType,Cname,Type,Pos,DecInfObj,Ext)  ->
 	    _ ->
 		CurrMod = get(currmod),
 		case asn1ct_gen:type(Atype) of
-		    #'Externaltypereference'{module=Mod,type=EType} when
-			  CurrMod == Mod ->
+		    #'Externaltypereference'{module=CurrMod,type=EType} ->
 			emit({"'dec_",EType,"'(",BytesVar,",telltype)"});
 		    #'Externaltypereference'{module=Mod,type=EType} ->
 			emit({"'",Mod,"':'dec_",EType,"'(",BytesVar,
@@ -829,11 +815,6 @@ gen_dec_line(TopType,Cname,Type,Pos,DecInfObj,Ext)  ->
 			ok
 		end,
 		[]
-%%	    {ObjSet,FieldName} ->
-%%		asn1ct_name:new(bytes),
-%%		emit({"{",{next,bytes},",_} = ?RT_PER:decode_open_type(",
-%%		      {curr,bytes},"[]),",nl}),
-%%		[{ObjSet,Cname,asn1ct_name:curr(bytes)}]
 	end,
     case Ext of 
 	{ext,Ep2,_} when Pos >= Ep2 ->
@@ -894,11 +875,12 @@ when record(H1,'ComponentType'), record(H2,'ComponentType') ->
     Cname = H1#'ComponentType'.name,
     Type = H1#'ComponentType'.typespec,
     EncObj =
-	case Type#type.constraint of
-	    {tableconstraint_info,_} ->
-		{no_attr,"ObjFun"};
+	case asn1ct_gen:get_constraint(Type#type.constraint,
+				       tableconstraint_info) of
+	    no ->
+		false;
 	    _ ->
-		false
+		{no_attr,"ObjFun"}
 	end,
     emit({{asis,Cname}," ->",nl}),
     gen_enc_line(TopType,Cname,Type,"element(2,Val)", Pos+1,EncObj,Ext),
@@ -908,11 +890,12 @@ gen_enc_choice2(TopType,[H1|T], Pos, Ext) when record(H1,'ComponentType') ->
     Cname = H1#'ComponentType'.name,
     Type = H1#'ComponentType'.typespec,
     EncObj =
-	case Type#type.constraint of
-	    {tableconstraint_info,_} ->
-		{no_attr,"ObjFun"};
+	case asn1ct_gen:get_constraint(Type#type.constraint,
+				       tableconstraint_info) of
+	    no ->
+		false;
 	    _ ->
-		false
+		{no_attr,"ObjFun"}
 	end,
     emit({{asis,H1#'ComponentType'.name}," ->",nl}),
     gen_enc_line(TopType,Cname,Type,"element(2,Val)", Pos+1,EncObj,Ext),

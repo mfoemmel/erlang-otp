@@ -112,23 +112,28 @@ chunk(FdC, FileName, Pos, B, N) ->
 
 handle_chunk(B, FdC, _FileName, Pos, 0, Ack) ->
     {FdC, {#continuation{pos = Pos, b = {B, true}}, lists:reverse(Ack)}};
-handle_chunk(<<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8, Tail/binary>>=B,
+handle_chunk(<<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8, Tail/binary>>, 
 	     FdC, FileName, Pos, N, Ack) ->
     case Tail of
 	<<BinTerm:Size/binary, Tail2/binary>> ->
 	    %% The client calls binary_to_term/1.
 	    handle_chunk(Tail2, FdC, FileName, Pos, N-1, [BinTerm | Ack]);
 	_ ->
-            TailSize = size(Tail),
-	    BytesToRead = Size - TailSize,
-            case read_chunks(BytesToRead, FdC, FileName, Pos, [B]) of
-		{ok, NewFdC, NewPos, Bin} when size(Bin) == Size + ?HEADERSZ ->
+	    %% We read the whole thing into one binary.
+	    Pos1 = Pos - size(Tail) - ?HEADERSZ,
+	    BytesToRead = Size + ?HEADERSZ,
+            case catch read_chunk(FdC, FileName, Pos1, BytesToRead) of
+		{NewFdC, {ok, Bin}} when size(Bin) == BytesToRead ->
+		    NewPos = Pos1 + BytesToRead,
 		    handle_chunk(Bin, NewFdC, FileName, NewPos, N, Ack);
-		{ok, NewFdC, NewPos, _Bin} -> % when size(Bin) < Size+?HEADERSZ
+		{NewFdC, {ok, _Bin}} -> % when size(_Bin) < BytesToRead
 		    {NewFdC, {error, {corrupt_log_file, FileName}}};
-                Other ->
-                    Other
-            end
+		{NewFdC, eof} ->
+		    %% "Cannot happen"
+		    {NewFdC, {error, {corrupt_log_file, FileName}}};
+		Other -> 
+		    Other
+	    end
     end;
 handle_chunk(<<_:?HEADERSZ/unit:8,_/binary>>, FdC, FileName, _Pos, _N, _Ack) ->
     {FdC, {error, {corrupt_log_file, FileName}}};
@@ -185,17 +190,25 @@ handle_chunk_ro(B= <<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8,
 	    NewAck = [BinTerm | Ack],
 	    handle_chunk_ro(Tail2, FdC, FileName, Pos, N-1, NewAck, Bad);
 	_ ->
-            TailSize = size(Tail),
-	    BytesToRead = Size - TailSize,
-            case read_chunks(BytesToRead, FdC, FileName, Pos, [B]) of
-		{ok, NewFdC, NewPos, Bin} when size(Bin) == Size + ?HEADERSZ ->
+	    %% We read the whole thing into one binary.
+	    TailSize = size(Tail),
+	    Pos1 = Pos - TailSize - ?HEADERSZ,
+	    BytesToRead = Size + ?HEADERSZ,
+            case catch read_chunk_ro(FdC, FileName, Pos1, BytesToRead) of
+		{NewFdC, {ok, Bin}} when size(Bin) == BytesToRead ->
+		    NewPos = Pos1 + BytesToRead,
 		    handle_chunk_ro(Bin, NewFdC, FileName, NewPos, N, Ack,Bad);
-		{ok, NewFdC, NewPos, _Bin} -> % when size(Bin) < Size+?HEADERSZ
+		{NewFdC, {ok, _Bin}} -> % when size(_Bin) < BytesToRead
 		    <<_:8, B2/binary>> = B,
 		    handle_chunk_ro(B2, NewFdC, FileName, Pos, N-1, Ack,Bad+1);
-                Other ->
-                    Other
-            end
+		{NewFdC, eof} ->
+		    %% "Cannot happen"
+		    NewCont = #continuation{pos = Pos1, b = <<>>},
+		    {NewFdC, 
+                     {NewCont, lists:reverse(Ack), Bad + TailSize+?HEADERSZ}};
+		Other -> 
+		    Other
+	    end
     end;
 handle_chunk_ro(B= <<_:?HEADERSZ/unit:8, _/binary>>, 
 		FdC, FileName, Pos, N, Ack, Bad) ->
@@ -204,27 +217,8 @@ handle_chunk_ro(B= <<_:?HEADERSZ/unit:8, _/binary>>,
 handle_chunk_ro(B, FdC, _FileName, Pos, _N, Ack, Bad) ->
     {FdC, {#continuation{pos = Pos, b = B}, lists:reverse(Ack), Bad}}.
 
-%% To be removed in R8.
-read_chunks(0, FdC, _FileName, Pos, Bs) ->
-    {ok, FdC, Pos, list_to_binary(Bs)};
-read_chunks(BytesToRead, FdC, FileName, Pos, Bs) when BytesToRead > 0 ->
-    ToRead = min(BytesToRead, ?MAX_CHUNK_SIZE),
-    case catch read_chunk(FdC, FileName, Pos, ToRead) of
-        {NewFdC, eof} ->
-	    read_chunks(0, NewFdC, FileName, Pos, Bs);
-	{NewFdC, {ok, B}} ->
-	    Read = size(B),
-            NBs = [Bs | B],
-	    read_chunks(BytesToRead - Read, NewFdC, FileName, Pos + Read, NBs);
-	Other -> 
-	    Other
-    end.
-
 read_chunk_ro(FdC, FileName, Pos, MaxBytes) ->
     pread(FdC, FileName, Pos + ?HEADSZ, MaxBytes).
-
-min(A, B) when A < B -> A;
-min(_A, B) -> B.
 
 %% -> ok | throw(Error)
 close(#cache{fd = Fd, c = []}, _FileName, read_only) ->
@@ -1025,7 +1019,7 @@ truncate_index_file(Fd, FileName, Offset, N) ->
     ok.
 	    
 print_index_file(File) ->
-    io:format("-- Index begin --~n", []),
+    io:format("-- Index begin --~n"),
     case file:read_file(File) of
 	{ok, <<0, CurF:32, Tail/binary>>} when 0 < CurF, CurF < ?MAX_FILES ->
 	    io:format("cur file: ~w~n", [CurF]),
@@ -1036,7 +1030,7 @@ print_index_file(File) ->
 	_Else ->
 	    ok
     end,
-    io:format("-- end --~n", []).
+    io:format("-- end --~n").    
 
 loop_index(N, <<Sz:32, Tail/binary>>) ->
     io:format(" ~p  items: ~w~n", [N, Sz]),

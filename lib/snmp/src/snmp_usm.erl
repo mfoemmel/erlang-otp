@@ -40,7 +40,7 @@
 
 -define(twelwe_zeros, [0,0,0,0,0,0,0,0,0,0,0,0]).
 
--define(i32(Int), (Int bsr 24) band 255, (Int bsr 16) band 255, (Int bsr 8) band 255, Int band 255.
+-define(i32(Int), (Int bsr 24) band 255, (Int bsr 16) band 255, (Int bsr 8) band 255, Int band 255).
 
 
 %%-----------------------------------------------------------------
@@ -124,6 +124,7 @@ mk_buf64(BufLen, Buf, Passwd, PasswdLen) ->
 %%-----------------------------------------------------------------
 process_incoming_msg(Packet, Data, SecParams, SecLevel) ->
     %% 3.2.1
+    ?vtrace("check security parms: 3.2.1",[]),
     UsmSecParams =
 	case catch snmp_pdus:dec_usm_security_parameters(SecParams) of
 	    {'EXIT', Reason} ->
@@ -137,6 +138,7 @@ process_incoming_msg(Packet, Data, SecParams, SecLevel) ->
     ?vlog("~n   authEngineID: \"~s\", userName: \"~s\"",
 	  [MsgAuthEngineID, MsgUserName]),
     %% 3.2.3
+    ?vtrace("check engine id: 3.2.3",[]),
     case snmp_user_based_sm_mib:is_engine_id_known(MsgAuthEngineID) of
 	true ->
 	    ok;
@@ -147,6 +149,7 @@ process_incoming_msg(Packet, Data, SecParams, SecLevel) ->
 		  undefined, [{sec_data, SecData1}])
     end,
     %% 3.2.4
+    ?vtrace("retrieve usm user: 3.2.4",[]),
     UsmUser =
 	case snmp_user_based_sm_mib:get_user(MsgAuthEngineID, MsgUserName) of
 	    User when element(?usmUserStatus, User) == ?'RowStatus_active' ->
@@ -160,8 +163,10 @@ process_incoming_msg(Packet, Data, SecParams, SecLevel) ->
     SecName = element(?usmUserSecurityName, UsmUser),
     %% 3.2.5 - implicit in following checks
     %% 3.2.6 - 3.2.7
+    ?vtrace("authenticate incoming: 3.2.5 - 3.2.7",[]),
     authenticate_incoming(Packet, UsmSecParams, UsmUser, SecLevel),
     %% 3.2.8
+    ?vtrace("decrypt scoped data: 3.2.8",[]),
     ScopedPDUBytes = decrypt(Data, UsmUser, UsmSecParams, SecLevel),
     %% 3.2.9
     %% Means that if AuthKey/PrivKey are changed; the old values
@@ -177,10 +182,11 @@ process_incoming_msg(Packet, Data, SecParams, SecLevel) ->
 authenticate_incoming(Packet, UsmSecParams, UsmUser, SecLevel) ->
     SecName = element(?usmUserSecurityName, UsmUser),
     %% 3.2.6
+    ?vtrace("authenticate incoming: 3.2.6",[]),
     AuthProtocol = element(?usmUserAuthProtocol, UsmUser),
-    #usmSecurityParameters{msgAuthoritativeEngineID = MsgAuthEngineID,
+    #usmSecurityParameters{msgAuthoritativeEngineID    = MsgAuthEngineID,
 			   msgAuthoritativeEngineBoots = MsgAuthEngineBoots,
-			   msgAuthoritativeEngineTime = MsgAuthEngineTime,
+			   msgAuthoritativeEngineTime  = MsgAuthEngineTime,
 			   msgAuthenticationParameters = MsgAuthParams} =
 	UsmSecParams,
     case snmp_misc:is_auth(SecLevel) of
@@ -219,10 +225,12 @@ is_auth(AuthProtocol, AuthKey, AuthParams, Packet, SecName,
     case IsAuth of
 	true ->
 	    %% 3.2.7
+	    ?vtrace("retrieve EngineBoots and EngineTime: 3.2.7",[]),
 	    SnmpEngineID = snmp_framework_mib:get_engine_id(),
 	    ?vtrace("SnmpEngineID: ~p",[SnmpEngineID]),
 	    case MsgAuthEngineID of
 		SnmpEngineID -> %% 3.2.7a
+		    ?vtrace("we are authoritative: 3.2.7a",[]),
 		    SnmpEngineBoots = snmp_framework_mib:get_engine_boots(),
 		    ?vtrace("SnmpEngineBoots: ~p",[SnmpEngineBoots]),
 		    SnmpEngineTime = snmp_framework_mib:get_engine_time(),
@@ -236,12 +244,14 @@ is_auth(AuthProtocol, AuthKey, AuthParams, Packet, SecName,
 			end,
 		    case InTimeWindow of
 			true -> true;
+			%% OTP-4090 (OTP-3542)
 			false -> error(usmStatsNotInTimeWindows,
-				       ?usmStatsNotInTimeWindows,
+				       ?usmStatsNotInTimeWindows_instance,
 				       SecName,
 				       [{securityLevel, 1}]) % authNoPriv
 		    end;
 		_ -> %% 3.2.7b - we're non-authoritative
+		    ?vtrace("we are non-authoritative: 3.2.7b",[]),
 		    SnmpEngineBoots = get_engine_boots(MsgAuthEngineID),
 		    ?vtrace("SnmpEngineBoots: ~p",[SnmpEngineBoots]),
 		    SnmpEngineTime = get_engine_time(MsgAuthEngineID),
@@ -255,6 +265,8 @@ is_auth(AuthProtocol, AuthKey, AuthParams, Packet, SecName,
 			end,
 		    case UpdateLCD of
 			true -> %% 3.2.7b1
+			    ?vtrace("update msgAuthoritativeEngineID: 3.2.7b1",
+				    []),
 			    set_engine_boots(MsgAuthEngineID,
 					     MsgAuthEngineBoots),
 			    set_engine_time(MsgAuthEngineID,
@@ -265,6 +277,8 @@ is_auth(AuthProtocol, AuthKey, AuthParams, Packet, SecName,
 			    ok
 		    end,
 		    %% 3.2.7.b2
+		    ?vtrace("check if message is outside time window: 3.2.7b2",
+			    []),
 		    InTimeWindow =
 			if
 			    SnmpEngineBoots == 2147483647 ->
@@ -397,7 +411,8 @@ encrypt(Data, PrivProtocol, PrivKey, SecLevel) ->
     end.
 
 
-authenticate_outgoing(Message, UsmSecParams, AuthKey, AuthProtocol, SecLevel) ->
+authenticate_outgoing(Message, UsmSecParams, 
+		      AuthKey, AuthProtocol, SecLevel) ->
     Message2 = 
 	case snmp_misc:is_auth(SecLevel) of
 	    true ->
@@ -554,8 +569,8 @@ set_msg_auth_params(Message, UsmSecParams, AuthParams) ->
 	UsmSecParams#usmSecurityParameters{msgAuthenticationParameters =
 					   AuthParams},
     SecBytes = snmp_pdus:enc_usm_security_parameters(NUsmSecParams),
-    VsnHdr = Message#message.vsn_hdr,
-    NVsnHdr = VsnHdr#v3_hdr{msgSecurityParameters = SecBytes},
+    VsnHdr   = Message#message.vsn_hdr,
+    NVsnHdr  = VsnHdr#v3_hdr{msgSecurityParameters = SecBytes},
     Message#message{vsn_hdr = NVsnHdr}.
 
 

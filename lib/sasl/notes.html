@@ -1,102 +1,66 @@
 <HTML>
 <HEAD>
-  <TITLE>Sasl Release Notes</TITLE>
-</HEAD>
- 
-<BODY BGCOLOR="#FFFFFF">
- 
-<CENTER><H1>Sasl Release Notes</H1></CENTER>
+  <TITLE>SASL Release Notes</TITLE>
+  <style type="text/css">
+<!--
+    body          { background: white; margin: 3em }
 
-<H2>Sasl 1.9.2</H2>
+    body          { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1 h2 h3 h4   { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1            { font-size: 48 }
+    p li          { font-family: Verdana, Arial, Helvetica, sans-serif }
+-->
+  </style>
+</HEAD>
+
+<BODY BGCOLOR="#FFFFFF">
+
+<CENTER><H1>SASL Release Notes</H1></CENTER>
+
+<H2>SASL 1.9.3</H2>
+  <H3>Fixed errors and malfunctions</H3>
+  <UL>
+    <LI>Erroneous parameter name <CODE>sasl_error_logger_type</CODE> in
+     application resource file (<CODE>sasl.app</CODE>) corrected to
+     <CODE>errlog_type</CODE>.<BR>
+     Own Id: OTP-3372
+    </LI>
+  </UL>
+
+  <H3>Improvements and new features</H3>
+  <UL>
+    <LI><CODE>systools_make</CODE> uses <CODE>xref</CODE> for cross
+      reference checks. The format of the warnings for undefined
+      functions has been changed.<BR>
+      (*** POTENTIAL INCOMPATIBILITY ***)<BR>
+      Own Id: OTP-3922
+    </LI>
+    <LI>The report browser <CODE>rb</CODE> no longer ignores faulty
+      events - it prints the raw terms instead. It also presents
+      user-generated <CODE>error_report</CODE> and <CODE>info_report</CODE>
+      events more nicely.<BR>
+      Own Id: OTP-3257<BR>
+      Aux Id: Seq3849
+    </LI>
+  </UL>
+
+<H2>SASL 1.9.2</H2>
  <H3>Fixed errors and malfunctions</H3>
  <UL>
-  <LI>
-   <P>OTP-3998: <CODE>systools:make_relup/3,4</CODE> now generates upgrade
-    instructions for the applications in start order, instead of in reversed
-    start order.</P>
-   <P>OTP-4121: <CODE>systools:make_script/1,2</CODE> now keeps the order
-    of the release resource file (<CODE>.rel</CODE>) also for included
-    applications.</P>
-   Own Id: OTP-4123<BR>
+ <LI>
+  <P>OTP-3998: <CODE>systools:make_relup/3,4</CODE> now generates upgrade
+   instructions for the applications in start order, instead of in reversed
+   start order.</P>
+  <P>OTP-4121: <CODE>systools:make_script/1,2</CODE> now keeps the order
+   of the release resource file (<CODE>.rel</CODE>) also for included
+   applications.<BR>
+   Own Id: OTP-4123 (OTP-4124)<BR>
    Aux Id: Seq 5270
-  </LI>
+ </LI>
  </UL>
 
-<H2>SASL 1.9.1 (R7B01)</H2>
-  <H3>Fixed Errors and Malfunctions</H3>
-  <UL>
-    <LI>
-      If a new application was added using <CODE>code:replace_path/2</CODE>,
-      the <CODE>code:lib_dir/1</CODE> function would fail on the new
-      application name. This has been corrected.<BR>
-      Own Id: OTP-3780<BR>
-      Aux Id: Seq 5003
-    </LI>
-    <LI>
-      A printout has been added in <CODE>release_handler</CODE> when
-      <CODE>install_release</CODE> fails.<BR>
-      Own Id: OTP-3767<BR>
-      Aux Id: seq4983
-    </LI>
-  </UL>
-
-<H2>Sasl 1.9 (R7B)</H2>
-  <H3>Fixed Errors and Malfunctions</H3>
-  <UL>
-    <LI>
-      In the release handler the upgrade instructions before
-      the point_of_no_return instruction, were executed in reverse order.<BR>
-      Own Id: OTP-3604
-    </LI>
-    <LI>
-      In the release handler, the tar file containing a release was not
-      removed after the release had been successfully unpacked.<BR>
-      Own Id: OTP-3605
-    </LI>
-    <LI>
-      In the release handler, the relative matching of release versions
-      (e.g. 3.1 matches 3.1.1) was wrong. Such matching has been removed
-      altogether, and now only exact matches are allowed.<BR>
-      Own Id: OTP-3606
-    </LI>
-    <LI>
-      In systools, when reordering instructions with respect to dependency,
-      the case of duplicate instructions for the same module was not
-      properly checked.<BR>
-      Own Id: OTP-3607
-    </LI>
-  </UL>
-
-<H2>Sasl 1.8.3</H2>
-  <H3>Fixed Errors and Malfunctions</H3>
-  <UL>
-    <LI>
-      Release handler didn't find topmost supervisors.<BR>
-      Own Id: OTP-3452
-    </LI>
-    <LI>
-      Processes were suspended in the wrong order.<BR>
-      Processes are now suspended and resumed in correct order: suspension
-      is in the order of dependency, and resumption is in the reversed order
-      of dependency (both for upgrade and downgrade). Furthermore, modules
-      are loaded in the reversed order of dependency at upgrade, and in
-      the order of dependency at downgrade.<BR>
-      Own Id: OTP-3453<BR>
-      Aux Id: seq4270
-    </LI>
-    <LI>
-      Empty suspend and remove instructions are now removed from boot
-      scripts.<BR>
-      Own Id: OTP-3469
-    </LI>
-    <LI>
-      Modules added by the add_module instruction was not in the dependency
-      chain.<BR>
-      Own Id: OTP-3477
-    </LI>
-  </UL>
- 
-<P>There are also release notes for <A HREF="notes_history.html">older versions</A>.</P>
+<P>There are also release notes for <A HREF="notes_history.html">older
+  versions</A>.</P>
 
 </BODY>
 </HTML>

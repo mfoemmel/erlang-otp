@@ -21,7 +21,7 @@
 	 start/0,
 	 init/1,
 	 non_transaction/5,
-	 transaction/5,
+	 transaction/6,
 	 commit_participant/5,
 	 dirty/2,
 	 display_info/2,
@@ -54,7 +54,7 @@
 %% Format on coordinators is [{Tid, EtsTabList} .....
 
 -record(prep, {protocol = sym_trans,
-	       %% async_dirty | sync_dirty | sym_trans | asym_trans
+	       %% async_dirty | sync_dirty | sym_trans | sync_sym_trans | asym_trans
 	       records = [],
 	       prev_tab = [], % initiate to a non valid table name
 	       prev_types,
@@ -62,7 +62,8 @@
 	       types 
 	      }).
 
--record(participant, {tid, pid, commit, disc_nodes = [], ram_nodes = []}).
+-record(participant, {tid, pid, commit, disc_nodes = [], 
+		      ram_nodes = [], protocol = sym_trans}).
 
 start() ->
     mnesia_monitor:start_proc(?MODULE, ?MODULE, init, [self()]).
@@ -220,18 +221,19 @@ doit_loop(State) ->
 	    mnesia_checkpoint:tm_enter_pending(Tid, DiscNs, RamNs),
 	    Pid = 
 		case Protocol of
-		    sym_trans when node(Tid#tid.pid) /= node() ->
-			reply(From, {vote_yes, Tid}),
-			nopid;
 		    asym_trans when node(Tid#tid.pid) /= node() ->
 			Args = [From, Tid, Commit, DiscNs, RamNs],
-			spawn_link(?MODULE, commit_participant, Args)
+			spawn_link(?MODULE, commit_participant, Args);		
+		    _ when node(Tid#tid.pid) /= node() -> %% *_sym_trans
+			reply(From, {vote_yes, Tid}),
+			nopid
 		end,
 	    P = #participant{tid = Tid,
 			     pid = Pid,
 			     commit = Commit,
 			     disc_nodes = DiscNs,
-			     ram_nodes = RamNs},
+			     ram_nodes = RamNs,
+			     protocol = Protocol},
 	    State2 = State#state{participants = [P | Participants]},
 	    doit_loop(State2);
 	
@@ -247,12 +249,22 @@ doit_loop(State) ->
 		    case P#participant.pid of
 			nopid ->
 			    Commit = P#participant.commit,
-			    case lists:member(node(), P#participant.disc_nodes) of
-				true -> mnesia_log:log(Commit);
-				false -> ignore
+			    Member = lists:member(node(), P#participant.disc_nodes),
+			    if Member == false ->
+				    ignore;
+			       P#participant.protocol == sym_trans -> 
+				    mnesia_log:log(Commit);
+			       P#participant.protocol == sync_sym_trans -> 
+				    mnesia_log:slog(Commit)
 			    end,
 			    mnesia_recover:note_decision(Tid, committed),
 			    do_commit(Tid, Commit),
+			    if 
+				P#participant.protocol == sync_sym_trans ->
+				    Tid#tid.pid ! {?MODULE, node(), {committed, Tid}};
+				true ->
+				    ignore
+			    end,
 			    mnesia_locker:release_tid(Tid),
 			    transaction_terminated(Tid),
 			    ?eval_debug_fun({?MODULE, do_commit, post}, [{tid, Tid}, {pid, nopid}]),
@@ -284,6 +296,12 @@ doit_loop(State) ->
 			    Commit = P#participant.commit,
 			    mnesia_recover:note_decision(Tid, aborted),
 			    do_abort(Tid, Commit),
+			    if 
+				P#participant.protocol == sync_sym_trans ->
+				    Tid#tid.pid ! {?MODULE, node(), {aborted, Tid}};
+				true ->
+				    ignore
+			    end,
 			    transaction_terminated(Tid),
 			    ?eval_debug_fun({?MODULE, do_abort, post}, [{tid, Tid}, {pid, nopid}]),
 			    doit_loop(State#state{participants = Participants2});
@@ -400,7 +418,7 @@ doit_loop(State) ->
 		    ignore
 	    end,
 	    reply(From, Res, State);
-		
+	
 	{system, From, Msg} ->
 	    dbg_out("~p got {system, ~p, ~p}~n", [?MODULE, From, Msg]),
 	    sys:handle_system_msg(Msg, From, Sup, ?MODULE, [], State);
@@ -487,7 +505,7 @@ handle_exit(Pid, Reason, State) ->
     case pid_search_delete(Pid, State#state.coordinators) of 
 	{none, _} ->
 	    %% Check if it is a participant
-	    case pid_search_delete(Pid, State#state.participants) of
+	    case mnesia_lib:key_search_delete(Pid, #participant.pid, State#state.participants) of
 		{none, _} ->
 		    %% We got exit from a local fool
 		    verbose("** ERROR ** ~p got local EXIT from unknown process: ~p~n",  
@@ -516,7 +534,7 @@ recover_coordinator(Tid, Etabs) ->
     Store = hd(Etabs),
     CheckNodes = get_nodes(Store),
     TellNodes = CheckNodes -- [node()],
-    case catch arrange(Tid, Store) of
+    case catch arrange(Tid, Store, async) of
 	{'EXIT', Reason} ->
 	    dbg_out("Recovery of coordinator ~p failed:~n", [Tid, Reason]),
 	    Protocol = asym_trans,
@@ -547,6 +565,12 @@ recover_coordinator(Tid, sym_trans, committed, Local, _, _) ->
     do_dirty(Tid, Local);
 recover_coordinator(Tid, sym_trans, aborted, Local, _, _) ->
     mnesia_recover:note_decision(Tid, aborted);
+recover_coordinator(Tid, sync_sym_trans, committed, Local, _, _) ->
+    mnesia_recover:note_decision(Tid, committed),
+    do_dirty(Tid, Local);
+recover_coordinator(Tid, sync_sym_trans, aborted, Local, _, _) ->
+    mnesia_recover:note_decision(Tid, aborted);
+
 recover_coordinator(Tid, asym_trans, committed, Local, DiscNs, RamNs) ->
     D = #decision{tid = Tid, outcome = committed,
 		  disc_nodes = DiscNs, ram_nodes = RamNs},		
@@ -595,23 +619,11 @@ erase_ets_tabs([]) ->
 %% {none, All} or {Tr, Rest} 
 pid_search_delete(Pid, Trs) ->
     pid_search_delete(Pid, Trs, none, []).
+pid_search_delete(Pid, [Tr = {Tid, Ts} | Trs], Val, Ack) when Tid#tid.pid == Pid ->
+    pid_search_delete(Pid, Trs, Tr, Ack);
 pid_search_delete(Pid, [Tr | Trs], Val, Ack) ->
-    case Tr of
-	P when record(P, participant) ->
-	    Tid = P#participant.tid,
-	    if
-		Tid#tid.pid == Pid ->
-		    pid_search_delete(Pid, Trs, Tr, Ack);
-		true ->
-		    pid_search_delete(Pid, Trs, Val, [Tr | Ack])
-	    end;
-	
-	{Tid, Ts} when Tid#tid.pid == Pid ->
-	    pid_search_delete(Pid, Trs, Tr, Ack);
-	
-	_ ->
-	    pid_search_delete(Pid, Trs, Val, [Tr | Ack])
-    end;
+    pid_search_delete(Pid, Trs, Val, [Tr | Ack]);
+
 pid_search_delete(Pid, [], Val, Ack) ->
     {Val, Ack}.
 
@@ -665,18 +677,18 @@ non_transaction(OldState, Fun, Args, ActivityKind, Mod) ->
 	    throw(Throw)
     end.
 
-transaction(OldTidTs, Fun, Args, Retries, Mod) ->
+transaction(OldTidTs, Fun, Args, Retries, Mod, Type) ->
     Factor = 1,
     case OldTidTs of
 	undefined -> % Outer
-	    execute_outer(Mod, Fun, Args, Factor, Retries);
+	    execute_outer(Mod, Fun, Args, Factor, Retries, Type);
 	{_OldMod, Tid, Ts} ->  % Nested
-	    execute_inner(Mod, Tid, Ts, Fun, Args, Factor, Retries);
+	    execute_inner(Mod, Tid, Ts, Fun, Args, Factor, Retries, Type);
 	_ -> % Bad nesting
 	    {aborted, nested_transaction}
     end.
 
-execute_outer(Mod, Fun, Args, Factor, Retries) ->
+execute_outer(Mod, Fun, Args, Factor, Retries, Type) ->
     case req(start_outer) of
 	{error, Reason} -> 
 	    {aborted, Reason};
@@ -684,10 +696,10 @@ execute_outer(Mod, Fun, Args, Factor, Retries) ->
 	    Ts = #tidstore{store = Store},
 	    NewTidTs = {Mod, Tid, Ts},
 	    put(mnesia_activity_state, NewTidTs),
-	    execute_transaction(Fun, Args, Factor, Retries)
+	    execute_transaction(Fun, Args, Factor, Retries, Type)
     end.
 
-execute_inner(Mod, Tid, Ts, Fun, Args, Factor, Retries) ->
+execute_inner(Mod, Tid, Ts, Fun, Args, Factor, Retries, Type) ->
     case req({add_store, Tid}) of
 	{error, Reason} ->
 	    {aborted, Reason};
@@ -699,7 +711,7 @@ execute_inner(Mod, Tid, Ts, Fun, Args, Factor, Retries) ->
 				up_stores = Up},
 	    NewTidTs = {Mod, Tid, NewTs},
 	    put(mnesia_activity_state, NewTidTs),
-	    execute_transaction(Fun, Args, Factor, Retries)
+	    execute_transaction(Fun, Args, Factor, Retries, Type)
     end.
 
 copy_ets(From, To) ->
@@ -717,10 +729,10 @@ insert_objs([H|T], Tab) ->
 insert_objs([], _Tab) ->
     ok.
 
-execute_transaction(Fun, Args, Factor, Retries) ->
-    case catch apply_fun(Fun, Args) of
+execute_transaction(Fun, Args, Factor, Retries, Type) ->
+    case catch apply_fun(Fun, Args, Type) of
 	{'EXIT', Reason} ->
-	    check_exit(Fun, Args, Factor, Retries, Reason);
+	    check_exit(Fun, Args, Factor, Retries, Reason, Type);
 	{atomic, Value} ->
 	    mnesia_lib:incr_counter(trans_commits),
 	    erase(mnesia_activity_state),
@@ -736,9 +748,9 @@ execute_transaction(Fun, Args, Factor, Retries) ->
 	    return_abort(Fun, Args, Reason)
     end.
 
-apply_fun(Fun, Args) ->
+apply_fun(Fun, Args, Type) ->
     Result = apply(Fun, Args),
-    case t_commit() of
+    case t_commit(Type) of
 	do_commit ->
             {atomic, Result};
         do_commit_nested ->
@@ -749,23 +761,23 @@ apply_fun(Fun, Args) ->
             {'EXIT', {aborted, Reason}}
     end.
 
-check_exit(Fun, Args, Factor, Retries, Reason) ->
+check_exit(Fun, Args, Factor, Retries, Reason, Type) ->
     case Reason of
 	{aborted, C} when record(C, cyclic) ->
-	    maybe_restart(Fun, Args, Factor, Retries, C);
+	    maybe_restart(Fun, Args, Factor, Retries, Type, C);
 	{aborted, {node_not_running, N}} ->
-	    maybe_restart(Fun, Args, Factor, Retries, {node_not_running, N});
+	    maybe_restart(Fun, Args, Factor, Retries, Type, {node_not_running, N});
 	{aborted, {bad_commit, N}} ->
-	    maybe_restart(Fun, Args, Factor, Retries, {bad_commit, N});
+	    maybe_restart(Fun, Args, Factor, Retries, Type, {bad_commit, N});
 	_ -> 
 	    return_abort(Fun, Args, Reason)
     end.
 
-maybe_restart(Fun, Args, Factor, Retries, Why) ->
+maybe_restart(Fun, Args, Factor, Retries, Type, Why) ->
     {Mod, Tid, Ts} = get(mnesia_activity_state),
     case try_again(Retries) of
 	yes when Ts#tidstore.level == 1 ->
-	    restart(Mod, Tid, Ts, Fun, Args, Factor, Retries, Why);
+	    restart(Mod, Tid, Ts, Fun, Args, Factor, Retries, Type, Why);
 	yes ->
 	    return_abort(Fun, Args, Why);
 	no ->
@@ -782,7 +794,7 @@ try_again(_) -> no.
 %% restarted. The stack is thus popped by a consequtive series of
 %% exit({aborted, #cyclic{}}) calls
 
-restart(Mod, Tid, Ts, Fun, Args, Factor0, Retries0, Why) ->
+restart(Mod, Tid, Ts, Fun, Args, Factor0, Retries0, Type, Why) ->
     mnesia_lib:incr_counter(trans_restarts),
     Retries = decr(Retries0),
     case Why of
@@ -792,14 +804,14 @@ restart(Mod, Tid, Ts, Fun, Args, Factor0, Retries0, Why) ->
 	    SleepTime = mnesia_lib:random_time(Factor, Tid#tid.counter),
 	    dbg_out("Restarting transaction ~w: in ~wms ~w~n", [Tid, SleepTime, Why]),
 	    timer:sleep(SleepTime),
-	    execute_outer(Mod, Fun, Args, Factor, Retries);
+	    execute_outer(Mod, Fun, Args, Factor, Retries, Type);
 	{node_not_running, N} ->   %% Avoids hanging in receive_release_tid_ack
 	    return_abort(Fun, Args, Why),
 	    Factor = 1,
 	    SleepTime = mnesia_lib:random_time(Factor, Tid#tid.counter),
 	    dbg_out("Restarting transaction ~w: in ~wms ~w~n", [Tid, SleepTime, Why]),
 	    timer:sleep(SleepTime),
-	    execute_outer(Mod, Fun, Args, Factor, Retries);	
+	    execute_outer(Mod, Fun, Args, Factor, Retries, Type);	
 	_ ->
 	    SleepTime = mnesia_lib:random_time(Factor0, Tid#tid.counter),
 	    dbg_out("Restarting transaction ~w: in ~wms ~w~n", [Tid, SleepTime, Why]),
@@ -823,7 +835,7 @@ restart(Mod, Tid, Ts, Fun, Args, Factor0, Retries0, Why) ->
 	    case rec() of
 		{restarted, Tid} ->
 		    execute_transaction(Fun, Args, Factor0 + 1, 
-					Retries);
+					Retries, Type);
 		{error, Reason} ->
 		    mnesia:abort(Reason)
 	    end
@@ -978,14 +990,14 @@ dirty(Protocol, Item) ->
 %% functions insert the names of the nodes where it aquires locks
 %% into the local shadow Store
 %% This function exacutes in the context of the user process
-t_commit() ->
+t_commit(Type) ->
     {Mod, Tid, Ts} = get(mnesia_activity_state),
     Store = Ts#tidstore.store,
     if
 	Ts#tidstore.level == 1 ->
 	    intercept_friends(Tid, Ts),
 	    %% N is number of updates 
-	    case arrange(Tid, Store) of
+	    case arrange(Tid, Store, Type) of
 		{N, Prep} when N > 0 ->
 		    multi_commit(Prep#prep.protocol,
 				 Tid, Prep#prep.records, Store);
@@ -1009,13 +1021,17 @@ t_commit() ->
 %% in a list of {Node, CommitRecord}
 %% Important function for the performance of mnesia.
 
-arrange(Tid, Store) ->
+arrange(Tid, Store, Type) ->
     %% The local node is always included
     Nodes = get_nodes(Store),
     Recs = prep_recs(Nodes, []),
     Key = ?ets_first(Store),
     N = 0,
-    Prep = #prep{records = Recs},
+    Prep = 
+	case Type of 
+	    async -> #prep{protocol = sym_trans, records = Recs};
+	    sync -> #prep{protocol = sync_sym_trans, records = Recs}
+	end,
     case catch do_arrange(Tid, Store, Key, Prep, N) of
 	{'EXIT', Reason} ->
 	    dbg_out("do_arrange failed ~p ~p~n", [Reason, Tid]),
@@ -1248,6 +1264,37 @@ multi_commit(sym_trans, Tid, CR, Store) ->
 	do_commit ->
 	    mnesia_recover:note_decision(Tid, committed),
 	    do_dirty(Tid, Local),
+	    mnesia_locker:release_tid(Tid),
+	    ?MODULE ! {delete_transaction, Tid};
+	{do_abort, Reason} ->
+	    mnesia_recover:note_decision(Tid, aborted)
+    end,
+    ?eval_debug_fun({?MODULE, multi_commit_sym, post},
+		    [{tid, Tid}, {outcome, Outcome}]),
+    Outcome;
+
+multi_commit(sync_sym_trans, Tid, CR, Store) ->
+    %%   This protocol is the same as sym_trans except that it
+    %%   uses syncronized calls to disk_log and syncronized commits
+    %%   when several nodes are involved.
+    
+    {DiscNs, RamNs} = commit_nodes(CR, [], []),
+    Pending = mnesia_checkpoint:tm_enter_pending(Tid, DiscNs, RamNs),
+    ?ets_insert(Store, Pending),
+
+    {WaitFor, Local} = ask_commit(sync_sym_trans, Tid, CR, DiscNs, RamNs),
+    {Outcome, []} = rec_all(WaitFor, Tid, do_commit, []), 
+    ?eval_debug_fun({?MODULE, multi_commit_sym_sync}, 
+		    [{tid, Tid}, {outcome, Outcome}]), 
+    rpc:abcast(DiscNs -- [node()], ?MODULE, {Tid, Outcome}),
+    rpc:abcast(RamNs -- [node()], ?MODULE, {Tid, Outcome}),
+    case Outcome of
+	do_commit ->
+	    mnesia_recover:note_decision(Tid, committed),
+	    mnesia_log:slog(Local),
+	    do_commit(Tid, Local),
+	    %% Just wait for completion result is ignore.
+	    rec_all(WaitFor, Tid, ignore, []),
 	    mnesia_locker:release_tid(Tid),
 	    ?MODULE ! {delete_transaction, Tid};
 	{do_abort, Reason} ->
@@ -1576,7 +1623,7 @@ do_commit(Tid, C, DumperMode) ->
     R3 = do_update(Tid, disc_copies, C#commit.disc_copies, R2),
     do_update(Tid, disc_only_copies, C#commit.disc_only_copies, R3).
 
-%% Update the items in reverse order
+%% Update the items
 do_update(Tid, Storage, [Op | Ops], OldRes) ->
     case catch do_update_op(Tid, Storage, Op) of
 	ok ->
@@ -1857,6 +1904,11 @@ rec_all([Node | Tail], Tid, Res, Pids) ->
 	    rec_all(Tail, Tid, Res, [Pid | Pids]);
 	{?MODULE, Node, {vote_no, Tid, Reason}} ->
 	    rec_all(Tail, Tid, {do_abort, Reason}, Pids);
+	{?MODULE, Node, {committed, Tid}} ->
+	    rec_all(Tail, Tid, Res, Pids);
+	{?MODULE, Node, {aborted, Tid}} ->
+	    rec_all(Tail, Tid, Res, Pids);
+
 	{mnesia_down, Node} ->  
 	    rec_all(Tail, Tid, {do_abort, {bad_commit, Node}}, Pids)
     end;
@@ -2050,11 +2102,7 @@ reconfigure_participants(N, [P | Tail]) ->
 		    Nodes = P#participant.disc_nodes ++
 			    P#participant.ram_nodes,
 		    AliveNodes = Nodes  -- [N],
-		    Protocol =
-			case P#participant.pid of
-			    nopid -> sym_trans;
-			    Pid when pid(Pid)  -> asym_trans
-			end,
+		    Protocol =  P#participant.protocol,
 		    tell_outcome(Tid, Protocol, N, AliveNodes, AliveNodes),
 		    reconfigure_participants(N, Tail)
 	    end

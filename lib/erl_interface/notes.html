@@ -1,83 +1,63 @@
-<HTML>
-<HEAD>
-  <TITLE>Erl_Interface Release Notes</TITLE>
-</HEAD>
+<html>
+<head>
+  <title>Erl_Interface Release Notes</title>
+  <style type="text/css">
+<!--
+    body          { background: white; margin: 3em }
 
-<BODY BGCOLOR="white">
+    body          { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1 h2 h3 h4   { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1            { font-size: 48 }
+    p li          { font-family: Verdana, Arial, Helvetica, sans-serif }
+-->
+  </style>
+</head>
 
-<CENTER><H1>Erl_interface Release Notes</H1></CENTER>
+<body bgcolor=white>
 
-<H2>Erl_interface 3.2.9</H2>
-<H3>Fixed errors and malfunctions</H3>
-
-<UL>
-
-<LI>
-Changed back the return values from erl_send() and erl_reg_send()
-to 1 (as they used to be). Incompatible with plain R7, compatible
-with previous versions.
-<br>(*** INCOMPATIBILITY with R7B ***)
-<br>Own Id: OTP-3772
+<center><h1>ErlInterface Release Notes</h1></center>
 
 
-<LI>
-A race-condition bug in the term allocation routines was corrected.
-<br>Own Id: OTP-3809
+<!--- ################################################################# --->
+
+<h2>ErlInterface 3.3</h2>
 
 
-<LI>
-erl_interface could not be linked with pthreads.
-<br>Own Id: OTP-3810<br>
-Aux Id: Seq 5032
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+     ErlInterface has been rewritten extensively. The library <code>ei
+     </code> is now documented and supported. The old
+     <code>erl_interface</code> is considered obsolete, and provided
+     only for backward compatibility.
+  </li>
+
+  <li>
+    ErlInterface is now thread-safe, and multiple C-nodes may run from
+    the same process.
+  </li>
+
+  <li>
+    New functions are added for connecting and accepting connections
+    from <code>ei</code>; these are documented in <code>ei_connect
+    </code>.
+  </li>
+
+  <li>
+     New functions are added for converting to and from erlang binary
+     format; these are documented in <code>ei</code>.
+  </li>
+
+</ul>
 
 
-<LI>
-The TCB of VxWorks processes no longer grows when erl_errno 
-is accessed.
-On Pthreads plattforms the use of erl_errno no longer crashes 
-programs using multithreading.
-<br>Own Id: OTP-3820
 
+There are also release notes for
+<a href="notes_history.html">older versions</a>.
 
-<LI>
-Name clashes between Erlang emulator and erl_interface
-on VxWorks removed.
-<br>Own Id: OTP-3824
-
-
-</UL>
-
-<h2>Erl_Interface 3.2.3</h2>
-  <h3>Fixed errors</h3>
-  <ul>
-    <li>Memory lossage affecting Pids, Ports and Refs fixed.</li>
-  </ul>
-
-<H2>Erl_Interface 3.2.2</H2>
-  <H3>Improvements and New Features</H3>
-  <UL>
-    <LI>
-      An error reporting facility <CODE>erl_errno</CODE> has been introduced.
-      <BR>
-      Own Id: OTP-3641
-    </LI>
-    <LI>
-      ETERMs are now shrunk to a more reasonable size.<BR>
-      Own Id: OTP-3648
-    </LI>
-  </UL>
-
-<H2>Erl_Interface 3.2.1</H2>
-  <H3>Fixed Errors and Malfunctions</H3>
-  <UL>
-    <LI>
-      Lists containing negative numbers were incorrectly encoded by
-      <CODE>erl_encode()</CODE>. This has been corrected.<BR>
-      Own Id: OTP-3535
-    </LI>
-  </UL>
-
-<P>There are also release notes for <A HREF="notes_history.html">older versions</A>.</P>
-
-</BODY>
-</HTML>
+</body>
+</html>

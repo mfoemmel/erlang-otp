@@ -273,7 +273,7 @@ send(S, Data) when port(S) ->
 	    receive
 		{inet_reply, S, Status} -> Status
 	    end;
-	{'EXIT', Reason} -> {error, Reason}
+	{'EXIT', _Reason} -> {error, einval}
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -290,7 +290,7 @@ sendto(S,IP,Port,Data) when port(S), Port >= 0, Port =< 65535 ->
 	    receive
 		{inet_reply, S, Reply} -> Reply
 	    end;
-	{'EXIT',Reason} -> {error, Reason}
+	{'EXIT', _Reason} -> {error, einval}
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -832,7 +832,9 @@ type_opt(packet)        ->
 	    {cdr, ?TCP_PB_CDR},
 	    {fcgi, ?TCP_PB_FCGI},
 	    {line, ?TCP_PB_LINE_LF},
-	    {tpkt, ?TCP_PB_TPKT}]};
+	    {tpkt, ?TCP_PB_TPKT},
+	    {http, ?TCP_PB_HTTP},
+	    {httph,?TCP_PB_HTTPH}]};
 type_opt(mode) ->
     {enum, [{list, ?INET_MODE_LIST},
 	    {binary, ?INET_MODE_BINARY}]};
@@ -1251,4 +1253,3 @@ ctl_cmd(Port, Cmd, Args) ->
 	{'EXIT', _} -> {error, einval};
 	_ -> {error, internal}
     end.
-

@@ -24,7 +24,7 @@
 	 i/3,pid/3,m/0,m/1,
 	 zi/0, bt/1, q/0,
 	 erlangrc/0,erlangrc/1,bi/1, flush/0, regs/0,
-	 nregs/0,pwd/0,ls/0,ls/1,cd/1,memory/1,memory/0]).
+	 nregs/0,pwd/0,ls/0,ls/1,cd/1,memory/1,memory/0, xm/1]).
 
 -import(lists, [reverse/1,flatten/1,sublist/3,sort/1,keysearch/3,keysort/2,
 		concat/1,max/1,min/1,foreach/2,foldl/3,flatmap/2,map/2]).
@@ -54,6 +54,7 @@ help() ->
 	   "q()        -- quit - shorthand for init:stop()\n"
 	   "regs()     -- information about registered processes\n"
 	   "nregs()    -- information about all registered processes\n"
+	   "xm(M)      -- cross reference check a module\n"
 	   "zi()       -- information about the system, including zombies\n").
 
 %% c(FileName)
@@ -64,20 +65,13 @@ c(File) -> c(File, []).
 c(File, Opt) when atom(Opt) -> c(File, [Opt]);
 c(File, Opts0) ->
     Opts = [report_errors,report_warnings|Opts0],
-    case code:interpreted(File) of
-	false ->
-	    case compile:file(File, Opts) of
-		{ok,Mod} ->			%Listing file.
-		    machine_load(Mod, File, Opts);
-		{ok,Mod,Ws} ->			%Warnings maybe turned on.
-		    machine_load(Mod, File, Opts);
-		Other ->			%Errors go here
-		    Other
-	    end;
-	true ->
-	    format("*** Warning: Module ~p is interpreted.~n",[File]),
-	    format("             No object file will be created.~n"),
-	    int:i(File,Opts)
+    case compile:file(File, Opts) of
+	{ok,Mod} ->				%Listing file.
+	    machine_load(Mod, File, Opts);
+	{ok,Mod,Ws} ->				%Warnings maybe turned on.
+	    machine_load(Mod, File, Opts);
+	Other ->				%Errors go here
+	    Other
     end.
 
 
@@ -192,25 +186,18 @@ nc(File) -> nc(File, []).
 nc(File, Opt) when atom(Opt) -> nc(File, [Opt]);
 nc(File, Opts0) ->
     Opts = Opts0 ++ [report_errors, report_warnings],
-    case code:interpreted(File) of
-	false ->
-	    case compile:file(File, Opts) of
-		{ok,Mod} ->
-		    Fname = concat([File, code:objfile_extension()]),
-		    case file:read_file(Fname) of
-			{ok,Bin} ->
-			    rpc:eval_everywhere(code,load_binary,[Mod,Fname,Bin]),
-			    {ok,Mod};
-			Other ->
-			    Other
-		    end;
-		Other ->                                %Errors go here
+    case compile:file(File, Opts) of
+	{ok,Mod} ->
+	    Fname = concat([File, code:objfile_extension()]),
+	    case file:read_file(Fname) of
+		{ok,Bin} ->
+		    rpc:eval_everywhere(code,load_binary,[Mod,Fname,Bin]),
+		    {ok,Mod};
+		Other ->
 		    Other
 	    end;
-	_ ->
-	    format("*** Warning: Module ~p is interpreted.~n",[File]),
-	    format("             No object file will be created.~n"),
-	    int:ni(File,Opts)
+	Other ->                                %Errors go here
+	    Other
     end.
 
 %% l(Mod)
@@ -378,47 +365,7 @@ bt(Pid) ->
 
 m() ->
     mformat("Module", "File"),
-    Fun =
-	case file:get_cwd() of
-	    {ok, Cwd} ->
-		fun ({Mod,File0}) ->
-			File = relative_name(Mod,File0,Cwd),
-			mformat(Mod, File)
-		end;
-	    {error, _} ->
-		fun ({Mod,File}) -> mformat(Mod, File) end
-	end,
-    foreach(Fun, sort(code:all_loaded())).
-
-relative_name(Mod, File) ->
-    case file:get_cwd() of
-	{ok, Cwd} ->
-	    Cwd2 = filename:join([Cwd]), % to normalise
-	    relative_name(Mod, File, Cwd2);
-	{error, _} ->
-	    File
-    end.
-
-relative_name(Mod, File, Cwd) ->
-    case code:rel_loaded_p(Mod) of
-	false ->
-	    File;
-	_ ->
-	    case lists:prefix(Cwd, File) of
-		false -> File;
-		_     -> strip_cwd(File, Cwd)
-	    end
-    end.
-
-strip_cwd(File0, Cwd) ->
-    I = length(Cwd),
-    L = length(File0),
-    File1 = lists:sublist(File0,I+2,L),
-    case filename:split(File1) of
-	["."|T]  -> filename:join(["."|T]);
-	[".."|T] -> filename:join([".."|T]);
-	_        -> filename:join(".",File1)
-    end.
+    foreach(fun ({Mod,File}) -> mformat(Mod, File) end, sort(code:all_loaded())).
 
 mformat(A1, A2) ->
     format("~-20s  ~s\n", [A1,A2]).
@@ -458,7 +405,7 @@ f_p_e(P, F) ->
     end.
 
 bi(I) ->
-    case erlang:info(I) of
+    case erlang:system_info(I) of
 	X when binary(X) -> io:put_chars(binary_to_list(X));
 	X when list(X) -> io:put_chars(X);
 	X -> format("~w", [X])
@@ -472,53 +419,40 @@ m(M) ->
     L = M:module_info(),
     {value,{exports,E}} = keysearch(exports, 1, L),
     Time = get_compile_time(L),
-    Srcfile = get_src_file(L),
     COpts = get_compile_options(L),
     format("Module ~w compiled: ",[M]), print_time(Time),
     format("Compiler options:  ~p~n", [COpts]),
-    format("Sourcefile:  ~s~n", [Srcfile]),
     print_object_file(M),
     format("Exports: ~n",[]), print_exports(keysort(1, E)).
 
 print_object_file(Mod) ->
     case code:is_loaded(Mod) of
-	{file,File0} ->
-	    File = relative_name(Mod,File0),
-	    format("Objectfile:  ~s~n",[File]);
+	{file,File} ->
+	    format("Object file: ~s\n", [File]);
 	_ ->
 	    ignore
     end.
 
 get_compile_time(L) ->
-    case get_compile_info(L, time, compiletime) of
+    case get_compile_info(L, time) of
 	{ok,Val} -> Val;
 	error -> notime
     end.
 
 get_compile_options(L) ->
-    case get_compile_info(L, options, compiler_options) of
+    case get_compile_info(L, options) of
 	{ok,Val} -> Val;
 	error -> []
     end.
 
-get_src_file(L) ->
-    case get_compile_info(L, source_file, source_file) of
-	{ok,Val} -> Val;
-	error -> "No source file info available"
-    end.
-
-get_compile_info(L, Tag, OldTag) ->
+get_compile_info(L, Tag) ->
     case keysearch(compile, 1, L) of
 	{value, {compile, I}} ->
 	    case keysearch(Tag, 1, I) of
 		{value, {Tag, Val}} -> {ok,Val};
 		false -> error
 	    end;
-	false ->
-	    case keysearch(OldTag, 1, L) of
-		{value, {OldTag, Val}} -> {ok,Val};
-		false -> error
-	    end
+	false -> error
     end.
 
 print_exports(X) when length(X) > 16 ->
@@ -679,13 +613,16 @@ w(X) ->
 %%
 
 get_proc_mem() ->
-    get_proc_mem(erlang:processes(), 0).
-
-get_proc_mem([P|Ps], Acc) ->
-    {memory, M} = erlang:process_info(P, memory),
-    get_proc_mem(Ps, Acc + M);
-get_proc_mem([],Acc) ->
-    Acc.
+    lists:foldl(fun (P, Acc) ->
+			case process_info(P, memory) of
+			    {memory, M} ->
+				Acc + M;
+			    _ ->
+				Acc
+			end
+		end,
+		0,
+		processes()).
 
 get_non_proc_mem([{static, Alloc}|Rest], Acc) ->
     get_non_proc_mem(Rest, Acc+Alloc);
@@ -753,11 +690,22 @@ get_ets_mem([], Acc) ->
 
 
 mem(total, Proc, MemList, Ets) ->
-    mem(processes, Proc, MemList, Ets) + mem(system, Proc, MemList, Ets);
+    case catch get_mem(total, allocated, MemList) of
+	Tot when integer(Tot) ->
+	    Tot;
+	_ ->
+	    mem(processes, Proc, MemList, Ets)
+		+ mem(system, Proc, MemList, Ets)
+    end;
 mem(processes, Proc, MemList, Ets) ->
     Proc;
 mem(system, Proc, MemList, Ets) ->
-    get_non_proc_mem(MemList, 0) + mem(ets, Proc, MemList, Ets);
+    case catch get_mem(total, allocated, MemList) of
+	Tot when integer(Tot) ->
+	    Tot - mem(processes, Proc, MemList, Ets);
+	_ ->
+	    get_non_proc_mem(MemList, 0) + mem(ets, Proc, MemList, Ets)
+    end;
 mem(atom, Proc, MemList, Ets) ->
     get_mem(atom_space, allocated, MemList)
         + get_mem(atom_table, allocated, MemList)
@@ -776,6 +724,13 @@ mem(code, Proc, MemList, Ets) ->
         + get_mem(module_desc, allocated, MemList);
 mem(ets, Proc, MemList, Ets) ->
     Ets;
+mem(maximum, Proc, MemList, Ets) ->
+    case catch get_mem(maximum, allocated, MemList) of
+	Max when integer(Max) ->
+	    Max;
+	_ ->
+	    unknown
+    end;
 mem(_, _, _, _) ->
     badarg.
 
@@ -790,6 +745,7 @@ get_allocated_areas_if_needed(atom) ->      erlang:system_info(allocated_areas);
 get_allocated_areas_if_needed(atom_used) -> erlang:system_info(allocated_areas);
 get_allocated_areas_if_needed(binary) ->    erlang:system_info(allocated_areas);
 get_allocated_areas_if_needed(code) ->      erlang:system_info(allocated_areas);
+get_allocated_areas_if_needed(maximum) ->   erlang:system_info(allocated_areas);
 get_allocated_areas_if_needed(_) ->         [].
 
 get_ets_mem_if_needed(total) ->             get_ets_mem();
@@ -797,22 +753,31 @@ get_ets_mem_if_needed(system) ->            get_ets_mem();
 get_ets_mem_if_needed(ets) ->               get_ets_mem();
 get_ets_mem_if_needed(_) ->                 0.
 
+get_maximum_list(Proc, MemList, Ets) ->
+    case mem(maximum, Proc, MemList, Ets) of
+	unknown ->
+	    [];
+	Max ->
+	    [{maximum, Max}]
+    end.
+
+
 %%
 %% memory information.
 %%
-
 memory() ->
     MemList = erlang:system_info(allocated_areas),
     Ets = get_ets_mem(),
-    Proc = get_proc_mem(erlang:processes(), 0),
-    [{total,     mem(total,     Proc, MemList, Ets)},
-     {processes, mem(processes, Proc, MemList, Ets)},
-     {system,    mem(system,    Proc, MemList, Ets)},
-     {atom,      mem(atom,      Proc, MemList, Ets)},
-     {atom_used, mem(atom_used, Proc, MemList, Ets)},
-     {binary,    mem(binary,    Proc, MemList, Ets)},
-     {code,      mem(code,      Proc, MemList, Ets)},
-     {ets,       mem(ets,       Proc, MemList, Ets)}].
+    Proc = get_proc_mem(),
+    [{total,        mem(total,        Proc, MemList, Ets)},
+     {processes,    mem(processes,    Proc, MemList, Ets)},
+     {system,       mem(system,       Proc, MemList, Ets)},
+     {atom,         mem(atom,         Proc, MemList, Ets)},
+     {atom_used,    mem(atom_used,    Proc, MemList, Ets)},
+     {binary,       mem(binary,       Proc, MemList, Ets)},
+     {code,         mem(code,         Proc, MemList, Ets)},
+     {ets,          mem(ets,          Proc, MemList, Ets)}|
+     get_maximum_list(                Proc, MemList, Ets)].
 
 memory(Type) ->
     case mem(Type,
@@ -821,8 +786,16 @@ memory(Type) ->
 	     get_ets_mem_if_needed(Type)) of
 	Result when integer(Result) ->
 	    Result;
+	unknown when Type == maximum ->
+	    erlang:fault(badarg, [Type]);
 	Error ->
 	    erlang:fault(Error, [Type])
     end.
 
 
+%%
+%% Cross Reference Check
+%% 
+
+xm(M) ->
+    xref:m(M).

@@ -22,8 +22,7 @@
 
 -export([system_bittypes/0, 
 	 system_bitdefault/0,
-	 set_bit_type/2,set_bit_type/5,
-	 set_type/2,
+	 set_bit_type/2,
 	 as_list/1]).
 
 %% Dummies.
@@ -36,20 +35,14 @@ system_bittypes() -> no_system_types.
 as_list(Bt) ->
     [Bt#bittype.type,{unit,Bt#bittype.unit},Bt#bittype.sign,Bt#bittype.endian].
 
-set_bit_type(Expr, Size, TypeList, Default, Dict) ->
-    set_type(Size, TypeList).
-
-set_bit_type(Size, TypeList) ->
-    set_type(Size, TypeList).
-
-%% set_type(Size, TypeList) ->
+%% set_bit_type(Size, TypeList) ->
 %%              {ok,Size,BitType} |
 %%              {error,{undefined_bittype,Name}} |
-%%              {error,{bittype_mismatch,T1,T2}}
+%%              {error,{bittype_mismatch,T1,T2,What}}
 
-set_type(Size, default) ->
-    set_type(Size, []);
-set_type(Size, TypeList) ->
+set_bit_type(Size, default) ->
+    set_bit_type(Size, []);
+set_bit_type(Size, TypeList) ->
     case catch set_bit(TypeList, #bittype{}) of
 	{ok,#bittype{type=Type,unit=Unit,sign=Sign,endian=Endian}} ->
 	    apply_defaults(Type, Size, Unit, Sign, Endian);
@@ -109,7 +102,7 @@ update_type(Name, _) -> throw({error,{undefined_bittype,Name}}).
 %% Merge two bit type specifications.
 %%
 merge_bittype(B1, B2) ->
-    Endian = merge_field(B1#bittype.endian, B2#bittype.endian, "endian"),
+    Endian = merge_field(B1#bittype.endian, B2#bittype.endian, "endianness"),
     Sign   = merge_field(B1#bittype.sign, B2#bittype.sign, "sign"),
     Type   = merge_field(B1#bittype.type, B2#bittype.type, "type"),
     Unit   = merge_field(B1#bittype.unit, B2#bittype.unit, "unit"),
@@ -119,7 +112,7 @@ merge_field(undefined, B, _) -> B;
 merge_field(A, undefined, _) -> A;
 merge_field(A, A, _) -> A;
 merge_field(X, Y, What) ->
-    throw({error,{bittype_mismatch,X,Y}}).
+    throw({error,{bittype_mismatch,X,Y,What}}).
 
 %%
 %% Defaults are as follows.

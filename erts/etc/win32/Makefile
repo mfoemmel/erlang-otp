@@ -39,7 +39,8 @@ INSTALL_SRC = ./start_erl.c ./Nmakefile.start_erl
 
 INSTALL_WS2 = 	ws2setup.exe
 
-INSTALL_INCLUDE = $(RUNTIME)/driver.h $(RUNTIME)/erl_driver.h $(SYS)/driver_int.h 
+INSTALL_INCLUDE = $(ERL_TOP)/erts/emulator/obsolete/driver.h \
+   $(RUNTIME)/erl_driver.h $(SYS)/driver_int.h 
 INSTALL_LIBS =  $(BINDIR)/erl_dll.lib
 
 INSTALL_README  = \

@@ -25,7 +25,7 @@
 #endif
 
 #include "sys.h"
-#include "driver.h"
+#include "erl_driver.h"
 #include <stdlib.h>
 
 #ifdef __WIN32__
@@ -42,14 +42,13 @@
 #define PATHSEP ";"
 #define NULL_DEVICE "nul"
 #define BINARY_EXT ".exe"
-#define QUOTE(s) possibly_quote(s)
 #else
 #define PATHSEP ":"
 #define DIRSEP "/"
 #define NULL_DEVICE "/dev/null"
 #define BINARY_EXT ""
-#define QUOTE(s) s
 #endif
+#define QUOTE(s) s
 
 /*
  * Define sleep(seconds) in terms of Sleep() on Windows.
@@ -79,7 +78,7 @@ void error(char* format, ...);
 
 static void mergeargs(int *argc, char ***argv, char **addargs);
 static char **build_args_from_env(void);
-static void get_parameters(void);
+static void get_parameters(int argc, char** argv);
 static void add_arg(char *new_arg);
 static void add_args(char *first_arg, ...);
 static void add_Eargs(char *new_arg);
@@ -88,14 +87,15 @@ static void *emalloc(size_t size);
 static void *erealloc(void *p, size_t size);
 static void efree(void *p);
 static char* strsave(char* string);
-static FUNCTION(void, get_home, ());
+static void get_home(void);
 #ifdef __WIN32__
 static void get_start_erl_data(char *);
 static char* get_value(HKEY key, char* value_name, BOOL mustExit);
 static char* possibly_quote(char* arg);
+
 /* 
  * Functions from win_erlexec.c
-*/
+ */
 #ifdef WIN32_WERL
 int
 start_win_emulator(char* emu, char** argv, int start_detached);
@@ -199,9 +199,9 @@ main(int argc, char **argv)
     int i;
     char* s;
     char *epmd_prog = NULL;
+    int process_args = 1;
 
 #ifdef __WIN32__
-
     /* if we started this erl just to get a detached emulator, 
      * the arguments are already prepared for beam, so we skip
      * directly to start_emulator */
@@ -221,8 +221,7 @@ main(int argc, char **argv)
     }
 #endif		
 
-    
-    get_parameters();
+    get_parameters(argc, argv);
     
     /*
      * Construct the path of the executable.
@@ -234,9 +233,7 @@ main(int argc, char **argv)
 	  instrumented = 1;
        i++;
     }
-#ifdef __WIN32__
-    emu = argv[0];		/* we relaunch ourserlves when -detached given */
-#else
+#if !defined(__WIN32__)
     if (instrumented) {
 	emu = add_instrument_suffix(emu);
     }
@@ -262,230 +259,241 @@ main(int argc, char **argv)
 
     i = 1;
 
+    get_home();
+    add_args("-home", home, NULL);
     while (i < argc) {
-	switch (argv[i][0]) {
-	case '-':
-	    switch (argv[i][1]) {
+	if (process_args) {
+	    switch (argv[i][0]) {
+	      case '-':
+		switch (argv[i][1]) {
 #if defined(__WIN32__) && defined(DEBUG)
-	    case 'b':
-		if (strcmp(argv[i], "-bc") == 0) {
-		    static char bc[] = "bcpro.exe";
-		    int i;
+		  case 'b':
+		    if (strcmp(argv[i], "-bc") == 0) {
+			static char bc[] = "bcpro.exe";
+			int i;
 
-		    /*
-		     * Run the emulator under control of BoundsChecker, by
-		     * moving up all arguments and putting into arg0.
-		     * Note that we find the path to bcpro, because the code
-		     * which starts the emulator uses execv/spawnv, which don't
-		     * search the path.
-		     */
+			/*
+			 * Run the emulator under control of BoundsChecker, by
+			 * moving up all arguments and putting into arg0.
+			 * Note that we find the path to bcpro, because the code
+			 * which starts the emulator uses execv/spawnv, which don't
+			 * search the path.
+			 */
 
-		    for (i = EargsCnt; i > 0; i--)
-			Eargsp[i] = Eargsp[i-1];
-		    EargsCnt++;
-		    _searchenv(bc, "PATH", tmpStr);
-		    if (tmpStr[0] == '\0')
-			error("Can't find %s in PATH", bc);
-		    Eargsp[0] = emu = strsave(tmpStr);
-		}
-		else if (strcmp(argv[i], "-boot") == 0) {
-		    if (boot_script)
-			error("Conflicting -start_erl and -boot options");
-		    if (i+1 >= argc)
-			usage("-boot");
-		    boot_script = strsave(argv[i+1]);
-		    i++;
-		}
-		else {
-		    add_arg(argv[i]);
-		}
-		break;
+			for (i = EargsCnt; i > 0; i--)
+			    Eargsp[i] = Eargsp[i-1];
+			EargsCnt++;
+			_searchenv(bc, "PATH", tmpStr);
+			if (tmpStr[0] == '\0')
+			    error("Can't find %s in PATH", bc);
+			Eargsp[0] = emu = strsave(tmpStr);
+		    }
+		    else if (strcmp(argv[i], "-boot") == 0) {
+			if (boot_script)
+			    error("Conflicting -start_erl and -boot options");
+			if (i+1 >= argc)
+			    usage("-boot");
+			boot_script = strsave(argv[i+1]);
+			i++;
+		    }
+		    else {
+			add_arg(argv[i]);
+		    }
+		    break;
 #endif	
 
-	    case 'c':
-		if (strcmp(argv[i], "-compile") == 0) {
+		  case 'c':
+		    if (strcmp(argv[i], "-compile") == 0) {
+			/*
+			 * Note that the shell script erl.exec does an recursive call
+			 * on itself here.  We'll avoid doing that.
+			 */
+			add_args("-noshell", "-noinput", "-s", "c", "lc_batch",
+				 NULL);
+			add_Eargs("-B");
+			haltAfterwards = 0;
+		    }
+#ifdef __WIN32__
+		    else if (strcmp(argv[i], "-config") == 0){
+			if (config_script)
+			    error("Conflicting -start_erl and -config options");
+			if (i+1 >= argc)
+			    usage("-config");
+			config_script = strsave(argv[i+1]);
+			i++;
+		    }
+#endif
+		    else {
+			add_arg(argv[i]);
+		    }
+		    break;
+
+		  case 'd':
+		    if (strcmp(argv[i], "-detached") != 0) {
+			add_arg(argv[i]);
+		    } else {
+			start_detached = 1;
+			add_args("-noshell", "-noinput", NULL);
+		    }
+		    break;
+
+		  case 'i':
+		    if (strcmp(argv[i], "-instr") == 0)
+			;	/* already handled above */
+		    else
+			add_arg(argv[i]);
+		    break;
+
+		  case 'e':
+		    if (strcmp(argv[i], "-extra") == 0) {
+			process_args = 0;
+			add_arg(argv[i]);
+		    } else if (strcmp(argv[i], "-emu_args") == 0) { /* -emu_args */
+			verbose = 1;
+		    } else if (strcmp(argv[i], "-env") == 0) { /* -env VARNAME VARVALUE */
+			if (i+2 >= argc)
+			    usage("-env");
+			sprintf(tmpStr, "%s=%s", argv[i+1], argv[i+2]);
+			putenv(strsave(tmpStr));
+			i += 2;
+		    } else if (strcmp(argv[i], "-epmd") == 0) { 
+			if (i+1 >= argc)
+			    usage("-epmd");
+			epmd_prog = argv[i+1];
+			++i;
+		    } else {
+			add_arg(argv[i]);
+		    }
+		    break;
+		  case 'k':
+		    if (strcmp(argv[i], "-keep_window") == 0) {
+			keep_window = 1;
+		    } else
+			add_arg(argv[i]);
+		    break;
+
+		  case 'm':
 		    /*
 		     * Note that the shell script erl.exec does an recursive call
 		     * on itself here.  We'll avoid doing that.
 		     */
-		    add_args("-noshell", "-noinput", "-s", "c", "lc_batch",
-			     NULL);
-		    add_Eargs("-B");
-		    haltAfterwards = 0;
-		}
-#ifdef __WIN32__
-		else if (strcmp(argv[i], "-config") == 0){
-		    if (config_script)
-			error("Conflicting -start_erl and -config options");
-		    if (i+1 >= argc)
-			usage("-config");
-		    config_script = strsave(argv[i+1]);
-		    i++;
-		}
-#endif
-		else {
-		    add_arg(argv[i]);
-		}
-		break;
-
-	    case 'd':
-		if (strcmp(argv[i], "-detached") != 0) {
-		    add_arg(argv[i]);
-		} else {
-		    start_detached = 1;
-		    add_args("-noshell", "-noinput", NULL);
-		}
-		break;
-
-	    case 'i':
-		if (strcmp(argv[i], "-instr") == 0)
-		   ;		/* already handled above */
-		else
-		   add_arg(argv[i]);
-		break;
-
-	    case 'e':
-		if (strcmp(argv[i], "-emu_args") == 0) { /* -emu_args */
-		    verbose = 1;
-		} else if (strcmp(argv[i], "-env") == 0) { /* -env VARNAME VARVALUE */
-		    if (i+2 >= argc)
-			usage("-env");
-		    sprintf(tmpStr, "%s=%s", argv[i+1], argv[i+2]);
-		    putenv(strsave(tmpStr));
-		    i += 2;
-		} else if (strcmp(argv[i], "-epmd") == 0) { 
-		    if (i+1 >= argc)
-			usage("-epmd");
-		    epmd_prog = argv[i+1];
-		    ++i;
-		} else {
-		    add_arg(argv[i]);
-		}
-		break;
-	    case 'k':
-		if (strcmp(argv[i], "-keep_window") == 0) {
-		    keep_window = 1;
-		} else
-		    add_arg(argv[i]);
-		break;
-
-	    case 'm':
-		/*
-		 * Note that the shell script erl.exec does an recursive call
-		 * on itself here.  We'll avoid doing that.
-		 */
-		if (strcmp(argv[i], "-make") == 0) {
-		    add_args("-noshell", "-noinput", "-s", "make", "all", NULL);
-		    add_Eargs("-B");
-		    haltAfterwards = 1;
-		    i = argc;	/* Skip rest of command line */
-		} else if (strcmp(argv[i], "-man") == 0) {
+		    if (strcmp(argv[i], "-make") == 0) {
+			add_args("-noshell", "-noinput", "-s", "make", "all", NULL);
+			add_Eargs("-B");
+			haltAfterwards = 1;
+			i = argc; /* Skip rest of command line */
+		    } else if (strcmp(argv[i], "-man") == 0) {
 #if defined(__WIN32__)
-		    error("-man not supported on Windows");
+			error("-man not supported on Windows");
 #else
-		    argv[i] = "man";
-		    sprintf(tmpStr, "MANPATH=%s/man", rootdir);
-		    putenv(strsave(tmpStr));
-		    execvp("man", argv+i);
-		    error("Could not execute the 'man' command.");
+			argv[i] = "man";
+			sprintf(tmpStr, "MANPATH=%s/man", rootdir);
+			putenv(strsave(tmpStr));
+			execvp("man", argv+i);
+			error("Could not execute the 'man' command.");
 #endif
-		} else
-		  add_arg(argv[i]);
-		break;
-
-	    case 'n':
-		if (strcmp(argv[i], "-name") == 0) { /* -name NAME */
-		    if (i+1 >= argc)
-			usage("-name");
-		    
-		    /*
-		     * Note: Cannot use add_args() here, due to non-defined
-		     * evaluation order.
-		     */
-
-		    add_arg(argv[i]);
-		    add_arg(argv[i+1]);
-		    isdistributed = 1;
-		    i++;
-		} else if (strcmp(argv[i], "-noshell") == 0) {
-		    add_args("-noshell", "-noinp_shell", NULL);
-		} else if (strcmp(argv[i], "-noinput") == 0) {
-		    add_args("-noshell", "-noinput", NULL);
-		} else if (strcmp(argv[i], "-nohup") == 0) {
-		    add_arg("-nohup");
-		    nohup = 1;
-		} else if (strcmp(argv[i], "-no_epmd") == 0) {
-		    add_arg("-no_epmd");
-		    no_epmd = 1;
-		} else {
-		    add_arg(argv[i]);
-		}
-		break;
-
-	    case 's':		/* -sname NAME */
-		if (strcmp(argv[i], "-sname") == 0) {
-		    if (i+1 >= argc)
-			usage("-sname");
-		    add_arg(argv[i]);
-		    add_arg(argv[i+1]);
-		    isdistributed = 1;
-		    i++;
-		}
-#ifdef __WIN32__
-		else if (strcmp(argv[i], "-start_erl") == 0) {
-		    if (i+1 < argc && argv[i+1][0] != '-') {
-		       get_start_erl_data(argv[i+1]);
-		       i++;
 		    } else
-		       get_start_erl_data((char *) NULL);
-		}
-#endif
-		else
-		    add_arg(argv[i]);
-		
-		break;
-	
-	    case 'v':		/* -version */
-		if (strcmp(argv[i], "-version") == 0)
-		    add_Eargs("-V");
-		else
-		    add_arg(argv[i]);
-		break;
+			add_arg(argv[i]);
+		    break;
 
-	    case 'x':
-		if (argv[i][2] != '\0') {
-		    add_arg(argv[i]);
-		} else {
-#ifdef __WIN32__
-		    error("'-x' supported on Unix only.");
-#else
-		    sprintf(tmpStr, "%s/lib/xerl", rootdir);
-		    if (dirq(tmpStr)) {
-			sprintf(tmpStr, "%s/lib/pxw", rootdir);
-			if (dirq(tmpStr)) {
-			    add_args("-x", "-noshell", NULL);
-			    break;
-			}
+		  case 'n':
+		    if (strcmp(argv[i], "-name") == 0) { /* -name NAME */
+			if (i+1 >= argc)
+			    usage("-name");
+		    
+			/*
+			 * Note: Cannot use add_args() here, due to non-defined
+			 * evaluation order.
+			 */
+
+			add_arg(argv[i]);
+			add_arg(argv[i+1]);
+			isdistributed = 1;
+			i++;
+		    } else if (strcmp(argv[i], "-noshell") == 0) {
+			add_args("-noshell", "-noinp_shell", NULL);
+		    } else if (strcmp(argv[i], "-noinput") == 0) {
+			add_args("-noshell", "-noinput", NULL);
+		    } else if (strcmp(argv[i], "-nohup") == 0) {
+			add_arg("-nohup");
+			nohup = 1;
+		    } else if (strcmp(argv[i], "-no_epmd") == 0) {
+			add_arg("-no_epmd");
+			no_epmd = 1;
+		    } else {
+			add_arg(argv[i]);
 		    }
-		    error("You need the 'xerl' and 'pxw' bundles to run 'erl -x'");
+		    break;
+
+		  case 's':	/* -sname NAME */
+		    if (strcmp(argv[i], "-sname") == 0) {
+			if (i+1 >= argc)
+			    usage("-sname");
+			add_arg(argv[i]);
+			add_arg(argv[i+1]);
+			isdistributed = 1;
+			i++;
+		    }
+#ifdef __WIN32__
+		    else if (strcmp(argv[i], "-service_event")) {
+			add_arg(argv[i]);
+			add_arg(argv[i+1]);
+			i++;
+		    }		    
+		    else if (strcmp(argv[i], "-start_erl") == 0) {
+			if (i+1 < argc && argv[i+1][0] != '-') {
+			    get_start_erl_data(argv[i+1]);
+			    i++;
+			} else
+			    get_start_erl_data((char *) NULL);
+		    }
 #endif
-		}
+		    else
+			add_arg(argv[i]);
+		
+		    break;
+	
+		  case 'v':	/* -version */
+		    if (strcmp(argv[i], "-version") == 0)
+			add_Eargs("-V");
+		    else
+			add_arg(argv[i]);
+		    break;
+
+		  case 'x':
+		    if (argv[i][2] != '\0') {
+			add_arg(argv[i]);
+		    } else {
+#ifdef __WIN32__
+			error("'-x' supported on Unix only.");
+#else
+			sprintf(tmpStr, "%s/lib/xerl", rootdir);
+			if (dirq(tmpStr)) {
+			    sprintf(tmpStr, "%s/lib/pxw", rootdir);
+			    if (dirq(tmpStr)) {
+				add_args("-x", "-noshell", NULL);
+				break;
+			    }
+			}
+			error("You need the 'xerl' and 'pxw' bundles to run 'erl -x'");
+#endif
+		    }
+		    break;
+
+		  default:
+		    add_arg(argv[i]);
+		    break;
+		} /* switch(argv[i][1] */
 		break;
 
-	    default:
-		add_arg(argv[i]);
-		break;
-	    } /* switch(argv[i][1] */
-	    break;
-
-	case '+':
-	    switch (argv[i][1]) {
-	    case 'i':
-	    case 'b':
-	    case 's':
-	    case 'h':
-	    case '#':
-	    case 'P':
+	      case '+':
+		switch (argv[i][1]) {
+		  case 'i':
+		  case 'b':
+		  case 's':
+		  case 'h':
+		  case '#':
+		  case 'P':
 		{
 		    char xx[3];
 		    xx[0] = '-';
@@ -500,26 +508,31 @@ main(int argc, char **argv)
 		    i++;
 		    break;
 		}
-	    default:
-		argv[i][0] = '-'; /* Change +option to -option. */
-		add_Eargs(argv[i]);
-	    }
-	    break;
+		  default:
+		    argv[i][0] = '-'; /* Change +option to -option. */
+		    add_Eargs(argv[i]);
+		}
+		break;
       
-	default:
+	      default:
+		add_arg(argv[i]);
+	    } /* switch(argv[i][0] */
+	    i++;
+	} else {
 	    add_arg(argv[i]);
-	} /* switch(argv[i][0] */
-	i++;
+	    i++;
+	}
     }
 
-    get_home();
-    add_args("-home", home, NULL);
 #ifdef __WIN32__
     if (boot_script)
 	add_args("-boot", boot_script, NULL);
     if (config_script)
 	add_args("-config", config_script, NULL);
 #endif
+
+    /* Doesn't conflict with -extra, since -make skips all the rest of
+       the arguments. */
     if (haltAfterwards) {
 	add_args("-s", "erlang", "halt", NULL);
     }
@@ -634,23 +647,40 @@ void
 start_epmd(char *epmd)
 {
     char  epmd_cmd[MAXPATHLEN+100];
+#ifdef __WIN32__
+    char* arg1 = NULL;
+#endif
     int   result;
 
     if (!epmd) {
+	epmd = epmd_cmd;
 #ifdef __WIN32__
 	sprintf(epmd_cmd, "%s" DIRSEP "epmd", bindir);
-	result = spawnlp(_P_DETACH, epmd_cmd, epmd_cmd, "-daemon", NULL);
+	arg1 = "-daemon";
 #else
 	sprintf(epmd_cmd, "%s" DIRSEP "epmd -daemon", bindir);
-	result = system(epmd_cmd);
 #endif
-    } else {
+    } 
 #ifdef __WIN32__
-	result = spawnlp(_P_DETACH, epmd, epmd, NULL);
+    if (arg1 != NULL) {
+	strcat(epmd, " ");
+	strcat(epmd, arg1);
+    }
+    {
+	STARTUPINFO start;
+	PROCESS_INFORMATION pi;
+	memset(&start, 0, sizeof (start));
+	start.cb = sizeof (start);
+	if (!CreateProcess(NULL, epmd, NULL, NULL, FALSE, 
+			       CREATE_DEFAULT_ERROR_MODE | DETACHED_PROCESS,
+			       NULL, NULL, &start, &pi))
+	    result = -1;
+	else
+	    result = 0;
+    }
 #else
-	result = system(epmd);
+    result = system(epmd);
 #endif
-    }	
     if (result == -1) {
       fprintf(stderr, "Error spawning %s (error %d)\n", epmd_cmd,errno);
       exit(1);
@@ -844,7 +874,7 @@ get_value(HKEY key, char* value_name, BOOL mustExist)
 }
 
 static void
-get_parameters(void)
+get_parameters(int argc, char** argv)
 {
     HKEY key;			/* Handle to open key. */
     char* tcl_library;
@@ -856,7 +886,8 @@ get_parameters(void)
     progname = get_value(key, "Progname", TRUE);
     bindir = get_value(key, "Bindir", TRUE);
     rootdir = get_value(key, "Rootdir", TRUE);
-    emu = get_value(key, "Emulator", TRUE);
+    emu = argv[0];
+
     /*
      * Get values for GS and store in environment.
      */
@@ -879,7 +910,7 @@ get_parameters(void)
 }
 
 static void
-get_home()
+get_home(void)
 {
     int len;
     char tmpstr[MAX_PATH+1];
@@ -904,24 +935,24 @@ get_home()
 #else
 
 static void
-get_parameters()
+get_parameters(int argc, char** argv)
 {
-  progname = getenv("PROGNAME");
-  bindir = getenv("BINDIR");
-  rootdir = getenv("ROOTDIR");
-  emu = getenv("EMU");
-  if (!progname || !bindir || !rootdir || !emu )
-    error("BINDIR, ROOTDIR, EMU and PROGNAME  must be set");
+    progname = getenv("PROGNAME");
+    bindir = getenv("BINDIR");
+    rootdir = getenv("ROOTDIR");
+    emu = getenv("EMU");
+    if (!progname || !bindir || !rootdir || !emu ) {
+	error("BINDIR, ROOTDIR, EMU and PROGNAME  must be set");
+    }
 }
 
 static void
-get_home()
+get_home(void)
 {
-  home = getenv("HOME");
-  if (home == NULL)
-    error("HOME must be set");
+    home = getenv("HOME");
+    if (home == NULL)
+	error("HOME must be set");
 }
-
 
 #endif
 
@@ -931,7 +962,7 @@ static char **build_args_from_env(void)
     int argc = 0;
     char **argv = NULL;
     int alloced = 0;
-    char **cur_s;
+    char **cur_s = NULL;	/* Initialized to avoid warning. */
     int s_alloced = 0;
     int s_pos = 0;
     char *p;

@@ -25,7 +25,8 @@
 -export([get_dependencies/1, add_inh_data/3, preproc/3]).
 -export([getBrokerData/3,defaultBrokerData/1,list_to_term/1]).
 -export([get_local_c_headers/2,get_included_c_headers/1,is_inherited_by/3]).
--export([no_doubles/1]).
+-export([no_doubles/1,fetchRandomLocalType/1,fetchLocalOperationNames/2]).
+-export([is_local/2]).
 
 %% Debug
 -export([print_tab/1,slashify/1,is_short/1]).
@@ -841,20 +842,32 @@ get_included_c_headers([{file_data_included,PF_idl,CF_idl,T,S,N,SN,0,_}|Hs],All,
     FN = string:sub_string(PF_idl,1,Len-4),
     case only_top_level(PF_idl,All) of
 	true ->
-	    get_included_c_headers(Hs,All,["oe_"++FN|Found]);
+	    %%
+	    L = string:tokens(FN,"/"),
+	    FN2 = lists:last(L),
+	    %%
+	    get_included_c_headers(Hs,All,["oe_"++FN2|Found]);
 	false ->
 	    case T of
 		module ->
 		    case contains_interface(PF_idl,All) of
 			true ->
-			    get_included_c_headers(Hs,All,["oe_"++FN|Found]);
+			    %%
+			    L = string:tokens(FN,"/"),
+			    FN2 = lists:last(L),
+			    %%
+			    get_included_c_headers(Hs,All,["oe_"++FN2|Found]);
 			false ->
 			    get_included_c_headers(Hs,All,[SN|Found])
 		    end;
 	        interface ->
 		    case contains_interface(PF_idl,All) of
 			true ->
-			    get_included_c_headers(Hs,All,["oe_"++FN|Found]);
+			    %%
+			    L = string:tokens(FN,"/"),
+			    FN2 = lists:last(L),
+			    %%
+			    get_included_c_headers(Hs,All,["oe_"++FN2|Found]);
 			false ->
 			    get_included_c_headers(Hs,All,[SN|Found])
 		    end;
@@ -1884,6 +1897,76 @@ hasNonSpecificCodeoptionOnTopFile(S,File) ->
 
 
 
+%%---------------------------------------------
+%%
+%% Returns {ok,IfrId}/error when searching a random local type
+%%
+%%---------------------------------------------
+
+
+fetchRandomLocalType(G) ->
+    
+    S = pragmatab(G),
+
+    case ets:match(S,{file_data_local,'_','_','$2','$3','$4','_','_','_'}) of		
+	[] ->
+	    false;
+	
+	List ->
+	    fetchRandomLocalType(S,List)
+    end.
+
+
+fetchRandomLocalType(_,[]) ->
+    false;
+fetchRandomLocalType(S,[[module|_]|Tail]) ->
+    fetchRandomLocalType(S,Tail);
+fetchRandomLocalType(S,[[_,Scope,Name]|Tail]) ->
+    case ets:match(S,{alias,[Name|Scope],'$1'}) of
+	[] ->
+	    fetchRandomLocalType(S,Tail);
+	[[IfrId]] ->
+	    {ok,IfrId}
+    end.
 
 
 
+%%---------------------------------------------
+%%
+%% Returns A list of local operation mapping 
+%% for a given scope
+%%
+%%---------------------------------------------
+
+
+fetchLocalOperationNames(G,I) ->
+    S = pragmatab(G),
+    case ets:match(S,{file_data_local,'_','_',op,I,'$4','_','_','_'}) of
+	[] ->
+	    [];
+	List ->
+	    fetchLocalOperationNames2(List,[])
+    end.
+
+fetchLocalOperationNames2([],Found) ->
+    lists:reverse(Found);
+fetchLocalOperationNames2([[Name]|Names],Found) ->
+    fetchLocalOperationNames2(Names,[Name|Found]).
+
+
+
+%%------------------------------------------------
+%%
+%%  Returns a true if this scoped id is a local
+%%  one, false otherwise
+%%
+%%------------------------------------------------
+is_local(G,ScopedId) ->
+    S = pragmatab(G),
+    Name = icgen:to_undersc(ScopedId),
+    case ets:match(S,{file_data_local,'_','_','_',tl(ScopedId),'_',Name,'_','_'}) of
+	[[]] ->
+	    true;
+	_ ->
+	    false
+    end.

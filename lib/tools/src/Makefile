@@ -33,21 +33,11 @@ RELSYSDIR = $(RELEASE_PATH)/lib/tools-$(VSN)
 # Common Macros
 # ----------------------------------------------------
 
-MODULES= coast               \
-	coast_analyse_funcs  \
-	coast_comm_funcs     \
-	coast_compile_funcs  \
-	coast_server         \
+MODULES= cover               \
+	cover_web	     \
 	eprof                \
 	fprof                \
 	instrument           \
-	exref                \
-	exref_analysis       \
-	exref_cross_ref      \
-	exref_internal       \
-	exref_io             \
-	exref_pp             \
-	exref_server         \
 	make		     \
 	xref		     \
 	xref_base	     \
@@ -55,13 +45,10 @@ MODULES= coast               \
 	xref_parser          \
 	xref_reader	     \
 	xref_scanner	     \
-	xref_utils	     \
-	xsets
+	xref_utils
 
 
-HRL_FILES= coast.hrl      \
-	coast_server.hrl  \
-	exref_state.hrl   \
+HRL_FILES= \
 	xref.hrl
 
 
@@ -70,8 +57,14 @@ ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
 APP_FILE = tools.app
+APPUP_FILE = tools.appup
+
 APP_SRC = $(APP_FILE).src
 APP_TARGET = $(EBIN)/$(APP_FILE)
+
+APPUP_SRC = $(APPUP_FILE).src
+APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
+
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
@@ -82,16 +75,23 @@ ERL_COMPILE_FLAGS +=
 # Targets
 # ----------------------------------------------------
 
-debug opt: $(TARGET_FILES) $(APP_TARGET)
+debug opt: $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET)
 
 clean:
-	rm -f $(TARGET_FILES) $(APP_TARGET)
+	rm -f $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET)
 	rm -f errs core *~
+
+docs:
+
+# ----------------------------------------------------
+# Special Build Targets
+# ----------------------------------------------------
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
-docs:
+$(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
+	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 # ----------------------------------------------------
 # Release Target
@@ -102,6 +102,7 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
-	$(INSTALL_DATA) $(TARGET_FILES) $(APP_TARGET) $(RELSYSDIR)/ebin
+	$(INSTALL_DATA) $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) \
+		$(RELSYSDIR)/ebin
 
 release_docs_spec:

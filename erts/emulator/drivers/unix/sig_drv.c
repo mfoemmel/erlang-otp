@@ -23,58 +23,58 @@
 #endif
 
 #include "sys.h"
-#include "driver.h"
+#include "erl_driver.h"
 #include <signal.h>
 #include <stdio.h>
 
-static long sig_start();
-static int sig_init(),sig_stop(),doio();
+static ErlDrvData sig_start(ErlDrvPort, char*);
+static int sig_init(void);
+static void sig_stop(ErlDrvData), doio(ErlDrvData, ErlDrvEvent);
 
-const struct driver_entry sig_driver_entry = {
-    sig_init,sig_start,sig_stop,null_func,
-    doio,null_func,"sig_test"
-    };
+ErlDrvEntry sig_driver_entry = {
+    sig_init,
+    sig_start,
+    sig_stop,
+    NULL,
+    doio,
+    NULL,
+    "sig_test"
+};
 
-static long this_port;
+static ErlDrvPort this_port;
 
-static int sig_init()
+static int sig_init(void)
 {
-    this_port = -1;
+    this_port = (ErlDrvPort)-1;
+    return 0;
 }
 
-
-static sigc(ino)
-int ino;
+static sigc(int ino)
 {
     driver_interrupt(this_port, ino);
 }
 
-static long sig_start(port,buf) 
-int port;
-char *buf;
+static ErlDrvData sig_start(ErlDrvPort port, char* buf)
 {
-
-    if (this_port != -1)
-	return(-1);
+    if (this_port != (ErlDrvPort)-1)
+	return ERL_DRV_ERROR_GENERAL;
     this_port = port;
     signal(SIGUSR1, sigc);
-    return(port);
+    return (ErlDrvData)port;
 }
 
-static int sig_stop()
+static void sig_stop(ErlDrvData port)
 {
-    this_port = -1;
+    this_port = (ErlDrvPort)-1;
     signal(SIGUSR1, SIG_DFL);
 }
 
-
-doio(port ,ino)
-int port, ino;
+doio(ErlDrvData port, ErlDrvEvent ino)
 {
     /* First go get the io, unless we already did that */
     /* In the sighandler */
 
     /* Then send it to erlang */
 
-    driver_output(this_port,"y",1);
+    driver_output(this_port, "y", 1);
 }

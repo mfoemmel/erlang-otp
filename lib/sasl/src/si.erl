@@ -34,7 +34,7 @@
 	 abbrevs/0, pi/1, pi/2, pi/3, pi/4, ppi/1, ppi/3, stop/0]).
 
 %% Internal exports
--export([pi_impl/2, test_all_registered/1, test/0]).
+-export([pi_impl/2, test/0]).
 
 
 %%--------------------------------------------------
@@ -159,7 +159,7 @@ process_abbrevs() ->
 
 %% Test get_status_info/format_status_info for all implemented servers.
 test() ->
-    lists:foreach({si, test_all_registered}, [],
+    lists:foreach(fun test_all_registered/1,
 		  lists:append(si_sasl_supp:process_abbrevs(),
 			       process_abbrevs())).
 

@@ -191,7 +191,6 @@ $(GEN_PP_FILES): $(PERSON_IDL)
 $(GEN_MS_FILES): $(ERL_TOP)/lib/mnesia_session/src/mnesia_session.idl
 	$(ERLC) $(ERL_FLAGS)  $(ERL_COMPILE_FLAGS) \
 	+'{be,c_genserv}' +'{outdir,"./$(MS_DIR)"}' \
-	+'{preproc_cmd,"gcc -x c -E"}' \
 	$(ERL_TOP)/lib/mnesia_session/src/mnesia_session.idl
 
 $(GEN_MS_O_FILES): $(GEN_MS_C_FILES)

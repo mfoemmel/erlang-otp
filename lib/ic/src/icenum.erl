@@ -51,22 +51,31 @@ enum_gen(G, N, X, L) ->
 emit_c_enum(G, N, X) ->
     case icgen:is_hrlfile_open(G) of
 	true ->
-	    Fd = icgen:hrlfiled(G),
 	    EnumName = [icgen:get_id2(X) | N],
-	    EnumNameStr = icgen:to_undersc(EnumName),
-	    icgen:insert_typedef(G, EnumNameStr, {enum, EnumNameStr}),
-	    {tk_enum,_,_,EList} = ic_forms:get_tk(X),
-	    icgen:emit(Fd, "\n#ifndef __~s__\n",[ic_util:to_uppercase(EnumNameStr)]),	
-	    icgen:emit(Fd, "#define __~s__\n",[ic_util:to_uppercase(EnumNameStr)]),
-	    icgen:mcomment_light(Fd,
-				 [io_lib:format("Enum definition: ~s",
-						[EnumNameStr])],
-				 c),
-	    icgen:emit(Fd, "typedef CORBA_enum {", []),
-	    emit_c_enum_values(G, N, Fd, EList),
-	    icgen:emit(Fd, "} ~s ;\n\n", [EnumNameStr]),
-	    create_c_enum_file(G, N, EnumNameStr, EList),
-	    icgen:emit(Fd, "\n#endif\n\n");
+
+	    case ic_pragma:is_local(G,EnumName) of
+		true ->
+
+		    Fd = icgen:hrlfiled(G),
+		    EnumNameStr = icgen:to_undersc(EnumName),
+		    icgen:insert_typedef(G, EnumNameStr, {enum, EnumNameStr}),
+		    {tk_enum,_,_,EList} = ic_forms:get_tk(X),
+		    icgen:emit(Fd, "\n#ifndef __~s__\n",[ic_util:to_uppercase(EnumNameStr)]),	
+		    icgen:emit(Fd, "#define __~s__\n",[ic_util:to_uppercase(EnumNameStr)]),
+		    icgen:mcomment_light(Fd,
+					 [io_lib:format("Enum definition: ~s",
+							[EnumNameStr])],
+					 c),
+		    icgen:emit(Fd, "typedef CORBA_enum {", []),
+		    emit_c_enum_values(G, N, Fd, EList),
+		    icgen:emit(Fd, "} ~s ;\n\n", [EnumNameStr]),
+		    create_c_enum_file(G, N, EnumNameStr, EList),
+		    icgen:emit(Fd, "\n#endif\n\n");
+		
+		false ->   %% Do not generate included types att all.
+		    ok
+	    end;
+
 	false ->
 	    ok
     end.

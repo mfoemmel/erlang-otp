@@ -18,41 +18,39 @@
 /* Purpose: Access to elib memory statistics */
 
 #include "sys.h"
-#include "driver.h"
+#include "erl_driver.h"
 #include "elib_stat.h"
 
 #define MAP_BUF_SIZE    1000   /* Max map size */
 #define HISTO_BUF_SIZE  100    /* Max histogram buckets */
 
-static long mem_start();
-static int  mem_init(); 
-static int  mem_stop();
-static int  mem_command();
+static ErlDrvData mem_start(ErlDrvPort, char*);
+static int mem_init(void); 
+static void mem_stop(ErlDrvData);
+static void mem_command(ErlDrvData);
 
-const struct driver_entry mem_driver_entry = {
+ErlDrvEntry mem_driver_entry = {
     mem_init,
     mem_start,
     mem_stop,
     mem_command,
-    null_func,
-    null_func,
+    NULL,
+    NULL,
     "mem_drv"
 };
 
-static int mem_init()
+static int mem_init(void)
 {
     return 0;
 }
 
-static long mem_start(port, buf)
-int port; char* buf;
+static ErlDrvData mem_start(ErlDrvPort port, char* buf)
 {
-    return port;
+    return (ErlDrvData)port;
 }
 
-static int mem_stop()
+static void mem_stop(ErlDrvData port)
 {
-    return 0;
 }
 
 void putint32(p, v)
@@ -83,8 +81,7 @@ byte* p;
 */
 unsigned char outbuf[HISTO_BUF_SIZE*2*4];
 
-static int mem_command(port, buf, count)
-int port; char* buf; int count;
+static void mem_command(ErlDrvData port, char* buf, int count)
 {
     if ((count == 1) && buf[0] == 's') {
 	struct elib_stat info;
@@ -95,8 +92,8 @@ int port; char* buf; int count;
 	putint32(v, info.mem_total*4);
 	putint32(v+4, info.mem_free*4);
 	putint32(v+8, info.max_free*4);
-	driver_output(port, v, 12);
-	return 0;
+	driver_output((ErlDrvPort)port, v, 12);
+	return;
     }
     else if ((count == 3) && buf[0] == 'm') {
 	char w[MAP_BUF_SIZE];
@@ -105,8 +102,8 @@ int port; char* buf; int count;
 	if (n > MAP_BUF_SIZE)
 	    n = MAP_BUF_SIZE;
 	elib_heap_map(w, n);
-	driver_output(port, w, n);
-	return 0;
+	driver_output((ErlDrvPort)port, w, n);
+	return;
     }
     else if ((count == 4) && (buf[0] == 'h' || buf[0] == 'l')) {
 	unsigned long vf[HISTO_BUF_SIZE];
@@ -119,8 +116,8 @@ int port; char* buf; int count;
 	if (buf[0] == 'l')
 	    base = -base;
 	if (elib_histo(vf, va, n, base) < 0) {
-	    driver_failure(port, -1);
-	    return 0;
+	    driver_failure((ErlDrvPort)port, -1);
+	    return;
 	}
 	else {
 	    char* p = outbuf;
@@ -134,11 +131,10 @@ int port; char* buf; int count;
 		putint32(p, va[i]);
 		p += 4;
 	    }
-	    driver_output(port, outbuf, n*8);
+	    driver_output((ErlDrvPort)port, outbuf, n*8);
 	}
-	return 0;
+	return;
     }
-    driver_failure(port, -1);
-    return 0;
+    driver_failure((ErlDrvPort)port, -1);
 }
 

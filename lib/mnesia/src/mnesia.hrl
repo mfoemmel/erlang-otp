@@ -18,45 +18,23 @@
 
 -define(APPLICATION, mnesia).
 
-%-define(use_db_bifs, true). %% When uncommenting,remember to modify mnesia_lib:erlang_db_match_ob
-
--ifdef(use_db_bifs).
-  -define(ets_lookup(Tab, Key), erlang:db_get(Tab, Key)).
-  -define(ets_lookup_element(Tab, Key, Pos), erlang:db_get_element(Tab, Key, Pos)).
-  -define(ets_insert(Tab, Rec), erlang:db_put(Tab, Rec)).
-  -define(ets_delete(Tab, Key), erlang:db_erase(Tab, Key)).
-  -define(ets_match_delete(Tab, Pat), erlang:db_match_erase(Tab, Pat)).
-  -define(ets_match_object(Tab, Pat), mnesia_lib:erlang_db_match_object(Tab, Pat)).
-  -define(ets_match(Tab, Pat), erlang:db_match(Tab, Pat)).
-  -define(ets_info(Tab, Item), erlang:db_info(Tab, Item)).
-  -define(ets_update_counter(Tab, Key, Incr), erlang:db_update_counter(Tab, Key, Incr)).
-  -define(ets_first(Tab), erlang:db_first(Tab)).
-  -define(ets_next(Tab, Key), erlang:db_next_key(Tab, Key)).
-  -define(ets_slot(Tab, Pos), erlang:db_slot(Tab, Pos)).
-  -define(ets_new_table(Tab, Props), erlang:db_create(Tab, Props)).
-  -define(ets_delete_table(Tab), erlang:db_erase(Tab)).
-  -define(ets_fixtable(Tab, Bool), erlang:db_fixtable(Tab, Bool)).
--else.
-  -define(ets_lookup(Tab, Key), ets:lookup(Tab, Key)).
-%%  -define(ets_lookup_element(Tab, Key, Pos), erlang:db_get_element(Tab, Key, Pos)).
-  -define(ets_lookup_element(Tab, Key, Pos), ets:lookup_element(Tab, Key, Pos)).
-  -define(ets_insert(Tab, Rec), ets:insert(Tab, Rec)).
-  -define(ets_delete(Tab, Key), ets:delete(Tab, Key)).
-  -define(ets_match_delete(Tab, Pat), ets:match_delete(Tab, Pat)).
-  -define(ets_match_object(Tab, Pat), ets:match_object(Tab, Pat)).
-  -define(ets_match(Tab, Pat), ets:match(Tab, Pat)).
-  -define(ets_info(Tab, Item), ets:info(Tab, Item)).
-  -define(ets_update_counter(Tab, Key, Incr), ets:update_counter(Tab, Key, Incr)).
-  -define(ets_first(Tab), ets:first(Tab)).
-  -define(ets_next(Tab, Key), ets:next(Tab, Key)).
-  -define(ets_last(Tab), ets:last(Tab)).
-  -define(ets_prev(Tab, Key), ets:prev(Tab, Key)).
-  -define(ets_slot(Tab, Pos), ets:slot(Tab, Pos)).
-  -define(ets_new_table(Tab, Props), ets:new(Tab, Props)).
-%%  -define(ets_new_table(Tab, Props), erlang:db_create(Tab, Props)).
-  -define(ets_delete_table(Tab), ets:delete(Tab)).
-  -define(ets_fixtable(Tab, Bool), ets:fixtable(Tab, Bool)).
--endif.    
+-define(ets_lookup(Tab, Key), ets:lookup(Tab, Key)).
+-define(ets_lookup_element(Tab, Key, Pos), ets:lookup_element(Tab, Key, Pos)).
+-define(ets_insert(Tab, Rec), ets:insert(Tab, Rec)).
+-define(ets_delete(Tab, Key), ets:delete(Tab, Key)).
+-define(ets_match_delete(Tab, Pat), ets:match_delete(Tab, Pat)).
+-define(ets_match_object(Tab, Pat), ets:match_object(Tab, Pat)).
+-define(ets_match(Tab, Pat), ets:match(Tab, Pat)).
+-define(ets_info(Tab, Item), ets:info(Tab, Item)).
+-define(ets_update_counter(Tab, Key, Incr), ets:update_counter(Tab, Key, Incr)).
+-define(ets_first(Tab), ets:first(Tab)).
+-define(ets_next(Tab, Key), ets:next(Tab, Key)).
+-define(ets_last(Tab), ets:last(Tab)).
+-define(ets_prev(Tab, Key), ets:prev(Tab, Key)).
+-define(ets_slot(Tab, Pos), ets:slot(Tab, Pos)).
+-define(ets_new_table(Tab, Props), ets:new(Tab, Props)).
+-define(ets_delete_table(Tab), ets:delete(Tab)).
+-define(ets_fixtable(Tab, Bool), ets:fixtable(Tab, Bool)).
 
 -define(catch_val(Var), (catch ?ets_lookup_element(mnesia_gvar, Var, 2))).
 

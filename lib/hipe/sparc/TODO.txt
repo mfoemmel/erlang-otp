@@ -1,0 +1,22 @@
+hot_cold:
+ * peephole opt of 
+      jump L1
+      X
+   L1:
+
+sparc_loader:
+
+ * Remove the need to have a .beam file loaded. (This might work already.)
+ * Make the BEAM loader invoke the patching when a .beam file is
+   loaded so that native code calls the beam code.
+ * Add exporting of exported constants.
+ * Add support for freeing of catch-indices.
+ * Add freeing of old code. 
+ * Add freeing of catch-indices.
+ * Inline sparc_ext_format somehow.
+ * Test a lot.
+ * Make the module autoload on startup.
+ * Make the code_server load HiPE code automatically when appropriate.
+ * Test a lot.
+ * Flush the I-cache after patch.
+

@@ -28,11 +28,12 @@
 #include "global.h"
 #include "erl_process.h"
 #include "error.h"
-#include "driver.h"
+#include "erl_driver.h"
 #include "bif.h"
 #include "big.h"
 #include "external.h"
 #include "beam_load.h"
+#include "beam_bp.h"
 
 void dbg_bt(Process* p, Eterm* sp);
 void dbg_where(Eterm* addr, Eterm x0, Eterm* reg);
@@ -45,13 +46,68 @@ extern Eterm beam_debug_apply[];
 extern int beam_debug_apply_size;
 
 Eterm
+erts_debug_same_2(Process* p, Eterm term1, Eterm term2)
+{
+    return (term1 == term2) ? am_true : am_false;
+}
+
+Eterm
+erts_debug_flat_size_1(Process* p, Eterm term)
+{
+    return make_small_or_big(size_object(term), p);
+}
+
+Eterm
+erts_debug_breakpoint_2(Process* p, Eterm MFA, Eterm bool)
+{
+    Eterm* tp;
+    Eterm mfa[3];
+    int i;
+    int specified = 0;
+
+    if (is_not_tuple(MFA)) {
+	goto error;
+    }
+    tp = tuple_val(MFA);
+    if (*tp != make_arityval(3)) {
+	goto error;
+    }
+    mfa[0] = tp[1];
+    mfa[1] = tp[2];
+    mfa[2] = tp[3];
+    if (!is_atom(mfa[0]) || !is_atom(mfa[1]) ||
+	(!is_small(mfa[2]) && mfa[2] != am_Underscore)) {
+	goto error;
+    }
+    for (i = 0; i < 3 && mfa[i] != am_Underscore; i++, specified++) {
+	/* Empty loop body */
+    }
+    for (i = specified; i < 3; i++) {
+	if (mfa[i] != am_Underscore) {
+	    goto error;
+	}
+    }
+    if (is_small(mfa[2])) {
+	mfa[2] = signed_val(mfa[2]);
+    }
+    if (bool == am_true) {
+	return make_small(erts_set_debug_break(mfa, specified));
+    } else if (bool == am_false) {
+	return make_small(erts_clear_debug_break(mfa, specified));
+    }
+
+ error:
+    BIF_ERROR(p, BADARG);
+}
+
+Eterm
 erts_debug_make_fun_1(Process* p, Eterm tuple)
 {
     Eterm* tp;
     Eterm creator;
     Eterm module;
-    Eterm index;
-    Eterm uniq;
+    Eterm old_index;
+    Eterm old_uniq;
     Eterm env;
     int num_free;
     unsigned needed;
@@ -67,7 +123,7 @@ erts_debug_make_fun_1(Process* p, Eterm tuple)
 	BIF_ERROR(p, BADARG);
     }
     tp = tuple_val(tuple);
-    if (tp[0] != make_arityval(5)) {
+    if (tp[0] != make_arityval(7)) {
 	goto error;
     }
     if (!is_pid(creator = tp[1])) {
@@ -76,13 +132,13 @@ erts_debug_make_fun_1(Process* p, Eterm tuple)
     if (!is_atom(module = tp[2])) {
 	goto error;
     }
-    if (!is_small(index = tp[3])) {
+    if (!is_small(old_index = tp[5])) { /* OldIndex */
 	goto error;
     }
-    if (!is_small(uniq = tp[4])) {
+    if (!is_small(old_uniq = tp[6])) { /* OldUniq */
 	goto error;
     }
-    env = tp[5];
+    env = tp[7];
     if ((num_free = list_length(env)) < 0) {
 	goto error;
     }
@@ -96,11 +152,10 @@ erts_debug_make_fun_1(Process* p, Eterm tuple)
     funp->thing_word = HEADER_FUN;
     funp->next = p->off_heap.funs;
     p->off_heap.funs = funp;
-    funp->modp = erts_put_module(module);
-    funp->index = unsigned_val(index);
-    funp->uniq = uniq;
     funp->num_free = num_free;
     funp->creator = creator;
+    funp->fe = erts_put_fun_entry(module, unsigned_val(old_uniq),
+				  unsigned_val(old_index));
     for (i = 0; i < num_free; i++) {
 	Eterm* ep = list_val(env);
 	funp->env[i] = CAR(ep);
@@ -219,7 +274,11 @@ find_code(Eterm* addr)
 void
 dbg_bt(Process* p, Eterm* sp)
 {
+#ifdef UNIFIED_HEAP
+    Eterm* stack = p->stack;
+#else
     Eterm* stack = p->hend;
+#endif
 
     while (sp < stack) {
 	if (is_CP(*sp)) {
@@ -457,7 +516,7 @@ print_op(CIO to, int op, int size, Eterm* addr)
 	    ap++;
 	    break;
 	case 'P':	/* Byte offset into tuple (see beam_load.c) */
-	    erl_printf(to, "%d", (*ap / sizeof(uint32*)) - 1);
+	    erl_printf(to, "%d", (*ap / sizeof(Eterm*)) - 1);
 	    ap++;
 	    break;
 	case 'w':
@@ -467,6 +526,19 @@ print_op(CIO to, int op, int size, Eterm* addr)
 		ap += arity + 1;
 		size += arity;
 	    }
+	    break;
+	case 'o':
+	    {
+		FloatDef f;
+
+		f.fw[0] = *ap++;
+		f.fw[1] = *ap++;
+		erl_printf(to, "%g", f.fd);
+	    }
+	    break;
+	case 'l':		/* fr(N) */
+	    erl_printf(to, "fr(%d)", reg_index(ap[0]));
+	    ap++;
 	    break;
 	default:
 	    erl_printf(to, "???");

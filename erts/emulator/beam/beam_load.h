@@ -1,5 +1,3 @@
-#ifndef _BEAM_LOAD_H
-#define _BEAM_LOAD_H
 /* ``The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
@@ -17,13 +15,13 @@
  * 
  *     $Id$
  */
+
+#ifndef _BEAM_LOAD_H
+#  define _BEAM_LOAD_H
+
 #include "beam_opcodes.h"
 #include "erl_process.h"
 
-Eterm exported_from_module(Process* p, Eterm mod);
-Eterm functions_in_module(Process* p, Eterm mod);
-Eterm attributes_for_module(Process* p, Eterm mod);
-Eterm compilation_info_for_module(Process* p, Eterm mod);
 int beam_make_current_old(Eterm module);
 
 typedef struct gen_op_entry {
@@ -88,13 +86,10 @@ extern Range* mid_module;
 #define MI_COMPILE_PTR          3
 #define MI_COMPILE_SIZE_ON_HEAP 4
 
-#define MI_LAMBDA_PTR		5
-#define MI_NUM_LAMBDAS		6
-
 /*
  * Number of breakpoints in module is stored in this word
  */
-#define MI_NUM_BREAKPOINTS      7
+#define MI_NUM_BREAKPOINTS      5
 
 /*
  * Start of function pointer table.  This table contains pointers to
@@ -105,5 +100,5 @@ extern Range* mid_module;
  * this table.
  */
 
-#define MI_FUNCTIONS         8
+#define MI_FUNCTIONS         6
 #endif /* _BEAM_LOAD_H */

@@ -55,7 +55,7 @@ fix_down(Vec, K, N) ->
 			    fix_down(store(Vec, K, C2, J+1, Elem), J+1, N);
 			C2 when Elem < C1 ->
 			    fix_down(store(Vec, K, C1, J, Elem), J, N);
-			Other -> Vec
+			_ -> Vec
 		    end
 	    end;
 	true -> Vec

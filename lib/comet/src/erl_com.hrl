@@ -33,6 +33,10 @@
 -define(ERLCOM_EndThread , 11).
 -define(ERLCOM_CurrentThread , 12).
 -define(ERLCOM_PropertyPutRef , 13).
+-define(ERLCOM_GetObject , 14).
+-define(ERLCOM_Next , 15).
+-define(ERLCOM_NextIntf , 16).
+-define(ERLCOM_Reset, 17).
 -define(ERLCOM_Quit , 50).
 -define(ERLCOM_Test , 100).
 
@@ -46,3 +50,7 @@
 -define(CLSCTX_REMOTE_SERVER, 16).
 
 -define(IID_IDispatch, "{00020400-0000-0000-C000-000000000046}").
+
+-define(DISPID_VALUE, 0).
+-define(DISPID_NEWENUM, -4).
+-define(DISPID_EVALUATE, -5).

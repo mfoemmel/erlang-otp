@@ -78,9 +78,9 @@ RELSYSDIR = $(RELEASE_PATH)/lib/gs-$(VSN)
 # ----------------------------------------------------
 # Common Macros
 # ----------------------------------------------------
-TCL_FILES =  gtk.tcl gtk_srv.tcl
+TCL_FILES =  gstk.tcl gstk_srv.tcl
 
-PROGRAMS= $(BINDIR)/gtk $(BINDIR)/killer $(BINDIR)/wrap
+PROGRAMS= $(BINDIR)/gstk $(BINDIR)/killer $(BINDIR)/wrap
 
 # ----------------------------------------------------
 # Targets
@@ -89,7 +89,7 @@ PROGRAMS= $(BINDIR)/gtk $(BINDIR)/killer $(BINDIR)/wrap
 debug opt:  @tcltklibs@ $(PROGRAMS)
 
 clean:
-	rm -f $(PROGRAMS) gtk.c
+	rm -f $(PROGRAMS) gstk.c
 	rm -f errs core *~
 	(cd lib/tcl7.6/unix; $(MAKE) clean)
 	(cd lib/tk4.2/unix; $(MAKE) clean)
@@ -100,12 +100,12 @@ tcltklibs:
 	(cd lib/tcl7.6/unix; $(MAKE))
 	(cd lib/tk4.2/unix; $(MAKE))
 
-gtk.c: $(TCL_FILES)
+gstk.c: $(TCL_FILES)
 	$(TCL2C) -o $@ $(TCL_FILES) -tk
 
-$(BINDIR)/gtk: gtk.c
+$(BINDIR)/gstk: gstk.c
 	$(INSTALL_DIR) $(BINDIR)
-	$(CC) gtk.c -I$(TCL_H_DIR) $(CFLAGS) $(LDFLAGS) $(LIBS)  -o $@
+	$(CC) gstk.c -I$(TCL_H_DIR) $(CFLAGS) $(LDFLAGS) $(LIBS)  -o $@
 
 $(BINDIR)/killer: killer.c
 	$(INSTALL_DIR) $(BINDIR)
@@ -119,7 +119,7 @@ $(BINDIR)/tcl2c: tcl2c.c
 	$(INSTALL_DIR) $(BINDIR)
 	$(CC) tcl2c.c $(CFLAGS) -o $@
 
-C_FILES = gtk.c killer.c wrap.c
+C_FILES = gstk.c killer.c wrap.c
 
 # ----------------------------------------------------
 # Release Target

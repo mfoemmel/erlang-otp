@@ -20,16 +20,17 @@
 -module(beam_dict).
 
 -export([new/0, opcode/2, highest_opcode/1,
-	 atom/2, local/4, export/4, import/4, string/2,
+	 atom/2, local/4, export/4, import/4, string/2, lambda/5,
 	 atom_table/1, local_table/1, export_table/1, import_table/1,
-	 string_table/1]).
+	 string_table/1,lambda_table/1]).
 
 -record(asm_dict,
-	{atoms = [],				% [{Index, Atom}, ...]
-	 exports = [],				% [{F, A, Label}, ...]
-	 locals = [],				% [{F, A, Label}, ...]
-	 imports = [],				% [{Index, {M, F, A}, ...]
+	{atoms = [],				% [{Index, Atom}]
+	 exports = [],				% [{F, A, Label}]
+	 locals = [],				% [{F, A, Label}]
+	 imports = [],				% [{Index, {M, F, A}]
 	 strings = [],				% Deep list of characters
+	 lambdas = [],				% [{...}]
 	 next_atom = 1,
 	 next_import = 0,
 	 string_offset = 0,
@@ -41,15 +42,12 @@ new() ->
 
 %% Remembers highest opcode.
 
-opcode(Op, Dict) when Dict#asm_dict.highest_opcode > Op ->
-    Dict;
-opcode(Op, Dict) ->
-    Dict#asm_dict{highest_opcode=Op}.
+opcode(Op, Dict) when Dict#asm_dict.highest_opcode > Op -> Dict;
+opcode(Op, Dict) -> Dict#asm_dict{highest_opcode=Op}.
 
 %% Returns the highest opcode encountered.
 
-highest_opcode(#asm_dict{highest_opcode=Op}) ->
-    Op.
+highest_opcode(#asm_dict{highest_opcode=Op}) -> Op.
 
 %% Returns the index for an atom (adding it to the atom table if necessary).
 %%    atom(Atom, Dict) -> {Index, Dict'}
@@ -74,8 +72,8 @@ export(Func, Arity, Label, Dict0) when atom(Func), integer(Arity), integer(Label
 %%    local(Func, Arity, Label, Dict) -> Dict'
 
 local(Func, Arity, Label, Dict0) when atom(Func), integer(Arity), integer(Label) ->
-    {Index, Dict1} = atom(Func, Dict0),
-    Dict1#asm_dict{locals = [{Index, Arity, Label}| Dict1#asm_dict.locals]}.
+    {Index,Dict1} = atom(Func, Dict0),
+    Dict1#asm_dict{locals = [{Index,Arity,Label}| Dict1#asm_dict.locals]}.
 
 %% Returns the index for an import entry (adding it to the import table if necessary).
 %%    import(Mod, Func, Arity, Dict) -> {Index, Dict'}
@@ -106,6 +104,17 @@ string(Str, Dict) when list(Str) ->
 	    {NextOffset, NewDict}
     end.
 
+%% Returns the index for a funentry (adding it to the table if necessary).
+%%    lambda(Dict, Lbl, Index, Uniq, NumFree) -> {Index,Dict'}
+
+lambda(Lbl, Index, OldUniq, NumFree, #asm_dict{lambdas=Lambdas0}=Dict) ->
+    OldIndex = length(Lambdas0),
+    Lambdas = [{Lbl,{OldIndex,Lbl,Index,NumFree,OldUniq}}|Lambdas0],
+    {OldIndex,Dict#asm_dict{lambdas=Lambdas}}.
+
+%% Returns the atom table.
+%%    atom_table(Dict) -> [Length,AtomString...]
+
 atom_table(#asm_dict{atoms=Atoms, next_atom=NumAtoms}) ->
     Sorted = lists:sort(Atoms),
     Fun = fun({_, A}) ->
@@ -118,7 +127,7 @@ atom_table(#asm_dict{atoms=Atoms, next_atom=NumAtoms}) ->
 %%    local_table(Dict) -> {NumLocals, [{Function, Arity, Label}...]}
 
 local_table(#asm_dict{locals = Locals}) ->
-    {length(Locals), Locals}.
+    {length(Locals),Locals}.
 
 %% Returns the export table.
 %%    export_table(Dict) -> {NumExports, [{Function, Arity, Label}...]}
@@ -141,6 +150,14 @@ import_table(Dict) ->
 
 string_table(#asm_dict{strings = Strings, string_offset = Size}) ->
     {Size, Strings}.
+
+lambda_table(#asm_dict{locals=Loc0,lambdas=Lambdas0}) ->
+    Lambdas1 = sofs:relation(Lambdas0),
+    Loc = sofs:relation([{Lbl,{F,A}} || {F,A,Lbl} <- Loc0]),
+    Lambdas2 = sofs:relative_product1(Lambdas1, Loc),
+    Lambdas = [<<F:32,A:32,Lbl:32,Index:32,NumFree:32,OldUniq:32>> ||
+		  {{_,Lbl,Index,NumFree,OldUniq},{F,A}} <- sofs:to_external(Lambdas2)],
+    {length(Lambdas),Lambdas}.
 
 %%% Local helper functions.
 
@@ -177,5 +194,3 @@ old_string(Str, [_|Pool], Index) ->
     old_string(Str, Pool, Index+1);
 old_string(Str, [], Index) ->
     false.
-
-    

@@ -35,7 +35,7 @@
 #include <unistd.h>
 #include <termios.h>
 
-#include "driver.h"
+#include "erl_driver.h"
 
 #define TRUE 1
 #define FALSE 0
@@ -75,14 +75,14 @@ static int lpos;
 #define NL '\n'
 
 /* Main interface functions. */
-static int ttysl_init();
-static long ttysl_start();
-static int ttysl_stop();
-static int ttysl_from_erlang();
-static int ttysl_from_tty();
+static int ttysl_init(void);
+static ErlDrvData ttysl_start(ErlDrvPort, char*);
+static void ttysl_stop(ErlDrvData);
+static void ttysl_from_erlang(ErlDrvData, char*, int);
+static void ttysl_from_tty(ErlDrvData, ErlDrvEvent);
 static sint16 get_sint16();
 
-static int ttysl_port;
+static ErlDrvPort ttysl_port;
 static int ttysl_fd;
 static FILE *ttysl_out;
 
@@ -114,36 +114,40 @@ static int tty_reset();
 /* static RETSIGTYPE (*orig_ctl_c)(); gordon temp */
 /* static RETSIGTYPE ctl_c(); gordon temp */
 static RETSIGTYPE suspend();
+static RETSIGTYPE cont();
 
 /* Define the driver table entry. */
-struct driver_entry ttsl_driver_entry = {
-    ttysl_init, ttysl_start, ttysl_stop, ttysl_from_erlang,
-    ttysl_from_tty, null_func, "tty_sl"
+struct erl_drv_entry ttsl_driver_entry = {
+    ttysl_init,
+    ttysl_start,
+    ttysl_stop,
+    ttysl_from_erlang,
+    ttysl_from_tty,
+    NULL,
+    "tty_sl"
   };
 
-static int ttysl_init()
+static int ttysl_init(void)
 {
-    ttysl_port = -1;
+    ttysl_port = (ErlDrvPort)-1;
     ttysl_fd = -1;
     lbuf = NULL;		/* For line buffer handling */
     capbuf = NULL;		/* For termcap handling */
     return TRUE;
 }
 
-static long ttysl_start(port, buf)
-int port;
-char *buf;
+static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
 {
     char *s, *t, c;
     int canon, echo, sig;	/* Terminal characteristics */
     int flag;
     extern int using_oldshell; /* set this to let the rest of erts know */
 
-    if (ttysl_port != -1)
-      return -1;
+    if ((int)ttysl_port != -1)
+      return ERL_DRV_ERROR_GENERAL;
 
     if (!isatty(0) || !isatty(1))
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
 
     /* Set the terminal modes to default leave as is. */
     canon = echo = sig = 0;
@@ -162,61 +166,68 @@ char *buf;
 	    if (s[1] == 's') sig = flag;
 	}
 	else if ((ttysl_fd = open(s, O_RDWR, 0)) < 0)
-	      return -1;
+	      return ERL_DRV_ERROR_GENERAL;
     }
     if (ttysl_fd < 0)
       ttysl_fd = 0;
 
     if (tty_init(ttysl_fd, canon, echo, sig) < 0 ||
 	tty_set(ttysl_fd) < 0) {
-	ttysl_port = -1;
+	ttysl_port = (ErlDrvPort)-1;
 	tty_reset(ttysl_fd);
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     }
 
     /* Set up smart line and termcap stuff. */
     if (!start_lbuf() || !start_termcap()) {
 	stop_lbuf();		/* Must free this */
 	tty_reset(ttysl_fd);
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     }
 
     /* Open the terminal and set the terminal */
     ttysl_out = fdopen(ttysl_fd, "w");
 
     setlocale(LC_CTYPE, "");	/* Set international environment */
+#if 0
     sys_sigset(SIGTSTP, suspend);
     sys_sigset(SIGTTIN, suspend);
     sys_sigset(SIGTTOU, suspend);
+#else
+    sys_sigset(SIGCONT, cont);
+#endif
     /* orig_ctl_c = sys_sigset(SIGINT, ctl_c); gordon temp */
 
-    driver_select(port, ttysl_fd, DO_READ, 1);
+    driver_select(port, (ErlDrvEvent)ttysl_fd, DO_READ, 1);
     ttysl_port = port;
 
     /* we need to know this when we enter the break handler */
     using_oldshell = 0;
 
-    return ttysl_port;			/* Nothing important to return */
+    return (ErlDrvData)ttysl_port;	/* Nothing important to return */
 }
 
-static int ttysl_stop(ttysl_data)
-long ttysl_data;
+static void ttysl_stop(ErlDrvData ttysl_data)
 {
-    if (ttysl_port != -1) {
+    if ((int)ttysl_port != -1) {
 	stop_lbuf();
 	stop_termcap();
 	tty_reset(ttysl_fd);
 	if (ttysl_fd != 0)
 	  close(ttysl_fd);
-	driver_select(ttysl_port, ttysl_fd, DO_READ, 0);
+	driver_select(ttysl_port, (ErlDrvEvent)ttysl_fd, DO_READ, 0);
+#if 0
 	sys_sigset(SIGTSTP, SIG_DFL);
 	sys_sigset(SIGTTIN, SIG_DFL);
 	sys_sigset(SIGTTOU, SIG_DFL);
+#else
+	sys_sigset(SIGCONT, SIG_DFL);
+#endif
 	/* sys_sigset(SIGINT,  orig_ctl_c); gordon temp */
     }
-    ttysl_port = -1;
+    ttysl_port = (ErlDrvPort)-1;
     ttysl_fd = -1;
-    return TRUE;
+    /* return TRUE; */
 }
 
 /*
@@ -252,16 +263,13 @@ int n;
     return(1);
 }
 
-static int ttysl_from_erlang(ttysl_data, buf, count)
-long ttysl_data;
-byte *buf;
-int count;
+static void ttysl_from_erlang(ErlDrvData ttysl_data, char* buf, int count)
 {
     if (lpos > MAXSIZE) 
 	put_chars("\n", 1);
 
     if (check_buf_size(buf+1, count-1) == 0)
-	return(-1);
+	return; /*(-1); */
 
     switch (buf[0]) {
     case OP_PUTC:
@@ -284,21 +292,19 @@ int count;
 	break;
     }
     fflush(ttysl_out);
-    return TRUE;
+    return; /* TRUE; */
 }
 
-static int ttysl_from_tty(ttysl_data, fd)
-long ttysl_data;
-int fd;
+static void ttysl_from_tty(ErlDrvData ttysl_data, ErlDrvEvent fd)
 {
     char b[1024];
     int i;
 
-    if ((i = read(fd, b, 1024)) >= 0)
+    if ((i = read((int)fd, b, 1024)) >= 0)
       driver_output(ttysl_port, b, i);
     else
       driver_failure(ttysl_port, -1);
-    return TRUE;
+    /* return TRUE;*/
 }
 
 /* Procedures for putting and getting integers to/from strings. */
@@ -762,6 +768,15 @@ int sig;
 
     if (tty_set(ttysl_fd) < 0) {
 	fprintf(stderr,"Can't set tty raw \n");
+	exit(1);
+    }
+}
+
+static RETSIGTYPE cont(sig)	
+int sig;
+{
+    if (tty_set(ttysl_fd) < 0) {
+	fprintf(stderr,"Can't set tty raw\n");
 	exit(1);
     }
 }

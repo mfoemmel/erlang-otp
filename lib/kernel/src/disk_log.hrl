@@ -16,6 +16,9 @@
 %%     $Id$
 %%
 
+-define(DISK_LOG_NAME_TABLE, disk_log_names).
+-define(DISK_LOG_PID_TABLE, disk_log_pids).
+
 %% HEADSZ is the size of the file header, 
 %% HEADERSZ is the size of the item header ( = ?SIZESZ + ?MAGICSZ).
 -define(HEADSZ, 8).

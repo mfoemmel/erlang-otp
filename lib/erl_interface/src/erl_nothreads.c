@@ -29,42 +29,12 @@
 #include "erl_error.h"
 
 extern int erl_locking_init_done;
+extern void ei_init_nothreads();
 extern void erl_common_init(void *, long);
 int erl_init_nothreads(void *x, long y)
 {
-#ifdef DEBUG
-#if defined(VXWORKS) || defined (__WIN32__)
-  fprintf(stderr,"erl_interface using native locks\n");
-#else
-  fprintf(stderr,"erl_interface using no locks\n");
-#endif
-#endif
-  erl_common_init(x,y);
-  return 0; /*success */
+    ei_init_nothreads();
+    erl_common_init(x,y);
+    return 0; /*success */
 }
 
-#if !defined(VXWORKS) && !defined(__WIN32__)
-
-void *erl_m_create(void)   { return NULL; }
-int erl_m_destroy(void *l) { return 0; }
-int erl_m_lock(void *l)    { return 0; }
-int erl_m_trylock(void *l) { return 0; } 
-int erl_m_unlock(void *l)  { return 0; } 
-
-volatile int * 
-__erl_errno_place (void) { return &__erl_errno; }
-
-#ifndef NO_PRAGMA_WEAK
-/* above symbols must be weak since 
- * they are multiply defined 
- */
-#pragma weak erl_m_create
-#pragma weak erl_m_destroy
-#pragma weak erl_m_lock
-#pragma weak erl_m_trylock
-#pragma weak erl_m_unlock
-#pragma weak __erl_errno_place
-
-#endif
-
-#endif

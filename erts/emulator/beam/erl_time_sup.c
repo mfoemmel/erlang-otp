@@ -613,8 +613,8 @@ int *year, *month, *day, *hour, *minute, *second;
 
 
 /* get a timestamp */
-void get_now(megasec, sec, microsec)
-uint32 *megasec, *sec, *microsec;
+void
+get_now(Uint32* megasec, Uint32* sec, Uint32* microsec)
 {
     SysTimeval now;
     

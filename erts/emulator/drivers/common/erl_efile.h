@@ -21,6 +21,7 @@
  */
 
 #include "sys.h"
+#include "erl_driver.h"
 
 /*
  * Open modes for efile_openfile().
@@ -89,17 +90,17 @@ typedef struct _Efile_time {
  */
 
 typedef struct _Efile_info {
-    uint32 size_low;		/* Size of file, lower 32 bits.. */
-    uint32 size_high;		/* Size of file, higher 32 bits. */
-    uint32 type;		/* Type of file -- one of FT_*. */
-    uint32 access;		/* Access to file -- one of FA_*. */
-    uint32 mode;		/* Access permissions -- bit field. */
-    uint32 links;		/* Number of links to file. */
-    uint32 major_device;	/* Major device or file system. */
-    uint32 minor_device;	/* Minor device (for devices). */
-    uint32 inode;		/* Inode number. */
-    uint32 uid;			/* User id of owner. */
-    uint32 gid;			/* Group id of owner. */
+    Uint32 size_low;		/* Size of file, lower 32 bits.. */
+    Uint32 size_high;		/* Size of file, higher 32 bits. */
+    Uint32 type;		/* Type of file -- one of FT_*. */
+    Uint32 access;		/* Access to file -- one of FA_*. */
+    Uint32 mode;		/* Access permissions -- bit field. */
+    Uint32 links;		/* Number of links to file. */
+    Uint32 major_device;	/* Major device or file system. */
+    Uint32 minor_device;	/* Minor device (for devices). */
+    Uint32 inode;		/* Inode number. */
+    Uint32 uid;			/* User id of owner. */
+    Uint32 gid;			/* Group id of owner. */
     Efile_time accessTime;	/* Last time the file was accessed. */
     Efile_time modifyTime;	/* Last time the file was modified. */
     Efile_time cTime;		/* Creation time (Windows) or last
@@ -131,6 +132,7 @@ int efile_fileinfo(Efile_error* errInfo, Efile_info* pInfo,
 		   char *name, int info_for_link);
 int efile_write_info(Efile_error* errInfo, Efile_info* pInfo, char *name);
 int efile_write(Efile_error* errInfo, int flags, int fd, char* buf, unsigned count);
+int efile_writev(Efile_error* errInfo, int flags, int fd, SysIOVec* iov, int iovcnt, int size);
 int efile_read(Efile_error* errInfo, int flags, int fd, char* buf,
 	       unsigned count, unsigned* pBytesRead);
 int efile_seek(Efile_error* errInfo, int fd, int offset, int origin,
@@ -143,3 +145,8 @@ int efile_pread(Efile_error* errInfo, int fd, int offset, char* buf,
 int efile_readlink(Efile_error* errInfo, char *name, char* buffer, unsigned size);
 int efile_link(Efile_error* errInfo, char* old, char* new);
 int efile_symlink(Efile_error* errInfo, char* old, char* new);
+
+
+
+
+

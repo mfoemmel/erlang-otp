@@ -25,6 +25,8 @@
 -export([file_term2binary/2, read_term/1, read_term_from_stream/2,
 	 get_dirs/1, get_path/1]).
 
+-include_lib("kernel/include/file.hrl").
+
 %% reads a single term form a file - convert it to binary and 
 %% dump it in a file
 
@@ -197,8 +199,8 @@ join(_, F, true) -> F;
 join(Dir, F, _)  -> filename:join(Dir, F).
 
 dir_p(DirF) ->
-    case file:file_info(DirF) of
-	{ok, {_,directory,_,_,_,_,_}} -> true;
+    case file:read_file_info(DirF) of
+	{ok, Info} when Info#file_info.type==directory -> true;
 	_                             -> false
     end.
     

@@ -25,7 +25,7 @@
 
 #include <errno.h>
 #include "sys.h"		/* Needed to define fake ENOTSUP */
-#include "driver.h"
+#include "erl_driver.h"
 
 /*
  *----------------------------------------------------------------------

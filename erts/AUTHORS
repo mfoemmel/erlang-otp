@@ -9,6 +9,7 @@ They were completely rewritten by Björn Gustavsson.
 Over the years the emulator has been basically completely rewritten by
 a large number of individuals. Most(?) notably Claes Wikström, Tony
 Rogvall, Björn Gustavsson, Patrik Nyblom and Arndt Jonasson.
+In R7 and R8 also Raimo Niskanen and Rickard Green.
 
 Marcus Arendt did the original port for Windows NT. Most of this code
 was rewritten by Björn Gustavsson, Patrik Nyblom, Kenneth Lundin,
@@ -30,15 +31,22 @@ Björn Gustavsson and Arndt Jonasson implemented the bit syntax
 instructions, borrowing some code from the original prototype
 implementation by Tony Rogvall and Claes Wikström.
 
-Open source contributors:
+The HiPE project (Kostis Sagonas, Mikael Petterson, Erik Johansson,
+Richard Carlsson, Ulf Magnusson, Jesper Wilhelmsson) added the
+hipe runtime to the Beam emulator. Björn Gustavsson helped to
+integrate the hipe runtime.
 
+New developers in the runtime for R7 and R8: Raimo Niskanen and Rickard Green.
+
+Open source contributors:
   Mick Dwyer
   Geoff Wong
   Maurice Castro
   Luke Gorrie <luke@vegetable.org>
   Shawn Pearce <pearcs@rpi.edu>
   Ruslan Shevchenko <Ruslan@Shevchenko.Kiev.UA>
-  Tony Rogvall (@Bluetail): New faster inet_drv
+  Tony Rogvall (@Bluetail): New faster inet_drv (R7)
+			    HTTP packet mode (R8)
   Sebastian Strollo (@Bluetail): poll() as alternative to select()
   Mikael Pettersson (HiPE)
 

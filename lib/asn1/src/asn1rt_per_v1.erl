@@ -24,7 +24,7 @@
 -export([dec_fixup/3, cindex/3, list_to_record/2]).
 -export([setchoiceext/1, setext/1, fixoptionals/2, fixextensions/2, setoptionals/1, 
 	 getext/1, getextension/2, skipextensions/3, getbit/1, getchoice/3 ]).
--export([getoptionals/3, set_choice/3, encode_integer/2, encode_integer/3  ]).
+-export([getoptionals/2, getoptionals/3, set_choice/3, encode_integer/2, encode_integer/3  ]).
 -export([decode_integer/2, decode_integer/3, encode_small_number/1, encode_boolean/1, 
 	 decode_boolean/1, encode_length/2, decode_length/1, decode_length/2,
 	encode_small_length/1, decode_small_length/1,
@@ -185,10 +185,20 @@ getchoice(Bytes,NumChoices,1) ->
 getchoice(Bytes,NumChoices,0) ->
     decode_integer(Bytes,[{'ValueRange',{0,NumChoices-1}}]).
 
+getoptionals(Bytes,NumOpt) ->
+    {Blist,Bytes1} = getbits_as_list(NumOpt,Bytes),
+    {list_to_tuple(Blist),Bytes1}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% getoptionals/3 is only here for compatibility from 1.3.2 
+%% the codegenerator uses getoptionals/2
+
 getoptionals(Bytes,L,NumComp) when list(L) ->
     {Blist,Bytes1} = getbits_as_list(length(L),Bytes),
     {list_to_tuple(comptuple(Blist,L,NumComp,1)),Bytes1}.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% comptuple is only here for compatibility not used from 1.3.2
 comptuple([Bh|Bt],[{Name,Nr}|T],NumComp,Nr) ->
     [Bh|comptuple(Bt,T,NumComp-1,Nr+1)];
 comptuple(Bl,[{Name,Tnr}|Tl],NumComp,Nr) ->

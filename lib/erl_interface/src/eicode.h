@@ -68,6 +68,20 @@ typedef struct {
   erlang_trace token;
 } erlang_msg;
 
+/* a fun */
+typedef struct {
+    long arity;
+    char module[MAXATOMLEN+1];
+    char md5[16];
+    long index;
+    long old_index;
+    long uniq;
+    long n_free_vars;
+    erlang_pid pid;
+    long free_var_len;
+    char* free_vars;
+} erlang_fun;
+
 /*
  * The following functions are used to encode from c native types directly into
  * Erlang external format. To use them, you need
@@ -115,7 +129,9 @@ extern int ei_encode_double(char *buf, int *index, double p);
 extern int ei_encode_boolean(char *buf, int *index, int p);
 extern int ei_encode_char(char *buf, int *index, char p);
 extern int ei_encode_string(char *buf, int *index, const char *p);
+extern int ei_encode_string_len(char *buf, int *index, const char *p, int len);
 extern int ei_encode_atom(char *buf, int *index, const char *p);
+extern int ei_encode_atom_len(char *buf, int *index, const char *p, int len);
 extern int ei_encode_binary(char *buf, int *index, const void *p, long len);
 extern int ei_encode_pid(char *buf, int *index, const erlang_pid *p);
 extern int ei_encode_port(char *buf, int *index, const erlang_port *p);
@@ -125,6 +141,7 @@ extern int ei_encode_trace(char *buf, int *index, const erlang_trace *p);
 extern int ei_encode_tuple_header(char *buf, int *index, int arity);
 extern int ei_encode_list_header(char *buf, int *index, int arity);
 #define ei_encode_empty_list(buf,i) ei_encode_list_header(buf,i,0)
+extern int ei_encode_fun(char* buf, int* index, const erlang_fun* p);
 
 /* Step through buffer, decoding the given type into the buffer
  * provided. On success, 0 is returned and index is updated to point
@@ -149,6 +166,8 @@ extern int ei_decode_term(const char *buf, int *index, void *t); /* ETERM** actu
 extern int ei_decode_trace(const char *buf, int *index, erlang_trace *p);
 extern int ei_decode_tuple_header(const char *buf, int *index, int *arity);
 extern int ei_decode_list_header(const char *buf, int *index, int *arity);
+extern int ei_decode_fun(const char* buf, int* index, erlang_fun* p);
+extern void free_fun(erlang_fun* f);
 
 /* decode a list of integers into an integer array (i.e. even if it is
  * encoded as a string). count gets number of items in array

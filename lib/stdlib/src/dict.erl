@@ -85,7 +85,7 @@ is_key(Key, D) ->
     find_key(Key, Bkt).
 
 find_key(K, [?kv(K,Val)|Bkt]) -> true;
-find_key(K, [_|Bkt]) -> find_val(K, Bkt);
+find_key(K, [_|Bkt]) -> find_key(K, Bkt);
 find_key(K, []) -> false.
 
 %% to_list(Dictionary) -> [{Key,Value}].
@@ -290,7 +290,7 @@ counter_bkt(Key, I, [Other|Bkt0]) ->
     {[Other|Bkt1],Ic};
 counter_bkt(Key, I, []) -> {[?kv(Key,I)],1}.
 
-%% foldFold(Fun, Accumulator, Dictionary) -> Accumulator.
+%% fold(FoldFun, Accumulator, Dictionary) -> Accumulator.
 %%  Fold function Fun over all "bags" in Table and return Accumulator.
 
 fold(F, Acc, D) -> fold_dict(F, Acc, D).
@@ -305,10 +305,14 @@ filter(F, D) -> filter_dict(F, D).
 
 %% merge(MergeFun, Dictionary, Dictionary) -> Dictionary.
 
-merge(F, D1, D2) ->
+merge(F, D1, D2) when D1#dict.size < D2#dict.size ->
     fold_dict(fun (K, V1, D) ->
 		      update(K, fun (V2) -> F(K, V1, V2) end, V1, D)
-	      end, D2, D1).
+	      end, D2, D1);
+merge(F, D1, D2) ->
+    fold_dict(fun (K, V2, D) ->
+		      update(K, fun (V1) -> F(K, V1, V2) end, V2, D)
+	      end, D1, D2).
 
 %% Depreciated interface.
 

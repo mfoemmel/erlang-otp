@@ -24,7 +24,8 @@
 	 il/0,im/0,ini/1,ini/2,inq/1,ip/0,ipb/0,ipb/1,iq/1,
 	 ir/0,ir/1,ir/2,ir/3,iv/0,ist/1]).
 
--import(io,[format/1,format/2]).
+-import(io, [format/1,format/2]).
+-import(lists, [sort/1,foreach/2]).
 
 iv() ->
     int:version().
@@ -171,15 +172,9 @@ ir() ->
 %% -------------------------------------------
 
 il() ->
-    Mods = lists:sort(code:interpreted()),
+    Mods = sort(int:interpreted()),
     ilformat("Module","File"),
-    il1(Mods).
-
-il1([Mod|Mods]) ->
-    ilformat(atom_to_list(Mod),get_file(Mod)),
-    il1(Mods);
-il1([]) ->
-    ok.
+    foreach(fun(Mod) -> ilformat(atom_to_list(Mod), get_file(Mod)) end, Mods).
 
 get_file(Mod) ->
     case int:file(Mod) of

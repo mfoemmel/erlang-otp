@@ -1,39 +1,15 @@
 {"%VSN%",
  [
-  {"3.2.7",
+  {"3.2.8",
    [
-        {update, 'orber', soft, soft_purge, soft_purge, []}
-    ]
-  },
-  {"3.2.6",
-   [
-        {update, 'orber', soft, soft_purge, soft_purge, []},
-        {update, 'iop_ior', soft, soft_purge, soft_purge, []},
-        {update, 'orber_initial_references', soft, soft_purge, soft_purge, []},
-        {update, 'corba_object', soft, soft_purge, soft_purge, []},
-        {update, 'orber_cosnaming_utils', soft, soft_purge, soft_purge, []},
-        {update, 'corba', soft, soft_purge, soft_purge, []},
-        {update, 'CosNaming_BindingIterator_impl', soft, soft_purge, soft_purge, []},
-	{update, 'orber_iiop_pm', {advanced, async}, soft_purge, soft_purge, []}
+        {update, 'iop_ior', soft, soft_purge, soft_purge, []}
     ]
   }
  ],
  [
-  {"3.2.7",
+  {"3.2.8",
    [
-        {update, 'orber', soft, soft_purge, soft_purge, []}
-   ]
-  },
-  {"3.2.6",
-   [
-        {update, 'orber', soft, soft_purge, soft_purge, []},
-        {update, 'iop_ior', soft, soft_purge, soft_purge, []},
-        {update, 'orber_initial_references', soft, soft_purge, soft_purge, []},
-        {update, 'corba_object', soft, soft_purge, soft_purge, []},
-        {update, 'orber_cosnaming_utils', soft, soft_purge, soft_purge, []},
-        {update, 'corba', soft, soft_purge, soft_purge, []},
-        {update, 'CosNaming_BindingIterator_impl', soft, soft_purge, soft_purge, []},
-	{update, 'orber_iiop_pm', {advanced, async}, soft_purge, soft_purge, []}
+        {update, 'iop_ior', soft, soft_purge, soft_purge, []}
    ]
   }
  ]

@@ -173,7 +173,9 @@ gen_serv(G, N, X) ->
 	    %% Generate the operation switch part
 	    lists:foreach(fun({Name, Body}) ->
 				  gen_dispatch(G, Fd, N, Body) end,
-			  [{x, get_body(X)} | X#interface.inherit_body]);
+			  [{x, get_body(X)} | X#interface.inherit_body]),
+	    
+	    emit_operation_map(G,Fd,N);
 
 	false ->
 	    ok
@@ -251,7 +253,10 @@ gen_prototypes(G,N,X) ->
 	    lists:foreach(fun({Name, Body}) ->
 				  gen_encoder_prototypes(G, HFd, N, Body) end,
 			  [{x, get_body(X)} | X#interface.inherit_body]),
-	    
+
+	    %% Emit operation mapping structures
+	    emit_operation_map_declaration(G, HFd, N),
+
 	    ok;
 
 	false -> 
@@ -470,73 +475,13 @@ emit_server_generic_decoding(G, Fd, N) ->
 
 "
 /*
- * Returns call identity
+ * Returns call identity ( left only for backward compatibility )
  */
 
 int ~s__call_info(~s oe_obj, CORBA_Environment *oe_env) {
-
-  char gencall_atom[10];
-  int error_code = 0;
-  int rec_version = 0;
-  oe_env->_iin = 0;
-  oe_env->_received = 0;
-
-  memset(gencall_atom, 0, 10);
-  ei_decode_version(oe_env->_inbuf, &oe_env->_iin, &rec_version);
-  ei_decode_tuple_header(oe_env->_inbuf, &oe_env->_iin, &oe_env->_received);
-  ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, gencall_atom);
-
-  if (strcmp(gencall_atom, \"$gen_cast\") == 0) {
-
-    if ((error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, oe_env->_operation)) < 0) {
-      ei_decode_tuple_header(oe_env->_inbuf, &oe_env->_iin, &oe_env->_received);
-      if ((error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, oe_env->_operation)) < 0) { 
-        CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_OPERATION, \"Bad Message, cannot extract operation\");
-        return error_code;
-      }
-      oe_env->_received -= 1;
-    } else
-      oe_env->_received -= 2;
-
-    return 0;
-  }
-
-  if (strcmp(gencall_atom, \"$gen_call\") == 0) {
-
-    ei_decode_tuple_header(oe_env->_inbuf, &oe_env->_iin, &oe_env->_received);
-
-    if ((error_code = ei_decode_pid(oe_env->_inbuf, &oe_env->_iin, &oe_env->_caller)) < 0) {
-      CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, MARSHAL, \"Bad Message, bad caller identity\");
-      return error_code;
-    }
-
-    if ((error_code = ei_decode_ref(oe_env->_inbuf, &oe_env->_iin, &oe_env->_unique)) < 0) {
-      CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, MARSHAL, \"Bad Message, bad message reference\");
-      return error_code;
-    }
-
-    if ((error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, oe_env->_operation)) < 0) {
-
-      ei_decode_tuple_header(oe_env->_inbuf, &oe_env->_iin, &oe_env->_received);
-
-      if ((error_code = ei_decode_atom(oe_env->_inbuf, &oe_env->_iin, oe_env->_operation)) < 0) { 
-        CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_OPERATION, \"Bad Message, cannot extract operation\");
-        return error_code;
-      }
-
-      oe_env->_received -= 1;
-      return 0;	  
-    }
-    else {
-      oe_env->_received -= 2;
-      return 0;
-    }
-  }
-
-  CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, MARSHAL, \"Bad message, neither cast nor call\");
-  return -1;
+  
+  return ___call_info___(oe_obj,oe_env);
 }
-
 
 ",
 
@@ -564,53 +509,12 @@ emit_switch(G, Fd, N, X) ->
 
 int ~s__switch(~s oe_obj, CORBA_Environment *oe_env) {
 
-  int status=0;
+  return ___switch___(oe_obj,oe_env,&___~s_map___);
 
-  /* Initiating exception indicator */
-  oe_env->_major = CORBA_NO_EXCEPTION;
-
-  /* Call switch */
-  if ((status = ~s__call_info(oe_obj, oe_env)) >= 0) {\n",
+}\n\n",
             
     ScopedName = icgen:to_undersc(N),
-
-    emit(Fd,StartCode,[ScopedName,ScopedName,ScopedName,ScopedName]),
-
-    %% Generate the server switch part
-    lists:foreach(fun({Name, Body}) ->
-			  gen_switch(G, Fd, N, Body) end,
-		  [{x, get_body(X)} | X#interface.inherit_body]),
-
-    emit(Fd,"     \n"),
-    emit(Fd,"    /* Bad call */\n"),
-    emit(Fd,"    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_OPERATION, \"Invalid operation\");\n"),
-    emit(Fd,"    return -1;\n"),
-    emit(Fd,"  }\n\n\n"),
-    emit(Fd,"  /* Exit */\n"),
-    emit(Fd,"  return status;\n}\n\n\n").
-
-
-
-gen_switch(G, Fd, N, [X |Xs]) when record(X, op) ->
-    % Check if to use scoped call names
-    {ScopedName, _, _} = extract_info(G, N, X),
-    Name = case icgen:get_opt(G, scoped_op_calls) of 
-	       true -> 
-		   ScopedName;
-	       false ->
-		   icgen:get_id(X#op.id)
-	   end,
-    
-    emit(Fd,"\n    if (strcmp(oe_env->_operation, ~p) == 0)\n",[Name]),
-    emit(Fd,"      return ~s__exec(oe_obj, oe_env);\n",[ScopedName]),
-    gen_switch(G, Fd, N, Xs);
-gen_switch(G, Fd, N, [X |Xs]) when record(X, attr) ->
-    gen_switch(G, Fd, N, Xs);
-gen_switch(G, Fd, N, [X|Xs]) ->
-    gen_switch(G, Fd, N, Xs);
-gen_switch(G, Fd, N, []) -> ok.
-
-
+    emit(Fd,StartCode,[ScopedName,ScopedName,ScopedName,ScopedName]).
 
 
 gen_dispatch(G, Fd, N, [X |Xs]) when record(X, op) ->
@@ -1659,6 +1563,7 @@ gen_cc_type(G, N, S, evaluate) when element(1, S) == scoped_id ->
 	Type ->
 	    gen_cc_type(G, N, Type, evaluate)
     end;
+
 gen_cc_type(G, N, S, evaluate_not) when element(1, S) == scoped_id ->
     {FullScopedName, T, TK, _} = icgen:get_full_scoped_name(G, N, S),
     BT = icgen:get_basetype(G, icgen:to_undersc(FullScopedName)),
@@ -1676,18 +1581,25 @@ gen_cc_type(G, N, S, evaluate_not) when element(1, S) == scoped_id ->
 	Type ->
 	    Type
     end;
+
 gen_cc_type(G, N, S, _) when list(S) ->
     S;
+
 gen_cc_type(G, N, S, _) when record(S, string) ->
     "CORBA_char";
+
 gen_cc_type(G, N, S, _) when record(S, wstring) ->  %% WSTRING
     "CORBA_wchar";
+
 gen_cc_type(G, N, {boolean, _}, _) ->
     "CORBA_boolean";
+
 gen_cc_type(G, N, {octet, _}, _) ->
     "CORBA_octet";
+
 gen_cc_type(G, N, {void, _}, _) ->
     "void";
+
 gen_cc_type(G, N, {unsigned, U}, _) ->
     case U of
 	{short,_} ->
@@ -1697,8 +1609,13 @@ gen_cc_type(G, N, {unsigned, U}, _) ->
 	{'long long',_} ->
 	    "CORBA_unsigned_long_long"
     end;
+
 gen_cc_type(G, N, {'long long', _}, _) ->
     "CORBA_long_long";
+
+gen_cc_type(G, N, {'any', _}, _) ->  %% Fix for any type
+    "CORBA_long";
+
 gen_cc_type(G, N, {T, _}, _) ->
     "CORBA_" ++ atom_to_list(T).
 
@@ -1767,6 +1684,11 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer)  when list(T) -> %% Already a
 					 [LName]),
 				    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
 				    emit(Fd, "    return oe_error_code;\n  }\n\n");
+				tk_long ->
+				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, ~s)) < 0) {\n",
+					 [LName]),
+				    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
+				    emit(Fd, "    return oe_error_code;\n  }\n\n");
 				tk_longlong ->
 				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_longlong(oe_env, ~s)) < 0) {\n",
 					 [LName]),
@@ -1810,6 +1732,11 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer)  when list(T) -> %% Already a
 				    emit(Fd, "    return oe_error_code;\n  }\n\n");
 				tk_octet ->
 				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_char(oe_env, ~s)) < 0) {\n",
+					 [LName]),
+				    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
+				    emit(Fd, "    return oe_error_code;\n  }\n\n");
+				tk_any ->
+				    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, ~s)) < 0) {\n",
 					 [LName]),
 				    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
 				    emit(Fd, "    return oe_error_code;\n  }\n\n");
@@ -1925,6 +1852,11 @@ gen_encoding_fun(G, N, X, Fd, T, LName, OutBuffer) ->
 	{sequence, _, _} ->
 	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
 	    emit(Fd, "    return oe_error_code;\n  }\n\n");
+	{any, _} -> %% Fix for any type
+	    emit(Fd, "  if ((oe_error_code = oe_ei_encode_long(oe_env, ~s)) < 0) {\n",
+		 [LName]),
+	    emit(Fd, "    CORBA_exc_set(oe_env, CORBA_SYSTEM_EXCEPTION, BAD_PARAM, \"Bad operation parameter on encode\");\n"),
+	    emit(Fd, "    return oe_error_code;\n  }\n\n");
 	_ ->
 	    icgen:fatal_error(G, {illegal_typecode_for_c, T, N})
     end.
@@ -1986,7 +1918,7 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring,
     end;
 gen_decoding_fun(G, N, Fd, T, LName, Refstring,
 		 InBuffer, Align, NextPos, DecType)  when list(T) -> %% Already a fullscoped name
-        Type = ictype:name2type(G,T),
+    Type = ictype:name2type(G,T),
     case ictype:isBasicType(Type) of
 	true ->
 	    case Type of
@@ -2070,6 +2002,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring,
 		
 		octet ->
 		    emit(Fd, "  if ((oe_error_code = ei_decode_char(~s, &oe_env->_iin, ~s~s)) < 0)\n",
+			 [InBuffer, Refstring, LName]),
+		    emit(Fd, "    return oe_error_code;\n\n");
+		    
+		any -> %% Fix for any type
+		    emit(Fd, "  if ((oe_error_code = ei_decode_long(~s, &oe_env->_iin, ~s~s)) < 0)\n",
 			 [InBuffer, Refstring, LName]),
 		    emit(Fd, "    return oe_error_code;\n\n")
 	    
@@ -2200,6 +2137,11 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring, InBuffer, Align, NextPos, DecTyp
 	{sequence, _, _} ->
 	    emit(Fd, "    return oe_error_code;\n\n");
 
+	{any, _} -> %% Fix for any type
+	    emit(Fd, "  if ((oe_error_code = ei_decode_long(~s, &oe_env->_iin, ~s~s)) < 0)\n",
+		 [InBuffer, Refstring, LName]),
+	    emit(Fd, "    return oe_error_code;\n\n");
+
 	_ ->
 	    icgen:fatal_error(G, {illegal_typecode_for_c, T, N})
     end.
@@ -2207,17 +2149,69 @@ gen_decoding_fun(G, N, Fd, T, LName, Refstring, InBuffer, Align, NextPos, DecTyp
 
 
 
+emit_operation_map(G,Fd,Scope) ->
+    Interface = ic_util:to_undersc(Scope),
+    OpNames = ic_pragma:fetchLocalOperationNames(G,Scope),
+    Length = erlang:length(OpNames),
+    emit(Fd,"\n/* Operation mapping */\n\n",[]),
+    case Length of 
+	0 ->
+	    emit(Fd,"___map___ ___~s_map___ = { 0, NULL };\n\n",[Interface]);
+	_ ->
+	    emit(Fd,"char ___~s___[] = ~p;\n",[Interface,Interface]),
+	    emit_operation_map1(G,Fd,Scope,OpNames),
+	    emit(Fd,"\n___operation___ ___~s_operations___[~p]  =  {\n",[Interface,Length]),
+	    emit_operation_map2(Fd,Scope,OpNames),
+	    emit(Fd,"};\n\n",[]),
+	    emit(Fd,"___map___ ___~s_map___ = { ~p, ___~s_operations___ };\n\n",[Interface,Length,Interface])
+    end.
+
+emit_operation_map1(_G,_Fd,_Scope,[])->
+    ok;
+emit_operation_map1(G,Fd,Scope,[Op|Ops]) ->
+    ScopedName = ic_util:to_undersc([Op|Scope]),
+    Name = case icgen:get_opt(G, scoped_op_calls) of 
+	       true ->
+		   ScopedName;
+	       _ ->
+		   Op
+	   end,
+    emit(Fd,"char ___~s___[] = ~p;\n",[ScopedName,Name]),
+    emit_operation_map1(G,Fd,Scope,Ops).
+
+emit_operation_map2(Fd,Scope,[Op]) ->
+    Name = ic_util:to_undersc([Op|Scope]),
+    Interface = ic_util:to_undersc(Scope),
+    emit(Fd,"  {  ___~s___, ___~s___, (___generic___*)~s__exec }\n",[Interface,Name,Name]);
+emit_operation_map2(Fd,Scope,[Op|Ops]) ->
+    Name = ic_util:to_undersc([Op|Scope]),
+    Interface = ic_util:to_undersc(Scope),
+    emit(Fd,"  {  ___~s___, ___~s___, (___generic___*)~s__exec },\n",[Interface,Name,Name]),
+    emit_operation_map2(Fd,Scope,Ops).
 
 
 
 
+emit_operation_map_declaration(G,Fd,Scope) ->
+    Interface = ic_util:to_undersc(Scope),
+    OpNames = ic_pragma:fetchLocalOperationNames(G,Scope),
+    Length = erlang:length(OpNames),
+    emit(Fd,"\n/* Operation mapping */\n",[]),
+    emit(Fd,"extern ___map___ ___~s_map___;\n",[Interface]),
+    case Length of 
+	0 ->
+	    ok;
+	_ ->
+	    emit(Fd,"extern ___operation___ ___~s_operations___[];\n",[Interface]),
+	    emit(Fd,"extern char ___~s___[];\n",[Interface]),
+	    emit_operation_map_declaration1(G,Fd,Scope,OpNames)
+    end.
 
-
-
-
-
-
-
-
+emit_operation_map_declaration1(_G,Fd,_Scope,[])->
+    ok;
+emit_operation_map_declaration1(G,Fd,Scope,[Op|Ops]) ->
+    ScopedName = ic_util:to_undersc([Op|Scope]),
+    emit(Fd,"extern char ___~s___[];\n",[ScopedName]),
+    emit_operation_map_declaration1(G,Fd,Scope,Ops).
 
 

@@ -35,24 +35,33 @@ RELSYSDIR = $(RELEASE_PATH)/sae
 MODULES= \
 	ring0 \
 	elink \
-	primes \
-	ebundle
+        esh \
+	erl_prim_loader \
+	prim_file \
+	fake_ecc_code \
+	init \
+	erl_root_dir \
+	fake_ecc_error_handler \
+        make_sae_tools \
+	erlang \
+	erl_open_port \
+	fake_ecc_init
 
 ERL_FILES= $(MODULES:%=%.erl)
 
-TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
+TARGET_FILES=$(MODULES:%=$(EBIN)/%.$(EMULATOR)) ecc
 
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
 ERL_FLAGS += 
-ERL_COMPILE_FLAGS += -I../include -I../../kernel/include
+ERL_COMPILE_FLAGS += -I../include -I$(ERL_TOP)/lib/kernel/include
 
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
 
-debug opt: $(TARGET_FILES) $(PRIMES_BIN)
+debug opt: $(TARGET_FILES)
 
 
 clean:
@@ -61,20 +70,35 @@ clean:
 
 docs:
 
-$(PRIMES_BIN): $(PRIMES_MOD)
-	erl -noshell -pa ../ebin -s ebundle unix $(PRIMES_BIN) $(PRIMES_MOD)
-
-$(PRIMES_BUNDLE): $(PRIMES_MOD)
-	erl -noshell -pa ../ebin -s ebundle win32 $(PRIMES_BUNDLE) $(PRIMES_MOD)
-
 
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
 
-# If .beam files in lib aren't built we use this rule.
-$(ERL_TOP)/lib/%.beam:
-	cd $(@D)/../src && $(MAKE) ../ebin/$(@F)
+$(EBIN)/init.beam: ../../../lib/kernel/src/init.erl
+	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+
+$(EBIN)/erl_prim_loader.beam: ../../../lib/kernel/src/erl_prim_loader.erl
+	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+
+$(EBIN)/prim_file.beam: ../../../lib/kernel/src/prim_file.erl
+	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+
+$(EBIN)/erlang.beam: ../../../lib/kernel/src/erlang.erl
+	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+
+$(EBIN)/erl_open_port.beam: ../../../lib/kernel/src/erl_open_port.erl
+	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+
+BINDIR=$(ERL_TOP)/bin/$(TARGET)
+START_ERL = PATH=$(PATH):$(BINDIR) ROOTDIR=$(ERL_TOP) BINDIR=$(BINDIR) \
+ EMU=beam PROGNAME=erl $(ERL_TOP)/bin/$(TARGET)/erlexec
+
+ecc: ${MODS:%=%.beam}
+	$(START_ERL) -noshell -pa ../ebin -run make_sae_tools all -s erlang halt
+	## this command patches ecc and esh with the
+	## correct path to the sources
+	PATH=$(PATH):$(BINDIR) ./ecc -install $(ERL_TOP)
 
 # ----------------------------------------------------
 # Release Target
@@ -84,9 +108,3 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 release_spec: opt
 
 release_docs_spec:
-
-
-
-
-
-

@@ -12,7 +12,7 @@
 /* XXX: should use dynamic reallocation */
 #define TABSIZ (16*1024)
 static struct {
-    uint32 *cp;
+    Eterm *cp;
     unsigned cdr;
 } beam_catches[TABSIZ];
 
@@ -25,7 +25,7 @@ void beam_catches_init(void)
     high_mark = 0;
 }
 
-unsigned beam_catches_cons(uint32 *cp, unsigned cdr)
+unsigned beam_catches_cons(Eterm *cp, unsigned cdr)
 {
     int i;
 
@@ -51,7 +51,7 @@ unsigned beam_catches_cons(uint32 *cp, unsigned cdr)
     return i;
 }
 
-uint32 *beam_catches_car(unsigned i)
+Eterm *beam_catches_car(unsigned i)
 {
     if( i >= TABSIZ ) {
 	fprintf(stderr,
@@ -61,7 +61,7 @@ uint32 *beam_catches_car(unsigned i)
     return beam_catches[i].cp;
 }
 
-void beam_catches_delmod(unsigned head, uint32 *code, unsigned code_bytes)
+void beam_catches_delmod(unsigned head, Eterm *code, unsigned code_bytes)
 {
     unsigned i, cdr;
 

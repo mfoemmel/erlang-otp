@@ -223,8 +223,8 @@ seq_trace_send_to_port(Process *c_p, Eterm message, Eterm timestamp)
 ** If we are to suspend on a port the busy_port is the thing
 ** otherwise busy_port is NIL
 */
-void erl_suspend(process, busy_port)
-Process* process; uint32 busy_port;
+void
+erl_suspend(Process* process, Eterm busy_port)
 {
     process->rcount++;  /* count number of suspend */
     switch(process->status) {
@@ -288,8 +288,8 @@ Process* process;
 static Eterm*
 patch_ts(Eterm tuple, Eterm* hp)
 {
-    uint32 ms, s, us;
-    uint32* ptr = tuple_val(tuple);
+    Uint ms, s, us;
+    Eterm* ptr = tuple_val(tuple);
     int arity = arityval(*ptr);
 
     ASSERT((ptr+arity+1) == hp);
@@ -558,7 +558,7 @@ seq_trace_output_generic(Eterm token, Eterm msg, Uint type,
 	    mess = TUPLE3(hp, am_seq_trace, label, mess);
 	    seq_trace_send_to_port(NULL, mess, NIL);
 	} else {
-	    uint32 ms,s,us,ts;
+	    Uint ms,s,us,ts;
 	    get_now(&ms, &s, &us);
 	    ts = TUPLE3(hp, make_small(ms),make_small(s), make_small(us));
 	    hp += 4;
@@ -568,7 +568,7 @@ seq_trace_output_generic(Eterm token, Eterm msg, Uint type,
     } else {
 	Process* tracer;
 	Eterm m2;
-	uint32 sz_label, sz_lastcnt_serial, sz_msg, sz_ts;
+	Uint sz_label, sz_lastcnt_serial, sz_msg, sz_ts;
 
 	tracer = process_tab[pid_number(system_seq_tracer)];
 	if (INVALID_PID(tracer, tracer->id) || (receiver == system_seq_tracer)) {
@@ -597,7 +597,7 @@ seq_trace_output_generic(Eterm token, Eterm msg, Uint type,
 		      receiver, m2);
 	hp += 6;
 	if (sz_ts) {/* timestamp should be included */
-	    uint32 ms,s,us,ts;
+	    Uint ms,s,us,ts;
 	    get_now(&ms, &s, &us);
 	    ts = TUPLE3(hp, make_small(ms),make_small(s), make_small(us));
 	    hp += 4;
@@ -1125,11 +1125,19 @@ trace_gc(Process *p, Eterm what)
 	hp = HAlloc(tracer, 64);
     }
 
+#ifdef UNIFIED_HEAP
+    CONS_PAIR(am_heap_size, make_small(global_htop - global_heap));
+    CONS_PAIR(am_old_heap_size, make_small(global_old_htop - global_old_heap));
+    CONS_PAIR(am_stack_size, make_small(p->stack - p->stop));
+    CONS_PAIR(am_recent_size, make_small(global_high_water - global_heap));
+    CONS_PAIR(am_mbuf_size, make_small(global_mbuf_sz));
+#else
     CONS_PAIR(am_heap_size, make_small(p->htop - p->heap));
     CONS_PAIR(am_old_heap_size, make_small(p->old_htop - p->old_heap));
     CONS_PAIR(am_stack_size, make_small(p->hend - p->stop));
     CONS_PAIR(am_recent_size, make_small(p->high_water - p->heap));
     CONS_PAIR(am_mbuf_size, make_small(p->mbuf_sz));
+#endif
 
     msg = TUPLE4(hp, am_trace, p->id, what, msg);
     hp += 5;

@@ -17,33 +17,14 @@
 %%
 -module(otp_internal).
 
--export([behaviour_info/0,behaviour_info/1,obsolete/3]).
-
-behaviour_info() ->
-    [application, gen_server, gen_event, gen_fsm,
-     supervisor, supervisor_bridge].
-
-behaviour_info(application) ->
-    [{start,2},{stop,1}];
-behaviour_info(gen_server) ->
-    [{init,1},{handle_call,3},{handle_cast,2},{handle_info,2},
-     {terminate,2},{code_change,3}];
-behaviour_info(gen_fsm) ->
-    [{init,1},{handle_event,3},{handle_sync_event,4},{handle_info,3},
-     {terminate,3},{code_change,4}];
-behaviour_info(gen_event) ->
-    [{init,1},{handle_event,2},{handle_call,2},{handle_info,2},
-     {terminate,2},{code_change,3}];
-behaviour_info(supervisor_bridge) ->
-    [{init,1},{terminate,2}];
-behaviour_info(supervisor) ->
-    [{init,1}].
-
+-export([obsolete/3]).
 
 obsolete(init, get_flag, 1) ->
     {true, {init, get_argument, 1}};
 obsolete(init, get_flags, 0) ->
     {true, {init, get_arguments, 0}};
+obsolete(init, get_args, 0) ->
+    {true, {init, get_plain_arguments, 0}};
 obsolete(unix, cmd, 1) ->
     {true, {os, cmd, 1}};
 
@@ -181,9 +162,15 @@ obsolete(erlang, db_slot, 2) ->
     {true, "deprecated BIF"};
 obsolete(erlang, db_update_counter, 3) ->
     {true, "deprecated BIF"};
+obsolete(ets, fixtable, 2) ->
+    {true, {ets, safe_fixtable, 2}};
 
 obsolete(erlang, old_binary_to_term, 1) ->
     {true, "deprecated BIF"};
+obsolete(erlang, info, 1) ->
+    {true, {erlang, system_info, 1}};
+obsolete(erlang, hash, 2) ->
+    {true, {erlang, phash, 2}};
 
 obsolete(file, file_info, 1) ->
     {true, {file, read_file_info, 1}};

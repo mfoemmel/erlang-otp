@@ -113,7 +113,6 @@ erts_put_module(Eterm mod)
 
     ASSERT(is_atom(mod));
     e.module = atom_val(mod);
-    e.slot.index = -1;
     index = index_put(&module_table, (void*) &e);
     return module_code(index);
 }

@@ -40,7 +40,8 @@
 	 encode_utc_time/3,decode_utc_time/5,
 	 encode_length/1,decode_length/1,
 	 check_if_valid_tag/3,
-	 decode_tag_and_length/1, decode_components/6, decode_set/6]).
+	 decode_tag_and_length/1, decode_components/6, 
+	 decode_components/7, decode_set/6]).
 
 -export([encode_open_type/1, decode_open_type/1]).
 -export([skipvalue/1, skipvalue/2]).
@@ -483,7 +484,7 @@ encode_open_type(Val) ->
 decode_open_type(Bytes) ->
     {Tag, Len, RemainingBuffer, RemovedBytes} = decode_tag_and_length(Bytes),
     N = Len + RemovedBytes,
-    <<Val:N/unit:8, RemainingBytes/binary>> = Bytes,
+    <<Val:N/binary, RemainingBytes/binary>> = Bytes,
     {Val, RemainingBytes, Len + RemovedBytes}.
  
  
@@ -567,8 +568,8 @@ encode_integer(C, Val, NamedNumberList, Tag) when atom(Val) ->
 	_ ->  
 	    exit({error,{asn1, {encode_integer_namednumber, Val}}}) 
     end; 
-encode_integer(C,{Name,Val},NamedNumberList,Val) ->
-    encode_integer(C,Val,NamedNumberList,Val); 
+encode_integer(C,{Name,Val},NamedNumberList,Tag) ->
+    encode_integer(C,Val,NamedNumberList,Tag); 
 encode_integer(C, Val, NamedNumberList, Tag) -> 
     dotag(Tag, ?N_INTEGER, encode_integer(C, Val)). 
  
@@ -1111,25 +1112,27 @@ encode_bit_string_bits(C, BitListVal, NamedBitList, DoTag) when list(BitListVal)
 	    {Len, Unused, OctetList} = encode_bitstring(BitListVal),  
 	    %%add unused byte to the Len 
 	    dotag(DoTag, ?N_BIT_STRING, {[Unused | OctetList],Len+1});
-	{Min,Max} -> 
-	    BitLen = length(BitListVal), 
-	    if  
-		BitLen > Max -> 
-		    exit({error,{asn1, 
-				 {bitstring_length, {{was,BitLen},{maximum,Max}}}}}); 
-		true -> 
-		    {Len, Unused, OctetList} = encode_bitstring(BitListVal),  
-		    %%add unused byte to the Len 
-		    dotag(DoTag, ?N_BIT_STRING, {[Unused | OctetList],Len+1})  
-	    end; 
- 
+	Constr={Min,Max} when integer(Min),integer(Max) -> 
+	    encode_constr_bit_str_bits(Constr,BitListVal,DoTag);
+	{Constr={Min,Max},[]} ->
+	    %% constraint with extension mark
+	    encode_constr_bit_str_bits(Constr,BitListVal,DoTag);
+	Constr={{Min1,Max1},{Min2,Max2}} ->
+	    %% constraint with extension mark
+	    encode_constr_bit_str_bits(Constr,BitListVal,DoTag);
 	Size ->
 	    case length(BitListVal) of
-		BitSize when BitSize =< Size ->
+		BitSize when BitSize == Size ->
 		    {Len, Unused, OctetList} = encode_bitstring(BitListVal),  
 		    %%add unused byte to the Len 
 		    dotag(DoTag, ?N_BIT_STRING, 
 			  {[Unused | OctetList],Len+1});  
+		BitSize when BitSize < Size ->
+		    PaddedList = pad_bit_list(Size-BitSize,BitListVal),
+		    {Len, Unused, OctetList} = encode_bitstring(PaddedList),  
+		    %%add unused byte to the Len 
+		    dotag(DoTag, ?N_BIT_STRING, 
+			  {[Unused | OctetList],Len+1});
 		BitSize -> 
 		    exit({error,{asn1,  
 			  {bitstring_length, {{was,BitSize},{should_be,Size}}}}}) 
@@ -1137,6 +1140,38 @@ encode_bit_string_bits(C, BitListVal, NamedBitList, DoTag) when list(BitListVal)
  
     end. 
  
+encode_constr_bit_str_bits({Min,Max},BitListVal,DoTag) ->
+    BitLen = length(BitListVal), 
+    if  
+	BitLen > Max -> 
+	    exit({error,{asn1,{bitstring_length,{{was,BitLen},
+						 {maximum,Max}}}}}); 
+	true -> 
+	    {Len, Unused, OctetList} = encode_bitstring(BitListVal),  
+	    %%add unused byte to the Len 
+	    dotag(DoTag, ?N_BIT_STRING, {[Unused, OctetList],Len+1})  
+    end;
+encode_constr_bit_str_bits({{Min1,Max1},{Min2,Max2}},BitListVal,DoTag) ->
+    BitLen = length(BitListVal),
+    case BitLen of
+	Len when Len > Max2 -> 
+	    exit({error,{asn1,{bitstring_length,{{was,BitLen},
+						 {maximum,Max2}}}}}); 
+	Len when Len > Max1, Len < Min2  ->
+	    exit({error,{asn1,{bitstring_length,{{was,BitLen},
+						 {not_allowed_interval,
+						  Max1,Min2}}}}});
+	_ ->
+	    {Len, Unused, OctetList} = encode_bitstring(BitListVal),  
+	    %%add unused byte to the Len 
+	    dotag(DoTag, ?N_BIT_STRING, {[Unused, OctetList],Len+1})  
+    end.
+
+%% returns a list of length Size + length(BitListVal), with BitListVal 
+%% as the most significant elements followed by padded zero elements
+pad_bit_list(Size,BitListVal) ->
+    Tail = lists:duplicate(Size,0),
+    lists:append(BitListVal,Tail).
  
 %%================================================================= 
 %% Do the actual encoding 
@@ -1509,6 +1544,11 @@ check_and_convert_restricted_string(Val,StringType,Range,NamedNumberList,BinOrOl
 	[] -> % No length constraint
 	    NewVal;
 	{Lb,Ub} when StrLen >= Lb, Ub >= StrLen -> % variable length constraint
+	    NewVal;
+	{{Lb,Ub},[]} when StrLen >= Lb ->
+	    NewVal;
+	{{Lb1,Ub1},{Lb2,Ub2}} when StrLen >= Lb1, StrLen =< Ub1; 
+				   StrLen =< Ub2, StrLen >= Lb2 ->
 	    NewVal;
 	StrLen -> % fixed length constraint
 	    NewVal;
@@ -1998,6 +2038,24 @@ decode_components(Rb, Num, Bytes, Fun3, TagIn, Acc) ->
 
 %%decode_components(Rb, indefinite, [0,0|Bytes], _Fun3, _TagIn, Acc) ->
 %%   {lists:reverse(Acc),Bytes,Rb+2};
+
+decode_components(Rb, indefinite, <<0,0,Bytes/binary>>, _Fun4, _TagIn, _Fun, Acc) ->
+   {lists:reverse(Acc),Bytes,Rb+2};
+
+decode_components(Rb, indefinite, Bytes, _Fun4, TagIn, _Fun, Acc) ->
+   {Term, Remain, Rb1} = _Fun4(Bytes, mandatory, TagIn, _Fun),
+   decode_components(Rb+Rb1, indefinite, Remain, _Fun4, TagIn, _Fun, [Term|Acc]);
+
+decode_components(Rb, Num, Bytes, _Fun4, _TagIn, _Fun, Acc) when Num == 0 ->
+   {lists:reverse(Acc), Bytes, Rb};
+
+decode_components(Rb, Num, Bytes, _Fun4, _TagIn, _Fun, Acc) when Num < 0 ->
+   exit({error,{asn1,{length_error,'SET/SEQUENCE OF'}}});
+
+decode_components(Rb, Num, Bytes, _Fun4, TagIn, _Fun, Acc) ->
+   {Term, Remain, Rb1} = _Fun4(Bytes, mandatory, TagIn, _Fun),
+   decode_components(Rb+Rb1, Num-Rb1, Remain, _Fun4, TagIn, _Fun, [Term|Acc]).
+
 
 
 %%-------------------------------------------------------------------------

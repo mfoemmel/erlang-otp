@@ -22,14 +22,18 @@
 #include "erl_message.h"
 #include "erl_process_dict.h"
 
+#ifdef HIPE
+#include "hipe_process.h"
+#endif
+
 /*
 ** Timer entry:
 */
 typedef struct erl_timer {
-    struct erl_timer* next;   /* next entry tiw slot or chain */
-    uint32 slot;              /* slot in timer wheel */
-    uint32 count;             /* number of loops reamining */
-    int    active;            /* 1=activated, 0=deactivated */
+    struct erl_timer* next;	/* next entry tiw slot or chain */
+    Uint slot;			/* slot in timer wheel */
+    Uint count;			/* number of loops remaining */
+    int    active;		/* 1=activated, 0=deactivated */
     /* called when timeout */
     FUNCTION(void, (*timeout), (void*));
     /* called when cancel (may be NULL) */
@@ -57,13 +61,29 @@ extern Export exp_send, exp_receive, exp_timeout;
 typedef struct process {
     Eterm* htop;		/* Heap top */
     Eterm* stop;		/* Stack top */
+#ifdef UNIFIED_HEAP
+    Eterm* hend;                /* Heap end */
+    Eterm* stack;               /* Stack start */
+    Eterm* send;                /* Stack end */
+    Uint stack_sz;              /* Size of stack in words */
+    Uint min_heap_size;         /* Minimum size of heap (in words). */
+    Uint active;                /* Active since last fullsweep? */
+#else
     Eterm* heap;		/* Heap start */
     Eterm* hend;		/* Heap end */
     Uint heap_sz;		/* Size of heap in words */
     Uint min_heap_size;		/* Minimum size of heap (in words). */
     Uint16 gen_gcs;		/* Number of (minor) generational GCs. */
     Uint16 max_gen_gcs;		/* Max minor gen GCs before fullsweep. */
+#endif
 
+#ifdef HIPE
+    /* HiPE-specific process fields. Put it early in struct process,
+       to enable smaller & faster addressing modes on the x86. */
+    struct hipe_process_state hipe;
+#endif
+
+#ifndef UNIFIED_HEAP
     /*
      * Heap pointers for generational GC.
      */
@@ -72,27 +92,28 @@ typedef struct process {
     Eterm *old_hend;
     Eterm *old_htop;
     Eterm *old_heap;
+#endif
 
-    uint32 status;	    /* process STATE */
-    uint32 rstatus;	    /* process resume STATE */
-    int rcount;             /* suspend count */
+    Uint32 status;		/* process STATE */
+    Uint32 rstatus;		/* process resume STATE */
+    int rcount;			/* suspend count */
 
-    Eterm id;		    /* The pid of this process */
-    int    prio;            /* Priority of process */
-    uint32 reds;            /* No of reductions for this process  */
-    Eterm error_handler;   /* module atom for the error handler */
-    Eterm tracer_proc;     /* If proc is traced, this is the tracer */
-    Eterm group_leader;    /* pid in charge */
+    Eterm id;			/* The pid of this process */
+    int    prio;		/* Priority of process */
+    Uint reds;			/* No of reductions for this process  */
+    Eterm error_handler;	/* Module atom for the error handler */
+    Eterm tracer_proc;		/* If proc is traced, this is the tracer */
+    Eterm group_leader;		/* Pid in charge */
     Uint flags;			/* Trap exit, trace  flags etc */
     Eterm fvalue;		/* Exit & Throw value (failure reason) */
-    uint32 freason;	    /* Reason for detected failure */
-    sint32 fcalls;          /* 
-			     * Number of reductions left to execute.
-			     * Only valid for the current process.
-			     */
-    int    dslot;           /* Distribution slot to use if F_DISTRIBUTION */
+    Uint freason;	    /* Reason for detected failure */
+    Sint fcalls;		/* 
+				 * Number of reductions left to execute.
+				 * Only valid for the current process.
+				 */
+    int    dslot;		/* Distribution slot to use if F_DISTRIBUTION */
 
-    ErlTimer tm;            /* Timer entry */
+    ErlTimer tm;		/* Timer entry */
 
     struct process *next;	/* Pointer to next process in list */
     ErlOffHeap off_heap;	/* Off-heap data updated by copy_struct(). */
@@ -103,16 +124,18 @@ typedef struct process {
     struct erl_link* links;         /* List of links */
 
     ErlMessageQueue msg;	/* Message queue */
+#ifndef UNIFIED_HEAP
     ErlHeapFragment* mbuf;	/* Pointer to message buffer list */
-    uint32 mbuf_sz;		/* Size of all message buffers */
+    Uint mbuf_sz;		/* Size of all message buffers */
+#endif
 
     ProcDict  *dictionary;       /* Process dictionary, may be NULL */
     ProcDict  *debug_dictionary; /* Process dictionary-like debugging 
 				  * information, private to OTP applications */
     struct saved_calls *ct;
 
-    uint32 seq_trace_clock;
-    uint32 seq_trace_lastcnt;
+    Uint seq_trace_clock;
+    Uint seq_trace_lastcnt;
     Eterm seq_trace_token;	/* Sequential trace token (tuple size 5 see below) */
 
     Eterm initial[3];		/* Initial module(0), function(1), arity(2) */
@@ -122,15 +145,15 @@ typedef struct process {
 				 * arity an untagged integer).
 				 */
 
-    uint32* cp;                 /* Continuation pointer (for threaded code). */
-    uint32* i;                  /* Program counter for threaded code. */
-    sint32 catches;             /* Number of catches on stack */
+    Eterm* cp;			/* Continuation pointer (for threaded code). */
+    Eterm* i;			/* Program counter for threaded code. */
+    Sint catches;		/* Number of catches on stack */
 
     /*
      * Secondary heap for arithmetic operations.
      */
     Eterm* arith_heap;		/* Current heap pointer. */
-    uint32 arith_avail;		/* Available space on arithmetic heap. */
+    Uint arith_avail;		/* Available space on arithmetic heap. */
 #ifdef DEBUG
     char* arith_file;		/* Filename of last ArithAlloc(). */
     int arith_line;		/* And linenumber. */
@@ -140,14 +163,50 @@ typedef struct process {
     /*
      * Saved x registers.
      */
-    uint32 arity;               /* Number of live argument registers (only valid
+    Uint arity;			/* Number of live argument registers (only valid
 				 * when process is *not* running).
 				 */
-    uint32* arg_reg;		/* Pointer to argument registers. */
+    Eterm* arg_reg;		/* Pointer to argument registers. */
     unsigned max_arg_reg;	/* Maximum number of argument registers available. */
-    uint32 def_arg_reg[6];	/* Default array for argument registers. */
+    Eterm def_arg_reg[6];	/* Default array for argument registers. */
 } Process;
 
+#ifdef UNIFIED_HEAP
+/*
+ * Macros to store live processes in the active_procs array.
+ * The array is used in GC and the macros are called from erl_message.c
+ * and erl_process.c
+ */
+
+#define ADD_TO_ROOTSET(p) \
+do { \
+    int active_index = 0; \
+    while ((active_procs[active_index] != NULL) && \
+           (active_procs[active_index] != (Process*)NIL) && \
+           (active_procs[active_index] != p)) \
+    { \
+        active_index++; \
+    }  \
+    if (active_procs[active_index] != p) \
+    { \
+        if (active_procs[active_index] == NULL) \
+            active_procs[active_index+1] = NULL; \
+        active_procs[active_index] = p; \
+    } \
+} while(0)
+
+#define REMOVE_FROM_ROOTSET(p) \
+do { \
+    int active_index = 0; \
+    while ((active_procs[active_index] != NULL) && \
+           (active_procs[active_index] != p)) \
+    { \
+        active_index++;  \
+    } \
+    if (active_procs[active_index] != NULL) \
+      active_procs[active_index] = (Process*)NIL; \
+} while (0)
+#endif
 
 /*
  * The MBUF_GC_FACTOR descides how easily a process is subject to GC 
@@ -224,12 +283,15 @@ typedef struct {
  * The KILL_CATCHES(p) macro kills pending catches for process p.
  */
 
-#define KILL_CATCHES(p) (p)->catches = 0
+#define KILL_CATCHES(p) (p)->catches = -1
 
-extern Eterm* arith_alloc(Process* p, uint32 need);
+extern Eterm* arith_alloc(Process* p, Uint need);
 
 extern Process** process_tab;
-extern uint32 max_process;
+#ifdef UNIFIED_HEAP
+extern Process** active_procs;
+#endif
+extern Uint max_process;
 extern Uint erts_default_process_flags;
 extern Eterm erts_default_tracer;
 
@@ -245,7 +307,7 @@ extern Eterm erts_default_tracer;
  port->id != port_id || \
  port->status == FREE || \
  (port->status & (EXITING|CLOSING|PORT_BUSY|DISTRIBUTION)))
- 
+
 #define IS_TRACED(p)        ( (p)->tracer_proc != NIL)
 #define IS_TRACED_FL(p,tf)  ( IS_TRACED(p) && ( ((p)->flags & (tf)) == (tf)) )
 
@@ -311,23 +373,19 @@ extern Eterm erts_default_tracer;
 	(p)->flags &= ~(F_INSLPQUEUE|F_TIMO); \
     } while (0)
 
-EXTERN_FUNCTION(void, init_scheduler, (_VOID_));
-EXTERN_FUNCTION(int,  sched_q_len, (_VOID_));
-EXTERN_FUNCTION(void, add_to_schedule_q, (Process*));
-EXTERN_FUNCTION(int,  remove_proc_from_sched_q,  (Process*));
-EXTERN_FUNCTION(int,  schedule, (_VOID_));
-EXTERN_FUNCTION(uint32, erl_create_process, (Process*, uint32, uint32, uint32,
-					   ErlSpawnOpts*));
-EXTERN_FUNCTION(void, delete_process, (Process*));
-EXTERN_FUNCTION(void, schedule_exit, (Process*, uint32));
-EXTERN_FUNCTION(void, do_exit, (Process*, uint32));
-EXTERN_FUNCTION(void, set_timer, (Process*, uint32));
-EXTERN_FUNCTION(void, cancel_timer, (Process*));
-EXTERN_FUNCTION(int, keep_zombies, (int, int*));
-EXTERN_FUNCTION(void, process_info_zombies, (CIO));
-
-EXTERN_FUNCTION(void, trace_proc_call, (Process*, uint32));
-EXTERN_FUNCTION(void, trace_proc_ret, (Process*, uint32));
+void init_scheduler(void);
+int  sched_q_len(void);
+void add_to_schedule_q(Process*);
+int  remove_proc_from_sched_q(Process*);
+int  schedule(void);
+Eterm erl_create_process(Process*, Eterm, Eterm, Eterm, ErlSpawnOpts*);
+void delete_process(Process*);
+void schedule_exit(Process*, Eterm);
+void do_exit(Process*, Eterm);
+void set_timer(Process*, Uint);
+void cancel_timer(Process*);
+int keep_zombies(int, int*);
+void process_info_zombies(CIO);
 
 void erts_init_empty_process(Process *p);
 void erts_cleanup_empty_process(Process* p);

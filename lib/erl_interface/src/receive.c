@@ -52,8 +52,9 @@ extern int ei_trace_distribution;
 
 extern erlang_trace *ei_trace(int query, erlang_trace *token);
 
-static int 
-read_fill (int fd, char *buf, int len)
+int ei_select_timeout(int fd, int f_write, int* timeout);
+
+static int read_fill (int fd, char *buf, int len)
 {
   int got = 0;
   int i;

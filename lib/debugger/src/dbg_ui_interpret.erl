@@ -91,7 +91,7 @@ fs_init(Dir,Owner,Pos,Title,Action,Table) ->
     Items =  refresh(Dir, Interpreted),
     gs:config(info,{label,{text,["Dir: "|Dir]}}),
     dbg_ui_aux:mark_nonbusy(win),
-    fs_loop(Win,Dir, Pid, Size, Table, Interpreted, undefined, undefined).
+    fs_loop(Win,Dir, Pid, Size, Table, Interpreted).
 
 %%% init_win(Items,Dir,{X,Y}) -> {Width,Height}. Creates the window
 
@@ -118,11 +118,6 @@ init_win(Items,Dir,{X,Y},Title) ->
 					  {underline, 1},
 					  {side, left}
 					 ]),
-    gs:menubutton(menubtn_options, menubar, [{label, {text, " Options "}},
-					  {underline, 1},
-					  {side, left}
-					 ]),
-
     dbg_ui_winman:windows_menu (MenuBar),
     
     gs:menubutton(menubtn_help, menubar, [{label, {text, " Help "}},
@@ -130,21 +125,12 @@ init_win(Items,Dir,{X,Y},Title) ->
 					  {side, right}
 					 ]),
     gs:menu(menu_file, menubtn_file, []), 
-    gs:menu(menu_options, menubtn_options, []), 
     gs:menu(menu_help, menubtn_help, []), 
     
     gs:menuitem(menu_file, [{label, {text, "Close"}},
 			    {underline, 0},
 			    {data, close}
 			   ]),
-    gs:menuitem(menu_options, [{label, {text, "Macro Definitions..."}},
-			       {underline, 0},
-			       {data, macro}
-			      ]),
-    gs:menuitem(menu_options, [{label, {text, "Include Directories..."}},
-			       {underline, 0},
-			       {data, incdir}
-			      ]),
     gs:menuitem(menu_help, [{label, {text, "Help"}},
 			       {underline, 0},
 			       {data, help}
@@ -218,134 +204,88 @@ update_window(X,Y,{OldX, OldY}) ->
 %%% Interpreted: File names on which actions have been taken, not to
 %%%         be shown in the list box.
 
-fs_loop(Win, Dir, Owner, Size, Table, Interpreted, MPid, IPid) ->
+fs_loop(Win, Dir, Owner, Size, Table, Interpreted) ->
     receive
 	{update_windows, Data} ->
 	    dbg_ui_winman:update_windows_menu (Data),
-	    fs_loop (Win, Dir, Owner, Size, Table, Interpreted, MPid, IPid);
+	    fs_loop (Win, Dir, Owner, Size, Table, Interpreted);
 
         %% manages the Windows menu - puts the choosen window on top
         {gs, _, click, [win_menu, Win_Pid], _}     ->
             dbg_ui_winman:on_top(Win_Pid),
-	    fs_loop (Win, Dir, Owner, Size, Table, Interpreted, MPid, IPid);
+	    fs_loop (Win, Dir, Owner, Size, Table, Interpreted);
 
 	{gs, _, destroy, _, _} ->             %%Exit
-	    send_to(MPid, destroy),
-	    send_to(IPid, destroy),
 	    dbg_ui_winman:delete_win (Win),
 	    Owner ! {?INT_MSG_TAG, self(), Dir, done};
 
 	{gs, win, keypress, [], ['Up'|_]} ->    %%Up
 	    up(Dir, Owner),
-	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted, MPid, IPid);
+	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted);
 
 	{gs, win, keypress, [], ['Down'|_]} ->  %%Down
 	    down(Dir, Owner),
-	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted, MPid, IPid);
+	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted);
 
 	{gs, win, keypress, _, ['Return'|_]} -> %%Compile
 	    {NDir, NInterpreted} = entered_name(Dir, Owner, Table, Interpreted),
-	    case NDir of
-		Dir ->
-		    done;
-		_Other ->
-		    send_to(MPid, {new_dir,NDir}),
-		    send_to(IPid, {new_dir,NDir})
-	    end,
-	    fs_loop(Win, NDir, Owner, Size, Table, NInterpreted, MPid, IPid);
+	    fs_loop(Win, NDir, Owner, Size, Table, NInterpreted);
 
 	{gs, win, keypress, _, [c,_,_,1]} ->    %%Exit
-	    send_to(MPid, destroy),
-	    send_to(IPid, destroy),
 	    dbg_ui_winman:delete_win (Win),
 	    Owner ! {?INT_MSG_TAG, self(), Dir, done};
 
 	{gs, win, keypress, _, [p,_,_,1]} ->    %%Up
 	    up(Dir, Owner),
-	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted, MPid, IPid);
+	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted);
 
 	{gs, win, keypress, _, [n,_,_,1]} ->    %%Down
 	    down(Dir, Owner),
-	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted, MPid, IPid);
+	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted);
 
 	{gs, interp, click, _, _} ->          %%Action
 	    gs:config(win, [{cursor,busy}]),
 	    {NDir, NInterpreted} = double_clicked(Dir, Owner, Table, Interpreted),
-	    case NDir of
-		Dir ->
-		    done;
-		_Other ->
-		    send_to(MPid, {new_dir,NDir}),
-		    send_to(IPid, {new_dir,NDir})
-	    end,
 	    gs:config(win, [{cursor,arrow}]),
-	    fs_loop(Win, NDir, Owner, Size, Table, NInterpreted, MPid, IPid);
+	    fs_loop(Win, NDir, Owner, Size, Table, NInterpreted);
 
 	{gs, all, click, _, _} ->             %%Action on all
 	    NInterpreted = all(Dir, Owner, Table, Interpreted),
-	    fs_loop(Win, Dir, Owner, Size, Table, NInterpreted, MPid, IPid);
+	    fs_loop(Win, Dir, Owner, Size, Table, NInterpreted);
 
 	{gs, done, click, _, _} ->            %%Exit
-	    send_to(MPid, destroy),
-	    send_to(IPid, destroy),
 	    dbg_ui_winman:delete_win (Win),
 	    Owner ! {?INT_MSG_TAG, self(), Dir, done};
 
 	{gs, lb, click, _, _} ->              %%Choose
 	    clicked(Dir, Owner),
-	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted, MPid, IPid);
+	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted);
 
 	{gs, lb, doubleclick, _, _} ->        %%Compile
 	    gs:config(win, [{cursor,busy}]),
 	    {NDir, NInterpreted} = double_clicked(Dir, Owner, Table, Interpreted),
-	    case NDir of
-		Dir ->
-		    done;
-		_Other ->
-		    send_to(MPid, {new_dir,NDir}),
-		    send_to(IPid, {new_dir,NDir})
-	    end,
 	    gs:config(win, [{cursor,arrow}]),
-	    fs_loop(Win, NDir, Owner, Size, Table, NInterpreted, MPid, IPid);
+	    fs_loop(Win, NDir, Owner, Size, Table, NInterpreted);
 
 	{gs, win, configure, _, [X,Y|_]} ->   %%Resize
 	    New_size = update_window(X, Y, Size),
-	    fs_loop(Win, Dir, Owner, New_size, Table, Interpreted, MPid, IPid);
+	    fs_loop(Win, Dir, Owner, New_size, Table, Interpreted);
 
 	{gs, _Id, click, close, _Args} ->
-	    send_to(MPid, destroy),
-	    send_to(IPid, destroy),
 	    dbg_ui_winman:delete_win (Win),
 	    Owner ! {?INT_MSG_TAG, self(), Dir, done};
-
-	{gs, _Id, click, macro, _Args} ->
-	    NewMPid = dbg_ui_compilerdefs:start(macro, Table, Dir, MPid),
-	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted, NewMPid, IPid);
-
-	{gs, _Id, click, incdir, _Args} ->
-	    NewIPid = dbg_ui_compilerdefs:start(incdir, Table, Dir, undefined),
-	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted, MPid, NewIPid);
 
 	{gs, _Id, click, help, _Args} ->
 	    HelpFile = filename:join(code:priv_dir(debugger), "../doc/index.html"),
 	    tool_utils:open_help(gs:start([{kernel,true}]), HelpFile),
-	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted, MPid, IPid);
-
-
-	{'EXIT', MPid, Reason} ->
-	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted, undefined, IPid);
-
-	{'EXIT', IPid, Reason} ->
-	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted, MPid, undefined);
+	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted);
 
 	{'EXIT', _AnyPid, Reason} ->
-	    send_to(MPid, destroy),
-	    send_to(IPid, destroy),
 	    dbg_ui_winman:delete_win (Win),
 	    Owner ! {?INT_MSG_TAG, self(), Dir, done};
 
 	_Other ->                              %%Ignore
-	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted, MPid, IPid)
+	    fs_loop(Win, Dir, Owner, Size, Table, Interpreted)
     end.
 
 %% up(Dir,Owner) -> ok.
@@ -444,7 +384,7 @@ interpret_all(Dir,Owner,Table,Num,Size,Interpreted) ->
     case check_file(Dir,filename:join(Dir,File1)) of
 	{file,Dir2,File2} ->
 	    gs:config(info,{label,{text,["Compiling: " | File2]}}),
-	    Opts = dbg_ui_compilerdefs:get_opts(Table, Dir2),
+	    Opts = [],				%XXX Obsolete.
 	    Owner !  {?INT_MSG_TAG,self(),{ok,Dir2,File2,Opts}},
 	    receive
 		error ->
@@ -510,7 +450,7 @@ entered_name(Dir,Owner,Table,Interpreted) ->
     case check_file(Dir,File) of
 	{file,Dir2,File2} ->
 	    gs:config(info,{label,{text,["Compiling: " | File2]}}),
-	    Opts = dbg_ui_compilerdefs:get_opts(Table, Dir2),
+	    Opts = [],				%XXX Obsolete
 	    Owner ! {?INT_MSG_TAG, self(), {ok,Dir2,File2,Opts}},
 	    receive
 		error ->
@@ -622,16 +562,6 @@ get_files (Dir, [H | T], Interpreted, Buffer) ->
 	    get_files(Dir,T,Interpreted,Buffer)
     end;
 get_files(_,[],_,Buffer) -> lists:reverse(Buffer).
-
-
-
-
-send_to(undefined, _Msg) ->
-    done;
-send_to(Pid, Msg) ->
-    Pid ! Msg.
-
-
 
 
 %%% get_interpreted  /0

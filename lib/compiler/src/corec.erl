@@ -104,8 +104,8 @@ format_error(write_error) ->
     "error writing file";
 format_error({rename,S}) ->
     io_lib:format("error renaming ~s", [S]);
-format_error({parse_transform,M,R}) ->
-    io_lib:format("error in transform '~s': ~p", [M, R]);
+format_error({core_transform,M,R}) ->
+    io_lib:format("error in core transform '~s': ~p", [M, R]);
 format_error({crash,Pass,Reason}) ->
     io_lib:format("internal error in ~p;\ncrash reason: ~P", [Pass,Reason,20]);
 format_error({bad_return,Pass,Reason}) ->
@@ -298,30 +298,37 @@ select_cond(Flag, ShouldBe, Pass, Ps, Opts) ->
 standard_passes() ->
     [?pass(core_lint_module),
      {iff,dcore,{listing,"rcore"}},
-     {pass,v3_core_opt},
+     ?pass(core_transforms),
+     {unless,no_copt,{pass,v3_core_opt}},
      {iff,dcopt,{listing,"coreopt"}},
      {iff,clint,?pass(core_lint_module)},
+
+     %% Kernel Erlang and code generation
      {pass,v3_kernel},
      {iff,dkern,{listing,"kernel"}},
      {pass,v3_life},
      {iff,dlife,{listing,"life"}},
      {pass,v3_codegen},
-     {iff,dcg,{listing,"codegen"}}|postopt_passes()] ++
-	%% Common assembly pass.
-	[{iff,dopt,{listing,"optimize"}},
-	 {iff,'S',{listing,"S"}},
-	 ?pass(beam_asm),
-	 {unless,binary,?pass(save_binary)}].
+     {iff,dcg,{listing,"codegen"}},
 
-postopt_passes() ->
-    [{unless,no_postopt,
+     %% Assembly level optimisations.
+     {unless,no_postopt,
       [{pass,beam_block},
        {iff,dblk,{listing,"block"}},
+       {pass,beam_bs},
+       {iff,dbs,{listing,"bs"}},
        {unless,no_jopt,{pass,beam_jump}},
        {iff,djmp,{listing,"jump"}},
        {unless,no_topt,{pass,beam_type}},
        {iff,dtype,{listing,"type"}},
-       {pass,beam_flatten}]}].
+       {pass,beam_clean},
+       {iff,dclean,{listing,"clean"}},
+       {pass,beam_flatten}]},
+     {iff,dopt,{listing,"optimize"}},
+     {iff,'S',{listing,"S"}},
+
+     ?pass(beam_asm),
+     {unless,binary,?pass(save_binary)}].
 
 %%%
 %%% Compiler passes.
@@ -340,7 +347,8 @@ parse_module(St) ->
 		{ok,Toks,Epos} ->
 		    case core_parse:parse(Toks) of
 			{ok,Mod} ->
-			    {ok,St#compile{module=Mod#c_mdef.name,code=Mod}};
+			    Name = (Mod#c_module.name)#c_atom.val,
+			    {ok,St#compile{module=Name,code=Mod}};
 			{error,E} ->
 			    Es = [{St#compile.ifile,[E]}],
 			    {error,St#compile{errors=St#compile.errors ++ Es}}
@@ -353,6 +361,30 @@ parse_module(St) ->
 	    Es = [{St#compile.ifile,[{none,compile,{open,E}}]}],
 	    {error,St#compile{errors=St#compile.errors ++ Es}}
     end.
+
+get_core_transforms(Opts) -> [M || {core_transform,M} <- Opts]. 
+
+core_transforms(St) ->
+    %% The options field holds the complete list of options at this
+    %% point - no need to examine the code.
+    Ts = get_core_transforms(St#compile.options),
+    foldl_core_transforms(St, Ts).
+
+foldl_core_transforms(St, [T|Ts]) ->
+    Name = "core transform " ++ atom_to_list(T),
+    Fun = fun(S) -> T:module(S#compile.code, S#compile.options) end,
+    Run = case member(time, St#compile.options) of
+	      true  -> fun run_tc/2;
+	      false -> fun({N,F}, S) -> catch F(S) end
+	  end,
+    case Run({Name, Fun}, St) of
+	{'EXIT',R} ->
+	    Es = [{St#compile.ifile,[{none,compile,{core_transform,T,R}}]}],
+	    {error,St#compile{errors=St#compile.errors ++ Es}};
+	Forms ->
+	    foldl_core_transforms(St#compile{code=Forms}, Ts)
+    end;
+foldl_core_transforms(St, []) -> {ok,St}.
 
 %%% Fetches the module name from a list of forms. The module attribute must
 %%% be present.

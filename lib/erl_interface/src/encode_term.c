@@ -18,10 +18,27 @@
 #include "erl_interface.h"
 #include "ei.h"
 #include "putget.h"
+#include "ei_x_encode.h"
+
 
 /* the actual encoder */
-extern int erl_encode_it(ETERM *ep, unsigned char **ext);
+extern int erl_encode_it(ETERM *ep, unsigned char **ext, int dist);
      
+int ei_x_encode_term(ei_x_buff* x, void* t)
+{
+    int i = x->index;
+    char* s, * s0;
+
+    if (!x_fix_buff(x, i))
+	return -1;
+    s0 = s = x->buff + i;
+    i += erl_term_len(t) - 1;
+    if (erl_encode_it(t,(unsigned char **)&s, 5))
+	return -1;
+    x->index += s - s0;
+    return 0;
+}
+
 extern int ei_encode_term(char *buf, int *index, void *t)
 {
   char *s = buf + *index;
@@ -31,7 +48,7 @@ extern int ei_encode_term(char *buf, int *index, void *t)
   else {
     /* this encodes all but the version at the start */
     /* and it will move s forward the right number of bytes */
-    if (erl_encode_it(t,(unsigned char **)&s)) return -1;
+    if (erl_encode_it(t,(unsigned char **)&s, 5)) return -1;
   }
   
   *index += s - s0;

@@ -20,7 +20,12 @@
 
 #include "erl_error.h"
 #include "ei.h"
+#include "ei_printterm.h"
 #include "putget.h"
+
+/* maybe this function should be rewritten to use ei_printterm instead
+   (or the other way around) */
+
 
 /* the new TT stuff has been added, but when these messages are shown
  * they will look just like the non-tt ones for now.
@@ -231,6 +236,26 @@ show_term (const char *termbuf, int *index, int (*pr)(), void *dest)
     n += pr(dest,"#Bignum");
     break;
     
+  case ERL_FUN_EXT: {
+    char atom[MAXATOMLEN];
+    long idx;
+    long uniq;
+    const char* s = termbuf + *index, * s0 = s;
+    int n_free;
+
+    ++s;
+    n_free = get32be(s);
+    *index += s - s0;
+    ei_decode_pid(termbuf, index, NULL); /* skip pid */
+    ei_decode_atom(termbuf, index, atom); /* get module, index, uniq */
+    ei_decode_long(termbuf, index, &idx);
+    ei_decode_long(termbuf, index, &uniq);
+    n += pr(dest,"#Fun<%s.%ld.%ld>", atom, idx, uniq);
+    for (i = 0; i < n_free; ++i) {
+	ei_skip_term(termbuf, index);
+    }
+    break;
+  }
   default:
     n += pr(dest,"#Unknown<%d.%d>",type,len);
     /* unfortunately we don't know how to skip over this type in

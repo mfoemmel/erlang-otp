@@ -22,8 +22,8 @@
 
 #include "sys.h"
 
-FUNCTION(void, *ddll_open, (char *));
-FUNCTION(uint32, *ddll_sym, (void *, char *));
-FUNCTION(int, ddll_close, (void *));
-FUNCTION(char, *ddll_error, ());
+void *ddll_open(char *);
+void *ddll_sym(void *, char *);
+int ddll_close(void *);
+char *ddll_error(void);
 

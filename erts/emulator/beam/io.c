@@ -25,6 +25,10 @@
 #endif
 
 #include "sys.h"
+
+/* must be included BEFORE global.h (since it includes erl_driver.h) */
+#include "erl_sys_driver.h"
+
 #include "erl_vm.h"
 #include "global.h"
 #include "erl_process.h"
@@ -34,19 +38,19 @@
 
 /* XXX Remove when driver interface has been cleaned-up. */
 void *ddll_open(char *);
-uint32 *ddll_sym(void *, char *);
+void *ddll_sym(void *, char *);
 int ddll_close(void *);
 char *ddll_error(void);
 
-extern DriverEntry fd_driver_entry;
-extern DriverEntry vanilla_driver_entry;
-extern DriverEntry spawn_driver_entry;
-extern DriverEntry *driver_tab[];
+extern ErlDrvEntry fd_driver_entry;
+extern ErlDrvEntry vanilla_driver_entry;
+extern ErlDrvEntry spawn_driver_entry;
+extern ErlDrvEntry *driver_tab[];
 
 DE_List*   driver_list;	/* Where should this be defined? */
 Port* erts_port;
-uint32     bytes_out;          /* No bytes sent out of the system */
-uint32     bytes_in;           /* No bytes gotten into the system */
+Uint       bytes_out;          /* No bytes sent out of the system */
+Uint       bytes_in;           /* No bytes gotten into the system */
 
 int erl_max_ports;
 
@@ -141,7 +145,7 @@ static void stopq(prt)
 Port* prt;
 {
     ErlIOQueue* q = &prt->ioq;
-    DriverBinary** binp = q->b_head;
+    ErlDrvBinary** binp = q->b_head;
 
     if (q->v_start != q->v_small)
 	sys_free(q->v_start);
@@ -161,7 +165,7 @@ Port* prt;
 
 
 static void
-setup_port(int port_num, Eterm pid, DriverEntry *driver, long ret, char *name)
+setup_port(int port_num, Eterm pid, ErlDrvEntry *driver, long ret, char *name)
 {
     Port* prt = &erts_port[port_num];
 
@@ -173,6 +177,7 @@ setup_port(int port_num, Eterm pid, DriverEntry *driver, long ret, char *name)
     prt->bytes_in = 0;
     prt->bytes_out = 0;
     prt->dslot = -1;
+    prt->reg = NULL;
     sys_memset(&prt->tm, 0, sizeof(ErlTimer));
     if (prt->name != NULL) {
 	sys_free(prt->name);
@@ -182,13 +187,13 @@ setup_port(int port_num, Eterm pid, DriverEntry *driver, long ret, char *name)
     sys_strcpy(prt->name, name);
     prt->links = NULL;
     prt->linebuf = NULL;
+    prt->bp = NULL;
+    prt->data = am_undefined;    
     initq(prt);
 }
 
 void
-wake_process_later(this_port, process)
-uint32 this_port;
-Process* process;
+wake_process_later(Eterm this_port, Process *process)
 {
     int port_pos;
     ProcessList** p;
@@ -216,11 +221,10 @@ Process* process;
    The driver start function must obey the same conventions.
 */
 int
-open_driver(driver, pid, name, opts)
-    DriverEntry* driver;	/* Pointer to driver entry. */
-    uint32 pid;			/* Current process. */
-    char* name;			/* Driver name. */
-    SysDriverOpts* opts;	/* Options. */
+open_driver(ErlDrvEntry* driver,	/* Pointer to driver entry. */
+	    Eterm pid,			/* Current process. */
+	    char* name,			/* Driver name. */
+	    SysDriverOpts* opts)	/* Options. */
 {
     int port_num;
     long ret;
@@ -278,7 +282,7 @@ open_driver(driver, pid, name, opts)
     ret = 0;
     setup_port(port_num, pid, driver, ret, name);
     if (driver->start) {
-	ret = (*driver->start)(port_num, name, opts);
+	ret = (long)(*driver->start)((ErlDrvPort)port_num, name, opts);
     }
     if (ret == -1 || ret == -2 || ret == -3) {
 	/*
@@ -322,15 +326,24 @@ do {								\
     GET_REAL_BIN(obj, _real, _offset);				\
     _bptr = binary_val(_real);					\
     if (thing_subtag(*_bptr) == REFC_BINARY_SUBTAG) {		\
-	ProcBin* _pb;						\
-	if (csize != 0) {					\
-	    SET_VEC(iov, binv, cbin, cptr, csize, vlen);	\
-	    cptr = buf;						\
-	    csize = 0;						\
-	}							\
-	_pb = (ProcBin *) _bptr;				\
-	SET_VEC(iov, binv, Binary2DriverBinary(_pb->val),	\
-		_pb->bytes+_offset, _size, vlen);		\
+	ProcBin* _pb = (ProcBin *) _bptr;			\
+        if (bin_limit && _size < bin_limit) {                   \
+            if (len < _size) {                                  \
+                goto L_overflow;                                \
+            }                                                   \
+            sys_memcpy(buf, _pb->bytes+_offset, _size);         \
+            csize += _size;                                     \
+            buf += _size;                                       \
+            len -= _size;                                       \
+        } else {                                                \
+	    if (csize != 0) {					\
+	        SET_VEC(iov, binv, cbin, cptr, csize, vlen);	\
+	        cptr = buf;				       	\
+	        csize = 0;				       	\
+	    }							\
+	    SET_VEC(iov, binv, Binary2ErlDrvBinary(_pb->val),	\
+		    _pb->bytes+_offset, _size, vlen);		\
+        }                                                       \
     } else {							\
 	ErlHeapBin* hb = (ErlHeapBin *) _bptr;			\
 	if (len < _size) {					\
@@ -345,8 +358,9 @@ do {								\
 
 static int io_list_to_vec(Eterm obj, /* io-list */
 			  SysIOVec* iov, /* io vector */
-			  DriverBinary** binv, /* binary reference vector */
-			  DriverBinary* cbin) /* binary to store characters */
+			  ErlDrvBinary** binv, /* binary reference vector */
+			  ErlDrvBinary* cbin,  /* binary to store characters */
+			  int bin_limit) /* small binaries limit */
 {
     DECLARE_ESTACK(s);
     Eterm* objp;
@@ -420,11 +434,26 @@ do {									\
 	b_size += _size;						\
 	in_clist = 0;							\
 	v_size++;							\
+        if (_size >= bin_limit) {                                       \
+            p_in_clist = 0;                                             \
+            p_v_size++;                                                 \
+        } else {                                                        \
+            p_c_size += _size;                                          \
+            if (!p_in_clist) {                                          \
+                p_in_clist = 1;                                         \
+                p_v_size++;                                             \
+            }                                                           \
+        }                                                               \
     } else {								\
 	c_size += _size;						\
 	if (!in_clist) {						\
 	    in_clist = 1;						\
 	    v_size++;							\
+	}								\
+	p_c_size += _size;						\
+	if (!p_in_clist) {						\
+	    p_in_clist = 1;						\
+	    p_v_size++;							\
 	}								\
     }									\
 } while (0)
@@ -433,12 +462,17 @@ do {									\
 /* 
 ** Size of a io list in bytes
 ** return -1 if error
-** returns:  vsize     - SysIOVec size needed for a writev
-**           csize     - Number of bytes not in binary
+** returns:            - Total size of io list
+**           vsize     - SysIOVec size needed for a writev
+**           csize     - Number of bytes not in binary (in the common binary)
+**           pvsize    - SysIOVec size needed if packing small binaries
+**           pcsize    - Number of bytes in the common binary if packing
 */
 
 static int 
-io_list_vec_len(Eterm obj, int* vsize, int* csize)
+io_list_vec_len(Eterm obj, int* vsize, int* csize, 
+		int bin_limit, /* small binaries limit */
+		int * pvsize, int * pcsize)
 {
     DECLARE_ESTACK(s);
     Eterm* objp;
@@ -446,6 +480,9 @@ io_list_vec_len(Eterm obj, int* vsize, int* csize)
     int c_size = 0;
     int b_size = 0;
     int in_clist = 0;
+    int p_v_size = 0;
+    int p_c_size = 0;
+    int p_in_clist = 0;
 
     goto L_jump_start;  /* avoid a push */
 
@@ -462,6 +499,11 @@ io_list_vec_len(Eterm obj, int* vsize, int* csize)
 		if (!in_clist) {
 		    in_clist = 1;
 		    v_size++;
+		}
+		p_c_size++;
+		if (!p_in_clist) {
+		    p_in_clist = 1;
+		    p_v_size++;
 		}
 	    }
 	    else if (is_binary(obj)) {
@@ -498,6 +540,10 @@ io_list_vec_len(Eterm obj, int* vsize, int* csize)
 	*vsize = v_size;
     if (csize != NULL)
 	*csize = c_size;
+    if (pvsize != NULL)
+	*pvsize = p_v_size;
+    if (pcsize != NULL)
+	*pcsize = p_c_size;
     return c_size + b_size;
 
  L_type_error:
@@ -505,40 +551,55 @@ io_list_vec_len(Eterm obj, int* vsize, int* csize)
     return -1;
 }
 
-#define SMALL_WRITE_VEC  6
+#define ERL_SMALL_IO_BIN_LIMIT (4*ERL_ONHEAP_BIN_LIMIT)
+#define SMALL_WRITE_VEC  16
 
 
 /* write data to a port */
-int write_port(caller_id, ix, list)
-uint32 caller_id;
-int ix; uint32 list;
+int write_port(Eterm caller_id, int ix, Eterm list)
 {
     char *buf;
     Port* p = &erts_port[ix];
-    DriverEntry *drv = p->drv_ptr;
+    ErlDrvEntry *drv = p->drv_ptr;
     int size;
     
     p->caller = caller_id;
     if (drv->outputv != NULL) {
 	int vsize;
 	int csize;
+	int pvsize;
+	int pcsize;
+	int blimit;
 	SysIOVec iv[SMALL_WRITE_VEC];
-	DriverBinary* bv[SMALL_WRITE_VEC];
+	ErlDrvBinary* bv[SMALL_WRITE_VEC];
 	SysIOVec* ivp;
-	DriverBinary**  bvp;
-	DriverBinary* cbin;
+	ErlDrvBinary**  bvp;
+	ErlDrvBinary* cbin;
 	ErlIOVec ev;
 
-	if ((size = io_list_vec_len(list, &vsize, &csize)) < 0) {
+	if ((size = io_list_vec_len(list, &vsize, &csize, 
+				    ERL_SMALL_IO_BIN_LIMIT,
+				    &pvsize, &pcsize)) < 0) {
 	    goto bad_value;
 	}
-	vsize += 1;
+	/* To pack or not to pack (small binaries) ...? */
+	vsize++;
+	if (vsize <= SMALL_WRITE_VEC) {
+	    /* Do NOT pack */
+	    blimit = 0;
+	} else {
+	    /* Do pack */
+	    vsize = pvsize + 1;
+	    csize = pcsize;
+	    blimit = ERL_SMALL_IO_BIN_LIMIT;
+	}
+	/* Use vsize and csize from now on */
 	if (vsize <= SMALL_WRITE_VEC) {
 	    ivp = iv;
 	    bvp = bv;
 	} else {
 	    ivp = (SysIOVec*) safe_alloc(vsize * sizeof(SysIOVec));
-	    bvp = (DriverBinary**) safe_alloc(vsize * sizeof(DriverBinary*));
+	    bvp = (ErlDrvBinary**) safe_alloc(vsize * sizeof(ErlDrvBinary*));
 	}
 	cbin = driver_alloc_binary(csize);
 
@@ -546,7 +607,7 @@ int ix; uint32 list;
 	ivp[0].iov_base = NULL;
 	ivp[0].iov_len = 0;
 	bvp[0] = NULL;
-	ev.vsize = io_list_to_vec(list, ivp+1, bvp+1, cbin);
+	ev.vsize = io_list_to_vec(list, ivp+1, bvp+1, cbin, blimit);
 	ev.vsize++;
 #if 0
 	/* This assertion may say something useful, but it can
@@ -556,7 +617,7 @@ int ix; uint32 list;
 	ev.size = size;  /* total size */
 	ev.iov = ivp;
 	ev.binv = bvp;
-	(*drv->outputv)(p->drv_data, &ev);
+	(*drv->outputv)((ErlDrvData)p->drv_data, &ev);
 	if (ivp != iv) {
 	    sys_free(ivp);
 	}
@@ -572,7 +633,7 @@ int ix; uint32 list;
 	if (r >= 0) {
 	    size -= r;
 	    if (drv->output) {
-		(*drv->output)(p->drv_data,(char*) tmp_buf, size);
+		(*drv->output)((ErlDrvData)p->drv_data,(char*) tmp_buf, size);
 	    }
 	}
 	else if (r == -2)
@@ -590,7 +651,7 @@ int ix; uint32 list;
 	    buf = safe_alloc(size+1); 
 	    r = io_list_to_buf(list, buf, size);
 	    if (drv->output) {
-		(*drv->output)(p->drv_data, (char*)buf, size);
+		(*drv->output)((ErlDrvData)p->drv_data, (char*)buf, size);
 	    }
 	    sys_free(buf);
 	}
@@ -623,8 +684,8 @@ static int fits_in_bits(unsigned int n)
 void init_io(void)
 {
     int i;
-    DriverEntry** dp;
-    DriverEntry* drv;
+    ErlDrvEntry** dp;
+    ErlDrvEntry* drv;
     char *maxports;
 
     maxports = getenv("ERL_MAX_PORTS");
@@ -657,11 +718,14 @@ void init_io(void)
 	erts_port[i].linebuf = NULL;
     }
 
-    sys_init_io(tmp_buf, (uint32)TMP_BUF_SIZE);
+    sys_init_io(tmp_buf, (size_t)TMP_BUF_SIZE);
 
-    (*fd_driver_entry.init)();
-    (*vanilla_driver_entry.init)();
-    (*spawn_driver_entry.init)();
+    if (fd_driver_entry.init != NULL)
+	(*fd_driver_entry.init)();
+    if (vanilla_driver_entry.init != NULL)
+	(*vanilla_driver_entry.init)();
+    if (spawn_driver_entry.init != NULL)
+	(*spawn_driver_entry.init)();
     for (dp = driver_tab; *dp != NULL; dp++) {
 	drv = *dp;
 	add_driver_entry(*dp);	/* will call init as well! */
@@ -935,13 +999,9 @@ int eol;
  * Deliver all lines in a line buffer, repeats calls to
  * deliver_read_message, and takes the same parameters.
  */
-static void deliver_linebuf_message(prt, to, hbuf, hlen, buf, len)
-Port* prt;
-uint32 to;
-char* hbuf;
-int hlen;
-char *buf;
-int len;
+static void deliver_linebuf_message(Port* prt, Eterm to, 
+				    char* hbuf, int hlen,
+				    char *buf, int len)
 {
     LineBufContext lc;
     int ret;
@@ -981,7 +1041,7 @@ deliver_vec_message(
 		    Eterm to,			/* Receiving pid */
 		    char* hbuf,			/* "Header" buffer... */
 		    int hlen,			/* ... and its length */
-		    DriverBinary** binv,	/* Vector of binaries */
+		    ErlDrvBinary** binv,	/* Vector of binaries */
 		    SysIOVec* iov,		/* I/O vector */
 		    int vsize,			/* Size of binv & iov */
 		    int csize)			/* Size of characters in 
@@ -1020,7 +1080,7 @@ deliver_vec_message(
 	if ((prt->status & BINARY_IO) == 0) {
 	    listp = buf_to_intlist(&hp, iov->iov_base, iov->iov_len, listp);
 	} else {
-	    DriverBinary* b;
+	    ErlDrvBinary* b;
 	    ProcBin* pb = (ProcBin*) hp;
 	    byte* base;
 
@@ -1037,7 +1097,7 @@ deliver_vec_message(
 	    pb->size = iov->iov_len;
 	    pb->next = rp->off_heap.mso;
 	    rp->off_heap.mso = pb;
-	    pb->val = DriverBinary2Binary(b);
+	    pb->val = ErlDrvBinary2Binary(b);
 	    pb->bytes = base;
 	    hp += PROC_BIN_SIZE;
 	    
@@ -1068,12 +1128,11 @@ deliver_vec_message(
 }
 
 
-static void deliver_bin_message(
-				Port*  prt,         /* port */
-				uint32 to,          /* receing pid */
+static void deliver_bin_message(Port*  prt,         /* port */
+				Eterm to,           /* receivng pid */
 				char* hbuf,         /* "header" buffer */
 				int hlen,           /* and it's length */
-				DriverBinary* bin,  /* binary data */
+				ErlDrvBinary* bin,  /* binary data */
 				int offs,           /* offset into binary */
 				int len)            /* length of binary */
 {
@@ -1084,21 +1143,45 @@ static void deliver_bin_message(
     deliver_vec_message(prt, to, hbuf, hlen, &bin, &vec, 1, len);
 }
 
+/* flush the port I/O queue and terminate if empty */
+/* 
+ * Note. 
+ *
+ * The test for (p->status != FREE) is important since the driver's 
+ * flush function might call driver_async, which when using no threads
+ * and being short circuited will notice that the io queue is empty
+ * (after calling the driver's async_ready) and recursively call 
+ * terminate_port. So when we get back here, the port is already terminated.
+ */
+void flush_port(int ix)
+{
+    Port *p = &erts_port[ix];
+
+    if (p->drv_ptr->flush != NULL) {
+	(*p->drv_ptr->flush)((ErlDrvData)p->drv_data);
+    }
+    if ((p->status != FREE) && (p->ioq.size == 0)) {
+	terminate_port(ix);
+    }
+}
+
 
 /* stop and delete a port that is CLOSING */
 static void terminate_port(ix)
 int ix;
 {
     Port* prt = &erts_port[ix];
-    DriverEntry *drv;
+    ErlDrvEntry *drv;
 
-    if (prt->status & SEND_CLOSED)
+    if (prt->status & SEND_CLOSED) {
+	prt->status &= ~SEND_CLOSED;
 	deliver_result(prt->id, prt->connected, am_closed);
+    }
     erl_cancel_timer(&prt->tm);
 
     drv = prt->drv_ptr;
-    if (drv->stop != NULL) {
-	(*drv->stop)(prt->drv_data);
+    if ((drv != NULL) && (drv->stop != NULL)) {
+	(*drv->stop)((ErlDrvData)prt->drv_data);
     }
     stopq(prt);        /* clear queue memory */
     prt->status = FREE;
@@ -1106,6 +1189,11 @@ int ix;
     if(prt->linebuf != NULL){
 	sys_free(prt->linebuf);
 	prt->linebuf = NULL;
+    }
+    if (prt->bp != NULL) {
+	free_message_buffer(prt->bp);
+	prt->bp = NULL;
+	prt->data = am_undefined;
     }
 }
 
@@ -1115,9 +1203,7 @@ int ix;
    away the reason, so we can do a BIF_ERROR(USER_EXIT, ...) later.
 */
 
-static void schedule_exit2(rp, reason)
-Process *rp;
-uint32 reason;
+static void schedule_exit2(Process *rp, Eterm reason)
 {
    if (rp->status == P_RUNNING)
    {
@@ -1134,21 +1220,18 @@ uint32 reason;
  * If 'from' is ourself we always die.
  * When a driver has data in ioq then driver will be set to closing
  * and become inaccessible to the processes. One exception exists and
- * that is to kill a port till reason kill. The the port is stopped.
+ * that is to kill a port till reason kill. Then the port is stopped.
  * 
  */
-void do_exit_port(this_port,from,reason)
-uint32 this_port;
-uint32 from;
-uint32 reason;
+void do_exit_port(Eterm this_port, Eterm from, Eterm reason)
 {
-   uint32 item;
+   Eterm item;
    Process *rp;
    int ix = port_index(this_port);
    int slot;
    Port* p = &erts_port[ix];
    ErlLink* lnk;
-   uint32 rreason = (reason == am_kill) ? am_killed : reason;
+   Eterm rreason = (reason == am_kill) ? am_killed : reason;
 
    if ((p->status == FREE) ||
        (p->status & EXITING) ||
@@ -1165,7 +1248,10 @@ uint32 reason;
     * Setting the port to not busy here, frees the list of pending
     * processes and makes them runnable.
     */
-   set_busy_port(ix, 0);
+   set_busy_port((ErlDrvPort)ix, 0);
+
+   if (p->reg != NULL)
+      unregister_name(NULL, p->reg->name);
 
    p->status |= EXITING;
    lnk = p->links;
@@ -1200,7 +1286,7 @@ uint32 reason;
 #ifdef MONITOR_ENHANCE
        case LNK_LINK1:
          {
-	    uint32 ref;
+	    Eterm ref;
 
 	    ref = lnk->ref;
 	    rp = pid2proc(item);
@@ -1228,6 +1314,7 @@ uint32 reason;
    if ((reason != am_kill) && (p->ioq.size > 0)) {
       p->status &= ~EXITING;	/* must turn it off */
       p->status |= CLOSING;
+      flush_port(ix);
    }
    else
       terminate_port(ix);
@@ -1241,14 +1328,11 @@ uint32 reason;
 **
 **
 */
-void port_command(caller_id, port_id, command)
-uint32 caller_id;
-uint32 port_id;
-uint32 command;
+void port_command(Eterm caller_id, Eterm port_id, Eterm command)
 {
     int ix;
-    uint32 *tp;
-    uint32 pid;
+    Eterm *tp;
+    Eterm pid;
     Process* rp;
 
     if (port_node(port_id) != THIS_NODE)
@@ -1306,9 +1390,9 @@ port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
     int to_len = 0;		/* Length of buffer. */
     int must_free = 0;		/* True if the buffer should be freed. */
     char port_result[64];	/* Buffer for result from port. */
-    void* port_resp;		/* Pointer to result buffer. */
+    char* port_resp;		/* Pointer to result buffer. */
     int ret = 1;		/* Return value (default ok) */
-    DriverEntry* drv;
+    ErlDrvEntry* drv;
     int n;
 
     prt->caller = p->id;
@@ -1351,14 +1435,14 @@ port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
      * Call the port's control routine.
      */
     port_resp = port_result;
-    n = drv->control(prt->drv_data, command, to_port, to_len,
+    n = drv->control((ErlDrvData)prt->drv_data, command, to_port, to_len,
 		     &port_resp, sizeof(port_result));
     if (must_free)
 	sys_free(to_port);
 
     if ((n >= 0) && (prt->control_flags & PORT_CONTROL_FLAG_BINARY)) {
 	Eterm* hp;
-	DriverBinary *b = port_resp;
+	ErlDrvBinary *b = (ErlDrvBinary*)port_resp;
 	ProcBin* pb;
 
 	hp = HAlloc(p, PROC_BIN_SIZE);
@@ -1368,7 +1452,7 @@ port_control(Process* p, Port* prt, Uint command, Eterm iolist, Eterm* resp)
 	pb->size = b->orig_size;
 	pb->next = p->off_heap.mso;
 	p->off_heap.mso = pb;
-	pb->val = DriverBinary2Binary(b);
+	pb->val = ErlDrvBinary2Binary(b);
 	pb->bytes = b->orig_bytes;
 	p->off_heap.overhead += b->orig_size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
 	*resp = make_binary(pb);
@@ -1417,6 +1501,12 @@ print_port_info(int i, CIO fp)
 	erl_printf(fp,"\n");
     }
 
+    if (p->reg != NULL) {
+	erl_printf(fp,"Registered as: ");
+	print_atom(atom_val(p->reg->name), fp);
+	erl_printf(fp,"\n");
+    }
+
     if (p->drv_ptr == &fd_driver_entry) {
 	erl_printf(fp,"Port is UNIX fd %s not opened by emulator\n",
 		   p->name);
@@ -1432,7 +1522,7 @@ print_port_info(int i, CIO fp)
 
 
 void
-set_busy_port(int port_num, int on)
+set_busy_port(ErlDrvPort port_num, int on)
 {
     if (on) {
         erts_port[port_num].status |= PORT_BUSY;
@@ -1455,7 +1545,7 @@ set_busy_port(int port_num, int on)
             ProcessList* pl = p->next;
 
             pid0 = p->pid;	/* Get first pid (should be sceduled last) */
-            fix_free(plist_desc, (uint32*) p);
+            fix_free(plist_desc, (Eterm *) p);
 
             p = pl;
             while (p != NULL) {
@@ -1467,7 +1557,7 @@ set_busy_port(int port_num, int on)
                         erl_resume(proc);
 		    }
                 }
-                fix_free(plist_desc,(uint32*) p);
+                fix_free(plist_desc,(Eterm *) p);
                 p = pl;
             }
 
@@ -1480,8 +1570,7 @@ set_busy_port(int port_num, int on)
     }
 }
 
-void set_port_control_flags(port_num, flags)
-int port_num, flags;
+void set_port_control_flags(ErlDrvPort port_num, int flags)
 {
     erts_port[port_num].control_flags = flags;
 }
@@ -1490,10 +1579,9 @@ int port_num, flags;
 void dist_port_command(p, buf, len)
 Port* p; byte* buf; int len;
 {
-    F_PTR fp = p->drv_ptr->output;
     p->caller = NIL;
-    if (fp != NULL) {
-	(*fp)(p->drv_data, buf, len);
+    if (p->drv_ptr->output != NULL) {
+	(*p->drv_ptr->output)((ErlDrvData)p->drv_data, buf, len);
     }
 }
 
@@ -1505,7 +1593,7 @@ int hndl;
     Port* p = &erts_port[ix];
 
     if (p->status != FREE) {
-	(*p->drv_ptr->ready_input)(p->drv_data,hndl);
+	(*p->drv_ptr->ready_input)((ErlDrvData)p->drv_data,(ErlDrvEvent)hndl);
 	/* NOTE some windows drivers use input_ready for input and output */
 	if ((p->status & CLOSING) && (p->ioq.size == 0)) {
 	    terminate_port(ix);
@@ -1517,7 +1605,7 @@ int hndl;
 		   "Input driver gone away without deselecting!\n", 
 		   ix, p->name ? p->name : "(unknown)" );
 	send_error_to_logger(NIL);
-	driver_select(ix, hndl, DO_READ, 0);
+	driver_select((ErlDrvPort)ix, (ErlDrvEvent)hndl, DO_READ, 0);
     }
 }
 
@@ -1528,7 +1616,7 @@ int hndl;
     Port* p = &erts_port[ix];
 
     if (p->status != FREE) {
-	(*p->drv_ptr->ready_output)(p->drv_data, hndl);
+	(*p->drv_ptr->ready_output)((ErlDrvData)p->drv_data, (ErlDrvEvent)hndl);
 	if ((p->status & CLOSING) && (p->ioq.size == 0)) {
 	    terminate_port(ix);
 	}
@@ -1538,7 +1626,7 @@ int hndl;
 		   "Output driver gone away without deselecting!\n", 
 		   ix, p->name ? p->name : "(unknown)" );
 	send_error_to_logger(NIL);
-	driver_select(ix, hndl, DO_WRITE, 0);
+	driver_select((ErlDrvPort)ix, (ErlDrvEvent)hndl, DO_WRITE, 0);
     }
 }
 
@@ -1549,7 +1637,7 @@ int async_ready(int ix, void* data)
 
     if (p->status != FREE) {
 	if (p->drv_ptr->ready_async != NULL) {
-	    (*p->drv_ptr->ready_async)(p->drv_data, data);
+	    (*p->drv_ptr->ready_async)((ErlDrvData)p->drv_data, data);
 	    need_free = 0;
 	}
 	if ((p->status & CLOSING) && (p->ioq.size == 0)) {
@@ -1564,11 +1652,11 @@ int async_ready(int ix, void* data)
 static void port_timeout_proc(p)
 Port* p;
 {
-    DriverEntry* drv = p->drv_ptr;
+    ErlDrvEntry* drv = p->drv_ptr;
 
     if ((p->status == FREE) || (drv->timeout == NULL))
 	return;
-    (*drv->timeout)(p->drv_data);
+    (*drv->timeout)((ErlDrvData)p->drv_data);
     if ((p->status & CLOSING) && (p->ioq.size == 0)) {
 	terminate_port(port_index(p->id));
     }
@@ -1581,10 +1669,10 @@ int status;
 {
    Port* prt = NUM2PORT(ix);
    ErlHeapFragment* bp;
-   uint32* hp;
-   uint32 tuple;
+   Eterm* hp;
+   Eterm tuple;
    Process *rp;
-   uint32 pid;
+   Eterm pid;
 
    pid = prt->connected;
    rp = process_tab[pid_number(pid)];
@@ -1613,15 +1701,15 @@ int status;
  */
 
 static int
-driver_deliver_term(Port* prt, Eterm to, DriverTermData* data, int len)
+driver_deliver_term(Port* prt, Eterm to, ErlDrvTermData* data, int len)
 {
     int need = 0;
     int depth = 0;
     int max_depth = 0;
     ErlHeapFragment* bp;
     Eterm* hp;
-    DriverTermData* ptr;
-    DriverTermData* ptr_end;
+    ErlDrvTermData* ptr;
+    ErlDrvTermData* ptr_end;
     DECLARE_ESTACK(stack); 
     Eterm mess = NIL;		/* keeps compiler happy */
     Process* rp;
@@ -1635,13 +1723,13 @@ driver_deliver_term(Port* prt, Eterm to, DriverTermData* data, int len)
 	return 0;
 
     /*
-     * Check DriverTermData for consistency and calculate needed heap size
+     * Check ErlDrvTermData for consistency and calculate needed heap size
      * and stack depth.
      */
     ptr = data;
     ptr_end = ptr + len;
     while (ptr < ptr_end) {
-	DriverTermData tag = *ptr++;
+	ErlDrvTermData tag = *ptr++;
 	switch(tag) {
 	case ERL_DRV_NIL: /* no arguments */
 	    depth++;
@@ -1664,7 +1752,7 @@ driver_deliver_term(Port* prt, Eterm to, DriverTermData* data, int len)
 	    ptr++;
 	    depth++;
 	    break;
-	case ERL_DRV_BINARY: /* DriverBinary*, size, offs */
+	case ERL_DRV_BINARY: /* ErlDrvBinary*, size, offs */
 	    if ((ptr+1 >= ptr_end) || (ptr[0] == 0)) return -1;
 	    need += PROC_BIN_SIZE;
 	    ptr += 3;
@@ -1726,7 +1814,7 @@ driver_deliver_term(Port* prt, Eterm to, DriverTermData* data, int len)
     ptr = data;
     ptr_end = ptr + len;
     while (ptr < ptr_end) {
-	DriverTermData tag = *ptr++;
+	ErlDrvTermData tag = *ptr++;
 
 	switch(tag) {
 	case ERL_DRV_NIL: /* no arguments */
@@ -1753,9 +1841,9 @@ driver_deliver_term(Port* prt, Eterm to, DriverTermData* data, int len)
 	    ptr++;
 	    break;
 
-	case ERL_DRV_BINARY: { /* DriverBinary*, size, offs */
+	case ERL_DRV_BINARY: { /* ErlDrvBinary*, size, offs */
 	    ProcBin* pb;
-	    DriverBinary* b = (DriverBinary*) ptr[0];
+	    ErlDrvBinary* b = (ErlDrvBinary*) ptr[0];
 
 	    b->refc++;  /* caller must free binary !!! */
 
@@ -1764,7 +1852,7 @@ driver_deliver_term(Port* prt, Eterm to, DriverTermData* data, int len)
 	    pb->size =  ptr[1];
 	    pb->next = rp->off_heap.mso;
 	    rp->off_heap.mso = pb;
-	    pb->val = DriverBinary2Binary(b);
+	    pb->val = ErlDrvBinary2Binary(b);
 	    pb->bytes = ((byte*) b->orig_bytes) + ptr[2];
 	    mess =  make_binary(pb);
 	    hp += PROC_BIN_SIZE;
@@ -1791,7 +1879,7 @@ driver_deliver_term(Port* prt, Eterm to, DriverTermData* data, int len)
 	    mess = ESTACK_POP(stack);
 	    i--;
 	    while(i > 0) {
-		uint32 hd = ESTACK_POP(stack);
+		Eterm hd = ESTACK_POP(stack);
 
 		mess = CONS(hp, hd, mess);
 		hp += 2;
@@ -1803,7 +1891,7 @@ driver_deliver_term(Port* prt, Eterm to, DriverTermData* data, int len)
 
 	case ERL_DRV_TUPLE: { /* int */
 	    int size = (int)ptr[0];
-	    uint32* tp = hp;
+	    Eterm* tp = hp;
 
 	    *tp = make_arityval(size);
 	    mess = make_tuple(tp);
@@ -1830,7 +1918,7 @@ driver_deliver_term(Port* prt, Eterm to, DriverTermData* data, int len)
 
 
 int 
-driver_output_term(int ix, DriverTermData* data, int len)
+driver_output_term(ErlDrvPort ix, ErlDrvTermData* data, int len)
 {
     Port* prt = NUM2PORT(ix);
     if (prt == NULL) return -1;
@@ -1840,7 +1928,7 @@ driver_output_term(int ix, DriverTermData* data, int len)
 
 
 int
-driver_send_term(int ix, DriverTermData to, DriverTermData* data, int len)
+driver_send_term(ErlDrvPort ix, ErlDrvTermData to, ErlDrvTermData* data, int len)
 {
     Port* prt = NUM2PORT(ix);
 
@@ -1856,8 +1944,8 @@ driver_send_term(int ix, DriverTermData to, DriverTermData* data, int len)
  * and data is len length of bin starting from offset offs.
  */
 
-int driver_output_binary(ix, hbuf, hlen, bin, offs, len)
-int ix; char* hbuf; int hlen; DriverBinary* bin; int offs; int len;
+int driver_output_binary(ErlDrvPort ix, char* hbuf, int hlen,
+			 ErlDrvBinary* bin, int offs, int len)
 {
     Port* prt = NUM2PORT(ix);
 
@@ -1885,8 +1973,7 @@ int ix; char* hbuf; int hlen; DriverBinary* bin; int offs; int len;
 ** Example: if hlen = 3 then the port owner will receive the data
 ** [H1,H2,H3 | T]
 */
-int driver_output2(ix, hbuf, hlen, buf, len)
-int ix; char* hbuf; int hlen; char* buf; int len;
+int driver_output2(ErlDrvPort ix, char* hbuf, int hlen, char* buf, int len)
 {
     Port* prt = NUM2PORT(ix);
 
@@ -1913,20 +2000,18 @@ int ix; char* hbuf; int hlen; char* buf; int len;
 
 /* Interface functions available to driver writers */
 
-int driver_output(ix,buf,len)
-int ix; int len; char *buf;
+int driver_output(ErlDrvPort ix, char* buf, int len)
 {
     return driver_output2(ix, NULL, 0, buf, len);
 }
 
-int
-driver_outputv(int ix, char* hbuf, int hlen, ErlIOVec* vec, int skip)
+int driver_outputv(ErlDrvPort ix, char* hbuf, int hlen, ErlIOVec* vec, int skip)
 {
     int n;
     int len;
     int size;
     SysIOVec* iov;
-    DriverBinary** binv;
+    ErlDrvBinary** binv;
     Port* prt;
 
     size = vec->size - skip;   /* Size of remaining bytes in vector */
@@ -2002,7 +2087,7 @@ int len;
 ** Allocation/Deallocation of binary objects 
 */
 
-DriverBinary*
+ErlDrvBinary*
 driver_alloc_binary(int size)
 {
     Binary* bin;
@@ -2013,30 +2098,30 @@ driver_alloc_binary(int size)
     bin->refc = 1;
     bin->orig_size = size;
     tot_bin_allocated += size;    
-    return Binary2DriverBinary(bin);
+    return Binary2ErlDrvBinary(bin);
 }
 
 /* Reallocate space hold by binary */
 
-DriverBinary* driver_realloc_binary(bin, size)
-DriverBinary* bin; int size;
+ErlDrvBinary* driver_realloc_binary(bin, size)
+ErlDrvBinary* bin; int size;
 {
     Binary* newbin;
 
     if ((newbin = (Binary*)
-	 sys_realloc((bin == NULL) ? NULL : DriverBinary2Binary(bin) , 
+	 sys_realloc((bin == NULL) ? NULL : ErlDrvBinary2Binary(bin) , 
 		     sizeof(Binary)+size)) == NULL)
 	return NULL;
     tot_bin_allocated += (size - newbin->orig_size);
     newbin->orig_size = size;
-    return Binary2DriverBinary(newbin);
+    return Binary2ErlDrvBinary(newbin);
 }
 
 
 void driver_free_binary(dbin)
-DriverBinary* dbin;
+ErlDrvBinary* dbin;
 {
-    Binary *bin = DriverBinary2Binary(dbin);
+    Binary *bin = ErlDrvBinary2Binary(dbin);
     if (bin->refc == 1) {
 	if (bin->flags & BIN_FLAG_MATCH_PROG) {
 	    erts_match_set_free(bin);
@@ -2080,7 +2165,7 @@ int tail;      /* 0 if make room in head, make room in tail otherwise */
     int q_sz;  /* occupied */
     int nvsz;
     SysIOVec* niov;
-    DriverBinary** nbinv;
+    ErlDrvBinary** nbinv;
 
     h_sz = q->v_head - q->v_start;
     t_sz = q->v_end -  q->v_tail;
@@ -2096,7 +2181,7 @@ int tail;      /* 0 if make room in head, make room in tail otherwise */
 
 	if ((niov = sys_alloc(nvsz * sizeof(SysIOVec))) == NULL)
 	    return -1;
-	if ((nbinv = sys_alloc(nvsz * sizeof(DriverBinary**))) == NULL) {
+	if ((nbinv = sys_alloc(nvsz * sizeof(ErlDrvBinary**))) == NULL) {
 	    sys_free(niov);
 	    return -1;
 	}
@@ -2109,7 +2194,7 @@ int tail;      /* 0 if make room in head, make room in tail otherwise */
 	    q->v_head = q->v_start;
 	    q->v_tail = q->v_head + q_sz;
 
-	    sys_memcpy(nbinv, q->b_head, q_sz*sizeof(DriverBinary*));
+	    sys_memcpy(nbinv, q->b_head, q_sz*sizeof(ErlDrvBinary*));
 	    if (q->b_start != q->b_small)
 		sys_free(q->b_start);
 	    q->b_start = nbinv;
@@ -2126,7 +2211,7 @@ int tail;      /* 0 if make room in head, make room in tail otherwise */
 	    q->v_tail = q->v_end;
 	    q->v_head = q->v_tail - q_sz;
 	    
-	    sys_memcpy(nbinv+nvsz-q_sz, q->b_head, q_sz*sizeof(DriverBinary*));
+	    sys_memcpy(nbinv+nvsz-q_sz, q->b_head, q_sz*sizeof(ErlDrvBinary*));
 	    if (q->b_start != q->b_small)
 		sys_free(q->b_start);
 	    q->b_start = nbinv;
@@ -2139,7 +2224,7 @@ int tail;      /* 0 if make room in head, make room in tail otherwise */
 	sys_memmove(q->v_start, q->v_head, q_sz*sizeof(SysIOVec));
 	q->v_head = q->v_start;
 	q->v_tail = q->v_head + q_sz;
-	sys_memmove(q->b_start, q->b_head, q_sz*sizeof(DriverBinary*));
+	sys_memmove(q->b_start, q->b_head, q_sz*sizeof(ErlDrvBinary*));
 	q->b_head = q->b_start;
 	q->b_tail = q->b_head + q_sz;
     }
@@ -2147,7 +2232,7 @@ int tail;      /* 0 if make room in head, make room in tail otherwise */
 	sys_memmove(q->v_end-q_sz, q->v_head, q_sz*sizeof(SysIOVec));
 	q->v_tail = q->v_end;
 	q->v_head = q->v_tail-q_sz;
-	sys_memmove(q->b_end-q_sz, q->b_head, q_sz*sizeof(DriverBinary*));
+	sys_memmove(q->b_end-q_sz, q->b_head, q_sz*sizeof(ErlDrvBinary*));
 	q->b_tail = q->b_end;
 	q->b_head = q->b_tail-q_sz;
     }
@@ -2158,17 +2243,14 @@ int tail;      /* 0 if make room in head, make room in tail otherwise */
 
 
 /* Put elements from vec at q tail */
-int driver_enqv(ix, vec, skip)
-int ix;
-ErlIOVec* vec;
-int skip;       /* number of bytes already consumed */
+int driver_enqv(ErlDrvPort ix, ErlIOVec* vec, int skip)
 {
     int n;
     int len;
     int size;
     SysIOVec* iov;
-    DriverBinary** binv;
-    DriverBinary*  b;
+    ErlDrvBinary** binv;
+    ErlDrvBinary*  b;
     ErlIOQueue* q = IOQ(ix);
 
     if (q == NULL)
@@ -2227,17 +2309,14 @@ int skip;       /* number of bytes already consumed */
 }
 
 /* Put elements from vec at q head */
-int driver_pushqv(ix, vec, skip)
-int ix;
-ErlIOVec* vec;
-int skip;       /* number of bytes already consumed */
+int driver_pushqv(ErlDrvPort ix, ErlIOVec* vec, int skip)
 {
     int n;
     int len;
     int size;
     SysIOVec* iov;
-    DriverBinary** binv;
-    DriverBinary* b;
+    ErlDrvBinary** binv;
+    ErlDrvBinary* b;
     ErlIOQueue* q = IOQ(ix);
 
     if (q == NULL)
@@ -2299,9 +2378,7 @@ int skip;       /* number of bytes already consumed */
 ** Remove size bytes from queue head
 ** Return number of bytes that remain in queue
 */
-int driver_deq(ix, size)
-int ix; 
-int size;
+int driver_deq(ErlDrvPort ix, int size)
 {
     ErlIOQueue* q = IOQ(ix);
     int len;
@@ -2336,9 +2413,27 @@ int size;
 }
 
 
-SysIOVec* driver_peekq(ix, vlenp)
-int ix; 
-int* vlenp;  /* length of io-vector */
+int driver_peekqv(ErlDrvPort ix, ErlIOVec *ev) {
+    ErlIOQueue *q = IOQ(ix);
+    ASSERT(ev);
+
+    if (! q) {
+	return -1;
+    } else {
+	if ((ev->vsize = q->v_tail - q->v_head) == 0) {
+	    ev->size = 0;
+	    ev->iov = NULL;
+	    ev->binv = NULL;
+	} else {
+	    ev->size = q->size;
+	    ev->iov = q->v_head;
+	    ev->binv = q->b_head;
+	}
+	return q->size;
+    }
+}
+
+SysIOVec* driver_peekq(ErlDrvPort ix, int* vlenp)  /* length of io-vector */
 {
     ErlIOQueue* q = IOQ(ix);
 
@@ -2350,8 +2445,7 @@ int* vlenp;  /* length of io-vector */
 }
 
 
-int driver_sizeq(ix)
-int ix;
+int driver_sizeq(ErlDrvPort ix)
 {
     ErlIOQueue* q = IOQ(ix);
 
@@ -2364,8 +2458,7 @@ int ix;
 /* Utils */
 
 /* Enqueue a binary */
-int driver_enq_bin(ix, bin, offs, len)
-int ix; DriverBinary* bin; int offs; int len;
+int driver_enq_bin(ErlDrvPort ix, ErlDrvBinary* bin, int offs, int len)
 {
     SysIOVec      iov;
     ErlIOVec      ev;
@@ -2382,11 +2475,10 @@ int ix; DriverBinary* bin; int offs; int len;
     return driver_enqv(ix, &ev, 0);
 }
 
-int driver_enq(ix, buffer, len)
-int ix; char* buffer; int len;
+int driver_enq(ErlDrvPort ix, char* buffer, int len)
 {
     int code;
-    DriverBinary* bin;
+    ErlDrvBinary* bin;
 
     ASSERT(len >= 0);
     if (len == 0)
@@ -2399,8 +2491,7 @@ int ix; char* buffer; int len;
     return code;
 }
 
-int driver_pushq_bin(ix, bin, offs, len)
-int ix; DriverBinary* bin; int offs; int len;
+int driver_pushq_bin(ErlDrvPort ix, ErlDrvBinary* bin, int offs, int len)
 {
     SysIOVec      iov;
     ErlIOVec      ev;
@@ -2417,11 +2508,10 @@ int ix; DriverBinary* bin; int offs; int len;
     return driver_pushqv(ix, &ev, 0);
 }
 
-int driver_pushq(ix, buffer, len)
-int ix; char* buffer; int len;
+int driver_pushq(ErlDrvPort ix, char* buffer, int len)
 {
     int code;
-    DriverBinary* bin;
+    ErlDrvBinary* bin;
 
     ASSERT(len >= 0);
     if (len == 0)
@@ -2435,8 +2525,7 @@ int ix; char* buffer; int len;
     return code;
 }
 
-int driver_set_timer(ix, t)
-int ix; uint32 t;
+int driver_set_timer(ErlDrvPort ix, Uint t)
 {
     Port* prt = NUM2PORT(ix);
 
@@ -2448,8 +2537,7 @@ int ix; uint32 t;
     return 0;
 }
 
-int driver_cancel_timer(ix)
-int ix;
+int driver_cancel_timer(ErlDrvPort ix)
 {
     Port* prt = NUM2PORT(ix);
 
@@ -2462,7 +2550,7 @@ int ix;
 
 
 int
-driver_read_timer(int ix, unsigned long* t)
+driver_read_timer(ErlDrvPort ix, unsigned long* t)
 {
     Port* prt = NUM2PORT(ix);
 
@@ -2474,10 +2562,7 @@ driver_read_timer(int ix, unsigned long* t)
 }
 
 static int
-driver_failure_term(ix, term, eof)
-int ix;				/* Port index. */
-uint32 term;			/* Term to put in exit reason (ignored if eof != 0). */
-int eof;			/* EOF or not. */
+driver_failure_term(ErlDrvPort ix, Eterm term, int eof)
 {
     Port* prt = NUM2PORT(ix);
 
@@ -2504,8 +2589,7 @@ int eof;			/* EOF or not. */
 ** Do a (soft) exit. unlink the connected process before doing
 ** driver posix error or (normal)
 */
-int driver_exit(ix, err)
-int ix; int err;
+int driver_exit(ErlDrvPort ix, int err)
 {
     Port* prt = NUM2PORT(ix);
     Process* rp;
@@ -2519,67 +2603,57 @@ int ix; int err;
     /* unlink port from connected */
     if ((rp = pid2proc(prt->connected)) != NULL)
         del_link(find_link(&rp->links, LNK_LINK,
-                           make_port2(THIS_NODE,ix), NIL));
+                           make_port2(THIS_NODE, ix), NIL));
 
     if (err == 0)
         return driver_failure_term(ix, am_normal, 0);
     else {
         char* err_str = erl_errno_id(err);
-        uint32 am_err = make_atom(atom_put(err_str, sys_strlen(err_str)));
+        Eterm am_err = am_atom_put(err_str, sys_strlen(err_str));
         return driver_failure_term(ix, am_err, 0);
     }
 }
 
 
-int driver_failure(ix, code)
-int ix;
-int code;
+int driver_failure(ErlDrvPort ix, int code)
 {
     return driver_failure_term(ix, make_small(code), code == 0);
 }
 
-int driver_failure_atom(ix, string)
-int ix;
-char* string;
+int driver_failure_atom(ErlDrvPort ix, char* string)
 {
-    int am = atom_put(string, strlen(string));
+    Eterm am = am_atom_put(string, strlen(string));
 
-    return driver_failure_term(ix, make_atom(am), 0);
+    return driver_failure_term(ix, am, 0);
 }
 
-int driver_failure_posix(ix, err)
-    int ix;
-    int err;
+int driver_failure_posix(ErlDrvPort ix, int err)
 {
     return driver_failure_atom(ix, erl_errno_id(err));
 }
 
-int driver_failure_eof(ix)
-    int ix;
+int driver_failure_eof(ErlDrvPort ix)
 {
     return driver_failure_term(ix, NIL, 1);
 }
 
 
 
-DriverTermData driver_mk_atom(string)
-char* string;
+ErlDrvTermData driver_mk_atom(char* string)
 {
-    int am = atom_put(string, sys_strlen(string));
+    Eterm am = am_atom_put(string, sys_strlen(string));
     
-    return (DriverTermData) make_atom(am);
+    return (ErlDrvTermData) am;
 }
 
-DriverTermData driver_mk_port(ix)
-int ix;
+ErlDrvTermData driver_mk_port(ErlDrvPort ix)
 {
     Port* prt = NUM2PORT(ix);
 
-    return (DriverTermData) prt->id;
+    return (ErlDrvTermData) prt->id;
 }
 
-DriverTermData driver_connected(ix)
-int ix;
+ErlDrvTermData driver_connected(ErlDrvPort ix)
 {
     Port* prt = NUM2PORT(ix);
 
@@ -2588,8 +2662,7 @@ int ix;
     return prt->connected;
 }
 
-DriverTermData driver_caller(ix)
-int ix;
+ErlDrvTermData driver_caller(ErlDrvPort ix)
 {
     Port* prt = NUM2PORT(ix);
 
@@ -2602,8 +2675,12 @@ int ix;
 /*
 ** Make a HARD link to the driver which makes
 ** the erl_ddll to suspend unloading
+
+* Not sure this is safe! ?J
+
 */
-int driver_attach(int ix)
+
+int driver_attach(ErlDrvPort ix)
 {
     Port* prt = NUM2PORT(ix);
     DE_Handle* dh;
@@ -2616,7 +2693,7 @@ int driver_attach(int ix)
 }
 
 /* Unlink from a driver */
-int driver_detach(int ix)
+int driver_detach(ErlDrvPort ix)
 {
     Port* prt = NUM2PORT(ix);
     DE_Handle* dh;
@@ -2641,7 +2718,7 @@ int driver_detach(int ix)
  */
 
 void add_driver_entry(drv)
-    DriverEntry *drv;
+    ErlDrvEntry *drv;
 {
     DE_List *p = sys_alloc_from(161,sizeof(DE_List));
 
@@ -2655,7 +2732,7 @@ void add_driver_entry(drv)
 }
 
 int remove_driver_entry(drv)
-    DriverEntry *drv;
+    ErlDrvEntry *drv;
 {
     DE_List **p = &driver_list;
     DE_List *q;

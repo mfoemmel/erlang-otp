@@ -21,27 +21,25 @@
  */
 
 #include "sys.h"
-#include "driver.h"
+#include "erl_sys_driver.h"
 #include "global.h"
 
-EXTERN_FUNCTION(void, init_sys_float, ());
-EXTERN_FUNCTION(void, init_sys_select, ());
+void erts_sys_init_float(void);
+void init_sys_select(void);
 
-EXTERN_FUNCTION(void, win_check_io, (int wait));
-EXTERN_FUNCTION(void, init_sys_float, ());
-EXTERN_FUNCTION(void, init_sys_select, ());
+void win_check_io(int wait);
 
 #ifdef USE_THREADS
-EXTERN_FUNCTION(void, async_ready, (int, int));
-EXTERN_FUNCTION(int, init_async, (int));
-EXTERN_FUNCTION(int, exit_async, (_VOID_));
+void async_ready(int, int);
+int init_async(int);
+int exit_async(void);
 #endif
 
-EXTERN_FUNCTION(void, erl_start, (int, char**));
-EXTERN_FUNCTION(void, erl_exit, (int n, char*, _DOTS_));
-EXTERN_FUNCTION(void, erl_error, (char*, va_list));
-EXTERN_FUNCTION(int, send_error_to_logger, (uint32));
-EXTERN_FUNCTION(int, schedule, (_VOID_));
+void erl_start(int, char**);
+void erl_exit(int n, char*, _DOTS_);
+void erl_error(char*, va_list);
+int send_error_to_logger(Eterm);
+int schedule(_VOID_);
 void erl_crash_dump(char*, char*);
 
 /*
@@ -62,6 +60,8 @@ extern void _dosmaperr(DWORD);
 
 static void init_console();
 static int get_and_remove_option(int* argc, char** argv, const char* option);
+static char *get_and_remove_option2(int *argc, char **argv, 
+				    const char *option);
 static int init_async_io(struct async_io* aio, int use_threads);
 static void release_async_io(struct async_io* aio);
 static void async_read_file(struct async_io* aio, LPVOID buf, DWORD numToRead);
@@ -74,8 +74,7 @@ static FUNCTION(BOOL, CreateChildProcess, (char *, HANDLE, HANDLE,
 static int create_pipe(LPHANDLE, LPHANDLE, BOOL);
 static int ApplicationType(const char* originalName, char fullPath[MAX_PATH]);
 
-DWORD WINAPI nohup_thread(LPVOID param);
-
+HANDLE erts_service_event;
 
 /* Results from ApplicationType is one of */
 #define APPL_NONE 0
@@ -85,7 +84,7 @@ DWORD WINAPI nohup_thread(LPVOID param);
 
 static FUNCTION(int, driver_write, (long, HANDLE, byte*, int));
 static FUNCTION(void*, checked_alloc, (unsigned));
-static int common_stop(int);
+static void common_stop(int);
 static int create_file_thread(struct async_io* aio, int mode);
 static DWORD WINAPI threaded_reader(LPVOID param);
 static DWORD WINAPI threaded_writer(LPVOID param);
@@ -130,112 +129,12 @@ void erl_sys_init();
 
 void erl_sys_args(int* argc, char** argv);
 
-
-#ifndef ERL_RUN_SHARED_LIB
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
-		   PSTR szCmdLine, int iCmdShow)
-#else
-__declspec( dllexport )  int starta_emulatorn(int e_argc, char** e_argv)
-#endif
-{
-    HANDLE handle;
-    int nohup = 0;
-    /*DebugBreak();*/
-
-    erl_sys_init();
-
-    /*
-     * Start a thread which will prevent us to be killed if a user logs out.
-     * NB: This is needed for erlsrv!
-     */
-
-    if (get_and_remove_option(&e_argc, e_argv, "-nohup")) {
-	nohup = 1;
-    }
-
-    if (nohup) {
-	DWORD tid;
- 	_beginthreadex(NULL, 0, nohup_thread, 0, 0, &tid);
-    }
-
-#ifdef DEBUG
-    /*
-     * Start a debug console if -console option given.
-     */
-
-    if (get_and_remove_option(&__argc, __argv, "-console")) {
-	debug_console();
-    }
-#endif
-
-#ifdef ERL_RUN_SHARED_LIB
-	if (beam_module == NULL)
-#ifdef DEBUG
-	    beam_module = GetModuleHandle("beam.debug.dll");
-#else
-            beam_module = GetModuleHandle("beam.dll");
-#endif
-#endif
-    init_console();
-
-    /*
-     * The following makes sure that the current directory for the current drive
-     * is remembered (in the environment).
-     */  
-
-    chdir(".");
-
-    /*
-     * Make sure that the standard error handle is valid.
-     */
-    
-    handle = GetStdHandle(STD_ERROR_HANDLE);
-    if (handle == INVALID_HANDLE_VALUE || handle == 0) {
-	SetStdHandle(STD_ERROR_HANDLE, GetStdHandle(STD_OUTPUT_HANDLE));
-    }
-
-
-#ifdef DEBUG
-    /*
-     * Given the "-threads" option, always use threads instead of
-     * named pipes.
-     */
-
-    if (get_and_remove_option(&__argc, __argv, "-threads")) {
-	use_named_pipes = FALSE;
-    }
-#endif
-    init_sys_float();
-    init_sys_select();
-
-    erl_start(__argc, __argv);
-
-#ifndef ERL_RUN_SHARED_LIB
-    while(1) {
-	while(schedule()) {
-	    win_check_io(0);            /* poll for any i/o */
-	}
-	win_check_io(1);
-    }
-
-    return -1;
-#else
-    return 0;
-#endif
-}
-
 int nohup;
 
 void erl_sys_args(int* argc, char** argv)
 {
+    char *event_name;
     nohup = get_and_remove_option(argc, argv, "-nohup");
-
-#ifndef ERL_RUN_SHARED_LIB
-    if (nohup) {
-	DWORD tid;
- 	_beginthreadex(NULL, 0, nohup_thread, 0, 0, &tid);
-    }
-#endif
 
 #ifdef DEBUG
     /*
@@ -246,6 +145,18 @@ void erl_sys_args(int* argc, char** argv)
 	debug_console();
     }
 #endif
+
+    if (nohup && (event_name = get_and_remove_option2(argc, argv, 
+						      "-service_event"))) {
+	if ((erts_service_event = 
+	     OpenEvent(EVENT_ALL_ACCESS,FALSE,event_name)) == NULL) {
+	    sys_printf(CERR,
+		       "Warning: could not open service event: %s\r\n", 
+		       event_name);
+	}	    
+    } else {
+	erts_service_event = NULL;
+    }
 
 #ifdef DEBUG
     /*
@@ -286,54 +197,6 @@ init_console()
     }
 }
 
-DWORD WINAPI
-nohup_thread(LPVOID param)
-{
-    static char class_name[] = "nohup_class";
-    MSG msg;
-    WNDCLASSEX wndclass;
-    HINSTANCE hInstance = GetModuleHandle(NULL);
-
-    /*
-     * Create an invisible window that ignores the WM_ENDSESSION message to
-     * avoid getting killed when a user logs out.  Since DefWindowProc()
-     * does the job nicely, we'll use it as our window procedure.
-     */
-    wndclass.cbSize	    = sizeof(wndclass);
-    wndclass.style          = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-    wndclass.lpfnWndProc    = DefWindowProc;
-    wndclass.cbClsExtra     = 0;
-    wndclass.cbWndExtra     = 0;
-    wndclass.hInstance      = hInstance;
-    wndclass.hIcon          = 0;
-    wndclass.hCursor        = 0;
-    wndclass.hbrBackground  = 0;
-    wndclass.lpszMenuName   = NULL;
-    wndclass.lpszClassName  = class_name;
-    wndclass.hIconSm	    = 0;
-
-    DEBUGF(("Registering window\n"));
-    if (!RegisterClassEx(&wndclass)) {
-	DEBUGF(("RegisterClassEx failed: %s\n", last_error()));
-    }
-
-    if (!CreateWindow(class_name, "name", WS_OVERLAPPEDWINDOW,
-		     CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-		     NULL, NULL, hInstance, NULL)) {
-	DEBUGF(("CreateWindow failed: %s\n", last_error()));
-    }
-
-    /*
-     * Process messages sent to this application.
-     */
-    while (GetMessage(&msg, NULL, 0, 0)) {
-	DEBUGF(("Got message %d\n", msg.message));
-	TranslateMessage(&msg);
-	DispatchMessage(&msg);
-    }
-    return 0;
-}
-
 int sys_max_files() 
 {
     return max_files;
@@ -370,6 +233,30 @@ get_and_remove_option(argc, argv, option)
     }
     return 0;
 }
+
+static char *get_and_remove_option2(int *argc, char **argv, 
+				    static char *option)
+{
+    char *ret;
+    int i;
+
+    for (i = 1; i < *argc; i++) {
+	if (strcmp(argv[i], option) == 0) {
+	    if (i+1 < *argc) {
+		ret = argv[i+1];
+		(*argc) -= 2;
+		while (i < *argc) {
+		    argv[i] = argv[i+2];
+		    i++;
+		}
+		argv[i] = NULL;
+		return ret;
+	    }
+	}
+    }
+    return NULL;
+}
+    
 
 /************************** OS info *******************************/
 
@@ -512,7 +399,7 @@ typedef struct driver_data {
     int inBufSize;		/* Size of input buffer. */
     byte *inbuf;		/* Buffer to use for overlapped read. */
     byte *outbuf;		/* Buffer to use for overlapped write. */
-    int port_num;		/* The port number. */
+    ErlDrvPort port_num;		/* The port number. */
     int packet_bytes;		/* 0: continous stream, 1, 2, or 4: the number
 				 * of bytes in the packet header.
 				 */
@@ -525,41 +412,93 @@ typedef struct driver_data {
 static DriverData* driver_data;	/* Pointer to array of driver data. */
 
 /* Driver interfaces */
-static long spawn_start(), fd_start(), vanilla_start();
-static int spawn_init(), fd_stop(), stop(), output(),
-    ready_input(), ready_output();
+static ErlDrvData spawn_start(ErlDrvPort, char*, SysDriverOpts*);
+static ErlDrvData fd_start(ErlDrvPort, char*, SysDriverOpts*);
+static ErlDrvData vanilla_start(ErlDrvPort, char*, SysDriverOpts*);
+static int spawn_init(void);
+static void fd_stop(ErlDrvData);
+static void stop(ErlDrvData);
+static void output(ErlDrvData, char*, int);
+static void ready_input(ErlDrvData, ErlDrvEvent);
+static void ready_output(ErlDrvData, ErlDrvEvent);
 
-const struct driver_entry spawn_driver_entry = {
-    spawn_init, spawn_start, stop, output,
-    ready_input, ready_output, "spawn"
+const struct erl_drv_entry spawn_driver_entry = {
+    spawn_init,
+    spawn_start,
+    stop,
+    output,
+    ready_input,
+    ready_output,
+    "spawn",
+    NULL, /* finish */
+    NULL, /* handle */
+    NULL, /* timeout */
+    NULL, /* outputv */
+    NULL /* ready_async */
 };
 
-const struct driver_entry fd_driver_entry = {
-    null_func, fd_start, fd_stop, output,
-    ready_input, ready_output, "fd"
+extern int null_func(void);
+
+const struct erl_drv_entry fd_driver_entry = {
+    null_func,
+    fd_start,
+    fd_stop,
+    output,
+    ready_input,
+    ready_output,
+    "fd",
+    NULL, /* finish */
+    NULL, /* handle */
+    NULL, /* timeout */
+    NULL, /* outputv */
+    NULL /* ready_async */
 };
 
-const struct driver_entry vanilla_driver_entry = {
-    null_func, vanilla_start, stop, output,
-    ready_input, ready_output, "vanilla"
+const struct erl_drv_entry vanilla_driver_entry = {
+    null_func,
+    vanilla_start,
+    stop,
+    output,
+    ready_input,
+    ready_output,
+    "vanilla",
+    NULL, /* finish */
+    NULL, /* handle */
+    NULL, /* timeout */
+    NULL, /* outputv */
+    NULL /* ready_async */
 };
 
 #ifdef USE_THREADS
 
-static int  async_drv_init();
-static long async_drv_start();
-static int  async_drv_stop();
-static int  async_drv_input();
+static int  async_drv_init(void);
+static ErlDrvData async_drv_start(ErlDrvPort, char*, SysDriverOpts*);
+static void async_drv_stop(ErlDrvData);
+static void async_drv_input(ErlDrvData, ErlDrvEvent);
 
 /* INTERNAL use only */
 
-struct driver_entry async_driver_entry = {
-    async_drv_init,    async_drv_start,
-    async_drv_stop,    null_func,
-    async_drv_input,    null_func,
+void null_output(ErlDrvData drv_data, char* buf, int len)
+{
+}
+
+void null_ready_output(ErlDrvData drv_data, ErlDrvEvent event)
+{
+}
+
+struct erl_drv_entry async_driver_entry = {
+    async_drv_init,
+    async_drv_start,
+    async_drv_stop,
+    null_output,
+    async_drv_input,
+    null_ready_output,
     "async",
-    NULL,    NULL,    NULL,    NULL,
-    NULL,    NULL
+    NULL, /* finish */
+    NULL, /* handle */
+    NULL, /* timeout */
+    NULL, /* outputv */
+    NULL /* ready_async */
 };
 
 #endif
@@ -660,7 +599,7 @@ release_driver_data(DriverData* dp)
  * This function fortunately can't fail!
  */
 
-static int
+static ErlDrvData
 set_driver_data(dp, ifd, ofd, read_write, report_exit)
     DriverData* dp;
     HANDLE ifd;
@@ -676,16 +615,18 @@ set_driver_data(dp, ifd, ofd, read_write, report_exit)
     dp->report_exit = report_exit;
 
     if (read_write & DO_READ) {
-	result = driver_select(dp->port_num, dp->in.ov.hEvent, DO_READ, 1);
+	result = driver_select(dp->port_num, (ErlDrvEvent)dp->in.ov.hEvent,
+			       DO_READ, 1);
 	ASSERT(result != -1);
 	async_read_file(&dp->in, dp->inbuf, dp->inBufSize);
     }
 
     if (read_write & DO_WRITE) {
-	result = driver_select(dp->port_num, dp->out.ov.hEvent, DO_WRITE, 1);
+	result = driver_select(dp->port_num, (ErlDrvEvent)dp->out.ov.hEvent,
+			       DO_WRITE, 1);
 	ASSERT(result != -1);
     }
-    return index;
+    return (ErlDrvData)index;
 }
 
 /*
@@ -906,11 +847,8 @@ spawn_init()
     return 0;
 }
 
-static long
-spawn_start(port_num, name, opts)
-    int port_num;
-    char* name;
-    SysDriverOpts* opts;
+static ErlDrvData
+spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 {
     HANDLE hToChild = INVALID_HANDLE_VALUE; /* Write handle to child. */
     HANDLE hFromChild = INVALID_HANDLE_VALUE; /* Read handle from child. */
@@ -918,7 +856,7 @@ spawn_start(port_num, name, opts)
     HANDLE hChildStdout = INVALID_HANDLE_VALUE;	/* Child's stout. */
     HANDLE hChildStderr = INVALID_HANDLE_VALUE;	/* Child's sterr. */
     DriverData* dp;		/* Pointer to driver data. */
-    int retval = -1;		/* Return value. */
+    ErlDrvData retval = ERL_DRV_ERROR_GENERAL; /* Return value. */
     int ok;
     int neededSelects = 0;
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
@@ -930,7 +868,7 @@ spawn_start(port_num, name, opts)
 
     if ((dp = new_driver_data(port_num, opts->packet_bytes, neededSelects,
 			      !use_named_pipes)) == NULL)
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
 
     /*
      * Create two pipes to communicate with the port program.
@@ -1007,7 +945,7 @@ spawn_start(port_num, name, opts)
 				 opts->exit_status);
     }
     
-    if (retval != -1)
+    if (retval != ERL_DRV_ERROR_GENERAL)
 	return retval;
     
  error:
@@ -1016,7 +954,7 @@ spawn_start(port_num, name, opts)
     if (hToChild != INVALID_HANDLE_VALUE)
 	CloseHandle(hToChild);
     release_driver_data(dp);
-    return -1;
+    return ERL_DRV_ERROR_GENERAL;
 }
 
 static int
@@ -1485,15 +1423,15 @@ threaded_reader(LPVOID param)
 	    n = aio->bytesTransferred;
 	    for (s = buf; s < buf+n; s++) {
 		if (*s == '\r') {
-                    if (s < buf + n - 1 && s[1] == '\n') {
-                        memmove(s, s+1, (buf+n - s - 1));
-                        --n;
-                    } else {
-                        *s = '\n';
-                    }
+		    if (s < buf + n - 1 && s[1] == '\n') {
+			memmove(s, s+1, (buf+n - s - 1));
+			--n;
+		    } else {
+			*s = '\n';
+		    }
 		}
 	    }
-            aio->bytesTransferred = n;
+	    aio->bytesTransferred = n;
 	}
 	SetEvent(aio->ov.hEvent);
 	if ((aio->flags & DF_XLAT_CR) == 0 && aio->bytesTransferred == 0) {
@@ -1574,27 +1512,24 @@ translate_fd(int fd)
     return handle;
 }
 
-static long 
-fd_start(port_num, name, opts)
-    int port_num;
-    char* name;			/* Ignored. */
-    SysDriverOpts* opts;
+static ErlDrvData
+fd_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 {
     DriverData* dp;
     
     opts->ifd = (int) translate_fd(opts->ifd);
     opts->ofd = (int) translate_fd(opts->ofd);
     if ((dp = new_driver_data(port_num, opts->packet_bytes, 2, TRUE)) == NULL)
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     
     if (!create_file_thread(&dp->in, DO_READ)) {
 	dp->port_num = PORT_FREE;
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     }
 
     if (!create_file_thread(&dp->out, DO_WRITE)) {
 	dp->port_num = PORT_FREE;
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     }
     
     fd_driver_input = &(dp->in);
@@ -1602,10 +1537,9 @@ fd_start(port_num, name, opts)
     return set_driver_data(dp, opts->ifd, opts->ofd, opts->read_write, 0);
 }
 
-static int
-fd_stop(fd)
-     long fd;
+static void fd_stop(ErlDrvData d)
 {
+  int fd = (int)d;
   /*
    * I don't know a clean way to terminate the threads
    * (TerminateThread() doesn't release the stack),
@@ -1622,14 +1556,11 @@ fd_stop(fd)
   driver_data[fd].in.fd = INVALID_HANDLE_VALUE;
   driver_data[fd].out.fd = INVALID_HANDLE_VALUE;
 
-  return common_stop(fd);
+  /*return */ common_stop(fd);
 }
 
-static long
-vanilla_start(port_num, name, opts)
-    int port_num;
-    char* name;
-    SysDriverOpts* opts;
+static ErlDrvData
+vanilla_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 {
     HANDLE fd;
     DriverData* dp;
@@ -1650,24 +1581,21 @@ vanilla_start(port_num, name, opts)
 	crFlags = OPEN_ALWAYS;
 
     if ((dp = new_driver_data(port_num, opts->packet_bytes, 2, FALSE)) == NULL)
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     fd = CreateFile(name, access, FILE_SHARE_READ | FILE_SHARE_WRITE,
 		    NULL, crFlags, FILE_ATTRIBUTE_NORMAL, NULL);
     if (fd == INVALID_HANDLE_VALUE)
-	return -1;
+	return ERL_DRV_ERROR_GENERAL;
     return set_driver_data(dp, fd, fd, opts->read_write,0);
 }
 
-static int
-stop(index)
-     long index;		/* Index into the driver data table. */
+static void
+stop(ErlDrvData index)
 {
-    return common_stop(index);
+    common_stop((int)index);
 }
 
-static int
-common_stop(index)
-     int index;
+static void common_stop(int index)
 {
     DriverData* dp = driver_data+index;
 
@@ -1675,13 +1603,13 @@ common_stop(index)
 
     if (dp->in.ov.hEvent != NULL)
 	(void) driver_select(dp->port_num,
-			     dp->in.ov.hEvent,
+			     (ErlDrvEvent)dp->in.ov.hEvent,
 			     DO_READ,
 			     0);
 
     if (dp->out.ov.hEvent != NULL)
 	(void) driver_select(dp->port_num,
-			     dp->out.ov.hEvent,
+			     (ErlDrvEvent)dp->out.ov.hEvent,
 			     DO_WRITE,
 			     0);
 
@@ -1698,8 +1626,6 @@ common_stop(index)
 	thread = (HANDLE *) _beginthreadex(NULL, 0, threaded_exiter, dp, 0, &tid);
 	CloseHandle(thread);
     }
-
-    return 0;
 }
 
 DWORD WINAPI
@@ -1820,23 +1746,23 @@ threaded_exiter(LPVOID param)
  * ----------------------------------------------------------------------
  */
 
-static int
-output(drv_data, buf, len)
-     long drv_data;		/* The slot to use in the driver data table.
+static void
+output(ErlDrvData drv_data, char* buf, int len)
+/*     long drv_data;		/* The slot to use in the driver data table.
 				 * For Windows NT, this is *NOT* a file handle.
 				 * The handle is found in the driver data.
 				 */
-     char *buf;			/* Pointer to data to write to the port program. */
-     int len;			/* Number of bytes to write. */
+/*     char *buf;			/* Pointer to data to write to the port program. */
+/*     int len;			/* Number of bytes to write. */
 {
     DriverData* dp;
     int pb;			/* The header size for this port. */
     int port_num;		/* The actual port number (for diagnostics). */
     char* current;
 
-    dp = driver_data + drv_data;
+    dp = driver_data + (int)drv_data;
     if ((port_num = dp->port_num) == -1)
-	return -1;
+	return ; /*-1;*/
 
     pb = dp->packet_bytes;
 
@@ -1846,7 +1772,7 @@ output(drv_data, buf, len)
 
     if ((pb == 2 && len > 65535) || (pb == 1 && len > 255)) {
 	driver_failure_posix(port_num, EINVAL);
-	return -1;
+	return ; /* -1; */
     }
 
     /*
@@ -1855,7 +1781,7 @@ output(drv_data, buf, len)
 
     if ((dp->outbuf = sys_alloc(pb+len)) == NULL) {
 	driver_failure_posix(port_num, ENOMEM);
-	return -1;
+	return ; /* -1; */
     }
 
     /*
@@ -1878,7 +1804,7 @@ output(drv_data, buf, len)
      */
 
     if ((pb+len) == 0)
-	return 0;
+	return ; /* 0; */
     memcpy(current, buf, len);
     
     if (!async_write_file(&dp->out, dp->outbuf, pb+len)) {
@@ -1889,7 +1815,7 @@ output(drv_data, buf, len)
 	sys_free(dp->outbuf);
 	dp->outbuf = NULL;
     }
-    return 0;
+    /*return 0;*/
 }
 
 
@@ -1907,17 +1833,17 @@ output(drv_data, buf, len)
  * ----------------------------------------------------------------------
  */
 
-static int
-ready_input(drv_data, ready_event)
-     long drv_data;		/* Driver data. */
-     HANDLE ready_event;	/* The handle for the ready event. */
+static void
+ready_input(ErlDrvData drv_data, ErlDrvEvent ready_event)
+/*     long drv_data;		/* Driver data. */
+/*     HANDLE ready_event;	/* The handle for the ready event. */
 {
     int error = 0;		/* The error code (assume initially no errors). */
     DWORD bytesRead;		/* Number of bytes read. */
     DriverData* dp;
     int pb;
 
-    dp = driver_data+drv_data;
+    dp = driver_data+(int)drv_data;
     pb = dp->packet_bytes;
 
     DEBUGF(("ready_input: dp %p, event 0x%x\n", dp, ready_event));
@@ -2061,16 +1987,14 @@ ready_input(drv_data, ready_event)
 	}
     }
 
-    return 0;
+    /*return 0;*/
 }
 
-static int
-ready_output(drv_data, ready_event)
-     long drv_data;
-     int ready_event;
+static void
+ready_output(ErlDrvData drv_data, ErlDrvEvent ready_event)
 {
     DWORD bytesWritten;
-    DriverData* dp = driver_data + drv_data;
+    DriverData* dp = driver_data + (int)drv_data;
     int error;
 
     DEBUGF(("ready_output(%d, 0x%x)\n", drv_data, ready_event));
@@ -2081,12 +2005,12 @@ ready_output(drv_data, ready_event)
     error = get_overlapped_result(&dp->out, &bytesWritten, TRUE);
     if (error == NO_ERROR) {
 	dp->out.ov.Offset += bytesWritten; /* For vanilla driver. */
-	return 0;
+	return ; /* 0; */
     }
     (void) driver_select(dp->port_num, ready_event, DO_WRITE, 0);
     _dosmaperr(error);
     driver_failure_posix(dp->port_num, errno);
-    return 0;
+    /* return 0; */
 }
 /* Fills in the systems representation of the beam process identifier.
 ** The Pid is put in STRING representation in the supplied buffer,
@@ -2171,9 +2095,9 @@ uint32 size;
 #else /* ifndef sys_alloc2 */
 
 /* ... and sys_A2 makros used; need sys_A (symbols) */
-void* sys_alloc(unsigned int size)              {return sys_alloc2(size);}
-void* sys_realloc(void* ptr, unsigned int size) {return sys_realloc2(ptr,size);}
-void* sys_free(void* ptr)                       {return sys_free2(ptr);}
+void* sys_alloc(Uint size)              { return sys_alloc2(size);        }
+void* sys_realloc(void* ptr, Uint size) { return sys_realloc2(ptr, size); }
+void* sys_free(void* ptr)               { return sys_free2(ptr);          }
 #endif /* ifndef sys_alloc2 */
 
 #endif /* #ifdef SYS_ALLOC_ELSEWHERE */
@@ -2186,11 +2110,10 @@ int alloc_calls = 0, realloc_calls = 0, free_calls = 0;
 #endif
 
 /* Allocate memory */
-void* SYS_ALLOC(size)
-     unsigned int size;
+void* SYS_ALLOC(Uint size)
 {
 #ifdef DEBUG
-    uint32* p = (uint32*) malloc(2*sizeof(uint32)+size);
+    uint32* p = (uint32*) malloc(2*sizeof(uint32)+((size_t)size));
     alloc_calls++;
   
     if (p != NULL) {
@@ -2201,13 +2124,12 @@ void* SYS_ALLOC(size)
     /* memset(p, 0, size); */
     return p;
 #else
-    return (void*) malloc(size);
+    return (void*) malloc((size_t)size);
 #endif
 }
 
 /* Allocate memory */
-void* SYS_REALLOC(ptr, size)
-void* ptr; unsigned int size;
+void* SYS_REALLOC(void* ptr, Uint size)
 {
 #ifdef DEBUG
     if (ptr == NULL)
@@ -2216,7 +2138,7 @@ void* ptr; unsigned int size;
 	uint32* p = (uint32*) ((char*)ptr - 2*sizeof(uint32));
 	realloc_calls++;
 	tot_allocated -= *p;
-	p = (uint32*) realloc((char*)p, 2*sizeof(uint32)+size);
+	p = (uint32*) realloc((char*)p, 2*sizeof(uint32)+((size_t)size));
 	if (p != NULL) {
 	    *p = size;
 	    tot_allocated += size;
@@ -2225,13 +2147,12 @@ void* ptr; unsigned int size;
 	return p;
     }
 #else
-    return (void*) realloc((char*)ptr, size);
+    return (void*) realloc((char*)ptr, (size_t)size);
 #endif
 }
 
 /* Deallocate memory */
-void SYS_FREE(ptr)
-void* ptr;
+void SYS_FREE(void* ptr)
 {
 #ifdef DEBUG
     uint32* p = (uint32*) ((char*)ptr-2*sizeof(uint32));
@@ -2677,7 +2598,7 @@ erl_sys_init()
     if (handle == INVALID_HANDLE_VALUE || handle == 0) {
 	SetStdHandle(STD_ERROR_HANDLE, GetStdHandle(STD_OUTPUT_HANDLE));
     }
-    init_sys_float();
+    erts_sys_init_float();
     init_sys_select();
 }
 
@@ -2699,80 +2620,59 @@ erl_sys_schedule_loop(void)
 
 #ifdef USE_THREADS
 /*
-** Async operation support
-*/
+ * Async operation support.
+ */
 
-/* static int async_fd[2]; */
-HANDLE async_drv_event;
+static ErlDrvEvent async_drv_event;
 
-/* called from threads !! */
-void sys_async_ready(int fd)
+void
+sys_async_ready(int fd)
 {
-    int r;
-    /* r = write(fd, "0", 1);  /* signal main thread fd MUST be async_fd[1] */
-    SetEvent(async_drv_event);
-    /* DEBUGF(("sys_async_ready: r = %d\r\n", r)); */
+    SetEvent((HANDLE)async_drv_event);
 }
 
-static int async_drv_init()
+static int
+async_drv_init(void)
 {
-    async_drv_event = NULL;
-    /* async_fd[0] = -1;
-    async_fd[1] = -1;*/
+    async_drv_event = (ErlDrvEvent) NULL;
     return 0;
 }
 
-static long async_drv_start(int port_num, char* name, SysDriverOpts* opts)
+static ErlDrvData
+async_drv_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 {
-    if (async_drv_event != NULL)
-	return -1;
-    /*if (async_fd[0] != -1)
-	return -1;*/
-    /*if (pipe(async_fd) < 0)*/
-    if ((async_drv_event = CreateEvent(NULL, FALSE, FALSE, NULL))
-	 == NULL)
-	return -1;
-    
-    {DEBUGF(("async_drv_start: %d\r\n", port_num));}
+    if (async_drv_event != (ErlDrvEvent) NULL) {
+	return ERL_DRV_ERROR_GENERAL;
+    }
+    if ((async_drv_event = (ErlDrvEvent)CreateAutoEvent(FALSE)) == (ErlDrvEvent) NULL) {
+	return ERL_DRV_ERROR_GENERAL;
+    }
 
-    /*driver_select(port_num, async_fd[0], DO_READ, 1);*/
     driver_select(port_num, async_drv_event, DO_READ, 1);
-
-    /*if (init_async(async_fd[1]) < 0)*/
-    if (init_async(async_drv_event) < 0)
-	return -1;
-    return port_num;
+    if (init_async(async_drv_event) < 0) {
+	return ERL_DRV_ERROR_GENERAL;
+    }
+    return (ErlDrvData)port_num;
 }
 
-
-static int async_drv_stop(int port_num)
+static void
+async_drv_stop(ErlDrvData port_num)
 {
-    DEBUGF(("async_drv_stop: %d\r\n", port_num));
-
     exit_async();
-
-    /*driver_select(port_num, async_fd[0], DO_READ, 0);*/
-    driver_select(port_num, async_drv_event, DO_READ, 0);
-
-    /*close(async_fd[0]);
-    close(async_fd[1]);*/
-    CloseHandle(async_drv_event);
-    /*async_fd[0] = async_fd[1] = -1;*/
-    async_drv_event = NULL;
-    return 0;
+    driver_select((ErlDrvPort)port_num, async_drv_event, DO_READ, 0);
+    CloseHandle((HANDLE)async_drv_event);
+    async_drv_event = (ErlDrvEvent) NULL;
 }
 
 
-static int async_drv_input(int port_num, int fd)  
+static void
+async_drv_input(ErlDrvData port_num, ErlDrvEvent e) 
 {
-    /*char buf[1];*/
+    check_async_ready();
 
-    DEBUGF(("async_drv_input\r\n"));
-    /* we don't have to do anything, since we use
-       autoreset for async_drv_event */
-    /*read(fd, buf, 1);     /* fd MUST be async_fd[0] */
-    check_async_ready();  /* invoke all async_ready */
-    return 0;
+    /*
+     * Our event is auto-resetting.
+     */
 }
 
 #endif

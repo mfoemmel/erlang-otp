@@ -23,7 +23,7 @@
 
 /* XXX: Sounds like an impossible operation to me... /kgb */
 extern int gzseekk(gzFile, int, int);
-extern DriverBinary* gzinflate_buffer(char*, int);
-extern DriverBinary* gzdeflate_buffer(char*, int);
+extern ErlDrvBinary* gzinflate_buffer(char*, int);
+extern ErlDrvBinary* gzdeflate_buffer(char*, int);
 
 

@@ -99,7 +99,7 @@ get_mid(char* name)
  * But if it has .o as suffix or no suffix it is also ok (e.g. echo_drv.o and echo_drv)
  *
  */
-uint32 *ddll_sym(void *handle, char *func_name)
+void *ddll_sym(void *handle, char *func_name)
 {
     MODULE_ID mid = (MODULE_ID) handle;
     char *modname;
@@ -128,7 +128,7 @@ uint32 *ddll_sym(void *handle, char *func_name)
     if((func = lookup(fname)) == NULL)
 	curr_error = "ddll_sym: function NAME_init not found";
     free(fname);
-    return (uint32 *) func;
+    return func;
 }
 
 int ddll_close(void *handle)

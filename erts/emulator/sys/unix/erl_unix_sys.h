@@ -23,6 +23,10 @@
 #ifndef _ERL_UNIX_SYS_H
 #define _ERL_UNIX_SYS_H
 
+#if defined(__linux__) && defined(__GNUC__)
+#   define _GNU_SOURCE 1 /* we want to turn some features */
+#endif
+
 #include <stdio.h>
 #include <math.h>
 #include <limits.h>
@@ -32,11 +36,18 @@
 #include <memory.h>
 #endif
 
-#include <sys/types.h>
+#if defined(__sun__) && defined(__SVR4) && !defined(__EXTENSIONS__)
+#   define __EXTENSIONS__
+#   include <sys/types.h>
+#   undef __EXTENSIONS__
+#else
+#   include <sys/types.h>
+#endif
 #include <sys/stat.h>
 #include <sys/param.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <signal.h>
 
 
 #if HAVE_SOCKETIO_H
@@ -152,5 +163,42 @@ extern RETSIGTYPE (*sys_sigset())();
 extern void sys_sigrelease(int);
 extern void sys_sigblock(int);
 extern void sys_stop_cat(void);
+
+/*
+ * Handling of floating point exceptions.
+ */
+
+extern volatile int erl_fp_exception;
+
+#ifdef USE_ISINF_ISNAN		/* simulate finite() */
+#  define finite(f) (!isinf(f) && !isnan(f))
+#  define HAVE_FINITE
+#endif
+
+#ifdef NO_FPE_SIGNALS
+#  define ERTS_FP_CHECK_INIT() do {} while (0)
+#  define ERTS_FP_ERROR(f, Action) if (!finite(f)) { Action; } else {}
+#  define ERTS_SAVE_FP_EXCEPTION()
+#  define ERTS_RESTORE_FP_EXCEPTION()
+#else
+#  define ERTS_FP_CHECK_INIT() do {erl_fp_exception = 0;} while (0)
+#  if defined(__i386__) && defined(__GNUC__)
+extern void erts_restore_x87(void);
+static __inline__ int erts_check_x87(double f)
+{
+    __asm__ __volatile__("fwait" : "=m"(erl_fp_exception) : "m"(f));
+    if( !erl_fp_exception )
+       return 0;
+    erts_restore_x87();
+    return 1;
+}
+#  define ERTS_FP_ERROR(f, Action) do { if( erts_check_x87((f)) ) { Action; } } while (0)
+#  else
+#  define ERTS_FP_ERROR(f, Action) if (erl_fp_exception) { Action; } else {}
+#  endif
+#  define ERTS_SAVE_FP_EXCEPTION() int old_erl_fp_exception = erl_fp_exception
+#  define ERTS_RESTORE_FP_EXCEPTION() \
+              do {erl_fp_exception = old_erl_fp_exception;} while (0)
+#endif
 
 #endif

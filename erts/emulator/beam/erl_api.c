@@ -24,7 +24,7 @@
 #include "global.h"
 #include "erl_process.h"
 #include "error.h"
-#include "driver.h"
+#include "erl_driver.h"
 #include "bif.h"
 #include "big.h"
 #include "dist.h"
@@ -35,6 +35,11 @@ APIEXTERN
 void
 ErlInit(void)
 {
+    sys_sl_alloc_init(1);
+    erts_init_utils();
+    /* Permanently disable use of mmap for sys_alloc (malloc). */
+    sys_alloc_opt(SYS_ALLOC_OPT_MMAP_MAX, 0);
+
     erl_sys_init();
     erl_init();
 }

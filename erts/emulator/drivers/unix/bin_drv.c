@@ -26,7 +26,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include "driver.h"
+#include "erl_driver.h"
 #include <errno.h>
 
 #ifdef NO_UMASK
@@ -41,10 +41,15 @@ static long bin_start();
 static int bin_init(),bin_stop(),bin_erlang_read();
 static int read_fill(), write_fill();
 
-const struct driver_entry bin_driver_entry = {
-    bin_init,bin_start,bin_stop,bin_erlang_read,
-    null_func,null_func,"binary_filer"
-    };
+const struct erl_drv_entry bin_driver_entry = {
+    bin_init,
+    bin_start,
+    bin_stop,
+    bin_erlang_read,
+    NULL,
+    NULL,
+    "binary_filer"
+};
 
 
 

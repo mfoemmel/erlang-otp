@@ -433,7 +433,7 @@ record_inits([]) -> [].
 
 record_updates([{record_field,Lf,{atom,La,F},Val0}|Us]) ->
     Val1 = expr(Val0),
-    [{record_field,Lf,{atom,La,F},Val0}|record_updates(Us)];
+    [{record_field,Lf,{atom,La,F},Val1}|record_updates(Us)];
 record_updates([]) -> [].
 
 %% -type icr_clauses([Clause]) -> [Clause].

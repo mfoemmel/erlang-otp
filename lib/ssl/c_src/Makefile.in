@@ -44,7 +44,7 @@ LDLIBS = $(LIBS)
 SSLEAY_INCLUDE = @SSL_INCLUDE@
 SSLEAY_LIBDIR = $(SSLEAY_ROOT)/lib
 
-ALL_CFLAGS = @CFLAGS@ @DEFS@ $(TYPE_FLAGS)
+ALL_CFLAGS = @WFLAGS@ @CFLAGS@ @DEFS@ $(TYPE_FLAGS)
 TARGET = @host@
 
 ifeq ($(TYPE),debug)
@@ -152,7 +152,7 @@ release_spec:
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/obj
 	$(INSTALL_DATA) $(SSL_BASE_OBJS) $(EXTRA_SSL_OBJS) \
 		$(RELSYSDIR)/priv/obj
-	sed 	-e "s;%BINDIR%;../bin;" \
+	sed 	-e "s;%BINDIR%;..\\\\bin;" \
 		-e "s;%SSLEAY_LIBDIR%;$(SSLEAY_LIBDIR);" \
 		-e "s;%LDLIBS%;$(LDLIBS);" ./Makefile.win32.dist \
 		> $(RELSYSDIR)/priv/obj/Makefile

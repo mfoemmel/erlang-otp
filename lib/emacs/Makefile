@@ -41,22 +41,24 @@ MODULES= \
 MAN_FILES= \
 	tags.3
 
-EL_FILES= \
-	erlang-start.el \
-	erlang.el \
-	erlang.elc
+EMACS_FILES= \
+	erlang-start \
+	erlang
+
 
 README_FILES= README
 
 HRL_FILES= 
 
 ERL_FILES= $(MODULES:%=%.erl)
+EL_FILES = $(EMACS_FILES:%=%.el)
 
 TARGET_FILES = $(MODULES:%=%.$(EMULATOR))
+ELC_FILES = $(EMACS_FILES:%=%.elc) 
 
-APP_FILES = 
+APP_FILE = emacs.app
 APP_SRC = $(APP_FILE).src
-APP_TARGET = $(EBIN)/$(APP_FILE)
+APP_TARGET = $(APP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
@@ -66,11 +68,12 @@ ERL_COMPILE_FLAGS +=
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
+# FIXME Is it an application or not, we uses tools app file?!
 
-debug opt: $(TARGET_FILES) 
+debug opt: $(TARGET_FILES) $(EL_FILES) # $(APP_TARGET)
 
 clean:
-	rm -f $(TARGET_FILES) 
+	rm -f $(TARGET_FILES) $(ELC_FILES)
 	rm -f errs core *~
 
 $(APP_TARGET): $(APP_SRC)
@@ -90,7 +93,8 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR) $(RELEASE_PATH)/misc/emacs
-	$(INSTALL_DATA) $(EL_FILES) $(README_FILES) $(RELEASE_PATH)/misc/emacs
+	$(INSTALL_DATA) $(EL_FILES) $(README_FILES) \
+		$(RELEASE_PATH)/misc/emacs
 
 release_docs_spec: docs
 	$(INSTALL_DIR) $(RELEASE_PATH)/man/man3

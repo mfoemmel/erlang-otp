@@ -26,14 +26,14 @@
 -include("file.hrl").
 
 type() ->
-    case erlang:info(os_type) of
+    case erlang:system_info(os_type) of
 	{vxworks, _} ->
 	    vxworks;
 	Else -> Else
     end.
 
 version() ->
-    erlang:info(os_version).
+    erlang:system_info(os_version).
 
 find_executable(Name) ->
     case os:getenv("PATH") of

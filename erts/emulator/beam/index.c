@@ -100,25 +100,17 @@ IndexTable* t;
 }
 
 
-int index_put(t, tmpl)
-IndexTable* t; void* tmpl;
+int
+index_put(IndexTable* t, void* tmpl)
 {
     int ix;
     IndexSlot* p = (IndexSlot*) hash_put(&t->htable, tmpl);
-    IndexSlot* q = (IndexSlot*) tmpl;
 
     if (p->index >= 0) {
-	if (q->index >= 0 && q->index != p->index)
-	    erl_exit(1, "index in %s already installed (%d != %d)\n",
-		     t->htable.name, q->index, p->index);
 	return p->index;
     }
 
-    if (q->index >= 0)
-	ix = q->index;
-    else
-	ix = t->sz;
-    
+    ix = t->sz;
     if (ix >= t->size) {
 	int sz;
 	int sz_inc;
@@ -139,7 +131,7 @@ IndexTable* t; void* tmpl;
 	if (sz >= t->limit)
 	    sz = t->limit;
 	if (ix >= t->limit)
-	    erl_exit(1, "panic : no more index entries in %s (max=%d)\n",
+	    erl_exit(1, "no more index entries in %s (max=%d)\n",
 		     t->htable.name, t->limit);
 	t->table = (IndexSlot**) sys_realloc(t->table, 
 					     sz*sizeof(IndexSlot*));

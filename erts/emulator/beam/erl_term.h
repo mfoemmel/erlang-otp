@@ -316,8 +316,8 @@ typedef union float_def
 {
     ieee754_8 fd;
     byte   fb[sizeof(ieee754_8)];
-    uint16 fs[sizeof(ieee754_8) / sizeof(uint16)];
-    uint32 fw[sizeof(ieee754_8) / sizeof(uint32)];
+    Uint16 fs[sizeof(ieee754_8) / sizeof(Uint16)];
+    Uint32 fw[sizeof(ieee754_8) / sizeof(Uint32)];
 } FloatDef;
 
 #define GET_DOUBLE(x, f) (f).fw[0] = *(float_val(x)+1), \
@@ -376,6 +376,29 @@ _ET_DECLARE_CHECKED(Eterm*,tuple_val,Eterm);
         (t)[4] = (e4), \
         (t)[5] = (e5), \
 	(t)[6] = (e6), \
+        make_tuple(t))
+
+#define TUPLE7(t,e1,e2,e3,e4,e5,e6,e7) \
+        ((t)[0] = make_arityval(7), \
+        (t)[1] = (e1), \
+        (t)[2] = (e2), \
+        (t)[3] = (e3), \
+        (t)[4] = (e4), \
+        (t)[5] = (e5), \
+	(t)[6] = (e6), \
+	(t)[7] = (e7), \
+        make_tuple(t))
+
+#define TUPLE8(t,e1,e2,e3,e4,e5,e6,e7,e8) \
+        ((t)[0] = make_arityval(8), \
+        (t)[1] = (e1), \
+        (t)[2] = (e2), \
+        (t)[3] = (e3), \
+        (t)[4] = (e4), \
+        (t)[5] = (e5), \
+	(t)[6] = (e6), \
+	(t)[7] = (e7), \
+	(t)[8] = (e8), \
         make_tuple(t))
 
 /* pid layout
@@ -548,8 +571,6 @@ _ET_DECLARE_CHECKED(Eterm*,ref_val,Eterm);
 
 #define ENULL		0
 
-#if BEAM
-
 /* on some architectures CP contains labels which are not aligned */
 #ifdef NOT_ALIGNED
 #error "fix yer arch, like"
@@ -607,8 +628,8 @@ _ET_DECLARE_CHECKED(Uint,vector_arity,Eterm);
 #define beam_reg_tag(x)	((x) & 3)
 
 #define make_rreg()	R_REG_DEF
-#define make_xreg(ix)	(((ix) << 2) | X_REG_DEF)
-#define make_yreg(ix)	(((ix) << 2) | Y_REG_DEF)
+#define make_xreg(ix)	(((ix) * sizeof(Eterm)) | X_REG_DEF)
+#define make_yreg(ix)	(((ix) * sizeof(Eterm)) | Y_REG_DEF)
 
 #define _is_xreg(x)	(beam_reg_tag(x) == X_REG_DEF)
 #define _is_yreg(x)	(beam_reg_tag(x) == Y_REG_DEF)
@@ -621,7 +642,7 @@ _ET_DECLARE_CHECKED(Uint,x_reg_offset,Uint);
 _ET_DECLARE_CHECKED(Uint,y_reg_offset,Uint);
 #define y_reg_offset(R)	_ET_APPLY(y_reg_offset,(R))
 
-#define reg_index(R) ((R) >> 2)
+#define reg_index(R) ((R) / sizeof(Eterm))
 
 #define _unchecked_x_reg_index(R)	((R) >> 2)
 _ET_DECLARE_CHECKED(Uint,x_reg_index,Uint);
@@ -630,8 +651,6 @@ _ET_DECLARE_CHECKED(Uint,x_reg_index,Uint);
 #define _unchecked_y_reg_index(R)	((R) >> 2)
 _ET_DECLARE_CHECKED(Uint,y_reg_index,Uint);
 #define y_reg_index(R)	_ET_APPLY(y_reg_index,(R))
-
-#endif	/*BEAM*/
 
 /*
  * Backwards compatibility definitions:

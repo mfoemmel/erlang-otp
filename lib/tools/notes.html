@@ -1,108 +1,113 @@
-<HTML>
-<HEAD>
-  <TITLE>Tools Release Notes</TITLE>
-</HEAD>
+<html>
+<head>
+  <title>Tools Release Notes</title>
+  <style type="text/css">
+<!--
+    body          { background: white; margin: 3em }
 
-<BODY BGCOLOR="#FFFFFF">
+    body          { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1 h2 h3 h4   { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1            { font-size: 48 }
+    p li          { font-family: Verdana, Arial, Helvetica, sans-serif }
+-->
+  </style>
+</head>
 
-<CENTER><H1>Tools Release Notes</H1></CENTER>
+<body bgcolor=white>
 
-<H2>Tools 1.6.2</H2>
-<H3>Improvements and new features</H3>
-
-<UL>
-
-<LI>
-The functions <CODE>xref:m/1</CODE> and <CODE>xref:d/1</CODE> return 
-a list of undefined functions in case the BEAM files do not 
-contain debug information.
-<br>Own Id: OTP-3879
-
-
-</UL>
-
-<H2>Tools 1.6.1</H2>
-  <H3>Known Problems</H3>
-  <P>See Tools 1.6.</P>
-
-  <H3>Improvements and New Features</H3>
-  <UL>
-    <LI>
-      The following changes has been made to Xref:
-      <UL>
-        <LI><CODE>xref:m/1</CODE> has been changed to accept a filename.</LI>
-        <LI>bug fix: the predefined analysis <CODE>locals_not_called</CODE>
-          and <CODE>xref:m/1</CODE> could sometimes miss unused local
-          functions.</LI>
-        <LI>bug fix: the bit syntax is now recognized...</LI>
-        <LI>bug fix: setting the library path to <CODE>code_path</CODE> did
-          not force the setting up of data.</LI>
-        <LI># has lower precedence now.</LI>
-        <LI>only atoms are allowed as release and application names.</LI>
-        <LI>invalid symbolic links are ignored unless the extension is
-          recognized (<CODE>.beam</CODE> typically).</LI>
-        <LI>calls where the module is fixed but the function is not are no
-          longer unresolved; instead the "function" <CODE>'$F_EXPR'</CODE>
-          is "called".</LI>
-        <LI><CODE>xref_compiler:format_error/1</CODE> has been improved.</LI>
-        <LI>bug fix: calls to <CODE>'MNEMOSYNE RULE'</CODE> et al removed.
-        </LI>
-        <LI><CODE>m/1</CODE> and <CODE>d/1</CODE> return a list that always
-          contains two elements.</LI>
-        <LI><CODE>xref_parser:t2s/1</CODE> adds quotes to atoms that need
-          them.</LI>
-        <LI>the documentation is less incomplete and buggy.</LI>
-        <LI>the strict operator has been documented (it was present in the
-          code before).</LI>
-      </UL>
-      Own Id: OTP-3681
-    </LI>
-  </UL>
+<center><h1>Tools Release Notes</h1></center>
 
 
-<H2>Tools 1.6</H2>
-  <H3>Known Problems</H3>
-  <UL>
-    <LI>Externally defined macros are not handled correctly in Coast.<BR>
-      Own Id: OTP-3273<BR>
-      Aux Id: seq3910
-    </LI>
-  </UL>
+<!--- ################################################################# --->
 
-  <H3>Fixed Errors and Malfunctions</H3>
-  <UL>
-    <LI><CODE>make:all()</CODE> no longer unnecessarily recompiles modules located in other directories than the current working directory.<BR>
-      Own Id: OTP-3336<BR>
-      Aux Id: Seq 4055
-    </LI>
-    <LI>When waiting for a reply from the Coast server process, the user interface functions did a <CODE>receive</CODE> that accepted any term. The <CODE>receive</CODE> has now been restricted to accept only the correct replies and not accidently a message from some other process.<BR>
-      Own Id: OTP-3394<BR>
-      Aux Id: Seq 4209
-    </LI>
-    <LI><CODE>coast:compile_all/1,2</CODE> now returns the correct return value <CODE>{error,Reason}</CODE> if the directory given as argument does not exist or cannot be read.<BR>
-      Own Id: OTP-3500<BR>
-      Aux Id: Seq 4394
-    </LI>
-    <LI>The function <CODE>instrument:memory_data/0</CODE> returned invalid information if an address or size exceeded 2^27. <CODE>instrument:store_memory_data</CODE> did not have that problem.<BR>
-      Own Id: OTP-3635
-    </LI>
-  </UL>
+<h2>Tools 2.0</h2>
 
-  <H3>Improvements and new features</H3>
-  <UL>
-    <LI><CODE>make:all()</CODE> now recompiles modules where an include file has been modified.<BR>
-      Own Id: OTP-3088<BR>
-      Aux Id: seq1645, seq4228
-    </LI>
-    <LI>The eprof module has been optimised to minimise the measuring overhead. Typically, the measured program runs at about 50% of its ordinary speed.<BR>
-      Own Id: OTP-3163
-    </LI>
-    <LI>xref is a new cross reference tool.<BR>
-      Own Id: OTP-3639
-    </LI>
-  </UL>
 
-<P>There are also release notes for <A HREF="notes_history.html">older versions</A>.</P>
+<!--- ----------------------------------------------------------------- --->
 
-</BODY>
-</HTML>
+<h3>Fixed errors and malfunctions</h3>
+
+<ul>
+
+  <li>
+    xref bug fix: variables LM and AM were not always disjoint.<br>
+    (Own Id: OTP-3921)<p>
+  </li>
+
+</ul>
+
+
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+    <p>Coast was much too slow and ineffiecient, especially for large
+    modules. Also, it was discovered that Coast in some cases returned
+    erroneous values.</p> <p>Consequently, Coast has been discontinued and
+    is replaced with a new tool <b>Cover</b> with similar interface and
+    functionality. Refer to the Tools User's Guide and Reference Manual for
+    more information about Cover.</p><br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-3622)<p>
+  </li>
+
+  <li>
+    The functions <code>xref:m/1</code> and <code>xref:d/1</code> return a
+    list of undefined functions in case the BEAM files do not contain debug
+    information.<br>
+    (Own Id: OTP-3879)<p>
+  </li>
+
+  <li>
+    <code>xref</code> represents unresolved calls with calls where the
+    module, the function or the number of arguments are atoms and integers
+    that are unlikely to occur in an Erlang system. Calls to
+    <code>erlang:apply/2</code> and the like are included among the
+    external calls. This is in contrast to R7 where calls to
+    <code>apply</code> and <code>spawn</code> were used for representing
+    unresolved calls.<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-3948)<p>
+  </li>
+
+  <li>
+    The default value of the Xref option <code>verbose</code> has been
+    changed from <code>true</code> to <code>false</code>. The function
+    <code>xm/1</code>, which cross reference checks a module by calling
+    <code>xref:m/1</code>, has been added to the <code>c</code> module.<br>
+    (Own Id: OTP-4101)<p>
+  </li>
+
+  <li>
+    Added a web based user interface to Cover.<br>
+    (Own Id: OTP-4105)<br>
+    (Aux Id: OTP-4104)<p>
+  </li>
+
+  <li>
+    The old cross reference tool <code>exref</code> has now been removed,
+    use the new tool <code>xref</code> instead.<br>
+    (Own Id: OTP-4140)<p>
+  </li>
+
+</ul>
+
+<h2>Tools 1.6.3</h2>
+<h3>Improvements and new features</h3>
+<ul>
+  <li>
+    A preliminary version of the new Fprof tool has been added.<br>
+   (Own Id: OTP-4010)<p>
+  </li>
+</ul>
+
+
+
+There are also release notes for
+<a href="notes_history.html">older versions</a>.
+
+</body>
+</html>

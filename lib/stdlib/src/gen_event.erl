@@ -35,6 +35,8 @@
 	 add_handler/3, add_sup_handler/3, delete_handler/3, swap_handler/3,
 	 swap_sup_handler/3, which_handlers/1, call/3, call/4]).
 
+-export([behaviour_info/1]).
+
 -export([init_it/6,
 	 system_continue/3,
 	 system_terminate/4,
@@ -50,6 +52,12 @@
 		  id = false,
 		  state,
 		  supervised = false}).
+
+behaviour_info(callbacks) ->
+    [{init,1},{handle_event,2},{handle_call,2},{handle_info,2},
+     {terminate,2},{code_change,3}];
+behaviour_info(Other) ->
+    undefined.
 
 %% gen_event:start(Handler) -> ok | {error, What}
 %%   gen_event:add_handler(Handler, Mod, Args) -> ok | Other

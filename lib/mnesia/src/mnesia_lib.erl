@@ -65,6 +65,8 @@
 	 db_prev_key/3,
 	 db_put/2,
 	 db_put/3,
+	 db_select/2,	 
+	 db_select/3,
 	 db_slot/2,
 	 db_slot/3,
 	 db_update_counter/3,
@@ -83,7 +85,6 @@
 	 disk_type/2,	 
 	 elems/2,
 	 ensure_loaded/1,
-	 erlang_db_match_object/2,
 	 error/2,
 	 error/2,
 	 error_desc/1,
@@ -117,7 +118,6 @@
 	 report_system_event/1,
 	 running_nodes/0,
 	 running_nodes/1,
-	 safe_match_object/3,
 	 schema_cs_to_storage_type/2,
 	 search_delete/2,
 	 set/2,
@@ -155,6 +155,7 @@
 	 eval_debug_fun/4,
 	 scratch_debug_fun/0
 	]).
+ 
 
 search_delete(Obj, List) ->
     search_delete(Obj, List, [], none).
@@ -220,7 +221,6 @@ union([], L2) -> L2.
 uniq([]) ->
     [];
 uniq(List) ->
-    %% Could be optimized further with a modified sort algo.
     [H|T] = lists:sort(List),
     uniq1(H, T, []).
 
@@ -907,12 +907,10 @@ verbose(Format, Args) ->
 %% debug message are display if debug level == 2
 dbg_out(Format, Args) ->
     case mnesia_monitor:get_env(debug) of
-	none ->    save({Format, Args});
+	none ->    ignore;
 	verbose -> save({Format, Args});
-	debug ->   important(Format, Args);
-	trace ->   important(Format, Args)
+	_ ->  report_system_event({mnesia_info, Format, Args})
     end.
-
 
 %% Keep the last 10 debug print outs
 save(DbgInfo) ->
@@ -975,43 +973,16 @@ db_init_chunk(Tab) ->
     db_init_chunk(val({Tab, storage_type}), Tab, 1000).
 db_init_chunk(Tab, N) ->
     db_init_chunk(val({Tab, storage_type}), Tab, N).
-%% FIX R8
-db_init_chunk(Storage, Tab, N) ->
-    State = {Tab, Storage, db_first(Storage, Tab), N, N},
-    get_records(State, []).
 
-db_chunk(_Type, State) ->
-    get_records(State, []).
+db_init_chunk(disc_only_copies, Tab, N) ->
+    dets:select(Tab, [{'_', [], ['$_']}], N);
+db_init_chunk(_, Tab, N) ->
+    ets:select(Tab, [{'_', [], ['$_']}], N).
 
-get_records({Tab, Storage, Key, KeysLeft, N}, AccRecs)
-  when KeysLeft > 0,  Key /= '$end_of_table'  ->
-    Recs = db_get(Storage, Tab, Key),
-    NextKey = db_next_key(Storage, Tab, Key),
-    get_records({Tab, Storage, NextKey, KeysLeft - 1, N}, Recs ++ AccRecs);
-get_records({Tab, Storage, Key, KeysLeft, N}, AccRecs) ->
-    if 
-	Key == '$end_of_table',	AccRecs == [] ->
-	    '$end_of_table';
-	true ->
-	    {AccRecs, {Tab, Storage, Key, N, N}}
-    end.
-
-
-%db_init_chunk(disc_only_copies, Tab, N) ->
-%    dets:select(Tab, [{'_', [], ['$_']}], N);
-%db_init_chunk(_, Tab, N) ->
-%     case ets:select(Tab, [{'_', [], ['$_']}], N) of
-% 	%% BUGBUG remove when ets fixed
-% 	[] ->
-% 	    '$end_of_table';
-% 	R ->
-% 	    R
-%     end.
-
-% db_chunk(disc_only_copies, State) ->
-%     dets:select(State);
-% db_chunk(_, State) ->
-%     ets:select(State).
+db_chunk(disc_only_copies, State) ->
+    dets:select(State);
+db_chunk(_, State) ->
+    ets:select(State).
 
 db_put(Tab, Val) ->
     db_put(val({Tab, storage_type}), Tab, Val).
@@ -1022,76 +993,47 @@ db_put(disc_only_copies, Tab, Val) -> dets:insert(Tab, Val).
 
 db_match_object(Tab, Pat) ->
     db_match_object(val({Tab, storage_type}), Tab, Pat).
-db_match_object(ram_copies, Tab, Pat) ->
-    safe_match_object(ets, Tab, Pat);
-db_match_object(disc_copies, Tab, Pat) ->
-    safe_match_object(ets, Tab, Pat);
-db_match_object(disc_only_copies, Tab, Pat) ->
-    safe_match_object(dets, Tab, Pat).
-
-safe_match_object(TabKind, Tab, Pat) ->
-    TabRef = {TabKind, Tab},
-    do_db_fixtable(TabKind, Tab, true),
-    Res = catch_match_object(TabKind, Tab, Pat),
-    do_db_fixtable(TabKind, Tab, false),
+db_match_object(Storage, Tab, Pat) ->
+    db_fixtable(Storage, Tab, true),
+    Res = catch_match_object(Storage, Tab, Pat),
+    db_fixtable(Storage, Tab, false),
     case Res of
 	{'EXIT', Reason} -> exit(Reason);
 	_ -> Res
     end.
 
-catch_match_object(ets, Tab, Pat) ->
-    catch ?ets_match_object(Tab, Pat);
-catch_match_object(dets, Tab, Pat) ->
-    catch dets:match_object(Tab, Pat).
+catch_match_object(disc_only_copies, Tab, Pat) ->
+    catch dets:match_object(Tab, Pat);
+catch_match_object(_, Tab, Pat) ->
+    catch ets:match_object(Tab, Pat).
 
--ifdef(use_db_bifs).
- erlang_db_match_object(Tab, Pat) ->
-    erlang_db_match_object(Tab, Pat, 1000).
+db_select(Tab, Pat) ->
+    db_select(val({Tab, storage_type}), Tab, Pat).
 
- erlang_db_match_object(Tab, Pat, State0) ->
-    case erlang:db_match_object(Tab, Pat, State0) of
-        State when tuple(State) ->
-	    erlang:yield(),
-	    erlang_db_match_object(Tab, Pat, State);
-        Result when list(Result) ->
-            Result
+db_select(Storage, Tab, Pat) ->
+    db_fixtable(Storage, Tab, true),
+    Res = catch_select(Storage, Tab, Pat),
+    db_fixtable(Storage, Tab, false),
+    case Res of
+	{'EXIT', Reason} -> exit(Reason);
+	_ -> Res
     end.
--else.
- erlang_db_match_object(Tab, Pat) ->
-    ?ets_match_object(Tab, Pat).
--endif.
 
+catch_select(disc_only_copies, Tab, Pat) ->
+    dets:select(Tab, Pat);
+catch_select(_, Tab, Pat) ->
+    ets:select(Tab, Pat).
+
+db_fixtable(ets, Tab, Bool) ->
+    ets:safe_fixtable(Tab, Bool);
 db_fixtable(ram_copies, Tab, Bool) ->
-    do_db_fixtable(ets, Tab, Bool);
+    ets:safe_fixtable(Tab, Bool);
 db_fixtable(disc_copies, Tab, Bool) ->
-    do_db_fixtable(ets, Tab, Bool);
+    ets:safe_fixtable(Tab, Bool);
+db_fixtable(dets, Tab, Bool) ->
+    dets:safe_fixtable(Tab, Bool);
 db_fixtable(disc_only_copies, Tab, Bool) ->
-    do_db_fixtable(dets, Tab, Bool).
-
-do_db_fixtable(TabKind, Tab, true) ->
-    Counter = {Tab, fixtable},
-    Incr = 1,
-    catch
-	begin
-	    case catch update_counter(Counter, Incr) of
-		{'EXIT', _} -> set_counter(Counter, Incr);
-		_ -> ignore
-	    end,
-	    do_db_fixtable2(TabKind, Tab, true)
-	end;
-do_db_fixtable(TabKind, Tab, false) ->
-    Counter = {Tab, fixtable},
-    Incr = -1,
-    catch
-	case update_counter(Counter, Incr) of
-	    0 -> do_db_fixtable2(TabKind, Tab, false);
-	    _ -> ignore
-	end.
-
-do_db_fixtable2(ets, Tab, Bool) ->
-    catch ?ets_fixtable(Tab, Bool);
-do_db_fixtable2(dets, Tab, Bool) ->
-    dets:fixtable(Tab, Bool).
+    dets:safe_fixtable(Tab, Bool).
 
 db_erase(Tab, Key) ->
     db_erase(val({Tab, storage_type}), Tab, Key).
@@ -1157,15 +1099,13 @@ dets_to_ets(Tabname, Tab, File, Type, Rep, Lock) ->
     case Open(Tabname, [{file, File}, {type, disk_type(Tab, Type)},
 			{keypos, 2}, {repair, Rep}]) of
 	{ok, Tabname} ->
-	    %% Res = dets:to_ets(Tabname, Tab), FIX R8
-	    Res = dets:traverse(Tabname, Fun),
+	    Res = dets:to_ets(Tabname, Tab),
 	    Close(Tabname),
 	    trav_ret(Res, Tab);
 	Other ->
 	    Other
     end.
 
-trav_ret([], Tab) -> loaded; %% FIX R8 remove
 trav_ret(Tabname, Tabname) -> loaded;
 trav_ret(Other, Tabname) -> Other.
 
@@ -1175,7 +1115,6 @@ mkfuns(yes) ->
 mkfuns(no) ->
     {fun(Tab, Args) -> dets:open_file(Tab, Args) end,
      fun(Tab) -> dets:close(Tab) end}.
-
 
 disk_type(Tab) ->
     disk_type(Tab, val({Tab, setorbag})).
@@ -1269,7 +1208,7 @@ readable_indecies(Tab) ->
 
 scratch_debug_fun() ->
     dbg_out("scratch_debug_fun(): ~p~n", [?DEBUG_TAB]),
-    catch ?ets_delete_table(?DEBUG_TAB),
+    ?ets_delete_table(?DEBUG_TAB),
     ?ets_new_table(?DEBUG_TAB, [set, public, named_table, {keypos, 2}]).
 
 activate_debug_fun(FunId, Fun, InitialContext, File, Line) ->

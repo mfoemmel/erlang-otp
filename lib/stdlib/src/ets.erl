@@ -26,9 +26,12 @@
 	 foldl/3, foldr/3,
 	 info/1,
 	 info/2,
-	 match_object/2,
-	 safe_fixtable/2,
+	 match_delete/2,
 	 tab2file/2,
+	 from_dets/2,
+	 to_dets/2,
+	 init_table/2,
+	 test_ms/2,
 	 tab2list/1]).
 
 -export([i/0, i/1, i/2, i/3]).
@@ -49,17 +52,28 @@
 %% prev/2
 %% rename/2
 %% slot/2
+%% match/1
 %% match/2
-%% match_delete/2
+%% match/3
+%% match_object/1
+%% match_object/2
+%% match_object/3
+%% select/1
+%% select/2
+%% select/3
+%% select_reverse/1
+%% select_reverse/2
+%% select_reverse/3
+%% select_delete/2
 %% update_counter/3
 %%
 
 foldl(F, Accu, T) ->
-    safe_fixtable(T, true),
+    ets:safe_fixtable(T, true),
     First = ets:first(T),
     Ref = make_ref(),
     R = (catch {Ref, do_foldl(F, Accu, First, T)}),
-    safe_fixtable(T, false),
+    ets:safe_fixtable(T, false),
     case R of
 	{Ref, Result} ->
 	    Result;
@@ -80,11 +94,11 @@ do_foldl(F, Accu0, Key, T) ->
     end.
 
 foldr(F, Accu, T) ->
-    safe_fixtable(T, true),
+    ets:safe_fixtable(T, true),
     Last = ets:last(T),
     Ref = make_ref(),
     R = (catch {Ref, do_foldr(F, Accu, Last, T)}),
-    safe_fixtable(T, false),
+    ets:safe_fixtable(T, false),
     case R of
 	{Ref, Result} ->
 	    Result;
@@ -104,43 +118,73 @@ do_foldr(F, Accu0, Key, T) ->
 		     ets:prev(T, Key), T)
     end.
 
-delete(T) when atom(T) ->
-    Ret = ets:db_delete(T),
-    fixtable_server:table_closed(?MODULE, T),
-    Ret;
-delete(T) when integer(T) ->
-    Ret = ets:db_delete(T),
-    fixtable_server:table_closed(?MODULE, T),
-    Ret.
-
-safe_fixtable(T, How) when atom(T) -> 
-    check_fixtable_access(T, How),
-    fixtable_server:safe_fixtable(?MODULE, T, How);
-safe_fixtable(T, How) when integer(T) -> 
-    check_fixtable_access(T, How),
-    fixtable_server:safe_fixtable(?MODULE, T, How).
-
-match_object(T,Pattern) when atom(T) ->
-    erlang_db_match_object(T,Pattern);
-match_object(T,Pattern) when integer(T) ->
-    erlang_db_match_object(T,Pattern).
-
-erlang_db_match_object(Tab, Pat) ->
-    erlang_db_match_object(Tab, Pat, 1000).
-
-erlang_db_match_object(Tab, Pat, State0) ->
-    case ets:db_match_object(Tab, Pat, State0) of 
-	%% a "yield" is done in the BIF if necessary
-        State when tuple(State) ->
-	    erlang_db_match_object(Tab, Pat, State);
-        Result when list(Result) ->
-            Result
+from_dets(EtsTable, DetsTable) ->
+    case (catch dets:to_ets(DetsTable, EtsTable)) of
+	{error, Reason} ->
+	    erlang:fault(Reason,[EtsTable,DetsTable]);
+	{'EXIT', {Reason1, Stack1}} ->
+	    erlang:fault(Reason1,[EtsTable,DetsTable]);
+	{'EXIT', EReason} ->
+	    erlang:fault(EReason,[EtsTable,DetsTable]);
+	EtsTable ->
+	    true;
+	Unexpected -> %% Dets bug?
+	    erlang:fault(Unexpected,[EtsTable,DetsTable])
     end.
 
+to_dets(EtsTable, DetsTable) ->
+    case (catch dets:from_ets(DetsTable, EtsTable)) of
+	{error, Reason} ->
+	    erlang:fault(Reason,[EtsTable,DetsTable]);
+	{'EXIT', {Reason1, Stack1}} ->
+	    erlang:fault(Reason1,[EtsTable,DetsTable]);
+	{'EXIT', EReason} ->
+	    erlang:fault(EReason,[EtsTable,DetsTable]);
+	ok ->
+	    DetsTable;
+	Unexpected -> %% Dets bug?
+	    erlang:fault(Unexpected,[EtsTable,DetsTable])
+    end.
 
-info(T) when atom(T) ->
-    local_info(T, node());
-info(T) when integer(T) ->
+test_ms(Term,MS) ->
+    case erlang:match_spec_test(Term,MS,table) of
+	{ok, Result, _Flags, Messages} ->
+	    {ok, Result}; 
+	{error, Errors} ->
+	    {error, Errors}
+    end.
+
+init_table(Table, Fun) ->
+    ets:delete_all_objects(Table),
+    init_table_continue(Table, Fun(read)).
+
+init_table_continue(Table, end_of_input) ->
+    true;
+init_table_continue(Table, {List,Fun}) when list(List), function(Fun) ->
+    case (catch init_table_sub(Table, List)) of
+	{'EXIT', Reason} ->
+	    (catch Fun(close)),
+	    exit(Reason);
+	true ->
+	    init_table_continue(Table,Fun(read))
+    end;
+init_table_continue(Table, Error) ->
+    exit(Error).
+
+init_table_sub(Table,[]) ->
+    true;
+init_table_sub(Table, [H|T]) ->
+    ets:insert(Table,H),
+    init_table_sub(Table,T).
+
+match_delete(Table, Pattern) ->
+    ets:select_delete(Table,[{Pattern,[],[true]}]),
+    true.
+
+delete(T) when atom(T) ; integer(T) ->
+    ets:db_delete(T).
+
+info(T) when atom(T) ; integer(T) ->
     local_info(T, node()).
 
 local_info(T, Node) ->
@@ -157,9 +201,7 @@ local_info(T, Node) ->
 	     {protection, info(T, protection)}}
     end.
 
-info(T, What) when atom(T) -> 
-    local_info(T, What, node());
-info(T, What) when integer(T) ->
+info(T, What) when atom(T) ; integer(T) ->
     local_info(T, What, node()).
 
 local_info(T, What, Node) ->
@@ -189,16 +231,6 @@ local_info(T, What, Node) ->
 			    false
 		    end
 	    end;
-	safe_fixed ->
-	    %% Use a bif call to determine if the table exists
-	    case (catch ets:db_info(T, type)) of
-		undefined ->
-		    undefined;
-		{'EXIT',_} ->
-		    undefined;
-		_ ->
-		    fixtable_server:info(?MODULE, T)
-	    end;
 	_ ->
 	    case (catch ets:db_info(T, What)) of
 	        undefined -> 
@@ -215,9 +247,7 @@ local_info(T, What, Node) ->
 tab2list(T) ->
     ets:match_object(T, '_').
 
-filter(Tn, F, A) when atom(Tn) ->
-    do_filter(Tn,ets:first(Tn),F,A, []);
-filter(Tn, F, A) when integer(Tn) ->
+filter(Tn, F, A) when atom(Tn) ; integer(Tn) ->
     do_filter(Tn,ets:first(Tn),F,A, []).
 
 do_filter(Tab, '$end_of_table', _,_, Ack) -> 
@@ -542,16 +572,3 @@ re_match([H|T], Re) ->
 	    re_match(T, Re)
     end.
 
-check_fixtable_access(T, B) ->
-    Self = self(),
-    case ets:db_info(T, owner) of
-	Self ->
-	    ok;
-	_ ->
-	    case ets:db_info(T, protection) of
-		public ->
-		    ok;
-		_ ->
-		    exit({badarg, {?MODULE, safe_fixtable, [T, B]}})
-	    end
-    end.

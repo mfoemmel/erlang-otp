@@ -22,6 +22,7 @@
 -export([add_vertex/1, add_vertex/2, add_vertex/3]).
 -export([del_vertex/2, del_vertices/2]).
 -export([vertex/2, no_vertices/1, vertices/1]).
+-export([source_vertices/1, sink_vertices/1]).
 
 -export([add_edge/3, add_edge/4, add_edge/5]).
 -export([del_edge/2, del_edges/2, del_path/3]).
@@ -56,8 +57,7 @@ new(Type) ->
 	    V = ets:new(vertices, [set,Access]),
 	    E = ets:new(edges, [set,Access]),
 	    N = ets:new(neighbours, [bag,Access]),
-	    ets:insert(N, {'$vid', 1}),
-	    ets:insert(N, {'$eid', 1}),
+	    ets:insert(N, [{'$vid', 0}, {'$eid', 0}]),
 	    set_type(Ts, #graph{vtab=V, 
 				etab=E,
 				ntab=N })
@@ -136,7 +136,13 @@ no_vertices(G) ->
     ets:info(G#graph.vtab, size).
 
 vertices(G) -> 
-    collect_keys(G#graph.vtab).
+    ets:select(G#graph.vtab, [{{'$1', '_'}, [], ['$1']}]).
+
+source_vertices(G) ->
+    collect_vertices(G, in).
+
+sink_vertices(G) ->
+    collect_vertices(G, out).
 
 in_degree(G, V) ->
     length(ets:lookup(G#graph.ntab,{in,V})).
@@ -147,7 +153,7 @@ in_neighbours(G,V) ->
     collect_elems(ets:lookup(NT,{in,V}),ET,2).
 
 in_edges(G, V) ->
-    collect_objs(ets:lookup(G#graph.ntab,{in,V})).
+    ets:select(G#graph.ntab, [{{{in,V},'$1'},[],['$1']}]).
 
 out_degree(G, V) -> 
     length(ets:lookup(G#graph.ntab,{out,V})).
@@ -158,7 +164,7 @@ out_neighbours(G, V) ->
     collect_elems(ets:lookup(NT,{out,V}),ET,3).
 
 out_edges(G, V) -> 
-    collect_objs(ets:lookup(G#graph.ntab, {out,V})).
+    ets:select(G#graph.ntab, [{{{out,V},'$1'},[],['$1']}]).
 
 add_edge(G, V1, V2) -> 
     do_add_edge({new_edge_id(G),V1,V2,[]}, G).
@@ -179,13 +185,11 @@ no_edges(G) ->
     ets:info(G#graph.etab, size).
 
 edges(G) ->
-    collect_keys(G#graph.etab).
+    ets:select(G#graph.etab, [{{'$1', '_', '_', '_'}, [], ['$1']}]).
 
 edges(G, V) ->
-    NT = G#graph.ntab,
-    collect_objs(lists:append(ets:lookup(NT,{out,V}),ets:lookup(NT,{in,V}))).
-
-
+    ets:select(G#graph.ntab, [{{{out,V},'$1'},[],['$1']},
+			      {{{in,V},'$1'},[],['$1']}]).
 
 edge(G, E) ->
     case ets:lookup(G#graph.etab,E) of
@@ -216,44 +220,31 @@ new_vertex_id(G) ->
     ['$v' | K].
 
 %%
-%% Scan table for all keys
-%%
-collect_keys(Table) ->
-    collect_keys(ets:first(Table), Table, []).
-	    
-collect_keys('$end_of_table', _, Keys) -> Keys;
-collect_keys(Key, Table, L) ->
-    collect_keys(ets:next(Table,Key), Table, [Key|L]).
-
-%%
 %% Collect elements for a index in a tuple
 %%
 collect_elems(Keys, Table, Index) ->
     collect_elems(Keys, Table, Index,[]).
 
 collect_elems([{_,Key}|Keys], Table, Index, Acc) ->
-    case ets:lookup(Table, Key) of
-	[X] when tuple(X),size(X) >= Index ->
-	    collect_elems(Keys, Table, Index, [element(Index,X)|Acc]);
-	_ ->
-	    collect_elems(Keys, Table, Index, Acc)
-    end;
+    collect_elems(Keys, Table, Index,
+		  [ets:lookup_element(Table, Key, Index)|Acc]);
 collect_elems([], _, _, Acc) -> Acc.
-
-%%
-%% Remove keys from a {Key,Value} list
-%%
-collect_objs(Ls) ->
-    collect_objs(Ls, []).
-    
-collect_objs([{_Key,Value}|T],Acc) ->
-    collect_objs(T, [Value|Acc]);
-collect_objs([], Acc) -> Acc.
-
 
 do_add_vertex({V,Label}, G) ->
     ets:insert(G#graph.vtab, {V,Label}),
     V.
+
+%%
+%% Collect either source or sink vertices.
+%%
+collect_vertices(#graph{vtab=VT,ntab=NT}, Type) ->
+    Vs = ets:select(VT, [{{'$1', '_'}, [], ['$1']}]),
+    lists:foldl(fun(V, A) ->
+			case ets:member(NT, {Type,V}) of
+			    true -> A;
+			    false -> [V|A]
+			end
+		end, [], Vs).
 
 %%
 %% Delete vertices
@@ -294,10 +285,9 @@ do_del_edges([E | Es], G) ->
 do_del_edges([], _) -> true.
 
 do_del_edge(E,V1,V2,G) ->
-    ets:match_delete(G#graph.ntab, {{in,V2},E}),
-    ets:match_delete(G#graph.ntab, {{out,V1},E}),
+    ets:select_delete(G#graph.ntab, [{{{in,V2},E},[],[true]},
+				     {{{out,V1},E},[],[true]}]),
     ets:delete(G#graph.etab, E).
-
 
 rm_edges([V1,V2|Vs], G) ->
     rm_edge(V1,V2,G),
@@ -322,27 +312,22 @@ rm_edge_0([],_,_,_) -> ok.
 %% Check that endpoints exists
 %%
 do_add_edge({E,V1,V2,Label}, G) ->
-    case ets:lookup(G#graph.vtab,V1) of
-	[] -> {error, {bad_vertex, V1}};
-	_  ->
-	    case ets:lookup(G#graph.vtab,V2) of
-		[] -> {error, {bad_vertex,V2}};
-		_  ->
-		    if
-			G#graph.cyclic == false ->
-			    acyclic_add_edge(E,V1,V2,Label,G);
-			true ->
-			    do_insert_edge(E,V1,V2,Label,G)
-		    end
+    case ets:member(G#graph.vtab, V1) of
+	false -> {error, {bad_vertex, V1}};
+	true  ->
+	    case ets:member(G#graph.vtab, V2) of
+		false -> {error, {bad_vertex,V2}};
+		true when G#graph.cyclic =:= false ->
+		    acyclic_add_edge(E, V1, V2, Label, G);
+		true ->
+		    do_insert_edge(E, V1, V2, Label, G)
 	    end
     end.
 
 
-do_insert_edge(E,V1,V2,Label,G) ->
-    NT = G#graph.ntab,
-    ets:insert(NT, {{out,V1},E}),
-    ets:insert(NT, {{in,V2},E}),
-    ets:insert(G#graph.etab, {E,V1,V2,Label}),
+do_insert_edge(E, V1, V2, Label, #graph{ntab=NT,etab=ET}) ->
+    ets:insert(NT, [{{out,V1},E},{{in,V2},E}]),
+    ets:insert(ET, {E,V1,V2,Label}),
     E.
 
 acyclic_add_edge(_E, V1, V2, _L, _G) when V1 == V2 ->

@@ -3,16 +3,16 @@
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
 %% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
+%%
 %% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
-%% 
+%%
 %%     $Id$
 %%
 -module(edlin).
@@ -460,38 +460,31 @@ expand_function_name(ModStr, FuncPrefix) ->
     end.
 
 match(Prefix, Alts, Extra) ->
-    case match1(Prefix, Alts, []) of
-	[Str] ->
-	    {yes, append(nthtail(length(Prefix), Str),[Extra])};
-	Matches ->
-	    case longest_common_head(Matches) of
-		{yes, []} ->
-		    print_matches(Matches),
-		    no;
-		{yes, Str} ->
-		    case nthtail(length(Prefix), Str) of
-			[] ->
-			    print_matches(Matches),
-			    {yes, []};
-			Remain ->
-			    {yes, Remain}
-		    end;
-		no ->
-		    no
-	    end
+    Matches0 = match1(Prefix, Alts, []),
+    Matches = lists:map(fun({N,_}) -> N end, Matches0),
+    case longest_common_head(Matches) of
+	{partial, []} ->
+	    print_matches(Matches0),
+	    no;
+	{partial, Str} ->
+	    case nthtail(length(Prefix), Str) of
+		[] ->
+		    print_matches(Matches0),
+		    {yes, []};
+		Remain ->
+		    {yes, Remain}
+	    end;
+	{complete, Str} ->
+	    {yes, append(nthtail(length(Prefix), Str), [Extra])};
+	no ->
+	    no
     end.
 
-%% Print the list of names L in multiple columns. L might contain
-%% duplicates (e.g. function names with different arities) but we only
-%% print them once.
+%% Print the list of names L in multiple columns.
 print_matches(L) ->
     io:nl(),
-    col_print(uniq(lists:sort(L))),
+    col_print(lists:sort(L)),
     ok.
-
-uniq([]) -> [];
-uniq([H,H|T]) -> uniq([H|T]);
-uniq([H|T]) -> [H|uniq(T)].
 
 col_print([]) -> ok;
 col_print(L)  -> col_print(L, field_width(L), 0).
@@ -499,15 +492,23 @@ col_print(L)  -> col_print(L, field_width(L), 0).
 col_print(X, Width, Len) when Width + Len > 79 ->
     io:nl(),
     col_print(X, Width, 0);
-col_print([H|T], Width, Len) ->
+col_print([{H0,A}|T], Width, Len) ->
+    H = if
+	    %% If the second element is an integer, we assume it's an
+	    %% arity, and meant to be printed.
+	    integer(A) ->
+		H0 ++ "/" ++ integer_to_list(A);
+	    true ->
+		H0
+	end,
     io:format("~-*s",[Width,H]),
     col_print(T, Width, Len+Width);
 col_print([], _, _) ->
     io:nl().
 
-field_width([H|T]) -> field_width(T, length(H)).
+field_width([{H,_}|T]) -> field_width(T, length(H)).
 
-field_width([H|T], W) ->
+field_width([{H,_}|T], W) ->
     case length(H) of
 	L when L > W -> field_width(T, L);
 	_ -> field_width(T, W)
@@ -516,11 +517,11 @@ field_width([], W) when W < 40 ->
     W + 4;
 field_width([], _) ->
     40.
-    
-match1(Prefix, [{H,_}|T], L) ->
+
+match1(Prefix, [{H,A}|T], L) ->
     case prefix(Prefix, Str = atom_to_list(H)) of
 	true ->
-	    match1(Prefix, T, [Str|L]);
+	    match1(Prefix, T, [{Str,A}|L]);
 	false ->
 	    match1(Prefix, T, L)
     end;
@@ -533,15 +534,20 @@ longest_common_head(LL) ->
     longest_common_head(LL, []).
 
 longest_common_head([[]|_], L) ->
-    {yes, reverse(L)};
+    {partial, reverse(L)};
 longest_common_head(LL, L) ->
     case same_head(LL) of
 	true ->
 	    [[H|_]|_] = LL,
 	    LL1 = all_tails(LL),
-	    longest_common_head(LL1, [H|L]);
+	    case all_nil(LL1) of
+		false ->
+		    longest_common_head(LL1, [H|L]);
+		true ->
+		    {complete, reverse([H|L])}
+	    end;
 	false ->
-	    {yes, reverse(L)}
+	    {partial, reverse(L)}
     end.
 
 same_head([[H|T]|T1]) -> same_head(H, T1).
@@ -554,3 +560,7 @@ all_tails(LL) -> all_tails(LL, []).
 
 all_tails([[_|T]|T1], L) -> all_tails(T1, [T|L]);
 all_tails([], L)         -> L.
+
+all_nil([]) -> true;
+all_nil([[] | Rest]) -> all_nil(Rest);
+all_nil(_) -> false.

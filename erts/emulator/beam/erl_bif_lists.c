@@ -30,6 +30,26 @@
 #include "error.h"
 #include "bif.h"
 
+/*
+ * erlang:'++'/2
+ */
+
+Eterm
+erlang_append_2(Process* p, Eterm A, Eterm B)
+{
+    return append_2(p, A, B);
+}
+
+/*
+ * erlang:'--'/2
+ */
+
+Eterm
+erlang_subtract_2(Process* p, Eterm A, Eterm B)
+{
+    return subtract_2(p, A, B);
+}
+
 BIF_RETTYPE append_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
@@ -69,84 +89,84 @@ BIF_ADECL_2
 BIF_RETTYPE subtract_2(BIF_ALIST_2)
 BIF_ADECL_2
 {
-     uint32  list;
-     uint32* hp;
-     uint32  need;
-     uint32  res;
-     uint32  small_vec[10];	/* Preallocated memory for small lists */
-     uint32* vec_p;
-     uint32* vp;
-     int     i;
-     int     n;
-     int     m;
-
-     if ((n = list_length(BIF_ARG_1)) < 0) {
-	 BIF_ERROR(BIF_P, BADARG);
-     }
-     if ((m = list_length(BIF_ARG_2)) < 0) {
-	 BIF_ERROR(BIF_P, BADARG);
-     }
-
-     if (n == 0)
-	 BIF_RET(NIL);
-     if (m == 0)
-	 BIF_RET(BIF_ARG_1);
-
-     /* allocate element vector */
-     if (n <= sizeof(small_vec)/sizeof(small_vec[0]))
-	 vec_p = small_vec;
-     else
-	 vec_p = (uint32*) safe_alloc(n * sizeof(uint32));
-
-     /* PUT ALL ELEMENTS IN VP */
-     vp = vec_p;
-     list = BIF_ARG_1;
-     i = n;
-     while(i--) {
-	 uint32* listp = list_val(list);
-	 *vp++ = CAR(listp);
-	 list = CDR(listp);
-     }
-
-     /* UNMARK ALL DELETED CELLS */
-     list = BIF_ARG_2;
-     m = 0;  /* number of deleted elements */
-     while(is_list(list)) {
-	 uint32* listp = list_val(list);
-	 uint32  elem = CAR(listp);
-	 i = n;
-	 vp = vec_p;
-	 while(i--) {
-	     if (is_value(*vp) && eq(*vp, elem)) {
-		 *vp = THE_NON_VALUE;
-		 m++;
-		 break;
-	     }
-	     vp++;
-	 }
-	 list = CDR(listp);
-     }
-
-     if (m == n)      /* All deleted ? */
-	 res = NIL;
-     else if (m == 0)  /* None deleted ? */
-	 res = BIF_ARG_1;
-     else { 	 /* REBUILD LIST */
-	 res = NIL;
-	 need = 2*(n - m);
-	 hp = HAlloc(BIF_P, need);
-	 vp = vec_p + n - 1;
-	 while(vp >= vec_p) {
-	     if (is_value(*vp)) {
-		 res = CONS(hp, *vp, res);
-		 hp += 2;
-	     }
-	     vp--;
-	 }
-     }
-     if (vec_p != small_vec)
-	 sys_free(vec_p);
-     BIF_RET(res);
+    Eterm  list;
+    Eterm* hp;
+    Uint  need;
+    Eterm  res;
+    Eterm  small_vec[10];	/* Preallocated memory for small lists */
+    Eterm* vec_p;
+    Eterm* vp;
+    int     i;
+    int     n;
+    int     m;
+    
+    if ((n = list_length(BIF_ARG_1)) < 0) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    if ((m = list_length(BIF_ARG_2)) < 0) {
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    
+    if (n == 0)
+	BIF_RET(NIL);
+    if (m == 0)
+	BIF_RET(BIF_ARG_1);
+    
+    /* allocate element vector */
+    if (n <= sizeof(small_vec)/sizeof(small_vec[0]))
+	vec_p = small_vec;
+    else
+	vec_p = (Eterm*) safe_alloc(n * sizeof(Eterm));
+    
+    /* PUT ALL ELEMENTS IN VP */
+    vp = vec_p;
+    list = BIF_ARG_1;
+    i = n;
+    while(i--) {
+	Eterm* listp = list_val(list);
+	*vp++ = CAR(listp);
+	list = CDR(listp);
+    }
+    
+    /* UNMARK ALL DELETED CELLS */
+    list = BIF_ARG_2;
+    m = 0;  /* number of deleted elements */
+    while(is_list(list)) {
+	Eterm* listp = list_val(list);
+	Eterm  elem = CAR(listp);
+	i = n;
+	vp = vec_p;
+	while(i--) {
+	    if (is_value(*vp) && eq(*vp, elem)) {
+		*vp = THE_NON_VALUE;
+		m++;
+		break;
+	    }
+	    vp++;
+	}
+	list = CDR(listp);
+    }
+    
+    if (m == n)      /* All deleted ? */
+	res = NIL;
+    else if (m == 0)  /* None deleted ? */
+	res = BIF_ARG_1;
+    else {			/* REBUILD LIST */
+	res = NIL;
+	need = 2*(n - m);
+	hp = HAlloc(BIF_P, need);
+	vp = vec_p + n - 1;
+	while(vp >= vec_p) {
+	    if (is_value(*vp)) {
+		res = CONS(hp, *vp, res);
+		hp += 2;
+	    }
+	    vp--;
+	}
+    }
+    if (vec_p != small_vec)
+	sys_free(vec_p);
+    BIF_RET(res);
 }
 
 BIF_RETTYPE lists_member_2(BIF_ALIST_2)

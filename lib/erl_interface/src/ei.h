@@ -25,4 +25,7 @@
 #include "eireg.h"
 #include "eimd5.h"
 
+#include "ei_format.h"
+#include "ei_decode_term.h"
+
 #endif

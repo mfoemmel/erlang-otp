@@ -29,24 +29,30 @@
 
 #define WITHIN(ptr, x, y) ((x) <= (ptr) && (ptr) < (y))
 
+#ifdef UNIFIED_HEAP
+#define IN_HEAP(p, ptr) \
+   (WITHIN((ptr), global_heap, global_hend) || (global_old_heap && \
+       WITHIN((ptr), global_old_heap, global_old_hend)))
+#else
 #define IN_HEAP(p, ptr) \
    (WITHIN((ptr), (p)->heap, (p)->hend) || (p->old_heap && \
        WITHIN((ptr), (p)->old_heap, (p)->old_hend)))
+#endif
 
 /*
  * This file defines functions for use within a debugger like gdb
- * and the declarations below is just to make gcc quit.
+ * and the declarations below is just to make gcc quiet.
  */
 
-void pps(Process*, uint32*);
-void ptd(Process*, uint32);
-void paranoid_display(Process*, uint32, CIO);
+void pps(Process*, Eterm*);
+void ptd(Process*, Eterm);
+void paranoid_display(Process*, Eterm, CIO);
 
 static int dcount;
 
-static int pdisplay1(Process* p, uint32 obj, CIO fd);
+static int pdisplay1(Process* p, Eterm obj, CIO fd);
 
-void ptd(Process* p, uint32 x) 
+void ptd(Process* p, Eterm x) 
 {
     pdisplay1(p, x, CERR);
     erl_putc('\n', CERR);
@@ -58,17 +64,17 @@ void ptd(Process* p, uint32 x)
  */
 
 void
-paranoid_display(Process* p, uint32 obj, CIO fd)
+paranoid_display(Process* p, Eterm obj, CIO fd)
 {
     dcount = 100000;
     pdisplay1(p, obj, fd);
 }
 
 static int
-pdisplay1(Process* p, uint32 obj, CIO fd)
+pdisplay1(Process* p, Eterm obj, CIO fd)
 {
     int i, k;
-    uint32 *nobj;
+    Eterm* nobj;
 
     if (dcount-- <= 0)
 	return(1);
@@ -170,17 +176,24 @@ pdisplay1(Process* p, uint32 obj, CIO fd)
 }
 
 void
-pps(p, stop)
-Process* p; uint32* stop;
+pps(Process* p, Eterm* stop)
 {
-    uint32* sp = p->hend-1;
+#ifdef UNIFIED_HEAP
+    Eterm* sp = p->stack-1;
+
+    if (stop <= p->send) {
+        stop = p->send + 1;
+    }
+#else
+    Eterm* sp = p->hend-1;
 
     if (stop <= p->htop) {
 	stop = p->htop + 1;
     }
+#endif
 
     while(sp >= stop) {
-	erl_printf(COUT,"%08lx: ", (uint32) sp);
+	erl_printf(COUT,"%08lx: ", (Eterm) sp);
 	if (is_catch(*sp)) {
 	    erl_printf(COUT, "catch %d", (Uint)catch_pc(*sp));
 	} else {

@@ -1,120 +1,132 @@
-<HTML>
-<HEAD>
-  <TITLE>Runtime_tools Release Notes</TITLE>
-</HEAD>
+<html>
+<head>
+  <title>Runtime_tools Release Notes</title>
+  <style type="text/css">
+<!--
+    body          { background: white; margin: 3em }
 
-<BODY BGCOLOR="#FFFFFF">
+    body          { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1 h2 h3 h4   { font-family: Verdana, Arial, Helvetica, sans-serif }
+    h1            { font-size: 48 }
+    p li          { font-family: Verdana, Arial, Helvetica, sans-serif }
+-->
+  </style>
+</head>
 
-<CENTER><H1>Runtime_tools Release Notes</H1></CENTER>
+<body bgcolor=white>
 
-<H2>Runtime_tools 1.1.4</H2>
-<H3>Improvements and new features</H3>
-
-<UL>
-
-<LI>
-A number of bug fixes and improvements have been done
-to applications <CODE>runtime_tools</CODE>, 
-<CODE>kernel</CODE> and <CODE>erts</CODE>:
-<UL>
-<br>
-<LI>A read timeout no longer resets the sequential
-trace token. This is an incompatibility towards
-the previous behaviour. Use
-<CODE>seq_trace:set_token([])</CODE> to reset the
-sequential trace token.
-<br>
-<LI><CODE>seq_trace:get_token/0</CODE> and 
-<CODE>seq_trace:set_token/1</CODE> now have compatible
-token formats. 
-<br>
-<LI><CODE>dbg:trace_port/2</CODE> and 
-<CODE>dbg:trace_client/2,3</CODE> now supports trace
-to and read from a size limited "wrap file set".
-<br>
-<LI><CODE>dbg:trace_port_control/1</CODE> now supports
-operation <CODE>get_listen_port</CODE> for the ip
-trace driver.
-<br>
-<LI>New match spec functions 
-<CODE>{is_seq_trace}</CODE> and 
-<CODE>{get_seq_trace}</CODE> has been added to test
-and read the sequential trace token in match specs.
-<br>
-<LI>New match spec functions 
-<CODE>{get_tcw}</CODE> and 
-<CODE>{set_tcw Value}</CODE> that reads and sets 
-a "trace control word" in the node has been added.
-The "trace control word" is a word in each
-Erlang node of at least 24 bits.
-There are also enhancements of BIFs:
-<CODE>erlang:system_info(trace_control_word)</CODE> and
-<CODE>erlang:system_flag(trace_control_word, Value)</CODE>
-for the same purpose.
-<br>
-<LI>A new match spec function
-<CODE>{silent, TrueOrFalse}</CODE> for setting a 
-silent call trace flag per process that inhibits
-call trace messages, both local and global, has
-been added. The BIF 
-<CODE>erlang:trace/3</CODE> has been extended to 
-recognize the flag 'silent' to start a call
-trace in silent mode.
-<br>
-<LI>Some bugs in the <CODE>dbg</CODE> module has been
-fixed, e.g the 'old_trace_call' flag has been
-removed from the 'all' flags list, and the dbg server
-no longer hangs if the supplied tracer fails to
-start.
-<br>
-<LI>A bug in the emulator that made 'EXIT' messages
-from a process involved in a sequential call trace
-get overwritten by the sequential trace token
-itself has been fixed.
-<br>
-<LI>The documentation regarding the above has
-been updated. Especially, the fact that the match spec
-function <CODE>{return_trace}</CODE> destroys the 
-tail recursiveness of the traced function has been 
-pointed out.
-<br>
-</UL>
-<br>(*** POTENTIAL INCOMPATIBILITY ***)
-<br>Own Id: OTP-3747<br>
-Aux Id: OTP-3592, OTP-3744
+<center><h1>Runtime_tools Release Notes</h1></center>
 
 
-</UL>
+<!--- ################################################################# --->
 
-<H2>Runtime_tools 1.1.2</H2>
-<H3>Improvements and new features</H3>
-
-<UL>
-
-<LI>
-New functions in the module <CODE>dbg</CODE>:
-<CODE>flush_trace_port</CODE>, <CODE>stop_trace_client</CODE>.
-There is a new option
-<CODE>follow_file</CODE> for <CODE>trace_client</CODE>.
-<br>Own Id: OTP-3471<br>
-Aux Id: OTP-3427
+<h2>Runtime_tools 1.2</h2>
 
 
-<LI>
-Call tracing is greatly improved. It is now possible to
-trace local function calls (and calls to local functions)
-set up with the erlang:trace_pattern BIF. Trace compilation 
-for local call is no longer needed.
-New functions in the module <CODE>dbg</CODE>: <CODE>h</CODE>, <CODE>tpl</CODE>,
-<CODE>ctpl</CODE>, <CODE>ctpg</CODE>. <CODE>tp</CODE> now
-only traces global functions - use <CODE>tpl</CODE> to trace global
-and local.
-<br>Own Id: OTP-3518
+<!--- ----------------------------------------------------------------- --->
+
+<h3>Improvements and new features</h3>
+
+<ul>
+
+  <li>
+    A number of bug fixes and improvements have been done to applications
+    <CODE>runtime_tools</CODE>, <CODE>kernel</CODE> and <CODE>erts</CODE>:
+    <UL> <br> <LI>A read timeout no longer resets the sequential trace
+    token. This is an incompatibility towards the previous behaviour. Use
+    <CODE>seq_trace:set_token([])</CODE> to reset the sequential trace
+    token. <br> <LI><CODE>seq_trace:get_token/0</CODE> and
+    <CODE>seq_trace:set_token/1</CODE> now have compatible token formats.
+    <br> <LI><CODE>dbg:trace_port/2</CODE> and
+    <CODE>dbg:trace_client/2,3</CODE> now supports trace to and read from a
+    size limited "wrap file set". <br>
+    <LI><CODE>dbg:trace_port_control/1</CODE> now supports operation
+    <CODE>get_listen_port</CODE> for the ip trace driver. <br> <LI>New
+    match spec functions <CODE>{is_seq_trace}</CODE> and
+    <CODE>{get_seq_trace}</CODE> has been added to test and read the
+    sequential trace token in match specs. <br> <LI>New match spec
+    functions <CODE>{get_tcw}</CODE> and <CODE>{set_tcw Value}</CODE> that
+    reads and sets a "trace control word" in the node has been added. The
+    "trace control word" is a word in each Erlang node of at least 24 bits.
+    There are also enhancements of BIFs:
+    <CODE>erlang:system_info(trace_control_word)</CODE> and
+    <CODE>erlang:system_flag(trace_control_word, Value)</CODE> for the same
+    purpose. <br> <LI>A new match spec function <CODE>{silent,
+    TrueOrFalse}</CODE> for setting a silent call trace flag per process
+    that inhibits call trace messages, both local and global, has been
+    added. The BIF <CODE>erlang:trace/3</CODE> has been extended to
+    recognize the flag 'silent' to start a call trace in silent mode. <br>
+    <LI>Some bugs in the <CODE>dbg</CODE> module has been fixed, e.g the
+    'old_trace_call' flag has been removed from the 'all' flags list, and
+    the dbg server no longer hangs if the supplied tracer fails to start.
+    <br> <LI>A bug in the emulator that made 'EXIT' messages from a process
+    involved in a sequential call trace get overwritten by the sequential
+    trace token itself has been fixed. <br> <LI>The documentation regarding
+    the above has been updated. Especially, the fact that the match spec
+    function <CODE>{return_trace}</CODE> destroys the tail recursiveness of
+    the traced function has been pointed out. <br> </UL><br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-3747)<br>
+    (Aux Id: OTP-3592, OTP-3744)<p>
+  </li>
+
+  <li>
+    A trace client fun that can be given to dbg:trace_client/3 now gets
+    informed about the end of trace, so it can do something useful with its
+    collected data. See dbg:trace_client/3.<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-3933)<br>
+    (Aux Id: seq5193)<p>
+  </li>
+
+  <li>
+    The flag 'procs' to erlang:trace/3 has got a slightly new behaviour:
+    Trace tag 'spawn' has a new element, and trace tags 'register',
+    'unregister', and 'getting_unlinked' are new. Therefore, new and/or
+    different trace messages will arrive to the tracer when the 'procs'
+    trace flag is used.<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-3934)<br>
+    (Aux Id: seq5193)<p>
+  </li>
+
+  <li>
+    Wrap file traces now can limit the size of each file with a time
+    instead of a size. See the documentation for dbg:trace_port/2.<br>
+    (Own Id: OTP-3935)<br>
+    (Aux Id: seq5193)<p>
+  </li>
+
+  <li>
+    When using trace flags 'running' and 'timestamp' to determine the
+    amount of running time different processes in the system were using,
+    the results were somewhat unreliable since the time to write the trace
+    buffer itself randomly burdened the traced processes. This is now
+    compensated for by faking process schedule out and in trace messages
+    around the file writes (for the trace file driver trace_file_drv).<br>
+    (Own Id: OTP-3938)<p>
+  </li>
+
+  <li>
+    The file names for wrap file traces has been changed. This has been
+    done to make it easier for auxiliary tools to know the file names when
+    fetching wrap traces over the network, especially if the tools used for
+    fetching does not support wildcards in filenames. See the documentation
+    for dbg:trace_port/2. NOTE that this change may affect existing fetch
+    tools. Especially note that the number of files in the wrap trace must
+    now be known when reading the trace, or as it is stated in the
+    documentation: the same wrap trace specification must be used when
+    reading the trace as when creating the trace.<br>
+    (*** POTENTIAL INCOMPATIBILITY ***)<br>
+    (Own Id: OTP-3965)<p>
+  </li>
+
+</ul>
 
 
-</UL>
 
-<p>There are also release notes for <A HREF="notes_history.html">older versions</A>.</P>
+There are also release notes for
+<a href="notes_history.html">older versions</a>.
 
 </body>
 </html>

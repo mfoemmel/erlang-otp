@@ -1,0 +1,20 @@
+rtl_to_x86:
+* recognise alub(X,X,sub,1,lt,L1,L2,P) and turn it into 'dec',
+  this might improve the reduction test code slightly (X is
+  the pseudo for FCALLS)
+* recognise alu(Z,X,add,Y) and turn it into 'lea'.
+
+x86:
+* Use separate constructors for real regs (x86_reg) and pseudos (x86_temp).
+
+Frame:
+
+Optimizations:
+* Kill move X,X insns, either in frame or finalise
+* Add jmp-to-jmp direct optimization
+* Finish the new register allocator
+* Instruction scheduling module
+
+Loader:
+
+Assembler:

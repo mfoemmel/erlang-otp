@@ -136,73 +136,66 @@ gen_encode_prim(Erules,D,DoTag) ->
 
 gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
     Constraint = D#type.constraint,
-    Rtmod = list_to_atom(?RT_PER),
     case D#type.def of
 	'INTEGER' ->
-	    emit({{asis,Rtmod},":encode_integer(", %fel
+	    emit({"?RT_PER:encode_integer(", %fel
 		  {asis,Constraint},",",Value,")"});
 	{'INTEGER',NamedNumberList} ->
-	    emit({{asis,Rtmod},":encode_integer(",
+	    emit({"?RT_PER:encode_integer(",
 		  {asis,Constraint},",",Value,",",
 		  {asis,NamedNumberList},")"});
 	{'ENUMERATED',{Nlist1,Nlist2}} ->
 	    NewList = lists:concat([[{0,X}||{X,Y} <- Nlist1],['EXT_MARK'],[{1,X}||{X,Y} <- Nlist2]]),
 	    NewC = [{'ValueRange',{0,length(Nlist1)-1}}],
-	    emit(["case ",Value," of",nl]),
+	    emit(["case (case ",Value," of {_,_}->element(2,",Value,");_->",
+		  Value," end) of",nl]),
 	    emit_enc_enumerated_cases(NewC, NewList++[{asn1_enum,length(Nlist1)-1}], 0);
-%%%	    emit([{asis,Rtmod},":encode_enumerated(",
-%%%		  {asis,NewC},",",Value,",",
-%%%		  {asis,NewList},")"]);
 	{'ENUMERATED',NamedNumberList} ->
 	    NewList = [X||{X,Y} <- NamedNumberList],
 	    NewC = [{'ValueRange',{0,length(NewList)-1}}],
-	    emit(["case ",Value," of",nl]),
+	    emit(["case (case ",Value," of {_,_}->element(2,",Value,");_->",
+		  Value," end) of",nl]),
 	    emit_enc_enumerated_cases(NewC, NewList, 0);
-%%%	    emit({{asis,Rtmod},":encode_enumerated(",
-%%%		  {asis,NewC},",",Value,",",
-%%%		  {asis,NewList},")"});
 	{'BIT STRING',NamedNumberList} ->
-%%	    NewList = [{X,Y}||{_,X,Y} <- NamedNumberList],
-	    emit({{asis,Rtmod},":encode_bit_string(",
+	    emit({"?RT_PER:encode_bit_string(",
 		  {asis,Constraint},",",Value,",",
-%%		  {asis,NewList},")"});
 		  {asis,NamedNumberList},")"});
 	'NULL' ->
-	    emit({{asis,Rtmod},":encode_null(",Value,")"});
+	    emit({"?RT_PER:encode_null(",Value,")"});
 	'OBJECT IDENTIFIER' ->
-	    emit({{asis,Rtmod},":encode_object_identifier(",Value,")"});
+	    emit({"?RT_PER:encode_object_identifier(",Value,")"});
 	'ObjectDescriptor' ->
 	    emit({"asn1_encode:e_object_descriptor(",Value,",",false,")"});
 	'BOOLEAN' ->
-	    emit({{asis,Rtmod},":encode_boolean(",Value,")"});
+	    emit({"?RT_PER:encode_boolean(",Value,")"});
 	'OCTET STRING' ->
-	    emit({{asis,Rtmod},":encode_octet_string(",{asis,Constraint},",",Value,")"});
+	    emit({"?RT_PER:encode_octet_string(",{asis,Constraint},",",Value,")"});
 	'NumericString' ->
-	    emit({{asis,Rtmod},":encode_NumericString(",{asis,Constraint},",",Value,")"});
+	    emit({"?RT_PER:encode_NumericString(",{asis,Constraint},",",Value,")"});
 	'TeletexString' ->
-	    emit({{asis,Rtmod},":encode_TeletexString(",{asis,Constraint},",",Value,")"});
+	    emit({"?RT_PER:encode_TeletexString(",{asis,Constraint},",",Value,")"});
 	'VideotexString' ->
-	    emit({{asis,Rtmod},":encode_VideotexString(",{asis,Constraint},",",Value,")"});
+	    emit({"?RT_PER:encode_VideotexString(",{asis,Constraint},",",Value,")"});
 	'UTCTime' ->
-	    emit({{asis,Rtmod},":encode_VisibleString(",{asis,Constraint},",",Value,")"});
+	    emit({"?RT_PER:encode_VisibleString(",{asis,Constraint},",",Value,")"});
 	'GeneralizedTime' ->
-	    emit({{asis,Rtmod},":encode_VisibleString(",{asis,Constraint},",",Value,")"});
+	    emit({"?RT_PER:encode_VisibleString(",{asis,Constraint},",",Value,")"});
 	'GraphicString' ->
-	    emit({{asis,Rtmod},":encode_GraphicString(",{asis,Constraint},",",Value,")"});
+	    emit({"?RT_PER:encode_GraphicString(",{asis,Constraint},",",Value,")"});
 	'VisibleString' ->
-	    emit({{asis,Rtmod},":encode_VisibleString(",{asis,Constraint},",",Value,")"});
+	    emit({"?RT_PER:encode_VisibleString(",{asis,Constraint},",",Value,")"});
 	'GeneralString' ->
-	    emit({{asis,Rtmod},":encode_GeneralString(",{asis,Constraint},",",Value,")"});
+	    emit({"?RT_PER:encode_GeneralString(",{asis,Constraint},",",Value,")"});
 	'PrintableString' ->
-	    emit({{asis,Rtmod},":encode_PrintableString(",{asis,Constraint},",",Value,")"});
+	    emit({"?RT_PER:encode_PrintableString(",{asis,Constraint},",",Value,")"});
 	'IA5String' ->
-	    emit({{asis,Rtmod},":encode_IA5String(",{asis,Constraint},",",Value,")"});
+	    emit({"?RT_PER:encode_IA5String(",{asis,Constraint},",",Value,")"});
 	'BMPString' ->
-	    emit({{asis,Rtmod},":encode_BMPString(",{asis,Constraint},",",Value,")"});
+	    emit({"?RT_PER:encode_BMPString(",{asis,Constraint},",",Value,")"});
 	'UniversalString' ->
-	    emit({{asis,Rtmod},":encode_UniversalString(",{asis,Constraint},",",Value,")"});
+	    emit({"?RT_PER:encode_UniversalString(",{asis,Constraint},",",Value,")"});
 	'ANY' ->
-	    emit([{asis,Rtmod},":encode_open_type(", {asis,Constraint}, ",", 
+	    emit(["?RT_PER:encode_open_type(", {asis,Constraint}, ",", 
 		  Value, ")"]);
 	'ASN1_OPEN_TYPE' ->
 	    NewValue = case Constraint of
@@ -214,7 +207,7 @@ gen_encode_prim(Erules,D,DoTag,Value) when record(D,type) ->
 				 "?RT_PER:complete(enc_~s(~s))",[Tname,Value]);
 			 _ -> Value
 		     end,
-	    emit([{asis,Rtmod},":encode_open_type(", {asis,Constraint}, ",", 
+	    emit(["?RT_PER:encode_open_type(", {asis,Constraint}, ",", 
 		  NewValue, ")"]);
 	XX ->
 	    exit({asn1_error,nyi,XX})
@@ -676,106 +669,103 @@ gen_decode_user(Erules,D) when record(D,typedef) ->
 gen_dec_prim(Erules,Att,BytesVar) ->
     Typename = Att#type.def,
     Constraint = Att#type.constraint,
-    Rtmod = list_to_atom(?RT_PER),
     case Typename of
 	'INTEGER' ->
-	    emit({{asis,Rtmod},":decode_integer(",BytesVar,",",
+	    emit({"?RT_PER:decode_integer(",BytesVar,",",
 		  {asis,Constraint},")"});
 	{'INTEGER',NamedNumberList} ->
-	    emit({{asis,Rtmod},":decode_integer(",BytesVar,",",
+	    emit({"?RT_PER:decode_integer(",BytesVar,",",
 		  {asis,Constraint},",",
 		  {asis,NamedNumberList},")"});
 	{'BIT STRING',NamedNumberList} ->
-%%	    NewList = [{X,Y}||{_,X,Y} <- NamedNumberList],
 	    case get(compact_bit_string) of
 		true ->
-		    emit({{asis,Rtmod},":decode_compact_bit_string(",
+		    emit({"?RT_PER:decode_compact_bit_string(",
 			  BytesVar,",",{asis,Constraint},",",
 			  {asis,NamedNumberList},")"});
 		_ ->
-		    emit({{asis,Rtmod},":decode_bit_string(",BytesVar,",",
+		    emit({"?RT_PER:decode_bit_string(",BytesVar,",",
 			  {asis,Constraint},",",
-			  %%		  {asis,NewList},")"});
 			  {asis,NamedNumberList},")"})
 	    end;
 	'NULL' ->
-	    emit({{asis,Rtmod},":decode_null(",
+	    emit({"?RT_PER:decode_null(",
 		  BytesVar,")"});
 	'OBJECT IDENTIFIER' ->
-	    emit({{asis,Rtmod},":decode_object_identifier(",
+	    emit({"?RT_PER:decode_object_identifier(",
 		  BytesVar,")"});
 	'ObjectDescriptor' ->
-	    emit({{asis,Rtmod},":decode_object_descriptor(",
+	    emit({"?RT_PER:decode_object_descriptor(",
 		  BytesVar,")"});
 	{'ENUMERATED',{NamedNumberList1,NamedNumberList2}} ->
 	    NewTup = {list_to_tuple([X||{X,Y} <- NamedNumberList1]),
 		      list_to_tuple([X||{X,Y} <- NamedNumberList2])},
 	    NewC = [{'ValueRange',{0,size(element(1,NewTup))-1}}],
-	    emit({{asis,Rtmod},":decode_enumerated(",BytesVar,",",
+	    emit({"?RT_PER:decode_enumerated(",BytesVar,",",
 		  {asis,NewC},",",
 		  {asis,NewTup},")"});
 	{'ENUMERATED',NamedNumberList} ->
 	    NewTup = list_to_tuple([X||{X,Y} <- NamedNumberList]),
 	    NewC = [{'ValueRange',{0,size(NewTup)-1}}],
-	    emit({{asis,Rtmod},":decode_enumerated(",BytesVar,",",
+	    emit({"?RT_PER:decode_enumerated(",BytesVar,",",
 		  {asis,NewC},",",
 		  {asis,NewTup},")"});
 	'BOOLEAN'->
-	    emit({{asis,Rtmod},":decode_boolean(",BytesVar,")"});
+	    emit({"?RT_PER:decode_boolean(",BytesVar,")"});
 	'OCTET STRING' ->
-	    emit({{asis,Rtmod},":decode_octet_string(",BytesVar,",",
+	    emit({"?RT_PER:decode_octet_string(",BytesVar,",",
 		  {asis,Constraint},")"});
 	'NumericString' ->
-	    emit({{asis,Rtmod},":decode_NumericString(",BytesVar,",",
+	    emit({"?RT_PER:decode_NumericString(",BytesVar,",",
 		  {asis,Constraint},")"});
 	'TeletexString' ->
-	    emit({{asis,Rtmod},":decode_TeletexString(",BytesVar,",",
+	    emit({"?RT_PER:decode_TeletexString(",BytesVar,",",
 		  {asis,Constraint},")"});
 	'VideotexString' ->
-	    emit({{asis,Rtmod},":decode_VideotexString(",BytesVar,",",
+	    emit({"?RT_PER:decode_VideotexString(",BytesVar,",",
 		  {asis,Constraint},")"});
 	'UTCTime' ->
-	    emit({{asis,Rtmod},":decode_VisibleString(",BytesVar,",",
+	    emit({"?RT_PER:decode_VisibleString(",BytesVar,",",
 		  {asis,Constraint},")"});
 	'GeneralizedTime' ->
-	    emit({{asis,Rtmod},":decode_VisibleString(",BytesVar,",",
+	    emit({"?RT_PER:decode_VisibleString(",BytesVar,",",
 		  {asis,Constraint},")"});
 	'GraphicString' ->
-	    emit({{asis,Rtmod},":decode_GraphicString(",BytesVar,",",
+	    emit({"?RT_PER:decode_GraphicString(",BytesVar,",",
 		  {asis,Constraint},")"});
 	'VisibleString' ->
-	    emit({{asis,Rtmod},":decode_VisibleString(",BytesVar,",",
+	    emit({"?RT_PER:decode_VisibleString(",BytesVar,",",
 		  {asis,Constraint},")"});
 	'GeneralString' ->
-	    emit({{asis,Rtmod},":decode_GeneralString(",BytesVar,",",
+	    emit({"?RT_PER:decode_GeneralString(",BytesVar,",",
 		  {asis,Constraint},")"});
 	'PrintableString' ->
-	    emit({{asis,Rtmod},":decode_PrintableString(",BytesVar,",",{asis,Constraint},")"});
+	    emit({"?RT_PER:decode_PrintableString(",BytesVar,",",{asis,Constraint},")"});
 	'IA5String' ->
-	    emit({{asis,Rtmod},":decode_IA5String(",BytesVar,",",{asis,Constraint},")"});
+	    emit({"?RT_PER:decode_IA5String(",BytesVar,",",{asis,Constraint},")"});
 	'BMPString' ->
-	    emit({{asis,Rtmod},":decode_BMPString(",BytesVar,",",{asis,Constraint},")"});
+	    emit({"?RT_PER:decode_BMPString(",BytesVar,",",{asis,Constraint},")"});
 	'UniversalString' ->
-	    emit({{asis,Rtmod},":decode_UniversalString(",BytesVar,",",{asis,Constraint},")"});
+	    emit({"?RT_PER:decode_UniversalString(",BytesVar,",",{asis,Constraint},")"});
 	'ANY' ->
-	    emit([{asis,Rtmod},":decode_open_type(",BytesVar,",", 
+	    emit(["?RT_PER:decode_open_type(",BytesVar,",", 
 		  {asis,Constraint}, ")"]); 
 	'ASN1_OPEN_TYPE' ->
 	    case Constraint of
 		[#'Externaltypereference'{type=Tname}] ->
 		    emit(["fun(FBytes) ->",nl,
 			  "   {XTerm,XBytes} = "]),
-		    emit([{asis,Rtmod},":decode_open_type(",BytesVar,",[]),",nl]),
+		    emit(["?RT_PER:decode_open_type(",BytesVar,",[]),",nl]),
 		    emit(["   {YTerm,_} = dec_",Tname,"(XTerm,mandatory),",nl]),
 		    emit(["   {YTerm,XBytes} end(",BytesVar,")"]);
 		[#type{def=#'Externaltypereference'{type=Tname}}] ->
 		    emit(["fun(FBytes) ->",nl,
 			  "   {XTerm,XBytes} = "]),
-		    emit([{asis,Rtmod},":decode_open_type(",BytesVar,",[]),",nl]),
+		    emit(["?RT_PER:decode_open_type(",BytesVar,",[]),",nl]),
 		    emit(["   {YTerm,_} = dec_",Tname,"(XTerm,mandatory),",nl]),
 		    emit(["   {YTerm,XBytes} end(",BytesVar,")"]);
 		_ ->
-		    emit([{asis,Rtmod},":decode_open_type(",BytesVar,",[])"])
+		    emit(["?RT_PER:decode_open_type(",BytesVar,",[])"])
 	    end;
 	Other ->
 	    exit({'cant decode' ,Other})

@@ -54,11 +54,22 @@ static int bg_count;
 static unsigned qmask = 0;
 
 Process**  process_tab;
-uint32     context_switches;   /* no of context switches */
-uint32     reductions;	       /* total number of reductions */
-uint32     last_reds;	       /* used in process info */
+Uint context_switches;		/* no of context switches */
+Uint reductions;		/* total number of reductions */
+Uint last_reds;			/* used in process info */
 Uint erts_default_process_flags = 0;
 Eterm erts_default_tracer = NIL;
+
+#ifdef UNIFIED_HEAP
+  Process** active_procs;
+  #define HEAP_SIZE global_heap_sz
+  #define MBUF_SIZE global_mbuf_sz
+  #define UH_FLAGS  global_gc_flags
+#else
+  #define HEAP_SIZE p->heap_sz
+  #define MBUF_SIZE p->mbuf_sz
+  #define UH_FLAGS  p->flags
+#endif
 
 /* initialize the scheduler */
 void init_scheduler()
@@ -68,6 +79,11 @@ void init_scheduler()
     process_tab = (Process**) 
 	safe_alloc_from(91, max_process * sizeof(Process*));
     sys_memzero(process_tab, max_process * sizeof(Process*));
+#ifdef UNIFIED_HEAP
+    active_procs = (Process**)
+        safe_alloc_from(92, max_process * sizeof(Process*));
+    active_procs[0] = NULL;
+#endif
 
     p_next = 0;
     p_serial = 0;
@@ -218,6 +234,9 @@ schedule(void)
 #ifdef DEBUG
 	default:
 	    ASSERT(0);
+#else
+	default:
+	    return 0; /* Should not happen ... */
 #endif
 	}
 
@@ -234,13 +253,16 @@ schedule(void)
 
 	ASSERT(p->status != P_SUSPENDED); /* Never run a suspended process */
 
+#ifdef UNIFIED_HEAP
+        p->active = 1;
+#endif
 	context_switches++;
 	calls = CONTEXT_REDS;
 	if (p->status != P_EXITING) {
 	    if (IS_TRACED_FL(p, F_TRACE_SCHED)) {
 		trace_sched(p, am_in);
 	    }
-	    if (((p->mbuf_sz + p->off_heap.overhead)*MBUF_GC_FACTOR) >= p->heap_sz) {
+	    if (((MBUF_SIZE + p->off_heap.overhead)*MBUF_GC_FACTOR) >= HEAP_SIZE) {
 		calls -= erts_garbage_collect(p, 0, p->arg_reg, p->arity);
 		if (calls < 0) {
 		    calls = 1;
@@ -263,7 +285,7 @@ schedule(void)
 
 	p->reds += calls;
 	if (p->status == P_FREE) {
-	    fix_free(process_desc, (uint32 *) p);
+	    fix_free(process_desc, (Eterm *) p);
 	} else if (IS_TRACED_FL(p, F_TRACE_SCHED)) {
 	    trace_sched(p, am_out);
 	}
@@ -311,16 +333,16 @@ alloc_process(void)
 
 Eterm
 erl_create_process(Process* parent, /* Parent of process (default group leader). */
-		   uint32 mod,	/* Tagged atom for module. */
-		   uint32 func,	/* Tagged atom for function. */
-		   uint32 args,	/* Arguments for function (must be well-formed list). */
+		   Eterm mod,	/* Tagged atom for module. */
+		   Eterm func,	/* Tagged atom for function. */
+		   Eterm args,	/* Arguments for function (must be well-formed list). */
 		   ErlSpawnOpts* so) /* Options for spawn. */
 {
     Process *p;
-    uint32 arg_size;		/* Size of arguments. */
-    uint32 sz;			/* Needed words on heap. */
-    uint32 arity;		/* Number of arguments. */
-    uint32 heap_need;		/* Size needed on heap. */
+    Uint arg_size;		/* Size of arguments. */
+    Uint sz;			/* Needed words on heap. */
+    Uint arity;			/* Number of arguments. */
+    Uint heap_need;		/* Size needed on heap. */
     ScheduleQ* sq;
 
     /*
@@ -348,11 +370,15 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     if (so->flags & SPO_USE_ARGS) {
 	p->min_heap_size = so->min_heap_size;
 	p->prio = so->priority;
+#ifndef UNIFIED_HEAP
 	p->max_gen_gcs = so->max_gen_gcs;
+#endif
     } else {
 	p->min_heap_size = H_MIN_SIZE;
 	p->prio = PRIORITY_NORMAL;
+#ifndef UNIFIED_HEAP
 	p->max_gen_gcs = erts_max_gen_gcs;
+#endif
     }
     ASSERT(p->min_heap_size == next_heap_size(p->min_heap_size, 0));
     
@@ -373,19 +399,33 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 	sz = next_heap_size(heap_need, 0);
     }
 
+#ifdef HIPE
+    hipe_init_process(&p->hipe);
+#endif
+
+#ifdef UNIFIED_HEAP
+    p->send = (Eterm *) safe_alloc_from(7, sizeof(Eterm) * S_DEFAULT_SIZE);
+    p->stop = p->stack = p->send + S_DEFAULT_SIZE;
+    p->stack_sz = S_DEFAULT_SIZE;
+    p->htop = NULL;
+    p->hend = NULL;
+#else
     p->heap = (Eterm *) safe_sl_alloc_from(8, sizeof(Eterm)*sz);
     p->old_hend = p->old_htop = p->old_heap = NULL;
     p->high_water = p->heap;
     p->gen_gcs = 0;
+#endif
     p->arith_avail = 0;		/* No arithmetic heap. */
     p->arith_heap = NULL;
 #ifdef DEBUG
     p->arith_check_me = NULL;
 #endif
 
+#ifndef UNIFIED_HEAP
     p->stop = p->hend = p->heap + sz;
     p->htop = p->heap;
     p->heap_sz = sz;
+#endif
     p->catches = 0;
     /* No need to initialize p->fcalls. */
 
@@ -398,7 +438,11 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->max_arg_reg = sizeof(p->def_arg_reg)/sizeof(p->def_arg_reg[0]);
     p->arg_reg[0] = mod;
     p->arg_reg[1] = func;
+#ifdef UNIFIED_HEAP
+    p->arg_reg[2] = args;
+#else
     p->arg_reg[2] = copy_struct(args, arg_size, &p->htop, &p->off_heap);
+#endif
     p->arity = 3;
 
     p->freason = 0;
@@ -417,8 +461,10 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->msg.last = &p->msg.first;
     p->msg.save = &p->msg.first;
     p->msg.len = 0;
+#ifndef UNIFIED_HEAP
     p->mbuf = NULL;
     p->mbuf_sz = 0;
+#endif
     p->dictionary = NULL;
     p->debug_dictionary = NULL;
     p ->seq_trace_lastcnt = 0;
@@ -466,6 +512,10 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 	}
     }
 
+#ifdef UNIFIED_HEAP
+    ADD_TO_ROOTSET(p);
+    p->active = 1;
+#endif
     /*
      * Schedule process for execution.
      */
@@ -490,11 +540,17 @@ void erts_init_empty_process(Process *p)
 {
     p->htop = NULL;
     p->stop = NULL;
-    p->heap = NULL;
     p->hend = NULL;
-    p->min_heap_size = 0;
+#ifdef UNIFIED_HEAP
+    p->stack = NULL;
+    p->send  = NULL;
+    p->stack_sz = 0;
+#else
+    p->heap = NULL;
     p->gen_gcs = 0;
     p->max_gen_gcs = 0;
+#endif
+    p->min_heap_size = 0;
     p->status = P_RUNABLE;
     p->rstatus = P_RUNABLE;
     p->rcount = 0;
@@ -516,18 +572,22 @@ void erts_init_empty_process(Process *p)
     p->off_heap.overhead = 0;
     p->reg = NULL;
     p->reg_atom = THE_NON_VALUE;
+#ifndef UNIFIED_HEAP
     p->heap_sz = 0;
     p->high_water = NULL;
     p->old_hend = NULL;
     p->old_htop = NULL;
     p->old_heap = NULL;
+#endif
     p->links = NULL;         /* List of links */
     p->msg.first = NULL;
     p->msg.last = &p->msg.first;
     p->msg.save = &p->msg.first;
     p->msg.len = 0;
+#ifndef UNIFIED_HEAP
     p->mbuf = NULL;
     p->mbuf_sz = 0;
+#endif
     p->dictionary = NULL;
     p->debug_dictionary = NULL;
     p->ct = NULL;
@@ -565,38 +625,48 @@ void erts_init_empty_process(Process *p)
     p->def_arg_reg[3] = 0;
     p->def_arg_reg[4] = 0;
     p->def_arg_reg[5] = 0;
+#ifdef HIPE
+    hipe_init_process(&p->hipe);
+#endif
 }    
 
 void
 erts_cleanup_empty_process(Process* p)
 {
+#ifdef UNIFIED_HEAP
+    ;
+#else
     ErlHeapFragment* ptr = p->mbuf;
 
-    erts_cleanup_mso(p->off_heap.mso);
+    erts_cleanup_offheap(&p->off_heap);
     while (ptr) {
 	ErlHeapFragment*next = ptr->next;
 	free_message_buffer(ptr);
 	ptr = next;
     }
+#endif
 }
 
-static void delete_process0(p, do_delete)
-Process* p;
-int do_delete;
+static void
+delete_process0(Process* p, int do_delete)
 {
     ErlLink* lnk;
+#ifndef UNIFIED_HEAP
     ErlMessage* mp;
     ErlHeapFragment* bp;
+#endif
     int i;
 
-    /* Free all chunks of binaries */
-    erts_cleanup_mso(p->off_heap.mso);
+#ifndef UNIFIED_HEAP
+    /* Clean binaries and funs */
+    erts_cleanup_offheap(&p->off_heap);
 
     /*
      * The mso list should not be used anymore, but if it is, make sure that
      * we'll notice.
      */
     p->off_heap.mso = (void *) 0x8DEFFACD;
+#endif
     
     if (p->arg_reg != p->def_arg_reg)
 	sys_free(p->arg_reg);
@@ -605,8 +675,20 @@ int do_delete;
      * Release heaps. Clobber contents in DEBUG build.
      */
 
+#ifdef UNIFIED_HEAP
+#ifdef DEBUG
+    sys_memset(p->send, 0xfb, p->stack_sz*sizeof(Eterm));
+#endif
+#ifdef HIPE
+    hipe_delete_process(&p->hipe);
+#endif
+    sys_free((void*) p->send);
+#else
 #ifdef DEBUG
     sys_memset(p->heap, 0xfb, p->heap_sz*sizeof(Eterm));
+#endif
+#ifdef HIPE
+    hipe_delete_process(&p->hipe);
 #endif
     sys_sl_free((void*) p->heap);
     if (p->old_heap != NULL) {
@@ -625,6 +707,7 @@ int do_delete;
 	free_message_buffer(bp);
 	bp = next_bp;
     }
+#endif
 
     if (p->dictionary != NULL) {
 	sys_free(p->dictionary);
@@ -636,6 +719,7 @@ int do_delete;
 	p->debug_dictionary = NULL;
     }
 
+#ifndef UNIFIED_HEAP
     /* free all pending messages */
     mp = p->msg.first;
     while(mp != NULL) {
@@ -643,12 +727,13 @@ int do_delete;
 	free_message(mp);
 	mp = next_mp;
     }
+#endif
 
     /* free all links */
     lnk = p->links;
     while(lnk != NULL) {
 	ErlLink* next_link = lnk->next;
-	fix_free(link_desc, (uint32*)lnk);
+	fix_free(link_desc, (Eterm*)lnk);
 	lnk = next_link;
     }
 
@@ -666,11 +751,15 @@ int do_delete;
     /*
      * Don't free it here, just mark it.
      */
-    if (do_delete)
-       fix_free(process_desc, (uint32 *) p);
-    else
+    if (do_delete) {
+       fix_free(process_desc, (Eterm *) p);
+    } else {
        p->status = P_FREE;
+   }
 
+#ifdef UNIFIED_HEAP
+    REMOVE_FROM_ROOTSET(p);
+#endif
     processes_busy--;
 }
 
@@ -693,12 +782,12 @@ Process* p;
 #endif
 
    if (p->reg != NULL)
-      unregister_process(p, p->reg->name);
+      unregister_name(p, p->reg->name);
 
    cancel_timer(p);		/* Always cancel timer just in case */
 
 #ifdef KEEP_ZOMBIE
-   if (p->freason != NORMAL
+   if (p->freason != EXC_NORMAL
 /*       && p->freason != USER_EXIT */
        && (keep_killed > 0 ||
 	   (keep_killed < 0 && last_killed_no < -keep_killed)))
@@ -715,6 +804,7 @@ Process* p;
 
       if (p->flags & F_USING_DB)
 	 db_proc_dead(p->id);
+      UH_FLAGS |= F_NEED_FULLSWEEP;
       erts_garbage_collect(p, 0, p->arg_reg, p->arity);
    }
    else
@@ -739,7 +829,7 @@ int keep_zombies(int z, int *oldz)
       kp = last_killed[i];
       if (kp != NULL)
       {
-	 delete_process0(kp);
+	 delete_process0(kp, 1);
 	 last_killed[i] = NULL;
       }
    }
@@ -791,7 +881,7 @@ void
 schedule_exit(Process *p, Eterm reason)
 {
     Eterm copy;
-    uint32 status = p->status;
+    Uint32 status = p->status;
 
     /*
      * If this is the currently running process, we'll only change its
@@ -815,12 +905,12 @@ schedule_exit(Process *p, Eterm reason)
 
 /* this function fishishes a process and propagates exit messages - called
    by process_main when a process dies */
-void do_exit(p, reason)
-Process* p; uint32 reason;
+void 
+do_exit(Process* p, Eterm reason)
 {
    Process *rp;
    ErlLink* lnk;
-   uint32 item;
+   Eterm item;
    int slot;
    int ix;
    Ref *ref;
@@ -955,10 +1045,10 @@ Process* p; uint32 reason;
 }
 
 /* Callback for process timeout */
-static void timeout_proc(p)
-Process* p;
+static void
+timeout_proc(Process* p)
 {
-    p->i = (uint32 *) p->def_arg_reg[0];
+    p->i = (Eterm *) p->def_arg_reg[0];
     p->flags |= F_TIMO;
     p->flags &= ~F_INSLPQUEUE;
 
@@ -969,19 +1059,18 @@ Process* p;
 }
 
 
-void cancel_timer(p)
-Process* p;
+void
+cancel_timer(Process* p)
 {
     erl_cancel_timer(&p->tm);
     p->flags &= ~(F_INSLPQUEUE|F_TIMO);
 }
 
 /*
-** Insert a process into the time queue, with a timeout 'timeout'
-*/
-void set_timer(p, timeout)
-Process* p;
-uint32 timeout;   /* time in ms */
+ * Insert a process into the time queue, with a timeout 'timeout' in ms.
+ */
+void
+set_timer(Process* p, Uint timeout)
 {
     /* check for special case timeout=0 DONT ADD TO time queue */
     if (timeout == 0) {

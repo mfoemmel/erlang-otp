@@ -91,7 +91,7 @@ int main(int argc, char **argv)
   }
 
 #ifdef DEBUG
-  fprintf(stderr, "%s: pid is : %d\n", argv[0], getpid());
+  fprintf(stderr, "%s: pid is : %d\n", argv[0], (int)getpid());
 #endif
 
   if(argv[1])

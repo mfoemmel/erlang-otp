@@ -181,3 +181,19 @@ BEAM_FORMAT_NUMBER=0
 # Binary construction (R7B).
 #
 93: bs_need_buf/1
+
+#
+# Floating point arithmetic (R8).
+#
+94: fclearerror/0
+95: fcheckerror/1
+96: fmove/2
+97: fconv/2
+98: fadd/4
+99: fsub/4
+100: fmul/4
+101: fdiv/4
+102: fnegate/3
+
+# New fun construction (R8).
+103: make_fun2/1

@@ -5,6 +5,205 @@
 <BODY BGCOLOR="#FFFFFF">
 <BLOCKQUOTE>
 <P>This document describes the changes made to old versions of the <CODE>asn1</CODE> application.
+
+
+<H2>Asn1 1.2.9.6</H2>
+<H3>Known problems</H3>
+
+<UL>
+
+<LI>
+The compiler does not check that an exported name actually exists in the ASN.1 module.
+<br>Own Id: OTP-3659
+
+
+<LI>
+The compiler does not check that a value referenced by name does exist.
+<br>Own Id: OTP-3277
+
+
+
+<LI>
+BER: The compiler does not take the extensions into account when checking if
+the tags are unique in a SEQUENCE or SET.
+<br>Own Id: OTP-3304
+
+</UL>
+
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+PER: Trailing zeroes in a BIT STRING declared without named bits
+ should not be removed in the encodings.
+<br>Own Id: OTP-3830
+</UL>
+
+<H2>Asn1 1.2.9.5</H2>
+<H3>Known problems</H3>
+<P>Same as for 1.2.9.3.</P>
+
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+PER: Constraints are not propagated when types are
+referring to each other. Example:
+<code> 
+                TBCD-STRING ::= OCTET STRING
+ 
+                LAI ::= TBCD-STRING (SIZE(3))
+</code> 
+                The size constraint is not passed on during encode,decode
+                resulting in wrong encoding for PER , it is
+                coded with a length determinant which should not be there
+                when the length is fixed. For BER this does not matter because the constraints does
+                not affect the encodings.
+<br>Own Id: OTP-3713
+                
+<LI>
+ The generated code gets wrong if there are several ENUMERATED fields in a SEQUENCE or SET, this is now corrected.
+<br>Own Id: OTP-3796
+
+<LI>
+BER:Decode of a type T ::= SEQUENCE OF C fails if C is encoded with indefinite length.
+                This is know corrected.
+<br>Own Id: OTP-3811
+</UL>
+
+<H2>Asn1 1.2.9.3</H2>
+<H3>Known problems</H3>
+
+<UL>
+
+<LI>
+The compiler does not check that an exported name actually exists in the ASN.1 module.
+<br>Own Id: OTP-3659
+
+
+<LI>
+The compiler does not check that a value referenced by name does exist.
+<br>Own Id: OTP-3277
+
+
+
+<LI>
+BER: The compiler does not take the extensions into account when checking if
+the tags are unique in a SEQUENCE or SET.
+<br>Own Id: OTP-3304
+
+</UL>
+
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+<LI>
+This version supports soft upgrade from versions 1.2.6 1.2.7.
+
+<LI>
+In an ENUMERATED type like this:<br>
+		T ::= ENUMERATED { blue, green}<br>
+		The symbols was encoded/decoded with the wrong values, i.e in
+		reverse order. This is now corrected.
+<br>Own Id: OTP-3700
+
+<LI>
+PER: OCTET STRING with Size constrained to a single value i.e fixed size
+		was treated wrong during encode and decode. This is now corrected.
+<br>Own Id: OTP-3701
+</UL>
+
+<H3>Improvements and new features</H3>
+
+<UL>
+<LI>
+There is now a new compiler option <code>ber_bin</code> available that can be used to 
+generate encode/decode functions for BER that uses the new "bit-syntax" to
+make the functions more efficient. The <code>ber_bin</code> option is used
+as an alternative to the <code>ber</code> and <code>per</code> options.
+<p>
+The encode function then produces a
+possibly nested list of binaries and integer lists. The decode function does 
+in this case require a single binary as input instead of a list.
+The modules generated with this option require that you have an R7A  or later
+system, otherwise they will not compile and the runtime module asn1rt_ber_bin
+can not be executed.
+<p>
+The ber_bin option is not officially supported in this version (will be
+in a later version) but is provided for those who want to try it. 
+It should be significantly faster at decode and is slightly faster at encode.
+Exactly how performance differs between this binary approach and the
+list approach depends highly on the type of input.
+Another thing worth noting is that both approaches still have a lot of
+solutions in common which can be improved a lot to gain even better 
+performance. 
+</UL>
+
+<H2>Asn1 1.2.9.2</H2>
+
+<H3>Fixed errors and malfunctions</H3>
+
+<UL>
+
+
+<LI>
+BER: Encode/decode of extension components did not work properly. This is now corrected.
+<br>Own Id: OTP-3395
+<br>Aux Id: 
+
+PER:The encode/decode of NULL as an open type has been corrected. An open type must always have a length of at least 1 byte even if the contained 
+value (e.g NULL) encodes to nothing.
+<br>Own Id: OTP-3496
+<br>Aux Id: 
+
+<LI>
+BER:In the current implementation extension components of a SEQUENCE are required
+to be present when they are specified as mandatory. This is an error, all extension
+components are "optional" even if they are not specified to have the OPTIONAL or
+DEFAULT property. This is now corrected.
+<br>Own Id: OTP-3278
+
+
+</UL>
+
+<H3>Improvements and new features</H3>
+
+<UL>
+<LI>
+The ASN.1 language feature <CODE>COMPONENTS OF</CODE> is now implemented.
+<br>Own Id: OTP-2515
+
+<LI>
+The encoding and decoding of ENUMERATED and
+INTEGER with NamedNumbers is made more efficient and thus
+faster in runtime.
+<br>Own Id: OTP-3464
+<br>Aux Id:
+
+<LI>
+Added support for encode/decode of open type which is
+constrained to a specific type. Previously the value of
+an open type had to be a list of  octets, but now the Erlang
+representation of the specific type used in the constraint
+is used both as input to encode and as output from decode.
+<br>Own Id: OTP-3569
+<br>Aux Id: 
+
+<LI>
+PER: GeneralString, GraphicalString etc. i.e all strings
+that are not so called "known-multiplier character
+string types" are now supported by the runtime 
+encode/decode functions.
+<br>Own Id: OTP-3573
+<br>Aux Id:
+
+</UL>
+
+
+
 <H2>Asn1 1.2.6</H2>
 <H3>Known problems</H3>
 

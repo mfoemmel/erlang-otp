@@ -307,6 +307,7 @@ handle_event(TabRef, delete_object, OldRec) ->
 handle_event(TabRef, clear_table, {_Tab, _Key}) ->
     db_match_erase(TabRef, '_').
 
+
 handle_last(Tab, disc_copies, _Type, nobin) ->
     Ret = mnesia_log:ets2dcd(Tab),
     Fname = mnesia_lib:tab2dat(Tab),  
@@ -375,7 +376,7 @@ flush_subcrs() ->
     end.
 
 insert_records(TabRef, [Recs | Tail]) ->
-    lists:foreach(fun(Rec) -> db_put(TabRef, Rec) end, Recs), %% FIX R8
+    db_put(TabRef, Recs),
     insert_records(TabRef, Tail);
 insert_records(TabRef, []) ->
     ok.

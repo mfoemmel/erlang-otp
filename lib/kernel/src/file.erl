@@ -17,140 +17,287 @@
 %%
 -module(file).
 
-%% A simple file server.
+%% Interface module for the file server and the file io servers.
 
--behaviour(gen_server).
 
+
+%%% External exports
+
+-export([format_error/1]).
+%% File system and metadata.
 -export([get_cwd/0, get_cwd/1, set_cwd/1, delete/1, rename/2,
 	 make_dir/1, del_dir/1, list_dir/1,
 	 read_file_info/1, write_file_info/2,
 	 read_link_info/1, read_link/1,
 	 make_link/2, make_symlink/2,
-	 read_file/1, write_file/2,
-	 change_owner/2, change_owner/3, change_group/2,
+	 read_file/1, write_file/2]).
+%% Specialized
+-export([ipread_s32bu_p32bu/3]).
+%% Generic file contents.
+-export([open/2, close/1, 
+	 read/2, write/2, 
+	 pread/2, pread/3, pwrite/2, pwrite/3,
+	 position/2, truncate/1, sync/1,
+	 copy/2, copy/3]).
+%% High level operations
+-export([consult/1, path_consult/2, eval/1, path_eval/2, path_open/3]).
+-export([change_owner/2, change_owner/3, change_group/2,
 	 change_mode/2, change_time/2, change_time/3]).
--export([consult/1,path_consult/2,eval/1,path_eval/2]).
--export([path_open/3,open/2,close/1,position/2,truncate/1, sync/1]).
--export([format_error/1]).
 
--export([pread/3, pwrite/3]).
 
-%% Obsolete.
 
--export([file_info/1]).
+%%% Obsolete exported functions
 
-%% Private exports.
--export([start/0,start_link/0,stop/0, file/3, init/1]).
--export([handle_call/3,handle_cast/2,handle_info/2,terminate/2]).
--export([rawopen/2, raw_read_file_info/1, raw_write_file_info/2,
-	 read/2, write/2]).
--export([relay/1]).
+-export([file_info/1, raw_read_file_info/1, raw_write_file_info/2]).
+-export([rawopen/2]).
 
+%% Internal export to prim_file and ram_file until they implement
+%% an efficient copy themselves.
+-export([copy_opened/3]).
+
+-export([ipread_s32bu_p32bu_int/3]).
+
+
+
+%%% Includes and defines
 -include("file.hrl").
-
--define(FILE_OPEN,             1).
--define(FILE_READ,             2).
--define(FILE_LSEEK,            3).
--define(FILE_WRITE,            4).
--define(FILE_FSTAT,            5).
--define(FILE_PWD,              6).
--define(FILE_READDIR,          7).
--define(FILE_CHDIR,            8).
--define(FILE_FSYNC,            9).
--define(FILE_MKDIR,            10).
--define(FILE_DELETE,           11).
--define(FILE_RENAME,           12).
--define(FILE_RMDIR,            13).
--define(FILE_TRUNCATE,         14).
--define(FILE_READ_FILE,        15).
--define(FILE_WRITE_INFO,       16).
--define(FILE_PREAD,            17).
--define(FILE_PWRITE,           18).
--define(FILE_LSTAT,            19).
--define(FILE_READLINK,        20).
--define(FILE_LINK,             21).
--define(FILE_SYMLINK,          22).
+-define(OLD_FILE_SERVER, file_server). % Registered name
+-define(FILE_SERVER, file_server_2).   % Registered name
+-define(PRIM_FILE, prim_file).         % Module
+-define(RAM_FILE, ram_file).           % Module
 
 
--define(FILE_RESP_OK,          0).
--define(FILE_RESP_ERROR,       1).
--define(FILE_RESP_DATA,        2).
--define(FILE_RESP_NUMBER,      3).
--define(FILE_RESP_INFO,        4).
+%%%-----------------------------------------------------------------
+%%% === Concerning backwards compatibility between R8 and older nodes
+%%%
+%%% The R7 file server protocol and the R8 file server protocol 
+%%% differs in three different details:
+%%% * The mode specification for an 'open' request is an integer
+%%%   (flag bits) in R7, and a list of atoms in R8. This was changed
+%%%   because the flag bits were considered too inflexible.
+%%% * The 'get_cwd' request useful for Windows systems in R7 had an 
+%%%   integer drive number as argument, but in R8 it is supposed to 
+%%%   be a string starting with "D:". This is because the drive
+%%%   number was regarded to low-level.
+%%% * A 'copy' request has been added in R8.
+%%%
+%%% The backwards compatibility problem is solved as follows:
+%%%
+%%% An R7 node registers the file server under the name 'file_server',
+%%% the code for the server is find in module 'file'.
+%%%
+%%% An R8 node registers the file server under the name 'file_server_2',
+%%% executed by module 'file_server'. It also registers a relay
+%%% process named 'file_server' executed by module 'old_file_server'
+%%% that relays all messages to the name 'file_server_2'.
+%%%
+%%% If the R8 node is a slave node, module 'file_server' will try to 
+%%% locate the name 'file_server_2' on the master node. If it exists
+%%% a relay process will register the name 'file_server_2' to relay
+%%% all messages to the master 'file_server_2'. If it does not exist
+%%% a stupid nameless process is created just to keep
+%%% the kernel supervisor happy.
+%%%
+%%% Module 'old_file_server' will do roughly the same with the name
+%%% 'file_server' towards the master node, with the exception that
+%%% it will first look for the name 'file_server_2' on the master
+%%% node, and then for 'file_server', and if neither name does exist, 
+%%% the kernel will crash during init.
+%%%
+%%% When the R8 node is not a slave node, the module 'file_server' 
+%%% is itself backwards compatible in that respect that it 
+%%% understands the R7 requests and replies correctly.
+%%%
+%%% Calls to module 'file' when an R8 node is a slave to an R7 master
+%%% will be translated when necessary by doing a local name lookup
+%%% with erlang:whereis/1 for the name 'file_server_2'. If that name
+%%% does not exist, the request will be in R7 format and sent to
+%%% the name 'file_server' (locally, as usual), otherwise an R8 
+%%% request is sent to 'file_server_2'.
+%%%
+%%% In the pictures below, nota that it is not common in practice
+%%% for a slave to have slaves. It is just to show that it is
+%%% theoretically possible.
+%%%
+%%%-----------------------------------------------------------------
+%%% R8 Master with R8 and R7 slaves:
+%%%                                                                 
+%%% +============================================+                  
+%%% | R7 Slave                                   |                  
+%%% |                                            |                  
+%%% | +-------+                  +-----------+   |                  
+%%% | |<X.X.X>|----------------->|file_server|   |                  
+%%% | +-------+                  +-----------+   |                  
+%%% |                                  |         |                  
+%%% +==================================|=========+                  
+%%%                                    |                            
+%%%                                    |                            
+%%% +==================================|=========+                  
+%%% | R8 Slave                         |         |                  
+%%% |                                  |         |                  
+%%% | +-------+                        |         |                  
+%%% | |<X.X.X>|                        |         |                  
+%%% | +-------+                        |         |                  
+%%% |        |                         |         |                  
+%%% |        V                         V         |                  
+%%% |       +-------------+      +-----------+   |                  
+%%% |       |file_server_2|      |file_server|   |                  
+%%% |       +-------------+      +-----------+   |                  
+%%% |              |                   |         |                  
+%%% |              |    +--------------+         |                  
+%%% |              |    |                        |                  
+%%% +==============|====|========================+                  
+%%%                |    |                                           
+%%%                |    |                                           
+%%% +==============|====|========================+                  
+%%% | R8 Master    |    |                        |                  
+%%% |              V    V                        |                  
+%%% |       +-------------+      +-----------+   |                  
+%%% |       |file_server_2|<-----|file_server|   |                  
+%%% |       +-------------+      +-----------+   |                  
+%%% |        A                         A         |                  
+%%% |        |                         |         |                  
+%%% | +-------+                        |         |                  
+%%% | |<X.X.X>|                        |         |                  
+%%% | +-------+                        |         |                  
+%%% |                                  |         |                  
+%%% +==================================|=========+                  
+%%%                                    |                            
+%%%                                    |                            
+%%% +==================================|=========+                  
+%%% | R7 Slave                         |         |                  
+%%% |                                  |         |                  
+%%% | +-------+                  +-----------+   |                  
+%%% | |<X.X.X>|----------------->|file_server|   |                  
+%%% | +-------+                  +-----------+   |                  
+%%% |                                            |                  
+%%% +============================================+                  
+%%%                                                                 
+%%%-----------------------------------------------------------------
+%%% R7 Master with R7 and R8 slaves:
+%%%                                                                 
+%%% +============================================+                  
+%%% | R7 Slave                                   |                  
+%%% |                                            |                  
+%%% | +-------+                  +-----------+   |                  
+%%% | |<X.X.X>|----------------->|file_server|   |                  
+%%% | +-------+                  +-----------+   |                  
+%%% |                                  |         |                  
+%%% +==================================|=========+                  
+%%%                                    |                            
+%%%                                    |                            
+%%% +==================================|=========+                  
+%%% | R8 Slave                         |         |                  
+%%% |                                  |         |                  
+%%% | +-------+                        |         |                  
+%%% | |<X.X.X>|                        |         |                  
+%%% | +-------+                        |         |                  
+%%% |        |                         |         |                  
+%%% |        |                         V         |                  
+%%% |        |                   +-----------+   |                  
+%%% |        +------------------>|file_server|   |                  
+%%% |                            +-----------+   |                  
+%%% |                                  |         |                  
+%%% +==================================|=========+                  
+%%%                                    |                            
+%%%                                    |                            
+%%% +==================================|=========+                  
+%%% | R7 Master                        |         |                  
+%%% |                                  V         |                  
+%%% | +-------+                  +-----------+   |                  
+%%% | |<X.X.X>|----------------->|file_server|   |                  
+%%% | +-------+                  +-----------+   |                  
+%%% |                                  A         |                  
+%%% +==================================|=========+                  
+%%%                                    |                            
+%%%                                    |                            
+%%% +==================================|=========+                  
+%%% | R7 Slave                         |         |                  
+%%% |                                  |         |                  
+%%% | +-------+                  +-----------+   |                  
+%%% | |<X.X.X>|----------------->|file_server|   |                  
+%%% | +-------+                  +-----------+   |                  
+%%% |                                            |                  
+%%% +============================================+                  
+%%%                                                                 
+%%%-----------------------------------------------------------------
 
--record(fd, {port, number}).
 
-%% Open modes for the efile driver's open function.
--define(EFILE_MODE_READ, 1).
--define(EFILE_MODE_WRITE, 2).
--define(EFILE_MODE_READ_WRITE, 3).  
--define(EFILE_MODE_APPEND, 4).
--define(EFILE_COMPRESSED, 8).
+%% Mode bit mask values for R7 file server call {open, Name, Mode}
+-define(OLD_MODE_READ,       (1 bsl 0)).
+-define(OLD_MODE_WRITE,      (1 bsl 1)).
+-define(OLD_MODE_APPEND,     (1 bsl 2)).
+-define(OLD_MODE_COMPRESSED, (1 bsl 3)).
+-define(OLD_MODE_BINARY,     (1 bsl 10)).
 
-%% Use this mask to get just the mode bits to be passed to the driver.
--define(EFILE_MODE_MASK, 15).
+%%%-----------------------------------------------------------------
+%%% General functions
 
-%% These are used internally in this module, and never passed to the driver.
--define(BINARY_FILE, 2#10000000000).
--define(RAW_PORT,    2#01000000000).
-
-%% Seek modes for the efile driver's seek function.
-
--define(EFILE_SEEK_SET, 0).
--define(EFILE_SEEK_CUR, 1).
--define(EFILE_SEEK_END, 2).
-
-
-format_error({Line, file, Reason}) ->
+format_error({Line, ?MODULE, Reason}) ->
     io_lib:format("~w", [Reason]);
 format_error({Line, Mod, Reason}) ->
     Mod:format_error(Reason);
 format_error(ErrorId) ->
     erl_posix_msg:message(ErrorId).
 
-%%% The following interface functions take one or more filename arguments.
+%%%-----------------------------------------------------------------
+%%% File server functions.
+%%% Functions that do not operate on a single open file.
+%%% Stateless.
 
-get_cwd() ->        call({get_cwd, 0}).
-
-get_cwd([Letter, $:]) when $A =< Letter, Letter =< $Z ->
-    call({get_cwd, Letter-$A+1});
-get_cwd([Letter, $:]) when $a =< Letter, Letter =< $z ->
-    call({get_cwd, Letter-$a+1});
-get_cwd(_) ->
-    {error, einval}.
-
-set_cwd(Dirname) -> check_and_call(set_cwd, [file_name2(Dirname)]).
-delete(Name) ->     check_and_call(delete, [file_name2(Name)]).
-rename(From, To) -> check_and_call(rename, [file_name2(From), file_name2(To)]).
-make_dir(Name) ->   check_and_call(make_dir, [file_name2(Name)]).
-del_dir(Name) ->    check_and_call(del_dir, [file_name2(Name)]).
-read_file_info(Name) -> check_and_call(read_file_info, [file_name2(Name)]).
-read_link_info(Name) -> check_and_call(read_link_info, [file_name2(Name)]).
-read_link(Name) -> check_and_call(read_link, [file_name2(Name)]).
-write_file_info(Name, Info) when record(Info, file_info) ->
-    check_and_call(write_file_info, [file_name2(Name), Info]).
-list_dir(Name) ->   check_and_call(list_dir, [file_name2(Name)]).
-read_file(Name) ->  check_and_call(read_file, [file_name2(Name)]).
-
-make_link(Old, New) ->
-    check_and_call(make_link, [file_name2(Old), file_name2(New)]).
-
-make_symlink(Old, New) ->
-    check_and_call(make_symlink, [file_name2(Old), file_name2(New)]).
-
-write_file(Name, Bin) ->
-    check_and_call(write_file, [file_name2(Name), check_binary(Bin)]).
-
-open(Name, Mode0) ->
-    case open_mode(Mode0) of
-	Mode when Mode band ?RAW_PORT /= 0 ->
-	    ll_raw_open(Name, Mode bxor ?RAW_PORT);
-	Other ->
-	    check_and_call(open, [file_name2(Name), Other])
+get_cwd() -> 
+    case file_server() of
+	?FILE_SERVER ->
+	    call(?FILE_SERVER, get_cwd, []);
+	?OLD_FILE_SERVER ->
+	    call(?OLD_FILE_SERVER, get_cwd, [0])
     end.
+get_cwd(Dirname) ->
+    case file_server() of
+	?FILE_SERVER ->
+	    check_and_call(?FILE_SERVER, get_cwd, [file_name(Dirname)]);
+	?OLD_FILE_SERVER ->
+	    case Dirname of
+		[D, $: | _] when 
+		      integer(D), $A =< D, D =< $Z ->
+		    call(?OLD_FILE_SERVER, get_cwd, [1+D-$A]);
+		[D, $: | _] when 
+		      integer(D), $a =< D, D =< $z ->
+		    call(?OLD_FILE_SERVER, get_cwd, [1+D-$a]);
+		_ ->
+		    {error, einval}
+	    end
+    end.
+set_cwd(Dirname) -> 
+    check_and_call(set_cwd, [file_name(Dirname)]).
+delete(Name) ->
+    check_and_call(delete, [file_name(Name)]).
+rename(From, To) ->
+    check_and_call(rename, [file_name(From), file_name(To)]).
+make_dir(Name) ->
+    check_and_call(make_dir, [file_name(Name)]).
+del_dir(Name) ->
+    check_and_call(del_dir, [file_name(Name)]).
+read_file_info(Name) ->
+    check_and_call(read_file_info, [file_name(Name)]).
+read_link_info(Name) ->
+    check_and_call(read_link_info, [file_name(Name)]).
+read_link(Name) ->
+    check_and_call(read_link, [file_name(Name)]).
+write_file_info(Name, Info) when record(Info, file_info) ->
+    check_and_call(write_file_info, [file_name(Name), Info]).
+list_dir(Name) ->
+    check_and_call(list_dir, [file_name(Name)]).
+read_file(Name) ->
+    check_and_call(read_file, [file_name(Name)]).
+make_link(Old, New) ->
+    check_and_call(make_link, [file_name(Old), file_name(New)]).
+make_symlink(Old, New) ->
+    check_and_call(make_symlink, [file_name(Old), file_name(New)]).
+write_file(Name, Bin) ->
+    check_and_call(write_file, [file_name(Name), check_binary(Bin)]).
 
 %% Obsolete function.
-
 file_info(Name) ->
     case read_file_info(Name) of
 	{ok, #file_info {size=Size, type=Type, access=Access,
@@ -164,115 +311,447 @@ file_info(Name) ->
 	    Other
     end.
 
-%% Raw functions, operating on the local node only.
-%% This function is obsolete and undocumented!  Don't use!
-
-rawopen(Name, Mode) ->
-    ll_raw_open(Name, open_mode(Mode)).
-
+%% Obsolete, undocumented, local node only, don't use!.
+%% XXX to be removed.
 raw_read_file_info(Name) ->
-    Args = [file_name2(Name)],
+    Args = [file_name(Name)],
     case check_args(Args) of
 	ok ->
-	    [N] = Args,
-	    Port = mkport([?FILE_FSTAT, file_name2(N), 0], 0),
-	    Result = get_response(Port),
-	    unlink(Port),
-	    exit(Port, die),
-	    Result;
+	    [FileName] = Args,
+	    ?PRIM_FILE:read_file_info(FileName);
 	Error ->
 	    Error
     end.
 
-raw_write_file_info(Name, Info) ->
-    Args = [file_name2(Name)],
+%% Obsolete, undocumented, local node only, don't use!.
+%% XXX to be removed.
+raw_write_file_info(Name, #file_info{} = Info) ->
+    Args = [file_name(Name)],
     case check_args(Args) of
 	ok ->
-	    [N] = Args,
-	    Command = [?FILE_WRITE_INFO, info_to_list(Name, Info)],
-	    Port = mkport(Command, 0),
-	    Result = get_response(Port),
-	    unlink(Port),
-	    exit(Port, die),
-	    Result;
+	    [FileName] = Args,
+	    ?PRIM_FILE:write_file_info(FileName, Info);
 	Error ->
 	    Error
     end.
 
-
+%%%-----------------------------------------------------------------
+%%% File io server functions.
+%%% They operate on a single open file.
+%%% Stateful.
+
+%% Contemporary mode specification - list of options
+open(Item, ModeList) when list(ModeList) ->
+    case lists:member(raw, ModeList) of
+	%% Raw file, use ?PRIM_FILE to handle this file
+	true ->
+	    Args = [file_name(Item) | ModeList],
+	    case check_args(Args) of
+		ok ->
+		    [FileName | _] = Args,
+		    %% We rely on the returned Handle (in {ok, Handle})
+		    %% being a pid() or a #file_descriptor{}
+		    ?PRIM_FILE:open(FileName, ModeList);
+		Error ->
+		    Error
+	    end;
+	false ->
+	    case lists:member(ram, ModeList) of
+		%% RAM file, use ?RAM_FILE to handle this file
+		true ->
+		    case check_args(ModeList) of
+			ok ->
+			    ?RAM_FILE:open(Item, ModeList);
+			Error ->
+			    Error
+		    end;
+		%% File server file
+		false ->
+		    case file_server() of
+			?OLD_FILE_SERVER ->
+			    Mode = old_mode(ModeList),
+			    Args = [file_name(Item), Mode],
+			    case check_args(Args) of
+				ok ->
+				    call(?OLD_FILE_SERVER, open, Args);
+				Error ->
+				    Error
+			    end;
+			?FILE_SERVER ->
+			    Args = [file_name(Item) | ModeList],
+			    case check_args(Args) of 
+				ok ->
+				    [FileName | _] = Args,
+				    call(?FILE_SERVER, 
+					 open, [FileName, ModeList]);
+				Error ->
+				    Error
+			    end;
+			Error ->
+			    Error
+		    end
+	    end
+    end;
+%% Old obsolete mode specification in atom or 2-tuple format
+open(Item, Mode) ->
+    open(Item, mode_list(Mode)).
+
+%% Obsolete, undocumented, local node only, don't use!.
+%% XXX to be removed.
+rawopen(Name, Mode) ->
+    Args = [file_name(Name) | mode_list(Mode)],
+    case check_args(Args) of
+	ok ->
+	    [FileName | ModeList] = Args,
+	    %% We rely on the returned Handle (in {ok, Handle})
+	    %% being a pid() or a #file_descriptor{}
+	    ?PRIM_FILE:open(FileName, ModeList);
+	Error ->
+	    Error
+    end.
+
+%%%-----------------------------------------------------------------
 %%% The following interface functions operate on open files.
-%%% The File argument must be either a Pid or a fd record.
+%%% The File argument must be either a Pid or a handle 
+%%% returned from ?PRIM_FILE:open.
 
-read(File, Sz) when pid(File) ->
+close(File) when pid(File) ->
+    R = file_request(File, close),
+    case wait_file_reply(File, R) of
+	{error, terminated} ->
+	    ok;
+	Other ->
+	    Other
+    end;
+%%    unlink(File),
+%%    exit(File, close),
+%%    ok;
+close(#file_descriptor{module = Module} = Handle) ->
+    Module:close(Handle);
+close(_) ->
+    {error, einval}.
+
+read(File, Sz) when pid(File), integer(Sz), Sz >= 0 ->
     case io:get_chars(File, '', Sz) of
 	List when list(List) ->
 	    {ok, List};
 	Other ->
 	    Other
     end;
-read(File, Sz) when record(File, fd) ->
-    case ll_read(File, Sz) of
-	{error, enomem} ->
-	    %% Garbage collecting here might help if the current processes
-	    %% has some old binaries left.
+read(#file_descriptor{module = Module} = Handle, Sz) 
+  when integer(Sz), Sz >= 0 ->
+    Module:read(Handle, Sz);
+read(_, _) ->
+    {error, einval}.
 
-	    erlang:garbage_collect(),
-	    ll_read(File, Sz);
-	Other ->
-	    Other
-    end.
 
+
+pread(File, L) when pid(File), list(L) ->
+    pread_int(File, L, []);
+pread(#file_descriptor{module = Module} = Handle, L) when list(L) ->
+    Module:pread(Handle, L);
+pread(_, _) ->
+    {error, einval}.
+
+pread_int(File, [], R) ->
+    {ok, lists:reverse(R)};
+pread_int(File, [{At, Sz} | T], R) when integer(Sz), Sz >= 0 ->
+    case pread(File, At, Sz) of
+	{ok, Data} ->
+	    pread_int(File, T, [Data | R]);
+	eof ->
+	    pread_int(File, T, [eof | R]);
+	{error, _} = Error ->
+	    Error
+    end;
+pread_int(_, _, _) ->
+    {error, einval}.
+
+pread(File, At, Sz) when pid(File), integer(Sz), Sz >= 0 ->
+    R = file_request(File, {pread, At, Sz}),
+    wait_file_reply(File, R);
 %% No Whence supported, only absolute positions
-pread(File, At, Sz) when record(File, fd) , integer(At), At >= 0->
-    ll_pread(File, At, Sz);
-pread(File, At, Sz) when pid(File) ->
-    R = request(File, {pread, At, Sz}),
-    wait_file_reply(File, R).
+pread(#file_descriptor{module = Module} = Handle, Offs, Sz) 
+  when integer(Offs), Offs >= 0, integer(Sz), Sz >= 0 ->
+    Module:pread(Handle, Offs, Sz);
+pread(_, _, _) ->
+    {error, einval}.
+
+
 
 write(File, Bytes) when pid(File) ->
     io:put_chars(File, Bytes);
-write(File, Bytes) when record(File, fd) ->
-    ll_write(File, Bytes).
+write(#file_descriptor{module = Module} = Handle, Bytes) ->
+    Module:write(Handle, Bytes);
+write(_, _) ->
+    {error, einval}.
 
 
-pwrite(File, At, Bytes) when record(File, fd), integer(At), At >= 0 ->
-    ll_pwrite(File, At, Bytes);
+
+pwrite(File, L) when pid(File), list(L) ->
+    pwrite_int(File, L, 0);
+pwrite(#file_descriptor{module = Module} = Handle, L) when list(L) ->
+    Module:pwrite(Handle, L);
+pwrite(_, _) ->
+    {error, einval}.
+
+pwrite_int(File, [], _R) ->
+    ok;
+pwrite_int(File, [{At, Bytes} | T], R) ->
+    case pwrite(File, At, Bytes) of
+	ok ->
+	    pwrite_int(File, T, R+1);
+	{error, Reason} ->
+	    {error, {R, Reason}}
+    end;
+pwrite_int(_, _, _) ->
+    {error, einval}.
+
 pwrite(File, At, Bytes) when pid(File) ->
-    R = request(File, {pwrite, At, Bytes}),
-    wait_file_reply(File, R).
+    R = file_request(File, {pwrite, At, Bytes}),
+    wait_file_reply(File, R);
+pwrite(#file_descriptor{module = Module} = Handle, Offs, Bytes) 
+  when integer(Offs), Offs >= 0 ->
+    Module:pwrite(Handle, Offs, Bytes);
+pwrite(_, _, _) ->
+    {error, einval}.
+
+
 
 sync(File) when pid(File) ->
-    R = request(File, sync),
+    R = file_request(File, sync),
     wait_file_reply(File, R);
-sync(File) when record(File, fd) ->
-    ll_sync(File).
-
-close(File) when pid(File) ->
-    unlink(File),
-    exit(File, die),
-    ok;
-close(File) when record(File, fd) ->
-    Port = File#fd.port,
-    unlink(Port),
-    exit(Port, die),
-    ok.
+sync(#file_descriptor{module = Module} = Handle) ->
+    Module:sync(Handle);
+sync(_) ->
+    {error, einval}.
 
 position(File, At) when pid(File) ->
-    R = request(File, {position,At}),
+    R = file_request(File, {position,At}),
     wait_file_reply(File, R);
-position(File, At) when record(File, fd) ->
-    case position_file(File, At, []) of
-	{ok, Res, _} -> Res;
-	{error, E, _} -> E
-    end.
+position(#file_descriptor{module = Module} = Handle, At) ->
+    Module:position(Handle, At);
+position(_, _) ->
+    {error, einval}.
 
 truncate(File) when pid(File) ->
-    R = request(File, truncate),
+    R = file_request(File, truncate),
     wait_file_reply(File, R);
-truncate(File) when record(File, fd) ->
-    ll_truncate(File).
+truncate(#file_descriptor{module = Module} = Handle) ->
+    Module:truncate(Handle);
+truncate(_) ->
+    {error, einval}.
 
-
+
+
+copy(Source, Dest) ->
+    copy_int(file_server(), Source, Dest, infinity).
+
+copy(Source, Dest, Length) 
+  when integer(Length), Length >= 0;
+       atom(Length) ->
+    copy_int(file_server(), Source, Dest, Length);
+copy(_, _, _) ->
+    {error, einval}.
+
+%% Here we know that Length is either an atom or an integer >= 0
+%% (by the way, atoms > integers)
+%%
+%% Copy between open files. 
+copy_int(_FileServer, Source, Dest, Length) 
+  when pid(Source), pid(Dest);
+       pid(Source), record(Dest, file_descriptor);
+       record(Source, file_descriptor), pid(Dest) ->
+    copy_opened_int(Source, Dest, Length, 0);
+%% Copy between open raw files, both handled by the same module
+copy_int(_FileServer, #file_descriptor{module = Module} = Source,
+	 #file_descriptor{module = Module} = Dest,
+     Length) ->
+    Module:copy(Source, Dest, Length);
+%% Copy between open raw files
+copy_int(_FileServer, Source, Dest, Length) 
+  when record(Source, file_descriptor), record(Dest, file_descriptor) ->
+    copy_opened_int(Source, Dest, Length, 0);
+%%
+%% At least one of the files needs to be opened
+%%
+%% Copy between filenames, let the server do the copy
+copy_int(?FILE_SERVER, {SourceName, SourceOpts}, {DestName, DestOpts}, Length) 
+  when list(SourceOpts), list(DestOpts) ->
+   check_and_call(?FILE_SERVER, copy, 
+		   [file_name(SourceName), SourceOpts,
+		    file_name(DestName), DestOpts,
+		    Length]);
+%% Must open Source
+copy_int(FileServer, {SourceName, SourceOpts}, Dest, Length) 
+  when list(SourceOpts) ->
+    case file_name(SourceName) of
+	{error, _} = Error ->
+	    Error;
+	Source ->
+	    case open(Source, [read | SourceOpts]) of
+		{ok, Handle} ->
+		    Result = copy_int(FileServer, Handle, Dest, Length),
+		    close(Handle),
+		    Result;
+		{error, _} = Error ->
+		    Error
+	    end
+    end;
+%% Must open Dest
+copy_int(FileServer, Source, {DestName, DestOpts}, Length)
+  when list(DestOpts) ->
+    case file_name(DestName) of
+	{error, _} = Error ->
+	    Error;
+	Dest ->
+	    case open(Dest, [write | DestOpts]) of
+		{ok, Handle} ->
+		    Result = copy_int(FileServer, Source, Handle, Length),
+		    close(Handle),
+		    Result;
+		{error, _} = Error ->
+		    Error
+	    end
+    end;
+%%
+%% Neither of Source and Dest is a {Name, Opts} tuple, so they must
+%% be open file handles or filenames
+%%
+%% Copy from open file to filename
+copy_int(FileServer, Source, Dest, Length) 
+  when pid(Source);
+       record(Source, file_descriptor) ->
+    copy_int(FileServer, Source, {Dest, []}, Length);
+%% Copy from filename to open file
+copy_int(FileServer, Source, Dest, Length) 
+  when pid(Dest);
+       record(Dest, file_descriptor) ->
+    copy_int(FileServer, {Source, []}, Dest, Length);
+%% Copy between filenames
+copy_int(FileServer, Source, Dest, Length) ->
+    copy_int(FileServer, {Source, []}, {Dest, []}, Length).
+
+
+
+copy_opened(Source, Dest, Length)
+  when integer(Length), Length >= 0;
+       atom(Length) ->
+    copy_opened_int(Source, Dest, Length);
+copy_opened(_, _, _) ->
+    {error, einval}.
+
+%% Here we know that Length is either an atom or an integer >= 0
+%% (by the way, atoms > integers)
+
+copy_opened_int(Source, Dest, Length)
+  when pid(Source), pid(Dest) ->
+    copy_opened_int(Source, Dest, Length, 0);
+copy_opened_int(Source, Dest, Length)
+  when pid(Source), record(Dest, file_descriptor) ->
+    copy_opened_int(Source, Dest, Length, 0);
+copy_opened_int(Source, Dest, Length)
+  when record(Source, file_descriptor), pid(Dest) ->
+    copy_opened_int(Source, Dest, Length, 0);
+copy_opened_int(Source, Dest, Length)
+  when record(Source, file_descriptor), record(Dest, file_descriptor) ->
+    copy_opened_int(Source, Dest, Length, 0);
+copy_opened_int(_, _, _) ->
+    {error, einval}.
+
+%% Here we know that Source and Dest are handles to open files, Length is
+%% as above, and Copied is an integer >= 0
+
+%% Copy loop in client process
+copy_opened_int(_, _, Length, Copied) when Length =< 0 -> % atom() > integer()
+    {ok, Copied};
+copy_opened_int(Source, Dest, Length, Copied) ->
+    N = if Length > 65536 -> 65536; true -> Length end, % atom() > integer() !
+    case read(Source, N) of
+	{ok, Data} ->
+	    M = if binary(Data) -> size(Data);
+		   list(Data)   -> length(Data)
+		end,
+	    case write(Dest, Data) of
+		ok ->
+		    if M < N ->
+			    %% Got less than asked for - must be end of file
+			    {ok, Copied+M};
+		       true ->
+			    %% Decrement Length (might be an atom (infinity))
+			    NewLength = if atom(Length) -> Length;
+					   true         -> Length-M
+					end,
+			    copy_opened_int(Source, Dest, NewLength, Copied+M)
+		    end;
+		{error, _} = Error ->
+		    Error
+	    end;
+	eof ->
+	    {ok, Copied};
+	{error, _} = Error ->
+	    Error
+    end.
+
+
+%% Special indirect pread function. Introduced for Dets.
+%% Reads a header from pos 'Pos', the header is first a size encoded as
+%% 32 bit big endian unsigned and then a position also encoded as
+%% 32 bit big endian. Finally it preads the data from that pos and size 
+%% in the file.
+
+ipread_s32bu_p32bu(File, Pos, MaxSize) when pid(File) ->
+    ipread_s32bu_p32bu_int(File, Pos, MaxSize);
+ipread_s32bu_p32bu(#file_descriptor{module = Module} = Handle, Pos, MaxSize) ->
+    Module:ipread_s32bu_p32bu(Handle, Pos, MaxSize);
+ipread_s32bu_p32bu(_, _, _) ->
+    {error, einval}.
+
+ipread_s32bu_p32bu_int(File, Pos, MaxSize) 
+  when integer(MaxSize), MaxSize >= 0, MaxSize < (1 bsl 31) ->
+    case pread(File, Pos, 8) of
+	{ok, Header} ->
+	    ipread_s32bu_p32bu_2(File, Header, MaxSize);
+	Error ->
+	    Error
+    end;
+ipread_s32bu_p32bu_int(File, Pos, infinity) ->
+    ipread_s32bu_p32bu_int(File, Pos, (1 bsl 31)-1);
+ipread_s32bu_p32bu_int(_File, _Pos, _MaxSize) ->
+    {error, einval}.
+
+ipread_s32bu_p32bu_2(_File, 
+		     <<0:32/big-unsigned, Pos:32/big-unsigned>>,
+		     _MaxSize) ->
+    {ok, {0, Pos, eof}};
+ipread_s32bu_p32bu_2(File, 
+		     <<Size:32/big-unsigned, Pos:32/big-unsigned>>,
+		     MaxSize) 
+  when Size =< MaxSize ->
+    case pread(File, Pos, Size) of
+	{ok, Data} ->
+	    {ok, {Size, Pos, Data}};
+	eof ->
+	    {ok, {Size, Pos, eof}};
+	Error ->
+	    Error
+    end;
+ipread_s32bu_p32bu_2(_File, 
+		     <<_:8/binary>>,
+		     _MaxSize) ->
+    eof;
+ipread_s32bu_p32bu_2(_File,
+		     <<_/binary>>,
+		     _MaxSize) ->
+    eof;
+ipread_s32bu_p32bu_2(File,
+		    Header,
+		    MaxSize) when list(Header) ->
+    ipread_s32bu_p32bu_2(File, list_to_binary(Header), MaxSize).
+
+
+
+%%%-----------------------------------------------------------------
 %%% The following functions, built upon the other interface functions,
 %%% provide a higher-lever interface to files.
 
@@ -326,6 +805,58 @@ path_eval(Path, File) ->
 	    Error
     end.
 
+%% path_open(Paths, Filename, Mode) ->
+%%	{ok,FileDescriptor,FullName}
+%%	{error,Reason}
+%%
+%% Searches the Paths for file Filename which can be opened with Mode.
+%% The path list is ignored if Filename contains an absolute path.
+
+path_open(PathList, Name, Mode) ->
+    case file_name(Name) of
+	{error, Error} ->
+	    {error, Error};
+	FileName ->
+	    case filename:pathtype(FileName) of
+		relative ->
+		    path_open_first(PathList, FileName, Mode, enoent);
+		_ ->
+		    case open(Name, Mode) of
+			{ok, Fd} -> 
+			    {ok, Fd, Name};
+			Error -> 
+			    Error
+		    end
+	    end
+    end.
+
+change_mode(Name, Mode) 
+  when integer(Mode) ->
+    write_file_info(Name, #file_info{mode=Mode}).
+
+change_owner(Name, OwnerId) 
+  when integer(OwnerId) ->
+    write_file_info(Name, #file_info{uid=OwnerId}).
+
+change_owner(Name, OwnerId, GroupId) 
+  when integer(OwnerId), integer(GroupId) ->
+    write_file_info(Name, #file_info{uid=OwnerId, gid=GroupId}).
+
+change_group(Name, GroupId) 
+  when integer(GroupId) ->
+    write_file_info(Name, #file_info{gid=GroupId}).
+
+change_time(Name, Time) 
+  when tuple(Time) ->
+    write_file_info(Name, #file_info{mtime=Time}).
+
+change_time(Name, Atime, Mtime) 
+  when tuple(Atime), tuple(Mtime) ->
+    write_file_info(Name, #file_info{atime=Atime, mtime=Mtime}).
+
+%%%-----------------------------------------------------------------
+%%% Helpers
+
 consult_stream(Fd) ->
     case catch consult_stream(io:read(Fd, ''), Fd) of
 	{'EXIT', Reason} ->
@@ -357,764 +888,142 @@ eval_stream({ok,Form,EndLine}, Fd, E, Bs0) ->
 	{value,V,Bs} ->
 	    eval_stream(Fd, E, Bs);
 	{'EXIT',Reason} ->
-	    eval_stream(Fd, [{EndLine,file,Reason}|E], Bs0)
+	    eval_stream(Fd, [{EndLine,?MODULE,Reason}|E], Bs0)
     end;
 eval_stream({error,What,EndLine}, Fd, E, Bs) ->
     eval_stream(Fd, [What | E], Bs);
 eval_stream({eof,EndLine}, Fd, E, Bs) ->
     lists:reverse(E).
 
-%% path_open(Paths, Filename, Mode) ->
-%%	{ok,FileDescriptor,FullName}
-%%	{error,Reason}
-%%
-%% Searches the Paths for file Filename which can be opened with Mode.
-%% The path list is ignored if Filename contains an absolute path.
-
-path_open(Ps, Name0, Mode) ->
-    case file_name2(Name0) of
+path_open_first([Path|Rest], Name, Mode, LastError) ->
+    case file_name(Path) of
 	{error, Error} ->
 	    {error, Error};
-	Name ->
-	    case filename:pathtype(Name) of
-		relative ->
-		    path_open1(Ps, Name, Mode, enoent);
-		_ ->
-		    path_open1(Name, Mode)
-	    end
-    end.
-
-path_open1(Name, Mode) ->
-    case open(Name, Mode) of
-	{ok, Fd} -> {ok, Fd, Name};
-	Error -> Error
-    end.
-
-path_open1([Path0|Rest], Name0, Mode, LastError) ->
-    case file_name2(Path0) of
-	{error, Error} ->
-	    {error, Error};
-	Path ->
-	    Name = filename:join(Path, Name0),
-	    case open(Name, Mode) of
+	FilePath ->
+	    FileName = filename:join(FilePath, Name),
+	    case open(FileName, Mode) of
 		{ok, Fd} ->
-		    {ok, Fd, Name};
+		    {ok, Fd, FileName};
 		{error, enoent} ->
-		    path_open1(Rest, Name0, Mode, LastError);
+		    path_open_first(Rest, Name, Mode, LastError);
 		Error ->
 		    Error
 	    end
     end;
-path_open1([], Name, Mode, LastError) ->
+path_open_first([], _Name, _Mode, LastError) ->
     {error, LastError}.
 
-change_mode(Name, Mode) when integer(Mode) ->
-    write_file_info(Name, #file_info{mode=Mode}).
-
-change_owner(Name, OwnerId) when integer(OwnerId) ->
-    write_file_info(Name, #file_info{uid=OwnerId}).
-
-change_owner(Name, OwnerId, GroupId) when integer(OwnerId), integer(GroupId) ->
-    write_file_info(Name, #file_info{uid=OwnerId, gid=GroupId}).
-
-change_group(Name, GroupId) when integer(GroupId) ->
-    write_file_info(Name, #file_info{gid=GroupId}).
-
-change_time(Name, Time) when tuple(Time) ->
-    write_file_info(Name, #file_info{mtime=Time}).
-
-change_time(Name, Atime, Mtime) when tuple(Atime), tuple(Mtime) ->
-    write_file_info(Name, #file_info{atime=Atime, mtime=Mtime}).
-    
-
-%% The basic file server and start-up.
-%%
-%% The file server just handles the open command/message and acts as a
-%% router for messages between the port and the file processes. If a
-%% file process terminates we close the associated file.
-
-start() -> do_start(start).
-start_link() -> do_start(start_link).
-
-do_start(F) ->
-    case init:get_argument(master) of
-	error ->
-	    gen_server:F({local,file_server}, file, [], []);
-	{ok, [[Node]]} ->
-	    start_slave([list_to_atom(Node)],F)
-    end.
-
-start_slave([Node],F) when atom(Node) ->
-    %%    If we are not alive here things will get out of hand
-    Filer = rpc:call(Node,erlang,whereis,[file_server]),
-    case Filer of
-	XX when pid(XX) ->
-	    Id = start_relay(Filer, F),
-	    register(file_server,Id),
-	    {ok,Id};
-	_ ->
-	    error_logger:error_msg('can not get remote filer ',[]),
-	    %% Time to die
-	    halt()
-    end.
-
-%% We have the relay process file internal.
-%% We do not need to load slave as an mandatory module
-%% during system startup.
-
-start_relay(Filer, start_link) ->
-    spawn_link(file,relay,[Filer]);
-start_relay(Filer, _) ->
-    spawn(file,relay,[Filer]).
-
-relay(Pid) ->
-    receive
-        X ->
-            Pid ! X
-    end,
-    relay(Pid).
-    
-stop() -> call(stop).
-
-init([]) ->
-    process_flag(trap_exit, true),
-    Port = open_port({spawn, efile}, []),
-    {ok,Port}.
-
-
-%% This function handles all functions that operate on or more
-%% filenames.  It uses a single open port.
-
-handle_call({open, Name, Mode}, From, Port) ->
-    spawn(file, file, [From, Name, Mode]),
-    {noreply, Port};
-
-handle_call({read_file, Name}, _From, Port) ->
-    {reply, do_read_file(Name), Port};
-
-handle_call({write_file, F, Bin}, _From, Port) ->
-    {reply, do_write_file(F, Bin), Port};
-
-handle_call({set_cwd, Name}, _From, Port) ->
-    Mod_name = case os:type() of
-		   vxworks -> 
-		       %%% chdir on vxworks doesn't support
-		       %%% relative paths
-		       %%% must call get_cwd from here and use
-		       %%% absname/2, since
-		       %%% absbase/1 uses file:get_cwd ...
-		       case handle_call({get_cwd, 0}, _From, Port) of
-			   {reply, {ok, AbsPath}, _Port} ->
-			       filename:absname(Name, AbsPath);
-			   _Badcwd ->
-			       Name
-		       end;
-		   _Else ->
-		       Name
-	       end,
-    {reply, fm_op(?FILE_CHDIR, Mod_name, Port), Port};
-
-handle_call({delete, Name}, _From, Port) ->
-    {reply, fm_op(?FILE_DELETE, Name, Port), Port};
-
-handle_call({rename, Fr, To}, _From, Port) ->
-    {reply, fm_op(?FILE_RENAME, [Fr, 0, To], Port), Port};
-
-handle_call({make_dir, Name}, _From, Port) ->
-    {reply, fm_op(?FILE_MKDIR, Name, Port), Port};
-
-handle_call({del_dir, Name}, _From, Port) ->
-    {reply, fm_op(?FILE_RMDIR, Name, Port), Port};
-
-handle_call({list_dir, Name}, _From, Port) ->
-    {reply, list_dir_op(Name, Port), Port};
-
-handle_call({get_cwd, Drive}, _From, Port) ->
-    port_command(Port, [?FILE_PWD, Drive]),
-    {reply, get_response(Port), Port};
-
-handle_call({read_file_info, Name}, _From, Port) ->
-    {reply, fm_op(?FILE_FSTAT, Name, Port), Port};
-
-handle_call({write_file_info, Name, Info}, _From, Port) ->
-    {reply, write_file_info_op(?FILE_WRITE_INFO, Name, Info, Port), Port};
-
-handle_call({read_link_info, Name}, _From, Port) ->
-    {reply, fm_op(?FILE_LSTAT, Name, Port), Port};
-
-handle_call({read_link, Name}, _From, Port) ->
-    {reply, fm_op(?FILE_READLINK, Name, Port), Port};
-
-handle_call({make_link, Old, New}, _From, Port) ->
-    {reply, fm_op(?FILE_LINK, [Old, 0, New], Port), Port};
-
-handle_call({make_symlink, Old, New}, _From, Port) ->
-    {reply, fm_op(?FILE_SYMLINK, [Old, 0, New], Port), Port};
-
-handle_call(stop, _From, Port) ->
-    {stop, normal, stopped, Port};
-
-handle_call(_, _, Port) ->
-    {noreply, Port}.
-
-handle_cast(_, Port) ->
-    {noreply, Port}.
-
-handle_info({'EXIT', Port, Reason}, Port) ->
-    error_logger:error_msg('Port controlling ~w terminated in file_server',
-			   [file_server]),
-    {stop, normal, Port};
-handle_info(_, Port) ->
-    {noreply, Port}.
-
-terminate(_Reason, Port) ->
-    port_close(Port).
-
-
-%% Reads a complete file in one operation.
-%%
-%% Note: This function (as well as do_write_file/2) should be called
-%% from within the file server to allow remote filers.  It must not
-%% called from the client.
-
-do_read_file(Name) -> 
-    case catch open_port({spawn, efile}, [binary]) of
-	{'EXIT', Reason} ->
-	    {error, Reason};
-	P ->
-	    Command = [?FILE_READ_FILE, Name, 0],
-	    port_command(P, Command),
-	    Result =
-		case get_response(P) of
-		    {error, enomem} ->
-			%% It could possibly help to do a gargabe collection
-			%% here, if the file server has some references
-			%% to binaries read earlier.
-
-			erlang:garbage_collect(),
-			port_command(P, Command),
-			get_response(P);
-		    Other ->
-			Other
-		end,
-	    unlink(P),
-	    exit(P, die),
-	    Result
-    end.
-
-do_write_file(File, Bin) ->
-    case open(File, [binary, write, raw]) of
-	{ok, Fdesc} ->
-	    Result = 
-		case write(Fdesc, Bin) of
-		    {ok, _} -> ok;
-		    Error -> Error
-		end,
-	    close(Fdesc),
-	    Result;
-	Error ->
-	    Error
-    end.
-
-fm_op(Op, Chars, Port) ->
-    port_command(Port, [Op, Chars, 0]),
-    get_response(Port).
-
-list_dir_op(Chars, Port) ->
-    port_command(Port, [?FILE_READDIR|[Chars, 0]]),
-    collect_files(Port, []).
-
-collect_files(Port, Result) ->
-    case get_response(Port) of
-	ok ->
-	    {ok, Result};
-	{ok, Name} ->
-	    collect_files(Port, [Name|Result]);
-	Error ->
-	    Error
-    end.
-
-write_file_info_op(Op, Name, Info, Port) ->
-    port_command(Port, [Op, info_to_list(Name, Info)]),
-    get_response(Port).
-
-info_to_list(Name, #file_info {mode=Mode, uid=Uid, gid=Gid,
-			       atime=Atime0, mtime=Mtime0, ctime=Ctime}) ->
-    {Atime, Mtime} =
-	case {Atime0, Mtime0} of
-	    {undefined, Mtime0} -> {erlang:localtime(), Mtime0};
-	    {Atime0, undefined} -> {Atime0, Atime0};
-	    Complete -> Complete
-	end,
-    [int_to_bytes(Mode), int_to_bytes(Uid), int_to_bytes(Gid),
-     date_to_bytes(Atime), date_to_bytes(Mtime), date_to_bytes(Ctime),
-     Name, 0].
-
-int_to_bytes(Int) when integer(Int) ->
-    i32(Int);
-int_to_bytes(undefined) ->
-    [255, 255, 255, 255].
-
-date_to_bytes(undefined) ->
-    MinusOne = [255, 255, 255, 255],
-    [MinusOne, MinusOne, MinusOne, MinusOne, MinusOne, MinusOne];
-date_to_bytes({{Y, Mon, D}, {H, Min, S}}) ->
-    [i32(Y), i32(Mon), i32(D), i32(H), i32(Min), i32(S)].
-    
-
-%% This is the process which is spawned for each file which is opened.
-
-file({ReplyTo, ReplyAs}, Name, Mode) ->
-    process_flag(trap_exit, true),
-    link(ReplyTo),
-    put(owner, ReplyTo),
-    case ll_open(Name, Mode) of
-	{error, Reason} ->
-	    unlink(ReplyTo),
-	    gen_server:reply({ReplyTo, ReplyAs}, {error, Reason}),
-	    exit(normal);
-	{ok, Fd} ->
-	    put(fd, Fd),
-	    gen_server:reply({ReplyTo, ReplyAs}, {ok, self()}),
-	    file_loop([])
-    end.
-
-file_loop(Buf0) ->
-    receive
-	{file_request,From,ReplyAs,Request} when pid(From) ->
-	    Buf = file_request(Request, From, ReplyAs, Buf0),
-	    file_loop(Buf);
-	{io_request,From,ReplyAs,Request} when pid(From) ->
-	    Buf = io_request(Request, From, ReplyAs, Buf0),
-	    file_loop(Buf);
-	%% An exit signal from anyone causes us to exit.
-	{'EXIT',_,Reason}  ->
-	    unlink(get(owner)),
-	    exit(normal);               
-	Other ->				%Ignore other messages
-	    file_loop(Buf0)
-    end.
-
-%% file_request(Request, Sender, ReplyAs, Descriptor, Server, Buffer)
-%%  Returns the new buffer.
-
-file_request(Req, From, ReplyAs, Buf0) ->
-    case file_request(Req, Buf0) of
-	{Status,Reply,Buf} ->
-	    file_reply(From, ReplyAs, Reply),
-	    Buf;
-	{exit,normal} ->
-	    file_reply(From, ReplyAs, ok),
-	    exit(normal);
-	{exit,R} ->
-	    file_reply(From, ReplyAs, {error,R}),
-	    exit(normal)
-    end.
-
-file_request({position,At}, Buf) ->
-    position_file(get(fd), At, Buf);
-file_request(truncate, Buf) ->
-    case ll_truncate(get(fd)) of
-	{error, Reason} -> {exit, Reason};
-	ok -> {ok, ok, []}
-    end;
-file_request(sync, Buf) ->
-    case ll_sync(get(fd)) of
-	{error, Reason} -> {exit, Reason};
-	ok -> {ok, ok, Buf}
-    end;
-
-file_request({pread, At, Sz}, Buf) -> 
-    case position_file(get(fd), At, Buf) of
-	{error, Err, Buf2} -> 
-	    {error, Err, Buf2};
-	{ok, Res, Buf2} -> 
-	    case ll_read(get(fd), Sz) of
-		eof -> {ok, eof, []};
-		{ok, Data} -> {ok, {ok, Data}, []};
-		{error, Reason} -> {error, {error, Reason}, []}
-	    end
-    end;
-
-file_request({pwrite, At, Data}, Buf) ->
-    case position_file(get(fd), At, Buf) of
-	{error, Err, Buf2} -> 
-	    {error, Err, Buf2};
-	{ok, Res, Buf2} -> 
-	    io_request({put_chars, Data}, Buf2)
-    end;
-
-file_request(close, Buf) ->
-    {exit,normal};
-file_request(R, Buf) ->				% Unknown request
-    {ok,{error,{request,R}},Buf}.		% Ignore but give error (?)
-
-%% io_request(Request, Sender, ReplyAs, Buffer)
-%%  Returns the new buffer.
-
-io_request(Req, From, ReplyAs, Buf0) ->
-    case io_request(Req, Buf0) of
-	{Status, Reply, Buf} ->
-	    io_reply(From, ReplyAs, Reply),
-	    Buf;
-	{exit, normal} ->
-	    io_reply(From, ReplyAs, ok),
-	    exit(normal);
-	{exit, R} ->
-	    io_reply(From, ReplyAs, {error,R}),
-	    exit(normal)
-    end.
-
-io_request({put_chars, Chars}, Buf) ->
-    case ll_write(get(fd), Chars) of
-	{error, Reason} ->
-	    {exit, Reason};
-	ok ->
-	    {ok, ok, Buf}
-    end;
-
-io_request({put_chars,Mod,Func,Args}, Buf) ->
-    case catch apply(Mod,Func,Args) of
-	Chars when list(Chars) ->
-	    io_request({put_chars,Chars}, Buf);
-	Other ->
-	    {error,{error,Func}, Buf}
-    end;
-io_request({get_until,Prompt,M,F,As}, Buf) ->
-    get_until(M, F, As, Buf);
-io_request({requests,Reqs},  Buf) ->
-    io_requests(Reqs, {ok,ok,Buf});
-io_request(R, Buf) ->	                	%Unknown request
-    {ok,{error,{request,R}},Buf}.		%Ignore but give error (?)
-
-%% Status = io_requests(RequestList, PrevStat, Descriptor, Server)
-%%  Process a list of output requests as long as the previous status is 'ok'.
-
-io_requests([R|Rs], {ok,Res,Buf}) ->
-    io_requests(Rs, io_request(R, Buf));
-io_requests([_|_], Error) ->
-    Error;
-io_requests([], Stat) ->
-    Stat.
-
-%% position_file(Descriptor, At, ReadBuffer)
-%%  Position the file at At. Returns:
-%%
-%%	{ok,NewPosition,NewReadBuffer}
-%%	{error,{error,position},NewReadBuffer}
-%%
-%%  NewReadBuffer is always [] here. This is less efficient but makes
-%%  life easier.
-
-position_file(Fd, At, Buf) ->
-    case file_position(At, 0, length(Buf)) of
-	{error, Reason} ->
-	    {error, {error, Reason}, []};
-	{ok, Offs, Whence} ->
-	    case ll_lseek(Fd, Offs, Whence) of
-		{error, Reason} ->
-		    {error,{error,Reason},[]};
-		{ok, Res} ->
-		    {ok, {ok, Res}, []}
-	    end
-    end.
-
-%% get_until(Module, Function, Arguments, Descriptor, Server, Buffer)
-%%  Gets characters from the input file as long as the applied function
-%%  returns {more,Continuation}. Returns:
-%%
-%%	{Status,Result,NewSaveBuffer}
-%%	{exit,Reason}
-
-get_until(M, F, As, Buf) ->
-    get_until1(catch apply(M, F, [[],Buf|As]), M, F, As).
-
-get_until1({more,Cont}, M, F, As) ->
-    case ll_read(get(fd), 128) of
-	eof ->
-	    get_until1(catch apply(M, F, [Cont,eof|As]), M, F, As);
-	{ok, Bs} when list(Bs) ->
-	    get_until1(catch apply(M, F, [Cont,Bs|As]), M, F, As);
-	{ok, Bin} when binary(Bin) ->
-	    get_until1(catch apply(M, F, [Cont,binary_to_list(Bin)|As]),
-		       M, F, As);
-	{error,Reason} ->
-	    {exit,Reason}
-    end;
-
-get_until1({done,Result,Buf}, M, F, As) ->
-    {ok,Result,Buf};
-get_until1(Other, M, F, As) ->
-    {error,{error,F},[]}.
-  
-
-
-%%% Internal functions operating on a port.
-%%% (The 'll' in all these calls stands for 'low level'.)
-
-ll_raw_open(Name, Mode) ->
-    Args = [file_name2(Name), Mode],
-    case check_args(Args) of
-	ok ->
-	    [N, M] = Args,
-	    ll_open(N, M);
-	Error ->
-	    Error
-    end.
-
-%% ll_open(Name, Mode) -> {ok, #fd}|{error, Reason}
-
-ll_open(File, Mode) ->
-    Cmd = [?FILE_OPEN, i32(Mode band ?EFILE_MODE_MASK), File, 0],
-    case catch mkport(Cmd, Mode band ?BINARY_FILE) of
-	{'EXIT', _} ->
-	    {error, emfile};
-	P ->
-	    case get_response(P) of
-		{ok, Number}  ->  
-		    {ok, #fd{port = P, number = Number}};
-		Error ->
-		    unlink(P),
-		    exit(P, die),
-		    Error
-	    end
-    end.
-
-ll_write(Fdesc, Bytes) ->
-    case ll_command(Fdesc, [?FILE_WRITE,Bytes]) of
-	{ok, _Size} ->
-	    ok;
-	Other ->
-	    Other
-    end.
-
-ll_pwrite(Fdesc, Offs, Bytes) ->
-    case ll_command(Fdesc, [?FILE_PWRITE,i32(Offs), Bytes]) of
-	{ok, _Size} ->
-	    ok;
-	Other ->
-	    Other
-    end.
-
-ll_sync(Fdesc) ->
-    ll_command(Fdesc, [?FILE_FSYNC]).
-
-ll_read(Fdesc, Size) ->
-    case ll_command(Fdesc, [?FILE_READ|i32(Size)]) of
-	{ok, {0, _Data}} ->
-	    eof;
-	{ok, {_Size, Data}} ->
-	    {ok, Data};
-	Other ->
-	    Other
-    end.
-
-
-ll_pread(Fdesc, Offs, Size) ->
-    case ll_command(Fdesc, [?FILE_PREAD, i32(Offs), i32(Size)]) of
-	{ok, {0, _Data}} ->
-	    eof;
-	{ok, {_Size, Data}} ->
-	    {ok, Data};
-	Other ->
-	    Other
-    end.
-
-ll_lseek(Fdesc, Offset, Whence) ->
-    ll_command(Fdesc, [?FILE_LSEEK, i32(Offset), i32(Whence)]).
-
-ll_truncate(Fdesc) ->
-    ll_command(Fdesc, [?FILE_TRUNCATE]).
-
-ll_command(Fdesc, Command) ->
-    Port = Fdesc#fd.port,
-    port_command(Port, Command),
-    get_response(Port).
-
-mkport(Cmd, BinaryFile) ->
-    Opts = if
-	BinaryFile == 0 -> [];
-	true -> [binary]  %% flag is set
-    end,
-    P = open_port({spawn, efile}, Opts),	% can fail
-    port_command(P, Cmd),
-    P.
-
-
+%%%-----------------------------------------------------------------
 %%% Utility functions.
 
-%% file_name2(FileName)
+%% file_name(FileName)
 %% 	Generates a flat file name from a deep list of atoms and 
 %% 	characters (integers).
 
-file_name2([C|T]) when integer(C), C > 0, C =< 255 ->
-    case file_name2(T) of
-	{error, Error} ->
-	    {error, Error};
-	Name ->
-	    [C|Name]
-    end;
-file_name2([H|T]) ->
-    case {file_name2(H), file_name2(T)} of
-	{{error, Error}, _} ->
-	    {error, Error};
-	{_, {error, Error}} ->
-	    {error, Error};
-	{N1, N2} ->
-	    N1++N2
-    end;
-file_name2([]) ->
+file_name(N) ->
+    catch file_name_1(N).
+
+file_name_1([C|T]) when integer(C), C > 0, C =< 255 ->
+    [C|file_name_1(T)];
+file_name_1([H|T]) ->
+    file_name_1(H) ++ file_name_1(T);
+file_name_1([]) ->
     [];
-file_name2(N) when atom(N) ->
+file_name_1(N) when atom(N) ->
     atom_to_list(N);
-file_name2(_) ->
-    {error, einval}.
+file_name_1(_) ->
+    throw({error, einval}).
 
 check_binary(Bin) when binary(Bin) ->
     Bin;
 check_binary(List) when list(List) ->
-    %% Convert the list to a binary, to avoid copying a list to the file server.
-    list_to_binary(List);
+    %% Convert the list to a binary, 
+    %% to avoid copying a list to the file server.
+    case catch list_to_binary(List) of
+	{'EXIT', _} ->
+	    {error, einval};
+	Bin ->
+	    Bin
+    end;
 check_binary(_) ->
     {error, einval}.
 
-open_mode(Mode) when list(Mode) ->
-    new_open_mode(Mode);
-open_mode(Mode) ->
-    new_open_mode(translate_old_mode(Mode)).
+mode_list(read) ->
+    [read];
+mode_list(write) ->
+    [write];
+mode_list(read_write) ->
+    [read, write];
+mode_list({binary, Mode}) when atom(Mode) ->
+    [binary | mode_list(Mode)];
+mode_list({character, Mode}) when atom(Mode) ->
+    mode_list(Mode);
+mode_list(_) ->
+    [{error, einval}].
 
-new_open_mode(List) ->
-    case new_open_mode(List, 0) of
-	Mode when Mode band (?EFILE_MODE_READ bor ?EFILE_MODE_WRITE) == 0 ->
-	    Mode bor ?EFILE_MODE_READ;
+
+
+%% Convert mode list to bit mask for old R7 file server
+
+old_mode(List) when list(List) ->
+    case old_mode(List, 0) of
+	Mode when Mode band (?OLD_MODE_READ bor ?OLD_MODE_WRITE) == 0 ->
+	    Mode bor ?OLD_MODE_READ;
 	Other ->
 	    Other
     end.
 
-new_open_mode([read|Rest], Result) ->
-    new_open_mode(Rest, Result bor ?EFILE_MODE_READ);
-new_open_mode([write|Rest], Result) ->
-    new_open_mode(Rest, Result bor ?EFILE_MODE_WRITE);
-new_open_mode([binary|Rest], Result) ->
-    new_open_mode(Rest, Result bor ?BINARY_FILE);
-new_open_mode([raw|Rest], Result) ->
-    new_open_mode(Rest, Result bor ?RAW_PORT);
-new_open_mode([compressed|Rest], Result) ->
-    new_open_mode(Rest, Result bor ?EFILE_COMPRESSED);
-new_open_mode([append|Rest], Result) ->
-    new_open_mode(Rest, Result bor ?EFILE_MODE_APPEND bor ?EFILE_MODE_WRITE);
-new_open_mode([], Result) ->
-    Result;
-new_open_mode(_, _) ->
+old_mode([read|Rest], Mode) ->
+    old_mode(Rest, Mode bor ?OLD_MODE_READ);
+old_mode([write|Rest], Mode) ->
+    old_mode(Rest, Mode bor ?OLD_MODE_WRITE);
+old_mode([binary|Rest], Mode) ->
+    old_mode(Rest, Mode bor ?OLD_MODE_BINARY);
+old_mode([compressed|Rest], Mode) ->
+    old_mode(Rest, Mode bor ?OLD_MODE_COMPRESSED);
+old_mode([append|Rest], Mode) ->
+    old_mode(Rest, Mode bor ?OLD_MODE_APPEND bor ?OLD_MODE_WRITE);
+old_mode([{delayed_write, _, _}|Rest], Mode) ->
+    old_mode(Rest, Mode);
+old_mode([delayed_write|Rest], Mode) ->
+    old_mode(Rest, Mode);
+old_mode([{read_ahead, _}|Rest], Mode) ->
+    old_mode(Rest, Mode);
+old_mode([read_ahead|Rest], Mode) ->
+    old_mode(Rest, Mode);
+old_mode([], Mode) ->
+    Mode;
+old_mode(_, _) ->
     {error, einval}.
 
-translate_old_mode(read) -> [read];
-translate_old_mode(write) -> [write];
-translate_old_mode(read_write) -> [read, write];
-translate_old_mode({binary, Mode}) -> [binary|translate_old_mode(Mode)];
-translate_old_mode({character, Mode}) -> translate_old_mode(Mode);
-translate_old_mode(_) -> [this_is_an_error].
 
-%% file_position(At, Offset, VirtualOffset)
+%%-----------------------------------------------------------------
+%% Functions for communicating with the file server
 
-file_position(Pos, _, Voff) when integer(Pos) ->
-    file_position(bof, Pos, Voff);
-file_position(bof, Offset, Voff) when integer(Offset) ->
-    {ok, Offset, ?EFILE_SEEK_SET};
-file_position({From,Offset}, _, Voff) ->
-    file_position(From, Offset, Voff);
-file_position(cur, Offset, Voff) when integer(Offset) ->
-    {ok, Offset-Voff, ?EFILE_SEEK_CUR};
-file_position(eof, Offset, Voff) when integer(Offset) ->
-    {ok, Offset, ?EFILE_SEEK_END};
-file_position(_, _, _) ->
-    {error, einval}.
-
-%% Receives the response from an efile port.
-%% Returns: {ok, ListOrBinary}|{error, Reason}
-
-get_response(Port) ->
-    erlang:bump_reductions(100),
-    receive
-	{Port, {data, [Response|Rest]}} ->
-	    get_response(Response, Rest);
-	{'EXIT', Port, Reason} ->
-	    {error, port_died}
+%% Selects between an old and a new file server
+file_server() ->
+    case whereis(?FILE_SERVER) of
+	Pid when pid(Pid) ->
+	    ?FILE_SERVER;
+	undefined ->
+	    ?OLD_FILE_SERVER
     end.
 
-get_response(?FILE_RESP_OK, []) ->
-    ok;
-get_response(?FILE_RESP_OK, Data) ->
-    {ok, Data};
-get_response(?FILE_RESP_ERROR, List) when list(List) ->
-    {error, list_to_atom(List)};
-get_response(?FILE_RESP_NUMBER, [X1, X2, X3, X4]) ->
-    {ok, i32(X1, X2, X3, X4)};
-get_response(?FILE_RESP_DATA, [X1, X2, X3, X4|Data]) ->
-    {ok, {i32(X1, X2, X3, X4), Data}};
-get_response(?FILE_RESP_INFO, List) when list(List) ->
-    {ok, transform_ints(getints(List))};
-get_response(X, Data) ->
-    {error, {bad_response_from_port, X, Data}}.
+%% Currently not used
+%% 
+%% call(Command, Args) ->
+%%     call(file_server(), Command, Args).
 
-transform_ints(Ints) ->
-    [HighSize, LowSize, Type|Tail0] = Ints,
-    Size = HighSize * 16#100000000 + LowSize,
-    [Ay, Am, Ad, Ah, Ami, As|Tail1]  = Tail0,
-    [My, Mm, Md, Mh, Mmi, Ms|Tail2] = Tail1,
-    [Cy, Cm, Cd, Ch, Cmi, Cs|Tail3] = Tail2,
-    [Mode, Links, Major, Minor, Inode, Uid, Gid, Access] = Tail3,
-    #file_info {
-		size = Size,
-		type = file_type(Type),
-		access = file_access(Access),
-		atime = {{Ay, Am, Ad}, {Ah, Ami, As}},
-		mtime = {{My, Mm, Md}, {Mh, Mmi, Ms}},
-		ctime = {{Cy, Cm, Cd}, {Ch, Cmi, Cs}},
-		mode = Mode,
-		links = Links,
-		major_device = Major,
-		minor_device = Minor,
-		inode = Inode,
-		uid = Uid,
-		gid = Gid}.
-    
-file_type(1) -> device;
-file_type(2) -> directory;
-file_type(3) -> regular;
-file_type(4) -> symlink;
-file_type(_) -> other.
-
-file_access(0) -> none;   
-file_access(1) -> write;
-file_access(2) -> read;
-file_access(3) -> read_write.
-
-
-i32(Int) when binary(Int) ->
-    i32(binary_to_list(Int));
-
-i32(Int)  when integer(Int) -> [(Int bsr 24) band 255,
-				(Int bsr 16) band 255,
-				(Int bsr  8) band 255,
-				Int band 255];
-i32([X1,X2,X3,X4]) ->
-    (X1 bsl 24) bor (X2 bsl 16) bor (X3 bsl 8) bor X4.
-
-i32(X1,X2,X3,X4) ->
-    (X1 bsl 24) bor (X2 bsl 16) bor (X3 bsl 8) bor X4.
-    
-getints([X1,X2,X3,X4|Tail]) ->
-    [i32(X1,X2,X3,X4) | getints(Tail)];
-getints([]) -> [].
-
-call(Req) -> gen_server:call(file_server, Req, infinity).
+call(FileServer, Command, Args) when list(Args) ->
+    gen_server:call(FileServer, list_to_tuple([Command | Args]), infinity).
 
 check_and_call(Command, Args) ->
+    check_and_call(file_server(), Command, Args).
+
+check_and_call(FileServer, Command, Args) when list(Args) ->
     case check_args(Args) of
 	ok ->
-	    gen_server:call(file_server, list_to_tuple([Command|Args]),
-			    infinity);
+	    call(FileServer, Command, Args);
 	Error ->
 	    Error
     end.
@@ -1126,53 +1035,26 @@ check_args([_Name|Rest]) ->
 check_args([]) ->
     ok.
 
-%% io_reply(From, ReplyAs, Reply)
-%% request(Io, Request)
-%% file_reply(From, ReplyAs, Reply)
-%% wait_file_reply(From)
-%%  The functions for sending and waiting for i/o command acknowledgement.
-%%  The messages sent have the following formats:
+%%-----------------------------------------------------------------
+%% Functions for communicating with a file io server.
+%% The messages sent have the following formats:
 %%
 %%	{file_request,From,ReplyAs,Request}
 %%	{file_reply,ReplyAs,Reply}
-%%	{io_reply,ReplyAs,Reply}
 
-io_reply(From, ReplyAs, Reply) ->
-    From ! {io_reply,ReplyAs,Reply}.
-
-request(Io, Request) ->
+file_request(Io, Request) ->
     R = erlang:monitor(process, Io),
     Io ! {file_request,self(),Io,Request},
     R.
-
-file_reply(From, ReplyAs, Reply) ->
-    From ! {file_reply,ReplyAs,Reply}.
 
 wait_file_reply(From, Ref) ->
     receive
 	{file_reply,From,Reply} ->
 	    erlang:demonitor(Ref),
-	    receive
-		{'DOWN', Ref, _, _, _} ->
-		    ok
-	    after 0 ->
-		    ok
-	    end,
+	    receive {'DOWN', Ref, _, _, _} -> ok after 0 -> ok end,
+	    %% receive {'EXIT', From, _} -> ok after 0 -> ok end,
 	    Reply;
-	{'EXIT',From,Reason} ->			%In case we are trapping exits
-	    receive
-		{'DOWN', Ref, _, _, _} ->
-		    ok
-	    after 0 ->
-		    ok
-	    end,
-	    {error, terminated};
 	{'DOWN', Ref, _, _, _} ->
-	    receive
-		{'EXIT',From,Reason} ->
-		    ok
-	    after 0 ->
-		    ok
-	    end,
+	    %% receive {'EXIT', From, _} -> ok after 0 -> ok end,
 	    {error, terminated}
     end.

@@ -33,116 +33,15 @@
 #endif 
 
 extern int erl_locking_init_done;
+extern void ei_init_sthreads();
 extern void erl_common_init(void *, long);
 int erl_init_sthreads(void *x, long y)
 {
-#ifdef DEBUG
-  fprintf(stderr,"erl_interface using Solaris threads\n");
-#endif
-
-  erl_errno_key_alloc();
-
-  erl_common_init(x,y);
-  return 0; /*success */
+    ei_init_sthreads();
+    erl_common_init(x,y);
+    return 0; /*success */
 }
 
-mutex_t *erl_m_create(void)  
-{ 
-  mutex_t *l;
-
-#ifdef DEBUG
-  fprintf(stderr,"Solaris threads create\n");
-#endif
-
-  if (!erl_locking_init_done) return 0;
-
-  if ((l = malloc(sizeof(*l)))) {
-    mutex_init(l,USYNC_PROCESS,NULL);
-  }
-
-  return l;
-}
-
-int erl_m_destroy(mutex_t *l) 
-{ 
-  int r;
-  if (!erl_locking_init_done) return 0;
-  r = mutex_destroy(l);
-  free(l);
-  
-  return r;
-}
-
-int erl_m_lock(mutex_t *l)    
-{ 
-  if (!erl_locking_init_done) return 0;
-  return mutex_lock(l);
-}
-
-int erl_m_trylock(mutex_t *l) 
-{ 
-  if (!erl_locking_init_done) return 0;
-  return mutex_trylock(l);
-}
-
-int erl_m_unlock(void *l)  
-{ 
-  if (!erl_locking_init_done) return 0;
-  return mutex_unlock(l);
-} 
-
-
-/*
- * Thread-specific erl_errno variable.
- */
-
-static thread_key_t erl_errno_key;
-
-/*
- * Destroy per-thread erl_errno locus
- */
-static void
-erl_errno_destroy (void * ptr)
-{
-    free(ptr);
-}
-
-/*
- * Allocate erl_errno key.
- */
-static void
-erl_errno_key_alloc (void)
-{
-    thr_keycreate(&erl_errno_key, erl_errno_destroy);
-}
-
-/*
- * Allocate (and initialize) per-thread erl_errno locus.
- */
-static void
-erl_errno_alloc (void)
-{
-    int * locus;
-    thr_setspecific(erl_errno_key, malloc(sizeof(__erl_errno)));
-    thr_getspecific(erl_errno_key, &locus); *locus = 0;
-}
-
-/*
- * Return a pointer to the erl_errno locus.
- */
-volatile int *
-__erl_errno_place (void)
-{
-    int * locus;
-    thr_getspecific(erl_errno_key, &locus);
-    if (locus == NULL)
-    {
-	erl_errno_alloc();
-	thr_getspecific(erl_errno_key, &locus);
-    }
-    return locus;
-}
-
-#endif /* THREAD_H */
+#endif /* HAVE_THREAD_H */
 #endif /* !VXWORKS && !__WIN32__ */
 

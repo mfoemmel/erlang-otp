@@ -51,6 +51,7 @@ extern int ei_trace_distribution;
 #include "erl_interface.h"
 #include "erl_config.h"
 #include "putget.h"
+#include "ei_connect.h"
 
 #ifndef SMALLBUF
 #define SMALLBUF 512
@@ -237,9 +238,7 @@ erl_epmd_publish (int port, const char *alive)
  * a file descriptor is returned - close it to unpublish.
  * 
  */
-int erl_publish(int port)
+int ei_publish(ei_cnode* ec, int port)
 {
-  return erl_epmd_publish(port,erl_thisalivename());
-} 
-
-
+  return erl_epmd_publish(port, ei_thisalivename(ec));
+}

@@ -35,6 +35,10 @@
 #define com_EndThread	       11
 #define com_CurrentThread      12
 #define com_PropertyPutRef     13
+#define com_GetObject          14
+#define com_Next	       15
+#define com_NextIntf	       16
+#define com_Reset	       17
 #define com_Quit	       50
 #define com_Test	      100
 

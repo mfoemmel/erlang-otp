@@ -42,10 +42,11 @@
 -export([auto_att/3,attached/1,eval/3,refresh/0,refresh/1,
 	 clear/1,attach/2,attach/3,
 	 snap_procs/0,start/0,int_module/1,
-	 do_load/3,do_mark/1,do_delete/1]).
-
+	 do_delete/1]).
 
 -define(ATTACH_FUNCTION, {dbg_ui_trace, a_start}).
+
+-import(lists, [foldl/3]).
 
 %% ------------------------------------------------
 
@@ -69,29 +70,10 @@ m() ->
 %% -------------------------------------------
 
 i(Module) ->
-    i(Module,[]).
+    int_mod(Module, local).
 
-i(Module,O) when atom(Module) ->
-    case lists:member($/,atom_to_list(Module)) of
-	false ->
-	    int_mod(Module,local,O);
-	_ ->
-	    int_abs(Module,local,O)
-    end;
-i([X|Rest],O) when number(X) ->
-    case lists:member($/,[X|Rest]) of
-	false ->
-	    int_mod(list_to_atom([X|Rest]),local,O);
-	_ ->
-	    int_abs([X|Rest],local,O)
-    end;
-i([Module],O) ->
-    i(Module,O);
-i([Module|Mods],O) ->
-    i(Module,O),
-    i(Mods,O);
-i(_,_) ->
-    error.
+i(Module, O) ->
+    int_mod(Module, local).
 
 %% -------------------------------------------
 %% The corresponding functions (i/1,i/2) for 
@@ -100,29 +82,11 @@ i(_,_) ->
 %% facility.
 %% -------------------------------------------
 
-ni(Module) -> ni(Module,[]).
+ni(Module) ->
+    int_mod(Module, distributed).
 
-ni(Module,O) when atom(Module) ->
-    case lists:member($/,atom_to_list(Module)) of
-	false ->
-	    int_mod(Module,dist,O);
-	_ ->
-	    int_abs(Module,dist,O)
-    end;
-ni([X|Rest],O) when number(X) ->
-    case lists:member($/,[X|Rest]) of
-	false ->
-	    int_mod(list_to_atom([X|Rest]),dist,O);
-	_ ->
-	    int_abs([X|Rest],dist,O)
-    end;
-ni([Module],O) ->
-    ni(Module,O);
-ni([Module|Mods],O) ->
-    ni(Module,O),
-    ni(Mods,O);
-ni(_,_) ->
-    error.
+ni(Module, O) ->
+    int_mod(Module, distributed).
 
 %% -------------------------------------------
 %% Add Module(s) as being interpreted.
@@ -130,19 +94,10 @@ ni(_,_) ->
 %% -------------------------------------------
 
 a(File) ->
-    a(File,[]).
+    i(File).
 
-a(File,O) when atom(File) ->
-    int_abs(File,local,O);
-a([X|Rest],O) when number(X) ->
-    int_abs([X|Rest],local,O);
-a([File],O) ->
-    a(File,O);
-a([File|Files],O) ->
-    a(File,O),
-    a(Files,O);
-a(_,_) ->
-    error.
+a(File, O) ->
+    i(File).
 
 %% -------------------------------------------
 %% The corresponding functions (a/1,a/2) for 
@@ -152,19 +107,10 @@ a(_,_) ->
 %% -------------------------------------------
 
 na(File) ->
-    na(File,[]).
+    ni(File).
 
-na(File,O) when atom(File) ->
-    int_abs(File,dist,O);
-na([X|Rest],O) when number(X) ->
-    int_abs([X|Rest],dist,O);
-na([File],O) ->
-    na(File,O);
-na([File|Files],O) ->
-    na(File,O),
-    na(Files,O);
-na(_,_) ->
-    error.
+na(File, O) ->
+    ni(File).
 
 %% -------------------------------------------
 %% Don't interpret module(s). The module will be
@@ -203,7 +149,10 @@ nn(_) ->
 %% Get a list of all interpreted modules.
 %% -------------------------------------------
 
-interpreted() -> code:interpreted().
+interpreted() ->
+    ensure_started(),
+    {ok,Mods} = dbg_idb:lookup(interpret),
+    Mods.
 
 %% -------------------------------------------
 %% Attach to process.
@@ -535,32 +484,10 @@ attached(AttPid) ->
 	    true
     end.
 
-%% ----------------------------------------------
-%% Interpret the function call Module:Func(Args).
-%% If the process already is interpreted use the
-%% old Meta process, otherwise start a new.
-%% ----------------------------------------------
+%% Main entry point from break point handler in error_handler.
 
-eval(Module, Func, Args) ->
-    case int_p() of
-	Pid when pid(Pid) ->
-	    dbg_imeta:eval(Pid,Module,Func,Args);
-	_ ->
-	    dbg_imeta:start(Module,Func,Args)
-    end.
-
-int_p() ->
-    case whereis(interpret) of
-	Pid when pid(Pid) ->
-	    Pid ! {self(),{interpreted,self()}},
-	    receive
-		{Pid,{interpreted,Res}} ->
-		    Res
-	    end;
-	_ ->
-	    start(),
-	    false
-    end.
+eval(Mod, Func, Args) ->
+    dbg_debugged:eval(Mod, Func, Args).
 
 %% ----------------------------------------------
 %% Request information about all interpreted
@@ -697,140 +624,128 @@ to_atom(Mod) when list(Mod) ->
 %% Misc. functions for the i,a,n,ni,na,nn funcs.
 %% ----------------------------------------------
 
-int_mod(Module,L,O) ->
-    File = lists:concat(["./",Module]),
-    int_mod(Module,File,L,O).
+int_mod(What, Dist) ->
+    everywhere(case Dist of
+		   local -> false;
+		   distributed -> is_alive()
+	       end, fun() -> int_mod1(What) end).
 
-int_mod(Module,File,L,O) ->
-
-    IsDistributed = is_alive(),
-
-    maybe_load(Module,File,L,O,IsDistributed).
-
-
-
-
-
-
-%% maybe_load/5 - "Compiles", and possibly loads a module into the interpreter.
-%%
-%% Returns: (???) Return values appear to be a bit undefined.
-%%
-%% {module, Module}	After an attempt to load the "compiled" binary to all
-%%			nodes. The result is disregarded.
-%%
-%%				  Result of do_load
-%%   ok					"
-%%   {{module, Module}, List}        	"
-%%   {error, sticky_directory}		"
-%%   {error, no_interpreter}		"
-%% 
-%% error	Otherwise.
-%%
-
-maybe_load(Module,SrcFile,L,O,IsDistributed) ->
-
-    case compile_module(Module,SrcFile,O) of
-	
-	%% Compilation succeeded, tell nodes to load result
-	{ok,Module,File,Bin} when L == dist, IsDistributed == true ->
-	    mark_int(Module, IsDistributed, L),
-	    rpc:eval_everywhere(?MODULE,do_load,[Module,File,Bin]),
-	    {module,Module};
-
-	%% Compilation succeeded, load result
-	{ok,Module,File,Bin} ->
-	    mark_int(Module, IsDistributed, L),
-	    do_load(Module,File,Bin);
-
-	%% Error in "compilation"
-	error ->
-	    error;
-
-	%% Unexpected results
-	Other ->
-	    Other
+int_mod1(Module) when atom(Module) ->
+    int_beam_module(Module);
+int_mod1([X|_]=Name) when number(X) ->
+    int_file(Name);
+int_mod1([Module]) ->
+    int_mod1(Module);
+int_mod1([Module|Mods]) ->
+    int_mod1(Module),
+    int_mod1(Mods);
+int_mod1(_) -> error.
+    
+int_file(Name0) ->
+    case filelib:is_file(Name0) of
+	true -> int_file2(Name0);
+	false ->
+	    Name = Name0 ++ ".erl",
+	    case filelib:is_file(Name) of
+		true -> int_file2(Name);
+		false -> error
+	    end
     end.
 
-%% do_load/3 - Makes sure the interpreter server is started
-%%             and then loads the "compiled" binary into it.
-%%
-%% Returns:
-%%   ok
-%%   {{module, Module}, List}
-%%   {error, sticky_directory}
-%%   {error, no_interpreter}
+int_file2(Src) ->
+    Mod = list_to_atom(filename:rootname(filename:basename(Src))),
+    case get_beam_file(Mod, Src) of
+	Beam when list(Beam) ->
+	    Bin = make_int_binary(Beam, Src),
+	    do_load(Mod, Src, Bin);
+	error -> error
+    end.
 
+get_beam_file(Mod, Src) ->
+    BaseMod = atom_to_list(Mod),
+    SrcDir = filename:dirname(Src),
+    CodePath = [SrcDir,filename:join(SrcDir, "../ebin")|code:get_path()],
+    code:purge(Mod),
+    foldl(fun (_, Bin) when binary(Bin) -> Bin;
+	      (P, St) ->
+		  File = filename:join(P, BaseMod),
+		  case code:load_abs(File) of
+		      {module,Mod} -> File ++ ".beam";
+		      _ -> St
+		  end
+	  end, error, CodePath).
 
-do_load(Module,File,Bin) ->
+int_beam_module(Mod) ->
+    code:purge(Mod),
+    case code:load_file(Mod) of
+	{module,Mod} ->
+	    case code:which(Mod) of
+		Beam when list(Beam) ->
+		    case find_src(filename:rootname(Beam) ++ ".erl") of
+			false -> error;
+			Src when list(Src) ->
+			    Bin = make_int_binary(Beam, Src),
+			    do_load(Mod, Src, Bin)
+		    end;
+		Other -> error
+	    end;
+	_ -> error
+    end.
+
+find_src(Src0) ->
+    case filelib:is_file(Src0) of
+	true -> Src0;
+	false ->
+	    Base = filename:basename(Src0),
+	    Dir = filename:dirname(filename:dirname(Src0)),
+	    Wc = filename:join([Dir,"*",Base]),
+	    case filelib:wildcard(Wc) of
+		[] -> false;
+		[Src] -> Src;
+		[_|_] -> false
+	    end
+    end.
+
+everywhere(false, Fun) -> Fun();
+everywhere(true, Fun) ->
+    {Results,Nodes} = rpc:multicall(erlang, apply, [Fun,[]]),
+    check_results(Results, []).
+
+check_results([error|T], Prev) -> error;
+check_results([H|T], []) -> check_results(T, H);
+check_results([H|T], H) -> check_results(T, H);
+check_results([], Result) -> Result.
+
+do_load(Mod, File, Bin) ->
     start(),
-    code:interpret_binary(Module,File,Bin).
+    Ref = make_ref(),
+    dbg_iserver_api:load({self(),Ref}, Mod, File, Bin),
+    receive
+	{Ref,Reply} ->
+	    true = erts_debug:breakpoint({Mod,'_','_'}, true) > 0,
+	    Reply
+    end.
 
-
-
-%% mark_int/3 - Marks the specified module as interpreted in the code_server
-%%              on all nodes in the distributed system.
-%%
-%% Returns:
-%%  Whatever garbage the code:interpret/int:do_mark function returns.
-%% {module, Module}		After "successful" addition of the module to the code_server.
-%%  {error, W}
-%% 
-
-mark_int(Module,true,dist) ->
-    case do_mark(Module) of
-	{error,W} ->
-	    {error,W};
-	Res ->
-	    rpc:eval_everywhere(?MODULE,do_mark,[Module]),
-	    Res
-    end;
-mark_int(Module,_,_) ->
-    do_mark(Module).
-
-
-
-%% do_mark/1 - Starts the interpreter server, and notifies the code_server
-%%             that the module shall be interpreted.
-%%
-%% Returns:
-%%  Whatever garbage the code:interpret function returns.
-%% {module, Module}		After "successful" addition of the module to the code_server.
-
-do_mark(Module) ->
-    start(),
-    code:interpret(Module).
-
-%% compile_module/3 - Sets up for "compilation" of the specified module.
-%%
-%% Returns:
-%% {ok,Module, File, Binary}		If all went well
-%% error		If the module couldn't be "compiled"
-
-compile_module(Module,F,O) when atom(O) ->
-    compile_module(Module,F,[O]);
-compile_module(Module,F,O) ->
-    Opts = lists:append(O,[report_errors,report_warnings]),
-    case dbg_icompile:file(F,Opts) of
-	{ok,Module,File,Bin} ->
-	    {ok,Module,File,Bin};
-	{ok,M,_,_} ->
-	    io:format("** Modulename in objectcode differs from Modulename in argument **~n"),
-	    error;
-	_ ->
+make_int_binary(Beam, SrcPath) ->
+    case beam_lib:chunks(Beam, [exports,"Abst"]) of
+	{ok,{Mod,Result}} ->
+	    {ok,Src} = file:read_file(SrcPath),
+	    [{exports,Exp},{"Abst",Abst}] = Result,
+	    {ok,Bin} = file:read_file(Beam),
+	    MD5 = code:module_md5(Bin),
+	    %%io:format("~w\n", [{Mod,MD5}]),
+	    %%MD5_2 = vsn_md5(Beam),
+	    %%io:format("~w\n", [{Mod,MD5_2}]),
+	    term_to_binary({interpreter_module,Exp,Abst,Src,MD5});
+	{error,_,_} ->
+	    io:format("** Invalid beam file or no abstract code: ~s\n", [SrcPath]),
 	    error
     end.
 
-int_abs(File,L,O) ->
-    F = to_list(File),
-    File1 = case lists:suffix(".erl",F) of
-		true ->
-		    strip(lists:reverse(F));
-		_ ->
-		    F
-	    end,
-    Mod = to_mod(File1),
-    int_mod(Mod,File1,L,O).
+% vsn_md5(Beam) ->
+%     {ok,{_,[{attributes,Attr}]}} = beam_lib:chunks(Beam, [attributes]),
+%     {value,{vsn,[MD5]}} = lists:keysearch(vsn, 1, Attr),
+%     <<MD5:16/unsigned-integer-unit:8>>.
 
 del_mod(Module,local) ->
     do_delete(Module);
@@ -843,25 +758,14 @@ del_mod(Module,dist) ->
 	    do_delete(Module)
     end.
 
-do_delete(Module) ->
-    start(),
-    code:delete_interpret(Module).
-
-strip([$l,$r,$e,$.|File]) ->
-    lists:reverse(File);
-strip(File) ->
-    lists:reverse(File).
-
-to_list(List) when list(List) -> List;
-to_list(Atom) when atom(Atom) -> atom_to_list(Atom).
-
-to_mod(File) ->
-    N = string:words(File,$/),
-    list_to_atom(string:sub_word(File,N,$/)).
-
-
+do_delete(Mod) when list(Mod) ->
+    do_delete(list_to_atom(Mod));
+do_delete(Mod) ->
+    code:delete(Mod),
+    dbg_iserver_api:delete(Mod),
+    erts_debug:breakpoint({Mod,'_','_'}, false),
+    erlang:yield(),
+    ok.
 
 int_module(X) ->
     dbg_iserver:int_module(X).
-
-    

@@ -47,10 +47,7 @@ loop(DbPid,Pids,Mons,Fol,Atts,Auto) ->
 	    %% We need to check the interpretation result for 
 	    %% (all?) nodes here? /olin (???)
 
-	    int_module(Mod),
-	    mon_send({self(),interpret,Mod},lists:append(Mons,Atts)),
-
-
+	    mon_send({self(),interpret,Mod},lists:append(Mons, Atts)),
 	    loop(DbPid,Pids,Mons,Fol,Atts,Auto);
 	
 	{_,{load,{From,Tag},Mod,File,Binary}} ->
@@ -132,7 +129,7 @@ loop(DbPid,Pids,Mons,Fol,Atts,Auto) ->
 	    Atts1 = case lists:member(AttPid,Atts) of
 			false ->
 			    link(AttPid),
-			    AttPid ! {self(),interpreted,code:interpreted()},
+			    AttPid ! {self(),interpreted,dbg_idb:lookup(interpret)},
 			    [AttPid|Atts];
 			_ ->
 			    Atts
@@ -474,27 +471,14 @@ remove_exited([]) ->
 %%% =================================================
 
 del_module(Mod) ->
-    dbg_idb:del_mod(Mod),
-    {ok,CurModules} = dbg_idb:lookup(interpret),
-    dbg_idb:insert(interpret,lists:delete(Mod,CurModules)).
+    dbg_idb:del_mod(Mod).
 
 %%% =================================================
 %%% Load a new module into the database.
 %%% =================================================
 
 load_mod(Mod,File,Binary) ->
-    dbg_iload:load_mod(Mod,File,Binary).
-
-%%% =================================================
-%%% Add a module to the interpreter database.
-%%% =================================================
+    dbg_iload:load_mod(Mod, File, Binary).
 
 int_module(Mod) ->
-    {ok,CurModules} = dbg_idb:lookup(interpret),
-    case lists:member(Mod,CurModules) of
-	true ->
-	    ok;
-	_ ->
-	    dbg_idb:insert(interpret,[Mod|CurModules])
-    end.
-
+    ok.

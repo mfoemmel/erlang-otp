@@ -1645,9 +1645,15 @@ exchange_names([{Name, Pid, Method} |Tail], Node, Ops, Res) ->
 		    error_logger:info_msg("global: badrpc ~w received when "
 					  "conflicting name ~w was found",
 					  [Badrpc, Name]),
+%		    erlang:display({badrpcc, node(),
+%				    node2, Node2,
+%				    node, Node,
+%				    pidnode, node(Pid)}),
 		    dounlink(Pid2),
-		    ets:delete(global_names, Name),
-		    Op = {delete, Name},
+%		    ets:delete(global_names, Name),
+%		    Op = {delete, Name},
+		    ets:insert(global_names, {Name, Pid, Method}),
+		    Op = {insert, {Name, Pid, Method}},
 		    exchange_names(Tail, Node, [Op | Ops], [Op | Res]);
 		Else ->
 		    error_logger:info_msg("global: Resolve method ~w for "
@@ -1946,12 +1952,28 @@ check_sync_nodes(SyncNodes) ->
 	    {error, Error}
     end.
 
+%%% R7
+%get_own_nodes() ->
+%    case application:get_env(kernel, global_groups) of
+%	undefined ->
+%	    {ok, all};
+%	{ok, []} ->
+%	    {ok, all};
+%	{ok, NodeGrps} ->
+%	    case catch global_group:config_scan(NodeGrps) of
+%		{error, Error2} ->
+%		    {error, {"global_groups definition error", Error2}};
+%		{_GroupNameDef, NodesDef, _OtherDef} ->
+%		    {ok, NodesDef}
+%	    end
+%    end.
+
 get_own_nodes() ->
     case global_group:get_own_nodes_with_errors() of
-        {error, Error} ->
-            {error, {"global_groups definition error", Error}};
-        OkTup ->
-            OkTup
+	{error, Error} ->
+	    {error, {"global_groups definition error", Error}};
+	OkTup ->
+	    OkTup
     end.
 
 %%% In certain places in the server, calling io:format hangs everything,

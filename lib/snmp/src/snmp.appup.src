@@ -1,11 +1,26 @@
 {"%VSN%",
- [{"3.3.1", 
+ [{"3.3.2", 
    [
-    {update, snmp_net_if, soft, soft_purge, soft_purge, []}
+    {load_module, snmp_general_db, soft_purge, soft_purge, []},
+    {load_module, snmp_mib_data, soft_purge, soft_purge, [snmp_general_db]},
+    {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
+    {load_module, snmp_usm, soft_purge, soft_purge, [snmp_user_based_sm_mib]},
+    {load_module, snmp_mpd, soft_purge, soft_purge, [snmp_usm]}
+   ]
+  },
+  {"3.3.1", 
+   [
+    {update, snmp_net_if, soft, soft_purge, soft_purge, []},
+    {load_module, snmp_general_db, soft_purge, soft_purge, []},
+    {load_module, snmp_mib_data, soft_purge, soft_purge, [snmp_general_db]},
+    {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
+    {load_module, snmp_usm, soft_purge, soft_purge, [snmp_user_based_sm_mib]}
    ]
   },
   {"3.3.0", 
    [
+    {load_module, snmp_general_db, soft_purge, soft_purge, []},
+
     {load_module, snmp_misc, soft_purge, soft_purge, []},
 
     {load_module, snmp_generic, soft_purge, soft_purge, []},
@@ -25,6 +40,8 @@
      [snmp_conf, snmp_generic]},
 
     {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
+
+    {load_module, snmp_usm, soft_purge, soft_purge, [snmp_user_based_sm_mib]},
 
     {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
 
@@ -69,6 +86,8 @@
 
     {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
 
+    {load_module, snmp_usm, soft_purge, soft_purge, [snmp_user_based_sm_mib]},
+
     {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
 
     {load_module, snmp_mpd, soft_purge, soft_purge, 
@@ -101,13 +120,28 @@
   }
  ], 
 
- [{"3.3.1", 
+ [{"3.3.2", 
    [
-    {update, snmp_net_if, soft, soft_purge, soft_purge, []}
+    {load_module, snmp_general_db, soft_purge, soft_purge, []},
+    {load_module, snmp_mib_data, soft_purge, soft_purge, [snmp_general_db]},
+    {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
+    {load_module, snmp_usm, soft_purge, soft_purge, [snmp_user_based_sm_mib]},
+    {load_module, snmp_mpd, soft_purge, soft_purge, [snmp_usm]}
+   ]
+  },
+  {"3.3.1", 
+   [
+    {update, snmp_net_if, soft, soft_purge, soft_purge, []},
+    {load_module, snmp_general_db, soft_purge, soft_purge, []},
+    {load_module, snmp_mib_data, soft_purge, soft_purge, [snmp_general_db]},
+    {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
+    {load_module, snmp_usm, soft_purge, soft_purge, [snmp_user_based_sm_mib]}
    ]
   },
   {"3.3.0", 
    [
+    {load_module, snmp_general_db, soft_purge, soft_purge, []},
+
     {load_module, snmp_misc, soft_purge, soft_purge, []},
 
     {load_module, snmp_generic, soft_purge, soft_purge, []},
@@ -125,6 +159,8 @@
      [snmp_conf, snmp_generic]},
 
     {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
+
+    {load_module, snmp_usm, soft_purge, soft_purge, [snmp_user_based_sm_mib]},
 
     {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
 
@@ -164,6 +200,8 @@
      [snmp_conf,snmp_generic,snmp_verbosity]},
 
     {load_module, snmp_user_based_sm_mib, soft_purge, soft_purge, []},
+
+    {load_module, snmp_usm, soft_purge, soft_purge, [snmp_user_based_sm_mib]},
 
     {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
 
